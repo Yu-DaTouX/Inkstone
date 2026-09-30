@@ -78,6 +78,11 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan subagent list
   yan subagent get --id <子代理ID>
   yan subagent stop --id <子代理ID>
+  yan hub start --request-file task.json
+  yan hub list
+  yan hub get --id <任务ID>
+  yan hub send --request-file packet.json
+  yan hub stop --id <任务ID>
   yan browser <动作> [选项]     内置浏览器（yan browser --help 看全部动作）
   yan search query --query-text "关键词"  联网搜索（需要 OpenCLI）
   yan search doctor                       搜索后端诊断（未安装也能读）
@@ -437,6 +442,7 @@ function fail(code, message, extra) {
  * `src/main/agent.ts` 的 `runBrowserCommand` 一一对应。
  */
 const GROUP_SPECS = {
+  hub: { actions: ['start', 'list', 'get', 'stop', 'send'], required: { get: ['id'], stop: ['id'], send: ['toTaskId', 'summary', 'requestId'] } },
   capabilities: {
     actions: ['search', 'discover', 'prepare', 'acquire'],
     required: { prepare: ['candidate'] }

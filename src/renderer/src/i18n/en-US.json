@@ -220,6 +220,9 @@
   "ctx.afterCompact": "Compacted · refreshes after your next message",
   "ctx.atCompact": "threshold reached",
   "ctx.autoCompact": "Auto-compact",
+  "cap.nativeMcpTitle": "Native pi MCP",
+  "cap.nativeMcpDesc": "Pi manages server configuration, connections and sign-in. Open its server status, then use /mcp login, /mcp logout or /mcp reconnect. The list below contains compatible host services; existing configuration is retained for you to migrate selectively.",
+  "cap.nativeMcpOpen": "View native server status",
   "ctx.compactingReason": "Compacting · {reason}",
   "ctx.declinedTip": "Upstream did not run this compaction (nothing to compact, already compacted, or cancelled by an extension)",
   "ctx.details": "Details",
@@ -1932,5 +1935,11 @@
   "cu.disabling": "Turning off…",
   "cu.enabled": "On. Available from the next turn; only screen reading, click, type, scroll, shortcuts and app switching are exposed.",
   "cu.scope": "Provided by the open-source windows-mcp; shell, file, registry and process tools stay off.",
-  "cu.repo": "Project page"
+  "cu.repo": "Project page",
+  "ctx.nativeOwner": "Managed by the agent",
+  "ctx.nativeDescription": "The agent manages context, compaction and session continuation. Inkstone displays state and usage without generating summaries, adjusting budgets or injecting material automatically.",
+  "ctx.nativeMaterials": "You can send files and material explicitly. The agent loads its own project rules, skills and memory.",
+  "ctx.nativePiControls": "These controls call native pi functions directly.",
+  "ctx.nativeUnavailable": "No active pi session is available.",
+  "ctx.nativeHistory": "Existing sessions and legacy context files are retained and are not injected into new model requests."
 }

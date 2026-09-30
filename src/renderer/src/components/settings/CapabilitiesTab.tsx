@@ -18,6 +18,9 @@ export function CapabilitiesTab(): React.JSX.Element {
   const tk = (key: string): string => t(key as MessageKey)
   const settings = useStore((s) => s.settings)
   const patchSettings = useStore((s) => s.patchSettings)
+  const session = useStore(s => s.session)
+  const send = useStore(s => s.send)
+  const closeSettings = useStore(s => s.closeSettings)
   const strategy = settings?.capabilityStrategy ?? 'auto-connect'
   const [snapshot, setSnapshot] = useState<CapabilitySettingsSnapshot | null>(null)
   const [searchText, setSearchText] = useState('')
@@ -166,6 +169,9 @@ export function CapabilitiesTab(): React.JSX.Element {
         </div>
       </div>
 
+      {snapshot?.nativeMcpAvailable ? <SettingRow col name={t('cap.nativeMcpTitle')} desc={t('cap.nativeMcpDesc')}>
+        <Button data-testid="cap-native-mcp" disabled={!session?.sessionId || !!session.isAgentRunning || !!session.isStreaming || !!session.isCompacting} onClick={() => { closeSettings(); void send('/mcp') }}>{t('cap.nativeMcpOpen')}</Button>
+      </SettingRow> : null}
       <div className="ui-row set-row-col" data-testid="cap-mcp">
         <div className="ui-row-label">
           <div className="ui-row-name">{t('cap.mcpTitle')}</div>

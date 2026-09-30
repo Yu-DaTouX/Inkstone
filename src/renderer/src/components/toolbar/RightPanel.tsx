@@ -4,6 +4,7 @@ import { useT } from '../../i18n'
 import { SECTION_ICON, SECTION_TITLE } from './ToolSection'
 import { DragDropRect, DragPreview } from './DragPreview'
 import { useStore } from '../../state/store'
+import { AgentHubPanel } from '../workbench/AgentHubPanel'
 import { TOOL_SECTIONS, type ToolSectionId } from '../../../../shared/ipc'
 import {
   defaultFloatRect,
@@ -110,6 +111,7 @@ export function RightPanel() {
     state: loadWorkbenchState(workbenchKey)
   }))
   const [quickMenuOpen, setQuickMenuOpen] = useState(false)
+  const [hubOpen, setHubOpen] = useState(false)
 
   const updateWorkbench = useCallback((fn: (state: WorkbenchState) => WorkbenchState): void => {
     setBench((current) => ({ key: current.key, state: fn(current.state) }))
@@ -683,8 +685,9 @@ export function RightPanel() {
       ) : null}
       {toolsMode || (fileMode && open) ? (
         <div className="rp-body" data-testid="rp-body">
+          {hubOpen ? <AgentHubPanel onBack={() => setHubOpen(false)} /> : <Button size="sm" onClick={() => setHubOpen(true)} data-testid="open-agent-hub">多 Agent 工作台</Button>}
           {fileMode && filePreview ? <FilePreviewPane focus={previewFocus} onToggleFocus={() => setPreviewFocus((v) => !v)} /> : null}
-          {(fileMode && filePreview && previewFocus ? [] : sequence).map((tile) => {
+          {(hubOpen || (fileMode && filePreview && previewFocus) ? [] : sequence).map((tile) => {
             if (tile.placement === 'floating') {
               return (
                 <FloatPlaceholder

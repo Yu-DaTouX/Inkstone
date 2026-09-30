@@ -1,20 +1,8 @@
-/**
- * 会话后台工作的调度服务：回合收尾后「接下来做什么」只在这里决定。
- *
- * 职责（从 index.ts 抽出，行为不变）：
- *   · 每个 runner 一条串行工作链：交接、目标续跑、重复拦下的补记按优先级在同一条链里判定，
- *     不再各自 `void` 起跑；
- *   · 模型报错后的自动继续：计数落盘（AutoContinueStore）、退避定时、学习等待闸；
- *   · 从运行推送里识别调度时机（回合结束、模型报错、一轮真的产出）。
- *
- * 它不持有窗口、IPC 或 pi 进程：需要的能力都经 `SessionWorkDeps` 注入。
- * 这样桌面 IPC、远程入口（以及以后的手机入口）触发的后台工作走同一套规则，
- * 不必在第二个入口里复制一份调度逻辑。
- */
-import { randomUUID } from 'node:crypto'
+/** Record settled run observations without driving another agent turn. */
+
 import type { MainPush, SessionState } from '../shared/ipc'
-import { decideSessionWork } from '../shared/handoff-schedule'
-import { retryResumeSummary, type AutoContinuePlan } from '../shared/auto-continue'
+
+
 import type { AutoContinueStore } from './auto-continue-service'
 
 export interface SessionWorkDeps {
@@ -41,7 +29,7 @@ export interface SessionWorkDeps {
 export interface SessionWorkScheduler {
   /** 把一次「回合空下来之后看看要不要做事」排进该会话的串行链 */
   schedule(id: string, reason: string): Promise<void>
-  /** 运行推送的调度钩子：回合结束 → 排工作；模型报错 → 自动继续；真的产出 → 计数归零 */
+  /** 运行推送的观察钩子：回合结束后记录重复动作的处理结果 */
   observePush(id: string, msg: MainPush): void
   /** 用户发言 / 停止 / 一轮成功 → 失败计数归零（并撤掉待发的自动继续） */
   resetAutoContinue(id: string): Promise<void>
@@ -50,148 +38,32 @@ export interface SessionWorkScheduler {
   hasPendingAutoContinue(id: string): boolean
 }
 
+/** Observe settled runs without creating synthetic prompts, summaries, or retries. */
 export function createSessionWorkScheduler(deps: SessionWorkDeps): SessionWorkScheduler {
-  /* 串行链按 runnerId 分开：不同会话之间没有共享状态，没必要互相阻塞 */
-  const tails = new Map<string, Promise<void>>()
-  /*
-   * 待发的自动继续（每个 runner 至多一个）。
-   * 用 token 而不是只存 timer：延时期间用户可能发话 / 按停止，条目会被换掉或删掉 ——
-   * 回调醒来时先验明正身，避免「取消之后还是发了」。
-   */
-  const timers = new Map<string, { timer: NodeJS.Timeout; token: string }>()
-
-  async function run(id: string, reason: string): Promise<void> {
-    const state = deps.stateOf(id)
-    if (!state) return
-    const decision = decideSessionWork({
-      busy: state.isAgentRunning === true || state.isStreaming === true,
-      handoffPending: deps.hasHandoffOperation(id),
-      errorRetryPending: timers.has(id),
-      handoffAllowed: true
-    })
-    /* 三个 `wait-*` 都是「现在不做决定」（安全边界未到 / 已有更高优先级的事） */
-    if (decision === 'wait-busy' || decision === 'wait-error-retry' || decision === 'wait-handoff') return
-    /* 重复拦下先计入：它可能把目标打成 blocked（终态），那就不能 arm 任何东西 */
-    await deps.consumeRepeatBlocks(id).catch(() => undefined)
-    /* 它可能改掉交接现场（目标终态会清续行），再核一次 */
-    if (deps.handoffPending(id)) return
-    if (await deps.tryArmHandoff(id, reason)) return
-    await deps.maybeArmGoalContinue(id).catch(() => undefined)
-  }
-
-  function schedule(id: string, reason: string): Promise<void> {
-    const previous = tails.get(id) ?? Promise.resolve()
-    const next = previous.then(
-      () => run(id, reason),
-      () => run(id, reason)
-    )
-    tails.set(id, next)
-    void next.finally(() => {
-      if (tails.get(id) === next) tails.delete(id)
-    })
-    return next.catch(() => undefined)
-  }
-
-  function cancelAutoContinue(id: string): void {
-    const entry = timers.get(id)
-    if (!entry) return
-    clearTimeout(entry.timer)
-    timers.delete(id)
-  }
-
-  async function resetAutoContinue(id: string): Promise<void> {
-    cancelAutoContinue(id)
-    const key = deps.workModeKeyFor(id)
-    if (!key) return
-    try {
-      await deps.autoContinues.load()
-      await deps.autoContinues.reset(key)
-    } catch {
-      /* 归零失败不影响会话：下一次错误会再试 */
-    }
-  }
-
-  /*
-   * 退避在宿主而不在薄层：薄层的 1.8s 只是「确认回合真的空闲」，
-   * 与「上游刚挂了、给它几秒再试」是两件事，混在一起就调不动了。
-   */
-  function scheduleAutoContinue(id: string, plan: Extract<AutoContinuePlan, { action: 'retry' }>): void {
-    cancelAutoContinue(id)
-    const token = randomUUID()
-    const timer = setTimeout(() => {
-      const current = timers.get(id)
-      if (!current || current.token !== token) return
-      timers.delete(id)
-      void (async () => {
-        await deps.writeRetrySnapshot(id, {
-          operationId: randomUUID(),
-          at: Date.now(),
-          kind: 'retry',
-          summary: retryResumeSummary({ error: plan.error, attempt: plan.attempt, limit: deps.autoContinueLimit })
-        })
-      })().catch(() => {
-        /* 快照写不进去 → 这一次不继续；下一次错误还会再来（不会静默丢掉整条链） */
-      })
-    }, plan.delayMs)
-    /* 不阻止应用退出：用户关窗口时不该等这个定时器 */
-    timer.unref?.()
-    timers.set(id, { timer, token })
-  }
-
-  /* 幂等与去重在 store 里：同一次错误从两条通道到达时，第二次拿到 duplicate */
-  async function handleModelError(id: string, payload: { text: string; source: string }): Promise<void> {
-    const key = deps.workModeKeyFor(id)
-    if (!key) return
-    let result: { plan: AutoContinuePlan | null; duplicate: boolean }
-    try {
-      await deps.autoContinues.load()
-      result = await deps.autoContinues.noteFailure(key, payload.text)
-    } catch {
-      return
-    }
-    const { plan, duplicate } = result
-    if (!plan || duplicate) return
-    if (plan.action === 'stop') {
-      deps.notify(id, plan.note, plan.reason === 'limit' ? 'error' : 'info', 'auto-continue')
-      return
-    }
-    deps.notify(id, plan.note, 'warning', 'auto-continue')
-    scheduleAutoContinue(id, plan)
-  }
-
-  /* 每个 runner 上一次看到的「是否在跑」：只有从在跑变成空闲才算回合结束 */
   const running = new Map<string, boolean>()
-
-  function observePush(id: string, msg: MainPush): void {
-    /*
-     * 回合刚结束：交接、普通续跑、重复拦下都在同一条串行链里决定。
-     * 打开 / 切换会话时也会推一条空闲 state —— 那不是回合结束，
-     * 在那里排工作会让目标在用户什么都没做时自己续跑起来。
-     */
-    if (msg.ch === 'state') {
-      const now = (msg.payload as SessionState)?.isAgentRunning === true
+  const tails = new Map<string, Promise<void>>()
+  function schedule(id: string, _reason: string): Promise<void> {
+    const previous = tails.get(id) ?? Promise.resolve()
+    const next = previous.then(async () => {
+      const state = deps.stateOf(id)
+      if (!state || state.isAgentRunning || state.isStreaming || state.isCompacting || deps.hasHandoffOperation(id)) return
+      await deps.consumeRepeatBlocks(id)
+    }).catch(() => undefined)
+    tails.set(id, next)
+    void next.then(() => { if (tails.get(id) === next) tails.delete(id) })
+    return next
+  }
+  return {
+    schedule,
+    observePush(id, msg) {
+      if (msg.ch !== 'state') return
+      const now = msg.payload.isAgentRunning === true
       const was = running.get(id) === true
       running.set(id, now)
       if (was && !now) void schedule(id, 'settled')
-    }
-    /* 模型报错 → 自动继续（单开通道；拿提示文案做判据太脆） */
-    if (msg.ch === 'agent-error') void handleModelError(id, msg.payload)
-    /* 一轮真的产出了（有文本或工具调用、且没标错）→ 连续失败计数归零 */
-    if (
-      msg.ch === 'msg-update' &&
-      msg.payload?.patch?.role === 'assistant' &&
-      !msg.payload.patch.error &&
-      (msg.payload.patch.text || msg.payload.patch.toolCalls?.length)
-    ) {
-      void resetAutoContinue(id)
-    }
-  }
-
-  return {
-    schedule,
-    observePush,
-    resetAutoContinue,
-    cancelAutoContinue,
-    hasPendingAutoContinue: (id) => timers.has(id)
+    },
+    async resetAutoContinue(_id) {},
+    cancelAutoContinue(_id) {},
+    hasPendingAutoContinue: () => false
   }
 }

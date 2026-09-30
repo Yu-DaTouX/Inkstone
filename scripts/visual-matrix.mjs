@@ -1288,10 +1288,10 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'segmented', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewside', 'reviewwrite', 'envnotgit', 'reviewnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
+    states: ['main', 'segmented', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewside', 'reviewwrite', 'envnotgit', 'reviewnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewside', 'reviewwrite', 'envnotgit', 'reviewnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
-  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini', 'spaceoverview'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewside', 'reviewwrite', 'envnotgit', 'reviewnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
+  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini', 'spaceoverview', 'nativecontextsettings', 'nativecontext'] },
   /* 1280×800 加 spaceartifact：成果编辑器（实施-25 P06a）深浅各一张 */
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
@@ -2047,6 +2047,27 @@ const STATES = {
    * 单独一个状态而不是只拍 appearance —— 新 tab 的排版（数值输入、
    * 预设分段控件、来源行）只能在真图里看是否折行 / 溢出。
    */
+  nativecontextsettings: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.openSettings('context');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return 'ok';
+    })()
+  `,
+  nativecontext: `
+    (async () => {
+      window.__yanStore.getState().closeSettings();
+      await new Promise(resolve => setTimeout(resolve, 600));
+      const st = window.__yanStore.getState();
+      window.__yanStore.setState({ session: { ...st.session, isStreaming: false, isAgentRunning: false, isCompacting: true,
+        compaction: { status: 'running', reason: 'threshold', startedAt: Date.now() - 2400 },
+        lastCompaction: { status: 'completed', reason: 'manual', beforeTokens: 36230, afterTokens: 18400, startedAt: Date.now() - 60000, endedAt: Date.now() - 58000 }
+      } });
+      await new Promise(resolve => setTimeout(resolve, 200));
+      return 'ok';
+    })()
+  `,
   ctxsettings: `
     (() => {
       const st = window.__yanStore.getState();
@@ -5262,7 +5283,9 @@ const MUST_HAVE = {
     '[data-testid="kn-review-k-demo0001"]',
     '[data-testid="kn-export-copy"]'
   ],
-  ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-fold"]', '[data-testid="ctx-deep"]'],
+  nativecontextsettings: ['.settings', '[data-testid="ctx-native-settings"]'],
+  nativecontext: ['[data-testid="rp-context"]', '[data-testid="ctx-native-owner"]', '[data-testid="ctx-compacting-reason"]', '[data-testid="ctx-last-compaction"]', '[data-testid="rp-context-actions"] [role="switch"]'],
+  ctxsettings: ['.settings', '[data-testid="ctx-native-settings"]'],
   ctxmodelpresets: ['.settings', '[data-testid="ctx-model-presets"]', '[data-testid="ctx-model-large-balanced"]', '[data-testid="ctx-model-large-long"]'],
   turntime: ['.stream', '[data-testid="turn-footer"]', '.turn-time'],
   turnstatus: ['.stream', '[data-testid="turn-footer"]'],
@@ -5829,6 +5852,7 @@ const ONLY = (process.env.YAN_MATRIX_ONLY ?? '').split(',').filter(Boolean)
 
 /* 这些状态检查工具工作页；每张图开始前都回到同一个工具表面。 */
 const TOOL_PANEL_STATES = new Set([
+  'nativecontext',
   'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'wschanges', 'wsunknown',
   'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'envlinks', 'sourcesearch',
   'extdiag', 'taskhost', 'subagentnote', 'subagentfailed', 'rightresources',

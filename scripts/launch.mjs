@@ -72,7 +72,8 @@ say(`  ${C.ok('✓')} node_modules`)
  * 没有它应用能启动，但连不上 pi（界面会显示「pi 未连接」），
  * 所以这里主动补上，而不是让用户对着错误信息猜。
  */
-const piRuntime = join(root, 'resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')
+const { selectedPiRuntime } = await import('./lib/pi-runtime-location.mjs')
+const piRuntime = join(selectedPiRuntime(join(root, 'resources', 'pi-runtime')), 'dist', 'bundle', 'cli.js')
 if (!existsSync(piRuntime)) {
   say(C.warn('  缺内置 pi 运行时，开始抽取（需要本机装过一个 pi）…'))
   const r = spawnSync('node', [join(root, 'scripts', 'vendor-pi.mjs')], {

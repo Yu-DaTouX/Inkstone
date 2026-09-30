@@ -135,6 +135,12 @@ export interface HistoryPage {
 export class RemoteClient {
   readonly historyCache = new HistoryCache()
   constructor(readonly connection: Connection) {}
+  async hubSnapshot(): Promise<import('../../../src/shared/agent-hub').HubSnapshot> {
+    return (await this.get<{ data: import('../../../src/shared/agent-hub').HubSnapshot }>('/remote/v1/hub')).data
+  }
+  async hubCommand(command: import('../../../src/shared/agent-hub').HubCommand, key = idempotencyKey()): Promise<unknown> {
+    return (await this.post<{ data: unknown }>('/remote/v1/hub', command, key)).data
+  }
 
   private get<T>(path: string): Promise<T> {
     return request<T>(this.connection.baseUrl, path, { token: this.connection.token })

@@ -10,10 +10,12 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | --- | --- |
 | `src/main/index.ts` | Electron 主进程入口：装配、生命周期、运行控制与窗口 |
 | `src/main/ipc/` | 按领域的 IPC 注册器（`registrar.ts` 统一校验调用者是主窗口） |
-| `src/main/goal-coordinator.ts` / `handoff-coordinator.ts` / `session-work-scheduler.ts` | 会话后台调度：工作模式与目标续跑、自动交接、回合收尾的下一步 |
+| `src/main/goal-coordinator.ts` / `handoff-coordinator.ts` / `session-work-scheduler.ts` | 工作模式与目标状态、历史交接兼容、回合收尾观察；宿主自动续跑与自动交接已停用 |
 | `src/main/session-host.ts` / `remote-host.ts` | 桌面会话的宿主能力（桌面 IPC 与远程共用）；手机与砚对砚所有者一侧的处理 |
 | `src/main/agent.ts` | 模型运行与 pi 交互：进程、事件转换、发送与队列 |
-| `src/main/capabilities/acquisition-commands.ts` / `browser-commands.ts` / `lookup-commands.ts` / `context-budget-commands.ts` | `yan` 宿主工具：能力接入、浏览器、搜索与长期记忆、上下文预算 |
+| `src/main/agent-hub/` + `src/shared/agent-hub.ts` | 多 Agent 任务、运行适配、共享交互资源与固定版本成果；桌面/手机用同一宿主服务，见[多 Agent 工作台](AGENT_HUB.md) |
+| `src/main/capabilities/acquisition-commands.ts` / `browser-commands.ts` / `lookup-commands.ts` | `yan` 宿主工具：能力接入、浏览器、搜索与长期记忆；旧上下文预算命令已退役 |
+| `src/shared/agent-context.ts` / `src/main/agent.ts` | Agent 原生上下文边界与 pi 版本适配；过滤宿主上下文改写扩展，加载原生 MCP / codemode / 工具搜索，投影子工具的父调用身份 |
 | `src/main/ui-requests.ts` / `turn-timing-tracker.ts` | 界面请求（扩展对话框与宿主提问）；回合计时与落盘 |
 | `src/main/storage-move.ts` / `storage-move-boot.ts` | 数据位置迁移：设置 → 关于 → 数据位置 登记目标，下次启动整体搬迁并在原处留目录联接，核对文件数与字节后才删原目录，失败撤回 |
 | `src/main/app-update.ts` + `src/shared/app-update.ts` | 应用更新：GitHub Release 检查；安装版经 electron-updater 下载、确认后重启安装，有任务运行时拒绝；便携版与开发版只给发布页入口 |
@@ -26,7 +28,7 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页、空间工作台（概览 / 资料 / 成果）与会话地图（`WorkbenchHome.tsx` / `SpaceWorkbench.tsx` / `SpaceOverview.tsx` / `LibraryView.tsx` / `ArtifactView.tsx`/ `FollowPanel.tsx`（持续关注）/ `SessionMap.tsx`（会话地图：当前会话家族、问答轮次与持久化分支）） |
 | `src/shared/space.ts` + `src/main/space-store.ts` | 主题空间：非 Git 的会话归属与项目关联 |
 | `src/shared/library.ts` + `src/main/library-store.ts` / `library-parser.ts` / `library-service.ts` | 资料库：唯一事实源、版本绑定与解析 |
-| `src/shared/activity-flow.ts` + `src/shared/context-assembly.ts` / `src/main/context-assembler.ts` | 建任务阈值（简单问答不建任务清单；各活动的做法在随包技能里）、按活动的上下文装配（引用可回原文） |
+| `src/shared/activity-flow.ts` + `src/shared/context-assembly.ts` / `src/main/context-assembler.ts` | 建任务阈值与历史资料装配的数据结构；自动装配和请求注入已停用，资料引用仍可回原文 |
 | `src/shared/artifact-doc.ts` + `src/main/artifact-doc-store.ts` | 可编辑成果：版本推进、「用户改过的段落不被 agent 整篇覆盖」、结构化清单（Markdown 任务列表）、引用回原文与导出 Markdown |
 | `src/shared/research.ts` | 资料引用：引用状态（旧版本按版本保留、**只提示不改引用**）与按版本读片段；对照做法在 `resources/skills/research` |
 | `src/shared/user-skill.ts` + `src/main/user-skills.ts` | 用户技能：`YAN_DIR/skills/<名称>/SKILL.md` 的校验、保存（`yan skill save`）与按 `--skill` 加载；旧办事模板（`playbooks.json`）启动时一次性导出成技能，原文件保留。写法与执行约定见 `resources/skills/playbook` |

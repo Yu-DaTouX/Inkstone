@@ -3,13 +3,13 @@ import { createLatestOnly, type LatestOnly } from '../../lib/latest-only'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { KnowledgeActionRequest, KnowledgeEntryView, KnowledgeListView, KnowledgeScope } from '../../../../shared/ipc'
-import { Button, SettingRow, Switch } from '../ui'
+import { Button, SettingRow } from '../ui'
 
 /**
  * 「项目知识」设置页（实施-03 S5）。
  *
  * 这一页要回答三个问题，顺序也就是界面的顺序：
- *   ① **开不开**：检索开关（默认关）。关掉就停止检索 / 注入 —— 页面本身还能看历史条目；
+ *   ① **资料边界**：查看与主动发送；自动检索和上下文注入由 Agent 管理；
  *   ② **有哪些**：已确认 / 待确认 / 需复核三种筛选。**需复核是派生状态**
  *      （分支变了、引用路径没了、来源会话被删），由主进程判断后随列表下来；
  *   ③ **怎么处置**：确认（候选 → 已确认）、编辑、替代（新条目取代旧条目）、删除。
@@ -23,11 +23,9 @@ export function KnowledgeTab() {
   const t = useT()
   /* 运行期拼出来的 key（筛选项 / 复核原因），i18n 的 key 是编译期联合类型，这里集中断言一次 */
   const tk = (key: string): string => t(key as MessageKey)
-  const settings = useStore((s) => s.settings)
-  const patchSettings = useStore((s) => s.patchSettings)
   const switchSession = useStore((s) => s.switchSession)
   const closeSettings = useStore((s) => s.closeSettings)
-  const enabled = settings?.projectKnowledge?.enabled === true
+  const enabled = false
   /**
    * 当前会话的 cwd —— 项目身份变了，列表必须跟着重取。
    * 只依赖 enabled 是不够的（R10）：设置页开着时切会话，界面会停在旧项目，
@@ -202,15 +200,7 @@ export function KnowledgeTab() {
 
   return (
     <div className="ui-rows">
-      {/* 开关：关闭时不检索、不注入、不生成候选；已保存的条目保留 */}
-      <SettingRow name={tk('set.knTitle')} desc={<span data-testid="kn-desc">{tk(enabled ? 'set.knDescOn' : 'set.knDescOff')}</span>} ctlProps={{ 'data-testid': 'kn-toggle' }}>
-        <Switch
-          checked={enabled}
-          onChange={(next) => void patchSettings({ projectKnowledge: { enabled: next } })}
-          label={tk('set.knTitle')}
-          testId="kn-toggle-btn"
-        />
-      </SettingRow>
+      <SettingRow name={tk('set.knowledge')} desc={<span data-testid="kn-desc">{tk('ctx.nativeMaterials')}</span>} />
 
       {/* 范围（本项目 / 个人记忆）+ 状态筛选 */}
       <SettingRow

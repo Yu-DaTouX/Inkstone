@@ -26,6 +26,7 @@ npm run launch
 | `npm run typecheck` | TypeScript、CSS 布局与样式层约定 |
 | `npm run build` | 构建当前源码 |
 | `npm run test:unit` | 单元检查，依赖当前构建 |
+| `npm run test:agent-native-context` | 原生上下文边界、技能发现、运行时选择及打包路径 |
 | `npm run test:live -- <场景>` | Electron 场景检查，不自动构建 |
 | `npm run audit:refs` | 引用一致性审计 |
 | `npm run check:css-docs` | CSS 生成清单一致性 |

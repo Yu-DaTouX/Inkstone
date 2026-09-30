@@ -6,6 +6,7 @@
 | --- | --- |
 | 安装、登录和日常使用 | [使用指南](GETTING_STARTED.md) · [English](GETTING_STARTED_EN.md) |
 | Android 手机接入与配对 | [手机接入说明](MOBILE_ACCESS.md) |
+| 外部 CLI 派活、固定成果与手机控制 | [多 Agent 工作台](AGENT_HUB.md) |
 | 长期记忆与其他 AI 工具互通 | [记忆互通说明](MEMORY_INTEROP.md) |
 | 两台砚之间的连接与传送 | [砚互联说明](PEER_ACCESS.md) |
 | 从源码运行与贡献 | [贡献指南](CONTRIBUTING.md) |

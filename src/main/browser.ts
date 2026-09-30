@@ -16,6 +16,7 @@
  * 细节再进子目录。
  */
 import type { ChildProcess } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { app, shell, WebContentsView, type BrowserWindow } from 'electron'
 import { mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -32,6 +33,7 @@ import type {
   MainPush
 } from '../shared/ipc'
 import { BrowserPolicy } from './browser/BrowserPolicy'
+import { sharedResources, INTERACTIVE_RESOURCE } from './agent-hub/resources'
 import { failureUrl, shouldSurfaceLoadError } from '../shared/browser-navigation'
 import { CDPBridge } from './browser/CDPBridge'
 import type { CdpChannel } from './browser/CdpChannel'
@@ -165,6 +167,10 @@ export class BrowserController {
   private activeTabId: string | null = null
   private userControl = false
   private lastDownload: BrowserState['lastDownload']
+  private automationOwner?: string
+  private readonly ownedDownloads = new Map<string, NonNullable<BrowserState['lastDownload']>>()
+  setAutomationOwner(owner?: string): void { this.automationOwner = owner }
+  getOwnedDownload(owner: string): BrowserState['lastDownload'] { return this.ownedDownloads.get(owner) }
   private nativeBounds: BrowserBounds | undefined
   private downloadSessionAttached = false
   /** 权限管理器是否已挂（session 是共享的，只能挂一次） */
@@ -265,6 +271,7 @@ export class BrowserController {
   }
 
   private updateState(): void {
+    sharedResources.setPaused(INTERACTIVE_RESOURCE, this.userControl)
     this.state = this.getState()
     this.publish()
   }
@@ -396,7 +403,10 @@ export class BrowserController {
     })
     if (!this.downloadSessionAttached) {
       this.downloadSessionAttached = true
-      view.webContents.session.on('will-download', (_event, item) => void this.handleDownload(item))
+      view.webContents.session.on('will-download', (_event, item, contents) => {
+        const owner = !this.userControl && this.activeMode !== 'external' && contents?.id === this.activeTab()?.view.webContents.id ? this.automationOwner : undefined
+        void this.handleDownload(item, owner)
+      })
     }
     if (!this.permissionHandlerAttached) {
       this.permissionHandlerAttached = true
@@ -1113,19 +1123,27 @@ export class BrowserController {
   async observe(): Promise<BrowserObservation> {
     const p = this.parts()
     if (!p) throw new Error('浏览器尚未打开')
+    return this.observeTarget(p)
+  }
+
+  private async observeTarget(p: TargetParts): Promise<BrowserObservation> {
+    const tab = [...this.tabs.values()].find((candidate) => candidate.cdp === p.cdp)
+    const external = this.external?.observer === p.observer ? this.external : null
+    if (!tab && !external) throw new Error('浏览器目标已失效，请重新 observe')
     await p.cdp.attach()
-    if (this.external && this.activeMode === 'external') {
-      const observation = await this.external.observer.capture(this.external.url, this.external.title)
+    if (external) {
+      const observation = await p.observer.capture(external.url, external.title)
       // 页面自己跳转（或标题变化）时同步状态与可切换标签
-      this.external.url = observation.url
-      this.external.title = observation.title
-      await this.syncExternalHistory()
-      await this.syncExternalTabs()
-      this.updateState()
+      if (this.external?.observer === p.observer) {
+        external.url = observation.url
+        external.title = observation.title
+        await this.syncExternalHistory()
+        await this.syncExternalTabs()
+        this.updateState()
+      }
       return observation
     }
-    const tab = this.activeTab()!
-    return tab.observer.capture(tab.state.url, tab.state.title)
+    return p.observer.capture(tab!.state.url, tab!.state.title)
   }
 
   /** 最近一段只读网络活动；不会返回请求头、请求体或 Cookie。 */
@@ -1156,7 +1174,7 @@ export class BrowserController {
       if (!policy.ok) return { ok: false, code: policy.code, error: policy.message }
       await p.input.click(element)
       await this.waitForPage()
-      return { ok: true, observation: await this.observe() }
+      return { ok: true, observation: await this.observeTarget(p) }
     } catch (error) {
       return this.actionError(error)
     }
@@ -1172,7 +1190,7 @@ export class BrowserController {
       if (!policy.ok) return { ok: false, code: policy.code, error: policy.message }
       await p.input.type(element, text)
       await this.waitForPage()
-      return { ok: true, observation: await this.observe() }
+      return { ok: true, observation: await this.observeTarget(p) }
     } catch (error) {
       return this.actionError(error)
     }
@@ -1187,7 +1205,7 @@ export class BrowserController {
     try {
       await p.input.press(key)
       await this.waitForPage()
-      return { ok: true, observation: await this.observe() }
+      return { ok: true, observation: await this.observeTarget(p) }
     } catch (error) {
       return this.actionError(error)
     }
@@ -1212,7 +1230,7 @@ export class BrowserController {
       if (!policy.ok) return { ok: false, code: policy.code, error: policy.message }
       const outcome = await p.input.select(element, value)
       await this.waitForPage()
-      return { ok: true, chosen: outcome, observation: await this.observe() }
+      return { ok: true, chosen: outcome, observation: await this.observeTarget(p) }
     } catch (error) {
       return this.actionError(error)
     }
@@ -1224,7 +1242,7 @@ export class BrowserController {
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
     try {
       await p.input.scroll(deltaX, deltaY)
-      return { ok: true, observation: await this.observe() }
+      return { ok: true, observation: await this.observeTarget(p) }
     } catch (error) {
       return this.actionError(error)
     }
@@ -1347,11 +1365,11 @@ export class BrowserController {
     await new Promise((resolve) => setTimeout(resolve, 120))
   }
 
-  private async handleDownload(item: Electron.DownloadItem): Promise<void> {
+  private async handleDownload(item: Electron.DownloadItem, owner?: string): Promise<void> {
     const directory = app.getPath('downloads')
     await mkdir(directory, { recursive: true })
     const filename = item.getFilename().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') || `download-${Date.now()}`
-    const path = join(directory, filename)
+    const path = join(directory, `${randomUUID()}-${filename}`)
     /*
      * 下载**不自动执行**（方案 9.2）：只落盘到系统下载目录并告知来源，
      * 是否打开由用户自己决定。
@@ -1362,6 +1380,11 @@ export class BrowserController {
       if (state !== 'completed') return
       /* 带上来源：用户要能看出「这个文件是从哪来的」（方案 9.2） */
       this.lastDownload = { path, filename, size: item.getReceivedBytes(), source: origin }
+      if (owner) {
+        this.ownedDownloads.delete(owner)
+        this.ownedDownloads.set(owner, this.lastDownload)
+        while (this.ownedDownloads.size > 50) this.ownedDownloads.delete(this.ownedDownloads.keys().next().value!)
+      }
       this.updateState()
     })
   }

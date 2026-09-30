@@ -6,10 +6,10 @@
  * 建目的会话等），桌面 IPC、远程控制与会话调度器都调这里的同一套规则。
  */
 import type { MainPush } from '../shared/ipc'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { RunnerRegistry } from './runners'
 import { getSettings } from './settings'
-import { handoffHistoryExcerpt, handoffContinuationProblem } from '../shared/handoff-context'
+import { handoffContinuationProblem } from '../shared/handoff-context'
 import { handoffReasonText } from '../shared/handoff-notice'
 import { GoalStore, writeGoalResumeSnapshotIfVacant } from './goal-service'
 import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
@@ -20,13 +20,13 @@ import { SessionChainStore } from './session-chain-service'
 import { HandoffRunner } from './handoff-runner'
 import type { HandoffSessionHandle, HandoffSessionTarget } from './handoff-runner'
 import { normalizeChainKey } from '../shared/session-chain'
-import { HANDOFF_AUTO_COMPACT_THRESHOLD, handoffCommitEnabled, handoffEligibility, handoffSummary, parseHandoffOutput, renderHandoffPrompt, sanitizeHandoffPackage } from '../shared/handoff'
+import { HANDOFF_AUTO_COMPACT_THRESHOLD, handoffCommitEnabled, handoffSummary, parseHandoffOutput, sanitizeHandoffPackage } from '../shared/handoff'
 import type { HandoffPackage } from '../shared/handoff'
-import { randomUUID } from 'node:crypto'
+
 import { isActiveGoalPhase, keepsGoalResumeOnModeChange } from '../shared/goal'
 import { WorkModeStore, writeWorkModeSnapshot } from './work-mode-service'
 import type { WorkMode, WorkModeState } from '../shared/work-mode'
-import type { SessionState, UIMessage } from '../shared/ipc'
+import type { SessionState } from '../shared/ipc'
 
 export interface HandoffHost {
   runners(): RunnerRegistry | null
@@ -258,147 +258,8 @@ export function handoffNotify(id: string, message: string, notifyType: 'info' | 
  * 否则交接与续跑同时在跑，谁先落地都不对。冻结只针对*未发出*的那一条；
  * 交接失败 / 放弃时会用 `maybeArmGoalContinue` 把续跑放回来。
  */
-export async function tryArmHandoff(id: string, reason: string): Promise<boolean> {
-  if (hasHandoffOperation(id)) return false
-  const key = host.workModeKeyFor(id)
-  const agent = host.runners()?.agentOf(id)
-  if (!key || !agent) return false
-  const state = agent.getState()
-  if (!state) return false
-  /* 忙：§7 的「有未完成子代理 / 长命令先等待，不遗弃后台工作」
-   * 这里是**流式期间每份 state 推送都会走到**的热路径，所以不记事件（那是正常等待，不是异常）。
-   * 真的等不来安全边界由 `safety-boundary` 事件反映（在提交入口的复核里）。 */
-  if (state.isAgentRunning || state.isStreaming) return false
-  const now = Date.now()
-  if (now - (handoffLastCheck.get(id) ?? 0) < HANDOFF_CHECK_INTERVAL_MS) return false
-  handoffLastCheck.set(id, now)
-  try {
-    await host.handoffs.load()
-    await host.goals.load()
-    if (host.goals.isPaused(key)) return false
-    const tally = host.handoffs.state(key).tally
-    const goal = host.goals.state(key)
-    const mode = await host.resolveWorkMode(id)
-    const verdict = handoffEligibility({
-      tally,
-      goal,
-      mode: mode.mode,
-      busy: false,
-      threshold: HANDOFF_THRESHOLD_EFFECTIVE
-    })
-    /*
-     * 资格没过曾经是**静默 return** —— 用户看到的就是「压了两次但什么都没发生」。
-     * 四种原因的修法完全不同（等够数 / 建目标 / 换自主档 / 等后台工作），
-     * 所以每一种都留一条事件 —— 但**同一结论不重复记**（见 `shouldRecordEligibilityReject`）。
-     */
-    if (!verdict.eligible) {
-      if (!handoffEligibilityLog.shouldRecord(id, verdict.reason, verdict.count)) return false
-      host.handoffDiag.record({
-        stage: 'eligibility',
-        outcome: 'rejected',
-        reason: verdict.reason,
-        runnerId: id,
-        sessionKey: key,
-        detail: { count: verdict.count, threshold: verdict.threshold, trigger: reason, mode: mode.mode }
-      })
-      return false
-    }
-
-    let messages: UIMessage[] = []
-    try {
-      messages = await agent.getMessages()
-    } catch {
-      /* 拿不到界面历史也照样能写包：提示词里少一段「最近用户消息」，模型会在 notes 里说 */
-    }
-    const recentUser = messages
-      .filter((message) => message.role === 'user' && String(message.text ?? '').trim())
-      .slice(-8)
-      .map((message) => String(message.text).trim().slice(0, 600))
-    let history: string | undefined
-    if (state.sessionFile) {
-      try {
-        if ((await stat(state.sessionFile)).size <= 32 * 1024 * 1024)
-          history = handoffHistoryExcerpt(await readFile(state.sessionFile, 'utf8'))
-      } catch { /* Prompt explicitly marks unavailable source history. */ }
-    }
-    const sourceHead = messages.at(-1)?.id ?? null
-    const request = buildHandoffRequest({
-      handoffId: randomUUID(),
-      operationId: randomUUID(),
-      sessionKey: key,
-      prompt: renderHandoffPrompt({
-        goal,
-        cwd: state.cwd ?? '',
-        recentUser,
-        history,
-        previousPackage: host.handoffs.state(key).package,
-        extra: `本次交接由「${reason}」触发；本片段已完成 ${tally.count} 次自动压缩。`
-      }),
-      sourceHead,
-      mode: mode.mode,
-      model: state.model?.id ?? null
-    })
-    const written = await handoffRequests.writeRequest(id, request).catch(() => false)
-    if (!written) {
-      host.handoffDiag.record({
-        stage: 'generate',
-        outcome: 'request-write-failed',
-        reason: 'request-file-not-written',
-        op: request.operationId,
-        handoffId: request.handoffId,
-        runnerId: id,
-        sessionKey: key
-      })
-      return false
-    }
-    if (host.goals.isPaused(key) || host.goals.state(key).goalId !== goal.goalId) {
-      await handoffRequests.clearRequest(id).catch(() => {})
-      return false
-    }
-    /* 冻结源续跑：换片段之前不许再 arm 新的「接着干」（§5.2） */
-    await host.cancelGoalResume(id).catch(() => {})
-    if (host.goals.isPaused(key) || host.goals.state(key).goalId !== goal.goalId) {
-      await handoffRequests.clearRequest(id).catch(() => {})
-      return false
-    }
-    /* 时间线锚点：排障时用它对比扩展日志里 `check` 行的 `ageMs`（谁晚、晚了多久） */
-    console.log(`[handoff] 已写生成请求（${reason}）：${request.operationId}`)
-    handoffNotify(id, '正在整理上下文，当前任务将在此继续…', 'info')
-    const interval = setInterval(() => void collectHandoffResult(id, request.operationId), HANDOFF_POLL_MS)
-    interval.unref?.()
-    /* 超时也走同一条出口，但**带着这次操作的 id** —— 它不能清掉后来的操作（H2） */
-    const timeout = setTimeout(() => void abandonHandoff(id, 'timeout', request.operationId), HANDOFF_WAIT_MS)
-    timeout.unref?.()
-    handoffPending.set(id, {
-      request,
-      interval,
-      timeout,
-      goalId: goal.goalId ?? ''
-    })
-    host.handoffDiag.record({
-      stage: 'generate',
-      outcome: 'request-written',
-      op: request.operationId,
-      handoffId: request.handoffId,
-      runnerId: id,
-      sessionKey: key,
-      reason,
-      detail: { count: tally.count, threshold: HANDOFF_THRESHOLD_EFFECTIVE, mode: mode.mode }
-    })
-    return true
-  } catch (error) {
-    /* 交接是「有更好、没有也能活」的优化：失败不该影响会话本身 —— 但要留得下痕迹 */
-    host.handoffDiag.record({
-      stage: 'generate',
-      outcome: 'arm-threw',
-      reason: error instanceof Error ? error.message : String(error),
-      runnerId: id,
-      sessionKey: key,
-      detail: { trigger: reason }
-    })
-    return false
-  }
-}
+/** Native agents own context recovery; old automatic handoff callers cannot arm work. */
+export async function tryArmHandoff(_id: string, _reason: string): Promise<boolean> { return false }
 
 /**
  * 放弃一次生成（超时 / 用户插话 / 水位过期 / 会话结束）：清请求与结果，别让下一次交接拿到上一份遗物。

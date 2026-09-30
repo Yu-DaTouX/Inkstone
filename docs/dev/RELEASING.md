@@ -48,7 +48,7 @@ NSIS 自动更新需要将同一次构建的 `latest.yml`、安装程序及对�
 ## 发布检查
 
 1. 按 [贡献指南](../CONTRIBUTING.md) 检查最终源码，记录实际运行与视觉结果。
-2. 用 `npm run vendor:pi:check` 核对内置运行时；升级使用 `npm run upgrade:pi`。
+2. 用 `npm run vendor:pi:check` 核对内置运行时；升级使用 `npm run upgrade:pi`。运行时按独立生成目录保存，验证成功后通过 `resources/pi-runtime/current.json` 切换新进程的入口；旧目录保留给仍在运行的进程。打包前的 hook 只提取当前选中的运行时，发行包内仍使用稳定的 `resources/pi-runtime/` 路径，不携带旧版本。
 3. 生成目录包并运行 `npm run test:packaged`，核对包内 pi、CLI、配置与路径。
 4. 升级验证使用数据备份副本；发布产物中不得包含测试凭证、私人会话、日志或本机用户数据。
 5. 按发布范围生成安装包与 ZIP，核对版本、文件名、大小和 SHA-256，并附发布说明。

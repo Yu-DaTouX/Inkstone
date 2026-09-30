@@ -122,6 +122,8 @@ export interface CapabilityServerOptions {
   opsDir: string
   /** 额外允许的 command 前缀（默认只允许已登记的动词）。 */
   allowCommands?: string[]
+  /** 外部受管运行使用精确白名单；不继承原生 pi 的全部宿主能力。 */
+  onlyCommands?: string[]
 }
 
 /** 骨架默认实现：明确告知「命令已接通，但还没实现」，而不是静默成功。 */
@@ -188,6 +190,11 @@ const KNOWN_COMMANDS = new Set([
   'subagent.list',
   'subagent.get',
   'subagent.stop',
+  'hub.start',
+  'hub.list',
+  'hub.get',
+  'hub.stop',
+  'hub.handoff',
   'browser.navigate',
   'browser.open',
   'browser.state',
@@ -253,7 +260,7 @@ export class CapabilityServer {
   constructor(opts: CapabilityServerOptions) {
     this.opsDir = opts.opsDir
     this.handlers = opts.handlers ?? NOT_IMPLEMENTED
-    this.allowCommands = new Set([...KNOWN_COMMANDS, ...(opts.allowCommands ?? [])])
+    this.allowCommands = new Set(opts.onlyCommands ?? [...KNOWN_COMMANDS, ...(opts.allowCommands ?? [])])
   }
 
   /** 端点是否可用（CLI 侧据此决定要不要报「宿主不可用」而不是「命令不存在」）。 */

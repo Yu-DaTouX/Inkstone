@@ -96,7 +96,7 @@ export function registerKnowledgeIpc(ipc: IpcRegistrar, deps: KnowledgeIpcDeps):
 
   const knowledgeSnapshot = async (scope: unknown) => {
     const settings = await getSettings()
-    const enabled = settings.projectKnowledge?.enabled === true
+    const enabled = false
     /* 打开列表时顺带收一次外部工具写回的候选 */
     await ingestMemoryInbox(settings.projects).catch(() => null)
     const store = await knowledgeStore(scope)
@@ -225,12 +225,11 @@ export function registerKnowledgeIpc(ipc: IpcRegistrar, deps: KnowledgeIpcDeps):
     const exportDir = personal ? app.getPath('documents') : identity.cwd
     const exportName = personal ? 'personal-memory.md' : 'project-knowledge.md'
     try {
-      const settings = await getSettings()
       const views = toKnowledgeViews(await listKnowledge(identity, store.opts), await knowledgeQueryFor(identity))
       const markdown = knowledgeMarkdown(views, {
         projectId: identity.projectId,
         exportedAt: new Date().toISOString(),
-        enabled: settings.projectKnowledge?.enabled === true
+        enabled: false
       })
       if (mode !== 'save') return { ok: true, markdown }
       /*

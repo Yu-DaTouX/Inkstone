@@ -16,9 +16,11 @@ function timeAgo(at: number): string {
 }
 
 /** Projects are navigation; recent messages and live activity remain visible at the root. */
-export function HomeScreen({ onOpen, onSettings, alertsEnabled, onEnableAlerts, selectedSessionId, project, onProjectChange }: {
+export function HomeScreen({ onOpen, onOpenAssistant, onSettings, onHub, alertsEnabled, onEnableAlerts, selectedSessionId, project, onProjectChange }: {
   onOpen: (sessionId: string, title: string) => void
+  onOpenAssistant: () => void
   onSettings: () => void
+  onHub: () => void
   alertsEnabled: boolean
   onEnableAlerts: () => void
   selectedSessionId?: string
@@ -87,7 +89,7 @@ export function HomeScreen({ onOpen, onSettings, alertsEnabled, onEnableAlerts, 
         <Text accessibilityLabel={client.connection.baseUrl} numberOfLines={1} style={{ flexShrink: 1, color: p.fgMute, fontSize: font.xs, fontFamily: mono }}>{info?.computer?.name || client.connection.computerName || client.connection.baseUrl.replace(/^https?:\/\//, '').replace(/:\d+$/, '')}</Text>
         <Meta>· {STATUS_TEXT[stream]}</Meta>
       </>}
-      right={<View style={{ flexDirection: 'row' }}><IconButton name="refresh" label="刷新会话" busy={refreshing} onPress={() => { setRefreshing(true); void refresh().finally(() => setRefreshing(false)) }} /><IconButton name="settings" label="打开手机设置" onPress={onSettings} /></View>}
+      right={<View style={{ flexDirection: 'row' }}><IconButton name="terminal" label="多 Agent 工作台" onPress={onHub} /><IconButton name="refresh" label="刷新会话" busy={refreshing} onPress={() => { setRefreshing(true); void refresh().finally(() => setRefreshing(false)) }} /><IconButton name="settings" label="打开手机设置" onPress={onSettings} /></View>}
     />
     {(refreshing || creating || stream === 'connecting' || stream === 'reconnecting') ? <View style={[styles.activity, { borderBottomColor: p.borderSoft }]}>{selectedSessionId ? <RunDot label={STATUS_TEXT[stream]} /> : <Spinner label={STATUS_TEXT[stream]} />}<Text style={{ color: p.fgDim, fontSize: font.sm }}>{creating ? '正在新建会话' : refreshing ? '正在刷新会话' : STATUS_TEXT[stream]}</Text></View> : null}
     {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft }]}>{/连接超时/.test(error) ? '连接超时，请检查电脑和 Tailscale。' : error}</Text> : null}
@@ -101,6 +103,12 @@ export function HomeScreen({ onOpen, onSettings, alertsEnabled, onEnableAlerts, 
             </Pressable> : <QuestionCard key={q.id} question={q} onAnswer={(answer, key) => client.answer(q.id, answer, key).finally(() => refresh())} />)}
           </> : null}
           {!project && !query ? <>
+            <SectionTitle>生活助手</SectionTitle>
+            <Pressable accessibilityRole="button" accessibilityLabel="打开生活助手" onPress={onOpenAssistant} style={({ pressed }) => [styles.question, { borderColor: p.borderSoft, backgroundColor: p.bg2, opacity: pressed ? 0.7 : 1 }]}>
+              <Icon name="sparkles" color={p.accent} size={icon.md} />
+              <View style={styles.rowMain}><Text style={{ color: p.fg, fontSize: font.base }}>直接在手机上与模型对话</Text><Meta numberOfLines={1}>无需配对电脑 · 密钥只存手机</Meta></View>
+              <Icon name="chevron-right" color={p.fgMute} size={icon.sm} />
+            </Pressable>
             <SectionTitle>活动会话{active.length ? ` · ${active.length}` : ''}</SectionTitle>
             {active.length ? active.map((s) => <View key={s.id}>{renderSession(s, true)}</View>) : <Meta style={{ fontSize: font.sm, paddingVertical: space[2] }}>{stream === 'open' ? '暂无活动' : '等待连接'}</Meta>}
             <SectionTitle>项目</SectionTitle>

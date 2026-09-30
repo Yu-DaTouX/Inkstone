@@ -9,7 +9,7 @@ import { deviceInfo } from '../device'
 
 const GUIDE = 'https://github.com/Yu-DaTouX/Inkstone/blob/main/docs/MOBILE_ACCESS.md'
 
-export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDisableAlerts, onUnpair, onBack, onToggleSidebar, sidebarVisible }: {
+export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDisableAlerts, onUnpair, onBack, onToggleSidebar, sidebarVisible, onOpenAssistantSettings }: {
   connection: Connection
   alertsEnabled: boolean
   onEnableAlerts: () => void
@@ -18,6 +18,8 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
   onBack: () => void
   onToggleSidebar?: () => void
   sidebarVisible?: boolean
+  /** 打开「模型与服务商」；生活助手的密钥、模型都在那里配置 */
+  onOpenAssistantSettings?: () => void
 }) {
   const p = usePalette()
   const { stream, info, client, refresh } = useRemote()
@@ -50,9 +52,12 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
             <Text style={{ flex: 1, color: p.fg, fontSize: font.base }}>任务与问题通知</Text>
             <Switch value={alertsEnabled} onValueChange={(enabled) => enabled ? onEnableAlerts() : onDisableAlerts()} accessibilityLabel="手机待回答通知" trackColor={{ true: p.accentSoft, false: p.bg3 }} thumbColor={alertsEnabled ? p.accent : p.fgMute} />
           </View>
-          <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>锁屏只显示待回答数量。</Text>
+          <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>同时提醒多 Agent 的待答复、待审阅和待核实事项。锁屏只显示数量。</Text>
           <Button label="系统通知设置" onPress={() => void openAlertSettings()} />
         </View>
+        <SectionTitle>生活助手</SectionTitle>
+        <Button label="模型与服务商" icon="key" onPress={() => onOpenAssistantSettings?.()} />
+        <Meta style={{ fontSize: font.sm }}>密钥存在系统钥匙串，只在本机；不配对电脑也能用。</Meta>
         <SectionTitle>帮助</SectionTitle>
         <Button label="使用说明" icon="external" onPress={() => open(GUIDE)} />
         <Button label="下载 Tailscale" icon="external" onPress={() => open('https://tailscale.com/download/android')} />

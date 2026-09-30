@@ -74,7 +74,7 @@ extraResources:
   # 「把一个 pi-extensions 目录随包塞回默认发现链」。
   - from: resources/pi-extensions
     to: yan-thin
-    filter: ['**/*']
+    filter: ['**/*', '!context.js', '!context-budget-observer.js', '!context-budget-maintenance.js', '!context-budget-v1.generated.js', '!project-knowledge.js', '!goal-resume.js', '!handoffs.js']
   # 随包技能：领域做法（例如办公文件）以 SKILL.md 按需加载；主进程用 --skill 显式传入。
   - from: resources/skills
     to: yan-skills
@@ -87,6 +87,7 @@ extraResources:
     filter: ['**/*']
 
 asar: true
+beforePack: scripts/pi-runtime-before-pack.cjs
 compression: normal
 
 #

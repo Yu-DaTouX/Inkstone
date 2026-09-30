@@ -2,6 +2,8 @@
 
 Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（React Native）。pi 通过独立 RPC 子进程提供模型循环。公开品牌为 Inkstone，现有 `yan`、`YAN_*`、CLI 与数据目录标识按兼容约定维护。
 
+外部 CLI 派活、共享工具协调和手机控制的现行边界见[多 Agent 工作台](docs/AGENT_HUB.md)。
+
 本仓库由多个 agent（Claude Code、Codex、砚内置的 pi 等）轮流或同时开发，彼此看不到对方的会话和私有记忆。本文是所有 agent 的共同入口，只写每次都要遵守的规则；状态、交接与本地资料的做法见[多 Agent 协作流程](docs/AGENT_WORKFLOW.md)。
 
 ## 开工
@@ -29,7 +31,7 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 ## 实现约定
 
 - 主进程入口 `src/main/index.ts`；渲染端通过 preload 和 `src/shared/ipc.ts` 调用宿主能力，不直接导入 pi 内部模块。
-- 能力保持单一正式入口；宿主能承担的逻辑放在宿主，随包 pi 扩展保持必要且薄。
+- 能力保持单一正式入口；上下文、压缩、恢复与技能加载由 Agent 原生管理。pi 新增且与砚重复的能力优先适配原生实现；窗口、共享设备与必要授权协调放在宿主，随包 pi 扩展保持必要且薄。
 - 会话历史以持久化记录为准；后台事件必须核对会话归属，不能覆盖当前会话状态。
 - WebContentsView 属于原生层；浮层、焦点、窗口位置与缩放必须与主进程协调。
 - UI 遵循[设计规范](docs/DESIGN_SYSTEM.md)：控件外观只来自 `styles/ui.css` 与 `components/ui/`，模块 CSS 只管版面；保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。界面决定先写入设计规范再改代码；v0.5 重构的范围与余项见[界面重构计划](docs/UI_REDESIGN.md)。

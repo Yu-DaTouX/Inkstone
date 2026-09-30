@@ -18,6 +18,7 @@ import type { RemoteImageInput } from '../shared/remote-protocol'
 import type { RemoteDeviceStore } from './remote-devices'
 import { PEER_CONNECTION_HEADER, PEER_OPERATIONS, type PeerOperation, type PeerProjectRef } from '../shared/peer-protocol'
 import type { PeerGrantRegistry } from './peer-grants'
+import type { HubAttentionItem, HubCommand, HubSnapshot } from '../shared/agent-hub'
 
 /**
  * 砚远程管理服务（电脑 ↔ 手机）。协议定义见 `src/shared/remote-protocol.ts`。
@@ -51,6 +52,9 @@ export interface RemoteArtifactFile {
 }
 
 export interface RemoteServerHandlers {
+  hubSnapshot?(): Promise<HubSnapshot>
+  hubAttention?(): HubAttentionItem[]
+  hubCommand?(command: HubCommand, actor: string): Promise<RemoteOperationResult>
   /** 返回不含绝对会话路径、凭证和其它桌面私密字段的快照。 */
   snapshot(): Promise<unknown>
   /** 按稳定 sessionId 读取历史；路径解析留在主进程，不能由网络请求传入。 */
@@ -509,7 +513,8 @@ export class RemoteServer {
           ...(this.options.handlers.answer ? ['answer'] : []),
           ...(this.options.handlers.artifact ? ['artifacts'] : []),
           ...(this.options.devices ? ['device-name'] : []),
-          ...(this.options.handlers.models ? ['models', 'send-images'] : [])
+          ...(this.options.handlers.models ? ['models', 'send-images'] : []),
+          ...(this.options.handlers.hubSnapshot && this.options.handlers.hubCommand ? ['agent-hub'] : [])
         ],
         device: caller.device,
         computer: { name: hostname() }
@@ -520,6 +525,31 @@ export class RemoteServer {
     if (req.method === 'GET' && url.pathname === '/remote/v1/status') {
       writeJson(res, 200, { ok: true, data: await this.options.handlers.snapshot() })
       return
+    }
+
+    if (url.pathname === '/remote/v1/hub' || url.pathname === '/remote/v1/hub/attention') {
+      if (!caller.device || caller.device.kind === 'peer') return writeError(res, 403, 'Agent Hub 需要配对的手机身份')
+      const address = (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '')
+      const octets = address.split('.').map(Number)
+      const tailscale = octets.length === 4 && octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127
+      const encrypted = Boolean((req.socket as { encrypted?: boolean }).encrypted)
+      if (!encrypted && !tailscale && address !== '127.0.0.1' && address !== '::1') return writeError(res, 403, '完整控制需要 Tailscale 加密连接或 HTTPS')
+      if (url.pathname === '/remote/v1/hub/attention') {
+        if (req.method !== 'GET' || !this.options.handlers.hubAttention) return writeError(res, 404, '这台电脑未启用 Agent Hub 提醒')
+        writeJson(res, 200, { ok: true, data: { items: this.options.handlers.hubAttention() } }); return
+      }
+      if (req.method === 'GET' && this.options.handlers.hubSnapshot) {
+        writeJson(res, 200, { ok: true, data: await this.options.handlers.hubSnapshot() }); return
+      }
+      if (req.method === 'POST' && this.options.handlers.hubCommand) {
+        const body = await this.readJson(req)
+        const actions = ['create', 'cancel', 'accept', 'answer', 'claim-input', 'input', 'resize', 'resume', 'inspect', 'save-template', 'delete-template', 'send-packet']
+        if (!actions.includes(String(body.action))) return writeError(res, 400, 'Agent Hub 操作无效')
+        const command = body as unknown as HubCommand
+        const handler = this.options.handlers.hubCommand
+        await this.idempotent(req, res, caller, true, () => handler(command, `phone:${caller.device!.id}`)); return
+      }
+      return writeError(res, 404, '这台电脑未启用 Agent Hub')
     }
 
     if (req.method === 'GET' && url.pathname === '/remote/v1/sessions') {

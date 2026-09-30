@@ -12,14 +12,20 @@ import { CapabilityCommandError } from './capability-server'
 import { WAIT_POLL_MS, describeWait, parseWaitCondition, waitSatisfied } from '../shared/browser-wait'
 import { YAN_DIR } from './paths'
 import type { BrowserObservation, BrowserNetworkSnapshot, BrowserState } from '../shared/ipc'
+import { sharedResources, INTERACTIVE_RESOURCE } from './agent-hub/resources'
 
 export interface BrowserCommandsHost {
   /** 宿主浏览器服务；还在启动或未初始化时为 null */
   browserHostOrNull(): BrowserCommandHost | null
   capabilityOpts(): CapabilityRunOptions | undefined
+  isActive?(): boolean
 }
 
 export class BrowserCommands {
+  private readonly owner = `browser-${randomUUID()}`
+  private refs = new Set<string>()
+  private targetId: string | undefined
+  private identity?: string
   constructor(private readonly ctl: BrowserCommandsHost) {}
 
 
@@ -45,6 +51,60 @@ export class BrowserCommands {
     action: string,
     params: Record<string, unknown>
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    const opts = this.ctl.capabilityOpts()
+    const identity = `${opts?.sessionId ?? 'host'}:${opts?.runnerGeneration ?? 0}`
+    if (this.identity !== identity) { this.refs.clear(); this.targetId = undefined; this.identity = identity }
+    const owner = `${identity}:${this.owner}`
+    try {
+      return await sharedResources.run(INTERACTIVE_RESOURCE, owner, async () => {
+        const current = this.ctl.capabilityOpts()
+        if (this.ctl.isActive?.() === false || `${current?.sessionId ?? 'host'}:${current?.runnerGeneration ?? 0}` !== identity) throw new CapabilityCommandError('run_expired', '运行已改变，旧排队操作未执行')
+        const state = this.browserHost().getState()
+        const userMutations = new Set(['navigate', 'open', 'back', 'forward', 'reload', 'new-tab', 'switch-tab', 'close-tab', 'connect-chrome', 'disconnect-chrome', 'click', 'type', 'select', 'press', 'scroll'])
+        if (state.userControl && userMutations.has(action)) {
+          throw new CapabilityCommandError('USER_CONTROL_ACTIVE', '浏览器当前由用户接管，请等待用户恢复 Agent 控制。')
+        }
+        if (['click', 'type', 'select'].includes(action)) {
+          const ref = this.browserText(params, 'ref')
+          if (ref && !this.refs.has(ref)) throw new CapabilityCommandError('STALE_ELEMENT', '元素引用不属于本次运行的最新观察，请重新 observe。')
+        }
+        if (['click', 'type', 'select', 'press', 'scroll'].includes(action) && this.targetId !== state.activeTabId) {
+          throw new CapabilityCommandError('STALE_TARGET', '浏览器目标已改变，请重新 observe 后继续。')
+        }
+        let result: { data?: unknown; summary: Record<string, unknown> }
+        const host = this.browserHost()
+        if (userMutations.has(action)) host.setAutomationOwner?.(owner)
+        try { result = await this.execute(action, params) }
+        catch (error) {
+          if (userMutations.has(action) && !(error instanceof CapabilityCommandError)) sharedResources.markUncertain(INTERACTIVE_RESOURCE)
+          throw error
+        }
+        finally { if (userMutations.has(action)) host.setAutomationOwner?.() }
+        if (result.data && typeof result.data === 'object' && 'lastDownload' in result.data) result.data = { ...result.data, lastDownload: host.getOwnedDownload?.(owner) }
+        const observation = result.data as BrowserObservation | undefined
+        if (observation && Array.isArray(observation.elements)) {
+          if (state.activeTabId !== this.browserHost().getState().activeTabId) {
+            this.refs.clear()
+            this.targetId = undefined
+            throw new CapabilityCommandError('STALE_TARGET', '操作期间显示目标发生变化，动作可能已完成，请核对结果并重新 observe；不要重放动作。')
+          }
+          this.refs = new Set(observation.elements.map((e) => e.ref))
+          this.targetId = this.browserHost().getState().activeTabId
+        } else if (userMutations.has(action)) {
+          this.refs.clear()
+          this.targetId = undefined
+        }
+        return result
+      })
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'waiting_resource') {
+        throw new CapabilityCommandError('waiting_resource', error.message)
+      }
+      throw error
+    }
+  }
+
+  private async execute(action: string, params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
     const host = this.browserHost()
     switch (action) {
       /* 打开 / 导航：`open` 是历史别名（旧 browser_open 与 browser_navigate 等价） */
@@ -201,8 +261,9 @@ export class BrowserCommands {
 
       /* 最近一次完成的下载（旧 browser_download 的等价物，数据来自宿主 state） */
       case 'download': {
-        const state = host.getState()
-        const download = state.lastDownload ?? null
+        const opts = this.ctl.capabilityOpts()
+        const owner = `${opts?.sessionId ?? 'host'}:${opts?.runnerGeneration ?? 0}:${this.owner}`
+        const download = host.getOwnedDownload?.(owner) ?? null
         return {
           data: { download },
           summary: {
