@@ -6,21 +6,27 @@ import type { PhotoDraft } from './device'
 import { parsePairingLink, type PairingPrefill } from './pairLink'
 import { restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
 import { ArtifactScreen } from './screens/ArtifactScreen'
+import { AgentHubScreen } from './screens/AgentHubScreen'
+import { AssistantScreen, type AssistantConversation } from './screens/AssistantScreen'
+import { AssistantSettingsScreen } from './screens/AssistantSettingsScreen'
 import { HomeScreen } from './screens/HomeScreen'
 import { PairScreen } from './screens/PairScreen'
 import { SessionScreen } from './screens/SessionScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { RemoteProvider, useRemote } from './state'
-import { EmptyState } from './ui'
+import { Button, EmptyState } from './ui'
 import { clearConnection, loadConnection, saveConnection } from './storage'
-import { usePalette } from './theme'
+import { space, usePalette } from './theme'
 import { BootSplash, ContentEnter } from './motion'
 import { useFoldLayout } from './foldLayout'
 import { cancelSpeech, isSpeechActive } from './speech'
 
 type Route =
   | { name: 'home' }
+  | { name: 'assistant' }
+  | { name: 'assistant-settings' }
   | { name: 'settings' }
+  | { name: 'hub' }
   | { name: 'session'; sessionId: string; title: string }
   | { name: 'artifact'; sessionId: string; title: string; artifact: { id: string; filename: string; mediaType: string; kind: string } }
 
@@ -58,6 +64,11 @@ export default function App() {
   const expanded = !horizontalInside && (verticalInside ? twoPanes : width >= 600)
   const [connection, setConnection] = useState<Connection | null | undefined>(undefined)
   const [route, setRoute] = useState<Route>({ name: 'home' })
+  /** 未配对时也能用生活助手：welcome = 配对页，assistant = 本机助手 */
+  const [assistantConversation, setAssistantConversation] = useState<AssistantConversation>({ messages: [], draft: '' })
+  const [localRoute, setLocalRoute] = useState<'welcome' | 'assistant' | 'assistant-settings'>('welcome')
+  /** 助手设置的返回目标：从设置页进来就回设置，从对话页进来就回对话 */
+  const assistantSettingsFrom = useRef<'assistant' | 'settings'>('assistant')
   const [pairingPrefill, setPairingPrefill] = useState<PairingPrefill | null>(null)
   const [alertsEnabled, setAlertsEnabled] = useState(false)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -89,6 +100,7 @@ export default function App() {
     const receive = (url: string | null) => {
       if (!url) return
       if (url === 'inkstone://inbox') { setRoute({ name: 'home' }); return }
+      if (url === 'inkstone://hub') { setRoute({ name: 'hub' }); return }
       const parsed = parsePairingLink(url)
       if (parsed) setPairingPrefill(parsed)
     }
@@ -137,11 +149,14 @@ export default function App() {
         setPairingPrefill(null)
         return true
       }
+      if (!connection && localRoute !== 'welcome') { setLocalRoute(localRoute === 'assistant-settings' ? 'assistant' : 'welcome'); return true }
+      if (route.name === 'assistant-settings') { setRoute(assistantSettingsFrom.current === 'settings' ? { name: 'settings' } : { name: 'assistant' }); return true }
+      if (route.name === 'assistant') { setRoute({name: 'home'}); return true }
       if (route.name === 'artifact') {
         setRoute({ name: 'session', sessionId: route.sessionId, title: route.title })
         return true
       }
-      if (route.name === 'session' || route.name === 'settings') {
+      if (route.name === 'session' || route.name === 'settings' || route.name === 'hub') {
         setRoute({ name: 'home' })
         return true
       }
@@ -149,7 +164,7 @@ export default function App() {
       return false
     })
     return () => sub.remove()
-  }, [connection, pairingPrefill, route, project])
+  }, [connection, pairingPrefill, route, project, localRoute])
 
   return (
     <SafeAreaProvider>
@@ -158,7 +173,17 @@ export default function App() {
         <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={frame.y} style={{ flex: 1 }}>
         <View ref={frameRef} collapsable={false} onLayout={() => frameRef.current?.measureInWindow((x, y, measuredWidth, height) => setFrame({ x, y, width: measuredWidth, height }))} style={{ flex: 1 }}>
         {connection === undefined ? null : connection === null || pairingPrefill ? (
+          localRoute !== 'welcome' && !pairingPrefill ? (
+            <View style={safeRegion}>{localRoute === 'assistant-settings' ? (
+              <AssistantSettingsScreen onBack={() => setLocalRoute('assistant')} />
+            ) : (
+              <AssistantScreen conversation={assistantConversation} onConversationChange={setAssistantConversation} onBack={() => setLocalRoute('welcome')} onConfigure={() => setLocalRoute('assistant-settings')} />
+            )}</View>
+          ) : (
           <View style={safeRegion}>
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: space[3], paddingTop: space[2] }}>
+            <Button compact variant="ghost" label="先用生活助手" onPress={() => setLocalRoute('assistant')} />
+          </View>
           <PairScreen
             prefill={pairingPrefill}
             onCancel={connection ? () => setPairingPrefill(null) : undefined}
@@ -170,6 +195,7 @@ export default function App() {
             }}
           />
           </View>
+          )
         ) : (
           /* 令牌被撤销（401）时回到配对页 */
           <RemoteProvider connection={connection} onUnauthorized={unpair}>
@@ -180,6 +206,8 @@ export default function App() {
                   <HomeScreen
                     onOpen={(sessionId, title) => setRoute({ name: 'session', sessionId, title })}
                     onSettings={() => setRoute({ name: 'settings' })}
+                    onHub={() => setRoute({ name: 'hub' })}
+                    onOpenAssistant={() => setRoute({ name: 'assistant' })}
                     alertsEnabled={alertsEnabled}
                     onEnableAlerts={() => void enableAlerts()}
                     selectedSessionId={'sessionId' in route ? route.sessionId : undefined}
@@ -191,7 +219,7 @@ export default function App() {
               {sidebarVisible && verticalInside ? <View style={{ width: verticalInside.gap }} /> : null}
               {(expanded || route.name !== 'home') ? (
                 <ContentEnter key={route.name === 'session' ? route.sessionId : route.name}>
-                  {route.name === 'settings' ? (
+                  {route.name === 'hub' ? <AgentHubScreen onBack={() => setRoute({ name: 'home' })} /> : route.name === 'settings' ? (
                     <SettingsScreen
                       connection={connection}
                       alertsEnabled={alertsEnabled}
@@ -201,6 +229,7 @@ export default function App() {
                       onBack={() => setRoute({ name: 'home' })}
                       sidebarVisible={sidebarVisible}
                       onToggleSidebar={expanded ? () => setSidebarCollapsed((current) => !current) : undefined}
+                      onOpenAssistantSettings={() => { assistantSettingsFrom.current = 'settings'; setRoute({ name: 'assistant-settings' }) }}
                     />
                   ) : route.name === 'session' ? (
                     <SessionScreen
@@ -225,6 +254,10 @@ export default function App() {
                       sidebarVisible={sidebarVisible}
                       onToggleSidebar={expanded ? () => setSidebarCollapsed((current) => !current) : undefined}
                     />
+                  ) : route.name === 'assistant' ? (
+                    <AssistantScreen conversation={assistantConversation} onConversationChange={setAssistantConversation} onBack={() => setRoute({ name: 'home' })} onConfigure={() => { assistantSettingsFrom.current = 'assistant'; setRoute({ name: 'assistant-settings' }) }} />
+                  ) : route.name === 'assistant-settings' ? (
+                    <AssistantSettingsScreen onBack={() => setRoute(assistantSettingsFrom.current === 'settings' ? { name: 'settings' } : { name: 'assistant' })} />
                   ) : (
                     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
                       <EmptyState>选择会话</EmptyState>

@@ -1809,3 +1809,29 @@
 .wb-inbox-more {
   align-self: center;
 }
+/* Agent Hub 只定义版面，控件外观来自 ui.css。 */
+.hub-panel, .hub-form, .hub-detail, .hub-task-list, .hub-approval, .hub-messages { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.hub-messages { gap: 6px; }
+.hub-message { border-left: 2px solid var(--border-str); padding-left: 8px; min-width: 0; }
+.hub-message p { font-size: var(--fs-xs); color: var(--fg-mute); }
+.hub-message pre { white-space: pre-wrap; word-break: break-word; font-family: var(--font-code); font-size: var(--fs-code); }
+.hub-panel { padding: 12px; }
+.hub-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hub-form label { display: flex; flex-direction: column; gap: 4px; }
+.hub-path { overflow-wrap: anywhere; }
+.hub-report, .hub-approval pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 480px; overflow: auto; }
+.hub-terminal { min-height: 320px; height: 440px; min-width: 0; overflow: hidden; }
+.hub-windows { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.hub-window-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; min-width: 0; }
+.hub-window { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+.hub-window-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg-2); border-bottom: 1px solid var(--border); }
+.hub-window-head .nm { font-size: var(--fs-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-window-head .sub { font-size: var(--fs-xs); color: var(--fg-mute); flex: none; }
+.hub-window-head .grow { flex: 1; }
+.hub-window .hub-terminal { height: 300px; min-height: 220px; }
+.hub-window-note { padding: 12px; font-size: var(--fs-xs); color: var(--fg-mute); display: flex; flex-direction: column; gap: 8px; }
+.hub-window-note pre { white-space: pre-wrap; word-break: break-word; font-family: var(--font-code); font-size: var(--fs-code); color: var(--fg-dim); }
+.hub-act-say { padding: 3px 6px; font-family: var(--font-code); font-size: var(--fs-code); color: var(--fg-dim); white-space: pre-wrap; word-break: break-word; }
+.hub-act-tool { border: 1px solid var(--border); border-radius: var(--r-xs); padding: 3px 6px; }
+.hub-act-tool summary { cursor: pointer; font-family: var(--font-code); font-size: var(--fs-code); color: var(--fg-mute); }
+.hub-act-tool pre { white-space: pre-wrap; word-break: break-word; font-family: var(--font-code); font-size: var(--fs-code); color: var(--fg-dim); }

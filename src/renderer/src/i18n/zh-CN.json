@@ -220,6 +220,9 @@
   "ctx.afterCompact": "已压缩 · 下一条消息后重新统计",
   "ctx.atCompact": "已达触发线",
   "ctx.autoCompact": "自动压缩",
+  "cap.nativeMcpTitle": "pi 原生 MCP",
+  "cap.nativeMcpDesc": "服务器配置、连接与登录由 pi 管理。打开原生服务器状态后，可使用 /mcp login、/mcp logout 或 /mcp reconnect 操作。下面列出砚的兼容宿主服务；已有配置保留，迁移时由你选择。",
+  "cap.nativeMcpOpen": "查看原生服务器状态",
   "ctx.compactingReason": "压缩中 · {reason}",
   "ctx.declinedTip": "上游没有执行这次压缩（没有可压缩的内容、已经压缩过，或被扩展取消）",
   "ctx.details": "详情",
@@ -1932,5 +1935,11 @@
   "cu.disabling": "正在关闭…",
   "cu.enabled": "已开启。新一轮对话起可用；只开放看屏幕、点击、输入、滚动、快捷键和切换应用。",
   "cu.scope": "由开源的 windows-mcp 提供；命令行、文件、注册表、进程类工具不开放。",
-  "cu.repo": "项目主页"
+  "cu.repo": "项目主页",
+  "ctx.nativeOwner": "由 Agent 原生管理",
+  "ctx.nativeDescription": "上下文、压缩与会话续接由当前 Agent 管理。砚只展示运行状态和用量，不再生成摘要、调整预算或自动注入资料。",
+  "ctx.nativeMaterials": "资料与文件可由你主动发送；Agent 自己的项目规则、技能与记忆继续由 Agent 加载。",
+  "ctx.nativePiControls": "下列操作直接调用 pi 原生功能。",
+  "ctx.nativeUnavailable": "当前没有可操作的 pi 会话。",
+  "ctx.nativeHistory": "已有会话和旧上下文资料保留，不作为新的模型上下文自动注入。"
 }

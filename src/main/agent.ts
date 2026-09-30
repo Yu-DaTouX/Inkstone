@@ -16,7 +16,8 @@ import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { saveUserSkill } from './user-skills'
-import { PiRpc } from './protocol'
+import { PiRpc, resolvePi } from './protocol'
+import { AGENT_CONTEXT_ERROR, agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
 import { ContextRecallError, findArchivedContext, recallArchivedContext } from './context-recall'
@@ -42,17 +43,7 @@ import {
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { consumeQueuedItem } from './queue-items'
 import { clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
-import { activeContextPolicy, contextPolicySettings } from './context-policy'
-import {
-  contextBudget,
-  contextPolicyStep,
-  hasExplicitLegacyOverride,
-  INITIAL_POLICY_STATE,
-  rearmAfterCompaction,
-  type ContextPolicyState,
-  type ContextTrigger,
-  type ResolvedContextPolicy
-} from '../shared/context-policy'
+import type { ContextTrigger } from '../shared/context-policy'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { projectPackageDirs } from './packages'
 import { turnTiming } from '../shared/turn-timing'
@@ -68,17 +59,15 @@ import { agentProfileSnapshotPath } from './agent-profile-store'
 import { decideTaskCreation, taskCreationRefusal } from '../shared/activity-flow'
 import { isAgentActivity, isAgentProfileKind, type AgentActivity, type AgentProfileKind } from '../shared/agent-profile'
 import { isSafeSessionId } from './context-state-store'
-import { readSessionEntryIndex } from './context-watermark'
-import { contextBudgetStoreV1 } from './context-budget-store'
-import type { ContextMaintenanceOperationV1 } from '../shared/context-maintenance'
+
 import { questionLog } from './question-log'
-import { prepareProjectKnowledgeInjection, readProjectKnowledgeEnabled } from './project-knowledge'
+
 import { requestedTimeout } from '../shared/ui-timeout'
 import { buildCatalog } from './capabilities/catalog'
 import { webSearchAvailability, type WebSearchAvailability } from '../shared/web-search'
 import { readSkillById, skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
 import { CapabilityAcquisition } from './capabilities/acquisition-commands'
-import { ContextBudgetCommands } from './context-budget-commands'
+
 import { BrowserCommands } from './browser-commands'
 import { LookupCommands } from './lookup-commands'
 import { TurnTimingTracker } from './turn-timing-tracker'
@@ -105,8 +94,6 @@ import type {
   BrowserObservation,
   BrowserNetworkSnapshot,
   BrowserState,
-  ContextBudget,
-  ContextPolicy,
   ContextPolicyView,
   CustomEntry,
   ExtensionUiRequest,
@@ -153,7 +140,6 @@ const MAX_FLUSH_MS = 120
  */
 const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 
-
 /** 推送补丁到渲染端（主进程注入） */
 type Push = (msg: MainPush) => void
 
@@ -178,6 +164,8 @@ export type BrowserObservationResult = BrowserCommandResult & { observation?: Br
  */
 export interface BrowserCommandHost {
   getState(): BrowserState
+  setAutomationOwner?(owner?: string): void
+  getOwnedDownload?(owner: string): BrowserState['lastDownload']
   navigate(url: string): Promise<BrowserCommandResult>
   back(): Promise<BrowserCommandResult>
   forward(): Promise<BrowserCommandResult>
@@ -397,6 +385,7 @@ export class AgentController extends EventEmitter {
   private getBrowserHost?: () => BrowserCommandHost | null
   /** `yan subagent …` 的宿主实现；不把它注册为 pi 工具。 */
   private subagentHost?: SubagentCommandHost
+  private hubHost?: SubagentCommandHost
   /** `yan goal …` 的宿主实现（实施-05 S3）；同样不是 pi 工具。 */
   private goalHost?: GoalCommandHost
   /** 资料引用：按版本读片段与引用状态。 */
@@ -449,12 +438,7 @@ export class AgentController extends EventEmitter {
     browserHostOrNull: () => this.getBrowserHost?.() ?? null,
     capabilityOpts: () => this.capabilityOpts
   })
-  /** 上下文预算命令与回合边界记账（见 context-budget-commands.ts） */
-  private readonly contextBudget = new ContextBudgetCommands({
-    state: () => this.state,
-    messages: () => this.messages,
-    cwd: () => this.cwd
-  })
+
   private readonly acquisition = new CapabilityAcquisition({
     capabilityOpts: () => this.capabilityOpts,
     cwd: () => this.cwd,
@@ -508,7 +492,7 @@ export class AgentController extends EventEmitter {
   } | null = null
   /** 回合级「正在干活」（含工具执行），见 setAgentRunning */
   private agentRunning = false
-  private contextMaintenanceInProgress = false
+
   /** 当前回合的计时与元数据（见 turn-timing-tracker.ts） */
   private readonly turn = new TurnTimingTracker()
   /** 文本脏（有新的流式文本待推） */
@@ -543,27 +527,7 @@ export class AgentController extends EventEmitter {
    * 必须活在这之外，否则一收到 state 推送就归零。
    */
   private compactionState: CompactionState = EMPTY_COMPACTION_STATE
-  /**
-   * 上下文策略状态（N21-3）：上膛标记 + 上次策略压缩的时间（冷却）。
-   * 与 compactionState 一样活在 `state` 重建之外，否则每条 state 推送都会把它冲掉。
-   */
-  private policyState: ContextPolicyState = INITIAL_POLICY_STATE
-  /**
-   * 砚刚刚为哪条线发起了压缩。
-   *
-   * 为什么需要：pi 对砚发起的 `compact()` 一律报 `reason: 'manual'`，
-   * 界面上会写成「手动」——用户明明没点那个按钮。发起方只有砚自己知道，
-   * 所以在这里记一笔，等压缩事件到达时盖到那条记录上（见 setCompaction）。
-   *
-   * 为什么要带 `baseline`：`compaction_start` / `compaction_end` 的到达顺序、
-   * 以及 `get_state` 的自愈都可能让“正在压缩”那条临时记录消失（实测：成功的
-   * 那次压缩没有可用的开始记录，只有结束记录）。所以不能只靠开始事件盖章，
-   * 而要能认出**哪条结束记录是本次调用产生的** —— 用“上一条记录的 endedAt”
-   * 当基准就够了。
-   */
-  private policyOrigin: { stage: ContextTrigger; baseline: number | null } | null = null
-  /** 正在走策略触发流程（防止两次 stats 刷新同时判定过线） */
-  private policyTriggering = false
+
   /** 扩展与宿主发起的界面请求（见 ui-requests.ts） */
   /** 会话文件的轻量条目索引（任务清单 / 自定义条目 / 用户轮次），见 session-entries-lite.ts */
   private readonly entriesLite = new SessionEntriesLite()
@@ -677,6 +641,7 @@ export class AgentController extends EventEmitter {
     browserHost?: () => BrowserCommandHost | null
     /** 子代理宿主入口，由 index.ts 注入，按当前 runner 绑定父会话。 */
     subagentHost?: SubagentCommandHost
+    hubHost?: SubagentCommandHost
     /** 目标状态入口（`yan goal …`），由 index.ts 注入（模式与目标在同一侧）。 */
     goalHost?: GoalCommandHost
     /** 资料引用：按版本读片段与引用状态；对照做法在 research 技能。 */
@@ -733,6 +698,7 @@ export class AgentController extends EventEmitter {
     this.getResponseDetail = opts.getResponseDetail
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
+    this.hubHost = opts.hubHost
     this.goalHost = opts.goalHost
     this.researchHost = opts.researchHost
     this.followHost = opts.followHost
@@ -874,17 +840,15 @@ export class AgentController extends EventEmitter {
     const userSkillArgs = this.userSkills ? await this.userSkills().catch(() => [] as string[]) : []
     /* 项目 settings 登记的 pi 包：`--no-extensions` 会关掉它们，这里显式补回。 */
     const projectPackageArgs = await projectPiPackageArgs(this.cwd)
+    const probe = resolvePi({ override: this.piBin })
+    const version = probe.home ? await readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : undefined
+    const nativeTools = nativePiToolsSupported(version)
     const rpc = new PiRpc({
       cwd: this.cwd,
       piBin: this.piBin,
-      args: [
-        /*
-         * 01-S5：砚默认启动不接管用户的 pi 扩展 / Skill 自动发现。
-         * 下面的 --extension / --skill 仍是砚自己明确传入的受管资源，
-         * 因此不会把允许的薄层或当前项目 active Skill 一并关掉。
-         */
+      args: agentOwnedPiArgs([
+        /* Trusted UI/authorization extensions are explicit; pi discovers its native skills. */
         '--no-extensions',
-        '--no-skills',
          // 工作模式的提问指引薄层（真正入口是宿主 yan question ask）
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
         /*
@@ -964,7 +928,7 @@ export class AgentController extends EventEmitter {
         // 曾经传 `--name 砚` 希望“好辨认”，结果每个新会话标题都是「砚」，
         // 在左栏里长得一模一样，等于没标题。
         // 让 pi 用首条用户消息当标题，才真正可辨认。
-      ],
+      ], nativeTools),
       env: {
         // 让内置扩展能读到桌面端设置（工作模式快照存在 desktop.json 旁边）。
         // 测试时 YAN_DATA_DIR 指向隔离目录，扩展会读到那份设置。
@@ -1226,6 +1190,10 @@ export class AgentController extends EventEmitter {
     if (command.startsWith('browser.')) {
       return this.browserCommands.runBrowserCommand(command.slice('browser.'.length), params)
     }
+    if (command.startsWith('hub.')) {
+      if (!this.hubHost) throw new CapabilityCommandError('hub_unavailable', '多 Agent 宿主当前不可用')
+      return this.hubHost.run(command, params, { cwd: this.cwd, parentSessionId: this.state?.sessionId ?? this.capabilityOpts?.sessionId, parentRunId: this.capabilityOpts?.sessionId, projectId: this.capabilityOpts?.projectId })
+    }
     if (command.startsWith('subagent.')) {
       if (!this.subagentHost) {
         throw new CapabilityCommandError('subagent_unavailable', '子代理宿主入口当前不可用')
@@ -1320,7 +1288,7 @@ export class AgentController extends EventEmitter {
     if (command === 'office.read') return this.runOfficeReadCommand(params)
     if (command === 'consent.request') return this.runConsentRequestCommand(params)
     if (command === 'danger.confirm') return this.runDangerConfirmCommand(params)
-    if (command.startsWith('context.budget.')) return this.contextBudget.runContextBudgetCommand(command, params)
+    if (command.startsWith('context.budget.')) throw new CapabilityCommandError('agent_owned_context', AGENT_CONTEXT_ERROR)
     switch (command) {
       case 'tasks.apply':
         return this.applyTaskPlan(params)
@@ -1553,7 +1521,6 @@ export class AgentController extends EventEmitter {
     }
   }
 
-
   startHostUiTimer(id: string): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
     return this.ui.startHostUiTimer(id)
   }
@@ -1676,7 +1643,6 @@ export class AgentController extends EventEmitter {
     }
   }
 
-
   /** `yan skill read`：按需读技能正文（记录内容 hash，正文变了要重读）。 */
   private async runSkillRead(params: Record<string, unknown>) {
     const id = this.knowledgeString(params, ['id', 'skillId', 'skill-id'])
@@ -1747,7 +1713,8 @@ export class AgentController extends EventEmitter {
 
   /** 安全投影给设置页：不回传命令参数、环境变量、认证引用或完整端点 URL。 */
   async capabilitySettingsSnapshot() {
-    const skills = skillsFromCommands(await this.rawCommands()).map(({ capability }) => ({
+    const commands = await this.rawCommands()
+    const skills = skillsFromCommands(commands).map(({ capability }) => ({
       id: capability.id,
       title: capability.title,
       description: capability.description
@@ -1774,7 +1741,9 @@ export class AgentController extends EventEmitter {
         toolCount: manager.toolCountOf(server.id)
       }
     })
-    return { skills, servers, configWarning: Boolean(this.mcpConfigError) }
+    const probe = resolvePi({ override: this.piBin })
+    const version = probe.home ? await readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : undefined
+    return { skills, servers, nativeMcpAvailable: nativePiToolsSupported(version) && commands.some(command => command.name === 'mcp'), configWarning: Boolean(this.mcpConfigError) }
   }
 
   /** 只在用户明确点击「检查」时连接并刷新 MCP 工具表。 */
@@ -1929,11 +1898,6 @@ export class AgentController extends EventEmitter {
   private knowledgeString(params: Record<string, unknown>, keys: string[]): string | undefined {
     return paramString(params, keys)
   }
-
-
-
-
-
 
   /**
    * 当前会话「第几轮用户消息」（从 1 开始）。
@@ -2101,55 +2065,8 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  /**
-   * 当前有效的上下文策略与工作集预算（N21-3，**唯一来源**）。
-   *
-   * 为什么把「界面用的数」与「做决定用的数」算在一处：它们必须是同一个数。
-   * 这一块已经出过两次「界面数字 ≠ 实际生效值」的错（D21 项目级设置被忽略、
-   * D22 用户级设置读错文件），不能再让渲染端自己再算一遍。
-   *
-   * 总开关就是那个已有的「自动压缩」开关（pi 的 `compaction.enabled`）：
-   * 它关掉时砚也不自作主张地压 —— 用户关的就是“别自动动我的上下文”。
-   * 注意 pi 自己那条自动压缩线仍然在（砚不写 pi 的设置文件），
-   * 所以这个开关的语义仍然是“pi 要不要自动压缩”，只是多了一个更早的砚决策点。
-   */
-  private effectivePolicy(): {
-    resolved: ResolvedContextPolicy
-    policy: ContextPolicy
-    budget: ContextBudget | null
-  } {
-    /*
-     * 模型级覆盖按**当前会话模型**查表（N21-7）：同一台机器上切到不同模型
-     * 会得到不同工作集，而 `source` 让界面能说出“这个数是模型级定的”。
-     */
-    const resolved = activeContextPolicy(process.env, modelKeyOf(this.state?.model))
-    const policy: ContextPolicy =
-      resolved.policy.enabled && this.state?.autoCompactionEnabled !== false
-        ? resolved.policy
-        : { ...resolved.policy, enabled: false }
-    return { resolved, policy, budget: contextBudget(this.state?.model?.contextWindow ?? 0, policy) }
-  }
-
-  /** 推给界面的策略视图（窗口未知或策略关时为 undefined —— 界面退回物理窗口视角） */
-  private contextPolicyView(): ContextPolicyView | undefined {
-    const { resolved, policy, budget } = this.effectivePolicy()
-    if (!policy.enabled || !budget) return undefined
-    /*
-     * 精确模型层的原文（C-5 尾）：右栏据此说「现在用的是均衡 600K 档」。
-     * 只看 `source === 'model'` 不够 —— 模型级也可能是用户手填的自定义数。
-     */
-    const modelKey = modelKeyOf(this.state?.model)
-    const modelOverrides = modelKey ? contextPolicySettings().byModel?.[modelKey] : undefined
-    return {
-      enabled: true,
-      kinds: policy.kinds,
-      budget,
-      source: resolved.source,
-      ...(resolved.sourceKey ? { sourceKey: resolved.sourceKey } : {}),
-      overridden: resolved.overridden,
-      ...(modelOverrides ? { modelOverrides } : {})
-    }
-  }
+  /** Context pressure is reported by pi, without a host working-set policy. */
+  private contextPolicyView(): ContextPolicyView | undefined { return undefined }
 
   /**
    * 设置改动后重推一帧上下文策略（N21-7）。
@@ -2232,48 +2149,6 @@ export class AgentController extends EventEmitter {
     const policyView = this.contextPolicyView()
     if (policyView) this.state = { ...this.state, contextPolicy: policyView }
     this.push({ ch: 'state', payload: this.state })
-  }
-
-  /**
-   * 一次上下文策略判定（N21-3）。
-   *
-   * 触发时机只有一处：**回合结束**（`agent_settled` → `refreshStats({ allowPolicyTrigger: true })`）。
-   * 两个理由：① 不在流式输出或工具执行的中途动上下文 —— 那会把正在写的回合从中间截断；
-   * ② 也不能跟着“任何一次用量刷新”跑 —— 切到一个很大的旧会话也会刷新用量，
-   * 那会变成“用户只是想看一眼，却被按头压了一次”（实测踩过，见 refreshStats 的注释）。
-   *
-   * 命中的两条线都是砚自己的：工作集上限（`compact`）与物理兜底（`emergency`，
-   * 取 `min(90% 窗口, 窗口 − 输出预留)` —— 兜底不能吃掉留给回答的空间，见方案 §12.1）。
-   * pi 原生那条 `窗口 − reserveTokens` 自动压缩**保持不动**，两者都失灵时由它兜底。
-   */
-  private async evaluateContextPolicy(tokens: number | null): Promise<void> {
-    const { policy, budget } = this.effectivePolicy()
-    const busy =
-      !!this.state?.isStreaming || !!this.state?.isCompacting || !!this.state?.isAgentRunning
-    const decided = contextPolicyStep({ state: this.policyState, tokens, budget, policy, busy })
-    this.policyState = decided.state
-    if (!decided.trigger || this.policyTriggering) return
-
-    this.policyTriggering = true
-    /* 基准＝调用之前已有的最后一条记录：用来认出“这次调用产生的那条” */
-    this.policyOrigin = { stage: decided.trigger, baseline: this.compactionState.last?.endedAt ?? null }
-    try {
-      const res = await this.compact({ fromPolicy: decided.trigger })
-      if (!res.ok) {
-        /* 连请求都没发出去（RPC 挂了）：清掉来源标记，别把下一次压缩误标成策略发起 */
-        this.policyOrigin = null
-        console.error('[agent] 工作集压缩失败：', res.error)
-      }
-    } catch (err) {
-      /*
-       * 兜底：这条链是 `void` 出去的（见 refreshStats 的调用点），
-       * 异常没人接就会变成主进程的 unhandledRejection —— 2026-09-22 实测到过。
-       */
-      this.policyOrigin = null
-      console.error('[agent] 工作集压缩异常：', err instanceof Error ? err.message : err)
-    } finally {
-      this.policyTriggering = false
-    }
   }
 
   /* ---------------------------------------------------------------- 事件 */
@@ -2486,7 +2361,8 @@ export class AgentController extends EventEmitter {
         const call = this.findOrCreateCall(
           String(evt.toolCallId ?? ''),
           String(evt.toolName ?? 'tool'),
-          evt.args
+          evt.args,
+          typeof evt.parentToolCallId === 'string' ? evt.parentToolCallId : undefined
         )
         call.status = 'running'
         call.startedAt = Date.now()
@@ -2595,7 +2471,6 @@ export class AgentController extends EventEmitter {
         this.setAgentRunning(false)
         this.turn.startedAt = undefined
         this.turn.startedMono = undefined
-        void this.contextBudget.settleContextBudgetTurn()
         /* 回合结束才写元数据日志：中途写会得到一堆半截记录（H-6）。 */
         void this.persistTurnTiming()
         void this.refreshState()
@@ -2762,12 +2637,18 @@ export class AgentController extends EventEmitter {
     return this.callOwner.get(call.id) ?? this.streaming?.id
   }
 
-  private findOrCreateCall(id: string, name: string, args: unknown): UIToolCall {
+  private findOrCreateCall(id: string, name: string, args: unknown, parentToolCallId?: string): UIToolCall {
     const existing = this.findCall(id)
     if (existing) return existing
 
-    const call: UIToolCall = { id, name, args, status: 'running', startedAt: Date.now() }
-    if (this.streaming) {
+    const call: UIToolCall = { id, name, args, parentToolCallId, status: 'running', startedAt: Date.now() }
+    const parent = parentToolCallId ? this.findCall(parentToolCallId) : undefined
+    const parentOwner = parent ? this.ownerOf(parent) : undefined
+    const parentMessage = parentOwner ? this.messages.find(message => message.id === parentOwner) : undefined
+    if (parentMessage) {
+      (parentMessage.toolCalls ??= []).push(call)
+      this.registerCall(call, parentMessage.id)
+    } else if (this.streaming) {
       this.streaming.tools.push(call)
       this.registerCall(call, this.streaming.id)
     } else {
@@ -2935,7 +2816,6 @@ export class AgentController extends EventEmitter {
     await this.turn.persist(final, this.state?.sessionFile, this.messages)
   }
 
-
   private speedOf(
     s: {
       usage?: Usage
@@ -2983,51 +2863,13 @@ export class AgentController extends EventEmitter {
     this.push({ ch: 'state', payload: this.state })
   }
 
-  /**
-   * 压缩事件 → 状态 → 渲染端（N21-2）。
-   *
-   * 归一化（含“结束了但没有 status 字段”的兼容）全在 `main/compaction.ts`，
-   * 这里只负责落盘与推送 —— 事件不是压缩类时 `reduceCompaction` 返回 null，
-   * 这时**不要**推状态（state 推送很贵，而且没必要让界面重画）。
-   */
+  /** Project native compaction events without rewriting their origin. */
   private setCompaction(cur: CompactionState, evt: Record<string, unknown>): void {
-    let next = reduceCompaction(cur, evt)
+    const next = reduceCompaction(cur, evt)
     if (!next) return
-    /*
-     * 补上真正的发起方（N21-3）。两个判据都要，这是关键：
-     *   · `running` 新出现 → 本次调用开的那一次，盖它；
-     *   · `last` 是新对象且 `endedAt` 不同于基准 → 本次调用产生的结束记录，盖它。
-     * 第二条不能省：实测成功的压缩只有结束记录（“正在压缩”已被
-     * `isCompacting=false` 的自愈清掉），只盖 running 会丢章。
-     * 也不能只看 last：开始事件到达时 last 还是**上一次**的结果，盖它就是撒谎。
-     */
-    const origin = this.policyOrigin
-    if (origin) {
-      const stamp = { triggeredBy: 'policy' as const, policyStage: origin.stage }
-      const started = !!next.running && next.running !== cur.running
-      const ended = !!next.last && next.last !== cur.last && next.last.endedAt !== origin.baseline
-      if (started) next = { ...next, running: { ...next.running!, ...stamp } }
-      else if (ended) next = { ...next, last: { ...next.last!, ...stamp } }
-      /* 本次调用已经落定（成功或失败都算）：来源标记不再属于下一笔 */
-      if (ended && !next.running) {
-        this.policyOrigin = null
-        /*
-         * 压缩**成功** → 重新上膛（N21-4 尾，压力测试发现）。
-         * 不能只靠「用量回落到线下」：当基线开销（系统提示 + 工具定义）本身就
-         * 压在工作集线上时，那条路永远不会成立，策略会退化成 5 分钟一次。
-         */
-        if (next.last?.status === 'completed') {
-          this.policyState = rearmAfterCompaction(this.policyState, next.last?.afterTokens ?? null)
-        }
-      }
-    }
     this.compactionState = next
     if (!this.state) return
-    this.state = {
-      ...this.state,
-      compaction: next.running ?? undefined,
-      lastCompaction: next.last ?? undefined
-    }
+    this.state = { ...this.state, compaction: next.running ?? undefined, lastCompaction: next.last ?? undefined }
     this.push({ ch: 'state', payload: this.state })
   }
 
@@ -3149,324 +2991,13 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  /* ---------------------------------------------------------------- 命令 */
-
-  /**
-   * 把这一轮的用户输入交给宿主检索，并把结果写成扩展要读的注入文件（实施-03 S3）。
-   *
-   * 为什么在这一层做：检索（打分 / 预算 / 状态过滤）是业务逻辑，只能在宿主跑 ——
-   * 薄层扩展只允许「读文件 + 放一段消息」。这里 `await` 的意义是保证
-   * **请求发出前**文件已就绪，不然会看到「第一轮没注入、第二轮才注入」的假象。
-   *
-   * 失败一律吞掉：查知识不该拦住用户发消息。宿主那侧失败时也会写一条
-   * `read-failed` 记录（而不是留着上一轮的内容）—— 宁可这轮不注入，
-   * 也不能让模型看到已经过期的材料。
-   */
-  private async prepareKnowledge(text: string): Promise<void> {
-    /*
-     * 会话键取 `capabilityOpts.sessionId`，**不**用 `state.sessionId`：
-     * 扩展只能从环境变量（`YAN_SESSION_ID`）知道自己的会话键，而那个值
-     * 正是 capabilityOpts.sessionId（宿主注入 `yan` CLI 的同一份身份）。
-     * 用 state.sessionId 会让两边写到不同文件 —— 实测踩过：宿主写
-     * `<稳定 sessionId>.json`，扩展去读 `r1.json`，于是「开启了也永远不注入」。
-     */
-    const sessionId = this.capabilityOpts?.sessionId
-    if (!sessionId || !text.trim()) return
-    try {
-      const enabled = await readProjectKnowledgeEnabled()
-      const projectId = this.capabilityOpts?.projectId
-      await prepareProjectKnowledgeInjection({
-        sessionId,
-        /* 身份只来自宿主绑定的 capabilityOpts（不接受调用方自报的 cwd / projectId） */
-        identity: projectId ? { projectId, cwd: this.cwd } : undefined,
-        queryText: text,
-        enabled
-      })
-    } catch {
-      /* 检索失败静默放行 */
-    }
+  /** Compatibility endpoint for older clients; native compaction uses compact(). */
+  async requestContextMaintenanceV1(_operationId?: string): Promise<{ ok: boolean; error?: string }> {
+    return { ok: false, error: AGENT_CONTEXT_ERROR }
   }
 
-  /** Start one host-authorized, session-bound V1 maintenance transaction while idle. */
-  async requestContextMaintenanceV1(retryOperationId?: string): Promise<{
-    ok: boolean
-    operationId?: string
-    state?: 'committed' | 'applied' | 'needs_action'
-    error?: string
-  }> {
-    const sessionId = this.state?.sessionId
-    const sessionFile = this.state?.sessionFile
-    if (!isSafeSessionId(sessionId) || !sessionFile || !this.rpc?.running) {
-      return { ok: false, error: '当前没有可整理的活动会话' }
-    }
-    if (this.agentRunning || this.state?.isStreaming || this.state?.isCompacting) {
-      return { ok: false, error: '当前会话仍在运行；等本轮结束后再整理' }
-    }
-    const hold = await this.automaticMaintenanceHold()
-    if (hold === 'blocked') {
-      return { ok: false, error: '上下文整理没有完成。请在设置 → 上下文中选择「重试整理 / 临时抬软线 / 降档」，然后再继续；草稿仍保留' }
-    }
-    if (hold === 'running') {
-      return { ok: false, error: '当前有自动整理或续接操作；请等它完成，或在会话中明确停止后再操作' }
-    }
-    if (this.contextMaintenanceInProgress) return { ok: false, error: '已有上下文整理操作正在运行' }
-    this.contextMaintenanceInProgress = true
-    try {
-      if (!(await contextBudgetStoreV1.isConfigured(sessionId))) {
-        return { ok: false, error: '当前会话仍使用 legacy 策略；先在上下文设置中启用 V1' }
-      }
-      const policy = await contextBudgetStoreV1.read(sessionId)
-      const index = await readSessionEntryIndex(sessionFile)
-      if (!index || index.sessionId !== sessionId || index.incompleteTail || index.unreadableEntries > 0) {
-        return { ok: false, error: '会话原始记录不完整；未启动整理，原始记录已保留' }
-      }
-      const model = this.state?.model
-      if (!model?.provider || !model.id || !model.endpointKey) {
-        return { ok: false, error: '当前模型端点信息不完整；未启动整理' }
-      }
-      const registered = await this.rawCommands()
-      if (!registered.some((command) => String(command.name ?? '').replace(/^\/+/, '') === 'yan-context-maintain')) {
-        return { ok: false, error: '当前 pi runner 未确认加载整理命令；未发送控制消息' }
-      }
-      const watermark = index.watermark
-      const sourceRevision = `messages:${index.contextMessageWatermark.entryCount}:${index.contextMessageWatermark.lastEntryId ?? 'empty'}`
-      const runnerId = this.capabilityOpts?.sessionId ?? 'primary'
-      const runnerEpoch = String(this.capabilityOpts?.runnerGeneration ?? 1)
-      const capabilityRevision = [model.endpointKey, model.contextWindow, model.maxTokens]
-        .map((part) => String(part ?? '')).join('/')
-      let operationId = retryOperationId
-      if (retryOperationId !== undefined) {
-        if (!/^[A-Za-z0-9._-]{1,120}$/.test(retryOperationId)) {
-          return { ok: false, error: '整理操作身份无效' }
-        }
-        const prior = await contextBudgetStoreV1.readOperation(sessionId, retryOperationId)
-        if (!prior || (prior.state !== 'needs_action' && prior.state !== 'failed')) {
-          return { ok: false, error: '该整理操作当前不可重试；请刷新状态' }
-        }
-        if (prior.failureCode === 'resume_send_uncertain') {
-          return { ok: false, error: '续接消息发送状态不明；为避免重复执行，请先检查会话记录后再继续' }
-        }
-        if (
-          prior.identity.runnerId !== runnerId ||
-          prior.base.sourceRevision !== sourceRevision || prior.base.policyRevision !== policy.revision ||
-          prior.base.capabilityRevision !== capabilityRevision
-        ) return { ok: false, error: '会话、策略、原始记录或模型已变化；旧候选不能重试，请刷新并按当前状态重新整理' }
-        if (prior.resumeReceipt === null) {
-          try {
-            await contextBudgetStoreV1.recoverAndCommitCandidate(
-              sessionId,
-              retryOperationId,
-              prior.revision,
-              {
-                rawWatermark: { entryCount: watermark.entryCount, lastEntryId: watermark.lastEntryId },
-                sourceRevision,
-                policyRevision: policy.revision,
-                capabilityRevision
-              },
-              runnerId,
-              runnerEpoch,
-              index.entryIds
-            )
-            const recovered = await contextBudgetStoreV1.readOperation(sessionId, retryOperationId)
-            if (recovered?.state === 'committed' || recovered?.state === 'applied') {
-              if (recovered.requestKind === 'automatic') {
-                const commands = await this.rawCommands()
-                if (commands.some((command) => String(command.name ?? '').replace(/^\/+/, '') === 'yan-context-resume')) {
-                  const resume = await this.rpc.command('prompt', { message: `/yan-context-resume ${retryOperationId}` })
-                  if (!resume.success) {
-                    return { ok: false, operationId: retryOperationId, state: recovered.state, error: resume.error ?? '续接命令未能排队' }
-                  }
-                }
-              }
-              return { ok: true, operationId: retryOperationId, state: recovered.state }
-            }
-          } catch {
-            /* A stale candidate can still be explicitly regenerated below after the same base checks. */
-          }
-        }
-        await contextBudgetStoreV1.transitionOperation(sessionId, retryOperationId, prior.revision, 'preparing', {
-          requestKind: prior.requestKind === 'automatic' ? 'automatic' : 'user_retry',
-          identity: { ...prior.identity, runnerEpoch },
-          base: {
-            ...prior.base,
-            rawWatermark: { entryCount: watermark.entryCount, lastEntryId: watermark.lastEntryId }
-          },
-          reason: '用户明确重试上下文整理',
-          retryNonce: randomUUID(),
-          candidateRef: null,
-          failureCode: null,
-          resumeId: null,
-          resumeReceipt: null,
-          projectionReceipt: null
-        })
-      } else {
-        const previous = await contextBudgetStoreV1.latestOperation(sessionId)
-        const waitingForProjection = previous?.state === 'committed' &&
-          (previous.requestKind !== 'automatic' || previous.resumeReceipt === null || previous.resumeReceipt.startsWith('intent:'))
-        const waitingForAutoResume = previous?.state === 'applied' && previous.requestKind === 'automatic' &&
-          (previous.resumeReceipt === null || previous.resumeReceipt.startsWith('intent:'))
-        if (previous && (
-          ['requested', 'preparing', 'summarizing', 'validating'].includes(previous.state) ||
-          waitingForProjection || waitingForAutoResume
-        )) {
-          return { ok: false, error: '已有整理操作正在等待完成或应用；请先刷新状态' }
-        }
-        if (previous && (previous.state === 'needs_action' || previous.state === 'failed') && previous.base.sourceRevision === sourceRevision) {
-          return { ok: false, error: '当前整理操作需要处理；请使用该操作的重试入口' }
-        }
-        operationId = `context-${randomUUID()}`
-        const now = Date.now()
-        const operation: ContextMaintenanceOperationV1 = {
-          version: 1,
-          revision: randomUUID(),
-          identity: { sessionId, runnerId, runnerEpoch, operationId },
-          base: {
-            rawWatermark: { entryCount: watermark.entryCount, lastEntryId: watermark.lastEntryId },
-            sourceRevision,
-            policyRevision: policy.revision,
-            capabilityRevision
-          },
-          requestKind: 'manual',
-          reason: '用户从上下文设置请求整理',
-          protectedRefs: [],
-          candidateRef: null,
-          beforeSnapshot: null,
-          afterSnapshot: null,
-          resumeId: null,
-          resumeReceipt: null,
-          projectionReceipt: null,
-          lastSummarizedSourceRevision: null,
-          retryNonce: null,
-          state: 'requested',
-          failureCode: null,
-          createdAt: now,
-          updatedAt: now
-        }
-        await contextBudgetStoreV1.createOperation(operation)
-      }
-      if (!operationId) return { ok: false, error: '整理操作没有生成身份' }
-      const result = await this.rpc.command('prompt', { message: `/yan-context-maintain ${operationId}` })
-      let latest = await contextBudgetStoreV1.readOperation(sessionId, operationId)
-      if (latest?.state === 'validating' && latest.candidateRef) {
-        const match = /^projections\/([A-Za-z0-9._-]{1,120})\.json$/.exec(latest.candidateRef)
-        try {
-          if (!match) throw new Error('整理候选路径无效；原始记录已保留')
-          const candidate = await contextBudgetStoreV1.readProjectionCandidate(sessionId, match[1])
-          if (!candidate) throw new Error('整理候选文件不存在；原始记录已保留')
-          const currentPolicy = await contextBudgetStoreV1.read(sessionId)
-          const currentIndex = await readSessionEntryIndex(sessionFile)
-          const currentModel = this.state?.model
-          const currentCapabilityRevision = currentModel?.endpointKey
-            ? [currentModel.endpointKey, currentModel.contextWindow, currentModel.maxTokens].map((part) => String(part ?? '')).join('/')
-            : ''
-          if (
-            this.state?.sessionId !== sessionId || currentPolicy.revision !== latest.base.policyRevision ||
-            !currentIndex || currentIndex.sessionId !== sessionId || currentIndex.incompleteTail || currentIndex.unreadableEntries > 0 ||
-            currentIndex.watermark.entryCount !== latest.base.rawWatermark.entryCount ||
-            currentIndex.watermark.lastEntryId !== latest.base.rawWatermark.lastEntryId ||
-            `messages:${currentIndex.contextMessageWatermark.entryCount}:${currentIndex.contextMessageWatermark.lastEntryId ?? 'empty'}` !== latest.base.sourceRevision ||
-            currentCapabilityRevision !== latest.base.capabilityRevision
-          ) throw new Error('整理期间会话、策略、原始记录或模型端点发生变化；候选未提交')
-          await contextBudgetStoreV1.commitProjection(sessionId, operationId, latest.revision, candidate)
-          latest = await contextBudgetStoreV1.readOperation(sessionId, operationId)
-        } catch (error) {
-          const current = await contextBudgetStoreV1.readOperation(sessionId, operationId)
-          if (current?.state === 'validating') {
-            await contextBudgetStoreV1.transitionOperation(
-              sessionId, operationId, current.revision, 'needs_action', { failureCode: 'projection_commit_failed' }
-            ).catch(() => undefined)
-          }
-          return {
-            ok: false,
-            operationId,
-            state: 'needs_action',
-            error: error instanceof Error ? error.message : '整理候选未能提交；原始记录已保留'
-          }
-        }
-      }
-      if (latest?.state === 'committed' || latest?.state === 'applied') {
-        return { ok: true, operationId, state: latest.state }
-      }
-      if (!result.success) {
-        if (latest?.state === 'requested' || latest?.state === 'preparing') {
-          await contextBudgetStoreV1.transitionOperation(
-            sessionId, operationId, latest.revision, 'needs_action', { failureCode: 'maintenance_command_failed' }
-          ).catch(() => undefined)
-        }
-        return { ok: false, operationId, state: 'needs_action', error: result.error ?? '整理命令未完成' }
-      }
-      if (latest?.state === 'requested' || latest?.state === 'preparing') {
-        await contextBudgetStoreV1.transitionOperation(
-          sessionId, operationId, latest.revision, 'needs_action', { failureCode: 'maintenance_command_not_run' }
-        ).catch(() => undefined)
-      }
-      return {
-        ok: false,
-        operationId,
-        state: 'needs_action',
-        error: latest?.failureCode ?? '整理操作尚未提交；原始记录未改动'
-      }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : '上下文整理失败；原始记录已保留' }
-    } finally {
-      this.contextMaintenanceInProgress = false
-    }
-  }
-
-  /** Cancel outstanding context work before an explicit stop or endpoint change. */
-  async cancelContextMaintenanceV1(reason: string): Promise<void> {
-    const sessionId = this.state?.sessionId
-    if (!isSafeSessionId(sessionId)) return
-    try {
-      const operation = await contextBudgetStoreV1.latestOperation(sessionId)
-      if (!operation) return
-      const working = ['requested', 'preparing', 'summarizing', 'validating'].includes(operation.state)
-      const pendingAutoResume = operation.requestKind === 'automatic' &&
-        ['committed', 'applied'].includes(operation.state) &&
-        (operation.resumeReceipt === null || operation.resumeReceipt.startsWith('intent:'))
-      if (!working && !pendingAutoResume) return
-      if (pendingAutoResume) {
-        /* 已提交的整理照常生效，只是不再自动续跑；把它标成 cancelled 会让投影失效、下一轮又撞线 */
-        await contextBudgetStoreV1.transitionOperation(
-          sessionId, operation.identity.operationId, operation.revision, operation.state,
-          { resumeReceipt: `skipped:${String(reason).slice(0, 120)}` }
-        )
-        return
-      }
-      await contextBudgetStoreV1.transitionOperation(
-        sessionId, operation.identity.operationId, operation.revision, 'cancelled',
-        { failureCode: String(reason).slice(0, 160) }
-      )
-    } catch {
-      /* Stale operation revisions fail closed in the extension before commit. */
-    }
-  }
-
-  /**
-   * 自动整理当前是否挡着新消息。
-   *
-   * 两种挡法要分开（用户能做的下一步不同）：
-   *   · `running` —— 整理正在进行，等它完成即可；
-   *   · `blocked` —— 整理失败停在待处理；用户必须从设置里的三个出口选一个
-   *     （重试整理 / 临时抬软线 / 降档），出口会把这笔操作标成已取代。
-   *
-   * 读不到状态时**不挡**：真正防止超预算的是请求前的预算门禁，它不受这里影响；
-   * 本地 IO 读不出来就让用户停手，代价比多发一次被挡下的请求大。
-   */
-  private async automaticMaintenanceHold(): Promise<'running' | 'blocked' | null> {
-    const sessionId = this.state?.sessionId
-    if (!isSafeSessionId(sessionId)) return null
-    try {
-      const operation = await contextBudgetStoreV1.latestOperation(sessionId)
-      if (!operation || operation.requestKind !== 'automatic') return null
-      if (['requested', 'preparing', 'summarizing', 'validating'].includes(operation.state)) return 'running'
-      if (operation.state === 'needs_action') return 'blocked'
-      if (['committed', 'applied'].includes(operation.state) && operation.resumeReceipt?.startsWith('intent:') === true) return 'running'
-      return null
-    } catch {
-      return null
-    }
-  }
+  /** Legacy records remain untouched; they cannot block native agent requests. */
+  async cancelContextMaintenanceV1(_reason: string): Promise<void> {}
 
   async send(
     text: string,
@@ -3481,12 +3012,6 @@ export class AgentController extends EventEmitter {
      */
     mode?: 'steer' | 'followUp'
   ): Promise<{ ok: boolean; error?: string }> {
-    const hold = await this.automaticMaintenanceHold()
-    if (hold === 'blocked') {
-      return { ok: false, error: '上下文整理没有完成。请在设置 → 上下文中选择「重试整理 / 临时抬软线 / 降档」，然后再继续；草稿仍保留' }
-    }
-    if (hold === 'running') return { ok: false, error: '上下文正在自动整理；完成前暂不接收新消息，草稿仍保留' }
-    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前暂不接收新消息；草稿仍保留' }
     const payload: Record<string, unknown> = { message: text }
     if (images?.length) {
       payload.images = images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))
@@ -3513,31 +3038,16 @@ export class AgentController extends EventEmitter {
       payload.streamingBehavior = mode ?? 'followUp'
     }
 
-    await this.prepareKnowledge(text)
     const res = await this.rpc!.command('prompt', payload)
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
   async steer(text: string): Promise<{ ok: boolean; error?: string }> {
-    const hold = await this.automaticMaintenanceHold()
-    if (hold === 'blocked') {
-      return { ok: false, error: '上下文整理没有完成。请在设置 → 上下文中选择「重试整理 / 临时抬软线 / 降档」，然后再继续；草稿仍保留' }
-    }
-    if (hold === 'running') return { ok: false, error: '上下文正在自动整理；完成前暂不接收插话，草稿仍保留' }
-    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前暂不接收插话；草稿仍保留' }
-    await this.prepareKnowledge(text)
     const res = await this.rpc!.command('steer', { message: text })
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
   async followUp(text: string): Promise<{ ok: boolean; error?: string }> {
-    const hold = await this.automaticMaintenanceHold()
-    if (hold === 'blocked') {
-      return { ok: false, error: '上下文整理没有完成。请在设置 → 上下文中选择「重试整理 / 临时抬软线 / 降档」，然后再继续；草稿仍保留' }
-    }
-    if (hold === 'running') return { ok: false, error: '上下文正在自动整理；完成前暂不接收排队消息，草稿仍保留' }
-    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前暂不接收排队消息；草稿仍保留' }
-    await this.prepareKnowledge(text)
     const res = await this.rpc!.command('follow_up', { message: text })
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
@@ -3905,7 +3415,6 @@ export class AgentController extends EventEmitter {
   /* ---------------------------------------------------------- 会话管理 */
 
   async newSession(): Promise<{ ok: boolean; error?: string }> {
-    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前不能创建新会话' }
     await this.cancelContextMaintenanceV1('session_changed')
     this.suppressPush = true
     try {
@@ -3923,9 +3432,6 @@ export class AgentController extends EventEmitter {
        * 头上（A 的「阈值触发 · 已完成」出现在 B 的详情里）。
        */
       this.compactionState = EMPTY_COMPACTION_STATE
-      /* 上膛/冷却同样是本次运行的状态：换会话后按新会话的用量重新判定 */
-      this.policyState = INITIAL_POLICY_STATE
-      this.policyOrigin = null
       this.suppressPush = false
       await this.hydrate()
       return this.initializeContextBudgetV1Default()
@@ -3934,31 +3440,10 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  /** Persist V1 defaults only for sessions the host has just created. */
-  async initializeContextBudgetV1Default(): Promise<{ ok: boolean; error?: string }> {
-    const sessionId = this.state?.sessionId
-    if (!isSafeSessionId(sessionId)) {
-      return { ok: false, error: '新会话身份不可核实，未启用上下文预算 V1' }
-    }
-    /*
-     * 显式旧覆盖（env / 用户 / 供应商 / 模型级的数值或开关）保留 legacy：
-     * V1 会取消未经整理事务的原生压缩，默认迁过去会让旧阈值、
-     * 按压缩次数的自动交接这些用户明确配置过的行为静默失效。
-     */
-    if (hasExplicitLegacyOverride(this.effectivePolicy().resolved)) return { ok: true }
-    try {
-      await contextBudgetStoreV1.ensureDefault(sessionId)
-      return { ok: true }
-    } catch (error) {
-      return {
-        ok: false,
-        error: `新会话上下文策略未能保存：${error instanceof Error ? error.message : String(error)}`
-      }
-    }
-  }
+  /** Retained for callers predating agent-owned context; never creates host budget files. */
+  async initializeContextBudgetV1Default(): Promise<{ ok: boolean; error?: string }> { return { ok: true } }
 
   async switchSession(path: string): Promise<{ ok: boolean; error?: string }> {
-    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前不能切换会话' }
     await this.cancelContextMaintenanceV1('session_changed')
     this.suppressPush = true
     try {
@@ -3973,8 +3458,6 @@ export class AgentController extends EventEmitter {
       this.resetQueue()
       /* 同上：压缩记录不跨会话 */
       this.compactionState = EMPTY_COMPACTION_STATE
-      this.policyState = INITIAL_POLICY_STATE
-      this.policyOrigin = null
       this.suppressPush = false
       await this.hydrate()
       return { ok: true }
@@ -4058,7 +3541,7 @@ export class AgentController extends EventEmitter {
      * 用户手动压缩要把来源标记清掉 —— 否则上一次策略触发留下的标记
      * 会把他自己点的那次标成「工作集」。
      */
-    if (!opts.fromPolicy) this.policyOrigin = null
+    void opts // Older callers may pass an origin; pi owns the resulting compaction.
     /*
      * 契约是「不抛」：调用方有两类 —— 用户点的 `/compact`（会把它当提示弹出来）
      * 和策略触发的自动压缩（在 `void` 出去的异步链上）。后者没人接异常，
@@ -4104,13 +3587,11 @@ export class AgentController extends EventEmitter {
   }
 
   async setModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }> {
-    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前不能切换模型' }
     await this.cancelContextMaintenanceV1('model_changed')
     return this.enqueueCapabilityChange(() => this.applyModel(provider, modelId))
   }
 
   async setThinking(level: string): Promise<{ ok: boolean; error?: string }> {
-    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前不能切换思考档位' }
     await this.cancelContextMaintenanceV1('thinking_level_changed')
     return this.enqueueCapabilityChange(async () => {
       const res = await this.rpc!.command('set_thinking_level', { level })
@@ -4308,29 +3789,15 @@ export class AgentController extends EventEmitter {
     return this.state
   }
 
-  async refreshStats(opts: { allowPolicyTrigger?: boolean } = {}): Promise<SessionStats | null> {
+  async refreshStats(_opts: { allowPolicyTrigger?: boolean } = {}): Promise<SessionStats | null> {
     try {
       const res = await this.rpc?.command<SessionStats>('get_session_stats')
       if (res?.success && res.data) {
         const stats = this.statsForCurrentModel(res.data)
         this.push({ ch: 'stats', payload: stats })
-        /*
-         * 工作集判定**只允许在回合结束那条路上跑**（见 evaluateContextPolicy）。
-         *
-         * 为什么不能用“每次刷新用量”当触发点：切到（或只是读一下）一个很大的旧会话
-         * 也会刷新用量 —— 实测那个会话已经 276k tokens（超过 262k 窗口），
-         * 于是切过去的瞬间就发起压缩、实例变“忙”，紧接着「新对话」被拒
-         * （同一 cwd 已有运行中的会话）。用户只是想看一眼那个会话，不该被动刀。
-         */
-        if (opts.allowPolicyTrigger) {
-          const tokens = stats.contextUsage?.tokens
-          void this.evaluateContextPolicy(typeof tokens === 'number' ? tokens : null)
-        }
         return stats
       }
-    } catch {
-      /* ignore */
-    }
+    } catch { /* A missing usage snapshot does not change agent execution. */ }
     return null
   }
 

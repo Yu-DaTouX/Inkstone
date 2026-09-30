@@ -16,6 +16,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { McpServerConfig, McpServerStatus, McpToolDescriptor } from '../../shared/mcp'
+import { sharedResources, INTERACTIVE_RESOURCE } from '../agent-hub/resources'
 
 interface Connection {
   config: McpServerConfig
@@ -270,6 +271,22 @@ export class McpConnectionManager {
 
   /** 调用工具。返回**原始**结果 —— 分类（工具错误 vs 协议错误）在 shared 层做。 */
   async callTool(serverId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+    if (serverId === 'windows-mcp') {
+      return sharedResources.run(INTERACTIVE_RESOURCE, `mcp:${serverId}`, async () => {
+        // 连接尚未建成时没有发出桌面动作，不隔离资源。
+        await this.connect(this.require(serverId))
+        try { return await this.callToolUncoordinated(serverId, toolName, args) }
+        catch (error) {
+          // 断连与超时不能撤回已发送的输入；确认旧 worker 停止前不转交资源。
+          sharedResources.markUncertain(INTERACTIVE_RESOURCE)
+          throw error
+        }
+      })
+    }
+    return this.callToolUncoordinated(serverId, toolName, args)
+  }
+
+  private async callToolUncoordinated(serverId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
     const conn = this.require(serverId)
     await this.connect(conn)
     const generation = conn.generation

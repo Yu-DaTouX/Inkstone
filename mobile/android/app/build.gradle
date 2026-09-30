@@ -80,6 +80,12 @@ android {
     namespace "com.yudatoux.inkstone"
     defaultConfig {
         applicationId "com.yudatoux.inkstone"
+        // 隔离安装测试包，保留已有手机应用与数据。
+        def testSuffix = project.findProperty("inkstoneTestSuffix")
+        if (testSuffix != null && !(testSuffix ==~ /\.[a-z][a-z0-9]*/)) throw new GradleException("Invalid inkstoneTestSuffix")
+        if (testSuffix != null) applicationIdSuffix testSuffix
+        else if (project.hasProperty("inkstoneHubTest")) applicationIdSuffix ".hubtest"
+        manifestPlaceholders = [inkstoneAppLabel: testSuffix != null ? "Inkstone Test" : project.hasProperty("inkstoneHubTest") ? "Inkstone Hub Test" : "@string/app_name"]
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

@@ -84,6 +84,7 @@ resources/pi-runtime/
 
 # 手机端（mobile/）：依赖与原生构建产物不入库
 /mobile/node_modules/
+/mobile/android/app/src/main/assets/inkstone-terminal/
 /mobile/android/app/build/
 /mobile/android/build/
 /mobile/android/.gradle/

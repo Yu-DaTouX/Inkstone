@@ -1,6 +1,6 @@
 /**
- * 会话级任务状态与目标续跑调度：工作模式、活动档案、目标与续行快照，
- * 以及自主档「回合收尾后自动接着推进目标」的判定与发起。
+ * 会话级工作模式、活动档案与目标状态。历史续行数据保留兼容，
+ * 上下文装配和自动目标续跑由 Agent 管理，宿主不再发起。
  *
  * 状态按会话文件路径作键（`workModeKeyFor`），桌面 IPC、`yan goal` 能力服务、
  * 交接协调与会话调度器都读写同一份；入口在启动前用 `configureGoalCoordinator`
@@ -8,9 +8,9 @@
  */
 import type { RunnerRegistry } from './runners'
 import { readTurnTimings, timingKey } from './turn-timing-store'
-import { hasHandoffOperation } from './handoff-coordinator'
-import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot } from './goal-service'
-import { AUTONOMOUS_CONTINUE_LIMIT, isActiveGoalPhase } from '../shared/goal'
+
+import { GoalStore, writeGoalResumeSnapshot } from './goal-service'
+import { isActiveGoalPhase } from '../shared/goal'
 import type { BudgetUsage } from '../shared/goal'
 import { YAN_DIR } from './paths'
 import { normalizeSessionFileKey, pendingWorkModeKey, writeWorkModeSnapshot } from './work-mode-service'
@@ -175,19 +175,8 @@ export async function pushAgentProfile(id: string): Promise<AgentProfileState> {
   return state
 }
 
-/**
- * 刷新这个会话本轮注入的上下文分区（实施-25 P05 / T05-3）。
- *
- * 挂在 `pushAgentProfile` 后：切会话 / 新建 / 启动 / 改档案都经这一处，
- * 上下文与档案用同一个交接时机（否则会出现「界面改了活动、注入的还是上一个」）。
- * 写盘失败由 assembler 内部吞掉 —— 上下文是增强，不该拦着一轮对话。
- *
- * **偏好分区刻意不填**：语言与详细程度已有各自的薄层扩展在每轮读设置注入，
- * 在这里再带一份就是第二个真源（P01 已经为角色文本定过同一条边界）。
- */
-export async function refreshSessionContext(id: string, state: AgentProfileState): Promise<void> {
-  await host.contextAssembler.assembleAndWrite(id, await buildContextRequest(id, state))
-}
+/** Agent-native context does not receive host snapshots or implicit continuation prompts. */
+export async function refreshSessionContext(_id: string, _state: AgentProfileState): Promise<void> {}
 
 /**
  * 构造这个会话本轮的装配请求（T05-3）。
@@ -250,16 +239,8 @@ export async function pushGoal(id: string): Promise<void> {
   await refreshSessionContext(id, await resolveAgentProfile(id))
 }
 
-/**
- * 把该实例的「待发续行」写给薄层（实施-05 S3b）。
- *
- * 与模式快照同一个理由：`goals.json` 按**会话文件路径**索引，
- * 而扩展只认自己是哪个 runner（`YAN_SESSION_ID`）。
- */
-export async function applyGoalResume(id: string): Promise<void> {
-  await goals.load()
-  await writeGoalResumeSnapshot(id, goals.resumeOf(workModeKeyFor(id))).catch(() => {})
-}
+/** Agent-native context does not receive host snapshots or implicit continuation prompts. */
+export async function applyGoalResume(_id: string): Promise<void> {}
 
 /**
  * 抦销未发续行（用户停止 / 用户改档）。
@@ -336,75 +317,5 @@ export const goals = new GoalStore()
  */
 export const autonomousArmInFlight = new Set<string>()
 
-export async function maybeArmGoalContinue(id: string): Promise<void> {
-  if (autonomousArmInFlight.has(id)) return
-  /* 交接正在准备包：源续跑已被冻结（H1）——即便有人绕过调度器直接调这里，也不能破 */
-  if (hasHandoffOperation(id)) return
-  autonomousArmInFlight.add(id)
-  try {
-    const mode = await resolveWorkMode(id)
-
-    await goals.load()
-    const key = workModeKeyFor(id)
-    const goal = goals.state(key)
-    if (!goal.goalId || !isActiveGoalPhase(goal.phase) || goal.revision <= 0 || goal.pendingReady) return
-    /*
-     * 谁有资格被自动叫醒（2026-09-22）：
-     *   · 自主档 —— 档位本身就意味着「接着干」；
-     *   · 或者目标带 `pursue`（用户在 `+` 菜单里明确设定的持续目标）——
-     *     那是**目标**语义，与档位正交，所以标准 / 计划档下也要继续推进。
-     */
-    if (mode.mode !== 'autonomous' && !goal.pursue) return
-
-    const resume = goals.resumeOf(key)
-    if (resume) {
-      /* 还没消费的续行仍交给 goal-resume 扩展，不能覆盖它。 */
-      if (resume.kind !== 'continue') return
-      if (!(await goalResumeContinuationWasConsumed(id, resume.operationId))) return
-      /* 旧的 continue 已消费，当前空闲回合需要一个新的 operationId。 */
-    }
-
-    /*
-     * `paused`（用户按过停止）与 `pending`（已有未消费的续行）都在这一层取。
-     * 两者都是「本次不 arm」的正常状态，不记事件（每次回合收尾都会走到，记了只会刷屏）。
-     * 用户停止那一次由 `yan:abort` 的 `goal-continue:cancelled` 负责留痕。
-     */
-    if (hasHandoffOperation(id)) return
-    const armed = await goals.armContinue(key, {
-      consumed: (operationId) => goalResumeContinuationWasConsumed(id, operationId),
-      usage: await goalBudgetUsage(id, goals.startOf(key))
-    })
-    if (armed.armed) {
-      await applyGoalResume(id)
-      await pushGoal(id)
-      host.handoffDiag.record({
-        stage: 'goal-continue',
-        outcome: 'armed',
-        reason: 'settled-fallback',
-        runnerId: id,
-        sessionKey: key,
-        detail: { round: armed.round, mode: mode.mode, pursue: goal.pursue === true }
-      })
-    } else if (armed.reason === 'limit') {
-      /* 到上限是**要让用户看见**的暂停原因（A6）：arm 不会再发生，所以每次收尾都记 */
-      host.handoffDiag.record({
-        stage: 'goal-continue',
-        outcome: 'limit',
-        reason: 'autonomous-continue-limit',
-        runnerId: id,
-        sessionKey: key,
-        detail: { round: armed.round, limit: AUTONOMOUS_CONTINUE_LIMIT }
-      })
-    }
-  } catch (error) {
-    /* 自动兜底是增强路径；失败时保留目标状态，不让它影响当前会话 —— 但要留痕 */
-    host.handoffDiag.record({
-      stage: 'goal-continue',
-      outcome: 'arm-threw',
-      reason: error instanceof Error ? error.message : String(error),
-      runnerId: id
-    })
-  } finally {
-    autonomousArmInFlight.delete(id)
-  }
-}
+/** Compatibility hook: the host no longer creates another agent turn. */
+export async function maybeArmGoalContinue(_id: string): Promise<void> {}

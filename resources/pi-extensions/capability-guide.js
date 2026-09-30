@@ -57,7 +57,6 @@ export const CAPABILITY_GUIDE = [
   '- 根据资料库的多份资料回答、对照说法或写带引用的成果前，先读 `research` 技能（`yan skill read --id skill:research`）；按版本读片段用 `yan research read`。',
   '- 用户要把做过的事存成办事模板，或按已有模板办事时，先读 `playbook` 技能（`yan skill read --id skill:playbook`）；模板以用户技能保存（`yan skill save`）。',
   '- 读写 Word / Excel / PPT / PDF 前先读 `office` 技能（`yan skill read --id skill:office`），按其中步骤读取、检查环境、修改并核对；界面会按真实文件显示预览与前后对比，不要只凭文字声称已修改。',
-  '- 每个有意义的新用户任务边界都先 `yan context budget status`，再按本轮实际需要用 `yan context budget adjust --request-file context-budget.json` 登记/更新材料、用途，并释放已不需要的材料；宿主核实后按当前任务自动选择足够档位。若 status 显示 `strategy: legacy`，保持旧策略并告知用户可在上下文设置启用 V1；不要自行迁移。目标确实切换时可设 `startNewPhase: true`，由宿主生成阶段 ID；用户固定档位与固定材料会继承。不要按旧日志长度、模型标称窗口或自报 token 数升档；用户固定档位时不得覆盖。',
   '- 生成图片文件：先写 `image.json`，再调用 `yan image generate --request-file image.json`；生成结果会自动挂到当前助手消息并在对话中直接预览。',
   '- 展示已有文件：`yan artifact attach --path <项目内文件> --description "说明"`；结果会复制到砚的受控目录并挂到当前助手消息。',
   '- 图片生图默认优先使用当前 ChatGPT/Codex 订阅通道；如果选择 `openai` 或 `compatible` API，砚会先弹出确认，未确认不会发出请求。',

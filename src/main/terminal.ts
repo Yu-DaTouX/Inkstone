@@ -21,6 +21,7 @@ import { existsSync, statSync } from 'node:fs'
 import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { IPty } from 'node-pty'
+import { TerminalScreen } from './agent-hub/terminal-screen'
 
 /**
  * 主进程是 ESM，而 `node-pty` 是原生 CJS 模块；用 `createRequire` 拿一个
@@ -66,6 +67,12 @@ export interface TerminalStartOptions {
   fallbackCwd?: string
   cols?: number
   rows?: number
+  /** 仅宿主 Agent Hub 使用；普通终端 IPC 不转发这些字段。 */
+  executable?: string
+  args?: string[]
+  env?: NodeJS.ProcessEnv
+  /** Hub 需要可恢复光标、样式与备用屏幕的快照。 */
+  screenSnapshot?: boolean
 }
 
 interface TerminalEntry {
@@ -74,6 +81,8 @@ interface TerminalEntry {
   buffer: string
   /** 输出序号：每次 data 自增；重连时用来丢弃已包含在快照里的推送 */
   seq: number
+  chunks: Array<{ seq: number; data: string }>
+  screen?: TerminalScreen
 }
 
 /** 推送回调：`data` 是实时输出，`exit` 是进程退出（两者都带会话身份） */
@@ -163,17 +172,17 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
   const cwd = validDir(options.cwd) ?? validDir(options.fallbackCwd) ?? process.cwd()
   const cols = clampDimension(options.cols, 80)
   const rows = clampDimension(options.rows, 24)
-  const shell = defaultShell()
+  const shell = options.executable ?? defaultShell()
   const id = randomUUID()
 
   let child: IPty
   try {
-    child = pty.spawn(shell, [], {
+    child = pty.spawn(shell, options.args ?? [], {
       name: 'xterm-256color',
       cols,
       rows,
       cwd,
-      env: { ...process.env, TERM: 'xterm-256color' }
+      env: { ...process.env, ...options.env, TERM: 'xterm-256color' }
     })
   } catch (error) {
     loadError = error instanceof Error ? error.message : String(error)
@@ -190,7 +199,7 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     alive: true,
     exitCode: null
   }
-  const entry: TerminalEntry = { info, pty: child, buffer: '', seq: 0 }
+  const entry: TerminalEntry = { info, pty: child, buffer: '', seq: 0, chunks: [], screen: options.screenSnapshot ? new TerminalScreen(cols, rows) : undefined }
   sessions.set(id, entry)
 
   child.onData((data) => {
@@ -198,8 +207,11 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     if (!current) return
     current.buffer += data
     current.seq += 1
+    current.screen?.write(data, current.seq)
+    current.chunks.push({ seq: current.seq, data })
     if (current.buffer.length > BUFFER_LIMIT) {
       current.buffer = current.buffer.slice(current.buffer.length - BUFFER_KEEP)
+      current.chunks = []
     }
     sink?.({ kind: 'data', id, data, seq: current.seq })
   })
@@ -225,15 +237,34 @@ export function writeTerminal(id: string, data: string): boolean {
   }
 }
 
+/** 缺失增量时用解析后的屏幕重建；不把任意截断的转义序列当成完整屏幕。 */
+export async function readTerminalUpdate(id: string, sinceSeq?: number): Promise<{ kind: 'snapshot' | 'delta'; data: string; seq: number; alive: boolean; cols: number; rows: number } | null> {
+  const entry = sessions.get(id)
+  if (!entry) return null
+  const screen = await entry.screen?.snapshot()
+  const seq = screen?.seq ?? entry.seq
+  const first = entry.chunks[0]?.seq ?? entry.seq + 1
+  if (Number.isInteger(sinceSeq) && sinceSeq! >= first - 1 && sinceSeq! <= seq) {
+    return { kind: 'delta', data: entry.chunks.filter((c) => c.seq > sinceSeq! && c.seq <= seq).map((c) => c.data).join(''), seq, alive: entry.info.alive, cols: screen?.cols ?? entry.info.cols, rows: screen?.rows ?? entry.info.rows }
+  }
+  return { kind: 'snapshot', data: screen?.data ?? entry.buffer, seq, alive: entry.info.alive, cols: screen?.cols ?? entry.info.cols, rows: screen?.rows ?? entry.info.rows }
+}
+
 /** 缩放：先记住尺寸，再通知 PTY（供 curses 程序重排） */
 export function resizeTerminal(id: string, cols: number, rows: number): boolean {
   const entry = sessions.get(id)
   if (!entry || !entry.info.alive) return false
   const nextCols = clampDimension(cols, entry.info.cols)
   const nextRows = clampDimension(rows, entry.info.rows)
+  const changedSize = nextCols !== entry.info.cols || nextRows !== entry.info.rows
   entry.info = { ...entry.info, cols: nextCols, rows: nextRows }
   try {
     entry.pty.resize(nextCols, nextRows)
+    if (entry.screen && changedSize) {
+      entry.seq++
+      entry.screen.resize(nextCols, nextRows, entry.seq)
+      entry.chunks = []
+    }
     return true
   } catch {
     return false
@@ -250,6 +281,7 @@ export function killTerminal(id: string): boolean {
     /* 已经退出的会话 kill 会抛，忽略即可 */
   }
   sessions.delete(id)
+  entry.screen?.dispose()
   return true
 }
 

@@ -46,6 +46,8 @@ An inkstone holds the ink before it becomes writing. Inkstone carries that idea 
 
 The title bar switches between **coding mode** and **daily mode**: the first is centered on projects and files, the second organizes conversations, material, and learning by topic.
 
+The agent manages its own context. Inkstone displays runtime events, usage and tool results, while compaction controls call native pi directly. You choose which materials to send; the agent loads its own rules, skills and memory.
+
 Model capabilities, usage limits, and charges depend on your provider.
 
 ## Quiet, clear, considered

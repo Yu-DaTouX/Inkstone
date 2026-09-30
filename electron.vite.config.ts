@@ -58,7 +58,7 @@ export default defineConfig({
          * 否则开发态 / 解包目录静态检查会通过，安装后的主进程却会在
          * import 阶段弹出 ERR_MODULE_NOT_FOUND。
          */
-        exclude: ['@modelcontextprotocol/sdk', 'tar', 'electron-updater']
+        exclude: ['@modelcontextprotocol/sdk', 'tar', 'electron-updater', '@xterm/headless', '@xterm/addon-serialize']
       })
     ],
     build: {

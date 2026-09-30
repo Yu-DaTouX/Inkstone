@@ -15,7 +15,7 @@
  */
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { request as httpRequest } from 'node:http'
-import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -136,6 +136,13 @@ if (exeFromArg) {
 }
 /* 2. 隔离沙盒（绕不开真实会话、派生状态与 localStorage） */
 const sandbox = mkdtempSync(join(tmpdir(), 'yan-packaged-'))
+if (!exeFromArg) {
+  // A workspace parent can supply a missing dependency and hide an incomplete package.
+  const standalone = join(sandbox, 'app')
+  cpSync(unpacked, standalone, { recursive: true })
+  exePath = join(standalone, basename(exePath))
+  console.log(C.dim(`  独立目录副本：${exePath}`))
+}
 /*
  * 便携 wrapper 会把 PORTABLE_EXECUTABLE_DIR 指向被启动 EXE 的同级目录。
  * 不能直接从 release/ 启动它，否则真实的 release/砚数据/会被测试写入。
@@ -396,7 +403,7 @@ if (!exeFromArg) {
   runChecks.push([existsSync(shPath), `POSIX 启动器已生成（${shPath}）`])
   if (existsSync(cmdPath)) {
     const txt = readFileSync(cmdPath, 'utf8')
-    const cliInUnpacked = join(unpacked, 'resources', 'yan-cli', 'yan.mjs')
+    const cliInUnpacked = join(dirname(exePath), 'resources', 'yan-cli', 'yan.mjs')
     runChecks.push([txt.includes(cliInUnpacked), '启动器指向解包目录里的 yan.mjs（不是开发态仓库路径）'])
     runChecks.push([/ELECTRON_RUN_AS_NODE/.test(txt), '启动器用应用自带运行时（ELECTRON_RUN_AS_NODE=1）'])
   }
@@ -404,7 +411,7 @@ if (!exeFromArg) {
     /* 内容里用反斜杠分隔，与写入时一致；路径比较做一次归一化 */
     const norm = (s) => s.replace(/[\\/]+/g, '\\')
     runChecks.push([
-      norm(readFileSync(cmdPath, 'utf8')).includes(norm(join(unpacked, 'resources', 'yan-cli', 'yan.mjs'))),
+      norm(readFileSync(cmdPath, 'utf8')).includes(norm(join(dirname(exePath), 'resources', 'yan-cli', 'yan.mjs'))),
       '启动器里的 CLI 路径与安装目录逐段一致'
     ])
   }
@@ -491,7 +498,13 @@ if (!exeFromArg) {
     YAN_PI_DIR: join(sandbox, 'remote-pi')
   }
   for (const d of Object.values(remoteDirs)) mkdirSync(d, { recursive: true })
-  const remoteChild = spawn(exePath, [], {
+  const remoteChild = spawn(exePath, [
+    `--user-data-dir=${remoteDirs.YAN_USER_DATA}`,
+    `--yan-user-data=${remoteDirs.YAN_USER_DATA}`,
+    `--yan-sessions-dir=${remoteDirs.YAN_SESSIONS_DIR}`,
+    `--yan-data-dir=${remoteDirs.YAN_DATA_DIR}`,
+    `--yan-pi-dir=${remoteDirs.YAN_PI_DIR}`
+  ], {
     cwd: root,
     windowsHide: true,
     env: cleanEnv({

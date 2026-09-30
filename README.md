@@ -11,6 +11,7 @@
   <a href="#开始使用">快速开始</a> ·
   <a href="docs/GETTING_STARTED.md">使用指南</a> ·
   <a href="docs/MOBILE_ACCESS.md">手机接入说明</a> ·
+  <a href="docs/AGENT_HUB.md">多 Agent 工作台（开发中）</a> ·
   <a href="https://github.com/Yu-DaTouX/Inkstone/issues">反馈</a> ·
   <a href="README_EN.md">English</a>
 </p>
@@ -47,6 +48,8 @@
 | **看清会话的分支** | 会话地图按工作区分泳道；展开一个会话能看到一轮一轮的问答，也能从某一轮分叉出新的会话。 |
 
 标题栏可以切换**编码模式**与**日常模式**：前者以项目和文件为中心，后者把会话、资料与学习按主题组织。
+
+上下文由 Agent 原生管理。砚把运行过程、用量和工具结果呈现为界面，压缩操作直接调用 pi；资料由你主动发送，或由 Agent 按自己的规则读取。技术边界见[架构简介](docs/ARCHITECTURE.md)。
 
 模型能力、额度和费用取决于所接入的服务。
 

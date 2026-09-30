@@ -20,6 +20,7 @@ import { homedir } from 'node:os'
 import { join, delimiter, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PiInfo, PiSource, PiProbe, RpcResponse } from '../shared/ipc'
+import { selectedPiRuntime } from './pi-runtime-location'
 
 const PKG = '@earendil-works/pi-coding-agent'
 /** cli 在包里的相对路径（package.json 的 bin 字段） */
@@ -44,7 +45,7 @@ function bundledRoots(): string[] {
   out.push(join(__dirname_, '..', '..', 'resources', 'pi-runtime'))
   // 兜底：以 cwd 为项目根时
   out.push(join(process.cwd(), 'resources', 'pi-runtime'))
-  return out
+  return out.map(selectedPiRuntime)
 }
 
 /* 定位 pi 可执行入口 */

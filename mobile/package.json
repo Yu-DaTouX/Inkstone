@@ -4,18 +4,19 @@
   "private": true,
   "description": "砚（Inkstone）手机端：查看电脑上的任务、回复问题、发送文字；任务仍在电脑上执行",
   "scripts": {
-    "android": "react-native run-android",
+    "android": "node scripts/sync-terminal.mjs && react-native run-android",
     "start": "react-native start",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "icons:launcher": "node ../node_modules/electron/cli.js scripts/build-launcher-icons.mjs",
-    "build:apk": "node scripts/sync-brand.mjs && npm run icons:launcher && cd android && gradlew.bat assembleRelease"
+    "build:apk": "node scripts/sync-brand.mjs && node scripts/sync-terminal.mjs && npm run icons:launcher && cd android && gradlew.bat assembleRelease"
   },
   "dependencies": {
     "react": "19.1.0",
     "react-native": "0.81.0",
     "react-native-keychain": "^10.0.0",
     "react-native-safe-area-context": "^5.6.0",
-    "react-native-svg": "^15.12.1"
+    "react-native-svg": "^15.12.1",
+    "react-native-webview": "^14.0.1"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

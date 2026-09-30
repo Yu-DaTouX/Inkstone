@@ -3898,6 +3898,9 @@ const browserNetworkMod = await buildNeutral('src/main/browser/NetworkTracker.ts
 const { runBrowserNetworkTests } = await import('./test-browser-network.mjs')
 await runBrowserNetworkTests(ok, browserNetworkMod)
 
+const { runAssistantLinkTests } = await import('./test-assistant-link.mjs')
+await runAssistantLinkTests(ok)
+
 console.log(`\n${pass}/${pass + fail} 通过`)
 await rm(dataDir, { recursive: true, force: true })
 process.exit(fail ? 1 : 0)

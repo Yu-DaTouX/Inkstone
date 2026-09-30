@@ -26,6 +26,8 @@ class QuestionAlertService : Service() {
   @Volatile private var stream: HttpURLConnection? = null
   private var worker: Thread? = null
   private var known = emptySet<String>()
+  private var knownHub = emptySet<String>()
+  private var lastHubAt = 0L
   private var questionSession: String? = null
   private var ongoingKey = ""
   private var lastStatusAt = 0L
@@ -36,6 +38,7 @@ class QuestionAlertService : Service() {
     super.onCreate()
     manager.createNotificationChannel(NotificationChannel(SERVICE_CHANNEL, "电脑连接", NotificationManager.IMPORTANCE_LOW))
     manager.createNotificationChannel(NotificationChannel(QUESTION_CHANNEL, "待回答问题", NotificationManager.IMPORTANCE_HIGH).apply { enableVibration(true) })
+    manager.createNotificationChannel(NotificationChannel(HUB_CHANNEL, "多 Agent 待处理", NotificationManager.IMPORTANCE_HIGH))
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -55,10 +58,13 @@ class QuestionAlertService : Service() {
       .digest("$baseUrl:$token".toByteArray(Charsets.UTF_8))
       .joinToString("") { "%02x".format(it) }
     if (preferences.getString("identity", null) != identity) {
-      preferences.edit().putString("identity", identity).remove("known").apply()
+      preferences.edit().putString("identity", identity).remove("known").remove("knownHub").apply()
       manager.cancel(QUESTION_ID)
+      manager.cancel(HUB_ID)
     }
     known = preferences.getStringSet("known", emptySet())?.toSet() ?: emptySet()
+    knownHub = preferences.getStringSet("knownHub", emptySet())?.toSet() ?: emptySet()
+    lastHubAt = 0L
 
     ongoingKey = ""
     val ongoing = ongoingNotification("砚", "连接中")
@@ -82,6 +88,7 @@ class QuestionAlertService : Service() {
       try {
         syncQuestions(baseUrl, token, current)
         syncTask(baseUrl, token, current)
+        syncHub(baseUrl, token, current)
         if (!running || generation != current) break
         val connection = open(baseUrl, token, "/remote/v1/events?since=0", 65_000)
         currentStream = connection
@@ -102,10 +109,14 @@ class QuestionAlertService : Service() {
                   syncTask(baseUrl, token, current)
                 }
                 "runners", "proc", "session-title" -> syncTask(baseUrl, token, current)
-                "state" -> if (System.currentTimeMillis() - lastStatusAt >= 1000) syncTask(baseUrl, token, current)
+                "state" -> {
+                  if (System.currentTimeMillis() - lastStatusAt >= 1000) syncTask(baseUrl, token, current)
+                  syncHub(baseUrl, token, current)
+                }
               }
             } else if (line.startsWith(":")) {
               syncTask(baseUrl, token, current)
+              syncHub(baseUrl, token, current)
             }
           }
         }
@@ -119,6 +130,38 @@ class QuestionAlertService : Service() {
       try { Thread.sleep(retryMs) } catch (_: InterruptedException) { break }
       retryMs = (retryMs * 2).coerceAtMost(30_000L)
     }
+  }
+
+  private fun syncHub(baseUrl: String, token: String, currentGeneration: Int) {
+    if (System.currentTimeMillis() - lastHubAt < 3000) return
+    lastHubAt = System.currentTimeMillis()
+    val connection = open(baseUrl, token, "/remote/v1/hub/attention", 12_000)
+    try {
+      if (connection.responseCode == 401) { stopSelf(); return }
+      if (connection.responseCode == 403 || connection.responseCode == 404) { manager.cancel(HUB_ID); return }
+      if (connection.responseCode != 200) return
+      val items = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).getJSONObject("data").getJSONArray("items")
+      val pending = buildSet { for (index in 0 until items.length()) add(items.getJSONObject(index).getString("id")) }
+      if (!running || generation != currentGeneration) return
+      val hasNew = pending.any { it !in knownHub }
+      knownHub = pending
+      preferences.edit().putStringSet("knownHub", pending).apply()
+      if (pending.isEmpty()) { manager.cancel(HUB_ID); return }
+      val intent = Intent(this, MainActivity::class.java).apply {
+        action = Intent.ACTION_VIEW
+        data = android.net.Uri.parse("inkstone://hub")
+        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+      }
+      val openHub = PendingIntent.getActivity(this, HUB_ID, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+      manager.notify(HUB_ID, Notification.Builder(this, HUB_CHANNEL)
+        .setSmallIcon(R.drawable.ic_stat_inkstone).setColor(ACCENT)
+        .setContentTitle("砚有待处理事项").setContentText("${pending.size} 项多 Agent 任务需要查看")
+        .setContentIntent(openHub).setVisibility(Notification.VISIBILITY_PRIVATE)
+        .setPublicVersion(Notification.Builder(this, HUB_CHANNEL).setSmallIcon(R.drawable.ic_stat_inkstone).setContentTitle("砚").setContentText("${pending.size} 项待处理").build())
+        .setOnlyAlertOnce(!hasNew).setAutoCancel(false).build())
+    } catch (_: Exception) {
+      // Hub 的可选提醒不能中断已有问题和会话的监控。
+    } finally { connection.disconnect() }
   }
 
   private fun syncQuestions(baseUrl: String, token: String, currentGeneration: Int) {
@@ -245,6 +288,7 @@ class QuestionAlertService : Service() {
   private fun stopMonitoring(clear: Boolean) {
     stopWorker()
     manager.cancel(QUESTION_ID)
+    manager.cancel(HUB_ID)
     if (clear) preferences.edit().clear().apply()
   }
 
@@ -260,8 +304,10 @@ class QuestionAlertService : Service() {
     const val EXTRA_TOKEN = "token"
     private const val SERVICE_CHANNEL = "inkstone.connection"
     private const val QUESTION_CHANNEL = "inkstone.questions"
+    private const val HUB_CHANNEL = "inkstone.hub"
     private const val SERVICE_ID = 37921
     private const val QUESTION_ID = 37922
+    private const val HUB_ID = 37923
     /** 浅色主题强调色（tokens.css --accent），通知标题与小图标的着色 */
     private val ACCENT = 0xFF5264C8.toInt()
   }

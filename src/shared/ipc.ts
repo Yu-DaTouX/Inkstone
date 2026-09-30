@@ -201,6 +201,8 @@ export interface UIMessageImage {
 }
 
 export interface UIToolCall {
+  /** Native pi codemode calls share the parent assistant message. */
+  parentToolCallId?: string
   id: string
   name: string
   args: unknown
@@ -2649,6 +2651,8 @@ export interface CapabilityMcpServerSettingView {
 export interface CapabilitySettingsSnapshot {
   skills: CapabilitySkillSettingView[]
   servers: CapabilityMcpServerSettingView[]
+  /** Native pi server management is exposed through its own slash command. */
+  nativeMcpAvailable?: boolean
   /** 仅提示配置存在问题，不回传可能包含本地路径的原始错误。 */
   configWarning: boolean
 }
@@ -3682,6 +3686,11 @@ export interface YanBridge {
     kill(id: string): Promise<boolean>
     /** 重新订阅一个已存在会话（重连）：回放已有缓冲并返回快照 */
     attach(id: string): Promise<TerminalSnapshot | null>
+  }
+  hub: {
+    snapshot(): Promise<import('./agent-hub').HubSnapshot>
+    command(command: import('./agent-hub').HubCommand): Promise<unknown>
+    detect(): Promise<import('./agent-hub').HubSnapshot>
   }
 }
 

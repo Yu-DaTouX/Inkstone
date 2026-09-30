@@ -16,7 +16,7 @@
  * 实测体积 ≈ 21MB（依赖捆绑方案 424MB，差距 20 倍）。
  *
  * 用法：
- *   node scripts/vendor-pi.mjs            # 有则覆盖
+ *   node scripts/vendor-pi.mjs            # 新建并验证运行时，再切换入口
  *   node scripts/vendor-pi.mjs --check    # 只校验现有 runtime 是否可用，不重建
  *   YAN_PI_SRC=<pi包目录> node scripts/vendor-pi.mjs
  *
@@ -29,19 +29,24 @@ import {
   readdirSync,
   readFileSync,
   writeFileSync,
-  rmSync,
+  renameSync,
   copyFileSync,
   cpSync,
   statSync
 } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, dirname, delimiter, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { builtinModules } from 'node:module'
+import { randomUUID } from 'node:crypto'
+import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DEST = join(root, 'resources', 'pi-runtime')
+const runtimeRoot = join(root, 'resources', 'pi-runtime')
+let DEST = selectedPiRuntime(runtimeRoot)
 const PKG = '@earendil-works/pi-coding-agent'
 
 /**
@@ -231,7 +236,8 @@ const mb = (b) => (b / 1024 / 1024).toFixed(1) + ' MB'
 /* 5. 自检：真跑一次 RPC 握手 */
 function verify(label) {
   const cli = join(DEST, 'dist', 'bundle', 'cli.js')
-  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+  const testDir = mkdtempSync(join(tmpdir(), 'inkstone-runtime-check-'))
+  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', PI_CODING_AGENT_DIR: testDir, PI_OFFLINE: '1' }
 
   let version
   try {
@@ -247,13 +253,20 @@ function verify(label) {
     return false
   }
 
-  // 真握手一次：确认依赖闭包完整（缺任何外部包都会在这里暴露）
+  // WASM is resolved only when codemode runs, rather than during the RPC handshake.
+  if (version.split('.').map(Number)[1] >= 99 && !existsSync(join(DEST, 'node_modules', 'quickjs-wasi', 'quickjs.wasm'))) {
+    bad(`${label} codemode WASM 缺失：quickjs-wasi/quickjs.wasm`)
+    return false
+  }
+
+  // 真握手一次：确认启动分支可用；按需加载的工具还需要单独调用验证。
   try {
-    const out = execFileSync(process.execPath, [cli, '--mode', 'rpc', '--no-session'], {
+    const out = execFileSync(process.execPath, [cli, '--mode', 'rpc', '--no-session', '--no-extensions', '--no-skills', '--no-prompt-templates'], {
       input: '{"id":1,"type":"get_state"}\n',
       encoding: 'utf8',
       timeout: 60000,
       env,
+      cwd: testDir,
       windowsHide: true,
       maxBuffer: 8 * 1024 * 1024
     })
@@ -297,7 +310,12 @@ if (checkOnly) {
 log('抽取 pi 运行时 → resources/pi-runtime/\n')
 
 const { root: piRoot } = findPiRoot()
-const piVersion = JSON.parse(readFileSync(join(piRoot, 'package.json'), 'utf8')).version
+const piPackage = JSON.parse(readFileSync(join(piRoot, 'package.json'), 'utf8'))
+const piVersion = piPackage.version
+// Codemode resolves its WASM asset at runtime, so bundle imports cannot find it.
+if (piPackage.dependencies?.['quickjs-wasi']) {
+  MUST_HAVE.push('quickjs-wasi')
+}
 ok(`源：${piRoot}`)
 ok(`版本：pi ${piVersion}`)
 
@@ -319,7 +337,8 @@ if (missing.length) {
   process.exit(1)
 }
 
-rmSync(DEST, { recursive: true, force: true })
+const generation = `versions/${piVersion}-${randomUUID()}`
+DEST = join(runtimeRoot, generation)
 mkdirSync(DEST, { recursive: true })
 
 const dist = copyDist(piRoot)
@@ -358,4 +377,7 @@ if (!verify('内置 pi：')) {
   process.exit(1)
 }
 
-log('\n完成。应用会优先用这个内置运行时，找不到才回退到全局安装的 pi。')
+const nextManifest = join(runtimeRoot, `current-${randomUUID()}.json`)
+writeFileSync(nextManifest, JSON.stringify({ generation, version: piVersion }, null, 2) + '\n')
+renameSync(nextManifest, join(runtimeRoot, 'current.json'))
+log('\n完成。新进程使用已验证的运行时；旧运行时保留给正在运行的进程。')

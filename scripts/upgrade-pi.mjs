@@ -22,9 +22,10 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { delimiter } from 'node:path'
+import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DEST = join(root, 'resources', 'pi-runtime')
+const DEST = selectedPiRuntime(join(root, 'resources', 'pi-runtime'))
 const PKG = '@earendil-works/pi-coding-agent'
 
 const args = process.argv.slice(2)

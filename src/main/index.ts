@@ -1,3 +1,4 @@
+import { AGENT_CONTEXT_ERROR, isAgentContextExtension } from '../shared/agent-context'
 /**
  * 主进程入口：窗口 + IPC + AgentController 的生命周期。
  *
@@ -38,6 +39,8 @@ import { disposeTerminals, setTerminalSink } from './terminal'
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
+import { AgentHubService } from './agent-hub/service'
+import { registerAgentHubIpc } from './ipc/agent-hub-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
@@ -63,7 +66,7 @@ import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
 import { createSubagentNotifier } from './subagent-notify'
-import { configureGoalCoordinator, setDefaultWorkMode, defaultWorkMode, goalBudgetUsage, workModeKeyFor, resolveWorkMode, pushWorkMode, resolveAgentProfile, pushAgentProfile, refreshSessionContext, buildContextRequest, pushGoal, applyGoalResume, cancelGoalResume, consumeRepeatBlocks, goals, maybeArmGoalContinue } from './goal-coordinator'
+import { configureGoalCoordinator, setDefaultWorkMode, defaultWorkMode, goalBudgetUsage, workModeKeyFor, resolveWorkMode, pushWorkMode, resolveAgentProfile, pushAgentProfile, refreshSessionContext, pushGoal, applyGoalResume, cancelGoalResume, consumeRepeatBlocks, goals, maybeArmGoalContinue } from './goal-coordinator'
 import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { configureHandoffCoordinator, handoffRunner, publishHandoffReplacement, handoffPending, handoffIdentities, hasHandoffOperation, tryArmHandoff, abandonHandoff } from './handoff-coordinator'
 import { registerVoiceIpc } from './ipc/voice-ipc'
@@ -328,6 +331,13 @@ function schedulePiPackageActivationRetry(): void {
   piPackageActivationRetryTimer.unref?.()
 }
 let browser: BrowserController | null = null
+const agentHub = new AgentHubService({
+  dataDir: YAN_DIR, piDir: PI_AGENT_DIR,
+  resourcesDir: existsSync(join(process.resourcesPath ?? '', 'yan-cli')) ? process.resourcesPath : join(app.getAppPath(), 'resources'),
+  browser: () => browser,
+  projects: async () => (await getSettings()).projects.filter((p) => !p.archived),
+  piBin: async () => (await getSettings()).piBin
+})
 /**
  * 子代理：主进程级的生命周期服务。界面与模型（`yan subagent …`）共用同一个控制器，
  * RunnerRegistry 切会话 / 重启 pi 时重建 AgentController，但这个服务不跟着重建。
@@ -557,7 +567,7 @@ function yanThinExtensionPaths(): string[] {
     dangerGuardExtensionPath(),
     contextBudgetMaintenanceExtensionPath(),
     contextBudgetObserverExtensionPath()
-  ].filter((p): p is string => !!p)
+  ].filter((p): p is string => !!p && isAgentContextExtension(p))
 }
 
 function push(msg: MainPush): void {
@@ -1542,6 +1552,7 @@ async function shutdown(): Promise<void> {
     /* 已死 */
   }
   /* 退出前把子代理一起收掉（方案 8.3：主任务停了，它的子任务不该变孤儿） */
+  await agentHub.shutdown().catch((error) => reportMainError('agent-hub-shutdown', error))
   try {
     await subagentService.current()?.stopAll()
   } catch {
@@ -1630,7 +1641,13 @@ async function startRemoteServer(): Promise<void> {
         command: executeRemoteCommand,
         questions: remoteQuestions,
         answer: remoteAnswer,
-        artifact: remoteArtifact
+        artifact: remoteArtifact,
+        hubSnapshot: () => agentHub.snapshot(true),
+        hubAttention: () => agentHub.attention(),
+        hubCommand: async (command, actor) => {
+          try { return { ok: true, data: await agentHub.remoteCommand(command, actor) } }
+          catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+        }
       },
       (text, level) => {
         if (level === 'error') console.error(`[remote] ${text}`)
@@ -1734,7 +1751,7 @@ function requestExit(): Promise<ExitResult> {
   if (exitRequestInFlight) return exitRequestInFlight
 
   const task: Promise<ExitResult> = (async (): Promise<ExitResult> => {
-    const busy = runners?.hasBusy() === true
+    const busy = runners?.hasBusy() === true || agentHub.hasBusy()
     let choice = probeExitChoice()
     if (!choice && busy && win && !win.isDestroyed()) {
       const response = await dialog.showMessageBox(win, {
@@ -2215,6 +2232,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         subagentHost: subagentService.capabilityHost,
         /* 目标状态（实施-05 S3）：会话键与模式 store 都在本文件一侧。 */
         goalHost: goalCapabilityHost,
+        hubHost: agentHub.capabilityHost,
         /* 资料引用：按版本读片段与引用状态。 */
         researchHost: researchCapabilityHost,
         /* 持续关注（实施-25 P16）：到点提醒与结果记录，没有后台调度器。 */
@@ -3240,13 +3258,7 @@ function registerIpc(): void {
    * 引用带 sourceId + version + 字符区间，界面与探针据此核对、跳回原文。
    * 这里不写盘、不改任何状态。
    */
-  handle('yan:context:current', async () => {
-    const id = runners?.activeRunner()?.id
-    if (!id) return { ok: false, error: 'no_session' }
-    const state = await resolveAgentProfile(id)
-    const assembly = await contextAssembler.assemble(await buildContextRequest(id, state))
-    return { ok: true, assembly }
-  })
+  handle('yan:context:current', async () => ({ ok: false, error: AGENT_CONTEXT_ERROR }))
 
   registerArtifactDocIpc(ipc, { artifactDocs, library, sourceStatus: runSourceStatus, window: () => win })
 
@@ -3294,7 +3306,8 @@ function registerIpc(): void {
   })
 
   /* ---- 交互终端（实施-11 H-11） ---- */
-  registerTerminalIpc(ipc, () => ac()?.getState()?.cwd)
+  registerTerminalIpc(ipc, () => ac()?.getState()?.cwd, (id) => agentHub.ownsTerminal(id))
+  registerAgentHubIpc(ipc, agentHub)
 }
 
 /** 推一次窗口状态（最大化 + 置顶） */
@@ -3867,6 +3880,7 @@ app.whenReady().then(async () => {
   browser = new BrowserController(() => win, push)
   /* 终端输出转成渲染端可消费的推送（H-11）：只有活动窗口时才有接收方 */
   setTerminalSink((event) => {
+    if (event.kind === 'exit') void agentHub.terminalExit(event.id, event.exitCode)
     push({
       ch: 'terminal',
       payload:
