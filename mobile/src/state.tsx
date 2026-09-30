@@ -178,6 +178,12 @@ export function RemoteProvider({
     }, 750))
   }, [])
 
+  const notifySession = useCallback((sessionId: string) => {
+    debounce(`session:${sessionId}`, () => {
+      for (const listener of listeners.current.get(sessionId) ?? []) listener()
+    })
+  }, [debounce])
+
   useEffect(() => {
     void refresh()
     const events = new RemoteEventStream(connection, {
@@ -186,15 +192,20 @@ export function RemoteProvider({
       onResync: () => void refresh(),
       onEvent: (event) => {
         if (QUESTION_CHANNELS.has(event.channel)) debounce('questions', () => void refreshQuestions())
-        if (STATUS_CHANNELS.has(event.channel)) debounce('status', () => void refreshStatus())
+        if (STATUS_CHANNELS.has(event.channel)) {
+          debounce('status', () => void refreshStatus())
+          /*
+           * 状态变化也要重取历史：流式的 `msg-add` 到达时电脑往往还没把消息写进会话文件，
+           * 真正写完要等回合结束（`state.isAgentRunning=false`）。只靠消息事件刷新，
+           * 手机端就会一直停在旧内容，必须手动下拉刷新才能看到最终回复。
+           */
+          const sessionId = sessionOfEvent(event)
+          if (sessionId) notifySession(sessionId)
+        }
         if (MESSAGE_CHANNELS.has(event.channel)) {
           const sessionId = sessionOfEvent(event)
           debounce('status', () => void refreshStatus())
-          if (sessionId) {
-            debounce(`session:${sessionId}`, () => {
-              for (const listener of listeners.current.get(sessionId) ?? []) listener()
-            })
-          }
+          if (sessionId) notifySession(sessionId)
         }
       }
     })
@@ -204,7 +215,7 @@ export function RemoteProvider({
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
     }
-  }, [connection, debounce, onUnauthorized, refresh, refreshQuestions, refreshStatus])
+  }, [connection, debounce, notifySession, onUnauthorized, refresh, refreshQuestions, refreshStatus])
 
   const onSessionEvent = useCallback((sessionId: string, listener: () => void) => {
     const set = listeners.current.get(sessionId) ?? new Set()

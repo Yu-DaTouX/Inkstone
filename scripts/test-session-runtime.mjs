@@ -113,6 +113,18 @@ export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeK
   map = updateSessionRuntime(map, runtimeUi, { uiRequests: [] })
   ok(map['session-ui'].uiRequests.length === 0, 'uiRequests 可以由缓存补丁清空（防止投影时复活）')
 
+  /*
+   * 手机答复走的是主进程推来的 `ui-resolved`（不经过 updateSessionRuntime）。
+   * 它同样必须从实例缓存里移除，否则电脑端在下一次 `runners` 投影时把问题复活。
+   */
+  map = reduceSessionRuntime(map, runtimeUi, {
+    ch: 'ui-request',
+    payload: { id: 'ui-remote', method: 'select', title: '手机来答', options: ['a', 'b'], createdAt: 2 }
+  })
+  ok(map['session-ui'].uiRequests.length === 1, '手机答复前 ui-request 仍在缓存')
+  map = reduceSessionRuntime(map, runtimeUi, { ch: 'ui-resolved', payload: { id: 'ui-remote', by: 'remote' } })
+  ok(map['session-ui'].uiRequests.length === 0, 'ui-resolved（手机答复）从会话缓存移除，不会随投影复活')
+
   /* 清空后再来一条 `runners` 式的投影源：缓存里没有旧请求，就不会复活 */
   map = reduceSessionRuntime(map, runtimeUi, { ch: 'todos', payload: [] })
   ok(map['session-ui'].uiRequests.length === 0, '后续事件不会把已清的请求带回来')
