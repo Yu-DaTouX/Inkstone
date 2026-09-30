@@ -1,6 +1,6 @@
 /** 子代理运行选择与归属（实施-11 H-10a）的纯函数测试。 */
 export async function runSubagentViewTests(ok) {
-  const { dedupeRuns, selectSubagentRuns, subagentTabId } = await import('../out/test/subagent-view.mjs')
+  const { dedupeRuns, selectSubagentRuns, subagentTabId, visibleSubagentRuns } = await import('../out/test/subagent-view.mjs')
 
   console.log('\n--- H-10a 子代理运行归属 ---')
   const run = (id, extra = {}) => ({
@@ -49,4 +49,22 @@ export async function runSubagentViewTests(ok) {
   ok(twenty.all.length === 20 && twenty.running === 10, '20 个任务计数与 running 正确')
   const withDuplicate = [...manyRuns, run('r0', { parentSessionId: 'S', status: 'done' })]
   ok(selectSubagentRuns(withDuplicate, { sessionIds: ['S'] }).all.length === 20, '20 个任务重复推送不会变成 21')
+
+  /* 界面上继续露面的：已合并 / 已放弃 / 已归档的即使刚结束也安静退场 */
+  const now = 1_000_000
+  const finished = (id, review) => run(id, { parentSessionId: 'S', status: 'done', endedAt: now - 1000, review })
+  const visible = visibleSubagentRuns(
+    [
+      finished('fresh', 'none'),
+      finished('pend', 'pending'),
+      finished('merged', 'merged'),
+      finished('dropped', 'discarded'),
+      finished('filed', 'archived'),
+      run('live', { parentSessionId: 'S' })
+    ],
+    { sessionIds: ['S'] },
+    now
+  ).map((r) => r.id)
+  ok(visible.includes('fresh') && visible.includes('pend') && visible.includes('live'), '刚完成 / 待审阅 / 运行中的继续露面')
+  ok(!visible.includes('merged') && !visible.includes('dropped') && !visible.includes('filed'), '已合并 / 已放弃 / 已归档的不再占位')
 }
