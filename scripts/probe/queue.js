@@ -72,22 +72,18 @@
   log('  已经进对话的: ' + JSON.stringify(enteredEarly))
   const queued = [...queue.steering, ...queue.followUp]
   /*
-   * 默认投递方式是**插话**（steering）：用户在工作过程中打字，
-   * 意思就是“你现在就该知道这件事”。
+   * 默认投递方式是**排队**（followUp）：界面重构（7c10942）起，运行中发送普通消息
+   * 默认排队，需要打断当前这一轮时再对队列行用「插队」。
    *
-   * 早期默认是 followUp（等这轮跑完再投递）—— 结果是消息半天不出现，
-   * 用户去点队列行上的「插队」/「撤回」，而 followUp 在这轮结束时已被
-   * pi 接收，于是报「消息已被 pi 接收，无法撤回」（用户报的“插话失效”）。
-   *
-   * ⚠️ 判据不能只看“快照里此刻还挂着几条”：steering 会被 pi 很快取走，
+   * ⚠️ 判据不能只看“快照里此刻还挂着几条”：排队消息会在这一轮结束后被 pi 很快取走，
    *    取走后队列就空了 —— 那是**成功**而不是失败。所以两条一起判：
-   *      ① followUp 为空（没有走排队通道）
-   *      ② 消息要么还挂在 steering 里，要么已经进了对话
+   *      ① steering 为空（默认没有走插话通道）
+   *      ② 消息要么还挂在队列里，要么已经进了对话
    */
-  ok(queue.followUp.length === 0, '默认不排队（followUp 为空）')
+  ok(queue.steering.length === 0, '默认走排队通道（steering 为空）')
   ok(
     queued.length + enteredEarly.length >= 1,
-    `消息在插话通道里（队列 ${queued.length} 条 / 已进对话 ${enteredEarly.length} 条）`
+    `消息在排队通道里（队列 ${queued.length} 条 / 已进对话 ${enteredEarly.length} 条）`
   )
   // 队列行显示在输入框上方（已被取走时那一行本来就不该在）
   ok(!!q('[data-testid="queue-stack"]') || enteredEarly.length > 0, '队列行显示在输入框上方（或已被取走）')

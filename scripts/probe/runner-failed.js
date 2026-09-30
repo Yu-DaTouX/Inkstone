@@ -93,9 +93,9 @@
 
     const post = await waitFor(() => {
       const picker = q('[data-testid="model-picker"]')
-      return picker && /未就绪|not ready/i.test(picker.textContent ?? '') ? picker : null
+      return picker && /未就绪|未选模型|not ready/i.test(picker.textContent ?? '') ? picker : null
     }, 400)
-    ok(!!post, '输入区的模型选择器显示「未就绪」（pi 起不来时用户看到的就是它）')
+    ok(!!post, '输入区的模型选择器显示「未选模型」（pi 起不来时用户看到的就是它）')
     if (post) out.push('  选择器文字 = ' + JSON.stringify((post.textContent ?? '').trim()))
 
     await store.getState().refreshSessions()

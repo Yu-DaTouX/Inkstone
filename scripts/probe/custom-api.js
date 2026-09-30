@@ -39,8 +39,8 @@
     st().openSettings?.()
     await sleep(500)
 
-    /* 进入「接入」页 */
-    const tab = q('[data-testid="settings-tab-auth"]') ?? [...document.querySelectorAll('button')].find((b) => /接入/.test(b.textContent ?? ''))
+    /* 进入「接入」页（设置页签的稳定钩子是 id，不是 data-testid） */
+    const tab = q('#settings-tab-auth') ?? q('[data-testid="settings-tab-auth"]')
     click(tab)
     const ready = await until(() => q('[data-testid="custom-api"]'), 8000)
     ok(ready, '设置 → 模型里有「自定义 API 服务」')
@@ -87,7 +87,7 @@
     const panel = await until(() => q('[data-testid="custom-api-test-panel-yan-probe"]'), 3000)
     ok(panel, '连接测试面板能展开')
     const panelText = q('[data-testid="custom-api-test-panel-yan-probe"]')?.textContent ?? ''
-    ok(/计费/.test(panelText), '面板里写明了哪一段会计费', panelText.slice(0, 80))
+    ok(/费用/.test(panelText), '面板里写明了哪一段会产生费用', panelText.slice(0, 80))
     ok(!!q('[data-testid="custom-api-test-billable-yan-probe"]'), '存在「发真实请求」按钮（需用户主动点）')
 
     const beforeTest = qa('.custom-api-test .ui-row-desc').length
@@ -96,7 +96,9 @@
     ok(gotResult, '免费检查返回了结果（不是只转圈）')
     const resultText = q('[data-testid="custom-api-test-result-yan-probe"]')?.textContent ?? ''
     /* example.invalid 永远解析不到：这里要的正是「失败也给可读原因」 */
-    ok(/✗/.test(resultText) && /(连不上|HTTP|超时)/.test(resultText), '不可达地址给出可读失败原因', resultText.replace(/✗/g, '失败').trim())
+    /* 失败态由 `.err` 类表示（图标是 SVG，文本里没有 ✗） */
+    const failed = !!q('[data-testid="custom-api-test-result-yan-probe"].err')
+    ok(failed && /(连不上|HTTP|超时)/.test(resultText), '不可达地址给出可读失败原因', resultText.trim())
     ok(/ms/.test(resultText), '结果带耗时')
     ok(qa('.custom-api-test .ui-row-desc').length >= beforeTest, '结果就地显示在按钮下方')
 

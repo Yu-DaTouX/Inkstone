@@ -58,7 +58,10 @@
   S().openSettings('auth')
   await sleep(1200)
   ok(!!q('[data-testid="set-activity-models"]'), '接入页有该区块')
-  const scope = String(q('[data-testid="am-scope"]')?.textContent ?? '')
+  /* 边界说明放在悬停提示里（title）；解释「为什么是这个模型」在各行输入框的 title，回退时才多一行可见文字 */
+  const noteOf = (activity) =>
+    String(q(`[data-testid="am-note-${activity}"]`)?.textContent || q(`[data-testid="am-input-${activity}"]`)?.title || '')
+  const scope = String(q('[data-testid="am-scope"]')?.title ?? '')
   ok(/不会新建会话/.test(scope), '固定文案写明「不会新建会话」', scope.slice(0, 24))
   ok(/不会动课程与学习进度/.test(scope), '固定文案写明「不动课程与学习进度」')
   for (const activity of ['answer', 'research', 'compose', 'organize', 'learn']) {
@@ -75,9 +78,9 @@
   await sleep(200)
   blur(q('[data-testid="am-input-learn"]'))
   await sleep(900)
-  const learnNote = String(q('[data-testid="am-note-learn"]')?.textContent ?? '')
+  const learnNote = noteOf('learn')
   ok(/这个活动指定了用 probe\/learn-model/.test(learnNote), 'learn 行的解释说明「活动指定」', learnNote)
-  const answerNote = String(q('[data-testid="am-note-answer"]')?.textContent ?? '')
+  const answerNote = noteOf('answer')
   ok(!/probe\/learn-model/.test(answerNote), 'answer 行不受影响', answerNote)
 
   log('=== 3. 默认模型会体现在其它活动上 ===')
@@ -85,10 +88,10 @@
   await sleep(200)
   blur(q('[data-testid="am-default"]'))
   await sleep(900)
-  const afterDefault = String(q('[data-testid="am-note-answer"]')?.textContent ?? '')
+  const afterDefault = noteOf('answer')
   ok(/默认模型 probe\/default-model/.test(afterDefault), '没单独指定的活动落到默认那一档', afterDefault)
   ok(
-    /这个活动指定了用 probe\/learn-model/.test(String(q('[data-testid="am-note-learn"]')?.textContent ?? '')),
+    /这个活动指定了用 probe\/learn-model/.test(noteOf('learn')),
     '活动指定仍然优先于默认'
   )
 

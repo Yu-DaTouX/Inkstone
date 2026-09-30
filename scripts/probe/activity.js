@@ -57,13 +57,9 @@
   await sleep(300)
   ok(S().workspaceMode === 'daily', '已切到日常模式', String(S().workspaceMode))
 
-  const profileBtn = q('[data-testid="agent-profile-button"]')
-  if (profileBtn) {
-    click(profileBtn)
-    await sleep(250)
-    click(q('[data-testid="agent-profile-option-research"]'))
-    await sleep(450)
-  }
+  /* 活动档案的入口在「设置 → 工作区」；这里直接走同一个 store 动作（界面点选的链路由 agentprofile 场景覆盖） */
+  await S().setAgentProfile({ profile: 'daily', activity: 'research' })
+  await sleep(450)
   ok(S().agentProfile?.profile === 'daily' && S().agentProfile?.activity === 'research', '活动 = 日常 · 研究', JSON.stringify(S().agentProfile))
 
   log('=== 2. 导入一份资料并加入对话 ===')
@@ -113,12 +109,8 @@
   }
 
   log('=== 5. 切回 coding：装配为空（不残留日常上下文） ===')
-  if (profileBtn) {
-    click(profileBtn)
-    await sleep(250)
-    click(q('[data-testid="agent-profile-option-coding"]'))
-    await sleep(450)
-  }
+  await S().setAgentProfile({ profile: 'coding' })
+  await sleep(450)
   ok(S().agentProfile?.profile === 'coding', '切回代码档案')
   const codingAssembly = await S().currentContext()
   ok((codingAssembly?.citations.length ?? 0) === 0, 'coding 会话不注入来源片段', JSON.stringify(codingAssembly?.citations))

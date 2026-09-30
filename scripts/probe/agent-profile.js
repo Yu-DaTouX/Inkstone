@@ -40,25 +40,30 @@
   }
   if (S().conn !== 'ready') return `  ⤺ 跳过：pi 未就绪（conn=${S().conn}）`
 
+  /*
+   * 入口在「设置 → 工作区」的分段控件里（输入区工具栏上的按钮已撤下）。
+   * 选中态用 .sel，档案值在 data-profile。
+   */
   log('=== 1. 入口存在且默认是自动 ===')
-  const btn = q('[data-testid="agent-profile-button"]')
-  if (!btn) return '✗ 找不到活动档案按钮（composer 工具栏）'
-  ok(btn.getAttribute('data-profile') === 'auto', '默认档案是 auto（由 agent 自行判断）')
-  ok(!!btn.getAttribute('title'), '按钮带说明（title）')
+  S().openSettings?.('workspace')
+  await sleep(700)
+  const seg = () => q('[data-testid="set-agent-profile"]')
+  const opt = (k) => seg()?.querySelector(`[data-profile="${k}"]`)
+  if (!seg()) return '✗ 找不到活动档案控件（设置 → 工作区）'
+  ok(opt('auto')?.classList.contains('sel'), '默认档案是 auto（由 agent 自行判断）')
+  ok(!!opt('auto')?.getAttribute('title'), '选项带说明（title）')
 
-  log('=== 2. 菜单与选项 ===')
-  click(btn)
-  await sleep(250)
-  ok(!!q('[data-testid="agent-profile-menu"]'), '菜单能打开')
+  log('=== 2. 选项 ===')
   const options = ['auto', 'coding', 'answer', 'research', 'compose', 'organize', 'learn']
   ok(
-    options.every((k) => !!q(`[data-testid="agent-profile-option-${k}"]`)),
+    options.every((k) => !!opt(k)),
     '七个选项都在（自动 + 代码 + 五个日常活动）',
     options.join(',')
   )
+  ok(options.every((k) => opt(k)?.tagName === 'BUTTON'), '选项都是真按钮（键盘可达）')
 
   log('=== 3. 切到「研究」：UI → IPC → 落盘 ===')
-  click(q('[data-testid="agent-profile-option-research"]'))
+  click(opt('research'))
   await sleep(450)
   ok(S().agentProfile?.activity === 'research', 'store 变成 research', JSON.stringify(S().agentProfile))
   const viaIpc = await window.yan.getAgentProfile()
@@ -67,30 +72,15 @@
     'IPC 回读一致（提交真的落了盘）',
     JSON.stringify(viaIpc)
   )
-  const label = q('[data-testid="agent-profile-label"]')?.textContent?.trim() ?? ''
-  ok(/研究/.test(label), '按钮文案跟着变', label)
+  ok(opt('research')?.classList.contains('sel'), '选中态跟着变到「研究」')
 
-  log('=== 4. 键盘可达 ===')
-  btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-  await sleep(220)
-  ok(!!q('[data-testid="agent-profile-menu"]'), 'ArrowDown 能打开菜单')
-  const menu = q('[data-testid="agent-profile-menu"]')
-  menu?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-  await sleep(220)
-  ok(!q('[data-testid="agent-profile-menu"]'), 'Esc 关闭菜单')
-
-  log('=== 5. 切回代码：日常活动被记住 ===')
-  click(q('[data-testid="agent-profile-button"]'))
-  await sleep(250)
-  click(q('[data-testid="agent-profile-option-coding"]'))
+  log('=== 4. 切回代码：日常活动被记住 ===')
+  click(opt('coding'))
   await sleep(450)
   const back = await window.yan.getAgentProfile()
   ok(back.profile === 'coding', '切回代码档案', JSON.stringify(back))
   ok(back.activity === 'research', '切回代码后上次的日常活动被保留（不用重选）')
-  ok(
-    q('[data-testid="agent-profile-button"]')?.getAttribute('data-profile') === 'coding',
-    '按钮回到代码态'
-  )
+  ok(opt('coding')?.classList.contains('sel'), '选中态回到代码')
 
   return out
 })()

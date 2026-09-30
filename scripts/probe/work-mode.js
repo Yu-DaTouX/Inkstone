@@ -103,7 +103,9 @@
   const composerEl = q('.composer-wrap .composer')
   const bandA = composerEl ? getComputedStyle(composerEl, '::before') : null
   const bandB = composerEl ? getComputedStyle(composerEl, '::after') : null
-  ok(bandA?.display === 'none' && bandB?.display === 'none', '自主模式采用静态边界，不生成动画光带')
+  /* 没有伪元素样式时 display 不是 none（而是默认值），要看的是有没有生成内容 */
+  const noBox = (c) => !c || c.content === 'none' || c.content === 'normal' || c.display === 'none'
+  ok(noBox(bandA) && noBox(bandB), '自主模式采用静态边界，不生成动画光带')
   const legacyBands = composerEl?.getAnimations({ subtree: true }).filter((a) => a.animationName === 'yan-autonomous-border') ?? []
   ok(legacyBands.length === 0, `旧版自主光带动画已移除（实得 ${legacyBands.length}）`)
 
@@ -259,7 +261,7 @@
   /* --------------------------------- 7. 自定义快捷键（录音 → 真生效） */
   out.push('')
   out.push('=== 7. 自定义快捷键：录音 Ctrl+Shift+K 后旧键失效 ===')
-  await store.getState().openSettings('appearance')
+  await store.getState().openSettings('input')
   let keyBtn = null
   for (let i = 0; i < 40 && !keyBtn; i += 1) {
     keyBtn = q('[data-testid="set-work-mode-key"]')

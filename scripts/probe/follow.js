@@ -66,7 +66,7 @@
   await sleep(600)
   ok(!!q('[data-testid="space-ov-follow-card"]'), '空间概览里有「持续关注」卡')
   const note = q('[data-testid="space-follow-note"]')
-  ok(!!note && /应用没开/.test(String(note.textContent ?? '')), '卡上写明「应用没开的那段时间不会被跟进」', String(note?.textContent ?? '').slice(0, 40))
+  ok(!!note && /只在砚打开时检查/.test(String(note.textContent ?? '')), '卡上写明「只在砚打开时检查」（没开的时间不会被跟进）', String(note?.textContent ?? '').slice(0, 40))
   ok(!/已跟进/.test(String(note?.textContent ?? '')), '没有「已跟进」这种承诺')
 
   log('=== 2. 自己建一个关注 ===')

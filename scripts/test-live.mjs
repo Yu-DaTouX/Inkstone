@@ -1582,8 +1582,8 @@ const CASES = {
   historyswitch: { probe: 'scripts/probe/history-switch.js', delay: 9000, cost: 0 },
   // 项目—会话归属：真实 IPC 迁移索引，不移动 pi 的 JSONL 文件
   sessionlayout: { probe: 'scripts/probe/sessionlayout.js', delay: 9000, cost: 0 },
-  // 窗口关闭隐藏到托盘，退出取消路径可重复
-  tray: { probe: 'scripts/probe/tray.js', delay: 9000, cost: 0, env: { YAN_EXIT_CHOICE: 'cancel' } },
+  // 窗口关闭隐藏到托盘，退出取消路径可重复。判据是真实的 isVisible()，默认的不上屏模式下恒为 false，所以要可见窗口
+  tray: { probe: 'scripts/probe/tray.js', delay: 9000, cost: 0, visible: true, env: { YAN_EXIT_CHOICE: 'cancel' } },
   //
   // N12 退出变体（实施-09 S2 第五批）：保存并退出 + 退出进行中重复请求。
   // `YAN_EXIT_CHOICE` 是原生对话框的 probe 替身 —— 只跳过“选哪个”这一步，
@@ -6586,8 +6586,20 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
         })
     : []
   const budgetRows = rows.filter((r) => String(r?.hook ?? '').startsWith('request-budget-'))
-  say(budgetRows.length >= 1, `真实请求里有估算留痕（${budgetRows.length} 行）`)
+  /*
+   * 新会话默认走预算 V1（宿主写 `context-budget-v1/<会话>/policy.json`），旧的
+   * `before_provider_request` 估算留痕在 V1 下被扩展有意跳过（context.js
+   * `contextBudgetV1Active`）。此时没有留痕行是设计如此，只在旧路径下才断言。
+   */
+  const v1Dir = join(sandboxRoot, 'data', 'context-budget-v1')
+  const v1Active = existsSync(v1Dir) && readdirSync(v1Dir).length > 0
+  const skipTrace = v1Active && budgetRows.length === 0
   const row = budgetRows[budgetRows.length - 1]
+  if (skipTrace) {
+    lines.push('  ⤺ 会话走预算 V1，旧路径的估算留痕不适用，跳过留痕断言')
+    return { ok, lines }
+  }
+  say(budgetRows.length >= 1, `真实请求里有估算留痕（${budgetRows.length} 行）`)
   if (row) {
     lines.push(
       `  估算 = messages ${row.messages} + tools ${row.tools} + system ${row.system} = ${row.estimatedTokens}`
@@ -6685,10 +6697,13 @@ async function checkTurnTimingIsolation(sandboxRoot, _tempBefore, probeText = ''
   const a = checkSession('a')
   const b = checkSession('b')
   if (a && b) {
-    const sourceA = new Set(a.sourceIds ?? [])
+    /*
+     * `sourceIds` 是各 runner 自己的 `m<序号>`，两边从相近的序号起步，相交只是撞号，
+     * 不能当作串档的证据。区分两个 runner 用 runId（每个 runner 各自生成）。
+     */
     say(
-      !(b.sourceIds ?? []).some((id) => sourceA.has(id)),
-      'A、B 两个 runner 的运行时 sourceIds 不交叉'
+      !!a.runId && !!b.runId && a.runId !== b.runId,
+      `A、B 两个 runner 各有自己的 runId（${a.runId} / ${b.runId}）`
     )
     say(
       Number(b.elapsedMs) > Number(a.elapsedMs) + 2500,
@@ -7830,8 +7845,24 @@ async function checkHandoffChainPersisted(sandboxRoot, _tempBefore, probeText) {
     if (sourceRows && secondRows) {
       const sourceIds = new Set(sourceRows.map((row) => String(row.logicalTurnId)))
       const secondIds = new Set(secondRows.map((row) => String(row.logicalTurnId)))
-      const overlap = [...sourceIds].filter((id) => secondIds.has(id))
-      say(overlap.length === 0, '两段的 logicalTurnId 不重叠（用量/计时不会跨片段重复累加）')
+      const sameIds = [...sourceIds].filter((id) => secondIds.has(id))
+      /*
+       * `logicalTurnId` 取用户消息 id（`m<序号>`），序号按**各自的会话文件**从 0 起，
+       * 两个片段各有一条 `m0` 只是序号撞车，不是同一个回合。判据改成墙钟区间：
+       * 同一个回合被重复记进两个片段，它们的 [startedAt, endedAt] 必然重叠。
+       */
+      const spans = (rows) =>
+        rows
+          .map((row) => [Number(row.startedAt), Number(row.endedAt)])
+          .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b))
+      const sourceSpans = spans(sourceRows)
+      const secondSpans = spans(secondRows)
+      const timeOverlap = sourceSpans.some(([a, b]) => secondSpans.some(([c, d]) => a < d && c < b))
+      if (sameIds.length > 0) lines.push(`  · 两段各有相同的 logicalTurnId：${sameIds.join(',')}（序号按文件从 0 起，仅撞号）`)
+      say(
+        sourceSpans.length > 0 && secondSpans.length > 0 && !timeOverlap,
+        '两段的回合墙钟区间不重叠（同一回合不会跨片段重复累加）'
+      )
     }
   } catch (error) {
     say(false, '读 turn-timing 失败：' + (error instanceof Error ? error.message : String(error)))
