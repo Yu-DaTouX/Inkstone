@@ -115,7 +115,7 @@ export function HomeScreen({ onOpen, onSettings, alertsEnabled, onEnableAlerts, 
     </ContentEnter>
     {!alertsEnabled ? <Pressable accessibilityRole="button" onPress={onEnableAlerts} style={styles.alertPrompt}><Icon name="bell" color={p.accent} size={icon.sm} /><Text style={{ color: p.accent, fontSize: font.sm }}>开启待回答提醒</Text></Pressable> : null}
     <View style={[styles.dock, { borderTopColor: p.borderSoft, backgroundColor: p.bg1 }]}>
-      <View style={[styles.search, { borderColor: p.border, backgroundColor: p.bg0 }]}><Icon name="search" size={icon.sm} color={p.fgMute} /><TextInput disableFullscreenUI value={query} onChangeText={setQuery} placeholder={project ? '搜索此项目' : '搜索会话'} placeholderTextColor={p.fgMute} accessibilityLabel="搜索会话" style={{ flex: 1, minHeight: touch.min, paddingVertical: 6, color: p.fg, fontSize: font.base }} /></View>
+      <View style={[styles.search, { borderColor: p.border, backgroundColor: p.bg0 }]}><Icon name="search" size={icon.sm} color={p.fgMute} /><TextInput disableFullscreenUI value={query} onChangeText={setQuery} placeholder={project ? '搜索此项目' : '搜索会话'} placeholderTextColor={p.fgMute} accessibilityLabel="搜索会话" style={{ flex: 1, minWidth: 0, minHeight: touch.min, paddingVertical: 6, color: p.fg, fontSize: font.base }} /></View>
       <IconButton name="pencil" primary label="新建会话" busy={creating} disabled={stream !== 'open'} onPress={() => Alert.alert('新建会话', '使用电脑当前目录，并切换电脑会话。', [{ text: '取消', style: 'cancel' }, { text: '新建', onPress: () => void create() }])} />
     </View>
   </View>
@@ -132,5 +132,6 @@ const styles = StyleSheet.create({
   activity: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[4], borderBottomWidth: StyleSheet.hairlineWidth },
   alertPrompt: { minHeight: touch.min, paddingHorizontal: space[4], flexDirection: 'row', alignItems: 'center', gap: space[2] },
   dock: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[4], paddingVertical: space[3], borderTopWidth: StyleSheet.hairlineWidth },
-  search: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[3], borderWidth: 1, borderRadius: radius.md }
+  /* `minWidth: 0` 让搜索框随屏幕／键盘缩窄，而不是被输入内容撑开（同 SessionScreen 的输入框）。 */
+  search: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[3], borderWidth: 1, borderRadius: radius.md }
 })

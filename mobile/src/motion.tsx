@@ -25,7 +25,8 @@ export function ContentEnter({ children }: { children: ReactNode }) {
     value.setValue(reduced ? 1 : 0)
     Animated.timing(value, { toValue: 1, duration: reduced ? 1 : duration.base, easing: ease, useNativeDriver: true }).start()
   }, [reduced, value])
-  return <Animated.View style={{ flex: 1, opacity: value, transform: [{ translateY: value.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }] }}>{children}</Animated.View>
+  /* `minWidth: 0` 让宽屏／折叠屏双栏时右栏能被屏幕宽度压窄，而不是被内容撑开。 */
+  return <Animated.View style={{ flex: 1, minWidth: 0, opacity: value, transform: [{ translateY: value.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }] }}>{children}</Animated.View>
 }
 
 /*

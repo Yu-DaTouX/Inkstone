@@ -275,6 +275,16 @@ export function reduceSessionRuntime(
       }
       break
     }
+    case 'ui-resolved': {
+      /*
+       * 手机端答复后同样要从实例缓存里移除。
+       *
+       * 只清顶层 `uiRequests` 会留下「复活」缺陷：下一次 `runners` / `state` 推送
+       * 会把缓存快照投影回顶层，电脑端就会重新显示这条已经回答过的问题。
+       */
+      next = { ...next, uiRequests: next.uiRequests.filter((item) => item.id !== message.payload.id) }
+      break
+    }
     case 'status': {
       const statuses = { ...next.statuses }
       if (message.payload.text === undefined) delete statuses[message.payload.key]
