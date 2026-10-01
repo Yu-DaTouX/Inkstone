@@ -1,43 +1,15 @@
 /**
- * Git 审查、写操作、用户工作树与托管网页的 IPC 适配（`yan:git:*`）。
+ * Git 状态、写操作、用户工作树与托管网页的 IPC 适配（`yan:git:*`）。
  *
- * 渲染端只能传 cwd / 范围 / 路径，不能传 git 命令：命令形状全部在主进程里固定，
+ * 渲染端只能传 cwd / 路径，不能传 git 命令：命令形状全部在主进程里固定，
  * 路径与 ref 在 git-service 里单独校验；写操作的防护在 git-actions.ts。
  */
 import type { IpcRegistrar } from './registrar'
-import type { GitScopeRequest } from '../../shared/ipc'
-import { fileContent, filePatch, reviewSnapshot } from '../git-diff'
 import { readExpected, readRepoState, listRefs, resolveRepo } from '../git-service'
 import { listRemotes, remoteWeb, runGitAction } from '../git-actions'
 import { prStatus } from '../hosting'
-import { createWorktree, listWorktrees, removeWorktree } from '../git-worktree'
+import { createWorktree, listUntracked, listWorktrees, removeWorktree } from '../git-worktree'
 import type { WorktreeLinkStore } from '../worktree-links'
-
-/**
- * 审查范围来自渲染端，一律当**不可信输入**校验。
- *
- * 参数数组已经挡住了 shell 注入，但 `--` 之前的**选项注入**还挡不住：
- * 一个形如 `--upload-pack=…` 的「ref」会被 git 当成选项。所以这里
- * 只放行 git ref 的合法字符集，并且**不以 `-` 开头**。
- * 任何不合法 / 缺失的范围都退回「工作区全部改动」—— 它是纯只读的，
- * 退到它不会造成任何破坏，而报错会让整个审查面板打不开。
- */
-export function normalizeScope(raw: unknown): GitScopeRequest {
-  const rec = (raw ?? {}) as Record<string, unknown>
-  const clean = (v: unknown): string | undefined => {
-    const s = typeof v === 'string' ? v.trim() : ''
-    if (!s || s.startsWith('-') || s.length > 250) return undefined
-    if (!/^[\w./@^~{}+-]+$/.test(s)) return undefined
-    return s
-  }
-  if (rec.kind === 'working' || rec.kind === 'unstaged' || rec.kind === 'staged') return { kind: rec.kind }
-  if (rec.kind === 'range') {
-    const base = clean(rec.base)
-    const target = clean(rec.target)
-    if (base && target) return { kind: 'range', base, target }
-  }
-  return { kind: 'working' }
-}
 
 export interface GitIpcDeps {
   /** 这个目录有没有正在跑的任务（切分支、删工作树前必须问） */
@@ -50,11 +22,10 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
   const { handle } = ipc
   const { isCwdBusy, worktreeOrigins } = deps
   /*
-   * ---- Git 审查（只读，方案 G1）----
+   * ---- Git 状态（只读）----
    *
-   * 渲染端只能传 cwd / 范围 / 路径，**不能传 git 命令**（方案 §11）：
+   * 渲染端只能传 cwd，**不能传 git 命令**（方案 §11）：
    * 命令形状全部在主进程里固定，路径与 ref 在 git-service 里单独校验。
-   * 每个响应带回 requestId，用户切项目后渲染端靠它丢弃迟到结果。
    */
   handle('yan:git:state', async (cwd: string) => {
     try {
@@ -65,7 +36,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
        * 一起把「预期版本」带回去：环境菜单里的写操作（切分支 / 拉取 / 推送）
        * 同样要带上用户看到的那个版本，而菜单没有审查快照可用。
        * 两次读取与菜单显示的内容是**同一个时刻**的（差几毫秒），
-       * 而且先读版本更安全（见 git-diff.ts 里 reviewSnapshot 的同一段说明）。
+       * 先读取预期版本，再读取供菜单显示的仓库状态。
        */
       const expected = await readExpected(repo.root)
       return { repo: await readRepoState(repo.root), expected }
@@ -88,50 +59,6 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
       }
     }
   })
-  handle('yan:git:snapshot', async (req: { cwd?: string; scope?: unknown; requestId?: string }) =>
-    reviewSnapshot({
-      cwd: String(req?.cwd ?? ''),
-      scope: normalizeScope(req?.scope),
-      requestId: String(req?.requestId ?? '')
-    })
-  )
-  handle(
-    'yan:git:patch',
-    async (req: {
-      cwd?: string
-      scope?: unknown
-      requestId?: string
-      path?: string
-      oldPath?: string
-      untracked?: boolean
-    }) =>
-      filePatch({
-        cwd: String(req?.cwd ?? ''),
-        scope: normalizeScope(req?.scope),
-        requestId: String(req?.requestId ?? ''),
-        path: String(req?.path ?? ''),
-        oldPath: req?.oldPath ? String(req.oldPath) : undefined,
-        untracked: !!req?.untracked
-      })
-  )
-  handle(
-    'yan:git:content',
-    async (req: {
-      cwd?: string
-      scope?: unknown
-      requestId?: string
-      path?: string
-      side?: string
-    }) =>
-      fileContent({
-        cwd: String(req?.cwd ?? ''),
-        scope: normalizeScope(req?.scope),
-        requestId: String(req?.requestId ?? ''),
-        path: String(req?.path ?? ''),
-        /* side 只认 old / new，别的一律当 old（宁可少给一侧也不给错一侧） */
-        side: req?.side === 'new' ? 'new' : 'old'
-      })
-  )
 
   /*
    * ---- Git 写操作（方案 §5，G2）----
@@ -219,6 +146,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
    * 这里建的会被用户长期使用，所以删除前逐项检查，且**没有** force 入口。
    * 「有任务在跑」的判据与切分支同一个（注入的 runner 状态）。
    */
+  handle('yan:git:untracked', async (cwd: string) => listUntracked(String(cwd ?? '')))
   handle('yan:git:worktrees', async (cwd: string) => {
     try {
       return await listWorktrees(String(cwd ?? ''))

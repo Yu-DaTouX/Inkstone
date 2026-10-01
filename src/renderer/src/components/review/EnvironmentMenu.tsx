@@ -38,7 +38,6 @@ export function EnvironmentMenu() {
   const t = useT()
   const session = useStore((s) => s.session)
   const settings = useStore((s) => s.settings)
-  const openReview = useStore((s) => s.openReview)
   const project = session?.cwd ?? settings?.cwd
   const patchSettings = useStore((s) => s.patchSettings)
   const newSession = useStore((s) => s.newSession)
@@ -223,26 +222,16 @@ export function EnvironmentMenu() {
 
   /*
    * 未跟踪清单：只在用户点开「选择要带过去的文件」时拉一次。
-   * 复用审查用的快照通道（scope=untracked）—— 它已经把未跟踪文件做成了
-   * 与审查面板同一份数据，没必要再开一条。
    */
   useEffect(() => {
     if (!pickOpen || !project) return
     let alive = true
     void window.yan.git
-      .snapshot({ cwd: project, /* 没有单独的 untracked 范围：未跟踪文件在 working 里，靠 untracked 标志挑出来 */
-            scope: { kind: 'working' }, requestId: `carry-${Date.now()}` })
-      .then((res) => {
+      .untracked(project)
+      .then((paths) => {
         if (!alive) return
-        setUntracked(
-          (res.files ?? [])
-            .filter((f) => f.untracked)
-            .map((f) => ({
-            path: f.path,
-            /* snapshot 不带 size；展示用 0，真正的大小上限由主进程把关 */
-            size: 0
-          }))
-        )
+        /* 列表不带 size；展示用 0，真正的大小上限由主进程把关 */
+        setUntracked(paths.map((path) => ({ path, size: 0 })))
       })
       .catch((e: unknown) => {
         if (alive) {
@@ -427,17 +416,7 @@ export function EnvironmentMenu() {
 
           {repo ? (
             <>
-              <button
-                type="button"
-                role="menuitem"
-                ref={firstRef}
-                className="env-item"
-                data-testid="env-changes"
-                onClick={() => {
-                  setOpen(false)
-                  openReview({ kind: 'working' })
-                }}
-              >
+              <div className="env-item env-static" data-testid="env-changes">
                 <Icon name="history" size={14} />
                 <span className="env-label">{t('env.changes')}</span>
                 <span className="env-count" data-testid="env-changes-count">
@@ -454,7 +433,7 @@ export function EnvironmentMenu() {
                     </>
                   )}
                 </span>
-              </button>
+              </div>
 
               {/*
                * 「本地」不是导航项，而是**当前执行环境**：显示工作目录，
@@ -469,6 +448,7 @@ export function EnvironmentMenu() {
                 </span>
                 <button
                   type="button"
+                  ref={firstRef}
                   className="env-mini"
                   data-testid="env-open-folder"
                   title={t('env.openFolder')}
@@ -1053,24 +1033,6 @@ export function EnvironmentMenu() {
                 </span>
               </button>
 
-              <button
-                type="button"
-                role="menuitem"
-                className="env-item"
-                data-testid="env-compare"
-                onClick={() => {
-                  setOpen(false)
-                  const target = repo.branch ?? 'HEAD'
-                  const base = repo.upstream ?? 'HEAD~1'
-                  openReview({ kind: 'range', base, target })
-                }}
-              >
-                <Icon name="search" size={14} />
-                <span className="env-label">{t('env.compare')}</span>
-                <span className="env-sub" title={repo.upstream && repo.branch ? `${repo.upstream} → ${repo.branch}` : ''}>
-                  {repo.upstream && repo.branch ? `${repo.upstream} → ${repo.branch}` : t('env.chooseBase')}
-                </span>
-              </button>
 
               {/*
                 托管网页比较（方案 §7）：把同一段比较交给托管站渲染。

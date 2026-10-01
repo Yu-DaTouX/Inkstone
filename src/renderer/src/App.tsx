@@ -5,6 +5,8 @@ import { PeerApprovalDialog } from './components/shell/PeerApprovalDialog'
 import { useI18n, useT } from './i18n'
 import { TitleBar, type Theme } from './components/shell/TitleBar'
 import { Rail } from './components/rail/Rail'
+import { Workspace, WorkspacePane } from './components/workbench/Workspace'
+import { workbenchSessionKey } from './state/workbench'
 import { RightPanel } from './components/toolbar/RightPanel'
 import { FloatingTiles } from './components/toolbar/FloatingTiles'
 import { Resizer } from './components/toolbar/Resizer'
@@ -113,16 +115,8 @@ export default function App() {
   /** 左栏由标题栏开关显式控制，首次收起，后续恢复保存的展开状态。 */
   const railPinned = useStore((s) => s.railPinned)
   const setRailPinned = useStore((s) => s.setRailPinned)
-  const rightPanelOpen = useStore((s) => s.settings?.rightPanelOpen ?? true)
-  const toggleRightPanel = useStore((s) => s.toggleRightPanel)
   /* 浏览器开关与工具栏独立：入口在标题栏，收起工具栏不影响浏览器 */
   const browserOpen = useStore((s) => s.browserState.open)
-  /*
-   * 审查打开时右栏要加宽（CSS 里 `.app.review-on` 把 --w-right 换成审查档位）。
-   * 放在 `.app` 而不是 aside 上：宽度是 grid 的列定义（.workspace），
-   * 而 `.workspace` 不是 aside 的子元素，它拿不到 aside 上的类。
-   */
-  const reviewOpen = useStore((s) => s.reviewOpen)
   const openBrowser = useStore((s) => s.openBrowser)
   const closeBrowser = useStore((s) => s.closeBrowser)
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
@@ -744,8 +738,7 @@ export default function App() {
   const appCls = [
     'app',
     !railOpen && 'rail-off',
-    railPinned && 'rail-pinned',
-    reviewOpen && 'review-on'
+    railPinned && 'rail-pinned'
   ]
     .filter(Boolean)
     .join(' ')
@@ -759,8 +752,6 @@ export default function App() {
         <TitleBar
           onToggleRail={() => setRailPinned(!railPinned)}
           railOpen={railOpen}
-          onToggleRightPanel={() => void toggleRightPanel()}
-          rightPanelOpen={rightPanelOpen}
           onToggleBrowser={() => void (browserOpen ? closeBrowser() : openBrowser())}
           browserOpen={browserOpen}
           alwaysOnTop={alwaysOnTop}
@@ -769,7 +760,7 @@ export default function App() {
           onSettings={() => (settingsOpen ? closeSettings() : openSettings())}
         />
 
-        <div className="workspace">
+        <div className="workspace workspace-tiled">
           {/* ⚠️ 这里曾经有一个 .rail-hotzone —— 
               它是 .workspace 的第一个 grid item，会白占掉第一列，
               导致 .rail-slot 被挤到第二列、.center 落到 0px 宽的第三列。
@@ -798,6 +789,8 @@ export default function App() {
           <Resizer side="rail" />
         </div>
 
+          <Workspace sessionKey={workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)}>
+          <WorkspacePane id="chat" title="主会话" icon="chat-round">
           <section className="center">
             <Continuity
               mapEnabled={dailyMode}
@@ -897,7 +890,9 @@ export default function App() {
             <Composer />
           </section>
 
+          </WorkspacePane>
           <RightPanel />
+          </Workspace>
           {/* 浮动工具磁贴（实施-12 U-4/U-5）：应用内容区上的独立层，不随右栏收起而消失 */}
           <FloatingTiles />
         </div>

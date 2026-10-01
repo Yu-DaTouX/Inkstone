@@ -39,9 +39,9 @@
 | 左栏 | 新对话与搜索、置顶 / 最近、项目与会话树、待我处理、用户区、右键菜单 | `rail/Rail`、`SessionRow`、`RailDialogs`、`RailUser`、`common/ContextMenu` |
 | 对话 | 会话头、空状态、回合、用户消息、助手正文、推理、工具行与详情、子代理说明、交接与延续说明、提问面板、学习操作、对话大纲 | `chat/SessionHeader`、`EmptyStream`、`TurnView`、`MessageParts`、`Reasoning`、`ToolRow`、`ToolDetails`、`SubagentNote`、`HandoffNote`、`Continuity`、`QuestionPanel`、`LearningActions`、`ConversationOutline` |
 | 输入区 | 输入框与边框、运行条、`/` 命令菜单、`@` 文件菜单、模型与思考档位、语音输入 | `chat/Composer`、`ComposerPickers`、`PlusMenu`、`attachment-files`、`ComposerBorder`、`slash-query`、`at-query`、`Pickers`、`VoiceInputButton` |
-| 右栏检查器 | 任务、上下文、额度、文件树与预览、队列、目标、工具分区、浮出磁贴、拖动预览、开始页、工作对象条 | `toolbar/RightPanel`、`ContextSection`、`QuotaSection`、`TodoSection`、`PanelSections`、`GoalSection`、`GoalPopover`、`FileTree`、`FilePreview`、`FloatingTiles`、`DragPreview`、`StartPage`、`WorkObjectBar`、`ToolSection` |
+| 工作区资源与详情 | 文件、浏览器、终端、Agent、任务与日志磁贴；输入框上下文圆环和状态栏额度详情；保留旧布局读取 | `workbench/Workspace`、`toolbar/RightPanel`、`NativeContextSection`、`QuotaSection`、`TodoSection`、`PanelSections`、`GoalSection`、`GoalPopover`、`FileTree`、`FilePreview`、`FloatingTiles`、`WorkObjectBar`、`ToolSection` |
 | 工作台 | 工作台首页、空间概览与空间工作台、任务收件箱、资料库、成果查看、会话地图与预览、跟随面板 | `workbench/*` |
-| 审查 | 审查面板、改动文件树、差异查看、提交条、环境与来源菜单、Office 内容 | `review/*` |
+| 环境与文件内容 | 环境菜单中的分支、工作树和托管网页操作，来源菜单与办公文件文字预览；独立审查面板和提交区已移除 | `review/EnvironmentMenu`、`SourceMenu`、`OfficeContent`、`useGitReview`、`CommitBar`（仅失败提示） |
 | 内嵌表面 | 浏览器、终端 | `browser/BrowserSurface`、`terminal/TerminalSurface`、`chat/Terminal` |
 | 设置 | 模型、外观、输入与提醒、工作区、上下文与记忆、能力与插件、语音输入、设备连接、关于；自定义模型表单、授权同意、活动模型 | `settings/*` |
 | 引导与对话框 | 首次引导、砚互联批准对话框、通用对话框 | `settings/Onboarding`、`shell/PeerApprovalDialog`、`styles/dialog.css` |

@@ -33,4 +33,5 @@
 @import './terminal.css' layer(modules);
 @import './review.css' layer(modules);
 @import './workbench.css' layer(modules);
+@import './workspace.css' layer(modules);
 @import './icon-state.css' layer(modules);

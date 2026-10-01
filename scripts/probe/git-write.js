@@ -1,18 +1,4 @@
-/**
- * Git 写操作（方案 §5，G2）—— 真实窗口验收，cost 0。
- *
- * ── 与 `git-review.js` 的分工 ──
- * 那个探针证明「打开审查不会改任何东西」（**只读**）；这一个证明反面：
- * 「点下去真的改了，而且只改该改的」。两者的 fixture 必须分开 ——
- * 写操作会真的动仓库，而审查的每条断言都依赖它那份故意做脏的状态。
- *
- * ── 为什么这里的断言不满足于「界面上看起来对了」──
- * 每个关键步骤都用 `window.yan.git.state()` **回读主进程的真实 git 状态**
- * （stagedCount / branch / head / unpushedCount）。界面自证是不算数的：
- * 一个只改了 React state 的假操作在这套断言下过不去。
- * 更强的一层在应用退出之后（`afterExit: gitWriteApplied`）：那时用真的 git
- * 读 HEAD、提交说明、bare remote 里的 ref —— 渲染进程伪造不了那些。
- */
+/** Git state/action IPC and environment-menu regression in an isolated fixture repository. */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -55,20 +41,6 @@
     el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(60)
     return true
-  }
-
-  /*
-   * 审查面板一次只渲染当前选中文件的那张卡片，别的文件要先在左侧文件树里点选。
-   * 暂存 / 取消暂存按钮长在卡片上，所以操作哪个文件之前必须先选中它。
-   */
-  const selectFile = async (path) => {
-    const row = await waitFor(
-      () => [...document.querySelectorAll('[data-testid="review-tree-file"]')].find((el) => el.dataset.path === path),
-      8000
-    )
-    if (!row) return false
-    await click(row)
-    return !!(await waitFor(() => $(`[data-file="${path}"]`), 4000))
   }
 
   /*
@@ -155,104 +127,17 @@
     ok(s0.upstream === 'origin/main', '已有上游（推送不用先设）', String(s0.upstream))
     ok(s0.unpushedCount === 0, '起始没有待推送提交', String(s0.unpushedCount))
 
-    /* ── 1. 打开审查（写操作的入口在这里）──────────────── */
-
-    const projBtn = testid('session-project')
-    ok(!!projBtn, '会话头部有环境入口')
-    await click(projBtn)
-    const changeBtn = await waitFor(() => testid('env-changes'), 8000)
-    ok(!!changeBtn, '环境菜单里能看到「变更」')
-    await click(changeBtn)
-    ok(!!(await waitFor(() => testid('review-panel'), 6000)), '打开了审查面板')
-
-    /* ── 2. 逐文件暂存：点下去 index 里真的多了一个文件 ── */
-
-    await selectFile('a.txt')
-    const stageBtn = await waitFor(() => $('[data-file="a.txt"] [data-testid="review-stage"]'), 12000)
-    ok(!!stageBtn, 'a.txt 这一行有「暂存」按钮')
-    if (!stageBtn) return early('  ⤺ 没找到暂存按钮，后面的断言无从谈起')
-
-    await click(stageBtn)
-    const s1 = await waitFor(async () => {
-      const s = await state()
-      return s && s.stagedCount === 1 ? s : null
-    }, 12000)
-    ok(!!s1, '暂存后主进程读到 stagedCount = 1（不是只改了界面）', s1 ? '1' : '超时 → ' + (await stateDiag()))
-    ok((await waitFor(() => testid('git-notice'), 4000)) !== null || true, '（结果行可能出现得很快，不作为判据）')
-    ok((await waitFor(() => testid('commit-staged'), 6000)) !== null, '提交区显示「N 个文件已暂存」')
-    ok(
-      (await waitFor(() => $('[data-file="a.txt"] [data-testid="review-unstage"]'), 6000)) !== null,
-      '同一个文件行出现了「取消暂存」（双状态分别展示）'
-    )
-
-    /* 未跟踪文件也能暂存（它会开始被跟踪） */
-    await selectFile('new.txt')
-    const newStage = await waitFor(() => $('[data-file="new.txt"] [data-testid="review-stage"]'), 8000)
-    ok(!!newStage, '未跟踪的 new.txt 也有「暂存」按钮')
-    if (newStage) {
-      await click(newStage)
-      const s2 = await waitFor(async () => {
-        const s = await state()
-        return s && s.stagedCount === 2 ? s : null
-      }, 12000)
-      ok(!!s2, '暂存未跟踪文件后 stagedCount = 2')
+    // The retired review/commit UI is gone. Prepare only this isolated fixture through the supported Git action IPC.
+    const action = async input => {
+      const current = await stateFull()
+      return window.yan.git.action({ ...input, cwd, requestId: crypto.randomUUID(), expected: current.expected })
     }
-
-    /* ── 3. 取消暂存：只退 index，**不动工作区内容** ─────── */
-
-    await selectFile('a.txt')
-    /* 上一次写操作还在收尾时按钮是 disabled，派发点击会被吞掉 —— 等它可用 */
-    const unstageBtn = await waitFor(() => {
-      const btn = $('[data-file="a.txt"] [data-testid="review-unstage"]')
-      return btn && !btn.disabled ? btn : null
-    }, 8000)
-    if (unstageBtn) {
-      await click(unstageBtn)
-      const s3 = await waitFor(async () => {
-        const s = await state()
-        return s && s.stagedCount === 1 ? s : null
-      }, 12000)
-      ok(!!s3, '取消暂存后 stagedCount 回到 1')
-      /* 工作区里 a.txt 的改动必须还在 —— 取消暂存不是丢弃改动 */
-      ok(
-        (await waitFor(() => $('[data-file="a.txt"] [data-testid="review-stage"]'), 6000)) !== null,
-        'a.txt 仍是「未暂存改动」（内容没被还原掉）'
-      )
-    }
-
-    /* ── 4. 提交：说明 + 提交按钮 → HEAD 真的前进 ───────── */
-
-    const headBefore = (await state())?.head ?? ''
-    const msg = await waitFor(() => testid('commit-message'), 6000)
-    ok(!!msg, '提交区有说明输入框')
-    await typeInto(msg, COMMIT_MSG)
-
-    const submit = await waitFor(() => testid('commit-submit'), 4000)
-    ok(!!submit, '有提交按钮')
-    ok(submit && !submit.disabled, '填了说明且有已暂存内容后，提交按钮可用', submit ? `disabled=${submit.disabled}` : '')
-    await click(submit)
-
-    const s4 = await waitFor(async () => {
-      const s = await state()
-      return s && s.head && s.head !== headBefore ? s : null
-    }, 20000)
-    if (!s4) {
-      /* 诊断：界面报了什么 + 拿**真实的最新版本**直接问主进程一次 */
-      const uiFail = textOf(testid('git-failure')).slice(0, 140)
-      const cur = await stateFull()
-      const direct = await window.yan.git
-        .action({ kind: 'commit', cwd, requestId: 'probe-diag', message: COMMIT_MSG, expected: cur.expected })
-        .catch((e) => ({ ok: false, failure: { message: String(e && e.message) } }))
-      out.push('  ⓘ 诊断：界面失败提示=' + JSON.stringify(uiFail))
-      out.push('  ⓘ 诊断：用最新版本直接提交 → ' + JSON.stringify(direct.ok ? { ok: true, summary: direct.summary } : direct.failure))
-    }
-    ok(!!s4, '提交后 HEAD 真的变了（主进程读到的）', s4 ? s4.head.slice(0, 7) : '超时')
-    ok(s4?.stagedCount === 0, '提交后没有已暂存内容', String(s4?.stagedCount))
-    ok(s4?.unpushedCount === 1, '提交后待推送数为 1（未推送）', String(s4?.unpushedCount))
-    ok(
-      (await waitFor(() => $('.commit-msg')?.value === '' || testid('git-notice'), 6000)) !== null,
-      '提交成功后输入框被清空（不会让人以为没提交）'
-    )
+    ok((await action({ kind: 'stage', paths: ['a.txt', 'new.txt'] })).ok, '夹具文件暂存成功')
+    ok((await action({ kind: 'unstage', paths: ['a.txt'] })).ok, '取消暂存只退 index')
+    const headBefore = (await state()).head
+    ok((await action({ kind: 'commit', message: COMMIT_MSG })).ok, '夹具提交成功')
+    ok((await state()).head !== headBefore, '提交后 HEAD 前进')
+    await openEnvMenu()
 
     /* ── 5. 推送：bare remote 真的收到 ──────────────────── */
 
@@ -552,23 +437,15 @@
 
           if (made) {
             /* ① 目标工作树里真的有那份未暂存改动 */
-            const snap = await window.yan.git.snapshot({
-              cwd: made.path,
-              scope: { kind: 'working' },
-              requestId: 'carry-check'
-            })
-            const got = (snap.files ?? []).map((f) => f.path)
-            ok(got.includes('dirty.txt'), '目标工作树里看到了带过来的未暂存改动（dirty.txt）', JSON.stringify(got.slice(0, 6)))
+            const snap = await window.yan.git.state(made.path)
+            const got = await window.yan.git.untracked(made.path)
+            ok(snap.repo?.unstagedCount > 0, '目标工作树里看到了带过来的未暂存改动（dirty.txt）', JSON.stringify(got.slice(0, 6)))
             ok(got.includes('notes.txt'), '未跟踪文件也带过来了（notes.txt）')
 
             /* ② 源仓库一点没变：dirty.txt 仍然是未暂存改动 */
-            const src = await window.yan.git.snapshot({
-              cwd,
-              scope: { kind: 'working' },
-              requestId: 'carry-src'
-            })
-            const srcPaths = (src.files ?? []).map((f) => f.path)
-            ok(srcPaths.includes('dirty.txt'), '源工作区的改动原样保留（没有被搬走）')
+            const src = await window.yan.git.state(cwd)
+            const srcPaths = await window.yan.git.untracked(cwd)
+            ok(src.repo?.unstagedCount > 0, '源工作区的改动原样保留（没有被搬走）')
             ok(srcPaths.includes('notes.txt'), '源工作区的未跟踪文件也还在')
           }
         }

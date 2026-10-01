@@ -68,10 +68,7 @@ import type {
 } from './context-budget-v1'
 export type { ContextMaintenanceOperationV1, ContextMaintenanceStateV1 } from './context-maintenance'
 import type { ContextMaintenanceOperationV1 } from './context-maintenance'
-/* 可编辑成果（实施-25 P06a）：契约在 shared/artifact-doc.ts */
-export type { ArtifactDoc, ArtifactKind, ArtifactSourceRef, ArtifactVersion } from './artifact-doc'
 export type { SourceStatus, SourceRefStatus, ResearchExcerpt } from './research'
-import type { SourceStatus } from './research'
 export type {
   FollowRun,
   FollowOutcome,
@@ -84,16 +81,7 @@ import type { FollowRun, Watch, WatchView } from './follow'
 export type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { AgentActivity } from './agent-profile'
-import type { AgentEditInput, ArtifactDoc, ArtifactKind, ArtifactSourceRef } from './artifact-doc'
-import type {
-  GitContentSide,
-  GitFileContent,
-  GitFilePatch,
-  GitRefOption,
-  GitRepoState,
-  GitReviewSnapshot,
-  GitScopeRequest
-} from './git'
+import type { GitRefOption, GitRepoState } from './git'
 /* 写操作的请求 / 结果类型也在这里转发：preload 只 import 本文件（单一入口） */
 export type {
   GitActionExpected,
@@ -118,7 +106,7 @@ import type { ContextBackgroundUsageSummary } from './context-background-usage'
 import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
-import type { SearchBackendStatus } from './search'
+import type { SearchBackendStatus, SearchApiConfigView } from './search'
 import type { TaskInboxPage, TaskInboxQuery } from './task-inbox'
 import type { ToolLayout } from './tool-layout'
 /* 活动档案（实施-25 P01）：类型与纯逻辑在 `./agent-profile`，这里转发给渲染端。 */
@@ -131,22 +119,7 @@ export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, Knowle
 
 /* Git 审查的类型与纯解析在 `./git` 里（它们要能在没有 Electron 的环境下单测），
    这里只做转发，让渲染端可以从**一处**拿到全部跨进程类型。 */
-export type {
-  GitContentSide,
-  GitFileContent,
-  GitFilePatch,
-  GitRefOption,
-  GitRepoState,
-  GitReviewSnapshot,
-  GitScopeRequest,
-  GitChangedFile,
-  GitDiffHunk,
-  GitDiffLine,
-  GitFileKind,
-  GitFileStats,
-  GitScopeKind,
-  GitChangeStatus
-} from './git'
+export type { GitRefOption, GitRepoState } from './git'
 
 /* RPC */
 
@@ -203,6 +176,10 @@ export interface UIMessageImage {
 export interface UIToolCall {
   /** Native pi codemode calls share the parent assistant message. */
   parentToolCallId?: string
+  /** pi persists child-call summaries without full result output. */
+  historySummary?: boolean
+  incomplete?: boolean
+  nestedCallsIncomplete?: boolean
   id: string
   name: string
   args: unknown
@@ -958,6 +935,8 @@ export interface AppSettings {
   lang: 'zh-CN' | 'en-US'
   /** 手动指定 pi 入口（自动探测失败时用） */
   piBin?: string
+  /** Enable native pi Codemode in Inkstone; missing means enabled. */
+  codemodeEnabled?: boolean
   /** 最近使用的目录 */
   recentCwds: string[]
   /** 工作目录绝对路径 → 用户自定义项目名 */
@@ -2175,6 +2154,8 @@ export type MainPushBody =
    * 右栏日志抽屉，可回看、不弹框。
    */
   | { ch: 'log'; payload: { text: string; level?: 'info' | 'error' } }
+  /** 搜索时发现没配置搜索 API：界面弹一次带「去设置 / 不再提示」的提醒 */
+  | { ch: 'search-api-hint'; payload: Record<string, never> }
   /**
    * 运行实例状态快照（N12）。
    * 它是**全局**推送（不属于某个会话）—— 左栏需要一次拿到所有实例的画法。
@@ -2211,38 +2192,16 @@ export type MainPush = MainPushBody & {
   sessionKey?: string
 }
 
-/** Git 审查的请求身份：`requestId` 由渲染端生成，迟到响应靠它丢弃。 */
-export interface GitReviewRequest {
-  /** 会话工作目录（主进程按它解析仓库；渲染端不能传任意命令） */
-  cwd: string
-  scope: GitScopeRequest
-  requestId: string
-}
-
-export interface GitReviewFileRequest extends GitReviewRequest {
-  path: string
-  oldPath?: string
-}
 
 /**
- * Git 审查（方案 G1）。
- *
- * ⚠️ **只读**：这里没有任何 add / commit / checkout / reset。
- * 打开审查、刷新、切换范围都不会改变用户的工作区与暂存区 ——
- * 写操作会另开一组接口（G2 的 `git.actions`），因为它们需要
- * 操作记录、并发协调与明确的用户确认。
+ * Git 状态与写操作。读接口不改变用户的工作区与暂存区；写操作只走 `action`，
+ * 它需要操作记录、并发协调与明确的用户确认。
  */
 export interface GitBridge {
   /** 仓库状态（环境菜单）。非 Git 目录返回 `repo: null`，**不是错误** */
   state(cwd: string): Promise<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>
   /** 可选基准（本地 / 远程跟踪 / 标签）与被**其它**工作树占用的分支 */
   refs(cwd: string): Promise<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>
-  /** 变更清单（**不含正文**；正文按文件懒加载，避免大 diff 进每次响应） */
-  snapshot(req: GitReviewRequest): Promise<GitReviewSnapshot>
-  /** 单文件 diff（结构化 hunk，渲染端做折叠 / 行号 / 高亮） */
-  patch(req: GitReviewFileRequest & { untracked?: boolean }): Promise<GitFilePatch>
-  /** 某一侧的文件内容（图片预览、缺失侧判断、「显示完整文件」） */
-  content(req: GitReviewFileRequest & { side: GitContentSide }): Promise<GitFileContent>
   /**
    * 写操作（方案 §5，G2）：暂存 / 取消暂存 / 提交 / 切分支 / 新建分支 / 拉取 / 推送。
    *
@@ -2284,6 +2243,8 @@ export interface GitBridge {
    * 只读；认不出的托管站返回 null —— 不猜路径，免得给用户一个 404。
    */
   remoteWeb(cwd: string): Promise<{ ok: boolean; web?: string | null; remote?: string | null; error?: string }>
+  /** 未跟踪文件（新建工作树时勾选要带过去的文件） */
+  untracked(cwd: string): Promise<string[]>
   worktrees(cwd: string): Promise<WorktreeListing>
   worktreeCreate(req: WorktreeCreateRequest): Promise<WorktreeCreateResult>
   worktreeRemove(req: WorktreeRemoveRequest): Promise<WorktreeRemoveResult>
@@ -2816,53 +2777,6 @@ export interface LibraryBridge {
    * 它展示的是**真的会注入给模型的那份内容**（与扩展读的快照同源）。
    */
   current(): Promise<{ ok: boolean; error?: string; assembly?: ContextAssembly }>
-}
-
-/** 成果写操作的结果（与纯逻辑层的 `ArtifactMutation` 对应）。 */
-export interface ArtifactDocResult {
-  ok: boolean
-  error?: string
-  doc?: ArtifactDoc
-  /** 内容没变，**没有**开新版本。 */
-  unchanged?: boolean
-  /** agent 整篇重写时被保留的用户段落号。 */
-  preserved?: number[]
-}
-
-/**
- * 可编辑成果（实施-25 P06a）。
- *
- * 与 `main/artifacts.ts`（消息里的文件产物）**不是一回事**：这里管的是
- * 用户与 agent 都要改的文档对象（标题 / 正文 / 版本 / 来源引用）。
- * 关键约束：agent 改正文走 `applyAgentEdit`（按段落或指定版本基线），
- * 不能靠「重生成全文整篇写回」——那会吞括号用户的修改。
- */
-export interface ArtifactDocBridge {
-  list(spaceId?: string | null): Promise<{ ok: boolean; error?: string; docs: ArtifactDoc[] }>
-  create(input: { title: string; text?: string; kind?: ArtifactKind; spaceId?: string; taskId?: string }): Promise<ArtifactDocResult>
-  saveUserEdit(id: string, text: string): Promise<ArtifactDocResult>
-  applyAgentEdit(id: string, edit: AgentEditInput): Promise<ArtifactDocResult>
-  rename(id: string, title: string): Promise<ArtifactDocResult>
-  assign(id: string, patch: { spaceId?: string | null; taskId?: string | null }): Promise<ArtifactDocResult>
-  addSource(id: string, ref: ArtifactSourceRef): Promise<ArtifactDocResult>
-  /** 勾选结构化清单的一项（T06b-1）；就是一次用户编辑，会开新版本。 */
-  toggleChecklist(id: string, index: number): Promise<ArtifactDocResult>
-  /** 导出为 Markdown（T06b-3）：弹保存框，取消时返回 `canceled`。 */
-  exportMarkdown(
-    id: string
-  ): Promise<{ ok: boolean; error?: string; canceled?: boolean; path?: string; markdown?: string }>
-  remove(id: string): Promise<{ ok: boolean; error?: string }>
-}
-
-/**
- * 跨资料研究（实施-25 P13）。
- *
- * 宿主只给**结构**：读当时那一版的片段、把不同立场并排、标出「引用原文 / 模型补充」。
- * 不对「谁对」下结论、不合并成一段总结 —— 那是研究者的判断。
- */
-export interface ResearchBridge {
-  /** 成果引用的资料现在怎么样了（T13-4）：只提示变化，不改引用。 */
-  sourceStatus(artifactId: string): Promise<{ ok: boolean; error?: string; statuses: SourceStatus[] }>
 }
 
 /**
@@ -3531,9 +3445,6 @@ export interface YanBridge {
   sources: SourcesBridge
   /** 资料库（实施-25 P03）：与 sources 并存，落在 library.json */
   library: LibraryBridge
-  artifactDoc: ArtifactDocBridge
-  /** 成果引用的资料状态（按版本读片段与对照做法在 research 技能）。 */
-  research: ResearchBridge
   /** 持续关注（实施-25 P16）：到点提醒与结果记录（没有后台调度）。 */
   follow: FollowBridge
   /** 按活动配置模型（实施-25 P18）：只回答「该用哪个模型」，不动会话与学习状态。 */
@@ -3552,6 +3463,12 @@ export interface YanBridge {
     doctor(): Promise<SearchBackendStatus>
     /** 用户点「安装 OpenCLI」：npm 全局安装；needsNode 表示先要装 Node.js */
     installBackend(): Promise<{ ok: boolean; needsNode?: boolean; error?: string; log?: string }>
+    /** 搜索 API（Brave）配置状态；密钥不返回渲染端 */
+    apiConfig(): Promise<SearchApiConfigView>
+    setApiKey(key: string): Promise<{ ok: boolean; error?: string }>
+    clearApiKey(): Promise<{ ok: boolean; error?: string }>
+    /** 「不再提示」开关；设置页可重新打开 */
+    setApiHintDismissed(dismissed: boolean): Promise<void>
   }
   /**
    * 电脑操作（Windows-MCP）：状态只读；安装 uv、开关都由用户在设置页点。
@@ -3610,10 +3527,9 @@ export interface YanBridge {
     /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时必须调） */
     setVisible(visible: boolean): Promise<void>
   }
-  /** 办公文件（docx / xlsx / pptx / pdf）：按结构提取的正文预览，以及与最近一次提交的对比 */
+  /** 办公文件（docx / xlsx / pptx / pdf）：按结构提取的正文预览 */
   office: {
     preview(path: string, cwd?: string): Promise<import('./office').OfficeDocumentView>
-    compare(path: string, cwd?: string): Promise<import('./office').OfficeCompareResult>
   }
   /**
    * 电脑本地语音输入：状态与推荐、先核实再下载（plan → 用户确认 → download）、转写。

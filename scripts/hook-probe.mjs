@@ -22,12 +22,6 @@
  *     abort    before_provider_request 第 2 次调 ctx.abort()：第 2 个请求应当**不发出**
  *     compact  tool_call 里调 ctx.compact()：看它返回什么、当前 run 会怎样
  *
- * 另有两种专测**请求前预算门**（实施-05 S4，扩展是 resources/pi-extensions/context.js，
- * 完全走产品代码与产品的 `YAN_CONTEXT_POLICY` 通道）：
- *   budget       把输出预留拉到几乎等于窗口（装不下的线降到 ~5k）+
- *                工具产出 40 万字符 → 第 2 个请求应当**不发**（假 provider 只收到 1 个）
- *   budget-soft  把工作集上限降到 1000 → 第 2 个请求应当**照发**（只标 soft、不 abort，对照）
- *
  * 输出：假 provider 收到的请求清单 + 钩子时序 + 会话 JSONL + marker 文件是否出现。
  * 结论写进 `docs/plan/证据-05-S1-钩子与安全点.md`（改动后要重跑并更新那份证据）。
  *
@@ -79,27 +73,7 @@ writeFileSync(
 )
 writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ s1mock: { type: 'api_key', key: 'dummy' } }))
 
-/*
- * 预算门实验（实施-05 S4）：加载**真正随包**的 context.js，用它自己的
- * `YAN_CONTEXT_POLICY` 通道调预算。两种模式共用一份窗口（20 万，与 models.json 一致）：
- *   · budget     —— 输出预留 = 195k（safetyMarginMin 降到 1k 保证工作集仍 > 0）
- *                   → 装不下的线 = 200k − 195k = 5k：大工具结果必然超过；
- *   · budget-soft —— 工作集上限压到 1000（输出预留走默认）→ 只到 soft，不 physical。
- * `bodyChars` 会同时出现在假 provider 的请求日志里，用来校准估算。
- */
-const BUDGET_MODES = {
-  budget: { responseReservePreferred: 195000, responseReserveMin: 195000, safetyMarginMin: 1000 },
-  'budget-soft': { workingSetCap: 1000 }
-}
-
-/* 门禁实验里「模型要求执行的那条命令」（默认写 marker 文件） */
-const TOOL_COMMAND =
-  MODE === 'workmode-allow'
-    ? 'yan goal status'
-    : BUDGET_MODES[MODE]
-      ? /* 一个**大产出**的工具调用：让第 2 个请求真的装不下 */
-        `node -e "process.stdout.write('x'.repeat(400000))"`
-      : undefined
+const TOOL_COMMAND = MODE === 'workmode-allow' ? 'yan goal status' : undefined
 
 /** 门禁实验：给宿主侧快照写模式（真正的扩展读它决定工具表）。 */
 const GATE_MODES = { workmode: 'clarify', 'workmode-standard': 'standard', 'workmode-allow': 'clarify' }
@@ -137,8 +111,6 @@ const args = [
   join(HERE, 'lib/hook-probe-ext.mjs'),
   /* 门禁实验要加载真正随包的那个扩展（不是复刻它的逻辑） */
   ...(GATE_MODES[MODE] ? ['--extension', join(REPO, 'resources/pi-extensions/work-mode.js')] : []),
-  /* 预算门实验同理：加载真正随包的上下文扩展 */
-  ...(BUDGET_MODES[MODE] ? ['--extension', join(REPO, 'resources/pi-extensions/context.js')] : []),
   '--model',
   's1mock/mock',
   '--tools',
@@ -164,14 +136,6 @@ const child = spawn(process.execPath, args, {
           YAN_DATA_DIR: dataDir,
           YAN_SESSION_ID: runnerId,
           YAN_WORK_MODE_EXT_LOG: join(root, 'work-mode-ext.jsonl')
-        }
-      : {}),
-    ...(BUDGET_MODES[MODE]
-      ? {
-          YAN_DATA_DIR: dataDir,
-          YAN_SESSION_ID: runnerId,
-          YAN_CONTEXT_POLICY: JSON.stringify(BUDGET_MODES[MODE]),
-          YAN_CONTEXT_EXT_LOG: join(root, 'context-ext.jsonl')
         }
       : {})
   }

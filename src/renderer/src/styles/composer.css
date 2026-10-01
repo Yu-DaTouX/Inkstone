@@ -2025,3 +2025,12 @@
   line-height: var(--lh-body);
   user-select: none;
 }
+
+/* Context ring beside the model picker: ring + percentage, details open above it. */
+.ctx-ring { display: inline-flex; align-items: center; gap: var(--sp-1); flex: none; padding-inline: var(--sp-1); }
+/* Narrow conversation tiles: keep one row without overlap; secondary labels give way first. */
+.composer { container-type: inline-size; }
+@container (max-width: 520px) {
+  .ctx-ring-text, .mt-trigger .mt-level { display: none; }
+  .composer-tools { overflow: hidden; }
+}

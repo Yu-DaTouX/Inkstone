@@ -44,7 +44,7 @@
     click(fold)
     await sleep(250)
     ok(qa('.tgroup .trow').length === 8, '展开后八步可逐行查看')
-    click(q('[data-testid="tool-group-toggle"]'))
+    click(q('[data-testid="tool-group-collapse"]'))
     await sleep(250)
     ok(qa('.tgroup .trow').length === 1, '收起后保留失败步骤')
 

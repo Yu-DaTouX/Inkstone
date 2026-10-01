@@ -39,11 +39,12 @@ import { FileChangeDetail, ToolResultDetail, WorkspaceChangesDetail, detailKind,
 import { RunDot } from '../ui'
 import { goalCommand, summarizeTaskPlanCommand, summarizeYanCommand, taskPlanCommand } from '../../../../shared/tool-origin'
 import type { UIToolCall } from '../../../../shared/ipc'
+import { projectToolCallTree } from '../../../../shared/tool-call-tree'
 import { ChatImage } from './ChatImage'
 
 
 /** 一行工具：图标 + 动词 + 目标 + 状态 */
-function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: boolean }) {
+function ToolRowImpl({ call, autoOpen = true, depth = 0 }: { call: UIToolCall; autoOpen?: boolean; depth?: number }) {
   const t = useT()
   /** 用户手动开关；null = 跟随默认值 */
   const [manual, setManual] = useState<boolean | null>(null)
@@ -130,11 +131,13 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
         aria-expanded={open}
         title={target}
         aria-label={`${verb} ${target}`}
+        data-tool-depth={depth}
+        data-parent-tool-call={call.parentToolCallId}
         data-testid="tool-row"
       >
         {/* 命令块（设计规范 §3.5）：状态 · 工具名 · 目标 · 右侧耗时 */}
         <span className="trow-ico" aria-hidden>
-          {running ? <RunDot /> : <span className={`trow-dot ${failed ? 'err' : cancelled ? 'warn' : 'ok'}`} />}
+          {running ? <RunDot /> : <span className={`trow-dot ${failed ? 'err' : cancelled || call.incomplete ? 'warn' : 'ok'}`} />}
         </span>
         {taskPlan || goalCmd ? (
           <span
@@ -155,6 +158,8 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
           <span className="trow-badge err">{t('tool.failed')}</span>
         ) : cancelled ? (
           <span className="trow-badge warn">{t('tool.cancelled')}</span>
+        ) : call.incomplete ? (
+          <span className="trow-badge warn">{t('tool2.incomplete')}</span>
         ) : null}
         {running ? null : (
           <Icon name="chevron-right" size={12} className={`chev ${open ? 'on' : ''}`} />
@@ -164,6 +169,8 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
       <div className={`trow-expand ${open ? 'open' : ''}`} aria-hidden={!open} inert={!open}>
         <div className="trow-expand-inner">
           {open ? <div className="trow-body" data-kind={kind}>
+          {call.historySummary ? <p className="trow-src">{t('tool2.historySummary')}</p> : null}
+          {call.nestedCallsIncomplete ? <p className="trow-src">{t('tool2.nestedIncomplete')}</p> : null}
           {/*
            * 工具跑出来的图（`yan browser` 截图、渲染图表）：与用户贴的图同一套
            * 落盘 / 显示路径。放在详情之前 —— 截图就是这次调用的主要结果，
@@ -234,6 +241,10 @@ function sameCall(a: UIToolCall, b: UIToolCall): boolean {
     a === b ||
     (a.id === b.id &&
       a.name === b.name &&
+      a.parentToolCallId === b.parentToolCallId &&
+      a.historySummary === b.historySummary &&
+      a.incomplete === b.incomplete &&
+      a.nestedCallsIncomplete === b.nestedCallsIncomplete &&
       a.status === b.status &&
       a.cancelled === b.cancelled &&
       a.output === b.output &&
@@ -247,7 +258,7 @@ function sameCall(a: UIToolCall, b: UIToolCall): boolean {
   )
 }
 
-export const ToolRow = memo(ToolRowImpl, (a, b) => a.autoOpen === b.autoOpen && sameCall(a.call, b.call))
+export const ToolRow = memo(ToolRowImpl, (a, b) => a.autoOpen === b.autoOpen && a.depth === b.depth && sameCall(a.call, b.call))
 
 /**
  * 一回合的全部工具：一个细边框的命令块表（设计规范 §3.5），一行一条。
@@ -271,12 +282,12 @@ function ToolGroupImpl({ tools, activeId = null }: { tools: UIToolCall[]; active
   if (tools.length === 0) return null
   const setRevealed = (next: (n: number) => number) => setReveal((r) => ({ key: groupKey, n: next(r.key === groupKey ? r.n : 0) }))
 
-  const history = tools.filter((c) => c.status !== 'running' && c.status !== 'pending' && c.status !== 'error')
+  const history = tools.filter((c) => c.status !== 'running' && c.status !== 'pending' && c.status !== 'error' && !c.incomplete)
   const revealed = reveal.key === groupKey ? Math.min(reveal.n, history.length) : 0
   const shownHistory = new Set(history.slice(history.length - revealed))
-  const visible = tools.filter((c) => !history.includes(c) || shownHistory.has(c))
+  const visible = projectToolCallTree(tools, new Set(tools.filter((c) => !history.includes(c) || shownHistory.has(c)).map(c => c.id)))
   const foldable = history.length > 0
-  const hidden = history.length - shownHistory.size
+  const hidden = tools.length - visible.length
   const expanded = revealed > 0
 
   return (
@@ -292,15 +303,15 @@ function ToolGroupImpl({ tools, activeId = null }: { tools: UIToolCall[]; active
           <span>{expanded ? t('tool2.moreEarlier', { n: hidden, k: Math.min(hidden, REVEAL_MORE) }) : t('tool2.earlier', { n: hidden })}</span>
         </button>
       ) : null}
-      {visible.map((c) => (
-        <ToolRow key={c.id} call={c} autoOpen={c.id === activeId} />
-      ))}
       {foldable && expanded ? (
-        <button className="tgroup-fold up" onClick={() => setRevealed(() => 0)} aria-expanded data-testid="tool-group-toggle">
+        <button className="tgroup-fold up" onClick={() => setRevealed(() => 0)} aria-expanded data-testid="tool-group-collapse">
           <Icon name="chevron-right" size={12} className="chev" />
           <span>{t('tool2.foldEarlier')}</span>
         </button>
       ) : null}
+      {visible.map(({ call, depth }) => (
+        <ToolRow key={call.id} call={call} depth={depth} autoOpen={call.id === activeId} />
+      ))}
     </div>
   )
 }
@@ -321,7 +332,7 @@ export const ToolGroup = memo(ToolGroupImpl, (a, b) => {
 
 /** 动词：按工具类型给一个中文动作词 */
 function verbOf(name: string, t: (k: 'tool2.vRun' | 'tool2.vRead' | 'tool2.vEdit' | 'tool2.vWrite' | 'tool2.vSearch' | 'tool2.vCall') => string): string {
-  if (name === 'bash') return t('tool2.vRun')
+  if (name === 'bash' || name === 'powershell') return t('tool2.vRun')
   if (name === 'read' || name === 'list') return t('tool2.vRead')
   if (name === 'edit') return t('tool2.vEdit')
   if (name === 'write') return t('tool2.vWrite')

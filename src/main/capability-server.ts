@@ -175,9 +175,8 @@ const KNOWN_COMMANDS = new Set([
   'goal.ready',
   'goal.report',
   'goal.status',
-  /* 资料引用：按版本读片段与引用状态；对照做法在 research 技能。 */
+  /* 资料引用：按版本读片段；对照做法在 research 技能。 */
   'research.read',
-  'research.status',
   /* 持续关注（实施-25 P16）：只能提议与回报（启用 / 删除是用户的事）。 */
   'follow.list',
   'follow.due',
@@ -195,6 +194,8 @@ const KNOWN_COMMANDS = new Set([
   'hub.get',
   'hub.stop',
   'hub.handoff',
+  'hub.reply',
+  'hub.send',
   'browser.navigate',
   'browser.open',
   'browser.state',
@@ -219,6 +220,7 @@ const KNOWN_COMMANDS = new Set([
   'browser.disconnect-chrome',
   /* 联网搜索（实施-27 S3）：只查询与诊断，不代用户打开页面。 */
   'search.query',
+  'search.fetch',
   'search.doctor'
 ])
 

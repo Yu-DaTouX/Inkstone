@@ -60,9 +60,8 @@ import { decideRequestBoundary } from './browser/network-boundary'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
-const INITIAL_URL = 'https://www.google.com/'
-/** 接入本机 Chrome 时默认打开的页面（用户要操作的 ChatGPT 网页版） */
-const EXTERNAL_CHROME_URL = 'https://chatgpt.com'
+/** 新开浏览器 / 新标签默认空白，不替用户选站点 */
+const INITIAL_URL = 'about:blank'
 
 function safeUrl(raw: unknown): string | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
@@ -775,8 +774,9 @@ export class BrowserController {
    *
    * `YAN_CHROME_HEADLESS=1` 时用无头模式（自动化测试用，不弹窗口）。
    */
-  async openExternalChrome(rawUrl = EXTERNAL_CHROME_URL): Promise<BrowserActionResult> {
-    const url = safeUrl(rawUrl)
+  async openExternalChrome(rawUrl?: string): Promise<BrowserActionResult> {
+    /* 未指定地址时沿用当前内置页，接入前后停在同一个网页；没有就空白 */
+    const url = safeUrl(rawUrl ?? this.activeTab()?.state.url ?? INITIAL_URL)
     if (!url) return { ok: false, error: '只允许打开 http(s) 网页' }
     if (this.external) {
       this.activeMode = 'external'

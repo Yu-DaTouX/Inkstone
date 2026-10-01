@@ -57,6 +57,7 @@
     await sleep(400)
     document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(500)
+    await window.__yanOpenWorkspaceTool('文件', 'files')
 
     const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
     out.push('=== 0. fixture 工作目录 ===')
@@ -367,10 +368,11 @@
      * 这里直接把宽度设到下限，再量：行不横溢 / 超长名省略但 title 给全文 /
      * 大目录分页与「显示更多」仍然可用。
      */
-    const rpEl = () => q('[data-testid="rightpanel"]')
+    const rpEl = () => q('[data-workspace-pane="files"]:not([hidden])')
     const widthOf = (el) => (el ? Math.round(el.getBoundingClientRect().width) : 0)
     const wBefore = widthOf(rpEl())
-    await store.getState().setPanelWidth({ panelWidth: 220 })
+    const pane = rpEl(), previousWidth = pane.style.width
+    pane.style.width = '220px'
     await sleep(1000)
     const wNarrow = widthOf(rpEl())
     out.push(`  右栏宽度 ${wBefore} → ${wNarrow}`)
@@ -420,79 +422,29 @@
     }
 
     /* 恢复默认宽度，给下一节的浏览器共存用（0 = 用默认值） */
-    await store.getState().setPanelWidth({ panelWidth: 0 })
+    pane.style.width = previousWidth
     await sleep(700)
 
     /* ---------------------------------------------------------- */
     out.push('')
-    out.push('=== 8. 右栏窗口标签（浏览器 / 文件单一活动表面） ===')
-    /*
-     * 内置浏览器是原生 `WebContentsView`，永远盖在渲染层之上，位置由主进程
-     * 按 `zoomFactor` 换算。现在浏览器和文件不是上下共存的两块，而是右栏
-     * 共同标签栏里的两个窗口；探针钉住的是活动窗口、标签存在和切换后的
-     * 文件树恢复，避免把旧的“浏览器上半 / 文件树下半”契约当成回归标准。
-     */
-    const browserToggle = q('[data-testid="browser-view-toggle"]')
-    if (!browserToggle) {
-      ok(false, '找不到内置浏览器开关')
-    } else {
-      if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
-      await sleep(600)
-      const wBeforeBrowser = widthOf(rpEl())
-      browserToggle.click()
-      const opened = await until(() => !!q('[data-testid="browser-surface"]'), 12000)
-      ok(opened, '内置浏览器在右栏打开')
-      await sleep(2500)
-
-      const surface = q('[data-testid="browser-surface"]')
-      const viewport = surface?.querySelector('.browser-viewport')
-      const body = q('[data-testid="rp-body"]')
-      const browserTab = q('[data-testid="right-window-tab-browser"]')
-      const wAfterBrowser = widthOf(rpEl())
-      const sRect = surface?.getBoundingClientRect()
-      const vRect = viewport?.getBoundingClientRect()
-      out.push(
-        `  右栏 ${wBeforeBrowser} → ${wAfterBrowser}；浏览器占位 ${vRect ? Math.round(vRect.width) + '×' + Math.round(vRect.height) : '无'}；工具正文 ${body ? '仍在' : '已卸载'}`
-      )
-      ok(Math.abs(wAfterBrowser - wBeforeBrowser) <= 1, '打开浏览器不改变右栏宽度')
-      ok(!!sRect && sRect.width > 0 && sRect.width <= wAfterBrowser + 1, '浏览器面板在右栏内，未撑破')
-      ok(!!vRect && vRect.width > 0 && vRect.height > 0, '渲染层给原生视图留出了占位区')
-      ok(!!browserTab && browserTab.getAttribute('aria-selected') === 'true', '浏览器以活动窗口标签显示')
-      ok(!body, '浏览器活动时工具栏正文已卸载，不与原生网页叠放')
-
-      /* 点“工具栏”标签返回工具窗口，再从同一条标签栏的菜单打开文件窗口。 */
-      const toolsTab = q('[data-testid="right-window-tab-start"]')
-      if (!toolsTab) {
-        ok(false, '浏览器窗口没有工具栏标签')
-      } else {
-        toolsTab.click()
-        const browserClosed = await until(() => !q('[data-testid="browser-surface"]'), 8000)
-        ok(browserClosed, '切回工具栏窗口后浏览器表面关闭')
-        const launcher = q('[data-testid="right-tool-menu"]')
-        if (!launcher) {
-          ok(false, '工具栏窗口没有窗口入口按钮')
-        } else {
-          launcher.click()
-          const menu = await until(() => !!q('[data-testid="right-tool-menu-popover"]'), 3000)
-          ok(menu, '窗口入口菜单可打开')
-          const fileItem = qa('.rp-tool-menu-item').find((el) => /文件/.test(el.textContent || ''))
-          if (!fileItem) {
-            ok(false, '窗口入口菜单没有文件项')
-          } else {
-            fileItem.click()
-            const fileWindow = await until(() => !!q('.rightpanel.window-file'), 5000)
-            ok(fileWindow, '文件以独立窗口表面打开')
-            ok(!!q('[data-testid="right-window-tab-file"]'), '文件窗口有自己的标签')
-            ok(!!q('[data-testid="rp-body"] [data-tool-id="files"]'), '文件窗口保留文件树')
-            ok(!q('[data-testid="browser-surface"]'), '文件窗口不与浏览器表面叠放')
-          }
-        }
-        const toolsAgain = q('[data-testid="right-window-tab-start"]')
-        if (toolsAgain) toolsAgain.click()
-        const bodyAfter = await until(() => !!q('[data-testid="rp-body"]') && !q('.rightpanel.window-file'), 5000)
-        ok(bodyAfter, '切回工具栏窗口后文件树分区恢复')
-      }
-    }
+    out.push('=== 8. 浏览器与文件磁贴共存 ===')
+    await window.__yanOpenWorkspaceTool('浏览器', 'browser')
+    await sleep(1500)
+    const browserPane = q('[data-workspace-pane="browser"]:not([hidden])')
+    const retainedFilePane = pane
+    const filePane = rpEl()
+    const view = browserPane?.querySelector('.browser-viewport')?.getBoundingClientRect()
+    ok(!!browserPane && retainedFilePane.isConnected, '浏览器活动，文件树资源仍挂载')
+    ok(!!q('[data-pane-tab="browser"] [role="tab"][aria-selected="true"]'), '浏览器磁贴有活动标签')
+    ok(!!view && view.width>0 && view.height>0, '浏览器原生视图有占位区')
+    const a=browserPane?.getBoundingClientRect(), b=filePane?.getBoundingClientRect()
+    ok(!!a && (b ? (a.right<=b.left+1 || b.right<=a.left+1 || a.bottom<=b.top+1 || b.bottom<=a.top+1) : retainedFilePane.hidden), '浏览器和文件磁贴分区或同组隐藏，不重叠')
+    const hide = q('[data-pane-tab="browser"]')?.closest('.tile-heading')?.querySelector('[aria-label="收起面板，保留运行"]')
+    hide?.click(); await sleep(500)
+    ok(!q('[data-workspace-pane="browser"]:not([hidden])'), '浏览器可隐藏')
+    await window.__yanOpenWorkspaceTool('文件', 'files')
+    ok(!!rpEl() && rowsOf().length>1, '隐藏浏览器后文件树仍保留内容')
+    await window.yan.browser.close()
   } catch (e) {
     ok(false, '抛异常：' + (e && e.message ? e.message : String(e)))
   }

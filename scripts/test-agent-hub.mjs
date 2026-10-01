@@ -6,7 +6,15 @@ import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-hub-test-'))
-for (const name of ['resources', 'workspaces']) await build({ entryPoints: [`src/main/agent-hub/${name}.ts`], outfile: join(root, `${name}.mjs`), bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+for (const name of ['resources', 'workspaces', 'terminal-launch']) await build({ entryPoints: [`src/main/agent-hub/${name}.ts`], outfile: join(root, `${name}.mjs`), bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+const { hubTerminalArgs } = await import(pathToFileURL(join(root, 'terminal-launch.mjs')))
+for (const agent of ['codex', 'claude', 'pi', 'gemini', 'grok']) {
+  assert.deepEqual(hubTerminalArgs([], { agent, prompt: '' }), [], `${agent} must open interactively without a synthetic prompt`)
+  const text = '用户原文：只查看文件，包含 "quotes" 与 $variables'
+  const args = hubTerminalArgs(['fixture-launcher'], { agent, prompt: text })
+  assert.equal(args.at(-1), text, 'CLI receives one verbatim prompt argument, without host instructions')
+}
+assert.deepEqual(hubTerminalArgs([], { agent: 'codex', prompt: '', externalSessionId: 'native-session', model: 'chosen-model' }), ['resume', 'native-session', '--model', 'chosen-model'])
 const { ResourceCoordinator } = await import(pathToFileURL(join(root, 'resources.mjs')))
 const { hubGit, createHubWorkspace, freezeHubWorkspace, applyHubArtifact } = await import(pathToFileURL(join(root, 'workspaces.mjs')))
 const resources = new ResourceCoordinator()

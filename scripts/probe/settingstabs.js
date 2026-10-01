@@ -13,7 +13,7 @@
     appearance: ['set-ui-scale', 'set-density', 'theme-dark'],
     input: ['set-sound', 'set-sound-enabled'],
     workspace: ['set-workspace-mode', 'set-space-new-name'],
-    context: ['ctx-budget-v1', 'ctx-fold-toggle', 'kn-toggle-btn'],
+    context: ['ctx-native-settings'],
     capabilities: ['set-capabilities', 'set-packages'],
     voice: ['settings-voice', 'voice-state', 'voice-models'],
     devices: ['settings-remote', 'settings-peer'],
@@ -56,8 +56,8 @@
     out.push('\n=== 合并页和低频选项 ===')
     click(q('#settings-tab-context'))
     await sleep(250)
-    ok(!!q('[data-testid="ctx-fold-toggle"]') && !!q('[data-testid="kn-toggle-btn"]'), '上下文与记忆共用一页')
-    ok(qa('.settings-body .ui-disclosure').length > 0, '高级选项使用 Disclosure')
+    ok(!!q('[data-testid="ctx-native-settings"]'), '上下文页提供 Agent 原生压缩操作')
+    ok(!q('[data-testid="ctx-budget-v1"]') && !q('[data-testid="ctx-fold-toggle"]') && !q('[data-testid="kn-toggle-btn"]'), '退役宿主预算、折叠与知识开关不再出现')
     click(q('#settings-tab-capabilities'))
     await sleep(250)
     ok(!!q('[data-testid="set-capabilities"]') && !!q('[data-testid="set-packages"]'), '能力与插件共用一页')

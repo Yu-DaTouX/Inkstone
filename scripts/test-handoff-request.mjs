@@ -15,7 +15,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
-export async function runHandoffRequestTests(ok, shared, service, goalResume, handoffs) {
+export async function runHandoffRequestTests(ok, shared, service) {
   console.log('\n--- 实施-05 S5b-2 交接包生成（请求 / 结果 / 解析） ---')
 
   /* --------------------------------------------------- 文件名清洗（两侧交叉校验） */
@@ -32,82 +32,6 @@ export async function runHandoffRequestTests(ok, shared, service, goalResume, ha
       .replace(/[^A-Za-z0-9._-]/g, '_')
       .slice(0, 120)
     ok(mine === theirs, `文件名清洗两侧一致（${JSON.stringify(key).slice(0, 20)} → ${JSON.stringify(mine)}）`)
-  }
-  ok(typeof goalResume?.safeKey === 'function', '薄层 `safeKey()` 可导入（否则交叉校验是假的）')
-  if (typeof goalResume?.safeKey === 'function') {
-    /* 薄层的 safeKey 读的是它自己的环境变量，所以对拍时把那个变量设成同一个 runnerId */
-    const before = process.env.YAN_SESSION_ID
-    process.env.YAN_SESSION_ID = 'r-1_2.3'
-    try {
-      ok(
-        shared.handoffFileKey('r-1_2.3') === goalResume.safeKey(),
-        '真·交叉校验：宿主与 goal-resume.js 的清洗实现一致'
-      )
-      process.env.YAN_SESSION_ID = 'a b/c\\d'
-      ok(shared.handoffFileKey('a b/c\\d') === goalResume.safeKey(), '真·交叉校验：含分隔符 / 空格的键也一致')
-    } finally {
-      if (before === undefined) delete process.env.YAN_SESSION_ID
-      else process.env.YAN_SESSION_ID = before
-    }
-  }
-
-  /* --------------------------------------------------- 重载后的目标续接唤醒 */
-
-  {
-    const rootResume = await mkdtemp(join(tmpdir(), 'yan-goal-resume-start-'))
-    const oldDataDir = process.env.YAN_DATA_DIR
-    const oldSessionId = process.env.YAN_SESSION_ID
-    const originalSetTimeout = globalThis.setTimeout
-    const timers = []
-    try {
-      process.env.YAN_DATA_DIR = rootResume
-      process.env.YAN_SESSION_ID = 'resume-runner'
-      await mkdir(join(rootResume, 'goal-resume'), { recursive: true })
-      await writeFile(
-        join(rootResume, 'goal-resume', 'resume-runner.json'),
-        JSON.stringify({ operationId: 'acq-continue-1', summary: '继续原目标', kind: 'continue' }),
-        'utf8'
-      )
-      globalThis.setTimeout = (callback) => {
-        const timer = { callback, unref() {} }
-        timers.push(timer)
-        return timer
-      }
-      const handlers = {}
-      const sent = []
-      const freshEntries = []
-      const staleCalls = []
-      const pi = {
-        on(name, handler) { handlers[name] = handler },
-        appendEntry() { staleCalls.push('appendEntry') },
-        async sendMessage() { staleCalls.push('sendMessage'); throw new Error('stale context should not be used') }
-      }
-      const freshContext = {
-        appendEntry(name, payload) { freshEntries.push({ name, payload }) },
-        async sendMessage(message, options) { sent.push({ message, options }) }
-      }
-      goalResume.default(pi)
-      ok(typeof handlers.session_start === 'function', 'goal resume 注册 session_start（runner 重载入口）')
-      handlers.session_start({ reason: 'reload' }, freshContext)
-      ok(timers.length === 1, 'session_start 延迟执行一次安全空闲检查')
-      timers[0].callback()
-      await Promise.resolve()
-      await Promise.resolve()
-      ok(
-        sent.length === 1 && sent[0].message.customType === 'yan-goal-continue' && sent[0].options.triggerTurn === true &&
-          freshEntries.length === 1 && freshEntries[0].name === 'yan-goal-resume' && staleCalls.length === 0,
-        '重载后使用 session_start 新 ctx 消费快照并触发原目标续接'
-      )
-      const consumed = JSON.parse(await readFile(join(rootResume, 'goal-resume', 'resume-runner.consumed.json'), 'utf8'))
-      ok(consumed.operationId === 'acq-continue-1', '重载唤醒先写 continueId 消费证据')
-    } finally {
-      globalThis.setTimeout = originalSetTimeout
-      if (oldDataDir === undefined) delete process.env.YAN_DATA_DIR
-      else process.env.YAN_DATA_DIR = oldDataDir
-      if (oldSessionId === undefined) delete process.env.YAN_SESSION_ID
-      else process.env.YAN_SESSION_ID = oldSessionId
-      await rm(rootResume, { recursive: true, force: true })
-    }
   }
 
   ok(shared.handoffFileKey('中文会话') === '____', '非 ASCII 一律替换（不允许路径分隔符逃逸）')
@@ -200,41 +124,6 @@ export async function runHandoffRequestTests(ok, shared, service, goalResume, ha
   ok(shared.sanitizeHandoffResult({ ...result, handoffId: '' }) === null, '缺交接 id 的结果 → 作废')
   const empty = shared.sanitizeHandoffResult(service.buildHandoffResult({ handoffId: 'h-1', operationId: 'op-1' }))
   ok(!!empty && empty.text === '' && empty.error === null, '「跑了但什么都没回」也是合法结果（宿主据此区分「没跑」）')
-
-  /* --------------------------------------------------- 下一跳怎么试（截断重试） */
-  /*
-   * 现场：交接包写到 7544 字符时被 4000 token 上限切断（`stopReason=length`），
-   * 而修复重试仍用同一个上限 → 必然复现。这里钉住“按失败原因选下一跳”的规则。
-   */
-  ok(typeof handoffs?.planRepairAttempt === 'function', '薄层的 `planRepairAttempt()` 可导入（否则这几条是假的）')
-  if (typeof handoffs?.planRepairAttempt === 'function') {
-    const plan = handoffs.planRepairAttempt
-    const base = { maxTokens: 4000, escalatedMaxTokens: 12000, retryPrompt: '格式不合格', retryPromptTruncated: '被长度切断' }
-
-    const cut = plan({ ...base, stopReason: 'length' })
-    ok(cut.truncated === true, 'stopReason=length → 标记截断')
-    ok(cut.maxTokens === 12000, '截断时抬预算到第二跳值（这是修好的关键）')
-    ok(cut.suffix.includes('切断'), '截断时用截断专用提示，而不是“格式不合格”那句')
-
-    const fmt = plan({ ...base, stopReason: 'stop' })
-    ok(fmt.truncated === false, '正常停止不算截断')
-    ok(fmt.maxTokens === 4000, '格式问题时**不动**预算（抬了也没用）')
-    ok(fmt.suffix.includes('格式不合格'), '格式问题时用原来的修复提示')
-
-    /* 没给第二跳预算（旧宿主写的请求）→ 不能凭空“抬起” */
-    const noEsc = plan({ maxTokens: 4000, retryPrompt: '格式不合格', stopReason: 'length' })
-    ok(noEsc.truncated === true && noEsc.maxTokens === 4000, '没给第二跳预算时保持原预算（不编数字）')
-    ok(noEsc.suffix.includes('格式不合格'), '没有截断提示时退回通用修复提示（不丢提示）')
-
-    /* 第二跳不比第一跳大 → 抬起来是假的 */
-    const fake = plan({ maxTokens: 4000, escalatedMaxTokens: 4000, retryPrompt: 'a', retryPromptTruncated: 'b', stopReason: 'length' })
-    ok(fake.maxTokens === 4000, '第二跳不比第一跳大 → 不抬（避免假抬起）')
-
-    /* 截断时若宿主**没**给专用提示，也不能把提示弄丢 */
-    const cutNoPrompt = plan({ maxTokens: 4000, escalatedMaxTokens: 12000, retryPrompt: '通用提示', stopReason: 'length' })
-    ok(cutNoPrompt.suffix.includes('通用提示'), '截断但没专用提示 → 退回通用提示（而不是什么都不说）')
-    ok(cutNoPrompt.suffix.startsWith('\n'), '附加提示以换行开头（不能贴着原提示词）')
-  }
 
   /* --------------------------------------------------- 模型输出解析 */
 

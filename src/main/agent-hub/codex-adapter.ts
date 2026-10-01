@@ -55,8 +55,15 @@ export class CodexAdapter {
     const result = await this.call('model/list', { includeHidden: true })
     return result.data
   }
-  async turn(threadId: string, text: string, effort?: 'low' | 'medium' | 'high'): Promise<string> {
-    const result = await this.call('turn/start', { threadId, input: [{ type: 'text', text }], ...(effort ? { effort } : {}) })
+  /** Images go as local-image input; if this Codex build rejects that, the turn is retried with text only (paths are already in the text). */
+  async turn(threadId: string, text: string, effort?: 'low' | 'medium' | 'high', images: string[] = []): Promise<string> {
+    const start = (input: unknown[]) => this.call('turn/start', { threadId, input, ...(effort ? { effort } : {}) })
+    const textInput = { type: 'text', text }
+    let result
+    if (images.length) {
+      try { result = await start([textInput, ...images.map((path) => ({ type: 'localImage', path }))]) }
+      catch (error) { if (/超时|已关闭|已退出/.test(String((error as Error).message))) throw error; result = await start([textInput]) }
+    } else result = await start([textInput])
     return String(result.turn.id)
   }
   async interrupt(threadId: string, turnId: string): Promise<void> {

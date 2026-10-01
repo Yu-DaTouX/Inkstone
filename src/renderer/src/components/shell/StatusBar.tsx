@@ -8,6 +8,7 @@ import { useStore } from '../../state/store'
 import { selectSubagentRuns } from '../../state/subagent-view'
 import { useRepoState } from '../review/useGitReview'
 import { UsageBar } from '../chat/UsageBar'
+import { QuotaSection } from '../toolbar/QuotaSection'
 import type { ReactNode } from 'react'
 import type { RemoteAccessStatus } from '../../../../shared/remote-protocol'
 
@@ -105,7 +106,8 @@ export function StatusBar() {
   const titleOf = (key: string): string => ({ mode: t('sb.dMode'), 'sb-branch': t('sb.dBranch'), 'sb-pi': t('sb.dPi'), 'sb-phone': t('sb.dPhone'), 'sb-agents': t('sb.dAgents') } as Record<string, string>)[key] ?? t('sb.dUsage')
   const toggleDetail = (target: Element): void => {
     const item = target.closest('.sb-mode, .sb-seg, .usagebar')
-    if (!item) return
+    /* The quota segment opens its own details popover. */
+    if (!item || item.classList.contains('sb-quota')) return
     const key = item.getAttribute('data-testid') ?? (item.classList.contains('sb-mode') ? 'mode' : 'usagebar')
     const r = item.getBoundingClientRect()
     const vw = window.innerWidth
@@ -118,9 +120,9 @@ export function StatusBar() {
       {detail ? createPortal(<section className="ui-detail-popover sb-details" role="dialog" aria-label={titleOf(detail)} data-testid="status-details" style={anchor}>
         <div className="sb-details-head"><strong>{titleOf(detail)}</strong><Button size="sm" onClick={() => setDetail(null)}>{t('q.close')}</Button></div>
         {detail === 'mode' ? <p className="sb-details-note">{modeTip}</p> : null}
-        {detail === 'sb-branch' ? <><KV rows={[[t('sb.kBranch'), branch], [t('sb.kChanged'), `${changed} ${t('sb.changedFiles')}`], [t('sb.kPath'), <span className="sb-details-path" title={project}>{project}</span>]]} /><div className="sb-details-actions"><Button size="sm" onClick={() => { useStore.getState().openReview(); setDetail(null) }}>{t('sb.openReview')}</Button></div></> : null}
+        {detail === 'sb-branch' ? <><KV rows={[[t('sb.kBranch'), branch], [t('sb.kChanged'), `${changed} ${t('sb.changedFiles')}`], [t('sb.kPath'), <span className="sb-details-path" title={project}>{project}</span>]]} /></> : null}
         {detail === 'sb-pi' ? <><KV rows={[[t('sb.kState'), connText]]} /><p className="sb-details-note">{t('sb.engineDetail')}</p><div className="sb-details-actions"><Button size="sm" onClick={() => { useStore.getState().openSettings('status'); setDetail(null) }}>{t('sb.diagnostics')}</Button></div></> : null}
-        {detail === 'sb-agents' ? <><KV rows={liveAgents.map((r): [string, ReactNode] => [r.task.slice(0, 40), r.latestActivity ?? '—'])} /><div className="sb-details-actions"><Button size="sm" onClick={() => { void useStore.getState().setRightPanelOpen(true); setDetail(null) }}>{t('sb.openTasks')}</Button></div></> : null}
+        {detail === 'sb-agents' ? <><KV rows={liveAgents.map((r): [string, ReactNode] => [r.task.slice(0, 40), r.latestActivity ?? '—'])} /><div className="sb-details-actions"><Button size="sm" onClick={() => { window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'tasks' })); setDetail(null) }}>{t('sb.openTasks')}</Button></div></> : null}
         {detail === 'sb-phone' ? <><KV rows={[[t('sb.kDevices'), String(devices ?? 0)], ...(remote?.devices.map((d): [string, ReactNode] => ['', d.name]) ?? [])]} /><div className="sb-details-actions"><Button size="sm" onClick={() => { useStore.getState().openSettings('remote'); setDetail(null) }}>{t('sb.deviceSettings')}</Button></div></> : null}
         {detail === 'usagebar' || detail === 'sb-cost' ? <><KV rows={[
           [t('tok.speed'), speed ? `${speed.toFixed(0)} ${t('tok.perSec')}` : '—'],
@@ -168,6 +170,8 @@ export function StatusBar() {
       ) : null}
 
       <span className="sb-grow" />
+
+      <QuotaSection variant="status" />
 
       <UsageBar />
 

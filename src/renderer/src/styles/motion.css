@@ -1412,3 +1412,7 @@ html[data-theme='light'] .rp-todo-now {
     opacity: 0.35;
   }
 }
+/* Shared slider feedback and Agent status indicators. */
+@keyframes ui-step-wave { from { background-position: -48px 0; } to { background-position: calc(100% + 48px) 0; } }
+@keyframes ui-step-bubble-in { from { opacity: 0; transform: translate(-50%, 4px); } }
+@keyframes ui-status-pulse { 50% { opacity: 0.35; } }

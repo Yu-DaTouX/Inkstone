@@ -5,6 +5,7 @@ import { useStore } from '../../state/store'
 import { ComposerBorder } from './ComposerBorder'
 import { QuestionPanel } from './QuestionPanel'
 import { ModelThinkingPicker } from '../Pickers'
+import { ContextRing } from '../toolbar/NativeContextSection'
 import { LearningActions } from './LearningActions'
 import { VoiceInputButton } from './VoiceInputButton'
 import { findAtQuery, replaceAtQuery } from './at-query'
@@ -1216,6 +1217,7 @@ export function Composer() {
            */}
           {/* 语音输入：本地转写后插入光标处，由用户编辑再发送 */}
           <VoiceInputButton onText={insertAtCursor} disabled={disabled} />
+          <ContextRing />
           <ModelThinkingPicker />
           <button
             className={`send ${busy ? 'abort' : ''}`}

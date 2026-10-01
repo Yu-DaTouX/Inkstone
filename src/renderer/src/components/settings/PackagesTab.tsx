@@ -134,10 +134,10 @@ export function PackagesTab(): React.JSX.Element {
     })()
   }, [])
 
-  const run = async (kind: 'install' | 'remove' | 'update', src: string): Promise<void> => {
-    setBusy(`${kind}:${src}`)
+  const run = async (kind: 'install' | 'remove' | 'update', src: string, targetLocal: boolean): Promise<void> => {
+    setBusy(`${kind}:${targetLocal ? 'project' : 'user'}:${src}`)
     setShowRaw(false)
-    const res = await window.yan.packages.action({ kind, source: src, local, cwd })
+    const res = await window.yan.packages.action({ kind, source: src, local: targetLocal, cwd })
     setResult(res)
     setBusy('')
     /* 主进程会把执行后的列表带回来（省一次往返，界面立刻是对的） */
@@ -168,7 +168,7 @@ export function PackagesTab(): React.JSX.Element {
             />
             <span>{t('pkg.local')}</span>
           </label>
-          <Button size="sm" type="button" data-testid="pkg-install-btn" disabled={!!busy || !source.trim()} onClick={() => void run('install', source.trim())}>
+          <Button size="sm" type="button" data-testid="pkg-install-btn" disabled={!!busy || !source.trim()} onClick={() => void run('install', source.trim(), local)}>
             {busy.startsWith('install') ? t('pkg.working') : t('pkg.installBtn')}
           </Button>
           {/* 社区目录是一个网站（没有结构化接口），这里只负责打开它 */}
@@ -231,16 +231,16 @@ export function PackagesTab(): React.JSX.Element {
                     type="button"
                     className="env-mini"
                     data-testid="pkg-detail"
-                    onClick={() => setOpenDetail(openDetail === e.source ? '' : e.source)}
+                    onClick={() => setOpenDetail(openDetail === `${e.scope}:${e.source}` ? '' : `${e.scope}:${e.source}`)}
                   >
-                    {openDetail === e.source ? t('pkg.hideDetail') : t('pkg.detail')}
+                    {openDetail === `${e.scope}:${e.source}` ? t('pkg.hideDetail') : t('pkg.detail')}
                   </button>
                   <button
                     type="button"
                     className="env-mini"
                     data-testid="pkg-update"
                     disabled={!!busy}
-                    onClick={() => void run('update', e.source)}
+                    onClick={() => void run('update', e.source, e.scope === 'project')}
                   >
                     {t('pkg.update')}
                   </button>
@@ -249,13 +249,13 @@ export function PackagesTab(): React.JSX.Element {
                     className="env-mini"
                     data-testid="pkg-remove"
                     disabled={!!busy}
-                    onClick={() => void run('remove', e.source)}
+                    onClick={() => void run('remove', e.source, e.scope === 'project')}
                   >
                     {t('pkg.remove')}
                   </button>
                 </div>
 
-                {openDetail === e.source ? (
+                {openDetail === `${e.scope}:${e.source}` ? (
                   <div className="pkg-detail" data-testid="pkg-detail-body">
                     <div className="pkg-detail-line">{e.description ?? t('pkg.noDesc')}</div>
                     <div className="pkg-detail-line pkg-dim">{t('pkg.sourceLine', { src: e.source })}</div>

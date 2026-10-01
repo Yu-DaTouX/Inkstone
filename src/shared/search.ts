@@ -15,7 +15,7 @@
  */
 
 /** 首批来源：三个都是 HTTP 直连（不依赖浏览器扩展），见 S0 实测 */
-export type SearchSourceId = 'wikipedia' | 'arxiv' | 'hackernews'
+export type SearchSourceId = 'wikipedia' | 'arxiv' | 'hackernews' | 'brave' | 'bing' | 'ddg' | 'so360'
 
 export interface SearchSource {
   id: SearchSourceId
@@ -28,16 +28,24 @@ export interface SearchSource {
   needsBrowser: boolean
   /** 结果的 URL 是完整链接，还是要按 id 拼出来 */
   urlKind: 'direct' | 'hackernews'
+  /** 需要用户自己的 API key：没配置时不进默认来源，也不算后端故障 */
+  needsKey?: boolean
+  /** 不经 OpenCLI，由宿主直接取结果（HTTP API 或隐藏窗口）；不进默认来源，由 `yan search` 按配置挑选 */
+  direct?: boolean
 }
 
 export const SEARCH_SOURCES: readonly SearchSource[] = [
   { id: 'wikipedia', app: 'wikipedia', subcommand: 'search', label: '维基百科', needsBrowser: false, urlKind: 'direct' },
   { id: 'arxiv', app: 'arxiv', subcommand: 'search', label: 'arXiv', needsBrowser: false, urlKind: 'direct' },
-  { id: 'hackernews', app: 'hackernews', subcommand: 'search', label: 'Hacker News', needsBrowser: false, urlKind: 'hackernews' }
+  { id: 'hackernews', app: 'hackernews', subcommand: 'search', label: 'Hacker News', needsBrowser: false, urlKind: 'hackernews' },
+  { id: 'brave', app: '', subcommand: '', label: 'Brave 搜索', needsBrowser: false, urlKind: 'direct', needsKey: true, direct: true },
+  { id: 'bing', app: '', subcommand: '', label: 'Bing 网页', needsBrowser: false, urlKind: 'direct', direct: true },
+  { id: 'ddg', app: '', subcommand: '', label: 'DuckDuckGo', needsBrowser: false, urlKind: 'direct', direct: true },
+  { id: 'so360', app: '', subcommand: '', label: '360 搜索', needsBrowser: false, urlKind: 'direct', direct: true }
 ]
 
 /** 默认只查这三个；要加来源先在这里登记，再在白名单校验里放行 */
-export const DEFAULT_SEARCH_SOURCES: readonly SearchSourceId[] = SEARCH_SOURCES.map((s) => s.id)
+export const DEFAULT_SEARCH_SOURCES: readonly SearchSourceId[] = SEARCH_SOURCES.filter((s) => !s.direct).map((s) => s.id)
 
 export const SEARCH_LIMIT_PER_SOURCE_DEFAULT = 6
 export const SEARCH_LIMIT_PER_SOURCE_MAX = 20
@@ -138,4 +146,13 @@ export interface SearchBackendStatus {
    * 「扩展没连 → 该来源未就绪」的判据，否则那个字段会名不副实。
    */
   sources: { id: SearchSourceId; label: string; needsBrowser: boolean; ready: boolean }[]
+}
+
+/** 搜索 API 的配置状态（设置页与提醒用；密钥本身不出主进程） */
+export interface SearchApiConfigView {
+  configured: boolean
+  /** 密钥来自哪里：本机配置文件 / 环境变量 BRAVE_API_KEY */
+  source?: 'file' | 'env'
+  /** 用户点过「不再提示」 */
+  hintDismissed: boolean
 }

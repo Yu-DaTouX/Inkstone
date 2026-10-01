@@ -30,6 +30,12 @@ Choose a project or start a conversation. Describe what you want to accomplish a
 
 Reference files with `@`, explore commands with `/`, or enter a Shell command with `!`. Expand tool details to inspect the work, or open files, change review, the browser, and the terminal from the workspace panels.
 
+## Codemode tool calls
+
+Open **Settings → Capabilities & plugins → Codemode** to turn it on or off. It is enabled by default, and changes apply from the next conversation turn. The Agent can batch tool calls and process results in scripts while retaining direct tool calls. Plan mode and read-only subagents keep their execution restrictions.
+
+Codemode controls tool execution independently of the title bar's coding/daily mode. It uses native pi capabilities and is unavailable with an older pi or an explicitly disabled native Codemode extension.
+
 ## Daily mode
 
 The switch at the left of the title bar toggles between **coding mode** and **daily mode**. Daily mode organizes the app around a few long-running topics:

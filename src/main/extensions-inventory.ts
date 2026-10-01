@@ -1,24 +1,14 @@
 /**
  * 「扩展来源」诊断：把**谁在给这个 pi 实例加东西**说清楚。
  *
- * ══════════════════════════════════════════════════════════════════
- * 为什么需要它（实施-02 S1 的出口）
- * ══════════════════════════════════════════════════════════════════
- * 任务工具从「用户扩展提供」迁到「砚内置」的过渡期里，两种来源曾经同时存在：
- * 用户 `~/.pi/agent/extensions/` 里的旧扩展会被 pi 自动发现，而砚自己的薄层
- * 是 `--extension` 显式传入。01-S5 收口后，砚默认启动带 `--no-extensions`，
- * 用户目录仍只读列出但不再加载；来源清单继续保留，方便解释历史会话与独立
- * pi 终端之间的差异。
- *
- * 所以这个模块只做一件事：**如实列举来源**，不做任何修复动作。
+ * 如实列举用户目录与显式传入的宿主适配；目录清单不代表实际加载成功。
+ * 原生 pi 的发现与禁用设置由 pi 管理，旧版 runner 保留隔离发现的策略。
  *
  * ── 边界（不能长成「插件管理器」）──
  * · 只 `readdir`，**不解析**扩展源码、不 import 它们、不改动它们；
  * · 不显示「已启用 / 已同步」这类没有依据的状态；
  * · 用户扩展**不删、不禁用**（AGENTS.md：不删用户已装的扩展）。
  *
- * 用户扩展的存在不等于砚默认启用：默认 runner 的启动参数由 01-S5 固定为
- * `--no-extensions` / `--no-skills`，独立 pi 终端仍由用户自己决定。
  */
 import { readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -31,6 +21,8 @@ export interface ExtensionExpectation {
   piDir: string
   /** 砚**显式**传给 pi 的薄层扩展路径（`--extension`）。 */
   yanThinPaths?: string[]
+  /** 与当前 runner 的启动参数一致，原生发现由 pi 设置与项目信任控制。 */
+  nativeDiscovery: boolean
 }
 
 /**
@@ -55,8 +47,7 @@ export function readUserExtensions(piDir: string): string[] {
  * 生成诊断行（每行是一条可以直接进「日志」分区的文本）。
  *
  * 文案规则：说清**事实**与**后果**，不承诺砚做不到的事。
- * 尤其不能写「任务由内置任务计划维护」—— 那要等 S3 真的接管写入之后，
- * 现在宿主还只读不写（先写了就是撒谎，用户按这句话排障会被带偏）。
+ * 清单与加载策略分别描述，不把目录存在当作加载成功。
  */
 export function extensionDiagnostics(opts: ExtensionExpectation): string[] {
   const user = readUserExtensions(opts.piDir)
@@ -66,7 +57,9 @@ export function extensionDiagnostics(opts: ExtensionExpectation): string[] {
   if (user.length) {
     lines.push(
       `[来源] 用户扩展 ${user.length} 项：${user.join('、')}` +
-        `（砚默认启动使用 --no-extensions，不加载；不删除、不改写）`
+        (opts.nativeDiscovery
+          ? '（由 pi 原生发现；是否加载由 pi 设置与项目信任决定，目录清单不代表已加载；不删除、不改写）'
+          : '（旧版 runner 使用 --no-extensions，不自动加载；不删除、不改写）')
     )
   } else {
     lines.push('[来源] 未检测到用户扩展（pi 的扩展目录是空的）')
@@ -74,21 +67,12 @@ export function extensionDiagnostics(opts: ExtensionExpectation): string[] {
 
   lines.push(
     `[来源] 砚内置薄层 ${thin.length} 项：${thin.join('、') || '（无）'}` +
-      `（显式传入；只承载宿主没有 CLI / RPC 等价物的生命周期钩子，不注册模型工具；上下文维护的两个命令只由宿主触发；交互提问走宿主 yan question ask，归档回读走 yan context recall）`
+      `（显式传入；承载宿主生命周期与授权适配，不注册模型工具；上下文由 Agent 原生管理，交互提问走宿主 yan question ask，归档回读走 yan context recall）`
   )
 
   if (user.length) {
-    /*
-     * 只在真有用户扩展时说这段：它解释的是「升级目录里仍有旧文件，
-     * 但砚默认 runner 不加载」的后果。
-     *
-     * 默认 runner 已经关掉用户扩展自动发现，所以这里不再暗示「两套路径
-     * 同时写入」。需要说明的是：历史会话里的旧条目仍可读，宿主新任务计划
-     * 写自己的日志，升级也不会反向改写旧数据。
-     */
     lines.push(
-      '[来源] 检测到用户扩展：砚默认启动不会加载它们（独立 pi 终端仍可自行加载）；' +
-        '历史会话里的 `left-panel-tasks` 只读，砚内置任务计划写宿主日志（数据目录下的 task-plans），' +
+      '[来源] 历史会话里的 `left-panel-tasks` 只读，砚内置任务计划写宿主日志（数据目录下的 task-plans），' +
         '不会覆盖或回写旧条目'
     )
   }

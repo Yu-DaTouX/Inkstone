@@ -1,4 +1,4 @@
-import { AGENT_CONTEXT_ERROR, isAgentContextExtension } from '../shared/agent-context'
+import { AGENT_CONTEXT_ERROR, isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
 /**
  * 主进程入口：窗口 + IPC + AgentController 的生命周期。
  *
@@ -45,7 +45,6 @@ import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
 import { registerFollowIpc } from './ipc/follow-ipc'
-import { registerArtifactDocIpc } from './ipc/artifact-doc-ipc'
 import { registerLibraryIpc } from './ipc/library-ipc'
 import { registerSourcesIpc } from './ipc/sources-ipc'
 import { registerKnowledgeIpc } from './ipc/knowledge-ipc'
@@ -103,11 +102,9 @@ import { AgentProfileStore } from './agent-profile-store'
 import { SpaceStore } from './space-store'
 import { LibraryService } from './library-service'
 import { ContextAssembler } from './context-assembler'
-import { ArtifactDocStore } from './artifact-doc-store'
 import { FollowStore } from './follow-store'
 import { FOLLOW_APP_ONLY_NOTE, runSummaryText, watchBriefText } from '../shared/follow'
 import {
-  artifactSourceStatuses,
   excerptReadable,
   excerptText,
   sourceStatus,
@@ -336,13 +333,20 @@ const agentHub = new AgentHubService({
   resourcesDir: existsSync(join(process.resourcesPath ?? '', 'yan-cli')) ? process.resourcesPath : join(app.getAppPath(), 'resources'),
   browser: () => browser,
   projects: async () => (await getSettings()).projects.filter((p) => !p.archived),
-  piBin: async () => (await getSettings()).piBin
+  piBin: async () => (await getSettings()).piBin,
+  sessionProject: (id) => runners?.agentForSession(id)?.capabilityProjectId ?? null,
+  notifyEnabled: async () => (await getSettings()).subagentNotify !== false,
+  sendToSession: async (id, text) => {
+    const target = runners?.agentForSession(id)
+    return target ? target.send(text, undefined, 'followUp') : { ok: false, error: '主会话已关闭' }
+  }
 })
 /**
  * 子代理：主进程级的生命周期服务。界面与模型（`yan subagent …`）共用同一个控制器，
  * RunnerRegistry 切会话 / 重启 pi 时重建 AgentController，但这个服务不跟着重建。
  */
 const subagentService = new SubagentService({
+  codemodeExtension: codemodeExtensionPath,
   onChange: (run) => push({ ch: 'subagent', payload: run }),
   onRemove: (id) => push({ ch: 'subagent-remove', payload: id }),
   resolveAgentProfile: (id) => resolveAgentProfile(id),
@@ -426,6 +430,10 @@ function workModeExtensionPath(): string | undefined {
   return yanThinResourcePath('work-mode.js')
 }
 
+function codemodeExtensionPath(): string | undefined {
+  return yanThinResourcePath('codemode-policy.js')
+}
+
 /**
  * 活动档案的角色与工具策略扩展的路径（实施-25 P01）。
  *
@@ -434,25 +442,6 @@ function workModeExtensionPath(): string | undefined {
  */
 function agentProfileExtensionPath(): string | undefined {
   return yanThinResourcePath('profile.js')
-}
-
-/**
- * 就绪转移之后的内部续行扩展（实施-05 S3b）。
- *
- * 只有扩展 API 能发 `custom` 角色消息并触发回合，所以这段必须留在薄层。
- */
-function goalResumeExtensionPath(): string | undefined {
-  return yanThinResourcePath('goal-resume.js')
-}
-
-/**
- * 交接包生成扩展的路径（实施-05 S5b-2）。
- *
- * 只有扩展 API 能调 `ctx.modelRegistry.complete`（RPC 面没有），所以这段必须留在薄层；
- * 但提示词与校验都在宿主 —— 它只负责「把这一次调用发出去并把原文写回来」。
- */
-function handoffsExtensionPath(): string | undefined {
-  return yanThinResourcePath('handoffs.js')
 }
 
 /**
@@ -496,30 +485,6 @@ function capabilityGuideExtensionPath(): string | undefined {
 }
 
 /**
- * 内置「上下文状态化压缩」扩展的路径（N21-4 / S2–S6）。
- *
- * 它做 Tool Sweep（旧工具输出 → 墓碑 + `ctx://` 引用）、Task State 前置注入、
- * Recall 工具与结构化压缩的接管闸门。默认接管 `tool-sweep` + `recall` + `compaction`
- * （用户 2026-09-17 拍板：清理默认开，但必须保留可召回引用）；`episode-fold`
- * 仍要等状态生成器。`kinds` 的唯一真源是主进程的 `ContextPolicy`，扩展从环境变量读到同一份。
- * 与 language.js 同一套查找顺序（打包后 / 开发期）。
- */
-function contextExtensionPath(): string | undefined {
-  return yanThinResourcePath('context.js')
-}
-
-/**
- * 内置「项目知识注入」扩展的路径（实施-03 S3）。
- *
- * 它与其它薄层成员一样只做「宿主无法用 CLI / RPC 表达」的那一步：
- * 在 `before_provider_request` 把宿主准备好的材料块放进上下文。
- * 检索与预算全在宿主（见 `main/project-knowledge.ts`）。
- */
-function projectKnowledgeExtensionPath(): string | undefined {
-  return yanThinResourcePath('project-knowledge.js')
-}
-
-/**
  * 单轮重复动作兜底的薄层路径（2026-09-22）。
  *
  * 只有它能在运行时拦下一次工具调用（`tool_call` 钩子），RPC 面没有这个事件。
@@ -532,16 +497,6 @@ function repeatGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('repeat-guard.js')
 }
 
-/** Context budget V1 observes the final post-extension payload for host reconciliation. */
-function contextBudgetObserverExtensionPath(): string | undefined {
-  return yanThinResourcePath('context-budget-observer.js')
-}
-
-/** Budget V1's host-authorized maintenance command and committed context projection. */
-function contextBudgetMaintenanceExtensionPath(): string | undefined {
-  return yanThinResourcePath('context-budget-maintenance.js')
-}
-
 /**
  * 砚随包薄层扩展的**实际加载路径**（传给 pi 的 `--extension`）。
  *
@@ -552,21 +507,16 @@ function contextBudgetMaintenanceExtensionPath(): string | undefined {
  */
 function yanThinExtensionPaths(): string[] {
   return [
+    codemodeExtensionPath(),
     questionExtensionPath(),
     workModeExtensionPath(),
     agentProfileExtensionPath(),
-    goalResumeExtensionPath(),
-    handoffsExtensionPath(),
     responseDetailExtensionPath(),
     preambleExtensionPath(),
     languageExtensionPath(),
     capabilityGuideExtensionPath(),
-    contextExtensionPath(),
-    projectKnowledgeExtensionPath(),
     repeatGuardExtensionPath(),
     dangerGuardExtensionPath(),
-    contextBudgetMaintenanceExtensionPath(),
-    contextBudgetObserverExtensionPath()
   ].filter((p): p is string => !!p && isAgentContextExtension(p))
 }
 
@@ -1030,32 +980,12 @@ const library = new LibraryService()
 const contextAssembler = new ContextAssembler({ library })
 
 /**
- * 可编辑成果（实施-25 P06a）的存储。
- *
- * 与 `artifacts.ts`（消息里的文件产物，按会话隔离）不同：这里是用户与 agent
- * 都要改的文档对象。版本推进规则全在 `shared/artifact-doc.ts` 的纯函数里，
- * 这一层只做 I/O。
- */
-const artifactDocs = new ArtifactDocStore()
-
-/**
  * 持续关注（实施-25 P16）。
  *
  * 这个 store 里**没有调度器**：宿主不主动调模型（会变成后台花钱），
  * 它只回答「谁到点了」并把模型回报的结果记下来。
  */
 const follows = new FollowStore()
-
-/**
- * 成果引用的资料现在怎么样了（P13 T13-4）：只回报状态，**不改引用**。
- */
-async function runSourceStatus(artifactId: string) {
-  await library.store.load()
-  await artifactDocs.load()
-  const doc = artifactDocs.find(artifactId)
-  if (!doc) return { ok: false as const, error: '找不到这份成果', statuses: [] }
-  return { ok: true as const, statuses: artifactSourceStatuses(library.store.document(), doc.sources) }
-}
 
 interface ResearchReadInput {
   refs?: { sourceId: string; version: number; locator?: { start: number; end: number } }[]
@@ -1118,7 +1048,7 @@ async function runResearchRead(input: ResearchReadInput) {
  *    「本轮收尾，下一轮开始执行」——不然模型会以为现在就能写文件。
  */
 /**
- * 资料引用：按版本读片段，以及成果引用的资料现在怎么样了。
+ * 资料引用：按版本读片段。
  * 对照与下结论的做法在 research 技能里。
  */
 const researchCapabilityHost: GoalCommandHost = {
@@ -1136,17 +1066,6 @@ const researchCapabilityHost: GoalCommandHost = {
             excerpts: res.excerpts.length,
             outdated: res.excerpts.filter((e) => e.status === 'outdated').length,
             skipped: res.skipped.length
-          }
-        }
-      }
-      case 'research.status': {
-        const res = await runSourceStatus(String(params.artifactId ?? params.id ?? ''))
-        return {
-          data: { statuses: res.statuses },
-          summary: {
-            ok: res.ok,
-            changed: res.statuses.filter((s) => s.status !== 'current').length,
-            total: res.statuses.length
           }
         }
       }
@@ -1751,7 +1670,7 @@ function requestExit(): Promise<ExitResult> {
   if (exitRequestInFlight) return exitRequestInFlight
 
   const task: Promise<ExitResult> = (async (): Promise<ExitResult> => {
-    const busy = runners?.hasBusy() === true || agentHub.hasBusy()
+    const busy = runners?.hasBusy() === true || agentHub.hasLiveWork()
     let choice = probeExitChoice()
     if (!choice && busy && win && !win.isDestroyed()) {
       const response = await dialog.showMessageBox(win, {
@@ -2132,11 +2051,14 @@ let extensionSourcesReported = false
  * 出问题时（清单跳变 / 历史对不上）第一件事就是分辨是谁写的。
  * 这里只**如实列举**，不做修复、不禁用、不删（判据见 extensions-inventory.ts 头注释）。
  */
-function reportExtensionSources(): void {
+async function reportExtensionSources(): Promise<void> {
   if (extensionSourcesReported) return
   extensionSourcesReported = true
   const thin = yanThinExtensionPaths()
-  for (const text of extensionDiagnostics({ piDir: PI_AGENT_DIR, yanThinPaths: thin })) {
+  const settings = await getSettings()
+  const probe = resolvePi({ override: settings.piBin })
+  const version = probe.home ? await readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : undefined
+  for (const text of extensionDiagnostics({ piDir: PI_AGENT_DIR, yanThinPaths: thin, nativeDiscovery: nativePiToolsSupported(version) })) {
     push({ ch: 'log', payload: { text } })
   }
 }
@@ -2214,11 +2136,10 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         push: (m) => pushFrom(id, m),
         cwd,
         piBin: settings.piBin,
+        codemodeExtension: codemodeExtensionPath(),
         questionExtension: questionExtensionPath(),
         workModeExtension: workModeExtensionPath(),
         agentProfileExtension: agentProfileExtensionPath(),
-        goalResumeExtension: goalResumeExtensionPath(),
-        handoffsExtension: handoffsExtensionPath(),
         responseDetailExtension: responseDetailExtensionPath(),
         getResponseDetail: () => agentResponseDetail,
         /*
@@ -2233,24 +2154,19 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         /* 目标状态（实施-05 S3）：会话键与模式 store 都在本文件一侧。 */
         goalHost: goalCapabilityHost,
         hubHost: agentHub.capabilityHost,
-        /* 资料引用：按版本读片段与引用状态。 */
+        /* 资料引用：按版本读片段。 */
         researchHost: researchCapabilityHost,
         /* 持续关注（实施-25 P16）：到点提醒与结果记录，没有后台调度器。 */
         followHost: followCapabilityHost,
         preambleExtension: preambleExtensionPath(),
         languageExtension: languageExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
-        contextExtension: contextExtensionPath(),
-        /* 项目知识注入（实施-03 S3）：检索在宿主，扩展只负责放到用户消息之前 */
-        projectKnowledgeExtension: projectKnowledgeExtensionPath(),
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
         repeatGuardExtension: repeatGuardExtensionPath(),
         dangerGuardExtension: dangerGuardExtensionPath(),
         bundledSkills: bundledSkillPaths(),
         /* 用户技能（YAN_DIR/skills）：每次启动会话时重新列出 */
         userSkills: () => userSkillPaths(),
-        contextBudgetObserverExtension: contextBudgetObserverExtensionPath(),
-        contextBudgetMaintenanceExtension: contextBudgetMaintenanceExtensionPath(),
         /*
          * 界面历史（实施-05 S5b-4）：交接过的会话在链上，按段从旧到新拼成
          * **一条时间线**。agent 不认识「链」—— 那是宿主的关系。
@@ -3260,7 +3176,6 @@ function registerIpc(): void {
    */
   handle('yan:context:current', async () => ({ ok: false, error: AGENT_CONTEXT_ERROR }))
 
-  registerArtifactDocIpc(ipc, { artifactDocs, library, sourceStatus: runSourceStatus, window: () => win })
 
   registerFollowIpc(ipc, { follows })
 
@@ -3468,7 +3383,7 @@ function createWindow(): void {
        * 而这些日志是给用户看的诊断 —— 丢了等于没做（实测第一版就丢在这里）。
        * ready-to-show 表示页面已经画出来了，渲染端的 push 订阅已经就位。
        */
-      reportExtensionSources()
+      void reportExtensionSources().catch(error => console.error('[来源] 扩展诊断失败', error))
       void getSettings().then((s) => {
         if (win && !win.isDestroyed()) applyZoom(win, s.uiScale)
       })
@@ -3682,6 +3597,8 @@ function createWindow(): void {
           try {
             const { readFile, writeFile } = await import('node:fs/promises')
             const src = await readFile(probeFile, 'utf8')
+            const helper = await readFile(join(dirname(probeFile), 'workspace-helper.js'), 'utf8').catch(() => '')
+            if (helper) await win!.webContents.executeJavaScript(helper)
             // 可选：先发一次**真实**鼠标移动（合成事件不产生 :hover，
             // 所以涉及 CSS hover 的断言必须用 sendInputEvent）
             const mouse = process.env.YAN_PROBE_MOUSE

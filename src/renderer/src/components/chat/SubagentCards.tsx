@@ -39,15 +39,14 @@ function useNow(active: boolean): number {
 /**
  * 一组子代理（同一条助手消息触发的，或没有可挂靠消息的）。
  *
- * 排序：运行中 → 需要处理（出错 / 超时 / 待合并）→ 其余；同档按启动先后。
- * 「哪条要我看」不靠读文字，靠位置和左边的色条。
+ * 按启动顺序保持位置稳定；运行与需要处理的状态由图标和文字表达。
  */
 export function SubagentGroup({ runs, showTag = true }: { runs: SubagentRun[]; showTag?: boolean }) {
   const now = useNow(runs.some(isLive))
   if (!runs.length) return null
   const ranked = runs
     .map((run) => ({ run, outcome: subagentOutcome(run) }))
-    .sort((a, b) => a.outcome.rank - b.outcome.rank || a.run.startedAt - b.run.startedAt)
+    .sort((a, b) => a.run.startedAt - b.run.startedAt)
   return (
     <div className="sg-group" data-testid="subagent-group">
       {ranked.map(({ run, outcome }) => (
@@ -60,7 +59,7 @@ export function SubagentGroup({ runs, showTag = true }: { runs: SubagentRun[]; s
 /**
  * 一张子代理卡片，信息分三层：
  *   ① 状态图标 + 任务（主）+ 状态词与耗时（右）
- *   ② 灰色小字一行：子代理 · 只读 · 模型 · 思考 · 调用数 · 输出 · 改动
+ *   ② 灰色小字一行：子代理 · 范围 · 模型简称 · 耗时
  *   ③ 只出现一次的正文：运行中是最新动作；结束后要处理的是原因与已产出的内容
  * 顺利完成、没有待处理改动的卡片只留 ①②，需要处理的才展开 ③ 和操作按钮。
  */
@@ -105,10 +104,8 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
       )
     }
   ]
-  if (run.thinkingLevel) meta.push({ key: 'think', node: <span data-testid={`subagent-note-thinking-${run.id}`}>{t('sa.thinking', { level: run.thinkingLevel })}</span> })
-  meta.push({ key: 'calls', node: <span>{t('sa.toolUses', { count: calls })}</span> })
-  if (run.usage?.output) meta.push({ key: 'out', node: <span title={t('sa.outputTokensHint')}>{t('sa.outputTokens', { count: compactTokens(run.usage.output) })}</span> })
-  if (changed) meta.push({ key: 'diff', node: <span>{t('sa.diffStats', { files: changed.files, additions: changed.additions, deletions: changed.deletions })}</span> })
+  meta.push({ key: 'elapsed', node: <span className="sg-time">{elapsed}</span> })
+  const openRun = () => window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: `subagent:${run.id}` }))
 
   return (
     <div className={`sg-card tone-${tone}${attention ? ' is-attn' : ''}${live ? ' is-live' : ''}`} data-testid={`subagent-note-${run.id}`} data-outcome={outcome.key}>
@@ -119,17 +116,18 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
         <button
           type="button"
           className="sg-task"
-          aria-expanded={expanded}
           title={run.task}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={openRun}
           data-testid={`subagent-note-toggle-${run.id}`}
         >
-          {run.task}
+          {run.task.split('\n')[0].slice(0, 64)}
         </button>
         <span className="sg-state" data-testid={`subagent-note-state-${run.id}`}>
           {t(`sa.state.${outcome.key}` as MessageKey)}
         </span>
-        <span className="sg-time">{elapsed}</span>
+        <Button size="sm" variant="ghost" onClick={openRun}>打开</Button>
+        <Button size="sm" variant="ghost" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>详情</Button>
+        {live ? <Button variant="danger" size="sm" onClick={() => void stopSubagent(run.id)} data-testid={`subagent-note-stop-${run.id}`}>{t('sa.stop')}</Button> : null}
       </div>
       <div className="sg-meta">
         {meta.map((item) => (
@@ -154,7 +152,7 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
           {produced}
         </div>
       ) : null}
-      {live || reviewing ? (
+      {reviewing ? (
         <div className="sg-actions">
           {run.diff?.patchPath ? (
             <Button size="sm" onClick={() => void window.yan.openPath(run.diff!.patchPath!)} data-testid={`subagent-note-diff-${run.id}`}>
@@ -177,14 +175,14 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
           )}
         </div>
       ) : null}
-      {expanded ? <SubagentDetail run={run} /> : null}
+      {expanded ? <><div className="sg-line">{run.task}</div><div className="sg-meta">{run.model}{run.thinkingLevel ? <span data-testid={`subagent-note-thinking-${run.id}`}> · {t('sa.thinking', { level: run.thinkingLevel })}</span> : null} · {t('sa.toolUses', { count: calls })}{run.usage?.output ? ` · ${t('sa.outputTokens', { count: compactTokens(run.usage.output) })}` : ''}{changed ? ` · ${t('sa.diffStats', { files: changed.files, additions: changed.additions, deletions: changed.deletions })}` : ''}</div><SubagentDetail run={run} /></> : null}
     </div>
   )
 }
 
 /**
  * 详情：最近几步工具调用 + 最终回复。
- * 任务原文在标题的 title 里，模型 / 用量在元信息行，这里不再重复。
+ * 完整任务和模型用量由明确的详情入口展示；这里补充最近工具与回复。
  */
 function SubagentDetail({ run }: { run: SubagentRun }) {
   const t = useT()

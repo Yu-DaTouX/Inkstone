@@ -1,17 +1,17 @@
 /**
- * 带历史扩展的升级目录（实施-01 S5 · 默认发现链收口）。
+ * 带历史扩展的升级目录：验证当前 pi 的发现策略与只读历史。
  *
  * 场景前提：专属 piDir 里放了一份 fixture 旧扩展（`scripts/fixtures/task-ext`），
  * 它注册同名 `panel_todos`、写旧标识 `left-panel-tasks`、注册 `/panel` 命令，
- * 并在 `session_start` 发一条 TUI 风格的通知 —— 用来证明默认 runner 没有偷偷加载它。
+ * 并在 `session_start` 发通知，用来区分实际加载和目录清单。
  *
- * 它要做的是把「目录里有旧扩展，但砚默认不加载」记录下来，并钉住两条底线：
- *   · 旧扩展没有 session_start 通知、工具或 `/notes` 命令进入当前 runner；
+ * 原生 pi 允许用户扩展发现，旧版 runner 隔离发现；两种路径分别验证：
+ *   · 诊断、session_start 通知与命令来源符合实际启动策略；
  *   · 历史会话里的旧任务条目仍能被砚只读显示，不会被迁移路径覆盖。
  * 第 4 节保留 `/panel` 的当前兼容行为记录，硬断言仍是「没有当自然语言发出去」。
  *
  * S5 把 piDir 扩成**两个扩展**（旧任务扩展 + 一个与任务无关的）：
- * 诊断计数、命令列表、清单来源判定都必须证明两者都没有被默认加载。
+ * 诊断计数、命令来源都要包含两份扩展，不能按任务关键词过滤。
  *
  * 另外解释一下为什么不在这里验「旧 JSONL 逐字节」：那要等 Electron 退出，
  * 由 `afterExit: taskFixtureReadonly` 在 Node 侧比（见 test-live.mjs）。
@@ -50,17 +50,20 @@
       } else await sleep(150)
     }
 
-    log('=== 带历史扩展目录：默认 pi 不加载（实施-01 S5）===')
+    log('=== 带历史扩展目录：原生发现与只读历史 ===')
 
     /* ================= 1. 启动期：通知降级 + 来源诊断 ================= */
     log('\n--- 1. 启动期通知与来源诊断 ---')
     await until(() => store.getState().conn === 'ready', 20000)
+    const version = store.getState().piInfo?.version?.split('.').map(Number)
+    const nativeDiscovery = !!version && (version[0] > 0 || version[1] >= 99)
+    log('  pi version: ' + store.getState().piInfo?.version + '; nativeDiscovery=' + nativeDiscovery)
     const logs = () => store.getState().logs
     const notices = () => store.getState().notices
 
     const extNotify = logs().filter((l) => l.includes('信息面板已启用'))
     log('  扩展 notify 落日志: ' + extNotify.length + (extNotify[0] ? ' → ' + JSON.stringify(extNotify[0].slice(0, 70)) : ''))
-    ok(extNotify.length === 0, '旧任务扩展没有被默认 pi 加载（没有 session_start 通知）')
+    ok(nativeDiscovery ? extNotify.length > 0 : extNotify.length === 0, '任务扩展启动通知符合当前 pi 发现策略')
     ok(
       !notices().some((n) => (n.text ?? '').includes('信息面板已启用')),
       '启动期通知没有弹成浮层（TUI 措辞不该打断桌面端）'
@@ -76,7 +79,9 @@
     log('  来源诊断（薄层）: ' + JSON.stringify(thinLine ?? null))
     ok(!!userLine, '诊断里有「用户扩展」清单')
     ok(!!userLine && userLine.includes('left-info-panel.ts'), '清单里点出了具体扩展名')
-    ok(!!userLine && userLine.includes('--no-extensions') && userLine.includes('不加载'), '诊断说明默认 runner 不加载用户扩展')
+    ok(!!userLine && (nativeDiscovery
+      ? userLine.includes('由 pi 原生发现') && !userLine.includes('--no-extensions') && userLine.includes('目录清单不代表已加载')
+      : userLine.includes('--no-extensions') && userLine.includes('不自动加载')), '来源诊断与当前 runner 的发现策略一致')
     /*
      * S5：诊断计的是**全部**用户扩展，不是只挑跟任务有关的那一个。
      * 这一条能红的场景是真存在的：按名字/关键词过滤扩展时，
@@ -89,7 +94,7 @@
     )
     const notesNotify = logs().filter((l) => l.includes('笔记面板已启用'))
     log('  无关扩展 notify 落日志: ' + notesNotify.length)
-    ok(notesNotify.length === 0, '无关扩展也没有被默认 pi 加载')
+    ok(nativeDiscovery ? notesNotify.length > 0 : notesNotify.length === 0, '无关扩展启动通知也符合发现策略')
     ok(!!thinLine, '诊断里有「砚内置薄层」清单')
     const taskLine = logs().find((l) => l.includes('left-panel-tasks'))
     ok(!!taskLine, '诊断说明了旧任务条目的只读语义', taskLine ? '' : '（缺这句话，用户无法判断两套清单的关系）')
@@ -105,14 +110,14 @@
      * 这里反过来要求没有 **extension 来源**：本地兼容表里可能仍有一条 panel
      *（`compatibility`，不可执行），但它不能被误当成旧扩展已经加载。
      */
-    ok(!panelFromExt, '旧扩展注册的 /panel 没有进入默认 pi（没有 source=extension）')
-    ok(panelAll.every((c) => c.source !== 'extension'), '当前 runner 的 panel 没有用户扩展来源')
+    ok(nativeDiscovery ? !!panelFromExt : !panelFromExt, '/panel 的扩展来源符合实际发现策略')
+    ok(panelAll.some((c) => c.source === 'extension') === nativeDiscovery, '当前 runner 命令来源没有误判目录存在')
     /* S5：无关扩展的命令也不能从用户目录偷偷进入当前 runner。 */
     const notesAll = store.getState().commands.filter((c) => c.name.toLowerCase() === 'notes')
     log('  commands 里的 notes: ' + JSON.stringify(notesAll.map((c) => c.source)))
     ok(
-      notesAll.length === 0,
-      '无关扩展注册的 /notes 没有进入默认 pi'
+      nativeDiscovery ? notesAll.some(c => c.source === 'extension') : notesAll.length === 0,
+      '无关扩展 /notes 的来源也符合实际发现策略'
     )
 
     /* ================= 3. 任务清单来自会话文件（只读） ================= */

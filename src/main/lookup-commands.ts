@@ -8,8 +8,14 @@
 import type { CapabilityRunOptions } from './agent'
 import { CapabilityCommandError } from './capability-server'
 import { memoryStoreOf } from './personal-memory'
-import { createOpencliRunner, runSearch, searchDoctor, searchSummary } from './search/opencli'
-import type { SearchSourceId } from '../shared/search'
+import { createOpencliRunner, type AdapterRunner, runSearch, searchDoctor, searchSummary } from './search/opencli'
+import { runBraveSearch } from './search/brave'
+import { detectLocale, runBingSearch } from './search/bing'
+import { runDdgSearch } from './search/ddg'
+import { readPage, ReadPageError } from './search/read-page'
+import { runSo360Search } from './search/so360'
+import { resolveBraveKey, searchApiConfig } from './search/config'
+import { DEFAULT_SEARCH_SOURCES, type SearchSourceId } from '../shared/search'
 import { isSafeSessionId } from './context-state-store'
 import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
 import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
@@ -19,9 +25,14 @@ import { paramNumber, paramString } from './command-params'
 export interface LookupCommandsHost {
   capabilityOpts(): CapabilityRunOptions | undefined
   cwd(): string
+  /** 没配置搜索 API 且用户没点过「不再提示」时，让界面提醒一次 */
+  notifySearchApiMissing?(): void
 }
 
 export class LookupCommands {
+  /** 每次应用运行只提醒一次，避免连续搜索反复弹 */
+  private searchApiHintSent = false
+
   constructor(private readonly host: LookupCommandsHost) {}
 
   /** CLI 的 kebab-case 与请求文件的 camelCase 都要认；空串当没传 */
@@ -76,6 +87,31 @@ export class LookupCommands {
         }
       }
     }
+    if (action === 'fetch') {
+      const url = this.searchString(params, ['url'])
+      if (!url) throw new CapabilityCommandError('search_url_required', 'search fetch 需要网址（--url）')
+      try {
+        const page = await readPage(url, {
+          maxChars: this.searchNumber(params, ['max-chars', 'maxChars']),
+          timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
+        })
+        return {
+          data: page,
+          summary: {
+            kind: 'search',
+            action: 'fetch',
+            url: page.finalUrl,
+            title: page.title,
+            chars: page.text.length,
+            totalChars: page.totalChars,
+            truncated: page.truncated
+          }
+        }
+      } catch (e) {
+        if (e instanceof ReadPageError) throw new CapabilityCommandError('search_fetch_' + e.code, e.message)
+        throw e
+      }
+    }
     if (action !== 'query') {
       throw new CapabilityCommandError('search_unknown_action', `不认识的 search 动作：${action}`)
     }
@@ -90,15 +126,31 @@ export class LookupCommands {
       .map((s) => String(s).trim())
       .filter((s): s is SearchSourceId => s.length > 0)
 
+    /*
+     * 没指定来源时：通用网页来源排在专业站点之前。有 Brave key 用 Brave；
+     * 没有就用 Bing 网页搜索兜底，并提醒一次「可以配置搜索 API」。
+     */
+    if (sources.length === 0) {
+      const hasKey = !!(await resolveBraveKey())
+      /* 中文：Bing 中文市场 + 360（中文社区、博客）；其余：DuckDuckGo + Bing（技术词更准） */
+      const web: SearchSourceId[] = detectLocale(text) === 'zh' ? ['bing', 'so360'] : ['ddg', 'bing']
+      sources.push(...(hasKey ? (['brave'] as SearchSourceId[]) : []), ...web, ...DEFAULT_SEARCH_SOURCES)
+      if (!hasKey && !this.searchApiHintSent) {
+        this.searchApiHintSent = true
+        if (!(await searchApiConfig()).hintDismissed) this.host.notifySearchApiMissing?.()
+      }
+    }
+
     const outcome = await runSearch(
       {
         text,
         ...(sources.length ? { sources } : {}),
         limitPerSource: this.searchNumber(params, ['limit-per-source', 'limitPerSource', 'limit']),
-        limitTotal: this.searchNumber(params, ['limit-total', 'limitTotal']),
+        /* 多个网页来源并用时，总量放宽，免得专业站点被挤掉 */
+        limitTotal: this.searchNumber(params, ['limit-total', 'limitTotal']) ?? (sources.length > 3 ? 24 : undefined),
         timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
       },
-      { runner: createOpencliRunner(), now: () => Date.now() }
+      { runner: searchRunner(), now: () => Date.now() }
     )
 
     /*
@@ -315,5 +367,19 @@ export class LookupCommands {
     }
 
     throw new CapabilityCommandError('unknown_command', `未知的 knowledge 动作：${action}`)
+  }
+}
+
+/** 按来源类型分流：直连 API 的来源走宿主 HTTP，其余交给 OpenCLI */
+function searchRunner(): AdapterRunner {
+  const opencli = createOpencliRunner()
+  return (source, query, opts) => {
+    switch (source.id) {
+      case 'brave': return runBraveSearch(query, opts)
+      case 'bing': return runBingSearch(query, opts)
+      case 'ddg': return runDdgSearch(query, opts)
+      case 'so360': return runSo360Search(query, opts)
+      default: return opencli(source, query, opts)
+    }
   }
 }

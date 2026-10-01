@@ -6,6 +6,12 @@ export function runDangerGuardTests(ok, mod) {
   const { detectDanger, isBroadTarget } = mod
   const bash = (command) => detectDanger('bash', { command }, 'C:/proj')
   const asks = (command) => bash(command).length > 0
+  for (const command of ['npm publish', 'git reset --hard HEAD', 'Restart-Computer', String.raw`Remove-Item -Recurse -Force C:\Users`]) {
+    ok(detectDanger('powershell', { command }, 'C:/proj').length > 0, `PowerShell 高危调用要问：${command}`)
+  }
+  for (const command of ['Get-ChildItem', 'npm test', 'git status', 'Write-Output "hello"']) {
+    ok(detectDanger('powershell', { command }, 'C:/proj').length === 0, `PowerShell 普通调用不打扰：${command}`)
+  }
 
   for (const cmd of [
     'rm -rf /',

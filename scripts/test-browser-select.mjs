@@ -10,6 +10,20 @@
 export async function runBrowserSelectTests(ok, mod, errors) {
   const { SELECT_VALUE_FN } = mod
   const { NotSelectElementError, SelectOptionNotFoundError } = errors
+  const registry = new errors.ElementRegistry()
+  const element = { backendNodeId: 7, role: 'button', name: 'fixture', box: [0, 0, 20, 20] }
+  const generation = registry.refresh([element])
+  const ref = `${generation}:e1`
+  ok(registry.resolve(ref).backendNodeId === 7, 'observe 的 generationId 可生成含目标身份的有效引用')
+  let crossTargetDenied = false
+  const other = new errors.ElementRegistry()
+  other.refresh([element])
+  try { other.resolve(ref) } catch (error) { crossTargetDenied = error.code === 'STALE_ELEMENT' }
+  ok(crossTargetDenied, '另一浏览器目标拒绝相同代次的引用')
+  registry.refresh([element])
+  let oldGenerationDenied = false
+  try { registry.resolve(ref) } catch (error) { oldGenerationDenied = error.code === 'STALE_ELEMENT' }
+  ok(oldGenerationDenied, '重新观察后旧引用失效')
 
   /* 页面侧函数：把字符串还原成函数（这一步本身就是"它必须是合法的函数声明"的断言） */
   let pageFn

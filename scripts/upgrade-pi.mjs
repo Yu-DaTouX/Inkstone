@@ -14,6 +14,7 @@
  *   npm run upgrade:pi              # 版本不同才提取
  *   npm run upgrade:pi -- --force   # 同版本也重跑提取（怀疑内置运行时损坏时用）
  *   npm run upgrade:pi -- --check   # 只报告版本，不动任何文件
+ *   npm run upgrade:pi -- --allow-downgrade # 明确回退到较旧的源版本
  *   YAN_PI_SRC=<pi包目录> npm run upgrade:pi
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -23,6 +24,7 @@ import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { delimiter } from 'node:path'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
+import { requirePiUpgrade } from './lib/pi-upgrade-policy.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DEST = selectedPiRuntime(join(root, 'resources', 'pi-runtime'))
@@ -31,6 +33,7 @@ const PKG = '@earendil-works/pi-coding-agent'
 const args = process.argv.slice(2)
 const force = args.includes('--force')
 const checkOnly = args.includes('--check')
+const allowDowngrade = args.includes('--allow-downgrade')
 
 const log = (s) => console.log(s)
 const bad = (s) => console.error(`  ✗ ${s}`)
@@ -99,6 +102,7 @@ log(`  当前：${cur ?? '（无）'}   ${existsSync(DEST) ? DEST : '(未生成)
 log(`  来源：${next ?? '（未找到源 pi）'}   ${src ?? ''}`)
 
 if (checkOnly) {
+  try { requirePiUpgrade(cur, next) } catch (error) { log(`  注意：${error.message}`) }
   process.exit(0)
 }
 
@@ -108,13 +112,18 @@ if (!src) {
   process.exit(1)
 }
 
+try { requirePiUpgrade(cur, next, allowDowngrade) } catch (error) {
+  bad(error.message)
+  process.exit(1)
+}
+
 if (!force && cur && next && cur === next) {
   log('\n已是最新，无需提取。（想强制重跑加 --force）')
   process.exit(0)
 }
 
 log(`\n提取：${cur ?? '无'} → ${next ?? '?'}\n`)
-const res = spawnSync(process.execPath, [join(root, 'scripts', 'vendor-pi.mjs')], {
+const res = spawnSync(process.execPath, [join(root, 'scripts', 'vendor-pi.mjs'), ...(allowDowngrade ? ['--allow-downgrade'] : [])], {
   stdio: 'inherit',
   env: process.env
 })

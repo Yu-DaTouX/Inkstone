@@ -8,26 +8,27 @@
 
 | 顺序 | 文件 | 层 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | `tokens.css` | tokens | 455 | 27 | 32 | 2 | 6 |
-| 2 | `ui.css` | ui | 754 | 135 | 136 | 0 | 0 |
+| 1 | `tokens.css` | tokens | 456 | 27 | 32 | 2 | 6 |
+| 2 | `ui.css` | ui | 920 | 280 | 283 | 5 | 0 |
 | 3 | `app.css` | modules | 511 | 72 | 73 | 1 | 0 |
-| 4 | `motion.css` | modules | 1415 | 172 | 175 | 4 | 0 |
+| 4 | `motion.css` | modules | 1419 | 172 | 175 | 4 | 0 |
 | 5 | `settings.css` | modules | 1116 | 169 | 175 | 1 | 0 |
 | 6 | `electron.css` | modules | 35 | 11 | 12 | 0 | 0 |
 | 7 | `highlight.css` | modules | 173 | 81 | 81 | 0 | 0 |
 | 8 | `layout.css` | modules | 239 | 19 | 20 | 4 | 2 |
-| 9 | `shell.css` | modules | 625 | 102 | 106 | 2 | 7 |
+| 9 | `shell.css` | modules | 671 | 129 | 133 | 2 | 7 |
 | 10 | `dialog.css` | modules | 151 | 19 | 20 | 0 | 0 |
 | 11 | `rail.css` | modules | 1064 | 197 | 206 | 0 | 0 |
-| 12 | `chat.css` | modules | 2628 | 356 | 412 | 4 | 0 |
-| 13 | `composer.css` | modules | 2028 | 300 | 302 | 1 | 0 |
-| 14 | `tools.css` | modules | 4113 | 631 | 692 | 5 | 5 |
+| 12 | `chat.css` | modules | 2689 | 377 | 435 | 5 | 0 |
+| 13 | `composer.css` | modules | 2037 | 301 | 304 | 1 | 0 |
+| 14 | `tools.css` | modules | 3960 | 616 | 677 | 2 | 5 |
 | 15 | `browser.css` | modules | 420 | 48 | 52 | 0 | 0 |
 | 16 | `terminal.css` | modules | 82 | 10 | 10 | 0 | 0 |
-| 17 | `review.css` | modules | 1511 | 233 | 234 | 1 | 0 |
-| 18 | `workbench.css` | modules | 1812 | 237 | 248 | 2 | 0 |
-| 19 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | | **19162** | **2758** | | | |
+| 17 | `review.css` | modules | 631 | 84 | 84 | 0 | 0 |
+| 18 | `workbench.css` | modules | 1953 | 375 | 391 | 3 | 0 |
+| 19 | `workspace.css` | modules | 66 | 62 | 62 | 0 | 0 |
+| 20 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
+| | **合计** | | **18623** | **2973** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -36,28 +37,29 @@
 | 文件 | 最终胜出 |
 | --- | ---: |
 | `tokens.css` | 23 |
-| `ui.css` | 134 |
+| `ui.css` | 259 |
 | `app.css` | 53 |
 | `motion.css` | 150 |
 | `settings.css` | 169 |
 | `electron.css` | 4 |
 | `highlight.css` | 80 |
 | `layout.css` | 18 |
-| `shell.css` | 102 |
+| `shell.css` | 129 |
 | `dialog.css` | 19 |
 | `rail.css` | 197 |
-| `chat.css` | 350 |
-| `composer.css` | 299 |
-| `tools.css` | 631 |
+| `chat.css` | 375 |
+| `composer.css` | 301 |
+| `tools.css` | 616 |
 | `browser.css` | 48 |
 | `terminal.css` | 10 |
-| `review.css` | 233 |
-| `workbench.css` | 237 |
+| `review.css` | 84 |
+| `workbench.css` | 375 |
+| `workspace.css` | 62 |
 | `icon-state.css` | 1 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）
 
-共 **56** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
+共 **71** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
 
 | 选择器 | 定义它的文件（按加载顺序） |
 | --- | --- |
@@ -71,6 +73,26 @@
 | `body` | tokens → electron |
 | `.ico` | tokens → icon-state |
 | `.btn:active:not(:disabled)` | ui → motion |
+| `.ui-usage-num` | ui → shell |
+| `.quota-block-sub` | ui → shell |
+| `.quota-pop-foot` | ui → shell |
+| `.ctx-window-note` | ui → shell |
+| `.agent-chat-user` | ui → workbench |
+| `.agent-chat-packet` | ui → workbench |
+| `.agent-chat-report` | ui → workbench |
+| `.agent-chat-meta` | ui → workbench |
+| `.agent-chat-who` | ui → workbench |
+| `.agent-chat-bubble-text` | ui → workbench |
+| `.agent-chat-tool > summary` | ui → workbench |
+| `.agent-chat-kind` | ui → workbench |
+| `.agent-chat-cmd` | ui → workbench |
+| `.agent-chat-out` | ui → workbench |
+| `.agent-chat-diff` | ui → workbench |
+| `.agent-chat-approval` | ui → workbench |
+| `.agent-chat-approval-detail` | ui → workbench |
+| `.agent-chat-working` | ui → workbench |
+| `.agent-chat-end` | ui → workbench |
+| `.agent-tree` | ui → workbench |
 | `.tb-name` | app → shell |
 | `.tb-right` | app → shell |
 | `.workspace` | app → layout |
@@ -112,8 +134,3 @@
 | `.app.rail-off .rail` | layout → rail |
 | `.term-bar` | chat → terminal |
 | `.term-bar .spacer` | chat → terminal |
-| `.sa-head` | chat → composer |
-| `.sa-row` | chat → composer |
-| `.sa-activity` | chat → composer |
-| `.sa-empty` | chat → composer |
-| `.review` | composer → review |

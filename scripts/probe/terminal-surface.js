@@ -59,7 +59,7 @@
   ok(!!toolMenu, '工作窗口显示工具菜单入口')
   click(toolMenu)
   const menuOpened = await until(() =>
-    toolMenu?.getAttribute('aria-expanded') === 'true' && !!q('[data-testid="right-tool-menu-popover"]')
+    !!q('[data-testid="right-tool-menu-popover"]')
   )
   ok(menuOpened, '打开工作区工具菜单')
   if (!menuOpened) return out.join('\n')
@@ -74,7 +74,7 @@
   /* ② 活动会话与标签 */
   let activeId = store.getState().activeTerminalId
   ok(!!activeId, `宿主开出了会话（${activeId}）`)
-  const tab = qa('[data-testid="right-window-tab-terminal"]').find((el) => el.dataset.terminalId === activeId)
+  const tab = q('[data-pane-tab="terminal:' + activeId + '"]')
   ok(!!tab, '工作窗口里出现该会话的标签（带会话身份）')
   const info = store.getState().terminals.find((t) => t.id === activeId)
   ok(!!info?.cwd && info.cwd.length > 0, `会话工作目录正确（${info?.cwd}）`)
@@ -83,7 +83,8 @@
   /* ③ 真实输入 / 输出：写一条命令，读 xterm 的行 */
   const token = 'YAN_TERM_UI_OK'
   await window.yan.terminal.write(activeId, `echo ${token}\r\n`)
-  const seen = await until(() => (q('.xterm-rows')?.textContent ?? '').includes(token), 8000)
+  const renderedText = () => (q('.xterm-accessibility-tree') ?? q('.xterm-rows'))?.textContent ?? ''
+  const seen = await until(() => renderedText().includes(token), 8000)
   ok(seen, '命令真的执行、输出进了 xterm 的行（界面路径，不只是主进程缓冲）')
 
   /* ④ 尺寸：resize 之后宿主快照跟着变 */
@@ -93,21 +94,21 @@
   ok(snapAfter?.cols === 100 && snapAfter?.rows === 30, `resize 真的落到宿主（${snapBefore?.cols}x${snapBefore?.rows} → ${snapAfter?.cols}x${snapAfter?.rows}）`)
 
   /* ⑤ 断线重连：切走再切回，同一会话拿回它的输出 */
-  click(q('[data-testid="right-window-tab-start"]'))
+  q('[data-pane-tab="terminal:' + activeId + '"]')?.closest('.tile-heading')?.querySelector('[aria-label="收起面板，保留运行"]')?.click()
   await sleep(500)
-  const tabBack = qa('[data-testid="right-window-tab-terminal"]').find((el) => el.dataset.terminalId === activeId)
+  ok(!q('[data-workspace-pane="terminal:' + activeId + '"]:not([hidden])'), '隐藏终端磁贴')
+  await window.__yanOpenWorkspaceTool('终端', 'terminal:' + activeId)
+  const tabBack = q('[data-pane-tab="terminal:' + activeId + '"] button[role="tab"]')
   click(tabBack)
-  ok(await until(() => !!q('.xterm-rows')), '切回终端标签后表面重新渲染')
+  ok(await until(() => !!q('.xterm-accessibility-tree, .xterm-rows')), '切回终端标签后表面重新渲染')
   ok(
-    await until(() => (q('.xterm-rows')?.textContent ?? '').includes(token), 8000),
+    await until(() => renderedText().includes(token), 8000),
     '重连后仍能看到之前的输出（缓冲回放，不是空壳）'
   )
   ok(store.getState().activeTerminalId === activeId, '重连回到同一个会话（身份不变）')
 
   /* ⑥ 关闭标签 = kill PTY */
-  const closeBtn = qa('[data-testid="right-window-tab-terminal"]')
-    .find((el) => el.dataset.terminalId === activeId)
-    ?.querySelector('.review-tab-close')
+  const closeBtn = q('[data-pane-tab="terminal:' + activeId + '"] .ui-tab-close')
   click(closeBtn)
   await sleep(600)
   const listed = (await window.yan.terminal.list()).some((t) => t.id === activeId)

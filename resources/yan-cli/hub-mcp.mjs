@@ -1,6 +1,7 @@
 /** 受管 CLI 的唯一共享工具入口。身份只继承本次 run 的宿主 token。 */
 let buffer = ''
 const tools = [
+  { name: 'inkstone_reply', description: 'Report a result or ask a question to your parent task or explicitly linked Inkstone session. Does not grant permission. Reuse requestId on retry.', inputSchema: { type: 'object', properties: { summary: { type: 'string' }, requestId: { type: 'string' } }, required: ['summary', 'requestId'] } },
   { name: 'inkstone_task_status', description: 'Read the status and frozen result of this run or its delegated tasks only.', inputSchema: { type: 'object', properties: { id: { type: 'string' } } } },
   { name: 'inkstone_browser', description: 'Operate Inkstone managed browser. Observe first; refs belong to this run. Resource contention means the operation has not started. Never replay an uncertain action.', inputSchema: { type: 'object', properties: { action: { type: 'string' }, params: { type: 'object' } }, required: ['action'] } },
   { name: 'inkstone_desktop', description: 'Use the host-enabled Windows UI tools through the shared interaction coordinator. Never replay uncertain input. Requires computer operation enabled in Inkstone settings.', inputSchema: { type: 'object', properties: { tool: { type: 'string', enum: ['Snapshot', 'Screenshot', 'DisplayInventory', 'Click', 'Type', 'Scroll', 'Move', 'Shortcut', 'Wait', 'WaitFor', 'App', 'MultiSelect', 'MultiEdit'] }, args: { type: 'object' } }, required: ['tool'] } },
@@ -20,7 +21,7 @@ async function handle(message) {
     if (message.method === 'tools/list') return reply({ tools })
     if (message.method === 'tools/call') {
       const { name, arguments: args = {} } = message.params ?? {}
-      const result = name === 'inkstone_browser' ? await rpc(`browser.${args.action}`, args.params ?? {}) : name === 'inkstone_desktop' ? await rpc('hub.desktop', args) : name === 'inkstone_delegate' ? await rpc('hub.delegate', args) : name === 'inkstone_handoff' ? await rpc('hub.handoff', args) : name === 'inkstone_task_status' ? await rpc(args.id ? 'hub.get' : 'hub.list', args) : { ok: false, error: 'unknown_tool' }
+      const result = name === 'inkstone_reply' ? await rpc('hub.reply', args) : name === 'inkstone_browser' ? await rpc(`browser.${args.action}`, args.params ?? {}) : name === 'inkstone_desktop' ? await rpc('hub.desktop', args) : name === 'inkstone_delegate' ? await rpc('hub.delegate', args) : name === 'inkstone_handoff' ? await rpc('hub.handoff', args) : name === 'inkstone_task_status' ? await rpc(args.id ? 'hub.get' : 'hub.list', args) : { ok: false, error: 'unknown_tool' }
       return reply({ content: [{ type: 'text', text: JSON.stringify(result) }], isError: result.ok === false })
     }
     process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Unknown method' } })}\n`)

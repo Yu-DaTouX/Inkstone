@@ -2,7 +2,7 @@
  * 资料引用的读取与状态。
  *
  * 宿主只负责两件与数据有关的事：
- * 1. **旧引用按版本保留**：资料更新后，成果里那条引用仍然指着当时那一版；
+ * 1. **旧引用按版本保留**：资料更新后，引用仍然指着当时那一版；
  *    这里只**提示变化**（「来源已更新到 v3，这条引用还是 v1」），不改写引用。
  * 2. **按版本读片段**：读每一份引用当时那一版的正文片段，读不到的如实标出。
  *
@@ -83,25 +83,6 @@ export function sourceStatus(
     return { ...base, title, status: 'unreadable', note: sourceStatusNote('unreadable', ref) }
   }
   return { ...base, title, status: 'current', note: sourceStatusNote('current', ref) }
-}
-
-/** 一份成果引用的全部资料现在怎么样了（成果页那一排提示）。 */
-export function artifactSourceStatuses(
-  doc: LibraryDocument,
-  sources: readonly { sourceId: string; version: number; locator?: { start: number; end: number } }[]
-): SourceStatus[] {
-  return sources.map((item) => sourceStatus(doc, { sourceId: item.sourceId, version: item.version }, item.locator))
-}
-
-/** 「有东西变了」的简短结论（没有变化就返回 null，界面上不制造噪声）。 */
-export function sourceChangeSummary(statuses: readonly SourceStatus[]): string | null {
-  const outdated = statuses.filter((s) => s.status === 'outdated').length
-  const gone = statuses.filter((s) => s.status === 'removed' || s.status === 'missing').length
-  if (outdated === 0 && gone === 0) return null
-  const parts: string[] = []
-  if (outdated > 0) parts.push(`${outdated} 条来源已有新版本`)
-  if (gone > 0) parts.push(`${gone} 条来源已找不到`)
-  return `${parts.join('，')}；引用的旧版本仍然保留`
 }
 
 /* ------------------------------------------------------------------ *

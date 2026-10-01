@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { basename, delimiter, dirname, join } from 'node:path'
 import {
+  DEFAULT_SEARCH_SOURCES,
   SEARCH_LIMIT_PER_SOURCE_DEFAULT,
   SEARCH_LIMIT_PER_SOURCE_MAX,
   SEARCH_LIMIT_TOTAL_DEFAULT,
@@ -426,7 +427,7 @@ export function normalizeQuery(input: SearchQuery):
     }
   | { ok: false; code: string; message: string; ignoredSources: string[] } {
   const text = (input.text ?? '').trim()
-  const wanted = input.sources && input.sources.length > 0 ? input.sources : SEARCH_SOURCES.map((s) => s.id)
+  const wanted = input.sources && input.sources.length > 0 ? input.sources : [...DEFAULT_SEARCH_SOURCES]
   const sources: SearchSource[] = []
   const ignoredSources: string[] = []
   for (const id of wanted) {
@@ -513,7 +514,7 @@ export async function searchDoctor(deps: {
    * 否则 `yan search doctor` 会一边说「不可用」一边说「三个来源都就绪」。
    */
   const sourcesFor = (available: boolean) =>
-    SEARCH_SOURCES.map((s) => ({ id: s.id, label: s.label, needsBrowser: s.needsBrowser, ready: available }))
+    SEARCH_SOURCES.filter((s) => !s.direct).map((s) => ({ id: s.id, label: s.label, needsBrowser: s.needsBrowser, ready: available }))
   const probe = deps.runner ?? defaultProbe
   const version = await probe(['--version'], 8000)
   if (version.code !== 0 && !version.stdout.trim()) {

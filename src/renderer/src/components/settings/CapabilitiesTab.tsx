@@ -8,8 +8,8 @@ import type {
   CapabilitySettingsSnapshot,
   CapabilityVerificationStatus
 } from '../../../../shared/ipc'
-import type { SearchBackendStatus } from '../../../../shared/search'
-import { Button, Disclosure, SettingRow } from '../ui'
+import type { SearchApiConfigView, SearchBackendStatus } from '../../../../shared/search'
+import { Button, Disclosure, SettingRow, Switch } from '../ui'
 
 const STRATEGIES = ['existing-only', 'search-and-recommend', 'auto-connect'] as const
 
@@ -129,6 +129,14 @@ export function CapabilitiesTab(): React.JSX.Element {
 
   return (
     <div className="ui-rows" data-testid="set-capabilities">
+      <SettingRow name={t('cap.codemodeTitle')} desc={t('cap.codemodeDesc')}>
+        <Switch
+          checked={settings?.codemodeEnabled !== false}
+          onChange={(enabled) => void patchSettings({ codemodeEnabled: enabled })}
+          label={t('cap.codemodeTitle')}
+          testId="cap-codemode"
+        />
+      </SettingRow>
       <SettingRow
         data-testid="cap-strategy"
         name={t('cap.strategyTitle')}
@@ -382,6 +390,8 @@ export function CapabilitiesTab(): React.JSX.Element {
             </div>
           </div>
 
+          <SearchApiRow />
+
           <div className="ui-row set-row-col" data-testid="cap-browsers">
             <div className="ui-row-label">
               <div className="ui-row-name">{t('set.browsers')}</div>
@@ -400,6 +410,76 @@ export function CapabilitiesTab(): React.JSX.Element {
         <ConsentSection />
       </Disclosure>
       {notice ? <div className="pkg-detail-warn" role="alert">{notice}</div> : null}
+    </div>
+  )
+}
+
+/** Brave 搜索 API：填 key 后 `yan search` 会优先带上通用网页结果；密钥只存主进程 */
+function SearchApiRow() {
+  const t = useT()
+  const [config, setConfig] = useState<SearchApiConfigView | null>(null)
+  const [key, setKey] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async (): Promise<void> => {
+    try { setConfig(await window.yan.search.apiConfig()) } catch { setConfig(null) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  const save = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault()
+    if (busy || !key.trim()) return
+    setBusy(true)
+    const res = await window.yan.search.setApiKey(key)
+    setBusy(false)
+    if (!res.ok) { setError(res.error ?? t('search.apiSaveFailed')); return }
+    setError('')
+    setKey('')
+    await load()
+  }
+  const clear = async (): Promise<void> => {
+    await window.yan.search.clearApiKey()
+    await load()
+  }
+
+  return (
+    <div className="ui-row set-row-col" data-testid="cap-search-api">
+      <div className="ui-row-label">
+        <div className="ui-row-name">{t('search.apiTitle')}</div>
+        <div className="ui-row-desc">{t('search.apiDesc')}</div>
+      </div>
+      <div className="ui-row-desc" data-testid="cap-search-api-status">
+        {config?.configured
+          ? config.source === 'env' ? t('search.apiReadyEnv') : t('search.apiReady')
+          : t('search.apiMissing')}
+      </div>
+      {config?.source !== 'env' ? (
+        <form className="pkg-install-row" onSubmit={(event) => void save(event)}>
+          <input
+            className="ui-input"
+            type="password"
+            autoComplete="off"
+            value={key}
+            maxLength={200}
+            placeholder={t('search.apiPlaceholder')}
+            aria-label={t('search.apiPlaceholder')}
+            data-testid="cap-search-api-key"
+            onChange={(event) => setKey(event.target.value)}
+          />
+          <button type="submit" className="env-mini" disabled={busy || !key.trim()}>{t('search.apiSave')}</button>
+          {config?.configured ? <button type="button" className="env-mini" onClick={() => void clear()}>{t('search.apiClear')}</button> : null}
+        </form>
+      ) : null}
+      {error ? <div className="ui-row-desc set-install-log err">{error}</div> : null}
+      <div className="set-install-actions">
+        <Button size="sm" variant="ghost" onClick={() => void window.yan.browser.openExternal('https://brave.com/search/api/')}>{t('search.apiGet')}</Button>
+        {config?.hintDismissed && !config.configured ? (
+          <Button size="sm" variant="ghost" data-testid="cap-search-api-rehint" onClick={() => void window.yan.search.setApiHintDismissed(false).then(load)}>
+            {t('search.apiHintReenable')}
+          </Button>
+        ) : null}
+      </div>
     </div>
   )
 }

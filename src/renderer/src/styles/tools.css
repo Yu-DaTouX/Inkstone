@@ -1039,78 +1039,6 @@
   box-shadow: inset 0 -2px 0 -0.5px var(--accent);
 }
 
-/*
- * 拖动预览：跟随指针的胶囊（.rp-drag-preview）与拖到工作区时的落位框
- * （.rp-drop-rect）。两者都由 DragPreview.tsx 用 portal 挂到 body，
- * 位置靠内联 transform / left-top 给；这里是纯外观。
- *
- * z-index 取 90/89：要盖过浮动磁贴层（.rp-float-layer 是 55），
- * 但不能压过模态与设置遮罩（它们是 100）。
- */
-.rp-drag-preview {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 90;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 240px;
-  padding: var(--sp-1) var(--sp-2);
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-full);
-  background: var(--bg-2);
-  color: var(--fg);
-  font-size: var(--fs-sm);
-  line-height: 1.4;
-  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.65);
-  pointer-events: none;
-  will-change: transform;
-}
-
-/* 拖到中栏 = 会变成浮窗，用强调色把「重排」与「移出」分开 */
-.rp-drag-preview.float {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.rp-drag-preview-grip {
-  color: var(--fg-mute);
-}
-
-.rp-drag-preview-label {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.rp-drag-preview-hint {
-  flex: none;
-  font-size: var(--fs-xs);
-  color: var(--fg-mute);
-}
-
-.rp-drag-preview.float .rp-drag-preview-hint {
-  color: var(--accent);
-}
-
-/* 落位框：画出这块磁贴将来变成的浮窗占在哪、多大 */
-.rp-drop-rect {
-  position: fixed;
-  z-index: 89;
-  display: grid;
-  place-items: center;
-  border: 1px dashed var(--accent);
-  border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  pointer-events: none;
-}
-
-.rp-drop-rect-label {
-  color: var(--accent);
-  font-size: var(--fs-xs);
-}
-
 .rp-threshold {
   position: absolute;
   top: -1px;
@@ -3205,7 +3133,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
  * 只让一个表面进入第二行，避免原生浏览器和 DOM 面板互相抢高度。
  */
 .rightpanel.right-window-panel:is(.window-start, .window-tools):not(.tools-collapsed) {
-  grid-template-rows: 42px minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
 }
 
 .rightpanel.right-window-panel:is(.window-start, .window-tools):not(.tools-collapsed):has(> .tool-lib) {
@@ -3215,7 +3143,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .rightpanel.right-window-panel.window-review,
 .rightpanel.right-window-panel.window-file,
 .rightpanel.right-window-panel.window-browser:not(.tools-collapsed) {
-  grid-template-rows: 42px minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
 }
 
 .rightpanel.right-window-panel.window-browser.tools-collapsed {
@@ -3327,87 +3255,6 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .rightpanel.right-window-panel.window-file .rp-body > .rp-slot[data-tool-id='files'] > .rp-sec {
   min-width: 0;
   min-height: 0;
-}
-
-/* 新标签页保持安静：其它工作区资源集中在上方＋菜单。 */
-.rp-start {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  overflow: auto;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: var(--sp-5) var(--sp-4);
-}
-
-.rp-start-group {
-  width: min(360px, 100%);
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-3);
-  text-align: center;
-  color: var(--fg-mute);
-}
-
-.rp-start-globe {
-  width: 32px;
-  height: 32px;
-}
-
-.rp-start-open {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--fg);
-  font: inherit;
-  font-size: 20px;
-  font-weight: var(--fw-strong);
-  cursor: pointer;
-}
-
-.rp-start-open:hover {
-  color: var(--accent);
-}
-
-.rp-start-open:focus-visible {
-  outline: var(--focus-ring-w) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
-}
-
-.rp-start-hint {
-  font-size: var(--fs-sm);
-  color: var(--fg-mute);
-}
-
-@media (max-width: 900px) {
-  .rp-start {
-    padding-inline: var(--sp-2);
-  }
-
-  .rp-start-item {
-    gap: var(--sp-2);
-    padding-inline: var(--sp-2);
-  }
-
-  .rp-start-label {
-    white-space: nowrap;
-  }
-}
-
-@media (max-height: 560px) {
-  .rp-start {
-    align-items: flex-start;
-    padding-top: var(--sp-5);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rp-start-item {
-    transition-duration: var(--dur-1);
-  }
 }
 
 .sp-overview {

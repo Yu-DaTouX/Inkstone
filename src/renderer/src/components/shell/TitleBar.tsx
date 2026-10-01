@@ -1,6 +1,7 @@
 import { Icon } from '../../icons/Icon'
 import { BrandMark } from './BrandMark'
 import { useI18n } from '../../i18n'
+import { menuAnchor } from '../workbench/Workspace'
 
 export type Theme = 'dark' | 'light'
 
@@ -8,9 +9,6 @@ interface Props {
   /** 左栏（侧边栏）开关 —— 在标题栏最左上（对齐 Codex） */
   onToggleRail: () => void
   railOpen?: boolean
-  /** 右栏（工具栏）开关 —— 在窗口控制按钮左侧 */
-  onToggleRightPanel: () => void
-  rightPanelOpen?: boolean
   /** 内置浏览器开关 —— 与工具栏独立，收起工具栏不影响它 */
   onToggleBrowser?: () => void
   browserOpen?: boolean
@@ -47,8 +45,6 @@ interface Props {
 export function TitleBar({
   onToggleRail,
   railOpen,
-  onToggleRightPanel,
-  rightPanelOpen,
   onToggleBrowser,
   browserOpen,
   alwaysOnTop,
@@ -115,6 +111,18 @@ export function TitleBar({
           <Icon name="pin" size={14} />
         </button>
 
+        {/* 工作区工具：打开文件、终端、审查等磁贴，菜单里另有排列与已隐藏面板 */}
+        <button
+          className="tb-icon"
+          title="打开工作区工具"
+          aria-label="打开工作区工具"
+          aria-haspopup="menu"
+          onClick={(e) => window.dispatchEvent(new CustomEvent('inkstone-workspace-open-tool', { detail: menuAnchor(e.currentTarget) }))}
+          data-testid="right-tool-menu"
+        >
+          <Icon name="tile" size={14} />
+        </button>
+
         {/* 内置浏览器开关：与工具栏独立（收起工具栏时浏览器仍可独占右栏） */}
         <button
           className={`tb-icon ${browserOpen ? 'on' : ''}`}
@@ -126,18 +134,6 @@ export function TitleBar({
           role="switch"
         >
           <Icon name="globe" size={14} />
-        </button>
-
-        {/* 工具栏开关：紧邻窗口控制按钮（与左上的侧栏开关形成两端对称） */}
-        <button
-          className={`tb-icon ${rightPanelOpen ? 'on' : ''}`}
-          title={rightPanelOpen ? t('rp.hide') : t('rp.show')}
-          onClick={onToggleRightPanel}
-          data-testid="rightpanel-toggle"
-          data-open={rightPanelOpen ? '1' : '0'}
-          aria-expanded={rightPanelOpen}
-        >
-          <Icon name="sidebar-right" size={14} />
         </button>
 
         {/* ---- Win11 窗口控制：46×32 方形，紧贴右上角 ---- */}

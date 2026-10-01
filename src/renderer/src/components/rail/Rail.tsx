@@ -1183,7 +1183,8 @@ export function Rail() {
                       data-testid="rail-project"
                       title={p.projectId ? `${p.label}\n${p.cwd}` : `${t('rail.global')}\n${p.cwd}`}
                       aria-current={p.isCurrent ? 'true' : undefined}
-                      onClick={() => void switchProject(p.cwd, p.projectId)}
+                      aria-expanded={pOpen}
+                      onClick={() => toggleProject(p.id)}
                     >
                       {/* 没登记成项目的目录（全局会话）用地球图标区分，名字只写目录名 */}
                       <Icon name={p.projectId ? (pOpen ? 'folder-open' : 'folder') : 'globe'} size={12} />
@@ -1237,6 +1238,7 @@ export function Rail() {
                     testid="rail-project-menu-panel"
                     onClose={() => { const trigger = projectMenu?.trigger; setProjectMenu(null); trigger?.focus?.() }}
                     items={[
+                      { id: 'rail-project-open', label: t('rail.openProject'), icon: 'folder-open', onSelect: () => { void switchProject(p.cwd, p.projectId) } },
                       {
                         id: 'rail-project-new',
                         label: t('rail.new'),

@@ -20,6 +20,7 @@ import { useStore } from '../../state/store'
 import { useT } from '../../i18n'
 import { Icon } from '../../icons/Icon'
 import { Button } from '../ui'
+import { installImeFallback, installTerminalRenderer, terminalAppearance, terminalFontReady } from './terminal-appearance'
 
 /**
  * xterm 的主题：**从 tokens.css 的 CSS 变量读**，不写死两份色值。
@@ -50,10 +51,12 @@ function currentTheme(): {
   }
 }
 
-export function TerminalSurface() {
+/** `bare`: the workspace tile already shows the title and new/close commands. */
+export function TerminalSurface({ terminalId, bare = false }: { terminalId?: string; bare?: boolean } = {}) {
   const t = useT()
   const terminals = useStore((s) => s.terminals)
-  const activeId = useStore((s) => s.activeTerminalId)
+  const selectedId = useStore((s) => s.activeTerminalId)
+  const activeId = terminalId ?? selectedId
   const available = useStore((s) => s.terminalAvailable)
   const error = useStore((s) => s.terminalError)
   const refresh = useStore((s) => s.refreshTerminals)
@@ -94,44 +97,58 @@ export function TerminalSurface() {
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    const term = new Terminal({
-      fontFamily: 'var(--font-mono)',
-      fontSize: 12.5,
-      cursorBlink: true,
-      convertEol: false,
-      scrollback: 5000,
-      theme: currentTheme()
-    })
-    const fitAddon = new FitAddon()
-    term.loadAddon(fitAddon)
-    term.open(host)
-    termRef.current = term
-    fitRef.current = fitAddon
-    setReady(true)
+    let disposed = false
+    let release = () => {}
+    const appearance = terminalAppearance()
+    void terminalFontReady(appearance).then(() => {
+      if (disposed) return
+      const term = new Terminal({
+        ...appearance,
+        convertEol: false,
+        scrollback: 5000,
+        theme: currentTheme()
+      })
+      const fitAddon = new FitAddon()
+      term.loadAddon(fitAddon)
+      term.open(host)
+      installTerminalRenderer(term, host)
+      const imeOff = installImeFallback(term)
+      termRef.current = term
+      fitRef.current = fitAddon
+      setReady(true)
 
-    /* 用户输入 → 宿主 PTY */
-    const dataSub = term.onData((data) => {
-      const id = activeIdRef.current
-      if (id) void window.yan.terminal.write(id, data)
-    })
+      /* 用户输入 → 宿主 PTY */
+      const dataSub = term.onData((data) => {
+        const id = activeIdRef.current
+        if (id) void window.yan.terminal.write(id, data)
+      })
 
-    const observer = new ResizeObserver(() => fit())
-    observer.observe(host)
-    /* 主题切换：xterm 不读 CSS 变量，得手动同步一次 */
-    const themeObserver = new MutationObserver(() => {
-      term.options.theme = currentTheme()
-    })
-    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+      /* Tiles glide while being dragged; fit once the size settles instead of resizing the PTY every frame. */
+      let fitTimer: ReturnType<typeof setTimeout> | undefined
+      const observer = new ResizeObserver(() => {
+        clearTimeout(fitTimer)
+        fitTimer = setTimeout(() => fit(), 90)
+      })
+      observer.observe(host)
+      /* 主题切换：xterm 不读 CSS 变量，得手动同步一次 */
+      const themeObserver = new MutationObserver(() => {
+        term.options.theme = currentTheme()
+      })
+      themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
-    return () => {
-      dataSub.dispose()
-      observer.disconnect()
-      themeObserver.disconnect()
-      term.dispose()
-      termRef.current = null
-      fitRef.current = null
-      setReady(false)
-    }
+      release = () => {
+        imeOff()
+        dataSub.dispose()
+        clearTimeout(fitTimer)
+        observer.disconnect()
+        themeObserver.disconnect()
+        term.dispose()
+        termRef.current = null
+        fitRef.current = null
+        setReady(false)
+      }
+    })
+    return () => { disposed = true; release() }
     // 实例只建一次；activeId 的变化由下面那个 effect 处理
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -250,7 +267,13 @@ export function TerminalSurface() {
 
   return (
     <div className="term-surface" data-testid="terminal-surface">
-      <div className="term-bar" data-testid="terminal-bar">
+      {bare ? (active && !active.alive ? (
+        <div className="term-bar" data-testid="terminal-bar">
+          <span className="term-bar-exited" data-testid="terminal-exited">
+            {t('term.exited', { code: exited === null ? '—' : String(exited) })}
+          </span>
+        </div>
+      ) : null) : <div className="term-bar" data-testid="terminal-bar">
         <span className="term-bar-title" title={active?.cwd}>
           {active ? active.title : t('term.none')}
         </span>
@@ -267,7 +290,7 @@ export function TerminalSurface() {
             {t('term.close')}
           </Button>
         ) : null}
-      </div>
+      </div>}
       <div className="term-host" ref={hostRef} data-testid="terminal-host" />
     </div>
   )

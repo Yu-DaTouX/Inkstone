@@ -26,6 +26,7 @@ const SUBAGENT_SYSTEM_PROMPT = [
 ].join('\n')
 
 export interface SubagentServiceDeps {
+  codemodeExtension?(): string | undefined
   onChange(run: SubagentRun): void
   onRemove(id: string): void
   /** 运行收口后（终态、差异已定）回调一次 */
@@ -50,6 +51,7 @@ export class SubagentService {
     this.controller = new SubagentController({
       cwd: s.cwd,
       piBin: s.piBin,
+      extensions: [this.deps.codemodeExtension?.()].filter((path): path is string => !!path),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
       onChange: (run) => this.deps.onChange(run),
       onRemove: (id) => this.deps.onRemove(id),

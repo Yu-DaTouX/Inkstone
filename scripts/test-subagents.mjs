@@ -144,7 +144,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     ok(res.ok === true, '只读子代理可以启动', res.error ?? '')
     const args = factory.created[0]?.args ?? []
     ok(args.includes('--no-extensions'), '子代理关闭用户扩展自动发现', JSON.stringify(args))
-    ok(args.includes('--no-session'), '子代理不落 pi 会话文件（否则混进左栏会话列表）', JSON.stringify(args))
+    ok(args.includes('--session-dir') && !args.includes('--no-session'), '子代理使用独立原生会话目录', JSON.stringify(args))
     ok(args.includes('--no-skills'), '子代理关闭用户 Skill 自动发现', JSON.stringify(args))
     const at = args.indexOf('--tools')
     ok(at >= 0, '只读子代理把工具白名单交给 pi（--tools）', JSON.stringify(args))

@@ -21,7 +21,6 @@ import type {
   HandoffView,
   PursuedBrief,
   ReadyApprovalMode,
-  GitScopeRequest,
   MainPush,
   MessagePatch,
   ModelInfo,
@@ -44,10 +43,6 @@ import type {
   LibraryVersion,
   SourceReference,
   ContextAssembly,
-  ArtifactDoc,
-  ArtifactKind,
-  ArtifactSourceRef,
-  SourceStatus,
   Watch,
   WatchView,
   SessionTodoSnapshot,
@@ -162,6 +157,8 @@ export interface Notice {
   type: 'info' | 'warning' | 'error'
   text: string
   at: number
+  /** 带按钮的专用通知；文案与按钮由渲染层按语言生成 */
+  action?: 'search-api-hint'
 }
 
 export interface Store {
@@ -216,15 +213,10 @@ export interface Store {
   libraryVersions: LibraryVersion[]
   libraryRefs: LibraryRefRecordView[]
   libraryLoaded: boolean
-  /** 可编辑成果（实施-25 P06a）：当前空间的文档对象 */
-  artifactDocs: ArtifactDoc[]
-  /** 当前成果的引用状态（P13 T13-4）：哪条来源已有新版本 / 已找不到。 */
-  artifactSourceStatuses: SourceStatus[]
   /** 持续关注（P16）：带状态文案的列表 + 到点清单。 */
   followViews: (WatchView & { lastRunText?: string })[]
   followDue: Watch[]
   followsLoaded: boolean
-  artifactDocsLoaded: boolean
   /** 扩展（如 left-info-panel 的 panel_todos）维护的任务清单 */
   todos: SessionTodo[]
   /** 全部任务清单快照（含最新）——「历史任务」模块用 */
@@ -314,19 +306,6 @@ export interface Store {
   filePreview: FilePreviewState | null
   /** 已打开的文件资源（key → 状态）。标签真源仍是工作台 tabs，这里只存数据。 */
   filePreviews: Record<string, FilePreviewState>
-  /**
-   * Git 审查面板是否打开（方案 G1）。
-   *
-   * 它是右栏的详情视图之一，但**优先级最高**（审查打开时不需要再同时
-   * 看文件预览 / 子代理详情）。放 store 而不是组件 state 的原因：
-   * 环境菜单（会话头部）、审查入口按钮、右栏分属三个组件。
-   */
-  reviewOpen: boolean
-  /** 当前审查范围（用户选过的要保留，下次打开还是它） */
-  reviewScope: GitScopeRequest
-  openReview: (scope?: GitScopeRequest) => void
-  closeReview: () => void
-  setReviewScope: (scope: GitScopeRequest) => void
   /** 子代理运行列表（方案第 8 节） */
   subagents: SubagentRun[]
   /** 右侧正在看的子代理（null = 没开） */
@@ -508,11 +487,6 @@ export interface Store {
   /** 拉资料列表；`spaceId: null` = 只看未归档到空间的 */
   refreshLibrary: (spaceId?: string | null) => Promise<void>
   importToLibrary: (view: LibraryImportView) => Promise<LibraryImportViewResult>
-  /** 拉成果列表（`spaceId` 省略 = 全部） */
-  refreshArtifactDocs: (spaceId?: string | null) => Promise<void>
-  /* 成果引用的资料现在怎么样了：只读，不改引用 */
-  refreshArtifactSourceStatus: (artifactId: string) => Promise<void>
-  clearArtifactSourceStatuses: () => void
   /* 持续关注（P16）：用户能建 / 启用 / 停用 / 删；宿主不会自己去查 */
   refreshFollows: (spaceId?: string | null) => Promise<void>
   saveWatch: (input: {
@@ -535,18 +509,6 @@ export interface Store {
     enabled?: boolean
   }) => Promise<boolean>
   removeWatch: (id: string) => Promise<boolean>
-  createArtifactDoc: (input: { title: string; text?: string; kind?: ArtifactKind; spaceId?: string; taskId?: string }) => Promise<ArtifactDoc | null>
-  /** 用户在编辑器保存正文：内容没变则**不开新版本** */
-  saveArtifactText: (id: string, text: string) => Promise<{ ok: boolean; unchanged?: boolean }>
-  renameArtifactDoc: (id: string, title: string) => Promise<boolean>
-  assignArtifactDoc: (id: string, patch: { spaceId?: string | null }) => Promise<boolean>
-  addArtifactSource: (id: string, ref: ArtifactSourceRef) => Promise<boolean>
-  /** 勾选结构化清单的一项（T06b-1）；勾选是一次用户编辑，会开新版本。 */
-  toggleArtifactChecklistItem: (id: string, index: number) => Promise<boolean>
-  /** 导出成果为 Markdown（T06b-3）；返回落盘路径（用户取消时为 null）。 */
-  exportArtifactDoc: (id: string) => Promise<{ ok: boolean; path?: string; canceled?: boolean }>
-
-  removeArtifactDoc: (id: string) => Promise<boolean>
   /** 打开一条引用：只按 sourceId + version，旧版本照样能读 */
   openLibraryRef: (ref: SourceReference, maxChars?: number) => Promise<LibraryOpenView | null>
   removeLibrarySource: (sourceId: string) => Promise<boolean>
@@ -690,7 +652,7 @@ export interface Store {
   /** 打开只读文件预览（相对路径由主进程按会话 cwd 解析） */
   previewFile: (path: string, line?: number, cwd?: string, lineEnd?: number) => Promise<void>
   /** 只查当前文件变没变（H-4 变化提示）：只 stat，不读内容 */
-  checkPreviewStale: () => Promise<void>
+  checkPreviewStale: (key?: string) => Promise<void>
   /** 切到已打开的文件标签（数据从 `filePreviews` 恢复，不重新读盘） */
   activateFileTab: (key: string) => void
   /** 关闭一个文件资源标签（实施-11 H-4：同一工作窗口可以开多个文件） */
@@ -1192,7 +1154,8 @@ let settingsBlockerRelease: (() => void) | null = null
 function browserVisibilityFor(state: Store): boolean {
   return shouldShowBrowser({
     browserOpen: state.browserState.open,
-    rightPanelOpen: state.settings?.rightPanelOpen ?? true,
+    /* The right-panel toggle is retired; the browser tile's own visibility decides. */
+    rightPanelOpen: true,
     activeBrowserSurface: browserSurfaceActive,
     overlayBlockers: overlayBlockers.size
   })
@@ -1249,12 +1212,9 @@ export const useStore = create<Store>((rawSet, get) => {
   libraryVersions: [],
   libraryRefs: [],
   libraryLoaded: false,
-  artifactDocs: [],
-  artifactSourceStatuses: [],
   followViews: [],
   followDue: [],
   followsLoaded: false,
-  artifactDocsLoaded: false,
   todos: [],
   todoHistory: [],
   activeRunnerId: null,
@@ -1307,8 +1267,6 @@ export const useStore = create<Store>((rawSet, get) => {
   terminalError: null,
   filePreview: null,
   filePreviews: {},
-  reviewOpen: false,
-  reviewScope: { kind: 'working' },
   subagents: [],
   subagentPreviewId: null,
   zoom: null,
@@ -1763,26 +1721,6 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  refreshArtifactDocs: async (spaceId) => {
-    try {
-      const res = await window.yan.artifactDoc.list(spaceId === undefined ? undefined : spaceId)
-      if (res.ok) set({ artifactDocs: res.docs, artifactDocsLoaded: true })
-    } catch {
-      /* 保持原状 */
-    }
-  },
-
-  refreshArtifactSourceStatus: async (artifactId) => {
-    try {
-      const res = await window.yan.research.sourceStatus(artifactId)
-      set({ artifactSourceStatuses: res?.statuses ?? [] })
-    } catch {
-      /* 保持原状 */
-    }
-  },
-
-  clearArtifactSourceStatuses: () => set({ artifactSourceStatuses: [] }),
-
   refreshFollows: async (spaceId) => {
     try {
       const [views, due] = await Promise.all([
@@ -1827,85 +1765,6 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     await get().refreshFollows()
     return true
-  },
-
-  createArtifactDoc: async (input) => {
-    const res = await window.yan.artifactDoc.create(input)
-    if (!res.ok || !res.doc) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '新建成果失败') })
-      return null
-    }
-    await get().refreshArtifactDocs()
-    return res.doc
-  },
-
-  saveArtifactText: async (id, text) => {
-    const res = await window.yan.artifactDoc.saveUserEdit(id, text)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '保存失败') })
-      return { ok: false }
-    }
-    await get().refreshArtifactDocs()
-    return { ok: true, ...(res.unchanged ? { unchanged: true } : {}) }
-  },
-
-  renameArtifactDoc: async (id, title) => {
-    const res = await window.yan.artifactDoc.rename(id, title)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '改名失败') })
-      return false
-    }
-    await get().refreshArtifactDocs()
-    return true
-  },
-
-  assignArtifactDoc: async (id, patch) => {
-    const res = await window.yan.artifactDoc.assign(id, patch)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '归属失败') })
-      return false
-    }
-    await get().refreshArtifactDocs()
-    return true
-  },
-
-  addArtifactSource: async (id, ref) => {
-    const res = await window.yan.artifactDoc.addSource(id, ref)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '加来源失败') })
-      return false
-    }
-    await get().refreshArtifactDocs()
-    return true
-  },
-
-  removeArtifactDoc: async (id) => {
-    const res = await window.yan.artifactDoc.remove(id)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '删除失败') })
-      return false
-    }
-    await get().refreshArtifactDocs()
-    return true
-  },
-
-  toggleArtifactChecklistItem: async (id, index) => {
-    const res = await window.yan.artifactDoc.toggleChecklist(id, index)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '勾选失败') })
-      return false
-    }
-    await get().refreshArtifactDocs()
-    return true
-  },
-
-  exportArtifactDoc: async (id) => {
-    const res = await window.yan.artifactDoc.exportMarkdown(id)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '导出失败') })
-      return { ok: false }
-    }
-    return { ok: true, ...(res.path ? { path: res.path } : {}), ...(res.canceled ? { canceled: true } : {}) }
   },
 
   importToLibrary: async (view) => {
@@ -3022,23 +2881,6 @@ export const useStore = create<Store>((rawSet, get) => {
    *    光在 DOM 里画一个预览面板是**看不见**的，必须让主进程
    *    把原生视图 setVisible(false)；关预览时再恢复。
    */
-  /*
-   * Git 审查（方案 G1）。
-   *
-   * 与 `previewFile` 同一套原生视图规则：审查占的是右栏区域，而原生
-   * `WebContentsView` 永远盖在 DOM 之上 —— 不把它藏起来，审查面板
-   * 会被浏览器盖住（看起来像「审查没打开」）。
-   */
-  openReview: (scope) => {
-    set({ reviewOpen: true, ...(scope ? { reviewScope: scope } : {}) })
-    /* 审查就在右栏里 —— 用户点名要看它，右栏收着就把它展开 */
-    if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
-    /* 原生网页由活动页切换（→review）自动隐藏，不再单独 setVisible */
-  },
-  closeReview: () => {
-    set({ reviewOpen: false })
-  },
-  setReviewScope: (scope) => set({ reviewScope: scope }),
 
   previewFile: async (path, line, cwd, lineEnd) => {
     set({ filePreview: { path, cwd, line, lineEnd, loading: true, data: null } })
@@ -3092,21 +2934,21 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ filePreview: target })
   },
 
-  checkPreviewStale: async () => {
-    const current = get().filePreview
+  checkPreviewStale: async (key) => {
+    const current = key ? get().filePreviews[key] : get().filePreview
     const abs = current?.data?.abs
     const loadedMtime = current?.data?.mtimeMs
     if (!current || !abs || !current.data?.ok || typeof loadedMtime !== 'number') return
     const found = await window.yan.statPreview(abs, current.cwd)
     /* 期间用户可能换了文件 / 关了预览：只对同一条预览生效 */
-    const now = get().filePreview
+    const now = key ? get().filePreviews[key] : get().filePreview
     if (!now || now.data?.abs !== abs) return
     /* 文件消失也算“变了”：提示重新加载，让错误就地出现在原位置 */
     const stale = !found.ok || found.mtimeMs !== loadedMtime
     if (!!now.stale === stale) return
     const next: FilePreviewState = { ...now, stale }
     set({
-      filePreview: next,
+      filePreview: get().filePreview?.key === next.key ? next : get().filePreview,
       filePreviews: next.key ? { ...get().filePreviews, [next.key]: next } : get().filePreviews
     })
   },

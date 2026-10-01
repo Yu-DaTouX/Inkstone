@@ -7,7 +7,7 @@ import { useStore } from '../../state/store'
 import { goalDisplayTitle } from '../../state/goal-view'
 import { RunDot, Button } from '../ui'
 import { visibleSubagentRuns } from '../../state/subagent-view'
-import { SubagentGroup, isLive } from '../chat/SubagentCards'
+import { isLive } from '../chat/SubagentCards'
 
 export function hasTaskTileContent(
   s: Pick<ReturnType<typeof useStore.getState>, 'todos' | 'goal'> & { hasMessageOutputs: boolean; hasSubagents?: boolean }
@@ -37,7 +37,7 @@ function SubagentsBlock() {
           </Button>
         ) : null}
       </div>
-      <SubagentGroup runs={visible} showTag={false} />
+      <Button block size="sm" icon="agent" trailingIcon="chevron-right" onClick={() => window.dispatchEvent(new CustomEvent('inkstone-agent-open', {detail:`subagent:${visible[0].id}`}))}>在 Agent 工作区查看</Button>
     </div>
   )
 }

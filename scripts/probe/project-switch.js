@@ -50,6 +50,7 @@
    * check 里跑时前面有场景会把分区收起，所以这里先把它展开 —— 不能假定默认态。
    */
   const ensureSection = async (id, ms = 6000) => {
+    await window.__yanOpenWorkspaceTool('文件', 'files')
     const sec = q(`[data-testid="${id}"]`)
     if (!sec) return false
     const head = sec.querySelector('.rp-sec-head')
@@ -153,6 +154,7 @@
     out.push('  B 的输入框 = ' + JSON.stringify(draftInB))
     ok(draftInB === '', 'B 看到的是自己的空草稿，不串 A 的草稿')
 
+    await window.__yanOpenWorkspaceTool('文件', 'files')
     const rootInB = await until(() => /other/i.test(q('[data-testid="fs-row-root"]')?.textContent ?? ''), 10000)
     out.push('  B 的文件树根行 = ' + JSON.stringify((q('[data-testid="fs-row-root"]')?.textContent ?? '').trim()))
     ok(rootInB, '文件树根名变成 B 的项目名（不是还停在 A）')
@@ -190,6 +192,7 @@
     const draftBack = await until(() => composer()?.value === draftA, 6000)
     out.push('  输入框 = ' + JSON.stringify(composer()?.value ?? ''))
     ok(draftBack, 'A 的草稿原样恢复（按运行实例隔离，不与 B 串）')
+    await window.__yanOpenWorkspaceTool('文件', 'files')
     const rootInA = await until(() => /fixture-project/i.test(q('[data-testid="fs-row-root"]')?.textContent ?? ''), 10000)
     ok(rootInA, '文件树根名回到 A')
 
@@ -231,6 +234,7 @@
       await store.getState().newSession({ cwd: cwdNoPerm, scope: 'global' })
       const moved = await until(() => samePath(sessionCwd(), cwdNoPerm), 15000)
       if (moved) {
+        await window.__yanOpenWorkspaceTool('文件', 'files')
         const permShown = await until(() => !!q('[data-testid="fs-permission"]'), 12000)
         ok(permShown, '切过去后文件树明确给出「没有读取权限」（不是空目录）')
         ok(!q('[data-testid="fs-empty"]'), '没有把它显示成「（空目录）」')

@@ -2,26 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
+import { StepSlider } from './ui'
 
-/**
- * 模型 + 思考强度选择器 —— 终端风格。
- *
- * 收起态（输入框右下）：
- *   `DeepSeek V4.1 Flash` + `高`（强调色）+ chevron
- *
- * 展开态（贴着触发器向上弹）：
- *   上半  当前模型名 + 一排**档位**（关 / 轻度 / 中 / 高 / 极高 / Ultra / Max）
- *   下半  模型列表（搜索 + 按 provider 分组）
- *
- * ⚠️ 为什么把原生 range 滑块换成了档位：
- *   之前的实现用 `input[type=range]` + `::-webkit-slider-runnable-track/thumb`，
- *   在 Chromium 里实际渲染出的是「一条 14px 高的粗蓝条 + 一个 16px 的方块」——
- *   轨道比滑块矮、滑块又比轨道高，视觉上是断的；再叠一层绝对定位的
- *   `mt-scale` 小方块行，两套「档位」指示互相打架。用户看到的就是「有 bug」。
- *
- *   而且滑块本身是个**谎言**：档位是离散的 5~7 档，滑动却没有中间态可用。
- *   档位按钮是 1:1 的映射 —— 看到几个方块就是几档，点哪个就是哪个。
- */
+/** 模型与思考强度选择器：离散档位的点阵滑块，按当前模型报告的可用档位展示。 */
 export function ModelThinkingPicker() {
   const t = useT()
   const session = useStore((s) => s.session)
@@ -309,23 +292,17 @@ export function ModelThinkingPicker() {
               {/* 档位按钮：一个方块 = 一档。终端风格的等宽分段。
                   `--i` 让它们从左到右依次落位（像终端打印出来）。 */}
               {hasLevels ? (
-                <div className="mt-stops" data-testid="thinking-stops">
-                  {levels.map((l, i) => (
-                    <button
-                      key={l}
-                      style={{ '--i': i } as React.CSSProperties}
-                      className={`mt-stop ${l === level ? 'on' : ''}`}
-                      onClick={() => void setThinking(l)}
-                      disabled={busy}
-                      title={l}
-                      data-testid={`thinking-dot-${l}`}
-                      data-level={l}
-                      data-on={l === level ? '1' : '0'}
-                    >
-                      {thinkLabel(l)}
-                    </button>
-                  ))}
-                </div>
+                <StepSlider
+                  values={levels}
+                  value={levels.includes(level) ? level : levels[0]}
+                  onChange={(l) => void setThinking(l)}
+                  label={t('picker.think')}
+                  format={thinkLabel}
+                  colorOf={(l) => `var(--think-${l}, var(--accent))`}
+                  disabled={busy}
+                  testId="thinking-stops"
+                  stopTestId={(l) => `thinking-dot-${l}`}
+                />
               ) : (
                 <div className="mt-capability-note" data-testid="thinking-capability-status">
                   {thinkingStatus === 'unsupported' ? t('picker.thinkUnsupported') : t('picker.thinkUnknown')}

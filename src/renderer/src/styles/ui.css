@@ -751,3 +751,169 @@ select.ui-input {
 .ui-mini-meter.unknown { opacity: 0.5; }
 .ui-map-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
 .ui-map-card.selected { border-color: var(--accent); }
+/* Shared workspace chrome; modules only assign its geometry.
+   Tiles are rounded cards separated by a gap; the gap is the resize splitter. */
+.ui-surface { background: var(--bg-1); border: 1px solid var(--border-soft); }
+.ui-tile { background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: var(--r-lg); transition: opacity var(--dur-200) var(--ease), border-color var(--dur-200) var(--ease); }
+.ui-tile.maximized { border-color: var(--border); }
+/* The main conversation is the primary content: no card, it sits on the workspace background. */
+.ui-tile.primary, .ui-tile.primary.maximized { background: transparent; border-color: transparent; }
+.ui-tile-head { border-bottom: 1px solid var(--border-soft); border-radius: var(--r-lg) var(--r-lg) 0 0; cursor: grab; }
+.ui-tile-head:active { cursor: grabbing; }
+.ui-tile-head .ui-tabs { background: transparent; }
+/* Compact tile title row: 28px high, 22px controls. */
+.ui-tile-head .ui-tab { height: 22px; padding-inline: var(--sp-1) var(--sp-2); font-size: var(--fs-sm); }
+.ui-tile-head .btn.icon.sm { width: 22px; height: 22px; }
+/* A lone tab reads as the tile title, as in the reference: no selected pill. */
+.ui-tile-head .ui-tabs.single .ui-tab.sel { background: transparent; }
+.ui-tile-head .ui-tabs.single .ui-tab.sel:hover { background: var(--bg-2); }
+.ui-tile-body { border-radius: 0 0 calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px); }
+.ui-tile-grip { border: none; background: transparent; cursor: grab; display: flex; align-items: center; justify-content: center; }
+.ui-tile-grip::before { content: ''; width: 32px; height: 3px; border-radius: var(--r-full); background: var(--border); transition: background var(--dur-200) var(--ease), width var(--dur-200) var(--ease); }
+.ui-tile-grip:hover::before, .ui-tile-grip:focus-visible::before { width: 40px; background: var(--fg-mute); }
+.ui-tile-grip:focus-visible { outline: none; }
+.ui-tile-grip:active { cursor: grabbing; }
+.ui-splitter { background: transparent; outline: none; }
+.ui-splitter::after { content: ''; position: absolute; inset: 0; margin: auto; border-radius: var(--r-full); background: transparent; transition: background var(--dur-200) var(--ease); }
+.ui-splitter[aria-orientation='vertical']::after { width: 2px; height: calc(100% - 2 * var(--r-lg)); }
+.ui-splitter[aria-orientation='horizontal']::after { height: 2px; width: calc(100% - 2 * var(--r-lg)); }
+.ui-splitter:hover::after, .ui-splitter:focus-visible::after { background: var(--accent-line); }
+.ui-tile.drop-slot { background: var(--accent-soft); border: 1px dashed var(--accent-line); }
+.ui-tile.floating { border-color: var(--border-str); box-shadow: var(--shadow-pop); }
+.ui-tile-grip-bar { display: block; width: 36px; height: 4px; border-radius: var(--r-full); background: var(--fg-dim); }
+.ui-menu-label { color: var(--fg-mute); font-size: var(--fs-xs); }
+
+/* ── 小圆环 <MiniRing>：输入框里的上下文占用 ── */
+.ui-mini-ring { flex: none; display: block; }
+.ui-mini-ring-track { fill: none; stroke: var(--bg-4); stroke-width: 2; }
+.ui-mini-ring-value { fill: none; stroke: var(--fg-mute); stroke-width: 2; stroke-linecap: round; transition: stroke-dashoffset var(--dur-420) var(--mo-ease), stroke var(--dur-200) var(--ease); }
+.ui-mini-ring.warn .ui-mini-ring-value { stroke: var(--warn); }
+.ui-mini-ring.err .ui-mini-ring-value { stroke: var(--err); }
+.ui-mini-ring.unknown .ui-mini-ring-value { stroke: transparent; }
+
+/* ── 分档滑块 <StepSlider>：冷暖点阵与移动亮波，圆角块手柄；拖动时上方浮出档名 ── */
+.ui-step-slider { --step-color: var(--accent); --step-pct: 0%; position: relative; padding: var(--sp-3) 9px 0; user-select: none; }
+.ui-step-slider.disabled { opacity: var(--ctl-disabled-opacity); }
+.ui-step-track { position: relative; height: 20px; cursor: pointer; touch-action: none; }
+.ui-step-slider.disabled .ui-step-track { cursor: default; }
+.ui-step-dots { position: absolute; top: 50%; width: 100%; height: 24px; margin-top: -12px; overflow: hidden; pointer-events: none; mask-image: radial-gradient(circle, black 1.2px, transparent 1.5px); mask-size: 6px 6px; }
+.ui-step-seg { --seg-from: var(--accent); --seg-color: var(--accent); position: absolute; top: 0; height: 100%; color: var(--bg-4); background: currentColor; transition: color var(--dur-320) var(--ease); }
+.ui-step-seg::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, var(--seg-from), var(--seg-color)); opacity: 0; transition: opacity var(--dur-320) var(--ease) calc(var(--seg-i, 0) * var(--dur-120) / 4); }
+.ui-step-seg.on::before { opacity: 1; }
+.ui-step-track:hover .ui-step-seg:not(.on) { color: var(--bg-3); }
+.ui-step-wave { position: absolute; inset: 0 auto 0 0; width: var(--step-pct); background-image: linear-gradient(90deg, transparent, var(--fg), transparent); background-size: 48px 100%; background-repeat: no-repeat; opacity: 0.7; animation: ui-step-wave var(--dur-1600) linear infinite; }
+.ui-step-dots[data-lit="0"] .ui-step-wave, .ui-step-slider.disabled .ui-step-wave { display: none; }
+.ui-step-thumb { position: absolute; top: 50%; left: var(--step-pct); width: 16px; height: 26px; margin: -13px 0 0 -8px; border-radius: var(--r-sm); background: var(--fg); border: 1px solid var(--step-color); box-shadow: 0 0 8px color-mix(in srgb, var(--step-color) 32%, transparent); transition: left var(--dur-320) var(--mo-ease), border-color var(--dur-200) var(--ease), box-shadow var(--dur-200) var(--ease), transform var(--dur-200) var(--mo-ease); outline: none; }
+.ui-step-track:hover .ui-step-thumb, .ui-step-thumb:focus-visible { transform: scale(1.08); box-shadow: 0 0 0 3px color-mix(in srgb, var(--step-color) 22%, transparent); }
+.ui-step-slider.dragging .ui-step-thumb { transform: scale(1.15); transition-duration: var(--dur-120); }
+.ui-step-bubble { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); padding: 2px 7px; border-radius: var(--r-sm); background: var(--step-color); color: var(--bg-0); font-size: var(--fs-xs); font-weight: var(--fw-medium); white-space: nowrap; pointer-events: none; animation: ui-step-bubble-in var(--dur-200) var(--mo-ease); }
+.ui-step-labels { position: relative; height: 22px; margin-top: 4px; }
+.ui-step-label { position: absolute; top: 0; transform: translateX(-50%); padding: 2px 4px; border: none; background: transparent; color: var(--fg-mute); font: inherit; font-size: var(--fs-xs); white-space: nowrap; cursor: pointer; border-radius: var(--r-xs); transition: color var(--dur-200) var(--ease), background var(--dur-200) var(--ease); }
+.ui-step-label.first { transform: translateX(-9px); }
+.ui-step-label.last { transform: translateX(calc(-100% + 9px)); }
+.ui-step-label:hover:not(:disabled) { color: var(--fg); background: var(--bg-3); }
+.ui-step-label.on { color: var(--step-color); font-weight: var(--fw-medium); background: color-mix(in srgb, var(--step-color) 14%, transparent); }
+@media (prefers-reduced-motion: reduce) {
+  .ui-step-seg, .ui-step-seg::before, .ui-step-thumb, .ui-step-thumb::after, .ui-step-label, .ui-mini-ring-value { transition: none; }
+  .ui-step-bubble { animation: none; }
+  .ui-step-wave { display: none; animation: none; }
+}
+/* Title inside compact detail popovers, and small tabular numbers beside meters. */
+.ui-popover-title { color: var(--fg); font-weight: var(--fw-medium); font-size: var(--fs-sm); }
+.ui-meta-num { color: var(--fg-mute); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+
+/* ── 分类用量 <ContextDetails>：分段条与图例（上下文窗口浮层） ── */
+.ui-usage-bar { display: flex; gap: 2px; height: 6px; border-radius: var(--r-full); background: var(--bg-3); overflow: hidden; }
+.ui-usage-seg { display: block; height: 100%; min-width: 2px; transition: width var(--dur-420) var(--mo-ease); }
+.ui-usage-legend { list-style: none; margin: 0; padding: 0; }
+.ui-usage-legend li { color: var(--fg); font-size: var(--fs-sm); }
+.ui-usage-legend li.free .ui-usage-name { color: var(--fg-mute); }
+.ui-usage-swatch { display: block; width: 10px; height: 10px; border-radius: 3px; }
+.ui-usage-num { text-align: right; }
+.c-system { background: var(--fg-mute); }
+.c-user { background: var(--accent); }
+.c-assistant { background: var(--ok); }
+.c-thinking { background: var(--magenta); }
+.c-tools { background: var(--warn); }
+.ui-usage-swatch.c-free { background: var(--bg-3); border: 1px solid var(--border); }
+@media (prefers-reduced-motion: reduce) { .ui-usage-seg { transition: none; } }
+
+/* ── 额度浮层：每个窗口一个块，大号百分比 + 4px 进度条 + 暗色副行 ── */
+.ui-quota-track { height: 4px; border-radius: var(--r-full); background: var(--bg-3); overflow: hidden; }
+.ui-quota-track > i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--dur-420) var(--mo-ease); }
+.ui-quota-track.warn > i { background: var(--warn); }
+.ui-quota-track.err > i { background: var(--err); }
+.quota-block-label { color: var(--fg-dim); font-size: var(--fs-sm); }
+.quota-block-value { color: var(--fg); font-size: var(--fs-lg); font-weight: var(--fw-medium); font-variant-numeric: tabular-nums; }
+.quota-block-value small { font-size: var(--fs-xs); color: var(--fg-mute); margin-left: 1px; font-weight: normal; }
+.quota-block-value.warn { color: var(--warn); }
+.quota-block-value.err { color: var(--err); }
+.quota-block-sub, .quota-pop-foot, .ctx-window-note { color: var(--fg-mute); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.quota-block-sub .err { color: var(--err); }
+.ctx-window-total.warn { color: var(--warn); }
+.ctx-window-total.err { color: var(--err); }
+@media (prefers-reduced-motion: reduce) { .ui-quota-track > i { transition: none; } }
+
+/* ── 抬高一级的块：表单卡片等（Agent 协作的新建区） ── */
+.ui-card { background: var(--bg-2); border: 1px solid var(--border-soft); border-radius: var(--r-md); }
+/* ── 选择片：单选的一组可点项（Agent 选择）；选中为强调描边 + 软底，不可用时置灰 ── */
+.ui-choice { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 var(--sp-2) 0 4px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-1); color: var(--fg-dim); font: inherit; font-size: var(--fs-sm); cursor: pointer; transition: border-color var(--dur-200) var(--ease), background var(--dur-200) var(--ease), color var(--dur-200) var(--ease); }
+.ui-choice:hover:not(:disabled) { border-color: var(--border-str); color: var(--fg); }
+.ui-choice.sel { border-color: var(--accent-line); background: var(--accent-soft); color: var(--fg); }
+.ui-choice:disabled { opacity: var(--ctl-disabled-opacity); cursor: default; }
+.ui-choice small { color: var(--fg-mute); font-size: var(--fs-xs); }
+/* ── 字母标识：Agent/CLI 的首字母方块 ── */
+.ui-letter-mark { display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: var(--r-xs); background: var(--bg-3); color: var(--fg-dim); font-family: var(--font-mono); font-size: 11px; font-weight: var(--fw-medium); }
+.ui-choice.sel .ui-letter-mark { background: var(--accent); color: var(--bg-0); }
+/* ── 状态：圆点 + 文字；live 用强调色，其余按语义色 ── */
+.ui-status { display: inline-flex; align-items: center; gap: 5px; color: var(--fg-mute); font-size: var(--fs-xs); white-space: nowrap; }
+.ui-status-dot { display: block; width: 6px; height: 6px; border-radius: var(--r-full); background: currentColor; }
+.ui-status.live { color: var(--accent); }
+.ui-status.ok { color: var(--ok); }
+.ui-status.warn { color: var(--warn); }
+.ui-status.err { color: var(--err); }
+.ui-status.live .ui-status-dot { animation: ui-status-pulse var(--dur-1600) var(--ease) infinite; }
+@media (prefers-reduced-motion: reduce) { .ui-status.live .ui-status-dot { animation: none; } .ui-choice { transition: none; } }
+
+/* ── 文件片：附件（待发送与已发送）；图片待发送时带缩略图 ── */
+.ui-file-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; padding: 0 4px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-2); color: var(--fg-dim); font-size: var(--fs-xs); }
+.ui-file-chip img, .ui-file-chip-ext { width: 20px; height: 20px; flex: none; border-radius: var(--r-xs); object-fit: cover; }
+.ui-file-chip-ext { display: grid; place-items: center; background: var(--bg-3); color: var(--fg-mute); font-family: var(--font-mono); font-size: 9px; }
+.ui-file-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-file-chip button { width: 18px; height: 18px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--fg-mute); cursor: pointer; font: inherit; }
+.ui-file-chip button:hover { background: var(--bg-3); color: var(--fg); }
+
+/* ── Agent 对话视图：受管运行的指令、叙述、工具、改动、交接包与审批 ── */
+.agent-chat-user { background: var(--bg-3); border-radius: var(--r-md) var(--r-md) var(--r-xs) var(--r-md); }
+.agent-chat-packet { background: var(--accent-soft); border-left: 2px solid var(--accent); border-radius: 0 var(--r-md) var(--r-md) 0; }
+.agent-chat-report { background: var(--bg-2); border: 1px dashed var(--border); border-radius: var(--r-md); }
+.agent-chat-meta, .agent-chat-who { color: var(--fg-mute); font-size: var(--fs-xs); }
+.agent-chat-packet .agent-chat-meta { color: var(--accent); }
+.agent-chat-bubble-text { color: var(--fg); line-height: 1.65; }
+.agent-chat-bubble-text.muted { color: var(--fg-mute); }
+.agent-chat-tool { border: 1px solid var(--border-soft); border-radius: var(--r-sm); background: var(--bg-2); }
+.agent-chat-tool > summary { font-family: var(--font-mono); font-size: var(--fs-sm); cursor: pointer; }
+.agent-chat-kind { color: var(--fg-mute); }
+.agent-chat-cmd { color: var(--fg); }
+.agent-chat-count .add { color: var(--ok); }
+.agent-chat-count .del { color: var(--err); }
+.agent-chat-out, .agent-chat-diff { border-top: 1px solid var(--border-soft); background: var(--bg-0); color: var(--fg-dim); font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.55; }
+.agent-chat-diff .d-p { background: var(--ok-soft); color: var(--fg); }
+.agent-chat-diff .d-m { background: var(--err-soft); color: var(--fg); }
+.agent-chat-diff .d-h { background: var(--bg-3); color: var(--fg-mute); }
+.agent-chat-approval { border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); border-radius: var(--r-md); }
+.agent-chat-approval-q { color: var(--fg); font-weight: var(--fw-medium); }
+.agent-chat-approval-detail { background: var(--bg-2); border-radius: var(--r-xs); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--fg); }
+.agent-chat-note, .agent-chat-hint, .agent-chat-working { color: var(--fg-mute); font-size: var(--fs-xs); }
+.agent-chat-working { color: var(--accent); }
+.agent-chat-working .ui-status-dot { animation: ui-status-pulse var(--dur-1600) var(--ease) infinite; }
+.agent-chat-end { border-top: 1px solid var(--border-soft); color: var(--fg-dim); font-size: var(--fs-sm); }
+.agent-chat-end.err { color: var(--err); }
+.agent-tree { color: var(--fg-dim); font-size: var(--fs-xs); background: var(--bg-2); border: 1px solid var(--border-soft); border-radius: var(--r-md); }
+.agent-tree.warn { background: var(--warn-soft); border-color: transparent; }
+.agent-tree b { color: var(--fg); font-weight: var(--fw-medium); }
+.agent-chat-composer.drag, .agent-chat-composer:focus-within { background: var(--bg-1); }
+@media (prefers-reduced-motion: reduce) { .agent-chat-working .ui-status-dot { animation: none; } }
+/* Tile tabs that can be closed show their × on the selected tab, and on others only while hovered or focused. */
+.ui-tile-head .ui-tab.doc:not(.sel) .ui-tab-close { opacity: 0; transition: opacity var(--dur-200) var(--ease); }
+.ui-tile-head .ui-tab.doc:not(.sel):hover .ui-tab-close, .ui-tile-head .ui-tab.doc:focus-visible .ui-tab-close { opacity: 1; }

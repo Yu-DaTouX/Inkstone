@@ -1,4 +1,4 @@
-/* 真实 Electron 探针：确认工具栏旁开关、右栏 BrowserView 与 renderer 状态能闭环。 */
+/* 真实 Electron 探针：浏览器磁贴、原生视图与 renderer 状态闭环。 */
 (async () => {
   let button = document.querySelector('[data-testid="browser-view-toggle"]')
   if (!button) {
@@ -16,11 +16,11 @@
   const observation = await window.yan.browser.observe()
   const viewport = document.querySelector('[data-testid="browser-surface"] .browser-viewport')
   const rect = viewport ? viewport.getBoundingClientRect() : null
-  const surface = document.querySelector('[data-testid="rightpanel"] [data-testid="browser-surface"]')
+  const surface = document.querySelector('[data-workspace-pane="browser"]:not([hidden]) [data-testid="browser-surface"]')
   const centerMode = document.querySelector('.center.browser-mode')
   if (!state.open) throw new Error(`浏览器未打开: ${JSON.stringify(state)}`)
   if (!surface || centerMode || button.getAttribute('aria-checked') !== 'true') {
-    throw new Error('浏览器没有在右侧工具栏面板中打开')
+    throw new Error('浏览器没有在可见工作区磁贴中打开')
   }
   if (!observation.generationId || observation.accessibilityNodeCount < 1 || !observation.domSnapshotCaptured) {
     throw new Error(`CDP 观察结果不完整: ${JSON.stringify(observation)}`)
@@ -163,18 +163,27 @@
    * 原生网页也不可见；展开后资源与页面都恢复。
    */
   const surfaceBox = () => document.querySelector('[data-testid="browser-surface"]')?.getBoundingClientRect()
-  const panelToggle = document.querySelector('[data-testid="rightpanel-toggle"]')
-  if (panelToggle) {
-    panelToggle.click()
+  const browserTab = document.querySelector('[data-pane-tab="browser"]')
+  const hide = browserTab?.closest('.tile-heading')?.querySelector('button[aria-label="收起面板，保留运行"]')
+  if (!hide) throw new Error('浏览器磁贴缺少隐藏入口')
+  {
+    const tabId = (await window.yan.browser.getState()).activeTabId
+    hide.click()
     await new Promise((r) => setTimeout(r, 700))
-    const panelGone = !document.querySelector('[data-testid="rightpanel"]')
+    const panelGone = !document.querySelector('[data-workspace-pane="browser"]:not([hidden])')
     const afterH = surfaceBox()?.height ?? 0
-    if (!panelGone) throw new Error('收起右栏后工作栏仍在布局里')
-    if (afterH > 0) throw new Error(`收起右栏后原生网页没有隐藏，仍有高度 ${afterH}`)
-    panelToggle.click()
+    if (!panelGone) throw new Error('隐藏浏览器后磁贴仍在布局里')
+    if (afterH > 0) throw new Error(`隐藏磁贴后网页仍有高度 ${afterH}`)
+    if ((await window.yan.browser.getState()).activeTabId !== tabId) throw new Error('隐藏磁贴丢失浏览器资源')
+    document.querySelector('[data-testid="right-tool-menu"]').click()
+    await new Promise((r) => setTimeout(r, 100))
+    const reopen = [...document.querySelectorAll('[data-testid="right-tool-menu-popover"] [role="menuitem"]')].find(el => el.textContent.trim() === '浏览器')
+    if (!reopen) throw new Error('工作区工具菜单缺少浏览器入口')
+    reopen.click()
     await new Promise((r) => setTimeout(r, 700))
-    if (!((surfaceBox()?.height ?? 0) > 0)) throw new Error('重新展开后浏览器没有恢复')
+    if (!((surfaceBox()?.height ?? 0) > 0)) throw new Error('重新打开后浏览器磁贴没有恢复')
+    if ((await window.yan.browser.getState()).activeTabId !== tabId) throw new Error('恢复磁贴改变了活动网页')
   }
 
-  return JSON.stringify({ open: state.open, hasUrl: Boolean(state.url), rightPanel: true, centerUnchanged: !centerMode, title: state.title, generation: observation.generationId, elements: observation.elements.length, tabs: finalState.tabs?.length || 0, viewport: rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, finalViewport: finalRect && { x: finalRect.x, y: finalRect.y, width: finalRect.width, height: finalRect.height }, nativeBounds: finalState.nativeBounds })
+  return JSON.stringify({ open: state.open, hasUrl: Boolean(state.url), workspaceTile: true, centerUnchanged: !centerMode, title: state.title, generation: observation.generationId, elements: observation.elements.length, tabs: finalState.tabs?.length || 0, viewport: rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, finalViewport: finalRect && { x: finalRect.x, y: finalRect.y, width: finalRect.width, height: finalRect.height }, nativeBounds: finalState.nativeBounds })
 })()

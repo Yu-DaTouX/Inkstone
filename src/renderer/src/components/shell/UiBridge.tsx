@@ -214,8 +214,10 @@ export function ConnBar({ conn }: { conn: 'starting' | 'ready' | 'exited' | 'err
 
 /* ------------------------------------------------------------------ 通知 */
 export function Notices() {
+  const t = useT()
   const notices = useStore((s) => s.notices)
   const dismiss = useStore((s) => s.dismissNotice)
+  const openSettings = useStore((s) => s.openSettings)
 
   /*
    * 退场：store 一移除通知，节点就没了 —— 所以要把刚被移除的**留住一会儿**。
@@ -243,7 +245,7 @@ export function Notices() {
   useEffect(() => {
     if (notices.length === 0) return
     const timers = notices.map((n) =>
-      setTimeout(() => dismiss(n.id), n.type === 'error' ? 12_000 : 5_000)
+      setTimeout(() => dismiss(n.id), n.action ? 20_000 : n.type === 'error' ? 12_000 : 5_000)
     )
     return () => timers.forEach(clearTimeout)
   }, [notices, dismiss])
@@ -255,6 +257,30 @@ export function Notices() {
     <div className="notices">
       {shown.map((n, i) => {
         const isLeaving = !notices.some((x) => x.id === n.id)
+        if (n.action === 'search-api-hint') {
+          return (
+            <div
+              key={n.id}
+              className={`notice info notice-action ${isLeaving ? 'closing' : ''}`}
+              style={{ '--i': i } as React.CSSProperties}
+              data-testid="search-api-hint"
+            >
+              <Icon name="search" size={12} />
+              <span className="notice-text">{t('search.apiHint')}</span>
+              <span className="notice-actions">
+                <Button size="sm" onClick={() => { dismiss(n.id); openSettings('capabilities') }}>{t('search.apiHintSetup')}</Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  data-testid="search-api-hint-dismiss"
+                  onClick={() => { dismiss(n.id); void window.yan.search.setApiHintDismissed(true) }}
+                >
+                  {t('search.apiHintNever')}
+                </Button>
+              </span>
+            </div>
+          )
+        }
         return (
           <button
             key={n.id}

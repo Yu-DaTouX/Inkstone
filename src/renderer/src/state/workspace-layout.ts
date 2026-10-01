@@ -1,0 +1,143 @@
+/** Layout contains resource references only. Moving a pane never changes its owner. */
+export type DockEdge = 'left' | 'right' | 'top' | 'bottom' | 'center'
+export type DockNode = { type: 'group'; id: string; panes: string[]; active: string } |
+  { type: 'split'; id: string; axis: 'x' | 'y'; ratio: number; first: DockNode; second: DockNode }
+export interface WorkspaceLayout { version: 1; root: DockNode; hidden: string[]; maximized?: string }
+export interface DockRect { x: number; y: number; w: number; h: number }
+export interface DockGroupRect extends DockRect { group: Extract<DockNode, { type: 'group' }> }
+export interface DockSeparator extends DockRect { id: string; axis: 'x' | 'y'; ratio: number; bounds: DockRect }
+export const CHAT_PANE = 'chat'
+/** Gap between tiles; the gap doubles as the resize separator. */
+export const DOCK_GAP = 8
+export const DOCK_MIN_CHAT = 340
+export const DOCK_MIN_TOOL = 200
+const group = (id: string, panes: string[]): DockNode => ({ type: 'group', id, panes, active: panes[0] })
+const uid = (): string => crypto.randomUUID()
+/** The default workspace is the main conversation alone; tools open beside it on demand. */
+export function defaultWorkspaceLayout(): WorkspaceLayout {
+  return { version: 1, root: group('conversation', [CHAT_PANE]), hidden: [] }
+}
+export function dockGroups(node: DockNode): Extract<DockNode, { type: 'group' }>[] {
+  return node.type === 'group' ? [node] : [...dockGroups(node.first), ...dockGroups(node.second)]
+}
+function mapNode(node: DockNode, fn: (node: DockNode) => DockNode): DockNode {
+  return fn(node.type === 'split' ? { ...node, first: mapNode(node.first, fn), second: mapNode(node.second, fn) } : node)
+}
+function removePane(node: DockNode, pane: string): DockNode | null {
+  if (node.type === 'group') {
+    const panes = node.panes.filter(id => id !== pane)
+    return panes.length ? { ...node, panes, active: panes.includes(node.active) ? node.active : panes[0] } : null
+  }
+  const first = removePane(node.first, pane), second = removePane(node.second, pane)
+  return first && second ? { ...node, first, second } : first ?? second
+}
+export function openDockPane(layout: WorkspaceLayout, pane: string): WorkspaceLayout {
+  const existing = dockGroups(layout.root).find(g => g.panes.includes(pane))
+  let root = layout.root
+  if (existing) root = mapNode(root, n => n.type === 'group' && n.id === existing.id ? { ...n, active: pane } : n)
+  else {
+    const candidates = dockGroups(root).filter(g => !g.panes.includes(CHAT_PANE))
+    const kind = pane.split(':')[0]
+    const target = candidates.find(g => g.panes.some(id => id.split(':')[0] === kind)) ?? candidates.find(g => g.panes.includes('tools')) ?? candidates.at(-1)
+    root = target ? mapNode(root, n => n.type === 'group' && n.id === target.id ? { ...n, panes: [...n.panes, pane], active: pane } : n)
+      : { type: 'split', id: uid(), axis: 'x', ratio: .65, first: root, second: group(uid(), [pane]) }
+  }
+  const previousMaxGroup = dockGroups(layout.root).find(g => g.panes.includes(layout.maximized ?? ''))
+  return { ...layout, root, hidden: layout.hidden.filter(id => id !== pane), maximized: layout.maximized && existing?.id === previousMaxGroup?.id ? pane : undefined }
+}
+/** The arrangement with one pane lifted out; drag targets are measured on it so they stay still while tiles reflow. */
+export function withoutDockPane(layout: WorkspaceLayout, pane: string): WorkspaceLayout {
+  const root = removePane(layout.root, pane)
+  return root ? { ...layout, root, maximized: undefined } : layout
+}
+export function hideDockPane(layout: WorkspaceLayout, pane: string): WorkspaceLayout {
+  if (pane === CHAT_PANE) return layout
+  const root = mapNode(layout.root, n => {
+    if (n.type !== 'group' || n.active !== pane) return n
+    return { ...n, active: n.panes.find(id => id !== pane && !layout.hidden.includes(id)) ?? pane }
+  })
+  return { ...layout, root, hidden: [...new Set([...layout.hidden, pane])], maximized: layout.maximized === pane ? undefined : layout.maximized }
+}
+export function moveDockPane(layout: WorkspaceLayout, pane: string, targetId: string, edge: DockEdge): WorkspaceLayout {
+  const groups = dockGroups(layout.root), source = groups.find(g => g.panes.includes(pane)), target = groups.find(g => g.id === targetId)
+  if (!source || !target || (source.id === targetId && (source.panes.length === 1 || edge === 'center'))) return layout
+  if (edge === 'center' && (pane === CHAT_PANE || target.panes.includes(CHAT_PANE))) return layout
+  const removed = removePane(layout.root, pane)
+  if (!removed) return layout
+  const root = mapNode(removed, n => {
+    if (n.type !== 'group' || n.id !== targetId) return n
+    if (edge === 'center') return { ...n, panes: [...n.panes, pane], active: pane }
+    const newGroup = group(uid(), [pane]), before = edge === 'left' || edge === 'top'
+    return { type: 'split', id: uid(), axis: edge === 'left' || edge === 'right' ? 'x' : 'y', ratio: .5, first: before ? newGroup : n, second: before ? n : newGroup }
+  })
+  return { ...layout, root, maximized: undefined, hidden: layout.hidden.filter(id => id !== pane) }
+}
+export function resizeDockSplit(layout: WorkspaceLayout, id: string, ratio: number): WorkspaceLayout {
+  return { ...layout, root: mapNode(layout.root, n => n.type === 'split' && n.id === id ? { ...n, ratio: Math.max(.1, Math.min(.9, ratio)) } : n) }
+}
+/** Validate persisted data defensively, with depth/node limits and unique resource references. */
+export function normalizeWorkspaceLayout(value: unknown): WorkspaceLayout {
+  const fallback = defaultWorkspaceLayout()
+  if (!value || typeof value !== 'object' || (value as WorkspaceLayout).version !== 1) return fallback
+  const input = value as WorkspaceLayout, panes = new Set<string>(), nodes = new Set<string>()
+  let count = 0
+  const read = (raw: unknown, depth = 0): DockNode | null => {
+    if (!raw || typeof raw !== 'object' || depth > 24 || ++count > 128) return null
+    const n = raw as DockNode
+    if (typeof n.id !== 'string' || nodes.has(n.id)) return null
+    nodes.add(n.id)
+    if (n.type === 'group' && Array.isArray(n.panes)) {
+      const valid = n.panes.filter(id => typeof id === 'string' && id.length < 2048 && !panes.has(id) && !!panes.add(id))
+      if (!valid.length) return null
+      // Main conversation can never be concealed behind a tool label.
+      if (valid.includes(CHAT_PANE) && valid.length > 1) {
+        return { type: 'split', id: uid(), axis: 'x', ratio: .65, first: group(n.id, [CHAT_PANE]), second: group(uid(), valid.filter(id => id !== CHAT_PANE)) }
+      }
+      return { type: 'group', id: n.id, panes: valid, active: valid.includes(n.active) ? n.active : valid[0] }
+    }
+    if (n.type === 'split') {
+      const first = read(n.first, depth + 1), second = read(n.second, depth + 1)
+      if (!first || !second) return first ?? second
+      return { type: 'split', id: n.id, axis: n.axis === 'y' ? 'y' : 'x', ratio: Number.isFinite(n.ratio) ? Math.max(.1, Math.min(.9, n.ratio)) : .5, first, second }
+    }
+    return null
+  }
+  let root = read(input.root)
+  if (!root) return fallback
+  if (!panes.has(CHAT_PANE)) root = { type: 'split', id: uid(), axis: 'x', ratio: .65, first: group(uid(), [CHAT_PANE]), second: root }
+  return { version: 1, root, hidden: Array.isArray(input.hidden) ? input.hidden.filter(id => typeof id === 'string' && id !== CHAT_PANE && panes.has(id)) : [], maximized: typeof input.maximized === 'string' && panes.has(input.maximized) ? input.maximized : undefined }
+}
+export function measureDockLayout(layout: WorkspaceLayout, available: Set<string>, width: number, height: number): { groups: DockGroupRect[]; separators: DockSeparator[]; width: number; height: number } {
+  const groups: DockGroupRect[] = [], separators: DockSeparator[] = []
+  const visible = (n: DockNode): boolean => n.type === 'group' ? n.panes.some(id => available.has(id) && !layout.hidden.includes(id)) : visible(n.first) || visible(n.second)
+  const minimum = (n: DockNode): [number, number] => {
+    if (!visible(n)) return [0, 0]
+    if (n.type === 'group') return [n.panes.includes(CHAT_PANE) ? DOCK_MIN_CHAT : DOCK_MIN_TOOL, 180]
+    const a = minimum(n.first), b = minimum(n.second)
+    if (!a[0]) return b
+    if (!b[0]) return a
+    return n.axis === 'x' ? [a[0] + b[0] + DOCK_GAP, Math.max(a[1], b[1])] : [Math.max(a[0], b[0]), a[1] + b[1] + DOCK_GAP]
+  }
+  const walk = (n: DockNode, r: DockRect): void => {
+    if (!visible(n)) return
+    if (n.type === 'group') { groups.push({ ...r, group: n }); return }
+    if (!visible(n.first)) { walk(n.second, r); return }
+    if (!visible(n.second)) { walk(n.first, r); return }
+    const a = minimum(n.first), b = minimum(n.second), horizontal = n.axis === 'x'
+    const total = (horizontal ? r.w : r.h) - DOCK_GAP
+    const size = Math.max(horizontal ? a[0] : a[1], Math.min(total - (horizontal ? b[0] : b[1]), total * n.ratio))
+    const first = horizontal ? { ...r, w: size } : { ...r, h: size }
+    const separator = horizontal ? { ...r, x: r.x + size, w: DOCK_GAP } : { ...r, y: r.y + size, h: DOCK_GAP }
+    const second = horizontal ? { ...r, x: r.x + size + DOCK_GAP, w: total - size } : { ...r, y: r.y + size + DOCK_GAP, h: total - size }
+    separators.push({ ...separator, id: n.id, axis: n.axis, ratio: n.ratio, bounds: r })
+    walk(n.first, first); walk(n.second, second)
+  }
+  const min = minimum(layout.root), w = Math.max(width, min[0]), h = Math.max(height, min[1])
+  if (layout.maximized && available.has(layout.maximized) && !layout.hidden.includes(layout.maximized)) {
+    const g = dockGroups(layout.root).find(g => g.panes.includes(layout.maximized!))
+    if (g) groups.push({ x: 0, y: 0, w: width, h: height, group: { ...g, active: layout.maximized } })
+    return { groups, separators, width, height }
+  }
+  walk(layout.root, { x: 0, y: 0, w, h })
+  return { groups, separators, width: w, height: h }
+}

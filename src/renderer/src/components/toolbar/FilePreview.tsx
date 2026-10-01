@@ -28,10 +28,12 @@ import { OfficePreview } from '../review/OfficeContent'
 const MAX_RENDER_LINES = 2000
 
 /** `focus`：预览独占右栏（收起下方的文件树等分区），由右栏持有状态 */
-export function FilePreviewPane({ focus = false, onToggleFocus }: { focus?: boolean; onToggleFocus?: () => void } = {}) {
+export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: { focus?: boolean; onToggleFocus?: () => void; resourceKey?: string } = {}) {
   const t = useT()
-  const preview = useStore((s) => s.filePreview)
-  const closePreview = useStore((s) => s.closePreview)
+  const preview = useStore((s) => resourceKey ? s.filePreviews[resourceKey] : s.filePreview)
+  const closeCurrentPreview = useStore((s) => s.closePreview)
+  const closeFileTab = useStore((s) => s.closeFileTab)
+  const closePreview = () => resourceKey ? closeFileTab(resourceKey) : closeCurrentPreview()
   const previewFile = useStore((s) => s.previewFile)
   const checkPreviewStale = useStore((s) => s.checkPreviewStale)
   const openBrowser = useStore((s) => s.openBrowser)
@@ -83,9 +85,9 @@ export function FilePreviewPane({ focus = false, onToggleFocus }: { focus?: bool
   useEffect(() => {
     const abs = data?.abs
     if (!abs || !data?.ok || typeof data.mtimeMs !== 'number') return
-    const timer = window.setInterval(() => void checkPreviewStale(), pollMs)
+    const timer = window.setInterval(() => void checkPreviewStale(resourceKey), pollMs)
     return () => window.clearInterval(timer)
-  }, [data?.abs, data?.ok, data?.mtimeMs, pollMs, checkPreviewStale])
+  }, [data?.abs, data?.ok, data?.mtimeMs, pollMs, checkPreviewStale, resourceKey])
 
   /**
    * 图片的原始尺寸（从 `onLoad` 拿）。

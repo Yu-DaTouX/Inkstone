@@ -149,7 +149,7 @@ export function isWriteTool(name: string): boolean {
  * “命令窗口”渲染，这边给它们算目录级改动；两边不一致会出现“看起来是命令，
  * 却没有改动卡片”的错觉。
  */
-const SHELL_TOOLS = new Set(['bash', 'shell', 'run', 'exec'])
+const SHELL_TOOLS = new Set(['bash', 'powershell', 'shell', 'run', 'exec'])
 
 export function isShellTool(name: string): boolean {
   return SHELL_TOOLS.has(name)

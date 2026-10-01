@@ -326,7 +326,7 @@ export async function runPackagesTests(ok) {
     rmSync(root, { recursive: true, force: true })
   }
 
-  /* ── 6. 项目作用域：同一 source 在项目里要覆盖显示 ──────── */
+  /* ── 6. 管理列表：同一 source 的两级声明均可独立操作 ───── */
   {
     const root = mkdtempSync(join(tmpdir(), 'yan-pkg-scope-'))
     const agent = join(root, 'agent')
@@ -335,8 +335,8 @@ export async function runPackagesTests(ok) {
     writePackageSourcesForTest(join(agent, 'settings.json'), ['npm:shared-pkg'])
     writePackageSourcesForTest(join(root, '.pi', 'settings.json'), ['npm:shared-pkg'])
     const listed = listPackages(root, agent)
-    ok(listed.entries.length === 1, '同一 source 不重复列两次', String(listed.entries.length))
-    ok(listed.entries[0].scope === 'project', '项目作用域的那条优先（它才是当前会话生效的）', listed.entries[0].scope)
+    ok(listed.entries.length === 2 && listed.entries.every(e => e.source === 'npm:shared-pkg'), '同一来源的两级登记均保留', JSON.stringify(listed.entries))
+    ok(listed.entries.map(e => e.scope).join(',') === 'user,project', '两级分别显示，列表不隐藏用户级声明', listed.entries.map(e => e.scope).join(','))
     rmSync(root, { recursive: true, force: true })
   }
 

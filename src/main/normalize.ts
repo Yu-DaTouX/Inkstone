@@ -45,6 +45,8 @@ export interface PiMessage {
   command?: string
   exitCode?: number | null
   cancelled?: boolean
+  details?: unknown
+  nestedCalls?: { calls?: unknown[]; complete?: boolean }
 }
 
 export function toUsage(u: PiMessage['usage']): Usage | undefined {
@@ -173,6 +175,7 @@ export function normalizeMessage(
           id: m.toolCallId ?? id,
           name: m.toolName ?? 'tool',
           args: undefined,
+          details: m.details,
           /* 被取消的不是失败：方案 4.1 要求取消单独显示 */
           status: m.isError && !m.cancelled ? 'error' : 'ok',
           ...(m.cancelled ? { cancelled: true } : {}),
@@ -256,8 +259,11 @@ export function normalizeHistory(
         // 挂到原有调用上，不新增消息（序号也不前进，与实时视图一致）
         hit.call.status = norm.toolCalls![0].status
         hit.call.output = norm.toolCalls![0].output
+        hit.call.cancelled = norm.toolCalls![0].cancelled
+        hit.call.details = norm.toolCalls![0].details
         const images = norm.toolCalls![0].images
         if (images?.length) hit.call.images = images
+        restoreNestedCalls(m, hit.msg, hit.call, callIndex)
         continue
       }
     }
@@ -267,7 +273,40 @@ export function normalizeHistory(
       callIndex.set(c.id, { msg: norm, call: c })
     }
     out.push(norm)
+    if (m.role === 'toolResult' && norm.toolCalls?.[0]) {
+      restoreNestedCalls(m, norm, norm.toolCalls[0], callIndex)
+    }
   }
 
   return out
+}
+
+/** pi persists bounded summaries, not the nested tools' full output. */
+function restoreNestedCalls(
+  result: PiMessage,
+  message: UIMessage,
+  parent: UIToolCall,
+  index: Map<string, { msg: UIMessage; call: UIToolCall }>
+): void {
+  if (!Array.isArray(result.nestedCalls?.calls)) return
+  parent.nestedCallsIncomplete = result.nestedCalls.complete === false || result.nestedCalls.calls.length > 256 || undefined
+  for (const raw of result.nestedCalls.calls.slice(0, 256)) {
+    if (!raw || typeof raw !== 'object') continue
+    const entry = raw as Record<string, unknown>
+    if (typeof entry.id !== 'string' || !entry.id.startsWith(`${parent.id}/`) ||
+        typeof entry.name !== 'string' || !['ok', 'error', 'unfinished'].includes(String(entry.status)) || index.has(entry.id)) continue
+    const caller = entry.id.slice(0, entry.id.lastIndexOf('/'))
+    const call: UIToolCall = {
+      id: entry.id,
+      parentToolCallId: index.has(caller) ? caller : parent.id,
+      name: entry.name,
+      args: entry.arguments,
+      status: entry.status === 'error' ? 'error' : 'ok',
+      historySummary: true,
+      incomplete: entry.status === 'unfinished' || undefined,
+      output: typeof entry.error === 'string' ? entry.error : undefined
+    }
+    ;(message.toolCalls ??= []).push(call)
+    index.set(call.id, { msg: message, call })
+  }
 }

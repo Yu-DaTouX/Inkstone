@@ -1,5 +1,7 @@
 /** 任务事实、执行尝试与外部会话分开；界面与手机复用同一宿主服务。 */
 export type HubAgent = 'pi' | 'codex' | 'claude' | 'gemini' | 'grok'
+/** npm packages of the external CLIs: detection reads their entry points, the install action installs them globally. */
+export const HUB_CLI_PACKAGES: Record<Exclude<HubAgent, 'pi'>, string> = { codex: '@openai/codex', claude: '@anthropic-ai/claude-code', gemini: '@google/gemini-cli', grok: '@xai-official/grok' }
 export type HubMode = 'managed' | 'terminal'
 export type HubStatus = 'queued' | 'preparing' | 'running' | 'waiting_input' | 'needs_review' | 'completed' | 'failed' | 'cancelled' | 'uncertain'
 /**
@@ -19,9 +21,18 @@ export interface HubActivity {
   detail?: string
   status?: 'running' | 'done' | 'failed'
 }
+/** A file the user attached; stored by the host outside every workspace so it never enters a delivered patch. */
+export interface HubAttachment { name: string; path: string; image: boolean }
+/** Attachment upload from a client: base64 content, written by the host. */
+export interface HubAttachmentInput { name: string; data: string; mime?: string }
+/** Who started a task: shown as the source of its instruction. */
+export type HubOrigin = 'desktop' | 'phone' | 'session' | 'run'
 export interface HubTask {
   id: string
+  createdBy?: HubOrigin
   parentTaskId?: string
+  /** 关联主会话，由可信宿主核对项目，不从终端输出推断。 */
+  parentSessionId?: string
   title: string
   prompt: string
   agent: HubAgent
@@ -37,6 +48,15 @@ export interface HubTask {
   workspace?: string
   reviewOf?: string
   artifact?: { patchPath: string; sha256: string; tree: string; reportPath: string }
+  /** Start from the project's uncommitted changes: frozen at launch and applied before the agent starts; not part of the delivered patch. */
+  includeWorkingChanges?: boolean
+  startArtifact?: { patchPath: string; sha256: string; tree: string; reportPath: string; files: number }
+  /** Tree the delivered patch is measured from when a start patch was applied. */
+  startTree?: string
+  /** Non-git folders run interactive terminals in place: no worktree, no frozen patch. */
+  inPlace?: boolean
+  workspaceRemoved?: boolean
+  attachments?: HubAttachment[]
   report?: string
   error?: string
   model?: string
@@ -106,11 +126,16 @@ export interface HubMessage {
   id: string
   taskId: string
   fromTaskId?: string
+  fromRunId?: string
+  toRunId?: string
+  parentSessionId?: string
+  requestKey?: string
   kind: 'packet' | 'note' | 'system'
   packet?: HubPacket
   text: string
   delivery: 'queued' | 'injected' | 'typed' | 'failed'
   createdAt: number
+  attachments?: HubAttachment[]
 }
 export interface HubSnapshot {
   tasks: HubTask[]
@@ -124,6 +149,7 @@ export interface HubSnapshot {
   messages?: HubMessage[]
 }
 export interface HubCreate {
+  parentSessionId?: string
   agent: HubAgent
   mode: HubMode
   projectId: string
@@ -134,6 +160,8 @@ export interface HubCreate {
   reviewOf?: string
   timeoutMinutes?: number
   requestId: string
+  includeWorkingChanges?: boolean
+  attachments?: HubAttachmentInput[]
 }
 export interface HubTemplate {
   id: string
@@ -157,8 +185,14 @@ export type HubCommand =
   | { action: 'resize'; taskId: string; epoch: number; cols: number; rows: number }
   | { action: 'resume'; taskId: string }
   | { action: 'inspect'; taskId: string; sinceSeq?: number }
+  | { action: 'link-session'; taskId: string; sessionId: string }
+  | { action: 'deliver-message'; messageId: string; epoch: number }
   /** 把一份交接包发给另一个运行；来源在宿主侧按调用者推断。 */
-  | { action: 'send-packet'; requestId: string; toTaskId: string; summary: string; request?: string; context?: string }
+  | { action: 'send-packet'; requestId: string; toTaskId: string; summary: string; request?: string; context?: string; attachments?: HubAttachmentInput[] }
+  /** Git state of a project's main working tree, for the "bring uncommitted changes" choice. */
+  | { action: 'workspace-status'; projectId: string }
+  /** Delete a finished task's worktree; the frozen patch and report stay. */
+  | { action: 'remove-workspace'; taskId: string }
 export const HUB_ACTIVE: readonly HubStatus[] = ['preparing', 'running', 'waiting_input']
 export interface HubAttentionItem { id: string; taskId?: string; resourceId?: string }
 /** 通知只投影身份与版本；不携带任务文本或审批内容。 */

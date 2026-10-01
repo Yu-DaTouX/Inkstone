@@ -140,6 +140,13 @@ function readContextSection() {
 }
 
 export default function agentProfileExtension(pi) {
+  // Deferred/codemode tools can be callable without being declared to the model.
+  pi.on('tool_call', (event) => {
+    const snapshot = readProfileSnapshot()
+    if (Array.isArray(snapshot?.deniedTools) && snapshot.deniedTools.includes(event?.toolName)) {
+      return { block: true, reason: '当前活动档案不允许调用这个工具。' }
+    }
+  })
   pi.on('before_agent_start', (event) => {
     const options = event?.systemPromptOptions
     /*

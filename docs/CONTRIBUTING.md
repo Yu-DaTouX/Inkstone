@@ -38,6 +38,20 @@ npm run launch
 
 ## 提交与反馈
 
+### 升级 pi 与兼容验证
+
+砚默认启用 Codemode，可在设置的能力与插件页关闭。`codemode-policy.js` 只选择原生工具并执行桌面偏好，不改 pi 引擎或用户 settings.json；先加载此薄层，再由工作模式与档案收紧工具。升级时运行 `node scripts/test-codemode-policy.mjs` 及 `node scripts/test-pi-native-tools.mjs --controller --desktop-codemode --project-package-policy`，核对默认启用、同一会话切换、计划模式恢复，以及原生 pi 对受信项目包的发现与禁用设置；应用设置的保存与开关交互可用 `npm run test:live -- codemodesetting` 验证。
+
+磁贴工作区用 `npm run test:live -- resize fs fsedge todos terminalsurface` 检查资源身份、调整尺寸、文件系统边界和真实 PTY。`workspace-tiles.js` 属于隔离视觉矩阵：设置 `YAN_MATRIX_ONLY=workspace` 后运行 `npm run visual:matrix -- 0 1 2`，检查移动、拆分、隐藏、拖动取消和组件身份；会话及 Agent 数据为夹具，终端使用真实本机 PTY，浏览器使用真实 WebContentsView。旧固定右栏排序、分区高度、浮出及统一窗口标签探针已移除；新探针通过当前工具菜单打开资源。旧布局读取兼容仍保留，不能把它当作新的磁贴入口。
+
+砚通过独立 RPC 子进程运行官方 pi；运行时由 `scripts/vendor-pi.mjs` 搬运官方 bundle、资产和最小依赖闭包。宿主策略及界面桥接放在 `resources/pi-extensions/`，不修改生成的 pi 引擎。上下文、压缩、恢复与技能发现由 pi 管理；身份、语言、活动工具限制和高危确认等砚薄层仍需随升级核对。
+
+先运行 `npm run upgrade:pi -- --check` 比较内置与本机源版本。准备目标版本的官方 npm 包后，可用 `YAN_PI_SRC` 指定其包目录，再执行 `npm run upgrade:pi`；升级不会自动安装或更新全局 pi。`--force` 只重新提取同版本，降级必须显式使用 `--allow-downgrade`，直接调用 vendor 脚本也遵守该限制。新运行时以独立 generation 保存，通过 `current.json` 切换；旧目录保留给活跃进程，已有窗口不会自动重启。
+
+Codemode 需要 `quickjs-wasi/quickjs.wasm` 和官方脚本 worker。版本与 RPC 握手通过后，仍需执行 `node scripts/test-pi-compatibility.mjs`、`npm run test:agent-native-context` 和 `node scripts/test-pi-native-tools.mjs --controller`。原生工具检查仅连接本机模型/MCP 夹具；可加 `--only`、`--no-mcp`、`--native-search`、`--guard` 或 `--profile-blocked` 验证对应边界，`--compact` 验证原生压缩。构建、真实服务和发行包需要各自证据。
+
+升级还要核对 `parentToolCallId` 实时事件与 `toolResult.nestedCalls` 历史摘要、执行时 `tool_call` 护栏和各类子 pi 的加载策略。原生 MCP 使用 pi 的 `mcp.json`，旧宿主服务使用砚的 `mcp-servers.json`；两者不自动迁移凭证。相关提交正文应写明目标版本、宿主适配、验证范围和剩余限制，不能只引用本地资料。
+
 Issue 应包含版本、复现步骤及必要截图；移除密钥、私人对话和个人路径。提交说明应写清修改原因、检查范围和剩余限制。构建成功、模拟数据和真实运行是不同的证据，不互相替代。
 
 新增公开文档应有稳定用途，并从 [文档索引](README.md) 可达。内部计划、验收流水与一次性报告保存在本地忽略目录。发布步骤见 [Windows 打包与数据](dev/RELEASING.md)。

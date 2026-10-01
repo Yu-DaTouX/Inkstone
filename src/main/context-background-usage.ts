@@ -1,14 +1,4 @@
-/**
- * 后台调用用量账的宿主侧读写。
- *
- * 账本由两方写进**同一个文件**：
- *   · 扩展（`resources/pi-extensions/context-background-usage.js`）写整理摘要、
- *     深度归纳、任务状态生成、交接归纳；
- *   · 主进程写标题生成 —— 它跑在独立的 pi 进程里，扩展看不到那次请求。
- * 宿主只负责读与聚合，不猜、不补。文件不存在 = 本会话还没有后台调用（不是错误）。
- *
- * 安全：sessionId 直接进文件名，复用 `context-state-store` 的路径穿越判据。
- */
+/** Reads historical host-context usage and records current title generation. */
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -21,7 +11,7 @@ import {
 import { isSafeSessionId } from './context-state-store'
 import { YAN_DIR } from './paths'
 
-/** 有界：与扩展侧同一组阈值，保证两边交替写也不会让文件无限长 */
+/** 有界：保留旧账本的行数边界，避免标题记录无限增长 */
 const LOG_MAX_LINES = 500
 const LOG_KEEP_LINES = 300
 

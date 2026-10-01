@@ -28,6 +28,7 @@
     } else await sleep(120)
   }
   await sleep(600)
+  await window.__yanOpenWorkspaceTool('日志', 'logs')
   store.getState().closeSettings?.()
   await sleep(200)
 

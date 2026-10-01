@@ -41,8 +41,11 @@ assert.equal(config.extraResources[3].from, 'resources/yan-cli')
 await assert.rejects(async () => modules.hub.hubPiArgs(root, join(root, 'sessions')), /授权适配缺失/)
 await mkdir(join(root, 'yan-thin'))
 await writeFile(join(root, 'yan-thin', 'danger-guard.js'), '// fixture')
+await writeFile(join(root, 'yan-thin', 'codemode-policy.js'), '// fixture')
 const hubArgs = modules.hub.hubPiArgs(root, join(root, 'sessions'), '0.99.1')
 assert(hubArgs.includes(join(root, 'yan-thin', 'danger-guard.js')))
+assert(hubArgs.includes(join(root, 'yan-thin', 'codemode-policy.js')), 'Hub pi loads the desktop tool preference')
+assert(!modules.hub.hubPiArgs(root, join(root, 'sessions'), '0.87.1').includes(join(root, 'yan-thin', 'codemode-policy.js')), 'older Hub pi does not load native tool preference')
 assert(hubArgs.includes('--session-dir'))
 assert(!hubArgs.includes('--no-skills') && !hubArgs.includes('--no-session'))
 assert(!hubArgs.includes('--no-extensions'), 'native discovery respects pi user/project built-in settings')
@@ -56,7 +59,7 @@ assert(!args.some(arg => arg.startsWith('builtin:')), 'do not force a built-in d
 assert(modules.context.agentOwnedPiArgs(['--no-extensions'], false).includes('--no-extensions'), 'older pi retains its extension policy')
 assert.equal(modules.context.nativePiToolsSupported('0.87.1'), false)
 assert.equal(modules.context.nativePiToolsSupported('0.99.1'), true)
-let checks = 28
+let checks = 30
 for (const folder of ['pi-extensions', 'yan-thin', 'YAN-THIN']) {
   const retired = ['context.js', 'context-budget-observer.js', 'context-budget-maintenance.js', 'project-knowledge.js', 'goal-resume.js', 'handoffs.js']
   const paths = retired.map((name) => `C:/app/resources/${folder}/${name}`)
