@@ -114,40 +114,31 @@
   }
 
   log('')
-  log('=== 上下文策略设置项（解包态，实施-06 包验收）===',)
-  /*
-   * 解包实例里「设置项能不能读写」在开发态永远是绿的（读的是仓库里的 out/ 与真实的
-   * 用户目录）。包里的风险是另一类：设置落到安装目录、或写入通道在打包后被裁掉。
-   * 所以这里真写一次再读回 —— 值的往返本身就是证据。
-   */
+  log('=== 原生 pi 上下文（解包态）===')
   try {
-    const before = await window.yan.getSettings()
-    log(`  写前 contextPolicy = ${JSON.stringify(before?.contextPolicy ?? null)}`)
-    const after1 = await window.yan.patchSettings({ contextPolicy: { workingSetCap: 123456 } })
-    log(`  contextPolicy.workingSetCap 写 123456 → 读回 ${after1?.contextPolicy?.workingSetCap}`)
-    ok(after1?.contextPolicy?.workingSetCap === 123456, '上下文策略设置项在打包态可写可读（往返一致）')
-
-    /*
-     * 再改一次：证明是**真在改**而不是“第一次写进去后就不动了”。
-     * 不把值改回去 —— 这是隔离沙箱里的一次性实例，没有“探针留下的怪设置”可留；
-     * 硬要写回默认值反而会撞上主进程对“等于默认就清掉覆盖”的归一化（实测踩过）。
-     */
-    const after2 = await window.yan.patchSettings({ contextPolicy: { workingSetCap: 200000 } })
-    log(`  再写 200000 → 读回 ${after2?.contextPolicy?.workingSetCap}`)
-    ok(after2?.contextPolicy?.workingSetCap === 200000, '再改一次仍然生效（不是只能写一次）')
-    log(`  策略视图 = ${JSON.stringify(after2?.contextPolicy ?? null)}`)
+    ok(store.getState().session?.contextPolicy === undefined, '当前会话没有启用旧宿主上下文策略')
+    const waitCompaction = async (enabled) => {
+      for (let i = 0; i < 40; i += 1) {
+        if (store.getState().session?.autoCompactionEnabled === enabled) return true
+        await sleep(50)
+      }
+      return false
+    }
+    ok((await window.yan.setAutoCompaction(false)).ok === true, '原生 pi 自动压缩可关闭')
+    ok(await waitCompaction(false), '关闭状态经 RPC 回传到当前会话')
+    ok((await window.yan.setAutoCompaction(true)).ok === true, '原生 pi 自动压缩可重新开启')
+    ok(await waitCompaction(true), '开启状态经 RPC 回传到当前会话')
+    store.getState().openSettings('context')
+    await sleep(500)
+    ok(!!q('[data-testid="ctx-native-settings"]'), '上下文设置页渲染原生 pi 控件')
+    store.getState().closeSettings()
   } catch (error) {
-    ok(false, `上下文策略设置项在打包态读写失败：${error?.message ?? error}`)
+    ok(false, `原生上下文在打包态验收失败：${error?.message ?? error}`)
   }
 
   log('')
-  log('=== 交接（解包态）===')
-  /*
-   * 交接（实施-05 S5b / S6）：解包态能读回状态，且**自动交接默认开**。
-   *
-   * 为何必须在包里验：`handoffCommitEnabled` 读的是环境变量，
-   * 而用户装完启动时的环境是干净的 —— 「装完即默认开」是产品口径本身。
-   */
+  log('=== 历史交接读取（解包态）===')
+  // Historical records and their read API remain available after retiring the host extension.
   let handoff = null
   for (let i = 0; i < 20; i += 1) {
     try {
@@ -176,7 +167,6 @@
       )
   )
   ok(!!handoff, '交接状态能读回来（IPC 在打包态可用）')
-  ok(handoff?.autoCommit === true, '自动交接默认开（用户拍板；装完即生效）')
   ok(handoff?.transaction === null, '没有历史事务时如实为 null（不造半条）')
 
   log('')
@@ -202,6 +192,27 @@
     ok(!!q('[data-testid="cap-search"]'), '解包态能力搜索区域已渲染')
     ok(!!q('[data-testid="cap-skills"]'), '解包态技能区域已渲染（内置能力并入技能列表）')
     ok(!!q('[data-testid="cap-mcp"]'), '解包态 MCP 区域已渲染')
+    const codemode = () => q('[data-testid="cap-codemode"]')
+    const waitCodemode = async (enabled) => {
+      for (let i = 0; i < 40; i += 1) {
+        if (codemode()?.getAttribute('aria-checked') === String(enabled)) return true
+        await sleep(50)
+      }
+      return false
+    }
+    ok(codemode()?.getAttribute('role') === 'switch', 'Codemode 开关可访问')
+    ok(await waitCodemode(true), '旧配置未设置 Codemode 时默认开启')
+    codemode()?.click()
+    ok(await waitCodemode(false), '点击关闭 Codemode 更新界面')
+    ok((await window.yan.getSettings()).codemodeEnabled === false, '关闭偏好经打包态 IPC 保存')
+    store.getState().closeSettings()
+    store.getState().openSettings('capabilities')
+    await sleep(500)
+    ok(await waitCodemode(false), '重开设置保留关闭偏好')
+    codemode()?.click()
+    ok(await waitCodemode(true), '点击重新开启 Codemode 更新界面')
+    ok((await window.yan.getSettings()).codemodeEnabled === true, '重新开启偏好经打包态 IPC 保存')
+    store.getState().closeSettings()
   } catch (error) {
     ok(false, `解包态能力设置页验收报错：${error?.message ?? error}`)
   }
