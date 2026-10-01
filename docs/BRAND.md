@@ -19,4 +19,6 @@
 
 [纸墨横幅](assets/inkstone/hero-paper-ink.png) 为 3:1 首页主视觉，由提供的品牌图片经 AI 编辑而来。它用于品牌展示，不替代应用图标。暖白与墨色为当前展示配色，可按品牌需要调整。
 
-[浅色界面](assets/inkstone/workspace-light.png) 与 [深色界面](assets/inkstone/workspace-dark.png) 使用开发构建和合成会话，演示配置为 GPT-6 Astra Max。图片不包含私人会话，也不代表案例中的任务经过真实模型执行。
+[浅色界面](assets/inkstone/workspace-tiles-light.png) 与 [深色界面](assets/inkstone/workspace-tiles-dark.png) 是主页当前使用的 v0.6 磁贴工作区截图，由视觉矩阵在隔离环境中生成（`YAN_MATRIX_ONLY=showcase`，场景见 [readme-showcase.js](../scripts/probe/readme-showcase.js)）。会话、文件与子 Agent 结果均为合成数据，图片不包含私人会话，也不代表案例中的任务经过真实模型执行。更新截图时另存新名，旧图保留。
+
+[workspace-light.png](assets/inkstone/workspace-light.png) 与 [workspace-dark.png](assets/inkstone/workspace-dark.png) 是 v0.5 界面重构前的旧版截图，仅作历史保留。

@@ -12,17 +12,22 @@
   <a href="https://github.com/Yu-DaTouX/Inkstone/issues">Issues</a> ·
   <a href="README.md">中文</a>
 </p>
-<p align="center"><sub>Windows · Multiple model providers · Light &amp; dark themes · MIT licensed</sub></p>
+<p align="center">
+  <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><img src="https://img.shields.io/github/v/release/Yu-DaTouX/Inkstone?label=release" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/Windows-x64-0078D4" alt="Windows x64">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"></a>
+</p>
+<p align="center"><sub>Windows · Multiple model providers · Tiled workspace · Light &amp; dark themes · MIT licensed</sub></p>
 
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-light.png">
-  <img src="docs/assets/inkstone/workspace-light.png" alt="Inkstone workspace: sessions on the left, conversation in the center, and browser, file and terminal tools on the right." width="1280">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-tiles-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-tiles-light.png">
+  <img src="docs/assets/inkstone/workspace-tiles-light.png" alt="Inkstone workspace: sessions grouped by project on the left, the main conversation in the center, and a file preview and a sub-agent run tiled on the right." width="1280">
 </picture>
 
-<p align="center"><sub>Development build · Demo configuration: GPT-6 Astra Max · Conversation and tool results are illustrative · English UI is also available</sub></p>
+<p align="center"><sub>v0.6 interface (Chinese UI) · Sessions, main conversation, and file and sub-agent tiles · All conversations, files and results are synthetic demo data · English UI is also available</sub></p>
 
 ## From an idea to something you can use
 
@@ -36,16 +41,18 @@ An inkstone holds the ink before it becomes writing. Inkstone carries that idea 
 | --- | --- |
 | **Develop an idea** | Streaming conversations, image input, `@` file references, `/` commands, and expandable reasoning and tool details. |
 | **Work across projects** | Project groups, session search, branches, and queues. Running tasks can continue in the background when you switch sessions. |
-| **Inspect the work** | File previews, an interactive terminal, an embedded browser, and access to local Chrome. |
+| **Inspect the work** | File previews, an interactive terminal, an embedded browser, and access to local Chrome. Web search uses Bing, 360, DuckDuckGo and similar pages, or an optional Brave Search API key. |
+| **Arrange your workspace** | The main conversation, files, browser, terminals, tasks, logs and agents are tiles you can drag, group or split, resize, maximize and hide. Layouts are remembered per session. |
 | **Follow progress** | Goals, plans, task lists, and agent context, usage and runtime information. |
-| **Work with multiple agents** | A unified Agent workspace for child pi sessions and external CLI runs, with run tabs, terminal access and result inspection. Agent Hub is still in development. |
+| **Work with multiple agents** | A unified Agent workspace for child pi sessions and external CLI runs. Sub-agent progress and results render the same way as the main conversation. Agent Hub is still in development. |
+| **Let agents script their tools** | pi Codemode is on by default, so the agent can call tools in batches from a script and summarize the results. Nested calls appear as a tree, and dangerous operations still ask first. You can turn it off in Settings. |
 | **Choose your model** | Connect model services and change models or thinking levels within the same interface. |
-| **Make the workspace yours** | Light and dark themes, Chinese and English UI, adjustable panels and zoom, and an organized tool area. |
+| **Make the workspace yours** | Light and dark themes, Chinese and English UI, adjustable panels and zoom. |
 | **Build up a topic** | Topic spaces group conversations by theme rather than by project folder. Imported material becomes citable sources and can be handed off to the tutor. |
 | **Learn with a tutor** | Say what you want to learn; the tutor explains step by step, asks questions and waits for your answer, and gives hints before answers. How it teaches lives in a bundled skill. |
 | **See how conversations branch** | The session map lays conversations out per workspace lane. Expanding a session shows one card per exchange, and you can branch from a specific exchange. |
 
-The title bar switches between **coding mode** and **daily mode**: the first is centered on projects and files, the second organizes conversations, material, and learning by topic.
+**Settings → Workspace → Layout** switches between **coding** and **daily**: the first is centered on projects and files, the second organizes conversations, material, and learning by topic.
 
 The agent manages its own context. Inkstone displays runtime events, usage and tool results, while compaction controls call native pi directly. You choose which materials to send; the agent loads its own rules, skills and memory.
 
@@ -63,9 +70,9 @@ The open frame in the brand symbol represents a workspace; `>_` represents input
 
 ### Download for Windows
 
-Visit [Releases](https://github.com/Yu-DaTouX/Inkstone/releases) and choose an installer, single-file portable application, or ZIP distribution. For the ZIP version, extract it and run `砚.exe`. Distributed packages include the pi runtime.
+Visit the [latest release](https://github.com/Yu-DaTouX/Inkstone/releases/latest) and choose an installer, single-file portable application, or ZIP distribution. For the ZIP version, extract it and run `砚.exe`. Distributed packages include the pi runtime. The installed version can update itself from within the app.
 
-**Releases may lag behind the development branch.** This page describes the development build. Check the release notes for the features available in a particular download.
+This page and its screenshots follow the `main` branch. Check the release notes for the features in a particular download.
 
 ### Connect a model and start working
 
@@ -74,6 +81,10 @@ Visit [Releases](https://github.com/Yu-DaTouX/Inkstone/releases) and choose an i
 3. Use the workspace panels to inspect files or continue in the browser and terminal.
 
 See the [user guide](docs/GETTING_STARTED_EN.md) for shortcuts, installation, and backups.
+
+An Android phone can pair over Tailscale by QR code to browse desktop sessions, answer questions, send messages and dictate; tasks still run on the computer. The entry is **Settings → Devices → Phone** on the desktop. The phone app is still in testing and has no public Android package yet; setup steps are in the [mobile access guide](docs/MOBILE_ACCESS.md) (Chinese).
+
+Two computers running Inkstone can connect to each other and, with per-connection approval, view and copy sessions and results. See the [peer access guide](docs/PEER_ACCESS.md) (Chinese).
 
 ## Data and platforms
 

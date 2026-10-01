@@ -5237,6 +5237,12 @@ if (ONLY.includes('workspace')) {
   for (const group of GROUPS) group.states.push('workspace')
   GROUPS.push({ w: 2560, h: 1380, scale: 1, theme: 'dark', states: ['workspace'] })
 }
+/* README 主页截图：`YAN_MATRIX_ONLY=showcase`，场景见 scripts/probe/readme-showcase.js */
+if (ONLY.includes('showcase')) {
+  STATES.showcase = readFileSync(join(root, 'scripts/probe/readme-showcase.js'), 'utf8')
+  MUST_HAVE.showcase = ['[data-testid="tile-workspace"]', '[data-workspace-pane="chat"] .composer-wrap', '.tile-heading']
+  for (const group of GROUPS) group.states.push('showcase')
+}
 if (ONLY.includes('codemode')) for (const group of GROUPS) group.states.push('codemode')
 if (ONLY.includes('codemodepreference')) {
   MUST_HAVE.codemodepreference = ['.settings', '[data-testid="cap-codemode"][role="switch"][aria-checked="true"]'];
