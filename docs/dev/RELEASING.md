@@ -9,7 +9,7 @@
 | `npm run dist:dir` | 构建并生成 `release/win-unpacked/` |
 | `npm run test:packaged` | 验已有目录包：包内 pi、**`yan` 能力入口（启动器 + CLI 真跑）** 与扩展 |
 | `npm run dist:check` | 生成目录包并验收 |
-| `npm run dist` | Windows 安装包 `*-setup.exe` 与单文件 `*-portable.exe` |
+| `npm run dist` | Windows 安装包 `*-setup.exe`、单文件 `*-portable.exe` 与快速免安装 ZIP |
 | `npm run dist:portable-fast` | 快速免安装 `*-portable-fast.zip` |
 
 单文件版每次启动会自解压；ZIP 版解压一次后运行 `砚.exe`。Windows 包内包含 pi runtime、随包 `yan` CLI 和自有扩展，最终用户无需安装 pi。
@@ -49,7 +49,7 @@ NSIS 自动更新需要将同一次构建的 `latest.yml`、安装程序及对�
 
 1. 按 [贡献指南](../CONTRIBUTING.md) 检查最终源码，记录实际运行与视觉结果。
 2. 用 `npm run vendor:pi:check` 核对内置运行时；升级使用 `npm run upgrade:pi`。运行时按独立生成目录保存，验证成功后通过 `resources/pi-runtime/current.json` 切换新进程的入口；旧目录保留给仍在运行的进程。打包前的 hook 只提取当前选中的运行时，发行包内仍使用稳定的 `resources/pi-runtime/` 路径，不携带旧版本。
-3. 生成目录包并运行 `npm run test:packaged`，核对包内 pi、CLI、配置与路径。
+3. 生成目录包并运行 `npm run test:packaged`，核对包内 pi、CLI、配置与路径。独立输出目录用 `YAN_PACKAGED_DIR` 指向对应的 `win-unpacked`；单文件便携版用 `npm run test:packaged -- --exe=<便携 EXE 路径>`。验收包括 Codemode 的 WASM / worker / 桌面薄层落位、默认开启及开关保存、原生自动压缩 RPC 往返、真实 PTY 和隔离数据完整性，不调用远程模型。
 4. 升级验证使用数据备份副本；发布产物中不得包含测试凭证、私人会话、日志或本机用户数据。
 5. 按发布范围生成安装包与 ZIP，核对版本、文件名、大小和 SHA-256，并附发布说明。
 6. 分别验证安装、启动和卸载结果，注明平台、签名状态与已知限制。Windows 检查不能替代其他平台验收。

@@ -116,6 +116,9 @@ console.log(C.dim(`  ${exePath}`))
 const must = [
   ['pi-runtime', join(unpacked, 'resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')],
   ['pi-runtime node_modules', join(unpacked, 'resources', 'pi-runtime', 'node_modules')],
+  ['Codemode WASM', join(unpacked, 'resources', 'pi-runtime', 'node_modules', 'quickjs-wasi', 'quickjs.wasm')],
+  ['Codemode worker', join(unpacked, 'resources', 'pi-runtime', 'dist', 'bundle', 'chunks', 'codemode-worker.js')],
+  ['Codemode desktop policy', join(unpacked, 'resources', 'yan-thin', 'codemode-policy.js')],
   /*
    * 实施-02 S5：随包 `yan` CLI 也必须进安装目录。
    * 它不在 app.asar 里（那是代码），而是 extraResources（模型要从磁盘直接跑它）。
@@ -436,7 +439,7 @@ if (!exeFromArg) {
 }
 
 /*
- * 4b. 交接模块真的进了包（实施-05 S6）。
+ * 4b. 历史读取与当前宿主能力真的进了包。
  *
  * `app.asar` 是归档，但内容是明文的（主进程 bundle + 资源）。
  * 为何在这里做而不在探针里：这些都是**主进程**的常量与文件名，渲染端看不到；
