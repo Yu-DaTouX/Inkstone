@@ -93,7 +93,14 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const observer = new ResizeObserver(() => setSize({ w: el.clientWidth - 2 * EDGE_X, h: el.clientHeight - EDGE_TOP - EDGE_BOTTOM }))
+    /* Measure the outer box, not clientWidth: a scrollbar that appears shrinks the client box, which
+       shrinks the canvas, which removes the scrollbar again and the layout oscillates. Flooring keeps
+       fractional device-pixel sizes from overflowing the container by a sub-pixel. */
+    const observer = new ResizeObserver(() => {
+      const box = el.getBoundingClientRect()
+      const w = Math.floor(box.width) - 2 * EDGE_X, h = Math.floor(box.height) - EDGE_TOP - EDGE_BOTTOM
+      setSize(prev => prev.w === w && prev.h === h ? prev : { w, h })
+    })
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
