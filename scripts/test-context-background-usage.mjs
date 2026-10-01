@@ -1,15 +1,5 @@
-/**
- * 后台调用用量账的测试。
- *
- * 分两层：
- *   ① `shared/context-background-usage.ts` —— 解析容错、按类分开、命中率口径、
- *      「缺报用量」与「报了 0」分开；
- *   ② 主进程读写 + **跨端格式**：扩展写的行必须能被宿主原样读回来
- *（两边的 kind 白名单和字段名是手抄的两份，漂移了就只有这个用例能发现）。
- *
- * 真实链路（后台调用真的发生 → 界面出现读数）由 `test:live` 覆盖。
- */
-import { mkdtempSync, rmSync } from 'node:fs'
+/** Historical usage parsing and current host title accounting. */
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -77,23 +67,12 @@ export async function runContextBackgroundUsageTests(ok) {
   const previousDataDir = process.env.YAN_DATA_DIR
   process.env.YAN_DATA_DIR = dir
   try {
-    const ext = await import('../resources/pi-extensions/context-background-usage.js')
-
-    ext.recordBackgroundUsage('session-a', {
-      kind: 'summary',
-      ok: true,
-      usage: { input: 500, output: 100, cacheRead: 4500, cacheWrite: 20, totalTokens: 5120, cost: 0.3 },
-      estimatedInput: 520,
-      durationMs: 1234,
-      model: 'provider/model-x'
-    })
-    ext.recordBackgroundUsage('session-a', {
-      kind: 'deep',
-      ok: false,
-      error: 'context_capacity_blocked'
-    })
-    /* 非法 sessionId 不入账（它直接进文件名） */
-    ext.recordBackgroundUsage('../escape', { kind: 'summary', ok: true })
+    // Read independently authored legacy rows after the producer has retired.
+    mkdirSync(join(dir, 'context-background-usage'))
+    writeFileSync(join(dir, 'context-background-usage', 'session-a.jsonl'), [
+      JSON.stringify({ at: 1, kind: 'summary', ok: true, input: 500, output: 100, cacheRead: 4500, cacheWrite: 20, totalTokens: 5120, cost: 0.3, usageReported: true, estimatedInput: 520 }),
+      JSON.stringify({ at: 2, kind: 'deep', ok: false, error: 'context_capacity_blocked', usageReported: false })
+    ].join('\n') + '\n')
 
     const read = await host.readContextBackgroundUsage('session-a', { dataDir: dir })
     ok(read.calls === 2, '扩展写的两条都被宿主读回来（两端字段口径一致）')
@@ -128,16 +107,4 @@ export async function runContextBackgroundUsageTests(ok) {
     rmSync(dir, { recursive: true, force: true })
   }
 
-  /* ------------------------------------------------ usage 归一化 */
-
-  const extForUsage = await import('../resources/pi-extensions/context-background-usage.js')
-  ok(
-    extForUsage.usageOfCompletion({ usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, totalTokens: 10, cost: { total: 0.05 } } }).cacheRead === 3,
-    '从返回值顶层的 usage 取数'
-  )
-  ok(
-    extForUsage.usageOfCompletion({ message: { usage: { promptTokens: 7, completionTokens: 9 } } }).input === 7,
-    '兼容 promptTokens / completionTokens 别名'
-  )
-  ok(extForUsage.usageOfCompletion({}) === null, 'provider 没报 usage 时返回 null（缺报≠0）')
 }

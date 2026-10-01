@@ -82,6 +82,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan hub list
   yan hub get --id <任务ID>
   yan hub send --request-file packet.json
+  yan hub reply --request-file reply.json
   yan hub stop --id <任务ID>
   yan browser <动作> [选项]     内置浏览器（yan browser --help 看全部动作）
   yan search query --query-text "关键词"  联网搜索（需要 OpenCLI）
@@ -212,9 +213,6 @@ const GROUP_USAGE = {
              "locator": {"start":0,"end":400} } ], "maxChars": 600 }
            读的是**每一份当时那一版**的片段（不跟着资料更新走），并标出引用是否已旧；
            读不到的来源单独放 skipped，不当作有效证据。
-  status  --artifact <成果ID>
-           看这份成果引用的资料现在怎么样了：哪条已有新版本、哪条已移除。
-           只提示变化 —— 旧引用仍然指着旧版本。
 `,
 
   follow: `yan follow <动作> [选项]
@@ -370,16 +368,20 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
   search: `yan search <动作> [选项]
 
 动作：
-  query   联网搜索（默认三个来源：维基百科 / arXiv / Hacker News）
+  query   联网搜索。按查询语言自动挑网页来源：中文用 Bing + 360，其余用 DuckDuckGo + Bing；
+          配了 Brave API key 时再加 Brave；另有维基百科 / arXiv / Hacker News（需 OpenCLI）
             yan search query --query-text "flash attention"
             yan search query --query-text "…" --sources wikipedia,arxiv --limit-per-source 5 --limit-total 12
+  fetch   把一个网页读成正文文本（JS 渲染页也行；不带登录态，不读内网地址）
+            yan search fetch --url https://example.com/post [--max-chars 12000]
   doctor  看后端在不在、版本、各来源依赖（未安装 OpenCLI 时也能读）
 
 说明：
   · 后端是 OpenCLI（用户自行安装）。没装时 query 回 code=backend_unavailable，
     doctor 回可读提示 —— 不把「取不到」写成「没有结果」；
   · 逐来源状态是分开的：ok / empty / timeout / unavailable / error；
-  · 拿到结果后要用内置浏览器打开：yan browser navigate --url <结果里的 url>；
+  · 网页来源（bing / ddg / so360 / brave）的 --sources 可以点名；某个来源弹验证或连不上会单独报错，其余照常；
+  · 要读结果正文先用 fetch；要登录、点击、交互的页面再用内置浏览器：yan browser navigate --url <结果里的 url>；
   · 这个 search 是「联网找网页」；在已装能力里找工具用 yan capabilities search。
 `,
   browser: `yan browser <动作> [选项]
@@ -442,7 +444,7 @@ function fail(code, message, extra) {
  * `src/main/agent.ts` 的 `runBrowserCommand` 一一对应。
  */
 const GROUP_SPECS = {
-  hub: { actions: ['start', 'list', 'get', 'stop', 'send'], required: { get: ['id'], stop: ['id'], send: ['toTaskId', 'summary', 'requestId'] } },
+  hub: { actions: ['start', 'list', 'get', 'stop', 'send', 'reply'], required: { get: ['id'], stop: ['id'], send: ['toTaskId', 'summary', 'requestId'], reply: ['summary', 'requestId'] } },
   capabilities: {
     actions: ['search', 'discover', 'prepare', 'acquire'],
     required: { prepare: ['candidate'] }
@@ -470,8 +472,7 @@ const GROUP_SPECS = {
   },
 
   research: {
-    actions: ['read', 'status'],
-    required: { status: ['artifact'] }
+    actions: ['read']
   },
 
   follow: {
@@ -521,9 +522,9 @@ const GROUP_SPECS = {
     required: { read: ['path'] }
   },
   search: {
-    actions: ['query', 'doctor'],
-    /* doctor 无必需参数；query 至少要一个查询词 */
-    required: { query: ['query-text'] }
+    actions: ['query', 'fetch', 'doctor'],
+    /* doctor 无必需参数；query 至少要一个查询词；fetch 要一个网址 */
+    required: { query: ['query-text'], fetch: ['url'] }
   },
   browser: {
     actions: [

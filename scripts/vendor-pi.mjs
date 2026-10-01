@@ -43,6 +43,7 @@ import { execFileSync } from 'node:child_process'
 import { builtinModules } from 'node:module'
 import { randomUUID } from 'node:crypto'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
+import { comparePiVersions, requirePiUpgrade } from './lib/pi-upgrade-policy.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const runtimeRoot = join(root, 'resources', 'pi-runtime')
@@ -254,8 +255,12 @@ function verify(label) {
   }
 
   // WASM is resolved only when codemode runs, rather than during the RPC handshake.
-  if (version.split('.').map(Number)[1] >= 99 && !existsSync(join(DEST, 'node_modules', 'quickjs-wasi', 'quickjs.wasm'))) {
+  if (comparePiVersions(version, '0.99.0') >= 0 && !existsSync(join(DEST, 'node_modules', 'quickjs-wasi', 'quickjs.wasm'))) {
     bad(`${label} codemode WASM 缺失：quickjs-wasi/quickjs.wasm`)
+    return false
+  }
+  if (comparePiVersions(version, '0.99.0') >= 0 && !existsSync(join(DEST, 'dist', 'bundle', 'chunks', 'codemode-worker.js'))) {
+    bad(`${label} codemode 脚本 worker 缺失`)
     return false
   }
 
@@ -312,6 +317,11 @@ log('抽取 pi 运行时 → resources/pi-runtime/\n')
 const { root: piRoot } = findPiRoot()
 const piPackage = JSON.parse(readFileSync(join(piRoot, 'package.json'), 'utf8'))
 const piVersion = piPackage.version
+const installedVersion = existsSync(join(DEST, 'package.json')) ? JSON.parse(readFileSync(join(DEST, 'package.json'), 'utf8')).version : undefined
+try { requirePiUpgrade(installedVersion, piVersion, process.argv.includes('--allow-downgrade')) } catch (error) {
+  bad(error.message)
+  process.exit(1)
+}
 // Codemode resolves its WASM asset at runtime, so bundle imports cannot find it.
 if (piPackage.dependencies?.['quickjs-wasi']) {
   MUST_HAVE.push('quickjs-wasi')

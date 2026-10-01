@@ -374,6 +374,24 @@
   border-left-color: var(--accent);
 }
 
+/* 带按钮的通知：文字在上、按钮在下，不走三行截断 */
+.notice.notice-action {
+  display: flex;
+  flex-wrap: wrap;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+.notice-action .notice-text {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.notice-action .notice-actions {
+  flex: 0 0 100%;
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: flex-end;
+}
+
 .notice.warning {
   border-left-color: var(--warn);
 }
@@ -625,3 +643,28 @@ html[data-theme-dir='in']::view-transition-new(root) {
 .boot-frame { stroke: var(--fg); stroke-width: 6; stroke-linejoin: round; }
 .boot-prompt, .boot-cursor { stroke: var(--accent); stroke-width: 6; stroke-linecap: square; stroke-linejoin: miter; }
 .boot.out { pointer-events: none; }
+
+/* Detail popovers opened from the composer ring and the status-bar quota (DetailTrigger). */
+.detail-trigger-pop { position: fixed; z-index: 300; width: 300px; max-width: calc(100vw - 16px); max-height: 70vh; overflow: auto; display: flex; flex-direction: column; gap: var(--sp-2); }
+.sb-quota { display: inline-flex; align-items: center; gap: var(--sp-2); }
+button.sb-seg { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.sb-quota .rp-header-usage { max-width: none; }
+/* Context window and quota popovers: header row, stacked blocks. */
+.ctx-window-head, .quota-pop-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.ctx-window-head .ctx-window-total { margin-left: auto; white-space: nowrap; }
+.detail-trigger-pop .ui-usage-legend { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; column-gap: var(--sp-2); row-gap: 5px; align-items: center; margin-top: var(--sp-1); }
+.detail-trigger-pop .ui-usage-legend li { display: contents; }
+.ui-usage-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-usage-num { min-width: 40px; }
+.ctx-window-note { margin-top: calc(-1 * var(--sp-1)); }
+.detail-trigger-pop .rp-ctx-actions { display: flex; align-items: center; gap: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--border-soft); }
+.detail-trigger-pop .rp-ctx-actions > .rp-u { margin-right: auto; }
+.quota-pop { display: flex; flex-direction: column; gap: var(--sp-3); }
+.quota-pop-provider { min-width: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quota-pop-head .spacer { flex: 1; }
+.quota-block { display: flex; flex-direction: column; gap: 6px; }
+.quota-block-top { display: flex; align-items: baseline; gap: var(--sp-2); }
+.quota-block-top > .quota-block-value { margin-left: auto; }
+.quota-block-sub { display: flex; justify-content: space-between; gap: var(--sp-2); }
+.quota-block-sub > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.quota-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 22px; }

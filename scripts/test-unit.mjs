@@ -144,6 +144,13 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
      * 运行时不从项目 node_modules 解析，与主进程构建的 externalize 行为一致。
      */
     external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
+    plugins: [{ name: 'unit-electron-boundary', setup(builder) {
+      builder.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'unit-electron' }))
+      builder.onLoad({ filter: /.*/, namespace: 'unit-electron' }, () => ({ contents: `
+        export class BrowserWindow { constructor() { throw new Error('Native browser requires an Electron integration test') } }
+        export const session = { fromPartition() { throw new Error('Native session requires an Electron integration test') } }
+      ` }))
+    } }],
     logLevel: 'silent'
   })
 )
@@ -506,7 +513,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runTodoHistoryTests } = await import('./test-todo-history.mjs')
 const { runWorkModeTests } = await import('./test-work-mode.mjs')
-const { runGoalResumeExtTests } = await import('./test-goal-resume.mjs')
 const { runRepeatGuardTests } = await import('./test-repeat-guard.mjs')
 
 const { runGoalTests } = await import('./test-goal.mjs')
@@ -835,20 +841,6 @@ const mcpPackage = await import('../node_modules/esbuild/lib/main.js').then(({ b
   }).then(() => import('../out/test/mcp-package.mjs'))
 )
 const { runMcpPackageTests } = await import('./test-mcp-package.mjs')
-
-/* 项目知识的注入链（实施-03 S3）：宿主准备文件 + 薄层扩展读文件注入。 */
-const projectKnowledge = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/project-knowledge.ts'],
-    outfile: 'out/test/project-knowledge.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/project-knowledge.mjs'))
-)
-const projectKnowledgeExtension = await import('../resources/pi-extensions/project-knowledge.js')
-const { runProjectKnowledgeInjectionTests } = await import('./test-project-knowledge.mjs')
 /* 项目知识视图层（实施-03 S5）：需复核是派生态，导出只含当前状态 */
 const projectKnowledgeView = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1746,7 +1738,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
-await runGoalResumeExtTests(ok)
 await runRepeatGuardTests(ok)
 await runGoalTests(ok)
 
@@ -1859,14 +1850,7 @@ await (await import('./test-handoff-context.mjs')).runHandoffContextTests(ok)
  * 顺带把薄层的 `safeKey()` 拿来做交叉校验 —— 两侧文件名规则不一致是静默失效。
  */
 const { runHandoffRequestTests } = await import('./test-handoff-request.mjs')
-await runHandoffRequestTests(
-  ok,
-  await import('../out/test/handoff.mjs'),
-  await import('../out/test/handoff-service.mjs'),
-  await import('../resources/pi-extensions/goal-resume.js'),
-  /* 薄层的“下一跳怎么试”决策（纯函数）：截断要抬预算，格式问题只换提示 */
-  await import('../resources/pi-extensions/handoffs.js')
-)
+await runHandoffRequestTests(ok, await import('../out/test/handoff.mjs'), await import('../out/test/handoff-service.mjs'))
 /* 交接事务（实施-05 S5b-3a）：阶段顺序 / 幂等 / 崩溃恢复 / 事务日志 */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1926,8 +1910,6 @@ await runHandoffResumeTests(
   await import('../out/test/handoff-resume.mjs'),
   await import('../out/test/handoff.mjs')
 )
-const { runHandoffExtTests } = await import('./test-handoff-ext.mjs')
-await runHandoffExtTests(ok)
 const { runHandoffRunnerTests } = await import('./test-handoff-runner.mjs')
 await runHandoffRunnerTests(
   ok,
@@ -2034,12 +2016,6 @@ await runMcpTests(ok, {
 await runMcpRegistrationTests(ok, { shared: mcpRegistrationShared, service: mcpRegistrationService })
 await runMcpPackageTests(ok, mcpPackage)
 runProjectKnowledgeSearchTests(ok, projectMemorySearch)
-await runProjectKnowledgeInjectionTests(ok, {
-  prepare: projectKnowledge,
-  store: projectMemoryStore,
-  memory: projectMemory,
-  extension: projectKnowledgeExtension
-})
 await runProjectKnowledgeViewTests(ok, projectKnowledgeView)
 await runExtensionInventoryTests(ok)
 
@@ -2201,19 +2177,6 @@ const { runContextPolicyTests } = await import('./test-context-policy.mjs')
 runContextPolicyTests(ok, contextPolicy, contextPolicyEnv, contextView)
 
 /*
- * 请求前预算诊断（实施-05 S4）：扩展侧 JS 公式与 shared 交叉校验 + 三档边界。
- * 直接 import 随包源码（与 context-safety / context-transform 同一做法）。
- */
-const contextBudgetExtension = await import('../resources/pi-extensions/context-budget.js')
-const { runContextBudgetTests } = await import('./test-context-budget.mjs')
-runContextBudgetTests(ok, contextBudgetExtension, contextPolicy)
-
-/* 预算观察者的诊断字段（payload 字符构成）—— 用来定位「估算与实际差 4 倍」 */
-const contextBudgetObserver = await import('../resources/pi-extensions/context-budget-observer.js')
-const { runContextBudgetObserverTests } = await import('./test-context-budget-observer.mjs')
-runContextBudgetObserverTests(ok, contextBudgetObserver)
-
-/*
  * 上下文预算 V1：同源算法边界 + 最终 provider hook 的 fail-closed 入口。
  * 隔离数据目录由本文件顶部的 YAN_DATA_DIR 指向临时目录；不接真实 provider。
  */
@@ -2227,24 +2190,6 @@ const contextBudgetV1 = await import('../node_modules/esbuild/lib/main.js').then
     logLevel: 'silent'
   }).then(() => import('../out/test/context-budget-v1.mjs'))
 )
-const contextBudgetObserverV1 = await import('../resources/pi-extensions/context-budget-observer.js')
-const { runContextBudgetV1Tests } = await import('./test-context-budget-v1.mjs')
-await runContextBudgetV1Tests(ok, contextBudgetV1, contextBudgetObserverV1)
-const contextBudgetStoreV1 = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/context-budget-store.ts'],
-    outfile: 'out/test/context-budget-store-v1.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-budget-store-v1.mjs'))
-)
-const { runContextBudgetStoreV1Tests } = await import('./test-context-budget-store-v1.mjs')
-await runContextBudgetStoreV1Tests(ok, contextBudgetStoreV1)
-const contextBudgetCompletionV1 = await import('../resources/pi-extensions/context-budget-completion.js')
-const { runContextBudgetCompletionV1Tests } = await import('./test-context-budget-completion-v1.mjs')
-await runContextBudgetCompletionV1Tests(ok, contextBudgetCompletionV1, contextBudgetObserverV1)
 
 /*
  * 界面语言扩展（resources/pi-extensions/language.js）。
@@ -2268,17 +2213,6 @@ const { runPreambleExtensionTests } = await import('./test-preamble-extension.mj
 await runPreambleExtensionTests(ok, preambleExtension)
 const { runAppUpdateTests } = await import('./test-app-update.mjs')
 await runAppUpdateTests(ok)
-
-/*
- * 切片安全规则（resources/pi-extensions/context-safety.js，N21-10）。
- *
- * 与语言扩展同理：它是**待分发的源码**，直接在包内 import。
- * 这几条规则（正在用的 diff 不得删 / 用户约束不得降级 / 不从 reasoning 中间切）
- * 是阶段 4 压缩的前置约束 —— 先在纯函数层钉死，等扩展接进来时直接调。
- */
-const contextSafety = await import('../resources/pi-extensions/context-safety.js')
-const { runContextSafetyTests } = await import('./test-context-safety.mjs')
-runContextSafetyTests(ok, contextSafety)
 
 /*
  * N21-4 / S1：State 与 Archive 基础设施。
@@ -2349,13 +2283,8 @@ const contextRecall = await import('../node_modules/esbuild/lib/main.js').then((
 const { runContextRecallTests } = await import('./test-context-recall.mjs')
 await runContextRecallTests(ok, { recall: contextRecall, store: contextStateStore })
 
-/* 上下文整理：滚动笔记封顶、归档检索（yan context find）、失败阶段与可重试标记 */
-const { runContextBudgetRollingTests } = await import('./test-context-budget-rolling.mjs')
-await runContextBudgetRollingTests(ok, {
-  maintenance: await import('../resources/pi-extensions/context-budget-maintenance.js'),
-  store: await import('../resources/pi-extensions/context-budget-store.js'),
-  recall: contextRecall
-})
+const { runContextArchiveFindTests } = await import('./test-context-budget-rolling.mjs')
+await runContextArchiveFindTests(ok, { recall: contextRecall })
 
 /* 会话后台工作调度服务：串行链、优先级、自动继续退避与撤销（假依赖驱动） */
 const sessionWorkScheduler = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -2370,60 +2299,6 @@ const sessionWorkScheduler = await import('../node_modules/esbuild/lib/main.js')
 )
 const { runSessionWorkSchedulerTests } = await import('./test-session-work-scheduler.mjs')
 await runSessionWorkSchedulerTests(ok, sessionWorkScheduler)
-
-/*
- * N21-4 / S2–S6：上下文变换（Tool Sweep / Task State / Recall / 结构化压缩闸门）。
- *
- * 三个模块都是**待分发的扩展源码**（resources/pi-extensions），直接 import。
- * 最后一组断言把 JS 写出的归档文件喂给 S1 的 TS schema —— 跨语言交叉验证，
- * 而不是让两边各信各的。
- */
-const contextTransform = await import('../resources/pi-extensions/context-transform.js')
-const contextExtension = await import('../resources/pi-extensions/context.js')
-const { runContextTransformTests } = await import('./test-context-transform.mjs')
-await runContextTransformTests(ok, {
-  transform: contextTransform,
-  extension: contextExtension,
-  schema: contextStateSchema
-})
-
-/*
- * N21-4 剩余项：状态生成器（语义部分 + 确定性 evidence + CAS）。
- *
- * 它是**唯一**会调模型、又会写用户派生数据的地方，所以判定全在纯逻辑层
- * （`context-producer.js`）；最后一组用 fake ctx 真跑一遍落盘，并把 JS 写出的
- * 状态文件喂给 TS schema 交叉校验（与 transform 测试同一约定）。
- */
-const contextProducer = await import('../resources/pi-extensions/context-producer.js')
-const { runContextProducerTests } = await import('./test-context-producer.mjs')
-await runContextProducerTests(ok, {
-  producer: contextProducer,
-  transform: contextTransform,
-  extension: contextExtension,
-  schema: contextStateSchema
-})
-
-/*
- * N21-4 剩余项：阶段运行状态（三阶段独立 Rearm / Cooldown，方案 §12.3）。
- *
- * 它与上下文策略、状态生成器都不同：它管的是「到线之后能不能动手」。
- * 判定错的每一种方式都是静默的 —— 阶段永久失效、每轮重试、两个阶段互相牵连 ——
- * 所以边界（回购比例、冷却边界、重试窗口）全部钉在纯函数层。
- */
-const stageRuntime = await import('../resources/pi-extensions/context-stage-runtime.js')
-const { runContextStageRuntimeTests } = await import('./test-context-stage-runtime.mjs')
-await runContextStageRuntimeTests(ok, { stage: stageRuntime })
-
-/*
- * N21-8：Deep Context（Pass 1 工作集归纳）。
- *
- * 它是唯一会在用户提问前**同步阻塞**一次模型调用的部分，而失败是两头静默的：
- * 该跑时没跑（用户以为开了）与不该跑时跑了（每轮多一次调用 + 最多多等 30s）。
- * 所以闸门、输入有界、解析容错、注入幂等全部钉在纯逻辑层。
- */
-const contextDeep = await import('../resources/pi-extensions/context-deep.js')
-const { runContextDeepTests } = await import('./test-context-deep.mjs')
-await runContextDeepTests(ok, { deep: contextDeep, extension: contextExtension })
 
 /*
  * IPC 错误剥壳（src/shared/ipc-error.ts）：`piCall` 与渲染端直接 catch 的
@@ -2529,23 +2404,6 @@ const { runRunProgressTests } = await import('./test-run-progress.mjs')
 await runRunProgressTests(ok, runProgress)
 
 /*
- * 审查目录宽度（src/shared/review-layout.ts，实施-22 R1）：夹取、默认值、
- * 坏持久化数据。
- */
-const reviewLayout = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/review-layout.ts'],
-    outfile: 'out/test/review-layout.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/review-layout.mjs'))
-)
-const { runReviewLayoutTests } = await import('./test-review-layout.mjs')
-await runReviewLayoutTests(ok, reviewLayout)
-
-/*
  * 自定义 API 服务（src/shared/custom-provider.ts，实施-23 M1）：校验、合并、
  * 密钥不回明文、保留用户手工条目。
  */
@@ -2600,31 +2458,10 @@ const { runForkContextTests } = await import('./test-fork-context.mjs')
 await runForkContextTests(ok, forkContextMod)
 
 /*
- * N21-9 A/B 基准的口径（src/shared/context-bench.ts，实施-06 S2）：四组策略怎么用
- * 现有开关表达、一条回答算不算守住约束、主判据与三项副指标的边界。
- * 纯函数，不跑模型 —— 真实对照跑批要额度，见 `npm run bench:context`。
- */
-const contextBench = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/context-bench.ts'],
-    outfile: 'out/test/context-bench.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-bench.mjs'))
-)
-const { runContextBenchTests } = await import('./test-context-bench.mjs')
-/* 任务集是数据（不随包分发），但它的约束必须能被判分规则正确区分 —— 所以拉进来自检 */
-const contextBenchTasks = await import('./bench/context-tasks.mjs')
-await runContextBenchTests(ok, contextBench, contextPolicy, contextBenchTasks)
-
-/*
- * Git 审查的纯解析（src/shared/git.ts）：`git status/diff` 的 NUL 分隔输出、
- * rename 多占一段、二进制的 `-`、未跟踪文件的补全、unified diff 的行号。
+ * Git 状态的纯解析（src/shared/git.ts）：`git status` 的 NUL 分隔输出、rename 路径与托管网页地址。
  * 平台用 neutral —— 这个模块**不依赖 node 内置**（渲染端也要 import 它）。
  */
-const gitReview = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+const gitState = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/git.ts'],
     outfile: 'out/test/git.mjs',
@@ -2634,8 +2471,8 @@ const gitReview = await import('../node_modules/esbuild/lib/main.js').then(({ bu
     logLevel: 'silent'
   }).then(() => import('../out/test/git.mjs'))
 )
-const { runGitReviewTests } = await import('./test-git-review.mjs')
-await runGitReviewTests(ok, gitReview)
+const { runGitStateTests } = await import('./test-git-state.mjs')
+await runGitStateTests(ok, gitState)
 
 /*
  * Git **写操作**的纯逻辑（src/shared/git-actions.ts）：失败分类、输入校验、
@@ -2655,7 +2492,7 @@ const { runGitActionTests } = await import('./test-git-actions.mjs')
 await runGitActionTests(ok)
 
 /*
- * Git 审查的**真实仓库**验证：数据层与真 git 的接口（临时目录、不碰用户数据）。
+ * Git 状态和写操作的**真实仓库**验证：数据层与真 git 的接口（临时目录、不碰用户数据）。
  * 与上面的纯解析测试是两层：那边验“我写的解析对不对”，这边验
  * “git 真的是这样输出的吗”，以及最要紧的“只读查询不会改暂存区”。
  */
@@ -2740,14 +2577,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       platform: 'node',
       format: 'esm',
       logLevel: 'warning'
-    }),
-    build({
-      entryPoints: ['src/main/git-diff.ts'],
-      outfile: 'out/test/git-diff.mjs',
-      bundle: true,
-      format: 'esm',
-      platform: 'node',
-      logLevel: 'silent'
     })
   ])
 )
@@ -2990,19 +2819,6 @@ await runGitRepoTests(ok)
   ok(/from: resources\/yan-cli/.test(builder), '打包：yan-cli 在 extraResources 里')
   ok(/to: yan-cli/.test(builder), '打包：yan-cli 落到安装目录的 yan-cli/')
   ok(/from: resources\/pi-extensions[\s\S]*to: yan-thin/.test(builder), '打包：砚薄层与 pi 用户扩展目录分离')
-}
-
-/* 实施-14 F7：实际 provider 失败 live 场景本身也属于交付证据。 */
-{
-  const { existsSync, readFileSync } = await import('node:fs')
-  const live = readFileSync('scripts/test-live.mjs', 'utf8')
-  ok(
-    /handoffrecoverproviderfail:\s*\{[\s\S]*?afterExit: 'handoffRecoverPersisted'/.test(live),
-    'F7：provider 硬失败场景仍接到恢复探针与退出后核验'
-  )
-  ok(/failureMode === 'provider-http-failure' && isHandoff/.test(live), 'F7：失败注入只针对交接包 provider 请求')
-  ok(/handoffFailureStatus === 503/.test(live), 'F7：退出后核验真实记录 provider HTTP 503')
-  ok(existsSync('scripts/probe/handoff-recover.js'), 'F7：provider 硬失败复用真实 Electron 恢复探针')
 }
 
 /*
@@ -3599,38 +3415,6 @@ await runActivityFlowTests(ok, activityFlow)
 await runContextAssemblyTests(ok, contextAssemblyShared)
 await runContextAssemblerTests(ok, contextAssembler, {
   mkdtemp: fsPromises.mkdtemp,
-  rm: fsPromises.rm
-})
-
-/*
- * 可编辑成果（实施-25 P06a）：版本推进纯逻辑 + 存储。
- * 重点在不变量「用户改过的段落被 agent 整篇重写时不丢」。
- */
-const artifactDocShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/artifact-doc.ts'],
-    outfile: 'out/test/artifact-doc.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/artifact-doc.mjs'))
-)
-const artifactDocStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/artifact-doc-store.ts'],
-    outfile: 'out/test/artifact-doc-store.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/artifact-doc-store.mjs'))
-)
-const { runArtifactDocTests, runArtifactDocStoreTests } = await import('./test-artifact-doc.mjs')
-await runArtifactDocTests(ok, artifactDocShared)
-await runArtifactDocStoreTests(ok, artifactDocStore, {
-  mkdtemp: fsPromises.mkdtemp,
-  readFile: fsPromises.readFile,
   rm: fsPromises.rm
 })
 

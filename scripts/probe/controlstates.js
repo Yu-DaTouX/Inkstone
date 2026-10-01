@@ -37,17 +37,15 @@
     const host = document.createElement('div')
     host.style.cssText = 'position:fixed;left:-9999px;top:0;width:200px'
     const PROBE_CLASSES = [
-      'send',
+      'btn icon primary send',
       /* v0.4：这几类按钮的外观（含禁用态）来自统一控件 .btn，按真实类名组合来造 */
       'btn sm rp-btn',
       'btn sm rp-act',
       'btn icon sm review-act',
       'btn icon sm browser-nav',
       'btn primary commit-submit',
-      'tl-move',
       'ui-menu-item',
-      'slash-item',
-      'rdiff-gap'
+      'btn sm'
     ]
     for (const name of PROBE_CLASSES) {
       const b = document.createElement('button')
@@ -68,6 +66,7 @@
     const tokenValue = getComputedStyle(document.documentElement).getPropertyValue('--ctl-disabled-opacity').trim()
     out.push(`  禁用控件样本 ${rows.length} 个（真实可见 ${realDisabled.length} + 借用类名 ${host.children.length}）`)
     out.push(`  不透明度取值：${distinct.join(' / ')}（令牌 --ctl-disabled-opacity=${tokenValue}）`)
+    out.push('  样本：' + JSON.stringify(rows))
     ok(distinct.length === 1, '所有 :disabled 控件的不透明度只有一个值', `实际 ${distinct.join('/')}`)
     ok(distinct[0] === tokenValue, '该值就是令牌的值（没有各写一份）')
     host.remove()

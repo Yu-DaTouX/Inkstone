@@ -1,0 +1,65 @@
+/* Geometry only; tile surfaces, grips, splitters and drop states belong to ui.css. */
+.workspace.workspace-tiled { grid-template-columns: var(--w-rail) minmax(0, 1fr); }
+.tile-workspace { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.tile-workspace-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; position: relative; }
+.tile-workspace-pad { width: max-content; min-width: 100%; box-sizing: border-box; }
+.tile-workspace-canvas { position: relative; }
+.tile-frame { position: absolute; pointer-events: none; }
+.tile-pane { position: absolute; display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; z-index: 1; }
+.tile-pane[hidden] { display: none; }
+.tile-pane > .center { flex: 1; width: 100%; height: 100%; min-height: 0; min-width: 0; }
+.tile-pane > .center .stream { min-width: 0; }
+.tile-heading { display: flex; align-items: center; gap: 2px; padding-inline: var(--sp-1) var(--sp-1); position: absolute; min-width: 0; overflow: hidden; z-index: 1; }
+.tile-grip-zone { justify-content: center; padding: 0; }
+.tile-grip { width: 44px; height: 100%; padding: 0; }
+.tile-tabs { display: flex; flex: 1; align-items: center; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tile-tabs .ui-tab { min-width: 0; max-width: 220px; flex-shrink: 0; }
+.tile-tabs .ui-tab-label { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.tile-separator { position: absolute; z-index: 2; touch-action: none; }
+.tile-separator.axis-x { cursor: col-resize; }
+.tile-separator.axis-y { cursor: row-resize; }
+.tile-drag-layer { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+.tile-drop-preview { position: absolute; display: flex; align-items: center; justify-content: center; }
+.tile-menu-backdrop { position: fixed; inset: 0; z-index: 200; }
+.tile-layout-menu { position: fixed; width: 240px; }
+.tile-layout-menu .ui-select { margin: 0 var(--sp-1) var(--sp-1); }
+.tile-move-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; }
+.tile-menu-label { padding: var(--sp-1) var(--sp-2); }
+.tile-pane .rp-body { flex: 1; min-height: 0; overflow: auto; }
+.tile-file-tree { display: flex; flex-direction: column; min-height: 0; overflow: auto; flex: 1; padding: var(--sp-2); }
+.tile-file-tree > .rp-sec { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.tile-file-tree .rp-sec-body.open, .tile-file-tree .rp-sec-body-inner { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.tile-file-tree .rp-fs { flex: 1; min-height: 0; max-height: none; }
+.tile-file-tree .rp-fs-search-results { flex: 1; min-height: 0; max-height: none; }
+/* Task and log tiles: their sections stack and scroll inside the tile. */
+.tile-sections { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: var(--sp-1) var(--sp-2) var(--sp-2); }
+.tile-sections > .ui-empty { margin: auto; }
+.tile-pane .fp-pane, .tile-pane .fp-wrap { flex: 1; min-height: 0; max-height: none; }
+.tile-pane > .agent-workspace { flex: 1; min-width: 0; width: 100%; max-width: none; border: 0; }
+.tile-pane .agent-run-surface { min-height: 0; }
+.tile-pane > .term-surface { flex: 1; min-height: 0; }
+.agent-message-stream { flex: 1; overflow: auto; min-height: 0; padding: var(--sp-3); }
+.agent-message-stream .msg { min-width: 0; }
+.agent-message-stream .bubble-text { overflow-wrap: anywhere; }
+.tile-pane .sg-main { flex-wrap: wrap; }
+.tile-pane .sg-task { flex-basis: 140px; }
+.agent-message-stream .msg-body { min-width: 0; }
+.agent-message-stream pre { max-width: 100%; overflow: auto; }
+.agent-message-stream .stream-inner { max-width: 900px; margin-inline: auto; }
+.agent-message-caption { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
+.tile-grip-restore { position: absolute; right: var(--sp-1); top: 1px; }
+/* Live drag: the grabbed tile follows the pointer above the others, which glide into
+   the arrangement the drop would produce; after release it glides into its slot. */
+.tile-workspace.dragging { cursor: grabbing; user-select: none; }
+.tile-workspace.dragging .tile-pane,
+.tile-workspace.dragging .tile-frame,
+.tile-workspace.dragging .tile-heading,
+.tile-workspace.settling .tile-pane,
+.tile-workspace.settling .tile-frame,
+.tile-workspace.settling .tile-heading { transition: left var(--dur-200) var(--ease), top var(--dur-200) var(--ease), width var(--dur-200) var(--ease), height var(--dur-200) var(--ease); }
+.tile-workspace.dragging .tile-pane.floating { transition: none; z-index: 21; pointer-events: none; }
+.tile-float { position: absolute; pointer-events: none; }
+.tile-float-head { position: absolute; top: 0; left: 0; right: 0; height: 28px; display: flex; align-items: center; padding-inline: var(--sp-1); }
+.tile-float-grip { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); z-index: 1; }
+/* The main conversation has no card to clip; its menus (model, work mode) may extend past it. */
+.tile-pane[data-workspace-pane='chat'] { overflow: visible; z-index: 3; }

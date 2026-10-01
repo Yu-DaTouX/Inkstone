@@ -6,7 +6,8 @@ import { quotaTone } from '../../../../shared/quota-tone'
 import { money, quotaCompactWindows, windowPct } from '../../../../shared/quota-mini'
 import { decideQuotaRefresh, hasDueQuotaWindow } from '../../../../shared/quota-refresh'
 import { type QuotaWindow } from '../../../../shared/ipc'
-import { Button, MiniMeter } from '../ui'
+import { Button, IconButton, MiniMeter } from '../ui'
+import { DetailTrigger } from '../shell/DetailPopover'
 
 /**
  * 额度自动刷新间隔（实施-20 U3）。
@@ -14,7 +15,8 @@ import { Button, MiniMeter } from '../ui'
  */
 const AUTO_QUOTA_REFRESH_MS = 60_000
 
-export function QuotaSection() {
+/** `status`: the status-bar entry, a summary that opens the same details above it. */
+export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 'status' } = {}) {
   const t = useT()
   const provider = useStore((s) => s.session?.model?.provider ?? '')
   const settings = useStore((s) => s.settings)
@@ -167,8 +169,7 @@ export function QuotaSection() {
   /* 空入口不渲染：没有供应商，或查不到任何可显示的数（不支持 / 未登录 / 出错）时整块不占位 */
   if (!provider || (!loading && !mainText && compactWindows.length === 0 && !budget)) return null
 
-  return (
-    <Section titleKey="rp.quota" testId="rp-quota" defaultOpen compactWhenFloating extra={
+  const summary = (
       <span className="rp-header-usage">
         <span className="rp-header-values" title={provider || undefined}>
           {compactWindows.length ? compactWindows.map(({ window, label }) => {
@@ -182,7 +183,9 @@ export function QuotaSection() {
         </span>
         {ringPct !== null ? <MiniMeter percent={ringPct} tone={ringTone} /> : null}
       </span>
-    }>
+  )
+  const body = (
+    <>
       {/* 主值：本月已用（有分窗口时）—— 不再取“最紧窗口”的 used */}
       {mainText && !hasWindows ? (
         <div className={`rp-quota-main ${hasWindows ? '' : 'rp-mini-duplicate'}`} data-testid="quota-main">
@@ -300,6 +303,68 @@ export function QuotaSection() {
           </Button>
         ) : null}
       </div>
+    </>
+  )
+  /* Status-bar popover: one block per window, a large percentage and a quiet sub line. */
+  const popover = (
+    <div className="quota-pop" data-testid="quota-popover">
+      <div className="quota-pop-head">
+        <span className="ui-popover-title">{t('rp.quota')}</span>
+        <span className="ui-badge quota-pop-provider" title={provider || undefined}>{provider || '—'}</span>
+        <span className="spacer" />
+        <IconButton size="sm" icon="refresh" label={t('quota.refresh')} onClick={() => void refresh()} disabled={loading} data-testid="quota-refresh" />
+      </div>
+      {mainText && !hasWindows ? (
+        <div className="quota-block" data-testid="quota-main">
+          <div className="quota-block-top">
+            <span className="quota-block-label">{mainLabel}</span>
+            <span className={`quota-block-value ${mainTone}`} data-testid="quota-main-value">{mainText}</span>
+          </div>
+        </div>
+      ) : null}
+      {quota?.error ? <div className="rp-dim" data-testid="quota-error">{quota.supported ? quota.error : t('quota.unsupported')}</div> : null}
+      {error && !quota?.error ? <div className="rp-dim" data-testid="quota-error">{t('quota.stale', { msg: error })}</div> : null}
+      {quota?.windows?.map((w) => {
+        const realPct = windowPct(w, 1) ?? 0
+        const tone = quotaTone(realPct, w.exceeded)
+        const reset = resetText(t, w)
+        const amount = isPercent ? '' : `${money(w.used, quota.currency)} / ${money(w.total, quota.currency)}`
+        return (
+          <div key={w.id} className="quota-block" data-testid={`quota-win-${w.id}`}>
+            <div className="quota-block-top">
+              <span className="quota-block-label">{w.label}</span>
+              {w.estimated ? <span className="ui-badge" title={t('quota.estimatedTip')} data-testid={`quota-win-${w.id}-estimated`}>{t('quota.estimated')}</span> : null}
+              <span className={`quota-block-value ${tone.replace('ok', '')}`} data-testid={`quota-win-${w.id}-pct`}>{realPct.toFixed(1)}<small>%</small></span>
+            </div>
+            <div className={`ui-quota-track ${tone}`}><i style={{ width: `${Math.min(100, Math.max(0, realPct))}%` }} /></div>
+            <div className="quota-block-sub">
+              {amount ? <span data-testid={`quota-win-${w.id}-amount`} title={`${t('quota.remainingShort')} ${money(Math.max(0, w.total - w.used), quota.currency)}`}>{amount}</span> : <span />}
+              {w.exceeded ? <span className="err" data-testid={`quota-win-${w.id}-reached`}>{t('quota.limitReached')}</span>
+                : reset.text ? <span data-testid={`quota-win-${w.id}-reset`} title={reset.tip}>{reset.text}</span> : null}
+            </div>
+          </div>
+        )
+      })}
+      <div className="quota-pop-foot">
+        {quota ? <span data-testid="quota-checked" title={new Date(quota.checkedAt).toLocaleString()}>{t('quota.checkedAt', { time: new Date(quota.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) })}</span> : <span>{loading ? '…' : ''}</span>}
+        {provider === 'openai' ? <Button size="sm" variant="ghost" onClick={() => {
+          const value = window.prompt(t('quota.budgetPrompt'), budget ? String(budget) : '')
+          if (value === null) return
+          const n = Number(value)
+          if (!Number.isFinite(n) || n <= 0) return
+          void patchSettings({ providerBudgets: { ...(settings?.providerBudgets ?? {}), [provider]: n } })
+        }}>{t('quota.setBudget')}</Button> : null}
+      </div>
+    </div>
+  )
+  if (variant === 'status') return (
+    <DetailTrigger className="sb-seg sb-quota" testId="sb-quota" label={t('rp.quota')} title={provider || undefined} panel={popover}>
+      {summary}
+    </DetailTrigger>
+  )
+  return (
+    <Section titleKey="rp.quota" testId="rp-quota" defaultOpen compactWhenFloating extra={summary}>
+      {body}
     </Section>
   )
 }

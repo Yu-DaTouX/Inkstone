@@ -27,11 +27,14 @@ export function BrowserSurface() {
   const syncLocalProfile = useStore((s) => s.syncLocalProfile)
   const syncPageStorage = useStore((s) => s.syncPageStorage)
   const [syncing, setSyncing] = useState(false)
+  const [connecting, setConnecting] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const tabs = state.tabs ?? []
   const external = state.external
   const externalActive = state.mode === 'external' ? external : undefined
-  const [address, setAddress] = useState(state.url)
+  /* 空白页不在地址栏里显示 about:blank */
+  const shownUrl = state.url === 'about:blank' ? '' : state.url
+  const [address, setAddress] = useState(shownUrl)
   /**
    * 用户是否正在编辑地址栏（H-9 第二阶段）。
    * 打开时不动草稿：后台导航（重定向 / 另一个标签 / 页面自己跳）
@@ -62,8 +65,8 @@ export function BrowserSurface() {
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setAddress((prev) => nextAddressInput(state.url, prev, addressDirty))
-  }, [state.url, addressDirty])
+    setAddress((prev) => nextAddressInput(shownUrl, prev, addressDirty))
+  }, [shownUrl, addressDirty])
 
   /* 菜单：点外面 / 按 Esc 收起 —— 否则它会一直悬在那儿挡地址栏 */
   useEffect(() => {
@@ -92,11 +95,16 @@ export function BrowserSurface() {
     let lastBounds = ''
     const syncBounds = (): void => {
       const r = el.getBoundingClientRect()
+      const clip = el.closest('.tile-workspace-scroll')?.getBoundingClientRect()
+      const left = clip ? Math.max(r.left, clip.left) : r.left
+      const top = clip ? Math.max(r.top, clip.top) : r.top
+      const right = clip ? Math.min(r.right, clip.right) : r.right
+      const bottom = clip ? Math.min(r.bottom, clip.bottom) : r.bottom
       const bounds = {
-        x: r.left,
-        y: r.top,
-        width: r.width,
-        height: r.height
+        x: left,
+        y: top,
+        width: Math.max(0, right - left),
+        height: Math.max(0, bottom - top)
       }
       /*
        * ResizeObserver 只保证尺寸变化，不保证位置变化（例如左栏收放、
@@ -118,6 +126,15 @@ export function BrowserSurface() {
       cancelAnimationFrame(frame)
     }
   }, [])
+
+  /* 启动 Chrome 最长要等 20 秒：期间按钮置忙，避免用户以为没反应而连点 */
+  const toggleChrome = async (): Promise<void> => {
+    if (connecting) return
+    setMenuOpen(false)
+    if (external) { await closeExternalChrome(); return }
+    setConnecting(true)
+    try { await openExternalChrome() } finally { setConnecting(false) }
+  }
 
   const navigate = async (target?: string): Promise<void> => {
     let value = (target ?? address).trim()
@@ -194,11 +211,24 @@ export function BrowserSurface() {
           icon="plug"
           size="sm"
           iconSize={14}
-          active={!!external}
+          active={!!external || connecting}
+          disabled={connecting}
           className="browser-nav browser-chrome"
-          label={external ? t('browser.disconnectChrome') : t('browser.connectChrome')}
+          label={connecting ? t('browser.connectingChrome') : external ? t('browser.disconnectChrome') : t('browser.connectChrome')}
           data-testid="browser-external-chrome"
-          onClick={() => void (external ? closeExternalChrome() : openExternalChrome())}
+          onClick={() => void toggleChrome()}
+        />
+
+        {/* 用系统默认浏览器打开当前页：常用操作，直接放在工具栏 */}
+        <IconButton
+          icon="external"
+          size="sm"
+          iconSize={14}
+          className="browser-nav browser-open-external"
+          label={t('browser.openExternal')}
+          disabled={!shownUrl}
+          data-testid="browser-open-external"
+          onClick={() => void window.yan.browser.openExternal(state.url || address)}
         />
 
         {/* 「⋯」菜单：低频操作收在这里，地址栏因此能拿到更多宽度 */}
@@ -306,26 +336,6 @@ export function BrowserSurface() {
               ))}
             </div>
           ) : null}
-          <button
-            className="browser-action"
-            onClick={() => {
-              setMenuOpen(false)
-              void window.yan.browser.openExternal(state.url || address)
-            }}
-            disabled={!state.url}
-            data-testid="browser-open-external"
-          >
-            {t('browser.openExternal')}
-          </button>
-          <button
-            className="browser-action"
-            onClick={() => {
-              setMenuOpen(false)
-              void (external ? closeExternalChrome() : openExternalChrome())
-            }}
-          >
-            {external ? t('browser.disconnectChrome') : t('browser.connectChrome')}
-          </button>
           {state.userControl ? (
             <button
               className="browser-action"

@@ -28,6 +28,7 @@
 import { appendFileSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { applyCodemodePreference } from './codemode-policy.js'
 
 /**
  * 计划档允许的工具：只读查询 + **受限的 bash**。
@@ -181,9 +182,10 @@ export default function workModePolicy(pi) {
      * 或后续注册的工具会被沏掉，而且症状与本次改动毫无关系，很难查。
      */
     if (restricted) {
-      const err = applyTools(baseTools ?? [])
+      const restoredTools = applyCodemodePreference(pi, baseTools ?? [])
+      const err = applyTools(restoredTools)
       restricted = false
-      note('before_agent_start', { mode, base: baseTools, applied: baseTools ?? [], err, restored: true })
+      note('before_agent_start', { mode, base: baseTools, applied: restoredTools, err, restored: true })
     }
   })
 

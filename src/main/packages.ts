@@ -164,11 +164,8 @@ export function listPackages(cwd: string, agentDirOverride?: string): PackageLis
     for (const src of readPackageSources(userSettings)) entries.push(describePackage(agentDir, src, 'user', agentDir))
     if (cwd && existsSync(projectSettings)) {
       for (const src of readPackageSources(projectSettings)) {
-        /* 同名时项目级优先显示（它就是当前会话真正生效的那份） */
-        const idx = entries.findIndex((e) => e.source === src)
-        const entry = describePackage(agentDir, src, 'project', projectSettingsDir)
-        if (idx >= 0) entries[idx] = entry
-        else entries.push(entry)
+        /* 管理列表保留两级声明，卸载一份后另一份仍可见；加载优先级由 pi 管理。 */
+        entries.push(describePackage(agentDir, src, 'project', projectSettingsDir))
       }
     }
     return { ok: true, agentDir, userSettings, projectSettings, entries }
@@ -187,13 +184,14 @@ export function listPackages(cwd: string, agentDirOverride?: string): PackageLis
 /**
  * 项目级 `.pi/settings.json` 里登记的 pi 包目录（绝对路径，磁盘上真实存在）。
  *
- * 砚的默认 runner 带 `--no-extensions`（01-S5）：pi 会关闭「发现 + 配置」的扩展，
+ * 旧版 runner 带 `--no-extensions`：pi 会关闭「发现 + 配置」的扩展，
  * 其中就包含项目 settings 的 `packages`。于是用户显式装进项目的包在 runner 里
  * **不会生效** —— 只有像砚的薄层那样**显式** `--extension` 传入才会加载
  * （pi 文档：`--no-extensions` disables discovered and configured extensions,
  * explicit `-e` paths still load）。
  *
- * 只列**项目级**声明：用户级 packages 属于用户自己的 pi 环境，砚默认不接管。
+ * 原生 pi 不使用这条补回路径，由 pi 自己处理发现与禁用设置。
+ * 这里只列项目级声明，不接管用户级 packages。
  * 只返回磁盘上真的存在、且带 `pi` 资源字段的包目录；settings 里登记但没装上的
  * 项留给诊断页显示，不在这里补齐。
  */
@@ -226,7 +224,7 @@ export interface PackageActionRequest {
   kind: PackageActionKind
   /** `npm:<包名>[@版本]` / `git:...` / 本地路径 */
   source: string
-  /** true = 装到当前项目（`.pi/settings.json`）；false = 用户级 */
+  /** true = 当前项目（`.pi/settings.json`）；false = 用户级。更新用此值解析本地来源。 */
   local?: boolean
   cwd: string
 }

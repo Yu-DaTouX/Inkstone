@@ -62,45 +62,35 @@
   }
 
   out.push('')
-  out.push('=== 1b. 上下文在右栏 ===')
-  const ctx = q('[data-sec="rp-context"]')
-  ok(!!ctx, '右栏有「上下文」分区')
-  if (ctx) {
-    const txt = ctx.textContent.replace(/\s+/g, ' ').trim()
-    out.push('  内容: ' + JSON.stringify(txt.slice(0, 80)))
-    /*
-     * 方案 7.3 改版后主行是「上下文 49% …… 128k / 262k」，
-     * tokens 行带 data-testid=ctx-tokens；阈值与花费收进「详情」。
-     */
-    /*
-     * 「上下文」分区默认是收起的（defaultOpen={false}）。
-     * 收起的卡片只渲染摘要行（`.rp-header-values`），body 里那套
-     * `ctx-tokens` / `.rp-meter` / `ctx-details-toggle` 根本不在 DOM 里 ——
-     * 所以要先展开再读，否则拿到的永远是一个空的 tokens 行。
-     */
-    const ctxHead = ctx.querySelector('.rp-sec-head')
-    if (!ctx.querySelector('[data-testid="ctx-tokens"]') && ctxHead) {
-      ctxHead.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-      await sleep(400)
+  out.push('=== 1b. 输入框上下文浮层 ===')
+  const ctxTrigger = q('[data-testid="composer-context"]')
+  ok(!!ctxTrigger, '输入框旁有上下文圆环入口')
+  if (ctxTrigger) {
+    ctxTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    let popover = null
+    for (let i = 0; i < 30 && !popover; i++) {
+      await sleep(100)
+      popover = q('.ui-detail-popover[role="dialog"]')
     }
-    const tokensLine = ctx.querySelector('[data-testid="ctx-tokens"]')?.textContent?.trim() ?? ''
-    out.push('  tokens 行: ' + JSON.stringify(tokensLine))
-    ok(tokensLine.length > 0, '显示 token 总量（84k / 200k 这种写法）')
-    /* 拿不到上下文窗口时百分比显示为「—」（而不是编一个数）—— 那是环境 */
-    if (/%/.test(txt)) ok(true, '显示占用百分比')
-    else skip('没有上下文窗口数据（pi 未就绪），百分比显示为「—」')
-    ok(!!ctx.querySelector('.rp-meter'), '有进度条')
-
-    /* 详情：调参项与花费默认收起（方案 7.3） */
-    const detailsToggle = ctx.querySelector('[data-testid="ctx-details-toggle"]')
-    ok(!!detailsToggle, '阈值 / 花费等收进「详情」入口')
-    if (detailsToggle) {
-      detailsToggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-      await sleep(250)
-      const cost = ctx.querySelector('[data-testid="ctx-cost"]')
-      ok(!!cost && /\$/.test(cost.textContent ?? ''), '详情里有花费')
-      detailsToggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-      await sleep(150)
+    ok(!!popover, '点击圆环打开上下文浮层')
+    if (popover) {
+      const tokens = popover.querySelector('[data-testid="ctx-tokens"]')
+      out.push('  tokens: ' + JSON.stringify(tokens?.textContent?.trim() ?? '缺失'))
+      ok(!!tokens && tokens.textContent.trim().length > 0, '浮层显示 Agent 报告的 token 总量或未知状态')
+      const usage = popover.querySelector('.ui-usage-bar[role="img"]')
+      ok(!!usage && !!usage.getAttribute('aria-label'), '浮层有可访问的分类用量条')
+      const auto = popover.querySelector('[data-testid="rp-auto-compact"]')
+      const manual = popover.querySelector('[data-testid="rp-compact-now"]')
+      ok(!!auto, '浮层提供原生自动压缩开关')
+      ok(!!manual, '浮层提供手动压缩操作')
+      if (manual) {
+        const busy = !!store.getState().session?.isAgentRunning || !!store.getState().session?.isStreaming || !!store.getState().session?.isCompacting
+        const shouldDisable = busy || !store.getState().session?.sessionId
+        ok(manual.disabled === shouldDisable, '手动压缩控件只在会话缺失或忙碌时禁用')
+      }
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await sleep(120)
+      ok(!q('.ui-detail-popover[role="dialog"]'), 'Escape 可关闭上下文浮层')
     }
   }
 
@@ -137,28 +127,23 @@
     }
     return fn()
   }
-  /**
-   * 等一个测量值**稳定下来**再读。
-   *
-   * ⚠️ 为什么必需：左栏收放是靠 `--w-rail` 的 CSS 过渡做的，
-   *   `until(() => rail-off)` 只等到**类名**变了，宽度还在变。
-   *   直接读 getBoundingClientRect 会拿到过渡中间值 —— 实测踩到过：
-   *   「收起」后读到的还是展开时的宽度，于是「推挤」断言方向反而是反的。
-   *   这是测量时机问题，不是功能问题。
-   */
-  const settle = async (read, ms = 1500) => {
+  /** Wait for ResizeObserver-driven workspace geometry to settle across multiple samples. */
+  const settle = async (read, ms = 3000) => {
     const t0 = Date.now()
     let prev = read()
+    let stable = 0
     while (Date.now() - t0 < ms) {
-      await sleep(120)
+      await sleep(150)
       const now = read()
-      if (Math.abs(now - prev) < 0.5) return now
+      stable = Math.abs(now - prev) < 0.5 ? stable + 1 : 0
+      if (stable >= 3) return now
       prev = now
     }
     return prev
   }
-  const centerW = () => q('.center').getBoundingClientRect().width
-  const innerL = () => q('.stream-inner').getBoundingClientRect().left
+  const workspaceViewport = () => q('.tile-workspace-scroll')
+  const viewportWidth = () => workspaceViewport()?.getBoundingClientRect().width ?? 0
+  const viewportLeft = () => workspaceViewport()?.getBoundingClientRect().left ?? 0
   const isOpen = () => !app.classList.contains('rail-off')
   const btn = q('[data-testid="rail-toggle"]')
   const click = () => btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -223,17 +208,38 @@
   out.push('  收起后 localStorage = ' + localStorage.getItem('yan.rail-open'))
   ok(localStorage.getItem('yan.rail-open') === '0', '收起状态会落盘')
 
-  /* ---- ④ 推挤式（不是浮层） ---- */
-  const cw1 = Math.round(await settle(centerW))
-  const cx1 = Math.round(await settle(innerL))
+  /* ---- ④ 工作区可用区域随侧栏变化，溢出留在工作区自己的滚动区 ---- */
+  const viewport = workspaceViewport()
+  const canvas = q('.tile-workspace-canvas')
+  ok(!!viewport && !!canvas && viewport.contains(canvas), '磁贴画布位于工作区自己的滚动 viewport 内')
+  const cw1 = Math.round(await settle(viewportWidth))
+  const cx1 = Math.round(await settle(viewportLeft))
   click()
   await until(isOpen, 2000)
-  const cw2 = Math.round(await settle(centerW))
-  const cx2 = Math.round(await settle(innerL))
-  // 从「浮层」改成「推挤」是刻意的：对齐 Agents-Anywhere 的常驻列做法。
-  // 浮层会把标题盖住，推挤才是面板收合的感觉。代价是中栏会重新居中。
-  ok(cw2 < cw1, `中栏被左栏推挤（${cw1} → ${cw2}）`)
-  ok(cx2 > cx1, `内容跟着右移（left ${cx1} → ${cx2}）`)
+  const cw2 = Math.round(await settle(viewportWidth))
+  const cx2 = Math.round(await settle(viewportLeft))
+  ok(cw2 < cw1, `展开侧栏后工作区 viewport 变窄（${cw1} → ${cw2}）`)
+  ok(cx2 > cx1, `展开侧栏后工作区 viewport 右移（left ${cx1} → ${cx2}）`)
+  if (viewport && canvas) {
+    const canvasWidth = Math.round(canvas.getBoundingClientRect().width)
+    const overflow = viewport.scrollWidth - viewport.clientWidth
+    const page = q('.app')
+    const pageOverflow = page ? page.scrollWidth - page.clientWidth : 0
+    const overflowX = getComputedStyle(viewport).overflowX
+    out.push(`  viewport=${Math.round(viewport.clientWidth)} canvas=${canvasWidth} scrollWidth=${viewport.scrollWidth} scrollLeft=${viewport.scrollLeft} overflowX=${overflowX}`)
+    ok(overflowX === 'auto' || overflowX === 'scroll', '工作区自身负责磁贴画布的横向溢出')
+    ok(pageOverflow <= 0, `工作区画布不撑出应用（app 横向溢出 ${pageOverflow}px）`)
+    if (overflow > 0) {
+      const before = viewport.scrollLeft
+      viewport.scrollLeft = viewport.scrollWidth
+      await sleep(2 * 150)
+      const reachedEnd = viewport.scrollLeft >= viewport.scrollWidth - viewport.clientWidth - 1
+      ok(reachedEnd, `超出 viewport 的画布可在工作区内滚动到末端（${before} → ${viewport.scrollLeft}）`)
+      viewport.scrollLeft = before
+    } else {
+      ok(canvasWidth <= viewport.clientWidth + 1, '画布未超出 viewport 时保持在工作区内')
+    }
+  }
 
   /* ---- ⑤ 按钮的选中态跟着状态 ---- */
   out.push('  展开后 data-open=' + btn.dataset.open + ' aria-expanded=' + btn.getAttribute('aria-expanded'))
@@ -258,7 +264,7 @@
   ok(!q('.tb-session'), '标题栏不再重复显示会话名')
 
   out.push('=== 5. 溢出 ===')
-  for (const sel of ['.app', '.workspace', '.center', '.usagebar', '.rightpanel']) {
+  for (const sel of ['.app', '.workspace', '.tile-workspace']) {
     const e = q(sel); if (!e) continue
     const over = e.scrollWidth - e.clientWidth
     ok(over <= 0, `${sel} 无横向溢出（差 ${over}）`)
@@ -266,11 +272,11 @@
 
   out.push('')
   out.push('=== 6. 布局宽度 ===')
-  for (const sel of ['.rail', '.center', '.rightpanel', '.usagebar', '.composer']) out.push('  ' + sel.padEnd(14) + box(sel))
+  for (const sel of ['.rail', '.tile-workspace', '.tile-workspace-scroll', '.tile-workspace-canvas', '.usagebar', '.composer']) out.push('  ' + sel.padEnd(26) + box(sel))
 
-  const cw3 = Math.round(await settle(centerW))
-  const cx3 = Math.round(await settle(innerL))
-  if (cw3 && cx3) out.push(`  钉住后中栏宽=${cw3} 内容左=${cx3}`)
+  const cw3 = Math.round(await settle(viewportWidth))
+  const cx3 = Math.round(await settle(viewportLeft))
+  if (cw3 && cx3) out.push(`  工作区 viewport 宽=${cw3} 左=${cx3}`)
 
   return out.join('\n')
 })()

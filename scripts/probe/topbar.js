@@ -39,14 +39,14 @@
 
     out.push('=== 1. 两个开关都在标题栏 ===')
     const rt = document.querySelector('[data-testid="rail-toggle"]')
-    const pt = document.querySelector('[data-testid="rightpanel-toggle"]')
+    const pt = document.querySelector('[data-testid="right-tool-menu"]')
     if (rt && rt.closest('.titlebar')) ok('侧栏开关在标题栏里')
     else bad('侧栏开关不在标题栏')
     if (pt && pt.closest('.titlebar')) ok('工具栏开关在标题栏里')
     else bad('工具栏开关不在标题栏')
     // 左右两端（Codex 的位置）：侧栏在左半、工具栏在右半
     const rtr = rect('[data-testid="rail-toggle"]')
-    const ptr = rect('[data-testid="rightpanel-toggle"]')
+    const ptr = rect('[data-testid="right-tool-menu"]')
     out.push('  侧栏开关 ' + JSON.stringify(rtr) + '   工具栏开关 ' + JSON.stringify(ptr) + '   窗口宽 ' + window.innerWidth)
     if (rtr && rtr.x < window.innerWidth / 2) ok('侧栏开关在窗口左侧')
     else bad('侧栏开关位置不对')
@@ -78,24 +78,21 @@
     if (slotW < 1) ok('收起 = 0 宽（入口只在标题栏）')
     else bad(`收起态不对：宽 ${slotW}px（应为 0）`)
 
-    const ptBefore = rect('[data-testid="rightpanel-toggle"]')
-    click(pt)
-    await sleep(700)
-    const ptAfter = rect('[data-testid="rightpanel-toggle"]')
-    out.push('  收起工具栏：' + JSON.stringify(ptBefore) + ' → ' + JSON.stringify(ptAfter))
-    if (same(ptBefore, ptAfter)) ok('工具栏收起后开关**不动**')
-    else bad('工具栏收起后开关移动了')
-    if (!document.querySelector('[data-testid="rightpanel"]')) ok('工具栏已卸载（收起不占位）')
-    else bad('工具栏还在')
-    const ws = getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns
-    out.push('  两侧都收起时 grid = ' + ws)
-    /* 两侧都收起：第一列 0（左栏让位）、最后一列 0（右栏整个卸载）。
-       列宽是小数（47.9926px），不能拿字符串比。 */
-    const cols = ws.trim().split(/\s+/).map((x) => parseFloat(x))
-    const firstCol = cols[0]
-    const lastCol = cols[cols.length - 1]
-    if (firstCol < 1 && lastCol === 0) ok('左栏 0 宽 + 右栏 0 宽（中栏拿到全部空间）')
-    else bad('收起后列宽不对：' + ws)
+    const ptBefore = rect('[data-testid="right-tool-menu"]')
+    await window.__yanOpenWorkspaceTool('文件', 'files')
+    const ptAfter = rect('[data-testid="right-tool-menu"]')
+    if (same(ptBefore, ptAfter)) ok('打开磁贴后工具入口位置稳定')
+    else bad('工具入口随磁贴打开移动')
+    const pane = document.querySelector('[data-workspace-pane="files"]:not([hidden])')
+    if (pane) ok('文件磁贴已打开')
+    else bad('工具菜单没有打开文件磁贴')
+    document.querySelector('[data-pane-tab="files"]')?.closest('.tile-heading')?.querySelector('[aria-label="收起面板，保留运行"]')?.click()
+    await sleep(500)
+    if (!document.querySelector('[data-workspace-pane="files"]:not([hidden])')) ok('隐藏磁贴让出工作区空间')
+    else bad('文件磁贴未隐藏')
+    const cols = getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns.split(/\s+/).map(Number.parseFloat)
+    if (cols[0] < 1) ok('侧栏收起后0宽，主会话保留可用空间')
+    else bad('侧栏收起后仍占宽')
 
     out.push('\n=== 3. 中栏内容与导航轨对齐（之前错位的根因）===')
     // 注入 4 轮，让导航轨渲染
@@ -127,7 +124,7 @@
     // 展开回来
     click(document.querySelector('[data-testid="rail-toggle"]'))
     await until(() => store.getState().railPinned, 3000)
-    click(document.querySelector('[data-testid="rightpanel-toggle"]'))
+    click(document.querySelector('[data-testid="right-tool-menu"]'))
     await until(() => store.getState().settings?.rightPanelOpen, 3000)
     await sleep(600)
 

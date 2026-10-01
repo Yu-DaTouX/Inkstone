@@ -14,7 +14,11 @@
   const ok = (m) => out.push('  ✓ ' + m)
   const bad = (m) => out.push('  ✗ ' + m)
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-  const qa = (s) => [...document.querySelectorAll(s)]
+  const q = (s) => document.querySelector(s)
+  const filesPane = () => q('.tile-pane[data-workspace-pane="files"]:not([hidden])')
+  const treeSelector = (s) => /rp-files|rp-fs|fs-/.test(s)
+  const qa = (s) => [...(treeSelector(s) ? (filesPane() ?? document) : document).querySelectorAll(s)]
+  const qTree = (s) => (filesPane() ?? document).querySelector(s)
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   const until = async (fn, ms = 6000) => {
     const t0 = Date.now()
@@ -25,6 +29,17 @@
     return false
   }
   const store = window.__yanStore
+  const openFilesTile = async () => {
+    if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
+    const visible = filesPane()
+    if (visible) return true
+    q('[data-testid="right-tool-menu"]')?.click()
+    if (!await until(() => !!q('[data-testid="right-tool-menu-popover"]'), 3000)) return false
+    const file = [...document.querySelectorAll('.rp-tool-menu-item')].find((el) => /文件/.test(el.textContent ?? ''))
+    if (!file) return false
+    file.click()
+    return until(() => !!filesPane(), 6000)
+  }
 
   try {
     // 关引导层（轮询等它出现再关，不要假设它已经没了）
@@ -36,11 +51,7 @@
       if (btn) { click(btn); await sleep(300) } else await sleep(150)
     }
 
-    /* H-3b：新会话默认停在「开始」页；文件分区在「工具」页。 */
-    if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
-    await sleep(400)
-    document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(500)
+    await openFilesTile()
 
     /* ---- 0. 把 cwd 设成项目目录（否则树是空的，断言会假通过）---- */    const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
     out.push('=== 0. 工作目录 ===')
@@ -55,13 +66,13 @@
 
     /* ---- 1. 分区存在 + 根层加载 ---- */
     out.push('\n=== 1. 工具栏「文件」分区 ===')
-    const sec = document.querySelector('[data-testid="rp-files"]')
+    const sec = filesPane()
     if (!sec) { bad('没有文件分区'); }
     else ok('有「文件」分区')
 
-    const root = await until(() => document.querySelector('[data-testid="fs-row-root"]'), 6000)
+    const root = await until(() => qTree('[data-testid="fs-row-root"]'), 6000)
     if (!root) bad('根行没出现')
-    const rootRow = document.querySelector('[data-testid="fs-row-root"]')
+    const rootRow = qTree('[data-testid="fs-row-root"]')
     out.push('  根标签 = ' + (rootRow?.textContent.trim() ?? '?'))
     if (/pi-desktop/i.test(rootRow?.textContent ?? '')) ok('根显示项目名')
 
@@ -116,6 +127,7 @@
     if (tree?.getAttribute('role') === 'tree') ok('文件树声明为 tree')
     else bad('文件树没有 role=tree')
     const key = async (path, keyName, extra = {}) => {
+      await window.__yanOpenWorkspaceTool('文件', 'files')
       const row = qa('.rp-fs-row').find((r) => r.dataset.path === path)
       if (!row) return false
       row.focus()
@@ -236,6 +248,7 @@
       const parent = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main')
       if (!parent) bad('3c 找不到 src/main 目录行')
       else {
+        await window.__yanOpenWorkspaceTool('文件', 'files')
         mouseClick(parent) // 鼠标收起父目录（会把 current 那一行卸掉）
         const gone = await until(() => !qa('.rp-fs-row').some((r) => r.dataset.path === 'src/main/agent.ts'), 4000)
         if (gone) ok('收起父目录后那一行不再渲染')
@@ -403,55 +416,31 @@
     if (!document.querySelector('.rp-fs-row')) {
       bad('文件树不可见，多标签断言跳过（不改判为通过）')
     } else {
-      const fileTabs = () => qa('[data-testid="right-window-tab-file"]')
-      const tabLabels = () => fileTabs().map((el) => (el.textContent ?? '').trim())
-      const currentName = () => (document.querySelector('.fp-name')?.textContent ?? '').trim()
-      const openRow = async (rel) => {
-        const row = qa('.rp-fs-row').find((r) => r.dataset.path === rel)
-        if (!row) return false
+      const panes=()=>[...document.querySelectorAll('[data-workspace-pane^="file:"]')]
+      const findPane=name=>panes().find(p=>(p.querySelector('.fp-name')?.textContent??'').includes(name))
+      const open=async rel=>{
+        const row=qa('.rp-fs-row').find(r=>r.dataset.path===rel)
+        if(!row) return false
         click(row)
-        return until(() => currentName().length > 0, 6000)
+        return until(()=>!!findPane(rel.split('/').pop()),6000)
       }
-
-      if (await openRow('src/main/agent.ts')) {
-        const one = await until(() => fileTabs().length >= 1, 4000)
-        if (one && tabLabels().some((l) => l.includes('agent.ts'))) ok('打开文件生成带文件名的资源标签')
-        else bad('文件标签不对：' + JSON.stringify(tabLabels()))
-      } else bad('找不到 src/main/agent.ts 行')
-
-      if (await openRow('src/main/artifacts.ts')) {
-        const two = await until(() => fileTabs().length >= 2, 6000)
-        out.push('  标签 = ' + JSON.stringify(tabLabels()) + '，当前 = ' + JSON.stringify(currentName()))
-        if (two) ok('两个不同文件 → 两个标签（不共用同一个）')
-        else bad('第二个文件没有生成新标签：' + JSON.stringify(tabLabels()))
-        if (tabLabels().some((l) => l.includes('agent.ts')) && tabLabels().some((l) => l.includes('artifacts.ts'))) {
-          ok('每个标签显示自己的文件名（不是都叫「文件」）')
-        } else bad('标签标题不对：' + JSON.stringify(tabLabels()))
-        if (currentName().includes('artifacts.ts')) ok('新打开的文件是当前预览')
-        else bad('当前预览不是刚打开的文件：' + JSON.stringify(currentName()))
-
-        /* 切回旧标签：内容跟着恢复（不是空白、也不叠一份新的） */
-        const first = fileTabs().find((el) => (el.textContent ?? '').includes('agent.ts'))
-        click(first)
-        const restored = await until(() => currentName().includes('agent.ts'), 4000)
-        if (restored) ok('切回旧标签恢复该文件（不空白、不重新叠一份）')
-        else bad('切回旧标签后当前文件 = ' + JSON.stringify(currentName()))
-        if (fileTabs().length === 2) ok('切换标签不会新增副本')
-        else bad('切换后标签数 = ' + fileTabs().length)
-
-        /* 关掉当前标签：另一个必须还在 */
-        const closeBtn = fileTabs()
-          .find((el) => (el.textContent ?? '').includes('agent.ts'))
-          ?.querySelector('.review-tab-close')
-        if (closeBtn) click(closeBtn)
-        const oneLeft = await until(() => fileTabs().length === 1, 5000)
-        if (oneLeft) ok('关闭一个文件标签后另一个保留')
-        else bad('关闭后标签数 = ' + fileTabs().length)
-        if (!fileTabs().some((el) => (el.textContent ?? '').includes('agent.ts'))) ok('被关掉的标签真的不在了')
-        else bad('被关掉的标签还在')
-      } else bad('找不到 src/main/artifacts.ts 行')
-      store.getState().closePreview()
-      await until(() => fileTabs().length === 0, 4000)
+      if(await open('src/main/agent.ts')) ok('打开文件生成属于该文件的磁贴')
+      else bad('agent.ts文件磁贴未打开')
+      if(await open('src/main/artifacts.ts')) ok('第二个文件生成独立磁贴')
+      else bad('artifacts.ts文件磁贴未打开')
+      const first=findPane('agent.ts'), second=findPane('artifacts.ts')
+      if(first && second && first!==second && first.dataset.workspacePane!==second.dataset.workspacePane) ok('同一工作区多文件身份独立')
+      else bad('文件磁贴身份不独立')
+      const oldBody=first?.querySelector('[data-testid="file-preview-body"]')
+      document.querySelector('[data-pane-tab="'+first?.dataset.workspacePane+'"] button[role="tab"]')?.click()
+      await sleep(200)
+      if(first?.querySelector('[data-testid="file-preview-body"]')===oldBody) ok('选择磁贴保留既有内容实例')
+      else bad('选择文件导致内容重建')
+      first?.querySelector('[data-testid="file-preview-close"]')?.click()
+      if(await until(()=>!findPane('agent.ts') && !!findPane('artifacts.ts'),4000)) ok('关闭一个文件保留另一个资源')
+      else bad('关闭文件影响了另一文件')
+      second?.querySelector('[data-testid="file-preview-close"]')?.click()
+      await until(()=>!findPane('artifacts.ts'),4000)
     }
 
     /* ---- 5c. H-4：文件变化提示（只 stat，不自动重载） ---- */
@@ -474,7 +463,8 @@
          * 检测链（stat → 比对 → 提示）全程是真的，没有直接写 stale 标志。
          */
         const cur = store.getState().filePreview
-        store.setState({ filePreview: { ...cur, data: { ...cur.data, mtimeMs: 1 } } })
+        const stale = { ...cur, data: { ...cur.data, mtimeMs: 1 } }
+        store.setState({ filePreview: stale, filePreviews: { ...store.getState().filePreviews, [cur.key]: stale } })
         const shown = await until(
           () => !!document.querySelector('[data-testid="file-preview-updated"]'),
           4000
@@ -518,7 +508,7 @@
         const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
         await store.getState().previewFile(`${cwd}\\src\\main\\agent.ts`, undefined, cwd)
         await until(() => !!q('[data-testid="file-preview"]'), 6000)
-        click(q('[data-testid="right-window-tab-start"]'))
+        await window.__yanOpenWorkspaceTool('文件', 'files')
         await sleep(1200)
 
         const expanded = q('[data-testid="fs-row-src"]')?.getAttribute('aria-expanded')
@@ -597,7 +587,7 @@
     else bad(over.length + ' 行溢出')
     const box = document.querySelector('.rp-fs')
     out.push('  文件树 视口 ' + box.getBoundingClientRect().height.toFixed(0) + 'px / 内容 ' + box.scrollHeight + 'px（可滚=' + (box.scrollHeight > box.clientHeight) + '）')
-    const body = document.querySelector('.rp-body').getBoundingClientRect().width
+    const body = filesPane().getBoundingClientRect().width
     const sec2 = sec.getBoundingClientRect().width
     out.push('  工具栏 body ' + body.toFixed(1) + '，文件分区 ' + sec2.toFixed(1))
     if (sec2 <= body + 1) ok('文件分区没有超出工具栏')

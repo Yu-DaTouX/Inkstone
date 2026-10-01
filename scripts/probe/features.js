@@ -336,45 +336,65 @@
   }
 
   /* ================= 5. 自动压缩 / 重试开关 ================= */
-  // 自动压缩归上下文分区，自动重试归操作分区；各只保留一个入口。
+  // 自动压缩位于输入框上下文详情；自动重试位于会话操作菜单。
   log('\n--- 5. 开关 ---')
-  /*
-   * 上下文分区默认是**折叠**的（`<Section defaultOpen={false}>`），
-   * 折叠时 Section 不渲染子节点 —— 所以必须先展开再找开关。
-   * （操作分区下面那段本来就有展开，这里补齐同一套动作。）
-   */
-  const ctxSection = q('[data-testid="rp-context"]')
-  if (ctxSection && !ctxSection.classList.contains('open')) click(ctxSection.querySelector('.rp-sec-head'))
-  await sleep(400)
-  const autoCompact = q('[data-testid="rp-auto-compact"]')
-  ok(!!autoCompact, '上下文分区提供自动压缩开关')
+  const contextTrigger = q('[data-testid="composer-context"]')
+  ok(!!contextTrigger, '输入框提供上下文详情入口')
+  if (contextTrigger && contextTrigger.getAttribute('aria-expanded') !== 'true') click(contextTrigger)
+  const autoCompactReady = await until(() => !!q('[role="dialog"].ui-detail-popover [data-testid="rp-auto-compact"]'))
+  ok(autoCompactReady, '打开上下文详情后显示自动压缩开关')
+  const autoCompact = q('[role="dialog"].ui-detail-popover [data-testid="rp-auto-compact"]')
   if (autoCompact) {
     const before = store.getState().session?.autoCompactionEnabled
     log('  自动压缩当前: ' + before)
     const target = !before
-    autoCompact.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(1200)
+    click(autoCompact)
+    await until(() => store.getState().session?.autoCompactionEnabled === target, 5000)
     ok(
       store.getState().session?.autoCompactionEnabled === target,
       `切换后 autoCompactionEnabled = ${store.getState().session?.autoCompactionEnabled}（期望 ${target}）`
     )
-    autoCompact.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(1200)
+    click(q('[role="dialog"].ui-detail-popover [data-testid="rp-auto-compact"]'))
+    await until(() => store.getState().session?.autoCompactionEnabled === before, 5000)
     ok(store.getState().session?.autoCompactionEnabled === before, '还原成功')
   }
-  const actions = q('[data-testid="rp-actions"]')
-  if (actions && !actions.classList.contains('open')) click(actions.querySelector('.rp-sec-head'))
-  await sleep(300)
-  const autoRetry = q('[data-testid="rp-auto-retry"] .switch-pill')
-  ok(!!autoRetry, '操作分区提供自动重试开关')
+  if (q('[role="dialog"].ui-detail-popover')) {
+    keydown(document.body, 'Escape')
+    await until(() => !q('[role="dialog"].ui-detail-popover'))
+  }
+
+  const openSessionMenu = async () => {
+    const trigger = q('[data-testid="session-menu"]')
+    if (!trigger) return false
+    if (!q('[data-testid="session-menu-popover"]')) click(trigger)
+    return await until(() => !!q('[data-testid="session-menu-popover"]'))
+  }
+  const retryMenuReady = await openSessionMenu()
+  ok(retryMenuReady, '会话菜单可打开')
+  const autoRetry = q('[data-testid="session-menu-popover"] [data-testid="act-auto-retry"]')
+  ok(!!autoRetry, '会话菜单提供自动重试开关')
   if (autoRetry) {
     const before = store.getState().autoRetryEnabled
-    autoRetry.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(600)
-    ok(store.getState().autoRetryEnabled === !before, '自动重试开关状态同步')
-    autoRetry.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(600)
-    ok(store.getState().autoRetryEnabled === before, '自动重试还原成功')
+    click(autoRetry)
+    const menuClosed = await until(() => !q('[data-testid="session-menu-popover"]'))
+    ok(menuClosed, '点击自动重试后会话菜单关闭')
+    const toggled = await until(() => store.getState().autoRetryEnabled === !before, 5000)
+    ok(toggled, '自动重试开关状态同步')
+
+    // 菜单项执行后会关闭菜单；恢复原值前必须重新打开并重新查询节点。
+    const reopenForRestore = await openSessionMenu()
+    ok(reopenForRestore, '恢复自动重试前重新打开会话菜单')
+    const retryRestore = q('[data-testid="session-menu-popover"] [data-testid="act-auto-retry"]')
+    ok(!!retryRestore, '重新打开后仍可找到自动重试菜单项')
+    if (retryRestore && store.getState().autoRetryEnabled !== before) {
+      click(retryRestore)
+      const restoreClosed = await until(() => !q('[data-testid="session-menu-popover"]'))
+      ok(restoreClosed, '恢复自动重试后会话菜单关闭')
+    } else if (q('[data-testid="session-menu-popover"]')) {
+      keydown(document.body, 'Escape')
+    }
+    const restored = await until(() => store.getState().autoRetryEnabled === before, 5000)
+    ok(restored, '自动重试还原成功')
   }
 
   /* ================= 6. 会话重命名 ================= */

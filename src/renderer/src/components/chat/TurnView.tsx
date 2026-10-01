@@ -12,7 +12,7 @@ import { parseSubagentNotice } from '../../../../shared/subagent-notice'
 import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared/turns'
 import { formatDuration } from '../../../../shared/duration'
 import { fileUrl as toFileUrl } from '../../../../shared/file-url'
-import { Caret } from '../ui'
+import { Caret, IconButton } from '../ui'
 import { ChatImage } from './ChatImage'
 
 /**
@@ -35,15 +35,15 @@ import { ChatImage } from './ChatImage'
  * （见 chat.css 的 `.turn-para`）。
  */
 
-export const TurnView = memo(function TurnView({ turn, streaming }: { turn: Turn; streaming?: boolean }) {
-  if (turn.kind === 'user') return <UserTurnView turn={turn} />
+export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false }: { turn: Turn; streaming?: boolean; readOnly?: boolean }) {
+  if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
-  return <AssistantTurnView turn={turn} streaming={streaming} />
+  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} />
 })
 
 /* ------------------------------------------------------------------ 用户 */
 
-function UserTurnView({ turn }: { turn: UserTurn }) {
+function UserTurnView({ turn, readOnly }: { turn: UserTurn; readOnly: boolean }) {
   const t = useT()
   const msg = turn.msg
   /* 宿主发给模型的子代理通知：显示成一行小提示，不当作用户说的话 */
@@ -104,14 +104,14 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
         {/* 消息块下方一行：时间 + 从这里分支。悬停 / 聚焦时才完全显现，平时淡显。 */}
         <div className="turn-footer msg-meta">
           {msg.timestamp ? <TurnTime timestamp={msg.timestamp} /> : null}
-          <button
+          {!readOnly ? <button
             className="msg-act"
             title={t('chat.forkHere')}
             onClick={() => void forkFromText(msg.text)}
           >
             <Icon name="branch" size={12} />
             {t('chat.fork')}
-          </button>
+          </button> : null}
         </div>
       </div>
     </article>
@@ -148,7 +148,7 @@ function BashTurnView({ turn }: { turn: BashTurn }) {
 
 /* ------------------------------------------------------------------ 助手 */
 
-function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }) {
+function AssistantTurnView({ turn, streaming, readOnly }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean }) {
   /*
    * 成功进度只是过程状态：artifact 已经落盘后，用户需要看到的是最终文件，
    * 不是一张永远停在「已完成」的进度卡。失败则保留，方便解释原因并重试。
@@ -193,7 +193,7 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
         {/* 过程记录（推理 + 工具）在解说之后、正式回复之前：按发生顺序读 */}
         <TurnActivity turn={turn} streaming={streaming} />
         {/* 这一回合派出的子代理：一个一行，运行中显示模型与最新动作 */}
-        <TurnSubagents turn={turn} />
+        {!readOnly ? <TurnSubagents turn={turn} /> : null}
 
         {/* 正式回复仍逐段保留，避免自主续跑时把不同来源的正文拼成一段。 */}
         {segmented
@@ -247,6 +247,15 @@ function TurnResponse({
 /** 回合底部只保留可验证的统计；模型名、回复档位与工具步数不再占据正文顶部。 */
 function TurnFooter({ turn }: { turn: AssistantTurn }) {
   const t = useT()
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  useEffect(() => {
+    if (copyState === 'idle') return
+    const timer = setTimeout(() => setCopyState('idle'), 2000)
+    return () => clearTimeout(timer)
+  }, [copyState])
+  const reply = (turn.segments.length
+    ? turn.segments.flatMap(segment => segment.response ? [segment.response.text] : [])
+    : [turn.response?.text ?? '']).join('\n\n').trim()
   const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatDuration(turn.elapsedMs) : null
   const stopped = turn.terminalReason === 'stopped'
   const failed = turn.terminalReason === 'failed'
@@ -257,7 +266,7 @@ function TurnFooter({ turn }: { turn: AssistantTurn }) {
    * 有宿主记录的回合才显示整轮用时。
    */
   const hasMeta =
-    !!elapsed || !!turn.timestamp || turn.tools.length > 1 || stopped || failed || interrupted
+    !!reply || !!elapsed || !!turn.timestamp || turn.tools.length > 1 || stopped || failed || interrupted
   if (!hasMeta) return null
 
   return (
@@ -290,6 +299,14 @@ function TurnFooter({ turn }: { turn: AssistantTurn }) {
         <span className="turn-footer-item turn-footer-tag">{t('turn.interrupted')}</span>
       ) : null}
       {turn.timestamp ? <TurnTime timestamp={turn.timestamp} /> : null}
+      {reply ? <IconButton
+        size="sm"
+        icon={copyState === 'copied' ? 'check' : 'copy'}
+        label={t(copyState === 'copied' ? 'turn.copied' : copyState === 'failed' ? 'turn.copyFailed' : 'turn.copy')}
+        data-testid="turn-copy"
+        disabled={turn.streaming}
+        onClick={() => void navigator.clipboard.writeText(reply).then(() => setCopyState('copied'), () => setCopyState('failed'))}
+      /> : null}
     </div>
   )
 }

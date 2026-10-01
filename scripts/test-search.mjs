@@ -36,9 +36,9 @@ export async function runSearchTests(ok, mod) {
 
   /* ---- 契约：来源白名单 ---- */
   {
-    ok(SEARCH_SOURCES.length === 3, '首批三个来源')
-    ok(SEARCH_SOURCES.every((s) => !s.needsBrowser), '首批来源都不需要浏览器扩展（HTTP 直连）')
-    ok(new Set(SEARCH_SOURCES.map((s) => s.id)).size === 3, '来源 id 不重复')
+    ok(SEARCH_SOURCES.map(s => s.id).join(',') === 'wikipedia,arxiv,hackernews,brave,bing,ddg,so360', '登记原有三个来源与四个网页来源')
+    ok(SEARCH_SOURCES.every((s) => !s.needsBrowser), '已登记来源均不需要浏览器扩展')
+    ok(new Set(SEARCH_SOURCES.map((s) => s.id)).size === SEARCH_SOURCES.length, '来源 id 不重复')
   }
 
   /* ---- 查询解析 ---- */
@@ -46,7 +46,9 @@ export async function runSearchTests(ok, mod) {
     ok(normalizeQuery({ text: '   ' }).code === 'empty_query', '空查询被拒（不是发出去等空结果）')
     const q = normalizeQuery({ text: '  flash attention  ' })
     ok(q.ok && q.text === 'flash attention', '查询词去首尾空白')
-    ok(q.sources.length === 3, '不指定来源时查全部三个')
+    ok(q.sources.map(s => s.id).join(',') === 'wikipedia,arxiv,hackernews', '不指定来源时保留默认三个来源')
+    const web = normalizeQuery({ text: 'x', sources: ['brave', 'bing', 'ddg', 'so360'] })
+    ok(web.ok && web.sources.map(s => s.id).join(',') === 'brave,bing,ddg,so360', '四个网页来源可显式选择且保持请求顺序')
     const only = normalizeQuery({ text: 'x', sources: ['arxiv'] })
     ok(only.ok && only.sources.length === 1 && only.sources[0].id === 'arxiv', '只查指定来源')
     const bogus = normalizeQuery({ text: 'x', sources: ['arxiv', 'nope', 'arxiv'] })

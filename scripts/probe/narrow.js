@@ -82,28 +82,18 @@
      * 所以「收起后找不到入口」在结构上就不存在了。
      * 断言：位置在收放前后**完全不变**（这才是「位置对」的定义）。
      */
-    const rpExp = box('.titlebar [data-testid="rightpanel-toggle"]')
-    out.push('  收起前开关 ' + JSON.stringify(rpExp))
-    click(document.querySelector('.titlebar [data-testid="rightpanel-toggle"]'))
-    await sleep(700)
-    const rpUn = box('.titlebar [data-testid="rightpanel-toggle"]')
-    out.push('  收起后开关 ' + JSON.stringify(rpUn) + '  工具栏已卸载=' + !document.querySelector('[data-testid="rightpanel"]'))
-    if (!document.querySelector('[data-testid="rightpanel"]')) ok('工具栏已卸载（收起 0 宽）')
-    else bad('工具栏还在')
-    if (rpUn) {
-      const dx = Math.abs((rpUn.x ?? 0) - (rpExp?.x ?? 0))
-      const dy = Math.abs((rpUn.y ?? 0) - (rpExp?.y ?? 0))
-      out.push('  与收起前的位置差: dx=' + dx + ' dy=' + dy)
-      if (dx <= 1 && dy <= 1) ok('工具栏收起后开关**不动**（入口始终在）')
-      else bad('开关移动了（dx=' + dx + ' dy=' + dy + '）')
-      const maxB = box('[data-testid="win-max"]')
-      out.push('  开关 x=' + rpUn.x + '  最大化按钮 x=' + (maxB?.x ?? '?'))
-      /* 开关与窗口控制之间还有「置顶」按钮，所以间距约一个按钮宽 */
-      const gapToControls = maxB ? maxB.x - (rpUn.x + rpUn.w) : -1
-      out.push('  与窗口控制的间距 ' + gapToControls + 'px（中间还有置顶按钮）')
-      if (maxB && rpUn.x + rpUn.w <= maxB.x + 2 && gapToControls <= 60) ok('在窗口控制按钮左侧（右侧的唯一入口）')
-      else bad('与窗口控制的相对位置不对')
-    } else bad('收起后找不到开关')
+    const rpExp = box('[data-testid="right-tool-menu"]')
+    await window.__yanOpenWorkspaceTool('文件', 'files')
+    const rpUn = box('[data-testid="right-tool-menu"]')
+    if (rpExp && rpUn && Math.abs(rpExp.x-rpUn.x)<1 && Math.abs(rpExp.y-rpUn.y)<1) ok('工作区入口位置不随磁贴打开改变')
+    else bad('工作区入口移动')
+    const pane = document.querySelector('[data-workspace-pane="files"]:not([hidden])')
+    if (pane && pane.getBoundingClientRect().width >= 199) ok('窄窗文件磁贴保留最小阅读尺寸')
+    else bad('文件磁贴没有可读宽度')
+    document.querySelector('[data-pane-tab="files"]')?.closest('.tile-heading')?.querySelector('[aria-label="收起面板，保留运行"]')?.click()
+    await sleep(500)
+    if (!document.querySelector('[data-workspace-pane="files"]:not([hidden])')) ok('文件磁贴可隐藏')
+    else bad('文件磁贴仍可见')
 
     out.push('\n=== 4. 两侧都收起（最窄的可用状态）===')
     click(document.querySelector('[data-testid="rail-toggle"]'))
@@ -119,7 +109,7 @@
     const rw = box('.rail-slot')?.w ?? -1
     /* 右栏收起后连元素都没有，所以量 grid 的第一/第三列 */
     const gridCols = getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns.split(' ')
-    const pw = parseFloat(gridCols[gridCols.length - 1])
+    const pw = document.querySelector('[data-workspace-pane="files"]:not([hidden])')?.getBoundingClientRect().width ?? 0
     out.push('  rail=' + rw + ' right=' + pw + ' composer=' + JSON.stringify(c4))
     if (visible(c4)) ok('两侧都收起时输入框仍在（' + c4.w + '×' + c4.h + '）')
     else bad('两侧收起后输入框不见了！')

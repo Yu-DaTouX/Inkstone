@@ -29,6 +29,12 @@ description: 考虑把任务拆给子代理并行处理时使用。说明哪些�
 
 ## 2. 写任务输入
 
+需要可写任务或其他 CLI 时，优先通过统一工作区后端派活：`yan hub start --request-file task.json`，文件包含 `requestId`、`agent`（`pi`、`codex` 或 `claude`）、`mode`（`managed`）和 `prompt`。项目与父会话由宿主绑定，不传其他会话身份。任务会出现在「Agent 协作」标签和运行列表中；`yan hub list/get/send/stop` 负责查询、补充资料和停止。`send` 请求文件包含 `requestId`、`toTaskId`、`summary`，交互终端消息需要用户核对后发送。
+
+派出的运行在独立工作区里工作。你在主工作区里做的、还没提交的改动默认会带过去（`includeWorkingChanges` 默认为 `true`），对方用 `git diff HEAD` 就能看到；只有明确要从干净的 HEAD 开始时才传 `false`。用户要你“做完后交给 Codex 审阅”时：先完成并自查改动，再派 `agent: "codex"` 的受管任务，`prompt` 写清审阅范围（用 `git diff HEAD` 查看待审改动）、关注点和回报格式，要求只给审阅意见、不要改代码。审阅结论会在 Codex 结束时自动回到本会话；收到后逐条核实，再决定是否修改，修改仍需用户确认。
+
+受管任务可用 `yan hub reply --request-file reply.json` 回报父任务或关联主会话，文件包含 `requestId` 和 `summary`；Codex、Claude 的临时 MCP 提供同职责的 `inkstone_reply`。主 Agent 可继续独立工作，结束回报沿用通知设置；不要轮询等待。上下文整理交给原生 Agent；宿主不替它压缩或注入状态摘要。只读检查继续使用下面的原有子任务入口。
+
 简单任务可以直接 `yan subagent start --task "任务"`。并行的子任务容易跑偏，复杂任务先写请求文件，再 `yan subagent start --request-file subagent.json`：
 
 ```json

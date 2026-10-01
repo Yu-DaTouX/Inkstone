@@ -113,6 +113,7 @@ const DEFAULTS: AppSettings = {
   /* 新会话的默认工作模式；旧 `autonomous` 只是迁移输入（见下方清洗） */
   defaultWorkMode: DEFAULT_WORK_MODE,
   capabilityStrategy: 'auto-connect',
+  codemodeEnabled: true,
   /*
    * 发送键默认 auto —— 保持用户已有的习惯：短输入框 Enter 发送，
    * 长文模式里 Enter 换行。**不改变默认行为**，只是把它变成可配、
@@ -421,6 +422,7 @@ export async function getSettings(): Promise<AppSettings> {
      *     组合键要过 `normalizeWorkModeShortcut`（脏值回落成「没设过」）。
      */
     cached.defaultWorkMode = migrateLegacyAutonomous(fileWorkMode, cached.autonomous)
+    cached.codemodeEnabled = cached.codemodeEnabled !== false
     cached.capabilityStrategy =
       cached.capabilityStrategy === 'existing-only' || cached.capabilityStrategy === 'search-and-recommend'
         ? cached.capabilityStrategy
@@ -529,6 +531,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   invalidate()
   const cur = await getSettings()
   const next: AppSettings = { ...cur, ...patch }
+  next.codemodeEnabled = next.codemodeEnabled !== false
 
   if (patch.recentCwds) {
     // 去重、保留最近 8 个

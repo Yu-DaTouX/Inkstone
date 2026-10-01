@@ -42,8 +42,6 @@ function libDoc(over = {}) {
 export function runResearchTests(ok, mod) {
   const {
     sourceStatus,
-    artifactSourceStatuses,
-    sourceChangeSummary,
     excerptText,
     excerptReadable
   } = mod
@@ -71,18 +69,6 @@ export function runResearchTests(ok, mod) {
       { sourceId: 'lib_1', version: 1 }
     )
     ok(unreadable.status === 'unreadable', '没有可读正文：unreadable')
-
-    /* 变化汇总：没有变化就返回 null（界面上不制造噪声） */
-    ok(sourceChangeSummary([current]) === null, '全都正常时不产生提示')
-    const summary = sourceChangeSummary([outdated, removed])
-    ok(!!summary && /1 条来源已有新版本/.test(summary) && /1 条来源已找不到/.test(summary), '变化汇总分开数「有新版本」与「找不到」', String(summary))
-
-    const statuses = artifactSourceStatuses(libDoc(), [
-      { sourceId: 'lib_1', version: 1, locator: { start: 3, end: 9 } },
-      { sourceId: 'lib_gone', version: 2 }
-    ])
-    ok(statuses.length === 2 && statuses[0].status === 'current' && statuses[1].status === 'missing', '成果的两条引用各自独立判定')
-    ok(statuses[0].ref.locator?.start === 3, 'locator 原样带回来（界面上要能标出位置）')
   }
 
   /* ---- 片段切片 ---- */

@@ -58,6 +58,15 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
       // 不再走 Electron 的原生错误弹框。
       set({ logs: [...s.logs, m.payload.text].slice(-200) })
       break
+    case 'search-api-hint':
+      /* 固定 id：重复到达只刷新一条，不叠加 */
+      set({
+        notices: [
+          ...s.notices.filter((n) => n.id !== 'search-api-hint'),
+          { id: 'search-api-hint', type: 'info', text: 'search-api-hint', at: Date.now(), action: 'search-api-hint' }
+        ]
+      })
+      break
     case 'pi-info':
       set({ piInfo: m.payload })
       break

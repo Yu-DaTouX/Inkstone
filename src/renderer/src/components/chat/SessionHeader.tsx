@@ -4,6 +4,7 @@ import { shortTitle } from '../../../../shared/short-title'
 import { useStore } from '../../state/store'
 import { EnvironmentMenu } from '../review/EnvironmentMenu'
 import { GoalPopover } from '../toolbar/GoalPopover'
+import { SessionMenu } from './SessionMenu'
 
 /**
  * 主区域顶部 —— 对齐 Codex 的头部。
@@ -173,6 +174,8 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
             <span className="shead-dot busy" />
           </span>
         ) : null}
+        {/* 会话操作：复制、导出、克隆、自动重试 */}
+        {previewing ? null : <SessionMenu />}
       </div>
     </div>
   )

@@ -55,6 +55,7 @@
         { id: 'h3', todos: cur, round: 3 }
       ]
     })
+    await window.__yanOpenWorkspaceTool('任务', 'tasks')
     await until(() => document.querySelector('[data-testid="rp-todo"]'), 4000)
     await sleep(500)
     const sec = document.querySelector('[data-testid="rp-todo"]')

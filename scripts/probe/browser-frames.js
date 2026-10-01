@@ -12,10 +12,11 @@
   const store = window.__yanStore
   const runCli = async (command, waitMs = 20000) => {
     const started = Date.now()
+    const prior = new Set(store.getState().messages.filter(message=>message.role==='bash').map(message=>message.id))
     await window.yan.runBash(command)
     const end = Date.now() + waitMs
     while (Date.now() < end) {
-      const messages = store.getState().messages.filter((message) => message.role === 'bash')
+      const messages = store.getState().messages.filter((message) => message.role === 'bash' && !prior.has(message.id))
       const last = messages[messages.length - 1]
       const call = last?.toolCalls?.[0]
       if (last?.bash && call && call.status !== 'running' && call.status !== 'pending') {
@@ -38,6 +39,11 @@
     const run = await runCli(command)
     return { run, data: await resultFile(run.receipt) }
   }
+  const observe = async () => {
+    const result = await action('yan browser observe')
+    if (!result.data?.elements) throw new Error('CLI observation failed: ' + JSON.stringify(result.run.receipt))
+    return result.data
+  }
   const until = async (fn, timeout = 8000) => {
     const end = Date.now() + timeout
     while (Date.now() < end) {
@@ -54,11 +60,11 @@
 
   try {
     await store.getState().openBrowser(`${base}/browser-fixture`)
-    const loaded = await until(async () => (await window.yan.browser.observe()).url.includes('/browser-fixture'))
+    const loaded = await until(async () => (await observe()).url.includes('/browser-fixture'))
     ok(!!loaded, '本地跨 frame fixture 已打开')
     await sleep(300)
 
-    let observation = await window.yan.browser.observe()
+    let observation = await observe()
     out.push(`  page text=${JSON.stringify(observation.text.slice(0, 300))}`)
     out.push(`  observe frameCount=${observation.frameCount ?? '?'} elements=${observation.elements.length} observedFrames=${observation.observedFrameCount ?? '?'}: ${JSON.stringify(observation.elements.map((e) => ({ name: e.name, role: e.role, frameId: e.frameId, frameUrl: e.frameUrl })))}`)
     out.push(`  blockedRequests=${JSON.stringify((await window.yan.browser.getState()).blockedRequests ?? [])}`)
@@ -75,22 +81,22 @@
 
     const sameResult = sameChoice ? await action(`yan browser select --ref ${sameChoice.ref} --value b`) : { run: {}, data: null }
     ok(sameResult.run.receipt?.ok === true, 'select works for same-origin iframe controls', JSON.stringify(sameResult.run.receipt ?? null))
-    observation = sameResult.data?.elements ? sameResult.data : await window.yan.browser.observe()
+    observation = sameResult.data?.elements ? sameResult.data : await observe()
     const input = observation.elements.find((element) => /cross-input/i.test(element.name))
     const typed = input ? await action(`yan browser type --ref ${input.ref} --text YAN_CROSS_FRAME_TYPED`) : { run: {}, data: null }
     ok(typed.run.receipt?.ok === true, 'type works through the cross-origin iframe session', JSON.stringify(typed.run.receipt ?? null))
-    ok(await until(async () => (await window.yan.browser.observe()).text.includes('YAN_TYPED:YAN_CROSS_FRAME_TYPED')), 'cross-origin input event reaches its parent through postMessage')
+    ok(await until(async () => (await observe()).text.includes('YAN_TYPED:YAN_CROSS_FRAME_TYPED')), 'cross-origin input event reaches its parent through postMessage')
 
     /* Polling observe refreshes generation-scoped refs; reacquire after the wait. */
-    observation = await window.yan.browser.observe()
+    observation = await observe()
     const choice = observation.elements.find((element) => /cross[- ]choice/i.test(element.name))
     const selected = choice ? await action(`yan browser select --ref ${choice.ref} --value b`) : { run: {}, data: null }
     ok(selected.run.receipt?.ok === true, 'select works through the cross-origin iframe session', JSON.stringify(selected.run.receipt ?? null))
-    observation = selected.data?.elements ? selected.data : await window.yan.browser.observe()
+    observation = selected.data?.elements ? selected.data : await observe()
     const submit = observation.elements.find((element) => /continue frame/i.test(element.name))
     const clicked = submit ? await action(`yan browser click --ref ${submit.ref}`) : { run: {}, data: null }
     ok(clicked.run.receipt?.ok === true, 'click maps child-frame coordinates into the top-level viewport', JSON.stringify(clicked.run.receipt ?? null))
-    ok(await until(async () => (await window.yan.browser.observe()).text.includes('frame submitted')), 'cross-origin frame action reaches the parent page')
+    ok(await until(async () => (await observe()).text.includes('frame submitted')), 'cross-origin frame action reaches the parent page')
 
     const network = await window.yan.browser.network()
     const request = network.entries.find((entry) => entry.url.includes('/browser-fixture-network'))

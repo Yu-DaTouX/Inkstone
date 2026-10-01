@@ -22,13 +22,34 @@
     return false
   }
 
-  log('=== 扩展集成：任务清单 + 启动通知 ===')
+  /** Open the task resource through the current workspace launcher. Session layouts may hide it. */
+  const visibleTasksTile = () => {
+    const pane = q('.tile-pane[data-workspace-pane="tasks"]')
+    return pane && !pane.hidden ? pane : null
+  }
+  const tq = (selector) => visibleTasksTile()?.querySelector(selector) ?? null
+  const tqa = (selector) => [...(visibleTasksTile()?.querySelectorAll(selector) ?? [])]
+  const openTasksTile = async () => {
+    const launcher = q('[data-testid="right-tool-menu"]')
+    if (!launcher) return false
+    if (!q('[data-testid="right-tool-menu-popover"]')) {
+      launcher.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    }
+    const menuReady = await until(() => !!q('[data-testid="right-tool-menu-popover"]'))
+    if (!menuReady) return false
+    const taskItem = [...q('[data-testid="right-tool-menu-popover"]').querySelectorAll('.rp-tool-menu-item')]
+      .find((item) => item.textContent.trim() === '任务')
+    if (!taskItem) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      return false
+    }
+    taskItem.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    const menuClosed = await until(() => !q('[data-testid="right-tool-menu-popover"]'))
+    const tileReady = await until(() => !!visibleTasksTile())
+    return menuClosed && tileReady
+  }
 
-  /* H-3b：新会话默认停在「开始」页，任务分区在「工具」固定页里。 */
-  if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
-  await sleep(400)
-  q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  await sleep(500)
+  log('=== 扩展集成：任务清单 + 启动通知 ===')
 
   /* ================= 1. 启动期通知不弹窗 ================= */
   log('\n--- 1. 启动期通知降级 ---')
@@ -73,11 +94,8 @@
   // 先等会话身份确认，再等任务投影；只看 todos 长度会把上一条会话的迟到帧当成结果。
   const targetReady = await until(() => store.getState().session?.sessionFile === target.path, 15000)
   await until(() => targetReady && store.getState().todos.length > 0, 15000)
-
-  /* H-3b：切会话会恢复到该会话的默认页（开始）；任务在「工具」页，重新点一次。 */
-  q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  await until(() => !!q('.rp-body'), 5000)
-  await sleep(300)
+  const taskTileReady = await openTasksTile()
+  ok(taskTileReady, '通过工作区工具入口打开当前会话的任务磁贴')
 
   const todos = store.getState().todos
   log('  store.todos = ' + JSON.stringify(todos))
@@ -95,11 +113,11 @@
 
   /* ================= 3. 任务渲染正确（含完成态） ================= */
   log('\n--- 3. 任务区块 DOM ---')
-  const grp = q('[data-sec="rp-todo"]')
-  if (piReady) ok(!!grp, '右栏出现任务区块')
+  const grp = tq('[data-sec="rp-todo"]')
+  if (piReady) ok(!!grp, '任务磁贴出现任务区块')
   else log('  ⤺ 跳过：同上（没有清单，自然也没有区块）')
   if (grp) {
-    const items = qa('.rp-todo')
+    const items = tqa('.rp-todo')
     ok(items.length === todos.length, `渲染了 ${items.length} 行（应 ${todos.length}）`)
 
     const head = grp.querySelector('.rp-sec-head')?.textContent ?? ''
@@ -124,17 +142,18 @@
       )
     }
 
-    // 位置：右栏在中栏右侧。
-    //
-    // ⚠️ 不再断言「任务在右栏**顶部**」—— 右栏已经从头改成 OpenCode 风格的
-    //    状态栏（上下文 / 任务 / 队列 / 扩展 / 环境 / 操作），
-    //    任务排在第一块「上下文」之后。这里只保证它确实在右栏里。
-    const center = q('.center')?.getBoundingClientRect()
+    // 任务属于可自由排列的工作区磁贴：只验证它在当前 pane/canvas 内，
+    // 不依赖固定右栏、固定列或固定相对主会话的位置。
+    const pane = visibleTasksTile()
+    const canvas = q('.tile-workspace-canvas')
     const r = grp.getBoundingClientRect()
-    const rp = q('[data-testid="rightpanel"]')?.getBoundingClientRect()
-    ok(!!center && r.left >= center.right - 2, `右栏在中栏右侧（center.right=${Math.round(center?.right)} rp.left=${Math.round(r.left)}）`)
-    ok(!!rp && r.left >= rp.left - 1 && r.right <= rp.right + 1, '任务区块在右栏内（不再跑到中栏）')
-    ok(q('.rail .todo') === undefined || q('.rail .rp-todo') === null, '左栏里已没有任务')
+    const p = pane?.getBoundingClientRect()
+    const c = canvas?.getBoundingClientRect()
+    ok(!!pane && !!p && r.width > 0 && r.left >= p.left - 1 && r.right <= p.right + 1,
+      '任务区块宽度位于当前任务磁贴内（纵向内容由磁贴滚动）')
+    ok(!!c && !!p && p.width > 0 && p.height > 0 && p.left >= c.left - 1 && p.right <= c.right + 1 && p.top >= c.top - 1 && p.bottom <= c.bottom + 1,
+      '任务磁贴几何位于工作区画布范围内')
+    ok(q('.rail .todo') === null && q('.rail .rp-todo') === null, '任务清单不重复出现在左栏')
   }
 
   /* ================= 4. 没有任务的会话不显示空区块 ================= */
@@ -148,22 +167,22 @@
   for (const cand of store.getState().sessions.filter((x) => x.path !== target.path)) {
     await store.getState().switchSession(cand.path)
     const candReady = await until(() => store.getState().session?.sessionFile === cand.path, 15000)
+    const candidateTileReady = await openTasksTile()
+    if (!candidateTileReady) ok(false, `切到 ${cand.title} 后可重新打开任务磁贴`)
     await until(() => candReady && store.getState().todos.length === 0, 15000)
     if (candReady && store.getState().todos.length === 0) { noTask = cand; break }
   }
   if (noTask) {
     ok(store.getState().todos.length === 0, '切到无任务的会话后 todos 清空（' + noTask.title + '）')
-    // 右栏现在**常驻**（包含上下文/环境等），所以判据不是「右栏消失」，
-    // 也不是「分区消失」—— `SECTION_REGISTRY.todo` 没定义 isEmpty，
-    // 任务分区一直在 DOM 里。真正的判据是「分区里没有任务行」。
-    ok(qa('[data-sec="rp-todo"] .rp-todo').length === 0, '没有任务时不渲染任务行')
+    // TasksPane 对空内容保留 empty state；不再通过旧右栏的空分区位置判断。
+    ok(tqa('[data-testid="tasks-pane"] .rp-todo').length === 0, '无任务会话的任务磁贴没有残留任务行')
   } else {
     log('  （只有一个会话，跳过）')
   }
 
   /* ================= 5. 溢出回归（任务文字可能很长） ================= */
   log('\n--- 5. 溢出回归 ---')
-  for (const sel of ['.rail', '.rail-body', '.status']) {
+  for (const sel of ['.rail', '.rail-body', '.status', '.tile-pane[data-workspace-pane="tasks"]', '[data-testid="tasks-pane"]', '.rp-todo-scroll']) {
     const el = q(sel)
     if (!el) continue
     const over = el.scrollWidth - el.clientWidth
@@ -175,9 +194,9 @@
 
   log('\n--- 6. 进度条 / 当前任务 / 动画 ---')
 
-  /* H-3b：第 4 节切到的会话默认停在「开始」页；本段只验注入后的渲染，先把工具页点回来。 */
-  q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  await sleep(300)
+  /* 注入前再次走正式资源入口：切会话会恢复各自布局，任务 tile 可能被隐藏。 */
+  const injectedTileReady = await openTasksTile()
+  ok(injectedTileReady, '合成任务渲染前重新打开任务磁贴')
 
   const tstore = window.__yanStore
   /**
@@ -232,7 +251,7 @@
   tstore.setState({ todos: tmk(5, 2) })
   await sleep(500)
 
-  const tmeter = () => q('[data-testid="todo-meter"]')
+  const tmeter = () => tq('[data-testid="todo-meter"]')
   ok(!!tmeter(), '进度条存在（不管任务数多少）')
 
   if (tmeter()) {
@@ -241,7 +260,7 @@
     ok(tmeter().classList.contains('busy'), '未完成时进度条带推进动画')
   }
 
-  const tcount = q('[data-testid="todo-count"]')
+  const tcount = tq('[data-testid="todo-count"]')
   ok(tcount?.textContent === '2/5', '计数显示 2/5（实际 ' + tcount?.textContent + '）')
 
   /* ---- 当前任务 = 第一个未完成的 ---- */
@@ -255,12 +274,12 @@
    *   · 当前那条在列表里带 active（且只有一条）
    *   · 它行内有「正在进行」+ spinner
    */
-  ok(!q('[data-testid="todo-now"]'), '不再有单独的「正在做」行（已并入任务本体）')
-  const tActive = q('.rp-todo[data-active="1"]')
+  ok(!tq('[data-testid="todo-now"]'), '不再有单独的「正在做」行（已并入任务本体）')
+  const tActive = tq('.rp-todo[data-active="1"]')
   log('  当前 = ' + JSON.stringify(tActive ? tActive.textContent : ''))
   ok(!!tActive && tActive.textContent.includes('任务 3'), '当前指向第 3 个（第一个未完成）')
-  ok(qa('.rp-todo.active').length === 1, '列表里恰好一条标为 active')
-  const tLabel = q('[data-testid="todo-active-label"]')
+  ok(tqa('.rp-todo.active').length === 1, '列表里恰好一条标为 active')
+  const tLabel = tq('[data-testid="todo-active-label"]')
   /* 进行中改由勾选框里的强调色方点表达，不再写「正在进行」字样 */
   ok(!!tLabel && !!tLabel.querySelector('*'), '当前那条的状态槽里有进行中标记')
 
@@ -271,12 +290,12 @@
    */
   setRunning(false)
   await sleep(400)
-  ok(!q('.rp-todo[data-active="1"]'), '回合停下后没有条目被标为 active')
-  ok(!q('[data-testid="todo-active-label"]'), '停下后不再有转圈的「正在进行」')
-  ok(qa('.rp-todo.todo-open').length === 3, '未完成的条目仍在（只是不再冒充「正在做」）')
+  ok(!tq('.rp-todo[data-active="1"]'), '回合停下后没有条目被标为 active')
+  ok(!tq('[data-testid="todo-active-label"]'), '停下后不再有转圈的「正在进行」')
+  ok(tqa('.rp-todo.todo-open').length === 3, '未完成的条目仍在（只是不再冒充「正在做」）')
   setRunning(true)
   await sleep(300)
-  ok(!!q('.rp-todo[data-active="1"]'), '回合又跑起来后「正在进行」回来')
+  ok(!!tq('.rp-todo[data-active="1"]'), '回合又跑起来后「正在进行」回来')
 
   /* ---- 勾完一个：宽度变化 + 闪动 ---- */
   tstore.setState({ todos: tmk(5, 3) })
@@ -284,7 +303,7 @@
   ok(!!tmeter(), '进度条节点稳定（不是被重建）')
   const meterAfterDone = tmeter()
   ok(meterAfterDone?.dataset.pct === '60', '勾完变 60%（实际 ' + (meterAfterDone?.dataset.pct ?? 'undefined') + '）')
-  ok(qa('.rp-todo.flash').length === 1, '刚勾完那条带 flash（确认反馈）')
+  ok(tqa('.rp-todo.flash').length === 1, '刚勾完那条带 flash（确认反馈）')
 
   /*
    * 显式 status 优先（pi 侧带了状态就不再猜）。
@@ -301,7 +320,7 @@
   })
   await sleep(400)
   {
-    const row = q('.rp-todo[data-active="1"]')
+    const row = tq('.rp-todo[data-active="1"]')
     ok(!!row && row.textContent.includes('任务 3'), '显式 running 的那条是 active')
     ok(
       !!row && row.textContent.includes('任务 3') && !row.textContent.includes('任务 2'),
@@ -319,11 +338,11 @@
   })
   await sleep(400)
   {
-    const blockedRow = q('.rp-todo[data-blocked="1"]')
+    const blockedRow = tq('.rp-todo[data-blocked="1"]')
     ok(!!blockedRow, 'blocked 的那条带 data-blocked 标记')
     ok(!!blockedRow && blockedRow.textContent.includes('受阻'), '行内显示「受阻」而不是「未完成」')
     ok(!blockedRow?.classList.contains('active'), '受阻不等于「正在做」')
-    const label = q('[data-testid="todo-blocked-label"]')
+    const label = tq('[data-testid="todo-blocked-label"]')
     ok(!!label, '受阻有独立的语义标签')
     if (label) {
       const probe = document.createElement('span')
@@ -337,7 +356,7 @@
 
   /* ---- 行布局：状态槽 / 文本 / 状态说明（方案 7.1）---- */
   {
-    const row = qa('.rp-todo')[0]
+    const row = tqa('.rp-todo')[0]
     if (row) {
       const cs = getComputedStyle(row)
       ok(cs.display === 'grid', '任务行是 grid（状态槽 / 文本 / 状态说明）')
@@ -368,15 +387,15 @@
    * 这里要验证的是「去掉推进动画」，所以先把分区重新展开再查。
    */
   {
-    const head = q('[data-sec="rp-todo"] .rp-sec-head')
+    const head = tq('[data-sec="rp-todo"] .rp-sec-head')
     if (head && head.getAttribute('aria-expanded') === 'false') {
       head.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
       await sleep(250)
     }
   }
   ok(!!tmeter() && !tmeter().classList.contains('busy'), '全完成后去掉推进动画')
-  ok(!!q('[data-testid="todo-all-done"]'), '全完成后有「全部完成」提示')
-  ok(!q('[data-testid="todo-active-label"]'), '全完成后不再有「正在进行」标记')
+  ok(!!tq('[data-testid="todo-all-done"]'), '全完成后有「全部完成」提示')
+  ok(!tq('[data-testid="todo-active-label"]'), '全完成后不再有「正在进行」标记')
 
   /* ---- 恢复真实数据（别把用户的会话状态改坏）---- */
   tstore.setState({ todos: [] })

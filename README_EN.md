@@ -19,7 +19,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-light.png">
-  <img src="docs/assets/inkstone/workspace-light.png" alt="Inkstone workspace: sessions on the left, conversation in the center, and review, browser, file and terminal tools on the right." width="1280">
+  <img src="docs/assets/inkstone/workspace-light.png" alt="Inkstone workspace: sessions on the left, conversation in the center, and browser, file and terminal tools on the right." width="1280">
 </picture>
 
 <p align="center"><sub>Development build · Demo configuration: GPT-6 Astra Max · Conversation and tool results are illustrative · English UI is also available</sub></p>
@@ -36,11 +36,12 @@ An inkstone holds the ink before it becomes writing. Inkstone carries that idea 
 | --- | --- |
 | **Develop an idea** | Streaming conversations, image input, `@` file references, `/` commands, and expandable reasoning and tool details. |
 | **Work across projects** | Project groups, session search, branches, and queues. Running tasks can continue in the background when you switch sessions. |
-| **Inspect the work** | File previews, change review, an interactive terminal, an embedded browser, and access to local Chrome. |
-| **Follow progress** | Goals, plans, task lists, subagent status, and context and runtime information. |
+| **Inspect the work** | File previews, an interactive terminal, an embedded browser, and access to local Chrome. |
+| **Follow progress** | Goals, plans, task lists, and agent context, usage and runtime information. |
+| **Work with multiple agents** | A unified Agent workspace for child pi sessions and external CLI runs, with run tabs, terminal access and result inspection. Agent Hub is still in development. |
 | **Choose your model** | Connect model services and change models or thinking levels within the same interface. |
 | **Make the workspace yours** | Light and dark themes, Chinese and English UI, adjustable panels and zoom, and an organized tool area. |
-| **Build up a topic** | Topic spaces group conversations by theme rather than by project folder. Imported material becomes citable sources, and artifacts are editable documents with versions, checklists, Markdown export, and a one-click hand-off to the tutor. |
+| **Build up a topic** | Topic spaces group conversations by theme rather than by project folder. Imported material becomes citable sources and can be handed off to the tutor. |
 | **Learn with a tutor** | Say what you want to learn; the tutor explains step by step, asks questions and waits for your answer, and gives hints before answers. How it teaches lives in a bundled skill. |
 | **See how conversations branch** | The session map lays conversations out per workspace lane. Expanding a session shows one card per exchange, and you can branch from a specific exchange. |
 
@@ -70,7 +71,7 @@ Visit [Releases](https://github.com/Yu-DaTouX/Inkstone/releases) and choose an i
 
 1. Configure a provider in **Settings → Model access**. Choose a provider and sign in directly from the app, or configure API credentials. No terminal login is required.
 2. Select a project or start a conversation. Describe the task, add files with `@`, or explore commands with `/`.
-3. Use the workspace panels to inspect files, review changes, or continue in the browser and terminal.
+3. Use the workspace panels to inspect files or continue in the browser and terminal.
 
 See the [user guide](docs/GETTING_STARTED_EN.md) for shortcuts, installation, and backups.
 

@@ -1,7 +1,9 @@
 import {
   forwardRef,
+  useEffect,
   useLayoutEffect,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type CSSProperties,
   type HTMLAttributes,
@@ -527,7 +529,8 @@ export function Tab({
   className,
   testId,
   title,
-  children
+  children,
+  onPointerDown
 }: {
   selected: boolean
   icon?: IconName
@@ -538,6 +541,7 @@ export function Tab({
   testId?: string
   title?: string
   children: ReactNode
+  onPointerDown?: React.PointerEventHandler<HTMLButtonElement>
 }) {
   return (
     <button
@@ -548,6 +552,7 @@ export function Tab({
       data-testid={testId}
       title={title}
       onClick={onClick}
+      onPointerDown={onPointerDown}
     >
       {icon ? <Icon name={icon} size={12} /> : null}
       <span className="ui-tab-label">{children}</span>
@@ -685,3 +690,135 @@ export const ListRow = forwardRef<
     </button>
   )
 })
+
+/**
+ * 小圆环：输入框里的上下文占用。percent 为 null 画空环；tone 只在黄 / 红档染色。
+ * 数字写在环右侧，环本身不写字。
+ */
+export function MiniRing({ percent, tone, size = 14 }: { percent: number | null; tone?: 'ok' | 'warn' | 'err' | ''; size?: number }) {
+  const value = percent === null || !Number.isFinite(percent) ? 0 : Math.max(0, Math.min(100, percent))
+  const r = (size - 3) / 2, c = 2 * Math.PI * r
+  return (
+    <svg className={cx('ui-mini-ring', tone, percent === null && 'unknown')} width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+      <circle className="ui-mini-ring-track" cx={size / 2} cy={size / 2} r={r} />
+      <circle className="ui-mini-ring-value" cx={size / 2} cy={size / 2} r={r} strokeDasharray={c} strokeDashoffset={c * (1 - value / 100)} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+    </svg>
+  )
+}
+
+/**
+ * 分档滑块：轨道按档位等分，填充与手柄跟随当前档；拖动时逐档吸附，松手才提交。
+ * 不用原生 range：它的外观在 Electron 里不可控，档位名也没法对齐刻度。
+ */
+export function StepSlider<T extends string>({
+  values,
+  value,
+  onChange,
+  label,
+  format,
+  colorOf,
+  disabled,
+  testId,
+  stopTestId
+}: {
+  values: readonly T[]
+  value: T
+  onChange: (value: T) => void
+  label: string
+  format: (value: T) => string
+  /** 当前档的颜色（CSS 值），填充、手柄与当前档名共用 */
+  colorOf?: (value: T) => string
+  disabled?: boolean
+  testId?: string
+  stopTestId?: (value: T) => string
+}) {
+  const track = useRef<HTMLDivElement>(null)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  /** Read by the pointer handlers directly: down and up can arrive before a re-render. */
+  const dragging = useRef(false)
+  const n = values.length
+  const index = Math.max(0, values.indexOf(value))
+  const shown = dragIndex ?? index
+  const at = (i: number): number => (n > 1 ? (i / (n - 1)) * 100 : 0)
+  const pick = (clientX: number): number => {
+    const rect = track.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0 || n < 2) return index
+    return Math.round(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * (n - 1))
+  }
+  const commit = (i: number): void => {
+    const next = values[Math.max(0, Math.min(n - 1, i))]
+    if (next !== undefined && next !== value) onChange(next)
+  }
+  /* 外部值变化（别处切档）时放弃未提交的拖动 */
+  useEffect(() => setDragIndex(null), [value])
+  const style = { '--step-pct': `${at(shown)}%`, ...(colorOf ? { '--step-color': colorOf(values[shown]) } : {}) } as CSSProperties
+  return (
+    <div className={cx('ui-step-slider', dragIndex !== null && 'dragging', disabled && 'disabled')} style={style} data-testid={testId}>
+      <div
+        ref={track}
+        className="ui-step-track"
+        onPointerDown={(e) => {
+          if (disabled || e.button !== 0) return
+          e.preventDefault()
+          try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic or already released pointer */ }
+          dragging.current = true
+          ;(e.currentTarget.querySelector('.ui-step-thumb') as HTMLElement | null)?.focus()
+          setDragIndex(pick(e.clientX))
+        }}
+        onPointerMove={(e) => { if (dragging.current) setDragIndex(pick(e.clientX)) }}
+        onPointerUp={(e) => { if (!dragging.current) return; dragging.current = false; const i = pick(e.clientX); setDragIndex(null); commit(i) }}
+        onPointerCancel={() => { dragging.current = false; setDragIndex(null) }}
+      >
+        {/* One shared dot mask keeps the travelling highlight aligned across level bands. */}
+        <div className="ui-step-dots" aria-hidden="true" data-lit={shown > 0 ? '1' : '0'}>
+          {values.slice(1).map((v, i) => (
+            <span
+              key={v}
+              className={cx('ui-step-seg', i < shown && 'on')}
+              style={{ left: `${at(i)}%`, width: `${at(1)}%`, '--seg-from': colorOf?.(values[i]) ?? 'var(--accent)', '--seg-color': colorOf?.(v) ?? 'var(--accent)', '--seg-i': i < shown ? i : n - 2 - i } as CSSProperties}
+            />
+          ))}
+          <span className="ui-step-wave" />
+        </div>
+        <span
+          className="ui-step-thumb"
+          role="slider"
+          tabIndex={disabled ? -1 : 0}
+          aria-label={label}
+          aria-valuemin={0}
+          aria-valuemax={n - 1}
+          aria-valuenow={shown}
+          aria-valuetext={format(values[shown])}
+          aria-disabled={disabled || undefined}
+          onKeyDown={(e) => {
+            if (disabled) return
+            const step = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0
+            if (step) { e.preventDefault(); commit(index + step) }
+            else if (e.key === 'Home') { e.preventDefault(); commit(0) }
+            else if (e.key === 'End') { e.preventDefault(); commit(n - 1) }
+          }}
+        >
+          {dragIndex !== null ? <span className="ui-step-bubble" aria-hidden>{format(values[shown])}</span> : null}
+        </span>
+      </div>
+      <div className="ui-step-labels">
+        {values.map((v, i) => (
+          <button
+            key={v}
+            type="button"
+            tabIndex={-1}
+            className={cx('ui-step-label', i === shown && 'on', i === 0 && 'first', i === n - 1 && 'last')}
+            style={{ left: `${at(i)}%` }}
+            disabled={disabled}
+            onClick={() => commit(i)}
+            data-testid={stopTestId?.(v)}
+            data-level={v}
+            data-on={i === index ? '1' : '0'}
+          >
+            {format(v)}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}

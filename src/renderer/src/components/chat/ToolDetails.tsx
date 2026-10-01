@@ -18,7 +18,7 @@ import type { FileDiff, UIToolCall, WorkspaceChangeFile, WorkspaceChanges } from
 
 /** 工具 → 详情类型。未知工具按「结果」处理（显示通用图标与真实名称） */
 export function detailKind(name: string): 'command' | 'change' | 'result' {
-  if (name === 'bash' || name === 'shell' || name === 'run' || name === 'exec') return 'command'
+  if (name === 'bash' || name === 'powershell' || name === 'shell' || name === 'run' || name === 'exec') return 'command'
   if (
     name === 'edit' ||
     name === 'write' ||

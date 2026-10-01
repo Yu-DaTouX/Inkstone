@@ -26,7 +26,7 @@
   log('=== 1. 三栏格局 ===')
   ok(!!q('.rail'), '左栏存在')
   ok(!!q('.center'), '中栏存在')
-  ok(!!q('[data-testid="rightpanel"]'), '右栏存在（常驻状态栏，默认展开）')
+  ok(!!q('[data-testid="tile-workspace"]'), '磁贴工作区存在')
 
   const cw = Math.round(q('.center')?.getBoundingClientRect().width ?? 0)
   log('  中间栏宽度: ' + cw)
@@ -157,7 +157,7 @@
   await sleep(500)
   const secs = qa('[data-sec]').map((x) => x.getAttribute('data-sec'))
   log('  右栏分区: ' + JSON.stringify(secs))
-  ok(secs.includes('rp-context'), '右栏有「上下文」分区')
+  ok(!!q('[data-testid="composer-context"]'), '输入框提供上下文详情入口')
   /*
    * 分区清单变过（2026-09-12）：
    *   · 「环境」（pi 版本 / 模型 / 计数 / 工作目录）**已删** —— 那些都有别处：
@@ -165,7 +165,8 @@
    *   · 新增「文件」（项目文件树）与「日志」（从底部搬过来）
    * 所以断言改成验证**当前的分区集合**，不再绑到已删的 rp-env。
    */
-  ok(secs.includes('rp-files'), '右栏有「文件」分区（文件树）')
+  await window.__yanOpenWorkspaceTool('文件', 'files')
+  ok(!!q('[data-workspace-pane="files"]:not([hidden]) [role="tree"]'), '工具菜单打开文件树磁贴')
   ok(!secs.includes('rp-env'), '「环境」分区已移除（信息在别处，不再重复）')
 
   /*

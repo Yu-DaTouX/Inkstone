@@ -74,7 +74,7 @@ export class ElementRegistry {
       const ref = `${this.targetId}:${this.generation}:e${index + 1}`
       this.elements.set(ref, { ...element, ref })
     }
-    return String(this.generation)
+    return `${this.targetId}:${this.generation}`
   }
 
   resolve(ref: unknown): RegisteredElement {

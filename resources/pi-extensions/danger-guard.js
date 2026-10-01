@@ -144,7 +144,7 @@ function scanCommand(command, reasons, depth = 0) {
 export function detectDanger(toolName, input, cwd) {
   const reasons = []
   const name = String(toolName ?? '')
-  if (name === 'bash') {
+  if (name === 'bash' || name === 'powershell') {
     const command = String(input?.command ?? '')
     scanCommand(command, reasons)
     if (/\bsudo\b/i.test(command) && reasons.length === 0 && /\brm\b/i.test(command)) reasons.push('以管理员身份删除文件')
@@ -176,7 +176,7 @@ async function askHost(toolName, input, reasons) {
   const projectId = process.env.YAN_PROJECT_ID
   if (!url || !token || !sessionId || !projectId) return { allowed: false, why: '宿主确认通道不可用' }
   const detail =
-    toolName === 'bash'
+    toolName === 'bash' || toolName === 'powershell'
       ? String(input?.command ?? '')
       : String(input?.path ?? input?.file_path ?? input?.filePath ?? '')
   try {

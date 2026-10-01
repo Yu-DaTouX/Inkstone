@@ -22,10 +22,6 @@ import type {
   LibraryVersion,
   LibrarySource,
   ContextAssembly,
-  ArtifactDoc,
-  ArtifactDocResult,
-  ResearchBridge,
-  SourceStatus,
   FollowBridge,
   FollowMutationResult,
   ActivityBridge,
@@ -68,11 +64,8 @@ import type {
   ForkPoint,
   GitActionExpected,
   GitActionResult,
-  GitFileContent,
-  GitFilePatch,
   GitRefOption,
   GitRepoState,
-  GitReviewSnapshot,
   KnowledgeActionResult,
   KnowledgeActionRequest,
   KnowledgeExportResult,
@@ -109,10 +102,10 @@ import type {
 } from '../shared/ipc'
 import type { WebSearchAvailability } from '../shared/web-search'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
-import type { OfficeCompareResult, OfficeDocumentView } from '../shared/office'
+import type { OfficeDocumentView } from '../shared/office'
 import type { ConsentEntryView } from '../shared/tool-consent'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
-import type { SearchBackendStatus } from '../shared/search'
+import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
 import type { TaskInboxPage } from '../shared/task-inbox'
 import type { ContextActionSummary } from '../shared/context-actions'
 import type { ContextBackgroundUsageSummary } from '../shared/context-background-usage'
@@ -350,7 +343,7 @@ const api: YanBridge = {
     discard: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:discard', id)
   },
 
-  /* ---- Git 审查（只读，方案 G1）---- */
+  /* ---- Git 仓库状态与环境操作---- */
   /*
    * pi 插件包管理（§9 的 P2）。
    * list 只读；action 会改用户磁盘上的包 —— 主进程那边会做形状校验并在有任务
@@ -396,27 +389,6 @@ const api: YanBridge = {
     /* 本轮上下文装配结果（实施-25 P05）：只读，供界面 / 探针核对来源引用 */
     current: () => invoke<{ ok: boolean; error?: string; assembly?: ContextAssembly }>('yan:context:current')
   },
-  /* 可编辑成果（实施-25 P06a）：正文 + 版本。agent 改正文走按段落接口，不整篇覆盖用户改动 */
-  artifactDoc: {
-    list: (spaceId) =>
-      invoke<{ ok: boolean; error?: string; docs: ArtifactDoc[] }>('yan:artifactDoc:list', spaceId),
-    create: (input) => invoke<ArtifactDocResult>('yan:artifactDoc:create', input),
-    saveUserEdit: (id, text) => invoke<ArtifactDocResult>('yan:artifactDoc:saveUserEdit', id, text),
-    applyAgentEdit: (id, edit) => invoke<ArtifactDocResult>('yan:artifactDoc:applyAgentEdit', id, edit),
-    rename: (id, title) => invoke<ArtifactDocResult>('yan:artifactDoc:rename', id, title),
-    assign: (id, patch) => invoke<ArtifactDocResult>('yan:artifactDoc:assign', id, patch),
-    addSource: (id, ref) => invoke<ArtifactDocResult>('yan:artifactDoc:addSource', id, ref),
-    toggleChecklist: (id, index) => invoke<ArtifactDocResult>('yan:artifactDoc:toggleChecklist', id, index),
-    exportMarkdown: (id) =>
-      invoke<{ ok: boolean; error?: string; canceled?: boolean; path?: string; markdown?: string }>(
-        'yan:artifactDoc:exportMarkdown',
-        id
-      ),
-    remove: (id) => invoke<{ ok: boolean; error?: string }>('yan:artifactDoc:remove', id)
-  },
-  research: {
-    sourceStatus: (artifactId) => invoke<{ ok: boolean; error?: string; statuses: SourceStatus[] }>('yan:artifactDoc:sourceStatus', artifactId)
-  } as ResearchBridge,
   follow: {
     list: (spaceId) => invoke<Watch[]>('yan:follow:list', spaceId),
     views: (spaceId) => invoke<(WatchView & { lastRunText?: string })[]>('yan:follow:views', spaceId),
@@ -457,7 +429,11 @@ const api: YanBridge = {
   search: {
     /** 搜索后端诊断（实施-27 S3/D4）：未安装也返回可读结果 */
     doctor: () => invoke<SearchBackendStatus>('yan:search:doctor'),
-    installBackend: () => invoke<{ ok: boolean; needsNode?: boolean; error?: string; log?: string }>('yan:search:install')
+    installBackend: () => invoke<{ ok: boolean; needsNode?: boolean; error?: string; log?: string }>('yan:search:install'),
+    apiConfig: () => invoke<SearchApiConfigView>('yan:search:apiConfig'),
+    setApiKey: (key) => invoke<{ ok: boolean; error?: string }>('yan:search:setApiKey', key),
+    clearApiKey: () => invoke<{ ok: boolean; error?: string }>('yan:search:clearApiKey'),
+    setApiHintDismissed: (dismissed) => invoke<void>('yan:search:setApiHintDismissed', dismissed)
   },
   computerUse: {
     status: () => invoke<ComputerUseStatusView>('yan:computerUse:status'),
@@ -488,14 +464,12 @@ const api: YanBridge = {
       invoke<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>('yan:git:state', cwd),
     refs: (cwd) =>
       invoke<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>('yan:git:refs', cwd),
-    snapshot: (req) => invoke<GitReviewSnapshot>('yan:git:snapshot', req),
-    patch: (req) => invoke<GitFilePatch>('yan:git:patch', req),
-    content: (req) => invoke<GitFileContent>('yan:git:content', req),
     action: (req) => invoke<GitActionResult>('yan:git:action', req),
     remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd),
     remoteWeb: (cwd) => invoke('yan:git:remoteWeb', cwd),
     /* PR 状态（§7）：只读，未认证时只能读公开仓库 */
     prStatus: (cwd) => invoke('yan:git:prStatus', cwd),
+    untracked: (cwd) => invoke<string[]>('yan:git:untracked', cwd),
     worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd),
     worktreeCreate: (req) => invoke<WorktreeCreateResult>('yan:git:worktreeCreate', req),
     worktreeRemove: (req) => invoke<WorktreeRemoveResult>('yan:git:worktreeRemove', req),
@@ -623,8 +597,7 @@ const api: YanBridge = {
 
   /* ---- 办公文件 ---- */
   office: {
-    preview: (path, cwd) => invoke<OfficeDocumentView>('yan:office:preview', path, cwd),
-    compare: (path, cwd) => invoke<OfficeCompareResult>('yan:office:compare', path, cwd)
+    preview: (path, cwd) => invoke<OfficeDocumentView>('yan:office:preview', path, cwd)
   },
 
   /* ---- 砚对砚 ---- */

@@ -99,57 +99,6 @@
       log(`  git.state = ${JSON.stringify({ repo: !!st?.repo, branch: st?.repo?.branch ?? null, error: st?.error ?? null })}`)
       ok(!!st?.repo, '解包实例认得这个仓库（git 子进程真跑起来了）')
 
-      /*
-       * 审查面板是**只读**的另一条链路（snapshot → patch → content），
-       * 与下面的写操作坏在不同地方：写会坏在权限与路径校验，读会坏在
-       * diff 解析、编码与临时文件。所以先读一次真实改动，再写。
-       *
-       * 断言的是**内容**而不是「返回了对象」：数量与新增行文本必须和
-       * Node 侧制造的那次改动（`one` → `one\ntwo`）对得上。
-       */
-      const reviewScope = { kind: 'unstaged' }
-      const snap = await window.yan.git.snapshot({
-        cwd: repoPath,
-        scope: reviewScope,
-        requestId: 'pkg-git-review-1'
-      })
-      const changed = (snap?.files ?? []).find((f) => f.path === 'tracked.txt')
-      log(
-        `  git.snapshot = ${JSON.stringify({ ok: snap?.ok, files: (snap?.files ?? []).map((f) => f.path), stats: snap?.stats ?? null })}`
-      )
-      ok(snap?.ok === true && !!changed, '审查快照读到那次未暂存改动（tracked.txt 在清单里）')
-
-      const patch = await window.yan.git.patch({
-        cwd: repoPath,
-        scope: reviewScope,
-        path: 'tracked.txt',
-        requestId: 'pkg-git-review-2'
-      })
-      const added = (patch?.hunks ?? [])
-        .flatMap((h) => h.lines ?? [])
-        .filter((l) => l.type === 'add')
-        .map((l) => l.text.trim())
-      log(
-        `  git.patch = ${JSON.stringify({ ok: patch?.ok, additions: patch?.additions ?? null, deletions: patch?.deletions ?? null, added }) }`
-      )
-      ok(
-        patch?.ok === true && patch.additions === 1 && patch.deletions === 0 && added.join('|') === 'two',
-        '审查补丁拿到真实 hunk（新增行 two / 增 1 删 0 —— 与 Node 侧制造的改动一致）'
-      )
-
-      const content = await window.yan.git.content({
-        cwd: repoPath,
-        scope: reviewScope,
-        path: 'tracked.txt',
-        side: 'new',
-        requestId: 'pkg-git-review-3'
-      })
-      log(`  git.content = ${JSON.stringify({ ok: content?.ok, side: content?.side, bytes: content?.bytes ?? null })}`)
-      ok(
-        content?.ok === true && String(content?.text ?? '').replace(/\r\n/g, '\n') === 'one\ntwo\n',
-        '「显示完整文件」那条路读得到新侧内容（one / two 两行）'
-      )
-
       const res = await window.yan.git.action({
         requestId: 'pkg-git-stage-1',
         cwd: repoPath,

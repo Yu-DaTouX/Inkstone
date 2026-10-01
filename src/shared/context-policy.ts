@@ -1,56 +1,5 @@
-/**
- * 上下文策略（N21-3）：砚按**工作集**决定什么时候压缩。
- *
- * ── 它解决什么问题 ──
- * pi 的原生自动压缩守的是**物理窗口**：`contextTokens > contextWindow − reserveTokens`。
- * 对 1M 窗口的模型，那条线在 984k —— 上下文可以涨到接近一百万 token 才被压，
- * 而编码任务真正需要的上下文远小于这个数（长上下文带来的成本与注意力稀释都是真实的）。
- * 所以砚自己算一条**工作集**线，到线就调 pi 的 `compact()`；
- * pi 那条线继续留在原地作为物理兜底（砚不写 pi 的设置文件，也不关它）。
- *
- * 公式（方案 §5，批注第 4、5 点的修订版）：
- *
- *     responseReserve = max(16k, min(32k, 窗口 × 25%))
- *     safetyMargin    = max(8k, 窗口 × 2%)
- *     workingSet      = min(240k, 窗口 × 70%, 窗口 − 预留 − 余量)
- *     triggers        = { sweep: 70%, fold: 85%, compact: 100% } × 工作集
- *     emergency       = min(窗口 × 90%, 窗口 − 预留)   // 最后一道防线，见下
- *
- * 验算（与方案里的表一致）：64k → 40k、128k → 88k、256k → 179k、1M → 240k。
- *
- * ── 兜底线为什么也要减输出预留（§12 修改 1 / D31）──
- * 只按 90% 窗口算时，64k 模型上兜底线是 57.6k，而输出预留是 16k ——
- * 也就是说这条线自己就吃掉了留给模型回答的空间（只剩 6.4k）。
- * 硬规则：**物理兜底不能突破输出预留**。
- *
- * 不减安全余量（方案里给的更保守那个写法）：`工作集` 在小窗口上正好由
- * `窗口 − 预留 − 余量` 决定，再减一次余量会让兜底线**等于**压缩线（64k 下都是 40k）。
- * 那时「兜底不看是否上膛」就等于「压缩线不看是否上膛」—— 冷却与上膛在
- * 小窗口模型上整体失效，退化成每轮重试。收了 `min` 之后可以证明
- * `emergency > triggers.compact` 恒成立（余量 ≥ 8k > 0），兜底仍是兜底。
- *
- * ── 为什么放在 shared 而不是 main ──
- * 判定（主进程做）与显示（渲染端的「下一步」那行）必须用**同一套**阶段规则，
- * 否则界面预报的和真的会发生的会不是一回事。这里只放纯逻辑：
- * 读 `YAN_CONTEXT_POLICY` 的入口在 `src/main/context-policy.ts`（那需要 process.env）。
- *
- * ── 为什么整块逻辑是纯函数 ──
- * 「什么时候压缩」是个会写坏用户上下文的决定，必须能一次把边界算清：
- * 窗口为 0 / 小到装不下预留 / 已过线 / 刚压完还没降下来 / 关了开关。
- * 这些分支在真实模型上要么很贵（要填几十万 token）要么很难构造，
- * 所以判定与预算全放在这里，只留「调 RPC」那一行给 agent.ts。
- *
- * ── 阶段边界（`kinds` 是唯一出处）──
- * 主进程只做 `compaction`（调 pi 的 `compact()`）；`tool-sweep` / `recall` / `episode-fold`
- * 由 pi 扩展的 `context` 钩子执行（`episode-fold` 的状态生成器 2026-09-17 已落地，
- * 2026-09-18 用户拍板进默认接管集）。`kinds` 说明**真会执行**的那些，
- * 界面据此把尚未接管的阶段画成未生效（而不是假装它会触发）。
- * 默认值是 `['tool-sweep', 'recall', 'episode-fold', 'compaction']`（清理默认开但必须保留
- * 可召回引用、2026-09-17 拍板；`episode-fold` 2026-09-18 拍板加入），可用
- * `YAN_CONTEXT_POLICY` 的 `kinds` 覆盖；用户要关掉 `episode-fold` 时有专用开关
- * （`AppSettings.contextFold` → `ContextPolicyLayers.foldEnabled`），不必自己写 `kinds`。
- * **扩展侧 `resources/pi-extensions/context.js`
- * 的同名默认值必须与此保持一致** —— 两边不一致时，界面（主进程侧）会与真实生效的行为不同。
+/** Legacy context policy calculations for stored settings and historical diagnostics.
+ * Active transcript management and compaction policy belong to pi.
  */
 import type {
   ContextBudget,

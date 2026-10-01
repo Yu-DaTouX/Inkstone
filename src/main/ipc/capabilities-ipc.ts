@@ -6,6 +6,7 @@
  */
 import type { IpcRegistrar } from './registrar'
 import { installOpenCli, searchDoctor } from '../search/opencli'
+import { clearBraveKey, searchApiConfig, setBraveKey, setSearchHintDismissed } from '../search/config'
 import { computerUseStatus, disableComputerUse, enableComputerUse, installUv } from '../computer-use'
 import { randomUUID } from 'node:crypto'
 import { builtinCapabilities } from '../extensions-inventory'
@@ -57,6 +58,11 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   handle('yan:search:doctor', async () => searchDoctor())
   /* 用户在设置页明确点了「安装」才会跑（npm 全局安装 OpenCLI）；诊断本身仍然只读 */
   handle('yan:search:install', async () => installOpenCli())
+  /* 搜索 API key：只在主进程落盘，渲染端拿不到明文 */
+  handle('yan:search:apiConfig', async () => searchApiConfig())
+  handle('yan:search:setApiKey', async (_e, key: string) => setBraveKey(String(key ?? '')))
+  handle('yan:search:clearApiKey', async () => clearBraveKey())
+  handle('yan:search:setApiHintDismissed', async (_e, dismissed: boolean) => setSearchHintDismissed(dismissed === true))
 
   /*
    * 电脑操作（Windows-MCP，见 computer-use.ts）：状态只读；安装 uv 与开关都要用户在设置页点。

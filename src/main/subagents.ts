@@ -22,7 +22,7 @@
  *   · 不把子任务的用量计入父会话（父工具汇总与子会话重复计费是坑）。
  */
 import { randomBytes } from 'node:crypto'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -36,7 +36,9 @@ import {
   summarizeSubagentRun,
   type SubagentBrief
 } from '../shared/subagent-brief'
-import { PiRpc } from './protocol'
+import { PiRpc, resolvePi } from './protocol'
+import { nativePiToolsSupported } from '../shared/agent-context'
+import { subagentPiArgs } from '../shared/subagent-pi-launch'
 import {
   applyPatch,
   cleanupWorkspace,
@@ -90,16 +92,6 @@ function wrapUpMessage(reason: 'timeout' | 'budget'): string {
 }
 /** 转录最多保留多少条 */
 const MAX_TRANSCRIPT = 200
-/**
- * 只读子代理的工具白名单（D4）。
- *
- * `controlled-cwd` 只是"不另开 worktree"，它本身**不限制写入** ——
- * 真正兑现"只读"要在 pi 侧传 `--tools`（0.85.1 支持，语义是
- * `Comma-separated allowlist of tool names to enable`）。
- * 没有 write / edit / bash，子任务就不可能改主工作目录。
- */
-const READONLY_TOOLS = 'read,grep,find,ls'
-
 /**
  * 子代理真正用到的 pi 客户端能力。
  *
@@ -331,7 +323,7 @@ export class SubagentController {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
 
-    const rpc = this.createRpc(ctx, workspace.cwd, model, isolation)
+    const rpc = this.createRpc(ctx, workspace.cwd, model, isolation, id)
 
     const run: Run = {
       id,
@@ -417,28 +409,12 @@ export class SubagentController {
     ctx: SubagentOptions,
     cwd: string,
     model: string | undefined,
-    isolation: 'worktree' | 'controlled-cwd'
+    isolation: 'worktree' | 'controlled-cwd',
+    id: string
   ): SubagentRpc {
-    const args = [
-      /* 子代理的记录由宿主自己保存；不落 pi 会话文件，否则会混进左栏的用户会话列表。 */
-      '--no-session',
-      /* 子代理也走默认 pi 边界：用户目录里的扩展 / Skill 不会被隐式带入。 */
-      '--no-extensions',
-      '--no-skills',
-      ...(ctx.extensions?.flatMap((p) => ['--extension', p]) ?? []),
-      ...(ctx.appendSystemPrompt ? ['--append-system-prompt', ctx.appendSystemPrompt] : []),
-      /* 只读任务把工具白名单交给 pi 兜底（D4），不依赖上层自觉。 */
-      ...(isolation === 'controlled-cwd' ? ['--tools', READONLY_TOOLS] : []),
-      /*
-       * 模型：优先用调用方指定的；否则跟随测试用的 YAN_TEST_MODEL
-       * （与主 agent 同一套约定，让回归能跑在免费模型上）。
-       */
-      ...(model
-        ? ['--model', model]
-        : process.env.YAN_TEST_MODEL
-          ? ['--model', process.env.YAN_TEST_MODEL]
-          : [])
-    ]
+    let version: string | undefined
+    try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { /* 未知版本保留兼容边界。 */ }
+    const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions })
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
     /*
      * 子代理必须和主 agent 用同一个 pi 私有目录。主 agent 显式传了

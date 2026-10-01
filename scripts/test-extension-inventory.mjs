@@ -38,11 +38,11 @@ export async function runExtensionInventoryTests(ok) {
     ok(readUserExtensions(join(root, 'nope')).length === 0, '目录不存在时返回空清单（不抛）')
 
     // 3. 诊断文案：有用户扩展时必须说清「谁写的、谁是只读的」
-    const withUser = extensionDiagnostics({ piDir, yanThinPaths: ['/x/resources/pi-extensions/language.js'] })
+    const withUser = extensionDiagnostics({ piDir, yanThinPaths: ['/x/resources/pi-extensions/language.js'], nativeDiscovery: false })
     ok(withUser.length === 3, `有用户扩展时 3 行（实际 ${withUser.length}）`)
     ok(withUser[0].includes('用户扩展 3 项'), '第一行列出来源与数量')
     ok(withUser[0].includes('left-info-panel.ts'), '第一行含具体条目名')
-    ok(withUser[0].includes('--no-extensions') && withUser[0].includes('不加载'), '第一行说明砚默认不加载用户扩展')
+    ok(withUser[0].includes('--no-extensions') && withUser[0].includes('不自动加载'), '旧版诊断与隔离发现参数一致')
     ok(withUser[1].includes('language.js') && withUser[1].includes('薄层'), '第二行是砚薄层（用 basename）')
     ok(
       withUser[1].includes('yan context recall'),
@@ -61,19 +61,23 @@ export async function runExtensionInventoryTests(ok) {
       '说明宿主日志与旧条目不会被覆盖 / 回写'
     )
     ok(
-      withUser[2].includes('默认启动不会加载'),
-      '说明默认启动不会加载用户扩展'
+      !withUser[1].includes('上下文维护的两个命令') && withUser[1].includes('Agent 原生管理'),
+      '诊断不再宣称退役宿主上下文命令存在'
     )
+    const native = extensionDiagnostics({ piDir, yanThinPaths: [], nativeDiscovery: true })
+    ok(native[0].includes('由 pi 原生发现') && native[0].includes('pi 设置与项目信任'), '原生诊断尊重 pi 的发现与授权策略')
+    ok(native[0].includes('目录清单不代表已加载') && !native[0].includes('--no-extensions'), '原生诊断不误报扩展被禁用或已加载')
+    ok(native[2].includes('只读') && native[2].includes('不会覆盖或回写'), '原生发现保留旧任务记录只读边界')
 
     // 4. 没有用户扩展：两行，且明确说「未检测到」
     await rm(extDir, { recursive: true, force: true })
-    const clean = extensionDiagnostics({ piDir, yanThinPaths: ['/x/resources/pi-extensions/language.js'] })
+    const clean = extensionDiagnostics({ piDir, yanThinPaths: ['/x/resources/pi-extensions/language.js'], nativeDiscovery: true })
     ok(clean.length === 2, `干净环境 2 行（实际 ${clean.length}）`)
     ok(clean[0].includes('未检测到用户扩展'), '第一行如实说没有')
     ok(!clean.some((l) => l.includes('left-panel-tasks')), '干净环境不提旧任务条目（没有这个上下文）')
 
     // 5. 薄层一个都没有也不能崩（打包异常时仍要能启动并说清楚）
-    const noThin = extensionDiagnostics({ piDir: join(root, 'missing'), yanThinPaths: [] })
+    const noThin = extensionDiagnostics({ piDir: join(root, 'missing'), yanThinPaths: [], nativeDiscovery: true })
     ok(noThin[1].includes('（无）'), '没有薄层时显示「（无）」而不是空字符串拼接')
 
     /*
@@ -115,18 +119,9 @@ export async function runExtensionInventoryTests(ok) {
    * 5. 架构检查（静态版）：砚薄层**只**承载宿主没有 CLI / RPC 等价物的
    * 生命周期钩子 —— 不得注册模型工具；pi 命令原则上也不注册。
    *
-   * 例外（上下文预算 V1）：`yan-context-maintain` / `yan-context-resume`
-   * 是**宿主↔薄层的控制命令**，不是模型工具：宿主先核实命令已注册，
-   * 再用 `rpc.command('prompt', ...)` 触发（见 `agent.ts` 的
-   * `requestContextMaintenanceV1`）。它们不进模型工具面，也不能被模型调用。
-   * 除这两个具名命令外，任何新注册都仍算违规。
-   *
-   * 运行时那一条写在 `test-context-transform.mjs`（把假 pi 对象塞进扩展，看它
-   * 调不调 registerTool）；这里扫源码，因为「某个还没被单测加载的扩展偷偷注册了
-   * 一个工具」运行时断言看不见。两者互补，不互相替代。
+   * 扫描全部随包适配，防止未进入专项测试的文件重新注册退役入口。
    */
   {
-    const ALLOWED_COMMANDS = new Set(['yan-context-maintain', 'yan-context-resume'])
     const dir = join('resources', 'pi-extensions')
     const files = (await readdir(dir)).filter((f) => f.endsWith('.js')).sort()
     const offenders = []
@@ -134,15 +129,12 @@ export async function runExtensionInventoryTests(ok) {
       const source = await readFile(join(dir, file), 'utf8')
       if (/\.registerTool\s*\(/.test(source)) offenders.push(`${file}:registerTool`)
       if (/\.registerCommand\s*\(/.test(source)) {
-        const names = [...source.matchAll(/\.registerCommand\s*\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
-        const unexpected = names.filter((name) => !ALLOWED_COMMANDS.has(name))
-        /* 名字不是字面量的也算违规：无法白名单化的注册就是没审查过的注册 */
-        if (unexpected.length > 0 || names.length === 0) offenders.push(`${file}:registerCommand(${unexpected.join('|') || '非字面量'})`)
+        offenders.push(`${file}:registerCommand`)
       }
     }
     ok(
       offenders.length === 0,
-      `薄层零注册模型工具，pi 命令只限宿主控制的维护入口（扫了 ${files.length} 个文件）`,
+      `薄层不注册模型工具或 pi 命令（扫了 ${files.length} 个文件）`,
       offenders.join('、')
     )
   }

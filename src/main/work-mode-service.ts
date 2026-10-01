@@ -142,7 +142,7 @@ export function readWorkModeState(
  * 把一份模式状态原子写到扩展读的快照文件。
  *
  * 原子写 + rename 失败退化为直写：Windows 上覆盖已存在文件的 `rename`
- * 会偶发 `EPERM`（项目知识注入踩过，见 `project-knowledge.ts`）。
+ * 会偶发 `EPERM`，失败时保留直接写入的兼容路径。
  */
 export async function writeWorkModeSnapshot(
   runtimeKey: string,

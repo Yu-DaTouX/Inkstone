@@ -82,7 +82,7 @@
     ok(!!group, '工具调用进入同一张命令块表')
     if (group) {
       ok(qa('.tgroup .trow').length === 2, '展开历史后两条工具行可见')
-      ok(!!group.querySelector('[data-testid="tool-group-toggle"]'), '已完成步骤有组折叠入口')
+      ok(!!group.querySelector('[data-testid="tool-group-collapse"]'), '已完成步骤有组折叠入口')
       ok(!!group.querySelector('.trow[data-state="error"]'), '失败的调用在组里仍以出错态显示')
     }
 
@@ -138,7 +138,7 @@
       }
     }
   } catch (error) {
-    out.push('  探针出错: ' + (error?.message ?? String(error)))
+    out.push('  ✗ 探针出错: ' + (error?.message ?? String(error)))
   }
 
   return out.join('\n')

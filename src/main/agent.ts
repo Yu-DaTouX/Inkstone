@@ -304,8 +304,8 @@ export interface CapabilityRunOptions {
 /**
  * 项目 `.pi/settings.json` 里登记的 pi 包 → 显式 `--extension` 参数。
  *
- * 砚默认 runner 带 `--no-extensions`（01-S5），pi 会关闭「发现 + 配置」的扩展加载，
- * 项目 settings 的 `packages` 也在其中；显式 `--extension` 是唯一仍会加载的通道。
+ * 仅旧版 runner 使用：`--no-extensions` 关闭项目包发现，需显式补入。
+ * 原生 pi 自己处理项目包与禁用设置，不能用显式路径绕过其设置。
  * 显式传入绕过了 pi 自己的项目信任闸门，所以这里必须自己补上：只有项目已被
  * 持久信任（`trust.json` 标记 true）才加载，范围与 pi 一致（整个项目 `.pi` 资源）。
  */
@@ -327,15 +327,12 @@ export class AgentController extends EventEmitter {
   private push: Push
   private cwd: string
   private piBin?: string
+  private codemodeExtension?: string
   private questionExtension?: string
   /** 工作模式的工具策略执行（实施-05 S3）：计划档收紧工具表 + 兜底阻断。 */
   private workModeExtension?: string
   /** 活动档案（实施-25 P01）：按会话注角色与受限工具。 */
   private agentProfileExtension?: string
-  /** 就绪转移之后的内部门续行（实施-05 S3b）：custom 消息 + 触发一次回合。 */
-  private goalResumeExtension?: string
-  /** 交接包生成（实施-05 S5b-2）：它只做「调一次 completion」那件 RPC 做不到的事。 */
-  private handoffsExtension?: string
   private responseDetailExtension?: string
   /**
    * 系统提示开场白扩展：把 pi 内置的英文 preamble 换成砚的中文开场白
@@ -347,18 +344,6 @@ export class AgentController extends EventEmitter {
   /** 能力入口说明扩展（每轮静态追加，不随设置变化）。 */
   private capabilityGuideExtension?: string
   /**
-   * 上下文状态化压缩扩展（N21-4）：Tool Sweep / Task State 注入 / Recall /
-   * 结构化压缩闸门，见 resources/pi-extensions/context.js。
-   * 默认接管 `tool-sweep` + `recall` + `compaction`（清理默认开，但保留可召回引用）；
-   * `episode-fold` 要等状态生成器。阶段启用由主进程策略决定。
-   */
-  private contextExtension?: string
-  /**
-   * 项目知识注入扩展（实施-03 S3）：只做「读宿主写的注入文件 + 放一条消息」。
-   * 检索与预算全在宿主（`main/project-knowledge.ts`）。
-   */
-  private projectKnowledgeExtension?: string
-  /**
    * 单轮重复动作兜底（2026-09-22）：`tool_call` 看参数、连续相同就提醒或拦下。
    * 被拦下的计数由宿主在回合收尾时计入目标失败签名（`shared/repeat-guard.ts`）。
    */
@@ -367,10 +352,6 @@ export class AgentController extends EventEmitter {
   private bundledSkills: string[] = []
   /** 用户技能（YAN_DIR/skills）：每次启动时重新列出，新保存的技能在下一次启动生效。 */
   private userSkills?: () => Promise<string[]>
-  /** 最终 provider payload 观察器，排在受管与项目扩展之后。 */
-  private contextBudgetObserverExtension?: string
-  /** Budget V1 的受控摘要事务与活跃投影应用。 */
-  private contextBudgetMaintenanceExtension?: string
   /** 读界面历史（实施-05 S5b-4）；缺省用 `readSessionMessages` 读单文件。 */
   private readHistory?: (sessionFile: string) => Promise<ReadResult | null>
   /** 当前设置的回复档位；在 agent_start 时快照，不随回合中途改设置漂移。 */
@@ -431,7 +412,8 @@ export class AgentController extends EventEmitter {
   /** `yan search …` 与 `yan knowledge …` 的实现（见 lookup-commands.ts） */
   private readonly lookup = new LookupCommands({
     capabilityOpts: () => this.capabilityOpts,
-    cwd: () => this.cwd
+    cwd: () => this.cwd,
+    notifySearchApiMissing: () => this.push({ ch: 'search-api-hint', payload: {} })
   })
   /** `yan browser …` 的实现（见 browser-commands.ts） */
   private readonly browserCommands = new BrowserCommands({
@@ -580,6 +562,7 @@ export class AgentController extends EventEmitter {
     push: Push
     cwd: string
     piBin?: string
+    codemodeExtension?: string
     questionExtension?: string
     workModeExtension?: string
     agentProfileExtension?: string
@@ -610,17 +593,17 @@ export class AgentController extends EventEmitter {
      * resources/pi-extensions/capability-guide.js）。
      */
     capabilityGuideExtension?: string
-    /** 上下文状态化压缩扩展（N21-4）：Tool Sweep / Task State / Recall / 压缩闸门 */
+    /** Legacy caller option accepted but ignored; context belongs to pi. */
     contextExtension?: string
-    /** 项目知识注入扩展（实施-03 S3）：读宿主写的注入文件并放到用户消息之前 */
+    /** Legacy caller option accepted but ignored; no automatic knowledge injection. */
     projectKnowledgeExtension?: string
     /** 单轮重复动作兜底（2026-09-22）：连续相同调用 → 提醒 / 拦下 */
     repeatGuardExtension?: string
     bundledSkills?: string[]
     userSkills?: () => Promise<string[]>
-    /** 上下文预算 V1：最终 payload 观察器，需排在受管与项目扩展之后。 */
+    /** Legacy caller option accepted but ignored. */
     contextBudgetObserverExtension?: string
-    /** 上下文预算 V1：受控摘要命令与已提交投影应用。 */
+    /** Legacy caller option accepted but ignored. */
     contextBudgetMaintenanceExtension?: string
     /**
      * 读界面历史（实施-05 S5b-4）。
@@ -679,21 +662,16 @@ export class AgentController extends EventEmitter {
     }
     this.cwd = opts.cwd
     this.piBin = opts.piBin
+    this.codemodeExtension = opts.codemodeExtension
     this.questionExtension = opts.questionExtension
     this.workModeExtension = opts.workModeExtension
     this.agentProfileExtension = opts.agentProfileExtension
-    this.goalResumeExtension = opts.goalResumeExtension
-    this.handoffsExtension = opts.handoffsExtension
     this.responseDetailExtension = opts.responseDetailExtension
     this.languageExtension = opts.languageExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
-    this.contextExtension = opts.contextExtension
-    this.projectKnowledgeExtension = opts.projectKnowledgeExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
     this.bundledSkills = opts.bundledSkills ?? []
     this.userSkills = opts.userSkills
-    this.contextBudgetObserverExtension = opts.contextBudgetObserverExtension
-    this.contextBudgetMaintenanceExtension = opts.contextBudgetMaintenanceExtension
     this.readHistory = opts.readHistory
     this.getResponseDetail = opts.getResponseDetail
     this.getBrowserHost = opts.browserHost
@@ -838,17 +816,17 @@ export class AgentController extends EventEmitter {
       ? await activeSkillArgs(YAN_DIR, this.capabilityOpts.projectId)
       : []
     const userSkillArgs = this.userSkills ? await this.userSkills().catch(() => [] as string[]) : []
-    /* 项目 settings 登记的 pi 包：`--no-extensions` 会关掉它们，这里显式补回。 */
-    const projectPackageArgs = await projectPiPackageArgs(this.cwd)
     const probe = resolvePi({ override: this.piBin })
     const version = probe.home ? await readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : undefined
     const nativeTools = nativePiToolsSupported(version)
+    const projectPackageArgs = nativeTools ? [] : await projectPiPackageArgs(this.cwd)
     const rpc = new PiRpc({
       cwd: this.cwd,
       piBin: this.piBin,
       args: agentOwnedPiArgs([
         /* Trusted UI/authorization extensions are explicit; pi discovers its native skills. */
         '--no-extensions',
+        ...(nativeTools && this.codemodeExtension ? ['--extension', this.codemodeExtension] : []),
          // 工作模式的提问指引薄层（真正入口是宿主 yan question ask）
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
         /*
@@ -861,10 +839,6 @@ export class AgentController extends EventEmitter {
          * 两边各自收紧工具、互不恢复对方，所以顺序不影响「更严的那个生效」。
          */
         ...(this.agentProfileExtension ? ['--extension', this.agentProfileExtension] : []),
-        /* 续行（实施-05 S3b）：就绪转移后由它发一条 custom 控制消息并触发回合 */
-        ...(this.goalResumeExtension ? ['--extension', this.goalResumeExtension] : []),
-        /* 交接包生成（实施-05 S5b-2）：宿主写请求，它调一次 completion 写结果 */
-        ...(this.handoffsExtension ? ['--extension', this.handoffsExtension] : []),
         // 回复详细程度（简洁 / 标准 / 详细）：standard 档不注入任何东西
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
         // 系统提示开场白：把 pi 内置英文 preamble 换成砚的中文开场白
@@ -875,14 +849,6 @@ export class AgentController extends EventEmitter {
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
           : []),
-        // 上下文状态化压缩（N21-4）：默认清扫 + 可召回墓碑，阶段启用由 ContextPolicy.kinds 决定
-        ...(this.contextExtension ? ['--extension', this.contextExtension] : []),
-        /*
-         * 项目知识注入（实施-03 S3）：宿主本轮先检索并写好注入文件，
-         * 扩展在 `before_provider_request` 把它放到最后一条用户消息之前。
-         * 与其它薄层成员一样：只做「钩子能做、CLI / RPC 做不到」的那一步。
-         */
-        ...(this.projectKnowledgeExtension ? ['--extension', this.projectKnowledgeExtension] : []),
         /*
          * 单轮重复动作兜底（2026-09-22）：连续 3 次相同调用提醒、5 次拦下。
          * 放最后：它要在其它扩展都不拦的时候才生效（不抢模式门禁的判断）。
@@ -895,21 +861,11 @@ export class AgentController extends EventEmitter {
         ...this.bundledSkills.flatMap((skill) => ['--skill', skill]),
         /* 用户技能：用户自己保存的做法（含旧办事模板的导出） */
         ...userSkillArgs.flatMap((skill) => ['--skill', skill]),
-        /* 项目已授权登记的 pi 包：显式路径不受 `--no-extensions` 影响（见函数注释）。 */
+        /* 旧版 pi 的受信项目包补回；原生 pi 保留自身发现与禁用策略。 */
         ...projectPackageArgs,
-        /* 投影在 `context` 阶段生效；最终 budget observer 保持所有请求改写器之后。 */
-        ...(this.contextBudgetMaintenanceExtension
-          ? ['--extension', this.contextBudgetMaintenanceExtension]
-          : []),
-        /* 必须排在所有会改请求内容的内置、受管、项目扩展之后。 */
-        ...(this.contextBudgetObserverExtension
-          ? ['--extension', this.contextBudgetObserverExtension]
-          : []),
         /*
          * 测试通道：`YAN_PROBE_SKILL` 指定一个 SKILL.md 时，像受管技能那样
-         * 用显式 `--skill` 传进去。产品自 01-S5 起带 `--no-skills`，
-         * 不再自动发现 `piDir/skills` —— 旧夹具把技能摆在 piDir 下，
-         * 在生产行为下永远不会被报告（capcli 曾因此变红）。
+         * 用显式 `--skill` 传进去，与真实用户技能目录隔离。
          */
         ...(process.env.YAN_PROBE && process.env.YAN_PROBE_SKILL
           ? ['--skill', process.env.YAN_PROBE_SKILL]

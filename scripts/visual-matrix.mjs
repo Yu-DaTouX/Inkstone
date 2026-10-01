@@ -22,9 +22,9 @@
  *      都不再出帧，`capturePage()` 会一直拿到旧画面。
  */
 import { missingHandlerSummary, muteMissingHandlerNoise } from './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, WebContentsView } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -179,8 +179,6 @@ function matrixPng(size, rgb) {
   ])
 }
 
-const GIT_STUB_IMAGE_OLD = matrixPng(24, [40, 90, 190])
-const GIT_STUB_IMAGE_NEW = matrixPng(24, [200, 70, 60])
 
 function gitStubRepo() {
   return {
@@ -205,62 +203,11 @@ function gitStubRepo() {
   }
 }
 
-function gitStubFiles() {
-  const mk = (path, status, additions, deletions, extra = {}) => ({
-    path,
-    status,
-    staged: extra.staged ?? null,
-    unstaged: extra.unstaged ?? status,
-    untracked: extra.untracked ?? false,
-    unmerged: false,
-    kind: extra.kind ?? 'text',
-    additions,
-    deletions,
-    oldFingerprint: 'aaa111',
-    newFingerprint: 'bbb222',
-    ...(extra.oldPath ? { oldPath: extra.oldPath } : {})
-  })
-  return [
-    mk('src/renderer/src/components/review/ReviewPanel.tsx', 'modified', 42, 8, { staged: 'modified' }),
-    mk('src/shared/git.ts', 'added', 318, 0, { staged: 'added' }),
-    mk('docs/design/DESIGN.md', 'modified', 30, 2),
-    mk('src/renderer/src/styles/review.css', 'added', 402, 0),
-    mk('src/renderer/src/components/chat/SessionHeader.tsx', 'modified', 5, 18),
-    mk('docs/design/preview/matrix-review.png', 'modified', 0, 0, { kind: 'image' }),
-    mk('docs/中文 目录/说明.md', 'untracked', 12, 0, { untracked: true }),
-    mk('assets/logo.bin', 'untracked', 0, 0, { untracked: true, kind: 'binary' }),
-    mk('scripts/test-live.mjs', 'modified', 96, 3, { oldPath: 'scripts/live-tests.mjs' })
-  ]
-}
-
-function gitStubSnapshot() {
-  const files = gitStubFiles()
-  return {
-    ok: true,
-    repo: gitStubRepo(),
-    scope: { kind: 'working' },
-    files,
-    stats: {
-      files: files.length,
-      additions: files.reduce((n, f) => n + f.additions, 0),
-      deletions: files.reduce((n, f) => n + f.deletions, 0),
-      binary: 2,
-      truncated: false
-    },
-    notes: ['有些文件同时有已暂存与未暂存的部分，行数统计按最终内容算，不重复相加'],
-    truncated: false,
-    requestId: 'stub',
-    generatedAt: Date.now(),
-    /* 写操作的预期版本（少了它，界面上的暂存 / 提交按钮会一直是 disabled） */
-    expected: { head: 'a'.repeat(40), indexDigest: 'stub-idx', statusDigest: 'stub-status' }
-  }
-}
-
 /**
  * 非 Git 目录的合成状态（实施-07 S1 的取证）。
  *
  * 真实链路里 `yan:git:state` 对非仓库目录返回 `repo: null` —— 那是**正常结果**，
- * 不是错误（见 src/main/git-diff.ts 的注释）。截图要证的正是界面据此走
+ * 不是错误。截图要证的正是界面据此走
  * 「未使用 Git」分支：环境菜单不给写操作入口、审查面板说清没有改动可审查。
  */
 const NON_GIT_STUB_CWD = 'C:/work/notes-notgit'
@@ -274,102 +221,10 @@ const NON_GIT_STUB_CWD = 'C:/work/notes-notgit'
  */
 let stubNonGit = false
 /** 需要“非 Git 数据源”的两个状态；主循环据此切换 `stubNonGit` */
-const NON_GIT_STATES = new Set(['envnotgit', 'reviewnotgit'])
+const NON_GIT_STATES = new Set(['envnotgit', ])
 function gitStubNonGitState() {
   return { repo: null, expected: undefined }
 }
-function gitStubNonGitSnapshot() {
-  return {
-    ok: true,
-    repo: null,
-    scope: { kind: 'working' },
-    files: [],
-    stats: { files: 0, additions: 0, deletions: 0, binary: 0, truncated: false },
-    notes: [],
-    truncated: false,
-    requestId: 'stub-notgit',
-    generatedAt: Date.now()
-  }
-}
-
-/** 合成一段真实的 hunk（行号连贯，截图里能看出旧/新两列行号推进） */
-function gitStubHunks(seed, lines = 8) {
-  const ctx = (i, oldNo, newNo) => ({ type: 'ctx', text: `  // 上下文第 ${i} 行`, oldLine: oldNo, newLine: newNo })
-  const first = { header: `@@ -10,${lines} +10,${lines + 1} @@`, section: 'export function ReviewPanel() {', oldStart: 10, oldCount: lines, newStart: 10, newCount: lines + 1, lines: [] }
-  let oldNo = 10
-  let newNo = 10
-  first.lines.push(ctx(1, oldNo++, newNo++))
-  first.lines.push({ type: 'del', text: `  const files = snapshot.files ?? []`, oldLine: oldNo++, newLine: null })
-  first.lines.push({ type: 'add', text: `  const files = snapshot?.files ?? []`, oldLine: null, newLine: newNo++ })
-  first.lines.push({ type: 'add', text: `  const [filter, setFilter] = useState<Filter>('all')`, oldLine: null, newLine: newNo++ })
-  for (let i = 2; i < lines; i += 1) first.lines.push(ctx(i, oldNo++, newNo++))
-  const second = { header: '@@ -78,6 +82,7 @@ function FileCard(', section: '', oldStart: 78, oldCount: 6, newStart: 82, newCount: 7, lines: [] }
-  let o2 = 78
-  let n2 = 82
-  for (let i = 0; i < 3; i += 1) second.lines.push(ctx(i + 20, o2++, n2++))
-  second.lines.push({ type: 'del', text: `      <span className="rcard-stat">`, oldLine: o2++, newLine: null })
-  second.lines.push({ type: 'add', text: `      <span className="rcard-stat" data-testid="review-stat">`, oldLine: null, newLine: n2++ })
-  for (let i = 0; i < 2; i += 1) second.lines.push(ctx(i + 30, o2++, n2++))
-  void seed
-  return [first, second]
-}
-
-function gitStubPatch(path) {
-  const file = gitStubFiles().find((f) => f.path === path)
-  const base = {
-    ok: true,
-    path,
-    kind: file?.kind ?? 'text',
-    status: file?.status ?? 'modified',
-    binary: false,
-    truncated: false,
-    hunks: [],
-    header: [],
-    additions: file?.additions ?? 0,
-    deletions: file?.deletions ?? 0,
-    synthesized: !!file?.untracked,
-    requestId: 'stub'
-  }
-  if (file?.kind === 'binary' || file?.kind === 'image') {
-    return { ...base, binary: true, kind: file.kind }
-  }
-  const hunks = gitStubHunks(path)
-  return { ...base, hunks, header: ['index 1111111..2222222 100644', `--- a/${path}`, `+++ b/${path}`] }
-}
-
-function gitStubContent(path, side) {
-  const file = gitStubFiles().find((f) => f.path === path)
-  if (file?.kind === 'image') {
-    const buf = side === 'old' ? GIT_STUB_IMAGE_OLD : GIT_STUB_IMAGE_NEW
-    return {
-      ok: true,
-      path,
-      side,
-      kind: 'image',
-      missing: false,
-      base64: buf.toString('base64'),
-      mimeType: 'image/png',
-      bytes: buf.length,
-      truncated: false,
-      requestId: 'stub'
-    }
-  }
-  if (file?.kind === 'binary') {
-    return { ok: true, path, side, kind: 'binary', missing: false, bytes: 20480, truncated: false, requestId: 'stub' }
-  }
-  return {
-    ok: true,
-    path,
-    side,
-    kind: 'text',
-    missing: false,
-    text: `// ${side === 'old' ? '改动前' : '改动后'}的 ${path}\n`,
-    bytes: 120,
-    truncated: false,
-    requestId: 'stub'
-  }
-}
-
 /**
  * 交互终端的矩阵桩（H-11 视觉验收）。
  *
@@ -506,6 +361,39 @@ function activityModelRules() {
 }
 
 function registerStubHandlers() {
+  const hubSnapshot = {
+    projects: [{ id: 'visual-project', name: 'Inkstone' }],
+    adapters: [{ agent: 'codex', available: true, modes: ['managed', 'terminal'], version: '0.159.0' }, { agent: 'pi', available: true, modes: ['managed', 'terminal'], version: '0.99.1' }],
+    tasks: [{ id: 'visual-task-one', title: '检查设置页的键盘交互', agent: 'codex', mode: 'terminal', terminalId: 'visual-terminal-one', inputOwner: 'desktop', inputEpoch: 1, projectId: 'visual-project', status: 'running' }, { id: 'visual-task-two', title: '整理 API 适配的变更', agent: 'pi', mode: 'terminal', terminalId: 'visual-terminal-two', inputOwner: 'desktop', inputEpoch: 1, projectId: 'visual-project', status: 'running' }],
+    approvals: [], resources: [], messages: [], runs: [], templates: []
+  }
+  /* Optional managed-run fixture for the Agent chat view (YAN_MATRIX_HUB_CHAT=1); other states keep the two terminals. */
+  if (process.env.YAN_MATRIX_HUB_CHAT === '1') {
+    const t0 = Date.now() - 600_000, ws = 'C:\\Users\\fixture\\.pi\\agent\\yan\\agent-hub\\workspaces\\visual-review'
+    hubSnapshot.tasks.unshift({ id: 'visual-review', title: '审阅设置页焦点修复', agent: 'codex', mode: 'managed', projectId: 'visual-project', status: 'waiting_input', createdBy: 'session', parentSessionId: 'visual-session', runId: 'visual-run', createdAt: t0, updatedAt: Date.now(), workspace: ws, baseline: 'c378e7e36c0a842b7350ce7d28fb88190bedcf82', includeWorkingChanges: true, startArtifact: { patchPath: '', reportPath: '', sha256: '', tree: '', files: 3 }, timeoutMinutes: 30, toolCoverage: 'managed-entrypoints',
+      prompt: '请审阅主工作区里关于设置页折叠面板焦点的改动（git diff HEAD）。只给审阅意见，不要改代码；按“问题 / 建议 / 可以合并”三段回报。',
+      attachments: [{ name: 'focus-bug.png', path: '', image: true }, { name: '复现步骤.md', path: '', image: false }],
+      activity: [
+        { id: 'a1', at: t0 + 20_000, kind: 'say', text: '我先看待审的改动范围，再逐个文件检查。', status: 'done' },
+        { id: 'a2', at: t0 + 40_000, kind: 'tool', title: 'Shell', text: 'git diff HEAD --stat', detail: ' src/renderer/src/components/ui/index.tsx | 5 ++++-\n src/renderer/src/styles/ui.css            | 2 ++\n 2 files changed, 6 insertions(+), 1 deletion(-)', status: 'done' },
+        { id: 'a3', at: t0 + 90_000, kind: 'patch', title: 'Patch', text: ws + '\\src\\renderer\\src\\components\\ui\\index.tsx', detail: '@@ -392,7 +392,10 @@ export function Disclosure(\n       <div className="ui-disclosure-body"\n-        style={{ height: open ? undefined : 0 }}>\n+        style={{ height: open ? undefined : 0 }}\n+        inert={!open || undefined}\n+        aria-hidden={!open || undefined}>', status: 'done' },
+        { id: 'a4', at: t0 + 150_000, kind: 'tool', title: 'Shell', text: 'npm test -- disclosure', detail: '✓ disclosure keeps hidden controls out of tab order (38 ms)\n✓ disclosure restores focus order when opened (21 ms)', status: 'done' },
+        { id: 'a5', at: t0 + 200_000, kind: 'say', text: '**问题**\n1. `aria-hidden` 与 `inert` 同时设置时，旧版 Electron 的读屏会跳过整段，建议只保留 `inert`。\n\n**建议**\n- 给收起动画结束后再加 `inert`，避免焦点在动画中途丢失。\n\n**可以合并**：修复思路正确，测试覆盖了两个关键路径。', status: 'done' }
+      ] })
+    hubSnapshot.messages.push(
+      { id: 'm1', taskId: 'visual-review', requestKey: 'pi:visual-session:r1', kind: 'packet', text: '改动集中在 Disclosure 组件，复现步骤见附件；重点看读屏兼容。', delivery: 'injected', createdAt: t0 + 10_000 },
+      { id: 'm2', taskId: 'visual-review', fromTaskId: 'visual-review', parentSessionId: 'visual-session', requestKey: 'run:visual-run:r2', kind: 'note', text: '审阅进行到一半：发现 aria-hidden 与 inert 重复，结论稍后回报。', delivery: 'injected', createdAt: t0 + 170_000 })
+    hubSnapshot.approvals.push({ id: 'ap1', taskId: 'visual-review', runId: 'visual-run', kind: 'command', title: '运行完整测试', detail: 'npm run test:unit', expiresAt: Date.now() + 100_000, status: 'pending' })
+  }
+  ipcMain.handle('yan:hub:snapshot', () => hubSnapshot)
+  ipcMain.handle('yan:hub:detect', () => hubSnapshot)
+  const hubSizes = new Map()
+  ipcMain.handle('yan:hub:command', (_event, command) => {
+    const size = hubSizes.get(command.taskId) ?? { cols: 80, rows: 24, seq: 0 }
+    if (command.action === 'resize') { hubSizes.set(command.taskId, { cols: command.cols, rows: command.rows, seq: size.seq + 1 }); return { accepted: true } }
+    if (command.action === 'inspect') return { terminal: { ...size, kind: command.sinceSeq === undefined || command.sinceSeq !== size.seq ? 'snapshot' : 'delta', data: command.sinceSeq === size.seq ? '' : '\x1b[2J\x1b[H\x1b[1mCLI Agent\x1b[0m\r\n\r\n\x1b[38;5;208m ▐▛███▜▌\x1b[0m  Native terminal\r\n\x1b[38;5;208m▝▜█████▛▘\x1b[0m  Inkstone workspace\r\n\r\n中文列宽 · ABC 123\r\n\x1b[32m✓\x1b[0m Ready\r\n\r\n❯ ' } }
+    return { accepted: true }
+  })
   registerTerminalStub()
   ipcMain.handle('yan:agentStatus', () => ({ state: 'ready', detail: '' }))
   const matrixInboxCards = [
@@ -1267,9 +1155,6 @@ function registerStubHandlers() {
       { ref: 'feature/review-panel', label: 'refs/heads/feature/review-panel', kind: 'local', current: false }
     ]
   }))
-  ipcMain.handle('yan:git:snapshot', () => (stubNonGit ? gitStubNonGitSnapshot() : gitStubSnapshot()))
-  ipcMain.handle('yan:git:patch', (_e, req) => gitStubPatch(String(req?.path ?? '')))
-  ipcMain.handle('yan:git:content', (_e, req) => gitStubContent(String(req?.path ?? ''), req?.side === 'new' ? 'new' : 'old'))
 }
 
 /**
@@ -1288,18 +1173,18 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'segmented', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewside', 'reviewwrite', 'envnotgit', 'reviewnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
+    states: ['main', 'segmented', 'righttoolmenu', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewside', 'reviewwrite', 'envnotgit', 'reviewnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
-  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini', 'spaceoverview', 'nativecontextsettings', 'nativecontext'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
+  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini', 'spaceoverview', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback'] },
   /* 1280×800 加 spaceartifact：成果编辑器（实施-25 P06a）深浅各一张 */
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
-  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'amconfig'] },
-  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'amconfig'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workbenchhome', 'taskinbox', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'amconfig', 'envnotgit'] },
-  { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings', 'workbenchhome', 'taskinbox'] },
-  { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning', 'workbenchhome', 'taskinbox'] },
+  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spacefollow', 'amconfig'] },
+  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spacefollow', 'amconfig'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workbenchhome', 'taskinbox', 'workmodemenu', 'envlinks', 'spaceoverview', 'spacefollow', 'amconfig', 'envnotgit'] },
+  { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['huboverview', 'hubfallback', 'main', 'settings', 'workbenchhome', 'taskinbox'] },
+  { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['huboverview', 'hubfallback', 'main', 'reasoning', 'workbenchhome', 'taskinbox'] },
   /*
    * 单开一组：额度三档配色（绿 / 黄 / 红 + 「已用完」）。
    * 为什么单独一组而不塞进组 0：那个状态会把会话的 provider 换成受控桩名，
@@ -1323,10 +1208,10 @@ const GROUPS = [
    * 而这些切片（工具磁贴、右栏资源、上下文档位）恰恰是**最先在窄窗口上崩裂**的那类
    * 密集控件，之前只有 1440x900 的证据。这里纯新增，不覆盖任何旧图。
    */
-  { w: 940, h: 620, scale: 1, theme: 'light', states: ['righttoolmenu', 'rightresources'] },
-  { w: 900, h: 520, scale: 1, theme: 'light', states: ['rightresources', 'ctxsettings'] },
+  { w: 940, h: 620, scale: 1, theme: 'light', states: ['righttoolmenu', ] },
+  { w: 900, h: 520, scale: 1, theme: 'light', states: ['ctxsettings'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'light', states: ['main', 'righttoolmenu'] },
-  { w: 1440, h: 900, scale: 1.5, theme: 'light', states: ['reasoning', 'rightresources'] },
+  { w: 1440, h: 900, scale: 1.5, theme: 'light', states: ['reasoning', ] },
   /*
    * 实施-12 U-2 残余：会话行菜单 / 分组菜单改走 Portal 后的真实窗口证据（深浅各一张）。
    * 单开一组：状态脚本会造 8 条合成会话，不影响任何旧图。
@@ -1437,6 +1322,77 @@ const projectMenuCornerState = (corner) => `
 `
 
 const STATES = {
+  codemode: `
+    (async () => {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      window.__yanStore.setState({ rightPanelOpen: false, messages: [
+        { id: 'pi-code-user', role: 'user', text: '并行查看两个文件，整理结果。', timestamp: Date.now() },
+        { id: 'pi-code-assistant', role: 'assistant', text: 'Codemode 已完成文件读取。历史保留调用摘要；未完成的子调用会单独标注。', timestamp: Date.now(), toolCalls: [
+          { id: 'code', name: 'codemode', args: { code: 'await Promise.allSettled([...])' }, status: 'ok', output: '已读取两个文件', nestedCallsIncomplete: true },
+          { id: 'code/1', parentToolCallId: 'code', name: 'read', args: { path: 'src/main/agent.ts' }, status: 'ok', historySummary: true },
+          { id: 'code/2', parentToolCallId: 'code', name: 'powershell', args: { command: 'Write-Output "npm publish"' }, status: 'error', output: '高危操作未获用户确认', historySummary: true },
+          { id: 'code/2/1', parentToolCallId: 'code/2', name: 'read', args: { path: 'README.md' }, status: 'ok', incomplete: true, historySummary: true }
+        ] }
+      ] });
+      await sleep(400);
+      document.querySelector('[data-testid="tool-group-toggle"]')?.click();
+      await sleep(150);
+      const rows = [...document.querySelectorAll('[data-testid="tool-row"]')];
+      rows.find(row => row.dataset.parentToolCall === 'code')?.click();
+      await sleep(150);
+      if (rows.length !== 4 || !document.querySelector('[data-tool-depth="2"]')) throw new Error('Nested tool rows missing');
+      if (!rows.some(row => row.textContent.includes('记录未完成'))) throw new Error('Incomplete record label missing');
+      return 'ok(4 nested tool rows)';
+    })()
+  `,
+  hubfallback: `
+    (async () => {
+      const host = document.querySelector('.hub-terminal');
+      if (host?.dataset.terminalRenderer !== 'webgl') return 'ok(default-renderer)';
+      const canvas = [...host.querySelectorAll('canvas')].find(canvas => canvas.getContext('webgl2'));
+      const lose = canvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context');
+      if (!lose) return 'no-context-loss-extension';
+      lose.loseContext();
+      await new Promise(resolve => setTimeout(resolve, 3500));
+      const preserved = host.querySelector('.xterm-accessibility-tree')?.textContent.includes('Ready');
+      return host.dataset.terminalRenderer === 'dom' && host.querySelector('.xterm-rows') && preserved ? 'ok(context-loss-fallback-preserved)' : 'fallback-failed';
+    })()
+  `,
+  hubsplit: `
+    (async () => {
+      document.querySelector('[aria-label="运行列表"]')?.click();
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return 'ok';
+    })()
+  `,
+  huboverview: `
+    (async () => {
+      window.__yanStore.getState().closeSettings();
+      document.querySelector('[aria-label="还原工作区"]')?.click();
+      if (document.querySelector('.agent-run-list')) document.querySelector('[aria-label="运行列表"]')?.click();
+      if (document.querySelector('.agent-create')) [...document.querySelectorAll('.agent-create button')].find(button => button.textContent === '取消')?.click();
+      await new Promise(resolve => setTimeout(resolve, 200));
+      document.querySelector('[data-testid="open-agent-hub"]')?.click();
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const host = document.querySelector('.hub-terminal');
+      const canvas = new OffscreenCanvas(50, 50).getContext('2d');
+      canvas.font = '13px var(--font-mono)';
+      const unresolvedFont = canvas.font;
+      canvas.font = '13px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-code').trim();
+      return 'ok(renderer=' + host?.dataset.terminalRenderer + ', oldMeasureFont=' + unresolvedFont + ', resolvedMeasureFont=' + canvas.font + ')';
+    })()
+  `,
+  hubcreate: `
+    (async () => {
+      if (!document.querySelector('[data-testid="agent-workspace"]')) document.querySelector('[data-testid="open-agent-hub"]')?.click();
+      await new Promise(resolve => setTimeout(resolve, 200));
+      document.querySelector('[aria-label="添加 Agent"]')?.click();
+      await new Promise(resolve => setTimeout(resolve, 200));
+      return 'ok';
+    })()
+  `,
   projectmenutl: projectMenuCornerState('tl'),
   projectmenutr: projectMenuCornerState('tr'),
   projectmenubl: projectMenuCornerState('bl'),
@@ -1506,7 +1462,7 @@ const STATES = {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const st = window.__yanStore.getState();
       st.closeSettings();
-      st.closeReview?.();
+
       st.setRailPinned(true);
       window.__yanStore.setState({ rightPanelOpen: true, filePreview: null });
       await sleep(200);
@@ -1518,81 +1474,6 @@ const STATES = {
     })()
   `,
   /* 右栏窗口标签：同一条标签栏同时承载工具栏、审查、浏览器和文件预览。 */
-  rightwindows: `
-    (async () => {
-      try {
-        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-        const st = window.__yanStore.getState();
-        st.closeSettings();
-        st.closeReview?.();
-        st.closePreview?.();
-        st.setRailPinned(true);
-        window.__yanStore.setState({ rightPanelOpen: true, filePreview: null });
-        await sleep(250);
-      /* 视觉矩阵不注册原生浏览器 IPC；用真实 BrowserState 让 BrowserSurface
-       * 渲染出来，原生 WebContentsView 的坐标生命周期仍由 live browser 场景验证。 */
-      window.__yanStore.setState({
-        browserState: {
-          open: true,
-          url: 'about:blank',
-          title: '浏览器窗口',
-          loading: false,
-          canGoBack: false,
-          canGoForward: false,
-          mode: 'embedded',
-          tabs: [{ id: 'matrix-browser-tab', title: '浏览器窗口', url: 'about:blank' }],
-          activeTabId: 'matrix-browser-tab'
-        }
-      });
-      await sleep(650);
-      /* 视觉矩阵只注册布局相关 IPC，不注册 readPreview；直接摆真实 FilePreviewState
-       * 的渲染输入，仍然走 FilePreviewPane，不为截图专门造 HTML。 */
-      const cwd = window.__yanStore.getState().session?.cwd || window.__yanStore.getState().settings?.cwd || 'C:/yan-preview';
-      const fileKey = '-|' + encodeURIComponent(cwd) + '|' + encodeURIComponent(cwd + '/src/main/agent.ts');
-      const filePreview = {
-        path: 'src/main/agent.ts',
-        cwd,
-        loading: false,
-        key: fileKey,
-        data: {
-          ok: true,
-          path: 'src/main/agent.ts',
-          abs: cwd + '/src/main/agent.ts',
-          name: 'agent.ts',
-          size: 4920,
-          kind: 'text',
-          text: 'export async function runAgent() {\\n  return "window surface"\\n}\\n'
-        }
-      };
-      window.__yanStore.setState({
-        filePreview,
-        filePreviews: { ...window.__yanStore.getState().filePreviews, [fileKey]: filePreview }
-      });
-      await sleep(650);
-      /* 直接落 reviewOpen，避免视觉矩阵未注册的 browser.setVisible IPC 干扰标签截图。 */
-      window.__yanStore.setState({
-        reviewOpen: true,
-        reviewScope: { kind: 'working' },
-        rightPanelOpen: true
-      });
-      await sleep(800);
-      /* 文件树在工具窗口首次挂载时会清理旧预览；审查窗口打开后再放回文件预览，
-       * 才能在同一张图里稳定展示四个并列窗口入口，而不改变真实运行时语义。 */
-      window.__yanStore.setState({
-        filePreview,
-        filePreviews: { ...window.__yanStore.getState().filePreviews, [fileKey]: filePreview }
-      });
-      await sleep(350);
-        const tabs = [...document.querySelectorAll('[data-testid="right-window-tabs"] [role="tab"]')]
-          .map((el) => el.textContent?.replace('×', '').trim())
-          .filter(Boolean);
-        return tabs.length >= 4 ? 'ok' : 'tabs=' + JSON.stringify(tabs);
-      } catch (error) {
-        return 'error:' + (error?.stack || error?.message || String(error));
-      }
-    })()
-  `,
-  /* AI 文件产物：走真实 TurnView → ArtifactCard，不用截图专用 HTML。 */
   artifact: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -2032,6 +1913,14 @@ const STATES = {
       return 'ok';
     })()
   `,
+  codemodepreference: `
+    (() => {
+      const st = window.__yanStore.getState();
+      window.__yanStore.setState({ settings: { ...st.settings, codemodeEnabled: true } });
+      st.openSettings('capabilities');
+      return 'ok';
+    })()
+  `,
   capabilitiesmcp: `
     (() => {
       const st = window.__yanStore.getState();
@@ -2252,8 +2141,7 @@ const STATES = {
           phase: 'planning',
           revision: 3,
           steps: [], evidence: [], links: [], blocker: null, failure: null,
-          readyApproval: 'review',
-          pendingReady: {
+          readyApproval: pendingReady: {
             transitionId: 'tr-goal-review-screenshot',
             goalId: 'goal-review-screenshot',
             modeRevision: 6,
@@ -2742,17 +2630,19 @@ const STATES = {
         const term = await st.startTerminal({ cols: 92, rows: 20 });
         if (!term) return 'no-pty';
         await new Promise((r) => setTimeout(r, 900));
-        await window.yan.terminal.write(term.id, 'echo 砚 · 交互终端 H-11\\r\\n');
+        await window.yan.terminal.write(term.id, 'echo 砚 · 交互终端' + String.fromCharCode(13));
         await new Promise((r) => setTimeout(r, 900));
-        await window.yan.terminal.write(term.id, 'node -v\\r\\n');
+        await window.yan.terminal.write(term.id, 'node -v' + String.fromCharCode(13));
         await new Promise((r) => setTimeout(r, 1200));
-        await window.yan.terminal.write(term.id, 'dir /b src\\r\\n');
+        await window.yan.terminal.write(term.id, 'dir /b src' + String.fromCharCode(13));
         await new Promise((r) => setTimeout(r, 1500));
         window.__yanStore.getState().setActiveTerminal(term.id);
         document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         await new Promise((r) => setTimeout(r, 400));
-        const entry = document.querySelector('[data-testid="start-terminal"]');
-        entry?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        document.querySelector('[data-testid="right-tool-menu"]')?.click();
+        await new Promise((r) => setTimeout(r, 150));
+        const entry = [...document.querySelectorAll('[data-testid="right-tool-menu-popover"] .rp-tool-menu-item')].find(el => /终端|terminal/i.test(el.textContent));
+        entry?.click();
         await new Promise((r) => setTimeout(r, 1000));
         return document.querySelector('[data-testid="terminal-surface"]') ? 'ok' : 'no-surface';
       } catch (e) {
@@ -2895,74 +2785,6 @@ const STATES = {
    * 活动窗口切到「文件」。原生 WebContentsView 会盖住 DOM，所以必须先切到文件
    *（switchWindow('file') 会 setVisible(false)）—— 这张图才能直接看到
    *「三个标签同时存在、活动的是文件」，而不是「切页把别的资源关掉了」。
-   */
-  rightresources: `
-    (async () => {
-      try {
-        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-        const S = () => window.__yanStore.getState();
-        S().closeSettings();
-        S().setRailPinned(true);
-        /*
-         * 直接注入三个资源，不走 IPC：截图脚本**刻意不注册**数据 / 写入型
-         * handler（否则空返回值会把 fixture 注入的 store 覆盖掉）。
-         * 所以 setRightPanelOpen / openBrowser / previewFile 这类会调 IPC 的
-         * store 方法在这里不能用 —— 它们是真实应用的路径，由 live 探针去验。
-         * （这段注释在模板字符串里，不能出现反引号，否则会截断脚本源码。）
-         */
-        window.__yanStore.setState({
-          rightPanelOpen: true,
-          settings: { ...S().settings, rightPanelOpen: true },
-          browserState: {
-            ...S().browserState,
-            open: true,
-            url: 'about:blank',
-            title: 'about:blank',
-            loading: false,
-            activeTabId: 'vt-1',
-            tabs: [{ id: 'vt-1', url: 'about:blank', title: 'about:blank', active: true }]
-          },
-          reviewOpen: true,
-          filePreview: {
-            path: 'docs/PROJECT.md',
-            cwd: '.',
-            loading: false,
-            /*
-             * 必须带资源身份键（H-4）：文件标签现在是工作窗口的一类资源，
-             * 由 RightPanel 监听到 filePreview.key 的变化才激活。缺了它这张图只能
-             * 靠前序状态（如 fileincontext）残留的文件标签碰巧通过 ——
-             * 单开一组时就会退化成 no-preview（实测踩过）。
-             */
-            key: '-|' + encodeURIComponent('C:/work/pi-desktop') + '|' + encodeURIComponent('C:/work/pi-desktop/docs/PROJECT.md'),
-            data: {
-              ok: true,
-              kind: 'text',
-              name: 'PROJECT.md',
-              abs: 'C:/work/pi-desktop/docs/PROJECT.md',
-              size: 23073,
-              text: '# 项目实现总览 — 每个功能怎么实现、要改它该动哪里。右侧是同一份文档的预览窗口，切标签不会把它关掉。'
-            }
-          }
-        });
-        await sleep(700);
-        const fileTab = document.querySelector('[data-testid="right-window-tab-file"]');
-        fileTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await sleep(800);
-        const tabs = [...document.querySelectorAll('[data-testid="right-window-tabs"] .review-tab')];
-        const names = tabs.map((el) => (el.textContent ?? '').replace('×', '').trim()).join('|');
-        if (!document.querySelector('[data-testid="file-preview"]')) return 'no-preview';
-        return tabs.length >= 3 ? 'ok:' + names : 'few-tabs:' + names;
-      } catch (e) {
-        return 'err:' + (e && e.message ? e.message : String(e));
-      }
-    })()
-  `,
-  /*
-   * 完整时间的键盘 / 触摸通道（实施-11 H-7）。
-   *
-   * 窗口 `show: true`（见本文件头部注释）：隐藏窗口里 `:focus` 不匹配，
-   * 也就拍不到聚焦浮层。这里注入一条带时间戳的回合，滚到底部后把最后
-   * 一个 `.turn-time` 真正 focus 掉再截图。
    */
   turntime: `
     (async () => {
@@ -3430,99 +3252,6 @@ const STATES = {
    * 与 spacelibrary 同一个理由直接注入 store：矩阵不注册数据型 IPC，
    * 界面那一次拉取会落在没 handler 上，注入的夹具因此保持原样。
    */
-  spaceartifact: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      const now = Date.now();
-      const L = String.fromCharCode(10);
-      const p = (a, b, c) => [a, b, c].join(L + L);
-      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
-      window.__yanStore.setState({
-        spaces: [{
-          id: 'sp_demo',
-          name: '英语学习',
-          description: '每天一小时，从精读开始',
-          archived: false,
-          createdAt: now - 86400000,
-          updatedAt: now
-        }],
-        sessions,
-        /* 来源标题从资料库取（成果只存 {sourceId, version}） */
-        library: [{
-          id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf',
-          createdAt: now - 3600000, updatedAt: now - 3600000
-        }],
-        artifactDocs: [
-          {
-            id: 'ad_demo1', spaceId: 'sp_demo', title: '产品调研报告', kind: 'markdown',
-            currentVersion: 3,
-            versions: [
-              { version: 1, text: p('第一段：调研范围。', '第二段：初步结论。', '第三段：后续动作。'), editedBy: 'user', at: now - 7200000, basedOn: null, userEditedParagraphs: [] },
-              { version: 2, text: p('第一段：调研范围（agent 改）。', '第二段：初步结论。', '第三段：后续动作（agent 改）。'), editedBy: 'agent', at: now - 3600000, basedOn: 1, userEditedParagraphs: [] },
-              { version: 3, text: p('第一段：调研范围（agent 改）。', '第二段：我把结论改成这样写。', '第三段：后续动作（agent 改）。'), editedBy: 'user', at: now - 600000, basedOn: 2, userEditedParagraphs: [1] }
-            ],
-            sources: [{ sourceId: 'lib_d1', version: 1 }],
-            createdAt: now - 86400000,
-            updatedAt: now - 600000
-          },
-          {
-            id: 'ad_demo2', spaceId: 'sp_demo', title: '这周要做的事', kind: 'checklist',
-            currentVersion: 1,
-            versions: [{ version: 1, text: ['- [x] 读完 Unit 3 精读', '- [ ] 整理生词 20 个', '- [ ] 写一段复述'].join(L), editedBy: 'user', at: now - 300000, basedOn: null, userEditedParagraphs: [0] }],
-            sources: [],
-            createdAt: now - 300000,
-            updatedAt: now - 300000
-          }
-        ],
-        artifactDocsLoaded: true,
-        /*
-         * 「回原文」要正文。不能真导入（矩阵跑在真实数据目录上，写 library.json 就是污染），
-         * 这里把取正文换成注入的正文；界面结构照旧走真实渲染路径。
-         * 真实的「按 id + version 取正文」由 test:live -- artifact 覆盖。
-         */
-        openLibraryRef: async () => ({
-          ok: true,
-          outcome: 'ok',
-          source: { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
-          version: { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 8123, note: '已提取正文', at: now - 3600000 } },
-          text: [
-            'Unit 3 · Reading',
-            '',
-            'When I was a child, my grandmother kept a small garden behind the house.',
-            'She never called it a garden; she called it “the outside room”.',
-            '',
-            'Every spring she would plant the same three things: tomatoes, mint and a',
-            'row of marigolds she never explained.'
-          ].join(String.fromCharCode(10)),
-          truncated: false
-        })
-      });
-      /* 与 spacelibrary 同样的投影：当前会话切到列表里已归档的那一条 */
-      const filed = sessions.find((x) => x.spaceId);
-      if (filed) {
-        const cur = S().session;
-        window.__yanStore.setState({
-          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
-        });
-      }
-      S().openSpaceView('artifact');
-      await sleep(500);
-      document.querySelector('[data-testid="space-art-item-ad_demo1"]')?.click();
-      await sleep(500);
-      /* T06b-4：展开「用于学习」面板（目标输入 + 生成路线），截图上要看得见 */
-      document.querySelector('[data-testid="space-art-tolearn"]')?.click();
-      await sleep(400);
-      document.querySelector('[data-testid="space-art-source-0"]')?.click();
-      await sleep(600);
-      const panel = document.querySelector('[data-testid="space-art-tolearn-panel"]');
-      return document.querySelector('[data-testid="space-art-source-preview"]') && panel ? 'ok' : 'no-artifact';
-    })()
-  `,
-  /*
-   * 按活动配置模型（实施-25 P18）：接入页顶部的五行配置。
-   * 注入一份有内容的配置（模型由桩 handler 给），截图要看到三种解释同时存在。
-   */
   amconfig: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3575,8 +3304,7 @@ const STATES = {
           },
           {
             watch: watch({
-              id: 'fw_review', title: '这周该复习的内容', kind: 'review',
-              resultPlace: '只提醒，不自动开始学', nextDueAt: now + 3600000,
+              id: 'fw_review', title: '这周该复习的内容', kind: resultPlace: '只提醒，不自动开始学', nextDueAt: now + 3600000,
               lastCheckedAt: now - 6 * 3600000, lastOutcome: 'no-change'
             }),
             status: '下次 27/09/2026, 11:18:49 pm',
@@ -3615,129 +3343,6 @@ const STATES = {
    * 清单成果（实施-25 P06b）：勾选列表本身就是正文的呈现方式；
    * 勾选是一次用户编辑（开新版本、进保护集），语义在单测与 live 探针里，这里只截界面。
    */
-  spacechecklist: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      const now = Date.now();
-      const L = String.fromCharCode(10);
-      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
-      window.__yanStore.setState({
-        spaces: [{
-          id: 'sp_demo',
-          name: '英语学习',
-          description: '每天一小时，从精读开始',
-          archived: false,
-          createdAt: now - 86400000,
-          updatedAt: now
-        }],
-        sessions,
-        artifactDocs: [{
-          id: 'ad_demo3', spaceId: 'sp_demo', title: '这周要做的事', kind: 'checklist',
-          currentVersion: 2,
-          versions: [
-            { version: 1, text: ['- [ ] 读完 Unit 3 精读', '- [ ] 整理生词 20 个', '- [ ] 写一段复述'].join(L), editedBy: 'user', at: now - 7200000, basedOn: null, userEditedParagraphs: [] },
-            { version: 2, text: ['- [x] 读完 Unit 3 精读', '- [ ] 整理生词 20 个', '- [ ] 写一段复述'].join(L), editedBy: 'user', at: now - 600000, basedOn: 1, userEditedParagraphs: [0] }
-          ],
-          sources: [],
-          createdAt: now - 7200000,
-          updatedAt: now - 600000
-        }],
-        artifactDocsLoaded: true
-      });
-      const filed = sessions.find((x) => x.spaceId);
-      if (filed) {
-        const cur = S().session;
-        window.__yanStore.setState({
-          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
-        });
-      }
-      S().openSpaceView('artifact');
-      await sleep(600);
-      return document.querySelector('[data-testid="space-art-checklist"]') ? 'ok' : 'no-checklist';
-    })()
-  `,
-  /*
-   * 跨资料研究（实施-25 P13）：成果页上的「来源已更新」提示 + 多来源对照。
-   * 为什么单开一个状态：对照视图是新增的多行区块，与 spaceartifact 的
-   * 「用于学习」面板叠在一起会互相挤压，看不出各自在常见尺寸下的真实形态。
-   * 引用状态与对照都是注入的（矩阵跑在真实数据目录上，不写 library.json）。
-   */
-  spaceresearch: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      const now = Date.now();
-      const L = String.fromCharCode(10);
-      const p = (a, b) => [a, b].join(L + L);
-      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
-      window.__yanStore.setState({
-        spaces: [{
-          id: 'sp_demo',
-          name: '英语学习',
-          description: '每天一小时，从精读开始',
-          archived: false,
-          createdAt: now - 86400000,
-          updatedAt: now
-        }],
-        sessions,
-        library: [
-          { id: 'lib_r1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
-          { id: 'lib_r2', spaceId: 'sp_demo', kind: 'web', title: '语法笔记：the outside room', createdAt: now - 3000000, updatedAt: now - 3000000 }
-        ],
-        artifactDocs: [{
-          id: 'ad_research', spaceId: 'sp_demo', title: 'outside room 到底指什么', kind: 'markdown',
-          currentVersion: 1,
-          versions: [{
-            version: 1,
-            text: p('奶奶把那片小花园叫「室外的房间」。', '两种读法不一样：一种说是亲密叫法，一种说指院子里真搭出来的那间屋。'),
-            editedBy: 'agent', at: now - 600000, basedOn: null, userEditedParagraphs: []
-          }],
-          sources: [{ sourceId: 'lib_r1', version: 1 }, { sourceId: 'lib_r2', version: 1 }],
-          createdAt: now - 600000,
-          updatedAt: now - 600000
-        }],
-        artifactDocsLoaded: true,
-        /* 正文由注入提供（真实取正文由 test:live -- artifact 覆盖） */
-        openLibraryRef: async () => ({
-          ok: true,
-          outcome: 'ok',
-          source: { id: 'lib_r1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
-          version: { sourceId: 'lib_r1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', fingerprint: 'fp-r1', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 8123, note: '已提取正文', at: now - 3600000 } },
-          text: [
-            'Unit 3 · Reading',
-            '',
-            'When I was a child, my grandmother kept a small garden behind the house.',
-            'She never called it a garden; she called it “the outside room”.'
-          ].join(String.fromCharCode(10)),
-          truncated: false
-        })
-      });
-      const filed = sessions.find((x) => x.spaceId);
-      if (filed) {
-        const cur = S().session;
-        window.__yanStore.setState({
-          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
-        });
-      }
-      S().openSpaceView('artifact');
-      await sleep(500);
-      document.querySelector('[data-testid="space-art-item-ad_research"]')?.click();
-      await sleep(600);
-      window.__yanStore.setState({
-        artifactSourceStatuses: [{
-          ref: { sourceId: 'lib_r1', version: 1 },
-          status: 'outdated',
-          latestVersion: 2,
-          title: '精读材料 · Unit 3.pdf',
-          note: '来源已更新到 v2，这条引用仍指着 v1'
-        }]
-      });
-      await sleep(600);
-      const changed = document.querySelector('[data-testid="space-art-source-changed"]');
-      return changed ? 'ok' : 'no-changed';
-    })()
-  `,
   usagepartial: `
     (async () => {
       try {
@@ -4370,7 +3975,7 @@ const STATES = {
       st.closeSettings();
       st.setRailPinned(true);
       /* 审查面板必须关掉：它优先于其它右栏视图，留着会把菜单遮在后面 */
-      st.closeReview?.();
+
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       await sleep(400);
@@ -4411,7 +4016,7 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
-      st.closeReview?.();
+
       window.__yanStore.setState({ rightPanelOpen: true });
       /* 菜单是开关：先确保关掉，再点开 */
       const btn = () => document.querySelector('[data-testid="session-project"]');
@@ -4434,61 +4039,13 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
     })()
   `,
   /* 非 Git 目录 · 审查面板：说清「没有改动可审查」，而不是给一个空的 diff */
-  reviewnotgit: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      window.__yanStore.setState({ rightPanelOpen: true });
-      const btn = document.querySelector('[data-testid="session-project"]');
-      if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click();
-      /* 上一条 review 可能已经把面板挂上了；先关再开，让快照重新拉一次 */
-      st.closeReview?.();
-      await sleep(200);
-      st.openReview({ kind: 'working' });
-      await sleep(600);
-      window.dispatchEvent(new Event('focus'));
-      await sleep(1000);
-      return document.querySelector('[data-testid="review-notgit"]') ? 'ok' : 'no-notgit';
-    })()
-  `,
-  reviewwrite: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      window.__yanStore.setState({ rightPanelOpen: true });
-      const btn = document.querySelector('[data-testid="session-project"]');
-      if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click();
-      await sleep(200);
-      st.openReview({ kind: 'working' });
-      await sleep(1400);
-      /* 填一句提交说明：空输入框看不出 placeholder 之外的东西，
-         而这一区要验的是「说明 + 已暂存数 + 主按钮文案」三者的排布 */
-      const ta = document.querySelector('[data-testid="commit-message"]');
-      if (ta) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-        setter.call(ta, 'feat: 给审查面板加上暂存与提交');
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-      await sleep(300);
-      return document.querySelector('[data-testid="commit-bar"]') ? 'ok' : 'no-commit';
-    })()
-  `,
-  /*
-   * 环境菜单的分支区（G2 §5.1）：分支列表 + 当前分支标记 + 新建分支输入框，
-   * 以及「拉取」「推送（↑1）」两项。这张图要能看出**哪些能点**：
-   * 当前分支的条目是灰的。
-   */
   envbranches: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
-      st.closeReview?.();
+
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       await sleep(300);
@@ -4522,7 +4079,7 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const st = window.__yanStore.getState();
       st.setRailPinned(true);
-      st.closeReview?.();
+
       await sleep(200);
       window.__yanStore.getState().openSettings('packages');
       await sleep(700);
@@ -4535,7 +4092,7 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
-      st.closeReview?.();
+
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       const button = document.querySelector('[data-testid="session-project"]');
@@ -4559,7 +4116,7 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
-      st.closeReview?.();
+
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       await sleep(300);
@@ -4609,7 +4166,7 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
-      st.closeReview?.();
+
       window.__yanStore.setState({ rightPanelOpen: false });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       st.injectComposerText([
@@ -4651,7 +4208,7 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
-      st.closeReview?.();
+
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       await sleep(300);
@@ -4675,65 +4232,13 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return document.querySelector('[data-testid="env-worktree-list"]') ? 'ok' : 'no-worktrees';
     })()
   `,
-  review: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      window.__yanStore.setState({ rightPanelOpen: true });
-      /* 上两个状态可能留着环境菜单（它是组件内部 state，不随 store 复位），
-         不关掉就会盖在审查面板上 —— 实测就这么截出过一张“菜单图”。 */
-      const btn = document.querySelector('[data-testid="session-project"]');
-      if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click();
-      await sleep(200);
-      st.openReview({ kind: 'working' });
-      /* 等清单 + 前几个文件的 patch（懒加载是两次 IPC 往返） */
-      await sleep(1200);
-      /* 标记第一个文件为已查看：进度条与已查看态都要进证据 */
-      document.querySelector('[data-testid="review-viewed"]')?.click();
-      await sleep(400);
-      return document.querySelector('[data-testid="review-diff"]') ? 'ok' : 'no-diff';
-    })()
-  `,
-  /*
-   * 实施-22 R1：文件目录收起后 diff 占满内层宽度。分隔条与「显示文件目录」按钮
-   * 是这一态要看的两个控件。
-   */
-  reviewside: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      window.__yanStore.setState({ rightPanelOpen: true });
-      const btn = document.querySelector('[data-testid="session-project"]');
-      if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click();
-      await sleep(200);
-      st.openReview({ kind: 'working' });
-      await sleep(1200);
-      localStorage.removeItem('yan.reviewSide');
-      document.querySelector('[data-testid="review-side-hide"]')?.click();
-      await sleep(400);
-      const hidden = !!document.querySelector('.review-body.side-hidden');
-      const tree = !!document.querySelector('[data-testid="review-tree"]');
-      return hidden && !tree ? 'ok' : 'not-hidden';
-    })()
-  `,
-  /*
-   * 子代理委派（2026-09-19）：输入区上方的显式入口 + 展开的任务面板。
-   *
-   * 这一态要验的是「能力能被发现」：按钮、面板、只读开关、说明与两个动作
-   * 都在一屏内 —— 不需要真起子进程（真链路证据在 live 的 `subagent` /
-   * `subagentmodel` 两个场景）。
-   */
   subagentnote: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
-      st.closeReview?.();
+
       const sessionId = st.session?.sessionId ?? 'session-note';
       const now = Date.now();
       const base = (over) => ({
@@ -4774,7 +4279,7 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
-      st.closeReview?.();
+
       const sessionId = st.session?.sessionId ?? 'session-note';
       const now = Date.now();
       const base = (over) => ({
@@ -4846,7 +4351,7 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
         workspaceMode: 'coding',
         inboxOpen: true,
         messages: [],
-        sessions: ['review', 'waiting', 'failed', 'running'].map((id, index) => ({
+        sessions: ['waiting', 'failed', 'running'].map((id, index) => ({
           id: 'inbox-' + id,
           path: 'C:/yan-matrix/inbox-' + id + '.jsonl',
           cwd: 'C:/proj/inkstone',
@@ -5088,13 +4593,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return 'ok';
     })()
   `,
-  reviewnotgit: `
-    (() => {
-      window.__yanStore.getState().closeReview?.();
-      return 'ok';
-    })()
-  `,
-  /* 菜单展开状态也要复位：后面的图不能让浮层挡着 */
   workmodemenu: `
     (() => {
       window.__yanStore.setState({ workMode: null });
@@ -5128,19 +4626,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
   railreorder: `
     (() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      return 'ok';
-    })()
-  `,
-  /*
-   * 终端图截完把 PTY 收掉：截图之后才跑清理，所以不影响那张图；
-   * 不收的话同一组里后面若还有别的状态会带着一个活的子进程，
-   * 且整组退出时也可能留下孤儿子壳。
-   */
-  terminal: `
-    (async () => {
-      const id = window.__yanStore.getState().activeTerminalId;
-      if (id) await window.yan.terminal.kill(id).catch(() => false);
-      window.__yanStore.setState({ terminals: [], activeTerminalId: null });
       return 'ok';
     })()
   `,
@@ -5179,6 +4664,10 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
  * 同时统计关键元素是否真的在视口里（截图一片空白时能立刻看出来）。
  */
 const MUST_HAVE = {
+  huboverview: ['[data-testid="agent-workspace"]', '.agent-run-tabs', '.hub-terminal .xterm'],
+  hubsplit: ['.agent-run-list', '.hub-terminal .xterm'],
+  hubfallback: ['.hub-terminal .xterm', '.hub-terminal .xterm-accessibility-tree'],
+  hubcreate: ['[data-testid="agent-workspace"]', '.agent-create'],
   /* 2026-09-27 新增：左栏「最近」区 / 项目「移除」确认框。 */
   railrecent: ['[data-testid="rail-recent"]'],
   projectremove: ['[data-testid="rail-remove-project-confirm"]'],
@@ -5213,38 +4702,6 @@ const MUST_HAVE = {
     '[data-testid="space-lib-join"]'
   ],
   /* 成果页（实施-25 P06a/P06b）：列表 + 编辑器 + 版本历史 + 「你改过几段」+ 导出 + 来源回原文 */
-  spaceartifact: [
-    '[data-testid="space-artifact"]',
-    '[data-testid="space-art-list"]',
-    '[data-testid="space-art-item-ad_demo1"]',
-    '[data-testid="space-art-item-ad_demo2"]',
-    '[data-testid="space-art-editor"]',
-    '[data-testid="space-art-title"]',
-    '[data-testid="space-art-body"]',
-    '[data-testid="space-art-versions"]',
-    '[data-testid="space-art-version-3"]',
-    '[data-testid="space-art-useredited"]',
-    '[data-testid="space-art-export"]',
-    '[data-testid="space-art-sources"]',
-    '[data-testid="space-art-source-0"]',
-    '[data-testid="space-art-source-preview"]',
-    '[data-testid="space-art-source-text"]',
-    /* T06b-4：成果「用于学习」 */
-    '[data-testid="space-art-tolearn"]',
-    '[data-testid="space-art-tolearn-panel"]',
-    '[data-testid="space-art-tolearn-goal"]',
-    '[data-testid="space-art-tolearn-go"]'
-  ],
-  /* 清单成果（实施-25 P06b）：勾选列表 + 类型标识 */
-  spacechecklist: [
-    '[data-testid="space-artifact"]',
-    '[data-testid="space-art-checklist"]',
-    '[data-testid="space-art-check-0"]',
-    '[data-testid="space-art-check-1"]',
-    '[data-testid="space-art-check-2"]',
-    '[data-testid="space-art-kind"]'
-  ],
-  /* 活动档案菜单（实施-25 P01）：按钮 + 浮层 + 当前项 */
   agentprofilemenu: [
     '[data-testid="agent-profile-button"]',
     '[data-testid="agent-profile-menu"]',
@@ -5253,14 +4710,6 @@ const MUST_HAVE = {
   /* 主界面（注意：fixture 里会话是「流式中」，所以这里不会出现「用时」——
      用时的视觉证据在 usageelapsed 状态里） */
   main: ['.rail', '.stream', '.composer, [data-testid="composer"]'],
-  rightwindows: [
-    '[data-testid="right-window-tabs"]',
-    '[data-testid="right-window-tab-tools"]',
-    '[data-testid="right-window-tab-browser"]',
-    '[data-testid="right-window-tab-file"]',
-    '[data-testid="review-tab"]',
-    '[data-testid="review-panel"]'
-  ],
   artifact: ['.stream', '[data-testid="turn-artifacts"]', '[data-artifact-id="matrix-artifact-svg"]', '.artifact-image', '.artifact-download'],
   imageprogress: ['.stream', '[data-testid="image-progress-list"]', '.image-progress[data-stage="generating"]', '.image-progress-track'],
   /* 自主模式：数据属性是探针/检查的钩子，光带本身在现场看（§4.2） */
@@ -5284,7 +4733,7 @@ const MUST_HAVE = {
     '[data-testid="kn-export-copy"]'
   ],
   nativecontextsettings: ['.settings', '[data-testid="ctx-native-settings"]'],
-  nativecontext: ['[data-testid="rp-context"]', '[data-testid="ctx-native-owner"]', '[data-testid="ctx-compacting-reason"]', '[data-testid="ctx-last-compaction"]', '[data-testid="rp-context-actions"] [role="switch"]'],
+  nativecontext: ['[data-testid="rp-context"]', '[data-testid="ctx-compacting-reason"]', '[data-testid="ctx-last-compaction"]', '[data-testid="rp-context-actions"] [role="switch"]'],
   ctxsettings: ['.settings', '[data-testid="ctx-native-settings"]'],
   ctxmodelpresets: ['.settings', '[data-testid="ctx-model-presets"]', '[data-testid="ctx-model-large-balanced"]', '[data-testid="ctx-model-large-long"]'],
   turntime: ['.stream', '[data-testid="turn-footer"]', '.turn-time'],
@@ -5371,26 +4820,7 @@ const MUST_HAVE = {
     /* 实施-07 S2：「这个会话从哪来」必须画得出来，缺了这张图就没意义 */
     '[data-testid="env-worktree-origin"]'
   ],
-  reviewwrite: [
-    '[data-testid="review-panel"]',
-    '[data-testid="review-stage"], [data-testid="review-unstage"]',
-    '[data-testid="commit-bar"]',
-    '[data-testid="commit-message"]',
-    '[data-testid="commit-submit"]'
-  ],
-  /* 非 Git 目录：两张图各自的关键元素（菜单走了 env-notgit 分支 / 面板说了原因） */
   envnotgit: ['[data-testid="env-menu"]', '[data-testid="env-notgit"]', '.env-sub'],
-  reviewnotgit: ['[data-testid="review-panel"]', '[data-testid="review-notgit"]', '[data-testid="review-scope"]'],
-  review: [
-    '[data-testid="review-panel"]',
-    '[data-testid="review-tab"]',
-    '[data-testid="review-scope"]',
-    '[data-testid="review-stats"]',
-    '[data-testid="review-diff"]',
-    '[data-testid="review-tree"]',
-    '[data-testid="review-progress"]',
-    '[data-testid="review-viewed"]'
-  ],
   compaction: [
     '[data-testid="rp-context"]',
     '[data-testid="ctx-compacting-reason"]',
@@ -5604,56 +5034,10 @@ const AFTER_STATE = {
     })()
   `,
   /* 成果页：关视图 + 清掉注入的成果夹具（含临时换过的取正文） */
-  spaceartifact: `
-    (() => {
-      const S = () => window.__yanStore.getState();
-      S().closeSpaceView();
-      window.__yanStore.setState({
-        spaces: [],
-        library: [],
-        artifactDocs: [],
-        artifactDocsLoaded: false,
-        openLibraryRef: async (ref, maxChars) =>
-          window.yan.library.open(ref, maxChars !== undefined ? { maxChars } : undefined),
-        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
-      });
-      return 'ok';
-    })()
-  `,
-  /* 清单页：同上 */
-  spacechecklist: `
-    (() => {
-      const S = () => window.__yanStore.getState();
-      S().closeSpaceView();
-      window.__yanStore.setState({
-        spaces: [],
-        artifactDocs: [],
-        artifactDocsLoaded: false,
-        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
-      });
-      return 'ok';
-    })()
-  `,
-  /* 活动档案菜单：关浮层 + 清掉注入的档案，后面的图不带着它 */
   agentprofilemenu: `
     (() => {
       window.__yanStore.setState({ agentProfile: null });
       document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      return 'ok';
-    })()
-  `,
-  rightwindows: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const click = (selector) => document.querySelector(selector)?.click();
-      click('[data-testid="review-tab"] .review-tab-close');
-      await sleep(180);
-      click('[data-testid="right-window-tab-browser"] .review-tab-close');
-      await sleep(220);
-      click('[data-testid="right-window-tab-file"] .review-tab-close');
-      await sleep(220);
-      click('[data-testid="right-window-tab-tools"]');
-      await sleep(180);
       return 'ok';
     })()
   `,
@@ -5717,13 +5101,6 @@ const AFTER_STATE = {
       return 'ok';
     })()
   `,
-  reviewnotgit: `
-    (() => {
-      window.__yanStore.getState().closeReview?.();
-      return 'ok';
-    })()
-  `,
-  /* 菜单展开状态也要复位：后面的图不能让浮层挡着 */
   workmodemenu: `
     (() => {
       window.__yanStore.setState({ workMode: null });
@@ -5849,16 +5226,33 @@ const probeGeometry = (selectors) => `
 
 /** 只跑某些状态（调脚本时用）：`YAN_MATRIX_ONLY=modelmenu` */
 const ONLY = (process.env.YAN_MATRIX_ONLY ?? '').split(',').filter(Boolean)
+if (ONLY.includes('uifinish')) {
+  STATES.uifinish = readFileSync(join(root, 'scripts/probe/ui-finish.js'), 'utf8')
+  MUST_HAVE.uifinish = ['[data-testid="tile-workspace"]', '[data-testid="turn-copy"]', '[data-testid="fs-tree"]', '.ui-step-slider']
+  for (const group of GROUPS) group.states.push('uifinish')
+}
+if (ONLY.includes('workspace')) {
+  STATES.workspace = readFileSync(join(root, 'scripts/probe/workspace-tiles.js'), 'utf8')
+  MUST_HAVE.workspace = ['[data-testid="tile-workspace"]', '[data-workspace-pane="chat"] .composer-wrap', '.tile-heading']
+  for (const group of GROUPS) group.states.push('workspace')
+  GROUPS.push({ w: 2560, h: 1380, scale: 1, theme: 'dark', states: ['workspace'] })
+}
+if (ONLY.includes('codemode')) for (const group of GROUPS) group.states.push('codemode')
+if (ONLY.includes('codemodepreference')) {
+  MUST_HAVE.codemodepreference = ['.settings', '[data-testid="cap-codemode"][role="switch"][aria-checked="true"]'];
+  for (const group of GROUPS.slice(0, 3)) group.states.push('codemodepreference');
+}
 
 /* 这些状态检查工具工作页；每张图开始前都回到同一个工具表面。 */
 const TOOL_PANEL_STATES = new Set([
+  'huboverview', 'hubcreate', 'hubsplit', 'hubfallback',
   'nativecontext',
   'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'wschanges', 'wsunknown',
   'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'envlinks', 'sourcesearch',
-  'extdiag', 'taskhost', 'subagentnote', 'subagentfailed', 'rightresources',
-  'compactionreclaim', 'ctxpreset', 'ctxincompressible', 'quotatone'
+  'extdiag', 'taskhost', 'subagentnote', 'subagentfailed', 'compactionreclaim', 'ctxpreset', 'ctxincompressible', 'quotatone'
 ])
 const RESET_MESSAGE_STATES = new Set([
+  'codemode',
   'segmented', 'artifact', 'imageprogress', 'toolgroup', 'toolterm', 'taskcard', 'turnfooter',
   'turntime', 'filelink', 'turnstatus', 'usageturn', 'usageagg', 'usagepartial'
 ])
@@ -5875,6 +5269,7 @@ const RESET_SESSION_STATES = new Set(['autonomousrunning', 'forkdraft', 'railmin
 const GROUP_ONLY = (process.env.YAN_MATRIX_GROUP ?? '')
   .split(',')
   .filter(Boolean)
+if (GROUP_ONLY.includes('workspacewide')) GROUP_ONLY.push(String(GROUPS.findIndex(g => g.w === 2560 && g.states.includes('workspace'))))
 /* 引导组也算一组（用名字）：`YAN_MATRIX_GROUP=onboarding` */
 const WANT_ONBOARDING = GROUP_ONLY.length === 0 || GROUP_ONLY.includes('onboarding')
 
@@ -5925,6 +5320,16 @@ async function main() {
     const message = String(event?.message ?? '')
     if (level >= 2) console.log('  [renderer] ' + message)
   })
+  if (ONLY.includes('workspace')) {
+    const view = new WebContentsView({ webPreferences: { sandbox: true, backgroundThrottling: false } })
+    win.contentView.addChildView(view)
+    view.setVisible(false)
+    const metrics = { visible: false, bounds: {}, changes: 0 }
+    await view.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<body style="margin:0;padding:24px;background:#171717;color:#ecece8;font:15px system-ui"><h2>Browser · 本机验证页面</h2><p>这是实际 WebContentsView。</p><p>用于检查磁贴移动、坐标和菜单遮挡。</p><input placeholder="网页焦点与输入" style="padding:8px"><p>没有连接外部网站或用户账号。</p></body>'))
+    ipcMain.handle('yan:browser:setBounds', (_e, r) => { const bounds = { x: Math.round(r.x), y: Math.round(r.y), width: Math.max(0, Math.round(r.width)), height: Math.max(0, Math.round(r.height)) }; view.setBounds(bounds); metrics.bounds = bounds; metrics.changes++; return { ok: true } })
+    ipcMain.handle('yan:browser:setVisible', (_e, visible) => { view.setVisible(visible); metrics.visible = visible; return { ok: true } })
+    ipcMain.handle('yan:browser:getState', () => ({ open: true, url: 'about:blank', title: '本机验证页面', __metrics: metrics }))
+  }
   await win.loadFile(join(root, 'out/renderer/index.html'))
   await win.webContents.executeJavaScript(`
     try {
@@ -6117,7 +5522,7 @@ async function main() {
           (async () => {
             const st = window.__yanStore.getState();
             st.closeSettings();
-            st.closeReview?.();
+
             const browser = st.browserState;
             window.__yanStore.setState({
               rightPanelOpen: true,
@@ -6154,10 +5559,10 @@ async function main() {
         await wait(1100)
       }
       /*
-       * 窗口被遮挡 / 隐藏时 Chromium 会跳过 View Transition，主题动画类状态
-       * 必须在可见窗口里跑，否则截到的是「瞬时换肤」的终态。
+       * 窗口被遮挡 / 隐藏时 Chromium 会跳过 View Transition 并暂停动画帧；
+       * 主题动画和滑块亮波检查必须在可见窗口里跑。
        */
-      if (state.startsWith('themetransition') && !win.isVisible()) {
+      if ((state.startsWith('themetransition') || state === 'uifinish' || state === 'workspace') && !win.isVisible()) {
         win.showInactive()
         await wait(220)
       }
@@ -6267,6 +5672,11 @@ async function main() {
     console.log(
       `预期内：截图脚本未注册 ${noise.names.length} 个数据型 IPC，Electron 报了 ${noise.total} 条「No handler registered」，已静音`
     )
+  }
+  if (ONLY.includes('workspace') && process.env.YAN_MATRIX_HOLD === '1') {
+    win.setTitle('Inkstone · Workspace validation')
+    console.log('  保留隔离验收窗口 60 秒供原生截图检查')
+    await wait(60_000)
   }
   app.exit(failures.length === 0 && Math.abs(cnWidth - 15) < 0.01 ? 0 : 1)
 }
