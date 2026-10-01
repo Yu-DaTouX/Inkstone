@@ -15,17 +15,22 @@
   <a href="https://github.com/Yu-DaTouX/Inkstone/issues">反馈</a> ·
   <a href="README_EN.md">English</a>
 </p>
-<p align="center"><sub>Windows · 多模型接入 · 深浅主题 · MIT 开源</sub></p>
+<p align="center">
+  <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><img src="https://img.shields.io/github/v/release/Yu-DaTouX/Inkstone?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC" alt="最新版本"></a>
+  <img src="https://img.shields.io/badge/Windows-x64-0078D4" alt="Windows x64">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"></a>
+</p>
+<p align="center"><sub>Windows · 多模型接入 · 磁贴工作区 · 深浅主题 · MIT 开源</sub></p>
 
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-light.png">
-  <img src="docs/assets/inkstone/workspace-light.png" alt="Inkstone 工作空间：左侧组织会话，中间阅读与输入，右侧打开浏览器、文件和终端。" width="1280">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-tiles-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-tiles-light.png">
+  <img src="docs/assets/inkstone/workspace-tiles-light.png" alt="Inkstone 工作空间：左侧按项目组织会话，中间是主会话，右侧并排打开文件预览与子 Agent 运行结果。" width="1280">
 </picture>
 
-<p align="center"><sub>开发分支界面预览 · 演示配置：GPT-6 Astra Max · 会话与工具结果为演示数据</sub></p>
+<p align="center"><sub>v0.6 界面 · 左侧会话、中间主会话、右侧文件与子 Agent 磁贴 · 会话、文件与运行结果均为合成演示数据</sub></p>
 
 ## 从一个想法，到一份作品
 
@@ -39,16 +44,18 @@
 | --- | --- |
 | **把思路说清楚** | 流式对话、图片输入、`@` 文件引用、`/` 命令；推理和工具过程可展开查看。 |
 | **围绕项目推进** | 项目分组、会话搜索、分支与队列；切换会话时，已经运行的任务可以继续在后台执行。 |
-| **查看过程与产出** | 文件预览、交互终端、内置浏览器和本机 Chrome 接入。 |
+| **查看过程与产出** | 文件预览、交互终端、内置浏览器和本机 Chrome 接入；联网搜索可用 Bing、360、DuckDuckGo 等网页搜索，也可配置 Brave 搜索 API。 |
+| **自由摆放工作区** | 主会话、文件、浏览器、终端、任务、日志和 Agent 都是磁贴：可拖动、分组或拆分、调尺寸、放大与收起，布局按会话记住。 |
 | **让任务有进展可循** | 目标与计划、任务清单，以及 Agent 原生上下文、用量和运行信息。 |
-| **让多个 Agent 协作** | 统一 Agent 工作区汇总子 pi 与外部 CLI 运行，按标签查看过程、终端和成果；多 Agent 工作台仍在开发中。 |
+| **让多个 Agent 协作** | 统一 Agent 工作区汇总子 pi 与外部 CLI 运行，子 Agent 的过程与结果用和主会话相同的方式呈现；多 Agent 工作台仍在开发中。 |
+| **让 Agent 组合调用工具** | 默认启用 pi Codemode，Agent 可以用脚本批量调用工具并整理结果；嵌套调用按树状展示，高危操作仍需确认。可在设置中关闭。 |
 | **选择合适的模型** | 接入模型服务、切换模型与思考档位，在同一套界面中工作。 |
-| **按自己的习惯使用** | 深浅主题、中英界面、可调栏宽与缩放，以及可整理的工具区。 |
+| **按自己的习惯使用** | 深浅主题、中英界面、可调栏宽与缩放。 |
 | **围绕主题积累** | 主题空间按主题（而不是项目目录）归类会话；导入的资料可作来源引用，也能交给导师带你学。 |
 | **跟着导师学** | 在对话里说想学什么，导师一步步讲解、出题并等你作答，答错先给提示；讲法与出题做法写在随包技能里。 |
 | **看清会话的分支** | 会话地图按工作区分泳道；展开一个会话能看到一轮一轮的问答，也能从某一轮分叉出新的会话。 |
 
-标题栏可以切换**编码模式**与**日常模式**：前者以项目和文件为中心，后者把会话、资料与学习按主题组织。
+在 **设置 → 工作区 → 界面形态** 中可以切换**编码**与**日常**：前者以项目和文件为中心，后者把会话、资料与学习按主题组织。
 
 上下文由 Agent 原生管理。砚把运行过程、用量和工具结果呈现为界面，压缩操作直接调用 pi；资料由你主动发送，或由 Agent 按自己的规则读取。技术边界见[架构简介](docs/ARCHITECTURE.md)。
 
@@ -68,9 +75,9 @@ Inkstone 的界面围绕“墨色工作空间”设计：
 
 ### 下载 Windows 版本
 
-前往 [Releases](https://github.com/Yu-DaTouX/Inkstone/releases)，按发布说明选择安装版、单文件便携版或 ZIP 版。ZIP 版解压后运行 `砚.exe`；发行包包含 pi 运行时，无需单独安装 pi。
+前往 [最新发行版](https://github.com/Yu-DaTouX/Inkstone/releases/latest)，按发布说明选择安装版、单文件便携版或 ZIP 版。ZIP 版解压后运行 `砚.exe`；发行包包含 pi 运行时，无需单独安装 pi。安装版支持应用内自动更新。
 
-**发行包与开发分支可能不同步。** 本页功能介绍和截图面向开发分支，具体发行版内容以对应发布说明为准。
+本页介绍与截图跟随 `main` 分支；某个发行包包含哪些功能，以对应的发布说明为准。
 
 ### 接入模型，开始第一项工作
 
@@ -80,7 +87,7 @@ Inkstone 的界面围绕“墨色工作空间”设计：
 
 常用操作、数据备份与安装说明见[使用指南](docs/GETTING_STARTED.md)。
 
-Android 手机接入的 Tailscale 安装、二维码配对与语音输入说明见[手机接入说明](docs/MOBILE_ACCESS.md)。此功能需要包含「设置 → 设备连接 → 手机接入」入口的桌面版本；旧发行包可能尚未包含。
+Android 手机可以经 Tailscale 扫码配对，查看电脑上的会话、回答提问、发消息和语音输入，任务仍在电脑上执行。入口在桌面端 **设置 → 设备连接 → 手机**；手机应用目前仍在测试，尚无公开 Android 安装包，说明见[手机接入说明](docs/MOBILE_ACCESS.md)。
 
 两台运行 Inkstone 的电脑可以互相连接，按「本次连接」授权查看、复制会话与成果，见[砚互联说明](docs/PEER_ACCESS.md)。
 
