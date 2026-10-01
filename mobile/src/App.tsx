@@ -170,7 +170,11 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar barStyle={scheme === 'light' ? 'dark-content' : 'light-content'} backgroundColor={p.bg1} />
       <SafeAreaView style={{ flex: 1, backgroundColor: p.bg1 }}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={frame.y} style={{ flex: 1 }}>
+        {/*
+          * Android 不包 KAV：AndroidManifest 已设 windowSoftInputMode="adjustResize"，系统自己收缩窗口。
+          * height 模式会把高度锁在首次测量值上，旋转或折叠展开后不重新收缩，底部输入框被推到屏幕外。
+          */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={frame.y} style={{ flex: 1 }}>
         <View ref={frameRef} collapsable={false} onLayout={() => frameRef.current?.measureInWindow((x, y, measuredWidth, height) => setFrame({ x, y, width: measuredWidth, height }))} style={{ flex: 1 }}>
         {connection === undefined ? null : connection === null || pairingPrefill ? (
           localRoute !== 'welcome' && !pairingPrefill ? (
