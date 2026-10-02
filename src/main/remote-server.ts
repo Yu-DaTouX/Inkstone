@@ -107,7 +107,18 @@ export interface RemoteServerOptions {
   /** 砚对砚：本次连接授权与开放数据；不提供时 peer 设备什么也访问不了 */
   peers?: { grants: PeerGrantRegistry; handlers: PeerHostHandlers }
   onLog?: (text: string, level?: 'info' | 'error') => void
+  /**
+   * 中继隧道专用实例的标记：请求头 x-yan-relay 等于它，说明请求来自本机中继桥（见 relay-bridge/）。
+   * 只有这样的请求能配对出 agent（礁石）身份。直连实例不设置。
+   */
+  relayToken?: string
 }
+
+/**
+ * agent（礁石）可以用的 Agent Hub 命令：查看、派活、答复提问、停止。验收、终端输入等仍只在电脑或手机上。
+ * Hub 内部按 `phone:<设备 id>` 记录操作者（与手机同一权限层级），范围由这里的白名单收窄。
+ */
+export const AGENT_HUB_ACTIONS: ReadonlySet<string> = new Set(['create', 'cancel', 'answer', 'inspect'])
 
 export interface RemoteServerInfo {
   host: string
@@ -489,6 +500,13 @@ export class RemoteServer {
      * 砚对砚：peer 令牌只能走 /remote/v1/peer/*（外加 health / info），
      * 手机路由对它一律拒绝；反过来手机令牌也不能冒充 peer。
      */
+    /* 礁石（agent）只能看信息与 Agent Hub；其余手机接口一律拒绝。 */
+    if (caller.device?.kind === 'agent') {
+      const allowed = (req.method === 'GET' && (url.pathname === '/remote/v1/info' || url.pathname === '/remote/v1/hub' || url.pathname === '/remote/v1/hub/attention'))
+        || (req.method === 'POST' && url.pathname === '/remote/v1/hub')
+      if (!allowed) return writeError(res, 403, '礁石只能使用 Agent Hub 的查看、派活、答复与停止', 'agent_scope')
+    }
+
     const isPeer = caller.device?.kind === 'peer'
     if (url.pathname.startsWith('/remote/v1/peer/')) {
       if (!isPeer || !caller.device) return writeError(res, 403, '只有配对为「另一台砚」的设备可以使用这个接口', 'peer_only')
@@ -545,6 +563,7 @@ export class RemoteServer {
         const body = await this.readJson(req)
         const actions = ['create', 'cancel', 'accept', 'answer', 'claim-input', 'input', 'resize', 'resume', 'inspect', 'save-template', 'delete-template', 'send-packet']
         if (!actions.includes(String(body.action))) return writeError(res, 400, 'Agent Hub 操作无效')
+        if (caller.device?.kind === 'agent' && !AGENT_HUB_ACTIONS.has(String(body.action))) return writeError(res, 403, '礁石不能执行这个 Agent Hub 操作（验收、终端输入等请在电脑或手机上处理）', 'agent_scope')
         const command = body as unknown as HubCommand
         const handler = this.options.handlers.hubCommand
         await this.idempotent(req, res, caller, true, () => handler(command, `phone:${caller.device!.id}`)); return
@@ -852,6 +871,15 @@ export class RemoteServer {
     }
     this.pairAttempts.push(now)
     const body = await this.readJson(req)
+    /* agent 身份只能经中继隧道、且隧道按中继配对用途标明 agent 时配对；直连请求声称 agent 一律拒绝。 */
+    if (body.kind === 'agent') {
+      const relayed = !!this.options.relayToken && typeof req.headers['x-yan-relay'] === 'string' &&
+        constantTimeEqual(this.options.relayToken, req.headers['x-yan-relay']) && req.headers['x-yan-relay-kind'] === 'agent'
+      if (!relayed) {
+        writeError(res, 403, '礁石只能经中继配对', 'agent_relay_only')
+        return
+      }
+    }
     const result = await this.options.devices.pair(body.code, body.deviceName, body.kind)
     if (!result.ok) {
       const message = {

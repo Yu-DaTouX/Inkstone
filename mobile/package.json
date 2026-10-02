@@ -11,8 +11,12 @@
     "build:apk": "node scripts/sync-brand.mjs && node scripts/sync-terminal.mjs && npm run icons:launcher && cd android && gradlew.bat assembleRelease"
   },
   "dependencies": {
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
     "react": "19.1.0",
     "react-native": "0.81.0",
+    "react-native-get-random-values": "^2.0.0",
     "react-native-keychain": "^10.0.0",
     "react-native-safe-area-context": "^5.6.0",
     "react-native-svg": "^15.12.1",

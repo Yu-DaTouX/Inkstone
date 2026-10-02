@@ -37,6 +37,7 @@
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="inkstone" android:host="pair" />
             <data android:scheme="inkstone" android:host="hub" />
+            <data android:scheme="inkstone" android:host="relay" />
         </intent-filter>
       </activity>
       <service

@@ -1,12 +1,17 @@
 import { normalizeBaseUrl } from './api/client'
+import { parseRelayLink, type RelayPairing } from './api/relay'
 
 export interface PairingPrefill {
   address: string
   code: string
+  /** 经中继配对（不用 Tailscale）：扫的是电脑「中继接入」生成的二维码 */
+  relay?: RelayPairing
 }
 
 /** The QR carries only the temporary address and six-digit pairing code, never a device token. */
 export function parsePairingLink(url: string): PairingPrefill | null {
+  const relay = parseRelayLink(url)
+  if (relay) return { address: `经中继连接 ${relay.computerName}`, code: relay.code, relay }
   const match = /^inkstone:\/\/pair\?([^#]+)$/i.exec(url)
   if (!match) return null
   const query = new Map<string, string>()

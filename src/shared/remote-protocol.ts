@@ -49,8 +49,9 @@ export interface RemotePairRequest {
   /**
    * 设备类型：缺省 phone（自己的手机，配对即可访问）；
    * peer 是另一台砚，配对只建立身份，每次连接另需所有者批准（见 peer-protocol.ts）。
+   * agent 是礁石（个人 Agent），只能经中继隧道配对，只能使用 Agent Hub 的查看、派活、答复与停止。
    */
-  kind?: 'phone' | 'peer'
+  kind?: 'phone' | 'peer' | 'agent'
 }
 
 export interface RemotePairResponse {
@@ -79,7 +80,7 @@ export interface RemoteDeviceSummary {
   id: string
   name: string
   /** 缺省（旧记录）按 phone 处理 */
-  kind?: 'phone' | 'peer'
+  kind?: 'phone' | 'peer' | 'agent'
   createdAt: number
   lastSeenAt: number | null
 }
@@ -102,6 +103,35 @@ export interface RemoteAccessStatus {
   /** 当前有效的砚对砚连接授权（本次连接，断开即失效） */
   grants: import('./peer-protocol').PeerGrantView[]
   error: string | null
+  /** 中继接入（不用 Tailscale）；见 RemoteRelaySettings */
+  relay?: RemoteRelayStatus
+}
+
+/** 中继接入：砚主动连上中继，手机与礁石经端到端加密隧道连进来，不需要 Tailscale 或开放端口。 */
+export interface RemoteRelaySettings {
+  enabled: boolean
+  /** 中继地址，如 https://reef-relay.example.workers.dev（礁石项目的 Cloudflare 中继，可自行部署） */
+  url: string
+}
+
+export interface RemoteRelayClient {
+  id: string
+  name: string
+  kind: 'phone' | 'agent'
+  addedAt: number
+  lastSeenAt: number | null
+  revokedAt: number | null
+  online: boolean
+}
+
+export interface RemoteRelayStatus {
+  enabled: boolean
+  url: string
+  connected: boolean
+  detail: string | null
+  clients: RemoteRelayClient[]
+  /** 最近一次生成的中继配对链接（只在内存里，过期即清除） */
+  pairing: { kind: 'phone' | 'agent'; link: string; expiresAt: number } | null
 }
 
 export interface RemoteAccessSettings {
@@ -109,6 +139,8 @@ export interface RemoteAccessSettings {
   /** 监听地址：'tailscale' 自动取 Tailscale IP；'loopback' 只在本机；也可填具体 IP */
   bind: 'tailscale' | 'loopback' | string
   port: number
+  /** 中继接入（可与直连同时开启） */
+  relay?: RemoteRelaySettings
 }
 
 export const DEFAULT_REMOTE_ACCESS_SETTINGS: RemoteAccessSettings = {

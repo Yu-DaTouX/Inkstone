@@ -8,6 +8,7 @@ import {
   type RemoteAccessStatus
 } from '../../../../shared/remote-protocol'
 import { useStore } from '../../state/store'
+import { RelaySection } from './RelaySection'
 
 type BindChoice = 'tailscale' | 'loopback' | 'custom'
 const WINDOWS_TAILSCALE_URL = 'https://tailscale.com/download/windows'
@@ -191,6 +192,7 @@ export function RemoteTab() {
                 <div className="remote-device-main">
                   <span className="remote-device-name">{device.name}</span>
                   {device.kind === 'peer' ? <Badge tone="accent">{t('remote.kindPeer')}</Badge> : null}
+                  {device.kind === 'agent' ? <Badge tone="accent">{t('remote.kindAgent')}</Badge> : null}
                   <span className="ui-row-desc">
                     {t('remote.pairedAt', { time: formatTime(device.createdAt, '—') })} ·{' '}
                     {t('remote.lastSeen', { time: formatTime(device.lastSeenAt, t('remote.never')) })}
@@ -215,6 +217,7 @@ export function RemoteTab() {
           </ul>
         )}
       </div>
+      <RelaySection draft={draft} status={status} busy={busy} configure={configure} run={run} />
       <Disclosure title={t('remote.networkSettings')}>      <SettingRow name={t('remote.bind')} desc={t('remote.bindDesc')}>
           <Segmented<BindChoice>
             value={choice}

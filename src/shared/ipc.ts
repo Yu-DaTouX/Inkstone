@@ -3587,6 +3587,11 @@ export interface YanBridge {
     cancelPairing(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     revoke(deviceId: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     forget(deviceId: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    /** 中继接入：为手机（phone）或礁石（agent）生成配对链接 */
+    relayPair(kind: 'phone' | 'agent'): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    relayCancel(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    relayRevoke(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    relayForget(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
   }
 
   /**

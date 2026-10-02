@@ -18,6 +18,8 @@ import {
   type RemoteAccessStatus
 } from '../shared/remote-protocol'
 import { RemoteDeviceStore } from './remote-devices'
+import { randomBytes } from 'node:crypto'
+import { RelayBridge } from './relay-bridge'
 import { RemoteServer, type PeerHostHandlers, type RemoteServerHandlers } from './remote-server'
 import type { PeerGrantRegistry } from './peer-grants'
 
@@ -74,6 +76,14 @@ export class RemoteAccess {
   private lastError: string | null = null
   /** 串行化启停：连续切换开关时不会同时起两个监听 */
   private applying: Promise<void> = Promise.resolve()
+  /**
+   * 中继接入：中继桥 + 只给它用的本机远程服务实例（127.0.0.1 随机端口）。
+   * 与直连服务共用设备表与处理逻辑，所以不管直连开没开、绑在哪个地址，中继都能用。
+   */
+  readonly relay: RelayBridge
+  private relayServer: RemoteServer | null = null
+  private relayToken = ''
+  private relayPairing: { kind: 'phone' | 'agent'; link: string; expiresAt: number } | null = null
 
   constructor(
     dataDir: string,
@@ -83,6 +93,11 @@ export class RemoteAccess {
     private readonly peers?: { grants: PeerGrantRegistry; handlers: PeerHostHandlers }
   ) {
     this.devices = new RemoteDeviceStore(dataDir)
+    this.relay = new RelayBridge(dataDir, {
+      target: () => (this.relayServer?.running ? { host: '127.0.0.1', port: this.relayServer.info.port, relayToken: this.relayToken } : null),
+      startYanPairing: () => this.devices.startPairing(),
+      log: this.log
+    })
   }
 
   private envOverride(): { host: string; port: number; token?: string } | null {
@@ -106,6 +121,7 @@ export class RemoteAccess {
   }
 
   private async applyNow(): Promise<void> {
+    await this.applyRelay()
     const env = this.envOverride()
     const wanted = env ?? (this.settings.enabled ? { host: await resolveBindHost(this.settings.bind), port: this.settings.port } : null)
     if (wanted && !wanted.host) {
@@ -132,6 +148,50 @@ export class RemoteAccess {
     if (env && server.info.token) this.log(`旧版单令牌模式：token=${server.info.token}`)
   }
 
+  /** 按设置启停中继桥与它专用的本机服务实例。 */
+  private async applyRelay(): Promise<void> {
+    const relay = this.settings.relay
+    if (relay?.enabled && relay.url.trim()) {
+      if (!this.relayServer) {
+        this.relayToken = randomBytes(24).toString('base64url')
+        const server = new RemoteServer({
+          host: '127.0.0.1',
+          port: 0,
+          devices: this.devices,
+          handlers: this.handlers,
+          relayToken: this.relayToken,
+          onLog: this.log
+        })
+        await server.start()
+        this.relayServer = server
+      }
+    } else if (this.relayServer) {
+      const server = this.relayServer
+      this.relayServer = null
+      await server.stop().catch(() => undefined)
+    }
+    await this.relay.apply(relay)
+  }
+
+  /** 生成中继配对链接：phone（砚手机端）或 agent（礁石）。同时生成砚 6 位配对码一并写入。 */
+  async relayPair(kind: 'phone' | 'agent'): Promise<void> {
+    const { link, expiresAt } = await this.relay.pairLink(kind)
+    this.relayPairing = { kind, link, expiresAt }
+  }
+
+  cancelRelayPairing(): void {
+    this.relayPairing = null
+    this.devices.cancelPairing()
+  }
+
+  async relayRevoke(id: string): Promise<boolean> {
+    return this.relay.revoke(id)
+  }
+
+  relayForget(id: string): Promise<boolean> {
+    return this.relay.forget(id)
+  }
+
   private async stopServer(): Promise<void> {
     const server = this.server
     this.server = null
@@ -150,12 +210,17 @@ export class RemoteAccess {
     this.server?.disconnectConnection(connectionId)
   }
 
-  stop(): Promise<void> {
+  async stop(): Promise<void> {
+    this.relay.stop()
+    const relayServer = this.relayServer
+    this.relayServer = null
+    await relayServer?.stop().catch(() => undefined)
     return this.stopServer()
   }
 
   publish(message: MainPush): void {
     this.server?.publish(message)
+    this.relayServer?.publish(message)
   }
 
   startPairing(): { code: string; expiresAt: number } {
@@ -168,7 +233,10 @@ export class RemoteAccess {
 
   async revoke(deviceId: string): Promise<boolean> {
     const revoked = await this.devices.revoke(deviceId)
-    if (revoked) this.server?.disconnectDevice(deviceId)
+    if (revoked) {
+      this.server?.disconnectDevice(deviceId)
+      this.relayServer?.disconnectDevice(deviceId)
+    }
     return revoked
   }
 
@@ -187,7 +255,11 @@ export class RemoteAccess {
       pairing: this.devices.currentPairing(),
       devices: await this.devices.list(),
       grants: this.peers?.grants.list() ?? [],
-      error: this.lastError
+      error: this.lastError,
+      relay: {
+        ...(await this.relay.status()),
+        pairing: this.relayPairing && this.relayPairing.expiresAt > Date.now() ? this.relayPairing : null
+      }
     }
   }
 }
