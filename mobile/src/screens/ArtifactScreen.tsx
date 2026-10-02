@@ -1,5 +1,6 @@
+import { RemoteImage } from '../components/RemoteImage'
 import { useEffect, useState } from 'react'
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useRemote } from '../state'
 import { font, mono, space, usePalette } from '../theme'
 import { EmptyState, Header, IconButton } from '../ui'
@@ -45,7 +46,7 @@ export function ArtifactScreen({
       />
       {error ? <Text style={[styles.error, { color: p.err }]}>{error}</Text> : null}
       {isImage ? (
-        <Image style={styles.image} resizeMode="contain" source={client.artifactSource(sessionId, artifact.id)} accessibilityLabel={artifact.filename} />
+        <RemoteImage client={client} style={styles.image} resizeMode="contain" source={client.artifactSource(sessionId, artifact.id)} accessibilityLabel={artifact.filename} />
       ) : isText ? (
         <ScrollView contentContainerStyle={styles.textBox}>
           <Text selectable style={[styles.text, { color: p.fg }]}>{text ?? '读取中…'}</Text>

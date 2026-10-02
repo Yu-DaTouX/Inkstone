@@ -71,12 +71,17 @@ Android 测试包已在 USB 真机验证配对、Hub 任务列表、ANSI 显示�
 
 已开启手机待回答提醒时，原生服务同时读取 Hub 待处理事项，锁屏只显示数量；点击进入多 Agent 页面。提醒接口沿用配对和网络门禁，返回事项身份与版本。该接线已通过原生编译与离线接口检查，通知弹出、点击和后台电池行为尚未在真机验收。
 
+## 礁石参与
+
+[礁石](https://github.com/Yu-DaTouX/reef)（个人 Agent）可以经[中继接入](MOBILE_ACCESS.md#不用-tailscale经中继连接)配对成 `agent` 身份：只能读取 Hub 快照与提醒，执行 `create`、`cancel`、`answer`、`inspect`；验收、恢复、终端输入、模板与交接包等操作对它关闭，会话、文件、浏览器等其他远程接口也一律拒绝。`agent` 身份只能经中继隧道配对，直连请求声称 `agent` 会被拒绝；Hub 内部按手机同一层级记录操作者。
+
 ## 开发检查
 
 基础检查使用贡献指南中的 typecheck、build 和 test:unit。以下补充检查不调用模型：
 
 ```powershell
 npm run test:agent-hub
+npm run test:relay
 npm run test:agent-workspace
 node scripts/probe-agent-hub-codex.mjs (Get-Command codex.exe).Source
 npm --prefix mobile run typecheck

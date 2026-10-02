@@ -1,3 +1,4 @@
+import { RemoteImage } from '../components/RemoteImage'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native'
 import { idempotencyKey, RemoteHttpError, type HistoryMessage } from '../api/client'
@@ -340,7 +341,7 @@ export function SessionScreen({
               {mine ? <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.prompt, { color: p.accent }]}>›</Text> : null}
               <View style={styles.messageMain}>
               {message.text ? <MessageBody text={message.text} /> : null}
-              {message.images?.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{message.images.map((_, index) => <Image key={index} accessibilityLabel={`消息图片 ${index + 1}`} source={client.imageSource(sessionId, message.id, index)} resizeMode="contain" style={{ width: 144, height: 144, borderRadius: radius.md, backgroundColor: p.bg1 }} />)}</View> : null}
+              {message.images?.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{message.images.map((_, index) => <RemoteImage key={index} client={client} accessibilityLabel={`消息图片 ${index + 1}`} source={client.imageSource(sessionId, message.id, index)} resizeMode="contain" style={{ width: 144, height: 144, borderRadius: radius.md, backgroundColor: p.bg1 }} />)}</View> : null}
               {message.error ? <Text style={[styles.meta, { color: p.err }]}>{message.error}</Text> : null}
               {(message.artifacts ?? []).map((artifact) => (
                 <Pressable

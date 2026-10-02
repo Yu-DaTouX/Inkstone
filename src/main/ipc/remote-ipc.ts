@@ -53,6 +53,28 @@ export function registerRemoteIpc(ipc: IpcRegistrar, deps: RemoteIpcDeps): void 
     return status()
   })
 
+  /* 中继接入：生成配对链接（phone / agent）、取消、撤销、移除 */
+  handle('yan:remote:relayPair', async (kind: unknown) => {
+    if (!deps.access()) await deps.ensureStarted()
+    await deps.access()?.relayPair(kind === 'agent' ? 'agent' : 'phone')
+    return status()
+  })
+
+  handle('yan:remote:relayCancel', async () => {
+    deps.access()?.cancelRelayPairing()
+    return status()
+  })
+
+  handle('yan:remote:relayRevoke', async (id: string) => {
+    await deps.access()?.relayRevoke(String(id ?? ''))
+    return status()
+  })
+
+  handle('yan:remote:relayForget', async (id: string) => {
+    await deps.access()?.relayForget(String(id ?? ''))
+    return status()
+  })
+
   handle('yan:remote:forget', async (deviceId: string) => {
     await deps.access()?.forget(String(deviceId ?? ''))
     return status()

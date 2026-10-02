@@ -13,7 +13,10 @@ export async function loadConnection(): Promise<Connection | null> {
     if (!entry) return null
     const parsed = JSON.parse(entry.password) as Partial<Connection>
     if (typeof parsed.baseUrl !== 'string' || typeof parsed.token !== 'string' || typeof parsed.deviceId !== 'string') return null
-    return { baseUrl: parsed.baseUrl, token: parsed.token, deviceId: parsed.deviceId, computerName: typeof parsed.computerName === 'string' ? parsed.computerName : undefined, deviceName: typeof parsed.deviceName === 'string' ? parsed.deviceName : undefined }
+    const relay = parsed.relay && typeof parsed.relay.join === 'string' && typeof parsed.relay.hostKey === 'string' && typeof parsed.relay.clientKey === 'string'
+      ? { join: parsed.relay.join, hostKey: parsed.relay.hostKey, clientKey: parsed.relay.clientKey }
+      : undefined
+    return { baseUrl: parsed.baseUrl, token: parsed.token, deviceId: parsed.deviceId, computerName: typeof parsed.computerName === 'string' ? parsed.computerName : undefined, deviceName: typeof parsed.deviceName === 'string' ? parsed.deviceName : undefined, ...(relay ? { relay } : {}) }
   } catch {
     return null
   }

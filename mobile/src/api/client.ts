@@ -17,10 +17,13 @@ import type {
 } from '../../../src/shared/remote-protocol'
 import type { RemoteImageInput, RemoteModel, RemoteDeviceSummary } from '../../../src/shared/remote-protocol'
 import { HistoryCache } from '../historyCache'
+import { bytesToUtf8, newClientKey, RelayError, RelayTunnel, toB64, type RelayConfig, type RelayPairing } from './relay'
 
 export interface Connection {
-  /** 例如 http://100.101.102.103:37892 */
+  /** 例如 http://100.101.102.103:37892；经中继连接时为 relay://<电脑名> */
   baseUrl: string
+  /** 经中继连接（不用 Tailscale）：中继地址、电脑主机公钥与本机私钥 */
+  relay?: RelayConfig
   token: string
   deviceId: string
   computerName?: string
@@ -59,11 +62,15 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
+type Target = { baseUrl: string; relay?: RelayConfig }
+
 async function request<T>(
-  baseUrl: string,
+  target: string | Target,
   path: string,
   init: { method?: 'GET' | 'POST'; token?: string; body?: unknown; idempotencyKey?: string; timeoutMs?: number } = {}
 ): Promise<T> {
+  const { baseUrl, relay } = typeof target === 'string' ? { baseUrl: target, relay: undefined } : target
+  if (relay) return relayRequest<T>(relay, path, init)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), init.timeoutMs ?? 15_000)
   try {
@@ -89,6 +96,57 @@ async function request<T>(
   } finally {
     clearTimeout(timer)
   }
+}
+
+function requestHeaders(init: { token?: string; body?: unknown; idempotencyKey?: string }): Record<string, string> {
+  const headers: Record<string, string> = { accept: 'application/json' }
+  if (init.token) headers.authorization = `Bearer ${init.token}`
+  if (init.body !== undefined) headers['content-type'] = 'application/json'
+  if (init.idempotencyKey) headers['idempotency-key'] = init.idempotencyKey
+  return headers
+}
+
+/** 经中继隧道发请求：语义与直连相同（状态码、错误、401）。 */
+async function relayRequest<T>(
+  relay: RelayConfig,
+  path: string,
+  init: { method?: 'GET' | 'POST'; token?: string; body?: unknown; idempotencyKey?: string; timeoutMs?: number }
+): Promise<T> {
+  try {
+    const res = await RelayTunnel.for(relay).request(init.method ?? 'GET', path, {
+      headers: requestHeaders(init),
+      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+      timeoutMs: init.timeoutMs ?? 20_000
+    })
+    let json: Record<string, unknown> = {}
+    try {
+      json = JSON.parse(bytesToUtf8(res.body)) as Record<string, unknown>
+    } catch {
+      /* 非 JSON */
+    }
+    if (res.status < 200 || res.status >= 300 || json.ok === false) {
+      throw new RemoteHttpError(res.status, String(json.error ?? `请求失败（${res.status}）`), typeof json.code === 'string' ? json.code : undefined)
+    }
+    return json as T
+  } catch (error) {
+    if (error instanceof RemoteHttpError) throw error
+    throw new RemoteHttpError(0, error instanceof RelayError ? error.message : '经中继连不上电脑：请确认电脑上的砚在运行并开启了中继接入')
+  }
+}
+
+/** 经中继配对：先用中继配对码完成加密隧道登记，再在隧道里用 6 位码换设备令牌。 */
+export async function pairViaRelay(pairing: RelayPairing, deviceName: string): Promise<Connection> {
+  const relay: RelayConfig = { join: pairing.join, hostKey: pairing.hostKey, clientKey: newClientKey() }
+  const tunnel = RelayTunnel.for(relay, deviceName)
+  try {
+    await tunnel.connect(pairing.relayCode)
+  } catch (error) {
+    tunnel.close()
+    throw new RemoteHttpError(0, error instanceof RelayError ? error.message : '经中继连不上电脑')
+  }
+  const target = { baseUrl: `relay://${pairing.computerName}`, relay }
+  const result = await request<RemotePairResponse>(target, '/remote/v1/pair', { method: 'POST', body: { code: pairing.code, deviceName } })
+  return { ...target, token: result.token, deviceId: result.deviceId, computerName: result.computer?.name ?? pairing.computerName, deviceName: result.device?.name ?? deviceName }
 }
 
 /** 配对：不需要令牌，用电脑上显示的 6 位码换一个设备令牌 */
@@ -143,11 +201,11 @@ export class RemoteClient {
   }
 
   private get<T>(path: string): Promise<T> {
-    return request<T>(this.connection.baseUrl, path, { token: this.connection.token })
+    return request<T>(this.connection, path, { token: this.connection.token })
   }
 
   private post<T>(path: string, body: unknown, key: string): Promise<T> {
-    return request<T>(this.connection.baseUrl, path, { method: 'POST', token: this.connection.token, body, idempotencyKey: key })
+    return request<T>(this.connection, path, { method: 'POST', token: this.connection.token, body, idempotencyKey: key })
   }
 
   info(): Promise<RemoteInfo> {
@@ -214,8 +272,26 @@ export class RemoteClient {
     }
   }
 
+  /**
+   * 把图片 / 成果地址变成 <Image> 能用的来源：直连原样返回；经中继时先经隧道取字节，转成 data URI。
+   */
+  async resolveSource(source: { uri: string; headers: Record<string, string> }): Promise<{ uri: string; headers?: Record<string, string> }> {
+    const relay = this.connection.relay
+    if (!relay) return source
+    const path = source.uri.slice(this.connection.baseUrl.length)
+    const res = await RelayTunnel.for(relay).request('GET', path, { headers: source.headers, timeoutMs: 60_000 })
+    if (res.status !== 200) throw new RemoteHttpError(res.status, '读取图片失败')
+    return { uri: `data:${res.headers['content-type'] ?? 'application/octet-stream'};base64,${toB64(res.body)}` }
+  }
+
   async artifactText(sessionId: string, artifactId: string): Promise<string> {
     const source = this.artifactSource(sessionId, artifactId)
+    const relay = this.connection.relay
+    if (relay) {
+      const res = await RelayTunnel.for(relay).request('GET', source.uri.slice(this.connection.baseUrl.length), { headers: source.headers, timeoutMs: 60_000 })
+      if (res.status !== 200) throw new RemoteHttpError(res.status, '读取成果失败')
+      return bytesToUtf8(res.body)
+    }
     const response = await fetch(source.uri, { headers: source.headers })
     if (!response.ok) {
       const json = await readJson(response)
@@ -246,6 +322,8 @@ export interface EventStreamHandlers {
  */
 export class RemoteEventStream {
   private xhr: XMLHttpRequest | null = null
+  /** 经中继时的事件流取消函数 */
+  private cancelRelay: (() => void) | null = null
   private lastSeq = 0
   private offset = 0
   private buffer = ''
@@ -266,11 +344,14 @@ export class RemoteEventStream {
     this.retryTimer = null
     this.xhr?.abort()
     this.xhr = null
+    this.cancelRelay?.()
+    this.cancelRelay = null
     this.handlers.onState('closed')
   }
 
   private open(): void {
     this.handlers.onState(this.lastSeq > 0 ? 'reconnecting' : 'connecting')
+    if (this.connection.relay) return this.openRelay(this.connection.relay)
     const xhr = new XMLHttpRequest()
     this.xhr = xhr
     this.offset = 0
@@ -298,20 +379,58 @@ export class RemoteEventStream {
     xhr.send()
   }
 
+  /** 经中继的事件流：隧道分块送来 SSE 文本，按同样的格式解析。 */
+  private openRelay(relay: RelayConfig): void {
+    this.buffer = ''
+    let received = 0
+    this.cancelRelay = RelayTunnel.for(relay).stream(`/remote/v1/events?since=${this.lastSeq}`, { authorization: `Bearer ${this.connection.token}`, accept: 'text/event-stream' }, {
+      onStart: (status) => {
+        if (status === 401) {
+          this.stopped = true
+          this.cancelRelay?.()
+          this.handlers.onUnauthorized()
+          return
+        }
+        if (status === 200) {
+          this.retryMs = 1000
+          this.handlers.onState('open')
+        }
+      },
+      onChunk: (text) => {
+        received += text.length
+        this.consumeText(text)
+        /* 与直连一致：长时间的流定期重连，避免无限累积 */
+        if (received >= 1_000_000) {
+          this.cancelRelay?.()
+          this.cancelRelay = null
+          this.scheduleReconnect()
+        }
+      },
+      onEnd: () => {
+        this.cancelRelay = null
+        this.scheduleReconnect()
+      }
+    })
+  }
+
   private consume(text: string): void {
-    this.buffer += text.slice(this.offset)
+    this.consumeText(text.slice(this.offset))
     this.offset = text.length
+    /* RN 的 XHR 会保留整条 SSE 响应；定期重连，避免长任务持续占用内存。 */
+    if (text.length >= 1_000_000) {
+      this.xhr?.abort()
+      this.scheduleReconnect()
+    }
+  }
+
+  private consumeText(chunk: string): void {
+    this.buffer += chunk
     let boundary = this.buffer.indexOf('\n\n')
     while (boundary >= 0) {
       const block = this.buffer.slice(0, boundary)
       this.buffer = this.buffer.slice(boundary + 2)
       this.dispatch(block)
       boundary = this.buffer.indexOf('\n\n')
-    }
-    /* RN 的 XHR 会保留整条 SSE 响应；定期重连，避免长任务持续占用内存。 */
-    if (text.length >= 1_000_000) {
-      this.xhr?.abort()
-      this.scheduleReconnect()
     }
   }
 

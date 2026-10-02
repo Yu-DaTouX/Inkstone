@@ -645,7 +645,11 @@ const api: YanBridge = {
     pair: () => invoke<RemoteAccessStatus | null>('yan:remote:pair'),
     cancelPairing: () => invoke<RemoteAccessStatus | null>('yan:remote:cancelPairing'),
     revoke: (deviceId) => invoke<RemoteAccessStatus | null>('yan:remote:revoke', deviceId),
-    forget: (deviceId) => invoke<RemoteAccessStatus | null>('yan:remote:forget', deviceId)
+    forget: (deviceId) => invoke<RemoteAccessStatus | null>('yan:remote:forget', deviceId),
+    relayPair: (kind) => invoke<RemoteAccessStatus | null>('yan:remote:relayPair', kind),
+    relayCancel: () => invoke<RemoteAccessStatus | null>('yan:remote:relayCancel'),
+    relayRevoke: (id) => invoke<RemoteAccessStatus | null>('yan:remote:relayRevoke', id),
+    relayForget: (id) => invoke<RemoteAccessStatus | null>('yan:remote:relayForget', id)
   },
 
   /* ---- 交互终端（实施-11 H-11） ---- */

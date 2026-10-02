@@ -42,6 +42,7 @@
     "test:unit": "node scripts/test-unit.mjs",
     "test:agent-native-context": "node scripts/test-agent-native-context.mjs",
     "test:agent-workspace": "node scripts/test-agent-workspace.mjs",
+    "test:relay": "node scripts/test-relay-bridge.mjs && node scripts/test-relay-mobile.mjs",
     "test:agent-hub": "node scripts/test-agent-hub.mjs && node scripts/test-agent-hub-remote.mjs && node scripts/test-agent-hub-service.mjs && node scripts/test-agent-hub-terminal.mjs && node scripts/test-agent-hub-worktree.mjs",
     "test:skill-files": "node scripts/test-skill-files.mjs && node scripts/test-skill-files-scheduler.mjs",
     "test:skill-source": "node scripts/test-skill-source.mjs",

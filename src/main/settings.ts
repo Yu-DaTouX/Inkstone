@@ -491,8 +491,18 @@ function sanitizeRemoteAccess(value: unknown): AppSettings['remoteAccess'] {
   return {
     enabled: raw.enabled === true,
     bind: bind === 'tailscale' || bind === 'loopback' || (ipv4.test(bind) && bind !== '0.0.0.0') ? bind : 'tailscale',
-    port: Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : 37892
+    port: Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : 37892,
+    ...(sanitizeRelay(raw.relay) ? { relay: sanitizeRelay(raw.relay) } : {})
   }
+}
+
+/** 中继接入：只接受 http(s) / ws(s) 地址，不带路径以外的奇怪字符；地址无效时视为关闭。 */
+function sanitizeRelay(value: unknown): NonNullable<AppSettings['remoteAccess']>['relay'] {
+  if (!value || typeof value !== 'object') return undefined
+  const raw = value as Record<string, unknown>
+  const url = typeof raw.url === 'string' ? raw.url.trim().slice(0, 300) : ''
+  const valid = /^(https?|wss?):\/\/[A-Za-z0-9.-]+(:\d{1,5})?(\/[A-Za-z0-9._~/-]*)?$/.test(url)
+  return { enabled: raw.enabled === true && valid, url: valid ? url : '' }
 }
 
 /** 语音输入设置：模型只认目录里的 id 或绝对路径的 .bin；程序只认绝对路径的 .exe；语言三选一 */

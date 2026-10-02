@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { KeyboardAvoidingView, Linking, NativeModules, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { normalizeBaseUrl, pair, RemoteHttpError, type Connection } from '../api/client'
+import { normalizeBaseUrl, pair, pairViaRelay, RemoteHttpError, type Connection } from '../api/client'
+import type { RelayPairing } from '../api/relay'
 import { parsePairingLink, type PairingPrefill } from '../pairLink'
 import { font, icon, mono, radius, space, touch, usePalette, weight } from '../theme'
 import { Button, Input } from '../ui'
@@ -25,12 +26,15 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** 扫到的是「中继接入」二维码：不用填地址，经中继连接 */
+  const [relay, setRelay] = useState<RelayPairing | null>(null)
   useEffect(() => { void deviceInfo().then((device) => setName((current) => current || device.name)).catch(() => undefined) }, [])
 
   useEffect(() => {
     if (prefill) {
       setAddress(prefill.address)
       setCode(prefill.code)
+      setRelay(prefill.relay ?? null)
       setError(null)
     }
   }, [prefill])
@@ -45,8 +49,10 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
     if (parsed) {
       setAddress(parsed.address)
       setCode(parsed.code)
+      setRelay(parsed.relay ?? null)
     } else {
       setAddress(value)
+      setRelay(null)
     }
     setError(null)
   }
@@ -60,6 +66,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
       if (!parsed) return setError('二维码不是有效的砚配对链接，请在电脑「设备连接」重新生成。')
       setAddress(parsed.address)
       setCode(parsed.code)
+      setRelay(parsed.relay ?? null)
       setError(null)
     } catch (err) {
       setError((err as { code?: string })?.code === 'scanner_permission'
@@ -79,6 +86,18 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
   }
 
   const submit = async (): Promise<void> => {
+    if (relay) {
+      setBusy(true)
+      setError(null)
+      try {
+        await onPaired(await pairViaRelay(relay, name.trim() || '我的手机'))
+      } catch (err) {
+        setError(err instanceof RemoteHttpError ? err.message : '经中继配对失败，请在电脑「中继接入」重新生成二维码。')
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
     const baseUrl = normalizeBaseUrl(address)
     if (!baseUrl) return setError(address.trim().toLowerCase().startsWith('inkstone://')
       ? '配对链接无效或已过期，请在电脑重新生成。'
@@ -107,7 +126,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
 
         <View style={[styles.step, { backgroundColor: p.bg1, borderColor: p.borderSoft }]}>
           <View style={styles.stepHeading}><Text style={[styles.number, { color: p.accent }]}>01</Text><Text style={[styles.stepTitle, { color: p.fg }]}>连接同一个网络</Text></View>
-          <Text style={[styles.stepBody, { color: p.fgDim }]}>手机与电脑需连接同一个 Tailscale 网络。</Text>
+          <Text style={[styles.stepBody, { color: p.fgDim }]}>手机与电脑需连接同一个 Tailscale 网络；电脑开启了「中继接入」时，直接扫它的二维码即可，不需要 Tailscale。</Text>
           <Pressable accessibilityRole="link" onPress={() => void open(TAILSCALE_URL)} style={[styles.linkRow, { borderTopColor: p.borderSoft }]}>
             <Text style={[styles.linkText, { color: p.accent }]}>下载 Tailscale</Text><Icon name="external" size={icon.sm} color={p.accent} />
           </Pressable>
@@ -120,7 +139,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
             <Button label="扫码配对" variant="secondary" onPress={() => void scan()} style={styles.pairAction} />
             <Button label="粘贴链接" variant="secondary" onPress={() => void paste()} style={styles.pairAction} />
           </View>
-          {prefill ? <Text style={[styles.scanned, { color: p.ok }]}>已填入配对信息</Text> : null}
+          {relay ? <Text style={[styles.scanned, { color: p.ok }]}>{`经中继连接「${relay.computerName}」，不需要 Tailscale`}</Text> : prefill ? <Text style={[styles.scanned, { color: p.ok }]}>已填入配对信息</Text> : null}
           <Text style={[styles.label, { color: p.fgDim }]}>配对链接或 Tailscale 地址</Text>
           <Input code value={address} onChangeText={acceptInput} placeholder="100.101.102.103:37892" autoCapitalize="none" autoCorrect={false} keyboardType="url" accessibilityLabel="配对链接或 Tailscale 地址" />
           <Text style={[styles.label, { color: p.fgDim }]}>6 位配对码</Text>
