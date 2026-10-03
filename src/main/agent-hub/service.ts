@@ -4,7 +4,7 @@ import { writeFile, mkdir } from 'node:fs/promises'
 import { join, dirname, delimiter, basename, extname } from 'node:path'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { promisify } from 'node:util'
-import { HUB_ACTIVE, HUB_CLI_PACKAGES, hubAttention, type HubActivity, type HubApproval, type HubAttachment, type HubAttachmentInput, type HubOrigin, type HubCapability, type HubCommand, type HubCreate, type HubMessage, type HubPacket, type HubSnapshot, type HubTask, type HubAgent, type HubRun, type HubTemplate } from '../../shared/agent-hub'
+import { HUB_ACTIVE, HUB_CLI_PACKAGES, HUB_CLI_BINARY, hubAttention, type HubActivity, type HubApproval, type HubAttachment, type HubAttachmentInput, type HubOrigin, type HubCapability, type HubCommand, type HubCreate, type HubMessage, type HubPacket, type HubSnapshot, type HubTask, type HubAgent, type HubRun, type HubTemplate } from '../../shared/agent-hub'
 import { BrowserCommands } from '../browser-commands'
 import type { BrowserCommandHost, SubagentCommandHost } from '../agent'
 import { CapabilityServer, CapabilityCommandError } from '../capability-server'
@@ -19,7 +19,7 @@ import { loadMcpServers, mcpServersForProject } from '../mcp/config'
 import { COMPUTER_USE_SERVER_ID, COMPUTER_USE_TOOLS } from '../computer-use'
 import { stopHubChild } from './stop-child'
 import { hubPiArgs } from './pi-launch'
-import { hubTerminalArgs } from './terminal-launch'
+import { hubTerminalArgs, hubPresetsSessionId } from './terminal-launch'
 
 const exec = promisify(execFile)
 interface HubDeps {
@@ -33,6 +33,8 @@ interface HubDeps {
   sendToSession?(sessionId: string, text: string): Promise<{ ok: boolean; error?: string }>
   notifyEnabled?(): Promise<boolean>
   changed?(): void
+  /** 把某个运行在界面前台打开 */
+  openRun?(taskId: string): void
 }
 interface LiveRun {
   runId: string
@@ -45,6 +47,10 @@ interface LiveRun {
   timer?: ReturnType<typeof setTimeout>
   stopping?: boolean
   finishing?: boolean
+  /** 终端屏幕最近一次看到的输出序号与变化时间，用来推断 working / idle */
+  screenSeq?: number
+  screenAt?: number
+  screenSavedAt?: number
   stream?: string
   approvalResponses: Map<string, { reply(answer: 'accept' | 'decline', answers?: Record<string, string>): void; wireId?: string | number }>
 }
@@ -97,6 +103,8 @@ export class AgentHubService {
   private readonly file: string
   constructor(private readonly deps: HubDeps) {
     this.file = join(deps.dataDir, 'agent-hub', 'tasks.json')
+    this.screenTimer = setInterval(() => void this.pollScreens(), 2000)
+    this.screenTimer.unref?.()
     sharedResources.attachJournal(join(deps.dataDir, 'agent-hub', 'resources.json'))
     if (existsSync(this.file)) {
       const saved = JSON.parse(readFileSync(this.file, 'utf8')) as { tasks: HubTask[]; runs?: HubRun[]; templates?: HubTemplate[]; messages?: HubMessage[]; requests: Array<[string, string]>; approvals?: HubApproval[]; uncertainResources?: string[] }
@@ -113,7 +121,7 @@ export class AgentHubService {
           task.status = 'uncertain'
           task.error = '宿主已重启，旧运行结果待核实；不会自动重试。'
         }
-        delete task.inputOwner
+        delete task.inputOwner; delete task.terminalState
         task.inputEpoch = (task.inputEpoch ?? 0) + 1
         this.tasks.set(task.id, task)
       }
@@ -144,14 +152,47 @@ export class AgentHubService {
   }
   hasBusy(): boolean { return [...this.tasks.values()].some((t) => HUB_ACTIVE.includes(t.status) || t.status === 'uncertain') || sharedResources.snapshot().some((r) => r.owner || r.uncertain) }
   /** Exit warnings describe live execution; restored uncertain records have no local process. */
-  hasLiveWork(): boolean { return this.live.size > 0 || [...this.tasks.values()].some(t => HUB_ACTIVE.includes(t.status)) }
+  hasLiveWork(): boolean { return [...this.live.keys()].some(id => !this.idleTerminal(id)) || [...this.tasks.values()].some(t => HUB_ACTIVE.includes(t.status) && !this.idleTerminal(t.id)) }
+  /** 退出前的提示用：哪些终端 Agent 仍在输出，哪些已安静（多半已做完或在等输入）。 */
+  exitDetail(): string {
+    const working = [...this.tasks.values()].filter(t => HUB_ACTIVE.includes(t.status) && !this.idleTerminal(t.id))
+    const idle = [...this.tasks.values()].filter(t => this.idleTerminal(t.id))
+    return [working.length ? `仍在工作：${working.map(t => `${t.agent} ${t.title.slice(0, 20)}`).join('、')}` : '', idle.length ? `已安静（多半已完成或在等输入）：${idle.length} 个终端，退出会关闭它们` : ''].filter(Boolean).join('\n')
+  }
+  private screenFile(taskId: string): string { return join(this.deps.dataDir, 'agent-hub', 'screens', `${taskId}.txt`) }
+  /** 把终端当前屏幕存成纯文本，砚重启后终端没了也能看到上次做到哪。尽力而为，失败不影响运行。 */
+  private async saveScreen(task: HubTask): Promise<void> {
+    if (!task.terminalId) return
+    try {
+      const text = await this.screenTail(task.terminalId, 60_000)
+      if (!text) return
+      await mkdir(dirname(this.screenFile(task.id)), { recursive: true })
+      await writeFile(this.screenFile(task.id), text, 'utf8')
+    } catch { /* 保存失败不影响运行 */ }
+  }
+  private idleTerminal(id: string): boolean { const t = this.tasks.get(id); return !!t && t.mode === 'terminal' && t.status === 'running' && t.terminalState === 'idle' }
+  private screenTimer?: ReturnType<typeof setInterval>
+  /** 读屏推断终端 Agent 的 working / idle；只在状态翻转时通知界面。 */
+  private async pollScreens(): Promise<void> {
+    for (const [id, run] of this.live) {
+      const task = this.tasks.get(id)
+      if (!task || task.mode !== 'terminal' || !task.terminalId || task.status !== 'running' || run.finishing) continue
+      const update = await readTerminalUpdate(task.terminalId, run.screenSeq).catch(() => null)
+      if (!update) continue
+      const now = Date.now()
+      if (update.seq !== run.screenSeq || run.screenAt === undefined) { run.screenSeq = update.seq; run.screenAt = now }
+      const state = now - run.screenAt < 6000 ? 'working' : 'idle'
+      if (task.terminalState !== state) { task.terminalState = state; this.changed(); if (state === 'idle') void this.saveScreen(task) }
+      else if (state === 'working' && now - (run.screenSavedAt ?? 0) > 30_000) { run.screenSavedAt = now; void this.saveScreen(task) }
+    }
+  }
   attention() { return hubAttention([...this.tasks.values()], [...this.approvals.values()], sharedResources.snapshot()) }
   readonly capabilityHost: SubagentCommandHost = {
     run: async (command, params, context) => {
       const actor = `pi:${context.parentSessionId ?? context.parentRunId}`
       if (!context.projectId || !context.parentRunId) throw new CapabilityCommandError('hub_identity_required', '派活需要可信项目与运行身份')
       if (command === 'hub.start') {
-        const result = await this.create({ ...params, attachments: undefined, includeWorkingChanges: params.includeWorkingChanges === false ? false : true, parentSessionId: context.parentSessionId ?? context.parentRunId, requestId: String(params.requestId ?? ''), agent: params.agent as HubAgent, mode: (params.mode ?? 'managed') as HubCreate['mode'], projectId: context.projectId, prompt: String(params.prompt ?? '') }, actor)
+        const result = await this.create({ ...params, attachments: undefined, includeWorkingChanges: params.includeWorkingChanges === false ? false : true, parentSessionId: context.parentSessionId ?? context.parentRunId, requestId: String(params.requestId ?? ''), agent: params.agent as HubAgent, mode: (params.mode ?? (params.agent === 'codex' || params.agent === 'claude' ? 'terminal' : 'managed')) as HubCreate['mode'], projectId: context.projectId, prompt: String(params.prompt ?? '') }, actor)
         return { summary: { kind: 'hub', ...result } }
       }
       const own = new Set([...this.requests].filter(([key]) => key.startsWith(`${actor}:`)).map(([, id]) => id))
@@ -195,7 +236,7 @@ export class AgentHubService {
     const rows: HubSnapshot['adapters'] = []
     const pi = resolvePi({ override: await this.deps.piBin() })
     rows.push({ agent: 'pi', available: pi.ok, modes: ['managed'], capabilities: capabilitiesOf('pi') })
-    for (const agent of ['codex', 'claude', 'gemini', 'grok'] as const) {
+    for (const agent of ['codex', 'claude', 'antigravity', 'grok', 'gemini'] as const) {
       const found = this.findExecutable(agent)
       if (!found) { rows.push({ agent, available: false, modes: agent === 'codex' || agent === 'claude' ? ['managed', 'terminal'] : ['terminal'], capabilities: capabilitiesOf(agent), error: '未安装或不在 PATH' }); continue }
       try {
@@ -207,15 +248,16 @@ export class AgentHubService {
     this.adapters = rows
   }
   private findExecutable(agent: HubAgent): { command: string; args: string[] } | null {
-    const directories = [...(process.env.PATH ?? '').split(delimiter), join(process.env.USERPROFILE ?? '', '.local', 'bin')]
+    const directories = [...(process.env.PATH ?? '').split(delimiter), join(process.env.USERPROFILE ?? '', '.local', 'bin'), ...(process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, 'agy', 'bin'), join(process.env.LOCALAPPDATA, 'Antigravity')] : [])]
     for (const directory of directories) {
-      const native = join(directory, `${agent}.exe`)
+      const native = join(directory, `${HUB_CLI_BINARY[agent] ?? agent}.exe`)
       if (existsSync(native)) return { command: native, args: [] }
     }
     // npm 的 .cmd 不经 shell 拼参数；直接用本次包声明的 JS 入口。
     const packages: Record<string, string> = HUB_CLI_PACKAGES
     for (const directory of directories) {
-      const root = join(directory, 'node_modules', packages[agent] ?? '')
+      if (!packages[agent]) break
+      const root = join(directory, 'node_modules', packages[agent])
       try {
         const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
         const bin = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.[agent]
@@ -276,6 +318,17 @@ export class AgentHubService {
       if (actor !== 'desktop') throw new Error('仅电脑端可以了结待核实的任务')
       return this.resolveUncertain(task, command.outcome)
     }
+    if (command.action === 'last-screen') {
+      if (actor !== 'desktop') throw new Error('仅电脑端可以查看保存的终端画面')
+      return { text: existsSync(this.screenFile(task.id)) ? readFileSync(this.screenFile(task.id), 'utf8') : '' }
+    }
+    if (command.action === 'dismiss') {
+      if (actor !== 'desktop') throw new Error('仅电脑端可以关闭记录')
+      if (HUB_ACTIVE.includes(task.status) || task.status === 'queued' || this.live.has(task.id)) throw new Error('运行中的任务请先停止')
+      if (task.status === 'uncertain') await this.resolveUncertain(task, 'dismiss')
+      task.dismissed = true; task.updatedAt = Date.now(); this.changed()
+      return { taskId: task.id }
+    }
     this.expireInput()
     if (command.action === 'inspect') {
       if (task.inputOwner === actor && actor.startsWith('phone:')) task.inputExpiresAt = Date.now() + 30_000
@@ -291,7 +344,8 @@ export class AgentHubService {
       return { taskId: task.id }
     }
     if (command.action === 'resume') {
-      if (!['uncertain', 'failed', 'cancelled'].includes(task.status) || this.live.has(task.id)) throw new Error('当前不能恢复此任务')
+      if (!(['uncertain', 'failed', 'cancelled'].includes(task.status) || (task.mode === 'terminal' && task.status === 'needs_review')) || this.live.has(task.id)) throw new Error('当前不能恢复此任务')
+      if (command.fresh && task.mode === 'terminal') { task.terminalStarted = false; task.externalSessionId = undefined }
       if (!task.workspace || !existsSync(task.workspace)) throw new Error('原工作区不存在，请新建任务')
       // 用户显式恢复创建新 run，保留同一外部 session 与工作目录。
       task.status = 'queued'; task.error = undefined; task.updatedAt = Date.now(); this.changed(); void this.drain(); return { taskId: task.id }
@@ -349,10 +403,12 @@ export class AgentHubService {
       reviewOf: review?.id, parentTaskId: parent?.id, toolCoverage: request.mode === 'managed' ? 'managed-entrypoints' : 'uncoordinated', inputEpoch: 0
     }
     this.tasks.set(task.id, task); this.requests.set(key, task.id); this.changed(); void this.drain()
+    /* 由 Agent 或主会话派出的终端任务在前台打开，用户一眼看到；界面自己发起的不重复弹出。 */
+    if (task.mode === 'terminal' && actor !== 'desktop') this.deps.openRun?.(task.id)
     return { taskId: task.id }
   }
   private validateTemplate(t: HubTemplate): HubTemplate {
-    if (!t || !/^[A-Za-z0-9._:-]{8,128}$/.test(t.id ?? '') || typeof t.name !== 'string' || !t.name.trim() || t.name.length > 80 || typeof t.prompt !== 'string' || !t.prompt.trim() || t.prompt.length > 32_000 || !['pi', 'codex', 'claude', 'gemini', 'grok'].includes(t.agent) || !['managed', 'terminal'].includes(t.mode) || (t.reasoningEffort && !['low', 'medium', 'high'].includes(t.reasoningEffort)) || (t.model !== undefined && (typeof t.model !== 'string' || t.model.length > 200))) throw new Error('模板名称、任务内容或模型偏好无效')
+    if (!t || !/^[A-Za-z0-9._:-]{8,128}$/.test(t.id ?? '') || typeof t.name !== 'string' || !t.name.trim() || t.name.length > 80 || typeof t.prompt !== 'string' || !t.prompt.trim() || t.prompt.length > 32_000 || !['pi', 'codex', 'claude', 'gemini', 'grok', 'antigravity'].includes(t.agent) || !['managed', 'terminal'].includes(t.mode) || (t.reasoningEffort && !['low', 'medium', 'high'].includes(t.reasoningEffort)) || (t.model !== undefined && (typeof t.model !== 'string' || t.model.length > 200))) throw new Error('模板名称、任务内容或模型偏好无效')
     return { id: t.id, name: t.name.trim(), agent: t.agent, mode: t.mode, prompt: t.prompt.trim(), model: t.model?.trim() || undefined, reasoningEffort: t.agent === 'codex' ? t.reasoningEffort : undefined }
   }
   ownsTerminal(id: string): boolean { return [...this.tasks.values()].some((t) => t.terminalId === id) }
@@ -413,10 +469,14 @@ export class AgentHubService {
         const children = [...this.tasks.values()].filter((child) => child.parentTaskId === task.id || child.id === task.id)
         const child = children.find((item) => item.id === params.id)
         if (command === 'hub.get' && !child) throw new CapabilityCommandError('hub_task_not_owned', '只能读取自己的派活成果')
-        return { data: command === 'hub.get' ? child : children, summary: { kind: 'hub', ...(child ? { taskId: child.id, status: child.status, report: child.report?.slice(-2000), artifact: child.artifact } : { tasks: children.map((item) => ({ id: item.id, status: item.status })) }) } }
+        /* 前台终端里的对方未必会调用 inkstone_reply：把它屏幕上最后的内容一并给发起者读。 */
+        const screen = command === 'hub.get' && child?.terminalId && child.id !== task.id ? await this.screenTail(child.terminalId) : undefined
+        return { data: command === 'hub.get' ? child : children, summary: { kind: 'hub', ...(child ? { taskId: child.id, status: child.status, terminalState: child.terminalState, screen, report: child.report?.slice(-2000), artifact: child.artifact } : { tasks: children.map((item) => ({ id: item.id, status: item.status })) }) } }
       }
       if (command === 'hub.delegate' || command === 'hub.start') {
-        const created = await this.create({ agent: params.agent as HubAgent, mode: 'managed', projectId: task.projectId, prompt: String(params.prompt ?? ''), reviewOf: typeof params.reviewOf === 'string' ? params.reviewOf : undefined, requestId: typeof params.requestId === 'string' ? params.requestId : '', timeoutMinutes: task.timeoutMinutes }, `run:${run.runId}`, task)
+        /* 终端里的 Agent 派活：对方也在前台终端打开，用户能看到指令被输入；其余沿用受管执行。 */
+        const foreground = task.mode === 'terminal' && (params.agent === 'codex' || params.agent === 'claude') && params.mode !== 'managed'
+        const created = await this.create({ agent: params.agent as HubAgent, mode: foreground ? 'terminal' : 'managed', projectId: task.projectId, prompt: String(params.prompt ?? '') + (foreground ? '\n\n完成后请调用 inkstone_reply（来自 MCP 服务器 inkstone；若工具列表里没有，先用工具搜索查找）向发起者汇报结果与改动要点。' : ''), reviewOf: typeof params.reviewOf === 'string' ? params.reviewOf : undefined, includeWorkingChanges: params.includeWorkingChanges !== false, requestId: typeof params.requestId === 'string' ? params.requestId : '', timeoutMinutes: foreground ? undefined : task.timeoutMinutes || undefined }, `run:${run.runId}`, task)
         return { summary: { kind: 'hub', ...created } }
       }
       if (command === 'hub.handoff' || command === 'hub.send') {
@@ -448,7 +508,12 @@ export class AgentHubService {
         await writeFile(claudeConfigPath, JSON.stringify({ mcpServers: { inkstone: { command: process.execPath, args: [bridge], env: { ELECTRON_RUN_AS_NODE: '1' } } } }), 'utf8')
         if (run.stopping || this.live.get(task.id) !== run) return
       }
-      const args = hubTerminalArgs(executable.args, { ...task, prompt: task.prompt + attachmentText(task.attachments) }, task.agent === 'codex' || task.agent === 'claude' ? { execPath: process.execPath, script: bridge, claudeConfigPath } : undefined)
+      /* 第一次启动记下会话 ID（能预先指定的 CLI），之后再启动就接着这个会话。 */
+      /* 这条标记出现之前启动过的终端任务没有记录：已有终端 ID 就说明启动过，同样当作接续。 */
+      const resume = task.terminalStarted === true || (task.terminalStarted === undefined && !!task.terminalId)
+      if (!resume && hubPresetsSessionId(task.agent) && !task.externalSessionId) task.externalSessionId = randomUUID()
+      const args = hubTerminalArgs(executable.args, { ...task, prompt: task.prompt + attachmentText(task.attachments) }, task.agent === 'codex' || task.agent === 'claude' ? { execPath: process.execPath, script: bridge, claudeConfigPath } : undefined, { id: task.externalSessionId, resume, uniqueCwd: !task.inPlace })
+      task.terminalStarted = true
       const terminal = startTerminal({ cwd: task.workspace, executable: executable.command, args, screenSnapshot: true, env: executable.args.length ? { ...env, ELECTRON_RUN_AS_NODE: '1' } : env })
       if (!terminal) throw new Error('无法启动 Agent 终端')
       task.terminalId = terminal.id; task.inputOwner = 'desktop'; task.inputEpoch = (task.inputEpoch ?? 0) + 1
@@ -763,6 +828,13 @@ export class AgentHubService {
     task.workspaceRemoved = true; task.updatedAt = Date.now(); this.changed()
   }
   /** 终端退出或宿主重启后没有正式完成信号；这里只记录用户核对后的结论，不替它判断成败。 */
+  /** 终端屏幕的纯文本尾部，去掉转义序列；只是对方屏幕上看到的内容，不是核实过的结论。 */
+  private async screenTail(terminalId: string, limit = 6000): Promise<string | undefined> {
+    const update = await readTerminalUpdate(terminalId).catch(() => null)
+    if (!update) return undefined
+    const plain = update.data.replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, '').replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/\u001b[()][A-Z0-9]/g, '').replace(/\r/g, '')
+    return plain.split('\n').map(line => line.trimEnd()).filter((line, i, all) => line || all[i - 1]).join('\n').slice(-limit)
+  }
   private async resolveUncertain(task: HubTask, outcome: 'executed' | 'dismiss'): Promise<{ taskId: string; status: HubTask['status'] }> {
     if (task.status !== 'uncertain' || this.live.has(task.id)) throw new Error('只有结果待核实且已无运行进程的任务可以了结')
     if (outcome === 'dismiss') {
@@ -785,13 +857,14 @@ export class AgentHubService {
     for (const child of this.tasks.values()) if (child.parentTaskId === task.id && (HUB_ACTIVE.includes(child.status) || child.status === 'queued')) await this.cancel(child, '发起任务已停止，本次派活同步停止。')
     if (task.status === 'queued') { task.status = 'cancelled'; this.changed(); return }
     if (!run) return
-    if (task.terminalId) killTerminal(task.terminalId)
+    if (task.terminalId) { await this.saveScreen(task); killTerminal(task.terminalId) }
     if (run.codex && task.externalSessionId && run.turnId) await run.codex.interrupt(task.externalSessionId, run.turnId).catch(() => undefined)
     await this.finish(task, run, 'cancelled', reason)
   }
   async terminalExit(terminalId: string, exitCode: number | null): Promise<void> {
     const task = [...this.tasks.values()].find((t) => t.terminalId === terminalId)
     const run = task ? this.live.get(task.id) : undefined
+    if (task) await this.saveScreen(task)
     if (task && run && !run.stopping) await this.finish(task, run, 'uncertain', `交互终端退出 ${exitCode ?? '未知'}；请核对是否完成任务`)
   }
   private async finish(task: HubTask, run: LiveRun, status: HubTask['status'], error?: string): Promise<void> {
@@ -814,7 +887,7 @@ export class AgentHubService {
       delete task.inputOwner; task.inputEpoch = (task.inputEpoch ?? 0) + 1
       this.live.delete(task.id); this.changed(); void this.drain(); return
     }
-    task.status = status; task.error = error; task.updatedAt = Date.now(); delete task.inputOwner; task.inputEpoch = (task.inputEpoch ?? 0) + 1
+    task.status = status; task.error = error; task.updatedAt = Date.now(); delete task.inputOwner; delete task.terminalState; task.inputEpoch = (task.inputEpoch ?? 0) + 1
     if (task.workspace && task.baseline) {
       try { task.artifact = await freezeHubWorkspace(task.workspace, task.startTree ?? task.baseline, join(this.deps.dataDir, 'agent-hub', 'artifacts', run.runId), task.report ?? error ?? '') }
       catch (failure) { task.status = 'uncertain'; task.error = `成果冻结失败：${String(failure)}` }
@@ -837,6 +910,7 @@ export class AgentHubService {
   }
   async shutdown(): Promise<void> {
     this.accepting = false
+    clearInterval(this.screenTimer)
     for (const task of this.tasks.values()) if (task.status === 'queued') { task.status = 'cancelled'; task.error = '宿主退出前尚未开始，需重新派活。'; this.changed() }
     for (const task of this.tasks.values()) if (this.live.has(task.id)) await this.cancel(task, '砚退出时已停止本次运行；工作区与成果保留。')
   }

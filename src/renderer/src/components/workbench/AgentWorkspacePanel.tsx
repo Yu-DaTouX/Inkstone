@@ -7,7 +7,15 @@ import { AgentMessageStream } from '../chat/AgentMessageStream'
 import { AgentHubPanel, HubTerminal } from './AgentHubPanel'
 import { AgentHubHome, AGENT_STATUS, agentName } from './AgentHubHome'
 import { AgentRunChat } from './AgentRunChat'
-import { Badge, Button, EmptyState, IconButton, Input, ListRow, Select, Tab, Textarea } from '../ui'
+import { Badge, Button, EmptyState, IconButton, ListRow, Select, Tab, Textarea } from '../ui'
+
+/** 磁贴标题只留 Agent 名；任务标题有信息量时再补一小段（默认的「xx 终端」不重复）。 */
+function tileTitle(agent:string,title:string):string{
+  const name=agentName(agent)
+  const text=title.trim()
+  if(!text||/^(codex|claude|gemini|grok|pi)\s*终端$/i.test(text))return name
+  return `${name} · ${text.length>12?text.slice(0,12)+'…':text}`
+}
 
 function rememberedTabs(): {active:string;opened:string[]} {
   try { const saved=JSON.parse(sessionStorage.getItem('inkstone-agent-tabs')??'{}');return {active:typeof saved.active==='string'?saved.active:'',opened:Array.isArray(saved.opened)?saved.opened.filter((id:unknown)=>typeof id==='string'):[]} } catch {return {active:'',opened:[]}}
@@ -33,7 +41,6 @@ export function AgentWorkspacePanel({ onBack, initialRun, onExpand, expanded, on
   const [projectId,setProjectId]=useState('')
   const [mode,setMode]=useState<'terminal'|'managed'|'readonly'>('terminal')
   const [prompt,setPrompt]=useState('')
-  const [text,setText]=useState('')
   const [messages,setMessages]=useState(false)
   const createId=useRef<{id:string;signature:string}|undefined>(undefined)
   const sessionId=session?.sessionId
@@ -48,8 +55,10 @@ export function AgentWorkspacePanel({ onBack, initialRun, onExpand, expanded, on
   useEffect(()=>{if(onlyRun||managerOnly)return;const open=(event:Event)=>{const key=(event as CustomEvent<string>).detail;if(typeof key==='string'&&/^(hub|subagent):[A-Za-z0-9-]+$/.test(key))openRun(key)};window.addEventListener('inkstone-agent-open',open);return()=>window.removeEventListener('inkstone-agent-open',open)},[openRun,onlyRun,managerOnly])
   const selected=managerOnly?undefined:onlyRun?runs.find(run=>run.key===initialRun):runs.find(run=>run.key===active)??runs.find(run=>opened.includes(run.key))
   const task=selected?.source==='hub'?snapshot?.tasks.find(t=>t.id===selected.id):undefined
+  const taskMessages=task?(snapshot?.messages??[]).filter(m=>m.taskId===task.id).slice(-20):[]
+  const queuedMessages=taskMessages.filter(m=>m.delivery==='queued').length
   const legacy=selected?.source==='subagent'?owned.find(t=>t.id===selected.id):undefined
-  useEffect(()=>{if(selected)onTitleChange?.(`${agentName(selected.agent)} · ${selected.title.slice(0,48)}`)},[selected?.agent,selected?.title,onTitleChange])
+  useEffect(()=>{if(selected)onTitleChange?.(`${tileTitle(selected.agent,selected.title)} · ${AGENT_STATUS[selected.status]??selected.status}`)},[selected?.agent,selected?.title,selected?.status,onTitleChange])
   const act=async(command:HubCommand)=>{setBusy(true);setError('');try{await window.yan.hub.command(command);await refresh();return true}catch(e){setError(e instanceof Error?e.message:String(e));return false}finally{setBusy(false)}}
   const create=async()=>{setBusy(true);setError('');try{
     if(mode==='readonly'){
@@ -66,7 +75,6 @@ export function AgentWorkspacePanel({ onBack, initialRun, onExpand, expanded, on
     }
     setCreating(false);setPrompt('')
   }catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}
-  const send=async()=>{if(!task||!text.trim())return;if(await act({action:'send-packet',requestId:crypto.randomUUID(),toTaskId:task.id,summary:text}))setText('')}
   if(details&&task)return <AgentHubPanel key={task.id} initialTaskId={task.id} onBack={()=>setDetails(false)}/>
   if(managerOnly)return <AgentHubHome snapshot={snapshot} runs={runs} sessionProject={sessionProject} onOpenRun={openRun} onRefresh={refresh}/>
   return <section className="agent-workspace" data-testid="agent-workspace">
@@ -78,7 +86,7 @@ export function AgentWorkspacePanel({ onBack, initialRun, onExpand, expanded, on
       {onExpand?<IconButton size="sm" icon="maximize" label={expanded?'还原工作区':'展开工作区'} onClick={onExpand}/>:null}
       <IconButton size="sm" icon="close" label="隐藏 Agent 面板" onClick={onBack}/>
     </div> : null}
-    {onlyRun && selected ? <div className="agent-message-caption" data-testid="agent-run-strip"><span className={`ui-status ${selected.status==='failed'||selected.status==='error'?'err':selected.attention?'warn':selected.live?'live':'mute'}`}><i className="ui-status-dot"/>{AGENT_STATUS[selected.status]??selected.status}</span><span className="agent-strip-agent">{agentName(selected.agent)}{selected.terminal?' · 交互终端':''}</span><span className="spacer"/>{task?.terminalId||(!task&&selected.live)?<Button size="sm" variant="ghost" icon="message-dots" onClick={()=>setMessages(!messages)} aria-expanded={messages}>协作</Button>:null}{task&&task.workspace&&!task.inPlace&&!task.workspaceRemoved&&!selected.live&&task.status!=='uncertain'?<Button size="sm" variant="ghost" icon="close" disabled={busy} title="删除这次运行的独立工作区；冻结的补丁与报告保留" onClick={()=>void act({action:'remove-workspace',taskId:task.id})}>清理工作区</Button>:null}{task?<Button size="sm" variant="ghost" icon="check-circle" onClick={()=>setDetails(true)}>审批与成果</Button>:null}</div> : null}
+    {onlyRun && selected ? <div className="agent-message-caption" data-testid="agent-run-strip"><span className="spacer"/>{task&&!task.parentSessionId&&sessionId&&sessionProject===task.projectId&&selected.live?<Button size="sm" variant="ghost" disabled={busy} title="关联后，这个运行的结果会回报到当前主会话" onClick={()=>void act({action:'link-session',taskId:task.id,sessionId})}>关联主会话</Button>:null}{taskMessages.length?<IconButton size="sm" icon="message-dots" label={queuedMessages?`消息记录（${queuedMessages} 条待发送）`:'消息记录'} onClick={()=>setMessages(!messages)}/>:null}{selected.live?<IconButton size="sm" icon="stop" label="停止运行" disabled={busy} onClick={()=>task?void act({action:'cancel',taskId:task.id}):void useStore.getState().stopSubagent(selected.id)}/>:null}{task&&task.workspace&&!task.inPlace&&!task.workspaceRemoved&&!selected.live&&task.status!=='uncertain'?<Button size="sm" variant="ghost" disabled={busy} title="删除这次运行的独立工作区；冻结的补丁与报告保留" onClick={()=>void act({action:'remove-workspace',taskId:task.id})}>清理工作区</Button>:null}{task?<IconButton size="sm" icon="check-circle" label="审批与成果" onClick={()=>setDetails(true)}/>:null}</div> : null}
     {error?<p className="agent-workspace-error" role="alert">{error}</p>:null}
     {creating?<form className="agent-create" onSubmit={e=>{e.preventDefault();void create()}}>
       <div className="hub-row"><Select aria-label="项目" value={projectId} onChange={e=>setProjectId(e.target.value)}>{snapshot?.projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</Select><Select aria-label="Agent" value={agent} disabled={mode==='readonly'} onChange={e=>setAgent(e.target.value as HubAgent)}>{snapshot?.adapters.map(a=><option key={a.agent} value={a.agent} disabled={!a.available}>{a.agent}{a.available?'':' · 未安装'}</option>)}</Select></div>
@@ -87,11 +95,9 @@ export function AgentWorkspacePanel({ onBack, initialRun, onExpand, expanded, on
       <div className="hub-row"><Button type="submit" variant="primary" disabled={busy||!projectId||(mode!=='terminal'&&!prompt.trim())||(mode==='readonly'&&projectId!==sessionProject)}>{mode==='terminal'?'打开终端':'派活'}</Button><Button onClick={()=>setCreating(false)}>取消</Button></div>
     </form>:null}
     {list?<div className="agent-run-list">{runs.map(run=><ListRow key={run.key} current={run.key===selected?.key} onClick={()=>openRun(run.key)}><span>{run.title}</span><Badge tone={run.attention?'warn':'neutral'}>{run.agent} · {AGENT_STATUS[run.status]??run.status}</Badge></ListRow>)}</div>:null}
-    {messages&&selected?<div className="agent-collaboration">
-      <div className="agent-collab-head"><strong className="agent-collab-title">{selected.title}</strong>{task?.parentSessionId?<span className="ui-badge accent">已关联主会话</span>:null}{selected.live?<Button size="sm" variant="ghost" icon="stop" disabled={busy} onClick={()=>task?void act({action:'cancel',taskId:task.id}):void useStore.getState().stopSubagent(selected.id)}>停止运行</Button>:null}</div>
-      {task&&!task.parentSessionId&&sessionId&&sessionProject===task.projectId?<Button size="sm" disabled={busy} onClick={()=>void act({action:'link-session',taskId:task.id,sessionId})}>加入当前会话协作</Button>:null}
-      {task?<><form className="agent-collab-send" onSubmit={e=>{e.preventDefault();void send()}}><Input aria-label="补充要求" value={text} onChange={e=>setText(e.target.value)} maxLength={4000} placeholder={selected.live?'发送补充要求或资料':'运行已结束，不能再发送'} disabled={!selected.live}/><Button type="submit" size="sm" variant="primary" icon="send" disabled={busy||!text.trim()||!selected.live}>发送</Button></form>
-      {snapshot?.messages?.filter(m=>m.taskId===task.id).slice(-20).map(m=><div key={m.id} className="agent-message"><div className="agent-message-meta"><span>{m.parentSessionId?'回报主会话':m.fromTaskId?'Agent 消息':'你'}</span><span className={`ui-badge ${m.delivery==='failed'?'err':m.delivery==='queued'?'warn':''}`}>{m.delivery==='queued'?'等待发送':m.delivery==='typed'?'已写入终端':m.delivery==='injected'?'协议已接收':'投递失败'}</span></div><pre>{m.text}</pre>{m.delivery==='queued'&&m.packet&&task.mode==='terminal'?<Button size="sm" disabled={busy||task.inputOwner!=='desktop'||m.toRunId!==task.runId} onClick={()=>{if(window.confirm('请确认终端正等待输入且输入行没有未发送内容。现在粘贴此消息并回车？'))void act({action:'deliver-message',messageId:m.id,epoch:task.inputEpoch??0})}}>核对输入后发送</Button>:null}</div>)}</>:<p className="agent-collab-note">pi 子任务完成后按原设置回报父会话；停止与补丁操作保留原后端。</p>}
+    {messages&&selected&&task?<div className="agent-collaboration">
+      <div className="agent-collab-head"><strong className="agent-collab-title">消息记录</strong>{task.parentSessionId?<span className="ui-badge accent">已关联主会话</span>:null}</div>
+      {taskMessages.map(m=><div key={m.id} className="agent-message"><div className="agent-message-meta"><span>{m.parentSessionId?'回报主会话':m.fromTaskId?'Agent 消息':'你'}</span><span className={`ui-badge ${m.delivery==='failed'?'err':m.delivery==='queued'?'warn':''}`}>{m.delivery==='queued'?'等待发送':m.delivery==='typed'?'已写入终端':m.delivery==='injected'?'协议已接收':'投递失败'}</span></div><pre>{m.text}</pre>{m.delivery==='queued'&&m.packet&&task.mode==='terminal'?<Button size="sm" disabled={busy||task.inputOwner!=='desktop'||m.toRunId!==task.runId} onClick={()=>{if(window.confirm('请确认终端正等待输入且输入行没有未发送内容。现在粘贴此消息并回车？'))void act({action:'deliver-message',messageId:m.id,epoch:task.inputEpoch??0})}}>核对输入后发送</Button>:null}</div>)}
     </div>:null}
     {!managerOnly ? <div className="agent-run-surface">
       {task?.status==='uncertain'?<div className="agent-ended ui-card" role="status" data-testid="agent-uncertain">
@@ -100,11 +106,19 @@ export function AgentWorkspacePanel({ onBack, initialRun, onExpand, expanded, on
         <p className="agent-ended-text">终端和受管进程退出时，砚无法判断任务是否做完。请先核对工作区或终端里的实际结果，再选择：</p>
         <div className="agent-ended-actions">
           <Button size="sm" variant="primary" icon="check-circle" disabled={busy} title="固定成果并转为待审阅；这不等于验收" onClick={()=>void act({action:'resolve',taskId:task.id,outcome:'executed'})}>确认执行已结束</Button>
-          <Button size="sm" disabled={busy||!task.workspace||task.workspaceRemoved} title="用原外部会话重新打开" onClick={()=>void act({action:'resume',taskId:task.id})}>重新运行</Button>
+          {task.mode==='terminal'
+            ?<><Button size="sm" disabled={busy||!task.workspace||task.workspaceRemoved} title="在原工作区重新打开 CLI，并接着上次的对话" onClick={()=>void act({action:'resume',taskId:task.id})}>接着上次对话</Button>
+              <Button size="sm" variant="ghost" disabled={busy||!task.workspace||task.workspaceRemoved} title="在原工作区用原指令重新开始一个对话" onClick={()=>void act({action:'resume',taskId:task.id,fresh:true})}>新开一个</Button></>
+            :<Button size="sm" disabled={busy||!task.workspace||task.workspaceRemoved} title="用原外部会话重新打开" onClick={()=>void act({action:'resume',taskId:task.id})}>重新运行</Button>}
           <Button size="sm" variant="ghost" disabled={busy} title="只清除提醒，不表示任务完成" onClick={()=>void act({action:'resolve',taskId:task.id,outcome:'dismiss'})}>忽略</Button>
         </div>
       </div>:null}
-      {task?.terminalId?<HubTerminal task={task} onError={setError} onRefresh={refresh}/>:task?<AgentRunChat task={task} tasks={snapshot?.tasks??[]} messages={snapshot?.messages??[]} approvals={snapshot?.approvals??[]} busy={busy} act={act} onDetails={()=>setDetails(true)}/>:legacy?<AgentMessageStream run={legacy}/>:<EmptyState icon="agent" title="Agent 协作">添加 Agent，或从主对话打开派出的子任务。</EmptyState>}
+      {task&&task.mode==='terminal'&&task.status!=='uncertain'&&!selected?.live&&['needs_review','cancelled','failed'].includes(task.status)&&task.workspace&&!task.workspaceRemoved?<div className="agent-ended-actions agent-resume-bar" data-testid="agent-resume">
+        <span className="agent-ended-text">终端已结束</span>
+        <Button size="sm" disabled={busy} onClick={()=>void act({action:'resume',taskId:task.id})}>接着上次对话</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={()=>void act({action:'resume',taskId:task.id,fresh:true})}>新开一个</Button>
+      </div>:null}
+      {task&&task.mode==='terminal'&&!task.terminalId&&['queued','preparing'].includes(task.status)?<div className="agent-launching" role="status" data-testid="agent-launching"><span className="ui-status live"><i className="ui-status-dot"/>正在启动 {agentName(task.agent)}…</span></div>:task?.terminalId?<HubTerminal task={task} onError={setError} onRefresh={refresh}/>:task?<AgentRunChat task={task} tasks={snapshot?.tasks??[]} messages={snapshot?.messages??[]} approvals={snapshot?.approvals??[]} busy={busy} act={act} onDetails={()=>setDetails(true)}/>:legacy?<AgentMessageStream run={legacy}/>:<EmptyState icon="agent" title="Agent 协作">添加 Agent，或从主对话打开派出的子任务。</EmptyState>}
     </div> : null}
   </section>
 }

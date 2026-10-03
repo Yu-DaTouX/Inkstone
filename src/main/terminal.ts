@@ -241,13 +241,17 @@ export function writeTerminal(id: string, data: string): boolean {
 export async function readTerminalUpdate(id: string, sinceSeq?: number): Promise<{ kind: 'snapshot' | 'delta'; data: string; seq: number; alive: boolean; cols: number; rows: number } | null> {
   const entry = sessions.get(id)
   if (!entry) return null
-  const screen = await entry.screen?.snapshot()
-  const seq = screen?.seq ?? entry.seq
+  /* 界面每 150ms 轮询一次：增量只看序号，整屏序列化（含回滚）只在需要重建时做。 */
+  const settled = await entry.screen?.settled()
+  const seq = settled?.seq ?? entry.seq
   const first = entry.chunks[0]?.seq ?? entry.seq + 1
+  const cols = settled?.cols ?? entry.info.cols, rows = settled?.rows ?? entry.info.rows
   if (Number.isInteger(sinceSeq) && sinceSeq! >= first - 1 && sinceSeq! <= seq) {
-    return { kind: 'delta', data: entry.chunks.filter((c) => c.seq > sinceSeq! && c.seq <= seq).map((c) => c.data).join(''), seq, alive: entry.info.alive, cols: screen?.cols ?? entry.info.cols, rows: screen?.rows ?? entry.info.rows }
+    const data = sinceSeq === seq ? '' : entry.chunks.filter((c) => c.seq > sinceSeq! && c.seq <= seq).map((c) => c.data).join('')
+    return { kind: 'delta', data, seq, alive: entry.info.alive, cols, rows }
   }
-  return { kind: 'snapshot', data: screen?.data ?? entry.buffer, seq, alive: entry.info.alive, cols: screen?.cols ?? entry.info.cols, rows: screen?.rows ?? entry.info.rows }
+  const screen = await entry.screen?.snapshot()
+  return { kind: 'snapshot', data: screen?.data ?? entry.buffer, seq: screen?.seq ?? seq, alive: entry.info.alive, cols: screen?.cols ?? cols, rows: screen?.rows ?? rows }
 }
 
 /** 缩放：先记住尺寸，再通知 PTY（供 curses 程序重排） */

@@ -85,6 +85,12 @@ assert.equal(restored.hasLiveWork(), false, 'restored uncertain history does not
   assert.notEqual(restored.tasks.get(id).status, 'completed')
   await assert.rejects(restored.command({ action: 'resolve', taskId: id, outcome: 'dismiss' }), /只有结果待核实/)
   assert.equal(restored.hasBusy(), false, 'resolving clears the uncertain guard')
+  /* 关闭记录：只隐藏提醒，不改变结论；运行中的不能关，手机端不能关。 */
+  await assert.rejects(restored.command({ action: 'dismiss', taskId: id }, 'phone:one'), /仅电脑端/)
+  await restored.command({ action: 'dismiss', taskId: id })
+  assert.equal(restored.tasks.get(id).dismissed, true)
+  assert.equal(restored.tasks.get(id).status, 'needs_review', 'dismiss keeps the status and frozen result')
+  assert.ok(!restored.attention().some(item => item.taskId === id), 'dismissed tasks no longer raise attention')
 }
 restored.live.set('fixture-active-exit', { approvalResponses: new Map() })
 assert.equal(restored.hasLiveWork(), true, 'live execution still requires exit confirmation')

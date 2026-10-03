@@ -2051,6 +2051,8 @@ export type MainPushBody =
   | { ch: 'subagent'; payload: SubagentRun }
   /** 子代理被移除（用户清掉记录时） */
   | { ch: 'subagent-remove'; payload: string }
+  /** 宿主要求在前台打开某个 Agent 运行（`hub:<任务 id>`） */
+  | { ch: 'hub-open'; payload: string }
   /** 会话状态变化 */
   | { ch: 'state'; payload: SessionState }
   | { ch: 'stats'; payload: SessionStats }

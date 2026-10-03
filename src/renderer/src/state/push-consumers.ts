@@ -101,6 +101,9 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
         set({ logs: [...s.logs, m.payload.detail].slice(-200) })
       }
       break
+    case 'hub-open':
+      window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: m.payload }))
+      break
     default:
       return false
   }

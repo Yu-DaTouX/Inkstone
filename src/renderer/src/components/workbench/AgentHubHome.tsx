@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { HUB_CLI_PACKAGES, type HubAgent, type HubAttachmentInput, type HubSnapshot } from '../../../../shared/agent-hub'
+import { HUB_CLI_PACKAGES, HUB_CLI_INSTALL_URL, HUB_LEGACY_AGENTS, type HubAgent, type HubAttachmentInput, type HubSnapshot } from '../../../../shared/agent-hub'
 import type { AgentWorkspaceRun } from '../../../../shared/agent-workspace'
 import { useStore } from '../../state/store'
 import { Button, EmptyState, IconButton, Segmented, Select, Switch, Textarea } from '../ui'
 import { AttachmentPicker, AttachmentTray, useAttachments } from './AgentAttachments'
+import { AgentMark } from './AgentMark'
 
 type Mode = 'terminal' | 'managed' | 'readonly'
 
-export const AGENT_STATUS: Record<string, string> = { queued: '排队中', preparing: '准备中', running: '运行中', waiting_input: '待答复', needs_review: '待审阅', completed: '已验收', failed: '失败', cancelled: '已停止', uncertain: '待核实', starting: '准备中', done: '已结束', error: '失败', stopped: '已停止' }
-const AGENT_NAME: Record<string, string> = { pi: 'pi', codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini', grok: 'Grok' }
+export const AGENT_STATUS: Record<string, string> = { queued: '排队中', preparing: '准备中', running: '运行中', waiting_input: '待答复', needs_review: '待审阅', completed: '已验收', failed: '失败', cancelled: '已停止', uncertain: '待核实', working: '工作中', idle: '空闲', starting: '准备中', done: '已结束', error: '失败', stopped: '已停止' }
+const AGENT_NAME: Record<string, string> = { pi: 'pi', codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini', grok: 'Grok', antigravity: 'Antigravity' }
 const MODE_HINT: Record<Mode, string> = {
   terminal: '在原生终端里启动所选 CLI，初始指令可留空。',
   managed: '在独立工作区执行任务，完成后等你审阅。',
@@ -29,6 +30,7 @@ function ago(at: number | undefined): string {
 }
 
 function statusTone(run: AgentWorkspaceRun): string {
+  if (run.status === 'idle') return 'mute'
   if (run.status === 'failed' || run.status === 'error') return 'err'
   if (run.attention) return 'warn'
   if (run.live) return 'live'
@@ -52,8 +54,9 @@ export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefr
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [taskOpen, setTaskOpen] = useState(false)
   const createId = useRef<{ id: string; signature: string } | undefined>(undefined)
-  const adapters = useMemo(() => (snapshot?.adapters ?? []).filter(a => a.agent !== 'pi'), [snapshot])
+  const adapters = useMemo(() => (snapshot?.adapters ?? []).filter(a => a.agent !== 'pi' && !HUB_LEGACY_AGENTS.includes(a.agent)), [snapshot])
   const project = projectId || sessionProject || snapshot?.projects[0]?.id || ''
   /* Default to the first installed CLI that supports the chosen mode. */
   const usable = adapters.filter(a => a.available && a.modes.includes(mode === 'managed' ? 'managed' : 'terminal'))
@@ -127,69 +130,75 @@ export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefr
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
   }
 
-  const groups: Array<[string, AgentWorkspaceRun[]]> = [
-    ['进行中', runs.filter(r => r.live)],
-    ['需要处理', runs.filter(r => !r.live && r.attention)],
-    ['已结束', runs.filter(r => !r.live && !r.attention)]
-  ]
-  const modeLabel = (run: AgentWorkspaceRun) => run.source === 'subagent' ? '子任务' : run.terminal ? '交互终端' : '受管执行'
+  /* 关闭记录只隐藏提醒：成果、报告和工作区保留，不验收。 */
+  const closeRuns = async (list: AgentWorkspaceRun[]) => {
+    setBusy(true); setError('')
+    try {
+      for (const run of list) if (run.closable && run.source === 'hub') await window.yan.hub.command({ action: 'dismiss', taskId: run.id })
+      await onRefresh()
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
+  }
+  /* 进行中与需要处理合成一张表；已结束的折叠在一行后面，想看再展开。 */
+  const active = runs.filter(r => r.live || r.attention)
+  const ended = runs.filter(r => !r.live && !r.attention)
+  const [showEnded, setShowEnded] = useState(false)
+
+  const runRow = (run: AgentWorkspaceRun) => <div key={run.key} className="agent-run-line">
+    <button type="button" className="ui-list-row agent-run-row" data-testid={`agent-run-${run.key}`} onClick={() => onOpenRun(run.key)}
+      title={`${run.title} · ${AGENT_STATUS[run.status] ?? run.status}`}>
+      <AgentMark agent={run.agent} size={16} />
+      <span className="agent-run-text">
+        <span className="agent-run-title">{run.title || '未命名任务'}</span>
+        <span className="agent-run-meta">{[agentName(run.agent), run.source === 'subagent' ? '子任务' : run.terminal ? '' : '受管', ago(run.startedAt)].filter(Boolean).join(' · ')}</span>
+      </span>
+      <span className={`agent-run-status ui-status ${statusTone(run)}`}><i className="ui-status-dot" />{AGENT_STATUS[run.status] ?? run.status}</span>
+    </button>
+    {run.closable ? <IconButton size="sm" icon="close" label="关闭这条记录" disabled={busy} onClick={() => void closeRuns([run])} data-testid={`agent-close-${run.key}`} /> : null}
+  </div>
 
   return <section className="agent-home" data-testid="agent-workspace">
     <div className="agent-home-head">
-      <span className="ui-menu-label">项目</span>
       <Select aria-label="项目" value={project} onChange={e => setProjectId(e.target.value)} data-testid="agent-project">
         {snapshot?.projects.map(p => <option key={p.id} value={p.id}>{p.name}{p.id === sessionProject ? '（当前会话）' : ''}</option>)}
       </Select>
+      <IconButton size="sm" icon="refresh" label={detecting ? '正在检测…' : '重新检测已安装的 CLI'} disabled={detecting} onClick={() => void detect()} data-testid="agent-detect" />
     </div>
-    {state ? <div className={`agent-tree ${notGit ? 'warn' : ''}`} data-testid="agent-tree">
-      {notGit ? <span>不是 git 仓库：交互终端直接在项目目录运行，不能派受管任务。</span>
-        : state.changed > 0 ? <>
-          <span className="agent-tree-text">主工作区有 <b>{state.changed}</b> 处未提交改动。Agent 在独立工作区里运行，{carry ? '会带上这些改动作为起点（不算进交付）。' : '将从最近一次提交开始，看不到这些改动。'}</span>
-          <Switch label="带上未提交改动" checked={carry} onChange={setCarry} testId="agent-carry" />
-        </>
-        : <span>主工作区没有未提交改动；Agent 从最近一次提交开始，依赖目录自动链接。</span>}
-    </div> : null}
+    {notGit ? <p className="agent-tree warn" data-testid="agent-tree">不是 git 仓库：终端直接在项目目录运行，不能派受管任务。</p>
+      : state && state.changed > 0 ? <div className="agent-tree" data-testid="agent-tree">
+        <span className="agent-tree-text">主工作区有 <b>{state.changed}</b> 处未提交改动{carry ? '，Agent 会带着它们开始。' : '，Agent 看不到它们。'}</span>
+        <Switch label="带上" checked={carry} onChange={setCarry} testId="agent-carry" />
+      </div> : null}
     <div className="agent-cli ui-card" data-testid="agent-cli">
-      <div className="agent-cli-head">
-        <span className="ui-popover-title">命令行 Agent</span>
-        <span className="agent-new-hint">点击直接打开终端</span>
-        <IconButton size="sm" icon="refresh" label={detecting ? '正在检测…' : '重新检测已安装的 CLI'} disabled={detecting} onClick={() => void detect()} data-testid="agent-detect" />
+      <div className="agent-cli-chips">
+        {adapters.length ? adapters.map(a => {
+          const cli = a.agent as Exclude<HubAgent, 'pi'>
+          const installing = !!installs[cli]
+          return a.available
+            ? <Button key={a.agent} size="sm" className="agent-chip" disabled={busy || !project} title={`${agentName(a.agent)} ${a.version ?? ''} · 点击直接打开终端`} onClick={() => void openTerminal(a.agent)} data-testid={`agent-open-${a.agent}`}><span className="agent-chip-body"><AgentMark agent={a.agent} size={14} />{agentName(a.agent)}</span></Button>
+            : HUB_CLI_PACKAGES[cli]
+              ? <Button key={a.agent} size="sm" variant="ghost" icon="plus" disabled={installing} title={`未安装 · npm install -g ${HUB_CLI_PACKAGES[cli]}`} onClick={() => void install(cli)} data-testid={`agent-install-${a.agent}`}>{installing ? '安装中…' : `安装 ${agentName(a.agent)}`}</Button> : null
+        }) : <span className="agent-new-hint">{snapshot ? '没有检测到 CLI' : '正在检测已安装的 CLI…'}</span>}
       </div>
-      {adapters.length ? adapters.map(a => {
-        const cli = a.agent as Exclude<HubAgent, 'pi'>
-        const installing = !!installs[cli]
-        return <div key={a.agent} className="agent-cli-row" data-testid={`agent-cli-${a.agent}`}>
-          <span className="ui-letter-mark" aria-hidden>{agentName(a.agent).slice(0, 1)}</span>
-          <span className="agent-run-text">
-            <span className="agent-run-title">{agentName(a.agent)}</span>
-            <span className="agent-run-meta" title={a.available ? a.version : a.error}>{a.available ? (a.version || '已安装') : installing ? '正在安装，终端结束后自动检测' : `未安装 · ${HUB_CLI_PACKAGES[cli] ?? ''}`}</span>
-          </span>
-          {a.available
-            ? <Button size="sm" icon="terminal" disabled={busy || !project} onClick={() => void openTerminal(a.agent)} data-testid={`agent-open-${a.agent}`}>打开终端</Button>
-            : HUB_CLI_PACKAGES[cli] ? <Button size="sm" variant="ghost" icon="plus" disabled={installing} title={`在终端中运行 npm install -g ${HUB_CLI_PACKAGES[cli]}`} onClick={() => void install(cli)} data-testid={`agent-install-${a.agent}`}>{installing ? '安装中…' : '安装'}</Button> : null}
-        </div>
-      }) : <span className="agent-new-hint">{snapshot ? '没有检测到 CLI' : '正在检测已安装的 CLI…'}</span>}
+      {adapters.some(a => !a.available && !HUB_CLI_PACKAGES[a.agent as Exclude<HubAgent, 'pi'>] && HUB_CLI_INSTALL_URL[a.agent]) ? <p className="agent-new-hint">Antigravity 未检测到：按官网说明安装 agy（{HUB_CLI_INSTALL_URL.antigravity}），装好后点右上角刷新。</p> : null}
+      <Button size="sm" variant="ghost" icon="chevron-right" aria-expanded={taskOpen} onClick={() => setTaskOpen(!taskOpen)} data-testid="agent-task-toggle">{taskOpen ? '收起' : '带任务启动'}</Button>
     </div>
-    <form className="agent-new ui-card" data-testid="agent-new" onSubmit={e => { e.preventDefault(); if (canSubmit) void create() }}>
-      <span className="ui-popover-title">带任务启动</span>
+    {taskOpen ? <form className="agent-new ui-card" data-testid="agent-new" onSubmit={e => { e.preventDefault(); if (canSubmit) void create() }}>
       <Segmented<Mode> size="sm" label="执行方式" value={mode} onChange={setMode} testId="agent-mode" options={[
         { value: 'terminal', label: '交互终端', icon: 'terminal' },
         { value: 'managed', label: '派出子任务', icon: 'agent' },
         { value: 'readonly', label: 'pi 只读', icon: 'search' }
       ]} />
       {mode !== 'readonly' ? <div className="agent-choices" role="radiogroup" aria-label="Agent">
-        {adapters.length ? adapters.map(a => {
+        {adapters.filter(a => a.available).map(a => {
           const supported = a.modes.includes(mode === 'managed' ? 'managed' : 'terminal')
-          const disabled = !a.available || !supported
-          return <button key={a.agent} type="button" role="radio" aria-checked={chosen === a.agent} disabled={disabled}
+          return <button key={a.agent} type="button" role="radio" aria-checked={chosen === a.agent} disabled={!supported}
             className={`ui-choice ${chosen === a.agent ? 'sel' : ''}`} data-testid={`agent-choice-${a.agent}`}
-            title={a.available ? (a.version ? `${agentName(a.agent)} ${a.version}` : agentName(a.agent)) : a.error || '未安装'}
             onClick={() => setAgent(a.agent)}>
-            <span className="ui-letter-mark" aria-hidden>{agentName(a.agent).slice(0, 1)}</span>
+            <AgentMark agent={a.agent} size={14} />
             <span>{agentName(a.agent)}</span>
-            {!a.available ? <small>未安装</small> : !supported ? <small>不支持</small> : null}
+            {!supported ? <small>不支持</small> : null}
           </button>
-        }) : <span className="agent-new-hint">{snapshot ? '没有检测到可用的 CLI' : '正在检测已安装的 CLI…'}</span>}
+        })}
       </div> : null}
       <AttachmentTray state={attach} />
       <Textarea aria-label="任务内容" rows={3} value={prompt} onChange={e => setPrompt(e.target.value)} data-testid="agent-prompt"
@@ -202,19 +211,16 @@ export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefr
         <span className="agent-new-hint">{readonlyBlocked ? '只读任务只能在当前会话的项目里运行' : mode === 'managed' && notGit ? '受管任务需要 git 仓库' : MODE_HINT[mode]}</span>
         <Button type="submit" variant="primary" size="sm" disabled={!canSubmit} data-testid="agent-submit">{busy ? '启动中…' : mode === 'terminal' ? '打开终端' : '派活'}</Button>
       </div>
-    </form>
+    </form> : error ? <p className="agent-new-error" role="alert">{error}</p> : null}
 
-    {runs.length ? groups.map(([title, list]) => list.length ? <div key={title} className="agent-group">
-      <div className="agent-group-title ui-menu-label">{title}<span className="ui-meta-num">{list.length}</span></div>
-      {list.map(run => <button key={run.key} type="button" className="ui-list-row agent-run-row" data-testid={`agent-run-${run.key}`} onClick={() => onOpenRun(run.key)}
-        title={`${run.title} · ${AGENT_STATUS[run.status] ?? run.status}`}>
-        <span className="ui-letter-mark" aria-hidden>{agentName(run.agent).slice(0, 1)}</span>
-        <span className="agent-run-text">
-          <span className="agent-run-title">{run.title || '未命名任务'}</span>
-          <span className="agent-run-meta">{[agentName(run.agent), modeLabel(run), ago(run.startedAt)].filter(Boolean).join(' · ')}</span>
-        </span>
-        <span className={`agent-run-status ui-status ${statusTone(run)}`}><i className="ui-status-dot" />{AGENT_STATUS[run.status] ?? run.status}</span>
-      </button>)}
-    </div> : null) : <EmptyState icon="agent" title="还没有协作运行">在上面选择 Agent 打开终端或派出任务；主对话派出的子任务也会出现在这里。</EmptyState>}
+    {runs.length ? <div className="agent-list">
+      {active.map(runRow)}
+      {ended.length ? <button type="button" className="agent-ended-toggle" aria-expanded={showEnded} onClick={() => setShowEnded(!showEnded)} data-testid="agent-ended-toggle">
+        <span>已结束 {ended.length}</span>
+        <span className="agent-ended-toggle-end">{showEnded ? '收起' : '展开'}</span>
+      </button> : null}
+      {showEnded ? ended.map(runRow) : null}
+    </div> : <EmptyState icon="agent" title="还没有协作运行">在上面选择 Agent 打开终端或派出任务；主对话派出的子任务也会出现在这里。</EmptyState>
+}
   </section>
 }

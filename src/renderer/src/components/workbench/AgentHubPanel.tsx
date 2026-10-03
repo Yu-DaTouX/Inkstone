@@ -190,6 +190,14 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
   const current = useRef(task); current.current = task
   /* 宿主重启或终端被关闭后，宿主已没有这个终端的画面：明说，而不是留一块空白。 */
   const [gone, setGone] = useState(false)
+  const [saved, setSaved] = useState('')
+  /* 终端没了：取砚上次保存的屏幕文本，只读展示。 */
+  useEffect(() => {
+    if (!gone) return
+    let alive = true
+    void window.yan.hub.command({ action: 'last-screen', taskId: task.id }).then((r) => { if (alive) setSaved((r as { text?: string }).text ?? '') }).catch(() => undefined)
+    return () => { alive = false }
+  }, [gone, task.id])
   useEffect(() => {
     if (!element.current || !task.terminalId) return
     let disposed = false
@@ -201,7 +209,7 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
       const fit = new FitAddon(); term.loadAddon(fit); term.open(element.current)
       installTerminalRenderer(term, element.current)
       const imeOff = installImeFallback(term)
-      let alive = true; let seq: number | undefined; let reading = false
+      let alive = true; let seq: number | undefined; let reading = false; let quietSince = Date.now()
       const read = async () => {
         if (!alive || reading) return
         reading = true
@@ -213,24 +221,32 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
           const update = result.terminal
           if (update.kind === 'snapshot') term.reset()
           if (term.cols !== update.cols || term.rows !== update.rows) term.resize(update.cols, update.rows)
-          await new Promise<void>((done) => term.write(update.data, done))
+          if (update.data) { quietSince = Date.now(); await new Promise<void>((done) => term.write(update.data, done)) }
           seq = update.seq
         } catch (error) { if (alive) onError(String(error)) }
         finally { reading = false }
       }
-      void read(); const poll = setInterval(() => void read(), 150)
+      /* 有输出时 150ms 跟随；安静后逐步放慢，隐藏窗口时更慢，避免空闲终端持续占用主进程。 */
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const schedule = (ms: number) => { clearTimeout(timer); if (alive) timer = setTimeout(() => void loop(), ms) }
+      const loop = async () => {
+        await read()
+        const quiet = Date.now() - quietSince
+        schedule(document.hidden ? 1000 : quiet < 3000 ? 150 : quiet < 20000 ? 400 : 1000)
+      }
+      void loop()
       let pending = Promise.resolve()
       const send = (command: HubCommand) => { pending = pending.then(async () => { if (alive) await window.yan.hub.command(command) }).catch((error) => onError(String(error))) }
-      const sub = term.onData((data) => { const t = current.current; if (t.inputOwner === 'desktop') send({ action: 'input', taskId: t.id, epoch: t.inputEpoch ?? 0, data }) })
+      const sub = term.onData((data) => { quietSince = Date.now(); schedule(30); const t = current.current; if (t.inputOwner === 'desktop') send({ action: 'input', taskId: t.id, epoch: t.inputEpoch ?? 0, data }) })
       const observer = new ResizeObserver(() => { if (!element.current || element.current.clientWidth < 16 || element.current.clientHeight < 16) return; fit.fit(); const t = current.current; if (t.inputOwner === 'desktop') send({ action: 'resize', taskId: t.id, epoch: t.inputEpoch ?? 0, cols: term.cols, rows: term.rows }) })
       observer.observe(element.current)
       const theme = new MutationObserver(() => {
         term.options.theme = terminalAppearance().theme
       })
       theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] })
-      release = () => { alive = false; imeOff(); clearInterval(poll); sub.dispose(); observer.disconnect(); theme.disconnect(); term.dispose() }
+      release = () => { alive = false; imeOff(); clearTimeout(timer); sub.dispose(); observer.disconnect(); theme.disconnect(); term.dispose() }
     })
     return () => { disposed = true; release() }
   }, [task.terminalId, onError])
-  return <>{task.inputOwner !== 'desktop' ? <div className="hub-row"><span>{task.inputOwner?.startsWith('phone:') ? '手机正在输入' : '终端只读'}</span>{task.status === 'running' ? <Button onClick={() => void window.yan.hub.command({ action: 'claim-input', taskId: task.id, epoch: task.inputEpoch ?? 0 }).then(onRefresh).catch((error) => onError(String(error)))}>电脑接管</Button> : null}</div> : null}{gone ? <p className="agent-terminal-gone" role="status">终端画面已不存在（砚重启或终端已关闭）。任务记录和成果仍在，可在上方核对后处理。</p> : null}<div ref={element} className="hub-terminal" /></>
+  return <>{task.inputOwner !== 'desktop' ? <div className="hub-row"><span>{task.inputOwner?.startsWith('phone:') ? '手机正在输入' : '终端只读'}</span>{task.status === 'running' ? <Button onClick={() => void window.yan.hub.command({ action: 'claim-input', taskId: task.id, epoch: task.inputEpoch ?? 0 }).then(onRefresh).catch((error) => onError(String(error)))}>电脑接管</Button> : null}</div> : null}{gone ? <p className="agent-terminal-gone" role="status">终端画面已不存在（砚重启或终端已关闭）。任务记录和成果仍在，可在上方核对后处理。{saved ? '下面是砚上次保存的画面。' : ''}</p> : null}{gone && saved ? <pre className="agent-last-screen" data-testid="agent-last-screen">{saved}</pre> : null}<div ref={element} className="hub-terminal" /></>
 }

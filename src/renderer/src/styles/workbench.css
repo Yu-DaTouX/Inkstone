@@ -1925,6 +1925,19 @@
 .agent-home-head { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; }
 .agent-home-head > .ui-input { flex: 1; width: auto; min-width: 0; max-width: none; }
 .agent-cli { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-2) var(--sp-3) var(--sp-2); flex-shrink: 0; }
+.agent-cli-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.agent-chip { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.agent-mark { flex: none; vertical-align: middle; }
+/* 记录表：进行中与需要处理合成一张，已结束折叠成一行 */
+.agent-list { display: flex; flex-direction: column; gap: 2px; }
+.agent-ended-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-top: var(--sp-2); padding: var(--sp-1) var(--sp-2); border: 0; background: none; color: var(--fg-mute); font: inherit; font-size: var(--fs-xs); cursor: pointer; border-radius: var(--r-sm); }
+.agent-ended-toggle:hover { background: var(--bg-2); color: var(--fg); }
+.agent-ended-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.agent-cli { gap: var(--sp-1); }
+.agent-cli > .btn.ghost { align-self: flex-start; }
+.agent-group-close { margin-left: auto; }
+/* 记录行：主体撑满，关闭按钮贴右 */
+.agent-run-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-1); }
 .agent-cli-head { display: flex; align-items: center; gap: var(--sp-2); padding-bottom: var(--sp-1); }
 .agent-cli-head > .agent-new-hint { flex: 1; }
 .agent-cli-row { display: flex; align-items: center; gap: var(--sp-2); min-height: 40px; }
@@ -1955,3 +1968,10 @@
 .agent-new .agent-new-foot > .btn.icon { flex: none; }
 .agent-tree { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); flex-shrink: 0; }
 .agent-tree-text { flex: 1; min-width: 0; }
+.agent-resume-bar { align-items: center; margin: var(--sp-2) var(--sp-3) 0; }
+.agent-resume-bar .agent-ended-text { margin-right: auto; }
+.agent-last-screen { flex: 1; min-height: 0; margin: 0; padding: var(--sp-3); overflow: auto; background: var(--bg-1); color: var(--fg-mute); font: var(--fs-xs) / 1.5 var(--font-code); white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-chip-body { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.agent-launching { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--fg-mute); font-size: var(--fs-sm); }
+/* 磁贴里的 Agent 窗格与终端同底色，终端边缘和窗格融为一体 */
+.tile-pane > .agent-workspace { background: var(--bg-0); }
