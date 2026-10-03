@@ -48,9 +48,9 @@ npm run launch
 
 先运行 `npm run upgrade:pi -- --check` 比较内置与本机源版本。准备目标版本的官方 npm 包后，可用 `YAN_PI_SRC` 指定其包目录，再执行 `npm run upgrade:pi`；升级不会自动安装或更新全局 pi。`--force` 只重新提取同版本，降级必须显式使用 `--allow-downgrade`，直接调用 vendor 脚本也遵守该限制。新运行时以独立 generation 保存，通过 `current.json` 切换；旧目录保留给活跃进程，已有窗口不会自动重启。
 
-Codemode 需要 `quickjs-wasi/quickjs.wasm` 和官方脚本 worker。版本与 RPC 握手通过后，仍需执行 `node scripts/test-pi-compatibility.mjs`、`npm run test:agent-native-context` 和 `node scripts/test-pi-native-tools.mjs --controller`。原生工具检查仅连接本机模型/MCP 夹具；可加 `--only`、`--no-mcp`、`--native-search`、`--guard` 或 `--profile-blocked` 验证对应边界，`--compact` 验证原生压缩。构建、真实服务和发行包需要各自证据。
+Codemode 需要 `quickjs-wasi/quickjs.wasm` 和官方脚本 worker。版本与 RPC 握手通过后，仍需执行 `node scripts/test-pi-compatibility.mjs`、`npm run test:agent-native-context` 和 `node scripts/test-pi-native-tools.mjs --controller`。原生工具检查仅连接本机模型/MCP 夹具；可加 `--only`、`--no-mcp`、`--native-search`、`--guard`、`--profile-blocked` 或 `--image`（codemode `image()` 输出在实时事件、历史与宿主投影中的图片块）验证对应边界，`--compact` 验证原生压缩。构建、真实服务和发行包需要各自证据。
 
-升级还要核对 `parentToolCallId` 实时事件与 `toolResult.nestedCalls` 历史摘要、执行时 `tool_call` 护栏和各类子 pi 的加载策略。原生 MCP 使用 pi 的 `mcp.json`，旧宿主服务使用砚的 `mcp-servers.json`；两者不自动迁移凭证。相关提交正文应写明目标版本、宿主适配、验证范围和剩余限制，不能只引用本地资料。
+升级还要核对 `parentToolCallId` 实时事件与 `toolResult.nestedCalls` 历史摘要、执行时 `tool_call` 护栏和各类子 pi 的加载策略。原生 MCP 使用 pi 的 `mcp.json`，旧宿主服务使用砚的 `mcp-servers.json`；两者不自动迁移凭证。原生 MCP 的 OAuth 登录由 pi 完成（`/mcp login <server>` 自动打开浏览器，授权链接以通知给出，浏览器到不了本机时由提问面板粘贴回调地址），凭证在 pi 的 `mcp-auth.json`，砚不读写。相关提交正文应写明目标版本、宿主适配、验证范围和剩余限制，不能只引用本地资料。
 
 Issue 应包含版本、复现步骤及必要截图；移除密钥、私人对话和个人路径。提交说明应写清修改原因、检查范围和剩余限制。构建成功、模拟数据和真实运行是不同的证据，不互相替代。
 

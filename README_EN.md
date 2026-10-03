@@ -41,7 +41,7 @@ An inkstone holds the ink before it becomes writing. Inkstone carries that idea 
 | --- | --- |
 | **Develop an idea** | Streaming conversations, image input, `@` file references, `/` commands, and expandable reasoning and tool details. |
 | **Work across projects** | Project groups, session search, branches, and queues. Running tasks can continue in the background when you switch sessions. |
-| **Inspect the work** | File previews, an interactive terminal, an embedded browser, and access to local Chrome. Web search uses Bing, 360, DuckDuckGo and similar pages, or an optional Brave Search API key. |
+| **Inspect the work** | File previews, an interactive terminal, an embedded browser, and access to local Chrome. Web search uses Bing, 360, DuckDuckGo and similar pages, or optional keys for Tavily, Brave, Firecrawl and Context7 under Settings > Enhanced search for steadier search, page reading and developer-docs lookup (all behind the single `yan search` entry). |
 | **Arrange your workspace** | The main conversation, files, browser, terminals, tasks, logs and agents are tiles you can drag, group or split, resize, maximize and hide. Layouts are remembered per session. |
 | **Follow progress** | Goals, plans, task lists, and agent context, usage and runtime information. |
 | **Work with multiple agents** | A unified Agent workspace for child pi sessions and external CLI runs. Sub-agent progress and results render the same way as the main conversation. Agent Hub is still in development. |
