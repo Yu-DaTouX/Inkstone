@@ -213,6 +213,11 @@ export function ConnBar({ conn }: { conn: 'starting' | 'ready' | 'exited' | 'err
 }
 
 /* ------------------------------------------------------------------ 通知 */
+/** 通知正文里的第一个网址（pi 的 MCP 登录会把授权链接放在通知里）；没有则返回 undefined。 */
+function noticeLink(text: string): string | undefined {
+  return text.match(/https?:\/\/[^\s<>"']+/)?.[0]
+}
+
 export function Notices() {
   const t = useT()
   const notices = useStore((s) => s.notices)
@@ -245,7 +250,7 @@ export function Notices() {
   useEffect(() => {
     if (notices.length === 0) return
     const timers = notices.map((n) =>
-      setTimeout(() => dismiss(n.id), n.action ? 20_000 : n.type === 'error' ? 12_000 : 5_000)
+      setTimeout(() => dismiss(n.id), n.action || noticeLink(n.text) ? 20_000 : n.type === 'error' ? 12_000 : 5_000)
     )
     return () => timers.forEach(clearTimeout)
   }, [notices, dismiss])
@@ -277,6 +282,24 @@ export function Notices() {
                 >
                   {t('search.apiHintNever')}
                 </Button>
+              </span>
+            </div>
+          )
+        }
+        const link = noticeLink(n.text)
+        if (link) {
+          return (
+            <div
+              key={n.id}
+              className={`notice ${n.type} notice-action ${isLeaving ? 'closing' : ''}`}
+              style={{ '--i': i } as React.CSSProperties}
+              data-testid="notice-link"
+            >
+              <Icon name="check-circle" size={12} />
+              <span className="notice-text">{n.text}</span>
+              <span className="notice-actions">
+                <Button size="sm" onClick={() => { dismiss(n.id); void window.yan.browser.openExternal(link) }}>{t('notice.openLink')}</Button>
+                <Button size="sm" variant="ghost" onClick={() => dismiss(n.id)}>{t('notice.dismiss')}</Button>
               </span>
             </div>
           )

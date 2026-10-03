@@ -28,8 +28,10 @@ const profileProbe = process.argv.includes('--profile-blocked')
 const onlyMode = process.argv.includes('--only')
 const desktopCodemode = process.argv.includes('--desktop-codemode')
 const projectPackagePolicy = process.argv.includes('--project-package-policy')
+const imageProbe = process.argv.includes('--image')
+const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 assert(!projectPackagePolicy || controllerMode, 'project package policy must exercise AgentController')
-const localTools = process.argv.includes('--no-mcp') || desktopCodemode
+const localTools = process.argv.includes('--no-mcp') || desktopCodemode || imageProbe
 const server = createServer((req, res) => {
   let body = ''
   req.on('data', part => { body += part })
@@ -43,7 +45,9 @@ const server = createServer((req, res) => {
       const name = nativeSearch ? 'tool_search' : 'codemode'
       assert(payload.tools.some(tool => tool.function.name === name))
       if (onlyMode) assert(!payload.tools.some(tool => ['read', 'bash', 'edit', 'write'].includes(tool.function.name)))
-      const code = guardProbe
+      const code = imageProbe
+        ? `const values = await Promise.allSettled([tools.read({path:"sample.txt"})]); store("fixture", values); image({ type: "image", data: "${PNG_1PX}", mimeType: "image/png" }); text("IMAGE-SHOWN");`
+        : guardProbe
         ? 'text(await tools.powershell({command: \'Write-Output "npm publish"\'}));'
         : localTools
           ? 'const values = await Promise.allSettled([tools.read({path:"sample.txt"}), tools.read({path:"sample.txt"})]); store("fixture", values); text(values);'
@@ -171,6 +175,20 @@ try {
       const history = normalizeHistory(entries.filter(entry => entry.type === 'message').map(entry => entry.message))
       assert(history.some(message => message.toolCalls?.some(call => call.name === toolName && call.parentToolCallId === 'native-code')))
       if (localTools) assert(entries.some(entry => entry.customType === 'codemode-store'))
+    }
+    if (imageProbe) {
+      // Codemode image() output is a top-level image block on the codemode result, in live events and in history.
+      const end = frames.find(frame => frame.type === 'tool_execution_end' && frame.toolCallId === 'native-code')
+      assert(end?.result?.content?.some(block => block.type === 'image' && block.mimeType === 'image/png' && block.data === PNG_1PX), 'live codemode result carries the image block')
+      const stored = entries.find(entry => entry.message?.role === 'toolResult' && entry.message.toolCallId === 'native-code')?.message
+      assert(stored?.content?.some(block => block.type === 'image' && block.data === PNG_1PX), 'history keeps the codemode image block')
+      const { normalizeHistory } = await import(pathToFileURL(resolve('out/test/pi-compat-normalize.mjs')))
+      const history = normalizeHistory(entries.filter(entry => entry.type === 'message').map(entry => entry.message))
+      assert(history.some(message => message.toolCalls?.some(call => call.id === 'native-code' && call.images?.length === 1)), 'normalized history attaches the image to the codemode call')
+      if (controller) {
+        const live = pushes.filter(event => event.ch === 'tool' && event.payload.call.id === 'native-code').at(-1)
+        assert.equal(live?.payload.call.images?.length, 1, 'live host projection attaches the image to the codemode call')
+      }
     }
     if (controller && !nativeSearch) {
       const parentPush = pushes.find(event => event.ch === 'tool' && event.payload.call.id === 'native-code')
