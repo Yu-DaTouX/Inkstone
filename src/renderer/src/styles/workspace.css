@@ -48,6 +48,9 @@
 .agent-message-stream pre { max-width: 100%; overflow: auto; }
 .agent-message-stream .stream-inner { max-width: 900px; margin-inline: auto; }
 .agent-message-caption { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-1) var(--sp-3); }
+/* 终端占满窗格：状态条浮在右上角，不再占掉终端上方一整行 */
+.tile-pane > .agent-workspace { position: relative; }
+.agent-message-caption.overlay { position: absolute; top: var(--sp-1); right: var(--sp-2); z-index: 2; padding: 0; }
 .tile-grip-restore { position: absolute; right: var(--sp-1); top: 1px; }
 /* Live drag: the grabbed tile follows the pointer above the others, which glide into
    the arrangement the drop would produce; after release it glides into its slot. */

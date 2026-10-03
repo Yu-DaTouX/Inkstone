@@ -209,7 +209,7 @@ function PhoneTerminal({ task, onRefresh, onError }: { task: HubTask; onRefresh:
       } catch (error) { if (active) onError(String(error)) }
       finally { fetching = false }
     }
-    void poll(); const timer = setInterval(() => void poll(), 1000)
+    void poll(); const timer = setInterval(() => void poll(), 500)
     return () => { active = false; clearInterval(timer) }
   }, [client, task.id, ready, onError])
   useEffect(() => {
@@ -219,7 +219,7 @@ function PhoneTerminal({ task, onRefresh, onError }: { task: HubTask; onRefresh:
   return <View style={{ gap: space[2] }}>
     <Meta>输入端：{mine ? '这台手机' : task.inputOwner === 'desktop' ? '电脑' : task.inputOwner ? '其他手机' : '只读'}</Meta>
     {!mine && task.status === 'running' ? <Button label="手机接管输入" onPress={() => void client.hubCommand({ action: 'claim-input', taskId: task.id, epoch: task.inputEpoch ?? 0 }).then(onRefresh).catch((error) => onError(String(error)))} /> : null}
-    <WebView<unknown> ref={web} source={{ uri: 'file:///android_asset/inkstone-terminal/index.html' }} style={{ height: 360 }} javaScriptEnabled allowFileAccess originWhitelist={['file://*']} onShouldStartLoadWithRequest={(request) => request.url.startsWith('file:///android_asset/inkstone-terminal/')} onMessage={(event) => {
+    <WebView<unknown> ref={web} source={{ uri: 'file:///android_asset/inkstone-terminal/index.html' }} style={{ height: 360 }} nestedScrollEnabled overScrollMode="never" javaScriptEnabled allowFileAccess originWhitelist={['file://*']} onShouldStartLoadWithRequest={(request) => request.url.startsWith('file:///android_asset/inkstone-terminal/')} onMessage={(event) => {
       try {
         const message = JSON.parse(event.nativeEvent.data)
         if (message.kind === 'ready') setReady(true)
@@ -230,7 +230,7 @@ function PhoneTerminal({ task, onRefresh, onError }: { task: HubTask; onRefresh:
     {mine ? <>
       <TextInput accessibilityLabel="终端输入" value={entry} onChangeText={setEntry} placeholder="发送到终端" placeholderTextColor={p.fgMute} style={{ color: p.fg, borderWidth: 1, borderColor: p.borderSoft, padding: space[2] }} onSubmitEditing={() => { void submit() }} />
       <Button label="发送" disabled={!entry || sending} onPress={() => { void submit() }} />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{[['Enter', '\r'], ['Ctrl+C', '\u0003'], ['Esc', '\u001b'], ['Tab', '\t'], ['↑', '\u001b[A'], ['↓', '\u001b[B']].map(([label, data]) => <Button key={label} label={label} compact onPress={() => void send(data)} />)}</View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{[['Enter', '\r'], ['Ctrl+C', '\u0003'], ['Esc', '\u001b'], ['Tab', '\t'], ['↑', '\u001b[A'], ['↓', '\u001b[B'], ['PgUp', '\u001b[5~'], ['PgDn', '\u001b[6~']].map(([label, data]) => <Button key={label} label={label} compact onPress={() => void send(data)} />)}</View>
     </> : null}
   </View>
 }

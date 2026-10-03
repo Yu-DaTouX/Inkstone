@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs'
+import { existsSync, readFileSync, mkdirSync, writeFileSync, renameSync, readdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join, dirname, delimiter, basename, extname } from 'node:path'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
@@ -53,6 +54,18 @@ interface LiveRun {
   screenSavedAt?: number
   stream?: string
   approvalResponses: Map<string, { reply(answer: 'accept' | 'decline', answers?: Record<string, string>): void; wireId?: string | number }>
+}
+
+/**
+ * Claude 只有在对话里真正说过话之后才会落盘；还没说过话就退出的会话，--resume 会报 No conversation found。
+ * 有会话 ID 时按 ID 找，没有（旧任务）时看这个工作目录下有没有任何对话。
+ */
+function claudeConversationExists(id: string | undefined, cwd: string): boolean {
+  try {
+    const root = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects')
+    if (id) return readdirSync(root).some((dir) => existsSync(join(root, dir, `${id}.jsonl`)))
+    return readdirSync(join(root, cwd.replace(/[^a-zA-Z0-9]/g, '-'))).some((file) => file.endsWith('.jsonl'))
+  } catch { return false }
 }
 
 const ATTACHMENT_LIMIT = 8
@@ -510,7 +523,9 @@ export class AgentHubService {
       }
       /* 第一次启动记下会话 ID（能预先指定的 CLI），之后再启动就接着这个会话。 */
       /* 这条标记出现之前启动过的终端任务没有记录：已有终端 ID 就说明启动过，同样当作接续。 */
-      const resume = task.terminalStarted === true || (task.terminalStarted === undefined && !!task.terminalId)
+      let resume = task.terminalStarted === true || (task.terminalStarted === undefined && !!task.terminalId)
+      /* 上次还没说过话就退出了：没有可接续的对话，按同一个会话 ID 重新开始（含原始指令）。 */
+      if (resume && task.agent === 'claude' && !claudeConversationExists(task.externalSessionId, workspace)) resume = false
       if (!resume && hubPresetsSessionId(task.agent) && !task.externalSessionId) task.externalSessionId = randomUUID()
       const args = hubTerminalArgs(executable.args, { ...task, prompt: task.prompt + attachmentText(task.attachments) }, task.agent === 'codex' || task.agent === 'claude' ? { execPath: process.execPath, script: bridge, claudeConfigPath } : undefined, { id: task.externalSessionId, resume, uniqueCwd: !task.inPlace })
       task.terminalStarted = true
