@@ -86,6 +86,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan hub stop --id <任务ID>
   yan browser <动作> [选项]     内置浏览器（yan browser --help 看全部动作）
   yan search query --query-text "关键词"  联网搜索（需要 OpenCLI）
+  yan search fetch --url <网址>           读网页正文；yan search docs --library <库名> --query-text "问题" 查开发文档
   yan search doctor                       搜索后端诊断（未安装也能读）
 
 选项：
@@ -369,18 +370,23 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
 
 动作：
   query   联网搜索。按查询语言自动挑网页来源：中文用 Bing + 360，其余用 DuckDuckGo + Bing；
-          配了 Brave API key 时再加 Brave；另有维基百科 / arXiv / Hacker News（需 OpenCLI）
+          用户在设置里配了 Tavily / Brave key 时自动加上并排在最前；另有维基百科 / arXiv / Hacker News（需 OpenCLI）
             yan search query --query-text "flash attention"
             yan search query --query-text "…" --sources wikipedia,arxiv --limit-per-source 5 --limit-total 12
-  fetch   把一个网页读成正文文本（JS 渲染页也行；不带登录态，不读内网地址）
-            yan search fetch --url https://example.com/post [--max-chars 12000]
+  fetch   把一个网页读成正文文本（JS 渲染页也行；不带登录态，不读内网地址）。本地读不出正文时，
+          若用户配了 Firecrawl key 会自动改用它（结果里 via 写明是谁读的）；--via local|firecrawl 可强制
+            yan search fetch --url https://example.com/post [--max-chars 12000] [--via firecrawl]
+  docs    查开发文档：按库名取该库最新版本的文档片段与示例（Context7）。库名有歧义时看结果里的 alternatives，
+          用 --library-id 指定
+            yan search docs --library react --query-text "useEffect 清理函数"
+            yan search docs --library-id /vercel/next.js --query-text "middleware matcher" [--max-chars 12000]
   doctor  看后端在不在、版本、各来源依赖（未安装 OpenCLI 时也能读）
 
 说明：
   · 后端是 OpenCLI（用户自行安装）。没装时 query 回 code=backend_unavailable，
     doctor 回可读提示 —— 不把「取不到」写成「没有结果」；
   · 逐来源状态是分开的：ok / empty / timeout / unavailable / error；
-  · 网页来源（bing / ddg / so360 / brave）的 --sources 可以点名；某个来源弹验证或连不上会单独报错，其余照常；
+  · 网页来源（bing / ddg / so360 / brave / tavily）的 --sources 可以点名；没配 key 的来源会单独报 api_key_missing；某个来源弹验证或连不上会单独报错，其余照常；
   · 要读结果正文先用 fetch；要登录、点击、交互的页面再用内置浏览器：yan browser navigate --url <结果里的 url>；
   · 这个 search 是「联网找网页」；在已装能力里找工具用 yan capabilities search。
 `,
@@ -522,9 +528,9 @@ const GROUP_SPECS = {
     required: { read: ['path'] }
   },
   search: {
-    actions: ['query', 'fetch', 'doctor'],
-    /* doctor 无必需参数；query 至少要一个查询词；fetch 要一个网址 */
-    required: { query: ['query-text'], fetch: ['url'] }
+    actions: ['query', 'fetch', 'docs', 'doctor'],
+    /* doctor 无必需参数；query 至少要一个查询词；fetch 要一个网址；docs 要问题（库名或库 ID 由宿主校验） */
+    required: { query: ['query-text'], fetch: ['url'], docs: ['query-text'] }
   },
   browser: {
     actions: [

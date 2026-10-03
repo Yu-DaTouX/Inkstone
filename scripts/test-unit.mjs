@@ -3582,6 +3582,47 @@ const { runSearchTests } = await import('./test-search.mjs')
 await runSearchTests(ok, searchMod)
 
 /*
+ * 增强搜索服务（Tavily / Firecrawl / Context7）与 key 配置：替身 fetch，不联网。
+ * key 文件落在临时数据目录；`electron` 换成桩（read-page 依赖它，但这里不会走到隐藏窗口）。
+ */
+{
+  const { mkdtempSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join, resolve } = await import('node:path')
+  const dataDir = mkdtempSync(join(tmpdir(), 'yan-search-providers-'))
+  const stub = join(dataDir, 'electron-stub.mjs')
+  writeFileSync(stub, 'export const BrowserWindow = class {}\nexport const session = {}\n')
+  const savedDataDir = process.env.YAN_DATA_DIR
+  process.env.YAN_DATA_DIR = dataDir
+  try {
+    const entry = [
+      "export * as config from './src/main/search/config.ts'",
+      "export * as tavily from './src/main/search/tavily.ts'",
+      "export * as firecrawl from './src/main/search/firecrawl.ts'",
+      "export * as context7 from './src/main/search/context7.ts'",
+      "export * as shared from './src/shared/search.ts'"
+    ].join('\n')
+    await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+      build({
+        stdin: { contents: entry, resolveDir: resolve('.'), loader: 'ts' },
+        outfile: 'out/test/search-providers.mjs',
+        bundle: true,
+        format: 'esm',
+        platform: 'node',
+        alias: { electron: stub },
+        logLevel: 'silent'
+      })
+    )
+    const providers = await import('../out/test/search-providers.mjs')
+    const { runSearchProviderTests } = await import('./test-search-providers.mjs')
+    await runSearchProviderTests(ok, providers, dataDir)
+  } finally {
+    if (savedDataDir === undefined) delete process.env.YAN_DATA_DIR
+    else process.env.YAN_DATA_DIR = savedDataDir
+  }
+}
+
+/*
  * 受管结果落盘（capability-server）：所有 `yan` 命令共用的通用链路。
  * 超过大小上限时必须是**合法 JSON**（带 truncated/bytes/shape），不能是半截文本。
  */
