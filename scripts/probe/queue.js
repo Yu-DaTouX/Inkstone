@@ -138,7 +138,12 @@
     }
   }
   log('  撤回前 key: ' + JSON.stringify(runtimeKey()))
-  const retractTarget = queued[0]
+  /*
+   * 目标必须在**点击前**重新取：上面 D9 那一段等了几十秒，开头的 `queued[0]`
+   * 很可能已经被 pi 收走 —— 那时点它只会得到「已被接收」。按钮也按同一顺序取
+   * （steering 在前），两者才对得上是同一条。
+   */
+  const retractTarget = [...store.getState().queue.steering, ...store.getState().queue.followUp][0]
   const retractButton = q('[data-testid="queue-retract"]')
   if (retractTarget && retractButton) {
     /*

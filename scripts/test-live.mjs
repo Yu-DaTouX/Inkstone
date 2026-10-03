@@ -1043,6 +1043,7 @@ const CASES = {
   image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1, model: TEST_VISION_MODEL },
   // 排队 + Esc 回收：需要真流式，也花 token
   queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1 },
+  queuebusy: { probe: 'scripts/probe/queue-busy.js', delay: 9000, cost: 1 },
   // 队列撤回的失败与并发边界（N09）：撤回不存在的 id / 连点两次 / 同时两条 —— 不花 token
   queueretract: { probe: 'scripts/probe/queue-retract.js', delay: 9000, cost: 0 },
   /*

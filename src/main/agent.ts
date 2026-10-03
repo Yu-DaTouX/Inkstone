@@ -786,6 +786,15 @@ export class AgentController extends EventEmitter {
    */
   private queueState: QueueState = { steering: [], followUp: [] }
   private queueSequence = 0
+  /**
+   * 是否正在做基于 clear_queue 的队列操作。
+   *
+   * pi 在 clear_queue 之后会推好几帧中间快照（最先一帧就是“空队列”）。
+   * 拿它覆盖本地快照，随后按文本复用 id 的重建就拿不到原来的 id ——
+   * 用户点「插队 / 撤回」会被误判成“消息已被 pi 接收”，还会白重建一次队列。
+   * 操作期间一律跳过 pi 的中间帧，由操作方在收尾时推权威数据。
+   */
+  private queueBusy = false
   /** clear_queue + 重排必须串行，避免两次撤回互相覆盖恢复结果。 */
   private queueOperations: Promise<void> = Promise.resolve()
 
@@ -2459,10 +2468,13 @@ export class AgentController extends EventEmitter {
         break
 
       case 'queue_update':
-        this.publishQueue(
-          Array.isArray(evt.steering) ? (evt.steering as string[]) : [],
-          Array.isArray(evt.followUp) ? (evt.followUp as string[]) : []
-        )
+        /* 队列操作（清空 → 重建）期间的中间帧不作数，见 queueBusy */
+        if (!this.queueBusy) {
+          this.publishQueue(
+            Array.isArray(evt.steering) ? (evt.steering as string[]) : [],
+            Array.isArray(evt.followUp) ? (evt.followUp as string[]) : []
+          )
+        }
         break
 
       /* ---- 直执行 bash 的流式输出 ---- */
@@ -2914,8 +2926,17 @@ export class AgentController extends EventEmitter {
 
   /** 所有基于 clear_queue 的操作共享一个串行闸门。 */
   private queueRun<T>(work: () => Promise<T>): Promise<T> {
+    /* 闸门里置队列操作标记：这一段时间内 pi 推的 queue_update 是中间态，不作数 */
+    const guarded = async (): Promise<T> => {
+      this.queueBusy = true
+      try {
+        return await work()
+      } finally {
+        this.queueBusy = false
+      }
+    }
     const previous = this.queueOperations
-    const current = previous.then(work, work)
+    const current = previous.then(guarded, guarded)
     this.queueOperations = current.then(() => undefined, () => undefined)
     return current
   }
@@ -3070,7 +3091,7 @@ export class AgentController extends EventEmitter {
             ok: false,
             error: recovery
               ? `消息已被接收；恢复队列失败：${recovery}`
-              : '消息已被 pi 接收，无法再插队'
+              : '消息已被 pi 接收（已进入本轮对话），无法再插队'
           }
         }
 
@@ -3121,7 +3142,7 @@ export class AgentController extends EventEmitter {
             ok: false,
             error: recovery
               ? `消息已被接收；恢复队列失败：${recovery}`
-              : '消息已被 pi 接收，无法撤回'
+              : '消息已被 pi 接收（已进入本轮对话），无法撤回'
           }
         }
 
@@ -3157,7 +3178,14 @@ export class AgentController extends EventEmitter {
     // 否则用户打了一半又改主意的话，那几句话就白打了（rpc.md §clear_queue）。
     let cleared: { steering: string[]; followUp: string[] } = { steering: [], followUp: [] }
     try {
-      const res = await this.rpc?.command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
+      /*
+       * 清空队列要走串行闸门：并发的「撤回 / 插队」收尾时会把剩余项 refill 回 pi，
+       * 与这里的 clear_queue 交错的话，中止之后 pi 里会残留几帧「排队中」——
+       * 用户看到中止了输入框上方还挂着消息。
+       */
+      const res = await this.queueRun(async () =>
+        this.rpc ? this.rpc.command<{ steering?: string[]; followUp?: string[] }>('clear_queue') : undefined
+      )
       if (res?.success && res.data) {
         cleared = { steering: res.data.steering ?? [], followUp: res.data.followUp ?? [] }
       }
