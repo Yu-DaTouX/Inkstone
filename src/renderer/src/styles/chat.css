@@ -490,7 +490,22 @@
   animation: sheadflash var(--dur-600) var(--ease);
 }
 
-/* 主区头部：标题 · 视图切换 · 项目胶囊 · 目标（44px，横贯中栏） */
+/* 标题栏中段：会话头与应用主栏同一行，没有自己的底色与分隔线 */
+.tb-center {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+}
+.titlebar .shead {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+}
+/* 主区头部：标题 · 视图切换 · 项目胶囊 · 目标 */
 .shead {
   display: flex;
   align-items: center;

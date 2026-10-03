@@ -58,7 +58,10 @@ export function hideDockPane(layout: WorkspaceLayout, pane: string): WorkspaceLa
   })
   return { ...layout, root, hidden: [...new Set([...layout.hidden, pane])], maximized: layout.maximized === pane ? undefined : layout.maximized }
 }
-export function moveDockPane(layout: WorkspaceLayout, pane: string, targetId: string, edge: DockEdge): WorkspaceLayout {
+/** The size the moved pane already has along the new split, and the length of the target it splits. */
+export interface DockKeep { size: number; extent: number }
+/** With `keep`, the moved pane lands at the size it had instead of half of the target. */
+export function moveDockPane(layout: WorkspaceLayout, pane: string, targetId: string, edge: DockEdge, keep?: DockKeep): WorkspaceLayout {
   const groups = dockGroups(layout.root), source = groups.find(g => g.panes.includes(pane)), target = groups.find(g => g.id === targetId)
   if (!source || !target || (source.id === targetId && (source.panes.length === 1 || edge === 'center'))) return layout
   if (edge === 'center' && (pane === CHAT_PANE || target.panes.includes(CHAT_PANE))) return layout
@@ -68,7 +71,8 @@ export function moveDockPane(layout: WorkspaceLayout, pane: string, targetId: st
     if (n.type !== 'group' || n.id !== targetId) return n
     if (edge === 'center') return { ...n, panes: [...n.panes, pane], active: pane }
     const newGroup = group(uid(), [pane]), before = edge === 'left' || edge === 'top'
-    return { type: 'split', id: uid(), axis: edge === 'left' || edge === 'right' ? 'x' : 'y', ratio: .5, first: before ? newGroup : n, second: before ? n : newGroup }
+    const share = keep && keep.extent > DOCK_GAP ? Math.max(.1, Math.min(.9, keep.size / (keep.extent - DOCK_GAP))) : .5
+    return { type: 'split', id: uid(), axis: edge === 'left' || edge === 'right' ? 'x' : 'y', ratio: before ? share : 1 - share, first: before ? newGroup : n, second: before ? n : newGroup }
   })
   return { ...layout, root, maximized: undefined, hidden: layout.hidden.filter(id => id !== pane) }
 }

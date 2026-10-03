@@ -24,6 +24,9 @@
   background: var(--bg-1);
   border-bottom: 1px solid var(--border);
   user-select: none;
+  /* 会话头的环境菜单、目标浮层从这里向下展开，要盖在工作区之上 */
+  position: relative;
+  z-index: 60;
 }
 .tb-left {
   display: flex;
@@ -156,6 +159,9 @@
    */
   padding: var(--sp-5) 0 var(--sp-4);
   min-width: 0;
+  /* 顶部一小段轻渐隐，滚到标题栏下的消息淡出而不是被一刀切断；比上内边距矮，所以停在顶端时首条消息不受影响 */
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.35), #000 var(--sp-4));
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.35), #000 var(--sp-4));
 }
 .stream-inner {
   max-width: var(--w-stream);

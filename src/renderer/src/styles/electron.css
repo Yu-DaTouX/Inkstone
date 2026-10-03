@@ -9,7 +9,10 @@
 }
 .titlebar button,
 .titlebar input,
-.titlebar a {
+.titlebar a,
+.titlebar .shead-view,
+.titlebar .env-menu,
+.titlebar .goal-popover {
   -webkit-app-region: no-drag;
 }
 

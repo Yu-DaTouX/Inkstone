@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Icon } from '../../icons/Icon'
 import { BrandMark } from './BrandMark'
 import { useI18n } from '../../i18n'
@@ -17,6 +18,8 @@ interface Props {
   alwaysOnTop?: boolean
   onToggleAlwaysOnTop?: () => void
   maximized?: boolean
+  /** 标题栏中段：会话标题与会话级入口（SessionHeader），与应用主栏合为一条 */
+  center?: ReactNode
 }
 
 /**
@@ -50,6 +53,7 @@ export function TitleBar({
   alwaysOnTop,
   onToggleAlwaysOnTop,
   maximized,
+  center
 }: Props) {
   const { t } = useI18n()
   const win = window.yan.win
@@ -77,21 +81,17 @@ export function TitleBar({
           <span className="tb-name">砚</span>
           <span className="tb-word" aria-hidden>INKSTONE</span>
         </span>
-        {/*
-         * 会话名胶囊**已删**（用户要求）。
-         * 理由：会话标题已经在**中栏顶部**常驻（SessionHeader），
-         * 而且那边显示的是完整标题（不截断、能悬停看全）。
-         * 一个信息只在一个地方出现。
-         */}
+        {/* 会话标题在中段（SessionHeader），这里不重复；一个信息只在一个地方出现。 */}
       </div>
 
       {/*
-       * 标题栏中段：**空**（用户要求删掉「已连接 · 工作目录」）。
-       * 这里必须留一个占位元素 —— .titlebar 是三列 grid
-       *（auto / 1fr / auto），少一个子元素右侧那组会被摆到中列里拉宽。
+       * 标题栏中段：会话标题与会话级入口（视图、环境、目标、会话菜单），
+       * 与应用主栏合为一条，参照 Claude 桌面端。没有「已连接 · 工作目录」：
        * 连接失败有 .connbar 在正文上方提示，工作目录在设置里看。
+       * 这个元素必须在 —— .titlebar 是三列 grid（auto / 1fr / auto），
+       * 少一个子元素右侧那组会被摆到中列里拉宽。
        */}
-      <div className="tb-center" />
+      <div className="tb-center">{center}</div>
 
       <div className="tb-right">
         {/*

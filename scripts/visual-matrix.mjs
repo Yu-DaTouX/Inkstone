@@ -5237,6 +5237,21 @@ if (ONLY.includes('workspace')) {
   for (const group of GROUPS) group.states.push('workspace')
   GROUPS.push({ w: 2560, h: 1380, scale: 1, theme: 'dark', states: ['workspace'] })
 }
+/* 磁贴拖拽尺寸：`YAN_MATRIX_ONLY=tiledrag`，场景见 scripts/probe/tile-drag-width.js */
+if (ONLY.includes('tiledrag')) {
+  STATES.tiledrag = readFileSync(join(root, 'scripts/probe/tile-drag-width.js'), 'utf8')
+  MUST_HAVE.tiledrag = ['[data-testid="tile-workspace"]', '.tile-heading']
+  for (const group of GROUPS) group.states.push('tiledrag')
+}
+/* 设置合并页截图：`YAN_MATRIX_ONLY=settingspageappearance,settingspageworkspace,settingspagedevices`，每页一张 */
+if (ONLY.some((name) => name.startsWith('settingspage'))) {
+  for (const page of ['appearance', 'workspace', 'devices']) {
+    const name = 'settingspage' + page
+    STATES[name] = `(async () => { const s = window.__yanStore.getState(); s.openSettings('${page}'); await new Promise((r) => setTimeout(r, 700)); return 'ok' })()`
+    MUST_HAVE[name] = ['.settings']
+    for (const group of GROUPS.slice(0, 1)) group.states.push(name)
+  }
+}
 /* README 主页截图：`YAN_MATRIX_ONLY=showcase`，场景见 scripts/probe/readme-showcase.js */
 if (ONLY.includes('showcase')) {
   STATES.showcase = readFileSync(join(root, 'scripts/probe/readme-showcase.js'), 'utf8')
