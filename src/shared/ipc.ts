@@ -103,10 +103,11 @@ import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
 import type { ContextActionSummary } from './context-actions'
 import type { ContextBackgroundUsageSummary } from './context-background-usage'
+import type { ContextInspectSnapshot } from './context-inspect'
 import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
-import type { SearchBackendStatus, SearchApiConfigView } from './search'
+import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
 import type { TaskInboxPage, TaskInboxQuery } from './task-inbox'
 import type { ToolLayout } from './tool-layout'
 /* 活动档案（实施-25 P01）：类型与纯逻辑在 `./agent-profile`，这里转发给渲染端。 */
@@ -3423,6 +3424,8 @@ export interface YanBridge {
    * 与 `contextActions` 同一约定：读的是**当前活动会话**，界面不自报会话身份。
    */
   contextBackgroundUsage(): Promise<ContextBackgroundUsageSummary>
+  /** 当前会话最近一次上报的系统提示分段与工具定义（估算）；还没有对话时为 null */
+  contextInspect(): Promise<ContextInspectSnapshot | null>
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
 
   /**
@@ -3463,10 +3466,10 @@ export interface YanBridge {
     doctor(): Promise<SearchBackendStatus>
     /** 用户点「安装 OpenCLI」：npm 全局安装；needsNode 表示先要装 Node.js */
     installBackend(): Promise<{ ok: boolean; needsNode?: boolean; error?: string; log?: string }>
-    /** 搜索 API（Brave）配置状态；密钥不返回渲染端 */
+    /** 增强搜索各服务（Tavily / Brave / Firecrawl / Context7）的配置状态；密钥不返回渲染端 */
     apiConfig(): Promise<SearchApiConfigView>
-    setApiKey(key: string): Promise<{ ok: boolean; error?: string }>
-    clearApiKey(): Promise<{ ok: boolean; error?: string }>
+    setApiKey(provider: SearchProviderId, key: string): Promise<{ ok: boolean; error?: string }>
+    clearApiKey(provider: SearchProviderId): Promise<{ ok: boolean; error?: string }>
     /** 「不再提示」开关；设置页可重新打开 */
     setApiHintDismissed(dismissed: boolean): Promise<void>
   }

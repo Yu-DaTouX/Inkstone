@@ -31,8 +31,8 @@ import { StorageSection } from './StorageSection'
 /**
  * 设置页的 id。
  *
- * 导航只有九页（SETTINGS_PAGES）；旧 id（sound / status / knowledge / packages /
- * remote / peer）仍可传给 openSettings，由 PAGE_OF 落到合并后的那一页，
+ * 导航只有六页（SETTINGS_PAGES）；旧 id（input / sound / context / knowledge / voice /
+ * status / packages / remote / peer）仍可传给 openSettings，由 PAGE_OF 落到合并后的那一页，
  * 这样散落在输入区、引导与菜单里的深链接不用逐个改。
  */
 export type SettingsTab =
@@ -52,19 +52,19 @@ export type SettingsTab =
   | 'remote'
   | 'peer'
 
-type SettingsPage = 'auth' | 'appearance' | 'input' | 'workspace' | 'context' | 'capabilities' | 'voice' | 'devices' | 'about'
+type SettingsPage = 'auth' | 'appearance' | 'workspace' | 'capabilities' | 'devices' | 'about'
 
 const PAGE_OF: Record<SettingsTab, SettingsPage> = {
   auth: 'auth',
   appearance: 'appearance',
-  input: 'input',
-  sound: 'input',
+  input: 'appearance',
+  sound: 'appearance',
   workspace: 'workspace',
-  context: 'context',
-  knowledge: 'context',
+  context: 'workspace',
+  knowledge: 'workspace',
   capabilities: 'capabilities',
   packages: 'capabilities',
-  voice: 'voice',
+  voice: 'devices',
   devices: 'devices',
   remote: 'devices',
   peer: 'devices',
@@ -72,21 +72,18 @@ const PAGE_OF: Record<SettingsTab, SettingsPage> = {
   status: 'about'
 }
 
-/** 导航顺序：先是每天会碰的（模型、外观、输入），再是工作方式，最后是连接与关于 */
+/** 导航顺序：先是每天会碰的（模型、外观与输入），再是工作方式与能力，最后是设备与关于 */
 const SETTINGS_PAGES: { id: SettingsPage; key: Parameters<TFunc>[0]; icon: string }[] = [
   { id: 'auth', key: 'set.auth', icon: 'key' },
-  { id: 'appearance', key: 'set.appearance', icon: 'moon' },
-  { id: 'input', key: 'set.input', icon: 'bell' },
-  { id: 'workspace', key: 'set.workspace', icon: 'group' },
-  { id: 'context', key: 'set.context', icon: 'layers' },
+  { id: 'appearance', key: 'set.pageAppearance', icon: 'moon' },
+  { id: 'workspace', key: 'set.pageWorkspace', icon: 'group' },
   { id: 'capabilities', key: 'set.capabilities', icon: 'sparkles' },
-  { id: 'voice', key: 'set.voice', icon: 'mic' },
-  { id: 'devices', key: 'set.devices', icon: 'phone' },
+  { id: 'devices', key: 'set.pageDevices', icon: 'phone' },
   { id: 'about', key: 'set.about', icon: 'shield-check' }
 ]
 
 /**
- * 设置面板：左侧九页导航，右侧当前页。
+ * 设置面板：左侧六页导航，右侧当前页。
  * 每页先放最常改的几项，诊断与高级数值收进页尾的「高级」。
  */
 export function Settings({
@@ -212,19 +209,21 @@ export function Settings({
           {page === 'auth' ? (
             <AuthTab />
           ) : page === 'appearance' ? (
-            <AppearanceTab lang={lang} setLang={setLang} />
-          ) : page === 'input' ? (
             <>
-              <InputTab />
+              <AppearanceTab lang={lang} setLang={setLang} />
+              <SettingGroup title={t('set.input')}>
+                <InputTab />
+              </SettingGroup>
               <SettingGroup title={t('set.sound')}>
                 <SoundTab />
               </SettingGroup>
             </>
           ) : page === 'workspace' ? (
-            <WorkspaceTab />
-          ) : page === 'context' ? (
             <>
-              <ContextTab />
+              <WorkspaceTab />
+              <SettingGroup title={t('set.context')}>
+                <ContextTab />
+              </SettingGroup>
               <SettingGroup title={t('set.knowledge')}>
                 <KnowledgeTab />
               </SettingGroup>
@@ -236,10 +235,11 @@ export function Settings({
                 <PackagesTab />
               </SettingGroup>
             </>
-          ) : page === 'voice' ? (
-            <VoiceTab />
           ) : page === 'devices' ? (
             <>
+              <SettingGroup title={t('set.voice')}>
+                <VoiceTab />
+              </SettingGroup>
               <SettingGroup title={t('set.remote')}>
                 <RemoteTab />
               </SettingGroup>

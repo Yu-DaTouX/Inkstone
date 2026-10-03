@@ -460,6 +460,8 @@ const CASES = {
   },
   // 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐
   context: { probe: 'scripts/probe/context.js', delay: 9000, cost: 0 },
+  // 真实一轮后，浮层出现系统提示分段与工具定义明细（context-inspect 薄层 → context.inspect → yan:contextInspect）
+  contextinspect: { probe: 'scripts/probe/context-inspect.js', delay: 9000, cost: 1, budget: 60000 },
   // C-2b：三类整理（清扫 / 状态刷新 / 整轮压缩）在界面上分开显示，界面数 = 主进程数
   contextactions: { probe: 'scripts/probe/contextactions.js', delay: 9000, cost: 0 },
   /*
@@ -656,6 +658,7 @@ const CASES = {
    *（`window.yan.runBash`），不需要模型生成。必须在**隔离的 fixture 目录**里跑，
    * 因为它会真的建/改/删文件。
    */
+  tiledrag: { probe: 'scripts/probe/tile-drag-width.js', delay: 9000, cost: 0 },
   workspacechanges: { probe: 'scripts/probe/workspace-changes.js', delay: 10000, cost: 0, fixture: true, fixtureSub: 'repo', budget: 180000, projectPeers: true },
   /*
    * Git 审查 + 环境菜单（方案 G1）—— cost 0，不调模型。
