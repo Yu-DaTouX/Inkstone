@@ -15,6 +15,18 @@ for (const agent of ['codex', 'claude', 'pi', 'gemini', 'grok']) {
   assert.equal(args.at(-1), text, 'CLI receives one verbatim prompt argument, without host instructions')
 }
 assert.deepEqual(hubTerminalArgs([], { agent: 'codex', prompt: '', externalSessionId: 'native-session', model: 'chosen-model' }), ['resume', 'native-session', '--model', 'chosen-model'])
+{
+  /* 终端接入砚的 MCP 入口：Codex 用 -c 内联表且令牌只经 env_vars 转交；Claude 的 --mcp-config 排在初始指令之后。 */
+  const bridge = { execPath: 'C:\\Program Files\\Inkstone\\Inkstone.exe', script: 'C:\\app\\yan-cli\\hub-mcp.mjs', claudeConfigPath: 'C:\\data\\mcp.json' }
+  const codex = hubTerminalArgs(['launcher'], { agent: 'codex', prompt: 'do it', externalSessionId: 'sid' }, bridge)
+  assert.deepEqual(codex.slice(0, 2), ['launcher', '-c'])
+  assert.ok(codex[2].startsWith('mcp_servers.inkstone={command=') && codex[2].includes("env_vars=['INKSTONE_HUB_URL','INKSTONE_HUB_TOKEN'"), 'codex gets the inline MCP table')
+  assert.ok(!codex[2].includes('Bearer') && !/TOKEN=/.test(codex[2]), 'token values never appear on the command line')
+  assert.deepEqual(codex.slice(3), ['resume', 'sid', 'do it'])
+  const claude = hubTerminalArgs([], { agent: 'claude', prompt: 'do it' }, bridge)
+  assert.deepEqual(claude, ['do it', '--mcp-config', 'C:\\data\\mcp.json'])
+  assert.deepEqual(hubTerminalArgs([], { agent: 'gemini', prompt: '' }, bridge), [], 'other CLIs are untouched')
+}
 const { ResourceCoordinator } = await import(pathToFileURL(join(root, 'resources.mjs')))
 const { hubGit, createHubWorkspace, freezeHubWorkspace, applyHubArtifact } = await import(pathToFileURL(join(root, 'workspaces.mjs')))
 const resources = new ResourceCoordinator()

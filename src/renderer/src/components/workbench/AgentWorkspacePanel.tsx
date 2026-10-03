@@ -94,6 +94,16 @@ export function AgentWorkspacePanel({ onBack, initialRun, onExpand, expanded, on
       {snapshot?.messages?.filter(m=>m.taskId===task.id).slice(-20).map(m=><div key={m.id} className="agent-message"><div className="agent-message-meta"><span>{m.parentSessionId?'回报主会话':m.fromTaskId?'Agent 消息':'你'}</span><span className={`ui-badge ${m.delivery==='failed'?'err':m.delivery==='queued'?'warn':''}`}>{m.delivery==='queued'?'等待发送':m.delivery==='typed'?'已写入终端':m.delivery==='injected'?'协议已接收':'投递失败'}</span></div><pre>{m.text}</pre>{m.delivery==='queued'&&m.packet&&task.mode==='terminal'?<Button size="sm" disabled={busy||task.inputOwner!=='desktop'||m.toRunId!==task.runId} onClick={()=>{if(window.confirm('请确认终端正等待输入且输入行没有未发送内容。现在粘贴此消息并回车？'))void act({action:'deliver-message',messageId:m.id,epoch:task.inputEpoch??0})}}>核对输入后发送</Button>:null}</div>)}</>:<p className="agent-collab-note">pi 子任务完成后按原设置回报父会话；停止与补丁操作保留原后端。</p>}
     </div>:null}
     {!managerOnly ? <div className="agent-run-surface">
+      {task?.status==='uncertain'?<div className="agent-ended ui-card" role="status" data-testid="agent-uncertain">
+        <strong>结果待核实</strong>
+        <p className="agent-ended-text">{task.error||'没有收到正式的完成确认。'}</p>
+        <p className="agent-ended-text">终端和受管进程退出时，砚无法判断任务是否做完。请先核对工作区或终端里的实际结果，再选择：</p>
+        <div className="agent-ended-actions">
+          <Button size="sm" variant="primary" icon="check-circle" disabled={busy} title="固定成果并转为待审阅；这不等于验收" onClick={()=>void act({action:'resolve',taskId:task.id,outcome:'executed'})}>确认执行已结束</Button>
+          <Button size="sm" disabled={busy||!task.workspace||task.workspaceRemoved} title="用原外部会话重新打开" onClick={()=>void act({action:'resume',taskId:task.id})}>重新运行</Button>
+          <Button size="sm" variant="ghost" disabled={busy} title="只清除提醒，不表示任务完成" onClick={()=>void act({action:'resolve',taskId:task.id,outcome:'dismiss'})}>忽略</Button>
+        </div>
+      </div>:null}
       {task?.terminalId?<HubTerminal task={task} onError={setError} onRefresh={refresh}/>:task?<AgentRunChat task={task} tasks={snapshot?.tasks??[]} messages={snapshot?.messages??[]} approvals={snapshot?.approvals??[]} busy={busy} act={act} onDetails={()=>setDetails(true)}/>:legacy?<AgentMessageStream run={legacy}/>:<EmptyState icon="agent" title="Agent 协作">添加 Agent，或从主对话打开派出的子任务。</EmptyState>}
     </div> : null}
   </section>

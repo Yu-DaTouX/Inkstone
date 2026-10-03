@@ -272,6 +272,10 @@ export class AgentHubService {
       await this.removeWorkspace(task)
       return { taskId: task.id }
     }
+    if (command.action === 'resolve') {
+      if (actor !== 'desktop') throw new Error('仅电脑端可以了结待核实的任务')
+      return this.resolveUncertain(task, command.outcome)
+    }
     this.expireInput()
     if (command.action === 'inspect') {
       if (task.inputOwner === actor && actor.startsWith('phone:')) task.inputExpiresAt = Date.now() + 30_000
@@ -437,7 +441,14 @@ export class AgentHubService {
     if (task.timeoutMinutes > 0) run.timer = setTimeout(() => { void this.cancel(task, '运行到达时长上限，已请求停止；请核对成果。') }, task.timeoutMinutes * 60_000)
     if (task.mode === 'terminal') {
       const executable = this.executables.get(task.agent)!
-      const args = hubTerminalArgs(executable.args, { ...task, prompt: task.prompt + attachmentText(task.attachments) })
+      /* 终端里的 Codex / Claude 也获得砚的派活与回报入口；令牌留在环境变量里，由 CLI 转交给桥接进程。 */
+      let claudeConfigPath: string | undefined
+      if (task.agent === 'claude') {
+        claudeConfigPath = join(opsDir, 'mcp.json')
+        await writeFile(claudeConfigPath, JSON.stringify({ mcpServers: { inkstone: { command: process.execPath, args: [bridge], env: { ELECTRON_RUN_AS_NODE: '1' } } } }), 'utf8')
+        if (run.stopping || this.live.get(task.id) !== run) return
+      }
+      const args = hubTerminalArgs(executable.args, { ...task, prompt: task.prompt + attachmentText(task.attachments) }, task.agent === 'codex' || task.agent === 'claude' ? { execPath: process.execPath, script: bridge, claudeConfigPath } : undefined)
       const terminal = startTerminal({ cwd: task.workspace, executable: executable.command, args, screenSnapshot: true, env: executable.args.length ? { ...env, ELECTRON_RUN_AS_NODE: '1' } : env })
       if (!terminal) throw new Error('无法启动 Agent 终端')
       task.terminalId = terminal.id; task.inputOwner = 'desktop'; task.inputEpoch = (task.inputEpoch ?? 0) + 1
@@ -750,6 +761,23 @@ export class AgentHubService {
     if (!project) throw new Error('项目已移除')
     await removeHubWorkspace(project.cwd, task.workspace)
     task.workspaceRemoved = true; task.updatedAt = Date.now(); this.changed()
+  }
+  /** 终端退出或宿主重启后没有正式完成信号；这里只记录用户核对后的结论，不替它判断成败。 */
+  private async resolveUncertain(task: HubTask, outcome: 'executed' | 'dismiss'): Promise<{ taskId: string; status: HubTask['status'] }> {
+    if (task.status !== 'uncertain' || this.live.has(task.id)) throw new Error('只有结果待核实且已无运行进程的任务可以了结')
+    if (outcome === 'dismiss') {
+      task.status = 'cancelled'; task.error = '已由用户忽略「结果待核实」提醒；未确认任务是否完成。'
+    } else if (outcome === 'executed') {
+      if (task.workspace && task.baseline && !task.workspaceRemoved && existsSync(task.workspace)) {
+        const runId = task.runId ?? randomUUID()
+        try { task.artifact = await freezeHubWorkspace(task.workspace, task.startTree ?? task.baseline, join(this.deps.dataDir, 'agent-hub', 'artifacts', runId), task.report ?? '用户确认执行已结束') }
+        catch (failure) { throw new Error(`成果冻结失败：${String(failure instanceof Error ? failure.message : failure).slice(0, 300)}`) }
+      }
+      task.status = 'needs_review'; task.error = undefined
+    } else throw new Error('了结方式无效')
+    task.updatedAt = Date.now(); delete task.inputOwner; task.inputEpoch = (task.inputEpoch ?? 0) + 1
+    this.changed()
+    return { taskId: task.id, status: task.status }
   }
   private async cancel(task: HubTask, reason?: string): Promise<void> {
     const run = this.live.get(task.id)

@@ -188,6 +188,8 @@ function AgentWindow({ task, onClose, onError, onRefresh }: { task: HubTask; onC
 export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onError: (error: string) => void; onRefresh: () => Promise<void> }) {
   const element = useRef<HTMLDivElement>(null)
   const current = useRef(task); current.current = task
+  /* 宿主重启或终端被关闭后，宿主已没有这个终端的画面：明说，而不是留一块空白。 */
+  const [gone, setGone] = useState(false)
   useEffect(() => {
     if (!element.current || !task.terminalId) return
     let disposed = false
@@ -205,7 +207,9 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
         reading = true
         try {
           const result = await window.yan.hub.command({ action: 'inspect', taskId: task.id, sinceSeq: seq }) as { terminal: { kind: string; data: string; seq: number; cols: number; rows: number } | null }
-          if (!alive || !result.terminal) return
+          if (!alive) return
+          setGone(!result.terminal)
+          if (!result.terminal) return
           const update = result.terminal
           if (update.kind === 'snapshot') term.reset()
           if (term.cols !== update.cols || term.rows !== update.rows) term.resize(update.cols, update.rows)
@@ -228,5 +232,5 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
     })
     return () => { disposed = true; release() }
   }, [task.terminalId, onError])
-  return <>{task.inputOwner !== 'desktop' ? <div className="hub-row"><span>{task.inputOwner?.startsWith('phone:') ? '手机正在输入' : '终端只读'}</span>{task.status === 'running' ? <Button onClick={() => void window.yan.hub.command({ action: 'claim-input', taskId: task.id, epoch: task.inputEpoch ?? 0 }).then(onRefresh).catch((error) => onError(String(error)))}>电脑接管</Button> : null}</div> : null}<div ref={element} className="hub-terminal" /></>
+  return <>{task.inputOwner !== 'desktop' ? <div className="hub-row"><span>{task.inputOwner?.startsWith('phone:') ? '手机正在输入' : '终端只读'}</span>{task.status === 'running' ? <Button onClick={() => void window.yan.hub.command({ action: 'claim-input', taskId: task.id, epoch: task.inputEpoch ?? 0 }).then(onRefresh).catch((error) => onError(String(error)))}>电脑接管</Button> : null}</div> : null}{gone ? <p className="agent-terminal-gone" role="status">终端画面已不存在（砚重启或终端已关闭）。任务记录和成果仍在，可在上方核对后处理。</p> : null}<div ref={element} className="hub-terminal" /></>
 }

@@ -75,6 +75,17 @@ assert.equal(restored.tasks.get(saved.tasks[1].id).status, 'cancelled')
 assert.equal(restored.live.size, 0)
 assert.equal(restored.hasBusy(), true, 'uncertain history retains resource guards')
 assert.equal(restored.hasLiveWork(), false, 'restored uncertain history does not trigger a running-task exit warning')
+{
+  /* 了结待核实：忽略只记为已停止；确认执行已结束进入待审阅，两者都只限电脑端，且不会把任务当成已验收。 */
+  const id = saved.tasks[0].id
+  await assert.rejects(restored.command({ action: 'resolve', taskId: id, outcome: 'executed' }, 'phone:one'), /仅电脑端/)
+  await assert.rejects(restored.command({ action: 'resolve', taskId: id, outcome: 'bogus' }), /了结方式无效/)
+  const done = await restored.command({ action: 'resolve', taskId: id, outcome: 'executed' })
+  assert.equal(done.status, 'needs_review')
+  assert.notEqual(restored.tasks.get(id).status, 'completed')
+  await assert.rejects(restored.command({ action: 'resolve', taskId: id, outcome: 'dismiss' }), /只有结果待核实/)
+  assert.equal(restored.hasBusy(), false, 'resolving clears the uncertain guard')
+}
 restored.live.set('fixture-active-exit', { approvalResponses: new Map() })
 assert.equal(restored.hasLiveWork(), true, 'live execution still requires exit confirmation')
 restored.live.delete('fixture-active-exit')

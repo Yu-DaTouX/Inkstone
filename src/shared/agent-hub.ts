@@ -193,6 +193,11 @@ export type HubCommand =
   | { action: 'workspace-status'; projectId: string }
   /** Delete a finished task's worktree; the frozen patch and report stay. */
   | { action: 'remove-workspace'; taskId: string }
+  /**
+   * 人工了结「结果待核实」的任务：executed 表示用户核对后确认执行已结束（固定成果并进入待审阅，不等于验收），
+   * dismiss 只清除提醒（记为已停止），不赋予完成语义。
+   */
+  | { action: 'resolve'; taskId: string; outcome: 'executed' | 'dismiss' }
 export const HUB_ACTIVE: readonly HubStatus[] = ['preparing', 'running', 'waiting_input']
 export interface HubAttentionItem { id: string; taskId?: string; resourceId?: string }
 /** 通知只投影身份与版本；不携带任务文本或审批内容。 */
