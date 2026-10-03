@@ -49,5 +49,20 @@ export function runCommandRegistryTests(ok, registry) {
   const compatPanel = panels.find((command) => command.source === 'compatibility')
   ok(!!compatPanel && compatPanel.hiddenInMenu === true, '兼容那条仍被隐藏（补全里看不到）')
   ok(!!compatPanel && compatPanel.executable === false, '兼容那条永远不可执行（手打走到它就给反馈）')
-}
 
+  /*
+   * pi 终端内置命令必须被登记：RPC 的 get_commands 不报内置命令，
+   * 漏登记的名字会被当成普通消息发给模型。
+   */
+  for (const name of ['settings', 'thinking', 'export', 'copy', 'name', 'session', 'clone']) {
+    const command = local.find((item) => item.name === name)
+    ok(command?.source === 'yan' && command.executable === true, `/${name} 在桌面端可执行`)
+  }
+  for (const name of ['tree', 'fork', 'resume', 'import', 'share', 'scoped-models', 'logout', 'trust', 'reload', 'hotkeys', 'changelog', 'bug', 'quit']) {
+    const command = local.find((item) => item.name === name)
+    ok(
+      command?.source === 'compatibility' && command.executable === false && !!command.availability,
+      `/${name} 登记为兼容项并说明桌面端入口`
+    )
+  }
+}

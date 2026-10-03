@@ -182,10 +182,12 @@ export function Composer() {
 
   const resetComposerHeight = useCallback((): void => {
     if (!ref.current) return
-    ref.current.style.height = '40px'
+    ref.current.style.height = `${REST_H}px`
     ref.current.style.maxHeight = ''
   }, [])
 
+  /** 静止高度：两行，参照 Claude 的输入框 */
+  const REST_H = 64
   /** 展开后的默认高度：够写一段，但不至于占半个屏 */
   const TALL_H = 180
 
@@ -365,7 +367,7 @@ export function Composer() {
      * 现在：tall > 0（长文模式/手动拖过）时，高度是**下限**而不是结果 ——
      * 内容更多可以长高，但不会缩回去。
      */
-    const need = Math.min(Math.max(el.scrollHeight, 34), 240)
+    const need = Math.min(Math.max(el.scrollHeight, REST_H), 240)
     /*
      * 矮窗口里输入框不能把运行条、工具条和底部状态栏挤出窗口：
      * 实际高度不超过窗口高度的 35%（存下的 tall 不改，窗口变高后恢复）。
@@ -746,6 +748,8 @@ export function Composer() {
           : undefined
         if (selected) await setModel(selected.provider, selected.id)
         else openSettings('status')
+      } else {
+        await runPiBuiltin(localName ?? '', localArgs)
       }
       return
     }
@@ -1253,6 +1257,36 @@ function sameFileCwd(a: string, b: string): boolean {
 function toAbsoluteFilePath(cwd: string, rel: string): string {
   const root = cwd.replace(/[\\/]+$/, '')
   return rel ? `${root}\\${rel.replace(/\//g, '\\')}` : root
+}
+
+/**
+ * pi 终端内置命令在桌面端的落点。命令名与参数含义沿用 pi（/thinking 档位、/name 名称），
+ * 动作交给已有的 store 方法，不另起一套实现。
+ */
+async function runPiBuiltin(name: string, args: string): Promise<void> {
+  const s = useStore.getState()
+  if (name === 'settings') s.openSettings()
+  else if (name === 'export') await s.exportHtml()
+  else if (name === 'copy') await s.copyLastReply()
+  else if (name === 'clone') await s.clone()
+  else if (name === 'name') {
+    if (args) await s.setManualTitle('', args)
+    else s.notify('info', '用法：/name <会话名称>')
+  } else if (name === 'thinking') {
+    const levels = s.thinkingLevels
+    const level = args.toLowerCase()
+    if (!level) s.notify('info', `当前思考档位：${s.session?.thinkingLevel ?? 'off'}（可选：${levels.join(' / ') || '当前模型不支持'}）`)
+    else if (levels.includes(level)) await s.setThinking(level)
+    else s.notify('error', `当前模型没有「${args}」档，可选：${levels.join(' / ') || '无'}`)
+  } else if (name === 'session') {
+    const info = s.session
+    const lines = [
+      info?.sessionName || info?.sessionId || '（未开始）',
+      info ? `${info.messageCount} 条消息` : '',
+      info?.sessionFile ?? ''
+    ].filter(Boolean)
+    s.notify('info', lines.join(' · '))
+  }
 }
 
 /** 命令说明的第一句（到第一个句号 / 分号 / 括号为止），菜单一行放得下 */

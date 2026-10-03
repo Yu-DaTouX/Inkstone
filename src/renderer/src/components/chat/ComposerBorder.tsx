@@ -4,6 +4,7 @@ import { useStore } from '../../state/store'
 import { deriveRunProgress, runPhaseIsActive, type RunProgress } from '../../../../shared/run-progress'
 import { formatDuration } from '../../../../shared/duration'
 import { Spinner } from '../ui'
+import { compactionRunningText } from '../../state/compaction-view'
 
 /**
  * 输入区顶边的运行条（设计规范 §3.5）：方点阵 · 阶段文字 · 计时。
@@ -26,7 +27,9 @@ import { Spinner } from '../ui'
 function useRunProgress(): RunProgress | null {
   const session = useStore((s) => s.session)
   const messages = useStore((s) => s.messages)
-  const running = !!session?.isAgentRunning || !!session?.isStreaming
+  const compacting = !!session?.isCompacting
+  /* 压缩可以独立发生（/compact、回合之间的自动压缩），此时没有 agent_start，也要有运行条 */
+  const running = !!session?.isAgentRunning || !!session?.isStreaming || compacting
   const startedRef = useRef<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
@@ -35,11 +38,11 @@ function useRunProgress(): RunProgress | null {
       startedRef.current = null
       return undefined
     }
-    if (startedRef.current === null) startedRef.current = Date.now()
+    if (startedRef.current === null) startedRef.current = session?.compaction?.startedAt ?? Date.now()
     /* 秒级心跳只为了“耗时”和长耗时阈值，不拿它推进阶段 */
     const id = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(id)
-  }, [running])
+  }, [running, session?.compaction?.startedAt])
 
   if (!running) return null
 
@@ -71,6 +74,7 @@ function useRunProgress(): RunProgress | null {
   return deriveRunProgress({
     running: true,
     streaming: !!session?.isStreaming,
+    compacting,
     tool,
     thinking,
     requested,
@@ -103,9 +107,12 @@ export function ComposerBorder() {
    * 长耗时（≥30s）只写「仍在运行」—— 细节靠 title 与阶段文案，
    * 不把秒数堆在主行里干扰阅读。
    */
+  const compaction = useStore((s) => s.session?.compaction)
   const text = !progress
     ? ''
-    : progress.long
+    : progress.phase === 'compacting'
+      ? compactionRunningText(t, compaction)
+      : progress.long
       ? t('run.long')
       : progress.phase === 'tool'
         ? t('run.tool', { name: progress.detail ?? '' })

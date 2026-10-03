@@ -88,8 +88,26 @@
     ok(await waitPhase('requesting'), '工具结束后回到 requesting', phase())
 
     out.push('')
+    out.push('=== 6b. 压缩上下文：独立于回合，运行条要写「压缩中」 ===')
+    /* 真实事件序：compaction_start 会把 isStreaming 也置真，不能被显示成「生成回复」 */
+    setTurn(
+      {
+        isAgentRunning: false,
+        isStreaming: true,
+        isCompacting: true,
+        compaction: { status: 'running', reason: 'manual', startedAt: Date.now() - 2000 }
+      },
+      [user, assistant({ text: '上一轮的回复' })]
+    )
+    ok(await waitPhase('compacting'), '阶段为 compacting（没有 agent_start 也有运行条）', phase())
+    ok(/压缩|Compact/.test(text()) && !/生成回复|Writing/.test(text()), '文案写压缩，不是「生成回复」', text())
+
+    out.push('')
     out.push('=== 7. 回合结束后整条状态收起 ===')
-    setTurn({ isAgentRunning: false, isStreaming: false }, [user, assistant({ text: '好了' })])
+    setTurn({ isAgentRunning: false, isStreaming: false, isCompacting: false, compaction: undefined }, [
+      user,
+      assistant({ text: '好了' })
+    ])
     await sleep(400)
     ok(!q('[data-testid="working"]'), '不在跑的时候不再显示工作状态')
     ok(phase() === 'idle', 'data-phase 回到 idle', String(phase()))

@@ -19,6 +19,7 @@ export type RunPhase =
   | 'thinking'
   | 'tool'
   | 'responding'
+  | 'compacting'
   | 'settled'
   | 'failed'
   | 'cancelled'
@@ -28,6 +29,8 @@ export interface RunProgressInput {
   running: boolean
   /** 有正文流在输出 */
   streaming: boolean
+  /** pi 正在压缩上下文（手动 /compact 或自动压缩；不一定伴随 agent_start） */
+  compacting?: boolean
   /** 正在执行的工具（取最后一个 status==='running' 的 toolCall） */
   tool: { name: string; startedAt?: number } | null
   /** 本回合已经出现可见思考流 */
@@ -63,7 +66,8 @@ const ACTIVE_PHASES: ReadonlySet<RunPhase> = new Set<RunPhase>([
   'requesting',
   'thinking',
   'tool',
-  'responding'
+  'responding',
+  'compacting'
 ])
 
 export function deriveRunProgress(input: RunProgressInput): RunProgress {
@@ -78,23 +82,26 @@ export function deriveRunProgress(input: RunProgressInput): RunProgress {
         ? 'cancelled'
         : input.terminal === 'completed'
           ? 'settled'
-          : input.tool
-            ? 'tool'
-            : input.streaming
-              ? 'responding'
-              : input.thinking
-                ? 'thinking'
-                : input.running && input.requested
-                  ? 'requesting'
-                  : input.running
-                    ? 'preparing'
-                    : 'settled'
+          : input.compacting
+            ? 'compacting'
+            : input.tool
+              ? 'tool'
+              : input.streaming
+                ? 'responding'
+                : input.thinking
+                  ? 'thinking'
+                  : input.running && input.requested
+                    ? 'requesting'
+                    : input.running
+                      ? 'preparing'
+                      : 'settled'
 
   return {
     phase,
     since: startedAt,
     ...(phase === 'tool' && input.tool ? { detail: input.tool.name } : {}),
-    long: long && ACTIVE_PHASES.has(phase),
+    /* 压缩本来就慢，长耗时也要继续说「压缩中」，不能被「仍在运行」顶掉 */
+    long: long && phase !== 'compacting' && ACTIVE_PHASES.has(phase),
     elapsedMs
   }
 }
