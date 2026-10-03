@@ -484,6 +484,11 @@ function capabilityGuideExtensionPath(): string | undefined {
   return yanThinResourcePath('capability-guide.js')
 }
 
+/** 上下文构成观测薄层：只读上报系统提示分段与工具定义（`context.inspect`）。 */
+function contextInspectExtensionPath(): string | undefined {
+  return yanThinResourcePath('context-inspect.js')
+}
+
 /**
  * 单轮重复动作兜底的薄层路径（2026-09-22）。
  *
@@ -515,6 +520,7 @@ function yanThinExtensionPaths(): string[] {
     preambleExtensionPath(),
     languageExtensionPath(),
     capabilityGuideExtensionPath(),
+    contextInspectExtensionPath(),
     repeatGuardExtensionPath(),
     dangerGuardExtensionPath(),
   ].filter((p): p is string => !!p && isAgentContextExtension(p))
@@ -2161,6 +2167,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         preambleExtension: preambleExtensionPath(),
         languageExtension: languageExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
+        contextInspectExtension: contextInspectExtensionPath(),
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
         repeatGuardExtension: repeatGuardExtensionPath(),
         dangerGuardExtension: dangerGuardExtensionPath(),
