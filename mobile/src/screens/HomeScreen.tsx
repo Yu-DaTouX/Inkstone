@@ -1,3 +1,4 @@
+import { LIFE_ASSISTANT_ENABLED } from '../features'
 import { useMemo, useRef, useState } from 'react'
 import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { idempotencyKey, RemoteHttpError, type SessionListItem } from '../api/client'
@@ -103,12 +104,14 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, onHub, alertsE
             </Pressable> : <QuestionCard key={q.id} question={q} onAnswer={(answer, key) => client.answer(q.id, answer, key).finally(() => refresh())} />)}
           </> : null}
           {!project && !query ? <>
+            {LIFE_ASSISTANT_ENABLED ? <>
             <SectionTitle>生活助手</SectionTitle>
             <Pressable accessibilityRole="button" accessibilityLabel="打开生活助手" onPress={onOpenAssistant} style={({ pressed }) => [styles.question, { borderColor: p.borderSoft, backgroundColor: p.bg2, opacity: pressed ? 0.7 : 1 }]}>
               <Icon name="sparkles" color={p.accent} size={icon.md} />
               <View style={styles.rowMain}><Text style={{ color: p.fg, fontSize: font.base }}>直接在手机上与模型对话</Text><Meta numberOfLines={1}>无需配对电脑 · 密钥只存手机</Meta></View>
               <Icon name="chevron-right" color={p.fgMute} size={icon.sm} />
             </Pressable>
+            </> : null}
             <SectionTitle>活动会话{active.length ? ` · ${active.length}` : ''}</SectionTitle>
             {active.length ? active.map((s) => <View key={s.id}>{renderSession(s, true)}</View>) : <Meta style={{ fontSize: font.sm, paddingVertical: space[2] }}>{stream === 'open' ? '暂无活动' : '等待连接'}</Meta>}
             <SectionTitle>项目</SectionTitle>

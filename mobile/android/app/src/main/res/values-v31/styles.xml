@@ -1,12 +1,11 @@
 <resources>
 
-    <!-- Android 12+ 系统启动画面：底色随深浅主题，图标是启动器前景放在品牌底砖色的圆里；随后接 RN 内的同款动画 -->
+    <!-- Android 12+ 系统启动画面：只显示随深浅主题的底色，不画图标；标志由 RN 内的启动动画绘制，两处不再大小不一而跳动 -->
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
         <item name="android:windowBackground">@color/splash_background</item>
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
-        <item name="android:windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_empty</item>
     </style>
 
 </resources>

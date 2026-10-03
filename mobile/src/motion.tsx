@@ -67,7 +67,7 @@ export function RunDot({ color, label }: { color?: string; label?: string }) {
 
 /*
  * 启动画面（设计规范 §3.4.1，与桌面同一画面）：石框从右上开口起笔描出，`>` 淡入，
- * 光标 `_` 呼吸直到 `ready`；就绪时若还没描完，等描完（至多半秒）再淡出再卸载。最长 8 秒无条件淡出。
+ * 光标 `_` 呼吸直到 `ready`；就绪时若还没描完，等描完（至多半秒）再淡出再卸载。最长 2.5 秒无条件淡出（电脑不可达时不让界面一直卡在启动画面）。
  * 系统启动画面（Android 12+）用同一底色，交接处不闪。减少动画时直接显示静态标志。
  */
 const AnimatedPath = Animated.createAnimatedComponent(Path)
@@ -83,7 +83,7 @@ export function BootSplash({ ready, onDone }: { ready: boolean; onDone: () => vo
   const [timedOut, setTimedOut] = useState(false)
   const introDone = useRef(false)
   useEffect(() => {
-    const id = setTimeout(() => setTimedOut(true), 8000)
+    const id = setTimeout(() => setTimedOut(true), 2500)
     return () => clearTimeout(id)
   }, [])
   useEffect(() => {

@@ -1,3 +1,4 @@
+import { LIFE_ASSISTANT_ENABLED } from '../features'
 import { useEffect, useState } from 'react'
 import { Alert, Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import type { Connection } from '../api/client'
@@ -55,9 +56,11 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
           <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>同时提醒多 Agent 的待答复、待审阅和待核实事项。锁屏只显示数量。</Text>
           <Button label="系统通知设置" onPress={() => void openAlertSettings()} />
         </View>
-        <SectionTitle>生活助手</SectionTitle>
-        <Button label="模型与服务商" icon="key" onPress={() => onOpenAssistantSettings?.()} />
-        <Meta style={{ fontSize: font.sm }}>密钥存在系统钥匙串，只在本机；不配对电脑也能用。</Meta>
+        {LIFE_ASSISTANT_ENABLED ? <>
+          <SectionTitle>生活助手</SectionTitle>
+          <Button label="模型与服务商" icon="key" onPress={() => onOpenAssistantSettings?.()} />
+          <Meta style={{ fontSize: font.sm }}>密钥存在系统钥匙串，只在本机；不配对电脑也能用。</Meta>
+        </> : null}
         <SectionTitle>帮助</SectionTitle>
         <Button label="使用说明" icon="external" onPress={() => open(GUIDE)} />
         <Button label="下载 Tailscale" icon="external" onPress={() => open('https://tailscale.com/download/android')} />

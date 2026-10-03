@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 系统启动画面不画图标：只显示底色，标志由应用内的启动动画绘制，避免两处图标大小不同而跳动。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:pathData="M0,0h1v1h-1z" android:fillColor="#00000000" />
+</vector>
