@@ -779,6 +779,7 @@ select.ui-input {
 .ui-splitter[aria-orientation='horizontal']::after { height: 2px; width: calc(100% - 2 * var(--r-lg)); }
 .ui-splitter:hover::after, .ui-splitter:focus-visible::after { background: var(--accent-line); }
 .ui-tile.drop-slot { background: var(--accent-soft); border: 1px dashed var(--accent-line); }
+.ui-tile-drop-edge { border: 2px solid var(--accent); border-radius: var(--r-lg); background: var(--accent-soft); }
 .ui-tile.floating { border-color: var(--border-str); box-shadow: var(--shadow-pop); }
 .ui-tile-grip-bar { display: block; width: 36px; height: 4px; border-radius: var(--r-full); background: var(--fg-dim); }
 .ui-menu-label { color: var(--fg-mute); font-size: var(--fs-xs); }

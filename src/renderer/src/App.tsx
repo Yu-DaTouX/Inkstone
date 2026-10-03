@@ -758,6 +758,16 @@ export default function App() {
           onToggleAlwaysOnTop={() => void toggleAlwaysOnTop()}
           maximized={maximized}
           onSettings={() => (settingsOpen ? closeSettings() : openSettings())}
+          center={
+            <Continuity
+              mapEnabled={dailyMode}
+              mapOpen={mapOpen}
+              onToggleMap={showMap}
+              spaceEnabled={dailyMode}
+              spaceOpen={spaceOpen}
+              onToggleSpace={(open) => showSpace(open)}
+            />
+          }
         />
 
         <div className="workspace workspace-tiled">
@@ -792,15 +802,6 @@ export default function App() {
           <Workspace sessionKey={workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)}>
           <WorkspacePane id="chat" title="主会话" icon="chat-round">
           <section className="center">
-            <Continuity
-              mapEnabled={dailyMode}
-              mapOpen={mapOpen}
-              onToggleMap={showMap}
-              spaceEnabled={dailyMode}
-              spaceOpen={spaceOpen}
-              onToggleSpace={(open) => showSpace(open)}
-            />
-
             {conn !== 'ready' ? <ConnBar conn={conn} /> : null}
 
             <ConversationOutline />

@@ -49,19 +49,19 @@
   log('=== 3. tab 数量 ===')
   const tabs = qa('.settings-tab').map((x) => x.textContent)
   log('  tab: ' + JSON.stringify(tabs))
-  ok(tabs.length === 10, `九个设置页加关闭入口（实际 ${tabs.length}）`)
+  ok(tabs.length === 7, `六个设置页加关闭入口（实际 ${tabs.length}）`)
 
   log('')
   log('=== 4. 上下文与记忆合并 ===')
-  const memTab = qa('.settings-tab').find((x) => /上下文与记忆|Context & memory/.test(x.textContent))
-  ok(!!memTab, '设置里有「上下文与记忆」合并页')
+  const memTab = qa('.settings-tab').find((x) => /工作区与上下文|Workspace & context/.test(x.textContent))
+  ok(!!memTab, '设置里有「工作区与上下文」合并页')
   ok(!q('.rightpanel .mem-sections'), '右栏里没有记忆面板')
   ok(!q('.review'), '没有记忆审阅条')
 
   log('')
   log('=== 5. 外观 tab ===')
-  const appTab = qa('.settings-tab').find((x) => /外观|Appearance/.test(x.textContent))
-  ok(!!appTab, '有「外观」tab')
+  const appTab = qa('.settings-tab').find((x) => /外观与输入|Appearance & input/.test(x.textContent))
+  ok(!!appTab, '有「外观与输入」tab')
   if (appTab) {
     click(appTab)
     await sleep(500)
@@ -100,9 +100,9 @@
   }
 
   log('')
-  log('=== 5c. 输入与提醒 tab ===')
-  const soundTab = qa('.settings-tab').find((x) => /输入与提醒|Input & notifications/.test(x.textContent))
-  ok(!!soundTab, '有「输入与提醒」tab')
+  log('=== 5c. 外观与输入页的提醒 ===')
+  const soundTab = qa('.settings-tab').find((x) => /外观与输入|Appearance & input/.test(x.textContent))
+  ok(!!soundTab, '外观与输入页含提醒设置')
   if (soundTab) {
     click(soundTab)
     await sleep(500)

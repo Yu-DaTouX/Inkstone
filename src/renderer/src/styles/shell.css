@@ -384,6 +384,7 @@
 .notice-action .notice-text {
   flex: 1 1 0;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 .notice-action .notice-actions {
   flex: 0 0 100%;
@@ -668,3 +669,13 @@ button.sb-seg { border: 0; background: transparent; color: inherit; font: inheri
 .quota-block-sub { display: flex; justify-content: space-between; gap: var(--sp-2); }
 .quota-block-sub > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .quota-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 22px; }
+/* Context breakdown details: fixed prompt sections and tool definitions. */
+.ctx-inspect { font-size: var(--fs-sm); }
+.ctx-inspect summary, .ctx-inspect-list summary { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; cursor: pointer; }
+.ctx-inspect > summary > .ui-meta-num { margin-left: auto; }
+.ctx-inspect-list { list-style: none; margin: var(--sp-1) 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ctx-inspect-list > li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.ctx-inspect-list > li > details { flex: 1; min-width: 0; }
+.ctx-inspect-list summary > .ui-meta-num { margin-left: auto; }
+.ctx-inspect-list > li > .ui-usage-name { flex: 1; }
+.ctx-inspect-text { margin: var(--sp-1) 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); color: var(--fg-mute); }

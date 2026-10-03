@@ -4,7 +4,7 @@ import type { IconName } from '../../icons/Icon'
 import { IconButton, Menu, MenuItem, MenuSeparator, Select, Tab } from '../ui'
 import { useStore } from '../../state/store'
 import { loadWorkbenchState } from '../../state/workbench'
-import { CHAT_PANE, DOCK_GAP, defaultWorkspaceLayout, dockGroups, hideDockPane, measureDockLayout, moveDockPane, normalizeWorkspaceLayout, openDockPane, resizeDockSplit, withoutDockPane, type DockEdge, type DockRect, type DockSeparator, type WorkspaceLayout } from '../../state/workspace-layout'
+import { CHAT_PANE, DOCK_GAP, defaultWorkspaceLayout, dockGroups, hideDockPane, measureDockLayout, moveDockPane, normalizeWorkspaceLayout, openDockPane, resizeDockSplit, withoutDockPane, type DockEdge, type DockKeep, type DockRect, type DockSeparator, type WorkspaceLayout } from '../../state/workspace-layout'
 
 /** Resource-owned commands shown in the tile menu; layout never decides what they do. */
 export interface PaneAction { label: string; icon?: IconName; danger?: boolean; run(): void }
@@ -64,7 +64,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   const [size, setSize] = useState({ w: 1000, h: 700 })
   const [menu, setMenu] = useState<WorkspaceMenu | null>(null)
   const [target, setTarget] = useState('')
-  const [drag, setDrag] = useState<{ pane: string; target?: string; edge?: DockEdge } | null>(null)
+  const [drag, setDrag] = useState<{ pane: string; target?: string; edge?: DockEdge; keep?: DockKeep } | null>(null)
   /** Cursor position inside the canvas, kept apart so following the pointer never re-measures tiles. */
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -131,9 +131,22 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   const open = useCallback((id: string) => update(l => openDockPane(l, id)), [update])
   const hide = useCallback((id: string) => update(l => hideDockPane(l, id)), [update])
   const available = useMemo(() => new Set(panes.map(p => p.id)), [panes])
-  /* While dragging, tiles render the arrangement the drop would produce; saving waits for release. */
-  const dragPane = drag?.pane, dragTarget = drag?.target, dragEdge = drag?.edge
-  const shown = useMemo(() => dragPane && dragTarget && dragEdge ? moveDockPane(layout, dragPane, dragTarget, dragEdge) : layout, [layout, dragPane, dragTarget, dragEdge])
+  /*
+   * Beside or into a tile (left, right, tabs) the tiles render the arrangement the drop would produce;
+   * above or below one they stay put and a border marks the half that tile would take.
+   * Saving waits for release.
+   */
+  const dragPane = drag?.pane, dragTarget = drag?.target, dragEdge = drag?.edge, dragKeep = drag?.keep
+  const stacked = dragEdge === 'top' || dragEdge === 'bottom'
+  const shown = useMemo(() => dragPane && dragTarget && dragEdge && !stacked ? moveDockPane(layout, dragPane, dragTarget, dragEdge, dragKeep) : layout, [layout, dragPane, dragTarget, dragEdge, dragKeep, stacked])
+  const edgeZone = useMemo(() => {
+    if (!dragPane || !dragTarget || !stacked) return null
+    const group = measureDockLayout(withoutDockPane(layout, dragPane), available, size.w, size.h).groups.find(r => r.group.id === dragTarget)
+    if (!group) return null
+    const share = dragKeep && dragKeep.extent > DOCK_GAP ? Math.max(.1, Math.min(.9, dragKeep.size / (dragKeep.extent - DOCK_GAP))) : .5
+    const h = Math.round((group.h - DOCK_GAP) * share)
+    return { x: group.x, w: group.w, h, y: dragEdge === 'top' ? group.y : group.y + group.h - h }
+  }, [layout, available, size, dragPane, dragTarget, dragEdge, dragKeep, stacked])
   const measured = useMemo(() => measureDockLayout(shown, available, size.w, size.h), [shown, available, size])
   /* The lifted tile keeps its size and the spot where it was grabbed, as a window would. */
   const lift = useRef({ x: 0, y: 0, w: 0, h: 0 })
@@ -168,7 +181,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
     const owner = sessionKey
     movedPointer.current = false
     const origin = { x: event.clientX, y: event.clientY }
-    let drop: { target: string; edge: DockEdge } | undefined, started = false
+    let drop: { target: string; edge: DockEdge; keep?: DockKeep } | undefined, started = false
     /*
      * Targets come from the arrangement without the dragged pane and stay fixed for the whole
      * drag. Hit-testing the live preview instead would move the tile under the cursor and flip
@@ -189,7 +202,9 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
       if (r) {
         const dx = (x - r.x) / r.w, dy = (y - r.y) / r.h
         const edge: DockEdge = dx < .24 ? 'left' : dx > .76 ? 'right' : dy < .24 ? 'top' : dy > .76 ? 'bottom' : 'center'
-        if (edge !== 'center' || (pane !== CHAT_PANE && !r.group.panes.includes(CHAT_PANE))) next = { target: r.group.id, edge }
+        /* A pane keeps the size it was lifted with, so a width the user set is not undone by moving it. */
+        const keep = edge === 'left' || edge === 'right' ? { size: lift.current.w, extent: r.w } : { size: lift.current.h, extent: r.h }
+        if (edge !== 'center' || (pane !== CHAT_PANE && !r.group.panes.includes(CHAT_PANE))) next = { target: r.group.id, edge, ...(edge === 'center' ? {} : { keep }) }
       }
       const same = next?.target === drop?.target && next?.edge === drop?.edge
       drop = next
@@ -201,7 +216,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
       document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('keydown', escape); window.removeEventListener('blur', cancel)
       if (movedPointer.current) { dragEndedAt.current = performance.now(); setSettling(true) }
       movedPointer.current = false; release?.(); setDrag(null); setPointer(null); interactionCleanup.current = undefined
-      if (commit && drop && currentKey.current === owner) update(l => moveDockPane(l, pane, drop!.target, drop!.edge))
+      if (commit && drop && currentKey.current === owner) update(l => moveDockPane(l, pane, drop!.target, drop!.edge, drop!.keep))
     }
     const up = () => finish(true), cancel = () => finish(false)
     const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); finish(false) } }
@@ -285,6 +300,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
             if (delta) { e.preventDefault(); update(l => resizeDockSplit(l, s.id, s.ratio + delta)) }
           }} />)}
           {floating && floatRect ? <div className="tile-drag-layer">
+            {edgeZone ? <div className="tile-drop-edge ui-tile-drop-edge" data-testid="tile-drop-edge" style={{ left: edgeZone.x, top: edgeZone.y, width: edgeZone.w, height: edgeZone.h }} /> : null}
             <div className="tile-float ui-tile floating" style={position(floatRect)}>
               <span className="tile-float-grip ui-tile-grip-bar" />
               {floating === CHAT_PANE ? null : <div className="tile-float-head ui-tile-head">

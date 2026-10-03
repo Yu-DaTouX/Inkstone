@@ -39,7 +39,7 @@
 }
 
 .composer textarea {
-  min-height: 40px;
+  min-height: 64px;
   padding: 2px 2px 0;
   font-family: var(--font-body);
   font-size: var(--fs-body);

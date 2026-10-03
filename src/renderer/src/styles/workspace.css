@@ -19,6 +19,7 @@
 .tile-separator.axis-x { cursor: col-resize; }
 .tile-separator.axis-y { cursor: row-resize; }
 .tile-drag-layer { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+.tile-drop-edge { position: absolute; pointer-events: none; box-sizing: border-box; }
 .tile-drop-preview { position: absolute; display: flex; align-items: center; justify-content: center; }
 .tile-menu-backdrop { position: fixed; inset: 0; z-index: 200; }
 .tile-layout-menu { position: fixed; width: 240px; }
@@ -51,6 +52,8 @@
 /* Live drag: the grabbed tile follows the pointer above the others, which glide into
    the arrangement the drop would produce; after release it glides into its slot. */
 .tile-workspace.dragging { cursor: grabbing; user-select: none; }
+/* The lifted tile moves freely; whatever hangs past the canvas is clipped instead of growing the scroll area, whose scrollbar would narrow every other tile mid-drag. */
+.tile-workspace.dragging .tile-workspace-canvas { overflow: clip; }
 .tile-workspace.dragging .tile-pane,
 .tile-workspace.dragging .tile-frame,
 .tile-workspace.dragging .tile-heading,

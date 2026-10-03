@@ -9,26 +9,26 @@
 | 顺序 | 文件 | 层 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | `tokens.css` | tokens | 456 | 27 | 32 | 2 | 6 |
-| 2 | `ui.css` | ui | 920 | 280 | 283 | 5 | 0 |
-| 3 | `app.css` | modules | 511 | 72 | 73 | 1 | 0 |
+| 2 | `ui.css` | ui | 921 | 281 | 284 | 5 | 0 |
+| 3 | `app.css` | modules | 517 | 72 | 73 | 1 | 0 |
 | 4 | `motion.css` | modules | 1419 | 172 | 175 | 4 | 0 |
 | 5 | `settings.css` | modules | 1116 | 169 | 175 | 1 | 0 |
-| 6 | `electron.css` | modules | 35 | 11 | 12 | 0 | 0 |
+| 6 | `electron.css` | modules | 38 | 14 | 15 | 0 | 0 |
 | 7 | `highlight.css` | modules | 173 | 81 | 81 | 0 | 0 |
 | 8 | `layout.css` | modules | 239 | 19 | 20 | 4 | 2 |
-| 9 | `shell.css` | modules | 671 | 129 | 133 | 2 | 7 |
+| 9 | `shell.css` | modules | 682 | 139 | 143 | 2 | 7 |
 | 10 | `dialog.css` | modules | 151 | 19 | 20 | 0 | 0 |
 | 11 | `rail.css` | modules | 1064 | 197 | 206 | 0 | 0 |
-| 12 | `chat.css` | modules | 2689 | 377 | 435 | 5 | 0 |
+| 12 | `chat.css` | modules | 2704 | 379 | 437 | 5 | 0 |
 | 13 | `composer.css` | modules | 2037 | 301 | 304 | 1 | 0 |
 | 14 | `tools.css` | modules | 3960 | 616 | 677 | 2 | 5 |
 | 15 | `browser.css` | modules | 420 | 48 | 52 | 0 | 0 |
 | 16 | `terminal.css` | modules | 82 | 10 | 10 | 0 | 0 |
 | 17 | `review.css` | modules | 631 | 84 | 84 | 0 | 0 |
 | 18 | `workbench.css` | modules | 1953 | 375 | 391 | 3 | 0 |
-| 19 | `workspace.css` | modules | 66 | 62 | 62 | 0 | 0 |
+| 19 | `workspace.css` | modules | 69 | 64 | 64 | 0 | 0 |
 | 20 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | | **18623** | **2973** | | | |
+| | **合计** | | **18662** | **2991** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -37,24 +37,24 @@
 | 文件 | 最终胜出 |
 | --- | ---: |
 | `tokens.css` | 23 |
-| `ui.css` | 259 |
+| `ui.css` | 260 |
 | `app.css` | 53 |
 | `motion.css` | 150 |
 | `settings.css` | 169 |
-| `electron.css` | 4 |
+| `electron.css` | 7 |
 | `highlight.css` | 80 |
 | `layout.css` | 18 |
-| `shell.css` | 129 |
+| `shell.css` | 139 |
 | `dialog.css` | 19 |
 | `rail.css` | 197 |
-| `chat.css` | 375 |
+| `chat.css` | 377 |
 | `composer.css` | 301 |
 | `tools.css` | 616 |
 | `browser.css` | 48 |
 | `terminal.css` | 10 |
 | `review.css` | 84 |
 | `workbench.css` | 375 |
-| `workspace.css` | 62 |
+| `workspace.css` | 64 |
 | `icon-state.css` | 1 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）
