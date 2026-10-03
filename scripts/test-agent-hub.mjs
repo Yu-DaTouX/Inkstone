@@ -27,6 +27,26 @@ assert.deepEqual(hubTerminalArgs([], { agent: 'codex', prompt: '', externalSessi
   assert.deepEqual(claude, ['do it', '--mcp-config', 'C:\\data\\mcp.json'])
   assert.deepEqual(hubTerminalArgs([], { agent: 'gemini', prompt: '' }, bridge), [], 'other CLIs are untouched')
 }
+{
+  /* 会话接续：能预设会话 ID 的 CLI 首次用 --session-id，再次启动按各自方式恢复，且不重发初始指令。 */
+  const uuid = '11111111-2222-3333-4444-555555555555'
+  const fresh = (agent) => hubTerminalArgs([], { agent, prompt: 'go' }, undefined, { id: uuid, resume: false, uniqueCwd: true })
+  const again = (agent, uniqueCwd = true) => hubTerminalArgs([], { agent, prompt: 'go' }, undefined, { id: uuid, resume: true, uniqueCwd })
+  assert.deepEqual(fresh('claude'), ['--session-id', uuid, 'go'])
+  assert.deepEqual(again('claude'), ['--resume', uuid])
+  assert.deepEqual(fresh('grok'), ['--session-id', uuid, 'go'])
+  assert.deepEqual(again('grok'), ['--resume', uuid])
+  assert.deepEqual(fresh('gemini'), ['--session-id', uuid, '--prompt-interactive', 'go'])
+  assert.deepEqual(again('gemini'), ['--resume', 'latest'])
+  assert.deepEqual(fresh('antigravity'), ['-i', 'go'], 'agy takes the opening prompt through -i and cannot preset an id')
+  assert.deepEqual(again('antigravity'), ['--continue'], 'agy resumes the directory\'s latest conversation')
+  const legacy = (agent) => hubTerminalArgs([], { agent, prompt: 'go' }, undefined, { resume: true, uniqueCwd: true })
+  assert.deepEqual(legacy('claude'), ['--continue'], 'tasks started before IDs were recorded resume by directory')
+  assert.deepEqual(legacy('grok'), ['--continue'])
+  assert.deepEqual(fresh('codex'), ['go'],'codex generates its own id; the first launch is plain')
+  assert.deepEqual(again('codex'), ['resume', '--last'], 'a private worktree makes --last unambiguous')
+  assert.deepEqual(again('codex', false), ['resume'], 'a shared project folder falls back to the picker')
+}
 const { ResourceCoordinator } = await import(pathToFileURL(join(root, 'resources.mjs')))
 const { hubGit, createHubWorkspace, freezeHubWorkspace, applyHubArtifact } = await import(pathToFileURL(join(root, 'workspaces.mjs')))
 const resources = new ResourceCoordinator()

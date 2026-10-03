@@ -21,6 +21,11 @@ export class TerminalScreen {
   resize(cols: number, rows: number, seq: number): void {
     this.pending = this.pending.then(() => { this.terminal.resize(cols, rows); this.sequence = seq })
   }
+  /** 等解析追平输出序号，不序列化整屏；增量读取只需要序号与尺寸。 */
+  async settled() {
+    await this.pending
+    return { seq: this.sequence, cols: this.terminal.cols, rows: this.terminal.rows }
+  }
   async snapshot() {
     await this.pending
     return { data: this.serializer.serialize(), seq: this.sequence, cols: this.terminal.cols, rows: this.terminal.rows }

@@ -339,7 +339,8 @@ const agentHub = new AgentHubService({
   sendToSession: async (id, text) => {
     const target = runners?.agentForSession(id)
     return target ? target.send(text, undefined, 'followUp') : { ok: false, error: '主会话已关闭' }
-  }
+  },
+  openRun: (taskId) => push({ ch: 'hub-open', payload: `hub:${taskId}` })
 })
 /**
  * 子代理：主进程级的生命周期服务。界面与模型（`yan subagent …`）共用同一个控制器，
@@ -1683,7 +1684,7 @@ function requestExit(): Promise<ExitResult> {
         type: 'warning',
         title: '退出砚',
         message: '仍有会话正在运行。请选择退出方式。',
-        detail: '保存并退出会记录运行实例快照；中断退出会立即停止当前任务。取消会继续把窗口留在托盘。',
+        detail: ['保存并退出会记录运行实例快照；中断退出会立即停止当前任务。取消会继续把窗口留在托盘。', agentHub.exitDetail()].filter(Boolean).join('\n\n'),
         buttons: ['取消', '保存并退出', '中断退出'],
         defaultId: 1,
         cancelId: 0,
