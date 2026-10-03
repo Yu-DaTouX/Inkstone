@@ -28,7 +28,7 @@ const node = process.execPath
 run(node, ['scripts/sync-brand.mjs'])
 run(node, ['scripts/sync-terminal.mjs'])
 run(node, ['../node_modules/electron/cli.js', 'scripts/build-launcher-icons.mjs'])
-if (process.platform === 'win32') run('cmd.exe', ['/c', 'gradlew.bat', 'assembleRelease', '--console=plain'], { cwd: join(mobile, 'android'), env })
+if (process.platform === 'win32') run('cmd.exe', ['/c', join(mobile, 'android', 'gradlew.bat'), 'assembleRelease', '--console=plain'], { cwd: join(mobile, 'android'), env })
 else run('./gradlew', ['assembleRelease', '--console=plain'], { cwd: join(mobile, 'android'), env })
 
 const apk = join(mobile, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk')
