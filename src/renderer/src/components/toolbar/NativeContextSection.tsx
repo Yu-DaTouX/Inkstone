@@ -1,10 +1,11 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useT } from '../../i18n'
 import { contextBreakdown, type ContextCategory } from '../../state/context-breakdown'
 import { useStore } from '../../state/store'
 import { Section } from './ToolSection'
 import { Button, MiniMeter, MiniRing, RunDot, Switch } from '../ui'
 import { DetailTrigger } from '../shell/DetailPopover'
+import type { ContextInspectSnapshot } from '../../../../shared/context-inspect'
 import { compactionRunningText, compactionSummary } from '../../state/compaction-view'
 
 /** The agent's reported pressure; the UI does not choose a budget or compact automatically. */
@@ -31,6 +32,39 @@ function shortTokens(n: number): string {
   if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}M`
   if (n >= 1000) return `${+(n / 1000).toFixed(1)}k`
   return String(n)
+}
+
+const SECTION_LABEL: Record<string, string> = {
+  preamble: '开场白', tools: '工具说明', rules: '行为准则', docs: '文档指引', skills: '技能清单',
+  'project-context': '项目说明文件', cwd: '工作目录', appended: '追加提示', additions: '扩展追加', between: '其他'
+}
+
+/** Fixed parts pi already assembled: system prompt sections and tool definitions (estimated, read-only). */
+function ContextInspect({ tokens }: { tokens: number }) {
+  const [snap, setSnap] = useState<ContextInspectSnapshot | null>(null)
+  useEffect(() => {
+    let alive = true
+    void window.yan.contextInspect().then(s => { if (alive) setSnap(s) }).catch(() => {})
+    return () => { alive = false }
+  }, [tokens])
+  if (!snap || (!snap.sections.length && !snap.tools.length)) return null
+  const active = snap.tools.filter(x => x.active).sort((a, b) => b.tokens - a.tokens)
+  const shown = active.slice(0, 8)
+  return <details className="ctx-inspect" data-testid="ctx-inspect">
+    <summary>固定部分明细（估算）<span className="ui-meta-num">{`系统提示 ${shortTokens(snap.promptTokens)} · 工具定义 ${shortTokens(snap.toolTokens)}`}</span></summary>
+    <ul className="ctx-inspect-list">
+      {snap.sections.map(s => <li key={s.id + s.label}>
+        <details>
+          <summary><span className="ui-usage-name">{SECTION_LABEL[s.id] ?? s.label}</span><span className="ui-meta-num">{shortTokens(s.tokens)}</span></summary>
+          <pre className="ctx-inspect-text">{s.text}{s.text.length < s.chars ? '\n…' : ''}</pre>
+        </details>
+      </li>)}
+    </ul>
+    {active.length ? <ul className="ctx-inspect-list" data-testid="ctx-inspect-tools">
+      {shown.map(x => <li key={x.name} title={x.description}><span className="ui-usage-name">{x.name}</span><span className="ui-meta-num">{shortTokens(x.tokens)}</span></li>)}
+      {active.length > shown.length ? <li className="rp-dim">{`另有 ${active.length - shown.length} 个工具`}</li> : null}
+    </ul> : null}
+  </details>
 }
 
 /** Details shared by the inspector section and the composer popover. */
@@ -63,6 +97,7 @@ function ContextDetails() {
         <span className="ui-usage-num ui-meta-num">{`${share(r.tokens).toFixed(1)}%`}</span>
       </li>)}
     </ul> : null}
+    {known ? <ContextInspect tokens={tokens} /> : null}
     {rows.length ? <div className="ctx-window-note">分类按当前消息文本估算，总量来自 Agent</div> : null}
     {matches && usage?.tokens === null ? <div className="rp-dim" data-testid="ctx-unknown">{t('ctx.afterCompact')}</div> : null}
     {session?.lastCompaction ? <div className="rp-dim" data-testid="ctx-last-compaction">{compactionSummary(t, session.lastCompaction)}</div> : null}

@@ -163,6 +163,8 @@ const KNOWN_COMMANDS = new Set([
   'question.ask',
   'context.recall',
   'context.find',
+  /* 上下文构成：只由 context-inspect 薄层上报系统提示分段与工具定义。 */
+  'context.inspect',
   /* 办公文件：只读提取 docx / xlsx / pptx / pdf 的文字正文。 */
   'office.read',
   /* 普通工具使用前的同意判断（按真实答复记录自动放行或询问）。 */

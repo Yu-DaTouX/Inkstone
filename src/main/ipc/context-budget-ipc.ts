@@ -2,6 +2,7 @@ import type { IpcRegistrar } from './registrar'
 import type { AgentController } from '../agent'
 import { AGENT_CONTEXT_ERROR } from '../../shared/agent-context'
 import { readContextActions } from '../context-actions'
+import { readContextInspect } from '../context-inspect'
 import { readContextBackgroundUsage } from '../context-background-usage'
 
 export interface ContextBudgetIpcDeps { currentAgent(): AgentController | undefined }
@@ -18,5 +19,6 @@ export function registerContextBudgetIpc(ipc: IpcRegistrar, deps: ContextBudgetI
   ipc.rawHandle('yan:setContextBudgetMaterialPinV1', () => ({ ok: false, error: AGENT_CONTEXT_ERROR }))
   ipc.rawHandle('yan:contextBudgetMaintenanceExitV1', () => ({ ok: false, error: AGENT_CONTEXT_ERROR }))
   ipc.rawHandle('yan:contextActions', () => readContextActions(deps.currentAgent()?.getState()?.sessionId ?? null))
+  ipc.rawHandle('yan:contextInspect', () => readContextInspect(deps.currentAgent()?.getState()?.sessionId ?? null))
   ipc.rawHandle('yan:contextBackgroundUsage', () => readContextBackgroundUsage(deps.currentAgent()?.getState()?.sessionId ?? null))
 }

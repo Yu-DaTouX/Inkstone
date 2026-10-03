@@ -109,6 +109,7 @@ import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
 import type { TaskInboxPage } from '../shared/task-inbox'
 import type { ContextActionSummary } from '../shared/context-actions'
 import type { ContextBackgroundUsageSummary } from '../shared/context-background-usage'
+import type { ContextInspectSnapshot } from '../shared/context-inspect'
 /**
  * 白名单桥 —— renderer 全程 nodeIntegration:false + contextIsolation:true。
  * 这里的方法就是渲染端能碰到的**全部**能力（HANDOFF §9 原则 3）。
@@ -431,8 +432,8 @@ const api: YanBridge = {
     doctor: () => invoke<SearchBackendStatus>('yan:search:doctor'),
     installBackend: () => invoke<{ ok: boolean; needsNode?: boolean; error?: string; log?: string }>('yan:search:install'),
     apiConfig: () => invoke<SearchApiConfigView>('yan:search:apiConfig'),
-    setApiKey: (key) => invoke<{ ok: boolean; error?: string }>('yan:search:setApiKey', key),
-    clearApiKey: () => invoke<{ ok: boolean; error?: string }>('yan:search:clearApiKey'),
+    setApiKey: (provider, key) => invoke<{ ok: boolean; error?: string }>('yan:search:setApiKey', provider, key),
+    clearApiKey: (provider) => invoke<{ ok: boolean; error?: string }>('yan:search:clearApiKey', provider),
     setApiHintDismissed: (dismissed) => invoke<void>('yan:search:setApiHintDismissed', dismissed)
   },
   computerUse: {
@@ -560,6 +561,8 @@ const api: YanBridge = {
   contextActions: () => invoke<ContextActionSummary>('yan:contextActions'),
   /** 后台调用用量账（供应商口径）：未缓存输入 / 缓存命中率 / 各类调用次数 */
   contextBackgroundUsage: () => invoke<ContextBackgroundUsageSummary>('yan:contextBackgroundUsage'),
+  /** 当前会话最近一次上报的系统提示分段与工具定义（估算）；还没有对话时为 null */
+  contextInspect: () => invoke<ContextInspectSnapshot | null>('yan:contextInspect'),
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
 
   /* ---- 图片附件：占用与手动清理（不做自动 GC）---- */

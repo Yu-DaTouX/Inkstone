@@ -20,7 +20,8 @@ import { PiRpc, resolvePi } from './protocol'
 import { AGENT_CONTEXT_ERROR, agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
-import { ContextRecallError, findArchivedContext, recallArchivedContext } from './context-recall'
+import { saveContextInspect } from './context-inspect'
+import { ContextRecallError,findArchivedContext, recallArchivedContext } from './context-recall'
 import { previewOffice } from './office/office-service'
 import { localDeviceId, markConsentAuto, readConsentLedger, recordConsentAnswer } from './consent-store'
 import {
@@ -343,6 +344,8 @@ export class AgentController extends EventEmitter {
   private languageExtension?: string
   /** 能力入口说明扩展（每轮静态追加，不随设置变化）。 */
   private capabilityGuideExtension?: string
+  /** 上下文构成观测薄层（只读上报系统提示分段与工具定义）。 */
+  private contextInspectExtension?: string
   /**
    * 单轮重复动作兜底（2026-09-22）：`tool_call` 看参数、连续相同就提醒或拦下。
    * 被拦下的计数由宿主在回合收尾时计入目标失败签名（`shared/repeat-guard.ts`）。
@@ -593,6 +596,8 @@ export class AgentController extends EventEmitter {
      * resources/pi-extensions/capability-guide.js）。
      */
     capabilityGuideExtension?: string
+    /** 上下文构成观测：只读上报，不改提示与消息。 */
+    contextInspectExtension?: string
     /** Legacy caller option accepted but ignored; context belongs to pi. */
     contextExtension?: string
     /** Legacy caller option accepted but ignored; no automatic knowledge injection. */
@@ -669,6 +674,7 @@ export class AgentController extends EventEmitter {
     this.responseDetailExtension = opts.responseDetailExtension
     this.languageExtension = opts.languageExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
+    this.contextInspectExtension = opts.contextInspectExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
     this.bundledSkills = opts.bundledSkills ?? []
     this.userSkills = opts.userSkills
@@ -858,6 +864,8 @@ export class AgentController extends EventEmitter {
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
           : []),
+        // 上下文构成：只读观测，放在提示类扩展之后，读到的是它们拼完的最终系统提示
+        ...(this.contextInspectExtension ? ['--extension', this.contextInspectExtension] : []),
         /*
          * 单轮重复动作兜底（2026-09-22）：连续 3 次相同调用提醒、5 次拦下。
          * 放最后：它要在其它扩展都不拦的时候才生效（不抢模式门禁的判断）。
@@ -1253,6 +1261,11 @@ export class AgentController extends EventEmitter {
     if (command === 'office.read') return this.runOfficeReadCommand(params)
     if (command === 'consent.request') return this.runConsentRequestCommand(params)
     if (command === 'danger.confirm') return this.runDangerConfirmCommand(params)
+    if (command === 'context.inspect') {
+      /* 按 pi 会话 id 存（界面读的也是它）；capability 的 sessionId 是运行实例 id，换实例会变。 */
+      const saved = saveContextInspect(this.state?.sessionId, params.snapshot)
+      return { data: { saved }, summary: { kind: 'context-inspect', saved } }
+    }
     if (command.startsWith('context.budget.')) throw new CapabilityCommandError('agent_owned_context', AGENT_CONTEXT_ERROR)
     switch (command) {
       case 'tasks.apply':
