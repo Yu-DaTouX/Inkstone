@@ -6,7 +6,8 @@
  */
 import type { IpcRegistrar } from './registrar'
 import { installOpenCli, searchDoctor } from '../search/opencli'
-import { clearBraveKey, searchApiConfig, setBraveKey, setSearchHintDismissed } from '../search/config'
+import { clearSearchKey, searchApiConfig, setSearchHintDismissed, setSearchKey } from '../search/config'
+import { isSearchProviderId } from '../../shared/search'
 import { computerUseStatus, disableComputerUse, enableComputerUse, installUv } from '../computer-use'
 import { randomUUID } from 'node:crypto'
 import { builtinCapabilities } from '../extensions-inventory'
@@ -60,8 +61,12 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   handle('yan:search:install', async () => installOpenCli())
   /* 搜索 API key：只在主进程落盘，渲染端拿不到明文 */
   handle('yan:search:apiConfig', async () => searchApiConfig())
-  handle('yan:search:setApiKey', async (_e, key: string) => setBraveKey(String(key ?? '')))
-  handle('yan:search:clearApiKey', async () => clearBraveKey())
+  handle('yan:search:setApiKey', async (_e, provider: string, key: string) =>
+    isSearchProviderId(provider) ? setSearchKey(provider, String(key ?? '')) : { ok: false, error: '不认识的搜索服务' }
+  )
+  handle('yan:search:clearApiKey', async (_e, provider: string) =>
+    isSearchProviderId(provider) ? clearSearchKey(provider) : { ok: false, error: '不认识的搜索服务' }
+  )
   handle('yan:search:setApiHintDismissed', async (_e, dismissed: boolean) => setSearchHintDismissed(dismissed === true))
 
   /*

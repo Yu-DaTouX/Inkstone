@@ -10,17 +10,23 @@ import { CapabilityCommandError } from './capability-server'
 import { memoryStoreOf } from './personal-memory'
 import { createOpencliRunner, type AdapterRunner, runSearch, searchDoctor, searchSummary } from './search/opencli'
 import { runBraveSearch } from './search/brave'
+import { runTavilySearch } from './search/tavily'
+import { firecrawlReadPage } from './search/firecrawl'
+import { DocsError, queryDocs } from './search/context7'
 import { detectLocale, runBingSearch } from './search/bing'
 import { runDdgSearch } from './search/ddg'
 import { readPage, ReadPageError } from './search/read-page'
 import { runSo360Search } from './search/so360'
-import { resolveBraveKey, searchApiConfig } from './search/config'
+import { resolveSearchKey, searchApiConfig } from './search/config'
 import { DEFAULT_SEARCH_SOURCES, type SearchSourceId } from '../shared/search'
 import { isSafeSessionId } from './context-state-store'
 import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
 import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
 import { searchProjectKnowledge } from '../shared/project-memory-search'
 import { paramNumber, paramString } from './command-params'
+
+/** 本地读到的正文短于这个字数，当作「没读到」（SPA 空壳、付费墙）；有 Firecrawl key 时换它再试 */
+const THIN_PAGE_CHARS = 200
 
 export interface LookupCommandsHost {
   capabilityOpts(): CapabilityRunOptions | undefined
@@ -90,13 +96,18 @@ export class LookupCommands {
     if (action === 'fetch') {
       const url = this.searchString(params, ['url'])
       if (!url) throw new CapabilityCommandError('search_url_required', 'search fetch 需要网址（--url）')
+      const via = this.searchString(params, ['via'])
+      if (via && via !== 'local' && via !== 'firecrawl') {
+        throw new CapabilityCommandError('search_bad_via', '--via 只能是 local 或 firecrawl')
+      }
       try {
-        const page = await readPage(url, {
+        const read = {
           maxChars: this.searchNumber(params, ['max-chars', 'maxChars']),
           timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
-        })
+        }
+        const { page, via: usedVia, note } = await this.readWithFallback(url, read, via)
         return {
-          data: page,
+          data: { ...page, via: usedVia, ...(note ? { note } : {}) },
           summary: {
             kind: 'search',
             action: 'fetch',
@@ -104,11 +115,53 @@ export class LookupCommands {
             title: page.title,
             chars: page.text.length,
             totalChars: page.totalChars,
-            truncated: page.truncated
+            truncated: page.truncated,
+            via: usedVia,
+            ...(note ? { note } : {})
           }
         }
       } catch (e) {
         if (e instanceof ReadPageError) throw new CapabilityCommandError('search_fetch_' + e.code, e.message)
+        throw e
+      }
+    }
+    if (action === 'docs') {
+      const query = this.searchString(params, ['query-text', 'queryText', 'query', 'text'])
+      const library = this.searchString(params, ['library', 'lib'])
+      const libraryId = this.searchString(params, ['library-id', 'libraryId'])
+      if (!query) throw new CapabilityCommandError('search_query_required', 'search docs 需要要查的问题（--query-text）')
+      if (!library && !libraryId) {
+        throw new CapabilityCommandError('search_library_required', 'search docs 需要库名（--library react）或库 ID（--library-id /owner/repo）')
+      }
+      try {
+        const docs = await queryDocs({
+          ...(library ? { library } : {}),
+          ...(libraryId ? { libraryId } : {}),
+          query,
+          maxChars: this.searchNumber(params, ['max-chars', 'maxChars']),
+          timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
+        })
+        return {
+          data: docs,
+          summary: {
+            kind: 'search',
+            action: 'docs',
+            library: docs.library.id,
+            title: docs.library.title,
+            chars: docs.text.length,
+            totalChars: docs.totalChars,
+            truncated: docs.truncated,
+            alternatives: docs.alternatives.map((item) => item.id)
+          }
+        }
+      } catch (e) {
+        if (e instanceof DocsError) {
+          throw new CapabilityCommandError(
+            'search_docs_' + e.code,
+            e.message,
+            e.candidates?.length ? { alternatives: e.candidates } : undefined
+          )
+        }
         throw e
       }
     }
@@ -131,10 +184,16 @@ export class LookupCommands {
      * 没有就用 Bing 网页搜索兜底，并提醒一次「可以配置搜索 API」。
      */
     if (sources.length === 0) {
-      const hasKey = !!(await resolveBraveKey())
+      const [hasTavily, hasBrave] = await Promise.all([resolveSearchKey('tavily'), resolveSearchKey('brave')])
+      const hasKey = !!(hasTavily || hasBrave)
       /* 中文：Bing 中文市场 + 360（中文社区、博客）；其余：DuckDuckGo + Bing（技术词更准） */
       const web: SearchSourceId[] = detectLocale(text) === 'zh' ? ['bing', 'so360'] : ['ddg', 'bing']
-      sources.push(...(hasKey ? (['brave'] as SearchSourceId[]) : []), ...web, ...DEFAULT_SEARCH_SOURCES)
+      sources.push(
+        ...(hasTavily ? (['tavily'] as SearchSourceId[]) : []),
+        ...(hasBrave ? (['brave'] as SearchSourceId[]) : []),
+        ...web,
+        ...DEFAULT_SEARCH_SOURCES
+      )
       if (!hasKey && !this.searchApiHintSent) {
         this.searchApiHintSent = true
         if (!(await searchApiConfig()).hintDismissed) this.host.notifySearchApiMissing?.()
@@ -208,6 +267,40 @@ export class LookupCommands {
         ...(outcome.ignoredSources?.length ? { ignoredSources: outcome.ignoredSources } : {}),
         summary: searchSummary(outcome)
       }
+    }
+  }
+
+  /**
+   * 读网页：默认用本地隐藏窗口；读不出来（超时 / 网络错误）或正文几乎为空时，
+   * 若用户配了 Firecrawl key 就换它兜底。`via` 可以强制其一。
+   * `bad_url` / `private_host` 不兜底——那是地址本身不该读，换服务也一样。
+   */
+  private async readWithFallback(
+    url: string,
+    read: { maxChars?: number; timeoutMs?: number },
+    via: string | undefined
+  ): Promise<{ page: Awaited<ReturnType<typeof readPage>>; via: 'local' | 'firecrawl'; note?: string }> {
+    if (via === 'firecrawl') return { page: await firecrawlReadPage(url, read), via: 'firecrawl' }
+    let local: Awaited<ReturnType<typeof readPage>> | null = null
+    let localError: ReadPageError | null = null
+    try {
+      local = await readPage(url, read)
+      if (local.text.trim().length >= THIN_PAGE_CHARS || via === 'local') return { page: local, via: 'local' }
+    } catch (e) {
+      if (!(e instanceof ReadPageError) || e.code === 'bad_url' || e.code === 'private_host' || via === 'local') throw e
+      localError = e
+    }
+    if (!(await resolveSearchKey('firecrawl'))) {
+      if (local) return { page: local, via: 'local' }
+      throw localError as ReadPageError
+    }
+    try {
+      const page = await firecrawlReadPage(url, read)
+      return { page, via: 'firecrawl', note: local ? '本地读到的正文太短，已改用 Firecrawl' : `本地读取失败（${localError?.message}），已改用 Firecrawl` }
+    } catch (e) {
+      if (local) return { page: local, via: 'local', note: `正文很短，Firecrawl 兜底也失败：${e instanceof Error ? e.message : String(e)}` }
+      const reason = e instanceof Error ? e.message : String(e)
+      throw new ReadPageError(localError?.code ?? 'network_error', `${localError?.message}；Firecrawl 兜底也失败：${reason}`)
     }
   }
 
@@ -376,6 +469,7 @@ function searchRunner(): AdapterRunner {
   return (source, query, opts) => {
     switch (source.id) {
       case 'brave': return runBraveSearch(query, opts)
+      case 'tavily': return runTavilySearch(query, opts)
       case 'bing': return runBingSearch(query, opts)
       case 'ddg': return runDdgSearch(query, opts)
       case 'so360': return runSo360Search(query, opts)

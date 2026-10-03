@@ -36,7 +36,7 @@ export async function runSearchTests(ok, mod) {
 
   /* ---- 契约：来源白名单 ---- */
   {
-    ok(SEARCH_SOURCES.map(s => s.id).join(',') === 'wikipedia,arxiv,hackernews,brave,bing,ddg,so360', '登记原有三个来源与四个网页来源')
+    ok(SEARCH_SOURCES.map(s => s.id).join(',') === 'wikipedia,arxiv,hackernews,brave,tavily,bing,ddg,so360', '登记原有三个来源与五个网页来源')
     ok(SEARCH_SOURCES.every((s) => !s.needsBrowser), '已登记来源均不需要浏览器扩展')
     ok(new Set(SEARCH_SOURCES.map((s) => s.id)).size === SEARCH_SOURCES.length, '来源 id 不重复')
   }

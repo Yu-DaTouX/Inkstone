@@ -15,7 +15,7 @@
  */
 
 /** 首批来源：三个都是 HTTP 直连（不依赖浏览器扩展），见 S0 实测 */
-export type SearchSourceId = 'wikipedia' | 'arxiv' | 'hackernews' | 'brave' | 'bing' | 'ddg' | 'so360'
+export type SearchSourceId = 'wikipedia' | 'arxiv' | 'hackernews' | 'brave' | 'tavily' | 'bing' | 'ddg' | 'so360'
 
 export interface SearchSource {
   id: SearchSourceId
@@ -39,6 +39,7 @@ export const SEARCH_SOURCES: readonly SearchSource[] = [
   { id: 'arxiv', app: 'arxiv', subcommand: 'search', label: 'arXiv', needsBrowser: false, urlKind: 'direct' },
   { id: 'hackernews', app: 'hackernews', subcommand: 'search', label: 'Hacker News', needsBrowser: false, urlKind: 'hackernews' },
   { id: 'brave', app: '', subcommand: '', label: 'Brave 搜索', needsBrowser: false, urlKind: 'direct', needsKey: true, direct: true },
+  { id: 'tavily', app: '', subcommand: '', label: 'Tavily 搜索', needsBrowser: false, urlKind: 'direct', needsKey: true, direct: true },
   { id: 'bing', app: '', subcommand: '', label: 'Bing 网页', needsBrowser: false, urlKind: 'direct', direct: true },
   { id: 'ddg', app: '', subcommand: '', label: 'DuckDuckGo', needsBrowser: false, urlKind: 'direct', direct: true },
   { id: 'so360', app: '', subcommand: '', label: '360 搜索', needsBrowser: false, urlKind: 'direct', direct: true }
@@ -148,11 +149,49 @@ export interface SearchBackendStatus {
   sources: { id: SearchSourceId; label: string; needsBrowser: boolean; ready: boolean }[]
 }
 
+/**
+ * 增强搜索的服务清单：凡是需要用户自己注册 key 的服务都登记在这里，
+ * 设置页逐项列出，填了 key 才启用。`yan search` 仍是模型唯一的入口，
+ * 这些服务只是它背后更好的来源。
+ *   · brave / tavily：通用网页搜索，进 `query` 的来源链；
+ *   · firecrawl：读网页的兜底（本地隐藏窗口读不出来时用），进 `fetch`；
+ *   · context7：开发文档查询，对应 `docs` 动作；key 可选（有 key 额度更高）。
+ */
+export type SearchProviderId = 'brave' | 'tavily' | 'firecrawl' | 'context7'
+
+export interface SearchProvider {
+  id: SearchProviderId
+  label: string
+  /** 申请 key 的页面 */
+  keyUrl: string
+  /** 环境变量名；文件里的 key 优先于它 */
+  envName: string
+  /** 不填 key 也能用（只是限额低）；设置页据此写「可选」 */
+  keyOptional?: boolean
+}
+
+export const SEARCH_PROVIDERS: readonly SearchProvider[] = [
+  { id: 'tavily', label: 'Tavily', keyUrl: 'https://app.tavily.com/', envName: 'TAVILY_API_KEY' },
+  { id: 'brave', label: 'Brave Search', keyUrl: 'https://brave.com/search/api/', envName: 'BRAVE_API_KEY' },
+  { id: 'firecrawl', label: 'Firecrawl', keyUrl: 'https://www.firecrawl.dev/app/api-keys', envName: 'FIRECRAWL_API_KEY' },
+  { id: 'context7', label: 'Context7', keyUrl: 'https://context7.com/dashboard', envName: 'CONTEXT7_API_KEY', keyOptional: true }
+]
+
+export function isSearchProviderId(value: unknown): value is SearchProviderId {
+  return SEARCH_PROVIDERS.some((provider) => provider.id === value)
+}
+
+export interface SearchProviderState {
+  configured: boolean
+  /** 密钥来自哪里：本机配置文件 / 环境变量 */
+  source?: 'file' | 'env'
+}
+
 /** 搜索 API 的配置状态（设置页与提醒用；密钥本身不出主进程） */
 export interface SearchApiConfigView {
+  /** 任一「通用网页搜索」key（Brave / Tavily）已配置——决定要不要提醒去配置 */
   configured: boolean
-  /** 密钥来自哪里：本机配置文件 / 环境变量 BRAVE_API_KEY */
-  source?: 'file' | 'env'
   /** 用户点过「不再提示」 */
   hintDismissed: boolean
+  providers: Record<SearchProviderId, SearchProviderState>
 }
