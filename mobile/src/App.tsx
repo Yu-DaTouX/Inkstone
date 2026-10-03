@@ -1,3 +1,4 @@
+import { LIFE_ASSISTANT_ENABLED } from './features'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, StatusBar, useColorScheme, useWindowDimensions, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
@@ -185,9 +186,9 @@ export default function App() {
             )}</View>
           ) : (
           <View style={safeRegion}>
-          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: space[3], paddingTop: space[2] }}>
+          {LIFE_ASSISTANT_ENABLED ? <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: space[3], paddingTop: space[2] }}>
             <Button compact variant="ghost" label="先用生活助手" onPress={() => setLocalRoute('assistant')} />
-          </View>
+          </View> : null}
           <PairScreen
             prefill={pairingPrefill}
             onCancel={connection ? () => setPairingPrefill(null) : undefined}

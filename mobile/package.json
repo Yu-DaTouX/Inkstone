@@ -8,7 +8,7 @@
     "start": "react-native start",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "icons:launcher": "node ../node_modules/electron/cli.js scripts/build-launcher-icons.mjs",
-    "build:apk": "node scripts/sync-brand.mjs && node scripts/sync-terminal.mjs && npm run icons:launcher && cd android && gradlew.bat assembleRelease"
+    "build:apk": "node scripts/build-apk.mjs"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",

@@ -30,6 +30,19 @@ NSIS 自动更新需要将同一次构建的 `latest.yml`、安装程序及对�
 
 上传可以用 `gh release create v<版本> --verify-tag --latest --title "Inkstone <版本>" --notes-file RELEASE-NOTES.md <附件…>`：带附件时 gh 先建草稿，全部附件传完才发布，应用内更新不会读到附件不全的版本。发布后核对 `releases/latest`、线上 `latest.yml` 与本地是否逐字一致，以及安装包与 `.blockmap` 的下载地址和大小。
 
+## Android 手机端
+
+手机端（`mobile/`）有自己的版本号（`mobile/package.json`，当前 0.1.0），和桌面版本分开。桌面构建不会编译这个目录，发布桌面版时按需单独打包手机端：
+
+```powershell
+cd mobile
+npm install        # 首次或依赖变化后
+npm run typecheck
+npm run build:apk  # 构建并整理到 release/apk-<版本>-<提交>/，附 SHA256.txt
+```
+
+`build:apk` 直接调用 Gradle，Android SDK 取 `ANDROID_HOME` 或 `mobile/android/local.properties` 的 `sdk.dir`。产物沿用模板自带的**调试密钥**签名，只供本机安装验证（`adb install -r`），**不是公开发布包**：不要把它上传到 GitHub Release，除非先换成自己保管的正式签名密钥。手机端与桌面端的协议兼容性以 `src/shared/remote-protocol.ts` 为准；修改手机端终端页面要改 `mobile/scripts/sync-terminal.mjs`（`assets/inkstone-terminal/` 是生成物）。
+
 ## 数据位置与备份
 
 以下是未设置 YAN_* 覆盖变量时的默认行为，依据 [paths.ts](../../src/main/paths.ts)。
