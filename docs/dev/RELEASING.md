@@ -41,7 +41,9 @@ npm run typecheck
 npm run build:apk  # 构建并整理到 release/apk-<版本>-<提交>/，附 SHA256.txt
 ```
 
-`build:apk` 直接调用 Gradle，Android SDK 取 `ANDROID_HOME` 或 `mobile/android/local.properties` 的 `sdk.dir`。产物沿用模板自带的**调试密钥**签名，只供本机安装验证（`adb install -r`），**不是公开发布包**：不要把它上传到 GitHub Release，除非先换成自己保管的正式签名密钥。手机端与桌面端的协议兼容性以 `src/shared/remote-protocol.ts` 为准；修改手机端终端页面要改 `mobile/scripts/sync-terminal.mjs`（`assets/inkstone-terminal/` 是生成物）。
+`build:apk` 直接调用 Gradle，Android SDK 取 `ANDROID_HOME` 或 `mobile/android/local.properties` 的 `sdk.dir`。
+
+**签名**：正式签名密钥和密码放在仓库之外，默认 `~/.inkstone-signing/`（`inkstone-release.jks` 与 `keystore.properties`，或用环境变量 `INKSTONE_SIGNING` 指向别处的 properties 文件）。存在时 Gradle 用它签名，产物文件名为 `Inkstone-mobile-<版本>.apk`，证书 DN 为 `CN=Inkstone, O=Yu-DaTouX`，SHA-256 指纹 `4D:95:19:9D:2F:E4:16:34:A7:FA:FF:23:3C:E4:2F:DA:6F:72:9E:CF:3A:35:79:34:AE:75:F7:63:80:F4:A4:B6`；不存在时退回仓库里的调试密钥，文件名带 `-debug-signed`，只供本机验证，**不能公开发布**。**这个密钥丢了，已安装的用户就无法再收到可覆盖安装的更新**：请把 `~/.inkstone-signing/` 整个目录备份到安全位置，不要提交、不要上传。用不同密钥签名的包不能互相覆盖，从调试版换成正式版要先卸载（会丢掉手机上的配对，需要重新配对）。验证签名：`apksigner verify --print-certs <apk>`（在 SDK 的 `build-tools/<版本>/` 下）。手机端与桌面端的协议兼容性以 `src/shared/remote-protocol.ts` 为准；修改手机端终端页面要改 `mobile/scripts/sync-terminal.mjs`（`assets/inkstone-terminal/` 是生成物）。
 
 ## 数据位置与备份
 

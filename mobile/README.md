@@ -37,4 +37,4 @@ Samsung Fold6 已验证服务启动、输入栏波形、取消和无语音错误
 - Android SDK Platform 36、Build Tools 36.0.0、NDK 27.1.12297006，并配置 `ANDROID_HOME`；
 - 在 `mobile/` 运行 `npm install`、`npm run typecheck`；连接设备后可运行 `npm run android`，或运行 `npm run build:apk` 构建本机调试 APK。
 
-`npm run build:apk`（`scripts/build-apk.mjs`，直接调用 Gradle，并把 APK 与 SHA-256 整理到仓库 `release/apk-<版本>-<提交>/`）会把 JavaScript 一起打入 `android/app/build/outputs/apk/release/app-release.apk`，安装后不需要 Metro 开发服务器。当前沿用模板的调试密钥签名，只供本机安装验证，不是公开发布包。桌面端构建不会编译这个目录。依赖版本以 `package-lock.json` 为准；原生工程由 React Native Community CLI 20.0.0 的 0.81.0 模板生成。
+`npm run build:apk`（`scripts/build-apk.mjs`，直接调用 Gradle，并把 APK 与 SHA-256 整理到仓库 `release/apk-<版本>-<提交>/`）会把 JavaScript 一起打入 `android/app/build/outputs/apk/release/app-release.apk`，安装后不需要 Metro 开发服务器。存在 `~/.inkstone-signing/keystore.properties` 时用正式签名密钥签名（密钥在仓库之外，见 [Windows 打包与数据](../docs/dev/RELEASING.md#android-手机端)），否则退回调试密钥，只供本机安装验证。桌面端构建不会编译这个目录。依赖版本以 `package-lock.json` 为准；原生工程由 React Native Community CLI 20.0.0 的 0.81.0 模板生成。
