@@ -237,14 +237,35 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
       void loop()
       let pending = Promise.resolve()
       const send = (command: HubCommand) => { pending = pending.then(async () => { if (alive) await window.yan.hub.command(command) }).catch((error) => onError(String(error))) }
-      const sub = term.onData((data) => { quietSince = Date.now(); schedule(30); const t = current.current; if (t.inputOwner === 'desktop') send({ action: 'input', taskId: t.id, epoch: t.inputEpoch ?? 0, data }) })
+      /* 输入（含滚轮产生的鼠标序列）合并后再发：逐条串行往返会让滚动排起长队。 */
+      let inputBuf = ''
+      let inputTimer: ReturnType<typeof setTimeout> | undefined
+      const flushInput = () => {
+        inputTimer = undefined
+        const data = inputBuf; inputBuf = ''
+        const t = current.current
+        if (data && t.inputOwner === 'desktop') send({ action: 'input', taskId: t.id, epoch: t.inputEpoch ?? 0, data })
+      }
+      const queueInput = (data: string) => {
+        quietSince = Date.now(); schedule(30)
+        inputBuf += data
+        if (inputBuf.length > 8000) { clearTimeout(inputTimer); flushInput() } else if (!inputTimer) inputTimer = setTimeout(flushInput, 8)
+      }
+      const sub = term.onData(queueInput)
+      /* 全屏应用（备用屏幕）没有开启鼠标上报时，滚轮改成上下方向键，和常见终端一致。 */
+      term.attachCustomWheelEventHandler((e) => {
+        if (term.buffer.active.type !== 'alternate' || term.modes.mouseTrackingMode !== 'none') return true
+        const lines = Math.max(1, Math.min(5, Math.round(Math.abs(e.deltaY) / 40)))
+        queueInput((e.deltaY < 0 ? '\u001b[A' : '\u001b[B').repeat(lines))
+        return false
+      })
       const observer = new ResizeObserver(() => { if (!element.current || element.current.clientWidth < 16 || element.current.clientHeight < 16) return; fit.fit(); const t = current.current; if (t.inputOwner === 'desktop') send({ action: 'resize', taskId: t.id, epoch: t.inputEpoch ?? 0, cols: term.cols, rows: term.rows }) })
       observer.observe(element.current)
       const theme = new MutationObserver(() => {
         term.options.theme = terminalAppearance().theme
       })
       theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] })
-      release = () => { alive = false; imeOff(); clearTimeout(timer); sub.dispose(); observer.disconnect(); theme.disconnect(); term.dispose() }
+      release = () => { alive = false; imeOff(); clearTimeout(timer); clearTimeout(inputTimer); sub.dispose(); observer.disconnect(); theme.disconnect(); term.dispose() }
     })
     return () => { disposed = true; release() }
   }, [task.terminalId, onError])

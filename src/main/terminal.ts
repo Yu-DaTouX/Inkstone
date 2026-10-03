@@ -211,7 +211,10 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     current.chunks.push({ seq: current.seq, data })
     if (current.buffer.length > BUFFER_LIMIT) {
       current.buffer = current.buffer.slice(current.buffer.length - BUFFER_KEEP)
-      current.chunks = []
+      /* 只丢最旧的增量：整段清空会让界面下一次轮询被迫整屏重建（重置滚动位置、清空回滚）。 */
+      let kept = 0, from = current.chunks.length
+      while (from > 0 && kept + current.chunks[from - 1].data.length <= BUFFER_KEEP) { from -= 1; kept += current.chunks[from].data.length }
+      current.chunks = current.chunks.slice(from)
     }
     sink?.({ kind: 'data', id, data, seq: current.seq })
   })
