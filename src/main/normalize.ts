@@ -91,6 +91,21 @@ export function imagesOf(
   return out.length ? out : undefined
 }
 
+/**
+ * pi 在 `/skill:名字 参数` 发出后把整份 SKILL.md 包成
+ * `<skill name location>…</skill>\n\n参数` 再交给模型。模型要看到全文，
+ * 用户只该看到自己敲的那一行，所以展示层折回 `/skill:名字 参数`。
+ * 格式与 pi 的 parseSkillBlock 一致；对不上就原样返回，不猜。
+ */
+const SKILL_BLOCK = /^<skill name="([^"]+)" location="[^"]+">\n[\s\S]*?\n<\/skill>(?:\n\n([\s\S]+))?$/
+
+export function collapseSkillInvocation(text: string): string {
+  const match = SKILL_BLOCK.exec(text)
+  if (!match) return text
+  const args = match[2]?.trim()
+  return args ? `/skill:${match[1]} ${args}` : `/skill:${match[1]}`
+}
+
 export function normalizeMessage(
   m: PiMessage,
   idx: number,
@@ -112,7 +127,8 @@ export function normalizeMessage(
       }
     }
 
-    // 去掉客户端塞进去的 XML 包裹
+    // 技能展开块先折叠，再去掉客户端塞进去的 XML 包裹（顺序反了会先把 <skill> 标签剥掉）
+    text = collapseSkillInvocation(text)
     text = text.replace(/^<[^>]{1,40}>/, '').replace(/<\/[^>]{1,40}>$/, '')
     return {
       id,

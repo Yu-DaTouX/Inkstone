@@ -1552,7 +1552,20 @@ export const useStore = create<Store>((rawSet, get) => {
           s.session?.sessionId === m.payload.sessionId &&
           s.session?.isAgentRunning === true &&
           m.payload.isAgentRunning !== true
+        /*
+         * 压缩收尾要说一声：运行条在压缩期间显示「压缩中」，结束后条一收就什么都没了，
+         * 用户分不清是压好了还是没动。只对同一会话的「在跑 → 有结局」报，切会话不报。
+         */
+        const endedRun =
+          s.session?.sessionId === m.payload.sessionId && s.session?.compaction && !m.payload.compaction
+            ? m.payload.lastCompaction
+            : undefined
         set({ session: m.payload })
+        if (endedRun?.status === 'completed') {
+          set({ notices: pushNotice(get().notices, 'info', '上下文已压缩') })
+        } else if (endedRun?.status === 'failed') {
+          set({ notices: pushNotice(get().notices, 'error', `压缩失败：${endedRun.error ?? '未知原因'}`) })
+        }
         if (finished) {
           const sid = s.session?.sessionId
           const label = (sid && (s.manualTitles[sid] || s.titles[sid])) || s.session?.sessionName || ''

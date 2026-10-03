@@ -80,6 +80,16 @@ export async function runRunProgressTests(ok, mod) {
   )
   ok(deriveRunProgress({ ...base, startedAt: null }).elapsedMs === 0, '没有开始时间时不编造时长')
 
+  /* ── 压缩：独立于回合，且不被「仍在运行」顶掉 ── */
+  ok(phaseOf({ running: true, compacting: true }) === 'compacting', '压缩中 → compacting（不再误报成生成回复）')
+  ok(phaseOf({ streaming: true, compacting: true, requested: true }) === 'compacting', '压缩期间 isStreaming 为真也显示压缩')
+  ok(phaseOf({ compacting: true, terminal: 'failed' }) === 'failed', '终态仍优先于压缩')
+  ok(
+    deriveRunProgress({ ...base, compacting: true, now: base.startedAt + 90_000 }).long === false,
+    '压缩再久也不标长耗时（文案保持「压缩中」）'
+  )
+  ok(runPhaseIsActive('compacting') === true, 'compacting 算进行中阶段')
+
   ok(runPhaseIsActive('tool') === true && runPhaseIsActive('settled') === false, '只有进行中的阶段算 active')
 }
 

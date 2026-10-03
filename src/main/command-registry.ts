@@ -54,6 +54,51 @@ const LOCAL_COMMANDS: readonly CommandDescriptor[] = [
     executable: true,
     usage: '/browser [url]'
   },
+  { name: 'settings', description: '打开设置', source: 'yan', executable: true, usage: '/settings' },
+  {
+    name: 'thinking',
+    description: '查看或设置思考档位',
+    source: 'yan',
+    executable: true,
+    usage: '/thinking [档位]'
+  },
+  { name: 'export', description: '导出当前会话为 HTML', source: 'yan', executable: true, usage: '/export' },
+  { name: 'copy', description: '复制最近一条回复', source: 'yan', executable: true, usage: '/copy' },
+  { name: 'name', description: '重命名当前会话', source: 'yan', executable: true, usage: '/name <名称>' },
+  { name: 'session', description: '查看当前会话信息', source: 'yan', executable: true, usage: '/session' },
+  { name: 'clone', description: '复制当前会话到新会话', source: 'yan', executable: true, usage: '/clone' },
+  /*
+   * pi 终端内置、桌面端换了入口的命令。pi RPC 的 get_commands 不报内置命令，
+   * 不登记的话手打 `/tree` 会被当成消息发给模型。保留为 compatibility 并隐藏在补全外：
+   * 手打时给出桌面端对应的入口，输入与附件原样保留。
+   */
+  ...(
+    [
+      ['tree', '桌面端没有会话树视图；在消息上点「分叉」回到某一轮。'],
+      ['fork', '在要分叉的那条消息上点「分叉」。'],
+      ['resume', '在左栏选择要继续的会话。'],
+      ['import', '桌面端没有导入 JSONL 会话的入口。'],
+      ['share', '桌面端不提供 gist 分享；可用 /export 导出后自行分享。'],
+      ['scoped-models', '桌面端没有模型范围设置；Ctrl+P 在已发现的模型间切换。'],
+      ['logout', '在设置的登录页管理各模型服务的登录状态。'],
+      ['trust', '项目信任记录在 pi 的 trust.json 里；桌面端不提供命令入口，未信任的项目不加载项目级 .pi 资源。'],
+      ['reload', '技能与扩展在新会话启动时重新加载；/ 菜单会自动刷新。'],
+      ['hotkeys', '桌面端没有快捷键总表；按钮悬停提示里标有快捷键。'],
+      ['changelog', '桌面端没有更新日志入口；版本信息在设置的关于页。'],
+      ['bug', '请到设置的关于页打开项目主页反馈问题。'],
+      ['quit', '直接关闭窗口即可。']
+    ] as const
+  ).map(
+    ([name, availability]): CommandDescriptor => ({
+      name,
+      description: `pi 终端命令（桌面端另有入口）`,
+      source: 'compatibility',
+      executable: false,
+      hiddenInMenu: true,
+      usage: `/${name}`,
+      availability
+    })
+  ),
   {
     name: 'subagent',
     description: '子代理由模型按任务需要自主调用',
