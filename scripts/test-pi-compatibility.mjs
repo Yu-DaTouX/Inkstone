@@ -44,7 +44,12 @@ if (before) {
   }
 }
 
-const { normalizeHistory } = modules.normalize
+const { normalizeHistory, collapseSkillInvocation } = modules.normalize
+const skillBody = ['<skill name="capabilities" location="C:/repo/SKILL.md">', 'References are relative.', '', '# body', '</skill>'].join(String.fromCharCode(10))
+check(collapseSkillInvocation(skillBody) === '/skill:capabilities', 'skill block collapses to the typed command')
+check(collapseSkillInvocation(skillBody + String.fromCharCode(10, 10) + '找个画图能力') === '/skill:capabilities 找个画图能力', 'skill block keeps the user arguments')
+check(collapseSkillInvocation('<skill name="x"> not a pi block') === '<skill name="x"> not a pi block', 'non-matching text is left alone')
+check(normalizeHistory([{ role: 'user', content: [{ type: 'text', text: skillBody }], timestamp: 1 }])[0].text === '/skill:capabilities', 'history shows the collapsed skill command')
 const parent = { role: 'assistant', content: [{ type: 'toolCall', id: 'code', name: 'codemode', arguments: { code: 'fixture' } }], timestamp: 1 }
 const result = { role: 'toolResult', toolCallId: 'code', toolName: 'codemode', content: [{ type: 'text', text: 'selected output' }], details: { truncated: true }, nestedCalls: { complete: false, calls: [
   { id: 'code/1', name: 'read', arguments: { path: 'a.txt' }, status: 'ok', durationMs: 3 },
