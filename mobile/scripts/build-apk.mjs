@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
 
 const mobile = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const root = resolve(mobile, '..')
@@ -22,6 +23,8 @@ function sdkDir() {
   return match[1].trim().replace(/\\\\/g, '\\').replace(/\\:/g, ':')
 }
 
+const signingFile = process.env.INKSTONE_SIGNING || join(homedir(), '.inkstone-signing', 'keystore.properties')
+const releaseSigned = existsSync(signingFile)
 const sdk = sdkDir()
 const env = { ...process.env, ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk }
 const node = process.execPath
@@ -36,8 +39,8 @@ const version = JSON.parse(readFileSync(join(mobile, 'package.json'), 'utf8')).v
 const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
 const outDir = join(root, 'release', `apk-${version}-${commit}`)
 mkdirSync(outDir, { recursive: true })
-const name = `Inkstone-mobile-${version}.apk`
+const name = releaseSigned ? `Inkstone-mobile-${version}.apk` : `Inkstone-mobile-${version}-debug-signed.apk`
 copyFileSync(apk, join(outDir, name))
 const sha = createHash('sha256').update(readFileSync(apk)).digest('hex')
 writeFileSync(join(outDir, 'SHA256.txt'), `${sha} *${name}\n`)
-console.log(`\nAPK：${join(outDir, name)}\nSHA-256：${sha}\n沿用调试密钥签名，只供本机安装验证，不是公开发布包。`)
+console.log(`\nAPK：${join(outDir, name)}\nSHA-256：${sha}\n${releaseSigned ? '已用正式签名密钥签名（' + signingFile + '）。' : '没有找到正式签名密钥，沿用调试密钥签名，只供本机安装验证，不是公开发布包。'}`)

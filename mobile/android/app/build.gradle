@@ -93,6 +93,11 @@ android {
         testInstrumentationRunner "com.yudatoux.inkstone.QuestionAlertProbe"
     }
     testBuildType "release"
+    // 正式签名：密钥和密码放在仓库之外（INKSTONE_SIGNING 指向 keystore.properties，默认 ~/.inkstone-signing/）。
+    // 没有这个文件时退回调试密钥，只供本机验证。
+    def signingFile = new File(System.getenv("INKSTONE_SIGNING") ?: "${System.getProperty('user.home')}/.inkstone-signing/keystore.properties")
+    def signingProps = new Properties()
+    if (signingFile.exists()) signingFile.withInputStream { signingProps.load(it) }
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -100,15 +105,21 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (signingFile.exists()) {
+            release {
+                storeFile file(signingProps['storeFile'])
+                storePassword signingProps['storePassword']
+                keyAlias signingProps['keyAlias']
+                keyPassword signingProps['keyPassword']
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingFile.exists() ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
