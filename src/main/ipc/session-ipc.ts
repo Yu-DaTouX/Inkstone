@@ -9,6 +9,7 @@ import { shell } from 'electron'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from '../title'
 import { getSettings } from '../settings'
 import { listSessions, deleteSession, readTitleSamples, restoreSession } from '../sessions'
+import { searchSessionText, warmSessionSearch } from '../session-search'
 import { moveSessionLayout } from '../session-layout'
 import { filterChainRepresentatives } from '../remote-host'
 import { planHistoryRead } from '../../shared/session-chain'
@@ -247,7 +248,10 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   })
   handle('yan:getCustomEntries', async () => host.ac()?.getCustomEntries() ?? [])
   handle('yan:refreshTodos', async () => host.ac()?.refreshTodos() ?? [])
+  handle('yan:searchSessions', async (query: unknown, limit?: unknown) =>
+    searchSessionText(typeof query === 'string' ? query.slice(0, 200) : '', typeof limit === 'number' ? limit : 30))
   handle('yan:listSessions', async () => {
+    warmSessionSearch()
     const settings = await getSettings()
     /*
      * 生产端保持 200 条的桌面快照边界。隔离 live 回归会在一个批次里

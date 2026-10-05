@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { shell } from 'electron'
 import { mergeAuthEntry } from './credentials'
+import { openableAuthUrl } from './external-url'
 import type { OAuthLoginEvent, OAuthLoginResult } from '../shared/ipc'
 
 /** 界面上的 provider id → pi 登录模块的文件名与导出名（auth.json 的键与 id 相同） */
@@ -90,9 +91,10 @@ export async function startOAuthLogin(opts: {
       signal: state.abort.signal,
       notify(event) {
         const type = String(event.type ?? '')
-        if (type === 'auth_url' && typeof event.url === 'string') {
-          void shell.openExternal(event.url).catch(() => undefined)
-          send({ provider, type: 'auth_url', url: event.url, message: typeof event.instructions === 'string' ? event.instructions : undefined })
+        const authUrl = type === 'auth_url' ? openableAuthUrl(event.url) : null
+        if (authUrl) {
+          void shell.openExternal(authUrl).catch(() => undefined)
+          send({ provider, type: 'auth_url', url: authUrl, message: typeof event.instructions === 'string' ? event.instructions : undefined })
         } else if (type === 'device_code') {
           send({
             provider,

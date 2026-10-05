@@ -51,6 +51,7 @@ export function RightPanel() {
   const browser = useStore(s => s.browserState)
   const filePreview = useStore(s => s.filePreview)
   const files = useStore(s => s.filePreviews)
+  const closeFileTab = useStore(s => s.closeFileTab)
   const terminals = useStore(s => s.terminals)
   const setBrowserSurfaceActive = useStore(s => s.setBrowserSurfaceActive)
   const [agents, setAgents] = useState<string[]>([])
@@ -141,7 +142,7 @@ export function RightPanel() {
     {logsOpen ? <WorkspacePane id="logs" title="日志" icon="activity"><LogsPane /></WorkspacePane> : null}
     {browser.open ? <WorkspacePane id="browser" title="浏览器" icon="globe" onVisibleChange={setBrowserSurfaceActive}><BrowserSurface /></WorkspacePane> : null}
     {fileTreeOpen ? <WorkspacePane id="files" title="文件" icon="folder"><div className="tile-file-tree"><FileTree /></div></WorkspacePane> : null}
-    {Object.entries(files).map(([id, preview]) => <WorkspacePane key={id} id={'file:' + id} title={preview.data?.name || fileResourceLabel(id) || '文件'} icon="file"><FilePreviewPane resourceKey={id} /></WorkspacePane>)}
+    {Object.entries(files).map(([id, preview]) => <WorkspacePane key={id} id={'file:' + id} title={preview.data?.name || fileResourceLabel(id) || '文件'} icon="file" closeLabel="关闭文件" onClose={() => closeFileTab(id)}><FilePreviewPane resourceKey={id} /></WorkspacePane>)}
     {terminals.map((terminal, index) => <WorkspacePane key={terminal.id} id={'terminal:' + terminal.id} title={`终端 ${index + 1}`} hint={[terminal.title, terminal.alive ? '' : '已退出'].filter(Boolean).join(' · ')} addLabel="新建终端" onAdd={() => void newTerminal()} closeLabel={terminal.alive ? '结束终端' : '关闭终端'} onClose={() => void useStore.getState().closeTerminal(terminal.id)} actions={[{ label: '新建终端', icon: 'plus', run: () => void newTerminal() }, { label: terminal.alive ? '结束终端' : '关闭终端', icon: 'stop', danger: terminal.alive, run: () => void useStore.getState().closeTerminal(terminal.id) }]}><TerminalSurface terminalId={terminal.id} bare /></WorkspacePane>)}
     {ownerKey === key && agentManager ? <WorkspacePane id="agents" title="Agent 协作" icon="agent"><AgentWorkspacePanel onBack={() => hide('agents')} onOpenRun={openAgent} managerOnly /></WorkspacePane> : null}
     {(ownerKey === key ? agents : []).map(id => <WorkspacePane key={key + id} id={'agent:' + id} title={agentTitles[id] || (id.startsWith('subagent:') ? 'pi · 子任务' : 'Agent · ' + id.slice(-6))} icon="agent"><AgentWorkspacePanel initialRun={id} onlyRun onBack={() => hide('agent:' + id)} onTitleChange={title => { if (currentKey.current === key) setAgentTitles(old => old[id] === title ? old : { ...old, [id]: title }) }} /></WorkspacePane>)}

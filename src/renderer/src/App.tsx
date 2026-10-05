@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { VList, type VListHandle } from 'virtua'
 import { IconSprite } from './icons/Icon'
 import { PeerApprovalDialog } from './components/shell/PeerApprovalDialog'
+import { SessionSwitcher } from './components/shell/SessionSwitcher'
+import { RewindDialog } from './components/shell/RewindDialog'
 import { useI18n, useT } from './i18n'
 import { TitleBar, type Theme } from './components/shell/TitleBar'
 import { Rail } from './components/rail/Rail'
@@ -110,6 +112,16 @@ export default function App() {
   const themeTransitionRunning = useRef(false)
   /** 首次使用引导（默认关；启动后按条件自动开） */
   const [onboarding, setOnboarding] = useState(false)
+  /* Ctrl+K 会话切换器 */
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  /* 检查点：换会话、来新消息后刷新（用户消息上的「回退代码」据此出现） */
+  const refreshCheckpoints = useStore((s) => s.refreshCheckpoints)
+  const checkpointKey = useStore((s) => s.session?.conversationId ?? s.session?.sessionId ?? '')
+  const checkpointMessages = useStore((s) => s.messages.length)
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refreshCheckpoints(), 400)
+    return () => window.clearTimeout(timer)
+  }, [refreshCheckpoints, checkpointKey, checkpointMessages])
   /** 只在第一次判定时决定是否自动弹，之后用户关了就不管了 */
   const onboardDecided = useRef(false)
   /** 左栏由标题栏开关显式控制，首次收起，后续恢复保存的展开状态。 */
@@ -127,6 +139,18 @@ export default function App() {
 
   /* 左栏是否可见：只取决于那个开关 */
   const railOpen = railPinned
+  /*
+   * 左栏收起时，指针停在标题栏开关上 → 左栏以浮层预览（不推挤布局），
+   * 指针离开开关与浮层后收回；点击开关仍是固定展开。
+   */
+  const [railPeek, setRailPeek] = useState(false)
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverRail = (inside: boolean): void => {
+    if (peekTimer.current) clearTimeout(peekTimer.current)
+    peekTimer.current = setTimeout(() => setRailPeek(inside && !railPinned), inside ? 140 : 260)
+  }
+  useEffect(() => { if (railPinned) setRailPeek(false) }, [railPinned])
+  useEffect(() => () => { if (peekTimer.current) clearTimeout(peekTimer.current) }, [])
   // 设置面板状态放 store（ContextBar 等深层组件要能直接打开）
   const settingsOpen = useStore((s) => s.settingsOpen)
   const settingsTab = useStore((s) => s.settingsTab as SettingsTab)
@@ -722,6 +746,14 @@ export default function App() {
         guard('cycleThinking')
         return
       }
+      /* Ctrl+K：会话切换器（搜标题与正文，回车跳转） */
+      if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+        /* 终端里 Ctrl+K 是 shell 的「删到行尾」，不抢 */
+        if ((e.target as HTMLElement | null)?.closest?.('.xterm')) return
+        e.preventDefault()
+        setSwitcherOpen((open) => !open)
+        return
+      }
       /* Ctrl+N：新对话（左栏按钮上标着这个键位） */
       if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault()
@@ -738,6 +770,7 @@ export default function App() {
   const appCls = [
     'app',
     !railOpen && 'rail-off',
+    !railOpen && railPeek && 'rail-peek',
     railPinned && 'rail-pinned'
   ]
     .filter(Boolean)
@@ -748,10 +781,13 @@ export default function App() {
       <IconSprite />
       {/* 另一台砚申请本次连接时的所有者审批（全局，不依赖设置页是否打开） */}
       <PeerApprovalDialog />
+      {switcherOpen ? <SessionSwitcher onClose={() => setSwitcherOpen(false)} /> : null}
+      <RewindDialog />
       <div className={appCls}>
         <TitleBar
           onToggleRail={() => setRailPinned(!railPinned)}
           railOpen={railOpen}
+          onRailHover={hoverRail}
           onToggleBrowser={() => void (browserOpen ? closeBrowser() : openBrowser())}
           browserOpen={browserOpen}
           alwaysOnTop={alwaysOnTop}
@@ -788,7 +824,7 @@ export default function App() {
          * 现在改成：**同一个按钮**（左栏头部的 .rail-brand-btn）在收起时
          * 仍然可见可点 —— 收起宽度 50px 刚好容纳它，几何完全一致。
          */}
-        <div className="rail-slot">
+        <div className="rail-slot" onPointerEnter={() => { if (!railOpen) hoverRail(true) }} onPointerLeave={() => { if (!railOpen) hoverRail(false) }}>
           {/*
             左栏开关在标题栏最左上（用户要求，参考 Codex）——
             所以收起就是真的 0 宽，这里不再需要留槽/悬停按钮。

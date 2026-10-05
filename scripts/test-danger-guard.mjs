@@ -86,4 +86,32 @@ export function runDangerGuardTests(ok, mod) {
   ok(detectDanger('write', { path: '/etc/../etc/hosts' }, '/home/me/proj').length > 0, '绝对路径里的 .. 也归一化')
   ok(detectDanger('read', { path: '/etc/hosts' }, '/x').length === 0, '读取不问')
   ok(isBroadTarget('/') && isBroadTarget('..') && !isBroadTarget('node_modules') && !isBroadTarget('/var/www/site/cache'), '大范围目标的口径')
+
+  /* ---- 写入项目之外（可选，设置里开关；默认开） ---- */
+  const { outsideWrites } = mod
+  const on = { outsideWrites: true, allowRoots: [] }
+  const outside = (tool, input, cwd = 'C:/proj', prefs = on) => outsideWrites(tool, input, cwd, prefs)
+  ok(outside('write', { path: 'C:/proj/src/a.ts' }).length === 0, '写项目内文件不算越界')
+  ok(outside('write', { path: 'src/a.ts' }).length === 0, '相对路径写项目内不算越界')
+  ok(outside('write', { path: 'D:/other/a.ts' }).length === 1, '写另一个盘上的文件算越界')
+  ok(outside('edit', { path: '../sibling/a.ts' }).length === 1, '用 .. 写到同级目录算越界')
+  ok(outside('write', { path: 'C:/proj/../other/a.ts' }).length === 1, '绝对路径里的 .. 先归一化再判定')
+  ok(outside('write', { path: 'C:/proj2/a.ts' }).length === 1, '前缀相同但不是子目录（proj2）算越界')
+  ok(outside('write', { path: 'D:/other/a.ts' }, 'C:/proj', { outsideWrites: false }).length === 0, '设置关闭时一律不拦')
+  ok(outside('write', { path: 'D:/other/a.ts' }, 'C:/proj', { outsideWrites: true, allowRoots: ['D:/other'] }).length === 0, '用户允许的目录不拦')
+  ok(outside('write', { path: 'D:/otherx/a.ts' }, 'C:/proj', { outsideWrites: true, allowRoots: ['D:/other'] }).length === 1, '允许目录按整段路径匹配，不按前缀')
+  ok(outside('read', { path: 'D:/other/a.ts' }).length === 0, '读取不算写入')
+  ok(outside('bash', { command: 'echo hi > D:/other/a.txt' }).length === 1, 'shell 重定向写到项目外要问')
+  ok(outside('bash', { command: 'echo hi >> out.log' }).length === 0, 'shell 重定向写到项目内不问')
+  ok(outside('bash', { command: 'npm test 2>&1 | tee D:/logs/t.log' }).length === 1, 'tee 写到项目外要问')
+  ok(outside('bash', { command: 'cmd > /dev/null 2>&1' }).length === 0, '重定向到 /dev/null 不问')
+  ok(outside('bash', { command: 'cp D:/other/a.txt ./a.txt' }).length === 0, '复制：来源在项目外只是读取，不问')
+  ok(outside('bash', { command: 'cp ./a.txt D:/other/a.txt' }).length === 1, '复制：目标在项目外要问')
+  ok(outside('bash', { command: 'mv a.txt D:/other/' }).length === 1, '移动到项目外要问')
+  ok(outside('bash', { command: 'rm -f D:/other/a.txt' }).length === 1, '删除项目外的文件要问')
+  ok(outside('bash', { command: 'mkdir build && rm -rf build' }).length === 0, '项目内的创建与删除不问')
+  ok(outside('powershell', { command: 'Set-Content -Path D:/other/a.txt -Value hi' }).length === 1, 'PowerShell 写项目外要问')
+  ok(outside('powershell', { command: 'Get-ChildItem D:/other' }).length === 0, 'PowerShell 读取不问')
+  ok(outside('bash', { command: 'echo hi > ~/notes.txt' }, 'C:/proj').length === 1, '写家目录要问')
+  ok(outside('bash', { command: 'echo hi > /tmp/x.txt' }).length === 0, '写临时目录不问')
 }

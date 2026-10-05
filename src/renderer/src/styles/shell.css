@@ -545,6 +545,15 @@
   display: none;
 }
 
+/* 常驻只留速度与缓存命中；输入 / 输出悬停或聚焦时展开，点开详情始终看得到全部 */
+.statusbar .usagebar .ub-secondary {
+  display: none;
+}
+.statusbar .usagebar:hover .ub-secondary,
+.statusbar .usagebar:focus-visible .ub-secondary {
+  display: inline-flex;
+}
+
 @container (max-width: 1100px) {
   .sb-cost {
     display: none;
@@ -657,7 +666,6 @@ button.sb-seg { border: 0; background: transparent; color: inherit; font: inheri
 .detail-trigger-pop .ui-usage-legend li { display: contents; }
 .ui-usage-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-usage-num { min-width: 40px; }
-.ctx-window-note { margin-top: calc(-1 * var(--sp-1)); }
 .detail-trigger-pop .rp-ctx-actions { display: flex; align-items: center; gap: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--border-soft); }
 .detail-trigger-pop .rp-ctx-actions > .rp-u { margin-right: auto; }
 .quota-pop { display: flex; flex-direction: column; gap: var(--sp-3); }

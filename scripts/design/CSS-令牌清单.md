@@ -167,8 +167,8 @@
 | `--err` | `#dc2626` | **tokens**: #dc2626 |
 | `--err-soft` | `rgba(220, 38, 38, 0.1)` | **tokens**: rgba(220, 38, 38, 0.1) |
 | `--fg` | `#252522` | **tokens**: #252522 |
-| `--fg-dim` | `#66665f` | **tokens**: #66665f |
-| `--fg-mute` | `#73736b` | **tokens**: #73736b |
+| `--fg-dim` | `#55554f` | **tokens**: #55554f |
+| `--fg-mute` | `#6a6a63` | **tokens**: #6a6a63 |
 | `--magenta` | `#9333ea` | **tokens**: #9333ea |
 | `--ok` | `#059669` | **tokens**: #059669 |
 | `--ok-soft` | `rgba(5, 150, 105, 0.1)` | **tokens**: rgba(5, 150, 105, 0.1) |

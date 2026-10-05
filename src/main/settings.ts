@@ -114,6 +114,9 @@ const DEFAULTS: AppSettings = {
   defaultWorkMode: DEFAULT_WORK_MODE,
   capabilityStrategy: 'auto-connect',
   codemodeEnabled: true,
+  guardOutsideWrites: true,
+  guardAllowRoots: [],
+  checkpointsEnabled: true,
   /*
    * 发送键默认 auto —— 保持用户已有的习惯：短输入框 Enter 发送，
    * 长文模式里 Enter 换行。**不改变默认行为**，只是把它变成可配、
@@ -423,6 +426,9 @@ export async function getSettings(): Promise<AppSettings> {
      */
     cached.defaultWorkMode = migrateLegacyAutonomous(fileWorkMode, cached.autonomous)
     cached.codemodeEnabled = cached.codemodeEnabled !== false
+    cached.guardOutsideWrites = cached.guardOutsideWrites !== false
+    cached.checkpointsEnabled = cached.checkpointsEnabled !== false
+    cached.guardAllowRoots = cleanAllowRoots(cached.guardAllowRoots)
     cached.capabilityStrategy =
       cached.capabilityStrategy === 'existing-only' || cached.capabilityStrategy === 'search-and-recommend'
         ? cached.capabilityStrategy
@@ -519,6 +525,12 @@ function sanitizeVoiceInput(value: unknown): AppSettings['voiceInput'] {
   return Object.keys(out).length ? out : undefined
 }
 
+/** 允许写入的额外目录：只留非空字符串，去重，最多 30 个 */
+function cleanAllowRoots(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((p): p is string => typeof p === 'string' && p.trim().length > 0).map((p) => p.trim()))].slice(0, 30)
+}
+
 export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
   /* 排队：上一个写完才轮到本个（失败也不能断链，否则后面的永远等不到） */
   const task = writeQueue.then(() => applyPatch(patch), () => applyPatch(patch))
@@ -542,6 +554,9 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   const cur = await getSettings()
   const next: AppSettings = { ...cur, ...patch }
   next.codemodeEnabled = next.codemodeEnabled !== false
+  next.guardOutsideWrites = next.guardOutsideWrites !== false
+  next.checkpointsEnabled = next.checkpointsEnabled !== false
+  next.guardAllowRoots = cleanAllowRoots(next.guardAllowRoots)
 
   if (patch.recentCwds) {
     // 去重、保留最近 8 个

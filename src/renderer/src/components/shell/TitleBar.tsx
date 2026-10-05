@@ -10,6 +10,8 @@ interface Props {
   /** 左栏（侧边栏）开关 —— 在标题栏最左上（对齐 Codex） */
   onToggleRail: () => void
   railOpen?: boolean
+  /** 左栏收起时，指针停在开关上预览左栏（悬停展开） */
+  onRailHover?: (inside: boolean) => void
   /** 内置浏览器开关 —— 与工具栏独立，收起工具栏不影响它 */
   onToggleBrowser?: () => void
   browserOpen?: boolean
@@ -48,6 +50,7 @@ interface Props {
 export function TitleBar({
   onToggleRail,
   railOpen,
+  onRailHover,
   onToggleBrowser,
   browserOpen,
   alwaysOnTop,
@@ -69,6 +72,8 @@ export function TitleBar({
           className={`tb-icon ${railOpen ? 'on' : ''}`}
           title={railOpen ? t('rail.collapse') : t('rail.expand')}
           onClick={onToggleRail}
+          onPointerEnter={() => { if (!railOpen) onRailHover?.(true) }}
+          onPointerLeave={() => { if (!railOpen) onRailHover?.(false) }}
           data-testid="rail-toggle"
           data-open={railOpen ? '1' : '0'}
           aria-expanded={railOpen}

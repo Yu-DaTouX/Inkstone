@@ -240,6 +240,8 @@ export interface DangerConfirmPrompt {
   detail: string
   reasons: string[]
   cwd: string
+  /** 越界写入涉及的目录（来自 danger-guard）；有值时确认框可「允许并记住」 */
+  outsideDirs?: string[]
 }
 
 export interface ToolConsentPrompt {
@@ -754,6 +756,11 @@ export class AgentController extends EventEmitter {
 
   get running(): boolean {
     return this.rpc?.running ?? false
+  }
+
+  /** 这个实例的项目目录（只读；检查点按它存取） */
+  get workingDirectory(): string {
+    return this.cwd
   }
 
   private currentResponseDetail(): ResponseDetail {
@@ -1470,7 +1477,10 @@ export class AgentController extends EventEmitter {
     const reasons = Array.isArray(params.reasons)
       ? params.reasons.filter((r): r is string => typeof r === 'string').map((r) => r.slice(0, 200)).slice(0, 6)
       : []
-    const answer = this.confirmDanger ? await this.confirmDanger({ tool, detail, reasons, cwd: this.cwd }) : null
+    const outsideDirs = Array.isArray(params.outsideDirs)
+      ? params.outsideDirs.filter((d): d is string => typeof d === 'string').map((d) => d.slice(0, 500)).slice(0, 6)
+      : []
+    const answer = this.confirmDanger ? await this.confirmDanger({ tool, detail, reasons, cwd: this.cwd, ...(outsideDirs.length ? { outsideDirs } : {}) }) : null
     const decision = answer ?? 'no-answer'
     return {
       data: { decision },

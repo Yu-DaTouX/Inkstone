@@ -435,6 +435,21 @@ function OutlinePreview({
     el.style.top = `${Math.round(top)}px`
   }, [ratio, n])
 
+  /*
+   * 卡片高度在内容与字体就绪后才稳定；首次量高时偏矮会让贴近底部的卡片被宿主裁掉下沿。
+   * 下一帧按最终高度把它再夹回宿主盒内。
+   */
+  useEffect(() => {
+    const el = card.current
+    const host = el?.offsetParent as HTMLElement | null
+    if (!el || !host) return
+    const id = requestAnimationFrame(() => {
+      const over = el.getBoundingClientRect().bottom - (host.getBoundingClientRect().bottom - 4)
+      if (over > 0) el.style.top = `${Math.max(4, Math.round(el.offsetTop - over))}px`
+    })
+    return () => cancelAnimationFrame(id)
+  }, [ratio, n, turn.assistant])
+
   return (
     <div className="outline-preview" ref={card} data-testid="outline-preview">
       <div className="op-head">
@@ -500,6 +515,9 @@ function clean(s: string, max = 220): string {
   const plain = s
     .replace(/```[\s\S]*?```/g, ' […] ')
     .replace(/`([^`]*)`/g, '$1')
+    // 行内强调与链接只留文字，别把 ** 和 [..](..) 原样露在预览里
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     // 保留换行 —— 三行回答是按行 clamp 的，压成一长行就变成「一整段的开头」
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{2,}/g, '\n')

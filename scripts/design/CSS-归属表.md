@@ -8,27 +8,27 @@
 
 | 顺序 | 文件 | 层 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | `tokens.css` | tokens | 456 | 27 | 32 | 2 | 6 |
-| 2 | `ui.css` | ui | 921 | 281 | 284 | 5 | 0 |
+| 1 | `tokens.css` | tokens | 457 | 27 | 32 | 2 | 6 |
+| 2 | `ui.css` | ui | 933 | 280 | 288 | 5 | 0 |
 | 3 | `app.css` | modules | 517 | 72 | 73 | 1 | 0 |
-| 4 | `motion.css` | modules | 1419 | 172 | 175 | 4 | 0 |
+| 4 | `motion.css` | modules | 1429 | 172 | 175 | 4 | 0 |
 | 5 | `settings.css` | modules | 1116 | 169 | 175 | 1 | 0 |
 | 6 | `electron.css` | modules | 38 | 14 | 15 | 0 | 0 |
 | 7 | `highlight.css` | modules | 173 | 81 | 81 | 0 | 0 |
 | 8 | `layout.css` | modules | 239 | 19 | 20 | 4 | 2 |
-| 9 | `shell.css` | modules | 682 | 139 | 143 | 2 | 7 |
-| 10 | `dialog.css` | modules | 151 | 19 | 20 | 0 | 0 |
-| 11 | `rail.css` | modules | 1064 | 197 | 206 | 0 | 0 |
-| 12 | `chat.css` | modules | 2704 | 379 | 437 | 5 | 0 |
-| 13 | `composer.css` | modules | 2037 | 301 | 304 | 1 | 0 |
-| 14 | `tools.css` | modules | 3960 | 616 | 677 | 2 | 5 |
+| 9 | `shell.css` | modules | 690 | 141 | 145 | 2 | 7 |
+| 10 | `dialog.css` | modules | 309 | 44 | 45 | 0 | 0 |
+| 11 | `rail.css` | modules | 1089 | 199 | 208 | 0 | 0 |
+| 12 | `chat.css` | modules | 2716 | 379 | 437 | 5 | 0 |
+| 13 | `composer.css` | modules | 2040 | 301 | 304 | 1 | 0 |
+| 14 | `tools.css` | modules | 3945 | 614 | 675 | 2 | 5 |
 | 15 | `browser.css` | modules | 420 | 48 | 52 | 0 | 0 |
 | 16 | `terminal.css` | modules | 82 | 10 | 10 | 0 | 0 |
 | 17 | `review.css` | modules | 631 | 84 | 84 | 0 | 0 |
-| 18 | `workbench.css` | modules | 1953 | 375 | 391 | 3 | 0 |
-| 19 | `workspace.css` | modules | 69 | 64 | 64 | 0 | 0 |
+| 18 | `workbench.css` | modules | 1978 | 395 | 412 | 3 | 0 |
+| 19 | `workspace.css` | modules | 72 | 65 | 66 | 0 | 0 |
 | 20 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | | **18662** | **2991** | | | |
+| | **合计** | | **18904** | **3038** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -44,17 +44,17 @@
 | `electron.css` | 7 |
 | `highlight.css` | 80 |
 | `layout.css` | 18 |
-| `shell.css` | 139 |
-| `dialog.css` | 19 |
-| `rail.css` | 197 |
+| `shell.css` | 141 |
+| `dialog.css` | 44 |
+| `rail.css` | 199 |
 | `chat.css` | 377 |
 | `composer.css` | 301 |
-| `tools.css` | 616 |
+| `tools.css` | 614 |
 | `browser.css` | 48 |
 | `terminal.css` | 10 |
 | `review.css` | 84 |
-| `workbench.css` | 375 |
-| `workspace.css` | 64 |
+| `workbench.css` | 394 |
+| `workspace.css` | 65 |
 | `icon-state.css` | 1 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）
@@ -76,7 +76,6 @@
 | `.ui-usage-num` | ui → shell |
 | `.quota-block-sub` | ui → shell |
 | `.quota-pop-foot` | ui → shell |
-| `.ctx-window-note` | ui → shell |
 | `.agent-chat-user` | ui → workbench |
 | `.agent-chat-packet` | ui → workbench |
 | `.agent-chat-report` | ui → workbench |
@@ -134,3 +133,4 @@
 | `.app.rail-off .rail` | layout → rail |
 | `.term-bar` | chat → terminal |
 | `.term-bar .spacer` | chat → terminal |
+| `.tile-pane > .agent-workspace` | workbench → workspace |

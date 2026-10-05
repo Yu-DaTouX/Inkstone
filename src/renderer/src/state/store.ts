@@ -60,6 +60,7 @@ import type {
   ZoomState
 } from '../../../shared/ipc'
 import { TOOL_SECTIONS } from '../../../shared/ipc'
+import type { CheckpointRecord } from '../../../shared/checkpoints'
 import { commitTileLayout, defaultToolLayout, type ToolLayout } from '../../../shared/tool-layout'
 import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
 import { isWorkspaceMode, type WorkspaceMode } from '../../../shared/workspace-mode'
@@ -253,6 +254,13 @@ export interface Store {
    * 放 store 里是因为标题栏和左栏自己的开关都要读写它。
    */
   railPinned: boolean
+  /** 当前会话的检查点（回退代码用）；由主进程列出，发消息后刷新 */
+  checkpoints: CheckpointRecord[]
+  /** 正在确认的回退：哪个检查点、对应哪句话 */
+  rewind: { recordId: string; preview: string } | null
+  refreshCheckpoints: () => Promise<void>
+  openRewind: (recordId: string, preview: string) => void
+  closeRewind: () => void
   /**
    * 消息流的滚动进度（0~1）。
   /**
@@ -1245,6 +1253,8 @@ export const useStore = create<Store>((rawSet, get) => {
    *
    * 首次打开默认收起；已有保存值优先，启动时恢复上次退出的状态。
    */
+  checkpoints: [],
+  rewind: null,
   railPinned: ((): boolean => {
     try {
       const v = localStorage.getItem('yan.rail-open')
@@ -3480,6 +3490,19 @@ export const useStore = create<Store>((rawSet, get) => {
   /**
    * 显式切换左栏并立即保存，正常退出后无需另一次异步写入。
    */
+  refreshCheckpoints: async () => {
+    try {
+      const list = await window.yan.checkpoints.list()
+      const prev = get().checkpoints
+      /* 内容没变就不换引用，免得每条用户消息都跟着重渲染 */
+      if (prev.length === list.length && prev.every((r, i) => r.id === list[i].id)) return
+      set({ checkpoints: list })
+    } catch {
+      /* 没有活动会话或主进程还没就绪：当作没有检查点 */
+    }
+  },
+  openRewind: (recordId, preview) => set({ rewind: { recordId, preview } }),
+  closeRewind: () => set({ rewind: null }),
   setRailPinned: (v) => {
     set({ railPinned: v })
     try {

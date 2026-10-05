@@ -23,8 +23,9 @@
  * `YAN_DANGER_GUARD=0` 只给自动化测试用，关闭整个护栏。
  */
 
-import { posix } from 'node:path'
-import { homedir } from 'node:os'
+import { readFileSync } from 'node:fs'
+import { join, posix } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
 
 /** 确认框等用户的最长时间；超过就当作拒绝 */
 const CONFIRM_TIMEOUT_MS = 4 * 60 * 1000
@@ -167,9 +168,115 @@ export function detectDanger(toolName, input, cwd) {
   return [...new Set(reasons)]
 }
 
+/* ------------------------------------------------------------------ 项目之外的写入 */
+
+/**
+ * 写入项目之外的路径（可选，设置里「写入项目之外要确认」，默认开）。
+ *
+ * 与上面的 `SENSITIVE_PATH` 不同：这里不看路径「是不是系统或凭证目录」，只看
+ * 「是不是在项目、临时目录、pi 数据目录、用户允许的目录之内」。
+ * 同样是提醒式护栏：只认文件写入工具，以及 shell 命令里写得出来的重定向与常见写入命令，
+ * 拼接、编码、脚本里再调用都绕得开。
+ */
+const WRITE_COMMANDS_ALL_ARGS = new Set([
+  'rm', 'rmdir', 'del', 'erase', 'rd', 'mkdir', 'md', 'touch', 'chmod', 'chown', 'mv', 'move', 'ren', 'rename',
+  'remove-item', 'ri', 'new-item', 'ni', 'move-item', 'mi', 'rename-item', 'rni', 'set-content', 'sc', 'add-content', 'ac', 'out-file', 'clear-content'
+])
+/* 复制类：只有最后一个参数是被写入的一端，来源只是被读 */
+const WRITE_COMMANDS_LAST_ARG = new Set(['cp', 'copy', 'xcopy', 'robocopy', 'ln', 'install', 'copy-item', 'ci', 'cpi'])
+const PS_PATH_FLAGS = new Set(['-path', '-literalpath', '-filepath', '-destination', '-name'])
+
+function expandHome(text) {
+  return String(text)
+    .replace(/^(~|\$home|\$\{home\}|%userprofile%|%homepath%|\$env:userprofile)(?=[\\/]|$)/i, homedir())
+}
+
+/** 目标路径解析成归一化的绝对路径；`..`、`.` 一并折叠 */
+function resolveTarget(raw, cwd) {
+  const cleaned = expandHome(String(raw ?? '').trim().replace(/^["']+|["']+$/g, ''))
+  if (!cleaned) return ''
+  /* 通配符：取通配之前的部分，等价于「这一层目录下的东西」 */
+  const fixed = cleaned.replace(/[*?].*$/, '')
+  const base = String(cwd || process.cwd()).replace(/[\\/]+$/, '')
+  return normalizePath(isAbsolutePath(fixed) ? fixed : `${base}/${fixed}`)
+}
+
+function allowedRoots(cwd, prefs) {
+  const list = [cwd, tmpdir(), '/tmp', '/var/tmp', join(homedir(), '.pi'), process.env.PI_CODING_AGENT_DIR, process.env.YAN_DATA_DIR, ...(prefs.allowRoots ?? [])]
+  return list.filter((p) => typeof p === 'string' && p.trim()).map((p) => normalizePath(p).replace(/\/$/, ''))
+}
+
+function isInside(target, roots) {
+  return roots.some((root) => root && (target === root || target.startsWith(`${root}/`)))
+}
+
+/** 一段 shell 命令里会被写入或删除的路径（原样文本，未解析） */
+function shellWriteTargets(command) {
+  const out = []
+  const redirect = /(?:^|[\s;&|])\d?>{1,2}\s*("[^"]+"|'[^']+'|[^\s;&|<>]+)/g
+  let match
+  while ((match = redirect.exec(command))) out.push(match[1])
+  for (const segment of command.split(SEGMENT_SPLIT)) {
+    const { head, args } = commandOf(segment)
+    const positional = args.filter((a) => !/^-/.test(a) && !/^\d?>/.test(a))
+    if (head === 'tee') out.push(...positional)
+    else if (WRITE_COMMANDS_ALL_ARGS.has(head)) {
+      const flagged = []
+      args.forEach((a, i) => { if (PS_PATH_FLAGS.has(a.toLowerCase()) && args[i + 1]) flagged.push(args[i + 1]) })
+      out.push(...(flagged.length ? flagged : positional))
+    } else if (WRITE_COMMANDS_LAST_ARG.has(head)) {
+      const flagged = []
+      args.forEach((a, i) => { if (['-destination', '-path'].includes(a.toLowerCase()) && args[i + 1]) flagged.push(args[i + 1]) })
+      const last = flagged.length ? flagged : positional.slice(-1)
+      out.push(...last)
+    }
+  }
+  return out
+}
+
+/**
+ * 这次调用会写到项目之外的哪些路径（已归一化的绝对路径）。
+ * `prefs.outsideWrites` 为假时一律返回空。
+ */
+export function outsideWrites(toolName, input, cwd, prefs = {}) {
+  if (!prefs.outsideWrites) return []
+  const name = String(toolName ?? '')
+  const raws = []
+  if (name === 'write' || name === 'edit' || name === 'multi_edit' || name === 'apply_patch') {
+    const raw = input?.path ?? input?.file_path ?? input?.filePath
+    if (typeof raw === 'string' && raw.trim()) raws.push(raw)
+  } else if (name === 'bash' || name === 'powershell') {
+    raws.push(...shellWriteTargets(String(input?.command ?? '')))
+  } else {
+    return []
+  }
+  const roots = allowedRoots(cwd || process.cwd(), prefs)
+  const hits = []
+  for (const raw of raws) {
+    if (/^(?:\/dev\/(?:null|stdout|stderr)|nul|&\d)$/i.test(String(raw).trim())) continue
+    const target = resolveTarget(raw, cwd)
+    if (target && !isInside(target, roots)) hits.push(target)
+  }
+  return [...new Set(hits)].slice(0, 6)
+}
+
+/** 桌面设置里与护栏相关的两项；读不到就取默认（开启、没有额外目录） */
+function guardPrefs() {
+  try {
+    const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
+    const settings = JSON.parse(readFileSync(join(dir, 'desktop.json'), 'utf8'))
+    return {
+      outsideWrites: settings.guardOutsideWrites !== false,
+      allowRoots: Array.isArray(settings.guardAllowRoots) ? settings.guardAllowRoots.filter((p) => typeof p === 'string') : []
+    }
+  } catch {
+    return { outsideWrites: true, allowRoots: [] }
+  }
+}
+
 /* ------------------------------------------------------------------ 向宿主确认 */
 
-async function askHost(toolName, input, reasons) {
+async function askHost(toolName, input, reasons, outsideDirs = []) {
   const url = process.env.YAN_CLI_URL
   const token = process.env.YAN_CLI_TOKEN
   const sessionId = process.env.YAN_SESSION_ID
@@ -186,7 +293,7 @@ async function askHost(toolName, input, reasons) {
       body: JSON.stringify({
         apiVersion: 1,
         command: 'danger.confirm',
-        params: { tool: toolName, detail: detail.slice(0, 2000), reasons },
+        params: { tool: toolName, detail: detail.slice(0, 2000), reasons, ...(outsideDirs.length ? { outsideDirs } : {}) },
         sessionId,
         projectId
       }),
@@ -206,8 +313,10 @@ export default function dangerGuardExtension(pi) {
     const name = String(event?.toolName ?? '')
     if (!name) return undefined
     const reasons = detectDanger(name, event?.input ?? {}, ctx?.cwd)
+    const outside = outsideWrites(name, event?.input ?? {}, ctx?.cwd, guardPrefs())
+    for (const target of outside) reasons.push(`写入项目之外的路径：${target}`)
     if (reasons.length === 0) return undefined
-    const answer = await askHost(name, event?.input ?? {}, reasons)
+    const answer = await askHost(name, event?.input ?? {}, [...new Set(reasons)], outside)
     if (answer.allowed) return undefined
     return { block: true, reason: `高危操作未获用户确认：${reasons.join('；')}。${answer.why}。请换一种更安全的做法，或向用户说明为什么必须这样做。` }
   })

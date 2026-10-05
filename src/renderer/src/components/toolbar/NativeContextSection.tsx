@@ -51,7 +51,7 @@ function ContextInspect({ tokens }: { tokens: number }) {
   const active = snap.tools.filter(x => x.active).sort((a, b) => b.tokens - a.tokens)
   const shown = active.slice(0, 8)
   return <details className="ctx-inspect" data-testid="ctx-inspect">
-    <summary>固定部分明细（估算）<span className="ui-meta-num">{`系统提示 ${shortTokens(snap.promptTokens)} · 工具定义 ${shortTokens(snap.toolTokens)}`}</span></summary>
+    <summary title={`估算：系统提示 ${shortTokens(snap.promptTokens)} · 工具定义 ${shortTokens(snap.toolTokens)}`}>固定部分<span className="ui-meta-num">{shortTokens(snap.promptTokens + snap.toolTokens)}</span></summary>
     <ul className="ctx-inspect-list">
       {snap.sections.map(s => <li key={s.id + s.label}>
         <details>
@@ -80,7 +80,7 @@ function ContextDetails() {
   const rows = known ? [...slices.filter(s => s.tokens > 0), { id: 'free' as const, tokens: Math.max(0, windowSize - tokens) }] : []
   const share = (n: number) => windowSize > 0 ? n / windowSize * 100 : 0
   return <>
-    <div className="ctx-window-head" data-testid="ctx-main" data-mode="window">
+    <div className="ctx-window-head" data-testid="ctx-main" data-mode="window" title="分类按当前消息文本估算，总量来自 Agent">
       <span className="ui-popover-title">上下文窗口</span>
       <span className={`ctx-window-total ui-meta-num ${known && tone !== 'ok' ? tone : ''}`} data-testid="ctx-tokens">
         {known ? `${shortTokens(tokens)} / ${shortTokens(windowSize)} (${Math.round(percent!)}%)` : '—'}
@@ -98,7 +98,6 @@ function ContextDetails() {
       </li>)}
     </ul> : null}
     {known ? <ContextInspect tokens={tokens} /> : null}
-    {rows.length ? <div className="ctx-window-note">分类按当前消息文本估算，总量来自 Agent</div> : null}
     {matches && usage?.tokens === null ? <div className="rp-dim" data-testid="ctx-unknown">{t('ctx.afterCompact')}</div> : null}
     {session?.lastCompaction ? <div className="rp-dim" data-testid="ctx-last-compaction">{compactionSummary(t, session.lastCompaction)}</div> : null}
     <div className="rp-kv rp-ctx-actions" data-testid="rp-context-actions">

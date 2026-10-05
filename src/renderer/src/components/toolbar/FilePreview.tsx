@@ -31,9 +31,6 @@ const MAX_RENDER_LINES = 2000
 export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: { focus?: boolean; onToggleFocus?: () => void; resourceKey?: string } = {}) {
   const t = useT()
   const preview = useStore((s) => resourceKey ? s.filePreviews[resourceKey] : s.filePreview)
-  const closeCurrentPreview = useStore((s) => s.closePreview)
-  const closeFileTab = useStore((s) => s.closeFileTab)
-  const closePreview = () => resourceKey ? closeFileTab(resourceKey) : closeCurrentPreview()
   const previewFile = useStore((s) => s.previewFile)
   const checkPreviewStale = useStore((s) => s.checkPreviewStale)
   const openBrowser = useStore((s) => s.openBrowser)
@@ -161,12 +158,8 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
   }, [docDir, openBrowser, previewFile, t])
 
   return (
-    <div className="fp" data-testid="file-preview">
+    <div className="fp" data-testid="file-preview" data-file-name={data?.name || preview.path}>
       <div className="fp-head">
-        <Icon name="file" size={12} />
-        <span className="fp-name" title={data?.abs || preview.path}>
-          {data?.name || preview.path}
-        </span>
         {data?.line ? (
           <span className="fp-line-no" data-testid="file-preview-line">
             {data.lineEnd ? `${data.line}\u2013${data.lineEnd}` : data.line}
@@ -223,17 +216,10 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
             onClick={() => void window.yan.openFileDefault(data.abs)}
           />
         ) : null}
-        <IconButton
-          size="sm"
-          icon="close"
-          label={t('fp.close')}
-          onClick={closePreview}
-          data-testid="file-preview-close"
-        />
       </div>
 
-      <div className="fp-path" title={preview.path} hidden={isImage}>
-        {(data?.abs || preview.path).replace(/[\\/]+/g, ' › ')}
+      <div className="fp-path" title={data?.abs || preview.path} hidden={isImage || !dirOf(data?.abs || preview.path)}>
+        {dirOf(data?.abs || preview.path).replace(/[\\/]+/g, ' › ')}
       </div>
 
       {/* 内容被外部改写：就地说一声，不自动重载、不抢回阅读位置 */}
@@ -371,4 +357,9 @@ function fmtSize(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
   return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** 文件名已在磁贴标签上，路径行只给所在目录 */
+function dirOf(path: string): string {
+  return path.replace(/[\\/]+[^\\/]*$/, '')
 }

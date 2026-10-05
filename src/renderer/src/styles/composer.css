@@ -134,10 +134,13 @@
   color: currentColor;
 }
 .send:hover:not(:disabled) {
-  opacity: 0.9;
+  background: color-mix(in srgb, var(--accent) 86%, var(--fg));
 }
+/* 空输入：中性底，一眼与可发送区分，不靠透明度 */
 .send:disabled {
-  opacity: var(--ctl-disabled-opacity);
+  background: var(--bg-3);
+  color: var(--fg-mute);
+  opacity: 1;
 }
 .send.abort {
   width: auto;
