@@ -143,27 +143,27 @@ export function StatusBar() {
       </span>
 
       {branch !== null ? (
-        <span className="sb-seg sb-branch" tabIndex={0} title={t('sb.branchTip', { branch, n: changed })} data-testid="sb-branch">
+        <span className="sb-seg sb-branch" tabIndex={0} role="button" aria-haspopup="dialog" aria-expanded={detail === 'sb-branch'} title={t('sb.branchTip', { branch, n: changed })} data-testid="sb-branch">
           <Icon name="branch" size={12} />
           <span className="sb-text">{branch}</span>
           {changed > 0 ? <span className="sb-changed">~{changed}</span> : null}
         </span>
       ) : null}
 
-      <span className="sb-seg sb-pi" tabIndex={0} title={t('sb.piTip')} data-state={conn} data-testid="sb-pi">
+      <span className="sb-seg sb-pi" tabIndex={0} role="button" aria-haspopup="dialog" aria-expanded={detail === 'sb-pi'} title={t('sb.piTip')} data-state={conn} data-testid="sb-pi">
         <span className="sb-dot" aria-hidden />
         <span className="sb-text">pi · {connText}</span>
       </span>
 
       {liveAgents.length > 0 ? (
-        <span className="sb-seg sb-agents" tabIndex={0} title={t('sb.agentsTip')} data-testid="sb-agents">
+        <span className="sb-seg sb-agents" tabIndex={0} role="button" aria-haspopup="dialog" aria-expanded={detail === 'sb-agents'} title={t('sb.agentsTip')} data-testid="sb-agents">
           <span className="sb-dot on" aria-hidden />
           <span className="sb-text">{t('sb.agents', { n: liveAgents.length })}</span>
         </span>
       ) : null}
 
       {devices !== null ? (
-        <span className="sb-seg sb-phone" tabIndex={0} title={t('sb.phoneTip')} data-testid="sb-phone">
+        <span className="sb-seg sb-phone" tabIndex={0} role="button" aria-haspopup="dialog" aria-expanded={detail === 'sb-phone'} title={t('sb.phoneTip')} data-testid="sb-phone">
           <Icon name="phone" size={12} />
           <span className="sb-text">{t('sb.phone', { n: devices })}</span>
         </span>
@@ -175,7 +175,7 @@ export function StatusBar() {
 
       <UsageBar />
 
-      <span className="sb-seg sb-cost" tabIndex={0} title={t('sb.costTip')} data-testid="sb-cost">
+      <span className="sb-seg sb-cost" tabIndex={0} role="button" aria-haspopup="dialog" aria-expanded={detail === 'sb-cost'} title={t('sb.costTip')} data-testid="sb-cost">
         {t('sb.cost', { cost: cost.toFixed(3) })}
       </span>
     </footer>

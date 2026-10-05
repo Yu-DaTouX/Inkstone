@@ -236,10 +236,11 @@ html[data-theme='light'] {
   --border: rgba(0, 0, 0, 0.13);
   --border-str: rgba(0, 0, 0, 0.2);
   --edge: rgba(0, 0, 0, 0.04);
-  /* 浅色下 whitespace 上「淡」很快变成「读不到」，所以 dim/mute 都比深色主题更黑 */
+  /* 浅色下 whitespace 上「淡」很快变成「读不到」，所以 dim/mute 都比深色主题更黑；
+     mute 在 bg-1 / bg-3（磁贴、选中行）上也要 ≥4.5:1 */
   --fg: #252522;
-  --fg-dim: #66665f;
-  --fg-mute: #73736b;
+  --fg-dim: #55554f;
+  --fg-mute: #6a6a63;
   --accent: #5264c8;
   --accent-soft: rgba(82, 100, 200, 0.1);
   --accent-line: rgba(82, 100, 200, 0.42);

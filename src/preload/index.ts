@@ -84,6 +84,7 @@ import type {
   SessionLayoutEntry,
   SessionState,
   SessionStats,
+  SessionSearchResult,
   SessionSummary,
   Space,
   SpaceProjectLink,
@@ -101,6 +102,7 @@ import type {
   CustomProviderTestResult
 } from '../shared/ipc'
 import type { WebSearchAvailability } from '../shared/web-search'
+import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from '../shared/checkpoints'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { OfficeDocumentView } from '../shared/office'
 import type { ConsentEntryView } from '../shared/tool-consent'
@@ -283,6 +285,13 @@ const api: YanBridge = {
   getCustomEntries: () => invoke<CustomEntry[]>('yan:getCustomEntries'),
   refreshTodos: () => invoke<SessionTodo[]>('yan:refreshTodos'),
   listSessions: () => invoke<SessionSummary[]>('yan:listSessions'),
+  checkpoints: {
+    list: () => invoke<CheckpointRecord[]>('yan:checkpoints:list'),
+    preview: (recordId) => invoke<CheckpointPreview>('yan:checkpoints:preview', recordId),
+    restore: (recordId) => invoke<CheckpointRestoreResult>('yan:checkpoints:restore', recordId),
+    undo: (undoId) => invoke<CheckpointRestoreResult>('yan:checkpoints:undo', undoId)
+  },
+  searchSessions: (query, limit) => invoke<SessionSearchResult>('yan:searchSessions', query, limit),
   peekSession: (path) => invoke<PeekResult | null>('yan:peekSession', path),
 
   /* ---- 模型接入（凭证） ---- */

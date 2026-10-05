@@ -1793,24 +1793,9 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   color: var(--fg-dim);
 }
 
-.fp-head > .ico {
-  flex: none;
-  color: var(--fg-mute);
-}
 
 .fp-head .spacer {
   flex: 1;
-}
-
-.fp-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg);
-  /* 文件名是这一行的主信息：让它优先占位、被挤时最后才缩（原来没有这条，
-     窄右栏里它会被后面的字节数、模式切换挤成「92-real-user-images.p…」） */
-  min-width: 0;
-  flex: 0 1 auto;
 }
 
 .fp-line-no {

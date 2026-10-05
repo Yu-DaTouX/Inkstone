@@ -35,6 +35,7 @@ import { setContextPolicySettings, syncEffectivePolicyFile } from './context-pol
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
+import { openableExternalUrl } from './external-url'
 import { disposeTerminals, setTerminalSink } from './terminal'
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
@@ -54,6 +55,8 @@ import { registerPackagesIpc } from './ipc/packages-ipc'
 import { registerActivityModelIpc } from './ipc/activity-model-ipc'
 import { registerSubagentsIpc } from './ipc/subagents-ipc'
 import { registerSessionIpc } from './ipc/session-ipc'
+import { registerCheckpointIpc } from './ipc/checkpoint-ipc'
+import { captureCheckpoint, pruneCheckpoints } from './checkpoints'
 import type { SessionHost } from './session-host'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerWorkspaceIpc } from './ipc/workspace-ipc'
@@ -2322,24 +2325,32 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         /* 高危操作确认（danger-guard 薄层发起）：每次都弹框，不记忆；关掉框按拒绝。 */
         confirmDanger: async (request): Promise<ConsentDecision | null> => {
           if (!win || win.isDestroyed()) return null
+          /* 越界写入：目标所在目录，可选择「允许并记住」，之后在这些目录里写不再询问 */
+          const rememberDirs = [...new Set((request.outsideDirs ?? []).map((p) => p.replace(/[\\/]+[^\\/]*$/, '')).filter(Boolean))]
           const response = await dialog.showMessageBox(win, {
             type: 'warning',
-            title: '高危操作，需要你确认',
-            message: 'Agent 想执行一个难以撤销的操作',
+            title: rememberDirs.length ? '写入项目之外，需要你确认' : '高危操作，需要你确认',
+            message: rememberDirs.length ? 'Agent 想写入项目之外的位置' : 'Agent 想执行一个难以撤销的操作',
             detail: [
               ...request.reasons.map((r) => `· ${r}`),
               '',
-              request.tool === 'bash' ? `命令：${request.detail}` : `文件：${request.detail}`,
+              request.tool === 'bash' || request.tool === 'powershell' ? `命令：${request.detail}` : `文件：${request.detail}`,
               `项目：${request.cwd}`,
               '',
-              '拒绝后模型会收到说明并改用别的做法。每次都会询问，不会记住你的选择。'
+              rememberDirs.length
+                ? `「允许并记住」会把这些目录加入允许列表（可在 设置 → 能力与插件 里移除）：\n${rememberDirs.map((d) => `  ${d}`).join('\n')}`
+                : '拒绝后模型会收到说明并改用别的做法。每次都会询问，不会记住你的选择。'
             ].join('\n'),
-            buttons: ['拒绝', '允许这一次'],
+            buttons: rememberDirs.length ? ['拒绝', '允许这一次', '允许并记住目录'] : ['拒绝', '允许这一次'],
             defaultId: 0,
             cancelId: 0,
             noLink: true
           })
-          return response.response === 1 ? 'allow' : 'deny'
+          if (response.response === 2 && rememberDirs.length) {
+            const current = await getSettings()
+            await patchSettings({ guardAllowRoots: [...(current.guardAllowRoots ?? []), ...rememberDirs] })
+          }
+          return response.response >= 1 ? 'allow' : 'deny'
         },
         /*
          * 普通工具使用前的询问（需求稿 4.3）。关掉对话框不算答复（返回 null，不记录）；
@@ -2616,6 +2627,17 @@ function registerIpc(): void {
         await pushGoal(id)
       }
     }
+    /*
+     * 检查点：新一轮开始前给项目目录存一份快照（排队、插话不算新一轮）。
+     * 最多等 10 秒，存不下也照常发送。
+     */
+    if (id && !mode && text.trim()) {
+      const agent = runners?.agentOf(id)
+      const state = typeof agent?.getState === 'function' ? agent.getState() : null
+      if (agent && state && !state.isAgentRunning && (await getSettings()).checkpointsEnabled !== false) {
+        await captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text)
+      }
+    }
     return (id ? runners?.agentOf(id)?.send(text, images, mode) : undefined) ?? { ok: false, error: 'pi 未运行' }
   })
 
@@ -2700,6 +2722,9 @@ function registerIpc(): void {
   })
 
   registerSessionIpc(ipc, sessionHost)
+  registerCheckpointIpc(ipc, sessionHost)
+  /* 启动后空闲时清掉过期的检查点 */
+  setTimeout(() => void pruneCheckpoints().catch(() => undefined), 60_000).unref?.()
 
   /* ---- 模型 / 思考 ---- */
   handle('yan:listModels', async () => ac()?.listModels() ?? [])
@@ -3573,8 +3598,21 @@ function createWindow(): void {
   })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    const external = openableExternalUrl(url)
+    if (external) void shell.openExternal(external)
     return { action: 'deny' }
+  })
+
+  /*
+   * 应用窗口只显示自己的界面：开发时是 dev server 的源，打包后是 file://index.html。
+   * 其余导航（链接点击、重定向）一律拦下，网页与邮件链接交给系统打开。
+   */
+  win.webContents.on('will-navigate', (event, url) => {
+    const dev = process.env.ELECTRON_RENDERER_URL
+    if (dev ? new URL(url).origin === new URL(dev).origin : url.startsWith('file://')) return
+    event.preventDefault()
+    const external = openableExternalUrl(url)
+    if (external) void shell.openExternal(external)
   })
 
   // 渲染端异常要有记录，否则 React 启动失败时用户只会看到黑屏。

@@ -397,6 +397,9 @@ const CASES = {
   railtitle: { probe: 'scripts/probe/railtitle.js', delay: 9000, cost: 0 },
   // 收起侧栏的 mini 项目文件夹（N14）：图标 / 名称 / 当前标记 / 全部项目浮层
   railmini: { probe: 'scripts/probe/railmini.js', delay: 9000, cost: 0 },
+  railpeek: { probe: 'scripts/probe/railpeek.js', delay: 9000, cost: 0 },
+  switcher: { probe: 'scripts/probe/switcher.js', delay: 9000, cost: 0 },
+  rewind: { probe: 'scripts/probe/rewind.js', delay: 9000, cost: 0 },
   /*
    * 工作模式（实施-05 S2）：旧配置迁移 / 菜单与键盘 / 会话级隔离。
    *

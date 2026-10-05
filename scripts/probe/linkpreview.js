@@ -94,7 +94,7 @@
       }
 
       /* 关闭按钮：收起来 */
-      const close = q('[data-testid="file-preview-close"]')
+      const close = q('[data-testid="file-preview"]') && document.querySelector('[data-pane-tab^="file:"] .ui-tab-close')
       ok(!!close, '预览面板有关闭按钮')
       if (close) {
         click(close)

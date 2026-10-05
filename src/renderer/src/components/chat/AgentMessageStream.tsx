@@ -16,7 +16,7 @@ export function AgentMessageStream({ run }: { run: SubagentRun }) {
   const turns = useMemo(() => groupIntoTurns(run.transcript.filter(m => m.role !== 'user' || m.text !== run.task).map(m => ({ ...m, sourceCwd: m.sourceCwd ?? run.cwd }))), [run.transcript, run.task, run.cwd])
   useLayoutEffect(() => { if (follow.current && root.current) root.current.scrollTop = root.current.scrollHeight }, [turns])
   return <>
-    <div className="agent-message-caption"><strong>{run.task.split('\n')[0].slice(0, 60)}</strong><Badge>{t(`sa.state.${outcome.key}` as MessageKey)}</Badge><Button size="sm" variant="ghost" onClick={() => setPromptOpen(v => !v)} aria-expanded={promptOpen}>任务原文</Button>
+    <div className="agent-message-caption"><Badge>{t(`sa.state.${outcome.key}` as MessageKey)}</Badge><Button size="sm" variant="ghost" onClick={() => setPromptOpen(v => !v)} aria-expanded={promptOpen}>任务原文</Button>
       {outcome.live ? <Button size="sm" variant="danger" onClick={() => void stop(run.id)}>停止</Button> : null}
       {run.diff?.patchPath ? <Button size="sm" onClick={() => void window.yan.openPath(run.diff!.patchPath!)}>查看补丁</Button> : null}
       {run.review === 'pending' || run.review === 'conflict' ? <><Button size="sm" onClick={() => void merge(run.id)}>采用改动</Button><Button size="sm" variant="danger" onClick={() => void discard(run.id)}>放弃改动</Button></> : null}

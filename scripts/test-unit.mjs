@@ -2889,6 +2889,22 @@ await runGitRepoTests(ok)
   runDangerGuardTests(ok, dangerGuard)
 }
 
+/* 会话正文检索（切换器）：哪些文字进索引、怎么匹配 */
+{
+  const { build } = await import('../node_modules/esbuild/lib/main.js')
+  await build({
+    entryPoints: ['src/shared/session-search-text.ts'],
+    outfile: 'out/test/session-search-text.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+  const searchText = await import('../out/test/session-search-text.mjs')
+  const { runSessionSearchTests } = await import('./test-session-search.mjs')
+  runSessionSearchTests(ok, searchText)
+}
+
 /*
  * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点
  * （如 Settings.tsx 的 `<div className="ui-row-desc">{t('…')}</div>`），

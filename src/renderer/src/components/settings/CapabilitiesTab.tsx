@@ -137,6 +137,34 @@ export function CapabilitiesTab(): React.JSX.Element {
           testId="cap-codemode"
         />
       </SettingRow>
+      <SettingRow name={t('cap.checkpointsTitle')} desc={t('cap.checkpointsDesc')}>
+        <Switch
+          checked={settings?.checkpointsEnabled !== false}
+          onChange={(enabled) => void patchSettings({ checkpointsEnabled: enabled })}
+          label={t('cap.checkpointsTitle')}
+          testId="cap-checkpoints"
+        />
+      </SettingRow>
+      <SettingRow name={t('cap.guardTitle')} desc={t('cap.guardDesc')}>
+        <Switch
+          checked={settings?.guardOutsideWrites !== false}
+          onChange={(enabled) => void patchSettings({ guardOutsideWrites: enabled })}
+          label={t('cap.guardTitle')}
+          testId="cap-guard-outside"
+        />
+      </SettingRow>
+      {(settings?.guardAllowRoots ?? []).length > 0 ? (
+        <SettingRow name={t('cap.guardRoots')} desc="" data-testid="cap-guard-roots">
+          <div className="ui-list">
+            {(settings?.guardAllowRoots ?? []).map((root) => (
+              <div key={root} className="ui-list-row">
+                <span className="ui-list-row-main" title={root}>{root}</span>
+                <Button size="sm" aria-label={t('cap.guardRootRemove', { path: root })} onClick={() => void patchSettings({ guardAllowRoots: (settings?.guardAllowRoots ?? []).filter((p) => p !== root) })}>{t('cap.guardRootRemoveBtn')}</Button>
+              </div>
+            ))}
+          </div>
+        </SettingRow>
+      ) : null}
       <SettingRow
         data-testid="cap-strategy"
         name={t('cap.strategyTitle')}

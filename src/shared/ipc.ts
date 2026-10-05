@@ -47,6 +47,7 @@ import type {
 /* 主题空间（实施-25 P02）：契约在 shared/space.ts，接口只转发 */
 export type { Space, SpaceDocument, SpaceProjectLink } from './space'
 import type { Space, SpaceProjectLink } from './space'
+import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from './checkpoints'
 /* 上下文装配（实施-25 P05）：契约在 shared/context-assembly.ts */
 export type { ContextAssembly, ContextCitation, ContextFragment, ContextSectionId } from './context-assembly'
 import type { ContextAssembly } from './context-assembly'
@@ -692,6 +693,21 @@ export interface CustomEntry {
 
 /* 会话列表 */
 
+/** 会话正文检索的一条命中；path 与 SessionSummary.path 对应 */
+export interface SessionSearchHit {
+  path: string
+  snippet: string
+  matches: number
+  updatedAt: number
+}
+
+export interface SessionSearchResult {
+  hits: SessionSearchHit[]
+  /** 已建好索引的会话数 / 会话文件总数 */
+  indexed: number
+  total: number
+}
+
 export interface SessionSummary {
   id: string
   path: string
@@ -938,6 +954,12 @@ export interface AppSettings {
   piBin?: string
   /** Enable native pi Codemode in Inkstone; missing means enabled. */
   codemodeEnabled?: boolean
+  /** 每轮发送前给项目文件存检查点，可回退；缺省为开 */
+  checkpointsEnabled?: boolean
+  /** 写入项目之外的路径前先确认；缺省为开 */
+  guardOutsideWrites?: boolean
+  /** 用户允许 Agent 写入的额外目录（绝对路径） */
+  guardAllowRoots?: string[]
   /** 最近使用的目录 */
   recentCwds: string[]
   /** 工作目录绝对路径 → 用户自定义项目名 */
@@ -3178,6 +3200,15 @@ export interface YanBridge {
 
   /* 会话列表 */
   listSessions(): Promise<SessionSummary[]>
+  /** 检查点（回退代码）：只作用于当前活动会话的项目目录 */
+  checkpoints: {
+    list(): Promise<CheckpointRecord[]>
+    preview(recordId: string): Promise<CheckpointPreview>
+    restore(recordId: string): Promise<CheckpointRestoreResult>
+    undo(undoId: string): Promise<CheckpointRestoreResult>
+  }
+  /** 会话正文检索（切换器用）：所有词都出现才算命中，返回命中的会话文件与片段 */
+  searchSessions(query: string, limit?: number): Promise<SessionSearchResult>
 
   /**
    * 快速预览会话消息（**直接读文件，不问 pi**）。

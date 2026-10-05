@@ -505,6 +505,23 @@
   border-bottom: 0;
   background: transparent;
 }
+/*
+ * 标题栏里的会话标题退一档：品牌已经是粗体，标题再粗就变成两个并列的主角。
+ * 用一条细竖线把它与品牌隔开，字重降到 medium、颜色用次级前景。
+ */
+.titlebar .tb-center::before {
+  content: '';
+  flex: none;
+  width: 1px;
+  height: 14px;
+  margin: 0 var(--sp-3);
+  background: var(--border-str);
+}
+.titlebar .shead-title {
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+}
 /* 主区头部：标题 · 视图切换 · 项目胶囊 · 目标 */
 .shead {
   display: flex;
@@ -1702,16 +1719,11 @@
 
 /* 62. 用户消息的分支按钮（用户要求：消息上要有分支按钮）
    原来是 `opacity: 0`（只有悬停才出现）—— 用户看截图时以为没有这个功能。
-   现在常驻淡显（0.4），悬停到 1：既看得见，又不抢消息本身的注意力。
+   现在常驻显示，靠 --fg-mute 本身退后；不再叠透明度（0.55 会把对比度压到 2:1）。
    图标用 layers（内置 sprite 里最接近「分支」的一个）。 */
 .msg.user .msg-meta {
   gap: var(--sp-2);
-  opacity: 0.55;
-  transition: opacity var(--dur) var(--ease);
-}
-.msg.user:hover .msg-meta,
-.msg.user .msg-meta:focus-within {
-  opacity: 1;
+  color: var(--fg-mute);
 }
 /* 整行已经负责淡显；行内的分支按钮不再单独隐身，也不再被推到最右 */
 .msg.user .msg-meta .msg-act {

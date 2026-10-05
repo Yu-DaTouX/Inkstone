@@ -48,6 +48,25 @@ The switch at the left of the title bar toggles between **coding mode** and **da
 
 All of it stays on this machine and can be exported or removed at any time. When something needs network access, an installed capability, or sending data outward, Inkstone explains the path first instead of doing it for you.
 
+## Session switcher (Ctrl+K)
+
+Press `Ctrl+K` anywhere, whether or not the sidebar is open. Type a few words to search session titles, project names and **conversation text** at once (every word must appear); a snippet of the match is shown. Arrow keys select, Enter opens, `Esc` closes. With no input it lists recent sessions, so Enter takes you back to the previous one.
+
+The text index lives only in memory and is built from the local session files (pi JSONL); nothing is uploaded. When a terminal has focus, `Ctrl+K` is left to the shell.
+
+## Checkpoints and Rewind code
+
+Before each new turn, Inkstone saves a snapshot of the project folder in a shadow git repository under the data folder (unrelated to the project's own `.git`), kept for 30 days on this machine only. When “Rewind code” appears under a user message, it first lists which files will be modified, removed or restored, and only acts after you confirm. The current state is saved first, so the dialog offers “Undo this rewind”.
+
+- The conversation is unchanged; use “Branch” on the same row to go back in the conversation too.
+- Changes made by shell commands are covered, not only edit/write tools; files ignored by `.gitignore` and `node_modules` are untouched.
+- Skipped for the home folder or more than 30,000 files; turn it off under **Settings > Capabilities and plugins > Checkpoints**.
+- Moving the data folder (Settings > About) carries the checkpoints along with the session files (the JSONL under `sessions/`).
+
+## Confirm before writing outside the project
+
+When the Agent writes, edits or deletes files outside the project, the system temp folder and the pi data folder, a dialog asks first: “Allow once” or “Allow and remember folder”. Remembered folders and the master switch live under **Settings > Capabilities and plugins**. This is a reminder guard that recognizes command text; concatenation, encoding or nested scripts can bypass it. It is not a sandbox.
+
 ## Everyday shortcuts
 
 | Action | Shortcut or location |
@@ -56,6 +75,9 @@ All of it stays on this machine and can be exported or removed at any time. When
 | File reference / command | `@` / `/` |
 | Coding / daily mode | Mode switch at the left of the title bar |
 | Model and thinking level | Selectors below the input area |
+| Switch session (search titles and conversation text) | `Ctrl+K` |
+| Rewind project files to before a message | “Rewind code” under a user message |
+| Peek at the sidebar when it is collapsed | Hover the toggle at the top-left of the title bar |
 | Zoom | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (automatic) |
 | Language and theme | Appearance settings |
 

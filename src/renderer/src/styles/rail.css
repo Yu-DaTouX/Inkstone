@@ -1061,3 +1061,28 @@ body.rail-dragging .srow {
     padding-left: calc(14px + var(--branch-depth, 0) * var(--sp-2));
   }
 }
+
+/*
+ * 左栏收起时的悬停预览：指针停在标题栏开关上，左栏以浮层滑出，不推挤中栏；
+ * 指针离开开关与浮层后收回，点击开关才固定展开。
+ * 位置在 .workspace 内（标题栏之下），宽度沿用用户拖出的左栏宽度。
+ */
+/* 槽仍占着网格第一列（0 宽）：把它拿出文档流会让中栏顶进 0 宽的第一列、整块消失 */
+.app.rail-off.rail-peek .rail-slot {
+  overflow: visible;
+  z-index: 30;
+}
+.app.rail-off.rail-peek .rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--w-rail-user, 248px);
+  height: auto;
+  display: flex;
+  visibility: visible;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border-soft);
+  box-shadow: 8px 0 24px -12px rgba(0, 0, 0, 0.35);
+  animation: rail-peek-in var(--dur-200) var(--ease);
+}

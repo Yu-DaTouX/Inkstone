@@ -849,7 +849,7 @@ select.ui-input {
 .quota-block-value small { font-size: var(--fs-xs); color: var(--fg-mute); margin-left: 1px; font-weight: normal; }
 .quota-block-value.warn { color: var(--warn); }
 .quota-block-value.err { color: var(--err); }
-.quota-block-sub, .quota-pop-foot, .ctx-window-note { color: var(--fg-mute); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.quota-block-sub, .quota-pop-foot { color: var(--fg-mute); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 .quota-block-sub .err { color: var(--err); }
 .ctx-window-total.warn { color: var(--warn); }
 .ctx-window-total.err { color: var(--err); }
@@ -918,3 +918,15 @@ select.ui-input {
 /* Tile tabs that can be closed show their × on the selected tab, and on others only while hovered or focused. */
 .ui-tile-head .ui-tab.doc:not(.sel) .ui-tab-close { opacity: 0; transition: opacity var(--dur-200) var(--ease); }
 .ui-tile-head .ui-tab.doc:not(.sel):hover .ui-tab-close, .ui-tile-head .ui-tab.doc:focus-visible .ui-tab-close { opacity: 1; }
+
+/*
+ * 字体分工：带中文的控件文字（按钮、分段、菜单项、徽标、折叠行标题）走无衬线；
+ * 等宽留给路径、文件名、代码、数字与快捷键，避免同一个标签里拉丁与汉字取自两套字体。
+ */
+.btn,
+.seg-btn,
+.ui-menu-item,
+.ui-badge,
+.ui-disclosure > summary {
+  font-family: var(--font-body);
+}

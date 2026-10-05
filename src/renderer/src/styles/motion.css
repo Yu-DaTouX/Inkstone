@@ -329,10 +329,14 @@
 
 /* ---- 回答：三行封顶 ---- */
 .op-answer {
-  padding: 0 var(--sp-3) var(--sp-3);
+  /* 下方留白用 margin：clamp 盒带 padding-bottom 时，溢出裁切发生在 padding 边缘，
+     第三行会被切掉半截，或露出第四行的上沿 */
+  padding: 0 var(--sp-3);
+  margin-bottom: var(--sp-3);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   line-height: 1.5;
+  max-height: calc(1.5em * 3);
   /* 用户明确要求「三行」 */
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -1416,3 +1420,9 @@ html[data-theme='light'] .rp-todo-now {
 @keyframes ui-step-wave { from { background-position: -48px 0; } to { background-position: calc(100% + 48px) 0; } }
 @keyframes ui-step-bubble-in { from { opacity: 0; transform: translate(-50%, 4px); } }
 @keyframes ui-status-pulse { 50% { opacity: 0.35; } }
+
+/* 左栏收起时悬停预览滑出 */
+@keyframes rail-peek-in {
+  from { transform: translateX(-12px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}

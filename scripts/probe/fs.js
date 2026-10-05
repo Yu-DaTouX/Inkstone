@@ -417,7 +417,9 @@
       bad('文件树不可见，多标签断言跳过（不改判为通过）')
     } else {
       const panes=()=>[...document.querySelectorAll('[data-workspace-pane^="file:"]')]
-      const findPane=name=>panes().find(p=>(p.querySelector('.fp-name')?.textContent??'').includes(name))
+      const findPane=name=>panes().find(p=>(p.querySelector('[data-file-name]')?.dataset.fileName??'').includes(name))
+      /* 关闭文件走磁贴标签自带的 ×（关闭资源）；磁贴头右侧的 × 只是收起 */
+      const closeTab=pane=>document.querySelector('[data-pane-tab="'+pane?.dataset.workspacePane+'"] .ui-tab-close')?.click()
       const open=async rel=>{
         const row=qa('.rp-fs-row').find(r=>r.dataset.path===rel)
         if(!row) return false
@@ -436,10 +438,10 @@
       await sleep(200)
       if(first?.querySelector('[data-testid="file-preview-body"]')===oldBody) ok('选择磁贴保留既有内容实例')
       else bad('选择文件导致内容重建')
-      first?.querySelector('[data-testid="file-preview-close"]')?.click()
+      closeTab(first)
       if(await until(()=>!findPane('agent.ts') && !!findPane('artifacts.ts'),4000)) ok('关闭一个文件保留另一个资源')
       else bad('关闭文件影响了另一文件')
-      second?.querySelector('[data-testid="file-preview-close"]')?.click()
+      closeTab(second)
       await until(()=>!findPane('artifacts.ts'),4000)
     }
 

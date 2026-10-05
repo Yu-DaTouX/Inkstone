@@ -122,19 +122,21 @@ export function UsageBar() {
 
       <span className="ub-turn">
         <Item
+          secondary
           label={t('tok.in')}
           value={u ? (shortOf ? `≥${fmtTok(u.input)}` : fmtTok(u.input)) : '—'}
           title={shortOf ? t('tok.usagePartialTip') : undefined}
           dim={!u || streaming}
         />
-        <span className="ub-dot" />
+        <span className="ub-dot ub-secondary" />
         <Item
+          secondary
           label={t('tok.out')}
           value={u ? (shortOf ? `≥${fmtTok(u.output)}` : fmtTok(u.output)) : '—'}
           title={shortOf ? t('tok.usagePartialTip') : undefined}
           dim={!u || (streaming && !liveSpeed)}
         />
-        <span className="ub-dot" />
+        <span className="ub-dot ub-secondary" />
         {/* 缓存：常显命中率；读取量与写入量在悬停提示里 */}
         <Item
           label={t('tok.cache')}
@@ -161,6 +163,7 @@ function Item({
   title,
   dim,
   live,
+  secondary,
   testId
 }: {
   label: string
@@ -170,11 +173,13 @@ function Item({
   title?: string
   dim?: boolean
   live?: boolean
+  /** 输入 / 输出：状态栏默认收起，悬停或聚焦用量条时展开（点开详情始终可见全部） */
+  secondary?: boolean
   /** 给视觉矩阵/探针用的稳定钩子（不是样式类名） */
   testId?: string
 }) {
   return (
-    <span className={`ub-item ${dim ? 'dim' : ''}`} title={title} {...(testId ? { 'data-testid': testId } : {})}>
+    <span className={`ub-item${dim ? ' dim' : ''}${secondary ? ' ub-secondary' : ''}`} title={title} {...(testId ? { 'data-testid': testId } : {})}>
       <span className="ub-label">{label}</span>
       <span className="ub-value">
         {value}

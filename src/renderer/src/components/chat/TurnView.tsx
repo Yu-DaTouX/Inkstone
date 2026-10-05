@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { forkFromText } from '../../lib/fork'
+import { matchCheckpoint } from '../../../../shared/checkpoints'
 import { Markdown } from './MessageParts'
 import { ReasoningCapsule } from './Reasoning'
 import { ToolGroup } from './ToolRow'
@@ -46,6 +47,10 @@ export const TurnView = memo(function TurnView({ turn, streaming, readOnly = fal
 function UserTurnView({ turn, readOnly }: { turn: UserTurn; readOnly: boolean }) {
   const t = useT()
   const msg = turn.msg
+  const checkpoints = useStore((s) => s.checkpoints)
+  const openRewind = useStore((s) => s.openRewind)
+  /* 这一轮发出之前存过项目文件的快照 → 可以把代码回退到那个时刻 */
+  const checkpoint = !readOnly && msg.text ? matchCheckpoint(checkpoints, msg.text, msg.timestamp) : null
   /* 宿主发给模型的子代理通知：显示成一行小提示，不当作用户说的话 */
   const notice = parseSubagentNotice(msg.text)
   if (notice) return <SubagentNoticeRow notice={notice} />
@@ -111,6 +116,15 @@ function UserTurnView({ turn, readOnly }: { turn: UserTurn; readOnly: boolean })
           >
             <Icon name="branch" size={12} />
             {t('chat.fork')}
+          </button> : null}
+          {checkpoint ? <button
+            className="msg-act"
+            title={t('chat.rewindHere')}
+            onClick={() => openRewind(checkpoint.id, msg.text)}
+            data-testid="msg-rewind"
+          >
+            <Icon name="back" size={12} />
+            {t('chat.rewind')}
           </button> : null}
         </div>
       </div>
