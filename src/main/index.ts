@@ -102,6 +102,8 @@ import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import { WorkModeStore, normalizeSessionFileKey } from './work-mode-service'
 import { ApprovalBroker } from './approval-broker'
+import { refreshManagedGit } from './git-runtime'
+import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
 import { AgentProfileStore } from './agent-profile-store'
 import { SpaceStore } from './space-store'
 import { LibraryService } from './library-service'
@@ -431,6 +433,10 @@ function questionExtensionPath(): string | undefined {
  *
  * 只有它能在运行中收紧工具表（RPC 没有工具面），所以计划档的门禁靠它执行。
  */
+/** 没有 Git Bash 时把 bash 工具换成 PowerShell 的薄层（有 bash 时不做任何事） */
+function shellFallbackExtensionPath(): string | undefined {
+  return yanThinResourcePath('shell-fallback.js')
+}
 function workModeExtensionPath(): string | undefined {
   return yanThinResourcePath('work-mode.js')
 }
@@ -523,6 +529,7 @@ function yanThinExtensionPaths(): string[] {
   return [
     codemodeExtensionPath(),
     questionExtensionPath(),
+    shellFallbackExtensionPath(),
     workModeExtensionPath(),
     agentProfileExtensionPath(),
     responseDetailExtensionPath(),
@@ -2115,6 +2122,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   await subagentService.current()?.stopAll()
 
   const settings = await getSettings()
+  /* 受管 Git：系统没有 git / bash 时把已装的那份接进本进程的 PATH（砚与 pi 子进程都继承） */
+  await refreshManagedGit().catch(() => undefined)
   agentResponseDetail = settings.responseDetail
   /* 工作模式（实施-05）：新会话的初值；已存过的会话仍用会话自己的值 */
   setDefaultWorkMode(settings.defaultWorkMode)
@@ -2175,6 +2184,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         piBin: settings.piBin,
         codemodeExtension: codemodeExtensionPath(),
         questionExtension: questionExtensionPath(),
+        shellFallbackExtension: shellFallbackExtensionPath(),
         workModeExtension: workModeExtensionPath(),
         agentProfileExtension: agentProfileExtensionPath(),
         responseDetailExtension: responseDetailExtensionPath(),
@@ -2856,6 +2866,12 @@ function registerIpc(): void {
     sendOAuthEvent: (event) => {
       if (win && !win.isDestroyed()) win.webContents.send('yan:oauth', event)
     }
+  })
+
+  registerGitRuntimeIpc(ipc, {
+    restartAgent: (reason: string) => restartAgent(reason),
+    push: (msg) => push(msg),
+    preferMirror: async () => (await getSettings()).lang === 'zh-CN'
   })
 
   registerFilesIpc(ipc, { resolveFileContext })

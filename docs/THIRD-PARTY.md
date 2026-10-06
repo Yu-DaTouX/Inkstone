@@ -18,6 +18,12 @@
 | 内置 pi 运行时（`resources/pi-runtime/`） | 见上游项目声明 |
 | electron-updater | MIT（见包内声明） |
 
+## 按需下载的组件
+
+| 组件 | 许可 | 说明 |
+| --- | --- | --- |
+| [Git for Windows](https://gitforwindows.org/)（PortableGit） | GPL-2.0 及其所含组件各自的许可 | **不随安装包分发**。用户在设置或引导里确认后才从官方发布页（或 npmmirror 镜像）下载，校验 SHA-256 后解压到数据目录，仅在没有系统 Git 时使用；源码与许可见官方发布页与包内 `LICENSE.txt` |
+
 ## Android 应用
 
 随 APK 分发：

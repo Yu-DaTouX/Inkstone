@@ -239,6 +239,11 @@ export function consumeTaskStatePush(m: MainPush, _s: Store, ctx: PushContext): 
       /* 批准请求属于宿主而不是某个会话视图：任何会话的请求都要让用户看到，不能被静默吞掉 */
       if (!_s.approvals.some((item) => item.id === m.payload.id)) set({ approvals: [..._s.approvals, m.payload] })
       break
+    case 'git-install':
+      set({ gitInstall: m.payload })
+      /* 装好了：把「缺 Git」的那条通知收掉 */
+      if (m.payload.phase === 'done') set({ notices: _s.notices.filter((n) => n.id !== 'git-install') })
+      break
     case 'approval-close':
       set({ approvals: _s.approvals.filter((item) => item.id !== m.payload.id) })
       break

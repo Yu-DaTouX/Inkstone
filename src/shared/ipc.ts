@@ -103,6 +103,8 @@ import type { KnowledgeKind } from './project-memory'
    这里转发给渲染端，界面不必知道存储层。 */
 import type { WorkMode, WorkModeState } from './work-mode'
 import type { ApprovalChoice, ApprovalRequest, PermissionMode } from './approval'
+import type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
+export type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { ApprovalChoice, ApprovalKind, ApprovalRequest, PermissionMode } from './approval'
 import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
@@ -904,6 +906,8 @@ export interface ToolStatus {
   path?: string
   /** 没找到时给人读的原因与做法 */
   hint?: string
+  /** 用的是砚装在数据目录里的 PortableGit，不是系统自带的 */
+  managed?: boolean
 }
 
 export interface ToolchainStatus {
@@ -2112,6 +2116,8 @@ export type MainPushBody =
   | { ch: 'approval'; payload: ApprovalRequest }
   /** 这条批准请求已有结论（别处答复、超时或会话被中止），卡片应收起 */
   | { ch: 'approval-close'; payload: { id: string } }
+  /** 受管 Git 的安装进度（下载 / 校验 / 解压 / 完成 / 出错） */
+  | { ch: 'git-install'; payload: GitInstallProgress }
   /**
    * 当前会话的活动档案变了（实施-25 P01）。
    *
@@ -3278,6 +3284,11 @@ export interface YanBridge {
   authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
   /** 外部命令（bash / git）是否可用；缺失时带安装说明 */
   toolchainStatus(): Promise<ToolchainStatus>
+  /** 受管 Git：当前状态 / 一键安装（需用户已确认）/ 取消 / 移除 */
+  gitRuntimeStatus(): Promise<GitRuntimeStatus>
+  gitRuntimeInstall(): Promise<{ ok: boolean; error?: string }>
+  gitRuntimeCancel(): Promise<void>
+  gitRuntimeRemove(): Promise<void>
   /* 实施-23：自定义 API 服务（真源是 pi 的 models.json，只动 yan- 前缀条目） */
   customProviders(): Promise<CustomProviderView[]>
   saveCustomProvider(input: CustomProviderInput): Promise<CustomProviderResult>

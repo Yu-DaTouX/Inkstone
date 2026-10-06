@@ -18,7 +18,7 @@
  */
 import { createRequire } from 'node:module'
 import { existsSync, statSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { IPty } from 'node-pty'
 import { TerminalScreen } from './agent-hub/terminal-screen'
@@ -125,10 +125,29 @@ export function setTerminalSink(next: TerminalSink | null): void {
   sink = next
 }
 
-/** 默认壳：Windows 用 ComSpec（cmd），类 Unix 用 SHELL（回退 sh） */
-function defaultShell(): string {
-  if (process.platform === 'win32') return process.env.ComSpec || 'cmd.exe'
-  return process.env.SHELL || '/bin/sh'
+/** 在 PATH 里找 .exe（不起子进程） */
+function findExe(name: string): string | null {
+  for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
+    const candidate = join(dir, name)
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
+/**
+ * 默认壳：Windows 优先 PowerShell 7（pwsh），其次系统自带的 Windows PowerShell，最后才是 cmd；
+ * 类 Unix 用 SHELL（回退 sh）。`-NoLogo` 去掉每次开终端都打印的版权横幅。
+ * 日常用法（查看磁盘、进程、整理文件）用 PowerShell 比 cmd 顺手得多，也和 pi 的 powershell 工具同一套命令。
+ */
+function defaultShell(): { shell: string; args: string[] } {
+  if (process.platform === 'win32') {
+    const pwsh = findExe('pwsh.exe')
+    if (pwsh) return { shell: pwsh, args: ['-NoLogo'] }
+    const windowsPowerShell = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    if (existsSync(windowsPowerShell)) return { shell: windowsPowerShell, args: ['-NoLogo'] }
+    return { shell: process.env.ComSpec || 'cmd.exe', args: [] }
+  }
+  return { shell: process.env.SHELL || '/bin/sh', args: [] }
 }
 
 /** 目录必须真实存在且是目录；否则返回 null（交给调用方回落） */
@@ -172,12 +191,13 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
   const cwd = validDir(options.cwd) ?? validDir(options.fallbackCwd) ?? process.cwd()
   const cols = clampDimension(options.cols, 80)
   const rows = clampDimension(options.rows, 24)
-  const shell = options.executable ?? defaultShell()
+  const resolved = options.executable ? { shell: options.executable, args: options.args ?? [] } : defaultShell()
+  const shell = resolved.shell
   const id = randomUUID()
 
   let child: IPty
   try {
-    child = pty.spawn(shell, options.args ?? [], {
+    child = pty.spawn(shell, resolved.args, {
       name: 'xterm-256color',
       cols,
       rows,

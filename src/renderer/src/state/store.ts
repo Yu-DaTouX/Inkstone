@@ -57,6 +57,7 @@ import type {
   WorkModeState,
   ApprovalChoice,
   ApprovalRequest,
+  GitInstallProgress,
   AgentProfileState,
   AgentProfilePatch,
   ZoomState
@@ -161,7 +162,7 @@ export interface Notice {
   text: string
   at: number
   /** 带按钮的专用通知；文案与按钮由渲染层按语言生成 */
-  action?: 'search-api-hint'
+  action?: 'search-api-hint' | 'git-install'
 }
 
 export interface Store {
@@ -704,6 +705,10 @@ export interface Store {
   setWorkMode: (mode: WorkMode) => Promise<void>
   /** 回答最前面的那条批准请求；答复后卡片立即收起，宿主随后推 approval-close 对账 */
   answerApproval: (id: string, choice: ApprovalChoice) => Promise<void>
+  /** 受管 Git 的安装进度（主进程推 git-install）与动作；只有用户点按钮才会开始下载 */
+  gitInstall: GitInstallProgress
+  installGit: () => Promise<void>
+  cancelGitInstall: () => Promise<void>
   /**
    * 改当前会话的活动档案（实施-25 P01）。
    *
@@ -1236,6 +1241,7 @@ export const useStore = create<Store>((rawSet, get) => {
   sessionRuntimes: {},
   workMode: null,
   approvals: [],
+  gitInstall: { phase: 'idle' },
   agentProfile: null,
   goal: null,
   goalLoading: false,
@@ -1389,8 +1395,18 @@ export const useStore = create<Store>((rawSet, get) => {
     void window.yan
       .toolchainStatus()
       .then((tools) => {
-        for (const tool of [tools.bash, tools.git]) {
-          if (!tool.ok && tool.hint) get().notify('warning', tool.hint)
+        const missing = [tools.bash, tools.git].filter((tool) => !tool.ok && tool.hint)
+        if (!missing.length) return
+        if (tools.platform === 'win32') {
+          /* Windows：合成一条带「一键安装」按钮的通知（bash 与 git 同一个 Git 就能解决） */
+          set({
+            notices: [
+              ...get().notices.filter((n) => n.id !== 'git-install'),
+              { id: 'git-install', type: 'warning', text: missing[0].hint ?? '', at: Date.now(), action: 'git-install' }
+            ]
+          })
+        } else {
+          for (const tool of missing) get().notify('warning', tool.hint ?? '')
         }
       })
       .catch(() => undefined)
@@ -1486,10 +1502,23 @@ export const useStore = create<Store>((rawSet, get) => {
              *   新会话），拿它的缓存盖上去，眼前刚铺好的内容就变成别人的了 ——
              *   而这条 `runners` 推送不带实例身份，上面的过滤拦不住它（D38）。
              */
-            const snapshot = snapshotForView(
-              get(),
-              findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId)
-            )
+            const found = findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId)
+            let snapshot = snapshotForView(get(), found)
+            /*
+             * 空会话被重启换成了新会话：保存凭证 / 安装 Git 后主进程会重启 pi，而一条还没有任何消息的会话
+             * 没有落盘的会话文件可恢复，pi 起在一个新会话上。眼前这条空会话没有任何内容可丢，
+             * 直接跟过去；否则界面一直停在已不存在的旧会话上，发消息、跑命令的输出都进不了视图。
+             */
+            if (!snapshot && found) {
+              const view = get()
+              const emptyView =
+                !view.peekedSessionId &&
+                view.messages.length === 0 &&
+                view.uiRequests.length === 0 &&
+                view.session?.isStreaming !== true &&
+                view.session?.sessionId !== runtime.sessionId
+              if (emptyView) snapshot = found
+            }
             if (snapshot) set(projectSnapshotKeepingPeek(get(), snapshot))
           }
         }
@@ -3108,6 +3137,19 @@ export const useStore = create<Store>((rawSet, get) => {
 
   patchSettings: async (p) => {
     set({ settings: await window.yan.patchSettings(p) })
+  },
+
+  installGit: async () => {
+    set({ gitInstall: { phase: 'downloading', received: 0, message: '' } })
+    try {
+      const res = await window.yan.gitRuntimeInstall()
+      if (!res.ok) set({ gitInstall: { phase: 'error', message: res.error ?? '安装失败' } })
+    } catch (error) {
+      set({ gitInstall: { phase: 'error', message: error instanceof Error ? error.message : String(error) } })
+    }
+  },
+  cancelGitInstall: async () => {
+    await window.yan.gitRuntimeCancel().catch(() => undefined)
   },
 
   answerApproval: async (id, choice) => {

@@ -116,6 +116,22 @@
     } else {
       ok(false, '设置 → 接入 里找不到自定义服务入口')
     }
+
+    /* ⑦ 缺 Git 的一键安装：通知里有按钮；点开始后显示进度与取消；出错能重试（不真下载：直接摆状态） */
+    store.setState({
+      gitInstall: { phase: 'idle' },
+      notices: [{ id: 'git-install', type: 'warning', text: '这台设备没有找到 git（测试）', at: Date.now(), action: 'git-install' }]
+    })
+    ok(await until(() => q('[data-testid="git-install-notice"]')), '缺 Git 的通知出现')
+    ok(!!q('[data-testid="git-install-start"]'), '通知里有「一键安装 Git」按钮')
+    store.setState({ gitInstall: { phase: 'downloading', received: 30_000_000, total: 60_000_000 } })
+    ok(await until(() => q('[data-testid="git-install-progress"]')), '下载中显示进度')
+    ok(/50%/.test(q('[data-testid="git-install-progress"]')?.textContent ?? ''), '进度按字节算出 50%')
+    ok(!!q('[data-testid="git-install-cancel"]'), '下载中有取消按钮')
+    store.setState({ gitInstall: { phase: 'error', message: '下载失败（测试）' } })
+    ok(await until(() => q('[data-testid="git-install-error"]')), '出错时显示原因')
+    ok(!!q('[data-testid="git-install-start"]'), '出错后可以重试')
+    store.setState({ gitInstall: { phase: 'idle' }, notices: [] })
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
   }

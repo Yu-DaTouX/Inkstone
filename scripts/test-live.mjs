@@ -807,6 +807,12 @@ const CASES = {
   composersize: { probe: 'scripts/probe/composer-size.js', delay: 9000, cost: 0, wins: ['1440x900', '1100x700', '940x640', '900x520'] },
   questionshot: { probe: 'scripts/probe/question-shot.js', delay: 9000, cost: 0 },
   modelscroll: { probe: 'scripts/probe/modelscroll.js', delay: 9000, cost: 0 },
+  // 没有 Git 的新设备：PATH 与 Program Files 都找不到 git / bash（不真下载）
+  // 真实一键安装 Git：点按钮 → 真下载 PortableGit（约 57MB）→ 校验解压 → 重启 pi → 直执行 bash 命中受管那份
+  gitinstall: { probe: 'scripts/probe/gitinstall.js', delay: 9000, cost: 0, freshDesktop: true, needsDownload: true, budget: 300000 },
+  // 空会话里保存凭证 → pi 重启 → 界面跟到新会话（不再停在旧会话上）
+  restartempty: { probe: 'scripts/probe/restart-empty.js', delay: 9000, cost: 0 },
+  nogit: { probe: 'scripts/probe/nogit.js', delay: 9000, cost: 0, freshDesktop: true },
   newuser: { probe: 'scripts/probe/newuser.js', delay: 9000, cost: 0, freshDesktop: true },
   // 首次引导：第 2 栏「模型接入」按钮布局（N20；从设置→关于重新打开，不重置首次启动标记）
   onboarding: {
@@ -5776,7 +5782,14 @@ async function main() {
 
   // 支持多个场景：npm run test:live -- live memory sessions
   const argv = process.argv.slice(2).filter((a) => !a.startsWith('-'))
-  const names = argv.length ? argv : Object.keys(CASES)
+  /* needsDownload：会真的联网下载大文件的场景，默认全量不跑，点名并设置 YAN_REAL_GIT_DOWNLOAD=1 才跑 */
+  let names = argv.length ? argv : Object.keys(CASES).filter((n) => !CASES[n].needsDownload)
+  const skippedDownloads = names.filter((n) => CASES[n]?.needsDownload && process.env.YAN_REAL_GIT_DOWNLOAD !== '1')
+  if (skippedDownloads.length) {
+    console.log(`跳过需要联网下载的场景：${skippedDownloads.join(', ')}（设置 YAN_REAL_GIT_DOWNLOAD=1 才会真的下载）`)
+    names = names.filter((n) => !skippedDownloads.includes(n))
+    if (!names.length) process.exit(0)
+  }
 
   for (const n of names) {
     if (!CASES[n]) {
@@ -6230,6 +6243,30 @@ async function main() {
     if (existsSync(modelsForNoAuth)) copyFileSync(modelsForNoAuth, join(piDirNoAuth, 'models.json'))
     CASES.auth.env = { YAN_PI_DIR: piDirNoAuth }
     CASES.newuser.env = { YAN_PI_DIR: piDirNoAuth }
+    /* nogit：把 PATH 里带 git / bash 的目录摘掉，并把 Program Files 指到不存在的目录 */
+    const pathWithoutGit = (process.env.PATH ?? '')
+      .split(';')
+      .filter((dir) => dir && !existsSync(join(dir, 'git.exe')) && !existsSync(join(dir, 'bash.exe')))
+      .join(';')
+    CASES.gitinstall.env = {
+      YAN_PI_DIR: piDirNoAuth,
+      PATH: pathWithoutGit,
+      ProgramFiles: join(sandboxRoot, 'no-program-files'),
+      PROGRAMFILES: join(sandboxRoot, 'no-program-files'),
+      ProgramW6432: join(sandboxRoot, 'no-program-files'),
+      'ProgramFiles(x86)': join(sandboxRoot, 'no-program-files-x86'),
+      'PROGRAMFILES(X86)': join(sandboxRoot, 'no-program-files-x86')
+    }
+    CASES.nogit.env = {
+      YAN_PI_DIR: piDirNoAuth,
+      PATH: pathWithoutGit,
+      ProgramFiles: join(sandboxRoot, 'no-program-files'),
+      PROGRAMFILES: join(sandboxRoot, 'no-program-files'),
+      ProgramW6432: join(sandboxRoot, 'no-program-files'),
+      'ProgramFiles(x86)': join(sandboxRoot, 'no-program-files-x86'),
+      'PROGRAMFILES(X86)': join(sandboxRoot, 'no-program-files-x86')
+    }
+
 
     /*
      * `slashcmd` 验证受管技能如何进入命令列表。生产启动带 `--no-skills`，

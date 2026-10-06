@@ -122,3 +122,22 @@
   font-size: var(--fs-xs);
   line-height: 1.5;
 }
+
+/* 一键安装 Git：按钮 / 进度 / 错误（引导页一行与启动通知共用） */
+.git-install {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.git-install-label {
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.git-install-label.err {
+  color: var(--err);
+}

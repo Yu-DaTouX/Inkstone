@@ -41,8 +41,22 @@ const SAFE_HEADS = new Set([
   'whoami', 'date', 'tree', 'stat', 'file', 'du', 'df', 'sort', 'uniq', 'cut', 'tr', 'diff', 'basename', 'dirname',
   'realpath', 'true', 'false', 'echo', 'printf', 'test', 'hostname', 'uname', 'env', 'printenv',
   'get-childitem', 'gci', 'get-content', 'gc', 'select-string', 'sls', 'get-location', 'resolve-path', 'test-path',
-  'get-item', 'gi', 'get-command', 'get-date', 'measure-object', 'sort-object', 'select-object', 'where-object', 'format-table'
+  'get-item', 'gi', 'get-command', 'get-date', 'measure-object', 'sort-object', 'select-object', 'where-object', 'format-table',
+  /* 电脑状况的只读查询（日常「体检」类任务）：磁盘、进程、服务、系统信息、已装更新、注册表读取 */
+  'format-list', 'out-string', 'group-object', 'get-process', 'get-service', 'get-ciminstance', 'get-wmiobject',
+  'get-psdrive', 'get-volume', 'get-disk', 'get-partition', 'get-physicaldisk', 'get-computerinfo', 'get-hotfix',
+  'get-itemproperty', 'get-itempropertyvalue', 'get-netadapter', 'get-netipaddress', 'get-help', 'get-member',
+  'get-scheduledtask', 'get-appxpackage', 'get-startapps', 'convertto-json', 'convertfrom-json',
+  'write-output', 'write-host', 'tasklist', 'systeminfo', 'ipconfig', 'ver'
 ])
+
+/**
+ * PowerShell 里会改动环境的动词。命令头在白名单里也不够：`Where-Object { Remove-Item $_ }`
+ * 的头是只读的，真正的写入藏在脚本块里，所以整条命令文本里出现就按「会写」处理。
+ */
+const PS_WRITE_VERB = /\b(?:remove|set|new|stop|start|restart|clear|move|copy|rename|invoke|install|uninstall|disable|enable|out-file|add|export|import|register|unregister|update|reset|send|suspend|resume|mount|dismount|format(?=-volume)|optimize|repair|checkpoint|restore)-[a-z]/i
+/** 这些别名等价于上面的写入动词；只在带脚本块时检查，避免把普通词误伤 */
+const PS_WRITE_ALIAS = /(?:^|[\s{;|(])(?:iex|saps|spps|sc|ac|ni|si|cpi|mi|rni|ri|kill|start|sleep|ii)(?=[\s;|)}]|$)/i
 
 const SAFE_GIT = new Set([
   'status', 'diff', 'log', 'show', 'ls-files', 'rev-parse', 'blame', 'grep', 'describe', 'shortlog', 'ls-tree',
@@ -87,6 +101,8 @@ export function isReadOnlyShell(command) {
   const text = String(command ?? '')
   if (!text.trim()) return true
   if (/[>`]|\$\(|<\(|\$\{/.test(text)) return false
+  if (PS_WRITE_VERB.test(text)) return false
+  if (text.includes('{') && PS_WRITE_ALIAS.test(text)) return false
   for (const segment of text.split(SEGMENT_SPLIT)) {
     if (!segment.trim()) continue
     const { head, args } = headOf(segment)

@@ -36,3 +36,10 @@ assert.equal(permissionReasons('bash', { command: 'ls' }, cwd, dailyFull), null)
 assert.equal(permissionReasons('write', { path: cwd + '/a.txt' }, cwd, dailyFull), null)
 assert.equal(permissionReasons('bash', { command: 'rm -rf /' }, cwd, dailyFull), null, '大范围递归删除交给 danger-guard')
 console.log('permission-guard delete: ok')
+
+/* PowerShell：只读查询放行；写入藏在脚本块 / 别名里也要问 */
+const psReadOnly = ['Get-Process | Sort-Object CPU -Descending | Select-Object -First 10', 'Get-Volume | Format-Table', 'Get-CimInstance Win32_OperatingSystem | Select-Object Caption', 'Get-ChildItem C:/Users -Recurse | Measure-Object', 'Get-Service | Where-Object { $_.Status -eq "Running" }']
+const psWrites = ['Remove-Item a.txt', 'Get-Process | Where-Object { Stop-Process -Id $_.Id }', 'Get-ChildItem | ForEach-Object { sc x }', 'Set-ItemProperty HKCU:/x y 1', 'Start-Process notepad', 'iex "dir"', 'Get-ChildItem | Out-File a.txt']
+for (const command of psReadOnly) assert.equal(isReadOnlyShell(command), true, `PowerShell 应当只读：${command}`)
+for (const command of psWrites) assert.equal(isReadOnlyShell(command), false, `PowerShell 应当会写：${command}`)
+console.log('permission-guard powershell: ok')

@@ -46,7 +46,8 @@ import { applyCodemodePreference } from './codemode-policy.js'
  *
  * 归档回读也走宿主 CLI；提问与回读都不向计划档恢复业务模型工具。
  */
-const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'bash']
+/* `powershell`：没有 Git Bash 时 shell-fallback.js 用它顶替 bash，同样只放行下面那几种宿主 CLI 形状 */
+const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'bash', 'powershell']
 
 /** 计划档允许的宿主 bash 形状：目标状态 / 提问 / 只读归档回读。 */
 const GOAL_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+goal\s+(?:status|ready|report)(?:\s|$)/
@@ -203,7 +204,7 @@ export default function workModePolicy(pi) {
     planApprovalPending = policy.planApprovalPending
     const name = String(event?.toolName ?? '')
     if (mode !== 'clarify' || !name) return undefined
-    if (name === 'bash') {
+    if (name === 'bash' || name === 'powershell') {
       const command = String((event?.input ?? {})?.command ?? '')
       if (isAllowedBashCommand(command, planApprovalPending)) return undefined
       note('tool_call_blocked', { mode, tool: name, command: command.slice(0, 140) })
