@@ -98,6 +98,7 @@ import type {
   PursuedBrief,
   HandoffView,
   WorkModeState,
+  ApprovalRequest,
   AgentProfileState,
   YanBridge,
   ZoomState,
@@ -223,6 +224,8 @@ const api: YanBridge = {
 
   /* ---- 工作模式（实施-05，按当前会话） ---- */
   getWorkMode: () => invoke<WorkModeState>('yan:getWorkMode'),
+  answerApproval: (id, choice) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice),
+  pendingApprovals: () => invoke<ApprovalRequest[]>('yan:approvalPending'),
   getAgentProfile: () => invoke<AgentProfileState>('yan:getAgentProfile'),
   setAgentProfile: (patch, expectedRevision) =>
     invoke<{ ok: boolean; state: AgentProfileState; error?: string; detail?: string }>(

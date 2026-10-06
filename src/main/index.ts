@@ -101,6 +101,7 @@ import { exportLearningData } from './learning-export'
 import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import { WorkModeStore, normalizeSessionFileKey } from './work-mode-service'
+import { ApprovalBroker } from './approval-broker'
 import { AgentProfileStore } from './agent-profile-store'
 import { SpaceStore } from './space-store'
 import { LibraryService } from './library-service'
@@ -502,6 +503,10 @@ function contextInspectExtensionPath(): string | undefined {
 function dangerGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('danger-guard.js')
 }
+/** 权限档位（询问档下写文件 / 跑命令前先问）；与 danger-guard 分开，互不改对方 */
+function permissionGuardExtensionPath(): string | undefined {
+  return yanThinResourcePath('permission-guard.js')
+}
 function repeatGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('repeat-guard.js')
 }
@@ -527,6 +532,7 @@ function yanThinExtensionPaths(): string[] {
     contextInspectExtensionPath(),
     repeatGuardExtensionPath(),
     dangerGuardExtensionPath(),
+    permissionGuardExtensionPath(),
   ].filter((p): p is string => !!p && isAgentContextExtension(p))
 }
 
@@ -535,6 +541,27 @@ function push(msg: MainPush): void {
   if (!win || win.isDestroyed()) return
   win.webContents.send('yan:push', msg)
 }
+
+/** 批准卡片的中转：宿主要问用户时挂起，等渲染端在输入框上方答复 */
+const approvals = new ApprovalBroker({
+  canAsk: () => !!win && !win.isDestroyed(),
+  open: (request) => {
+    push({ ch: 'approval', payload: request })
+    /* 窗口在后台或最小化时卡片看不到：任务栏闪烁并发一条系统通知（不抢焦点），点通知回到窗口 */
+    if (win && !win.isDestroyed() && !win.isFocused()) {
+      win.flashFrame(true)
+      const notice = new Notification({ title: '砚需要你确认', body: request.title })
+      notice.on('click', () => {
+        if (!win || win.isDestroyed()) return
+        if (win.isMinimized()) win.restore()
+        win.show()
+        win.focus()
+      })
+      notice.show()
+    }
+  },
+  close: (id) => push({ ch: 'approval-close', payload: { id } })
+})
 
 /**
  * 给某个实例的事件标上身份（N12）。
@@ -2175,6 +2202,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
         repeatGuardExtension: repeatGuardExtensionPath(),
         dangerGuardExtension: dangerGuardExtensionPath(),
+        permissionGuardExtension: permissionGuardExtensionPath(),
         bundledSkills: bundledSkillPaths(),
         /* 用户技能（YAN_DIR/skills）：每次启动会话时重新列出 */
         userSkills: () => userSkillPaths(),
@@ -2322,63 +2350,58 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           })
           return response.response === 1
         },
-        /* 高危操作确认（danger-guard 薄层发起）：每次都弹框，不记忆；关掉框按拒绝。 */
+        /*
+         * 高危操作确认（danger-guard 薄层发起）与询问档的写入确认（permission-guard 发起）：
+         * 都走输入框上方的批准卡片；高危每次都问、不记忆，关不掉的卡片超时按拒绝。
+         */
         confirmDanger: async (request): Promise<ConsentDecision | null> => {
-          if (!win || win.isDestroyed()) return null
-          /* 越界写入：目标所在目录，可选择「允许并记住」，之后在这些目录里写不再询问 */
-          const rememberDirs = [...new Set((request.outsideDirs ?? []).map((p) => p.replace(/[\\/]+[^\\/]*$/, '')).filter(Boolean))]
-          const response = await dialog.showMessageBox(win, {
-            type: 'warning',
-            title: rememberDirs.length ? '写入项目之外，需要你确认' : '高危操作，需要你确认',
-            message: rememberDirs.length ? 'Agent 想写入项目之外的位置' : 'Agent 想执行一个难以撤销的操作',
-            detail: [
-              ...request.reasons.map((r) => `· ${r}`),
-              '',
-              request.tool === 'bash' || request.tool === 'powershell' ? `命令：${request.detail}` : `文件：${request.detail}`,
-              `项目：${request.cwd}`,
-              '',
-              rememberDirs.length
-                ? `「允许并记住」会把这些目录加入允许列表（可在 设置 → 能力与插件 里移除）：\n${rememberDirs.map((d) => `  ${d}`).join('\n')}`
-                : '拒绝后模型会收到说明并改用别的做法。每次都会询问，不会记住你的选择。'
-            ].join('\n'),
-            buttons: rememberDirs.length ? ['拒绝', '允许这一次', '允许并记住目录'] : ['拒绝', '允许这一次'],
-            defaultId: 0,
-            cancelId: 0,
-            noLink: true
+          const rememberDirs = [...new Set((request.outsideDirs ?? []).map((p) => p.replace(/[\/]+[^\/]*$/, '')).filter(Boolean))]
+          const isPermission = request.kind === 'permission'
+          const isDelete = request.kind === 'delete'
+          const isShell = request.tool === 'bash' || request.tool === 'powershell'
+          const choice = await approvals.ask({
+            kind: isDelete ? 'delete' : isPermission ? 'permission' : rememberDirs.length ? 'outside' : 'danger',
+            tool: request.tool,
+            title: isDelete
+              ? 'Agent 想删除文件'
+              : isPermission
+              ? isShell ? 'Agent 想运行一条命令' : 'Agent 想修改文件'
+              : rememberDirs.length ? 'Agent 想写入项目之外的位置' : 'Agent 想执行一个难以撤销的操作',
+            detail: request.detail,
+            reasons: request.reasons,
+            cwd: request.cwd,
+            ...(rememberDirs.length ? { rememberDirs } : {}),
+            canRemember: isPermission || rememberDirs.length > 0
           })
-          if (response.response === 2 && rememberDirs.length) {
-            const current = await getSettings()
-            await patchSettings({ guardAllowRoots: [...(current.guardAllowRoots ?? []), ...rememberDirs] })
+          if (choice === 'remember') {
+            if (isPermission) await patchSettings({ permissionMode: 'full' })
+            else if (rememberDirs.length) {
+              const current = await getSettings()
+              await patchSettings({ guardAllowRoots: [...(current.guardAllowRoots ?? []), ...rememberDirs] })
+            }
           }
-          return response.response >= 1 ? 'allow' : 'deny'
+          return choice === 'once' || choice === 'remember' ? 'allow' : choice === 'deny' ? 'deny' : null
         },
         /*
-         * 普通工具使用前的询问（需求稿 4.3）。关掉对话框不算答复（返回 null，不记录）；
+         * 普通工具使用前的询问（需求稿 4.3）。没有答复不记录（返回 null）；
          * 只有点「允许」或「拒绝」才写进同意记录。
          */
         confirmToolConsent: async (request: ToolConsentPrompt): Promise<ConsentDecision | null> => {
-          if (!win || win.isDestroyed()) return null
           const { parts, verdict } = request
-          const response = await dialog.showMessageBox(win, {
-            type: verdict.danger ? 'warning' : 'question',
-            title: '允许使用这个工具吗？',
-            message: `Agent 想使用「${parts.capability}」执行「${parts.action}」`,
-            detail: [
-              `资源：${parts.resource}`,
+          const choice = await approvals.ask({
+            kind: 'consent',
+            tool: parts.capability,
+            title: `Agent 想使用「${parts.capability}」执行「${parts.action}」`,
+            detail: parts.resource,
+            reasons: [
               ...(request.purpose ? [`用途：${request.purpose}`] : []),
-              `项目：${request.cwd}`,
-              '',
               verdict.reason,
-              verdict.danger
-                ? '危险类别不会因为同意次数多而自动放行。'
-                : '同类操作多次同意后会自动放行；可在「设置 → 能力」里改为始终询问或清空记录。'
-            ].join('\n'),
-            buttons: ['拒绝', '允许'],
-            defaultId: 0,
-            cancelId: 2,
-            noLink: true
+              verdict.danger ? '危险类别不会因为同意次数多而自动放行。' : '同类操作多次同意后会自动放行；可在「设置 → 能力」里改为始终询问或清空记录。'
+            ],
+            cwd: request.cwd,
+            canRemember: false
           })
-          return response.response === 1 ? 'allow' : response.response === 0 ? 'deny' : null
+          return choice === 'once' || choice === 'remember' ? 'allow' : choice === 'deny' ? 'deny' : null
         }
       }),
     onChanged: () => {
@@ -2795,6 +2818,8 @@ function registerIpc(): void {
   handle('yan:lastAssistantText', async () => ac()?.lastAssistantText() ?? null)
 
   /* ---- pi 环境（版本 / 入口） ---- */
+  handle('yan:approvalAnswer', async (id: string, choice: unknown) => ({ ok: approvals.answer(String(id ?? ''), choice) }))
+  handle('yan:approvalPending', async () => approvals.list())
   handle('yan:piInfo', async () => {
     const s = await getSettings()
     return piInfo(s.piBin)
@@ -3312,6 +3337,11 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     frame: false,
+    /*
+     * Windows 11 会给无边框窗口加系统圆角；个别设备上最大化 / 全屏后圆角仍在，
+     * 四角与直角的屏幕之间露出一道缝。界面本身是直角风格，窗口也用直角（Win10 与旧版本无影响）。
+     */
+    roundedCorners: false,
     /* 与深色 --bg-0 / 启动画面底色一致；浅色主题在读到设置后改（见下方 getSettings） */
     backgroundColor: '#151515',
     webPreferences: {

@@ -38,6 +38,7 @@ export function WorkObjectBar(): React.JSX.Element | null {
   const t = useT()
   const stored = useStore((s) => s.agentProfile)
   const openSpaceView = useStore((s) => s.openSpaceView)
+  const showSpaces = useStore((s) => s.settings?.showSpaces === true)
 
   /*
    * 只有**手动锁定**到某个日常活动时才显示工作对象条。
@@ -60,7 +61,7 @@ export function WorkObjectBar(): React.JSX.Element | null {
         {t(LABEL_KEY[activity])}
       </span>
       <span className="spacer" />
-      {target ? (
+      {target && showSpaces ? (
         <button
           className="rp-workobj-open"
           data-testid="rp-workobj-open"
@@ -70,7 +71,7 @@ export function WorkObjectBar(): React.JSX.Element | null {
           <Icon name={target.icon} size={12} />
           {t('space.obj.open')}
         </button>
-      ) : (
+      ) : target ? null : (
         <span className="rp-workobj-hint">{t('space.obj.answerHint')}</span>
       )}
     </div>

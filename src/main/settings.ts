@@ -30,6 +30,7 @@ import { YAN_DIR } from './paths'
 import { sanitizeActivityModelConfig } from '../shared/activity-model'
 import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
+import { DEFAULT_PERMISSION_MODE, normalizePermissionMode } from '../shared/approval'
 import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode, normalizeWorkModeShortcut } from '../shared/work-mode'
 import { migrateToolLayout, normalizeToolLayout } from '../shared/tool-layout'
 import { isWorkspaceMode } from '../shared/workspace-mode'
@@ -115,6 +116,7 @@ const DEFAULTS: AppSettings = {
   capabilityStrategy: 'auto-connect',
   codemodeEnabled: true,
   guardOutsideWrites: true,
+  permissionMode: DEFAULT_PERMISSION_MODE,
   guardAllowRoots: [],
   checkpointsEnabled: true,
   /*
@@ -352,12 +354,36 @@ function invalidate(): void {
   cached = null
 }
 
+/**
+ * 新安装的默认工作文件夹：「文档砚」，而不是整个用户主目录。
+ *
+ * Agent 的写入范围以工作目录为界（写到目录之外会先确认并可记住），所以默认范围越小越安全；
+ * 日常用法（表格、整理文件）本来就没有项目，给一个专用文件夹最合适。
+ * 取系统「文档」位置（可能被 OneDrive 重定向）；建不出来才退回主目录。
+ */
+async function defaultWorkFolder(): Promise<string> {
+  let documents = join(homedir(), 'Documents')
+  try {
+    documents = app.getPath('documents')
+  } catch {
+    /* 还没 ready 或平台没有这个位置 */
+  }
+  const dir = join(documents, '砚')
+  try {
+    await mkdir(dir, { recursive: true })
+    return dir
+  } catch {
+    return homedir()
+  }
+}
+
 export async function getSettings(): Promise<AppSettings> {
   if (cached) return cached
   try {
     const raw = await readFile(FILE, 'utf8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
     cached = { ...DEFAULTS, ...parsed }
+    if (typeof parsed.cwd !== 'string' || !parsed.cwd) cached.cwd = await defaultWorkFolder()
     /*
      * 工作模式迁移的输入必须是**文件里的原值**，不能用合并后的：
      * DEFAULTS 里有 `defaultWorkMode: 'standard'`，合完之后永远“合法”，
@@ -427,6 +453,7 @@ export async function getSettings(): Promise<AppSettings> {
     cached.defaultWorkMode = migrateLegacyAutonomous(fileWorkMode, cached.autonomous)
     cached.codemodeEnabled = cached.codemodeEnabled !== false
     cached.guardOutsideWrites = cached.guardOutsideWrites !== false
+    cached.permissionMode = normalizePermissionMode(cached.permissionMode)
     cached.checkpointsEnabled = cached.checkpointsEnabled !== false
     cached.guardAllowRoots = cleanAllowRoots(cached.guardAllowRoots)
     cached.capabilityStrategy =
@@ -480,6 +507,7 @@ export async function getSettings(): Promise<AppSettings> {
   } catch {
     cached = { ...DEFAULTS }
     cached.lang = detectLang()
+    cached.cwd = await defaultWorkFolder()
   }
   return cached
 }
@@ -555,6 +583,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   const next: AppSettings = { ...cur, ...patch }
   next.codemodeEnabled = next.codemodeEnabled !== false
   next.guardOutsideWrites = next.guardOutsideWrites !== false
+  next.permissionMode = normalizePermissionMode(next.permissionMode)
   next.checkpointsEnabled = next.checkpointsEnabled !== false
   next.guardAllowRoots = cleanAllowRoots(next.guardAllowRoots)
 

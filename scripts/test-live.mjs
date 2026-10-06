@@ -803,6 +803,11 @@ const CASES = {
   browserreal: { probe: 'scripts/probe/browser-real-sites.js', delay: 9000, cost: 0, budget: 240000 },
   // 浅色主题：对比度 / 代码高亮 / 工具行
   light: { probe: 'scripts/probe/light.js', delay: 9000, cost: 0 },
+  // 新用户首次使用（无凭证的全新数据目录）：默认工作文件夹、Git/bash 检测、引导、权限选择器、批准卡片、自定义服务
+  composersize: { probe: 'scripts/probe/composer-size.js', delay: 9000, cost: 0, wins: ['1440x900', '1100x700', '940x640', '900x520'] },
+  questionshot: { probe: 'scripts/probe/question-shot.js', delay: 9000, cost: 0 },
+  modelscroll: { probe: 'scripts/probe/modelscroll.js', delay: 9000, cost: 0 },
+  newuser: { probe: 'scripts/probe/newuser.js', delay: 9000, cost: 0, freshDesktop: true },
   // 首次引导：第 2 栏「模型接入」按钮布局（N20；从设置→关于重新打开，不重置首次启动标记）
   onboarding: {
     probe: 'scripts/probe/onboarding.js',
@@ -6224,6 +6229,7 @@ async function main() {
     const modelsForNoAuth = join(sourceAgentDir, 'models.json')
     if (existsSync(modelsForNoAuth)) copyFileSync(modelsForNoAuth, join(piDirNoAuth, 'models.json'))
     CASES.auth.env = { YAN_PI_DIR: piDirNoAuth }
+    CASES.newuser.env = { YAN_PI_DIR: piDirNoAuth }
 
     /*
      * `slashcmd` 验证受管技能如何进入命令列表。生产启动带 `--no-skills`，
@@ -6655,7 +6661,8 @@ async function main() {
 
     for (const win of wins) {
       if (sandboxRoot) {
-        const desktop = { cwd: caseCwd, lang: 'zh-CN' }
+        /* freshDesktop：不预置 cwd，验全新安装的默认工作文件夹 */
+        const desktop = c.freshDesktop ? { lang: 'zh-CN' } : { cwd: caseCwd, lang: 'zh-CN' }
         /* 工作模式迁移场景：只留旧布尔，验「旧 true → 新字段」的真实清洗 */
         if (c.legacyAutonomous) desktop.autonomous = true
         if (c.knowledgeSeed) {

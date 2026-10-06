@@ -203,6 +203,8 @@ export default function App() {
   const openSpaceView = useStore((s) => s.openSpaceView)
   const closeSpaceView = useStore((s) => s.closeSpaceView)
   const dailyMode = workspaceMode === 'daily'
+  /* 空间与资料库默认收起（日常多是一次性的个人事务）；在 设置 → 工作区 里打开 */
+  const showSpaces = useStore((s) => s.settings?.showSpaces === true)
   /* 空间视图压在地图之上：两者都开着时显示概览，关掉概览自然回到刚才的地图 */
   const mapOpen = dailyMode && dailyView === 'map' && !spaceOpen
   const showMap = (open: boolean): void => {
@@ -799,7 +801,7 @@ export default function App() {
               mapEnabled={dailyMode}
               mapOpen={mapOpen}
               onToggleMap={showMap}
-              spaceEnabled={dailyMode}
+              spaceEnabled={dailyMode && showSpaces}
               spaceOpen={spaceOpen}
               onToggleSpace={(open) => showSpace(open)}
             />

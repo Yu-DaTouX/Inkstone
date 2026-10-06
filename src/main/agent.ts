@@ -240,6 +240,8 @@ export interface DangerConfirmPrompt {
   detail: string
   reasons: string[]
   cwd: string
+  /** `permission` = 询问档下的写入确认（permission-guard 发起）；缺省是高危确认 */
+  kind?: 'permission' | 'delete'
   /** 越界写入涉及的目录（来自 danger-guard）；有值时确认框可「允许并记住」 */
   outsideDirs?: string[]
 }
@@ -386,6 +388,7 @@ export class AgentController extends EventEmitter {
   private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
   private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
   private dangerGuardExtension?: string
+  private permissionGuardExtension?: string
   /**
    * 宿主能力服务注入给 pi 子进程的身份与地址（见 capability-server.ts / yan-cli.ts）。
    *
@@ -645,6 +648,7 @@ export class AgentController extends EventEmitter {
     confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
     confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
     dangerGuardExtension?: string
+    permissionGuardExtension?: string
     /** 宿主能力服务环境（`yan` CLI 用）；未提供时不注入，CLI 会报「宿主不可用」。 */
     yanCliEnv?: YanCliEnv
     /** 宿主能力服务参数；提供时由本实例自己启动端点与启动器。 */
@@ -693,6 +697,7 @@ export class AgentController extends EventEmitter {
     this.confirmToolConsent = opts.confirmToolConsent
     this.confirmDanger = opts.confirmDanger
     this.dangerGuardExtension = opts.dangerGuardExtension
+    this.permissionGuardExtension = opts.permissionGuardExtension
     this.yanCliEnv = opts.yanCliEnv
     this.capabilityOpts = opts.capability
       ? { ...opts.capability, runnerGeneration: opts.capability.runnerGeneration ?? 1 }
@@ -879,6 +884,8 @@ export class AgentController extends EventEmitter {
          */
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
+        // 询问档：写文件 / 跑命令前先问（读设置，full 档不产生任何请求）
+        ...(this.permissionGuardExtension ? ['--extension', this.permissionGuardExtension] : []),
         /* 受管 skill-files 只按当前项目 active 记录显式传入；不扫描全盘。 */
         ...managedSkillArgs,
         /* 随包技能：领域做法（例如办公文件）放在技能里按需加载，不写进宿主 */
@@ -1480,7 +1487,8 @@ export class AgentController extends EventEmitter {
     const outsideDirs = Array.isArray(params.outsideDirs)
       ? params.outsideDirs.filter((d): d is string => typeof d === 'string').map((d) => d.slice(0, 500)).slice(0, 6)
       : []
-    const answer = this.confirmDanger ? await this.confirmDanger({ tool, detail, reasons, cwd: this.cwd, ...(outsideDirs.length ? { outsideDirs } : {}) }) : null
+    const kind = params.kind === 'permission' || params.kind === 'delete' ? params.kind : undefined
+    const answer = this.confirmDanger ? await this.confirmDanger({ tool, detail, reasons, cwd: this.cwd, ...(kind ? { kind } : {}), ...(outsideDirs.length ? { outsideDirs } : {}) }) : null
     const decision = answer ?? 'no-answer'
     return {
       data: { decision },

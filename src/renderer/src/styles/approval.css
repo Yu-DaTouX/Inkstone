@@ -1,0 +1,124 @@
+/* 批准卡片（输入框上方的内嵌请求）与模式菜单里的「权限」分段。
+   控件外观来自 ui.css / components/ui；这里只管版面与状态色。 */
+
+.approval-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--bg-1);
+  border: 1px solid var(--border-str);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+}
+
+.approval-card.risky {
+  border-left-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.approval-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.approval-icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.approval-card.risky .approval-icon {
+  color: var(--warn);
+}
+
+.approval-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-count {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* 命令 / 路径：等宽、可滚动，最多露出约六行，长命令不撑破输入区 */
+.approval-detail {
+  max-height: 9em;
+  margin: 0;
+  padding: var(--sp-2);
+  overflow: auto;
+  background: var(--bg-2);
+  border-radius: var(--r-xs);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.approval-reasons {
+  margin: 0;
+  padding-left: var(--sp-4);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+
+.approval-dirs {
+  overflow: hidden;
+  color: var(--fg-mute);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.approval-cwd {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+/* 模式菜单里的「权限」分段标题与按钮上的状态徽标 */
+.mode-section {
+  margin-top: var(--sp-1);
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+  border-top: 1px solid var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.mode-perm {
+  flex: none;
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-xs);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}

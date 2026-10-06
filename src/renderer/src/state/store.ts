@@ -55,6 +55,8 @@ import type {
   UserProfile,
   WorkMode,
   WorkModeState,
+  ApprovalChoice,
+  ApprovalRequest,
   AgentProfileState,
   AgentProfilePatch,
   ZoomState
@@ -438,6 +440,8 @@ export interface Store {
    * 后台会话各自的值在 `sessionRuntimes` 里，切回去时主进程会再推一份权威值。
    */
   workMode: WorkModeState | null
+  /** 等用户答复的批准请求（权限 / 高危 / 越界写入 / 工具同意），最早的在前 */
+  approvals: ApprovalRequest[]
   /**
    * 当前会话的活动档案（实施-25 P01）。
    *
@@ -698,6 +702,8 @@ export interface Store {
    * 这里收到拒绝后把显示恢复成权威值，不让界面出现“已自主”的假象。
    */
   setWorkMode: (mode: WorkMode) => Promise<void>
+  /** 回答最前面的那条批准请求；答复后卡片立即收起，宿主随后推 approval-close 对账 */
+  answerApproval: (id: string, choice: ApprovalChoice) => Promise<void>
   /**
    * 改当前会话的活动档案（实施-25 P01）。
    *
@@ -1229,6 +1235,7 @@ export const useStore = create<Store>((rawSet, get) => {
   runners: [],
   sessionRuntimes: {},
   workMode: null,
+  approvals: [],
   agentProfile: null,
   goal: null,
   goalLoading: false,
@@ -1375,6 +1382,9 @@ export const useStore = create<Store>((rawSet, get) => {
     performance.mark('yan:bootstrap-set')
     // 模型 / 斜杠命令在启动后单独拉（要等 pi ready）
     void get().reloadModels()
+    void window.yan.pendingApprovals().then((approvals) => {
+      if (approvals.length) set({ approvals })
+    }).catch(() => undefined)
     /* 新设备常缺 Git / bash：只在启动时提示一次，缺什么说什么 */
     void window.yan
       .toolchainStatus()
@@ -3098,6 +3108,15 @@ export const useStore = create<Store>((rawSet, get) => {
 
   patchSettings: async (p) => {
     set({ settings: await window.yan.patchSettings(p) })
+  },
+
+  answerApproval: async (id, choice) => {
+    set({ approvals: get().approvals.filter((item) => item.id !== id) })
+    try {
+      await window.yan.answerApproval(id, choice)
+    } catch {
+      /* 请求已超时失效：卡片已经收起，没有可补救的 */
+    }
   },
 
   setWorkMode: async (mode) => {
