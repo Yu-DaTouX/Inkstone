@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { WORK_MODES, type WorkMode } from '../../../../shared/work-mode'
+import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '../../../../shared/approval'
 
 /**
  * 输入框上方的消息栈：**悬着的（待投递）** + pi 队列里（已投递）的。
@@ -135,6 +136,13 @@ export function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLB
   const fallback = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
   const setWorkMode = useStore((s) => s.setWorkMode)
   const state: WorkMode = stored?.mode ?? fallback
+  /* 权限档位是全局设置，和工作模式放在同一个菜单里：模式管「怎么做」，权限管「做之前要不要问」 */
+  const permission: PermissionMode = normalizePermissionMode(useStore((s) => s.settings?.permissionMode))
+  const patchSettings = useStore((s) => s.patchSettings)
+  const rows = [
+    ...WORK_MODES.map((id) => ({ kind: 'mode' as const, id })),
+    ...PERMISSION_MODES.map((id) => ({ kind: 'permission' as const, id }))
+  ]
   const [open, setOpen] = useState(false)
   const [index, setIndex] = useState(0)
   const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
@@ -167,10 +175,14 @@ export function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLB
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
-  const commit = (mode: WorkMode) => {
+  const commit = (row: (typeof rows)[number]) => {
     setOpen(false)
     buttonRef.current?.focus()
-    if (mode !== state) void setWorkMode(mode)
+    if (row.kind === 'mode') {
+      if (row.id !== state) void setWorkMode(row.id)
+    } else if (row.id !== permission) {
+      void patchSettings({ permissionMode: row.id })
+    }
   }
 
   return (
@@ -198,6 +210,11 @@ export function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLB
         <span className="mode-label" data-testid="work-mode-label">
           {t(`workMode.label.${state}`)}
         </span>
+        {permission === 'ask' ? (
+          <span className="mode-perm" data-testid="permission-badge" title={t('permission.desc.ask')}>
+            {t('permission.badge.ask')}
+          </span>
+        ) : null}
         <Icon name="chevron-right" size={12} className="mode-caret chev on" />
       </button>
 
@@ -213,13 +230,13 @@ export function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLB
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault()
-              setIndex((value) => (value + 1) % WORK_MODES.length)
+              setIndex((value) => (value + 1) % rows.length)
             } else if (event.key === 'ArrowUp') {
               event.preventDefault()
-              setIndex((value) => (value - 1 + WORK_MODES.length) % WORK_MODES.length)
+              setIndex((value) => (value - 1 + rows.length) % rows.length)
             } else if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault()
-              commit(WORK_MODES[index])
+              commit(rows[index])
             } else if (event.key === 'Escape') {
               event.preventDefault()
               setOpen(false)
@@ -237,12 +254,34 @@ export function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLB
               data-testid={`work-mode-option-${mode}`}
               data-mode={mode}
               onMouseEnter={() => setIndex(itemIndex)}
-              onClick={() => commit(mode)}
+              onClick={() => commit({ kind: 'mode', id: mode })}
             >
               <span className="mode-item-label">{t(`workMode.label.${mode}`)}</span>
               <span className="mode-item-desc">{t(`workMode.desc.${mode}`)}</span>
             </button>
           ))}
+          <div className="mode-section" role="presentation">
+            {t('permission.title')}
+          </div>
+          {PERMISSION_MODES.map((level, permIndex) => {
+            const itemIndex = WORK_MODES.length + permIndex
+            return (
+              <button
+                key={level}
+                role="menuitemradio"
+                aria-checked={level === permission}
+                tabIndex={-1}
+                className={`mode-item ${itemIndex === index ? 'active' : ''} ${level === permission ? 'current' : ''}`}
+                data-testid={`permission-option-${level}`}
+                data-permission={level}
+                onMouseEnter={() => setIndex(itemIndex)}
+                onClick={() => commit({ kind: 'permission', id: level })}
+              >
+                <span className="mode-item-label">{t(`permission.label.${level}`)}</span>
+                <span className="mode-item-desc">{t(`permission.desc.${level}`)}</span>
+              </button>
+            )
+          })}
         </div>
       ) : null}
     </div>

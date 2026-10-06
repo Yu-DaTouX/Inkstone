@@ -34,6 +34,8 @@ const NO_PROJECT_NAMES: Record<string, string> = {}
 export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInbox }: Props): React.JSX.Element {
   const t = useT()
   const sessions = useStore((s) => s.sessions)
+  /* 空间与资料库默认收起：关着时首页不出这两张卡 */
+  const showSpaces = useStore((s) => s.settings?.showSpaces === true)
   /*
    * 收件箱计数（实施-28 T5）。
    *
@@ -185,7 +187,7 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
     })
   }
 
-  if (space) {
+  if (space && showSpaces) {
     cards.push({
       id: 'space',
       node: (
@@ -207,7 +209,7 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
     })
   }
 
-  if (!sources.loading && !sources.error && sources.all.length > 0) {
+  if (showSpaces && !sources.loading && !sources.error && sources.all.length > 0) {
     cards.push({
       id: 'sources',
       node: (

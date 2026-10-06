@@ -235,6 +235,13 @@ export function consumeTaskStatePush(m: MainPush, _s: Store, ctx: PushContext): 
       /* 当前会话的模式：后台会话的已经写进 sessionRuntimes，上面已 return */
       set({ workMode: m.payload })
       break
+    case 'approval':
+      /* 批准请求属于宿主而不是某个会话视图：任何会话的请求都要让用户看到，不能被静默吞掉 */
+      if (!_s.approvals.some((item) => item.id === m.payload.id)) set({ approvals: [..._s.approvals, m.payload] })
+      break
+    case 'approval-close':
+      set({ approvals: _s.approvals.filter((item) => item.id !== m.payload.id) })
+      break
     case 'agent-profile':
       /* 当前会话的活动档案：后台会话的已归并到 sessionRuntimes，上面已 return */
       set({ agentProfile: m.payload })

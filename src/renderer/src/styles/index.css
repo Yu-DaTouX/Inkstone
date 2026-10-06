@@ -28,6 +28,7 @@
 @import './rail.css' layer(modules);
 @import './chat.css' layer(modules);
 @import './composer.css' layer(modules);
+@import './approval.css' layer(modules);
 @import './tools.css' layer(modules);
 @import './browser.css' layer(modules);
 @import './terminal.css' layer(modules);

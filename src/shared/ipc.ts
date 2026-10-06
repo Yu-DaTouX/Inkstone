@@ -102,6 +102,8 @@ import type { KnowledgeKind } from './project-memory'
 /* 工作模式（实施-05）：类型与纯逻辑在 `./work-mode`（主进程 / 单测 / CLI 共用），
    这里转发给渲染端，界面不必知道存储层。 */
 import type { WorkMode, WorkModeState } from './work-mode'
+import type { ApprovalChoice, ApprovalRequest, PermissionMode } from './approval'
+export type { ApprovalChoice, ApprovalKind, ApprovalRequest, PermissionMode } from './approval'
 import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
 import type { ContextActionSummary } from './context-actions'
@@ -974,6 +976,10 @@ export interface AppSettings {
   checkpointsEnabled?: boolean
   /** 写入项目之外的路径前先确认；缺省为开 */
   guardOutsideWrites?: boolean
+  /** 日常模式里显示空间与资料库（标题栏入口、首页卡片、工作对象条）；缺省为隐藏，数据不受影响 */
+  showSpaces?: boolean
+  /** 权限档位：ask = 写文件与跑命令前先问；full = 只在高危时问（缺省） */
+  permissionMode?: PermissionMode
   /** 用户允许 Agent 写入的额外目录（绝对路径） */
   guardAllowRoots?: string[]
   /** 最近使用的目录 */
@@ -2102,6 +2108,10 @@ export type MainPushBody =
    * 带 `runtime` 封套：A 会话切模式不得影响 B 会话的显示与提问行为。
    */
   | { ch: 'work-mode'; payload: WorkModeState }
+  /** 宿主要问用户一件事（权限 / 高危 / 越界写入 / 工具同意）：界面以输入框上方的卡片呈现 */
+  | { ch: 'approval'; payload: ApprovalRequest }
+  /** 这条批准请求已有结论（别处答复、超时或会话被中止），卡片应收起 */
+  | { ch: 'approval-close'; payload: { id: string } }
   /**
    * 当前会话的活动档案变了（实施-25 P01）。
    *
@@ -3075,6 +3085,10 @@ export interface YanBridge {
   setAutoRetry(enabled: boolean): Promise<{ ok: boolean; error?: string }>
 
   /* 工作模式（实施-05）：按**当前会话**读写，不是全局设置 */
+  /** 回答一条批准请求；请求已失效时 ok=false */
+  answerApproval(id: string, choice: ApprovalChoice): Promise<{ ok: boolean }>
+  /** 当前还在等答复的批准请求（界面重载后找回卡片） */
+  pendingApprovals(): Promise<ApprovalRequest[]>
   getWorkMode(): Promise<WorkModeState>
   setWorkMode(mode: WorkMode, expectedRevision?: number): Promise<{
     ok: boolean

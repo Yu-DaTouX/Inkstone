@@ -104,6 +104,14 @@ export async function removeCustomProvider(id: string): Promise<CustomProviderRe
  *                 用的是这条 provider 自己的模型，真实计费。
  */
 
+/** Node 的 fetch 把真正原因藏在 `cause` 里（ECONNREFUSED、ENOTFOUND…）；只有「fetch failed」没法排查 */
+function describeFetchError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  const cause = (error as { cause?: { code?: unknown; message?: unknown } } | null)?.cause
+  const detail = typeof cause?.code === 'string' ? cause.code : typeof cause?.message === 'string' ? cause.message : ''
+  return detail ? `${message}（${detail}）` : message
+}
+
 /** 与 pi 的 `models.json` 一致：OpenAI 兼容端点统一取 `<baseUrl>/models` */
 export function modelsEndpoint(baseUrl: string): string {
   return `${baseUrl.trim().replace(/\/+$/, '')}/models`
@@ -155,7 +163,7 @@ export async function testCustomProviderEndpoint(id: string): Promise<CustomProv
       ok: false,
       mode: 'endpoint',
       ms,
-      message: aborted ? '连接超时（10 秒）' : `连不上：${error instanceof Error ? error.message : String(error)}`
+      message: aborted ? '连接超时（10 秒）' : `连不上：${describeFetchError(error)}`
     }
   } finally {
     clearTimeout(timer)
@@ -294,7 +302,7 @@ export async function discoverCustomProviderModels(input: {
     return {
       ok: false,
       models: [],
-      message: aborted ? '获取超时（10 秒）' : `连不上：${error instanceof Error ? error.message : String(error)}`
+      message: aborted ? '获取超时（10 秒）' : `连不上：${describeFetchError(error)}`
     }
   } finally {
     clearTimeout(timer)

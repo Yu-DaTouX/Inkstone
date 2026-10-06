@@ -3,7 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { WORK_MODES, type WorkMode } from '../../../../shared/work-mode'
-import { Button, SettingGroup, SettingRow } from '../ui'
+import { Button, SettingGroup, SettingRow, Switch } from '../ui'
 
 /** 活动档案的选项：与输入区原来的选择器同源（实施-25 P01 的七档） */
 const AGENT_PROFILES = [
@@ -30,6 +30,8 @@ const AGENT_PROFILES = [
 export function WorkspaceTab() {
   const t = useT()
   const workspaceMode = useStore((s) => s.workspaceMode)
+  const settings = useStore((s) => s.settings)
+  const patchSettings = useStore((s) => s.patchSettings)
   const setWorkspaceMode = useStore((s) => s.setWorkspaceMode)
   const spaces = useStore((s) => s.spaces)
   const sessions = useStore((s) => s.sessions)
@@ -84,6 +86,14 @@ export function WorkspaceTab() {
               <span>{o.label}</span>
             </button>
           ))}
+        </SettingRow>
+        <SettingRow name={t('set.showSpaces')} desc={t('set.showSpacesDesc')}>
+          <Switch
+            checked={settings?.showSpaces === true}
+            onChange={(enabled) => void patchSettings({ showSpaces: enabled })}
+            label={t('set.showSpaces')}
+            testId="set-show-spaces"
+          />
         </SettingRow>
       </div>
 

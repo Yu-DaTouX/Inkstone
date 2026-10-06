@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { BrandMark } from '../shell/BrandMark'
 import { useStore } from '../../state/store'
+import type { ToolchainStatus } from '../../../../shared/ipc'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import { Button, IconButton } from '../ui'
 
@@ -81,6 +82,20 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
   /* pi 拿不到模型时会报一个名为 unknown 的占位，那不算「可用」 */
   const modelOk = models.length > 0 && !!session?.model && session.model.id !== 'unknown'
   const authOk = (ready?.n ?? 0) > 0
+
+  /* 新装的 Windows 设备常缺 Git for Windows：没有 bash，命令行工具与改动审阅都用不了 */
+  const [tools, setTools] = useState<ToolchainStatus | null>(null)
+  const detectTools = useCallback(async () => {
+    try {
+      setTools(await window.yan.toolchainStatus())
+    } catch {
+      setTools(null)
+    }
+  }, [])
+  useEffect(() => {
+    void detectTools()
+  }, [detectTools])
+  const toolsOk = !tools || (tools.bash.ok && tools.git.ok)
 
   /**
    * 一条检查项。
@@ -171,9 +186,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
                   ) : null}
                 </>
               ) : (
-                <>
-                  {t('ob.authMissing')} <code>pi</code> → <code>/login</code>
-                </>
+                t('ob.authMissing')
               )
             }
             action={
@@ -189,7 +202,22 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             }
           />
 
-          {/* ③ 连通性 */}
+          {/* ③ 命令行工具（bash / git）；检测不到状态时不显示，避免误报 */}
+          {tools ? (
+            <Row
+              testId="ob-tools"
+              ok={toolsOk}
+              title={t('ob.toolsTitle')}
+              desc={toolsOk ? t('ob.toolsOk') : [tools.bash, tools.git].filter((tool) => !tool.ok && tool.hint).map((tool) => tool.hint).join(' ')}
+              action={
+                <Button className="ob-btn" onClick={() => void detectTools()} data-testid="ob-recheck-tools">
+                  {t('ob.recheck')}
+                </Button>
+              }
+            />
+          ) : null}
+
+          {/* ④ 连通性 */}
           <Row
             testId="ob-conn"
             ok={connOk}
@@ -197,7 +225,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             desc={connOk ? t('ob.connOk') : t('ob.connMissing')}
           />
 
-          {/* ④ 模型列表（能列出模型 = pi 跑起来了） */}
+          {/* ⑤ 模型列表（能列出模型 = pi 跑起来了） */}
           <Row
             testId="ob-models"
             ok={modelOk}

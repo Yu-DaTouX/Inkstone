@@ -15,6 +15,7 @@ import { type WorkMode } from '../../../../shared/work-mode'
 import { PlusMenu } from './PlusMenu'
 import { readFiles, fmtSize } from './attachment-files'
 import { QueueStack, WorkModePicker } from './ComposerPickers'
+import { ApprovalCard } from './ApprovalCard'
 
 /**
  * 输入区。四种输入模式共存：
@@ -29,6 +30,11 @@ import { QueueStack, WorkModePicker } from './ComposerPickers'
  * 生成中按 Enter 会**排队**（pi 的 follow-up，等这轮跑完再发）；
  * 想立刻插入当前这轮，用排队行右侧的「插队」（pi 的 steer）。
  */
+/** 输入框静止高度（px）；窗口高度不超过 SHORT_WINDOW_H 时用矮的那个，样式里有同一组数 */
+const REST_H = 64
+const REST_H_SHORT = 40
+const SHORT_WINDOW_H = 640
+
 export function Composer() {
   const t = useT()
   const [value, setValue] = useState('')
@@ -182,12 +188,12 @@ export function Composer() {
 
   const resetComposerHeight = useCallback((): void => {
     if (!ref.current) return
-    ref.current.style.height = `${REST_H}px`
+    ref.current.style.height = `${restHeight()}px`
     ref.current.style.maxHeight = ''
   }, [])
 
-  /** 静止高度：两行，参照 Claude 的输入框 */
-  const REST_H = 64
+  /** 静止高度：两行，参照 Claude 的输入框；矮窗口（≤640px）收成一行半，把高度还给对话区 */
+  const restHeight = (): number => (window.innerHeight <= SHORT_WINDOW_H ? REST_H_SHORT : REST_H)
   /** 展开后的默认高度：够写一段，但不至于占半个屏 */
   const TALL_H = 180
 
@@ -367,7 +373,7 @@ export function Composer() {
      * 现在：tall > 0（长文模式/手动拖过）时，高度是**下限**而不是结果 ——
      * 内容更多可以长高，但不会缩回去。
      */
-    const need = Math.min(Math.max(el.scrollHeight, REST_H), 240)
+    const need = Math.min(Math.max(el.scrollHeight, restHeight()), 240)
     /*
      * 矮窗口里输入框不能把运行条、工具条和底部状态栏挤出窗口：
      * 实际高度不超过窗口高度的 35%（存下的 tall 不改，窗口变高后恢复）。
@@ -991,6 +997,8 @@ export function Composer() {
     >
       {/* 排队的消息：显示在输入框**上方**（用户要求） */}
       <QueueStack />
+      {/* 宿主要问用户的事（权限 / 高危 / 越界写入）：内嵌在输入框上方，不用原生弹窗 */}
+      <ApprovalCard />
       {/* 学习会话的快捷回应（只在「日常 · 学习」里出现） */}
       <LearningActions />
       {/*
@@ -1140,7 +1148,7 @@ export function Composer() {
           </span>
           <textarea
             ref={ref}
-            rows={2}
+            rows={1}
             data-testid="composer"
             value={value}
             disabled={disabled}

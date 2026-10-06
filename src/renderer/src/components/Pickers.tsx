@@ -174,11 +174,18 @@ export function ModelThinkingPicker() {
   const flat = groups.flatMap(([, list]) => list)
   const indexOf = new Map(flat.map((m, i) => [`${m.provider}|${m.id}`, i]))
 
-  /** 展开时把当前模型滚进视野 */
-  const listRef = (el: HTMLDivElement | null): void => {
-    if (!el || !open) return
-    el.querySelector<HTMLElement>('[data-current="1"]')?.scrollIntoView({ block: 'center' })
-  }
+  /**
+   * 展开时把当前模型滚进视野 —— **只在打开那一刻做一次**。
+   *
+   * 这里曾经是每次渲染都新建的回调 ref：React 对「新函数」会重新调用，
+   * 于是 agent 生成期间（会话状态不停刷新、组件不停重渲染）列表每次都被拉回
+   * 当前模型，用户怎么滚都滚不动。
+   */
+  const listEl = useRef<HTMLDivElement | null>(null)
+  useLayoutEffect(() => {
+    if (!open) return
+    listEl.current?.querySelector<HTMLElement>('[data-current="1"]')?.scrollIntoView({ block: 'center' })
+  }, [open])
 
   /**
    * 键盘高亮（N08：鼠标与键盘都能选中）。
@@ -358,7 +365,7 @@ export function ModelThinkingPicker() {
             <span className="mt-count">{models.length}</span>
           </div>
 
-          <div className="mt-list" ref={listRef}>
+          <div className="mt-list" ref={listEl}>
             {groups.length === 0 ? (
               <div className="mt-empty">
                 {models.length === 0 ? t('picker.noModels') : t('picker.noMatch')}

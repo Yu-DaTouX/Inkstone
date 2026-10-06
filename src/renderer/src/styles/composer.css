@@ -45,6 +45,12 @@
   font-size: var(--fs-body);
   line-height: var(--lh-body);
 }
+/* 矮窗口：静止高度收成一行半（与 Composer.tsx 的 REST_H_SHORT 同值），内容多了照常长高 */
+@media (max-height: 640px) {
+  .composer textarea {
+    min-height: 40px;
+  }
+}
 .composer textarea::placeholder {
   color: var(--fg-mute);
 }
@@ -1331,6 +1337,34 @@
 }
 
 /*
+/* 提问面板的身份：强调色左边线 + 淡强调底的头部 + 「提问」徽标，与普通工具条、批准卡片区分开 */
+.qpanel {
+  border-left: 3px solid var(--accent);
+}
+.qpanel-head {
+  background: var(--accent-soft);
+}
+.qpanel-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-strong);
+  line-height: 1.7;
+}
+.qpanel-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
  * 倒计时：点一下加 2 分钟。
  * 数字是**像素点阵**（见 PixelDigits.tsx）：每个点是一个小方块，
  * 颜色跟着 `currentColor` 走 —— 所以低余量转警色、深浅主题都自动生效。
@@ -1477,8 +1511,10 @@
   padding: 6px var(--sp-3);
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
-  color: var(--fg-dim);
+  /* 问题本身是这张面板的主角：正文色、略加粗，选项与输入退到它下面 */
+  color: var(--fg);
   font-size: var(--fs-sm);
+  font-weight: var(--fw-strong);
 }
 
 /* 序号：圆牌里的 1/2/3 —— 键盘 Tab 到哪一项也能从数字对上 */
