@@ -263,3 +263,29 @@ export interface CustomProviderTestResult {
   /** 计费段才有：模型回复的正文 */
   text?: string
 }
+
+/**
+ * 解析各家 `GET <baseUrl>/models` 的响应，取出模型 ID。
+ * OpenAI / Anthropic / Mistral 兼容端点是 `{ data: [{ id }] }`；
+ * Google 是 `{ models: [{ name: "models/xxx" }] }`；也有端点直接返回数组。
+ */
+export function parseModelList(json: unknown): string[] {
+  const root = json as { data?: unknown; models?: unknown } | unknown[] | null
+  const list = Array.isArray(root) ? root : Array.isArray(root?.data) ? root.data : Array.isArray(root?.models) ? root.models : []
+  const ids: string[] = []
+  for (const item of list) {
+    const entry = item as { id?: unknown; name?: unknown; supportedGenerationMethods?: unknown } | string
+    /* Google 会把 embedding / aqa 等不能对话的模型也列出来 */
+    if (typeof entry === 'object' && entry && Array.isArray(entry.supportedGenerationMethods) && !entry.supportedGenerationMethods.includes('generateContent')) continue
+    const raw = typeof entry === 'string' ? entry : typeof entry?.id === 'string' ? entry.id : typeof entry?.name === 'string' ? entry.name : ''
+    const id = raw.replace(/^models\//, '').trim()
+    if (id && !hasExecutablePrefix(id) && !ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+export interface CustomProviderDiscoverResult {
+  ok: boolean
+  models: string[]
+  message: string
+}

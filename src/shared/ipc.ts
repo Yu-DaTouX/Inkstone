@@ -12,11 +12,13 @@
  * 因为它们必须能在没有 DOM / Electron 的环境下被单测。
  */
 export type {
+  CustomProviderDiscoverResult,
   CustomProviderInput,
   CustomProviderTestResult,
   CustomProviderView
 } from './custom-provider'
 import type {
+  CustomProviderDiscoverResult,
   CustomProviderInput,
   CustomProviderTestResult,
   CustomProviderView
@@ -892,6 +894,20 @@ export interface CustomProviderResult {
   ok: boolean
   errors?: string[]
   providers?: CustomProviderView[]
+}
+
+export interface ToolStatus {
+  ok: boolean
+  /** 找到的可执行文件；没找到时为空 */
+  path?: string
+  /** 没找到时给人读的原因与做法 */
+  hint?: string
+}
+
+export interface ToolchainStatus {
+  platform: string
+  bash: ToolStatus
+  git: ToolStatus
 }
 
 export interface AuthProviderInfo {
@@ -3246,11 +3262,15 @@ export interface YanBridge {
   clearAuth(provider: string): Promise<{ ok: boolean; error?: string }>
   /** auth.json 的路径与条目数（界面上告知凭证存在哪） */
   authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
+  /** 外部命令（bash / git）是否可用；缺失时带安装说明 */
+  toolchainStatus(): Promise<ToolchainStatus>
   /* 实施-23：自定义 API 服务（真源是 pi 的 models.json，只动 yan- 前缀条目） */
   customProviders(): Promise<CustomProviderView[]>
   saveCustomProvider(input: CustomProviderInput): Promise<CustomProviderResult>
   removeCustomProvider(id: string): Promise<CustomProviderResult>
   /** 连接测试：endpoint = URL/凭证检查（免费）；billable = 真实模型请求（计费） */
+  /** 从端点的 /models 拉模型 ID（密钥留空时用磁盘上已保存的） */
+  discoverCustomModels(input: Partial<CustomProviderInput>): Promise<CustomProviderDiscoverResult>
   testCustomProvider(
     id: string,
     mode: 'endpoint' | 'billable',

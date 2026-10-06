@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useT } from '../../i18n'
+import { refreshModelsAfterRestart } from '../../state/refresh-models'
 import type { CustomProviderInput, CustomProviderTestResult, CustomProviderView } from '../../../../shared/ipc'
 import { CUSTOM_API_CHOICES } from '../../../../shared/custom-provider'
 import { Icon } from '../../icons/Icon'
@@ -51,6 +52,29 @@ export function CustomProviderForm() {
     models: [{ id: '' }]
   })
 
+  const [fetching, setFetching] = useState(false)
+
+  /** 从端点拉模型填进表单（保留已填的行，只追加没有的 ID） */
+  const fetchModels = async (): Promise<void> => {
+    if (!draft) return
+    setFetching(true)
+    setMsg(null)
+    try {
+      const found = await window.yan.discoverCustomModels(draft)
+      if (!found.ok) {
+        setMsg({ kind: 'err', text: found.message })
+        return
+      }
+      const kept = draft.models.filter((model) => model.id.trim())
+      const known = new Set(kept.map((model) => model.id.trim()))
+      const added = found.models.filter((id) => !known.has(id)).map((id) => ({ id }))
+      setDraft({ ...draft, models: [...kept, ...added] })
+      setMsg({ kind: 'ok', text: found.message })
+    } finally {
+      setFetching(false)
+    }
+  }
+
   const save = async (): Promise<void> => {
     if (!draft) return
     setBusy(true)
@@ -68,6 +92,7 @@ export function CustomProviderForm() {
       setList(result.providers ?? [])
       setDraft(null)
       setMsg({ kind: 'ok', text: t('customApi.saved') })
+      refreshModelsAfterRestart()
     } finally {
       setBusy(false)
     }
@@ -83,6 +108,7 @@ export function CustomProviderForm() {
       }
       setList(result.providers ?? [])
       setMsg({ kind: 'ok', text: t('customApi.removed') })
+      refreshModelsAfterRestart()
     } finally {
       setBusy(false)
     }
@@ -181,6 +207,7 @@ export function CustomProviderForm() {
             />
           </label>
 
+          <div className="ui-row-desc">{t('customApi.modelsHint')}</div>
           {draft.models.map((model, index) => (
             <div className="ui-row custom-api-model" key={index}>
               <input
@@ -221,6 +248,9 @@ export function CustomProviderForm() {
 
           <div className="ui-row">
             <Button icon="plus" type="button" data-testid="custom-api-add-model" onClick={() => setDraft({ ...draft, models: [...draft.models, { id: '' }] })}>{t('customApi.addModel')}
+            </Button>
+            <Button type="button" disabled={fetching || busy} data-testid="custom-api-fetch-models" onClick={() => void fetchModels()}>
+              {fetching ? t('customApi.fetching') : t('customApi.fetchModels')}
             </Button>
             <span className="spacer" />
             <Button type="button" onClick={() => setDraft(null)}>

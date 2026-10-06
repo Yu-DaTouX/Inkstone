@@ -15,6 +15,7 @@
  */
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
+import { existsSync } from 'node:fs'
 import { realpath, stat, readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { basename, resolve } from 'node:path'
@@ -28,6 +29,12 @@ const execFileAsync = promisify(execFile)
 /** 只读查询的缓冲上限：大仓库的 `diff` 可能很大，但不需要无限 */
 const MAX_BUFFER = 48 * 1024 * 1024
 const DEFAULT_TIMEOUT = 20_000
+const GIT_MISSING_MESSAGE = '没有找到 git：请先安装 Git（Windows 为 Git for Windows，https://git-scm.com/download/win），装好后重启砚。'
+
+/** ENOENT 既可能是没装 git，也可能是工作目录不存在 —— 先排除后者 */
+function enoentMessage(cwd: string): string {
+  return existsSync(cwd) ? GIT_MISSING_MESSAGE : `项目目录不存在：${cwd}`
+}
 
 export interface GitRunResult {
   ok: boolean
@@ -78,7 +85,13 @@ export async function gitRun(
       child.stderr?.on('data', (d: Buffer) => {
         stderr += d.toString('utf8')
       })
-      child.on('error', (e) => resolve({ ok: false, stdout, stderr: stderr + e.message }))
+      child.on('error', (e) =>
+        resolve({
+          ok: false,
+          stdout,
+          stderr: (e as NodeJS.ErrnoException).code === 'ENOENT' ? enoentMessage(cwd) : stderr + e.message
+        })
+      )
       child.on('close', (code) => resolve({ ok: code === 0, stdout, stderr }))
       child.stdin?.end(opts.stdin, 'utf8')
     })
@@ -103,9 +116,9 @@ export async function gitRun(
     })
     return { ok: true, stdout: String(res.stdout ?? ''), stderr: String(res.stderr ?? '') }
   } catch (error) {
-    const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown }
+    const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown; code?: unknown }
     const stdout = String(e.stdout ?? '')
-    const stderr = String(e.stderr ?? '')
+    const stderr = e.code === 'ENOENT' ? enoentMessage(cwd) : String(e.stderr ?? '')
     if (opts.allowFailure) {
       return { ok: false, stdout, stderr, error: (stderr || stdout).trim() || undefined }
     }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useT } from '../../i18n'
+import { refreshModelsAfterRestart } from '../../state/refresh-models'
 import type { AuthProviderInfo, OAuthLoginEvent } from '../../../../shared/ipc'
 import { CustomProviderForm } from './CustomProviderForm'
 import { ActivityModelSection } from './ActivityModelSection'
@@ -87,6 +88,7 @@ export function AuthTab() {
     setBusy(false)
     if (r.ok) {
       setMsg({ kind: 'ok', text: t('auth.saved') })
+      refreshModelsAfterRestart()
       setEditing(null)
       setDraft('')
       await load(false)
@@ -101,6 +103,7 @@ export function AuthTab() {
     setBusy(false)
     if (r.ok) {
       setMsg({ kind: 'ok', text: t('auth.cleared') })
+      refreshModelsAfterRestart()
       await load(false)
     }
   }
