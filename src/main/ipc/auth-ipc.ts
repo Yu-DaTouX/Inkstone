@@ -7,8 +7,9 @@ import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
 import { resolvePi } from '../protocol'
 import type { CustomProviderInput } from '../../shared/custom-provider'
-import { listCustomProviders, removeCustomProvider, saveCustomProvider, testCustomProviderBillable, testCustomProviderEndpoint } from '../custom-providers'
+import { discoverCustomProviderModels, listCustomProviders, removeCustomProvider, saveCustomProvider, testCustomProviderBillable, testCustomProviderEndpoint } from '../custom-providers'
 import { authFileInfo, clearAuth, listAuthProviders, setApiKey } from '../credentials'
+import { detectToolchain } from '../toolchain'
 import { cancelCodexLogin, startCodexLogin } from '../oauth'
 import { answerOAuthPrompt, cancelOAuthLogin, startOAuthLogin } from '../oauth-providers'
 import type { OAuthLoginEvent } from '../../shared/ipc'
@@ -29,13 +30,35 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
     const probe = resolvePi({ override: s.piBin })
     return listAuthProviders({ cmd: probe.cmd, args: probe.args }, !!deep)
   })
-  handle('yan:setApiKey', async (provider: string, key: string) => setApiKey(provider, key))
-  handle('yan:clearAuth', async (provider: string) => clearAuth(provider))
+  /*
+   * pi 只在启动时读 auth.json / models.json：写入 key 或自定义服务后必须重启它，
+   * 模型列表才会带上新的 provider（渲染端在连接恢复 ready 时会自动重拉）。
+   */
+  handle('yan:setApiKey', async (provider: string, key: string) => {
+    const r = await setApiKey(provider, key)
+    if (r.ok) void restartAgent('API key 已更新')
+    return r
+  })
+  handle('yan:clearAuth', async (provider: string) => {
+    const r = await clearAuth(provider)
+    if (r.ok) void restartAgent('凭证已清除')
+    return r
+  })
   handle('yan:authFileInfo', async () => authFileInfo())
+  handle('yan:toolchainStatus', async () => detectToolchain())
   /* 实施-23：自定义 API 服务。真源是 pi 的 models.json，只写 yan- 前缀条目。 */
   handle('yan:customProviders', async () => listCustomProviders())
-  handle('yan:saveCustomProvider', async (input: CustomProviderInput) => saveCustomProvider(input))
-  handle('yan:removeCustomProvider', async (id: string) => removeCustomProvider(id))
+  handle('yan:saveCustomProvider', async (input: CustomProviderInput) => {
+    const r = await saveCustomProvider(input)
+    if (r.ok) void restartAgent('自定义服务已更新')
+    return r
+  })
+  handle('yan:discoverCustomModels', async (input: Partial<CustomProviderInput>) => discoverCustomProviderModels(input))
+  handle('yan:removeCustomProvider', async (id: string) => {
+    const r = await removeCustomProvider(id)
+    if (r.ok) void restartAgent('自定义服务已移除')
+    return r
+  })
   /*
    * 连接测试（实施-23 M2）：endpoint 段是宿主自己的 HTTP 检查；billable 段交给
    * pi 的 --print 模式真实跑一条提示词 —— 两者分开返回，界面才能分别标成本。

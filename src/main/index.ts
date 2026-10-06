@@ -2483,6 +2483,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
  *    （`startAgent(restore)`），否则界面会停在一条空会话上（D37）。
  */
 let agentRestarting = false
+/* 重启期间又来了新的变更（例如连续保存两个 key）：本轮结束后必须再重启一次 */
+let agentRestartQueued: string | null = null
 
 /**
  * 模态层守卫（渲染端上报）。
@@ -2496,7 +2498,10 @@ let agentRestarting = false
  */
 let hotkeyGuardPaused = false
 async function restartAgent(reason: string, retries = 150): Promise<void> {
-  if (agentRestarting) return
+  if (agentRestarting) {
+    agentRestartQueued = reason
+    return
+  }
   /* 启动还没跑完就别动它 —— 等它落定再判断要不要重启 */
   if (starting) await starting
   if (!runners) return
@@ -2529,6 +2534,9 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
     reportMainError(reason, error)
   } finally {
     agentRestarting = false
+    const queued = agentRestartQueued
+    agentRestartQueued = null
+    if (queued) void restartAgent(queued)
   }
 }
 

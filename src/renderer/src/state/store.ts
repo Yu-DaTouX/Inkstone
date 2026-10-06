@@ -1375,6 +1375,15 @@ export const useStore = create<Store>((rawSet, get) => {
     performance.mark('yan:bootstrap-set')
     // 模型 / 斜杠命令在启动后单独拉（要等 pi ready）
     void get().reloadModels()
+    /* 新设备常缺 Git / bash：只在启动时提示一次，缺什么说什么 */
+    void window.yan
+      .toolchainStatus()
+      .then((tools) => {
+        for (const tool of [tools.bash, tools.git]) {
+          if (!tool.ok && tool.hint) get().notify('warning', tool.hint)
+        }
+      })
+      .catch(() => undefined)
     // 界面缩放现状（设置面板要显示「自动 = 1.15×，屏幕 125%」）
     void get().loadZoom()
     void get().reloadCommands()

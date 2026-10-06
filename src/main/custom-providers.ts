@@ -13,6 +13,9 @@ import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 import {
   mergeCustomProviders,
+  parseModelList,
+  validateBaseUrl,
+  type CustomProviderDiscoverResult,
   readCustomProviders,
   validateCustomProvider,
   type CustomProviderInput,
@@ -64,7 +67,13 @@ export async function listCustomProviders(): Promise<CustomProviderView[]> {
 
 /** 新增或更新一个自定义服务 */
 export async function saveCustomProvider(input: CustomProviderInput): Promise<CustomProviderResult> {
-  const checked = validateCustomProvider(input)
+  /* 空白的模型行不算数；一个都没填就从端点自动拉（拉不到再报「至少要有一个模型」） */
+  const filled = (input.models ?? []).filter((model) => model?.id?.trim())
+  if (!filled.length) {
+    const found = await discoverCustomProviderModels(input)
+    if (found.ok) filled.push(...found.models.map((id) => ({ id })))
+  }
+  const checked = validateCustomProvider({ ...input, models: filled })
   if (!checked.ok || !checked.value) return { ok: false, errors: checked.errors }
 
   const raw = await readRaw()
@@ -219,4 +228,75 @@ export async function testCustomProviderBillable(opts: {
       resolve({ ok: false, mode: 'billable', ms, message: reason.slice(0, 200) })
     })
   })
+}
+
+/**
+ * 从端点拉模型列表，省得用户手填模型 ID。
+ *
+ * 密钥优先用表单里刚填的；留空时（编辑已有服务）读磁盘上已保存的那份，
+ * 密钥始终不经渲染端回传。
+ */
+export async function discoverCustomProviderModels(input: {
+  id?: string
+  api?: string
+  baseUrl?: string
+  apiKey?: string
+}): Promise<CustomProviderDiscoverResult> {
+  const baseUrl = (input.baseUrl ?? '').trim()
+  const urlError = validateBaseUrl(baseUrl)
+  if (urlError) return { ok: false, models: [], message: urlError }
+  let apiKey = (input.apiKey ?? '').trim()
+  if (!apiKey && input.id) {
+    const stored = (await readProviderEntry(input.id))?.apiKey
+    if (typeof stored === 'string') apiKey = stored
+  }
+  const headers: Record<string, string> = {}
+  if (apiKey) {
+    if (input.api === 'anthropic-messages') {
+      headers['x-api-key'] = apiKey
+      headers['anthropic-version'] = '2023-06-01'
+    } else if (input.api === 'google-generative-ai') {
+      headers['x-goog-api-key'] = apiKey
+    } else {
+      headers.Authorization = `Bearer ${apiKey}`
+    }
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  try {
+    let url = modelsEndpoint(baseUrl)
+    let response = await fetch(url, { headers, signal: controller.signal })
+    /* Anthropic 的 Base URL 通常不带 /v1（SDK 自己拼 /v1/messages），404 时补一次 */
+    const trimmedBase = baseUrl.replace(/\/+$/, '')
+    if (response.status === 404 && input.api === 'anthropic-messages' && !/\/v\d+$/.test(trimmedBase)) {
+      url = modelsEndpoint(`${trimmedBase}/v1`)
+      response = await fetch(url, { headers, signal: controller.signal })
+    }
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, models: [], message: `凭证被拒绝（HTTP ${response.status}），先检查 API Key` }
+    }
+    if (!response.ok) {
+      return { ok: false, models: [], message: `这个端点没有提供模型列表（HTTP ${response.status}），请手动填写模型 ID` }
+    }
+    let body = (await response.json().catch(() => null)) as { nextPageToken?: unknown } | null
+    const models = parseModelList(body)
+    /* Google 的模型列表分页：最多再翻 10 页 */
+    for (let page = 0; page < 10 && input.api === 'google-generative-ai' && typeof body?.nextPageToken === 'string' && body.nextPageToken; page++) {
+      const next = await fetch(`${url}${url.includes('?') ? '&' : '?'}pageToken=${encodeURIComponent(body.nextPageToken)}`, { headers, signal: controller.signal })
+      if (!next.ok) break
+      body = (await next.json().catch(() => null)) as { nextPageToken?: unknown } | null
+      for (const id of parseModelList(body)) if (!models.includes(id)) models.push(id)
+    }
+    if (!models.length) return { ok: false, models: [], message: '端点返回了空列表，请手动填写模型 ID' }
+    return { ok: true, models, message: `获取到 ${models.length} 个模型` }
+  } catch (error) {
+    const aborted = (error as { name?: string }).name === 'AbortError'
+    return {
+      ok: false,
+      models: [],
+      message: aborted ? '获取超时（10 秒）' : `连不上：${error instanceof Error ? error.message : String(error)}`
+    }
+  } finally {
+    clearTimeout(timer)
+  }
 }
