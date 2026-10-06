@@ -82,6 +82,7 @@ import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shar
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
 import { ArtifactStore } from './artifacts'
+import { hasBash } from './git-runtime'
 import { codexAuthAvailable, generateImage, resolveImageProvider, type ImageGenerationRequest } from './image-generation'
 import {
   capabilitySnapshot,
@@ -336,6 +337,7 @@ export class AgentController extends EventEmitter {
   private questionExtension?: string
   /** 工作模式的工具策略执行（实施-05 S3）：计划档收紧工具表 + 兜底阻断。 */
   private workModeExtension?: string
+  private shellFallbackExtension?: string
   /** 活动档案（实施-25 P01）：按会话注角色与受限工具。 */
   private agentProfileExtension?: string
   private responseDetailExtension?: string
@@ -573,6 +575,7 @@ export class AgentController extends EventEmitter {
     codemodeExtension?: string
     questionExtension?: string
     workModeExtension?: string
+    shellFallbackExtension?: string
     agentProfileExtension?: string
     goalResumeExtension?: string
     handoffsExtension?: string
@@ -676,6 +679,7 @@ export class AgentController extends EventEmitter {
     this.codemodeExtension = opts.codemodeExtension
     this.questionExtension = opts.questionExtension
     this.workModeExtension = opts.workModeExtension
+    this.shellFallbackExtension = opts.shellFallbackExtension
     this.agentProfileExtension = opts.agentProfileExtension
     this.responseDetailExtension = opts.responseDetailExtension
     this.languageExtension = opts.languageExtension
@@ -847,6 +851,8 @@ export class AgentController extends EventEmitter {
     const version = probe.home ? await readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : undefined
     const nativeTools = nativePiToolsSupported(version)
     const projectPackageArgs = nativeTools ? [] : await projectPiPackageArgs(this.cwd)
+    /* Windows 上找不到 bash（系统没有、也没装受管 Git）：命令行工具退到 PowerShell */
+    const shellFallback = !(await hasBash())
     const rpc = new PiRpc({
       cwd: this.cwd,
       piBin: this.piBin,
@@ -860,6 +866,8 @@ export class AgentController extends EventEmitter {
          * 工作模式的工具策略（实施-05 S3）：计划档把非只读工具从表里拿掉。
          * 放最后加载：它要在其它扩展注册完工具之后再收紧工具表。
          */
+        /* 没有 Git Bash 时把 bash 工具换成 PowerShell；必须在 work-mode 之前，让它记到换好的基线 */
+        ...(this.shellFallbackExtension ? ['--extension', this.shellFallbackExtension] : []),
         ...(this.workModeExtension ? ['--extension', this.workModeExtension] : []),
         /*
          * 活动档案（实施-25 P01）：紧跟在 work-mode 之后加载。
@@ -922,6 +930,7 @@ export class AgentController extends EventEmitter {
         YAN_DATA_DIR: YAN_DIR,
         // 便携版必须让 pi 也使用 EXE 同级的私有目录；否则它会回退到 ~/.pi。
         PI_CODING_AGENT_DIR: PI_AGENT_DIR,
+        ...(shellFallback ? { YAN_SHELL: 'powershell' } : {}),
         /*
          * 实例身份：薄层扩展靠它找到**自己那份**文件（工作模式快照、
          * 项目知识注入）。

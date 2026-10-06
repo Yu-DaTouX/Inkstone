@@ -6,6 +6,7 @@ import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import type { ExtensionUiRequest } from '../../../../shared/ipc'
 import { Button, IconButton } from '../ui'
+import { GitInstallControl } from '../settings/GitInstallControl'
 
 /** 退场时长 —— 与 motion.css 里的 `--mo-fast` 同源。改一处要改两处，所以写注释。 */
 const EXIT_MS = 110
@@ -250,9 +251,10 @@ export function Notices() {
   useEffect(() => {
     if (notices.length === 0) return
     const timers = notices.map((n) =>
-      setTimeout(() => dismiss(n.id), n.action || noticeLink(n.text) ? 20_000 : n.type === 'error' ? 12_000 : 5_000)
+      /* 缺 Git 的通知要等用户决定（可能正在下载），不自动消失 */
+      n.action === 'git-install' ? undefined : setTimeout(() => dismiss(n.id), n.action || noticeLink(n.text) ? 20_000 : n.type === 'error' ? 12_000 : 5_000)
     )
-    return () => timers.forEach(clearTimeout)
+    return () => timers.forEach((timer) => timer && clearTimeout(timer))
   }, [notices, dismiss])
 
   const shown = [...notices, ...leaving]
@@ -262,6 +264,23 @@ export function Notices() {
     <div className="notices">
       {shown.map((n, i) => {
         const isLeaving = !notices.some((x) => x.id === n.id)
+        if (n.action === 'git-install') {
+          return (
+            <div
+              key={n.id}
+              className={`notice ${n.type} notice-action ${isLeaving ? 'closing' : ''}`}
+              style={{ '--i': i } as React.CSSProperties}
+              data-testid="git-install-notice"
+            >
+              <Icon name="alert-circle" size={12} />
+              <span className="notice-text">{n.text}</span>
+              <span className="notice-actions">
+                <GitInstallControl size="sm" />
+                <Button size="sm" variant="ghost" onClick={() => dismiss(n.id)}>{t('notice.dismiss')}</Button>
+              </span>
+            </div>
+          )
+        }
         if (n.action === 'search-api-hint') {
           return (
             <div

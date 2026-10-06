@@ -6,6 +6,7 @@ import { useStore } from '../../state/store'
 import type { ToolchainStatus } from '../../../../shared/ipc'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import { Button, IconButton } from '../ui'
+import { GitInstallControl } from './GitInstallControl'
 
 /**
  * 首次使用引导。
@@ -210,9 +211,12 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
               title={t('ob.toolsTitle')}
               desc={toolsOk ? t('ob.toolsOk') : [tools.bash, tools.git].filter((tool) => !tool.ok && tool.hint).map((tool) => tool.hint).join(' ')}
               action={
-                <Button className="ob-btn" onClick={() => void detectTools()} data-testid="ob-recheck-tools">
-                  {t('ob.recheck')}
-                </Button>
+                <>
+                  {!toolsOk && tools.platform === 'win32' ? <GitInstallControl /> : null}
+                  <Button className="ob-btn" onClick={() => void detectTools()} data-testid="ob-recheck-tools">
+                    {t('ob.recheck')}
+                  </Button>
+                </>
               }
             />
           ) : null}
