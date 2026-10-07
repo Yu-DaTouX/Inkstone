@@ -3,15 +3,12 @@
 </p>
 
 <h1 align="center">让想法成形。</h1>
-<p align="center">Give ideas form.</p>
-<p align="center">砚 · 一个专注于内容与行动的桌面 AI 工作空间。</p>
+<p align="center">砚（Inkstone）是装在电脑上的 AI 助手：你说要做什么，它帮你查资料、写东西、改代码，过程和结果都摆在眼前。</p>
 
 <p align="center">
-  <a href="https://github.com/Yu-DaTouX/Inkstone/releases">下载</a> ·
-  <a href="#开始使用">快速开始</a> ·
+  <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><b>下载</b></a> ·
   <a href="docs/GETTING_STARTED.md">使用指南</a> ·
-  <a href="docs/MOBILE_ACCESS.md">手机接入说明</a> ·
-  <a href="docs/AGENT_HUB.md">多 Agent 工作台（开发中）</a> ·
+  <a href="https://github.com/Yu-DaTouX/Inkstone/releases">更新日志</a> ·
   <a href="https://github.com/Yu-DaTouX/Inkstone/issues">反馈</a> ·
   <a href="README_EN.md">English</a>
 </p>
@@ -20,87 +17,43 @@
   <img src="https://img.shields.io/badge/Windows-x64-0078D4" alt="Windows x64">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"></a>
 </p>
-<p align="center"><sub>Windows · 多模型接入 · 磁贴工作区 · 深浅主题 · MIT 开源</sub></p>
 
 <br>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-tiles-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-tiles-light.png">
-  <img src="docs/assets/inkstone/workspace-tiles-light.png" alt="Inkstone 工作空间：左侧按项目组织会话，中间是主会话，右侧并排打开文件预览与子 Agent 运行结果。" width="1280">
+  <img src="docs/assets/inkstone/workspace-tiles-light.png" alt="砚的界面：左边是会话列表，中间是对话，右边并排打开文件和另一个 AI 的工作结果。" width="1280">
 </picture>
 
-<p align="center"><sub>v0.6 界面 · 左侧会话、中间主会话、右侧文件与子 Agent 磁贴 · 会话、文件与运行结果均为合成演示数据</sub></p>
+<p align="center"><sub>界面示意 · 图中内容均为演示数据</sub></p>
 
-## 从一个想法，到一份作品
+## 它能帮你做什么
 
-**Inkstone（砚）** 将对话、项目、文件和工具放在同一个桌面工作空间里。你可以从一个问题开始，带上已有资料，与 AI 一起梳理思路、修改代码、运行命令，并查看工作的过程与产出。
-
-砚是承接笔墨的地方。Inkstone 延续这个意象：让内容成为中心，让输入始终触手可及，让执行细节在需要时展开。
-
-## 在同一处，把工作接着做
-
-| 你想做什么 | Inkstone 提供什么 |
-| --- | --- |
-| **把思路说清楚** | 流式对话、图片输入、`@` 文件引用、`/` 命令；推理和工具过程可展开查看。 |
-| **围绕项目推进** | 项目分组、会话搜索、分支与队列；切换会话时，已经运行的任务可以继续在后台执行。 |
-| **查看过程与产出** | 文件预览、交互终端、内置浏览器和本机 Chrome 接入；联网搜索可用 Bing、360、DuckDuckGo 等网页搜索，也可在设置的「增强搜索」里填入自己的 Tavily、Brave、Firecrawl、Context7 key，获得更稳的搜索、网页读取和开发文档查询（统一经 `yan search`）。 |
-| **自由摆放工作区** | 主会话、文件、浏览器、终端、任务、日志和 Agent 都是磁贴：可拖动、分组或拆分、调尺寸、放大与收起，布局按会话记住。 |
-| **随时找回、随时回退** | `Ctrl+K` 会话切换器搜标题与对话内容；每轮发送前给项目文件存检查点，用户消息上的「回退代码」可把文件恢复到那一刻并可撤销；Agent 写项目之外的路径前先确认。 |
-| **让任务有进展可循** | 目标与计划、任务清单，以及 Agent 原生上下文、用量和运行信息。 |
-| **让多个 Agent 协作** | 统一 Agent 工作区汇总子 pi 与外部 CLI 运行，子 Agent 的过程与结果用和主会话相同的方式呈现；多 Agent 工作台仍在开发中。 |
-| **让 Agent 组合调用工具** | 默认启用 pi Codemode，Agent 可以用脚本批量调用工具并整理结果；嵌套调用按树状展示，高危操作仍需确认。可在设置中关闭。 |
-| **选择合适的模型** | 接入模型服务、切换模型与思考档位，在同一套界面中工作。 |
-| **按自己的习惯使用** | 深浅主题、中英界面、可调栏宽与缩放。 |
-| **围绕主题积累** | 主题空间按主题（而不是项目目录）归类会话；导入的资料可作来源引用，也能交给导师带你学。 |
-| **跟着导师学** | 在对话里说想学什么，导师一步步讲解、出题并等你作答，答错先给提示；讲法与出题做法写在随包技能里。 |
-| **看清会话的分支** | 会话地图按工作区分泳道；展开一个会话能看到一轮一轮的问答，也能从某一轮分叉出新的会话。 |
-
-在 **设置 → 工作区 → 界面形态** 中可以切换**编码**与**日常**：前者以项目和文件为中心，后者把会话、资料与学习按主题组织。
-
-上下文由 Agent 原生管理。砚把运行过程、用量和工具结果呈现为界面，压缩操作直接调用 pi；资料由你主动发送，或由 Agent 按自己的规则读取。技术边界见[架构简介](docs/ARCHITECTURE.md)。
-
-模型能力、额度和费用取决于所接入的服务。
-
-## 安静、清楚、精致
-
-Inkstone 的界面围绕“墨色工作空间”设计：
-
-- **内容优先。** 把阅读、产出和下一步输入放在主要位置；执行过程先显示摘要，细节按需展开。
-- **文字各司其职。** 界面与正文采用无衬线字体；代码、命令和路径采用等宽字体。
-- **克制地表达层级。** 用留白、暖中性色和少量边界组织界面，以单一强调色引导操作。
-
-品牌图标中的开口石框代表工作空间，`>_` 代表输入与行动。
+- **聊着把活干了**：像聊天一样交代任务，可以贴图片、用 `@` 指定文件。AI 每一步做了什么都能点开看。
+- **一个窗口就够**：对话、文件、网页、终端并排摆在一起，想怎么摆就怎么摆，不用来回切窗口。
+- **改坏了能退回**：每次发消息前，自动给项目存一份快照；不满意，一键退回到那一刻。
+- **危险操作先问你**：大范围删除、丢弃改动这类操作，会先停下来等你点头。
+- **模型随你选**：在软件里登录，或填入 API Key 就能用，随时切换。
+- **以前聊过的都找得到**：按 `Ctrl+K`，搜标题或聊天内容。
+- **还能当老师**：说想学什么，它一步步讲、出题、等你作答，答错了先给提示。
 
 ## 开始使用
 
-### 下载 Windows 版本
+1. 到 [发布页](https://github.com/Yu-DaTouX/Inkstone/releases/latest) 下载安装包，双击安装（之后会在软件里自动更新）。也有免安装的便携版。
+2. 打开砚，在 **设置 → 模型** 里登录，或填入 API Key。
+3. 新建对话，说出你要做的事。
 
-前往 [最新发行版](https://github.com/Yu-DaTouX/Inkstone/releases/latest)，按发布说明选择安装版、单文件便携版或 ZIP 版。ZIP 版解压后运行 `砚.exe`；发行包包含 pi 运行时，无需单独安装 pi。安装版支持应用内自动更新。
+安装包还没有数字签名，Windows 可能会弹出“未知发布者”提示，请只从本页下载。更多用法见 [使用指南](docs/GETTING_STARTED.md)。
 
-本页介绍与截图跟随 `main` 分支；某个发行包包含哪些功能，以对应的发布说明为准。
+## 需要知道的
 
-### 接入模型，开始第一项工作
+- 目前只有 Windows 版。
+- 聊天记录和设置都存在你自己的电脑上。你发给 AI 的内容会发到你选的模型服务，费用由该服务收取。
+- 换电脑或换版本前，先看 [备份说明](docs/GETTING_STARTED.md#数据与备份)。
+- 安卓手机可以连上电脑看进度、回消息，目前还在测试，见 [手机接入说明](docs/MOBILE_ACCESS.md)。
 
-1. 在 **设置 → 模型** 中配置服务。选择服务后，可直接在软件内完成登录或配置 API 凭证，无需使用终端登录。
-2. 选择项目或新建对话，在输入框写下任务；用 `@` 引用文件，用 `/` 查看可用命令。
-3. 在工作面板中查看文件，或打开浏览器与终端继续操作。
-
-常用操作、数据备份与安装说明见[使用指南](docs/GETTING_STARTED.md)。
-
-Android 手机可以经 Tailscale 扫码配对，查看电脑上的会话、回答提问、发消息和语音输入，任务仍在电脑上执行。入口在桌面端 **设置 → 设备连接 → 手机**；手机应用目前仍在测试，尚无公开 Android 安装包，说明见[手机接入说明](docs/MOBILE_ACCESS.md)。
-
-两台运行 Inkstone 的电脑可以互相连接，按「本次连接」授权查看、复制会话与成果，见[砚互联说明](docs/PEER_ACCESS.md)。
-
-## 数据与平台
-
-目前提供 Windows 版本，尚未提供 macOS、Linux 发行包或代码签名。会话与设置保存在本机；跨设备同步暂不提供。
-
-连接远程模型时，请求会发送到所选服务。单文件便携版与安装版的数据位置有所不同，迁移前请按[使用指南](docs/GETTING_STARTED.md#数据与备份)备份。
-
-## 开源与反馈
-
-欢迎通过 [Issues](https://github.com/Yu-DaTouX/Inkstone/issues) 反馈问题或提出建议。请附上应用版本、复现步骤与必要截图，并隐去密钥和私人内容。
+遇到问题欢迎提 [Issue](https://github.com/Yu-DaTouX/Inkstone/issues)，写上版本号和操作步骤，截图时记得遮住密钥。
 
 <details>
 <summary>开发者：从源码运行与参与贡献</summary>
@@ -118,10 +71,10 @@ npm run launch
 
 启动器会检查依赖、准备缺失的内置运行时并按需构建。已有工作区可双击 `启动-砚.cmd`；开发模式使用 `开发-砚.cmd` 或 `npm run launch:dev`。
 
-参与贡献前请阅读 [贡献指南](docs/CONTRIBUTING.md) 和 [AI 协作约定](AGENTS.md)。按功能定位代码见[代码地图](docs/CODE_MAP.md)，语言与应用壳选择见[技术路线评估](docs/TECH_STACK_OPTIONS.md)；架构、构建与发布入口见[文档索引](docs/README.md)。
+参与贡献前请阅读 [贡献指南](docs/CONTRIBUTING.md) 和 [AI 协作约定](AGENTS.md)。按功能定位代码见[代码地图](docs/CODE_MAP.md)，架构、构建与发布入口见[文档索引](docs/README.md)。
 
 </details>
 
 ## 许可证
 
-[MIT](LICENSE) · © 2026 Yu-DaTouX。第三方字体、图标、代码高亮和内置 pi 的许可随分发保留，清单见[第三方许可](docs/THIRD-PARTY.md)。
+[MIT](LICENSE) · © 2026 Yu-DaTouX。第三方组件的许可见 [第三方许可](docs/THIRD-PARTY.md)。
