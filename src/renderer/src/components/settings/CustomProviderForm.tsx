@@ -65,9 +65,25 @@ export function CustomProviderForm() {
         setMsg({ kind: 'err', text: found.message })
         return
       }
-      const kept = draft.models.filter((model) => model.id.trim())
+      const entries: CustomProviderInput['models'] = found.entries ?? found.models.map((id) => ({ id }))
+      const byId = new Map(entries.map((entry) => [entry.id, entry]))
+      /* 已有的行保留用户填的名称与上下文，补上端点和 pi 目录给出的协议与思考能力 */
+      const kept = draft.models
+        .filter((model) => model.id.trim())
+        .map((model) => {
+          const entry = byId.get(model.id.trim())
+          if (!entry) return model
+          return {
+            ...entry,
+            ...model,
+            api: model.api ?? entry.api,
+            baseUrl: model.baseUrl ?? entry.baseUrl,
+            reasoning: model.reasoning === true || entry.reasoning === true || undefined,
+            thinkingLevelMap: model.thinkingLevelMap ?? entry.thinkingLevelMap
+          }
+        })
       const known = new Set(kept.map((model) => model.id.trim()))
-      const added = found.models.filter((id) => !known.has(id)).map((id) => ({ id }))
+      const added = entries.filter((entry) => !known.has(entry.id))
       setDraft({ ...draft, models: [...kept, ...added] })
       setMsg({ kind: 'ok', text: found.message })
     } finally {
@@ -243,6 +259,11 @@ export function CustomProviderForm() {
                 />
                 <span>{t('customApi.reasoning')}</span>
               </label>
+              {model.api && model.api !== draft.api ? (
+                <span className="ui-badge" title={t('customApi.modelApiHint', { url: model.baseUrl ?? draft.baseUrl })} data-testid={`custom-api-model-api-${index}`}>
+                  {CUSTOM_API_CHOICES.find((choice) => choice.id === model.api)?.label ?? model.api}
+                </span>
+              ) : null}
             </div>
           ))}
 

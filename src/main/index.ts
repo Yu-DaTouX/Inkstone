@@ -354,6 +354,7 @@ const agentHub = new AgentHubService({
  */
 const subagentService = new SubagentService({
   codemodeExtension: codemodeExtensionPath,
+  providerExtensions: providerExtensionPaths,
   onChange: (run) => push({ ch: 'subagent', payload: run }),
   onRemove: (id) => push({ ch: 'subagent-remove', payload: id }),
   resolveAgentProfile: (id) => resolveAgentProfile(id),
@@ -513,6 +514,10 @@ function dangerGuardExtensionPath(): string | undefined {
 function permissionGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('permission-guard.js')
 }
+/** 内置服务扩展：pi 不认识、但凭证页提供的服务（Command Code），主会话与子代理都要加载 */
+function providerExtensionPaths(): string[] {
+  return [yanThinResourcePath('commandcode.js')].filter((p): p is string => !!p)
+}
 function repeatGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('repeat-guard.js')
 }
@@ -540,6 +545,7 @@ function yanThinExtensionPaths(): string[] {
     repeatGuardExtensionPath(),
     dangerGuardExtensionPath(),
     permissionGuardExtensionPath(),
+    ...providerExtensionPaths(),
   ].filter((p): p is string => !!p && isAgentContextExtension(p))
 }
 
@@ -2213,6 +2219,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         repeatGuardExtension: repeatGuardExtensionPath(),
         dangerGuardExtension: dangerGuardExtensionPath(),
         permissionGuardExtension: permissionGuardExtensionPath(),
+        providerExtensions: providerExtensionPaths(),
         bundledSkills: bundledSkillPaths(),
         /* 用户技能（YAN_DIR/skills）：每次启动会话时重新列出 */
         userSkills: () => userSkillPaths(),
