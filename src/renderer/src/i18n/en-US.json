@@ -2431,5 +2431,9 @@
   "tile.edge.top": "Above",
   "tile.edge.bottom": "Below",
   "tile.mergeTabs": "Merge into tab group",
-  "tile.hide": "Hide panel"
+  "tile.hide": "Hide panel",
+  "picker.thinkNotDeclared": "This model's configuration does not declare reasoning support (no reasoning flag in models.json), so only \"off\" is available.",
+  "picker.thinkNotDeclaredCustom": "This model is not marked \"Reasoning\", so only \"off\" is available. Refetch the model list or tick \"Reasoning\" in the custom service.",
+  "picker.thinkOpenSettings": "Open settings",
+  "customApi.modelApiHint": "This model is only served over this API, at {url}"
 }

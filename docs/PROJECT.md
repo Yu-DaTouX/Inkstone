@@ -46,7 +46,7 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/renderer/src/styles/motion.css` | 动效唯一真源（37 个关键帧）；时长 / 曲线令牌在 `tokens.css`，模块 CSS 只引用不定义 |
 | `src/renderer/src/state/` | 会话状态与事件投影 |
 | `src/renderer/src/styles/` | 样式、令牌与主题；入口 `index.css` 用级联层决定覆盖关系 |
-| `resources/pi-extensions/` | 随包 pi 薄层：语言、身份、工具权限、UI 桥接与高危确认；宿主上下文、预算、知识自动注入及自动交接实现已移除 |
+| `resources/pi-extensions/` | 随包 pi 薄层：语言、身份、工具权限、UI 桥接、高危确认，以及 pi 不认识的内置服务（Command Code）；`generated/` 下是生成物（模型能力表与共用判断逻辑），不手改；宿主上下文、预算、知识自动注入及自动交接实现已移除 |
 | `src/main/ipc/context-budget-ipc.ts` / `context-recall.ts` / `context-background-usage.ts` | 旧预算 IPC 返回停用或拒绝修改；主动归档检索与召回、历史用量读取及标题计费保留 |
 | `resources/yan-cli/` | 本机能力 CLI |
 | `scripts/` | 启动、构建、检查与截图工具 |

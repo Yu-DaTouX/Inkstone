@@ -391,6 +391,8 @@ export class AgentController extends EventEmitter {
   private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
   private dangerGuardExtension?: string
   private permissionGuardExtension?: string
+  /** 内置服务扩展（Command Code：凭证页填了密钥就注册模型） */
+  private providerExtensions: string[] = []
   /**
    * 宿主能力服务注入给 pi 子进程的身份与地址（见 capability-server.ts / yan-cli.ts）。
    *
@@ -652,6 +654,7 @@ export class AgentController extends EventEmitter {
     confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
     dangerGuardExtension?: string
     permissionGuardExtension?: string
+    providerExtensions?: string[]
     /** 宿主能力服务环境（`yan` CLI 用）；未提供时不注入，CLI 会报「宿主不可用」。 */
     yanCliEnv?: YanCliEnv
     /** 宿主能力服务参数；提供时由本实例自己启动端点与启动器。 */
@@ -702,6 +705,7 @@ export class AgentController extends EventEmitter {
     this.confirmDanger = opts.confirmDanger
     this.dangerGuardExtension = opts.dangerGuardExtension
     this.permissionGuardExtension = opts.permissionGuardExtension
+    this.providerExtensions = opts.providerExtensions ?? []
     this.yanCliEnv = opts.yanCliEnv
     this.capabilityOpts = opts.capability
       ? { ...opts.capability, runnerGeneration: opts.capability.runnerGeneration ?? 1 }
@@ -894,6 +898,7 @@ export class AgentController extends EventEmitter {
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
         // 询问档：写文件 / 跑命令前先问（读设置，full 档不产生任何请求）
         ...(this.permissionGuardExtension ? ['--extension', this.permissionGuardExtension] : []),
+        ...this.providerExtensions.flatMap((path) => ['--extension', path]),
         /* 受管 skill-files 只按当前项目 active 记录显式传入；不扫描全盘。 */
         ...managedSkillArgs,
         /* 随包技能：领域做法（例如办公文件）放在技能里按需加载，不写进宿主 */

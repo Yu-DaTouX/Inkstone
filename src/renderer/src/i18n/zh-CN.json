@@ -2431,5 +2431,9 @@
   "tile.edge.top": "上方",
   "tile.edge.bottom": "下方",
   "tile.mergeTabs": "合入标签组",
-  "tile.hide": "隐藏面板"
+  "tile.hide": "隐藏面板",
+  "picker.thinkNotDeclared": "这个模型的配置没有声明支持思考（models.json 里缺 reasoning），所以只有「关」一档。",
+  "picker.thinkNotDeclaredCustom": "这个模型没有标记「推理」，所以只有「关」一档。在自定义服务里重新获取模型列表或勾选「推理」即可。",
+  "picker.thinkOpenSettings": "去设置",
+  "customApi.modelApiHint": "这个模型只开放这种接口，地址：{url}"
 }

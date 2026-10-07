@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
-import { StepSlider } from './ui'
+import { Button, StepSlider } from './ui'
 
 /** 模型与思考强度选择器：离散档位的点阵滑块，按当前模型报告的可用档位展示。 */
 export function ModelThinkingPicker() {
@@ -168,7 +168,13 @@ export function ModelThinkingPicker() {
    * **并不为空**；真正为空的只有 `session` 本身。
    */
   const hasLevels = levels.length > 1
-  const showThinkingSection = hasLevels || thinkingStatus !== 'known'
+  /*
+   * 只有「关」一档：pi 认为这个模型不能思考（模型条目没标 reasoning）。
+   * 不再把整块藏起来 —— 用户会以为档位选项丢了；说清原因，砚管理的服务给出去设置的入口。
+   */
+  const notDeclared = !hasLevels && thinkingStatus === 'known' && !!cur
+  const customProvider = !!cur?.provider && /^yan-/.test(cur.provider)
+  const showThinkingSection = hasLevels || thinkingStatus !== 'known' || notDeclared
 
   /** 分组扁平化 —— 键盘上下走的是这个顺序（与视觉顺序一致） */
   const flat = groups.flatMap(([, list]) => list)
@@ -283,14 +289,14 @@ export function ModelThinkingPicker() {
                   title={
                     hasLevels
                       ? t('picker.thinkDesc')
-                      : thinkingStatus === 'unsupported'
+                      : thinkingStatus === 'unsupported' || notDeclared
                         ? t('picker.thinkUnsupported')
                         : t('picker.thinkUnknown')
                   }
                 >
                   {hasLevels
                     ? thinkLabel(level)
-                    : thinkingStatus === 'unsupported'
+                    : thinkingStatus === 'unsupported' || notDeclared
                       ? t('picker.thinkUnsupportedShort')
                       : t('picker.thinkUnknownShort')}
                 </span>
@@ -312,7 +318,20 @@ export function ModelThinkingPicker() {
                 />
               ) : (
                 <div className="mt-capability-note" data-testid="thinking-capability-status">
-                  {thinkingStatus === 'unsupported' ? t('picker.thinkUnsupported') : t('picker.thinkUnknown')}
+                  {notDeclared
+                    ? customProvider ? t('picker.thinkNotDeclaredCustom') : t('picker.thinkNotDeclared')
+                    : thinkingStatus === 'unsupported' ? t('picker.thinkUnsupported') : t('picker.thinkUnknown')}
+                  {notDeclared && customProvider ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="mt-capability-action"
+                      data-testid="thinking-open-settings"
+                      onClick={() => { setOpen(false); useStore.getState().openSettings('auth') }}
+                    >
+                      {t('picker.thinkOpenSettings')}
+                    </Button>
+                  ) : null}
                 </div>
               )}
 

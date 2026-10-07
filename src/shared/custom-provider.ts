@@ -57,6 +57,31 @@ export interface CustomProviderModel {
   maxTokens?: number
   reasoning?: boolean
   input?: Array<'text' | 'image'>
+  /**
+   * 只有这个模型的协议与服务默认值不同时才写，例如中转站里 Claude 只开放 Anthropic 接口、
+   * 其余模型走 Chat Completions。pi 的 models.json 支持逐模型覆盖 api 与 baseUrl。
+   */
+  api?: CustomApiId
+  baseUrl?: string
+  /** pi 的思考档位映射（取自 pi 自带模型目录）；值为 null 表示该档不可用 */
+  thinkingLevelMap?: Record<string, string | null>
+}
+
+/** pi 的思考档位名（models.json 里 thinkingLevelMap 的键） */
+const THINKING_LEVEL_KEYS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
+function cleanThinkingLevelMap(value: unknown): Record<string, string | null> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const out: Record<string, string | null> = {}
+  for (const key of THINKING_LEVEL_KEYS) {
+    const v = (value as Record<string, unknown>)[key]
+    if (v === null || (typeof v === 'string' && v.trim() && !hasExecutablePrefix(v))) out[key] = v
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+function isCustomApiId(value: unknown): value is CustomApiId {
+  return CUSTOM_API_CHOICES.some((choice) => choice.id === value)
 }
 
 /** 读回渲染端的形状：**不含** apiKey 明文 */
@@ -153,6 +178,19 @@ export function validateCustomProvider(input: Partial<CustomProviderInput>): Val
       const kinds = raw.input.filter((kind): kind is 'text' | 'image' => kind === 'text' || kind === 'image')
       if (kinds.length) next.input = [...new Set(kinds)]
     }
+    if (raw.api !== undefined) {
+      if (isCustomApiId(raw.api)) next.api = raw.api
+      else errors.push(`模型「${modelId}」的协议不受支持`)
+    }
+    if (raw.baseUrl !== undefined) {
+      const modelUrlError = validateBaseUrl(raw.baseUrl)
+      if (modelUrlError) errors.push(`模型「${modelId}」：${modelUrlError}`)
+      else next.baseUrl = String(raw.baseUrl).trim()
+    }
+    if (next.reasoning) {
+      const map = cleanThinkingLevelMap(raw.thinkingLevelMap)
+      if (map) next.thinkingLevelMap = map
+    }
     cleaned.push(next)
   }
   if (!cleaned.length) errors.push('至少要有一个模型')
@@ -193,6 +231,10 @@ export function readCustomProviders(modelsJson: unknown): CustomProviderView[] {
           if (Array.isArray(m.input)) {
             model.input = m.input.filter((k): k is 'text' | 'image' => k === 'text' || k === 'image')
           }
+          if (isCustomApiId(m.api)) model.api = m.api
+          if (typeof m.baseUrl === 'string' && m.baseUrl) model.baseUrl = m.baseUrl
+          const map = m.reasoning === true ? cleanThinkingLevelMap(m.thinkingLevelMap) : undefined
+          if (map) model.thinkingLevelMap = map
           return model
         })
         .filter((m) => m.id),
@@ -270,22 +312,140 @@ export interface CustomProviderTestResult {
  * Google 是 `{ models: [{ name: "models/xxx" }] }`；也有端点直接返回数组。
  */
 export function parseModelList(json: unknown): string[] {
+  return parseModelEntries(json).map((model) => model.id)
+}
+
+/** 端点在模型列表里顺带给出的能力信息；多数端点只给 id，其余字段都可能缺 */
+export interface DiscoveredModel {
+  id: string
+  name?: string
+  contextWindow?: number
+  /** 这个模型开放的接口路径，如 `/chat/completions`、`/messages`（部分中转站提供） */
+  endpoints?: string[]
+  /** 端点明说支持思考（OpenRouter 式的 `supported_parameters`） */
+  reasoning?: boolean
+  image?: boolean
+}
+
+/** 同 parseModelList，但保留端点给出的上下文长度、开放接口与能力字段 */
+export function parseModelEntries(json: unknown): DiscoveredModel[] {
   const root = json as { data?: unknown; models?: unknown } | unknown[] | null
   const list = Array.isArray(root) ? root : Array.isArray(root?.data) ? root.data : Array.isArray(root?.models) ? root.models : []
-  const ids: string[] = []
+  const out: DiscoveredModel[] = []
   for (const item of list) {
-    const entry = item as { id?: unknown; name?: unknown; supportedGenerationMethods?: unknown } | string
+    const entry = item as Record<string, unknown> | string
     /* Google 会把 embedding / aqa 等不能对话的模型也列出来 */
     if (typeof entry === 'object' && entry && Array.isArray(entry.supportedGenerationMethods) && !entry.supportedGenerationMethods.includes('generateContent')) continue
     const raw = typeof entry === 'string' ? entry : typeof entry?.id === 'string' ? entry.id : typeof entry?.name === 'string' ? entry.name : ''
     const id = raw.replace(/^models\//, '').trim()
-    if (id && !hasExecutablePrefix(id) && !ids.includes(id)) ids.push(id)
+    if (!id || hasExecutablePrefix(id) || out.some((m) => m.id === id)) continue
+    const model: DiscoveredModel = { id }
+    if (typeof entry === 'object' && entry) {
+      if (typeof entry.name === 'string' && entry.name.trim() && entry.name !== raw) model.name = entry.name.trim()
+      if (typeof entry.display_name === 'string' && entry.display_name.trim()) model.name = entry.display_name.trim()
+      const context = [entry.context_length, entry.context_window, entry.inputTokenLimit].find((v) => typeof v === 'number' && v > 0)
+      if (typeof context === 'number') model.contextWindow = Math.round(context)
+      if (Array.isArray(entry.supported_endpoints)) model.endpoints = entry.supported_endpoints.filter((p): p is string => typeof p === 'string')
+      if (Array.isArray(entry.supported_parameters)) {
+        const params = entry.supported_parameters.filter((p): p is string => typeof p === 'string')
+        if (params.includes('reasoning') || params.includes('include_reasoning') || params.includes('reasoning_effort')) model.reasoning = true
+      }
+      if (entry.thinking === true) model.reasoning = true
+      const modalities = (entry.architecture as { input_modalities?: unknown } | undefined)?.input_modalities
+      if (Array.isArray(modalities) && modalities.includes('image')) model.image = true
+    }
+    out.push(model)
   }
-  return ids
+  return out
+}
+
+/**
+ * pi 自带模型目录里查找能力用的键：同一个模型在不同服务里写法不同
+ * （`deepseek/deepseek-v4-pro`、`Qwen/Qwen3.8-Max`、`xxx:free`、`gpt-5.4` 与 `gpt-5-4`），归一成一个键。
+ * 与 scripts/lib/pi-model-catalog-key.mjs 必须一致（能力表由那边生成）。
+ */
+export function catalogKey(id: string): string {
+  return id.trim().toLowerCase().replace(/:free$/, '').replace(/^.*\//, '').replace(/\./g, '-')
+}
+
+/** 能力表里的一项（scripts/gen-pi-model-catalog.mjs 从随包 pi 的模型目录生成） */
+export interface PiCatalogEntry {
+  provider: string
+  api: string
+  reasoning: boolean
+  input?: Array<'text' | 'image'>
+  contextWindow?: number
+  maxTokens?: number
+  thinkingLevelMap?: Record<string, string | null>
+}
+
+export type PiModelCatalog = Record<string, PiCatalogEntry>
+
+/** 端点路径 → pi 协议；端点同时开放多种时按这个顺序挑 */
+const ENDPOINT_APIS: Array<[string, CustomApiId]> = [
+  ['/chat/completions', 'openai-completions'],
+  ['/responses', 'openai-responses'],
+  ['/messages', 'anthropic-messages']
+]
+
+/**
+ * 换协议时的 Base URL：OpenAI 系 SDK 在 baseUrl 后接 `/chat/completions`（baseUrl 自带 `/v1`），
+ * Anthropic SDK 自己拼 `/v1/messages`（baseUrl 不带 `/v1`）。
+ */
+function baseUrlForApi(baseUrl: string, from: string, to: CustomApiId): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  const anthropic = (api: string) => api === 'anthropic-messages'
+  if (anthropic(to) && !anthropic(from)) return trimmed.replace(/\/v\d+$/, '')
+  if (!anthropic(to) && anthropic(from) && !/\/v\d+$/.test(trimmed)) return `${trimmed}/v1`
+  return trimmed
+}
+
+/**
+ * 把端点列出的模型变成 models.json 的条目：
+ *   · 端点说明了某模型只开放别的接口（如 Claude 只开放 `/messages`）→ 这一条单独改协议与地址；
+ *   · 能否思考、图片输入、上下文与输出上限先看端点自己给的，没有再查 pi 自带目录；
+ *   · 档位映射只在协议与目录条目一致、且不是 Chat Completions 时照搬 ——
+ *     Chat Completions 的思考参数各家方言不同，映射搬过去反而可能发出对方不认的值，
+ *     不带映射时 pi 只发标准的 low / medium / high。
+ */
+export function describeDiscoveredModels(
+  found: DiscoveredModel[],
+  provider: { api: string; baseUrl: string },
+  catalog: PiModelCatalog
+): CustomProviderModel[] {
+  return found.map((item) => {
+    const model: CustomProviderModel = { id: item.id }
+    if (item.name) model.name = item.name
+    let api = provider.api
+    const endpoints = item.endpoints ?? []
+    const native = ENDPOINT_APIS.find(([, id]) => id === provider.api)?.[0]
+    if (endpoints.length && native && !endpoints.includes(native)) {
+      const alternative = ENDPOINT_APIS.find(([path]) => endpoints.includes(path))
+      if (alternative) {
+        api = alternative[1]
+        model.api = alternative[1]
+        model.baseUrl = baseUrlForApi(provider.baseUrl, provider.api, alternative[1])
+      }
+    }
+    const known = catalog[catalogKey(item.id)]
+    const reasoning = item.reasoning ?? known?.reasoning
+    if (reasoning) model.reasoning = true
+    if (item.image || known?.input?.includes('image')) model.input = ['text', 'image']
+    const contextWindow = item.contextWindow ?? known?.contextWindow
+    if (contextWindow) model.contextWindow = contextWindow
+    if (known?.maxTokens) model.maxTokens = contextWindow ? Math.min(known.maxTokens, contextWindow) : known.maxTokens
+    if (reasoning && known?.thinkingLevelMap && known.api === api && api !== 'openai-completions') {
+      model.thinkingLevelMap = { ...known.thinkingLevelMap }
+    }
+    return model
+  })
 }
 
 export interface CustomProviderDiscoverResult {
   ok: boolean
+  /** 模型 ID（兼容旧调用方） */
   models: string[]
+  /** 带能力信息的完整条目，表单直接用它填行 */
+  entries?: CustomProviderModel[]
   message: string
 }

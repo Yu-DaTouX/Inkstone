@@ -12,16 +12,19 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 import {
+  describeDiscoveredModels,
   mergeCustomProviders,
-  parseModelList,
+  parseModelEntries,
   validateBaseUrl,
   type CustomProviderDiscoverResult,
+  type DiscoveredModel,
   readCustomProviders,
   validateCustomProvider,
   type CustomProviderInput,
   type CustomProviderTestResult,
   type CustomProviderView
 } from '../shared/custom-provider'
+import { readPiModelCatalog } from './pi-model-catalog'
 
 export const MODELS_FILE = join(PI_AGENT_DIR, 'models.json')
 
@@ -71,7 +74,7 @@ export async function saveCustomProvider(input: CustomProviderInput): Promise<Cu
   const filled = (input.models ?? []).filter((model) => model?.id?.trim())
   if (!filled.length) {
     const found = await discoverCustomProviderModels(input)
-    if (found.ok) filled.push(...found.models.map((id) => ({ id })))
+    if (found.ok) filled.push(...(found.entries ?? found.models.map((id) => ({ id }))))
   }
   const checked = validateCustomProvider({ ...input, models: filled })
   if (!checked.ok || !checked.value) return { ok: false, errors: checked.errors }
@@ -287,16 +290,24 @@ export async function discoverCustomProviderModels(input: {
       return { ok: false, models: [], message: `这个端点没有提供模型列表（HTTP ${response.status}），请手动填写模型 ID` }
     }
     let body = (await response.json().catch(() => null)) as { nextPageToken?: unknown } | null
-    const models = parseModelList(body)
+    const found: DiscoveredModel[] = parseModelEntries(body)
     /* Google 的模型列表分页：最多再翻 10 页 */
     for (let page = 0; page < 10 && input.api === 'google-generative-ai' && typeof body?.nextPageToken === 'string' && body.nextPageToken; page++) {
       const next = await fetch(`${url}${url.includes('?') ? '&' : '?'}pageToken=${encodeURIComponent(body.nextPageToken)}`, { headers, signal: controller.signal })
       if (!next.ok) break
       body = (await next.json().catch(() => null)) as { nextPageToken?: unknown } | null
-      for (const id of parseModelList(body)) if (!models.includes(id)) models.push(id)
+      for (const model of parseModelEntries(body)) if (!found.some((m) => m.id === model.id)) found.push(model)
     }
-    if (!models.length) return { ok: false, models: [], message: '端点返回了空列表，请手动填写模型 ID' }
-    return { ok: true, models, message: `获取到 ${models.length} 个模型` }
+    if (!found.length) return { ok: false, models: [], message: '端点返回了空列表，请手动填写模型 ID' }
+    /* 能力（能否思考、单模型协议）由端点信息与 pi 自带目录补齐；用户仍可在表单里改 */
+    const entries = describeDiscoveredModels(found, { api: input.api ?? 'openai-completions', baseUrl }, await readPiModelCatalog())
+    const thinking = entries.filter((m) => m.reasoning).length
+    return {
+      ok: true,
+      models: entries.map((m) => m.id),
+      entries,
+      message: `获取到 ${entries.length} 个模型，其中 ${thinking} 个支持思考`
+    }
   } catch (error) {
     const aborted = (error as { name?: string }).name === 'AbortError'
     return {

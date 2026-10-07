@@ -46,7 +46,7 @@ npm run launch
 
 砚通过独立 RPC 子进程运行官方 pi；运行时由 `scripts/vendor-pi.mjs` 搬运官方 bundle、资产和最小依赖闭包。宿主策略及界面桥接放在 `resources/pi-extensions/`，不修改生成的 pi 引擎。上下文、压缩、恢复与技能发现由 pi 管理；身份、语言、活动工具限制和高危确认等砚薄层仍需随升级核对。
 
-先运行 `npm run upgrade:pi -- --check` 比较内置与本机源版本。准备目标版本的官方 npm 包后，可用 `YAN_PI_SRC` 指定其包目录，再执行 `npm run upgrade:pi`；升级不会自动安装或更新全局 pi。`--force` 只重新提取同版本，降级必须显式使用 `--allow-downgrade`，直接调用 vendor 脚本也遵守该限制。新运行时以独立 generation 保存，通过 `current.json` 切换；旧目录保留给活跃进程，已有窗口不会自动重启。
+先运行 `npm run upgrade:pi -- --check` 比较内置与本机源版本。准备目标版本的官方 npm 包后，可用 `YAN_PI_SRC` 指定其包目录，再执行 `npm run upgrade:pi`；升级不会自动安装或更新全局 pi。`--force` 只重新提取同版本，降级必须显式使用 `--allow-downgrade`，直接调用 vendor 脚本也遵守该限制。新运行时以独立 generation 保存，通过 `current.json` 切换；旧目录保留给活跃进程，已有窗口不会自动重启。升级结束会重新生成 `resources/pi-extensions/generated/pi-model-catalog.json`（从随包 pi 的模型目录摘出能否思考、协议、上下文与输出上限，自定义服务接入时按模型 ID 补齐能力），这份文件要随升级一起提交；单独重新生成用 `node scripts/gen-pi-model-catalog.mjs`，`--check` 只比对。
 
 Codemode 需要 `quickjs-wasi/quickjs.wasm` 和官方脚本 worker。版本与 RPC 握手通过后，仍需执行 `node scripts/test-pi-compatibility.mjs`、`npm run test:agent-native-context` 和 `node scripts/test-pi-native-tools.mjs --controller`。原生工具检查仅连接本机模型/MCP 夹具；可加 `--only`、`--no-mcp`、`--native-search`、`--guard`、`--profile-blocked` 或 `--image`（codemode `image()` 输出在实时事件、历史与宿主投影中的图片块）验证对应边界，`--compact` 验证原生压缩。构建、真实服务和发行包需要各自证据。
 

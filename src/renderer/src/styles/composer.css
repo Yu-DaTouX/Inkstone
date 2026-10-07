@@ -593,6 +593,9 @@
   font-size: var(--fs-xs);
   line-height: 1.4;
 }
+.mt-capability-action {
+  margin-top: var(--sp-1);
+}
 
 .mt-head-title {
   color: var(--fg-mute);
