@@ -45,6 +45,9 @@
   font-size: var(--fs-sm);
   outline: none;
 }
+.browser-address input:focus-visible {
+  border-color: var(--accent);
+}
 
 /* ── 基础段结束 ── */
 
@@ -324,7 +327,7 @@
 .browser-ext-port {
   max-width: 100%;
   overflow-wrap: anywhere;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--fg-mute);
 }
 
@@ -366,7 +369,7 @@
   margin: 0;
   padding-left: 1.1em;
   text-align: left;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1.5;
   color: var(--fg-mute);
 }

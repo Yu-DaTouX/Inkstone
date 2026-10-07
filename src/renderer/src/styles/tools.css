@@ -2556,7 +2556,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   gap: 2px;
   padding: var(--sp-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg, var(--r-lg));
+  border-radius: var(--r-lg);
   background: var(--bg-1);
   box-shadow: 0 14px 34px rgb(0 0 0 / 28%);
 }
@@ -2863,7 +2863,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .goal-step-done .goal-step-icon {
-  color: var(--ok, #70c49a);
+  color: var(--ok);
 }
 
 .goal-step-blocked .goal-step-icon,
@@ -3098,7 +3098,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .goal-completed {
-  border-color: color-mix(in srgb, var(--ok, #70c49a) 30%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--border-soft));
 }
 
 .goal-blocked {
@@ -3344,7 +3344,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 .goal-entry-count {
   flex: none;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   padding: 2px var(--sp-1);
   border-radius: var(--r-full);
   background: var(--bg-3);
@@ -3360,9 +3360,9 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   max-height: min(70vh, 620px);
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg, var(--r-lg));
+  border-radius: var(--r-lg);
   background: var(--bg-2);
-  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.32));
+  box-shadow: var(--shadow-pop);
 }
 
 .goal-popover .goal-panel {

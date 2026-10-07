@@ -59,17 +59,17 @@ const light: Palette = {
   borderSoft: 'rgba(0,0,0,0.07)',
   borderStr: 'rgba(0,0,0,0.2)',
   fg: '#252522',
-  fgDim: '#66665f',
-  fgMute: '#73736b',
-  accent: '#5264c8',
-  accentSoft: 'rgba(82,100,200,0.10)',
-  accentLine: 'rgba(82,100,200,0.42)',
+  fgDim: '#55554f',
+  fgMute: '#6a6a63',
+  accent: '#4b5dbf',
+  accentSoft: 'rgba(75,93,191,0.10)',
+  accentLine: 'rgba(75,93,191,0.42)',
   onAccent: '#ffffff',
-  ok: '#059669',
-  warn: '#b45309',
-  warnSoft: 'rgba(180,83,9,0.10)',
-  err: '#dc2626',
-  errSoft: 'rgba(220,38,38,0.10)'
+  ok: '#047857',
+  warn: '#9a4508',
+  warnSoft: 'rgba(154,69,8,0.10)',
+  err: '#c42020',
+  errSoft: 'rgba(196,32,32,0.10)'
 }
 
 export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 24, 6: 32 } as const

@@ -93,7 +93,7 @@ export function AuthTab() {
       setDraft('')
       await load(false)
     } else {
-      setMsg({ kind: 'err', text: r.error ?? '保存失败' })
+      setMsg({ kind: 'err', text: r.error ?? t('auth.saveFailed') })
     }
   }
 

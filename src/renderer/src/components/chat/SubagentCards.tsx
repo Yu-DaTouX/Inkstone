@@ -125,8 +125,8 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
         <span className="sg-state" data-testid={`subagent-note-state-${run.id}`}>
           {t(`sa.state.${outcome.key}` as MessageKey)}
         </span>
-        <Button size="sm" variant="ghost" onClick={openRun}>打开</Button>
-        <Button size="sm" variant="ghost" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>详情</Button>
+        <Button size="sm" variant="ghost" onClick={openRun}>{t('sa.open')}</Button>
+        <Button size="sm" variant="ghost" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>{t('sa.noteDetails')}</Button>
         {live ? <Button variant="danger" size="sm" onClick={() => void stopSubagent(run.id)} data-testid={`subagent-note-stop-${run.id}`}>{t('sa.stop')}</Button> : null}
       </div>
       <div className="sg-meta">

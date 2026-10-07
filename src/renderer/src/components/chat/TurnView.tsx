@@ -1,6 +1,6 @@
 import { memo, useEffect, useId, useState } from 'react'
 import { Icon } from '../../icons/Icon'
-import { useT } from '../../i18n'
+import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { forkFromText } from '../../lib/fork'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
@@ -384,7 +384,7 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
       /* 单击在软件内打开，双击在资源管理器定位；按钮与下载链接自己处理点击 */
       onClick={(e) => { if (!unavailable && !(e.target as HTMLElement).closest('a,button')) void previewFile(artifact.path) }}
       onDoubleClick={(e) => { if (!unavailable && !(e.target as HTMLElement).closest('a,button')) void window.yan.revealPath(artifact.path) }}
-      title={unavailable ? undefined : '单击在右侧打开，双击在资源管理器中显示'}
+      title={unavailable ? undefined : t('artifact.cardHint')}
     >
       <div className="artifact-head">
         <Icon name={artifact.kind === 'image' || artifact.kind === 'svg' ? 'sparkles' : 'file'} size={12} />
@@ -402,26 +402,25 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
               alt={artifact.filename}
               className="artifact-image"
               title={t('artifact.zoomHint')}
-              onClick={() => void previewFile(artifact.path)}
               onError={(event) => {
                 event.currentTarget.hidden = true
                 event.currentTarget.parentElement?.classList.add('failed')
               }}
             />
           ) : null}
-          {unavailable ? <span className="artifact-preview-error">{artifact.error || '原始文件不可用，无法预览。'}</span> : null}
+          {unavailable ? <span className="artifact-preview-error">{artifact.error || t('artifact.noPreview')}</span> : null}
         </div>
       ) : null}
       {isCode ? (
-        <pre className="artifact-code"><code>{unavailable ? (artifact.error || '原始文件不可用，无法预览。') : text ?? '正在读取文件…'}</code></pre>
+        <pre className="artifact-code"><code>{unavailable ? (artifact.error || t('artifact.noPreview')) : text ?? t('artifact.reading')}</code></pre>
       ) : null}
-      {!artifact.previewable ? <div className="artifact-binary">{unavailable ? (artifact.error || '原始文件不可用。') : '文件已生成，可下载或在资源管理器中查看。'}</div> : null}
+      {!artifact.previewable ? <div className="artifact-binary">{unavailable ? (artifact.error || t('artifact.unavailable')) : t('artifact.binary')}</div> : null}
       {!unavailable ? (
         <div className="artifact-actions">
-          <a className="artifact-download" href={fileUrl} download={artifact.filename}>下载文件</a>
-          <button type="button" onClick={() => void previewFile(artifact.path)} title="在右侧预览">右侧预览</button>
-          <button type="button" onClick={() => void window.yan.revealPath(artifact.path)} title="在资源管理器中显示">打开位置</button>
-          <button type="button" onClick={() => void navigator.clipboard.writeText(artifact.path)} title="复制受控文件路径">复制路径</button>
+          <a className="artifact-download" href={fileUrl} download={artifact.filename}>{t('artifact.download')}</a>
+          <button type="button" onClick={() => void previewFile(artifact.path)} title={t('artifact.previewHint')}>{t('artifact.preview')}</button>
+          <button type="button" onClick={() => void window.yan.revealPath(artifact.path)} title={t('artifact.revealHint')}>{t('artifact.reveal')}</button>
+          <button type="button" onClick={() => void navigator.clipboard.writeText(artifact.path)} title={t('artifact.copyPathHint')}>{t('artifact.copyPath')}</button>
         </div>
       ) : null}
     </section>
@@ -429,6 +428,7 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
 }
 
 function ImageProgressList({ items }: { items: AssistantTurn['imageProgress'] }) {
+  const t = useT()
   const [now, setNow] = useState(() => Date.now())
   const active = items.some((item) => item.stage !== 'done' && item.stage !== 'error')
 
@@ -447,8 +447,8 @@ function ImageProgressList({ items }: { items: AssistantTurn['imageProgress'] })
           <div className={`image-progress ${running ? 'running' : ''} ${item.stage === 'error' ? 'failed' : ''}`} key={item.id} data-stage={item.stage}>
             <div className="image-progress-head">
               <Icon name={item.stage === 'error' ? 'alert-circle' : 'sparkles'} size={12} />
-              <strong>生成图片</strong>
-              <span className="image-progress-stage">{imageStageLabel(item.stage)}</span>
+              <strong>{t('artifact.imageGen')}</strong>
+              <span className="image-progress-stage">{t(IMAGE_STAGE[item.stage])}</span>
               <span className="spacer" />
               <span className="image-progress-time">{formatDuration(elapsed)}</span>
             </div>
@@ -461,17 +461,15 @@ function ImageProgressList({ items }: { items: AssistantTurn['imageProgress'] })
   )
 }
 
-function imageStageLabel(stage: AssistantTurn['imageProgress'][number]['stage']): string {
-  switch (stage) {
-    case 'queued': return '已排队'
-    case 'preparing': return '准备请求'
-    case 'confirming': return '等待确认'
-    case 'requesting': return '请求模型'
-    case 'generating': return '生成中'
-    case 'saving': return '保存文件'
-    case 'done': return '已完成'
-    case 'error': return '失败'
-  }
+const IMAGE_STAGE: Record<AssistantTurn['imageProgress'][number]['stage'], MessageKey> = {
+  queued: 'artifact.stage.queued',
+  preparing: 'artifact.stage.preparing',
+  confirming: 'artifact.stage.confirming',
+  requesting: 'artifact.stage.requesting',
+  generating: 'artifact.stage.generating',
+  saving: 'artifact.stage.saving',
+  done: 'artifact.stage.done',
+  error: 'artifact.stage.error'
 }
 
 function fmtArtifactBytes(n: number): string {

@@ -119,8 +119,8 @@ export function TitleBar({
         {/* 工作区工具：打开文件、终端、审查等磁贴，菜单里另有排列与已隐藏面板 */}
         <button
           className="tb-icon"
-          title="打开工作区工具"
-          aria-label="打开工作区工具"
+          title={t('tb.openTools')}
+          aria-label={t('tb.openTools')}
           aria-haspopup="menu"
           onClick={(e) => window.dispatchEvent(new CustomEvent('inkstone-workspace-open-tool', { detail: menuAnchor(e.currentTarget) }))}
           data-testid="right-tool-menu"

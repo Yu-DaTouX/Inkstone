@@ -4763,7 +4763,7 @@ const MUST_HAVE = {
   /* 实施-09 S2：后台会话在等输入的 `?` 槽、以及与失败槽（第四批） */
   railwaiting: ['[data-testid="rail-session"]', '[data-testid="rail-waiting"]', '[data-testid="rail-failed"]'],
   pendingcards: ['[data-testid="queue-pending"]', '[data-testid="pending-steer"]', '[data-testid="pending-follow"]'],
-  envmenu: ['[data-testid="env-menu"]', '[data-testid="env-changes"]', '[data-testid="env-pr"]', '[data-testid="env-compare"]'],
+  envmenu: ['[data-testid="env-menu"]', '[data-testid="env-changes"]', '[data-testid="env-pr"]', '[data-testid="env-compare-web"]'],
   envbranches: [
     '[data-testid="env-menu"]',
     '[data-testid="env-branches"]',
@@ -5257,6 +5257,14 @@ if (ONLY.includes('showcase')) {
   STATES.showcase = readFileSync(join(root, 'scripts/probe/readme-showcase.js'), 'utf8')
   MUST_HAVE.showcase = ['[data-testid="tile-workspace"]', '[data-workspace-pane="chat"] .composer-wrap', '.tile-heading']
   for (const group of GROUPS) group.states.push('showcase')
+}
+/* 会话切换器（Ctrl+K）截图：`YAN_MATRIX_ONLY=switcher`，在 README 展示场景上打开 */
+if (ONLY.includes('switcher')) {
+  /* 场景脚本以 `;(async () => …)()` 开头，嵌进表达式前去掉前导注释与分号 */
+  const scene = readFileSync(join(root, 'scripts/probe/readme-showcase.js'), 'utf8').replace(/^[\s\S]*?;\(/, '(')
+  STATES.switcher = `(async () => { await (${scene}); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true })); await new Promise((r) => setTimeout(r, 700)); return 'ok' })()`
+  MUST_HAVE.switcher = ['[data-testid="tile-workspace"]']
+  for (const group of GROUPS) group.states.push('switcher')
 }
 if (ONLY.includes('codemode')) for (const group of GROUPS) group.states.push('codemode')
 if (ONLY.includes('codemodepreference')) {

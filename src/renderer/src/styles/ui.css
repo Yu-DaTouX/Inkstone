@@ -391,9 +391,10 @@
 .ui-input:hover {
   border-color: var(--border-str);
 }
+/* 聚焦用实色强调描边：半透明 --accent-line 在浅色底上不到 3:1，键盘用户找不到光标在哪 */
 .ui-input:focus-visible {
   outline: none;
-  border-color: var(--accent-line);
+  border-color: var(--accent);
 }
 .ui-input:disabled {
   opacity: var(--ctl-disabled-opacity);
@@ -652,6 +653,10 @@ select.ui-input {
   background: var(--bg-3);
   color: var(--fg);
 }
+/* 悬停、选中与键盘焦点同底；键盘焦点另加内描边，否则在 bg-2 浮层里分不出落点 */
+.ui-menu-item:focus-visible {
+  box-shadow: inset 0 0 0 var(--focus-ring-w) var(--focus-ring-color);
+}
 .ui-menu-item.danger,
 .ui-menu-item.danger .ico {
   color: var(--err);
@@ -792,32 +797,33 @@ select.ui-input {
 .ui-mini-ring.err .ui-mini-ring-value { stroke: var(--err); }
 .ui-mini-ring.unknown .ui-mini-ring-value { stroke: transparent; }
 
-/* ── 分档滑块 <StepSlider>：冷暖点阵与移动亮波，圆角块手柄；拖动时上方浮出档名 ── */
+/*
+ * ── 分档滑块 <StepSlider>：脉冲点阵 + 终端块光标 ──
+ * 点阵由画布绘制（components/ui/pulse-field.ts）：五行方点，已点亮部分沿轨道取档位连续色，亮脉冲沿点行跑过，
+ * 档位越高越密越快。手柄是当前档位色的块光标，位置跟随画布的弹簧前沿（--step-x），静止时按终端节拍闪四次后常亮（闪烁不超过 5 秒，WCAG 2.2.2）。
+ */
 .ui-step-slider { --step-color: var(--accent); --step-pct: 0%; position: relative; padding: var(--sp-3) 9px 0; user-select: none; }
 .ui-step-slider.disabled { opacity: var(--ctl-disabled-opacity); }
-.ui-step-track { position: relative; height: 20px; cursor: pointer; touch-action: none; }
+.ui-step-track { position: relative; height: 30px; cursor: pointer; touch-action: none; }
 .ui-step-slider.disabled .ui-step-track { cursor: default; }
-.ui-step-dots { position: absolute; top: 50%; width: 100%; height: 24px; margin-top: -12px; overflow: hidden; pointer-events: none; mask-image: radial-gradient(circle, black 1.2px, transparent 1.5px); mask-size: 6px 6px; }
-.ui-step-seg { --seg-from: var(--accent); --seg-color: var(--accent); position: absolute; top: 0; height: 100%; color: var(--bg-4); background: currentColor; transition: color var(--dur-320) var(--ease); }
-.ui-step-seg::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, var(--seg-from), var(--seg-color)); opacity: 0; transition: opacity var(--dur-320) var(--ease) calc(var(--seg-i, 0) * var(--dur-120) / 4); }
-.ui-step-seg.on::before { opacity: 1; }
-.ui-step-track:hover .ui-step-seg:not(.on) { color: var(--bg-3); }
-.ui-step-wave { position: absolute; inset: 0 auto 0 0; width: var(--step-pct); background-image: linear-gradient(90deg, transparent, var(--fg), transparent); background-size: 48px 100%; background-repeat: no-repeat; opacity: 0.7; animation: ui-step-wave var(--dur-1600) linear infinite; }
-.ui-step-dots[data-lit="0"] .ui-step-wave, .ui-step-slider.disabled .ui-step-wave { display: none; }
-.ui-step-thumb { position: absolute; top: 50%; left: var(--step-pct); width: 16px; height: 26px; margin: -13px 0 0 -8px; border-radius: var(--r-sm); background: var(--fg); border: 1px solid var(--step-color); box-shadow: 0 0 8px color-mix(in srgb, var(--step-color) 32%, transparent); transition: left var(--dur-320) var(--mo-ease), border-color var(--dur-200) var(--ease), box-shadow var(--dur-200) var(--ease), transform var(--dur-200) var(--mo-ease); outline: none; }
-.ui-step-track:hover .ui-step-thumb, .ui-step-thumb:focus-visible { transform: scale(1.08); box-shadow: 0 0 0 3px color-mix(in srgb, var(--step-color) 22%, transparent); }
-.ui-step-slider.dragging .ui-step-thumb { transform: scale(1.15); transition-duration: var(--dur-120); }
+.ui-step-field { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* 解析档位色用的探针：不占位、不可见 */
+.ui-step-probe { position: absolute; width: 0; height: 0; overflow: hidden; visibility: hidden; }
+.ui-step-thumb { position: absolute; top: 50%; left: var(--step-x, var(--step-pct)); z-index: 1; width: 10px; height: 26px; margin: -13px 0 0 -5px; border-radius: var(--r-xs); background: var(--step-color); box-shadow: 0 0 12px color-mix(in srgb, var(--step-color) 55%, transparent); outline: none; animation: ui-step-caret var(--dur-1060) step-end 4; transition: background var(--dur-200) var(--ease), box-shadow var(--dur-200) var(--ease), transform var(--dur-200) var(--mo-spring); }
+.ui-step-track:hover .ui-step-thumb { transform: scale(1.12, 1.04); animation-play-state: paused; }
+.ui-step-thumb:focus-visible { animation: none; box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 4px color-mix(in srgb, var(--step-color) 60%, transparent), 0 0 14px color-mix(in srgb, var(--step-color) 50%, transparent); }
+.ui-step-slider.dragging .ui-step-thumb { animation: none; transform: scale(1.2, 1.06); }
+.ui-step-slider.disabled .ui-step-thumb { animation: none; box-shadow: none; }
 .ui-step-bubble { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); padding: 2px 7px; border-radius: var(--r-sm); background: var(--step-color); color: var(--bg-0); font-size: var(--fs-xs); font-weight: var(--fw-medium); white-space: nowrap; pointer-events: none; animation: ui-step-bubble-in var(--dur-200) var(--mo-ease); }
-.ui-step-labels { position: relative; height: 22px; margin-top: 4px; }
+.ui-step-labels { position: relative; height: 22px; margin-top: 2px; }
 .ui-step-label { position: absolute; top: 0; transform: translateX(-50%); padding: 2px 4px; border: none; background: transparent; color: var(--fg-mute); font: inherit; font-size: var(--fs-xs); white-space: nowrap; cursor: pointer; border-radius: var(--r-xs); transition: color var(--dur-200) var(--ease), background var(--dur-200) var(--ease); }
 .ui-step-label.first { transform: translateX(-9px); }
 .ui-step-label.last { transform: translateX(calc(-100% + 9px)); }
 .ui-step-label:hover:not(:disabled) { color: var(--fg); background: var(--bg-3); }
 .ui-step-label.on { color: var(--step-color); font-weight: var(--fw-medium); background: color-mix(in srgb, var(--step-color) 14%, transparent); }
 @media (prefers-reduced-motion: reduce) {
-  .ui-step-seg, .ui-step-seg::before, .ui-step-thumb, .ui-step-thumb::after, .ui-step-label, .ui-mini-ring-value { transition: none; }
-  .ui-step-bubble { animation: none; }
-  .ui-step-wave { display: none; animation: none; }
+  .ui-step-thumb, .ui-step-label, .ui-mini-ring-value { transition: none; }
+  .ui-step-thumb, .ui-step-bubble { animation: none; }
 }
 /* Title inside compact detail popovers, and small tabular numbers beside meters. */
 .ui-popover-title { color: var(--fg); font-weight: var(--fw-medium); font-size: var(--fs-sm); }

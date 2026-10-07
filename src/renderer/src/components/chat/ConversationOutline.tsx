@@ -462,7 +462,7 @@ function OutlinePreview({
 
       {/* 标题：用户那一问的短摘要 */}
       <div className="op-title" data-testid="outline-preview-title" title={clean(turn.user, 400)}>
-        {makeTitle(turn.user)}
+        {makeTitle(turn.user) || t('outline.untitled')}
       </div>
 
       {/* 正文：AI 回答的三行预览 */}
@@ -507,7 +507,7 @@ function makeTitle(s: string): string {
   // 去掉结尾的标点与连接词
   t = t.replace(/[，,、；;：:。.]+$/, '').trim()
 
-  return t.length > 22 ? `${t.slice(0, 22)}…` : t || '（无标题）'
+  return t.length > 22 ? `${t.slice(0, 22)}…` : t
 }
 
 /** 预览里不需要 markdown 语法噪音，压成纯文本并截断 */

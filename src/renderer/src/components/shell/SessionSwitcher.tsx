@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionSearchHit, SessionSummary } from '../../../../shared/ipc'
-import { useT } from '../../i18n'
+import { useT, type TFunc } from '../../i18n'
 import { Icon } from '../../icons/Icon'
 import { useStore } from '../../state/store'
 import { shortProject } from '../rail/rail-utils'
@@ -23,13 +23,13 @@ interface Row {
 const RECENT_LIMIT = 12
 const RESULT_LIMIT = 30
 
-function ago(at: number | undefined): string {
+function ago(t: TFunc, at: number | undefined): string {
   if (!at || !Number.isFinite(at)) return ''
   const s = Math.max(0, (Date.now() - at) / 1000)
-  if (s < 60) return '刚刚'
-  if (s < 3600) return `${Math.floor(s / 60)} 分钟前`
-  if (s < 86400) return `${Math.floor(s / 3600)} 小时前`
-  if (s < 86400 * 30) return `${Math.floor(s / 86400)} 天前`
+  if (s < 60) return t('time.justNow')
+  if (s < 3600) return t('time.minutesAgo', { n: Math.floor(s / 60) })
+  if (s < 86400) return t('time.hoursAgo', { n: Math.floor(s / 3600) })
+  if (s < 86400 * 30) return t('time.daysAgo', { n: Math.floor(s / 86400) })
   const d = new Date(at)
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
 }
@@ -182,7 +182,7 @@ export function SessionSwitcher({ onClose }: { onClose: () => void }) {
               data-testid="switcher-row"
             >
               <span className="switcher-title">{row.title}</span>
-              <span className="switcher-meta">{row.project} · {ago(row.session.lastActivityAt ?? row.session.updatedAt)}</span>
+              <span className="switcher-meta">{row.project} · {ago(t, row.session.lastActivityAt ?? row.session.updatedAt)}</span>
               {row.snippet ? <span className="switcher-snippet">{row.snippet}</span> : null}
             </button>
           ))}

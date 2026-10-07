@@ -138,7 +138,7 @@ export function RemoteTab() {
           <div className="remote-pairing">
             <div className="remote-pairing-layout">
               {pairingLink ? (
-                <div className="remote-pairing-qr" aria-label="手机配对二维码" data-testid="remote-pairing-qr">
+                <div className="remote-pairing-qr" aria-label={t('remote.qrLabel')} data-testid="remote-pairing-qr">
                   <QRCodeSVG value={pairingLink} size={180} level="M" marginSize={2} />
                 </div>
               ) : null}

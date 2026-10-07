@@ -175,12 +175,12 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
           <Segmented
             size="sm"
             className="fp-mode"
-            label="文件阅读模式"
+            label={t('fp.mode')}
             value={mode}
             onChange={setMode}
             options={[
-              { value: 'read', label: '阅读', testId: 'file-preview-read' },
-              { value: 'source', label: '源码', testId: 'file-preview-source' }
+              { value: 'read', label: t('fp.modeRead'), testId: 'file-preview-read' },
+              { value: 'source', label: t('fp.modeSource'), testId: 'file-preview-source' }
             ]}
           />
         ) : null}
@@ -195,7 +195,7 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
           <IconButton
             size="sm"
             icon="maximize"
-            label={focus ? '恢复文件树' : '预览占满右栏'}
+            label={focus ? t('fp.unfocus') : t('fp.focus')}
             onClick={onToggleFocus}
             data-testid="file-preview-focus"
           />
@@ -245,7 +245,7 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
           <div className="fp-note err" role="alert">
             {data.error ?? t('fp.failed')}
             <div className="fp-path-line">{preview.path}</div>
-            <button type="button" className="fp-retry" onClick={() => void previewFile(preview.path, preview.line, preview.cwd, preview.lineEnd)} data-testid="file-preview-retry">重试</button>
+            <button type="button" className="fp-retry" onClick={() => void previewFile(preview.path, preview.line, preview.cwd, preview.lineEnd)} data-testid="file-preview-retry">{t('fp.retry')}</button>
             {/* 文件不在了就给一条去其父目录的出口（H-4）；越界类错误不带 dir */}
             {data.dir ? (
               <button

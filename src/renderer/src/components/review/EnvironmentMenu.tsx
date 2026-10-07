@@ -412,40 +412,20 @@ export function EnvironmentMenu() {
 
       {open ? (
         <div className="env-menu" role="menu" data-testid="env-menu" aria-label={t('env.title')}>
-          <div className="env-head">{t('env.title')}</div>
-
-          {repo ? (
-            <>
-              <div className="env-item env-static" data-testid="env-changes">
-                <Icon name="history" size={14} />
-                <span className="env-label">{t('env.changes')}</span>
-                <span className="env-count" data-testid="env-changes-count">
-                  {changed === 0 ? (
-                    <span className="env-none">{t('env.noChanges')}</span>
-                  ) : (
-                    <>
-                      <span className="env-num">{changed}</span>
-                      {repo.untrackedCount > 0 ? (
-                        <span className="env-num env-untracked" title={t('env.untracked')}>
-                          +{repo.untrackedCount}
-                        </span>
-                      ) : null}
-                    </>
-                  )}
-                </span>
-              </div>
-
-              {/*
-               * 「本地」不是导航项，而是**当前执行环境**：显示工作目录，
-               * 并给出方案 §6.1 要求的两个动作（打开文件夹 / 复制路径）。
-               * 之前它点下去是打开审查 —— 名字与实际动作对不上。
-               */}
-              <div className="env-item env-static" data-testid="env-local" title={project ?? ''}>
-                <Icon name="folder" size={14} />
-                <span className="env-label">{t('env.local')}</span>
-                <span className="env-sub" title={project ?? ''}>
-                  {project ? shortProject(project) : ''}
-                </span>
+          {/*
+           * 顶部是当前执行环境本身：项目名 + 完整路径，两个动作（打开文件夹 / 复制路径）
+           * 跟着它走。原来的「环境信息」标题与「本地」行合成这一块，Git 是否可用都显示。
+           */}
+          <div className="env-project" data-testid="env-local" title={project ?? ''}>
+            <span className="env-project-ico" aria-hidden="true">
+              <Icon name="folder" size={16} />
+            </span>
+            <span className="env-project-meta">
+              <span className="env-project-name">{project ? shortProject(project) : t('header.noProject')}</span>
+              {project ? <span className="env-project-path">{project}</span> : null}
+            </span>
+            {project ? (
+              <span className="env-project-actions">
                 <button
                   type="button"
                   ref={firstRef}
@@ -454,7 +434,7 @@ export function EnvironmentMenu() {
                   title={t('env.openFolder')}
                   onClick={() => {
                     setOpen(false)
-                    if (project) void window.yan.openPath(project)
+                    void window.yan.openPath(project)
                   }}
                 >
                   {t('env.open')}
@@ -466,11 +446,41 @@ export function EnvironmentMenu() {
                   title={t('env.copyPath')}
                   onClick={() => {
                     setOpen(false)
-                    if (project) void navigator.clipboard?.writeText(project)
+                    void navigator.clipboard?.writeText(project)
                   }}
                 >
                   {t('env.copy')}
                 </button>
+              </span>
+            ) : null}
+          </div>
+
+          {repo ? (
+            <>
+              <div className="env-group">
+              <div className="env-item env-static" data-testid="env-changes">
+                <Icon name="history" size={14} />
+                <span className="env-label">{t('env.changes')}</span>
+                <span className="env-count" data-testid="env-changes-count">
+                  {changed === 0 ? (
+                    <span className="env-none">{t('env.noChanges')}</span>
+                  ) : (
+                    <>
+                      {/* 一眼看出改动量：已跟踪改动是警示色方点，未跟踪是暗点，最多十格 */}
+                      <span className="env-dots" aria-hidden="true">
+                        {Array.from({ length: 10 }, (_, i) => (
+                          <i key={i} className={i < changed ? 'on' : i < changed + repo.untrackedCount ? 'new' : ''} />
+                        ))}
+                      </span>
+                      <span className="env-num">{changed}</span>
+                      {repo.untrackedCount > 0 ? (
+                        <span className="env-num env-untracked" title={t('env.untracked')}>
+                          +{repo.untrackedCount}
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </span>
               </div>
 
               {/*
@@ -487,7 +497,7 @@ export function EnvironmentMenu() {
                 onClick={() => setShowBranches((v) => !v)}
               >
                 <Icon name="branch" size={14} />
-                <span className="env-label">{branchLabel}</span>
+                <span className="env-label env-mono">{branchLabel}</span>
                 {repo.ahead > 0 || repo.behind > 0 ? (
                   <span className="env-sub env-ab">
                     {repo.ahead > 0 ? `↑${repo.ahead}` : ''}
@@ -561,8 +571,10 @@ export function EnvironmentMenu() {
                   ) : null}
                 </div>
               ) : null}
+              </div>
 
-              {/* 拉取 / 推送：写操作，会改 .git（对象库 / 远程跟踪引用） */}
+              {/* 拉取 / 推送：写操作，会改 .git（对象库 / 远程跟踪引用）；并排一行，像一对同步按钮 */}
+              <div className="env-group env-sync">
               <button
                 type="button"
                 role="menuitem"
@@ -586,7 +598,7 @@ export function EnvironmentMenu() {
                 className="env-item"
                 data-testid="env-push"
                 disabled={!!write.busy || !repoView.expected}
-                title={repo.upstream ? repo.upstream : t('commit.noUpstream')}
+                title={[repo.upstream || t('commit.noUpstream'), repo.unpushedCount ? t('env.pushN', { n: repo.unpushedCount }) : ''].filter(Boolean).join(' · ')}
                 onClick={() => {
                   if (!repoView.expected) return
                   void write.run(
@@ -606,11 +618,13 @@ export function EnvironmentMenu() {
                   {repo.unpushedCount === null
                     ? t('commit.setUpstream')
                     : repo.unpushedCount > 0
-                      ? t('env.pushN', { n: repo.unpushedCount })
+                      ? `↑${repo.unpushedCount}`
                       : ''}
                 </span>
               </button>
+              </div>
 
+              <div className="env-group">
               {/*
                 * 工作树（方案 §6.2）：与子代理的一次性隔离工作树是两回事 ——
                 * 这里建的会被用户长期使用，所以「移除」先检查再动手，
@@ -1056,6 +1070,7 @@ export function EnvironmentMenu() {
                   <span className="env-sub">{new URL(webRepo).host}</span>
                 </button>
               ) : null}
+              </div>
 
               {/*
                 关联外部任务链接（方案 §6.4）。文案里的边界是硬要求：

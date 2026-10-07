@@ -353,9 +353,24 @@
   transform: rotate(90deg);
 }
 
+/* 当前值：前面一枚与滑块手柄同语言的小块光标，颜色跟着档位走 */
 .mt-head-level {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--accent);
   font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  transition: color var(--dur-200) var(--ease);
+}
+
+.mt-head-level::before {
+  content: '';
+  width: 5px;
+  height: 13px;
+  border-radius: 1px;
+  background: currentColor;
+  box-shadow: 0 0 8px color-mix(in srgb, currentColor 45%, transparent);
 }
 
 /* 档位落点：小方块，点了直接跳 */
@@ -378,9 +393,22 @@
   flex: none;
 }
 
+.mt-search {
+  transition: color var(--dur-200) var(--ease), box-shadow var(--dur-200) var(--ease);
+}
+
+/* 整行就是输入框：聚焦时只亮放大镜与底线，不在行里再套一个框 */
+.mt-search:focus-within {
+  color: var(--accent);
+  box-shadow: inset 0 -1px 0 var(--accent-line);
+}
+
 .mt-search input {
   flex: 1;
   min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
   font-size: var(--fs-sm);
   color: var(--fg);
 }
@@ -441,10 +469,10 @@
 /* 键盘高亮（N08）：与 sel（当前生效的模型）分开 —— 高亮是「按 Enter
    会选它」，sel 是「现在就是它」，两者可以同时落在同一行。 */
 .mt-item.cur {
-  background: var(--bg-2);
+  background: var(--bg-3);
   color: var(--fg);
-  box-shadow: inset 0 0 0 1px var(--accent-line);
 }
+
 
 .mt-item.sel .ico {
   color: var(--accent);
@@ -1309,34 +1337,6 @@
   color: var(--accent);
 }
 
-.qpanel-head .spacer {
-  flex: 1;
-}
-
-/*
- * 多问题分页（‹ 1 / 3 ›）。
- * 只翻显示：每条请求都还在等回答，各自的倒计时照常走。
- */
-.qpanel-page {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-
-/* 同一个图标转过来当成「上一条」，不额外加一个 sprite 图标 */
-.qpanel-prev .ico {
-  transform: rotate(180deg);
-}
-
-.qpanel-page-n {
-  padding: 0 2px;
-  font-variant-numeric: tabular-nums;
-}
-
-/*
 /* 提问面板的身份：强调色左边线 + 淡强调底的头部 + 「提问」徽标，与普通工具条、批准卡片区分开 */
 .qpanel {
   border-left: 3px solid var(--accent);
@@ -1365,6 +1365,34 @@
   white-space: nowrap;
 }
 
+.qpanel-head .spacer {
+  flex: 1;
+}
+
+/*
+ * 多问题分页（‹ 1 / 3 ›）。
+ * 只翻显示：每条请求都还在等回答，各自的倒计时照常走。
+ */
+.qpanel-page {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* 同一个图标转过来当成「上一条」，不额外加一个 sprite 图标 */
+.qpanel-prev .ico {
+  transform: rotate(180deg);
+}
+
+.qpanel-page-n {
+  padding: 0 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
  * 倒计时：点一下加 2 分钟。
  * 数字是**像素点阵**（见 PixelDigits.tsx）：每个点是一个小方块，
  * 颜色跟着 `currentColor` 走 —— 所以低余量转警色、深浅主题都自动生效。
@@ -1483,8 +1511,10 @@
 }
 
 .qpanel-msg {
-  color: var(--fg-dim);
+  /* 问题本身是这张面板的主角：正文色、略加粗，选项与输入退到它下面 */
+  color: var(--fg);
   font-family: var(--font-body);
+  font-weight: var(--fw-strong);
   font-size: var(--fs-base);
   line-height: var(--lh-base);
   white-space: pre-wrap;
@@ -1511,10 +1541,8 @@
   padding: 6px var(--sp-3);
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
-  /* 问题本身是这张面板的主角：正文色、略加粗，选项与输入退到它下面 */
-  color: var(--fg);
+  color: var(--fg-dim);
   font-size: var(--fs-sm);
-  font-weight: var(--fw-strong);
 }
 
 /* 序号：圆牌里的 1/2/3 —— 键盘 Tab 到哪一项也能从数字对上 */
@@ -1663,7 +1691,7 @@
   border-radius: var(--r-full);
   background: var(--accent);
   color: var(--bg-0);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 15px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -1733,7 +1761,7 @@
   flex: 1;
   min-width: 0;
   color: var(--fg-mute);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1.35;
 }
 
@@ -1970,7 +1998,7 @@
 }
 
 .sa-filter-n {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1;
   padding: 2px var(--sp-1);
   border-radius: var(--r-full);
@@ -1986,7 +2014,7 @@
 
 .sa-badge {
   flex: none;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1;
   padding: 3px 6px;
   border-radius: var(--r-full);

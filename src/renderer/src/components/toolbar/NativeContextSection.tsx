@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useT } from '../../i18n'
+import { useT, type MessageKey } from '../../i18n'
 import { contextBreakdown, type ContextCategory } from '../../state/context-breakdown'
 import { useStore } from '../../state/store'
 import { Section } from './ToolSection'
@@ -23,8 +23,8 @@ function useContextUsage() {
   return { session, usage, matches, windowSize, known, tokens, percent, tone }
 }
 
-const CATEGORY_LABEL: Record<ContextCategory | 'free', string> = {
-  system: '系统提示与工具', user: '用户消息', assistant: '回复', thinking: '思考', tools: '工具调用与结果', free: '剩余空间'
+const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
+  system: 'ctx.cat.system', user: 'ctx.cat.user', assistant: 'ctx.cat.assistant', thinking: 'ctx.cat.thinking', tools: 'ctx.cat.tools', free: 'ctx.cat.free'
 }
 
 /** 383.8k / 1M style figures for the window header and legend. */
@@ -34,13 +34,14 @@ function shortTokens(n: number): string {
   return String(n)
 }
 
-const SECTION_LABEL: Record<string, string> = {
-  preamble: '开场白', tools: '工具说明', rules: '行为准则', docs: '文档指引', skills: '技能清单',
-  'project-context': '项目说明文件', cwd: '工作目录', appended: '追加提示', additions: '扩展追加', between: '其他'
+const SECTION_LABEL: Record<string, MessageKey> = {
+  preamble: 'ctx.sec.preamble', tools: 'ctx.sec.tools', rules: 'ctx.sec.rules', docs: 'ctx.sec.docs', skills: 'ctx.sec.skills',
+  'project-context': 'ctx.sec.projectContext', cwd: 'ctx.sec.cwd', appended: 'ctx.sec.appended', additions: 'ctx.sec.additions', between: 'ctx.sec.between'
 }
 
 /** Fixed parts pi already assembled: system prompt sections and tool definitions (estimated, read-only). */
 function ContextInspect({ tokens }: { tokens: number }) {
+  const t = useT()
   const [snap, setSnap] = useState<ContextInspectSnapshot | null>(null)
   useEffect(() => {
     let alive = true
@@ -51,18 +52,18 @@ function ContextInspect({ tokens }: { tokens: number }) {
   const active = snap.tools.filter(x => x.active).sort((a, b) => b.tokens - a.tokens)
   const shown = active.slice(0, 8)
   return <details className="ctx-inspect" data-testid="ctx-inspect">
-    <summary title={`估算：系统提示 ${shortTokens(snap.promptTokens)} · 工具定义 ${shortTokens(snap.toolTokens)}`}>固定部分<span className="ui-meta-num">{shortTokens(snap.promptTokens + snap.toolTokens)}</span></summary>
+    <summary title={t('ctx.fixedHint', { prompt: shortTokens(snap.promptTokens), tools: shortTokens(snap.toolTokens) })}>{t('ctx.fixed')}<span className="ui-meta-num">{shortTokens(snap.promptTokens + snap.toolTokens)}</span></summary>
     <ul className="ctx-inspect-list">
       {snap.sections.map(s => <li key={s.id + s.label}>
         <details>
-          <summary><span className="ui-usage-name">{SECTION_LABEL[s.id] ?? s.label}</span><span className="ui-meta-num">{shortTokens(s.tokens)}</span></summary>
+          <summary><span className="ui-usage-name">{SECTION_LABEL[s.id] ? t(SECTION_LABEL[s.id]) : s.label}</span><span className="ui-meta-num">{shortTokens(s.tokens)}</span></summary>
           <pre className="ctx-inspect-text">{s.text}{s.text.length < s.chars ? '\n…' : ''}</pre>
         </details>
       </li>)}
     </ul>
     {active.length ? <ul className="ctx-inspect-list" data-testid="ctx-inspect-tools">
       {shown.map(x => <li key={x.name} title={x.description}><span className="ui-usage-name">{x.name}</span><span className="ui-meta-num">{shortTokens(x.tokens)}</span></li>)}
-      {active.length > shown.length ? <li className="rp-dim">{`另有 ${active.length - shown.length} 个工具`}</li> : null}
+      {active.length > shown.length ? <li className="rp-dim">{t('ctx.moreTools', { n: active.length - shown.length })}</li> : null}
     </ul> : null}
   </details>
 }
@@ -80,19 +81,19 @@ function ContextDetails() {
   const rows = known ? [...slices.filter(s => s.tokens > 0), { id: 'free' as const, tokens: Math.max(0, windowSize - tokens) }] : []
   const share = (n: number) => windowSize > 0 ? n / windowSize * 100 : 0
   return <>
-    <div className="ctx-window-head" data-testid="ctx-main" data-mode="window" title="分类按当前消息文本估算，总量来自 Agent">
-      <span className="ui-popover-title">上下文窗口</span>
+    <div className="ctx-window-head" data-testid="ctx-main" data-mode="window" title={t('ctx.estimateHint')}>
+      <span className="ui-popover-title">{t('ctx.window')}</span>
       <span className={`ctx-window-total ui-meta-num ${known && tone !== 'ok' ? tone : ''}`} data-testid="ctx-tokens">
         {known ? `${shortTokens(tokens)} / ${shortTokens(windowSize)} (${Math.round(percent!)}%)` : '—'}
       </span>
     </div>
-    <div className="ui-usage-bar" role="img" aria-label={known ? `已用 ${Math.round(percent!)}%` : '用量未知'}>
+    <div className="ui-usage-bar" role="img" aria-label={known ? t('quota.usedInline', { pct: Math.round(percent!) }) : t('ctx.usageUnknown')}>
       {slices.map(s => s.tokens > 0 ? <i key={s.id} className={`ui-usage-seg c-${s.id}`} style={{ width: `${share(s.tokens)}%` }} /> : null)}
     </div>
     {rows.length ? <ul className="ui-usage-legend" data-testid="ctx-breakdown">
       {rows.map(r => <li key={r.id} className={r.id === 'free' ? 'free' : undefined}>
         <i className={`ui-usage-swatch c-${r.id}`} aria-hidden />
-        <span className="ui-usage-name">{CATEGORY_LABEL[r.id]}</span>
+        <span className="ui-usage-name">{t(CATEGORY_LABEL[r.id])}</span>
         <span className="ui-usage-num ui-meta-num">{shortTokens(r.tokens)}</span>
         <span className="ui-usage-num ui-meta-num">{`${share(r.tokens).toFixed(1)}%`}</span>
       </li>)}

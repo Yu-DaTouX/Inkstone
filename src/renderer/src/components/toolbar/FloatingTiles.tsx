@@ -392,7 +392,7 @@ export function FloatingTiles() {
                     {name}
                   </span>
                   <span className="spacer" />
-                  <IconButton icon="maximize" label="放大或还原磁贴" size="sm" type="button" data-testid={`float-maximize-${tile.id}`} onClick={() => {
+                  <IconButton icon="maximize" label={t('tile.toggleMax')} size="sm" type="button" data-testid={`float-maximize-${tile.id}`} onClick={() => {
                       if (!area) return
                       const previous = restoreRects.current[tile.id]
                       if (previous) {
@@ -433,8 +433,8 @@ export function FloatingTiles() {
                     <button
                       type="button"
                       className="rp-float-resize"
-                      aria-label={`${name} 尺寸调整`}
-                      title="拖动调整尺寸"
+                      aria-label={t('tile.resizeLabel', { name })}
+                      title={t('tile.resizeHint')}
                       data-testid={`float-resize-${tile.id}`}
                       onPointerDown={onResizeDown}
                       onPointerMove={onResizeMove}

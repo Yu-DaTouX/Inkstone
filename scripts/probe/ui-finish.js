@@ -63,11 +63,12 @@
   await sleep(150)
   const slider = document.querySelector('.ui-step-slider')
   check(!!slider, 'Thinking slider is visible in model menu')
-  check(getComputedStyle(slider.querySelector('.ui-step-dots')).maskImage.includes('radial-gradient'), 'Thinking track uses one aligned dot matrix')
-  const wave = slider.querySelector('.ui-step-wave')
-  const beforeWave = getComputedStyle(wave).backgroundPosition
+  const field = slider.querySelector('canvas.ui-step-field')
+  check(!!field && field.width > 0, 'Thinking track draws one dot-matrix canvas')
+  const beforePulse = field?.toDataURL()
   await sleep(180)
-  check(getComputedStyle(wave).animationName === 'ui-step-wave' && getComputedStyle(wave).backgroundPosition !== beforeWave, 'Thinking highlight actually travels while the menu stays open')
+  check(!!field && field.toDataURL() !== beforePulse, 'Thinking pulses actually travel while the menu stays open')
+  check(getComputedStyle(slider.querySelector('.ui-step-thumb')).animationName === 'ui-step-caret', 'Thinking thumb is a blinking block caret')
   try {
     const thumb = slider.querySelector('[role="slider"]')
     thumb.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }))

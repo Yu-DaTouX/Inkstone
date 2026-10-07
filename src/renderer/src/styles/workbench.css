@@ -58,6 +58,9 @@
   background: var(--bg-1);
   color: var(--fg-mute);
 }
+.wb-map-search:focus-within {
+  border-color: var(--accent);
+}
 
 .wb-map-search input {
   width: 100%;
@@ -1296,7 +1299,7 @@
 .wb-art-source-status {
   display: block;
   margin: 2px 0 0 var(--sp-2);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--fg-mute);
 }
 

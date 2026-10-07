@@ -22,10 +22,10 @@ export function SessionMenu() {
   const run = (fn: () => unknown) => { setAt(null); void fn() }
   const state = useStore.getState
   return <>
-    <IconButton size="sm" icon="menu" label="会话操作" aria-haspopup="menu" aria-expanded={!!at} data-testid="session-menu"
+    <IconButton size="sm" icon="menu" label={t('rp.sessionActions')} aria-haspopup="menu" aria-expanded={!!at} data-testid="session-menu"
       onClick={e => setAt(at ? null : menuAnchor(e.currentTarget))} />
     {at ? createPortal(<div className="tile-menu-backdrop" onPointerDown={e => { if (e.target === e.currentTarget) setAt(null) }}>
-      <Menu className="tile-layout-menu" label="会话操作" style={{ top: at.top, right: at.right }} data-testid="session-menu-popover">
+      <Menu className="tile-layout-menu" label={t('rp.sessionActions')} style={{ top: at.top, right: at.right }} data-testid="session-menu-popover">
         <MenuItem icon="external" autoFocus data-testid="act-export" onClick={() => run(() => state().exportHtml())}>{t('rp.actExport')}</MenuItem>
         <MenuItem icon="branch" data-testid="act-clone" disabled={!!session.isStreaming} onClick={() => run(() => state().clone())}>{t('rp.actClone')}</MenuItem>
         {session.sessionFile ? <MenuItem icon="folder-open" data-testid="act-reveal" onClick={() => run(() => window.yan.revealPath(session.sessionFile!))}>{t('rp.actReveal')}</MenuItem> : null}

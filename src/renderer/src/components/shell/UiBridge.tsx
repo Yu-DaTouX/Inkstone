@@ -179,6 +179,7 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
 
 /* 连接失败条 */
 export function ConnBar({ conn }: { conn: 'starting' | 'ready' | 'exited' | 'error' }) {
+  const t = useT()
   const logs = useStore((s) => s.logs)
   const connDetail = useStore((s) => s.connDetail)
   const [showDetail, setShowDetail] = useState(false)
@@ -187,25 +188,25 @@ export function ConnBar({ conn }: { conn: 'starting' | 'ready' | 'exited' | 'err
     <div className={`connbar ${conn}`}>
       <span className={conn === 'starting' ? 'dot warn' : 'dot err'} />
       <span className="connbar-text">
-        {conn === 'starting' ? '正在启动 pi…' : connDetail || 'pi 未连接'}
+        {conn === 'starting' ? t('conn.piStarting') : connDetail || t('conn.piDown')}
       </span>
       <span className="spacer" />
       <Button onClick={() => setShowDetail((v) => !v)}>
-        {showDetail ? '收起' : '详情'}
+        {showDetail ? t('conn.hideDetail') : t('conn.detail')}
       </Button>
       <Button onClick={() => void window.yan.start()}>
-        重试
+        {t('conn.retry')}
       </Button>
 
       {showDetail ? (
         <pre className="connbar-detail">
           {[
-            `工作目录：${useStore.getState().settings?.cwd ?? '—'}`,
+            t('conn.cwd', { cwd: useStore.getState().settings?.cwd ?? '—' }),
             '',
-            '--- pi 的 stderr（最近 12 行）---',
-            ...(logs.length ? logs.slice(-12) : ['（无输出）']),
+            t('conn.stderr'),
+            ...(logs.length ? logs.slice(-12) : [t('conn.noOutput')]),
             '',
-            '排查提示：运行 `npm run probe-pi` 可以单独验证 pi 能不能被找到并启动。'
+            t('conn.probeHint')
           ].join('\n')}
         </pre>
       ) : null}

@@ -1,3 +1,4 @@
+import { PulseField, resolveColor } from './pulse-field'
 import {
   forwardRef,
   useEffect,
@@ -637,7 +638,7 @@ export function MiniMeter({
   return (
     <span
       className={cx('ui-mini-meter', tone, value === null && 'unknown', className)}
-      title={title ?? (value === null ? '用量未知' : `已用 ${percent!.toFixed(1)}%`)}
+      title={title}
       aria-hidden="true"
     >
       <i style={{ width: `${value ?? 0}%` }} />
@@ -751,9 +752,39 @@ export function StepSlider<T extends string>({
   }
   /* 外部值变化（别处切档）时放弃未提交的拖动 */
   useEffect(() => setDragIndex(null), [value])
-  const style = { '--step-pct': `${at(shown)}%`, ...(colorOf ? { '--step-color': colorOf(values[shown]) } : {}) } as CSSProperties
+  /* 点阵画布：脉冲引擎跟控件同生命周期（菜单关闭即卸载、停帧） */
+  const root = useRef<HTMLDivElement>(null)
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const probe = useRef<HTMLSpanElement>(null)
+  const field = useRef<PulseField | null>(null)
+  const palette = values.map((v) => colorOf?.(v) ?? 'var(--accent)').join('|')
+  useEffect(() => {
+    if (!canvas.current || !root.current || !probe.current) return
+    const engine = new PulseField(canvas.current, root.current)
+    field.current = engine
+    const paint = (): void => {
+      const el = probe.current
+      if (!el) return
+      engine.setColors({
+        levels: palette.split('|').map((c) => resolveColor(el, c)),
+        off: resolveColor(el, 'var(--bg-4)'),
+        dark: document.documentElement.dataset.theme === 'dark'
+      })
+    }
+    paint()
+    /* 换主题时档位色跟着变，重新解析 */
+    const themes = new MutationObserver(paint)
+    themes.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] })
+    return () => { themes.disconnect(); engine.dispose(); field.current = null }
+  }, [palette])
+  useEffect(() => { field.current?.setLevel(shown, n, !!disabled) }, [shown, n, disabled, palette])
+  const style = {
+    '--step-pct': `${at(shown)}%`,
+    ...(colorOf ? { '--step-color': colorOf(values[shown]) } : {})
+  } as CSSProperties
   return (
-    <div className={cx('ui-step-slider', dragIndex !== null && 'dragging', disabled && 'disabled')} style={style} data-testid={testId}>
+    <div ref={root} className={cx('ui-step-slider', dragIndex !== null && 'dragging', disabled && 'disabled')} style={style} data-testid={testId}>
+      <span ref={probe} className="ui-step-probe" aria-hidden="true" />
       <div
         ref={track}
         className="ui-step-track"
@@ -769,17 +800,7 @@ export function StepSlider<T extends string>({
         onPointerUp={(e) => { if (!dragging.current) return; dragging.current = false; const i = pick(e.clientX); setDragIndex(null); commit(i) }}
         onPointerCancel={() => { dragging.current = false; setDragIndex(null) }}
       >
-        {/* One shared dot mask keeps the travelling highlight aligned across level bands. */}
-        <div className="ui-step-dots" aria-hidden="true" data-lit={shown > 0 ? '1' : '0'}>
-          {values.slice(1).map((v, i) => (
-            <span
-              key={v}
-              className={cx('ui-step-seg', i < shown && 'on')}
-              style={{ left: `${at(i)}%`, width: `${at(1)}%`, '--seg-from': colorOf?.(values[i]) ?? 'var(--accent)', '--seg-color': colorOf?.(v) ?? 'var(--accent)', '--seg-i': i < shown ? i : n - 2 - i } as CSSProperties}
-            />
-          ))}
-          <span className="ui-step-wave" />
-        </div>
+        <canvas ref={canvas} className="ui-step-field" aria-hidden="true" data-lit={shown > 0 ? '1' : '0'} />
         <span
           className="ui-step-thumb"
           role="slider"
