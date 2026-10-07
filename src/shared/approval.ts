@@ -2,29 +2,41 @@
  * 权限与批准卡片的共用契约（主进程 / 渲染端 / 单测）。
  *
  * 两件事：
- *   · 权限档位 `PermissionMode`：全局设置，决定写文件与跑命令前要不要先问；
+ *   · 权限档位 `PermissionMode`：全局设置，决定哪些操作执行前要先问；
  *   · 批准请求 `ApprovalRequest`：宿主把「要问用户」的事推给界面，界面以输入框上方的
  *     内嵌卡片呈现，答复经 `yan:approvalAnswer` 回到宿主。
  *
- * 档位只有两个，「只读」由工作模式里的「计划」承担（工具表里直接拿掉写入口），
- * 不在这里重复做一套。
+ * 档位只有两个（用户 2026-10-07 定）：
+ *   · `danger` 危险批准 —— 只有高危清单（danger-guard）要确认；
+ *   · `all`    全部允许 —— 什么都不问。
+ * 两档共同的底线：**没经确认的删除一律移到回收站**（permission-guard / danger-guard 拦下删除命令，
+ * 引到 `yan file trash`）。「只读」由工作模式里的「计划」承担，不在这里重复做一套。
  */
 
-export const PERMISSION_MODES = ['ask', 'full'] as const
+export const PERMISSION_MODES = ['danger', 'all'] as const
 export type PermissionMode = (typeof PERMISSION_MODES)[number]
 
-/** 缺省 / 脏值都回到「完全放行」：保持升级前的行为，高危护栏照旧生效。 */
-export const DEFAULT_PERMISSION_MODE: PermissionMode = 'full'
+/** 缺省 / 脏值 / 旧档位（ask、full）都回到「危险批准」：高危护栏照旧生效。 */
+export const DEFAULT_PERMISSION_MODE: PermissionMode = 'danger'
 
 export function normalizePermissionMode(value: unknown): PermissionMode {
-  return value === 'ask' ? 'ask' : 'full'
+  return value === 'all' ? 'all' : 'danger'
+}
+
+/**
+ * 设置里存的还是旧档位（0.7.2 及以前的 ask / full，或更早没有这个字段）。
+ * 旧版加载设置时会把「写入项目之外要确认」强制存成 true；迁到新档位时一并关掉，
+ * 否则「危险批准」仍会为每次写项目外弹卡片。迁移后档位是新值，不会再迁第二次。
+ */
+export function isLegacyPermissionMode(value: unknown): boolean {
+  return value !== 'danger' && value !== 'all'
 }
 
 /**
  * 请求来源：
- *   · `permission` 询问档下的写文件 / 跑命令；
- *   · `delete`     日常模式下的删除文件（任何档位都问，不提供「记住」）；
- *   · `danger`     高危命令（任何档位都问，每次都问）；
+ *   · `permission` 旧询问档下的写文件 / 跑命令（现行档位不再产生，保留给旧薄层）；
+ *   · `delete`     旧版日常模式下的删除确认（现行改为移到回收站，保留给旧薄层）；
+ *   · `danger`     高危命令（「危险批准」档每次都问）；
  *   · `outside`    写入项目之外的位置（可记住目录）；
  *   · `consent`    普通工具的同意记录（多次同意后自动放行）。
  */

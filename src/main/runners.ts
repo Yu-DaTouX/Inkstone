@@ -44,6 +44,19 @@ import type { RunnerStatus, RuntimeEnvelope, SessionScope, SessionState } from '
 export const RUNNER_LIMIT = 3
 
 /**
+ * 代次在整个主进程内单调递增，跨注册表重建也不回落。
+ *
+ * 渲染端按会话缓存后台状态，并丢弃代次更旧的事件。保存凭证、安装 Git 等会
+ * `restartAgent` → 新建注册表，runner id 会从 r1 重新编号；代次若也回到 1，
+ * 新实例的事件会被当成旧代次挡在缓存外，切走再切回时只剩重建前的内容。
+ */
+let lastGeneration = 0
+function nextGeneration(): number {
+  lastGeneration += 1
+  return lastGeneration
+}
+
+/**
  * 工作目录是并发写入边界：Windows 的斜杠、大小写和末尾分隔符不能让
  * 同一个目录绕过冲突检查。这里不做 realpath，因为 runner 的 cwd 还
  * 可能是一个合法的符号链接；是否允许该路径由主进程目录校验决定。
@@ -348,7 +361,7 @@ export class RunnerRegistry {
     if (idle) {
       const oldGeneration = idle.generation
       const oldProjectId = idle.projectId
-      idle.generation += 1
+      idle.generation = nextGeneration()
       idle.agent.setRunnerGeneration(idle.generation)
       idle.projectId = target.projectId
       this.opts.onChanged?.()
@@ -416,13 +429,14 @@ export class RunnerRegistry {
     }
 
     const id = `r${++this.seq}`
-    const agent = this.opts.createAgent(id, target.cwd, 1)
+    const generation = nextGeneration()
+    const agent = this.opts.createAgent(id, target.cwd, generation)
     const runner: Runner = {
       id,
       agent,
       cwd: target.cwd,
       projectId: target.projectId,
-      generation: 1,
+      generation,
       createdAt: Date.now(),
       hidden: target.hidden,
       lastActiveAt: Date.now()
@@ -514,9 +528,10 @@ export class RunnerRegistry {
     const previous = runner.agent
     const previousGeneration = runner.generation
     const queue = previous.queueSnapshot()
-    const replacement = this.opts.createAgent(runner.id, runner.cwd, runner.generation + 1)
+    const generation = nextGeneration()
+    const replacement = this.opts.createAgent(runner.id, runner.cwd, generation)
     runner.agent = replacement
-    runner.generation += 1
+    runner.generation = generation
     this.opts.onChanged?.()
 
     let failure: string | undefined

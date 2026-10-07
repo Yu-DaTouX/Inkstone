@@ -98,6 +98,17 @@ export function runRunnerTests(ok, RunnerRegistry) {
       ok(first.calls.start === 1, '新实例被启动')
       ok(first.calls.switchSession.includes('C:/s1.jsonl'), '新实例切到了目标会话')
 
+      /* ---- 1b. 注册表重建（保存凭证等触发 restartAgent）后代次不回落 ---- */
+      {
+        const rebuilt = new RunnerRegistry({ limit: 1, createAgent: (id) => Object.assign(mkAgent(), { id }) })
+        const again = await rebuilt.select({ cwd: 'C:/a', sessionFile: 'C:/s1.jsonl' })
+        ok(
+          again.id === r.id && (again.generation ?? 0) > (r.generation ?? 0),
+          '重建后 runner id 可以重号，但代次必须大于重建前（否则新实例的事件会被当成旧代次丢弃）',
+          `${r.generation} → ${again.generation}`
+        )
+      }
+
       /* ---- 2. 再选同一个会话：命中，不动任何实例 ---- */
       const r2 = await reg.select({ cwd: 'C:/a', sessionFile: 'C:/s1.jsonl' })
       ok(r2.ok && r2.via === 'hit', '切回同一会话命中已有实例（只改视图）', `via=${r2.via}`)

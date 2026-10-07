@@ -13,8 +13,9 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { basename, delimiter, dirname, join } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { saveUserSkill } from './user-skills'
 import { PiRpc, resolvePi } from './protocol'
 import { AGENT_CONTEXT_ERROR, agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
@@ -305,6 +306,8 @@ export interface CapabilityRunOptions {
   getCapabilityStrategy?: () => Promise<CapabilityStrategy>
   /** 直执行 bash 收尾后给受管能力调度器一个安全边界机会。 */
   onBashSettled?: () => void
+  /** 移到系统回收站（宿主注入 Electron `shell.trashItem`）。 */
+  trashItem?: (path: string) => Promise<void>
 }
 
 /**
@@ -670,6 +673,7 @@ export class AgentController extends EventEmitter {
       getCapabilityStrategy?: () => Promise<CapabilityStrategy>
       /** 直执行 bash 收尾后给受管能力调度器一个安全边界机会。 */
       onBashSettled?: () => void
+      trashItem?: (path: string) => Promise<void>
     }
   }) {
     super()
@@ -1287,6 +1291,7 @@ export class AgentController extends EventEmitter {
     if (command === 'context.recall') return this.runContextRecallCommand(params)
     if (command === 'context.find') return this.runContextFindCommand(params)
     if (command === 'office.read') return this.runOfficeReadCommand(params)
+    if (command === 'file.trash') return this.runFileTrashCommand(params)
     if (command === 'consent.request') return this.runConsentRequestCommand(params)
     if (command === 'danger.confirm') return this.runDangerConfirmCommand(params)
     if (command === 'context.inspect') {
@@ -1528,6 +1533,45 @@ export class AgentController extends EventEmitter {
         lines: view.sections.reduce((n, section) => n + section.lines.length, 0),
         truncated: view.truncated
       }
+    }
+  }
+
+  /**
+   * `yan file trash`：把文件或目录移到系统回收站。
+   *
+   * 权限档位不确认删除时，薄层（permission-guard / danger-guard）拦下删除命令并引到这里，
+   * 删除因此总能从回收站找回。逐个处理，一个失败不影响其余；盘符根与家目录本身拒绝。
+   */
+  private async runFileTrashCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
+    const trash = this.capabilityOpts?.trashItem
+    if (!trash) throw new CapabilityCommandError('trash_unavailable', '回收站当前不可用（宿主未注入）')
+    const raw = [
+      ...(typeof params.path === 'string' ? [params.path] : []),
+      ...(Array.isArray(params.paths) ? params.paths.filter((p): p is string => typeof p === 'string') : [])
+    ].map((p) => p.trim()).filter(Boolean)
+    if (!raw.length) throw new CapabilityCommandError('trash_path_required', '缺少 --path（或请求文件里的 paths）')
+    if (raw.length > 200) throw new CapabilityCommandError('trash_too_many', '一次最多移动 200 个路径')
+    const home = resolve(homedir()).toLowerCase()
+    const trashed: string[] = []
+    const failed: { path: string; error: string }[] = []
+    for (const item of raw) {
+      const abs = isAbsolute(item) ? resolve(item) : resolve(this.cwd, item)
+      const key = abs.toLowerCase().replace(/[\\/]+$/, '')
+      if (dirname(abs) === abs || key === home) {
+        failed.push({ path: abs, error: '拒绝把盘符根目录或家目录整体移到回收站' })
+        continue
+      }
+      try {
+        await stat(abs)
+        await trash(abs)
+        trashed.push(abs)
+      } catch (error) {
+        failed.push({ path: abs, error: error instanceof Error ? error.message : String(error) })
+      }
+    }
+    return {
+      data: { trashed, failed },
+      summary: { kind: 'file-trash', trashed: trashed.length, failed: failed.length }
     }
   }
 

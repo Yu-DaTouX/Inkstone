@@ -1,20 +1,21 @@
 /* 批准卡片（输入框上方的内嵌请求）与模式菜单里的「权限」分段。
    控件外观来自 ui.css / components/ui；这里只管版面与状态色。 */
 
+/* 与输入框、排队栈同一栏：同宽居中，整圈细边框（与 Agent 协作里的批准同一语言），不用侧边色条 */
 .approval-card {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  margin: 0 0 var(--sp-2);
+  max-width: var(--w-stream);
+  margin: 0 auto var(--sp-2);
   padding: var(--sp-3);
   background: var(--bg-1);
-  border: 1px solid var(--border-str);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
 }
 
 .approval-card.risky {
-  border-left-color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
   background: var(--warn-soft);
 }
 

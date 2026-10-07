@@ -40,6 +40,7 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { request as httpRequest } from 'node:http'
 
 const API_VERSION = 1
 
@@ -67,6 +68,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan context recall --ref <ctx://...>
   yan context find --query "关键词"
   yan office read --path <文件.docx|xlsx|pptx|pdf>
+  yan file trash --path <文件或目录>     删除改为移到回收站（可恢复）
   yan consent request --capability <能力> --action <操作> [--resource <资源>] [--purpose <用途>]
   yan context budget status
   yan context budget adjust --request-file context-budget.json
@@ -278,6 +280,16 @@ const GROUP_USAGE = {
           yan office read --path 报告.docx
           结果按节给出：Word 按段落、Excel 按工作表与单元格（含公式）、PPT 按页（含备注）、
           PDF 按正文。只有文字，不含版式与图片；路径按当前会话目录解析。
+
+`,
+  file: `yan file <动作> [选项]
+
+动作：
+  trash   把文件或目录移到系统回收站（用户可以从回收站恢复）。
+          yan file trash --path 旧报告.docx
+          yan file trash --request-file trash.json    trash.json: {"paths":["a.txt","旧目录"]}
+          权限档位不要求确认删除时，砚会拦下 rm / del / Remove-Item 等删除命令，改用这个动作。
+          路径按当前会话目录解析；系统临时目录里的文件可以直接删除，不必移到回收站。
 
 `,
   artifact: `yan artifact <动作> [选项]
@@ -527,6 +539,11 @@ const GROUP_SPECS = {
     actions: ['read'],
     required: { read: ['path'] }
   },
+  /* --path 或请求文件里的 paths 二选一，由宿主校验 */
+  file: {
+    actions: ['trash'],
+    required: {}
+  },
   search: {
     actions: ['query', 'fetch', 'docs', 'doctor'],
     /* doctor 无必需参数；query 至少要一个查询词；fetch 要一个网址；docs 要问题（库名或库 ID 由宿主校验） */
@@ -700,21 +717,36 @@ if (!url || !token || !sessionId || !projectId) {
   })
 }
 
+/*
+ * 用 node:http 而不是 fetch：fetch 收不到响应头 5 分钟就断开，而 `question ask`
+ * 要一直等到用户回答（后台会话的提问在用户看到时才开始计时，宿主兜底 10 分钟
+ * 起、可加时）。等多久由宿主决定，CLI 不另设超时。宿主地址固定是本机 http。
+ */
+function post(target, headers, body) {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(target, { method: 'POST', headers: { ...headers, 'content-length': Buffer.byteLength(body) } }, (res) => {
+      const chunks = []
+      res.on('data', (chunk) => chunks.push(chunk))
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') }))
+      res.on('error', reject)
+    })
+    req.on('error', reject)
+    req.end(body)
+  })
+}
+
 let response
 try {
-  response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${token}`
-    },
-    body: JSON.stringify({ apiVersion: API_VERSION, command, params, sessionId, projectId })
-  })
+  response = await post(
+    url,
+    { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    JSON.stringify({ apiVersion: API_VERSION, command, params, sessionId, projectId })
+  )
 } catch (err) {
   fail(EXIT.unavailable, '连不上宿主能力服务', { detail: String(err?.message ?? err) })
 }
 
-const text = await response.text()
+const text = response.text
 let payload
 try {
   payload = JSON.parse(text)
