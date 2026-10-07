@@ -38,7 +38,8 @@
     /* ① 默认工作文件夹 */
     const settings = await window.yan.getSettings()
     ok(/[\\/]砚$/.test(settings.cwd || ''), `默认工作文件夹是「…\\砚」（实际 ${settings.cwd}）`)
-    ok(settings.permissionMode === undefined || settings.permissionMode === 'full', '权限默认是完全放行（保持原行为）')
+    ok(settings.permissionMode === undefined || settings.permissionMode === 'danger', '权限默认是危险批准')
+    ok(settings.guardOutsideWrites !== true, '写入项目之外的确认默认关')
     ok(settings.showSpaces !== true, '空间与资料库默认收起')
 
     /* ② 命令行工具检测 */
@@ -72,25 +73,25 @@
     ok(!!modeButton, '输入区有模式按钮')
     if (modeButton) {
       click(modeButton)
-      ok(await until(() => q('[data-testid="permission-option-ask"]')), '模式菜单里有权限分段')
-      ok(!!q('[data-testid="permission-option-full"]'), '有「完全放行」')
-      ok(q('[data-testid="permission-option-full"]')?.getAttribute('aria-checked') === 'true', '当前是完全放行')
-      click(q('[data-testid="permission-option-ask"]'))
-      ok(await until(() => store.getState().settings?.permissionMode === 'ask'), '选「每次询问」后写进设置')
-      ok(await until(() => q('[data-testid="permission-badge"]')), '按钮上出现「询问」徽标')
+      ok(await until(() => q('[data-testid="permission-option-danger"]')), '模式菜单里有权限分段')
+      ok(!!q('[data-testid="permission-option-all"]') && !q('[data-testid="permission-option-ask"]'), '只有「危险批准」「全部允许」两档')
+      ok(q('[data-testid="permission-option-danger"]')?.getAttribute('aria-checked') === 'true', '当前是危险批准')
+      click(q('[data-testid="permission-option-all"]'))
+      ok(await until(() => store.getState().settings?.permissionMode === 'all'), '选「全部允许」后写进设置')
+      ok(await until(() => q('[data-testid="permission-badge"]')), '按钮上出现「全部允许」徽标')
       const saved = await window.yan.getSettings()
-      ok(saved.permissionMode === 'ask', '设置已落盘')
+      ok(saved.permissionMode === 'all', '设置已落盘')
       /* 还原，别影响别的场景 */
       click(q('[data-testid="work-mode-button"]'))
-      if (await until(() => q('[data-testid="permission-option-full"]'))) click(q('[data-testid="permission-option-full"]'))
-      ok(await until(() => !q('[data-testid="permission-badge"]')), '切回完全放行后徽标消失')
+      if (await until(() => q('[data-testid="permission-option-danger"]'))) click(q('[data-testid="permission-option-danger"]'))
+      ok(await until(() => !q('[data-testid="permission-badge"]')), '切回危险批准后徽标消失')
     }
 
     /* ⑤ 批准卡片（直接往 store 放请求：验渲染与按钮，不依赖模型去触发） */
     const base = { tool: 'bash', title: '测试', detail: 'rm old.xlsx', reasons: ['原因'], cwd: 'C:/x', createdAt: Date.now() }
-    store.setState({ approvals: [{ ...base, id: 'p1', kind: 'permission', canRemember: true }] })
+    store.setState({ approvals: [{ ...base, id: 'o1', kind: 'outside', canRemember: true, rememberDirs: ['D:/other'] }] })
     ok(await until(() => q('[data-testid="approval-card"]')), '批准卡片渲染在输入框上方')
-    ok(!!q('[data-testid="approval-remember"]'), '权限类带「改为完全放行」')
+    ok(!!q('[data-testid="approval-remember"]'), '项目外写入带「允许并记住目录」')
     ok(!!q('[data-testid="approval-once"]') && !!q('[data-testid="approval-deny"]'), '有「允许这一次」与「拒绝」')
     store.setState({ approvals: [{ ...base, id: 'd1', kind: 'delete', canRemember: false }] })
     await sleep(300)

@@ -36,12 +36,7 @@ export function ApprovalCard() {
   const risky = current.kind === 'danger' || current.kind === 'outside' || current.kind === 'delete'
   const isShell = current.tool === 'bash' || current.tool === 'powershell'
   const icon: IconName = risky ? 'alert-circle' : isShell ? 'terminal' : 'shield-check'
-  const rememberLabel =
-    current.kind === 'permission'
-      ? t('approval.rememberPermission')
-      : current.kind === 'outside'
-        ? t('approval.rememberDirs')
-        : ''
+  const rememberLabel = current.kind === 'outside' ? t('approval.rememberDirs') : ''
 
   return (
     <div

@@ -147,7 +147,7 @@ export function CapabilitiesTab(): React.JSX.Element {
       </SettingRow>
       <SettingRow name={t('cap.guardTitle')} desc={t('cap.guardDesc')}>
         <Switch
-          checked={settings?.guardOutsideWrites !== false}
+          checked={settings?.guardOutsideWrites === true}
           onChange={(enabled) => void patchSettings({ guardOutsideWrites: enabled })}
           label={t('cap.guardTitle')}
           testId="cap-guard-outside"

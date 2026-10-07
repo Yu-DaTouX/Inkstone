@@ -167,6 +167,8 @@ const KNOWN_COMMANDS = new Set([
   'context.inspect',
   /* 办公文件：只读提取 docx / xlsx / pptx / pdf 的文字正文。 */
   'office.read',
+  /* 删除改为移到回收站：权限档位不确认删除时，薄层把删除命令引到这里。 */
+  'file.trash',
   /* 普通工具使用前的同意判断（按真实答复记录自动放行或询问）。 */
   'consent.request',
   /* 高危操作确认：只由 danger-guard 薄层调用，宿主弹框后回答放行 / 拒绝。 */

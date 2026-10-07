@@ -210,9 +210,9 @@ export function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLB
         <span className="mode-label" data-testid="work-mode-label">
           {t(`workMode.label.${state}`)}
         </span>
-        {permission === 'ask' ? (
-          <span className="mode-perm" data-testid="permission-badge" title={t('permission.desc.ask')}>
-            {t('permission.badge.ask')}
+        {permission === 'all' ? (
+          <span className="mode-perm" data-testid="permission-badge" title={t('permission.desc.all')}>
+            {t('permission.badge.all')}
           </span>
         ) : null}
         <Icon name="chevron-right" size={12} className="mode-caret chev on" />

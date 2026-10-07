@@ -21,7 +21,7 @@
 | 11 | `rail.css` | modules | 1089 | 199 | 208 | 0 | 0 |
 | 12 | `chat.css` | modules | 2719 | 379 | 437 | 5 | 0 |
 | 13 | `composer.css` | modules | 2107 | 306 | 312 | 2 | 0 |
-| 14 | `approval.css` | modules | 144 | 17 | 17 | 0 | 0 |
+| 14 | `approval.css` | modules | 145 | 17 | 17 | 0 | 0 |
 | 15 | `tools.css` | modules | 3945 | 614 | 675 | 2 | 5 |
 | 16 | `browser.css` | modules | 423 | 49 | 53 | 0 | 0 |
 | 17 | `terminal.css` | modules | 82 | 10 | 10 | 0 | 0 |
@@ -29,7 +29,7 @@
 | 19 | `workbench.css` | modules | 1981 | 396 | 413 | 3 | 0 |
 | 20 | `workspace.css` | modules | 72 | 65 | 66 | 0 | 0 |
 | 21 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | | **19266** | **3076** | | | |
+| | **合计** | | **19267** | **3076** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 

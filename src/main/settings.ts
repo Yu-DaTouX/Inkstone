@@ -30,7 +30,7 @@ import { YAN_DIR } from './paths'
 import { sanitizeActivityModelConfig } from '../shared/activity-model'
 import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
-import { DEFAULT_PERMISSION_MODE, normalizePermissionMode } from '../shared/approval'
+import { DEFAULT_PERMISSION_MODE, isLegacyPermissionMode, normalizePermissionMode } from '../shared/approval'
 import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode, normalizeWorkModeShortcut } from '../shared/work-mode'
 import { migrateToolLayout, normalizeToolLayout } from '../shared/tool-layout'
 import { isWorkspaceMode } from '../shared/workspace-mode'
@@ -115,7 +115,7 @@ const DEFAULTS: AppSettings = {
   defaultWorkMode: DEFAULT_WORK_MODE,
   capabilityStrategy: 'auto-connect',
   codemodeEnabled: true,
-  guardOutsideWrites: true,
+  guardOutsideWrites: false,
   permissionMode: DEFAULT_PERMISSION_MODE,
   guardAllowRoots: [],
   checkpointsEnabled: true,
@@ -452,7 +452,8 @@ export async function getSettings(): Promise<AppSettings> {
      */
     cached.defaultWorkMode = migrateLegacyAutonomous(fileWorkMode, cached.autonomous)
     cached.codemodeEnabled = cached.codemodeEnabled !== false
-    cached.guardOutsideWrites = cached.guardOutsideWrites !== false
+    /* 旧档位迁到「危险批准」时关掉项目外写入确认（见 isLegacyPermissionMode） */
+    cached.guardOutsideWrites = !isLegacyPermissionMode(cached.permissionMode) && cached.guardOutsideWrites === true
     cached.permissionMode = normalizePermissionMode(cached.permissionMode)
     cached.checkpointsEnabled = cached.checkpointsEnabled !== false
     cached.guardAllowRoots = cleanAllowRoots(cached.guardAllowRoots)
@@ -582,7 +583,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   const cur = await getSettings()
   const next: AppSettings = { ...cur, ...patch }
   next.codemodeEnabled = next.codemodeEnabled !== false
-  next.guardOutsideWrites = next.guardOutsideWrites !== false
+  next.guardOutsideWrites = next.guardOutsideWrites === true
   next.permissionMode = normalizePermissionMode(next.permissionMode)
   next.checkpointsEnabled = next.checkpointsEnabled !== false
   next.guardAllowRoots = cleanAllowRoots(next.guardAllowRoots)

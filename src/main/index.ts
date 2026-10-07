@@ -2250,7 +2250,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           devResourcesDir: join(app.getAppPath(), 'resources'),
           getWorkMode: async () => (await resolveWorkMode(id ?? 'primary')).mode,
           getCapabilityStrategy: async () => (await getSettings()).capabilityStrategy,
-          onBashSettled: () => requestPiPackageActivationTick()
+          onBashSettled: () => requestPiPackageActivationTick(),
+          trashItem: (path: string) => shell.trashItem(path)
         },
         /*
          * `--authorize` 只能请求显示这条主进程对话框，本身不构成同意。
@@ -2368,8 +2369,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           return response.response === 1
         },
         /*
-         * 高危操作确认（danger-guard 薄层发起）与询问档的写入确认（permission-guard 发起）：
-         * 都走输入框上方的批准卡片；高危每次都问、不记忆，关不掉的卡片超时按拒绝。
+         * 高危操作确认（danger-guard 薄层发起）：走输入框上方的批准卡片；高危每次都问、
+         * 不记忆，关不掉的卡片超时按拒绝。只有项目外写入可「记住目录」。
          */
         confirmDanger: async (request): Promise<ConsentDecision | null> => {
           const rememberDirs = [...new Set((request.outsideDirs ?? []).map((p) => p.replace(/[\/]+[^\/]*$/, '')).filter(Boolean))]
@@ -2388,11 +2389,10 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             reasons: request.reasons,
             cwd: request.cwd,
             ...(rememberDirs.length ? { rememberDirs } : {}),
-            canRemember: isPermission || rememberDirs.length > 0
+            canRemember: rememberDirs.length > 0
           })
           if (choice === 'remember') {
-            if (isPermission) await patchSettings({ permissionMode: 'full' })
-            else if (rememberDirs.length) {
+            if (rememberDirs.length) {
               const current = await getSettings()
               await patchSettings({ guardAllowRoots: [...(current.guardAllowRoots ?? []), ...rememberDirs] })
             }

@@ -978,11 +978,11 @@ export interface AppSettings {
   codemodeEnabled?: boolean
   /** 每轮发送前给项目文件存检查点，可回退；缺省为开 */
   checkpointsEnabled?: boolean
-  /** 写入项目之外的路径前先确认；缺省为开 */
+  /** 「危险批准」档下，写入项目之外的路径前也确认；缺省为关 */
   guardOutsideWrites?: boolean
   /** 日常模式里显示空间与资料库（标题栏入口、首页卡片、工作对象条）；缺省为隐藏，数据不受影响 */
   showSpaces?: boolean
-  /** 权限档位：ask = 写文件与跑命令前先问；full = 只在高危时问（缺省） */
+  /** 权限档位：danger = 只在高危时问（缺省）；all = 一律不问。没经确认的删除都移到回收站 */
   permissionMode?: PermissionMode
   /** 用户允许 Agent 写入的额外目录（绝对路径） */
   guardAllowRoots?: string[]

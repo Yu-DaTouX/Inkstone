@@ -16,6 +16,10 @@
  * 确认框在宿主：这里用宿主注入的 `YAN_CLI_URL` 发一条 `danger.confirm`，宿主弹框，
  * 答复回来后才决定放行还是 `{ block: true }`。
  *
+ * ── 权限档位（桌面设置 `permissionMode`）──
+ * `danger`（缺省，危险批准）：命中高危就问；`all`（全部允许）：一律不问，但其中的删除
+ * 拦下并引到 `yan file trash`——没经确认的删除一律移到回收站（用户 2026-10-07 定）。
+ *
  * ── 失败方向 ──
  * 命中高危却连不上宿主 / 没有窗口 / 超时 → **拦下**（宁可让模型换路，也不在没人看着时放行）。
  * 没命中的调用不产生任何网络请求，对正常工作零开销。
@@ -171,7 +175,7 @@ export function detectDanger(toolName, input, cwd) {
 /* ------------------------------------------------------------------ 项目之外的写入 */
 
 /**
- * 写入项目之外的路径（可选，设置里「写入项目之外要确认」，默认开）。
+ * 写入项目之外的路径（可选，设置里「写入项目之外要确认」，默认关；只在「危险批准」档生效）。
  *
  * 与上面的 `SENSITIVE_PATH` 不同：这里不看路径「是不是系统或凭证目录」，只看
  * 「是不是在项目、临时目录、pi 数据目录、用户允许的目录之内」。
@@ -191,9 +195,21 @@ function expandHome(text) {
     .replace(/^(~|\$home|\$\{home\}|%userprofile%|%homepath%|\$env:userprofile)(?=[\\/]|$)/i, homedir())
 }
 
+/** `$env:TEMP`、`%LOCALAPPDATA%`、`$TMPDIR` 这类开头的环境变量换成实际值（认不出的原样保留） */
+function expandEnv(text) {
+  const lookup = (name) => {
+    const key = Object.keys(process.env).find((k) => k.toLowerCase() === name.toLowerCase())
+    return key ? process.env[key] : undefined
+  }
+  return String(text)
+    .replace(/^\$env:([a-z_]\w*)/i, (all, name) => lookup(name) ?? all)
+    .replace(/^%([a-z_]\w*)%/i, (all, name) => lookup(name) ?? all)
+    .replace(/^\$\{?(TMPDIR|TEMP|TMP)\}?(?=[\\/]|$)/, (all, name) => lookup(name) ?? all)
+}
+
 /** 目标路径解析成归一化的绝对路径；`..`、`.` 一并折叠 */
 function resolveTarget(raw, cwd) {
-  const cleaned = expandHome(String(raw ?? '').trim().replace(/^["']+|["']+$/g, ''))
+  const cleaned = expandHome(expandEnv(String(raw ?? '').trim().replace(/^["']+|["']+$/g, '')))
   if (!cleaned) return ''
   /* 通配符：取通配之前的部分，等价于「这一层目录下的东西」 */
   const fixed = cleaned.replace(/[*?].*$/, '')
@@ -260,17 +276,70 @@ export function outsideWrites(toolName, input, cwd, prefs = {}) {
   return [...new Set(hits)].slice(0, 6)
 }
 
-/** 桌面设置里与护栏相关的两项；读不到就取默认（开启、没有额外目录） */
+/* ------------------------------------------------------------------ 删除改走回收站 */
+
+/** 删除文件的命令名（只认命令位，`grep rm x` 不算） */
+export const DELETE_HEADS = new Set(['rm', 'rmdir', 'rd', 'del', 'erase', 'unlink', 'remove-item', 'ri', 'shred', 'trash'])
+
+/** 命令里是否含删除（逐段看命令名） */
+export function hasDelete(command) {
+  for (const segment of String(command ?? '').split(SEGMENT_SPLIT)) {
+    if (DELETE_HEADS.has(commandOf(segment).head)) return true
+  }
+  return false
+}
+
+/** 删除命令要删的路径（已解析、归一化）。管道喂进来的目标看不到，返回空数组 */
+export function shellDeleteTargets(command, cwd) {
+  const out = []
+  for (const segment of String(command ?? '').split(SEGMENT_SPLIT)) {
+    const { head, args } = commandOf(segment)
+    if (!DELETE_HEADS.has(head)) continue
+    const flagged = []
+    args.forEach((a, i) => { if (PS_PATH_FLAGS.has(a.toLowerCase()) && args[i + 1]) flagged.push(args[i + 1]) })
+    const raws = flagged.length ? flagged : args.filter((a) => !/^-/.test(a) && !/^\d?>/.test(a))
+    for (const raw of raws) {
+      const target = resolveTarget(raw, cwd)
+      if (target) out.push(target)
+    }
+  }
+  return [...new Set(out)]
+}
+
+/** 是不是系统临时目录里的路径：这些删除照常执行，否则清理临时文件腾不出空间 */
+export function isTempPath(target) {
+  const roots = [tmpdir(), process.env.TEMP, process.env.TMP, '/tmp', '/var/tmp']
+    .filter((p) => typeof p === 'string' && p.trim())
+    .map((p) => normalizePath(p).replace(/\/$/, ''))
+  const normalized = normalizePath(target)
+  return roots.some((root) => normalized !== root && normalized.startsWith(`${root}/`))
+}
+
+/** 拦下删除时给模型的说明 */
+export function trashHint(targets = []) {
+  const list = targets.length ? `要删除的是：${targets.slice(0, 6).join('、')}。` : ''
+  return '砚的权限设置不对这次删除做确认，删除要移到回收站，方便用户找回。' + list +
+    '请改用 `yan file trash --path <路径>`；多个路径用 `yan file trash --request-file trash.json`（{"paths":[…]}）。' +
+    '系统临时目录里的文件可以直接删除。'
+}
+
+/**
+ * 桌面设置里与护栏相关的几项。
+ * 旧档位（ask / full，或没有这个字段）迁到「危险批准」，并关掉项目外写入确认——与主进程
+ * `settings.ts` 的迁移同一口径（设置文件可能还没被重新保存）。读不到就取默认。
+ */
 function guardPrefs() {
   try {
     const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
     const settings = JSON.parse(readFileSync(join(dir, 'desktop.json'), 'utf8'))
+    const legacy = settings.permissionMode !== 'danger' && settings.permissionMode !== 'all'
     return {
-      outsideWrites: settings.guardOutsideWrites !== false,
+      mode: settings.permissionMode === 'all' ? 'all' : 'danger',
+      outsideWrites: !legacy && settings.guardOutsideWrites === true,
       allowRoots: Array.isArray(settings.guardAllowRoots) ? settings.guardAllowRoots.filter((p) => typeof p === 'string') : []
     }
   } catch {
-    return { outsideWrites: true, allowRoots: [] }
+    return { mode: 'danger', outsideWrites: false, allowRoots: [] }
   }
 }
 
@@ -312,8 +381,18 @@ export default function dangerGuardExtension(pi) {
     if (process.env.YAN_DANGER_GUARD === '0') return undefined
     const name = String(event?.toolName ?? '')
     if (!name) return undefined
+    const prefs = guardPrefs()
     const reasons = detectDanger(name, event?.input ?? {}, ctx?.cwd)
-    const outside = outsideWrites(name, event?.input ?? {}, ctx?.cwd, guardPrefs())
+    if (prefs.mode === 'all') {
+      /* 全部允许：不确认；高危里的删除改走回收站（临时目录除外） */
+      const command = String(event?.input?.command ?? '')
+      if (reasons.length && (name === 'bash' || name === 'powershell') && hasDelete(command)) {
+        const targets = shellDeleteTargets(command, ctx?.cwd)
+        if (!(targets.length && targets.every(isTempPath))) return { block: true, reason: trashHint(targets) }
+      }
+      return undefined
+    }
+    const outside = outsideWrites(name, event?.input ?? {}, ctx?.cwd, prefs)
     for (const target of outside) reasons.push(`写入项目之外的路径：${target}`)
     if (reasons.length === 0) return undefined
     const answer = await askHost(name, event?.input ?? {}, [...new Set(reasons)], outside)
