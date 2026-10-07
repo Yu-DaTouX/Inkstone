@@ -513,7 +513,7 @@ html[data-theme='light'] .settings-scrim {
 }
 .kn-textarea:focus {
   outline: none;
-  border-color: var(--accent-line);
+  border-color: var(--accent);
 }
 .kn-meta {
   display: flex;

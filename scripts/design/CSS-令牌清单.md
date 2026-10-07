@@ -5,7 +5,7 @@
 > **只有每个变量的“最终值”生效** —— 它可能不在 `tokens.css` 里。
 > 定义链从左到右，最右者胜（同特异性、后加载）。
 
-## `:root`　99 个变量（其中 1 个被重复定义）
+## `:root`　100 个变量（其中 1 个被重复定义）
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -84,6 +84,7 @@
 | `--mo-loop` | `cubic-bezier(0.45, 0, 0.55, 1)` | **motion**: cubic-bezier(0.45, 0, 0.55, 1) |
 | `--mo-shift` | `4px` | **motion**: 4px |
 | `--mo-slow` | `240ms` | **motion**: 240ms |
+| `--mo-spring` | `cubic-bezier(0.34, 1.4, 0.64, 1)` | **motion**: cubic-bezier(0.34, 1.4, 0.64, 1) |
 | `--r-full` | `999px` | **tokens**: 999px |
 | `--r-lg` | `12px` | **tokens**: 12px |
 | `--r-md` | `8px` | **tokens**: 8px |
@@ -98,11 +99,11 @@
 | `--sp-6` | `32px` | **tokens**: 32px |
 | `--statusbar-h` | `24px` | **tokens**: 24px |
 | `--think-high` | `#b294bb` | **motion**: #b294bb |
-| `--think-low` | `#5f87af` | **motion**: #5f87af |
+| `--think-low` | `#6990b8` | **motion**: #6990b8 |
 | `--think-max` | `#ff5fff` | **motion**: #ff5fff |
 | `--think-medium` | `#81a2be` | **motion**: #81a2be |
-| `--think-minimal` | `#6e6e6e` | **motion**: #6e6e6e |
-| `--think-off` | `#4a4a4a` | **motion**: #4a4a4a |
+| `--think-minimal` | `#a4a49e` | **motion**: #a4a49e |
+| `--think-off` | `#8a8a84` | **motion**: #8a8a84 |
 | `--think-xhigh` | `#d183e8` | **motion**: #d183e8 |
 | `--w-rail` | `var(--w-rail-user, 248px)` | **layout**: var(--w-rail-user, 248px) |
 | `--w-rail-collapsed` | `0px` | **layout**: 0px |
@@ -147,9 +148,9 @@
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
-| `--accent` | `#5264c8` | **tokens**: #5264c8 |
-| `--accent-line` | `rgba(82, 100, 200, 0.42)` | **tokens**: rgba(82, 100, 200, 0.42) |
-| `--accent-soft` | `rgba(82, 100, 200, 0.1)` | **tokens**: rgba(82, 100, 200, 0.1) |
+| `--accent` | `#4b5dbf` | **tokens**: #4b5dbf |
+| `--accent-line` | `rgba(75, 93, 191, 0.42)` | **tokens**: rgba(75, 93, 191, 0.42) |
+| `--accent-soft` | `rgba(75, 93, 191, 0.1)` | **tokens**: rgba(75, 93, 191, 0.1) |
 | `--bg-0` | `#fcfcfa` | **tokens**: #fcfcfa |
 | `--bg-1` | `#f3f3f0` | **tokens**: #f3f3f0 |
 | `--bg-2` | `#ffffff` | **tokens**: #ffffff |
@@ -164,25 +165,25 @@
 | `--code-inline-fg` | `#45525a` | **tokens**: #45525a |
 | `--cyan` | `var(--accent)` | **tokens**: var(--accent) |
 | `--edge` | `rgba(0, 0, 0, 0.04)` | **tokens**: rgba(0, 0, 0, 0.04) |
-| `--err` | `#dc2626` | **tokens**: #dc2626 |
-| `--err-soft` | `rgba(220, 38, 38, 0.1)` | **tokens**: rgba(220, 38, 38, 0.1) |
+| `--err` | `#c42020` | **tokens**: #c42020 |
+| `--err-soft` | `rgba(196, 32, 32, 0.1)` | **tokens**: rgba(196, 32, 32, 0.1) |
 | `--fg` | `#252522` | **tokens**: #252522 |
 | `--fg-dim` | `#55554f` | **tokens**: #55554f |
 | `--fg-mute` | `#6a6a63` | **tokens**: #6a6a63 |
 | `--magenta` | `#9333ea` | **tokens**: #9333ea |
-| `--ok` | `#059669` | **tokens**: #059669 |
-| `--ok-soft` | `rgba(5, 150, 105, 0.1)` | **tokens**: rgba(5, 150, 105, 0.1) |
+| `--ok` | `#047857` | **tokens**: #047857 |
+| `--ok-soft` | `rgba(4, 120, 87, 0.1)` | **tokens**: rgba(4, 120, 87, 0.1) |
 | `--on-accent` | `#ffffff` | **tokens**: #ffffff |
 | `--shadow-pop` | `0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04)` | **tokens**: 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) |
 | `--think-high` | `#7a5f8c` | **motion**: #7a5f8c |
-| `--think-low` | `#3f6c92` | **motion**: #3f6c92 |
+| `--think-low` | `#335d82` | **motion**: #335d82 |
 | `--think-max` | `#a300a3` | **motion**: #a300a3 |
-| `--think-medium` | `#4a7ba0` | **motion**: #4a7ba0 |
-| `--think-minimal` | `#8a8a8a` | **motion**: #8a8a8a |
-| `--think-off` | `#9a9a9a` | **motion**: #9a9a9a |
+| `--think-medium` | `#40719a` | **motion**: #40719a |
+| `--think-minimal` | `#5c5c56` | **motion**: #5c5c56 |
+| `--think-off` | `#6a6a64` | **motion**: #6a6a64 |
 | `--think-xhigh` | `#8b4bb0` | **motion**: #8b4bb0 |
-| `--warn` | `#b45309` | **tokens**: #b45309 |
-| `--warn-soft` | `rgba(180, 83, 9, 0.1)` | **tokens**: rgba(180, 83, 9, 0.1) |
+| `--warn` | `#9a4508` | **tokens**: #9a4508 |
+| `--warn-soft` | `rgba(154, 69, 8, 0.1)` | **tokens**: rgba(154, 69, 8, 0.1) |
 
 ## `@media (min-width: 1600px) :root`　1 个变量
 
@@ -208,7 +209,7 @@
 
 ## 小结
 
-- 变量总数（含各主题）：**171**
+- 变量总数（含各主题）：**172**
 - 同一选择器内被重复定义（真冗余）：**1**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。

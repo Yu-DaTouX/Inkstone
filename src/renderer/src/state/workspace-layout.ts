@@ -2,7 +2,12 @@
 export type DockEdge = 'left' | 'right' | 'top' | 'bottom' | 'center'
 export type DockNode = { type: 'group'; id: string; panes: string[]; active: string } |
   { type: 'split'; id: string; axis: 'x' | 'y'; ratio: number; first: DockNode; second: DockNode }
-export interface WorkspaceLayout { version: 1; root: DockNode; hidden: string[]; maximized?: string }
+/**
+ * `basis` is the canvas size the ratios were last set at. Splits beside the main conversation keep
+ * the tool side's pixel size from that basis, so a wider rail or a smaller window narrows only the
+ * conversation instead of every tile.
+ */
+export interface WorkspaceLayout { version: 1; root: DockNode; hidden: string[]; maximized?: string; basis?: { w: number; h: number } }
 export interface DockRect { x: number; y: number; w: number; h: number }
 export interface DockGroupRect extends DockRect { group: Extract<DockNode, { type: 'group' }> }
 export interface DockSeparator extends DockRect { id: string; axis: 'x' | 'y'; ratio: number; bounds: DockRect }
@@ -79,6 +84,14 @@ export function moveDockPane(layout: WorkspaceLayout, pane: string, targetId: st
 export function resizeDockSplit(layout: WorkspaceLayout, id: string, ratio: number): WorkspaceLayout {
   return { ...layout, root: mapNode(layout.root, n => n.type === 'split' && n.id === id ? { ...n, ratio: Math.max(.1, Math.min(.9, ratio)) } : n) }
 }
+const holdsChat = (n: DockNode): boolean => n.type === 'group' ? n.panes.includes(CHAT_PANE) : holdsChat(n.first) || holdsChat(n.second)
+/** Re-express the ratios at the current size so the arrangement on screen becomes the new basis. */
+export function rebaseDockLayout(layout: WorkspaceLayout, available: Set<string>, width: number, height: number): WorkspaceLayout {
+  if (layout.maximized) return layout
+  const measured = measureDockLayout(layout, available, width, height)
+  const shares = new Map(measured.separators.map(s => [s.id, s.ratio]))
+  return { ...layout, root: mapNode(layout.root, n => n.type === 'split' && shares.has(n.id) ? { ...n, ratio: shares.get(n.id)! } : n), basis: { w: measured.width, h: measured.height } }
+}
 /** Validate persisted data defensively, with depth/node limits and unique resource references. */
 export function normalizeWorkspaceLayout(value: unknown): WorkspaceLayout {
   const fallback = defaultWorkspaceLayout()
@@ -102,15 +115,16 @@ export function normalizeWorkspaceLayout(value: unknown): WorkspaceLayout {
     if (n.type === 'split') {
       const first = read(n.first, depth + 1), second = read(n.second, depth + 1)
       if (!first || !second) return first ?? second
-      return { type: 'split', id: n.id, axis: n.axis === 'y' ? 'y' : 'x', ratio: Number.isFinite(n.ratio) ? Math.max(.1, Math.min(.9, n.ratio)) : .5, first, second }
+      return { type: 'split', id: n.id, axis: n.axis === 'y' ? 'y' : 'x', ratio: Number.isFinite(n.ratio) ? Math.max(.02, Math.min(.98, n.ratio)) : .5, first, second }
     }
     return null
   }
   let root = read(input.root)
   if (!root) return fallback
   if (!panes.has(CHAT_PANE)) root = { type: 'split', id: uid(), axis: 'x', ratio: .65, first: group(uid(), [CHAT_PANE]), second: root }
-  return { version: 1, root, hidden: Array.isArray(input.hidden) ? input.hidden.filter(id => typeof id === 'string' && id !== CHAT_PANE && panes.has(id)) : [], maximized: typeof input.maximized === 'string' && panes.has(input.maximized) ? input.maximized : undefined }
+  return { version: 1, root, hidden: Array.isArray(input.hidden) ? input.hidden.filter(id => typeof id === 'string' && id !== CHAT_PANE && panes.has(id)) : [], maximized: typeof input.maximized === 'string' && panes.has(input.maximized) ? input.maximized : undefined, ...(validBasis(input.basis) ? { basis: { w: input.basis.w, h: input.basis.h } } : {}) }
 }
+const validBasis = (b: unknown): b is { w: number; h: number } => !!b && typeof b === 'object' && [(b as { w: unknown }).w, (b as { h: unknown }).h].every(v => typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 100000)
 export function measureDockLayout(layout: WorkspaceLayout, available: Set<string>, width: number, height: number): { groups: DockGroupRect[]; separators: DockSeparator[]; width: number; height: number } {
   const groups: DockGroupRect[] = [], separators: DockSeparator[] = []
   const visible = (n: DockNode): boolean => n.type === 'group' ? n.panes.some(id => available.has(id) && !layout.hidden.includes(id)) : visible(n.first) || visible(n.second)
@@ -122,26 +136,36 @@ export function measureDockLayout(layout: WorkspaceLayout, available: Set<string
     if (!b[0]) return a
     return n.axis === 'x' ? [a[0] + b[0] + DOCK_GAP, Math.max(a[1], b[1])] : [Math.max(a[0], b[0]), a[1] + b[1] + DOCK_GAP]
   }
-  const walk = (n: DockNode, r: DockRect): void => {
+  /* `b` is the same node laid out at the basis size; it tells how many pixels the tool side had. */
+  const walk = (n: DockNode, r: DockRect, b: DockRect): void => {
     if (!visible(n)) return
     if (n.type === 'group') { groups.push({ ...r, group: n }); return }
-    if (!visible(n.first)) { walk(n.second, r); return }
-    if (!visible(n.second)) { walk(n.first, r); return }
-    const a = minimum(n.first), b = minimum(n.second), horizontal = n.axis === 'x'
-    const total = (horizontal ? r.w : r.h) - DOCK_GAP
-    const size = Math.max(horizontal ? a[0] : a[1], Math.min(total - (horizontal ? b[0] : b[1]), total * n.ratio))
+    if (!visible(n.first)) { walk(n.second, r, b); return }
+    if (!visible(n.second)) { walk(n.first, r, b); return }
+    const a = minimum(n.first), c = minimum(n.second), horizontal = n.axis === 'x'
+    const minFirst = horizontal ? a[0] : a[1], minSecond = horizontal ? c[0] : c[1]
+    const clamp = (total: number, want: number) => Math.max(minFirst, Math.min(total - minSecond, want))
+    const total = (horizontal ? r.w : r.h) - DOCK_GAP, basisTotal = (horizontal ? b.w : b.h) - DOCK_GAP
+    const basisSize = clamp(basisTotal, basisTotal * n.ratio)
+    const chatFirst = holdsChat(n.first)
+    const want = !layout.basis || chatFirst === holdsChat(n.second) ? total * n.ratio : chatFirst ? total - (basisTotal - basisSize) : basisSize
+    const size = clamp(total, want)
     const first = horizontal ? { ...r, w: size } : { ...r, h: size }
     const separator = horizontal ? { ...r, x: r.x + size, w: DOCK_GAP } : { ...r, y: r.y + size, h: DOCK_GAP }
     const second = horizontal ? { ...r, x: r.x + size + DOCK_GAP, w: total - size } : { ...r, y: r.y + size + DOCK_GAP, h: total - size }
-    separators.push({ ...separator, id: n.id, axis: n.axis, ratio: n.ratio, bounds: r })
-    walk(n.first, first); walk(n.second, second)
+    const basisFirst = horizontal ? { ...b, w: basisSize } : { ...b, h: basisSize }
+    const basisSecond = horizontal ? { ...b, x: b.x + basisSize + DOCK_GAP, w: basisTotal - basisSize } : { ...b, y: b.y + basisSize + DOCK_GAP, h: basisTotal - basisSize }
+    /* The reported ratio is the share on screen, which is what keyboard nudges and rebasing start from. */
+    separators.push({ ...separator, id: n.id, axis: n.axis, ratio: total > 0 ? size / total : n.ratio, bounds: r })
+    walk(n.first, first, basisFirst); walk(n.second, second, basisSecond)
   }
   const min = minimum(layout.root), w = Math.max(width, min[0]), h = Math.max(height, min[1])
+  const basis = layout.basis ? { x: 0, y: 0, w: Math.max(layout.basis.w, min[0]), h: Math.max(layout.basis.h, min[1]) } : { x: 0, y: 0, w, h }
   if (layout.maximized && available.has(layout.maximized) && !layout.hidden.includes(layout.maximized)) {
     const g = dockGroups(layout.root).find(g => g.panes.includes(layout.maximized!))
     if (g) groups.push({ x: 0, y: 0, w: width, h: height, group: { ...g, active: layout.maximized } })
     return { groups, separators, width, height }
   }
-  walk(layout.root, { x: 0, y: 0, w, h })
+  walk(layout.root, { x: 0, y: 0, w, h }, basis)
   return { groups, separators, width: w, height: h }
 }

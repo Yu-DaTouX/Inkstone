@@ -87,7 +87,7 @@
   border-color: var(--border);
 }
 .rail-search:focus-within {
-  border-color: var(--accent-line);
+  border-color: var(--accent);
 }
 .rail-search input {
   flex: 1;
@@ -974,7 +974,7 @@ body.rail-dragging .srow {
 }
 .rup-input:focus {
   outline: none;
-  border-color: var(--accent-line);
+  border-color: var(--accent);
 }
 .rup-icons {
   display: grid;

@@ -105,7 +105,7 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
     setBusy(true)
     try {
       if (path !== useStore.getState().session?.sessionFile) await useStore.getState().switchSession(path)
-      if (useStore.getState().session?.sessionFile !== path) throw new Error('会话切换失败，未创建分支')
+      if (useStore.getState().session?.sessionFile !== path) throw new Error(t('map.switchFailed'))
       if (branch && turn.question.entryId && !(await forkAt(turn.question.entryId))) return
       if (quote) useStore.getState().insertIntoComposer(t('map.quotePrompt', { text: quote }))
       onBackToChat()

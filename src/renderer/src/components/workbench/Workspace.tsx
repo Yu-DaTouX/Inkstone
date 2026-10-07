@@ -2,9 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { createPortal } from 'react-dom'
 import type { IconName } from '../../icons/Icon'
 import { IconButton, Menu, MenuItem, MenuSeparator, Select, Tab } from '../ui'
+import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { loadWorkbenchState } from '../../state/workbench'
-import { CHAT_PANE, DOCK_GAP, defaultWorkspaceLayout, dockGroups, hideDockPane, measureDockLayout, moveDockPane, normalizeWorkspaceLayout, openDockPane, resizeDockSplit, withoutDockPane, type DockEdge, type DockKeep, type DockRect, type DockSeparator, type WorkspaceLayout } from '../../state/workspace-layout'
+import { CHAT_PANE, DOCK_GAP, defaultWorkspaceLayout, dockGroups, hideDockPane, measureDockLayout, moveDockPane, normalizeWorkspaceLayout, openDockPane, rebaseDockLayout, resizeDockSplit, withoutDockPane, type DockEdge, type DockKeep, type DockRect, type DockSeparator, type WorkspaceLayout } from '../../state/workspace-layout'
 
 /** Resource-owned commands shown in the tile menu; layout never decides what they do. */
 export interface PaneAction { label: string; icon?: IconName; danger?: boolean; run(): void }
@@ -58,10 +59,14 @@ export function useWorkspace() {
   return value
 }
 export function Workspace({ sessionKey, children }: { sessionKey: string; children: ReactNode }) {
+  const t = useT()
   const [saved, setSaved] = useState(() => ({ key: sessionKey, layout: loadWorkspaceLayout(sessionKey) }))
   const [panes, setPanes] = useState<PaneInfo[]>([])
   const [host, setHost] = useState<HTMLDivElement | null>(null)
   const [size, setSize] = useState({ w: 1000, h: 700 })
+  /* Edits rebase the layout on the size on screen; until the canvas is measured there is nothing to rebase on. */
+  const measuredSize = useRef<{ w: number; h: number } | null>(null)
+  const availableRef = useRef(new Set<string>())
   const [menu, setMenu] = useState<WorkspaceMenu | null>(null)
   const [target, setTarget] = useState('')
   const [drag, setDrag] = useState<{ pane: string; target?: string; edge?: DockEdge; keep?: DockKeep } | null>(null)
@@ -78,7 +83,11 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   const acquireBlocker = useStore(s => s.acquireOverlayBlocker)
 
   const layout = saved.layout
-  const update = useCallback((fn: (l: WorkspaceLayout) => WorkspaceLayout) => setSaved(s => ({ key: currentKey.current, layout: fn(s.key === currentKey.current ? s.layout : loadWorkspaceLayout(currentKey.current)) })), [])
+  /* Every edit starts from the arrangement as shown, so tiles beside the conversation keep the pixel size the user gave them. */
+  const update = useCallback((fn: (l: WorkspaceLayout) => WorkspaceLayout) => setSaved(s => {
+    const base = s.key === currentKey.current ? s.layout : loadWorkspaceLayout(currentKey.current), at = measuredSize.current
+    return { key: currentKey.current, layout: fn(at ? rebaseDockLayout(base, availableRef.current, at.w, at.h) : base) }
+  }), [])
   useEffect(() => {
     interactionCleanup.current?.()
     setSaved({ key: sessionKey, layout: loadWorkspaceLayout(sessionKey) }); setMenu(null)
@@ -99,6 +108,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
     const observer = new ResizeObserver(() => {
       const box = el.getBoundingClientRect()
       const w = Math.floor(box.width) - 2 * EDGE_X, h = Math.floor(box.height) - EDGE_TOP - EDGE_BOTTOM
+      measuredSize.current = { w, h }
       setSize(prev => prev.w === w && prev.h === h ? prev : { w, h })
     })
     observer.observe(el)
@@ -131,6 +141,10 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   const open = useCallback((id: string) => update(l => openDockPane(l, id)), [update])
   const hide = useCallback((id: string) => update(l => hideDockPane(l, id)), [update])
   const available = useMemo(() => new Set(panes.map(p => p.id)), [panes])
+  availableRef.current = available
+  /* A layout saved before sizes were kept records the size it is first shown at. */
+  const needsBasis = !layout.basis && !layout.maximized && panes.length > 0
+  useEffect(() => { if (needsBasis && measuredSize.current) update(l => l) }, [needsBasis, size, update])
   /*
    * Beside or into a tile (left, right, tabs) the tiles render the arrangement the drop would produce;
    * above or below one they stay put and a border marks the half that tile would take.
@@ -138,7 +152,8 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
    */
   const dragPane = drag?.pane, dragTarget = drag?.target, dragEdge = drag?.edge, dragKeep = drag?.keep
   const stacked = dragEdge === 'top' || dragEdge === 'bottom'
-  const shown = useMemo(() => dragPane && dragTarget && dragEdge && !stacked ? moveDockPane(layout, dragPane, dragTarget, dragEdge, dragKeep) : layout, [layout, dragPane, dragTarget, dragEdge, dragKeep, stacked])
+  /* The preview starts from the rebased arrangement, exactly as the committed move will. */
+  const shown = useMemo(() => dragPane && dragTarget && dragEdge && !stacked ? moveDockPane(rebaseDockLayout(layout, available, size.w, size.h), dragPane, dragTarget, dragEdge, dragKeep) : layout, [layout, available, size, dragPane, dragTarget, dragEdge, dragKeep, stacked])
   const edgeZone = useMemo(() => {
     if (!dragPane || !dragTarget || !stacked) return null
     const group = measureDockLayout(withoutDockPane(layout, dragPane), available, size.w, size.h).groups.find(r => r.group.id === dragTarget)
@@ -275,27 +290,27 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
             if (ids.length === 1 && active === CHAT_PANE) {
               /* The conversation keeps its own header; only a grip sits above it. */
               return <div key={'head-' + active} className="tile-heading tile-grip-zone" style={{ ...position(r), height: layout.maximized ? GRIP_MAXIMIZED : GRIP }} data-dock-group={r.group.id} onPointerDown={e => { if (!(e.target as HTMLElement).closest(".tile-grip-restore")) beginDrag(active, e) }}>
-                <button type="button" className="tile-grip ui-tile-grip" aria-label={`移动 ${titleOf(active)}`} title="拖动以移动主会话；按 Enter 打开移动菜单" onClick={e => openPaneMenu(active, menuAnchor(e.currentTarget))} />
-                {layout.maximized ? <IconButton className="tile-grip-restore" size="sm" icon="dock" label="还原面板" onClick={() => toggleMaximize(active)} /> : null}
+                <button type="button" className="tile-grip ui-tile-grip" aria-label={t('tile.move', { title: titleOf(active) })} title={t('tile.gripHint')} onClick={e => openPaneMenu(active, menuAnchor(e.currentTarget))} />
+                {layout.maximized ? <IconButton className="tile-grip-restore" size="sm" icon="dock" label={t('tile.restore')} onClick={() => toggleMaximize(active)} /> : null}
               </div>
             }
             const info = panes.find(p => p.id === active)
             /* Only tabs, "+" and hide stay visible; the pane menu opens on right-click (or the menu key) and double-click maximizes. */
-            return <div key={'head-' + active} className="tile-heading ui-tile-head" style={{ ...position(r), height: HEAD }} data-dock-group={r.group.id} title="右键：移动与面板操作 · 双击：放大或还原"
+            return <div key={'head-' + active} className="tile-heading ui-tile-head" style={{ ...position(r), height: HEAD }} data-dock-group={r.group.id} title={t('tile.headHint')}
               onPointerDown={e => { if (!(e.target as HTMLElement).closest('button')) beginDrag(active, e) }}
               onDoubleClick={e => { if (!(e.target as HTMLElement).closest('.ui-tab-close, .btn')) toggleMaximize(active) }}
               onContextMenu={e => { e.preventDefault(); const tab = (e.target as HTMLElement).closest('[data-pane-tab]') as HTMLElement | null; openPaneMenu(tab?.dataset.paneTab ?? active, { top: e.clientY + 2, right: Math.max(8, window.innerWidth - e.clientX) }) }}
               onKeyDown={e => { if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); openPaneMenu(active, menuAnchor(e.currentTarget)) } }}>
-              <div className={`ui-tabs tile-tabs${ids.length === 1 ? ' single' : ''}`} role="tablist" aria-label="磁贴标签">
+              <div className={`ui-tabs tile-tabs${ids.length === 1 ? ' single' : ''}`} role="tablist" aria-label={t('tile.tabs')}>
                 {ids.map(id => { const pane = panes.find(p => p.id === id); return <span key={id} role="presentation" className="tile-tab" data-pane-tab={id}><Tab icon={pane?.icon} title={pane?.hint} selected={id === active}
                   onClick={() => { if (!justDragged()) open(id) }} onPointerDown={e => { if (!(e.target as HTMLElement).closest('.ui-tab-close')) beginDrag(id, e) }}
                   onClose={pane?.closeLabel ? () => commands.get(id)?.onClose?.() : undefined} closeLabel={pane?.closeLabel}>{titleOf(id)}</Tab></span> })}
                 {info?.addLabel ? <IconButton icon="plus" size="sm" label={info.addLabel} onClick={() => commands.get(active)?.onAdd?.()} /> : null}
               </div>
-              <IconButton size="sm" icon="close" label="收起面板，保留运行" onClick={() => hide(active)} />
+              <IconButton size="sm" icon="close" label={t('tile.hideKeep')} onClick={() => hide(active)} />
             </div>
           })}
-          {drag ? null : measured.separators.map(s => <div key={s.id} className={`tile-separator ui-splitter axis-${s.axis}`} style={position(s)} role="separator" tabIndex={0} aria-label={s.axis === 'x' ? '调整面板宽度' : '调整面板高度'} aria-orientation={s.axis === 'x' ? 'vertical' : 'horizontal'} aria-valuenow={Math.round(s.ratio * 100)} aria-valuemin={10} aria-valuemax={90} onPointerDown={e => resize(s, e)} onKeyDown={e => {
+          {drag ? null : measured.separators.map(s => <div key={s.id} className={`tile-separator ui-splitter axis-${s.axis}`} style={position(s)} role="separator" tabIndex={0} aria-label={s.axis === 'x' ? t('tile.resizeWidth') : t('tile.resizeHeight')} aria-orientation={s.axis === 'x' ? 'vertical' : 'horizontal'} aria-valuenow={Math.round(s.ratio * 100)} aria-valuemin={10} aria-valuemax={90} onPointerDown={e => resize(s, e)} onKeyDown={e => {
             const delta = (s.axis === 'x' ? e.key === 'ArrowLeft' : e.key === 'ArrowUp') ? -.025 : (s.axis === 'x' ? e.key === 'ArrowRight' : e.key === 'ArrowDown') ? .025 : 0
             if (delta) { e.preventDefault(); update(l => resizeDockSplit(l, s.id, s.ratio + delta)) }
           }} />)}
@@ -312,23 +327,23 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
         </div>
       </div>
       {menu ? <div className="tile-menu-backdrop" onPointerDown={e => { if (e.target === e.currentTarget) setMenu(null) }}>
-        <Menu className="tile-layout-menu" label="调整工作区" style={{ top: menu.at.top, right: menu.at.right }}>
+        <Menu className="tile-layout-menu" label={t('tile.menu')} style={{ top: menu.at.top, right: menu.at.right }}>
           {menu.kind === 'workspace' ? <>
-            <MenuItem icon="tile" autoFocus onClick={() => run(() => update(() => panes.reduce((l, p) => p.id === CHAT_PANE || p.id === 'tools' ? l : openDockPane(l, p.id), defaultWorkspaceLayout())))}>恢复默认排列</MenuItem>
-            {layout.maximized ? <MenuItem icon="dock" onClick={() => run(() => update(l => ({ ...l, maximized: undefined })))}>返回工作区</MenuItem> : null}
-            {panes.some(p => layout.hidden.includes(p.id)) ? <><MenuSeparator /><div className="tile-menu-label ui-menu-label">已隐藏</div></> : null}
-            {panes.filter(p => layout.hidden.includes(p.id)).map(p => <MenuItem key={p.id} icon={p.icon} onClick={() => run(() => open(p.id))}>重新打开 {p.title}</MenuItem>)}
+            <MenuItem icon="tile" autoFocus onClick={() => run(() => update(() => panes.reduce((l, p) => p.id === CHAT_PANE || p.id === 'tools' ? l : openDockPane(l, p.id), defaultWorkspaceLayout())))}>{t('tile.resetLayout')}</MenuItem>
+            {layout.maximized ? <MenuItem icon="dock" onClick={() => run(() => update(l => ({ ...l, maximized: undefined })))}>{t('tile.backToWorkspace')}</MenuItem> : null}
+            {panes.some(p => layout.hidden.includes(p.id)) ? <><MenuSeparator /><div className="tile-menu-label ui-menu-label">{t('tile.hidden')}</div></> : null}
+            {panes.filter(p => layout.hidden.includes(p.id)).map(p => <MenuItem key={p.id} icon={p.icon} onClick={() => run(() => open(p.id))}>{t('tile.reopen', { title: p.title })}</MenuItem>)}
           </> : <>
-            <div className="tile-menu-label ui-menu-label">移动 {titleOf(menuPane)} 到</div>
-            <Select autoFocus aria-label="目标磁贴" value={target} onChange={e => setTarget(e.target.value)}>{measured.groups.map(r => <option key={r.group.id} value={r.group.id}>{r.group.panes.map(id => panes.find(p => p.id === id)?.title).filter(Boolean).join(' / ')}</option>)}</Select>
+            <div className="tile-menu-label ui-menu-label">{t('tile.moveTo', { title: titleOf(menuPane) })}</div>
+            <Select autoFocus aria-label={t('tile.target')} value={target} onChange={e => setTarget(e.target.value)}>{measured.groups.map(r => <option key={r.group.id} value={r.group.id}>{r.group.panes.map(id => panes.find(p => p.id === id)?.title).filter(Boolean).join(' / ')}</option>)}</Select>
             <div className="tile-move-actions">
-              {(['left', 'right', 'top', 'bottom'] as DockEdge[]).map((edge, i) => <MenuItem key={edge} onClick={() => run(() => { if (target) update(l => moveDockPane(l, menuPane, target, edge)) })}>{['左侧', '右侧', '上方', '下方'][i]}</MenuItem>)}
+              {(['left', 'right', 'top', 'bottom'] as DockEdge[]).map((edge, i) => <MenuItem key={edge} onClick={() => run(() => { if (target) update(l => moveDockPane(l, menuPane, target, edge)) })}>{t((['tile.edge.left', 'tile.edge.right', 'tile.edge.top', 'tile.edge.bottom'] as const)[i])}</MenuItem>)}
             </div>
-            <MenuItem icon="group" disabled={menuPane === CHAT_PANE || targetHasChat} onClick={() => run(() => { if (target) update(l => moveDockPane(l, menuPane, target, 'center')) })}>合入标签组</MenuItem>
+            <MenuItem icon="group" disabled={menuPane === CHAT_PANE || targetHasChat} onClick={() => run(() => { if (target) update(l => moveDockPane(l, menuPane, target, 'center')) })}>{t('tile.mergeTabs')}</MenuItem>
             <MenuSeparator />
             {(commands.get(menuPane)?.actions ?? []).map(action => <MenuItem key={action.label} icon={action.icon} danger={action.danger} onClick={() => run(action.run)}>{action.label}</MenuItem>)}
-            <MenuItem icon={layout.maximized ? 'dock' : 'maximize'} onClick={() => run(() => toggleMaximize(menuPane))}>{layout.maximized ? '还原面板' : '放大面板'}</MenuItem>
-            {menuPane !== CHAT_PANE ? <MenuItem icon="close" onClick={() => run(() => hide(menuPane))}>隐藏面板</MenuItem> : null}
+            <MenuItem icon={layout.maximized ? 'dock' : 'maximize'} onClick={() => run(() => toggleMaximize(menuPane))}>{layout.maximized ? t('tile.restore') : t('tile.maximize')}</MenuItem>
+            {menuPane !== CHAT_PANE ? <MenuItem icon="close" onClick={() => run(() => hide(menuPane))}>{t('tile.hide')}</MenuItem> : null}
           </>}
         </Menu>
       </div> : null}

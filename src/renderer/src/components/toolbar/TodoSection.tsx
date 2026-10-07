@@ -37,7 +37,7 @@ function SubagentsBlock() {
           </Button>
         ) : null}
       </div>
-      <Button block size="sm" icon="agent" trailingIcon="chevron-right" onClick={() => window.dispatchEvent(new CustomEvent('inkstone-agent-open', {detail:`subagent:${visible[0].id}`}))}>在 Agent 工作区查看</Button>
+      <Button block size="sm" icon="agent" trailingIcon="chevron-right" onClick={() => window.dispatchEvent(new CustomEvent('inkstone-agent-open', {detail:`subagent:${visible[0].id}`}))}>{t('sa.viewInWorkspace')}</Button>
     </div>
   )
 }
@@ -325,14 +325,14 @@ function GoalTaskSummary() {
   const done = goal.steps.filter((step) => step.status === 'done').length
   return (
     <div className="rp-goal-summary" data-testid="rp-goal-summary">
-      <button type="button" className="rp-goal-summary-head" onClick={() => setGoalPopoverOpen(true)} title="查看目标详情与证据">
+      <button type="button" className="rp-goal-summary-head" onClick={() => setGoalPopoverOpen(true)} title={t('goal.detailHint')}>
         <Icon name="checklist" size={14} />
         <strong>{goalDisplayTitle(goal)}</strong>
         <span className="rp-goal-phase">{t(`goal.${goal.phase}` as MessageKey)}</span>
       </button>
       {goal.steps.length ? (
         <>
-          <div className="rp-goal-progress">目标进度 <span>{done}/{goal.steps.length}</span></div>
+          <div className="rp-goal-progress">{t('goal.progressLabel')} <span>{done}/{goal.steps.length}</span></div>
           <ol className="rp-goal-step-list">
             {goal.steps.slice(0, 5).map((step, index) => (
               <li key={`${index}-${step.title}`} className={`rp-goal-step ${step.status}`} title={step.title}>
@@ -343,10 +343,10 @@ function GoalTaskSummary() {
               </li>
             ))}
           </ol>
-          {goal.steps.length > 5 ? <button type="button" className="rp-goal-more" onClick={() => setGoalPopoverOpen(true)}>查看全部 {goal.steps.length} 步</button> : null}
+          {goal.steps.length > 5 ? <button type="button" className="rp-goal-more" onClick={() => setGoalPopoverOpen(true)}>{t('goal.viewAllSteps', { n: goal.steps.length })}</button> : null}
         </>
       ) : null}
-      {goal.verification ? <div className="rp-goal-verification">核验：{goal.verification.detail}</div> : null}
+      {goal.verification ? <div className="rp-goal-verification">{t('goal.verification', { detail: goal.verification.detail })}</div> : null}
     </div>
   )
 }
@@ -396,6 +396,7 @@ function OutputGroup({
 
 /** 只展示当前会话实际登记的产物和参考；没有数据时不占磁贴空间。 */
 function GoalOutputs() {
+  const t = useT()
   const goalLinks = useStore((s) => s.goal?.links)
   const messages = useStore((s) => s.messages)
   const outputs = useMemo(() => {
@@ -428,7 +429,7 @@ function GoalOutputs() {
   return (
     <div className="rp-goal-outputs" data-testid="rp-goal-outputs">
       {outputs.length ? (
-        <OutputGroup testId="rp-output-products" title="产物" count={outputs.length}>
+        <OutputGroup testId="rp-output-products" title={t('goal.outputs')} count={outputs.length}>
           {outputs.slice(-6).map((output) => (
             <button
               type="button"
@@ -440,13 +441,13 @@ function GoalOutputs() {
             >
               <Icon name="folder-open" size={12} />
               <span>{output.label}</span>
-              {output.unavailable ? <small>不可用</small> : null}
+              {output.unavailable ? <small>{t('src.unavailable')}</small> : null}
             </button>
           ))}
         </OutputGroup>
       ) : null}
       {urls.length || images.length ? (
-        <OutputGroup testId="rp-output-references" title="参考" count={urls.length + images.length}>
+        <OutputGroup testId="rp-output-references" title={t('goal.references')} count={urls.length + images.length}>
           {urls.slice(-4).map((link) => (
             <button
               type="button"
@@ -461,8 +462,8 @@ function GoalOutputs() {
           ))}
           {images.slice(-3).map((image, index) => (
             <div className="rp-output-row" key={`${index}-${image.mimeType}`}>
-              <img src={`data:${image.mimeType};base64,${image.data}`} alt={`参考图片 ${index + 1}`} />
-              <span>参考图片 {index + 1}</span>
+              <img src={`data:${image.mimeType};base64,${image.data}`} alt={t('goal.refImage', { n: index + 1 })} />
+              <span>{t('goal.refImage', { n: index + 1 })}</span>
             </div>
           ))}
         </OutputGroup>

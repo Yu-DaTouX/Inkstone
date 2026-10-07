@@ -241,15 +241,16 @@ html[data-theme='light'] {
   --fg: #252522;
   --fg-dim: #55554f;
   --fg-mute: #6a6a63;
-  --accent: #5264c8;
-  --accent-soft: rgba(82, 100, 200, 0.1);
-  --accent-line: rgba(82, 100, 200, 0.42);
-  --ok: #059669;
-  --ok-soft: rgba(5, 150, 105, 0.1);
-  --warn: #b45309;
-  --warn-soft: rgba(180, 83, 9, 0.1);
-  --err: #dc2626;
-  --err-soft: rgba(220, 38, 38, 0.1);
+  /* 强调色与三个状态色在 bg-3（选中行）与自己的淡底上作文字也要 ≥4.5:1 */
+  --accent: #4b5dbf;
+  --accent-soft: rgba(75, 93, 191, 0.1);
+  --accent-line: rgba(75, 93, 191, 0.42);
+  --ok: #047857;
+  --ok-soft: rgba(4, 120, 87, 0.1);
+  --warn: #9a4508;
+  --warn-soft: rgba(154, 69, 8, 0.1);
+  --err: #c42020;
+  --err-soft: rgba(196, 32, 32, 0.1);
   --magenta: #9333ea;
   --cyan: var(--accent);
 

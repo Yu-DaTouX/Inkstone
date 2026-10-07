@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { AgentWorkspacePanel } from '../workbench/AgentWorkspacePanel'
 import { type ToolSectionId } from '../../../../shared/ipc'
@@ -18,33 +19,36 @@ import { LogCount, QueueSection, ExtSection, LogSection, ActionsSection } from '
 import { WorkspacePane, useWorkspace, loadWorkspaceLayout, type MenuAnchor } from '../workbench/Workspace'
 import { dockGroups } from '../../state/workspace-layout'
 
-const LAUNCH_ITEMS: [string, string, IconName][] = [
-  ['files', '文件', 'folder'], ['browser', '浏览器', 'globe'], ['terminal', '终端', 'terminal'], ['agents', 'Agent 协作', 'agent'],
-  ['tasks', '任务', 'checklist'], ['logs', '日志', 'activity']
+const LAUNCH_ITEMS: [string, MessageKey, IconName][] = [
+  ['files', 'tile.files', 'folder'], ['browser', 'tile.browser', 'globe'], ['terminal', 'tile.terminal', 'terminal'], ['agents', 'hub.title', 'agent'],
+  ['tasks', 'tile.tasks', 'checklist'], ['logs', 'tile.logs', 'activity']
 ]
 
 /** Goal, task list and queued messages; the tile stays useful when the agent has none yet. */
 function TasksPane() {
+  const t = useT()
   const hasTasks = useStore(s => hasTaskTileContent({
     todos: s.todos, goal: s.goal, hasSubagents: hasVisibleSubagents(s),
     hasMessageOutputs: s.messages.some(m => !!m.artifacts?.length || (m.role === 'user' && !!m.images?.length))
   }))
   return <div className="tile-sections" data-testid="tasks-pane">
-    {hasTasks ? <TodoSection /> : <EmptyState icon="checklist" title="还没有任务">Agent 维护的目标与任务清单会显示在这里。</EmptyState>}
+    {hasTasks ? <TodoSection /> : <EmptyState icon="checklist" title={t('tile.tasksEmpty')}>{t('tile.tasksEmptyBody')}</EmptyState>}
     <QueueSection />
   </div>
 }
 
 /** Extension status and the agent process log. */
 function LogsPane() {
+  const t = useT()
   const empty = useStore(s => s.logs.length === 0 && !Object.keys(s.statuses).length && !Object.keys(s.widgets).length)
   return <div className="tile-sections" data-testid="logs-pane">
-    {empty ? <EmptyState icon="activity" title="暂无日志">扩展状态与 Agent 进程输出会显示在这里。</EmptyState> : <><ExtSection /><LogSection /></>}
+    {empty ? <EmptyState icon="activity" title={t('tile.logsEmpty')}>{t('tile.logsEmptyBody')}</EmptyState> : <><ExtSection /><LogSection /></>}
   </div>
 }
 
 /** Resource owners stay unchanged; this controller only opens their workspace panes. */
 export function RightPanel() {
+  const t = useT()
   const workspace = useWorkspace()
   const session = useStore(s => s.session)
   const key = workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)
@@ -138,18 +142,18 @@ export function RightPanel() {
   }
   launchRef.current = launch
   return <>
-    {tasksOpen ? <WorkspacePane id="tasks" title="任务" icon="checklist"><TasksPane /></WorkspacePane> : null}
-    {logsOpen ? <WorkspacePane id="logs" title="日志" icon="activity"><LogsPane /></WorkspacePane> : null}
-    {browser.open ? <WorkspacePane id="browser" title="浏览器" icon="globe" onVisibleChange={setBrowserSurfaceActive}><BrowserSurface /></WorkspacePane> : null}
-    {fileTreeOpen ? <WorkspacePane id="files" title="文件" icon="folder"><div className="tile-file-tree"><FileTree /></div></WorkspacePane> : null}
-    {Object.entries(files).map(([id, preview]) => <WorkspacePane key={id} id={'file:' + id} title={preview.data?.name || fileResourceLabel(id) || '文件'} icon="file" closeLabel="关闭文件" onClose={() => closeFileTab(id)}><FilePreviewPane resourceKey={id} /></WorkspacePane>)}
-    {terminals.map((terminal, index) => <WorkspacePane key={terminal.id} id={'terminal:' + terminal.id} title={`终端 ${index + 1}`} hint={[terminal.title, terminal.alive ? '' : '已退出'].filter(Boolean).join(' · ')} addLabel="新建终端" onAdd={() => void newTerminal()} closeLabel={terminal.alive ? '结束终端' : '关闭终端'} onClose={() => void useStore.getState().closeTerminal(terminal.id)} actions={[{ label: '新建终端', icon: 'plus', run: () => void newTerminal() }, { label: terminal.alive ? '结束终端' : '关闭终端', icon: 'stop', danger: terminal.alive, run: () => void useStore.getState().closeTerminal(terminal.id) }]}><TerminalSurface terminalId={terminal.id} bare /></WorkspacePane>)}
-    {ownerKey === key && agentManager ? <WorkspacePane id="agents" title="Agent 协作" icon="agent"><AgentWorkspacePanel onBack={() => hide('agents')} onOpenRun={openAgent} managerOnly /></WorkspacePane> : null}
-    {(ownerKey === key ? agents : []).map(id => <WorkspacePane key={key + id} id={'agent:' + id} title={agentTitles[id] || (id.startsWith('subagent:') ? 'pi · 子任务' : 'Agent · ' + id.slice(-6))} icon="agent"><AgentWorkspacePanel initialRun={id} onlyRun onBack={() => hide('agent:' + id)} onTitleChange={title => { if (currentKey.current === key) setAgentTitles(old => old[id] === title ? old : { ...old, [id]: title }) }} /></WorkspacePane>)}
-    {menu ? <div className="tile-menu-backdrop" onPointerDown={e => { if (e.target === e.currentTarget) setMenu(null) }}><Menu className="tile-layout-menu" label="打开工作区工具" data-testid="right-tool-menu-popover" style={{ top: menu.top, right: menu.right }}>
-      {LAUNCH_ITEMS.map(([id, title, icon], i) => <MenuItem key={id} icon={icon} className="rp-tool-menu-item" autoFocus={i === 0} onClick={() => void launch(id)}>{title}</MenuItem>)}
+    {tasksOpen ? <WorkspacePane id="tasks" title={t('tile.tasks')} icon="checklist"><TasksPane /></WorkspacePane> : null}
+    {logsOpen ? <WorkspacePane id="logs" title={t('tile.logs')} icon="activity"><LogsPane /></WorkspacePane> : null}
+    {browser.open ? <WorkspacePane id="browser" title={t('tile.browser')} icon="globe" onVisibleChange={setBrowserSurfaceActive}><BrowserSurface /></WorkspacePane> : null}
+    {fileTreeOpen ? <WorkspacePane id="files" title={t('tile.files')} icon="folder"><div className="tile-file-tree"><FileTree /></div></WorkspacePane> : null}
+    {Object.entries(files).map(([id, preview]) => <WorkspacePane key={id} id={'file:' + id} title={preview.data?.name || fileResourceLabel(id) || t('tile.file')} icon="file" closeLabel={t('tile.closeFile')} onClose={() => closeFileTab(id)}><FilePreviewPane resourceKey={id} /></WorkspacePane>)}
+    {terminals.map((terminal, index) => <WorkspacePane key={terminal.id} id={'terminal:' + terminal.id} title={t('tile.terminalN', { n: index + 1 })} hint={[terminal.title, terminal.alive ? '' : t('tile.exited')].filter(Boolean).join(' · ')} addLabel={t('term.new')} onAdd={() => void newTerminal()} closeLabel={terminal.alive ? t('tile.endTerminal') : t('term.close')} onClose={() => void useStore.getState().closeTerminal(terminal.id)} actions={[{ label: t('term.new'), icon: 'plus', run: () => void newTerminal() }, { label: terminal.alive ? t('tile.endTerminal') : t('term.close'), icon: 'stop', danger: terminal.alive, run: () => void useStore.getState().closeTerminal(terminal.id) }]}><TerminalSurface terminalId={terminal.id} bare /></WorkspacePane>)}
+    {ownerKey === key && agentManager ? <WorkspacePane id="agents" title={t('hub.title')} icon="agent"><AgentWorkspacePanel onBack={() => hide('agents')} onOpenRun={openAgent} managerOnly /></WorkspacePane> : null}
+    {(ownerKey === key ? agents : []).map(id => <WorkspacePane key={key + id} id={'agent:' + id} title={agentTitles[id] || (id.startsWith('subagent:') ? `pi · ${t('hub.kind.subtask')}` : 'Agent · ' + id.slice(-6))} icon="agent"><AgentWorkspacePanel initialRun={id} onlyRun onBack={() => hide('agent:' + id)} onTitleChange={title => { if (currentKey.current === key) setAgentTitles(old => old[id] === title ? old : { ...old, [id]: title }) }} /></WorkspacePane>)}
+    {menu ? <div className="tile-menu-backdrop" onPointerDown={e => { if (e.target === e.currentTarget) setMenu(null) }}><Menu className="tile-layout-menu" label={t('tb.openTools')} data-testid="right-tool-menu-popover" style={{ top: menu.top, right: menu.right }}>
+      {LAUNCH_ITEMS.map(([id, title, icon], i) => <MenuItem key={id} icon={icon} className="rp-tool-menu-item" autoFocus={i === 0} onClick={() => void launch(id)}>{t(title)}</MenuItem>)}
       <MenuSeparator />
-      <MenuItem icon="tile" onClick={() => { const at = menu; setMenu(null); window.dispatchEvent(new CustomEvent('inkstone-workspace-arrange', { detail: at })) }}>排列与隐藏的面板…</MenuItem>
+      <MenuItem icon="tile" onClick={() => { const at = menu; setMenu(null); window.dispatchEvent(new CustomEvent('inkstone-workspace-arrange', { detail: at })) }}>{t('tile.arrange')}</MenuItem>
     </Menu></div> : null}
   </>
 }

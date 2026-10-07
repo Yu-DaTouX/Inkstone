@@ -122,7 +122,7 @@ export function KnowledgeTab() {
          */
         const text =
           res.latestRevision !== undefined
-            ? `${res.error ?? tk('set.knFailed')}（磁盘上是第 ${res.latestRevision} 版，刷新后再改）`
+            ? `${res.error ?? tk('set.knFailed')}${t('set.knStale', { n: res.latestRevision })}`
             : (res.error ?? tk('set.knFailed'))
         setNotice({ kind: 'err', text })
         await refresh()

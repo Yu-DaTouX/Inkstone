@@ -237,7 +237,7 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
   return (
     <div className="env-links" data-testid="env-source-menu">
       <div className="env-links-head">
-        <Icon name="library" size={14} />
+        <Icon name="library" size={12} />
         <span className="env-label">{t('src.title')}</span>
         <span className="env-sub">{counts.all > 0 ? String(counts.all) : ''}</span>
       </div>
@@ -336,8 +336,9 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
         </div>
       )}
 
-      {dir ? (
-        <div className="env-carry-hint" title={dir}>
+      {/* 副本目录只和图片有关：没有图片时不占行；路径一行省略，悬停看全 */}
+      {dir && images.length > 0 ? (
+        <div className="env-carry-hint src-dir" title={dir}>
           {t('src.stored', { dir })}
         </div>
       ) : null}
@@ -406,8 +407,8 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
         </button>
       </div>
       {bad ? <div className="env-error">{t('src.badUrl')}</div> : null}
-      {/* 边界（方案 §6.4 的硬要求）：只是关联，不宣称上传/同步/远程执行 */}
-      <div className="env-carry-hint">{t('src.note')}</div>
+      {/* 边界（方案 §6.4 的硬要求）：只是关联，不宣称上传/同步/远程执行；说的是「移除」，有条目时才出现 */}
+      {counts.all > 0 ? <div className="env-carry-hint">{t('src.note')}</div> : null}
     </div>
   )
 }

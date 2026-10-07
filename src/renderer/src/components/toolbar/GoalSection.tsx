@@ -305,7 +305,7 @@ export function GoalContent() {
                   data-link-kind={link.kind}
                   data-link-ok={link.check ? String(link.check.ok) : 'unchecked'}
                   key={`${link.kind}-${link.target}-${index}`}
-                  title={link.check ? `${link.target}\n宿主核验：${link.check.detail}` : link.target}
+                  title={link.check ? `${link.target}\n${t('goal.hostCheck', { detail: link.check.detail })}` : link.target}
                   onClick={() => void openLink(link)}
                 >
                   <Icon name={link.kind === 'url' ? 'globe' : 'folder-open'} size={12} />

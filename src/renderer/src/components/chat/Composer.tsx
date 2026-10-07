@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
-import { useT } from '../../i18n'
+import { useT, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { ComposerBorder } from './ComposerBorder'
 import { QuestionPanel } from './QuestionPanel'
@@ -755,7 +755,7 @@ export function Composer() {
         if (selected) await setModel(selected.provider, selected.id)
         else openSettings('status')
       } else {
-        await runPiBuiltin(localName ?? '', localArgs)
+        await runPiBuiltin(t, localName ?? '', localArgs)
       }
       return
     }
@@ -1055,7 +1055,7 @@ export function Composer() {
             {slashMatches.map((c, i) => (
               <Fragment key={`${c.source}:${c.name}:${c.module ?? ''}`}>
                 {i === 0 || slashMatches[i - 1].source !== c.source ? (
-                  <div className="slash-group" data-source={c.source}>{commandSourceLabel(c.source)}</div>
+                  <div className="slash-group" data-source={c.source}>{commandSourceLabel(t, c.source)}</div>
                 ) : null}
                 <button
                   className={`slash-item ${i === menu.index ? 'sel' : ''} ${c.executable ? '' : 'compat'}`}
@@ -1081,15 +1081,15 @@ export function Composer() {
              */}
             <div className="slash-hint" data-testid="slash-hint">
               <span>
-                <kbd className="ui-kbd">↑↓</kbd> 选
+                <kbd className="ui-kbd">↑↓</kbd> {t('composer.slashSelect')}
               </span>
               <span>
-                <kbd className="ui-kbd">Enter</kbd> / <kbd className="ui-kbd">Tab</kbd> 填入
+                <kbd className="ui-kbd">Enter</kbd> / <kbd className="ui-kbd">Tab</kbd> {t('composer.slashFill')}
               </span>
               <span>
-                <kbd className="ui-kbd">Esc</kbd> 关闭
+                <kbd className="ui-kbd">Esc</kbd> {t('composer.slashClose')}
               </span>
-              <span className="slash-count">{slashMatches.length} 项</span>
+              <span className="slash-count">{t('composer.slashCount', { n: slashMatches.length })}</span>
             </div>
           </div>
         ) : null}
@@ -1271,7 +1271,7 @@ function toAbsoluteFilePath(cwd: string, rel: string): string {
  * pi 终端内置命令在桌面端的落点。命令名与参数含义沿用 pi（/thinking 档位、/name 名称），
  * 动作交给已有的 store 方法，不另起一套实现。
  */
-async function runPiBuiltin(name: string, args: string): Promise<void> {
+async function runPiBuiltin(t: TFunc, name: string, args: string): Promise<void> {
   const s = useStore.getState()
   if (name === 'settings') s.openSettings()
   else if (name === 'export') await s.exportHtml()
@@ -1279,18 +1279,18 @@ async function runPiBuiltin(name: string, args: string): Promise<void> {
   else if (name === 'clone') await s.clone()
   else if (name === 'name') {
     if (args) await s.setManualTitle('', args)
-    else s.notify('info', '用法：/name <会话名称>')
+    else s.notify('info', t('composer.nameUsage'))
   } else if (name === 'thinking') {
     const levels = s.thinkingLevels
     const level = args.toLowerCase()
-    if (!level) s.notify('info', `当前思考档位：${s.session?.thinkingLevel ?? 'off'}（可选：${levels.join(' / ') || '当前模型不支持'}）`)
+    if (!level) s.notify('info', t('composer.thinkingCurrent', { level: s.session?.thinkingLevel ?? 'off', levels: levels.join(' / ') || t('composer.thinkingUnsupported') }))
     else if (levels.includes(level)) await s.setThinking(level)
-    else s.notify('error', `当前模型没有「${args}」档，可选：${levels.join(' / ') || '无'}`)
+    else s.notify('error', t('composer.thinkingMissing', { level: args, levels: levels.join(' / ') || t('composer.none') }))
   } else if (name === 'session') {
     const info = s.session
     const lines = [
-      info?.sessionName || info?.sessionId || '（未开始）',
-      info ? `${info.messageCount} 条消息` : '',
+      info?.sessionName || info?.sessionId || t('composer.sessionNotStarted'),
+      info ? t('composer.messageCount', { n: info.messageCount }) : '',
       info?.sessionFile ?? ''
     ].filter(Boolean)
     s.notify('info', lines.join(' · '))
@@ -1317,15 +1317,15 @@ function commandSourceRank(command: SlashCommand): number {
   }[command.source]
 }
 
-function commandSourceLabel(source: SlashCommand['source']): string {
-  return {
-    yan: 'Yan 内置',
-    pi: 'pi 内置',
-    extension: '扩展',
-    skill: '技能',
-    prompt: '提示词模板',
-    compatibility: '兼容显示'
-  }[source]
+function commandSourceLabel(t: TFunc, source: SlashCommand['source']): string {
+  return t(({
+    yan: 'composer.src.yan',
+    pi: 'composer.src.pi',
+    extension: 'composer.src.extension',
+    skill: 'composer.src.skill',
+    prompt: 'composer.src.prompt',
+    compatibility: 'composer.src.compatibility'
+  } as const)[source])
 }
 
 /** 排队的插话 / 后续消息 —— 让「它知道我说了」可见 */

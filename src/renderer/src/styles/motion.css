@@ -44,6 +44,8 @@
   --mo-ease-out: cubic-bezier(0.4, 0, 1, 1);
   /* 只给运行中的循环（呼吸、脉冲）：两端对称，不抢入场曲线的「快进慢停」 */
   --mo-loop: cubic-bezier(0.45, 0, 0.55, 1);
+  /* 落位带一点回弹：只给小控件的手柄（分档滑块），浮层与面板仍用 --mo-ease */
+  --mo-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 /* 52.1 关键帧 */
@@ -201,6 +203,27 @@
 .mt-pop .mt-stop {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
   animation-delay: calc(var(--i, 0) * var(--dur-26));
+}
+
+/* 项目环境菜单：从触发器下方落下，各组依次落位 */
+.env-menu {
+  animation: mo-in-down var(--mo-base) var(--mo-ease) both;
+  transform-origin: top right;
+}
+.env-menu > .env-group,
+.env-menu > .env-links {
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+}
+.env-menu > :nth-child(2) { animation-delay: var(--dur-24); }
+.env-menu > :nth-child(3) { animation-delay: var(--dur-45); }
+.env-menu > :nth-child(4) { animation-delay: var(--dur-80); }
+.env-menu > :nth-child(n + 5) { animation-delay: var(--dur-120); }
+@media (prefers-reduced-motion: reduce) {
+  .env-menu,
+  .env-menu > .env-group,
+  .env-menu > .env-links {
+    animation: none;
+  }
 }
 
 /* 向下弹（会话行 / 列表项的操作菜单） */
@@ -591,10 +614,11 @@ html[data-theme='light'] .turn {
    思考档位色只落在方点阵与运行条底线上（七档七色，取自 pi 的 dark.json），
    文字用中性色 —— 整句染成高档位的洋红读起来像告警。 */
 
+/* 档位色也是模型菜单里的档位文字色：off / minimal / low 从 pi 原值提亮到 bg-1、bg-2 上 ≥4.5:1 */
 :root {
-  --think-off: #4a4a4a;
-  --think-minimal: #6e6e6e;
-  --think-low: #5f87af;
+  --think-off: #8a8a84;
+  --think-minimal: #a4a49e;
+  --think-low: #6990b8;
   --think-medium: #81a2be;
   --think-high: #b294bb;
   --think-xhigh: #d183e8;
@@ -678,12 +702,12 @@ html[data-theme='light'] .turn {
   font-variant-numeric: tabular-nums;
 }
 
-/* 浅色主题：pi 的 thinking 色是为深色底调的，浅色下要压暗才能读 */
+/* 浅色主题：pi 的 thinking 色是为深色底调的，浅色下要压暗才能读（bg-1 上 ≥4.5:1） */
 html[data-theme='light'] {
-  --think-off: #9a9a9a;
-  --think-minimal: #8a8a8a;
-  --think-low: #3f6c92;
-  --think-medium: #4a7ba0;
+  --think-off: #6a6a64;
+  --think-minimal: #5c5c56;
+  --think-low: #335d82;
+  --think-medium: #40719a;
   --think-high: #7a5f8c;
   --think-xhigh: #8b4bb0;
   --think-max: #a300a3;
@@ -1060,7 +1084,7 @@ html[data-theme='light'] .rp-todo-now {
   font-size: var(--fs-sm);
 }
 .auth-input:focus {
-  border-color: var(--accent-line);
+  border-color: var(--accent);
   outline: none;
 }
 
@@ -1417,7 +1441,8 @@ html[data-theme='light'] .rp-todo-now {
   }
 }
 /* Shared slider feedback and Agent status indicators. */
-@keyframes ui-step-wave { from { background-position: -48px 0; } to { background-position: calc(100% + 48px) 0; } }
+/* 思考滑块的块光标：按终端光标节拍在亮与半暗之间跳（不完全消失，手柄始终可见） */
+@keyframes ui-step-caret { 50% { opacity: 0.38; } }
 @keyframes ui-step-bubble-in { from { opacity: 0; transform: translate(-50%, 4px); } }
 @keyframes ui-status-pulse { 50% { opacity: 0.35; } }
 

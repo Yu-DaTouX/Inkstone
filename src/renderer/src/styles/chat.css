@@ -1711,10 +1711,13 @@
   border-bottom: 1.5px solid rgba(255, 255, 255, 0.4);
 }
 
-.term-grip:hover,
+.term-grip:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
 .term-grip:focus-visible {
   background: rgba(255, 255, 255, 0.08);
-  outline: none;
+  outline: var(--focus-ring-w-strong) solid var(--focus-ring-color);
+  outline-offset: calc(var(--focus-ring-w-strong) * -1);
 }
 
 /* 62. 用户消息的分支按钮（用户要求：消息上要有分支按钮）
