@@ -4,12 +4,14 @@
  * 为什么单独一个文件（原来在 agent.ts 里）：
  *   会话文件解析器（session-reader.ts）也要用它 —— 而 agent.ts 依赖 sessions.ts，
  *   如果让 sessions.ts 或 session-reader.ts 反向 import agent.ts 就会成环。
- *   这里只依赖 shared/ipc，谁都能安全地 import。
+ *   这里只依赖 shared 下的类型与纯函数，谁都能安全地 import。
  *
  * 协议知识仍然集中：pi 的**字段名**只出现在这个文件与 agent.ts 里
  * （HANDOFF §9 原则 1）。
  */
 import type { Usage, UIMessage, UIMessageImage, UIToolCall } from '../shared/ipc'
+import { modelErrorNotice } from '../shared/auto-continue'
+import { estimateCost } from '../shared/model-pricing'
 
 /* pi 的原始类型（只在这里出现） */
 
@@ -38,6 +40,8 @@ export interface PiMessage {
   }
   model?: string
   stopReason?: string
+  /** `stopReason === 'error'` 时服务商给的原文 */
+  errorMessage?: string
   timestamp?: number
   toolCallId?: string
   toolName?: string
@@ -49,9 +53,15 @@ export interface PiMessage {
   nestedCalls?: { calls?: unknown[]; complete?: boolean }
 }
 
-export function toUsage(u: PiMessage['usage']): Usage | undefined {
+/** 助手消息的错误行：只在模型出错时有，文案按服务商原文分类。 */
+export function assistantError(m: PiMessage): string | undefined {
+  return m.stopReason === 'error' ? modelErrorNotice(m.errorMessage) : undefined
+}
+
+/** `model` 给出时，pi 报 0 费用的消息按公开 API 价补估算（见 model-pricing.ts） */
+export function toUsage(u: PiMessage['usage'], model?: string): Usage | undefined {
   if (!u) return undefined
-  return {
+  const usage: Usage = {
     input: u.input ?? 0,
     output: u.output ?? 0,
     cacheRead: u.cacheRead ?? 0,
@@ -60,6 +70,9 @@ export function toUsage(u: PiMessage['usage']): Usage | undefined {
       u.totalTokens ?? (u.input ?? 0) + (u.output ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0),
     cost: u.cost?.total ?? 0
   }
+  if (usage.cost > 0 || !model) return usage
+  const estimate = estimateCost(model, usage)
+  return estimate && estimate > 0 ? { ...usage, cost: estimate, costEstimated: true } : usage
 }
 
 /** 把 pi 的 AgentMessage 归一化成 UIMessage（历史回放用） */
@@ -169,11 +182,11 @@ export function normalizeMessage(
       text,
       thinking: thinking || undefined,
       toolCalls: toolCalls.length ? toolCalls : undefined,
-      usage: toUsage(m.usage),
+      usage: toUsage(m.usage, m.model),
       model: m.model,
       responseDetail: 'unknown',
       timestamp: m.timestamp,
-      error: m.stopReason === 'error' ? '模型返回错误' : undefined
+      error: assistantError(m)
     }
   }
 
