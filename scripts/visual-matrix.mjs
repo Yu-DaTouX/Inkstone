@@ -30,6 +30,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { MODEL_MENU_GROUPS, selectMatrixGroups, hasRequestedStates } from './lib/visual-matrix-selection.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = process.env.YAN_SHOT_DIR
@@ -5231,6 +5232,51 @@ if (ONLY.includes('uifinish')) {
   MUST_HAVE.uifinish = ['[data-testid="tile-workspace"]', '[data-testid="turn-copy"]', '[data-testid="fs-tree"]', '.ui-step-slider']
   for (const group of GROUPS) group.states.push('uifinish')
 }
+/* 分屏：`YAN_MATRIX_ONLY=splitview,splitfocus`，焦点在主会话位 / 旁边一侧各一张，场景见 scripts/probe/split-view.js */
+if (ONLY.includes('splitview') || ONLY.includes('splitfocus')) {
+  const probe = readFileSync(join(root, 'scripts/probe/split-view.js'), 'utf8')
+  STATES.splitview = probe.replaceAll('__FOCUS__', 'chat')
+  STATES.splitfocus = probe.replaceAll('__FOCUS__', 'peer')
+  MUST_HAVE.splitview = ['[data-workspace-pane="chat-peer"] [data-testid="split-peer"]', '[data-workspace-pane="chat"] .composer-wrap']
+  MUST_HAVE.splitfocus = ['[data-workspace-pane="chat"] [data-testid="split-peer"]', '[data-workspace-pane="chat-peer"] .composer-wrap']
+  for (const group of GROUPS.slice(0, 3)) group.states.push('splitview', 'splitfocus')
+}
+/* 分屏五块：`YAN_MATRIX_ONLY=splitfive`，在 splitview 场景上再加三块合成会话（共 5 块），宽屏组才放得下 */
+if (ONLY.includes('splitfive')) {
+  const source = readFileSync(join(root, 'scripts/probe/split-view.js'), 'utf8').replaceAll('__FOCUS__', 'chat')
+  const scene = source.slice(source.indexOf('(async'))
+  STATES.splitfive = `(async () => {
+    await (${scene})
+    const store = window.__yanStore, split = window.__yanSplit
+    const st = store.getState()
+    const base = st.sessionRuntimes['split-peer-fixture']
+    const titles = ['整理本周周报', '排查构建缓存失效', '给设置页补键盘导航']
+    const extra = titles.map((title, i) => ({ id: 'split-five-' + i, path: 'C:/fixture/split-five-' + i + '.jsonl', title }))
+    store.setState({
+      sessions: [...st.sessions, ...extra.map((e) => ({ ...(st.sessions[0] ?? {}), id: e.id, path: e.path, title: e.title, updatedAt: Date.now(), lastActivityAt: Date.now() }))],
+      sessionRuntimes: { ...st.sessionRuntimes, ...Object.fromEntries(extra.map((e, i) => [e.id, { ...base, runtime: { ...base.runtime, sessionId: e.id }, session: { ...base.session, sessionId: e.id, sessionFile: e.path, isAgentRunning: i === 0 }, messages: base.messages.map((m) => ({ ...m, id: e.id + m.id })) }])) }
+    })
+    const cur = { sessionId: store.getState().session?.sessionId, path: store.getState().session?.sessionFile }
+    for (const e of extra) split.getState().open({ sessionId: e.id, path: e.path }, cur)
+    await new Promise((r) => setTimeout(r, 900))
+    const tiles = split.getState().split?.tiles.length
+    if (tiles !== 5) throw new Error('splitfive: 没有 5 块 ' + tiles)
+    return 'ok(tiles=5)'
+  })()`
+  MUST_HAVE.splitfive = ['[data-workspace-pane="chat-peer-4"] [data-testid="split-peer"]', '[data-workspace-pane="chat"] .composer-wrap']
+  for (const group of GROUPS) group.states.push('splitfive')
+  GROUPS.push({ w: 2560, h: 1380, scale: 1, theme: 'dark', states: ['splitfive'] })
+}
+/* 左栏视图：`YAN_MATRIX_ONLY=railviewmenu,railviewstate,railviewdate`，菜单 / 按状态 / 按日期各一张，场景见 scripts/probe/rail-view.js */
+if (ONLY.some((name) => name.startsWith('railview'))) {
+  const probe = readFileSync(join(root, 'scripts/probe/rail-view.js'), 'utf8')
+  for (const mode of ['menu', 'state', 'date', 'archive']) STATES['railview' + mode] = probe.replaceAll('__MODE__', mode)
+  MUST_HAVE.railviewmenu = ['[data-testid="rail-view-menu"]']
+  MUST_HAVE.railviewstate = ['[data-testid="rail-section-waiting"]']
+  MUST_HAVE.railviewdate = ['[data-testid="rail-section-today"]']
+  MUST_HAVE.railviewarchive = ['[data-testid="rail-archive"]']
+  for (const group of GROUPS.slice(0, 3)) group.states.push('railviewmenu', 'railviewstate', 'railviewdate', 'railviewarchive')
+}
 if (ONLY.includes('workspace')) {
   STATES.workspace = readFileSync(join(root, 'scripts/probe/workspace-tiles.js'), 'utf8')
   MUST_HAVE.workspace = ['[data-testid="tile-workspace"]', '[data-workspace-pane="chat"] .composer-wrap', '.tile-heading']
@@ -5265,6 +5311,43 @@ if (ONLY.includes('switcher')) {
   STATES.switcher = `(async () => { await (${scene}); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true })); await new Promise((r) => setTimeout(r, 700)); return 'ok' })()`
   MUST_HAVE.switcher = ['[data-testid="tile-workspace"]']
   for (const group of GROUPS) group.states.push('switcher')
+}
+/*
+ * 模型很多时的模型菜单：`YAN_MATRIX_ONLY=modelmenufull npm run visual:matrix`。
+ * 单组可指定 modelmenufull-dark / modelmenufull-light / modelmenufull-narrow。
+ * 真实接入一个中转服务就有几十个模型，菜单会长到上限；fixture 只有一个模型看不出来。
+ * 尺寸覆盖 1080p 笔记本 150% 缩放（约 1280×680 CSS 像素）与窗口最小尺寸。
+ */
+if (ONLY.includes('modelmenufull') || MODEL_MENU_GROUPS.some((group) =>
+  (process.env.YAN_MATRIX_GROUP ?? '').split(',').includes(group.name)
+)) {
+  STATES.modelmenufull = `(async () => {
+    const st = window.__yanStore.getState();
+    st.closeSettings();
+    document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    window.__yanModelMenuFullBaseline = {
+      runners: st.runners, models: st.models, thinkingLevels: st.thinkingLevels, session: st.session
+    };
+    const families = [['commandcode', ['claude-sonnet-5-5', 'claude-opus-5-5', 'gpt-6-astra', 'gpt-6-sol', 'deepseek/deepseek-v4-pro', 'deepseek/deepseek-v4.1-flash', 'moonshotai/Kimi-K3', 'moonshotai/Kimi-K2.6', 'zai-org/GLM-5.3', 'Qwen/Qwen3.8-Max', 'google/gemini-3.8-flash', 'xai/grok-4.7', 'MiniMaxAI/MiniMax-M3', 'xiaomi/mimo-v2.6-pro']], ['openai-codex', ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-5.6-terra']], ['yan-relay', ['claude-sonnet-4-6', 'deepseek-v4-flash', 'qwen3.7-plus', 'glm-5.2', 'kimi-k2.5']]];
+    const models = families.flatMap(([provider, ids]) => ids.map((id) => ({ provider, id, name: id.replace(/^.*\\//, ''), reasoning: true, contextWindow: 1000000 })));
+    const cur = models[0];
+    window.__yanStore.setState({ runners: [], models, thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'], session: { ...st.session, isStreaming: false, isCompacting: false, model: cur, thinkingLevel: 'high', thinkingLevelsStatus: 'known' } });
+    await new Promise((r) => setTimeout(r, 200));
+    document.querySelector('[data-testid="model-picker"]')?.click();
+    await new Promise((r) => setTimeout(r, 500));
+    const pop = document.querySelector('[data-testid="model-menu"]')?.getBoundingClientRect();
+    return pop ? 'ok(' + Math.round(pop.width) + 'x' + Math.round(pop.height) + ' in ' + innerWidth + 'x' + innerHeight + ')' : 'no-menu';
+  })()`
+  MUST_HAVE.modelmenufull = ['[data-testid="model-menu"]']
+  AFTER_STATE.modelmenufull = `(async () => {
+    document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    window.__yanStore.setState(window.__yanModelMenuFullBaseline);
+    delete window.__yanModelMenuFullBaseline;
+    await new Promise((r) => setTimeout(r, 100));
+    if (document.querySelector('[data-testid="model-menu"]')) throw new Error('modelmenufull: 菜单未关闭');
+    return 'ok';
+  })()`
+  GROUPS.push(...MODEL_MENU_GROUPS)
 }
 if (ONLY.includes('codemode')) for (const group of GROUPS) group.states.push('codemode')
 if (ONLY.includes('codemodepreference')) {
@@ -5303,6 +5386,10 @@ if (GROUP_ONLY.includes('workspacewide')) GROUP_ONLY.push(String(GROUPS.findInde
 const WANT_ONBOARDING = GROUP_ONLY.length === 0 || GROUP_ONLY.includes('onboarding')
 
 async function main() {
+  const selectedGroups = selectMatrixGroups(GROUPS, GROUP_ONLY)
+  if (!hasRequestedStates(selectedGroups, ONLY) && !(WANT_ONBOARDING && ONLY.length === 0)) {
+    throw new Error(`未执行任何目标场景：groups=${GROUP_ONLY.join(',') || 'all'}，ONLY=${ONLY.join(',') || 'all'}`)
+  }
   /*
    * 截图/测量脚本只注册必要的只读桩：HandoffNote 需要基线状态，失败提示夹具
    * 则在 store 中保持稳定。其余拉取型 IPC 故意留空；Electron 会把每次失败调用
@@ -5503,8 +5590,7 @@ async function main() {
     await wait(220)
   }
 
-  for (const [gi, g] of GROUPS.entries()) {
-    if (GROUP_ONLY.length && !GROUP_ONLY.includes(String(gi))) continue
+  for (const g of selectedGroups) {
     const size = `${g.w}x${g.h}`
     const pct = Math.round(g.scale * 100)
     console.log(`\n▶ ${size} @ ${pct}% ${g.theme}`)

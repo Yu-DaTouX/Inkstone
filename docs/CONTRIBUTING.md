@@ -36,6 +36,20 @@ npm run launch
 
 视觉改动同时关注深浅主题、窄窗口、缩放、键盘操作与实际截图。生成截图保留在本地，不批量提交到仓库；主页配图单独维护。
 
+模型菜单的多模型列表专项使用合成数据，不连接真实模型服务。在 PowerShell 中运行：
+
+```powershell
+$env:YAN_MATRIX_ONLY = "modelmenufull"
+$env:YAN_SHOT_DIR = Join-Path $env:TEMP "inkstone-model-menu-shots"
+npm run visual:matrix
+```
+
+此专项自动选择深色、浅色和窄窗三组，不需要记数组下标；单组可运行 `npm run visual:matrix -- modelmenufull-dark`（另有 `modelmenufull-light`、`modelmenufull-narrow`），命名组也可在未设置 `YAN_MATRIX_ONLY` 时直接使用。旧数字组号仍保留，显式指定的组优先；所选组没有任何目标场景时会报错并返回非零退出码，不算验收通过。纯 Node 回归检查为 `node scripts/test-visual-matrix.mjs`，也已纳入 `test:unit`。专项结束后清除本次设置的环境变量，避免过滤后续验证：
+
+```powershell
+Remove-Item Env:YAN_MATRIX_ONLY, Env:YAN_SHOT_DIR
+```
+
 ## 提交与反馈
 
 ### 升级 pi 与兼容验证
