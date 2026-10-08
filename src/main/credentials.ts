@@ -29,7 +29,7 @@
  * 桌面端提供输入框只是把它变成 GUI —— 与 TUI 的 `/login` 是同一件事。
  * 而且写入时会**合并**（不会碰其它 provider 的条目）。
  */
-import { readFile, writeFile, mkdir, stat, readdir, realpath } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, stat, readdir, realpath, rmdir, utimes } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import type { AuthProviderInfo, AuthStatus, FileListingStatus, FileRequestContext, PathCompletionResult } from '../shared/ipc'
@@ -172,11 +172,95 @@ async function readAuth(): Promise<Record<string, unknown>> {
   }
 }
 
+/** 读一条凭证原样返回（主进程内部用，不跨 IPC）。 */
+export async function readAuthEntry(provider: string): Promise<unknown> {
+  return (await readAuth())[provider]
+}
+
+/*
+ * auth.json 的文件锁：与 pi 同一把（proper-lockfile 的约定：在旁边建 `auth.json.lock` 目录，
+ * mkdir 成功即持有，超过 10 秒没更新 mtime 视为残留）。pi 刷新 OAuth token 时持这把锁，
+ * 所以宿主的读改写必须也持锁，否则可能把 pi 刚写的新 token 盖掉。
+ *
+ * 两条容易出错的细节（踩过就会两边同时写）：
+ *   · 持锁期间必须持续刷新 mtime —— 否则宿主自己写超过 10 秒会被 pi 当成残留锁删掉；
+ *   · 抢残留锁前要再确认一次 mtime 没变 —— 否则可能删掉另一个进程刚好在刷新的锁。
+ */
+const AUTH_LOCK = `${AUTH_FILE}.lock`
+const AUTH_LOCK_STALE_MS = 10_000
+/** 持锁期间刷新 mtime 的间隔，必须明显小于 stale 阈值 */
+const AUTH_LOCK_TOUCH_MS = 2_500
+const AUTH_LOCK_WAIT_MS = 5_000
+const AUTH_LOCK_POLL_MS = 60
+
+async function lockMtimeMs(): Promise<number | null> {
+  try {
+    return (await stat(AUTH_LOCK)).mtimeMs
+  } catch {
+    return null
+  }
+}
+
+/** 获取 auth.json 的写锁；返回释放函数 */
+async function acquireAuthLock(): Promise<() => Promise<void>> {
+  const deadline = Date.now() + AUTH_LOCK_WAIT_MS
+  for (;;) {
+    try {
+      await mkdir(AUTH_LOCK)
+      break
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+    }
+    const firstSeen = await lockMtimeMs()
+    if (firstSeen !== null && Date.now() - firstSeen > AUTH_LOCK_STALE_MS) {
+      /* 第二次确认：mtime 在这一瞬没有变化，才当残留锁收回 */
+      const confirmed = await lockMtimeMs()
+      if (confirmed !== null && confirmed === firstSeen) {
+        await rmdir(AUTH_LOCK).catch(() => undefined)
+        continue
+      }
+    }
+    if (Date.now() > deadline) throw new Error('凭证文件正被 pi 占用，请稍后再试')
+    await new Promise((r) => setTimeout(r, AUTH_LOCK_POLL_MS))
+  }
+  const timer = setInterval(() => {
+    const now = new Date()
+    void utimes(AUTH_LOCK, now, now).catch(() => undefined)
+  }, AUTH_LOCK_TOUCH_MS)
+  timer.unref?.()
+  return async () => {
+    clearInterval(timer)
+    await rmdir(AUTH_LOCK).catch(() => undefined)
+  }
+}
+
+/**
+ * 持锁读改写 auth.json。`fn` 直接修改传入的对象，`write: false` 表示不用写回。
+ *
+ * **auth.json 的所有写入都应经这里**（合并一条凭证、退出登录、切换账号）——
+ * 只给其中一条路径加锁，另一条照旧读写，并发时还是会把对方刚写的内容盖掉。
+ */
+export async function updateAuthFile<T>(
+  fn: (data: Record<string, unknown>) => { write: boolean; result: T } | Promise<{ write: boolean; result: T }>
+): Promise<T> {
+  await mkdir(PI_DIR, { recursive: true })
+  const release = await acquireAuthLock()
+  try {
+    const data = await readAuth()
+    const { write, result } = await fn(data)
+    if (write) await writeFile(AUTH_FILE, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
+    return result
+  } finally {
+    await release()
+  }
+}
+
 /**
  * 写入一个 provider 的凭证。
  *
  * **合并**写入：只动这一个 key，其它 provider 的条目原样保留 ——
- * 否则用户配第二个 provider 时会把第一个弄丢。
+ * 否则用户配第二个 provider 时会把第一个弄丢。全部经持锁的 `updateAuthFile`
+ *（见那里的注释），与 pi 的 token 刷新、与设置页的其它写入互斥。
  * 文件权限尽量设 0600（与 pi 一致；Windows 上这个位不生效，但不报错）。
  */
 export async function setApiKey(provider: string, key: string): Promise<{ ok: boolean; error?: string }> {
@@ -197,10 +281,10 @@ export async function setApiKey(provider: string, key: string): Promise<{ ok: bo
  */
 export async function mergeAuthEntry(provider: string, value: unknown): Promise<{ ok: boolean; error?: string }> {
   try {
-    await mkdir(PI_DIR, { recursive: true })
-    const cur = await readAuth()
-    cur[provider] = value
-    await writeFile(AUTH_FILE, JSON.stringify(cur, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
+    await updateAuthFile((data) => {
+      data[provider] = value
+      return { write: true, result: undefined }
+    })
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : '写入失败' }
@@ -210,10 +294,11 @@ export async function mergeAuthEntry(provider: string, value: unknown): Promise<
 /** 移除一个 provider 的凭证（界面上就是「退出登录」） */
 export async function clearAuth(provider: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const cur = await readAuth()
-    if (!(provider in cur)) return { ok: true }
-    delete cur[provider]
-    await writeFile(AUTH_FILE, JSON.stringify(cur, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
+    await updateAuthFile((data) => {
+      if (!(provider in data)) return { write: false, result: undefined }
+      delete data[provider]
+      return { write: true, result: undefined }
+    })
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : '删除失败' }

@@ -185,6 +185,40 @@ async function exchangeCode(code: string, verifier: string): Promise<CodexLoginR
   return { ok: true, accountId }
 }
 
+/** pi 存在 auth.json 里的 ChatGPT 凭证形状。 */
+export interface CodexOAuthCredential {
+  type: 'oauth'
+  access: string
+  refresh: string
+  expires: number
+  accountId: string
+}
+
+/**
+ * 用 refresh token 换新凭证，请求体与 pi 的刷新逐字一致（grant_type / refresh_token / client_id）。
+ * 只给砚自己保存的**非当前**账号用：当前账号由 pi 刷新，宿主不插手。
+ * refresh token 会轮换，调用方必须马上保存返回的新凭证，否则这个账号要重新登录。
+ */
+export async function refreshCodexCredential(refresh: string): Promise<CodexOAuthCredential> {
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh, client_id: CLIENT_ID }),
+    signal: AbortSignal.timeout(15_000)
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(res.status === 400 || res.status === 401 ? '登录已失效，请重新登录这个账号' : `刷新登录失败（${res.status}）${body ? '：' + body.slice(0, 120) : ''}`)
+  }
+  const json = (await res.json().catch(() => null)) as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown } | null
+  if (!json || typeof json.access_token !== 'string' || typeof json.refresh_token !== 'string' || typeof json.expires_in !== 'number') {
+    throw new Error('刷新登录的响应缺字段')
+  }
+  const accountId = extractAccountId(json.access_token)
+  if (!accountId) throw new Error('刷新后的令牌里没有 accountId')
+  return { type: 'oauth', access: json.access_token, refresh: json.refresh_token, expires: Date.now() + json.expires_in * 1000, accountId }
+}
+
 /* ------------------------------------------------------------ 主流程 */
 
 /** 同一时刻只允许一次登录（端口只有一个，且避免两套 PKCE 互相踩）。 */

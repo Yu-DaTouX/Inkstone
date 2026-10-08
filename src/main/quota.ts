@@ -2,6 +2,7 @@ import { net } from 'electron'
 import type { ProviderQuota, QuotaWindow } from '../shared/ipc'
 import { resolveCodexAccountId, resolveProviderSecret } from './credentials'
 import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode'
+import { codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
 
 /**
  * 取额度用的 HTTP 客户端。
@@ -44,41 +45,12 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
     if (isCodex) {
       const accountId = await resolveCodexAccountId()
       if (!accountId) return { provider, supported: true, error: '凭证缺少 chatgpt-account-id，请重新登录 ChatGPT', checkedAt }
-      const r = await http('https://chatgpt.com/backend-api/codex/usage', {
-        headers: {
-          Authorization: `Bearer ${key}`,
-          'chatgpt-account-id': accountId,
-          'Content-Type': 'application/json',
-          originator: 'codex_cli_rs',
-          'User-Agent': 'codex_cli_rs/0.1.0'
-        },
-        signal: AbortSignal.timeout(10_000)
-      })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const j = await r.json() as CodexUsage
-      const rl = j.rate_limit
-      if (!rl) return { provider, supported: true, error: '订阅未返回限速窗口', checkedAt }
-      const windows: QuotaWindow[] = []
-      const addWin = (id: string, w?: CodexWindow): void => {
-        if (!w || !Number.isFinite(Number(w.used_percent))) return
-        const secs = Number(w.limit_window_seconds)
-        windows.push({
-          id,
-          // Codex 固定按短窗口和周窗口展示；用稳定名称而非“1 周”，更贴近套餐页面。
-          label: id === 'primary' ? '五小时' : id === 'secondary' ? '本周' : windowLabel(secs),
-          used: Number(w.used_percent),
-          /* 百分比口径：满分 100 */
-          total: 100,
-          resetAt: Number.isFinite(Number(w.reset_at)) ? Number(w.reset_at) * 1000 : undefined,
-          exceeded: false
-        })
-      }
-      addWin('primary', rl.primary_window)
-      addWin('secondary', rl.secondary_window)
+      const usage = await fetchCodexUsage(key, accountId)
+      const windows: QuotaWindow[] = usage.windows
       if (windows.length === 0) return { provider, supported: true, error: '订阅未返回限速窗口', checkedAt }
       /* 最紧的窗口当主数字（谁先满谁先卡） */
       const binding = [...windows].sort((a, b) => b.used / b.total - a.used / a.total)[0]
-      const plan = typeof j.plan_type === 'string' ? j.plan_type.toUpperCase() : ''
+      const plan = usage.plan ? usage.plan.toUpperCase() : ''
       return {
         provider,
         supported: true,
@@ -213,36 +185,22 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
   }
 }
 
-/** ChatGPT 订阅用量接口（`/backend-api/codex/usage`）的形状 */
-interface CodexUsage {
-  plan_type?: string
-  rate_limit?: {
-    allowed?: boolean
-    limit_reached?: boolean
-    primary_window?: CodexWindow
-    secondary_window?: CodexWindow
-  } | null
-}
-
-interface CodexWindow {
-  used_percent?: number
-  limit_window_seconds?: number
-  reset_after_seconds?: number
-  /** 秒级时间戳 */
-  reset_at?: number
-}
-
 /**
- * 把窗口长度（秒）变成人话。
- * 不写死「5 小时 / 每周」：接口给的是秒数，万一以后套餐改了窗口长度，
- * 写死的标签会骗人。
+ * ChatGPT 订阅的套餐限速窗口。右栏额度（当前账号）与「账号额度」磁贴（每个保存的账号）共用。
+ * `/backend-api/codex/usage` 只需 OAuth access token + chatgpt-account-id，不需要 Admin Key；
+ * 数字是百分比（used_percent），解析口径在 shared/account-quota.ts。
  */
-function windowLabel(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '额度'
-  const hours = seconds / 3600
-  if (hours < 24) return `${Math.round(hours)} 小时`
-  const days = hours / 24
-  if (days < 7) return `${Math.round(days)} 天`
-  if (days < 30) return `${Math.round(days / 7)} 周`
-  return `${Math.round(days / 30)} 个月`
+export async function fetchCodexUsage(accessToken: string, accountId: string): Promise<{ plan?: string; windows: QuotaWindow[]; limited: boolean }> {
+  const r = await http('https://chatgpt.com/backend-api/codex/usage', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'chatgpt-account-id': accountId,
+      'Content-Type': 'application/json',
+      originator: 'codex_cli_rs',
+      'User-Agent': 'codex_cli_rs/0.1.0'
+    },
+    signal: AbortSignal.timeout(10_000)
+  })
+  if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? `登录已失效（HTTP ${r.status}）` : `HTTP ${r.status}`)
+  return codexUsageWindows(await r.json() as CodexUsagePayload)
 }

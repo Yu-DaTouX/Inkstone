@@ -1,5 +1,5 @@
 /**
- * 模型接入的 IPC 适配：凭证、自定义 API 服务与应用内 ChatGPT（Codex）登录。
+ * 模型接入的 IPC 适配：凭证、自定义 API 服务、应用内 ChatGPT（Codex）登录与多账号切换、「账号额度」磁贴。
  *
  * 自定义服务的真源是 pi 的 models.json，只写 yan- 前缀条目；登录成功后重启 pi 让它重新读 auth.json。
  */
@@ -13,6 +13,9 @@ import { detectToolchain } from '../toolchain'
 import { cancelCodexLogin, startCodexLogin } from '../oauth'
 import { answerOAuthPrompt, cancelOAuthLogin, startOAuthLogin } from '../oauth-providers'
 import type { OAuthLoginEvent } from '../../shared/ipc'
+import { ACCOUNT_QUOTA_CLI_SOURCES, type AccountQuotaCliSource } from '../../shared/account-quota'
+import { accountQuotaReport, readAccountQuotaPrefs, setAccountLabel, setAccountQuotaSource } from '../account-quota'
+import { captureActiveCodexAccount, listCodexAccounts, removeCodexAccount, switchCodexAccount } from '../codex-accounts'
 
 export interface AuthIpcDeps {
   /** 登录成功后重启 pi（等当前回合结束，不阻塞返回） */
@@ -81,8 +84,13 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
    * 当前这一轮跑完（见 restartAgent 里的空闲等待），不能让设置页转圈等它。
    */
   handle('yan:codexLogin', async () => {
+    /* 登录会覆盖 auth.json 里的当前账号：先把它收进账号列表，登录第二个账号时第一个不会丢 */
+    await captureActiveCodexAccount().catch(() => undefined)
     const r = await startCodexLogin()
-    if (r.ok) void restartAgent('ChatGPT 登录')
+    if (r.ok) {
+      await captureActiveCodexAccount().catch(() => undefined)
+      void restartAgent('ChatGPT 登录')
+    }
     return r
   })
   handle('yan:codexLoginCancel', async () => {
@@ -105,5 +113,28 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   )
   handle('yan:oauthLoginCancel', async (provider: string) => {
     cancelOAuthLogin(String(provider ?? '') || undefined)
+  })
+
+  /*
+   * 「账号额度」磁贴与砚内多个 ChatGPT 账号。
+   * 切换 / 移除当前账号会改 auth.json，与登录一样非阻塞地重启 pi（等当前回合结束）。
+   */
+  handle('yan:accountQuota', async () => accountQuotaReport())
+  handle('yan:accountQuotaSource', async (source: unknown, enabled: unknown) => {
+    const id = String(source ?? '') as AccountQuotaCliSource
+    if (!ACCOUNT_QUOTA_CLI_SOURCES.includes(id)) throw new Error('未知的账号来源')
+    return setAccountQuotaSource(id, enabled === true)
+  })
+  handle('yan:accountLabel', async (key: unknown, label: unknown) => setAccountLabel(String(key ?? ''), String(label ?? '')))
+  handle('yan:codexAccounts', async () => listCodexAccounts((await readAccountQuotaPrefs()).labels))
+  handle('yan:codexAccountSwitch', async (key: unknown) => {
+    const r = await switchCodexAccount(String(key ?? ''))
+    if (r.ok) void restartAgent('ChatGPT 账号已切换')
+    return r
+  })
+  handle('yan:codexAccountRemove', async (key: unknown) => {
+    const r = await removeCodexAccount(String(key ?? ''))
+    if (r.ok && r.wasActive) void restartAgent('ChatGPT 账号已移除')
+    return { ok: r.ok, error: r.error }
   })
 }

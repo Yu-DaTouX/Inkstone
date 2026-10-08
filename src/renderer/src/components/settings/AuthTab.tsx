@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useT } from '../../i18n'
 import { refreshModelsAfterRestart } from '../../state/refresh-models'
+import { useStore } from '../../state/store'
 import type { AuthProviderInfo, OAuthLoginEvent } from '../../../../shared/ipc'
 import { CustomProviderForm } from './CustomProviderForm'
 import { ActivityModelSection } from './ActivityModelSection'
@@ -37,6 +38,8 @@ export function AuthTab() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   /** 其余订阅的应用内登录：哪一家在登、过程中收到的提示 */
   const [oauth, setOauth] = useState<{ provider: string; events: OAuthLoginEvent[] } | null>(null)
+  /** 砚保存的 ChatGPT 账号数；多于一个时提示去「账号额度」切换 */
+  const [codexCount, setCodexCount] = useState(0)
 
   useEffect(
     () =>
@@ -66,12 +69,14 @@ export function AuthTab() {
   const load = async (deep: boolean): Promise<void> => {
     if (deep) setChecking(true)
     try {
-      const [providers, fileInfo] = await Promise.all([
+      const [providers, fileInfo, codexAccounts] = await Promise.all([
         window.yan.authProviders(deep),
-        window.yan.authFileInfo()
+        window.yan.authFileInfo(),
+        window.yan.codexAccounts().catch(() => [])
       ])
       setList(providers)
       setInfo(fileInfo)
+      setCodexCount(codexAccounts.length)
     } finally {
       setChecking(false)
     }
@@ -233,7 +238,31 @@ export function AuthTab() {
                 {p.hint ? <div className="auth-row-hint">{p.hint}</div> : null}
               </div>
 
-              {p.status === 'ready' ? (
+              {p.status === 'ready' && p.id === 'openai-codex' ? (
+                <div className="auth-actions">
+                  {loggingIn ? (
+                    <>
+                      <span className="auth-waiting" data-testid="auth-login-waiting">
+                        <Spinner mute />
+                        <span>{t('auth.loginWaiting')}</span>
+                      </span>
+                      <Button size="sm" variant="ghost" data-testid="auth-login-cancel" onClick={() => void window.yan.codexLoginCancel()}>
+                        {t('ui.cancel')}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      {/* 再登录一个账号：主进程先把当前账号收进列表，之后在「账号额度」里切换 */}
+                      <Button size="sm" data-testid="auth-add-account" disabled={busy || !!oauth} onClick={() => void loginCodex()}>
+                        {t('auth.addAccount')}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => void signOut(p.id)} disabled={busy || !!oauth}>
+                        {t('auth.signOut')}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              ) : p.status === 'ready' ? (
                 <Button size="sm" variant="ghost" onClick={() => void signOut(p.id)} disabled={busy || loggingIn || !!oauth}>
                   {t('auth.signOut')}
                 </Button>
@@ -275,6 +304,21 @@ export function AuthTab() {
                 </div>
               )}
               {oauth?.provider === p.id ? <SubscriptionLoginPanel provider={p.id} events={oauth.events} /> : null}
+              {p.id === 'openai-codex' && codexCount > 1 ? (
+                <div className="auth-row-hint" data-testid="auth-codex-accounts">
+                  {t('acct.savedCount', { n: codexCount })}{' '}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      useStore.getState().closeSettings()
+                      window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'accounts' }))
+                    }}
+                  >
+                    {t('acct.manage')}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
