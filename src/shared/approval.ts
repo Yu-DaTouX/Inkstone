@@ -38,9 +38,10 @@ export function isLegacyPermissionMode(value: unknown): boolean {
  *   · `delete`     旧版日常模式下的删除确认（现行改为移到回收站，保留给旧薄层）；
  *   · `danger`     高危命令（「危险批准」档每次都问）；
  *   · `outside`    写入项目之外的位置（可记住目录）；
- *   · `consent`    普通工具的同意记录（多次同意后自动放行）。
+ *   · `consent`    普通工具的同意记录（多次同意后自动放行）；
+ *   · `move`       Agent 请求把会话移到另一个文件夹（`yan session move`，本轮结束后切换）。
  */
-export type ApprovalKind = 'permission' | 'delete' | 'danger' | 'outside' | 'consent'
+export type ApprovalKind = 'permission' | 'delete' | 'danger' | 'outside' | 'consent' | 'move'
 
 /** 用户的答复：拒绝 / 允许这一次 / 允许并记住（记住什么由 kind 决定） */
 export type ApprovalChoice = 'deny' | 'once' | 'remember'

@@ -177,18 +177,32 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
   )
 }
 
-/* 连接失败条 */
+/** 启动多久还没好才出连接条：切换项目时内核换进程是正常过程，不该闪一条提示 */
+const CONN_BAR_DELAY_MS = 1500
+
+/* 连接条：启动太久或失败时才出现（设计规范 §4：日常界面不写 pi，详情里保留原始诊断） */
 export function ConnBar({ conn }: { conn: 'starting' | 'ready' | 'exited' | 'error' }) {
   const t = useT()
   const logs = useStore((s) => s.logs)
   const connDetail = useStore((s) => s.connDetail)
   const [showDetail, setShowDetail] = useState(false)
+  const [late, setLate] = useState(conn !== 'starting')
+  useEffect(() => {
+    if (conn !== 'starting') {
+      setLate(true)
+      return
+    }
+    setLate(false)
+    const id = window.setTimeout(() => setLate(true), CONN_BAR_DELAY_MS)
+    return () => window.clearTimeout(id)
+  }, [conn])
+  if (!late) return null
 
   return (
     <div className={`connbar ${conn}`}>
       <span className={conn === 'starting' ? 'dot warn' : 'dot err'} />
       <span className="connbar-text">
-        {conn === 'starting' ? t('conn.piStarting') : connDetail || t('conn.piDown')}
+        {conn === 'starting' ? t('conn.preparing') : connDetail || t('conn.engineDown')}
       </span>
       <span className="spacer" />
       <Button onClick={() => setShowDetail((v) => !v)}>

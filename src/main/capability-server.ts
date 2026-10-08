@@ -173,6 +173,8 @@ const KNOWN_COMMANDS = new Set([
   'consent.request',
   /* 高危操作确认：只由 danger-guard 薄层调用，宿主弹框后回答放行 / 拒绝。 */
   'danger.confirm',
+  /* 任务属于另一个文件夹时请求移动会话：批准卡片问用户，本轮结束后切换工作目录。 */
+  'session.move',
   'context.budget.status',
   'context.budget.adjust',
   /* 目标状态（实施-05 S3）：计划档就绪转移与自主档推进报告。 */

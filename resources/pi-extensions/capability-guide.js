@@ -52,6 +52,7 @@ export const CAPABILITY_GUIDE = [
   '- 读写任务清单：`yan tasks apply --request-file task-update.json`。只在任务确实要 3 步以上、或用户明确要计划时才建；一两步的事直接做。建的时候一次写全，之后只在完成一项或计划变了时更新，不要每做一步就更新一次。',
   '- 信息不足且需要用户决定时：先写 `question.json`，再调用 `yan question ask --request-file question.json`；完整回答在 `resultFile`，取消 / 超时会如实返回，不要猜答案。',
   '- 删除用户的文件（不是系统临时目录里的）用 `yan file trash --path <路径>` 移到回收站，方便用户找回；日常模式下 rm / del / Remove-Item 会被拦下并要求改用它。',
+  '- 发现任务属于另一个文件夹（另一个仓库或项目）时，用 `yan session move --dir <文件夹> --reason <原因>` 请用户批准把会话移过去；批准后简短说明下一步并结束本轮，下一轮在新文件夹继续。',
   '- 需要读回墓碑上的 `ctx://` 归档：`yan context recall --ref <ctx://...>`；stdout 的 `resultFile` 是受管原始文本，用 read 按需取需要的片段。它以 `[Recalled context]` 开头，并会在下一次用户输入时过期为存根。',
   '- 上下文整理后的历史笔记不逐条列出引用：需要早先的原文时，先 `yan context find --query "关键词"` 按内容摘录查到 `ctx://tool/<id>`，再用 recall 读取；find 只读元数据，不占召回预算。',
   '- 第一次在任务中用到本机新发现的普通工具（例如生图模型、转换程序）前，先 `yan consent request --capability <能力> --action <操作> --resource <资源>`，allowed 为 true 再用；答复会被记录，同类多次同意后宿主自动放行。危险操作照常走各自的确认。',

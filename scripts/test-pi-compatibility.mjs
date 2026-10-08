@@ -71,10 +71,14 @@ check(normalizeHistory([result])[0].toolCalls.length === 4, 'orphan parent resul
 check(normalizeHistory([parent, { ...result, nestedCalls: { calls: 'bad' } }])[0].toolCalls.length === 1, 'malformed nested record safely ignored')
 const many = Array.from({ length: 300 }, (_, i) => ({ id: `code/${i + 1}`, name: 'read', status: 'ok' }))
 check(normalizeHistory([parent, { ...result, nestedCalls: { calls: many } }])[0].toolCalls.length === 257, 'at most 256 child summaries restored')
-const tree = modules.tree.projectToolCallTree(calls, new Set(['code/2/1']))
-check(tree.map(row => row.call.id).join(',') === 'code,code/2,code/2/1' && tree[2].depth === 2, 'visible nested child retains ancestor order')
+const forest = modules.tree.toolCallForest(calls)
+check(forest.length === 1 && forest[0].children.map(node => node.call.id).join(',') === 'code/1,code/2', 'nested calls sit under their parent in execution order')
+check(forest[0].children[1].children[0]?.call.id === 'code/2/1', 'grandchild stays under its own caller')
+check(!modules.tree.isSettledToolNode(forest[0]), 'a failed or unfinished child keeps the whole step visible')
+check(modules.tree.summarizeNestedCalls(forest[0].children) === 'read ×2 · powershell', 'parent target summarizes the tools it used')
 const cycle = [{ id: 'a', parentToolCallId: 'b', name: 'read' }, { id: 'b', parentToolCallId: 'a', name: 'read' }]
-check(modules.tree.projectToolCallTree(cycle, new Set(['a'])).length === 2, 'cyclic history cannot hang the renderer')
+check(modules.tree.toolCallForest(cycle).length === 2, 'cyclic history cannot hang the renderer')
+check(modules.tree.toolCallForest([{ id: 'x', parentToolCallId: 'gone', name: 'read' }]).length === 1, 'orphan child stays inspectable at the top level')
 
 const previous = { data: process.env.YAN_DATA_DIR, session: process.env.YAN_SESSION_ID }
 try {

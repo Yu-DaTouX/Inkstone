@@ -69,6 +69,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan context find --query "关键词"
   yan office read --path <文件.docx|xlsx|pptx|pdf>
   yan file trash --path <文件或目录>     删除改为移到回收站（可恢复）
+  yan session move --dir <文件夹> [--reason <原因>]   任务属于别的文件夹时，请用户批准把会话移过去
   yan consent request --capability <能力> --action <操作> [--resource <资源>] [--purpose <用途>]
   yan context budget status
   yan context budget adjust --request-file context-budget.json
@@ -282,6 +283,16 @@ const GROUP_USAGE = {
           PDF 按正文。只有文字，不含版式与图片；路径按当前会话目录解析。
 
 `,
+  session: `yan session <动作> [选项]
+
+动作：
+  move    请求把这条会话移到另一个文件夹（用户在输入框上方的批准卡片里确认）。
+          yan session move --dir C:\\Users\\me\\Desktop\\my-app --reason "要改的代码在 my-app 仓库"
+          批准后**本轮结束时**才切换：对话保留，之后的命令在新文件夹里运行，并读取那里的
+          AGENTS.md 与项目设置。所以批准后先简短说明下一步，然后结束本轮，不要在本轮继续改文件。
+          用户发现你找错地方、或任务明显属于另一个仓库时用它；只是读几个外部文件不需要移动。
+
+`,
   file: `yan file <动作> [选项]
 
 动作：
@@ -385,7 +396,7 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
           用户在设置里配了 Tavily / Brave key 时自动加上并排在最前；另有维基百科 / arXiv / Hacker News（需 OpenCLI）
             yan search query --query-text "flash attention"
             yan search query --query-text "…" --sources wikipedia,arxiv --limit-per-source 5 --limit-total 12
-  fetch   把一个网页读成正文文本（JS 渲染页也行；不带登录态，不读内网地址）。本地读不出正文时，
+  fetch   把一个网页读成正文文本（JS 渲染页也行；不带登录态，不读本机/内网地址）。本地读不出正文时，
           若用户配了 Firecrawl key 会自动改用它（结果里 via 写明是谁读的）；--via local|firecrawl 可强制
             yan search fetch --url https://example.com/post [--max-chars 12000] [--via firecrawl]
   docs    查开发文档：按库名取该库最新版本的文档片段与示例（Context7）。库名有歧义时看结果里的 alternatives，
@@ -543,6 +554,10 @@ const GROUP_SPECS = {
   file: {
     actions: ['trash'],
     required: {}
+  },
+  session: {
+    actions: ['move'],
+    required: { move: ['dir'] }
   },
   search: {
     actions: ['query', 'fetch', 'docs', 'doctor'],
