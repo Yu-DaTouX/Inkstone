@@ -10,7 +10,8 @@ import { cachedTitles, generateTitle, manualTitles, setManualTitle } from '../ti
 import { getSettings } from '../settings'
 import { listSessions, deleteSession, readTitleSamples, restoreSession } from '../sessions'
 import { searchSessionText, warmSessionSearch } from '../session-search'
-import { moveSessionLayout } from '../session-layout'
+import { archiveSessionsBatch, moveSessionLayout, setSessionFlags } from '../session-layout'
+import { selectAutoArchive } from '../../shared/session-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { planHistoryRead } from '../../shared/session-chain'
 
@@ -260,8 +261,43 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
      */
     const requested = Number(process.env.YAN_TEST_SESSION_LIST_LIMIT)
     const limit = Number.isInteger(requested) && requested > 200 && requested <= 1000 ? requested : 200
-    return filterChainRepresentatives(await listSessions(limit, settings.projects))
+    const list = await filterChainRepresentatives(await listSessions(limit, settings.projects))
+    return sweepAutoArchive(list, settings.autoArchiveDays)
   })
+
+  /**
+   * 自动归档：闲置够久且没置顶、没有运行实例的会话打上归档标记。
+   * 失败只跳过这一轮，不影响列表本身。
+   */
+  async function sweepAutoArchive<T extends Parameters<typeof selectAutoArchive>[0][number]>(list: T[], days: unknown): Promise<T[]> {
+    const busyFiles = (host.runners()?.statuses() ?? []).map((r) => r.sessionFile)
+    const ids = selectAutoArchive(list, { days: Number(days), now: Date.now(), busyFiles })
+    if (!ids.length) return list
+    try {
+      await archiveSessionsBatch(ids)
+    } catch {
+      return list
+    }
+    const at = Date.now()
+    const done = new Set(ids)
+    return list.map((s) => (done.has(s.id) ? { ...s, archivedAt: at } : s))
+  }
+
+  /** 归档 / 置顶共用：找到会话再写 session-layout 标记。 */
+  async function setFlags(sessionId: string, flags: { archived?: boolean; pinned?: boolean }): Promise<{ ok: boolean; error?: string }> {
+    const settings = await getSettings()
+    const summaries = await listSessions(500, settings.projects)
+    const summary = summaries.find((item) => item.id === sessionId)
+    if (!summary) return { ok: false, error: '找不到这条会话' }
+    try {
+      await setSessionFlags({ sessionId: summary.id, sessionFile: summary.path, cwd: summary.cwd }, flags)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+  handle('yan:setSessionArchived', async (sessionId: string, archived: boolean) => setFlags(String(sessionId), { archived: archived === true }))
+  handle('yan:setSessionPinned', async (sessionId: string, pinned: boolean) => setFlags(String(sessionId), { pinned: pinned === true }))
 
   /**
    * 快速预览一个会话的消息 —— **直接读文件，不问 pi**。

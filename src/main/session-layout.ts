@@ -34,6 +34,10 @@ export interface RememberSessionInput {
   /** 主题空间归属（`null` = 移出空间；不传 = 保留原值）。 */
   spaceId?: string | null
   opened?: boolean
+  /** true = 归档、false = 取消归档；不传保留原值。 */
+  archived?: boolean
+  /** 同上，置顶。 */
+  pinned?: boolean
 }
 
 export interface MoveSessionInput {
@@ -100,6 +104,8 @@ function sanitizeEntry(item: unknown): SessionLayoutEntry | null {
     createdAt,
     updatedAt,
     ...(Number.isFinite(o.lastOpenedAt) ? { lastOpenedAt: Number(o.lastOpenedAt) } : {}),
+    ...(Number.isFinite(o.archivedAt) && Number(o.archivedAt) > 0 ? { archivedAt: Number(o.archivedAt) } : {}),
+    ...(o.pinned === true ? { pinned: true } : {}),
     moveHistory
   }
 }
@@ -217,6 +223,8 @@ export async function decorateSessions(
         ...(entry.spaceId ? { spaceId: entry.spaceId } : {}),
         scope: entry.scope,
         ...(entry.lastOpenedAt ? { lastOpenedAt: entry.lastOpenedAt } : {}),
+        ...(entry.archivedAt ? { archivedAt: entry.archivedAt } : {}),
+        ...(entry.pinned ? { pinned: true } : {}),
         ...(entry.projectCandidates?.length ? { projectCandidates: entry.projectCandidates } : {})
       }
     })
@@ -235,6 +243,8 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
     const nextScope = scopeFor(input.projectId, input.scope)
     const at = now()
     const history = previous?.moveHistory ? [...previous.moveHistory] : []
+    const archivedAt = input.archived === undefined ? previous?.archivedAt : input.archived ? previous?.archivedAt ?? at : undefined
+    const pinned = input.pinned === undefined ? previous?.pinned : input.pinned
     if (previous && (previous.projectId !== input.projectId || previous.scope !== nextScope)) {
       history.push({
         at,
@@ -264,6 +274,9 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
       createdAt: previous?.createdAt ?? at,
       updatedAt: at,
       ...(input.opened === false ? { lastOpenedAt: previous?.lastOpenedAt } : { lastOpenedAt: at }),
+      /* 归档与置顶只在显式传入时变；其余写入（打开、移动、归属空间）原样带过 */
+      ...(archivedAt ? { archivedAt } : {}),
+      ...(pinned ? { pinned: true } : {}),
       moveHistory: history.slice(-MAX_HISTORY)
     }
     if (index >= 0) entries[index] = next
@@ -308,4 +321,44 @@ export async function setSessionSpace(input: MoveSessionInput, spaceId: string |
     spaceId,
     opened: false
   })
+}
+
+/**
+ * 设置会话的归档 / 置顶标记。
+ *
+ * 与 `setSessionSpace` 同一个边界：先读出现有条目带回项目归属，否则 `rememberSession`
+ * 会按传入值重算 scope，把项目归属冲成 global。
+ */
+export async function setSessionFlags(
+  input: MoveSessionInput,
+  flags: { archived?: boolean; pinned?: boolean }
+): Promise<SessionLayoutEntry> {
+  const doc = await getSessionLayout()
+  const index = findEntryIndex(doc.entries, input.sessionId, input.sessionFile)
+  const previous = index >= 0 ? doc.entries[index] : undefined
+  return rememberSession({
+    sessionId: input.sessionId,
+    ...(input.sessionFile || previous?.sessionFile ? { sessionFile: input.sessionFile ?? previous?.sessionFile } : {}),
+    cwd: input.cwd || previous?.cwd || '',
+    ...(previous?.projectId ? { projectId: previous.projectId, scope: previous.scope } : { scope: previous?.scope ?? 'global' }),
+    ...flags,
+    opened: false
+  })
+}
+
+/** 一次写入多条会话的归档标记（自动归档用），避免逐条重写整份索引。 */
+export async function archiveSessionsBatch(sessionIds: readonly string[]): Promise<number> {
+  const ids = new Set(sessionIds)
+  if (!ids.size) return 0
+  let changed = 0
+  const at = now()
+  await update((document) => {
+    const entries = document.entries.map((entry) => {
+      if (!ids.has(entry.sessionId) || entry.archivedAt) return entry
+      changed++
+      return { ...entry, archivedAt: at }
+    })
+    return changed ? { version: 1, entries } : document
+  })
+  return changed
 }

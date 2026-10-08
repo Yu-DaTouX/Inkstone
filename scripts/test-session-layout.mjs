@@ -66,5 +66,29 @@ export async function runSessionLayoutTests(ok, api) {
     document.entries.some((item) => item.sessionId === 'parallel-a') && document.entries.some((item) => item.sessionId === 'parallel-b'),
     '并发归属写入串行化，不丢任一会话记录'
   )
+
+  /* 归档与置顶：只在显式传入时变，其余写入（打开、移动）原样带过 */
+  const base = await api.rememberSession({ sessionId: 'flag-a', sessionFile: 'C:/yan/sessions/flag-a.jsonl', cwd: 'C:/work/app', projectId: 'project-a', scope: 'project' })
+  ok(!base.archivedAt && !base.pinned, '新会话默认未归档、未置顶')
+  const archived = await api.setSessionFlags({ sessionId: 'flag-a', sessionFile: base.sessionFile, cwd: base.cwd }, { archived: true })
+  ok(archived.archivedAt > 0 && archived.projectId === 'project-a' && archived.scope === 'project', '归档只写标记，项目归属原样保留')
+  const pinned = await api.setSessionFlags({ sessionId: 'flag-a', sessionFile: base.sessionFile, cwd: base.cwd }, { pinned: true })
+  ok(pinned.pinned === true && pinned.archivedAt === archived.archivedAt, '置顶不改归档时间')
+  const reopened = await api.rememberSession({ sessionId: 'flag-a', cwd: 'C:/work/app', projectId: 'project-a', scope: 'project' })
+  ok(reopened.pinned === true && reopened.archivedAt === archived.archivedAt, '再次打开会话不会清掉归档与置顶')
+  const movedFlag = await api.moveSessionLayout({ sessionId: 'flag-a', sessionFile: base.sessionFile, cwd: base.cwd }, 'project-b')
+  ok(movedFlag.pinned === true && !!movedFlag.archivedAt, '移动到别的项目不会清掉归档与置顶')
+  const back = await api.setSessionFlags({ sessionId: 'flag-a', sessionFile: base.sessionFile, cwd: base.cwd }, { archived: false, pinned: false })
+  ok(!back.archivedAt && !back.pinned, '取消归档与置顶后标记清除')
+  const projected = await api.decorateSessions([{ ...summary('flag-a', base.sessionFile, 'C:/work/app') }], projects)
+  ok(projected[0].archivedAt === undefined && projected[0].pinned === undefined, '取消后列表投影里也没有这两个字段')
+
+  await api.setSessionFlags({ sessionId: 'flag-a', sessionFile: base.sessionFile, cwd: base.cwd }, { pinned: true })
+  await api.rememberSession({ sessionId: 'flag-b', cwd: 'C:/work/app', scope: 'global' })
+  const n = await api.archiveSessionsBatch(['flag-a', 'flag-b', 'no-such'])
+  ok(n === 2, '批量归档只计真正改变的条目（未知 id 跳过）')
+  ok((await api.archiveSessionsBatch(['flag-b'])) === 0, '已归档的再批量归档不重复写入')
+  const afterBatch = (await api.getSessionLayout()).entries.find((e) => e.sessionId === 'flag-a')
+  ok(afterBatch.pinned === true && !!afterBatch.archivedAt, '批量归档不动其他标记')
 }
 

@@ -294,6 +294,8 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const patchSettings = useStore((s) => s.patchSettings)
   const onTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
+  const keepAwake = useStore((s) => s.settings?.keepAwakeWhileWorking) !== false
+  const keepAwakeBattery = useStore((s) => s.settings?.keepAwakeOnBattery) !== false
   const uiScale = useStore((s) => s.settings?.uiScale) ?? 0
   const setUiScale = useStore((s) => s.setUiScale)
   const density = useStore((s) => s.settings?.density) ?? 'standard'
@@ -407,6 +409,12 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
       {/* 与标题栏的图钉是同一个状态（store.alwaysOnTop），显示以主进程推的真实值为准 */}
       <SettingRow name={t('set.alwaysOnTop')} desc={t('set.alwaysOnTopDesc')}>
         <Switch checked={onTop} onChange={() => void toggleAlwaysOnTop()} label={t('set.alwaysOnTop')} testId="set-always-on-top" />
+      </SettingRow>
+      <SettingRow name={t('set.keepAwake')} desc={t('set.keepAwakeDesc')}>
+        <Switch checked={keepAwake} onChange={(on) => void patchSettings({ keepAwakeWhileWorking: on })} label={t('set.keepAwake')} testId="set-keep-awake" />
+      </SettingRow>
+      <SettingRow name={t('set.keepAwakeBattery')} desc={t('set.keepAwakeBatteryDesc')}>
+        <Switch checked={keepAwakeBattery} onChange={(on) => void patchSettings({ keepAwakeOnBattery: on })} label={t('set.keepAwakeBattery')} testId="set-keep-awake-battery" />
       </SettingRow>
     </div>
   )

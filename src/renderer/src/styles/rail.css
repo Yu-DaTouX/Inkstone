@@ -1086,3 +1086,30 @@ body.rail-dragging .srow {
   box-shadow: 8px 0 24px -12px rgba(0, 0, 0, 0.35);
   animation: rail-peek-in var(--dur-200) var(--ease);
 }
+
+/* ── 视图菜单与非项目视图 ── */
+.rail-search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.rail-search-row > .rail-search {
+  flex: 1;
+  min-width: 0;
+}
+.rail-view-item {
+  width: 100%;
+}
+.rail-view-check {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 12px;
+}
+.rail-view-check .ico {
+  color: var(--accent);
+}
+/* 状态 / 日期 / 不分组视图的会话行与置顶、最近同级，不缩进 */
+.rail-flat .srow {
+  padding-left: var(--sp-2);
+}
