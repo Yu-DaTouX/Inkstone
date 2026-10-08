@@ -95,6 +95,18 @@ export function WorkspaceTab() {
             testId="set-show-spaces"
           />
         </SettingRow>
+        <SettingRow name={t('set.autoArchive')} desc={t('set.autoArchiveDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': 'set-auto-archive' }}>
+          {[0, 7, 14, 30].map((days) => (
+            <button
+              key={days}
+              className={`seg-btn ${(settings?.autoArchiveDays ?? 0) === days ? 'sel' : ''}`}
+              data-days={days}
+              onClick={() => void patchSettings({ autoArchiveDays: days })}
+            >
+              <span>{days === 0 ? t('set.autoArchiveNever') : t('set.autoArchiveDays', { n: days })}</span>
+            </button>
+          ))}
+        </SettingRow>
       </div>
 
       <SettingGroup title={t('set.sessionHead')}>

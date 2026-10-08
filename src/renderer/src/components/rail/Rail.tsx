@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { ContextMenu } from '../common/ContextMenu'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { SessionSummary } from '../../../../shared/ipc'
-import { beforeFromDrop, orderAfterDrag, rankOf } from '../../../../shared/rail-order'
-import { shortProject } from './rail-utils'
 import { RailUser } from './RailUser'
-import { ancestorPaths, useSidebarValue } from './sidebar-state'
+import { ancestorPaths, useSidebarJson, useSidebarValue } from './sidebar-state'
+import { RailViewMenu } from './RailViewMenu'
+import { buildRailSections, DEFAULT_RAIL_VIEW, normalizeRailView, type RailRunState } from '../../../../shared/rail-view'
 import { buildBranchIndex } from '../../../../shared/session-map'
 import { RunDot } from '../ui'
 import { type TrashNotice, TrashNoticeBar, SessionDeleteDialog, ProjectRemoveDialog } from './RailDialogs'
 import { SessionRow } from './SessionRow'
+import { useRailDrag } from './useRailDrag'
+import { useRailProjects } from './useRailProjects'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -63,50 +65,6 @@ const SESSION_PREVIEW = 5
 const RECENT_PREVIEW = 5
 /** Zustand selector 的稳定空值，禁止在 selector 内创建 `{}`。 */
 const EMPTY_PROJECT_NAMES: Record<string, string> = {}
-/** 同上：项目顺序的稳定空值 */
-const EMPTY_IDS: string[] = []
-
-/**
- * 拖拽排序（N01）的距离阈值（px）。
- *
- * 为什么要阈值：项目行同时是「切项目」按钮、分组标题里的名字也能被点 ——
- * 按下就进入拖拽会让单击全部失效。超过这个距离才当拖拽，没超过一律当点击。
- */
-const DRAG_THRESHOLD = 4
-
-type DragKind = 'project' | 'group' | 'session'
-/** 插入线落点：插在 `id` 这一行的**前**（after=false）或**后**（after=true） */
-interface DropHint {
-  kind: DragKind
-  id: string
-  after: boolean
-}
-/**
- * 「投放到某个容器」的落点（拖会话用）。
- *
- * 与 `DropHint`（插入线，换顺序）是两回事：会话是**归属**变更 ——
- * 拖到某个项目行 = 移入该项目，拖到「全局」行 = 移回默认位置。
- * 这里不存在「插在某一行的上/下半」的含义。
- */
-interface DropInto {
-  /** 容器 key：`project:<id>` 或 `global:<cwd>` */
-  key: string
-  /** 目标项目 id；null = 默认位置（全局） */
-  projectId: string | null
-}
-/** 一次拖拽会话（存在 ref 里，pointermove 高频且回调要读最新值） */
-interface DragSession {
-  kind: DragKind
-  id: string
-  /** 项目所属分组；落点必须同组（跨组是归属变更，走右键菜单） */
-  groupId: string
-  /** 会话拖拽：出发时所在的容器 key（拖回同一个容器 = 无操作） */
-  from: string
-  startX: number
-  startY: number
-  /** 是否已越过阈值、真正进入拖拽态 */
-  active: boolean
-}
 
 export function Rail() {
   const t = useT()
@@ -125,8 +83,6 @@ export function Rail() {
   const projectNames = settings?.projectNames ?? EMPTY_PROJECT_NAMES
   const projectRecords = settings?.projects ?? []
   const projectGroups = settings?.projectGroups ?? []
-  /** 用户拖拽定下的项目顺序（N01）；空 = 未拖过，按原活动序 */
-  const projectOrder = settings?.projectOrder ?? EMPTY_IDS
   const patchSettings = useStore((s) => s.patchSettings)
 
   /*
@@ -196,7 +152,42 @@ export function Rail() {
     railWasPinned.current = railPinned
   }, [railPinned, setShownAllSessions])
   const [expanded, setExpanded] = useSidebarValue<string[]>('expanded-branches', [])
-  const [pinned, setPinned] = useSidebarValue<string[]>('pinned', [])
+  /** 置顶存在宿主（会话索引），这里只取路径用于比对 */
+  const pinned = useMemo(() => sessions.filter((s) => s.pinned).map((s) => s.path), [sessions])
+  /** 视图：分组方式与排序。只改整理方式；「按项目」是原有的项目树。 */
+  const [viewRaw, setViewRaw] = useSidebarJson('view', DEFAULT_RAIL_VIEW)
+  const view = useMemo(() => normalizeRailView(viewRaw), [viewRaw])
+  const projectMode = view.group === 'project'
+  /** 归档视图只列已归档的会话，默认视图只列没归档的 */
+  const showArchivedSessions = view.show === 'archived'
+  const visibleSessions = useMemo(() => sessions.filter((s) => showArchivedSessions === !!s.archivedAt), [sessions, showArchivedSessions])
+
+  /*
+   * 旧版本把置顶存在本机 localStorage：第一次拿到会话列表时一次性搬进宿主，
+   * 搬完删掉旧键。找不到对应会话的旧路径（已删除的会话）直接丢弃。
+   */
+  const pinMigrated = useRef(false)
+  useEffect(() => {
+    if (pinMigrated.current || sessions.length === 0) return
+    pinMigrated.current = true
+    let legacy: string[] = []
+    try {
+      const parsed = JSON.parse(localStorage.getItem('yan.sidebar.pinned') ?? 'null')
+      legacy = Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+    } catch { /* 读不出来就当没有 */ }
+    if (!legacy.length) return
+    const todo = sessions.filter((s) => legacy.includes(s.path) && !s.pinned)
+    void (async () => {
+      let failed = false
+      for (const s of todo) {
+        const res = await window.yan.setSessionPinned(s.id, true).catch(() => ({ ok: false }))
+        if (!res.ok) failed = true
+      }
+      /* 有一条没写成功就保留旧键，下次启动再试；全成功才清 */
+      if (!failed) { try { localStorage.removeItem('yan.sidebar.pinned') } catch { /* 存储不可用 */ } }
+      await refreshSessions()
+    })()
+  }, [sessions, refreshSessions])
   const archived = useMemo(() => projectRecords.filter((p) => p.archived).map((p) => p.cwd), [projectRecords])
   const [showArchived, setShowArchived] = useState(false)
   const [unread, setUnread] = useSidebarValue<string[]>('unread', [])
@@ -215,16 +206,37 @@ export function Rail() {
   /**
    * 「最近」区：用户真的在砚里打开过的会话，跨项目按打开时间倒序。
    *
-   * 判据用 `lastOpenedAt`（宿主在打开时记的）而不是 `lastActivityAt`：
-   * 后台续行、子代理写回都会刷新后者，那会把「从没被打开过」的会话顶上来。
+   * 入选判据用 `lastOpenedAt`（宿主在打开时记的）：后台续行、子代理写回会刷新
+   * `lastActivityAt`，那会把「从没被打开过」的会话顶上来。
+   * 但**排序**用 `lastActivityAt`（最后一条消息的时间）：只是查看一条会话不该让它跳到最上面，
+   * 只有它真的有新消息（用户发送或回复）才上移，与项目内的会话排序一致。
    */
   const recentSessions = useMemo(
-    () => sessions
+    () => visibleSessions
       .filter((s) => (s.lastOpenedAt ?? 0) > 0 && !pinned.includes(s.path) && !archived.includes(s.cwd))
-      .sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))
+      .sort((a, b) => (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt))
       .slice(0, RECENT_PREVIEW),
-    [sessions, pinned, archived]
+    [visibleSessions, pinned, archived]
   )
+
+  /**
+   * 非项目视图（按状态 / 日期 / 不分组）的分区。
+   * 置顶会话留在置顶区，已归档项目的会话不出现；搜索按标题与目录过滤。
+   */
+  const flatSections = useMemo(() => {
+    if (projectMode) return []
+    const q = query.trim().toLowerCase()
+    const byFile = new Map(runners.filter((r) => !!r.sessionFile).map((r) => [r.sessionFile!, r]))
+    const items = visibleSessions
+      .filter((s) => (showArchivedSessions || !pinned.includes(s.path)) && !archived.includes(s.cwd))
+      .map((s) => ({ ...s, title: manualTitles[s.id] || titles[s.id] || s.title }))
+      .filter((s) => !q || s.title.toLowerCase().includes(q) || s.cwd.toLowerCase().includes(q))
+    const stateOf = (s: SessionSummary): RailRunState => {
+      const r = byFile.get(s.path)
+      return r?.waiting ? 'waiting' : r?.failed ? 'failed' : r?.running ? 'running' : 'idle'
+    }
+    return buildRailSections(items, view, stateOf, Date.now())
+  }, [projectMode, query, visibleSessions, showArchivedSessions, pinned, archived, manualTitles, titles, runners, view])
 
   /**
    * 打开菜单的会话。
@@ -342,166 +354,7 @@ export function Rail() {
     return () => document.removeEventListener('click', close)
   }, [menuFor, projectMenu, groupMenu])
 
-  /** 按项目（cwd）分组；当前项目永远排最前，其余按最近活动排 */
-  const projects = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    const activity = (s: SessionSummary): number => s.lastActivityAt ?? s.updatedAt
-    const recordsById = new Map(projectRecords.map((project) => [project.id, project]))
-    const activeProjectId = runners.find((runner) => runner.id === activeRunnerId)?.projectId
-    const currentSummary = sessions.find((item) => item.id === session?.sessionId || item.path === session?.sessionFile)
-    const currentProjectId = activeProjectId ?? currentSummary?.projectId
-
-    /** 同一项目里的分支仍然按“根会话 + 子会话”连续展示。 */
-    const orderFamily = (list: SessionSummary[]): SessionSummary[] => {
-      const inList = new Set(list.map((s) => s.path))
-      const children = new Map<string, SessionSummary[]>()
-      for (const s of list) {
-        if (!s.parentSession || !inList.has(s.parentSession)) continue
-        const arr = children.get(s.parentSession) ?? []
-        arr.push(s)
-        children.set(s.parentSession, arr)
-      }
-      for (const arr of children.values()) arr.sort((a, b) => a.createdAt - b.createdAt)
-
-      const roots = list.filter((s) => !s.parentSession || !inList.has(s.parentSession))
-      roots.sort((a, b) => activity(b) - activity(a))
-      const out: SessionSummary[] = []
-      const seen = new Set<string>()
-      const push = (s: SessionSummary): void => {
-        if (seen.has(s.path)) return
-        seen.add(s.path)
-        out.push(s)
-        for (const c of children.get(s.path) ?? []) push(c)
-      }
-      for (const r of roots) push(r)
-      for (const s of list) push(s)
-      return out
-    }
-
-    const currentPath = session?.sessionFile
-    const synthetic: SessionSummary[] = currentPath && !sessions.some((x) => x.path === currentPath)
-      ? [{
-          id: session?.sessionId ?? 'current',
-          path: currentPath,
-          cwd: session?.cwd ?? '',
-          title: session?.sessionName ?? t('rail.untitled'),
-          named: !!session?.sessionName,
-          ...(currentProjectId ? { projectId: currentProjectId, scope: 'project' as const } : { scope: 'global' as const }),
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          messageCount: 0
-        }]
-      : []
-
-    // 用模型生成的短标题覆盖列表标题（如果有）；用户手动名优先。
-    const all = [...synthetic, ...sessions].map((x) => {
-      const manual = manualTitles[x.id]
-      if (manual) return { ...x, title: manual, named: true }
-      const generated = titles[x.id]
-      return generated ? { ...x, title: generated } : x
-    })
-    const parents = new Map(all.filter((s) => s.parentSession).map((s) => [s.path, s.parentSession!]))
-    const projectFor = (s: SessionSummary): {
-      id: string
-      cwd: string
-      label: string
-      projectId?: string
-    } => {
-      const record = s.projectId ? recordsById.get(s.projectId) : undefined
-      if (record) {
-        return {
-          id: `project:${record.id}`,
-          projectId: record.id,
-          cwd: record.cwd,
-          label: record.name || projectNames[record.cwd] || shortProject(record.cwd)
-        }
-      }
-      const cwd = s.cwd || '—'
-      return {
-        id: `global:${cwd}`,
-        cwd,
-        label: cwd === '—' ? t('rail.local') : shortProject(cwd)
-      }
-    }
-
-    const matches = new Set<string>()
-    for (const s of all) {
-      const project = projectFor(s)
-      if (!q || [s.title, s.cwd, project.label, projectNames[s.cwd] ?? ''].some((v) => v.toLowerCase().includes(q))) {
-        matches.add(s.path)
-        for (const p of ancestorPaths(s.path, parents)) matches.add(p)
-      }
-    }
-    const filtered = all.filter((s) => matches.has(s.path))
-    const byProject = new Map<string, { id: string; cwd: string; label: string; projectId?: string; list: SessionSummary[] }>()
-    const addProject = (project: ReturnType<typeof projectFor>, list: SessionSummary[] = []): void => {
-      const previous = byProject.get(project.id)
-      if (previous) previous.list.push(...list)
-      else byProject.set(project.id, { ...project, list: [...list] })
-    }
-
-    // 先把设置里的项目放入列表，即使它暂时没有会话，项目入口仍然稳定。
-    for (const record of projectRecords) {
-      const label = record.name || projectNames[record.cwd] || shortProject(record.cwd)
-      if (!q || label.toLowerCase().includes(q) || record.cwd.toLowerCase().includes(q)) {
-        addProject({ id: `project:${record.id}`, projectId: record.id, cwd: record.cwd, label })
-      }
-    }
-    for (const s of filtered) addProject(projectFor(s), [s])
-
-    // 没有 ProjectRecord 的旧 cwd 仍要作为一个可访问的全局位置保留。
-    for (const cwd of settings?.recentCwds ?? []) {
-      const alreadyShown = [...byProject.values()].some((project) => project.cwd.toLowerCase() === cwd.toLowerCase())
-      if (!alreadyShown && (!q || (projectNames[cwd] || cwd).toLowerCase().includes(q))) {
-        addProject({ id: `global:${cwd}`, cwd, label: shortProject(cwd) })
-      }
-    }
-
-    const cur = session?.cwd
-    /*
-     * 项目顺序（N01）：用户拖过的按 `projectOrder`；没拖过的仍按最近活动排。
-     * 「当前项目置顶」保留 —— 它是切项目后的定位手段，与用户排的顺序不冲突
-     * （两者只能有一个在最上面，置顶优先）。
-     */
-    const rank = rankOf(projectOrder)
-    return [...byProject.values()]
-      .map((project) => ({
-        ...project,
-        list: orderFamily(project.list),
-        isCurrent: project.projectId ? project.projectId === currentProjectId : !currentProjectId && project.cwd === cur
-      }))
-      .filter((project) => showArchived === !!(project.projectId && recordsById.get(project.projectId)?.archived))
-      .sort((a, b) => {
-        if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
-        const ar = a.projectId ? rank.get(a.projectId) : undefined
-        const br = b.projectId ? rank.get(b.projectId) : undefined
-        if (ar !== undefined || br !== undefined) {
-          if (ar === undefined) return 1
-          if (br === undefined) return -1
-          if (ar !== br) return ar - br
-        }
-        const at = (p: { list: SessionSummary[] }) => p.list[0] ? activity(p.list[0]) : 0
-        return at(b) - at(a)
-      })
-  }, [sessions, query, session, t, titles, manualTitles, projectNames, projectRecords, projectOrder, settings?.recentCwds, archived, showArchived, runners, activeRunnerId])
-
-  // 将项目实体按持久化分组重新排列；分组标题会在项目列表中作为一级标题显示。
-  // 组内仍保留项目原本的活动排序，未分组项目统一放在最后。
-  const displayProjects = useMemo(() => {
-    const groupIdFor = (project: (typeof projects)[number]): string | undefined =>
-      project.projectId ? projectRecords.find((record) => record.id === project.projectId)?.groupId : undefined
-    const byGroup = new Map<string, typeof projects>()
-    for (const project of projects) {
-      const key = groupIdFor(project) ?? ''
-      const list = byGroup.get(key) ?? []
-      list.push(project)
-      byGroup.set(key, list)
-    }
-    const ordered: typeof projects = []
-    for (const group of projectGroups) ordered.push(...(byGroup.get(group.id) ?? []))
-    ordered.push(...(byGroup.get('') ?? []))
-    return ordered
-  }, [projects, projectRecords, projectGroups])
+  const { projects, displayProjects } = useRailProjects({ query, showArchived, sortBy: view.sort, showArchivedSessions })
 
   /**
    * 项目列表默认只展开前 N 个（N17）。
@@ -523,212 +376,10 @@ export function Rail() {
   const shownProjects = showAllProjects ? displayProjects : displayProjects.slice(0, PROJECT_PREVIEW)
   const hiddenProjects = Math.max(0, displayProjects.length - PROJECT_PREVIEW)
 
-  /*
-   * ------------------------------------------------------------------
-   * 拖拽排序（N01）
-   *
-   * 为什么自己写指针拖拽而不用 HTML5 的 `draggable`：
-   *   · 原生 dragstart/dragover 在自动化里只能靠底层接口合成，
-   *     而本项目的验收铁律是「在真实窗口里跑出来」；
-   *   · 原生拖拽的拖影 / dropEffect 跳平台不一致。
-   * 用 pointerdown / move / up + elementFromPoint，行为全由这里的代码决定，
-   * 探针合成 PointerEvent 就能走同一条路径。
-   *
-   * 与「搜索」「前五项折叠」的关系（互斥）：
-   *   · 搜索态下列表是筛过的，拖出来的顺序不代表真实排列 → 不允许拖；
-   *   · 折叠态下看不到第 6 个以后的项目 → 真正开始拖就自动展开，
-   *     否则会出现「拖不到看不见的行」。
-   * ------------------------------------------------------------------
-   */
-  /** 拖拽中的行（用于 `.is-dragging` 视觉态）；null = 没在拖 */
-  const [dragItem, setDragItem] = useState<{ kind: DragKind; id: string } | null>(null)
-  /** 插入线落点 */
-  const [dropHint, setDropHint] = useState<DropHint | null>(null)
-  /** 会话拖拽的投放目标（项目行 / 全局行） */
-  const [dropInto, setDropInto] = useState<DropInto | null>(null)
-  /** 拖拽会话（事件回调是 pointerdown 那一刻的闭包，必须经 ref 读最新值） */
-  const dragRef = useRef<DragSession | null>(null)
-  const dropHintRef = useRef<DropHint | null>(null)
-  const dropIntoRef = useRef<DropInto | null>(null)
-  /**
-   * 屏幕上真实渲染出来的分组顺序。
-   * **不等于** `projectGroups`：没有项目的分组根本不渲染标题（标题是跟着
-   * 第一个项目行出来的），拿 `projectGroups` 排会出现「拖了没反应」。
-   */
-  const renderedGroupIds = useMemo(() => {
-    const seen = new Set<string>()
-    const out: string[] = []
-    for (const project of displayProjects) {
-      const gid = project.projectId ? projectRecords.find((record) => record.id === project.projectId)?.groupId : undefined
-      if (gid && !seen.has(gid)) {
-        seen.add(gid)
-        out.push(gid)
-      }
-    }
-    return out
-  }, [displayProjects, projectRecords])
-  /** 落盘时要用的「当前排列」快照（pointerup 读它，保证不是旧渲染的数组） */
-  const orderRef = useRef({ projects: displayProjects, groups: renderedGroupIds })
-  useEffect(() => {
-    orderRef.current = { projects: displayProjects, groups: renderedGroupIds }
-  }, [displayProjects, renderedGroupIds])
-  /* 组件卸载（拖拽中切走）时别把类名留在 body 上 */
-  useEffect(() => () => document.body.classList.remove('rail-dragging'), [])
-
-  /** 同步落点：state 给渲染用，ref 给 pointerup 用 */
-  const setHint = (hint: DropHint | null): void => {
-    dropHintRef.current = hint
-    setDropHint(hint)
-  }
-
-  /** 同上，用于会话拖拽的投放目标 */
-  const setInto = (into: DropInto | null): void => {
-    dropIntoRef.current = into
-    setDropInto(into)
-  }
-
-  /** 拆掉监听与视觉态；`keepSession` = 把会话留给随后的 click 消费（见 consumeDragClick） */
-  function cleanupDrag(keepSession: boolean): void {
-    window.removeEventListener('pointermove', onDragMove)
-    window.removeEventListener('pointerup', onDragUp)
-    window.removeEventListener('pointercancel', onDragCancel)
-    window.removeEventListener('keydown', onDragKey)
-    document.body.classList.remove('rail-dragging')
-    setDragItem(null)
-    setHint(null)
-    setInto(null)
-    if (!keepSession) dragRef.current = null
-  }
-
-  /**
-   * 会话拖拽的落点：指针下的「容器」（项目行 / 全局行）。
-   *
-   * 为什么用 `closest('[data-drop-into]')` 而不是看插入线：会话是归属变更，
-   * 行内嵌套很多（会话行在项目行下方），指针落在会话行上时也要能命中它所属的项目行
-   * —— 与 `DropHint` 只认同类行不同。
-   */
-  function intoAt(x: number, y: number): DropInto | null {
-    const under = document.elementFromPoint(x, y) as HTMLElement | null
-    const row = under?.closest<HTMLElement>('[data-drop-into]')
-    const key = row?.dataset.dropInto
-    if (!row || !key) return null
-    return { key, projectId: key.startsWith('project:') ? key.slice('project:'.length) : null }
-  }
-
-  /** 指针落在哪一行上：上半 → 插到它之前；下半 → 插到它之后 */
-  function hintAt(x: number, y: number, session: DragSession): DropHint | null {
-    const under = document.elementFromPoint(x, y) as HTMLElement | null
-    const row = under?.closest<HTMLElement>(`[data-drag-kind="${session.kind}"]`)
-    const id = row?.dataset.dragId
-    if (!row || !id || id === session.id) return null
-    /*
-     * 项目只在**同一个分组内**换位，跨组的落点一律不接受。
-     * 「把项目移到另一个分组」是归属变更（右键菜单里已有明确入口），
-     * 让拖拽同时表示「换组」和「换序」会让一次误拖悄悄改掉归属。
-     */
-    if (session.kind === 'project' && (row.dataset.dragGroup ?? '') !== session.groupId) return null
-    const rect = row.getBoundingClientRect()
-    return { kind: session.kind, id, after: y > rect.top + rect.height / 2 }
-  }
-
-  function onDragMove(e: PointerEvent): void {
-    const session = dragRef.current
-    if (!session) return
-    if (!session.active) {
-      if (Math.hypot(e.clientX - session.startX, e.clientY - session.startY) < DRAG_THRESHOLD) return
-      session.active = true
-      /* 折叠态下后面的行不可见 —— 进入拖拽就展开，否则拖不过去 */
-      setProjectsExpanded(true)
-      setDragItem({ kind: session.kind, id: session.id })
-      document.body.classList.add('rail-dragging')
-    }
-    e.preventDefault()
-    if (session.kind === 'session') setInto(intoAt(e.clientX, e.clientY))
-    else setHint(hintAt(e.clientX, e.clientY, session))
-  }
-
-  function onDragUp(): void {
-    const session = dragRef.current
-    const hint = dropHintRef.current
-    const into = dropIntoRef.current
-    cleanupDrag(true)
-    if (!session?.active) return
-    /*
-     * 会话：拖到项目行 / 全局行 → 改归属。
-     * 拖回出发时所在的容器（或没拖到任何容器）= 无操作，不发 IPC。
-     */
-    if (session.kind === 'session') {
-      if (!into || into.key === session.from) return
-      void useStore.getState().moveSession(session.id, into.projectId)
-      return
-    }
-    if (!hint) return
-    const { projects: list, groups } = orderRef.current
-    if (session.kind === 'group') {
-      const nextIds = orderAfterDrag(groups, session.id, beforeFromDrop(groups, hint.id, hint.after))
-      if (nextIds.join('\u0000') === groups.join('\u0000')) return
-      const byId = new Map(projectGroups.map((group) => [group.id, group]))
-      const ordered = nextIds.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []))
-      /* 没渲染的分组（暂时没项目）保持相对位置跟在后面，不能丢 */
-      const rest = projectGroups.filter((group) => !nextIds.includes(group.id))
-      void patchSettings({ projectGroups: [...ordered, ...rest] })
-      return
-    }
-    const ids = list.flatMap((project) => (project.projectId ? [project.projectId] : []))
-    const nextIds = orderAfterDrag(ids, session.id, beforeFromDrop(ids, hint.id, hint.after))
-    if (nextIds.join('\u0000') === ids.join('\u0000')) return
-    void patchSettings({ projectOrder: nextIds })
-  }
-
-  function onDragCancel(): void {
-    cleanupDrag(false)
-  }
-
-  function onDragKey(e: KeyboardEvent): void {
-    if (e.key !== 'Escape') return
-    e.preventDefault()
-    cleanupDrag(false)
-  }
-
-  /**
-   * 开始一次可能的拖拽。
-   *
-   * 不在这里 preventDefault：项目行整行也是「切到该项目」的按钮，
-   * 按下就拦掉会让单击失效 —— 只有越过阈值、真正进入拖拽后才接管。
-   */
-  function beginDrag(e: ReactPointerEvent, kind: DragKind, id: string, groupId = '', from = ''): void {
-    if (e.button !== 0) return
-    if (query) return
-    if (!projectsOpen) return
-    const target = e.target as HTMLElement
-    /*
-     * 行内的按钮 / 输入框有自己的语义，不要让拖拽把它们吃掉。
-     * 会话行的「主体」正好就是一个 button（`.srow`），所以**不能**对会话
-     * 用同一条排除规则 —— 否则整个会话行都拖不动。那里只排除行内的
-     * 操作按钮（⋯ / 分叉开关）与重命名输入框。
-     */
-    if (kind === 'session') {
-      if (target.closest('.srow-acts, .srow-btoggle, input')) return
-    } else if (target.closest('button:not(.proj-pick), input, [role="button"]')) return
-    dragRef.current = { kind, id, groupId, from, startX: e.clientX, startY: e.clientY, active: false }
-    window.addEventListener('pointermove', onDragMove)
-    window.addEventListener('pointerup', onDragUp)
-    window.addEventListener('pointercancel', onDragCancel)
-    window.addEventListener('keydown', onDragKey)
-  }
-
-  /**
-   * 拖拽结束后紧跟而来的 click 不该再当成「点这一行」。
-   *
-   * click 一定在 pointerup 之后、下一次 pointerdown 之前派发，所以在 click
-   * 处理器里读到「上一次拖拽仍活着」就吞掉它，然后清掉标记。
-   * 用时间戳不行 —— 拖完立刻点同一行会被误吞。
-   */
-  function consumeDragClick(): boolean {
-    if (!dragRef.current?.active) return false
-    dragRef.current = null
-    return true
-  }
+  const { dragItem, dropHint, dropInto, beginDrag, consumeDragClick } = useRailDrag({
+    query, projectsOpen, displayProjects, projectRecords, projectGroups, patchSettings,
+    expandAllProjects: () => setProjectsExpanded(true)
+  })
 
   /*
    * 切换项目时把「手工展开/收起」重置（N17）。
@@ -921,7 +572,8 @@ export function Rail() {
       projectRecords={projectRecords}
       dragging={dragItem?.kind === 'session' && dragItem.id === s.id}
       onDragStart={(e) => beginDrag(e, 'session', s.id, '', containerKey)}
-      onPin={() => setPinned((prev) => prev.includes(s.path) ? prev.filter((p) => p !== s.path) : [...prev, s.path])}
+      onPin={() => void useStore.getState().setSessionPinned(s.id, !pinned.includes(s.path))}
+      archived={!!s.archivedAt} onArchive={() => void useStore.getState().setSessionArchived(s.id, !s.archivedAt)}
       onRequestDelete={() => setDeleteTarget(s)} />
   }
 
@@ -940,6 +592,7 @@ export function Rail() {
           <span>{t('rail.new')}</span>
           <kbd className="ui-kbd plain">Ctrl N</kbd>
         </button>
+        <div className="rail-search-row">
         <label className="rail-search">
           <Icon name="search" size={12} />
           <input
@@ -973,29 +626,38 @@ export function Rail() {
             </button>
           ) : null}
         </label>
+        <RailViewMenu view={view} onChange={setViewRaw} />
+        </div>
       </div>
 
       {/* ---- 项目分组 ---- */}
       <div className="rail-section">
         <div className="rail-body">
           {projectError ? <div className="rail-empty" role="alert">{projectError}</div> : null}
-          {!query && !showArchived && pinned.some((p) => sessions.some((s) => s.path === p && !archived.includes(s.cwd))) ? <div className="rail-pins">
+          {!query && !showArchived && !showArchivedSessions && pinned.some((p) => sessions.some((s) => s.path === p && !s.archivedAt && !archived.includes(s.cwd))) ? <div className="rail-pins">
             <div className="rail-section-head"><span className="rail-label">{t('rail.pinned')}</span><span className="rail-label-line" aria-hidden /></div>
-            {sessions.filter((s) => pinned.includes(s.path) && !archived.includes(s.cwd)).map((s) => renderSession({ ...s, title: manualTitles[s.id] || titles[s.id] || s.title }, []))}
+            {sessions.filter((s) => pinned.includes(s.path) && !s.archivedAt && !archived.includes(s.cwd)).map((s) => renderSession({ ...s, title: manualTitles[s.id] || titles[s.id] || s.title }, []))}
           </div> : null}
           {/*
             * 最近打开过的会话（跨项目）。
             * 只在未搜索、未看归档时显示：搜索是另一套筛选语境，
             * 归档视图里项目区本身就在展示被移除的项目。
             */}
-          {!query && !showArchived && recentSessions.length > 0 ? <div className="rail-recent" data-testid="rail-recent">
+          {projectMode && !query && !showArchived && !showArchivedSessions && recentSessions.length > 0 ? <div className="rail-recent" data-testid="rail-recent">
             <div className="rail-section-head"><span className="rail-label">{t('rail.recent')}</span><span className="rail-label-line" aria-hidden /></div>
             {recentSessions.map((s) => renderSession({ ...s, title: manualTitles[s.id] || titles[s.id] || s.title }, []))}
           </div> : null}
           {/* 没有归档项目时不摆「已归档项目 · 0」：一个永远指向空列表的入口只是噪音 */}
-          {showArchived || archived.length > 0 ? (
+          {projectMode && (showArchived || archived.length > 0) ? (
             <button className="rail-archive-toggle" onClick={() => setShowArchived((v) => !v)}>{showArchived ? t('rail.backProjects') : t('rail.archivedProjects', { n: archived.length })}</button>
           ) : null}
+          {!projectMode ? (
+            flatSections.length === 0 ? <div className="rail-empty">{query ? t('rail.noMatch') : showArchivedSessions ? t('rail.noArchived') : t('rail.empty')}</div>
+              : flatSections.map((section) => <div key={section.key} className="rail-flat" data-testid={`rail-section-${section.key}`}>
+                {view.group === 'none' ? null : <div className="rail-section-head"><span className="rail-label">{t(`rail.section.${section.key}`)}</span><span className="rail-label-line" aria-hidden /></div>}
+                {section.items.map((s) => renderSession(s, [], 0, new Set<string>(), 'flat'))}
+              </div>)
+          ) : <>
           <div className="rail-section-head">
             <button
               className={`rail-label ${projectsOpen ? '' : 'collapsed'}`}
@@ -1019,7 +681,7 @@ export function Rail() {
           {total === 0 && projects.length === 0 ? (
             <div className="rail-empty">{t('rail.empty')}</div>
           ) : shown === 0 && projects.length === 0 ? (
-            <div className="rail-empty">{t('rail.noMatch')}</div>
+            <div className="rail-empty">{showArchivedSessions && !query ? t('rail.noArchived') : t('rail.noMatch')}</div>
           ) : projectsOpen || query ? (
             shownProjects.map((p, projectIndex) => {
               const pOpen = !!query || !collapsed.includes(p.id)
@@ -1344,6 +1006,7 @@ export function Rail() {
               </span>
             </button>
           ) : null}
+          </>}
         </div>
       </div>
 
