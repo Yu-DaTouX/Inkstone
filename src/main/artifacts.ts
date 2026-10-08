@@ -8,7 +8,7 @@
  *   4. 对 SVG 做最小安全清理，渲染端永远不执行 HTML/Markdown。
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
 import type { AssistantArtifact } from '../shared/ipc'
 
@@ -106,6 +106,16 @@ export interface ArtifactAttachInput {
 export class ArtifactStore {
   constructor(private readonly rootDir: string) {}
 
+  /**
+   * 每个会话的 manifest 读改写串行闸门。
+   *
+   * 为什么必须串行：`append()` 是「读 manifest → push → 写回」。多个保存
+   *（模型一次生成多张图、并发 attach）同时进行时会各自读到同一份旧清单，
+   * 再分别覆盖写回 —— 结果是文件都在，但只有最后一次的条目留在 manifest 里，
+   * 重启后其余产物不再挂回消息。按会话串行化整段读改写，并把写盘换成原子替换。
+   */
+  private readonly manifestTail = new Map<string, Promise<unknown>>()
+
   private sessionDir(sessionFile: string): string {
     return join(this.rootDir, safeSessionKey(sessionFile))
   }
@@ -176,10 +186,25 @@ export class ArtifactStore {
   }
 
   async append(sessionFile: string, messageId: string, artifact: AssistantArtifact): Promise<void> {
+    const key = safeSessionKey(sessionFile)
+    const prev = this.manifestTail.get(key) ?? Promise.resolve()
+    const next = prev.then(
+      () => this.appendNow(sessionFile, messageId, artifact),
+      () => this.appendNow(sessionFile, messageId, artifact)
+    )
+    this.manifestTail.set(key, next.then(() => undefined, () => undefined))
+    return next
+  }
+
+  private async appendNow(sessionFile: string, messageId: string, artifact: AssistantArtifact): Promise<void> {
     const items = await this.list(sessionFile)
     items.push({ messageId, artifact })
     await mkdir(this.sessionDir(sessionFile), { recursive: true })
-    await writeFile(this.manifestPath(sessionFile), JSON.stringify(items.slice(-MAX_MANIFEST_ITEMS), null, 2), 'utf8')
+    const target = this.manifestPath(sessionFile)
+    /* 原子替换：写到临时文件再 rename，不会留下写到一半的清单 */
+    const temp = `${target}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
+    await writeFile(temp, JSON.stringify(items.slice(-MAX_MANIFEST_ITEMS), null, 2), 'utf8')
+    await rename(temp, target)
   }
 
   async hydrateMessages(sessionFile: string, messages: import('../shared/ipc').UIMessage[]): Promise<import('../shared/ipc').UIMessage[]> {

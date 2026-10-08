@@ -121,6 +121,35 @@ export async function runSpaceStoreTests(ok, mod, helpers) {
       ok(reloaded.links().length === 1, '重启后关联仍在')
     }
 
+    /* ---- 写盘失败：内存不留幽灵记录（O09 回归） ---- */
+    {
+      const { mkdir, rename } = await import('node:fs/promises')
+      const failRoot = await mkdtemp(join(tmpdir(), 'yan-space-fail-'))
+      try {
+        const failing = new SpaceStore({ root: failRoot })
+        /* 用同名目录占住目标路径：rename 与直接写都会失败 */
+        await mkdir(join(failRoot, 'spaces.json'), { recursive: true })
+        let rejected = false
+        try {
+          await failing.create({ name: '会失败的空间' })
+        } catch {
+          rejected = true
+        }
+        ok(rejected, '写盘失败时 create 如实抵错')
+        ok(failing.list().length === 0, '**写盘失败的空间不进内存**（不会在下一次保存时偷偷提交）')
+        await rename(join(failRoot, 'spaces.json'), join(failRoot, 'obstacle'))
+        const retry = await failing.create({ name: '修复后' })
+        ok(retry.ok === true && failing.list().length === 1, '阻碍解除后能正常保存')
+        const onDisk = JSON.parse(await readFile(join(failRoot, 'spaces.json'), 'utf8'))
+        ok(
+          onDisk.spaces.length === 1 && onDisk.spaces[0].name === '修复后',
+          '磁盘上只有成功那一条（失败的没被带进去）'
+        )
+      } finally {
+        await rm(failRoot, { recursive: true, force: true })
+      }
+    }
+
     /* ---- 坏文档：坏条目与孤儿关联都丢掉 ---- */
     {
       const doc = sanitizeSpaceDocument({

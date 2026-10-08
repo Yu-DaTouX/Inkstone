@@ -2,10 +2,11 @@
  * 读网页正文：搜到结果之后，把一个页面读成可直接引用的文本。
  *
  * 和搜索引擎来源一样在隐藏页面里加载（JS 渲染的页面也能读到），不带用户的登录态，
- * 不碰内置浏览器标签；内网地址在请求层被拦。需要登录或交互的页面应改用 `yan browser`。
+ * 不碰内置浏览器标签；本机与内网地址在请求层被拦（含域名解析到内网的情况）。
+ * 需要登录或交互的页面应改用 `yan browser`。
  */
 import { isLinkLocalHost, isPrivateHost } from '../browser/network-boundary'
-import { HiddenPageTimeout, withHiddenPage } from './hidden-page'
+import { HiddenPageTimeout, sleepUnlessAborted, withHiddenPage } from './hidden-page'
 
 export const READ_PAGE_MAX_CHARS_DEFAULT = 12_000
 export const READ_PAGE_MAX_CHARS_MAX = 40_000
@@ -66,7 +67,7 @@ export async function readPage(
   const maxChars = Math.min(READ_PAGE_MAX_CHARS_MAX, Math.max(500, Math.round(opts.maxChars ?? READ_PAGE_MAX_CHARS_DEFAULT)))
   const timeoutMs = Math.min(60_000, Math.max(3_000, Math.round(opts.timeoutMs ?? 20_000)))
   try {
-    return await withHiddenPage(timeoutMs, async (win) => {
+    return await withHiddenPage(timeoutMs, async (win, signal) => {
       let loadError = ''
       void win.loadURL(url).catch((e: Error) => {
         if (!/ERR_ABORTED/.test(e.message)) loadError = e.message
@@ -76,6 +77,8 @@ export async function readPage(
       let stable = 0
       let prevLen = -1
       for (;;) {
+        /* 超时后 withHiddenPage 会 abort：这里立刻退出，不再在已销毁窗口上轮询 */
+        if (signal.aborted) throw new HiddenPageTimeout(timeoutMs)
         if (loadError) throw new ReadPageError('network_error', loadError)
         try {
           last = (await win.webContents.executeJavaScript(EXTRACT)) as Snapshot
@@ -88,7 +91,7 @@ export async function readPage(
           prevLen = last.text.length
           if (last.state === 'complete' || stable >= 4) break
         }
-        await new Promise((r) => setTimeout(r, 400))
+        await sleepUnlessAborted(400, signal)
       }
       const done = last as Snapshot
       const text = done.text

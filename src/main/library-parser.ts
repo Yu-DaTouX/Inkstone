@@ -31,6 +31,16 @@ export interface ParseOutcome {
 export const MAX_TEXT_BYTES = 4 * 1024 * 1024
 /** PDF 上限：超过就标 unsupported（解析会很慢，且多半也不是"资料"）。 */
 export const MAX_PDF_BYTES = 64 * 1024 * 1024
+/**
+ * 单个内容流的解压输出上限。
+ *
+ * 压缩输入大小（受 MAX_PDF_BYTES 约束）**不能**约束输出：一个小压缩流可以展开
+ * 成几百倍的文本（deflate 的放大比可以做到上千倍），而解压是同步跑在宿主调用链上的。
+ * 同仓库的 `office/zip.ts` 已经用 `inflateRawSync(..., { maxOutputLength })` 做了同样的事。
+ */
+export const MAX_PDF_STREAM_BYTES = 16 * 1024 * 1024
+/** 一个 PDF 里所有内容流的累计解压输出上限（多个流各自不超也能量很大）。 */
+export const MAX_PDF_TOTAL_BYTES = 64 * 1024 * 1024
 /** 提取结果的可打印比例低于此值 → 判定为乱码（典型是 CID 字体 / 扫描件）。 */
 const MIN_PRINTABLE_RATIO = 0.6
 const MIN_TEXT_CHARS = 20
@@ -127,6 +137,10 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
   const pieces: string[] = []
   let streams = 0
   let inflated = 0
+  /** 已经解出来的文本量（含未压缩流）：用来卡累计预算 */
+  let produced = 0
+  /** 超出解压预算（或预算已用完）而被跳过的流数 */
+  let skipped = 0
 
   const marker = /stream(\r\n|\r|\n)/g
   let hit: RegExpExecArray | null
@@ -136,13 +150,28 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
     if (end < 0) break
     streams += 1
     const slice = buf.subarray(start, end)
-    let content = slice.toString('latin1')
-    try {
-      content = inflateSync(slice).toString('latin1')
-      inflated += 1
-    } catch {
-      /* 未压缩的流：原样使用 */
+    let content = ''
+    const remaining = MAX_PDF_TOTAL_BYTES - produced
+    if (remaining <= 0) {
+      skipped += 1
+      marker.lastIndex = end
+      continue
     }
+    try {
+      content = inflateSync(slice, { maxOutputLength: Math.min(MAX_PDF_STREAM_BYTES, remaining) }).toString('latin1')
+      inflated += 1
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code
+      if (code === 'ERR_BUFFER_TOO_LARGE' || /maxOutputLength/i.test(error instanceof Error ? error.message : '')) {
+        /* 超出预算的流不当成"未压缩流"继续读 —— 那会把压缩数据当文本乱解一气 */
+        skipped += 1
+        marker.lastIndex = end
+        continue
+      }
+      /* 未压缩的流：原样使用 */
+      content = slice.toString('latin1')
+    }
+    produced += content.length
     const text = extractPdfText(content)
     if (text.trim()) pieces.push(text)
     marker.lastIndex = end
@@ -150,14 +179,18 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
 
   const text = pieces.join('\n\n').replace(/\n{3,}/g, '\n\n').trim()
   if (streams === 0) return { status: 'failed', pages, note: 'PDF 里没有内容流（文件可能损坏）' }
+  const skippedNote = skipped > 0 ? `（${skipped} 个内容流超出解压上限，已跳过）` : ''
   if (text.length < MIN_TEXT_CHARS) {
-    return { status: 'unsupported', pages, note: 'PDF 里没有可提取的文本层（扫描件或纯图片页），已作为附件保留' }
+    if (skipped > 0 && !pieces.length) {
+      return { status: 'failed', pages, note: `内容流解压后超出上限${skippedNote}，没有可用的文本层` }
+    }
+    return { status: 'unsupported', pages, note: `PDF 里没有可提取的文本层（扫描件或纯图片页），已作为附件保留${skippedNote}` }
   }
   if (printableRatio(text) < MIN_PRINTABLE_RATIO) {
-    return { status: 'failed', pages, note: '提取出的字符大多是乱码（可能是 CID 内嵌字体或扫描件），已作为附件保留' }
+    return { status: 'failed', pages, note: `提取出的字符大多是乱码（可能是 CID 内嵌字体或扫描件），已作为附件保留${skippedNote}` }
   }
   const how = inflated < streams ? '（含未压缩流）' : ''
-  return { status: 'ok', text, pages, note: `已提取正文：${pages} 页${how}；纯文本，不含排版与图片` }
+  return { status: 'ok', text, pages, note: `已提取正文：${pages} 页${how}；纯文本，不含排版与图片${skippedNote}` }
 }
 
 /**

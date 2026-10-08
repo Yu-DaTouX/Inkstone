@@ -7,7 +7,7 @@
  */
 import type { SourceRun } from './aggregate'
 import type { SearchSourceId } from '../../shared/search'
-import { HiddenPageTimeout, withHiddenPage } from './hidden-page'
+import { HiddenPageTimeout, sleepUnlessAborted, withHiddenPage } from './hidden-page'
 
 export interface EnginePage<Raw> {
   items: Raw[]
@@ -37,7 +37,7 @@ export async function runWebEngine<Raw>(engine: WebEngine<Raw>, opts: { timeoutM
     elapsedMs: elapsed()
   })
   try {
-    return await withHiddenPage(opts.timeoutMs, async (win) => {
+    return await withHiddenPage(opts.timeoutMs, async (win, signal) => {
       /*
        * 不等整页加载完：结果是服务端渲染的，慢站点的广告 / 统计脚本会把
        * did-finish-load 拖到十几秒。边加载边轮询结果列表，出现就走。
@@ -49,6 +49,8 @@ export async function runWebEngine<Raw>(engine: WebEngine<Raw>, opts: { timeoutM
       })
       let noneStreak = 0
       for (;;) {
+        /* 超时后 withHiddenPage 会 abort：立即返回，不在已销毁窗口上继续轮询 */
+        if (signal.aborted) return fail('timeout', `超过 ${opts.timeoutMs}ms 没有返回`, true)
         if (loadError) return fail('network_error', loadError)
         let page: EnginePage<Raw> | null = null
         try {
@@ -62,7 +64,7 @@ export async function runWebEngine<Raw>(engine: WebEngine<Raw>, opts: { timeoutM
         }
         noneStreak = page?.none ? noneStreak + 1 : 0
         if (noneStreak >= 10) return { source: engine.source, rows: [], elapsedMs: elapsed() } satisfies SourceRun
-        await new Promise((r) => setTimeout(r, 300))
+        await sleepUnlessAborted(300, signal)
       }
     })
   } catch (e) {

@@ -529,17 +529,33 @@ export class LibraryStore {
     return run
   }
 
+  /**
+   * 落盘（原子替换）。
+   *
+   * 失败时把内存恢复到磁盘上的真实内容：各业务方法都是「先改 this.doc、再调
+   * flush」，不回滚的话报过失败的操作会留在内存里，被下一次成功的写入一起提交。
+   * 代价是失败后重读一次文件（低频操作，可以接受）。
+   */
   private async flush(): Promise<void> {
     const target = libraryDocumentPath(this.root)
-    await mkdir(dirname(target), { recursive: true })
     const temp = `${target}.${process.pid}.tmp`
-    const payload = JSON.stringify(this.doc, null, 2)
-    await writeFile(temp, payload, 'utf8')
     try {
-      await rename(temp, target)
-    } catch {
-      await writeFile(target, payload, 'utf8')
-      await rm(temp, { force: true }).catch(() => undefined)
+      await mkdir(dirname(target), { recursive: true })
+      const payload = JSON.stringify(this.doc, null, 2)
+      await writeFile(temp, payload, 'utf8')
+      try {
+        await rename(temp, target)
+      } catch {
+        await writeFile(target, payload, 'utf8')
+        await rm(temp, { force: true }).catch(() => undefined)
+      }
+    } catch (error) {
+      try {
+        this.doc = sanitizeLibraryDocument(JSON.parse(await readFile(libraryDocumentPath(this.root), 'utf8')))
+      } catch {
+        this.doc = EMPTY_LIBRARY
+      }
+      throw error
     }
   }
 }

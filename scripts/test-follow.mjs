@@ -373,6 +373,48 @@ export function runFollowStoreTests(ok, mod, fs) {
       /* 显式给过才启用：save 不带 enabled 时是未启用 */
       const silent = await store.save({ title: '没写 enabled 的关注', cadence: 'once', resultPlace: '概览' })
       ok(silent.ok && silent.value.enabled === false, '不带 enabled 的关注是未启用（不静默开始跟踪）')
+
+      /*
+       * 并发保存：8 个不同关注都要在（O02 回归）。
+       * 旧实现把「构造新文档」放在写队列之外，8 个并发各自基于同一份旧文档构造，
+       * 再依次覆盖写入 —— 8 次都返回成功，磁盘上只剩最后那一个。
+       */
+      {
+        const before = store.list().length
+        const concurrent = await Promise.all(
+          Array.from({ length: 8 }, (_, i) =>
+            store.save({
+              title: `并发关注 ${i}`,
+              kind: 'files',
+              cadence: 'interval',
+              intervalMinutes: 1440,
+              resultPlace: '概览',
+              enabled: true
+            })
+          )
+        )
+        ok(concurrent.every((r) => r.ok), '并发保存 8 个关注都返回成功')
+        ok(
+          store.list().length === before + 8,
+          '**并发保存的关注都在**（旧实现只剩一个）',
+          `${before} → ${store.list().length}`
+        )
+        const { readFile } = await import('node:fs/promises')
+        const onDisk = JSON.parse(await readFile(join(dir, 'follows.json'), 'utf8'))
+        ok(onDisk.watches.length === before + 8, '磁盘上也都在', String(onDisk.watches.length))
+      }
+
+      /*
+       * 只读入口依赖 load（O07）：宿主入口必须先 `await load()`，否则
+       * 「重启后还没有任何写操作」时读到的是空文档（磁盘上的关注还在）。
+       */
+      {
+        const expected = store.list().length
+        const fresh = new FollowStore({ root: dir })
+        ok(fresh.list().length === 0, '没 load 时只读入口是空的（所以宿主必须先 await load）')
+        await fresh.load()
+        ok(fresh.list().length === expected, 'load 之后记录都在，不需要任何写操作触发')
+      }
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

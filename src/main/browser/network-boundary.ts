@@ -11,7 +11,7 @@
  *   · `block-private` —— 目标是内网地址且不是用户/agent 明确要求的顶层导航
  *   · `check-dns`    —— 地址看着是公网，但仍要解析一次（DNS 重绑定）
  */
-import { isPrivateAddress } from './network-policy'
+import { isPrivateAddress, resolvesToPrivateAddress } from './network-policy'
 
 export type BoundaryDecision = 'allow' | 'block-private' | 'check-dns'
 
@@ -43,6 +43,34 @@ export function isLinkLocalHost(hostname: string): boolean {
   const h = hostname.toLowerCase().trim().replace(/^\[|\]$/g, '').split('%', 1)[0]
   if (/^169\.254\./.test(h)) return true
   return /^fe[89ab][0-9a-f]:/.test(h)
+}
+
+/**
+ * 隐藏页面（读网页正文、搜索引擎结果页）的请求该不该拦。
+ *
+ * 与内置浏览器不同，这里没有「用户/agent 明确要求打开内网地址」的正当用法 ——
+ * 隐藏页面只读公开网页，所以内网与 link-local 一律拦，顶层导航也不例外。
+ *
+ * 判定必须落到**解析后的地址**：域名看着是公网、解析却指向内网时字符串检查挡不住
+ * （DNS 重绑定）。这正是内置浏览器 `check-dns` 分支在做的事，两条路都该做。
+ *
+ * @param resolves 域名是否解析到内网；默认用 Node 的解析器，单测可注入替身。
+ */
+export async function shouldBlockHiddenPageRequest(
+  url: string,
+  resolves: (hostname: string) => Promise<boolean> = resolvesToPrivateAddress
+): Promise<boolean> {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  /* 只有真会出网的协议才判定；about: / data: / blob: 不访问网络 */
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+  const host = parsed.hostname
+  if (isLinkLocalHost(host) || isPrivateHost(host)) return true
+  return resolves(host)
 }
 
 /** 发起方本身是不是本地页面 */

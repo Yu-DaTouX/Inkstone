@@ -150,8 +150,9 @@ export class SpaceStore {
         createdAt: at,
         updatedAt: at
       }
-      this.doc = { ...this.doc, spaces: [...this.doc.spaces, space] }
-      await this.flush()
+      const document: SpaceDocument = { ...this.doc, spaces: [...this.doc.spaces, space] }
+      await this.flush(document)
+      this.doc = document
       return { ok: true, space }
     })
   }
@@ -190,8 +191,9 @@ export class SpaceStore {
       if (!description) delete next.description
       const spaces = [...this.doc.spaces]
       spaces[index] = next
-      this.doc = { ...this.doc, spaces }
-      await this.flush()
+      const document: SpaceDocument = { ...this.doc, spaces }
+      await this.flush(document)
+      this.doc = document
       return { ok: true, space: next }
     })
   }
@@ -207,8 +209,9 @@ export class SpaceStore {
       if (this.doc.links.some((l) => linkKey(l) === key)) {
         return { ok: true, links: this.links() }
       }
-      this.doc = { ...this.doc, links: [...this.doc.links, link] }
-      await this.flush()
+      const document: SpaceDocument = { ...this.doc, links: [...this.doc.links, link] }
+      await this.flush(document)
+      this.doc = document
       return { ok: true, links: this.links() }
     })
   }
@@ -219,8 +222,9 @@ export class SpaceStore {
       await this.load()
       const links = this.doc.links.filter((l) => !(l.spaceId === spaceId && l.projectId === projectId))
       if (links.length === this.doc.links.length) return { ok: true, links: this.links() }
-      this.doc = { ...this.doc, links }
-      await this.flush()
+      const document: SpaceDocument = { ...this.doc, links }
+      await this.flush(document)
+      this.doc = document
       return { ok: true, links: this.links() }
     })
   }
@@ -231,15 +235,22 @@ export class SpaceStore {
     return run
   }
 
-  private async flush(): Promise<void> {
+  /**
+   * 落盘（原子替换）。接受**候选文档**而不是读 `this.doc`：调用方先构造新状态、
+   * 落盘成功后再提交到内存 —— 写盘失败时内存不能先变，否则失败的操作会在
+   * 下一次保存时“偷偷”生效（实际复现：目录占位让第一次 create 失败，内存里
+   * 却留着那条空间，移开障碍后第二次保存把它一并写了进去）。
+   */
+  private async flush(candidate: SpaceDocument): Promise<void> {
     const target = spaceDocumentPath(this.root)
     await mkdir(dirname(target), { recursive: true })
     const temp = `${target}.${process.pid}.tmp`
-    await writeFile(temp, JSON.stringify(this.doc, null, 2), 'utf8')
+    const payload = JSON.stringify(candidate, null, 2)
+    await writeFile(temp, payload, 'utf8')
     try {
       await rename(temp, target)
     } catch {
-      await writeFile(target, JSON.stringify(this.doc, null, 2), 'utf8')
+      await writeFile(target, payload, 'utf8')
       await rm(temp, { force: true }).catch(() => undefined)
     }
   }
