@@ -54,6 +54,8 @@ export type ModelErrorKind =
   | 'context'
   /** 用户取消：不重试 */
   | 'aborted'
+  /** 服务商安全审核拦截：同一段上下文重发多半照样被拦 */
+  | 'refused'
 
 export interface ModelErrorInfo {
   kind: ModelErrorKind
@@ -69,6 +71,18 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
     kind: 'aborted',
     label: '本轮被取消',
     re: /\b(abort(ed)?|cancel(led|ed)?)\b|取消|已中止/i
+  },
+  {
+    kind: 'refused',
+    label: '服务商安全审核拦截',
+    /*
+     * 各家措辞：OpenAI / Codex「flagged … cybersecurity risk」「usage policy」，
+     * Azure「content management policy」/ content_filter，Gemini「blocked … SAFETY」，
+     * DeepSeek「Content Exists Risk」，Moonshot「considered high risk」，
+     * 通义「inappropriate content」/ data_inspection_failed，智谱「不安全或敏感内容」。
+     * 排在额度 / 认证之前：这类拒绝有时带 400 / 403，但换凭证没用，要换模型或换说法。
+     */
+    re: /\bflagged\b|content[ _-]?(policy|filter|management)|usage polic(y|ies)|(blocked|filtered).{0,40}\bsafety\b|\bsafety (filter|system|polic)|prohibited[ _]content|content exists risk|considered (a )?high risk|inappropriate content|data_inspection_failed|内容安全|(不安全|敏感)(或敏感)?内容|违反.{0,8}(政策|规定|策略|规范)/i
   },
   {
     kind: 'quota',
@@ -104,6 +118,19 @@ export function classifyModelError(text: unknown): ModelErrorInfo {
     if (item.re.test(raw)) return { kind: item.kind, text: raw, label: item.label }
   }
   return { kind: 'retryable', text: raw, label: raw ? '模型侧错误' : '模型侧错误（没有错误文本）' }
+}
+
+/**
+ * 消息流里错误行的文案（实时与历史共用）。
+ *
+ * 安全审核拦截单独说明：用户看到的若只是「模型返回错误」，第一反应是点继续，
+ * 而每轮都会重发整段上下文，同一会话里多半照样被拦。其余错误保持原来的短句。
+ */
+export function modelErrorNotice(errorText: unknown): string {
+  if (classifyModelError(errorText).kind === 'refused') {
+    return '服务商的安全审核拦下了这轮请求，常见于误判（审查鉴权、加密之类的代码也会触发）。同一会话直接重试多半仍会被拦：可以换个模型继续，或换个说法重新提问。'
+  }
+  return '模型返回错误'
 }
 
 /** 自动继续的会话级状态。 */

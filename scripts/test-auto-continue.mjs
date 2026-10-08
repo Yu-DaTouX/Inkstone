@@ -36,6 +36,19 @@ export async function runAutoContinueTests(ok) {
     ['上下文超过上限', 'context'],
     ['Request aborted', 'aborted'],
     ['已取消', 'aborted'],
+    [
+      'Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://platform.openai.com/settings/organization/status-and-access before retrying.',
+      'refused'
+    ],
+    ['400 Invalid prompt: your prompt was flagged as potentially violating our usage policy', 'refused'],
+    ["The response was filtered due to the prompt triggering Azure OpenAI's content management policy", 'refused'],
+    ['finish_reason: content_filter', 'refused'],
+    ['Response was blocked due to SAFETY', 'refused'],
+    ['Content Exists Risk', 'refused'],
+    ['The request was rejected because it was considered high risk', 'refused'],
+    ['data_inspection_failed: Input data may contain inappropriate content.', 'refused'],
+    ['系统检测到输入或生成内容可能包含不安全或敏感内容', 'refused'],
+    ['WebSocket error', 'retryable'],
     ['Internal Server Error (500)', 'retryable'],
     ['socket hang up', 'retryable'],
     ['fetch failed', 'retryable'],
@@ -92,7 +105,8 @@ export async function runAutoContinueTests(ok) {
     ['429 Too Many Requests', 'quota'],
     ['401 Unauthorized', 'auth'],
     ['maximum context length', 'context'],
-    ['Request aborted', 'aborted']
+    ['Request aborted', 'aborted'],
+    ['This content was flagged for possible cybersecurity risk', 'refused']
   ]) {
     const stop = shared.planAutoContinue({ state: state(0), error: shared.classifyModelError(text) })
     ok(stop.action === 'stop' && stop.reason === 'not-retryable', `${why} 类错误不重试`)
@@ -114,6 +128,21 @@ export async function runAutoContinueTests(ok) {
     '覆盖后的上限同样生效'
   )
   ok(shared.planAutoContinue({ state: state(0), error: errQuota }).reason === 'not-retryable', '额度类不因覆盖而重试')
+
+  /* --------------------------------------------------- 消息流错误行 */
+
+  const flagged = 'Codex error: This content was flagged for possible cybersecurity risk.'
+  const refusedNotice = shared.modelErrorNotice(flagged)
+  ok(/安全审核/.test(refusedNotice) && /换个模型/.test(refusedNotice), `安全审核拦截说清原因与出路（${refusedNotice}）`)
+  ok(shared.modelErrorNotice('WebSocket error') === '模型返回错误', '其余错误保持原来的短句')
+  ok(shared.modelErrorNotice(undefined) === '模型返回错误', '没有原文时同样是原来的短句')
+
+  const { normalizeMessage } = await import('../out/test/normalize.mjs')
+  const failedAssistant = (errorMessage) =>
+    normalizeMessage({ role: 'assistant', content: [], stopReason: 'error', ...(errorMessage ? { errorMessage } : {}) }, 0)
+  ok(/安全审核/.test(failedAssistant(flagged).error ?? ''), '历史读回的拦截消息带同一句说明')
+  ok(failedAssistant().error === '模型返回错误', '历史里没有 errorMessage 的旧错误不变')
+  ok(normalizeMessage({ role: 'assistant', content: [], stopReason: 'stop' }, 0).error === undefined, '正常结束没有错误行')
 
   /* --------------------------------------------------- 续行正文 */
 
