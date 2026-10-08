@@ -39,15 +39,28 @@ import { FileChangeDetail, ToolResultDetail, WorkspaceChangesDetail, detailKind,
 import { RunDot } from '../ui'
 import { goalCommand, summarizeTaskPlanCommand, summarizeYanCommand, taskPlanCommand } from '../../../../shared/tool-origin'
 import type { UIToolCall } from '../../../../shared/ipc'
-import { projectToolCallTree } from '../../../../shared/tool-call-tree'
+import { flattenToolNodes, isSettledToolNode, summarizeNestedCalls, toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
 import { ChatImage } from './ChatImage'
 
+/** 子调用区最多嵌四级，更深的平铺在第四级里 */
+const MAX_NEST_DEPTH = 4
+/** 子调用区超过这么多条才折叠较早的已完成调用，折叠后留最近几条 */
+const NEST_FOLD_OVER = 6
+const NEST_KEEP = 4
 
-/** 一行工具：图标 + 动词 + 目标 + 状态 */
-function ToolRowImpl({ call, autoOpen = true, depth = 0 }: { call: UIToolCall; autoOpen?: boolean; depth?: number }) {
+/**
+ * 一行工具：图标 + 动词 + 目标 + 状态。
+ *
+ * 有子调用（Codemode 脚本里又调了别的工具）时，子调用嵌在这一行之下的
+ * 子调用区里，与父行读作同一步；父行目标改写成「工具名 ×次数」。
+ */
+function ToolRowImpl({ call, nested = [], activeId = null, depth = 0 }: { call: UIToolCall; nested?: ToolCallNode[]; activeId?: string | null; depth?: number }) {
   const t = useT()
   /** 用户手动开关；null = 跟随默认值 */
   const [manual, setManual] = useState<boolean | null>(null)
+  /** 子调用区里较早的已完成调用是否展开 */
+  const [nestOpen, setNestOpen] = useState(false)
+  const autoOpen = call.id === activeId
   /*
    * 自动展开偏好：**默认关**（N03）。
    * 缺失 / 脏值都当关闭 —— 只有设置里明确打开过（toolDetail === true）
@@ -104,8 +117,18 @@ function ToolRowImpl({ call, autoOpen = true, depth = 0 }: { call: UIToolCall; a
     ? summarizeTaskPlanCommand(taskPlan)
     : goalCmd
       ? summarizeYanCommand(goalCmd)
-      : summarize(call)
+      : nested.length
+        ? summarizeNestedCalls(nested)
+        : summarize(call)
   const secs = durationSecs(call)
+  /* 第四级以下不再缩进：把更深的子调用平铺进这一级 */
+  const flat = depth + 1 >= MAX_NEST_DEPTH
+  const children = flat ? flattenToolNodes(nested) : nested
+  /* 较早的已完成子调用收进区内一行；运行中、失败、记录不完整的始终可见 */
+  const settledKids = children.filter((node) => isSettledToolNode(node))
+  const foldKids =
+    !nestOpen && children.length > NEST_FOLD_OVER ? new Set(settledKids.slice(0, Math.max(0, settledKids.length - NEST_KEEP))) : new Set<ToolCallNode>()
+  const shownKids = children.filter((node) => !foldKids.has(node))
 
   /* 动词：Codex 是「正在运行 / 已在 Ns 内运行」，我们按工具类型分 */
   const verb = running
@@ -210,6 +233,25 @@ function ToolRowImpl({ call, autoOpen = true, depth = 0 }: { call: UIToolCall; a
           </div> : null}
         </div>
       </div>
+
+      {children.length ? (
+        <div className="trow-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })} data-testid="tool-nest">
+          {foldKids.size > 0 ? (
+            <button className="tgroup-fold trow-nest-fold" onClick={() => setNestOpen(true)} aria-expanded={false} data-testid="tool-nest-toggle">
+              <Icon name="chevron-right" size={12} className="chev" />
+              <span>{t('tool2.nestEarlier', { n: foldKids.size })}</span>
+            </button>
+          ) : nestOpen && children.length > NEST_FOLD_OVER ? (
+            <button className="tgroup-fold up trow-nest-fold" onClick={() => setNestOpen(false)} aria-expanded data-testid="tool-nest-collapse">
+              <Icon name="chevron-right" size={12} className="chev" />
+              <span>{t('tool2.foldEarlier')}</span>
+            </button>
+          ) : null}
+          {shownKids.map((node) => (
+            <ToolRow key={node.call.id} call={node.call} nested={flat ? [] : node.children} activeId={activeId} depth={depth + 1} />
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -258,13 +300,25 @@ function sameCall(a: UIToolCall, b: UIToolCall): boolean {
   )
 }
 
-export const ToolRow = memo(ToolRowImpl, (a, b) => a.autoOpen === b.autoOpen && a.depth === b.depth && sameCall(a.call, b.call))
+/** 子调用树逐条渲染等价（树每帧重建，引用永远不同） */
+function sameNodes(a: ToolCallNode[] = [], b: ToolCallNode[] = []): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (!sameCall(a[i].call, b[i].call) || !sameNodes(a[i].children, b[i].children)) return false
+  }
+  return true
+}
+
+/* activeId 变化只影响「它自己或子调用」是不是那条活动调用；简单起见整棵比较 */
+export const ToolRow = memo(ToolRowImpl, (a, b) => a.activeId === b.activeId && a.depth === b.depth && sameCall(a.call, b.call) && sameNodes(a.nested, b.nested))
 
 /**
- * 一回合的全部工具：一个细边框的命令块表（设计规范 §3.5），一行一条。
+ * 一回合的全部工具：一个细边框的命令块表（设计规范 §3.5），一行一步。
  *
  * 运行中的与已结束的放在同一张表里、按发生顺序排列；已成功结束的较早几步
  * 收在首行「前面 N 步」里分批展开。运行中和失败的始终可见，不参与折叠。
+ * 组合调用（Codemode）连同它的子调用算一步：子调用里有运行中或失败的，整步可见。
  * 只有 `activeId` 那条会按设置里的「工具详情」偏好自动展开，其余保持一行。
  */
 /** 点「前面 N 步」先展开最近几步，再按批追加 */
@@ -282,12 +336,13 @@ function ToolGroupImpl({ tools, activeId = null }: { tools: UIToolCall[]; active
   if (tools.length === 0) return null
   const setRevealed = (next: (n: number) => number) => setReveal((r) => ({ key: groupKey, n: next(r.key === groupKey ? r.n : 0) }))
 
-  const history = tools.filter((c) => c.status !== 'running' && c.status !== 'pending' && c.status !== 'error' && !c.incomplete)
+  const steps = toolCallForest(tools)
+  const history = steps.filter((node) => isSettledToolNode(node))
   const revealed = reveal.key === groupKey ? Math.min(reveal.n, history.length) : 0
   const shownHistory = new Set(history.slice(history.length - revealed))
-  const visible = projectToolCallTree(tools, new Set(tools.filter((c) => !history.includes(c) || shownHistory.has(c)).map(c => c.id)))
+  const visible = steps.filter((node) => !history.includes(node) || shownHistory.has(node))
   const foldable = history.length > 0
-  const hidden = tools.length - visible.length
+  const hidden = steps.length - visible.length
   const expanded = revealed > 0
 
   return (
@@ -309,8 +364,8 @@ function ToolGroupImpl({ tools, activeId = null }: { tools: UIToolCall[]; active
           <span>{t('tool2.foldEarlier')}</span>
         </button>
       ) : null}
-      {visible.map(({ call, depth }) => (
-        <ToolRow key={call.id} call={call} depth={depth} autoOpen={call.id === activeId} />
+      {visible.map(({ call, children }) => (
+        <ToolRow key={call.id} call={call} nested={children} activeId={activeId} />
       ))}
     </div>
   )
@@ -357,6 +412,8 @@ function summarize(call: UIToolCall): string {
   const a = call.args as Record<string, unknown> | undefined
   if (!a || typeof a !== 'object') return ''
   if (typeof a.command === 'string') return a.command
+  /* Codemode 脚本还没调工具时：给脚本首行，而不是参数名 code */
+  if (typeof a.code === 'string') return a.code.split('\n').map((line) => line.trim()).find(Boolean) ?? ''
   if (Array.isArray(a.edits) && typeof a.path === 'string') return a.path
   if (typeof a.file_path === 'string') return shortPath(a.file_path)
   if (typeof a.path === 'string') return shortPath(a.path)

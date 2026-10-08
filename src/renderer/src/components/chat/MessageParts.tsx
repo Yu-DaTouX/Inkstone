@@ -330,7 +330,9 @@ export function ToolDetail({ call }: { call: UIToolCall }) {
   /* ---- 通用：命令/参数 + 输出 ---- */
   /* 只有命令本身的参数不再重复一遍 JSON：命令已经写在提示符那一行 */
   const onlyCommand = typeof a.command === 'string' && Object.keys(a).every((k) => k === 'command' || k === 'timeout')
-  const argsText = onlyCommand ? '' : call.args && Object.keys(a).length ? JSON.stringify(call.args, null, 2) : call.argsRaw
+  /* Codemode 只带脚本时直接给脚本原文：JSON 会把换行转义成 \n，一屏读不出代码 */
+  const onlyScript = typeof a.code === 'string' && Object.keys(a).every((k) => k === 'code' || k === 'timeout_ms')
+  const argsText = onlyCommand ? '' : onlyScript ? String(a.code) : call.args && Object.keys(a).length ? JSON.stringify(call.args, null, 2) : call.argsRaw
 
   return (
     <>
