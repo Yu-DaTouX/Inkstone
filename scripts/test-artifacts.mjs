@@ -67,6 +67,29 @@ export async function runArtifactTests() {
     assert(rejected, 'artifact attach should reject paths outside the project')
     await rm(external, { force: true })
 
+    /*
+     * 并发保存：每一条都必须留在 manifest 里（O01 回归）。
+     * 旧实现的 list → push → writeFile 没有串行化：8 个并发保存都成功，
+     * 但最终 manifest 只剩最后写入的那一条（文件都在，清单丢了）。
+     */
+    const bulk = await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        store.save({
+          sessionFile,
+          messageId: `bulk-${i}`,
+          filename: `bulk-${i}.txt`,
+          bytes: Buffer.from(`bulk payload ${i}`)
+        })
+      )
+    )
+    const manifest = await store.list(sessionFile)
+    const manifestIds = new Set(manifest.map((item) => item.artifact.id))
+    assert(bulk.every((artifact) => manifestIds.has(artifact.id)), 'concurrent saves must all stay in the manifest')
+    assert(
+      manifest.filter((item) => item.messageId.startsWith('bulk-')).length === 8,
+      'concurrent saves must not overwrite each other in the manifest'
+    )
+
     delete process.env.YAN_IMAGE_PROVIDER
     assert(resolveImageProvider('auto', true, false) === 'codex', 'auto should prefer Codex auth')
     assert(resolveImageProvider('compatible', false, false) === 'compatible', 'explicit compatible should remain compatible')

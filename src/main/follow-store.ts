@@ -62,8 +62,9 @@ export class FollowStore {
   private readonly now: () => number
   private readonly idFactory: () => string
   private doc: FollowDocument = emptyFollowDocument()
-  private loaded = false
   private tail: Promise<unknown> = Promise.resolve()
+  /** 首次加载共享同一个 Promise：并发入口不会各自读盘 */
+  private ready: Promise<void> | null = null
 
   constructor(options: FollowStoreOptions = {}) {
     this.root = options.root ?? YAN_DIR
@@ -71,15 +72,26 @@ export class FollowStore {
     this.idFactory = options.idFactory ?? defaultFollowId
   }
 
-  async load(): Promise<void> {
-    if (this.loaded) return
-    this.loaded = true
-    try {
-      const text = await readFile(followPath(this.root), 'utf8')
-      this.doc = sanitizeFollowDocument(JSON.parse(text))
-    } catch {
-      this.doc = emptyFollowDocument()
+  /**
+   * 首次加载（后续调用复用同一个 Promise）。
+   *
+   * ⚠️ 只读方法（`list` / `views` / `due` / `runs`）**不会**自己 await 它 ——
+   * 宿主必须先在暴露只读入口前 `await load()`。否则重启后这些入口读到的
+   * 是一份空文档，直到某次写操作偶然触发加载（踩过：重启后已启用的关注
+   * 与到点提醒全部消失，磁盘上的数据其实还在）。
+   */
+  load(): Promise<void> {
+    if (!this.ready) {
+      this.ready = (async () => {
+        try {
+          const text = await readFile(followPath(this.root), 'utf8')
+          this.doc = sanitizeFollowDocument(JSON.parse(text))
+        } catch {
+          this.doc = emptyFollowDocument()
+        }
+      })()
     }
+    return this.ready
   }
 
   snapshot(): FollowDocument {
@@ -108,51 +120,64 @@ export class FollowStore {
   }
 
   async save(input: WatchInput & { id?: unknown }): Promise<FollowMutation<Watch>> {
-    await this.load()
-    const valid = validateWatchInput(input)
-    if (!valid.ok) return { ok: false, code: valid.code, error: valid.message }
-    const now = this.now()
-    const existingId = typeof input.id === 'string' && input.id.trim() ? input.id.trim() : ''
-    const existing = existingId ? findWatch(this.doc, existingId) : undefined
-    if (existingId && !existing) return { ok: false, code: 'not_found', error: '找不到这个关注' }
-    if (!existing) {
-      if (this.doc.watches.length >= FOLLOW_LIMITS.maxWatches) {
-        return { ok: false, code: 'too_many_watches', error: `最多 ${FOLLOW_LIMITS.maxWatches} 个关注` }
+    /*
+     * 整个「加载 → 校验 → 基于最新文档构造 → 落盘」都在串行队列里。
+     * 旧实现把构造放在队列外，并发保存会各自基于同一份旧文档构造，
+     * 再依次覆盖写入 —— 后写的把先写的关注整条冲掉（实际复现：8 个并发只留 1 个）。
+     */
+    return this.enqueue(async () => {
+      await this.load()
+      const valid = validateWatchInput(input)
+      if (!valid.ok) return { ok: false, code: valid.code, error: valid.message }
+      const now = this.now()
+      const existingId = typeof input.id === 'string' && input.id.trim() ? input.id.trim() : ''
+      const existing = existingId ? findWatch(this.doc, existingId) : undefined
+      if (existingId && !existing) return { ok: false, code: 'not_found', error: '找不到这个关注' }
+      if (!existing) {
+        if (this.doc.watches.length >= FOLLOW_LIMITS.maxWatches) {
+          return { ok: false, code: 'too_many_watches', error: `最多 ${FOLLOW_LIMITS.maxWatches} 个关注` }
+        }
+        const watch = createWatch(valid.value, { id: this.nextId(), now })
+        await this.writeDoc(upsertWatchIn(this.doc, watch))
+        return { ok: true, value: watch }
       }
-      const watch = createWatch(valid.value, { id: this.nextId(), now })
-      await this.persist(upsertWatchIn(this.doc, watch))
+      const watch: Watch = { ...existing, ...valid.value, id: existing.id, createdAt: existing.createdAt, updatedAt: now }
+      await this.writeDoc(upsertWatchIn(this.doc, watch))
       return { ok: true, value: watch }
-    }
-    const watch: Watch = { ...existing, ...valid.value, id: existing.id, createdAt: existing.createdAt, updatedAt: now }
-    await this.persist(upsertWatchIn(this.doc, watch))
-    return { ok: true, value: watch }
+    })
   }
 
   async update(
     id: string,
     patch: { title?: unknown; kind?: unknown; cadence?: unknown; intervalMinutes?: unknown; resultPlace?: unknown; notifyOn?: unknown; enabled?: unknown }
   ): Promise<FollowMutation<Watch>> {
-    await this.load()
-    const prev = findWatch(this.doc, id)
-    if (!prev) return { ok: false, code: 'not_found', error: '找不到这个关注' }
-    const patched = applyWatchPatch(prev, patch, this.now())
-    if (!patched.ok) return { ok: false, code: patched.code, error: patched.message }
-    await this.persist(upsertWatchIn(this.doc, patched.watch))
-    return { ok: true, value: patched.watch }
+    return this.enqueue(async () => {
+      await this.load()
+      const prev = findWatch(this.doc, id)
+      if (!prev) return { ok: false, code: 'not_found', error: '找不到这个关注' }
+      const patched = applyWatchPatch(prev, patch, this.now())
+      if (!patched.ok) return { ok: false, code: patched.code, error: patched.message }
+      await this.writeDoc(upsertWatchIn(this.doc, patched.watch))
+      return { ok: true, value: patched.watch }
+    })
   }
 
   async remove(id: string): Promise<{ ok: boolean; error?: string }> {
-    await this.load()
-    if (!findWatch(this.doc, id)) return { ok: false, error: '找不到这个关注' }
-    await this.persist(removeWatchFrom(this.doc, id))
-    return { ok: true }
+    return this.enqueue(async () => {
+      await this.load()
+      if (!findWatch(this.doc, id)) return { ok: false, error: '找不到这个关注' }
+      await this.writeDoc(removeWatchFrom(this.doc, id))
+      return { ok: true }
+    })
   }
 
   async removeSpace(spaceId: string): Promise<number> {
-    await this.load()
-    const { doc, removed } = removeSpaceWatchesFrom(this.doc, spaceId)
-    if (removed > 0) await this.persist(doc)
-    return removed
+    return this.enqueue(async () => {
+      await this.load()
+      const { doc, removed } = removeSpaceWatchesFrom(this.doc, spaceId)
+      if (removed > 0) await this.writeDoc(doc)
+      return removed
+    })
   }
 
   /**
@@ -167,40 +192,42 @@ export class FollowStore {
     changed?: unknown
     decisions?: unknown
   }): Promise<FollowMutation<{ run: FollowRun; watch: Watch }>> {
-    await this.load()
-    const watchId = typeof input.watchId === 'string' ? input.watchId.trim() : ''
-    const watch = findWatch(this.doc, watchId)
-    if (!watch) return { ok: false, code: 'not_found', error: '找不到这个关注' }
-    const outcome = input.outcome
-    if (outcome !== 'no-change' && outcome !== 'changed' && outcome !== 'needs-decision' && outcome !== 'failed') {
-      return { ok: false, code: 'bad_notify', error: '结果只能是 no-change / changed / needs-decision / failed' }
-    }
-    const at = this.now()
-    const list = (value: unknown): string[] => {
-      if (!Array.isArray(value)) return []
-      const out: string[] = []
-      for (const item of value) {
-        if (typeof item !== 'string') continue
-        const trimmed = item.trim()
-        if (!trimmed || [...trimmed].length > FOLLOW_LIMITS.maxText) continue
-        if (!out.includes(trimmed)) out.push(trimmed)
-        if (out.length >= FOLLOW_LIMITS.maxList) break
+    return this.enqueue(async () => {
+      await this.load()
+      const watchId = typeof input.watchId === 'string' ? input.watchId.trim() : ''
+      const watch = findWatch(this.doc, watchId)
+      if (!watch) return { ok: false, code: 'not_found', error: '找不到这个关注' }
+      const outcome = input.outcome
+      if (outcome !== 'no-change' && outcome !== 'changed' && outcome !== 'needs-decision' && outcome !== 'failed') {
+        return { ok: false, code: 'bad_notify', error: '结果只能是 no-change / changed / needs-decision / failed' }
       }
-      return out
-    }
-    const summary = typeof input.summary === 'string' ? input.summary.trim().slice(0, FOLLOW_LIMITS.maxText) : ''
-    const run: FollowRun = {
-      id: this.nextId(),
-      watchId: watch.id,
-      at,
-      outcome: outcome as FollowOutcome,
-      summary,
-      changed: list(input.changed),
-      decisions: list(input.decisions)
-    }
-    const nextWatch = applyRunToWatch(watch, { outcome: run.outcome, at })
-    await this.persist(pruneRunsDoc(upsertWatchIn({ ...this.doc, runs: [run, ...this.doc.runs] }, nextWatch)))
-    return { ok: true, value: { run, watch: nextWatch } }
+      const at = this.now()
+      const list = (value: unknown): string[] => {
+        if (!Array.isArray(value)) return []
+        const out: string[] = []
+        for (const item of value) {
+          if (typeof item !== 'string') continue
+          const trimmed = item.trim()
+          if (!trimmed || [...trimmed].length > FOLLOW_LIMITS.maxText) continue
+          if (!out.includes(trimmed)) out.push(trimmed)
+          if (out.length >= FOLLOW_LIMITS.maxList) break
+        }
+        return out
+      }
+      const summary = typeof input.summary === 'string' ? input.summary.trim().slice(0, FOLLOW_LIMITS.maxText) : ''
+      const run: FollowRun = {
+        id: this.nextId(),
+        watchId: watch.id,
+        at,
+        outcome: outcome as FollowOutcome,
+        summary,
+        changed: list(input.changed),
+        decisions: list(input.decisions)
+      }
+      const nextWatch = applyRunToWatch(watch, { outcome: run.outcome, at })
+      await this.writeDoc(pruneRunsDoc(upsertWatchIn({ ...this.doc, runs: [run, ...this.doc.runs] }, nextWatch)))
+      return { ok: true, value: { run, watch: nextWatch } }
+    })
   }
 
   /**
@@ -221,26 +248,30 @@ export class FollowStore {
     return next
   }
 
-  private persist(doc: FollowDocument): Promise<FollowDocument> {
-    return this.enqueue(async () => {
-      this.doc = doc
-      const path = followPath(this.root)
-      const temp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
+  /**
+   * 落盘（调用方已经在串行队列内，所以这里**不**再入队）。
+   *
+   * 先写临时文件再 rename，成功后才把新文档提交到内存：
+   * 写盘失败时内存保持磁盘上的旧内容，失败的操作不会在下一次保存时"偷偷"生效。
+   */
+  private async writeDoc(doc: FollowDocument): Promise<FollowDocument> {
+    const path = followPath(this.root)
+    const temp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
+    try {
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(temp, JSON.stringify(doc), 'utf8')
+      await rename(temp, path)
+    } catch {
       try {
-        await mkdir(dirname(path), { recursive: true })
-        await writeFile(temp, JSON.stringify(this.doc), 'utf8')
-        await rename(temp, path)
+        const text = await readFile(path, 'utf8')
+        this.doc = sanitizeFollowDocument(JSON.parse(text))
       } catch {
-        try {
-          const text = await readFile(path, 'utf8')
-          this.doc = sanitizeFollowDocument(JSON.parse(text))
-        } catch {
-          this.doc = emptyFollowDocument()
-        }
-        throw new Error('关注落盘失败')
+        this.doc = emptyFollowDocument()
       }
-      return this.doc
-    })
+      throw new Error('关注落盘失败')
+    }
+    this.doc = doc
+    return this.doc
   }
 }
 

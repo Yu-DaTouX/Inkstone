@@ -121,6 +121,19 @@ export async function runLibraryParserTests(ok, parser, helpers) {
     ok(zipPdf.status === 'ok' && zipPdf.text?.includes('Compressed Yan Library'), 'PDF（FlateDecode）→ 提取到正文', zipPdf.note)
     ok((await parser.parseLibraryFile(pdfNoStream, 'file')).status === 'failed', 'PDF 无内容流 → failed（不是 unsupported）')
     ok((await parser.parseLibraryFile(notPdf, 'file')).status === 'failed', '扩展名是 pdf 但不是 PDF → failed')
+
+    /*
+     * 解压预算（H04 回归）：输入大小不能约束输出 ——
+     * 一个小压缩流能展开成几百倍的文本，而解压是同步跑在宿主调用链上的。
+     */
+    ok(
+      parser.MAX_PDF_STREAM_BYTES > 0 && parser.MAX_PDF_TOTAL_BYTES >= parser.MAX_PDF_STREAM_BYTES,
+      '解压预算常量已导出（单流 ≤ 累计）'
+    )
+    const bomb = await write('bomb.pdf', makePdf(' '.repeat(20 * 1024 * 1024) + 'BT (ONLY_SYNTHETIC_OVERSIZE) Tj ET', { compress: true }))
+    const bombOut = await parser.parseLibraryFile(bomb, 'file')
+    ok(bombOut.status === 'failed', '解压超出上限的内容流被跳过（不返回 ok）', bombOut.status)
+    ok(/解压上限/.test(bombOut.note), 'note 说明是超出解压上限，而不是把压缩数据当未压缩流乱解', bombOut.note)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

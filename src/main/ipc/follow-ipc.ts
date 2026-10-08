@@ -23,17 +23,30 @@ export function registerFollowIpc(ipc: IpcRegistrar, deps: FollowIpcDeps): void 
    * 「应用没开就不跟进」这句话由 `FOLLOW_APP_ONLY_NOTE` 固定，
    * 界面与模型看到的是同一句。
    */
-  handle('yan:follow:list', async (spaceId?: string | null) => follows.list(spaceId))
-  handle('yan:follow:views', async (spaceId?: string | null) =>
-    follows.views(spaceId).map((view) => ({
+  /*
+   * 只读入口先等首次加载：`list` / `views` / `due` / `runs` 是同步方法，
+   * 不等的话「重启后还没发生任何写操作」时它们读到的是一份空文档 ——
+   * 磁盘上的关注还在，界面上却什么都没有。
+   */
+  handle('yan:follow:list', async (spaceId?: string | null) => {
+    await follows.load()
+    return follows.list(spaceId)
+  })
+  handle('yan:follow:views', async (spaceId?: string | null) => {
+    await follows.load()
+    return follows.views(spaceId).map((view) => ({
       ...view,
       ...(view.lastRun ? { lastRunText: runSummaryText(view.lastRun) } : {})
     }))
-  )
-  handle('yan:follow:due', async () => follows.due())
-  handle('yan:follow:runs', async (input: { watchId: string; limit?: number }) =>
-    follows.runs(String(input?.watchId ?? ''), input?.limit)
-  )
+  })
+  handle('yan:follow:due', async () => {
+    await follows.load()
+    return follows.due()
+  })
+  handle('yan:follow:runs', async (input: { watchId: string; limit?: number }) => {
+    await follows.load()
+    return follows.runs(String(input?.watchId ?? ''), input?.limit)
+  })
   handle('yan:follow:save', async (input: Parameters<typeof follows.save>[0]) => {
     const res = await follows.save(input ?? {})
     return res.ok ? { ok: true as const, watch: res.value } : { ok: false as const, code: res.code, error: res.error }

@@ -35,6 +35,7 @@ import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode, normaliz
 import { migrateToolLayout, normalizeToolLayout } from '../shared/tool-layout'
 import { isWorkspaceMode } from '../shared/workspace-mode'
 import { voiceModelSpec } from '../shared/voice-input'
+import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import {
   sanitizeContextPolicyByModel,
   sanitizeContextPolicyOverrides
@@ -649,6 +650,10 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   }
   if ('workModeShortcut' in patch) next.workModeShortcut = normalizeWorkModeShortcut(next.workModeShortcut)
   if ('remoteAccess' in patch) next.remoteAccess = sanitizeRemoteAccess(next.remoteAccess)
+  /* 自动归档天数：0 / 脏值落成「没设置」，不写进文件 */
+  if ('keepAwakeWhileWorking' in patch) next.keepAwakeWhileWorking = next.keepAwakeWhileWorking === false ? false : undefined
+  if ('keepAwakeOnBattery' in patch) next.keepAwakeOnBattery = next.keepAwakeOnBattery === false ? false : undefined
+  if ('autoArchiveDays' in patch) next.autoArchiveDays = normalizeAutoArchiveDays(next.autoArchiveDays) || undefined
   if ('voiceInput' in patch) next.voiceInput = sanitizeVoiceInput(next.voiceInput)
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。
   next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({
@@ -663,12 +668,18 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.projectOrder = sanitizeProjectOrder(next.projectOrder)
     .filter((id) => next.projects.some((project) => project.id === id))
 
-  cached = next
   try {
     await mkdir(DIR, { recursive: true })
     await writeFile(FILE, JSON.stringify(next, null, 2), 'utf8')
   } catch (e) {
-    console.error('[settings] 写入失败：', e)
+    /*
+     * 写盘失败必须如实回报：不能更新缓存、更不能返回“已保存”的新设置。
+     * 否则界面显示成功、重启后变回旧值，而调用方没有任何办法发现。
+     * `invalidate()` 让下一次读取回到磁盘上的真实状态。
+     */
+    invalidate()
+    throw new Error(`设置写入失败：${e instanceof Error ? e.message : String(e)}`)
   }
+  cached = next
   return next
 }

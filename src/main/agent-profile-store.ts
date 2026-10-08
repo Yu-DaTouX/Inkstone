@@ -307,16 +307,32 @@ export class AgentProfileStore {
     return run
   }
 
+  /**
+   * 落盘（原子替换）。
+   *
+   * 失败时把内存恢复到磁盘上的真实内容：业务方法都是「先改 this.doc、再调
+   * flush」，不回滚的话报过失败的操作会留在内存里，被下一次成功的写入一起提交。
+   */
   private async flush(): Promise<void> {
     const target = agentProfileDocumentPath(this.root)
-    await mkdir(dirname(target), { recursive: true })
     const temp = `${target}.${process.pid}.tmp`
-    await writeFile(temp, JSON.stringify(this.doc), 'utf8')
     try {
-      await rename(temp, target)
-    } catch {
-      await writeFile(target, JSON.stringify(this.doc), 'utf8')
-      await rm(temp, { force: true }).catch(() => undefined)
+      await mkdir(dirname(target), { recursive: true })
+      const payload = JSON.stringify(this.doc)
+      await writeFile(temp, payload, 'utf8')
+      try {
+        await rename(temp, target)
+      } catch {
+        await writeFile(target, payload, 'utf8')
+        await rm(temp, { force: true }).catch(() => undefined)
+      }
+    } catch (error) {
+      try {
+        this.doc = sanitizeAgentProfileDocument(JSON.parse(await readFile(agentProfileDocumentPath(this.root), 'utf8')))
+      } catch {
+        this.doc = { version: 1, entries: {} }
+      }
+      throw error
     }
   }
 }

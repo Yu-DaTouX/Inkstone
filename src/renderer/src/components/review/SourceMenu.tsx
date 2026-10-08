@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { listSourceFiles, removeSourceFile } from '../../state/source-files'
 import type { SourceLinkView, SourceRefView } from '../../../../shared/ipc'
 
 /**
@@ -27,13 +28,6 @@ import type { SourceLinkView, SourceRefView } from '../../../../shared/ipc'
  */
 export type SourceFilter = 'all' | 'image' | 'file' | 'web'
 
-interface FileRef {
-  path: string
-  name: string
-  addedAt: number
-}
-
-const FILE_KEY = 'yan.source-files.v1'
 const WEB_KEY = 'yan.source-links.v1'
 
 export interface WebLink {
@@ -115,8 +109,8 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
     } catch {
       if (gate.current === mine) setImages([])
     }
-    /* 文件引用：登记在本地，由主进程复核「还在不在」 */
-    const refs = loadJson<FileRef>(FILE_KEY).filter((x) => x.path)
+    /* 文件引用：登记在本地，由主进程复核「还在不在」。按会话过滤后才发过去 */
+    const refs = listSourceFiles(current)
     try {
       const verified = await window.yan.sources.verifyFiles({ sessionId: current, entries: refs })
       if (gate.current === mine) setFiles(verified)
@@ -192,11 +186,8 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
       /* 图片：连**我们存的副本**一起删 */
       await window.yan.sources.removeImage({ sessionId, sourceId: item.sourceId }).catch(() => undefined)
     } else if (item.kind === 'file') {
-      /* 文件：只删登记 —— 原文件是用户的，这一层永远不碰 */
-      saveJson(
-        FILE_KEY,
-        loadJson<FileRef>(FILE_KEY).filter((x) => x.path !== item.ref)
-      )
+      /* 文件：只删**本会话**的登记 —— 原文件是用户的，这一层永远不碰 */
+      removeSourceFile(sessionId, item.ref)
     } else {
       saveJson(
         WEB_KEY,

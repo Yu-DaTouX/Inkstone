@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SourceLinkView, SourceRefView } from '../../../shared/ipc'
+import { listSourceFiles } from './source-files'
 
 /**
  * 读当前会话的来源（实施-18 S3）。
@@ -13,12 +14,6 @@ import type { SourceLinkView, SourceRefView } from '../../../shared/ipc'
  * 各存一份会立刻漂移。
  */
 
-interface FileRef {
-  path: string
-  name: string
-  addedAt: number
-}
-
 interface WebLink {
   id: string
   sessionId: string
@@ -27,7 +22,6 @@ interface WebLink {
   addedAt: number
 }
 
-const FILE_KEY = 'yan.source-files.v1'
 const WEB_KEY = 'yan.source-links.v1'
 
 function loadJson<T>(key: string): T[] {
@@ -87,7 +81,7 @@ export function useSessionSources(sessionId: string | undefined): SessionSources
         failed = true
       }
 
-      const refs = loadJson<FileRef>(FILE_KEY).filter((x) => x.path)
+      const refs = listSourceFiles(sessionId)
       try {
         const verified = await window.yan.sources.verifyFiles({ sessionId, entries: refs })
         if (gate.current !== mine) return

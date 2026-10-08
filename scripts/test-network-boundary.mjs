@@ -10,7 +10,7 @@
  *（2026-09-16 实测过反例：以前用导航**目标**当发起方，于是
  * 远程页面 → 127.0.0.1 的顶层导航被放过 —— 见 live 场景 `browserboundary`。）
  */
-export function runNetworkBoundaryTests(ok, mod) {
+export async function runNetworkBoundaryTests(ok, mod) {
   const { decideRequestBoundary, isPrivateHost, isLinkLocalHost: isLinkLocal } = mod
 
   /* ---- isPrivateHost：地址判断本身 ---- */
@@ -138,4 +138,40 @@ export function runNetworkBoundaryTests(ok, mod) {
     }) === 'check-dns',
     'DNS 重绑定的判定**不看**“是不是我们发起的” —— 不能给 agent 留读本机服务的原语'
   )
+
+  /*
+   * ---- 隐藏页面（读网页正文 / 搜索结果页）的请求判定 ----
+   *
+   * 与内置浏览器不同：隐藏页面只读公开网页，没有「明确要求打开内网」的用法，
+   * 所以内网一律拦；公网域名必须**解析一次**再决定。
+   * 回归本体：原来这里只按 hostname 字符串判断，域名解析到 127.0.0.1 时
+   * 照样把本机服务读进了正文（2026-10-07 审核复现）。
+   */
+  const blockHidden = mod.shouldBlockHiddenPageRequest
+  ok(typeof blockHidden === 'function', '隐藏页面请求判定已导出')
+  if (typeof blockHidden === 'function') {
+    const publicOnly = async () => false
+    const privateOnly = async () => true
+    ok(await blockHidden('http://127.0.0.1:8080/x', publicOnly), '隐藏页面：字面回环地址直接拦')
+    ok(await blockHidden('http://169.254.169.254/latest/meta-data/', publicOnly), '隐藏页面：云 metadata（link-local）拦')
+    ok(await blockHidden('http://192.168.1.9/a', publicOnly), '隐藏页面：RFC1918 拦')
+    ok(!(await blockHidden('https://example.com/a', publicOnly)), '隐藏页面：解析到公网的域名放行')
+    ok(
+      await blockHidden('https://hidden-review.test/a', privateOnly),
+      '**隐藏页面：域名看着是公网、解析到内网也要拦（DNS 重绑定回归）**'
+    )
+    ok(
+      await blockHidden('https://hidden-review.test/a', async (host) => host === 'hidden-review.test'),
+      '隐藏页面：按解析结果决定（只拦真正解析到内网的那个域名）'
+    )
+    let asked = ''
+    await blockHidden('https://lookup-target.test/a', async (hostname) => {
+      asked = hostname
+      return false
+    })
+    ok(asked === 'lookup-target.test', '隐藏页面：把域名（不带端口与路径）交给解析器', asked)
+    ok(!(await blockHidden('about:blank')), '隐藏页面：about: 不当网络请求判')
+    ok(!(await blockHidden('data:text/html,<p>x</p>')), '隐藏页面：data: 不当网络请求判')
+    ok(!(await blockHidden('这不是网址')), '隐藏页面：解析不出的地址不误拦')
+  }
 }
