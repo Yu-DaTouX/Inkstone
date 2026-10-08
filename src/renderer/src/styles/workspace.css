@@ -35,6 +35,19 @@
 /* Task and log tiles: their sections stack and scroll inside the tile. */
 .tile-sections { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: var(--sp-1) var(--sp-2) var(--sp-2); }
 .tile-sections > .ui-empty { margin: auto; }
+/* Accounts tile: one block per account, separated by space instead of borders. */
+.acct-pane { gap: var(--sp-4); padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+.acct-head, .acct-add { display: flex; align-items: center; gap: var(--sp-2); color: var(--fg-mute); font-size: var(--fs-xs); }
+.acct-head { justify-content: space-between; }
+.acct-card { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.acct-card-id { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.acct-card-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.acct-card-head > .spacer { flex: 1; }
+.acct-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
+.acct-meta, .acct-msg, .acct-hint { color: var(--fg-mute); font-size: var(--fs-xs); }
+.acct-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-edit { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.acct-edit > .ui-input { flex: 1 1 0; min-width: 0; }
 .tile-pane .fp-pane, .tile-pane .fp-wrap { flex: 1; min-height: 0; max-height: none; }
 .tile-pane > .agent-workspace { flex: 1; min-width: 0; width: 100%; max-width: none; border: 0; }
 .tile-pane .agent-run-surface { min-height: 0; }
@@ -69,3 +82,18 @@
 .tile-float-grip { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); z-index: 1; }
 /* The main conversation has no card to clip; its menus (model, work mode) may extend past it. */
 .tile-pane[data-workspace-pane='chat'] { overflow: visible; z-index: 3; }
+
+/* 分屏：两条会话之间一道清楚的竖线。画在两块磁贴之间的缝（DOCK_GAP = 8）正中，和缝上的拖动条重合：
+   平时是灰线，指针停上去由拖动条的强调色盖住，始终只有一道。 */
+.tile-pane[data-workspace-pane='chat-peer'] { overflow: visible; }
+.tile-pane[data-workspace-pane='chat-peer']::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  z-index: 4;
+  width: 2px;
+  background: var(--border-str);
+  pointer-events: none;
+}

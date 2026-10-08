@@ -4,6 +4,7 @@ import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { I18nProvider } from './i18n'
 import { useStore } from './state/store'
+import { useSplitView } from './state/split-view'
 import { installAudioUnlock } from './lib/sound'
 
 const root = document.getElementById('root')
@@ -19,9 +20,11 @@ if (!root) throw new Error('找不到 #root')
 declare global {
   interface Window {
     __yanStore: typeof useStore
+    __yanSplit: typeof useSplitView
   }
 }
 window.__yanStore = useStore
+window.__yanSplit = useSplitView
 
 /* 声音提示：首次点击/按键时解锁 AudioContext（主进程已放开自动播放，这里兜底） */
 installAudioUnlock()

@@ -908,6 +908,11 @@ const CASES = {
   // 长会话虚拟化
   /* 虚拟滚动：首屏渲染行数与滚动位置都是几何量 → 需要真实可见窗口 */
   virtual: { probe: 'scripts/probe/virtual.js', delay: 9000, cost: 0, visible: true },
+  splitreal: { probe: 'scripts/probe/split-real.js', delay: 12000, cost: 0, visible: true },
+  splitdrop: { probe: 'scripts/probe/split-drop.js', delay: 9000, cost: 0, visible: true },
+  splitdeferred: { probe: 'scripts/probe/split-deferred.js', delay: 12000, cost: 0, visible: true },
+  splitfive: { probe: 'scripts/probe/split-five.js', delay: 9000, cost: 0, visible: true },
+  splitvirtual: { probe: 'scripts/probe/split-virtual.js', delay: 9000, cost: 0, visible: true },
   // 会话切换 + 新建会话
   sessions: { probe: 'scripts/probe/sessions.js', delay: 9000, cost: 0 },
   // 切换会话不能丢历史（含「切语言重建实例之后」这条路）
@@ -5654,7 +5659,7 @@ function runProbe(
      * test-live 判定“没抓到 PROBE 输出”，而 Electron 其实还在后台跑探针 ——
      * 既拿不到证据，又留下一个没人管的 GUI 实例。
      */
-    const child = spawn(electronBin, ['.'], {
+    const child = spawn(electronBin, process.env.YAN_TEST_DPR ? ['.', `--force-device-scale-factor=${process.env.YAN_TEST_DPR}`] : ['.'], {
       cwd: root,
       env: probeEnv,
       windowsHide: true,

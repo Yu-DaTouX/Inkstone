@@ -96,7 +96,7 @@ export function TitleBar({
        * 这个元素必须在 —— .titlebar 是三列 grid（auto / 1fr / auto），
        * 少一个子元素右侧那组会被摆到中列里拉宽。
        */}
-      <div className="tb-center">{center}</div>
+      {center ? <div className="tb-center">{center}</div> : <div className="tb-center" aria-hidden />}
 
       <div className="tb-right">
         {/*

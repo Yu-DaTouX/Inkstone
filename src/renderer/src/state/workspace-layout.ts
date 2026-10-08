@@ -12,6 +12,12 @@ export interface DockRect { x: number; y: number; w: number; h: number }
 export interface DockGroupRect extends DockRect { group: Extract<DockNode, { type: 'group' }> }
 export interface DockSeparator extends DockRect { id: string; axis: 'x' | 'y'; ratio: number; bounds: DockRect }
 export const CHAT_PANE = 'chat'
+/** The second conversation of a split view; laid out like the main conversation, never as a tool tab. */
+export const PEER_PANE = 'chat-peer'
+/** Further conversations of a split view (up to five tiles in all): `chat-peer-2`, `chat-peer-3`, ... */
+export const isConversationPane = (id: string): boolean => id === CHAT_PANE || id === PEER_PANE || /^chat-peer-\d+$/.test(id)
+/** Pane id of the n-th conversation tile (0 is the main conversation). */
+export const conversationPaneId = (index: number): string => index <= 0 ? CHAT_PANE : index === 1 ? PEER_PANE : `${PEER_PANE}-${index}`
 /** Gap between tiles; the gap doubles as the resize separator. */
 export const DOCK_GAP = 8
 export const DOCK_MIN_CHAT = 340
@@ -36,12 +42,29 @@ function removePane(node: DockNode, pane: string): DockNode | null {
   const first = removePane(node.first, pane), second = removePane(node.second, pane)
   return first && second ? { ...node, first, second } : first ?? second
 }
+const conversationCount = (n: DockNode): number => n.type === 'group' ? n.panes.filter(isConversationPane).length : conversationCount(n.first) + conversationCount(n.second)
+const onlyConversations = (n: DockNode): boolean => n.type === 'group' ? n.panes.every(isConversationPane) : onlyConversations(n.first) && onlyConversations(n.second)
+/** Wrap the widest all-conversation subtree around the main conversation, so k tiles end up with equal widths. */
+function addConversation(root: DockNode, pane: string): DockNode {
+  const wrap = (n: DockNode): DockNode => {
+    if (!holdsChat(n)) return n
+    if (onlyConversations(n)) {
+      const k = conversationCount(n)
+      return { type: 'split', id: uid(), axis: 'x', ratio: k / (k + 1), first: n, second: group(uid(), [pane]) }
+    }
+    return n.type === 'split' ? { ...n, first: wrap(n.first), second: wrap(n.second) } : n
+  }
+  return wrap(root)
+}
 export function openDockPane(layout: WorkspaceLayout, pane: string): WorkspaceLayout {
   const existing = dockGroups(layout.root).find(g => g.panes.includes(pane))
   let root = layout.root
   if (existing) root = mapNode(root, n => n.type === 'group' && n.id === existing.id ? { ...n, active: pane } : n)
-  else {
-    const candidates = dockGroups(root).filter(g => !g.panes.includes(CHAT_PANE))
+  else if (isConversationPane(pane)) {
+    /* Another conversation joins the row of conversations at an even share; tools stay where they were. */
+    root = addConversation(root, pane)
+  } else {
+    const candidates = dockGroups(root).filter(g => !g.panes.some(isConversationPane))
     const kind = pane.split(':')[0]
     const target = candidates.find(g => g.panes.some(id => id.split(':')[0] === kind)) ?? candidates.find(g => g.panes.includes('tools')) ?? candidates.at(-1)
     root = target ? mapNode(root, n => n.type === 'group' && n.id === target.id ? { ...n, panes: [...n.panes, pane], active: pane } : n)
@@ -56,7 +79,7 @@ export function withoutDockPane(layout: WorkspaceLayout, pane: string): Workspac
   return root ? { ...layout, root, maximized: undefined } : layout
 }
 export function hideDockPane(layout: WorkspaceLayout, pane: string): WorkspaceLayout {
-  if (pane === CHAT_PANE) return layout
+  if (isConversationPane(pane)) return layout
   const root = mapNode(layout.root, n => {
     if (n.type !== 'group' || n.active !== pane) return n
     return { ...n, active: n.panes.find(id => id !== pane && !layout.hidden.includes(id)) ?? pane }
@@ -69,7 +92,7 @@ export interface DockKeep { size: number; extent: number }
 export function moveDockPane(layout: WorkspaceLayout, pane: string, targetId: string, edge: DockEdge, keep?: DockKeep): WorkspaceLayout {
   const groups = dockGroups(layout.root), source = groups.find(g => g.panes.includes(pane)), target = groups.find(g => g.id === targetId)
   if (!source || !target || (source.id === targetId && (source.panes.length === 1 || edge === 'center'))) return layout
-  if (edge === 'center' && (pane === CHAT_PANE || target.panes.includes(CHAT_PANE))) return layout
+  if (edge === 'center' && (isConversationPane(pane) || target.panes.some(isConversationPane))) return layout
   const removed = removePane(layout.root, pane)
   if (!removed) return layout
   const root = mapNode(removed, n => {
@@ -130,7 +153,7 @@ export function measureDockLayout(layout: WorkspaceLayout, available: Set<string
   const visible = (n: DockNode): boolean => n.type === 'group' ? n.panes.some(id => available.has(id) && !layout.hidden.includes(id)) : visible(n.first) || visible(n.second)
   const minimum = (n: DockNode): [number, number] => {
     if (!visible(n)) return [0, 0]
-    if (n.type === 'group') return [n.panes.includes(CHAT_PANE) ? DOCK_MIN_CHAT : DOCK_MIN_TOOL, 180]
+    if (n.type === 'group') return [n.panes.some(isConversationPane) ? DOCK_MIN_CHAT : DOCK_MIN_TOOL, 180]
     const a = minimum(n.first), b = minimum(n.second)
     if (!a[0]) return b
     if (!b[0]) return a

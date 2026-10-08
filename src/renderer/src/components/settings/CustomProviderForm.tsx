@@ -79,7 +79,8 @@ export function CustomProviderForm() {
             api: model.api ?? entry.api,
             baseUrl: model.baseUrl ?? entry.baseUrl,
             reasoning: model.reasoning === true || entry.reasoning === true || undefined,
-            thinkingLevelMap: model.thinkingLevelMap ?? entry.thinkingLevelMap
+            thinkingLevelMap: model.thinkingLevelMap ?? entry.thinkingLevelMap,
+            cost: model.cost ?? entry.cost
           }
         })
       const known = new Set(kept.map((model) => model.id.trim()))

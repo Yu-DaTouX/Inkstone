@@ -35,6 +35,7 @@ import {
 } from '../shared/tool-consent'
 import { ensureYanLauncher } from './yan-cli'
 import {
+  assistantError,
   normalizeHistory,
   normalizeMessage,
   imagesOf,
@@ -118,6 +119,7 @@ import type {
   Usage
 } from '../shared/ipc'
 import type { CapabilityStrategy, WorkMode } from '../shared/ipc'
+import type { SessionMoveAnswer, SessionMovePrompt } from './session-move'
 
 /** 流式文本的推送节流：60 帧够了，再多是给 IPC 白干活 */
 const FLUSH_MS = 16
@@ -392,6 +394,7 @@ export class AgentController extends EventEmitter {
   private confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
   private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
   private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
+  private requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
   private dangerGuardExtension?: string
   private permissionGuardExtension?: string
   /** 内置服务扩展（Command Code：凭证页填了密钥就注册模型） */
@@ -655,6 +658,8 @@ export class AgentController extends EventEmitter {
     confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
     confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
     confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
+    /** `yan session move`：问用户能否把会话移到另一个文件夹（本轮结束后由宿主切换）。 */
+    requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
     dangerGuardExtension?: string
     permissionGuardExtension?: string
     providerExtensions?: string[]
@@ -707,6 +712,7 @@ export class AgentController extends EventEmitter {
     this.confirmExternalApi = opts.confirmExternalApi
     this.confirmToolConsent = opts.confirmToolConsent
     this.confirmDanger = opts.confirmDanger
+    this.requestSessionMove = opts.requestSessionMove
     this.dangerGuardExtension = opts.dangerGuardExtension
     this.permissionGuardExtension = opts.permissionGuardExtension
     this.providerExtensions = opts.providerExtensions ?? []
@@ -1294,6 +1300,7 @@ export class AgentController extends EventEmitter {
     if (command === 'file.trash') return this.runFileTrashCommand(params)
     if (command === 'consent.request') return this.runConsentRequestCommand(params)
     if (command === 'danger.confirm') return this.runDangerConfirmCommand(params)
+    if (command === 'session.move') return this.runSessionMoveCommand(params)
     if (command === 'context.inspect') {
       /* 按 pi 会话 id 存（界面读的也是它）；capability 的 sessionId 是运行实例 id，换实例会变。 */
       const saved = saveContextInspect(this.state?.sessionId, params.snapshot)
@@ -1516,6 +1523,28 @@ export class AgentController extends EventEmitter {
   }
 
   /**
+   * `yan session move --dir <文件夹>`：任务属于另一个文件夹时，请求把这条会话移过去。
+   * 宿主用批准卡片问用户；允许后等这一轮结束再切换工作目录（见 session-move.ts），
+   * 所以这里只回结果与下一步说明，不在回合中途换目录。
+   */
+  private async runSessionMoveCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
+    const dir = typeof params.dir === 'string' ? params.dir.trim().slice(0, 1000) : ''
+    if (!dir) throw new CapabilityCommandError('session_move_dir_required', '缺少 --dir（要移到的文件夹）')
+    const reason = typeof params.reason === 'string' ? params.reason.trim().slice(0, 300) : ''
+    if (!this.requestSessionMove) throw new CapabilityCommandError('session_move_unavailable', '移动会话当前不可用（宿主未注入）')
+    const sessionId = this.state?.sessionId
+    const sessionFile = this.state?.sessionFile
+    if (!sessionId || !sessionFile) {
+      throw new CapabilityCommandError('session_move_unsaved', '会话还没有保存到文件，暂时不能移动；先完成这一轮再试')
+    }
+    const answer = await this.requestSessionMove({ dir, reason, cwd: this.cwd, sessionId, sessionFile })
+    return {
+      data: answer,
+      summary: { kind: 'session-move', decision: answer.decision, target: answer.target ?? dir, allowed: answer.decision === 'approved' }
+    }
+  }
+
+  /**
    * `yan office read`：读 docx / xlsx / pptx / pdf 的文字正文（与界面预览同一条提取链）。
    * 只读；路径按会话目录解析，校验规则与文件预览相同。
    */
@@ -1583,7 +1612,12 @@ export class AgentController extends EventEmitter {
     return this.ui.extendHostUi(id, extraMs)
   }
 
-  private async attachArtifact(artifact: AssistantArtifact, messageId = this.latestAssistantMessageId()): Promise<void> {
+  /**
+   * `sessionFile` 给出时要求当前仍是那条会话：异步生成期间实例换了会话，成果已按原会话写进
+   * manifest，这里不把它挂到现在的消息上（也不改挂最新消息）。
+   */
+  private async attachArtifact(artifact: AssistantArtifact, messageId = this.latestAssistantMessageId(), sessionFile?: string): Promise<void> {
+    if (sessionFile && this.state?.sessionFile && this.state.sessionFile !== sessionFile) return
     const message = this.messages.find((item) => item.id === messageId)
     if (message) message.artifacts = [...(message.artifacts ?? []), artifact]
     this.push({ ch: 'artifact', payload: { messageId, artifact } })
@@ -1664,7 +1698,7 @@ export class AgentController extends EventEmitter {
       artifactDir: this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'),
       onProgress: publishProgress
     })
-    await this.attachArtifact(result.artifact)
+    await this.attachArtifact(result.artifact, messageId, sessionFile)
     publishProgress('done', `${result.artifact.filename} · ${result.artifact.bytes} bytes`)
     return {
       data: { artifact: result.artifact, provider: result.provider, model: result.model, revisedPrompt: result.revisedPrompt },
@@ -2274,7 +2308,7 @@ export class AgentController extends EventEmitter {
         const kind = String(ev.type ?? '')
 
         // 顶层的 usage 是**累积值**（有的 provider 流式期间不报，保持 0）
-        const u = toUsage(evt.usage as PiMessage['usage'])
+        const u = toUsage(evt.usage as PiMessage['usage'], this.state?.model?.id)
         if (u) this.streaming.usage = u
 
         // 首个内容 delta 到达 → 记下首包时间（算速率时排除排队与首包延迟）
@@ -2349,7 +2383,7 @@ export class AgentController extends EventEmitter {
         for (const c of s.tools) this.registerCall(c, id)
 
         // 以 message_end 的 usage 为准（流式期间的可能是 0 或旧值）
-        const finalUsage = toUsage(m.usage) ?? s.usage
+        const finalUsage = toUsage(m.usage, m.model ?? this.state?.model?.id) ?? s.usage
         if (typeof finalUsage?.output === 'number' && finalUsage.output > 0) {
           /* 累积值：取最大，不相加（相加会把同一轮的中间快照重复计入） */
           this.turn.outputTokens = Math.max(this.turn.outputTokens ?? 0, finalUsage.output)
@@ -2370,7 +2404,7 @@ export class AgentController extends EventEmitter {
           responseDetail: s.responseDetail,
           model: m.model,
           timestamp: m.timestamp ?? Date.now(),
-          error: m.stopReason === 'error' ? '模型返回错误' : undefined
+          error: assistantError(m)
         }
         this.messages.push(msg)
         /* 这一轮归属的消息 id（H-6）：终止时写成元数据日志的 `sourceIds`。 */
@@ -3938,7 +3972,9 @@ export class AgentController extends EventEmitter {
       // 写回 pi（TUI 的 /resume 也能看到）。
       // ⚠️ 只有在标题真的变了才写 —— set_session_name 会改会话文件，
       // 每轮都写一下是没意义的磁盘写入。
-      if (this.lastTitle !== res.title) {
+      // 生成期间实例可能已换到别的会话：旧标题只推给界面（按原 sessionId），不写进当前 RPC
+      const stillSameSession = this.state?.sessionId === sessionId
+      if (stillSameSession && this.lastTitle !== res.title) {
         this.lastTitle = res.title
         const ok = await this.rpc?.command('set_session_name', { name: res.title })
         if (ok?.success) await this.refreshState()
@@ -3975,9 +4011,14 @@ export class AgentController extends EventEmitter {
    */
   private statsForCurrentModel(stats: SessionStats): SessionStats {
     const modelKey = modelKeyOf(this.state?.model)
-    if (!stats.contextUsage) return stats
+    /* pi 对没有报价的模型（订阅制、手写服务）记 0：把消息里按公开价估算的部分加进总花费 */
+    let costEstimated = 0
+    for (const msg of this.messages) if (msg.usage?.costEstimated) costEstimated += msg.usage.cost
+    const priced = costEstimated > 0 ? { cost: stats.cost + costEstimated, costEstimated } : {}
+    if (!stats.contextUsage) return { ...stats, ...priced }
     return {
       ...stats,
+      ...priced,
       contextUsage: {
         ...stats.contextUsage,
         ...(modelKey ? { modelKey } : {}),

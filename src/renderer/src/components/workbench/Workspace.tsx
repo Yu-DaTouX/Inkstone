@@ -5,7 +5,7 @@ import { IconButton, Menu, MenuItem, MenuSeparator, Select, Tab } from '../ui'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { loadWorkbenchState } from '../../state/workbench'
-import { CHAT_PANE, DOCK_GAP, defaultWorkspaceLayout, dockGroups, hideDockPane, measureDockLayout, moveDockPane, normalizeWorkspaceLayout, openDockPane, rebaseDockLayout, resizeDockSplit, withoutDockPane, type DockEdge, type DockKeep, type DockRect, type DockSeparator, type WorkspaceLayout } from '../../state/workspace-layout'
+import { CHAT_PANE, DOCK_GAP, defaultWorkspaceLayout, dockGroups, hideDockPane, isConversationPane, measureDockLayout, moveDockPane, normalizeWorkspaceLayout, openDockPane, rebaseDockLayout, resizeDockSplit, withoutDockPane, type DockEdge, type DockKeep, type DockRect, type DockSeparator, type WorkspaceLayout } from '../../state/workspace-layout'
 
 /** Resource-owned commands shown in the tile menu; layout never decides what they do. */
 export interface PaneAction { label: string; icon?: IconName; danger?: boolean; run(): void }
@@ -90,7 +90,8 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   }), [])
   useEffect(() => {
     interactionCleanup.current?.()
-    setSaved({ key: sessionKey, layout: loadWorkspaceLayout(sessionKey) }); setMenu(null)
+    /* A pane that registered in the same commit already rebuilt the layout for the new key; reloading would drop it. */
+    setSaved(s => s.key === sessionKey ? s : { key: sessionKey, layout: loadWorkspaceLayout(sessionKey) }); setMenu(null)
   }, [sessionKey])
   useEffect(() => {
     try {
@@ -167,13 +168,13 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   const lift = useRef({ x: 0, y: 0, w: 0, h: 0 })
   const floating = drag && pointer ? drag.pane : null
   const floatRect = floating && pointer ? { x: pointer.x - lift.current.x, y: pointer.y - lift.current.y, w: lift.current.w, h: lift.current.h } : null
-  const floatHead = floating === CHAT_PANE ? GRIP : HEAD
+  const floatHead = floating && isConversationPane(floating) ? GRIP : HEAD
   const rects = useMemo(() => {
     const result = new Map<string, DockRect>()
     for (const r of measured.groups) {
       const ids = r.group.panes.filter(id => available.has(id) && !layout.hidden.includes(id))
       const active = ids.includes(r.group.active) ? r.group.active : ids[0]
-      const head = ids.length === 1 && ids[0] === CHAT_PANE ? (layout.maximized ? GRIP_MAXIMIZED : GRIP) : HEAD
+      const head = ids.length === 1 && isConversationPane(ids[0]) ? (layout.maximized ? GRIP_MAXIMIZED : GRIP) : HEAD
       if (active) result.set(active, { x: r.x + 1, y: r.y + head, w: r.w - 2, h: r.h - head - 1 })
     }
     if (floating && floatRect) result.set(floating, { x: floatRect.x + 1, y: floatRect.y + floatHead, w: floatRect.w - 2, h: floatRect.h - floatHead - 1 })
@@ -219,7 +220,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
         const edge: DockEdge = dx < .24 ? 'left' : dx > .76 ? 'right' : dy < .24 ? 'top' : dy > .76 ? 'bottom' : 'center'
         /* A pane keeps the size it was lifted with, so a width the user set is not undone by moving it. */
         const keep = edge === 'left' || edge === 'right' ? { size: lift.current.w, extent: r.w } : { size: lift.current.h, extent: r.h }
-        if (edge !== 'center' || (pane !== CHAT_PANE && !r.group.panes.includes(CHAT_PANE))) next = { target: r.group.id, edge, ...(edge === 'center' ? {} : { keep }) }
+        if (edge !== 'center' || (!isConversationPane(pane) && !r.group.panes.some(isConversationPane))) next = { target: r.group.id, edge, ...(edge === 'center' ? {} : { keep }) }
       }
       const same = next?.target === drop?.target && next?.edge === drop?.edge
       drop = next
@@ -269,7 +270,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   const run = (fn: () => void) => { setMenu(null); fn() }
   const toggleMaximize = (pane: string) => update(l => ({ ...l, maximized: l.maximized ? undefined : pane }))
   const menuPane = menu?.kind === 'pane' ? menu.pane : ''
-  const targetHasChat = !!dockGroups(layout.root).find(g => g.id === target)?.panes.includes(CHAT_PANE)
+  const targetHasChat = !!dockGroups(layout.root).find(g => g.id === target)?.panes.some(isConversationPane)
   return <WorkspaceContext.Provider value={context}>
     <div className={`tile-workspace${drag ? ' dragging' : ''}${settling ? ' settling' : ''}`} data-testid="tile-workspace">
       <div className="tile-workspace-scroll" ref={scrollRef}>
@@ -281,14 +282,14 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
             /* The lifted tile leaves a placeholder where it will land (or where it came from). */
             const slot = !!floating && active === floating
             if (!active) return null
-            return <div key={'frame-' + active} className={`tile-frame ui-tile${slot ? ' drop-slot tile-drop-preview' : ids.length === 1 && active === CHAT_PANE ? ' primary' : ''}${layout.maximized ? ' maximized' : ''}`} style={position(r)} />
+            return <div key={'frame-' + active} className={`tile-frame ui-tile${slot ? ' drop-slot tile-drop-preview' : ids.length === 1 && isConversationPane(active) ? ' primary' : ''}${layout.maximized ? ' maximized' : ''}`} style={position(r)} />
           })}
           {measured.groups.map(r => {
             const ids = r.group.panes.filter(id => available.has(id) && !layout.hidden.includes(id))
             const active = ids.includes(r.group.active) ? r.group.active : ids[0]
             if (!active || active === floating) return null
-            if (ids.length === 1 && active === CHAT_PANE) {
-              /* The conversation keeps its own header; only a grip sits above it. */
+            if (ids.length === 1 && isConversationPane(active)) {
+              /* A conversation keeps its own header; only a grip sits above it. */
               return <div key={'head-' + active} className="tile-heading tile-grip-zone" style={{ ...position(r), height: layout.maximized ? GRIP_MAXIMIZED : GRIP }} data-dock-group={r.group.id} onPointerDown={e => { if (!(e.target as HTMLElement).closest(".tile-grip-restore")) beginDrag(active, e) }}>
                 <button type="button" className="tile-grip ui-tile-grip" aria-label={t('tile.move', { title: titleOf(active) })} title={t('tile.gripHint')} onClick={e => openPaneMenu(active, menuAnchor(e.currentTarget))} />
                 {layout.maximized ? <IconButton className="tile-grip-restore" size="sm" icon="dock" label={t('tile.restore')} onClick={() => toggleMaximize(active)} /> : null}
@@ -318,7 +319,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
             {edgeZone ? <div className="tile-drop-edge ui-tile-drop-edge" data-testid="tile-drop-edge" style={{ left: edgeZone.x, top: edgeZone.y, width: edgeZone.w, height: edgeZone.h }} /> : null}
             <div className="tile-float ui-tile floating" style={position(floatRect)}>
               <span className="tile-float-grip ui-tile-grip-bar" />
-              {floating === CHAT_PANE ? null : <div className="tile-float-head ui-tile-head">
+              {isConversationPane(floating) ? null : <div className="tile-float-head ui-tile-head">
                 <div className="ui-tabs tile-tabs single"><Tab selected icon={panes.find(p => p.id === floating)?.icon} onClick={() => {}}>{titleOf(floating)}</Tab></div>
               </div>}
             </div>
@@ -339,11 +340,11 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
             <div className="tile-move-actions">
               {(['left', 'right', 'top', 'bottom'] as DockEdge[]).map((edge, i) => <MenuItem key={edge} onClick={() => run(() => { if (target) update(l => moveDockPane(l, menuPane, target, edge)) })}>{t((['tile.edge.left', 'tile.edge.right', 'tile.edge.top', 'tile.edge.bottom'] as const)[i])}</MenuItem>)}
             </div>
-            <MenuItem icon="group" disabled={menuPane === CHAT_PANE || targetHasChat} onClick={() => run(() => { if (target) update(l => moveDockPane(l, menuPane, target, 'center')) })}>{t('tile.mergeTabs')}</MenuItem>
+            <MenuItem icon="group" disabled={isConversationPane(menuPane) || targetHasChat} onClick={() => run(() => { if (target) update(l => moveDockPane(l, menuPane, target, 'center')) })}>{t('tile.mergeTabs')}</MenuItem>
             <MenuSeparator />
             {(commands.get(menuPane)?.actions ?? []).map(action => <MenuItem key={action.label} icon={action.icon} danger={action.danger} onClick={() => run(action.run)}>{action.label}</MenuItem>)}
             <MenuItem icon={layout.maximized ? 'dock' : 'maximize'} onClick={() => run(() => toggleMaximize(menuPane))}>{layout.maximized ? t('tile.restore') : t('tile.maximize')}</MenuItem>
-            {menuPane !== CHAT_PANE ? <MenuItem icon="close" onClick={() => run(() => hide(menuPane))}>{t('tile.hide')}</MenuItem> : null}
+            {!isConversationPane(menuPane) ? <MenuItem icon="close" onClick={() => run(() => hide(menuPane))}>{t('tile.hide')}</MenuItem> : null}
           </>}
         </Menu>
       </div> : null}

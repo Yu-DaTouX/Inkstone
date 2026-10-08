@@ -10,6 +10,9 @@
 import { mkdtemp, writeFile, mkdir, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runVisualMatrixTests } from './test-visual-matrix.mjs'
+
+await runVisualMatrixTests()
 
 const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
 const dataDir = await mkdtemp(join(tmpdir(), 'yan-data-'))
@@ -1621,6 +1624,18 @@ await runFileRefTests(ok)
 await runLinkTests(ok)
 await runFileResourceTests(ok)
 
+// 本地文件 → file:// 地址（文件名里的 # ? % 与盘符，纯函数）
+const { runFileUrlTests } = await import('./test-file-url.mjs')
+await runFileUrlTests(ok)
+
+// 文件来源登记：按会话隔离的读写（localStorage 内存替身）
+const { runSourceFilesTests } = await import('./test-source-files.mjs')
+await runSourceFilesTests(ok)
+
+// 快速切会话：选择代次（渲染端 store + window.yan 桩）
+const { runSessionSwitchTests } = await import('./test-session-switch.mjs')
+await runSessionSwitchTests(ok)
+
 
 // 工作窗口状态：稳定会话身份 / 标签恢复 / 资源缺失回退
 await runWorkbenchTests(ok)
@@ -2069,6 +2084,36 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 }
 
 {
+  const { runModelPricingTests } = await import('./test-model-pricing.mjs')
+  await runModelPricingTests(ok)
+}
+
+{
+  const { runSplitViewTests } = await import('./test-split-view.mjs')
+  await runSplitViewTests(ok)
+}
+
+{
+  const { runKeepAwakeTests } = await import('./test-keep-awake.mjs')
+  await runKeepAwakeTests(ok)
+}
+
+{
+  const { runSessionArchiveTests } = await import('./test-session-archive.mjs')
+  await runSessionArchiveTests(ok)
+}
+
+{
+  const { runRailViewTests } = await import('./test-rail-view.mjs')
+  await runRailViewTests(ok)
+}
+
+{
+  const { runSessionMoveTests } = await import('./test-session-move.mjs')
+  await runSessionMoveTests(ok)
+}
+
+{
   const { runSessionLayoutTests } = await import('./test-session-layout.mjs')
   await runSessionLayoutTests(ok, sessionLayout)
 }
@@ -2115,7 +2160,13 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 
 {
   const { runNetworkBoundaryTests } = await import('./test-network-boundary.mjs')
-  runNetworkBoundaryTests(ok, networkBoundary)
+  await runNetworkBoundaryTests(ok, networkBoundary)
+}
+
+{
+  /* 隐藏页面：请求层按解析地址拦 + 超时后真的停轮询（electron / dns 都换桩） */
+  const { runHiddenPageTests } = await import('./test-hidden-page.mjs')
+  await runHiddenPageTests(ok)
 }
 
 runAtQueryTests(ok, atQuery)
@@ -2133,6 +2184,10 @@ await runFileListingTests(ok, fileListing)
 // 模型接入：provider 名映射（假 pi 探针，不碰真实 auth.json）
 const { runCredentialsTests } = await import('./test-credentials.mjs')
 await runCredentialsTests(ok)
+
+// 设置的落盘语义：写盘失败要如实报错（隔离目录 + electron 桩）
+const { runSettingsStoreTests } = await import('./test-settings-store.mjs')
+await runSettingsStoreTests(ok)
 
 // 应用内登录 ChatGPT 订阅（electron/fetch 都换成桩，不联网不开浏览器）
 const { runOAuthTests } = await import('./test-oauth.mjs')
@@ -2171,6 +2226,9 @@ runStdioGuardTests(ok, stdioGuard)
 // 安卓远程管理层：HTTP/SSE 路由与认证边界
 await runRemoteServerTests(ok, remoteServer)
 await runPeerTests(ok, { ...remoteServer, ...peerDeps })
+/* 设备表存储语义：并发配对只出一个令牌、写盘失败可恢复、撤销失败不回退内存 */
+const { runRemoteDeviceTests } = await import('./test-remote-devices.mjs')
+await runRemoteDeviceTests(ok, peerDeps)
 
 // N21-3：工作集预算 / 触发决策 / 阶段文案
 const { runContextPolicyTests } = await import('./test-context-policy.mjs')

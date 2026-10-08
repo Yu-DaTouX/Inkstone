@@ -103,7 +103,9 @@
     '没有旧固定窗口、尺寸把手、回到最新按钮或「展开全部」出口'
   )
 
-  /* 逐字流式：body 的文字会逐步追上来，轮询等它追到结尾。 */
+  /* 逐字流式：body 的文字会逐步追上来，轮询等它追到结尾。收起时不挂全文，先展开再量。 */
+  click('[data-testid="reasoning-toggle"]')
+  await sleep(260)
   let shownLen = 0
   for (let i = 0; i < 60; i++) {
     shownLen = (inner()?.textContent ?? '').length
@@ -113,6 +115,8 @@
   log(`  逐字进度：${shownLen} / ${THINK.length}`)
   ok(shownLen >= THINK.length, '推理文本逐字追上（不是一次性贴上来）')
   ok((inner()?.textContent ?? '').includes('🧭👩‍💻'), 'emoji 保持完整，没有被 UTF-16 截断')
+  click('[data-testid="reasoning-toggle"]')
+  await sleep(260)
   ok((peek() ?? '').includes('关键是把羊先带过去，再把羊带回来。'), '折叠预览显示最新完整句而非首行')
 
   /* ---- 2. 最新句的取句边界（中文 / 英文引号 / 句点版本号 / 无标点） ---- */
@@ -344,7 +348,9 @@
     const typewriterText = THINK.slice(0, 600)
     injectThinking(typewriterText)
     setTurnStreaming(true)
-    await sleep(200)
+    await sleep(50)
+    if (!inner()) click('[data-testid="reasoning-toggle"]')
+    await sleep(150)
     const partial = (inner()?.textContent ?? '').length
     ok(partial < typewriterText.length, `挂载后仍逐字（200ms 时 ${partial}/${typewriterText.length}）`)
     setReduce(true)

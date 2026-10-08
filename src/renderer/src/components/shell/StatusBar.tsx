@@ -15,12 +15,12 @@ import type { RemoteAccessStatus } from '../../../../shared/remote-protocol'
 /**
  * 窗口底部的状态栏（设计规范 §4）。
  *
- * 左段是全局状态：模式色块（RUN / WAIT / IDLE）· 分支与改动 · pi 连接 · 手机配对；
+ * 左段是全局状态：模式色块（RUN / WAIT / IDLE）· 分支与改动 · 内核连接（不写 pi）· 手机配对；
  * 右段是本轮用量（沿用 UsageBar 的口径：流式期间不编造速度，缺报用量时标 ≥）与本会话花费。
  * 不重复别处已有的信息：模型与思考档位在输入框里，上下文占用在右栏检查器。
  *
  * 状态都从已有的 store 快照推导，不自己计时（「同一时钟」原则）。
- * 窄窗时由容器查询从右往左隐藏低优先级段：先花费，再手机与 pi。
+ * 窄窗时由容器查询从右往左隐藏低优先级段：先花费，再手机与内核连接。
  */
 type Mode = 'run' | 'wait' | 'idle'
 
@@ -89,6 +89,8 @@ export function StatusBar() {
   const connText = conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')
   const devices = remote?.enabled ? remote.devices.length : null
   const cost = stats?.cost ?? 0
+  /* 其中按公开 API 价估算的部分（这些模型 pi 没有报价，订阅制或自写服务） */
+  const costEstimated = stats?.costEstimated ?? 0
   const [detail, setDetail] = useState<string | null>(null)
   /* 浮层贴着被点的那一段弹出：段落在窗口右半边就右对齐，免得点右侧用量却在左下角出现 */
   const [anchor, setAnchor] = useState<{ left?: number; right?: number }>({})
@@ -131,8 +133,9 @@ export function StatusBar() {
           [t('sb.kCacheRead'), num(usage?.cacheRead, partial)],
           [t('sb.kCacheWrite'), num(usage?.cacheWrite, partial)],
           [t('sb.kHitRate'), formatHitRate(cacheHitRate(usage)) ?? '—'],
-          [t('sb.kSessionCost'), `$${cost.toFixed(3)}`]
-        ]} /><p className="sb-details-note">{partial ? t('tok.usagePartialTip') : t('sb.costTip')}</p></> : null}
+          [t('sb.kSessionCost'), `${costEstimated > 0 ? '≈' : ''}${cost.toFixed(3)}`],
+          ...(costEstimated > 0 ? [[t('sb.kCostEstimated'), `${costEstimated.toFixed(3)}`] as [string, ReactNode]] : [])
+        ]} /><p className="sb-details-note">{partial ? t('tok.usagePartialTip') : costEstimated > 0 ? t('sb.costEstimatedTip') : t('sb.costTip')}</p></> : null}
       </section>, document.body) : null}
       <span className="sb-mode" data-mode={mode} title={modeTip} tabIndex={0} role="status" aria-live="polite">
         {MODES.map((m) => (
@@ -152,7 +155,7 @@ export function StatusBar() {
 
       <span className="sb-seg sb-pi" tabIndex={0} role="button" aria-haspopup="dialog" aria-expanded={detail === 'sb-pi'} title={t('sb.piTip')} data-state={conn} data-testid="sb-pi">
         <span className="sb-dot" aria-hidden />
-        <span className="sb-text">pi · {connText}</span>
+        <span className="sb-text">{connText}</span>
       </span>
 
       {liveAgents.length > 0 ? (
@@ -175,8 +178,8 @@ export function StatusBar() {
 
       <UsageBar />
 
-      <span className="sb-seg sb-cost" tabIndex={0} role="button" aria-haspopup="dialog" aria-expanded={detail === 'sb-cost'} title={t('sb.costTip')} data-testid="sb-cost">
-        {t('sb.cost', { cost: cost.toFixed(3) })}
+      <span className="sb-seg sb-cost" tabIndex={0} role="button" aria-haspopup="dialog" aria-expanded={detail === 'sb-cost'} title={costEstimated > 0 ? t('sb.costEstimatedTip') : t('sb.costTip')} data-testid="sb-cost">
+        {t('sb.cost', { cost: (costEstimated > 0 ? '≈' : '') + cost.toFixed(3) })}
       </span>
     </footer>
   )

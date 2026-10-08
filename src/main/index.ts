@@ -12,12 +12,15 @@ import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path
 import { constants as fsConstants, existsSync, readdirSync } from 'node:fs'
 import { access, appendFile, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import { loadModelPricing } from './model-pricing'
 import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt, type GoalCommandHost } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { getSettings, patchSettings } from './settings'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
-import { rememberSession } from './session-layout'
+import { moveSessionLayout, rememberSession } from './session-layout'
+import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awake'
+import { rewriteSessionCwd, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import { readChainMessages } from './session-history'
 import { ArtifactStore } from './artifacts'
 import { readRepoState } from './git-service'
@@ -563,14 +566,18 @@ const approvals = new ApprovalBroker({
     /* 窗口在后台或最小化时卡片看不到：任务栏闪烁并发一条系统通知（不抢焦点），点通知回到窗口 */
     if (win && !win.isDestroyed() && !win.isFocused()) {
       win.flashFrame(true)
-      const notice = new Notification({ title: '砚需要你确认', body: request.title })
-      notice.on('click', () => {
-        if (!win || win.isDestroyed()) return
-        if (win.isMinimized()) win.restore()
-        win.show()
-        win.focus()
-      })
-      notice.show()
+      /* 系统通知跟随设置里的「系统通知」开关；任务栏闪烁不受它影响 */
+      void getSettings().then((settings) => {
+        if (settings.sound?.notifications === false || !Notification.isSupported()) return
+        const notice = new Notification({ title: '砚需要你确认', body: request.title })
+        notice.on('click', () => {
+          if (!win || win.isDestroyed()) return
+          if (win.isMinimized()) win.restore()
+          win.show()
+          win.focus()
+        })
+        notice.show()
+      }).catch(() => undefined)
     }
   },
   close: (id) => push({ ch: 'approval-close', payload: { id } })
@@ -985,8 +992,16 @@ function requestPiPackageActivationTick(): void {
 
 /** 把所有运行实例的状态推给渲染端（左栏状态槽） */
 function pushRunners(): void {
-  push({ ch: 'runners', payload: runners?.statuses() ?? [] })
+  const statuses = runners?.statuses() ?? []
+  push({ ch: 'runners', payload: statuses })
   refreshTrayMenu()
+  void syncKeepAwake(statuses.some((r) => r.running))
+}
+
+/** 有会话在跑时按设置保持唤醒；读设置失败就按「没有设置」处理。 */
+async function syncKeepAwake(working: boolean): Promise<void> {
+  const s = await getSettings().catch(() => null)
+  updateKeepAwake({ working, whileWorking: s?.keepAwakeWhileWorking, onBatteryAllowed: s?.keepAwakeOnBattery })
 }
 
 /**
@@ -1141,6 +1156,8 @@ const followCapabilityHost: GoalCommandHost = {
     switch (command) {
       case 'follow.list': {
         const spaceId = typeof params.spaceId === 'string' ? params.spaceId : null
+        /* 只读前先等首次加载，否则重启后（还没有写操作）这里会返回空列表 */
+        await follows.load()
         const views = follows.views(spaceId).map((view) => ({
           id: view.watch.id,
           title: view.watch.title,
@@ -1162,6 +1179,7 @@ const followCapabilityHost: GoalCommandHost = {
         }
       }
       case 'follow.due': {
+        await follows.load()
         const due = follows.due()
         return {
           data: {
@@ -1503,6 +1521,7 @@ let shuttingDown = false
 async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
+  disposeKeepAwake()
   tray?.destroy()
   tray = null
   try {
@@ -1908,6 +1927,74 @@ async function validateCwd(cwd: unknown): Promise<{ ok: true; cwd: string } | { 
     return { ok: true, cwd: absolute }
   } catch {
     return { ok: false, error: `工作目录不存在或不可访问：${raw}` }
+  }
+}
+
+/**
+ * `yan session move`：Agent 发现任务属于另一个文件夹，请求把这条会话移过去。
+ * 批准卡片问用户；允许后等这一轮结束再切换（moveSessionWhenIdle），回合中途不换目录。
+ */
+async function requestSessionMove(request: SessionMovePrompt): Promise<SessionMoveAnswer> {
+  const checked = await validateCwd(isAbsolute(request.dir) ? request.dir : resolve(request.cwd || process.cwd(), request.dir))
+  if (!checked.ok) return { decision: 'invalid', message: `${checked.error}。会话留在当前文件夹。` }
+  const target = checked.cwd
+  if (normalizeCwdForIdentity(target) === normalizeCwdForIdentity(request.cwd)) {
+    return { decision: 'same', target, message: '会话已经在这个文件夹里，不需要移动。' }
+  }
+  const choice = await approvals.ask({
+    kind: 'move',
+    tool: 'session',
+    title: '允许把这次会话移到另一个文件夹？',
+    detail: target,
+    reasons: [
+      ...(request.reason ? [request.reason] : []),
+      '本轮结束后切换：对话保留，之后的命令在这个文件夹里运行，并读取它的 AGENTS.md 与项目设置。'
+    ],
+    cwd: request.cwd,
+    canRemember: false
+  })
+  if (choice !== 'once' && choice !== 'remember') {
+    return {
+      decision: choice === 'deny' ? 'denied' : 'no-answer',
+      target,
+      message: choice === 'deny' ? '用户拒绝移动，继续在当前文件夹工作。' : '没有得到答复，会话留在当前文件夹。'
+    }
+  }
+  void moveSessionWhenIdle({ sessionId: request.sessionId, sessionFile: request.sessionFile, target })
+  return {
+    decision: 'approved',
+    target,
+    message: `已批准：本轮结束后，会话的工作目录切换到 ${target}。请用一两句话说明接下来要做什么并结束本轮，下一轮会在新文件夹里继续。`
+  }
+}
+
+/** 等这条会话的回合结束（不在跑、也没有待回答的请求）再移动；最多等 30 分钟 */
+async function moveSessionWhenIdle(job: { sessionId: string; sessionFile: string; target: string }): Promise<void> {
+  const same = (a?: string) => !!a && normalizeCwdForIdentity(a) === normalizeCwdForIdentity(job.sessionFile)
+  const runnerOf = () => runners?.statuses().find((r) => same(r.sessionFile))
+  const deadline = Date.now() + 30 * 60_000
+  while (runnerOf()?.running || runnerOf()?.waiting) {
+    if (Date.now() > deadline) {
+      push({ ch: 'session-moved', payload: { sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target, ok: false, error: '等这一轮结束超时，会话没有移动' } })
+      return
+    }
+    await new Promise((r) => setTimeout(r, 500))
+  }
+  try {
+    /* pi 会往会话文件追加记录：先停掉用它的实例，再改文件头；界面随后在新目录重新打开 */
+    await runners?.stopBySessionFile(job.sessionFile)
+    await rewriteSessionCwd(job.sessionFile, job.target)
+    let settings = await getSettings()
+    const projectOf = () => settings.projects.find((p) => !p.archived && normalizeCwdForIdentity(p.cwd) === normalizeCwdForIdentity(job.target))
+    /* 新文件夹还不是项目：加进最近目录，设置会为它生成项目记录 */
+    if (!projectOf()) settings = await patchSettings({ recentCwds: [job.target, ...(settings.recentCwds ?? [])] })
+    const project = projectOf()
+    await moveSessionLayout({ sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target }, project?.id ?? null)
+    push({ ch: 'session-moved', payload: { sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target, ok: true } })
+  } catch (error) {
+    push({ ch: 'session-moved', payload: { sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target, ok: false, error: error instanceof Error ? error.message : String(error) } })
+  } finally {
+    pushRunners()
   }
 }
 
@@ -2399,6 +2486,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           }
           return choice === 'once' || choice === 'remember' ? 'allow' : choice === 'deny' ? 'deny' : null
         },
+        requestSessionMove,
         /*
          * 普通工具使用前的询问（需求稿 4.3）。没有答复不记录（返回 null）；
          * 只有点「允许」或「拒绝」才写进同意记录。
@@ -2889,7 +2977,18 @@ function registerIpc(): void {
   })
   handle('yan:patchSettings', async (patch: Record<string, unknown>) => {
     const before = await getSettings()
-    const next = await patchSettings(patch as never)
+    let next: Awaited<ReturnType<typeof patchSettings>>
+    try {
+      next = await patchSettings(patch as never)
+    } catch (e) {
+      /*
+       * 写盘失败（目录不可写、磁盘满、同名文件占住路径）：
+       * 推一条错误到日志抽屉，并返回**磁盘上的旧设置**。
+       * 旧实现只打日志、仍返回新设置 —— 界面显示“已保存”，重启后发现变回旧值。
+       */
+      reportMainError('设置', e)
+      return await getSettings()
+    }
     /*
      * 语言切换**不重建实例**：语言要求由内置扩展在每一轮读 desktop.json 注入，
      * 所以下一轮就生效 —— 现有会话、后备会话、新建会话一视同仁
@@ -2906,6 +3005,7 @@ function registerIpc(): void {
       })
     }
     if (patch.responseDetail !== undefined) agentResponseDetail = next.responseDetail
+    if ('keepAwakeWhileWorking' in patch || 'keepAwakeOnBattery' in patch) void syncKeepAwake((runners?.statuses() ?? []).some((r) => r.running))
     /* 工作模式（实施-05）：新会话默认模式改完立即生效（已存过的会话不受影响） */
     if (patch.defaultWorkMode !== undefined) setDefaultWorkMode(next.defaultWorkMode)
     /*
@@ -3901,6 +4001,8 @@ configureHandoffCoordinator({
 })
 
 app.whenReady().then(async () => {
+  void loadModelPricing()
+  watchPowerSource()
   browser = new BrowserController(() => win, push)
   /* 终端输出转成渲染端可消费的推送（H-11）：只有活动窗口时才有接收方 */
   setTerminalSink((event) => {

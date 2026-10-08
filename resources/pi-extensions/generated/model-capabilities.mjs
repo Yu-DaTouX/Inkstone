@@ -1,5 +1,5 @@
 /* 由 src/shared/custom-provider.ts 生成，勿手改；重新生成：node scripts/build-model-capabilities.mjs
- * source-sha256: 697cb1384b9cc6a7278be592590037a84e4b6bb072c9f8b4efed88eb44869dd4
+ * source-sha256: 3dad156877d0dd9efe03f22dd8df0cf2e2400701157e876b729d17e12cfab267
  */
 // src/shared/custom-provider.ts
 var PI_API_IDS = [
@@ -22,6 +22,13 @@ var CUSTOM_API_CHOICES = [
   { id: "google-generative-ai", label: "Google Generative AI" },
   { id: "mistral-conversations", label: "Mistral Conversations" }
 ];
+function cleanModelCost(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
+  const raw = value;
+  const num = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0;
+  const cost = { input: num(raw.input), output: num(raw.output), cacheRead: num(raw.cacheRead), cacheWrite: num(raw.cacheWrite) };
+  return cost.input > 0 || cost.output > 0 ? cost : void 0;
+}
 var THINKING_LEVEL_KEYS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 function cleanThinkingLevelMap(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
@@ -109,6 +116,8 @@ function validateCustomProvider(input) {
       const map = cleanThinkingLevelMap(raw.thinkingLevelMap);
       if (map) next.thinkingLevelMap = map;
     }
+    const cost = cleanModelCost(raw.cost);
+    if (cost) next.cost = cost;
     cleaned.push(next);
   }
   if (!cleaned.length) errors.push("\u81F3\u5C11\u8981\u6709\u4E00\u4E2A\u6A21\u578B");
@@ -145,6 +154,8 @@ function readCustomProviders(modelsJson) {
         if (typeof m.baseUrl === "string" && m.baseUrl) model.baseUrl = m.baseUrl;
         const map = m.reasoning === true ? cleanThinkingLevelMap(m.thinkingLevelMap) : void 0;
         if (map) model.thinkingLevelMap = map;
+        const cost = cleanModelCost(m.cost);
+        if (cost) model.cost = cost;
         return model;
       }).filter((m) => m.id),
       /* 只报告有没有，不回明文 */
@@ -253,6 +264,8 @@ function describeDiscoveredModels(found, provider, catalog) {
     if (reasoning && known?.thinkingLevelMap && known.api === api && api !== "openai-completions") {
       model.thinkingLevelMap = { ...known.thinkingLevelMap };
     }
+    const cost = cleanModelCost(known?.cost);
+    if (cost) model.cost = cost;
     return model;
   });
 }
@@ -261,6 +274,7 @@ export {
   CUSTOM_PROVIDER_PREFIX,
   PI_API_IDS,
   catalogKey,
+  cleanModelCost,
   describeDiscoveredModels,
   hasExecutablePrefix,
   isYanProviderId,

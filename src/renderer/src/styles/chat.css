@@ -740,8 +740,9 @@
   margin: 0;
   overflow: auto;
   padding: var(--sp-2);
-  color: var(--fg);
-  background: #101318;
+  color: var(--code-fg);
+  background: var(--code-bg);
+  border-top: 1px solid var(--border);
   font-size: var(--fs-xs);
   line-height: 1.5;
   white-space: pre-wrap;
@@ -1115,10 +1116,26 @@
 .trow {
   min-width: 0;
 }
-.trow-head[data-tool-depth='1'] { padding-left: calc(var(--sp-3) + var(--sp-3)); }
-.trow-head[data-tool-depth='2'] { padding-left: calc(var(--sp-3) + var(--sp-3) * 2); }
-.trow-head[data-tool-depth='3'] { padding-left: calc(var(--sp-3) + var(--sp-3) * 3); }
-.trow-head[data-tool-depth='4'] { padding-left: calc(var(--sp-3) + var(--sp-3) * 4); }
+/* 组合调用（Codemode）的子调用区：嵌在父行之下，与父行读作同一步。
+   左侧细引导线对准父行状态点（行左内边距 + 状态点列宽一半），子行之间不画分隔线。 */
+.trow-nest {
+  min-width: 0;
+  margin: 0 0 var(--sp-1) calc(var(--sp-3) + 5px);
+  padding-left: var(--sp-1);
+  border-left: 1px solid var(--border-soft);
+}
+.trow-nest .trow-head {
+  height: 26px;
+  padding-left: var(--sp-2);
+}
+/* 再深一级：引导线对准子行的状态点 */
+.trow-nest .trow-nest {
+  margin-left: calc(var(--sp-2) + 5px);
+}
+.trow-nest-fold {
+  height: 24px;
+  padding-left: var(--sp-2);
+}
 .trow-head {
   display: flex;
   align-items: center;
@@ -2716,3 +2733,121 @@ img.chat-image-open {
   font-size: var(--fs-xs);
   color: var(--fg-mute);
 }
+
+/* 分屏（设计规范 §4）：一个窗口并排两条会话，焦点那一侧是活动会话。
+   焦点换边时，那一侧的输入框从底部升起；失去焦点的一侧输入框收成一行、落到底部。 */
+.center.split-live > .composer-wrap {
+  --mo-shift: var(--sp-5);
+  animation: mo-in-up var(--mo-slow) var(--mo-ease) both;
+}
+/* 两侧顶部各自的会话头（分屏时标题栏不放会话头）：焦点一侧是完整会话头，另一侧标题退一档 */
+.split-head {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding-right: var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+.split-head > .shead {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 0;
+  background: transparent;
+}
+.split-head:not(.live) .shead-title {
+  flex: 0 1 auto;
+  color: var(--fg-dim);
+  font-weight: var(--fw-medium);
+}
+.titlebar .tb-center:empty::before {
+  display: none;
+}
+.split-peer-bar-wrap {
+  grid-row: 5;
+  padding: var(--sp-2) var(--sp-5) var(--sp-3);
+}
+/* 收起的输入框：与输入框同一张卡片的边线与底色，只剩一行 */
+.split-peer-bar {
+  --mo-shift: var(--sp-5);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  max-width: var(--w-stream);
+  min-height: var(--sp-6);
+  margin: 0 auto;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: left;
+  animation: mo-in-down var(--mo-slow) var(--mo-ease) both;
+  transition:
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.split-peer-bar:hover,
+.split-peer-bar:focus-visible {
+  border-color: var(--accent-line);
+  color: var(--fg-dim);
+}
+.split-peer-prompt {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+.split-peer-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.split-peer-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+}
+.split-peer-state.warn {
+  color: var(--warn);
+}
+@media (prefers-reduced-motion: reduce) {
+  .center.split-live > .composer-wrap,
+  .split-peer-bar {
+    animation: none;
+  }
+}
+
+/* 拖左栏会话进工作区右半边：松手即分屏（几何见 state/split-drop.ts） */
+.split-drop {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--accent-line);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--fg-dim);
+  pointer-events: none;
+  transition: background var(--mo-fast) ease, border-color var(--mo-fast) ease;
+}
+.split-drop.over {
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.split-drop-label {
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  font-size: var(--fs-sm);
+}
+/* 拖会话进工作区：左右两半各一个落点，指针所在的那一半高亮 */
+.split-drop.left { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split-drop.right { border-top-left-radius: 0; border-bottom-left-radius: 0; }

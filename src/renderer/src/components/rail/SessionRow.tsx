@@ -7,11 +7,12 @@ import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
 import { shortProject } from './rail-utils'
 import { forkLatest } from '../../lib/fork'
 import { RunDot } from '../ui'
+import { displayedSessionOf, useSplitView } from '../../state/split-view'
 
 /* ---------------------------------------------------------------- 会话行 */
 
 export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onToggleBranches,
-  children, depth, menuOpen, menuAnchor, onOpenMenu, onCloseMenu, onSelect, pinned, onPin, unread, projectRecords, onRequestDelete, dragging, onDragStart
+  children, depth, menuOpen, menuAnchor, onOpenMenu, onCloseMenu, onSelect, pinned, onPin, unread, projectRecords, onRequestDelete, dragging, onDragStart, archived, onArchive
 }: {
   s: SessionSummary; selected: boolean; branchCount: number; branchIndex?: number;
   branchesOpen: boolean; onToggleBranches: () => void; children: React.ReactNode; depth: number;
@@ -21,6 +22,7 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
   onSelect: () => void; pinned: boolean; onPin: () => void; unread: boolean;
   projectRecords: ProjectRecord[];
   onRequestDelete: () => void;
+  archived: boolean; onArchive: () => void;
   /** 正在被拖动（视觉态：整行变淡） */
   dragging: boolean;
   /** 按下即准备拖拽（越过阈值才算真拖，见 `beginDrag`） */
@@ -100,7 +102,10 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
             }}
           />
         ) : (
-          <button className={`srow ${selected ? 'sel' : ''}`} onClick={onSelect} title={`${s.title}${s.branchOrigin ? '\n' + s.branchOrigin : ''}\n${s.path}`} data-testid={depth ? 'rail-branch-item' : 'rail-session'}>
+          <button className={`srow ${selected ? 'sel' : ''}`} onClick={(e) => {
+            /* Ctrl / ⌘ + 点击：在旁边分屏打开，当前会话保留在原处 */
+            if (e.ctrlKey || e.metaKey) { e.preventDefault(); openInSplit(s) } else onSelect()
+          }} title={`${s.title}${s.branchOrigin ? '\n' + s.branchOrigin : ''}\n${s.path}`} data-testid={depth ? 'rail-branch-item' : 'rail-session'}>
             {/* 行首状态点：运行（强调色方点）/ 等你回答 / 失败 / 隔离 / 未读 / 空心（静止） */}
             {waiting ? <span className="srow-dot waiting" data-testid="rail-waiting" title={t('rail.waiting')} />
               : failure ? <span className="srow-dot failed" data-testid="rail-failed" title={failure} />
@@ -223,6 +228,17 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
             </div>
           ) : null}
           <button className="ui-menu-item srow-menu-btn" role="menuitem" onClick={() => { onPin(); onCloseMenu() }}><Icon name="pin" size={12} />{pinned ? t('rail.unpin') : t('rail.pin')}</button>
+          <button className="ui-menu-item srow-menu-btn" role="menuitem" data-testid="rail-archive" onClick={() => { onArchive(); onCloseMenu() }}><Icon name="folder" size={12} />{archived ? t('rail.unarchive') : t('rail.archive')}</button>
+          <button
+            className="ui-menu-item srow-menu-btn" role="menuitem"
+            data-testid="rail-open-split"
+            disabled={selected}
+            title={t('rail.openSplitTip')}
+            onClick={() => { openInSplit(s); onCloseMenu() }}
+          >
+            <Icon name="tile" size={12} />
+            {t('rail.openSplit')}
+          </button>
           <div className="srow-menu-section" data-testid="rail-move-session">
             <div className="srow-menu-section-title">{t('rail.moveSession')}</div>
             {s.scope !== 'global' ? (
@@ -358,6 +374,12 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
       </ContextMenuSurface>
     </div>
   )
+}
+
+/** 在旁边分屏打开这条会话：加到最右（`at` 指定插入位置）；已满 5 块时挤掉一块没有焦点的 */
+export function openInSplit(s: SessionSummary, at?: number): void {
+  const st = useStore.getState()
+  useSplitView.getState().open({ sessionId: s.id, path: s.path }, displayedSessionOf(st), at)
 }
 
 /* 分叉的两个入口在 lib/fork.ts —— 对话区（消息上的分支按钮）也要用，

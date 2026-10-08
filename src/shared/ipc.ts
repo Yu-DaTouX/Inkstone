@@ -119,6 +119,7 @@ import type { TaskInboxPage, TaskInboxQuery } from './task-inbox'
 import type { ToolLayout } from './tool-layout'
 /* 活动档案（实施-25 P01）：类型与纯逻辑在 `./agent-profile`，这里转发给渲染端。 */
 import type { AgentProfilePatch, AgentProfileState } from './agent-profile'
+import type { AccountQuotaCliSource, AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from './account-quota'
 export type { AgentActivity, AgentProfile, AgentProfileKind, AgentProfilePatch, AgentProfileState } from './agent-profile'
 export type { WorkMode, WorkModeState } from './work-mode'
 export type { GoalState, GoalPhase, GoalLink, GoalLinkKind, PursuedBrief, ReadyApprovalMode } from './goal'
@@ -150,6 +151,8 @@ export interface Usage {
   cacheWrite: number
   totalTokens: number
   cost: number
+  /** pi 没有这个模型的报价（记 0）时，主进程按公开 API 价补的估算；`cost` 里已包含它 */
+  costEstimated?: boolean
 }
 
 /** 回复详细程度的实际采用值；旧历史没有记录时必须保留 unknown。 */
@@ -609,6 +612,8 @@ export interface SessionStats {
     total: number
   }
   cost: number
+  /** `cost` 里有多少是按公开 API 价估算的（pi 没有报价的模型）；没有估算为 0 或缺省 */
+  costEstimated?: number
   contextUsage?: {
     tokens: number | null
     contextWindow: number
@@ -756,6 +761,10 @@ export interface SessionSummary {
   scope?: SessionScope
   /** 最近一次在 Yan 中打开的时间。 */
   lastOpenedAt?: number
+  /** 归档时间（见 SessionLayoutEntry.archivedAt）。 */
+  archivedAt?: number
+  /** 置顶（见 SessionLayoutEntry.pinned）。 */
+  pinned?: boolean
   /** cwd 对应多个项目时保留候选，不静默选择。 */
   projectCandidates?: string[]
 }
@@ -784,6 +793,10 @@ export interface SessionLayoutEntry {
   createdAt: number
   updatedAt: number
   lastOpenedAt?: number
+  /** 归档时间；有值 = 已归档（列表默认不显示，可恢复）。只是产品层标记，JSONL 不动。 */
+  archivedAt?: number
+  /** 置顶：存在宿主，手机端与多窗口共用，自动归档也据此跳过。 */
+  pinned?: boolean
   moveHistory: SessionMoveRecord[]
 }
 
@@ -976,6 +989,12 @@ export interface AppSettings {
   piBin?: string
   /** Enable native pi Codemode in Inkstone; missing means enabled. */
   codemodeEnabled?: boolean
+  /** 闲置多少天自动归档会话；缺省 / 0 = 从不。置顶与有运行实例的会话永不归档。 */
+  autoArchiveDays?: number
+  /** 有会话在跑时保持电脑不睡眠；缺省 = 开，只有明确关才存 false。 */
+  keepAwakeWhileWorking?: boolean
+  /** 靠电池供电时也保持唤醒；缺省 = 开。 */
+  keepAwakeOnBattery?: boolean
   /** 每轮发送前给项目文件存检查点，可回退；缺省为开 */
   checkpointsEnabled?: boolean
   /** 「危险批准」档下，写入项目之外的路径前也确认；缺省为关 */
@@ -2224,6 +2243,8 @@ export type MainPushBody =
   /** 另一台砚申请本次连接：所有者界面弹出审批（决定走 yan:peer-host:decide） */
   | { ch: 'peer-request'; payload: import('./peer-protocol').PeerApprovalRequest }
   | { ch: 'peer-request-closed'; payload: { requestId: string } }
+  /** `yan session move` 批准后的结果：会话文件头已改到新目录（界面刷新列表，正在看就在新目录重新打开） */
+  | { ch: 'session-moved'; payload: { sessionId: string; sessionFile: string; cwd: string; ok: boolean; error?: string } }
   /** 托盘菜单要求切到指定运行实例；没有 sessionFile 时用稳定 sessionId。 */
   | {
       ch: 'tray-select-session'
@@ -3047,6 +3068,10 @@ export interface YanBridge {
     spaceId: string,
     projectId: string
   ): Promise<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>
+  /** 归档 / 取消归档会话；只写 session-layout，不动 JSONL、不停 runner。 */
+  setSessionArchived(sessionId: string, archived: boolean): Promise<{ ok: boolean; error?: string }>
+  /** 置顶 / 取消置顶；`paths` 供旧版本地置顶一次性迁移时批量写入。 */
+  setSessionPinned(sessionId: string, pinned: boolean): Promise<{ ok: boolean; error?: string }>
   /** 把会话放进空间（null = 移出）。不动 projectId。 */
   setSessionSpace(
     sessionId: string,
@@ -3282,6 +3307,18 @@ export interface YanBridge {
   clearAuth(provider: string): Promise<{ ok: boolean; error?: string }>
   /** auth.json 的路径与条目数（界面上告知凭证存在哪） */
   authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
+  /** 「账号额度」磁贴：砚的账号与已打开的本机 CLI 来源，各自的额度窗口或余额 */
+  accountQuota(): Promise<AccountQuotaReport>
+  /** 打开 / 关闭一个本机 CLI 来源（Codex CLI、Claude Code、Gemini CLI） */
+  accountQuotaSource(source: AccountQuotaCliSource, enabled: boolean): Promise<AccountQuotaPrefs>
+  /** 设置账号备注；空字符串恢复默认名 */
+  accountLabel(key: string, label: string): Promise<AccountQuotaPrefs>
+  /** 砚保存的 ChatGPT 账号（不含凭证） */
+  codexAccounts(): Promise<CodexAccountView[]>
+  /** 切到另一个保存的 ChatGPT 账号；pi 在当前回合结束后重启生效 */
+  codexAccountSwitch(key: string): Promise<{ ok: boolean; error?: string }>
+  /** 移除保存的 ChatGPT 账号；是当前账号时同时退出登录 */
+  codexAccountRemove(key: string): Promise<{ ok: boolean; error?: string }>
   /** 外部命令（bash / git）是否可用；缺失时带安装说明 */
   toolchainStatus(): Promise<ToolchainStatus>
   /** 受管 Git：当前状态 / 一键安装（需用户已确认）/ 取消 / 移除 */
