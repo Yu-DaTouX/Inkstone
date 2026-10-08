@@ -87,12 +87,19 @@ function compact(models) {
   }
   const out = {}
   for (const key of [...groups.keys()].sort()) {
-    const best = groups.get(key).sort((a, b) => rank(a.provider) - rank(b.provider) || a.provider.localeCompare(b.provider))[0]
+    const ranked = groups.get(key).sort((a, b) => rank(a.provider) - rank(b.provider) || a.provider.localeCompare(b.provider))
+    const best = ranked[0]
     const entry = { provider: best.provider, api: best.api, reasoning: best.reasoning === true }
     if (Array.isArray(best.input) && best.input.includes('image')) entry.input = ['text', 'image']
     if (typeof best.contextWindow === 'number') entry.contextWindow = best.contextWindow
     if (typeof best.maxTokens === 'number') entry.maxTokens = best.maxTokens
     if (best.reasoning && best.thinkingLevelMap && typeof best.thinkingLevelMap === 'object') entry.thinkingLevelMap = best.thinkingLevelMap
+    /* 报价（美元 / 百万 token）：会话花费按它估算，订阅制服务也能看到「折合 API 价」 */
+    /* 代表那条可能是套餐里标 0 的（如 qwen-token-plan）：报价取排名最靠前的、真有标价的那条 */
+    const c = ranked.find((m) => m.cost && (m.cost.input > 0 || m.cost.output > 0))?.cost
+    if (c && (c.input > 0 || c.output > 0)) {
+      entry.cost = { input: c.input ?? 0, output: c.output ?? 0, cacheRead: c.cacheRead ?? 0, cacheWrite: c.cacheWrite ?? 0 }
+    }
     out[key] = entry
   }
   return out

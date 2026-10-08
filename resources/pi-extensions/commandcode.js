@@ -18,7 +18,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describeDiscoveredModels, parseModelEntries } from './generated/model-capabilities.mjs'
+import { catalogKey, cleanModelCost, describeDiscoveredModels, parseModelEntries } from './generated/model-capabilities.mjs'
 
 export const PROVIDER = 'commandcode'
 export const BASE_URL = 'https://api.commandcode.ai/provider/v1'
@@ -48,8 +48,12 @@ export function handWritten(dir) {
   return !!readJson(join(dir, 'models.json'))?.providers?.[PROVIDER]
 }
 
-/** 砚的模型条目 → pi 注册所需的完整模型定义（pi 要求名称、输入、费用、上下文与输出上限齐全） */
-export function toPiModels(entries) {
+/**
+ * 砚的模型条目 → pi 注册所需的完整模型定义（pi 要求名称、输入、费用、上下文与输出上限齐全）。
+ * 费用：订阅制按额度窗口计费，没有逐 token 账单；这里填 pi 模型目录里该模型的公开 API 报价，
+ * 会话花费显示的是「折合 API 价」的估算（目录里没有标价的模型记 0）。旧缓存条目没有报价时按目录补。
+ */
+export function toPiModels(entries, catalog = {}) {
   return entries.map((m) => ({
     id: m.id,
     name: m.name ?? m.id,
@@ -58,8 +62,7 @@ export function toPiModels(entries) {
     reasoning: m.reasoning === true,
     ...(m.reasoning && m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
     input: m.input ?? ['text'],
-    /* 订阅制按额度窗口计费，没有逐 token 价格 */
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    cost: cleanModelCost(m.cost) ?? cleanModelCost(catalog[catalogKey(m.id)]?.cost) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: m.contextWindow ?? 128000,
     maxTokens: m.maxTokens ?? 16384
   }))
@@ -88,7 +91,7 @@ export default async function commandcodeExtension(pi) {
   const catalog = readJson(join(here, 'generated', 'pi-model-catalog.json'))?.models ?? {}
   const cachePath = join(dir, CACHE_FILE)
   const register = (entries) =>
-    pi.registerProvider(PROVIDER, { name: 'Command Code', baseUrl: BASE_URL, api: 'openai-completions', models: toPiModels(entries) })
+    pi.registerProvider(PROVIDER, { name: 'Command Code', baseUrl: BASE_URL, api: 'openai-completions', models: toPiModels(entries, catalog) })
   const refresh = async () => {
     const entries = await fetchModels(catalog)
     if (!entries.length) return false

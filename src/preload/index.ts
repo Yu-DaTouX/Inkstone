@@ -116,6 +116,7 @@ import type { TaskInboxPage } from '../shared/task-inbox'
 import type { ContextActionSummary } from '../shared/context-actions'
 import type { ContextBackgroundUsageSummary } from '../shared/context-background-usage'
 import type { ContextInspectSnapshot } from '../shared/context-inspect'
+import type { AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from '../shared/account-quota'
 /**
  * 白名单桥 —— renderer 全程 nodeIntegration:false + contextIsolation:true。
  * 这里的方法就是渲染端能碰到的**全部**能力（HANDOFF §9 原则 3）。
@@ -195,6 +196,8 @@ const api: YanBridge = {
     invoke<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>('yan:linkSpaceProject', spaceId, projectId),
   unlinkSpaceProject: (spaceId, projectId) =>
     invoke<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>('yan:unlinkSpaceProject', spaceId, projectId),
+  setSessionArchived: (sessionId, archived) => invoke<{ ok: boolean; error?: string }>('yan:setSessionArchived', sessionId, archived),
+  setSessionPinned: (sessionId, pinned) => invoke<{ ok: boolean; error?: string }>('yan:setSessionPinned', sessionId, pinned),
   setSessionSpace: (sessionId, spaceId) =>
     invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:setSessionSpace', sessionId, spaceId),
   runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
@@ -317,6 +320,12 @@ const api: YanBridge = {
   setApiKey: (provider, key) => invoke<Ok>('yan:setApiKey', provider, key),
   clearAuth: (provider) => invoke<Ok>('yan:clearAuth', provider),
   authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
+  accountQuota: () => invoke<AccountQuotaReport>('yan:accountQuota'),
+  accountQuotaSource: (source, enabled) => invoke<AccountQuotaPrefs>('yan:accountQuotaSource', source, enabled),
+  accountLabel: (key, label) => invoke<AccountQuotaPrefs>('yan:accountLabel', key, label),
+  codexAccounts: () => invoke<CodexAccountView[]>('yan:codexAccounts'),
+  codexAccountSwitch: (key) => invoke<Ok>('yan:codexAccountSwitch', key),
+  codexAccountRemove: (key) => invoke<Ok>('yan:codexAccountRemove', key),
   toolchainStatus: () => invoke<ToolchainStatus>('yan:toolchainStatus'),
   gitRuntimeStatus: () => invoke<GitRuntimeStatus>('yan:gitRuntimeStatus'),
   gitRuntimeInstall: () => invoke<{ ok: boolean; error?: string }>('yan:gitRuntimeInstall'),

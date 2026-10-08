@@ -102,8 +102,15 @@ export function ModelThinkingPicker() {
     if (!el) return
     const measure = (): void => {
       const r = el.getBoundingClientRect()
-      /* 上方留 20px 安全边距（菜单本身还要往上 6px 的间隔），封顶 560px */
-      setMaxH(Math.max(200, Math.min(560, Math.floor(r.top - 26))))
+      /*
+       * 高度三重封顶：不越过标题栏（留 8px）、不超过窗口高度的 60%、最多 560px。
+       * 只按「触发器上方还有多少」算时，150% 缩放的 1080p 笔记本（约 680px 高）上
+       * 菜单会一直顶到标题栏，把整个对话区盖住；窗口最小尺寸时还会钻到标题栏下面。
+       */
+      const titlebar = document.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? 0
+      const room = Math.floor(r.top - 6 - Math.max(20, titlebar + 8))
+      const share = Math.floor(window.innerHeight * 0.6)
+      setMaxH(Math.max(200, Math.min(560, room, share)))
       /*
        * 菜单底边贴在触发器上沿往上 6px 处。
        * 夹到 ≥ 8px：窗口矮/被拖到极端位置时不能弹出视口外面。
@@ -263,7 +270,8 @@ export function ModelThinkingPicker() {
 
       {open ? (
         <div
-          className="mt-pop"
+          /* 矮窗口：两块设置收紧，把高度让给模型列表 */
+          className={`mt-pop${maxH && maxH < 480 ? ' compact' : ''}`}
           data-testid="model-menu"
           style={{
             ...(maxH ? { maxHeight: maxH } : {}),
@@ -345,7 +353,7 @@ export function ModelThinkingPicker() {
            * 与推理强度是**两件事**：一个管「想多深」，一个管「讲多细」。
            * 放在同一个菜单里，因为它们是同一个决定（要多少篇幅）。
            */}
-          <div className="mt-head">
+          <div className="mt-head mt-detail">
             <div className="mt-head-row">
               <span className="mt-head-title" title={t('picker.detailDesc')}>{t('picker.detail')}</span>
               <span className="spacer" />

@@ -175,15 +175,22 @@ function ReasoningCapsuleImpl({
           followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
         }}
       >
-        <div className="reason-window-content" data-testid="reasoning-body">
-          {head}
-          {tail ? (
-            <span className="reason-tail" key={shown.length}>
-              {tail}
-            </span>
-          ) : null}
-          {live ? <Caret className="cursor cursor-inline" /> : null}
-        </div>
+        {/*
+          * 收起时不挂全文：长会话里一段推理可达几万像素，收起的窗口只是 0 高度 + clip-path，
+          * 内容照样参与布局与合成。分屏焦点换边、整列重挂时这些巨型隐藏块会让合成器出不了图
+          *（整列白屏、滚动条与导航轨都在）。收起态只靠头部那一行预览，展开时再挂。
+          */}
+        {open ? (
+          <div className="reason-window-content" data-testid="reasoning-body">
+            {head}
+            {tail ? (
+              <span className="reason-tail" key={shown.length}>
+                {tail}
+              </span>
+            ) : null}
+            {live ? <Caret className="cursor cursor-inline" /> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   )

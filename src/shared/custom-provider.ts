@@ -65,6 +65,25 @@ export interface CustomProviderModel {
   baseUrl?: string
   /** pi 的思考档位映射（取自 pi 自带模型目录）；值为 null 表示该档不可用 */
   thinkingLevelMap?: Record<string, string | null>
+  /** 每百万 token 的报价（美元）；会话花费按它估算，没有就记 0 */
+  cost?: ModelCost
+}
+
+/** 每百万 token 的报价（美元），与 pi 的 models.json `cost` 同形 */
+export interface ModelCost {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+/** 只认有限的非负数，且至少有输入或输出价；其余当作没报价 */
+export function cleanModelCost(value: unknown): ModelCost | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const raw = value as Record<string, unknown>
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0)
+  const cost = { input: num(raw.input), output: num(raw.output), cacheRead: num(raw.cacheRead), cacheWrite: num(raw.cacheWrite) }
+  return cost.input > 0 || cost.output > 0 ? cost : undefined
 }
 
 /** pi 的思考档位名（models.json 里 thinkingLevelMap 的键） */
@@ -191,6 +210,8 @@ export function validateCustomProvider(input: Partial<CustomProviderInput>): Val
       const map = cleanThinkingLevelMap(raw.thinkingLevelMap)
       if (map) next.thinkingLevelMap = map
     }
+    const cost = cleanModelCost(raw.cost)
+    if (cost) next.cost = cost
     cleaned.push(next)
   }
   if (!cleaned.length) errors.push('至少要有一个模型')
@@ -235,6 +256,8 @@ export function readCustomProviders(modelsJson: unknown): CustomProviderView[] {
           if (typeof m.baseUrl === 'string' && m.baseUrl) model.baseUrl = m.baseUrl
           const map = m.reasoning === true ? cleanThinkingLevelMap(m.thinkingLevelMap) : undefined
           if (map) model.thinkingLevelMap = map
+          const cost = cleanModelCost(m.cost)
+          if (cost) model.cost = cost
           return model
         })
         .filter((m) => m.id),
@@ -377,6 +400,8 @@ export interface PiCatalogEntry {
   contextWindow?: number
   maxTokens?: number
   thinkingLevelMap?: Record<string, string | null>
+  /** 每百万 token 的报价（美元）；目录里没有标价的模型没有这一项 */
+  cost?: ModelCost
 }
 
 export type PiModelCatalog = Record<string, PiCatalogEntry>
@@ -437,6 +462,8 @@ export function describeDiscoveredModels(
     if (reasoning && known?.thinkingLevelMap && known.api === api && api !== 'openai-completions') {
       model.thinkingLevelMap = { ...known.thinkingLevelMap }
     }
+    const cost = cleanModelCost(known?.cost)
+    if (cost) model.cost = cost
     return model
   })
 }

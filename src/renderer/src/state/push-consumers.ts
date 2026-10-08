@@ -20,6 +20,19 @@ export interface PushContext {
 export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boolean {
   const { set } = ctx
   switch (m.ch) {
+    case 'session-moved': {
+      /* 会话换了工作目录：刷新列表；正看着它就按新目录重新打开（旧运行实例宿主已停掉） */
+      const p = m.payload
+      if (!p.ok) {
+        set({ notices: ctx.pushNotice(s.notices, 'error', `会话没有移动：${p.error ?? '未知原因'}`) })
+        break
+      }
+      const view = ctx.get()
+      const showing = view.peekedPath === p.sessionFile || view.session?.sessionFile === p.sessionFile || view.session?.sessionId === p.sessionId
+      set({ notices: ctx.pushNotice(view.notices, 'info', `会话已移到 ${p.cwd}`) })
+      void view.refreshSessions().then(() => { if (showing) void ctx.get().switchSession(p.sessionFile) })
+      break
+    }
     case 'win-state':
       set({ maximized: m.payload.maximized, alwaysOnTop: m.payload.alwaysOnTop })
       break
@@ -83,7 +96,7 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
         // pi 都已退出：不能再宣称「回合进行中」，否则推理窗口会永远不折
         set({
           conn: 'exited',
-          connDetail: `pi 已退出（code=${m.payload.code ?? 'null'}）`,
+          connDetail: `Agent 内核已退出（code=${m.payload.code ?? 'null'}）`,
           ...(s.session ? { session: { ...s.session, isAgentRunning: false } } : {})
         })
       } else if (m.payload.state === 'error') {

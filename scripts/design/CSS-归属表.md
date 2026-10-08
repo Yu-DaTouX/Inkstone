@@ -18,18 +18,18 @@
 | 8 | `layout.css` | modules | 239 | 19 | 20 | 4 | 2 |
 | 9 | `shell.css` | modules | 690 | 141 | 145 | 2 | 7 |
 | 10 | `dialog.css` | modules | 309 | 44 | 45 | 0 | 0 |
-| 11 | `rail.css` | modules | 1089 | 199 | 208 | 0 | 0 |
-| 12 | `chat.css` | modules | 2719 | 379 | 437 | 5 | 0 |
-| 13 | `composer.css` | modules | 2107 | 306 | 312 | 2 | 0 |
+| 11 | `rail.css` | modules | 1116 | 205 | 214 | 0 | 0 |
+| 12 | `chat.css` | modules | 2854 | 397 | 455 | 6 | 0 |
+| 13 | `composer.css` | modules | 2130 | 311 | 317 | 2 | 0 |
 | 14 | `approval.css` | modules | 145 | 17 | 17 | 0 | 0 |
 | 15 | `tools.css` | modules | 3945 | 614 | 675 | 2 | 5 |
 | 16 | `browser.css` | modules | 423 | 49 | 53 | 0 | 0 |
 | 17 | `terminal.css` | modules | 82 | 10 | 10 | 0 | 0 |
 | 18 | `review.css` | modules | 741 | 97 | 98 | 0 | 0 |
 | 19 | `workbench.css` | modules | 1981 | 396 | 413 | 3 | 0 |
-| 20 | `workspace.css` | modules | 72 | 65 | 66 | 0 | 0 |
+| 20 | `workspace.css` | modules | 100 | 80 | 83 | 0 | 0 |
 | 21 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | | **19267** | **3076** | | | |
+| | **合计** | | **19480** | **3120** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -47,16 +47,16 @@
 | `layout.css` | 18 |
 | `shell.css` | 141 |
 | `dialog.css` | 44 |
-| `rail.css` | 199 |
-| `chat.css` | 377 |
-| `composer.css` | 306 |
+| `rail.css` | 205 |
+| `chat.css` | 395 |
+| `composer.css` | 311 |
 | `approval.css` | 17 |
 | `tools.css` | 614 |
 | `browser.css` | 49 |
 | `terminal.css` | 10 |
 | `review.css` | 97 |
 | `workbench.css` | 395 |
-| `workspace.css` | 65 |
+| `workspace.css` | 80 |
 | `icon-state.css` | 1 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）

@@ -75,7 +75,9 @@ export function ConversationOutline() {
   const programmaticAt = useRef(0)
 
   const activeFromGeometry = (): number => {
-    const box = document.querySelector('.stream')
+    /* 只看自己所在的这一列（分屏时窗口里有多个 `.stream` / 回合） */
+    const scope: ParentNode = (root.current?.offsetParent as HTMLElement | null) ?? document
+    const box = scope.querySelector('.stream')
     if (!box) return 0
     const boxTop = box.getBoundingClientRect().top
 
@@ -103,7 +105,7 @@ export function ConversationOutline() {
     /** 视口里最靠上的一轮（内容不满一屏时的兜底） */
     let topmost = -1
     let topmostTop = Infinity
-    for (const el of document.querySelectorAll<HTMLElement>('[data-turn-id]')) {
+    for (const el of scope.querySelectorAll<HTMLElement>('[data-turn-id]')) {
       const id = el.dataset.turnId
       const idx = turns.findIndex((x) => x.msgId === id)
       if (idx < 0) continue
@@ -194,9 +196,10 @@ export function ConversationOutline() {
      *    CSS 的 left:0）。两者的内边距与 max-width 完全一致，量哪个都行。
      */
     const innerOf = (): HTMLElement | null =>
-      document.querySelector<HTMLElement>('.stream-inner, .stream-row')
+      host.querySelector<HTMLElement>('.stream-inner, .stream-row')
 
-    const streamOf = (): HTMLElement | null => document.querySelector<HTMLElement>('.stream')
+    /* 只在自己所在的这一列里找：分屏时窗口里有好几个 `.stream`，全局取第一个会量到别的磁贴 */
+    const streamOf = (): HTMLElement | null => host.querySelector<HTMLElement>('.stream')
 
     const measure = (): void => {
       /*
@@ -257,7 +260,7 @@ export function ConversationOutline() {
     const stream0 = streamOf()
     if (stream0) ro.observe(stream0)
     /* 输入区高度一变，对话区高度也跟着变 */
-    const composer0 = document.querySelector<HTMLElement>('.composer-wrap')
+    const composer0 = host.querySelector<HTMLElement>('.composer-wrap')
     if (composer0) ro.observe(composer0)
     window.addEventListener('resize', measure)
     /* 设置里改对话宽度后，App 会派这个事件 */

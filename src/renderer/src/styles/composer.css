@@ -625,6 +625,29 @@
   flex: 1;
 }
 
+/*
+ * 矮窗口（菜单可用高度 < 480px，常见于 150% 缩放的笔记本）：两块设置收紧，
+ * 「回复详细程度」标题与分段并成一行（当前值由分段本身表达），把高度让给模型列表。
+ */
+.mt-pop.compact .mt-head {
+  padding: var(--sp-2) var(--sp-3);
+}
+.mt-pop.compact .mt-head-row {
+  margin-bottom: 0;
+}
+.mt-pop.compact .ui-step-slider {
+  padding-top: var(--sp-2);
+}
+.mt-pop.compact .mt-detail {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-3);
+}
+.mt-pop.compact .mt-detail .mt-head-level {
+  display: none;
+}
+
 /* 下拉箭头是转向的 chevron 图标（界面里不用 ▾ 这类文字符号，设计规范 §3.4） */
 .mt-chev {
   flex: none;

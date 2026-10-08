@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { VList, type VListHandle } from 'virtua'
 import { IconSprite } from './icons/Icon'
 import { PeerApprovalDialog } from './components/shell/PeerApprovalDialog'
@@ -9,6 +9,10 @@ import { TitleBar, type Theme } from './components/shell/TitleBar'
 import { Rail } from './components/rail/Rail'
 import { Workspace, WorkspacePane } from './components/workbench/Workspace'
 import { workbenchSessionKey } from './state/workbench'
+import { SPLIT_WORKSPACE_KEY, displayedSessionOf, reconcileSplit, useSplitView, type SplitSessionRef } from './state/split-view'
+import { conversationPaneId } from './state/workspace-layout'
+import { SplitPaneHead, SplitPeerPane, closeSplitTile } from './components/chat/SplitPeerPane'
+import { SplitDropZone } from './components/chat/SplitDropZone'
 import { RightPanel } from './components/toolbar/RightPanel'
 import { FloatingTiles } from './components/toolbar/FloatingTiles'
 import { Resizer } from './components/toolbar/Resizer'
@@ -58,6 +62,23 @@ import './styles/index.css'
 const VIRTUALIZE_AT = 80
 /** 消息条数达到这个量级就虚拟化（回合数之外的第二道闸） */
 const VIRTUALIZE_MSGS_AT = 200
+
+/**
+ * 虚拟列表「看上去是空的」：容器有高度，却一行都没有，或有行但没有一行落在视口里。
+ * 只看几何，不依赖列表内部状态 —— 它自己的状态正是出问题的那一块。
+ */
+function listLooksBlank(list: HTMLElement | null | undefined): boolean {
+  if (!list) return false
+  const box = list.getBoundingClientRect()
+  if (box.height < 40) return false
+  const rows = list.querySelectorAll('.stream-row')
+  if (rows.length === 0) return true
+  for (const row of rows) {
+    const r = row.getBoundingClientRect()
+    if (r.height > 0 && r.bottom > box.top + 1 && r.top < box.bottom - 1) return false
+  }
+  return true
+}
 
 function readTheme(parent: Theme | undefined): Theme {
   if (parent) return parent
@@ -171,6 +192,19 @@ export default function App() {
   const questionLog = useStore((s) => s.questionLog)
   const questionLogSession = useStore((s) => s.questionLogSession)
   const session = useStore((s) => s.session)
+  /*
+   * 分屏（设计规范 §4）：两侧各绑一条会话，焦点那一侧就是活动会话，渲染完整对话与输入框；
+   * 另一侧只读、输入框收起。焦点按「正在显示哪条会话」推导，变化写回分屏状态。
+   */
+  const peekedSessionId = useStore((s) => s.peekedSessionId)
+  const peekedPath = useStore((s) => s.peekedPath)
+  const storedSplit = useSplitView((s) => s.split)
+  const displayedSession = useMemo<SplitSessionRef | null>(
+    () => displayedSessionOf({ peekedSessionId, peekedPath, session: session ? { sessionId: session.sessionId, sessionFile: session.sessionFile } : null }),
+    [peekedSessionId, peekedPath, session?.sessionId, session?.sessionFile]
+  )
+  const split = storedSplit ? reconcileSplit(storedSplit, displayedSession) : null
+  useLayoutEffect(() => { useSplitView.getState().sync(displayedSession) }, [displayedSession, storedSplit])
   const settings = useStore((s) => s.settings)
   const bootstrap = useStore((s) => s.bootstrap)
   const startConnWatch = useStore((s) => s.startConnWatch)
@@ -567,7 +601,74 @@ export default function App() {
     const el = streamRef.current
     if (el) el.scrollTop = el.scrollHeight
     // 依赖 turns 而不是 messages：回合合并后一块里也可能长高（新段落）
-  }, [turns, stick, virtual])
+    // split?.live：分屏焦点换边时对话列在另一个磁贴里重新挂载，新的滚动容器从头开始，要重新贴底
+  }, [turns, stick, virtual, split?.live])
+
+  /*
+   * 长会话的虚拟列表在「刚挂载 / 换了磁贴」时可能一格都没画出来：列表按挂载那一刻量到的
+   * 视口算要画哪几行，磁贴还在重排时量到的是 0，之后高度变大它也不重算 ——
+   * 滚动条、导航轨都在，正文却是一片空白（分屏拖入、焦点换边时用户碰到过）。
+   * 挂载后的前几帧里检查：容器有高度、应当有行、实际一行都没有 → 换 key 重挂一次，
+   * 重挂时视口已经稳定；没出问题就只是顺手贴底。
+   */
+  const centerRef = useRef<HTMLElement>(null)
+  const [vlistKey, setVlistKey] = useState(0)
+  const vlistRemounts = useRef(0)
+  /** 对话列刚搬到新磁贴、还在稳定：新列表从顶部起步发出的 scroll 事件不算用户往上翻 */
+  const vlistSettlingRef = useRef(false)
+  const lastTurnIndexRef = useRef(0)
+  lastTurnIndexRef.current = Math.max(0, turns.length - 1)
+  useEffect(() => {
+    if (!virtual) return undefined
+    if (vlistKey === 0) vlistRemounts.current = 0
+    /* 搬家前用户停在底部就搬完仍停在底部；往上翻着的不去动它 */
+    const wasStick = stickRef.current
+    vlistSettlingRef.current = true
+    let frames = 0
+    let raf = 0
+    const tick = (): void => {
+      const list = centerRef.current?.querySelector<HTMLElement>('.stream')
+      const blank = listLooksBlank(list)
+      if (blank && vlistRemounts.current < 3) {
+        vlistRemounts.current += 1
+        setVlistKey((k) => k + 1)
+        return
+      }
+      if (wasStick) {
+        stickRef.current = true
+        vlistRef.current?.scrollToIndex(lastTurnIndexRef.current, { align: 'end' })
+      }
+      if (++frames < 24) {
+        raf = requestAnimationFrame(tick)
+        return
+      }
+      vlistSettlingRef.current = false
+      if (wasStick) setStickNow(true)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => {
+      cancelAnimationFrame(raf)
+      vlistSettlingRef.current = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [split?.live, !!split, virtual, vlistKey])
+
+  /* 分屏期间磁贴随时可能重排：每半秒再看一眼，空白了就重挂并贴回底部（最多 3 次，换会话后清零） */
+  const sessionIdentity = displayedSession?.path ?? displayedSession?.sessionId ?? ''
+  useEffect(() => {
+    vlistRemounts.current = 0
+  }, [sessionIdentity, split?.live])
+  useEffect(() => {
+    if (!virtual || !split) return undefined
+    const timer = window.setInterval(() => {
+      if (vlistSettlingRef.current || vlistRemounts.current >= 3) return
+      const list = centerRef.current?.querySelector<HTMLElement>('.stream')
+      if (!listLooksBlank(list)) return
+      vlistRemounts.current += 1
+      setVlistKey((k) => k + 1)
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [virtual, !!split])
 
   const onScroll = () => {
     const el = streamRef.current
@@ -675,7 +776,7 @@ export default function App() {
   /** 虚拟列表的滚动回调：用 handle 的尺寸算「是否贴底」 */
   const onVirtualScroll = () => {
     const h = vlistRef.current
-    if (!h) return
+    if (!h || vlistSettlingRef.current) return
     setStickNow(h.scrollSize - h.scrollOffset - h.viewportSize < 40)
   }
 
@@ -778,68 +879,23 @@ export default function App() {
     .filter(Boolean)
     .join(' ')
 
-  return (
-    <>
-      <IconSprite />
-      {/* 另一台砚申请本次连接时的所有者审批（全局，不依赖设置页是否打开） */}
-      <PeerApprovalDialog />
-      {switcherOpen ? <SessionSwitcher onClose={() => setSwitcherOpen(false)} /> : null}
-      <RewindDialog />
-      <div className={appCls}>
-        <TitleBar
-          onToggleRail={() => setRailPinned(!railPinned)}
-          railOpen={railOpen}
-          onRailHover={hoverRail}
-          onToggleBrowser={() => void (browserOpen ? closeBrowser() : openBrowser())}
-          browserOpen={browserOpen}
-          alwaysOnTop={alwaysOnTop}
-          onToggleAlwaysOnTop={() => void toggleAlwaysOnTop()}
-          maximized={maximized}
-          onSettings={() => (settingsOpen ? closeSettings() : openSettings())}
-          center={
-            <Continuity
-              mapEnabled={dailyMode}
-              mapOpen={mapOpen}
-              onToggleMap={showMap}
-              spaceEnabled={dailyMode && showSpaces}
-              spaceOpen={spaceOpen}
-              onToggleSpace={(open) => showSpace(open)}
-            />
-          }
-        />
-
-        <div className="workspace workspace-tiled">
-          {/* ⚠️ 这里曾经有一个 .rail-hotzone —— 
-              它是 .workspace 的第一个 grid item，会白占掉第一列，
-              导致 .rail-slot 被挤到第二列、.center 落到 0px 宽的第三列。
-              而「鼠标靠近左边缘」是用 window mousemove 的 clientX 判断的，
-              根本不需要 DOM 元素。 */}
-        {/*
-         * 展开把手**已删除**（曾经用 .rail-stub）。
-         *
-         * 为什么删：它和左栏头部的开关是**两个不同的元素、两套几何**，
-         * 所以展开前/后按钮的位置与大小对不上（用户报的第二个问题）。
-         * 而且收起时左栏虽然透明却仍然盖在把手上（过时的
-         * `.app.rail-off .rail{pointer-events:auto}`），导致把手根本点不到 ——
-         * 实测 elementFromPoint 命中的是 rail-brand-btn。
-         *
-         * 现在改成：**同一个按钮**（左栏头部的 .rail-brand-btn）在收起时
-         * 仍然可见可点 —— 收起宽度 50px 刚好容纳它，几何完全一致。
-         */}
-        <div className="rail-slot" onPointerEnter={() => { if (!railOpen) hoverRail(true) }} onPointerLeave={() => { if (!railOpen) hoverRail(false) }}>
-          {/*
-            左栏开关在标题栏最左上（用户要求，参考 Codex）——
-            所以收起就是真的 0 宽，这里不再需要留槽/悬停按钮。
-            收起后仍能展开：标题栏那个按钮的位置从不变。
-          */}
-          <Rail />
-          {/* 宽度把手：贴在左栏右缘（放进 slot 内部，不占 grid 列） */}
-          <Resizer side="rail" />
-        </div>
-
-          <Workspace sessionKey={workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)}>
-          <WorkspacePane id="chat" title="主会话" icon="chat-round">
-          <section className="center">
+  /*
+   * 活动会话的对话列。分屏时它跟着焦点放进那一侧的磁贴，另一侧是只读投影（SplitPeerPane）；
+   * 焦点换边时这一列在新位置重新挂载，输入框随之从底部升起（`split-live`）。
+   */
+  const sessionHeader = (
+    <Continuity
+      mapEnabled={dailyMode}
+      mapOpen={mapOpen}
+      onToggleMap={showMap}
+      spaceEnabled={dailyMode && showSpaces}
+      spaceOpen={spaceOpen}
+      onToggleSpace={(open) => showSpace(open)}
+    />
+  )
+  const chatColumn = (
+          <section ref={centerRef} className={`center${split ? ' split-live' : ''}`} data-testid={split ? 'split-live' : undefined}>
+            {split ? <SplitPaneHead index={split.live} target={split.tiles[split.live]}>{sessionHeader}</SplitPaneHead> : null}
             {conn !== 'ready' ? <ConnBar conn={conn} /> : null}
 
             <ConversationOutline />
@@ -865,6 +921,7 @@ export default function App() {
               <SessionMap onOpen={openSessionFromMap} onBackToChat={() => showMap(false)} />
             ) : virtual ? (
               <VList
+                key={`${sessionIdentity}|${vlistKey}`}
                 ref={vlistRef}
                 data={turns}
                 className="stream"
@@ -928,12 +985,77 @@ export default function App() {
             <SubagentNote />
             <Composer />
           </section>
+  )
 
-          </WorkspacePane>
+  return (
+    <>
+      <IconSprite />
+      {/* 另一台砚申请本次连接时的所有者审批（全局，不依赖设置页是否打开） */}
+      <PeerApprovalDialog />
+      {switcherOpen ? <SessionSwitcher onClose={() => setSwitcherOpen(false)} /> : null}
+      <RewindDialog />
+      <div className={appCls}>
+        <TitleBar
+          onToggleRail={() => setRailPinned(!railPinned)}
+          railOpen={railOpen}
+          onRailHover={hoverRail}
+          onToggleBrowser={() => void (browserOpen ? closeBrowser() : openBrowser())}
+          browserOpen={browserOpen}
+          alwaysOnTop={alwaysOnTop}
+          onToggleAlwaysOnTop={() => void toggleAlwaysOnTop()}
+          maximized={maximized}
+          onSettings={() => (settingsOpen ? closeSettings() : openSettings())}
+          /* 分屏时会话头移到各自磁贴上方（参考 Claude Code），标题栏不再放当前会话 */
+          center={split ? null : sessionHeader}
+        />
+
+        <div className="workspace workspace-tiled">
+          {/* ⚠️ 这里曾经有一个 .rail-hotzone —— 
+              它是 .workspace 的第一个 grid item，会白占掉第一列，
+              导致 .rail-slot 被挤到第二列、.center 落到 0px 宽的第三列。
+              而「鼠标靠近左边缘」是用 window mousemove 的 clientX 判断的，
+              根本不需要 DOM 元素。 */}
+        {/*
+         * 展开把手**已删除**（曾经用 .rail-stub）。
+         *
+         * 为什么删：它和左栏头部的开关是**两个不同的元素、两套几何**，
+         * 所以展开前/后按钮的位置与大小对不上（用户报的第二个问题）。
+         * 而且收起时左栏虽然透明却仍然盖在把手上（过时的
+         * `.app.rail-off .rail{pointer-events:auto}`），导致把手根本点不到 ——
+         * 实测 elementFromPoint 命中的是 rail-brand-btn。
+         *
+         * 现在改成：**同一个按钮**（左栏头部的 .rail-brand-btn）在收起时
+         * 仍然可见可点 —— 收起宽度 50px 刚好容纳它，几何完全一致。
+         */}
+        <div className="rail-slot" onPointerEnter={() => { if (!railOpen) hoverRail(true) }} onPointerLeave={() => { if (!railOpen) hoverRail(false) }}>
+          {/*
+            左栏开关在标题栏最左上（用户要求，参考 Codex）——
+            所以收起就是真的 0 宽，这里不再需要留槽/悬停按钮。
+            收起后仍能展开：标题栏那个按钮的位置从不变。
+          */}
+          <Rail />
+          {/* 宽度把手：贴在左栏右缘（放进 slot 内部，不占 grid 列） */}
+          <Resizer side="rail" />
+        </div>
+
+          {/* 分屏时工作区用固定的分屏键：焦点在两条会话间切换，磁贴排布不跟着换 */}
+          <Workspace sessionKey={split ? SPLIT_WORKSPACE_KEY : workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)}>
+          {(split?.tiles ?? [null]).map((tile, i) => (
+            <WorkspacePane
+              key={conversationPaneId(i)}
+              id={conversationPaneId(i)}
+              title={i === 0 ? '主会话' : t('split.paneTitle')}
+              icon="chat-round"
+              actions={split ? [{ label: t('split.closeSide'), icon: 'close', run: () => closeSplitTile(i) }] : undefined}
+            >
+              {!split || split.live === i ? chatColumn : <SplitPeerPane index={i} target={tile!} />}
+            </WorkspacePane>
+          ))}
           <RightPanel />
           </Workspace>
           {/* 浮动工具磁贴（实施-12 U-4/U-5）：应用内容区上的独立层，不随右栏收起而消失 */}
           <FloatingTiles />
+          <SplitDropZone />
         </div>
         <StatusBar />
       </div>

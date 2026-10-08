@@ -19,8 +19,8 @@
 | `layout.css` | 2 | 2 | 2 | 1 | 0 | 0 |
 | `shell.css` | 3 | 1 | 43 | 21 | 0 | 0 |
 | `dialog.css` | 1 | 0 | 13 | 7 | 0 | 0 |
-| `rail.css` | 1 | 1 | 71 | 51 | 0 | 0 |
-| `chat.css` | 35 | 10 | 130 | 88 | 0 | 0 |
+| `rail.css` | 1 | 1 | 72 | 52 | 0 | 0 |
+| `chat.css` | 34 | 10 | 135 | 90 | 0 | 0 |
 | `composer.css` | 2 | 0 | 115 | 80 | 0 | 0 |
 | `approval.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `tools.css` | 3 | 2 | 284 | 207 | 0 | 0 |
@@ -28,9 +28,9 @@
 | `terminal.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `review.css` | 0 | 0 | 81 | 51 | 0 | 0 |
 | `workbench.css` | 0 | 0 | 155 | 120 | 0 | 0 |
-| `workspace.css` | 0 | 0 | 8 | 4 | 0 | 0 |
+| `workspace.css` | 0 | 0 | 9 | 5 | 0 | 0 |
 | `icon-state.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **60** | **21** | **1322** | **959** | **0** | **0** |
+| **合计** | **59** | **21** | **1329** | **963** | **0** | **0** |
 
 ## 2. 无对应令牌的值（语义缺口）
 
@@ -40,18 +40,18 @@
 | `20px` | length | 26 | chat.css, composer.css, rail.css, settings.css, shell.css, tools.css, ui.css |
 | `10px` | length | 24 | chat.css, composer.css, motion.css, rail.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
 | `22px` | length | 21 | chat.css, composer.css, review.css, shell.css, tools.css, ui.css, workbench.css |
-| `26px` | length | 19 | app.css, browser.css, composer.css, rail.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
+| `26px` | length | 20 | app.css, browser.css, chat.css, composer.css, rail.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
 | `220px` | length | 16 | chat.css, motion.css, review.css, settings.css, shell.css, tools.css, ui.css, workbench.css, workspace.css |
 | `36px` | length | 14 | chat.css, composer.css, layout.css, review.css, tools.css, ui.css |
 | `320px` | length | 13 | chat.css, composer.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
 | `420px` | length | 10 | chat.css, composer.css, review.css, tools.css, ui.css, workbench.css |
+| `5px` | length | 9 | chat.css, composer.css, shell.css, tools.css, ui.css |
 | `120px` | length | 9 | composer.css, motion.css, settings.css, tools.css, workbench.css |
 | `180px` | length | 9 | browser.css, composer.css, dialog.css, settings.css, shell.css, tools.css, workbench.css |
 | `11.5px` | length | 9 | review.css, settings.css |
 | `240px` | length | 8 | browser.css, composer.css, ui.css, workbench.css, workspace.css |
 | `34px` | length | 8 | app.css, chat.css, composer.css, rail.css, tools.css, workbench.css |
 | `160px` | length | 8 | browser.css, chat.css, review.css, settings.css, tools.css, workbench.css |
-| `5px` | length | 7 | composer.css, shell.css, tools.css, ui.css |
 | `rgb(0, 0, 0, 1.000)` | color | 7 | chat.css, composer.css, dialog.css, settings.css |
 | `260px` | length | 7 | composer.css, dialog.css, settings.css, tools.css |
 | `30px` | length | 6 | chat.css, composer.css, motion.css, review.css, tools.css, ui.css |
@@ -81,7 +81,6 @@
 | `88px` | length | 2 | shell.css, workbench.css |
 | `430px` | length | 2 | composer.css, rail.css |
 | `rgb(127, 127, 127)` | color | 2 | chat.css |
-| `rgb(16, 19, 24)` | color | 2 | chat.css |
 | `rgb(111, 111, 111)` | color | 2 | chat.css |
 | `480px` | length | 2 | chat.css, workbench.css |
 | `78px` | length | 2 | composer.css, tools.css |
@@ -96,6 +95,7 @@
 | `600px` | length | 1 | settings.css |
 | `46px` | length | 1 | shell.css |
 | `rgb(196, 43, 28)` | color | 1 | shell.css |
+| `rgb(177, 38, 26)` | color | 1 | shell.css |
 | … | | | 其余 34 条省略 |
 
 ## 3. 定义了但没被引用的令牌
@@ -142,6 +142,7 @@
 | `--on-accent` | #10131f / #ffffff | tokens.css |
 | `--shadow-pop` | 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2) / 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) | tokens.css |
 | `--w-right` | var(--w-panel-user, 264px) / var(--w-panel-user, 220px) / 0px / var(--w-panel-user, 336px) / min(var(--w-panel-user, 190px), max(170px, calc((100vw - 360px) / 2))) / min(var(--w-panel-user, 170px), max(170px, calc((100vw - 360px) / 2))) / min(calc(var(--w-panel-user, 340px) + 400px), max(400px, calc(100vw - var(--w-rail) - 420px))) / calc(100vw - var(--w-rail)) / min(420px, 48vw) | tokens.css, layout.css, workbench.css |
+| `--mo-shift` | 4px / var(--sp-5) | motion.css, chat.css |
 | `--think-off` | #8a8a84 / #6a6a64 | motion.css |
 | `--think-minimal` | #a4a49e / #5c5c56 | motion.css |
 | `--think-low` | #6990b8 / #335d82 | motion.css |
@@ -157,4 +158,4 @@
 ## 5. 概况
 
 - 令牌总数：141（被引用 137）
-- 令牌引用点：5114（含组件内联 style）
+- 令牌引用点：5184（含组件内联 style）

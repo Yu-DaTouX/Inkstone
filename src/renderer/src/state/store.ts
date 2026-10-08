@@ -83,6 +83,7 @@ import {
 } from './session-runtime'
 import { routePush, viewingSessionId } from './push-routing'
 import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTaskStatePush } from './push-consumers'
+import { addSourceFiles } from './source-files'
 
 /**
  * 提醒的标题（系统通知用）。按界面语言分。
@@ -622,6 +623,9 @@ export interface Store {
   ensureActivated: () => Promise<boolean>
   /** 只改 Yan 的产品归属，不移动 pi 的 JSONL，也不停止运行实例。 */
   moveSession: (sessionId: string, projectId: string | null) => Promise<boolean>
+  /** 归档 / 取消归档、置顶 / 取消置顶：写宿主标记后刷新列表。 */
+  setSessionArchived: (sessionId: string, archived: boolean) => Promise<boolean>
+  setSessionPinned: (sessionId: string, pinned: boolean) => Promise<boolean>
   renameSession: (name: string) => Promise<void>
   /** 给**任意**会话（含非当前会话）起一个手动名，粘性、不被自动标题覆盖 */
   setManualTitle: (sessionId: string, name: string) => Promise<void>
@@ -1185,6 +1189,17 @@ function applyBrowserVisibility(get: () => Store): void {
   if (get().browserNativeVisible !== desired) useStore.setState({ browserNativeVisible: desired })
   void window.yan.browser.setVisible(desired)
 }
+
+/**
+ * 会话选择代次（不放进 state：它只是并发闸门，不需要渲染、也不需要持久化）。
+ *
+ * 为什么要它：`switchSession` 的「peek 内容 → 请求 pi 切换」跨了两次 await。
+ * 大历史会话的 peek 慢、小会话快，用户快速连点两个会话时，先点的那个可能后
+ * 完成 —— 旧请求会把新选择覆盖掉（内容、待激活目标都指回上一条会话）。
+ * 每次点击自增一次，await 回来后发现自己已经过期就整段放弃，既不写投影
+ * 也不再向主进程请求激活。
+ */
+let sessionSwitchGate = 0
 
 export const useStore = create<Store>((rawSet, get) => {
   /*
@@ -2416,6 +2431,8 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   switchSession: async (path) => {
+    /* 本次点击的代次；后面每个 await 之后都要核对自己还没过期 */
+    const gate = ++sessionSwitchGate
     /*
      * 会话身份先取：下面 ② 要用它（cwd / 归属），① 的 peek 也要用它把
      * 「刚铺上的内容」与随后 pi 的 sync 认成同一条会话。
@@ -2427,10 +2444,22 @@ export const useStore = create<Store>((rawSet, get) => {
      */
     set({ goal: null, handoff: null })
 
+    /*
+     * 运行缓存里已有这条会话的消息（分屏的另一侧正显示着它、或后台在跑）：同步先铺上，
+     * 不等文件读取 —— 否则焦点换边的这几十毫秒里，对话列还是上一条会话的内容或空白。
+     * 后面的 peek 与 pi 的权威同步照常覆盖。
+     */
+    const cachedMessages = sum?.id ? get().sessionRuntimes[sum.id]?.messages : undefined
+    if (cachedMessages?.length) {
+      set({ messages: cachedMessages, peekedPath: path, peekedSessionId: sum?.id ?? null, peekNote: null })
+    }
+
     // ① 立即显示（不等 pi）
     performance.mark('yan:switch-start')
     try {
       const peek = await window.yan.peekSession(path)
+      /* 用户又点了别的会话（这次 click 已经过期）：整段放弃，不写投影也不再请求激活 */
+      if (gate !== sessionSwitchGate) return
       performance.mark('yan:switch-peeked')
       if (peek && peek.messages.length) {
         set({
@@ -2442,7 +2471,8 @@ export const useStore = create<Store>((rawSet, get) => {
         requestAnimationFrame(() => requestAnimationFrame(() => performance.mark('yan:switch-painted')))
       }
     } catch {
-      /* 读不出来就等 pi —— 不是致命错误 */
+      /* 读不出来就等 pi —— 不是致命错误；但过期了同样不继续 */
+      if (gate !== sessionSwitchGate) return
     }
 
     // ② 切视图（N12：命中运行实例就只是切换订阅，**不停任何**会话）
@@ -2466,6 +2496,8 @@ export const useStore = create<Store>((rawSet, get) => {
       window.yan.selectSession({ sessionFile: path, sessionId: sum?.id, projectId, scope, cwd, preview: true })
     )
     performance.mark('yan:switch-selected')
+    /* 这次点击已经过期：结果一律不采用（宿主侧的激活顺序由它自己的队列决定） */
+    if (gate !== sessionSwitchGate) return
     if (!res.ok) {
       set({
         notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'),
@@ -2544,6 +2576,26 @@ export const useStore = create<Store>((rawSet, get) => {
     const res = await window.yan.moveSession(sessionId, projectId)
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '移动会话失败') })
+      return false
+    }
+    await get().refreshSessions()
+    return true
+  },
+
+  setSessionArchived: async (sessionId, archived) => {
+    const res = await window.yan.setSessionArchived(sessionId, archived)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '归档失败') })
+      return false
+    }
+    await get().refreshSessions()
+    return true
+  },
+
+  setSessionPinned: async (sessionId, pinned) => {
+    const res = await window.yan.setSessionPinned(sessionId, pinned)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '置顶失败') })
       return false
     }
     await get().refreshSessions()
@@ -3353,17 +3405,12 @@ export const useStore = create<Store>((rawSet, get) => {
     try {
       const sessionId = get().session?.sessionId
       if (sessionId) {
-        const KEY = 'yan.source-files.v1'
-        const prev: { path: string; name: string; addedAt: number; sessionId?: string }[] = JSON.parse(
-          localStorage.getItem(KEY) ?? '[]'
-        )
-        const mine = Array.isArray(prev) ? prev.filter((x) => x.sessionId === sessionId) : []
-        for (const path of unique) {
-          if (mine.some((x) => x.path === path)) continue
-          mine.push({ path, name: path.split(/[\\/]/).pop() ?? path, addedAt: Date.now(), sessionId })
-        }
-        /* 只保留最近的 200 条（够用，且不会把 localStorage 撑爆） */
-        localStorage.setItem(KEY, JSON.stringify(mine.slice(-200)))
+        /*
+         * 登记按会话隔离，且**保留其它会话的记录**：旧实现读全局数组后
+         * 只保留本会话的，再用它覆盖整个键 —— 在 B 会话加一个文件就把
+         * A 会话的登记全清了（切回 A 时来源菜单什么都没有）。
+         */
+        addSourceFiles(sessionId, unique)
       }
     } catch {
       /* 记不下来不影响这次发送 */
