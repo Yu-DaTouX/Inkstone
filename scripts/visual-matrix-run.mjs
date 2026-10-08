@@ -18,14 +18,16 @@
  * 子进程自己的 stdio 护栏见 `scripts/lib/stdio-guard.mjs`（那是第一道防线）。
  *
  * 用法：
- *   npm run visual:matrix          # 全部组
+ *   npm run visual:matrix          # 核心组与引导组
  *   npm run visual:matrix -- 0 2   # 只跑指定组
+ *   YAN_MATRIX_ONLY=modelmenufull npm run visual:matrix  # 模型菜单深浅与窄窗专项
  */
 import './lib/stdio-guard.mjs'
 import { execFileSync, spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
+import { selectRunGroups } from './lib/visual-matrix-selection.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const electron = createRequire(import.meta.url)('electron')
@@ -36,7 +38,8 @@ const electron = createRequire(import.meta.url)('electron')
  */
 const ALL = ['0', '1', '2', '3', '4', '5', '6', '7', '8', 'onboarding']
 const wanted = process.argv.slice(2).filter(Boolean)
-const groups = wanted.length ? wanted : ALL
+const only = (process.env.YAN_MATRIX_ONLY ?? '').split(',').filter(Boolean)
+const groups = selectRunGroups(wanted, only, ALL)
 
 /**
  * 单组上限。
