@@ -28,9 +28,6 @@ export interface SplitLayout {
   live: number
 }
 
-/** 分屏时工作区布局用这个键：焦点在会话之间切换时，磁贴排布保持不变 */
-export const SPLIT_WORKSPACE_KEY = 'split'
-
 const normPath = (p?: string): string => (p ?? '').replace(/[\\/]+/g, '/').toLowerCase()
 
 export function sameSplitSession(a: SplitSessionRef | null | undefined, b: SplitSessionRef | null | undefined): boolean {
@@ -126,8 +123,14 @@ export function removeSplitTile(split: SplitLayout, index: number): SplitLayout 
   return { tiles, live }
 }
 
+/** 分屏里一块的稳定身份（列的 React key、宽度份额都按它）：先 id，后路径 */
+export const splitTileKey = (tile: SplitSessionRef): string => tile.sessionId || tile.path || ''
+
 interface SplitViewState {
   split: SplitLayout | null
+  /** 各列的宽度份额（按 splitTileKey；没调过是 1，各列等宽） */
+  weights: Record<string, number>
+  setWeights(next: Record<string, number>): void
   /**
    * 在旁边打开一条会话。`at` 是插入位置（拖拽落点），不给就追加到最右；规则见 `placeInSplit`。
    */
@@ -142,6 +145,8 @@ interface SplitViewState {
 
 export const useSplitView = create<SplitViewState>((set, get) => ({
   split: null,
+  weights: {},
+  setWeights: (next) => set({ weights: { ...get().weights, ...next } }),
   open: (target, current, at) => {
     const next = placeInSplit(get().split, target, current, at)
     if (next !== get().split) set({ split: next })
@@ -157,5 +162,5 @@ export const useSplitView = create<SplitViewState>((set, get) => ({
     if (!split) return
     set({ split: removeSplitTile(split, index) })
   },
-  close: () => set({ split: null })
+  close: () => set({ split: null, weights: {} })
 }))

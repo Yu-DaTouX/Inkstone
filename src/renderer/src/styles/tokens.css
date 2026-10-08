@@ -192,6 +192,8 @@ html[data-theme='dark'] {
   --border: rgba(255, 255, 255, 0.1);
   --border-str: rgba(255, 255, 255, 0.16);
   --edge: rgba(255, 255, 255, 0.07);
+  /* 分屏非焦点会话的淡遮罩：朝页面底色退一层 */
+  --split-dim: rgba(21, 21, 21, 0.38);
 
   --fg: #ecece8;
   --fg-dim: #b4b4ac;
@@ -236,6 +238,7 @@ html[data-theme='light'] {
   --border: rgba(0, 0, 0, 0.13);
   --border-str: rgba(0, 0, 0, 0.2);
   --edge: rgba(0, 0, 0, 0.04);
+  --split-dim: rgba(252, 252, 250, 0.5);
   /* 浅色下 whitespace 上「淡」很快变成「读不到」，所以 dim/mute 都比深色主题更黑；
      mute 在 bg-1 / bg-3（磁贴、选中行）上也要 ≥4.5:1 */
   --fg: #252522;

@@ -37,7 +37,7 @@
   ok(document.querySelectorAll('[data-testid="split-live"]').length === 1, '只有一块是活动会话')
   ok(document.querySelectorAll('.composer-wrap, [data-testid="composer"]').length >= 1, '活动会话有输入框')
   const noOverflow = fr.every((r) => r.right <= window.innerWidth + 1)
-  const scroller = document.querySelector('.tile-workspace-scroll')
+  const scroller = document.querySelector('.split-row') ?? document.querySelector('.tile-workspace-scroll')
   ok(noOverflow || (!!scroller && scroller.scrollWidth > scroller.clientWidth), `窗口放不下五块时横向可滚动（窗口宽 ${window.innerWidth}）`)
 
   split.getState().open(ref(fx[5]), current)

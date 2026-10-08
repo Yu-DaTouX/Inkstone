@@ -83,17 +83,23 @@
 /* The main conversation has no card to clip; its menus (model, work mode) may extend past it. */
 .tile-pane[data-workspace-pane='chat'] { overflow: visible; z-index: 3; }
 
-/* 分屏：两条会话之间一道清楚的竖线。画在两块磁贴之间的缝（DOCK_GAP = 8）正中，和缝上的拖动条重合：
-   平时是灰线，指针停上去由拖动条的强调色盖住，始终只有一道。 */
-.tile-pane[data-workspace-pane='chat-peer'] { overflow: visible; }
-.tile-pane[data-workspace-pane='chat-peer']::before {
+/* 分屏：每条会话一列（会话 + 它自己的工具），并排等宽；窗口放不下（每列至少 340px）时横向滚动。
+   列与列之间一道清楚的竖线。 */
+.split-row { display: flex; min-width: 0; min-height: 0; overflow: auto hidden; }
+/* 各列等分；每列至少是自己工作区需要的宽度（会话 + 工具，Workspace fit 给出），放不下时整排横向滚动 */
+.split-column { position: relative; display: flex; flex: 1 1 0; min-width: min-content; min-height: 0; }
+/* 工作区的画布按自己的框量出来：不让内容反过来撑大这一列（否则各列越撑越宽、宽度不等），只保留 fit 给的最小宽度 */
+.split-column > .tile-workspace { flex: 1; contain: inline-size; }
+/* 列之间的分隔条：平时一道 2px 竖线，悬停 / 拖动 / 键盘焦点时由 .ui-splitter 换成强调色；两侧各外扩 4px 好抓 */
+.split-resizer { position: relative; flex: none; width: 2px; background: var(--border-str); cursor: col-resize; z-index: 5; }
+.split-resizer::before { content: ''; position: absolute; inset: 0 -4px; }
+body.split-resizing { cursor: col-resize; user-select: none; }
+/* 非焦点列的工具也盖同一层淡遮罩（会话本身的遮罩在 SplitPeerPane 里）；不拦指针 */
+.split-column:not(.live) .tile-pane:not([data-workspace-pane='chat'])::after {
   content: '';
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -5px;
+  inset: 0;
   z-index: 4;
-  width: 2px;
-  background: var(--border-str);
+  background: var(--split-dim);
   pointer-events: none;
 }

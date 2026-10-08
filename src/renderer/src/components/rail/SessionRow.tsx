@@ -7,7 +7,7 @@ import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
 import { shortProject } from './rail-utils'
 import { forkLatest } from '../../lib/fork'
 import { RunDot } from '../ui'
-import { displayedSessionOf, useSplitView } from '../../state/split-view'
+import { displayedSessionOf, sameSplitSession, useSplitView } from '../../state/split-view'
 
 /* ---------------------------------------------------------------- 会话行 */
 
@@ -29,6 +29,8 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
   onDragStart: (e: React.PointerEvent) => void
 }) {
   const t = useT()
+  /* 分屏里打开着的会话（焦点那条另有 selected）：行底色标出来，一眼看出哪几条在屏幕上 */
+  const open = useSplitView((v) => !!v.split?.tiles.some((tile) => sameSplitSession(tile, { sessionId: s.id, path: s.path })))
   /*
    * 运行 / 等待 / 失败状态来自**运行实例注册表**（N12）。
    *
@@ -78,7 +80,7 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
   return (
     <div className={`srow-wrap has-acts ${menuOpen ? 'menu-open' : ''}${dragging ? ' is-dragging' : ''}`} data-session-path={s.path} data-depth={depth} style={{ '--branch-depth': Math.min(depth, 3) } as React.CSSProperties} onPointerDown={onDragStart}>
       {/* 行主体：会话按钮（占满，可省略号） + 分叉开关 + 相对时间 */}
-      <div className={`srow-row ${selected ? 'selected' : ''}`} onContextMenu={(e) => { e.preventDefault(); onOpenMenu(e.currentTarget, { x: e.clientX, y: e.clientY }) }}>
+      <div className={`srow-row ${selected ? 'selected' : open ? 'open' : ''}`} data-split-open={open || undefined} onContextMenu={(e) => { e.preventDefault(); onOpenMenu(e.currentTarget, { x: e.clientX, y: e.clientY }) }}>
         {renaming ? (
           /* 行内重命名：Enter 提交 / Esc 取消 / 失焦提交 */
           <input
@@ -104,7 +106,11 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
         ) : (
           <button className={`srow ${selected ? 'sel' : ''}`} onClick={(e) => {
             /* Ctrl / ⌘ + 点击：在旁边分屏打开，当前会话保留在原处 */
-            if (e.ctrlKey || e.metaKey) { e.preventDefault(); openInSplit(s) } else onSelect()
+            if (e.ctrlKey || e.metaKey) { e.preventDefault(); openInSplit(s) } else {
+              /* 点开就能直接打字：显示这条会话的输入框会取得光标 */
+              useStore.getState().requestComposerFocus({ sessionId: s.id, path: s.path })
+              onSelect()
+            }
           }} title={`${s.title}${s.branchOrigin ? '\n' + s.branchOrigin : ''}\n${s.path}`} data-testid={depth ? 'rail-branch-item' : 'rail-session'}>
             {/* 行首状态点：运行（强调色方点）/ 等你回答 / 失败 / 隔离 / 未读 / 空心（静止） */}
             {waiting ? <span className="srow-dot waiting" data-testid="rail-waiting" title={t('rail.waiting')} />

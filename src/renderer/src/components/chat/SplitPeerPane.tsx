@@ -5,21 +5,39 @@ import { neighborOf, sameSplitSession, useSplitView, type SplitSessionRef } from
 import { groupIntoTurns } from '../../../../shared/turns'
 import type { UIMessage } from '../../../../shared/ipc'
 import { Badge, IconButton, RunDot } from '../ui'
+import { Icon } from '../../icons/Icon'
 import { TurnView } from './TurnView'
+import { ConversationOutline } from './ConversationOutline'
+import { fitComposerHeight } from './Composer'
+import { ComposerBorderIdle } from './ComposerBorder'
+import { newestMessages, rememberScroll, rememberShown, shownMessages, shownScroll } from '../../state/split-snapshots'
 
 /**
  * 分屏里**没有焦点**的那条会话（设计规范 §4「分屏」）。
  *
- * 只读投影：内容来自会话运行缓存（后台还在跑的会话会实时更新），没有缓存就读会话文件。
- * 输入框收到底部，只剩一行「继续这个会话」。点这一侧任意位置先把焦点切过来 ——
- * 这一下不交给里面的按钮：它们操作的是当前活动会话，焦点没过来之前点下去会作用到另一条会话上。
+ * 只读投影：内容来自会话运行缓存（后台还在跑的会话会实时更新），其次是这条会话刚才在屏幕上
+ * 显示的内容（焦点刚离开时接着显示，不闪空白），都没有才读会话文件。
+ * 底部是与真输入框同尺寸的外观（显示草稿），上面盖一层淡遮罩。单击这一块先把焦点切过来并把
+ * 光标放进输入框 —— 这一下不交给里面的按钮：它们操作的是当前活动会话，焦点没过来之前点下去
+ * 会作用到另一条会话上。拖选文字不算单击。
  */
 export function SplitPeerPane({ index, target }: { index: number; target: SplitSessionRef }) {
   const t = useT()
   const runtime = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId] : undefined))
   const cached = runtime?.messages
+  const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
+  /*
+   * 显示哪一份（焦点换块时版面不跳、内容不缺的关键）：
+   *   · 失焦后这条会话又跑过 → 运行缓存（后台推送实时更新，流式中的消息时间不变，只能这样认）；
+   *   · 否则在「它在焦点时屏幕上的那份 / 会话文件 / 运行缓存」里取最后一条消息最新的，一样新取靠前的。
+   * 运行缓存可能是很早以前的旧版本，也不收只推给活动会话的补丁（成果卡片）；而且它把工具结果单列，
+   * 条数多不代表新 —— 所以比时间，不比条数。
+   */
+  const [sawRun, setSawRun] = useState(false)
+  useEffect(() => { if (running) setSawRun(true) }, [running])
+  const [shown] = useState(() => shownMessages(target))
   const [history, setHistory] = useState<{ path: string; messages: UIMessage[] } | null>(null)
-  const needHistory = !cached?.length && !!target.path
+  const needHistory = !!target.path
   useEffect(() => {
     if (!needHistory || !target.path) return
     let alive = true
@@ -30,8 +48,10 @@ export function SplitPeerPane({ index, target }: { index: number; target: SplitS
     return () => { alive = false }
   }, [needHistory, target.path])
 
-  const messages = cached?.length ? cached : history && history.path === target.path ? history.messages : []
-  const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
+  const fromHistory = history && history.path === target.path && history.messages.length ? history.messages : undefined
+  const messages = (sawRun && cached?.length ? cached : newestMessages(shown, fromHistory, cached)) ?? []
+  useEffect(() => { rememberShown(target, messages) }, [target, messages])
+  const draft = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId]?.draft ?? '' : ''))
   const waiting = (runtime?.uiRequests.length ?? 0) > 0
   const streamingId = running ? messages[messages.length - 1]?.id : undefined
   const turns = useMemo(() => groupIntoTurns(messages, streamingId), [messages, streamingId])
@@ -40,21 +60,41 @@ export function SplitPeerPane({ index, target }: { index: number; target: SplitS
 
   /* 贴底跟随：停在底部时新内容进来继续贴底；往上翻了就不打扰 */
   const streamRef = useRef<HTMLDivElement>(null)
-  const atBottom = useRef(true)
+  /* 外观输入框与真输入框同一高度规则（草稿或占位文字决定）；窗口变了重算 */
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return undefined
+    fitComposerHeight(el)
+    const observer = new ResizeObserver(() => fitComposerHeight(el))
+    observer.observe(el.parentElement ?? el)
+    return () => observer.disconnect()
+  }, [draft])
+  /* 刚失焦时接着停在焦点时的位置；之后停在底部就跟随新内容 */
+  const restored = useRef(shownScroll(target))
+  const atBottom = useRef(restored.current?.atBottom ?? true)
   useLayoutEffect(() => {
     const el = streamRef.current
-    if (el && atBottom.current) el.scrollTop = el.scrollHeight
+    if (!el) return
+    if (atBottom.current) el.scrollTop = el.scrollHeight
+    else if (restored.current) { el.scrollTop = restored.current.top; restored.current = undefined }
   }, [turns])
+  /*
+   * 内容自己长高（成果卡片的预览、图片、代码块后加载）或列宽变了（换行变多）时，消息条数没变、
+   * 也没有滚动事件 —— 停在底部的仍要贴住底部，否则最后一张卡片会落到可视区下面，看着像往上滚了。
+   */
+  useLayoutEffect(() => {
+    const el = streamRef.current
+    const inner = el?.firstElementChild
+    if (!el || !inner) return undefined
+    const stick = (): void => { if (atBottom.current) el.scrollTop = el.scrollHeight }
+    const observer = new ResizeObserver(stick)
+    observer.observe(inner)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
-  const focus = (): void => {
-    const store = useStore.getState()
-    if (target.path) void store.switchSession(target.path)
-    /* 还没落盘的新会话只有 id：沿用托盘「按 id 选中运行实例」的同一条路径 */
-    else if (target.sessionId) {
-      const runner = store.runners.find((r) => r.sessionId === target.sessionId)
-      store.applyPush({ ch: 'tray-select-session', payload: { sessionId: target.sessionId, projectId: runner?.projectId, cwd: runner?.cwd ?? store.settings?.cwd ?? '' } })
-    }
-  }
+  const focus = (): void => focusSplitSession(target, true)
   return (
     <section
       className="center split-peer"
@@ -63,30 +103,75 @@ export function SplitPeerPane({ index, target }: { index: number; target: SplitS
       aria-label={t('split.peerLabel', { title: title || t('split.untitled') })}
       onClickCapture={(e) => {
         if ((e.target as HTMLElement).closest('[data-split-own]')) return
+        /* 刚在这一块里拖选了文字：留给用户复制，不切焦点 */
+        const selection = window.getSelection()
+        if (selection && !selection.isCollapsed && e.currentTarget.contains(selection.anchorNode)) return
         e.preventDefault()
         e.stopPropagation()
         focus()
       }}
     >
       <SplitPaneHead index={index} target={target} firstUserText={firstUserText} />
+      {/* 与焦点那块同一条导航轨：正文让位的量一致，换块时不横移 */}
+      <ConversationOutline messages={messages} streamingId={streamingId} />
       <div className="stream" ref={streamRef} onScroll={(e) => {
         const el = e.currentTarget
         atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+        rememberScroll(target, { top: el.scrollTop, atBottom: atBottom.current })
       }}>
         <div className="stream-inner">
           {turns.map((tt) => <TurnView key={tt.id} turn={tt} streaming={tt.kind === 'assistant' && tt.streaming} />)}
         </div>
       </div>
-      <div className="split-peer-bar-wrap">
-        <button type="button" className="split-peer-bar" data-split-own data-testid="split-peer-focus" onClick={focus}>
-          <span className="split-peer-prompt" aria-hidden>›</span>
-          <span className="split-peer-hint">{t('split.continue')}</span>
-          {waiting ? <span className="split-peer-state warn">{t('split.waiting')}</span>
-            : running ? <span className="split-peer-state"><RunDot />{t('split.running')}</span> : null}
-        </button>
+      {/* 与真输入框同一套外观与尺寸：焦点换过来时版面不跳 */}
+      <div className="composer-wrap split-peer-composer">
+        <div className="composer-stack">
+          <div className="composer">
+            <ComposerBorderIdle />
+            <div className="composer-line">
+              <span className="composer-prompt" aria-hidden>›</span>
+              <textarea
+                ref={inputRef}
+                rows={1}
+                readOnly
+                tabIndex={-1}
+                value={draft}
+                placeholder={t('composer.ph')}
+                aria-label={t('split.continue')}
+                data-testid="split-peer-input"
+              />
+            </div>
+            <div className="composer-bar">
+              <div className="composer-tools">
+                {waiting ? <span className="split-peer-state warn">{t('split.waiting')}</span>
+                  : running ? <span className="split-peer-state"><RunDot />{t('split.running')}</span> : null}
+              </div>
+              <button type="button" className="send" data-testid="split-peer-focus" data-empty={draft.trim() ? undefined : ''} onClick={focus}>
+                <Icon name="send" size={12} />
+                <span>{t('composer.go')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
+      <div className="split-dim" aria-hidden />
     </section>
   )
+}
+
+/**
+ * 把焦点切到分屏里的这一块。`composer`：同时把光标放进它的输入框（点在会话上）；
+ * 点在它旁边的工具上时不要，光标留给工具。
+ */
+export function focusSplitSession(target: SplitSessionRef, composer: boolean): void {
+  const store = useStore.getState()
+  if (composer) store.requestComposerFocus(target)
+  if (target.path) void store.switchSession(target.path)
+  /* 还没落盘的新会话只有 id：沿用托盘「按 id 选中运行实例」的同一条路径 */
+  else if (target.sessionId) {
+    const runner = store.runners.find((r) => r.sessionId === target.sessionId)
+    store.applyPush({ ch: 'tray-select-session', payload: { sessionId: target.sessionId, projectId: runner?.projectId, cwd: runner?.cwd ?? store.settings?.cwd ?? '' } })
+  }
 }
 
 /** 会话在列表里的那条（先按 id，再按文件） */

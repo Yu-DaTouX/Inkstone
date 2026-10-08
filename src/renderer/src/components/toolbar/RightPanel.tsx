@@ -9,7 +9,7 @@ import { TerminalSurface } from '../terminal/TerminalSurface'
 import { FilePreviewPane } from './FilePreview'
 import { fileResourceLabel } from '../../../../shared/file-resource'
 import { workbenchSessionKey, loadWorkbenchState } from '../../state/workbench'
-import { SPLIT_WORKSPACE_KEY, useSplitView } from '../../state/split-view'
+import { claimResource, resourceOwner } from '../../state/resource-owners'
 import { EmptyState, Menu, MenuItem, MenuSeparator } from '../ui'
 import type { IconName } from '../../icons/Icon'
 import { ContextSection } from './ContextSection'
@@ -48,19 +48,35 @@ function LogsPane() {
   </div>
 }
 
-/** Resource owners stay unchanged; this controller only opens their workspace panes. */
-export function RightPanel() {
+/**
+ * Resource owners stay unchanged; this controller only opens their workspace panes.
+ *
+ * One instance per conversation column. `sessionKey` names the conversation the column belongs to
+ * (defaults to the active one); terminals and file previews show only beside the conversation that
+ * owns them (`resource-owners`). `live` is the focused column: only it answers launch requests and
+ * shows tools that read the active conversation (tasks, logs) or the single native browser view.
+ */
+export function RightPanel({ sessionKey, live = true }: { sessionKey?: string; live?: boolean } = {}) {
   const t = useT()
   const workspace = useWorkspace()
   const session = useStore(s => s.session)
-  /* Same key as the workspace: a split view keeps one arrangement while focus moves between its two conversations. */
-  const splitOpen = useSplitView(s => !!s.split)
-  const key = splitOpen ? SPLIT_WORKSPACE_KEY : workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)
+  const key = sessionKey ?? workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)
+  const liveRef = useRef(live)
+  liveRef.current = live
   const browser = useStore(s => s.browserState)
   const filePreview = useStore(s => s.filePreview)
-  const files = useStore(s => s.filePreviews)
+  const allFiles = useStore(s => s.filePreviews)
   const closeFileTab = useStore(s => s.closeFileTab)
-  const terminals = useStore(s => s.terminals)
+  const allTerminals = useStore(s => s.terminals)
+  /* The focused column also adopts resources nobody owns yet (opened by the host or an older version). */
+  const mine = (resource: string): boolean => { const owner = resourceOwner(resource); return owner === key || (live && !owner) }
+  const terminals = allTerminals.filter(term => mine('terminal:' + term.id))
+  const files = Object.fromEntries(Object.entries(allFiles).filter(([id]) => mine('file:' + id)))
+  useEffect(() => {
+    if (!live) return
+    for (const term of allTerminals) claimResource('terminal:' + term.id, key)
+    for (const id of Object.keys(allFiles)) claimResource('file:' + id, key)
+  }, [live, key, allTerminals, allFiles])
   const setBrowserSurfaceActive = useStore(s => s.setBrowserSurfaceActive)
   const [agents, setAgents] = useState<string[]>([])
   const [agentManager, setAgentManager] = useState(false)
@@ -93,6 +109,7 @@ export function RightPanel() {
   }, [key])
   useEffect(() => {
     const show = (e: Event) => {
+      if (!liveRef.current) return
       const id = (e as CustomEvent<string>).detail
       if (typeof id === 'string' && /^(hub|subagent):[A-Za-z0-9-]+$/.test(id)) openAgent(id)
     }
@@ -100,24 +117,26 @@ export function RightPanel() {
     return () => window.removeEventListener('inkstone-agent-open', show)
   }, [openAgent])
   useEffect(() => {
-    const show = (e: Event) => setMenu((e as CustomEvent<MenuAnchor | undefined>).detail ?? { top: 44, right: 16 })
+    const show = (e: Event) => { if (liveRef.current) setMenu((e as CustomEvent<MenuAnchor | undefined>).detail ?? { top: 44, right: 16 }) }
     window.addEventListener('inkstone-workspace-open-tool', show)
     return () => window.removeEventListener('inkstone-workspace-open-tool', show)
   }, [])
   /* Other surfaces (status bar, cards) ask for a tool by kind; the launcher decides how it opens. */
   const launchRef = useRef<(kind: string) => Promise<void>>(async () => {})
   useEffect(() => {
-    const run = (e: Event) => { const kind = (e as CustomEvent<string>).detail; if (typeof kind === 'string') void launchRef.current(kind) }
+    const run = (e: Event) => { const kind = (e as CustomEvent<string>).detail; if (liveRef.current && typeof kind === 'string') void launchRef.current(kind) }
     window.addEventListener('inkstone-workspace-launch', run)
     return () => window.removeEventListener('inkstone-workspace-launch', run)
   }, [])
-  useEffect(() => { if (filePreview?.key) open('file:' + filePreview.key) }, [filePreview?.key, filePreview?.line, open])
-  useEffect(() => { if (browser.open) open('browser') }, [browser.open, open])
-  const previousTerminals = useRef(new Set(terminals.map(t => t.id)))
+  useEffect(() => { if (live && filePreview?.key) open('file:' + filePreview.key) }, [live, filePreview?.key, filePreview?.line, open])
+  useEffect(() => { if (live && browser.open) open('browser') }, [live, browser.open, open])
+  /* "New" is judged against every terminal, not just this conversation's: switching back to a conversation must not reopen its terminals. */
+  const previousTerminals = useRef(new Set(allTerminals.map(t => t.id)))
   useEffect(() => {
-    for (const terminal of terminals) if (!previousTerminals.current.has(terminal.id)) open('terminal:' + terminal.id)
-    previousTerminals.current = new Set(terminals.map(t => t.id))
-  }, [terminals, open])
+    if (live) for (const terminal of allTerminals) if (!previousTerminals.current.has(terminal.id) && mine('terminal:' + terminal.id)) open('terminal:' + terminal.id)
+    previousTerminals.current = new Set(allTerminals.map(t => t.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, allTerminals, open])
   useEffect(() => {
     if (!menu) return
     const release = useStore.getState().acquireOverlayBlocker('workspace-launcher')
@@ -128,6 +147,7 @@ export function RightPanel() {
   const newTerminal = async () => {
     const identity = key, serial = ++request.current
     const terminal = await useStore.getState().startTerminal({ cols: 80, rows: 24 })
+    if (terminal) claimResource('terminal:' + terminal.id, identity)
     if (terminal && currentKey.current === identity && request.current === serial) open('terminal:' + terminal.id)
   }
   const launch = async (kind: string) => {
@@ -141,18 +161,22 @@ export function RightPanel() {
     if (kind === 'agents') { setAgentManager(true); open('agents') }
     if (kind === 'browser') { await state.openBrowser(); if (currentKey.current === identity && request.current === serial) open('browser') }
     if (kind === 'terminal') {
-      const existing = state.terminals.find(t => t.alive)
+      const existing = terminals.find(t => t.alive)
       if (existing) open('terminal:' + existing.id)
-      else { const terminal = await state.startTerminal({ cols: 80, rows: 24 }); if (terminal && currentKey.current === identity && request.current === serial) open('terminal:' + terminal.id) }
+      else {
+        const terminal = await state.startTerminal({ cols: 80, rows: 24 })
+        if (terminal) claimResource('terminal:' + terminal.id, identity)
+        if (terminal && currentKey.current === identity && request.current === serial) open('terminal:' + terminal.id)
+      }
     }
   }
   launchRef.current = launch
   return <>
-    {tasksOpen ? <WorkspacePane id="tasks" title={t('tile.tasks')} icon="checklist"><TasksPane /></WorkspacePane> : null}
-    {logsOpen ? <WorkspacePane id="logs" title={t('tile.logs')} icon="activity"><LogsPane /></WorkspacePane> : null}
-    {accountsOpen ? <WorkspacePane id="accounts" title={t('tile.accounts')} icon="dashboard"><AccountQuotaPane /></WorkspacePane> : null}
-    {browser.open ? <WorkspacePane id="browser" title={t('tile.browser')} icon="globe" onVisibleChange={setBrowserSurfaceActive}><BrowserSurface /></WorkspacePane> : null}
-    {fileTreeOpen ? <WorkspacePane id="files" title={t('tile.files')} icon="folder"><div className="tile-file-tree"><FileTree /></div></WorkspacePane> : null}
+    {live && tasksOpen ? <WorkspacePane id="tasks" title={t('tile.tasks')} icon="checklist"><TasksPane /></WorkspacePane> : null}
+    {live && logsOpen ? <WorkspacePane id="logs" title={t('tile.logs')} icon="activity"><LogsPane /></WorkspacePane> : null}
+    {live && accountsOpen ? <WorkspacePane id="accounts" title={t('tile.accounts')} icon="dashboard"><AccountQuotaPane /></WorkspacePane> : null}
+    {live && browser.open ? <WorkspacePane id="browser" title={t('tile.browser')} icon="globe" onVisibleChange={setBrowserSurfaceActive}><BrowserSurface /></WorkspacePane> : null}
+    {live && fileTreeOpen ? <WorkspacePane id="files" title={t('tile.files')} icon="folder"><div className="tile-file-tree"><FileTree /></div></WorkspacePane> : null}
     {Object.entries(files).map(([id, preview]) => <WorkspacePane key={id} id={'file:' + id} title={preview.data?.name || fileResourceLabel(id) || t('tile.file')} icon="file" closeLabel={t('tile.closeFile')} onClose={() => closeFileTab(id)}><FilePreviewPane resourceKey={id} /></WorkspacePane>)}
     {terminals.map((terminal, index) => <WorkspacePane key={terminal.id} id={'terminal:' + terminal.id} title={t('tile.terminalN', { n: index + 1 })} hint={[terminal.title, terminal.alive ? '' : t('tile.exited')].filter(Boolean).join(' · ')} addLabel={t('term.new')} onAdd={() => void newTerminal()} closeLabel={terminal.alive ? t('tile.endTerminal') : t('term.close')} onClose={() => void useStore.getState().closeTerminal(terminal.id)} actions={[{ label: t('term.new'), icon: 'plus', run: () => void newTerminal() }, { label: terminal.alive ? t('tile.endTerminal') : t('term.close'), icon: 'stop', danger: terminal.alive, run: () => void useStore.getState().closeTerminal(terminal.id) }]}><TerminalSurface terminalId={terminal.id} bare /></WorkspacePane>)}
     {ownerKey === key && agentManager ? <WorkspacePane id="agents" title={t('hub.title')} icon="agent"><AgentWorkspacePanel onBack={() => hide('agents')} onOpenRun={openAgent} managerOnly /></WorkspacePane> : null}

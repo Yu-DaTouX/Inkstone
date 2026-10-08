@@ -122,6 +122,7 @@
 | `--border` | rgba(255, 255, 255, 0.1) / rgba(0, 0, 0, 0.13) | tokens.css |
 | `--border-str` | rgba(255, 255, 255, 0.16) / rgba(0, 0, 0, 0.2) | tokens.css |
 | `--edge` | rgba(255, 255, 255, 0.07) / rgba(0, 0, 0, 0.04) | tokens.css |
+| `--split-dim` | rgba(21, 21, 21, 0.38) / rgba(252, 252, 250, 0.5) | tokens.css |
 | `--fg` | #ecece8 / #252522 | tokens.css |
 | `--fg-dim` | #b4b4ac / #55554f | tokens.css |
 | `--fg-mute` | #92928a / #6a6a63 | tokens.css |
@@ -142,7 +143,6 @@
 | `--on-accent` | #10131f / #ffffff | tokens.css |
 | `--shadow-pop` | 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2) / 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) | tokens.css |
 | `--w-right` | var(--w-panel-user, 264px) / var(--w-panel-user, 220px) / 0px / var(--w-panel-user, 336px) / min(var(--w-panel-user, 190px), max(170px, calc((100vw - 360px) / 2))) / min(var(--w-panel-user, 170px), max(170px, calc((100vw - 360px) / 2))) / min(calc(var(--w-panel-user, 340px) + 400px), max(400px, calc(100vw - var(--w-rail) - 420px))) / calc(100vw - var(--w-rail)) / min(420px, 48vw) | tokens.css, layout.css, workbench.css |
-| `--mo-shift` | 4px / var(--sp-5) | motion.css, chat.css |
 | `--think-off` | #8a8a84 / #6a6a64 | motion.css |
 | `--think-minimal` | #a4a49e / #5c5c56 | motion.css |
 | `--think-low` | #6990b8 / #335d82 | motion.css |
@@ -157,5 +157,5 @@
 
 ## 5. 概况
 
-- 令牌总数：141（被引用 137）
-- 令牌引用点：5184（含组件内联 style）
+- 令牌总数：142（被引用 138）
+- 令牌引用点：5167（含组件内联 style）

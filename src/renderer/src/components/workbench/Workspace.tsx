@@ -27,8 +27,13 @@ export type MenuAnchor = { top: number; right: number }
 type WorkspaceMenu = { kind: 'workspace'; at: MenuAnchor } | { kind: 'pane'; pane: string; at: MenuAnchor }
 /** Tool tiles have a tab row; the main conversation only has a slim grip. */
 const HEAD = 28, GRIP = 10, GRIP_MAXIMIZED = 24
-/** Space between the tiles and the edges of the content area. */
-const EDGE_X = DOCK_GAP, EDGE_TOP = 2, EDGE_BOTTOM = DOCK_GAP
+/**
+ * Space between the tiles and the edges of the content area. The window edge on the right only keeps
+ * a hairline, like the top; beside the rail the gap matches the gap between tiles.
+ */
+const EDGE_LEFT = DOCK_GAP, EDGE_RIGHT = 2, EDGE_TOP = 2, EDGE_BOTTOM = DOCK_GAP
+export interface WorkspaceEdges { left: number; right: number }
+const DEFAULT_EDGES: WorkspaceEdges = { left: EDGE_LEFT, right: EDGE_RIGHT }
 export function menuAnchor(el: Element): MenuAnchor {
   const r = el.getBoundingClientRect()
   return { top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) }
@@ -58,8 +63,19 @@ export function useWorkspace() {
   if (!value) throw new Error('Workspace pane needs a workspace')
   return value
 }
-export function Workspace({ sessionKey, children }: { sessionKey: string; children: ReactNode }) {
+/**
+ * One conversation's workspace: its conversation tile and the tools beside it, saved per conversation.
+ * A split view puts several side by side; `active` marks the focused one, which alone answers
+ * window-wide requests such as the arrange menu. `fit` makes the workspace at least as wide as its
+ * tiles need, so a split view scrolls the row of conversations instead of squeezing one column.
+ */
+export function Workspace({ sessionKey, active = true, fit = false, edges = DEFAULT_EDGES, children }: { sessionKey: string; active?: boolean; fit?: boolean; edges?: WorkspaceEdges; children: ReactNode }) {
   const t = useT()
+  const edgeX = edges.left + edges.right
+  const edgeXRef = useRef(edgeX)
+  edgeXRef.current = edgeX
+  const activeRef = useRef(active)
+  activeRef.current = active
   const [saved, setSaved] = useState(() => ({ key: sessionKey, layout: loadWorkspaceLayout(sessionKey) }))
   const [panes, setPanes] = useState<PaneInfo[]>([])
   const [host, setHost] = useState<HTMLDivElement | null>(null)
@@ -86,7 +102,11 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   /* Every edit starts from the arrangement as shown, so tiles beside the conversation keep the pixel size the user gave them. */
   const update = useCallback((fn: (l: WorkspaceLayout) => WorkspaceLayout) => setSaved(s => {
     const base = s.key === currentKey.current ? s.layout : loadWorkspaceLayout(currentKey.current), at = measuredSize.current
-    return { key: currentKey.current, layout: fn(at ? rebaseDockLayout(base, availableRef.current, at.w, at.h) : base) }
+    const rebased = at ? rebaseDockLayout(base, availableRef.current, at.w, at.h) : base
+    const next = fn(rebased)
+    /* Nothing changed (a resource of this conversation registering again after a switch): keep the saved arrangement as it was. */
+    if (next === rebased && base.basis) return s.key === currentKey.current ? s : { key: currentKey.current, layout: base }
+    return { key: currentKey.current, layout: next }
   }), [])
   useEffect(() => {
     interactionCleanup.current?.()
@@ -108,7 +128,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
        fractional device-pixel sizes from overflowing the container by a sub-pixel. */
     const observer = new ResizeObserver(() => {
       const box = el.getBoundingClientRect()
-      const w = Math.floor(box.width) - 2 * EDGE_X, h = Math.floor(box.height) - EDGE_TOP - EDGE_BOTTOM
+      const w = Math.floor(box.width) - edgeXRef.current, h = Math.floor(box.height) - EDGE_TOP - EDGE_BOTTOM
       measuredSize.current = { w, h }
       setSize(prev => prev.w === w && prev.h === h ? prev : { w, h })
     })
@@ -127,6 +147,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   /* The title bar owns the entry; the anchor arrives with the request. */
   useEffect(() => {
     const show = (e: Event) => {
+      if (!activeRef.current) return
       const at = (e as CustomEvent<MenuAnchor | undefined>).detail
       setMenu({ kind: 'workspace', at: at ?? { top: 44, right: 16 } })
     }
@@ -164,6 +185,7 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
     return { x: group.x, w: group.w, h, y: dragEdge === 'top' ? group.y : group.y + group.h - h }
   }, [layout, available, size, dragPane, dragTarget, dragEdge, dragKeep, stacked])
   const measured = useMemo(() => measureDockLayout(shown, available, size.w, size.h), [shown, available, size])
+  const minWidth = useMemo(() => fit ? measureDockLayout(layout, available, 0, size.h).width + edgeX : 0, [fit, layout, available, size.h, edgeX])
   /* The lifted tile keeps its size and the spot where it was grabbed, as a window would. */
   const lift = useRef({ x: 0, y: 0, w: 0, h: 0 })
   const floating = drag && pointer ? drag.pane : null
@@ -272,9 +294,9 @@ export function Workspace({ sessionKey, children }: { sessionKey: string; childr
   const menuPane = menu?.kind === 'pane' ? menu.pane : ''
   const targetHasChat = !!dockGroups(layout.root).find(g => g.id === target)?.panes.some(isConversationPane)
   return <WorkspaceContext.Provider value={context}>
-    <div className={`tile-workspace${drag ? ' dragging' : ''}${settling ? ' settling' : ''}`} data-testid="tile-workspace">
+    <div className={`tile-workspace${drag ? ' dragging' : ''}${settling ? ' settling' : ''}`} data-testid="tile-workspace" style={fit ? { minWidth } : undefined}>
       <div className="tile-workspace-scroll" ref={scrollRef}>
-        <div className="tile-workspace-pad" style={{ padding: `${EDGE_TOP}px ${EDGE_X}px ${EDGE_BOTTOM}px` }}>
+        <div className="tile-workspace-pad" style={{ padding: `${EDGE_TOP}px ${edges.right}px ${EDGE_BOTTOM}px ${edges.left}px` }}>
         <div className="tile-workspace-canvas" ref={setHost} style={{ width: measured.width, height: measured.height }}>
           {measured.groups.map(r => {
             const ids = r.group.panes.filter(id => available.has(id) && !layout.hidden.includes(id))

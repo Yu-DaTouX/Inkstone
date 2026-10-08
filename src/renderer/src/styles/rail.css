@@ -501,6 +501,11 @@ button.rail-label:hover {
   background: var(--bg-3);
   color: var(--fg);
 }
+/* 分屏里打开着、但不是焦点的会话：比悬停实一点、比选中浅一档 */
+.srow-row.open {
+  background: var(--bg-2);
+  color: var(--fg);
+}
 .srow {
   display: flex;
   align-items: center;

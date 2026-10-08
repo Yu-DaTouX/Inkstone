@@ -84,6 +84,8 @@ import {
 import { routePush, viewingSessionId } from './push-routing'
 import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTaskStatePush } from './push-consumers'
 import { addSourceFiles } from './source-files'
+import { newestMessages, shownMessages } from './split-snapshots'
+import { useSplitView } from './split-view'
 
 /**
  * 提醒的标题（系统通知用）。按界面语言分。
@@ -368,6 +370,11 @@ export interface Store {
   statuses: Record<string, string>
   /** 扩展想让输入框变成的文本（消费一次就清） */
   editorInject: string | null
+  /**
+   * 用户点开了哪条会话：显示这条会话的输入框（含分屏换块后新挂载的）据此取得光标。
+   * 带目标会话，是因为点击当下屏幕上的还是上一条会话，它的输入框不该把光标抢走。
+   */
+  composerFocus: { tick: number; at: number; sessionId?: string; path?: string }
   /** 中止时从队列里回收的文本，应回填到输入框（消费一次就清） */
   queueRestore: string | null
   title: string | null
@@ -795,6 +802,8 @@ export interface Store {
    */
   notify: (type: Notice['type'], text: string) => void
   consumeEditorInject: () => void
+  /** 用户点开了一条会话：让输入框取得光标 */
+  requestComposerFocus: (target: { sessionId?: string; path?: string }) => void
   consumeQueueRestore: () => void
   setSettings: (s: AppSettings) => void
   /** 打开设置面板并定位到某个 tab（ContextBar 点击时用） */
@@ -1322,6 +1331,7 @@ export const useStore = create<Store>((rawSet, get) => {
   widgets: {},
   piInfo: null,
   editorInject: null,
+  composerFocus: { tick: 0, at: 0 },
   queueRestore: null,
   title: null,
   attachments: [],
@@ -2445,11 +2455,15 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ goal: null, handoff: null })
 
     /*
-     * 运行缓存里已有这条会话的消息（分屏的另一侧正显示着它、或后台在跑）：同步先铺上，
+     * 运行缓存里已有这条会话的消息（后台在跑），或分屏里另一块正显示着它（split-snapshots）：同步先铺上，
      * 不等文件读取 —— 否则焦点换边的这几十毫秒里，对话列还是上一条会话的内容或空白。
      * 后面的 peek 与 pi 的权威同步照常覆盖。
      */
-    const cachedMessages = sum?.id ? get().sessionRuntimes[sum.id]?.messages : undefined
+    /* 分屏时先用这条会话在旁边那块里正显示的那份（与屏幕上一模一样，换块不跳），没有再用运行缓存 */
+    const runtimeMessages = sum?.id ? get().sessionRuntimes[sum.id]?.messages : undefined
+    const splitShown = useSplitView.getState().split ? shownMessages({ sessionId: sum?.id, path }) : undefined
+    /* 比最后一条消息的时间，不比条数（运行缓存把工具结果单列，条数多不代表新）；一样新用屏幕上那份 */
+    const cachedMessages = newestMessages(splitShown, runtimeMessages)
     if (cachedMessages?.length) {
       set({ messages: cachedMessages, peekedPath: path, peekedSessionId: sum?.id ?? null, peekNote: null })
     }
@@ -3536,6 +3550,7 @@ export const useStore = create<Store>((rawSet, get) => {
   dismissNotice: (id) => set({ notices: get().notices.filter((n) => n.id !== id) }),
   notify: (type, text) => set({ notices: pushNotice(get().notices, type, text) }),
   consumeEditorInject: () => set({ editorInject: null }),
+  requestComposerFocus: (target) => set({ composerFocus: { tick: get().composerFocus.tick + 1, at: Date.now(), sessionId: target.sessionId, path: target.path } }),
   consumeQueueRestore: () => set({ queueRestore: null }),
   setSettings: (s) => set({ settings: s }),
   startConnWatch: () => {

@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { Icon } from '../../icons/Icon'
 import { useT, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
+import { displayedSessionOf, sameSplitSession } from '../../state/split-view'
 import { ComposerBorder } from './ComposerBorder'
 import { QuestionPanel } from './QuestionPanel'
 import { ModelThinkingPicker } from '../Pickers'
@@ -34,6 +35,20 @@ import { ApprovalCard } from './ApprovalCard'
 const REST_H = 64
 const REST_H_SHORT = 40
 const SHORT_WINDOW_H = 640
+
+/** 静止高度：两行，参照 Claude 的输入框；矮窗口（≤640px）收成一行半，把高度还给对话区 */
+export const composerRestHeight = (): number => (window.innerHeight <= SHORT_WINDOW_H ? REST_H_SHORT : REST_H)
+
+/** 输入框按内容（空时按占位文字）定高：不低于静止高度，最多 240px。分屏非焦点块的外观用同一规则，两边同高 */
+export function fitComposerHeight(el: HTMLTextAreaElement): void {
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(Math.max(el.scrollHeight, composerRestHeight()), 240)}px`
+}
+
+/** 已经交出光标的那次「点开会话」（模块级：换块后新挂载的输入框不重复取） */
+let consumedComposerFocus = 0
+/** 切换太慢（读大会话）时过了这么久才显示出来，就不再抢光标：用户可能已经在别处操作 */
+const FOCUS_REQUEST_TTL = 4000
 
 export function Composer() {
   const t = useT()
@@ -192,8 +207,7 @@ export function Composer() {
     ref.current.style.maxHeight = ''
   }, [])
 
-  /** 静止高度：两行，参照 Claude 的输入框；矮窗口（≤640px）收成一行半，把高度还给对话区 */
-  const restHeight = (): number => (window.innerHeight <= SHORT_WINDOW_H ? REST_H_SHORT : REST_H)
+  const restHeight = composerRestHeight
   /** 展开后的默认高度：够写一段，但不至于占半个屏 */
   const TALL_H = 180
 
@@ -328,6 +342,21 @@ export function Composer() {
     consumeQueueRestore()
     ref.current?.focus()
   }, [queueRestore, consumeQueueRestore])
+
+  /*
+   * ---- 用户点开一条会话后取得光标 ----
+   * 分屏换块时输入框是在新磁贴里重新挂载的，所以挂载时也要看一眼有没有没消费的请求。
+   */
+  const focusRequest = useStore((s) => s.composerFocus)
+  const shownId = useStore((s) => displayedSessionOf(s)?.sessionId)
+  const shownPath = useStore((s) => displayedSessionOf(s)?.path)
+  useEffect(() => {
+    if (focusRequest.tick === consumedComposerFocus || Date.now() - focusRequest.at > FOCUS_REQUEST_TTL) return
+    if (!sameSplitSession(focusRequest, { sessionId: shownId, path: shownPath })) return
+    consumedComposerFocus = focusRequest.tick
+    /* 已经消费：不在清理时取消，否则同一帧里再次渲染会把这一下光标弄丢 */
+    requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }))
+  }, [focusRequest, shownId, shownPath])
 
   /* ---- 按会话恢复 / 保存输入框草稿 ---- */
   useEffect(() => {

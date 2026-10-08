@@ -157,3 +157,12 @@ export function ComposerBorder() {
     </div>
   )
 }
+
+/** 空闲态的顶边框（不读运行状态）：分屏非焦点块的输入框外观用它，与真输入框同高 */
+export function ComposerBorderIdle() {
+  return (
+    <div className="cborder" data-state="idle" data-phase="idle" aria-hidden>
+      <div className="cborder-row" />
+    </div>
+  )
+}

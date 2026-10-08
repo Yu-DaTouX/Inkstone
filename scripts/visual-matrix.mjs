@@ -5237,8 +5237,8 @@ if (ONLY.includes('splitview') || ONLY.includes('splitfocus')) {
   const probe = readFileSync(join(root, 'scripts/probe/split-view.js'), 'utf8')
   STATES.splitview = probe.replaceAll('__FOCUS__', 'chat')
   STATES.splitfocus = probe.replaceAll('__FOCUS__', 'peer')
-  MUST_HAVE.splitview = ['[data-workspace-pane="chat-peer"] [data-testid="split-peer"]', '[data-workspace-pane="chat"] .composer-wrap']
-  MUST_HAVE.splitfocus = ['[data-workspace-pane="chat"] [data-testid="split-peer"]', '[data-workspace-pane="chat-peer"] .composer-wrap']
+  MUST_HAVE.splitview = ['[data-split-column="1"] [data-testid="split-peer"]', '[data-split-column="0"] [data-testid="split-live"] .composer-wrap']
+  MUST_HAVE.splitfocus = ['[data-split-column="0"] [data-testid="split-peer"]', '[data-split-column="1"] [data-testid="split-live"] .composer-wrap']
   for (const group of GROUPS.slice(0, 3)) group.states.push('splitview', 'splitfocus')
 }
 /* 分屏五块：`YAN_MATRIX_ONLY=splitfive`，在 splitview 场景上再加三块合成会话（共 5 块），宽屏组才放得下 */
@@ -5263,7 +5263,7 @@ if (ONLY.includes('splitfive')) {
     if (tiles !== 5) throw new Error('splitfive: 没有 5 块 ' + tiles)
     return 'ok(tiles=5)'
   })()`
-  MUST_HAVE.splitfive = ['[data-workspace-pane="chat-peer-4"] [data-testid="split-peer"]', '[data-workspace-pane="chat"] .composer-wrap']
+  MUST_HAVE.splitfive = ['[data-split-column="4"] [data-testid="split-peer"]', '[data-split-column="0"] [data-testid="split-live"] .composer-wrap']
   for (const group of GROUPS) group.states.push('splitfive')
   GROUPS.push({ w: 2560, h: 1380, scale: 1, theme: 'dark', states: ['splitfive'] })
 }

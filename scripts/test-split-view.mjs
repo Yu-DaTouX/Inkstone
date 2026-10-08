@@ -110,6 +110,19 @@ export async function runSplitViewTests(ok) {
   const widths = measured.groups.filter((g) => g.group.panes.every(isConversationPane)).map((g) => Math.round(g.w))
   ok(widths.length === 5 && Math.max(...widths) - Math.min(...widths) <= 2, `五块会话等宽（${widths.join('/')}）`)
   ok(hideDockPane(m, 'chat-peer-3') === m, '任何一块会话都不能被隐藏')
+
+  /* 非焦点块显示哪一份：比最后一条消息的时间，不比条数 */
+  const snaps = await load('src/renderer/src/state/split-snapshots.ts', 'out/test/split-snapshots.mjs')
+  const msg = (id, ts) => ({ id, role: 'assistant', text: id, ...(ts ? { timestamp: ts } : {}) })
+  const shownNew = [msg('u1', 100), msg('a1', 200), msg('u2', 300), msg('a2', 400)]
+  const cacheOld = [msg('u1', 100), msg('t1', 150), msg('t2', 160), msg('a1', 200), msg('t3', 210)]
+  ok(snaps.newestMessages(shownNew, undefined, cacheOld) === shownNew, '运行缓存条数更多但更旧：仍用屏幕上那份（用户截图里少了最后一轮）')
+  const cacheNewer = [...shownNew, msg('u3', 500)]
+  ok(snaps.newestMessages(shownNew, undefined, cacheNewer) === cacheNewer, '后台又跑出了新消息：用运行缓存')
+  const tied = [msg('u1', 100), msg('a2', 400)]
+  ok(snaps.newestMessages(shownNew, tied) === shownNew, '一样新：取靠前的（屏幕上那份，含只推给活动会话的卡片）')
+  ok(snaps.newestMessages(undefined, [], tied) === tied, '空的跳过')
+  ok(snaps.newestMessages([msg('x')], [msg('y', 1)]) !== undefined && snaps.latestTimestamp([msg('a', 5), msg('b')]) === 5, '没有时间的消息不算，往前找带时间的')
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
