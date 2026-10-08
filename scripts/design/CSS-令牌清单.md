@@ -110,7 +110,7 @@
 | `--w-right` ⚠️ | `var(--w-panel-user, 336px)` | tokens: var(--w-panel-user, 264px) → **layout**: var(--w-panel-user, 336px) |
 | `--w-stream` | `800px` | **tokens**: 800px |
 
-## `html[data-theme='dark']`　29 个变量
+## `html[data-theme='dark']`　30 个变量
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -141,10 +141,11 @@
 | `--ok-soft` | `rgba(52, 211, 153, 0.16)` | **tokens**: rgba(52, 211, 153, 0.16) |
 | `--on-accent` | `#10131f` | **tokens**: #10131f |
 | `--shadow-pop` | `0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2)` | **tokens**: 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2) |
+| `--split-dim` | `rgba(21, 21, 21, 0.38)` | **tokens**: rgba(21, 21, 21, 0.38) |
 | `--warn` | `#fbbf24` | **tokens**: #fbbf24 |
 | `--warn-soft` | `rgba(251, 191, 36, 0.16)` | **tokens**: rgba(251, 191, 36, 0.16) |
 
-## `html[data-theme='light']`　36 个变量
+## `html[data-theme='light']`　37 个变量
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -175,6 +176,7 @@
 | `--ok-soft` | `rgba(4, 120, 87, 0.1)` | **tokens**: rgba(4, 120, 87, 0.1) |
 | `--on-accent` | `#ffffff` | **tokens**: #ffffff |
 | `--shadow-pop` | `0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04)` | **tokens**: 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) |
+| `--split-dim` | `rgba(252, 252, 250, 0.5)` | **tokens**: rgba(252, 252, 250, 0.5) |
 | `--think-high` | `#7a5f8c` | **motion**: #7a5f8c |
 | `--think-low` | `#335d82` | **motion**: #335d82 |
 | `--think-max` | `#a300a3` | **motion**: #a300a3 |
@@ -209,7 +211,7 @@
 
 ## 小结
 
-- 变量总数（含各主题）：**172**
+- 变量总数（含各主题）：**174**
 - 同一选择器内被重复定义（真冗余）：**1**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。

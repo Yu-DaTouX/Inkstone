@@ -35,7 +35,8 @@ export interface SplitDropZoneRect {
  * 已满 5 块时松手会挤掉离落点最近的、没有焦点的一块（见 `placeInSplit`）。
  */
 export function splitDropZones(): SplitDropZoneRect[] | null {
-  const canvas = document.querySelector('.tile-workspace-canvas')
+  /* 分屏时每列各有一张画布：会话磁贴从所有列里取 */
+  const canvas = document.querySelector('.split-row') ?? document.querySelector('.tile-workspace-canvas')
   if (!canvas) return null
   const base = canvas.getBoundingClientRect()
   if (base.width < 200 || base.height < 120) return null

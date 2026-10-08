@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { VList, type VListHandle } from 'virtua'
 import { IconSprite } from './icons/Icon'
 import { PeerApprovalDialog } from './components/shell/PeerApprovalDialog'
@@ -9,9 +9,11 @@ import { TitleBar, type Theme } from './components/shell/TitleBar'
 import { Rail } from './components/rail/Rail'
 import { Workspace, WorkspacePane } from './components/workbench/Workspace'
 import { workbenchSessionKey } from './state/workbench'
-import { SPLIT_WORKSPACE_KEY, displayedSessionOf, reconcileSplit, useSplitView, type SplitSessionRef } from './state/split-view'
-import { conversationPaneId } from './state/workspace-layout'
-import { SplitPaneHead, SplitPeerPane, closeSplitTile } from './components/chat/SplitPeerPane'
+import { splitTileKey, displayedSessionOf, reconcileSplit, useSplitView, type SplitSessionRef } from './state/split-view'
+import { CHAT_PANE, DOCK_GAP } from './state/workspace-layout'
+import { SplitResizer } from './components/chat/SplitResizer'
+import { rememberScroll, rememberShown, shownScroll } from './state/split-snapshots'
+import { SplitPaneHead, SplitPeerPane, closeSplitTile, focusSplitSession } from './components/chat/SplitPeerPane'
 import { SplitDropZone } from './components/chat/SplitDropZone'
 import { RightPanel } from './components/toolbar/RightPanel'
 import { FloatingTiles } from './components/toolbar/FloatingTiles'
@@ -199,12 +201,18 @@ export default function App() {
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
   const storedSplit = useSplitView((s) => s.split)
+  const splitWeights = useSplitView((s) => s.weights)
   const displayedSession = useMemo<SplitSessionRef | null>(
     () => displayedSessionOf({ peekedSessionId, peekedPath, session: session ? { sessionId: session.sessionId, sessionFile: session.sessionFile } : null }),
     [peekedSessionId, peekedPath, session?.sessionId, session?.sessionFile]
   )
   const split = storedSplit ? reconcileSplit(storedSplit, displayedSession) : null
   useLayoutEffect(() => { useSplitView.getState().sync(displayedSession) }, [displayedSession, storedSplit])
+  /*
+   * 记下每条会话在屏幕上的最后样子：分屏里焦点离开这一块时它接着显示这份（SplitPeerPane），
+   * 之后再拉进分屏也从这份起步，不闪空白、不少只推给活动会话的内容。
+   */
+  useEffect(() => { if (displayedSession) rememberShown(displayedSession, messages) }, [displayedSession, messages])
   const settings = useStore((s) => s.settings)
   const bootstrap = useStore((s) => s.bootstrap)
   const startConnWatch = useStore((s) => s.startConnWatch)
@@ -603,6 +611,22 @@ export default function App() {
     // 依赖 turns 而不是 messages：回合合并后一块里也可能长高（新段落）
     // split?.live：分屏焦点换边时对话列在另一个磁贴里重新挂载，新的滚动容器从头开始，要重新贴底
   }, [turns, stick, virtual, split?.live])
+  /*
+   * 回合数没变而内容自己长高（成果卡片预览、图片后加载）或列宽变了：停在底部的仍贴住底部。
+   * 跟着对话区节点走（分屏换块时整列在新磁贴里重新挂载，节点会换），所以挂在 ref 回调上。
+   */
+  const stickObserver = useRef<ResizeObserver | null>(null)
+  const setStreamNode = useCallback((node: HTMLDivElement | null): void => {
+    streamRef.current = node
+    stickObserver.current?.disconnect()
+    stickObserver.current = null
+    const inner = node?.firstElementChild
+    if (!node || !inner) return
+    const observer = new ResizeObserver(() => { if (stickRef.current && !suppressStickScrollRef.current) node.scrollTop = node.scrollHeight })
+    observer.observe(inner)
+    observer.observe(node)
+    stickObserver.current = observer
+  }, [])
 
   /*
    * 长会话的虚拟列表在「刚挂载 / 换了磁贴」时可能一格都没画出来：列表按挂载那一刻量到的
@@ -653,8 +677,29 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [split?.live, !!split, virtual, vlistKey])
 
-  /* 分屏期间磁贴随时可能重排：每半秒再看一眼，空白了就重挂并贴回底部（最多 3 次，换会话后清零） */
+  /*
+   * 分屏换块 / 焦点那块换了会话：从这条会话刚才在屏幕上的位置接着显示（失焦时在只读投影里滚到哪就是哪），
+   * 没记录过就贴底。不沿用上一条会话的「是否贴底」—— 那是另一条会话的状态，沿用会让新焦点跳回顶部。
+   * 它是 layout effect，比上面「虚拟列表搬家」的普通 effect 先跑，那边读到的 stickRef 已是这条会话的。
+   */
+  const splitOn = !!split
   const sessionIdentity = displayedSession?.path ?? displayedSession?.sessionId ?? ''
+  useLayoutEffect(() => {
+    if (!splitOn || !displayedSession) return undefined
+    const snap = shownScroll(displayedSession)
+    const bottom = !snap || snap.atBottom
+    stickRef.current = bottom
+    setStick(bottom)
+    if (bottom || !snap) return undefined
+    const raf = requestAnimationFrame(() => {
+      if (virtual) vlistRef.current?.scrollTo(snap.top)
+      else if (streamRef.current) streamRef.current.scrollTop = snap.top
+    })
+    return () => cancelAnimationFrame(raf)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [split?.live, sessionIdentity, splitOn])
+
+  /* 分屏期间磁贴随时可能重排：每半秒再看一眼，空白了就重挂并贴回底部（最多 3 次，换会话后清零） */
   useEffect(() => {
     vlistRemounts.current = 0
   }, [sessionIdentity, split?.live])
@@ -674,7 +719,9 @@ export default function App() {
     const el = streamRef.current
     if (!el) return
     if (suppressStickScrollRef.current) return
-    setStickNow(el.scrollHeight - el.scrollTop - el.clientHeight < 40)
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    setStickNow(atBottom)
+    if (split && displayedSession) rememberScroll(displayedSession, { top: el.scrollTop, atBottom })
   }
 
   /**
@@ -777,7 +824,9 @@ export default function App() {
   const onVirtualScroll = () => {
     const h = vlistRef.current
     if (!h || vlistSettlingRef.current) return
-    setStickNow(h.scrollSize - h.scrollOffset - h.viewportSize < 40)
+    const atBottom = h.scrollSize - h.scrollOffset - h.viewportSize < 40
+    setStickNow(atBottom)
+    if (split && displayedSession) rememberScroll(displayedSession, { top: h.scrollOffset, atBottom })
   }
 
   const jumpToBottom = () => {
@@ -880,8 +929,8 @@ export default function App() {
     .join(' ')
 
   /*
-   * 活动会话的对话列。分屏时它跟着焦点放进那一侧的磁贴，另一侧是只读投影（SplitPeerPane）；
-   * 焦点换边时这一列在新位置重新挂载，输入框随之从底部升起（`split-live`）。
+   * 活动会话的对话列。分屏时它跟着焦点放进那一块磁贴，其余是只读投影（SplitPeerPane，外观同尺寸）；
+   * 焦点换块时这一列在新位置重新挂载，遮罩从这一块淡出（`split-live`）。
    */
   const sessionHeader = (
     <Continuity
@@ -935,7 +984,7 @@ export default function App() {
                 )}
               </VList>
             ) : (
-              <div className="stream" ref={streamRef} onScroll={onScroll}>
+              <div className="stream" ref={setStreamNode} onScroll={onScroll}>
                 <div className="stream-inner">
                   {turns.length === 0 ? (
                     dailyMode ? (
@@ -1038,21 +1087,50 @@ export default function App() {
           <Resizer side="rail" />
         </div>
 
-          {/* 分屏时工作区用固定的分屏键：焦点在两条会话间切换，磁贴排布不跟着换 */}
-          <Workspace sessionKey={split ? SPLIT_WORKSPACE_KEY : workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)}>
-          {(split?.tiles ?? [null]).map((tile, i) => (
-            <WorkspacePane
-              key={conversationPaneId(i)}
-              id={conversationPaneId(i)}
-              title={i === 0 ? '主会话' : t('split.paneTitle')}
-              icon="chat-round"
-              actions={split ? [{ label: t('split.closeSide'), icon: 'close', run: () => closeSplitTile(i) }] : undefined}
-            >
-              {!split || split.live === i ? chatColumn : <SplitPeerPane index={i} target={tile!} />}
-            </WorkspacePane>
-          ))}
-          <RightPanel />
-          </Workspace>
+          {split ? (
+            /*
+             * 分屏（设计规范 §4）：每块是一条会话自己的工作区 —— 会话加它旁边的工具，排布按这条会话保存，
+             * 与单会话时看到的同一份。工具只在自己那一列里挪动。焦点那一列是活动会话；
+             * 其余列的工具照常显示（终端实时刷新），点一下先把焦点切过来，这一下照常交给工具本身。
+             */
+            <div className="split-row" data-testid="split-row">
+              {split.tiles.map((tile, i) => {
+                const live = split.live === i
+                const columnKey = workbenchSessionKey(tile.path, tile.sessionId)
+                const tileKey = splitTileKey(tile) || `tile-${i}`
+                return (
+                  <Fragment key={tileKey}>
+                  {i > 0 ? <SplitResizer left={split.tiles[i - 1]} right={tile} /> : null}
+                  <div
+                    className={`split-column${live ? ' live' : ''}`}
+                    data-split-column={i}
+                    style={{ flexGrow: splitWeights[tileKey] ?? 1 }}
+                    onPointerDownCapture={live ? undefined : (e) => {
+                      /* 会话本身由 SplitPeerPane 处理（切焦点并把光标放进输入框） */
+                      if ((e.target as HTMLElement).closest('[data-testid="split-peer"]')) return
+                      focusSplitSession(tile, false)
+                    }}
+                  >
+                    {/* 窗口两侧照常留边；列与列之间两边各留一半，和分隔条一起像一道缝 */}
+                    <Workspace sessionKey={columnKey} active={live} fit edges={{ left: i === 0 ? DOCK_GAP : DOCK_GAP / 2, right: i === split.tiles.length - 1 ? 2 : DOCK_GAP / 2 }}>
+                      <WorkspacePane id={CHAT_PANE} title={t('split.paneTitle')} icon="chat-round" actions={[{ label: t('split.closeSide'), icon: 'close', run: () => closeSplitTile(i) }]}>
+                        {live ? chatColumn : <SplitPeerPane index={i} target={tile} />}
+                      </WorkspacePane>
+                      <RightPanel sessionKey={columnKey} live={live} />
+                    </Workspace>
+                  </div>
+                  </Fragment>
+                )
+              })}
+            </div>
+          ) : (
+            <Workspace sessionKey={workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)}>
+              <WorkspacePane id={CHAT_PANE} title="主会话" icon="chat-round">
+                {chatColumn}
+              </WorkspacePane>
+              <RightPanel />
+            </Workspace>
+          )}
           {/* 浮动工具磁贴（实施-12 U-4/U-5）：应用内容区上的独立层，不随右栏收起而消失 */}
           <FloatingTiles />
           <SplitDropZone />

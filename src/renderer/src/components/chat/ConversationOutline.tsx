@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { groupIntoTurns } from '../../../../shared/turns'
+import type { UIMessage } from '../../../../shared/ipc'
 
 /**
  * 对话导航轨 —— 消息流左侧那一条。
@@ -30,11 +31,18 @@ import { groupIntoTurns } from '../../../../shared/turns'
  * 位置用 flex 均分而不是按像素排：消息高度差异极大（一句话 vs 一段代码），
  * 按高度排会让刻度全挤在一起。
  */
-export function ConversationOutline() {
+/**
+ * 对话左侧的导航轨。默认画活动会话；分屏里非焦点的那块传入自己的 `messages`（只读投影），
+ * 两块的轨道与正文避让完全一致，焦点换块时正文不横移。只读时点一格不跳转（点击先用来切焦点）。
+ */
+export function ConversationOutline({ messages: projected, streamingId: projectedStreaming }: { messages?: UIMessage[]; streamingId?: string } = {}) {
   const t = useT()
-  const messages = useStore((s) => s.messages)
-  const scrollToTurn = useStore((s) => s.scrollToTurn)
-  const streamingId = useStore((s) => (s.session?.isStreaming ? s.messages[s.messages.length - 1]?.id : undefined))
+  const storeMessages = useStore((s) => s.messages)
+  const storeScrollToTurn = useStore((s) => s.scrollToTurn)
+  const storeStreamingId = useStore((s) => (s.session?.isStreaming ? s.messages[s.messages.length - 1]?.id : undefined))
+  const messages = projected ?? storeMessages
+  const streamingId = projected ? projectedStreaming : storeStreamingId
+  const scrollToTurn = projected ? () => {} : storeScrollToTurn
   const [hover, setHover] = useState<number | null>(null)
 
   /**

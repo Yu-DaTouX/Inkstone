@@ -2734,12 +2734,7 @@ img.chat-image-open {
   color: var(--fg-mute);
 }
 
-/* 分屏（设计规范 §4）：一个窗口并排两条会话，焦点那一侧是活动会话。
-   焦点换边时，那一侧的输入框从底部升起；失去焦点的一侧输入框收成一行、落到底部。 */
-.center.split-live > .composer-wrap {
-  --mo-shift: var(--sp-5);
-  animation: mo-in-up var(--mo-slow) var(--mo-ease) both;
-}
+/* 分屏（设计规范 §4）：一个窗口并排多条会话，焦点那一块是活动会话，其余盖淡遮罩。 */
 /* 两侧顶部各自的会话头（分屏时标题栏不放会话头）：焦点一侧是完整会话头，另一侧标题退一档 */
 .split-head {
   grid-row: 1;
@@ -2764,47 +2759,15 @@ img.chat-image-open {
 .titlebar .tb-center:empty::before {
   display: none;
 }
-.split-peer-bar-wrap {
-  grid-row: 5;
-  padding: var(--sp-2) var(--sp-5) var(--sp-3);
+/* 非焦点块的输入框：与真输入框同一张卡片、同尺寸，只读；点它与点这一块其他地方一样是切焦点 */
+.split-peer-composer textarea {
+  cursor: default;
+  resize: none;
 }
-/* 收起的输入框：与输入框同一张卡片的边线与底色，只剩一行 */
-.split-peer-bar {
-  --mo-shift: var(--sp-5);
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  width: 100%;
-  max-width: var(--w-stream);
-  min-height: var(--sp-6);
-  margin: 0 auto;
-  padding: 0 var(--sp-3);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-lg);
-  background: var(--bg-1);
+/* 草稿为空时与真输入框的空态发送键同样是中性底 */
+.split-peer-composer .send[data-empty] {
+  background: var(--bg-3);
   color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  text-align: left;
-  animation: mo-in-down var(--mo-slow) var(--mo-ease) both;
-  transition:
-    border-color var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-.split-peer-bar:hover,
-.split-peer-bar:focus-visible {
-  border-color: var(--accent-line);
-  color: var(--fg-dim);
-}
-.split-peer-prompt {
-  color: var(--accent);
-  font-family: var(--font-mono);
-}
-.split-peer-hint {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .split-peer-state {
   display: inline-flex;
@@ -2812,14 +2775,31 @@ img.chat-image-open {
   align-items: center;
   gap: var(--sp-1);
   font-size: var(--fs-xs);
+  color: var(--fg-mute);
 }
 .split-peer-state.warn {
   color: var(--warn);
 }
+/* 淡遮罩：盖住正文与输入框，会话头在它上面；不拦指针（照样滚动、拖选） */
+.split-peer > .split-head {
+  position: relative;
+  z-index: 5;
+}
+.split-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: var(--split-dim);
+  pointer-events: none;
+  /* 焦点换块时遮罩立即换位，不做淡入淡出：两块一淡一显叠在一起看着像闪了一下 */
+  transition: opacity var(--mo-fast) var(--mo-ease);
+}
+.split-peer:hover > .split-dim {
+  opacity: 0.5;
+}
 @media (prefers-reduced-motion: reduce) {
-  .center.split-live > .composer-wrap,
-  .split-peer-bar {
-    animation: none;
+  .split-dim {
+    transition: none;
   }
 }
 
