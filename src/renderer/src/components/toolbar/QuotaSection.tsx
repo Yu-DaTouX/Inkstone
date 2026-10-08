@@ -375,7 +375,7 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
  *   · 月 → 日期「10/22 重置」
  *   · 已到点 → 「待刷新」（不本地归零，由 effect 重新查询）
  */
-function resetText(t: TFunc, w: QuotaWindow): { text: string; tip: string } {
+export function resetText(t: TFunc, w: QuotaWindow): { text: string; tip: string } {
   if (w.resetAt === undefined) return { text: '', tip: '' }
   const now = Date.now()
   const tip = t('quota.resetAtTip', { time: new Date(w.resetAt).toLocaleString(undefined, { hour12: false }) })

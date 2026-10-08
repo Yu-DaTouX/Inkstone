@@ -17,7 +17,7 @@
  * 假 pi 让它可确定性地复现：命令里收到 `openai-codex` 才说 ready，
  * 收到 `openai` 说 not_ready —— 与真实环境一致。
  */
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, writeFile, readFile, stat } from 'node:fs/promises'
 import { readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -42,7 +42,7 @@ export async function runCredentialsTests(ok) {
       logLevel: 'silent'
     })
   )
-  const { listAuthProviders, authFileInfo } = await import('../out/test/credentials.mjs')
+  const { listAuthProviders, authFileInfo, mergeAuthEntry, updateAuthFile, setApiKey } = await import('../out/test/credentials.mjs')
 
   /* ---- 安全闸：确认真的落在临时目录，否则立刻停手 ---- */
   const info = await authFileInfo()
@@ -159,4 +159,67 @@ export async function runCredentialsTests(ok) {
     calls.every((x) => x.length > 0),
     '深查：每次探测都带了非空 provider 名（空名会让 pi 直接报错）'
   )
+
+  /* ================= 3. 并发合并写入：不丢 provider（H03 回归） ================= */
+  {
+    const writes = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        mergeAuthEntry(`fixture-provider-${i}`, { type: 'api_key', key: 'ONLY_SYNTHETIC_FIXTURE' })
+      )
+    )
+    ok(writes.every((w) => w.ok), '并发合并写入 6 个 provider 都返回成功')
+    const after = JSON.parse(await readFile(authPath, 'utf8'))
+    const kept = Array.from({ length: 6 }, (_, i) => `fixture-provider-${i}`).filter((k) => k in after)
+    ok(kept.length === 6, '**并发写入后 6 个 provider 都在 auth.json 里（不互相覆盖）**', `实际 ${kept.length} 个`)
+    ok(Boolean(after['openai-codex'] && after.commandcode), '并发写入没有弄丢原有凭证')
+
+    const viaSetApiKey = await Promise.all(
+      Array.from({ length: 4 }, (_, i) => setApiKey(`fixture-key-${i}`, 'ONLY_SYNTHETIC_FIXTURE'))
+    )
+    ok(viaSetApiKey.every((w) => w.ok), '设置页路径（setApiKey）并发写入也成功')
+    const afterKeys = JSON.parse(await readFile(authPath, 'utf8'))
+    const keyCount = Array.from({ length: 4 }, (_, i) => `fixture-key-${i}`).filter((k) => k in afterKeys).length
+    ok(keyCount === 4, '**设置页并发保存 4 个 provider 也不丢（与合并写入共用同一把锁）**', `实际 ${keyCount} 个`)
+  }
+
+  /* ================= 4. 写锁语义：与 pi 同一把锁，并且真的串行 ================= */
+  {
+    const lockDir = join(dir, 'auth.json.lock')
+    let heldDuringWrite = false
+    await updateAuthFile((auth) => {
+      auth['lock-probe'] = { type: 'api_key', key: 'ONLY_SYNTHETIC_FIXTURE' }
+      return { write: true, result: undefined }
+    })
+    heldDuringWrite = await stat(lockDir).then(
+      () => true,
+      () => false
+    )
+    ok(!heldDuringWrite, '写入完成后释放 auth.json.lock')
+
+    const order = []
+    const seenInLock = []
+    const first = updateAuthFile(async (auth) => {
+      order.push('first-in')
+      seenInLock.push(await stat(lockDir).then(() => true, () => false))
+      await new Promise((r) => setTimeout(r, 200))
+      auth['lock-order-1'] = { type: 'api_key', key: 'ONLY_SYNTHETIC_FIXTURE' }
+      order.push('first-out')
+      return { write: true, result: undefined }
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    const second = updateAuthFile((auth) => {
+      order.push('second-in')
+      auth['lock-order-2'] = { type: 'api_key', key: 'ONLY_SYNTHETIC_FIXTURE' }
+      return { write: true, result: undefined }
+    })
+    await Promise.all([first, second])
+    ok(seenInLock[0] === true, '持锁写入期间 auth.json.lock 存在（与 pi 同一把锁）')
+    ok(
+      order.join(',') === 'first-in,first-out,second-in',
+      '**写锁串行化：第二个写入等第一个退出后才进入**',
+      order.join(',')
+    )
+    const afterLock = JSON.parse(await readFile(authPath, 'utf8'))
+    ok(Boolean(afterLock['lock-order-1'] && afterLock['lock-order-2']), '两次持锁写入的结果都在（没有互相覆盖）')
+  }
 }
