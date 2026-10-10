@@ -217,6 +217,17 @@ export function Badge({
   )
 }
 
+/** 文字链接：显示去掉协议的网址（可带前缀标签），完整地址放在 title；打开方式由调用方决定。 */
+export function LinkButton({ url, label, onOpen }: { url: string; label?: string; onOpen: (url: string) => void }) {
+  const shown = url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')
+  return (
+    <button type="button" className="ui-link" title={url} onClick={() => onOpen(url)}>
+      {label ? <span className="ui-link-kind">{label}</span> : null}
+      <span className="ui-link-url">{shown}</span>
+    </button>
+  )
+}
+
 /** 空状态：一句事实 + 可选的下一步。不画插图，不写「暂无数据」式的空话。 */
 export function EmptyState({
   icon,
@@ -720,7 +731,8 @@ export function StepSlider<T extends string>({
   colorOf,
   disabled,
   testId,
-  stopTestId
+  stopTestId,
+  onPreview
 }: {
   values: readonly T[]
   value: T
@@ -732,6 +744,8 @@ export function StepSlider<T extends string>({
   disabled?: boolean
   testId?: string
   stopTestId?: (value: T) => string
+  /** 拖动中实时报告手柄所在的档位（松手或取消时为 null），供外部同步显示 */
+  onPreview?: (value: T | null) => void
 }) {
   const track = useRef<HTMLDivElement>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -752,6 +766,9 @@ export function StepSlider<T extends string>({
   }
   /* 外部值变化（别处切档）时放弃未提交的拖动 */
   useEffect(() => setDragIndex(null), [value])
+  const preview = useRef(onPreview)
+  preview.current = onPreview
+  useEffect(() => { preview.current?.(dragIndex === null ? null : values[dragIndex] ?? null) }, [dragIndex, values])
   /* 点阵画布：脉冲引擎跟控件同生命周期（菜单关闭即卸载、停帧） */
   const root = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -818,9 +835,7 @@ export function StepSlider<T extends string>({
             else if (e.key === 'Home') { e.preventDefault(); commit(0) }
             else if (e.key === 'End') { e.preventDefault(); commit(n - 1) }
           }}
-        >
-          {dragIndex !== null ? <span className="ui-step-bubble" aria-hidden>{format(values[shown])}</span> : null}
-        </span>
+        />
       </div>
       <div className="ui-step-labels">
         {values.map((v, i) => (

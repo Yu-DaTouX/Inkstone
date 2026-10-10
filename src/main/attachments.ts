@@ -12,7 +12,6 @@
  */
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, statSync, unlinkSync } from 'node:fs'
-import type { Dirent } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AttachmentPruneResult, AttachmentUsage } from '../shared/ipc'
@@ -49,17 +48,13 @@ export function attachmentStem(name: string): string {
 export function listSessionFiles(dir: string): string[] {
   const out: string[] = []
   const walk = (d: string, depth: number): void => {
-    if (depth > 3) return
-    let entries: Dirent[]
-    try {
-      entries = readdirSync(d, { withFileTypes: true })
-    } catch {
-      return
-    }
+    if (depth > 64) throw new Error('会话目录层级过深，已停止附件清理')
+    const entries = readdirSync(d, { withFileTypes: true })
     for (const entry of entries) {
       const path = join(d, entry.name)
       if (entry.isDirectory()) walk(path, depth + 1)
-      else if (entry.name.endsWith('.jsonl')) out.push(path)
+      else if (entry.isSymbolicLink()) throw new Error('会话目录包含符号链接，已停止附件清理')
+      else if (entry.isFile() && entry.name.endsWith('.jsonl')) out.push(path)
     }
   }
   walk(dir, 0)
@@ -71,7 +66,7 @@ export function listSessionFiles(dir: string): string[] {
  *
  * 会话 JSONL 里存的是图片的 base64 —— 那是 pi 的记录格式，改不了；而附件
  * 文件名恰好是同一段 base64 的 sha1，所以扫一遍会话就知道哪些附件还挂在
- * 某条历史消息上。只有含 `"type":"image"` 的行才解析，其余整行跳过。
+ * 某条历史消息上。逐行按 JSON 语义扫描；任何无法读取或解析的历史都中止清理。
  *
  * 用异步读（而不是 readFileSync）：用户有几百 MB 会话，同步读会把主进程
  * 卡住几秒 —— 那是整个 UI 一起冻。
@@ -79,19 +74,14 @@ export function listSessionFiles(dir: string): string[] {
 export async function referencedAttachmentNames(sessionFiles: string[]): Promise<Set<string>> {
   const out = new Set<string>()
   for (const file of sessionFiles) {
-    let text: string
-    try {
-      text = await readFile(file, 'utf8')
-    } catch {
-      continue
-    }
+    const text = await readFile(file, 'utf8')
     for (const line of text.split('\n')) {
-      if (!line.includes('"type":"image"')) continue
+      if (!line.trim()) continue
       let row: unknown
       try {
         row = JSON.parse(line)
       } catch {
-        continue
+        throw new Error('会话历史不完整，已停止附件清理，请稍后重试')
       }
       collectImageHashes(row, out)
     }
@@ -121,7 +111,7 @@ function collectImageHashes(value: unknown, out: Set<string>): void {
 export function pruneAttachments(
   dir: string,
   referenced: Set<string>,
-  opts?: { dryRun?: boolean }
+  opts?: { dryRun?: boolean; before?: number }
 ): AttachmentPruneResult {
   if (!existsSync(dir)) return { removed: 0, bytes: 0, kept: 0 }
   let removed = 0
@@ -136,9 +126,11 @@ export function pruneAttachments(
     const file = join(dir, entry.name)
     let size = 0
     try {
-      size = statSync(file).size
+      const st = statSync(file)
+      if (opts?.before !== undefined && Math.max(st.mtimeMs, st.ctimeMs) >= opts.before) { kept += 1; continue }
+      size = st.size
     } catch {
-      /* 大小拿不到也要删：这个文件已经没人用了 */
+      continue
     }
     if (!opts?.dryRun) {
       try {

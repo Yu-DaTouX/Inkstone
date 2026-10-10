@@ -26,8 +26,8 @@ export async function runNetworkBoundaryTests(ok, mod) {
 
   /* ---- 放行：拿不到已提交文档 / 发起方本来就是本地页面 ---- */
   ok(
-    decide({ targetHost: '127.0.0.1', initiatorUrl: '', requestedByUs: false }) === 'allow',
-    '新标签第一次导航（没有已提交文档）放行 —— 宁可少拦也不误杀'
+    decide({ targetHost: '127.0.0.1', initiatorUrl: '', requestedByUs: false }) === 'block-private',
+    '未知来源的新标签不能访问本机服务'
   )
   ok(
     decide({ targetHost: '10.0.0.5', initiatorUrl: 'http://localhost:5173/', requestedByUs: false }) === 'allow',

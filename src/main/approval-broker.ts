@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { isApprovalChoice, type ApprovalChoice, type ApprovalRequest } from '../shared/approval'
 
 /** 与薄层的确认超时（4 分钟）对齐：超过它薄层已经放弃，卡片也该收起 */
-const APPROVAL_TIMEOUT_MS = 4 * 60 * 1000
+export const APPROVAL_TIMEOUT_MS = 4 * 60 * 1000
 
 interface Pending {
   request: ApprovalRequest

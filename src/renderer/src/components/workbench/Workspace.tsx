@@ -22,6 +22,8 @@ interface WorkspaceContextValue {
   /** The pane lifted by a drag; it follows the pointer above the other tiles. */
   floating: string | null
   commands: Map<string, PaneCommands>
+  /** The conversation this workspace belongs to (resource ownership). */
+  sessionKey: string
 }
 export type MenuAnchor = { top: number; right: number }
 type WorkspaceMenu = { kind: 'workspace'; at: MenuAnchor } | { kind: 'pane'; pane: string; at: MenuAnchor }
@@ -57,6 +59,10 @@ export function loadWorkspaceLayout(key: string): WorkspaceLayout {
     if (ids.includes(legacy.activeTabId)) migrated = openDockPane(migrated, legacy.activeTabId)
     return migrated
   } catch { return defaultWorkspaceLayout() }
+}
+/** Key of the enclosing workspace, if any (a terminal outside a workspace has no owner). */
+export function useWorkspaceKey(): string | undefined {
+  return useContext(WorkspaceContext)?.sessionKey
 }
 export function useWorkspace() {
   const value = useContext(WorkspaceContext)
@@ -120,21 +126,29 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
       localStorage.setItem(storageKey, JSON.stringify(map))
     } catch { /* A preference write never prevents using the resource. */ }
   }, [saved])
+  const measureScroll = useCallback((el: HTMLElement) => {
+    const box = el.getBoundingClientRect()
+    const w = Math.floor(box.width) - edgeXRef.current, h = Math.floor(box.height) - EDGE_TOP - EDGE_BOTTOM
+    measuredSize.current = { w, h }
+    setSize(prev => prev.w === w && prev.h === h ? prev : { w, h })
+  }, [])
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
     /* Measure the outer box, not clientWidth: a scrollbar that appears shrinks the client box, which
        shrinks the canvas, which removes the scrollbar again and the layout oscillates. Flooring keeps
        fractional device-pixel sizes from overflowing the container by a sub-pixel. */
-    const observer = new ResizeObserver(() => {
-      const box = el.getBoundingClientRect()
-      const w = Math.floor(box.width) - edgeXRef.current, h = Math.floor(box.height) - EDGE_TOP - EDGE_BOTTOM
-      measuredSize.current = { w, h }
-      setSize(prev => prev.w === w && prev.h === h ? prev : { w, h })
-    })
+    const observer = new ResizeObserver(() => measureScroll(el))
     observer.observe(el)
     return () => observer.disconnect()
-  }, [])
+  }, [measureScroll])
+  /* 列首尾变了（关掉最后一块等）盒子宽度不一定变，ResizeObserver 不会触发：边距变了就重量一次 */
+  const lastEdgeX = useRef(edgeX)
+  useLayoutEffect(() => {
+    if (lastEdgeX.current === edgeX) return
+    lastEdgeX.current = edgeX
+    if (scrollRef.current) measureScroll(scrollRef.current)
+  }, [edgeX, measureScroll])
   useEffect(() => () => interactionCleanup.current?.(), [])
   const menuOpen = !!menu
   useEffect(() => {
@@ -202,7 +216,7 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
     if (floating && floatRect) result.set(floating, { x: floatRect.x + 1, y: floatRect.y + floatHead, w: floatRect.w - 2, h: floatRect.h - floatHead - 1 })
     return result
   }, [measured, available, layout.hidden, layout.maximized, floating, floatRect?.x, floatRect?.y, floatHead])
-  const context = useMemo(() => ({ host, register, unregister, open, hide, rects, commands, floating }), [host, register, unregister, open, hide, rects, commands, floating])
+  const context = useMemo(() => ({ host, register, unregister, open, hide, rects, commands, floating, sessionKey }), [host, register, unregister, open, hide, rects, commands, floating, sessionKey])
   /* After release the tile glides from the cursor into its slot. */
   const [settling, setSettling] = useState(false)
   useEffect(() => {

@@ -5,7 +5,7 @@
  *   1. 只接收当前项目内的真实普通文件，或宿主刚生成的 bytes；
  *   2. 复制到按会话隔离的受控目录；
  *   3. 写入轻量 manifest，使会话重启后仍能把产物挂回原消息；
- *   4. 对 SVG 做最小安全清理，渲染端永远不执行 HTML/Markdown。
+ *   4. 对 SVG 做最小安全清理；HTML 仅经独立隔离预览执行，Markdown 不作为网页。
  */
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
@@ -50,6 +50,7 @@ function mediaTypeOf(name: string): string {
     case '.js': return 'text/javascript'
     case '.jsx': return 'text/jsx'
     case '.css': return 'text/css'
+    case '.htm':
     case '.html': return 'text/html'
     default: return 'application/octet-stream'
   }

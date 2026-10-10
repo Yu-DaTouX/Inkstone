@@ -171,6 +171,9 @@ export default function question(pi) {
     noteModeDiagnostic('before_agent_start', mode)
     const extra = guidanceFor(mode)
     const base = String(event?.systemPrompt ?? '')
+    /* 同时写具名分区：只转发结构化部分的 provider（pi-claude-bridge → Claude Code）会丢掉整段覆盖的文本 */
+    const sections = event?.systemPromptOptions?.sections
+    if (sections && typeof sections === 'object') sections.inkstone_question = extra
     return { systemPrompt: `${base}\n\n${extra}` }
   })
 }

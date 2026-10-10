@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import type { SubagentRun, UIMessage } from '../../../../shared/ipc'
 import { formatDuration } from '../../../../shared/duration'
-import type { ParsedSubagentNotice } from '../../../../shared/subagent-notice'
 import { subagentOutcome, type SubagentOutcome } from '../../../../shared/subagent-outcome'
 import { useStore } from '../../state/store'
 import { Button } from '../ui'
@@ -60,8 +59,8 @@ export function SubagentGroup({ runs, showTag = true }: { runs: SubagentRun[]; s
  * 一张子代理卡片，信息分三层：
  *   ① 状态图标 + 任务（主）+ 状态词与耗时（右）
  *   ② 灰色小字一行：子代理 · 范围 · 模型简称 · 耗时
- *   ③ 只出现一次的正文：运行中是最新动作；结束后要处理的是原因与已产出的内容
- * 顺利完成、没有待处理改动的卡片只留 ①②，需要处理的才展开 ③ 和操作按钮。
+ *   ③ 至多一行当前动作或原因；完整任务、最近工具和产出按需展开。
+ * 待审阅的改动保留操作入口，默认不把过程正文铺进聊天。
  */
 function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcome: SubagentOutcome; now: number; showTag: boolean }) {
   const t = useT()
@@ -76,8 +75,7 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
   const changed = run.diff && run.diff.files > 0 ? run.diff : null
   const reviewing = !live && (run.review === 'pending' || run.review === 'conflict')
 
-  /* 原因与已产出的内容各只显示一次：摘要若只是错误文案的回落，就不再重复 */
-  const produced = run.result?.summaryFrom === 'last-message' ? run.result.summary : ''
+  /* 默认只给原因；产出正文留在详情中。 */
   const reason =
     outcome.partial && run.status === 'done'
       ? t(run.endReason === 'budget' ? 'sa.partialBudget' : 'sa.partialTimeout')
@@ -125,7 +123,6 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
         <span className="sg-state" data-testid={`subagent-note-state-${run.id}`}>
           {t(`sa.state.${outcome.key}` as MessageKey)}
         </span>
-        <Button size="sm" variant="ghost" onClick={openRun}>{t('sa.open')}</Button>
         <Button size="sm" variant="ghost" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>{t('sa.noteDetails')}</Button>
         {live ? <Button variant="danger" size="sm" onClick={() => void stopSubagent(run.id)} data-testid={`subagent-note-stop-${run.id}`}>{t('sa.stop')}</Button> : null}
       </div>
@@ -136,20 +133,14 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
           </span>
         ))}
       </div>
-      {live && run.latestActivity ? (
-        <div className="sg-line sg-activity" title={run.latestActivity} data-testid={`subagent-note-activity-${run.id}`}>
-          {run.latestActivity}
+      {live && (run.progressWarning || run.latestActivity) ? (
+        <div className={`sg-line sg-activity${run.progressWarning ? ' sg-reason' : ''}`} title={run.progressWarning || run.latestActivity} data-testid={`subagent-note-activity-${run.id}`}>
+          {run.progressWarning || run.latestActivity}
         </div>
       ) : null}
       {!live && reason ? (
-        <div className="sg-line sg-reason" data-testid={`subagent-note-reason-${run.id}`}>
+        <div className={`sg-line sg-reason${expanded ? '' : ' sg-activity'}`} title={reason} data-testid={`subagent-note-reason-${run.id}`}>
           {reason}
-        </div>
-      ) : null}
-      {!live && attention && produced ? (
-        <div className="sg-produced" title={produced} data-testid={`subagent-note-summary-${run.id}`}>
-          <span className="sg-produced-label">{t(reason ? 'sa.produced' : 'sa.summary')}</span>
-          {produced}
         </div>
       ) : null}
       {reviewing ? (
@@ -212,16 +203,4 @@ function toolArgSummary(args: unknown): string {
   if (!args || typeof args !== 'object') return ''
   const first = Object.values(args as Record<string, unknown>).find((v) => typeof v === 'string') as string | undefined
   return first ? first.replace(/\s+/g, ' ').slice(0, 100) : ''
-}
-
-/** 宿主投递给模型的「子代理结束」通知：会话里只显示一行，不当成用户消息 */
-export function SubagentNoticeRow({ notice }: { notice: ParsedSubagentNotice }) {
-  const t = useT()
-  return (
-    <div className="sg-notice" title={notice.body} data-testid={`subagent-notice-${notice.id}`}>
-      <span className={`sg-dot ${notice.status}`} aria-hidden="true" />
-      <span className="sg-notice-tag">{t('sa.tag')}</span>
-      <span className="sg-notice-text">{notice.headline}</span>
-    </div>
-  )
 }

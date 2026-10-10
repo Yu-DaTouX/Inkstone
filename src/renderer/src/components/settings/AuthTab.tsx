@@ -1,10 +1,10 @@
+import { ClaudeSubscriptionSection } from './ClaudeSubscriptionSection'
 import { useEffect, useState } from 'react'
-import { useT } from '../../i18n'
+import { useT, type MessageKey } from '../../i18n'
 import { refreshModelsAfterRestart } from '../../state/refresh-models'
 import { useStore } from '../../state/store'
 import type { AuthProviderInfo, OAuthLoginEvent } from '../../../../shared/ipc'
 import { CustomProviderForm } from './CustomProviderForm'
-import { ActivityModelSection } from './ActivityModelSection'
 import { Button, Disclosure, Input, SettingGroup, SettingRow, Spinner } from '../ui'
 
 /**
@@ -27,6 +27,14 @@ import { Button, Disclosure, Input, SettingGroup, SettingRow, Spinner } from '..
  */
 export function AuthTab() {
   const t = useT()
+  const providerName = (p: AuthProviderInfo): string => {
+    const names: Record<string, MessageKey> = { anthropic: 'auth.anthropicMetered', xai: 'auth.name.xai', 'zai-coding-cn': 'auth.name.zai', 'minimax-cn': 'auth.name.minimax', 'qwen-token-plan-cn': 'auth.name.qwen', 'xai-api': 'auth.name.xaiApi', 'openrouter-key': 'auth.name.openrouterApi' }
+    return names[p.id] ? t(names[p.id]) : p.name
+  }
+  const providerHint = (p: AuthProviderInfo): string => {
+    const hints: Record<string, MessageKey> = { 'openai-codex': 'auth.hint.codex', anthropic: 'auth.hint.anthropic', 'github-copilot': 'auth.hint.copilot', openrouter: 'auth.hint.openrouter', commandcode: 'auth.hint.commandcode', 'xai-api': 'auth.hint.xaiApi' }
+    return hints[p.id] ? t(hints[p.id]) : p.hint
+  }
   const [list, setList] = useState<AuthProviderInfo[] | null>(null)
   const [checking, setChecking] = useState(false)
   const [info, setInfo] = useState<{ path: string; exists: boolean; count: number } | null>(null)
@@ -153,7 +161,7 @@ export function AuthTab() {
       <div className="auth-row-main">
         <div className="auth-row-name">
           <span className={`auth-dot ${p.status}`} />
-          {p.name}
+          {providerName(p)}
         </div>
         {p.envVar ? <div className="auth-row-hint">{t('auth.orEnv')} <code>{p.envVar}</code></div> : null}
       </div>
@@ -224,18 +232,18 @@ export function AuthTab() {
         ) : null}
       </div>
 
-      {/* 订阅制：ChatGPT 可在应用内登录；其余几家协议不同，只能在终端跑一次 pi → /login */}
-      {subs.length > 0 ? (
+      {/* 插件订阅与按量登录路径明确区分；登录由各 Provider 的协议处理。 */}
       <SettingGroup title={t('auth.subs')}>
+        <ClaudeSubscriptionSection />
         <div className="ui-rows">
           {subs.map((p) => (
             <div className="auth-row" key={p.id} data-testid={`auth-row-${p.id}`}>
               <div className="auth-row-main">
                 <div className="auth-row-name">
                   <span className={`auth-dot ${p.status}`} />
-                  {p.name}
+                  {providerName(p)}
                 </div>
-                {p.hint ? <div className="auth-row-hint">{p.hint}</div> : null}
+                {providerHint(p) ? <div className="auth-row-hint">{providerHint(p)}</div> : null}
               </div>
 
               {p.status === 'ready' && p.id === 'openai-codex' ? (
@@ -323,8 +331,6 @@ export function AuthTab() {
           ))}
         </div>
       </SettingGroup>
-      ) : null}
-
       {keys.length > 0 ? (
       <SettingGroup title={t('auth.keys')}>
         <div className="ui-rows">
@@ -338,6 +344,7 @@ export function AuthTab() {
       </SettingGroup>
       ) : null}
 
+
       {/* 自定义 API 服务（真源是 pi 的 models.json） */}
       <SettingGroup title={t('customApi.title')}>
         <CustomProviderForm />
@@ -345,9 +352,6 @@ export function AuthTab() {
 
       {/* 按活动分配模型：低频配置，收在页尾 */}
       <SettingGroup>
-        <Disclosure title={t('am.title')} testId="auth-activity-models">
-          <ActivityModelSection />
-        </Disclosure>
         {info ? (
           <Disclosure title={t('auth.fileHint')}>
             <div className="set-diag">

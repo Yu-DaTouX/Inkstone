@@ -3,7 +3,6 @@ import { Icon } from '../../icons/Icon'
 import { shortTitle } from '../../../../shared/short-title'
 import { useStore } from '../../state/store'
 import { EnvironmentMenu } from '../review/EnvironmentMenu'
-import { GoalPopover } from '../toolbar/GoalPopover'
 import { SessionMenu } from './SessionMenu'
 
 /**
@@ -45,6 +44,7 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
   const titles = useStore((s) => s.titles)
   const peekedPath = useStore((s) => s.peekedPath)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
+  /* 过程布局：与设置·外观「执行过程」同一个值 */
   /*
    * 「只读打开」：点开的会话没有接管运行实例（同一目录已有忙碌实例），
    * `session` 仍是那个正在跑的会话。标题、空间入口、忙碌点都要跟着**正在看的**会话走，
@@ -158,7 +158,6 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
         <EnvironmentMenu />
 
         {/* 目标入口（U-3a）：点开是只读浮层，不再占工具页的一块 */}
-        <GoalPopover />
 
         {/*
          * 模型胶囊**已删**（用户要求）。

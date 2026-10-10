@@ -36,3 +36,5 @@
 @import './workbench.css' layer(modules);
 @import './workspace.css' layer(modules);
 @import './icon-state.css' layer(modules);
+/* 界面方案 E：全界面统一的一层，排在模块最后 */
+@import './scheme.css' layer(modules);

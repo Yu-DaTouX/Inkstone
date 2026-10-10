@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../../icons/Icon'
+import { modelErrorText } from '../../../../shared/model-errors'
 import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -50,7 +51,7 @@ const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
  * （`installed`）。**不显示"当前会话可用"** —— 那需要 pi 重载，而我们没有把
  * 它当成已发生的事。
  */
-export function PackagesTab(): React.JSX.Element {
+export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin = true }: { selectedSource?: string; selectionKey?: number; showBuiltin?: boolean }): React.JSX.Element {
   const t = useT()
   const cwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd ?? '')
   const [listing, setListing] = useState<PackageListingView | null>(null)
@@ -59,6 +60,7 @@ export function PackagesTab(): React.JSX.Element {
   const [result, setResult] = useState<PackageActionResultView | null>(null)
   const [source, setSource] = useState('')
   const [local, setLocal] = useState(false)
+  useEffect(() => { if (selectedSource) setSource(selectedSource) }, [selectedSource, selectionKey])
 
   /*
    * 图片附件目录：占用 + 手动清理。
@@ -89,8 +91,9 @@ export function PackagesTab(): React.JSX.Element {
           ? t('pkg.attachDone', { n: res.removed, size: fmtSize(res.bytes) })
           : t('pkg.attachNone')
       )
-    } catch {
-      setAttachNote(t('pkg.failed'))
+    } catch (error) {
+      const reason = modelErrorText(error).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
+      setAttachNote(`${t('pkg.failed')}: ${reason} ${t('pkg.attachRetry')}`)
     } finally {
       setAttachBusy(false)
     }
@@ -137,7 +140,9 @@ export function PackagesTab(): React.JSX.Element {
   const run = async (kind: 'install' | 'remove' | 'update', src: string, targetLocal: boolean): Promise<void> => {
     setBusy(`${kind}:${targetLocal ? 'project' : 'user'}:${src}`)
     setShowRaw(false)
-    const res = await window.yan.packages.action({ kind, source: src, local: targetLocal, cwd })
+    let res: PackageActionResultView
+    try { res = await window.yan.packages.action({ kind, source: src, local: targetLocal, cwd }) }
+    catch (error) { res = { ok: false, error: error instanceof Error ? error.message : String(error) } }
     setResult(res)
     setBusy('')
     /* 主进程会把执行后的列表带回来（省一次往返，界面立刻是对的） */
@@ -277,7 +282,7 @@ export function PackagesTab(): React.JSX.Element {
       </div>
 
       {/* ⑤ 砚内置能力：与「用户装的包」彻底分开（实施-02 S4） */}
-      {builtin.length > 0 ? (
+      {showBuiltin && builtin.length > 0 ? (
         <Disclosure title={t('pkg.builtinCount', { n: builtin.length })} testId="set-builtin-caps">
           <div className="ui-row-desc">{t('pkg.builtinDesc')}</div>
           <div className="pkg-list">

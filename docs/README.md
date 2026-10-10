@@ -4,9 +4,13 @@
 
 | 目的 | 文档 |
 | --- | --- |
+| 当前功能、产品定位、目标平台与精简边界 | [产品方向](PRODUCT_DIRECTION.md) |
 | 安装、登录和日常使用 | [使用指南](GETTING_STARTED.md) · [English](GETTING_STARTED_EN.md) |
 | Android 手机接入与配对 | [手机接入说明](MOBILE_ACCESS.md) |
-| 统一 Agent 入口、外部 CLI 派活、固定成果与手机控制 | [多 Agent 工作台](AGENT_HUB.md) |
+| Hermes 通过插件查看和控制砚 | [Hermes 控制插件](../integrations/hermes-inkstone/README.md) |
+| 下载砚插件、浏览及管理 pi 生态包 | [插件市场](PLUGIN_MARKET.md) |
+| 现有 Hub：外部 CLI、固定成果与手机控制（待精简复核） | [多 Agent 工作台](AGENT_HUB.md) |
+| 现有独立服务与文件任务（待精简复核） | [运行服务](AGENT_SERVICE.md) |
 | 长期记忆与其他 AI 工具互通 | [记忆互通说明](MEMORY_INTEROP.md) |
 | 两台砚之间的连接与传送 | [砚互联说明](PEER_ACCESS.md) |
 | 从源码运行与贡献 | [贡献指南](CONTRIBUTING.md) |

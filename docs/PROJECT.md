@@ -1,5 +1,7 @@
 # 代码导览
 
+产品目标见[产品方向与精简边界](PRODUCT_DIRECTION.md)。下表记录当前源码位置，不表示空间、资料库、Hub 或独立文件任务仍是产品必选模块；其退役与迁移需按调用链审计。
+
 [架构简介](ARCHITECTURE.md) · [按功能查找的代码地图](CODE_MAP.md) · [技术路线](TECH_STACK_OPTIONS.md) · [贡献指南](CONTRIBUTING.md)
 
 Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；长期记忆的范围与外部工具读写约定见[记忆互通说明](MEMORY_INTEROP.md)；两台砚之间的本次连接授权见[砚互联说明](PEER_ACCESS.md)。
@@ -8,7 +10,13 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 
 | 路径 | 职责 |
 | --- | --- |
+| `integrations/hermes-inkstone/` | 可独立安装的 Hermes Python 插件；通过远程 API 控制会话、回答普通问题，通过用户 `/inkstone` 命令批准具体操作，复用设备配对，不嵌入桌面运行时 |
+| `src/main/remote-approval.ts` | 将真实批准卡映射到远程待答队列；验证人工决定绑定的会话、运行、内容摘要与有效期 |
+| `src/shared/inkstone-plugins.ts` / `src/main/plugin-market.ts` / `components/settings/PluginMarketTab.tsx` | 自有插件目录、随包 Hermes 导出与 npm pi-package 搜索；安装复用 packages IPC 和 pi CLI，见[插件市场](PLUGIN_MARKET.md) |
 | `src/main/index.ts` | Electron 主进程入口：装配、生命周期、运行控制与窗口 |
+| `src/core/run-state.ts` | 无平台依赖的运行身份、忙碌判定与只读状态投影；由运行注册表传入执行器事实，不管理消息、原生上下文、窗口或持久状态 |
+| `src/core/agent-service.ts` / `runtime-store.ts` / `task-files.ts` / `task-authority.ts` / `data-root-lock.ts` | 独立运行与普通文件任务：持久事实、审批回执、版本化成果应用、权限/预算与单写入者；见[独立运行与文件任务](AGENT_SERVICE.md) |
+| `src/adapters/pi-executor.ts` / `service-cli.ts`、`scripts/agent-service.mjs` | 官方 pi JSONL 适配和显式 Node 宿主；复用 protocol，不依赖 Electron 窗口 |
 | `src/main/ipc/` | 按领域的 IPC 注册器（`registrar.ts` 统一校验调用者是主窗口） |
 | `src/main/goal-coordinator.ts` / `handoff-coordinator.ts` / `session-work-scheduler.ts` | 工作模式与目标状态、历史交接兼容、回合收尾观察；宿主自动续跑与自动交接已停用 |
 | `src/main/session-host.ts` / `remote-host.ts` | 桌面会话的宿主能力（桌面 IPC 与远程共用）；手机与砚对砚所有者一侧的处理 |
@@ -27,20 +35,20 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/preload/index.ts` | 渲染端可用的宿主接口 |
 | `src/shared/ipc.ts` | IPC 契约与类型 |
 | `src/renderer/src/components/` | React 界面组件 |
-| `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页、空间工作台（概览 / 资料）与会话地图（`WorkbenchHome.tsx` / `SpaceWorkbench.tsx` / `SpaceOverview.tsx` / `LibraryView.tsx` / `FollowPanel.tsx`（持续关注）/ `SessionMap.tsx`（会话地图：当前会话家族、问答轮次与持久化分支）） |
-| `src/shared/space.ts` + `src/main/space-store.ts` | 主题空间：非 Git 的会话归属与项目关联 |
-| `src/shared/library.ts` + `src/main/library-store.ts` / `library-parser.ts` / `library-service.ts` | 资料库：唯一事实源、版本绑定与解析 |
-| `src/shared/activity-flow.ts` + `src/shared/context-assembly.ts` / `src/main/context-assembler.ts` | 建任务阈值与历史资料装配的数据结构；自动装配和请求注入已停用，资料引用仍可回原文 |
-| `src/shared/research.ts` | 资料引用：引用状态（旧版本按版本保留、**只提示不改引用**）与按版本读片段；对照做法在 `resources/skills/research` |
+| `src/renderer/src/components/workbench/` | 中栏的多 Agent 与子 Agent 视图：`AgentHubHome.tsx`、`AgentHubPanel.tsx`、`AgentWorkspacePanel.tsx`、`AgentRunChat.tsx`、`AgentAttachments.tsx`、`AgentMark.tsx`、`SubagentPanel.tsx`、`Workspace.tsx`。空间、资料库、关注、工作台首页、任务收件箱与会话地图界面已于 2026-10-09 移除，无界面入口 |
+| `src/shared/space.ts` + `src/main/space-store.ts` | 主题空间：非 Git 的会话归属与项目关联（历史数据兼容，无界面入口） |
+| `src/shared/library.ts` + `src/main/library-store.ts` / `library-parser.ts` / `library-service.ts` | 资料库：唯一事实源、版本绑定与解析（历史数据兼容，无界面入口） |
+| `src/shared/activity-flow.ts` + `src/shared/context-assembly.ts` / `src/main/context-assembler.ts` | 建任务阈值与历史资料装配的数据结构；自动装配和请求注入已停用，资料引用仍可回原文（无界面入口） |
+| `src/shared/research.ts` | 资料引用：引用状态（旧版本按版本保留、**只提示不改引用**）与按版本读片段；对照做法在 `resources/skills/research`（无界面入口） |
 | `src/shared/user-skill.ts` + `src/main/user-skills.ts` | 用户技能：`YAN_DIR/skills/<名称>/SKILL.md` 的校验、保存（`yan skill save`）与按 `--skill` 加载；旧办事模板（`playbooks.json`）启动时一次性导出成技能，原文件保留。写法与执行约定见 `resources/skills/playbook` |
-| `src/shared/learning-export.ts` + `src/main/learning-export.ts` | 学习记录导出：学习功能已改由 `tutor` 技能在对话中进行；启动时把旧版留下的 courses / study-sessions / exercises / learning-memory 四个原始 JSON 整理成 `YAN_DIR/learning-export/` 下按课程分的 Markdown 与完整副本；只读原文件，不依赖各 store。讲解与出题做法见 `resources/skills/tutor` |
+| `src/shared/learning-export.ts` + `src/main/learning-export.ts` | 旧学习记录导出：`exportLearningData` 可把旧版留下的 courses / study-sessions / exercises / learning-memory 四个原始 JSON 整理成 `YAN_DIR/learning-export/` 下按课程分的 Markdown 与完整副本；只读原文件，不依赖各 store。**当前源码无调用点，启动时不会自动执行**。学习功能已改由 `tutor` 技能在对话中进行，讲解与出题做法见 `resources/skills/tutor` |
 | `src/shared/subagent-brief.ts` | 内部 agent 分工：任务输入（目标 / 交付物 / 来源 / 边界）不猜、结果汇总如实标来源（**未决问题不自动抽取**）；何时拆分见 `resources/skills/subagent` |
-| `src/shared/follow.ts` + `src/main/follow-store.ts` | 持续关注与提醒：**应用没开就不跟进**（状态里没有「后台在跑」）、未启用的关注不自行建立、没变化不打扰、一次性关注看完就结束 |
-| `src/shared/activity-model.ts` | 按活动配置模型：优先级（活动 → 默认 → 跟随会话）可解释、回退如实标注、**不改任务身份与学习状态** |
-| `src/shared/conversation-turns.ts` | 轮次投影（一轮问答 = 一个块），会话地图的轮次级基础 |
-| `src/shared/session-map.ts` | 历史会话地图投影工具；当前地图使用持久化会话家族与轮次投影 |
+| `src/shared/follow.ts` + `src/main/follow-store.ts` | 持续关注与提醒：**应用没开就不跟进**（状态里没有「后台在跑」）、未启用的关注不自行建立、没变化不打扰、一次性关注看完就结束（界面已移除，无入口） |
+| `src/shared/activity-model.ts` | 按活动配置模型：优先级（活动 → 默认 → 跟随会话）可解释、回退如实标注、**不改任务身份与学习状态**（界面已移除，无入口） |
+| `src/shared/conversation-turns.ts` | 轮次投影（一轮问答 = 一个块），原会话地图的轮次级基础（界面已移除） |
+| `src/shared/session-map.ts` | 历史会话地图投影工具（界面已移除，无入口） |
 | `src/shared/search.ts` + `src/main/search/` | 联网搜索（`yan search query / fetch / docs`，单一入口）：增强搜索服务按 `SEARCH_PROVIDERS` 登记，都需要用户自己注册 key、填了才启用，key 在 `search-config.json` 或环境变量——Tavily / Brave 进 `query` 来源链，Firecrawl 是 `fetch` 本地读不出正文时的兜底，Context7 是 `docs`（key 可选），共用 `api-call.ts` 的超时与错误码；来源白名单（首批 wikipedia / arxiv / hackernews，HTTP 直连不需要浏览器扩展）、归一化与 URL 去重、逐来源状态（`ok` / `empty` / `timeout` / `unavailable` / `error` 分开）、`spawn` 参数数组不经 shell；JS 入口**用真实 node 跑**（Electron 自带的 Node 会让 commander 的参数切分错位，子命令全部失效、而 `--version` 仍成功 → 假绿），PATH 里没有 node 时可用 `YAN_NODE_BIN` 显式指定；`scripts/probe/search.mjs` 是不依赖宿主的探针，`scripts/probe/search-electron.mjs` 专测 **Electron 运行时**（钉住上面那条假绿回归） |
-| `src/shared/task-inbox.ts` + `src/main/task-inbox-service.ts` | 任务收件箱：七态投影（`needs_review` 无精确来源，只能近似并标 `approximate`）、排序与筛选、注入式只读聚合（TTL 缓存 + 分页；某个来源坏了只丢那一项） |
+| `src/shared/task-inbox.ts` + `src/main/task-inbox-service.ts` | 任务收件箱：七态投影（`needs_review` 无精确来源，只能近似并标 `approximate`）、排序与筛选、注入式只读聚合（TTL 缓存 + 分页；某个来源坏了只丢那一项）；界面已移除，无入口 |
 | `src/renderer/src/icons/` + `scripts/design/icons/` | 图标体系：`catalog.json` 是语义 → 图标的唯一真源（55 个语义），`npm run icons` 生成 sprite；界面只用语义名，不写库里的原名 |
 | `src/renderer/src/styles/ui.css`、`src/renderer/src/components/ui/` | 统一控件（按钮、分段、开关、徽标、空状态）的唯一外观来源，规则见[设计规范](DESIGN_SYSTEM.md)，重构路线见[界面重构计划](UI_REDESIGN.md) |
 | `src/renderer/src/styles/motion.css` | 动效唯一真源（37 个关键帧）；时长 / 曲线令牌在 `tokens.css`，模块 CSS 只引用不定义 |

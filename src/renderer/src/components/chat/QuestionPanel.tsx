@@ -6,6 +6,7 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { PixelDigits } from './PixelDigits'
 import { Button, IconButton } from '../ui'
+import { QuestionForm } from './QuestionForm'
 
 /**
  * 问题面板（方案第 6 节）。
@@ -189,8 +190,9 @@ function PanelBody({
     answerUi({ id: reqId, ...res })
   }
 
-  const title =
-    req.method === 'select'
+  const title = req.form?.length
+    ? t('qf.title')
+    : req.method === 'select'
       ? t('q.select')
       : req.method === 'confirm'
         ? t('q.confirm')
@@ -274,7 +276,13 @@ function PanelBody({
         <div className="qpanel-body" data-testid="question-panel-body">
           {req.message ? <div className="qpanel-msg">{req.message}</div> : null}
 
-          {(req.method === 'select' || req.method === 'input') && req.options?.length ? (
+          {/* 宿主表单：一次问清几项，其余输入形态都不显示 */}
+          {req.form?.length ? (
+            <QuestionForm fields={req.form} busy={busy} submitLabel={page.total > 1 ? t('q.next') : t('q.submit')}
+              onSubmit={(json) => answer({ value: json })} onSkip={() => answer({ cancelled: true })} />
+          ) : null}
+
+          {!req.form?.length && (req.method === 'select' || req.method === 'input') && req.options?.length ? (
             <div className="qpanel-options">
               {req.options?.map((o, index) => (
                 <button
@@ -299,7 +307,7 @@ function PanelBody({
            *   · `input` / `editor` —— 输入框本身就是回答，见下面的分支。
            * 不 autoFocus：问题到达时用户可能正在别处打字。
            */}
-          {req.method === 'select' ? (
+          {!req.form?.length && req.method === 'select' ? (
             <input
               className="qpanel-input"
               data-testid="question-panel-custom"
@@ -316,7 +324,7 @@ function PanelBody({
             />
           ) : null}
 
-          {req.method === 'input' ? (
+          {!req.form?.length && req.method === 'input' ? (
             <input
               className="qpanel-input"
               data-testid="question-panel-input"
@@ -346,7 +354,7 @@ function PanelBody({
             />
           ) : null}
 
-          <div className="qpanel-foot">
+          {req.form?.length ? null : <div className="qpanel-foot">
             <Button disabled={busy} onClick={() => answer({ cancelled: true })} data-testid="question-panel-skip">
               {t('q.skip')}
             </Button>
@@ -369,7 +377,7 @@ function PanelBody({
                 {page.total > 1 ? t('q.next') : t('q.submit')}
               </Button>
             ) : null}
-          </div>
+          </div>}
         </div>
       )}
     </div>

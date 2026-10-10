@@ -17,8 +17,7 @@
  * 答复回来后才决定放行还是 `{ block: true }`。
  *
  * ── 权限档位（桌面设置 `permissionMode`）──
- * `danger`（缺省，危险批准）：命中高危就问；`all`（全部允许）：一律不问，但其中的删除
- * 拦下并引到 `yan file trash`——没经确认的删除一律移到回收站（用户 2026-10-07 定）。
+ * `danger`（缺省，危险批准）：命中高危就问；`all`（全部允许）：砚不额外审批或拦截，保留原生工具行为（2026-10-08）。
  *
  * ── 失败方向 ──
  * 命中高危却连不上宿主 / 没有窗口 / 超时 → **拦下**（宁可让模型换路，也不在没人看着时放行）。
@@ -345,6 +344,18 @@ function guardPrefs() {
 
 /* ------------------------------------------------------------------ 向宿主确认 */
 
+/** Bridge 的原生工具在 pi 钩子之外执行，批准的是整次委派，不能承诺逐条命令审批。 */
+export function claudeDelegationDanger(toolName, input, cwd) {
+  if (['read', 'write', 'edit', 'bash', 'powershell', 'grep', 'find', 'ls', 'multi_edit', 'apply_patch'].includes(toolName)) return []
+  const readConfig = (path) => {
+    try { return JSON.parse(readFileSync(path, 'utf8'))?.askClaude ?? {} } catch { return {} }
+  }
+  const agentDir = process.env.PI_CODING_AGENT_DIR || process.env.YAN_PI_DIR || join(homedir(), '.pi', 'agent')
+  const config = { ...readConfig(join(agentDir, 'claude-bridge.json')), ...readConfig(join(cwd || process.cwd(), '.pi', 'claude-bridge.json')) }
+  if (toolName !== (config.name || 'AskClaude')) return []
+  return ['Claude Code 原生工具委派：砚无法逐条检查内部操作；允许将授权本次完整任务。需要逐条危险审批时，请使用指定 claude-bridge 模型的砚子 Agent']
+}
+
 async function askHost(toolName, input, reasons, outsideDirs = []) {
   const url = process.env.YAN_CLI_URL
   const token = process.env.YAN_CLI_TOKEN
@@ -354,7 +365,7 @@ async function askHost(toolName, input, reasons, outsideDirs = []) {
   const detail =
     toolName === 'bash' || toolName === 'powershell'
       ? String(input?.command ?? '')
-      : String(input?.path ?? input?.file_path ?? input?.filePath ?? '')
+      : typeof input?.prompt === 'string' ? JSON.stringify(input) : String(input?.path ?? input?.file_path ?? input?.filePath ?? '')
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -362,7 +373,7 @@ async function askHost(toolName, input, reasons, outsideDirs = []) {
       body: JSON.stringify({
         apiVersion: 1,
         command: 'danger.confirm',
-        params: { tool: toolName, detail: detail.slice(0, 2000), reasons, ...(outsideDirs.length ? { outsideDirs } : {}) },
+        params: { tool: toolName, detail: typeof input?.prompt === 'string' ? detail : detail.slice(0, 2000), reasons, ...(outsideDirs.length ? { outsideDirs } : {}) },
         sessionId,
         projectId
       }),
@@ -382,20 +393,12 @@ export default function dangerGuardExtension(pi) {
     const name = String(event?.toolName ?? '')
     if (!name) return undefined
     const prefs = guardPrefs()
-    const reasons = detectDanger(name, event?.input ?? {}, ctx?.cwd)
-    if (prefs.mode === 'all') {
-      /* 全部允许：不确认；高危里的删除改走回收站（临时目录除外） */
-      const command = String(event?.input?.command ?? '')
-      if (reasons.length && (name === 'bash' || name === 'powershell') && hasDelete(command)) {
-        const targets = shellDeleteTargets(command, ctx?.cwd)
-        if (!(targets.length && targets.every(isTempPath))) return { block: true, reason: trashHint(targets) }
-      }
-      return undefined
-    }
-    const outside = outsideWrites(name, event?.input ?? {}, ctx?.cwd, prefs)
-    for (const target of outside) reasons.push(`写入项目之外的路径：${target}`)
+    if (prefs.mode === 'all') return undefined
+    const delegation = claudeDelegationDanger(name, event?.input ?? {}, ctx?.cwd)
+    if (delegation.length && JSON.stringify(event?.input ?? {}).length > 20000) return { block: true, reason: 'Claude Code 委派任务过长，无法完整展示审批内容。请缩短任务，或使用砚子 Agent。' }
+    const reasons = [...detectDanger(name, event?.input ?? {}, ctx?.cwd), ...delegation]
     if (reasons.length === 0) return undefined
-    const answer = await askHost(name, event?.input ?? {}, [...new Set(reasons)], outside)
+    const answer = await askHost(name, event?.input ?? {}, [...new Set(reasons)])
     if (answer.allowed) return undefined
     return { block: true, reason: `高危操作未获用户确认：${reasons.join('；')}。${answer.why}。请换一种更安全的做法，或向用户说明为什么必须这样做。` }
   })

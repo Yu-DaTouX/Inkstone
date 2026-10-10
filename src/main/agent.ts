@@ -18,6 +18,8 @@ import { homedir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { saveUserSkill } from './user-skills'
 import { PiRpc, resolvePi } from './protocol'
+import { modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { isSubagentNotice } from '../shared/subagent-notice'
 import { AGENT_CONTEXT_ERROR, agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
@@ -64,6 +66,7 @@ import { isAgentActivity, isAgentProfileKind, type AgentActivity, type AgentProf
 import { isSafeSessionId } from './context-state-store'
 
 import { questionLog } from './question-log'
+import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, summarizeAnswers, type QuestionField } from '../shared/question-form'
 
 import { requestedTimeout } from '../shared/ui-timeout'
 import { buildCatalog } from './capabilities/catalog'
@@ -126,10 +129,8 @@ const FLUSH_MS = 16
 /**
  * 节流间隔的上限。
  *
- * 文本/输出越长，一帧要序列化、要 diff 的字节越多 —— 这时把间隔拉开比
- * 「硬撑 60fps」更划算：每次推送都是**值得的**，而不是把主线程压在
- * 全量重传上。实测（见 MessageParts.tsx 顶部）一帧的渲染预算会被
- * 几十万字的累积文本吃穿，所以让它自然降频到 10~20fps 比卡顿好。
+ * 独立bash输出按累积长度降频。模型正文已经只传增量，不应因为
+ * 之前的回答变长就把后续新字压成120ms一批。
  */
 const MAX_FLUSH_MS = 120
 
@@ -199,6 +200,7 @@ export interface BrowserCommandHost {
  * 同时模型能发现并调用它。
  */
 export interface SubagentCommandContext {
+  model?: string
   cwd: string
   parentSessionId?: string
   parentRunId?: string
@@ -347,8 +349,7 @@ export class AgentController extends EventEmitter {
   private agentProfileExtension?: string
   private responseDetailExtension?: string
   /**
-   * 系统提示开场白扩展：把 pi 内置的英文 preamble 换成砚的中文开场白
-   * （只动这一句，见 resources/pi-extensions/preamble.js）。
+   * 保留pi原生规则，补充砚身份与简短进展说明约定。
    */
   private preambleExtension?: string
   /** 界面语言扩展（每轮注入一句语言要求，见 resources/pi-extensions/language.js） */
@@ -394,6 +395,7 @@ export class AgentController extends EventEmitter {
   private confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
   private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
   private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
+  private getPermissionMode?: () => Promise<'danger' | 'all'>
   private requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
   private dangerGuardExtension?: string
   private permissionGuardExtension?: string
@@ -590,9 +592,9 @@ export class AgentController extends EventEmitter {
     /** 回复详细程度扩展（方案 3.1）：按档位注入系统提示 */
     responseDetailExtension?: string
     /**
-     * 系统提示开场白扩展：把 pi 内置的英文 preamble 换成砚的中文开场白。
+     * 薄系统提示扩展：砚身份与简短进展说明约定。
      *
-     * 只做一处定点替换 —— 不用 `--system-prompt`（那是整段替换，
+     * 不用 `--system-prompt`（那是整段替换，
      * 会丢掉 pi 自己维护的 tools / rules / docs 段落）。
      */
     preambleExtension?: string
@@ -658,6 +660,7 @@ export class AgentController extends EventEmitter {
     confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
     confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
     confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
+    getPermissionMode?: () => Promise<'danger' | 'all'>
     /** `yan session move`：问用户能否把会话移到另一个文件夹（本轮结束后由宿主切换）。 */
     requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
     dangerGuardExtension?: string
@@ -712,6 +715,7 @@ export class AgentController extends EventEmitter {
     this.confirmExternalApi = opts.confirmExternalApi
     this.confirmToolConsent = opts.confirmToolConsent
     this.confirmDanger = opts.confirmDanger
+    this.getPermissionMode = opts.getPermissionMode
     this.requestSessionMove = opts.requestSessionMove
     this.dangerGuardExtension = opts.dangerGuardExtension
     this.permissionGuardExtension = opts.permissionGuardExtension
@@ -989,7 +993,20 @@ export class AgentController extends EventEmitter {
     })
 
     rpc.on('exit', (code) => {
+      if (this.rpc !== rpc) return
+      // A dead RPC cannot finish its turn or answer UI requests. Preserve history/queue
+      // for explicit reload, but release busy flags so the runner can be replaced.
+      this.flushNow()
       this.streaming = null
+      this.bash = null
+      this.agentRunning = false
+      this.compactionState = EMPTY_COMPACTION_STATE
+      this.ui.rejectPendingHostUi('pi 已退出，问题请求已取消')
+      this.ui.pending.clear()
+      if (this.state) {
+        this.state = { ...this.state, isAgentRunning: false, isStreaming: false, isCompacting: false }
+        this.push({ ch: 'state', payload: this.state })
+      }
       this.setConn('exited', `pi 已退出（code=${code ?? 'null'}）`)
     })
 
@@ -1211,6 +1228,7 @@ export class AgentController extends EventEmitter {
       }
       return this.subagentHost.run(command, params, {
         cwd: this.cwd,
+        model: this.state?.model ? `${this.state.model.provider}/${this.state.model.id}` : undefined,
         /* state.sessionId 是真正的父会话；新会话尚未落盘时退回 runner id。 */
         parentSessionId: this.state?.sessionId ?? this.capabilityOpts?.sessionId,
         parentRunId: this.capabilityOpts?.sessionId,
@@ -1331,6 +1349,36 @@ export class AgentController extends EventEmitter {
     this.push({ ch: 'question-log', payload: { sessionId, entries: questionLog.list(sessionId) } })
   }
 
+  private async runQuestionForm(
+    question: string,
+    params: Record<string, unknown>
+  ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    let fields: QuestionField[]
+    try {
+      fields = parseQuestionFields(params.fields)
+    } catch (error) {
+      if (error instanceof QuestionFormError) throw new CapabilityCommandError('question_form_invalid', error.message)
+      throw error
+    }
+    const mode = await this.capabilityOpts?.getWorkMode?.()
+    if (mode === 'autonomous') {
+      return {
+        data: { question, fields, answers: null, answer: null, autonomous: true, cancelled: false },
+        summary: { kind: 'question', action: 'ask', mode, form: true, answered: false, autonomous: true }
+      }
+    }
+    const response = await this.ui.requestHostUi({ method: 'input', title: '需要你填写', message: question, form: fields, timeout: requestedTimeout(params.timeout) })
+    const answers = typeof response.value === 'string' ? parseQuestionAnswers(fields, response.value) : null
+    const answer = answers ? summarizeAnswers(fields, answers) : null
+    const cancelled = response.cancelled === true || answers === null
+    const entries = questionLog.append(this.state?.sessionId, { question, options: [], answer, cancelled, at: Date.now() })
+    if (entries) this.pushQuestionLog()
+    return {
+      data: { question, fields, answers, answer, cancelled, autonomous: false },
+      summary: { kind: 'question', action: 'ask', mode: mode ?? 'standard', form: true, answered: answers !== null, cancelled }
+    }
+  }
+
   /**
    * `yan question ask` 的宿主实现。
    *
@@ -1344,6 +1392,9 @@ export class AgentController extends EventEmitter {
     const question = typeof params.question === 'string' ? params.question.trim() : ''
     if (!question) throw new CapabilityCommandError('question_missing', 'question ask 需要 question')
     if (question.length > 4000) throw new CapabilityCommandError('question_too_long', '问题不能超过 4000 个字符')
+
+    /* 表单形态：一次问清几项（单选卡片 / 多选 / 文字 / 日期 / 数字 / 滑块），格式见 shared/question-form.ts */
+    if (params.fields !== undefined) return this.runQuestionForm(question, params)
 
     const rawOptions = params.options
     const options = Array.isArray(rawOptions)
@@ -1478,6 +1529,10 @@ export class AgentController extends EventEmitter {
     const parts = normalized.parts
     const purpose = typeof params.purpose === 'string' ? params.purpose.trim().slice(0, 500) : ''
     const declaredDanger = params.dangerous === true || params.dangerous === 'true'
+    // 两档权限取代按工具积累的同意率；旧记录仍可读取但不再决定调用。
+    if (!declaredDanger || (await this.getPermissionMode?.()) === 'all') {
+      return { summary: { kind: 'consent', allowed: true, decision: 'auto', reason: 'permission-mode' } }
+    }
     const ledger = await readConsentLedger()
     const verdict = consentVerdict(ledger.entries.find((entry) => entry.key === consentKeyOf(parts)), parts, Date.now(), declaredDanger)
     const summary = (decision: 'auto' | ConsentDecision | 'no-answer') => ({
@@ -1505,8 +1560,11 @@ export class AgentController extends EventEmitter {
    * 没有窗口 / 没有回调 / 用户关掉框都算没有确认（薄层据此拦下）。
    */
   private async runDangerConfirmCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
+    if ((await this.getPermissionMode?.()) === 'all') return { summary: { kind: 'danger-confirm', allowed: true, decision: 'auto' } }
     const tool = typeof params.tool === 'string' ? params.tool.slice(0, 40) : 'tool'
-    const detail = typeof params.detail === 'string' ? params.detail.slice(0, 2000) : ''
+    const detail = typeof params.detail === 'string' ? params.detail : ''
+    // Never authorize a different, truncated task than the one the user reviewed.
+    if (detail.length > 20000) return { summary: { kind: 'danger-confirm', allowed: false, decision: 'no-answer', reason: '审批内容过长，请缩短任务后重试' } }
     const reasons = Array.isArray(params.reasons)
       ? params.reasons.filter((r): r is string => typeof r === 'string').map((r) => r.slice(0, 200)).slice(0, 6)
       : []
@@ -2430,12 +2488,11 @@ export class AgentController extends EventEmitter {
         if (m.stopReason === 'error') {
           /*
            * 模型侧错误（实施-05 S5c）：宿主据此决定要不要自动继续。
-           * 这个事件不带错误文本（只有 `stopReason`），所以 `text` 允许为空 ——
-           * 分类器把空文本当「未知但可重试」，并与 `auto_retry_end` 的同一错误去重。
+           * message_end 的 errorMessage 保留服务商原因，不能只转发 stopReason。
            */
           this.push({
             ch: 'agent-error',
-            payload: { message: '模型返回错误', text: '', source: 'stop-reason' }
+            payload: { message: modelErrorNotice(m.errorMessage), text: modelErrorText(m.errorMessage), source: 'stop-reason' }
           })
           /* 失败也是终止原因：不能落盘成「正常完成」（H-6）。 */
           this.turn.terminal = 'failed'
@@ -2658,27 +2715,27 @@ export class AgentController extends EventEmitter {
             id: `retry-${Date.now()}`,
             method: 'notify',
             notifyType: 'warning',
-            message: `上游出错，第 ${Number(evt.attempt ?? 1)} 次重试…`
+            message: `${modelErrorNotice(evt.errorMessage ?? evt.error)} 第 ${Number(evt.attempt ?? 1)} 次重试…`
           }
         })
         break
 
       case 'auto_retry_end':
         if (evt.success === false) {
-          const finalError = typeof evt.finalError === 'string' ? evt.finalError : ''
+          const finalError = modelErrorText(evt.finalError)
           this.push({
             ch: 'notify',
             payload: {
               id: `retry-fail-${Date.now()}`,
               method: 'notify',
               notifyType: 'error',
-              message: '重试失败，本轮结束。'
+              message: `重试失败，本轮结束。${modelErrorNotice(finalError)}`
             }
           })
           /* pi 的重试已用尽；把错误文本交给宿主（自动继续要靠它做分类，S5c） */
           this.push({
             ch: 'agent-error',
-            payload: { message: '模型返回错误', text: finalError, source: 'auto-retry' }
+            payload: { message: modelErrorNotice(finalError), text: finalError, source: 'auto-retry' }
           })
         }
         break
@@ -2837,13 +2894,11 @@ export class AgentController extends EventEmitter {
   }
 
   /**
-   * 节流间隔：随着累积文本/输出变长而拉大（上限 MAX_FLUSH_MS）。
-   *
-   * 理由见 MAX_FLUSH_MS：一帧的成本与已累积的文本量成正比，
-   * 长回答/长输出时降频比卡顿好。
+   * 模型增量维持一帧节奏；独立bash输出仍保留自适应限频。
    */
   private flushDelay(): number {
-    const len = (this.streaming?.text.length ?? 0) + (this.bash?.output.length ?? 0)
+    if (this.streaming) return FLUSH_MS
+    const len = this.bash?.output.length ?? 0
     return Math.min(MAX_FLUSH_MS, Math.max(FLUSH_MS, Math.round(len / 2000)))
   }
 
@@ -3017,7 +3072,10 @@ export class AgentController extends EventEmitter {
 
   private publishQueueItems(next: QueueState): QueueState {
     this.queueState = next
-    this.push({ ch: 'queue', payload: next })
+    this.push({ ch: 'queue', payload: {
+      steering: next.steering.filter(item => !isSubagentNotice(item.text)),
+      followUp: next.followUp.filter(item => !isSubagentNotice(item.text))
+    } })
     return next
   }
 
@@ -3683,6 +3741,15 @@ export class AgentController extends EventEmitter {
     /* 新模型的上下文窗口与 token 统计必须一起刷新。 */
     await this.refreshStats()
     return { ok: true }
+  }
+
+  /** Host-only model metadata for an explicitly requested independent task. No secrets cross IPC. */
+  async serviceModelDetails(): Promise<Record<string, unknown> | null> {
+    const current = this.state?.model
+    if (!current || !this.rpc) return null
+    const response = await this.rpc.command<{ models?: Array<Record<string, unknown>> }>('get_available_models')
+    if (!response.success) return null
+    return response.data?.models?.find(model => model.id === current.id && model.provider === current.provider) ?? null
   }
 
   async listModels(): Promise<ModelInfo[]> {

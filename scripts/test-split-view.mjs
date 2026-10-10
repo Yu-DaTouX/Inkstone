@@ -122,6 +122,47 @@ export async function runSplitViewTests(ok) {
   const tied = [msg('u1', 100), msg('a2', 400)]
   ok(snaps.newestMessages(shownNew, tied) === shownNew, '一样新：取靠前的（屏幕上那份，含只推给活动会话的卡片）')
   ok(snaps.newestMessages(undefined, [], tied) === tied, '空的跳过')
+  /* 宽度份额只留还在分屏里的块；资源归属可认领、可释放 */
+  const sv = useSplitView.getState()
+  sv.close()
+  sv.open(b, a)
+  useSplitView.getState().open(c, a)
+  const [ka, kb, kc] = useSplitView.getState().split.tiles.map(split.splitTileKey)
+  useSplitView.getState().setWeights({ [ka]: 2, [kb]: 3, [kc]: 4 })
+  useSplitView.getState().remove(2)
+  const kept = useSplitView.getState().weights
+  ok(kept[ka] === 2 && kept[kb] === 3 && !(kc in kept), '关掉一块：它的宽度份额一并清掉')
+  /* 列的固定编号：会话补上 id、或焦点那一块换了会话，列的身份都不变 */
+  const pathOnly = { path: 'C:/s/p.jsonl' }
+  const withUidSplit = placeInSplit(null, pathOnly, a)
+  const uid0 = withUidSplit.tiles[1].uid
+  const enriched = reconcileSplit(withUidSplit, { sessionId: 'p', path: 'C:/s/p.jsonl' })
+  ok(!!uid0 && enriched.tiles[1].uid === uid0 && enriched.tiles[1].sessionId === 'p', '会话后来补上 id：列的编号不变')
+  const movedSplit = placeInSplit(withUidSplit, { path: 'C:/s/p.jsonl' }, a, 0)
+  ok(movedSplit.tiles[0].uid === uid0 && movedSplit.tiles.length === 2, '拖已在分屏里的会话挪位置：列的编号不变')
+  const swapped = reconcileSplit(withUidSplit, c)
+  ok(swapped.tiles[0].uid === withUidSplit.tiles[0].uid && swapped.tiles[0].sessionId === 'c', '焦点那一块换了会话：列的编号沿用')
+  /* 工作区键：见过的会话取对话键（接力后沿用原对话），没见过的按路径与 id */
+  const wk = await load('src/renderer/src/state/workspace-key.ts', 'out/test/workspace-key.mjs')
+  ok(wk.workspaceKeyFor({ sessionId: 'z', path: 'C:/s/z.jsonl' }) === 'C:/s/z.jsonl', '没见过的会话：按路径取键')
+  wk.rememberConversationKey({ sessionId: 'z', sessionFile: 'C:/s/z.jsonl', conversationId: 'orig', conversationFile: 'C:/s/orig.jsonl' })
+  ok(wk.workspaceKeyFor({ sessionId: 'z' }) === 'C:/s/orig.jsonl' && wk.workspaceKeyFor({ path: 'C:\\S\\z.jsonl' }) === 'C:/s/orig.jsonl', '成为活动会话后：磁贴取到与单会话相同的对话键（id 或路径都能查到）')
+  useSplitView.getState().close()
+  ok(Object.keys(useSplitView.getState().weights).length === 0, '回到单会话：份额清空')
+  const lsData = new Map()
+  globalThis.localStorage = { getItem: (k) => lsData.get(k) ?? null, setItem: (k, v) => void lsData.set(k, String(v)) }
+  const owners = await load('src/renderer/src/state/resource-owners.ts', 'out/test/resource-owners.mjs')
+  ok(owners.claimResource('terminal:1', 'X') === 'X' && owners.claimResource('terminal:1', 'Y') === 'X', '资源归第一个认领的会话，不被后来者改走')
+  owners.claimResource('file:f', 'pending')
+  owners.reassignOwner('pending', 'S')
+  ok(owners.resourceOwner('file:f') === 'S' && owners.resourceOwner('terminal:1') === 'X', '占位键换成真键：它名下的资源跟过去，别人的不动')
+  owners.releaseResource('terminal:1')
+  ok(owners.resourceOwner('terminal:1') === undefined, '释放后不再有主人')
+  owners.claimResource('browser', 'X')
+  owners.claimResource('browser', 'Y')
+  ok(owners.resourceOwner('browser') === 'X', '浏览器绑定原会话，另一列取得焦点不抢占')
+  owners.releaseResource('browser')
+  ok(owners.claimResource('browser', 'Y') === 'Y', '关闭浏览器释放归属，下次打开绑定新会话')
   ok(snaps.newestMessages([msg('x')], [msg('y', 1)]) !== undefined && snaps.latestTimestamp([msg('a', 5), msg('b')]) === 5, '没有时间的消息不算，往前找带时间的')
 }
 

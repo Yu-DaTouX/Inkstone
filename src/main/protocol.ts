@@ -292,6 +292,8 @@ export interface PiRpcOptions {
   env?: NodeJS.ProcessEnv
   /** Replace rather than inherit the parent environment (for credential-isolated smoke runs). */
   inheritEnv?: boolean
+  /** An explicit host runtime bypasses desktop/global discovery. */
+  runtime?: { executable: string; cli: string; kind: 'node' | 'electron' }
 }
 
 type Pending = {
@@ -330,7 +332,9 @@ export class PiRpc extends EventEmitter {
 
   constructor(private opts: PiRpcOptions) {
     super()
-    this.probe = resolvePi({ override: opts.piBin })
+    this.probe = opts.runtime
+      ? { ok: true, source: 'override', cmd: opts.runtime.executable, args: [opts.runtime.cli], tried: ['explicit host runtime'] }
+      : resolvePi({ override: opts.piBin })
   }
 
   get running(): boolean {
@@ -346,9 +350,10 @@ export class PiRpc extends EventEmitter {
     // 这样不依赖用户系统里装了哪个版本的 node。
     const env: NodeJS.ProcessEnv = {
       ...(this.opts.inheritEnv === false ? {} : process.env),
-      ...(this.opts.env ?? {}),
-      ELECTRON_RUN_AS_NODE: '1'
+      ...(this.opts.env ?? {})
     }
+    if (this.opts.runtime?.kind === 'node') delete env.ELECTRON_RUN_AS_NODE
+    else env.ELECTRON_RUN_AS_NODE = '1'
     // 去掉可能干扰子进程的 Electron 变量
     delete env.ELECTRON_NO_ATTACH_CONSOLE
     delete env.ELECTRON_FORCE_IS_PACKAGED

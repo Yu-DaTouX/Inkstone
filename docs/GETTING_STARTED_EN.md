@@ -17,7 +17,7 @@ Packages include the pi runtime, so you do not need to install Node.js or pi. Co
 ## Connect a model
 
 1. Open **Settings → Model access**.
-2. Configure the required credentials or subscription login. Choose a provider and sign in directly from the app, or configure API credentials. No terminal login is required.
+2. Choose a provider and sign in from the app or configure API credentials. CC subscription access requires Claude Code sign-in on this computer first, followed by the plugin installation entry on this page.
 3. Choose an available model and thinking level below the input area.
 
 A local profile name or avatar is for personalization and does not indicate a signed-in model account. Requests to remote models are sent to your selected provider.
@@ -30,23 +30,33 @@ Choose a project or start a conversation. Describe what you want to accomplish a
 
 Reference files with `@`, explore commands with `/`, or enter a Shell command with `!`. Expand tool details to inspect the work, or open files, change review, the browser, and the terminal from the workspace panels.
 
+## HTML artifacts in messages
+
+The desktop app displays managed `.html` / `.htm` artifacts as web pages inside their message cards, including interactive diagrams and single-file reports. Use **Page / Source** to switch views. Download, source preview, file location, and copy-path actions remain available.
+
+This is an isolated offline preview, not a full browser. Inline scripts, styles, and embedded images are supported; network resources, adjacent local files, popups, form submissions, fullscreen, and page-initiated exports are blocked. The page controls its own theme. The limit is 5 MiB, and ordinary HTML code blocks are not executed. If an attempted navigation leaves the preview unavailable, switch to **Source** and back to **Page** to reload it.
+
 ## Codemode tool calls
 
-Open **Settings → Capabilities & plugins → Codemode** to turn it on or off. It is enabled by default, and changes apply from the next conversation turn. The Agent can batch tool calls and process results in scripts while retaining direct tool calls. Plan mode and read-only subagents keep their execution restrictions.
+Open **Settings → Capabilities & plugins → Codemode** to turn it on or off. It is enabled by default, and changes apply from the next conversation turn. The Agent can batch tool calls and process results in scripts while retaining direct tool calls. Read-only subagents retain their execution restrictions. Legacy plan mode has left the default workflow.
 
-Codemode controls tool execution independently of the title bar's coding/daily mode. It uses native pi capabilities and is unavailable with an older pi or an explicitly disabled native Codemode extension.
+Codemode uses native pi capabilities, rather than adding a work mode. It is unavailable with an older pi or an explicitly disabled native Codemode extension.
 
-## Daily mode
+The model menu supports provider filters, search, shared favorites and pagination. Starring a model does not select it. New conversations use the last successfully selected main model; existing conversations keep their own model. Thinking strength and response detail expand at the bottom, retaining the animated slider. An unavailable remembered model is not silently replaced; a failed initialization offers an explicit preference reset and reconnect.
 
-The switch at the left of the title bar toggles between **coding mode** and **daily mode**. Daily mode organizes the app around a few long-running topics:
+## Conversations and subagents
 
-- **Workbench home**: start a conversation and return to recent ones.
-- **Topic spaces**: group conversations by topic instead of by project folder. Each space has overview, library, and artifacts views.
-- **Library and artifacts**: imported material (text or files) becomes a source you can cite. Artifacts are editable documents with versions and checklists; they export to Markdown and can be handed to the tutor to learn from.
-- **Learning**: say what you want to learn in the conversation. The tutor checks what you already know, explains step by step, asks questions and waits for your answer, and gives hints before answers. Courses, exercises, and notes from earlier versions are kept as a readable copy in `learning-export/` in the data folder.
-- **Session map**: conversations and their branches are laid out per workspace lane. Expanding a session shows one card per exchange, and you can branch from a specific exchange.
+The development build is conversation-first. Coding/daily and standard/plan/autonomous switches, spaces, library, and dedicated writing/learning pages have left the default UI. Historical data is retained. Writing, explanations, learning, and file work remain possible in normal conversations. Asking a model to plan first is a conversation instruction, not a host-enforced read-only plan mode.
 
-All of it stays on this machine and can be exported or removed at any time. When something needs network access, an installed capability, or sending data outward, Inkstone explains the path first instead of doing it for you.
+Open **Subagents** from the tools menu, select a model, enter a task, and choose execution. The panel remembers its own last selected model, initially using the current conversation. An explicit follow option resolves to the current conversation model; the form shows the actual model and working folder. Results return to the parent conversation. Current-folder execution changes files directly; read-only limits tools; optional Git worktree isolation requires Git. CC subscription models do not support read-only subtasks; unsupported combinations are explained before submission.
+
+Messages entered during a run wait for your choice to steer or queue. Stop ends the current run. Switching conversations does not stop background work. Files, browser, terminal, and subagent details open on demand and retain their owning conversation in split views.
+
+## Plugins and remote access
+
+**Settings → Plugin market** has Inkstone and pi pages. Inkstone currently offers the Hermes plugin; exporting it does not install or pair it. The pi page supports package search, installation, updates, and removal, without guaranteeing graphical compatibility. See the [plugin market](PLUGIN_MARKET.md).
+
+The Android client remains in testing and connects to a running computer for conversations, messages, questions, and artifacts. Sensitive approvals in the Android app can only be denied; allow them on the computer. The independent Hermes plugin provides explicit user allow/deny commands after separate installation and pairing. Ordinary model answers cannot grant approval. macOS/Linux/iOS are not delivered; automatic cross-device sync is not provided. See [mobile access](MOBILE_ACCESS.md).
 
 ## Session switcher (Ctrl+K)
 
@@ -63,9 +73,20 @@ Before each new turn, Inkstone saves a snapshot of the project folder in a shado
 - Skipped for the home folder or more than 30,000 files; turn it off under **Settings > Capabilities and plugins > Checkpoints**.
 - Moving the data folder (Settings > About) carries the checkpoints along with the session files (the JSONL under `sessions/`).
 
-## Confirm before writing outside the project
+## Two permission modes
 
-When the Agent writes, edits or deletes files outside the project, the system temp folder and the pi data folder, a dialog asks first: “Allow once” or “Allow and remember folder”. Remembered folders and the master switch live under **Settings > Capabilities and plugins**. This is a reminder guard that recognizes command text; concatenation, encoding or nested scripts can bypass it. It is not a sandbox.
+The selector beside the conversation input shows the current mode and applies to all conversations and ordinary subagents:
+
+- **Dangerous-operation approval**: routine actions run directly; recognized dangerous actions ask for approval.
+- **Native mode**: Inkstone adds no approval or interception. pi, providers, external tools, and the operating system retain their own behavior.
+
+Approval cards identify their source conversation, subagent, and folder, with a source link when available. Unresolved sources are labeled as unknown. WAIT means a response is needed; other tasks may still be running. These guardrails are not a sandbox or a task-level permission system. AskClaude executes inside CC and receives whole-delegation approval in dangerous mode. Use an Inkstone subagent with a claude-bridge model when approval should inspect individual pi tool operations.
+
+## Computers without Git
+
+Change review, worktrees, subtask isolation, and checkpoints need Git, and the command-line tool needs Git Bash on Windows. If Git is missing, Inkstone prompts after startup and offers a one-click **Install Git**. After you confirm, it downloads PortableGit (about 57 MB) from the official release page (the Chinese interface tries a mainland China mirror first), verifies it, and unpacks it into Inkstone's data directory. It does not open an installer wizard, needs no administrator rights, and does not change the system PATH. If Git is already installed, Inkstone uses it first and does not overwrite it.
+
+Inkstone still works without Git. The command-line tool falls back to the PowerShell that ships with Windows, and the model writes commands in PowerShell syntax, but change review, worktrees, and checkpoints remain unavailable.
 
 ## Everyday shortcuts
 
@@ -73,7 +94,7 @@ When the Agent writes, edits or deletes files outside the project, the system te
 | --- | --- |
 | Send / new line | `Enter` / `Shift+Enter` by default; configurable in settings |
 | File reference / command | `@` / `/` |
-| Coding / daily mode | Mode switch at the left of the title bar |
+| Two permission modes | Selector beside the input; applies to all conversations |
 | Model and thinking level | Selectors below the input area |
 | Switch session (search titles and conversation text) | `Ctrl+K` |
 | Rewind project files to before a message | “Rewind code” under a user message |

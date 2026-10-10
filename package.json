@@ -32,6 +32,7 @@
     "dev:watch": "electron-vite dev --watch",
     "build": "electron-vite build",
     "start": "node scripts/launch.mjs",
+    "agent:service": "node scripts/agent-service.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/lint-css.mjs && npm run lint:layers",
     "icons": "node scripts/design/icons/build-icons.mjs",
     "probe-pi": "npm run build && node scripts/probe-pi.mjs",
@@ -93,7 +94,7 @@
     "vite": "^7.1.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@mogeko/maple-mono-cn": "^7.9.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-serialize": "0.13.0",
@@ -102,6 +103,7 @@
     "@xterm/xterm": "^5.5.0",
     "electron-updater": "^6.8.9",
     "highlight.js": "^11.12.0",
+    "mermaid": "11.17.2",
     "node-pty": "^1.1.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.3.0",

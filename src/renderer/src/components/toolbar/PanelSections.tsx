@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
 import { Section } from './ToolSection'
-import { Button } from '../ui'
+import { Button, Switch } from '../ui'
 import { useStore } from '../../state/store'
 import { type QueueMode } from '../../../../shared/ipc'
 
@@ -210,15 +210,9 @@ export function ActionsSection() {
       <div className="rp-kv rp-action-setting" data-testid="rp-auto-retry">
         <span className="rp-k">{t('status.autoRetry')}</span>
         <span className="spacer" />
-        <button
-          className={`switch-pill ${autoRetry ? 'on' : ''}`}
-          role="switch"
-          aria-checked={autoRetry}
-          title={t('status.autoRetryHint')}
-          onClick={() => void setAutoRetry(!autoRetry)}
-        >
-          <span className="switch-knob" />
-        </button>
+        <span title={t('status.autoRetryHint')}>
+          <Switch checked={autoRetry} label={t('status.autoRetry')} onChange={(next) => void setAutoRetry(next)} />
+        </span>
       </div>
     </Section>
   )

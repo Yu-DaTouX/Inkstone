@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createReadStream } from 'node:fs'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { hostname } from 'node:os'
+import { negotiateCapabilities } from '../shared/capability-negotiation'
 import type { MainPush } from '../shared/ipc'
 import {
   REMOTE_EVENT_BUFFER,
@@ -14,6 +15,7 @@ import {
   type RemoteEventEnvelope,
   type RemotePendingQuestion
 } from '../shared/remote-protocol'
+import type { RemoteHumanApproval } from '../shared/remote-protocol'
 import type { RemoteImageInput } from '../shared/remote-protocol'
 import type { RemoteDeviceStore } from './remote-devices'
 import { PEER_CONNECTION_HEADER, PEER_OPERATIONS, type PeerOperation, type PeerProjectRef } from '../shared/peer-protocol'
@@ -67,6 +69,8 @@ export interface RemoteServerHandlers {
   questions?(): Promise<RemotePendingQuestion[]>
   /** 回答一个问题；敏感确认由实现方拒绝（需要在电脑上处理） */
   answer?(questionId: string, answer: RemoteAnswer): Promise<RemoteOperationResult>
+  /** Trusted paired user client only; not the ordinary question-answer or legacy-token route. */
+  humanApproval?(questionId: string, answer: RemoteHumanApproval): Promise<RemoteOperationResult>
   /** 按会话 + 成果 id 找到受管文件（实现方负责核对归属，网络请求不能传路径） */
   artifact?(sessionId: string, artifactId: string): Promise<RemoteArtifactFile | RemoteOperationResult>
 }
@@ -258,6 +262,8 @@ export class RemoteServer {
   /** 事件缓冲：断线重连时按 seq 补发 */
   private seq = 0
   private readonly buffer: RemoteEventEnvelope[] = []
+  private bufferBytes = 0
+  private readonly eventFrames = new WeakMap<RemoteEventEnvelope, { text: string; bytes: number }>()
   /** 幂等键 → 结果（有效期内同一键只执行一次；执行中的请求共享同一个 Promise） */
   private readonly idempotency = new Map<string, { at: number; result: Promise<RemoteOperationResult> }>()
   private pairAttempts: number[] = []
@@ -315,11 +321,7 @@ export class RemoteServer {
     if (address && typeof address === 'object') this.boundPort = address.port
     this.heartbeat = setInterval(() => {
       for (const client of [...this.clients, ...this.peerClients.values()]) {
-        try {
-          client.write(': heartbeat\n\n')
-        } catch {
-          this.clients.delete(client)
-        }
+        this.writeSse(client, ': heartbeat\n\n')
       }
       this.pruneIdempotency()
     }, 25_000)
@@ -378,18 +380,37 @@ export class RemoteServer {
       payload: message.payload,
       ...(message.runtime ? { runtime: message.runtime } : {})
     }
+    const text = `id: ${envelope.seq}\nevent: ${envelope.channel}\ndata: ${JSON.stringify(envelope)}\n\n`
+    const bytes = Buffer.byteLength(text)
+    this.eventFrames.set(envelope, { text, bytes })
     this.buffer.push(envelope)
-    if (this.buffer.length > REMOTE_EVENT_BUFFER) this.buffer.splice(0, this.buffer.length - REMOTE_EVENT_BUFFER)
+    this.bufferBytes += bytes
+    while (this.buffer.length > REMOTE_EVENT_BUFFER || this.bufferBytes > 8 * 1024 * 1024) {
+      const removed = this.buffer.shift()!
+      this.bufferBytes -= this.eventFrames.get(removed)!.bytes
+    }
     if (!this.server) return
     for (const client of this.clients) this.writeEvent(client, envelope)
   }
 
-  private writeEvent(client: ServerResponse, envelope: RemoteEventEnvelope): void {
+  private writeSse(client: ServerResponse, text: string): boolean {
     try {
-      client.write(`id: ${envelope.seq}\nevent: ${envelope.channel}\ndata: ${JSON.stringify(envelope)}\n\n`)
+      if (client.destroyed || client.writableEnded || client.writableLength + Buffer.byteLength(text) > 4 * 1024 * 1024) {
+        throw new Error('SSE client exceeded queue budget')
+      }
+      client.write(text)
+      return true
     } catch {
       this.clients.delete(client)
+      for (const [id, response] of this.peerClients) if (response === client) this.peerClients.delete(id)
+      client.destroy()
+      return false
     }
+  }
+
+  private writeEvent(client: ServerResponse, envelope: RemoteEventEnvelope): boolean {
+    return this.writeSse(client, this.eventFrames.get(envelope)?.text ??
+      `id: ${envelope.seq}\nevent: ${envelope.channel}\ndata: ${JSON.stringify(envelope)}\n\n`)
   }
 
   private log(text: string, level: 'info' | 'error' = 'info'): void {
@@ -519,21 +540,25 @@ export class RemoteServer {
     }
 
     if (req.method === 'GET' && url.pathname === '/remote/v1/info') {
+      const configured = [
+        'status', 'sessions', 'history', 'select', 'new', 'send', 'abort', 'rename', 'events-resume', 'idempotency',
+        ...(this.options.handlers.questions ? ['questions'] : []),
+        ...(this.options.handlers.answer ? ['answer'] : []),
+        ...(this.options.handlers.humanApproval && caller.device && (caller.device.kind ?? 'phone') === 'phone' ? ['human-approval'] : []),
+        ...(this.options.handlers.artifact ? ['artifacts'] : []),
+        ...(this.options.devices ? ['device-name'] : []),
+        ...(this.options.handlers.models ? ['models', 'send-images'] : []),
+        ...(this.options.handlers.hubSnapshot && this.options.handlers.hubCommand ? ['agent-hub'] : [])
+      ]
+      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'models', 'send-images', 'agent-hub'])]
+      const allowed = isPeer ? [] : caller.device?.kind === 'agent' ? ['agent-hub'] : configured
+      const negotiation = negotiateCapabilities(implemented, configured, allowed)
       writeJson(res, 200, {
         ok: true,
         apiVersion: REMOTE_API_VERSION,
         transport: ['http', 'sse'],
         tokenRequired: true,
-        capabilities: [
-          'status', 'sessions', 'history', 'select', 'new', 'send', 'abort', 'rename',
-          'events-resume', 'idempotency',
-          ...(this.options.handlers.questions ? ['questions'] : []),
-          ...(this.options.handlers.answer ? ['answer'] : []),
-          ...(this.options.handlers.artifact ? ['artifacts'] : []),
-          ...(this.options.devices ? ['device-name'] : []),
-          ...(this.options.handlers.models ? ['models', 'send-images'] : []),
-          ...(this.options.handlers.hubSnapshot && this.options.handlers.hubCommand ? ['agent-hub'] : [])
-        ],
+        ...negotiation,
         device: caller.device,
         computer: { name: hostname() }
       })
@@ -628,6 +653,20 @@ export class RemoteServer {
 
     if (req.method === 'POST' && parts.length === 5 && parts[2] === 'questions' && parts[4] === 'answer') {
       await this.answer(req, res, caller, decodeURIComponent(parts[3]))
+      return
+    }
+
+    if (req.method === 'POST' && parts.length === 5 && parts[2] === 'questions' && parts[4] === 'approval') {
+      if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone') return writeError(res, 403, '人工批准需要单独配对的用户客户端', 'paired_user_required')
+      const handler = this.options.handlers.humanApproval
+      if (!handler) return writeError(res, 404, '电脑端尚不支持人工批准回传')
+      const questionId = decodeURIComponent(parts[3])
+      const body = await this.readJson(req)
+      if (!validQuestionId(questionId) || !(body.sessionId === null || (typeof body.sessionId === 'string' && validSessionId(body.sessionId))) ||
+          !(validRunId(body.runId) || (typeof body.runId === 'string' && /^approval:[0-9a-f-]{36}$/.test(body.runId))) ||
+          typeof body.confirmed !== 'boolean' || typeof body.digest !== 'string' || !/^[0-9a-f]{64}$/.test(body.digest)) return writeError(res, 400, '人工批准必须绑定有效的问题、会话、运行和操作摘要')
+      const answer: RemoteHumanApproval = { sessionId: body.sessionId, runId: body.runId, digest: body.digest, confirmed: body.confirmed }
+      await this.idempotent(req, res, caller, true, () => handler(questionId, answer))
       return
     }
 
@@ -748,6 +787,7 @@ export class RemoteServer {
 
     /* 事件流：打开即激活授权；断开即作废，重连必须重新申请 */
     if (req.method === 'GET' && parts.length === 1 && parts[0] === 'events') {
+      if (this.clients.size + this.peerClients.size >= 32) return writeError(res, 429, '事件连接过多，请关闭其他连接后重试')
       const grant = connectionId ? grants.activate(connectionId, device.id) : null
       if (!grant || !connectionId) return writeError(res, 401, '本次连接未获批准、已使用过或已失效，请重新申请', 'peer_connection_required')
       res.writeHead(200, {
@@ -756,12 +796,12 @@ export class RemoteServer {
         connection: 'keep-alive',
         'x-accel-buffering': 'no'
       })
-      res.write(`event: grant\ndata: ${JSON.stringify(grant)}\n\n`)
       this.peerClients.set(connectionId, res)
       res.on('close', () => {
         this.peerClients.delete(connectionId)
         grants.revoke(connectionId)
       })
+      this.writeSse(res, `event: grant\ndata: ${JSON.stringify(grant)}\n\n`)
       return
     }
 
@@ -955,6 +995,10 @@ export class RemoteServer {
   }
 
   private async openEvents(req: IncomingMessage, res: ServerResponse, caller: Caller, sinceRaw: string | null): Promise<void> {
+    if (this.clients.size + this.peerClients.size >= 32) return writeError(res, 429, '事件连接过多，请关闭其他连接后重试')
+    ;(res as ServerResponse & { yanDeviceId?: string }).yanDeviceId = caller.device?.id
+    this.clients.add(res)
+    res.on('close', () => this.clients.delete(res))
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-store',
@@ -962,7 +1006,7 @@ export class RemoteServer {
       'access-control-allow-origin': '*',
       'x-accel-buffering': 'no'
     })
-    res.write(`event: ready\ndata: ${JSON.stringify({ apiVersion: REMOTE_API_VERSION, at: Date.now(), latestSeq: this.seq })}\n\n`)
+    if (!this.writeSse(res, `event: ready\ndata: ${JSON.stringify({ apiVersion: REMOTE_API_VERSION, at: Date.now(), latestSeq: this.seq })}\n\n`)) return
     /* 断线补齐：优先用 ?since=，其次 SSE 标准的 Last-Event-ID */
     const lastEventId = req.headers['last-event-id']
     const since = Number(sinceRaw ?? (typeof lastEventId === 'string' ? lastEventId : NaN))
@@ -970,15 +1014,12 @@ export class RemoteServer {
       const oldest = this.buffer[0]?.seq ?? this.seq + 1
       if (since > this.seq) {
         /* 客户端的序号比服务端还新：服务端重启过，序号已经重新开始 */
-        res.write(`event: resync\ndata: ${JSON.stringify({ reason: 'server_restarted', latestSeq: this.seq })}\n\n`)
+        this.writeSse(res, `event: resync\ndata: ${JSON.stringify({ reason: 'server_restarted', latestSeq: this.seq })}\n\n`)
       } else if (since < oldest - 1) {
-        res.write(`event: resync\ndata: ${JSON.stringify({ reason: 'buffer_overflow', latestSeq: this.seq })}\n\n`)
+        this.writeSse(res, `event: resync\ndata: ${JSON.stringify({ reason: 'buffer_overflow', latestSeq: this.seq })}\n\n`)
       } else {
-        for (const envelope of this.buffer) if (envelope.seq > since) this.writeEvent(res, envelope)
+        for (const envelope of this.buffer) if (envelope.seq > since && !this.writeEvent(res, envelope)) break
       }
     }
-    ;(res as ServerResponse & { yanDeviceId?: string }).yanDeviceId = caller.device?.id
-    this.clients.add(res)
-    res.on('close', () => this.clients.delete(res))
   }
 }

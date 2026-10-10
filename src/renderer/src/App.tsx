@@ -7,12 +7,13 @@ import { RewindDialog } from './components/shell/RewindDialog'
 import { useI18n, useT } from './i18n'
 import { TitleBar, type Theme } from './components/shell/TitleBar'
 import { Rail } from './components/rail/Rail'
+import { applyBackground } from './lib/background'
 import { Workspace, WorkspacePane } from './components/workbench/Workspace'
-import { workbenchSessionKey } from './state/workbench'
+import { conversationKeyOf, rememberConversationKey, workspaceKeyFor } from './state/workspace-key'
 import { splitTileKey, displayedSessionOf, reconcileSplit, useSplitView, type SplitSessionRef } from './state/split-view'
 import { CHAT_PANE, DOCK_GAP } from './state/workspace-layout'
 import { SplitResizer } from './components/chat/SplitResizer'
-import { rememberScroll, rememberShown, shownScroll } from './state/split-snapshots'
+import { rememberScroll, rememberShown, restoreScrollAnchor, scrollAnchorOf, shownScroll, type ScrollAnchor } from './state/split-snapshots'
 import { SplitPaneHead, SplitPeerPane, closeSplitTile, focusSplitSession } from './components/chat/SplitPeerPane'
 import { SplitDropZone } from './components/chat/SplitDropZone'
 import { RightPanel } from './components/toolbar/RightPanel'
@@ -20,23 +21,11 @@ import { FloatingTiles } from './components/toolbar/FloatingTiles'
 import { Resizer } from './components/toolbar/Resizer'
 import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
-import { SessionMap } from './components/workbench/SessionMap'
-import { TaskInbox } from './components/workbench/TaskInbox'
-import { WorkbenchHome } from './components/workbench/WorkbenchHome'
-import { SpaceWorkbench } from './components/workbench/SpaceWorkbench'
-import { type SpaceView } from './state/space-view'
-import { readDailyView, writeDailyView, type DailyView } from './state/daily-view'
 import { TurnView } from './components/chat/TurnView'
-import { groupIntoTurns } from '../../shared/turns'
+import { createTurnProjector } from '../../shared/turns'
 import { mergeQuestionLog } from '../../shared/question-log'
-import {
-  isWorkModeShortcutEnabled,
-  matchesKeyBinding,
-  nextWorkMode
-} from '../../shared/work-mode'
 import { isModalOpen } from './lib/modalLayer'
 import { Composer } from './components/chat/Composer'
-import { HandoffNote } from './components/chat/HandoffNote'
 import { SubagentNote } from './components/chat/SubagentNote'
 import { Settings, type SettingsTab } from './components/settings/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
@@ -207,12 +196,48 @@ export default function App() {
     [peekedSessionId, peekedPath, session?.sessionId, session?.sessionFile]
   )
   const split = storedSplit ? reconcileSplit(storedSplit, displayedSession) : null
+  rememberConversationKey(session)
   useLayoutEffect(() => { useSplitView.getState().sync(displayedSession) }, [displayedSession, storedSplit])
   /*
    * 记下每条会话在屏幕上的最后样子：分屏里焦点离开这一块时它接着显示这份（SplitPeerPane），
    * 之后再拉进分屏也从这份起步，不闪空白、不少只推给活动会话的内容。
    */
-  useEffect(() => { if (displayedSession) rememberShown(displayedSession, messages) }, [displayedSession, messages])
+  /* 会话身份先于消息更新时，那一帧的消息还是上一条会话的：换身份后第一次出现的消息引用不记 */
+  const shownGuard = useRef<{ key: string; last: unknown }>({ key: '', last: null })
+  /* 换身份后消息引用没变，说明还是上一条会话的 */
+  useEffect(() => {
+    if (!displayedSession) return
+    const key = displayedSession.path ?? displayedSession.sessionId ?? ''
+    const stale = shownGuard.current.key !== key && messages === shownGuard.current.last
+    shownGuard.current = { key, last: messages }
+    if (!stale) rememberShown(displayedSession, messages)
+  }, [displayedSession, messages])
+  /*
+   * 记滚动位置：合到每帧一次；换会话后的头一小会儿不记（那时的滚动事件来自上一条会话的旧内容）。
+   */
+  const scrollNote = useRef<{ raf: number; top: number; atBottom: boolean; anchor?: ScrollAnchor; settleAt: number; identity: string; target: SplitSessionRef | null }>({ raf: 0, top: 0, atBottom: true, settleAt: 0, identity: '', target: null })
+  const scrollIdentity = displayedSession?.path ?? displayedSession?.sessionId ?? ''
+  /* 在渲染时就arm：不等 effect，同一帧里的旧滚动事件也进不来 */
+  if (scrollNote.current.identity !== scrollIdentity) {
+    scrollNote.current.identity = scrollIdentity
+    scrollNote.current.settleAt = performance.now() + 150
+  }
+  const noteScroll = (top: number, atBottom: boolean, container?: HTMLElement | null): void => {
+    const note = scrollNote.current
+    if (!displayedSession || performance.now() < note.settleAt) return
+    /* 目标在事件发生时就定下，帧回调里换了会话也不会记到新会话名下 */
+    if (note.target && note.target !== displayedSession && note.raf) { cancelAnimationFrame(note.raf); note.raf = 0 }
+    note.target = displayedSession
+    note.top = top
+    note.atBottom = atBottom
+    /* 锚点在事件发生时就取（帧回调时 DOM 可能已换成别的会话） */
+    note.anchor = atBottom ? undefined : scrollAnchorOf(container)
+    if (note.raf) return
+    note.raf = requestAnimationFrame(() => {
+      note.raf = 0
+      if (note.target) rememberScroll(note.target, { top: note.top, atBottom: note.atBottom, anchor: note.anchor })
+    })
+  }
   const settings = useStore((s) => s.settings)
   const bootstrap = useStore((s) => s.bootstrap)
   const startConnWatch = useStore((s) => s.startConnWatch)
@@ -221,91 +246,6 @@ export default function App() {
   const applyPush = useStore((s) => s.applyPush)
   const piInfo = useStore((s) => s.piInfo)
   const models = useStore((s) => s.models)
-  /* 全局模式快捷键要用到当前模式与会话默认模式（见下面的快捷键 effect） */
-  const setWorkMode = useStore((s) => s.setWorkMode)
-  const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
-  /*
-   * 工作区模式与中栏视图（实施-18 S2/S4）。
-   * 真源是 AppSettings.workspaceMode；地图视图状态只在内存 + 一个
-   * localStorage 偏好键，不进设置。
-   */
-  const workspaceMode = useStore((s) => s.workspaceMode)
-  const switchSession = useStore((s) => s.switchSession)
-  const [dailyView, setDailyView] = useState<DailyView>(() => readDailyView())
-  /*
-   * 空间视图的状态在 store 里（右栏也要能打开它）；「停在哪个入口」的偏好
-   * 仍由 space-view.ts 管。刻意与 dailyView 分开：从概览退回地图时
-   * 不该覆盖用户的地图偏好（T04-1）。
-   */
-  const spaceOpen = useStore((s) => s.spaceOpen)
-  const spaceView = useStore((s) => s.spaceView)
-  /* 收件箱压在最上层：它跨会话，与“当前在看哪个会话”无关 */
-  const inboxOpen = useStore((s) => s.inboxOpen)
-  const setInboxOpen = useStore((s) => s.setInboxOpen)
-  const openSpaceView = useStore((s) => s.openSpaceView)
-  const closeSpaceView = useStore((s) => s.closeSpaceView)
-  const dailyMode = workspaceMode === 'daily'
-  /* 空间与资料库默认收起（日常多是一次性的个人事务）；在 设置 → 工作区 里打开 */
-  const showSpaces = useStore((s) => s.settings?.showSpaces === true)
-  /* 空间视图压在地图之上：两者都开着时显示概览，关掉概览自然回到刚才的地图 */
-  const mapOpen = dailyMode && dailyView === 'map' && !spaceOpen
-  const showMap = (open: boolean): void => {
-    if (open) closeSpaceView()
-    setDailyView(open ? 'map' : 'chat')
-    writeDailyView(open ? 'map' : 'chat')
-  }
-  const showSpace = (open: boolean, view?: SpaceView): void => {
-    if (open) openSpaceView(view)
-    else closeSpaceView()
-  }
-  const openSessionFromMap = (path: string): void => {
-    void switchSession(path)
-    showMap(false)
-  }
-  /**
-   * 从空间视图里点开会话：关掉概览回到对话。
-   *
-   * 这里**不设置任何「当前空间」** —— 空间是**派生**的（T04-8：导航只是投影）。
-   * 切换会话之后，概览里显示的就是那个会话自己 `spaceId` 指向的空间。
-   */
-  const openSessionFromSpace = (path: string): void => {
-    void switchSession(path)
-    showSpace(false)
-  }
-
-  /* 地图打开时，Esc 退出（有模态层时不抢，交给模态处理） */
-  useEffect(() => {
-    if (!mapOpen) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !isModalOpen()) {
-        /*
-         * 地图里的预览抽屉有自己的 Esc（先关抽屉）。
-         * 两个监听器都挂在 window 上而且这个先注册，所以让位这件事
-         * 只能由这里主动做 —— 看看地图里是不是开着抽屉。
-         */
-        if (document.querySelector('[data-testid="map-preview"]')) return
-        e.preventDefault()
-        setDailyView('chat')
-        writeDailyView('chat')
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [mapOpen])
-
-  /* 收件箱也吃 Esc：与地图同一套「有模态层就不抢」的规则 */
-  useEffect(() => {
-    if (!inboxOpen) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !isModalOpen()) {
-        e.preventDefault()
-        setInboxOpen(false)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [inboxOpen, setInboxOpen])
-
   const streamRef = useRef<HTMLDivElement>(null)
   const vlistRef = useRef<VListHandle>(null)
   /*
@@ -354,41 +294,17 @@ export default function App() {
    * 为什么要记 memoize：每次 msg-update 推送（流式时几十次/秒）都会重算，
    * 而分组要遍历整个消息数组。依赖只有 messages 与 streamingId。
    */
+  const projectTurns = useMemo(() => createTurnProjector(), [])
   const turns = useMemo(
     () =>
-      groupIntoTurns(
+      projectTurns(
         mergeQuestionLog(messages, questionLogSession && questionLogSession === session?.sessionId ? questionLog : []),
         streamingId
       ),
-    [messages, questionLog, questionLogSession, session?.sessionId, streamingId]
+    [messages, questionLog, questionLogSession, session?.sessionId, streamingId, projectTurns]
   )
 
   const virtual = turns.length >= VIRTUALIZE_AT || messages.length >= VIRTUALIZE_MSGS_AT
-
-  /*
-   * 模式快捷键（2026-09-22）：**全局**生效。
-   *
-   * 用户口径：模式切换不该只在输入框里管用（以前是裸 Tab，只在 textarea 里拦）。
-   * 这里用 window 的 capture 阶段：不管焦点在侧栏、右栏还是消息区，都能切。
-   *
-   * 三条边界：
-   *   ① 设置页正在录新键（`shortcutRecording`）—— 那次按键归录音，不切模式；
-   *   ② 长按重复（`repeat`）只算一次；
-   *   ③ 快捷键关掉了 / 组合键不匹配 —— 直接放行，不 preventDefault。
-   */
-  useEffect(() => {
-    if (!isWorkModeShortcutEnabled(settings?.workModeShortcutEnabled)) return undefined
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.repeat) return
-      if (useStore.getState().shortcutRecording) return
-      if (!matchesKeyBinding(settings?.workModeShortcut, event)) return
-      event.preventDefault()
-      event.stopPropagation()
-      void setWorkMode(nextWorkMode(useStore.getState().workMode?.mode ?? defaultWorkMode))
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [defaultWorkMode, setWorkMode, settings?.workModeShortcut, settings?.workModeShortcutEnabled])
 
   /* ---- 主进程推送 → store；并做一次全量 bootstrap ---- */
   useEffect(() => {
@@ -585,7 +501,7 @@ export default function App() {
    * 为什么用 CSS 变量而不是给每个元素传宽度：
    *   正文列 / 输入框 / 用量条 / 导航轨的定位**全都**从 --w-stream 取值，
    *   改一个变量就整体对齐，不会出现「正文宽了但输入框还窄」的错位。
-   * 0 = 删掉变量，回落到 tokens.css 的设计默认值（800px）。
+   * 0 = 删掉变量，回落到 tokens.css 的设计默认值（正文 80ch + 两侧内边距）。
    *
    * 改完发一个 `yan:stream-width` 事件：导航轨的横向位置是 JS 实测的，
    * 它需要重新量一次（尤其虚拟化长会话里没有 .stream-inner 可观察）。
@@ -597,6 +513,16 @@ export default function App() {
     else root.style.removeProperty('--w-stream')
     window.dispatchEvent(new Event('yan:stream-width'))
   }, [settings?.streamWidth])
+
+  /* 背景色模板 / 自定义：覆盖层级令牌，换主题时按新主题重算 */
+  useEffect(() => {
+    applyBackground(document.documentElement, settings?.backgroundPreset, settings?.backgroundCustom, theme)
+  }, [settings?.backgroundPreset, settings?.backgroundCustom, theme])
+
+  /* 过程布局写到根元素：宽度够时由 chat.css 的容器查询把过程放到右侧一栏 */
+  useEffect(() => {
+    document.documentElement.dataset.procLayout = settings?.processLayout === 'side' || settings?.processLayout === 'left' ? settings.processLayout : 'inline'
+  }, [settings?.processLayout])
 
   /* ---- 贴底滚动：用户往上翻了就不打扰 ---- */
   useEffect(() => {
@@ -642,6 +568,9 @@ export default function App() {
   const vlistSettlingRef = useRef(false)
   const lastTurnIndexRef = useRef(0)
   lastTurnIndexRef.current = Math.max(0, turns.length - 1)
+  /* 恢复滚动的帧回调里读最新的回合列表（按锚点找下标） */
+  const turnsRef = useRef(turns)
+  turnsRef.current = turns
   useEffect(() => {
     if (!virtual) return undefined
     if (vlistKey === 0) vlistRemounts.current = 0
@@ -675,29 +604,39 @@ export default function App() {
       vlistSettlingRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [split?.live, !!split, virtual, vlistKey])
+  }, [split?.live, !!split, virtual, vlistKey, scrollIdentity])
 
   /*
-   * 分屏换块 / 焦点那块换了会话：从这条会话刚才在屏幕上的位置接着显示（失焦时在只读投影里滚到哪就是哪），
+   * 普通切换 / 分屏换块：从这条会话刚才在屏幕上的位置接着显示（失焦时在只读投影里滚到哪就是哪），
    * 没记录过就贴底。不沿用上一条会话的「是否贴底」—— 那是另一条会话的状态，沿用会让新焦点跳回顶部。
    * 它是 layout effect，比上面「虚拟列表搬家」的普通 effect 先跑，那边读到的 stickRef 已是这条会话的。
    */
   const splitOn = !!split
   const sessionIdentity = displayedSession?.path ?? displayedSession?.sessionId ?? ''
   useLayoutEffect(() => {
-    if (!splitOn || !displayedSession) return undefined
+    if (!displayedSession) return undefined
     const snap = shownScroll(displayedSession)
     const bottom = !snap || snap.atBottom
     stickRef.current = bottom
     setStick(bottom)
-    if (bottom || !snap) return undefined
+    // 初始布局的 scroll 事件不代表用户阅读意图，也不能覆盖目标会话的快照。
+    vlistSettlingRef.current = true
     const raf = requestAnimationFrame(() => {
-      if (virtual) vlistRef.current?.scrollTo(snap.top)
-      else if (streamRef.current) streamRef.current.scrollTop = snap.top
+      /* 按回合锚点恢复（两块的渲染方式不同，像素位置不通用），找不到锚点回合才用像素 */
+      if (virtual) {
+        const at = snap?.anchor ? turnsRef.current.findIndex((tt) => tt.id === snap.anchor!.turnId) : -1
+        if (bottom) vlistRef.current?.scrollToIndex(lastTurnIndexRef.current, { align: 'end' })
+        else if (at >= 0) vlistRef.current?.scrollToIndex(at, { align: 'start', offset: snap!.anchor!.offset })
+        else if (snap) vlistRef.current?.scrollTo(snap.top)
+      } else if (streamRef.current) {
+        if (bottom) streamRef.current.scrollTop = streamRef.current.scrollHeight
+        else if (!restoreScrollAnchor(streamRef.current, snap!.anchor)) streamRef.current.scrollTop = snap!.top
+        vlistSettlingRef.current = false
+      }
     })
     return () => cancelAnimationFrame(raf)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [split?.live, sessionIdentity, splitOn])
+  }, [split?.live, sessionIdentity, splitOn, virtual, vlistKey])
 
   /* 分屏期间磁贴随时可能重排：每半秒再看一眼，空白了就重挂并贴回底部（最多 3 次，换会话后清零） */
   useEffect(() => {
@@ -718,10 +657,10 @@ export default function App() {
   const onScroll = () => {
     const el = streamRef.current
     if (!el) return
-    if (suppressStickScrollRef.current) return
+    if (suppressStickScrollRef.current || vlistSettlingRef.current) return
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
     setStickNow(atBottom)
-    if (split && displayedSession) rememberScroll(displayedSession, { top: el.scrollTop, atBottom })
+    noteScroll(el.scrollTop, atBottom, el)
   }
 
   /**
@@ -826,7 +765,7 @@ export default function App() {
     if (!h || vlistSettlingRef.current) return
     const atBottom = h.scrollSize - h.scrollOffset - h.viewportSize < 40
     setStickNow(atBottom)
-    if (split && displayedSession) rememberScroll(displayedSession, { top: h.scrollOffset, atBottom })
+    noteScroll(h.scrollOffset, atBottom, centerRef.current?.querySelector<HTMLElement>('.stream'))
   }
 
   const jumpToBottom = () => {
@@ -932,16 +871,7 @@ export default function App() {
    * 活动会话的对话列。分屏时它跟着焦点放进那一块磁贴，其余是只读投影（SplitPeerPane，外观同尺寸）；
    * 焦点换块时这一列在新位置重新挂载，遮罩从这一块淡出（`split-live`）。
    */
-  const sessionHeader = (
-    <Continuity
-      mapEnabled={dailyMode}
-      mapOpen={mapOpen}
-      onToggleMap={showMap}
-      spaceEnabled={dailyMode && showSpaces}
-      spaceOpen={spaceOpen}
-      onToggleSpace={(open) => showSpace(open)}
-    />
-  )
+  const sessionHeader = <Continuity />
   const chatColumn = (
           <section ref={centerRef} className={`center${split ? ' split-live' : ''}`} data-testid={split ? 'split-live' : undefined}>
             {split ? <SplitPaneHead index={split.live} target={split.tiles[split.live]}>{sessionHeader}</SplitPaneHead> : null}
@@ -949,26 +879,7 @@ export default function App() {
 
             <ConversationOutline />
 
-            {inboxOpen ? (
-              /* 任务收件箱（实施-28 T2）：跨会话待处理，与当前会话无关所以排在最前 */
-              <TaskInbox
-                onOpenSession={(path) => {
-                  void switchSession(path)
-                  setInboxOpen(false)
-                }}
-              />
-            ) : spaceOpen ? (
-              /* 空间工作台：概览 / 资料 / 成果 / 学习（实施-25 P04） */
-              <SpaceWorkbench
-                view={spaceView}
-                onView={(v) => showSpace(true, v)}
-                onClose={() => showSpace(false)}
-                onOpenSession={openSessionFromSpace}
-              />
-            ) : mapOpen ? (
-              /* 会话地图读取当前会话家族的持久日志和真实分支。 */
-              <SessionMap onOpen={openSessionFromMap} onBackToChat={() => showMap(false)} />
-            ) : virtual ? (
+            {virtual ? (
               <VList
                 key={`${sessionIdentity}|${vlistKey}`}
                 ref={vlistRef}
@@ -987,16 +898,7 @@ export default function App() {
               <div className="stream" ref={setStreamNode} onScroll={onScroll}>
                 <div className="stream-inner">
                   {turns.length === 0 ? (
-                    dailyMode ? (
-                      <WorkbenchHome
-                        onOpenSession={openSessionFromMap}
-                        onOpenMap={() => showMap(true)}
-                        onOpenSpace={() => showSpace(true, 'overview')}
-                        onOpenInbox={() => setInboxOpen(true)}
-                      />
-                    ) : (
-                      <EmptyStream />
-                    )
+                    <EmptyStream />
                   ) : (
                     turns.map((tt) => (
                       <TurnView
@@ -1029,7 +931,6 @@ export default function App() {
             ) : null}
 
             {/* 交接 / 上下文整理的一行非阻塞状态（实施-14 F5）：没事就不占地方 */}
-            <HandoffNote />
             {/* 实施-20 U4：子代理运行状态与必须由人处理的合并/停止，走普通会话流 */}
             <SubagentNote />
             <Composer />
@@ -1096,8 +997,9 @@ export default function App() {
             <div className="split-row" data-testid="split-row">
               {split.tiles.map((tile, i) => {
                 const live = split.live === i
-                const columnKey = workbenchSessionKey(tile.path, tile.sessionId)
                 const tileKey = splitTileKey(tile) || `tile-${i}`
+                /* 与单会话同一把键（workspace-key）：焦点怎么换，这一列的排布和资源都不变 */
+                const columnKey = workspaceKeyFor(tile)
                 return (
                   <Fragment key={tileKey}>
                   {i > 0 ? <SplitResizer left={split.tiles[i - 1]} right={tile} /> : null}
@@ -1124,7 +1026,7 @@ export default function App() {
               })}
             </div>
           ) : (
-            <Workspace sessionKey={workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)}>
+            <Workspace sessionKey={conversationKeyOf(session)}>
               <WorkspacePane id={CHAT_PANE} title="主会话" icon="chat-round">
                 {chatColumn}
               </WorkspacePane>

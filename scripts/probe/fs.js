@@ -141,9 +141,10 @@
       return true
     }
     const activePath = () => document.activeElement?.dataset?.treePath ?? ''
+    const firstSrcChild = qa('.rp-fs-row').find(r => r.dataset.path?.startsWith('src/') && r.dataset.path.split('/').length === 2)?.dataset.path
     if (await key('src', 'ArrowRight')) {
       const p = activePath()
-      if (p === 'src/main') ok('ArrowRight 从已展开目录移动到下一可见节点')
+      if (firstSrcChild && p === firstSrcChild) ok('ArrowRight 从已展开目录移动到第一个可见子节点：' + p)
       else bad('ArrowRight 焦点没有移动到下一可见节点：' + JSON.stringify(p))
     } else bad('键盘探针找不到 src 目录')
     if (await key('src/main/agent.ts', 'Enter')) {

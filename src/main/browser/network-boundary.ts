@@ -98,13 +98,13 @@ export function decideRequestBoundary(input: {
 }): BoundaryDecision {
   const { targetHost, initiatorUrl, requestedByUs, resourceType } = input
   /*
-   * 拿不到已提交文档（新标签的第一次导航）或发起方本来就是本地页面时放行：
-   * 宁可少拦，也不要把本地预览、正常图片/字体请求误杀。
+   * 本地页面可以继续访问本地预览资源。未知来源按外部页面处理，
+   * 不能把网页新窗口的首导航当成宿主明确授权。
    *
    * ⚠️ link-local 是例外（云 metadata）：它跟“谁发起的”无关，一律拦。
    */
   if (isLinkLocalHost(targetHost)) return 'block-private'
-  if (!initiatorUrl || isLoopbackOrigin(initiatorUrl)) return 'allow'
+  if (isLoopbackOrigin(initiatorUrl)) return 'allow'
   if (!isPrivateHost(targetHost)) return 'check-dns'
   /*
    * 地址本身就是内网时：只有「用户/agent 明确要求打开的顶层导航」才放行

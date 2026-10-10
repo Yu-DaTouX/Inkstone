@@ -26,7 +26,7 @@ export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps):
   handle('yan:subagents:start', async (task: string, model?: string, isolation?: string) => {
     const ctrl = await service.get()
     ctrl.setContext(await parentContext())
-    const mode = isolation === 'controlled-cwd' ? 'controlled-cwd' : 'worktree'
+    const mode = isolation === 'controlled-cwd' ? 'controlled-cwd' : isolation === 'worktree' ? 'worktree' : 'shared-cwd'
     return ctrl.start(String(task ?? ''), typeof model === 'string' ? model : undefined, mode)
   })
   handle('yan:subagents:stop', async (id: string) => (await service.get()).stop(String(id ?? '')))

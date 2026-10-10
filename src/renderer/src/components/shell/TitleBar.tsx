@@ -135,8 +135,8 @@ export function TitleBar({
           onClick={onToggleBrowser}
           data-testid="browser-view-toggle"
           data-open={browserOpen ? '1' : '0'}
-          aria-checked={!!browserOpen}
-          role="switch"
+          aria-pressed={!!browserOpen}
+          aria-label={browserOpen ? t('browser.close') : t('browser.open')}
         >
           <Icon name="globe" size={14} />
         </button>

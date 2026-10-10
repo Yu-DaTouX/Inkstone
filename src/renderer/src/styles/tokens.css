@@ -18,23 +18,8 @@
    里的引用不用改。 */
 @import '@mogeko/maple-mono-cn/dist/font/result.css';
 
-/* 界面骨架里的汉字（设计规范 §2.2）。
-   Maple 的汉字占两格，而且只有常规字重：在按钮、导航、分区标题里读起来像
-   「字 距 拉 开」，加粗时是合成的伪粗体。界面骨架只需要拉丁与数字等宽，
-   所以在 --font-ui 里把 CJK 区段交给系统的微软雅黑 UI（本机字体，不增加体积）；
-   代码、diff、终端仍用 --font-code，保持严格 1:2 栅格。 */
-@font-face {
-  font-family: 'Inkstone UI CJK';
-  src: local('Microsoft YaHei UI'), local('Microsoft YaHei');
-  font-weight: 100 500;
-  unicode-range: U+2E80-2FDF, U+3000-303F, U+3040-30FF, U+3100-312F, U+31A0-31FF, U+3200-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF;
-}
-@font-face {
-  font-family: 'Inkstone UI CJK';
-  src: local('Microsoft YaHei UI Bold'), local('Microsoft YaHei Bold');
-  font-weight: 501 900;
-  unicode-range: U+2E80-2FDF, U+3000-303F, U+3040-30FF, U+3100-312F, U+31A0-31FF, U+3200-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF;
-}
+/* 全界面只用 Maple Mono CN 常规体（设计规范「界面重构」）：不再拼接雅黑切片，
+   也不让浏览器合成伪粗体（见下方 body 的 font-synthesis）。 */
 
 /* 1. 令牌 */
 :root {
@@ -45,20 +30,30 @@
    *   --font-body 对话正文、用户消息、推理、设置说明、页标题
    */
   --font-mono: 'Maple Mono CN', ui-monospace, Consolas, monospace;
-  --font-sans: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+  --font-sans: var(--font-mono);
   --font-code: var(--font-mono);
-  --font-ui: 'Inkstone UI CJK', var(--font-mono);
-  --font-body: var(--font-sans);
+  --font-ui: var(--font-mono);
+  --font-body: var(--font-mono);
 
   --fs-xs: 11px;
   --fs-sm: 12px;
   --fs-code: 12.5px;
   --fs-base: 13px;
-  --fs-body: 14px;
+  --fs-body: 15px;
   --fs-lg: 15px;
+  --fs-h3: 17px;
+  --fs-h2: 20px;
+  --fs-stat: 22px;
   --lh-tight: 1.45;
   --lh-base: 1.55;
-  --lh-body: 1.7;
+  --lh-body: 1.75;
+  /* 界面行（列表行、工具行、活动行、文字按钮）统一 24 */
+  --lh-row: 24px;
+  /* 正文列：80ch × 15px Maple（拉丁 0.6em）= 720，约 40 个汉字 */
+  --w-body: 720px;
+  /* 过程并列时右侧那一栏与它和正文之间的间距 */
+  --w-proc-side: 240px;
+  --gap-proc-side: 32px;
 
   --sp-1: 4px;
   --sp-2: 8px;
@@ -79,11 +74,12 @@
   --d-message-gap: 32px; /* 消息回合之间（= 原来的 --sp-6） */
 
   /* 4 / 6 / 8 / 12px 分级；大容器不再使用胶囊式圆角。 */
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
-  --r-xl: 12px;
+  /* 方案 E：规整的小圆角（控件 4、菜单与卡片 6、对话框 8） */
+  --r-xs: 3px;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 8px;
   /* 圆形组件（头像状、开关、滚动条）用 */
   --r-full: 999px;
 
@@ -100,7 +96,8 @@
      曾经是 760px —— 那是有 328px 右栏时定的。右栏搬进设置后中间栏
      多出 328px，760 的上限会让内容像「挤在左边」。放宽到 900。
      （上限仍必要：1920px 下不加限制会行长得读不了） */
-  --w-stream: 800px;
+  /* 窗口越宽正文列越宽（左栏与正文之间不留大片空白），上限 920px */
+  --w-stream: clamp(calc(var(--w-body) + 2 * var(--sp-5)), calc(100vw - 680px), 920px);
 
   /* ── 控件状态（V-1，2026-09-23）──
      「禁用」与「键盘焦点」原来在各模块各写一份：禁用不透明度实测有 9 个值、
@@ -121,8 +118,9 @@
   --ctl-h: 28px;
   --ctl-h-lg: 32px;
   --fw-regular: 400;
-  --fw-medium: 500;
-  --fw-strong: 600;
+  /* 只有 Regular 一个字面：三档令牌保留给模块引用，实际都按常规体渲染 */
+  --fw-medium: 400;
+  --fw-strong: 400;
 
   /* 动效时长（B2 归口）——
      语义别名 --dur 是默认过渡；其余按毫秒值命名，值等于收口前的实际值，未做视觉调整。
@@ -179,94 +177,84 @@
 }
 
 html[data-theme='dark'] {
-  --bg-0: #151515;
-  --bg-1: #1b1b1a;
-  --bg-2: #222221;
-  --bg-3: #2b2b29;
-  --bg-4: #393936;
+  /* 冷中性三层背景 + 终端蓝（界面重构，深色单独校准） */
+  --bg-0: #17191d;
+  --bg-1: #1f2228;
+  --bg-2: #282c34;
+  --bg-3: #2d3340;
+  --bg-4: #3a414e;
 
-  /* 描边用**半透明白**而不是实色 ——
-     实色边界只在特定底色上对，一挪到卡片上就不对了。
-     半透明白在任何底色上都自动带出正确的关系。 */
-  --border-soft: rgba(255, 255, 255, 0.06);
-  --border: rgba(255, 255, 255, 0.1);
-  --border-str: rgba(255, 255, 255, 0.16);
+  /* 描边用半透明白：在任何底色上都带出正确的关系 */
+  --border-soft: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.11);
+  --border-str: rgba(255, 255, 255, 0.18);
   --edge: rgba(255, 255, 255, 0.07);
   /* 分屏非焦点会话的淡遮罩：朝页面底色退一层 */
-  --split-dim: rgba(21, 21, 21, 0.38);
+  --split-dim: rgba(23, 25, 29, 0.38);
 
-  --fg: #ecece8;
-  --fg-dim: #b4b4ac;
-  --fg-mute: #92928a;
+  --fg: #e5e7eb;
+  --fg-dim: #b3bac5;
+  --fg-mute: #929caa;
 
-  --accent: #93a4f4;
-  --accent-soft: rgba(147, 164, 244, 0.16);
-  --accent-line: rgba(147, 164, 244, 0.52);
-  --ok: #34d399;
-  --ok-soft: rgba(52, 211, 153, 0.16);
-  --warn: #fbbf24;
-  --warn-soft: rgba(251, 191, 36, 0.16);
-  --err: #ff6467;
-  --err-soft: rgba(255, 100, 103, 0.16);
-  --magenta: #c084fc;
+  --accent: #93a8ff;
+  --accent-soft: rgba(147, 168, 255, 0.16);
+  --accent-line: rgba(147, 168, 255, 0.5);
+  --ok: #82c7a0;
+  --ok-soft: rgba(130, 199, 160, 0.14);
+  --warn: #e8b17b;
+  --warn-soft: rgba(232, 177, 123, 0.14);
+  --err: #f5a2a2;
+  --err-soft: rgba(245, 162, 162, 0.13);
+  --magenta: #c4a5f5;
   --cyan: var(--accent);
-  /* --fact / --fact-soft 已删除：它们是记忆模块的「已确认事实」色，
-     而记忆模块整体移除后这两个名字在 src/ 与设计稿里都是**零引用**
-     （只在自己这一行上出现）。留着一个没人用的语义色只会误导后来人
-     以为存在第四种状态。 */
 
-  /* 代码块（highlight.css 用）。深色主题就是 GitHub Dark 的底色 */
-  --code-bg: #0d1117;
+  /* 代码块：比页面底再深半级 */
+  --code-bg: #1c1f24;
   --code-fg: #c9d1d9;
-  /* 行内代码：靠等宽 + 淡底区分，**不用彩色** ——
-     高饱和青蓝在密麻代码里会变成一串跳动的灯，正文反而读不进去。 */
+  /* 行内代码：靠等宽 + 淡底区分，不用彩色 */
   --code-inline-bg: rgba(255, 255, 255, 0.07);
-  --code-inline-fg: #cdd6dc;
+  --code-inline-fg: #cfd5de;
 
   /* 强调色实底上的文字；弹出层（菜单 / 对话框）唯一允许的投影 */
-  --on-accent: #10131f;
-  --shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  --on-accent: #17191d;
+  --shadow-pop: 0 14px 36px -14px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 html[data-theme='light'] {
-  --bg-0: #fcfcfa;
-  --bg-1: #f3f3f0;
+  --bg-0: #f6f7f9;
+  --bg-1: #eef0f3;
   --bg-2: #ffffff;
-  --bg-3: #eaeae6;
-  --bg-4: #deded9;
-  --border-soft: rgba(0, 0, 0, 0.07);
-  --border: rgba(0, 0, 0, 0.13);
-  --border-str: rgba(0, 0, 0, 0.2);
-  --edge: rgba(0, 0, 0, 0.04);
-  --split-dim: rgba(252, 252, 250, 0.5);
-  /* 浅色下 whitespace 上「淡」很快变成「读不到」，所以 dim/mute 都比深色主题更黑；
-     mute 在 bg-1 / bg-3（磁贴、选中行）上也要 ≥4.5:1 */
-  --fg: #252522;
-  --fg-dim: #55554f;
-  --fg-mute: #6a6a63;
-  /* 强调色与三个状态色在 bg-3（选中行）与自己的淡底上作文字也要 ≥4.5:1 */
-  --accent: #4b5dbf;
-  --accent-soft: rgba(75, 93, 191, 0.1);
-  --accent-line: rgba(75, 93, 191, 0.42);
-  --ok: #047857;
-  --ok-soft: rgba(4, 120, 87, 0.1);
-  --warn: #9a4508;
-  --warn-soft: rgba(154, 69, 8, 0.1);
-  --err: #c42020;
-  --err-soft: rgba(196, 32, 32, 0.1);
-  --magenta: #9333ea;
+  --bg-3: #e3e7ee;
+  --bg-4: #d5dae2;
+  --border-soft: rgba(20, 30, 50, 0.07);
+  --border: rgba(20, 30, 50, 0.13);
+  --border-str: rgba(20, 30, 50, 0.2);
+  --edge: rgba(20, 30, 50, 0.04);
+  --split-dim: rgba(246, 247, 249, 0.5);
+  /* 浅色下 dim / mute 在 bg-1 / bg-3 上也要 ≥4.5:1 */
+  --fg: #242830;
+  --fg-dim: #505966;
+  --fg-mute: #5e6876;
+  --accent: #4059ad;
+  --accent-soft: rgba(64, 89, 173, 0.1);
+  --accent-line: rgba(64, 89, 173, 0.42);
+  --ok: #216a4b;
+  --ok-soft: rgba(33, 106, 75, 0.1);
+  --warn: #8a430d;
+  --warn-soft: rgba(138, 67, 13, 0.1);
+  --err: #a53030;
+  --err-soft: rgba(165, 48, 48, 0.09);
+  --magenta: #7e3fc4;
   --cyan: var(--accent);
 
-  /* 代码块：白底上不能再用深色底（否则就是“白页面上一个黑框”）。
-     用 GitHub Light 的浅灰底 + 深色字，语法色在 highlight.css 里另给。」 */
-  --code-bg: #f6f8fa;
+  /* 代码块：浅冷灰底 + 深字，语法色在 highlight.css */
+  --code-bg: #ebedf1;
   --code-fg: #24292f;
-  /* 同深色主题：中性灰（浅色底上蓝色小标签最显眼） */
-  --code-inline-bg: rgba(0, 0, 0, 0.055);
-  --code-inline-fg: #45525a;
+  --code-inline-bg: rgba(20, 30, 50, 0.06);
+  --code-inline-fg: #3c4654;
 
   --on-accent: #ffffff;
-  --shadow-pop: 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-pop: 0 14px 36px -14px rgba(20, 30, 50, 0.28), 0 0 0 1px rgba(20, 30, 50, 0.05);
 }
 
 /* 2. 基础 */
@@ -274,6 +262,8 @@ html[data-theme='light'] {
 *::before,
 *::after {
   box-sizing: border-box;
+  /* 模块里写死的 600 / 700 也不合成伪粗体（font 简写不会把它带回来） */
+  font-synthesis: none;
   margin: 0;
   padding: 0;
 }
@@ -285,6 +275,8 @@ body {
   background: var(--bg-0);
   color: var(--fg);
   font: var(--fs-base) / var(--lh-base) var(--font-ui);
+  /* 只有 Regular：不让浏览器造假粗体，层级靠字号与留白 */
+  font-synthesis: none;
   font-variant-ligatures: none;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
@@ -430,11 +422,6 @@ html[data-density='comfortable'] {
   transform: rotate(90deg);
 }
 
-@media (min-width: 1600px) {
-  :root {
-    --w-stream: 980px;
-  }
-}
 
 /* 37. 终端风格强化
    目标：更像终端，不像「一堆卡片」。

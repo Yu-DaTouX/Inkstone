@@ -14,6 +14,7 @@
  *      点了没反应的终端框（H-11 禁区：不做灰色永久占位按钮）。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useWorkspaceKey } from '../workbench/Workspace'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useStore } from '../../state/store'
@@ -61,6 +62,7 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
   const error = useStore((s) => s.terminalError)
   const refresh = useStore((s) => s.refreshTerminals)
   const startTerminal = useStore((s) => s.startTerminal)
+  const workspaceKey = useWorkspaceKey()
   const closeTerminal = useStore((s) => s.closeTerminal)
   const setActiveTerminal = useStore((s) => s.setActiveTerminal)
 
@@ -235,12 +237,12 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
   const newTerminal = useCallback(async () => {
     const cols = termRef.current?.cols ?? 80
     const rows = termRef.current?.rows ?? 24
-    const snapshot = await startTerminal({ cols, rows })
+    const snapshot = await startTerminal({ cols, rows, owner: workspaceKey })
     if (snapshot) {
       setExited(null)
       setActiveTerminal(snapshot.id)
     }
-  }, [startTerminal, setActiveTerminal])
+  }, [startTerminal, setActiveTerminal, workspaceKey])
 
   const closeActive = useCallback(async () => {
     const id = activeIdRef.current

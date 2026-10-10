@@ -5,10 +5,9 @@
  *
  * 控制器第一次用到时才建（要读设置里的 cwd 与 piBin）。
  */
-import { SubagentController } from './subagents'
+import { SubagentController, type SubagentApprovalOrigin } from './subagents'
 import { getSettings } from './settings'
 import { CapabilityCommandError } from './capability-server'
-import { resolveActivityModel } from '../shared/activity-model'
 import type { SubagentCommandHost } from './agent'
 import type { SubagentRun } from '../shared/ipc'
 import type { AgentProfileState } from '../shared/agent-profile'
@@ -20,6 +19,7 @@ import type { AgentProfileState } from '../shared/agent-profile'
  */
 const SUBAGENT_SYSTEM_PROMPT = [
   'You are a subagent working on one focused task inside a larger project.',
+  'Search only the supplied source paths and workspace. Avoid filesystem-root searches; set a finite timeout on shell commands that may take a long time.',
   '- Work autonomously: do not ask the user questions; make reasonable assumptions and state them.',
   '- Keep the scope to the task you were given.',
   '- Finish with a concise report: what you changed or found, and how you verified it.'
@@ -29,6 +29,9 @@ export interface SubagentServiceDeps {
   codemodeExtension?(): string | undefined
   /** 内置服务扩展（Command Code）：子代理选到这些服务的模型时也要能找到 */
   providerExtensions?(): string[]
+  guardExtension?(): string | undefined
+  shellExtension?(): string | undefined
+  confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean>
   onChange(run: SubagentRun): void
   onRemove(id: string): void
   /** 运行收口后（终态、差异已定）回调一次 */
@@ -53,8 +56,9 @@ export class SubagentService {
     this.controller = new SubagentController({
       cwd: s.cwd,
       piBin: s.piBin,
-      extensions: [this.deps.codemodeExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
+      extensions: [this.deps.codemodeExtension?.(), this.deps.guardExtension?.(), this.deps.shellExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
+      confirmDanger: (params, cwd, origin) => this.deps.confirmDanger?.(params, cwd, origin) ?? Promise.resolve(false),
       onChange: (run) => this.deps.onChange(run),
       onRemove: (id) => this.deps.onRemove(id),
       onFinished: (run) => this.deps.onFinished?.(run)
@@ -91,29 +95,12 @@ export class SubagentService {
       }
       const model = typeof params.model === 'string' && params.model.length <= 200 ? params.model : undefined
       const readOnly = params.readOnly === true || params['read-only'] === true
-      /*
-       * 模型没显式给时，按**父会话的活动**取「按活动配置模型」里的那一档
-       * （实施-25 P18 的真实生效点）。解析结果里带理由与是否发生回退，
-       * 但这里只需要最终值。
-       */
-      let effectiveModel = model
-      if (!effectiveModel) {
-        try {
-          const profile = await this.deps.resolveAgentProfile(context.parentSessionId ?? context.parentRunId ?? '')
-          const settings = await getSettings()
-          effectiveModel = resolveActivityModel({
-            config: settings.activityModels,
-            activity: profile.activity
-          }).model ?? undefined
-        } catch {
-          /* 取不到配置就当没配：不因为一个设置读盘失败而挡住子代理 */
-        }
-      }
+      // 未指定子模型时跟随父会话模型，不再按旧活动配置偷偷换模型。
       /*
        * 任务输入（实施-25 P15 T15-1）：目标 / 交付物 / 来源 / 边界。
        * 读不通就在**占用并发槽之前**失败（服务里同一个顺序）。
        */
-      const result = await ctrl.start(task, effectiveModel, readOnly ? 'controlled-cwd' : 'worktree', params.brief)
+      const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : params.isolation === 'worktree' ? 'worktree' : 'shared-cwd', params.brief)
       if (!result.ok || !result.run) {
         throw new CapabilityCommandError(
           'subagent_start_failed',

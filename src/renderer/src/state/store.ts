@@ -77,6 +77,7 @@ import { keepLocalImages } from './keep-images'
 import { reuseIfSame } from './same-messages'
 import {
   rebindSessionRuntime,
+  pruneSessionRuntimes,
   updateSessionRuntime,
   type SessionRuntimeMap,
   type SessionRuntimeSnapshot
@@ -86,6 +87,8 @@ import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTask
 import { addSourceFiles } from './source-files'
 import { newestMessages, shownMessages } from './split-snapshots'
 import { useSplitView } from './split-view'
+import { claimResource, releaseResource, resourceOwner } from './resource-owners'
+import { conversationKeyOf, workspaceKeyFor } from './workspace-key'
 
 /**
  * 提醒的标题（系统通知用）。按界面语言分。
@@ -647,7 +650,7 @@ export interface Store {
   compact: () => Promise<void>
   stop: () => Promise<void>
 
-  setModel: (provider: string, id: string) => Promise<void>
+  setModel: (provider: string, id: string, quiet?: boolean) => Promise<{ ok: boolean; error?: string }>
   setThinking: (level: string) => Promise<void>
   setAutoCompaction: (on: boolean) => Promise<void>
   setAutoRetry: (on: boolean) => Promise<void>
@@ -670,7 +673,7 @@ export interface Store {
   /* ---- 交互终端（实施-11 H-11） ---- */
   /** 从宿主拉一次会话列表与可用性（启用 / 面板打开 / 重连时调） */
   refreshTerminals: () => Promise<void>
-  startTerminal: (options?: { cols?: number; rows?: number; cwd?: string }) => Promise<TerminalSessionInfo | null>
+  startTerminal: (options?: { cols?: number; rows?: number; cwd?: string; owner?: string }) => Promise<TerminalSessionInfo | null>
   closeTerminal: (id: string) => Promise<void>
   setActiveTerminal: (id: string | null) => void
   /** 打开只读文件预览（相对路径由主进程按会话 cwd 解析） */
@@ -684,7 +687,7 @@ export interface Store {
   closePreview: () => void
   /* ---- 子代理 ---- */
   loadSubagents: () => Promise<void>
-  startSubagent: (task: string, model?: string, isolation?: 'worktree' | 'controlled-cwd') => Promise<void>
+  startSubagent: (task: string, model?: string, isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<void>
   stopSubagent: (id: string) => Promise<void>
   clearSubagents: () => Promise<void>
   mergeSubagent: (id: string) => Promise<void>
@@ -1071,11 +1074,11 @@ let commandRequestSeq = 0
  */
 const THINK_LABEL: Record<string, string> = {
   off: '关',
-  minimal: '轻度',
-  low: '中',
-  medium: '高',
-  high: '极高',
-  xhigh: 'Ultra',
+  minimal: '最低',
+  low: '低',
+  medium: '中',
+  high: '高',
+  xhigh: '极高',
   max: 'Max'
 }
 
@@ -1409,6 +1412,7 @@ export const useStore = create<Store>((rawSet, get) => {
       piInfo: pi,
       browserState
     })
+    if (!browserState.open) releaseResource('browser')
 
     performance.mark('yan:bootstrap-set')
     // 模型 / 斜杠命令在启动后单独拉（要等 pi ready）
@@ -1468,7 +1472,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const s = get()
 
     /* 会话与运行实例的身份、事件归属判定统一在 push-routing.ts */
-    const route = routePush(s, m)
+    const route = routePush({ ...s, visibleSessionIds: useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : []) }, m)
     if (route.patch) set(route.patch)
     if (!route.project) return
 
@@ -1518,7 +1522,10 @@ export const useStore = create<Store>((rawSet, get) => {
         /* 全局快照（N12）：左栏状态槽用。不参与上面的实例身份过滤 */
         {
           const active = m.payload.find((runner) => runner.isActive)
-          set({ runners: m.payload, ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
+          const keep = new Set([viewingSessionId(s) ?? '',
+            ...(useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : []) ?? [])])
+          for (const runner of m.payload) if (runner.running || runner.waiting || runner.isActive) keep.add(runner.sessionId || `run:${runner.runId}`)
+          set({ runners: m.payload, sessionRuntimes: pruneSessionRuntimes(get().sessionRuntimes, keep), ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
           if (active) {
             const runtime = runtimeFromRunner(active)
             /*
@@ -2709,6 +2716,12 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '删除失败') })
       return
     }
+    const cache = { ...get().sessionRuntimes }
+    const normalize = (value: string): string => value.replace(/\\/g, '/').toLowerCase()
+    for (const [key, snapshot] of Object.entries(cache)) {
+      if (snapshot.session?.sessionFile && normalize(snapshot.session.sessionFile) === normalize(path)) delete cache[key]
+    }
+    set({ sessionRuntimes: cache })
     await get().refreshSessions()
   },
 
@@ -2780,14 +2793,18 @@ export const useStore = create<Store>((rawSet, get) => {
 
   /* --------------------------------------------------- 模型 / 思考 / 目录 */
 
-  setModel: async (provider, id) => {
+  setModel: async (provider, id, quiet = false) => {
     const res = await piCall(() => window.yan.setModel(provider, id))
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换模型失败') })
-      return
+      if (!quiet) set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换模型失败') })
+      return res
     }
     /* 主进程已刷新权威 state/stats；列表也按当前实例代次补一次。 */
     void get().reloadModels()
+    const selected = get().models.find(m => m.provider === provider && m.id === id)
+    try { await get().patchSettings({ lastMainModel: { provider, id, name: selected?.name } }) }
+    catch (error) { return { ok: false, error: `模型已切换，但偏好保存失败：${String(error)}` } }
+    return res
   },
 
   setThinking: async (level) => {
@@ -2931,18 +2948,26 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   openBrowser: async (url) => {
+    const view = get()
+    const owner = view.peekedPath || view.peekedSessionId
+      ? workspaceKeyFor({ path: view.peekedPath ?? undefined, sessionId: view.peekedSessionId ?? undefined })
+      : conversationKeyOf(view.session)
+    const previousOwner = resourceOwner('browser')
     /*
      * 浏览器与文件预览占同一块区域，而且原生网页视图永远盖在 DOM 之上 ——
      * 这里仅让主进程打开网页；右栏窗口协调器负责显隐，不能因为切到浏览器
      * 就丢掉用户刚打开的文件标签。
      */
     try {
+      // 在异步 IPC 前绑定，避免打开期间切会话把浏览器认领到新焦点。
+      claimResource('browser', owner)
       const browserState = await window.yan.browser.open(url)
       set({ browserState })
       /* 浏览器是右栏资源：右栏收着就展开它，否则用户看不到刚打开的网页 */
       if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
       applyBrowserVisibility(get)
     } catch (error) {
+      if (!previousOwner && !get().browserState.open && resourceOwner('browser') === owner) releaseResource('browser')
       /*
        * 这里不走 `piCall`（成功返回的是 BrowserState 而不是 `{ok}`），
        * 所以剥壳要自己调 —— 否则用户看到的提示是
@@ -2954,7 +2979,9 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   closeBrowser: async () => {
-    set({ browserState: await window.yan.browser.close() })
+    const browserState = await window.yan.browser.close()
+    if (!browserState.open) releaseResource('browser')
+    set({ browserState })
     applyBrowserVisibility(get)
   },
 
@@ -2977,7 +3004,8 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   startTerminal: async (options) => {
-    const snapshot = await window.yan.terminal.start(options)
+    const { owner, ...startOptions } = options ?? {}
+    const snapshot = await window.yan.terminal.start(options ? startOptions : undefined)
     if (!snapshot) {
       /*
        * 启不来不是静默失败：把宿主给的原因带出来（原生依赖 / spawn 失败）。
@@ -2992,6 +3020,8 @@ export const useStore = create<Store>((rawSet, get) => {
       })
       return null
     }
+    /* 先登记归属再进 store：焦点列的认领不会抢在发起它的那一列前面 */
+    if (owner) claimResource('terminal:' + snapshot.id, owner)
     set({
       terminals: [...get().terminals.filter((term) => term.id !== snapshot.id), snapshot],
       activeTerminalId: snapshot.id
@@ -3002,6 +3032,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
   closeTerminal: async (id) => {
     await window.yan.terminal.kill(id).catch(() => false)
+    releaseResource('terminal:' + id)
     const terminals = get().terminals.filter((term) => term.id !== id)
     set({
       terminals,
@@ -3091,6 +3122,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   closeFileTab: (key) => {
+    releaseResource('file:' + key)
     const rest = { ...get().filePreviews }
     delete rest[key]
     const current = get().filePreview
@@ -3591,8 +3623,6 @@ export const useStore = create<Store>((rawSet, get) => {
             void get().reloadModels()
             void get().reloadCommands()
             void get().refreshSessions()
-            /* 空间不依赖模型，但接一次就能拿到真实数据（与 sessions 同一时机） */
-            void get().refreshSpaces()
           }
         }
       } catch {

@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useDeferredValue } from 'react'
 import ReactMarkdown, { type Options } from 'react-markdown'
 import { createContext, useContext } from 'react'
 import remarkGfm from 'remark-gfm'
@@ -9,6 +9,8 @@ import { classifyLink } from '../../../../shared/links'
 import type { UIToolCall } from '../../../../shared/ipc'
 import { fileUrl as toFileUrl } from '../../../../shared/file-url'
 import { ChatImage } from './ChatImage'
+import { VisualFence } from './VisualBlock'
+import { isVisualBlockLang } from '../../../../shared/visual-blocks'
 
 /**
  * 共享的渲染件：Markdown / 工具行 / 工具详情。
@@ -48,11 +50,14 @@ const MD_CACHE_LIMIT = 200
 const MD_CACHE_MAX_CHARS = 20_000
 const mdCache = new Map<string, React.ReactElement>()
 const MessageSourceCwd = createContext<string | undefined>(undefined)
+/** 正在流式输出的消息：结构化块写完前只占位，不报格式错误 */
+const MarkdownLive = createContext(false)
 
 const MD_COMPONENTS = {
   a: LinkAnchor,
   img: MarkdownImage,
   code: InlineCodeLink,
+  pre: MarkdownPre,
   // 表格用等宽栅格，横向可滚
   table: ({ children }: { children?: React.ReactNode }) => (
     <div className="md-table-wrap">
@@ -189,6 +194,20 @@ function InlineCodeLink({ className, children }: { className?: string; children?
   )
 }
 
+type HastNode = { type: string; value?: string; tagName?: string; properties?: { className?: unknown }; children?: HastNode[] }
+const hastText = (node: HastNode): string => node.type === 'text' ? node.value ?? '' : (node.children ?? []).map(hastText).join('')
+
+/** 代码块：`yan-chart` / `yan-cards` / `yan-flow` 交给结构化回答组件，其余照常 */
+function MarkdownPre({ node, children }: { node?: HastNode; children?: React.ReactNode }) {
+  const live = useContext(MarkdownLive)
+  const code = node?.children?.find((child) => child.type === 'element' && child.tagName === 'code')
+  const classes = Array.isArray(code?.properties?.className) ? code.properties.className as string[] : []
+  const lang = classes.find((c) => c.startsWith('language-'))?.slice('language-'.length)
+  const plain = <pre>{children}</pre>
+  if (!code || !isVisualBlockLang(lang)) return plain
+  return <VisualFence lang={lang} text={hastText(code)} live={live} fallback={plain} />
+}
+
 /** 相对路径按消息的工作目录补全（revealPath 只认绝对路径） */
 function resolveAgainstCwd(path: string, cwd?: string): string {
   if (/^[a-zA-Z]:[\\/]|^[\\/]/.test(path) || !cwd) return path
@@ -204,33 +223,37 @@ function hasUnclosedFence(text: string): boolean {
   return n % 2 === 1
 }
 
-export const Markdown = memo(function Markdown({ text, sourceCwd }: { text: string; sourceCwd?: string }) {
-  const cached = mdCache.get(text)
-  if (cached) return <MessageSourceCwd.Provider value={sourceCwd}>{cached}</MessageSourceCwd.Provider>
+export const Markdown = memo(function Markdown({ text, sourceCwd, live = false }: { text: string; sourceCwd?: string; live?: boolean }) {
+  // Let input and tool status paint before expensive live Markdown work. Completion
+  // uses authoritative text immediately, without a delayed typewriter tail.
+  const deferredText = useDeferredValue(text)
+  const renderedText = live ? deferredText : text
+  const cached = live ? undefined : mdCache.get(renderedText)
+  if (cached) return <MessageSourceCwd.Provider value={sourceCwd}><MarkdownLive.Provider value={false}>{cached}</MarkdownLive.Provider></MessageSourceCwd.Provider>
 
-  const unclosed = hasUnclosedFence(text)
+  const unclosed = hasUnclosedFence(renderedText)
   const el = (
     <div className="prose md">
       <ReactMarkdown
         remarkPlugins={MD_REMARK}
         // 未闭合的代码块**不做高亮**：它每帧都在变，highlightAuto 会
         // 拿半截代码去逐个试所有语言（实测单块 30ms）。
-        rehypePlugins={unclosed ? MD_REHYPE_PLAIN : MD_REHYPE}
+        rehypePlugins={live || unclosed ? MD_REHYPE_PLAIN : MD_REHYPE}
         components={MD_COMPONENTS}
       >
-        {text}
+        {renderedText}
       </ReactMarkdown>
     </div>
   )
 
-  if (!unclosed && text.length <= MD_CACHE_MAX_CHARS) {
+  if (!live && !unclosed && renderedText.length <= MD_CACHE_MAX_CHARS) {
     if (mdCache.size >= MD_CACHE_LIMIT) {
       const oldest = mdCache.keys().next().value
       if (oldest !== undefined) mdCache.delete(oldest)
     }
-    mdCache.set(text, el)
+    mdCache.set(renderedText, el)
   }
-  return <MessageSourceCwd.Provider value={sourceCwd}>{el}</MessageSourceCwd.Provider>
+  return <MessageSourceCwd.Provider value={sourceCwd}><MarkdownLive.Provider value={live}>{el}</MarkdownLive.Provider></MessageSourceCwd.Provider>
 })
 
 /* ---------------------------------------------------------------- 工具详情 */

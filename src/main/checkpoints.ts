@@ -160,9 +160,16 @@ async function commitTree(cwd: string, dir: string, tree: string, message: strin
  * 发消息之前存一份快照。`budgetMs` 内没完成就先放行（首次给大项目建快照可能要几秒），
  * 快照仍会在后台继续完成；返回 null 表示这一轮没有检查点。
  */
+/** 上一轮超时后还在后台跑的快照：同一项目不再叠加新的，否则每轮都排在慢快照后面 */
+const inflight = new Set<string>()
+
 export function captureCheckpoint(cwd: string, sessionKey: string, text: string, budgetMs = 10_000): Promise<CheckpointRecord | null> {
   if (!isCheckpointableDir(cwd) || !sessionKey) return Promise.resolve(null)
-  const work = serialized(normalizeCwd(cwd), () => takeSnapshot(cwd, sessionKey, text, 'turn')).catch(() => null)
+  const key = normalizeCwd(cwd)
+  if (inflight.has(key)) return Promise.resolve(null)
+  inflight.add(key)
+  const work = serialized(key, () => takeSnapshot(cwd, sessionKey, text, 'turn')).catch(() => null)
+  void work.finally(() => inflight.delete(key))
   const timeout = new Promise<null>((done) => setTimeout(() => done(null), budgetMs).unref?.())
   return Promise.race([work, timeout])
 }

@@ -1,7 +1,7 @@
 /** `/subagent` 参数路由的纯测试，不启动 Electron、不启动 pi。 */
 export function runSubagentCommandTests(ok, parseSubagentCommand) {
-  const worktree = parseSubagentCommand('/subagent 检查项目')
-  ok(worktree?.task === '检查项目' && worktree.isolation === 'worktree', '普通子代理任务默认进入隔离 worktree')
+  const current = parseSubagentCommand('/subagent 检查项目')
+  ok(current?.task === '检查项目' && current.isolation === 'shared-cwd', '普通子代理任务默认在当前文件夹执行')
 
   const prefix = parseSubagentCommand('/subagent --read-only 检查项目')
   ok(prefix?.task === '检查项目' && prefix.isolation === 'controlled-cwd', '前置 --read-only 进入受控只读目录')

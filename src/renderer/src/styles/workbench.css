@@ -1929,7 +1929,6 @@
 .agent-home-head > .ui-input { flex: 1; width: auto; min-width: 0; max-width: none; }
 .agent-cli { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-2) var(--sp-3) var(--sp-2); flex-shrink: 0; }
 .agent-cli-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
-.agent-chip { display: inline-flex; align-items: center; gap: var(--sp-1); }
 .agent-mark { flex: none; vertical-align: middle; }
 /* 记录表：进行中与需要处理合成一张，已结束折叠成一行 */
 .agent-list { display: flex; flex-direction: column; gap: 2px; }
@@ -1978,3 +1977,9 @@
 .agent-launching { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--fg-mute); font-size: var(--fs-sm); }
 /* 磁贴里的 Agent 窗格与终端同底色，终端边缘和窗格融为一体 */
 .tile-pane > .agent-workspace { background: var(--bg-0); }
+
+/* 轻量委派面板：控件样式由公共 ui 提供，此处只管理排布。 */
+.agent-workspace:has(> .delegate-form) { overflow-y: auto; }
+.delegate-form { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); flex-shrink: 0; }
+.delegate-form .ui-input { width: 100%; }
+.delegate-target { overflow-wrap: anywhere; }

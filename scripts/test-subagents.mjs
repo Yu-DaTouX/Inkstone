@@ -276,12 +276,12 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     const rpc = factory.created[0]
     rpc.emit('event', {
       type: 'message_end',
-      message: { role: 'assistant', id: 'm1', content: [], stopReason: 'error' }
+      message: { role: 'assistant', id: 'm1', content: [], stopReason: 'error', errorMessage: 'WebSocket closed 1012' }
     })
     rpc.emit('event', { type: 'agent_settled' })
     const run = ctrl.get(res.run?.id)
     ok(run?.status === 'error', '模型报错时终态是 error（不是 done）', String(run?.status))
-    ok(/模型返回错误/.test(run?.error ?? ''), 'error 带可读原因', JSON.stringify(run?.error))
+    ok(/服务重启/.test(run?.error ?? '') && /WebSocket closed 1012/.test(run?.error ?? ''), '子代理错误保留服务商原文与可读原因', JSON.stringify(run?.error))
     ok(run?.latestActivity !== '已完成', '列表里的活动也不是「已完成」', String(run?.latestActivity))
     await ctrl.stopAll()
   }
@@ -357,8 +357,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
 
   /*
    * L03：运行超时要真的能触发。
-   * 10 分钟等不起 —— 用 `YAN_SUBAGENT_TIMEOUT_MS` 压到 200ms（真实验证同一先例：
-   * `YAN_AUTO_CONTINUE` 把退避压短）。断言到点后转 error + 进程被收。
+   * 用 `YAN_SUBAGENT_TIMEOUT_MS` 压到 200ms，检查到点后转 error + 进程被收。
    */
   {
     const factory = makeRpcFactory()
@@ -434,7 +433,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* 空闲上限：有输出就续期，真的没动静才算卡死 */
+  /* 无事件只提醒：既不发收尾指令，也不关闭工具/模型；新进展清除提醒。 */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -455,13 +454,36 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       }
       ok(ctrl.get(id)?.status === 'running' && !ctrl.get(id)?.wrapUp, '持续有动静时不算空闲超时（共 600ms > 300ms 上限）')
       ok(ctrl.get(id)?.toolCalls === 4, '记下已发起的工具调用次数', String(ctrl.get(id)?.toolCalls))
-      ok(await waitFor(() => ctrl.get(id)?.status === 'error', 3000), '停下来之后到空闲上限转 error')
-      ok(/没有进展/.test(ctrl.get(id)?.error ?? '') && ctrl.get(id)?.endReason === 'timeout', '原因写着没有进展', String(ctrl.get(id)?.error))
+      ok(await waitFor(() => !!ctrl.get(id)?.progressWarning, 3000), '停止输出后提示未收到进展')
+      ok(ctrl.get(id)?.status === 'running' && !ctrl.get(id)?.wrapUp && !rpc.closed, '无进展提醒不收尾、不关闭子进程')
+      ok(/执行工具或等待模型/.test(ctrl.get(id)?.progressWarning ?? ''), '提醒不把静默执行直接认作卡死')
+      rpc.emit('event', { type: 'tool_execution_update', toolName: 'read' })
+      ok(!ctrl.get(id)?.progressWarning && ctrl.get(id)?.status === 'running', '工具更新清除无进展提醒')
     } finally {
       delete process.env.YAN_SUBAGENT_IDLE_MS
       delete process.env.YAN_SUBAGENT_GRACE_MS
     }
     await ctrl.stopAll()
+  }
+
+  {
+    const factory = makeRpcFactory()
+    process.env.YAN_SUBAGENT_IDLE_MS = '50'
+    process.env.YAN_SUBAGENT_TIMEOUT_MS = '250'
+    process.env.YAN_SUBAGENT_GRACE_MS = '70'
+    const ctrl = new SubagentController({ cwd: 'C:/proj-a', createRpc: factory.createRpc, onChange: () => {}, prepare: fakePrepare })
+    try {
+      const res = await ctrl.start('工具静默，但总时长仍有效', undefined, 'controlled-cwd', { timeoutMinutes: 15 })
+      const id = res.run.id
+      ok(await waitFor(() => !!ctrl.get(id)?.progressWarning), '总时长之前可出现无进展提醒')
+      ok(await waitFor(() => ctrl.get(id)?.status === 'error'), '无进展提醒之后总时长仍能终止任务')
+      ok(/运行超时/.test(ctrl.get(id)?.error ?? '') && factory.created[0].closed, '终止原因是总时长，且清理子进程')
+    } finally {
+      delete process.env.YAN_SUBAGENT_IDLE_MS
+      delete process.env.YAN_SUBAGENT_TIMEOUT_MS
+      delete process.env.YAN_SUBAGENT_GRACE_MS
+      await ctrl.stopAll()
+    }
   }
 
   /* 调用预算：用完就让它收尾，结束原因记 budget */

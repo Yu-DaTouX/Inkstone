@@ -20,6 +20,7 @@
  * 本模块看不见也不需要看见。
  */
 import type { TurnTerminalReason, UIMessage } from './ipc'
+import { isSubagentNotice } from './subagent-notice'
 
 export interface ConversationTurn {
   /** 稳定轮次身份：有 `logicalTurnId` 用它，否则 `turn:<首条 user 的 id>` */
@@ -67,6 +68,7 @@ export function buildConversationTurns(messages: UIMessage[]): ConversationTurn[
   let current: Acc | null = null
 
   for (const m of messages) {
+    if (m.role === 'user' && isSubagentNotice(m.text)) continue
     const lid = m.turnTiming?.logicalTurnId
 
     if (m.role === 'user') {

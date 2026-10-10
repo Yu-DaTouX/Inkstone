@@ -187,7 +187,7 @@ export function RemoteProvider({
   useEffect(() => {
     void refresh()
     const events = new RemoteEventStream(connection, {
-      onState: setStream,
+      onState: (state) => { setStream(state); if (state === 'open') void refreshInfo() },
       onUnauthorized,
       onResync: () => void refresh(),
       onEvent: (event) => {
@@ -215,7 +215,7 @@ export function RemoteProvider({
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
     }
-  }, [connection, debounce, notifySession, onUnauthorized, refresh, refreshQuestions, refreshStatus])
+  }, [connection, debounce, notifySession, onUnauthorized, refresh, refreshInfo, refreshQuestions, refreshStatus])
 
   const onSessionEvent = useCallback((sessionId: string, listener: () => void) => {
     const set = listeners.current.get(sessionId) ?? new Set()

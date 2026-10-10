@@ -15,6 +15,7 @@ import { mergeRecentHistory } from '../historyCache'
 import { pickImages, type PhotoDraft } from '../device'
 import { ModelPicker } from '../components/ModelPicker'
 import type { RemoteModel } from '../../../src/shared/remote-protocol'
+import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 
 type TimelineEntry = { kind: 'message'; key: string; message: HistoryMessage } | { kind: 'tools'; key: string; tools: Array<{ name: string; failed: boolean }> }
 
@@ -382,13 +383,13 @@ export function SessionScreen({
         />
         </View>
         <View style={styles.composerActions}>
-          <IconButton name="image" label="添加图片" busy={picking} disabled={sending || photos.length >= 4 || voicePhase !== 'idle'} onPress={() => void addPhotos()} />
+          <IconButton name="image" label="添加图片" busy={picking} disabled={!capabilityAllowed(info, 'send-images') || sending || photos.length >= 4 || voicePhase !== 'idle'} onPress={() => void addPhotos()} />
           <SpeechInputButton onText={(text) => onDraftChange(draft.trim() ? `${draft.trimEnd()} ${text}` : text)} onError={setVoiceError} onStateChange={setVoicePhase} disabled={sending} />
           {voicePhase !== 'idle' ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[styles.flex, { color: p.accent, fontSize: font.xs }]}>{voicePhase === 'listening' ? '正在听…' : voicePhase === 'processing' ? '转写中…' : '准备中…'}</Text> : <Pressable accessibilityRole="button" accessibilityLabel={`选择模型，当前 ${model?.name || model?.id || '电脑模型'}`} disabled={sending} onPress={() => { if (info?.capabilities.includes('models')) setModelPicker(true); else Alert.alert('请更新电脑端', '新版电脑端支持模型选择。') }} style={{ flex: 1, minWidth: 0, minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: 4 }}><Text numberOfLines={1} style={{ flexShrink: 1, color: p.fgMute, fontSize: font.xs }}>{model?.name || model?.id || sessions.find((session) => session.id === sessionId)?.model || '模型'}</Text><View style={{ transform: [{ rotate: '90deg' }] }}><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></View></Pressable>}
           {runner?.running ? (
-            <IconButton name="stop" label="停止当前运行" busy={aborting} onPress={() => void abort(runner.runId)} />
+            <IconButton name="stop" label="停止当前运行" busy={aborting} disabled={!capabilityAllowed(info, 'abort')} onPress={() => void abort(runner.runId)} />
           ) : null}
-          <IconButton name="send" label="发送消息" primary busy={sending} disabled={(!draft.trim() && !photos.length) || stream !== 'open' || voicePhase !== 'idle' || picking} onPress={() => void send()} />
+          <IconButton name="send" label="发送消息" primary busy={sending} disabled={!capabilityAllowed(info, 'send') || (!draft.trim() && !photos.length) || stream !== 'open' || voicePhase !== 'idle' || picking} onPress={() => void send()} />
         </View>
         {voiceError ? <Text accessibilityLiveRegion="polite" style={[styles.voiceError, { color: p.err }]}>{voiceError}</Text> : null}
       </View>

@@ -7,7 +7,6 @@ import { Icon } from '../../icons/Icon'
 import { useStore } from '../../state/store'
 import { selectSubagentRuns } from '../../state/subagent-view'
 import { useRepoState } from '../review/useGitReview'
-import { UsageBar } from '../chat/UsageBar'
 import { QuotaSection } from '../toolbar/QuotaSection'
 import type { ReactNode } from 'react'
 import type { RemoteAccessStatus } from '../../../../shared/remote-protocol'
@@ -16,7 +15,7 @@ import type { RemoteAccessStatus } from '../../../../shared/remote-protocol'
  * 窗口底部的状态栏（设计规范 §4）。
  *
  * 左段是全局状态：模式色块（RUN / WAIT / IDLE）· 分支与改动 · 内核连接（不写 pi）· 手机配对；
- * 右段是本轮用量（沿用 UsageBar 的口径：流式期间不编造速度，缺报用量时标 ≥）与本会话花费。
+ * 右段只留本会话花费；本轮速度、缓存与输入输出在点开花费后的详情里（缺报用量时标 ≥）。
  * 不重复别处已有的信息：模型与思考档位在输入框里，上下文占用在右栏检查器。
  *
  * 状态都从已有的 store 快照推导，不自己计时（「同一时钟」原则）。
@@ -68,7 +67,7 @@ export function StatusBar() {
   const turnMessages = currentTurnMessages(messages)
   const { usage, partial } = turnUsageOf(turnMessages)
   const speed = [...turnMessages].reverse().find((m) => m.role === 'assistant' && m.speed)?.speed
-  const waiting = useStore((s) => s.uiRequests.length > 0)
+  const waiting = useStore((s) => s.uiRequests.length > 0 || s.approvals.length > 0)
   const running = !!session?.isAgentRunning || !!session?.isStreaming
   const project = session?.cwd ?? settings?.cwd
   /* 运行结束时重新拉一次仓库状态：刚跑完的回合往往改了文件 */
@@ -174,9 +173,8 @@ export function StatusBar() {
 
       <span className="sb-grow" />
 
+      {/* 额度常驻状态栏（账号明细在右栏「账号额度」）；速度、缓存与输入输出明细在花费的详情里 */}
       <QuotaSection variant="status" />
-
-      <UsageBar />
 
       <span className="sb-seg sb-cost" tabIndex={0} role="button" aria-haspopup="dialog" aria-expanded={detail === 'sb-cost'} title={costEstimated > 0 ? t('sb.costEstimatedTip') : t('sb.costTip')} data-testid="sb-cost">
         {t('sb.cost', { cost: (costEstimated > 0 ? '≈' : '') + cost.toFixed(3) })}

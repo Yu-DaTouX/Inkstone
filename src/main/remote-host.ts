@@ -13,6 +13,8 @@ import { stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { hostname } from 'node:os'
 import { remoteHistoryPage } from '../shared/remote-history-page'
+import { approvalDigest, applyHumanApproval, remoteApprovalQuestion } from './remote-approval'
+import type { ApprovalBroker } from './approval-broker'
 import { localizeImage } from './image-store'
 import { setManualTitle } from './title'
 import { getSettings } from './settings'
@@ -23,7 +25,7 @@ import type { PeerHostHandlers, RemoteArtifactFile, RemoteCommand, RemoteOperati
 import { PEER_ARTIFACT_MAX_BYTES } from '../shared/peer-protocol'
 import type { PeerExportedArtifact, PeerKnowledgeExport, PeerSessionExport } from '../shared/peer-protocol'
 import { REMOTE_ARTIFACT_MAX_BYTES } from '../shared/remote-protocol'
-import type { RemoteAnswer, RemoteArtifact, RemotePendingQuestion } from '../shared/remote-protocol'
+import type { RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval } from '../shared/remote-protocol'
 import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/session-chain'
 import { YAN_DIR } from './paths'
 import { listKnowledge } from './project-memory-store'
@@ -35,6 +37,7 @@ import type { AgentController } from './agent'
 export interface RemoteHost extends SessionHost {
   win(): BrowserWindow | null
   remoteAccess(): RemoteAccess | null
+  approvals?: Pick<ApprovalBroker, 'list' | 'answer'>
 }
 
 let host: RemoteHost
@@ -373,7 +376,7 @@ export function remoteArtifactOf(artifact: AssistantArtifact): RemoteArtifact {
 }
 
 /** 当前所有运行实例里等待回答的问题（手机端列出用） */
-export async function remoteQuestions(): Promise<RemotePendingQuestion[]> {
+function pendingRemoteQuestions(): RemotePendingQuestion[] {
   const questions: RemotePendingQuestion[] = []
   for (const status of host.runners()?.statuses() ?? []) {
     const agent = host.runners()?.agentOf(status.runId)
@@ -394,7 +397,29 @@ export async function remoteQuestions(): Promise<RemotePendingQuestion[]> {
       })
     }
   }
-  return questions
+  questions.push(...(host.approvals?.list() ?? []).map(remoteApprovalQuestion))
+  return questions.map(question => question.sensitive && question.method === 'confirm'
+    ? { ...question, approvalDigest: approvalDigest(question) }
+    : question)
+}
+
+export async function remoteQuestions(): Promise<RemotePendingQuestion[]> {
+  return pendingRemoteQuestions()
+}
+
+/** Separate user-client boundary; ordinary model-facing answers still reject sensitive confirmations. */
+export async function remoteHumanApproval(questionId: string, answer: RemoteHumanApproval): Promise<RemoteOperationResult> {
+  if (questionId.startsWith('approval:')) {
+    const request = host.approvals?.list().find(item => `approval:${item.id}` === questionId)
+    return applyHumanApproval(request ? remoteApprovalQuestion(request) : undefined, answer,
+      confirmed => host.approvals?.answer(questionId.slice('approval:'.length), confirmed ? 'once' : 'deny') ?? false)
+  }
+  const question = pendingRemoteQuestions().find(item => item.id === questionId && item.runId === answer.runId)
+  const agent = host.runners()?.agentOf(answer.runId)
+  if (!agent?.pendingUiRequests().some(item => item.id === questionId)) {
+    return { ok: false, status: 404, code: 'question_not_pending', error: '该审批已处理或已过期' }
+  }
+  return applyHumanApproval(question, answer, confirmed => agent.respondUi({ id: questionId, confirmed }, 'remote'))
 }
 
 /** 手机回答问题：找到持有这个问题的实例；敏感确认由 AgentController 拒绝 */
@@ -405,7 +430,7 @@ export async function remoteAnswer(questionId: string, answer: RemoteAnswer): Pr
     const result = agent.answerUiRemotely(questionId, answer)
     if (result.ok) return { ok: true, data: { questionId, runId: status.runId } }
     return result.code === 'sensitive_confirmation_requires_desktop'
-      ? { ok: false, status: 403, code: result.code, error: '这是敏感确认（删除、授权或付费等），需要在电脑上处理' }
+      ? { ok: false, status: 403, code: result.code, error: '这是敏感确认，请在电脑上确认，或通过已配对客户端的人工批准通道处理' }
       : { ok: false, status: 409, code: result.code, error: '这个问题已经答复或已过期' }
   }
   return { ok: false, status: 404, code: 'question_not_pending', error: '这个问题已经答复或已过期' }

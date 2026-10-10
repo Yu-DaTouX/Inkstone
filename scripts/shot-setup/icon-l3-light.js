@@ -79,7 +79,7 @@
   const card = q('[data-testid="turn-artifacts"]')
   if (card) card.scrollIntoView({ block: 'center' })
   await sleep(400)
-  const hover = q('.artifact-download') || q('.artifact-actions button')
+  const hover = q('.artifact-actions button')
   if (hover) hover.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
   await sleep(300)
 

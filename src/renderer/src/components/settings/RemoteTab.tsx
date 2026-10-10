@@ -100,7 +100,20 @@ export function RemoteTab() {
 
   return (
     <div className="ui-rows" data-testid="settings-remote">
-      <SettingRow name={t('remote.enable')} desc={t('remote.enableDesc')}>
+      {/* 开关与运行状态同一行：状态是开关的结果，不单独占一行 */}
+      <SettingRow name={t('remote.enable')} desc={<>
+        {t('remote.enableDesc')}
+        <div className="remote-status-line" data-testid="remote-status">
+          {status?.running ? (
+            <>
+              <Badge tone="ok">{t('remote.running')}</Badge> <span className="set-path">{endpoint}</span>
+            </>
+          ) : (
+            <Badge>{t('remote.stopped')}</Badge>
+          )}
+          {status?.error ? <div className="set-warn">{status.error}</div> : null}
+        </div>
+      </>}>
           <Switch
             checked={draft.enabled}
             label={t('remote.enable')}
@@ -110,29 +123,10 @@ export function RemoteTab() {
           />
         </SettingRow>
 
-      <div className="ui-row">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('remote.status')}</div>
-          <div className="ui-row-desc" data-testid="remote-status">
-            {status?.running ? (
-              <>
-                <Badge tone="ok">{t('remote.running')}</Badge> <span className="set-path">{endpoint}</span>
-              </>
-            ) : (
-              <Badge>{t('remote.stopped')}</Badge>
-            )}
-            {status?.error ? <div className="set-warn">{status.error}</div> : null}
-          </div>
-        </div>
-      </div>
-
       <div className="ui-row col" data-testid="remote-pairing">
         <div className="ui-row-label">
           <div className="ui-row-name">{t('remote.pairTitle')}</div>
           <div className="ui-row-desc">{t('remote.pairDesc')}</div>
-        </div>
-        <div className="btn-row">
-          <Button size="sm" data-testid="remote-guide" onClick={() => openGuide(MOBILE_GUIDE_URL)}>{t('remote.guide')}</Button>
         </div>
         {status?.pairing && secondsLeft > 0 ? (
           <div className="remote-pairing">
@@ -173,6 +167,7 @@ export function RemoteTab() {
             >
               {t('remote.pairStart')}
             </Button>
+            <Button size="sm" variant="ghost" data-testid="remote-guide" onClick={() => openGuide(MOBILE_GUIDE_URL)}>{t('remote.guide')}</Button>
             {!status?.running ? <span className="ui-row-desc">{t('remote.pairNeedsRunning')}</span> : null}
           </div>
         )}
@@ -217,8 +212,10 @@ export function RemoteTab() {
           </ul>
         )}
       </div>
+      {/* 中继与监听地址都是连不上时才需要动的网络细节，收进同一个折叠区 */}
+      <Disclosure title={t('remote.networkSettings')}>
       <RelaySection draft={draft} status={status} busy={busy} configure={configure} run={run} />
-      <Disclosure title={t('remote.networkSettings')}>      <SettingRow name={t('remote.bind')} desc={t('remote.bindDesc')}>
+      <SettingRow name={t('remote.bind')} desc={t('remote.bindDesc')}>
           <Segmented<BindChoice>
             value={choice}
             label={t('remote.bind')}

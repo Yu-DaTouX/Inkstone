@@ -11,6 +11,8 @@
  * 两边都要用的纯逻辑（回合分组、链接判定、模型能力归一化）放在本层，
  * 因为它们必须能在没有 DOM / Electron 的环境下被单测。
  */
+import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
+
 export type {
   CustomProviderDiscoverResult,
   CustomProviderInput,
@@ -982,6 +984,12 @@ export interface ProjectGroup {
 export type CapabilityStrategy = 'existing-only' | 'search-and-recommend' | 'auto-connect'
 
 export interface AppSettings {
+  /** Last explicitly selected models and shared favorites; independent of session history. */
+  lastMainModel?: import('./model-selection').ModelChoice
+  lastSubagentModel?: import('./model-selection').ModelChoice | 'follow'
+  modelFavorites?: import('./model-selection').ModelChoice[]
+  /** 模型菜单里供应商的显示顺序（用户拖动调整） */
+  modelProviderOrder?: string[]
   cwd: string
   theme: 'dark' | 'light'
   lang: 'zh-CN' | 'en-US'
@@ -993,6 +1001,16 @@ export interface AppSettings {
   autoArchiveDays?: number
   /** 有会话在跑时保持电脑不睡眠；缺省 = 开，只有明确关才存 false。 */
   keepAwakeWhileWorking?: boolean
+  /** 可视化回答（图表、卡片、图解等结构化块）：缺省 = 开；关掉后不再告诉模型这些写法，已有历史照常显示。 */
+  visualAnswers?: boolean
+  /** 执行过程放在正文之后（inline，缺省）还是右侧并列一栏（side）；宽度不够时界面自动回到 inline，值不变。 */
+  processLayout?: 'inline' | 'side' | 'left'
+  /** 背景色模板 id（缺省 = 默认；custom = 用 backgroundCustom）。深浅主题各自有一套模板色。 */
+  /** 思考链默认展开并实时显示；缺省 = 关（折叠成一行预览）。 */
+  liveThinking?: boolean
+  backgroundPreset?: string
+  /** 自定义页面底色 #rrggbb，会按当前主题夹进可读范围 */
+  backgroundCustom?: string
   /** 靠电池供电时也保持唤醒；缺省 = 开。 */
   keepAwakeOnBattery?: boolean
   /** 每轮发送前给项目文件存检查点，可回退；缺省为开 */
@@ -1932,6 +1950,8 @@ export interface ExtensionUiRequest {
   title?: string
   message?: string
   options?: string[]
+  /** 宿主表单（`yan question ask` 带 fields 时）：面板按字段渲染，答案以 JSON 字符串回传 */
+  form?: import('./question-form').QuestionField[]
   placeholder?: string
   prefill?: string
   notifyType?: 'info' | 'warning' | 'error'
@@ -2037,7 +2057,7 @@ export interface SubagentRun {
   parentMessageId?: string
   projectId?: string
   /** worktree = 默认写入隔离；controlled-cwd = 显式只读受控目录。 */
-  isolation: 'worktree' | 'controlled-cwd'
+  isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd'
   /** 审阅结束后为空；待审阅时指向 worktree，退出归档后指向补丁。 */
   resultPath?: string
   model?: string
@@ -2048,6 +2068,8 @@ export interface SubagentRun {
   endedAt?: number
   /** 最新一行活动（紧凑列表里显示） */
   latestActivity?: string
+  /** 未收到事件的提醒；不会提前终止任务，有新进展时清除。 */
+  progressWarning?: string
   /** 转录（有界：主进程只保留最后若干条，避免 IPC 越推越大） */
   transcript: UIMessage[]
   diff?: SubagentDiffSummary
@@ -2082,7 +2104,7 @@ export interface SubagentBridge {
   start(
     task: string,
     model?: string,
-    isolation?: 'worktree' | 'controlled-cwd'
+    isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd'
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }>
   stop(id: string): Promise<{ ok: boolean; error?: string }>
   stopAll(): Promise<void>
@@ -2548,6 +2570,8 @@ export interface PackageActionResultView {
 }
 
 export interface PackagesBridge {
+  search(query: string, offset?: number): Promise<import('./plugin-market').MarketSearchResult>
+  exportPlugin(id: string): Promise<import('./plugin-market').PluginExportResult>
   list(cwd: string): Promise<PackageListingView>
   action(req: PackageActionView): Promise<PackageActionResultView>
 }
@@ -2970,6 +2994,7 @@ export interface AttachmentPruneResult {
 }
 
 export interface YanBridge {
+  agentService: import('./agent-service').ServiceBridge
   appUpdate: {
     status(): Promise<import('./app-update').AppUpdateStatus>
     check(): Promise<import('./app-update').AppUpdateStatus>
@@ -3477,6 +3502,11 @@ export interface YanBridge {
    * `line` 来自 `path:42` 形式，界面用它滚到目标行。
    */
   readPreview(path: string, line?: number, cwd?: string, lineEnd?: number): Promise<FilePreview>
+  /** 只为受控 HTML 成果建立限长、隔离的页面快照。 */
+  prepareHtmlArtifact(path: string): Promise<HtmlArtifactPreviewResult>
+  releaseHtmlArtifact(url: string): Promise<void>
+  /** 消息内小部件：整页 HTML 放进隔离协议，返回同样的预览地址（用完同样 releaseHtmlArtifact） */
+  prepareHtmlWidget(html: string): Promise<HtmlArtifactPreviewResult>
   /** 只查文件变没变（H-4 变化提示）：只 stat，不读内容 */
   statPreview(path: string, cwd?: string): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>
   /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */

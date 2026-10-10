@@ -5,7 +5,7 @@
 ## 名称与表达
 
 - 英文名：**Inkstone**；中文名：**砚**。
-- 中文定位：一个专注于内容与行动的桌面 AI 工作空间。
+- 中文定位：基于 pi 的轻量图形 Agent 客户端。
 - Slogan：**让想法成形。 / Give ideas form.**
 - 仓库：[Yu-DaTouX/Inkstone](https://github.com/Yu-DaTouX/Inkstone)。
 

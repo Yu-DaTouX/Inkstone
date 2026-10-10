@@ -8,7 +8,7 @@
  * 旧探针没有 runtime 时走 sessionKey 的兼容路径。纯函数，便于单测。
  */
 import type { MainPush, RunnerStatus, SessionState } from '../../../shared/ipc'
-import { migrateSessionRuntime, reduceSessionRuntime, type SessionRuntimeMap } from './session-runtime'
+import { migrateSessionRuntime, reduceSessionRuntime, pruneSessionRuntimes, type SessionRuntimeMap } from './session-runtime'
 
 export interface PushRoutingView {
   runners: RunnerStatus[]
@@ -16,6 +16,7 @@ export interface PushRoutingView {
   sessionRuntimes: SessionRuntimeMap
   peekedSessionId: string | null
   session: SessionState | null
+  visibleSessionIds?: string[]
 }
 
 export interface PushRoute {
@@ -49,10 +50,17 @@ export function routePush(s: PushRoutingView, m: MainPush): PushRoute {
       ? s.activeRunnerId === m.runtime.runId &&
         (!currentRunner || m.runtime.generation >= currentRunner.generation)
       : true
-    const cache = migrateSessionRuntime(
+    let cache = migrateSessionRuntime(
       reduceSessionRuntime(s.sessionRuntimes, m.runtime, m),
       m.runtime
     )
+    if (m.ch === 'sync' || m.ch === 'state') {
+      const keep = new Set([viewingSessionId(s) ?? '', m.runtime.sessionId || `run:${m.runtime.runId}`, ...(s.visibleSessionIds ?? [])])
+      for (const runner of s.runners) if (runner.running || runner.waiting || runner.isActive) {
+        keep.add(runner.sessionId || `run:${runner.runId}`)
+      }
+      cache = pruneSessionRuntimes(cache, keep)
+    }
     const patch = {
       sessionRuntimes: cache,
       ...(s.activeRunnerId ? {} : { activeRunnerId: m.runtime.runId })

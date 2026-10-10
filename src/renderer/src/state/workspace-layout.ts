@@ -20,8 +20,8 @@ export const isConversationPane = (id: string): boolean => id === CHAT_PANE || i
 export const conversationPaneId = (index: number): string => index <= 0 ? CHAT_PANE : index === 1 ? PEER_PANE : `${PEER_PANE}-${index}`
 /** Gap between tiles; the gap doubles as the resize separator. */
 export const DOCK_GAP = 8
-export const DOCK_MIN_CHAT = 340
-export const DOCK_MIN_TOOL = 200
+export const DOCK_MIN_CHAT = 280
+export const DOCK_MIN_TOOL = 160
 const group = (id: string, panes: string[]): DockNode => ({ type: 'group', id, panes, active: panes[0] })
 const uid = (): string => crypto.randomUUID()
 /** The default workspace is the main conversation alone; tools open beside it on demand. */

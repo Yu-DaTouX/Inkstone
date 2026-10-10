@@ -75,11 +75,12 @@
   if (!search) return out.join('\n')
 
   const setValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+  const provider=q('[data-testid="models-provider"]');provider.value='';provider.dispatchEvent(new Event('change',{bubbles:true}))
   setValue.call(search, 'v4.1 flash')
   search.dispatchEvent(new Event('input', { bubbles: true }))
   await sleep(500)
 
-  const rows = qa('.mt-item')
+  const rows = qa('[data-testid="model-option"]').map(el => ({ id: el.dataset.modelId, provider: el.dataset.provider, textContent: el.textContent }))
   out.push('  过滤结果 = ' + JSON.stringify(rows.map((el) => (el.textContent || '').trim())))
   ok(rows.length > 0, '搜索到候选模型行')
 
@@ -87,9 +88,14 @@
   for (const [idx, row] of rows.slice(0, 2).entries()) {
     const label = (row.textContent || '').trim()
     const before = store.getState().session?.model?.id ?? ''
-    click(row)
+    if(!q('[data-testid="model-menu"]')){click(picker);await sleep(200)}
+    const filter=q('[data-testid="models-provider"]');filter.value=row.provider;filter.dispatchEvent(new Event('change',{bubbles:true}))
+    const field=q('[data-testid="model-search"]');setValue.call(field,row.id);field.dispatchEvent(new Event('input',{bubbles:true}));await sleep(200)
+    click(qa('[data-testid="model-option"]').find(el=>el.dataset.modelId===row.id))
     await sleep(1500)
     const after = store.getState().session?.model?.id ?? ''
+    if(!q('[data-testid="model-menu"]')){click(picker);await sleep(200)}
+    const details=q('[data-testid="model-thinking-settings"]');if(details&&!details.open)details.querySelector('summary').click()
 
     out.push('')
     out.push(`=== 点击第 ${idx + 1} 行：${label} ===`)

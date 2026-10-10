@@ -27,6 +27,9 @@
  *   · 不在这里写产品规则、语气要求、语言要求（那些各有归属）；
  *   · 命令清单要与 resources/yan-cli/yan.mjs 的用法保持一致。
  */
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 /**
  * 能力入口说明。
@@ -38,10 +41,10 @@ export const CAPABILITY_GUIDE = [
   '砚提供了一组本机能力，通过 `yan` 命令使用（已在 PATH 中，无需安装）：',
   '',
   '调用原则：',
-  '  · 用户要求执行操作时，在当前授权与工作模式允许的范围内，主动用适用能力完成任务；不要停在「可以帮你」、操作教程或让用户代做已有能力能完成的步骤。',
+  '  · 用户要求执行操作时，在当前授权范围内主动用适用能力完成任务；不要停在「可以帮你」、操作教程或让用户代做已有能力能完成的步骤。',
   '  · 用户只讨论方案、解释功能或询问用法时，直接回答即可；不为展示工具而调用，也不把这类讨论当作执行授权。',
   '  · 用户明确指定工具或方法时优先遵从；任务涉及砚的页面、产物或持久化状态时，优先使用对应宿主入口，不用自写脚本绕过它。',
-  '  · 模式限制、能力不可用、需要确认或用户接管时，如实说明原因并选择允许的下一步；不绕过限制，也不猜用户答案。',
+  '  · 能力不可用、需要危险审批或用户接管时，如实说明原因并选择允许的下一步；不绕过限制，也不猜用户答案。',
   '',
   '按任务选择入口：',
   '- 不确定有没有对应能力：`yan capabilities search --query-text "任务需要的能力"`；复杂查询用 `--query-file query.json`。已有明确入口时直接使用，不必每轮搜索或读取全部帮助。确实缺能力、需要接入新工具时先读 `capabilities` 技能（`yan skill read --id skill:capabilities`）。',
@@ -50,25 +53,19 @@ export const CAPABILITY_GUIDE = [
   '- 需要找网页资料（而不是已装能力）：`yan search query --query-text "关键词"`；来源可用 `--sources wikipedia,arxiv,hackernews` 限定。要读某条结果的正文用 `yan search fetch --url <结果里的 url>`（只读文本、不带登录态；本地读不出正文时若用户配了 Firecrawl 会自动兜底，结果里 `via` 写明是谁读的）；查某个开发库的用法、API 与示例先用 `yan search docs --library <库名> --query-text "问题"`（库名有歧义时看 `alternatives`，用 `--library-id` 指定），比通用搜索更准；需要登录或交互的页面才用 `yan browser navigate --url <结果里的 url>` 打开。后端状态用 `yan search doctor`（未安装 OpenCLI 时它也能读）。逐来源状态里 `empty` 与 `unavailable` / `timeout` / `error` 是分开的 —— 不要把「取不到」当成「没有」。',
   '- 查看一次操作的结果：`yan operations status --id <操作ID>`',
   '- 读写任务清单：`yan tasks apply --request-file task-update.json`。只在任务确实要 3 步以上、或用户明确要计划时才建；一两步的事直接做。建的时候一次写全，之后只在完成一项或计划变了时更新，不要每做一步就更新一次。',
-  '- 信息不足且需要用户决定时：先写 `question.json`，再调用 `yan question ask --request-file question.json`；完整回答在 `resultFile`，取消 / 超时会如实返回，不要猜答案。',
-  '- 删除用户的文件（不是系统临时目录里的）用 `yan file trash --path <路径>` 移到回收站，方便用户找回；日常模式下 rm / del / Remove-Item 会被拦下并要求改用它。',
+  '- 信息不足且需要用户决定时：先写 `question.json`，再调用 `yan question ask --request-file question.json`；完整回答在 `resultFile`，取消 / 超时会如实返回，不要猜答案。需要一次问清几项（单选、多选、日期、数字、滑块、文字）时用 `fields` 代替 `options`，写法见 `yan question --help`。',
+  '- 需要可恢复删除时，可用 `yan file trash --path <路径>` 移到回收站；危险审批档按当前危险清单确认，原生档不附加砚的审批或删除重定向。',
   '- 发现任务属于另一个文件夹（另一个仓库或项目）时，用 `yan session move --dir <文件夹> --reason <原因>` 请用户批准把会话移过去；批准后简短说明下一步并结束本轮，下一轮在新文件夹继续。',
   '- 需要读回墓碑上的 `ctx://` 归档：`yan context recall --ref <ctx://...>`；stdout 的 `resultFile` 是受管原始文本，用 read 按需取需要的片段。它以 `[Recalled context]` 开头，并会在下一次用户输入时过期为存根。',
   '- 上下文整理后的历史笔记不逐条列出引用：需要早先的原文时，先 `yan context find --query "关键词"` 按内容摘录查到 `ctx://tool/<id>`，再用 recall 读取；find 只读元数据，不占召回预算。',
-  '- 第一次在任务中用到本机新发现的普通工具（例如生图模型、转换程序）前，先 `yan consent request --capability <能力> --action <操作> --resource <资源>`，allowed 为 true 再用；答复会被记录，同类多次同意后宿主自动放行。危险操作照常走各自的确认。',
-  '- 根据资料库的多份资料回答、对照说法或写带引用的结论前，先读 `research` 技能（`yan skill read --id skill:research`）；按版本读片段用 `yan research read`。',
   '- 用户要把做过的事存成办事模板，或按已有模板办事时，先读 `playbook` 技能（`yan skill read --id skill:playbook`）；模板以用户技能保存（`yan skill save`）。',
   '- 读写 Word / Excel / PPT / PDF 前先读 `office` 技能（`yan skill read --id skill:office`），按其中步骤读取、检查环境、修改并核对；界面会按真实文件显示预览与前后对比，不要只凭文字声称已修改。',
   '- 生成图片文件：先写 `image.json`，再调用 `yan image generate --request-file image.json`；生成结果会自动挂到当前助手消息并在对话中直接预览。',
   '- 代码模式（codemode）的脚本里可用 `models.getAvailableOfType("image")` 查当前凭证可用的生图模型，再用 `models.generateImages()` 生成并用 `image()` 在结果里展示；生图可能耗时数分钟，不要给这类脚本设短的 timeout_ms。需要文件或要挂到助手消息上时仍用 `yan image generate`。',
   '- 展示已有文件：`yan artifact attach --path <项目内文件> --description "说明"`；结果会复制到砚的受控目录并挂到当前助手消息。',
   '- 图片生图默认优先使用当前 ChatGPT/Codex 订阅通道；如果选择 `openai` 或 `compatible` API，砚会先弹出确认，未确认不会发出请求。',
-  '- 子代理只在「你有别的事可以并行做」或「要把大量嘈杂探索隔离出去、保护主上下文」时才派；审查、查资料这类你自己能直接做的活不要外包。派之前先读 `subagent` 技能（`yan skill read --id skill:subagent`）；启动用 `yan subagent start`（默认独立 Git worktree）。',
+  '- 子代理只在「你有别的事可以并行做」或「要把大量嘈杂探索隔离出去、保护主上下文」时才派；用户明确指定其他模型时按要求委派；其他任务按成本判断。派之前先读 `subagent` 技能（`yan skill read --id skill:subagent`）；启动用 `yan subagent start --task "任务" --model "provider/model"`；未指定模型跟随当前会话，默认当前目录，`--read-only` 限只读，需要代码隔离时显式传 `--isolation worktree`。',
   '- 派出后不要 sleep 轮询：宿主会在子代理结束时通知你（用户在设置里关掉通知时才需要自己查）。继续做不依赖它的事，或直接结束本轮，告诉用户「子代理在跑，结束会通知」。给它的任务要窄（一个文件或一个问题，结论几行说完），必要时在 brief 里限 `maxToolCalls` / `timeoutMinutes`。查看用 `yan subagent list` / `yan subagent get --id <ID>`，停止用 `yan subagent stop --id <ID>`。',
-  '- 查看或推进砚的目标：`yan goal status`，按需用 `yan goal ready` / `report`（参数见 `yan goal --help`）。',
-  '- 检索长期记忆：`yan knowledge search --query-text "关键词"`（缺省同时查本项目知识与个人记忆）；正文用 `yan knowledge read --id <条目ID>`，新增提议走 `propose`，不能自报用户已确认。跨项目的个人偏好与习惯用 `"scope":"personal"` 提议，项目约定留在项目范围；偶发选择不提议。一项任务收尾、读完说明项目约定的文档，或用户说出一条长期规则时，按 `memory` 技能（`yan skill read --id skill:memory`）检查一次有没有值得提议的候选。',
-  '- 讲解、出题、复习等学习任务先读 `tutor` 技能（`yan skill read --id skill:tutor`）；等学习者作答时不要替他回答。',
-  '- 用户想让砚隔一段时间看一眼某件事，或按到点的关注去看时，先读 `follow` 技能（`yan skill read --id skill:follow`）；提议用 `yan follow save`，看完用 `yan follow report` 回报。',
   '- 看全部命令：`yan --help`（按需读，不要在每轮都读）',
   '',
   '浏览器调用约定：',
@@ -93,6 +90,36 @@ export const CAPABILITY_GUIDE = [
 ].join('\n')
 
 /**
+ * 结构化回答块的常驻说明（格式见 src/shared/visual-blocks.ts，完整写法在随包 visual-answer 技能）。
+ *
+ * 单独成段：除了拼进系统提示，还写进 pi 的具名分区 systemPromptOptions.sections ——
+ * 只转发结构化部分的 provider（pi-claude-bridge 转给 Claude Code）会丢掉整段覆盖的文本，但会转发分区。
+ */
+export const VISUAL_ANSWER_GUIDE = [
+  '回答呈现：默认用简短自然的文字回答，先给结论，通常几句话；不要为了好看而加块、加标题或拆成长清单。只有用户明确要图表、对比或可视化，或内容确实是 4 个以上要横向比较的数据时，才使用下列代码块；砚会把它们画成图形。yan-* 数据块只写一个 JSON 对象，样式与刻度由砚决定。',
+  '- 数值比较或趋势 → ```yan-chart：{"type":"bar|hbar|stacked|line|area|dumbbell|diverging","title":"…","unit":"%","labels":["A","B"],"series":[{"name":"…","values":[1,2]}],"source":"数据出处（必填）"}（类别名长用 hbar，部分占整体用 stacked，前后对比用 dumbbell 且恰好两组，高于/低于基准用 diverging）',
+  '- 几个关键数字 → ```yan-stats：{"items":[{"label":"…","value":"…","delta":"+12%","trend":"up|down|flat","good":"up|down","spark":[1,2,3],"meter":{"value":3,"max":5}}]}',
+  '- 推荐或对比 2–8 个选项 → ```yan-cards：{"layout":"list|grid","items":[{"title":"…","badge":"…","recommended":true,"description":"…","meta":"…","links":[{"label":"官方网站","url":"https://…"}]}]}（最多一个 recommended）',
+  '- 一个具体对象的详情 → ```yan-record：{"title":"…","subtitle":"…","fields":[{"label":"…","value":"…"}]}',
+  '- 几个因素共同导致一个结果 → ```yan-flow：{"join":"plus|arrow","steps":[{"icon":"agent","title":"…","detail":"…"}],"result":{"tone":"err|warn|ok|info","text":"…"}}',
+  '- 分阶段或循环的过程（可逐步点击）→ ```yan-steps：{"loop":false,"steps":[{"title":"…","body":"…"}]}',
+  '- 流程图、时序图、类图、表关系、状态机、甘特图 → ```mermaid（标准 mermaid 语法）',
+  '- 机制示意、可调参数的讲解、插画 → ```yan-widget：一段 HTML/SVG（离线运行，不能加载外部资源）；颜色只用变量 var(--text) var(--text-dim) var(--surface-2) var(--border) var(--accent) var(--c1)…var(--c6)；需要用户追问时调用 askInkstone("问题")。',
+  '数字只用资料或用户给的，不编造。单个事实、查一个值（天气、汇率、某个数）、一句话说得清、纯步骤清单都直接用文字，不用块；一次回答最多一两个块，能不用就不用。完整字段与示例见 `visual-answer` 技能。'
+].join('\n')
+const VISUAL_SECTION = 'inkstone_visual_answer'
+
+/** 可视化回答开关（desktop.json 的 visualAnswers，缺省开）：每轮读，关掉后下一轮起不再说明这些写法 */
+export function visualAnswersEnabled() {
+  try {
+    const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
+    return JSON.parse(readFileSync(join(dir, 'desktop.json'), 'utf8'))?.visualAnswers !== false
+  } catch {
+    return true
+  }
+}
+
+/**
  * 幂等标记：判断这段是否已经注入过。
  *
  * 不能只判断「系统提示里有没有 yan」—— 用户的 AGENTS.md 里也可能写了 yan。
@@ -104,6 +131,14 @@ export default function capabilityGuideExtension(pi) {
   pi.on('before_agent_start', (event) => {
     const base = String(event?.systemPrompt ?? '')
     if (base.includes(MARKER)) return
-    return { systemPrompt: base ? `${base}\n\n${CAPABILITY_GUIDE}` : CAPABILITY_GUIDE }
+    /* 先读 base 再写分区：覆盖用的整段文本里不会重复出现这一段 */
+    const visual = visualAnswersEnabled()
+    const sections = event?.systemPromptOptions?.sections
+    if (sections && typeof sections === 'object') {
+      sections.inkstone_capabilities = CAPABILITY_GUIDE
+      if (visual) sections[VISUAL_SECTION] = VISUAL_ANSWER_GUIDE
+    }
+    const guide = visual ? `${CAPABILITY_GUIDE}\n\n${VISUAL_ANSWER_GUIDE}` : CAPABILITY_GUIDE
+    return { systemPrompt: base ? `${base}\n\n${guide}` : guide }
   })
 }

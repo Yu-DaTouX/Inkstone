@@ -19,7 +19,7 @@
   const surface = document.querySelector('[data-workspace-pane="browser"]:not([hidden]) [data-testid="browser-surface"]')
   const centerMode = document.querySelector('.center.browser-mode')
   if (!state.open) throw new Error(`浏览器未打开: ${JSON.stringify(state)}`)
-  if (!surface || centerMode || button.getAttribute('aria-checked') !== 'true') {
+  if (!surface || centerMode || button.getAttribute('aria-pressed') !== 'true') {
     throw new Error('浏览器没有在可见工作区磁贴中打开')
   }
   if (!observation.generationId || observation.accessibilityNodeCount < 1 || !observation.domSnapshotCaptured) {

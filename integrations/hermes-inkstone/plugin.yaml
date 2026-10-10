@@ -1,0 +1,7 @@
+name: inkstone
+version: "0.2.0"
+description: "Control Inkstone sessions from Hermes using the authenticated desktop API."
+author: Inkstone
+provides_tools:
+  - inkstone_read
+  - inkstone_control

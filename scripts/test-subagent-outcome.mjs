@@ -42,6 +42,9 @@ export function runSubagentOutcomeTests(ok, { outcome, notice, brief, repeatGuar
   ok(/已完成/.test(text({ status: 'done', endReason: 'completed', result: { summary: '好了', summaryFrom: 'last-message' } })), '正常完成写已完成')
   const parsed = notice.parseSubagentNotice(timedOutDone)
   ok(parsed?.id === 'sub-1' && parsed.status === 'done', '通知格式仍可被解析（界面靠它显示成一行）')
+  ok(notice.isSubagentNotice(timedOutDone), '完整后台通知可识别')
+  ok(notice.isSubagentNotice(timedOutDone.replace(/\n<\/subagent-notification>$/, '')), '旧展示层剥掉结束标签的通知仍隐藏')
+  ok(!notice.isSubagentNotice('请解释 <subagent-notification> 的含义'), '普通提及标签的用户消息不隐藏')
 
   /* ---- 任务输入的限额 ---- */
   const parse = (raw) => brief.parseSubagentBrief(raw, '任务')

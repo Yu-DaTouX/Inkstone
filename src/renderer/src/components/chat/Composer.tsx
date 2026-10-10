@@ -7,16 +7,17 @@ import { ComposerBorder } from './ComposerBorder'
 import { QuestionPanel } from './QuestionPanel'
 import { ModelThinkingPicker } from '../Pickers'
 import { ContextRing } from '../toolbar/NativeContextSection'
-import { LearningActions } from './LearningActions'
 import { VoiceInputButton } from './VoiceInputButton'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 import type { FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
-import { type WorkMode } from '../../../../shared/work-mode'
 import { PlusMenu } from './PlusMenu'
 import { readFiles, fmtSize } from './attachment-files'
-import { QueueStack, WorkModePicker } from './ComposerPickers'
+import { Button } from '../ui'
+import { QueueStack, PermissionPicker } from './ComposerPickers'
 import { ApprovalCard } from './ApprovalCard'
+import { runPhaseText, useRunProgress } from './run-status'
+import { formatDuration } from '../../../../shared/duration'
 
 /**
  * 输入区。四种输入模式共存：
@@ -59,12 +60,11 @@ export function Composer() {
   const holdSend = useStore((s) => s.holdSend)
   const abort = useStore((s) => s.abort)
   const runBash = useStore((s) => s.runBash)
-  const busy = useStore((s) => !!s.session?.isStreaming)
   const running = useStore((s) => !!s.session?.isAgentRunning || !!s.session?.isStreaming)
   /**
    * 「模型在干活」的**回合级**判据（agent_start → agent_settled）。
    *
-   * ⚠️ 不能用 `busy` 代替：`busy` 是 `session.isStreaming`，只在「有一条
+   * ⚠️ 不能用 `isStreaming` 代替：`isStreaming` 是 `session.isStreaming`，只在「有一条
    *    assistant 消息正在流」时为真 —— 工具执行期间是 false，而那时 pi 同样
    *    不接受不带 streamingBehavior 的 prompt（用户报过这个错）。
    *    「生成中发送 = 先悬在输入框上方」必须用回合级判据，否则用户在工具执行时
@@ -138,17 +138,6 @@ export function Composer() {
   const setModel = useStore((s) => s.setModel)
   const models = useStore((s) => s.models)
   const openBrowser = useStore((s) => s.openBrowser)
-  /*
-   * 工作模式（实施-05）：状态在**会话级**（主进程推 `work-mode`），
-   * 启动早期还没收到推送时按设置里的新会话默认值渲染 —— 不能拿一个
-   * 全局布尔当当前模式（那正是这次要拆掉的东西）。
-   */
-  const workModeState = useStore((s) => s.workMode)
-  const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
-  const activeWorkMode: WorkMode = workModeState?.mode ?? defaultWorkMode
-  const autonomous = activeWorkMode === 'autonomous'
-  /** 输入区里的会话模式切换器，也作为 Esc 后的键盘焦点落点。 */
-  const modeButtonRef = useRef<HTMLButtonElement>(null)
   const editorInject = useStore((s) => s.editorInject)
   /* 办事模板（P14）的「填到输入框」：跨页中转，消费后清空 —— 只填不发。 */
   const composerInsert = useStore((s) => s.composerInsert)
@@ -992,28 +981,23 @@ export function Composer() {
     }
 
     /* 长文模式下 Esc 退出（不用先清空再双击 ↑） */
-    if (e.key === 'Escape' && expanded && !busy) {
+    if (e.key === 'Escape' && expanded && !running) {
       e.preventDefault()
       toggleExpanded()
       return
     }
 
-    if (e.key === 'Escape' && busy) {
+    if (e.key === 'Escape' && running) {
       e.preventDefault()
       void abort()
     }
 
-    /* Esc 可从输入区直接到模式切换器，键盘用户不必绕设置找入口。 */
-    if (e.key === 'Escape' && !expanded && !busy && !disabled) {
-      e.preventDefault()
-      modeButtonRef.current?.focus()
-    }
   }
 
   return (
     <div
-      className={`composer-wrap ${dragging ? 'dropping' : ''} ${autonomous ? 'autonomous' : ''}`}
-      data-autonomous={autonomous ? '1' : '0'}
+      className={`composer-wrap ${dragging ? 'dropping' : ''}`}
+      data-autonomous="0"
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-yan-file-path')) {
           e.preventDefault()
@@ -1029,15 +1013,14 @@ export function Composer() {
       {/* 宿主要问用户的事（权限 / 高危 / 越界写入）：内嵌在输入框上方，不用原生弹窗 */}
       <ApprovalCard />
       {/* 学习会话的快捷回应（只在「日常 · 学习」里出现） */}
-      <LearningActions />
       {/*
        * .composer-stack 只做一件事：给问题面板当定位父元素。
        * 面板是浮层（`bottom: calc(100% + …)` 向上生长），得与输入框同层才贴得上；
        * 又不能塞进 .composer —— 那张卡片有 overflow: hidden，浮层会被裁掉。
        */}
       <div className="composer-stack">
-      {/* 环绕流光：一次运行超过 3 秒才淡入（motion.css 的 .ui-orbit）；自主模式有自己的光带，不叠加 */}
-      <div className={`composer-orbit ui-orbit ${running && !autonomous ? 'on' : ''}`} data-testid="composer-orbit">
+      {/* 环绕流光已取消（设计规范「界面重构」：只保留回合活动行一个运行信号）；外层保留作定位 */}
+      <div className="composer-orbit" data-testid="composer-orbit">
       <div className={`composer ${expanded ? 'tall' : ''} ${heightAnimating ? 'animating' : ''}`}>
         {/*
          * 顶边框 **内含工作状态**（pi 的 renderTopBorder 做法）。
@@ -1189,7 +1172,7 @@ export function Composer() {
             placeholder={
               disabled
                 ? t('conn.starting')
-                : busy
+                : running
                   ? t('composer.busy')
                   : expanded
                     ? t('composer.phTall')
@@ -1216,10 +1199,9 @@ export function Composer() {
               <span className="mode-badge cmd">{t('composer.cmdMode')}</span>
             ) : null}
 
+            <PermissionPicker />
             <PlusMenu onInsert={insertAtCursor} />
 
-            {/* 工作模式是高频会话控制，留在输入区便于直接切换；活动档案仍在设置中管理。 */}
-            <WorkModePicker buttonRef={modeButtonRef} />
 
             {/*
              * 当前发送规则 —— **常显**（不只是长文模式）。
@@ -1260,12 +1242,13 @@ export function Composer() {
           <VoiceInputButton onText={insertAtCursor} disabled={disabled} />
           <ContextRing />
           <ModelThinkingPicker />
+          <RunSlot running={running} onStop={() => void abort()} />
           <button
-            className={`send ${busy ? 'abort' : ''}`}
+            className="send"
             data-testid="send"
-            onClick={busy ? () => void abort() : () => void submit()}
+            onClick={() => void submit()}
             /* 有附件就能发 —— 与 submit() 的判据保持一致（否则按钮是灰的，点不动） */
-            disabled={!busy && (!value.trim() && attachments.length === 0 ? true : disabled && !canRunLocalCommand)}
+            disabled={!value.trim() && attachments.length === 0 ? true : disabled && !canRunLocalCommand}
             title={
               sendRule === 'ctrl'
                 ? t('composer.keyCtrlSend')
@@ -1274,8 +1257,8 @@ export function Composer() {
                   : undefined
             }
           >
-            <Icon name={busy ? 'stop' : bashMode ? 'terminal' : 'send'} size={12} />
-            <span>{busy ? t('composer.stop') : bashMode ? t('composer.run') : t('composer.go')}</span>
+            <Icon name={bashMode ? 'terminal' : 'send'} size={12} />
+            <span>{bashMode ? t('composer.run') : t('composer.go')}</span>
           </button>
         </div>
       </div>
@@ -1284,6 +1267,29 @@ export function Composer() {
       </div>
 
     </div>
+  )
+}
+
+/**
+ * 发送位左侧的运行控制：运行中是「■ 停止 计时」；只有上下文压缩在跑（没有回合）时
+ * 是一行安静的阶段文字。计时与回合活动行同源（run-status）。
+ */
+function RunSlot({ running, onStop }: { running: boolean; onStop: () => void }) {
+  const t = useT()
+  const progress = useRunProgress()
+  const compaction = useStore((s) => s.session?.compaction)
+  if (!progress) return null
+  const elapsed = formatDuration(progress.elapsedMs)
+  const text = runPhaseText(t, progress, compaction)
+  if (!running) {
+    return <span className="composer-run" role="status" aria-live="polite" data-testid="composer-run" title={text}>{text} <span className="composer-run-time">{elapsed}</span></span>
+  }
+  return (
+    <Button type="button" size="sm" className="composer-stop" data-testid="composer-stop" aria-label={`${t('composer.stop')} · ${text}`} title={text} onClick={onStop}>
+      <span className="composer-stop-sq" aria-hidden />
+      {t('composer.stop')}
+      <span className="composer-run-time">{elapsed}</span>
+    </Button>
   )
 }
 

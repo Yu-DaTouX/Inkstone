@@ -524,6 +524,7 @@ button.rail-label:hover {
 .rail-recent .srow {
   padding-left: var(--sp-2);
 }
+/* 静止行的空心点只在悬停时淡显：一列空心圈是噪音，位置仍保留以对齐标题 */
 .srow-dot {
   display: block;
   flex: none;
@@ -532,6 +533,13 @@ button.rail-label:hover {
   box-sizing: border-box;
   border: 1px solid var(--fg-mute);
   border-radius: var(--r-full);
+  opacity: 0;
+  transition:
+    opacity var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+.srow-row:hover .srow-dot {
   opacity: 0.6;
 }
 .srow-row.selected .srow-dot {

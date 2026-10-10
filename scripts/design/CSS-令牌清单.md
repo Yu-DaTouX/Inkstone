@@ -5,7 +5,7 @@
 > **只有每个变量的“最终值”生效** —— 它可能不在 `tokens.css` 里。
 > 定义链从左到右，最右者胜（同特异性、后加载）。
 
-## `:root`　100 个变量（其中 1 个被重复定义）
+## `:root`　107 个变量（其中 1 个被重复定义）
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -59,23 +59,28 @@
 | `--focus-ring-offset` | `1px` | **tokens**: 1px |
 | `--focus-ring-w` | `1px` | **tokens**: 1px |
 | `--focus-ring-w-strong` | `2px` | **tokens**: 2px |
-| `--font-body` | `var(--font-sans)` | **tokens**: var(--font-sans) |
+| `--font-body` | `var(--font-mono)` | **tokens**: var(--font-mono) |
 | `--font-code` | `var(--font-mono)` | **tokens**: var(--font-mono) |
 | `--font-mono` | `'Maple Mono CN', ui-monospace, Consolas, monospace` | **tokens**: 'Maple Mono CN', ui-monospace, Consolas, monospace |
-| `--font-sans` | `'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif` | **tokens**: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif |
-| `--font-ui` | `'Inkstone UI CJK', var(--font-mono)` | **tokens**: 'Inkstone UI CJK', var(--font-mono) |
+| `--font-sans` | `var(--font-mono)` | **tokens**: var(--font-mono) |
+| `--font-ui` | `var(--font-mono)` | **tokens**: var(--font-mono) |
 | `--fs-base` | `13px` | **tokens**: 13px |
-| `--fs-body` | `14px` | **tokens**: 14px |
+| `--fs-body` | `15px` | **tokens**: 15px |
 | `--fs-code` | `12.5px` | **tokens**: 12.5px |
+| `--fs-h2` | `20px` | **tokens**: 20px |
+| `--fs-h3` | `17px` | **tokens**: 17px |
 | `--fs-lg` | `15px` | **tokens**: 15px |
 | `--fs-sm` | `12px` | **tokens**: 12px |
+| `--fs-stat` | `22px` | **tokens**: 22px |
 | `--fs-xs` | `11px` | **tokens**: 11px |
-| `--fw-medium` | `500` | **tokens**: 500 |
+| `--fw-medium` | `400` | **tokens**: 400 |
 | `--fw-regular` | `400` | **tokens**: 400 |
-| `--fw-strong` | `600` | **tokens**: 600 |
+| `--fw-strong` | `400` | **tokens**: 400 |
+| `--gap-proc-side` | `32px` | **tokens**: 32px |
 | `--h-titlebar` | `40px` | **tokens**: 40px |
 | `--lh-base` | `1.55` | **tokens**: 1.55 |
-| `--lh-body` | `1.7` | **tokens**: 1.7 |
+| `--lh-body` | `1.75` | **tokens**: 1.75 |
+| `--lh-row` | `24px` | **tokens**: 24px |
 | `--lh-tight` | `1.45` | **tokens**: 1.45 |
 | `--mo-base` | `170ms` | **motion**: 170ms |
 | `--mo-ease` | `cubic-bezier(0.22, 1, 0.36, 1)` | **motion**: cubic-bezier(0.22, 1, 0.36, 1) |
@@ -86,11 +91,11 @@
 | `--mo-slow` | `240ms` | **motion**: 240ms |
 | `--mo-spring` | `cubic-bezier(0.34, 1.4, 0.64, 1)` | **motion**: cubic-bezier(0.34, 1.4, 0.64, 1) |
 | `--r-full` | `999px` | **tokens**: 999px |
-| `--r-lg` | `12px` | **tokens**: 12px |
-| `--r-md` | `8px` | **tokens**: 8px |
-| `--r-sm` | `6px` | **tokens**: 6px |
-| `--r-xl` | `12px` | **tokens**: 12px |
-| `--r-xs` | `4px` | **tokens**: 4px |
+| `--r-lg` | `8px` | **tokens**: 8px |
+| `--r-md` | `6px` | **tokens**: 6px |
+| `--r-sm` | `4px` | **tokens**: 4px |
+| `--r-xl` | `8px` | **tokens**: 8px |
+| `--r-xs` | `3px` | **tokens**: 3px |
 | `--sp-1` | `4px` | **tokens**: 4px |
 | `--sp-2` | `8px` | **tokens**: 8px |
 | `--sp-3` | `12px` | **tokens**: 12px |
@@ -98,100 +103,96 @@
 | `--sp-5` | `24px` | **tokens**: 24px |
 | `--sp-6` | `32px` | **tokens**: 32px |
 | `--statusbar-h` | `24px` | **tokens**: 24px |
-| `--think-high` | `#b294bb` | **motion**: #b294bb |
-| `--think-low` | `#6990b8` | **motion**: #6990b8 |
-| `--think-max` | `#ff5fff` | **motion**: #ff5fff |
-| `--think-medium` | `#81a2be` | **motion**: #81a2be |
-| `--think-minimal` | `#a4a49e` | **motion**: #a4a49e |
-| `--think-off` | `#8a8a84` | **motion**: #8a8a84 |
-| `--think-xhigh` | `#d183e8` | **motion**: #d183e8 |
+| `--think-high` | `#9d92f6` | **motion**: #9d92f6 |
+| `--think-low` | `#5fbfc9` | **motion**: #5fbfc9 |
+| `--think-max` | `#f26b6b` | **motion**: #f26b6b |
+| `--think-medium` | `#7aa7f5` | **motion**: #7aa7f5 |
+| `--think-minimal` | `#93a3b5` | **motion**: #93a3b5 |
+| `--think-off` | `#868991` | **motion**: #868991 |
+| `--think-xhigh` | `#d38be0` | **motion**: #d38be0 |
+| `--w-body` | `720px` | **tokens**: 720px |
+| `--w-proc-side` | `240px` | **tokens**: 240px |
 | `--w-rail` | `var(--w-rail-user, 248px)` | **layout**: var(--w-rail-user, 248px) |
 | `--w-rail-collapsed` | `0px` | **layout**: 0px |
 | `--w-right` ⚠️ | `var(--w-panel-user, 336px)` | tokens: var(--w-panel-user, 264px) → **layout**: var(--w-panel-user, 336px) |
-| `--w-stream` | `800px` | **tokens**: 800px |
+| `--w-stream` | `clamp(calc(var(--w-body) + 2 * var(--sp-5)), calc(100vw - 680px), 920px)` | **tokens**: clamp(calc(var(--w-body) + 2 * var(--sp-5)), calc(100vw - 680px), 920px) |
 
 ## `html[data-theme='dark']`　30 个变量
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
-| `--accent` | `#93a4f4` | **tokens**: #93a4f4 |
-| `--accent-line` | `rgba(147, 164, 244, 0.52)` | **tokens**: rgba(147, 164, 244, 0.52) |
-| `--accent-soft` | `rgba(147, 164, 244, 0.16)` | **tokens**: rgba(147, 164, 244, 0.16) |
-| `--bg-0` | `#151515` | **tokens**: #151515 |
-| `--bg-1` | `#1b1b1a` | **tokens**: #1b1b1a |
-| `--bg-2` | `#222221` | **tokens**: #222221 |
-| `--bg-3` | `#2b2b29` | **tokens**: #2b2b29 |
-| `--bg-4` | `#393936` | **tokens**: #393936 |
-| `--border` | `rgba(255, 255, 255, 0.1)` | **tokens**: rgba(255, 255, 255, 0.1) |
-| `--border-soft` | `rgba(255, 255, 255, 0.06)` | **tokens**: rgba(255, 255, 255, 0.06) |
-| `--border-str` | `rgba(255, 255, 255, 0.16)` | **tokens**: rgba(255, 255, 255, 0.16) |
-| `--code-bg` | `#0d1117` | **tokens**: #0d1117 |
+| `--accent` | `#93a8ff` | **tokens**: #93a8ff |
+| `--accent-line` | `rgba(147, 168, 255, 0.5)` | **tokens**: rgba(147, 168, 255, 0.5) |
+| `--accent-soft` | `rgba(147, 168, 255, 0.16)` | **tokens**: rgba(147, 168, 255, 0.16) |
+| `--bg-0` | `#17191d` | **tokens**: #17191d |
+| `--bg-1` | `#1f2228` | **tokens**: #1f2228 |
+| `--bg-2` | `#282c34` | **tokens**: #282c34 |
+| `--bg-3` | `#2d3340` | **tokens**: #2d3340 |
+| `--bg-4` | `#3a414e` | **tokens**: #3a414e |
+| `--border` | `rgba(255, 255, 255, 0.11)` | **tokens**: rgba(255, 255, 255, 0.11) |
+| `--border-soft` | `rgba(255, 255, 255, 0.07)` | **tokens**: rgba(255, 255, 255, 0.07) |
+| `--border-str` | `rgba(255, 255, 255, 0.18)` | **tokens**: rgba(255, 255, 255, 0.18) |
+| `--code-bg` | `#1c1f24` | **tokens**: #1c1f24 |
 | `--code-fg` | `#c9d1d9` | **tokens**: #c9d1d9 |
 | `--code-inline-bg` | `rgba(255, 255, 255, 0.07)` | **tokens**: rgba(255, 255, 255, 0.07) |
-| `--code-inline-fg` | `#cdd6dc` | **tokens**: #cdd6dc |
+| `--code-inline-fg` | `#cfd5de` | **tokens**: #cfd5de |
 | `--cyan` | `var(--accent)` | **tokens**: var(--accent) |
 | `--edge` | `rgba(255, 255, 255, 0.07)` | **tokens**: rgba(255, 255, 255, 0.07) |
-| `--err` | `#ff6467` | **tokens**: #ff6467 |
-| `--err-soft` | `rgba(255, 100, 103, 0.16)` | **tokens**: rgba(255, 100, 103, 0.16) |
-| `--fg` | `#ecece8` | **tokens**: #ecece8 |
-| `--fg-dim` | `#b4b4ac` | **tokens**: #b4b4ac |
-| `--fg-mute` | `#92928a` | **tokens**: #92928a |
-| `--magenta` | `#c084fc` | **tokens**: #c084fc |
-| `--ok` | `#34d399` | **tokens**: #34d399 |
-| `--ok-soft` | `rgba(52, 211, 153, 0.16)` | **tokens**: rgba(52, 211, 153, 0.16) |
-| `--on-accent` | `#10131f` | **tokens**: #10131f |
-| `--shadow-pop` | `0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2)` | **tokens**: 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2) |
-| `--split-dim` | `rgba(21, 21, 21, 0.38)` | **tokens**: rgba(21, 21, 21, 0.38) |
-| `--warn` | `#fbbf24` | **tokens**: #fbbf24 |
-| `--warn-soft` | `rgba(251, 191, 36, 0.16)` | **tokens**: rgba(251, 191, 36, 0.16) |
+| `--err` | `#f5a2a2` | **tokens**: #f5a2a2 |
+| `--err-soft` | `rgba(245, 162, 162, 0.13)` | **tokens**: rgba(245, 162, 162, 0.13) |
+| `--fg` | `#e5e7eb` | **tokens**: #e5e7eb |
+| `--fg-dim` | `#b3bac5` | **tokens**: #b3bac5 |
+| `--fg-mute` | `#929caa` | **tokens**: #929caa |
+| `--magenta` | `#c4a5f5` | **tokens**: #c4a5f5 |
+| `--ok` | `#82c7a0` | **tokens**: #82c7a0 |
+| `--ok-soft` | `rgba(130, 199, 160, 0.14)` | **tokens**: rgba(130, 199, 160, 0.14) |
+| `--on-accent` | `#17191d` | **tokens**: #17191d |
+| `--shadow-pop` | `0 14px 36px -14px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.2)` | **tokens**: 0 14px 36px -14px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.2) |
+| `--split-dim` | `rgba(23, 25, 29, 0.38)` | **tokens**: rgba(23, 25, 29, 0.38) |
+| `--warn` | `#e8b17b` | **tokens**: #e8b17b |
+| `--warn-soft` | `rgba(232, 177, 123, 0.14)` | **tokens**: rgba(232, 177, 123, 0.14) |
 
 ## `html[data-theme='light']`　37 个变量
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
-| `--accent` | `#4b5dbf` | **tokens**: #4b5dbf |
-| `--accent-line` | `rgba(75, 93, 191, 0.42)` | **tokens**: rgba(75, 93, 191, 0.42) |
-| `--accent-soft` | `rgba(75, 93, 191, 0.1)` | **tokens**: rgba(75, 93, 191, 0.1) |
-| `--bg-0` | `#fcfcfa` | **tokens**: #fcfcfa |
-| `--bg-1` | `#f3f3f0` | **tokens**: #f3f3f0 |
+| `--accent` | `#4059ad` | **tokens**: #4059ad |
+| `--accent-line` | `rgba(64, 89, 173, 0.42)` | **tokens**: rgba(64, 89, 173, 0.42) |
+| `--accent-soft` | `rgba(64, 89, 173, 0.1)` | **tokens**: rgba(64, 89, 173, 0.1) |
+| `--bg-0` | `#f6f7f9` | **tokens**: #f6f7f9 |
+| `--bg-1` | `#eef0f3` | **tokens**: #eef0f3 |
 | `--bg-2` | `#ffffff` | **tokens**: #ffffff |
-| `--bg-3` | `#eaeae6` | **tokens**: #eaeae6 |
-| `--bg-4` | `#deded9` | **tokens**: #deded9 |
-| `--border` | `rgba(0, 0, 0, 0.13)` | **tokens**: rgba(0, 0, 0, 0.13) |
-| `--border-soft` | `rgba(0, 0, 0, 0.07)` | **tokens**: rgba(0, 0, 0, 0.07) |
-| `--border-str` | `rgba(0, 0, 0, 0.2)` | **tokens**: rgba(0, 0, 0, 0.2) |
-| `--code-bg` | `#f6f8fa` | **tokens**: #f6f8fa |
+| `--bg-3` | `#e3e7ee` | **tokens**: #e3e7ee |
+| `--bg-4` | `#d5dae2` | **tokens**: #d5dae2 |
+| `--border` | `rgba(20, 30, 50, 0.13)` | **tokens**: rgba(20, 30, 50, 0.13) |
+| `--border-soft` | `rgba(20, 30, 50, 0.07)` | **tokens**: rgba(20, 30, 50, 0.07) |
+| `--border-str` | `rgba(20, 30, 50, 0.2)` | **tokens**: rgba(20, 30, 50, 0.2) |
+| `--code-bg` | `#ebedf1` | **tokens**: #ebedf1 |
 | `--code-fg` | `#24292f` | **tokens**: #24292f |
-| `--code-inline-bg` | `rgba(0, 0, 0, 0.055)` | **tokens**: rgba(0, 0, 0, 0.055) |
-| `--code-inline-fg` | `#45525a` | **tokens**: #45525a |
+| `--code-inline-bg` | `rgba(20, 30, 50, 0.06)` | **tokens**: rgba(20, 30, 50, 0.06) |
+| `--code-inline-fg` | `#3c4654` | **tokens**: #3c4654 |
 | `--cyan` | `var(--accent)` | **tokens**: var(--accent) |
-| `--edge` | `rgba(0, 0, 0, 0.04)` | **tokens**: rgba(0, 0, 0, 0.04) |
-| `--err` | `#c42020` | **tokens**: #c42020 |
-| `--err-soft` | `rgba(196, 32, 32, 0.1)` | **tokens**: rgba(196, 32, 32, 0.1) |
-| `--fg` | `#252522` | **tokens**: #252522 |
-| `--fg-dim` | `#55554f` | **tokens**: #55554f |
-| `--fg-mute` | `#6a6a63` | **tokens**: #6a6a63 |
-| `--magenta` | `#9333ea` | **tokens**: #9333ea |
-| `--ok` | `#047857` | **tokens**: #047857 |
-| `--ok-soft` | `rgba(4, 120, 87, 0.1)` | **tokens**: rgba(4, 120, 87, 0.1) |
+| `--edge` | `rgba(20, 30, 50, 0.04)` | **tokens**: rgba(20, 30, 50, 0.04) |
+| `--err` | `#a53030` | **tokens**: #a53030 |
+| `--err-soft` | `rgba(165, 48, 48, 0.09)` | **tokens**: rgba(165, 48, 48, 0.09) |
+| `--fg` | `#242830` | **tokens**: #242830 |
+| `--fg-dim` | `#505966` | **tokens**: #505966 |
+| `--fg-mute` | `#5e6876` | **tokens**: #5e6876 |
+| `--magenta` | `#7e3fc4` | **tokens**: #7e3fc4 |
+| `--ok` | `#216a4b` | **tokens**: #216a4b |
+| `--ok-soft` | `rgba(33, 106, 75, 0.1)` | **tokens**: rgba(33, 106, 75, 0.1) |
 | `--on-accent` | `#ffffff` | **tokens**: #ffffff |
-| `--shadow-pop` | `0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04)` | **tokens**: 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) |
-| `--split-dim` | `rgba(252, 252, 250, 0.5)` | **tokens**: rgba(252, 252, 250, 0.5) |
-| `--think-high` | `#7a5f8c` | **motion**: #7a5f8c |
-| `--think-low` | `#335d82` | **motion**: #335d82 |
-| `--think-max` | `#a300a3` | **motion**: #a300a3 |
-| `--think-medium` | `#40719a` | **motion**: #40719a |
-| `--think-minimal` | `#5c5c56` | **motion**: #5c5c56 |
-| `--think-off` | `#6a6a64` | **motion**: #6a6a64 |
-| `--think-xhigh` | `#8b4bb0` | **motion**: #8b4bb0 |
-| `--warn` | `#9a4508` | **tokens**: #9a4508 |
-| `--warn-soft` | `rgba(154, 69, 8, 0.1)` | **tokens**: rgba(154, 69, 8, 0.1) |
-
-## `@media (min-width: 1600px) :root`　1 个变量
-
-| 变量 | 最终值 | 定义链 |
-| --- | --- | --- |
-| `--w-stream` | `980px` | **tokens**: 980px |
+| `--shadow-pop` | `0 14px 36px -14px rgba(20, 30, 50, 0.28), 0 0 0 1px rgba(20, 30, 50, 0.05)` | **tokens**: 0 14px 36px -14px rgba(20, 30, 50, 0.28), 0 0 0 1px rgba(20, 30, 50, 0.05) |
+| `--split-dim` | `rgba(246, 247, 249, 0.5)` | **tokens**: rgba(246, 247, 249, 0.5) |
+| `--think-high` | `#5a4cc7` | **motion**: #5a4cc7 |
+| `--think-low` | `#137a85` | **motion**: #137a85 |
+| `--think-max` | `#bf2e2e` | **motion**: #bf2e2e |
+| `--think-medium` | `#2f62c9` | **motion**: #2f62c9 |
+| `--think-minimal` | `#566676` | **motion**: #566676 |
+| `--think-off` | `#64676e` | **motion**: #64676e |
+| `--think-xhigh` | `#9a3fae` | **motion**: #9a3fae |
+| `--warn` | `#8a430d` | **tokens**: #8a430d |
+| `--warn-soft` | `rgba(138, 67, 13, 0.1)` | **tokens**: rgba(138, 67, 13, 0.1) |
 
 ## `html[data-density='comfortable']`　3 个变量
 
@@ -211,7 +212,7 @@
 
 ## 小结
 
-- 变量总数（含各主题）：**174**
+- 变量总数（含各主题）：**180**
 - 同一选择器内被重复定义（真冗余）：**1**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。

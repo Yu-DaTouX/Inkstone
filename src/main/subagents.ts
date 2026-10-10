@@ -1,25 +1,8 @@
 /**
- * 子代理运行（方案第 8 节）。
- *
- * ══════════════════════════════════════════════════════════════════
- * 为什么是「自有进程管理适配」而不是直接装上游扩展
- * ══════════════════════════════════════════════════════════════════
- * 方案 8.2 的门槛（Windows 路径 / Electron 起子进程 / RPC 事件流 /
- * 取消与恢复）必须**实测**才能算通过，而上游候选扩展在本机没有装、
- * 也没有可复现的 Windows RPC 事件协议证据。方案 8.2 自己写了兜底：
- *   「若两者都无法提供稳定流，采用 Yan 自有进程管理适配，但保留同一前端模型」。
- * 这里就是那条兜底路线：
- *   · 每个子任务 = **一个独立的 `pi --mode rpc` 子进程**（真正的进程隔离）；
- *   · 事件流复用主进程已有的 `PiRpc` 与 `normalizeMessage`（不解析终端画面）；
- *   · 前端模型（SubagentRun + 转录）与「未来接上游扩展」时**完全一致** ——
- *     换实现只需要换这个文件里的 spawn 部分。
- *
- * ── 边界（方案 8.4）──
- *   · 并发上限 2、不嵌套（子代理不会再起子代理）；
- *   · 单次运行超时上限（默认 10 分钟），到点标记 error 并杀掉进程；
- *   · 转录有界（保留最后 200 条），避免 IPC 越推越大；
- *   · 子任务只拿到自己的工作目录，不继承桌面端能力；
- *   · 不把子任务的用量计入父会话（父工具汇总与子会话重复计费是坑）。
+ * 每个子任务使用独立 pi RPC 进程，复用事件规范化与有界转录。
+ * 默认当前文件夹；只读工具和 Git worktree 均显式选择。
+ * 子进程只有自己的危险审批通道，不继承父会话的宿主能力令牌。
+ * 并发、超时、取消与用量按子运行记录，结果通过父会话身份回传。
  */
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, readFileSync } from 'node:fs'
@@ -37,8 +20,10 @@ import {
   type SubagentBrief
 } from '../shared/subagent-brief'
 import { PiRpc, resolvePi } from './protocol'
+import { CapabilityServer } from './capability-server'
 import { nativePiToolsSupported } from '../shared/agent-context'
-import { subagentPiArgs } from '../shared/subagent-pi-launch'
+import { modelErrorNotice } from '../shared/model-errors'
+import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
 import {
   applyPatch,
   cleanupWorkspace,
@@ -51,19 +36,19 @@ import {
 const MAX_CONCURRENT = 2
 /**
  * 时间限制有三层，避免「干了很多活却在整点被一刀杀掉、成果全丢」：
- *   · 空闲上限：这么久没有任何输出 / 工具动静才算卡死；
+ *   · 无进展提醒：这么久没有事件只提醒等待，不据此判定卡死；
  *   · 总上限：不管有没有进展，最长跑这么久（任务输入里可给 `timeoutMinutes`，仍封顶）；
  *   · 收尾宽限：到点先让它交出目前的结论，宽限内仍不结束才硬停。
  */
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000
+const IDLE_WARNING_MS = 5 * 60 * 1000
 const TOTAL_TIMEOUT_MS = 30 * 60 * 1000
 const GRACE_MS = 75 * 1000
 
 /**
- * 三个上限的实际取值。
+ * 无进展提醒、总时长与收尾宽限的实际取值。
  *
  * `YAN_SUBAGENT_TIMEOUT_MS` / `YAN_SUBAGENT_IDLE_MS` / `YAN_SUBAGENT_GRACE_MS` 只为测试能真跑
- * 超时分支（真实验证等不起几十分钟）——与 `YAN_AUTO_CONTINUE` 同一个先例。
+ * 超时分支，避免回归测试等待完整任务时限。
  */
 function envMs(name: string): number | undefined {
   const value = Number(process.env[name])
@@ -71,7 +56,7 @@ function envMs(name: string): number | undefined {
 }
 function limitsFor(brief: SubagentBrief): { totalMs: number; idleMs: number; graceMs: number } {
   const total = envMs('YAN_SUBAGENT_TIMEOUT_MS') ?? (brief.timeoutMinutes ? brief.timeoutMinutes * 60_000 : TOTAL_TIMEOUT_MS)
-  return { totalMs: total, idleMs: envMs('YAN_SUBAGENT_IDLE_MS') ?? IDLE_TIMEOUT_MS, graceMs: envMs('YAN_SUBAGENT_GRACE_MS') ?? GRACE_MS }
+  return { totalMs: total, idleMs: envMs('YAN_SUBAGENT_IDLE_MS') ?? IDLE_WARNING_MS, graceMs: envMs('YAN_SUBAGENT_GRACE_MS') ?? GRACE_MS }
 }
 
 /** 时长的可读写法：报**实际上限**，测试把它压到几百毫秒时不能还写「10 分钟」 */
@@ -81,7 +66,7 @@ function spanText(ms: number): string {
   return `${ms} 毫秒`
 }
 const totalTimeoutText = (ms: number): string => `运行超时（超过 ${spanText(ms)}）`
-const idleTimeoutText = (ms: number): string => `长时间没有进展（超过 ${spanText(ms)} 没有任何输出）`
+const idleWarningText = (ms: number): string => `超过 ${spanText(ms)} 未收到进展，可能仍在执行工具或等待模型；任务继续运行`
 
 /** 到点后发给子代理的收尾指令 */
 function wrapUpMessage(reason: 'timeout' | 'budget'): string {
@@ -114,7 +99,7 @@ interface Run extends SubagentRun {
   rpc: SubagentRpc
   /** 当前排定的看门计时器（到点检查空闲 / 总上限，或收尾宽限） */
   timer: NodeJS.Timeout
-  /** 最近一次收到 pi 事件的时刻：空闲上限从这里算 */
+  /** 最近一次收到 pi 事件的时刻：无进展提醒从这里算 */
   lastProgressAt: number
   totalMs: number
   idleMs: number
@@ -152,8 +137,10 @@ interface Run extends SubagentRun {
   brief: SubagentBrief
 }
 
+export interface SubagentApprovalOrigin { sessionId?: string; runId?: string; subagentId?: string }
+
 export interface SubagentOptions {
-  /** 父会话当前工作目录；写入任务不会直接使用它。 */
+  /** 父会话当前工作目录；默认在此执行，worktree 模式才建立独立目录。 */
   cwd: string
   piBin?: string
   parentSessionId?: string
@@ -162,6 +149,7 @@ export interface SubagentOptions {
   projectId?: string
   /** 退出 / 重启时的可恢复补丁目录。 */
   archiveDir?: string
+  confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean>
   /** 传给子进程的扩展（默认不传：子代理不需要浏览器/提问扩展） */
   extensions?: string[]
   /** 追加系统提示（例如「你是子代理，目标明确、少寒暄」） */
@@ -173,8 +161,8 @@ export interface SubagentOptions {
   onFinished?: (run: SubagentRun) => void
   /** 造 pi 客户端（默认真的 PiRpc；单测注入假实现） */
   createRpc?: (opts: { cwd: string; piBin?: string; args: string[] }) => SubagentRpc
-  /** 准备隔离工作区（默认真的 git worktree；单测注入以便控制准备阶段的时长） */
-  prepare?: (rootCwd: string, id: string, isolation: 'worktree' | 'controlled-cwd') => Promise<PreparedWorkspace>
+  /** 按所选方式准备工作目录；单测可注入准备过程。 */
+  prepare?: (rootCwd: string, id: string, isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<PreparedWorkspace>
 }
 
 export class SubagentController {
@@ -219,6 +207,7 @@ export class SubagentController {
       toolCalls: run.toolCalls,
       wrapUp: run.wrapUp,
       latestActivity: run.latestActivity,
+      progressWarning: run.progressWarning,
       transcript: run.transcript,
       diff: run.diff,
       review: run.review,
@@ -274,11 +263,13 @@ export class SubagentController {
   async start(
     task: string,
     model?: string,
-    isolation: 'worktree' | 'controlled-cwd' = 'worktree',
+    isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd' = 'shared-cwd',
     briefInput?: unknown
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
     const text = task.trim()
     if (!text) return { ok: false, error: '任务描述为空' }
+    const modelError = subagentModelError(model ?? process.env.YAN_TEST_MODEL, isolation === 'controlled-cwd')
+    if (modelError) return { ok: false, error: modelError }
     if (this.runningCount >= MAX_CONCURRENT) {
       return { ok: false, error: `同时最多 ${MAX_CONCURRENT} 个子代理，先等一个结束或停掉它` }
     }
@@ -311,7 +302,7 @@ export class SubagentController {
     ctx: SubagentOptions,
     text: string,
     model: string | undefined,
-    isolation: 'worktree' | 'controlled-cwd',
+    isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd',
     brief: SubagentBrief
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
     const id = `sub-${randomBytes(4).toString('hex')}`
@@ -323,7 +314,13 @@ export class SubagentController {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
 
-    const rpc = this.createRpc(ctx, workspace.cwd, model, isolation, id)
+    let rpc: SubagentRpc
+    try {
+      rpc = await this.createRpc(ctx, workspace.cwd, model, isolation, id)
+    } catch (error) {
+      await cleanupWorkspace(workspace)
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
 
     const run: Run = {
       id,
@@ -405,13 +402,13 @@ export class SubagentController {
   }
 
   /** 拼子进程参数并造客户端（默认 `PiRpc`，单测可注入假实现） */
-  private createRpc(
+  private async createRpc(
     ctx: SubagentOptions,
     cwd: string,
     model: string | undefined,
-    isolation: 'worktree' | 'controlled-cwd',
+    isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd',
     id: string
-  ): SubagentRpc {
+  ): Promise<SubagentRpc> {
     let version: string | undefined
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { /* 未知版本保留兼容边界。 */ }
     const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions })
@@ -422,12 +419,30 @@ export class SubagentController {
      * `~/.pi/agent`：便携版 / `YAN_PI_DIR` 隔离时凭证、models.json、会话目录
      * 全都错位（测试会读真实凭证而不是隔离副本）。这里补齐同一份目录。
      */
-    return new PiRpc({
-      cwd,
-      piBin: ctx.piBin,
-      args,
-      env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }
+    // 子运行只有独立的危险审批端点，不继承父会话的完整能力令牌。
+    const approval = new CapabilityServer({
+      opsDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'approvals', id),
+      onlyCommands: ['danger.confirm'],
+      handlers: { run: async (_command, params) => ({ summary: {
+        kind: 'danger-confirm', allowed: await ctx.confirmDanger?.(params, cwd, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id }) ?? false
+      } }) }
     })
+    try {
+      const endpoint = await approval.start({ sessionId: id, projectId: ctx.projectId ?? id })
+      const rpc = new PiRpc({
+        cwd, piBin: ctx.piBin, args,
+        env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR,
+          YAN_CLI_URL: endpoint.url, YAN_CLI_TOKEN: endpoint.token,
+          YAN_SESSION_ID: id, YAN_PROJECT_ID: ctx.projectId ?? id }
+      })
+      rpc.on('exit', () => approval.stop())
+      const close = rpc.close.bind(rpc)
+      rpc.close = async () => { approval.stop(); await close() }
+      return rpc
+    } catch (error) {
+      approval.stop()
+      throw error
+    }
   }
 
   /** 停止一个运行（方案 8.3：停止是明确动作，不是关掉预览） */
@@ -477,6 +492,7 @@ export class SubagentController {
     run.status = run.status === 'cancelled' ? 'cancelled' : 'error'
     run.endReason = run.status === 'cancelled' ? 'stopped' : reason
     run.wrapUp = undefined
+    run.progressWarning = undefined
     run.error = message
     run.endedAt = Date.now()
     run.latestActivity = message
@@ -590,6 +606,10 @@ export class SubagentController {
             rootCwd: run.workspace.rootCwd,
             isolation: run.isolation,
             status: run.status,
+            endReason: run.endReason,
+            error: run.error,
+            brief: run.brief,
+            limits: { totalMs: run.totalMs, idleWarningMs: run.idleMs, graceMs: run.graceMs },
             review: run.review,
             startedAt: run.startedAt,
             endedAt: run.endedAt,
@@ -655,11 +675,13 @@ export class SubagentController {
     return { ok: true }
   }
 
-  /** 排定下一次看门检查：空闲上限与总上限里更早的那个 */
+  /** 无进展只提醒一次；总时长独立计时，不被事件续期。 */
   private armWatch(run: Run): void {
     clearTimeout(run.timer)
     if (run.status !== 'running' && run.status !== 'starting') return
-    const at = Math.min(run.startedAt + run.totalMs, run.lastProgressAt + run.idleMs)
+    const at = run.progressWarning
+      ? run.startedAt + run.totalMs
+      : Math.min(run.startedAt + run.totalMs, run.lastProgressAt + run.idleMs)
     run.timer = setTimeout(() => this.onWatch(run), Math.max(10, at - Date.now()))
   }
 
@@ -667,8 +689,13 @@ export class SubagentController {
     if (run.status !== 'running' && run.status !== 'starting') return
     const now = Date.now()
     if (now >= run.startedAt + run.totalMs) void this.wrapUp(run, 'timeout', totalTimeoutText(run.totalMs))
-    else if (now >= run.lastProgressAt + run.idleMs) void this.wrapUp(run, 'timeout', idleTimeoutText(run.idleMs))
-    else this.armWatch(run) // 期间有过进展：按新的空闲起点重排
+    else {
+      if (!run.progressWarning && now >= run.lastProgressAt + run.idleMs) {
+        run.progressWarning = idleWarningText(run.idleMs)
+        this.emit(run)
+      }
+      this.armWatch(run)
+    }
   }
 
   /**
@@ -684,6 +711,7 @@ export class SubagentController {
       return
     }
     run.wrapUp = { reason, since: Date.now() }
+    run.progressWarning = undefined
     run.latestActivity = reason === 'budget' ? '调用次数用完，正在收尾…' : '时间到，正在收尾…'
     this.emit(run)
     clearTimeout(run.timer)
@@ -724,6 +752,11 @@ export class SubagentController {
   private handleEvent(run: Run, evt: Record<string, unknown>): void {
     const type = String(evt.type ?? '')
     run.lastProgressAt = Date.now()
+    if (run.progressWarning && !run.wrapUp && (run.status === 'running' || run.status === 'starting')) {
+      run.progressWarning = undefined
+      this.armWatch(run)
+      this.emit(run)
+    }
     /* 临时调试开关：看 pi 到底推了哪些事件（YAN_DEBUG_SUBAGENT=1）。
        Windows 上 Electron 是 GUI 子系统，console.log 不进 stdout，所以落临时文件。 */
     if (process.env.YAN_DEBUG_SUBAGENT) {
@@ -749,7 +782,10 @@ export class SubagentController {
        * 不记住它，settled 就无法分辨「真答完了」与「模型报错了」
        *（实测：坏模型名下子代理显示「已完成」、`error=null`）。
        */
-      if (raw.role === 'assistant' && raw.stopReason) run.stopReason = raw.stopReason
+      if (raw.role === 'assistant' && raw.stopReason) {
+        run.stopReason = raw.stopReason
+        if (raw.stopReason === 'error') run.error = modelErrorNotice(raw.errorMessage)
+      }
 
       /*
        * `toolResult` 不是新消息，而是对已有工具调用的**回填**（也不占用序号）。
@@ -828,8 +864,9 @@ export class SubagentController {
       run.status = run.status === 'cancelled' ? 'cancelled' : modelFailed ? 'error' : 'done'
       run.endReason = run.status === 'cancelled' ? 'stopped' : modelFailed ? 'model-error' : (wrapped?.reason ?? 'completed')
       run.wrapUp = undefined
+      run.progressWarning = undefined
       run.endedAt = Date.now()
-      if (modelFailed) run.error = run.error ?? '模型返回错误（这一轮没有产出可用结果）'
+      if (modelFailed) run.error = run.error ?? modelErrorNotice(undefined)
       run.latestActivity = modelFailed
         ? '模型返回错误'
         : wrapped

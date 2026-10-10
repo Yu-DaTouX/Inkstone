@@ -182,6 +182,15 @@
   animation-delay: calc(var(--i, 0) * var(--dur-22));
 }
 
+/* 插件市场：切页淡入，结果逐行落位（最多错开 8 行） */
+.market-panel {
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+}
+.market-item {
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+  animation-delay: calc(var(--i, 0) * var(--dur-22));
+}
+
 /* 52.4 应用：贴着触发器的浮层 */
 /* 向上弹（输入区附近的模型选择器） */
 .mt-pop {
@@ -611,18 +620,19 @@ html[data-theme='light'] .turn {
 
 /* 56. 输入区运行条（设计规范 §3.5 / §4）
    输入区顶边的一行，只在运行时用 grow 长出来：方点阵 · 阶段文字 · 计时。
-   思考档位色只落在方点阵与运行条底线上（七档七色，取自 pi 的 dark.json），
-   文字用中性色 —— 整句染成高档位的洋红读起来像告警。 */
+   思考档位色只落在方点阵与运行条底线上（七档冷→暖色阶，令牌见下），
+   文字用中性色 —— 整句染成高档位的暖色读起来像告警。 */
 
-/* 档位色也是模型菜单里的档位文字色：off / minimal / low 从 pi 原值提亮到 bg-1、bg-2 上 ≥4.5:1 */
+/* 档位色也是模型菜单里的档位文字色：冷→暖的温度色阶（灰→青→蓝→鸢尾→兰紫→红），
+   相邻档插值顺滑、不撞色；深色 bg-1、bg-2 上 ≥4.5:1 */
 :root {
-  --think-off: #8a8a84;
-  --think-minimal: #a4a49e;
-  --think-low: #6990b8;
-  --think-medium: #81a2be;
-  --think-high: #b294bb;
-  --think-xhigh: #d183e8;
-  --think-max: #ff5fff;
+  --think-off: #868991;
+  --think-minimal: #93a3b5;
+  --think-low: #5fbfc9;
+  --think-medium: #7aa7f5;
+  --think-high: #9d92f6;
+  --think-xhigh: #d38be0;
+  --think-max: #f26b6b;
 }
 
 .cborder {
@@ -702,15 +712,15 @@ html[data-theme='light'] .turn {
   font-variant-numeric: tabular-nums;
 }
 
-/* 浅色主题：pi 的 thinking 色是为深色底调的，浅色下要压暗才能读（bg-1 上 ≥4.5:1） */
+/* 浅色主题：同一色阶压暗才能读（bg-1 上 ≥4.5:1） */
 html[data-theme='light'] {
-  --think-off: #6a6a64;
-  --think-minimal: #5c5c56;
-  --think-low: #335d82;
-  --think-medium: #40719a;
-  --think-high: #7a5f8c;
-  --think-xhigh: #8b4bb0;
-  --think-max: #a300a3;
+  --think-off: #64676e;
+  --think-minimal: #566676;
+  --think-low: #137a85;
+  --think-medium: #2f62c9;
+  --think-high: #5a4cc7;
+  --think-xhigh: #9a3fae;
+  --think-max: #bf2e2e;
 }
 
 /* 57. 任务栏：进度条 + 当前任务 + 动画
@@ -1443,11 +1453,165 @@ html[data-theme='light'] .rp-todo-now {
 /* Shared slider feedback and Agent status indicators. */
 /* 思考滑块的块光标：按终端光标节拍在亮与半暗之间跳（不完全消失，手柄始终可见） */
 @keyframes ui-step-caret { 50% { opacity: 0.38; } }
-@keyframes ui-step-bubble-in { from { opacity: 0; transform: translate(-50%, 4px); } }
+@keyframes ui-step-value-in { from { opacity: 0; transform: translateY(4px); } }
 @keyframes ui-status-pulse { 50% { opacity: 0.35; } }
 
 /* 左栏收起时悬停预览滑出 */
 @keyframes rail-peek-in {
   from { transform: translateX(-12px); opacity: 0; }
   to { transform: none; opacity: 1; }
+}
+
+/* ------------------------------------------------------------------
+   状态变化的过渡：左栏、分屏、磁贴（设计规范 §6「会变化的都要有过渡」）
+   只用透明度与小位移；原生浏览器视图不受 CSS 影响，因此磁贴只淡入不位移。
+   减少动态偏好由 tokens.css 的全局规则压到 1ms。
+   ------------------------------------------------------------------ */
+
+/* 左栏：会话行挂载（展开项目、显示更多、置顶移位、筛选结果）轻落位 */
+.srow-wrap {
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+}
+/* 归档 / 取消归档：先淡出收起，再由列表移除（SessionRow 延迟 150ms） */
+.srow-wrap.leaving {
+  animation: mo-out-left var(--mo-fast) var(--mo-ease-out) both;
+  pointer-events: none;
+}
+@keyframes mo-out-left {
+  to {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+/* 分支子树、「更多会话」、项目下的会话：展开时整体淡入 */
+.session-children,
+.rail-more-sessions {
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+}
+/* 行内重命名输入框出现 */
+.srow-rename-input,
+.proj-rename-input {
+  animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
+}
+/* 拖拽落点：插入线与「放进项目」高亮淡入 */
+.proj-head.drop-before::before,
+.proj-head.drop-after::after,
+.proj-group-heading.drop-before::before,
+.proj-group-heading.drop-after::after {
+  animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
+}
+.srow-wrap.is-dragging,
+.proj-head.is-dragging {
+  transition: opacity var(--mo-fast) var(--mo-ease);
+}
+/* 删除后的撤销条 */
+.rail-trash {
+  animation: mo-in-up var(--mo-base) var(--mo-ease) both;
+}
+
+/* 分屏：新加入的一列淡入；关闭时先淡出再移除（closeSplitTile 加 .closing） */
+.split-column + .split-column {
+  animation: mo-fade-in var(--mo-slow) var(--mo-ease) both;
+}
+.split-column.closing {
+  animation: mo-fade-out var(--mo-fast) var(--mo-ease-out) both;
+  pointer-events: none;
+}
+.split-drop,
+.split-peer-state {
+  animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
+}
+
+/* 工具磁贴：打开 / 重新显示时淡入（主会话磁贴不动，避免切会话闪烁） */
+.tile-pane:not([data-workspace-pane='chat']):not([hidden]) {
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+}
+/* 浮动磁贴：从中心轻放大落位；吸附参考线与提示淡入 */
+.rp-float-tile {
+  animation: mo-in-center var(--mo-base) var(--mo-ease) both;
+}
+.rp-float-tile.locate-flash {
+  animation: rp-float-flash var(--dur-900) var(--ease);
+}
+.rp-snap-guide,
+.rp-float-notice {
+  animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
+}
+
+/* 结构化回答块：块淡入；柱子从基线长出、卡片与步骤逐个落位（错开上限由组件给的 --vb-i 决定） */
+.vb:not(.vb-pending) {
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+}
+.vb-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: vb-bar-grow var(--mo-slow) var(--mo-ease) both;
+  animation-delay: calc(min(var(--vb-i, 0), 8) * var(--dur-45));
+}
+.vb-value {
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+  animation-delay: calc(var(--mo-slow) + min(var(--vb-i, 0), 8) * var(--dur-45));
+}
+.vb-line-group:not(.alt) .vb-line {
+  stroke-dasharray: 2000;
+  animation: vb-line-draw var(--dur-900) var(--mo-ease) both;
+}
+.vb-line-group.alt {
+  animation: mo-fade-in var(--dur-900) var(--mo-ease) both;
+}
+.vb-card,
+.vb-step-wrap {
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+  animation-delay: calc(min(var(--vb-i, 0), 8) * var(--dur-45));
+}
+.vb-result {
+  animation: mo-in-up var(--mo-base) var(--mo-ease) both;
+  animation-delay: var(--dur-180);
+}
+.vb-pending {
+  animation: ui-status-pulse var(--dur-1200) var(--mo-loop) infinite;
+}
+@keyframes vb-bar-grow {
+  from { transform: scaleY(0); }
+}
+@keyframes vb-line-draw {
+  from { stroke-dashoffset: 2000; }
+  to { stroke-dashoffset: 0; }
+}
+/* 第二批块：横向柱从左长出，指标卡逐个落位，分步面板切换淡入，追问条上浮 */
+.vb-hbar {
+  transform-origin: left;
+  animation: vb-hbar-grow var(--mo-slow) var(--mo-ease) both;
+  animation-delay: calc(min(var(--vb-i, 0), 8) * var(--dur-45));
+}
+.vb-seg {
+  animation-delay: calc(min(var(--vb-i, 0), 8) * var(--dur-45));
+}
+.vb-tile,
+.vb-dumbbell {
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+  animation-delay: calc(min(var(--vb-i, 0), 8) * var(--dur-45));
+}
+.vb-stepper-panel {
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+}
+.vb-ask {
+  animation: mo-in-up var(--mo-base) var(--mo-ease) both;
+}
+@keyframes vb-hbar-grow {
+  from { transform: scaleX(0); }
+}
+/* 问题表单：字段逐个落位，缺填提示淡入 */
+.qform-field {
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+}
+.qform-error {
+  animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
+}
+
+/* 已播放过入场动画的块（切换分屏会话后重新挂载）：直接给最终状态 */
+.vb-seen { display: contents; }
+.vb-seen[data-seen='1'] .vb:not(.vb-pending),
+.vb-seen[data-seen='1'] .vb:not(.vb-pending) * {
+  animation: none !important;
 }

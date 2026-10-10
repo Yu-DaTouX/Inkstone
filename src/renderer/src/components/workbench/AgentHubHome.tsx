@@ -179,7 +179,7 @@ export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefr
           const cli = a.agent as Exclude<HubAgent, 'pi'>
           const installing = !!installs[cli]
           return a.available
-            ? <Button key={a.agent} size="sm" className="agent-chip" disabled={busy || !project} title={`${agentName(a.agent)} ${a.version ?? ''} · ${t('hub.openTerminalHint')}`} onClick={() => void openTerminal(a.agent)} data-testid={`agent-open-${a.agent}`}><span className="agent-chip-body"><AgentMark agent={a.agent} size={14} />{agentName(a.agent)}</span></Button>
+            ? <Button key={a.agent} size="sm" disabled={busy || !project} title={`${agentName(a.agent)} ${a.version ?? ''} · ${t('hub.openTerminalHint')}`} onClick={() => void openTerminal(a.agent)} data-testid={`agent-open-${a.agent}`}><span className="agent-chip-body"><AgentMark agent={a.agent} size={14} />{agentName(a.agent)}</span></Button>
             : HUB_CLI_PACKAGES[cli]
               ? <Button key={a.agent} size="sm" variant="ghost" icon="plus" disabled={installing} title={`${t('hub.notInstalled')} · npm install -g ${HUB_CLI_PACKAGES[cli]}`} onClick={() => void install(cli)} data-testid={`agent-install-${a.agent}`}>{installing ? t('hub.installing') : t('hub.install', { name: agentName(a.agent) })}</Button> : null
         }) : <span className="agent-new-hint">{snapshot ? t('hub.noCli') : t('hub.detectingCli')}</span>}

@@ -545,6 +545,18 @@ function registerStubHandlers() {
     models: input.models ?? [],
     hasApiKey: Boolean(input.apiKey)
   })
+  /* 消息内小部件：矩阵没有隔离协议，用 data: 地址承载（只放夹具内容；真实链路由 test-visual-answer-live 覆盖） */
+  ipcMain.removeHandler('yan:prepareHtmlWidget')
+  ipcMain.handle('yan:prepareHtmlWidget', (_event, html) => ({ ok: true, url: 'data:text/html;charset=utf-8,' + encodeURIComponent(String(html)) }))
+  ipcMain.removeHandler('yan:releaseHtmlArtifact')
+  ipcMain.handle('yan:releaseHtmlArtifact', () => undefined)
+  /* 插件市场目录：固定假数据，不访问 npm */
+  ipcMain.removeHandler('yan:packages:search')
+  ipcMain.handle('yan:packages:search', () => ({ ok: true, total: 60, entries: Array.from({ length: 12 }, (_, i) => ({
+    name: i % 3 ? `pi-fixture-tool-${i}` : `@fixture/pi-very-long-package-name-for-layout-${i}`, version: `1.${i}.0`, publisher: 'fixture',
+    description: i % 2 ? 'Adds browser automation, screenshots and page reading tools to pi sessions with a fairly long description that wraps.' : 'Short tool.',
+    source: `npm:pi-fixture-tool-${i}`, npmUrl: `https://www.npmjs.com/package/pi-fixture-tool-${i}`, ...(i % 2 ? { homepage: `https://github.com/fixture/pi-tool-${i}` } : {})
+  })) }))
   ipcMain.handle('yan:customProviders', () => [...matrixCustomProviders])
   ipcMain.handle('yan:saveCustomProvider', (_event, input) => {
     const view = matrixProviderView(input)
@@ -1174,10 +1186,10 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'segmented', 'righttoolmenu', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
+    states: ['main', 'procopen', 'procside', 'segmented', 'righttoolmenu', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
-  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini', 'spaceoverview', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'procopen', 'procside', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
+  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'procside', 'modelmenu', 'railmini', 'spaceoverview', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback'] },
   /* 1280×800 加 spaceartifact：成果编辑器（实施-25 P06a）深浅各一张 */
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
@@ -1722,6 +1734,44 @@ const STATES = {
       return 'ok(count=' + document.querySelectorAll('.tgroup-body .trow').length + ')';
     })()
   `,
+  /* 界面方案 E：阅读优先下展开最后一轮的过程（调用树 + 推理入口） */
+  procopen: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: false, settings: { ...st.settings, processLayout: 'inline' } });
+      await sleep(200);
+      const toggles = [...document.querySelectorAll('[data-testid="turn-process-toggle"]')];
+      toggles.forEach((b) => { if (b.getAttribute('aria-expanded') !== 'true') b.click(); });
+      await sleep(300);
+      const box = document.querySelector('.stream');
+      if (box) box.scrollTop = box.scrollHeight;
+      await sleep(200);
+      return toggles.length ? 'ok(proc=' + toggles.length + ')' : 'no-process';
+    })()
+  `,
+  /* 界面方案 E：过程并列（右侧一栏 sticky，宽度不够时回到正文之后） */
+  procside: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: false, settings: { ...st.settings, processLayout: 'side' } });
+      await sleep(400);
+      const box = document.querySelector('.stream');
+      if (box) box.scrollTop = box.scrollHeight;
+      await sleep(200);
+      const proc = document.querySelector('.tproc');
+      const inner = document.querySelector('.stream-inner, .stream-row');
+      const body = document.querySelector('.msg.assistant .msg-body');
+      return document.documentElement.dataset.procLayout === 'side'
+        ? 'ok(stream=' + Math.round(box?.clientWidth ?? 0) + ',inner=' + Math.round(inner?.getBoundingClientRect().width ?? 0) + ',cols=' + (body ? getComputedStyle(body).gridTemplateColumns : '-') + ',proc=' + Math.round(proc?.getBoundingClientRect().width ?? 0) + ',zoom=' + (window.__yanStore.getState().zoom?.effective ?? '?') + ')'
+        : 'layout-not-applied';
+    })()
+  `,
   /* 工具详情：命令行展开后的终端窗口（N03；只有命令类工具会渲染 .term） */
   toolterm: `
     (async () => {
@@ -1730,6 +1780,9 @@ const STATES = {
       st.closeSettings();
       st.setRailPinned(true);
       window.__yanStore.setState({ rightPanelOpen: false });
+      await sleep(200);
+      /* 工具行在过程树里：先展开各轮的过程 */
+      document.querySelectorAll('[data-testid="turn-process-toggle"][aria-expanded="false"]').forEach((b) => b.click());
       await sleep(200);
       const row =
         document.querySelector('.trow[data-tool="bash"] .trow-head') ||
@@ -1761,6 +1814,8 @@ const STATES = {
       st.closeSettings();
       st.setRailPinned(true);
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      /* 推理入口在过程树里：先展开各轮的过程 */
+      document.querySelectorAll('[data-testid="turn-process-toggle"][aria-expanded="false"]').forEach((b) => b.click());
       const toggles = [...document.querySelectorAll('[data-testid="reasoning-toggle"]')];
       const last = toggles[toggles.length - 1];
       if (last && last.getAttribute('aria-expanded') !== 'true') last.click();
@@ -4082,8 +4137,11 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       st.setRailPinned(true);
 
       await sleep(200);
-      window.__yanStore.getState().openSettings('packages');
+      /* 包管理已并入插件市场的 pi 页（packages 深链接落到市场） */
+      window.__yanStore.getState().openSettings('market');
       await sleep(700);
+      document.querySelector('[data-testid="market-pi-tab"]')?.click();
+      await sleep(900);
       return document.querySelector('[data-testid="set-packages"]') ? 'ok' : 'no-packages-tab';
     })()
   `,
@@ -4711,7 +4769,7 @@ const MUST_HAVE = {
   /* 主界面（注意：fixture 里会话是「流式中」，所以这里不会出现「用时」——
      用时的视觉证据在 usageelapsed 状态里） */
   main: ['.rail', '.stream', '.composer, [data-testid="composer"]'],
-  artifact: ['.stream', '[data-testid="turn-artifacts"]', '[data-artifact-id="matrix-artifact-svg"]', '.artifact-image', '.artifact-download'],
+  artifact: ['.stream', '[data-testid="turn-artifacts"]', '[data-artifact-id="matrix-artifact-svg"]', '.artifact-image', '.artifact-actions'],
   imageprogress: ['.stream', '[data-testid="image-progress-list"]', '.image-progress[data-stage="generating"]', '.image-progress-track'],
   /* 自主模式：数据属性是探针/检查的钩子，光带本身在现场看（§4.2） */
   autonomous: ['[data-testid="composer"]', '.composer-wrap[data-autonomous="1"]', '[data-testid="work-mode-button"][data-mode="autonomous"]', '[data-testid="goal-panel"]', '[data-goal-phase="executing"]', '.goal-step'],
@@ -4783,15 +4841,11 @@ const MUST_HAVE = {
     '[data-testid="src-url"]'
   ],
   settingspkg: [
+    '[data-testid="market-pi"]',
     '[data-testid="set-packages"]',
-    '[data-testid="set-pi-catalog"]',
     '[data-testid="set-pi-catalog-open"]',
     '[data-testid="pkg-source"]',
-    '[data-testid="pkg-install-btn"]',
-    '[data-testid="pkg-effect"]',
-    /* 实施-02 S4：内置能力区必须与「已装的插件」同时出现在图上 */
-    '[data-testid="set-builtin-caps"]',
-    '[data-testid="builtin-cap"]'
+    '[data-testid="pkg-install-btn"]'
   ],
   envlinks: [
     '[data-testid="env-menu"]',
@@ -5289,14 +5343,70 @@ if (ONLY.includes('tiledrag')) {
   MUST_HAVE.tiledrag = ['[data-testid="tile-workspace"]', '.tile-heading']
   for (const group of GROUPS) group.states.push('tiledrag')
 }
-/* 设置合并页截图：`YAN_MATRIX_ONLY=settingspageappearance,settingspageworkspace,settingspagedevices`，每页一张 */
+/* 设置页截图：`YAN_MATRIX_ONLY=settingspageauth,settingspageappearance,…`（auth/appearance/workspace/capabilities/market/devices/about），每页一张 */
 if (ONLY.some((name) => name.startsWith('settingspage'))) {
-  for (const page of ['appearance', 'workspace', 'devices']) {
+  for (const page of ['auth', 'appearance', 'workspace', 'capabilities', 'market', 'devices', 'remote', 'about']) {
     const name = 'settingspage' + page
-    STATES[name] = `(async () => { const s = window.__yanStore.getState(); s.openSettings('${page}'); await new Promise((r) => setTimeout(r, 700)); return 'ok' })()`
+    if (!ONLY.includes(name)) continue
+    /* 整页组（settingstall）：把设置面板撑到内容高度，一张图看完整页 */
+    const tall = `const p = document.querySelector('.settings'); if (p && innerHeight > 1200) { p.style.height = 'auto'; p.style.maxHeight = 'none'; const b = p.querySelector('.settings-body'); if (b) b.style.overflow = 'visible'; p.parentElement.style.alignItems = 'flex-start'; p.parentElement.style.paddingTop = '24px' }`
+    STATES[name] = `(async () => { const s = window.__yanStore.getState(); s.openSettings('${page}'); await new Promise((r) => setTimeout(r, 700)); ${tall}; await new Promise((r) => setTimeout(r, 200)); return 'ok' })()`
     MUST_HAVE[name] = ['.settings']
     for (const group of GROUPS.slice(0, 1)) group.states.push(name)
   }
+  GROUPS.push({ name: 'settingstall', w: 1280, h: 2400, scale: 1, theme: 'dark', states: ONLY.filter((name) => name.startsWith('settingspage')) })
+}
+/* 结构化回答块：`YAN_MATRIX_ONLY=visualblocks`，三种块（卡片 / 柱状与折线图 / 流程卡）的合成回答 */
+if (ONLY.includes('visualblocks')) {
+  const VB_TEXT = "有，Windows 上有几款好用的 Markdown 编辑器，我比较推荐下面这几款。\n\n```yan-cards\n{\n  \"title\": \"推荐的 Markdown 编辑器\",\n  \"items\": [\n    {\n      \"title\": \"Typora\",\n      \"badge\": \"所见即所得\",\n      \"description\": \"界面简洁，输入 Markdown 后直接显示排版效果，支持表格、代码块、数学公式和图片。\",\n      \"meta\": \"付费：一次性买断，15 天试用\",\n      \"links\": [\n        {\n          \"label\": \"官方网站\",\n          \"url\": \"https://typora.io\"\n        }\n      ]\n    },\n    {\n      \"title\": \"Obsidian\",\n      \"badge\": \"管理大量文档\",\n      \"description\": \"管理整个 Markdown 文件夹，支持双向链接、插件和知识图谱。\",\n      \"meta\": \"免费使用，同步服务另收费\",\n      \"links\": [\n        {\n          \"label\": \"官方网站\",\n          \"url\": \"https://obsidian.md\"\n        }\n      ]\n    },\n    {\n      \"title\": \"MarkText\",\n      \"description\": \"开源、所见即所得，支持实时渲染、表格、公式和导出 PDF。\",\n      \"meta\": \"完全免费、开源\",\n      \"links\": [\n        {\n          \"label\": \"GitHub 下载\",\n          \"url\": \"https://github.com/marktext/marktext\"\n        }\n      ]\n    }\n  ]\n}\n```\n\n## 最重要的实验对照\n\n```yan-chart\n{\n  \"type\": \"bar\",\n  \"title\": \"TDFlow：人工测试 vs AI 自行生成测试\",\n  \"subtitle\": \"同一 TDFlow 工作流，SWE-bench Verified 数据集\",\n  \"unit\": \"%\",\n  \"labels\": [\n    \"AI 生成测试\",\n    \"人工提供测试\"\n  ],\n  \"series\": [\n    {\n      \"name\": \"成功率\",\n      \"values\": [\n        68,\n        94.3\n      ]\n    }\n  ],\n  \"stats\": [\n    {\n      \"label\": \"AI 自行生成测试\",\n      \"value\": \"68.0%\",\n      \"detail\": \"平均 $4.12 / 任务\"\n    },\n    {\n      \"label\": \"提供人工编写的测试\",\n      \"value\": \"94.3%\",\n      \"detail\": \"平均 $1.01 / 任务\"\n    }\n  ],\n  \"source\": \"论文表 2（示例数据）\",\n  \"note\": \"人工测试组拿到了通常隐藏的测试，不等于生产环境中的普通 Agent。\",\n  \"sources\": [\n    {\n      \"label\": \"ACL Anthology\",\n      \"url\": \"https://aclanthology.org/\"\n    }\n  ]\n}\n```\n\n例如：\n\n```yan-flow\n{\n  \"join\": \"plus\",\n  \"steps\": [\n    {\n      \"icon\": \"agent\",\n      \"title\": \"Agent 编写测试\",\n      \"detail\": \"TestLoadKeyFromEnv\"\n    },\n    {\n      \"icon\": \"checklist\",\n      \"title\": \"评分器隐藏测试\",\n      \"detail\": \"TestLoadKeyFromEnv\"\n    }\n  ],\n  \"result\": {\n    \"tone\": \"err\",\n    \"text\": \"测试函数重复定义 → 编译失败 → 判定任务失败\"\n  },\n  \"note\": \"这是独立审查发现的真实错误类型，不代表一定出现在该实验中。\"\n}\n```\n\n```yan-chart\n{\n  \"type\": \"line\",\n  \"title\": \"每周构建耗时\",\n  \"unit\": \"s\",\n  \"labels\": [\n    \"W1\",\n    \"W2\",\n    \"W3\",\n    \"W4\",\n    \"W5\",\n    \"W6\"\n  ],\n  \"series\": [\n    {\n      \"name\": \"桌面\",\n      \"values\": [\n        42,\n        39,\n        35,\n        36,\n        31,\n        28\n      ]\n    },\n    {\n      \"name\": \"手机\",\n      \"values\": [\n        65,\n        61,\n        58,\n        50,\n        47,\n        45\n      ]\n    }\n  ],\n  \"source\": \"示例数据\"\n}\n```"
+  STATES.visualblocks = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const st = window.__yanStore.getState(); st.closeSettings(); st.setRailPinned(true); window.__yanStore.setState({ rightPanelOpen: false }); const messages = window.__yanStore.getState().messages; const host = messages.find((m) => m.role === 'assistant'); if (!host) return 'no-assistant'; window.__yanStore.setState({ messages: messages.map((m) => m.id === host.id ? { ...m, text: ${JSON.stringify(VB_TEXT)} } : m) }); await sleep(900); const first = document.querySelector('[data-testid="vb-cards"]'); if (!first) return 'no-block'; first.scrollIntoView({ block: 'start' }); await sleep(1200); return 'ok' })()`
+  STATES.visualblocks2 = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const el = document.querySelector('[data-testid="vb-chart"]'); if (!el) return 'no-chart'; el.scrollIntoView({ block: 'start' }); await sleep(1200); return 'ok' })()`
+  STATES.visualblocks3 = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const el = document.querySelector('[data-testid="vb-flow"]'); if (!el) return 'no-flow'; el.scrollIntoView({ block: 'start' }); await sleep(1200); return 'ok' })()`
+  MUST_HAVE.visualblocks = ['[data-testid="vb-cards"]', '[data-testid="vb-chart"]', '[data-testid="vb-flow"]']
+  for (const group of GROUPS.slice(0, 3)) group.states.push('visualblocks', 'visualblocks2', 'visualblocks3')
+}
+/* 结构化回答块（第二批）：`YAN_MATRIX_ONLY=visualmore`，指标/横向/堆叠/哑铃/偏离/面积图、卡片网格、记录卡、分步、mermaid、小部件；按块逐屏截图 */
+if (ONLY.includes('visualmore')) {
+  const VB_MORE = "本周构建与发布情况如下。\n\n```yan-stats\n\n{\n  \"items\": [\n    {\n      \"label\": \"构建耗时\",\n      \"value\": \"28 s\",\n      \"delta\": \"-33%\",\n      \"trend\": \"down\",\n      \"good\": \"down\",\n      \"spark\": [\n        42,\n        39,\n        35,\n        36,\n        31,\n        28\n      ]\n    },\n    {\n      \"label\": \"测试通过\",\n      \"value\": \"5985\",\n      \"delta\": \"+18\",\n      \"trend\": \"up\",\n      \"spark\": [\n        5940,\n        5952,\n        5962,\n        5967,\n        5983,\n        5985\n      ]\n    },\n    {\n      \"label\": \"包体积\",\n      \"value\": \"131 MB\",\n      \"delta\": \"+2 MB\",\n      \"trend\": \"up\",\n      \"good\": \"down\"\n    },\n    {\n      \"label\": \"本月额度\",\n      \"value\": \"4.2 / 5 美元\",\n      \"meter\": {\n        \"value\": 4.2,\n        \"max\": 5\n      }\n    }\n  ],\n  \"source\": \"示例数据\"\n}\n\n```\n\n```yan-chart\n\n{\n  \"type\": \"hbar\",\n  \"title\": \"各模块构建耗时\",\n  \"unit\": \"s\",\n  \"labels\": [\n    \"渲染端（React + 样式）\",\n    \"主进程\",\n    \"pi 运行时打包\",\n    \"手机端\"\n  ],\n  \"series\": [\n    {\n      \"name\": \"耗时\",\n      \"values\": [\n        12.4,\n        6.1,\n        18.9,\n        9.3\n      ]\n    }\n  ],\n  \"source\": \"示例数据\"\n}\n\n```\n\n```yan-chart\n\n{\n  \"type\": \"stacked\",\n  \"title\": \"每周提交构成\",\n  \"labels\": [\n    \"W1\",\n    \"W2\",\n    \"W3\",\n    \"W4\"\n  ],\n  \"series\": [\n    {\n      \"name\": \"功能\",\n      \"values\": [\n        12,\n        9,\n        15,\n        11\n      ]\n    },\n    {\n      \"name\": \"修复\",\n      \"values\": [\n        6,\n        8,\n        4,\n        7\n      ]\n    },\n    {\n      \"name\": \"文档\",\n      \"values\": [\n        2,\n        3,\n        5,\n        2\n      ]\n    }\n  ],\n  \"source\": \"示例数据\"\n}\n\n```\n\n```yan-chart\n\n{\n  \"type\": \"dumbbell\",\n  \"title\": \"优化前后启动时间\",\n  \"unit\": \"ms\",\n  \"labels\": [\n    \"冷启动\",\n    \"打开会话\",\n    \"切换会话\"\n  ],\n  \"series\": [\n    {\n      \"name\": \"优化前\",\n      \"values\": [\n        820,\n        340,\n        210\n      ]\n    },\n    {\n      \"name\": \"优化后\",\n      \"values\": [\n        507,\n        190,\n        96\n      ]\n    }\n  ],\n  \"source\": \"示例数据\"\n}\n\n```\n\n```yan-chart\n\n{\n  \"type\": \"diverging\",\n  \"title\": \"各项指标相对目标\",\n  \"unit\": \"%\",\n  \"labels\": [\n    \"启动\",\n    \"内存\",\n    \"包体积\",\n    \"测试覆盖\"\n  ],\n  \"series\": [\n    {\n      \"name\": \"偏差\",\n      \"values\": [\n        12,\n        -8,\n        -3,\n        6\n      ]\n    }\n  ],\n  \"source\": \"示例数据\"\n}\n\n```\n\n```yan-chart\n\n{\n  \"type\": \"area\",\n  \"title\": \"日活跃会话\",\n  \"labels\": [\n    \"周一\",\n    \"周二\",\n    \"周三\",\n    \"周四\",\n    \"周五\"\n  ],\n  \"series\": [\n    {\n      \"name\": \"会话\",\n      \"values\": [\n        18,\n        24,\n        21,\n        30,\n        27\n      ]\n    }\n  ],\n  \"source\": \"示例数据\"\n}\n\n```\n\n```yan-cards\n\n{\n  \"layout\": \"grid\",\n  \"title\": \"同步方案对比\",\n  \"items\": [\n    {\n      \"title\": \"本地文件夹\",\n      \"icon\": \"folder\",\n      \"description\": \"数据只在本机，最简单。\",\n      \"meta\": \"免费\"\n    },\n    {\n      \"title\": \"自建中继\",\n      \"icon\": \"globe\",\n      \"recommended\": true,\n      \"badge\": \"推荐\",\n      \"description\": \"手机经中继连电脑，无需公网 IP。\",\n      \"meta\": \"需要一台小服务器\"\n    },\n    {\n      \"title\": \"第三方云盘\",\n      \"icon\": \"package\",\n      \"description\": \"省心，但会话内容离开本机。\",\n      \"meta\": \"按容量收费\"\n    }\n  ]\n}\n\n```\n\n```yan-record\n\n{\n  \"title\": \"pi-web-access\",\n  \"subtitle\": \"pi 插件 · npm\",\n  \"badge\": \"0.37.0\",\n  \"fields\": [\n    {\n      \"label\": \"发布者\",\n      \"value\": \"nicobailon\"\n    },\n    {\n      \"label\": \"用途\",\n      \"value\": \"网页搜索、抓取与 PDF 提取\"\n    },\n    {\n      \"label\": \"安装范围\",\n      \"value\": \"用户级\"\n    }\n  ],\n  \"links\": [\n    {\n      \"label\": \"npm\",\n      \"url\": \"https://www.npmjs.com/package/pi-web-access\"\n    }\n  ]\n}\n\n```\n\n```yan-steps\n\n{\n  \"title\": \"JavaScript 事件循环\",\n  \"loop\": true,\n  \"steps\": [\n    {\n      \"title\": \"执行同步代码\",\n      \"body\": \"调用栈清空之前，不会处理任何回调。\"\n    },\n    {\n      \"title\": \"清空微任务\",\n      \"body\": \"Promise.then、queueMicrotask 的回调全部执行完，期间新加入的微任务也一并执行。\"\n    },\n    {\n      \"title\": \"渲染（如需要）\",\n      \"body\": \"浏览器可能在这里更新画面。\"\n    },\n    {\n      \"title\": \"取一个宏任务\",\n      \"body\": \"定时器、I/O、消息事件中取出一个执行，然后回到第一步。\"\n    }\n  ]\n}\n\n```\n\n```mermaid\n\nsequenceDiagram\n  participant U as 用户\n  participant Y as 砚\n  participant P as pi\n  U->>Y: 发送消息\n  Y->>P: prompt\n  P-->>Y: 流式回复与工具调用\n  Y-->>U: 渲染回答与图表\n\n```\n\n```mermaid\n\nflowchart LR\n  A[收到请求] --> B{危险操作?}\n  B -- 否 --> C[直接执行]\n  B -- 是 --> D[弹出批准卡]\n  D --> E[用户批准] --> C\n\n```\n\n```yan-widget\n\n<div style=\"display:flex;gap:12px;align-items:center;margin-bottom:8px\"><label style=\"color:var(--text-dim)\">利率</label><input id=\"r\" type=\"range\" min=\"1\" max=\"12\" value=\"5\" style=\"flex:1\"><b id=\"rv\">5%</b></div>\n<svg viewBox=\"0 0 600 160\" width=\"100%\"><g id=\"bars\"></g></svg>\n<div style=\"display:flex;justify-content:space-between;align-items:center\"><span style=\"color:var(--text-dim)\">10 年后：<b id=\"out\"></b></span><button onclick=\"askInkstone('如果每年追加投入 1000 元，结果会怎样？')\">追问：每年追加投入</button></div>\n<script>function draw(){var r=+document.getElementById('r').value/100,g=document.getElementById('bars'),h='';for(var i=0;i<=10;i++){var v=1000*Math.pow(1+r,i),bh=v/3200*140;h+='<rect x=\"'+(i*54+8)+'\" y=\"'+(150-bh)+'\" width=\"40\" height=\"'+bh+'\" rx=\"4\" fill=\"var(--c1)\" opacity=\"'+(0.45+i*0.05)+'\"/>'}g.innerHTML=h;document.getElementById('rv').textContent=(r*100).toFixed(0)+'%';document.getElementById('out').textContent=Math.round(1000*Math.pow(1+r,10))+' 元'}document.getElementById('r').oninput=draw;draw()</script>\n\n```"
+  STATES.visualmore = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const st = window.__yanStore.getState(); st.closeSettings(); st.setRailPinned(true); window.__yanStore.setState({ rightPanelOpen: false }); const messages = window.__yanStore.getState().messages; const host = messages.find((m) => m.role === 'assistant'); if (!host) return 'no-assistant'; window.__yanStore.setState({ messages: messages.map((m) => m.id === host.id ? { ...m, text: ${JSON.stringify(VB_MORE)} } : m) }); for (let i = 0; i < 40 && document.querySelectorAll('.vb-mermaid, [data-testid="vb-widget-frame"]').length < 3; i++) await sleep(250); const first = document.querySelector('[data-testid="vb-stats"]'); if (!first) return 'no-block'; first.scrollIntoView({ block: 'start' }); await sleep(1200); return 'ok' })()`
+  const steps = []
+  for (let i = 1; i <= 7; i++) {
+    STATES['visualmore' + i] = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const blocks = [...document.querySelectorAll('.vb')]; const el = blocks[Math.min(blocks.length - 1, ${i * 2})]; if (!el) return 'no-block'; el.scrollIntoView({ block: 'start' }); await sleep(1300); return 'ok' })()`
+    steps.push('visualmore' + i)
+  }
+  MUST_HAVE.visualmore = ['[data-testid="vb-stats"]', '[data-testid="vb-record"]', '[data-testid="vb-steps"]', '[data-testid="vb-mermaid"]', '[data-testid="vb-widget"]']
+  for (const group of GROUPS.slice(0, 3)) group.states.push('visualmore', ...steps)
+}
+/* 提问表单：`YAN_MATRIX_ONLY=questionform` */
+if (ONLY.includes('questionform')) {
+  STATES.questionform = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); window.__yanStore.setState({ uiRequests: [{ id: 'yan-question-matrix', method: 'input', title: '需要你填写', message: '开始审查前确认几件事', timeout: 180000, form: [{"name":"side","label":"这份合同你是哪一方？","kind":"choice","options":[{"label":"甲方","description":"委托方，付款","icon":"file"},{"label":"乙方","description":"承接方，交付","icon":"package"}]},{"name":"focus","label":"重点看哪些条款？","kind":"multi","options":["付款","违约责任","知识产权","保密"]},{"name":"deadline","label":"什么时候需要？","kind":"date"},{"name":"depth","label":"审查深度","kind":"range","min":1,"max":5,"step":1},{"name":"notes","label":"还有要特别注意的吗？","kind":"text","optional":true,"placeholder":"例如：对方是长期合作方"}] }], uiCollapsed: false }); await sleep(900); return document.querySelector('[data-testid="question-form"]') ? 'ok' : 'no-form' })()`
+  MUST_HAVE.questionform = ['[data-testid="question-form"]']
+  for (const group of GROUPS.slice(0, 3)) group.states.push('questionform')
+}
+/* 插件市场 pi 页：`YAN_MATRIX_ONLY=marketpi`，看搜索结果、原链接与下方安装区是否被遮挡 */
+if (ONLY.includes('marketpi')) {
+  STATES.marketpi = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); window.__yanStore.getState().openSettings('market'); await sleep(700); document.querySelector('[data-testid="market-pi-tab"]')?.click(); await sleep(2500); return 'ok' })()`
+  MUST_HAVE.marketpi = ['[data-testid="market-pi"]']
+  for (const group of GROUPS.slice(0, 1)) group.states.push('marketpi')
+  GROUPS.push({ name: 'marketnarrow', w: 900, h: 640, scale: 1, theme: 'light', states: ['marketpi'] })
+}
+/* 思考档位拖动中：`YAN_MATRIX_ONLY=modelmenufull,thinkingdrag`，在模型菜单里按住手柄拖到约 30% 处不松手，看头部档位是否实时跟随 */
+if (ONLY.includes('thinkingdrag')) {
+  STATES.thinkingdrag = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const st = window.__yanStore.getState(); window.__yanStore.setState({ session: { ...st.session, isStreaming: false, isAgentRunning: false, isCompacting: false }, thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] }); await sleep(100); if (!document.querySelector('[data-testid="model-menu"]')) { document.querySelector('[data-testid="model-picker"]')?.click(); await sleep(500) } const track = document.querySelector('[data-testid="model-menu"] .ui-step-track'); if (!track) return 'no-track'; const r = track.getBoundingClientRect(); const y = r.top + r.height / 2; const opts = (x) => ({ bubbles: true, button: 0, pointerId: 1, clientX: x, clientY: y }); track.dispatchEvent(new PointerEvent('pointerdown', opts(r.left + r.width * 0.9))); await sleep(120); track.dispatchEvent(new PointerEvent('pointermove', opts(r.left + r.width * 0.3))); await sleep(400); const head = document.querySelector('[data-testid="thinking-current"]'); return 'ok(' + (head && head.textContent) + ')' })()`
+  MUST_HAVE.thinkingdrag = ['[data-testid="thinking-current"]']
+  for (const group of MODEL_MENU_GROUPS.slice(0, 1)) group.states.push('thinkingdrag')
+}
+/* 最窄会话磁贴的输入框：`YAN_MATRIX_ONLY=composernarrow`，把输入区压到 330px 看工具条是否重叠/换行 */
+if (ONLY.includes('composernarrow')) {
+  STATES.composernarrow = `(async () => { const s = window.__yanStore.getState(); s.closeSettings(); const w = document.querySelector('.composer-wrap'); if (!w) return 'no-composer'; w.style.maxWidth = '330px'; w.style.width = '330px'; w.style.marginInline = 'auto'; await new Promise((r) => setTimeout(r, 300)); return 'ok' })()`
+  MUST_HAVE.composernarrow = ['.composer-bar']
+  for (const group of GROUPS.slice(0, 2)) group.states.push('composernarrow')
+}
+/* 权限菜单截图：`YAN_MATRIX_ONLY=permissionmenu`，点开输入框左侧的两档权限入口 */
+if (ONLY.includes('permissionmenu')) {
+  STATES.permissionmenu = `(async () => { const s = window.__yanStore.getState(); s.closeSettings(); const b = document.querySelector('[data-testid="permission-picker"]'); if (!b) return 'no-picker'; b.click(); await new Promise((r) => setTimeout(r, 400)); return 'ok' })()`
+  MUST_HAVE.permissionmenu = ['.ui-choice-menu']
+  for (const group of GROUPS.slice(0, 2)) group.states.push('permissionmenu')
 }
 /* README 主页截图：`YAN_MATRIX_ONLY=showcase`，场景见 scripts/probe/readme-showcase.js */
 if (ONLY.includes('showcase')) {
@@ -5683,6 +5793,7 @@ async function main() {
       }
       const res = await win.webContents.executeJavaScript(STATES[state])
       if (!String(res).startsWith('ok')) failures.push(`${size}@${pct} ${state}: 状态脚本返回 ${res}`)
+      else if (process.env.YAN_MATRIX_DEBUG) console.log(`  ${size}@${pct} ${state}: ${res}`)
       if (String(res) !== 'ok') console.log(`    （${state} 状态脚本：${res}）`)
       await wait(420)
       if (state === 'capabilitiesmcp') {

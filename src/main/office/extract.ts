@@ -113,17 +113,27 @@ function pptx(zip: ZipReader): OfficeSection[] {
 
 function clamp(sections: OfficeSection[]): { sections: OfficeSection[]; truncated: boolean } {
   let budget = OFFICE_MAX_LINES
+  let characters = 512 * 1024
   let truncated = false
   const out: OfficeSection[] = []
   for (const section of sections) {
-    if (budget <= 0) {
+    if (budget <= 0 || characters <= 0 || out.length >= OFFICE_MAX_LINES) {
       truncated = true
       break
     }
-    const lines = section.lines.slice(0, budget)
+    const title = section.title.slice(0, Math.min(256, characters))
+    if (title.length < section.title.length) truncated = true
+    characters -= title.length
+    const lines: string[] = []
+    for (const line of section.lines.slice(0, budget)) {
+      if (characters <= 0) { truncated = true; break }
+      lines.push(line.slice(0, characters))
+      if (line.length > characters) truncated = true
+      characters -= lines[lines.length - 1].length
+    }
     if (lines.length < section.lines.length) truncated = true
     budget -= lines.length
-    out.push({ title: section.title, lines })
+    out.push({ title, lines })
   }
   return { sections: out, truncated }
 }
@@ -136,7 +146,7 @@ export function extractOffice(buffer: Buffer, format: OfficeFormat): OfficeDocum
       const { sections, truncated } = clamp([{ title: '正文', lines: parsed.text.split('\n').map((line) => line.trim()).filter(Boolean) }])
       return { ok: true, format, sections, truncated, note: parsed.note }
     }
-    const zip = new ZipReader(buffer)
+    const zip = new ZipReader(buffer, 8 * 1024 * 1024, 16 * 1024 * 1024)
     const raw = format === 'docx' ? docx(zip) : format === 'xlsx' ? xlsx(zip) : pptx(zip)
     const { sections, truncated } = clamp(raw)
     const note = {

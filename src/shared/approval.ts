@@ -6,11 +6,8 @@
  *   · 批准请求 `ApprovalRequest`：宿主把「要问用户」的事推给界面，界面以输入框上方的
  *     内嵌卡片呈现，答复经 `yan:approvalAnswer` 回到宿主。
  *
- * 档位只有两个（用户 2026-10-07 定）：
- *   · `danger` 危险批准 —— 只有高危清单（danger-guard）要确认；
- *   · `all`    全部允许 —— 什么都不问。
- * 两档共同的底线：**没经确认的删除一律移到回收站**（permission-guard / danger-guard 拦下删除命令，
- * 引到 `yan file trash`）。「只读」由工作模式里的「计划」承担，不在这里重复做一套。
+ * 档位只有两个：danger 在明确危险操作前确认；all 保留原生工具行为。
+ * 原生模式不再把删除命令改写为回收站操作；用户主动选择回收站仍可使用该工具。
  */
 
 export const PERMISSION_MODES = ['danger', 'all'] as const
@@ -48,6 +45,10 @@ export type ApprovalChoice = 'deny' | 'once' | 'remember'
 
 export interface ApprovalRequest {
   id: string
+  /** Origin captured when the operation asks; never inferred from the focused conversation. */
+  sessionId?: string
+  runId?: string
+  subagentId?: string
   kind: ApprovalKind
   /** 工具名：bash / write / edit …；consent 是能力名 */
   tool: string

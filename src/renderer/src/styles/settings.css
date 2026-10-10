@@ -66,6 +66,16 @@ html[data-theme='light'] .settings-scrim {
 .settings-body > * {
   max-width: 720px;
 }
+/* 设备页分区定位条：吸在内容区顶端，外观来自 .ui-tabs / .ui-tab */
+.settings-jump {
+  position: sticky;
+  top: calc(-1 * var(--sp-5));
+  z-index: 2;
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-0);
+}
 .settings-page-title {
   margin: 0 0 var(--sp-3);
   color: var(--fg);
@@ -1112,4 +1122,108 @@ html[data-theme='light'] .ob-scrim {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: var(--sp-3);
+}
+
+/* Plugin cards keep description, actions, and installation steps readable in narrow windows. */
+.market-plugin-body {
+  flex-direction: column;
+  align-items: flex-start;
+}
+[data-testid='plugin-market'] .pkg-install-row {
+  flex-wrap: wrap;
+}
+[data-testid='plugin-market'] .pkg-install-row .ui-input {
+  flex-basis: 180px;
+}
+/* Results flow with the page: no nested scroll box that cuts entries off above the pager. */
+.market-results {
+  display: flex;
+  flex-direction: column;
+  transition: opacity var(--mo-fast) var(--mo-ease);
+}
+.market-results.loading {
+  opacity: 0.5;
+}
+.market-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.market-item:last-child {
+  border-bottom: 0;
+}
+.market-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.market-item-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
+}
+.market-item-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--sp-3);
+  min-width: 0;
+}
+.market-item-action {
+  margin-top: 2px;
+}
+.market-pager {
+  justify-content: space-between;
+}
+
+/* 手机接入：运行状态写在开关行的说明下 */
+.remote-status-line {
+  margin-top: var(--sp-1);
+}
+
+/* 背景色模板：色块 + 名称；自定义项内嵌原生取色器 */
+.bg-ctl {
+  flex-wrap: wrap;
+}
+.bg-swatch {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: var(--sp-1);
+  border: 1px solid var(--border-str);
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--bg-0) 50%, var(--bg-3) 50%);
+  vertical-align: -1px;
+}
+.bg-custom {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.bg-picker {
+  width: 1.1em;
+  height: 1.1em;
+  margin: 0 var(--sp-1) 0 0;
+  padding: 0;
+  border: 1px solid var(--border-str);
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.bg-picker::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.bg-picker::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
 }
