@@ -495,6 +495,11 @@ function contextInspectExtensionPath(): string | undefined {
   return yanThinResourcePath('context-inspect.js')
 }
 
+/** 旧工具输出裁剪与自动压缩上限（读设置；压缩调用 pi 原生 compact）。 */
+function contextTrimExtensionPath(): string | undefined {
+  return yanThinResourcePath('context-trim.js')
+}
+
 /**
  * 单轮重复动作兜底的薄层路径（2026-09-22）。
  *
@@ -526,6 +531,7 @@ function yanThinExtensionPaths(): string[] {
     languageExtensionPath(),
     capabilityGuideExtensionPath(),
     contextInspectExtensionPath(),
+    contextTrimExtensionPath(),
     dangerGuardExtensionPath(),
     ...providerExtensionPaths(),
   ].filter((p): p is string => !!p && isAgentContextExtension(p))
@@ -1781,17 +1787,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       await autoIsolations.add(outcome.record).catch(() => undefined)
       /* 刚建出来的隔离树一定是「等主干空闲」（主干正忙着才走到这里） */
       setIsolationView(outcome.record.worktree, { state: 'waiting', branch: outcome.record.branch })
-      push({
-        ch: 'notify',
-        payload: {
-          id: `iso-${Date.now()}`,
-          method: 'notify',
-          notifyType: 'info',
-          message:
-            `同一工作目录已有会话在运行：已在隔离工作树 ${outcome.record.worktree}（分支 ${outcome.record.branch}）中打开这条会话。` +
-            `两边都空闲时会把它的提交自动合回 ${outcome.record.baseBranch}。`
-        }
-      })
       return { cwd: outcome.record.worktree }
     },
     /* 每个实例自己一个 pi 子进程；事件带上实例 id（N12） */
@@ -1819,6 +1814,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         languageExtension: languageExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
         contextInspectExtension: contextInspectExtensionPath(),
+        contextTrimExtension: contextTrimExtensionPath(),
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
         dangerGuardExtension: dangerGuardExtensionPath(),
         providerExtensions: providerExtensionPaths(),
@@ -2255,14 +2251,15 @@ function registerIpc(): void {
     const id = targetId
     /*
      * 检查点：新一轮开始前给项目目录存一份快照（排队、插话不算新一轮）。
-     * 最多等 1.5 秒：大项目的 git add 可达数秒，不能让发送卡在快照上；
-     * 超时后快照在后台继续，模型首包通常晚于这个时间，不会读到被改过的文件。
+     * 快照在后台拍，发送不等它：用户消息上屏与模型开始都不被项目大小拖慢。
+     * 先于 send 启动，小项目在模型首包（至少数百毫秒）之前就已拍完；
+     * 大项目的 git add 可达数秒，则与首次改文件并行，快照可能带上本轮的头几处改动。
      */
     if (id && !mode && text.trim()) {
       const agent = runners?.agentOf(id)
       const state = typeof agent?.getState === 'function' ? agent.getState() : null
       if (agent && state && !state.isAgentRunning && (await getSettings()).checkpointsEnabled !== false) {
-        await captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text, 1_500)
+        void captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text)
       }
     }
     return (id ? runners?.agentOf(id)?.send(text, images, mode) : undefined) ?? { ok: false, error: 'pi 未运行' }

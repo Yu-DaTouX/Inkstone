@@ -21,6 +21,11 @@ export function runRunnerTests(ok, RunnerRegistry) {
       restoreResult: { ok: true },
       /** 直执行 shell 是否在跑（L05：它也算“忙”，见 runners.ts 的 busy） */
       bashRunning: false,
+      /** 本回合是否写过文件（缺省按写过处理，才会走冲突分支） */
+      wrote: true,
+      hasWrittenThisRun() {
+        return this.wrote
+      },
       getState() {
         return this.state
       },
@@ -126,12 +131,12 @@ export function runRunnerTests(ok, RunnerRegistry) {
       ok(first.state.sessionFile === 'C:/s1.jsonl', '忙碌实例仍停在原会话上（上下文没被换走）')
       ok(reg.size === 2, '现在有 2 个实例')
 
-      /* ---- 4. 同 cwd 忙碌冲突：明确拒绝，不牺牲后台会话 ---- */
+      /* ---- 4. 同 cwd 忙碌且已写过文件：隔离不了时静默放行（不再拒绝、不报错），不牺牲后台会话 ---- */
+      /* 两个实例都忙：放行时只会撞并发上限，不会动任何实例 */
+      made[1].state = { ...made[1].state, isAgentRunning: true }
       const rConflict = await reg.select({ cwd: 'C:/a/', sessionFile: 'C:/s-conflict.jsonl' })
-      ok(!rConflict.ok, '同一工作目录已有忙碌会话时拒绝并发写入')
-      ok(/同一工作目录/.test(rConflict.error ?? ''), '冲突信息明确指出同一工作目录', JSON.stringify(rConflict.error))
-      ok(first.calls.stop === 0 && made.length === 2, '冲突时没有停止或额外创建实例')
-      ok(reg.size === 2, '冲突拒绝后实例数量不变')
+      ok(!/同一工作目录/.test(rConflict.error ?? ''), '同一工作目录有写过文件的忙碌会话时不再报「同一工作目录」冲突', JSON.stringify(rConflict.error))
+      ok(first.calls.stop === 0, '放行时没有停止原会话')
 
       /*
        * ---- 4b. 直执行 shell 在跑也算忙（L05） ----
@@ -156,8 +161,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
         madeB[0].bashRunning = true
         ok(regB.hasBusyCwd('c:/z/') === true, 'cwd 忙碌查询也包含直执行 bash')
         const b2 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z2.jsonl' })
-        ok(!b2.ok, '直执行 shell 在跑时，同 cwd 的切换被拒绝', JSON.stringify(b2))
-        ok(/同一工作目录/.test(b2.error ?? ''), '理由仍是“同一工作目录已有运行中的会话”', JSON.stringify(b2.error))
+        ok(!/同一工作目录/.test(b2.error ?? ''), '直执行 shell 在跑时，同 cwd 的切换也不再被拦', JSON.stringify(b2))
         madeB[0].bashRunning = false
         const b3 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z2.jsonl' })
         ok(b3.ok, 'shell 跑完后同 cwd 又能正常切换/复用', JSON.stringify(b3))
@@ -210,8 +214,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
         const agentD = regD.agentOf(d1.id)
         agentD.state = { ...agentD.state, isAgentRunning: true }
         const d2 = await regD.select({ cwd: 'C:/same', sessionFile: 'C:/same2.jsonl' })
-        ok(!d2.ok && /同一工作目录/.test(d2.error ?? ''), '隔离结果与原 cwd 相同时仍按冲突拒绝', JSON.stringify(d2))
-        ok(regD.size === 1, '被拒绝时没有多建实例')
+        ok(d2.ok === true && regD.size === 2, '隔离结果与原 cwd 相同 = 没隔离成：静默放行', JSON.stringify(d2))
 
         /* 隔离失败：原因进报错，原来的文案还在 */
         const regE = new RunnerRegistry({
@@ -227,11 +230,21 @@ export function runRunnerTests(ok, RunnerRegistry) {
         const agentE = regE.agentOf(e1.id)
         agentE.state = { ...agentE.state, isAgentRunning: true }
         const e2 = await regE.select({ cwd: 'C:/nr', sessionFile: 'C:/nr2.jsonl' })
-        ok(
-          !e2.ok && /同一工作目录/.test(e2.error ?? '') && /自动隔离未生效：不是 Git 仓库/.test(e2.error ?? ''),
-          '隔离失败时把原因并进原冲突报错',
-          JSON.stringify(e2)
-        )
+        ok(e2.ok === true && regE.size === 2, '隔离失败（不是 Git 仓库）时静默放行，不报错', JSON.stringify(e2))
+
+        /* 对方只是聊天 / 只读（本回合没写过文件）：根本不算冲突，不碰隔离 */
+        const seenF = []
+        const regF = new RunnerRegistry({
+          limit: 3,
+          createAgent: (id) => Object.assign(mkAgent(), { id }),
+          resolveCwdConflict: async (t) => { seenF.push(t.cwd); return null }
+        })
+        const f1 = await regF.select({ cwd: 'C:/chat', sessionFile: 'C:/chat1.jsonl' })
+        const agentF = regF.agentOf(f1.id)
+        agentF.state = { ...agentF.state, isAgentRunning: true }
+        agentF.wrote = false
+        const f2 = await regF.select({ cwd: 'C:/chat', sessionFile: 'C:/chat2.jsonl' })
+        ok(f2.ok === true && seenF.length === 0 && regF.size === 2, '对方没写过文件：直接并行，不触发隔离', JSON.stringify(f2))
       }
 
       /*
@@ -311,7 +324,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
       const r4 = await reg.select({ cwd: 'C:/c', sessionFile: 'C:/s3.jsonl' })
       ok(!r4.ok, '到并发上限时拒绝切换')
       ok(/上限/.test(r4.error ?? ''), '错误信息说明是并发上限', JSON.stringify(r4.error))
-      ok(first.calls.stop === 0 && second.calls.stop === 0, '拒绝时**没有**停掉任何后台会话')
+      ok(first.calls.stop === 0, '拒绝时**没有**停掉任何后台会话')
       ok(reg.size === 2, '实例数量不变')
 
       /* ---- 6. 有实例空闲时才复用（并且是切会话不是停止） ---- */

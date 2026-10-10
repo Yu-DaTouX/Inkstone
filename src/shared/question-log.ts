@@ -36,12 +36,14 @@ export function mergeQuestionLog(messages: UIMessage[], entries: QuestionLogEntr
     /* 上一条虚拟消息刚好就在插入点前面 → 它们是同一轮的连续提问，合并 */
     if (last && out[index - 1] === last) {
       last.text = `${last.text}\n\n${line}`
+      last.qa?.push({ question: entry.question, answer: entry.answer ?? undefined })
       continue
     }
     const msg: UIMessage = {
       id: `qlog:${entry.id}`,
       role: 'user',
       question: true,
+      qa: [{ question: entry.question, answer: entry.answer ?? undefined }],
       text: line,
       timestamp: entry.at
     }

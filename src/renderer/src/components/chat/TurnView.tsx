@@ -98,7 +98,18 @@ function UserTurnView({ turn, readOnly }: { turn: UserTurn; readOnly: boolean })
           </div>
         ) : null}
 
-        {msg.text ? (
+        {msg.qa?.length ? (
+          <div className="qa-list" data-testid="msg-question-qa">
+            {msg.qa.map((item, i) => (
+              <div key={i} className="qa-item">
+                <details className="qa-q">
+                  <summary>{item.question}</summary>
+                </details>
+                {item.answer ? <div className="qa-a">{item.answer}</div> : null}
+              </div>
+            ))}
+          </div>
+        ) : msg.text ? (
           <div className="bubble">
             <span className="bubble-prompt" aria-hidden>
               ›

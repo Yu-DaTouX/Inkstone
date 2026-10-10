@@ -303,6 +303,22 @@ const GROUP_USAGE = {
           路径按当前会话目录解析；系统临时目录里的文件可以直接删除，不必移到回收站。
 
 `,
+  tasks: `yan tasks apply --request-file task-update.json
+
+维护右栏的任务清单。只在任务确实要 3 步以上、或用户明确要计划时才建；一两步的事直接做。
+建的时候一次写全，之后只在完成一项或计划变化时更新，不要每做一步就更新一次。
+
+task-update.json：
+  {"action":"set","items":[{"text":"读现有实现","done":false},{"text":"改写","done":false}]}
+  {"action":"add","items":[{"text":"补测试","done":false}]}
+  {"action":"complete","index":1}        index 从 1 开始；uncomplete / remove 同样写法
+  {"action":"clear"}
+回执里有 operationId：重试同一次提交时把它一起传回来，同一个 operationId 只生效一次。
+`,
+  operations: `yan operations status --id <操作ID>
+
+查看一次操作（之前某条 yan 命令回执里的 operationId）的状态与结果文件。
+`,
   artifact: `yan artifact <动作> [选项]
 
 动作：
@@ -321,6 +337,11 @@ const GROUP_USAGE = {
 
 provider=auto 优先使用本机 Codex ChatGPT 登录态；使用 OpenAI 或 OpenAI-compatible
 API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供应商。
+生成结果会自动挂到当前助手消息并在对话中预览。
+
+codemode 脚本里也能生图：models.getAvailableOfType("image") 查可用的生图模型，
+models.generateImages() 生成，image() 在结果里展示；生图可能要几分钟，别给脚本设短的 timeout_ms。
+需要落成文件或挂到助手消息上时仍用 yan image generate。
 `,
   question: `yan question <动作> [选项]
 
@@ -368,7 +389,7 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
   subagent: `yan subagent <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
-  start --task <任务> [--model <模型>] [--read-only]
+  start --task <任务> [--model <模型>] [--read-only] [--isolation worktree]
        或 --request-file subagent.json
        请求文件示例：{"task":"检查当前项目的测试入口","readOnly":true}
        带上任务输入（P15 推荐，免得并行的子任务跑偏）：
@@ -383,11 +404,14 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
   stop   --id <子代理ID>        停止一个仍在运行的子代理
 
 说明：
-  · start 默认使用独立 Git worktree；readOnly=true 使用当前目录但只开放 read/grep/find/ls；
+  · start 默认在当前目录执行，可能直接改文件；未指定 --model 时跟随当前会话模型；
+    readOnly=true 只开放 read/grep/find/ls；需要代码隔离时显式传 --isolation worktree（要求 Git）；
+  · 任务要窄（一个文件或一个问题，结论几行说完）；
   · 任务输入里的 goal 决定它做什么，deliverables / sources / boundary 决定它交回什么与不碰什么；
     maxToolCalls（5–300）限工具调用次数，timeoutMinutes（1–60）限总时长（默认 30 分钟，5 分钟未收到进展只提醒，不提前终止）；这些限额通过 brief 传入，写在 task 正文中不会设置宿主限额。
     到点先让它收尾交结论，宽限内仍不结束才停止；
-  · 派出后不要 sleep 轮询：结束时宿主会通知你；
+  · 派出后不要 sleep 轮询：结束时宿主会通知你（用户关掉通知时才需要自己 list / get）；
+    继续做不依赖它的事，或结束本轮并告诉用户「子代理在跑，结束会通知」；
   · 子代理结束后，宿主会汇总「摘要 / 来源 / 成果」给主 agent ——
     摘要取的是它**最后一段话**（会在数据里标名），不是子代理自报的结论；
     「未决问题」不自动猜：那要主 agent 判断，宿主不替它下结论；
@@ -448,7 +472,10 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
   disconnect-chrome              断开并关闭砚启动的那个 Chrome
 
 说明：
+  · 先用 state 看标签与当前状态，操作前用 observe 拿元素 ref，不猜 ref；
   · 浏览器还没打开时，除 navigate / open 外的动作回 code=browser_not_open；
+  · screenshot 只是落盘截图：要判断外观，得用读取工具真正打开那张图；
+  · 关键操作后读回执里的页面观察，必要时再 observe 或截图核对；没确认上次提交的结果前，不要重复提交；
   · 页面是异步渲染时，点完不要立刻 observe（容易读到中间态）：用 wait 等 ref / 文本 / 地址就绪；
   · 原生下拉框展开的选项不是 DOM 元素（observe 看不到）→ 选值用 select，不要先 click 再点选项；
     目标不是下拉框回 code=NOT_SELECT，没有这个可选值回 code=OPTION_NOT_FOUND（并附上可选值）；

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, IconButton } from '../ui'
+import { APPEARANCE_EVENT } from '../../lib/appearance'
 import { HTML_ARTIFACT_SANDBOX } from '../../../../shared/html-artifact-preview'
 import { safeHttpUrl, VISUAL_WIDGET_MAX_CHARS } from '../../../../shared/visual-blocks'
 
@@ -104,7 +105,8 @@ export function WidgetBlock({ html, fallback }: { html: string; fallback: React.
   useEffect(() => {
     const observer = new MutationObserver(sendTheme)
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-    return () => observer.disconnect()
+    window.addEventListener(APPEARANCE_EVENT, sendTheme)
+    return () => { observer.disconnect(); window.removeEventListener(APPEARANCE_EVENT, sendTheme) }
   }, [])
 
   useEffect(() => {

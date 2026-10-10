@@ -14,6 +14,7 @@ import {
   type TextareaHTMLAttributes
 } from 'react'
 import { Icon, type IconName } from '../../icons/Icon'
+import { APPEARANCE_EVENT } from '../../lib/appearance'
 
 /**
  * 统一控件（v0.4）。外观唯一来源是 `styles/ui.css`；这里只把常用组合收成组件，
@@ -789,10 +790,11 @@ export function StepSlider<T extends string>({
       })
     }
     paint()
-    /* 换主题时档位色跟着变，重新解析 */
+    /* 换主题或背景色时档位色跟着变，重新解析（不观察根元素 style：拖动列宽时它每帧都变） */
     const themes = new MutationObserver(paint)
-    themes.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] })
-    return () => { themes.disconnect(); engine.dispose(); field.current = null }
+    themes.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] })
+    window.addEventListener(APPEARANCE_EVENT, paint)
+    return () => { themes.disconnect(); window.removeEventListener(APPEARANCE_EVENT, paint); engine.dispose(); field.current = null }
   }, [palette])
   useEffect(() => { field.current?.setLevel(shown, n, !!disabled) }, [shown, n, disabled, palette])
   const style = {

@@ -317,7 +317,11 @@ export class RunnerRegistry {
      * 返回；这里只有“要创建/载入另一个运行实例”时才拒绝。
      */
     const conflict = [...this.runners.values()].find(
-      (runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) && this.busy(runner)
+      (runner) =>
+        canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) &&
+        this.busy(runner) &&
+        /* 只读 / 聊天的会话不动文件，不算冲突；直执行 bash 一律按写文件处理 */
+        (runner.agent.hasRunningBash() || (runner.agent.hasWrittenThisRun?.() ?? true))
     )
     if (conflict) {
       /*
@@ -338,16 +342,8 @@ export class RunnerRegistry {
       const escalated = await this.opts.resolveCwdConflict?.(target)
       if (escalated && 'cwd' in escalated && canonicalCwd(escalated.cwd) !== canonicalCwd(target.cwd)) {
         target = { ...target, cwd: escalated.cwd }
-      } else {
-        const sessionId = conflict.agent.getState()?.sessionId ?? conflict.id
-        const why = escalated && 'reason' in escalated ? `自动隔离未生效：${escalated.reason}。` : ''
-        return {
-          ok: false,
-          error:
-            `同一工作目录已有运行中的会话（${sessionId}）。` +
-            `${why}为避免文件写入冲突，请先等待它完成，或使用隔离工作目录。`
-        }
       }
+      /* 隔离不了（如目录不是 Git 仓库）就静默放行：不拦、不弹提示 */
     }
 
     /* 复用空闲实例：不忙的那个可以被切到别的会话（旧会话已落盘，随时能载回） */

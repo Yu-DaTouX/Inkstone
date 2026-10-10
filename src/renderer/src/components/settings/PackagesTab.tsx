@@ -29,7 +29,8 @@ const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
   language: { name: 'pkg.builtin.language', desc: 'pkg.builtin.languageDesc' },
   preamble: { name: 'pkg.builtin.preamble', desc: 'pkg.builtin.preambleDesc' },
   'capability-guide': { name: 'pkg.builtin.capability-guide', desc: 'pkg.builtin.capability-guideDesc' },
-  context: { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' }
+  context: { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' },
+  'context-trim': { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' }
 }
 
 /**

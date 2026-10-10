@@ -2270,6 +2270,14 @@ await runLanguageExtensionTests(ok, languageExtension)
 const preambleExtension = await import('../resources/pi-extensions/preamble.js')
 const { runPreambleExtensionTests } = await import('./test-preamble-extension.mjs')
 await runPreambleExtensionTests(ok, preambleExtension)
+{
+  const { build } = await import('../node_modules/esbuild/lib/main.js')
+  await build({ entryPoints: ['src/shared/context-limits.ts'], outfile: 'out/test/context-limits.mjs', bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
+  const contextTrim = await import('../resources/pi-extensions/context-trim.js')
+  const contextLimits = await import('../out/test/context-limits.mjs')
+  const { runContextTrimTests } = await import('./test-context-trim.mjs')
+  await runContextTrimTests(ok, contextTrim, contextLimits)
+}
 const { runAppUpdateTests } = await import('./test-app-update.mjs')
 await runAppUpdateTests(ok)
 
@@ -2654,6 +2662,12 @@ const { runPluginMarketTests } = await import('./test-plugin-market.mjs')
 await runPluginMarketTests(ok)
 const { runVisualBlockTests } = await import('./test-visual-blocks.mjs')
 await runVisualBlockTests(ok)
+const { runAppearanceTests } = await import('./test-appearance.mjs')
+console.log('\n--- 外观个性化：字体、字号与背景色 ---')
+await runAppearanceTests(ok)
+const { runUsageStatsTests } = await import('./test-usage-stats.mjs')
+console.log('\n--- 启动页用量概览：按行计数与范围聚合 ---')
+await runUsageStatsTests(ok)
 console.log('\n--- S1. 会话来源的持久化引用 ---')
 await runSourcesTests(ok)
 console.log('\n--- S2. 会话↔工作树来源关系（实施-07）---')
@@ -2909,14 +2923,15 @@ await runGitRepoTests(ok)
     /resultFile/.test(guide) && /不要把整个结果文件/.test(guide),
     '能力说明：写明「摘要 + 结果文件，别整份读进上下文」'
   )
-  ok(
-    /yan subagent start/.test(guide) && /yan subagent list/.test(guide) && /yan subagent stop/.test(guide),
-    '能力说明：明确告诉模型可以启动、查看、停止子代理'
-  )
-  ok(/skill:subagent/.test(guide) && !/yan research read/.test(guide), '能力说明：分工指向随包技能，不推荐已退出的资料库研究入口')
+  ok(/yan <组> --help/.test(guide) && /SKILL\.md/.test(guide), '能力说明：目录式，用法按需读组帮助或技能文件')
+  for (const group of ['capabilities', 'browser', 'search', 'question', 'tasks', 'subagent', 'image', 'artifact', 'file', 'session', 'operations']) {
+    ok(new RegExp(`- ${group}：|；${group}：`).test(guide), `能力说明：目录列出 ${group}`)
+  }
+  ok(/技能 subagent/.test(guide) && /不要 sleep 轮询/.test(guide) && !/yan research read/.test(guide), '能力说明：子代理指向随包技能并说明不轮询，不推荐已退出的资料库研究入口')
+  ok(!/ctx:\/\//.test(guide) && !/yan context/.test(guide), '能力说明：不再引用已退役的上下文召回')
   ok(/Skill/.test(guide) && /MCP/.test(guide), '能力说明：写明能力选择优先顺序')
   const visual = mod.VISUAL_ANSWER_GUIDE
-  ok(/yan-chart/.test(visual) && /yan-cards/.test(visual) && /yan-flow/.test(visual) && /数据出处（必填）/.test(visual), '能力说明：常驻说明三种结构化回答块与数据来源要求')
+  ok(/yan-chart/.test(visual) && /yan-cards/.test(visual) && /yan-flow/.test(visual) && /数据出处/.test(visual) && /技能 visual-answer/.test(visual), '能力说明：常驻列出结构化回答块与数据来源要求，字段格式指向技能')
   {
     const probeHandlers = {}
     mod.default({ on: (name, fn) => { probeHandlers[name] = fn } })

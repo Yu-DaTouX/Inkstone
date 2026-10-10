@@ -71,7 +71,7 @@ const index = new Map<string, Entry>()
 let building: Promise<void> | null = null
 let knownFiles: Array<{ path: string; mtimeMs: number; size: number }> = []
 
-async function listSessionFiles(): Promise<Array<{ path: string; mtimeMs: number; size: number }>> {
+export async function listSessionFiles(): Promise<Array<{ path: string; mtimeMs: number; size: number }>> {
   const files: Array<{ path: string; mtimeMs: number; size: number }> = []
   const dirs = [SESSIONS_DIR]
   try {

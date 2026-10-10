@@ -14,6 +14,7 @@ import type { ProjectRecord, SessionSummary } from '../shared/ipc'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { deleteContextStates } from './context-state-store'
 import { decorateSessions } from './session-layout'
+import { parseSubagentNotice } from '../shared/subagent-notice'
 
 /**
  * 会话目录。
@@ -89,6 +90,10 @@ function userMessageText(msg: unknown): string | null {
     }
     text = parts.join('\n')
   }
+
+  /* 子 Agent 完成通知（多行、标签带长 id）用它的标题行，不暴露标签 */
+  const notice = parseSubagentNotice(text.trim())
+  if (notice) return notice.headline.trim() || null
 
   text = text.replace(/\s+/g, ' ').trim()
   if (!text) return null

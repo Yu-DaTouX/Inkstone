@@ -112,6 +112,8 @@ import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
 import type { ContextActionSummary } from './context-actions'
 import type { ContextBackgroundUsageSummary } from './context-background-usage'
+import type { UsageRange, UsageStatsView } from './usage-stats'
+export type UsageStatsResult = UsageStatsView & { userName: string }
 import type { ContextInspectSnapshot } from './context-inspect'
 import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
 import type { HandoffView } from './handoff'
@@ -254,6 +256,8 @@ export interface UIMessage {
    * 只影响显示（行首标「提问」）；它由 `question-log` 合成，不在 pi 会话里。
    */
   question?: boolean
+  /** 提问回答的结构化内容：题干与答案分开，界面把长题干折叠起来 */
+  qa?: { question: string; answer?: string }[]
   /** 来源会话段的工作目录；历史里的相对文件链接按原目录解析。 */
   sourceCwd?: string
   /** 正文文本（assistant 可能持续增长） */
@@ -1003,14 +1007,35 @@ export interface AppSettings {
   keepAwakeWhileWorking?: boolean
   /** 可视化回答（图表、卡片、图解等结构化块）：缺省 = 开；关掉后不再告诉模型这些写法，已有历史照常显示。 */
   visualAnswers?: boolean
+  /** 上下文超过软线后，把较早的大段工具输出换成存根再发给模型；缺省 = 开（只改发送视图，不改会话记录）。 */
+  contextTrim?: boolean
+  /** 开始裁剪的上下文大小（token）；缺省 80000，窗口较小的模型按比例提前。 */
+  contextTrimTokens?: number
+  /**
+   * 自动压缩上限（token）：一轮结束后上下文超过它就调用 pi 原生压缩；跟随 pi 的自动压缩开关，砚不另设开关。
+   * 缺省 250000，只收 AUTO_COMPACT_STEPS 里的挡位，窗口较小的模型按窗口的 90% 截断。
+   */
+  autoCompactTokens?: number
   /** 执行过程放在正文之后（inline，缺省）还是右侧并列一栏（side）；宽度不够时界面自动回到 inline，值不变。 */
   processLayout?: 'inline' | 'side' | 'left'
   /** 背景色模板 id（缺省 = 默认；custom = 用 backgroundCustom）。深浅主题各自有一套模板色。 */
   /** 思考链默认展开并实时显示；缺省 = 关（折叠成一行预览）。 */
   liveThinking?: boolean
   backgroundPreset?: string
-  /** 自定义页面底色 #rrggbb，会按当前主题夹进可读范围 */
+  /** 自定义页面底色 #rrggbb（深色主题；浅色未单独设置时也用它），会按当前主题夹进可读范围 */
   backgroundCustom?: string
+  /** 浅色主题的自定义页面底色 #rrggbb */
+  backgroundCustomLight?: string
+  /** 界面与正文字体：缺省 = Maple Mono CN；custom = 用 fontUiCustom（预设与清洗见 shared/appearance.ts） */
+  fontUi?: 'sans' | 'serif' | 'custom'
+  fontUiCustom?: string
+  /** 代码与终端字体：缺省 = Maple Mono CN；custom = 用 fontCodeCustom */
+  fontCode?: 'mono' | 'custom'
+  fontCodeCustom?: string
+  /** 正文字号 px（缺省 15） */
+  fontSizeBody?: number
+  /** 界面字号 px（缺省 13） */
+  fontSizeUi?: number
   /** 靠电池供电时也保持唤醒；缺省 = 开。 */
   keepAwakeOnBattery?: boolean
   /** 每轮发送前给项目文件存检查点，可回退；缺省为开 */
@@ -1387,6 +1412,8 @@ export interface QuotaWindow {
   /** 重置时间（毫秒时间戳），没有就不显示 */
   resetAt?: number
   exceeded?: boolean
+  /** 未登记的服务端限额（代号命名）：只展示，不参与「已用完」判断与告警配色 */
+  informational?: boolean
   /**
    * 这个窗口的额度是**推算**出来的（不是接口给的官方字段）。
    * 方案 7.2：界面必须标明来源，不能把推算值伪装成精确额度。
@@ -1484,8 +1511,10 @@ export interface CompactionInfo {
   keepRecentTokens: number
   /** 当前模型的上下文窗口 */
   contextWindow: number
-  /** 触发线 = contextWindow - reserveTokens */
+  /** 触发线 = contextWindow - reserveTokens；砚的自动压缩上限更早时取上限（见 cappedByInkstone） */
   threshold: number
+  /** 触发线来自砚设置里的「自动压缩上限」，而不是 pi 的 reserveTokens */
+  cappedByInkstone?: boolean
   /** 是否被用户改过（false = 全是 pi 的默认值） */
   custom: boolean
   /**
@@ -3295,6 +3324,8 @@ export interface YanBridge {
   }
   /** 会话正文检索（切换器用）：所有词都出现才算命中，返回命中的会话文件与片段 */
   searchSessions(query: string, limit?: number): Promise<SessionSearchResult>
+  /** 启动页用量概览：会话、消息、token、活跃天数、高峰时段、模型与热力图 */
+  usageStats(range: UsageRange): Promise<UsageStatsResult>
 
   /**
    * 快速预览会话消息（**直接读文件，不问 pi**）。

@@ -116,7 +116,7 @@ async function settle(base: CardBase, run: () => Promise<Partial<AccountQuotaCar
   }
 }
 
-const limitedIf = (windows: AccountQuotaCard['windows']): 'limited' | 'ok' => (windows.some((w) => w.total > 0 && w.used >= w.total) ? 'limited' : 'ok')
+const limitedIf = (windows: AccountQuotaCard['windows']): 'limited' | 'ok' => (windows.some((w) => !w.informational && w.total > 0 && w.used >= w.total) ? 'limited' : 'ok')
 
 /* ------------------------------------------------------------ 砚的账号 */
 

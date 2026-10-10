@@ -47,12 +47,12 @@
     q('[data-testid="model-picker"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await sleep(400)
     const stops = qa('[data-testid^="detail-"]')
-    const buttons = qa('[data-testid="detail-stops"] .mt-stop')
+    const buttons = qa('[data-testid="detail-stops"] .seg-btn')
     out.push(`  档位按钮 = ${buttons.map((b) => b.textContent).join(' / ')}`)
     ok(buttons.length === 3, '菜单里有三档（简洁 / 标准 / 详细）')
-    ok(!!q('[data-testid="detail-current"]'), '标题区显示当前档位')
+    ok(!!q('[data-testid="detail-stops"] .seg-btn.sel'), '分段里标出当前档位')
     ok(
-      q('[data-testid="detail-standard"]')?.dataset.on === '1',
+      q('[data-testid="detail-standard"]')?.getAttribute('aria-pressed') === 'true',
       '当前档位是 standard'
     )
     ok(stops.length >= 3, '三档都有 data-testid（可被测试/辅助技术定位）')
@@ -63,7 +63,7 @@
     out.push(`  点击「详细」后 = ${JSON.stringify(after)}`)
     ok(after === 'detailed', '点击后设置变成 detailed')
     ok(
-      q('[data-testid="detail-detailed"]')?.dataset.on === '1',
+      q('[data-testid="detail-detailed"]')?.getAttribute('aria-pressed') === 'true',
       '选中态跟着更新'
     )
 

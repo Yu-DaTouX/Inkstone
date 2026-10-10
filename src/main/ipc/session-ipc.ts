@@ -14,9 +14,12 @@ import { archiveSessionsBatch, moveSessionLayout, setSessionFlags } from '../ses
 import { selectAutoArchive } from '../../shared/session-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { planHistoryRead } from '../../shared/session-chain'
+import { readUsageStats } from '../usage-stats'
 
 export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   const { handle } = ipc
+  /* ---- 启动页用量概览（只读会话文件，增量缓存） ---- */
+  handle('yan:usageStats', async (range: 'all' | '30d' | '7d') => readUsageStats(range))
   /* ---- 会话管理 ---- */
   handle('yan:fork', async (entryId: string) => host.ac()?.fork(entryId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:clone', async () => host.ac()?.clone() ?? { ok: false, error: 'pi 未运行' })

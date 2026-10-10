@@ -1,6 +1,7 @@
 import { useT } from '../../i18n'
 import { Icon } from '../../icons/Icon'
 import { shortTitle } from '../../../../shared/short-title'
+import { parseSubagentNotice } from '../../../../shared/subagent-notice'
 import { useStore } from '../../state/store'
 import { EnvironmentMenu } from '../review/EnvironmentMenu'
 import { SessionMenu } from './SessionMenu'
@@ -42,6 +43,7 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
   const session = useStore((s) => s.session)
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
+  const manualTitles = useStore((s) => s.manualTitles)
   const peekedPath = useStore((s) => s.peekedPath)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   /* 过程布局：与设置·外观「执行过程」同一个值 */
@@ -68,7 +70,11 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
       ? titles[session.conversationId ?? session.sessionId]
       : undefined
   const fromList = previewing ? previewed?.title : sessions.find((x) => x.path === activeFile)?.title
-  const fromFirst = messages.find((m) => m.role === 'user')?.text
+  const firstText = messages.find((m) => m.role === 'user')?.text
+  const fromFirst = firstText ? (parseSubagentNotice(firstText)?.headline || firstText) : undefined
+  /* 用户手动命名优先于模型生成的短标题 */
+  const manualId = previewing ? peekedSessionId : session?.sessionId
+  const fromManual = manualId ? manualTitles[manualId] : undefined
   /**
    * 当前会话归属的空间（决定要不要给「空间」入口）。
    *
@@ -93,6 +99,7 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
   const knownInList = Boolean(currentFile) && sessions.some((x) => x.path === currentFile)
   const showSpace = Boolean(spaceId) || !knownInList
   const title =
+    fromManual ||
     fromModel ||
     (previewing ? undefined : session?.sessionName) ||
     fromList ||

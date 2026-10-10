@@ -22,6 +22,7 @@ import { useT } from '../../i18n'
 import { Icon } from '../../icons/Icon'
 import { Button } from '../ui'
 import { installImeFallback, installTerminalRenderer, terminalAppearance, terminalFontReady } from './terminal-appearance'
+import { APPEARANCE_EVENT } from '../../lib/appearance'
 
 /**
  * xterm 的主题：**从 tokens.css 的 CSS 变量读**，不写死两份色值。
@@ -132,11 +133,21 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
         fitTimer = setTimeout(() => fit(), 90)
       })
       observer.observe(host)
-      /* 主题切换：xterm 不读 CSS 变量，得手动同步一次 */
-      const themeObserver = new MutationObserver(() => {
+      /* 主题、背景色与代码字体切换：xterm 不读 CSS 变量，得手动同步一次 */
+      const syncAppearance = (): void => {
         term.options.theme = currentTheme()
-      })
+        const family = terminalAppearance().fontFamily
+        if (family && family !== term.options.fontFamily) {
+          void terminalFontReady({ ...appearance, fontFamily: family }).then(() => {
+            if (disposed) return
+            term.options.fontFamily = family
+            fit()
+          })
+        }
+      }
+      const themeObserver = new MutationObserver(syncAppearance)
       themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+      window.addEventListener(APPEARANCE_EVENT, syncAppearance)
 
       release = () => {
         imeOff()
@@ -144,6 +155,7 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
         clearTimeout(fitTimer)
         observer.disconnect()
         themeObserver.disconnect()
+        window.removeEventListener(APPEARANCE_EVENT, syncAppearance)
         term.dispose()
         termRef.current = null
         fitRef.current = null

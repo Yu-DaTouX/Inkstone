@@ -12,7 +12,7 @@ import { fileResourceLabel } from '../../../../shared/file-resource'
 import { loadWorkbenchState } from '../../state/workbench'
 import { conversationKeyOf } from '../../state/workspace-key'
 import { PENDING_SESSION_KEY } from '../../state/workbench'
-import { claimResource, reassignOwner, resourceOwner } from '../../state/resource-owners'
+import { claimResource, reassignOwner, releaseResource, resourceOwner } from '../../state/resource-owners'
 import { EmptyState, Menu, MenuItem, MenuSeparator } from '../ui'
 import type { IconName } from '../../icons/Icon'
 import { ContextSection } from './ContextSection'
@@ -172,7 +172,11 @@ export function RightPanel({ sessionKey, live = true }: { sessionKey?: string; l
     if (kind === 'accounts') { setAccountsOpen(true); open('accounts') }
     if (kind === 'files') { setFileTreeOpen(true); open('files') }
     if (kind === 'agents') { setAgentManager(true); open('agents') }
-    if (kind === 'browser') { await state.openBrowser(); if (resourceOwner('browser') === identity && currentKey.current === identity && request.current === serial) open('browser') }
+    if (kind === 'browser') {
+      /* 浏览器已被别的会话占着时，用户在这里明确点开就把它移过来，否则菜单点了没反应 */
+      const holder = resourceOwner('browser')
+      if (state.browserState.open && holder && holder !== identity) { releaseResource('browser'); claimResource('browser', identity) }
+      await state.openBrowser(); if (resourceOwner('browser') === identity && currentKey.current === identity && request.current === serial) open('browser') }
     if (kind === 'terminal') {
       const existing = terminals.find(t => t.alive)
       if (existing) open('terminal:' + existing.id)

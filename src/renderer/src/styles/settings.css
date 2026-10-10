@@ -205,6 +205,14 @@ html[data-theme='light'] .settings-scrim {
   opacity: 0.35;
   cursor: default;
 }
+/* 自动压缩上限：分档滑块按容器宽度等分档位，上下排布时要撑满这一格（col 行默认按内容宽度） */
+.ctx-compact-ctl {
+  justify-self: stretch;
+}
+.ctx-compact-ctl > .ui-step-slider {
+  flex: 1;
+  max-width: 72ch;
+}
 .set-warn {
   display: block;
   margin-top: var(--sp-2);
@@ -1191,39 +1199,132 @@ html[data-theme='light'] .ob-scrim {
   margin-top: var(--sp-1);
 }
 
-/* 背景色模板：色块 + 名称；自定义项内嵌原生取色器 */
+/* 背景色：模板一行；自定义单独一块（取色器 + 颜色值 + 五级色阶 + 说明） */
 .bg-ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.bg-presets {
   flex-wrap: wrap;
+  align-self: flex-start;
+  max-width: 100%;
 }
 .bg-swatch {
   display: inline-block;
   width: 0.8em;
   height: 0.8em;
-  margin-right: var(--sp-1);
   border: 1px solid var(--border-str);
   border-radius: 50%;
   background: linear-gradient(135deg, var(--bg-0) 50%, var(--bg-3) 50%);
-  vertical-align: -1px;
 }
-.bg-custom {
-  display: inline-flex;
-  align-items: center;
-  cursor: pointer;
+.bg-custom-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-3);
+  max-width: 72ch;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
 }
-.bg-picker {
-  width: 1.1em;
-  height: 1.1em;
-  margin: 0 var(--sp-1) 0 0;
-  padding: 0;
+.bg-custom-panel.on {
+  border-color: var(--border-str);
+}
+.bg-picker-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: calc(var(--sp-6) + var(--sp-5));
+  height: calc(var(--sp-6) + var(--sp-5));
+  overflow: hidden;
   border: 1px solid var(--border-str);
-  border-radius: 50%;
-  background: none;
+  border-radius: var(--r-sm);
   cursor: pointer;
 }
-.bg-picker::-webkit-color-swatch-wrapper {
-  padding: 0;
+.bg-picker-wrap:focus-within {
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
-.bg-picker::-webkit-color-swatch {
+.bg-picker-tile {
+  display: grid;
+  place-items: center;
+  width: 62%;
+  height: 62%;
+  border-radius: var(--r-xs);
+  color: var(--fg);
+  font-size: var(--fs-base);
+}
+/* 原生取色器只负责弹出选色面板：透明铺满预览块 */
+.bg-picker {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
   border: 0;
-  border-radius: 50%;
+  opacity: 0;
+  cursor: pointer;
+}
+.bg-custom-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.bg-custom-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.bg-custom-label {
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+}
+.bg-hex {
+  width: 11ch;
+  font-family: var(--font-code);
+}
+.bg-ladder {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  height: var(--sp-3);
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-xs);
+}
+
+/* 字体：预设分段 + 自定义字体名 + 一行样字 */
+.font-ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.font-ctl .seg {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.font-custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 100%;
+}
+.font-invalid {
+  color: var(--err);
+}
+.font-sample {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--fg-dim);
+  font-size: var(--fs-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

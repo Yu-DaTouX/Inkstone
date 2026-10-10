@@ -387,6 +387,19 @@ function registerStubHandlers() {
     hubSnapshot.approvals.push({ id: 'ap1', taskId: 'visual-review', runId: 'visual-run', kind: 'command', title: '运行完整测试', detail: 'npm run test:unit', expiresAt: Date.now() + 100_000, status: 'pending' })
   }
   ipcMain.handle('yan:hub:snapshot', () => hubSnapshot)
+  /* 启动页用量概览：合成数据（不读真实会话） */
+  ipcMain.handle('yan:usageStats', (_e, range) => {
+    const heat = []
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const start = new Date(today); start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - 25 * 7)
+    for (let d = new Date(start), i = 0; d <= today; d.setDate(d.getDate() + 1), i++) {
+      const date = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+      heat.push({ date, tokens: i > 150 ? Math.round(((i * 7919) % 97) * 1e6) : 0 })
+    }
+    const k = range === '7d' ? 0.05 : range === '30d' ? 0.6 : 1
+    return { range, sessions: Math.round(111 * k), messages: Math.round(64870 * k), tokens: Math.round(9.1e9 * k), activeDays: Math.round(13 * k) || 1, peakHour: 10, at: Date.now(), userName: 'fixture',
+      models: [{ key: 'commandcode/claude-opus-5-5', tokens: 6.2e9 * k }, { key: 'openai-codex/gpt-6.1-sol', tokens: 2.1e9 * k }, { key: 'commandcode/deepseek/deepseek-v4.1-flash', tokens: 0.8e9 * k }], heat }
+  })
   ipcMain.handle('yan:hub:detect', () => hubSnapshot)
   const hubSizes = new Map()
   ipcMain.handle('yan:hub:command', (_event, command) => {
@@ -5355,6 +5368,37 @@ if (ONLY.some((name) => name.startsWith('settingspage'))) {
     for (const group of GROUPS.slice(0, 1)) group.states.push(name)
   }
   GROUPS.push({ name: 'settingstall', w: 1280, h: 2400, scale: 1, theme: 'dark', states: ONLY.filter((name) => name.startsWith('settingspage')) })
+}
+/* 外观个性化：`YAN_MATRIX_ONLY=appearancecustom`，紧凑密度 + 系统无衬线 + 正文 17 / 界面 14 + 自定义底色，对话页与外观页各一张 */
+if (ONLY.some((name) => name.startsWith('appearance'))) {
+  const patch = JSON.stringify({ density: 'compact', fontUi: 'sans', fontSizeBody: 17, fontSizeUi: 14, backgroundPreset: 'custom', backgroundCustom: '#1a2433', backgroundCustomLight: '#eef3ea' })
+  STATES.appearancecustom = `(async () => { const s = window.__yanStore.getState(); window.__yanStore.setState({ settings: { ...s.settings, ...${patch} } }); s.closeSettings(); await new Promise((r) => setTimeout(r, 900)); const cs = getComputedStyle(document.documentElement); return 'ok(' + ['--fs-body', '--fs-base', '--bg-0'].map((k) => k + '=' + cs.getPropertyValue(k).trim()).join(' ') + ')' })()`
+  STATES.appearancecustom2 = `(async () => { window.__yanStore.getState().openSettings('appearance'); await new Promise((r) => setTimeout(r, 800)); return 'ok' })()`
+  /* 三档密度实测：左栏行高、按钮高、正文行高、回合间距 */
+  STATES.appearancedensity = `(async () => { const st = window.__yanStore; st.getState().closeSettings(); st.getState().setRailPinned(true); const out = []; for (const d of ['compact', 'standard', 'comfortable']) { st.setState({ settings: { ...st.getState().settings, density: d } }); await new Promise((r) => setTimeout(r, 400)); const h = (sel) => { const el = document.querySelector(sel); return el ? Math.round(el.getBoundingClientRect().height) : '-' }; const p = document.querySelector('.msg.assistant p'); const m = document.querySelector('.msg.assistant'); out.push(d + ':row=' + h('.srow-row') + ',btn=' + h('.ui-btn') + ',lh=' + (p ? getComputedStyle(p).lineHeight : '-') + ',gap=' + (m ? getComputedStyle(m).marginBottom : '-')) } return 'ok(' + out.join(' | ') + ')' })()`
+  MUST_HAVE.appearancecustom = ['.stream']
+  for (const group of GROUPS.slice(0, 3)) group.states.push('appearancecustom', 'appearancecustom2', 'appearancedensity')
+}
+/* 并列过程里展开终端：`YAN_MATRIX_ONLY=procsideterm`，报告过程栏宽度、封顶高度与对话区高度 */
+if (ONLY.includes('procsideterm')) {
+  STATES.procsideterm = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const st = window.__yanStore.getState(); st.closeSettings(); st.setRailPinned(false); window.__yanStore.setState({ rightPanelOpen: false, settings: { ...st.settings, processLayout: 'side' } }); await sleep(400); const row = document.querySelector('.tproc .trow[data-tool="bash"] .trow-head') || document.querySelector('.tproc .trow-head'); row?.click(); await sleep(500); const box = document.querySelector('.stream'); const proc = row?.closest('.tproc'); proc?.scrollIntoView({ block: 'start' }); await sleep(300); const term = proc?.querySelector('.term, .term-win'); if (term && proc) proc.scrollTop = term.offsetTop - 40; await sleep(200); return 'ok(stream-h=' + (box?.clientHeight ?? 0) + ',proc=' + Math.round(proc?.getBoundingClientRect().width ?? 0) + 'x' + Math.round(proc?.getBoundingClientRect().height ?? 0) + ',max=' + (proc ? getComputedStyle(proc).maxHeight : '-') + ',term=' + (term ? Math.round(term.getBoundingClientRect().width) + 'x' + Math.round(term.getBoundingClientRect().height) : 'none') + ')' })()`
+  MUST_HAVE.procsideterm = ['.tproc']
+  GROUPS.push({ name: 'procsidewide', w: 1920, h: 1000, scale: 1, theme: 'light', states: ['procsideterm'] })
+  for (const group of GROUPS.slice(0, 1)) group.states.push('procsideterm')
+}
+/* 会话柄悬停不推挤：`YAN_MATRIX_ONLY=outlinehover`，依次悬停每一格，量其余刻度的最大位移（应为 0） */
+if (ONLY.includes('outlinehover')) {
+  STATES.outlinehover = `(async () => { try { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const st = window.__yanStore.getState(); st.closeSettings(); const base = st.messages.filter((m) => m.role === 'user'); const extra = []; for (let i = 0; i < 8; i++) { const ts = Date.now() - (8 - i) * 60000; extra.push({ id: 'oh-u' + i, role: 'user', text: '第 ' + (i + 1) + ' 个问题', ts }, { id: 'oh-a' + i, role: 'assistant', text: '回答 ' + (i + 1), ts: ts + 1000 }) } if (base.length < 4) window.__yanStore.setState({ messages: [...st.messages, ...extra] }); await sleep(600); const ticks = () => [...document.querySelectorAll('[data-testid="outline-tick"]')]; const tops = () => ticks().map((el) => el.getBoundingClientRect().top); const t0 = tops(); if (t0.length < 4) return 'no-ticks(' + t0.length + ')'; let worst = 0; const log = []; const trk = document.querySelector('.outline-track'); for (const [k, el] of ticks().entries()) { const before = tops(); el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await sleep(180); const now = tops(); let d = 0; for (let i = 0; i < now.length; i++) d = Math.max(d, Math.abs(now[i] - before[i])); worst = Math.max(worst, d); if (d > 0.5) log.push(k + ':' + d.toFixed(1) + '/st' + trk.scrollTop + '/box' + Math.round(trk.getBoundingClientRect().top)); el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })) } if (log.length) return 'shift(' + log.slice(0, 6).join(' ') + ' n=' + t0.length + ' trackH=' + Math.round(trk.clientHeight) + ' scrollH=' + trk.scrollHeight + ')'; const mid = ticks()[Math.floor(t0.length / 2)]; mid.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await sleep(300); return worst < 0.5 ? 'ok(ticks=' + t0.length + ',maxShift=' + worst.toFixed(2) + ')' : 'shift(' + worst.toFixed(2) + 'px)' } catch (e) { return 'err:' + e.message } })()`
+  MUST_HAVE.outlinehover = ['[data-testid="outline"]']
+  for (const group of GROUPS.slice(0, 1)) group.states.push('outlinehover')
+}
+/* 启动页：`YAN_MATRIX_ONLY=startpage`，空会话 + 用量概览（合成数据），再切到模型页 */
+if (ONLY.some((name) => name.startsWith('startpage'))) {
+  STATES.startpage = `(async () => { const st = window.__yanStore; st.getState().closeSettings(); document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); st.setState({ messages: [] }); await new Promise((r) => setTimeout(r, 900)); return document.querySelector('[data-testid="usage-overview"]') ? 'ok' : 'no-card' })()`
+  STATES.startpage2 = `(async () => { const b = [...document.querySelectorAll('[data-testid="usage-overview"] .start-toggle button')].find((x) => x.textContent.trim() === '模型'); b?.click(); await new Promise((r) => setTimeout(r, 400)); return b ? 'ok' : 'no-tab' })()`
+  MUST_HAVE.startpage = ['[data-testid="start-page"]']
+  for (const group of GROUPS.slice(0, 3)) group.states.push('startpage', 'startpage2')
+  GROUPS.push({ name: 'startnarrow', w: 820, h: 640, scale: 1, theme: 'light', states: ['main', 'startpage'] }, { name: 'starttiny', w: 600, h: 600, scale: 1, theme: 'dark', states: ['main', 'startpage'] })
 }
 /* 结构化回答块：`YAN_MATRIX_ONLY=visualblocks`，三种块（卡片 / 柱状与折线图 / 流程卡）的合成回答 */
 if (ONLY.includes('visualblocks')) {

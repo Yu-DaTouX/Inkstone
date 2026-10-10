@@ -6,7 +6,7 @@ import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import { STREAM_MAX, STREAM_MIN, clampStreamWidth } from '../../../../shared/ipc'
 import type { SoundEvent, SoundSettings } from '../../../../shared/ipc'
 import { previewSound } from '../../lib/sound'
-import { BACKGROUND_PRESETS, CUSTOM_BACKGROUND_ID } from '../../lib/background'
+import { BackgroundSetting, FontSettings, FontSizeSettings } from './AppearanceCustomize'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
 import { BUILD_INFO, formatBuildTime } from '../../../../shared/build-info'
 import { Button, Disclosure, SettingGroup, SettingRow, Spinner, Switch } from '../ui'
@@ -375,17 +375,11 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const streamWidth = useStore((s) => s.settings?.streamWidth) ?? 0
   const processLayout = useStore((s) => s.settings?.processLayout)
   const liveThinking = useStore((s) => s.settings?.liveThinking === true)
-  const backgroundPreset = useStore((s) => s.settings?.backgroundPreset)
-  const backgroundCustom = useStore((s) => s.settings?.backgroundCustom)
   /**
    * 滑块拖动中的本地值：range 是受控输入，拖动时若一直绑在 settings 上，
    * React 会把滑块拉回旧值。拖动期间用 draft，落盘后清掉。
    */
   const [draft, setDraft] = useState<number | null>(null)
-  /* 取色器拖动时每帧都会触发 change：先本地预览，停手 250ms 再落盘 */
-  const [bgDraft, setBgDraft] = useState<string | null>(null)
-  const bgTimer = useRef<number | undefined>(undefined)
-  useEffect(() => () => window.clearTimeout(bgTimer.current), [])
   /* 未手动设置时的实际宽度：与 tokens.css 的 --w-stream clamp 同一公式 */
   const shownWidth = draft ?? (streamWidth || Math.round(Math.min(920, Math.max(768, window.innerWidth - 680))))
   useEffect(() => setDraft(null), [streamWidth])
@@ -418,39 +412,9 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
         <Switch checked={liveThinking} onChange={(on) => void patchSettings({ liveThinking: on })} label={t('set.liveThinking')} testId="set-live-thinking" />
       </SettingRow>
 
-      <SettingRow col name={t('set.background')} desc={t('set.backgroundDesc')} ctlClassName="seg bg-ctl" ctlProps={{ 'data-testid': 'set-background' }}>
-        {BACKGROUND_PRESETS.map((p) => {
-          const swatch = p[theme === 'light' ? 'light' : 'dark']
-          return (
-            <button
-              key={p.id}
-              className={`seg-btn ${(backgroundPreset ?? 'default') === p.id ? 'sel' : ''}`}
-              data-background={p.id}
-              onClick={() => void patchSettings({ backgroundPreset: p.id })}
-            >
-              <span className="bg-swatch" style={swatch ? { background: swatch } : undefined} aria-hidden />
-              {t(p.key as Parameters<typeof t>[0])}
-            </button>
-          )
-        })}
-        <label className={`seg-btn bg-custom ${backgroundPreset === CUSTOM_BACKGROUND_ID ? 'sel' : ''}`} data-background={CUSTOM_BACKGROUND_ID}>
-          <input
-            type="color"
-            className="bg-picker"
-            value={bgDraft ?? backgroundCustom ?? (theme === 'light' ? '#f6f7f9' : '#17191d')}
-            aria-label={t('set.bg.custom')}
-            onChange={(e) => {
-              const value = e.target.value
-              setBgDraft(value)
-              window.clearTimeout(bgTimer.current)
-              bgTimer.current = window.setTimeout(() => {
-                void patchSettings({ backgroundPreset: CUSTOM_BACKGROUND_ID, backgroundCustom: value }).finally(() => setBgDraft(null))
-              }, 250)
-            }}
-          />
-          {t('set.bg.custom')}
-        </label>
-      </SettingRow>
+      <BackgroundSetting />
+
+      <FontSettings />
 
       <SettingRow
         name={t('set.uiScale')}
@@ -475,7 +439,7 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
         ))}
       </SettingRow>
 
-      <SettingRow name={t('set.density')} ctlClassName="seg" ctlProps={{ 'data-testid': 'set-density' }}>
+      <SettingRow name={t('set.density')} desc={t('set.densityDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': 'set-density' }}>
         {DENSITY_OPTS.map((o) => (
           <button
             key={o.v}
@@ -488,6 +452,8 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
           </button>
         ))}
       </SettingRow>
+
+      <FontSizeSettings />
 
       <SettingRow
         name={t('set.streamWidth')}

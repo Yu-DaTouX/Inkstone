@@ -3,11 +3,10 @@ import { createPortal } from 'react-dom'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
-import { Button, StepSlider, Switch } from './ui'
+import { Button, Segmented, StepSlider, Switch } from './ui'
 import { ModelCatalog } from './ModelCatalog'
 import { useFocusTrap, useModalLayer } from '../lib/modalLayer'
 import { useAnchoredPopover } from '../lib/useAnchoredPopover'
-import { WheelPicker } from './ui/WheelPicker'
 
 /** 模型与思考强度选择器：离散档位的点阵滑块，按当前模型报告的可用档位展示。 */
 export function ModelThinkingPicker() {
@@ -237,34 +236,23 @@ export function ModelThinkingPicker() {
           ) : null}
 
           {/*
-           * ---- 回复详细程度（方案 3.1）----
-           * 与推理强度是**两件事**：一个管「想多深」，一个管「讲多细」。
-           * 放在同一个菜单里，因为它们是同一个决定（要多少篇幅）。
+           * ---- 回复详细程度（方案 3.1）与可视化回答 ----
+           * 与推理强度是**两件事**：一个管「想多深」，一个管「讲多细」。放在同一个菜单里，
+           * 因为它们是同一个决定（要多少篇幅）。两项都是一行：名称在左，控件在右，行高一致。
            */}
-          {/* 标题与说明在左，滚轮在右：说明不再单独占一行 */}
-          <div className="mt-head mt-detail">
-            <div className="mt-detail-copy">
-              <div className="mt-head-row">
-                <span className="mt-head-title" title={t('picker.detailDesc')}>{t('picker.detail')}</span>
-                <span className="spacer" />
-                <span className="mt-head-level" data-testid="detail-current">
-                  {detailLabel(responseDetail, t)}
-                </span>
-              </div>
+          <div className="mt-lines">
+            <div className="mt-line mt-detail">
+              <span className="mt-head-title" title={t('picker.detailDesc')}>{t('picker.detail')}</span>
+              <Segmented size="sm" label={t('picker.detail')} testId="detail-stops" value={responseDetail as 'brief' | 'standard' | 'detailed'}
+                options={(['brief', 'standard', 'detailed'] as const).map(detail => ({ value: detail, label: detailLabel(detail, t), testId: `detail-${detail}`, disabled: busy }))}
+                onChange={detail => { void patchSettings({ responseDetail: detail }).catch(error => useStore.getState().notify('error', String(error))) }} />
             </div>
-            <WheelPicker values={['brief', 'standard', 'detailed'] as const} value={responseDetail}
-              onChange={detail => { void patchSettings({ responseDetail: detail }).catch(error => useStore.getState().notify('error', String(error))) }}
-              format={detail => detailLabel(detail, t)} label={t('picker.detail')} disabled={busy} testId="detail-stops" />
-          </div>
-          {/* 可视化回答：图表、卡片、图解等由砚画出来；关掉后下一轮起模型不再使用，已有历史照常显示 */}
-          <div className="mt-head mt-detail mt-visual">
-            <div className="mt-detail-copy">
-              <div className="mt-head-row">
-                <span className="mt-head-title" title={t('picker.visualDesc')}>{t('picker.visual')}</span>
-              </div>
+            {/* 可视化回答：图表、卡片、图解等由砚画出来；关掉后下一轮起模型不再使用，已有历史照常显示 */}
+            <div className="mt-line mt-visual">
+              <span className="mt-head-title" title={t('picker.visualDesc')}>{t('picker.visual')}</span>
+              <Switch checked={visualAnswers} label={t('picker.visual')} testId="visual-answers-toggle"
+                onChange={on => { void patchSettings({ visualAnswers: on }).catch(error => useStore.getState().notify('error', String(error))) }} />
             </div>
-            <Switch checked={visualAnswers} label={t('picker.visual')} testId="visual-answers-toggle"
-              onChange={on => { void patchSettings({ visualAnswers: on }).catch(error => useStore.getState().notify('error', String(error))) }} />
           </div>
           </div>
         </div>, document.body

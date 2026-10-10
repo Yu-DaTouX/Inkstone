@@ -939,6 +939,10 @@ const CASES = {
    * 报出来的却是「没抓到 PROBE 输出 —— 应用可能启动失败」（误导）。
    * 所以这里显式给足：delay 9s + budget 200s。
    */
+  // 发送延迟：点发送 → 开始工作各段耗时（三个模型各一个场景，真实调用）
+  latds: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
+  latluna: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'openai-codex/gpt-6-luna' },
+  lathaiku: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'claude-bridge/haiku' },
   e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1, budget: 200000 },
   // 宿主能力服务：模型在 bash 里调 `yan`，宿主校验身份后回结构化摘要（花 token）
   capability: { probe: 'scripts/probe/capability.js', delay: 12000, cost: 1, budget: 180000 },
