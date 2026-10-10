@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useI18n, useT, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -6,32 +6,27 @@ import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import { STREAM_MAX, STREAM_MIN, clampStreamWidth } from '../../../../shared/ipc'
 import type { SoundEvent, SoundSettings } from '../../../../shared/ipc'
 import { previewSound } from '../../lib/sound'
+import { BACKGROUND_PRESETS, CUSTOM_BACKGROUND_ID } from '../../lib/background'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
-import {
-  DEFAULT_WORK_MODE_BINDING,
-  bindingFromKey,
-  formatKeyBinding,
-  isUsableKeyBinding,
-  parseKeyBinding
-} from '../../../../shared/work-mode'
 import { BUILD_INFO, formatBuildTime } from '../../../../shared/build-info'
-import { Button, Disclosure, SettingGroup, SettingRow, Switch } from '../ui'
-import { AuthTab } from './AuthTab'
-import { WorkspaceTab } from './WorkspaceTab'
-import { ContextTab } from './ContextTab'
-import { KnowledgeTab } from './KnowledgeTab'
-import { RemoteTab } from './RemoteTab'
-import { VoiceTab } from './VoiceTab'
+import { Button, Disclosure, SettingGroup, SettingRow, Spinner, Switch } from '../ui'
 import { AppUpdateSection } from './AppUpdateSection'
-import { PeerTab } from './PeerTab'
-import { PackagesTab } from './PackagesTab'
-import { CapabilitiesTab } from './CapabilitiesTab'
 import { StorageSection } from './StorageSection'
+
+// Keep the modal shell eager so focus, Escape and native browser occlusion work while loading.
+const AuthTab = lazy(() => import('./AuthTab').then(m => ({ default: m.AuthTab })))
+const WorkspaceTab = lazy(() => import('./WorkspaceTab').then(m => ({ default: m.WorkspaceTab })))
+const ContextTab = lazy(() => import('./ContextTab').then(m => ({ default: m.ContextTab })))
+const RemoteTab = lazy(() => import('./RemoteTab').then(m => ({ default: m.RemoteTab })))
+const VoiceTab = lazy(() => import('./VoiceTab').then(m => ({ default: m.VoiceTab })))
+const PeerTab = lazy(() => import('./PeerTab').then(m => ({ default: m.PeerTab })))
+const PluginMarketTab = lazy(() => import('./PluginMarketTab').then(m => ({ default: m.PluginMarketTab })))
+const CapabilitiesTab = lazy(() => import('./CapabilitiesTab').then(m => ({ default: m.CapabilitiesTab })))
 
 /**
  * 设置页的 id。
  *
- * 导航只有六页（SETTINGS_PAGES）；旧 id（input / sound / context / knowledge / voice /
+ * 导航含独立插件市场（SETTINGS_PAGES）；旧 id（input / sound / context / knowledge / voice /
  * status / packages / remote / peer）仍可传给 openSettings，由 PAGE_OF 落到合并后的那一页，
  * 这样散落在输入区、引导与菜单里的深链接不用逐个改。
  */
@@ -49,10 +44,11 @@ export type SettingsTab =
   | 'status'
   | 'knowledge'
   | 'packages'
+  | 'market'
   | 'remote'
   | 'peer'
 
-type SettingsPage = 'auth' | 'appearance' | 'workspace' | 'capabilities' | 'devices' | 'about'
+type SettingsPage = 'auth' | 'appearance' | 'workspace' | 'capabilities' | 'market' | 'devices' | 'about'
 
 const PAGE_OF: Record<SettingsTab, SettingsPage> = {
   auth: 'auth',
@@ -63,7 +59,8 @@ const PAGE_OF: Record<SettingsTab, SettingsPage> = {
   context: 'workspace',
   knowledge: 'workspace',
   capabilities: 'capabilities',
-  packages: 'capabilities',
+  packages: 'market',
+  market: 'market',
   voice: 'devices',
   devices: 'devices',
   remote: 'devices',
@@ -78,12 +75,13 @@ const SETTINGS_PAGES: { id: SettingsPage; key: Parameters<TFunc>[0]; icon: strin
   { id: 'appearance', key: 'set.pageAppearance', icon: 'moon' },
   { id: 'workspace', key: 'set.pageWorkspace', icon: 'group' },
   { id: 'capabilities', key: 'set.capabilities', icon: 'sparkles' },
+  { id: 'market', key: 'market.title', icon: 'package' },
   { id: 'devices', key: 'set.pageDevices', icon: 'phone' },
   { id: 'about', key: 'set.about', icon: 'shield-check' }
 ]
 
 /**
- * 设置面板：左侧六页导航，右侧当前页。
+ * 设置面板：左侧导航，右侧当前页。
  * 每页先放最常改的几项，诊断与高级数值收进页尾的「高级」。
  */
 export function Settings({
@@ -126,6 +124,17 @@ export function Settings({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presence.mounted, open])
 
+  /*
+   * 页面被外部切换（深链接、引导里的「去设置」）时，若焦点还停在导航里，
+   * 跟到新的选中项上；否则旧页签会留着键盘焦点环，看起来像同时选中了两项。
+   */
+  useEffect(() => {
+    const active = document.activeElement
+    if (!active || !tabRefs.current.includes(active as HTMLButtonElement)) return
+    const selected = tabRefs.current[SETTINGS_PAGES.findIndex((x) => x.id === page)]
+    if (selected && selected !== active) selected.focus()
+  }, [page])
+
   if (!presence.mounted) return null
 
   const current = SETTINGS_PAGES.find((x) => x.id === page)
@@ -148,8 +157,7 @@ export function Settings({
         <nav className="settings-nav">
           <div className="settings-nav-title">{t('set.title')}</div>
           {/*
-           * tablist + 方向键：只用键盘也能切页。未选中项不设 tabindex=-1，
-           * 保证所有控件都能 Tab 到达。
+           * tablist 使用单一 Tab 入口，方向键从当前焦点切页。
            */}
           <div className="ui-tabs vertical settings-tabs" role="tablist" aria-orientation="vertical" aria-label={t('set.title')}>
             {SETTINGS_PAGES.map((x, i) => (
@@ -163,10 +171,11 @@ export function Settings({
                 role="tab"
                 id={`settings-tab-${x.id}`}
                 aria-selected={page === x.id}
+                tabIndex={page === x.id ? 0 : -1}
                 aria-controls="settings-tabpanel"
                 onClick={() => onTabChange(x.id)}
                 onKeyDown={(e) => {
-                  const cur = SETTINGS_PAGES.findIndex((item) => item.id === page)
+                  const cur = i
                   const to =
                     e.key === 'ArrowDown' || e.key === 'ArrowRight'
                       ? cur + 1
@@ -206,6 +215,7 @@ export function Settings({
           aria-labelledby={`settings-tab-${page}`}
         >
           <h2 className="settings-page-title">{current ? t(current.key) : ''}</h2>
+          <Suspense fallback={<Spinner />}>
           {page === 'auth' ? (
             <AuthTab />
           ) : page === 'appearance' ? (
@@ -224,35 +234,96 @@ export function Settings({
               <SettingGroup title={t('set.context')}>
                 <ContextTab />
               </SettingGroup>
-              <SettingGroup title={t('set.knowledge')}>
-                <KnowledgeTab />
-              </SettingGroup>
             </>
           ) : page === 'capabilities' ? (
             <>
               <CapabilitiesTab />
-              <SettingGroup title={t('set.packages')}>
-                <PackagesTab />
-              </SettingGroup>
             </>
+          ) : page === 'market' ? (
+            <PluginMarketTab />
           ) : page === 'devices' ? (
             <>
+              <DevicesJump initial={tab === 'remote' || tab === 'peer' ? tab : 'voice'} />
+              <div id="devices-section-voice">
               <SettingGroup title={t('set.voice')}>
                 <VoiceTab />
               </SettingGroup>
+              </div>
+              <div id="devices-section-remote">
               <SettingGroup title={t('set.remote')}>
                 <RemoteTab />
               </SettingGroup>
+              </div>
+              <div id="devices-section-peer">
               <SettingGroup title={t('set.peer')}>
                 <PeerTab />
               </SettingGroup>
+              </div>
             </>
           ) : (
             <AboutTab onShowOnboarding={onShowOnboarding} />
           )}
+          </Suspense>
         </div>
       </div>
     </div>
+  )
+}
+
+/* ------------------------------------------------------------- 设备页定位 */
+
+const DEVICE_SECTIONS = ['voice', 'remote', 'peer'] as const
+type DeviceSection = (typeof DEVICE_SECTIONS)[number]
+
+/**
+ * 设备页顶部的分区定位条：吸顶，点击滚到对应分区，滚动时高亮当前分区。
+ * 旧深链接（openSettings('remote' | 'peer')）落到本页后直接滚到对应分区。
+ */
+function DevicesJump({ initial }: { initial: DeviceSection }) {
+  const t = useT()
+  const bar = useRef<HTMLElement>(null)
+  const [current, setCurrent] = useState<DeviceSection>(initial)
+  const jump = (section: DeviceSection, smooth: boolean) => {
+    setCurrent(section)
+    const root = bar.current?.closest('.settings-body')
+    const target = document.getElementById(`devices-section-${section}`)
+    if (!root || !target) return
+    const top = target.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - (bar.current?.offsetHeight ?? 0)
+    root.scrollTo({ top: section === 'voice' ? 0 : top, behavior: smooth && !prefersReducedMotion() ? 'smooth' : 'auto' })
+  }
+  useEffect(() => {
+    /* 分区内容懒加载，等一帧再定位 */
+    if (initial === 'voice') return
+    const id = window.setTimeout(() => jump(initial, false), 120)
+    return () => window.clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial])
+  useEffect(() => {
+    const root = bar.current?.closest('.settings-body')
+    if (!root) return
+    const onScroll = () => {
+      const edge = root.getBoundingClientRect().top + (bar.current?.offsetHeight ?? 0) + 24
+      let next: DeviceSection = 'voice'
+      for (const section of DEVICE_SECTIONS) {
+        const el = document.getElementById(`devices-section-${section}`)
+        if (el && el.getBoundingClientRect().top <= edge) next = section
+      }
+      if (root.scrollTop + root.clientHeight >= root.scrollHeight - 2) next = DEVICE_SECTIONS[DEVICE_SECTIONS.length - 1]
+      setCurrent(next)
+    }
+    root.addEventListener('scroll', onScroll, { passive: true })
+    return () => root.removeEventListener('scroll', onScroll)
+  }, [])
+  return (
+    <nav ref={bar} className="ui-tabs settings-jump" aria-label={t('set.devicesSections')}>
+      {DEVICE_SECTIONS.map((section) => (
+        <button key={section} type="button" className={`ui-tab ${current === section ? 'sel' : ''}`}
+          aria-current={current === section ? 'location' : undefined}
+          data-testid={`devices-jump-${section}`} onClick={() => jump(section, true)}>
+          {t(`set.${section}`)}
+        </button>
+      ))}
+    </nav>
   )
 }
 
@@ -302,12 +373,21 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const zoom = useStore((s) => s.zoom)
   /** 对话内容列宽度（0 = 用设计默认值） */
   const streamWidth = useStore((s) => s.settings?.streamWidth) ?? 0
+  const processLayout = useStore((s) => s.settings?.processLayout)
+  const liveThinking = useStore((s) => s.settings?.liveThinking === true)
+  const backgroundPreset = useStore((s) => s.settings?.backgroundPreset)
+  const backgroundCustom = useStore((s) => s.settings?.backgroundCustom)
   /**
    * 滑块拖动中的本地值：range 是受控输入，拖动时若一直绑在 settings 上，
    * React 会把滑块拉回旧值。拖动期间用 draft，落盘后清掉。
    */
   const [draft, setDraft] = useState<number | null>(null)
-  const shownWidth = draft ?? (streamWidth || 900)
+  /* 取色器拖动时每帧都会触发 change：先本地预览，停手 250ms 再落盘 */
+  const [bgDraft, setBgDraft] = useState<string | null>(null)
+  const bgTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(bgTimer.current), [])
+  /* 未手动设置时的实际宽度：与 tokens.css 的 --w-stream clamp 同一公式 */
+  const shownWidth = draft ?? (streamWidth || Math.round(Math.min(920, Math.max(768, window.innerWidth - 680))))
   useEffect(() => setDraft(null), [streamWidth])
 
   return (
@@ -326,12 +406,50 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
         ))}
       </SettingRow>
 
-      <SettingRow name={t('set.lang')} desc={t('set.langDesc')} ctlClassName="seg">
+      <SettingRow name={t('set.lang')} ctlClassName="seg">
         {(['zh-CN', 'en-US'] as const).map((x) => (
           <button key={x} className={`seg-btn ${lang === x ? 'sel' : ''}`} onClick={() => setLang(x)}>
             {x === 'zh-CN' ? '中文' : 'English'}
           </button>
         ))}
+      </SettingRow>
+
+      <SettingRow name={t('set.liveThinking')} desc={t('set.liveThinkingDesc')}>
+        <Switch checked={liveThinking} onChange={(on) => void patchSettings({ liveThinking: on })} label={t('set.liveThinking')} testId="set-live-thinking" />
+      </SettingRow>
+
+      <SettingRow col name={t('set.background')} desc={t('set.backgroundDesc')} ctlClassName="seg bg-ctl" ctlProps={{ 'data-testid': 'set-background' }}>
+        {BACKGROUND_PRESETS.map((p) => {
+          const swatch = p[theme === 'light' ? 'light' : 'dark']
+          return (
+            <button
+              key={p.id}
+              className={`seg-btn ${(backgroundPreset ?? 'default') === p.id ? 'sel' : ''}`}
+              data-background={p.id}
+              onClick={() => void patchSettings({ backgroundPreset: p.id })}
+            >
+              <span className="bg-swatch" style={swatch ? { background: swatch } : undefined} aria-hidden />
+              {t(p.key as Parameters<typeof t>[0])}
+            </button>
+          )
+        })}
+        <label className={`seg-btn bg-custom ${backgroundPreset === CUSTOM_BACKGROUND_ID ? 'sel' : ''}`} data-background={CUSTOM_BACKGROUND_ID}>
+          <input
+            type="color"
+            className="bg-picker"
+            value={bgDraft ?? backgroundCustom ?? (theme === 'light' ? '#f6f7f9' : '#17191d')}
+            aria-label={t('set.bg.custom')}
+            onChange={(e) => {
+              const value = e.target.value
+              setBgDraft(value)
+              window.clearTimeout(bgTimer.current)
+              bgTimer.current = window.setTimeout(() => {
+                void patchSettings({ backgroundPreset: CUSTOM_BACKGROUND_ID, backgroundCustom: value }).finally(() => setBgDraft(null))
+              }, 250)
+            }}
+          />
+          {t('set.bg.custom')}
+        </label>
       </SettingRow>
 
       <SettingRow
@@ -406,16 +524,32 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
         </Button>
       </SettingRow>
 
+      <SettingRow name={t('set.procLayout')} desc={t('set.procLayoutDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': 'set-process-layout' }}>
+        {(['inline', 'left', 'side'] as const).map((v) => (
+          <button
+            key={v}
+            className={`seg-btn ${(processLayout ?? 'inline') === v ? 'sel' : ''}`}
+            data-process-layout={v}
+            onClick={() => void patchSettings({ processLayout: v })}
+          >
+            {t(v === 'side' ? 'set.procSide' : v === 'left' ? 'set.procLeft' : 'set.procInline')}
+          </button>
+        ))}
+      </SettingRow>
+
       {/* 与标题栏的图钉是同一个状态（store.alwaysOnTop），显示以主进程推的真实值为准 */}
-      <SettingRow name={t('set.alwaysOnTop')} desc={t('set.alwaysOnTopDesc')}>
+      <SettingRow name={t('set.alwaysOnTop')}>
         <Switch checked={onTop} onChange={() => void toggleAlwaysOnTop()} label={t('set.alwaysOnTop')} testId="set-always-on-top" />
       </SettingRow>
       <SettingRow name={t('set.keepAwake')} desc={t('set.keepAwakeDesc')}>
         <Switch checked={keepAwake} onChange={(on) => void patchSettings({ keepAwakeWhileWorking: on })} label={t('set.keepAwake')} testId="set-keep-awake" />
       </SettingRow>
-      <SettingRow name={t('set.keepAwakeBattery')} desc={t('set.keepAwakeBatteryDesc')}>
-        <Switch checked={keepAwakeBattery} onChange={(on) => void patchSettings({ keepAwakeOnBattery: on })} label={t('set.keepAwakeBattery')} testId="set-keep-awake-battery" />
-      </SettingRow>
+      {/* 电池选项只在开启防睡眠后才有意义 */}
+      {keepAwake ? (
+        <SettingRow name={t('set.keepAwakeBattery')} desc={t('set.keepAwakeBatteryDesc')}>
+          <Switch checked={keepAwakeBattery} onChange={(on) => void patchSettings({ keepAwakeOnBattery: on })} label={t('set.keepAwakeBattery')} testId="set-keep-awake-battery" />
+        </SettingRow>
+      ) : null}
     </div>
   )
 }
@@ -428,43 +562,7 @@ function InputTab() {
   const sendKey = useStore((s) => s.settings?.sendKey) ?? 'auto'
   /** 运行中的工具调用是否自动展开详情（默认关） */
   const toolDetail = useStore((s) => s.settings?.toolDetail === true)
-  /* 工作模式：默认值只影响新会话；快捷键是全局输入偏好 */
-  const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
-  const workModeShortcutOn = useStore((s) => s.settings?.workModeShortcutEnabled !== false)
   const subagentNotify = useStore((s) => s.settings?.subagentNotify !== false)
-  const workModeShortcut = useStore((s) => s.settings?.workModeShortcut)
-  const shortcutRecording = useStore((s) => s.shortcutRecording)
-  /** 录音时按了裸键：不是错，但要告诉用户为什么没收 */
-  const [shortcutNeedsModifier, setShortcutNeedsModifier] = useState(false)
-
-  /*
-   * 录新的模式快捷键：接住真实组合键当值。只按修饰键不算；裸键不收
-   *（快捷键全局生效，裸键会抢掉正常输入）；Esc 取消。
-   * 录音期间 App 里的模式快捷键会让路（读 store 的 shortcutRecording）。
-   */
-  useEffect(() => {
-    if (!shortcutRecording) return undefined
-    const onKeyDown = (event: KeyboardEvent): void => {
-      event.preventDefault()
-      event.stopPropagation()
-      if (event.key === 'Escape') {
-        setShortcutNeedsModifier(false)
-        useStore.setState({ shortcutRecording: false })
-        return
-      }
-      const binding = bindingFromKey(event)
-      if (!binding) return
-      if (!isUsableKeyBinding(binding)) {
-        setShortcutNeedsModifier(true)
-        return
-      }
-      setShortcutNeedsModifier(false)
-      useStore.setState({ shortcutRecording: false })
-      void patchSettings({ workModeShortcut: formatKeyBinding(binding) })
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [patchSettings, shortcutRecording])
 
   return (
     <div className="ui-rows">
@@ -479,58 +577,6 @@ function InputTab() {
             {t(o.key)}
           </button>
         ))}
-      </SettingRow>
-
-      <SettingRow name={t('set.defaultWorkMode')} desc={t('set.defaultWorkModeDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': 'set-default-work-mode' }}>
-        {(['standard', 'clarify', 'autonomous'] as const).map((mode) => (
-          <button
-            key={mode}
-            className={`seg-btn ${defaultWorkMode === mode ? 'sel' : ''}`}
-            data-mode={mode}
-            data-on={defaultWorkMode === mode ? '1' : '0'}
-            title={t(`workMode.desc.${mode}`)}
-            onClick={() => void patchSettings({ defaultWorkMode: mode })}
-          >
-            {t(`workMode.label.${mode}`)}
-          </button>
-        ))}
-      </SettingRow>
-
-      {/*
-       * 模式快捷键：键位（点击进入录音）· 恢复默认（只有改过才显示）· 开关。
-       * 键位按钮把当前组合键写在 data-binding 上，探针据此断言，不猜文案。
-       */}
-      <SettingRow
-        name={t('set.workModeKey')}
-        desc={shortcutNeedsModifier ? t('set.workModeKeyInvalid') : t('set.workModeKeyDesc')}
-      >
-        <Button
-          size="sm"
-          active={shortcutRecording}
-          onClick={() => {
-            setShortcutNeedsModifier(false)
-            useStore.setState({ shortcutRecording: !shortcutRecording })
-          }}
-          data-testid="set-work-mode-key"
-          data-binding={workModeShortcut ?? DEFAULT_WORK_MODE_BINDING}
-          disabled={!workModeShortcutOn}
-        >
-          {shortcutRecording
-            ? t('set.workModeKeyRecording')
-            : formatKeyBinding(parseKeyBinding(workModeShortcut ?? DEFAULT_WORK_MODE_BINDING)!)}
-        </Button>
-        {workModeShortcut ? (
-          <Button size="sm" variant="ghost" onClick={() => void patchSettings({ workModeShortcut: undefined })} data-testid="set-work-mode-key-reset">
-            {t('set.workModeKeyReset')}
-          </Button>
-        ) : null}
-        {/* 开 = 不落盘（没改过的默认态），关才写 false */}
-        <Switch
-          checked={workModeShortcutOn}
-          onChange={(next) => void patchSettings({ workModeShortcutEnabled: next })}
-          label={t('set.workModeKey')}
-          testId="set-work-mode-key-enabled"
-        />
       </SettingRow>
 
       {/* 子代理结束后自动叫醒发起它的会话；关掉后模型只能自己去查 */}

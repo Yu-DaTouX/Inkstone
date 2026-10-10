@@ -2,6 +2,9 @@
 .workspace.workspace-tiled { grid-template-columns: var(--w-rail) minmax(0, 1fr); }
 .tile-workspace { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .tile-workspace-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; position: relative; }
+/* 快速调整窗口时布局的最小宽度会瞬间超出，滚动条一闪而过很突兀；仍可用滚轮 / Shift+滚轮横向滚动 */
+.tile-workspace-scroll::-webkit-scrollbar:horizontal,
+.split-row::-webkit-scrollbar:horizontal { display: none; }
 .tile-workspace-pad { width: max-content; min-width: 100%; box-sizing: border-box; }
 .tile-workspace-canvas { position: relative; }
 .tile-frame { position: absolute; pointer-events: none; }

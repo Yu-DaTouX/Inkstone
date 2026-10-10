@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">让想法成形。</h1>
-<p align="center">砚（Inkstone）是装在电脑上的 AI 助手：你说要做什么，它帮你查资料、写东西、改代码，过程和结果都摆在眼前。</p>
+<p align="center">砚（Inkstone）是基于 pi 的轻量图形 Agent 客户端：选择模型、交代任务，直接查看工具过程与结果。</p>
 
 <p align="center">
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><b>下载</b></a> ·
@@ -35,8 +35,15 @@
 - **改坏了能退回**：每次发消息前，自动给项目存一份快照；不满意，一键退回到那一刻。
 - **危险操作先问你**：大范围删除、丢弃改动这类操作，会先停下来等你点头。
 - **模型随你选**：在软件里登录，或填入 API Key 就能用，随时切换。
+- **插件按需添加**：在[插件市场](docs/PLUGIN_MARKET.md)下载砚适配的插件，或搜索、安装和管理 pi 生态包。
 - **以前聊过的都找得到**：按 `Ctrl+K`，搜标题或聊天内容。
-- **还能当老师**：说想学什么，它一步步讲、出题、等你作答，答错了先给提示。
+
+
+## 产品方向
+
+目标是简单易读的 UI、危险审批与原生模式两档权限、指定模型的子 Agent，以及轻量和性能。桌面目标覆盖 Windows、macOS、Linux；Android/iOS 作为连接电脑的工具。写作、学习、空间和资料库不再作为独立产品模块。
+
+当前开发版已接入 Claude Code 订阅插件、指定模型子 Agent 和两档权限；CC 只读子任务暂不支持。默认界面已退出旧计划/自主模式、空间、资料库与专用写作/学习流程。当前主要交付和验证 Windows，其他平台不能视为已支持；开发版改动未必包含在已下载的发行包中。功能与验证边界见[产品方向](docs/PRODUCT_DIRECTION.md)。
 
 ## 开始使用
 
@@ -52,6 +59,7 @@
 - 聊天记录和设置都存在你自己的电脑上。你发给 AI 的内容会发到你选的模型服务，费用由该服务收取。
 - 换电脑或换版本前，先看 [备份说明](docs/GETTING_STARTED.md#数据与备份)。
 - 安卓手机可以连上电脑看进度、回消息，目前还在测试，见 [手机接入说明](docs/MOBILE_ACCESS.md)。
+- Hermes 可通过独立插件查看会话、选择模型和提交任务，见 [Hermes 控制插件](integrations/hermes-inkstone/README.md)。
 
 遇到问题欢迎提 [Issue](https://github.com/Yu-DaTouX/Inkstone/issues)，写上版本号和操作步骤，截图时记得遮住密钥。
 
@@ -72,6 +80,8 @@ npm run launch
 启动器会检查依赖、准备缺失的内置运行时并按需构建。已有工作区可双击 `启动-砚.cmd`；开发模式使用 `开发-砚.cmd` 或 `npm run launch:dev`。
 
 参与贡献前请阅读 [贡献指南](docs/CONTRIBUTING.md) 和 [AI 协作约定](AGENTS.md)。按功能定位代码见[代码地图](docs/CODE_MAP.md)，架构、构建与发布入口见[文档索引](docs/README.md)。
+
+既有普通文件任务与本机独立 Node 入口见[运行服务](docs/AGENT_SERVICE.md)，现列为精简复核对象，不作为新产品的必选流程。
 
 </details>
 

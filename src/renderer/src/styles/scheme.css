@@ -1,0 +1,890 @@
+/*
+ * 界面方案 E（设计规范文首「界面重构」）。
+ *
+ * 全界面统一的一层：Maple Mono CN 常规体、冷中性三层背景、终端蓝，
+ * 信息默认简洁、可展开到全面。本文件排在 modules 层最后，同特异性时压过各模块的旧写法；
+ * 各模块里被这里取代的规则留待按文件逐步删减（共享热点文件只做小范围编辑）。
+ *
+ * 只写版面与层级：控件外观仍来自 ui.css；颜色、字号、尺寸只取令牌。
+ */
+
+/* ───────────────────────────── 字体与正文层级 ───────────────────────────── */
+
+/* 只有 Regular：强调靠颜色与字号，不靠粗体（font-synthesis 在 tokens.css 的 body 上） */
+.md strong,
+.md b {
+  font-weight: var(--fw-regular);
+  color: var(--fg);
+  background: linear-gradient(transparent 62%, var(--accent-soft) 62%);
+}
+.md {
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  letter-spacing: normal;
+}
+.md h1,
+.md h2 {
+  margin: var(--sp-4) 0 var(--sp-3);
+  color: var(--fg);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-regular);
+  line-height: 1.5;
+}
+.md h3 {
+  margin: var(--sp-5) 0 var(--sp-2);
+  color: var(--fg);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-regular);
+  line-height: 1.55;
+}
+.md h3::before {
+  content: '## ';
+  color: var(--fg-mute);
+}
+.md h4 {
+  margin: var(--sp-4) 0 var(--sp-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md p {
+  margin: 0 0 var(--sp-3);
+}
+.md th {
+  color: var(--fg-mute);
+  font-weight: var(--fw-regular);
+}
+.md table {
+  font-size: var(--fs-base);
+}
+
+/* ───────────────────────────── 用户消息：› 提示符 + 正文，无框 ───────────────────────────── */
+
+.msg.user .bubble {
+  grid-template-columns: 2ch minmax(0, 1fr);
+  column-gap: 1ch;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+.bubble-prompt {
+  font-weight: var(--fw-regular);
+}
+/* 时间、分支、回退在悬停或聚焦时淡入，平时让位给正文 */
+.msg.user .msg-meta {
+  margin-top: 0;
+  padding-left: 3ch;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.msg.user:hover .msg-meta,
+.msg.user:focus-within .msg-meta {
+  opacity: 1;
+}
+.msg.user .msg-act {
+  padding: 0 var(--sp-1);
+  border: 0;
+  background: none;
+}
+
+/* 用户消息与紧随其后的回复靠近些：间距只给回合与回合之间 */
+.msg.user {
+  margin-bottom: var(--sp-3);
+}
+
+/* 问题面板的回答：整块带强调色左线与底色，回看时一眼能认出这不是手打的 */
+.msg.user:has(.msg-tag.question) .bubble {
+  border-left: var(--sp-1) solid var(--accent);
+  background: var(--accent-soft);
+}
+.msg.user .msg-tag.question {
+  padding: 2px var(--sp-2);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: var(--fw-strong);
+}
+
+/* ───────────────────────────── 回合 ───────────────────────────── */
+
+.msg.assistant {
+  margin-bottom: var(--d-message-gap);
+  padding-bottom: var(--d-message-gap);
+  border-bottom: 1px solid var(--border-soft);
+}
+.stream-inner > .msg.assistant:last-child,
+.stream-row:last-child > .msg.assistant:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* 活动行：字符状态 · 状态文字 · 计数 ······ 用时（原地更新） */
+.tact {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0 var(--sp-2);
+  margin: var(--sp-1) 0 var(--sp-3);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  line-height: var(--lh-row);
+  font-variant-numeric: tabular-nums;
+}
+.tact-foot {
+  margin: var(--sp-2) 0 var(--sp-1);
+  gap: 0 var(--sp-3);
+}
+.tact-glyph {
+  flex: none;
+  width: 2ch;
+  color: var(--fg-mute);
+  text-align: center;
+}
+.tact-k {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+/* 阶段文字（如正在跑的长命令）可截断，计数与用时永远留在同一行 */
+.tact-item,
+.tact-time,
+.tact .turn-time {
+  flex: none;
+  white-space: nowrap;
+}
+.tact-item::before {
+  content: '·';
+  margin-right: var(--sp-2);
+  color: var(--fg-mute);
+}
+.tact-item.err {
+  color: var(--err);
+}
+.tact-sp {
+  flex: 1;
+}
+.tact-time,
+.tact .turn-time {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.tact[data-kind='run'] .tact-glyph {
+  color: var(--accent);
+}
+.tact[data-kind='wait'] .tact-glyph,
+.tact[data-kind='wait'] .tact-k {
+  color: var(--warn);
+}
+.tact[data-kind='err'] .tact-glyph,
+.tact[data-kind='err'] .tact-k {
+  color: var(--err);
+}
+/* 复制在悬停 / 聚焦时出现，平时这一行只有事实 */
+.tact-copy {
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.msg.assistant:hover .tact-copy,
+.tact-copy:focus-visible {
+  opacity: 1;
+}
+
+/* 失败摘要：首要信息，错误浅底 + 左侧错误色线 */
+.msg-error {
+  align-items: flex-start;
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-left: 2px solid var(--err);
+  border-radius: 0;
+  background: var(--err-soft);
+  color: var(--err);
+  font-size: var(--fs-base);
+  line-height: var(--lh-row);
+}
+.msg-error > .ico {
+  margin-top: var(--sp-1);
+}
+
+/* 解说比正式回答退一级 */
+.turn-commentary .md {
+  color: var(--fg-dim);
+}
+
+/* ───────────────────────────── 过程：一行摘要 → ├─ └─ 调用树 ───────────────────────────── */
+
+.tproc {
+  margin-top: var(--sp-4);
+  font-size: var(--fs-base);
+  line-height: var(--lh-row);
+}
+.tproc-sum {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: calc(100% + 2 * var(--sp-1));
+  margin: 0 calc(var(--sp-1) * -1);
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-xs);
+  color: var(--fg-dim);
+  text-align: left;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.tproc-sum:hover {
+  background: var(--bg-1);
+  color: var(--fg);
+}
+.tproc-tw {
+  display: inline-block;
+  width: 2ch;
+  color: var(--fg-mute);
+  text-align: center;
+  transition: transform var(--dur) var(--ease);
+}
+.tproc.open .tproc-tw {
+  transform: rotate(90deg);
+}
+.tproc-meta {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: var(--sp-2);
+  overflow: hidden;
+  color: var(--fg-mute);
+  white-space: nowrap;
+}
+.tproc-meta > span + span::before {
+  content: '·';
+  margin-right: var(--sp-2);
+}
+.tproc-meta > .err {
+  color: var(--err);
+}
+.tproc-meta > .run {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--accent);
+  text-overflow: ellipsis;
+}
+.tproc-tree {
+  margin-top: var(--sp-1);
+  /* 步骤很多时在树内滚动，不把整条消息撑得很长 */
+  max-height: min(46vh, 26em);
+  /* 只纵向滚动：overflow-y 非 visible 时 x 会变 auto，长行就会冒出横向滚动条 */
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+/* 实时思考链：回合顶部，与正文之间留一点距离 */
+.turn-reason {
+  margin: 0 0 var(--sp-3);
+}
+
+/* 树里的推理与工具组都是平铺的行，不再是带框的命令块表 */
+.tproc .reason {
+  margin: 0;
+}
+.tproc .reason-head,
+.tproc .trow-head,
+.tproc .tgroup-fold {
+  height: var(--lh-row);
+  gap: 1ch;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-xs);
+  font-size: var(--fs-base);
+}
+.tproc .tgroup {
+  margin: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  font-size: var(--fs-base);
+}
+.tproc .tgroup > * + * {
+  border-top: 0;
+}
+/* 树枝：每一行前面一段 ├─，最后一行 └─ */
+.tproc .reason-head::before,
+.tproc .tgroup > .trow > .trow-head::before,
+.tproc .tgroup > .tgroup-fold::before {
+  content: '├─';
+  flex: none;
+  width: 2ch;
+  color: var(--fg-mute);
+  white-space: pre;
+}
+.tproc .tproc-tree > .reason:last-child .reason-head::before,
+.tproc .tgroup > .trow:last-child > .trow-head::before {
+  content: '└─';
+}
+.tproc .trow-nest {
+  margin-left: calc(3ch + var(--sp-1));
+}
+.tproc .trow-nest .trow-head {
+  height: var(--lh-row);
+}
+.tproc .trow-head:hover,
+.tproc .trow.open > .trow-head,
+.tproc .tgroup-fold:hover,
+.tproc .reason-head:hover {
+  background: var(--bg-1);
+}
+/* 状态改为字符：✓ 完成（中性）· ✕ 失败 · ! 未完成 */
+.trow-dot {
+  display: inline-block;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  color: var(--fg-mute);
+  line-height: 1;
+}
+.trow-dot.ok,
+.trow-dot.err,
+.trow-dot.warn {
+  background: none;
+}
+.trow-dot.ok::before {
+  content: '✓';
+}
+.trow-dot.err::before {
+  content: '✕';
+  color: var(--err);
+}
+.trow-dot.warn::before {
+  content: '!';
+  color: var(--warn);
+}
+.trow-ico {
+  width: 2ch;
+}
+.trow-verb {
+  min-width: 0;
+  color: var(--fg);
+}
+.trow-target {
+  color: var(--fg-mute);
+  font-size: var(--fs-base);
+}
+.trow-head:hover .trow-target {
+  color: var(--fg-dim);
+}
+.trow[data-state='error'] .trow-verb {
+  color: var(--err);
+}
+.trow-body {
+  border-top: 0;
+  border-left: 1px solid var(--border);
+  background: none;
+  margin-left: calc(2ch + var(--sp-1));
+}
+
+/* 推理行：名称 + 「服务返回的摘要」标签 + 最新一句 */
+.reason-head {
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+}
+.reason-tag {
+  flex: none;
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+.reason-body {
+  border-radius: 0;
+  background: none;
+  font-size: var(--fs-base);
+}
+.reason-body.open {
+  border-width: 0 0 0 1px;
+  border-color: var(--border);
+  margin-left: calc(2ch + var(--sp-1));
+}
+
+/* ───────────────────────────── 过程并列：宽度够时放到右侧一栏 ───────────────────────────── */
+
+.stream {
+  container: procstream / inline-size;
+}
+/* 判定宽度 = 正文列 + 左右各一条过程栏（对称，正文始终居中）+ 间距，约 1240 */
+@container procstream (min-width: 1240px) {
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .stream-inner,
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .stream-row {
+    max-width: calc(var(--w-stream) + 2 * (var(--w-proc-side) + var(--gap-proc-side)));
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .msg:not(.assistant) .msg-body {
+    margin-inline: calc(var(--w-proc-side) + var(--gap-proc-side));
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .msg.assistant .msg-body {
+    display: grid;
+    grid-template-columns: var(--w-proc-side) minmax(0, 1fr) var(--w-proc-side);
+    column-gap: var(--gap-proc-side);
+    align-items: start;
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .msg.assistant .turn-main {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  html[data-proc-layout='side'] .msg.assistant .tproc {
+    grid-column: 3;
+  }
+  html[data-proc-layout='left'] .msg.assistant .tproc {
+    grid-column: 1;
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .msg.assistant .tproc {
+    grid-row: 1;
+    position: sticky;
+    top: 0;
+    max-height: 80vh;
+    margin-top: var(--sp-3);
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .reason-head,
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .trow-head {
+    min-width: 0;
+    overflow: hidden;
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .reason-tag {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  /* 栏宽有限：只留状态、名称、耗时，目标截断；不画树枝 */
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .reason-head::before,
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .tgroup > .trow > .trow-head::before,
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .tgroup > .tgroup-fold::before {
+    content: none;
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .reason-head {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--lh-row);
+    row-gap: var(--sp-1);
+    padding-bottom: var(--sp-1);
+  }
+  /* 栏里把最新的推理内容换行显示（最多 4 行），不再只剩一个标签 */
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .reason-peek {
+    flex: 1 0 100%;
+    direction: ltr;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    /* 固定两行高：推理句子长短变化时，侧栏不跟着忽高忽低 */
+    line-height: 1.5;
+    height: 3em;
+    margin-left: calc(2ch + var(--sp-1));
+  }
+  /* 栏宽有限：摘要里的计数、推理、失败数换行显示，不被截掉 */
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc-sum {
+    align-items: flex-start;
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc-meta {
+    flex-wrap: wrap;
+    row-gap: 0;
+    overflow: visible;
+    white-space: normal;
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .trow-nest {
+    margin-left: var(--sp-3);
+  }
+}
+
+/* ───────────────────────────── 待批准：消息流里唯一带完整边框的块 ───────────────────────────── */
+
+.approval-card {
+  border: 1px solid var(--warn);
+  border-radius: var(--r-xs);
+  background: var(--bg-2);
+  box-shadow: none;
+}
+
+/* ───────────────────────────── 输入框：单层平面，运行控制并入发送位 ───────────────────────────── */
+
+.composer {
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+}
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+/* 顶边运行条取消：只留间距 */
+.cborder,
+.cborder.busy {
+  grid-template-rows: 0fr;
+  margin-bottom: var(--sp-2);
+}
+.composer-orbit::after {
+  content: none;
+}
+.composer-stop {
+  gap: var(--sp-2);
+  font-variant-numeric: tabular-nums;
+}
+/* Button 把文字包在一个 span 里：方块与计时用外边距隔开 */
+.composer-stop-sq {
+  display: inline-block;
+  width: var(--sp-2);
+  height: var(--sp-2);
+  margin-right: var(--sp-2);
+  background: currentColor;
+}
+.composer-stop .composer-run-time {
+  margin-left: var(--sp-2);
+}
+.composer-run-time {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.composer-run {
+  max-width: 40ch;
+  overflow: hidden;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+}
+
+/* ───────────────────────────── 左栏：24px 行，字符状态在行首 ───────────────────────────── */
+
+.srow-row {
+  height: var(--lh-row);
+  border-radius: var(--r-xs);
+}
+.srow-row:hover {
+  background: var(--bg-2);
+}
+.srow {
+  gap: 1ch;
+  font-size: var(--fs-base);
+}
+/* 状态点改为字符：等待 ◆ · 失败 ✕ · 未读 ● · 选中 ›；静止行在悬停时淡出一个 · */
+.srow-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 2ch;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-base);
+  line-height: 1;
+}
+.srow-dot::before {
+  content: '·';
+}
+.srow-row.selected .srow-dot,
+.srow-dot.waiting,
+.srow-dot.failed,
+.srow-dot.iso,
+.srow-dot.unread {
+  border: 0;
+  background: none;
+}
+.srow-row.selected .srow-dot {
+  color: var(--accent);
+}
+.srow-row.selected .srow-dot::before {
+  content: '›';
+}
+.srow-dot.waiting {
+  color: var(--warn);
+}
+.srow-dot.waiting::before {
+  content: '◆';
+}
+.srow-dot.failed {
+  color: var(--err);
+}
+.srow-dot.failed::before {
+  content: '✕';
+}
+.srow-dot.unread,
+.srow-dot.iso {
+  color: var(--accent);
+}
+.srow-dot.unread::before,
+.srow-dot.iso::before {
+  content: '●';
+}
+.srow-dot.iso.blocked {
+  color: var(--warn);
+}
+.srow-time {
+  font-size: var(--fs-xs);
+}
+
+/* ───────────────────────────── 状态栏：只留常看的 ───────────────────────────── */
+
+.statusbar {
+  background: var(--bg-1);
+  font-size: var(--fs-xs);
+}
+/* 运行状态：不再是实底色块，字符 + 文字，运行时强调色、等待警示色 */
+.sb-mode[data-mode] {
+  background: none;
+  color: var(--fg-mute);
+}
+.sb-mode[data-mode='run'] {
+  color: var(--accent);
+}
+.sb-mode[data-mode='wait'] {
+  color: var(--warn);
+}
+
+/* ───────────────────────────── 会话柄：刻度 + 就地变宽 + 预览卡 ───────────────────────────── */
+
+.outline-bar {
+  background: var(--fg-mute);
+  opacity: 0.45;
+}
+.outline-hit.on .outline-bar {
+  background: var(--fg);
+  opacity: 0.9;
+}
+.outline-hit.mark .outline-bar {
+  background: var(--accent);
+  opacity: 0.9;
+}
+.outline-hit.err .outline-bar {
+  background: var(--err);
+  opacity: 0.9;
+}
+.outline-hit.hover .outline-bar {
+  background: var(--accent);
+  opacity: 1;
+}
+/* 卡片可以进入：书签按钮可点；离开后由组件稍后收起 */
+.outline-preview {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--fs-base);
+  line-height: var(--lh-tight);
+  pointer-events: auto;
+}
+.op-head {
+  align-items: center;
+  margin-bottom: var(--sp-1);
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.op-n {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.op-head .op-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-body);
+}
+.op-mark {
+  flex: none;
+  width: var(--ctl-h-sm);
+  height: var(--ctl-h-sm);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+}
+.op-mark:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.op-mark[aria-pressed='true'] {
+  color: var(--accent);
+}
+.op-answer {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--fg-dim);
+  line-height: var(--lh-base);
+  white-space: normal;
+}
+.op-answer b {
+  color: var(--fg);
+  font-weight: var(--fw-regular);
+}
+.op-meta {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.op-meta .spacer {
+  flex: 1;
+}
+.op-meta.err > span:first-child {
+  color: var(--err);
+}
+.outline-preview .op-head {
+  margin: 0 0 var(--sp-1);
+  padding: 0;
+  border-bottom: 0;
+  background: none;
+}
+.op-head .op-title::before {
+  content: none;
+}
+.outline-preview .op-head .op-title {
+  padding: 0;
+  font-weight: var(--fw-regular);
+}
+.outline-preview .op-answer {
+  padding: 0;
+  margin: 0;
+  max-height: calc(var(--lh-base) * 3em);
+  font-size: var(--fs-base);
+}
+html[data-theme='light'] .outline-preview {
+  box-shadow: var(--shadow-pop);
+}
+
+/* ───────────────────────────── 智能界面：融入正文，不加底色、外框与分隔线 ───────────────────────────── */
+
+.vb {
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-5);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-size: var(--fs-base);
+}
+/* 标题是插图的说明文字：元数据字号、淡色，不与正文标题争层级 */
+.vb-title {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+}
+.vb-sub,
+.vb-note,
+.vb-source-line {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+/* 指标：只靠间距成组，数值比正文大一级 */
+.vb-stats {
+  gap: 0 var(--sp-5);
+  padding: 0;
+}
+.vb-tiles {
+  gap: 0 var(--sp-5);
+}
+.vb-tile {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.vb-stat-label {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.vb-stat-detail {
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+.vb-stat-value {
+  font-size: var(--fs-stat);
+  font-weight: var(--fw-regular);
+  line-height: 1.45;
+}
+.vb-meter {
+  height: var(--sp-1);
+  border-radius: var(--r-xs);
+  background: var(--border);
+}
+/* 卡片：并排或成列，不画框与分隔线；推荐项靠名称正文色与「● 推荐」区分 */
+.vb-card,
+.vb-card:first-child {
+  padding: var(--sp-1) 0;
+  border-top: 0;
+}
+.vb-cards.grid .vb-card-list {
+  gap: var(--sp-3) var(--sp-5);
+}
+.vb-cards.grid .vb-card,
+.vb-cards.grid .vb-card:first-child,
+.vb-cards.list .vb-card.recommended {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+.vb-card-name {
+  color: var(--fg-dim);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+}
+.vb-card.recommended .vb-card-name {
+  color: var(--fg);
+}
+.vb-card-desc {
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+}
+.vb-card-pick {
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+}
+.vb-card-pick::before {
+  content: '● ';
+}
+.vb-stepper-panel {
+  padding: var(--sp-2) 0 0;
+  border-radius: 0;
+  background: none;
+}
+.vb-stepper-title {
+  font-weight: var(--fw-regular);
+}
+/* 小部件：标题行与图表标题同级，生命周期写在右侧 */
+.vb-widget-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--lh-row);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.vb-widget-sp {
+  flex: 1;
+}
+.vb-widget-life.on {
+  color: var(--ok);
+}
+.vb-ask {
+  padding: var(--sp-1) 0;
+  border-radius: 0;
+  background: none;
+}
+
+/* 过程摘要在正文上方：与正文之间留一点距离（并列栏里的 .tproc 不在 .turn-main 内，不受影响） */
+.turn-main > .tproc {
+  margin-bottom: var(--sp-3);
+}

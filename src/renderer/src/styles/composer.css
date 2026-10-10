@@ -67,6 +67,7 @@
 /* ── 工具条 ── */
 .composer-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   margin-top: var(--sp-1);
@@ -85,8 +86,11 @@
   white-space: nowrap;
 }
 .composer-bar > .composer-tools {
-  flex: 1 1 auto;
+  flex: 1 0 var(--sp-6);
+  min-width: var(--sp-6);
 }
+.composer-bar > .picker-wrap { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.composer-bar .mt-trigger { max-width: 100%; min-width: 0; }
 .composer-tools > .ctool-hint {
   flex: 0 1 auto;
   min-width: 0;
@@ -273,13 +277,9 @@
   z-index: 40;
   display: flex;
   flex-direction: column;
-  width: min(360px, calc(100vw - 24px));
-  max-height: min(560px, calc(100vh - 120px));
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
-  box-shadow: var(--shadow-pop);
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(680px, calc(100vh - 120px));
+  overflow: hidden auto;
 }
 
 .mt-trigger:hover:not(:disabled),
@@ -297,7 +297,7 @@
  * 强度：按**档位色**染，不再统一用强调色。
  *
  * 令牌与输入框顶边框（`.cborder`）是同一套（`motion.css` 的 `--think-*`，
- * 取自 pi 的 dark.json 七档）：同一个档位在**边框**与**文字**上是同一个颜色，
+ * 七档冷→暖色阶）：同一个档位在**边框**与**文字**上是同一个颜色，
  * 这两处才不会互相矛盾。改档位色只需改 motion.css 那七个变量。
  */
 .mt-level[data-level='off'],
@@ -383,46 +383,6 @@
 }
 
 /* ---- 下半：模型列表 ---- */
-.mt-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border-soft);
-  color: var(--fg-mute);
-  flex: none;
-}
-
-.mt-search {
-  transition: color var(--dur-200) var(--ease), box-shadow var(--dur-200) var(--ease);
-}
-
-/* 整行就是输入框：聚焦时只亮放大镜与底线，不在行里再套一个框 */
-.mt-search:focus-within {
-  color: var(--accent);
-  box-shadow: inset 0 -1px 0 var(--accent-line);
-}
-
-.mt-search input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  outline: none;
-  font-size: var(--fs-sm);
-  color: var(--fg);
-}
-
-.mt-search input::placeholder {
-  color: var(--fg-mute);
-}
-
-.mt-count {
-  flex: none;
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-}
-
 .mt-list {
   overflow: hidden auto;
   scrollbar-gutter: stable;
@@ -432,92 +392,6 @@
   flex: 1 1 auto;
 }
 
-.mt-group + .mt-group {
-  margin-top: var(--sp-1);
-}
-
-.mt-group-head {
-  padding: 6px var(--sp-2) 3px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.04em;
-}
-
-.mt-item {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  width: 100%;
-  padding: var(--sp-1) var(--sp-2);
-  border-radius: var(--r-sm);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  text-align: left;
-  transition: background var(--dur) var(--ease);
-}
-
-.mt-item:hover {
-  background: var(--bg-2);
-  color: var(--fg);
-}
-
-.mt-item.sel {
-  background: var(--bg-2);
-  color: var(--fg);
-}
-
-/* 键盘高亮（N08）：与 sel（当前生效的模型）分开 —— 高亮是「按 Enter
-   会选它」，sel 是「现在就是它」，两者可以同时落在同一行。 */
-.mt-item.cur {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-
-.mt-item.sel .ico {
-  color: var(--accent);
-  flex: none;
-}
-
-.mt-item-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mt-tag {
-  flex: none;
-  padding: 0 var(--sp-1);
-  border-radius: var(--r-xs);
-  border: 1px solid var(--border);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-
-/*
- * “未配置凭证”（D12）。
- *
- * 用警告色而不是错误色：这不是坏了，而是“还没设置”—— 用户下一步
- * 是去填 key / 登录，不需要红色吓一下。
- */
-.mt-tag.warn {
-  border-color: var(--warn, var(--border));
-  color: var(--warn, var(--fg-mute));
-}
-
-.mt-item.needs-auth .mt-item-name {
-  color: var(--fg-mute);
-}
-
-.mt-empty {
-  padding: var(--sp-4) var(--sp-3);
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  text-align: center;
-}
-
 /* 把「本轮用量」之后的所有内容推到右边 */
 .usagebar > .ub-turn {
   margin-right: auto;
@@ -525,11 +399,11 @@
 
 .mt-model {
   color: var(--fg-dim);
-  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 130px;
+  max-width: 240px;
+  min-width: 0;
 }
 
 /* 44. 思考强度档位（替换掉出问题的原生滑块） */
@@ -604,21 +478,16 @@
 }
 
 .mt-head {
-  padding: var(--sp-3) var(--sp-3) var(--sp-2);
   border-bottom: 1px solid var(--border-soft);
   flex: none;
-  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
 }
 
 .mt-head-row {
   display: flex;
   align-items: baseline;
   gap: var(--sp-2);
-  margin-bottom: var(--sp-3);
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-2);
+  margin-bottom: var(--sp-1);
 }
 
 .mt-head-row .spacer {
@@ -636,7 +505,7 @@
   margin-bottom: 0;
 }
 .mt-pop.compact .ui-step-slider {
-  padding-top: var(--sp-2);
+  padding-top: var(--sp-1);
 }
 .mt-pop.compact .mt-detail {
   display: grid;
@@ -2125,5 +1994,171 @@
 .composer { container-type: inline-size; }
 @container (max-width: 520px) {
   .ctx-ring-text, .mt-trigger .mt-level { display: none; }
-  .composer-tools { overflow: hidden; }
+}
+/*
+ * 最窄的会话磁贴：左侧工具按内容宽度占位（不再被压到 24px 而与右侧重叠），
+ * 让模型名先省略，用量环、再到语音按钮依次让位，发送键始终与工具同一行。
+ */
+/* 权限档位：宽时只显示文字；窄时收成一个盾牌图标（悬停与读屏仍给出完整名称和当前档位） */
+.composer-permission > .ico:first-child { display: none; }
+@container (max-width: 480px) {
+  .composer-permission > .ico:first-child { display: inline-block; }
+  .composer-permission .ui-choice-text { display: none; }
+}
+@container (max-width: 420px) {
+  .composer-bar { gap: var(--sp-1); }
+  .composer-bar > .composer-tools { flex: 0 0 auto; min-width: min-content; }
+  .composer-bar > .picker-wrap { flex: 1 1 0; }
+  .composer-bar .mt-model { max-width: none; }
+}
+/* 更窄：用量环先让位，再到语音按钮；权限、+、模型与发送始终可用 */
+@container (max-width: 340px) {
+  .composer-bar .ctx-ring { display: none; }
+}
+@container (max-width: 290px) {
+  .composer-bar .voice-input:not(.recording) { display: none; }
+}
+
+/* Shared model catalog; appearance remains in ui.css. */
+.model-catalog { display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; padding: var(--sp-2); flex: 1 1 auto; }
+.model-catalog > .ui-input { width: 100%; flex: none; }
+.mt-pop > .model-catalog { min-height: 180px; }
+.model-filters { display: flex; align-items: center; gap: var(--sp-1); flex: none; min-width: 0; }
+.model-filters > .btn { flex: none; }
+.model-count { flex: none; margin-left: auto; padding-inline: var(--sp-1); color: var(--fg-mute); font-size: var(--fs-xs); white-space: nowrap; }
+.model-filters .model-provider { flex: 0 1 auto; min-width: 0; max-width: 46%; }
+.model-rows { display: flex; flex-direction: column; gap: 1px; padding: 0; max-height: 340px; min-height: 52px; overscroll-behavior: contain; }
+.model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; flex: none; padding-right: var(--sp-1); }
+.mt-settings { flex: none; border-top: 1px solid var(--border-soft); }
+.mt-settings > .mt-head:last-child { border-bottom: 0; }
+.mt-settings .mt-detail { display: grid; grid-template-columns: minmax(0, 1fr) 112px; align-items: center; gap: var(--sp-4); }
+.mt-settings .mt-detail .mt-head-row { margin-bottom: 0; }
+.mt-pop .ui-step-slider { padding-top: var(--sp-1); }
+.mt-settings .mt-detail .mt-head-level { display: none; }
+.delegate-model-menu > .btn { flex: none; margin: var(--sp-2); }
+.delegate-form [data-testid="delegate-model"] { width: 100%; max-width: 100%; }
+/* 可视化回答开关：与详细程度同一行布局，开关靠右 */
+.mt-settings .mt-visual > .switch-pill { justify-self: end; }
+
+/* 问题面板的表单形态（QuestionForm.tsx）：字段纵向排列，选择题是可点的卡片 */
+.qpanel-body:has(.qform) {
+  max-height: min(70vh, calc(var(--sp-6) * 18));
+}
+.qform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.qform-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.qform-label {
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  color: var(--fg);
+}
+.qform-optional {
+  margin-left: var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  color: var(--fg-mute);
+}
+.qform-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--sp-6) * 5), 1fr));
+  gap: var(--sp-2);
+}
+.qform-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.qform-option:hover:not(:disabled) {
+  border-color: var(--border-str);
+}
+.qform-option.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.qform-option:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.qform-option-icon {
+  margin-top: 1px;
+  color: var(--fg-dim);
+}
+.qform-option-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.qform-option-label {
+  font-size: var(--fs-base);
+}
+.qform-option-desc {
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+.qform-check {
+  flex: none;
+  width: var(--sp-3);
+  height: var(--sp-3);
+  margin-top: 1px;
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-full);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.qform-option.on .qform-check {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 var(--sp-1) var(--accent-soft);
+}
+.qform-other,
+.qform-text,
+.qform-field > .ui-input {
+  width: 100%;
+}
+.qform-text {
+  resize: vertical;
+  min-height: calc(var(--sp-6) * 2);
+}
+.qform-range {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.qform-range input {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.qform-range-value {
+  min-width: calc(var(--sp-6) + var(--sp-4));
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.qform-error {
+  font-size: var(--fs-xs);
+  color: var(--err);
+}
+.qform-field.missing .qform-options,
+.qform-field.missing > .ui-input {
+  outline: 1px solid var(--err);
+  outline-offset: 1px;
+  border-radius: var(--r-md);
 }

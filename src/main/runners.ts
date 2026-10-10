@@ -32,7 +32,8 @@
  *   会把这条正常过渡当成过期响应丢掉。判定在 `renderer/src/state/capability-request.ts`，有单测。
  */
 import type { AgentController } from './agent'
-import type { RunnerStatus, RuntimeEnvelope, SessionScope, SessionState } from '../shared/ipc'
+import type { RunnerStatus, RuntimeEnvelope, SessionScope } from '../shared/ipc'
+import { executionBusy, runEnvelope, runStatus } from '../core/run-state'
 
 /**
  * 同时运行的会话实例上限（含当前正在查看的那个）。
@@ -129,6 +130,8 @@ export class RunnerRegistry {
       limit?: number
       /** 造一个新的 pi 会话实例。id 用于给 IPC 事件标身份 */
       createAgent: (id: string, cwd: string, generation?: number) => AgentController
+      /** Apply desktop defaults only to a new conversation, never to restored history. */
+      prepareNewSession?: (agent: AgentController) => Promise<{ ok: boolean; error?: string }>
       /** 实例集合或状态变化时通知主进程（推给渲染端） */
       onChanged?: () => void
       /**
@@ -240,22 +243,16 @@ export class RunnerRegistry {
   runtimeOf(id: string): RuntimeEnvelope | null {
     const runner = this.runners.get(id)
     if (!runner) return null
-    const sessionId = runner.agent.getState()?.sessionId || `pending:${id}`
-    return {
-      sessionId,
-      runId: runner.id,
-      ...(runner.projectId ? { projectId: runner.projectId } : {}),
-      generation: runner.generation
-    }
+    return runEnvelope(runner, runner.agent.getState())
   }
 
   /** 某个实例此刻「忙着」吗：回合在跑，或有请求在等用户回答 */
   private busy(runner: Runner): boolean {
-    const st = runner.agent.getState()
-    if (st?.isAgentRunning === true || st?.isCompacting === true || st?.isStreaming === true) return true
-    /* 直执行 shell 也算忙：它同样在改工作目录（L05） */
-    if (runner.agent.hasRunningBash()) return true
-    return runner.agent.getPendingUiCount() > 0
+    return executionBusy(
+      runner.agent.getState(),
+      () => runner.agent.hasRunningBash(),
+      () => runner.agent.getPendingUiCount()
+    )
   }
 
   /** 按会话文件找实例 */
@@ -361,6 +358,7 @@ export class RunnerRegistry {
     if (idle) {
       const oldGeneration = idle.generation
       const oldProjectId = idle.projectId
+      const oldSessionFile = idle.agent.getState()?.sessionFile
       idle.generation = nextGeneration()
       idle.agent.setRunnerGeneration(idle.generation)
       idle.projectId = target.projectId
@@ -402,10 +400,15 @@ export class RunnerRegistry {
         }
       }
 
-      const res = target.sessionFile
+      let res = target.sessionFile
         ? await idle.agent.switchSession(target.sessionFile)
         : await idle.agent.newSession()
+      if (res.ok && !target.sessionFile && this.opts.prepareNewSession) res = await this.opts.prepareNewSession(idle.agent)
       if (!res.ok) {
+        // A failed remembered default must not replace the conversation being reused.
+        if (!target.sessionFile && oldSessionFile) {
+          try { await idle.agent.switchSession(oldSessionFile) } catch { /* Keep the original setup error. */ }
+        }
         idle.generation = oldGeneration
         idle.agent.setRunnerGeneration(oldGeneration)
         idle.projectId = oldProjectId
@@ -458,6 +461,10 @@ export class RunnerRegistry {
       } else {
         const initialized = await agent.initializeContextBudgetV1Default()
         if (!initialized.ok) failure = initialized.error ?? '新会话上下文策略初始化失败'
+        if (failure === undefined && this.opts.prepareNewSession) {
+          const prepared = await this.opts.prepareNewSession(agent)
+          if (!prepared.ok) failure = prepared.error ?? '新会话模型初始化失败'
+        }
       }
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error)
@@ -699,27 +706,23 @@ export class RunnerRegistry {
   /** 当前视图对应的状态（渲染端拉取 / 推送都用它） */
   statuses(): RunnerStatus[] {
     return [...this.runners.values()].filter((r) => !r.hidden).map((r) => {
-      const st: SessionState | null = r.agent.getState()
+      const st = r.agent.getState()
       const conn = r.agent.getConn().state
       /* 隔离状态按注册表的 cwd 查（spawn 时就定了），不看 state.cwd —— 后者在过渡期会漂 */
       const isolation = this.opts.isolationOf?.(r.cwd)
-      return {
+      return runStatus({
         id: r.id,
-        runId: r.id,
-        sessionFile: st?.sessionFile,
-        sessionId: st?.sessionId,
         projectId: r.projectId,
         generation: r.generation,
-        cwd: st?.cwd ?? r.cwd,
-        running: st?.isAgentRunning === true,
-        waiting: r.agent.getPendingUiCount() > 0,
-        failed: conn === 'error' || conn === 'exited',
+        cwd: r.cwd,
+        state: st,
+        pendingUiCount: r.agent.getPendingUiCount(),
         conn,
         createdAt: r.createdAt,
         lastActiveAt: r.lastActiveAt,
         isActive: r.id === this.activeId,
-        ...(isolation ? { isolation: isolation.state, isolationBranch: isolation.branch } : {})
-      }
+        isolation
+      })
     })
   }
 

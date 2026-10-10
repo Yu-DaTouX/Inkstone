@@ -7,6 +7,7 @@
  */
 import type { AppSettings, MainPush, SoundEvent } from '../../../shared/ipc'
 import type { Notice, Store } from './store'
+import { releaseResource } from './resource-owners'
 
 export interface PushContext {
   get(): Store
@@ -50,6 +51,7 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
       })
       break
     case 'browser-state':
+      if (!m.payload.open) releaseResource('browser')
       set({ browserState: m.payload })
       ctx.applyBrowserVisibility()
       break

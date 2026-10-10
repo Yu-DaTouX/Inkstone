@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
-import { ConsentSection } from './ConsentSection'
 import { ComputerUseSection } from './ComputerUseSection'
 import type {
   CapabilitySearchResultView,
@@ -145,26 +144,6 @@ export function CapabilitiesTab(): React.JSX.Element {
           testId="cap-checkpoints"
         />
       </SettingRow>
-      <SettingRow name={t('cap.guardTitle')} desc={t('cap.guardDesc')}>
-        <Switch
-          checked={settings?.guardOutsideWrites === true}
-          onChange={(enabled) => void patchSettings({ guardOutsideWrites: enabled })}
-          label={t('cap.guardTitle')}
-          testId="cap-guard-outside"
-        />
-      </SettingRow>
-      {(settings?.guardAllowRoots ?? []).length > 0 ? (
-        <SettingRow name={t('cap.guardRoots')} desc="" data-testid="cap-guard-roots">
-          <div className="ui-list">
-            {(settings?.guardAllowRoots ?? []).map((root) => (
-              <div key={root} className="ui-list-row">
-                <span className="ui-list-row-main" title={root}>{root}</span>
-                <Button size="sm" aria-label={t('cap.guardRootRemove', { path: root })} onClick={() => void patchSettings({ guardAllowRoots: (settings?.guardAllowRoots ?? []).filter((p) => p !== root) })}>{t('cap.guardRootRemoveBtn')}</Button>
-              </div>
-            ))}
-          </div>
-        </SettingRow>
-      ) : null}
       <SettingRow
         data-testid="cap-strategy"
         name={t('cap.strategyTitle')}
@@ -433,9 +412,6 @@ export function CapabilitiesTab(): React.JSX.Element {
             </div>
           </div>
         </div>
-      </Disclosure>
-      <Disclosure title={t('consent.title')} testId="cap-consent">
-        <ConsentSection />
       </Disclosure>
       {notice ? <div className="pkg-detail-warn" role="alert">{notice}</div> : null}
     </div>

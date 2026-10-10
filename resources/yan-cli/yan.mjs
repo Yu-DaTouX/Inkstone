@@ -329,6 +329,11 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
           yan question ask --request-file question.json
           question.json: {"question":"…","options":["选项 A","选项 B"],"timeout":180000}
           options 为空或省略时显示文本输入；否则最多 3 个，面板另有一行「或自行撰写回复」直接回填。
+          一次问清几项时改用 fields（1–5 项，与 options 二选一）：
+          {"question":"…","fields":[{"name":"side","label":"你是哪一方？","kind":"choice","options":[{"label":"甲方","description":"…"},"乙方"]},
+            {"name":"deadline","label":"什么时候要？","kind":"date"},{"name":"budget","label":"预算（元）","kind":"range","min":0,"max":5000,"step":100}]}
+          kind：choice（单选，2–3 项）/ multi（多选，2–6 项）/ text / date / number / range（需 min、max）；optional:true 可不填。
+          结果 data.answers 是按 name 的对象，data.answer 是一行摘要。
           完整答案落在 resultFile，stdout 只回摘要；取消 / 超时会如实返回，不猜答案。
 
 `,
@@ -380,7 +385,7 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
 说明：
   · start 默认使用独立 Git worktree；readOnly=true 使用当前目录但只开放 read/grep/find/ls；
   · 任务输入里的 goal 决定它做什么，deliverables / sources / boundary 决定它交回什么与不碰什么；
-    maxToolCalls（5–300）限工具调用次数，timeoutMinutes（1–60）限总时长（默认 30 分钟，另有 5 分钟无输出的空闲上限）；
+    maxToolCalls（5–300）限工具调用次数，timeoutMinutes（1–60）限总时长（默认 30 分钟，5 分钟未收到进展只提醒，不提前终止）；这些限额通过 brief 传入，写在 task 正文中不会设置宿主限额。
     到点先让它收尾交结论，宽限内仍不结束才停止；
   · 派出后不要 sleep 轮询：结束时宿主会通知你；
   · 子代理结束后，宿主会汇总「摘要 / 来源 / 成果」给主 agent ——

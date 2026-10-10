@@ -1,14 +1,18 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
-import { Button, StepSlider } from './ui'
+import { Button, StepSlider, Switch } from './ui'
+import { ModelCatalog } from './ModelCatalog'
+import { useFocusTrap, useModalLayer } from '../lib/modalLayer'
+import { useAnchoredPopover } from '../lib/useAnchoredPopover'
+import { WheelPicker } from './ui/WheelPicker'
 
 /** 模型与思考强度选择器：离散档位的点阵滑块，按当前模型报告的可用档位展示。 */
 export function ModelThinkingPicker() {
   const t = useT()
   const session = useStore((s) => s.session)
-  const models = useStore((s) => s.models)
   const levels = useStore((s) => s.thinkingLevels)
   const setModel = useStore((s) => s.setModel)
   const setThinking = useStore((s) => s.setThinking)
@@ -18,30 +22,26 @@ export function ModelThinkingPicker() {
   /* 回复详细程度（方案 3.1）：与推理强度分开的两个维度 */
   const patchSettings = useStore((s) => s.patchSettings)
   const responseDetail = useStore((s) => s.settings?.responseDetail ?? 'standard')
+  const visualAnswers = useStore((s) => s.settings?.visualAnswers) !== false
+  const rememberedModel = useStore(s => s.settings?.lastMainModel)
+  const models = useStore(s => s.models)
+  const [recoveryError, setRecoveryError] = useState('')
+  const [recovering, setRecovering] = useState(false)
 
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  /**
-   * 菜单最大高度（px）—— 按**触发器上方的真实可用空间**算（N08）。
-   *
-   * 为什么不只用 CSS：菜单是向上弹的（`bottom: 100%`），固定 `max-height`
-   * 在矮窗口里会把面板顶出窗口上沿（用户报的「看不到全部模型」）。
-   * 打开时量一次 `top` 再算，窗口多矮都不会越界；普通 900px 高窗口
-   * 给到 560px，列表能一次看到 8 行以上。
-   */
-  const [maxH, setMaxH] = useState(0)
-  /**
-   * `position: fixed` 的坐标（见 `.mt-pop` 的注释）：触发器在输入框内部，
-   * 而 `.composer` 是 `overflow: hidden` —— 菜单必须挂到视口上才不会被裁掉。
-   */
-  const [anchor, setAnchor] = useState<{ right: number; bottom: number } | null>(null)
-  /** 键盘高亮的下标（对应扁平后的模型列表）；-1 = 没在用键盘 */
-  const [cursor, setCursor] = useState(-1)
   const box = useRef<HTMLDivElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
+  const position = useAnchoredPopover(open, box, 420, 680)
+  const maxH = position.maxHeight
+  const { isTop } = useModalLayer(open, () => setOpen(false))
+  useFocusTrap(menu, open, isTop)
 
   /* pi 没拿到模型时会报一个名为 unknown 的占位：界面上不直接露出这个词 */
   const cur = session?.model && session.model.id !== 'unknown' && session.model.name !== 'unknown' ? session.model : undefined
   const level = session?.thinkingLevel ?? 'off'
+  /* 拖动手柄时头部实时显示手柄所在档位（松手才真正切档） */
+  const [previewLevel, setPreviewLevel] = useState<string | null>(null)
+  const headLevel = previewLevel ?? level
   const thinkingStatus = session?.thinkingLevelsStatus ?? (levels.length ? 'known' : 'unknown')
   const busy = !!session?.isStreaming || !!session?.isCompacting
 
@@ -66,64 +66,18 @@ export function ModelThinkingPicker() {
   // 点外面 / Esc 关掉
   useEffect(() => {
     if (!open) return
+    const release = useStore.getState().acquireOverlayBlocker('model-picker')
     const onDown = (e: MouseEvent): void => {
-      if (!box.current?.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        setOpen(false)
-      }
+      if (!isTop) return
+      if (!box.current?.contains(e.target as Node) && !menu.current?.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey, true)
     return () => {
+      release()
       document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey, true)
     }
-  }, [open])
+  }, [open, isTop])
 
-  useEffect(() => {
-    if (open) setQuery('')
-  }, [open])
-
-  /*
-   * 打开时量上方的可用高度（含窗口缩放后的 CSS 像素）。
-   * 用 useLayoutEffect：要在浏览器绘制前定下 max-height，
-   * 否则会先渲染一帧越界高度再跳一下。
-   */
-  useLayoutEffect(() => {
-    if (!open) {
-      setMaxH(0)
-      setAnchor(null)
-      return
-    }
-    const el = box.current
-    if (!el) return
-    const measure = (): void => {
-      const r = el.getBoundingClientRect()
-      /*
-       * 高度三重封顶：不越过标题栏（留 8px）、不超过窗口高度的 60%、最多 560px。
-       * 只按「触发器上方还有多少」算时，150% 缩放的 1080p 笔记本（约 680px 高）上
-       * 菜单会一直顶到标题栏，把整个对话区盖住；窗口最小尺寸时还会钻到标题栏下面。
-       */
-      const titlebar = document.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? 0
-      const room = Math.floor(r.top - 6 - Math.max(20, titlebar + 8))
-      const share = Math.floor(window.innerHeight * 0.6)
-      setMaxH(Math.max(200, Math.min(560, room, share)))
-      /*
-       * 菜单底边贴在触发器上沿往上 6px 处。
-       * 夹到 ≥ 8px：窗口矮/被拖到极端位置时不能弹出视口外面。
-       */
-      setAnchor({
-        right: Math.max(8, Math.round(window.innerWidth - r.right)),
-        bottom: Math.max(8, Math.round(window.innerHeight - r.top + 6))
-      })
-    }
-    measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [open])
 
   /**
    * 档位的中文名。
@@ -143,25 +97,6 @@ export function ModelThinkingPicker() {
     }
     return map[l] ?? l
   }
-
-  const groups = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    const hit = q
-      ? models.filter(
-          (m) =>
-            m.name.toLowerCase().includes(q) ||
-            m.id.toLowerCase().includes(q) ||
-            m.provider.toLowerCase().includes(q)
-        )
-      : models
-    const byProvider = new Map<string, typeof models>()
-    for (const m of hit) {
-      const list = byProvider.get(m.provider) ?? []
-      list.push(m)
-      byProvider.set(m.provider, list)
-    }
-    return [...byProvider.entries()]
-  }, [models, query])
 
   /*
    * ⚠️ 这里曾经是 `if (!cur) return null`（用户报的「看不到模型选择」）。
@@ -183,70 +118,6 @@ export function ModelThinkingPicker() {
   const customProvider = !!cur?.provider && /^yan-/.test(cur.provider)
   const showThinkingSection = hasLevels || thinkingStatus !== 'known' || notDeclared
 
-  /** 分组扁平化 —— 键盘上下走的是这个顺序（与视觉顺序一致） */
-  const flat = groups.flatMap(([, list]) => list)
-  const indexOf = new Map(flat.map((m, i) => [`${m.provider}|${m.id}`, i]))
-
-  /**
-   * 展开时把当前模型滚进视野 —— **只在打开那一刻做一次**。
-   *
-   * 这里曾经是每次渲染都新建的回调 ref：React 对「新函数」会重新调用，
-   * 于是 agent 生成期间（会话状态不停刷新、组件不停重渲染）列表每次都被拉回
-   * 当前模型，用户怎么滚都滚不动。
-   */
-  const listEl = useRef<HTMLDivElement | null>(null)
-  useLayoutEffect(() => {
-    if (!open) return
-    listEl.current?.querySelector<HTMLElement>('[data-current="1"]')?.scrollIntoView({ block: 'center' })
-  }, [open])
-
-  /**
-   * 键盘高亮（N08：鼠标与键盘都能选中）。
-   *
-   * 打开、搜索结果变化、以及点选某个模型之后都重算一次：
-   * 高亮始终落在当前模型上（找不到就第一项），用户一进来就能直接上下走。
-   */
-  const cursorKey = cursor >= 0 ? `${flat[cursor]?.provider}|${flat[cursor]?.id}` : ''
-  useEffect(() => {
-    if (!open) return
-    const i = flat.findIndex((m) => m.provider === cur?.provider && m.id === cur?.id)
-    setCursor(i >= 0 ? i : flat.length > 0 ? 0 : -1)
-    // 依赖只取「列表变了没 / 当前模型变了没」，平铺数组每次新建不能用引用
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, flat.length, query, cur?.provider, cur?.id])
-
-  /** 高亮项滚进视野（键盘走到底时列表要跟着动） */
-  const cursorEl = useRef<HTMLButtonElement | null>(null)
-  useEffect(() => {
-    if (!open) return
-    cursorEl.current?.scrollIntoView({ block: 'nearest' })
-  }, [open, cursorKey])
-
-  /**
-   * 搜索框的键盘导航。
-   *
-   * Enter 只「接受当前高亮」，不发消息、也不关面板 —— 用户可能接着调
-   * 思考强度而模型已经切好了。⌘/IME 组合期间完全不打岔，选词用得上的
-   * Enter / 方向键必须留给输入法。
-   */
-  const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (e.nativeEvent.isComposing) return
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault()
-      if (flat.length === 0) return
-      const base = cursor < 0 ? -1 : cursor
-      const next = e.key === 'ArrowDown' ? base + 1 : base - 1
-      setCursor(Math.max(0, Math.min(flat.length - 1, next)))
-      return
-    }
-    if (e.key === 'Enter') {
-      const m = cursor >= 0 ? flat[cursor] : undefined
-      if (!m) return
-      e.preventDefault()
-      void setModel(m.provider, m.id)
-    }
-  }
-
   return (
     <div className="picker-wrap" ref={box}>
       <button
@@ -256,6 +127,7 @@ export function ModelThinkingPicker() {
         title={busy ? t('picker.busy') : cur ? t('picker.modelTip') : t('picker.notReadyTip')}
         data-testid="model-picker"
         data-state={cur ? 'ready' : 'unknown'}
+        aria-haspopup="dialog" aria-expanded={open}
       >
         {/* 档位色的小点：与运行条同一套 --think-* 颜色，一眼看出当前强度 */}
         <span className="mt-dot" data-level={hasLevels ? level : 'off'} aria-hidden />
@@ -268,16 +140,33 @@ export function ModelThinkingPicker() {
         <Icon name="chevron-right" size={12} className={`mt-chev chev ${open ? 'flip-up' : 'on'}`} />
       </button>
 
-      {open ? (
+      {open ? createPortal(
         <div
           /* 矮窗口：两块设置收紧，把高度让给模型列表 */
           className={`mt-pop${maxH && maxH < 480 ? ' compact' : ''}`}
+          ref={menu} role="dialog" aria-modal="true" aria-label={t('picker.searchModel')}
           data-testid="model-menu"
-          style={{
-            ...(maxH ? { maxHeight: maxH } : {}),
-            ...(anchor ? { right: anchor.right, bottom: anchor.bottom } : {})
-          }}
+          style={position}
         >
+          {!cur && !models.length && rememberedModel ? <div className="model-catalog">
+            <p className="ui-row-desc">{t('models.defaultUnavailable', { name: rememberedModel.name || rememberedModel.id })}</p>
+            <Button size="sm" disabled={recovering} data-testid="models-reset-default" onClick={() => {
+              setRecovering(true); setRecoveryError('')
+              void (async () => {
+                await patchSettings({ lastMainModel: undefined })
+                const result = await window.yan.start()
+                if (!result.ok) throw new Error(result.error || t('models.selectFailed'))
+                await useStore.getState().reloadModels()
+              })().catch(e => setRecoveryError(String(e))).finally(() => setRecovering(false))
+            }}>{t('models.resetDefault')}</Button>
+            {recoveryError ? <p className="ui-row-desc" role="alert">{recoveryError}</p> : null}
+          </div> : null}
+          <ModelCatalog current={cur} compact={maxH < 480} needsAuth={needsAuth} onSelect={async model => {
+            const result = await setModel(model.provider, model.id, true)
+            if (!result.ok) throw new Error(result.error || t('models.selectFailed'))
+            setOpen(false); return true
+          }} />
+          <div className="mt-settings" data-testid="model-thinking-settings">
           {/* ---- 上半：档位 ---- */}
           {showThinkingSection ? (
             <div className="mt-head">
@@ -286,7 +175,7 @@ export function ModelThinkingPicker() {
                 <span className="spacer" />
                 <span
                   className="mt-head-level"
-                  data-level={level}
+                  data-level={hasLevels ? headLevel : level}
                   data-testid="thinking-current"
                   /*
                    * D10：头部只用**短状态词**。
@@ -303,7 +192,7 @@ export function ModelThinkingPicker() {
                   }
                 >
                   {hasLevels
-                    ? thinkLabel(level)
+                    ? <span key={headLevel} className="ui-step-value">{thinkLabel(headLevel)}</span>
                     : thinkingStatus === 'unsupported' || notDeclared
                       ? t('picker.thinkUnsupportedShort')
                       : t('picker.thinkUnknownShort')}
@@ -323,6 +212,7 @@ export function ModelThinkingPicker() {
                   disabled={busy}
                   testId="thinking-stops"
                   stopTestId={(l) => `thinking-dot-${l}`}
+                  onPreview={setPreviewLevel}
                 />
               ) : (
                 <div className="mt-capability-note" data-testid="thinking-capability-status">
@@ -343,8 +233,6 @@ export function ModelThinkingPicker() {
                 </div>
               )}
 
-              {/* 说明只在空间充裕时占位：矮窗口把高度让给模型列表（N08） */}
-              {maxH > 520 ? <div className="mt-hint">{t('picker.thinkDesc')}</div> : null}
             </div>
           ) : null}
 
@@ -353,110 +241,33 @@ export function ModelThinkingPicker() {
            * 与推理强度是**两件事**：一个管「想多深」，一个管「讲多细」。
            * 放在同一个菜单里，因为它们是同一个决定（要多少篇幅）。
            */}
+          {/* 标题与说明在左，滚轮在右：说明不再单独占一行 */}
           <div className="mt-head mt-detail">
-            <div className="mt-head-row">
-              <span className="mt-head-title" title={t('picker.detailDesc')}>{t('picker.detail')}</span>
-              <span className="spacer" />
-              <span className="mt-head-level" data-testid="detail-current">
-                {detailLabel(responseDetail, t)}
-              </span>
-            </div>
-            <div className="mt-stops" data-testid="detail-stops">
-              {(['brief', 'standard', 'detailed'] as const).map((d, i) => (
-                <button
-                  key={d}
-                  style={{ '--i': i } as React.CSSProperties}
-                  className={`mt-stop ${d === responseDetail ? 'on' : ''}`}
-                  onClick={() => void patchSettings({ responseDetail: d })}
-                  disabled={busy}
-                  data-testid={`detail-${d}`}
-                  data-on={d === responseDetail ? '1' : '0'}
-                >
-                  {detailLabel(d, t)}
-                </button>
-              ))}
-            </div>
-            {maxH > 520 ? <div className="mt-hint">{t('picker.detailDesc')}</div> : null}
-          </div>
-          {/* ---- 下半：模型列表 ---- */}
-          <div className="mt-search">
-            <Icon name="search" size={12} />
-            <input
-              autoFocus
-              value={query}
-              placeholder={t('picker.searchModel')}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={onSearchKey}
-              data-testid="model-search"
-            />
-            <span className="mt-count">{models.length}</span>
-          </div>
-
-          <div className="mt-list" ref={listEl}>
-            {groups.length === 0 ? (
-              <div className="mt-empty">
-                {models.length === 0 ? t('picker.noModels') : t('picker.noMatch')}
+            <div className="mt-detail-copy">
+              <div className="mt-head-row">
+                <span className="mt-head-title" title={t('picker.detailDesc')}>{t('picker.detail')}</span>
+                <span className="spacer" />
+                <span className="mt-head-level" data-testid="detail-current">
+                  {detailLabel(responseDetail, t)}
+                </span>
               </div>
-            ) : (
-              (() => {
-                /*
-                 * 列表项的错开序号。
-                 *
-                 * 只错开前 12 个：69 个模型全错开的话，最后一个要等
-                 * 69×8ms ≈ 550ms 才出现，那就不像「入场」而像「卡了」。
-                 */
-                let seq = 0
-                return groups.map(([provider, list]) => {
-                  /* 整组都没配凭证时，组标题上也标一下（不用逐个模型去找） */
-                  const groupNeedsAuth = list.some((m) => needsAuth(m.provider))
-                  return (
-                  <div key={provider} className="mt-group">
-                    <div className="mt-group-head" data-needs-auth={groupNeedsAuth ? '1' : '0'}>
-                      {provider}
-                      {groupNeedsAuth ? (
-                        <span className="mt-tag warn" data-testid={`group-needs-auth-${provider}`}>
-                          {t('picker.needsAuth')}
-                        </span>
-                      ) : null}
-                    </div>
-                    {list.map((m) => {
-                      const on = !!cur && m.provider === cur.provider && m.id === cur.id
-                      const idx = indexOf.get(`${m.provider}|${m.id}`) ?? -1
-                      const isCursor = idx === cursor
-                      const i = Math.min(seq++, 12)
-                      const unauth = needsAuth(m.provider)
-                      return (
-                        <button
-                          key={`${m.provider}|${m.id}`}
-                          ref={isCursor ? cursorEl : undefined}
-                          style={{ '--i': i } as React.CSSProperties}
-                          className={`mt-item ${on ? 'sel' : ''} ${isCursor ? 'cur' : ''} ${unauth ? 'needs-auth' : ''}`}
-                          title={unauth ? t('picker.needsAuthHint') : m.id}
-                          data-current={on ? '1' : '0'}
-                          data-cursor={isCursor ? '1' : '0'}
-                          data-needs-auth={unauth ? '1' : '0'}
-                          onClick={() => {
-                            void setModel(m.provider, m.id)
-                            // 不关面板 —— 用户可能接着调强度
-                          }}
-                        >
-                          <span className="mt-item-name">{m.name}</span>
-                          {unauth ? (
-                            <span className="mt-tag warn">{t('picker.needsAuth')}</span>
-                          ) : null}
-                          {m.reasoning ? <span className="mt-tag">{t('picker.reasoning')}</span> : null}
-                          {m.input?.includes('image') ? <span className="mt-tag">{t('picker.image')}</span> : null}
-                          {on ? <Icon name="check" size={12} /> : null}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  )
-                })
-              })()
-            )}
+            </div>
+            <WheelPicker values={['brief', 'standard', 'detailed'] as const} value={responseDetail}
+              onChange={detail => { void patchSettings({ responseDetail: detail }).catch(error => useStore.getState().notify('error', String(error))) }}
+              format={detail => detailLabel(detail, t)} label={t('picker.detail')} disabled={busy} testId="detail-stops" />
           </div>
-        </div>
+          {/* 可视化回答：图表、卡片、图解等由砚画出来；关掉后下一轮起模型不再使用，已有历史照常显示 */}
+          <div className="mt-head mt-detail mt-visual">
+            <div className="mt-detail-copy">
+              <div className="mt-head-row">
+                <span className="mt-head-title" title={t('picker.visualDesc')}>{t('picker.visual')}</span>
+              </div>
+            </div>
+            <Switch checked={visualAnswers} label={t('picker.visual')} testId="visual-answers-toggle"
+              onChange={on => { void patchSettings({ visualAnswers: on }).catch(error => useStore.getState().notify('error', String(error))) }} />
+          </div>
+          </div>
+        </div>, document.body
       ) : null}
     </div>
   )

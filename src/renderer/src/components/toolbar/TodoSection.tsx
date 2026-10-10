@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
-import type { MessageKey } from '../../i18n'
 import { Section } from './ToolSection'
 import { useStore } from '../../state/store'
-import { goalDisplayTitle } from '../../state/goal-view'
 import { RunDot, Button } from '../ui'
 import { visibleSubagentRuns } from '../../state/subagent-view'
 import { isLive } from '../chat/SubagentCards'
@@ -142,7 +140,7 @@ export function TodoSection() {
 
   if (todos.length === 0) {
     if (!hasTaskTileContent({ todos, goal, hasMessageOutputs, hasSubagents })) return null
-    return <><GoalTaskSummary /><Section titleKey="rp.todo" testId="rp-todo"><SubagentsBlock /><GoalOutputs /></Section></>
+    return <><Section titleKey="rp.todo" testId="rp-todo"><SubagentsBlock /><GoalOutputs /></Section></>
   }
 
   const pct = todos.length ? (done / todos.length) * 100 : 0
@@ -170,7 +168,7 @@ export function TodoSection() {
 
   return (
     <>
-    <GoalTaskSummary />
+
     <Section
       titleKey="rp.todo"
       testId="rp-todo"
@@ -313,41 +311,6 @@ export function TodoSection() {
       <GoalOutputs />
     </Section>
     </>
-  )
-}
-
-/** 当前目标随任务磁贴常驻，完整证据与核验仍可从目标详情查看。 */
-function GoalTaskSummary() {
-  const goal = useStore((s) => s.goal)
-  const setGoalPopoverOpen = useStore((s) => s.setGoalPopoverOpen)
-  const t = useT()
-  if (!goal?.goalId) return null
-  const done = goal.steps.filter((step) => step.status === 'done').length
-  return (
-    <div className="rp-goal-summary" data-testid="rp-goal-summary">
-      <button type="button" className="rp-goal-summary-head" onClick={() => setGoalPopoverOpen(true)} title={t('goal.detailHint')}>
-        <Icon name="checklist" size={14} />
-        <strong>{goalDisplayTitle(goal)}</strong>
-        <span className="rp-goal-phase">{t(`goal.${goal.phase}` as MessageKey)}</span>
-      </button>
-      {goal.steps.length ? (
-        <>
-          <div className="rp-goal-progress">{t('goal.progressLabel')} <span>{done}/{goal.steps.length}</span></div>
-          <ol className="rp-goal-step-list">
-            {goal.steps.slice(0, 5).map((step, index) => (
-              <li key={`${index}-${step.title}`} className={`rp-goal-step ${step.status}`} title={step.title}>
-                <span className="rp-goal-step-mark" aria-hidden>
-                  {step.status === 'done' ? <Icon name="check" size={12} /> : step.status === 'blocked' ? <Icon name="alert-circle" size={12} /> : null}
-                </span>
-                <span>{step.title}</span>
-              </li>
-            ))}
-          </ol>
-          {goal.steps.length > 5 ? <button type="button" className="rp-goal-more" onClick={() => setGoalPopoverOpen(true)}>{t('goal.viewAllSteps', { n: goal.steps.length })}</button> : null}
-        </>
-      ) : null}
-      {goal.verification ? <div className="rp-goal-verification">{t('goal.verification', { detail: goal.verification.detail })}</div> : null}
-    </div>
   )
 }
 

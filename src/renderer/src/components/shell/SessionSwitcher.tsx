@@ -12,6 +12,8 @@ import { useT, type TFunc } from '../../i18n'
 import { Icon } from '../../icons/Icon'
 import { useStore } from '../../state/store'
 import { shortProject } from '../rail/rail-utils'
+import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
+import { Button } from '../ui'
 
 interface Row {
   session: SessionSummary
@@ -49,34 +51,37 @@ export function SessionSwitcher({ onClose }: { onClose: () => void }) {
   const switchSession = useStore((s) => s.switchSession)
   const acquireOverlayBlocker = useStore((s) => s.acquireOverlayBlocker)
   const [query, setQuery] = useState('')
-  const [hits, setHits] = useState<SessionSearchHit[]>([])
+  const [bodyResult, setBodyResult] = useState<{ query: string; hits: SessionSearchHit[] }>({ query: '', hits: [] })
+  const hits = bodyResult.query === query ? bodyResult.hits : []
   const [busy, setBusy] = useState(false)
+  const [searchError, setSearchError] = useState(false)
+  const [retry, setRetry] = useState(0)
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const { isTop } = useModalLayer(true, onClose)
+  useFocusTrap(panelRef, true, isTop)
   const projectNames = settings?.projectNames ?? {}
   const projects = settings?.projects ?? []
 
   useEffect(() => {
     const release = acquireOverlayBlocker('session-switcher')
-    input.current?.focus()
     return release
   }, [acquireOverlayBlocker])
 
-  /* Esc 在窗口层接：焦点不在输入框里（比如点过结果行）也能关 */
+  /* Focus trap records the opener before moving focus into the search field. */
   useEffect(() => {
-    const onEsc = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onEsc)
-    return () => window.removeEventListener('keydown', onEsc)
-  }, [onClose])
+    const timer = window.setTimeout(() => input.current?.focus(), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   /* 正文检索：停手 140ms 后再问主进程，只采纳最后一次的答复 */
   useEffect(() => {
     const tokens = tokensOf(query)
+    setSearchError(false)
     if (!tokens.length) {
-      setHits([])
+      setBodyResult({ query, hits: [] })
       setBusy(false)
       return undefined
     }
@@ -84,15 +89,15 @@ export function SessionSwitcher({ onClose }: { onClose: () => void }) {
     setBusy(true)
     const timer = window.setTimeout(() => {
       void window.yan.searchSessions(query, RESULT_LIMIT)
-        .then((result) => { if (alive) setHits(result.hits) })
-        .catch(() => { if (alive) setHits([]) })
+        .then((result) => { if (alive) setBodyResult({ query, hits: result.hits }) })
+        .catch(() => { if (alive) { setBodyResult({ query, hits: [] }); setSearchError(true) } })
         .finally(() => { if (alive) setBusy(false) })
     }, 140)
     return () => {
       alive = false
       window.clearTimeout(timer)
     }
-  }, [query])
+  }, [query, retry])
 
   const rows = useMemo<Row[]>(() => {
     const projectOf = (s: SessionSummary): string => {
@@ -138,6 +143,7 @@ export function SessionSwitcher({ onClose }: { onClose: () => void }) {
   }
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
+    if (e.target !== input.current) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActive((i) => (rows.length ? (i + 1) % rows.length : 0))
@@ -153,7 +159,7 @@ export function SessionSwitcher({ onClose }: { onClose: () => void }) {
   const hasQuery = tokensOf(query).length > 0
   return (
     <div className="modal-scrim switcher-scrim" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose() }} role="dialog" aria-modal="true" aria-label={t('switcher.title')} data-testid="session-switcher">
-      <div className="switcher" onKeyDown={onKeyDown}>
+      <div className="switcher" ref={panelRef} onKeyDown={onKeyDown}>
         <div className="switcher-input">
           <Icon name="search" size={14} />
           <input
@@ -164,14 +170,17 @@ export function SessionSwitcher({ onClose }: { onClose: () => void }) {
             spellCheck={false}
             aria-label={t('switcher.title')}
             data-testid="switcher-input"
+            role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="switcher-results"
+            aria-activedescendant={rows[active] ? `switcher-result-${active}` : undefined}
           />
           {busy ? <span className="switcher-busy" aria-hidden>…</span> : null}
         </div>
-        <div className="switcher-list" ref={listRef} role="listbox">
+        <div className="switcher-list" id="switcher-results" ref={listRef} role="listbox">
           {!hasQuery ? <div className="switcher-label">{t('switcher.recent')}</div> : null}
           {rows.map((row, i) => (
             <button
               key={row.session.path}
+              id={`switcher-result-${i}`}
               type="button"
               role="option"
               aria-selected={i === active}
@@ -186,7 +195,9 @@ export function SessionSwitcher({ onClose }: { onClose: () => void }) {
               {row.snippet ? <span className="switcher-snippet">{row.snippet}</span> : null}
             </button>
           ))}
-          {rows.length === 0 ? <div className="switcher-empty">{busy ? t('switcher.searching') : hasQuery ? t('switcher.none') : t('switcher.noSessions')}</div> : null}
+          {searchError ? <div className="switcher-empty" role="alert" data-testid="switcher-error">{t('switcher.failed')}
+            <Button size="sm" variant="ghost" data-testid="switcher-retry" onClick={() => setRetry(n => n + 1)}>{t('switcher.retry')}</Button>
+          </div> : rows.length === 0 ? <div className="switcher-empty">{busy ? t('switcher.searching') : hasQuery ? t('switcher.none') : t('switcher.noSessions')}</div> : null}
         </div>
         <div className="switcher-foot">{t('switcher.hint')}</div>
       </div>

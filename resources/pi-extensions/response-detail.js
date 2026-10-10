@@ -62,6 +62,9 @@ export default function responseDetailExtension(pi) {
     if (mode === 'standard') return
     const base = String(event?.systemPrompt ?? '')
     const extra = mode === 'brief' ? BRIEF : DETAILED
+    /* 同时写具名分区：只转发结构化部分的 provider（pi-claude-bridge → Claude Code）会丢掉整段覆盖的文本 */
+    const sections = event?.systemPromptOptions?.sections
+    if (sections && typeof sections === 'object') sections.inkstone_response_detail = extra
     return { systemPrompt: base ? `${base}\n\n${extra}` : extra }
   })
 }

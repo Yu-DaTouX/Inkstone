@@ -54,7 +54,6 @@ export async function runAttachmentTests(ok) {
           type: 'message',
           message: { role: 'user', content: [{ type: 'image', data: 'USED', mimeType: 'image/png' }] }
         }),
-        '{ 坏 JSON',
         JSON.stringify({
           type: 'message',
           message: { role: 'toolResult', content: [{ type: 'image', data: 'TOOL', mimeType: 'image/png' }] }
@@ -65,6 +64,18 @@ export async function runAttachmentTests(ok) {
     ok(referenced.has(sha1('USED')), '用户消息里的图算引用')
     ok(referenced.has(sha1('TOOL')), '工具结果里的图也算引用')
     ok(!referenced.has(stale), '没有会话引用的附件不在集合里')
+    const invalid = join(sessions, 'invalid.jsonl')
+    writeFileSync(invalid, '{ broken JSON')
+    let rejected = false
+    try { await referencedAttachmentNames([invalid]) } catch { rejected = true }
+    ok(rejected, '历史损坏时停止扫描，不能以不完整引用集合删除附件')
+    rejected = false
+    try { await referencedAttachmentNames([join(root, 'missing.jsonl')]) } catch { rejected = true }
+    ok(rejected, '历史文件读取失败时停止扫描')
+    writeFileSync(invalid, '{ "message": { "content": [{ "type" : "image", "data" : "SPACED" }] } }')
+    ok((await referencedAttachmentNames([invalid])).has(sha1('SPACED')), '合法 JSON 的空白不影响图片引用识别')
+    const concurrent = pruneAttachments(dir, referenced, { before: 0 })
+    ok(concurrent.removed === 0 && readdirSync(dir).length === 2, '扫描后新增或改动的附件不能被清理')
 
     /* dryRun 只统计 */
     const dry = pruneAttachments(dir, referenced, { dryRun: true })

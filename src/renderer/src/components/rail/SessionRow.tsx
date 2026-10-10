@@ -41,7 +41,6 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
   const runner = useStore((state) => state.runners.find((r) => !!r.sessionFile && r.sessionFile === s.path))
   const titleCandidate = useStore((state) => state.titleCandidates[s.id])
   /** 可归入的空间（左栏空间分区已移除，会话归属改从本行菜单改） */
-  const spaces = useStore((state) => state.spaces)
   const running = runner?.running === true
   const waiting = runner?.waiting === true
   const failure = runner?.failed ? t('rail.runnerFailed') : ''
@@ -67,6 +66,14 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
    *    改成行内 input：不依赖浏览器对话框，也少一层弹窗。
    */
   const [renaming, setRenaming] = useState(false)
+  /* 归档 / 取消归档：行先淡出再交给列表移除，避免整行「啪」地消失 */
+  const [leaving, setLeaving] = useState(false)
+  const archiveWithExit = (): void => {
+    setLeaving(true)
+    window.setTimeout(onArchive, 150)
+    /* 行若仍留在列表里（失败或当前视图同时显示归档）就恢复可见 */
+    window.setTimeout(() => setLeaving(false), 600)
+  }
   const [draft, setDraft] = useState(s.title)
   const moveTargets = projectRecords.filter((project) => !project.archived && project.id !== s.projectId)
 
@@ -78,7 +85,7 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
   }
 
   return (
-    <div className={`srow-wrap has-acts ${menuOpen ? 'menu-open' : ''}${dragging ? ' is-dragging' : ''}`} data-session-path={s.path} data-depth={depth} style={{ '--branch-depth': Math.min(depth, 3) } as React.CSSProperties} onPointerDown={onDragStart}>
+    <div className={`srow-wrap has-acts ${menuOpen ? 'menu-open' : ''}${dragging ? ' is-dragging' : ''}${leaving ? ' leaving' : ''}`} data-session-path={s.path} data-depth={depth} style={{ '--branch-depth': Math.min(depth, 3) } as React.CSSProperties} onPointerDown={onDragStart}>
       {/* 行主体：会话按钮（占满，可省略号） + 分叉开关 + 相对时间 */}
       <div className={`srow-row ${selected ? 'selected' : open ? 'open' : ''}`} data-split-open={open || undefined} onContextMenu={(e) => { e.preventDefault(); onOpenMenu(e.currentTarget, { x: e.clientX, y: e.clientY }) }}>
         {renaming ? (
@@ -155,7 +162,7 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
         ) : null}
 
         {/* 显示的时间必须与排序键一致，否则看起来“没排序” */}
-        <span className="srow-time">{relTime(s.lastActivityAt ?? s.updatedAt)}</span>
+        <span className="srow-time">{relTime(s.lastActivityAt ?? s.updatedAt, t('rail.justNow'))}</span>
       </div>
 
       {branchesOpen && children ? <div className="session-children" data-testid="rail-branch-tree">{children}</div> : null}
@@ -187,7 +194,7 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
         className="ctx-menu ui-menu row-menu-surface"
       >
           <div className="srow-menu-time" data-testid="rail-menu-time">
-            {t('rail.lastActive')} {relTime(s.lastActivityAt ?? s.updatedAt)}
+            {t('rail.lastActive')} {relTime(s.lastActivityAt ?? s.updatedAt, t('rail.justNow'))}
           </div>
           {/* 停止**这一个**运行实例（N12）：后台会话也能单独停，不影响别的会话 */}
           {runner && (runner.running || runner.waiting) ? (
@@ -234,7 +241,7 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
             </div>
           ) : null}
           <button className="ui-menu-item srow-menu-btn" role="menuitem" onClick={() => { onPin(); onCloseMenu() }}><Icon name="pin" size={12} />{pinned ? t('rail.unpin') : t('rail.pin')}</button>
-          <button className="ui-menu-item srow-menu-btn" role="menuitem" data-testid="rail-archive" onClick={() => { onArchive(); onCloseMenu() }}><Icon name="folder" size={12} />{archived ? t('rail.unarchive') : t('rail.archive')}</button>
+          <button className="ui-menu-item srow-menu-btn" role="menuitem" data-testid="rail-archive" onClick={() => { archiveWithExit(); onCloseMenu() }}><Icon name="folder" size={12} />{archived ? t('rail.unarchive') : t('rail.archive')}</button>
           <button
             className="ui-menu-item srow-menu-btn" role="menuitem"
             data-testid="rail-open-split"
@@ -273,43 +280,6 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
               </button>
             ))}
           </div>
-          {
-            /*
-             * 空间：从「左栏的一层目录」改为会话上的标签（实施-27 B3）。
-             * 左栏不再有常驻的空间分区，但「把这条会话归到哪个空间」必须仍然可达 ——
-             * 它本来就该跟着**具体这条会话**出现，而不是先选空间再找会话。
-             */
-            spaces.filter((x) => !x.archived).length > 0 || s.spaceId ? (
-            <div className="srow-menu-section" data-testid="rail-session-space">
-              <div className="srow-menu-section-title">{t('rail.spaces')}</div>
-              {s.spaceId ? (
-                <button
-                  className="ui-menu-item srow-menu-btn" role="menuitem"
-                  data-testid="rail-space-release-session"
-                  onClick={() => {
-                    void useStore.getState().setSessionSpace(s.id, null).then((done) => { if (done) onCloseMenu() })
-                  }}
-                >
-                  <Icon name="plus" size={12} className="rail-trash-x" />
-                  {t('rail.spaceRelease')}
-                </button>
-              ) : null}
-              {spaces.filter((x) => !x.archived && x.id !== s.spaceId).map((sp) => (
-                <button
-                  key={sp.id}
-                  className="ui-menu-item srow-menu-btn" role="menuitem"
-                  data-testid={`rail-space-put-${sp.id}`}
-                  onClick={() => {
-                    void useStore.getState().setSessionSpace(s.id, sp.id).then((done) => { if (done) onCloseMenu() })
-                  }}
-                >
-                  <Icon name="group" size={12} />
-                  {sp.name}
-                </button>
-              ))}
-            </div>
-            ) : null
-          }
           <button
             style={{ '--i': 1 } as React.CSSProperties}
             className="ui-menu-item srow-menu-btn" role="menuitem"
@@ -393,10 +363,10 @@ export function openInSplit(s: SessionSummary, at?: number): void {
 /* ---------------------------------------------------------------- 工具 */
 
 /** 相对时间：12m / 5h / 3d */
-function relTime(ts: number): string {
+function relTime(ts: number, justNow: string): string {
   const d = Math.max(0, Date.now() - ts)
   const m = Math.floor(d / 60_000)
-  if (m < 1) return 'now'
+  if (m < 1) return justNow
   if (m < 60) return `${m}m`
   const h = Math.floor(m / 60)
   if (h < 24) return `${h}h`

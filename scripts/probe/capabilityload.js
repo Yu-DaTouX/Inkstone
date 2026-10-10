@@ -65,12 +65,12 @@
     ok(trigger.dataset.state === 'ready', '选择器处于 ready（不是 unknown）')
     trigger.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(600)
-    const items = document.querySelectorAll('.mt-item')
-    const empty = q('.mt-empty')
+    const items = document.querySelectorAll('[data-testid="model-option"]')
+    const empty = q('.model-rows > p')
     log(`  菜单可选模型 = ${items.length} 个，空态 = ${empty ? JSON.stringify(empty.textContent) : '无'}`)
     ok(items.length > 0, '菜单里有可选模型')
     ok(!empty, '不再显示「没有匹配的模型」空态')
-    ok((q('.mt-count')?.textContent ?? '0') !== '0', '搜索框右侧的模型计数不再是 0')
+    ok(items.length > 0 && !!q('[data-testid="models-count"]'), '模型分页计数与可选列表均已加载')
   }
 
   /* ---- 5. 斜杠命令也依赖同一个重拉点（只记录，本地命令本来就非空） ---- */

@@ -31,6 +31,17 @@ const timing = (logicalTurnId, extra = {}) => ({
 export function runConversationTurnsTests(ok, mod) {
   const { buildConversationTurns } = mod
 
+  {
+    const notice = '<subagent-notification id="sub-nav" status="done">\n后台结果\n</subagent-notification>'
+    const turns = buildConversationTurns([
+      mk({ id: 'm0', role: 'user', text: '原任务' }),
+      mk({ id: 'm1', text: '等待结果' }),
+      mk({ id: 'm2', role: 'user', text: notice }),
+      mk({ id: 'm3', text: '继续原任务' })
+    ])
+    ok(turns.length === 1 && turns[0].question.text === '原任务', '后台通知不占导航轮次或替换用户问题')
+  }
+
   /* ---- 0 轮 ---- */
   {
     const none = buildConversationTurns([])

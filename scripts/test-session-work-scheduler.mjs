@@ -5,14 +5,8 @@ function fakeDeps(overrides = {}) {
   const states = new Map()
   return {
     log, states, stateOf: id => states.get(id) ?? null,
-    hasHandoffOperation: () => false, handoffPending: () => false,
+    hasHandoffOperation: () => false,
     consumeRepeatBlocks: async id => { log.push(`repeat:${id}`) },
-    tryArmHandoff: async id => { log.push(`handoff:${id}`); return true },
-    maybeArmGoalContinue: async id => { log.push(`goal:${id}`) },
-    workModeKeyFor: id => `key-${id}`, autoContinueLimit: 3,
-    writeRetrySnapshot: async id => { log.push(`snapshot:${id}`) },
-    notify: id => { log.push(`notify:${id}`) },
-    autoContinues: { reset: async () => { log.push('reset') }, noteFailure: async () => { log.push('failure'); return { plan: { action: 'retry', delayMs: 1 } } } },
     ...overrides
   }
 }
@@ -57,9 +51,8 @@ export async function runSessionWorkSchedulerTests(ok, { createSessionWorkSchedu
     const scheduler = createSessionWorkScheduler(deps)
     scheduler.observePush('e', { ch: 'agent-error', payload: { text: 'fixture failure' } })
     scheduler.observePush('e', { ch: 'msg-update', payload: { patch: { role: 'assistant', text: 'fixture output' } } })
-    await scheduler.resetAutoContinue('e'); scheduler.cancelAutoContinue('e')
     await sleep(40)
-    ok(!scheduler.hasPendingAutoContinue('e') && deps.log.length === 0, '模型错误、输出和旧重置接口不生成重试或续行快照')
+    ok(deps.log.length === 0, '模型错误和输出不生成重试或续行快照')
   }
   {
     const deps = fakeDeps()

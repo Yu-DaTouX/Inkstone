@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
 import type {
   AppSettings,
   OAuthLoginEvent,
@@ -136,6 +137,22 @@ const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
 type Ok = { ok: boolean; error?: string }
 
 const api: YanBridge = {
+  agentService: {
+    snapshot: () => invoke('yan:service:snapshot'),
+    create: request => invoke('yan:service:create', request),
+    run: (id, prompt) => invoke('yan:service:run', id, prompt),
+    cancel: id => invoke('yan:service:cancel', id),
+    reconcile: id => invoke('yan:service:reconcile', id),
+    outputs: id => invoke('yan:service:outputs', id),
+    preview: (id, name) => invoke('yan:service:preview', id, name),
+    planApply: (id, items) => invoke('yan:service:plan', id, items),
+    approve: (id, generation, approved) => invoke('yan:service:approve', id, generation, approved),
+    apply: (id, approval, request) => invoke('yan:service:apply', id, approval, request),
+    chooseInputs: () => invoke('yan:service:inputs'),
+    configureModel: () => invoke('yan:service:configure'),
+    chooseDestination: name => invoke('yan:service:destination', name),
+    openOutput: (id, name) => invoke('yan:service:open', id, name)
+  },
   appUpdate: {
     status: () => invoke('yan:update:status'),
     check: () => invoke('yan:update:check'),
@@ -355,6 +372,9 @@ const api: YanBridge = {
   describeFiles: (paths) => invoke<FileRefInfo[]>('yan:describeFiles', paths),
   readFileText: (p) => invoke<FileTextResult>('yan:readFileText', p),
   readPreview: (p, line, cwd, lineEnd) => invoke<FilePreview>('yan:readPreview', p, line, cwd, lineEnd),
+  prepareHtmlArtifact: (p) => invoke<HtmlArtifactPreviewResult>('yan:prepareHtmlArtifact', p),
+  releaseHtmlArtifact: (url) => invoke<void>('yan:releaseHtmlArtifact', url),
+  prepareHtmlWidget: (html) => invoke<HtmlArtifactPreviewResult>('yan:prepareHtmlWidget', html),
   statPreview: (p, cwd) =>
     invoke<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>(
       'yan:statPreview',
@@ -436,6 +456,8 @@ const api: YanBridge = {
     setModel: (input) => invoke<{ ok: boolean; error?: string; rows?: ActivityModelRow[] }>('yan:activity:modelSet', input)
   } as ActivityBridge,
   packages: {
+    search: (query, offset) => invoke('yan:packages:search', query, offset),
+    exportPlugin: (id) => invoke('yan:packages:exportPlugin', id),
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
     action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)
   },

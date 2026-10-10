@@ -96,3 +96,7 @@ resources/pi-runtime/
 
 # Codex 远程会话的临时附件
 /.codex-remote-attachments/
+
+# Python 字节码（Hermes 插件本地运行产生）
+__pycache__/
+*.pyc

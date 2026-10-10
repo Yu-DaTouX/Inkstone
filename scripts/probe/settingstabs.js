@@ -1,4 +1,4 @@
-/** 六页设置导航、合并内容、键盘焦点和高级披露。 */
+/** 设置导航、独立插件市场、键盘焦点和高级披露。 */
 ;(async () => {
   const out = []
   const ok = (condition, label) => { out.push((condition ? '  ✓ ' : '  ✗ ') + label); return !!condition }
@@ -7,12 +7,13 @@
   const qa = (selector) => [...document.querySelectorAll(selector)]
   const click = (element) => element?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   const store = window.__yanStore
-  const order = ['auth', 'appearance', 'workspace', 'capabilities', 'devices', 'about']
+  const order = ['auth', 'appearance', 'workspace', 'capabilities', 'market', 'devices', 'about']
   const anchors = {
     auth: ['auth-msg', 'auth-recheck'],
     appearance: ['set-ui-scale', 'set-density', 'theme-dark', 'set-sound', 'set-sound-enabled'],
-    workspace: ['set-workspace-mode', 'set-space-new-name', 'ctx-native-settings'],
-    capabilities: ['set-capabilities', 'set-packages'],
+    workspace: ['set-auto-archive', 'ctx-native-settings'],
+    capabilities: ['set-capabilities'],
+    market: ['plugin-market', 'market-ours', 'market-hermes-download'],
     devices: ['settings-voice', 'voice-state', 'voice-models', 'settings-remote', 'settings-peer'],
     about: ['pi-redetect', 'about-build']
   }
@@ -29,10 +30,10 @@
     if (!store.getState().settingsOpen) click(q('[data-testid="rail-settings"]'))
     await sleep(400)
 
-    out.push('=== 六页导航 ===')
+    out.push('=== 设置导航 ===')
     ok(qa('.settings').length === 1, '设置面板只有一个实例')
     const tabs = qa('.settings-tabs [role="tab"]')
-    ok(tabs.length === order.length, `六页导航（实际 ${tabs.length}）`)
+    ok(tabs.length === order.length, `七页导航（实际 ${tabs.length}）`)
     ok(tabs.map((element) => element.id.replace('settings-tab-', '')).join(',') === order.join(','), '页签顺序与设计规范一致')
     const selected = q('.settings-tabs [role="tab"][aria-selected="true"]')
     ok(!!selected, '只有当前页被选中')
@@ -44,8 +45,10 @@
 
     out.push('\n=== 每页内容 ===')
     for (const id of order) {
+      const started = performance.now()
       click(q(`#settings-tab-${id}`))
-      await sleep(230)
+      for (let n = 0; n < 40 && !anchors[id].some((name) => !!q(`[data-testid="${name}"]`)); n++) await sleep(50)
+      out.push(`  ${id}：首次内容就绪 ${Math.round(performance.now() - started)}ms`)
       ok(!!q('#settings-tabpanel[role="tabpanel"]'), `${id}：内容区存在`)
       ok(anchors[id].some((name) => !!q(`[data-testid="${name}"]`)), `${id}：真实内容锚点存在`)
     }
@@ -57,7 +60,7 @@
     ok(!q('[data-testid="ctx-budget-v1"]') && !q('[data-testid="ctx-fold-toggle"]') && !q('[data-testid="kn-toggle-btn"]'), '退役宿主预算、折叠与知识开关不再出现')
     click(q('#settings-tab-capabilities'))
     await sleep(250)
-    ok(!!q('[data-testid="set-capabilities"]') && !!q('[data-testid="set-packages"]'), '能力与插件共用一页')
+    ok(!!q('[data-testid="set-capabilities"]') && !!q('#settings-tab-market'), '能力保留原页，插件市场独立入口')
     const searchRow = q('[data-testid="cap-search-api"]')
     ok(!!searchRow, '能力页有「增强搜索」')
     for (const id of ['tavily', 'brave', 'firecrawl', 'context7']) {

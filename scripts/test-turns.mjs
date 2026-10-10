@@ -14,14 +14,43 @@
  */
 
 export async function runTurnTests(ok) {
-  const { groupIntoTurns, splitParagraphs, cacheHitRate, formatHitRate, turnUsage, turnUsageOf, addUsage, hasUsageNumbers, toolWaitSpans, waitSpansMs, currentTurnMessages } =
+  const { groupIntoTurns, createTurnProjector, splitParagraphs, cacheHitRate, formatHitRate, turnUsage, turnUsageOf, addUsage, hasUsageNumbers, toolWaitSpans, waitSpansMs, currentTurnMessages } =
     await import('../out/test/turns.mjs')
+
+  {
+    const project = createTurnProjector()
+    const history = [{ id: 'cache-u', role: 'user', text: 'History' }, { id: 'cache-a', role: 'assistant', text: 'Stable answer' }]
+    const question = { id: 'live-u', role: 'user', text: 'Current task' }
+    let current = { id: 'live-a', role: 'assistant', text: 'First', toolCalls: [{ id: 'tool-live', name: 'read', status: 'running' }] }
+    const first = project([...history, question, current], current.id)
+    current = { ...current, text: 'First\n\nMore', toolCalls: [{ ...current.toolCalls[0], status: 'done', output: 'Result' }] }
+    let rows = [...history, question, current]
+    const second = project(rows, current.id)
+    ok(first[1] === second[1], '流式更新复用已完成历史回合身份')
+    ok(JSON.stringify(second) === JSON.stringify(groupIntoTurns(rows, current.id)), '工具状态与文字增量的缓存投影等同完整投影')
+    ok(JSON.stringify(project(rows)) === JSON.stringify(groupIntoTurns(rows)), '流式结束使当前回合转为完成状态')
+    const editedHistory = [history[0], { ...history[1], text: 'Edited history' }, question, current]
+    ok(JSON.stringify(project(editedHistory)) === JSON.stringify(groupIntoTurns(editedHistory)), '历史编辑使对应缓存失效')
+    rows = [...history, { id: 'hidden-notice', role: 'user', text: '<subagent-notification id="x" status="done">\nResult\n</subagent-notification>' }, question, current]
+    ok(JSON.stringify(project(rows, current.id)) === JSON.stringify(groupIntoTurns(rows, current.id)), '隐藏宿主通知不制造回合边界')
+    rows = [current, { id: 'shell-cache', role: 'bash', text: 'shell output' }, ...history]
+    ok(JSON.stringify(project(rows)) === JSON.stringify(groupIntoTurns(rows)), '开头助手消息、bash边界与重排保持完整投影语义')
+    ok(project([]).length === 0 && JSON.stringify(project(history)) === JSON.stringify(groupIntoTurns(history)), '切换空会话及返回历史不会混入旧投影')
+  }
 
   /* ---------------------------------------------------------------- 构造 */
 
   const asst = (id, text, extra = {}) => ({ id, role: 'assistant', text, ...extra })
   const usr = (id, text) => ({ id, role: 'user', text })
   const tool = (id, name, status = 'ok') => ({ id, name, args: {}, status })
+
+  {
+    const notice = '<subagent-notification id="sub-1" status="done">\n后台结果\n</subagent-notification>'
+    const messages = [usr('u1', '继续任务'), asst('a1', '等待子代理'), usr('u2', notice), asst('a2', '收到结果，继续')]
+    const turns = groupIntoTurns(messages)
+    ok(turns.length === 2 && turns[0].kind === 'user' && turns[1].sourceIds.includes('a2'), '宿主通知不生成用户气泡或拆开助手回合')
+    ok(currentTurnMessages(messages).some(m => m.id === 'a1'), '宿主通知不重置本轮用量范围')
+  }
 
   /* ------------------------------------------------ 11. 回合分组（合并） */
 

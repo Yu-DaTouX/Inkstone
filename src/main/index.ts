@@ -13,7 +13,8 @@ import { constants as fsConstants, existsSync, readdirSync } from 'node:fs'
 import { access, appendFile, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { loadModelPricing } from './model-pricing'
-import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt, type GoalCommandHost } from './agent'
+import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt } from './agent'
+import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { getSettings, patchSettings } from './settings'
@@ -23,6 +24,7 @@ import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awak
 import { rewriteSessionCwd, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import { readChainMessages } from './session-history'
 import { ArtifactStore } from './artifacts'
+import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames } from './html-artifact-preview'
 import { readRepoState } from './git-service'
 import { configureWriteContext } from './git-actions'
 import { configurePackageContext, installManagedPiPackage, listPackages } from './packages'
@@ -66,21 +68,22 @@ import { registerWorkspaceIpc } from './ipc/workspace-ipc'
 import { registerGoalIpc } from './ipc/goal-ipc'
 import { registerSpaceIpc } from './ipc/space-ipc'
 import { registerFilesIpc } from './ipc/files-ipc'
+import { registerAgentServiceIpc, closeAgentService } from './ipc/agent-service-ipc'
+import { lockDataRoot } from '../core/data-root-lock'
 import { registerContextBudgetIpc } from './ipc/context-budget-ipc'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
 import { createSubagentNotifier } from './subagent-notify'
-import { configureGoalCoordinator, setDefaultWorkMode, defaultWorkMode, goalBudgetUsage, workModeKeyFor, resolveWorkMode, pushWorkMode, resolveAgentProfile, pushAgentProfile, refreshSessionContext, pushGoal, applyGoalResume, cancelGoalResume, consumeRepeatBlocks, goals, maybeArmGoalContinue } from './goal-coordinator'
-import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
-import { configureHandoffCoordinator, handoffRunner, publishHandoffReplacement, handoffPending, handoffIdentities, hasHandoffOperation, tryArmHandoff, abandonHandoff } from './handoff-coordinator'
+import { configureGoalCoordinator, setDefaultWorkMode, defaultWorkMode, workModeKeyFor, resolveWorkMode, pushWorkMode, resolveAgentProfile, pushAgentProfile, refreshSessionContext, pushGoal, applyGoalResume, cancelGoalResume, consumeRepeatBlocks, goals, maybeArmGoalContinue } from './goal-coordinator'
+import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
+import { configureHandoffCoordinator, handoffRunner, publishHandoffReplacement, handoffPending, handoffIdentities, hasHandoffOperation, abandonHandoff } from './handoff-coordinator'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { registerAppUpdate } from './app-update'
 import { VoiceService } from './voice/voice-service'
 import { registerPeerIpc } from './ipc/peer-ipc'
 import type { ConsentDecision } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
-import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot } from './goal-service'
 import { HandoffStore } from './handoff-service'
 import { HandoffDiagnostics } from './handoff-diagnostics'
 import { HandoffTransactionStore } from './handoff-transaction-service'
@@ -89,18 +92,14 @@ import { WorktreeLinkStore } from './worktree-links'
 import { AutoIsolationStore, isolateCwdForConflict, isolationCwdKey, syncIsolationBack } from './session-isolation'
 import { type HandoffSessionHandle, type HandoffSessionTarget } from './handoff-runner'
 import { normalizeChainKey } from '../shared/session-chain'
-import { AutoContinueStore, autoContinueOptionsFromEnv } from './auto-continue-service'
 import { createSessionWorkScheduler } from './session-work-scheduler'
-import { AUTO_CONTINUE_LIMIT } from '../shared/auto-continue'
-import { AUTONOMOUS_CONTINUE_LIMIT, goalSummary, isActiveGoalPhase, normalizeReadyParams, normalizeReportParams } from '../shared/goal'
-import { CapabilityCommandError } from './capability-server'
+import { emptyGoal } from '../shared/goal'
 import { localCommandDescriptors } from './command-registry'
 import { writeExitSnapshot } from './exit-snapshot'
 import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
-import { exportLearningData } from './learning-export'
 import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import { WorkModeStore, normalizeSessionFileKey } from './work-mode-service'
@@ -112,14 +111,6 @@ import { SpaceStore } from './space-store'
 import { LibraryService } from './library-service'
 import { ContextAssembler } from './context-assembler'
 import { FollowStore } from './follow-store'
-import { FOLLOW_APP_ONLY_NOTE, runSummaryText, watchBriefText } from '../shared/follow'
-import {
-  excerptReadable,
-  excerptText,
-  sourceStatus,
-  type ResearchExcerpt,
-  type SourceRefStatus
-} from '../shared/research'
 import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, MainPush, SessionState } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -358,6 +349,24 @@ const agentHub = new AgentHubService({
 const subagentService = new SubagentService({
   codemodeExtension: codemodeExtensionPath,
   providerExtensions: providerExtensionPaths,
+  guardExtension: dangerGuardExtensionPath,
+  shellExtension: shellFallbackExtensionPath,
+  confirmDanger: async (params, cwd, origin) => {
+    if ((await getSettings()).permissionMode === 'all') return true
+    const detail = String(params.detail ?? '')
+    if (detail.length > 20000) return false
+    const answer = await approvals.ask({
+      ...(origin?.sessionId ? { sessionId: origin.sessionId } : {}),
+      ...(origin?.runId ? { runId: origin.runId } : {}),
+      ...(origin?.subagentId ? { subagentId: origin.subagentId } : {}),
+      kind: 'danger', tool: String(params.tool ?? 'tool').slice(0, 40),
+      title: '子 Agent 想执行一个难以撤销的操作',
+      detail,
+      reasons: Array.isArray(params.reasons) ? params.reasons.filter((item): item is string => typeof item === 'string').slice(0, 6).map(item => item.slice(0, 200)) : [],
+      cwd, canRemember: false
+    })
+    return answer === 'once'
+  },
   onChange: (run) => push({ ch: 'subagent', payload: run }),
   onRemove: (id) => push({ ch: 'subagent-remove', payload: id }),
   resolveAgentProfile: (id) => resolveAgentProfile(id),
@@ -406,7 +415,7 @@ function bundledSkillPaths(): string[] {
   if (!root) return []
   try {
     return readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() && !['tutor', 'writing', 'research', 'follow', 'memory'].includes(entry.name))
       .map((entry) => join(root, entry.name, 'SKILL.md'))
       .filter((file) => existsSync(file))
   } catch {
@@ -432,31 +441,13 @@ function questionExtensionPath(): string | undefined {
   return yanThinResourcePath('question.js')
 }
 
-/**
- * 工作模式的工具策略扩展的路径（实施-05 S3）。
- *
- * 只有它能在运行中收紧工具表（RPC 没有工具面），所以计划档的门禁靠它执行。
- */
-/** 没有 Git Bash 时把 bash 工具换成 PowerShell 的薄层（有 bash 时不做任何事） */
+/** 没有 Git Bash 时提供 PowerShell 工具。 */
 function shellFallbackExtensionPath(): string | undefined {
   return yanThinResourcePath('shell-fallback.js')
-}
-function workModeExtensionPath(): string | undefined {
-  return yanThinResourcePath('work-mode.js')
 }
 
 function codemodeExtensionPath(): string | undefined {
   return yanThinResourcePath('codemode-policy.js')
-}
-
-/**
- * 活动档案的角色与工具策略扩展的路径（实施-25 P01）。
- *
- * 它只做注入：角色文本与禁用工具由宿主渲染好写进快照，扩展不抄文案。
- * 加载顺序在 `work-mode.js` 之后（两者各自收紧工具，互不恢复对方）。
- */
-function agentProfileExtensionPath(): string | undefined {
-  return yanThinResourcePath('profile.js')
 }
 
 /**
@@ -471,7 +462,7 @@ function responseDetailExtensionPath(): string | undefined {
  * 内置「系统提示开场白」扩展的路径。
  *
  * 它把 pi 内置的英文 preamble（"You are an expert coding assistant operating
- * inside pi, …"）换成砚的中文开场白，只动这一句。**不用** `--system-prompt`：
+ * inside pi, …"）换成砚身份，并追加简短进展约定。**不用** `--system-prompt`：
  * 那是整段替换，会把 pi 自己维护的 tools / rules / docs 段落一起丢掉。
  */
 function preambleExtensionPath(): string | undefined {
@@ -513,18 +504,10 @@ function contextInspectExtensionPath(): string | undefined {
 function dangerGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('danger-guard.js')
 }
-/** 权限档位（询问档下写文件 / 跑命令前先问）；与 danger-guard 分开，互不改对方 */
-function permissionGuardExtensionPath(): string | undefined {
-  return yanThinResourcePath('permission-guard.js')
-}
 /** 内置服务扩展：pi 不认识、但凭证页提供的服务（Command Code），主会话与子代理都要加载 */
 function providerExtensionPaths(): string[] {
   return [yanThinResourcePath('commandcode.js')].filter((p): p is string => !!p)
 }
-function repeatGuardExtensionPath(): string | undefined {
-  return yanThinResourcePath('repeat-guard.js')
-}
-
 /**
  * 砚随包薄层扩展的**实际加载路径**（传给 pi 的 `--extension`）。
  *
@@ -538,16 +521,12 @@ function yanThinExtensionPaths(): string[] {
     codemodeExtensionPath(),
     questionExtensionPath(),
     shellFallbackExtensionPath(),
-    workModeExtensionPath(),
-    agentProfileExtensionPath(),
     responseDetailExtensionPath(),
     preambleExtensionPath(),
     languageExtensionPath(),
     capabilityGuideExtensionPath(),
     contextInspectExtensionPath(),
-    repeatGuardExtensionPath(),
     dangerGuardExtensionPath(),
-    permissionGuardExtensionPath(),
     ...providerExtensionPaths(),
   ].filter((p): p is string => !!p && isAgentContextExtension(p))
 }
@@ -820,45 +799,14 @@ async function syncPendingIsolations(): Promise<void> {
 }
 
 
-/*
- * 模型出错后的自动继续（实施-05 S5c）。
- *
- * 与交接计数同因：状态要落盘（重启不忘记连续失败了几次），判定要单测。
- * `YAN_AUTO_CONTINUE` 是测试通道（`{limit, delays}`）—— 真实验证时用它把退避压短。
- */
-const autoContinueOptions = autoContinueOptionsFromEnv(process.env.YAN_AUTO_CONTINUE)
-const autoContinues = new AutoContinueStore(autoContinueOptions)
-const AUTO_CONTINUE_LIMIT_EFFECTIVE = autoContinueOptions.limit ?? AUTO_CONTINUE_LIMIT
-
-
-/**
- * 会话后台工作的调度服务（src/main/session-work-scheduler.ts）：
- * 回合收尾后的交接 / 目标续跑 / 重复拦下补记，以及模型报错后的自动继续，都只在这里决定。
- * 入口（桌面 IPC、远程控制）只调用它，不各自复制调度规则。
- */
+/** Observe settled runs without starting retries or automatic handoffs. */
 const sessionWork = createSessionWorkScheduler({
   stateOf: (id) => runners?.agentOf(id)?.getState() ?? null,
   hasHandoffOperation: (id) => hasHandoffOperation(id),
-  handoffPending: (id) => handoffPending.has(id),
-  consumeRepeatBlocks: (id) => consumeRepeatBlocks(id),
-  tryArmHandoff: (id, reason) => tryArmHandoff(id, reason),
-  maybeArmGoalContinue: (id) => maybeArmGoalContinue(id),
-  workModeKeyFor: (id) => workModeKeyFor(id),
-  autoContinues,
-  autoContinueLimit: AUTO_CONTINUE_LIMIT_EFFECTIVE,
-  writeRetrySnapshot: (id, snapshot) => writeGoalResumeSnapshot(id, snapshot),
-  notify: (id, message, notifyType, idPrefix) => {
-    pushFrom(id, {
-      ch: 'notify',
-      payload: { id: `${idPrefix}-${Date.now()}`, method: 'notify', notifyType, message }
-    })
-  }
+  // Native Agent owns continuation; no legacy domain files are polled.
+  consumeRepeatBlocks: async () => {}
 })
 
-/** 用户发言 / 用户停止 / 一轮真的成功 → 计数归零（下一轮错误从第 1 次算）。 */
-function resetAutoContinue(id: string): Promise<void> {
-  return sessionWork.resetAutoContinue(id)
-}
 
 /* ────────────────────────────────────────────── 交接包生成（实施-05 S5b-2） */
 
@@ -895,18 +843,7 @@ function pushFrom(runnerId: string, msg: MainPush): void {
    * 不在这里做去重，就不会出现「两份去重逻辑想不到一块去」。
    */
   if (msg.ch === 'state') void observeCompaction(runnerId, msg.payload)
-  /*
-   * 交接资格第二个评估时机（实施-05 S5b-2）：**回合刚结束**。
-   *
-   * 为什么需要它：`goal report` 发生在回合**中途**（工具调用），那一刻实例是忙的，
-   * 资格判定会正确地拒掉；而「目标在推进 + 自主档 + 不忙」三条同时成立的真实时刻，
-   * 恰恰是这一轮收尾之后。`maybeArmHandoff` 自己是幂等 + 节流的，
-   * 所以这里可以无条件看一眼（忙的时候它内部直接早退，不碰 IO）。
-   */
-  /*
-   * 调度时机（回合结束 → 排后台工作；模型报错 → 自动继续；一轮真的产出 → 失败计数归零）
-   * 统一交给调度服务判定，见 session-work-scheduler.ts。
-   */
+  // Observe run completion without creating another model turn.
   sessionWork.observePush(runnerId, msg)
   /* 隔离工作树的回合收尾 → 扫一轮自动合回（没有隔离登记时就是一次空扫） */
   if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) void syncPendingIsolations()
@@ -1052,425 +989,6 @@ const contextAssembler = new ContextAssembler({ library })
  */
 const follows = new FollowStore()
 
-interface ResearchReadInput {
-  refs?: { sourceId: string; version: number; locator?: { start: number; end: number } }[]
-  maxChars?: number
-}
-
-/**
- * 按版本读资料片段：读**当时那一版**的正文，不跟着资料更新走。
- *
- * 读不到的来源如实放进 `skipped`，不混进片段 —— 否则「三份资料都支持」
- * 可能实际只有两份读得到。怎么对照、怎么下结论由 research 技能说明。
- */
-async function runResearchRead(input: ResearchReadInput) {
-  await library.store.load()
-  const doc = library.store.document()
-  const maxChars = Math.max(200, Math.min(Math.trunc(input?.maxChars ?? 600), 4000))
-  const excerpts: ResearchExcerpt[] = []
-  const skipped: { sourceId: string; version: number; status: SourceRefStatus }[] = []
-  for (const ref of input?.refs ?? []) {
-    if (!ref?.sourceId || !Number.isFinite(ref.version)) continue
-    const version = Math.trunc(ref.version)
-    const status = sourceStatus(doc, { sourceId: ref.sourceId, version }, ref.locator)
-    if (!excerptReadable(status.status)) {
-      skipped.push({ sourceId: ref.sourceId, version, status: status.status })
-      continue
-    }
-    const opened = await library.openRef({ sourceId: ref.sourceId, version })
-    const cut = excerptText(opened.text ?? '', ref.locator, maxChars)
-    if (!cut.text.trim()) {
-      skipped.push({ sourceId: ref.sourceId, version, status: 'unreadable' })
-      continue
-    }
-    excerpts.push({
-      sourceId: ref.sourceId,
-      version,
-      title: status.title ?? opened.source?.title ?? `资料 ${ref.sourceId}`,
-      text: cut.text,
-      truncated: cut.truncated,
-      status: status.status,
-      ...(status.latestVersion ? { latestVersion: status.latestVersion } : {}),
-      ...(ref.locator ? { locator: ref.locator } : {})
-    })
-  }
-  return { ok: true as const, excerpts, skipped }
-}
-
-
-/**
- * `yan goal …` 的实现点（实施-05 S3）。
- *
- * 三条规则落在这里：
- *   ① **身份来自宿主**：会话键用 `workModeKeyFor`（= 会话文件路径），
- *      不接受请求里的会话 / 项目 id；
- *   ② **就绪转移是原子的**：先把目标推进到 executing（落盘），再切模式；
- *      模式写失败就不报成功（否则会出现「目标说已开工、模式还是计划」）；
- *   ③ **校验在纯函数里**（`shared/goal.ts`）：五栏 / 置信度 / revision 过期。
- *
- * ⚠️ 模式切到标准**不会**改写本轮已经生效的工具表（工具集按轮次生效，
- *    S1 实测）：本轮仍是计划档的只读集，所以回执里要明说
- *    「本轮收尾，下一轮开始执行」——不然模型会以为现在就能写文件。
- */
-/**
- * 资料引用：按版本读片段。
- * 对照与下结论的做法在 research 技能里。
- */
-const researchCapabilityHost: GoalCommandHost = {
-  async run(command, params) {
-    switch (command) {
-      case 'research.read': {
-        const res = await runResearchRead({
-          refs: Array.isArray(params.refs) ? (params.refs as ResearchReadInput['refs']) : [],
-          ...(Number.isFinite(Number(params.maxChars)) ? { maxChars: Number(params.maxChars) } : {})
-        })
-        return {
-          data: { excerpts: res.excerpts, skipped: res.skipped },
-          summary: {
-            ok: true,
-            excerpts: res.excerpts.length,
-            outdated: res.excerpts.filter((e) => e.status === 'outdated').length,
-            skipped: res.skipped.length
-          }
-        }
-      }
-      default:
-        return { summary: { ok: false, error: `未知的研究动作：${command}` } }
-    }
-  }
-}
-
-/**
- * 持续关注（实施-25 P16）。
- *
- * 模型能做的：看有哪些关注、看谁到点了、**提议**一个新关注、
- * 看完之后**回报**结果。
- *
- * 三件它做不到（都是故意的）：
- *   · 不能启用关注 —— 提议存下来就是未启用（T16-3），只有用户点过才会跑；
- *   · 不能删关注 —— 那是用户的东西；
- *   · 不能让宿主自己去查 —— 没有这种命令（不然就成了后台花钱）。
- */
-const followCapabilityHost: GoalCommandHost = {
-  async run(command, params) {
-    switch (command) {
-      case 'follow.list': {
-        const spaceId = typeof params.spaceId === 'string' ? params.spaceId : null
-        /* 只读前先等首次加载，否则重启后（还没有写操作）这里会返回空列表 */
-        await follows.load()
-        const views = follows.views(spaceId).map((view) => ({
-          id: view.watch.id,
-          title: view.watch.title,
-          kind: view.watch.kind,
-          enabled: view.watch.enabled,
-          status: view.status,
-          proposed: view.proposed,
-          resultPlace: view.watch.resultPlace,
-          ...(view.lastRun ? { lastRun: runSummaryText(view.lastRun) } : {})
-        }))
-        return {
-          data: { watches: views },
-          summary: {
-            ok: true,
-            count: views.length,
-            enabled: views.filter((v) => v.enabled).length,
-            proposals: views.filter((v) => v.proposed).length
-          }
-        }
-      }
-      case 'follow.due': {
-        await follows.load()
-        const due = follows.due()
-        return {
-          data: {
-            due: due.map((watch) => ({
-              id: watch.id,
-              title: watch.title,
-              lastCheckedAt: watch.lastCheckedAt ?? null,
-              brief: watchBriefText(watch, follows.runs(watch.id, 3))
-            }))
-          },
-          summary: {
-            ok: true,
-            count: due.length,
-            note: FOLLOW_APP_ONLY_NOTE
-          }
-        }
-      }
-      case 'follow.save': {
-        /*
-         * 模型只能**提议**：强制 `origin: 'agent'` 与 `enabled: false`，
-         * 无论它传了什么 —— 「用户未启用的关注不自行建立任务」不能靠模型自觉（T16-3）。
-         */
-        const raw = (params.watch && typeof params.watch === 'object' ? params.watch : params) as Record<string, unknown>
-        const res = await follows.save({ ...raw, origin: 'agent', enabled: false })
-        if (!res.ok) return { summary: { ok: false, error: res.error, code: res.code } }
-        return {
-          data: { id: res.value.id, title: res.value.title, status: 'proposed' },
-          summary: {
-            ok: true,
-            /** 如实告知：这是提议，等用户点才生效 */
-            note: '已存成提议（未启用）：用户点「开始关注」之后才会出现在到点提醒里。',
-            cadence: res.value.cadence,
-            intervalMinutes: res.value.intervalMinutes ?? null
-          }
-        }
-      }
-      case 'follow.report': {
-        const res = await follows.report({
-          watchId: params.watchId ?? params.id,
-          outcome: params.outcome,
-          summary: params.summary,
-          changed: params.changed,
-          decisions: params.decisions
-        })
-        if (!res.ok) return { summary: { ok: false, error: res.error, code: res.code } }
-        return {
-          data: { runId: res.value.run.id, text: runSummaryText(res.value.run) },
-          summary: {
-            ok: true,
-            outcome: res.value.run.outcome,
-            changed: res.value.run.changed.length,
-            decisions: res.value.run.decisions.length,
-            nextDueAt: res.value.watch.nextDueAt ?? null
-          }
-        }
-      }
-      default:
-        return { summary: { ok: false, error: `未知的关注动作：${command}` } }
-    }
-  }
-}
-
-const goalCapabilityHost: GoalCommandHost = {
-  async run(command, params, context) {
-    await goals.load()
-    const key = workModeKeyFor(context.sessionId)
-    const modeState = await resolveWorkMode(context.sessionId)
-    const goal = goals.state(key)
-
-    if (command === 'goal.ready') {
-      const submission = normalizeReadyParams(params)
-      let res: Awaited<ReturnType<GoalStore['commitReady']>>
-      if (goal.readyApproval === 'review') {
-        const review = await goals.prepareReadyReview(
-          key,
-          submission,
-          { modeRevision: modeState.revision, goalRevision: goal.revision },
-          goal.goalId || `goal-${context.sessionId}`
-        )
-        if (!review.ok) {
-          throw new CapabilityCommandError(review.code, review.message, {
-            goal: review.goal,
-            mode: modeState.mode,
-            modeRevision: modeState.revision
-          })
-        }
-        if ('pending' in review && review.pending) {
-          await pushGoal(context.sessionId)
-          await pushWorkMode(context.sessionId)
-          return {
-            data: {
-              replayed: review.replayed,
-              pendingApproval: true,
-              goal: review.goal,
-              note: '计划已保存，等待用户审阅。当前仍是只读计划档；不要调用写工具或提交目标进度。'
-            },
-            summary: {
-              kind: 'goal',
-              action: 'ready-review',
-              replayed: review.replayed,
-              goalId: review.goal.pendingReady?.goalId ?? review.goal.goalId,
-              goalRevision: review.goal.revision,
-              phase: review.goal.phase,
-              mode: modeState.mode
-            }
-          }
-        }
-        res = review as Awaited<ReturnType<GoalStore['commitReady']>>
-      } else {
-        res = await goals.commitReady(
-          key,
-          submission,
-          { modeRevision: modeState.revision, goalRevision: goal.revision },
-          goal.goalId || `goal-${context.sessionId}`
-        )
-      }
-      if (!res.ok) {
-        throw new CapabilityCommandError(res.code, res.message, {
-          goal: res.goal,
-          mode: modeState.mode,
-          modeRevision: modeState.revision
-        })
-      }
-      if (!res.replayed) {
-        const switched = await workModes.set(key, 'standard', modeState.revision)
-        if (!switched.ok) {
-          throw new CapabilityCommandError(
-            'mode_switch_failed',
-            `就绪已提交，但模式切换失败（${switched.error ?? 'unknown'}）；重试时带同一个 transitionId 就会回放已提交结果`,
-            { goal: res.goal, currentMode: switched.state }
-          )
-        }
-        await pushWorkMode(context.sessionId)
-        /* 先落盘（commitReady 里已做）再告诉薄层可以开工：顺序不能反（§4） */
-        await applyGoalResume(context.sessionId)
-      }
-      await pushGoal(context.sessionId)
-      return {
-        data: {
-          replayed: res.replayed,
-          goal: res.goal,
-          transition: res.result,
-          note: res.replayed
-            ? '这次是重放：就绪转移已经提交过，不会重复切换模式'
-            : '模式已切标准（下一轮生效）。本轮工具集仍是只读：先收尾，不要在这一轮里改文件。'
-        },
-        summary: {
-          kind: 'goal',
-          action: 'ready',
-          replayed: res.replayed,
-          goalId: res.result.goalId,
-          goalRevision: res.goal.revision,
-          phase: res.goal.phase,
-          mode: 'standard'
-        }
-      }
-    }
-
-    if (command === 'goal.report') {
-      const res = await goals.report(key, normalizeReportParams(params))
-      if (!res.ok) {
-        throw new CapabilityCommandError(res.code, res.message, {
-          goal: res.goal,
-          mode: modeState.mode,
-          modeRevision: modeState.revision
-        })
-      }
-      /*
-       * 目标进终态（completed / blocked / stopped）→ **立刻**把薄层可见的续行清掉。
-       *
-       * `GoalStore.report` 已经在同一次落盘里把 `entry.resume` 置空了，但那只是
-       * `goals.json`；薄层读的是 `goal-resume/<runnerId>.json` 快照（实施-14 A1）。
-       * 两份不同步时，停在 executing 时 arm 的那条「接着干」会在目标已经交付之后
-       * 才发出去，把模型重新叫起来干一件已经完的事。
-       */
-      if (!isActiveGoalPhase(res.goal.phase)) {
-        await applyGoalResume(context.sessionId)
-        handoffDiag.record({
-          stage: 'goal-continue',
-          outcome: 'terminal-cleared',
-          reason: res.goal.phase,
-          runnerId: context.sessionId,
-          sessionKey: key,
-          detail: { goalId: res.goal.goalId }
-        })
-      }
-      /*
-       * 顺路看一眼要不要开始交接（S5b-2）：资格四条里「目标在推进」正是在这里才可能成立 ——
-       * 只靠压缩事件驱动会在「先报告、后压缩」的顺序下漏掉。
-       * 生产上阈值没到就什么都不会发生（阈值覆盖只在测试里设）。
-       */
-      if (!res.replayed) void scheduleSessionWork(context.sessionId, 'goal-report')
-      /*
-       * 自主档（或带 pursue 的持续目标）的「接着干」（S3c）：报完进展就安排下一次续接，
-       * 让模型在**没有人再发消息**的情况下自己一轮轮往下推。
-       *
-       * 为什么标准档默认不 arm：用户就在旁边看着，自己往下跑会抢他的话；
-       * 而 `pursue` 是**目标**语义（用户在 `+` 菜单里明确要求持续推进），与档位正交。
-       * 能不能真发出去由薄层的空闲判定决定（本轮没结束就留着，见 goal-resume.js）。
-       */
-      let continueNote: string | null = null
-      let continueRound: number | null = null
-      if (!res.replayed && !hasHandoffOperation(context.sessionId) && (modeState.mode === 'autonomous' || res.goal.pursue)) {
-        const armed = await goals.armContinue(key, {
-          consumed: (operationId) => goalResumeContinuationWasConsumed(context.sessionId, operationId),
-          usage: await goalBudgetUsage(context.sessionId, goals.startOf(key))
-        })
-        if (armed.armed) {
-          continueRound = armed.round
-          /* 先落盘（armContinue 已 await persist）再告诉薄层 —— 顺序不能反（§4） */
-          await applyGoalResume(context.sessionId)
-          handoffDiag.record({
-            stage: 'goal-continue',
-            outcome: 'armed',
-            runnerId: context.sessionId,
-            sessionKey: key,
-            detail: { round: armed.round, mode: modeState.mode, pursue: res.goal.pursue === true }
-          })
-          continueNote =
-            `已安排第 ${armed.round} 次自动续接：本轮的活干完就收尾，` +
-            '之后会有一条控制消息把你叫回来继续，不要停下来等用户确认。'
-        } else if (armed.reason === 'limit') {
-          continueNote =
-            `已达自动续接上限（${AUTONOMOUS_CONTINUE_LIMIT} 次），不再自动叫你：` +
-            '请在本轮里把进展、结论与需要用户决定的事写清楚。'
-        } else if (armed.reason === 'pending') {
-          /*
-           * A6：同一条待发操作还在（模型重复 report，或上一轮还没发出），
-           * **不新建也不递增轮数** —— 如实复述已有的那一条。
-           */
-          continueRound = goals.autoContinueCount(key)
-          continueNote = `第 ${continueRound} 次自动续接已经安排，等待当前回合收尾后继续。`
-        } else if (armed.reason === 'paused') {
-          /*
-           * A2：用户按过停止。不自动继续，也不装作“已经安排”——
-           * 让模型在本轮里把现场交代清楚，等用户明确发话再恢复。
-           */
-          continueNote = '用户已暂停自动推进：本轮收尾后不会自动继续，需要用户明确发话或恢复档位。'
-        }
-      } else if (res.replayed && modeState.mode === 'autonomous' && isActiveGoalPhase(res.goal.phase)) {
-        /*
-         * reportId 重放是正常的 RPC / 模型重试，不应把已经存在的续行说成
-         * 没有安排。这里只复述仍待消费的那一条，不再重复 arm，避免多启动一轮。
-         */
-        const existing = goals.resumeOf(key)
-        if (existing?.kind === 'continue' && !(await goalResumeContinuationWasConsumed(context.sessionId, existing.operationId))) {
-          continueRound = goals.autoContinueCount(key)
-          continueNote = `第 ${continueRound} 次自动续接已经安排，等待当前回合收尾后继续。`
-        }
-      }
-      await pushGoal(context.sessionId)
-      return {
-        data: {
-          replayed: res.replayed,
-          goal: res.goal,
-          summary: goalSummary(res.goal),
-          ...(continueNote ? { note: continueNote } : {}),
-          ...(continueRound ? { autoContinueRound: continueRound } : {})
-        },
-        summary: {
-          kind: 'goal',
-          action: 'report',
-          replayed: res.replayed,
-          phase: res.goal.phase,
-          goalRevision: res.goal.revision,
-          stepsDone: res.goal.steps.filter((step) => step.status === 'done').length,
-          stepsTotal: res.goal.steps.length,
-          blocked: res.goal.phase === 'blocked',
-          autoContinueArmed: continueRound != null
-        }
-      }
-    }
-
-    if (command === 'goal.status') {
-      return {
-        data: { goal, mode: modeState, modeRevision: modeState.revision, summary: goalSummary(goal) },
-        summary: {
-          kind: 'goal',
-          action: 'status',
-          phase: goal.phase,
-          goalRevision: goal.revision,
-          mode: modeState.mode,
-          modeRevision: modeState.revision
-        }
-      }
-    }
-
-    throw new CapabilityCommandError('unknown_command', `未知的 goal 动作：${command}`)
-  }
-}
-
 /**
  * 切完视图后把目标实例的现状推给渲染端（N12）。
  *
@@ -1510,7 +1028,7 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
   /* 工作模式跟随实例推送：切会话 / 新建 / 启动都经这里，一处覆盖所有路径 */
   await pushWorkMode(id)
   await pushAgentProfile(id)
-  await pushGoal(id)
+  pushFrom(id, { ch: 'goal', payload: emptyGoal() })
   pushRunners()
 }
 
@@ -1518,9 +1036,11 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
  * 退出前的清理：收好 pi 子进程 —— 否则会留下孤儿 node 进程。
  */
 let shuttingDown = false
+let releaseDesktopDataRoot: (() => Promise<void>) | undefined
 async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
+  await closeAgentService().catch((error) => reportMainError('agent-service-shutdown', error))
   disposeKeepAwake()
   tray?.destroy()
   tray = null
@@ -1557,6 +1077,7 @@ async function shutdown(): Promise<void> {
   } catch {
     /* 已经退出的会话 kill 会抛，忽略 */
   }
+  await releaseDesktopDataRoot?.().catch((error) => reportMainError('data-root-unlock', error))
 }
 
 type ExitChoice = 'cancel' | 'save' | 'interrupt'
@@ -1629,6 +1150,7 @@ async function startRemoteServer(): Promise<void> {
         command: executeRemoteCommand,
         questions: remoteQuestions,
         answer: remoteAnswer,
+        humanApproval: remoteHumanApproval,
         artifact: remoteArtifact,
         hubSnapshot: () => agentHub.snapshot(true),
         hubAttention: () => agentHub.attention(),
@@ -2235,6 +1757,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   })
 
   runners = new RunnerRegistry({
+    prepareNewSession: async agent => {
+      return applyRememberedModel(agent, (await getSettings()).lastMainModel)
+    },
     /*
      * 同一工作目录冲突 → 自动隔离（用户 2026-09-25 拍板的全自动档）。
      * 建树失败**不**改变原来的冲突报错，只把原因并进去 —— 防线本身不降级。
@@ -2278,8 +1803,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         codemodeExtension: codemodeExtensionPath(),
         questionExtension: questionExtensionPath(),
         shellFallbackExtension: shellFallbackExtensionPath(),
-        workModeExtension: workModeExtensionPath(),
-        agentProfileExtension: agentProfileExtensionPath(),
         responseDetailExtension: responseDetailExtensionPath(),
         getResponseDetail: () => agentResponseDetail,
         /*
@@ -2292,20 +1815,12 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         /* 模型通过 `yan subagent …` 进入同一套全局控制器。 */
         subagentHost: subagentService.capabilityHost,
         /* 目标状态（实施-05 S3）：会话键与模式 store 都在本文件一侧。 */
-        goalHost: goalCapabilityHost,
-        hubHost: agentHub.capabilityHost,
-        /* 资料引用：按版本读片段。 */
-        researchHost: researchCapabilityHost,
-        /* 持续关注（实施-25 P16）：到点提醒与结果记录，没有后台调度器。 */
-        followHost: followCapabilityHost,
         preambleExtension: preambleExtensionPath(),
         languageExtension: languageExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
         contextInspectExtension: contextInspectExtensionPath(),
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
-        repeatGuardExtension: repeatGuardExtensionPath(),
         dangerGuardExtension: dangerGuardExtensionPath(),
-        permissionGuardExtension: permissionGuardExtensionPath(),
         providerExtensions: providerExtensionPaths(),
         bundledSkills: bundledSkillPaths(),
         /* 用户技能（YAN_DIR/skills）：每次启动会话时重新列出 */
@@ -2459,12 +1974,14 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
          * 高危操作确认（danger-guard 薄层发起）：走输入框上方的批准卡片；高危每次都问、
          * 不记忆，关不掉的卡片超时按拒绝。只有项目外写入可「记住目录」。
          */
+        getPermissionMode: async () => (await getSettings()).permissionMode ?? 'danger',
         confirmDanger: async (request): Promise<ConsentDecision | null> => {
           const rememberDirs = [...new Set((request.outsideDirs ?? []).map((p) => p.replace(/[\/]+[^\/]*$/, '')).filter(Boolean))]
           const isPermission = request.kind === 'permission'
           const isDelete = request.kind === 'delete'
           const isShell = request.tool === 'bash' || request.tool === 'powershell'
           const choice = await approvals.ask({
+            runId: id, sessionId: runners?.agentOf(id)?.getState()?.sessionId,
             kind: isDelete ? 'delete' : isPermission ? 'permission' : rememberDirs.length ? 'outside' : 'danger',
             tool: request.tool,
             title: isDelete
@@ -2494,6 +2011,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         confirmToolConsent: async (request: ToolConsentPrompt): Promise<ConsentDecision | null> => {
           const { parts, verdict } = request
           const choice = await approvals.ask({
+            runId: id, sessionId: runners?.agentOf(id)?.getState()?.sessionId,
             kind: 'consent',
             tool: parts.capability,
             title: `Agent 想使用「${parts.capability}」执行「${parts.action}」`,
@@ -2702,7 +2220,7 @@ function registerIpc(): void {
    * 更直接 —— 后者只是字符串，而这里比的是真实的进程对象。
    */
   /* 所有处理器共用来源校验：只接受主窗口的调用（见 ipc/registrar.ts） */
-  const ipc = createIpcRegistrar((event) => !!win && !win.isDestroyed() && event.sender === win.webContents)
+  const ipc = createIpcRegistrar((event) => !!win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame)
   const { handle, rawHandle } = ipc
 
   /* ---- 会话 ---- */
@@ -2734,44 +2252,17 @@ function registerIpc(): void {
       if (!r.ok) return r
       targetId = runners?.activeRunnerId
     }
-    /*
-     * 用户发话了：自主档的**连续**自动续接计数归零（S3c）。
-     * 上限只约束「无人看管的连续自动轮」—— 有人参与就重新给满额度。
-     */
     const id = targetId
-    if (id) {
-      await goals.load()
-      const mode = await resolveWorkMode(id)
-      const key = workModeKeyFor(id)
-      const goal = goals.state(key)
-      const pending = goals.resumeOf(key)
-      /*
-       * 用户发言 = 明确接管（实施-14 A2/A3）：旧自动续行作废、**暂停解除**。
-       * 不再只看自主档 —— `pursue` 目标在标准档下同样会自己往下跑，
-       * 而用户这一句话就是「我来接手」的意思。
-       */
-      if (mode.mode === 'autonomous' || goal.pursue === true || pending !== null || goals.isPaused(key)) {
-        await cancelGoalResume(id)
-      }
-      await goals.setPaused(key, false).catch(() => {})
-      /* await：用户发言必须先于模型接下来的 arm 落地，否则竞态下计数不会被归零 */
-      await goals.resetAutoContinues(key).catch(() => {})
-      /* 用户发话了 = 他接手了：自动继续作废、连续失败计数归零（S5c） */
-      await resetAutoContinue(id)
-      if (mode.mode === 'autonomous') {
-        if (text.trim()) await goals.ensureAutonomousGoal(key, text)
-        await pushGoal(id)
-      }
-    }
     /*
      * 检查点：新一轮开始前给项目目录存一份快照（排队、插话不算新一轮）。
-     * 最多等 10 秒，存不下也照常发送。
+     * 最多等 1.5 秒：大项目的 git add 可达数秒，不能让发送卡在快照上；
+     * 超时后快照在后台继续，模型首包通常晚于这个时间，不会读到被改过的文件。
      */
     if (id && !mode && text.trim()) {
       const agent = runners?.agentOf(id)
       const state = typeof agent?.getState === 'function' ? agent.getState() : null
       if (agent && state && !state.isAgentRunning && (await getSettings()).checkpointsEnabled !== false) {
-        await captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text)
+        await captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text, 1_500)
       }
     }
     return (id ? runners?.agentOf(id)?.send(text, images, mode) : undefined) ?? { ok: false, error: 'pi 未运行' }
@@ -2782,45 +2273,20 @@ function registerIpc(): void {
   handle('yan:steerQueued', async (queueId: string) => ac()?.steerQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:removeQueued', async (queueId: string) => ac()?.removeQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:abort', async () => {
-    /*
-     * 用户停止优先（实施-14 A2）：**先失效续接资格，再停当前回合**。
-     *
-     * 顺序反过来会留一个窗口：`abort()` 期间实例已经空闲，一次 `state` 推送
-     * 就能让 `maybeArmGoalContinue` 重新 arm 一条续行 —— 用户按了停止，
-     * 下一轮却自己跑起来。所以这里是「登记暂停（代次失效）→ 清快照 → 停回合」，
-     * 而且**同步 awaited**：不能让异步清理跑到后面去。
-     */
     const id = runners?.activeRunnerId
     if (id) {
-      await goals.load()
+      // 仅处理确实存在的历史交接，普通停止不再写旧目标/续行状态。
       for (const [sourceId, pending] of handoffPending) {
         if (sourceId !== id && pending.destinationRunId !== id) continue
         pending.cancelled = true
-        await goals.setPaused(pending.request.sessionKey, true)
-        if (pending.destinationRunId) {
-          await goals.setPaused(workModeKeyFor(pending.destinationRunId), true)
-          await cancelGoalResume(pending.destinationRunId)
+        if (pending.destinationRunId && pending.destinationRunId !== id) {
           await runners?.agentOf(pending.destinationRunId)?.abort()
         }
         await abandonHandoff(sourceId, 'user-stop', pending.request.operationId)
       }
-      const key = workModeKeyFor(id)
-      await goals.setPaused(key, true).catch(() => {})
-      await cancelGoalResume(id).catch(() => {})
-      handoffDiag.record({
-        stage: 'goal-continue',
-        outcome: 'cancelled',
-        reason: 'user-stop',
-        runnerId: id,
-        sessionKey: key,
-        detail: { paused: true }
-      })
     }
     // 把 clear_queue 拿回来的排队文本一并返回，客户端应放回输入框
     const cleared = (await ac()?.abort()) ?? { steering: [], followUp: [] }
-    /* 用户停止 = 立刻停手：未到点的自动继续也要撤掉，并归零（S5c） */
-    if (id) void resetAutoContinue(id)
-    /* 停止只是暂停，不是放弃目标 —— 目标级 `stopped` 走 `yan:stopGoal` */
     return cleared
   })
 
@@ -2969,7 +2435,8 @@ function registerIpc(): void {
     preferMirror: async () => (await getSettings()).lang === 'zh-CN'
   })
 
-  registerFilesIpc(ipc, { resolveFileContext })
+  registerFilesIpc(ipc, { resolveFileContext, isSessionBusy: () => !runners || runners.statuses().some((runner) => runner.running || runner.waiting) })
+  registerAgentServiceIpc(ipc, { currentAgent: ac })
 
   /* ---- 设置 ---- */  handle('yan:getSettings', async () => {
     const s = await getSettings()
@@ -3456,7 +2923,7 @@ function createWindow(): void {
     icon: shellIconPath(),
     width: useW,
     height: useH,
-    minWidth: 940,
+    minWidth: 600,
     minHeight: 600,
     show: false,
     frame: false,
@@ -3482,6 +2949,7 @@ function createWindow(): void {
       spellcheck: false
     }
   })
+  guardHtmlArtifactFrames(win.webContents)
 
   if (process.platform === 'win32') {
     // 任务栏按 AppUserModelID 取重启图标；只设置 BrowserWindow.icon 仍可能显示 Electron 默认图标。
@@ -3971,6 +3439,7 @@ const sessionHost: SessionHost = {
 /* 远程宿主接上桌面的运行注册表与会话规则（见 remote-host.ts） */
 configureRemoteHost({
   ...sessionHost,
+  approvals,
   win: () => win,
   remoteAccess: () => remoteAccess
 })
@@ -4001,6 +3470,8 @@ configureHandoffCoordinator({
 })
 
 app.whenReady().then(async () => {
+  try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { reportMainError('data-root-writer', error); app.exit(1); return }
+  registerHtmlArtifactProtocol()
   void loadModelPricing()
   watchPowerSource()
   browser = new BrowserController(() => win, push)
@@ -4024,8 +3495,6 @@ app.whenReady().then(async () => {
    * 导出的技能在第一次会话就能加载。失败只跳过，不挡启动；原文件保留。
    */
   await migrateLegacyPlaybooks().catch((error) => console.error('[yan] 办事模板导出失败：', error))
-  /* 学习记录的可读副本（YAN_DIR/learning-export）：派生文件，每次启动重写，原数据不动 */
-  void exportLearningData().catch((error) => console.error('[yan] 学习记录导出失败：', error))
 
   // 窗口就绪后自动连 pi，用户不用先点「连接」
   const started = await startAgent()

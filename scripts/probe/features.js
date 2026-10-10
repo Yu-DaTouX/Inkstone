@@ -245,8 +245,10 @@
   if (picker) {
     click(picker)
     await until(() => !!q('[data-testid="model-menu"]'), 3000)
-    const items = qa('.mt-item')
-    const current = q('.mt-item[data-current="1"]')
+    const providerSelect = q('[data-testid="models-provider"]')
+    providerSelect.value = ''; providerSelect.dispatchEvent(new Event('change', { bubbles: true })); await sleep(150)
+    const items = qa('[data-testid="model-option"]')
+    const current = q('[data-testid="model-option"][data-current="1"]')
     ok(items.length > 1, `模型菜单有 ${items.length} 个模型`)
     ok(!!current, '模型菜单标记当前模型')
     /*
@@ -272,7 +274,7 @@
     if (other) {
       click(other)
       await sleep(1200)
-      const id = other.getAttribute('title') ?? ''
+      const id = other.dataset.modelId ?? ''
       ok(store.getState().session?.model?.id === id, `菜单切换到 ${id} 生效`)
       if (cur) {
         await store.getState().setModel(cur.provider, cur.id)
@@ -281,6 +283,9 @@
       }
     }
 
+    if (!q('[data-testid="model-menu"]')) { click(picker); await sleep(200) }
+    const thinkingDetails = q('[data-testid="model-thinking-settings"]')
+    if (thinkingDetails && !thinkingDetails.open) thinkingDetails.querySelector('summary').click()
     const originalThinking = store.getState().session?.thinkingLevel ?? 'off'
     /*
      * 必须**重新查询**档位按钮：上面切过一次模型，菜单已重渲染，原来那份

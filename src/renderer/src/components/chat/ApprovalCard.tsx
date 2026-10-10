@@ -15,6 +15,13 @@ export function ApprovalCard() {
   const t = useT()
   const approvals = useStore((s) => s.approvals)
   const answerApproval = useStore((s) => s.answerApproval)
+  const session = useStore(s => s.session)
+  const sessions = useStore(s => s.sessions)
+  const runners = useStore(s => s.runners)
+  const subagents = useStore(s => s.subagents)
+  const titles = useStore(s => s.titles)
+  const manualTitles = useStore(s => s.manualTitles)
+  const switchSession = useStore(s => s.switchSession)
   const current = approvals[0]
   const cardRef = useRef<HTMLDivElement>(null)
 
@@ -32,6 +39,24 @@ export function ApprovalCard() {
   }, [current, answerApproval])
 
   if (!current) return null
+
+  const child = current.subagentId ? subagents.find(run => run.id === current.subagentId) : undefined
+  const originRunId = child?.parentRunId ?? current.runId
+  const runner = runners.find(run => originRunId && (run.runId ?? run.id) === originRunId)
+  const originSessionId = child?.parentSessionId ?? current.sessionId
+  const isCurrent = originSessionId && [session?.sessionId, session?.conversationId].includes(originSessionId)
+  const source = sessions.find(item => (originSessionId && item.id === originSessionId) || (runner?.sessionFile && item.path === runner.sessionFile))
+  const sourcePath = source?.path ?? runner?.sessionFile ?? (isCurrent ? session?.conversationFile ?? session?.sessionFile : undefined)
+  const sourceName = source ? manualTitles[source.id] || titles[source.id] || source.title
+    : isCurrent ? t('approval.currentSource') : t('approval.unknownSource')
+  const viewSource = async () => {
+    if (!sourcePath) return
+    if (sourcePath !== (session?.conversationFile ?? session?.sessionFile)) await switchSession(sourcePath)
+    const viewed = useStore.getState().session
+    if (child && (viewed?.conversationFile ?? viewed?.sessionFile) === sourcePath) {
+      window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: `subagent:${child.id}` }))
+    }
+  }
 
   const risky = current.kind === 'danger' || current.kind === 'outside' || current.kind === 'delete'
   const isShell = current.tool === 'bash' || current.tool === 'powershell'
@@ -55,6 +80,12 @@ export function ApprovalCard() {
             {t('approval.more', { n: approvals.length - 1 })}
           </span>
         ) : null}
+      </div>
+
+      <div className="approval-source" data-testid="approval-source">
+        <span>{t('approval.source', { name: sourceName })}</span>
+        {current.subagentId ? <span>{t('approval.childSource', { name: child?.model || current.subagentId })}</span> : null}
+        {sourcePath ? <Button size="sm" type="button" data-testid="approval-view-source" onClick={() => void viewSource()}>{t('approval.viewSource')}</Button> : null}
       </div>
 
       {current.detail ? (

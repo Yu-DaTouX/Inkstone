@@ -6800,8 +6800,7 @@ async function main() {
         /* 续行扩展诊断（实施-05 S3b）：没发出时要知道是「不该发」还是「发失败」 */
         ...(c.goalResumeExtLog ? { YAN_GOAL_RESUME_EXT_LOG: join(tmpdir(), 'yan-goal-resume.log') } : {}),
         /*
-         * 场景自己的环境变量（实施-05 S5c 首位使用者：`YAN_AUTO_CONTINUE` 压短退避 ——
-         * 真实验证不能等 3s+10s+30s）。放在 `YAN_TEST_MODEL` 之前，
+         * 场景自己的环境变量。放在 `YAN_TEST_MODEL` 之前，
          * 让场景也能覆盖模型之外的开关。
          */
         ...(c.env ?? {}),

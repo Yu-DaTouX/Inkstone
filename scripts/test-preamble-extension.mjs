@@ -7,7 +7,7 @@
  * 两种都只能在真实请求里才看得出来，所以这里把机制确定性地测掉。
  */
 export async function runPreambleExtensionTests(ok, mod) {
-  const { NATIVE_PREAMBLE, YAN_PREAMBLE, default: extension } = mod
+  const { NATIVE_PREAMBLE, YAN_PREAMBLE, PROGRESS_GUIDANCE, default: extension } = mod
 
   ok(typeof NATIVE_PREAMBLE === 'string' && NATIVE_PREAMBLE.startsWith('You are an expert coding assistant'), '导出的原生句就是 pi 的英文 preamble')
   ok(typeof YAN_PREAMBLE === 'string' && YAN_PREAMBLE.includes('Inkstone'), '导出的砚开场白包含产品名 Inkstone')
@@ -22,10 +22,12 @@ export async function runPreambleExtensionTests(ok, mod) {
   const base = `${NATIVE_PREAMBLE}\n\n<tools>\n- read: Read file contents\n</tools>\n\n<rules>\n- Be concise\n</rules>`
   const out = run(base)
   ok(out?.systemPrompt?.startsWith(YAN_PREAMBLE), '原生开场白被替换成砚的英文开场白', String(out?.systemPrompt).slice(0, 60))
-  ok(out.systemPrompt === `${YAN_PREAMBLE}\n\n<tools>\n- read: Read file contents\n</tools>\n\n<rules>\n- Be concise\n</rules>`, '只替换开场白这一句，其余段落逐字保留')
+  ok(out.systemPrompt === `${YAN_PREAMBLE}\n\n<tools>\n- read: Read file contents\n</tools>\n\n<rules>\n- Be concise\n</rules>\n\n${PROGRESS_GUIDANCE}`, '原生规则逐字保留，末尾追加简短进展约定')
   ok(!out.systemPrompt.includes(NATIVE_PREAMBLE), '替换后不再包含原生英文句')
 
-  ok(run('BASE').systemPrompt === `BASE\n\n${YAN_PREAMBLE}`, '未知原生开场白保留原文并补充砚身份')
+  ok(run('BASE').systemPrompt === `BASE\n\n${YAN_PREAMBLE}\n\n${PROGRESS_GUIDANCE}`, '未知原生开场白保留原文并补充砚身份和进展约定')
   ok(run('').systemPrompt.includes(YAN_PREAMBLE), '空系统提示仍包含砚身份')
-  ok(run(`${YAN_PREAMBLE}\n\n<tools>`) === undefined, '幂等：已替换过的提示不再重复替换')
+  ok(run(out.systemPrompt) === undefined, '幂等：身份和进展约定不重复追加')
+  ok(run(`${YAN_PREAMBLE}\n\n<tools>`).systemPrompt.endsWith(PROGRESS_GUIDANCE), '旧身份提示补齐进展约定')
+  ok(PROGRESS_GUIDANCE.includes('requests silence') && PROGRESS_GUIDANCE.includes('without narrating each routine call'), '进展约定尊重静默要求，不逐条播报工具')
 }

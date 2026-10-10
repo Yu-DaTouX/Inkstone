@@ -2,7 +2,7 @@
 
 Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（React Native）。pi 通过独立 RPC 子进程提供模型循环。公开品牌为 Inkstone，现有 `yan`、`YAN_*`、CLI 与数据目录标识按兼容约定维护。
 
-外部 CLI 派活、共享工具协调和手机控制的现行边界见[多 Agent 工作台](docs/AGENT_HUB.md)。
+产品目标与精简边界以[产品方向](docs/PRODUCT_DIRECTION.md)为准：基于 pi 的轻量图形客户端、指定模型的子 Agent、两档权限，桌面目标覆盖 Windows/macOS/Linux，Android/iOS 连接电脑。当前实现与目标平台分开记录；外部 CLI 工作台的现状见[多 Agent 工作台](docs/AGENT_HUB.md)。
 
 本仓库由多个 agent（Claude Code、Codex、砚内置的 pi 等）轮流或同时开发，彼此看不到对方的会话和私有记忆。本文是所有 agent 的共同入口，只写每次都要遵守的规则；状态、交接与本地资料的做法见[多 Agent 协作流程](docs/AGENT_WORKFLOW.md)。
 
@@ -24,13 +24,18 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 ## 代码定位与跨平台决策
 
 - 接手具体功能时，先用[代码地图](docs/CODE_MAP.md)找到用户入口、主进程处理、pi/RPC、持久状态和渲染投影，再读对应源码；地图是导航，实际行为以当前代码和运行证据为准。
-- 设计跨设备能力时，按[技术路线](docs/TECH_STACK_OPTIONS.md)区分 Windows 桌面执行与 Android 手机参与。外部主机 Agent（SSH 接入 Linux 主机等）当前不实施，不主动提议。iOS、macOS 与 Linux 桌面是后续适配空间，不因代码或框架支持该平台就宣称产品已支持。
+- 设计跨设备能力时，按[产品方向](docs/PRODUCT_DIRECTION.md)与[技术路线](docs/TECH_STACK_OPTIONS.md)区分 Windows/macOS/Linux 桌面执行和 Android/iOS 远程参与。macOS/Linux/iOS 是已确认的目标，尚未交付；不因框架支持就宣称产品支持。SSH 外部 Agent 主机当前不实施。
 - 个人开发者维护成本是选型条件。提出 Rust、Go、Kotlin、React Native、Flutter、.NET 或更换应用壳时，写清复用的现有代码、必须重做的浏览器/终端/pi/数据能力、各平台原生工作、发布维护量和可回退路径；避免仅凭语言性能或“一套 UI 多端”作决定。
+- 当前实施先适配和验收 Windows；macOS/Linux 桌面、Android/iOS 远程连接暂缓扩建，保持共享协议与平台边界，不把 Windows 验收泛化为其他系统已支持。
 - 跨端共享稳定的任务、会话、运行实例、事件与授权语义；平台专属的窗口、录音、文件和连接能力放在适配边界。首版只实现当前用户要求的端和流程，不提前建全平台空壳或复制任务状态机。
 
 ## 实现约定
 
+- 独立运行服务和普通文件任务的既有实现见[运行服务](docs/AGENT_SERVICE.md)，现列为精简复核对象，不再作为新功能必须经过的核心。按实际调用保留必要纯业务边界；不扩建任务授权/预算体系，不复制 pi 的模型循环。隔离夹具不能代替真实模型、真机或发行包验收。
+
 - 主进程入口 `src/main/index.ts`；渲染端通过 preload 和 `src/shared/ipc.ts` 调用宿主能力，不直接导入 pi 内部模块。
+- Hermes 外部控制插件位于 `integrations/hermes-inkstone/`，安装与验证见其 README；复用远程会话 API，不将外部插件嵌入桌面运行时。
+- 插件市场分砚/pi 两页；自有插件首批只有 Hermes，之后按实际适配结果收录。目录、导出及检查见[插件市场](docs/PLUGIN_MARKET.md)，安装复用 pi 包管理。
 - 能力保持单一正式入口；上下文、压缩、恢复与技能加载由 Agent 原生管理。pi 新增且与砚重复的能力优先适配原生实现；窗口、共享设备与必要授权协调放在宿主，随包 pi 扩展保持必要且薄。
 - 会话历史以持久化记录为准；后台事件必须核对会话归属，不能覆盖当前会话状态。
 - WebContentsView 属于原生层；浮层、焦点、窗口位置与缩放必须与主进程协调。

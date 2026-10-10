@@ -140,6 +140,9 @@ export default function languageExtension(pi) {
     trace('start', { lang: language(), injected: !!text, baseLen: String(event?.systemPrompt ?? '').length })
     if (!text) return
     const base = String(event?.systemPrompt ?? '')
+    /* 同时写具名分区：只转发结构化部分的 provider（pi-claude-bridge → Claude Code）会丢掉整段覆盖的文本 */
+    const sections = event?.systemPromptOptions?.sections
+    if (sections && typeof sections === 'object') sections.inkstone_language = text
     return { systemPrompt: base ? `${base}\n\n${text}` : text }
   })
 }

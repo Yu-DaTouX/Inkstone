@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { groupIntoTurns } from '../../../../shared/turns'
+import { groupIntoTurns, type AssistantTurn } from '../../../../shared/turns'
+import { formatDuration } from '../../../../shared/duration'
 import type { UIMessage } from '../../../../shared/ipc'
 
 /**
@@ -31,6 +32,45 @@ import type { UIMessage } from '../../../../shared/ipc'
  * 位置用 flex 均分而不是按像素排：消息高度差异极大（一句话 vs 一段代码），
  * 按高度排会让刻度全挤在一起。
  */
+const noopScroll = (): void => {}
+
+/**
+ * 书签：首版只在本机这一次运行里记住（按用户消息 id），不写进会话布局。
+ * 持久化要另评估会话布局的格式，见设计规范「界面重构」。
+ */
+const bookmarks = new Set<string>()
+const bookmarkListeners = new Set<() => void>()
+function toggleBookmark(id: string): void {
+  if (bookmarks.has(id)) bookmarks.delete(id)
+  else bookmarks.add(id)
+  bookmarkListeners.forEach((fn) => fn())
+}
+function useBookmarks(): Set<string> {
+  const [, bump] = useState(0)
+  useEffect(() => {
+    const fn = (): void => bump((n) => n + 1)
+    bookmarkListeners.add(fn)
+    return () => { bookmarkListeners.delete(fn) }
+  }, [])
+  return bookmarks
+}
+
+type OutlineTurn = {
+  user: string
+  assistant: string
+  msgId: string
+  index: number
+  failed: boolean
+  timestamp?: number
+  elapsedMs?: number
+  steps: number
+}
+
+function assistantAfter(all: ReturnType<typeof groupIntoTurns>, userIdx: number): AssistantTurn | null {
+  const next = all[userIdx + 1]
+  return next && next.kind === 'assistant' ? next : null
+}
+
 /**
  * 对话左侧的导航轨。默认画活动会话；分屏里非焦点的那块传入自己的 `messages`（只读投影），
  * 两块的轨道与正文避让完全一致，焦点换块时正文不横移。只读时点一格不跳转（点击先用来切焦点）。
@@ -42,8 +82,21 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
   const storeStreamingId = useStore((s) => (s.session?.isStreaming ? s.messages[s.messages.length - 1]?.id : undefined))
   const messages = projected ?? storeMessages
   const streamingId = projected ? projectedStreaming : storeStreamingId
-  const scrollToTurn = projected ? () => {} : storeScrollToTurn
-  const [hover, setHover] = useState<number | null>(null)
+  const scrollToTurn = projected ? noopScroll : storeScrollToTurn
+  const [hover, setHoverNow] = useState<number | null>(null)
+  const marks = useBookmarks()
+  /* 离开刻度后稍等再收起预览：指针可以移进卡片里点书签 */
+  const hideTimer = useRef(0)
+  const setHover = (next: number | null | ((h: number | null) => number | null)): void => {
+    window.clearTimeout(hideTimer.current)
+    if (typeof next === 'function') {
+      hideTimer.current = window.setTimeout(() => setHoverNow(next), 160)
+      return
+    }
+    setHoverNow(next)
+  }
+  const keepHover = (): void => window.clearTimeout(hideTimer.current)
+  useEffect(() => () => window.clearTimeout(hideTimer.current), [])
 
   /**
    * 每一轮：用**和滚动跳转同一个分组函数**（groupIntoTurns）算出来。
@@ -58,12 +111,19 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
     const all = groupIntoTurns(messages, streamingId)
     return all
       .filter((x) => x.kind === 'user')
-      .map((x, i) => ({
-        user: x.msg.text,
-        assistant: assistantTextAfter(all, all.indexOf(x)),
-        msgId: x.id,
-        index: i
-      }))
+      .map((x, i): OutlineTurn => {
+        const reply = assistantAfter(all, all.indexOf(x))
+        return {
+          user: x.msg.text,
+          assistant: assistantTextAfter(all, all.indexOf(x)),
+          msgId: x.id,
+          index: i,
+          failed: !!reply && (reply.terminalReason === 'failed' || !!reply.error || reply.tools.some((c) => c.status === 'error' && !c.cancelled)),
+          timestamp: x.msg.timestamp,
+          elapsedMs: reply?.elapsedMs,
+          steps: reply?.tools.length ?? 0
+        }
+      })
   }, [messages, streamingId])
 
   /**
@@ -317,7 +377,7 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
         {turns.map((turn, i) => (
           <button
             key={turn.msgId}
-            className={`outline-hit ${i === active ? 'on' : ''} ${i === hover ? 'hover' : ''}`}
+            className={`outline-hit ${i === active ? 'on' : ''} ${i === hover ? 'hover' : ''} ${turn.failed ? 'err' : ''} ${marks.has(turn.msgId) ? 'mark' : ''}`}
             /* 用 mouseover/mouseout 而不是 mouseenter/mouseleave：
                React 的 enter/leave 是从 mouseover/mouseout 合成的，
                直接派发 enter 不触发；over/out 是原生冒泡事件，行为可预测。 */
@@ -353,6 +413,10 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
           n={hover + 1}
           total={turns.length}
           ratio={hoverRatio}
+          marked={marks.has(turns[hover].msgId)}
+          onToggleMark={() => toggleBookmark(turns[hover].msgId)}
+          onEnter={keepHover}
+          onLeave={() => setHover((h) => (h === hover ? null : h))}
         />
       ) : null}
     </div>
@@ -391,12 +455,20 @@ function OutlinePreview({
   turn,
   n,
   total,
-  ratio
+  ratio,
+  marked,
+  onToggleMark,
+  onEnter,
+  onLeave
 }: {
-  turn: { user: string; assistant: string }
+  turn: OutlineTurn
   n: number
   total: number
   ratio: number
+  marked: boolean
+  onToggleMark: () => void
+  onEnter: () => void
+  onLeave: () => void
 }) {
   const t = useT()
   const card = useRef<HTMLDivElement>(null)
@@ -462,28 +534,48 @@ function OutlinePreview({
   }, [ratio, n, turn.assistant])
 
   return (
-    <div className="outline-preview" ref={card} data-testid="outline-preview">
+    <div className="outline-preview" ref={card} data-testid="outline-preview" onMouseEnter={onEnter} onMouseLeave={onLeave}>
+      {/* 序号/总数 · 标题 · 书签 */}
       <div className="op-head">
         <span className="op-n">
-          {n} / {total}
+          {n}/{total}
         </span>
-        <span className="spacer" />
-        <span className="op-hint">{t('outline.click')}</span>
+        <span className="op-title" data-testid="outline-preview-title" title={clean(turn.user, 400)}>
+          {makeTitle(turn.user) || t('outline.untitled')}
+        </span>
+        <button
+          type="button"
+          className="op-mark"
+          aria-pressed={marked}
+          title={marked ? t('outline.unmark') : t('outline.mark')}
+          aria-label={marked ? t('outline.unmark') : t('outline.mark')}
+          data-testid="outline-bookmark"
+          onClick={onToggleMark}
+        >
+          {marked ? '◼' : '◻'}
+        </button>
       </div>
 
-      {/* 标题：用户那一问的短摘要 */}
-      <div className="op-title" data-testid="outline-preview-title" title={clean(turn.user, 400)}>
-        {makeTitle(turn.user) || t('outline.untitled')}
-      </div>
-
-      {/* 正文：AI 回答的三行预览 */}
+      {/* 正文：AI 回答的三行摘要，关键句（模型加粗的那句）高亮 */}
       {turn.assistant ? (
         <div className="op-answer" data-testid="outline-preview-answer">
-          {clean(turn.assistant, 600)}
+          {summaryParts(turn.assistant).map((part, i) => part.hl ? <b key={i}>{part.text}</b> : <span key={i}>{part.text}</span>)}
         </div>
       ) : (
         <div className="op-empty">{t('outline.noAnswer')}</div>
       )}
+
+      {/* 元数据：时间 · 状态 · 步数 · 用时；失败轮标红 */}
+      <div className={`op-meta ${turn.failed ? 'err' : ''}`}>
+        <span>{[
+          turn.timestamp ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(turn.timestamp)) : null,
+          turn.failed ? t('act.failed') : null,
+          turn.steps ? t('turn.steps', { n: turn.steps }) : null,
+          turn.elapsedMs ? formatDuration(turn.elapsedMs) : null
+        ].filter(Boolean).join(' · ')}</span>
+        <span className="spacer" />
+        <span className="op-hint">{t('outline.click')}</span>
+      </div>
     </div>
   )
 }
@@ -519,6 +611,19 @@ function makeTitle(s: string): string {
   t = t.replace(/[，,、；;：:。.]+$/, '').trim()
 
   return t.length > 22 ? `${t.slice(0, 22)}…` : t
+}
+
+/** 摘要分段：模型用 ** 标出的第一句作为关键句高亮，其余按纯文本显示 */
+function summaryParts(s: string): { text: string; hl: boolean }[] {
+  const marked = /(\*\*|__)(.+?)\1/.exec(s)
+  if (!marked) return [{ text: clean(s, 600), hl: false }]
+  const before = clean(s.slice(0, marked.index), 300)
+  const after = clean(s.slice(marked.index + marked[0].length), 300)
+  return [
+    ...(before ? [{ text: before + ' ', hl: false }] : []),
+    { text: clean(marked[2], 200), hl: true },
+    ...(after ? [{ text: ' ' + after, hl: false }] : [])
+  ]
 }
 
 /** 预览里不需要 markdown 语法噪音，压成纯文本并截断 */

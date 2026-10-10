@@ -8,6 +8,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { cleanModelChoice, cleanModelFavorites, cleanProviderOrder } from '../shared/model-selection'
 import {
   RAIL_MAX,
   RAIL_MIN,
@@ -456,6 +457,10 @@ export async function getSettings(): Promise<AppSettings> {
     /* 旧档位迁到「危险批准」时关掉项目外写入确认（见 isLegacyPermissionMode） */
     cached.guardOutsideWrites = !isLegacyPermissionMode(cached.permissionMode) && cached.guardOutsideWrites === true
     cached.permissionMode = normalizePermissionMode(cached.permissionMode)
+    cached.lastMainModel = cleanModelChoice(cached.lastMainModel)
+    cached.lastSubagentModel = cached.lastSubagentModel === 'follow' ? 'follow' : cleanModelChoice(cached.lastSubagentModel)
+    cached.modelFavorites = cleanModelFavorites(cached.modelFavorites)
+    cached.modelProviderOrder = cleanProviderOrder(cached.modelProviderOrder)
     cached.checkpointsEnabled = cached.checkpointsEnabled !== false
     cached.guardAllowRoots = cleanAllowRoots(cached.guardAllowRoots)
     cached.capabilityStrategy =
@@ -586,6 +591,10 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.codemodeEnabled = next.codemodeEnabled !== false
   next.guardOutsideWrites = next.guardOutsideWrites === true
   next.permissionMode = normalizePermissionMode(next.permissionMode)
+  next.lastMainModel = cleanModelChoice(next.lastMainModel)
+  next.lastSubagentModel = next.lastSubagentModel === 'follow' ? 'follow' : cleanModelChoice(next.lastSubagentModel)
+  next.modelFavorites = cleanModelFavorites(next.modelFavorites)
+  next.modelProviderOrder = cleanProviderOrder(next.modelProviderOrder)
   next.checkpointsEnabled = next.checkpointsEnabled !== false
   next.guardAllowRoots = cleanAllowRoots(next.guardAllowRoots)
 
@@ -653,6 +662,15 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   /* 自动归档天数：0 / 脏值落成「没设置」，不写进文件 */
   if ('keepAwakeWhileWorking' in patch) next.keepAwakeWhileWorking = next.keepAwakeWhileWorking === false ? false : undefined
   if ('keepAwakeOnBattery' in patch) next.keepAwakeOnBattery = next.keepAwakeOnBattery === false ? false : undefined
+  if ('visualAnswers' in patch) next.visualAnswers = next.visualAnswers === false ? false : undefined
+  if ('processLayout' in patch) next.processLayout = next.processLayout === 'side' || next.processLayout === 'left' ? next.processLayout : undefined
+  if ('liveThinking' in patch) next.liveThinking = next.liveThinking === true ? true : undefined
+  if ('backgroundPreset' in patch) {
+    next.backgroundPreset = typeof next.backgroundPreset === 'string' && /^[a-z]{3,16}$/.test(next.backgroundPreset) && next.backgroundPreset !== 'default' ? next.backgroundPreset : undefined
+  }
+  if ('backgroundCustom' in patch) {
+    next.backgroundCustom = typeof next.backgroundCustom === 'string' && /^#[0-9a-fA-F]{6}$/.test(next.backgroundCustom) ? next.backgroundCustom.toLowerCase() : undefined
+  }
   if ('autoArchiveDays' in patch) next.autoArchiveDays = normalizeAutoArchiveDays(next.autoArchiveDays) || undefined
   if ('voiceInput' in patch) next.voiceInput = sanitizeVoiceInput(next.voiceInput)
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。

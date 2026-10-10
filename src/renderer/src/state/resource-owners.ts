@@ -1,5 +1,5 @@
 /**
- * 工作区资源（终端、文件预览）属于哪条会话。
+ * 工作区资源（浏览器、终端、文件预览）属于哪条会话。
  *
  * 资源本身仍由各自的 owner 管理（终端在主进程、文件预览在 store）；这里只记「挂在哪条会话旁边」，
  * 键是工作区布局用的会话键（`workbenchSessionKey`）。分屏时每块磁贴只显示自己会话的资源；
@@ -31,7 +31,7 @@ function save(map: Record<string, string>): void {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(kept)) } catch { /* 偏好写失败不影响使用资源 */ }
 }
 
-/** 资源 id 用工作区窗格 id 的形态：`terminal:<id>`、`file:<key>` */
+/** 资源 id 用工作区窗格 id 的形态：`browser`、`terminal:<id>`、`file:<key>` */
 export function resourceOwner(resource: string): string | undefined {
   return load()[resource]
 }
@@ -43,6 +43,13 @@ export function claimResource(resource: string, owner: string): string {
   if (current) return current
   save({ ...map, [resource]: owner })
   return owner
+}
+
+/** 还没有会话时开出的资源挂在占位键上；会话建好换成真键后，让它们跟过去 */
+export function reassignOwner(from: string, to: string): void {
+  const map = load()
+  if (from === to || !Object.values(map).includes(from)) return
+  save(Object.fromEntries(Object.entries(map).map(([resource, owner]) => [resource, owner === from ? to : owner])))
 }
 
 /** 资源关掉了：忘掉它的主人 */

@@ -119,6 +119,9 @@ interface BrowserTab {
    * 远程页面 → 127.0.0.1 的顶层导航因此没被拦住）。
    */
   committedUrl: string
+  /** Only a host-requested exact top-level URL gets the local-preview exception. */
+  pendingMainFrameUrl: string | null
+  openerUrl: string
 }
 
 /**
@@ -191,14 +194,6 @@ export class BrowserController {
   private readonly permissionGrants = new Set<string>()
   /** DNS 只短暂缓存，避免每个图片/字体请求都重复解析而留下长窗口。 */
   private readonly privateDnsCache = new Map<string, { private: boolean; expiresAt: number }>()
-  /**
-   * 我们自己（用户敲地址栏 / agent 调 `browser_open`）正在发起的顶层导航。
-   *
-   * 有什么用：内网地址的顶层导航放不放行，取决于“是用户/agent 明确要求，
-   * 还是远程页面想借道”—— 后者在 `details` 里没有 initiator 字段，
-   * 只能靠“这次导航是不是我们发起的”来区分（见 onBeforeRequest 的注释）。
-   */
-  private pendingMainFrameUrl: string | null = null
   /** 外部 Chrome 目标；可与内嵌标签同时存在 */
   private external: ExternalTarget | null = null
   private activeMode: 'embedded' | 'external' = 'embedded'
@@ -309,7 +304,9 @@ export class BrowserController {
       input: new InputController(cdp),
       network: new NetworkTracker(cdp),
       state: { id, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
-      committedUrl: ''
+      committedUrl: '',
+      pendingMainFrameUrl: null,
+      openerUrl: ''
     }
     void tab.network.start()
     view.webContents.on('did-start-loading', () => {
@@ -320,7 +317,7 @@ export class BrowserController {
     })
     view.webContents.on('did-stop-loading', () => {
       tab.state.loading = false
-      this.pendingMainFrameUrl = null
+      tab.pendingMainFrameUrl = null
       this.syncTabNavigation(tab)
       tab.registry.clear()
       this.updateState()
@@ -333,7 +330,7 @@ export class BrowserController {
       tab.state.url = url
       tab.committedUrl = url
       tab.state.loadError = undefined
-      this.pendingMainFrameUrl = null
+      tab.pendingMainFrameUrl = null
       tab.state.canGoBack = view.webContents.canGoBack()
       tab.state.canGoForward = view.webContents.canGoForward()
       tab.registry.clear()
@@ -365,7 +362,7 @@ export class BrowserController {
      * 被取消的导航（ERR_ABORTED）也不算失败。
      */
     view.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-      this.pendingMainFrameUrl = null
+      tab.pendingMainFrameUrl = null
       tab.state.loading = false
       if (shouldSurfaceLoadError(errorCode, isMainFrame !== false)) {
         tab.state.loadError = {
@@ -377,7 +374,7 @@ export class BrowserController {
       this.updateState()
     })
     view.webContents.setWindowOpenHandler(({ url }) => {
-      if (safeUrl(url)) void this.openBackgroundTab(url)
+      if (safeUrl(url)) void this.openBackgroundTab(url, tab.committedUrl || tab.openerUrl)
       return { action: 'deny' }
     })
     view.webContents.on('will-navigate', (event, url) => {
@@ -453,8 +450,7 @@ export class BrowserController {
        * 反而被放过（现已由 `committedUrl` + `pendingMainFrameUrl` 取代）。
        *
        * ⚠️ 已知局限（如实写在代码里，不假装完备）：
-       *   · 拿不到已提交文档（新标签第一次导航）时一律放行 —— 宁可少拦，
-       *     也不把正常请求误杀；
+       *   · 网页新标签继承 opener 来源；未知来源也不能自动获得内网权限。
        *   · 判定用 Node 的解析器，而真正发请求的是 Chromium。正常配置下两者
        *     看到同一份 DNS，但它不是网络栈级别的隔离（彻底封住需要单独代理）。
        */
@@ -469,14 +465,14 @@ export class BrowserController {
         const owner = [...this.tabs.values()].find(
           (t) => t.view.webContents.id === details.webContentsId
         )
-        /* 发起方 = **已提交**的文档；拿不到已提交文档时判定会放行（宁可少拦） */
-        const initiator = owner?.committedUrl ?? ''
+        /* 发起方优先取已提交文档；新窗口首导航继承 opener，未知来源保持受限。 */
+        const initiator = owner?.committedUrl || owner?.openerUrl || ''
         const decision = decideRequestBoundary({
           targetHost: target.hostname,
           initiatorUrl: initiator,
           resourceType: details.resourceType,
           requestedByUs:
-            details.resourceType === 'mainFrame' && this.pendingMainFrameUrl === details.url
+            details.resourceType === 'mainFrame' && owner?.pendingMainFrameUrl === details.url
         })
         if (decision === 'allow') {
           callback({})
@@ -564,7 +560,7 @@ export class BrowserController {
       tab.state.title = ''
       tab.state.loading = true
       /* 明确记下“这次导航是我们发起的”，供网络边界判定区分用户/页面发起 */
-      this.pendingMainFrameUrl = next
+      tab.pendingMainFrameUrl = next
       this.updateState()
       await tab.view.webContents.loadURL(next)
     }
@@ -580,7 +576,7 @@ export class BrowserController {
    * 正在阅读的那一页 —— 广告或授权弹窗把页面切走，用户会以为“点坏了”。
    * 与 `newTab()` 的区别只有一条：不改 `activeTabId`、新视图不设为可见。
    */
-  private async openBackgroundTab(rawUrl: string): Promise<void> {
+  private async openBackgroundTab(rawUrl: string, openerUrl: string): Promise<void> {
     const url = safeUrl(rawUrl)
     if (!url) return
     const tab = this.createTab()
@@ -592,7 +588,7 @@ export class BrowserController {
     tab.view.setVisible(false)
     tab.state.url = url
     tab.state.loading = true
-    this.pendingMainFrameUrl = url
+    tab.openerUrl = openerUrl
     this.updateState()
     try {
       await tab.view.webContents.loadURL(url)
@@ -624,7 +620,7 @@ export class BrowserController {
     tab.state.url = url
     tab.state.loading = true
     /* 同 `open()`：这是**我们**（用户/agent）发起的顶层导航 */
-    this.pendingMainFrameUrl = url
+    tab.pendingMainFrameUrl = url
     this.updateState()
     await tab.view.webContents.loadURL(url)
     this.syncTabNavigation(tab)

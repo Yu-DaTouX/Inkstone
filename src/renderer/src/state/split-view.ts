@@ -19,6 +19,8 @@ export interface SplitSessionRef {
   sessionId?: string
   /** 会话文件；切换与读历史都用它 */
   path?: string
+  /** 这一列的固定编号：列的 React key 与宽度份额按它，会话补上 id 或被替换都不变 */
+  uid?: string
 }
 
 export interface SplitLayout {
@@ -27,6 +29,9 @@ export interface SplitLayout {
   /** 焦点（活动会话）所在磁贴的下标 */
   live: number
 }
+
+let nextUid = 0
+const withUid = (ref: SplitSessionRef, uid?: string): SplitSessionRef => ({ ...ref, uid: uid ?? ref.uid ?? `t${++nextUid}` })
 
 const normPath = (p?: string): string => (p ?? '').replace(/[\\/]+/g, '/').toLowerCase()
 
@@ -50,7 +55,7 @@ export function displayedSessionOf(view: {
 }
 
 /* 新会话落盘后才有路径：同一条会话补上后来知道的字段，别的一概不动 */
-const merge = (a: SplitSessionRef, b: SplitSessionRef): SplitSessionRef => ({ sessionId: b.sessionId ?? a.sessionId, path: b.path ?? a.path })
+const merge = (a: SplitSessionRef, b: SplitSessionRef): SplitSessionRef => ({ sessionId: b.sessionId ?? a.sessionId, path: b.path ?? a.path, uid: a.uid })
 const sameFields = (a: SplitSessionRef, b: SplitSessionRef): boolean => (a.sessionId === (b.sessionId ?? a.sessionId)) && (a.path === (b.path ?? a.path))
 
 /**
@@ -67,7 +72,8 @@ export function reconcileSplit(split: SplitLayout, displayed: SplitSessionRef | 
     return { tiles, live: at }
   }
   const tiles = split.tiles.slice()
-  tiles[split.live] = { ...displayed }
+  /* 换掉焦点那一块的会话：列还是那一列，编号沿用 */
+  tiles[split.live] = withUid(displayed, tiles[split.live].uid)
   return { tiles, live: split.live }
 }
 
@@ -88,8 +94,8 @@ export function placeInSplit(split: SplitLayout | null, target: SplitSessionRef,
   if (!split) {
     if (sameSplitSession(target, current)) return null
     return at === 0
-      ? { tiles: [{ ...target }, { ...current }], live: 1 }
-      : { tiles: [{ ...current }, { ...target }], live: 0 }
+      ? { tiles: [withUid(target), withUid(current)], live: 1 }
+      : { tiles: [withUid(current), withUid(target)], live: 0 }
   }
   const liveRef = split.tiles[split.live]
   const existing = indexOfSession(split.tiles, target)
@@ -109,7 +115,8 @@ export function placeInSplit(split: SplitLayout | null, target: SplitSessionRef,
     tiles.splice(drop, 1)
     if (drop < slot) slot -= 1
   }
-  tiles.splice(slot, 0, { ...target })
+  /* 挪动已有的一块：列的编号沿用，不重挂载、不丢宽度份额 */
+  tiles.splice(slot, 0, withUid(target, existing >= 0 ? split.tiles[existing].uid : undefined))
   const live = indexOfSession(tiles, liveRef)
   return { tiles, live: live >= 0 ? live : 0 }
 }
@@ -123,8 +130,8 @@ export function removeSplitTile(split: SplitLayout, index: number): SplitLayout 
   return { tiles, live }
 }
 
-/** 分屏里一块的稳定身份（列的 React key、宽度份额都按它）：先 id，后路径 */
-export const splitTileKey = (tile: SplitSessionRef): string => tile.sessionId || tile.path || ''
+/** 分屏里一块的稳定身份（列的 React key、宽度份额都按它）：固定编号，没有才退回 id / 路径 */
+export const splitTileKey = (tile: SplitSessionRef): string => tile.uid || tile.sessionId || tile.path || ''
 
 interface SplitViewState {
   split: SplitLayout | null
@@ -143,24 +150,31 @@ interface SplitViewState {
   close(): void
 }
 
+/** 宽度份额只留还在分屏里的块：被关掉、挤掉或替换的块再回来时从等宽开始 */
+function keepWeights(weights: Record<string, number>, split: SplitLayout | null): Record<string, number> {
+  const alive = new Set(split?.tiles.map(splitTileKey))
+  return Object.fromEntries(Object.entries(weights).filter(([key]) => alive.has(key)))
+}
+
 export const useSplitView = create<SplitViewState>((set, get) => ({
   split: null,
   weights: {},
   setWeights: (next) => set({ weights: { ...get().weights, ...next } }),
   open: (target, current, at) => {
     const next = placeInSplit(get().split, target, current, at)
-    if (next !== get().split) set({ split: next })
+    if (next !== get().split) set({ split: next, weights: keepWeights(get().weights, next) })
   },
   sync: (displayed) => {
     const split = get().split
     if (!split) return
     const next = reconcileSplit(split, displayed)
-    if (next !== split) set({ split: next })
+    if (next !== split) set({ split: next, weights: keepWeights(get().weights, next) })
   },
   remove: (index) => {
     const split = get().split
     if (!split) return
-    set({ split: removeSplitTile(split, index) })
+    const next = removeSplitTile(split, index)
+    set({ split: next, weights: keepWeights(get().weights, next) })
   },
   close: () => set({ split: null, weights: {} })
 }))

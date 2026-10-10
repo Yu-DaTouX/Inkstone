@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { neighborOf, sameSplitSession, useSplitView, type SplitSessionRef } from '../../state/split-view'
-import { groupIntoTurns } from '../../../../shared/turns'
+import { createTurnProjector } from '../../../../shared/turns'
 import type { UIMessage } from '../../../../shared/ipc'
 import { Badge, IconButton, RunDot } from '../ui'
 import { Icon } from '../../icons/Icon'
@@ -10,7 +10,7 @@ import { TurnView } from './TurnView'
 import { ConversationOutline } from './ConversationOutline'
 import { fitComposerHeight } from './Composer'
 import { ComposerBorderIdle } from './ComposerBorder'
-import { newestMessages, rememberScroll, rememberShown, shownMessages, shownScroll } from '../../state/split-snapshots'
+import { latestTimestamp, newestMessages, rememberScroll, rememberShown, restoreScrollAnchor, scrollAnchorOf, shownMessages, shownScroll } from '../../state/split-snapshots'
 
 /**
  * 分屏里**没有焦点**的那条会话（设计规范 §4「分屏」）。
@@ -37,7 +37,10 @@ export function SplitPeerPane({ index, target }: { index: number; target: SplitS
   useEffect(() => { if (running) setSawRun(true) }, [running])
   const [shown] = useState(() => shownMessages(target))
   const [history, setHistory] = useState<{ path: string; messages: UIMessage[] } | null>(null)
-  const needHistory = !!target.path
+  /* 手上的最新一份比会话列表里的更新时间还旧（或根本没有）才读文件：每次焦点换块都会重挂载，不能每次读盘 */
+  const listed = useSplitSummary(target)
+  const have = newestMessages(shown, cached)
+  const needHistory = !!target.path && (!have || (listed?.updatedAt ?? 0) > latestTimestamp(have))
   useEffect(() => {
     if (!needHistory || !target.path) return
     let alive = true
@@ -54,7 +57,8 @@ export function SplitPeerPane({ index, target }: { index: number; target: SplitS
   const draft = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId]?.draft ?? '' : ''))
   const waiting = (runtime?.uiRequests.length ?? 0) > 0
   const streamingId = running ? messages[messages.length - 1]?.id : undefined
-  const turns = useMemo(() => groupIntoTurns(messages, streamingId), [messages, streamingId])
+  const projectTurns = useMemo(() => createTurnProjector(), [])
+  const turns = useMemo(() => projectTurns(messages, streamingId), [messages, streamingId, projectTurns])
   const firstUserText = messages.find((m) => m.role === 'user')?.text
   const title = useSplitTitle(target, firstUserText)
 
@@ -77,7 +81,10 @@ export function SplitPeerPane({ index, target }: { index: number; target: SplitS
     const el = streamRef.current
     if (!el) return
     if (atBottom.current) el.scrollTop = el.scrollHeight
-    else if (restored.current) { el.scrollTop = restored.current.top; restored.current = undefined }
+    else if (restored.current) {
+      if (!restoreScrollAnchor(el, restored.current.anchor)) el.scrollTop = restored.current.top
+      restored.current = undefined
+    }
   }, [turns])
   /*
    * 内容自己长高（成果卡片的预览、图片、代码块后加载）或列宽变了（换行变多）时，消息条数没变、
@@ -117,7 +124,7 @@ export function SplitPeerPane({ index, target }: { index: number; target: SplitS
       <div className="stream" ref={streamRef} onScroll={(e) => {
         const el = e.currentTarget
         atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
-        rememberScroll(target, { top: el.scrollTop, atBottom: atBottom.current })
+        rememberScroll(target, { top: el.scrollTop, atBottom: atBottom.current, anchor: atBottom.current ? undefined : scrollAnchorOf(el) })
       }}>
         <div className="stream-inner">
           {turns.map((tt) => <TurnView key={tt.id} turn={tt} streaming={tt.kind === 'assistant' && tt.streaming} />)}
@@ -221,6 +228,17 @@ export function SplitPaneHead({ index, target, children, firstUserText }: { inde
 
 /** 关闭分屏里的一块：关的是焦点那一块时，焦点先去邻近的一块；只剩一块就退出分屏 */
 export function closeSplitTile(index: number): void {
+  /* 先让这一列淡出（.closing，见 motion.css），再真正移除；同一列重复点关闭只算一次 */
+  const column = document.querySelector<HTMLElement>(`[data-split-column="${index}"]`)
+  if (column && !column.classList.contains('closing') && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    column.classList.add('closing')
+    window.setTimeout(() => removeSplitColumn(index), 140)
+    return
+  }
+  if (!column?.classList.contains('closing')) removeSplitColumn(index)
+}
+
+function removeSplitColumn(index: number): void {
   const view = useSplitView.getState()
   const split = view.split
   if (!split) return

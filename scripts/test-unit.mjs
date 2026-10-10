@@ -11,8 +11,23 @@ import { mkdtemp, writeFile, mkdir, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runVisualMatrixTests } from './test-visual-matrix.mjs'
+import { runHtmlArtifactPreviewTests } from './test-html-artifact-preview.mjs'
+import { runRunStateTests } from './test-run-state.mjs'
+import { runAgentServiceTests } from './test-agent-service.mjs'
+import { runServiceCliTests } from './test-agent-service-cli.mjs'
+import { runCapabilityNegotiationTests } from './test-capability-negotiation.mjs'
 
 await runVisualMatrixTests()
+await import('./test-light-client.mjs')
+await import('./test-light-hotpaths.mjs')
+await import('./test-model-selection.mjs')
+await import('./test-cc-guard.mjs')
+await runHtmlArtifactPreviewTests()
+await runRunStateTests()
+await runAgentServiceTests()
+await runServiceCliTests()
+await runCapabilityNegotiationTests()
+await import('./test-security-performance-fixes.mjs')
 
 const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
 const dataDir = await mkdtemp(join(tmpdir(), 'yan-data-'))
@@ -1803,32 +1818,13 @@ await runSessionHistoryTests(
   await import('../out/test/session-chain-service.mjs')
 )
 
-/*
- * 模型出错后的自动继续（实施-05 S5c）：分类 / 退避 / 上限 / 幂等 / 存储。
- * 与其它 store 同样分两份编译：shared 那份是判定，main 那份碰真文件。
- */
+// Error presentation is shared by live replies, stored history and subagents.
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/auto-continue.ts'],
-    outfile: 'out/test/auto-continue.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
+  build({ entryPoints: ['src/shared/model-errors.ts'], outfile: 'out/test/model-errors.mjs',
+    bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
 )
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/auto-continue-service.ts'],
-    outfile: 'out/test/auto-continue-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  })
-)
-const { runAutoContinueTests } = await import('./test-auto-continue.mjs')
-await runAutoContinueTests(ok)
+const { runModelErrorTests } = await import('./test-model-errors.mjs')
+await runModelErrorTests(ok)
 
 /*
  * 跨会话交接的计数与契约（实施-05 S5a）：与目标状态同样分两份编译 ——
@@ -2091,6 +2087,11 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 {
   const { runSplitViewTests } = await import('./test-split-view.mjs')
   await runSplitViewTests(ok)
+}
+
+{
+  const { runRemoteApprovalTests } = await import('./test-remote-approval.mjs')
+  await runRemoteApprovalTests(ok)
 }
 
 {
@@ -2649,6 +2650,10 @@ await runQuestionLogTests(ok)
 const { runHostingTests } = await import('./test-hosting.mjs')
 console.log('\n--- P2. pi 包管理（真实 pi CLI，隔离 agent 目录）---')
 await runPackagesTests(ok)
+const { runPluginMarketTests } = await import('./test-plugin-market.mjs')
+await runPluginMarketTests(ok)
+const { runVisualBlockTests } = await import('./test-visual-blocks.mjs')
+await runVisualBlockTests(ok)
 console.log('\n--- S1. 会话来源的持久化引用 ---')
 await runSourcesTests(ok)
 console.log('\n--- S2. 会话↔工作树来源关系（实施-07）---')
@@ -2893,7 +2898,7 @@ await runGitRepoTests(ok)
     outfile: 'out/test/capability-guide.mjs',
     bundle: true,
     format: 'esm',
-    platform: 'neutral',
+    platform: 'node',
     logLevel: 'silent'
   })
   const mod = await import('../out/test/capability-guide.mjs')
@@ -2908,8 +2913,18 @@ await runGitRepoTests(ok)
     /yan subagent start/.test(guide) && /yan subagent list/.test(guide) && /yan subagent stop/.test(guide),
     '能力说明：明确告诉模型可以启动、查看、停止子代理'
   )
-  ok(/skill:subagent/.test(guide) && /skill:research/.test(guide), '能力说明：分工与研究做法指向随包技能')
+  ok(/skill:subagent/.test(guide) && !/yan research read/.test(guide), '能力说明：分工指向随包技能，不推荐已退出的资料库研究入口')
   ok(/Skill/.test(guide) && /MCP/.test(guide), '能力说明：写明能力选择优先顺序')
+  const visual = mod.VISUAL_ANSWER_GUIDE
+  ok(/yan-chart/.test(visual) && /yan-cards/.test(visual) && /yan-flow/.test(visual) && /数据出处（必填）/.test(visual), '能力说明：常驻说明三种结构化回答块与数据来源要求')
+  {
+    const probeHandlers = {}
+    mod.default({ on: (name, fn) => { probeHandlers[name] = fn } })
+    const options = { sections: { preamble: 'x' } }
+    const result = probeHandlers.before_agent_start({ systemPrompt: 'base', systemPromptOptions: options })
+    ok(options.sections.inkstone_visual_answer === visual && result.systemPrompt.includes(visual) && result.systemPrompt.split(visual).length === 2,
+      '能力说明：结构化回答说明同时写进具名分区（只转发结构化部分的 provider 也能收到），整段文本中只出现一次')
+  }
 
   const handlers = {}
   mod.default({

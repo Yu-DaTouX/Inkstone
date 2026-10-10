@@ -8,28 +8,29 @@
 
 | 顺序 | 文件 | 层 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | `tokens.css` | tokens | 461 | 27 | 32 | 2 | 6 |
-| 2 | `ui.css` | ui | 939 | 275 | 284 | 5 | 0 |
+| 1 | `tokens.css` | tokens | 448 | 27 | 32 | 1 | 6 |
+| 2 | `ui.css` | ui | 1088 | 337 | 354 | 5 | 0 |
 | 3 | `app.css` | modules | 517 | 72 | 73 | 1 | 0 |
-| 4 | `motion.css` | modules | 1454 | 179 | 182 | 5 | 0 |
-| 5 | `settings.css` | modules | 1116 | 169 | 175 | 1 | 0 |
+| 4 | `motion.css` | modules | 1618 | 223 | 226 | 5 | 1 |
+| 5 | `settings.css` | modules | 1230 | 189 | 195 | 1 | 0 |
 | 6 | `electron.css` | modules | 38 | 14 | 15 | 0 | 0 |
 | 7 | `highlight.css` | modules | 173 | 81 | 81 | 0 | 0 |
 | 8 | `layout.css` | modules | 239 | 19 | 20 | 4 | 2 |
 | 9 | `shell.css` | modules | 690 | 141 | 145 | 2 | 7 |
 | 10 | `dialog.css` | modules | 309 | 44 | 45 | 0 | 0 |
-| 11 | `rail.css` | modules | 1121 | 206 | 215 | 0 | 0 |
-| 12 | `chat.css` | modules | 2834 | 395 | 453 | 6 | 0 |
-| 13 | `composer.css` | modules | 2130 | 311 | 317 | 2 | 0 |
+| 11 | `rail.css` | modules | 1129 | 207 | 216 | 0 | 0 |
+| 12 | `chat.css` | modules | 3479 | 526 | 587 | 6 | 0 |
+| 13 | `composer.css` | modules | 2165 | 340 | 346 | 2 | 0 |
 | 14 | `approval.css` | modules | 145 | 17 | 17 | 0 | 0 |
 | 15 | `tools.css` | modules | 3945 | 614 | 675 | 2 | 5 |
 | 16 | `browser.css` | modules | 423 | 49 | 53 | 0 | 0 |
 | 17 | `terminal.css` | modules | 82 | 10 | 10 | 0 | 0 |
 | 18 | `review.css` | modules | 741 | 97 | 98 | 0 | 0 |
-| 19 | `workbench.css` | modules | 1981 | 396 | 413 | 3 | 0 |
-| 20 | `workspace.css` | modules | 106 | 85 | 88 | 0 | 0 |
+| 19 | `workbench.css` | modules | 1986 | 399 | 416 | 3 | 0 |
+| 20 | `workspace.css` | modules | 109 | 87 | 90 | 0 | 0 |
 | 21 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | | **19474** | **3124** | | | |
+| 22 | `scheme.css` | modules | 891 | 175 | 182 | 0 | 0 |
+| | **合计** | | **21475** | **3480** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -38,43 +39,52 @@
 | 文件 | 最终胜出 |
 | --- | ---: |
 | `tokens.css` | 23 |
-| `ui.css` | 255 |
+| `ui.css` | 315 |
 | `app.css` | 53 |
-| `motion.css` | 156 |
-| `settings.css` | 169 |
+| `motion.css` | 165 |
+| `settings.css` | 189 |
 | `electron.css` | 7 |
 | `highlight.css` | 80 |
-| `layout.css` | 18 |
-| `shell.css` | 141 |
+| `layout.css` | 17 |
+| `shell.css` | 138 |
 | `dialog.css` | 44 |
-| `rail.css` | 206 |
-| `chat.css` | 393 |
-| `composer.css` | 311 |
-| `approval.css` | 17 |
+| `rail.css` | 196 |
+| `chat.css` | 468 |
+| `composer.css` | 338 |
+| `approval.css` | 16 |
 | `tools.css` | 614 |
 | `browser.css` | 49 |
 | `terminal.css` | 10 |
 | `review.css` | 97 |
-| `workbench.css` | 395 |
-| `workspace.css` | 85 |
+| `workbench.css` | 398 |
+| `workspace.css` | 87 |
 | `icon-state.css` | 1 |
+| `scheme.css` | 175 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）
 
-共 **72** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
+共 **176** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
 
 | 选择器 | 定义它的文件（按加载顺序） |
 | --- | --- |
 | `:root` | tokens → motion → layout |
+| `.mt-pop` | ui → motion → composer |
 | `.titlebar` | app → electron → shell |
+| `.stream` | app → chat → scheme |
 | `.bubble` | app → electron → chat |
 | `.composer textarea` | app → electron → composer |
 | `.composer-bar` | app → electron → composer |
 | `.status` | app → electron → tools |
+| `.outline-preview` | motion → chat → scheme |
+| `.vb-card` | motion → chat → scheme |
+| `.vb-tile` | motion → chat → scheme |
+| `.vb-stepper-panel` | motion → chat → scheme |
+| `.vb-ask` | motion → chat → scheme |
 | `html[data-theme='light']` | tokens → motion |
 | `body` | tokens → electron |
 | `.ico` | tokens → icon-state |
 | `.btn:active:not(:disabled)` | ui → motion |
+| `.model-row` | ui → composer |
 | `.ui-usage-num` | ui → shell |
 | `.quota-block-sub` | ui → shell |
 | `.quota-pop-foot` | ui → shell |
@@ -99,7 +109,6 @@
 | `.workspace` | app → layout |
 | `.center` | app → layout |
 | `.center > .stream` | app → layout |
-| `.stream` | app → chat |
 | `.stream-inner` | app → chat |
 | `.msg` | app → chat |
 | `.msg-label` | app → chat |
@@ -113,7 +122,7 @@
 | `.modal` | motion → dialog |
 | `.settings` | motion → settings |
 | `.settings-body > *` | motion → settings |
-| `.mt-pop` | motion → composer |
+| `.market-item` | motion → settings |
 | `.env-menu` | motion → review |
 | `.row-menu-surface` | motion → rail |
 | `.notices` | motion → shell |
@@ -121,19 +130,61 @@
 | `.notice:hover` | motion → shell |
 | `.logdrawer` | motion → shell |
 | `.connbar` | motion → shell |
-| `.outline-preview` | motion → chat |
+| `.outline-preview .op-head` | motion → scheme |
 | `.op-title` | motion → chat |
+| `.op-answer` | motion → scheme |
 | `.op-empty` | motion → chat |
+| `.msg.assistant` | motion → scheme |
+| `.cborder` | motion → scheme |
+| `.cborder.busy` | motion → scheme |
 | `.rp-now-spin` | motion → tools |
 | `.boot` | motion → shell |
 | `.boot-frame` | motion → shell |
 | `.boot-prompt` | motion → shell |
 | `.boot-cursor` | motion → shell |
 | `.boot.out` | motion → shell |
+| `.srow-wrap` | motion → rail |
+| `.session-children` | motion → rail |
+| `.rail-more-sessions` | motion → rail |
+| `.srow-rename-input` | motion → rail |
+| `.proj-rename-input` | motion → rail |
+| `.proj-head.drop-before::before` | motion → rail |
+| `.proj-head.drop-after::after` | motion → rail |
+| `.proj-group-heading.drop-before::before` | motion → rail |
+| `.proj-group-heading.drop-after::after` | motion → rail |
+| `.srow-wrap.is-dragging` | motion → rail |
+| `.proj-head.is-dragging` | motion → rail |
+| `.rail-trash` | motion → rail |
+| `.split-drop` | motion → chat |
+| `.split-peer-state` | motion → chat |
+| `.rp-float-tile` | motion → tools |
+| `.rp-float-tile.locate-flash` | motion → tools |
+| `.rp-snap-guide` | motion → tools |
+| `.rp-float-notice` | motion → tools |
+| `.vb-bar` | motion → chat |
+| `.vb-value` | motion → chat |
+| `.vb-step-wrap` | motion → chat |
+| `.vb-result` | motion → chat |
+| `.vb-pending` | motion → chat |
+| `.qform-field` | motion → composer |
+| `.qform-error` | motion → composer |
 | `.rail` | electron → rail |
 | `.prose` | electron → chat |
 | `.md pre code` | highlight → chat |
 | `.app.rail-off .rail` | layout → rail |
-| `.term-bar` | chat → terminal |
-| `.term-bar .spacer` | chat → terminal |
-| `.tile-pane > .agent-workspace` | workbench → workspace |
+| `html[data-theme='light'] .outline-preview` | layout → scheme |
+| `.statusbar` | shell → scheme |
+| `.sb-mode[data-mode='run']` | shell → scheme |
+| `.sb-mode[data-mode='wait']` | shell → scheme |
+| `.srow-row` | rail → scheme |
+| `.srow-row:hover` | rail → scheme |
+| `.srow` | rail → scheme |
+| `.srow-dot` | rail → scheme |
+| `.srow-row.selected .srow-dot` | rail → scheme |
+| `.srow-dot.waiting` | rail → scheme |
+| `.srow-dot.failed` | rail → scheme |
+| `.srow-dot.iso` | rail → scheme |
+| `.srow-dot.iso.blocked` | rail → scheme |
+| `.srow-dot.unread` | rail → scheme |
+| `.srow-time` | rail → scheme |
+| … | 另有 56 个 |

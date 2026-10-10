@@ -10,10 +10,12 @@
  * 搜索是「所有词都要出现」的子串匹配（不区分大小写），按命中次数与新近程度排序，
  * 并给出命中处前后的一小段文字作片段。
  */
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readdir, stat } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { setImmediate as yieldToIo } from 'node:timers/promises'
 import { join } from 'node:path'
 import { SESSIONS_DIR } from './sessions'
-import { extractSearchText, matchText, queryTokens } from '../shared/session-search-text'
+import { createSearchTextCollector, matchText, queryTokens } from '../shared/session-search-text'
 
 export interface SessionSearchHit {
   path: string
@@ -33,6 +35,31 @@ export interface SessionSearchResult {
 }
 
 const READ_PARALLEL = 4
+const MAX_INDEX_BYTES = 16 * 1024 * 1024
+const MAX_LINE_CHARS = 8 * 1024 * 1024
+
+/** Stream JSONL; oversized binary rows are skipped without retaining the rest of the row. */
+export async function readSessionSearchText(path: string): Promise<string> {
+  const collector = createSearchTextCollector()
+  let pending = ''
+  let skipping = false
+  for await (const chunk of createReadStream(path, { encoding: 'utf8', highWaterMark: 64 * 1024 })) {
+    const text = String(chunk)
+    let offset = 0
+    while (offset < text.length) {
+      const end = text.indexOf('\n', offset)
+      const part = text.slice(offset, end < 0 ? undefined : end)
+      if (!skipping && pending.length + part.length <= MAX_LINE_CHARS) pending += part
+      else { pending = ''; skipping = true }
+      if (end < 0) break
+      if (!skipping) collector.append(pending)
+      pending = ''; skipping = false; offset = end + 1
+    }
+    await yieldToIo()
+  }
+  if (!skipping && pending) collector.append(pending)
+  return collector.finish()
+}
 
 interface Entry {
   mtimeMs: number
@@ -80,7 +107,11 @@ async function refreshIndex(): Promise<void> {
   knownFiles = files
   const alive = new Set(files.map((f) => f.path))
   for (const path of index.keys()) if (!alive.has(path)) index.delete(path)
-  const stale = files.filter((f) => {
+  // Reserve the worst-case text quota per session, so concurrent readers cannot overshoot.
+  const selected = files.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, Math.floor(MAX_INDEX_BYTES / (2 * (400 * 1024 + 3))))
+  const retained = new Set(selected.map((f) => f.path))
+  for (const path of index.keys()) if (!retained.has(path)) index.delete(path)
+  const stale = selected.filter((f) => {
     const hit = index.get(f.path)
     return !hit || hit.mtimeMs !== f.mtimeMs || hit.size !== f.size
   })
@@ -89,8 +120,8 @@ async function refreshIndex(): Promise<void> {
     while (next < stale.length) {
       const file = stale[next++]
       try {
-        const raw = await readFile(file.path, 'utf8')
-        index.set(file.path, { mtimeMs: file.mtimeMs, size: file.size, text: extractSearchText(raw) })
+        const text = await readSessionSearchText(file.path)
+        index.set(file.path, { mtimeMs: file.mtimeMs, size: file.size, text })
       } catch {
         index.delete(file.path)
       }
@@ -128,9 +159,16 @@ export async function searchSessionText(query: string, limit = 30): Promise<Sess
   if (!tokens.length) return { hits: [], indexed: index.size, total: knownFiles.length }
   await ensureIndex()
   const hits: SessionSearchHit[] = []
-  for (const [path, entry] of index) {
+  for (const file of knownFiles) {
+    const path = file.path
+    let entry = index.get(path)
+    if (!entry) {
+      try { entry = { ...file, text: await readSessionSearchText(path) } }
+      catch { continue }
+    }
     const hit = matchText(entry.text, tokens)
     if (hit) hits.push({ path, snippet: hit.snippet, matches: Math.min(hit.matches, 40), updatedAt: entry.mtimeMs })
+    await yieldToIo()
   }
   const now = Date.now()
   const score = (h: SessionSearchHit): number => h.matches + Math.max(0, 8 - (now - h.updatedAt) / (3 * 24 * 3600 * 1000))

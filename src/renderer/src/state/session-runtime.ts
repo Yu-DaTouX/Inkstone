@@ -25,6 +25,7 @@ import type {
 } from '../../../shared/ipc'
 
 export interface SessionRuntimeSnapshot {
+  touchedAt?: number
   runtime: RuntimeEnvelope
   session: SessionState | null
   messages: UIMessage[]
@@ -50,6 +51,8 @@ export interface SessionRuntimeSnapshot {
 }
 
 export type SessionRuntimeMap = Record<string, SessionRuntimeSnapshot>
+let lastTouched = 0
+const touch = (): number => (lastTouched = Math.max(Date.now(), lastTouched + 1))
 
 /** sessionId 是主键；启动早期还没有 sessionId 时用 runId 临时占位。 */
 export function sessionRuntimeKey(runtime: RuntimeEnvelope): string {
@@ -114,7 +117,7 @@ export function updateSessionRuntime(
   const previous = map[key]
   if (previous && runtime.generation < previous.runtime.generation) return map
   const base = previous ? { ...previous, runtime } : emptyRuntime(runtime)
-  return { ...map, [key]: { ...base, ...patch } }
+  return { ...map, [key]: { ...base, ...patch, touchedAt: touch() } }
 }
 
 /**
@@ -304,7 +307,58 @@ export function reduceSessionRuntime(
       break
   }
 
-  return { ...map, [key]: next }
+  return { ...map, [key]: { ...next, touchedAt: touch() } }
+}
+
+const messageSizes = new WeakMap<UIMessage[], number>()
+const individualSizes = new WeakMap<UIMessage, number>()
+function historyBytes(messages: UIMessage[]): number {
+  const cached = messageSizes.get(messages)
+  if (cached !== undefined) return cached
+  let bytes = 0
+  for (const message of messages) {
+    let size = individualSizes.get(message)
+    if (size === undefined) {
+      size = 0
+      const pending: unknown[] = [message]
+      const seen = new Set<object>()
+      while (pending.length && size <= 32 * 1024 * 1024) {
+        const value = pending.pop()
+        if (typeof value === 'string') size += value.length * 2
+        else if (value && typeof value === 'object' && !seen.has(value)) {
+          seen.add(value)
+          size += 64
+          for (const item of Object.values(value)) pending.push(item)
+        }
+      }
+      individualSizes.set(message, size)
+    }
+    bytes += size
+    if (bytes > 32 * 1024 * 1024) break
+  }
+  messageSizes.set(messages, bytes)
+  return bytes
+}
+
+/** Keep visible/running sessions intact; cold histories can always be read from pi's JSONL. */
+export function pruneSessionRuntimes(map: SessionRuntimeMap, protectedKeys: ReadonlySet<string>): SessionRuntimeMap {
+  const cold = Object.entries(map).filter(([key, value]) => !protectedKeys.has(key) &&
+    !value.session?.isAgentRunning && !value.session?.isStreaming && !value.session?.isCompacting &&
+    !value.uiRequests.length && !value.queue.steering.length && !value.queue.followUp.length)
+    .sort((a, b) => (b[1].touchedAt ?? 0) - (a[1].touchedAt ?? 0))
+  let count = 0
+  let bytes = 0
+  let out = map
+  for (const [key, value] of cold) {
+    const size = historyBytes(value.messages)
+    if (count < 16 && bytes + size <= 32 * 1024 * 1024) { count += 1; bytes += size; continue }
+    if (out === map) out = { ...map }
+    if (value.draft) {
+      // Draft-only entries remain small and do not hold history or model capability arrays.
+      out[key] = { ...emptyRuntime(value.runtime), draft: value.draft, touchedAt: value.touchedAt }
+    } else delete out[key]
+  }
+  return out
 }
 
 /** 接续只替换运行身份，用户草稿和完整历史保留；新实例的空快照不能覆盖它们。 */

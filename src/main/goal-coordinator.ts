@@ -13,8 +13,8 @@ import { GoalStore, writeGoalResumeSnapshot } from './goal-service'
 import { isActiveGoalPhase } from '../shared/goal'
 import type { BudgetUsage } from '../shared/goal'
 import { YAN_DIR } from './paths'
-import { normalizeSessionFileKey, pendingWorkModeKey, writeWorkModeSnapshot } from './work-mode-service'
-import { pendingAgentProfileKey, writeAgentProfileSnapshot } from './agent-profile-store'
+import { normalizeSessionFileKey, pendingWorkModeKey } from './work-mode-service'
+import { pendingAgentProfileKey } from './agent-profile-store'
 import { DEFAULT_AGENT_PROFILE } from '../shared/agent-profile'
 import type { AgentProfileState } from '../shared/agent-profile'
 import type { AssembleContextRequest } from './context-assembler'
@@ -107,35 +107,15 @@ export function workModeKeyFor(id: string): string {
   return file ?? pendingWorkModeKey(id)
 }
 
-/**
- * 解析一个运行实例当前会话的模式，并顺手把 pending 键迁到稳定键。
- *
- * 迁移放在这里而不是「会话建立事件」里：稳定键何时出现由 pi 决定，
- * 而读模式的所有调用点都已经拿到过实例 —— 在这里做能保证「第一次读」
- * 就一定是对的键，不会出现“刚答完的会话又被当成新会话”。
- */
-export async function resolveWorkMode(id: string): Promise<WorkModeState> {
-  await host.workModes.load()
-  const stable = normalizeSessionFileKey(host.runners()?.agentOf(id)?.getState()?.sessionFile)
-  const pendingKey = pendingWorkModeKey(id)
-  if (!stable) return host.workModes.state(pendingKey, agentDefaultWorkMode)
-  if (host.workModes.snapshot().entries[pendingKey]) await host.workModes.adopt(pendingKey, stable)
-  return host.workModes.state(stable, agentDefaultWorkMode)
+/** 兼容旧消费者；轻量客户端始终使用普通会话，不迁移历史模式数据。 */
+export async function resolveWorkMode(_id: string): Promise<WorkModeState> {
+  // 历史模式文件保留，轻量客户端不再用活动/工作模式限制会话。
+  return { mode: 'standard', revision: 0 }
 }
 
-/**
- * 把该实例的当前模式写给模型侧并推给界面。
- *
- * 两个出口一次做完，否则会出现「界面已自主而扩展仍标准」：
- *   · `work-mode/<runnerId>.json` —— 薄层扩展只认 `YAN_SESSION_ID`（= runner id），
- *     文件缺失 / 读不到时它回退到旧 `autonomous` 或标准模式；
- *   · `work-mode` 推送 —— 带 `runtime` 封套，后台会话切模式不会串到当前视图。
- */
+/** 向兼容消费者推送固定模式；保留运行身份，不再生成模型侧状态文件。 */
 export async function pushWorkMode(id: string): Promise<WorkModeState> {
   const state = await resolveWorkMode(id)
-  await goals.load()
-  const planApprovalPending = goals.state(workModeKeyFor(id)).pendingReady !== null
-  await writeWorkModeSnapshot(id, { ...state, planApprovalPending }).catch(() => {})
   host.pushFrom(id, { ch: 'work-mode', payload: state })
   return state
 }
@@ -149,27 +129,14 @@ export function agentProfileKeyFor(id: string): string {
   return file ?? pendingAgentProfileKey(id)
 }
 
-/** 读该实例的档案，并把 pending 键迁到稳定键（与 `resolveWorkMode` 同一时机）。 */
-export async function resolveAgentProfile(id: string): Promise<AgentProfileState> {
-  await host.agentProfiles.load()
-  const stable = normalizeSessionFileKey(host.runners()?.agentOf(id)?.getState()?.sessionFile)
-  const pendingKey = pendingAgentProfileKey(id)
-  if (!stable) return host.agentProfiles.state(pendingKey, agentDefaultProfile)
-  if (host.agentProfiles.state(pendingKey, agentDefaultProfile).revision > 0) {
-    await host.agentProfiles.adopt(pendingKey, stable)
-  }
-  return host.agentProfiles.state(stable, agentDefaultProfile)
+/** 兼容旧消费者；不读取或迁移历史档案。 */
+export async function resolveAgentProfile(_id: string): Promise<AgentProfileState> {
+  return { profile: 'auto', activity: 'answer', revision: 0 }
 }
 
-/**
- * 把该实例的档案写给模型侧并推给界面。
- *
- * 与 `pushWorkMode` 同一个理由：薄层扩展只能从 `agent-profile/<runnerId>.json`
- * 知道自己的角色，两份出口不能分家（否则会出现「界面显示导师、模型仍是代码助手」）。
- */
+/** 向兼容消费者推送固定档案；不再生成模型侧状态文件或注入活动上下文。 */
 export async function pushAgentProfile(id: string): Promise<AgentProfileState> {
   const state = await resolveAgentProfile(id)
-  await writeAgentProfileSnapshot(id, state).catch(() => {})
   host.pushFrom(id, { ch: 'agent-profile', payload: state })
   await refreshSessionContext(id, state)
   return state
@@ -232,8 +199,6 @@ export async function buildContextRequest(id: string, state: AgentProfileState):
 export async function pushGoal(id: string): Promise<void> {
   await goals.load()
   const state = goals.state(workModeKeyFor(id))
-  const mode = await resolveWorkMode(id)
-  await writeWorkModeSnapshot(id, { ...mode, planApprovalPending: state.pendingReady !== null }).catch(() => {})
   host.pushFrom(id, { ch: 'goal', payload: state })
   /* 目标 / 待办变了，本轮注入的「任务与阶段」也得跟着变（T05-3） */
   await refreshSessionContext(id, await resolveAgentProfile(id))

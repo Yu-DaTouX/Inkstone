@@ -46,53 +46,11 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     'yan tasks apply --request-file <file>'
   ),
   builtin(
-    'goal.ready',
-    '目标就绪',
-    '计划已足够时提交目标就绪报告，触发从计划档切到标准档开始执行（需要五栏齐全）。',
-    'write',
-    'yan goal ready --request-file <file>'
-  ),
-  builtin(
-    'goal.report',
-    '目标进度报告',
-    '报告目标的执行进度（completed / blocked / stopped 三类结果，completed 必须带证据）。',
-    'write',
-    'yan goal report --request-file <file>'
-  ),
-  builtin(
-    'goal.status',
-    '目标状态查询',
-    '只读查询当前会话的目标阶段与待办，用于判断是否该继续还是先定计划。',
-    'read',
-    'yan goal status'
-  ),
-  builtin(
-    'knowledge.search',
-    '项目知识检索',
-    '在本项目已确认的知识里检索（中文关键词可用），得到带来源的条目。',
-    'read',
-    'yan knowledge search --query-file <file>'
-  ),
-  builtin(
-    'knowledge.read',
-    '项目知识读取',
-    '按 id 读取一条项目知识的完整正文与来源，用于核对细节。',
-    'read',
-    'yan knowledge read --id <id>'
-  ),
-  builtin(
-    'knowledge.propose',
-    '项目知识提议',
-    '把本次得到的新事实提议为**待确认**条目（不会直接生效，要用户确认）。',
-    'write',
-    'yan knowledge propose --request-file <file>'
-  ),
-  builtin(
     'subagent.start',
     '委派子代理',
-    '把一段独立任务交给子代理在隔离工作树里做，返回子代理 ID；适合互不冲突的并行工作。',
+    '指定模型执行独立子任务并返回结果；默认当前文件夹，代码任务可显式选择 worktree 隔离。',
     'external-action',
-    'yan subagent start --task <text>'
+    'yan subagent start --task <text> --model <provider/model>'
   ),
   builtin(
     'subagent.list',

@@ -51,7 +51,8 @@ function ReasoningCapsuleImpl({
   text,
   ms,
   live,
-  turnLive
+  turnLive,
+  defaultOpen = false
 }: {
   text: string
   /** 推理耗时（历史消息从会话里读不到，那时是 undefined） */
@@ -63,10 +64,14 @@ function ReasoningCapsuleImpl({
    * 只影响逐字推进与光标，**不控制开合**（开合是用户动作）。
    */
   turnLive?: boolean
+  /** 设置「实时显示思考链」：一出现就展开全文 */
+  defaultOpen?: boolean
 }) {
   const t = useT()
   /** 正文是否展开全文。默认 false = 一行最新句预览（不跟流式状态自动变化）。 */
-  const [open, setOpen] = useState(false)
+  /* 只有回合正在进行时才默认展开；历史回放不展开，回合结束后自动收起（用户动过开合就不再自动动） */
+  const [open, setOpen] = useState(defaultOpen && !!(turnLive ?? live))
+  const touchedRef = useRef(false)
   const bodyRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
@@ -89,6 +94,13 @@ function ReasoningCapsuleImpl({
     const el = bodyRef.current
     if (el && open && followRef.current) el.scrollTop = el.scrollHeight
   }, [shown, open])
+
+  /* hooks 都要在下面的提前返回之前：文本从空变成非空时 hooks 数量不能变 */
+  const wasRunning = useRef(!!streaming)
+  useEffect(() => {
+    if (wasRunning.current && !streaming && defaultOpen && !touchedRef.current) setOpen(false)
+    wasRunning.current = !!streaming
+  }, [streaming, defaultOpen])
 
   if (!text.trim()) return null
 
@@ -113,6 +125,7 @@ function ReasoningCapsuleImpl({
   const { head, tail } = splitTail(shown, !!live && shown.length <= 4000)
 
   const toggleOpen = (): void => {
+    touchedRef.current = true
     const next = !open
     setOpen(next)
     followRef.current = true
@@ -213,7 +226,7 @@ function splitTail(s: string, enabled: boolean): { head: string; tail: string } 
  */
 export const ReasoningCapsule = memo(
   ReasoningCapsuleImpl,
-  (a, b) => a.text === b.text && a.ms === b.ms && a.live === b.live && a.turnLive === b.turnLive
+  (a, b) => a.text === b.text && a.ms === b.ms && a.live === b.live && a.turnLive === b.turnLive && a.defaultOpen === b.defaultOpen
 )
 
 /** 展示层取最新一句；断行视作句界，未完成的末句优先保留。 */

@@ -61,6 +61,9 @@ files:
 #    症状是开发态 30 个场景全绿，装出来的应用却连不上 pi。
 #    单独 `from: …/node_modules` 后，相对路径不再等于 "node_modules"，规则不触发。
 extraResources:
+  - from: integrations/hermes-inkstone
+    to: integrations/hermes-inkstone
+    filter: ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py', 'README.md']
   - from: resources/pi-runtime/dist
     to: pi-runtime/dist
     filter: ['**/*']

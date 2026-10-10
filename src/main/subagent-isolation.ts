@@ -1,9 +1,7 @@
 /**
- * 子代理写入隔离与差异处理（L03）。
- *
- * 这个模块只处理文件系统 / Git 边界，不启动 pi，也不把差异正文推到
- * renderer。写入任务从当前 HEAD 创建独立 worktree，因此主工作树里已有的
- * 未提交修改不会被复制、覆盖或重置；完成后只把摘要和补丁路径交给审阅层。
+ * 子任务的目录与差异处理，不启动 pi。
+ * shared-cwd / controlled-cwd 使用当前目录；只有 worktree 模式创建独立 Git 工作树，
+ * 并在结束后生成审阅补丁。清理当前目录任务不会删除用户文件。
  */
 import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
@@ -14,7 +12,7 @@ import { tmpdir } from 'node:os'
 const execFileAsync = promisify(execFile)
 const GIT_MAX_BUFFER = 24 * 1024 * 1024
 
-export type SubagentIsolation = 'worktree' | 'controlled-cwd'
+export type SubagentIsolation = 'worktree' | 'controlled-cwd' | 'shared-cwd'
 
 export interface PreparedWorkspace {
   isolation: SubagentIsolation
@@ -129,7 +127,7 @@ export async function prepareWorkspace(
   isolation: SubagentIsolation
 ): Promise<PreparedWorkspace> {
   const root = resolve(rootCwd)
-  if (isolation === 'controlled-cwd') {
+  if (isolation === 'controlled-cwd' || isolation === 'shared-cwd') {
     return { isolation, rootCwd: root, cwd: root }
   }
 

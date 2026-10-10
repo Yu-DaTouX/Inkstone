@@ -63,7 +63,9 @@
     /* ---- 1. pi 枚举：自定义 provider 的模型出现在菜单里 ---- */
     click(q('[data-testid="model-picker"]'))
     await until(() => q('[data-testid="model-menu"]'), 8000)
-    const items = qa('.mt-item')
+    const filter = q('[data-testid="models-provider"]')
+    filter.value = 'yan-dp'; filter.dispatchEvent(new Event('change', { bubbles: true })); await sleep(150)
+    const items = qa('[data-testid="model-option"]')
     const mine = items.find((el) => /自定义接入/.test(el.textContent ?? ''))
     ok(items.length > 0, '模型菜单列出了模型', `${items.length} 项`)
     if (!mine) {

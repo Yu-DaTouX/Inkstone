@@ -85,42 +85,6 @@ export function Rail() {
   const projectGroups = settings?.projectGroups ?? []
   const patchSettings = useStore((s) => s.patchSettings)
 
-  /*
-   * 收件箱入口（实施-28 T2/T5）。
-   *
-   * 计数放在组件本地而不是 store：这是一个“顺手看一眼”的角标，
-   * 放 store 会让每个订阅者都跟着它重渲染。
-   * 只算**真需要人**的三档（待确认 / 等你回答 / 出错）——
-   * 把“进行中”也算进去，角标就会永远亮着，很快就没人看了。
-   */
-  const inboxOpen = useStore((s) => s.inboxOpen)
-  const setInboxOpen = useStore((s) => s.setInboxOpen)
-  const [inboxCount, setInboxCount] = useState(0)
-  useEffect(() => {
-    let alive = true
-    const load = async (): Promise<void> => {
-      try {
-        const res = await window.yan.taskInbox.page({ limit: 1, offset: 0 })
-        if (!alive) return
-        setInboxCount((res.counts.needs_review ?? 0) + (res.counts.waiting_user ?? 0) + (res.counts.failed ?? 0))
-      } catch {
-        /* 读不到就不显示角标（不要用 0 冒充“没有事”） */
-      }
-    }
-    void load()
-    return () => {
-      alive = false
-    }
-  }, [inboxOpen])
-
-  /*
-   * 空间列表不依赖 pi（只读 Yan 自己的 spaces.json）。
-   *
-   * 左栏的空间分区已移除（实施-27 B3），但会话行的「归入空间」菜单
-   * 仍要看到空间名 —— 所以这里保留一次拉取，渲染交给订阅 store 的会话行。
-   */
-  const refreshSpaces = useStore((s) => s.refreshSpaces)
-
   const [query, setQuery] = useState('')
   /* 搜索框常驻；点清空（✕）后焦点留在输入框，方便继续搜 */
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -546,14 +510,6 @@ export function Rail() {
     setMenuFor(null)
     trigger?.focus?.()
   }
-
-  /*
-   * 空间列表不依赖 pi（只读 Yan 自己的 `spaces.json`），挂载就拉一次；
-   * pi 就绪后 `startConnWatch` 会再拉一次（那时新会话的归属才可能已存在）。
-   */
-  useEffect(() => {
-    void refreshSpaces()
-  }, [refreshSpaces])
 
   const renderSession = (s: SessionSummary, list: SessionSummary[], depth = 0, lineage = new Set<string>(), containerKey = ''): React.ReactNode => {
     if (lineage.has(s.path)) return null
@@ -1010,18 +966,6 @@ export function Rail() {
         </div>
       </div>
 
-      {/* ---- 底部：收件箱入口 + 用户块（名字 / 自定义头像 / 登录预留）---- */}
-      <button
-        className={`rail-inbox${inboxOpen ? ' on' : ''}`}
-        data-testid="rail-inbox"
-        data-count={inboxCount}
-        title={t('inbox.title')}
-        onClick={() => setInboxOpen(!inboxOpen)}
-      >
-        <Icon name="checklist" size={14} />
-        <span>{t('inbox.title')}</span>
-        {inboxCount > 0 ? <span className="ui-badge warn rail-inbox-badge">{inboxCount}</span> : null}
-      </button>
       <RailUser />
       {trashNotice ? (
         <TrashNoticeBar

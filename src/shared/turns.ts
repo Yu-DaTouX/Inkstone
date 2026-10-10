@@ -35,6 +35,7 @@
  * ══════════════════════════════════════════════════════════════════
  */
 import type { ImageGenerationProgress, ResponseDetail, TurnTerminalReason, TurnTimingMeta, UIMessage, UIToolCall, Usage } from './ipc'
+import { isSubagentNotice } from './subagent-notice'
 
 /** 一段文字（解说或回答） */
 /**
@@ -258,6 +259,40 @@ interface SegmentAccumulator {
   closed: boolean
 }
 
+/** Per-view projection cache; immutable message references keep completed history stable. */
+export function createTurnProjector(): typeof groupIntoTurns {
+  const cache = new WeakMap<UIMessage, { messages: UIMessage[]; streamingId?: string; turns: Turn[] }>()
+  return (messages, streamingId) => {
+    const turns: Turn[] = []
+    let group: UIMessage[] = []
+    const flush = (): void => {
+      if (!group.length) return
+      const first = group[0]
+      const live = group.some(message => message.id === streamingId) ? streamingId : undefined
+      const saved = cache.get(first)
+      if (saved && saved.streamingId === live && saved.messages.length === group.length &&
+        group.every((message, index) => message === saved.messages[index])) {
+        turns.push(...saved.turns)
+      } else {
+        const projected = groupIntoTurns(group, live)
+        cache.set(first, { messages: group, streamingId: live, turns: projected })
+        turns.push(...projected)
+      }
+      group = []
+    }
+    for (const message of messages) {
+      if (message.role === 'user' && isSubagentNotice(message.text)) continue
+      if (message.role === 'user' || message.role === 'bash') {
+        flush()
+        group = [message]
+        flush()
+      } else group.push(message)
+    }
+    flush()
+    return turns
+  }
+}
+
 export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Turn[] {
   const turns: Turn[] = []
   /** 正在累积的助手回合 */
@@ -408,6 +443,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
   }
 
   for (const m of messages) {
+    if (m.role === 'user' && isSubagentNotice(m.text)) continue
     if (m.role === 'user') {
       flush()
       turns.push({ kind: 'user', id: m.id, msg: m })
@@ -550,6 +586,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
  */
 export function currentTurnMessages(messages: UIMessage[]): UIMessage[] {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === 'user' && isSubagentNotice(messages[i].text)) continue
     const role = messages[i].role
     if (role === 'user' || role === 'bash') return messages.slice(i + 1)
   }

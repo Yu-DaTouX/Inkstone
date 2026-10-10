@@ -33,15 +33,45 @@ function visibleText(line: string): string {
 }
 
 /** 把整份 JSONL 压成「一条消息一行」的纯文字，再按头尾配额截断 */
-export function extractSearchText(jsonl: string): string {
-  const lines: string[] = []
-  for (const line of jsonl.split('\n')) {
-    const text = visibleText(line)
-    if (text) lines.push(text.replace(/\s+/g, ' ').trim())
+export function createSearchTextCollector(): { append(line: string): void; finish(): string } {
+  let head = ''
+  const tail: string[] = []
+  let tailLength = 0
+  let length = 0
+  return {
+    append(line) {
+      const text = visibleText(line).replace(/\s+/g, ' ').trim()
+      if (!text) return
+      const part = `${length ? '\n' : ''}${text}`
+      if (head.length < HEAD_KEEP) head += part.slice(0, HEAD_KEEP - head.length)
+      tail.push(part)
+      tailLength += part.length
+      while (tailLength > TAIL_KEEP) {
+        const excess = tailLength - TAIL_KEEP
+        if (tail[0].length <= excess) tailLength -= tail.shift()!.length
+        else { tail[0] = tail[0].slice(excess); tailLength -= excess }
+      }
+      length += part.length
+    },
+    finish() {
+      const end = tail.join('')
+      if (length <= TAIL_KEEP) return end
+      if (length <= HEAD_KEEP + TAIL_KEEP) return head + end.slice(HEAD_KEEP + TAIL_KEEP - length)
+      return `${head}\n…\n${end}`
+    }
   }
-  const joined = lines.join('\n')
-  if (joined.length <= HEAD_KEEP + TAIL_KEEP) return joined
-  return `${joined.slice(0, HEAD_KEEP)}\n…\n${joined.slice(joined.length - TAIL_KEEP)}`
+}
+
+export function extractSearchText(jsonl: string): string {
+  const collector = createSearchTextCollector()
+  let offset = 0
+  while (offset < jsonl.length) {
+    const end = jsonl.indexOf('\n', offset)
+    collector.append(jsonl.slice(offset, end < 0 ? undefined : end))
+    if (end < 0) break
+    offset = end + 1
+  }
+  return collector.finish()
 }
 
 function escapeRegExp(text: string): string {

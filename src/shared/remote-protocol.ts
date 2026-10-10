@@ -5,7 +5,7 @@
  *   · 任务始终在电脑上执行；手机查看状态、回复问题、提交文字（语音转写后也是文字）。
  *   · 砚桌面应用运行期间才可访问；手机断线不终止电脑上的任务。
  *   · 网络可达 ≠ 获得权限：每台手机单独配对、单独令牌、可随时撤销。
- *   · 标记为敏感的确认（删除、授权、付费……）手机只能看，必须在电脑上确认。
+ *   · 敏感确认不走普通 answer；电脑或已配对用户客户端通过独立人工批准通道确认。
  *   · 断线恢复靠事件序号补齐；写操作带幂等键，重复提交不重复执行。
  *
  * 只放纯类型与常量：不依赖 Electron、Node 或 React Native 运行时。
@@ -34,6 +34,8 @@ export interface RemoteInfo {
   transport: Array<'http' | 'sse'>
   tokenRequired: true
   capabilities: string[]
+  /** Optional additive negotiation; old clients retain the filtered string list. */
+  capabilityDetails?: import('./agent-service').ServiceCapability[]
   /** 当前令牌对应的设备（使用旧的一次性环境变量令牌时为 null） */
   device: RemoteDeviceSummary | null
   computer?: { name: string }
@@ -182,8 +184,10 @@ export interface RemotePendingQuestion {
   message: string
   options?: string[]
   placeholder?: string
-  /** 敏感确认：手机只能查看，需要在电脑上处理 */
+  /** 敏感确认：普通 answer 不接受批准，人工批准使用独立接口 */
   sensitive: boolean
+  /** 人工批准绑定的操作摘要；仅敏感 confirm 提供，不是访问凭证 */
+  approvalDigest?: string
   /** 0 = 电脑端还没开始计时 */
   deadline: number
 }
@@ -193,6 +197,14 @@ export type RemoteAnswer =
   | { value: string }
   | { confirmed: boolean }
   | { cancelled: true }
+
+/** 已配对用户客户端对一条展示过的敏感确认作出决定。 */
+export interface RemoteHumanApproval {
+  sessionId: string | null
+  runId: string
+  digest: string
+  confirmed: boolean
+}
 
 /* ---------------------------------------------------------------- 成果 */
 

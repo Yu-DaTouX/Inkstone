@@ -2,7 +2,7 @@
  * 界面请求：pi 扩展发来的对话框 / 通知，以及宿主自己发起的提问（`yan question ask`）。
  *
  * 保存「见过的请求」「还没答复的请求」及其内容；宿主提问从用户看到那一刻起计时，
- * 可加时，到点如实报超时（不猜答案）。答复可来自电脑面板或手机（敏感确认只能在电脑上答），
+ * 可加时，到点如实报超时（不猜答案）。普通答复可来自电脑面板或手机；敏感批准另走明确的人工通道，
  * 答复后推 `ui-resolved` 让另一端移除。AgentController 只做转发。
  */
 import type { ExtensionUiRequest, MainPush } from '../shared/ipc'
@@ -69,6 +69,7 @@ export class UiRequests {
     title: string
     message: string
     options?: string[]
+    form?: import('../shared/question-form').QuestionField[]
     timeout: number
   }): Promise<HostUiResponse> {
     const id = `yan-question-${randomUUID()}`
@@ -98,7 +99,8 @@ export class UiRequests {
          * 不带这个字段的（pi 扩展自己的请求）由渲染端自己算。
          */
         deadline: 0,
-        ...(request.options ? { options: request.options } : {})
+        ...(request.options ? { options: request.options } : {}),
+        ...(request.form ? { form: request.form } : {})
       } as unknown as ExtensionUiRequest
       this.payloads.set(id, payload)
       this.host.push({ ch: 'ui-request', payload })
