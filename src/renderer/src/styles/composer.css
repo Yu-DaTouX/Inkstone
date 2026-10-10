@@ -507,14 +507,8 @@
 .mt-pop.compact .ui-step-slider {
   padding-top: var(--sp-1);
 }
-.mt-pop.compact .mt-detail {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--sp-3);
-}
-.mt-pop.compact .mt-detail .mt-head-level {
-  display: none;
+.mt-pop.compact .mt-lines {
+  padding-block: 0;
 }
 
 /* 下拉箭头是转向的 chevron 图标（界面里不用 ▾ 这类文字符号，设计规范 §3.4） */
@@ -1300,7 +1294,7 @@
 }
 
 .qpanel-timer {
-  --px-dot: 2px;
+  --px-dot: 3px;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -1398,7 +1392,7 @@
   flex-direction: column;
   gap: var(--sp-2);
   /* 浮层可以高一点：它不再挤消息区，超出的部分内部滚动 */
-  max-height: min(50vh, 320px);
+  max-height: min(60vh, 420px);
   overflow-y: auto;
   padding: 0 var(--sp-3) var(--sp-2);
   border-top: 1px solid var(--border-soft);
@@ -1406,6 +1400,11 @@
 }
 
 .qpanel-msg {
+  /* 题干很长时在自己内部滚动，选项始终留在可见区域 */
+  flex: 0 1 auto;
+  min-height: 3em;
+  max-height: min(24vh, 12em);
+  overflow-y: auto;
   /* 问题本身是这张面板的主角：正文色、略加粗，选项与输入退到它下面 */
   color: var(--fg);
   font-family: var(--font-body);
@@ -2031,14 +2030,13 @@
 .model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; flex: none; padding-right: var(--sp-1); }
 .mt-settings { flex: none; border-top: 1px solid var(--border-soft); }
 .mt-settings > .mt-head:last-child { border-bottom: 0; }
-.mt-settings .mt-detail { display: grid; grid-template-columns: minmax(0, 1fr) 112px; align-items: center; gap: var(--sp-4); }
-.mt-settings .mt-detail .mt-head-row { margin-bottom: 0; }
+/* 详细程度与可视化回答：名称在左、控件在右，两行同高，与上方思考强度共用标题样式与左右内边距 */
+.mt-lines { display: flex; flex-direction: column; padding: var(--sp-1) var(--sp-3); }
+.mt-line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: var(--ctl-h-lg); }
+.mt-line > .seg, .mt-line > .switch-pill { flex: none; }
 .mt-pop .ui-step-slider { padding-top: var(--sp-1); }
-.mt-settings .mt-detail .mt-head-level { display: none; }
 .delegate-model-menu > .btn { flex: none; margin: var(--sp-2); }
 .delegate-form [data-testid="delegate-model"] { width: 100%; max-width: 100%; }
-/* 可视化回答开关：与详细程度同一行布局，开关靠右 */
-.mt-settings .mt-visual > .switch-pill { justify-self: end; }
 
 /* 问题面板的表单形态（QuestionForm.tsx）：字段纵向排列，选择题是可点的卡片 */
 .qpanel-body:has(.qform) {

@@ -277,7 +277,7 @@ function AccountCard({
 
       {card.windows.map((w) => {
         const pct = windowPct(w, 1) ?? 0
-        const tone = quotaTone(pct, w.exceeded)
+        const tone = w.informational ? 'ok' : quotaTone(pct, w.exceeded)
         const reset = resetText(t, w)
         return (
           <div key={w.id} className="quota-block" data-testid={`acct-win-${w.id}`}>

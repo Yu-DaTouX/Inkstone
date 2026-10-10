@@ -99,6 +99,32 @@
   margin-bottom: var(--sp-3);
 }
 
+/* 用户消息靠右：一块贴内容宽度的浅底气泡，不再占整列也不带 › 提示符 */
+.msg.user .msg-body {
+  align-items: flex-end;
+}
+.msg.user .bubble {
+  display: block;
+  width: fit-content;
+  max-width: min(80%, 640px);
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+}
+.msg.user .bubble-prompt {
+  display: none;
+}
+.msg.user .msg-meta,
+.msg.user .msg-label,
+.msg.user .msg-images {
+  justify-content: flex-end;
+  padding-left: 0;
+}
+.msg.user .msg-images {
+  align-self: flex-end;
+}
+
 /* 问题面板的回答：整块带强调色左线与底色，回看时一眼能认出这不是手打的 */
 .msg.user:has(.msg-tag.question) .bubble {
   border-left: var(--sp-1) solid var(--accent);
@@ -110,6 +136,47 @@
   border-color: var(--accent);
   color: var(--on-accent);
   font-weight: var(--fw-strong);
+}
+
+/* 提问回答：题干折成两行（点开看全文），答案作为主体；不再把整段题干原样铺进气泡 */
+.msg.user .qa-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: fit-content;
+  max-width: min(80%, 640px);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: var(--sp-1) solid var(--accent);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+.qa-q summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  list-style: none;
+  cursor: pointer;
+  color: var(--fg-mute);
+  font-size: var(--fs-base);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.qa-q summary::-webkit-details-marker {
+  display: none;
+}
+.qa-q[open] summary {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+.qa-a {
+  color: var(--fg);
+  font-weight: var(--fw-strong);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 /* ───────────────────────────── 回合 ───────────────────────────── */
@@ -420,8 +487,10 @@
 }
 /* 判定宽度 = 正文列 + 左右各一条过程栏（对称，正文始终居中）+ 间距，约 1240 */
 @container procstream (min-width: 1240px) {
+  /* 过程栏随对话区变宽：两侧余量各取一半（240–440）；--w-proc-side 已注册为长度，在这里就算成像素，后代继承定值 */
   html:is([data-proc-layout='side'], [data-proc-layout='left']) .stream-inner,
   html:is([data-proc-layout='side'], [data-proc-layout='left']) .stream-row {
+    --w-proc-side: clamp(240px, calc((100cqw - var(--w-stream)) / 2 - var(--gap-proc-side) - var(--sp-3)), 440px);
     max-width: calc(var(--w-stream) + 2 * (var(--w-proc-side) + var(--gap-proc-side)));
   }
   html:is([data-proc-layout='side'], [data-proc-layout='left']) .msg:not(.assistant) .msg-body {
@@ -447,7 +516,8 @@
     grid-row: 1;
     position: sticky;
     top: 0;
-    max-height: 80vh;
+    /* 不高于对话区可见高度（useStreamHeight 写入），栏底的终端也能滚到 */
+    max-height: calc(var(--stream-h, 80vh) - var(--sp-3));
     margin-top: var(--sp-3);
     overflow: hidden auto;
     overscroll-behavior: contain;

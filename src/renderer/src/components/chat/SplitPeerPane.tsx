@@ -11,6 +11,7 @@ import { ConversationOutline } from './ConversationOutline'
 import { fitComposerHeight } from './Composer'
 import { ComposerBorderIdle } from './ComposerBorder'
 import { latestTimestamp, newestMessages, rememberScroll, rememberShown, restoreScrollAnchor, scrollAnchorOf, shownMessages, shownScroll } from '../../state/split-snapshots'
+import { useStreamHeight } from '../../lib/useStreamHeight'
 
 /**
  * 分屏里**没有焦点**的那条会话（设计规范 §4「分屏」）。
@@ -64,6 +65,7 @@ export function SplitPeerPane({ index, target }: { index: number; target: SplitS
 
   /* 贴底跟随：停在底部时新内容进来继续贴底；往上翻了就不打扰 */
   const streamRef = useRef<HTMLDivElement>(null)
+  useStreamHeight(streamRef)
   /* 外观输入框与真输入框同一高度规则（草稿或占位文字决定）；窗口变了重算 */
   const inputRef = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {

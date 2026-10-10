@@ -29,5 +29,16 @@ export async function runPreambleExtensionTests(ok, mod) {
   ok(run('').systemPrompt.includes(YAN_PREAMBLE), '空系统提示仍包含砚身份')
   ok(run(out.systemPrompt) === undefined, '幂等：身份和进展约定不重复追加')
   ok(run(`${YAN_PREAMBLE}\n\n<tools>`).systemPrompt.endsWith(PROGRESS_GUIDANCE), '旧身份提示补齐进展约定')
+  {
+    const docs = '<docs>\nPi documentation (read only when the user asks about pi itself):\n- Main documentation: C:\\pi\\README.md\n- Additional docs: C:\\pi\\docs\n</docs>'
+    const withDocs = run(`${NATIVE_PREAMBLE}\n\n${docs}\n\n<cwd>\nC:/x\n</cwd>`)
+    ok(withDocs.systemPrompt.includes('<docs>\nPi documentation') && withDocs.systemPrompt.includes('C:\\pi\\README.md') && !withDocs.systemPrompt.includes('Additional docs'), 'pi 文档段压成一行，保留主文档路径')
+    ok(withDocs.systemPrompt.includes('<cwd>\nC:/x\n</cwd>'), '压缩文档段不影响后面的段落')
+    ok(run(withDocs.systemPrompt) === undefined, '幂等：已压缩的文档段不再改动')
+    const sections = {}
+    handlers.before_agent_start({ systemPrompt: `${NATIVE_PREAMBLE}\n\n${docs}`, systemPromptOptions: { sections } }, {})
+    ok(typeof sections.docs === 'string' && sections.docs.includes('C:\\pi\\README.md'), '同名分区 docs 写入压缩版')
+    ok(run(`${NATIVE_PREAMBLE}\n\n<docs>\nsomething else\n</docs>`).systemPrompt.includes('something else'), '认不出的文档段原样保留')
+  }
   ok(PROGRESS_GUIDANCE.includes('requests silence') && PROGRESS_GUIDANCE.includes('without narrating each routine call'), '进展约定尊重静默要求，不逐条播报工具')
 }

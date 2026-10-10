@@ -6,6 +6,7 @@
 import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
 import { compactionInfo } from '../compaction'
+import { DEFAULT_AUTO_COMPACT_TOKENS } from '../../shared/context-limits'
 import { allowTrust, trustStatus } from '../project-trust'
 import { forkContext, forkFileRefs } from '../fork-rebind-service'
 import { providerQuota } from '../quota'
@@ -23,7 +24,7 @@ export function registerWorkspaceIpc(ipc: IpcRegistrar, deps: WorkspaceIpcDeps):
   /* ---- 自动压缩设置（只读 pi 的 settings.json）---- */
   rawHandle('yan:compactionInfo', async (_e, win: unknown) => {
     const s = await getSettings()
-    return compactionInfo(s.cwd, typeof win === 'number' ? win : 0)
+    return compactionInfo(s.cwd, typeof win === 'number' ? win : 0, s.autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS)
   })
 
   /*

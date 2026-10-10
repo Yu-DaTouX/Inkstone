@@ -21,6 +21,13 @@
 /* 全界面只用 Maple Mono CN 常规体（设计规范「界面重构」）：不再拼接雅黑切片，
    也不让浏览器合成伪粗体（见下方 body 的 font-synthesis）。 */
 
+/* 过程栏宽度注册为长度：容器查询里用 cqw 写的值在声明处就算成像素，后代继承定值 */
+@property --w-proc-side {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 240px;
+}
+
 /* 1. 令牌 */
 :root {
   /*
@@ -47,9 +54,10 @@
   --lh-tight: 1.45;
   --lh-base: 1.55;
   --lh-body: 1.75;
-  /* 界面行（列表行、工具行、活动行、文字按钮）统一 24 */
-  --lh-row: 24px;
-  /* 正文列：80ch × 15px Maple（拉丁 0.6em）= 720，约 40 个汉字 */
+  /* 界面行（列表行、工具行、活动行、文字按钮）：密度给基准（标准 24），界面字号调大时随之加高 */
+  --d-row-h: 24px;
+  --lh-row: calc(var(--d-row-h) + max(0px, var(--fs-base) - 13px) * 2);
+  /* 正文列：80ch × 15px Maple（拉丁 0.6em）= 720，约 40 个汉字；正文字号可调时由根元素覆盖 */
   --w-body: 720px;
   /* 过程并列时右侧那一栏与它和正文之间的间距 */
   --w-proc-side: 240px;
@@ -114,9 +122,11 @@
 
   /* ── 控件尺寸与字重（v0.4 统一控件层，见 styles/ui.css）──
      按钮、分段、输入框只用这三档高度；字重只用常规 / 中等 / 强调三档。 */
-  --ctl-h-sm: 24px;
-  --ctl-h: 28px;
-  --ctl-h-lg: 32px;
+  /* 密度按 --d-ctl 整体加减（标准 0） */
+  --d-ctl: 0px;
+  --ctl-h-sm: calc(24px + var(--d-ctl));
+  --ctl-h: calc(28px + var(--d-ctl));
+  --ctl-h-lg: calc(32px + var(--d-ctl));
   --fw-regular: 400;
   /* 只有 Regular 一个字面：三档令牌保留给模块引用，实际都按常规体渲染 */
   --fw-medium: 400;
@@ -375,17 +385,23 @@ textarea {
   animation: rot var(--dur-1100) linear infinite;
 }
 /*
- * 密度档位（方案 A1）：只覆盖三个语义间距。
+ * 密度档位：界面行高、正文行距、控件高度、回合与列表间距一起变，不改字号。
  *   紧凑 = 同屏放下更多行；舒适 = 行与行之间喘口气。
- * 三档都不改字号与行高倍率 —— 见上面的说明。
+ * 只覆盖语义变量；依赖它们的 --lh-row / --ctl-h-* 在 :root 里按 calc 推出。
  */
 html[data-density='compact'] {
+  --d-row-h: 20px;
+  --d-ctl: -2px;
+  --lh-body: 1.6;
   --d-row-gap: 1px;
   --d-section-gap: 1px;
   --d-message-gap: 16px;
 }
 
 html[data-density='comfortable'] {
+  --d-row-h: 28px;
+  --d-ctl: 2px;
+  --lh-body: 1.9;
   --d-row-gap: 7px;
   --d-section-gap: 9px;
   --d-message-gap: 48px;

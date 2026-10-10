@@ -34,9 +34,11 @@ import { projectIdForCwd } from './project-id'
 import { DEFAULT_PERMISSION_MODE, isLegacyPermissionMode, normalizePermissionMode } from '../shared/approval'
 import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode, normalizeWorkModeShortcut } from '../shared/work-mode'
 import { migrateToolLayout, normalizeToolLayout } from '../shared/tool-layout'
+import { AUTO_COMPACT_STEPS, CONTEXT_TRIM_STEPS, DEFAULT_AUTO_COMPACT_TOKENS, DEFAULT_CONTEXT_TRIM_TOKENS, pickTokenStep } from '../shared/context-limits'
 import { isWorkspaceMode } from '../shared/workspace-mode'
 import { voiceModelSpec } from '../shared/voice-input'
 import { normalizeAutoArchiveDays } from '../shared/session-archive'
+import { FONT_BODY_DEFAULT, FONT_BODY_MAX, FONT_BODY_MIN, FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset } from '../shared/appearance'
 import {
   sanitizeContextPolicyByModel,
   sanitizeContextPolicyOverrides
@@ -663,6 +665,10 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   if ('keepAwakeWhileWorking' in patch) next.keepAwakeWhileWorking = next.keepAwakeWhileWorking === false ? false : undefined
   if ('keepAwakeOnBattery' in patch) next.keepAwakeOnBattery = next.keepAwakeOnBattery === false ? false : undefined
   if ('visualAnswers' in patch) next.visualAnswers = next.visualAnswers === false ? false : undefined
+  /* 上下文裁剪与自动压缩：只有明确关才落 false；阈值只收档位里的值，缺省值不写进文件 */
+  if ('contextTrim' in patch) next.contextTrim = next.contextTrim === false ? false : undefined
+  if ('contextTrimTokens' in patch) next.contextTrimTokens = pickTokenStep(next.contextTrimTokens, CONTEXT_TRIM_STEPS, DEFAULT_CONTEXT_TRIM_TOKENS)
+  if ('autoCompactTokens' in patch) next.autoCompactTokens = pickTokenStep(next.autoCompactTokens, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS)
   if ('processLayout' in patch) next.processLayout = next.processLayout === 'side' || next.processLayout === 'left' ? next.processLayout : undefined
   if ('liveThinking' in patch) next.liveThinking = next.liveThinking === true ? true : undefined
   if ('backgroundPreset' in patch) {
@@ -671,6 +677,16 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   if ('backgroundCustom' in patch) {
     next.backgroundCustom = typeof next.backgroundCustom === 'string' && /^#[0-9a-fA-F]{6}$/.test(next.backgroundCustom) ? next.backgroundCustom.toLowerCase() : undefined
   }
+  if ('backgroundCustomLight' in patch) {
+    next.backgroundCustomLight = typeof next.backgroundCustomLight === 'string' && /^#[0-9a-fA-F]{6}$/.test(next.backgroundCustomLight) ? next.backgroundCustomLight.toLowerCase() : undefined
+  }
+  /* 字体与字号：只收预设 id、白名单字体名与区间内整数；缺省值不写进文件 */
+  if ('fontUi' in patch) next.fontUi = sanitizeFontUiPreset(next.fontUi)
+  if ('fontUiCustom' in patch) next.fontUiCustom = sanitizeFontName(next.fontUiCustom)
+  if ('fontCode' in patch) next.fontCode = sanitizeFontCodePreset(next.fontCode)
+  if ('fontCodeCustom' in patch) next.fontCodeCustom = sanitizeFontName(next.fontCodeCustom)
+  if ('fontSizeBody' in patch) next.fontSizeBody = sanitizeFontSize(next.fontSizeBody, FONT_BODY_MIN, FONT_BODY_MAX, FONT_BODY_DEFAULT)
+  if ('fontSizeUi' in patch) next.fontSizeUi = sanitizeFontSize(next.fontSizeUi, FONT_UI_MIN, FONT_UI_MAX, FONT_UI_DEFAULT)
   if ('autoArchiveDays' in patch) next.autoArchiveDays = normalizeAutoArchiveDays(next.autoArchiveDays) || undefined
   if ('voiceInput' in patch) next.voiceInput = sanitizeVoiceInput(next.voiceInput)
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。

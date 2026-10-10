@@ -5,6 +5,7 @@ import type { HubAgent, HubCommand, HubMode, HubSnapshot, HubTask } from '../../
 import { useT, type MessageKey } from '../../i18n'
 import { Badge, Button, EmptyState, IconButton, Input, ListRow, Segmented, Select, Tab, Textarea } from '../ui'
 import { installImeFallback, installTerminalRenderer, terminalAppearance, terminalFontReady } from '../terminal/terminal-appearance'
+import { APPEARANCE_EVENT } from '../../lib/appearance'
 
 const statusText: Record<HubTask['status'], MessageKey> = { queued: 'hub.status.queued', preparing: 'hubp.status.preparing', running: 'hub.status.running', waiting_input: 'hubp.status.waitingInput', needs_review: 'hub.status.needsReview', completed: 'hub.status.completed', failed: 'hub.status.failed', cancelled: 'hub.status.stopped', uncertain: 'hub.uncertain.title' }
 
@@ -266,11 +267,18 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
       })
       const observer = new ResizeObserver(() => { if (!element.current || element.current.clientWidth < 16 || element.current.clientHeight < 16) return; fit.fit(); const t = current.current; if (t.inputOwner === 'desktop') send({ action: 'resize', taskId: t.id, epoch: t.inputEpoch ?? 0, cols: term.cols, rows: term.rows }) })
       observer.observe(element.current)
-      const theme = new MutationObserver(() => {
-        term.options.theme = terminalAppearance().theme
-      })
-      theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] })
-      release = () => { alive = false; imeOff(); clearTimeout(timer); clearTimeout(inputTimer); sub.dispose(); observer.disconnect(); theme.disconnect(); term.dispose() }
+      /* 只跟主题切换与外观事件：观察根元素 style 会在拖动列宽等每一帧都重读计算样式 */
+      const syncAppearance = () => {
+        const next = terminalAppearance()
+        term.options.theme = next.theme
+        if (next.fontFamily && next.fontFamily !== term.options.fontFamily) {
+          void terminalFontReady(next).then(() => { if (alive) { term.options.fontFamily = next.fontFamily; fit.fit() } })
+        }
+      }
+      const theme = new MutationObserver(syncAppearance)
+      theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] })
+      window.addEventListener(APPEARANCE_EVENT, syncAppearance)
+      release = () => { alive = false; imeOff(); clearTimeout(timer); clearTimeout(inputTimer); sub.dispose(); observer.disconnect(); theme.disconnect(); window.removeEventListener(APPEARANCE_EVENT, syncAppearance); term.dispose() }
     })
     return () => { disposed = true; release() }
   }, [task.terminalId, onError])

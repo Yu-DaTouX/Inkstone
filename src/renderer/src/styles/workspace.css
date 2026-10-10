@@ -42,7 +42,8 @@
 .acct-pane { gap: var(--sp-4); padding: var(--sp-2) var(--sp-3) var(--sp-3); }
 .acct-head, .acct-add { display: flex; align-items: center; gap: var(--sp-2); color: var(--fg-mute); font-size: var(--fs-xs); }
 .acct-head { justify-content: space-between; }
-.acct-card { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.acct-card { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-2); }
+.acct-pane .acct-card + .acct-card { margin-top: var(--sp-2); }
 .acct-card-id { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
 .acct-card-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .acct-card-head > .spacer { flex: 1; }

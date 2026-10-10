@@ -9,7 +9,7 @@
 
 | 文件 | 颜色 | 其中可映射 | px | 其中可映射 | 时长 | 其中可映射 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tokens.css` | 0 | 0 | 13 | 8 | 0 | 0 |
+| `tokens.css` | 0 | 0 | 14 | 9 | 0 | 0 |
 | `ui.css` | 4 | 0 | 101 | 69 | 0 | 0 |
 | `app.css` | 4 | 0 | 15 | 8 | 0 | 0 |
 | `motion.css` | 2 | 0 | 198 | 189 | 0 | 0 |
@@ -20,8 +20,8 @@
 | `shell.css` | 3 | 1 | 43 | 24 | 0 | 0 |
 | `dialog.css` | 1 | 0 | 13 | 7 | 0 | 0 |
 | `rail.css` | 1 | 0 | 72 | 59 | 0 | 0 |
-| `chat.css` | 34 | 10 | 138 | 87 | 0 | 0 |
-| `composer.css` | 2 | 0 | 115 | 82 | 0 | 0 |
+| `chat.css` | 34 | 10 | 132 | 83 | 0 | 0 |
+| `composer.css` | 2 | 0 | 114 | 82 | 0 | 0 |
 | `approval.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `tools.css` | 3 | 0 | 284 | 212 | 0 | 0 |
 | `browser.css` | 1 | 1 | 26 | 18 | 0 | 0 |
@@ -30,8 +30,8 @@
 | `workbench.css` | 0 | 0 | 155 | 117 | 0 | 0 |
 | `workspace.css` | 0 | 0 | 9 | 6 | 0 | 0 |
 | `icon-state.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| `scheme.css` | 0 | 0 | 2 | 2 | 0 | 0 |
-| **合计** | **63** | **13** | **1350** | **991** | **0** | **0** |
+| `scheme.css` | 0 | 0 | 4 | 2 | 0 | 0 |
+| **合计** | **63** | **13** | **1346** | **988** | **0** | **0** |
 
 ## 2. 无对应令牌的值（语义缺口）
 
@@ -43,7 +43,7 @@
 | `26px` | length | 20 | app.css, browser.css, chat.css, composer.css, rail.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
 | `220px` | length | 16 | chat.css, motion.css, review.css, settings.css, shell.css, tools.css, ui.css, workbench.css, workspace.css |
 | `36px` | length | 14 | chat.css, composer.css, layout.css, review.css, tools.css, ui.css |
-| `320px` | length | 13 | chat.css, composer.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
+| `320px` | length | 12 | chat.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
 | `420px` | length | 12 | chat.css, composer.css, review.css, tools.css, ui.css, workbench.css |
 | `rgb(0, 0, 0, 0.000)` | color | 10 | app.css, layout.css, rail.css, settings.css, tools.css, ui.css |
 | `180px` | length | 10 | browser.css, composer.css, dialog.css, settings.css, shell.css, tools.css, workbench.css |
@@ -67,6 +67,7 @@
 | `72px` | length | 4 | settings.css, ui.css |
 | `56px` | length | 4 | shell.css, ui.css |
 | `52px` | length | 4 | composer.css, shell.css, workbench.css |
+| `640px` | length | 4 | chat.css, dialog.css, scheme.css |
 | `360px` | length | 4 | chat.css, review.css, tools.css |
 | `300px` | length | 3 | motion.css, shell.css, workbench.css |
 | `560px` | length | 3 | composer.css, dialog.css |
@@ -79,7 +80,6 @@
 | `600px` | length | 2 | chat.css, settings.css |
 | `380px` | length | 2 | shell.css, workbench.css |
 | `88px` | length | 2 | shell.css, workbench.css |
-| `640px` | length | 2 | chat.css, dialog.css |
 | `430px` | length | 2 | composer.css, rail.css |
 | `rgb(127, 127, 127)` | color | 2 | chat.css |
 | `rgb(111, 111, 111)` | color | 2 | chat.css |
@@ -97,7 +97,7 @@
 | `700px` | length | 1 | settings.css |
 | `46px` | length | 1 | shell.css |
 | `rgb(196, 43, 28)` | color | 1 | shell.css |
-| … | | | 其余 34 条省略 |
+| … | | | 其余 32 条省略 |
 
 ## 3. 定义了但没被引用的令牌
 
@@ -115,9 +115,13 @@
 
 | 令牌 | 值 | 定义于 |
 | --- | --- | --- |
+| `--lh-body` | 1.75 / 1.6 / 1.9 | tokens.css |
+| `--d-row-h` | 24px / 20px / 28px | tokens.css |
+| `--w-proc-side` | 240px / clamp(240px, calc((100cqw - var(--w-stream)) / 2 - var(--gap-proc-side) - var(--sp-3)), 440px) | tokens.css, scheme.css |
 | `--d-row-gap` | 3px / 1px / 7px | tokens.css |
 | `--d-section-gap` | 3px / 1px / 9px | tokens.css |
 | `--d-message-gap` | 32px / 16px / 48px | tokens.css |
+| `--d-ctl` | 0px / -2px / 2px | tokens.css |
 | `--bg-0` | #17191d / #f6f7f9 | tokens.css |
 | `--bg-1` | #1f2228 / #eef0f3 | tokens.css |
 | `--bg-2` | #282c34 / #ffffff | tokens.css |
@@ -163,5 +167,5 @@
 
 ## 5. 概况
 
-- 令牌总数：154（被引用 145）
-- 令牌引用点：5905（含组件内联 style）
+- 令牌总数：158（被引用 149）
+- 令牌引用点：5994（含组件内联 style）

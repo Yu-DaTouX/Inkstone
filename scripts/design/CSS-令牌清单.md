@@ -5,16 +5,18 @@
 > **只有每个变量的“最终值”生效** —— 它可能不在 `tokens.css` 里。
 > 定义链从左到右，最右者胜（同特异性、后加载）。
 
-## `:root`　107 个变量（其中 1 个被重复定义）
+## `:root`　109 个变量（其中 1 个被重复定义）
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
 | `--ctl-disabled-opacity` | `0.5` | **tokens**: 0.5 |
-| `--ctl-h` | `28px` | **tokens**: 28px |
-| `--ctl-h-lg` | `32px` | **tokens**: 32px |
-| `--ctl-h-sm` | `24px` | **tokens**: 24px |
+| `--ctl-h` | `calc(28px + var(--d-ctl))` | **tokens**: calc(28px + var(--d-ctl)) |
+| `--ctl-h-lg` | `calc(32px + var(--d-ctl))` | **tokens**: calc(32px + var(--d-ctl)) |
+| `--ctl-h-sm` | `calc(24px + var(--d-ctl))` | **tokens**: calc(24px + var(--d-ctl)) |
+| `--d-ctl` | `0px` | **tokens**: 0px |
 | `--d-message-gap` | `32px` | **tokens**: 32px |
 | `--d-row-gap` | `3px` | **tokens**: 3px |
+| `--d-row-h` | `24px` | **tokens**: 24px |
 | `--d-section-gap` | `3px` | **tokens**: 3px |
 | `--dur` | `120ms` | **tokens**: 120ms |
 | `--dur-0` | `0ms` | **tokens**: 0ms |
@@ -80,7 +82,7 @@
 | `--h-titlebar` | `40px` | **tokens**: 40px |
 | `--lh-base` | `1.55` | **tokens**: 1.55 |
 | `--lh-body` | `1.75` | **tokens**: 1.75 |
-| `--lh-row` | `24px` | **tokens**: 24px |
+| `--lh-row` | `calc(var(--d-row-h) + max(0px, var(--fs-base) - 13px) * 2)` | **tokens**: calc(var(--d-row-h) + max(0px, var(--fs-base) - 13px) * 2) |
 | `--lh-tight` | `1.45` | **tokens**: 1.45 |
 | `--mo-base` | `170ms` | **motion**: 170ms |
 | `--mo-ease` | `cubic-bezier(0.22, 1, 0.36, 1)` | **motion**: cubic-bezier(0.22, 1, 0.36, 1) |
@@ -194,25 +196,31 @@
 | `--warn` | `#8a430d` | **tokens**: #8a430d |
 | `--warn-soft` | `rgba(138, 67, 13, 0.1)` | **tokens**: rgba(138, 67, 13, 0.1) |
 
-## `html[data-density='comfortable']`　3 个变量
+## `html[data-density='comfortable']`　6 个变量
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
+| `--d-ctl` | `2px` | **tokens**: 2px |
 | `--d-message-gap` | `48px` | **tokens**: 48px |
 | `--d-row-gap` | `7px` | **tokens**: 7px |
+| `--d-row-h` | `28px` | **tokens**: 28px |
 | `--d-section-gap` | `9px` | **tokens**: 9px |
+| `--lh-body` | `1.9` | **tokens**: 1.9 |
 
-## `html[data-density='compact']`　3 个变量
+## `html[data-density='compact']`　6 个变量
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
+| `--d-ctl` | `-2px` | **tokens**: -2px |
 | `--d-message-gap` | `16px` | **tokens**: 16px |
 | `--d-row-gap` | `1px` | **tokens**: 1px |
+| `--d-row-h` | `20px` | **tokens**: 20px |
 | `--d-section-gap` | `1px` | **tokens**: 1px |
+| `--lh-body` | `1.6` | **tokens**: 1.6 |
 
 ## 小结
 
-- 变量总数（含各主题）：**180**
+- 变量总数（含各主题）：**188**
 - 同一选择器内被重复定义（真冗余）：**1**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。

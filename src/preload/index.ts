@@ -89,6 +89,7 @@ import type {
   SessionState,
   SessionStats,
   SessionSearchResult,
+  UsageStatsResult,
   SessionSummary,
   Space,
   SpaceProjectLink,
@@ -318,6 +319,7 @@ const api: YanBridge = {
     undo: (undoId) => invoke<CheckpointRestoreResult>('yan:checkpoints:undo', undoId)
   },
   searchSessions: (query, limit) => invoke<SessionSearchResult>('yan:searchSessions', query, limit),
+  usageStats: (range) => invoke<UsageStatsResult>('yan:usageStats', range),
   peekSession: (path) => invoke<PeekResult | null>('yan:peekSession', path),
 
   /* ---- 模型接入（凭证） ---- */

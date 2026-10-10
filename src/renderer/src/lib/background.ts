@@ -97,6 +97,12 @@ export function backgroundLadder(base: string, theme: BackgroundTheme): Record<(
   }
 }
 
+/** 当前主题用的自定义色：浅色主题优先用单独设置的浅色底，否则沿用深色那一个 */
+export function customForTheme(custom: string | undefined, customLight: string | undefined, theme: BackgroundTheme): string | undefined {
+  if (theme === 'light' && isHexColor(customLight)) return customLight
+  return isHexColor(custom) ? custom : undefined
+}
+
 /** 当前设置对应的页面底色；null = 用默认主题 */
 export function resolveBackground(preset: string | undefined, custom: string | undefined, theme: BackgroundTheme): string | null {
   if (preset === CUSTOM_BACKGROUND_ID) return isHexColor(custom) ? clampBackground(custom, theme) : null
@@ -104,12 +110,19 @@ export function resolveBackground(preset: string | undefined, custom: string | u
   return hit?.[theme] ?? null
 }
 
-export function applyBackground(root: HTMLElement, preset: string | undefined, custom: string | undefined, theme: BackgroundTheme): void {
+/** 上次写入的底色：设置对象每次变化都会触发，同值时跳过整组 setProperty（避免无谓的样式重算） */
+let appliedKey: string | null = null
+
+export function applyBackground(root: HTMLElement, preset: string | undefined, custom: string | undefined, theme: BackgroundTheme): boolean {
   const base = resolveBackground(preset, custom, theme)
+  const key = base ? `${theme}:${base}` : ''
+  if (key === appliedKey) return false
+  appliedKey = key
   if (!base) {
     for (const token of TOKENS) root.style.removeProperty(token)
-    return
+    return true
   }
   const ladder = backgroundLadder(base, theme)
   for (const token of TOKENS) root.style.setProperty(token, ladder[token])
+  return true
 }

@@ -1,6 +1,6 @@
 ---
 name: office
-description: 读取、修改或生成 Word（.docx）、Excel（.xlsx）、PowerPoint（.pptx）和 PDF 文件时使用。说明如何读文件、用本机 Python 库修改、核对结果，以及缺少依赖时怎么如实告诉用户。
+description: 读取、修改或生成 Word、Excel、PowerPoint 或 PDF 文件时使用。
 ---
 
 # 办公文件

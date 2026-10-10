@@ -93,11 +93,7 @@ function currentWorkMode() {
 
 /** 标准模式：模糊时先问（改动前的默认行为） */
 const STANDARD_GUIDANCE = [
-  'Interactive questions:',
-  '- If a request is genuinely ambiguous, or you are about to guess at a choice that materially changes the result, call `yan question ask` and ask BEFORE doing the work.',
-  '- Ask only when the answer changes what you build; do not ask about trivia or things you can verify yourself.',
-  '- Give at most 3 concrete options; the panel always offers one row for a typed reply, so the user can write their own answer.',
-  '- Keep it to one question at a time unless several are truly independent.'
+  'Interactive questions: if a request is genuinely ambiguous, or a guess would materially change the result, ask first with `yan question ask`. Do not ask what you can verify yourself. Give at most 3 concrete options (the panel adds a free-text row); one question at a time unless several are truly independent.'
 ].join('\n')
 
 /**

@@ -7,7 +7,9 @@ import { RewindDialog } from './components/shell/RewindDialog'
 import { useI18n, useT } from './i18n'
 import { TitleBar, type Theme } from './components/shell/TitleBar'
 import { Rail } from './components/rail/Rail'
-import { applyBackground } from './lib/background'
+import { applyBackground, customForTheme } from './lib/background'
+import { APPEARANCE_EVENT, applyTypography } from './lib/appearance'
+import { useStreamHeight } from './lib/useStreamHeight'
 import { Workspace, WorkspacePane } from './components/workbench/Workspace'
 import { conversationKeyOf, rememberConversationKey, workspaceKeyFor } from './state/workspace-key'
 import { splitTileKey, displayedSessionOf, reconcileSplit, useSplitView, type SplitSessionRef } from './state/split-view'
@@ -514,10 +516,17 @@ export default function App() {
     window.dispatchEvent(new Event('yan:stream-width'))
   }, [settings?.streamWidth])
 
-  /* 背景色模板 / 自定义：覆盖层级令牌，换主题时按新主题重算 */
+  /* 背景色模板 / 自定义、字体与字号：覆盖根元素令牌，换主题时按新主题重算；有变化才广播给终端等读计算值的组件 */
   useEffect(() => {
-    applyBackground(document.documentElement, settings?.backgroundPreset, settings?.backgroundCustom, theme)
-  }, [settings?.backgroundPreset, settings?.backgroundCustom, theme])
+    const root = document.documentElement
+    const colors = applyBackground(root, settings?.backgroundPreset, customForTheme(settings?.backgroundCustom, settings?.backgroundCustomLight, theme), theme)
+    const type = applyTypography(root, settings ?? {})
+    if (colors || type) window.dispatchEvent(new Event(APPEARANCE_EVENT))
+    if (type) window.dispatchEvent(new Event('yan:stream-width'))
+  }, [
+    settings?.backgroundPreset, settings?.backgroundCustom, settings?.backgroundCustomLight, theme,
+    settings?.fontUi, settings?.fontUiCustom, settings?.fontCode, settings?.fontCodeCustom, settings?.fontSizeBody, settings?.fontSizeUi
+  ])
 
   /* 过程布局写到根元素：宽度够时由 chat.css 的容器查询把过程放到右侧一栏 */
   useEffect(() => {
@@ -562,6 +571,7 @@ export default function App() {
    * 重挂时视口已经稳定；没出问题就只是顺手贴底。
    */
   const centerRef = useRef<HTMLElement>(null)
+  useStreamHeight(centerRef)
   const [vlistKey, setVlistKey] = useState(0)
   const vlistRemounts = useRef(0)
   /** 对话列刚搬到新磁贴、还在稳定：新列表从顶部起步发出的 scroll 事件不算用户往上翻 */

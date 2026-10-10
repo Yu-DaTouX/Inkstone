@@ -348,8 +348,8 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
   /**
    * 悬停时记下这一格在轨道里的相对位置。
    *
-   * 用 `useLayoutEffect` 而不是在事件里直接算 —— 因为 CSS 会在 hover 后
-   * 把那一格长高（.outline-hit 的 height 变化），布局量完才是最终位置。
+   * 用 `useLayoutEffect`：渲染后、绘制前量一次。悬停加高只用 transform，
+   * 不改命中区高度，所以这里量到的位置就是最终位置，刻度之间不会互相推开。
    */
   useLayoutEffect(() => {
     if (hover === null) return

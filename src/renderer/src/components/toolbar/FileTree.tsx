@@ -12,6 +12,7 @@ import type {
   FileSearchResult
 } from '../../../../shared/ipc'
 import { Spinner } from '../ui'
+import { samePath } from '../../../../shared/session-path'
 
 /** 绝对路径归一化：比较“已加入上下文”时忽略大小写与分隔符差异 */
 function normPath(p: string): string {
@@ -995,9 +996,6 @@ function toAbsolutePath(cwd: string, rel: string): string {
   return rel ? `${root}\\${rel.replace(/\//g, '\\')}` : root
 }
 
-function samePath(a: string, b: string): boolean {
-  return a.replace(/[\\/]+$/, '').toLowerCase() === b.replace(/[\\/]+$/, '').toLowerCase()
-}
 
 function sameFileContext(a: FileRequestContext | undefined, b: FileRequestContext): boolean {
   return !a || (

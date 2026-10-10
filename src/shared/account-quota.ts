@@ -223,13 +223,16 @@ export function claudeUsageWindows(payload: unknown): QuotaWindow[] {
     const w = obj(value)
     if (!w || typeof w.utilization !== 'number' || !Number.isFinite(w.utilization)) continue
     const resetAt = typeof w.resets_at === 'string' ? Date.parse(w.resets_at) : NaN
+    const listed = key in CLAUDE_WINDOW_LABELS
     windows.push({
       id: key,
-      label: CLAUDE_WINDOW_LABELS[key] ?? key.replace(/_/g, ' '),
+      ...(listed ? {} : { informational: true }),
+      /* 未登记的窗口是服务端新增的内部限额（如代号命名），原样带上代号，别当成正式套餐项 */
+      label: CLAUDE_WINDOW_LABELS[key] ?? `其他限额 · ${key.replace(/_/g, ' ')}`,
       used: w.utilization,
       total: 100,
       resetAt: Number.isFinite(resetAt) ? resetAt : undefined,
-      exceeded: w.utilization >= 100
+      exceeded: listed && w.utilization >= 100
     })
   }
   return windows

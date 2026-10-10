@@ -1,6 +1,6 @@
 ---
 name: visual-answer
-description: 在砚的图形界面里回答时，内容涉及数值对比或趋势、关键指标、几个候选项的推荐、对象详情、因果或分阶段流程、架构/时序/表关系图，或需要可调参数的示意时使用。说明 yan-chart / yan-stats / yan-cards / yan-record / yan-flow / yan-steps / mermaid / yan-widget 的写法，砚会把它们画成图形。
+description: 要在回答里写 yan-chart、yan-stats、yan-cards 等图形块或 mermaid 图时使用，给出各块的字段格式。
 ---
 
 # 结构化回答块

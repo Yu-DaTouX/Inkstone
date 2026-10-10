@@ -71,7 +71,8 @@
 .model-row[data-cursor='1'] { background: var(--bg-3); }
 .model-row[data-current='1'] { background: var(--accent-soft); }
 .model-row[data-ready='0'][data-cursor='1'] { background: var(--bg-2); }
-.btn.model-option, .btn.model-option:hover, .btn.model-option.on, .btn.model-option:disabled:hover { border-color: transparent; background: transparent; }
+/* 加 .model-row 前缀：要压过后面的 .btn.ghost:hover，否则悬停时按钮自己再画一层比整行短的底 */
+.model-row .btn.model-option, .model-row .btn.model-option:hover, .model-row .btn.model-option.on, .model-row .btn.model-option:disabled:hover { border-color: transparent; background: transparent; }
 .btn.model-option { height: auto; min-height: var(--ctl-h); width: 100%; text-align: left; justify-content: flex-start; align-items: center; padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-2); border-radius: var(--r-sm); color: var(--fg); }
 .btn.model-option > span { display: flex; align-items: center; gap: var(--sp-2); width: 100%; }
 .model-row-text { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); flex: 1 1 auto; min-width: 0; }
@@ -85,7 +86,7 @@
 .model-row-id > .model-row-warn { color: var(--warn); }
 .btn.model-favorite { width: var(--ctl-h); padding: 0; justify-content: center; color: var(--fg-mute); font-family: var(--font-body); font-size: var(--fs-base); opacity: 0; }
 .btn.model-favorite > span { overflow: visible; line-height: 1; }
-.btn.model-favorite, .btn.model-favorite:hover, .btn.model-favorite.on { border-color: transparent; background: transparent; }
+.model-row .btn.model-favorite, .model-row .btn.model-favorite:hover, .model-row .btn.model-favorite.on { border-color: transparent; background: transparent; }
 .btn.model-favorite:hover { color: var(--fg); }
 .btn.model-favorite.on { color: var(--accent); opacity: 1; }
 .model-row[data-cursor='1'] .btn.model-favorite, .btn.model-favorite:focus-visible { opacity: 1; }

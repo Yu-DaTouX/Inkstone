@@ -34,6 +34,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
+import { autoCompactAt } from '../shared/context-limits'
 import type { CompactionInfo, CompactionReason, CompactionRun, CompactionStatus } from '../shared/ipc'
 
 /** pi 的默认值。改这里之前先看 pi 的 docs/compaction.md */
@@ -100,7 +101,7 @@ export function projectTrustedFrom(trustRaw: unknown, cwd: string): boolean {
  * `contextWindow` 由调用方传入（来自当前模型 / 会话状态）——
  * 本模块不猜它，因为不同模型的窗口差很多。
  */
-export async function compactionInfo(cwd: string, contextWindow: number): Promise<CompactionInfo> {
+export async function compactionInfo(cwd: string, contextWindow: number, inkstoneCap?: number): Promise<CompactionInfo> {
   /*
    * 用户级设置必须跟着 **pi 自己的目录**（`PI_CODING_AGENT_DIR`），
    * 而不是拼 `~/.pi/agent` —— 便携版与 YAN_PI_DIR 下两者不是一个地方。
@@ -131,7 +132,12 @@ export async function compactionInfo(cwd: string, contextWindow: number): Promis
    * 不能给出负数，那会让界面显示「已经该压缩了」。
    */
   const win = Number.isFinite(contextWindow) && contextWindow > 0 ? Math.round(contextWindow) : 0
-  const threshold = Math.max(0, win - effective.reserveTokens)
+  const native = Math.max(0, win - effective.reserveTokens)
+  /* 砚的自动压缩上限（context-trim.js 在一轮结束后调 pi 原生 compact）：取两条线里先到的那条 */
+  /* 提前压缩跟随 pi 的自动压缩开关：pi 关了就都不压 */
+  const capped = inkstoneCap && effective.enabled ? autoCompactAt(inkstoneCap, win) : undefined
+  const byInkstone = capped !== undefined && capped < native
+  const threshold = byInkstone ? capped : native
 
   const info: CompactionInfo = {
     enabled: effective.enabled,
@@ -141,7 +147,8 @@ export async function compactionInfo(cwd: string, contextWindow: number): Promis
     threshold,
     /** 生效值是用户自己配的，还是 pi 的默认值 —— 界面上要能说清 */
     custom: JSON.stringify(effective) !== JSON.stringify(DEFAULTS),
-    scope: honored ? 'project' : 'global'
+    scope: honored ? 'project' : 'global',
+    ...(byInkstone ? { cappedByInkstone: true } : {})
   }
   /*
    * 项目里配了、pi 却不会读：说出来。

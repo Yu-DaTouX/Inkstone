@@ -358,6 +358,8 @@ export class AgentController extends EventEmitter {
   private capabilityGuideExtension?: string
   /** 上下文构成观测薄层（只读上报系统提示分段与工具定义）。 */
   private contextInspectExtension?: string
+  /** 旧工具输出裁剪与自动压缩上限（只改发给模型的视图，压缩走 pi 原生 compact）。 */
+  private contextTrimExtension?: string
   /**
    * 单轮重复动作兜底（2026-09-22）：`tool_call` 看参数、连续相同就提醒或拦下。
    * 被拦下的计数由宿主在回合收尾时计入目标失败签名（`shared/repeat-guard.ts`）。
@@ -494,6 +496,8 @@ export class AgentController extends EventEmitter {
   } | null = null
   /** 回合级「正在干活」（含工具执行），见 setAgentRunning */
   private agentRunning = false
+  /** 本回合是否已调用过写文件 / shell 类工具；同目录并发只在写过文件时才算冲突。 */
+  private wroteThisRun = false
 
   /** 当前回合的计时与元数据（见 turn-timing-tracker.ts） */
   private readonly turn = new TurnTimingTracker()
@@ -616,6 +620,8 @@ export class AgentController extends EventEmitter {
     capabilityGuideExtension?: string
     /** 上下文构成观测：只读上报，不改提示与消息。 */
     contextInspectExtension?: string
+    /** 旧工具输出裁剪与自动压缩上限。 */
+    contextTrimExtension?: string
     /** Legacy caller option accepted but ignored; context belongs to pi. */
     contextExtension?: string
     /** Legacy caller option accepted but ignored; no automatic knowledge injection. */
@@ -697,9 +703,11 @@ export class AgentController extends EventEmitter {
     this.shellFallbackExtension = opts.shellFallbackExtension
     this.agentProfileExtension = opts.agentProfileExtension
     this.responseDetailExtension = opts.responseDetailExtension
+    this.preambleExtension = opts.preambleExtension
     this.languageExtension = opts.languageExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.contextInspectExtension = opts.contextInspectExtension
+    this.contextTrimExtension = opts.contextTrimExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
     this.bundledSkills = opts.bundledSkills ?? []
     this.userSkills = opts.userSkills
@@ -904,6 +912,8 @@ export class AgentController extends EventEmitter {
           : []),
         // 上下文构成：只读观测，放在提示类扩展之后，读到的是它们拼完的最终系统提示
         ...(this.contextInspectExtension ? ['--extension', this.contextInspectExtension] : []),
+        // 旧工具输出裁剪 + 自动压缩上限：读设置，未到软线时不改任何消息
+        ...(this.contextTrimExtension ? ['--extension', this.contextTrimExtension] : []),
         /*
          * 单轮重复动作兜底（2026-09-22）：连续 3 次相同调用提醒、5 次拦下。
          * 放最后：它要在其它扩展都不拦的时候才生效（不抢模式门禁的判断）。
@@ -2511,6 +2521,7 @@ export class AgentController extends EventEmitter {
         )
         call.status = 'running'
         call.startedAt = Date.now()
+        if (isWriteTool(call.name) || isShellTool(call.name)) this.wroteThisRun = true
         /*
          * 写入类工具：**在文件被改之前**留一份执行前快照（方案 5.3）。
          * 同步读（限 2MB）：异步会有「工具已写完、before 才读到新内容」的竞态。
@@ -2597,6 +2608,7 @@ export class AgentController extends EventEmitter {
 
       /* ---- 会话级 ---- */
       case 'agent_start':
+        this.wroteThisRun = false
         this.turn.responseDetail = this.currentResponseDetail()
         this.turn.startedAt = Date.now()
         this.turn.startedMono = performance.now()
@@ -3575,6 +3587,11 @@ export class AgentController extends EventEmitter {
    */
   hasRunningBash(): boolean {
     return this.bash !== null
+  }
+
+  /** 本回合是否改过（或可能改过）工作目录里的文件 */
+  hasWrittenThisRun(): boolean {
+    return this.wroteThisRun
   }
 
   /* ---------------------------------------------------------- 会话管理 */
