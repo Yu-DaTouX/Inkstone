@@ -29,8 +29,13 @@ const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
   language: { name: 'pkg.builtin.language', desc: 'pkg.builtin.languageDesc' },
   preamble: { name: 'pkg.builtin.preamble', desc: 'pkg.builtin.preambleDesc' },
   'capability-guide': { name: 'pkg.builtin.capability-guide', desc: 'pkg.builtin.capability-guideDesc' },
+  'codemode-policy': { name: 'pkg.builtin.codemode-policy', desc: 'pkg.builtin.codemode-policyDesc' },
+  commandcode: { name: 'pkg.builtin.commandcode', desc: 'pkg.builtin.commandcodeDesc' },
   context: { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' },
-  'context-trim': { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' }
+  'context-inspect': { name: 'pkg.builtin.context-inspect', desc: 'pkg.builtin.context-inspectDesc' },
+  'context-trim': { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' },
+  'danger-guard': { name: 'pkg.builtin.danger-guard', desc: 'pkg.builtin.danger-guardDesc' },
+  'shell-fallback': { name: 'pkg.builtin.shell-fallback', desc: 'pkg.builtin.shell-fallbackDesc' }
 }
 
 /**
