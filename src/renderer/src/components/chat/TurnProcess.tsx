@@ -55,6 +55,15 @@ export function TurnActivityLine({ turn, streaming }: { turn: AssistantTurn; str
   return streaming ? <LiveActivity /> : <SettledActivity turn={turn} />
 }
 
+/** 消息已发出、模型还没有任何输出（没有助手回合）时的等待行：否则这段时间流里什么都没有 */
+export function PendingActivity() {
+  return (
+    <div className="stream-pending">
+      <LiveActivity />
+    </div>
+  )
+}
+
 /** 运行中的那一轮：阶段文字与计时来自 run-status，和输入框的「停止 + 计时」同拍 */
 function LiveActivity() {
   const t = useT()

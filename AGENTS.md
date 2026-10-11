@@ -2,7 +2,7 @@
 
 Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（React Native）。pi 通过独立 RPC 子进程提供模型循环。公开品牌为 Inkstone，现有 `yan`、`YAN_*`、CLI 与数据目录标识按兼容约定维护。
 
-产品目标与精简边界以[产品方向](docs/PRODUCT_DIRECTION.md)为准：基于 pi 的轻量图形客户端、指定模型的子 Agent、两档权限，桌面目标覆盖 Windows/macOS/Linux，Android/iOS 连接电脑。当前实现与目标平台分开记录；外部 CLI 工作台的现状见[多 Agent 工作台](docs/AGENT_HUB.md)。
+产品目标与精简边界以[产品方向](docs/PRODUCT_DIRECTION.md)为准：基于 pi 的轻量图形客户端、指定模型的子 Agent、两档权限，桌面目标覆盖 Windows/macOS/Linux，Android/iOS 连接电脑。当前实现与目标平台分开记录；外部 CLI 工作台已退出默认委派流程，保留的旧实现见[多 Agent 工作台](docs/AGENT_HUB.md)。
 
 本仓库由多个 agent（Claude Code、Codex、砚内置的 pi 等）轮流或同时开发，彼此看不到对方的会话和私有记忆。本文是所有 agent 的共同入口，只写每次都要遵守的规则；状态、交接与本地资料的做法见[多 Agent 协作流程](docs/AGENT_WORKFLOW.md)。
 
@@ -16,7 +16,7 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 
 ## 多 agent 协作
 
-- 未提交的改动可能属于其他 agent。不回滚、不格式化、不顺手修改任务范围外的文件；共享热点文件（`src/main/index.ts`、`src/shared/ipc.ts`、i18n、`Settings.tsx`、`chat.css` 等）只做小范围编辑，编辑前重新读取。
+- 未提交的改动可能属于其他 agent。不回滚、不格式化、不顺手修改任务范围外的文件；共享热点文件（`src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts`、两份 i18n、`Settings.tsx`、`chat.css`、`scheme.css` 等）只做小范围编辑，编辑前重新读取。
 - 共享信息只写进仓库里的文件：现状写 `.local-docs/STATUS.md`，用户决定追加到 `.local-docs/DECISIONS.md`，交接写 `.local-docs/handoffs/`。agent 的私有记忆别人看不到，只放个人沟通偏好和指向这些文件的指针。
 - 任务预计跨会话或跨 agent 时，在 STATUS「进行中」登记主题与文件范围；收尾时更新 STATUS，没做完就写交接。
 - 可以用 worktree 隔离长任务，分支名写明 agent 与主题。不删除、不重置其他 agent 的 worktree 与分支，清理由用户决定。
@@ -36,10 +36,10 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 - 主进程入口 `src/main/index.ts`；渲染端通过 preload 和 `src/shared/ipc.ts` 调用宿主能力，不直接导入 pi 内部模块。
 - Hermes 外部控制插件位于 `integrations/hermes-inkstone/`，安装与验证见其 README；复用远程会话 API，不将外部插件嵌入桌面运行时。
 - 插件市场分砚/pi 两页；自有插件首批只有 Hermes，之后按实际适配结果收录。目录、导出及检查见[插件市场](docs/PLUGIN_MARKET.md)，安装复用 pi 包管理。
-- 能力保持单一正式入口；上下文、压缩、恢复与技能加载由 Agent 原生管理。pi 新增且与砚重复的能力优先适配原生实现；窗口、共享设备与必要授权协调放在宿主，随包 pi 扩展保持必要且薄。
+- 能力保持单一正式入口；上下文、压缩、恢复与技能加载由 Agent 原生管理。砚只额外做两件可关闭的事：经 pi `context` 钩子裁剪发给模型的较早大段工具输出（不改会话文件、不做摘要），以及到「自动压缩上限」时调用 pi 原生 `compact()`；不恢复旧的预算、摘要、召回与自动续跑。pi 新增且与砚重复的能力优先适配原生实现；窗口、共享设备与必要授权协调放在宿主，随包 pi 扩展保持必要且薄。
 - 会话历史以持久化记录为准；后台事件必须核对会话归属，不能覆盖当前会话状态。
 - WebContentsView 属于原生层；浮层、焦点、窗口位置与缩放必须与主进程协调。
-- UI 遵循[设计规范](docs/DESIGN_SYSTEM.md)：控件外观只来自 `styles/ui.css` 与 `components/ui/`，模块 CSS 只管版面；保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。界面决定先写入设计规范再改代码；v0.5 重构的范围与余项见[界面重构计划](docs/UI_REDESIGN.md)。
+- UI 遵循[设计规范](docs/DESIGN_SYSTEM.md)：控件外观只来自 `styles/ui.css` 与 `components/ui/`，模块 CSS 只管版面；保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。界面决定先写入设计规范再改代码。现行方向是设计规范文首的「界面重构（方向 E）」，与下文 v0.5 旧条目冲突时以它为准；其样式在 `styles/scheme.css`（modules 层最后，只写版面与层级），被它取代的模块旧规则按文件逐步删减。v0.5 的阶段记录见[界面重构计划](docs/UI_REDESIGN.md)。
 - 模型接入在应用设置中登录或配置凭证；本地档案不表示已登录模型服务。
 - 注释解释当前职责和边界，避免把实施编号与阶段流水写入新代码。
 - 含正则、反斜杠或嵌套引号的代码，不经 `node -e`、heredoc 等 shell 字符串传递，用编辑工具或写成脚本文件。
@@ -49,6 +49,9 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 命令见[贡献指南](docs/CONTRIBUTING.md)，包与数据流程见[发布说明](docs/dev/RELEASING.md)。
 
 - 按用户要求与修改范围选择检查；`test:unit` 依赖构建，`test:live` 不自动构建。
+- 默认只跑与本次改动直接相关的小检查：`typecheck`、必要时 `build`、改动涉及的单个测试脚本或单个 `test:live` 场景。
+- 大测试先问用户，得到同意再跑。大测试包括：`npm run check`、完整 `test:unit`、多场景或整套 `test:live`、`visual:matrix` 整组、发行包验证，以及任何调用真实模型的场景。用户说过「不跑测试」「不准大测试」时照办，交付说明写明没跑什么。
+- 不替无关改动做测试：其他 agent 的未提交改动、任务范围外的既有失败，不自行排查、对照实验（如 stash 后重建）或修复；记下现象与命令，在交付说明里报告，由用户决定是否处理。
 - Electron 启动前清除 `ELECTRON_RUN_AS_NODE`；不要关闭或重启用户窗口，除非已授权。
 - 远程模型场景运行前确认模型、额度和授权。模拟或本机 fixture 不代表真实模型验证。
 - 视觉结论应来自实际截图；构建、静态检查、运行、视觉与发行包证据分别说明。
@@ -57,12 +60,12 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 
 ## 工作区与公开边界
 
-- 不用 reset、checkout、clean 或删除操作处理无关修改。
+- 不用 reset、checkout、clean、stash 或删除操作处理无关修改。
 - `docs/` 维护使用、贡献、架构、发布与品牌文档。公开文档链接必须指向版本控制内的文件，公开构建与贡献不得依赖本地资料。公开入口变更时同步 README、文档索引、AGENTS 和 PROJECT。
 - 本地资料的现行位置是 `.local-docs/`，分类见[多 Agent 协作流程](docs/AGENT_WORKFLOW.md)。`docs/plan/`、`docs/design/`、`docs/archive/` 与 `docs/dev/`（`RELEASING.md` 除外）是 2026-09-27 前的冻结历史区，只在追溯时读取；其中“先读 HANDOFF、回填阶段表”等旧流程不再适用。
 - 忽略不等于可删除。不清理本地资料，不用 `git add -f` 重新纳入内部目录。用户明确要求公开其中内容时，先选定必要文件并检查引用和私人信息。
 - 图标生成、维护用原型及 CSS 清单位于 `scripts/design/`，是开发依赖，不作为产品设计方案分发。
 - 已有截图与证据不删除、不覆盖，新图使用新名称。主页素材位于 `docs/assets/inkstone/`，按授权更新。
 - `release/砚数据/` 是真实用户数据，只读；验证使用独立 `YAN_*` 数据目录或备份副本。
-- `resources/pi-runtime/` 是生成物；保留根启动脚本、受控应用图标及第三方许可。
+- `resources/pi-runtime/` 整个被 Git 忽略，由 `vendor:pi` / `upgrade:pi` 生成：各版本在 `versions/` 下，`current.json` 指定新进程使用的版本。不手改，不删除旧版本目录（可能仍被运行中的进程使用）；应用图标在 `build/`。
 - 历史提交仍含以前公开的资料；不得自行强推或改写历史。

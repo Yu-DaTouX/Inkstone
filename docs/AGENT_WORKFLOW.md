@@ -44,7 +44,7 @@ Inkstone 由维护者和多个 AI agent（Claude Code、Codex、砚内置的 pi 
 
 ### 进行中
 
-- 只改任务范围内的文件。共享热点文件（`src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts`、两份 i18n、`Settings.tsx`、`chat.css` 等）用小范围编辑，编辑前重新读取，不整文件重写，不做无关格式化。
+- 只改任务范围内的文件。共享热点文件（`src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts`、两份 i18n、`Settings.tsx`、`chat.css`、`scheme.css` 等）用小范围编辑，编辑前重新读取，不整文件重写，不做无关格式化。
 - 遇到需要用户决定的问题，先记下，继续做不依赖它的部分，最后在回复里集中提出。
 - 截图、日志等证据放 `.local-docs/evidence/<日期>-<主题>/`，不放仓库根目录或 `.local-docs/` 根目录。一次性脚本放 `.tmp/<任务>/`。
 

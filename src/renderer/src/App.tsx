@@ -25,6 +25,7 @@ import { InteractionSession } from './lib/interaction-state'
 import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
 import { TurnView } from './components/chat/TurnView'
+import { PendingActivity } from './components/chat/TurnProcess'
 import { createTurnProjector } from '../../shared/turns'
 import { mergeQuestionLog } from '../../shared/question-log'
 import { isModalOpen } from './lib/modalLayer'
@@ -307,6 +308,13 @@ export default function App() {
     [messages, questionLog, questionLogSession, session?.sessionId, streamingId, projectTurns]
   )
 
+  /* 已发送、模型尚无输出：流末尾补一行等待状态（只用于渲染，不参与回合索引） */
+  const awaitingReply = turns.length > 0 && turns[turns.length - 1].kind !== 'assistant' && !!(session?.isAgentRunning || session?.isStreaming)
+  const renderTurns = useMemo(
+    () => awaitingReply ? [...turns, { kind: 'pending' as const, id: '__pending__' }] : turns,
+    [turns, awaitingReply]
+  )
+
   const virtual = turns.length >= VIRTUALIZE_AT || messages.length >= VIRTUALIZE_MSGS_AT
 
   /* ---- 主进程推送 → store；并做一次全量 bootstrap ---- */
@@ -539,14 +547,14 @@ export default function App() {
     if (!stickRef.current) return
     if (virtual) {
       // 虚拟列表：滚到最后一项的末尾
-      vlistRef.current?.scrollToIndex(turns.length - 1, { align: 'end' })
+      vlistRef.current?.scrollToIndex(renderTurns.length - 1, { align: 'end' })
       return
     }
     const el = streamRef.current
     if (el) el.scrollTop = el.scrollHeight
     // 依赖 turns 而不是 messages：回合合并后一块里也可能长高（新段落）
     // split?.live：分屏焦点换边时对话列在另一个磁贴里重新挂载，新的滚动容器从头开始，要重新贴底
-  }, [turns, stick, virtual, split?.live])
+  }, [renderTurns, stick, virtual, split?.live])
   /*
    * 回合数没变而内容自己长高（成果卡片预览、图片后加载）或列宽变了：停在底部的仍贴住底部。
    * 跟着对话区节点走（分屏换块时整列在新磁贴里重新挂载，节点会换），所以挂在 ref 回调上。
@@ -895,14 +903,14 @@ export default function App() {
               <VList
                 key={`${sessionIdentity}|${vlistKey}`}
                 ref={vlistRef}
-                data={turns}
+                data={renderTurns}
                 className="stream"
                 bufferSize={800}
                 onScroll={onVirtualScroll}
               >
                 {(tt) => (
                   <div key={tt.id} className="stream-row">
-                    <TurnView turn={tt} streaming={tt.kind === 'assistant' && tt.streaming} />
+                    {tt.kind === 'pending' ? <PendingActivity /> : <TurnView turn={tt} streaming={tt.kind === 'assistant' && tt.streaming} />}
                   </div>
                 )}
               </VList>
@@ -912,7 +920,9 @@ export default function App() {
                   {turns.length === 0 ? (
                     <EmptyStream />
                   ) : (
-                    turns.map((tt) => (
+                    renderTurns.map((tt) => tt.kind === 'pending' ? (
+                      <PendingActivity key={tt.id} />
+                    ) : (
                       <TurnView
                         key={tt.id}
                         turn={tt}

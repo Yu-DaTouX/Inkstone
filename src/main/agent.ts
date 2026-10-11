@@ -2506,6 +2506,15 @@ export class AgentController extends EventEmitter {
           })
           /* 失败也是终止原因：不能落盘成「正常完成」（H-6）。 */
           this.turn.terminal = 'failed'
+        } else if (m.stopReason === 'aborted' && this.turn.terminal !== 'stopped') {
+          /*
+           * 请求被中止但不是用户点的停止（abort() 会先把 terminal 标成 stopped）：
+           * 回复往往是空的，不提示的话界面看起来就是“发了没反应”。
+           */
+          this.push({
+            ch: 'agent-error',
+            payload: { message: modelErrorNotice(m.errorMessage ?? 'Request aborted'), text: modelErrorText(m.errorMessage ?? 'Request aborted'), source: 'stop-reason' }
+          })
         }
         this.markStreaming(false)
         break
