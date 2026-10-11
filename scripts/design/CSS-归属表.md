@@ -9,7 +9,7 @@
 | 顺序 | 文件 | 层 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | `tokens.css` | tokens | 464 | 27 | 32 | 1 | 6 |
-| 2 | `ui.css` | ui | 1089 | 341 | 354 | 5 | 0 |
+| 2 | `ui.css` | ui | 1093 | 343 | 356 | 5 | 0 |
 | 3 | `app.css` | modules | 517 | 72 | 73 | 1 | 0 |
 | 4 | `motion.css` | modules | 1618 | 223 | 226 | 5 | 1 |
 | 5 | `settings.css` | modules | 1331 | 204 | 210 | 1 | 0 |
@@ -19,7 +19,7 @@
 | 9 | `shell.css` | modules | 690 | 141 | 145 | 2 | 7 |
 | 10 | `dialog.css` | modules | 309 | 44 | 45 | 0 | 0 |
 | 11 | `rail.css` | modules | 1129 | 207 | 216 | 0 | 0 |
-| 12 | `chat.css` | modules | 3581 | 554 | 616 | 6 | 0 |
+| 12 | `chat.css` | modules | 3647 | 571 | 637 | 6 | 0 |
 | 13 | `composer.css` | modules | 2163 | 339 | 345 | 2 | 0 |
 | 14 | `approval.css` | modules | 145 | 17 | 17 | 0 | 0 |
 | 15 | `tools.css` | modules | 3945 | 614 | 675 | 2 | 5 |
@@ -29,8 +29,8 @@
 | 19 | `workbench.css` | modules | 1986 | 399 | 416 | 3 | 0 |
 | 20 | `workspace.css` | modules | 110 | 88 | 91 | 0 | 0 |
 | 21 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
-| 22 | `scheme.css` | modules | 961 | 184 | 194 | 0 | 0 |
-| | **合计** | | **21764** | **3533** | | | |
+| 22 | `scheme.css` | modules | 966 | 184 | 194 | 0 | 0 |
+| | **合计** | | **21839** | **3552** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -39,7 +39,7 @@
 | 文件 | 最终胜出 |
 | --- | ---: |
 | `tokens.css` | 23 |
-| `ui.css` | 319 |
+| `ui.css` | 321 |
 | `app.css` | 53 |
 | `motion.css` | 165 |
 | `settings.css` | 204 |
@@ -49,7 +49,7 @@
 | `shell.css` | 138 |
 | `dialog.css` | 44 |
 | `rail.css` | 196 |
-| `chat.css` | 493 |
+| `chat.css` | 510 |
 | `composer.css` | 337 |
 | `approval.css` | 16 |
 | `tools.css` | 614 |

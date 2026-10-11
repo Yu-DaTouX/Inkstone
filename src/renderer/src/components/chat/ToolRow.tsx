@@ -34,13 +34,12 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { withScrollAnchor } from '../../lib/scrollAnchor'
-import { TerminalWindow } from './Terminal'
-import { FileChangeDetail, ToolResultDetail, WorkspaceChangesDetail, detailKind, readWorkspaceChanges } from './ToolDetails'
+import { ToolCallDetail } from './ToolCallDetail'
+import { FileChangeStats, detailKind } from './ToolDetails'
 import { RunDot } from '../ui'
 import { goalCommand, summarizeTaskPlanCommand, summarizeYanCommand, taskPlanCommand } from '../../../../shared/tool-origin'
 import type { UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, isSettledToolNode, summarizeNestedCalls, toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
-import { ChatImage } from './ChatImage'
 
 /** 子调用区最多嵌四级，更深的平铺在第四级里 */
 const MAX_NEST_DEPTH = 4
@@ -97,7 +96,6 @@ function ToolRowImpl({ call, nested = [], activeId = null, depth = 0 }: { call: 
   const rowRef = useRef<HTMLDivElement | null>(null)
   /** 详情分型（方案 4.1）：命令 / 文件改动 / 普通结果 */
   const kind = detailKind(call.name)
-  const wsChanges = readWorkspaceChanges(call.details)
   /*
    * 实施-02 S4：模型用 bash 敲 `yan tasks apply` 时，这条调用其实是
    * **砚内置的任务计划**（宿主服务持写入权）。卡片必须说出来，否则用户
@@ -176,6 +174,7 @@ function ToolRowImpl({ call, nested = [], activeId = null, depth = 0 }: { call: 
           {kind === 'command' ? <span className="trow-dollar">$ </span> : null}
           {target || t('tool2.noTarget')}
         </span>
+        {kind === 'change' ? <FileChangeStats call={call} /> : null}
         {!running && secs !== null ? <span className="trow-time">{secs}s</span> : null}
         {failed ? (
           <span className="trow-badge err">{t('tool.failed')}</span>
@@ -192,44 +191,7 @@ function ToolRowImpl({ call, nested = [], activeId = null, depth = 0 }: { call: 
       <div className={`trow-expand ${open ? 'open' : ''}`} aria-hidden={!open} inert={!open}>
         <div className="trow-expand-inner">
           {open ? <div className="trow-body" data-kind={kind}>
-          {call.historySummary ? <p className="trow-src">{t('tool2.historySummary')}</p> : null}
-          {call.nestedCallsIncomplete ? <p className="trow-src">{t('tool2.nestedIncomplete')}</p> : null}
-          {/*
-           * 工具跑出来的图（`yan browser` 截图、渲染图表）：与用户贴的图同一套
-           * 落盘 / 显示路径。放在详情之前 —— 截图就是这次调用的主要结果，
-           * 不应该排在一堆文本输出下面。
-           */}
-          {call.images?.length ? (
-            <div className="trow-images" data-testid="tool-images">
-              {call.images.map((im, i) =>
-                im.data ? (
-                  <ChatImage key={i} src={`data:${im.mimeType};base64,${im.data}`} />
-                ) : im.url ? (
-                  <ChatImage key={i} src={im.url} />
-                ) : null
-              )}
-            </div>
-          ) : null}
-          {/*
-           * 按调用类型选详情组件（方案 4.1）：
-           *   命令 → 紧凑终端；文件改动 → 改动卡片；其余 → 直接给结果。
-           * 以前所有工具都套终端窗口，搜索/读文件看起来像跑过 shell。
-           */}
-          {kind === 'command' ? (
-            <>
-              <TerminalWindow call={call} target={target} secs={secs} />
-              {/*
-               * shell / 第三方工具改了哪些文件（L05）——挂在命令下面。
-               * 目录级快照只在**真的有变化**或**归属存疑**时才有值，
-               * 所以一条 `ls` 不会凭空多出一张“0 个改动”的卡片。
-               */}
-              {wsChanges ? <WorkspaceChangesDetail changes={wsChanges} /> : null}
-            </>
-          ) : kind === 'change' ? (
-            <FileChangeDetail call={call} />
-          ) : (
-            <ToolResultDetail call={call} />
-          )}
+          <ToolCallDetail call={call} target={target} secs={secs} />
           </div> : null}
         </div>
       </div>
@@ -324,6 +286,13 @@ export const ToolRow = memo(ToolRowImpl, (a, b) => a.activeId === b.activeId && 
 /** 点「前面 N 步」先展开最近几步，再按批追加 */
 const REVEAL_FIRST = 8
 const REVEAL_MORE = 20
+/**
+ * 设计规范：七步及以上折叠较早步骤。
+ *
+ * 少于此数的组直接逐行列出 —— 短组再叠一层「前面 N 步」只会让
+ * 用户为已经不多的内容多点一次（正文里的过程与详情已经是两层）。
+ */
+const FOLD_FROM = 7
 
 function ToolGroupImpl({ tools, activeId = null }: { tools: UIToolCall[]; activeId?: string | null }) {
   const t = useT()
@@ -338,10 +307,10 @@ function ToolGroupImpl({ tools, activeId = null }: { tools: UIToolCall[]; active
 
   const steps = toolCallForest(tools)
   const history = steps.filter((node) => isSettledToolNode(node))
-  const revealed = reveal.key === groupKey ? Math.min(reveal.n, history.length) : 0
+  const revealed = steps.length < FOLD_FROM ? history.length : reveal.key === groupKey ? Math.min(reveal.n, history.length) : 0
   const shownHistory = new Set(history.slice(history.length - revealed))
   const visible = steps.filter((node) => !history.includes(node) || shownHistory.has(node))
-  const foldable = history.length > 0
+  const foldable = steps.length >= FOLD_FROM && history.length > 0
   const hidden = steps.length - visible.length
   const expanded = revealed > 0
 
@@ -414,9 +383,8 @@ function summarize(call: UIToolCall): string {
   if (typeof a.command === 'string') return a.command
   /* Codemode 脚本还没调工具时：给脚本首行，而不是参数名 code */
   if (typeof a.code === 'string') return a.code.split('\n').map((line) => line.trim()).find(Boolean) ?? ''
-  if (Array.isArray(a.edits) && typeof a.path === 'string') return a.path
-  if (typeof a.file_path === 'string') return shortPath(a.file_path)
-  if (typeof a.path === 'string') return shortPath(a.path)
+  if (typeof a.file_path === 'string') return a.file_path.split(/[\\/]/).pop() || shortPath(a.file_path)
+  if (typeof a.path === 'string') return a.path.split(/[\\/]/).pop() || shortPath(a.path)
   if (typeof a.pattern === 'string') return a.pattern
   if (typeof a.query === 'string') return a.query
   if (typeof a.url === 'string') return a.url

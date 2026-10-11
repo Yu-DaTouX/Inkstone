@@ -80,7 +80,13 @@ UX 反馈专项：构建后设置 `YAN_LIGHT_PROBE=scripts/probe/ux-feedback.js`
 
 子代理流式专项运行 `node scripts/test-subagent-stream-performance.mjs`：独立数据目录与假 RPC 验证33ms快照合并、主动读取即时性、工具/结束/停止即时推送和清除后不反弹，并重复三轮100条历史与500次更新的序列化测量。`YAN_SUBAGENT_STREAM_OUT` 可指定新的 JSON 文件；`YAN_SUBAGENT_STREAM_MODULE` 可指定优化前编译的模块，配合 `--baseline` 运行同负载对照。字节数是 JSON 序列化体积，不是实际 IPC 字节；同步事件处理耗时不含异步推送回调，不能当作总 CPU 收益。并行运行隔离与收口检查也已纳入 unit。
 
-构建后可将 `YAN_LIGHT_PROBE` 设为 `scripts/probe/stream-smooth.js` 的绝对路径，再运行 `node scripts/test-light-client-live.mjs`。它在独立Electron目录中验证长历史、连续代码/中文/emoji输出、输入响应、无文字时活动行与过程入口可见、展开后工具可见、最终全文/代码高亮/表格与旧数据保留；不会调用模型。需要订阅额度的 `node scripts/test-luna-progress-live.mjs --real-luna` 使用已有Codex OAuth的隔离副本，仅运行精确 `openai-codex/gpt-6-luna` low小任务，记录首字/工具时间；无其他模型回退，执行前须得到额度调用授权。模型是否先说进展是行为采样，不是延迟保证。
+### 写 live 探针时的三个坑（2026-10-11 踩到）
+
+- **过程入口默认折叠**：`TurnProcess` 只在展开时渲染工具行与推理块，而默认是否展开只看「并列布局 + 正在流式」。注入夹具（`applyPush({ch:'sync'})` 或 `setState({messages})`）后如果不先点开 `[data-testid="turn-process-toggle"]`，看到的是「一个工具行都没有」「终端没渲染」「推理块没渲染」这类**假象**。两个细节：注入当下 DOM 里还挂着上一条回合的入口，要先等新回合上屏再点；换新消息 id 会让过程重挂，每条用例都要重新铺开。`scripts/probe/toolrow.js` 的 `openProcess()` 是可抄的写法。
+- **设置页入口**：插件（包括附件清理那一节）在「市场 → pi 插件」下，`openSettings('packages')` 不是合法页 id（见 `Settings.tsx` 的 `SETTINGS_PAGES`），要用 `openSettings('market')` + 点 `market-pi-tab`。另外各探针的 `q()` 约定不一：有的收选择器，有的收 testid 名，改之前先看它自己的定义。
+- **探针顶层要包 `try/catch`**：异常不兜住只会得到「没抓到 PROBE 输出」，连已跑过的断言一并丢掉，排查成本高得多。
+
+构建后可将 `YAN_LIGHT_PROBE` 设为 `scripts/probe/stream-smooth.js` 的绝对路径，再运行 `node scripts/test-light-client-live.mjs`。它在独立Electron目录中验证长历史、连续代码/中文/emoji输出、输入响应、无文字时活动行与过程入口可见、展开后工具可见、最终全文/代码高亮/表格与旧数据保留；不会调用模型。`YAN_LIGHT_WIDE_SIZE` 可改宽/深两次的窗口尺寸（默认 1440x1000），需验证并列过程栏时用 `1920x1000` 这类不会回退到正文内的宽度。工具详情专项 `scripts/probe/tool-detail-layouts.js` 检查两种过程布局的落位、单条详情只有一个滚动区、宽幅阅读的焦点归还、真实增删数与逐行 diff、以及七步长组的折叠口径；夹具是合成调用，不代表真实模型会话。需要订阅额度的 `node scripts/test-luna-progress-live.mjs --real-luna` 使用已有Codex OAuth的隔离副本，仅运行精确 `openai-codex/gpt-6-luna` low小任务，记录首字/工具时间；无其他模型回退，执行前须得到额度调用授权。模型是否先说进展是行为采样，不是延迟保证。
 
 Windows 上运行 `node scripts/measure-light-client.mjs` 记录三次空会话启动、空闲 CPU 与进程树工作集；`YAN_MEASURE_SCENARIO=long` 改用独立窗口的 2,000 条合成消息，记录首帧、120 次滚动采样和虚拟化 DOM 数量。`YAN_LIGHT_EXE` 指定独立目录包，`YAN_MEASURE_OUT` 指定新的证据文件；前后比较应使用同类运行方式。Chromium 探针关闭了帧率/后台限制，帧耗时不是实际显示器 FPS，工作集之和也不是独占物理内存。
 

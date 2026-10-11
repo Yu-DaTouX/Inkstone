@@ -49,7 +49,17 @@ export function listSessionFiles(dir: string): string[] {
   const out: string[] = []
   const walk = (d: string, depth: number): void => {
     if (depth > 64) throw new Error('会话目录层级过深，已停止附件清理')
-    const entries = readdirSync(d, { withFileTypes: true })
+    let entries
+    try {
+      entries = readdirSync(d, { withFileTypes: true })
+    } catch (error) {
+      /*
+       * 目录还不存在是**正常状态**：全新安装、自定义数据目录、用户清过 sessions
+       * 都长这样，不应当成错误。其他错误（权限、IO）照旧往上抛，不静默。
+       */
+      if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return
+      throw error
+    }
     for (const entry of entries) {
       const path = join(d, entry.name)
       if (entry.isDirectory()) walk(path, depth + 1)

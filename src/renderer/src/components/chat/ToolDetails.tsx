@@ -45,8 +45,18 @@ function readFileDiff(details: unknown): FileDiff | null {
   const d = (details as { fileDiff?: unknown }).fileDiff
   if (!d || typeof d !== 'object') return null
   const diff = d as Partial<FileDiff>
-  if (typeof diff.path !== 'string' || !diff.before || !diff.after) return null
+  if (typeof diff.path !== 'string' || !diff.before || !diff.after || typeof diff.patch !== 'string') return null
   return diff as FileDiff
+}
+
+/** 行头与详情共用执行后快照统计，未知值不冒充零。 */
+export function FileChangeStats({ call }: { call: UIToolCall }) {
+  const diff = readFileDiff(call.details)
+  if (!diff || call.status === 'running' || call.status === 'pending') return null
+  return <>
+    {Number.isFinite(diff.added) && diff.added >= 0 ? <span className="fd-stat add" data-testid="file-diff-added">+{diff.added}</span> : null}
+    {Number.isFinite(diff.removed) && diff.removed >= 0 ? <span className="fd-stat del" data-testid="file-diff-removed">−{diff.removed}</span> : null}
+  </>
 }
 
 /** 从 call.details 里取出 shell / 第三方工具的目录级改动（L05，没有就是 null） */
@@ -69,7 +79,7 @@ export function readWorkspaceChanges(details: unknown): WorkspaceChanges | null 
  *
  * 失败调用一律标明「未成功应用」，不能让用户以为改上了。
  */
-export function FileChangeDetail({ call }: { call: UIToolCall }) {
+export function FileChangeDetail({ call, showHeader = true }: { call: UIToolCall; showHeader?: boolean }) {
   const t = useT()
   const path = callPath(call)
   const running = call.status === 'running' || call.status === 'pending'
@@ -91,26 +101,16 @@ export function FileChangeDetail({ call }: { call: UIToolCall }) {
 
   return (
     <div className="fd" data-testid="file-change-detail">
-      <div className="fd-head">
+      {showHeader ? <div className="fd-head">
         <Icon name="file" size={12} />
         <span className="fd-path" title={path || diff?.path}>
           {path || diff?.path || call.name}
         </span>
         {statusText ? <span className="fd-status">{statusText}</span> : null}
         <span className="spacer" />
-        {/* 有真实差异时给增删行数（方案 5.3 要求） */}
-        {diff && diff.added >= 0 ? (
-          <span className="fd-stat add" data-testid="file-diff-added">
-            +{diff.added}
-          </span>
-        ) : null}
-        {diff && diff.removed >= 0 ? (
-          <span className="fd-stat del" data-testid="file-diff-removed">
-            -{diff.removed}
-          </span>
-        ) : null}
+        <FileChangeStats call={call} />
         <span className={`fd-state ${stateClass}`}>{stateText}</span>
-      </div>
+      </div> : null}
       {failed ? <div className="fd-note">{t('tool.notApplied')}</div> : null}
       <div className="fd-body">
         {diff ? (
@@ -118,14 +118,17 @@ export function FileChangeDetail({ call }: { call: UIToolCall }) {
             {tooLarge ? <div className="fd-note">{t('tool.diffTooLarge')}</div> : null}
             {diff.patch ? (
               <pre className="fd-patch" data-testid="file-diff-patch">
-                {diff.patch}
+                {diff.patch.split('\n').map((line, index) => <span key={index} className="ui-diff-line" data-kind={line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : 'context'}>{line}{'\n'}</span>)}
               </pre>
             ) : !tooLarge && diff.status !== 'unchanged' ? (
               <div className="fd-note">{t('tool.diffNoPatch')}</div>
             ) : null}
           </>
         ) : (
-          <ToolDetail call={call} />
+          <>
+            <div className="fd-note">{t('tool.diffUnavailable')}</div>
+            <ToolDetail call={call} />
+          </>
         )}
       </div>
     </div>

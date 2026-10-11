@@ -344,12 +344,7 @@
 }
 .tproc-tree {
   margin-top: var(--sp-1);
-  /* 步骤很多时在树内滚动，不把整条消息撑得很长 */
-  max-height: min(46vh, 26em);
-  /* 只纵向滚动：overflow-y 非 visible 时 x 会变 auto，长行就会冒出横向滚动条 */
-  overflow: hidden auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  min-width: 0;
 }
 /* 实时思考链：回合顶部，与正文之间留一点距离 */
 .turn-reason {
@@ -572,6 +567,15 @@
   }
   html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .trow-nest {
     margin-left: var(--sp-3);
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .tool-view-content {
+    max-height: min(48vh, 24rem);
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .tool-view[data-kind='command'] > .tool-view-content {
+    max-height: none;
+  }
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .tproc .term {
+    max-height: min(48vh, 24rem);
   }
 }
 
