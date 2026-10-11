@@ -17,7 +17,11 @@
     for (let i = 0; i < 50 && !document.querySelector('[data-msg-id="smooth-tool"]'); i++) await sleep(40)
     ok(!!document.querySelector('[data-msg-id="smooth-tool"]'), '长历史下当前流式回合可见')
     const node = () => document.querySelector('[data-msg-id="smooth-tool"]')
-    ok(!!node().querySelector('[data-tool="read"]'), '没有模型文字时真实工具进展仍可见')
+    const processToggle = node().querySelector('[data-testid="turn-process-toggle"]')
+    ok(!!processToggle && !!node().querySelector('[data-testid="working"]'), '没有模型文字时活动行与过程入口仍可见')
+    if (processToggle.getAttribute('aria-expanded') !== 'true') processToggle.click()
+    await frame()
+    ok(!!node().querySelector('[data-tool="read"]'), '展开过程后真实工具进展可见')
     store.getState().applyPush({ ch: 'tool', payload: { msgId: 'smooth-tool', call: { id: 'smooth-read', name: 'read', status: 'done' }, outputDelta: 'File read successfully' } })
     let paints = 0
     const observer = new MutationObserver(() => paints++)

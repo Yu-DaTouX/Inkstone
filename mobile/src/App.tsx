@@ -50,6 +50,29 @@ export default function App() {
   const fold = useFoldLayout()
   const frameRef = useRef<View>(null)
   const [frame, setFrame] = useState({ x: 0, y: 0, width: 0, height: 0 })
+  /*
+   * Android 15+ 强制全屏边到边，adjustResize 不再收缩窗口，输入法会盖住输入框。
+   * 这里按输入法顶边与内容区底边的重叠量给内容区加底部内边距；iOS 仍由 KAV 处理。
+   */
+  const [keyboardTop, setKeyboardTop] = useState<number | null>(null)
+  useEffect(() => {
+    if (Platform.OS !== 'android') return
+    const timers: Array<ReturnType<typeof setTimeout>> = []
+    const remeasure = (): void => { frameRef.current?.measureInWindow((x, y, measuredWidth, height) => setFrame({ x, y, width: measuredWidth, height })) }
+    const show = Keyboard.addListener('keyboardDidShow', (event) => {
+      setKeyboardTop(event.endCoordinates.screenY)
+      /* 输入法出现时系统导航栏内边距会变，等布局稳定后重新量一次内容区 */
+      for (const delay of [120, 400]) timers.push(setTimeout(remeasure, delay))
+    })
+    const hide = Keyboard.addListener('keyboardDidHide', () => { setKeyboardTop(null); timers.push(setTimeout(remeasure, 120)) })
+    return () => { timers.forEach(clearTimeout); show.remove(); hide.remove() }
+  }, [])
+  /*
+   * 输入法顶边是屏幕坐标，measureInWindow 在边到边窗口里不含状态栏高度（真机 y 为 0、底边差一个状态栏），
+   * 所以内容区的屏幕底边要补上状态栏；若某机型已含状态栏（y 已不小于它）则不再补。
+   */
+  const statusOffset = frame.y < (StatusBar.currentHeight ?? 0) / 2 ? StatusBar.currentHeight ?? 0 : 0
+  const keyboardOverlap = keyboardTop === null ? 0 : Math.max(0, Math.round(frame.y + statusOffset + frame.height - keyboardTop))
   const extraGap = fold.orientation === 'vertical' ? Math.max(0, 12 - ((fold.right ?? 0) - (fold.left ?? 0))) : Math.max(0, 12 - ((fold.bottom ?? 0) - (fold.top ?? 0)))
   const vertical = fold.separating && fold.orientation === 'vertical' && frame.width > 0 ? {
     left: (fold.left ?? 0) - frame.x - extraGap / 2,
@@ -176,7 +199,7 @@ export default function App() {
           * height 模式会把高度锁在首次测量值上，旋转或折叠展开后不重新收缩，底部输入框被推到屏幕外。
           */}
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={frame.y} style={{ flex: 1 }}>
-        <View ref={frameRef} collapsable={false} onLayout={() => frameRef.current?.measureInWindow((x, y, measuredWidth, height) => setFrame({ x, y, width: measuredWidth, height }))} style={{ flex: 1 }}>
+        <View ref={frameRef} collapsable={false} onLayout={() => frameRef.current?.measureInWindow((x, y, measuredWidth, height) => setFrame({ x, y, width: measuredWidth, height }))} style={{ flex: 1, paddingBottom: keyboardOverlap }}>
         {connection === undefined ? null : connection === null || pairingPrefill ? (
           localRoute !== 'welcome' && !pairingPrefill ? (
             <View style={safeRegion}>{localRoute === 'assistant-settings' ? (

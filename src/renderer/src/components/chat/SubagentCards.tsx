@@ -40,7 +40,7 @@ function useNow(active: boolean): number {
  *
  * 按启动顺序保持位置稳定；运行与需要处理的状态由图标和文字表达。
  */
-export function SubagentGroup({ runs, showTag = true }: { runs: SubagentRun[]; showTag?: boolean }) {
+export function SubagentGroup({ runs }: { runs: SubagentRun[] }) {
   const now = useNow(runs.some(isLive))
   if (!runs.length) return null
   const ranked = runs
@@ -49,7 +49,7 @@ export function SubagentGroup({ runs, showTag = true }: { runs: SubagentRun[]; s
   return (
     <div className="sg-group" data-testid="subagent-group">
       {ranked.map(({ run, outcome }) => (
-        <SubagentCard key={run.id} run={run} outcome={outcome} now={now} showTag={showTag} />
+        <SubagentCard key={run.id} run={run} outcome={outcome} now={now} />
       ))}
     </div>
   )
@@ -58,11 +58,11 @@ export function SubagentGroup({ runs, showTag = true }: { runs: SubagentRun[]; s
 /**
  * 一张子代理卡片，信息分三层：
  *   ① 状态图标 + 任务（主）+ 状态词与耗时（右）
- *   ② 灰色小字一行：子代理 · 范围 · 模型简称 · 耗时
+ *   ② 灰色小字一行：范围 · 模型简称 · 思考强度 · 原生上下文用量 · 耗时
  *   ③ 至多一行当前动作或原因；完整任务、最近工具和产出按需展开。
  * 待审阅的改动保留操作入口，默认不把过程正文铺进聊天。
  */
-function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcome: SubagentOutcome; now: number; showTag: boolean }) {
+function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: SubagentOutcome; now: number }) {
   const t = useT()
   const stopSubagent = useStore((s) => s.stopSubagent)
   const mergeSubagent = useStore((s) => s.mergeSubagent)
@@ -83,8 +83,11 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
         ? run.error
         : ''
 
+  const context = run.contextUsage
+  const contextText = context?.tokens != null
+    ? `${compactTokens(context.tokens)}${context.contextWindow > 0 ? ` / ${compactTokens(context.contextWindow)}` : ''}${context.percent != null ? ` (${Math.round(context.percent)}%)` : ''}`
+    : '—'
   const meta: { key: string; node: React.ReactNode }[] = [
-    ...(showTag ? [{ key: 'tag', node: <span data-testid={`subagent-note-tag-${run.id}`}>{t('sa.tag')}</span> }] : []),
     {
       key: 'mode',
       node: (
@@ -97,12 +100,23 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
       key: 'model',
       node: (
         <span className="sg-model" data-testid={`subagent-note-model-${run.id}`} title={run.model ?? ''}>
-          {run.model ? shortModel(run.model) : t('sa.modelDefault')}
+          {run.model ? shortModel(run.model) : '—'}
         </span>
       )
+    },
+    {
+      key: 'thinking',
+      node: <span data-testid={`subagent-note-thinking-${run.id}`}>{t('sa.thinking', { level: run.thinkingLevel ?? '—' })}</span>
+    },
+    {
+      key: 'context',
+      node: <span data-testid={`subagent-note-context-${run.id}`} title={t('sa.contextHint')}>{t('sa.context', { usage: contextText })}</span>
+    },
+    {
+      key: 'elapsed',
+      node: <span className="sg-time" data-testid={`subagent-note-time-${run.id}`}>{elapsed}</span>
     }
   ]
-  meta.push({ key: 'elapsed', node: <span className="sg-time">{elapsed}</span> })
   const openRun = () => window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: `subagent:${run.id}` }))
 
   return (
@@ -166,7 +180,7 @@ function SubagentCard({ run, outcome, now, showTag }: { run: SubagentRun; outcom
           )}
         </div>
       ) : null}
-      {expanded ? <><div className="sg-line">{run.task}</div><div className="sg-meta">{run.model}{run.thinkingLevel ? <span data-testid={`subagent-note-thinking-${run.id}`}> · {t('sa.thinking', { level: run.thinkingLevel })}</span> : null} · {t('sa.toolUses', { count: calls })}{run.usage?.output ? ` · ${t('sa.outputTokens', { count: compactTokens(run.usage.output) })}` : ''}{changed ? ` · ${t('sa.diffStats', { files: changed.files, additions: changed.additions, deletions: changed.deletions })}` : ''}</div><SubagentDetail run={run} /></> : null}
+      {expanded ? <><div className="sg-line">{run.task}</div><div className="sg-meta">{run.model} · {t('sa.toolUses', { count: calls })}{run.usage?.output ? ` · ${t('sa.outputTokens', { count: compactTokens(run.usage.output) })}` : ''}{changed ? ` · ${t('sa.diffStats', { files: changed.files, additions: changed.additions, deletions: changed.deletions })}` : ''}</div><SubagentDetail run={run} /></> : null}
     </div>
   )
 }

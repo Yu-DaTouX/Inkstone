@@ -567,6 +567,11 @@ const api: YanBridge = {
   /* ---- 诊断 ---- */
   probePi: () => invoke<PiProbe>('yan:probePi'),
   openPath: (p) => invoke<{ ok: boolean; error?: string }>('yan:openPath', p),
+  interactions: {
+    get: (session) => invoke<import('../shared/interaction-state').InteractionValues>('yan:interactions:get', session),
+    set: (session, key, value) => invoke<import('../shared/interaction-state').InteractionValues>('yan:interactions:set', session, key, value)
+  },
+  backup: (action) => invoke<import('../shared/data-backup').BackupResult>('yan:backup', action),
   storage: {
     info: () => invoke<StorageInfoView>('yan:storage:info'),
     pick: () => invoke<string | null>('yan:storage:pick'),

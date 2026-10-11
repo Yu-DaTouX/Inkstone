@@ -32,7 +32,7 @@
 
 - **Get work done by chatting**: describe the task like you would in a chat, paste images, or point at files with `@`. Every step the AI takes can be opened and checked.
 - **One window is enough**: conversation, files, web pages and terminal sit side by side, arranged however you like.
-- **Undo mistakes**: before each message, your project is snapshotted automatically. Not happy? Roll back to that moment in one click.
+- **Undo mistakes**: before sending, Inkstone attempts a local snapshot for eligible projects. Preview changes and confirm before restoring; see the [checkpoint limits](docs/GETTING_STARTED_EN.md#checkpoints-and-rewind-code).
 - **Asks before risky moves**: broad deletes, discarding changes and the like wait for your OK first.
 - **Your choice of model**: sign in or paste an API key inside the app, and switch any time.
 - **Plugins when you need them**: download Inkstone adapters or browse and manage pi ecosystem packages in the [plugin market](docs/PLUGIN_MARKET.md) (Chinese).

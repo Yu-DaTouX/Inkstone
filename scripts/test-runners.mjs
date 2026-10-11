@@ -525,6 +525,125 @@ export function runRunnerTests(ok, RunnerRegistry) {
         ok(first.id === reg.activeRunner()?.id, '实例身份没有被换掉')
         ok(agents[0].capabilityGeneration === first.generation, '跨项目启动失败后旧实例 capability generation 回滚')
       }
+      /* ---- 14b. 跨 cwd 替换事务：准备失败保留全部旧状态，成功才提交并停旧进程 ---- */
+      for (const mode of [
+        'start-fails', 'start-throws', 'switch-fails', 'switch-throws',
+        'new-fails', 'new-throws', 'prepare-fails', 'prepare-throws',
+        'history-success', 'new-success'
+      ]) {
+        for (const activate of [true, false]) {
+          const { reg, agents } = make()
+          const original = await reg.select({
+            cwd: 'C:/transaction-old', projectId: 'old-project', sessionFile: 'C:/transaction-old.jsonl'
+          })
+          const previous = agents[0]
+          previous.state = { ...previous.state, cwd: 'C:/transaction-old', isAgentRunning: true }
+          const foreground = await reg.select({ cwd: 'C:/foreground', sessionFile: 'C:/foreground.jsonl' })
+          previous.state = { ...previous.state, isAgentRunning: false }
+          agents[1].state = { ...agents[1].state, isAgentRunning: true }
+          if (activate) await reg.select({ cwd: 'C:/transaction-old', sessionFile: 'C:/transaction-old.jsonl' })
+          const previousActive = reg.activeRunnerId
+          const before = JSON.stringify(reg.statuses())
+          const oldState = JSON.stringify(previous.state)
+          const oldRuntime = JSON.stringify(reg.runtimeOf(original.id))
+          const label = `${mode}, activate=${activate}`
+          const history = mode.startsWith('start-') || mode.startsWith('switch-') || mode === 'history-success'
+          const success = mode.endsWith('-success')
+          let changes = 0
+          let replacement
+          const checkPending = () => {
+            ok(reg.agentOf(original.id) === previous && previous.calls.stop === 0,
+              `${label}：准备期间旧进程仍登记且存活`)
+            ok(JSON.stringify(reg.statuses()) === before && previous.capabilityGeneration === original.generation,
+              `${label}：准备期间 cwd/session/generation/projectId/active 快照不变`)
+          }
+          const step = (name) => async (...args) => {
+            if (name === 'start') replacement.calls.start++
+            if (name === 'switch') replacement.calls.switchSession.push(args[0])
+            if (name === 'new') replacement.calls.newSession++
+            checkPending()
+            await Promise.resolve()
+            checkPending()
+            // 模拟 RPC 已产生局部副作用后才失败；旧 agent 不能因此被改变。
+            if (name === 'switch' || name === 'new') {
+              replacement.state = { ...replacement.state, sessionFile: args[0], sessionId: 'replacement-session' }
+            }
+            if (mode === `${name}-throws`) throw new Error(mode)
+            if (mode === `${name}-fails`) return { ok: false, error: mode }
+            return { ok: true }
+          }
+          reg.opts.createAgent = (id, cwd, generation) => {
+            replacement = Object.assign(mkAgent(), { id })
+            replacement.state = { ...replacement.state, cwd }
+            replacement.setRunnerGeneration(generation)
+            replacement.start = step('start')
+            replacement.switchSession = step('switch')
+            replacement.newSession = step('new')
+            const stop = replacement.stop.bind(replacement)
+            replacement.stop = async () => {
+              checkPending()
+              await stop()
+              if (mode.endsWith('-throws')) throw new Error('cleanup failed')
+            }
+            return replacement
+          }
+          let preparations = 0
+          reg.opts.prepareNewSession = async (agent) => {
+            preparations++
+            ok(agent === replacement, `${label}：只在替代进程准备新会话`)
+            checkPending()
+            if (mode === 'prepare-throws') throw new Error(mode)
+            return mode === 'prepare-fails' ? { ok: false, error: mode } : { ok: true }
+          }
+          const stopPrevious = previous.stop.bind(previous)
+          previous.stop = async () => {
+            ok(reg.agentOf(original.id) === replacement && replacement.calls.stop === 0,
+              `${label}：提交新 agent 后才停止旧进程`)
+            ok(reg.runtimeOf(original.id)?.generation === replacement.capabilityGeneration,
+              `${label}：停止旧进程时 generation 已一致`)
+            await stopPrevious()
+          }
+          reg.opts.onChanged = () => { changes++ }
+          const selected = await reg.select({
+            cwd: 'C:/transaction-new', projectId: 'new-project', activate,
+            ...(history ? { sessionFile: 'C:/transaction-new.jsonl' } : {})
+          })
+          if (!success) {
+            ok(!selected.ok && selected.error === mode, `${label}：返回原始错误（清理异常不覆盖它）`, JSON.stringify(selected))
+            ok(reg.agentOf(original.id) === previous && previous.calls.stop === 0 && replacement.calls.stop === 1,
+              `${label}：旧进程保留，仅回收 replacement`)
+            ok(JSON.stringify(previous.state) === oldState && JSON.stringify(reg.runtimeOf(original.id)) === oldRuntime,
+              `${label}：旧会话及 runtime 完整保留`)
+            ok(JSON.stringify(reg.statuses()) === before && previous.capabilityGeneration === original.generation,
+              `${label}：失败后 cwd/generation/projectId/active 全部一致`)
+            ok(changes === 0 && reg.activeRunnerId === previousActive, `${label}：不发布半完成身份、不改变选择`)
+            const hit = await reg.select({ cwd: 'C:/transaction-old', sessionFile: 'C:/transaction-old.jsonl', activate: false })
+            ok(hit.ok && hit.via === 'hit' && hit.generation === original.generation,
+              `${label}：失败后原会话仍可命中，选择队列可继续使用`)
+          } else {
+            const status = reg.statuses().find((item) => item.id === original.id)
+            ok(selected.ok && selected.via === 'reuse' && selected.id === original.id,
+              `${label}：成功保留 runner 身份`)
+            ok(reg.agentOf(original.id) === replacement && previous.calls.stop === 1 && replacement.calls.stop === 0,
+              `${label}：仅旧进程被停，新进程正式登记`)
+            ok(selected.generation > original.generation && selected.generation === replacement.capabilityGeneration &&
+              reg.runtimeOf(original.id)?.generation === selected.generation,
+              `${label}：结果/runtime/capability 的新 generation 一致`)
+            ok(status?.cwd === 'C:/transaction-new' && status.projectId === 'new-project' &&
+              replacement.state.sessionFile === (history ? 'C:/transaction-new.jsonl' : undefined),
+              `${label}：新 cwd/projectId/session 一致`)
+            ok(changes === 1 && reg.activeRunnerId === (activate ? original.id : foreground.id),
+              `${label}：仅提交后通知，并遵守 activate`)
+          }
+          ok(preparations === (!history && mode !== 'new-fails' && mode !== 'new-throws' ? 1 : 0),
+            `${label}：仅成功创建的新会话执行默认准备`)
+          // 清理测试夹具时不再检查事务中间态。
+          previous.stop = stopPrevious
+          replacement.stop = async () => { replacement.calls.stop++ }
+          await reg.stopAll()
+        }
+      }
+
       /* ---- 15. 新实例切换失败：必须回收进程，不能只摘登记（R02） ---- */
       {
         const { reg, agents } = make()
@@ -715,4 +834,26 @@ export function runRunnerTests(ok, RunnerRegistry) {
       }
     })()
   }
+}
+
+// 专项入口：只在内存中编译 runners 及其纯状态依赖，不构建应用、不启动 pi。
+if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href) {
+  const { build } = await import('esbuild')
+  const { fileURLToPath } = await import('node:url')
+  const compiled = await build({
+    entryPoints: [fileURLToPath(new URL('../src/main/runners.ts', import.meta.url))],
+    bundle: true, platform: 'node', format: 'esm', write: false
+  })
+  const { RunnerRegistry } = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString('base64')}`)
+  let passed = 0
+  let failed = 0
+  await runRunnerTests((condition, label, detail) => {
+    if (condition) passed++
+    else {
+      failed++
+      console.error(`FAIL: ${label}`, detail ?? '')
+    }
+  }, RunnerRegistry)
+  console.log(`Runner tests: ${passed} passed, ${failed} failed`)
+  if (failed) process.exitCode = 1
 }

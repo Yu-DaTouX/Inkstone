@@ -39,7 +39,7 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
   const open = (url: string) => void Linking.openURL(url).catch(() => Alert.alert('无法打开链接', '请稍后重试'))
   return (
     <View style={{ flex: 1, backgroundColor: p.bg0 }}>
-      <Header title="设置" left={<IconButton name="back" label="返回工作台" onPress={onBack} />} right={onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : undefined} />
+      <Header title="设置" left={<View style={{ flexDirection: 'row' }}>{onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : null}<IconButton name="back" label="返回工作台" onPress={onBack} /></View>} />
       <ScrollView contentContainerStyle={styles.content}>
         <SectionTitle>电脑</SectionTitle>
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>

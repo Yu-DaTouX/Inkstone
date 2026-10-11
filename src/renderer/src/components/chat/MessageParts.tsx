@@ -194,7 +194,7 @@ function InlineCodeLink({ className, children }: { className?: string; children?
   )
 }
 
-type HastNode = { type: string; value?: string; tagName?: string; properties?: { className?: unknown }; children?: HastNode[] }
+type HastNode = { position?: { start?: { offset?: number } }; type: string; value?: string; tagName?: string; properties?: { className?: unknown }; children?: HastNode[] }
 const hastText = (node: HastNode): string => node.type === 'text' ? node.value ?? '' : (node.children ?? []).map(hastText).join('')
 
 /** 代码块：`yan-chart` / `yan-cards` / `yan-flow` 交给结构化回答组件，其余照常 */
@@ -205,7 +205,7 @@ function MarkdownPre({ node, children }: { node?: HastNode; children?: React.Rea
   const lang = classes.find((c) => c.startsWith('language-'))?.slice('language-'.length)
   const plain = <pre>{children}</pre>
   if (!code || !isVisualBlockLang(lang)) return plain
-  return <VisualFence lang={lang} text={hastText(code)} live={live} fallback={plain} />
+  return <VisualFence blockId={String(node?.position?.start?.offset ?? '')} lang={lang} text={hastText(code)} live={live} fallback={plain} />
 }
 
 /** 相对路径按消息的工作目录补全（revealPath 只认绝对路径） */

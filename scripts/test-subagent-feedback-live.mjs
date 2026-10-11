@@ -12,13 +12,28 @@ const evidence = resolve(`.local-docs/evidence/subagent-feedback-${Date.now()}`)
 const electron = process.env.YAN_LIGHT_EXE || createRequire(import.meta.url)('electron')
 await mkdir(evidence, { recursive: true })
 try {
-  for (const [name, theme, size] of [['dark', 'dark', '1440x900'], ['light', 'light', '1440x900'], ['narrow', 'dark', '940x900']]) {
-    const base = join(temp, name), data = join(base, 'data'), pi = join(base, 'pi'), user = join(base, 'electron')
+  for (const [name, theme, size] of [['dark', 'dark', '1440x900'], ['dark-restart', 'dark', '1440x900'], ['light', 'light', '1440x900'], ['narrow', 'dark', '940x900']]) {
+    // 第二次深色启动复用首个进程的数据，不重新播种历史。
+    const base = join(temp, name === 'dark-restart' ? 'dark' : name), data = join(base, 'data'), pi = join(base, 'pi'), user = join(base, 'electron')
     await Promise.all([data, pi, user].map(path => mkdir(path, { recursive: true })))
-    await writeFile(join(data, 'desktop.json'), JSON.stringify({ cwd: root, theme, locale: 'zh-CN', workspaceMode: 'coding', onboardingDone: true, remoteAccess: { enabled: false } }))
-    await writeFile(join(pi, 'settings.json'), JSON.stringify({ enableMcp: false, packages: [] }))
-    await writeFile(join(pi, 'auth.json'), '{}')
-    const shot = join(evidence, `${name}.png`), receipt = join(base, 'result.txt')
+    if (name !== 'dark-restart') {
+      await writeFile(join(data, 'desktop.json'), JSON.stringify({ cwd: root, theme, locale: 'zh-CN', workspaceMode: 'coding', onboardingDone: true, remoteAccess: { enabled: false } }))
+      await writeFile(join(pi, 'settings.json'), JSON.stringify({ enableMcp: false, packages: [] }))
+      await writeFile(join(pi, 'auth.json'), '{}')
+      const archive = join(data, 'subagents')
+      await mkdir(archive, { recursive: true })
+      await writeFile(join(archive, 'sub-history.json'), JSON.stringify({
+        id: 'sub-history', task: '历史任务：只读检查 example.ts', rootCwd: root, cwd: root,
+        parentSessionId: 'feedback-session', parentMessageId: 'a1', isolation: 'controlled-cwd',
+        model: 'openai-codex/gpt-6-luna', thinkingLevel: 'low', status: 'done', endReason: 'completed',
+        review: 'none', startedAt: 100, endedAt: 200, toolCalls: 1,
+        transcript: [
+          { id: 'saved-1', role: 'assistant', text: '', toolCalls: [{ id: 'saved-call', name: 'read', args: { path: 'example.ts' }, status: 'ok', output: '历史工具结果' }] },
+          { id: 'saved-2', role: 'assistant', text: '重启后保存的最终回复' }
+        ]
+      }))
+    }
+    const shot = join(evidence, `${name}.png`), receipt = join(base, `${name}-result.txt`)
     const env = { ...process.env, YAN_PI_DIR: pi, PI_CODING_AGENT_DIR: pi, YAN_DATA_DIR: data, YAN_USER_DATA: user,
       YAN_SESSIONS_DIR: join(pi, 'sessions'), YAN_REMOTE_ENABLE: '0',
       YAN_PROBE: join(root, 'scripts/probe/subagent-feedback.js'), YAN_PROBE_DELAY: '3000', YAN_PROBE_OUT: receipt,

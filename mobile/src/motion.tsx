@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { AccessibilityInfo, Animated, Easing, View } from 'react-native'
+import { AccessibilityInfo, Animated, Easing, StyleSheet, Text, View } from 'react-native'
 import Svg, { Path } from 'react-native-svg'
-import { usePalette } from './theme'
+import { font, mono, usePalette } from './theme'
 
 /** 与桌面 --mo-fast / --mo-base / --mo-slow、--mo-ease 同值（设计规范 §6） */
 const duration = { fast: 110, base: 170, slow: 240 }
@@ -58,6 +58,26 @@ export function Spinner({ size = 12, mute = false, color, label }: { size?: numb
   }
   return <View accessibilityRole={label ? 'progressbar' : undefined} accessibilityLabel={label} importantForAccessibility={label ? 'yes' : 'no-hide-descendants'} style={{ width: size, height: size }}>{cells}</View>
 }
+
+/*
+ * 字符旋转：⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏，80ms 一格，活动行的运行信号（桌面活动行同一组字符）。
+ * 减少动画时停在静态 ●，仍然可见。
+ */
+const BRAILLE = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+export function GlyphSpinner({ color }: { color?: string }) {
+  const p = usePalette()
+  const reduced = useReducedMotion()
+  const [step, setStep] = useState(0)
+  useEffect(() => {
+    if (reduced !== false) return
+    const id = setInterval(() => setStep((current) => (current + 1) % BRAILLE.length), 80)
+    return () => clearInterval(id)
+  }, [reduced])
+  return <Text accessibilityElementsHidden importantForAccessibility="no" style={[glyphStyle.glyph, { color: color ?? p.accent }]}>{reduced === false ? BRAILLE[step] : '●'}</Text>
+}
+
+const glyphStyle = StyleSheet.create({ glyph: { width: 14, textAlign: 'center', fontFamily: mono, fontSize: font.sm } })
 
 /** Static marker for secondary running items; the active screen owns the only Spinner. */
 export function RunDot({ color, label }: { color?: string; label?: string }) {

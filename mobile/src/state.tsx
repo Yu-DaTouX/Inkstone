@@ -186,8 +186,15 @@ export function RemoteProvider({
 
   useEffect(() => {
     void refresh()
+    let streamTimer: ReturnType<typeof setTimeout> | null = null
     const events = new RemoteEventStream(connection, {
-      onState: (state) => { setStream(state); if (state === 'open') void refreshInfo() },
+      /* 短暂断开不立刻显示「重新连接」：1.5 秒内恢复就不闪状态行，也不让列表跳动 */
+      onState: (state) => {
+        if (streamTimer) { clearTimeout(streamTimer); streamTimer = null }
+        if (state === 'open' || state === 'closed') setStream(state)
+        else streamTimer = setTimeout(() => { streamTimer = null; setStream(state) }, 1500)
+        if (state === 'open') void refreshInfo()
+      },
       onUnauthorized,
       onResync: () => void refresh(),
       onEvent: (event) => {
@@ -211,6 +218,7 @@ export function RemoteProvider({
     })
     events.start()
     return () => {
+      if (streamTimer) clearTimeout(streamTimer)
       events.stop()
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()

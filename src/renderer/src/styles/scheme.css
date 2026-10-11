@@ -936,9 +936,10 @@ html[data-theme='light'] .outline-preview {
 /* 小部件：标题行与图表标题同级，生命周期写在右侧 */
 .vb-widget-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
-  height: var(--lh-row);
+  min-height: var(--lh-row);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }

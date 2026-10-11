@@ -6,7 +6,7 @@
  */
 
 export async function runRunProgressTests(ok, mod) {
-  const { deriveRunProgress, runPhaseIsActive } = mod
+  const { deriveRunProgress, runPhaseIsActive, resolveRunClock } = mod
   const base = {
     running: true,
     streaming: false,
@@ -18,6 +18,16 @@ export async function runRunProgressTests(ok, mod) {
     now: 1_010_000
   }
   const phaseOf = (over) => deriveRunProgress({ ...base, ...over }).phase
+
+  const first = resolveRunClock(null, { identity: 'session-a/run-a/turn-1', running: true, now: 1000 })
+  ok(first?.startedAt === 1000, '首次运行缺少报告时从进入运行起算')
+  ok(resolveRunClock(first, { identity: first.identity, running: true, now: 9000 })?.startedAt === 1000, '同一运行的秒级刷新不重置起点')
+  const second = resolveRunClock(first, { identity: 'session-b/run-b/turn-1', running: true, now: 9000 })
+  ok(second?.startedAt === 9000, '两个都在运行的会话之间切换，不继承旧计时')
+  ok(resolveRunClock(second, { identity: first.identity, running: true, startedAt: 1000, now: 9500 })?.startedAt === 1000, '切回有原生消息时间的会话恢复该回合起点')
+  ok(resolveRunClock(first, { identity: 'session-a/run-a/turn-2', running: true, now: 10_000 })?.startedAt === 10_000, '同会话新回合也换起点')
+  ok(resolveRunClock(first, { identity: first.identity, running: false, now: 10_000 }) === null, '结束清空运行计时')
+  ok(resolveRunClock(first, { identity: 'new', running: true, startedAt: NaN, now: 12_000 })?.startedAt === 12_000, '非法报告起点不污染新运行计时')
 
   /* ── 阶段由真实事件推进 ── */
   ok(phaseOf({ running: false, startedAt: null }) === 'settled', '没有在跑就是 settled')

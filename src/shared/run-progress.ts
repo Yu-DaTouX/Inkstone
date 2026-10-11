@@ -58,6 +58,23 @@ export interface RunProgress {
   elapsedMs: number
 }
 
+export interface RunClock {
+  identity: string
+  startedAt: number
+}
+
+/** 回合与会话身份改变时绝不沿用旧计时；没有服务端起点时从进入运行起算。 */
+export function resolveRunClock(previous: RunClock | null, input: {
+  identity: string; running: boolean; startedAt?: number; now: number
+}): RunClock | null {
+  if (!input.running) return null
+  const reported = input.startedAt
+  const startedAt = typeof reported === 'number' && Number.isFinite(reported) && reported > 0
+    ? reported
+    : previous?.identity === input.identity ? previous.startedAt : input.now
+  return { identity: input.identity, startedAt }
+}
+
 const DEFAULT_LONG_MS = 30_000
 
 /** 还在推进中的阶段（这些才会被标记成“长耗时”） */

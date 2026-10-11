@@ -35,6 +35,7 @@ export type RemoteCommand =
   | { action: 'new' }
   | { action: 'send'; sessionId: string; text: string; images?: RemoteImageInput[] }
   | { action: 'model'; sessionId: string; provider: string; modelId: string }
+  | { action: 'thinking'; sessionId: string; level: string }
   | { action: 'abort'; runId: string }
   | { action: 'rename'; sessionId: string; name: string }
 
@@ -547,10 +548,10 @@ export class RemoteServer {
         ...(this.options.handlers.humanApproval && caller.device && (caller.device.kind ?? 'phone') === 'phone' ? ['human-approval'] : []),
         ...(this.options.handlers.artifact ? ['artifacts'] : []),
         ...(this.options.devices ? ['device-name'] : []),
-        ...(this.options.handlers.models ? ['models', 'send-images'] : []),
+        ...(this.options.handlers.models ? ['models', 'thinking', 'send-images'] : []),
         ...(this.options.handlers.hubSnapshot && this.options.handlers.hubCommand ? ['agent-hub'] : [])
       ]
-      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'models', 'send-images', 'agent-hub'])]
+      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'models', 'thinking', 'send-images', 'agent-hub'])]
       const allowed = isPeer ? [] : caller.device?.kind === 'agent' ? ['agent-hub'] : configured
       const negotiation = negotiateCapabilities(implemented, configured, allowed)
       writeJson(res, 200, {
@@ -729,6 +730,13 @@ export class RemoteServer {
         if (!validText(body.provider, 200) || !validText(body.modelId, 300)) return writeError(res, 400, '模型标识无效')
         const { provider, modelId } = body
         await this.idempotent(req, res, caller, true, () => this.options.handlers.command({ action: 'model', sessionId, provider, modelId }))
+        return
+      }
+      if (operation === 'thinking') {
+        if (!this.options.handlers.models) return writeError(res, 404, '请更新电脑端')
+        if (!validText(body.level, 40)) return writeError(res, 400, '思考档位无效')
+        const level = body.level
+        await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'thinking', sessionId, level }))
         return
       }
       if (operation === 'rename') {

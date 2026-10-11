@@ -6,7 +6,7 @@
  */
 
 export async function runQuotaRefreshTests(ok, mod) {
-  const { decideQuotaRefresh, hasDueQuotaWindow } = mod
+  const { claimDueQuotaWindows, decideQuotaRefresh, hasDueQuotaWindow } = mod
   const base = {
     now: 1_000_000,
     lastCheckedAt: null,
@@ -81,6 +81,19 @@ export async function runQuotaRefreshTests(ok, mod) {
   )
   ok(hasDueQuotaWindow([win({})], base.now) === false, '没有 resetAt 的窗口不触发')
   ok(hasDueQuotaWindow([], base.now) === false, '没有窗口时不触发')
+
+  const attempted = new Set()
+  const expired = [win({ resetAt: base.now - 1 })]
+  ok(claimDueQuotaWindows(expired, base.now, attempted), '过期窗口首次允许补查')
+  ok(!claimDueQuotaWindows(expired.map(w => ({ ...w })), base.now, attempted), '新响应对象保留相同过期窗口，不自驱动重复查询')
+  for (let n = 0; n < 20; n++) {
+    ok(!claimDueQuotaWindows(expired, base.now + n, attempted), '重复成功响应不形成连续请求循环')
+  }
+  ok(claimDueQuotaWindows([win({ resetAt: base.now - 2 })], base.now, attempted), '同窗口新的重置时间仍可补查')
+  ok(attempted.size === 1, '已消失的窗口标识从闸门移除，集合保持有界')
+  attempted.clear()
+  ok(claimDueQuotaWindows(expired, base.now, attempted), '切 provider 清空闸门，新账号不会继承旧抑制')
+  ok(!claimDueQuotaWindows([win({ resetAt: base.now + 100 })], base.now, attempted), '未来窗口不提前占用一次性补查机会')
 }
 
 export default runQuotaRefreshTests

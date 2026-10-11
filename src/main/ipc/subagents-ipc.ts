@@ -34,7 +34,7 @@ export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps):
     await (await service.get()).stopAll()
   })
   handle('yan:subagents:clear', async () => {
-    ;(await service.get()).clearFinished()
+    await (await service.get()).clearFinished()
   })
   handle('yan:subagents:merge', async (id: string) => (await service.get()).merge(String(id ?? '')))
   handle('yan:subagents:discard', async (id: string) => (await service.get()).discard(String(id ?? '')))

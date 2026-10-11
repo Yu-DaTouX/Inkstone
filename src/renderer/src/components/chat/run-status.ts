@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
-import { deriveRunProgress, type RunProgress } from '../../../../shared/run-progress'
+import { deriveRunProgress, resolveRunClock, type RunClock, type RunProgress } from '../../../../shared/run-progress'
 import { compactionRunningText } from '../../state/compaction-view'
 
 /**
@@ -15,24 +15,12 @@ import { compactionRunningText } from '../../state/compaction-view'
 export function useRunProgress(): RunProgress | null {
   const session = useStore((s) => s.session)
   const messages = useStore((s) => s.messages)
+  const runnerId = useStore((s) => s.activeRunnerId)
   const compacting = !!session?.isCompacting
   /* 压缩可以独立发生（/compact、回合之间的自动压缩），此时没有 agent_start，也算运行 */
   const running = !!session?.isAgentRunning || !!session?.isStreaming || compacting
-  const startedRef = useRef<number | null>(null)
+  const startedRef = useRef<RunClock | null>(null)
   const [now, setNow] = useState(() => Date.now())
-
-  useEffect(() => {
-    if (!running) {
-      startedRef.current = null
-      return undefined
-    }
-    if (startedRef.current === null) startedRef.current = session?.compaction?.startedAt ?? Date.now()
-    /* 秒级心跳只为了“耗时”和长耗时阈值，不拿它推进阶段 */
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(id)
-  }, [running, session?.compaction?.startedAt])
-
-  if (!running) return null
 
   /* 只看本回合：最后一条用户消息之后的部分 */
   let lastUser = -1
@@ -43,6 +31,23 @@ export function useRunProgress(): RunProgress | null {
     }
   }
   const turn = messages.slice(lastUser + 1)
+  const user = messages[lastUser]
+  const standaloneCompaction = compacting && !session?.isAgentRunning
+  const identity = JSON.stringify([session?.sessionId, runnerId, user?.id, user?.timestamp,
+    standaloneCompaction ? session?.compaction?.startedAt ?? 'compact' : 'turn'])
+  const reportedStartedAt = standaloneCompaction ? session?.compaction?.startedAt : user?.timestamp ?? turn[0]?.timestamp
+  const clock = resolveRunClock(startedRef.current, { identity, running, startedAt: reportedStartedAt, now })
+
+  useEffect(() => {
+    startedRef.current = resolveRunClock(startedRef.current, { identity, running, startedAt: reportedStartedAt, now: Date.now() })
+    if (!running) return undefined
+    setNow(Date.now())
+    /* 秒级心跳只为了耗时，不推进阶段；切会话时清理旧实例的心跳。 */
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [identity, running, reportedStartedAt])
+
+  if (!running) return null
 
   let tool: { name: string; startedAt?: number } | null = null
   let thinking = false
@@ -67,7 +72,7 @@ export function useRunProgress(): RunProgress | null {
     thinking,
     requested,
     terminal: null,
-    startedAt: startedRef.current ?? turn[0]?.timestamp ?? null,
+    startedAt: clock?.startedAt ?? null,
     now
   })
 }
@@ -83,8 +88,8 @@ function runLabel(call: { name: string; args?: unknown }): string {
 
 
 /**
- * 阶段文案：只说真的发生了的事。长耗时（≥30s）只写「仍在运行」——
- * 细节靠 title 与阶段文案，不把秒数堆在主行里。
+ * 阶段文案只说真的发生了的事。超过 30 秒后仍保留当前阶段和工具名，
+ * 避免长任务的活动行一直只显示「仍在运行」。耗时由活动行单独显示。
  */
 export function runPhaseText(t: TFunc, progress: RunProgress | null, compaction: Parameters<typeof compactionRunningText>[1]): string {
   if (!progress) return ''
@@ -92,7 +97,6 @@ export function runPhaseText(t: TFunc, progress: RunProgress | null, compaction:
     case 'compacting': return compactionRunningText(t, compaction)
     default: break
   }
-  if (progress.long) return t('run.long')
   switch (progress.phase) {
     case 'tool': return t('run.tool', { name: progress.detail ?? '' })
     case 'thinking': return t('run.thinking')

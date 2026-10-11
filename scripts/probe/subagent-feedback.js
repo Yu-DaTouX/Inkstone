@@ -8,12 +8,14 @@
   const q = selector => document.querySelector(selector)
   try {
     ok(await wait(() => store?.getState().settings), '桌面已就绪')
+    ok(await wait(() => store.getState().subagents.some(run => run.id === 'sub-history')), '不打开子代理窗口，启动时已恢复历史列表')
     const sessionId = 'feedback-session'
     const notice = '<subagent-notification id="sub-feedback" status="error">\n后台专用结果不应展示\n</subagent-notification>'
     const task = '实现独立 Hermes OneBot QQ 平台插件，仅修改指定目录。' + '这是完整任务边界与交付要求。'.repeat(45)
     const run = {
       id: 'sub-feedback', task, cwd: '', parentSessionId: sessionId, parentMessageId: 'a1',
-      isolation: 'worktree', model: 'commandcode/deepseek/deepseek-v4.1-flash',
+      isolation: 'controlled-cwd', model: 'openai-codex/gpt-6-luna', thinkingLevel: 'low',
+      contextUsage: { tokens: 84_000, contextWindow: 272_000, percent: 84_000 / 272_000 * 100 },
       status: 'error', endReason: 'timeout', startedAt: Date.now() - 900000, endedAt: Date.now(),
       error: '运行超时（超过 15 分钟）', review: 'none', toolCalls: 6,
       result: { summary: '这一段是只在详情查看的完整产出。', summaryFrom: 'last-message' },
@@ -31,6 +33,15 @@
     ok(await wait(() => q('[data-testid="subagent-note-sub-feedback"]')), '任务卡实际渲染')
     let card = q('[data-testid="subagent-note-sub-feedback"]')
     ok(!q('[data-testid="subagent-detail-sub-feedback"]'), '默认不展开工具与全文')
+    const metadata = [...card.querySelectorAll('.sg-meta > .sg-meta-item')].map(item => item.textContent)
+    ok(metadata.length === 5 && metadata[0] === '只读' && metadata[1] === 'gpt-6-luna' && metadata[2] === '思考 low' && metadata[3].includes('上下文 84k / 272k (31%)') && metadata[4].includes('15'), '第二行按范围、模型、思考、上下文、时间顺序显示')
+    ok(!q('[data-testid="subagent-note-tag-sub-feedback"]'), '第二行不再重复子代理标签')
+    store.setState({ subagents: [{ ...run, model: undefined, thinkingLevel: undefined, contextUsage: undefined }] })
+    ok(await wait(() => q('[data-testid="subagent-note-context-sub-feedback"]')?.textContent === '上下文 —'), '历史记录缺少原生上下文时显示未知')
+    ok(q('[data-testid="subagent-note-thinking-sub-feedback"]')?.textContent === '思考 —', '缺失思考档位时不猜测')
+    ok(q('[data-testid="subagent-note-model-sub-feedback"]')?.textContent === '—', '缺失模型显示未知，不冒充默认模型')
+    store.setState({ subagents: [run] })
+    await sleep(100)
     ok(!card.textContent.includes('完整产出'), '默认不展示产出正文')
     ok(card.getBoundingClientRect().height < 125, `卡片保持紧凑（${Math.round(card.getBoundingClientRect().height)}px）`)
     ok(!document.body.textContent.includes('后台专用结果不应展示'), '宿主通知没有用户气泡或后台文本泄露')
@@ -44,13 +55,30 @@
     details.click()
     ok(await wait(() => !q('[data-testid="subagent-detail-sub-feedback"]')), '详情可再次收起')
     store.setState({ subagents: [{ ...run, status: 'running', endedAt: undefined, endReason: undefined, error: undefined,
-      progressWarning: '超过 5 分钟未收到进展，可能仍在执行工具或等待模型；任务继续运行', latestActivity: '运行 bash' }] })
-    ok(await wait(() => q('[data-testid="subagent-note-activity-sub-feedback"]')?.textContent.includes('任务继续运行')), '无进展提醒可见且仍可停止')
+      wrapUp: { reason: 'timeout', since: Date.now() }, progressWarning: '停滞超时（超过 10 分钟未收到模型输出或工具事件）', latestActivity: '停滞超时，正在收尾…' }] })
+    ok(await wait(() => q('[data-testid="subagent-note-activity-sub-feedback"]')?.textContent.includes('停滞超时')), '停滞超时原因可见且仍可停止')
     ok(!!q('[data-testid="subagent-note-stop-sub-feedback"]'), '运行中的任务保留停止入口')
     store.setState({ subagents: [{ ...run, status: 'running', endedAt: undefined, endReason: undefined, error: undefined, latestActivity: '工具已返回，继续处理' }] })
-    ok(await wait(() => q('[data-testid="subagent-note-activity-sub-feedback"]')?.textContent.includes('工具已返回')), '进展恢复后提醒消失')
-    // 留下紧凑错误状态截图；窗口由测试驱动统一保存。
-    store.setState({ subagents: [run] })
+    ok(await wait(() => q('[data-testid="subagent-note-activity-sub-feedback"]')?.textContent.includes('工具已返回')), '普通运行显示真实进展')
+    // 通过真实 IPC 读冷启动磁盘历史，而非只往渲染端塞一条假记录。
+    await store.getState().loadSubagents()
+    const restored = store.getState().subagents.find(item => item.id === 'sub-history')
+    ok(restored?.transcript[0]?.toolCalls?.[0]?.output === '历史工具结果', '冷启动真实 IPC 恢复磁盘调用结果')
+    ok(restored?.parentSessionId === sessionId && restored.status === 'done', '恢复历史仍归原会话，不恢复执行')
+    store.setState({ subagents: [run, restored].filter(Boolean) })
+    window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: 'subagent:sub-history' }))
+    ok(await wait(() => q('.agent-message-stream')?.textContent.includes('重启后保存的最终回复')), '子代理过程窗口显示恢复的最终回复')
+    const stream = q('.agent-message-stream')
+    const caption = stream?.parentElement?.querySelector('.agent-message-caption')
+    ok(!!caption && !/任务原文|任务全文/.test(caption.textContent), '过程窗口没有任务原文或全文按钮')
+    ok(!stream?.textContent.includes('历史任务：只读检查'), '过程窗口不重复长任务说明')
+    stream?.querySelector('[data-testid="turn-process-toggle"]')?.click()
+    await wait(() => stream?.querySelector('[data-testid="tool-group-toggle"]'))
+    stream?.querySelector('[data-testid="tool-group-toggle"]')?.click()
+    ok(await wait(() => stream?.querySelector('[data-testid="tool-row"]')?.textContent.includes('example.ts')), '恢复的历史调用可以展开查看目标')
+    stream?.querySelector('[data-testid="tool-row"]')?.click()
+    ok(await wait(() => stream?.textContent.includes('历史工具结果')), '恢复的历史工具结果可再次展开查看')
+    // 保留历史过程窗口截图；主会话另核对紧凑卡片的已有截图。
     await sleep(2400)
   } catch (error) { out.push(`✗ ${error.stack || error}`) }
   return out.join('\n')

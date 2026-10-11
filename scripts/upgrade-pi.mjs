@@ -137,7 +137,12 @@ if (res.status !== 0) {
 /* 自定义服务接入时靠这张表补「能否思考」，新版 pi 的目录可能多了模型 */
 log('\n重新生成模型能力表 …')
 const catalog = spawnSync(process.execPath, [join(root, 'scripts', 'gen-pi-model-catalog.mjs')], { stdio: 'inherit', env: process.env })
-if (catalog.status !== 0) bad('模型能力表生成失败：手动跑 node scripts/gen-pi-model-catalog.mjs，并把结果一起提交。')
+if (catalog.error || catalog.status !== 0) {
+  bad('内置运行时已更新，但模型能力表未完成，升级未全部完成。')
+  if (catalog.error) bad(`模型能力表生成进程启动失败：${catalog.error.message}`)
+  bad('请补生成：node scripts/gen-pi-model-catalog.mjs，并把结果一起提交。')
+  process.exit(catalog.status || 1)
+}
 
 log('\n升级完成。')
 log('内置运行时版本在进程内缓存 —— 请**重启应用**后生效。')

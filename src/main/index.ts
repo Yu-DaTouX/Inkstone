@@ -18,6 +18,7 @@ import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { getSettings, patchSettings } from './settings'
+import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
 import { moveSessionLayout, rememberSession } from './session-layout'
 import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awake'
@@ -2635,6 +2636,8 @@ function registerIpc(): void {
     const err = await shell.openPath(target)
     return err ? { ok: false, error: err } : { ok: true }
   })
+
+  registerWorkspaceDataIpc(ipc, () => win)
 
   /* ---- 数据位置（迁移到非系统盘，见 storage-move.ts） ---- */
   handle('yan:storage:info', async () => {
