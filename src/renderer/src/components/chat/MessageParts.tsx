@@ -335,7 +335,7 @@ export function ToolDetail({ call }: { call: UIToolCall }) {
     }
   }
 
-  /* ---- write：显示完整内容（写入是整文件，就是新增） ---- */
+  /* 没有前后快照时只能显示写入内容，不能推断整文件都是新增。 */
   if (call.name === 'write' && typeof a.content === 'string') {
     return (
       <>
@@ -344,7 +344,7 @@ export function ToolDetail({ call }: { call: UIToolCall }) {
             {a.path}
           </div>
         ) : null}
-        <pre className="diff-pre add write-body">{a.content}</pre>
+        <pre className="diff-pre write-body">{a.content}</pre>
         {call.output ? <div className="tool-result">{call.output}</div> : null}
       </>
     )
@@ -359,9 +359,13 @@ export function ToolDetail({ call }: { call: UIToolCall }) {
 
   return (
     <>
-      {argsText ? <pre className="tool-pre args">{argsText}</pre> : null}
+      {onlyScript && argsText ? <pre className="tool-pre code">{argsText}</pre> : null}
       {call.output ? <pre className="tool-pre out">{call.output}</pre> : null}
       {!call.output && call.status === 'ok' ? <div className="tool-empty">{t('tool.noOutput')}</div> : null}
+      {!onlyScript && argsText ? <details className="ui-disclosure tool-args">
+        <summary>{t('tool.rawArgs')}</summary>
+        <pre className="tool-pre args">{argsText}</pre>
+      </details> : null}
     </>
   )
 }

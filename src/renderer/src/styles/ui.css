@@ -1068,6 +1068,10 @@ select.ui-input {
 .agent-tree b { color: var(--fg); font-weight: var(--fw-medium); }
 .agent-chat-composer.drag, .agent-chat-composer:focus-within { background: var(--bg-1); }
 @media (prefers-reduced-motion: reduce) { .agent-chat-working .ui-status-dot { animation: none; } }
+/* 差异保留 + / - 文本，颜色只作辅助。 */
+.ui-diff-line[data-kind='add'] { color: var(--ok); background: var(--ok-soft); }
+.ui-diff-line[data-kind='del'] { color: var(--err); background: var(--err-soft); }
+
 /* HTML 成果的独立网页表面；尺寸由消息卡片版面决定。 */
 .ui-html-preview { display: block; border: 0; background: var(--bg-1); }
 

@@ -1232,11 +1232,9 @@
   min-height: 0;
   overflow: hidden;
 }
-/* 单条详情卡在窗口高的四分之一（与推理全文同一口径），长输出自己滚 */
+/* 开合容器不再限高；结果区或终端各自持有唯一的内容滚动。 */
 .trow-expand.open > .trow-expand-inner {
-  max-height: 25vh;
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
 }
 .trow-body {
   box-sizing: border-box;
@@ -1252,6 +1250,75 @@
 .trow-body > :not(.term) {
   max-height: none;
   overflow: visible;
+}
+
+.tool-view, .tool-view-content {
+  min-width: 0;
+  min-height: 0;
+}
+.tool-view-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+}
+.tool-view-content {
+  max-height: min(52vh, 42rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.tool-view[data-kind='command'] > .tool-view-content {
+  max-height: none;
+  overflow: visible;
+}
+.tool-view-content :is(.tool-pre, .diff-pre, .fd-patch, .fd-body, .trd) {
+  max-height: none;
+  overflow: visible;
+}
+.tool-view-target {
+  padding: var(--sp-2) var(--sp-3);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.tool-view .tool-path {
+  display: none;
+}
+.tool-args {
+  margin: var(--sp-2) var(--sp-3);
+}
+.tool-detail-dialog {
+  width: min(72rem, calc(100vw - 2 * var(--sp-3)));
+  height: min(86vh, 60rem);
+  max-height: calc(100vh - 2 * var(--sp-3));
+}
+.tool-detail-dialog > .tool-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+.tool-detail-dialog .tool-view > .tool-view-content {
+  flex: 1;
+  max-height: none;
+  overflow: auto;
+}
+.tool-detail-dialog .term {
+  height: auto;
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+}
+.tool-detail-dialog .term-body {
+  flex: none;
+  overflow: visible;
+}
+.tool-detail-dialog :is(.term-grip, .term-bar) {
+  display: none;
+}
+.tool-view .fd-patch {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1582,8 +1649,8 @@
 .term-prompt-text {
   min-width: 0;
   color: #eaeaea;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  overflow-wrap: normal;
 }
 
 .term-out {
@@ -1885,7 +1952,7 @@ img.chat-image-open {
   user-select: text;
 }
 
-/* write 的正文：按整个文件算新增，用 add 色但不加边框（否则像 diff 的一半） */
+/* 无前后快照时的写入原文，不使用新增色。 */
 .diff-pre.write-body {
   max-height: 420px;
 }
@@ -2574,11 +2641,10 @@ img.chat-image-open {
   background: transparent;
 }
 
-/* 展开「前面 N 步」后整张表自己滚动，不把消息流撑得很长 */
+/* 长历史通过分批展开控制数量，不再叠加列表滚动框。 */
 .tgroup.is-expanded {
-  max-height: 40vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  max-height: none;
+  overflow: visible;
 }
 
 /* 右栏任务分区里的子代理：窄栏下一行放不下就换行 */

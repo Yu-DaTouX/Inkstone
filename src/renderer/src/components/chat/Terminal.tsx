@@ -70,12 +70,15 @@ function maxHeight(): number {
 export function TerminalWindow({
   call,
   target,
-  secs
+  secs,
+  fitContent = false
 }: {
   call: UIToolCall
   /** 命令原文 / 路径，标题与 prompt 行用 */
   target: string
   secs: number | null
+  /** 宽幅阅读由外层负责滚动，不使用嵌入终端的持久尺寸。 */
+  fitContent?: boolean
 }) {
   const t = useT()
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -216,7 +219,7 @@ export function TerminalWindow({
     <div
       className={`term ${running ? 'running' : ''} ${maxed ? 'max' : ''} ${drag ? 'dragging' : ''}`}
       ref={rootRef}
-      style={style}
+      style={fitContent ? undefined : style}
       data-testid="tool-terminal"
     >
       <div className="term-bar">
@@ -252,8 +255,8 @@ export function TerminalWindow({
 
       <div className="term-body">
         {/* prompt 行：让「这是一次命令执行」一眼成立（终端里 `$ ` 的约定） */}
-        <div className="term-prompt" aria-hidden>
-          <span className="term-prompt-sign">{call.name === 'bash' ? '$' : '>'}</span>
+        <div className="term-prompt">
+          <span className="term-prompt-sign" aria-hidden>{call.name === 'bash' ? '$' : '>'}</span>
           <span className="term-prompt-text">{target || call.name}</span>
         </div>
         <div className="term-out">

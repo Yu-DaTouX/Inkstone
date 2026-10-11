@@ -10,7 +10,8 @@ const temp = await mkdtemp(join(tmpdir(), 'inkstone-light-live-'))
 const evidence = resolve(process.env.YAN_LIGHT_EVIDENCE || `.local-docs/evidence/light-client-${Date.now()}`)
 await mkdir(evidence, { recursive: true })
 try {
-  for (const [name, theme, size] of [['light', 'light', '1440x1000'], ['dark', 'dark', '1440x1000'], ['narrow', 'dark', '940x900']]) {
+  const wideSize = process.env.YAN_LIGHT_WIDE_SIZE || '1440x1000'
+  for (const [name, theme, size] of [['light', 'light', wideSize], ['dark', 'dark', wideSize], ['narrow', 'dark', '940x900']]) {
     const base = join(temp, name), data = join(base, 'data'), pi = join(base, 'pi'), user = join(base, 'user')
     await Promise.all([data, pi, user].map(path => mkdir(path, { recursive: true })))
     await writeFile(join(data, 'desktop.json'), JSON.stringify({ cwd: base, theme, lang: 'zh-CN', onboardingDone: true, workspaceMode: 'daily', showSpaces: true, defaultWorkMode: 'clarify', appUpdate: { enabled: false }, remoteAccess: { enabled: false } }))

@@ -6,7 +6,7 @@
  */
 import type { IpcRegistrar } from './registrar'
 import { join } from 'node:path'
-import { statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { getSettings } from '../settings'
 import { completePath } from '../credentials'
 import { listDir, searchFiles } from '../files'
@@ -142,6 +142,12 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     if (deps.isSessionBusy()) throw new Error('会话正在运行，请结束后再清理附件')
     const before = Date.now()
     const sessionsDir = join(PI_AGENT_DIR, 'sessions')
+    /*
+     * 没有会话目录就不动手：全新安装、自定义数据目录、目录被移走都长这样。
+     * 按「未被任何会话引用就删」的字面执行，会把用户的历史附件整个清掉，
+     * 而附件是内容寻址、没有备份，删了不可逆 —— 宁可这一次什么也不清。
+     */
+    if (!existsSync(sessionsDir)) return { removed: 0, bytes: 0, kept: 0 }
     const fingerprint = (): string => JSON.stringify(listSessionFiles(sessionsDir).sort().map((path) => {
       const st = statSync(path)
       return [path, st.size, st.mtimeMs, st.ctimeMs]
