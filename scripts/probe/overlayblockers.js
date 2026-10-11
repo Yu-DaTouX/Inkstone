@@ -7,6 +7,15 @@
  *
  * 探针通过 store 的 `browserNativeVisible`（协调器算出的期望值）观察接线，
  * 不再靠各处 setVisible 的副作用。
+ *
+ * ⚠️ 与旧结构的差异（已按当前实现改）：
+ *   · 「活动页是不是浏览器」不再由右栏的窗口标签行决定，而是由**浏览器磁贴
+ *     的可见性**驱动（`RightPanel.tsx` 的 `WorkspacePane onVisibleChange` →
+ *     `setBrowserSurfaceActive`）。这里直接改这个输入，磁贴路径本身由
+ *     `workspace-tiles` / `righttabs` 覆盖。
+ *   · 右栏开关已退役：协调器把 `rightPanelOpen` 恒视为 true（见 store 注释
+ *     「The right-panel toggle is retired; the browser tile's own visibility
+ *     decides.」），所以「收起右栏」不再能让原生网页消失。
  */
 ;(async () => {
   const out = []
@@ -18,11 +27,6 @@
   const q = (s) => document.querySelector(s)
   const store = window.__yanStore
   const st = () => store.getState()
-  const click = (sel) => {
-    const el = q(sel)
-    if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    return !!el
-  }
 
   try {
     for (let i = 0; i < 80; i++) {
@@ -34,27 +38,32 @@
     await sleep(600)
 
     const read = () => st().browserNativeVisible
-    ok(!!q('[data-testid="right-window-tabs"]'), '右栏窗口标签行在（右栏已展开）')
+    const setActive = async (active) => {
+      st().setBrowserSurfaceActive(active)
+      await sleep(300)
+    }
+    /*
+     * 初始右栏只有对话磁贴（它用 grip 标题，没有标签栏），所以这里只断言
+     * 磁贴工作区已挂载；标签栏要到打开文件/工具磁贴之后才存在。
+     */
+    ok(!!q('[data-testid="tile-workspace"]') && !!q('[data-workspace-pane]'), '右栏磁贴工作区已挂载')
 
-    /* ---- 1. 打开浏览器并切到它：应可见 ---- */
+    /* ---- 1. 打开浏览器并把它当作活动页：应可见 ---- */
     out.push('')
     out.push('=== 1. 浏览器打开且是活动页 ===')
     await st().openBrowser('about:blank')
     await sleep(1200)
     ok(!!st().browserState.open, '浏览器已打开（about:blank）')
-    click('[data-testid="right-window-tab-browser"]')
-    await sleep(600)
+    await setActive(true)
     ok(read() === true, `浏览器是活动页且无浮层 → 期望可见（实际 ${read()}）`)
 
-    /* ---- 2. 切到工具：应隐藏，资源仍在 ---- */
+    /* ---- 2. 活动页不是浏览器：应隐藏，资源仍在 ---- */
     out.push('')
     out.push('=== 2. 活动页不是浏览器 ===')
-    click('[data-testid="right-window-tab-start"]')
-    await sleep(500)
-    ok(st().browserState.open, '切到工具后浏览器资源保留')
+    await setActive(false)
+    ok(st().browserState.open, '切走后浏览器资源保留')
     ok(read() === false, `活动页不是浏览器 → 期望隐藏（实际 ${read()}）`)
-    click('[data-testid="right-window-tab-browser"]')
-    await sleep(500)
+    await setActive(true)
     ok(read() === true, '切回浏览器恢复可见')
 
     /* ---- 3. overlay blocker：设置打开/关闭 ---- */
@@ -67,30 +76,18 @@
     await sleep(400)
     ok(read() === true, `设置关闭后按当时状态恢复可见（实际 ${read()}）`)
 
-    /* ---- 4. 审查资源：活动页切走后隐藏，关审查回浏览器恢复 ---- */
+    /* ---- 4. 右栏开关已退役：它不再影响原生网页 ---- */
     out.push('')
-    out.push('=== 4. 审查资源切换 ===')
-    st().openReview()
-    await sleep(500)
-    ok(read() === false, `审查打开时原生网页隐藏（实际 ${read()}）`)
-    ok(st().browserState.open, '审查打开不销毁浏览器资源')
-    st().closeReview()
-    await sleep(500)
-    ok(read() === true, `关审查回到浏览器活动页 → 恢复可见（实际 ${read()}）`)
-
-    /* ---- 5. 收起右栏：原生区域一起不可见 ---- */
-    out.push('')
-    out.push('=== 5. 收起右栏 ===')
+    out.push('=== 4. 右栏开关（已退役）===')
     await st().setRightPanelOpen(false)
-    await sleep(500)
-    ok(read() === false, `收起右栏时原生网页不可见（实际 ${read()}）`)
+    await sleep(400)
+    ok(read() === true, `收起右栏不再让原生网页消失（实际 ${read()}）—— 由浏览器磁贴可见性决定`)
     await st().setRightPanelOpen(true)
-    await sleep(500)
-    ok(read() === true, '展开右栏后恢复可见')
+    await sleep(300)
 
-    /* ---- 6. 直接领 token：只释放自己 ---- */
+    /* ---- 5. 直接领 token：只释放自己 ---- */
     out.push('')
-    out.push('=== 6. blocker token 归属 ===')
+    out.push('=== 5. blocker token 归属 ===')
     const releaseA = st().acquireOverlayBlocker('probe-a')
     await sleep(200)
     ok(read() === false, '领一个 blocker 就隐藏')
@@ -103,9 +100,9 @@
     await sleep(300)
     ok(read() === true, '释放自己的 b 后恢复可见')
 
-    /* ---- 7. 子代理详情 blocker（旧 right placement 路径） ---- */
+    /* ---- 6. 子代理详情 blocker ---- */
     out.push('')
-    out.push('=== 7. 子代理详情 blocker ===')
+    out.push('=== 6. 子代理详情 blocker ===')
     const releaseSub = st().acquireOverlayBlocker('subagent-preview')
     await sleep(200)
     ok(read() === false, '子代理详情占用时原生网页隐藏')
@@ -118,10 +115,9 @@
     await sleep(400)
     ok(read() === false, '关闭浏览器后不显示原生网页')
 
-    out.push('')
     return out.join('\n')
   } catch (error) {
-    out.push('  探针出错: ' + (error?.message ?? String(error)))
+    out.push('  ✗ 探针异常：' + (error?.message ?? String(error)))
     return out.join('\n')
   }
 })()
