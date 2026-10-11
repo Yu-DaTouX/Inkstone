@@ -33,6 +33,7 @@
     el.dispatchEvent(new KeyboardEvent('keydown', Object.assign({ key, bubbles: true, cancelable: true }, opts)))
 
   log('=== 阶段 2 功能验收 ===')
+  try {
 
   const store = window.__yanStore
   /**
@@ -285,7 +286,14 @@
 
     if (!q('[data-testid="model-menu"]')) { click(picker); await sleep(200) }
     const thinkingDetails = q('[data-testid="model-thinking-settings"]')
-    if (thinkingDetails && !thinkingDetails.open) thinkingDetails.querySelector('summary').click()
+    /*
+     * 这块现在是普通 `div`（内容由 `showThinkingSection` 决定是否渲染），
+     * 不再用 `<details>` —— 原来无条件点 `summary` 会撞到 null，
+     * 整个探针从里断掉。只在真的是 details 时才展开。
+     */
+    if (thinkingDetails instanceof HTMLDetailsElement && !thinkingDetails.open) {
+      thinkingDetails.querySelector('summary')?.click()
+    }
     const originalThinking = store.getState().session?.thinkingLevel ?? 'off'
     /*
      * 必须**重新查询**档位按钮：上面切过一次模型，菜单已重渲染，原来那份
@@ -502,5 +510,9 @@
     ok(over <= 0, `${sel} 无横向溢出（差 ${over}）`)
   }
 
+  } catch (error) {
+    /* 抛异常时也要把已有输出交回去，否则只能看到「没抓到 PROBE 输出」。 */
+    out.push('  ✗ 探针异常：' + (error?.message ?? String(error)))
+  }
   return out.join('\n')
 })()

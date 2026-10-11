@@ -20,6 +20,25 @@
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
+  const click = (el) => el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  /*
+   * 过程入口默认折叠，而折叠态下工具行**不在 DOM 里**（`TurnProcess` 的
+   * `open ? … : null`）。先铺开再找终端 —— 漏了这步只会看到「终端没渲染」。
+   */
+  const openProcess = async () => {
+    for (let i = 0; i < 25; i++) {
+      const toggle = q('[data-testid="turn-process-toggle"]')
+      if (toggle) {
+        if (toggle.getAttribute('aria-expanded') === 'false') {
+          click(toggle)
+          await sleep(300)
+        }
+        return !!q('.trow')
+      }
+      await sleep(200)
+    }
+    return false
+  }
   const until = async (fn, ms = 4000) => {
     const t0 = Date.now()
     while (Date.now() - t0 < ms) {
@@ -67,6 +86,7 @@
     settings: { ...(store.getState().settings ?? {}), toolDetail: true }
   })
 
+  await openProcess()
   ok(await until(() => !!q('.term')), '终端窗口已渲染')
   const term = q('.term')
   if (!term) return out.join('\n')

@@ -108,7 +108,7 @@ try {
   vm.runInNewContext((await transform(handlerSource, { loader: 'ts', target: 'es2022' })).code, {
     handle: (_channel, callback) => { prune = callback }, deps: { isSessionBusy: () => busy },
     join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
-    PI_AGENT_DIR: historyDir, YAN_DIR: temp, statSync, ...attachments,
+    PI_AGENT_DIR: historyDir, YAN_DIR: temp, statSync, existsSync, ...attachments,
     referencedAttachmentNames: async files => {
       const refs = await attachments.referencedAttachmentNames(files)
       if (mutate) await writeFile(sessionFile, validImageRow + '\n{}')
@@ -127,6 +127,25 @@ try {
   await new Promise(done => setTimeout(done, 10))
   const cleaned = await prune()
   assert.equal(cleaned.removed, 1); assert.ok(existsSync(join(imageDir, hash + '.png')))
+
+  /*
+   * 没有会话目录时**不清理**：全新安装、自定义数据目录、目录被移走都长这样。
+   * 那时「没扫到引用」不等于「附件是垃圾」—— 附件事后没有备份，删了不可逆。
+   */
+  let missing
+  await writeFile(join(imageDir, 'orphan.png'), 'synthetic orphan image')
+  vm.runInNewContext((await transform(handlerSource, { loader: 'ts', target: 'es2022' })).code, {
+    handle: (_channel, callback) => { missing = callback },
+    deps: { isSessionBusy: () => false },
+    join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
+    PI_AGENT_DIR: join(temp, 'no-sessions-here'), YAN_DIR: temp, statSync, existsSync, ...attachments
+  })
+  const skipped = await missing()
+  /* vm 里的对象来自另一个 realm，`deepEqual` 会因原型不同报假失败，逐字段比。 */
+  assert.equal(skipped.removed, 0); assert.equal(skipped.bytes, 0); assert.equal(skipped.kept, 0)
+  /* 上一步刚造一个孤儿附件：没有会话目录时它必须还在（不能「扫不到引用」就删）。 */
+  assert.ok(existsSync(join(imageDir, 'orphan.png')), '没有会话目录时不清理孤儿附件')
+  assert.ok(existsSync(join(imageDir, hash + '.png')), '有引用的附件当然也还在')
   console.log('✓ production attachment IPC refuses busy/corrupt/changing histories; stable scan removes only unreferenced fixture')
 
   const { routePush } = await mod('src/renderer/src/state/push-routing.ts', 'routing')

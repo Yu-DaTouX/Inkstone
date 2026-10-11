@@ -36,8 +36,14 @@
     out.push('  cwd = ' + cwd)
     out.push('  本地包 = ' + probeExt)
 
-    /* ① 配置：走 store 打开设置（点 rail 按钮依赖面板状态，这里不必要） */
-    store.getState().openSettings('packages')
+    /*
+     * ① 配置：走 store 打开设置。
+     * 插件分区现在在「市场 → pi 插件」下；`openSettings('packages')` 不是设置页 id
+     * （合法值见 `SETTINGS_PAGES`），铺不出这块面板。
+     */
+    store.getState().openSettings('market')
+    await until(() => !!document.querySelector('[data-testid="market-pi-tab"]'), 6000)
+    document.querySelector('[data-testid="market-pi-tab"]')?.click()
     const ready = await until(() => !!document.querySelector('[data-testid="set-packages"]'), 6000)
     if (!ready) return out.concat(['  ✗ 设置里没有「插件」分区']).concat(summary(out))
     ok('设置里有「插件」分区')

@@ -25,6 +25,21 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
   const store = window.__yanStore
+  /*
+   * 过程入口默认折叠（阅读优先），而折叠态下推理块**不在 DOM 里**
+   * （`TurnProcess` 只在 open 时渲染它）。先铺开再找它。
+   */
+  const openProcess = async () => {
+    for (let i = 0; i < 20; i++) {
+      const toggle = q('[data-testid="turn-process-toggle"]')
+      if (toggle) {
+        if (toggle.getAttribute('aria-expanded') === 'false') { toggle.click(); await sleep(250) }
+        return true
+      }
+      await sleep(200)
+    }
+    return false
+  }
 
   /* 外层（.reason-body）承载 aria/尺寸/滚动；内层 data-testid 只承载文字。 */
   const body = () => q('.reason-body')
@@ -56,9 +71,20 @@
     '关键是把羊先带过去，再把羊带回来。'.repeat(80)
 
   const push = (payload) => store.getState().applyPush({ ch: 'sync', payload })
+  /*
+   * 注入 + 展开过程入口：用例读的是过程里的推理块，而过程入口默认折叠
+   * （阅读优先），折叠态下推理块不在 DOM 里。注入当下 DOM 里还是上一条
+   * 回合的入口，点它没用 —— 所以先等新回合上屏再点。
+   */
+  const pushOpen = async (payload) => {
+    push(payload)
+    await sleep(250)
+    await openProcess()
+  }
   const patch = (id, p) => store.getState().applyPush({ ch: 'msg-update', payload: { id, patch: p } })
 
   log('=== 推理流：默认最新一句 / 原位展开限高 / 开合由用户决定 ===')
+  try {
 
   let conn = store.getState().conn
   for (let i = 0; i < 40 && conn !== 'ready'; i++) {
@@ -80,14 +106,16 @@
 
   let cap = null
   for (let i = 0; i < 12; i++) {
-    injectThinking()
+    await injectThinking()
     setTurnStreaming(true)
     await sleep(350)
+    await openProcess()
     cap = q('[data-testid="reasoning"]')
     if (cap) break
   }
   setTurnStreaming(true)
   await sleep(400)
+  await openProcess()
   cap = q('[data-testid="reasoning"]')
 
   ok(!!cap, '推理块被渲染（上游有 thinking 文本）')
@@ -129,7 +157,7 @@
     ]
     for (let i = 0; i < cases.length; i++) {
       const [source, expected] = cases[i]
-      push([
+      await pushOpen([
         { id: `reason-case-user-${i}`, role: 'user', text: 'preview case' },
         { id: `reason-case-assistant-${i}`, role: 'assistant', text: '', thinking: source }
       ])
@@ -143,7 +171,7 @@
   {
     const headText = '开头这些内容应该被截掉'.repeat(6)
     const tailText = '尾端标记🧭END'
-    push([
+    await pushOpen([
       { id: 'reason-peek-user', role: 'user', text: 'preview long' },
       { id: 'reason-peek-assistant', role: 'assistant', text: '', thinking: headText + tailText }
     ])
@@ -165,7 +193,7 @@
    * 详情栏不再有三行标题（用户：「直接写内容就行了 现在有三行标题太复杂」）。
    * 只留正文 —— 模型的显式 Markdown 标题也不再被单独拎出来当标签。
    */
-  push([
+  await pushOpen([
     { id: 'reason-title-user', role: 'user', text: 'title case' },
     { id: 'reason-title-assistant', role: 'assistant', text: '', thinking: '## 核对图片 URL\n\n先检查真实路径。' }
   ])
@@ -185,13 +213,14 @@
   click('[data-testid="reasoning-toggle"]')
 
   /* ---- 3. 单击头部：在原位展开全文 ---- */
-  injectThinking()
+  await injectThinking()
   setTurnStreaming(true)
   await sleep(600)
+  await openProcess()
   click('[data-testid="reasoning-toggle"]')
   await sleep(300)
   ok(isOpen(), '一次点击头部在原位打开全文')
-  ok(body().classList.contains('open'), 'body 标记 open')
+  ok(body()?.classList.contains('open'), 'body 标记 open')
   ok(q('[data-testid="reasoning-toggle"]')?.getAttribute('aria-expanded') === 'true', '头部按钮 aria-expanded=true')
   ok(!q('[data-testid="reasoning-preview"]'), '展开态不再显示单行预览')
 
@@ -291,7 +320,7 @@
 
   /* ---- 7. 短推理 / 无推理 ---- */
   {
-    push([
+    await pushOpen([
       { id: 'r-user3', role: 'user', text: '随便想想' },
       { id: 'r-a3', role: 'assistant', text: '', thinking: '想一下就好。', thinkingLive: true }
     ])
@@ -305,7 +334,7 @@
     click('[data-testid="reasoning-toggle"]')
     await sleep(200)
 
-    push([
+    await pushOpen([
       { id: 'r-user2', role: 'user', text: '跑个命令' },
       {
         id: 'r-a2',
@@ -344,10 +373,21 @@
       for (const cb of [...listeners]) cb({ matches: v })
     }
 
+    /*
+     * 推理块只在**挂载时**注册 matchMedia 监听（见 `Reasoning.tsx` 的
+     * `useEffect(..., [])`），而上一个用例已经把它挂在页面上 —— React 会复用
+     * 同一个实例，effect 不会重跑，后面的 setReduce 就没人接。
+     * 先清空消息让它卸载，替换完再注入。
+     */
+    push([])
+    await sleep(250)
+
     /* 超过 900 字素的突发块按现有防积压规则立即追齐；这里测逐字路径。 */
     const typewriterText = THINK.slice(0, 600)
-    injectThinking(typewriterText)
+    await injectThinking(typewriterText)
     setTurnStreaming(true)
+    /* 推理块在过程里，先保证它进了 DOM 再开始量逐字进度 */
+    await openProcess()
     await sleep(50)
     if (!inner()) click('[data-testid="reasoning-toggle"]')
     await sleep(150)
@@ -366,7 +406,7 @@
 
   /* ---- 9. 切会话不继承展开状态 ---- */
   {
-    push([
+    await pushOpen([
       { id: 'sessA-user', role: 'user', text: '会话 A' },
       { id: 'sessA-a', role: 'assistant', text: '', thinking: THINK, thinkingLive: true }
     ])
@@ -376,7 +416,7 @@
     await sleep(250)
     ok(isOpen(), '会话 A 手动展开')
 
-    push([
+    await pushOpen([
       { id: 'sessB-user', role: 'user', text: '会话 B' },
       { id: 'sessB-a', role: 'assistant', text: '', thinking: '乙会话的另一段思考。', thinkingLive: true }
     ])
@@ -394,7 +434,7 @@
       { id: 'segment-a', role: 'assistant', text: '已完成第一部分', thinking: '第一段思考' },
       { id: 'segment-b', role: 'assistant', text: '', thinking: '第二段正在思考', thinkingLive: true }
     ]
-    push(messages)
+    await pushOpen(messages)
     setTurnStreaming(true)
     /* sync 后先等新回合替换旧会话；只等 reasoning 存在会抓到上一场景的节点。 */
     for (let i = 0; i < 40 && !q('[data-turn-id="segment-a"] [data-testid="reasoning"]'); i++) await sleep(50)
@@ -414,5 +454,9 @@
     ok(caps.length === 1 && updatedCaps.length === 1 && updatedCaps[0] === caps[0], '第二段正文到达不重挂过程节点，保留展开状态')
   }
 
+  } catch (error) {
+    /* 抛异常时也要把已有输出交回去，否则只能看到「没抓到 PROBE 输出」。 */
+    out.push('  ✗ 探针异常：' + (error?.message ?? String(error)))
+  }
   return out.join('\n')
 })()

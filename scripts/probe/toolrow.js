@@ -4,6 +4,9 @@
  * 背景：`canExpand` 曾写成 `detailOn || running` —— 没开「工具详情」设置的用户
  * 遇到失败的工具调用时**连点都点不开**，只能看到一行红字。
  * 设计要的是「错误结果保留明显入口」。
+ *
+ * 两条命令属于短组，按设计规范（七步及以上才折叠较早步骤）直接可见，
+ * 本探针断言的是「行本身可点开」，不是组的那层折叠。
  */
 ;(async () => {
   const out = []
@@ -16,6 +19,26 @@
   const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+
+  /*
+   * 过程入口默认折叠（阅读优先）。折叠态下工具行**不在 DOM 里**
+   * （`TurnProcess` 只在 open 时渲染它们），所以任何工具行断言之前都必须
+   * 先把它铺开 —— 漏了这一步，看到的就是「一个工具行都没有」的假象。
+   */
+  const openProcess = async () => {
+    for (let i = 0; i < 25; i++) {
+      const toggle = q('[data-testid="turn-process-toggle"]')
+      if (toggle) {
+        if (toggle.getAttribute('aria-expanded') === 'false') {
+          click(toggle)
+          await sleep(300)
+        }
+        return !!q('.trow')
+      }
+      await sleep(200)
+    }
+    return false
+  }
 
   try {
     /*
@@ -57,22 +80,29 @@
         usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: 0 }
       }
     ]
-    store.getState().applyPush({ ch: 'sync', payload })
+    const inject = () => store.getState().applyPush({ ch: 'sync', payload })
+    inject()
+    await openProcess()
 
     for (let i = 0; i < 40; i++) {
       if (qa('.trow').length >= 1) break
       await sleep(250)
       /* 每 1.5s 重注入一次，避免被后续 sync 覆盖 */
-      if (i % 6 === 5) store.getState().applyPush({ ch: 'sync', payload })
+      if (i % 6 === 5) {
+        inject()
+        await openProcess()
+      }
     }
     /* 诊断：为什么没渲染 */
     out.push('  诊断 toolCalls=' + JSON.stringify((store.getState().messages[1]?.toolCalls ?? []).map(c => c.name + ':' + c.status)))
     out.push('  诊断 conn=' + store.getState().conn + ' messages=' + store.getState().messages.length + ' turns 相关 DOM=' + qa('.stream .msg, .stream-row').length)
     out.push('  诊断 .stream 存在=' + !!q('.stream') + ' innerHTML=' + JSON.stringify((q('.stream')?.innerHTML ?? '').replace(/s+/g, ' ').slice(0, 240)))
 
-    const history = q('[data-testid="tool-group-toggle"]')
-    ok(history?.getAttribute('aria-expanded') === 'false', '已完成调用默认折叠')
-    click(history); await sleep(250)
+    /*
+     * 短组（两条）直接逐行可见：设计规范是「七步及以上折叠较早步骤」，
+     * 内容本来就不多时再叠一层「前面 N 步」只会让人多点一次。
+     */
+    ok(!q('[data-testid="tool-group-toggle"]'), '短组不再要求额外展开')
     const rows = qa('.trow')
     out.push(`  渲染出 ${rows.length} 个工具行（含 ToolGroup 里的）`)
 
@@ -81,8 +111,8 @@
     const group = q('[data-testid="tool-group"]')
     ok(!!group, '工具调用进入同一张命令块表')
     if (group) {
-      ok(qa('.tgroup .trow').length === 2, '展开历史后两条工具行可见')
-      ok(!!group.querySelector('[data-testid="tool-group-collapse"]'), '已完成步骤有组折叠入口')
+      ok(qa('.tgroup .trow').length === 2, '短组里两条工具行都可见')
+      ok(!group.querySelector('[data-testid="tool-group-collapse"]'), '短组不再多一层组折叠（七步以下直接列出）')
       ok(!!group.querySelector('.trow[data-state="error"]'), '失败的调用在组里仍以出错态显示')
     }
 

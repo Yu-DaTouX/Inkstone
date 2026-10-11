@@ -8,8 +8,8 @@
  *   · 助手正文顶部不再有「砚 / N 步 / 标准」那一行；用户回合的「你」保留
  *   · 整轮用时只在回合**底部**出现一次，且在正文之后（不是顶部、不是每条消息各一份）
  *   · 用时口径是整轮墙钟（含工具往返），悬停能看到说明，不是最后一次生成的时间
- *   · 单工具回合不显示「N 步」（那只是个噪音计数）
- *   · 没有元数据的普通回答不出现空页脚
+ *   · 只有正文的回合也有页脚（复制入口在那里），但不假装有时刻 / 用时
+ *   · 步数不在页脚重复（它在紧邻的「过程」摘要里）
  *   · 底部没有点赞 / 点踩 / 评分入口
  *   · 完成时刻是 <time datetime>，悬停给出完整年月日时分秒 + 时区
  *
@@ -64,7 +64,7 @@
    *   tf-u1/a*  —— 两次工具往返，最后一条给出整轮 42.5s（多工具 → 显示步数）
    *   tf-u2/b1  —— 一个工具，18s（单工具 → 不显示步数）
    *   tf-u3/c1  —— 纯文本，没有 elapsedMs（只有完成时刻）
-   *   tf-u4/d1  —— 什么元数据都没有（不该出现页脚）
+   *   tf-u4/d1  —— 只有正文（页脚只剩复制入口，没有时刻 / 用时）
    */
   const T = Date.UTC(2026, 8, 21, 12, 42, 8) // 2026-09-21 12:42:08Z
   const msgs = [
@@ -143,22 +143,31 @@
     ok(!!response && fTop >= rBottom - 2, '页脚在正文**下方**（不是顶部汇总行）')
   }
   {
-    const body = turn('tf-a1')?.querySelector('.msg-body')
-    ok(body?.lastElementChild === footer, '页脚是回合正文的最后一个元素（贴着消息下沿）')
+    /*
+     * 并列布局下 `.msg-body` 的最后一个孩子是侧栏过程（`TurnView` 把过程放在
+     * 正文列之后），页脚收在正文列里 —— 位置断言要看 `.turn-main`。
+     */
+    const main = turn('tf-a1')?.querySelector('.turn-main')
+    ok(main?.lastElementChild === footer, '页脚是正文列的最后一个元素（贴着消息下沿）')
   }
 
   /* ---- 3. 步数 / 用时 / 完成时刻 ---- */
   {
     const text = footer.textContent ?? ''
     log(`  页脚文本：「${text.replace(/\s+/g, ' ').trim()}」`)
-    ok(/2\s*步/.test(text), '多工具回合显示步数（2 步）', text)
-    ok(text.includes('用时') && text.includes('42s'), '显示整轮用时 42s（注入 42000ms）', text)
+    /*
+     * 页脚不再重复步数（产品注释：「步数与失败数在紧邻的「过程」摘要里，
+     * 这里不重复」）—— 但信息不能丢，所以要反过来钉住它在过程摘要里。
+     */
+    ok(!/\d+\s*步/.test(text), '页脚不重复步数（统计行只留时刻与用时）', text)
+    const summary = turn('tf-a1')?.querySelector('[data-testid="turn-process"]')?.textContent ?? ''
+    ok(/2\s*步/.test(summary), '步数在过程摘要里显示（2 步）', summary)
+    ok(text.includes('42s'), '显示整轮用时 42s（注入 42000ms）', text)
     ok(!text.includes('42000'), '用时是人类可读格式，不是原始毫秒')
   }
   {
     /* 口径可解释：悬停要能说明这是整轮墙钟时间（含工具往返），不是生成速度 */
-    const spans = [...footer.querySelectorAll('.turn-footer-item')]
-    const elapsedSpan = spans.find((s) => (s.textContent ?? '').includes('用时'))
+    const elapsedSpan = footer.querySelector('.tact-time')
     ok(!!elapsedSpan?.getAttribute('title'), `用时条有悬停说明：「${elapsedSpan?.getAttribute('title') ?? ''}」`)
     ok(
       /工具|往返/.test(elapsedSpan?.getAttribute('title') ?? ''),
@@ -182,8 +191,8 @@
     const t2 = q('[data-turn-id="tf-b1"] [data-testid="turn-footer"]')
     ok(!!t2, '单工具回合也有页脚（用时仍在）')
     const text = t2?.textContent ?? ''
-    ok(text.includes('用时') && text.includes('18s'), '单工具回合显示 18s', text)
-    ok(!/\d+\s*步/.test(text), '单工具回合不显示步数（计数没有信息量）', text)
+    ok(text.includes('18s'), '单工具回合显示 18s', text)
+    ok(!/\d+\s*步/.test(text), '单工具回合也不往页脚里塞步数', text)
   }
 
   /* ---- 5. 没有 elapsedMs 的回合只显示完成时刻 ---- */
@@ -191,17 +200,31 @@
     const t3 = q('[data-turn-id="tf-c1"] [data-testid="turn-footer"]')
     ok(!!t3, '纯文本回合仍有页脚（完成时刻）')
     const text = t3?.textContent ?? ''
-    ok(!text.includes('用时'), '没有整轮用时不显示「用时」（不假装）', text)
+    ok(!t3?.querySelector('.tact-time'), '没有整轮用时不显示用时（不假装）', text)
     ok(!!t3?.querySelector('time'), '完成时刻仍然显示')
   }
 
-  /* ---- 6. 完全无元数据：不出现空页脚 ---- */
-  ok(!q('[data-turn-id="tf-d1"] [data-testid="turn-footer"]'), '没有用时/时刻/多工具的回合不渲染空页脚')
+  /* ---- 6. 完全没有元数据但有正文：页脚只留复制入口 ---- */
+  {
+    /*
+     * 契约变了：`TurnMeta` 现在把「复制正文」也放在页脚上，所以只要回合有正文
+     * 就会有页脚 —— 不再是「没有元数据就不渲染」。不渲染的只剩「无正文且无时刻」。
+     */
+    const t4 = q('[data-turn-id="tf-d1"] [data-testid="turn-footer"]')
+    ok(!!t4, '有正文就有页脚（复制入口挂在这里）')
+    ok(!t4?.querySelector('time') && !t4?.querySelector('.tact-time'), '没有时刻与用时不渲染空占位')
+    ok(!!t4?.querySelector('[data-testid="turn-copy"]'), '正文复制入口仍在')
+  }
 
   /* ---- 7. 没有点赞 / 点踩 / 评分 ---- */
   {
-    const buttons = footer.querySelectorAll('button')
-    ok(buttons.length === 0, '页脚里没有按钮（复制 / 更多另在正文操作区，不在统计行）', `实际 ${buttons.length}`)
+    const buttons = [...footer.querySelectorAll('button')]
+    /*
+     * 页脚只允许一个动作：复制正文（`TurnMeta` 的 `tact-copy`）。
+     * 点赞 / 点踩仍然不能有。
+     */
+    const extra = buttons.filter((b) => b.dataset.testid !== 'turn-copy')
+    ok(extra.length === 0, '页脚只有复制按钮（其它动作不在统计行）', `其它 ${extra.length} 个`)
     const bad = document.querySelectorAll(
       '[class*="thumb" i][class*="up" i], [class*="thumb" i][class*="down" i], [data-testid*="rating"], [aria-label*="点赞"], [aria-label*="点踩"]'
     )
