@@ -124,6 +124,14 @@
     }
 
     /* ⑦ 内置能力区：浏览器是**宿主能力**（01-S5 删掉了那个不注册任何东西的空壳 browser.js） */
+    const builtinProbe = await window.yan.builtinCapabilities.list().then(
+      (v) => ({ ok: true, value: v }),
+      (e) => ({ ok: false, error: e?.message ?? String(e) })
+    )
+    /* 只在 IPC 本身出问题时打诊断：区分「主进程没给清单」与「界面没渲染这一段」 */
+    if (!builtinProbe.ok || (builtinProbe.value?.length ?? 0) === 0) {
+      out.push('  内置能力 IPC 诊断 = ' + JSON.stringify(builtinProbe).slice(0, 300))
+    }
     const builtins = qa('[data-testid="builtin-cap"]')
     if (builtins.length === 0) bad('内置能力区是空的（至少应列出宿主任务计划与宿主浏览器）')
     else {
@@ -136,6 +144,12 @@
       const stale = builtins.filter((el) => (el.querySelector('.pkg-ver')?.textContent ?? '') === 'browser.js')
       if (stale.length === 0) ok('内置能力区不再出现 browser.js 空壳文件')
       else bad('内置能力区仍有 browser.js', String(stale.length))
+      /* 文案表要与主进程的薄层清单同步：漏登记时名字会退化成文件名，这里就该红 */
+      const fallbackNamed = builtins
+        .map((el) => (el.querySelector('[data-testid="builtin-cap-name"]')?.textContent ?? '').trim())
+        .filter((name) => /\.(?:js|mjs|cjs|ts)$/i.test(name))
+      if (fallbackNamed.length === 0) ok('内置能力每项都登记了文案，没有退化成文件名的')
+      else bad('内置能力里有没登记文案的项', fallbackNamed.join(', '))
     }
 
     /* ⑧ 收尾：关掉设置面板 */

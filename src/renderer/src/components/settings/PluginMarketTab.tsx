@@ -104,7 +104,7 @@ export function PluginMarketTab(): React.JSX.Element {
           <span className="ui-row-desc">{t('market.range', { from: offset + 1, to: Math.min(total, offset + PAGE), total })}</span>
           <Button size="sm" variant="ghost" disabled={loading || offset + PAGE >= total} onClick={() => setOffset(value => value + PAGE)}>{t('market.next')}</Button>
         </div> : null}
-        <div ref={installRef}><PackagesTab selectedSource={selected} selectionKey={selectionKey} showBuiltin={false} /></div>
+        <div ref={installRef}><PackagesTab selectedSource={selected} selectionKey={selectionKey} /></div>
       </div>}
     </div>
   </div>
