@@ -23,6 +23,21 @@
   const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  /* 过程入口默认折叠时工具行不在 DOM 里，先铺开（见 toolrow.js 里的说明）。 */
+  const openProcess = async () => {
+    for (let i = 0; i < 25; i++) {
+      const toggle = q('[data-testid="turn-process-toggle"]')
+      if (toggle) {
+        if (toggle.getAttribute('aria-expanded') === 'false') {
+          click(toggle)
+          await sleep(300)
+        }
+        return !!q('.trow')
+      }
+      await sleep(200)
+    }
+    return false
+  }
   /*
    * 现场画一张 24×24 的可见图当「截图」。
    *
@@ -90,11 +105,15 @@
      */
     const inject = () => store.getState().applyPush({ ch: 'sync', payload })
     inject()
+    await openProcess()
     for (let i = 0; i < 40; i++) {
-      if (q('[data-testid="tool-images"]') || q('[data-testid="tool-group-toggle"]')) break
+      if (q('.trow')) break
       await sleep(250)
       /* 应用自己也收 pi 的 sync（它才是权威的），定期重注入 */
-      if (i % 6 === 5) inject()
+      if (i % 6 === 5) {
+        inject()
+        await openProcess()
+      }
     }
 
     out.push('=== 1. 工具结果里的图片 ===')
@@ -265,9 +284,16 @@
     ok(pruned.kept <= usage.files, '留下来的不会多于原有文件数')
 
     out.push('')
-    out.push('=== 3. 设置 → 能力与插件：附件那一节 ===')
-    store.getState().openSettings('packages')
-    await sleep(900)
+    out.push('=== 3. 设置 → 市场 → pi 插件：附件那一节 ===')
+    /*
+     * 附件那一节挂在「市场 → pi 插件」下；`openSettings('packages')` 是旧入口，
+     * 它铺不出这一节（探针当时就卡在这里）。
+     */
+    store.getState().openSettings('market')
+    for (let i = 0; i < 30 && !q('[data-testid="plugin-market"]'); i++) await sleep(200)
+    const piTab = [...document.querySelectorAll('[role="tab"], button')].find((el) => el.innerText === 'pi 插件')
+    piTab?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    for (let i = 0; i < 30 && !q('[data-testid="set-attachments"]'); i++) await sleep(200)
     ok(!!q('[data-testid="set-attachments"]'), '设置里有「图片附件」一节')
     const sizeText = q('[data-testid="set-attach-size"]')?.textContent ?? ''
     out.push('  占用文案 = ' + JSON.stringify(sizeText))

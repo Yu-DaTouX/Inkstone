@@ -36,8 +36,14 @@
   }
   try {
     const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd
-    store.getState().openSettings('packages')
-    check(await until(() => !!q('pkg-source')), '真实设置页已加载')
+    /*
+     * 插件页现在挂在「市场 → pi 插件」下：`openSettings('packages')` 不是设置页 id
+     * （合法值见 `SETTINGS_PAGES`），铺不出 `pkg-*` 那一套控件。
+     */
+    store.getState().openSettings('market')
+    check(await until(() => !!q('market-pi-tab')), '真实设置页已加载')
+    q('market-pi-tab').click()
+    check(await until(() => !!q('pkg-source')), '插件安装表单已加载')
     const listing = await window.yan.packages.list(cwd)
     check(listing.agentDir.includes('yan-test-') && cwd.includes('fixture-project') && cwd.endsWith('pkgs'), '仅操作隔离插件目录')
     check((await window.yan.trust.allow(cwd)).ok === true, '隔离项目显式信任')

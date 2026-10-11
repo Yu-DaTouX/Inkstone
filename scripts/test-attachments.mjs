@@ -39,6 +39,11 @@ export async function runAttachmentTests(ok) {
 
     /* 会话文件列举：只认 .jsonl，且要走进嵌套目录 */
     const sessions = join(root, 'sessions')
+    /*
+     * 目录不存在是**正常状态**（全新安装、自定义数据目录），不能抛错：
+     * 直接抛会让设置页的「手动清」在隔离/新装环境下整个失败。
+     */
+    ok(listSessionFiles(join(root, 'missing-sessions')).length === 0, '会话目录不存在时列举为空（不报错）')
     mkdirSync(join(sessions, 'a', 'b'), { recursive: true })
     writeFileSync(join(sessions, 'a', 'b', 'one.jsonl'), '')
     writeFileSync(join(sessions, 'two.jsonl'), '')

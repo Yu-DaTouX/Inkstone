@@ -1270,11 +1270,6 @@ const CASES = {
    */
   overlayblockers: { probe: 'scripts/probe/overlayblockers.js', delay: 10000, cost: 0 },
 
-  /*
-   * 实施-12 U-0：磁贴布局契约（cost 0）。
-   * 写 floating → 空 patch 触发重读盘 → 仍在；越界坐标被归一夹回。
-   */
-  toollayout: { probe: 'scripts/probe/toollayout.js', delay: 10000, cost: 0 },
 
   /*
    * 实施-12 U-4/U-5：工具磁贴的位置切换、单实例、键盘与拖动（cost 0）。
@@ -5807,9 +5802,14 @@ async function main() {
     }
   }
 
-  // 早失败比晚失败好：确认探针脚本都存在
+  /* 早失败比晚失败好：确认探针脚本都存在（退役功能的场景条目要一并清掉） */
   for (const n of names) {
-    readFileSync(join(root, CASES[n].probe), 'utf8')
+    try {
+      readFileSync(join(root, CASES[n].probe), 'utf8')
+    } catch {
+      console.error(`场景 ${n} 的探针不存在：${CASES[n].probe} —— 场景表里的残留条目，请一并删除`)
+      process.exit(2)
+    }
   }
 
   console.log(`将运行：${names.join(', ')}`)

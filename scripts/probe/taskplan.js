@@ -177,6 +177,16 @@
      * 走的是 S4 那条文本判定（`shared/tool-origin.ts`）——
      * 这里顺带证明它在真实模型写出命令时也能命中（不是只有合成输入命中）。
      */
+    /*
+     * 过程入口默认折叠（阅读优先），而折叠态下工具行**不在 DOM 里**。
+     * 真实回合可能有多个，全铺开再找 —— 不铺就会看到「0 条标记」这种假象。
+     */
+    for (const fold of qa('[data-testid="turn-process-toggle"][aria-expanded="false"]')) {
+      click(fold)
+      await sleep(250)
+    }
+    await sleep(400)
+
     const originRows = qa('.trow[data-origin="yan-task-plan"]')
     log('  标记为任务计划的工具行：' + originRows.length + ' 条')
     ok(originRows.length >= 1, '至少一条工具行被标为砚内置任务计划')
@@ -187,7 +197,18 @@
     const originTargets = originRows
       .map((r) => r.querySelector('.trow-target')?.textContent ?? '')
       .join(' | ')
-    ok(/tasks apply/.test(originTargets), '标记的正是 `yan tasks apply` 那条命令')
+    log('  标记行的标题：' + JSON.stringify(originTargets.slice(0, 160)))
+    /*
+     * 标题是**摘要**（折叠空白 + 截断到 120 字符，见 `summarizeTaskPlanCommand`）。
+     * 隔离目录的绝对路径很长时，命令尾部的 `yan tasks apply` 会被截掉 ——
+     * 拿标题做判据会假失败，所以截断时改看**调用数据**里的原始命令。
+     */
+    const applyCmds = calls.filter((c) => /tasks apply/.test(String(c.args?.command ?? '')))
+    log(`  含 \`yan tasks apply\` 的调用：${applyCmds.length} 条`)
+    ok(
+      /tasks apply/.test(originTargets) || applyCmds.length >= 1,
+      '标记的正是 `yan tasks apply` 那条命令（标题被截断时用调用数据核对）'
+    )
 
     /*
      * 硬断言 3：真实文件动作确实发生了（模型不是只登记计划）。
