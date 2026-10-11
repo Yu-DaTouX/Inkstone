@@ -6,10 +6,10 @@ import { QuestionCard } from '../components/QuestionCard'
 import { MessageBody } from '../components/MessageBody'
 import { SpeechInputButton } from '../components/SpeechInputButton'
 import { useRemote } from '../state'
-import { font, icon, mono, radius, space, touch, usePalette } from '../theme'
-import { EmptyState, Header, IconButton, Meta, RunBar, STATUS_TEXT, StatusDot } from '../ui'
+import { font, icon, lineHeight, mono, radius, space, touch, usePalette } from '../theme'
+import { ActivityLine, EmptyState, Header, IconButton, Meta, STATUS_TEXT } from '../ui'
 import { Icon } from '../icons'
-import { RunDot, Spinner } from '../motion'
+import { GlyphSpinner, RunDot } from '../motion'
 import type { SpeechPhase } from '../speech'
 import { mergeRecentHistory } from '../historyCache'
 import { pickImages, type PhotoDraft } from '../device'
@@ -124,6 +124,8 @@ export function SessionScreen({
   const runner = runners.find((entry) => entry.sessionId === sessionId)
   const pending = questions.filter((question) => question.sessionId === sessionId)
   const timeline = useMemo(() => makeTimeline(messages), [messages])
+  /* 运行信号只留一个：最后一段是过程时由它的活动行旋转，否则才由输入区上方的一行承担 */
+  const runInList = !!runner?.running && timeline.at(-1)?.kind === 'tools'
   const snapBottom = (animated = false) => {
     if (alive.current && followBottom.current && listSize.current.viewport > 0) listRef.current?.scrollToOffset({ offset: Math.max(0, listSize.current.content - listSize.current.viewport), animated })
   }
@@ -269,12 +271,11 @@ export function SessionScreen({
       <View style={tabletop ? { height: tabletop.top } : { flex: 1 }}>
       <Header
         title={title || '会话'}
-        left={<IconButton name="back" label="返回会话列表" onPress={onBack} />}
+        left={onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : <IconButton name="back" label="返回会话列表" onPress={onBack} />}
         subtitle={`${sessions.find((s) => s.id === sessionId)?.cwdName || '电脑工作目录'} · ${info?.computer?.name || client.connection.computerName || STATUS_TEXT[stream]}`}
-        right={onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : undefined}
       />
-      {(loading || sending) && !runner?.running ? <View style={styles.loading}><Spinner label={sending ? '正在发送' : '正在读取会话'} /><Text style={{ color: p.fgDim, fontSize: font.sm }}>{sending ? '正在发送' : '正在读取会话'}</Text></View> : null}
-      {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft }]}>{error}</Text> : null}
+      {(loading || sending) && !runner?.running ? <View style={styles.loading}><GlyphSpinner /><Text style={{ color: p.fgDim, fontSize: font.sm, fontFamily: mono }}>{sending ? '正在发送' : '正在读取会话'}</Text></View> : null}
+      {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft, borderLeftColor: p.err }]}>{error}</Text> : null}
       <FlatList
         ref={listRef}
         contentContainerStyle={styles.list}
@@ -326,19 +327,25 @@ export function SessionScreen({
         renderItem={({ item }) => {
           if (item.kind === 'tools') {
             const expanded = expandedTools.includes(item.key)
-            const hidden = item.tools.length >= 7 && !expanded ? item.tools.length - 4 : 0
             const failed = item.tools.filter((tool) => tool.failed).length
-            return <View style={[styles.toolSummary, { backgroundColor: p.bg1, borderColor: p.borderSoft }]}>
-              <View style={styles.toolHeading}><Text style={{ flex: 1, color: p.fgDim, fontSize: font.sm }}>工具调用 · {item.tools.length}</Text>{failed ? <Text style={{ color: p.err, fontSize: font.xs }}>失败 {failed}</Text> : null}</View>
-              {hidden > 0 ? <Pressable accessibilityRole="button" accessibilityLabel={`展开较早的 ${hidden} 次工具调用`} onPress={() => setExpandedTools((current) => [...current, item.key])} style={styles.toolFold}><Text style={{ color: p.fgMute, fontSize: font.sm }}>较早的 {hidden} 步 · 展开</Text></Pressable> : null}
-              {item.tools.slice(hidden).map((tool, index) => <View key={`${item.key}:${index + hidden}`} style={[styles.toolRow, { borderTopColor: p.borderSoft }]}><StatusDot color={tool.failed ? p.err : p.ok} /><Text numberOfLines={1} style={{ flex: 1, color: p.fg, fontSize: font.sm, fontFamily: mono }}>{tool.name}</Text><Text style={{ color: tool.failed ? p.err : p.fgMute, fontSize: font.xs }}>{tool.failed ? '失败' : '完成'}</Text></View>)}
-              {item.tools.length >= 7 && expanded ? <Pressable accessibilityRole="button" accessibilityLabel="收起较早的工具调用" onPress={() => setExpandedTools((current) => current.filter((key) => key !== item.key))} style={styles.toolFold}><Text style={{ color: p.fgMute, fontSize: font.sm }}>收起较早步骤</Text></Pressable> : null}
+            const live = runInList && item.key === timeline.at(-1)?.key
+            const state = live ? 'run' : failed ? 'fail' : 'done'
+            const summary = `${live ? '运行中' : failed ? '部分失败' : '完成'} · ${item.tools.length} 步${failed ? ` · ${failed} 项失败` : ''}`
+            return <View style={styles.process}>
+              <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`过程，${summary}，${expanded ? '收起' : '展开'}`} onPress={() => setExpandedTools((current) => expanded ? current.filter((key) => key !== item.key) : [...current, item.key])} style={styles.processHead}>
+                <View style={{ flex: 1, minWidth: 0 }}><ActivityLine state={state} text={summary} meta={expanded ? '收起' : '过程 ›'} /></View>
+              </Pressable>
+              {expanded ? item.tools.map((tool, index) => <View key={`${item.key}:${index}`} style={styles.toolRow}>
+                <Text style={[styles.tree, { color: p.fgMute }]}>{index === item.tools.length - 1 ? '└─' : '├─'}</Text>
+                <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: tool.failed ? p.err : p.fgDim, fontSize: font.sm, fontFamily: mono }}>{tool.name}</Text>
+                <Text style={[styles.tree, { color: tool.failed ? p.err : p.ok }]}>{tool.failed ? '✕' : '✓'}</Text>
+              </View>) : null}
             </View>
           }
           const message = item.message
           const mine = message.role === 'user'
           return (
-            <View style={[styles.message, mine ? [styles.mine, { backgroundColor: p.bg2, borderColor: p.borderSoft }] : null]}>
+            <View style={styles.message}>
               {mine ? <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.prompt, { color: p.accent }]}>›</Text> : null}
               <View style={styles.messageMain}>
               {message.text ? <MessageBody text={message.text} /> : null}
@@ -350,7 +357,7 @@ export function SessionScreen({
                   accessibilityRole="button"
                   disabled={artifact.unavailable}
                   onPress={() => onOpenArtifact(artifact)}
-                  style={[styles.artifact, { borderColor: p.border, backgroundColor: p.bg1, opacity: artifact.unavailable ? 0.5 : 1 }]}
+                  style={[styles.artifact, { borderColor: p.border, opacity: artifact.unavailable ? 0.5 : 1 }]}
                 >
                   <Text numberOfLines={1} style={{ color: p.fg, fontSize: font.sm }}>{artifact.filename}</Text>
                   <Meta>{artifact.unavailable ? '文件已不可用' : `${Math.max(1, Math.round(artifact.bytes / 1024))} KB`}</Meta>
@@ -364,11 +371,11 @@ export function SessionScreen({
       </View>
       {tabletop ? <View style={{ height: tabletop.gap }} /> : null}
       <View style={tabletop ? { flex: 1, justifyContent: 'flex-end' } : undefined}>
-      <View style={[styles.composer, { borderTopColor: p.borderSoft, backgroundColor: p.bg1 }]}>
+      <View style={[styles.composer, { backgroundColor: p.bg0 }]}>
         {awayFromBottom && unread.has(sessionId) ? <Pressable accessibilityRole="button" onPress={() => { followBottom.current = true; snapBottom(true); readLatest() }} style={{ alignSelf: 'center', minHeight: touch.min, justifyContent: 'center', paddingHorizontal: space[4] }}><Text style={{ color: p.accent, fontSize: font.sm }}>新回复 ↓</Text></Pressable> : null}
         {photos.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{photos.map((photo, index) => <View key={photo.id} style={{ width: 72, height: 72 }}><Image accessibilityLabel={`待发送图片 ${index + 1}`} source={{ uri: `data:${photo.mimeType};base64,${photo.data}` }} style={{ width: 72, height: 72, borderRadius: radius.md }} /><Pressable disabled={sending} accessibilityLabel={`移除图片 ${index + 1}`} accessibilityRole="button" onPress={() => onPhotosChange(photos.filter((entry) => entry.id !== photo.id))} style={{ position: 'absolute', top: -4, right: -4, width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'flex-start', padding: 3 }}><View style={{ backgroundColor: p.bg1, borderRadius: 12, padding: 3 }}><Icon name="close" size={icon.sm} color={p.fg} /></View></Pressable></View>)}</View> : null}
-        {runner?.waiting || pending.length ? <RunBar mode="wait" /> : runner?.running ? <RunBar mode="run" /> : stream !== 'open' ? <RunBar mode="offline" text={STATUS_TEXT[stream]} /> : null}
-        <View style={[styles.inputFrame, { backgroundColor: p.bg0, borderColor: p.border }]}>
+        {runner?.waiting || pending.length ? <ActivityLine state="wait" text={STATUS_TEXT.wait} /> : runner?.running && !runInList ? <ActivityLine state="run" text={STATUS_TEXT.run} /> : stream !== 'open' ? <ActivityLine state="offline" text={STATUS_TEXT[stream]} /> : null}
+        <View style={[styles.inputFrame, { backgroundColor: p.bg2, borderColor: p.border }]}>
         <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.prompt, { color: p.accent, paddingTop: space[3] }]}>›</Text>
         <TextInput
           disableFullscreenUI
@@ -402,20 +409,19 @@ export function SessionScreen({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   list: { paddingHorizontal: space[5], paddingTop: space[5], paddingBottom: space[6], gap: space[5] },
-  error: { fontSize: font.sm, paddingHorizontal: space[4], paddingVertical: space[2] },
+  error: { fontSize: font.sm, paddingHorizontal: space[4], paddingVertical: space[2], borderLeftWidth: 2 },
   loading: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[4] },
   message: { flexDirection: 'row', gap: space[2], maxWidth: '100%' },
-  mine: { borderRadius: radius.md, borderWidth: 1, paddingHorizontal: space[3], paddingVertical: space[2] },
   messageMain: { flex: 1, minWidth: 0, gap: space[1], alignItems: 'flex-start' },
-  prompt: { fontFamily: mono, fontSize: font.body, lineHeight: 23 },
+  prompt: { fontFamily: mono, fontSize: font.body, lineHeight: lineHeight.body },
   meta: { fontSize: font.xs },
-  toolSummary: { alignSelf: 'stretch', borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[3], gap: space[2] },
-  toolHeading: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  toolFold: { minHeight: touch.min, justifyContent: 'center' },
-  toolRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: space[2], borderTopWidth: StyleSheet.hairlineWidth },
+  process: { alignSelf: 'stretch' },
+  processHead: { minHeight: touch.min, justifyContent: 'center' },
+  toolRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingLeft: space[1] },
+  tree: { fontFamily: mono, fontSize: font.sm },
   artifact: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[2], gap: 2, maxWidth: '92%' },
   pending: { marginTop: space[4] },
-  composer: { paddingHorizontal: space[4], paddingTop: space[3], paddingBottom: space[2], gap: space[2], borderTopWidth: StyleSheet.hairlineWidth },
+  composer: { paddingHorizontal: space[4], paddingTop: space[2], paddingBottom: space[2], gap: space[2] },
   /*
    * `minWidth: 0` 不能省：Android 的 TextInput 在 row 里会按内容报一个很大的最小宽度，
    * 缺少它时输入框不随屏幕／键盘缩窄（与本文件其它 row 容器同一处理）。

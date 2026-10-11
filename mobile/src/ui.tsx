@@ -2,13 +2,13 @@
  * 手机端的统一控件：与桌面 components/ui 同一套意图（主要 / 次要 / 无框 / 危险、徽标、空状态、输入框），
  * 尺寸按触屏放大。页面只组合这些控件，不各自写一套按钮、输入框或状态行。
  *
- * 字体分工与桌面一致：界面汉字用系统无衬线，代码与纯命令用等宽。
+ * 字体分工：正文与按钮用系统字体，活动行、元数据、字符状态与代码用等宽（见 theme.ts 的 mono）。
  */
 import { forwardRef, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native'
-import { font, icon, mono, radius, space, touch, usePalette, weight } from './theme'
+import { font, icon, lineHeight, mono, radius, space, touch, usePalette, weight } from './theme'
 import { Icon } from './icons'
-import { RunDot, Spinner } from './motion'
+import { GlyphSpinner, RunDot } from './motion'
 import type { IconName } from '../../src/renderer/src/icons/sprite'
 
 /** 状态用词与桌面状态栏一致（设计规范 §7） */
@@ -116,9 +116,10 @@ export function Header({ title, subtitle, left, right }: { title: string; subtit
   )
 }
 
+/** 分区标题：淡色等宽，前缀 `## `（桌面 h3 的写法），不加分隔线 */
 export function SectionTitle({ children }: { children: ReactNode }) {
   const p = usePalette()
-  return <Text accessibilityRole="header" style={[styles.section, { color: p.fgDim }]}>{children}</Text>
+  return <Text accessibilityRole="header" style={[styles.section, { color: p.fgMute }]}>{'## '}{children}</Text>
 }
 
 /** 元数据：等宽、淡色、表格数字（时间、计数、路径、电脑名） */
@@ -139,16 +140,20 @@ export const Input = forwardRef<TextInput, TextInputProps & { code?: boolean; in
   />
 })
 
+export type ActivityState = 'run' | 'wait' | 'done' | 'fail' | 'stop' | 'offline'
+
 /**
- * 运行条：会话页输入区上方的一行状态（桌面运行条与状态栏的手机版）。
- * 运行中是方点阵，等你回答是提醒图标，断线是警告色点；文字始终在，不只靠颜色或动画表达。
+ * 活动行：回合顶部与输入区上方共用的一行状态（桌面「活动行」的手机版）。
+ * 字符状态 ⠋ 运行 / ◆ 待回答 / ✓ 完成 / ✕ 失败 / ■ 停止 / ● 断线；运行中的旋转字符是整屏唯一的主要运行信号。
+ * 文字始终在，不只靠颜色或动画表达；右侧放计数或用时。
  */
-export function RunBar({ mode, text }: { mode: 'run' | 'wait' | 'offline'; text?: string }) {
+export function ActivityLine({ state, text, meta }: { state: ActivityState; text: string; meta?: string }) {
   const p = usePalette()
-  const label = text ?? (mode === 'run' ? STATUS_TEXT.run : mode === 'wait' ? STATUS_TEXT.wait : STATUS_TEXT.reconnecting)
-  return <View style={styles.runbar}>
-    {mode === 'run' ? <Spinner /> : mode === 'wait' ? <Icon name="bell" size={icon.sm} color={p.warn} /> : <StatusDot color={p.warn} />}
-    <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[styles.runbarText, { color: mode === 'wait' ? p.warn : p.fgDim }]}>{label}</Text>
+  const color = { run: p.accent, wait: p.warn, done: p.ok, fail: p.err, stop: p.fgMute, offline: p.warn }[state]
+  return <View style={styles.activityLine}>
+    {state === 'run' ? <GlyphSpinner color={color} /> : <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.glyph, { color }]}>{ { wait: '◆', done: '✓', fail: '✕', stop: '■', offline: '●' }[state] }</Text>}
+    <Text accessibilityLiveRegion={state === 'run' || state === 'wait' ? 'polite' : 'none'} numberOfLines={1} style={[styles.activityText, { color: state === 'run' || state === 'done' ? p.fgDim : color }]}>{text}</Text>
+    {meta ? <Text numberOfLines={1} style={[styles.meta, { color: p.fgMute }]}>{meta}</Text> : null}
   </View>
 }
 
@@ -191,11 +196,12 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: font.lg, fontWeight: weight.strong },
   headerTitleTwoLine: { fontSize: font.body },
   headerSub: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
-  section: { fontSize: font.sm, fontWeight: weight.strong, marginTop: space[4], marginBottom: space[2] },
-  meta: { fontSize: font.xs, fontVariant: ['tabular-nums'] },
+  section: { fontFamily: mono, fontSize: font.xs, marginTop: space[5], marginBottom: space[1] },
+  meta: { fontFamily: mono, fontSize: font.xs, fontVariant: ['tabular-nums'] },
   input: { minHeight: touch.min, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], fontSize: font.base },
   inputCode: { fontFamily: mono },
-  runbar: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  runbarText: { flexShrink: 1, fontSize: font.sm },
+  activityLine: { minHeight: lineHeight.row, flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  glyph: { width: 14, textAlign: 'center', fontFamily: mono, fontSize: font.sm },
+  activityText: { flex: 1, minWidth: 0, fontFamily: mono, fontSize: font.sm },
   dot: { width: 6, height: 6, borderRadius: 3 }
 })

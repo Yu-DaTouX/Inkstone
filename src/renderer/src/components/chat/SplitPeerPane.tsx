@@ -7,6 +7,7 @@ import type { UIMessage } from '../../../../shared/ipc'
 import { Badge, IconButton, RunDot } from '../ui'
 import { Icon } from '../../icons/Icon'
 import { TurnView } from './TurnView'
+import { InteractionSession } from '../../lib/interaction-state'
 import { ConversationOutline } from './ConversationOutline'
 import { fitComposerHeight } from './Composer'
 import { ComposerBorderIdle } from './ComposerBorder'
@@ -105,6 +106,7 @@ export function SplitPeerPane({ index, target }: { index: number; target: SplitS
 
   const focus = (): void => focusSplitSession(target, true)
   return (
+    <InteractionSession.Provider value={target.sessionId ?? ''}>
     <section
       className="center split-peer"
       data-testid="split-peer"
@@ -165,6 +167,7 @@ export function SplitPeerPane({ index, target }: { index: number; target: SplitS
       </div>
       <div className="split-dim" aria-hidden />
     </section>
+    </InteractionSession.Provider>
   )
 }
 

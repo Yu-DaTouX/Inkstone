@@ -136,6 +136,8 @@ export class UiRequests {
     this.pending.delete(id)
     if (pending.timer) clearTimeout(pending.timer)
     clearTimeout(pending.hardTimer)
+    this.payloads.delete(id)
+    this.host.push({ ch: 'ui-resolved', payload: { id, by: 'timeout' } })
     pending.reject(new CapabilityCommandError('question_timeout', '问题等待超时，未猜测用户答案'))
   }
 
@@ -250,6 +252,7 @@ export class UiRequests {
   respondUi(res: HostUiResponse & { id: string }, by: 'desktop' | 'remote' = 'desktop'): void {
     const wasPending = !!res.id && this.pending.has(res.id)
     const hostPending = this.pendingHostUi.get(res.id)
+    if (res.id?.startsWith('yan-question-') && !hostPending) return
     if (hostPending) {
       if (hostPending.timer) clearTimeout(hostPending.timer)
       clearTimeout(hostPending.hardTimer)

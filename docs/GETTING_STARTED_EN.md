@@ -32,7 +32,7 @@ Reference files with `@`, explore commands with `/`, or enter a Shell command wi
 
 ## HTML artifacts in messages
 
-The desktop app displays managed `.html` / `.htm` artifacts as web pages inside their message cards, including interactive diagrams and single-file reports. Use **Page / Source** to switch views. Download, source preview, file location, and copy-path actions remain available.
+The desktop app displays managed `.html` / `.htm` artifacts as web pages inside their message cards, including interactive diagrams and single-file reports. Use **Page / Source** to switch views. Reload or expand the preview, inspect the source in the side panel, reveal the file location, or copy its path. The original file remains on your computer.
 
 This is an isolated offline preview, not a full browser. Inline scripts, styles, and embedded images are supported; network resources, adjacent local files, popups, form submissions, fullscreen, and page-initiated exports are blocked. The page controls its own theme. The limit is 5 MiB, and ordinary HTML code blocks are not executed. If an attempted navigation leaves the preview unavailable, switch to **Source** and back to **Page** to reload it.
 
@@ -42,13 +42,31 @@ Open **Settings → Capabilities & plugins → Codemode** to turn it on or off. 
 
 Codemode uses native pi capabilities, rather than adding a work mode. It is unavailable with an older pi or an explicitly disabled native Codemode extension.
 
-The model menu supports provider filters, search, shared favorites and pagination. Starring a model does not select it. New conversations use the last successfully selected main model; existing conversations keep their own model. Thinking strength and response detail expand at the bottom, retaining the animated slider. An unavailable remembered model is not silently replaced; a failed initialization offers an explicit preference reset and reconnect.
+The model menu supports provider filters, search, shared favorites and continuous scrolling. Starring a model does not select it. New conversations use the last successfully selected main model; existing conversations keep their own model. Thinking strength, response detail and the visual-answer switch are at the bottom. An unavailable remembered model is not silently replaced; a failed initialization offers an explicit preference reset and reconnect.
+
+## Context and compaction
+
+Under **Settings → Conversations → Context & memory**, configure native pi auto-compaction and omission of older tool output. Inkstone's early compaction threshold defaults to 250k tokens after a turn settles, capped at 90% of a smaller model window. Older tool-output omission uses an 80k soft threshold, reduced for smaller windows and applied in batches according to cache timing. It does not alter chat history or source files, and does not guarantee lower cost on every request. Both can be disabled; see the [architecture boundary](ARCHITECTURE.md#职责).
+
+The former project-knowledge and personal-memory confirmation page is no longer part of the default UI. Retained file formats do not imply a current settings entry.
+
+## Bookmarks, widget state and backups
+
+Conversation-outline bookmarks are saved locally by session and message. A widget's **Save state** button stores ordinary form values and optional JSON state (up to 64 KB); saved values are restored on reload. **Fill input** inserts saved state without sending it. Password, hidden and file inputs are excluded; unsaved interactions can still be lost.
+
+Under **Settings → About → Local backup**, create a new backup folder containing conversations, desktop settings, bookmarks and widget state, checked with SHA-256. Credential files, attachments, models and project files are excluded; the content can still be sensitive. Back up while idle. Changes during copying cause an error and leave an incomplete copy.
+
+**Verify backup** checks a selected backup's manifest, sizes and hashes without overwriting current data. Automatic restore/switching is not implemented; verification is not restoration.
 
 ## Conversations and subagents
 
 The development build is conversation-first. Coding/daily and standard/plan/autonomous switches, spaces, library, and dedicated writing/learning pages have left the default UI. Historical data is retained. Writing, explanations, learning, and file work remain possible in normal conversations. Asking a model to plan first is a conversation instruction, not a host-enforced read-only plan mode.
 
 Open **Subagents** from the tools menu, select a model, enter a task, and choose execution. The panel remembers its own last selected model, initially using the current conversation. An explicit follow option resolves to the current conversation model; the form shows the actual model and working folder. Results return to the parent conversation. Current-folder execution changes files directly; read-only limits tools; optional Git worktree isolation requires Git. CC subscription models do not support read-only subtasks; unsupported combinations are explained before submission.
+
+Up to 10 subagents can run across the app at once. Each model decides how many tool calls its task needs. After 10 minutes without model output or tool events, Inkstone asks the subagent to wrap up and stops it if it has not finished within 75 seconds. There is no default total deadline while progress continues; a model can still specify a total deadline through the task request.
+
+Recent subagent tool activity and final replies are saved locally and remain attached to their original conversation after restart. Click the task title to view its process; the full assignment remains in the card's Details rather than a separate original-task button in the process window. Older records recover activity from their retained native child-session files when available; missing content is not invented. Restoring history does not restart execution or resend completion notifications.
 
 Messages entered during a run wait for your choice to steer or queue. Stop ends the current run. Switching conversations does not stop background work. Files, browser, terminal, and subagent details open on demand and retain their owning conversation in split views.
 
@@ -66,7 +84,7 @@ The text index lives only in memory and is built from the local session files (p
 
 ## Checkpoints and Rewind code
 
-Before each new turn, Inkstone saves a snapshot of the project folder in a shadow git repository under the data folder (unrelated to the project's own `.git`), kept for 30 days on this machine only. When “Rewind code” appears under a user message, it first lists which files will be modified, removed or restored, and only acts after you confirm. The current state is saved first, so the dialog offers “Undo this rewind”.
+Before each new turn, Inkstone attempts to save a snapshot of an eligible project folder in a shadow git repository under the data folder (unrelated to the project's own `.git`), kept for 30 days on this machine only. When “Rewind code” appears under a user message, it first lists which files will be modified, removed or restored, and only acts after you confirm. The current state is saved first, so the dialog offers “Undo this rewind”.
 
 - The conversation is unchanged; use “Branch” on the same row to go back in the conversation too.
 - Changes made by shell commands are covered, not only edit/write tools; files ignored by `.gitignore` and `node_modules` are untouched.
@@ -77,8 +95,8 @@ Before each new turn, Inkstone saves a snapshot of the project folder in a shado
 
 The selector beside the conversation input shows the current mode and applies to all conversations and ordinary subagents:
 
-- **Dangerous-operation approval**: routine actions run directly; recognized dangerous actions ask for approval.
-- **Native mode**: Inkstone adds no approval or interception. pi, providers, external tools, and the operating system retain their own behavior.
+- **Auto approve** (dangerous-operation approval): routine actions run directly; recognized dangerous actions ask for approval.
+- **Unrestricted** (native mode): Inkstone adds no approval or interception. pi, providers, external tools, and the operating system retain their own behavior.
 
 Approval cards identify their source conversation, subagent, and folder, with a source link when available. Unresolved sources are labeled as unknown. WAIT means a response is needed; other tasks may still be running. These guardrails are not a sandbox or a task-level permission system. AskClaude executes inside CC and receives whole-delegation approval in dangerous mode. Use an Inkstone subagent with a claude-bridge model when approval should inspect individual pi tool operations.
 

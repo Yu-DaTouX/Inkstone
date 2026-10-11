@@ -352,6 +352,54 @@ export class RunnerRegistry {
       .sort((a, b) => a.lastActiveAt - b.lastActiveAt)[0]
 
     if (idle) {
+      /* 跨 cwd 先在未登记的替代进程上准备；成功前旧实例及其身份始终不变。 */
+      if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd)) {
+        const previous = idle.agent
+        const generation = nextGeneration()
+        let replacement: AgentController | undefined
+        let failure: string | undefined
+        try {
+          replacement = this.opts.createAgent(idle.id, target.cwd, generation)
+          replacement.setRunnerGeneration(generation)
+          const started = await replacement.start()
+          if (!started.ok) {
+            failure = started.error ?? '替代运行实例启动失败'
+          } else {
+            let prepared = target.sessionFile
+              ? await replacement.switchSession(target.sessionFile)
+              : await replacement.newSession()
+            if (prepared.ok && !target.sessionFile && this.opts.prepareNewSession) {
+              prepared = await this.opts.prepareNewSession(replacement)
+            }
+            if (!prepared.ok) failure = prepared.error ?? '替代运行实例准备会话失败'
+          }
+        } catch (error) {
+          failure = error instanceof Error ? error.message : String(error)
+        }
+        if (failure !== undefined) {
+          try {
+            await replacement?.stop()
+          } catch {
+            /* 尽力回收半启动的替代进程，不覆盖原始失败原因。 */
+          }
+          return { ok: false, error: failure }
+        }
+
+        idle.agent = replacement!
+        idle.cwd = target.cwd
+        idle.generation = generation
+        idle.projectId = target.projectId
+        idle.lastActiveAt = Date.now()
+        if (target.activate !== false) this.activeId = idle.id
+        try {
+          await previous.stop()
+        } catch {
+          /* 已提交就绪的新实例，不切回可能已经半停的旧进程。 */
+        }
+        this.opts.onChanged?.()
+        return this.result(idle, 'reuse')
+      }
+
       const oldGeneration = idle.generation
       const oldProjectId = idle.projectId
       const oldSessionFile = idle.agent.getState()?.sessionFile
@@ -359,42 +407,6 @@ export class RunnerRegistry {
       idle.agent.setRunnerGeneration(idle.generation)
       idle.projectId = target.projectId
       this.opts.onChanged?.()
-
-      /*
-       * pi 进程的 cwd 只在 spawn 时确定：`new_session` 只接受
-       * `parentSession`（0.85.1 实测），`switch_session` 只换会话文件。
-       * 所以跨项目复用必须**换一个进程**，否则新会话会落在旧项目目录里
-       * （D5）—— 只改注册表上的 `cwd` 字段是骗自己的。
-       *
-       * 顺序：先把新实例起起来，失败就整体回退（旧实例原样留着、仍可用）；
-       * 成功后再停旧进程。被复用的实例一定是空闲的（没有流、没有等待），
-       * 所以这段窗口里旧进程不会自己推事件。
-       */
-      if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd)) {
-        const previous = idle.agent
-        const replacement = this.opts.createAgent(idle.id, target.cwd, idle.generation)
-        const started = await replacement.start()
-        if (!started.ok) {
-          /* 新进程没起来也要收掉，别留下半个 pi。 */
-          try {
-            await replacement.stop()
-          } catch {
-            /* 已经死了 */
-          }
-          idle.generation = oldGeneration
-          idle.agent.setRunnerGeneration(oldGeneration)
-          idle.projectId = oldProjectId
-          this.opts.onChanged?.()
-          return { ok: false, error: started.error }
-        }
-        idle.agent = replacement
-        idle.cwd = target.cwd
-        try {
-          await previous.stop()
-        } catch {
-          /* 旧进程自己已经退了 */
-        }
-      }
 
       let res = target.sessionFile
         ? await idle.agent.switchSession(target.sessionFile)

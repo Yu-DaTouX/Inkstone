@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { InteractionPart, useInteractionState } from '../../lib/interaction-state'
+import { WIDGET_STATE_BRIDGE } from '../../lib/widget-state-bridge'
+import { INTERACTION_VALUE_LIMIT } from '../../../../shared/interaction-state'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, IconButton } from '../ui'
@@ -13,7 +16,7 @@ import { safeHttpUrl, VISUAL_WIDGET_MAX_CHARS } from '../../../../shared/visual-
  * - 宿主注入主题变量与基础样式；换主题只经消息通道发新变量，不重建页面，页面内的操作不丢；
  * - 离视口很远时卸载页面、只留同高占位，回来重新载入（与 HTML 成果预览同一组边界），
  *   标题行写明当前是「活跃」还是「已暂停」；
- * - 页面只能经 postMessage 回报三件事：高度、打开 http(s) 链接、请求追问。
+ * - 页面经 postMessage 回报高度、链接、追问；状态仅响应用户发起的保存请求。
  *   追问不会自动发送：先在小部件下方显示文字，用户点「填入输入框」后照常由用户发送。
  */
 
@@ -66,12 +69,30 @@ input[type=range]{-webkit-appearance:none;appearance:none;height:16px;padding:0;
 input[type=range]::-webkit-slider-runnable-track{height:2px;border-radius:1px;background:var(--border-strong)}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;margin-top:-4px;border-radius:50%;background:var(--accent)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:1ms!important;transition-duration:1ms!important}}</style>
-<script>${BRIDGE}</script></head><body>${html}</body></html>`
+<script>${BRIDGE}\n${WIDGET_STATE_BRIDGE}</script></head><body>${html}</body></html>`
 }
 
-export function WidgetBlock({ html, fallback }: { html: string; fallback: React.ReactNode }) {
+export function WidgetBlock({ html, fallback, blockId }: { html: string; fallback: React.ReactNode; blockId?: string }) {
   const t = useT()
   const link = useStore((s) => s.openBrowser)
+  const saved = useInteractionState()
+  const part = useContext(InteractionPart)
+  const [stateKey, setStateKey] = useState('')
+  const [stateError, setStateError] = useState('')
+  const [capture, setCapture] = useState<{ id: string; key: string } | null>(null)
+  const restored = useRef('')
+  const loaded = useRef('')
+  useEffect(() => {
+    let alive = true
+    setStateKey('')
+    setCapture(null)
+    setStateError('')
+    restored.current = ''
+    if (part && saved.session) void crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([part, blockId, html]))).then((hash) => {
+      if (alive) setStateKey('widget:' + Array.from(new Uint8Array(hash), (n) => n.toString(16).padStart(2, '0')).join(''))
+    }).catch((e) => { if (alive) setStateError(String(e)) })
+    return () => { alive = false }
+  }, [part, blockId, html, saved.session])
   const root = useRef<HTMLElement>(null)
   const frame = useRef<HTMLIFrameElement>(null)
   const [near, setNear] = useState(false)
@@ -97,6 +118,22 @@ export function WidgetBlock({ html, fallback }: { html: string; fallback: React.
     keep.observe(node)
     return () => { load.disconnect(); keep.disconnect() }
   }, [])
+
+  const restoreState = (): void => {
+    if (!url || loaded.current !== url || !stateKey || !saved.ready || restored.current === url) return
+    restored.current = url
+    const text = saved.values[stateKey]
+    if (text) {
+      try { frame.current?.contentWindow?.postMessage({ yanWidgetState: 1, type: 'restore', state: JSON.parse(text) }, '*') }
+      catch (e) { setStateError(String(e)) }
+    }
+  }
+  useEffect(() => { restoreState() }, [saved.ready, stateKey])
+  useEffect(() => {
+    if (!capture) return
+    const timer = window.setTimeout(() => { setCapture(null); setStateError(t('widget.saveTimeout')) }, 4000)
+    return () => window.clearTimeout(timer)
+  }, [capture, t])
 
   /* 换主题：把新变量发进页面（页面状态保留）；页面重新载入时也补发一次 */
   const sendTheme = (): void => {
@@ -127,19 +164,28 @@ export function WidgetBlock({ html, fallback }: { html: string; fallback: React.
     }
   }, [doc, near, reload])
 
-  /* 只认自己这个 iframe 发来的、格式正确的三种消息 */
+  /* 只接受当前 iframe 的消息；保存响应必须匹配用户请求。 */
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (!frame.current || event.source !== frame.current.contentWindow) return
-      const data = event.data as { yanWidget?: number; type?: string; h?: unknown; url?: unknown; text?: unknown }
+      const data = event.data as { yanWidget?: number; type?: string; h?: unknown; url?: unknown; text?: unknown; request?: unknown }
       if (!data || data.yanWidget !== 1) return
       if (data.type === 'height' && typeof data.h === 'number' && Number.isFinite(data.h)) { const next = Math.max(40, Math.min(WIDGET_MAX_H, Math.ceil(data.h))); if (heightCache.size >= 100) heightCache.delete(heightCache.keys().next().value as string); heightCache.set(html, next); setHeight(next) }
       else if (data.type === 'open') { const target = safeHttpUrl(data.url); if (target) void link(target) }
       else if (data.type === 'ask' && typeof data.text === 'string' && data.text.trim()) setAsk(data.text.trim().slice(0, 500))
+      else if (data.type === 'state' && capture && data.request === capture.id) {
+        setCapture(null)
+        try {
+          if (typeof data.text !== 'string' || new TextEncoder().encode(data.text).length > INTERACTION_VALUE_LIMIT) throw new Error(t('widget.stateTooLarge'))
+          const value = JSON.parse(data.text)
+          if (!value || !Array.isArray(value.fields) || value.fields.length > 200) throw new Error(t('widget.stateInvalid'))
+          void saved.save(capture.key, data.text).catch((e) => setStateError(String(e)))
+        } catch (e) { setStateError(String(e)) }
+      }
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [link, html])
+  }, [link, html, capture, saved.save, t])
 
   if (tooLarge || error) {
     return <div className="vb-invalid">{fallback}<div className="vb-invalid-note">{t('vb.invalid', { error: tooLarge ? t('vb.widgetTooLarge') : t('vb.widgetFailed', { error: error ?? '' }) })}</div></div>
@@ -154,6 +200,13 @@ export function WidgetBlock({ html, fallback }: { html: string; fallback: React.
         <span className={`vb-widget-life${live ? ' on' : ''}`} data-testid="vb-widget-life" title={live ? undefined : t('artifact.htmlParked')}>
           {live ? t('widget.live') : t('widget.paused')}
         </span>
+        <Button size="sm" variant="ghost" disabled={!live || !saved.ready || !stateKey || !!capture} onClick={() => {
+          const request = crypto.randomUUID()
+          setStateError('')
+          setCapture({ id: request, key: stateKey })
+          frame.current?.contentWindow?.postMessage({ yanWidgetState: 1, type: 'capture', request }, '*')
+        }}>{capture ? t('widget.saving') : t('widget.saveState')}</Button>
+        {saved.values[stateKey] ? <Button size="sm" variant="ghost" onClick={() => useStore.getState().insertIntoComposer(saved.values[stateKey])}>{t('vb.askFill')}</Button> : null}
         <IconButton size="sm" icon="refresh" label={t('artifact.htmlReload')} onClick={() => setReload((n) => n + 1)} />
       </figcaption>
       <div className="vb-widget-stage" style={{ height }}>
@@ -167,9 +220,11 @@ export function WidgetBlock({ html, fallback }: { html: string; fallback: React.
           referrerPolicy="no-referrer"
           allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; fullscreen 'none'; display-capture 'none'; usb 'none'; serial 'none'; payment 'none'"
           data-testid="vb-widget-frame"
-          onLoad={sendTheme}
+          onLoad={() => { loaded.current = url; sendTheme(); restoreState() }}
         /> : <div className="vb-pending-inline" role="status">{near ? t('vb.pending') : t('artifact.htmlParked')}</div>}
       </div>
+      {stateError || saved.error ? <div role="alert" className="vb-invalid-note">{stateError || saved.error}</div> : null}
+      {saved.values[stateKey] ? <div role="status" className="vb-source-line">{t('widget.saved')}</div> : null}
       {ask ? (
         <div className="vb-ask" role="status">
           <span className="vb-ask-label">{t('vb.askLabel')}</span>

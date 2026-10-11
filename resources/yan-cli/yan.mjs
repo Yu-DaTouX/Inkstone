@@ -398,7 +398,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
                   "deliverables":["一段结论","不一致的具体位置"],
                   "sources":["src/main/agent.ts","src/main/index.ts"],
                   "boundary":"只读，不要改代码",
-                  "maxToolCalls":40,"timeoutMinutes":10}}
+                  "timeoutMinutes":10}}
   list                         查看所有子代理的状态与活动摘要
   get    --id <子代理ID>        查看一个子代理的实时转录与审阅状态
   stop   --id <子代理ID>        停止一个仍在运行的子代理
@@ -408,8 +408,9 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
     readOnly=true 只开放 read/grep/find/ls；需要代码隔离时显式传 --isolation worktree（要求 Git）；
   · 任务要窄（一个文件或一个问题，结论几行说完）；
   · 任务输入里的 goal 决定它做什么，deliverables / sources / boundary 决定它交回什么与不碰什么；
-    maxToolCalls（5–300）限工具调用次数，timeoutMinutes（1–60）限总时长（默认 30 分钟，5 分钟未收到进展只提醒，不提前终止）；这些限额通过 brief 传入，写在 task 正文中不会设置宿主限额。
-    到点先让它收尾交结论，宽限内仍不结束才停止；
+    工具调用次数由执行模型自主决定，旧 maxToolCalls 参数不再生效；全应用最多同时10个子代理。
+    默认连续10分钟没有模型输出或工具事件才超时；timeoutMinutes（1–60）可选限总时长，不设置则没有总期限，写在 task 正文中不会设置宿主限额。
+    超时先让它收尾交结论，75秒宽限内仍不结束才停止；
   · 派出后不要 sleep 轮询：结束时宿主会通知你（用户关掉通知时才需要自己 list / get）；
     继续做不依赖它的事，或结束本轮并告诉用户「子代理在跑，结束会通知」；
   · 子代理结束后，宿主会汇总「摘要 / 来源 / 成果」给主 agent ——

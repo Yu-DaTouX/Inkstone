@@ -8,7 +8,7 @@ import { ancestorPaths } from './sidebar-state'
 import { shortProject } from './rail-utils'
 
 /**
- * 「按项目」视图的数据：把会话归到项目（含没有会话的项目与旧 cwd），
+ * 「按项目」视图的数据：把会话归到项目（没有会话的项目只保留当前项目），
  * 当前项目置顶、其余按拖拽顺序或最近活动排；再按持久化分组重排成屏幕上的顺序。
  * 只整理数据，不碰界面状态。
  */
@@ -126,10 +126,15 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
       else byProject.set(project.id, { ...project, list: [...list] })
     }
 
-    // 先把设置里的项目放入列表，即使它暂时没有会话，项目入口仍然稳定。
+    /*
+     * 没有会话的项目不占左栏：旧版本留下的空记录（临时目录、重复路径、只开过一次的文件夹）会堆成一长串空文件夹。
+     * 只保留当前项目（刚添加或刚切到的空项目仍在眼前），其余在有会话后自然出现；数据不删除。
+     */
+    const sameCwd = (a: string, b?: string): boolean => !!b && a.toLowerCase() === b.toLowerCase()
     for (const record of projectRecords) {
       const label = record.name || projectNames[record.cwd] || shortProject(record.cwd)
-      if (!q || label.toLowerCase().includes(q) || record.cwd.toLowerCase().includes(q)) {
+      const isCurrent = record.id === currentProjectId || sameCwd(record.cwd, session?.cwd)
+      if (isCurrent && (!q || label.toLowerCase().includes(q) || record.cwd.toLowerCase().includes(q))) {
         addProject({ id: `project:${record.id}`, projectId: record.id, cwd: record.cwd, label })
       }
     }
@@ -138,7 +143,7 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
     // 没有 ProjectRecord 的旧 cwd 仍要作为一个可访问的全局位置保留。
     for (const cwd of settings?.recentCwds ?? []) {
       const alreadyShown = [...byProject.values()].some((project) => project.cwd.toLowerCase() === cwd.toLowerCase())
-      if (!alreadyShown && (!q || (projectNames[cwd] || cwd).toLowerCase().includes(q))) {
+      if (!alreadyShown && sameCwd(cwd, session?.cwd) && (!q || (projectNames[cwd] || cwd).toLowerCase().includes(q))) {
         addProject({ id: `global:${cwd}`, cwd, label: shortProject(cwd) })
       }
     }

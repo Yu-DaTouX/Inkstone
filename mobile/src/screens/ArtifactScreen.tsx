@@ -41,8 +41,7 @@ export function ArtifactScreen({
       <Header
         title={artifact.filename}
         subtitle={artifact.mediaType}
-        right={onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : undefined}
-        left={<IconButton name="back" label="返回会话" onPress={onBack} />}
+        left={<View style={{ flexDirection: 'row' }}>{onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : null}<IconButton name="back" label="返回会话" onPress={onBack} /></View>}
       />
       {error ? <Text style={[styles.error, { color: p.err }]}>{error}</Text> : null}
       {isImage ? (

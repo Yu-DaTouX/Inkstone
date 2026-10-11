@@ -38,7 +38,15 @@ npm run launch
 
 视觉改动同时关注深浅主题、窄窗口、缩放、键盘操作与实际截图。生成截图保留在本地，不批量提交到仓库；主页配图单独维护。
 
-子代理反馈专项：构建后运行 `node scripts/test-subagent-feedback-live.mjs`，在独立数据目录的真实 Electron 深浅主题与窄窗检查紧凑卡片、详情展开、后台通知隐藏、无进展提醒恢复与错误原文展示；数据为合成夹具，不调用模型或复制凭证。`node scripts/test-subagent-light-live.mjs` 使用真实 pi 子进程和本机模型夹具验证指定模型、文件写入、独立危险审批与结束清理，不能作为真实服务验收。
+运行实例事务回归可单独运行 `node scripts/test-runners.mjs`，使用假 Agent 验证跨目录替换先准备、成功才提交，失败保留旧实例并回收替代进程；不调用模型。
+
+子代理限制可直接运行 `node scripts/test-subagent-limits.mjs`，现场编译当前源码到临时目录，用独立数据目录、假 RPC 和临时 Git 验证10个并发名额及启动交接、10分钟停滞期限及进展续期、75秒收尾不被迟到事件延长、可选总期限和模型自主调用次数；不依赖应用构建、不启动 Electron或调用模型。
+
+子代理反馈专项：构建后运行 `node scripts/test-subagent-feedback-live.mjs`，在独立数据目录的真实 Electron 深浅主题与窄窗检查紧凑卡片的「范围、模型、思考、原生上下文、耗时」顺序与缺失值、详情展开、后台通知隐藏、停滞超时收尾原因与错误原文展示，并在独立桌面冷启动及复用同一数据目录的重启后核对真实 IPC 恢复调用结果、原父会话归属、过程窗口无任务原文按钮；数据为合成夹具，不调用模型或复制凭证。`test:unit` 中的 `scripts/test-subagents.mjs` 使用临时目录和假 RPC 验证新快照写入/读回、旧摘要从指定子会话补回调用、异常退出不复活、显式清除不反弹，以及落盘等待期间停止不再启动进程。快照及兼容转录保留最近 200 条消息；原生 JSONL 不改写，历史读取跳过损坏或超过 64 MiB 的单文件。
+
+`node scripts/test-subagent-light-live.mjs` 使用真实 pi 子进程和本机模型夹具验证指定模型、文件写入、独立危险审批与结束清理，不能作为真实服务验收。
+
+可靠性专项无需应用构建：`node scripts/test-queue-rpc-live.mjs` 使用当前 `AgentController`、真实随包 pi 与回环地址模型夹具，检查撤回/插队/中止交错、同文本队列身份、正常消费和回收后显式发送。`node scripts/test-personal-state-electron.mjs` 在隔离 Electron 组件夹具中加载正式 preload、IPC 注册器、互动状态 hook 与真实 sandbox iframe，检查写失败不发布、跨会话和进程重启恢复、非可信窗口拒绝与父窗口消息来源。两者现场编译到临时目录，不覆盖应用 `out/`，不复制凭证、不调用外部模型；后者日志中的写盘/坏文件/非可信 IPC 错误为预期故障注入。组件通过不代表整窗书签、小部件 UI、真实服务或发行包验收。
 
 运行服务专项见 [运行服务](AGENT_SERVICE.md)：`node scripts/test-agent-service.mjs --pi` 使用真实 Node 和官方 pi 连接本机模型夹具；`node scripts/test-agent-service-cli.mjs` 检查公开 JSONL 入口、跨进程数据根互斥和重启请求去重。独立文件任务桌面页面与对应 UI 探针已退役。不会调用真实服务或复用个人凭证。
 
@@ -68,7 +76,11 @@ UX 反馈专项：构建后设置 `YAN_LIGHT_PROBE=scripts/probe/ux-feedback.js`
 
 流式投影比较可运行 `node scripts/measure-turn-stream.mjs` 和 `node scripts/measure-turn-stream.mjs --after`：同一组合成2002条消息、200次更新，分别比较完整分组和按消息引用复用历史的投影；这是单个计算阶段的耗时，不是应用帧率或整体性能。
 
-构建后可将 `YAN_LIGHT_PROBE` 设为 `scripts/probe/stream-smooth.js` 的绝对路径，再运行 `node scripts/test-light-client-live.mjs`。它在独立Electron目录中验证长历史、连续代码/中文/emoji输出、输入响应、无文字时工具可见、最终全文/代码高亮/表格与旧数据保留；不会调用模型。需要订阅额度的 `node scripts/test-luna-progress-live.mjs --real-luna` 使用已有Codex OAuth的隔离副本，仅运行精确 `openai-codex/gpt-6-luna` low小任务，记录首字/工具时间；无其他模型回退，执行前须得到额度调用授权。模型是否先说进展是行为采样，不是延迟保证。
+导航轨专项运行 `node scripts/test-outline-performance.mjs`：现场编译纯投影函数，在2002条合成消息、200次更新下交替比较旧全量分组/查找和历史引用缓存，逐字段核对结果，重复三轮；`YAN_OUTLINE_PERF_OUT` 可指定新的 JSON 证据文件。基础导航语义检查已纳入 unit。
+
+子代理流式专项运行 `node scripts/test-subagent-stream-performance.mjs`：独立数据目录与假 RPC 验证33ms快照合并、主动读取即时性、工具/结束/停止即时推送和清除后不反弹，并重复三轮100条历史与500次更新的序列化测量。`YAN_SUBAGENT_STREAM_OUT` 可指定新的 JSON 文件；`YAN_SUBAGENT_STREAM_MODULE` 可指定优化前编译的模块，配合 `--baseline` 运行同负载对照。字节数是 JSON 序列化体积，不是实际 IPC 字节；同步事件处理耗时不含异步推送回调，不能当作总 CPU 收益。并行运行隔离与收口检查也已纳入 unit。
+
+构建后可将 `YAN_LIGHT_PROBE` 设为 `scripts/probe/stream-smooth.js` 的绝对路径，再运行 `node scripts/test-light-client-live.mjs`。它在独立Electron目录中验证长历史、连续代码/中文/emoji输出、输入响应、无文字时活动行与过程入口可见、展开后工具可见、最终全文/代码高亮/表格与旧数据保留；不会调用模型。需要订阅额度的 `node scripts/test-luna-progress-live.mjs --real-luna` 使用已有Codex OAuth的隔离副本，仅运行精确 `openai-codex/gpt-6-luna` low小任务，记录首字/工具时间；无其他模型回退，执行前须得到额度调用授权。模型是否先说进展是行为采样，不是延迟保证。
 
 Windows 上运行 `node scripts/measure-light-client.mjs` 记录三次空会话启动、空闲 CPU 与进程树工作集；`YAN_MEASURE_SCENARIO=long` 改用独立窗口的 2,000 条合成消息，记录首帧、120 次滚动采样和虚拟化 DOM 数量。`YAN_LIGHT_EXE` 指定独立目录包，`YAN_MEASURE_OUT` 指定新的证据文件；前后比较应使用同类运行方式。Chromium 探针关闭了帧率/后台限制，帧耗时不是实际显示器 FPS，工作集之和也不是独占物理内存。
 
@@ -82,7 +94,7 @@ Windows 上运行 `node scripts/measure-light-client.mjs` 记录三次空会话�
 
 砚通过独立 RPC 子进程运行官方 pi；运行时由 `scripts/vendor-pi.mjs` 搬运官方 bundle、资产和最小依赖闭包。宿主策略及界面桥接放在 `resources/pi-extensions/`，不修改生成的 pi 引擎。上下文、压缩、恢复与技能发现由 pi 管理；身份、语言和高危确认等砚薄层仍需随升级核对。
 
-先运行 `npm run upgrade:pi -- --check` 比较内置与本机源版本。准备目标版本的官方 npm 包后，可用 `YAN_PI_SRC` 指定其包目录，再执行 `npm run upgrade:pi`；升级不会自动安装或更新全局 pi。`--force` 只重新提取同版本，降级必须显式使用 `--allow-downgrade`，直接调用 vendor 脚本也遵守该限制。新运行时以独立 generation 保存，通过 `current.json` 切换；旧目录保留给活跃进程，已有窗口不会自动重启。升级结束会重新生成 `resources/pi-extensions/generated/pi-model-catalog.json`（从随包 pi 的模型目录摘出能否思考、协议、上下文与输出上限，自定义服务接入时按模型 ID 补齐能力），这份文件要随升级一起提交；单独重新生成用 `node scripts/gen-pi-model-catalog.mjs`，`--check` 只比对。
+先运行 `npm run upgrade:pi -- --check` 比较内置与本机源版本。准备目标版本的官方 npm 包后，可用 `YAN_PI_SRC` 指定其包目录，再执行 `npm run upgrade:pi`；升级不会自动安装或更新全局 pi。`--force` 只重新提取同版本，降级必须显式使用 `--allow-downgrade`，直接调用 vendor 脚本也遵守该限制。新运行时以独立 generation 保存，通过 `current.json` 切换；旧目录保留给活跃进程，已有窗口不会自动重启。升级结束会重新生成 `resources/pi-extensions/generated/pi-model-catalog.json`（从随包 pi 的模型目录摘出能否思考、协议、上下文与输出上限，自定义服务接入时按模型 ID 补齐能力），这份文件要随升级一起提交；单独重新生成用 `node scripts/gen-pi-model-catalog.mjs`，`--check` 只比对。能力表生成失败时升级命令非零退出，并明确报告运行时已更新但升级未全部完成；先补生成再继续后续检查，不能将部分成功视为整体成功。`node scripts/test-pi-compatibility.mjs --upgrade-catalog-only` 用临时副本和假子进程验证退出码，不执行真实升级。
 
 Codemode 需要 `quickjs-wasi/quickjs.wasm` 和官方脚本 worker。版本与 RPC 握手通过后，仍需执行 `node scripts/test-pi-compatibility.mjs`、`npm run test:agent-native-context` 和 `node scripts/test-pi-native-tools.mjs --controller`。原生工具检查仅连接本机模型/MCP 夹具；可加 `--only`、`--no-mcp`、`--native-search`、`--guard`、`--profile-blocked` 或 `--image`（codemode `image()` 输出在实时事件、历史与宿主投影中的图片块）验证对应边界，`--compact` 验证原生压缩。构建、真实服务和发行包需要各自证据。
 

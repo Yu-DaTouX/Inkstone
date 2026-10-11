@@ -22,6 +22,7 @@ const SUBAGENT_SYSTEM_PROMPT = [
   'Search only the supplied source paths and workspace. Avoid filesystem-root searches; set a finite timeout on shell commands that may take a long time.',
   '- Work autonomously: do not ask the user questions; make reasonable assumptions and state them.',
   '- Keep the scope to the task you were given.',
+  '- Decide how many tool calls the task needs; stop when you have enough evidence to report.',
   '- Finish with a concise report: what you changed or found, and how you verified it.'
 ].join('\n')
 
@@ -42,6 +43,7 @@ export interface SubagentServiceDeps {
 
 export class SubagentService {
   private controller: SubagentController | null = null
+  private loading?: Promise<SubagentController>
 
   constructor(private readonly deps: SubagentServiceDeps) {}
 
@@ -51,7 +53,13 @@ export class SubagentService {
   }
 
   async get(): Promise<SubagentController> {
+    if (this.loading) return this.loading
     if (this.controller) return this.controller
+    this.loading = this.createController()
+    try { return await this.loading } finally { this.loading = undefined }
+  }
+
+  private async createController(): Promise<SubagentController> {
     const s = await getSettings()
     this.controller = new SubagentController({
       cwd: s.cwd,
@@ -63,6 +71,7 @@ export class SubagentService {
       onRemove: (id) => this.deps.onRemove(id),
       onFinished: (run) => this.deps.onFinished?.(run)
     })
+    await this.controller.loadHistory()
     return this.controller
   }
 

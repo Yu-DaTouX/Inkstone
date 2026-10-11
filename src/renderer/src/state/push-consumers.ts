@@ -143,7 +143,7 @@ export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): bo
       ctx.alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
       break
     case 'ui-resolved':
-      /* 在手机上答复了：电脑上的问题面板同步移除这一条（草稿一并丢弃） */
+      /* 答复或超时：只移除对应请求。 */
       set({ uiRequests: s.uiRequests.filter((r) => r.id !== m.payload.id) })
       break
     case 'ui-deadline':

@@ -244,12 +244,16 @@ export class RemoteClient {
     return (await this.post<{ data: RemoteDeviceSummary }>('/remote/v1/device', { name }, idempotencyKey())).data
   }
 
-  async models(sessionId: string): Promise<{ models: RemoteModel[]; current: RemoteModel | null }> {
-    return (await this.get<{ data: { models: RemoteModel[]; current: RemoteModel | null } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/models`)).data
+  async models(sessionId: string): Promise<{ models: RemoteModel[]; current: RemoteModel | null; thinking?: { level: string; levels: string[] } | null }> {
+    return (await this.get<{ data: { models: RemoteModel[]; current: RemoteModel | null; thinking?: { level: string; levels: string[] } | null } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/models`)).data
   }
 
   async setModel(sessionId: string, model: RemoteModel, key = idempotencyKey()): Promise<RemoteModel> {
     return (await this.post<{ data: { current: RemoteModel } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/model`, { provider: model.provider, modelId: model.id }, key)).data.current
+  }
+
+  async setThinking(sessionId: string, level: string, key = idempotencyKey()): Promise<string> {
+    return (await this.post<{ data: { level: string } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/thinking`, { level }, key)).data.level
   }
 
   imageSource(sessionId: string, messageId: string, index: number) {
@@ -349,8 +353,12 @@ export class RemoteEventStream {
     this.handlers.onState('closed')
   }
 
+  /** 为控制内存主动换一条流：不是断线，不对外报「重新连接」，也不等退避 */
+  private rotating = false
+
   private open(): void {
-    this.handlers.onState(this.lastSeq > 0 ? 'reconnecting' : 'connecting')
+    if (this.rotating) this.rotating = false
+    else this.handlers.onState(this.lastSeq > 0 ? 'reconnecting' : 'connecting')
     if (this.connection.relay) return this.openRelay(this.connection.relay)
     const xhr = new XMLHttpRequest()
     this.xhr = xhr
@@ -403,7 +411,7 @@ export class RemoteEventStream {
         if (received >= 1_000_000) {
           this.cancelRelay?.()
           this.cancelRelay = null
-          this.scheduleReconnect()
+          this.rotate()
         }
       },
       onEnd: () => {
@@ -418,9 +426,20 @@ export class RemoteEventStream {
     this.offset = text.length
     /* RN 的 XHR 会保留整条 SSE 响应；定期重连，避免长任务持续占用内存。 */
     if (text.length >= 1_000_000) {
-      this.xhr?.abort()
-      this.scheduleReconnect()
+      const xhr = this.xhr
+      this.rotate()
+      xhr?.abort()
     }
+  }
+
+  private rotate(): void {
+    if (this.stopped || this.retryTimer) return
+    this.xhr = null
+    this.rotating = true
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
+      if (!this.stopped) this.open()
+    }, 0)
   }
 
   private consumeText(chunk: string): void {

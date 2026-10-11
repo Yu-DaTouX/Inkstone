@@ -6,13 +6,13 @@
  */
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, readFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { SubagentHistory } from './subagent-history'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import type { SubagentEndReason, SubagentRun, UIMessage } from '../shared/ipc'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
-import { accumulateUsage, ingestUsageSnapshot, type UsageSnapshots } from '../shared/subagent-usage'
+import { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage, type UsageSnapshots } from '../shared/subagent-usage'
 import {
   briefPrompt,
   parseSubagentBrief,
@@ -32,20 +32,15 @@ import {
   type PreparedWorkspace
 } from './subagent-isolation'
 
-/** 同时最多跑几个（方案 8.4 建议首期 2 个） */
-const MAX_CONCURRENT = 2
-/**
- * 时间限制有三层，避免「干了很多活却在整点被一刀杀掉、成果全丢」：
- *   · 无进展提醒：这么久没有事件只提醒等待，不据此判定卡死；
- *   · 总上限：不管有没有进展，最长跑这么久（任务输入里可给 `timeoutMinutes`，仍封顶）；
- *   · 收尾宽限：到点先让它交出目前的结论，宽限内仍不结束才硬停。
- */
-const IDLE_WARNING_MS = 5 * 60 * 1000
-const TOTAL_TIMEOUT_MS = 30 * 60 * 1000
+const MAX_CONCURRENT = 10
+/** 停滞或显式总期限到限后，先请求收尾，宽限内未结束才停止。 */
+const STALL_TIMEOUT_MS = 10 * 60 * 1000
 const GRACE_MS = 75 * 1000
+const PROGRESS_EVENTS = new Set(['agent_start', 'turn_start', 'turn_end', 'message_start', 'message_update', 'message_end',
+  'tool_execution_start', 'tool_execution_update', 'tool_execution_end', 'auto_compaction_start', 'auto_compaction_end'])
 
 /**
- * 无进展提醒、总时长与收尾宽限的实际取值。
+ * 停滞超时、可选总期限与收尾宽限的实际取值。
  *
  * `YAN_SUBAGENT_TIMEOUT_MS` / `YAN_SUBAGENT_IDLE_MS` / `YAN_SUBAGENT_GRACE_MS` 只为测试能真跑
  * 超时分支，避免回归测试等待完整任务时限。
@@ -54,9 +49,9 @@ function envMs(name: string): number | undefined {
   const value = Number(process.env[name])
   return Number.isFinite(value) && value > 0 ? value : undefined
 }
-function limitsFor(brief: SubagentBrief): { totalMs: number; idleMs: number; graceMs: number } {
-  const total = envMs('YAN_SUBAGENT_TIMEOUT_MS') ?? (brief.timeoutMinutes ? brief.timeoutMinutes * 60_000 : TOTAL_TIMEOUT_MS)
-  return { totalMs: total, idleMs: envMs('YAN_SUBAGENT_IDLE_MS') ?? IDLE_WARNING_MS, graceMs: envMs('YAN_SUBAGENT_GRACE_MS') ?? GRACE_MS }
+function limitsFor(brief: SubagentBrief): { totalMs?: number; idleMs: number; graceMs: number } {
+  const total = envMs('YAN_SUBAGENT_TIMEOUT_MS') ?? (brief.timeoutMinutes ? brief.timeoutMinutes * 60_000 : undefined)
+  return { totalMs: total, idleMs: envMs('YAN_SUBAGENT_IDLE_MS') ?? STALL_TIMEOUT_MS, graceMs: envMs('YAN_SUBAGENT_GRACE_MS') ?? GRACE_MS }
 }
 
 /** 时长的可读写法：报**实际上限**，测试把它压到几百毫秒时不能还写「10 分钟」 */
@@ -66,17 +61,16 @@ function spanText(ms: number): string {
   return `${ms} 毫秒`
 }
 const totalTimeoutText = (ms: number): string => `运行超时（超过 ${spanText(ms)}）`
-const idleWarningText = (ms: number): string => `超过 ${spanText(ms)} 未收到进展，可能仍在执行工具或等待模型；任务继续运行`
+const stallTimeoutText = (ms: number): string => `停滞超时（超过 ${spanText(ms)} 未收到模型输出或工具事件）`
 
 /** 到点后发给子代理的收尾指令 */
-function wrapUpMessage(reason: 'timeout' | 'budget'): string {
-  return (
-    (reason === 'budget' ? '【宿主提示】工具调用次数已用完。' : '【宿主提示】时间到了。') +
-    '不要再调用任何工具，立刻用已有的资料交出结论：先说已确认的结论，再说明哪些部分没来得及核实。'
-  )
+function wrapUpMessage(text: string): string {
+  return `【宿主提示】${text}。不要再调用任何工具，立刻用已有的资料交出结论：先说已确认的结论，再说明哪些部分没来得及核实。`
 }
 /** 转录最多保留多少条 */
 const MAX_TRANSCRIPT = 200
+/** 只合并流式消息快照；生命周期、工具与最终消息仍即时推送。 */
+const STREAM_PUSH_MS = 33
 /**
  * 子代理真正用到的 pi 客户端能力。
  *
@@ -99,9 +93,11 @@ interface Run extends SubagentRun {
   rpc: SubagentRpc
   /** 当前排定的看门计时器（到点检查空闲 / 总上限，或收尾宽限） */
   timer: NodeJS.Timeout
-  /** 最近一次收到 pi 事件的时刻：无进展提醒从这里算 */
+  /** 每个运行最多挂一个流式推送，避免逐 token 序列化整份转录。 */
+  pushTimer?: NodeJS.Timeout
+  /** 最近一次收到 pi 进展事件的时刻。 */
   lastProgressAt: number
-  totalMs: number
+  totalMs?: number
   idleMs: number
   graceMs: number
   /** 收到过 agent_settled / agent_end 就认为这一轮结束 */
@@ -128,6 +124,9 @@ interface Run extends SubagentRun {
   stopReason?: string
   /** H-10b：按消息 id 保存最后一份 usage 快照，重放/流式增量不会重复相加 */
   usageSnapshots: UsageSnapshots
+  /** 原生快照请求按事件更新；迟到的旧请求不能覆盖新快照。 */
+  contextRevision?: number
+  contextRefresh?: Promise<void>
   /**
    * 派活时写清的输入（T15-1）。
    *
@@ -173,9 +172,16 @@ export class SubagentController {
    */
   private preparing = 0
   private opts: SubagentOptions
+  private history: SubagentHistory
 
   constructor(opts: SubagentOptions) {
     this.opts = opts
+    this.history = new SubagentHistory(opts.archiveDir ?? join(YAN_DIR, 'subagents'))
+  }
+
+  /** 只恢复纯历史，不创建 RPC、占并发槽或通知父会话。 */
+  async loadHistory(): Promise<void> {
+    await this.history.load()
   }
 
   /**
@@ -200,6 +206,7 @@ export class SubagentController {
       resultPath: run.resultPath,
       model: run.model,
       thinkingLevel: run.thinkingLevel,
+      contextUsage: run.contextUsage,
       status: run.status,
       startedAt: run.startedAt,
       endedAt: run.endedAt,
@@ -232,16 +239,28 @@ export class SubagentController {
   }
 
   private emit(run: Run): void {
+    clearTimeout(run.pushTimer)
+    run.pushTimer = undefined
     this.opts.onChange(this.snapshot(run))
   }
 
+  private emitStream(run: Run): void {
+    if (run.pushTimer) return
+    run.pushTimer = setTimeout(() => {
+      run.pushTimer = undefined
+      // 清除记录后不能由迟到的计时器把它重新推回界面。
+      if (this.runs.get(run.id) === run) this.emit(run)
+    }, STREAM_PUSH_MS)
+  }
+
   list(): SubagentRun[] {
-    return [...this.runs.values()].map((r) => this.snapshot(r))
+    const historical = this.history.list().filter(({ run }) => !this.runs.has(run.id)).map(({ run }) => run)
+    return [...historical, ...[...this.runs.values()].map((r) => this.snapshot(r))].sort((a, b) => a.startedAt - b.startedAt)
   }
 
   get(id: string): SubagentRun | undefined {
     const run = this.runs.get(id)
-    return run ? this.snapshot(run) : undefined
+    return run ? this.snapshot(run) : this.history.get(id)?.run
   }
 
   get runningCount(): number {
@@ -250,13 +269,18 @@ export class SubagentController {
   }
 
   /** 跑清掉**已结束**的记录（运行中的不动） */
-  clearFinished(): void {
-    for (const [id, run] of [...this.runs]) {
+  async clearFinished(): Promise<void> {
+    for (const run of this.list()) {
       if (run.status === 'running' || run.status === 'starting') continue
       /* 未审阅的 worktree 不能被“清除已结束”悄悄丢掉。 */
       if (run.review === 'pending' || run.review === 'conflict') continue
-      this.runs.delete(id)
-      this.opts.onRemove?.(id)
+      const rootCwd = this.runs.get(run.id)?.workspace.rootCwd ?? this.history.get(run.id)?.rootCwd ?? run.cwd
+      // 只记隐藏，不删除调用记录、原生会话或补丁；重启后不能重新冒出来。
+      await this.history.hide(run, rootCwd)
+      const live = this.runs.get(run.id)
+      clearTimeout(live?.pushTimer)
+      this.runs.delete(run.id)
+      this.opts.onRemove?.(run.id)
     }
   }
 
@@ -291,10 +315,16 @@ export class SubagentController {
      */
     const ctx = this.opts
     this.preparing += 1
-    try {
-      return await this.launch(ctx, text, model, isolation, parsed.brief)
-    } finally {
+    let reserved = true
+    const releasePreparing = () => {
+      if (!reserved) return
+      reserved = false
       this.preparing -= 1
+    }
+    try {
+      return await this.launch(ctx, text, model, isolation, parsed.brief, releasePreparing)
+    } finally {
+      releasePreparing()
     }
   }
 
@@ -303,7 +333,8 @@ export class SubagentController {
     text: string,
     model: string | undefined,
     isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd',
-    brief: SubagentBrief
+    brief: SubagentBrief,
+    releasePreparing: () => void
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
     const id = `sub-${randomBytes(4).toString('hex')}`
     let workspace: PreparedWorkspace
@@ -369,9 +400,13 @@ export class SubagentController {
     })
 
     this.runs.set(id, run)
+    releasePreparing()
+    await this.writeMetadata(run)
     this.emit(run)
 
     try {
+      // 保存起始快照时也可能收到停止；不能在已收口后重新拉起子进程。
+      if (run.status !== 'starting') return { ok: false, error: '子代理在启动期间已停止' }
       rpc.spawn()
       /* 等 pi 起来（扩展加载 + RPC 就绪） */
       const ready = await this.waitReady(rpc, 20_000)
@@ -386,6 +421,8 @@ export class SubagentController {
       if (ready.thinkingLevel) run.thinkingLevel = ready.thinkingLevel
       run.status = 'running'
       run.latestActivity = '已启动'
+      await this.writeMetadata(run)
+      if (run.status !== 'running') return { ok: false, error: '子代理在启动期间已停止' }
       this.emit(run)
 
       const res = await rpc.command('prompt', { message: briefPrompt(brief, text) })
@@ -448,7 +485,7 @@ export class SubagentController {
   /** 停止一个运行（方案 8.3：停止是明确动作，不是关掉预览） */
   async stop(id: string): Promise<{ ok: boolean; error?: string }> {
     const run = this.runs.get(id)
-    if (!run) return { ok: false, error: '找不到这个子代理' }
+    if (!run) return this.history.get(id) ? { ok: true } : { ok: false, error: '找不到这个子代理' }
     if (run.status !== 'running' && run.status !== 'starting') return { ok: true }
     await this.stopRun(run, false)
     return { ok: true }
@@ -591,45 +628,19 @@ export class SubagentController {
 
   private async writeMetadata(run: Run, patchPath?: string): Promise<void> {
     try {
-      const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
-      await mkdir(archiveDir, { recursive: true })
-      await writeFile(
-        join(archiveDir, `${run.id}.json`),
-        JSON.stringify(
-          {
-            id: run.id,
-            task: run.task,
-            parentSessionId: run.parentSessionId,
-            parentRunId: run.parentRunId,
-            parentMessageId: run.parentMessageId,
-            projectId: run.projectId,
-            rootCwd: run.workspace.rootCwd,
-            isolation: run.isolation,
-            status: run.status,
-            endReason: run.endReason,
-            error: run.error,
-            brief: run.brief,
-            limits: { totalMs: run.totalMs, idleWarningMs: run.idleMs, graceMs: run.graceMs },
-            review: run.review,
-            startedAt: run.startedAt,
-            endedAt: run.endedAt,
-            diff: run.diff,
-            patchPath: patchPath ?? run.diff?.patchPath,
-            resultPath: run.resultPath
-          },
-          null,
-          2
-        ),
-        'utf8'
-      )
-    } catch {
-      /* 归档失败不能让已经完成的子代理变成未处理异常。 */
+      await this.history.save(this.snapshot(run), run.workspace.rootCwd, {
+        limits: { totalMs: run.totalMs, stallTimeoutMs: run.idleMs, graceMs: run.graceMs },
+        patchPath: patchPath ?? run.diff?.patchPath
+      })
+    } catch (error) {
+      /* 落盘失败不拖垮进程收口，但保留诊断，不能静默宣称历史已保存。 */
+      console.warn('[subagent] 保存历史失败', error)
     }
   }
 
   async merge(id: string): Promise<{ ok: boolean; error?: string }> {
     const run = this.runs.get(id)
-    if (!run) return { ok: false, error: '找不到这个子代理' }
+    if (!run) return this.reviewHistory(id, 'merged')
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: '子代理仍在运行，结束后才能合并' }
     if (run.review === 'merged') return { ok: true }
     const patchPath = run.diff?.patchPath
@@ -637,6 +648,7 @@ export class SubagentController {
       run.review = 'merged'
       await cleanupWorkspace(run.workspace)
       run.worktreeDone = true
+      await this.writeMetadata(run)
       this.emit(run)
       return { ok: true }
     }
@@ -663,7 +675,7 @@ export class SubagentController {
 
   async discard(id: string): Promise<{ ok: boolean; error?: string }> {
     const run = this.runs.get(id)
-    if (!run) return { ok: false, error: '找不到这个子代理' }
+    if (!run) return this.reviewHistory(id, 'discarded')
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: '子代理仍在运行，先停止它' }
     run.review = 'discarded'
     /* 补丁归档保留，但隔离 worktree 明确删除；主工作树不受影响。 */
@@ -675,52 +687,62 @@ export class SubagentController {
     return { ok: true }
   }
 
-  /** 无进展只提醒一次；总时长独立计时，不被事件续期。 */
+  /** 历史审阅只操作已保存补丁，不能把旧 cwd 当成当前进程或清理其目录。 */
+  private async reviewHistory(id: string, review: 'merged' | 'discarded'): Promise<{ ok: boolean; error?: string }> {
+    const record = this.history.get(id)
+    if (!record) return { ok: false, error: '找不到这个子代理' }
+    const run = { ...record.run }
+    if (run.review === review) return { ok: true }
+    if (review === 'merged' && run.diff?.files) {
+      if (!run.diff.patchPath) return { ok: false, error: '历史任务没有可合并的补丁' }
+      const result = await applyPatch(record.rootCwd, run.diff.patchPath)
+      if (!result.ok) return result
+    }
+    run.review = review
+    await this.history.save(run, record.rootCwd)
+    this.opts.onChange(run)
+    return { ok: true }
+  }
+
+  /** 进展续期停滞时钟；显式总期限独立计时，收尾计时不再续期。 */
   private armWatch(run: Run): void {
+    if (run.wrapUp || (run.status !== 'running' && run.status !== 'starting')) return
     clearTimeout(run.timer)
-    if (run.status !== 'running' && run.status !== 'starting') return
-    const at = run.progressWarning
-      ? run.startedAt + run.totalMs
-      : Math.min(run.startedAt + run.totalMs, run.lastProgressAt + run.idleMs)
+    const at = Math.min(run.totalMs ? run.startedAt + run.totalMs : Infinity, run.lastProgressAt + run.idleMs)
     run.timer = setTimeout(() => this.onWatch(run), Math.max(10, at - Date.now()))
   }
 
   private onWatch(run: Run): void {
-    if (run.status !== 'running' && run.status !== 'starting') return
+    if (run.wrapUp || (run.status !== 'running' && run.status !== 'starting')) return
     const now = Date.now()
-    if (now >= run.startedAt + run.totalMs) void this.wrapUp(run, 'timeout', totalTimeoutText(run.totalMs))
-    else {
-      if (!run.progressWarning && now >= run.lastProgressAt + run.idleMs) {
-        run.progressWarning = idleWarningText(run.idleMs)
-        this.emit(run)
-      }
-      this.armWatch(run)
-    }
+    if (run.totalMs && now >= run.startedAt + run.totalMs) void this.wrapUp(run, totalTimeoutText(run.totalMs))
+    else if (now >= run.lastProgressAt + run.idleMs) void this.wrapUp(run, stallTimeoutText(run.idleMs))
+    else this.armWatch(run)
   }
 
   /**
-   * 到点（时间或调用预算）：先让它收尾交结论，宽限内仍没结束才硬停。
+   * 超时先让它收尾交结论，宽限内仍没结束才硬停。
    *
    * 硬停时已经产出的助手文本仍会进摘要（见 `summarizeSubagentRun`），不会因为超时丢掉。
    * 启动阶段没有可收尾的东西，直接判失败。
    */
-  private async wrapUp(run: Run, reason: 'timeout' | 'budget', text: string): Promise<void> {
+  private async wrapUp(run: Run, text: string): Promise<void> {
     if (run.wrapUp || run.settled) return
     if (run.status !== 'running') {
-      await this.fail(run.id, text, reason)
+      await this.fail(run.id, text, 'timeout')
       return
     }
-    run.wrapUp = { reason, since: Date.now() }
-    run.progressWarning = undefined
-    run.latestActivity = reason === 'budget' ? '调用次数用完，正在收尾…' : '时间到，正在收尾…'
+    run.wrapUp = { reason: 'timeout', since: Date.now() }
+    run.progressWarning = text
+    run.latestActivity = `${text}，正在收尾…`
     this.emit(run)
     clearTimeout(run.timer)
-    run.timer = setTimeout(() => void this.fail(run.id, text, reason), run.graceMs)
+    run.timer = setTimeout(() => void this.fail(run.id, text, 'timeout'), run.graceMs)
     try {
-      const res = await run.rpc.command('steer', { message: wrapUpMessage(reason) }, { timeoutMs: 5000 })
-      if (!res.success) await this.fail(run.id, text, reason)
+      const res = await run.rpc.command('steer', { message: wrapUpMessage(text) }, { timeoutMs: 5000 })
+      if (!res.success) await this.fail(run.id, text, 'timeout')
     } catch {
-      await this.fail(run.id, text, reason)
+      await this.fail(run.id, text, 'timeout')
     }
   }
 
@@ -749,13 +771,29 @@ export class SubagentController {
     return { ok: false }
   }
 
+  /** 每条助手消息结束后读取 pi 原生上下文，不作周期轮询，也不阻塞模型事件。 */
+  private refreshContext(run: Run): void {
+    const revision = (run.contextRevision ?? 0) + 1
+    run.contextRevision = revision
+    run.contextRefresh = (async () => {
+      try {
+        const result = await run.rpc.command('get_session_stats', undefined, { timeoutMs: 2000 })
+        if (!result.success || run.contextRevision !== revision) return
+        const data = result.data as { contextUsage?: unknown } | undefined
+        const usage = normalizeSubagentContextUsage(data?.contextUsage)
+        if (!usage) return
+        run.contextUsage = usage
+        this.emit(run)
+      } catch {
+        /* 旧 pi 没报告或进程已退出：字段保持未知/最后一次原生快照，不估算。 */
+      }
+    })()
+  }
+
   private handleEvent(run: Run, evt: Record<string, unknown>): void {
     const type = String(evt.type ?? '')
-    run.lastProgressAt = Date.now()
-    if (run.progressWarning && !run.wrapUp && (run.status === 'running' || run.status === 'starting')) {
-      run.progressWarning = undefined
-      this.armWatch(run)
-      this.emit(run)
+    if (PROGRESS_EVENTS.has(type)) {
+      run.lastProgressAt = Date.now()
     }
     /* 临时调试开关：看 pi 到底推了哪些事件（YAN_DEBUG_SUBAGENT=1）。
        Windows 上 Electron 是 GUI 子系统，console.log 不进 stdout，所以落临时文件。 */
@@ -827,22 +865,21 @@ export class SubagentController {
         run.usageSnapshots = ingestUsageSnapshot(run.usageSnapshots, msg.id, usage)
         run.usage = accumulateUsage(run.usageSnapshots)
       }
-      if (type === 'message_end') run.streamingId = undefined
+      if (type === 'message_end') {
+        run.streamingId = undefined
+        if (raw.role === 'assistant') this.refreshContext(run)
+      }
       if (run.transcript.length > MAX_TRANSCRIPT) {
         run.transcript.splice(0, run.transcript.length - MAX_TRANSCRIPT)
       }
       run.latestActivity = activityOf(msg)
-      this.emit(run)
+      if (type === 'message_update' && raw.role === 'assistant') this.emitStream(run)
+      else this.emit(run)
       return
     }
 
     if (type === 'tool_execution_start') {
       run.toolCalls = (run.toolCalls ?? 0) + 1
-      const budget = run.brief?.maxToolCalls
-      if (budget && run.toolCalls >= budget && !run.wrapUp && run.status === 'running') {
-        void this.wrapUp(run, 'budget', `工具调用次数用完（${budget} 次）`)
-        return
-      }
       if (!run.wrapUp) run.latestActivity = `运行 ${String(evt.toolName ?? '工具')}`
       this.emit(run)
       return
@@ -869,11 +906,7 @@ export class SubagentController {
       if (modelFailed) run.error = run.error ?? modelErrorNotice(undefined)
       run.latestActivity = modelFailed
         ? '模型返回错误'
-        : wrapped
-          ? wrapped.reason === 'budget'
-            ? '调用次数用完，已收尾'
-            : '超时，已收尾'
-          : '已完成'
+        : wrapped ? '超时，已收尾' : '已完成'
       this.emit(run)
       /*
        * 跑完的子代理进程必须收掉（D16）。
@@ -891,6 +924,7 @@ export class SubagentController {
        */
       void (async () => {
         await this.waitTranscriptQuiet(run)
+        await run.contextRefresh
         try {
           await run.rpc.close()
         } catch {

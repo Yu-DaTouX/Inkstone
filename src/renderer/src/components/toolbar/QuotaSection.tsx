@@ -4,7 +4,7 @@ import { Section } from './ToolSection'
 import { useStore } from '../../state/store'
 import { quotaTone } from '../../../../shared/quota-tone'
 import { money, quotaCompactWindows, windowPct } from '../../../../shared/quota-mini'
-import { decideQuotaRefresh, hasDueQuotaWindow } from '../../../../shared/quota-refresh'
+import { claimDueQuotaWindows, decideQuotaRefresh } from '../../../../shared/quota-refresh'
 import { type QuotaWindow } from '../../../../shared/ipc'
 import { Button, IconButton, MiniMeter } from '../ui'
 import { DetailTrigger } from '../shell/DetailPopover'
@@ -36,6 +36,8 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
   const checkedAtRef = useRef<number | null>(null)
   /** 该 provider 是否支持额度接口；false 时不做任何自动查询（自定义 API） */
   const supportedRef = useRef<boolean | null>(null)
+  /** 相同窗口的过期响应不能驱动下一笔即时查询。 */
+  const resetAttemptsRef = useRef(new Set<string>())
 
   const refresh = useCallback(async () => {
     if (!provider) return
@@ -68,6 +70,9 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
   /* 切 provider 时清空旧账户的数字（不能把上一个账户的额度留在屏幕上） */
   useEffect(() => {
     providerRef.current = provider
+    resetAttemptsRef.current.clear()
+    checkedAtRef.current = null
+    supportedRef.current = null
     setQuota(null)
     setError('')
     void refresh()
@@ -121,9 +126,16 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
   }, [provider, refresh])
   useEffect(() => {
     const wins = quota?.windows ?? []
-    if (!wins.length) return
-    if (hasDueQuotaWindow(wins, Date.now())) void refresh()
-  }, [quota, refresh])
+    if (!wins.length || quota?.provider !== provider) return
+    const now = Date.now()
+    const decision = decideQuotaRefresh({
+      trigger: 'reset', now, lastCheckedAt: checkedAtRef.current,
+      intervalMs: AUTO_QUOTA_REFRESH_MS,
+      visible: document.visibilityState === 'visible', supported: supportedRef.current,
+      provider, inFlightProvider: inFlightRef.current
+    })
+    if (decision.query && claimDueQuotaWindows(wins, now, resetAttemptsRef.current)) void refresh()
+  }, [quota, provider, refresh])
   /**
    * 百分比口径（ChatGPT 订阅的用量接口只给 used_percent）。
    * 用 PERCENT 这个伪币种传递 —— 它不能走 money()，否则会显示成 “$28.00”。
@@ -167,7 +179,7 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
   /* 摘要条跟最紧的那个窗口；任一窗口已超限时条也标红 */
   const ringTone = ringPct === null ? '' : quotaTone(ringPct, anyExceeded)
   /* 空入口不渲染：没有供应商，或查不到任何可显示的数（不支持 / 未登录 / 出错）时整块不占位 */
-  if (!provider || (!loading && !mainText && compactWindows.length === 0 && !budget)) return null
+  if (!provider || (!loading && !mainText && compactWindows.length === 0 && !budget && provider !== 'claude-bridge')) return null
 
   const summary = (
       <span className="rp-header-usage">

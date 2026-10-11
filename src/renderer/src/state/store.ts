@@ -1443,6 +1443,8 @@ export const useStore = create<Store>((rawSet, get) => {
     void get().loadZoom()
     void get().reloadCommands()
     void get().loadGoal()
+    // 重启后聊天卡片也要读回历史，不能等打开子代理面板才恢复。
+    void get().loadSubagents()
     /* 运行实例身份与状态（N12）：bootstrap 后对齐一次 */
     void get().syncRunners()
   },
@@ -1565,9 +1567,11 @@ export const useStore = create<Store>((rawSet, get) => {
           void get().switchSession(target.sessionFile)
           break
         }
-        /* 尚未落盘的运行实例没有路径，使用稳定 sessionId 直接选。 */
+        /* 无路径托盘选择也要使旧历史读取和旧选择响应失效。 */
+        const gate = ++sessionSwitchGate
         void (async () => {
           const res = await piCall(() => window.yan.selectSession(target))
+          if (gate !== sessionSwitchGate) return
           if (!res.ok) {
             set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换运行中的会话失败') })
             return
@@ -1579,10 +1583,14 @@ export const useStore = create<Store>((rawSet, get) => {
             runId
           )
           set({
-            ...(snapshot ? projectSnapshotKeepingPeek(get(), snapshot) : {}),
+            ...(snapshot ? projectRuntimeSnapshot(snapshot) : { messages: [], session: null }),
+            peekedPath: null,
+            peekedSessionId: res.sessionId ?? target.sessionId ?? null,
+            peekNote: null,
             queue: snapshot?.queue ?? EMPTY_QUEUE,
             activeRunnerId: runId ?? null,
             goal: snapshot?.goal ?? null,
+            handoff: null,
             pendingActivation: null
           })
           void get().syncRunners()

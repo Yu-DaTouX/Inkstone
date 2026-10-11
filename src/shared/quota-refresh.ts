@@ -63,3 +63,19 @@ export function decideQuotaRefresh(input: QuotaRefreshInput): {
 export function hasDueQuotaWindow(windows: readonly QuotaWindow[], now: number): boolean {
   return windows.some((w) => w.resetAt !== undefined && w.resetAt <= now && !w.exceeded)
 }
+
+/** 同一到期窗口只自动补查一次；接口仍返回过期值时由正常周期刷新重试。 */
+export function claimDueQuotaWindows(windows: readonly QuotaWindow[], now: number, attempted: Set<string>): boolean {
+  const keyOf = (window: QuotaWindow) => JSON.stringify([window.id, window.resetAt])
+  const current = new Set(windows.map(keyOf))
+  for (const key of attempted) if (!current.has(key)) attempted.delete(key)
+  let claimed = false
+  for (const window of windows) {
+    if (!hasDueQuotaWindow([window], now)) continue
+    const key = keyOf(window)
+    if (attempted.has(key)) continue
+    attempted.add(key)
+    claimed = true
+  }
+  return claimed
+}

@@ -45,6 +45,7 @@ export async function runSessionSwitchTests(ok) {
   globalThis.cancelAnimationFrame = () => {}
 
   const peekDelays = new Map()
+  const selectDelays = new Map()
   const selected = []
   const yan = new Proxy(
     {},
@@ -63,8 +64,11 @@ export async function runSessionSwitchTests(ok) {
         }
         if (prop === 'selectSession') {
           return async (target) => {
-            selected.push(target.sessionFile)
-            return { ok: true, deferred: true, sessionId: target.sessionId }
+            selected.push(target.sessionFile ?? target.sessionId)
+            await sleep(selectDelays.get(target.sessionId) ?? 0)
+            return target.sessionFile
+              ? { ok: true, deferred: true, sessionId: target.sessionId }
+              : { ok: true, runId: `run-${target.sessionId}`, sessionId: target.sessionId }
           }
         }
         /* 其余宿主能力：返回空实现，本测试不依赖它们的具体行为 */
@@ -160,6 +164,66 @@ export async function runSessionSwitchTests(ok) {
     await Promise.all([p1, p2, p3])
     ok(useStore.getState().messages[0]?.id === 'msg-A', '最后一次点击最终生效', useStore.getState().messages[0]?.id)
     ok(selected.filter((path) => path === 'A').length === 1, '同一会话只请求激活一次（前两次作废）', selected.join(','))
+  }
+
+  /* 无路径托盘选择与历史点击必须共用选择代次。 */
+  const resetView = () => useStore.setState({
+    sessions, settings: { cwd: 'C:/proj', projects: [] }, session: null,
+    messages: [], activeRunnerId: 'old-run', sessionRuntimes: {},
+    peekedPath: null, peekedSessionId: null, pendingActivation: null, notices: []
+  })
+  const tray = (id) => useStore.getState().applyPush({
+    ch: 'tray-select-session', payload: { sessionId: id, cwd: 'C:/proj' }
+  })
+  {
+    resetView()
+    selected.length = 0
+    peekDelays.set('A', 100)
+    const history = useStore.getState().switchSession('A')
+    await sleep(10)
+    tray('tray-b')
+    await history
+    await sleep(20)
+    ok(!selected.includes('A'), '托盘的新选择使旧历史读取失效', selected.join(','))
+    ok(useStore.getState().pendingActivation === null, '旧历史不能成为托盘选择后的待激活目标')
+    ok(useStore.getState().activeRunnerId === 'run-tray-b', '托盘目标保持为当前运行实例')
+    ok(useStore.getState().peekedSessionId !== 'sess-a', '托盘选择不保留旧历史的预览身份')
+  }
+  {
+    resetView()
+    selectDelays.set('tray-b', 100)
+    peekDelays.set('A', 10)
+    tray('tray-b')
+    await sleep(10)
+    await useStore.getState().switchSession('A')
+    await sleep(110)
+    ok(useStore.getState().pendingActivation?.sessionFile === 'A', '托盘旧响应不清除新历史的待激活目标')
+    ok(useStore.getState().activeRunnerId !== 'run-tray-b', '托盘旧响应不覆盖新选择的运行身份')
+    selectDelays.clear()
+  }
+  {
+    resetView()
+    selectDelays.set('tray-b', 100)
+    tray('tray-b')
+    await sleep(10)
+    tray('tray-c')
+    await sleep(130)
+    ok(useStore.getState().activeRunnerId === 'run-tray-c', '连续无路径托盘选择只采用最后的响应')
+    selectDelays.clear()
+  }
+
+  {
+    resetView()
+    useStore.setState({ messages: [{ id: 'old-history', role: 'user', text: 'A' }], peekedPath: 'A', peekedSessionId: 'sess-a' })
+    useStore.getState().applyPush({
+      ch: 'sync',
+      runtime: { sessionId: 'tray-b', runId: 'run-tray-b', projectId: 'p', generation: 1 },
+      payload: [{ id: 'tray-message', role: 'assistant', text: 'B' }]
+    })
+    tray('tray-b')
+    await sleep(30)
+    ok(useStore.getState().messages[0]?.id === 'tray-message', '托盘选择投影目标缓存而不是旧历史')
+    ok(useStore.getState().peekedPath === null && useStore.getState().peekNote === null, '托盘选择清除旧历史的路径和截断提示')
   }
 
   /* 等一层微任务/定时器，确保没有残留回调，再把全局恢复回去 */

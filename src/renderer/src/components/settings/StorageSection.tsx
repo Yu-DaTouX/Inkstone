@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useT } from '../../i18n'
 import type { StorageInfoView } from '../../../../shared/ipc'
+import { BackupSection } from './BackupSection'
 import { Button, SettingRow } from '../ui'
 
 /**
@@ -37,6 +38,7 @@ export function StorageSection() {
   }
 
   return (
+    <>
     <SettingRow
       name={t('storage.title')}
       desc={
@@ -71,5 +73,7 @@ export function StorageSection() {
         <Button size="sm" variant="ghost" onClick={() => void window.yan.revealPath(info.realDir)}>{t('storage.open')}</Button>
       ) : null}
     </SettingRow>
+    <BackupSection />
+    </>
   )
 }

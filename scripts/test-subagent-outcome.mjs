@@ -2,7 +2,7 @@
  * 子代理的「结局」说法与相关护栏：
  *   · 状态词：超时 / 调用用完 / 报错 / 停止 / 待合并要能分开，别都压成「失败」；
  *   · 结束通知：如实写结局，超时收尾的部分结论要提醒模型核对；
- *   · 任务输入的时间与调用预算：夹到范围内，不是数字就报错；
+ *   · 可选总期限与旧调用预算兼容；
  *   · 别 sleep 轮询子代理：只认命令形状。
  */
 export function runSubagentOutcomeTests(ok, { outcome, notice, brief, repeatGuard }) {
@@ -49,13 +49,13 @@ export function runSubagentOutcomeTests(ok, { outcome, notice, brief, repeatGuar
   /* ---- 任务输入的限额 ---- */
   const parse = (raw) => brief.parseSubagentBrief(raw, '任务')
   const limited = parse({ goal: 'g', maxToolCalls: 1, timeoutMinutes: 999 })
-  ok(limited.ok && limited.brief.maxToolCalls === brief.SUBAGENT_BRIEF_LIMITS.minToolCalls, '调用预算夹到下限')
+  ok(limited.ok && limited.brief.maxToolCalls === undefined, '旧调用预算不再设置限制')
   ok(limited.ok && limited.brief.timeoutMinutes === brief.SUBAGENT_BRIEF_LIMITS.maxTimeoutMinutes, '时长夹到上限')
   const fine = parse({ goal: 'g', maxToolCalls: '40', timeoutMinutes: 10 })
-  ok(fine.ok && fine.brief.maxToolCalls === 40 && fine.brief.timeoutMinutes === 10, '数字字符串也接受（命令行传参是字符串）')
+  ok(fine.ok && fine.brief.maxToolCalls === undefined && fine.brief.timeoutMinutes === 10, '忽略旧调用预算，保留显式期限')
   ok(!('maxToolCalls' in parse({ goal: 'g' }).brief) && !('timeoutMinutes' in parse({ goal: 'g' }).brief), '不给就没有，不替调用方编')
-  ok(parse({ goal: 'g', maxToolCalls: 'many' }).ok === false && parse({ goal: 'g', timeoutMinutes: -3 }).ok === false, '不是正数就报错')
-  ok(/最多 40 次工具调用/.test(brief.briefPrompt(fine.brief, '任务')), '预算写进给子代理的提示')
+  ok(parse({ goal: 'g', maxToolCalls: 'many' }).ok && parse({ goal: 'g', timeoutMinutes: -3 }).ok === false, '旧预算字段忽略，非法期限仍报错')
+  ok(!/最多.*次工具调用/.test(brief.briefPrompt(fine.brief, '任务')), '不再给子代理注入调用预算')
 
   /* ---- 别 sleep 轮询 ---- */
   const { isSubagentPollLoop } = repeatGuard

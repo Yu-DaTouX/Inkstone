@@ -15,7 +15,7 @@
  */
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, readFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -73,6 +73,166 @@ async function waitFor(predicate, timeoutMs = 5000) {
 }
 
 export async function runSubagentControllerTests(ok, SubagentController) {
+  /* 流式推送按运行合并，主动读取/工具边界/停止仍立即反映权威转录。 */
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-coalesce-'))
+    const factory = makeRpcFactory(), pushed = []
+    const ctrl = new SubagentController({ cwd: archive, archiveDir: archive, prepare: fakePrepare,
+      createRpc: factory.createRpc, onChange: run => pushed.push(JSON.parse(JSON.stringify(run))) })
+    try {
+      const a = await ctrl.start('stream A', undefined, 'controlled-cwd')
+      const b = await ctrl.start('stream B', undefined, 'controlled-cwd')
+      const send = (rpc, type, text) => rpc.emit('event', { type, message: { role: 'assistant', content: [{ type: 'text', text }] } })
+      send(factory.created[0], 'message_start', '')
+      send(factory.created[1], 'message_start', '')
+      const initial = pushed.length
+      for (let i = 0; i < 40; i++) {
+        send(factory.created[0], 'message_update', `A-${i}中文🖋️`)
+        send(factory.created[1], 'message_update', `B-${i}`)
+      }
+      ok(pushed.length === initial, '流式突发不逐token推送完整快照')
+      ok(ctrl.get(a.run.id).transcript.at(-1).text === 'A-39中文🖋️', '主动读取不等待推送计时器')
+      await new Promise(done => setTimeout(done, 55))
+      ok(pushed.length === initial + 2, '两个运行分别合并为一个推送')
+      ok(pushed.filter(run => run.id === a.run.id).at(-1).transcript.at(-1).text === 'A-39中文🖋️', '合并推送保留完整中文emoji')
+      ok(pushed.filter(run => run.id === b.run.id).at(-1).transcript.at(-1).text === 'B-39', '并行运行不串流式内容')
+      send(factory.created[0], 'message_update', '待结束')
+      send(factory.created[0], 'message_end', '最终全文')
+      ok(pushed.at(-1).transcript.at(-1).text === '最终全文', '消息结束立即替换为权威全文')
+      const ended = pushed.length
+      await new Promise(done => setTimeout(done, 55))
+      ok(pushed.length === ended, '结束后没有旧计时器重复推送')
+      send(factory.created[1], 'message_update', '工具前最新正文')
+      factory.created[1].emit('event', { type: 'tool_execution_start', toolName: 'read' })
+      ok(pushed.at(-1).toolCalls === 1 && pushed.at(-1).transcript.at(-1).text === '工具前最新正文', '工具开始立即携带最新正文推送')
+      send(factory.created[1], 'message_update', '停止前最新正文')
+      await ctrl.stop(b.run.id)
+      ok(pushed.at(-1).status === 'cancelled' && pushed.at(-1).transcript.at(-1).text === '停止前最新正文', '停止立即推送并保留最新正文')
+      const stopped = pushed.length
+      await new Promise(done => setTimeout(done, 55))
+      ok(pushed.length === stopped, '停止清理待推送计时器')
+      await ctrl.clearFinished()
+      ok(ctrl.get(b.run.id) === undefined, '停止记录显式清除后不反弹')
+    } finally {
+      await ctrl.stopAll()
+      await rm(archive, { recursive: true, force: true })
+    }
+  }
+
+  /* 真实磁盘快照 + 新控制器模拟重启：调用结果、归属和原生上下文不能丢。 */
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-history-'))
+    try {
+      const factory = makeRpcFactory()
+      let finished = 0, restoredNotifications = 0, restoredRpc = 0
+      const ctrl = new SubagentController({ cwd: 'C:/history-project', parentSessionId: 'history-parent', parentRunId: 'r-old',
+        parentMessageId: 'history-message', projectId: 'history-project', archiveDir: archive, prepare: fakePrepare,
+        createRpc: opts => {
+          const rpc = factory.createRpc(opts), inner = rpc.command
+          rpc.command = async type => type === 'get_state'
+            ? { success: true, data: { thinkingLevel: 'low' } }
+            : type === 'get_session_stats'
+              ? { success: true, data: { contextUsage: { tokens: 2000, contextWindow: 10000, percent: 20 } } }
+              : inner(type)
+          return rpc
+        }, onChange: () => {}, onFinished: () => { finished++ } })
+      const started = await ctrl.start('持久化调用记录', 'openai-codex/gpt-6.1-sol', 'controlled-cwd')
+      ok(started.ok, '历史回归：假 RPC 子代理成功启动')
+      const id = started.run.id, rpc = factory.created[0]
+      rpc.emit('event', { type: 'tool_execution_start', toolName: 'read', toolCallId: 'saved-call' })
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'saved-call', name: 'read', arguments: { path: 'example.ts' } }] } })
+      rpc.emit('event', { type: 'message_end', message: { role: 'toolResult', toolCallId: 'saved-call', toolName: 'read', content: [{ type: 'text', text: 'saved tool result' }] } })
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '保存后的最终回复' }] } })
+      rpc.emit('event', { type: 'agent_settled' })
+      ok(await waitFor(() => finished === 1), '历史回归：结束收口落盘后通知一次')
+      await ctrl.stopAll()
+      const disk = JSON.parse(await readFile(join(archive, `${id}.json`), 'utf8'))
+      ok(disk.transcript[0].toolCalls[0].output === 'saved tool result', '磁盘快照包含回填后的调用结果')
+      ok(disk.model === 'openai-codex/gpt-6.1-sol' && disk.thinkingLevel === 'low' && disk.contextUsage.tokens === 2000, '模型、思考和原生上下文同时持久化')
+      const restarted = () => new SubagentController({ cwd: 'C:/other-current-project', archiveDir: archive,
+        createRpc: () => { restoredRpc++; throw new Error('历史不得创建进程') }, onChange: () => {},
+        onFinished: () => { restoredNotifications++ } })
+      const restored = restarted()
+      await Promise.all([restored.loadHistory(), restored.loadHistory()])
+      const history = restored.get(id)
+      ok(restored.list().length === 1 && history?.transcript[0].toolCalls[0].output === 'saved tool result', '新控制器读回调用及结果，不重复加载')
+      ok(history?.transcript.at(-1).text === '保存后的最终回复', '重启后最终回复仍可查看')
+      ok(history?.parentSessionId === 'history-parent' && history.parentMessageId === 'history-message' && history.cwd === 'C:/history-project', '历史保持原父会话、消息和工作目录，不归给当前项目')
+      await restored.stopAll()
+      ok(restored.runningCount === 0 && restoredRpc === 0 && restoredNotifications === 0, '恢复历史不占槽、不启动进程、不重发通知')
+      await restored.clearFinished()
+      ok(restored.list().length === 0 && existsSync(join(archive, `${id}.json`)), '清除只隐藏历史，原调用快照仍保留')
+      const cleared = restarted()
+      await cleared.loadHistory()
+      ok(cleared.list().length === 0, '显式清除的已完成任务重启后不会重新出现')
+
+      // 兼容旧摘要，调用来自指定子任务的原生会话，不读其他用户目录。
+      const legacy = { id: 'sub-legacy', task: '旧版任务', rootCwd: 'C:/legacy', parentSessionId: 'legacy-parent',
+        isolation: 'controlled-cwd', status: 'done', startedAt: 100, endedAt: 200, review: 'none' }
+      await writeFile(join(archive, 'sub-legacy.json'), JSON.stringify(legacy))
+      await writeFile(join(archive, 'sub-broken.json'), '{broken')
+      const session = join(archive, 'sessions', 'sub-legacy')
+      await mkdir(session, { recursive: true })
+      const entries = [
+        { type: 'session', id: 'native-history', cwd: 'C:/legacy' },
+        { type: 'message', id: 'native-call', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'legacy-call', name: 'read', arguments: { path: 'legacy.ts' } }] } },
+        { type: 'message', id: 'native-result', message: { role: 'toolResult', toolCallId: 'legacy-call', toolName: 'read', content: [{ type: 'text', text: 'legacy result' }] } },
+        { type: 'message', id: 'native-final', message: { role: 'assistant', model: 'gpt-6-luna', content: [{ type: 'text', text: '旧记录最终回复' }] } }
+      ]
+      const native = entries.map(entry => JSON.stringify(entry)).join('\n') + '\n'
+      await writeFile(join(session, 'session.jsonl'), native)
+      const old = restarted()
+      await old.loadHistory()
+      ok(old.list().length === 1 && old.get('sub-legacy')?.transcript[0].toolCalls[0].output === 'legacy result', '旧版摘要从本任务 pi 会话补回工具结果，损坏的其他摘要不遮掉历史')
+      ok(old.get('sub-legacy')?.toolCalls === 1 && old.get('sub-legacy')?.transcript.at(-1).text === '旧记录最终回复', '旧记录恢复调用计数和最终回复')
+      ok(old.get('sub-legacy')?.model === 'gpt-6-luna', '旧记录模型从原生助手消息恢复，不猜测提供商')
+      ok(await readFile(join(session, 'session.jsonl'), 'utf8') === native, '兼容恢复不改写原生会话')
+      await writeFile(join(archive, 'sub-interrupted.json'), JSON.stringify({ ...legacy, id: 'sub-interrupted', status: 'running', transcript: [], toolCalls: 0 }))
+      await mkdir(join(archive, 'sessions', 'sub-interrupted'), { recursive: true })
+      await writeFile(join(archive, 'sessions', 'sub-interrupted', 'session.jsonl'), native)
+      const interrupted = restarted()
+      await interrupted.loadHistory()
+      ok(interrupted.get('sub-interrupted')?.status === 'error' && interrupted.get('sub-interrupted')?.endReason === 'exited', '异常退出的旧运行如实显示中断，不误报正在执行')
+      ok(interrupted.get('sub-interrupted')?.transcript[0].toolCalls[0].output === 'legacy result' && interrupted.get('sub-interrupted')?.toolCalls === 1, '中断时空快照也从原生会话恢复，不继承过期调用计数')
+      ok(interrupted.runningCount === 0 && restoredRpc === 0 && restoredNotifications === 0, '旧记录和中断记录均不重新执行或通知')
+    } finally { await rm(archive, { recursive: true, force: true }) }
+  }
+  /* 保存起始快照是新的 await 边界：停止后不得再次 spawn 或发送 prompt。 */
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-start-save-'))
+    try {
+      for (const blockWrite of [1, 2]) {
+        const factory = makeRpcFactory()
+        let release, blocked = false, spawns = 0, prompts = 0
+        const gate = new Promise(resolve => { release = resolve })
+        const ctrl = new SubagentController({ cwd: 'C:/save-race', archiveDir: archive, prepare: fakePrepare, onChange: () => {},
+          createRpc: opts => {
+            const rpc = factory.createRpc(opts), spawn = rpc.spawn, command = rpc.command
+            rpc.spawn = () => { spawns++; spawn() }
+            rpc.command = async type => { if (type === 'prompt') prompts++; return command(type) }
+            return rpc
+          } })
+        const save = ctrl.history.save.bind(ctrl.history)
+        let writes = 0
+        ctrl.history.save = async (...args) => {
+          const wait = ++writes === blockWrite
+          await save(...args)
+          if (wait) { blocked = true; await gate }
+        }
+        const pending = ctrl.start('保存时停止', undefined, 'controlled-cwd')
+        ok(await waitFor(() => blocked), '起始快照保存后的 await 边界可以接收停止')
+        const id = ctrl.list()[0].id
+        await ctrl.stop(id)
+        release()
+        const started = await pending
+        ok(!started.ok && ctrl.get(id)?.status === 'cancelled' && spawns === blockWrite - 1 && prompts === 0, `第 ${blockWrite} 次保存期间停止后不再拉起进程或继续派活`)
+        const restored = new SubagentController({ cwd: 'C:/other', archiveDir: archive, onChange: () => {} })
+        await restored.loadHistory()
+        ok(restored.get(id)?.status === 'cancelled', '停止快照不会被迟到的起始写入盖回运行状态')
+      }
+    } finally { await rm(archive, { recursive: true, force: true }) }
+  }
+
   /* ---- D1：并发槽位在 prepare 之前预占 ---- */
   {
     let release
@@ -89,15 +249,44 @@ export async function runSubagentControllerTests(ok, SubagentController) {
         return { isolation, rootCwd, cwd: rootCwd }
       }
     })
-    const pending = [ctrl.start('任务 1'), ctrl.start('任务 2'), ctrl.start('任务 3')]
+    const pending = Array.from({ length: 11 }, (_, i) => ctrl.start(`任务 ${i + 1}`))
+    ok(ctrl.runningCount === 10, '准备期间预占10个名额')
     release()
     const results = await Promise.all(pending)
     const accepted = results.filter((r) => r.ok)
     const rejected = results.filter((r) => !r.ok)
-    ok(accepted.length === 2, '并发启动时最多两个通过（槽位在准备隔离区前就占住）', `通过=${accepted.length}`)
-    ok(rejected.length === 1, '第三个并发请求被拒绝', `拒绝=${rejected.length}`)
-    ok(/最多 2 个/.test(rejected[0]?.error ?? ''), '拒绝理由说明并发上限', JSON.stringify(rejected[0]?.error))
+    ok(accepted.length === 10, '并发启动时10个通过（槽位在准备隔离区前就占住）', `通过=${accepted.length}`)
+    ok(rejected.length === 1, '第11个并发请求被拒绝', `拒绝=${rejected.length}`)
+    ok(/最多 10 个/.test(rejected[0]?.error ?? ''), '拒绝理由说明并发上限', JSON.stringify(rejected[0]?.error))
+    await ctrl.stop(accepted[0].run.id)
+    ok((await ctrl.start('释放后补位')).ok && ctrl.runningCount === 10, '停止后可补回一个名额')
     await ctrl.stopAll()
+    ok(ctrl.runningCount === 0, '停止全部后名额归零')
+  }
+
+  {
+    let release
+    const gate = new Promise(resolve => { release = resolve })
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({ cwd: 'C:/staggered', onChange: () => {}, prepare: fakePrepare,
+      createRpc: opts => {
+        const rpc = factory.createRpc(opts), command = rpc.command
+        rpc.command = async type => { if (type === 'get_state') await gate; return command(type) }
+        return rpc
+      } })
+    const first = Array.from({ length: 5 }, () => ctrl.start('第一批'))
+    try {
+      ok(await waitFor(() => factory.created.length === 5 && ctrl.list().length === 5), '第一批已进入启动等待')
+      ok(ctrl.runningCount === 5, '已登记的启动任务不再重复计入准备名额')
+      const second = Array.from({ length: 5 }, () => ctrl.start('第二批'))
+      ok(!(await ctrl.start('超额')).ok, '交错启动仍拒绝第11个任务')
+      release()
+      ok((await Promise.all([...first, ...second])).every(result => result.ok) && ctrl.runningCount === 10, '两批共10个均可启动')
+    } finally {
+      release()
+      await Promise.all(first)
+      await ctrl.stopAll()
+    }
   }
 
   /* ---- D3：准备期间切父会话，不能发生代次漂移 ---- */
@@ -236,6 +425,40 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       message: { role: 'assistant', content: [{ type: 'text', text: 'ok2' }], usage: usage(7, 3) }
     })
     ok(ctrl.get(id)?.usage?.input === 107, '不同消息相加')
+    await ctrl.stopAll()
+  }
+
+  /* 原生上下文与累计调用用量独立，迟到响应不能覆盖新快照。 */
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({ cwd: 'C:/proj-a', createRpc: factory.createRpc, onChange: () => {}, prepare: fakePrepare })
+    const res = await ctrl.start('上下文快照', undefined, 'controlled-cwd')
+    const rpc = factory.created[0]
+    const command = rpc.command.bind(rpc)
+    let releaseOld
+    let queries = 0
+    rpc.command = async type => {
+      if (type !== 'get_session_stats') return command(type)
+      queries++
+      if (queries === 1) return new Promise(resolve => { releaseOld = resolve })
+      return { success: true, data: { contextUsage: { tokens: 2000, contextWindow: 8000 } } }
+    }
+    const end = () => rpc.emit('event', { type: 'message_end', message: {
+      role: 'assistant', content: [{ type: 'text', text: 'snapshot' }],
+      usage: { input: 50_000, output: 100, cacheRead: 0, cacheWrite: 0, totalTokens: 50_100, cost: { total: 0 } }
+    } })
+    end()
+    end()
+    ok(await waitFor(() => ctrl.get(res.run.id)?.contextUsage?.tokens === 2000), '助手结束后采集 pi 原生上下文快照')
+    ok(ctrl.get(res.run.id)?.usage?.totalTokens === 100_200, '上下文占用不取累计调用 token')
+    releaseOld({ success: true, data: { contextUsage: { tokens: 7000, contextWindow: 8000 } } })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    ok(ctrl.get(res.run.id)?.contextUsage?.tokens === 2000, '迟到的旧上下文响应不覆盖新值')
+    ok(ctrl.get(res.run.id)?.contextUsage?.percent === 25, '上下文快照携带窗口占比')
+    rpc.command = async type => type === 'get_session_stats' ? { success: false, error: 'unsupported' } : command(type)
+    end()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    ok(ctrl.get(res.run.id)?.contextUsage?.tokens === 2000, '原生查询失败保留最后快照，不用累计值替代')
     await ctrl.stopAll()
   }
 
@@ -433,7 +656,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* 无事件只提醒：既不发收尾指令，也不关闭工具/模型；新进展清除提醒。 */
+  /* 进展续期停滞时钟；到限收尾，迟到事件不重置收尾宽限。 */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -443,22 +666,28 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       prepare: fakePrepare
     })
     process.env.YAN_SUBAGENT_IDLE_MS = '300'
-    process.env.YAN_SUBAGENT_GRACE_MS = '100'
+    process.env.YAN_SUBAGENT_GRACE_MS = '200'
     const res = await ctrl.start('慢但有进展', undefined, 'controlled-cwd')
     const rpc = factory.created[0]
     const id = res.run?.id ?? ''
     try {
+      ok(ctrl.runs.get(id).totalMs === undefined, '默认没有总时长上限')
+      ctrl.runs.get(id).startedAt = Date.now() - 40 * 60_000
       for (let i = 0; i < 4; i += 1) {
         await new Promise((r) => setTimeout(r, 150))
         rpc.emit('event', { type: 'tool_execution_start', toolName: 'read' })
       }
       ok(ctrl.get(id)?.status === 'running' && !ctrl.get(id)?.wrapUp, '持续有动静时不算空闲超时（共 600ms > 300ms 上限）')
       ok(ctrl.get(id)?.toolCalls === 4, '记下已发起的工具调用次数', String(ctrl.get(id)?.toolCalls))
-      ok(await waitFor(() => !!ctrl.get(id)?.progressWarning, 3000), '停止输出后提示未收到进展')
-      ok(ctrl.get(id)?.status === 'running' && !ctrl.get(id)?.wrapUp && !rpc.closed, '无进展提醒不收尾、不关闭子进程')
-      ok(/执行工具或等待模型/.test(ctrl.get(id)?.progressWarning ?? ''), '提醒不把静默执行直接认作卡死')
+      ctrl.onWatch(ctrl.runs.get(id))
+      ok(!ctrl.get(id)?.wrapUp, '持续进展超过旧30分钟期限也不会被截断')
+      ok(await waitFor(() => !!ctrl.get(id)?.wrapUp, 3000), '停止输出后进入停滞超时收尾')
+      ok(ctrl.get(id)?.status === 'running' && !rpc.closed, '收尾期间保留子进程交出已有结论')
+      ok(/停滞超时/.test(ctrl.get(id)?.progressWarning ?? ''), '收尾说明实际停滞原因')
       rpc.emit('event', { type: 'tool_execution_update', toolName: 'read' })
-      ok(!ctrl.get(id)?.progressWarning && ctrl.get(id)?.status === 'running', '工具更新清除无进展提醒')
+      ok(ctrl.get(id)?.wrapUp?.reason === 'timeout', '迟到工具更新不撤销超时收尾')
+      ok(await waitFor(() => rpc.closed), '迟到进展不延长收尾宽限，仍会停止进程')
+      ok(ctrl.get(id)?.endReason === 'timeout' && /停滞超时/.test(ctrl.get(id)?.error ?? ''), '停止后保留停滞原因与timeout身份')
     } finally {
       delete process.env.YAN_SUBAGENT_IDLE_MS
       delete process.env.YAN_SUBAGENT_GRACE_MS
@@ -468,15 +697,14 @@ export async function runSubagentControllerTests(ok, SubagentController) {
 
   {
     const factory = makeRpcFactory()
-    process.env.YAN_SUBAGENT_IDLE_MS = '50'
+    process.env.YAN_SUBAGENT_IDLE_MS = '1000'
     process.env.YAN_SUBAGENT_TIMEOUT_MS = '250'
     process.env.YAN_SUBAGENT_GRACE_MS = '70'
     const ctrl = new SubagentController({ cwd: 'C:/proj-a', createRpc: factory.createRpc, onChange: () => {}, prepare: fakePrepare })
     try {
       const res = await ctrl.start('工具静默，但总时长仍有效', undefined, 'controlled-cwd', { timeoutMinutes: 15 })
       const id = res.run.id
-      ok(await waitFor(() => !!ctrl.get(id)?.progressWarning), '总时长之前可出现无进展提醒')
-      ok(await waitFor(() => ctrl.get(id)?.status === 'error'), '无进展提醒之后总时长仍能终止任务')
+      ok(await waitFor(() => ctrl.get(id)?.status === 'error'), '显式总期限仍能先于停滞期限终止任务')
       ok(/运行超时/.test(ctrl.get(id)?.error ?? '') && factory.created[0].closed, '终止原因是总时长，且清理子进程')
     } finally {
       delete process.env.YAN_SUBAGENT_IDLE_MS
@@ -486,7 +714,27 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     }
   }
 
-  /* 调用预算：用完就让它收尾，结束原因记 budget */
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({ cwd: 'C:/events', createRpc: factory.createRpc, onChange: () => {}, prepare: fakePrepare })
+    const started = await ctrl.start('事件边界', undefined, 'controlled-cwd')
+    const run = ctrl.runs.get(started.run.id)
+    try {
+      ok(run.idleMs === 10 * 60_000 && run.graceMs === 75_000, '默认停滞10分钟、收尾75秒')
+      run.lastProgressAt = Date.now() - run.idleMs - 1
+      const stale = run.lastProgressAt
+      factory.created[0].emit('event', { type: 'response', success: true })
+      ok(run.lastProgressAt === stale, '状态响应不能冒充模型或工具进展')
+      factory.created[0].emit('event', { type: 'message_update', message: { role: 'assistant', content: [] } })
+      ctrl.onWatch(run)
+      ok(!run.wrapUp && run.lastProgressAt > stale, '模型流式输出重置停滞时钟')
+      run.lastProgressAt = Date.now() - run.idleMs - 1
+      ctrl.onWatch(run)
+      ok(run.wrapUp?.reason === 'timeout' && /10 分钟/.test(run.progressWarning), '默认10分钟停滞触发实际超时收尾')
+    } finally { await ctrl.stopAll() }
+  }
+
+  /* 旧预算参数不再限制调用次数；模型自主完成任务。 */
   {
     const factory = makeRpcFactory()
     const steers = []
@@ -507,13 +755,11 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     const res = await ctrl.start('只许查五次', undefined, 'controlled-cwd', { goal: '只许查五次', maxToolCalls: 5 })
     const rpc = factory.created[0]
     const id = res.run?.id ?? ''
-    for (let i = 0; i < 4; i += 1) rpc.emit('event', { type: 'tool_execution_start', toolName: 'read' })
-    ok(steers.length === 0, '预算没用完不打扰')
-    rpc.emit('event', { type: 'tool_execution_start', toolName: 'read' })
-    ok(await waitFor(() => steers.length === 1, 2000), '用满预算就发收尾指令')
-    ok(ctrl.get(id)?.wrapUp?.reason === 'budget', 'wrapUp 原因是 budget')
+    for (let i = 0; i < 350; i += 1) rpc.emit('event', { type: 'tool_execution_start', toolName: 'read' })
+    ok(steers.length === 0 && !ctrl.get(id)?.wrapUp, '超过旧参数和旧300次上限也不被宿主收尾')
+    ok(ctrl.get(id)?.toolCalls === 350, '统计所有调用供用户查看')
     rpc.emit('event', { type: 'agent_settled' })
-    ok(await waitFor(() => ctrl.get(id)?.status === 'done', 5000) && ctrl.get(id)?.endReason === 'budget', '收尾后记为 budget', String(ctrl.get(id)?.endReason))
+    ok(await waitFor(() => ctrl.get(id)?.status === 'done', 5000) && ctrl.get(id)?.endReason === 'completed', '自主结束标为正常完成', String(ctrl.get(id)?.endReason))
     await ctrl.stopAll()
   }
 
@@ -611,6 +857,14 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       /* 重复退出不能报错，也不该重复删一次已经没了的东西。 */
       await ctrl.stopAll()
       ok(ctrl.get(run.id)?.review === 'archived', '重复退出保持归档状态')
+      const history = new SubagentController({ cwd: 'C:/unrelated-current-project', archiveDir: archive, onChange: () => {} })
+      await history.loadHistory()
+      ok(history.get(run.id)?.review === 'archived' && history.get(run.id)?.diff?.files === 1, '重启后保留归档补丁与审阅状态')
+      const merged = await history.merge(run.id)
+      ok(merged.ok && existsSync(join(root, 'new.txt')), '历史合并应用到原 rootCwd，不使用当前项目或旧 worktree')
+      ok((await history.merge(run.id)).ok, '历史合并审阅状态持久化且重复操作不重复套补丁')
+      await history.discard(run.id)
+      ok(existsSync(join(root, 'new.txt')) && history.get(run.id)?.review === 'discarded', '历史放弃不清理旧 cwd 或删除原项目，调用快照仍保留')
     } finally {
       await rm(root, { recursive: true, force: true })
     }

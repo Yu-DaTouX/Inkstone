@@ -4,6 +4,7 @@ import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { forkFromText } from '../../lib/fork'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
+import { InteractionPart } from '../../lib/interaction-state'
 import { Markdown } from './MessageParts'
 import { ToolGroup } from './ToolRow'
 import { TurnActivityLine, TurnClock, TurnMeta, TurnProcess } from './TurnProcess'
@@ -279,8 +280,8 @@ function TurnResponse({
   return (
     <div className="turn-response" data-testid="turn-response">
       {parts?.length
-        ? parts.map((part, index) => <Paragraph key={part.id} text={part.text} sourceCwd={part.sourceCwd} primary live={live && index === parts.length - 1} />)
-        : <Paragraph text={response.text} sourceCwd={response.sourceCwd} primary live={live} />}
+        ? parts.map((part, index) => <Paragraph key={part.id} partId={part.id} text={part.text} sourceCwd={part.sourceCwd} primary live={live && index === parts.length - 1} />)
+        : <Paragraph partId={response.id} text={response.text} sourceCwd={response.sourceCwd} primary live={live} />}
     </div>
   )
 }
@@ -443,13 +444,13 @@ function fmtArtifactBytes(n: number): string {
  * key 用的是段的 id，所以新的一段出现时 React 会挂新节点 →
  * CSS 的 fade-in 动画就会跑（`animation` 只在节点首次挂载时触发）。
  */
-function ParagraphImpl({ text, primary, sourceCwd, live }: { text: string; primary?: boolean; sourceCwd?: string; live?: boolean }) {
+function ParagraphImpl({ text, primary, sourceCwd, live, partId }: { text: string; primary?: boolean; sourceCwd?: string; live?: boolean; partId?: string }) {
   /* 流式正文逐字推进（积压大时自动加速，超长文本与减少动效时直接给全文），避免一块一块地蹦出来 */
   const smooth = !!live && text.length < 6000 && !(typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   const shown = useTypewriter(text, smooth)
   return (
     <div className={`turn-para ${primary ? 'primary' : ''}`}>
-      <Markdown text={live ? shown : text} sourceCwd={sourceCwd} live={live} />
+      <InteractionPart.Provider value={partId ?? ''}><Markdown text={live ? shown : text} sourceCwd={sourceCwd} live={live} /></InteractionPart.Provider>
     </div>
   )
 }
@@ -470,7 +471,7 @@ function ParagraphImpl({ text, primary, sourceCwd, live }: { text: string; prima
  */
 const Paragraph = memo(
   ParagraphImpl,
-  (a, b) => a.text === b.text && a.primary === b.primary && a.sourceCwd === b.sourceCwd && a.live === b.live
+  (a, b) => a.text === b.text && a.primary === b.primary && a.sourceCwd === b.sourceCwd && a.live === b.live && a.partId === b.partId
 )
 
 /** 连续的短解说只收起已经完成的前几条；最后一条始终留在消息流里。 */
@@ -505,13 +506,13 @@ function CommentaryList({ parts, liveSourceId }: { parts: readonly AssistantTurn
           </button>
           <div id={groupId} className="turn-progress-body" hidden={!open}>
             {open ? parts.slice(0, compactCount).map((p) => (
-              <Paragraph key={p.id} text={p.text} sourceCwd={p.sourceCwd} />
+              <Paragraph key={p.id} partId={p.id} text={p.text} sourceCwd={p.sourceCwd} />
             )) : null}
           </div>
         </>
       ) : null}
       {parts.slice(compactCount).map((p, index, visible) => (
-        <Paragraph key={p.id} text={p.text} sourceCwd={p.sourceCwd} live={!!liveSourceId && p.id.startsWith(liveSourceId + '#') && index === visible.length - 1} />
+        <Paragraph key={p.id} partId={p.id} text={p.text} sourceCwd={p.sourceCwd} live={!!liveSourceId && p.id.startsWith(liveSourceId + '#') && index === visible.length - 1} />
       ))}
     </div>
   )

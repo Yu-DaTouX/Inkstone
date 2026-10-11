@@ -2092,12 +2092,14 @@ export interface SubagentRun {
   model?: string
   /** pi 报告的思考强度（off / low / high …）；没拿到就缺省 */
   thinkingLevel?: string
+  /** pi 原生上下文快照；不同于多次模型调用的累计 usage，旧记录缺省为未知。 */
+  contextUsage?: SessionStats['contextUsage']
   status: 'starting' | 'running' | 'done' | 'error' | 'cancelled'
   startedAt: number
   endedAt?: number
   /** 最新一行活动（紧凑列表里显示） */
   latestActivity?: string
-  /** 未收到事件的提醒；不会提前终止任务，有新进展时清除。 */
+  /** 超时收尾期间的原因；旧历史也可能保存无进展提醒。 */
   progressWarning?: string
   /** 转录（有界：主进程只保留最后若干条，避免 IPC 越推越大） */
   transcript: UIMessage[]
@@ -2213,8 +2215,8 @@ export type MainPushBody =
    * 而这里只是同一个请求的截止时间变了。`deadline` 是绝对毫秒，渲染端每秒算剩余量。
    */
   | { ch: 'ui-deadline'; payload: { id: string; timeout: number; deadline: number } }
-  /** 问题已答复（电脑或手机）：另一端据此把它从问题列表里移除 */
-  | { ch: 'ui-resolved'; payload: { id: string; by: 'desktop' | 'remote' } }
+  /** 问题已答复或超时：各端据此移除对应请求 */
+  | { ch: 'ui-resolved'; payload: { id: string; by: 'desktop' | 'remote' | 'timeout' } }
   /**
    * 当前会话的宿主提问记录（整表覆盖，切会话 / 重载后对齐）。
    *
@@ -3461,6 +3463,11 @@ export interface YanBridge {
   /** 在系统文件管理器里定位一个文件 */
   revealPath(p: string): Promise<void>
   /** 数据位置（会话、凭证、语音模型等）与迁移到非系统盘 */
+  interactions: {
+    get(session: string): Promise<import('./interaction-state').InteractionValues>
+    set(session: string, key: string, value: string | null): Promise<import('./interaction-state').InteractionValues>
+  }
+  backup(action: 'create' | 'verify'): Promise<import('./data-backup').BackupResult>
   storage: {
     info(): Promise<StorageInfoView>
     pick(): Promise<string | null>

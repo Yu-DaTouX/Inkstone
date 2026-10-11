@@ -307,8 +307,11 @@ export async function remoteModels(sessionId: string): Promise<RemoteOperationRe
   const agent = status ? host.runners()?.agentOf(status.runId) : host.ac()
   if (!agent) return { ok: false, status: 503, error: '请先在电脑启动模型连接' }
   const models = await agent.listModels()
+  /* 思考档位属于当前模型：只有该会话已有运行实例时才给 */
+  const levels = status ? await agent.listThinkingLevels().catch(() => []) : []
+  const thinking = status && levels.length > 1 ? { level: agent.getState()?.thinkingLevel ?? 'off', levels } : null
   const current = status ? agent.getState()?.model : models.find((model) => summary.model === model.id || summary.model === `${model.provider}/${model.id}` || summary.model === `${model.provider}:${model.id}`)
-  return { ok: true, data: { models: models.map(({ id, provider, name, input }) => ({ id, provider, name, input })), current: current ? { id: current.id, provider: current.provider, name: current.name, input: current.input } : null } }
+  return { ok: true, data: { models: models.map(({ id, provider, name, input }) => ({ id, provider, name, input })), current: current ? { id: current.id, provider: current.provider, name: current.name, input: current.input } : null, thinking } }
 }
 
 export async function executeRemoteCommand(command: RemoteCommand): Promise<RemoteOperationResult> {
@@ -335,6 +338,18 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
       const result = await agent.setModel(model.provider, model.id)
       host.pushRunners()
       return result.ok ? { ok: true, data: { current: { id: model.id, provider: model.provider, name: model.name, input: model.input } } } : { ok: false, status: 409, error: result.error }
+    })
+  }
+
+  if (command.action === 'thinking') {
+    return withRemoteSession(command.sessionId, async (agent) => {
+      const state = agent.getState()
+      if (state?.isAgentRunning || state?.isStreaming || state?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可切换思考档位' }
+      const levels = await agent.listThinkingLevels()
+      if (!levels.includes(command.level)) return { ok: false, status: 400, error: '当前模型不支持这个思考档位' }
+      const result = await agent.setThinking(command.level)
+      host.pushRunners()
+      return result.ok ? { ok: true, data: { level: command.level, levels } } : { ok: false, status: 409, error: result.error }
     })
   }
 

@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useInteractionState } from '../../lib/interaction-state'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { groupIntoTurns, type AssistantTurn } from '../../../../shared/turns'
+import { createOutlineProjector, type OutlineTurn } from '../../../../shared/outline-turns'
 import { formatDuration } from '../../../../shared/duration'
 import type { UIMessage } from '../../../../shared/ipc'
 
@@ -35,56 +36,29 @@ import type { UIMessage } from '../../../../shared/ipc'
 const noopScroll = (): void => {}
 
 /**
- * 书签：首版只在本机这一次运行里记住（按用户消息 id），不写进会话布局。
- * 持久化要另评估会话布局的格式，见设计规范「界面重构」。
- */
-const bookmarks = new Set<string>()
-const bookmarkListeners = new Set<() => void>()
-function toggleBookmark(id: string): void {
-  if (bookmarks.has(id)) bookmarks.delete(id)
-  else bookmarks.add(id)
-  bookmarkListeners.forEach((fn) => fn())
-}
-function useBookmarks(): Set<string> {
-  const [, bump] = useState(0)
-  useEffect(() => {
-    const fn = (): void => bump((n) => n + 1)
-    bookmarkListeners.add(fn)
-    return () => { bookmarkListeners.delete(fn) }
-  }, [])
-  return bookmarks
-}
-
-type OutlineTurn = {
-  user: string
-  assistant: string
-  msgId: string
-  index: number
-  failed: boolean
-  timestamp?: number
-  elapsedMs?: number
-  steps: number
-}
-
-function assistantAfter(all: ReturnType<typeof groupIntoTurns>, userIdx: number): AssistantTurn | null {
-  const next = all[userIdx + 1]
-  return next && next.kind === 'assistant' ? next : null
-}
-
-/**
  * 对话左侧的导航轨。默认画活动会话；分屏里非焦点的那块传入自己的 `messages`（只读投影），
  * 两块的轨道与正文避让完全一致，焦点换块时正文不横移。只读时点一格不跳转（点击先用来切焦点）。
  */
 export function ConversationOutline({ messages: projected, streamingId: projectedStreaming }: { messages?: UIMessage[]; streamingId?: string } = {}) {
   const t = useT()
-  const storeMessages = useStore((s) => s.messages)
-  const storeScrollToTurn = useStore((s) => s.scrollToTurn)
-  const storeStreamingId = useStore((s) => (s.session?.isStreaming ? s.messages[s.messages.length - 1]?.id : undefined))
+  const storeMessages = useStore((s) => projected ?? s.messages)
+  const storeScrollToTurn = useStore((s) => projected ? noopScroll : s.scrollToTurn)
+  const storeStreamingId = useStore((s) => projected ? projectedStreaming : (s.session?.isStreaming ? s.messages[s.messages.length - 1]?.id : undefined))
   const messages = projected ?? storeMessages
   const streamingId = projected ? projectedStreaming : storeStreamingId
   const scrollToTurn = projected ? noopScroll : storeScrollToTurn
   const [hover, setHoverNow] = useState<number | null>(null)
-  const marks = useBookmarks()
+  const saved = useInteractionState()
+  const [markError, setMarkError] = useState('')
+  const [savingMark, setSavingMark] = useState(false)
+  const marks = new Set(Object.keys(saved.values).filter((key) => key.startsWith('bookmark:')).map((key) => key.slice(9)))
+  const toggleBookmark = async (id: string): Promise<void> => {
+    setSavingMark(true)
+    setMarkError('')
+    try { await saved.save(`bookmark:${id}`, marks.has(id) ? null : '1') }
+    catch (e) { setMarkError(String(e)) }
+    finally { setSavingMark(false) }
+  }
   /* 离开刻度后稍等再收起预览：指针可以移进卡片里点书签 */
   const hideTimer = useRef(0)
   const setHover = (next: number | null | ((h: number | null) => number | null)): void => {
@@ -107,24 +81,12 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
    *    导航轨的下标就会与 scrollToTurn 的下标错位，表现为
    *    「点第 N 格跳到第 N-1 轮」。两套口径必须只有一个真源。
    */
-  const turns = useMemo(() => {
-    const all = groupIntoTurns(messages, streamingId)
-    return all
-      .filter((x) => x.kind === 'user')
-      .map((x, i): OutlineTurn => {
-        const reply = assistantAfter(all, all.indexOf(x))
-        return {
-          user: x.msg.text,
-          assistant: assistantTextAfter(all, all.indexOf(x)),
-          msgId: x.id,
-          index: i,
-          failed: !!reply && (reply.terminalReason === 'failed' || !!reply.error || reply.tools.some((c) => c.status === 'error' && !c.cancelled)),
-          timestamp: x.msg.timestamp,
-          elapsedMs: reply?.elapsedMs,
-          steps: reply?.tools.length ?? 0
-        }
-      })
-  }, [messages, streamingId])
+  const projectOutline = useMemo(() => createOutlineProjector(), [])
+  const turns = useMemo(() => projectOutline(messages, streamingId), [messages, streamingId, projectOutline])
+  const turnIndex = useMemo(() => new Map(turns.map((turn, index) => [turn.msgId, index])), [turns])
+  // 滚动监听只依赖消息身份；最新查找表走 ref，不因流式摘要更新重复绑定。
+  const turnIndexRef = useRef(turnIndex)
+  turnIndexRef.current = turnIndex
 
   /**
    * 当前高亮哪一格。
@@ -175,8 +137,8 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
     let topmostTop = Infinity
     for (const el of scope.querySelectorAll<HTMLElement>('[data-turn-id]')) {
       const id = el.dataset.turnId
-      const idx = turns.findIndex((x) => x.msgId === id)
-      if (idx < 0) continue
+      const idx = id ? turnIndexRef.current.get(id) : undefined
+      if (idx === undefined) continue
       const top = el.getBoundingClientRect().top - boxTop
       // 顶边已经越过视口顶部的那一轮里，最靠下的那个 = 当前在读的
       if (top <= 8 && top > bestTop) {
@@ -407,32 +369,22 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
         ))}
       </div>
 
-      {hover !== null ? (
+      {hover !== null && turns[hover] ? (
         <OutlinePreview
           turn={turns[hover]}
           n={hover + 1}
           total={turns.length}
           ratio={hoverRatio}
           marked={marks.has(turns[hover].msgId)}
-          onToggleMark={() => toggleBookmark(turns[hover].msgId)}
+          onToggleMark={() => void toggleBookmark(turns[hover].msgId)}
+          markDisabled={!saved.ready || savingMark}
+          markError={markError || saved.error}
           onEnter={keepHover}
           onLeave={() => setHover((h) => (h === hover ? null : h))}
         />
       ) : null}
     </div>
   )
-}
-
-/**
- * 取某一轮后面的助手回复正文（用于预览摘要）。
- * 找不到就回空 —— 用户刚发完还没回答时就是这样。
- */
-function assistantTextAfter(all: ReturnType<typeof groupIntoTurns>, userIdx: number): string {
-  const next = all[userIdx + 1]
-  if (!next || next.kind !== 'assistant') return ''
-  /* assistant 回合把正文拆成了 response（回复）与 commentary（解说），预览要的是回复 */
-  /* response 是单个 TurnText（不是数组）—— 多段回复在分组时已拼成一段 */
-  return next.response?.text ?? ''
 }
 
 /**
@@ -458,6 +410,8 @@ function OutlinePreview({
   ratio,
   marked,
   onToggleMark,
+  markDisabled,
+  markError,
   onEnter,
   onLeave
 }: {
@@ -467,6 +421,8 @@ function OutlinePreview({
   ratio: number
   marked: boolean
   onToggleMark: () => void
+  markDisabled: boolean
+  markError?: string
   onEnter: () => void
   onLeave: () => void
 }) {
@@ -536,6 +492,7 @@ function OutlinePreview({
   return (
     <div className="outline-preview" ref={card} data-testid="outline-preview" onMouseEnter={onEnter} onMouseLeave={onLeave}>
       {/* 序号/总数 · 标题 · 书签 */}
+      {markError ? <div role="alert" className="set-warn">{markError}</div> : null}
       <div className="op-head">
         <span className="op-n">
           {n}/{total}
@@ -551,6 +508,7 @@ function OutlinePreview({
           aria-label={marked ? t('outline.unmark') : t('outline.mark')}
           data-testid="outline-bookmark"
           onClick={onToggleMark}
+          disabled={markDisabled}
         >
           {marked ? '◼' : '◻'}
         </button>

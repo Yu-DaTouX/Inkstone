@@ -21,6 +21,7 @@ import { SplitDropZone } from './components/chat/SplitDropZone'
 import { RightPanel } from './components/toolbar/RightPanel'
 import { FloatingTiles } from './components/toolbar/FloatingTiles'
 import { Resizer } from './components/toolbar/Resizer'
+import { InteractionSession } from './lib/interaction-state'
 import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
 import { TurnView } from './components/chat/TurnView'
@@ -883,6 +884,7 @@ export default function App() {
    */
   const sessionHeader = <Continuity />
   const chatColumn = (
+          <InteractionSession.Provider value={displayedSession?.sessionId ?? ''}>
           <section ref={centerRef} className={`center${split ? ' split-live' : ''}`} data-testid={split ? 'split-live' : undefined}>
             {split ? <SplitPaneHead index={split.live} target={split.tiles[split.live]}>{sessionHeader}</SplitPaneHead> : null}
             {conn !== 'ready' ? <ConnBar conn={conn} /> : null}
@@ -945,6 +947,7 @@ export default function App() {
             <SubagentNote />
             <Composer />
           </section>
+          </InteractionSession.Provider>
   )
 
   return (

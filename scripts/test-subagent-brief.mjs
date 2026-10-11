@@ -60,6 +60,11 @@ export function runSubagentBriefTests(ok, mod) {
     const sameGoal = briefPrompt(minimal.brief, '查一下这两个模块')
     ok(!/任务原话/.test(sameGoal), '目标与任务描述相同时不重复写一遍')
     ok(briefLine(full.brief).includes('要交回') && briefLine(full.brief).includes('边界'), '一行摘要含交付物与边界')
+    const legacyBudget = parseSubagentBrief({ maxToolCalls: 1000 }, '模型自主决定调用次数')
+    ok(legacyBudget.ok && legacyBudget.brief.maxToolCalls === undefined, '旧调用预算兼容接收但不设置限制')
+    ok(!/预算|最多.*次工具调用/.test(briefPrompt({ ...minimal.brief, maxToolCalls: 5 }, 'x')), '旧历史brief也不会生成调用预算指令')
+    const explicitDeadline = parseSubagentBrief({ timeoutMinutes: 10 }, '有明确截止时间')
+    ok(explicitDeadline.ok && explicitDeadline.brief.timeoutMinutes === 10, '显式总期限仍可选择')
   }
 
   /* ---- 结果汇总 ---- */

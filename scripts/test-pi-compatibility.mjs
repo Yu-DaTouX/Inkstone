@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -12,6 +12,12 @@ import { runDangerGuardTests } from './test-danger-guard.mjs'
 
 let checks = 0
 const check = (condition, message) => { assert(condition, message); checks++ }
+if (process.argv.includes('--upgrade-catalog-only')) {
+  await runUpgradeCatalogTests()
+  console.log(`PASS: ${checks} assertions; isolated pi upgrade catalog exit codes`)
+  process.exit(0)
+}
+await runUpgradeCatalogTests()
 const root = await mkdtemp(join(tmpdir(), 'inkstone-pi-compat-'))
 const modules = {}
 for (const [name, file] of Object.entries({ normalize: 'src/main/normalize.ts', tree: 'src/shared/tool-call-tree.ts' })) {
@@ -99,3 +105,78 @@ try {
   }
 }
 console.log(`PASS: ${checks} assertions plus version rejection cases; pi upgrade, shell guard, nested history/tree and deferred-tool policy`)
+
+async function runUpgradeCatalogTests() {
+  const fixture = await mkdtemp(join(tmpdir(), 'inkstone-upgrade-catalog-'))
+  try {
+    const scripts = join(fixture, 'scripts')
+    const source = join(fixture, 'source')
+    await mkdir(scripts)
+    await mkdir(join(source, 'dist', 'bundle'), { recursive: true })
+    await writeFile(join(source, 'package.json'), JSON.stringify({ version: '1.0.1' }))
+    await writeFile(join(source, 'dist', 'bundle', 'cli.js'), '// never executed')
+
+    // Run the real control flow in a temporary copy; all subprocesses and runtime lookup are fake.
+    let upgrade = await readFile(resolve('scripts/upgrade-pi.mjs'), 'utf8')
+    for (const [original, replacement] of [
+      ["import { spawnSync } from 'node:child_process'", "import { spawnSync } from './upgrade-fixture.mjs'"],
+      ["import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'", "import { selectedPiRuntime } from './upgrade-fixture.mjs'"],
+      ["import { requirePiUpgrade } from './lib/pi-upgrade-policy.mjs'", "import { requirePiUpgrade } from './upgrade-fixture.mjs'"]
+    ]) {
+      assert(upgrade.includes(original), `fixture import not found: ${original}`)
+      upgrade = upgrade.replace(original, replacement)
+    }
+    await writeFile(join(scripts, 'upgrade-pi.mjs'), upgrade)
+    await writeFile(join(scripts, 'upgrade-fixture.mjs'), `
+import assert from 'node:assert/strict'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+const scripts = dirname(fileURLToPath(import.meta.url))
+let calls = 0
+export const selectedPiRuntime = (runtimeRoot) => runtimeRoot
+export const requirePiUpgrade = () => {}
+export function spawnSync(command, args) {
+  assert.equal(command, process.execPath)
+  if (++calls === 1) {
+    assert.deepEqual(args, [join(scripts, 'vendor-pi.mjs')])
+    console.log('FIXTURE_VENDOR_OK')
+    return { status: 0 }
+  }
+  assert.equal(calls, 2)
+  assert.deepEqual(args, [join(scripts, 'gen-pi-model-catalog.mjs')])
+  console.log('FIXTURE_CATALOG_START')
+  switch (process.env.INKSTONE_CATALOG_CASE) {
+    case 'nonzero': return { status: 7 }
+    case 'spawn-error': return { status: null, error: new Error('fixture ENOENT') }
+    case 'signal': return { status: null, signal: 'SIGTERM' }
+    case 'success': return { status: 0 }
+    default: throw new Error('unknown fixture case')
+  }
+}
+`)
+    for (const [scenario, status] of [['nonzero', 7], ['spawn-error', 1], ['signal', 1], ['success', 0]]) {
+      const result = spawnSync(process.execPath, [join(scripts, 'upgrade-pi.mjs'), '--force'], {
+        cwd: fixture,
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 10000,
+        env: { ...process.env, YAN_PI_SRC: source, INKSTONE_CATALOG_CASE: scenario }
+      })
+      const output = result.stdout + result.stderr
+      check(!result.error && result.signal === null, `${scenario}: fixture process completed normally`)
+      check(result.status === status, `${scenario}: expected exit ${status}, got ${result.status}: ${output}`)
+      check(result.stdout.indexOf('FIXTURE_VENDOR_OK') < result.stdout.indexOf('FIXTURE_CATALOG_START') && result.stdout.includes('FIXTURE_VENDOR_OK'), `${scenario}: vendor succeeded before catalog generation`)
+      if (scenario === 'success') {
+        check(output.includes('升级完成。') && output.includes('请**重启应用**后生效。'), 'success preserves the original completion ending')
+        check(!output.includes('升级未全部完成'), 'success does not report a partial upgrade')
+      } else {
+        check(output.includes('内置运行时已更新') && output.includes('模型能力表未完成'), `${scenario}: reports partial update`)
+        check(output.includes('node scripts/gen-pi-model-catalog.mjs'), `${scenario}: gives catalog repair command`)
+        check(!output.includes('升级完成。') && !output.includes('请**重启应用**后生效。'), `${scenario}: no success ending`)
+        if (scenario === 'spawn-error') check(output.includes('fixture ENOENT'), 'spawn error includes the cause')
+      }
+    }
+  } finally {
+    await rm(fixture, { recursive: true, force: true })
+  }
+}

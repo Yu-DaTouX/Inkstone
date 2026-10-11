@@ -1,8 +1,11 @@
 import { net } from 'electron'
+import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { ProviderQuota, QuotaWindow } from '../shared/ipc'
 import { resolveCodexAccountId, resolveProviderSecret } from './credentials'
 import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode'
-import { codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
+import { claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
 
 /**
  * 取额度用的 HTTP 客户端。
@@ -22,6 +25,41 @@ const http = net.fetch.bind(net)
 export async function providerQuota(rawProvider: string, monthlyBudget?: number): Promise<ProviderQuota> {
   const provider = rawProvider.trim().toLowerCase()
   const checkedAt = Date.now()
+  if (provider === 'claude-bridge') {
+    try {
+      const dir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
+      const auth = JSON.parse(await readFile(join(dir, '.credentials.json'), 'utf8')) as {
+        claudeAiOauth?: { accessToken?: unknown; expiresAt?: unknown }
+      }
+      const credential = auth.claudeAiOauth
+      if (typeof credential?.accessToken !== 'string') {
+        return { provider, supported: true, error: '未找到 Claude Code 登录凭证', checkedAt }
+      }
+      if (Number(credential.expiresAt) <= Date.now()) {
+        return { provider, supported: true, error: 'Claude Code 登录令牌已过期，请先在终端使用一次 claude 刷新', checkedAt }
+      }
+      const response = await http('https://api.anthropic.com/api/oauth/usage', {
+        headers: { Authorization: `Bearer ${credential.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20', Accept: 'application/json' },
+        signal: AbortSignal.timeout(10_000)
+      })
+      if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? 'Claude Code 登录已失效' : `HTTP ${response.status}`)
+      const windows = claudeUsageWindows(await response.json())
+      if (!windows.length) return { provider, supported: true, error: 'Claude 未返回额度窗口', checkedAt }
+      const binding = [...windows].filter((window) => !window.informational).sort((a, b) => b.used / b.total - a.used / a.total)[0]
+      return {
+        provider, supported: true, windows, checkedAt,
+        ...(binding ? {
+          used: binding.used, total: binding.total, remaining: Math.max(0, binding.total - binding.used),
+          currency: 'PERCENT', label: 'Claude Code 订阅'
+        } : {})
+      }
+    } catch (e) {
+      const error = e instanceof Error && 'code' in e && e.code === 'ENOENT'
+        ? '未找到 Claude Code 登录凭证'
+        : e instanceof Error ? e.message : String(e)
+      return { provider, supported: true, error, checkedAt }
+    }
+  }
   /*
    * ⚠️ openai 与 openai-codex 是**两条完全不同的路**：
    *   · openai       = 平台 API key，能读的是「组织费用」（要 Admin Key）

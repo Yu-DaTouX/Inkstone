@@ -3339,6 +3339,14 @@ const turnCache = await import('../node_modules/esbuild/lib/main.js').then(({ bu
 const { runTurnCacheTests } = await import('./test-turn-cache.mjs')
 await runTurnCacheTests(ok, turnCache)
 
+const outlineTurns = await import('esbuild').then(({ build }) =>
+  build({ entryPoints: ['src/shared/outline-turns.ts'], outfile: 'out/test/outline-turns.mjs',
+    bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
+    .then(() => import('../out/test/outline-turns.mjs'))
+)
+const { runOutlineTurnTests } = await import('./test-outline-turns.mjs')
+runOutlineTurnTests(ok, outlineTurns)
+
 /*
  * 活动档案（实施-25 P01）：角色文本/工具策略纯逻辑 + 存储与快照。
  * shared 那份保持平台中立；store 那份要真读写临时目录。
