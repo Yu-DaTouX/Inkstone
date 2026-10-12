@@ -16,9 +16,9 @@
  * 落盘失败（磁盘满、权限）不抛错：这是附加的可读性信息，
  * 丢了最多是「这条问答在界面上看不到」，不该让一次提问失败。
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { QuestionLogEntry } from '../shared/ipc'
 import { isSafeSessionId } from './context-state-store'
 import { YAN_DIR } from './paths'
@@ -37,7 +37,7 @@ export function questionLogPath(): string {
 }
 
 /** 读盘时逐字段校验：手改过的文件不该让界面崩掉 */
-function sanitizeEntry(raw: unknown): QuestionLogEntry | null {
+function sanitizeEntry(raw: unknown, sessionId: string, index: number): QuestionLogEntry | null {
   if (!raw || typeof raw !== 'object') return null
   const value = raw as Record<string, unknown>
   const question = typeof value.question === 'string' ? value.question.trim() : ''
@@ -47,7 +47,7 @@ function sanitizeEntry(raw: unknown): QuestionLogEntry | null {
     ? value.options.filter((item): item is string => typeof item === 'string')
     : []
   return {
-    id: typeof value.id === 'string' && value.id ? value.id : randomUUID(),
+    id: typeof value.id === 'string' && value.id ? value.id : createHash('sha256').update(`${sessionId}\0${index}\0${question}\0${at}`).digest('hex').slice(0, 32),
     question,
     options,
     answer: typeof value.answer === 'string' && value.answer.trim() ? value.answer : null,
@@ -57,13 +57,13 @@ function sanitizeEntry(raw: unknown): QuestionLogEntry | null {
 }
 
 function sanitizeDocument(raw: unknown): QuestionLogDocument {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('提问记录文档结构无效')
+  const doc = raw as Record<string, unknown>
+  if (doc.version !== 1 || !doc.sessions || typeof doc.sessions !== 'object' || Array.isArray(doc.sessions)) throw new Error('提问记录文档结构无效')
   const out: QuestionLogDocument = { version: 1, sessions: {} }
-  if (!raw || typeof raw !== 'object') return out
-  const sessions = (raw as { sessions?: unknown }).sessions
-  if (!sessions || typeof sessions !== 'object') return out
-  for (const [sessionId, list] of Object.entries(sessions as Record<string, unknown>)) {
-    if (!isSafeSessionId(sessionId) || !Array.isArray(list)) continue
-    const entries = list.map(sanitizeEntry).filter((item): item is QuestionLogEntry => item !== null)
+  for (const [sessionId, list] of Object.entries(doc.sessions as Record<string, unknown>)) {
+    if (!isSafeSessionId(sessionId) || !Array.isArray(list)) throw new Error('提问记录会话数据无效')
+    const entries = list.map((item, index) => sanitizeEntry(item, sessionId, index)).filter((item): item is QuestionLogEntry => item !== null)
     if (entries.length) out.sessions[sessionId] = entries.slice(-PER_SESSION_LIMIT)
   }
   return out
@@ -98,21 +98,29 @@ export class QuestionLogStore {
   }
 
   private read(): QuestionLogDocument {
-    try {
-      return sanitizeDocument(JSON.parse(readFileSync(this.file(), 'utf8')))
-    } catch {
-      /* 文件不存在（第一次）或内容坏了 —— 都从空表开始 */
-      return { version: 1, sessions: {} }
+    let text: string
+    try { text = readFileSync(this.file(), 'utf8') }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, sessions: {} }
+      throw error
     }
+    return sanitizeDocument(JSON.parse(text))
   }
 
   private write(doc: QuestionLogDocument): void {
     try {
       const path = this.file()
       mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, JSON.stringify(doc), 'utf8')
-    } catch {
-      /* 附加信息，写不进去只影响回显 */
+      const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
+      try {
+        writeFileSync(temp, JSON.stringify(doc), { encoding: 'utf8', flag: 'wx' })
+        renameSync(temp, path)
+      } catch (error) {
+        rmSync(temp, { force: true })
+        throw error
+      }
+    } catch (error) {
+      console.warn('[question-log] 写入失败：', error instanceof Error ? error.message : error)
     }
   }
 }

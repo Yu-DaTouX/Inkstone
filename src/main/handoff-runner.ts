@@ -211,7 +211,11 @@ export class HandoffRunner {
     const activate = this.deps.shouldActivate?.(input.sourceRunId) ?? true
     /* ③ 释放源租约 → 建目的会话（同 cwd 防线不允许两步并行） */
     if (input.canContinue?.() === false) return this.fail(input, '交接已取消')
-    await this.deps.stopRunner(input.sourceRunId)
+    const stopped = await this.deps.stopRunner(input.sourceRunId)
+    if (!stopped) {
+      await this.reopenSource(input.sourceSession, input.cwd)
+      return this.fail(input, '源运行实例未能停止，已取消交接')
+    }
     const opened = await this.deps.openSession({
       cwd: input.cwd,
       activate,

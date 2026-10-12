@@ -7,6 +7,7 @@ import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import type { ExtensionUiRequest } from '../../../../shared/ipc'
 import { Button, IconButton } from '../ui'
 import { GitInstallControl } from '../settings/GitInstallControl'
+import { createPerIdTimers, optionKey } from './notice-timers'
 
 /** 退场时长 —— 与 motion.css 里的 `--mo-fast` 同源。改一处要改两处，所以写注释。 */
 const EXIT_MS = 110
@@ -110,7 +111,7 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
           <div className="modal-options">
             {req.options.map((o, i) => (
               <button
-                key={o}
+                key={optionKey(o, i)}
                 style={{ '--i': i } as React.CSSProperties}
                 className="modal-option"
                 onClick={() => answerUi({ id: req.id, value: o })}
@@ -208,7 +209,13 @@ export function ConnBar({ conn }: { conn: 'starting' | 'ready' | 'exited' | 'err
       <Button onClick={() => setShowDetail((v) => !v)}>
         {showDetail ? t('conn.hideDetail') : t('conn.detail')}
       </Button>
-      <Button onClick={() => void window.yan.start()}>
+      <Button onClick={() => {
+        void window.yan.start().then((result) => {
+          if (!result.ok) useStore.getState().notify('error', result.error || t('conn.engineDown'))
+        }).catch((error: unknown) => {
+          useStore.getState().notify('error', error instanceof Error ? error.message : t('conn.engineDown'))
+        })
+      }}>
         {t('conn.retry')}
       </Button>
 
@@ -248,29 +255,44 @@ export function Notices() {
    */
   const [leaving, setLeaving] = useState<typeof notices>([])
   const prev = useRef<typeof notices>([])
+  const makeTimers = (): ReturnType<typeof createPerIdTimers> => createPerIdTimers({
+    set: (fn, ms) => window.setTimeout(fn, ms),
+    clear: (id) => window.clearTimeout(id as number)
+  })
+  const leaveTimers = useRef<ReturnType<typeof createPerIdTimers> | null>(null)
+  const dismissTimers = useRef<ReturnType<typeof createPerIdTimers> | null>(null)
+  if (!leaveTimers.current) leaveTimers.current = makeTimers()
+  if (!dismissTimers.current) dismissTimers.current = makeTimers()
 
   useEffect(() => {
     const gone = prev.current.filter((p) => !notices.some((n) => n.id === p.id))
     prev.current = notices
     if (gone.length === 0) return
 
-    setLeaving((cur) => [...cur, ...gone])
+    setLeaving((cur) => [...cur.filter((item) => !gone.some((entry) => entry.id === item.id)), ...gone])
     const ms = prefersReducedMotion() ? 1 : EXIT_MS
-    const timer = setTimeout(() => {
-      setLeaving((cur) => cur.filter((x) => !gone.some((g) => g.id === x.id)))
-    }, ms)
-    return () => clearTimeout(timer)
+    for (const item of gone) {
+      leaveTimers.current?.schedule(item.id, ms, () => {
+        setLeaving((cur) => cur.filter((entry) => entry.id !== item.id))
+      })
+    }
   }, [notices])
 
-  // 自动消失（error 留久一点，用户可能要看）
+  // 每条通知拥有自己的退场与自动消失时钟；其他通知更新不重置它。
   useEffect(() => {
-    if (notices.length === 0) return
-    const timers = notices.map((n) =>
-      /* 缺 Git 的通知要等用户决定（可能正在下载），不自动消失 */
-      n.action === 'git-install' ? undefined : setTimeout(() => dismiss(n.id), n.action || noticeLink(n.text) ? 20_000 : n.type === 'error' ? 12_000 : 5_000)
-    )
-    return () => timers.forEach((timer) => timer && clearTimeout(timer))
+    const active = new Set(notices.map((notice) => notice.id))
+    dismissTimers.current?.clearMissing(active)
+    for (const notice of notices) {
+      if (dismissTimers.current?.has(notice.id) || notice.action === 'git-install') continue
+      const delay = notice.action || noticeLink(notice.text) ? 20_000 : notice.type === 'error' ? 12_000 : 5_000
+      dismissTimers.current?.schedule(notice.id, delay, () => dismiss(notice.id))
+    }
   }, [notices, dismiss])
+
+  useEffect(() => () => {
+    leaveTimers.current?.dispose()
+    dismissTimers.current?.dispose()
+  }, [])
 
   const shown = [...notices, ...leaving]
   if (shown.length === 0) return null

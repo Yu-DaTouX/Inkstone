@@ -18,8 +18,7 @@ export function findSlashQuery(value: string, cursor: number = value.length): Sl
   if (!match) return null
 
   const query = match[1] ?? ''
-  const slashOffset = (match[0].indexOf('/') >= 0 ? match[0].indexOf('/') : 0)
-  const start = slashOffset + 1
+  const start = match[0].indexOf('/') + 1
   const tokenEnd = start + query.length
 
   /* 光标进入参数区后不再把参数误当作命令名。 */

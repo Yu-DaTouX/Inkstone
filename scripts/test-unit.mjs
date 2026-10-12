@@ -3178,21 +3178,21 @@ await runGitRepoTests(ok)
   ok(/yan browser/.test(mainHelp.stdout ?? ''), 'yan CLI：主用法里也有 browser 一行')
 
   const typo = runYan(['browser', 'frobnicate'])
-  const typoBody = jsonOf(typo.stdout)
+  const typoBody = jsonOf(typo.stderr)
   ok(typo.status === 2, 'yan CLI：未知子命令走用法退出码 2')
   ok(/未知的 browser 子命令/.test(String(typoBody?.error ?? '')), 'yan CLI：未知子命令给中文提示')
-  ok(!looksLikeStack(typo.stdout ?? ''), 'yan CLI：未知子命令不抛堆栈')
+  ok(!looksLikeStack(typo.stderr ?? ''), 'yan CLI：未知子命令不抛堆栈')
 
   const missingArg = runYan(['browser', 'navigate'])
-  const missingBody = jsonOf(missingArg.stdout)
+  const missingBody = jsonOf(missingArg.stderr)
   ok(missingArg.status === 2, 'yan CLI：漏参数走用法退出码 2')
   ok(/--url/.test(String(missingBody?.error ?? '')), 'yan CLI：漏参数指出缺哪个 flag')
-  ok(!looksLikeStack(missingArg.stdout ?? ''), 'yan CLI：漏参数不抛堆栈')
+  ok(!looksLikeStack(missingArg.stderr ?? ''), 'yan CLI：漏参数不抛堆栈')
 
   /* 身份缺失要归到「宿主不可用」（退出码 3），不能和业务失败（1）混'  */
   const noHost = runYan(['browser', 'observe'])
   ok(noHost.status === 3, 'yan CLI：没有宿主环境变量时走「不可用」退出码 3')
-  ok(/宿主能力服务不可用/.test(noHost.stdout ?? ''), 'yan CLI：说明是宿主不可用（不是命令不存在）')
+  ok(/宿主能力服务不可用/.test(noHost.stderr ?? ''), 'yan CLI：说明是宿主不可用（不是命令不存在）')
 
   /* dry 一下：用法表里的动作名必须与 GROUP_SPECS 一致（防手改时只改一处） */
   const cliText = await readFile('resources/yan-cli/yan.mjs', 'utf8')

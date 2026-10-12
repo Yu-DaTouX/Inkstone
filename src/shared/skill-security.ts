@@ -101,7 +101,7 @@ const RULES: readonly SecurityRule[] = [
     code: 'destructive-operation',
     severity: 'high',
     detail: '疑似包含破坏性文件、磁盘或 Git 操作',
-    pattern: /(?:rm\s+-rf|remove-item\b.{0,80}(?:-recurse|-force)|del\s+\/s(?:\s+\/q)?|rmdir\s+\/s|shutil\.rmtree|os\.(?:unlink|remove)|format(?:\.com)?\b|git\s+(?:reset\s+--hard|clean\s+-[a-z]*f)|drop\s+database|wipe\s+(?:disk|drive)|删除全部|清空磁盘)/i
+    pattern: /(?:rm\s+-rf|remove-item\b.{0,80}(?:-recurse|-force)|del\s+\/s(?:\s+\/q)?|rmdir\s+\/s|shutil\.rmtree|os\.(?:unlink|remove)|\bformat(?:\.com)?\s+(?:[a-z]:|\/fs:|\/q\b)|git\s+(?:reset\s+--hard|clean\s+-[a-z]*f)|drop\s+database|wipe\s+(?:disk|drive)|删除全部|清空磁盘)/i
   },
   {
     code: 'privilege-escalation',
@@ -146,7 +146,7 @@ function byteLengthOf(content: string | Uint8Array): number {
 function excerptOf(line: string): string {
   const redacted = line
     .trim()
-    .replace(/((?:token|password|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]')
+    .replace(/((?:token|password|secret|api[_-]?key|access[_-]?token)["']?\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]')
   if (redacted.length <= MAX_EXCERPT_LENGTH) return redacted
   return `${redacted.slice(0, MAX_EXCERPT_LENGTH - 1)}…`
 }
@@ -179,9 +179,9 @@ export function reviewSkillFiles(files: readonly SkillSecurityInput[]): SkillSec
   for (const file of files) {
     const text = textOf(file.content)
     scannedBytes += byteLengthOf(file.content)
-    const lines = text.split(/\r?\n/)
+    const lines = text.normalize('NFKC').replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, '').split(/\r?\n/)
     for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index]
+      const line = lines.slice(index, index + 4).join(' ').replace(/(?:`|\\)\s+/g, ' ')
       for (const rule of RULES) {
         if (!rule.pattern.test(line)) continue
         if (findings.length >= SKILL_SECURITY_MAX_FINDINGS) {

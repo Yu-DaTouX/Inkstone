@@ -9,7 +9,8 @@
  * 令牌只在主进程里用来发请求，返回给渲染端的只有身份、窗口百分比和余额。
  */
 import { net } from 'electron'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
@@ -57,7 +58,14 @@ function updatePrefs(fn: (prefs: AccountQuotaPrefs) => void): Promise<AccountQuo
     const prefs = await readAccountQuotaPrefs()
     fn(prefs)
     await mkdir(YAN_DIR, { recursive: true })
-    await writeFile(PREFS_FILE, JSON.stringify(prefs, null, 2) + '\n', 'utf8')
+    const temp = `${PREFS_FILE}.${process.pid}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temp, JSON.stringify(prefs, null, 2) + '\n', { encoding: 'utf8', flag: 'wx' })
+      await rename(temp, PREFS_FILE)
+    } catch (error) {
+      await unlink(temp).catch(() => undefined)
+      throw error
+    }
     return prefs
   })
   prefsChain = next.catch(() => undefined)

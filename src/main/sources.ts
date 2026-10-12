@@ -19,8 +19,8 @@
  * 渲染端按本轮发送的附件判断。**证据不足时前两态之外的一律不显示** —— 所以这里
  * 只负责「已关联」与「资源还在不在」，不去猜别的。
  */
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { YAN_DIR } from './paths'
 
@@ -67,9 +67,14 @@ export function sourcesDir(sessionId: string): string {
    * ⚠️ 会话 id 来自 pi，而它会被当成**目录名**拼进路径 —— 所以只取安全字符。
    * 这一条挡的是路径穿越（`../../x`），不是洁癖。
    */
-  const safe = String(sessionId ?? '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'default'
+  const raw = String(sessionId ?? '')
+  const safe = raw.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120)
+  if (!safe || safe === '.' || safe === '..') throw new Error('会话 id 不合法')
   return join(baseDir ?? YAN_DIR, 'sources', safe)
 }
+
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+const MAX_IMAGE_BASE64 = Math.ceil(MAX_IMAGE_BYTES / 3) * 4
 
 const IMAGE_EXT: Record<string, string> = {
   'image/png': '.png',
@@ -99,14 +104,29 @@ export function saveImage(params: {
   mimeType: string
   base64: string
 }): SourceRef | null {
-  const data = Buffer.from(String(params.base64 ?? ''), 'base64')
-  if (data.length === 0) return null
+  const encoded = String(params.base64 ?? '')
+  if (encoded.length > MAX_IMAGE_BASE64) return null
+  const data = Buffer.from(encoded, 'base64')
+  if (data.length === 0 || data.length > MAX_IMAGE_BYTES) return null
   const fingerprint = createHash('sha256').update(data).digest('hex').slice(0, 32)
   const dir = sourcesDir(params.sessionId)
   const file = join(dir, fingerprint + imageExt(params.mimeType, params.name))
   try {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    if (!existsSync(file)) writeFileSync(file, data)
+    let validExisting = false
+    try {
+      const existing = readFileSync(file)
+      validExisting = existing.length === data.length && createHash('sha256').update(existing).digest('hex').slice(0, 32) === fingerprint
+    } catch { /* missing or unreadable: replace via a fresh temp file */ }
+    if (!validExisting) {
+      const temp = join(dir, `.${fingerprint}.${randomUUID()}.part`)
+      try {
+        writeFileSync(temp, data, { flag: 'wx' })
+        renameSync(temp, file)
+      } finally {
+        try { rmSync(temp, { force: true }) } catch { /* best-effort temp cleanup */ }
+      }
+    }
     return {
       sourceId: `image:${fingerprint}`,
       sessionId: params.sessionId,
@@ -155,16 +175,12 @@ function listImages(sessionId: string): SourceRef[] {
   try {
     return readdirSync(dir)
       .filter((f) => /\.(png|jpe?g|webp|gif|bmp|bin)$/i.test(f))
-      .map((f) => {
+      .flatMap((f) => {
         const fingerprint = f.replace(/\.[^.]+$/, '')
         const file = join(dir, f)
-        let size = 0
-        try {
-          size = statSync(file).size
-        } catch {
-          /* 读不到大小不影响列表 */
-        }
-        return {
+        let st: ReturnType<typeof statSync>
+        try { st = statSync(file) } catch { return [] }
+        return [{
           sourceId: `image:${fingerprint}`,
           sessionId,
           kind: 'image' as const,
@@ -173,10 +189,10 @@ function listImages(sessionId: string): SourceRef[] {
           fingerprint,
           origin: '',
           /* mtime 当"添加时间"：文件就是这份来源在磁盘上的样子 */
-          addedAt: statSync(file).mtimeMs,
+          addedAt: st.mtimeMs,
           available: true,
-          size
-        }
+          size: st.size
+        }]
       })
       .sort((a, b) => b.addedAt - a.addedAt)
   } catch {
@@ -392,7 +408,11 @@ export function readImage(sessionId: string, sourceId: string): { ok: boolean; b
 /** 会话结束时清掉它的图片副本（会话都删了，留着只是占地方） */
 export function dropSession(sessionId: string): void {
   try {
-    rmSync(sourcesDir(sessionId), { recursive: true, force: true })
+    const root = resolve(baseDir ?? YAN_DIR, 'sources')
+    const target = resolve(sourcesDir(sessionId))
+    const relative = target.slice(root.length).replace(/^[\\/]+/, '')
+    if (!relative || relative === '.' || relative === '..' || relative.startsWith(`..${process.platform === 'win32' ? '\\\\' : '/'}`) || resolve(root, relative) !== target) return
+    rmSync(target, { recursive: true, force: true })
   } catch {
     /* 清不掉不影响主流程 */
   }

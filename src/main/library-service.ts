@@ -12,7 +12,7 @@
  * 打开旧引用 → 查旧版本 → 读那一版解析出来的文本。
  */
 import { createHash } from 'node:crypto'
-import { mkdir, open, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import {
   contentIdentity,
@@ -173,8 +173,22 @@ export class LibraryService {
     const needsParse = res.decision !== 'unchanged' || !current || current.parse.status === 'pending'
     let parse = current?.parse
     if (needsParse) {
-      const outcome = request.parse ?? (await this.parseFor(request))
-      parse = await this.applyParse(sourceId, version, outcome)
+      try {
+        const outcome = request.parse ?? (await this.parseFor(request))
+        parse = await this.applyParse(sourceId, version, outcome)
+      } catch (error) {
+        const failed: LibraryParse = {
+          status: 'failed',
+          note: `解析资料失败：${error instanceof Error ? error.message : String(error)}`,
+          at: Date.now()
+        }
+        try {
+          await this.store.setParse(sourceId, version, failed)
+          parse = failed
+        } catch (saveError) {
+          return { ok: false, error: `解析失败且无法保存失败状态：${saveError instanceof Error ? saveError.message : String(saveError)}`, sourceId, version }
+        }
+      }
     }
 
     if (request.owner) await this.store.addRef(request.owner, { sourceId, version })
@@ -219,10 +233,18 @@ export class LibraryService {
     if (outcome.status === 'ok' && outcome.text && outcome.text.trim()) {
       const rel = textRelPath(sourceId, version)
       const full = join(this.root, rel)
-      await mkdir(dirname(full), { recursive: true })
-      await writeFile(full, outcome.text, 'utf8')
-      parse.textPath = rel
-      parse.chars = outcome.text.length
+      const temp = `${full}.${process.pid}.${Date.now()}.tmp`
+      try {
+        await mkdir(dirname(full), { recursive: true })
+        await writeFile(temp, outcome.text, 'utf8')
+        await rename(temp, full)
+        parse.textPath = rel
+        parse.chars = outcome.text.length
+      } catch (error) {
+        await rm(temp, { force: true }).catch(() => undefined)
+        parse.status = 'failed'
+        parse.note = `保存解析正文失败：${error instanceof Error ? error.message : String(error)}`
+      }
     } else if (outcome.status === 'ok') {
       parse.status = 'unsupported'
       parse.note = outcome.note || '没有提取到正文'
@@ -250,6 +272,7 @@ export class LibraryService {
     text?: string
     truncated?: boolean
   }> {
+    await this.store.load()
     const doc = this.store.document()
     const outcome = refOutcome(doc, ref)
     const version = versionByRef(doc, ref)
@@ -277,11 +300,12 @@ export class LibraryService {
    * 没有「原件被移动」这回事。结果写回版本状态，引用不会静默消失。
    */
   async verifyAvailability(refs: SourceReference[]): Promise<{ checked: number; unavailable: number }> {
+    await this.store.load()
     const doc = this.store.document()
     const results: { sourceId: string; version: number; available: boolean }[] = []
     for (const ref of refs) {
       const version = versionByRef(doc, ref)
-      if (!version || !version.identity.startsWith('file:')) continue
+      if (!version || !version.ref || !version.identity.startsWith('file:')) continue
       let available = true
       try {
         const info = await stat(version.ref)
@@ -310,6 +334,7 @@ export class LibraryService {
     ref: string
     spaceId?: string
   }): Promise<LibraryImportOutcome & { mapped?: boolean }> {
+    await this.store.load()
     const existing = legacyMappingOf(this.store.document(), params.legacyId, params.sessionId)
     if (existing) {
       return { ok: true, decision: 'unchanged', sourceId: existing.sourceId, version: existing.version, mapped: true }

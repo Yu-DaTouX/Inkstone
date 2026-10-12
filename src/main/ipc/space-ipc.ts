@@ -5,7 +5,7 @@
  */
 import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
-import { listSessions } from '../sessions'
+import { findSessionById } from '../sessions'
 import { setSessionSpace } from '../session-layout'
 import { agentDefaultProfile, agentProfileKeyFor, resolveAgentProfile, pushAgentProfile } from '../goal-coordinator'
 import type { AgentProfilePatch } from '../../shared/agent-profile'
@@ -111,8 +111,7 @@ export function registerSpaceIpc(ipc: IpcRegistrar, deps: SpaceIpcDeps): void {
     await spaces.load()
     if (spaceId !== null && !spaces.find(spaceId)) return { ok: false, error: '目标空间不存在' }
     const settings = await getSettings()
-    const summaries = await listSessions(500, settings.projects)
-    const summary = summaries.find((item) => item.id === sessionId)
+    const summary = await findSessionById(sessionId, settings.projects)
     if (!summary) return { ok: false, error: '找不到要归属的会话' }
     try {
       const entry = await setSessionSpace(

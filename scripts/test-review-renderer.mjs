@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+
+const source = async (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
+const composer = await source('src/renderer/src/components/chat/Composer.tsx')
+const split = await source('src/renderer/src/components/chat/SplitResizer.tsx')
+const environment = await source('src/renderer/src/components/review/EnvironmentMenu.tsx')
+const terminal = await source('src/renderer/src/components/terminal/TerminalSurface.tsx')
+const store = await source('src/renderer/src/state/store.ts')
+const pushes = await source('src/renderer/src/state/push-consumers.ts')
+
+assert.match(composer, /if \(!sent\) \{\s+useStore\.setState\(\(state\) => \(\{ attachments: \[\.\.\.savedAttachments, \.\.\.state\.attachments\.filter/)
+assert.match(composer, /setValue\(\(draft\) => draft \? `\$\{raw\}\\n\$\{draft\}` : raw\)/)
+assert.match(composer, /const sent = await send\(outgoing, images\.length \? images : undefined\)\s+if \(!sent\)/)
+assert.match(composer, /document\.addEventListener\('pointercancel', onUp\)/)
+assert.match(composer, /useEffect\(\(\) => \(\) => resizeCleanup\.current\?\.\(\), \[\]\)/)
+assert.match(composer, /Math\.min\(capNow, startT \+ dy\)/)
+assert.match(composer, /!resizing\.current && el\.scrollHeight/)
+assert.match(split, /document\.addEventListener\('pointercancel', up\)/)
+assert.match(split, /useEffect\(\(\) => \(\) => dragCleanup\.current\?\.\(\), \[\]\)/)
+assert.match(environment, /if \(!made\) \{\s+setWtBlockers\(\[\{ kind: 'missing', message: res\.failure\?\.message/)
+assert.match(environment, /\.catch\(\(e: unknown\) => \{\s+setWtBlockers/)
+assert.match(terminal, /\}, \[available\]\)/)
+assert.match(terminal, /fitTimer = setTimeout\(\(\) => fitCallbackRef\.current\(\), 90\)/)
+assert.match(store, /newSession: async \(target\) => \{\s+\+\+sessionSwitchGate/)
+assert.match(store, /fork: async \(entryId\) => \{\s+\+\+sessionSwitchGate/)
+assert.match(store, /clone: async \(\) => \{\s+\+\+sessionSwitchGate/)
+assert.match(pushes, /if \(becameReady\) \{\s+const current = ctx\.get\(\)\s+void current\.reloadModels\(\)/)
+const sessionSwitch = await import('./test-session-switch.mjs')
+let sessionSwitchAssertions = 0
+await sessionSwitch.runSessionSwitchTests(() => { sessionSwitchAssertions += 1 })
+assert.ok(sessionSwitchAssertions > 0, 'session switch regression suite executed')
+console.log(`review-renderer: 16 source assertions and ${sessionSwitchAssertions} isolated session-switch checks passed`)

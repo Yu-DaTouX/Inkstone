@@ -540,15 +540,19 @@ export function parseHandoffOutput(raw: unknown): { ok: true; value: unknown } |
   const text = typeof raw === 'string' ? raw.trim() : ''
   if (!text) return { ok: false, reason: 'empty' }
   const unfenced = text.replace(/^```[a-zA-Z]*\s*\n?/, '').replace(/\n?```\s*$/, '')
-  const object = firstJsonObject(unfenced)
-  if (!object) return { ok: false, reason: 'no-json-object' }
-  try {
-    const value = JSON.parse(object)
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return { ok: false, reason: 'not-an-object' }
-    return { ok: true, value }
-  } catch {
-    return { ok: false, reason: 'invalid-json' }
+  let candidate = unfenced.indexOf('{')
+  if (candidate < 0) return { ok: false, reason: 'no-json-object' }
+  while (candidate >= 0) {
+    const object = firstJsonObject(unfenced.slice(candidate))
+    if (object) {
+      try {
+        const value: unknown = JSON.parse(object)
+        if (value && typeof value === 'object' && !Array.isArray(value)) return { ok: true, value }
+      } catch { /* 前文中的花括号不是 JSON，继续检查后面的候选 */ }
+    }
+    candidate = unfenced.indexOf('{', candidate + 1)
   }
+  return { ok: false, reason: 'invalid-json' }
 }
 
 /**

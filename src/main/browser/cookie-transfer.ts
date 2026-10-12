@@ -28,8 +28,9 @@ export async function transferCookies(source: CdpChannel, target: CdpChannel): P
     if (cookie.sameSite) param.sameSite = cookie.sameSite
     if (cookie.partitionKey) param.partitionKey = cookie.partitionKey
     try {
-      await target.send('Network.setCookies', { cookies: [param] })
-      copied++
+      const result = await target.send<{ success?: boolean }>('Network.setCookies', { cookies: [param] })
+      if (result.success === false) failed++
+      else copied++
     } catch { failed++ }
   }
   return { copied, failed }

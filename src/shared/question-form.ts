@@ -113,7 +113,9 @@ export function parseQuestionAnswers(fields: QuestionField[], raw: string): Ques
       const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
       out[field.name] = Number.isFinite(n) ? Math.min(field.max ?? Infinity, Math.max(field.min ?? -Infinity, n)) : null
     } else if (field.kind === 'date') {
-      out[field.name] = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null
+      const valid = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+      const parsed = valid ? new Date(`${value}T00:00:00.000Z`) : null
+      out[field.name] = parsed && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value as string : null
     } else {
       out[field.name] = typeof value === 'string' && value.trim() ? value.trim().slice(0, 2000) : null
     }

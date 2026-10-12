@@ -109,6 +109,7 @@ export function EnvironmentMenu() {
   const [wtBranch, setWtBranch] = useState('')
   const [wtPath, setWtPath] = useState('')
   const [wtDeleteBranch, setWtDeleteBranch] = useState(false)
+  const [actionError, setActionError] = useState('')
   const [wtBlockers, setWtBlockers] = useState<WorktreeBlocker[]>([])
   /** remote 的托管网页地址（github/gitlab/bitbucket 才认）；null = 不显示「在网上比较」 */
   const [webRepo, setWebRepo] = useState<string | null>(null)
@@ -363,6 +364,8 @@ export function EnvironmentMenu() {
       setShowBranches(false)
       setNewBranch('')
       setShowWorktrees(false)
+      setWtDeleteBranch(false)
+      setActionError('')
       setWtBlockers([])
       setPickOpen(false)
       setPicked([])
@@ -433,8 +436,7 @@ export function EnvironmentMenu() {
                   data-testid="env-open-folder"
                   title={t('env.openFolder')}
                   onClick={() => {
-                    setOpen(false)
-                    void window.yan.openPath(project)
+                    void window.yan.openPath(project).then((result) => { if (!result.ok) setActionError(result.error || t('env.openFolder')) }).catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
                   }}
                 >
                   {t('env.open')}
@@ -445,8 +447,7 @@ export function EnvironmentMenu() {
                   data-testid="env-copy-path"
                   title={t('env.copyPath')}
                   onClick={() => {
-                    setOpen(false)
-                    void navigator.clipboard?.writeText(project)
+                    void navigator.clipboard?.writeText(project).catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
                   }}
                 >
                   {t('env.copy')}
@@ -601,6 +602,7 @@ export function EnvironmentMenu() {
                 title={[repo.upstream || t('commit.noUpstream'), repo.unpushedCount ? t('env.pushN', { n: repo.unpushedCount }) : ''].filter(Boolean).join(' · ')}
                 onClick={() => {
                   if (!repoView.expected) return
+                  if (!repo.upstream && !window.confirm(`${t('commit.setUpstream')} · origin/${repo.branch ?? t('env.detached')}`)) return
                   void write.run(
                     {
                       kind: 'push',
@@ -668,9 +670,18 @@ export function EnvironmentMenu() {
                       {!w.main && w.ours ? <span className="env-branch-tag">{t('env.worktreeOurs')}</span> : null}
                       {!w.main ? (
                         trustMap[w.path]?.trusted ? (
-                          <span className="env-branch-tag" data-testid="env-worktree-trusted">
-                            {t('env.trusted')}
-                          </span>
+                          <>
+                            <span className="env-branch-tag" data-testid="env-worktree-trusted">{t('env.trusted')}</span>
+                            <button type="button" className="env-mini" title={t('env.trustRevokeNote')} onClick={() => {
+                              if (!window.confirm(`${t('env.trustRevokeNote')}\n${w.path}`)) return
+                              void window.yan.trust.revoke(w.path).then((result) => {
+                                if (result.ok) {
+                                  setTrustMap((map) => ({ ...map, [w.path]: { trusted: false, entry: result.entry } }))
+                                  setActionError(t('env.trustRevokeNote'))
+                                } else setActionError(result.error || t('env.trustRevoke'))
+                              }).catch((error) => setActionError(error instanceof Error ? error.message : String(error)))
+                            }}>{t('env.trustRevoke')}</button>
+                          </>
                         ) : (
                           <button
                             type="button"
@@ -678,16 +689,17 @@ export function EnvironmentMenu() {
                             data-testid="env-worktree-trust"
                             title={t('env.trustAllowNote')}
                             onClick={() => {
+                              if (!window.confirm(`${t('env.trustAllowNote')}\n${w.path}`)) return
+                              setActionError('')
                               /*
                                * 信任是**用户显式动作**：不因为「同一个 Git 仓库」「remote 相同」
                                * 就自动把源目录的信任搬过来（形态决策里的反模式之一）。
                                * 成功后就地改这一条，不重查（避免整个列表闪一下）。
                                */
                               void window.yan.trust.allow(w.path).then((res) => {
-                                if (res?.ok) {
-                                  setTrustMap((m) => ({ ...m, [w.path]: { trusted: true, entry: res.entry } }))
-                                }
-                              })
+                                if (res?.ok) setTrustMap((m) => ({ ...m, [w.path]: { trusted: true, entry: res.entry } }))
+                                else setActionError(res?.error || t('env.trustAllowNote'))
+                              }).catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
                             }}
                           >
                             {t('env.trustAllow')}
@@ -723,6 +735,9 @@ export function EnvironmentMenu() {
                              * 新会话的起点，晚一步设置就落回旧目录了。
                              */
                             void (async () => {
+                              setActionError('')
+                              let succeeded = false
+                              try {
                               /*
                                * 来源关系要在**切之前**取：`newSession` 会把
                                * `session` 换成新的那一份，之后再读就是新会话自己。
@@ -730,7 +745,8 @@ export function EnvironmentMenu() {
                               const before = useStore.getState().session
                               await changeCwd(w.path)
                               const made = await newSession({ cwd: w.path })
-                              if (made.ok && made.sessionId) {
+                              if (!made.ok || !made.sessionId) throw new Error(made.error || t('env.worktreeOpenNote'))
+                              if (made.sessionId) {
                                 /*
                                  * 登记失败**不静默**：它就是这块功能的全部证据。
                                  * 但仍不阻断切会话 —— 会话已经起来了，退回反而更糟。
@@ -765,7 +781,11 @@ export function EnvironmentMenu() {
                                   })
                                   .catch(() => undefined)
                               }
-                              setOpen(false)
+                              succeeded = true
+                              if (succeeded) setOpen(false)
+                              } catch (cause) {
+                                setActionError(cause instanceof Error ? cause.message : String(cause))
+                              }
                             })()
                           }}
                         >
@@ -777,9 +797,12 @@ export function EnvironmentMenu() {
                           data-testid="env-worktree-remove"
                           disabled={!!write.busy}
                           onClick={() => {
+                            const deleteBranch = wtDeleteBranch
+                            if (!window.confirm(`${t('env.worktreeRemove')} · ${w.path}${deleteBranch ? ` · ${t('env.worktreeDeleteBranch')}` : ''}`)) return
+                            setWtDeleteBranch(false)
                             setWtBlockers([])
                             void window.yan.git
-                              .worktreeRemove({ cwd: project ?? '', path: w.path, deleteBranch: wtDeleteBranch })
+                              .worktreeRemove({ cwd: project ?? '', path: w.path, deleteBranch })
                               .then((res) => {
                                 if (res.ok) {
                                   setTrees((prev) => prev.filter((x) => x.path !== w.path))
@@ -871,6 +894,10 @@ export function EnvironmentMenu() {
                           })
                           .then((res) => {
                             const made = res.ok ? res.path : undefined
+                            if (!made) {
+                              setWtBlockers([{ kind: 'missing', message: res.failure?.message ?? '工作树创建失败' }])
+                              return
+                            }
                             if (made) {
                               setTrees((prev) => [
                                 ...prev,
@@ -920,12 +947,12 @@ export function EnvironmentMenu() {
                                       updatedAt: now
                                     }
                                   ]
-                                })
+                                }).catch((cause) => setWtBlockers([{ kind: 'missing', message: cause instanceof Error ? cause.message : String(cause) }]))
                               }
                             }
                           })
-                          .catch(() => {
-                            /* 失败原因由下面的 write.failure 统一展示（走同一条 IPC 形状） */
+                          .catch((e: unknown) => {
+                            setWtBlockers([{ kind: 'missing', message: e instanceof Error ? e.message : String(e) }])
                           })
                       }}
                     >
@@ -1035,8 +1062,7 @@ export function EnvironmentMenu() {
                 onClick={() => {
                   /* 有 PR 就打开它的网页；没有就什么都不做（不弹假状态） */
                   if (pr?.url) {
-                    setOpen(false)
-                    void window.yan.browser.open(pr.url)
+                    void window.yan.browser.open(pr.url).catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
                   }
                 }}
               >
@@ -1061,8 +1087,7 @@ export function EnvironmentMenu() {
                   onClick={() => {
                     const link = compareWebUrl(webRepo, repo.upstream ?? '', repo.branch ?? '')
                     if (!link) return
-                    setOpen(false)
-                    void window.yan.browser.open(link)
+                    void window.yan.browser.open(link).catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
                   }}
                 >
                   <Icon name="globe" size={14} />
@@ -1087,6 +1112,7 @@ export function EnvironmentMenu() {
           )}
 
           {repoView.error ? <div className="env-error">{repoView.error}</div> : null}
+          {actionError ? <div className="env-error" role="alert" data-testid="env-action-error">{actionError}</div> : null}
 
           {/* 写操作的失败：**不关菜单**，原地把原因与原始输出摆出来 */}
           {write.failure ? (

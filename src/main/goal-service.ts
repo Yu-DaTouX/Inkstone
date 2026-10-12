@@ -20,6 +20,7 @@
  * 每次读-改-写都在队列里做，写完原子替换（先写临时文件再 `rename`）。
  */
 
+import { parsePersistedDocument } from './persisted-document'
 import { mkdir, rename, writeFile, rm } from 'node:fs/promises'
 import { readFile } from 'node:fs/promises'
 import { readFileSync, statSync } from 'node:fs'
@@ -189,7 +190,8 @@ export function goalDocumentPath(root: string = YAN_DIR): string {
 export const GOAL_RESUME_DIRNAME = 'goal-resume'
 
 export function goalResumeSnapshotPath(runtimeKey: string, root: string = YAN_DIR): string {
-  const safe = sanitizeWorkModeKey(runtimeKey) ?? 'session'
+  const safe = sanitizeWorkModeKey(runtimeKey)
+  if (!safe) throw new Error('无效的运行实例标识')
   return join(root, GOAL_RESUME_DIRNAME, `${safe}.json`)
 }
 
@@ -315,9 +317,9 @@ async function writeGoalResumeSnapshotUnlocked(
   await writeFile(temp, JSON.stringify(record), 'utf8')
   try {
     await rename(temp, target)
-  } catch {
-    await writeFile(target, JSON.stringify(record), 'utf8')
-    await rm(temp, { force: true }).catch(() => {})
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => undefined)
+    throw error
   }
 }
 
@@ -446,7 +448,7 @@ export class GoalStore {
   private readonly root: string
   private readonly now: () => number
   private doc: GoalDocument = { version: 1, entries: {} }
-  private loaded = false
+  private loadPromise: Promise<void> | null = null
   private tail: Promise<unknown> = Promise.resolve()
 
   constructor(options: GoalStoreOptions = {}) {
@@ -521,6 +523,7 @@ export class GoalStore {
       entry.reports = {}
       entry.resume = null
       entry.autoContinues = 0
+      entry.startedAt = at
       /* 新目标：用户没暂停过它，重复拦下的消费游标也从零（A4） */
       entry.paused = false
       entry.repeatCursor = null
@@ -551,6 +554,7 @@ export class GoalStore {
       entry.reports = {}
       entry.resume = null
       entry.autoContinues = 0
+      entry.startedAt = at
       /* 换目标就是用户明确重新开工：暂停意图与新目标的拦下游标都重置（A2 / A4） */
       entry.paused = false
       entry.repeatCursor = null
@@ -1089,7 +1093,8 @@ export class GoalStore {
       }
 
       const existing = entry.resume
-      if (existing?.kind === 'continue') {
+      if (existing) {
+        if (existing.kind !== 'continue') return { armed: false, reason: 'pending' as const, round }
         const consumed = options.consumed ? await options.consumed(existing.operationId) : false
         if (!consumed) return { armed: false, reason: 'pending' as const, round }
       }
@@ -1234,16 +1239,21 @@ export class GoalStore {
   }
 
   /** 保证文档已从磁盘读过（幂等）。 */
-  async load(): Promise<void> {
-    if (this.loaded) return
-    this.loaded = true
-    try {
-      const text = await readFile(goalDocumentPath(this.root), 'utf8')
-      this.doc = sanitizeGoalDocument(JSON.parse(text))
-    } catch {
-      /* 文件不存在 / 读不了 / 坏 JSON：都当成「还没有任何目标」，不把界面弄挂 */
-      this.doc = { version: 1, entries: {} }
+  load(): Promise<void> {
+    if (!this.loadPromise) {
+      this.loadPromise = (async () => {
+        try {
+          this.doc = sanitizeGoalDocument(parsePersistedDocument(await readFile(goalDocumentPath(this.root), 'utf8'), { entries: 'object' }))
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            this.doc = { version: 1, entries: {} }
+            return
+          }
+          throw new Error('目标文件读取或解析失败，已拒绝覆盖', { cause: error })
+        }
+      })()
     }
+    return this.loadPromise
   }
 
   private trim(entry: GoalEntry): void {
@@ -1266,7 +1276,12 @@ export class GoalStore {
 
   /** 串行队列：所有读-改-写都在这里排队，避免两个提交互相覆盖。 */
   private enqueue<T>(job: () => Promise<T>): Promise<T> {
-    const next = this.tail.then(job, job)
+    const run = async () => {
+      await this.load()
+      const previous = structuredClone(this.doc)
+      try { return await job() } catch (error) { this.doc = previous; throw error }
+    }
+    const next = this.tail.then(run, run)
     this.tail = next.catch(() => {})
     return next
   }
@@ -1278,15 +1293,9 @@ export class GoalStore {
       await mkdir(dirname(path), { recursive: true })
       await writeFile(temp, JSON.stringify(this.doc), 'utf8')
       await rename(temp, path)
-    } catch {
-      /* 落盘失败不报成功：把内存态退回磁盘上的样子，让下一次提交重新走一遍。 */
-      try {
-        const text = await readFile(path, 'utf8')
-        this.doc = sanitizeGoalDocument(JSON.parse(text))
-      } catch {
-        this.doc = { version: 1, entries: {} }
-      }
-      throw new Error('目标状态落盘失败')
+    } catch (error) {
+      await rm(temp, { force: true }).catch(() => undefined)
+      throw new Error('目标状态落盘失败', { cause: error })
     }
   }
 }

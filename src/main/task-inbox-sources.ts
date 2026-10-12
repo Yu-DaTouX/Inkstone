@@ -18,7 +18,8 @@
  *     · subagents：子代理事实在 pi 侧，需要另开一条读取链。
  *   `needs_review` 同理：没有精确事实源，宁缺勿编（T1 已把这一点写在契约注释里）。
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { listSessions } from './sessions'
@@ -62,7 +63,7 @@ export async function readInboxState(root: string = YAN_DIR): Promise<InboxState
       }
     }
     return {
-      dismissed: Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [],
+      dismissed: Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string').slice(-DISMISS_MAX) : [],
       readUntil
     }
   } catch {
@@ -77,15 +78,21 @@ export async function writeInboxState(state: InboxState, root: string = YAN_DIR)
   const recent = Object.entries(state.readUntil ?? {})
     .sort((a, b) => b[1] - a[1])
     .slice(0, 200)
-  await writeFile(
-    path,
-    JSON.stringify(
-      { dismissed: (state.dismissed ?? []).slice(0, DISMISS_MAX), readUntil: Object.fromEntries(recent) },
-      null,
-      2
-    ),
-    'utf8'
-  )
+  const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(
+      temp,
+      JSON.stringify(
+        { dismissed: (state.dismissed ?? []).slice(-DISMISS_MAX), readUntil: Object.fromEntries(recent) },
+        null,
+        2
+      ),
+      'utf8'
+    )
+    await rename(temp, path)
+  } finally {
+    await rm(temp, { force: true }).catch(() => undefined)
+  }
 }
 
 /**

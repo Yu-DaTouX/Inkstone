@@ -32,7 +32,18 @@ const NAMED_KEYS: Record<string, { key: string; code: string; keyCode: number }>
   home: { key: 'Home', code: 'Home', keyCode: 36 },
   end: { key: 'End', code: 'End', keyCode: 35 },
   pageup: { key: 'PageUp', code: 'PageUp', keyCode: 33 },
-  pagedown: { key: 'PageDown', code: 'PageDown', keyCode: 34 }
+  pagedown: { key: 'PageDown', code: 'PageDown', keyCode: 34 },
+  '/': { key: '/', code: 'Slash', keyCode: 191 },
+  '.': { key: '.', code: 'Period', keyCode: 190 },
+  ',': { key: ',', code: 'Comma', keyCode: 188 },
+  ';': { key: ';', code: 'Semicolon', keyCode: 186 },
+  '-': { key: '-', code: 'Minus', keyCode: 189 },
+  '=': { key: '=', code: 'Equal', keyCode: 187 },
+  '[': { key: '[', code: 'BracketLeft', keyCode: 219 },
+  ']': { key: ']', code: 'BracketRight', keyCode: 221 },
+  '\\\\': { key: '\\\\', code: 'Backslash', keyCode: 220 },
+  "'": { key: "'", code: 'Quote', keyCode: 222 },
+  '`': { key: '`', code: 'Backquote', keyCode: 192 }
 }
 
 function keySpec(raw: string): { key: string; code: string; keyCode?: number } {
@@ -44,7 +55,7 @@ function keySpec(raw: string): { key: string; code: string; keyCode?: number } {
   if (raw.length === 1 && /[0-9]/.test(raw)) {
     return { key: raw, code: `Digit${raw}`, keyCode: raw.charCodeAt(0) }
   }
-  return { key: raw, code: raw }
+  throw new Error(`不支持的按键：${raw}`)
 }
 
 /** 把「节点已从文档移除」翻译成可重试的 STALE_ELEMENT，而不是一串 CDP 原文 */
@@ -122,6 +133,8 @@ export class InputController {
       outcome = call?.result?.value
     } catch (error) {
       throw staleFromCdp(error, element.ref) ?? error
+    } finally {
+      await this.cdp.send('Runtime.releaseObject', { objectId }, element.sessionId).catch(() => undefined)
     }
 
     if (!outcome?.ok) {

@@ -1,5 +1,6 @@
 /** Reads historical host-context usage and records current title generation. */
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -91,7 +92,14 @@ export function appendContextBackgroundUsage(
     appendFileSync(file, JSON.stringify(row) + '\n')
     const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean)
     if (lines.length > LOG_MAX_LINES) {
-      writeFileSync(file, lines.slice(-LOG_KEEP_LINES).join('\n') + '\n')
+      const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
+      try {
+        writeFileSync(temp, lines.slice(-LOG_KEEP_LINES).join('\n') + '\n')
+        renameSync(temp, file)
+      } catch {
+        rmSync(temp, { force: true })
+        throw new Error('context background usage rotation failed')
+      }
     }
   } catch {
     /* 账本写不进去不影响标题生成 */

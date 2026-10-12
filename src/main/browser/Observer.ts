@@ -84,23 +84,35 @@ export class Observer {
   private readonly sessionsByFrame = new Map<string, string>()
   private readonly sessionSetup = new Map<string, Promise<void>>()
   private readonly frameTreesBySession = new Map<string, PageFrameTree>()
+  private readonly activeSessions = new Set<string>()
+  private readonly unsubscribe: Array<() => void> = []
 
   constructor(private readonly cdp: CdpChannel, private readonly registry: ElementRegistry) {
-    cdp.on('Target.attachedToTarget', (params) => {
+    this.unsubscribe.push(cdp.on('Target.attachedToTarget', (params) => {
       const target = params.targetInfo as Record<string, unknown> | undefined
       const sessionId = String(params.sessionId ?? '')
       if (!sessionId || target?.type !== 'iframe') return
       const targetId = String(target.targetId ?? '')
       if (targetId) this.sessionsByFrame.set(targetId, sessionId)
+      this.activeSessions.add(sessionId)
       const ready = this.prepareFrameSession(sessionId).catch(() => undefined)
       this.sessionSetup.set(sessionId, ready)
-    })
-    cdp.on('Target.detachedFromTarget', (params) => {
+    }))
+    this.unsubscribe.push(cdp.on('Target.detachedFromTarget', (params) => {
       const sessionId = String(params.sessionId ?? '')
+      this.activeSessions.delete(sessionId)
       for (const [frameId, mapped] of this.sessionsByFrame) if (mapped === sessionId) this.sessionsByFrame.delete(frameId)
       this.frameTreesBySession.delete(sessionId)
       this.sessionSetup.delete(sessionId)
-    })
+    }))
+  }
+
+  dispose(): void {
+    for (const unsubscribe of this.unsubscribe.splice(0)) unsubscribe()
+    this.activeSessions.clear()
+    this.sessionsByFrame.clear()
+    this.frameTreesBySession.clear()
+    this.sessionSetup.clear()
   }
 
   async capture(url: string, title: string): Promise<BrowserObservation> {
@@ -226,7 +238,7 @@ export class Observer {
     await Promise.all(domains.map((method) => this.cdp.send(method, {}, sessionId).catch(() => undefined)))
     await this.cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId).catch(() => undefined)
     const tree = await this.cdp.send<{ frameTree?: PageFrameTree }>('Page.getFrameTree', {}, sessionId).catch(() => null)
-    if (tree?.frameTree) {
+    if (tree?.frameTree && this.activeSessions.has(sessionId)) {
       this.frameTreesBySession.set(sessionId, tree.frameTree)
       for (const frame of frameList(tree.frameTree)) this.sessionsByFrame.set(frame.id, sessionId)
     }

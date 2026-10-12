@@ -77,7 +77,7 @@ export function registerKnowledgeIpc(ipc: IpcRegistrar, deps: KnowledgeIpcDeps):
 
   const knowledgeQueryOf = async (cwd: string): Promise<KnowledgeViewContext> => {
     const repo = await readRepoState(cwd).catch(() => null)
-    const sessions = await listSessions(500).catch(() => [])
+    const sessions = await listSessions(Number.MAX_SAFE_INTEGER).catch(() => [])
     const ids = new Set(sessions.map((session) => session.id))
     return {
       branch: repo?.branch ?? null,
@@ -90,30 +90,29 @@ export function registerKnowledgeIpc(ipc: IpcRegistrar, deps: KnowledgeIpcDeps):
   /* 个人记忆没有工作目录：不查分支、不判路径，只核对来源会话 */
   const knowledgeQueryFor = async (identity: { projectId: string; cwd: string }): Promise<KnowledgeViewContext> => {
     if (identity.projectId !== PERSONAL_MEMORY_ID) return knowledgeQueryOf(identity.cwd)
-    const ids = new Set((await listSessions(500).catch(() => [])).map((session) => session.id))
+    const ids = new Set((await listSessions(Number.MAX_SAFE_INTEGER).catch(() => [])).map((session) => session.id))
     return { branch: null, pathExists: () => true, sessionReadable: (id: string) => ids.has(id) }
   }
 
   const knowledgeSnapshot = async (scope: unknown) => {
     const settings = await getSettings()
-    const enabled = false
     /* 打开列表时顺带收一次外部工具写回的候选 */
     await ingestMemoryInbox(settings.projects).catch(() => null)
     const store = await knowledgeStore(scope)
     const empty = { all: 0, active: 0, candidate: 0, review: 0 }
-    if (!store) return { ok: true, enabled, entries: [], counts: empty }
+    if (!store) return { ok: true, enabled: false, entries: [], counts: empty }
     const identity = store.identity
     try {
       const views = await knowledgeQueryFor(identity).then((query) =>
         listKnowledge(identity, store.opts).then((entries) => toKnowledgeViews(entries, query))
       )
       void refreshMemoryExport(store)
-      return { ok: true, projectId: identity.projectId, enabled, entries: views, counts: countKnowledge(views) }
+      return { ok: true, projectId: identity.projectId, enabled: false, entries: views, counts: countKnowledge(views) }
     } catch (error) {
       return {
         ok: false,
         projectId: identity.projectId,
-        enabled,
+        enabled: false,
         entries: [],
         counts: empty,
         error: error instanceof Error ? error.message : String(error)
@@ -144,7 +143,7 @@ export function registerKnowledgeIpc(ipc: IpcRegistrar, deps: KnowledgeIpcDeps):
     const query = await knowledgeQueryFor(identity)
     try {
       if (raw.action === 'delete') {
-        /* 永久删除是**另一个动作**（墓碑之外的正文也清），需要明确用户凭据 —— 不靠一个布尔切换 */
+        /* 渲染端经显式永久删除确认后传 permanent；宿主补上用户动作凭据，模型接口不能凭布尔值授予它。 */
         const permanent = raw.permanent === true
         const out = await deleteKnowledge({
           identity,
@@ -195,6 +194,7 @@ export function registerKnowledgeIpc(ipc: IpcRegistrar, deps: KnowledgeIpcDeps):
         if (raw.kind) draft.kind = raw.kind
         draft.confidenceClass = 'user-confirmed'
         draft.supersedes = [id]
+        draft.expectedSupersedesRevisions = { [id]: expectedRevision }
       } else {
         return { ok: false, error: '未知的操作' }
       }
@@ -264,7 +264,7 @@ export function registerKnowledgeIpc(ipc: IpcRegistrar, deps: KnowledgeIpcDeps):
     const id = String(sessionId ?? '')
     if (!id) return { ok: false, error: '缺少会话 id' }
     try {
-      const sessions = await listSessions(500)
+      const sessions = await listSessions(Number.MAX_SAFE_INTEGER)
       const hit = sessions.find((session) => session.id === id)
       if (!hit) return { ok: false, error: '来源会话已被删除，无法回读' }
       return { ok: true, path: hit.path, ...(hit.title ? { title: hit.title } : {}) }

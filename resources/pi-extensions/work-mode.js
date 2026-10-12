@@ -50,16 +50,18 @@ import { applyCodemodePreference } from './codemode-policy.js'
 const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'bash', 'powershell']
 
 /** 计划档允许的宿主 bash 形状：目标状态 / 提问 / 只读归档回读。 */
-const GOAL_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+goal\s+(?:status|ready|report)(?:\s|$)/
-const GOAL_STATUS_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+goal\s+status(?:\s|$)/
-const QUESTION_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+question\s+ask(?:\s|$)/
+const HOST_YAN = '(?:(?:"(?:[A-Za-z]:[\\\\/]|/)[^"]*[\\\\/]yan(?:\\.(?:cmd|exe|mjs))?")|(?:(?:[A-Za-z]:[\\\\/]|/)[^\\s;&|<>`$(){}\\[\\]]*[\\\\/]yan(?:\\.(?:cmd|exe|mjs))?)|yan(?:\\.(?:cmd|exe|mjs))?)'
+const GOAL_COMMAND = new RegExp(`^\\s*${HOST_YAN}\\s+goal\\s+(?:status|ready|report)(?:\\s|$)`)
+const GOAL_STATUS_COMMAND = new RegExp(`^\\s*${HOST_YAN}\\s+goal\\s+status(?:\\s|$)`)
+const QUESTION_COMMAND = new RegExp(`^\\s*${HOST_YAN}\\s+question\\s+ask(?:\\s|$)`)
 const CONTEXT_REF = 'ctx:\\/\\/(?:tool|file|diff|episode)\\/[A-Za-z0-9._~%:-]{1,200}'
 const CONTEXT_RECALL_COMMAND = new RegExp(
-  `^\\s*(?:"[^"]*[\\\\/])?yan(?:\\.(?:cmd|exe|mjs))?\\s+context\\s+recall\\s+--ref\\s+(?:${CONTEXT_REF}|"${CONTEXT_REF}")\\s*$`
+  `^\\s*${HOST_YAN}\\s+context\\s+recall\\s+--ref\\s+(?:${CONTEXT_REF}|"${CONTEXT_REF}")\\s*$`
 )
 /* 只读的归档引用查询：可选一个关键词参数（引号内或单个词）与两位数以内的条数 */
-const CONTEXT_FIND_COMMAND =
-  /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+context\s+find(?:\s+--query\s+(?:"[^"]{1,200}"|[^\s"]{1,200}))?(?:\s+--limit\s+\d{1,2})?\s*$/
+const CONTEXT_FIND_COMMAND = new RegExp(
+  `^\\s*${HOST_YAN}\\s+context\\s+find(?:\\s+--query\\s+(?:"[^"]{1,200}"|[^\\s"]{1,200}))?(?:\\s+--limit\\s+\\d{1,2})?\\s*$`
+)
 
 /**
  * 元字符一律拒。
@@ -129,7 +131,7 @@ function note(hook, payload) {
 }
 
 /** 这条 bash 命令是不是允许的宿主 CLI 形状？ */
-function isAllowedBashCommand(command, planApprovalPending = false) {
+export function isAllowedBashCommand(command, planApprovalPending = false) {
   if (!command) return false
   if (SHELL_METACHARS.test(command)) return false
   const goalCommand = planApprovalPending ? GOAL_STATUS_COMMAND : GOAL_COMMAND

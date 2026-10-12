@@ -10,7 +10,7 @@
 
 const POWERSHELL = /\b(?:powershell|pwsh)(?:\.exe)?\b/gi
 /* PowerShell 自动变量与 `$env:`；以及 `$name =` 赋值（bash 会展开成 ` = ...`） */
-const PS_VARIABLE = /^\$(?:_(?![A-Za-z0-9_])|PSItem\b|PSVersionTable\b|PSScriptRoot\b|LASTEXITCODE\b|env:[A-Za-z_]|true\b|false\b|null\b|args\b|input\b|Matches\b|Error\b|host\b|[A-Za-z_][A-Za-z0-9_]*\s*=(?!=))/
+const PS_VARIABLE = /^\$(?:[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z_][A-Za-z0-9_]*)?|\{[^}\n]+\}|\(|[0-9])/i
 
 /** 从 PowerShell 命令名之后找本条命令里第一个双引号参数，返回 [起点, 终点)；没有则返回 null。 */
 function doubleQuotedScript(command, from) {

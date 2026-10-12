@@ -98,6 +98,7 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
    *    （那个 store 字段连同它在每次滚动时的写入已经删掉了，
    *      见 store.ts 里 `scrollProgress` 处的说明。）
    */
+  const conversationId = useStore((s) => s.session?.conversationId ?? '')
   const [active, setActive] = useState(0)
   /** 点击后钉住的下标（因为最后几格滚不动，靠钉住才能给出正确反馈） */
   const pinned = useRef<number | null>(null)
@@ -184,12 +185,12 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turns.length, turns.map((x) => x.msgId).join(',')])
 
-  /** 切会话 / 首次渲染时也同步一次 */
+  /** 切会话时旧会话的点击钉住位置不再适用。 */
   useEffect(() => {
-    if (pinned.current !== null) return
+    pinned.current = null
     setActive(activeFromGeometry())
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turns.length])
+  }, [conversationId, turns.length])
 
   const track = useRef<HTMLDivElement>(null)
   /** 被指的那一格在轨道内的相对位置（0~1），预览卡按它定位 */

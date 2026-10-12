@@ -10,7 +10,7 @@
  */
 
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { reviewSkillFiles, formatSkillSecurityReview } from '../shared/skill-security'
@@ -35,15 +35,21 @@ export async function userSkillPaths(root: string = YAN_DIR): Promise<string[]> 
       .sort()
       .map((name) => join(dir, name, 'SKILL.md'))
       .filter((file) => existsSync(file))
-  } catch {
-    return []
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
   }
 }
 
 async function writeAtomic(file: string, content: string): Promise<void> {
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
-  await writeFile(tmp, content, 'utf8')
-  await rename(tmp, file)
+  try {
+    await writeFile(tmp, content, { encoding: 'utf8', flag: 'wx' })
+    await rename(tmp, file)
+  } catch (error) {
+    await rm(tmp, { force: true }).catch(() => undefined)
+    throw error
+  }
 }
 
 export type SaveUserSkillResult =
@@ -88,26 +94,43 @@ export async function saveUserSkill(
  * 只导出落过盘的模板（内置起步模板从未落盘，其做法已并入随包 playbook 技能）。
  * 任何一条失败都只跳过这一条，不影响启动。
  */
-export async function migrateLegacyPlaybooks(root: string = YAN_DIR): Promise<{ exported: string[]; skipped: number }> {
+export async function migrateLegacyPlaybooks(root: string = YAN_DIR): Promise<{ exported: string[]; skipped: number; diagnostics: string[] }> {
   const exported: string[] = []
+  const diagnostics: string[] = []
   let skipped = 0
   let rawDoc: unknown
   try {
     rawDoc = JSON.parse(await readFile(join(root, LEGACY_PLAYBOOK_FILE), 'utf8'))
-  } catch {
-    return { exported, skipped }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      diagnostics.push(`旧 playbooks.json 读取或解析失败，未执行迁移：${error instanceof Error ? error.message : String(error)}`)
+      console.warn('[yan] ' + diagnostics.at(-1))
+    }
+    return { exported, skipped, diagnostics }
   }
   const list = (rawDoc as { playbooks?: unknown } | null)?.playbooks
-  if (!Array.isArray(list) || list.length === 0) return { exported, skipped }
+  if (!Array.isArray(list)) {
+    diagnostics.push('旧 playbooks.json 结构无效，未执行迁移')
+    console.warn('[yan] ' + diagnostics.at(-1))
+    return { exported, skipped, diagnostics }
+  }
+  if (list.length === 0) return { exported, skipped, diagnostics }
 
   const dir = userSkillsDir(root)
   const markerPath = join(dir, MIGRATION_MARKER)
   let done: string[] = []
   try {
     const marker = JSON.parse(await readFile(markerPath, 'utf8')) as { ids?: unknown }
-    if (Array.isArray(marker.ids)) done = marker.ids.filter((id): id is string => typeof id === 'string')
-  } catch {
-    /* 没有标记：第一次迁移 */
+    if (!marker || !Array.isArray(marker.ids) || marker.ids.some((id) => typeof id !== 'string')) {
+      throw new Error('标记格式无效')
+    }
+    done = marker.ids
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      diagnostics.push(`迁移标记损坏，已停止以免重新导出已删除技能：${error instanceof Error ? error.message : String(error)}`)
+      console.warn('[yan] ' + diagnostics.at(-1))
+      return { exported, skipped, diagnostics }
+    }
   }
   const doneSet = new Set(done)
 
@@ -126,8 +149,11 @@ export async function migrateLegacyPlaybooks(root: string = YAN_DIR): Promise<{ 
         exported.push(skill.name)
       }
       doneSet.add(skill.id)
-    } catch {
+    } catch (error) {
       skipped += 1
+      const diagnostic = `导出旧 playbook「${skill.name}」失败：${error instanceof Error ? error.message : String(error)}`
+      diagnostics.push(diagnostic)
+      console.warn('[yan] ' + diagnostic)
     }
   }
   if (doneSet.size !== done.length) {
@@ -138,5 +164,5 @@ export async function migrateLegacyPlaybooks(root: string = YAN_DIR): Promise<{ 
       /* 标记写不进去：下次启动会再检查一遍，已存在的文件不会被覆盖 */
     }
   }
-  return { exported, skipped }
+  return { exported, skipped, diagnostics }
 }

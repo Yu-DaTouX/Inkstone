@@ -12,7 +12,7 @@
  *   · 非当前账号的令牌只有砚在用，过期时由这里刷新并立刻保存轮换后的 refresh token。
  *   · 凭证不出主进程；渲染端只拿到 `CodexAccountView`。
  */
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, rename, copyFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { readAuthEntry, updateAuthFile } from './credentials'
@@ -69,13 +69,26 @@ function serial<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function readStore(): Promise<Store> {
+  let text: string
   try {
-    const raw = JSON.parse(await readFile(STORE_FILE, 'utf8')) as Partial<Store>
-    const accounts = Array.isArray(raw.accounts) ? raw.accounts.filter((a): a is StoredAccount => !!a && typeof a.key === 'string' && isCodexCredential(a.credential)) : []
-    return { version: 1, accounts }
-  } catch {
-    return { version: 1, accounts: [] }
+    text = await readFile(STORE_FILE, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, accounts: [] }
+    throw error
   }
+  let raw: Partial<Store>
+  try {
+    raw = JSON.parse(text) as Partial<Store>
+  } catch (error) {
+    await copyFile(STORE_FILE, `${STORE_FILE}.corrupt-${Date.now()}.bak`).catch(() => undefined)
+    throw new Error(`账号凭证文件格式无效；为保护已有账号，已拒绝写入：${STORE_FILE}`)
+  }
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.accounts)) {
+    await copyFile(STORE_FILE, `${STORE_FILE}.corrupt-${Date.now()}.bak`).catch(() => undefined)
+    throw new Error(`账号凭证文件格式无效；为保护已有账号，已拒绝写入：${STORE_FILE}`)
+  }
+  const accounts = raw.accounts.filter((a): a is StoredAccount => !!a && typeof a.key === 'string' && isCodexCredential(a.credential))
+  return { version: 1, accounts }
 }
 
 /** 先写临时文件再改名：写到一半崩溃也不会留下半个 JSON（里面是登录凭证）。 */
@@ -197,7 +210,7 @@ export function codexAccountTargets(): Promise<CodexAccountTarget[]> {
         continue
       }
       try {
-        account.credential = await refreshCodexCredential(account.credential.refresh)
+        account.credential = await refreshCodexCredential(account.credential.refresh, account.credential.accountId)
         account.savedAt = Date.now()
         /* refresh token 已轮换：立刻落盘，不等循环结束 */
         await writeStore(store)

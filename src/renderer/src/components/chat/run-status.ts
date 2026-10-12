@@ -86,7 +86,6 @@ function runLabel(call: { name: string; args?: unknown }): string {
 }
 
 
-
 /**
  * 阶段文案只说真的发生了的事。超过 30 秒后仍保留当前阶段和工具名，
  * 避免长任务的活动行一直只显示「仍在运行」。耗时由活动行单独显示。
@@ -95,9 +94,6 @@ export function runPhaseText(t: TFunc, progress: RunProgress | null, compaction:
   if (!progress) return ''
   switch (progress.phase) {
     case 'compacting': return compactionRunningText(t, compaction)
-    default: break
-  }
-  switch (progress.phase) {
     case 'tool': return t('run.tool', { name: progress.detail ?? '' })
     case 'thinking': return t('run.thinking')
     case 'responding': return t('run.responding')

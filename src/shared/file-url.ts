@@ -14,7 +14,12 @@
  * 它同样不转义。盘符段要原样保留 `C:`（`encodeURIComponent` 会写成 `C%3A`）。
  */
 export function fileUrl(path: string): string {
-  const normalized = path.replace(/\\/g, '/').replace(/^\/+/, '')
+  const slashes = path.replace(/\\/g, '/')
+  if (slashes.startsWith('//')) {
+    const [host, ...parts] = slashes.slice(2).split('/')
+    return `file://${host}/${parts.map((segment) => encodeURIComponent(segment)).join('/')}`
+  }
+  const normalized = slashes.replace(/^\/+/, '')
   const encoded = normalized
     .split('/')
     .map((segment, index) => (index === 0 && /^[a-zA-Z]:$/.test(segment) ? segment : encodeURIComponent(segment)))

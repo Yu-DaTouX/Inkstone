@@ -1,4 +1,5 @@
 import { open, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 
 /**
@@ -23,6 +24,7 @@ export type LiteEntry = Record<string, unknown>
 interface IndexState {
   file: string
   offset: number
+  headerHash: string
   /** 上次读到末尾时不完整的半行（pi 正在写） */
   tail: string
   /** 按字节流解码：读取停在多字节字符中间时，不完整的字节留到下一轮，不会变成替换字符 */
@@ -52,9 +54,18 @@ export class SessionEntriesLite {
     } catch {
       return null
     }
+    let headerHash: string
+    try {
+      const fh = await open(file, 'r')
+      try {
+        const head = Buffer.alloc(Math.min(size, 4096))
+        const { bytesRead } = await fh.read(head, 0, head.length, 0)
+        headerHash = createHash('sha256').update(head.subarray(0, bytesRead)).digest('hex')
+      } finally { await fh.close() }
+    } catch { this.state = null; return null }
     let s = this.state
-    if (!s || s.file !== file || size < s.offset) {
-      s = { file, offset: 0, tail: '', decoder: new StringDecoder('utf8'), entries: [] }
+    if (!s || s.file !== file || size < s.offset || s.headerHash !== headerHash) {
+      s = { file, offset: 0, headerHash, tail: '', decoder: new StringDecoder('utf8'), entries: [] }
       this.state = s
     }
     if (size === s.offset) return s.entries

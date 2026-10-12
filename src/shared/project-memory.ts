@@ -258,7 +258,7 @@ export function isSafeRelativeRef(value: unknown): value is string {
   if (!ref || ref.length > PROJECT_KNOWLEDGE_LIMITS.maxRefLength) return false
   if (ref.includes('\u0000')) return false
   if (ref.startsWith('/') || ref.startsWith('\\')) return false
-  if (/^[A-Za-z]:[\\/]/.test(ref)) return false
+  if (/^[A-Za-z]:/.test(ref)) return false
   return !ref.split(/[\\/]+/).some((part) => part === '..')
 }
 
@@ -601,7 +601,7 @@ function parseEvidence(raw: unknown): { ok: true; value: KnowledgeEvidence[] } |
       if (charLength(e.excerpt) > PROJECT_KNOWLEDGE_LIMITS.maxEvidenceExcerpt) {
         return fail('bad_evidence', `第 ${at} 条证据的 excerpt 超过 ${PROJECT_KNOWLEDGE_LIMITS.maxEvidenceExcerpt} 字符`)
       }
-      evidence.excerpt = e.excerpt
+      if (e.excerpt.trim()) evidence.excerpt = e.excerpt
     }
     if (Object.keys(evidence).length === 0) {
       return fail('bad_evidence', `第 ${at} 条证据没有任何字段（来源必须可追溯）`)
@@ -688,7 +688,9 @@ export function readKnowledgeFile(value: unknown): ProjectKnowledge | undefined 
   const evidence = Array.isArray(raw.evidence)
     ? raw.evidence.filter((e): e is KnowledgeEvidence => !!e && typeof e === 'object' && !Array.isArray(e))
     : []
-  const validFor = raw.validFor && typeof raw.validFor === 'object' ? (raw.validFor as KnowledgeValidFor) : undefined
+  const scope = parseValidFor(raw.validFor)
+  if (!scope.ok) return undefined
+  const validFor = scope.value
   const supersedes = Array.isArray(raw.supersedes)
     ? raw.supersedes.filter((s): s is string => isSafeKnowledgeId(s))
     : []
@@ -743,6 +745,8 @@ export interface KnowledgeCommitRequest {
   confidenceClass?: unknown
   validFor?: unknown
   supersedes?: unknown
+  /** 新建替代条目也核对旧条目的版本；由宿主在确认时固定。 */
+  expectedSupersedesRevisions?: Record<string, number>
   /** CAS：`0` = 新建；`>0` = 必须等于磁盘上该条目的当前 revision。 */
   expectedRevision: unknown
 }
@@ -862,6 +866,8 @@ export function applyKnowledgeCommit(
     if (targetId === id) return fail('bad_supersedes', '不能替代自己')
     const target = ctx.supersedesTargets.get(targetId)
     if (!target) return fail('unknown_supersedes', `supersedes 指向不存在的条目：${targetId}`, targetId)
+    const expectedTargetRevision = request.expectedSupersedesRevisions?.[targetId]
+    if (expectedTargetRevision !== undefined && expectedTargetRevision !== target.revision) return fail('stale_revision', `被替代条目已更新，请刷新：${targetId}`, targetId)
     if (target.status === 'deleted') {
       return fail('supersedes_deleted', `supersedes 指向已删除的条目：${targetId}`, targetId)
     }
@@ -907,7 +913,7 @@ export function applyKnowledgeCommit(
     textDigest: value.textDigest,
     tags: value.tags,
     evidence: value.evidence,
-    confidenceClass: value.confidenceClass,
+    confidenceClass: confirmed ? 'user-confirmed' : value.confidenceClass,
     createdAt: current?.createdAt ?? ctx.now,
     updatedAt: ctx.now,
     ...(value.validFor ? { validFor: value.validFor } : {}),
@@ -1049,7 +1055,8 @@ export function knowledgeNeedsReview(
   if (!validFor) return false
   if (validFor.branch && current.branch && validFor.branch !== current.branch) return true
   if (validFor.commit && current.commit && validFor.commit !== current.commit) return true
-  if (validFor.paths && validFor.paths.length > 0) {
+  if (validFor.paths !== undefined && (!Array.isArray(validFor.paths) || validFor.paths.some((path) => typeof path !== 'string' || !isSafeRelativeRef(path)))) return true
+  if (Array.isArray(validFor.paths) && validFor.paths.length > 0) {
     if (current.existingPaths === undefined) return false
     const existing = new Set(current.existingPaths)
     if (validFor.paths.some((path) => !existing.has(path))) return true

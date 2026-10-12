@@ -4,7 +4,7 @@
  * 只读写「哪个活动用哪个模型」与解析结果；切模型本身仍走既有的模型选择链路。
  */
 import type { IpcRegistrar } from './registrar'
-import { getSettings, patchSettings } from '../settings'
+import { getSettings, updateSettings } from '../settings'
 import { activityModelRows, activityModelText, emptyActivityModelConfig, resolveActivityModel, sanitizeActivityModelConfig, setActivityModel } from '../../shared/activity-model'
 import { normalizeAgentActivity } from '../../shared/agent-profile'
 import type { AgentActivity } from '../../shared/agent-profile'
@@ -42,20 +42,18 @@ export function registerActivityModelIpc(ipc: IpcRegistrar): void {
   handle(
     'yan:activity:modelSet',
     async (input: { activity?: string; model?: string | null; defaultModel?: string | null; clear?: boolean }) => {
-      const current = (await getSettings()).activityModels
-      const next = input?.clear
-        ? emptyActivityModelConfig()
-        : (() => {
-            let base = current
-            if (input && 'defaultModel' in input) {
-              base = { ...sanitizeActivityModelConfig(base), defaultModel: input.defaultModel ?? null }
-            }
-            if (input?.activity) {
-              base = setActivityModel(base, normalizeAgentActivity(input.activity), input.model ?? null)
-            }
-            return base
-          })()
-      await patchSettings({ activityModels: next })
+      await updateSettings((settings) => {
+        const current = settings.activityModels
+        const next = input?.clear
+          ? emptyActivityModelConfig()
+          : (() => {
+              let base = current
+              if (input && 'defaultModel' in input) base = { ...sanitizeActivityModelConfig(base), defaultModel: input.defaultModel ?? null }
+              if (input?.activity) base = setActivityModel(base, normalizeAgentActivity(input.activity), input.model ?? null)
+              return base
+            })()
+        return { activityModels: next }
+      })
       const settings = await getSettings()
       const rows = activityModelRows({ config: settings.activityModels })
       return { ok: true as const, rows }

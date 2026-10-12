@@ -5,12 +5,13 @@
  * 批准后授权只在这次连接有效：对方断开即失效，重连会再次弹出这里。
  * 关闭或忽略按拒绝处理；两分钟没处理，宿主自动拒绝。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PeerApprovalRequest, PeerOperation } from '../../../../shared/peer-protocol'
 import { useT } from '../../i18n'
 import { Icon } from '../../icons/Icon'
 import { useStore } from '../../state/store'
 import { Button } from '../ui'
+import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 
 export function PeerApprovalDialog() {
   const t = useT()
@@ -20,6 +21,7 @@ export function PeerApprovalDialog() {
   const [operations, setOperations] = useState<PeerOperation[]>([])
   const [now, setNow] = useState(Date.now())
   const current = queue[0]
+  const panel = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     void window.yan.peer.hostPending().then(setQueue).catch(() => undefined)
@@ -45,17 +47,21 @@ export function PeerApprovalDialog() {
     }
   }, [current?.requestId, acquireOverlayBlocker])
 
-  if (!current) return null
-  const toggle = <T,>(list: T[], value: T): T[] => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value])
   const decide = (approve: boolean): void => {
+    if (!current) return
     void window.yan.peer.hostDecide({ requestId: current.requestId, approve, projectIds: projects, operations })
     setQueue((list) => list.filter((item) => item.requestId !== current.requestId))
   }
+  const { isTop } = useModalLayer(!!current, () => decide(false))
+  useFocusTrap(panel, !!current, isTop)
+
+  if (!current) return null
+  const toggle = <T,>(list: T[], value: T): T[] => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value])
   const seconds = Math.max(0, Math.ceil((current.expiresAt - now) / 1000))
 
   return (
     <div className="modal-scrim" role="dialog" aria-modal="true" aria-label={t('peer.approveTitle')} data-testid="peer-approval">
-      <div className="modal peer-approval">
+      <div className="modal peer-approval" ref={panel}>
         <div className="modal-head">
           <Icon name="shield-check" size={12} />
           <span className="modal-title">{t('peer.approveTitle')}</span>

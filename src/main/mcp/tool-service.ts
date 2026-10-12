@@ -12,7 +12,7 @@
  * ⚠️ 它**不**决定权限：`annotations.readOnlyHint` 是服务自己的说法，
  * 只原样展示，不参与任何判定（§4）。
  */
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   checkToolArguments,
@@ -99,6 +99,18 @@ export interface McpCallOptions {
   expectedRevision?: string
 }
 
+async function pruneResultFiles(dir: string): Promise<void> {
+  const names = await readdir(dir).catch(() => [])
+  const files = await Promise.all(names.map(async (name) => {
+    const path = join(dir, name)
+    try { const info = await stat(path); return info.isFile() ? { path, mtime: info.mtimeMs } : null }
+    catch { return null }
+  }))
+  const sorted = files.filter((file): file is { path: string; mtime: number } => file !== null).sort((a, b) => b.mtime - a.mtime)
+  const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000
+  await Promise.all(sorted.filter((file, index) => index >= 200 || file.mtime < cutoff).map((file) => unlink(file.path).catch(() => undefined)))
+}
+
 export async function callMcpTool(
   manager: McpConnectionManager,
   serverId: string,
@@ -135,18 +147,31 @@ export async function callMcpTool(
     return { id: described.id, serverId, toolName, toolError, text, bytes }
   }
 
-  /* 大结果落盘：stdout 只回摘要，模型按需去读文件（与 yan 其它命令同一约定）。 */
-  await mkdir(options.resultsDir, { recursive: true })
-  const name = `${safeResultSlug(serverId)}-${safeResultSlug(toolName)}-${Date.now()}.txt`
-  const file = join(options.resultsDir, name)
-  await writeFile(file, text, 'utf8')
-  return {
-    id: described.id,
-    serverId,
-    toolName,
-    toolError,
-    text: `（结果过大：${bytes} 字节，已落盘，请按需读取）`,
-    bytes,
-    resultFile: file
+  /* 大结果优先落盘；写盘失败时保留可用的内联片段，避免已执行的副作用被误判为未执行。 */
+  try {
+    await mkdir(options.resultsDir, { recursive: true })
+    await pruneResultFiles(options.resultsDir)
+    const name = `${safeResultSlug(serverId)}-${safeResultSlug(toolName)}-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`
+    const file = join(options.resultsDir, name)
+    await writeFile(file, text, 'utf8')
+    return {
+      id: described.id,
+      serverId,
+      toolName,
+      toolError,
+      text: `（结果过大：${bytes} 字节，已落盘，请按需读取）`,
+      bytes,
+      resultFile: file
+    }
+  } catch (error) {
+    const preview = Buffer.from(text, 'utf8').subarray(0, limit).toString('utf8')
+    return {
+      id: described.id,
+      serverId,
+      toolName,
+      toolError,
+      text: `（结果共 ${bytes} 字节；落盘失败，以下为前 ${Buffer.byteLength(preview, 'utf8')} 字节截断内容：${error instanceof Error ? error.message : String(error)}）\n${preview}`,
+      bytes
+    }
   }
 }

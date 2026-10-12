@@ -323,7 +323,7 @@ export function Grow({
   children: ReactNode
 }) {
   return (
-    <div className={cx('ui-grow', !open && 'closed', enter && 'enter', className)} style={style} aria-hidden={!open}>
+    <div className={cx('ui-grow', !open && 'closed', enter && 'enter', className)} style={style} aria-hidden={!open} inert={!open}>
       <div>{children}</div>
     </div>
   )

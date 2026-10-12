@@ -24,7 +24,7 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
     if (typeof query !== 'string' || (offset !== undefined && (typeof offset !== 'number' || !Number.isFinite(offset)))) {
       return { ok: false, entries: [], total: 0, error: '无效的搜索参数' }
     }
-    return searchPiPackages(query, typeof offset === 'number' ? offset : 0)
+    return searchPiPackages(query.slice(0, 500), typeof offset === 'number' ? Math.max(0, Math.floor(offset)) : 0)
   })
   handle('yan:packages:exportPlugin', async (id: unknown) => {
     if (id !== 'hermes-inkstone') return { ok: false, error: '未知插件' }

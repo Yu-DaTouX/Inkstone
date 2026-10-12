@@ -16,12 +16,21 @@ export type ModelErrorKind =
   /** 模型或请求参数不受支持，需调整配置后再试。 */
   | 'request'
 
+/**
+ * 额度类错误的细分：窗口/套餐用量用尽与短时频率限流出路不同，不能混成一句。
+ * · usage：这条会话/窗口的额度已用完（例如 Claude 的 5 小时窗口），等恢复才是正解；
+ * · rate：短时间内发得太密，稍等或降并发即可，额度本身还在。
+ */
+export type ModelErrorQuotaScope = 'usage' | 'rate'
+
 export interface ModelErrorInfo {
   kind: ModelErrorKind
   /** 归一化后的原始文本（可能为空） */
   text: string
   /** 给界面/日志看的中文短句 */
   label: string
+  /** 仅 kind=quota 时有值 */
+  quotaScope?: ModelErrorQuotaScope
 }
 
 /** 关键词表（中英都认；大小写不敏感）。顺序即优先级：越具体的越靠前。 */
@@ -70,6 +79,39 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   }
 ]
 
+/**
+ * 额度细分用的两条关键词表，「用量用尽」优先。
+ *
+ * 为什么先判用量：供应商把窗口额度用尽也写成 rate limit ——
+ * 实测原文 “Claude rate limit (five_hour) — resets 10:30:00 pm: You've hit your session limit”，
+ * 只按 rate limit 判会提示「降低并发」，但实际上并发再低也得等窗口恢复。
+ */
+const QUOTA_USAGE_RE = /usage limit|session limit|used all|free requests?|requests for today|weekly limit|hourly limit|5[ _-]?hour|five[ _-]?hour|resets?\s+(?:at|in)\b|额度|配额|余额|balance|credit|funds|套餐|用量上限/i
+const QUOTA_RATE_RE = /rate[ _-]?limit|too many requests|resource_exhausted|requests?\s+per\s+(?:minute|second|hour)|concurren|限流|频率|并发/i
+/** 余额不足与窗口用尽都是「不充值/不等待就不行」，但话不一样。 */
+const QUOTA_BALANCE_RE = /insufficient[ _](?:balance|funds|credit)|balance|credit|funds|余额|充值/i
+
+function quotaScopeOf(text: string): ModelErrorQuotaScope {
+  if (QUOTA_USAGE_RE.test(text)) return 'usage'
+  if (QUOTA_RATE_RE.test(text)) return 'rate'
+  /* 只认到 402/quota 这类笼统措辞时按额度用尽说，比说「降低并发」更接近事实。 */
+  return 'usage'
+}
+
+/**
+ * 供应商常把恢复时间写在同一句里。抓不到就不写，不猜时间。
+ * 例：`resets 10:30pm (Australia/Sydney)`、`Try again in ~76 min`。
+ */
+function quotaResetHint(text: string): string {
+  /* 同一句里可能出现多个 resets（带时区的那个更有用），优先取带括号时区的。 */
+  const hits = [...text.matchAll(/resets?\s+(?:at\s+)?([\d:.]+\s*[ap]\.?m\.?(?:\s*\([^)]+\))?)/gi)].map((m) => m[1].trim())
+  const best = hits.find((h) => h.includes('(')) ?? hits[0]
+  if (best) return `恢复时间：${best}`
+  const after = text.match(/try again in\s*~?\s*([0-9]+(?:\.[0-9]+)?\s*(?:min(?:ute)?s?|hours?|hrs?|seconds?|秒|分钟|小时))/i)
+  if (after) return `${after[1].trim()}后恢复`
+  return ''
+}
+
 /** 只提取错误字段，避免把请求正文、密钥或完整响应对象投到界面。 */
 export function modelErrorText(value: unknown, depth = 0): string {
   if (depth > 4) return ''
@@ -101,7 +143,11 @@ export function modelErrorText(value: unknown, depth = 0): string {
 export function classifyModelError(text: unknown): ModelErrorInfo {
   const raw = modelErrorText(text)
   for (const item of PATTERNS) {
-    if (item.re.test(raw)) return { kind: item.kind, text: raw, label: item.label }
+    if (item.re.test(raw)) {
+      return item.kind === 'quota'
+        ? { kind: item.kind, text: raw, label: item.label, quotaScope: quotaScopeOf(raw) }
+        : { kind: item.kind, text: raw, label: item.label }
+    }
   }
   return { kind: 'retryable', text: raw, label: raw ? '模型侧错误' : '模型侧错误（没有错误文本）' }
 }
@@ -117,9 +163,17 @@ export function modelErrorNotice(errorText: unknown): string {
   let explanation: string
   switch (info.kind) {
     case 'refused': explanation = '服务商安全审核拦截了这轮请求。请检查请求内容与服务商政策；可换个模型继续，直接重发相同内容可能仍被拦截。'; break
-    case 'quota': explanation = /usage limit|quota|余额|额度|配额|balance|credit|funds|used all/i.test(info.text)
-      ? '模型额度或余额不足，或已达到套餐用量上限。请查看服务商额度与恢复时间，或选择其他可用模型。'
-      : '服务商限制了请求频率。请等待限流窗口恢复后重试，或降低并发。'; break
+    case 'quota': {
+      if (info.quotaScope === 'rate') {
+        explanation = '服务商限制了请求频率。请稍候片刻重试，或降低并发；额度本身未用尽。'
+      } else if (QUOTA_BALANCE_RE.test(info.text)) {
+        explanation = '模型账户余额或额度不足。请充值或选择其他可用模型。'
+      } else {
+        const reset = quotaResetHint(info.text)
+        explanation = `模型额度已用尽（达到套餐用量上限或额度窗口用尽）${reset ? `，${reset}` : ''}。请等待额度恢复后重试，或选择其他可用模型。`
+      }
+      break
+    }
     case 'auth': explanation = '模型认证或访问权限失败。请在设置中重新登录、检查凭证及模型访问权限。'; break
     case 'context': explanation = '请求超过模型的上下文或输入长度限制。请压缩会话、减少附件，或选择支持更长上下文的模型。'; break
     case 'aborted': explanation = '本轮请求已取消。已执行的工具操作可能保留，继续前请先核对进度。'; break

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import { Badge, Button, Disclosure, Segmented, SettingRow } from '../ui'
 import { useStore } from '../../state/store'
@@ -29,12 +29,17 @@ export function VoiceTab() {
   const [plan, setPlan] = useState<VoiceDownloadPlan | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const alive = useRef(true)
+  const refreshGeneration = useRef(0)
+  useEffect(() => { alive.current = true; return () => { alive.current = false; refreshGeneration.current++ } }, [])
 
   const refresh = useCallback(async () => {
+    const generation = ++refreshGeneration.current
     try {
-      setStatus(await window.yan.voice.status())
+      const next = await window.yan.voice.status()
+      if (alive.current && generation === refreshGeneration.current) { setStatus(next); setError('') }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (alive.current && generation === refreshGeneration.current) setError(e instanceof Error ? e.message : String(e))
     }
   }, [])
 
@@ -51,9 +56,14 @@ export function VoiceTab() {
   }, [downloading, refresh])
 
   const save = async (next: VoiceInputSettings): Promise<void> => {
-    await window.yan.patchSettings({ voiceInput: next })
-    useStore.setState({ settings: await window.yan.getSettings() })
-    await refresh()
+    try {
+      await window.yan.patchSettings({ voiceInput: next })
+      const settings = await window.yan.getSettings()
+      if (!alive.current) return
+      useStore.setState({ settings })
+      setError('')
+      await refresh()
+    } catch (cause) { if (alive.current) setError(cause instanceof Error ? cause.message : String(cause)) }
   }
 
   const askPlan = async (target: VoiceDownloadPlan['target']): Promise<void> => {
@@ -61,29 +71,39 @@ export function VoiceTab() {
     setError('')
     try {
       const result = await window.yan.voice.plan(target)
-      if (result.ok) setPlan(result.plan)
-      else setError(result.error)
+      if (alive.current && result.ok) setPlan(result.plan)
+      else if (alive.current && !result.ok) setError(result.error)
+    } catch (cause) {
+      if (alive.current) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setBusy(false)
+      if (alive.current) setBusy(false)
     }
   }
 
   const confirmDownload = async (): Promise<void> => {
     if (!plan) return
-    const result = await window.yan.voice.download(plan.planId)
-    /* 下载的是模型时，顺手把它设为选用的模型（下完才会真正生效） */
-    if (result.ok && plan.target.kind === 'model') await save({ ...(saved ?? {}), model: { kind: 'catalog', id: plan.target.id } })
-    if (!result.ok) setError(result.error ?? t('voice.downloadFailed'))
-    setPlan(null)
-    await refresh()
+    setBusy(true)
+    try {
+      const result = await window.yan.voice.download(plan.planId)
+      if (result.ok && plan.target.kind === 'model') await save({ ...(saved ?? {}), model: { kind: 'catalog', id: plan.target.id } })
+      if (!result.ok) setError(result.error ?? t('voice.downloadFailed'))
+      setPlan(null)
+      await refresh()
+    } catch (cause) { if (alive.current) setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { if (alive.current) { setBusy(false); setPlan(null) } }
   }
 
   const pick = async (kind: 'binary' | 'model'): Promise<void> => {
-    const next = await window.yan.voice.pick(kind)
-    if (next) {
-      setStatus(next)
-      useStore.setState({ settings: await window.yan.getSettings() })
-    }
+    try {
+      const next = await window.yan.voice.pick(kind)
+      if (next) {
+        const settings = await window.yan.getSettings()
+        if (!alive.current) return
+        setStatus(next)
+        useStore.setState({ settings })
+      }
+      if (alive.current) setError('')
+    } catch (cause) { if (alive.current) setError(cause instanceof Error ? cause.message : String(cause)) }
   }
 
   const hw = status?.hardware

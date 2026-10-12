@@ -19,7 +19,7 @@ import type { ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { app, shell, WebContentsView, type BrowserWindow } from 'electron'
 import { mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import type {
@@ -207,6 +207,7 @@ export class BrowserController {
   private readonly privateDnsCache = new Map<string, { private: boolean; expiresAt: number }>()
   /** 外部 Chrome 目标；可与内嵌标签同时存在 */
   private external: ExternalTarget | null = null
+  private externalOpening: Promise<BrowserActionResult> | null = null
   private activeMode: 'embedded' | 'external' = 'embedded'
 
   private externalTabId(targetId: string): string {
@@ -257,7 +258,7 @@ export class BrowserController {
       permissions: this.permissionLog,
       blockedRequests: this.blockedRequests,
       nativeBounds: this.nativeBounds,
-      mode: ext ? 'external' : 'embedded',
+      mode: activeIsExternal ? 'external' : 'embedded',
       external: ext
         ? {
             url: ext.url,
@@ -385,7 +386,7 @@ export class BrowserController {
       this.updateState()
     })
     view.webContents.setWindowOpenHandler(({ url }) => {
-      if (safeUrl(url)) void this.openBackgroundTab(url, tab.committedUrl || tab.openerUrl)
+      if (safeUrl(url)) void this.openBackgroundTab(url, tab.committedUrl || tab.openerUrl).catch((error) => this.pushError(`无法打开后台标签：${error instanceof Error ? error.message : String(error)}`))
       return { action: 'deny' }
     })
     view.webContents.on('will-navigate', (event, url) => {
@@ -412,7 +413,10 @@ export class BrowserController {
       this.downloadSessionAttached = true
       view.webContents.session.on('will-download', (_event, item, contents) => {
         const owner = !this.userControl && this.activeMode !== 'external' && contents?.id === this.activeTab()?.view.webContents.id ? this.automationOwner : undefined
-        void this.handleDownload(item, owner)
+        void this.handleDownload(item, owner).catch((error) => {
+          item.cancel()
+          this.pushError(`浏览器下载无法保存：${error instanceof Error ? error.message : String(error)}`)
+        })
       })
     }
     if (!this.permissionHandlerAttached) {
@@ -477,7 +481,8 @@ export class BrowserController {
           (t) => t.view.webContents.id === details.webContentsId
         )
         /* 发起方优先取已提交文档；新窗口首导航继承 opener，未知来源保持受限。 */
-        const initiator = owner?.committedUrl || owner?.openerUrl || ''
+        const frameUrl = (details as typeof details & { frame?: { url?: string } }).frame?.url
+        const initiator = frameUrl || (details.resourceType === 'mainFrame' ? owner?.committedUrl || owner?.openerUrl : '') || ''
         const decision = decideRequestBoundary({
           targetHost: target.hostname,
           initiatorUrl: initiator,
@@ -573,8 +578,9 @@ export class BrowserController {
       /* 明确记下“这次导航是我们发起的”，供网络边界判定区分用户/页面发起 */
       tab.pendingMainFrameUrl = next
       this.updateState()
-      await tab.view.webContents.loadURL(next)
+        await tab.view.webContents.loadURL(next).catch(() => undefined)
     }
+    if (tab.view.webContents.isDestroyed()) return this.getState()
     this.syncTabNavigation(tab)
     this.updateState()
     return this.getState()
@@ -606,6 +612,7 @@ export class BrowserController {
     } catch {
       /* 后台页加载失败只留在它自己的标签里（loadError），不打断当前阅读 */
     }
+    if (tab.view.webContents.isDestroyed() || this.tabs.get(tab.id) !== tab) return
     this.syncTabNavigation(tab)
     this.updateState()
   }
@@ -633,7 +640,8 @@ export class BrowserController {
     /* 同 `open()`：这是**我们**（用户/agent）发起的顶层导航 */
     tab.pendingMainFrameUrl = url
     this.updateState()
-    await tab.view.webContents.loadURL(url)
+    await tab.view.webContents.loadURL(url).catch(() => undefined)
+    if (tab.view.webContents.isDestroyed()) return this.getState()
     this.syncTabNavigation(tab)
     this.updateState()
     return this.getState()
@@ -646,9 +654,10 @@ export class BrowserController {
         (t) => t.id === externalTargetId && !!t.webSocketDebuggerUrl
       )
       if (!target) throw new Error('找不到浏览器标签页')
+      await this.attachExternalTarget(target)
       this.activeMode = 'external'
       for (const tab of this.tabs.values()) tab.view.setVisible(false)
-      await this.attachExternalTarget(target)
+      this.updateState()
       return this.getState()
     }
     const tab = this.tabs.get(id)
@@ -687,11 +696,14 @@ export class BrowserController {
     if (!tab) return this.getState()
     const win = this.getWindow()
     if (win && win.contentView.children.includes(tab.view)) win.contentView.removeChildView(tab.view)
+    tab.observer.dispose()
     await tab.cdp.detach().catch(() => undefined)
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close()
+    const priorIndex = [...this.tabs.keys()].indexOf(id)
     this.tabs.delete(id)
     if (this.activeTabId === id) {
-      const next = [...this.tabs.values()].at(-1)
+      const remaining = [...this.tabs.values()]
+      const next = remaining[Math.min(Math.max(0, priorIndex), remaining.length - 1)]
       this.activeTabId = next?.id ?? null
       for (const candidate of this.tabs.values()) candidate.view.setVisible(candidate.id === this.activeTabId)
     }
@@ -782,6 +794,17 @@ export class BrowserController {
    * `YAN_CHROME_HEADLESS=1` 时用无头模式（自动化测试用，不弹窗口）。
    */
   async openExternalChrome(rawUrl?: string): Promise<BrowserActionResult> {
+    if (this.externalOpening) return this.externalOpening
+    const opening = this.openExternalChromeImpl(rawUrl)
+    this.externalOpening = opening
+    try {
+      return await opening
+    } finally {
+      if (this.externalOpening === opening) this.externalOpening = null
+    }
+  }
+
+  private async openExternalChromeImpl(rawUrl?: string): Promise<BrowserActionResult> {
     /* 未指定地址时沿用当前内置页，接入前后停在同一个网页；没有就空白 */
     const url = safeUrl(rawUrl ?? this.activeTab()?.state.url ?? INITIAL_URL)
     if (!url) return { ok: false, error: '只允许打开 http(s) 网页' }
@@ -882,7 +905,8 @@ export class BrowserController {
         // 旧版本不接受 eventsEnabled，退回基础参数（至少不阻断下载）
         await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: directory })
       }
-    } catch {
+    } catch (error) {
+      this.pushError(`外部 Chrome 下载监听未能启用：${error instanceof Error ? error.message : String(error)}`)
       return
     }
     cdp.on('Browser.downloadWillBegin', (params) => {
@@ -900,7 +924,7 @@ export class BrowserController {
       if (String(params.state ?? '') !== 'completed') return
       const guid = String(params.guid ?? '')
       const begun = this.externalDownloads.get(guid)
-      const filename = begun?.filename ?? `download-${Date.now()}`
+      const filename = (begun?.filename ?? `download-${Date.now()}`).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\.+$/, '') || `download-${Date.now()}`
       this.externalDownloads.delete(guid)
       const size = Number(params.receivedBytes ?? 0)
       this.lastDownload = {
@@ -925,7 +949,8 @@ export class BrowserController {
     // A connected managed Chrome is a live session, never a file-copy target.
     // Copy from the active browser to the other browser using Chromium's API.
     if (this.external) {
-      const embedded = this.activeTab() ?? this.createTab()
+      const embedded = this.activeTab()
+      if (!embedded) throw new Error('请先打开内置浏览器页面，再复制 Cookie')
       const fromChrome = this.activeMode === 'external'
       const result = await transferCookies(
         fromChrome ? this.external.cdp : embedded.cdp,
@@ -950,9 +975,11 @@ export class BrowserController {
 
   async syncPageStorage(): Promise<ChromeSyncReport> {
     if (!this.external) throw new Error('请先接入本机 Chrome')
-    const embedded = this.activeTab() ?? this.createTab()
-    const externalUrl = this.external.url
-    const embeddedUrl = embedded.state.url
+    const embedded = this.activeTab()
+    if (!embedded) throw new Error('请先打开内置浏览器页面，再复制当前页面存储')
+    const externalUrl = safeUrl(this.external.url)
+    const embeddedUrl = safeUrl(embedded.state.url)
+    if (!externalUrl || !embeddedUrl || externalUrl === 'about:blank' || embeddedUrl === 'about:blank') throw new Error('两个页面都需要先打开 http(s) 网站，才能复制当前页面存储')
     if (new URL(externalUrl).origin !== new URL(embeddedUrl).origin) throw new Error('两个页面必须处于同一网站，才能复制当前页面存储')
     const from = this.activeMode === 'external' ? this.external.cdp : embedded.cdp
     const to = this.activeMode === 'external' ? embedded.cdp : this.external.cdp
@@ -968,6 +995,8 @@ export class BrowserController {
     const ext = this.external
     if (!ext) return this.getState()
     this.external = null
+    this.externalDownloads.clear()
+    ext.observer.dispose()
     await ext.cdp.detach().catch(() => undefined)
     stopChrome(ext.chrome)
     this.activeMode = 'embedded'
@@ -981,19 +1010,23 @@ export class BrowserController {
   /** 把一个 Chrome 页面目标接成当前目标（重建 registry/observer/input） */
   private async attachExternalTarget(target: CdpTarget): Promise<void> {
     if (!this.external || !target.webSocketDebuggerUrl) return
-    await this.external.cdp.detach().catch(() => undefined)
+    const ext = this.external
+    const previousCdp = ext.cdp
+    const previousObserver = ext.observer
     const cdp = new RawCdp(target.webSocketDebuggerUrl)
     await cdp.attach()
     const registry = new ElementRegistry()
-    this.external.cdp = cdp
-    this.external.registry = registry
-    this.external.observer = new Observer(cdp, registry)
-    this.external.input = new InputController(cdp)
-    this.external.network = new NetworkTracker(cdp)
-    void this.external.network.start()
-    this.external.targetId = target.id
-    this.external.url = target.url
-    this.external.title = target.title
+    ext.cdp = cdp
+    ext.registry = registry
+    ext.observer = new Observer(cdp, registry)
+    ext.input = new InputController(cdp)
+    ext.network = new NetworkTracker(cdp)
+    void ext.network.start()
+    previousObserver.dispose()
+    ext.targetId = target.id
+    ext.url = target.url
+    ext.title = target.title
+    await previousCdp.detach().catch(() => undefined)
     await this.setupExternalDownloads(cdp)
     await this.syncExternalTabs()
     await this.syncExternalHistory()
@@ -1045,8 +1078,10 @@ export class BrowserController {
       ext.url = url
       await this.syncExternalHistory()
     } finally {
-      ext.loading = false
-      this.updateState()
+      if (this.external === ext) {
+        ext.loading = false
+        this.updateState()
+      }
     }
   }
 
@@ -1089,7 +1124,7 @@ export class BrowserController {
 
   setBounds(bounds: BrowserBounds): void {
     // 外部 Chrome 是独立窗口，没有原生视图要摆位置
-    if (this.external) return
+    if (this.external && this.activeMode === 'external') return
     const tab = this.activeTab()
     if (!tab || !this.state.open) return
     /*
@@ -1103,6 +1138,7 @@ export class BrowserController {
      */
     const win = this.getWindow()
     const zoom = win && !win.isDestroyed() ? win.webContents.getZoomFactor() || 1 : 1
+    if (![bounds.x, bounds.y, bounds.width, bounds.height].every((value) => typeof value === 'number' && Number.isFinite(value))) return
     const clean = {
       x: Math.max(0, Math.round(bounds.x * zoom)),
       y: Math.max(0, Math.round(bounds.y * zoom)),
@@ -1207,7 +1243,7 @@ export class BrowserController {
     const p = this.parts()
     if (!p) return { ok: false, error: '浏览器尚未打开' }
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
-    const policy = this.policy.checkAction('press', key)
+    const policy = this.policy.checkAction(key.trim().toLowerCase() === 'enter' ? 'submit' : 'press', key)
     if (!policy.ok) return { ok: false, code: policy.code, error: policy.message }
     try {
       await p.input.press(key)
@@ -1387,7 +1423,6 @@ export class BrowserController {
 
   private async handleDownload(item: Electron.DownloadItem, owner?: string): Promise<void> {
     const directory = app.getPath('downloads')
-    await mkdir(directory, { recursive: true })
     const filename = item.getFilename().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') || `download-${Date.now()}`
     const path = join(directory, `${randomUUID()}-${filename}`)
     /*
@@ -1407,6 +1442,7 @@ export class BrowserController {
       }
       this.updateState()
     })
+    mkdirSync(directory, { recursive: true })
   }
 
   private pushError(detail: string): void {

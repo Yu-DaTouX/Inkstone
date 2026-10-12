@@ -53,10 +53,14 @@ export class BrowserCommands {
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
     const opts = this.ctl.capabilityOpts()
     const identity = `${opts?.sessionId ?? 'host'}:${opts?.runnerGeneration ?? 0}`
-    if (this.identity !== identity) { this.refs.clear(); this.targetId = undefined; this.identity = identity }
     const owner = `${identity}:${this.owner}`
     try {
       return await sharedResources.run(INTERACTIVE_RESOURCE, owner, async () => {
+        if (this.identity !== identity) {
+          this.refs.clear()
+          this.targetId = undefined
+          this.identity = identity
+        }
         const current = this.ctl.capabilityOpts()
         if (this.ctl.isActive?.() === false || `${current?.sessionId ?? 'host'}:${current?.runnerGeneration ?? 0}` !== identity) throw new CapabilityCommandError('run_expired', '运行已改变，旧排队操作未执行')
         const state = this.browserHost().getState()
@@ -349,7 +353,9 @@ export class BrowserCommands {
   /** 数值参数（`--delta-y` / `--delta-x`）：认不出数字就报可读错误，不传 NaN 给 CDP。 */
   browserNumber(params: Record<string, unknown>, key: string): number | undefined {
     const raw = params[key]
-    if (raw === undefined || raw === '' || raw === true) return undefined
+    if (raw === undefined) return undefined
+    if (typeof raw !== 'number' && typeof raw !== 'string') throw new CapabilityCommandError('invalid_number', `${key} 需要数字，收到的是 ${JSON.stringify(raw)}`)
+    if (typeof raw === 'string' && !raw.trim()) throw new CapabilityCommandError('invalid_number', `${key} 需要数字，收到的是空白`)
     const value = Number(raw)
     if (!Number.isFinite(value)) {
       throw new CapabilityCommandError(
@@ -445,6 +451,7 @@ export class BrowserCommands {
       return await this.browserHost().observe()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
+      if (err instanceof CapabilityCommandError) throw err
       if (message.includes('浏览器尚未打开')) {
         throw new CapabilityCommandError(
           'browser_not_open',
@@ -462,6 +469,7 @@ export class BrowserCommands {
       shot = await this.browserHost().screenshot()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
+      if (err instanceof CapabilityCommandError) throw err
       if (message.includes('浏览器尚未打开')) {
         throw new CapabilityCommandError(
           'browser_not_open',

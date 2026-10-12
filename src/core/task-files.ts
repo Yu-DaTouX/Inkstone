@@ -120,8 +120,9 @@ export async function applyOutputs(root: string, plan: TaskApplyItem[], beforeRe
       if (await fileHash(source) !== item.outputSha256 || await fileHash(item.destination) !== item.expectedSha256 || await realpath(dirname(item.destination)) !== dirname(item.destination)) {
         result.conflicts.push(item.destination); continue
       }
-      temp = `${item.destination}.inkstone-${process.pid}-${index}.new`
-      const handle = await open(temp, 'wx')
+      const candidate = `${item.destination}.inkstone-${process.pid}-${index}.new`
+      const handle = await open(candidate, 'wx')
+      temp = candidate
       try { await handle.writeFile(await readFile(source)); await handle.sync() } finally { await handle.close() }
       await beforeReplace?.(item, index)
       if (await fileHash(item.destination) !== item.expectedSha256 || await fileHash(temp) !== item.outputSha256) { result.conflicts.push(item.destination); continue }

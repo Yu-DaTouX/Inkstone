@@ -12,12 +12,16 @@ export function SessionMenu() {
   const session = useStore(s => s.session)
   const autoRetry = useStore(s => s.autoRetryEnabled)
   useEffect(() => {
+    if (!session?.sessionId) {
+      setAt(null)
+      return
+    }
     if (!at) return
     const release = useStore.getState().acquireOverlayBlocker('session-menu')
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setAt(null) }
     document.addEventListener('keydown', key)
     return () => { release(); document.removeEventListener('keydown', key) }
-  }, [at])
+  }, [at, session?.sessionId])
   if (!session?.sessionId) return null
   const run = (fn: () => unknown) => { setAt(null); void fn() }
   const state = useStore.getState

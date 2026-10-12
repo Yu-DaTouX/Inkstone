@@ -11,6 +11,7 @@
  * 写操作串成一条队列（与 space-store / session-layout 同一做法）：
  * 读-改-写之间不能让第二个提交插进来。
  */
+import { parsePersistedDocument } from './persisted-document'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
@@ -210,7 +211,7 @@ export class LibraryStore {
   private readonly now: () => number
   private readonly random: () => number
   private doc: LibraryDocument = EMPTY_LIBRARY
-  private loaded = false
+  private loadPromise: Promise<void> | null = null
   private tail: Promise<unknown> = Promise.resolve()
 
   constructor(options: { root?: string; now?: () => number; random?: () => number } = {}) {
@@ -219,14 +220,24 @@ export class LibraryStore {
     this.random = options.random ?? Math.random
   }
 
-  async load(): Promise<void> {
-    if (this.loaded) return
-    try {
-      this.doc = sanitizeLibraryDocument(JSON.parse(await readFile(libraryDocumentPath(this.root), 'utf8')))
-    } catch {
-      this.doc = EMPTY_LIBRARY
+  load(): Promise<void> {
+    if (!this.loadPromise) {
+      this.loadPromise = (async () => {
+        try {
+          const parsed = parsePersistedDocument(await readFile(libraryDocumentPath(this.root), 'utf8'), { sources: 'array', versions: 'array', refs: 'array', legacy: 'array' })
+          const count = (parsed.sources as unknown[]).length
+          if (count > MAX_LIBRARY_SOURCES) throw new Error(`资料库包含 ${count} 份资料，超过上限 ${MAX_LIBRARY_SOURCES}；拒绝静默丢弃旧资料`)
+          this.doc = sanitizeLibraryDocument(parsed)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            this.doc = EMPTY_LIBRARY
+            return
+          }
+          throw new Error('资料库文件读取或解析失败，已拒绝覆盖', { cause: error })
+        }
+      })()
     }
-    this.loaded = true
+    return this.loadPromise
   }
 
   /** 只读快照（复制顶层数组，避免调用方拿到正在被写队列改写的引用）。 */
@@ -524,7 +535,12 @@ export class LibraryStore {
   }
 
   private enqueue<T>(job: () => Promise<T>): Promise<T> {
-    const run = this.tail.then(job, job)
+    const guarded = async () => {
+      await this.load()
+      const previous = structuredClone(this.doc)
+      try { return await job() } catch (error) { this.doc = previous; throw error }
+    }
+    const run = this.tail.then(guarded, guarded)
     this.tail = run.catch(() => undefined)
     return run
   }
@@ -543,18 +559,9 @@ export class LibraryStore {
       await mkdir(dirname(target), { recursive: true })
       const payload = JSON.stringify(this.doc, null, 2)
       await writeFile(temp, payload, 'utf8')
-      try {
-        await rename(temp, target)
-      } catch {
-        await writeFile(target, payload, 'utf8')
-        await rm(temp, { force: true }).catch(() => undefined)
-      }
+      await rename(temp, target)
     } catch (error) {
-      try {
-        this.doc = sanitizeLibraryDocument(JSON.parse(await readFile(libraryDocumentPath(this.root), 'utf8')))
-      } catch {
-        this.doc = EMPTY_LIBRARY
-      }
+      await rm(temp, { force: true }).catch(() => undefined)
       throw error
     }
   }

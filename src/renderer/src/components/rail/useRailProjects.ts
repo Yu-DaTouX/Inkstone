@@ -6,6 +6,7 @@ import { rankOf } from '../../../../shared/rail-order'
 import { compareBy, type RailSortBy } from '../../../../shared/rail-view'
 import { ancestorPaths } from './sidebar-state'
 import { shortProject } from './rail-utils'
+import { shouldIncludeSyntheticCurrent } from '../toolbar/workspace-control-guards'
 
 /**
  * 「按项目」视图的数据：把会话归到项目（没有会话的项目只保留当前项目），
@@ -65,7 +66,7 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
     }
 
     const currentPath = session?.sessionFile
-    const synthetic: SessionSummary[] = currentPath && !sessions.some((x) => x.path === currentPath)
+    const synthetic: SessionSummary[] = currentPath && shouldIncludeSyntheticCurrent(showArchivedSessions, currentPath) && !sessions.some((x) => x.path === currentPath)
       ? [{
           id: session?.sessionId ?? 'current',
           path: currentPath,

@@ -130,6 +130,10 @@ export function registerGoalIpc(ipc: IpcRegistrar, deps: GoalIpcDeps): void {
       const restored = await workModes.set(key, 'clarify', switched.state.revision)
       await pushWorkMode(id)
       await pushGoal(id)
+      if (!restored.ok) {
+        console.error('[goal] 审批失败且工作模式回滚失败，请手动切回澄清模式', { key, goalRevision: expectedGoalRevision })
+        pushFrom(id, { ch: 'log', payload: { text: '[任务计划] 审批失败且模式未能回滚；请在当前会话手动切回澄清模式，再刷新计划。' } })
+      }
       return { ok: false as const, error: restored.ok ? approved.code : 'approval_rollback_failed', goal: approved.goal }
     }
     await pushWorkMode(id)
@@ -281,13 +285,15 @@ export function registerGoalIpc(ipc: IpcRegistrar, deps: GoalIpcDeps): void {
     await handoffTransactions.load()
     const tx = handoffTransactions.snapshot().transactions[String(handoffId ?? '')]
     if (!tx) return { ok: false, error: 'not-found' }
+    const sourceRunner = registry()?.activeRunner()?.id
+    if (!sourceRunner || workModeKeyFor(sourceRunner) !== tx.sourceSession) return { ok: false, error: 'session-mismatch' }
     if (typeof tx.receipts?.sentAt !== 'number') return { ok: false, error: 'not-sent' }
     const done = await handoffTransactions.step(tx.handoffId, 'resumed', 'manual-confirmed')
     handoffDiag.record({
       stage: 'commit',
       outcome: 'manual-confirmed',
       reason: 'user-verified',
-      runnerId: registry()?.activeRunner()?.id ?? '',
+      runnerId: sourceRunner,
       sessionKey: tx.sourceSession
     })
     return { ok: done.advanced || done.tx?.stage === 'resumed' }
@@ -311,7 +317,7 @@ export function registerGoalIpc(ipc: IpcRegistrar, deps: GoalIpcDeps): void {
     await abandonHandoff(id, 'manual-retry')
     /* 资格评估有 1 秒节流；用户明确要求重试，就让它现在真的判一次 */
     handoffLastCheck.delete(id)
-    void scheduleSessionWork(id, 'manual-retry')
+    void scheduleSessionWork(id, 'manual-retry').catch((error) => console.error('[handoff] 重试调度失败', error))
     return { ok: true }
   })
   handle('yan:setWorkMode', async (mode: WorkMode, expectedRevision?: number) => {

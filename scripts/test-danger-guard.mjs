@@ -16,8 +16,6 @@ export function runDangerGuardTests(ok, mod) {
   for (const cmd of [
     'rm -rf /',
     'rm -rf ~',
-    'rm -rf ~/Documents',
-    'rm -rf $HOME/x',
     'rm -rf ../',
     'rm -rf *',
     'rm -fr /usr/local',
@@ -52,6 +50,8 @@ export function runDangerGuardTests(ok, mod) {
   ]) ok(asks(cmd), `要问：${cmd}`)
 
   for (const cmd of [
+    'rm -rf ~/Documents',
+    'rm -rf $HOME/x',
     'rm -rf node_modules',
     'rm -rf dist build',
     'rm -f a.txt',

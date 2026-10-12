@@ -65,6 +65,8 @@
 .agent-message-stream pre { max-width: 100%; overflow: auto; }
 .agent-message-stream .stream-inner { max-width: 900px; margin-inline: auto; }
 .agent-message-caption { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-1) var(--sp-3); }
+/* 过程窗口顶部的任务原文：与后面的回合留出间距（外观沿用 ui.css 的折叠样式）。 */
+.agent-prompt { margin-bottom: var(--sp-3); }
 /* 终端占满窗格：状态条浮在右上角，不再占掉终端上方一整行 */
 .tile-pane > .agent-workspace { position: relative; }
 .agent-message-caption.overlay { position: absolute; top: var(--sp-1); right: var(--sp-2); z-index: 2; padding: 0; }

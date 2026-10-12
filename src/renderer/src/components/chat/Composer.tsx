@@ -250,15 +250,23 @@ export function Composer() {
    * 鼠标拖得快时会跑出那个小把手，挂在元素上会“掉”。
    * pointer 事件而不是 mouse：自动兼得触控与指针捕获。
    */
+  const resizeCleanup = useRef<(() => void) | null>(null)
+  const resizing = useRef(false)
+  useEffect(() => () => resizeCleanup.current?.(), [])
+
   const startResize = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault()
+      resizeCleanup.current?.()
+      const pointerId = e.pointerId
       const startY = e.clientY
-      const startT = tall || (ref.current?.offsetHeight ?? TALL_H)
+      const capAtStart = Math.max(96, Math.round(window.innerHeight * 0.35))
+      const startT = Math.min(tall || (ref.current?.offsetHeight ?? TALL_H), capAtStart)
       const handle = e.currentTarget as HTMLElement
       let moved = 0
       let lastHeight = startT
       resizeMoved.current = false
+      resizing.current = true
       // Electron/Chromium 下确保快速拖动仍由这个把手持续接收指针事件。
       try {
         handle.setPointerCapture(e.pointerId)
@@ -273,18 +281,26 @@ export function Composer() {
         moved = Math.max(moved, Math.abs(dy))
         // 只有真的动了才改动高度（否则轻微抖动会把“点击”变成“拖拽”）
         if (moved < 4) return
-        const next = Math.max(40, Math.min(560, startT + dy))
+        const capNow = Math.max(96, Math.round(window.innerHeight * 0.35))
+        const next = Math.max(40, Math.min(capNow, startT + dy))
         lastHeight = next
         setTall(next)
         if (next > 48) setExpanded(true)
         else setExpanded(false)
       }
 
+      let finished = false
       const onUp = (): void => {
+        if (finished) return
+        finished = true
         handle.classList.remove('active')
         document.body.classList.remove('resizing-composer')
         document.removeEventListener('pointermove', onMove)
         document.removeEventListener('pointerup', onUp)
+        document.removeEventListener('pointercancel', onUp)
+        if (resizeCleanup.current === onUp) resizeCleanup.current = null
+        resizing.current = false
+        try { if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId) } catch { /* 已失去捕获或节点已卸载 */ }
 
         resizeMoved.current = moved >= 4
         if (moved < 4) return
@@ -297,8 +313,10 @@ export function Composer() {
         }
       }
 
+      resizeCleanup.current = onUp
       document.addEventListener('pointermove', onMove)
       document.addEventListener('pointerup', onUp)
+      document.addEventListener('pointercancel', onUp)
     },
     [tall, toggleExpanded, value, resetComposerHeight]
   )
@@ -414,7 +432,7 @@ export function Composer() {
     }
     const lh = parseFloat(getComputedStyle(el).lineHeight) || 20
     const pad = 16
-    if (el.scrollHeight > lh * 3 + pad) {
+    if (!resizing.current && el.scrollHeight > lh * 3 + pad) {
       animateHeight()
       setExpanded(true)
       setTall(TALL_H)
@@ -754,6 +772,23 @@ export function Composer() {
     }
 
     if (localCommand) {
+      if (localName === 'model') {
+        const spec = localArgs.toLowerCase()
+        const selected = spec
+          ? models.find((model) => {
+              const full = `${model.provider}/${model.id}`.toLowerCase()
+              return full === spec || model.id.toLowerCase() === spec || model.name.toLowerCase() === spec
+            })
+          : undefined
+        if (!selected) {
+          openSettings('status')
+          return
+        }
+        setValue('')
+        clearAttachments()
+        await setModel(selected.provider, selected.id)
+        return
+      }
       setValue('')
       clearAttachments()
       if (localName === 'new') {
@@ -762,16 +797,6 @@ export function Composer() {
         await compact()
       } else if (localName === 'browser') {
         await openBrowser(localArgs || undefined)
-      } else if (localName === 'model') {
-        const spec = localArgs.toLowerCase()
-        const selected = spec
-          ? models.find((model) => {
-              const full = `${model.provider}/${model.id}`.toLowerCase()
-              return full === spec || model.id.toLowerCase() === spec || model.name.toLowerCase() === spec
-            })
-          : undefined
-        if (selected) await setModel(selected.provider, selected.id)
-        else openSettings('status')
       } else {
         await runPiBuiltin(t, localName ?? '', localArgs)
       }
@@ -788,13 +813,21 @@ export function Composer() {
       setValue('')
       clearAttachments()
       const sent = await send(outgoing, images.length ? images : undefined, 'followUp')
-      if (!sent) { useStore.setState({ attachments: savedAttachments }); setValue((draft) => draft ? `${outgoing}\n${draft}` : outgoing) }
+      if (!sent) {
+        useStore.setState((state) => ({ attachments: [...savedAttachments, ...state.attachments.filter((item) => !savedAttachments.some((saved) => saved.id === item.id))] }))
+        setValue((draft) => draft ? `${raw}\n${draft}` : raw)
+      }
       return
     }
 
+    const savedAttachments = useStore.getState().attachments
     setValue('')
     clearAttachments()
-    await send(outgoing, images.length ? images : undefined)
+    const sent = await send(outgoing, images.length ? images : undefined)
+    if (!sent) {
+      useStore.setState((state) => ({ attachments: [...savedAttachments, ...state.attachments.filter((item) => !savedAttachments.some((saved) => saved.id === item.id))] }))
+      setValue((draft) => draft ? `${raw}\n${draft}` : raw)
+    }
   }
 
   /**
@@ -818,9 +851,9 @@ export function Composer() {
         .filter((f): f is File => !!f)
       if (files.length === 0) return
       e.preventDefault()
-      void readFiles(files, addAttachments)
+      void readFiles(files, addAttachments, (names) => notify('error', t('attachment.skipped', { names: names.join(', ') })))
     },
-    [addAttachments]
+    [addAttachments, notify, t]
   )
 
   /* ---- 图片：拖放；普通文件 → 文件引用 ---- */
@@ -845,10 +878,10 @@ export function Composer() {
       if (files.length === 0) return
       const images = files.filter((f) => f.type.startsWith('image/'))
       const others = files.filter((f) => !f.type.startsWith('image/'))
-      if (images.length) void readFiles(images, addAttachments)
+      if (images.length) void readFiles(images, addAttachments, (names) => notify('error', t('attachment.skipped', { names: names.join(', ') })))
       if (others.length) void addFileRefs(others)
     },
-    [addAttachments, addFileRefPaths, addFileRefs]
+    [addAttachments, addFileRefPaths, addFileRefs, notify, t]
   )
 
   const rememberCursor = useCallback((e: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -1005,7 +1038,9 @@ export function Composer() {
           setDragging(true)
         }
       }}
-      onDragLeave={() => setDragging(false)}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false)
+      }}
       onDrop={onDrop}
     >
       {/* 排队的消息：显示在输入框**上方**（用户要求） */}
@@ -1075,6 +1110,7 @@ export function Composer() {
                   onClick={() => completeSlash(c)}
                   disabled={!c.executable}
                   title={c.availability}
+                  id={`composer-slash-option-${i}`}
                   role="option"
                   aria-disabled={!c.executable}
                   aria-selected={i === menu.index}
@@ -1125,6 +1161,7 @@ export function Composer() {
                 className={`slash-item ${i === menu.index ? 'sel' : ''}`}
                 onMouseEnter={() => setMenu((m) => ({ ...m, index: i }))}
                 onClick={() => completeAt(p)}
+                id={`composer-at-option-${i}`}
                 role="option"
                 aria-selected={i === menu.index}
                 title={toAbsoluteFilePath(activeCwd, p)}
@@ -1151,6 +1188,30 @@ export function Composer() {
           data-testid="composer-resize"
           role="separator"
           aria-orientation="horizontal"
+          tabIndex={0}
+          aria-label={t('composer.resizeHint')}
+          aria-valuemin={40}
+          aria-valuemax={Math.max(96, Math.round(window.innerHeight * 0.35))}
+          aria-valuenow={Math.round(tall || (ref.current?.offsetHeight ?? restHeight()))}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+              event.preventDefault()
+              const step = event.shiftKey ? 48 : 16
+              const cap = Math.max(96, Math.round(window.innerHeight * 0.35))
+              const current = tall || (ref.current?.offsetHeight ?? restHeight())
+              const next = Math.max(40, Math.min(cap, current + (event.key === 'ArrowUp' ? step : -step)))
+              setTall(next)
+              setExpanded(next > 48)
+            } else if (event.key === 'Home') {
+              event.preventDefault()
+              setTall(0)
+              setExpanded(false)
+            } else if (event.key === 'End') {
+              event.preventDefault()
+              setTall(Math.max(96, Math.round(window.innerHeight * 0.35)))
+              setExpanded(true)
+            }
+          }}
         />
 
         {/* 提示符：普通输入是 `›`，`!` 开头的直执行命令是 `$`（设计规范 §3.5） */}
@@ -1188,6 +1249,7 @@ export function Composer() {
             onKeyUp={rememberCursor}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
+            aria-activedescendant={menu.open && slashMatches.length ? `composer-slash-option-${menu.index}` : menu.open && atQuery !== null && atMatches.length ? `composer-at-option-${menu.index}` : undefined}
           />
         </div>
 

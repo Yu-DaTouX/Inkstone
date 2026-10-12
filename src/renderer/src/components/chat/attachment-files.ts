@@ -1,12 +1,14 @@
 import type { Attachment } from '../../../../shared/ipc'
 
 /** 把 File 读成 base64 附件 */
-export async function readFiles(files: File[], add: (a: Attachment[]) => void): Promise<void> {
+export async function readFiles(files: File[], add: (a: Attachment[]) => void, skipped?: (names: string[]) => void): Promise<void> {
+  const rejected: string[] = []
   const out: Attachment[] = []
   for (const f of files) {
-    if (f.size > 12 * 1024 * 1024) continue
+    if (f.size > 12 * 1024 * 1024) { rejected.push(f.name || 'pasted.png'); continue }
     try {
       const buf = await f.arrayBuffer()
+      if (buf.byteLength > 12 * 1024 * 1024) { rejected.push(f.name || 'pasted.png'); continue }
       const data = bytesToBase64(new Uint8Array(buf))
       out.push({
         id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -17,10 +19,11 @@ export async function readFiles(files: File[], add: (a: Attachment[]) => void): 
         preview: data
       })
     } catch {
-      /* 读不了就跳过 */
+      rejected.push(f.name || 'pasted.png')
     }
   }
   add(out)
+  if (rejected.length) skipped?.(rejected)
 }
 
 /** 不用 FileReader：它返回 data: 前缀，而 pi 要的是裸 base64 */

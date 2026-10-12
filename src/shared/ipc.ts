@@ -342,6 +342,15 @@ export interface AssistantArtifact {
   sourceId: string
   filename: string
   path: string
+  /**
+   * 挂载已有文件时的**源文件路径**（受控副本之外的原始位置）。
+   *
+   * 预览、图片展示与远端读取仍走 `path` —— 受控副本不随源文件变动，也不把
+   * 绝对路径交给浏览器层；但「在文件夹中显示」「复制路径」要用源路径，
+   * 否则用户看到的是 `artifacts/` 里那份副本，找不到自己的原文档。
+   * 生成物（生图、HTML 预览）没有源文件，此字段不存在。
+   */
+  sourcePath?: string
   mediaType: string
   kind: 'image' | 'svg' | 'code' | 'document' | 'binary'
   bytes: number
@@ -3042,6 +3051,8 @@ export interface VisibleRunnerSession {
 }
 
 export interface YanBridge {
+  /** 宿主显式启动隔离探针时为真；普通窗口与打包产品不开放 store 调试引用。 */
+  readonly probeMode: boolean
   agentService: import('./agent-service').ServiceBridge
   appUpdate: {
     status(): Promise<import('./app-update').AppUpdateStatus>
@@ -3485,7 +3496,8 @@ export interface YanBridge {
    */
   openFileDefault(p: string, cwd?: string): Promise<{ ok: boolean; revealed?: boolean; error?: string }>
   /** 在系统文件管理器里定位一个文件 */
-  revealPath(p: string): Promise<void>
+  /** 在系统文件管理器里选中文件；路径不存在时返回 `{ ok: false }`，调用方据此回退到受控副本。 */
+  revealPath(p: string): Promise<{ ok: boolean }>
   /** 数据位置（会话、凭证、语音模型等）与迁移到非系统盘 */
   interactions: {
     get(session: string): Promise<import('./interaction-state').InteractionValues>
@@ -3584,6 +3596,7 @@ export interface YanBridge {
   trust: {
     status(cwd?: string): Promise<TrustStatusView>
     allow(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
+    revoke(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
   }
   /**
    * 工作集预算（N21-3）。只算不决策：返回当前生效的策略与某个窗口下的预算。

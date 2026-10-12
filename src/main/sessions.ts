@@ -9,6 +9,8 @@
  */
 import { readdir, stat, open, mkdir, rename } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { realpath } from 'node:fs/promises'
+import { sep } from 'node:path'
 import { join, resolve } from 'node:path'
 import type { ProjectRecord, SessionSummary } from '../shared/ipc'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
@@ -296,33 +298,41 @@ async function readBranchOrigin(path: string, forkTs: number): Promise<string | 
  */
 async function readLastActivity(path: string, size: number): Promise<{ at?: number; reply?: SessionSummary['lastReply'] }> {
   const TAIL = 64 * 1024
-  const start = Math.max(0, size - TAIL)
   const fh = await open(path, 'r')
   try {
-    const len = size - start
-    if (len <= 0) return {}
-    const buf = Buffer.alloc(len)
-    await fh.read(buf, 0, len, start)
-    const lines = buf.toString('utf8').split('\n')
+    if (size <= 0) return {}
+    let end = size
+    let carry = Buffer.alloc(0)
     let at: number | undefined
     let reply: SessionSummary['lastReply']
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i]
-      if (!line.includes('"type":"message"')) continue
-      try {
-        const o = JSON.parse(line) as { id?: string; timestamp?: string; message?: { role?: string; timestamp?: number; content?: Array<{ type?: string; text?: string }> | string } }
-        const ts = Date.parse(String(o.timestamp ?? ''))
-        if (at === undefined && !Number.isNaN(ts)) at = ts
-        if (!reply && o.message?.role === 'assistant') {
-          const content = o.message.content
-          const text = typeof content === 'string' ? content : Array.isArray(content) ? content.filter((item) => item.type === 'text' && typeof item.text === 'string').map((item) => item.text).join(' ') : ''
-          const stamp = typeof o.message.timestamp === 'number' && Number.isFinite(o.message.timestamp) ? o.message.timestamp : !Number.isNaN(ts) ? ts : undefined
-          if (text?.trim() && stamp && o.id) reply = { id: o.id, at: stamp, text: text.replace(/\s+/g, ' ').trim().slice(0, 180) }
-        }
-        if (at !== undefined && reply) break
-      } catch {
-        /* 尾部第一行可能被截断，继续往前找 */
+    while (end > 0 && (at === undefined || !reply)) {
+      const begin = Math.max(0, end - TAIL)
+      const buf = Buffer.alloc(end - begin)
+      const { bytesRead } = await fh.read(buf, 0, buf.length, begin)
+      const combined = Buffer.concat([buf.subarray(0, bytesRead), carry])
+      const boundary = begin > 0 ? combined.indexOf(10) : -1
+      const complete = begin > 0 ? (boundary >= 0 ? combined.subarray(boundary + 1) : Buffer.alloc(0)) : combined
+      carry = begin > 0 ? (boundary >= 0 ? combined.subarray(0, boundary) : combined) : Buffer.alloc(0)
+      // 跨块保留原字节，避免中文 UTF-8 恰好落在块边界时被替换；超长坏行不无限积累。
+      if (carry.length > 8 * 1024 * 1024) carry = Buffer.alloc(0)
+      const lines = complete.toString('utf8').split('\n')
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i]
+        if (line.length > 8 * 1024 * 1024 || !line.includes('"type":"message"')) continue
+        try {
+          const o = JSON.parse(line) as { id?: string; timestamp?: string; message?: { role?: string; timestamp?: number; content?: Array<{ type?: string; text?: string }> | string } }
+          const ts = Date.parse(String(o.timestamp ?? ''))
+          if (at === undefined && !Number.isNaN(ts)) at = ts
+          if (!reply && o.message?.role === 'assistant') {
+            const content = o.message.content
+            const body = typeof content === 'string' ? content : Array.isArray(content) ? content.filter((item) => item.type === 'text' && typeof item.text === 'string').map((item) => item.text).join(' ') : ''
+            const stamp = typeof o.message.timestamp === 'number' && Number.isFinite(o.message.timestamp) ? o.message.timestamp : !Number.isNaN(ts) ? ts : undefined
+            if (body?.trim() && stamp && o.id) reply = { id: o.id, at: stamp, text: body.replace(/\s+/g, ' ').trim().slice(0, 180) }
+          }
+          if (at !== undefined && reply) break
+        } catch { /* 截断或坏行跳过 */ }
       }
+      end = begin
     }
     return { at, reply }
   } catch {
@@ -333,6 +343,12 @@ async function readLastActivity(path: string, size: number): Promise<{ at?: numb
 }
 
 /** 列出所有会话，按更新时间倒序；传入 projects 时附加 Yan 的归属索引。 */
+export async function findSessionById(id: string, projects?: ProjectRecord[]): Promise<SessionSummary | undefined> {
+  if (!id) return undefined
+  const sessions = await listSessions(Number.MAX_SAFE_INTEGER, projects)
+  return sessions.find((session) => session.id === id)
+}
+
 export async function listSessions(limit = 200, projects?: ProjectRecord[]): Promise<SessionSummary[]> {
   if (!existsSync(SESSIONS_DIR)) return []
 
@@ -423,13 +439,18 @@ const deleted = new Map<string, Array<{ from: string; to: string }>>()
 export async function deleteSession(path: string, protectedPath?: string): Promise<string> {
   // 只允许删 sessions 目录下的 .jsonl，防止路径穿越误删
   const resolved = resolve(path)
-  if (!resolved.startsWith(resolve(SESSIONS_DIR))) {
+  const root = resolve(SESSIONS_DIR)
+  const [realFile, realRoot] = await Promise.all([realpath(resolved), realpath(root)])
+  const comparable = (value: string): string => process.platform === 'win32' ? value.toLowerCase() : value
+  const filePath = comparable(realFile)
+  const rootPath = comparable(realRoot).replace(/[\\/]$/, '')
+  if (filePath !== rootPath && !filePath.startsWith(`${rootPath}${sep}`)) {
     throw new Error('只能删除会话目录下的文件')
   }
-  if (!resolved.endsWith('.jsonl')) {
+  if (!realFile.toLowerCase().endsWith('.jsonl')) {
     throw new Error('不是会话文件')
   }
-  const all = await listSessions(500)
+  const all = await listSessions(Number.MAX_SAFE_INTEGER)
   const byParent = new Map<string, SessionSummary[]>()
   for (const session of all) {
     if (!session.parentSession) continue
@@ -510,9 +531,16 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
 export async function restoreSession(token: string): Promise<void> {
   const entry = deleted.get(token)
   if (!entry) throw new Error('此删除已无法撤销')
-  for (const item of entry) {
-    await mkdir(resolve(item.from, '..'), { recursive: true })
-    await rename(item.to, item.from)
+  const restored: Array<{ from: string; to: string }> = []
+  try {
+    for (const item of entry) {
+      await mkdir(resolve(item.from, '..'), { recursive: true })
+      await rename(item.to, item.from)
+      restored.push(item)
+    }
+    deleted.delete(token)
+  } catch (error) {
+    for (const item of restored.reverse()) await rename(item.from, item.to).catch(() => undefined)
+    throw error
   }
-  deleted.delete(token)
 }

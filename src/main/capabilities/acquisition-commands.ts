@@ -254,11 +254,13 @@ export class CapabilityAcquisition {
         )
       }
     }
-    const { plan, digest } = planForCandidate({
-      candidate,
-      goalId: this.host.capabilityOpts()?.sessionId ?? 'unknown-goal',
-      projectId: this.host.capabilityOpts()?.projectId ?? 'unknown-project'
-    })
+    const capabilityOpts = this.host.capabilityOpts()
+    const goalId = capabilityOpts?.sessionId?.trim()
+    const projectId = capabilityOpts?.projectId?.trim()
+    if (!goalId || !projectId) {
+      throw new CapabilityCommandError('context_missing', '缺少当前项目或会话身份，拒绝生成未绑定上下文的接入计划。')
+    }
+    const { plan, digest } = planForCandidate({ candidate, goalId, projectId })
     const now = Date.now()
     this.acquisitionPlans.set(plan.planId, { plan, candidate, digest, at: now })
     for (const [id, cached] of this.acquisitionPlans) {

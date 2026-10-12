@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileUrl } from '../shared/file-url'
 
@@ -35,9 +35,23 @@ export function imageFile(dir: string, mimeType: string, data: string): string {
  */
 export function localizeImage(dir: string, mimeType: string, data: string): string {
   const file = imageFile(dir, mimeType, data)
-  if (!existsSync(file)) {
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(file, Buffer.from(data, 'base64'))
+  const expected = Buffer.from(data, 'base64')
+  try {
+    const existing = readFileSync(file)
+    if (existing.length === expected.length && createHash('sha1').update(existing).digest('hex') === createHash('sha1').update(expected).digest('hex')) return fileUrl(file)
+  } catch { /* 缺失或损坏的缓存要重建 */ }
+  mkdirSync(dir, { recursive: true })
+  const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temp, expected, { flag: 'wx' })
+    try { renameSync(temp, file) }
+    catch (error) {
+      // 目标缓存可能是损坏文件；Windows 不允许 rename 覆盖，先移除无效目标再安装临时文件。
+      try { unlinkSync(file) } catch { /* 目标可能已被并发清理 */ }
+      renameSync(temp, file)
+    }
+  } finally {
+    try { unlinkSync(temp) } catch { /* rename 后临时文件已不存在 */ }
   }
   return fileUrl(file)
 }

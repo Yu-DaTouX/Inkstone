@@ -7,9 +7,9 @@ export function runSubagentCommandTests(ok, parseSubagentCommand) {
   ok(prefix?.task === '检查项目' && prefix.isolation === 'controlled-cwd', '前置 --read-only 进入受控只读目录')
 
   const suffix = parseSubagentCommand('/subagent 检查项目 --read-only')
-  ok(suffix?.task === '检查项目' && suffix.isolation === 'controlled-cwd', '文案约定的尾置 --read-only 进入受控只读目录')
+  ok(suffix?.task === '检查项目 --read-only' && suffix.isolation === 'shared-cwd', '尾置示例参数属于任务正文，不改变权限')
 
-  const middle = parseSubagentCommand('/subagent 检查项目 --READ-ONLY 然后汇总')
+  const middle = parseSubagentCommand('/subagent --READ-ONLY 检查项目 然后汇总')
   ok(
     middle?.task === '检查项目 然后汇总' && middle.isolation === 'controlled-cwd',
     '只读开关大小写不敏感且不会吞掉任务其它内容'

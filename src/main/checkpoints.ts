@@ -138,6 +138,10 @@ async function ensureRepo(cwd: string, dir: string): Promise<boolean> {
 
 /** 把工作树现在的样子并进影子索引，返回 tree；文件数过多或出错返回 null */
 async function snapshotTree(cwd: string, dir: string): Promise<string | null> {
+  const estimate = await shadowGit(cwd, dir, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { allowFailure: true })
+  if (!estimate.ok) return null
+  const estimatedCount = estimate.stdout.split('\0').filter(Boolean).length
+  if (estimatedCount > MAX_FILES) return null
   const add = await shadowGit(cwd, dir, ['add', '-A', '--ignore-errors'], { allowFailure: true })
   /* add 在个别文件上失败（权限、被占用）不致命，其余文件照常入索引；其他失败才放弃 */
   if (!add.ok && !/permission denied|unable to index|Invalid argument|short read|failed to insert/i.test(add.stderr)) return null
@@ -168,17 +172,18 @@ export function captureCheckpoint(cwd: string, sessionKey: string, text: string,
   const key = normalizeCwd(cwd)
   if (inflight.has(key)) return Promise.resolve(null)
   inflight.add(key)
-  const work = serialized(key, () => takeSnapshot(cwd, sessionKey, text, 'turn')).catch(() => null)
+  let expired = false
+  const work = serialized(key, () => takeSnapshot(cwd, sessionKey, text, 'turn', () => expired)).catch(() => null)
   void work.finally(() => inflight.delete(key))
-  const timeout = new Promise<null>((done) => setTimeout(() => done(null), budgetMs).unref?.())
+  const timeout = new Promise<null>((done) => setTimeout(() => { expired = true; done(null) }, budgetMs).unref?.())
   return Promise.race([work, timeout])
 }
 
-async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind: CheckpointRecord['kind']): Promise<CheckpointRecord | null> {
+async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind: CheckpointRecord['kind'], expired: () => boolean = () => false): Promise<CheckpointRecord | null> {
   const dir = projectDir(cwd)
   if (!(await ensureRepo(cwd, dir))) return null
   const tree = await snapshotTree(cwd, dir)
-  if (!tree) return null
+  if (!tree || expired()) return null
   const index = await readIndex(dir, cwd)
   let sha = index.lastTree === tree ? index.lastSha : undefined
   if (!sha) {
@@ -194,6 +199,7 @@ async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind:
     kind,
     sha
   }
+  if (expired()) return null
   index.records.push(record)
   index.lastTree = tree
   index.lastSha = sha
@@ -259,7 +265,12 @@ export function restoreCheckpoint(cwd: string, recordId: string, sessionKey: str
     if (!before) return { ok: false, error: '回退前没能存下现在的状态，已取消，文件没有改动', restored: 0 }
     const beforeSha = shaOf((await readIndex(dir, cwd)).records.find((r) => r.id === before.id))
     const reset = await shadowGit(cwd, dir, ['read-tree', '-u', '--reset', sha], { allowFailure: true })
-    if (!reset.ok) return { ok: false, error: reset.error ?? '恢复失败', undoId: before.id, restored: 0 }
+    if (!reset.ok) return {
+      ok: false,
+      error: `恢复失败，工作区可能已部分变更；可用撤销检查点 ${before.id} 恢复回退前状态。${reset.error ? ` ${reset.error}` : ''}`,
+      undoId: before.id,
+      restored: 0
+    }
     const changed = beforeSha ? await shadowGit(cwd, dir, ['diff-tree', '-r', '--name-only', '--no-renames', beforeSha, sha], { allowFailure: true }) : null
     const restored = changed?.ok ? changed.stdout.split('\n').filter(Boolean).length : 0
     return { ok: true, undoId: before.id, restored }
@@ -276,16 +287,19 @@ export async function pruneCheckpoints(now = Date.now()): Promise<void> {
   }
   for (const name of dirs) {
     const dir = join(ROOT, name)
+    const initial = await readIndex(dir, '')
+    const lockKey = initial.cwd ? normalizeCwd(initial.cwd) : `checkpoint-dir:${name}`
+    await serialized(lockKey, async () => {
     try {
       const st = await stat(dir)
-      if (!st.isDirectory()) continue
+      if (!st.isDirectory()) return
       const index = await readIndex(dir, '')
       const kept = index.records.filter((r) => now - r.at < KEEP_MS)
       if (!kept.length) {
         await rm(dir, { recursive: true, force: true })
-        continue
+        return
       }
-      if (kept.length === index.records.length) continue
+      if (kept.length === index.records.length) return
       const alive = new Set(kept.map((r) => shaOf(r)).filter((s): s is string => !!s))
       const dropped = new Set(index.records.map((r) => shaOf(r)).filter((s): s is string => !!s && !alive.has(s)))
       const cwd = index.cwd
@@ -297,5 +311,6 @@ export async function pruneCheckpoints(now = Date.now()): Promise<void> {
     } catch {
       /* 某个项目的清理失败不影响其他项目 */
     }
+    })
   }
 }

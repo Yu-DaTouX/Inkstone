@@ -83,6 +83,9 @@ export class AssistantLink {
 
   constructor(options: AssistantLinkOptions) {
     this.options = options;
+    const endpoint = new URL(options.baseUrl);
+    const loopback = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])$/i.test(endpoint.hostname);
+    if (!['http:', 'https:'].includes(endpoint.protocol) || (endpoint.protocol === 'http:' && !loopback) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw new Error('生活助手端点必须为 HTTPS；仅回环本机服务允许 HTTP');
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.token = options.token;
     this.timeoutMs = options.timeoutMs ?? 180_000;
@@ -117,7 +120,13 @@ export class AssistantLink {
         signal: controller.signal,
       });
       const text = await response.text();
-      const parsed = (text ? JSON.parse(text) : {}) as Record<string, unknown>;
+      let parsed: Record<string, unknown> = {};
+      try { parsed = (text ? JSON.parse(text) : {}) as Record<string, unknown>; }
+      catch {
+        if (response.status === 401) { this.setStatus("unauthorized"); throw new AssistantError("unauthorized", "访问令牌错误"); }
+        if (!response.ok) throw new AssistantError("http", text.trim().slice(0, 2000) || `助手服务返回 HTTP ${response.status}`, response.status);
+        throw new AssistantError("http", "助手服务响应不是有效 JSON", response.status);
+      }
       if (response.status === 401) {
         this.setStatus("unauthorized");
         throw new AssistantError("unauthorized", "访问令牌错误");
@@ -238,11 +247,12 @@ export class AssistantLink {
         let buffer = "";
         response.on("data", (chunk: string) => {
           buffer += chunk;
-          let index: number;
-          while ((index = buffer.indexOf("\n\n")) >= 0) {
-            const frame = buffer.slice(0, index);
-            buffer = buffer.slice(index + 2);
-            this.handleFrame(frame);
+          while (true) {
+            const match = /\r?\n\r?\n/.exec(buffer);
+            if (!match || match.index === undefined) break;
+            const frame = buffer.slice(0, match.index);
+            buffer = buffer.slice(match.index + match[0].length);
+            this.handleFrame(frame.replace(/\r\n/g, "\n"));
           }
         });
         response.on("end", () => this.scheduleReconnect());

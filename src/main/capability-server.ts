@@ -347,16 +347,20 @@ export class CapabilityServer {
       return
     }
 
-    let raw = ''
+    const chunks: Buffer[] = []
+    let bodyBytes = 0
     try {
       for await (const chunk of req) {
-        raw += chunk
-        if (raw.length > 1_000_000) throw new Error('body_too_large')
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+        bodyBytes += bytes.length
+        if (bodyBytes > 1_000_000) throw new Error('body_too_large')
+        chunks.push(bytes)
       }
     } catch {
       reply(413, { ok: false, error: 'body_too_large' })
       return
     }
+    const raw = Buffer.concat(chunks, bodyBytes).toString('utf8')
 
     let body: {
       command?: unknown

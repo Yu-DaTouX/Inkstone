@@ -38,7 +38,9 @@ function num(v: unknown): number {
 }
 
 function str(v: unknown, max: number): string {
-  return typeof v === 'string' ? v.slice(0, max) : ''
+  if (typeof v !== 'string') return ''
+  const end = max > 0 && /[\uD800-\uDBFF]/.test(v[max - 1] ?? '') && /[\uDC00-\uDFFF]/.test(v[max] ?? '') ? max - 1 : max
+  return v.slice(0, end)
 }
 
 /** 扩展经 HTTP 上报的内容不可信：逐字段收敛，形状不对返回 null。 */

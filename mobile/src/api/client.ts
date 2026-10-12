@@ -145,8 +145,13 @@ export async function pairViaRelay(pairing: RelayPairing, deviceName: string): P
     throw new RemoteHttpError(0, error instanceof RelayError ? error.message : '经中继连不上电脑')
   }
   const target = { baseUrl: `relay://${pairing.computerName}`, relay }
-  const result = await request<RemotePairResponse>(target, '/remote/v1/pair', { method: 'POST', body: { code: pairing.code, deviceName } })
-  return { ...target, token: result.token, deviceId: result.deviceId, computerName: result.computer?.name ?? pairing.computerName, deviceName: result.device?.name ?? deviceName }
+  try {
+    const result = await request<RemotePairResponse>(target, '/remote/v1/pair', { method: 'POST', body: { code: pairing.code, deviceName } })
+    return { ...target, token: result.token, deviceId: result.deviceId, computerName: result.computer?.name ?? pairing.computerName, deviceName: result.device?.name ?? deviceName }
+  } catch (error) {
+    tunnel.close()
+    throw error
+  }
 }
 
 /** 配对：不需要令牌，用电脑上显示的 6 位码换一个设备令牌 */
@@ -240,6 +245,10 @@ export class RemoteClient {
     return this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/messages`, { text, images }, key)
   }
 
+  async revokeSelf(): Promise<void> {
+    await this.post('/remote/v1/devices/self/revoke', {}, idempotencyKey())
+  }
+
   async renameDevice(name: string): Promise<RemoteDeviceSummary> {
     return (await this.post<{ data: RemoteDeviceSummary }>('/remote/v1/device', { name }, idempotencyKey())).data
   }
@@ -291,17 +300,60 @@ export class RemoteClient {
   async artifactText(sessionId: string, artifactId: string): Promise<string> {
     const source = this.artifactSource(sessionId, artifactId)
     const relay = this.connection.relay
+    const maxBytes = 2 * 1024 * 1024
     if (relay) {
       const res = await RelayTunnel.for(relay).request('GET', source.uri.slice(this.connection.baseUrl.length), { headers: source.headers, timeoutMs: 60_000 })
       if (res.status !== 200) throw new RemoteHttpError(res.status, '读取成果失败')
+      if (res.body.byteLength > maxBytes) throw new RemoteHttpError(res.status, '成果文本超过 2 MiB，无法在手机端预览')
       return bytesToUtf8(res.body)
     }
-    const response = await fetch(source.uri, { headers: source.headers })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 60_000)
+    let response: Response
+    try { response = await fetch(source.uri, { headers: source.headers, signal: controller.signal }) }
+    catch (error) {
+      clearTimeout(timer)
+      if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, '读取成果超时')
+      throw error
+    }
+    try {
     if (!response.ok) {
       const json = await readJson(response)
       throw new RemoteHttpError(response.status, String(json.error ?? '读取成果失败'))
     }
-    return response.text()
+    const declared = Number(response.headers.get('content-length'))
+    if (Number.isFinite(declared) && declared > maxBytes) throw new RemoteHttpError(response.status, '成果文本超过 2 MiB，无法在手机端预览')
+    // RN fetch 通常没有流响应；支持流的实现才逐块限制读取。
+    const body = (response as Response & { body?: { getReader(): {
+      read(): Promise<{ done: boolean; value: Uint8Array }>
+      cancel(): Promise<void>
+      releaseLock(): void
+    } } }).body
+    if (!body) {
+      const bytes = new Uint8Array(await response.arrayBuffer())
+      if (bytes.byteLength > maxBytes) throw new RemoteHttpError(response.status, '成果文本超过 2 MiB，无法在手机端预览')
+      return bytesToUtf8(bytes)
+    }
+    const reader = body.getReader()
+    const chunks: Uint8Array[] = []
+    let size = 0
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        size += value.byteLength
+        if (size > maxBytes) { await reader.cancel(); throw new RemoteHttpError(response.status, '成果文本超过 2 MiB，无法在手机端预览') }
+        chunks.push(value)
+      }
+    } finally { reader.releaseLock() }
+    const bytes = new Uint8Array(size)
+    let offset = 0
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+    return bytesToUtf8(bytes)
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, '读取成果超时')
+      throw error
+    } finally { clearTimeout(timer) }
   }
 }
 
@@ -357,6 +409,7 @@ export class RemoteEventStream {
   private rotating = false
 
   private open(): void {
+    if (this.stopped) return
     if (this.rotating) this.rotating = false
     else this.handlers.onState(this.lastSeq > 0 ? 'reconnecting' : 'connecting')
     if (this.connection.relay) return this.openRelay(this.connection.relay)
@@ -368,6 +421,7 @@ export class RemoteEventStream {
     xhr.setRequestHeader('authorization', `Bearer ${this.connection.token}`)
     xhr.setRequestHeader('accept', 'text/event-stream')
     xhr.onreadystatechange = () => {
+      if (this.stopped) return
       if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
         if (xhr.status === 401) {
           this.stopped = true
@@ -383,7 +437,7 @@ export class RemoteEventStream {
       if (xhr.readyState === XMLHttpRequest.LOADING || xhr.readyState === XMLHttpRequest.DONE) this.consume(xhr.responseText)
       if (xhr.readyState === XMLHttpRequest.DONE) this.scheduleReconnect()
     }
-    xhr.onerror = () => this.scheduleReconnect()
+    xhr.onerror = () => { if (!this.stopped) this.scheduleReconnect() }
     xhr.send()
   }
 
@@ -393,6 +447,7 @@ export class RemoteEventStream {
     let received = 0
     this.cancelRelay = RelayTunnel.for(relay).stream(`/remote/v1/events?since=${this.lastSeq}`, { authorization: `Bearer ${this.connection.token}`, accept: 'text/event-stream' }, {
       onStart: (status) => {
+        if (this.stopped) return
         if (status === 401) {
           this.stopped = true
           this.cancelRelay?.()
@@ -405,10 +460,12 @@ export class RemoteEventStream {
         }
       },
       onChunk: (text) => {
+        if (this.stopped) return
         received += text.length
         this.consumeText(text)
         /* 与直连一致：长时间的流定期重连，避免无限累积 */
-        if (received >= 1_000_000) {
+        if (!this.stopped && received >= 1_000_000) {
+          this.rotating = true
           this.cancelRelay?.()
           this.cancelRelay = null
           this.rotate()
@@ -416,12 +473,14 @@ export class RemoteEventStream {
       },
       onEnd: () => {
         this.cancelRelay = null
+        if (this.stopped || this.rotating) return
         this.scheduleReconnect()
       }
     })
   }
 
   private consume(text: string): void {
+    if (this.stopped) return
     this.consumeText(text.slice(this.offset))
     this.offset = text.length
     /* RN 的 XHR 会保留整条 SSE 响应；定期重连，避免长任务持续占用内存。 */
@@ -454,6 +513,7 @@ export class RemoteEventStream {
   }
 
   private dispatch(block: string): void {
+    if (this.stopped) return
     let eventName = 'message'
     const data: string[] = []
     for (const line of block.split('\n')) {

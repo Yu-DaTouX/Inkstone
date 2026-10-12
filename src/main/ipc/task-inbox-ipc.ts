@@ -29,11 +29,15 @@ export function registerTaskInboxIpc(ipc: IpcRegistrar, deps: TaskInboxIpcDeps):
    *   写入时同步更新 —— 不把可变状态放进 sources 模块（两个实例会互踩）。
    */
   let inboxDismissed: string[] | null = null
+  let inboxLoading: Promise<void> | null = null
+  let writeTail: Promise<unknown> = Promise.resolve()
+  let pageTail: Promise<unknown> = Promise.resolve()
+  let pageStatuses: RunnerStatus[] | null = null
   /* 「我上次看过它」的时间（收件箱近似判「跑完了没被确认」的唯一依据） */
   let inboxReadUntil: Record<string, number> = {}
   const inboxService = createTaskInboxService(
     createTaskInboxSources({
-      registry: { statuses: runnerStatuses },
+      registry: { statuses: () => pageStatuses ?? runnerStatuses() },
       dismissed: () => inboxDismissed ?? [],
       /* T3：等用户回答 —— 问答记录的最后一条没作答也没取消 */
       questionLog,
@@ -59,49 +63,64 @@ export function registerTaskInboxIpc(ipc: IpcRegistrar, deps: TaskInboxIpcDeps):
   )
   const inboxState = async (): Promise<string[]> => {
     if (!inboxDismissed) {
-      const state = await readInboxState()
-      inboxDismissed = state.dismissed
-      inboxReadUntil = state.readUntil
+      inboxLoading ??= readInboxState().then((state) => { inboxDismissed = state.dismissed; inboxReadUntil = state.readUntil })
+      try { await inboxLoading } catch (error) { inboxLoading = null; throw error }
     }
-    return inboxDismissed
+    return inboxDismissed ?? []
   }
-  handle('yan:taskinbox:page', async (query?: TaskInboxQuery) => {
-    await inboxState()
-    const { limit, offset, ...filter } = query ?? {}
-    return inboxService.page(filter, { limit, offset })
+  const updateInbox = <T>(change: () => Promise<T>): Promise<T> => {
+    const operation = async () => { await inboxState(); return change() }
+    const next = writeTail.then(operation, operation)
+    writeTail = next.catch(() => undefined)
+    return next
+  }
+  handle('yan:taskinbox:page', (query?: TaskInboxQuery) => {
+    const job = async () => {
+      await inboxState()
+      pageStatuses = runnerStatuses().map((status) => ({ ...status }))
+      try {
+        const { limit, offset, ...filter } = query ?? {}
+        return await inboxService.page(filter, { limit, offset })
+      } finally { pageStatuses = null }
+    }
+    const next = pageTail.then(job, job)
+    pageTail = next.catch(() => undefined)
+    return next
   })
-  handle('yan:taskinbox:dismiss', async (sessionId: string) => {
-    const list = await inboxState()
+  handle('yan:taskinbox:dismiss', (sessionId: string) => updateInbox(async () => {
+    const list = inboxDismissed ?? []
     const id = String(sessionId ?? '')
     if (id && !list.includes(id)) {
-      inboxDismissed = [...list, id]
-      await writeInboxState({ dismissed: inboxDismissed, readUntil: inboxReadUntil })
+      const candidate = [...list, id]
+      await writeInboxState({ dismissed: candidate, readUntil: inboxReadUntil })
+      inboxDismissed = candidate
       /* 名单变了要让下一次查询重算（TTL 缓存里还带着它） */
       inboxService.invalidate()
     }
     return { ok: Boolean(id), dismissed: inboxDismissed ?? [] }
-  })
-  handle('yan:taskinbox:restore', async (sessionId: string) => {
-    const list = await inboxState()
+  }))
+  handle('yan:taskinbox:restore', (sessionId: string) => updateInbox(async () => {
+    const list = inboxDismissed ?? []
     const id = String(sessionId ?? '')
     if (id) {
-      inboxDismissed = list.filter((x) => x !== id)
-      await writeInboxState({ dismissed: inboxDismissed, readUntil: inboxReadUntil })
+      const candidate = list.filter((x) => x !== id)
+      await writeInboxState({ dismissed: candidate, readUntil: inboxReadUntil })
+      inboxDismissed = candidate
       inboxService.invalidate()
     }
     return { ok: Boolean(id), dismissed: inboxDismissed ?? [] }
-  })
+  }))
   /*
    * 「我看过了」（T4）：打开会话时调一次，收件箱就不再把「跑完了」报成待确认。
    * 它只记时间戳，不动会话数据 —— 不写这条最多是多重提醒一次，不会丢信息。
    */
-  handle('yan:taskinbox:seen', async (sessionId: string) => {
-    await inboxState()
+  handle('yan:taskinbox:seen', (sessionId: string) => updateInbox(async () => {
     const id = String(sessionId ?? '')
     if (!id) return { ok: false }
-    inboxReadUntil = { ...inboxReadUntil, [id]: Date.now() }
-    await writeInboxState({ dismissed: inboxDismissed ?? [], readUntil: inboxReadUntil })
+    const candidate = { ...inboxReadUntil, [id]: Date.now() }
+    await writeInboxState({ dismissed: inboxDismissed ?? [], readUntil: candidate })
+    inboxReadUntil = candidate
     inboxService.invalidate()
     return { ok: true }
-  })
+  }))
 }

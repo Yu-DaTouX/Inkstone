@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import { refreshModelsAfterRestart } from '../../state/refresh-models'
 import type { CustomProviderInput, CustomProviderTestResult, CustomProviderView, LocalModelServer } from '../../../../shared/ipc'
 import { CUSTOM_API_CHOICES } from '../../../../shared/custom-provider'
 import { Icon } from '../../icons/Icon'
 import { Button, Disclosure } from '../ui'
+import { mergeDiscoveredModels } from './review2-settings-guards'
 
 /**
  * 「接入」设置页的自定义 API 服务（实施-23 M2）。
@@ -24,21 +25,35 @@ export function CustomProviderForm() {
   /* 连接测试：面板一次只开一个，结果也只留最近一次（避免和上一条对不上号） */
   const [testId, setTestId] = useState<string | null>(null)
   const [testing, setTesting] = useState('')
-  const [testResult, setTestResult] = useState<CustomProviderTestResult | null>(null)
+  const [testResult, setTestResult] = useState<{ id: string; result: CustomProviderTestResult } | null>(null)
+  const alive = useRef(true)
+  const loadGeneration = useRef(0)
+  const baseline = useRef<CustomProviderInput | null>(null)
+  useEffect(() => { alive.current = true; return () => { alive.current = false; loadGeneration.current++ } }, [])
 
   const runTest = async (id: string, mode: 'endpoint' | 'billable', modelId: string): Promise<void> => {
     setTesting(`${id}:${mode}`)
     setTestResult(null)
     try {
-      setTestResult(await window.yan.testCustomProvider(id, mode, modelId))
+      const result = await window.yan.testCustomProvider(id, mode, modelId)
+      if (alive.current) setTestResult({ id, result })
+    } catch (error) {
+      if (alive.current) setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     } finally {
-      setTesting('')
+      if (alive.current) setTesting('')
     }
   }
 
+  const [loadError, setLoadError] = useState('')
   const reload = useCallback(async () => {
-    const next = await window.yan.customProviders()
-    setList(next)
+    const generation = ++loadGeneration.current
+    if (alive.current) setLoadError('')
+    try {
+      const next = await window.yan.customProviders()
+      if (alive.current && generation === loadGeneration.current) setList(next)
+    } catch (error) {
+      if (alive.current && generation === loadGeneration.current) setLoadError(error instanceof Error ? error.message : String(error))
+    }
   }, [])
 
   useEffect(() => {
@@ -65,15 +80,20 @@ export function CustomProviderForm() {
     setMsg(null)
     try {
       const [found, urls] = await Promise.all([window.yan.detectLocalModels(), window.yan.localModelUrls()])
+      if (!alive.current) return
       setLocals(found)
       setExtraUrls(urls)
+    } catch (error) {
+      setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     } finally {
-      setDetecting(false)
+      if (alive.current) setDetecting(false)
     }
   }
 
   const saveUrls = async (urls: string[]): Promise<void> => {
-    setExtraUrls(await window.yan.saveLocalModelUrls(urls))
+    const saved = await window.yan.saveLocalModelUrls(urls)
+    if (!alive.current) return
+    setExtraUrls(saved)
     setUrlDraft('')
     await detectLocal()
   }
@@ -81,22 +101,25 @@ export function CustomProviderForm() {
   /** 把探测到的对话服务填进表单；已存在同名服务时改为编辑它（沿用已存的 key） */
   const fillFromLocal = async (server: LocalModelServer): Promise<void> => {
     const id = server.suggestedId ?? 'yan-local'
-    const existing = list?.find((item) => item.id === id)
     const base: CustomProviderInput = {
       id,
       api: 'openai-completions',
       baseUrl: server.baseUrl,
-      models: [],
-      ...(existing?.hasApiKey ? {} : { apiKey: 'local' })
+      models: []
     }
     setFetching(true)
     try {
       const found = await window.yan.discoverCustomModels(base)
-      const models = found.ok ? (found.entries ?? found.models.map((model) => ({ id: model }))) : server.models.map((model) => ({ id: model }))
-      setDraft({ ...base, models: models.length ? models : [{ id: '' }] })
-      setMsg({ kind: 'ok', text: t('customApi.localKeyHint') })
+      if (!found.ok) throw new Error(found.message)
+      const models = found.entries ?? found.models.map((model) => ({ id: model }))
+      const next = { ...base, models: models.length ? models : [{ id: '' }] }
+      baseline.current = null
+      setDraft(next)
+      setMsg(null)
+    } catch (error) {
+      setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     } finally {
-      setFetching(false)
+      if (alive.current) setFetching(false)
     }
   }
 
@@ -112,29 +135,17 @@ export function CustomProviderForm() {
         return
       }
       const entries: CustomProviderInput['models'] = found.entries ?? found.models.map((id) => ({ id }))
-      const byId = new Map(entries.map((entry) => [entry.id, entry]))
       /* 已有的行保留用户填的名称与上下文，补上端点和 pi 目录给出的协议与思考能力 */
-      const kept = draft.models
-        .filter((model) => model.id.trim())
-        .map((model) => {
-          const entry = byId.get(model.id.trim())
-          if (!entry) return model
-          return {
-            ...entry,
-            ...model,
-            api: model.api ?? entry.api,
-            baseUrl: model.baseUrl ?? entry.baseUrl,
-            reasoning: model.reasoning === true || entry.reasoning === true || undefined,
-            thinkingLevelMap: model.thinkingLevelMap ?? entry.thinkingLevelMap,
-            cost: model.cost ?? entry.cost
-          }
-        })
-      const known = new Set(kept.map((model) => model.id.trim()))
-      const added = entries.filter((entry) => !known.has(entry.id))
-      setDraft({ ...draft, models: [...kept, ...added] })
+      setDraft((current) => current ? { ...current, models: mergeDiscoveredModels(current.models, entries, (model, entry) => ({
+        ...entry, ...model, api: model.api ?? entry.api, baseUrl: model.baseUrl ?? entry.baseUrl,
+        reasoning: model.reasoning === true || entry.reasoning === true || undefined,
+        thinkingLevelMap: model.thinkingLevelMap ?? entry.thinkingLevelMap, cost: model.cost ?? entry.cost
+      })) } : current)
       setMsg({ kind: 'ok', text: found.message })
+    } catch (error) {
+      if (alive.current) setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     } finally {
-      setFetching(false)
+      if (alive.current) setFetching(false)
     }
   }
 
@@ -148,6 +159,7 @@ export function CustomProviderForm() {
         /* 空白表示沿用旧值；空白字段不要覆盖磁盘上的 key */
         ...(draft.apiKey && draft.apiKey.trim() ? {} : { apiKey: undefined })
       })
+      if (!alive.current) return
       if (!result.ok) {
         setMsg({ kind: 'err', text: (result.errors ?? []).join('；') })
         return
@@ -156,15 +168,19 @@ export function CustomProviderForm() {
       setDraft(null)
       setMsg({ kind: 'ok', text: t('customApi.saved') })
       refreshModelsAfterRestart()
+    } catch (error) {
+      if (alive.current) setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     } finally {
-      setBusy(false)
+      if (alive.current) setBusy(false)
     }
   }
 
   const remove = async (id: string): Promise<void> => {
+    if (!window.confirm(`Delete ${id}? This also removes its stored API key.`)) return
     setBusy(true)
     try {
       const result = await window.yan.removeCustomProvider(id)
+      if (!alive.current) return
       if (!result.ok) {
         setMsg({ kind: 'err', text: (result.errors ?? []).join('；') })
         return
@@ -172,8 +188,10 @@ export function CustomProviderForm() {
       setList(result.providers ?? [])
       setMsg({ kind: 'ok', text: t('customApi.removed') })
       refreshModelsAfterRestart()
+    } catch (error) {
+      if (alive.current) setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     } finally {
-      setBusy(false)
+      if (alive.current) setBusy(false)
     }
   }
 
@@ -187,7 +205,7 @@ export function CustomProviderForm() {
     <div className="ui-rows" data-testid="custom-api">
       <div className="ui-row-desc custom-api-desc">{t('customApi.desc')}</div>
 
-      {list === null ? <div className="ui-row-desc">{t('customApi.loading')}</div> : null}
+      {list === null ? <div className="ui-row-desc">{loadError || t('customApi.loading')} {loadError ? <Button size="sm" onClick={() => void reload()}>{t('browser.retry')}</Button> : null}</div> : null}
 
       {list?.map((item) => (
         <div className="ui-row custom-api-row" key={item.id} data-testid={`custom-api-row-${item.id}`}>
@@ -199,14 +217,12 @@ export function CustomProviderForm() {
             </span>
           </div>
           <span className="spacer" />
-          <Button type="button" data-testid={`custom-api-edit-${item.id}`} onClick={() =>
-              setDraft({
-                id: item.id,
-                api: item.api || 'openai-completions',
-                baseUrl: item.baseUrl,
-                models: item.models.length ? item.models : [{ id: '' }]
-              })
-            }>
+          <Button type="button" data-testid={`custom-api-edit-${item.id}`} onClick={() => {
+              const next = { id: item.id, api: item.api || 'openai-completions', baseUrl: item.baseUrl, models: item.models.length ? item.models : [{ id: '' }] }
+              if (draft && JSON.stringify(draft) !== JSON.stringify(baseline.current) && !window.confirm('Discard unsaved custom provider changes?')) return
+              baseline.current = next
+              setDraft(next)
+            }}>
             {t('customApi.edit')}
           </Button>
           <Button type="button" data-testid={`custom-api-test-${item.id}`} aria-expanded={testId === item.id} onClick={() => {
@@ -321,7 +337,7 @@ export function CustomProviderForm() {
               {fetching ? t('customApi.fetching') : t('customApi.fetchModels')}
             </Button>
             <span className="spacer" />
-            <Button type="button" onClick={() => setDraft(null)}>
+            <Button type="button" onClick={() => { if (!draft || JSON.stringify(draft) === JSON.stringify(baseline.current) || window.confirm('Discard unsaved custom provider changes?')) { baseline.current = null; setDraft(null) } }}>
               {t('customApi.cancel')}
             </Button>
             <Button variant="primary" type="button" disabled={busy} data-testid="custom-api-save" onClick={() => void save()}>
@@ -331,7 +347,7 @@ export function CustomProviderForm() {
         </div>
       ) : (
         <div className="ui-row custom-api-add-row">
-          <Button icon="plus" type="button" data-testid="custom-api-add" onClick={() => setDraft(blank())}>{t('customApi.add')}
+          <Button icon="plus" type="button" data-testid="custom-api-add" onClick={() => { baseline.current = null; setDraft(blank()) }}>{t('customApi.add')}
           </Button>
           <Button type="button" disabled={detecting} data-testid="custom-api-detect-local" onClick={() => void detectLocal()}>
             {detecting ? t('customApi.detecting') : t('customApi.detectLocal')}
@@ -431,15 +447,15 @@ export function CustomProviderForm() {
                 </div>
                 {/* 成本提示必须就在按钮旁边：点下去之前就要知道哪一段会花钱 */}
                 <div className="ui-row-desc">{t('customApi.testCost')}</div>
-                {testResult ? (
+                {testResult?.id === item.id ? (
                   <div
-                    className={testResult.ok ? 'ui-row-desc' : 'ui-row-desc err'}
+                    className={testResult.result.ok ? 'ui-row-desc' : 'ui-row-desc err'}
                     data-testid={`custom-api-test-result-${item.id}`}
                   >
-                    <Icon name={testResult.ok ? 'check' : 'alert-circle'} size={12} />{' '}
-                    {testResult.message +
-                      ` · ${testResult.ms}ms` +
-                      (testResult.text ? ` · ${testResult.text.slice(0, 60)}` : '')}
+                    <Icon name={testResult.result.ok ? 'check' : 'alert-circle'} size={12} />{' '}
+                    {testResult.result.message +
+                      ` · ${testResult.result.ms}ms` +
+                      (testResult.result.text ? ` · ${testResult.result.text.slice(0, 60)}` : '')}
                   </div>
                 ) : null}
               </div>

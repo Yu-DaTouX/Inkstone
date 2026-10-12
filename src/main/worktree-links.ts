@@ -128,8 +128,8 @@ export class WorktreeLinkStore {
     try {
       const raw = await readFile(worktreeLinkDocumentPath(this.root), 'utf8')
       this.doc = sanitizeWorktreeLinkDocument(JSON.parse(raw))
-    } catch {
-      /* 文件不存在 / 坏了：当空表。关系丢了只是少一行追溯，不该让应用起不来 */
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       this.doc = { version: 1, links: [], updatedAt: 0 }
     }
     this.loaded = true
@@ -150,7 +150,11 @@ export class WorktreeLinkStore {
     fromSessionFile?: string
     fromCwd?: string
   }): Promise<{ ok: boolean; link?: WorktreeLink; error?: string }> {
-    await this.load()
+    try {
+      await this.load()
+    } catch (error) {
+      return { ok: false, error: `读取工作树关联表失败，未覆盖原数据：${error instanceof Error ? error.message : String(error)}` }
+    }
     const sessionId = text(input.sessionId)
     const worktree = text(input.worktree)
     if (!sessionId || !worktree) return { ok: false, error: '会话 id 与工作树目录都不能为空' }

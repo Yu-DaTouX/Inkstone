@@ -18,7 +18,7 @@ import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { RunnerVisibility } from './runner-reclaim'
-import { getSettings, patchSettings } from './settings'
+import { getSettings, patchSettings, validateRendererSettingsPatch } from './settings'
 import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
 import { moveSessionLayout, rememberSession } from './session-layout'
@@ -70,6 +70,8 @@ import { registerWorkspaceIpc } from './ipc/workspace-ipc'
 import { registerGoalIpc } from './ipc/goal-ipc'
 import { registerSpaceIpc } from './ipc/space-ipc'
 import { registerFilesIpc } from './ipc/files-ipc'
+import { isAuthorizedFileCwd } from './file-context'
+import { canOpenDocument } from '../shared/document-open'
 import { registerAgentServiceIpc, closeAgentService } from './ipc/agent-service-ipc'
 import { lockDataRoot } from '../core/data-root-lock'
 import { registerContextBudgetIpc } from './ipc/context-budget-ipc'
@@ -278,13 +280,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
  */
 const APP_ID = 'com.yudatoux.yan'
 
-/** 双击链接时不直接启动的类型（可执行、脚本、快捷方式）：只在文件管理器里定位 */
-const RUNNABLE_EXT = new Set([
-  '.exe', '.com', '.bat', '.cmd', '.msi', '.msix', '.appx', '.scr', '.pif', '.cpl', '.lnk', '.url',
-  '.ps1', '.psm1', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.jar', '.reg', '.dll',
-  '.sys', '.appref-ms', '.application', '.gadget', '.inf', '.msc', '.sh', '.py', '.pyw', '.pyz',
-  '.docm', '.xlsm', '.pptm', '.dotm', '.xlam', '.chm', '.ws', '.pl', '.rb', '.iso', '.vhd', '.vhdx'
-])
+
 try {
   app.setAppUserModelId(APP_ID)
 } catch {
@@ -1569,6 +1565,14 @@ async function resolveFileContext(
     generation,
     ...(projectId ? { projectId } : {})
   }
+  const allowedCwds = [
+    settings.cwd,
+    ...settings.projects.filter((project) => !project.archived).map((project) => project.cwd),
+    ...(runners?.statuses().map((runner) => runner.cwd) ?? [])
+  ]
+  if (!await isAuthorizedFileCwd(requestedCwd, allowedCwds)) {
+    return { ok: false, context: provisional, error: '工作目录不属于已授权的项目或会话' }
+  }
   const checked = await validateCwd(requestedCwd)
   if (!checked.ok) return { ok: false, context: provisional, error: checked.error }
 
@@ -1919,7 +1923,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
               ...(request.endpoint ? [`远程端点：${request.endpoint}`, '该服务会收到本任务发送给它的请求内容。'] : []),
               ...(!isRemote
                 ? [
-                    '本地包可在 pi 重载后以当前 Windows 用户权限运行；staging 不是沙箱。',
+                    '本地包会在安装后的预检（smoke）及 pi 重载时以当前 Windows 用户权限运行，可能访问此用户的本机文件；staging 与离线环境不是操作系统沙箱。',
                     '禁用 lifecycle scripts 只影响安装脚本，不会隔离包的运行时代码。',
                     ...(trust?.trusted
                       ? ['此项目已经在 trust.json 中显式信任；本次不会改写信任设置。']
@@ -1985,7 +1989,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
          */
         getPermissionMode: async () => (await getSettings()).permissionMode ?? 'danger',
         confirmDanger: async (request): Promise<ConsentDecision | null> => {
-          const rememberDirs = [...new Set((request.outsideDirs ?? []).map((p) => p.replace(/[\/]+[^\/]*$/, '')).filter(Boolean))]
+          const rememberDirs = [...new Set((request.outsideDirs ?? []).filter((p) => typeof p === 'string' && isAbsolute(p)).map((p) => dirname(resolve(p))))]
           const isPermission = request.kind === 'permission'
           const isDelete = request.kind === 'delete'
           const isShell = request.tool === 'bash' || request.tool === 'powershell'
@@ -2167,8 +2171,12 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
    * 眼前这个会话，后台会话的流也会一起断。一直等到全部空闲。
    */
   if (runners.hasBusy()) {
-    if (retries <= 0) return
-    setTimeout(() => void restartAgent(reason, retries - 1), 2000)
+    if (retries <= 0) {
+      agentRestartQueued = null
+      reportMainError('刷新运行实例', new Error(`${reason}：等待空闲超时，配置已保存但未刷新运行实例，请稍后重试`))
+      return
+    }
+    setTimeout(() => void restartAgent(reason, retries - 1).catch((error) => reportMainError('刷新运行实例', error)), 2000)
     return
   }
   agentRestarting = true
@@ -2193,7 +2201,7 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
     agentRestarting = false
     const queued = agentRestartQueued
     agentRestartQueued = null
-    if (queued) void restartAgent(queued)
+    if (queued) void restartAgent(queued).catch((error) => reportMainError('刷新运行实例', error))
   }
 }
 
@@ -2231,7 +2239,8 @@ function registerIpc(): void {
    * 更直接 —— 后者只是字符串，而这里比的是真实的进程对象。
    */
   /* 所有处理器共用来源校验：只接受主窗口的调用（见 ipc/registrar.ts） */
-  const ipc = createIpcRegistrar((event) => !!win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame)
+  const isTrustedIpc = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean => !!win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
+  const ipc = createIpcRegistrar(isTrustedIpc)
   const { handle, rawHandle } = ipc
 
   /* ---- 会话 ---- */
@@ -2458,8 +2467,29 @@ function registerIpc(): void {
     const s = await getSettings()
     return { ...s, lang: s.lang, theme: s.theme }
   })
-  handle('yan:patchSettings', async (patch: Record<string, unknown>) => {
+  handle('yan:patchSettings', async (rawPatch: unknown) => {
+    const patch = validateRendererSettingsPatch(rawPatch)
     const before = await getSettings()
+    if ('cwd' in patch) {
+      const checked = await validateCwd(patch.cwd)
+      if (!checked.ok) throw new Error(checked.error)
+      patch.cwd = checked.cwd
+    }
+    if ('projects' in patch) {
+      if (!Array.isArray(patch.projects)) throw new Error('项目列表格式无效')
+      const ids = new Set<string>()
+      for (const project of patch.projects) {
+        if (!isObject(project) || typeof project.id !== 'string' || !project.id || typeof project.cwd !== 'string' || !isAbsolute(project.cwd) || ids.has(project.id)) throw new Error('项目标识或目录格式无效')
+        ids.add(project.id)
+        const previous = before.projects.find((item) => item.id === project.id)
+        if (previous && normalizeCwdForIdentity(previous.cwd) !== normalizeCwdForIdentity(project.cwd)) throw new Error('不能将已有项目标识重新绑定到其他目录')
+        if (!previous) {
+          const checked = await validateCwd(project.cwd)
+          if (!checked.ok) throw new Error(checked.error)
+          project.cwd = checked.cwd
+        }
+      }
+    }
     let next: Awaited<ReturnType<typeof patchSettings>>
     try {
       next = await patchSettings(patch as never)
@@ -2514,7 +2544,11 @@ function registerIpc(): void {
   })
 
   /* ---- 扩展 UI 应答（不需要返回值） ---- */
-  ipcMain.on('yan:respondUi', (_e, res) => (runners ? runners.respondUi(res) : ac()?.respondUi(res)))
+  ipcMain.on('yan:respondUi', (event, res) => {
+    if (!isTrustedIpc(event) || !isObject(res) || typeof res.id !== 'string' || !res.id) return
+    if (runners) runners.respondUi(res as never)
+    else ac()?.respondUi(res as never)
+  })
 
   /*
    * 延长待回答问题：倒计时在主进程抱，渲染端点「加时间」必须走到这里。
@@ -2540,8 +2574,9 @@ function registerIpc(): void {
    *    渲染端那条 window keydown 只是兑底，改它拦不住已经吃掉按键的主进程。
    *    所以必须由渲染端上报状态、主进程据此放行。
    */
-  ipcMain.on('yan:hotkey-guard', (_e, v) => {
-    hotkeyGuardPaused = Boolean(v)
+  ipcMain.on('yan:hotkey-guard', (event, v) => {
+    if (!isTrustedIpc(event) || typeof v !== 'boolean') return
+    hotkeyGuardPaused = v
   })
 
   /*
@@ -2583,7 +2618,8 @@ function registerIpc(): void {
      单向 push 不可靠 —— 主进程可能在 webContents 还没能力接收时
      就把 `proc: ready` 发出去（那条消息就丢了，界面永远停在「正在启动 pi」）。
      所以渲染端一订阅就发这个，我们把当前状态补一遍。 */
-  ipcMain.on('yan:renderer-ready', () => {
+  ipcMain.on('yan:renderer-ready', (event) => {
+    if (!isTrustedIpc(event)) return
     /* 渲染端刚加载完 —— 它还没有任何模态层，守卫必须归零。
        否则（比如窗口崩溃/热重载后）会永久卡在 paused=true。 */
     hotkeyGuardPaused = false
@@ -2647,7 +2683,7 @@ function registerIpc(): void {
     /* 链接名可能是 foo.txt、真实目标却是 bar.exe：两个扩展名都要判 */
     let real = target
     try { real = await realpath(target) } catch { /* 取不到就按链接名判 */ }
-    if (RUNNABLE_EXT.has(extname(target).toLowerCase()) || RUNNABLE_EXT.has(extname(real).toLowerCase())) {
+    if (!canOpenDocument(target) || !canOpenDocument(real)) {
       shell.showItemInFolder(target)
       return { ok: true, revealed: true }
     }
@@ -2681,7 +2717,10 @@ function registerIpc(): void {
 
   /** 在系统文件管理器里选中某个文件（比 openPath 精确） */
   handle('yan:revealPath', async (p: string) => {
-    if (p && existsSync(p)) shell.showItemInFolder(p)
+    /* 返回是否真的打开了：界面在源文件已被删除/移动时要能回退到受控副本。 */
+    if (!p || !existsSync(p)) return { ok: false }
+    shell.showItemInFolder(p)
+    return { ok: true }
   })
 
   /* ---- 附件：选图 → 读成 base64 ---- */
@@ -2764,12 +2803,12 @@ function registerIpc(): void {
   })
 
   /* ---- 窗口 ---- */
-  ipcMain.on('win:minimize', () => win?.minimize())
-  ipcMain.on('win:maximize', () => {
-    if (!win) return
+  ipcMain.on('win:minimize', (event) => { if (isTrustedIpc(event)) win?.minimize() })
+  ipcMain.on('win:maximize', (event) => {
+    if (!isTrustedIpc(event) || !win) return
     win.isMaximized() ? win.unmaximize() : win.maximize()
   })
-  ipcMain.on('win:close', () => win?.close())
+  ipcMain.on('win:close', (event) => { if (isTrustedIpc(event)) win?.close() })
   rawHandle('win:requestExit', async () => requestExit())
   rawHandle('win:lifecycle', () => ({
     tray: tray !== null,
@@ -2874,7 +2913,12 @@ function registerIpc(): void {
   registerConsentIpc(ipc)
 
   /* ---- 办公文件：预览与修改对比 ---- */
-  registerOfficeIpc(ipc, async () => (await getSettings()).cwd)
+  registerOfficeIpc(ipc, async (requestedCwd) => {
+    const settings = await getSettings()
+    const resolved = await resolveFileContext(settings, settings.cwd, { cwd: requestedCwd ?? settings.cwd })
+    if (!resolved.ok) throw new Error(resolved.error)
+    return resolved.context.cwd
+  })
 
   /* ---- 语音输入：本地转写（下载须经界面确认） ---- */
   registerAppUpdate(ipc, () => (runners?.statuses() ?? []).some((status) => status.running))
@@ -2954,6 +2998,7 @@ function createWindow(): void {
     backgroundColor: '#151515',
     webPreferences: {
       preload: join(__dirname_, '../preload/index.cjs'),
+      additionalArguments: process.env.YAN_PROBE && !app.isPackaged ? ['--yan-isolated-probe'] : [],
       /*
        * 主窗口的进程沙盒（方案第 9 节）。
        *

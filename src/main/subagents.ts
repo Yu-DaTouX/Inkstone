@@ -104,6 +104,8 @@ interface Run extends SubagentRun {
   settled: boolean
   workspace: PreparedWorkspace
   finalizing?: Promise<void>
+  /** 结束事件的转录收尾与进程关闭；退出时必须等它完成再清工作区。 */
+  settling?: Promise<void>
   /** worktree 已经归档或确认无需保留（退出清理据此避免重复 git 操作） */
   worktreeDone?: boolean
   /** 已经回调过 onFinished（每个运行只通知一次） */
@@ -584,7 +586,11 @@ export class SubagentController {
     const runs = [...this.runs.values()]
     for (const run of runs) {
       if (run.status === 'running' || run.status === 'starting') await this.stopRun(run, true)
-      else await this.finalize(run, true)
+      else {
+        if (run.settling) await run.settling
+        else await run.rpc.close()
+        await this.finalize(run, true)
+      }
     }
   }
 
@@ -593,13 +599,19 @@ export class SubagentController {
     if (!run) return
     clearTimeout(run.timer)
     await run.rpc.close()
-    run.status = run.status === 'cancelled' ? 'cancelled' : 'error'
-    run.endReason = run.status === 'cancelled' ? 'stopped' : reason
+    const cancelled = run.status === 'cancelled'
+    run.status = cancelled ? 'cancelled' : 'error'
+    run.endReason = cancelled ? 'stopped' : reason
     run.wrapUp = undefined
     run.progressWarning = undefined
-    run.error = message
+    if (cancelled) {
+      run.error = undefined
+      run.latestActivity = '已停止'
+    } else {
+      run.error = message
+      run.latestActivity = message
+    }
     run.endedAt = Date.now()
-    run.latestActivity = message
     this.emit(run)
     await this.finalize(run, false)
   }
@@ -628,6 +640,7 @@ export class SubagentController {
 
       if (run.isolation === 'worktree' && changed) {
         if (cleanupReview) {
+          if (!collected.patchPath) throw new Error('未能保存改动补丁，已保留工作区')
           run.review = 'archived'
           run.resultPath = collected.patchPath ?? run.workspace.worktreePath
           await cleanupWorkspace(run.workspace)
@@ -668,12 +681,12 @@ export class SubagentController {
    */
   private async archiveOnExit(run: Run): Promise<void> {
     if (run.worktreeDone) return
-    run.worktreeDone = true
 
     if (run.isolation === 'worktree' && (run.review === 'pending' || run.review === 'conflict')) {
       try {
         const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
         const collected = await collectDiff(run.workspace, archiveDir, run.id)
+        if (collected.summary.files > 0 && !collected.patchPath) throw new Error('未能保存改动补丁')
         run.diff = collected.summary
         run.review = 'archived'
         run.resultPath = collected.patchPath ?? run.workspace.worktreePath
@@ -690,6 +703,7 @@ export class SubagentController {
     }
 
     await cleanupWorkspace(run.workspace)
+    run.worktreeDone = true
     this.emit(run)
   }
 
@@ -710,14 +724,12 @@ export class SubagentController {
     if (!run) return this.reviewHistory(id, 'merged')
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: '子代理仍在运行，结束后才能合并' }
     if (run.review === 'merged') return { ok: true }
+    if (run.review !== 'pending' && run.review !== 'conflict') {
+      return { ok: false, error: '该任务没有待合并的改动' }
+    }
     const patchPath = run.diff?.patchPath
     if (!patchPath || !run.diff?.files) {
-      run.review = 'merged'
-      await cleanupWorkspace(run.workspace)
-      run.worktreeDone = true
-      await this.writeMetadata(run)
-      this.emit(run)
-      return { ok: true }
+      return { ok: false, error: '没有可合并的补丁，已保留工作区供检查' }
     }
 
     const res = await applyPatch(run.workspace.rootCwd, patchPath)
@@ -760,8 +772,10 @@ export class SubagentController {
     if (!record) return { ok: false, error: '找不到这个子代理' }
     const run = { ...record.run }
     if (run.review === review) return { ok: true }
-    if (review === 'merged' && run.diff?.files) {
-      if (!run.diff.patchPath) return { ok: false, error: '历史任务没有可合并的补丁' }
+    if (review === 'merged') {
+      if (!['pending', 'conflict', 'archived'].includes(run.review ?? '') || !run.diff?.files || !run.diff.patchPath) {
+        return { ok: false, error: '历史任务没有可合并的补丁' }
+      }
       const result = await applyPatch(record.rootCwd, run.diff.patchPath)
       if (!result.ok) return result
     }
@@ -989,7 +1003,7 @@ export class SubagentController {
        * 空的，模型的最终回复随后才到 —— 立即 close 会把尾巴一起切掉
        *（子代理场景的“转录里有回复文本”就是这么挂的）。所以先等转录安静。
        */
-      void (async () => {
+      run.settling = (async () => {
         await this.waitTranscriptQuiet(run)
         await run.contextRefresh
         try {

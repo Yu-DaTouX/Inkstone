@@ -1,10 +1,10 @@
 /**
  * 中继桥的持久状态：主机长期密钥、房间密钥、已登记的客户端公钥；一次性中继配对码只在内存里（存哈希）。
  *
- * 文件 `relay-bridge.json` 在砚数据目录，权限 0600。损坏时从空开始（所有客户端需重新配对，比误认更安全）。
+ * 文件 `relay-bridge.json` 在砚数据目录，权限 0600。损坏或读取失败时拒绝创建新身份，保留原文件与备份供恢复。
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rename, unlink, writeFile, copyFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { exportKeyPair, generateKeyPair, importKeyPair, randomB64u, sha256, toB64u, type KeyPair } from './crypto'
 
@@ -52,8 +52,15 @@ export class RelayBridgeStore {
 
   private async load(): Promise<StoredState> {
     if (this.state) return this.state
+    let text: string
     try {
-      const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<StoredState>
+      text = await readFile(this.file, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      return this.createFreshState()
+    }
+    try {
+      const parsed = JSON.parse(text) as Partial<StoredState>
       if (parsed?.version === 1 && typeof parsed.secret === 'string' && parsed.hostKey && Array.isArray(parsed.clients)) {
         this.state = {
           version: 1,
@@ -63,9 +70,15 @@ export class RelayBridgeStore {
         }
         return this.state
       }
-    } catch {
-      /* 文件不存在或损坏：生成新的 */
+      throw new Error('中继配对存储格式无效')
+    } catch (error) {
+      const backup = `${this.file}.${Date.now()}.${randomUUID()}.corrupt`
+      await copyFile(this.file, backup).catch(() => undefined)
+      throw error
     }
+  }
+
+  private async createFreshState(): Promise<StoredState> {
     const pair = await generateKeyPair()
     this.state = { version: 1, secret: randomB64u(24), hostKey: (await exportKeyPair(pair)) as JsonWebKey, clients: [] }
     this.key = pair

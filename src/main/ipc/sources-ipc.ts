@@ -34,14 +34,17 @@ export function registerSourcesIpc(ipc: IpcRegistrar, deps: SourcesIpcDeps): voi
   handle('yan:sources:addImage', async (req: unknown) => {
     const raw = (req ?? {}) as Record<string, unknown>
     try {
+      if (typeof raw.mimeType !== 'string' || !/^image\/(?:png|jpeg|webp|gif|bmp|avif)$/i.test(raw.mimeType)) throw new Error('不支持的图片类型')
+      if (typeof raw.base64 !== 'string' || raw.base64.length > 16 * 1024 * 1024 || !/^[A-Za-z0-9+/]*={0,2}$/.test(raw.base64) || !raw.base64.length) throw new Error('图片数据无效或超过大小上限')
+      if (typeof raw.name !== 'string' || raw.name.length > 255 || /[\u0000-\u001f]/.test(raw.name)) throw new Error('图片名称无效')
       return saveImage({
         sessionId: String(raw.sessionId ?? ''),
         name: String(raw.name ?? ''),
         mimeType: String(raw.mimeType ?? ''),
         base64: String(raw.base64 ?? '')
       })
-    } catch {
-      return null
+    } catch (error) {
+      throw new Error(`保存来源图片失败：${error instanceof Error ? error.message : String(error)}`)
     }
   })
 

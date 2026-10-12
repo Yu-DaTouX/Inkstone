@@ -42,7 +42,7 @@ export function decodeUtf8(bytes: Uint8Array): { text: string; rest: number } {
   let i = 0
   while (i < bytes.length) {
     const b = bytes[i]
-    const need = b < 0x80 ? 0 : b >= 0xf0 && b < 0xf8 ? 3 : b >= 0xe0 ? 2 : b >= 0xc0 ? 1 : -1
+    const need = b < 0x80 ? 0 : b >= 0xf0 && b <= 0xf4 ? 3 : b >= 0xe0 && b <= 0xef ? 2 : b >= 0xc2 && b <= 0xdf ? 1 : -1
     if (need < 0) {
       text += '\ufffd'
       i++
@@ -61,7 +61,9 @@ export function decodeUtf8(bytes: Uint8Array): { text: string; rest: number } {
       i++
       continue
     }
-    text += String.fromCodePoint(c)
+    const min = need === 1 ? 0x80 : need === 2 ? 0x800 : need === 3 ? 0x10000 : 0
+    if (c < min || c > 0x10ffff || (c >= 0xd800 && c <= 0xdfff)) text += '\ufffd'
+    else text += String.fromCodePoint(c)
     i += need + 1
   }
   return { text, rest: 0 }
@@ -254,18 +256,19 @@ export class RelayTunnel {
   /** 建立连接；首次配对时带上中继配对码。 */
   connect(pairCode?: string): Promise<void> {
     if (this.ready) return this.ready
-    this.ready = new Promise<void>((resolve, reject) => {
+    const attempt = new Promise<void>((resolve, reject) => {
       const clientSecret = fromB64u(this.config.clientKey)
       const ephSecret = p256.utils.randomSecretKey()
       const ws = new WebSocket(this.config.join)
       this.ws = ws
       let state: 'hello' | 'auth' | 'open' = 'hello'
-      const timer = setTimeout(() => fail(new RelayError('连接电脑超时：请确认电脑上的砚在运行，并开启了中继接入')), HANDSHAKE_MS)
+      let timer: ReturnType<typeof setTimeout>
       const fail = (error: Error) => {
         clearTimeout(timer)
         if (state !== 'open') reject(error)
         this.teardown(error)
       }
+      timer = setTimeout(() => fail(new RelayError('连接电脑超时：请确认电脑上的砚在运行，并开启了中继接入')), HANDSHAKE_MS)
       ws.onopen = () => {
         ws.send(JSON.stringify({ t: 'hi', v: PROTOCOL_VERSION, c: toB64u(p256.getPublicKey(clientSecret, false)), e: toB64u(p256.getPublicKey(ephSecret, false)) }))
       }
@@ -297,7 +300,12 @@ export class RelayTunnel {
       ws.onerror = () => fail(new RelayError('连不上中继：请检查手机网络'))
       ws.onclose = (event) => fail(new RelayError(event.code === 4004 ? '电脑不在线：请确认电脑开机、砚在运行并开启了中继接入' : '与电脑的连接断开了'))
     })
-    return this.ready
+    const ready = attempt.catch((error: unknown) => {
+      if (this.ready === ready) this.teardown(error instanceof Error ? error : new RelayError(String(error)))
+      throw error
+    })
+    this.ready = ready
+    return ready
   }
 
   private teardown(error: Error): void {
@@ -316,12 +324,14 @@ export class RelayTunnel {
 
   close(): void {
     this.teardown(new RelayError('连接已关闭'))
+    for (const [key, value] of RelayTunnel.shared) if (value === this) RelayTunnel.shared.delete(key)
   }
 
   private frame(msg: Record<string, unknown>): void {
     const id = typeof msg.id === 'string' ? msg.id : ''
     const p = this.pending.get(id)
     if (!p) return
+    try {
     if (msg.t === 'res') {
       p.status = Number(msg.status)
       p.headers = (msg.headers ?? {}) as Record<string, string>
@@ -339,6 +349,10 @@ export class RelayTunnel {
     } else if (msg.t === 'end') {
       this.pending.delete(id)
       p.resolve({ status: p.status ?? 502, headers: p.headers ?? {}, body: concat(...p.chunks) })
+    }
+    } catch (error) {
+      this.pending.delete(id)
+      p.reject(error instanceof Error ? error : new RelayError(String(error)))
     }
   }
 

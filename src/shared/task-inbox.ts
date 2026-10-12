@@ -217,7 +217,7 @@ function planProgress(facts: TaskFacts): string | undefined {
     if (goal && goal.phase !== 'completed' && goal.phase !== 'stopped') return `目标阶段：${goal.phase}`
     return undefined
   }
-  const head = `第 ${Math.min(plan.done + 1, plan.total)} / ${plan.total} 步`
+  const head = plan.done >= plan.total ? `已完成 ${plan.total} / ${plan.total} 步` : `第 ${Math.min(plan.done + 1, plan.total)} / ${plan.total} 步`
   return plan.current ? `${head}：${plan.current}` : head
 }
 

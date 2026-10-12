@@ -17,7 +17,7 @@
  * ⑥ 展开状态不跨会话：上层给每段推理的是带消息 id 的 key
  *    （`shared/turns.ts` 的 `${msgId}#segN`），切会话即重挂组件。
  */
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { Caret, RunDot } from '../ui'
@@ -80,6 +80,7 @@ function ReasoningCapsuleImpl({
   /** 逐字显示用的文本（逐步追上 text）；减少动态效果时直接给全文 */
   const [reduced, setReduced] = useState(prefersReducedMotion)
   const shown = useTypewriter(text, !!streaming && !reduced)
+  const previewSentence = useMemo(() => latestSentence(shown), [shown])
 
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return
@@ -172,7 +173,7 @@ function ReasoningCapsuleImpl({
             内层 ltr 隔离 bidi，中英混排的顺序不会被重排。 */}
         {!open ? (
           <span className="reason-peek" data-testid="reasoning-preview" dir="rtl">
-            <span dir="ltr">{peekText(latestSentence(shown))}</span>
+            <span dir="ltr">{peekText(previewSentence)}</span>
           </span>
         ) : null}
         {live ? <Caret className="cursor cursor-inline" /> : null}
@@ -345,12 +346,19 @@ export function useTypewriter(text: string, enabled: boolean): string {
       setShown(text)
       return
     }
+    const previousText = cache.current.text
+    const replaced = !!previousText && !text.startsWith(previousText)
     const units = unitsFor(text)
     if (units.length < shownCount.current) {
       /* 文本被替换成不相接的另一段（切会话 / 重新开始）→ 直接对齐 */
       cache.current = { text, units: toUnits(text) }
       render(cache.current.units.length)
       return
+    }
+    if (replaced) {
+      shownCount.current = 0
+      setShown('')
+      carry.current = 0
     }
     idle.current = 0
     if (raf.current === null) start()

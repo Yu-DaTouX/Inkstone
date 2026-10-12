@@ -1,5 +1,5 @@
 import { ClaudeSubscriptionSection } from './ClaudeSubscriptionSection'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { refreshModelsAfterRestart } from '../../state/refresh-models'
 import { useStore } from '../../state/store'
@@ -49,6 +49,9 @@ export function AuthTab() {
   const [oauth, setOauth] = useState<{ provider: string; events: OAuthLoginEvent[] } | null>(null)
   /** 砚保存的 ChatGPT 账号数；多于一个时提示去「账号额度」切换 */
   const [codexCount, setCodexCount] = useState(0)
+  const alive = useRef(true)
+  const loadGeneration = useRef(0)
+  useEffect(() => { alive.current = true; return () => { alive.current = false; loadGeneration.current++ } }, [])
 
   useEffect(
     () =>
@@ -59,10 +62,12 @@ export function AuthTab() {
   )
 
   const loginSubscription = async (provider: string): Promise<void> => {
+    if (!alive.current) return
     setOauth({ provider, events: [] })
     setMsg(null)
     try {
       const r = await window.yan.oauthLogin(provider)
+      if (!alive.current) return
       if (r.ok) {
         setMsg({ kind: 'ok', text: t('auth.loginOkGeneric') })
         await load(false)
@@ -70,24 +75,31 @@ export function AuthTab() {
       } else if (!r.cancelled) {
         setMsg({ kind: 'err', text: r.error ?? t('auth.loginFail') })
       }
+    } catch (error) {
+      if (alive.current) setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     } finally {
-      setOauth(null)
+      if (alive.current) setOauth(null)
     }
   }
 
   const load = async (deep: boolean): Promise<void> => {
-    if (deep) setChecking(true)
+    const generation = ++loadGeneration.current
+    if (deep && alive.current) setChecking(true)
     try {
       const [providers, fileInfo, codexAccounts] = await Promise.all([
         window.yan.authProviders(deep),
         window.yan.authFileInfo(),
         window.yan.codexAccounts().catch(() => [])
       ])
+      if (!alive.current || generation !== loadGeneration.current) return
       setList(providers)
       setInfo(fileInfo)
       setCodexCount(codexAccounts.length)
+      setMsg((current) => current?.kind === 'err' ? null : current)
+    } catch (error) {
+      if (alive.current && generation === loadGeneration.current) setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     } finally {
-      setChecking(false)
+      if (alive.current && generation === loadGeneration.current) setChecking(false)
     }
   }
 
@@ -98,8 +110,8 @@ export function AuthTab() {
   const save = async (): Promise<void> => {
     if (!editing || !draft.trim()) return
     setBusy(true)
+    try {
     const r = await window.yan.setApiKey(editing, draft)
-    setBusy(false)
     if (r.ok) {
       setMsg({ kind: 'ok', text: t('auth.saved') })
       refreshModelsAfterRestart()
@@ -109,17 +121,23 @@ export function AuthTab() {
     } else {
       setMsg({ kind: 'err', text: r.error ?? t('auth.saveFailed') })
     }
+    } catch (error) {
+      setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
+    } finally { setBusy(false) }
   }
 
   const signOut = async (id: string): Promise<void> => {
     setBusy(true)
+    try {
     const r = await window.yan.clearAuth(id)
-    setBusy(false)
     if (r.ok) {
       setMsg({ kind: 'ok', text: t('auth.cleared') })
       refreshModelsAfterRestart()
       await load(false)
-    }
+    } else setMsg({ kind: 'err', text: r.error ?? t('auth.saveFailed') })
+    } catch (error) {
+      setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
+    } finally { setBusy(false) }
   }
 
   /**
@@ -133,10 +151,12 @@ export function AuthTab() {
    * 状态显示出来，并给一个取消按钮。
    */
   const loginCodex = async (): Promise<void> => {
+    if (!alive.current) return
     setLoggingIn(true)
     setMsg(null)
     try {
       const r = await window.yan.codexLogin()
+      if (!alive.current) return
       if (r.ok) {
         setMsg({ kind: 'ok', text: t('auth.loginOk') })
         await load(false)
@@ -145,8 +165,10 @@ export function AuthTab() {
       } else {
         setMsg({ kind: 'err', text: r.error ?? t('auth.loginFail') })
       }
+    } catch (error) {
+      if (alive.current) setMsg({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     } finally {
-      setLoggingIn(false)
+      if (alive.current) setLoggingIn(false)
     }
   }
 

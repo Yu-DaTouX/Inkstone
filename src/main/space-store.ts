@@ -10,6 +10,7 @@
  * ⚠️ 空间**只归档、不物理删除**：资料库（P03）的引用按 `identity + version`
  *    绑定，删掉空间会让这些引用变成孤儿。真正的「移除」语义在 P03 定义。
  */
+import { parsePersistedDocument } from './persisted-document'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
@@ -82,7 +83,9 @@ export function sanitizeSpaceDocument(raw: unknown): SpaceDocument {
     linkSeen.add(key)
     links.push(link)
   }
-  return { version: 1, spaces: spaces.slice(-MAX_SPACES), links }
+  const retained = spaces.slice(-MAX_SPACES)
+  const retainedIds = new Set(retained.map((space) => space.id))
+  return { version: 1, spaces: retained, links: links.filter((link) => retainedIds.has(link.spaceId)) }
 }
 
 export type SpaceMutationResult =
@@ -100,7 +103,7 @@ export class SpaceStore {
   private readonly now: () => number
   private readonly random: () => number
   private doc: SpaceDocument = { version: 1, spaces: [], links: [] }
-  private loaded = false
+  private loadPromise: Promise<void> | null = null
   private tail: Promise<unknown> = Promise.resolve()
 
   constructor(options: { root?: string; now?: () => number; random?: () => number } = {}) {
@@ -109,14 +112,21 @@ export class SpaceStore {
     this.random = options.random ?? Math.random
   }
 
-  async load(): Promise<void> {
-    if (this.loaded) return
-    try {
-      this.doc = sanitizeSpaceDocument(JSON.parse(await readFile(spaceDocumentPath(this.root), 'utf8')))
-    } catch {
-      this.doc = { version: 1, spaces: [], links: [] }
+  load(): Promise<void> {
+    if (!this.loadPromise) {
+      this.loadPromise = (async () => {
+        try {
+          this.doc = sanitizeSpaceDocument(parsePersistedDocument(await readFile(spaceDocumentPath(this.root), 'utf8'), { spaces: 'array', links: 'array' }))
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            this.doc = { version: 1, spaces: [], links: [] }
+            return
+          }
+          throw new Error('空间文件读取或解析失败，已拒绝覆盖', { cause: error })
+        }
+      })()
     }
-    this.loaded = true
+    return this.loadPromise
   }
 
   /** 全部空间（含归档），最近更新的在前。 */
@@ -249,9 +259,9 @@ export class SpaceStore {
     await writeFile(temp, payload, 'utf8')
     try {
       await rename(temp, target)
-    } catch {
-      await writeFile(target, payload, 'utf8')
+    } catch (error) {
       await rm(temp, { force: true }).catch(() => undefined)
+      throw error
     }
   }
 }

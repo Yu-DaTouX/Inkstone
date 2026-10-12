@@ -52,7 +52,7 @@
  */
 import { hostname } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import { mkdir, open, readdir, readFile, rename, unlink } from 'node:fs/promises'
+import { link, mkdir, open, readdir, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { PROJECT_KNOWLEDGE_ROOT, projectKnowledgeDir } from './paths'
 import {
@@ -353,7 +353,9 @@ function canReclaim(held: LockRead, host: string): boolean {
     const expiresAt = Date.parse(held.record.expiresAt)
     return Number.isFinite(expiresAt) && Date.now() > expiresAt + FOREIGN_STALE_GRACE_MS
   }
-  return !isProcessAlive(held.record.pid)
+  /* pid 可被系统复用：仅在锁显著老于 TTL 后才按死锁回收，避免误删刚写入的公共锁。 */
+  const staleFor = Date.now() - Date.parse(held.record.at)
+  return !isProcessAlive(held.record.pid) && Number.isFinite(staleFor) && staleFor > DEFAULT_LOCK_TTL_MS * 2
 }
 
 function describeHolder(held: { record: LockRecord | null }): string {
@@ -441,8 +443,19 @@ export async function acquireProjectKnowledgeLock(
     /* 文件刚好被释放：立刻重试，不等 */
     if (held.missing) continue
     if (canReclaim(held, host)) {
-      /* 核实过进程已死（或超出宽限期）才删；删不掉就走正常退避，绝不自旋 */
-      if (await unlink(path).then(() => true).catch(() => false)) continue
+      /* 先原子移出公共锁名，再核对被移走的 token；不直接 unlink 检查过的公共路径。 */
+      const quarantine = `${path}.reap-${randomUUID()}`
+      if (await rename(path, quarantine).then(() => true).catch(() => false)) {
+        const moved = await readLockRecord(quarantine)
+        if (moved.record?.token === held.record?.token || (!moved.record && !held.record && moved.ageMs >= UNPARSABLE_LOCK_GRACE_MS)) {
+          await unlink(quarantine).catch(() => undefined)
+          continue
+        }
+        /* 锁在检查期间被替换：只在公共名仍空时恢复，绝不覆盖新锁。 */
+        const restored = await link(quarantine, path).then(() => true).catch(() => false)
+        if (restored) await unlink(quarantine).catch(() => undefined)
+        /* 链接恢复失败时保留 quarantine 副本，宁可人工恢复也不销毁未知锁。 */
+      }
     }
     if (Date.now() >= deadline) {
       throw new ProjectKnowledgeStoreError('locked', `项目知识目录正被占用：${describeHolder(held)}`)
@@ -456,7 +469,7 @@ export async function acquireProjectKnowledgeLock(
 export type ManifestLoad =
   | { status: 'ok'; manifest: ProjectKnowledgeManifest; path: string }
   /** 主文件坏了 / 不在，但从备份或 revision 文件恢复了（已写回主文件）。 */
-  | { status: 'recovered'; manifest: ProjectKnowledgeManifest; path: string; reason: 'backup' | 'rebuild' }
+  | { status: 'recovered'; manifest: ProjectKnowledgeManifest; path: string; reason: 'backup' | 'rebuild'; omitted?: string[] }
   /** 这个项目还没有任何知识（首次使用）。 */
   | { status: 'missing'; path: string }
   /** manifest 与备份都坏，且重建不出任何条目 —— **不能**当成空库。 */
@@ -502,15 +515,17 @@ async function readManifestFile(path: string, projectId: string): Promise<Manife
 async function rebuildManifest(
   projectId: string,
   dir: string
-): Promise<ProjectKnowledgeManifest | undefined> {
+): Promise<{ manifest: ProjectKnowledgeManifest; omitted: string[] } | undefined> {
   const ids = await readdir(entriesDir(dir)).catch(() => [] as string[])
   const pointers: KnowledgePointer[] = []
+  const omitted: string[] = []
   let revisionSum = 0
   for (const id of ids) {
     if (!isSafeKnowledgeId(id)) continue
     const files = (await readdir(join(entriesDir(dir), id)).catch(() => [] as string[]))
       .filter((name) => /^r\d+\.json$/.test(name))
       .sort((a, b) => Number(b.slice(1, -5)) - Number(a.slice(1, -5)))
+    let recovered = false
     for (const name of files) {
       let parsed: unknown
       try {
@@ -522,18 +537,23 @@ async function rebuildManifest(
       if (entry && entry.id === id && entry.projectId === projectId) {
         pointers.push(pointerOf(entry))
         revisionSum += entry.revision
+        recovered = true
         break
       }
     }
+    if (!recovered) omitted.push(id)
   }
   if (pointers.length === 0) return undefined
   pointers.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
   return {
-    schemaVersion: PROJECT_KNOWLEDGE_SCHEMA_VERSION,
-    projectId,
-    revision: revisionSum,
-    updatedAt: nowIso(),
-    entries: pointers
+    manifest: {
+      schemaVersion: PROJECT_KNOWLEDGE_SCHEMA_VERSION,
+      projectId,
+      revision: revisionSum,
+      updatedAt: nowIso(),
+      entries: pointers
+    },
+    omitted
   }
 }
 
@@ -551,6 +571,9 @@ export async function loadManifest(
   const path = manifestPath(dir)
   const main = await readManifestFile(path, projectId)
   if (main.status === 'ok') return { status: 'ok', manifest: main.manifest, path }
+  if (main.status === 'unreadable') {
+    return { status: 'unreadable', path, error: main.error }
+  }
 
   const backup = await readManifestFile(manifestBackupPath(dir), projectId)
   if (backup.status === 'ok') {
@@ -561,15 +584,15 @@ export async function loadManifest(
 
   const rebuilt = await rebuildManifest(projectId, dir)
   if (rebuilt) {
-    await writeManifestAtomic(dir, rebuilt, false)
-    return { status: 'recovered', manifest: rebuilt, path, reason: 'rebuild' }
+    await writeManifestAtomic(dir, rebuilt.manifest, false)
+    return { status: 'recovered', manifest: rebuilt.manifest, path, reason: 'rebuild', ...(rebuilt.omitted.length ? { omitted: rebuilt.omitted } : {}) }
   }
 
-  if (main.status === 'invalid' || main.status === 'unreadable' || backup.status === 'invalid') {
+  if (main.status === 'invalid' || backup.status === 'invalid' || backup.status === 'unreadable') {
     return {
       status: 'unreadable',
       path,
-      error: main.status === 'invalid' ? main.reason : main.status === 'unreadable' ? main.error : '备份也坏了'
+      error: main.status === 'invalid' ? main.reason : backup.status === 'unreadable' ? backup.error : '备份也坏了'
     }
   }
   return { status: 'missing', path }

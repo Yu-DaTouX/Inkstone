@@ -45,7 +45,8 @@ export function findAtQuery(value: string, cursor: number = value.length): AtQue
   if (first === '"' || first === "'") {
     /* 引号路径允许空格；光标在闭引号后时把整对引号纳入替换范围。 */
     for (let i = tokenStart + 1; i < end; i += 1) {
-      if (value[i] !== first || isEscaped(i)) continue
+      /* Windows 路径末尾的反斜杠是路径分隔符，不转义闭合引号。 */
+      if (value[i] !== first) continue
       const after = value.slice(i + 1, end)
       if (!after || /^[\s)\]}>,.;:!?，。！？]*$/.test(after)) {
         return {

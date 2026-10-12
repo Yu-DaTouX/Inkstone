@@ -121,6 +121,7 @@ export function normalizeRow(source: SearchSourceId, row: unknown): SearchItem |
     return item
   }
 
+  if (typeof r.url !== 'string' || r.url.length > 500) return null
   const url = cleanText(r.url, 500)
   if (!url) return null
   const item: SearchItem = { title, url, source }

@@ -88,7 +88,8 @@ try {
   console.log(`✓ 37MB streaming search bounded to ${text.length} chars, ${ticks} timer ticks in ${(performance.now() - start).toFixed(1)}ms`)
   await writeFile(join(temp, 'oversize.jsonl'), row('x'.repeat(9 * 1024 * 1024)) + row('after-oversize'))
   assert.equal(await readSessionSearchText(join(temp, 'oversize.jsonl')), 'after-oversize')
-  for (let i = 0; i < 30; i++) await writeFile(join(process.env.YAN_SESSIONS_DIR, `${i}.jsonl`), row('all-histories-marker ' + i))
+  // 按实际 UTF-8 字节预算驱逐，而非固定会话条数；夹具要真正超过 16 MiB。
+  for (let i = 0; i < 30; i++) await writeFile(join(process.env.YAN_SESSIONS_DIR, `${i}.jsonl`), row('all-histories-marker ' + i + ' 汉'.repeat(200000)))
   const searched = await searchSessionText('all-histories-marker', 100)
   assert.equal(searched.total, 30); assert.equal(searched.hits.length, 30); assert.ok(searched.indexed < searched.total)
   console.log('✓ cold histories remain searchable outside the global index cache')

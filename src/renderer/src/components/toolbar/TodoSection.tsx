@@ -30,7 +30,7 @@ function SubagentsBlock() {
         <span className="rp-count">{visible.length - finished}/{visible.length}</span>
         <span className="spacer" />
         {finished > 0 ? (
-          <Button size="sm" className="sa-act-btn" onClick={() => void clearSubagents()} data-testid="subagent-notes-clear">
+          <Button size="sm" className="sa-act-btn" onClick={() => { if (window.confirm(`${t('sa.clearFinished')} · ${finished}`)) void clearSubagents() }} data-testid="subagent-notes-clear">
             {t('sa.clearFinished')}
           </Button>
         ) : null}
@@ -132,7 +132,10 @@ export function TodoSection() {
     prevDone.current = cur
     // 首次渲染时不要把全部已完成当成「刚完成」
     if (cur.size && fresh.size === cur.size) return
-    if (fresh.size === 0) return
+    if (fresh.size === 0) {
+      if (justDone.size) setJustDone(new Set())
+      return
+    }
     setJustDone(fresh)
     const id = setTimeout(() => setJustDone(new Set()), 900)
     return () => clearTimeout(id)
@@ -374,9 +377,9 @@ function GoalOutputs() {
     }
     for (const message of messages) {
       for (const artifact of message.artifacts ?? []) {
-        byPath.set(artifact.path, {
+        byPath.set(artifact.sourcePath ?? artifact.path, {
           label: artifact.filename,
-          path: artifact.path,
+          path: artifact.sourcePath ?? artifact.path,
           unavailable: artifact.unavailable === true
         })
       }

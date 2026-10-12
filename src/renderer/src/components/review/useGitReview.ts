@@ -75,10 +75,17 @@ export function useRepoState(cwd: string | undefined, deps: unknown[] = []): Rep
   const [expected, setExpected] = useState<GitActionExpected | undefined>(undefined)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const cwdRef = useRef(cwd)
   const [tick, setTick] = useState(0)
   const gate = useRequestGate()
 
   useEffect(() => {
+    if (cwdRef.current !== cwd) {
+      cwdRef.current = cwd
+      setRepo(null)
+      setExpected(undefined)
+      setError('')
+    }
     if (!cwd) {
       setRepo(null)
       setError('')
@@ -100,7 +107,7 @@ export function useRepoState(cwd: string | undefined, deps: unknown[] = []): Rep
         setError(e instanceof Error ? e.message : String(e))
       })
       .finally(() => {
-        if (alive) setLoading(false)
+        if (alive && gate.isCurrent(id)) setLoading(false)
       })
     return () => {
       alive = false
@@ -124,7 +131,7 @@ export function useRepoState(cwd: string | undefined, deps: unknown[] = []): Rep
   const refresh = useCallback(() => setTick((v) => v + 1), [])
   const apply = useCallback((state: GitRepoState) => {
     setRepo(state)
-    setExpected({ head: state.head, indexDigest: '', statusDigest: '' })
+    // Keep the previous full expected snapshot; an action response has no fresh digest.
   }, [])
   return { repo, expected, error, loading, refresh, apply }
 }
@@ -175,9 +182,24 @@ export function useGitWrite(
   const [busy, setBusy] = useState('')
   const [failure, setFailure] = useState<GitFailure | null>(null)
   const [notice, setNotice] = useState('')
+  const busyCount = useRef(0)
+  const generation = useRef(0)
+  const cwdRef = useRef(cwd)
+  useEffect(() => {
+    if (cwdRef.current === cwd) return
+    cwdRef.current = cwd
+    generation.current += 1
+    busyCount.current = 0
+    setBusy('')
+    setFailure(null)
+    setNotice('')
+  }, [cwd])
 
   const run = useCallback(
     async (input: GitWriteInput, expected: GitActionExpected): Promise<GitActionResult> => {
+      if (busyCount.current > 0) return { ok: false, failure: { code: 'unknown', message: '已有 Git 操作正在进行', retrySafe: false } }
+      const requestGeneration = generation.current
+      busyCount.current += 1
       setBusy(input.kind)
       setFailure(null)
       setNotice('')
@@ -188,9 +210,11 @@ export function useGitWrite(
           requestId: `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
           expected
         } as GitActionRequest)
-        if (res.ok) setNotice(res.summary ?? '')
-        else setFailure(res.failure ?? { code: 'unknown', message: '操作失败', retrySafe: false })
-        onDone?.(res)
+        if (generation.current === requestGeneration) {
+          if (res.ok) setNotice(res.summary ?? '')
+          else setFailure(res.failure ?? { code: 'unknown', message: '操作失败', retrySafe: false })
+          onDone?.(res)
+        }
         return res
       } catch (e: unknown) {
         const f: GitFailure = {
@@ -198,10 +222,11 @@ export function useGitWrite(
           message: e instanceof Error ? e.message : String(e),
           retrySafe: false
         }
-        setFailure(f)
+        if (generation.current === requestGeneration) setFailure(f)
         return { ok: false, failure: f }
       } finally {
-        setBusy('')
+        busyCount.current = Math.max(0, busyCount.current - 1)
+        if (generation.current === requestGeneration && busyCount.current === 0) setBusy('')
       }
     },
     [cwd, onDone]

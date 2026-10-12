@@ -121,7 +121,11 @@ export async function startOAuthLogin(opts: {
             send({ provider, type: 'prompt_closed', promptId: id })
           }
           /* 界面一直不回答也不能永久等待 */
-          const timer = setTimeout(() => state.pending?.id === id && state.pending.reject(new Error('prompt timed out')), 10 * 60_000)
+          const timer = setTimeout(() => {
+            if (state.pending?.id !== id) return
+            state.pending.reject(new Error('prompt timed out'))
+            send({ provider, type: 'prompt_closed', promptId: id })
+          }, 10 * 60_000)
           const settle = (): void => {
             clearTimeout(timer)
             prompt.signal?.removeEventListener('abort', onAbort)

@@ -300,7 +300,7 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
         })
         return
       }
-      const args = [...target.prefix, source.app, source.subcommand, query, '-f', 'json', '--limit', String(opts.limit)]
+      const args = [...target.prefix, source.app, source.subcommand, '-f', 'json', '--limit', String(opts.limit), '--', query]
       const env = spawnEnv(target.file)
       let child: ReturnType<typeof spawn>
       try {

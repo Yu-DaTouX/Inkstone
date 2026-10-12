@@ -1,8 +1,8 @@
 import { LIFE_ASSISTANT_ENABLED } from './features'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, StatusBar, useColorScheme, useWindowDimensions, View } from 'react-native'
+import { Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, StatusBar, useColorScheme, useWindowDimensions, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
-import type { Connection } from './api/client'
+import { RemoteClient, type Connection } from './api/client'
 import type { PhotoDraft } from './device'
 import { parsePairingLink, type PairingPrefill } from './pairLink'
 import { restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
@@ -133,16 +133,28 @@ export default function App() {
     return () => subscription.remove()
   }, [])
 
-  const unpair = useCallback(() => {
-    void stopQuestionAlerts()
-    void clearConnection()
+  const unpair = useCallback(async () => {
+    await stopQuestionAlerts()
+    if (connection) {
+      try {
+        await new RemoteClient(connection).revokeSelf()
+      } catch {
+        const confirmed = await new Promise<boolean>((resolve) => Alert.alert(
+          '电脑暂时无法撤销设备', '若继续退出，将只清除此手机的钥匙串；电脑端令牌可能仍有效，请恢复连接后在设备设置中撤销。',
+          [{ text: '取消', style: 'cancel', onPress: () => resolve(false) }, { text: '仍然清除此手机', style: 'destructive', onPress: () => resolve(true) }],
+          { cancelable: false }
+        ))
+        if (!confirmed) return
+      }
+    }
+    await clearConnection()
     setConnection(null)
     setAlertsEnabled(false)
     setRoute({ name: 'home' })
     setProject(null)
     setDrafts({})
     setPhotoDrafts({})
-  }, [])
+  }, [connection])
 
   const enableAlerts = useCallback(async () => {
     if (!connection) return

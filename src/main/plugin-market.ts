@@ -1,5 +1,5 @@
 import type { MarketSearchResult } from '../shared/plugin-market'
-import { copyFile, mkdir } from 'node:fs/promises'
+import { copyFile, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 
 export const HERMES_PLUGIN_FILES = ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py', 'README.md']
@@ -12,8 +12,13 @@ export async function exportHermesPlugin(source: string, parent: string): Promis
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('目标目录已有 inkstone，请选择其他目录，避免覆盖现有插件')
     throw error
   }
-  for (const file of HERMES_PLUGIN_FILES) await copyFile(join(source, file), join(target, file))
-  return target
+  try {
+    for (const file of HERMES_PLUGIN_FILES) await copyFile(join(source, file), join(target, file))
+    return target
+  } catch (error) {
+    await rm(target, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  }
 }
 
 /** Publisher-declared links are shown and opened externally, so only plain https URLs pass. */

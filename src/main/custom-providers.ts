@@ -54,11 +54,24 @@ async function readRaw(): Promise<{ ok: true; json: unknown } | { ok: false; err
   }
 }
 
+let modelsWriteChain: Promise<unknown> = Promise.resolve()
+function serializeModels<T>(work: () => Promise<T>): Promise<T> {
+  const next = modelsWriteChain.then(work, work)
+  modelsWriteChain = next.catch(() => undefined)
+  return next
+}
+
 async function writeAtomic(json: Json): Promise<void> {
   await mkdir(PI_AGENT_DIR, { recursive: true })
-  const tmp = `${MODELS_FILE}.yan-tmp`
-  await writeFile(tmp, `${JSON.stringify(json, null, 2)}\n`, 'utf8')
-  await rename(tmp, MODELS_FILE)
+  const tmp = `${MODELS_FILE}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
+  try {
+    await writeFile(tmp, `${JSON.stringify(json, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+    await rename(tmp, MODELS_FILE)
+  } catch (error) {
+    const { unlink } = await import('node:fs/promises')
+    await unlink(tmp).catch(() => undefined)
+    throw error
+  }
 }
 
 /** 列出砚拥有的自定义服务（密钥只回存在状态） */
@@ -79,21 +92,24 @@ export async function saveCustomProvider(input: CustomProviderInput): Promise<Cu
   const checked = validateCustomProvider({ ...input, models: filled })
   if (!checked.ok || !checked.value) return { ok: false, errors: checked.errors }
 
-  const raw = await readRaw()
-  if (!raw.ok) return { ok: false, errors: [raw.error] }
-
-  const merged = mergeCustomProviders(raw.json, [checked.value], [])
-  if (merged.changed) await writeAtomic(merged.next)
-  return { ok: true, providers: readCustomProviders(merged.next) }
+  return serializeModels(async () => {
+    const raw = await readRaw()
+    if (!raw.ok) return { ok: false, errors: [raw.error] }
+    const merged = mergeCustomProviders(raw.json, [checked.value!], [])
+    if (merged.changed) await writeAtomic(merged.next)
+    return { ok: true, providers: readCustomProviders(merged.next) }
+  })
 }
 
 /** 删除一个自定义服务（只允许删砚自己的条目） */
 export async function removeCustomProvider(id: string): Promise<CustomProviderResult> {
-  const raw = await readRaw()
-  if (!raw.ok) return { ok: false, errors: [raw.error] }
-  const merged = mergeCustomProviders(raw.json, [], [id])
-  if (merged.changed) await writeAtomic(merged.next)
-  return { ok: true, providers: readCustomProviders(merged.next) }
+  return serializeModels(async () => {
+    const raw = await readRaw()
+    if (!raw.ok) return { ok: false, errors: [raw.error] }
+    const merged = mergeCustomProviders(raw.json, [], [id])
+    if (merged.changed) await writeAtomic(merged.next)
+    return { ok: true, providers: readCustomProviders(merged.next) }
+  })
 }
 
 /* ── 连接测试（实施-23 M2）───────────────────────────────────────────
@@ -258,8 +274,12 @@ export async function discoverCustomProviderModels(input: {
   if (urlError) return { ok: false, models: [], message: urlError }
   let apiKey = (input.apiKey ?? '').trim()
   if (!apiKey && input.id) {
-    const stored = (await readProviderEntry(input.id))?.apiKey
-    if (typeof stored === 'string') apiKey = stored
+    const entry = await readProviderEntry(input.id)
+    if (entry && typeof entry.apiKey === 'string' && typeof entry.baseUrl === 'string' && entry.baseUrl.replace(/\/+$/, '') === baseUrl.replace(/\/+$/, '')) {
+      apiKey = entry.apiKey
+    } else if (entry && typeof entry.apiKey === 'string') {
+      return { ok: false, models: [], message: '服务地址已更改，请重新输入 API Key 后再获取模型' }
+    }
   }
   const headers: Record<string, string> = {}
   if (apiKey) {

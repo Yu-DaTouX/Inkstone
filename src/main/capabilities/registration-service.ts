@@ -17,7 +17,7 @@
  *   `capabilities.acquire`，参数只能是 `planId`，真实端点从宿主持有的候选里取。
  */
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile, copyFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   addAuthorization,
@@ -80,17 +80,31 @@ async function writeFileAtomic(path: string, text: string): Promise<void> {
   await rename(tmp, path)
 }
 
+async function quarantineRecord(path: string): Promise<void> {
+  await copyFile(path, `${path}.corrupt-${Date.now()}-${Math.random().toString(36).slice(2)}`).catch(() => undefined)
+}
+
 async function readJsonArray<T>(path: string): Promise<T[]> {
+  let text: string
   try {
-    const parsed = JSON.parse(await readFile(path, 'utf8')) as unknown
-    if (Array.isArray(parsed)) return parsed as T[]
-    if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { items?: unknown }).items)) {
-      return (parsed as { items: T[] }).items
-    }
-    return []
-  } catch {
-    return []
+    text = await readFile(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
   }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch (error) {
+    await quarantineRecord(path)
+    throw new McpRegistrationError('record-invalid', `MCP 登记记录损坏，已拒绝覆盖（${path}）：${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (Array.isArray(parsed)) return parsed as T[]
+  if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { items?: unknown }).items)) {
+    return (parsed as { items: T[] }).items
+  }
+  await quarantineRecord(path)
+  throw new McpRegistrationError('record-invalid', `MCP 登记记录格式无效，已拒绝覆盖：${path}`)
 }
 
 /** 读回配置文件的**原始结构**（保留未知字段 / 手写条目，不用 loadMcpServers 的归一化结果回写）。 */

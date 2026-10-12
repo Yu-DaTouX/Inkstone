@@ -202,20 +202,23 @@ async function runWrite(
   opts: { timeout?: number } = {}
 ): Promise<{ ok: true; stdout: string; stderr: string } | { ok: false; failure: GitFailure; timedOut: boolean }> {
   try {
-    const res = await gitRun(root, args, {
-      allowFailure: true,
-      timeout: opts.timeout ?? WRITE_TIMEOUT
-    })
+    const res = await gitRun(root, args, { allowFailure: true, timeout: opts.timeout ?? WRITE_TIMEOUT })
+    const timedOut = res.timedOut === true
     if (res.ok) return { ok: true, stdout: res.stdout, stderr: res.stderr }
-    return { ok: false, failure: classifyGitFailure(res.stderr || res.stdout), timedOut: false }
+    return {
+      ok: false,
+      failure: timedOut ? timeoutFailure(res.error ?? res.stderr ?? res.stdout) : classifyGitFailure(res.stderr || res.stdout),
+      timedOut
+    }
   } catch (error) {
     /*
      * 走到这里说明 execFile 自己抛了（超时被 kill、进程起不来）。
      * 超时**不告诉用户「失败了」** —— 后面每个动作会重新读 HEAD，
      * 用实际状态说话（方案 §5.4）。
      */
-    const message = String((error as { message?: unknown }).message ?? error)
-    const timedOut = /timed? ?out|killed|SIGTERM/i.test(message)
+    const detail = error as { message?: unknown; timedOut?: boolean }
+    const message = String(detail.message ?? error)
+    const timedOut = detail.timedOut === true || /timed? ?out|killed|SIGTERM/i.test(message)
     return {
       ok: false,
       failure: timedOut ? timeoutFailure(message) : classifyGitFailure(message),
@@ -583,6 +586,10 @@ async function pushBranch(request: Extract<GitActionRequest, { kind: 'push' }>):
     }
     const state = await readRepoState(repo.root)
     const branch = request.branch || state?.branch || null
+    if (branch) {
+      const invalid = validateBranchName(branch) ?? (branch.startsWith('+') ? '分支名不能以 + 开头' : null)
+      if (invalid) return { ok: false, failure: { code: 'invalid-input', message: invalid, retrySafe: true } }
+    }
     const remote =
       request.remote && remotes.includes(request.remote)
         ? request.remote
@@ -592,6 +599,7 @@ async function pushBranch(request: Extract<GitActionRequest, { kind: 'push' }>):
 
     const before = await readExpected(repo.root)
     const args = buildPushArgs(branch ?? '', remote ?? null, request.setUpstream)
+    if (branch) args[args.length - 1] = `refs/heads/${branch}:refs/heads/${branch}`
     const res = await runWrite(repo.root, args, { timeout: NETWORK_TIMEOUT })
 
     if (!res.ok) {
@@ -639,7 +647,14 @@ async function pushBranch(request: Extract<GitActionRequest, { kind: 'push' }>):
  * 「应用会不会改用户的 Git 状态、怎么改」。
  */
 export async function runGitAction(request: GitActionRequest): Promise<GitActionResult> {
-  const cwd = resolve(String(request.cwd ?? ''))
+  const suppliedCwd = typeof request.cwd === 'string' ? request.cwd.trim() : ''
+  if (!suppliedCwd) {
+    return {
+      ok: false,
+      failure: { code: 'invalid-input', message: '缺少项目目录，Git 操作已取消', retrySafe: true }
+    }
+  }
+  const cwd = resolve(suppliedCwd)
   const normalized = { ...request, cwd } as GitActionRequest
   try {
     switch (normalized.kind) {

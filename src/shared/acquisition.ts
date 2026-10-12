@@ -348,8 +348,8 @@ export type ArtifactRejection = {
  * 只判 `/` 会漏掉 `..\..\evil`。归一化之后再判 `..` 才是完整的。
  */
 export function normalizeArtifactPath(raw: string): string | null {
-  const text = String(raw ?? '').trim()
-  if (text.length === 0) return null
+  const text = String(raw ?? '')
+  if (text.trim().length === 0) return null
   if (text.includes('\u0000')) return null
   const unified = text.replace(/\\/g, '/')
   if (unified.startsWith('/')) return null
@@ -358,7 +358,8 @@ export function normalizeArtifactPath(raw: string): string | null {
   const parts: string[] = []
   for (const segment of unified.split('/')) {
     if (segment === '' || segment === '.') continue
-    if (segment === '..') return null
+    if (segment === '..' || /[. ]$/.test(segment) || /[<>:"|?*\u0000-\u001f]/.test(segment)) return null
+    if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(segment)) return null
     parts.push(segment)
   }
   if (parts.length === 0) return null

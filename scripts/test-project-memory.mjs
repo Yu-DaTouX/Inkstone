@@ -678,7 +678,7 @@ export async function runProjectMemoryTests(ok, modules) {
       ok(store.isProcessAlive(deadPid) === false, `真的死掉的 pid（${deadPid}）被判为不活着`)
       ok(store.isProcessAlive(process.pid) === true, '当前进程被判为活着')
       ok(store.isProcessAlive(0) === false && store.isProcessAlive('x') === false, '非法 pid 一律当不活着')
-      await writeLock({ pid: deadPid, host: hostname(), token: 'dead-holder' })
+      await writeLock({ pid: deadPid, host: hostname(), token: 'dead-holder', at: new Date(Date.now() - store.DEFAULT_LOCK_TTL_MS * 2 - 2000).toISOString() })
       const reclaimed = await store.commitKnowledge({
         identity: A,
         request: draft({ text: '死进程留下的锁可以回收' }),

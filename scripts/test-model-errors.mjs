@@ -48,11 +48,22 @@ export async function runModelErrorTests(ok) {
   ok(/安全审核/.test(refusedNotice) && /换个模型/.test(refusedNotice), `安全审核拦截说清原因与出路（${refusedNotice}）`)
   ok(/连接或响应流意外中断/.test(shared.modelErrorNotice('WebSocket error')), '连接错误说明中断原因')
   ok(/未返回具体原因/.test(shared.modelErrorNotice(undefined)), '没有原文时明确未知，不编造原因')
+  // Claude 的 5 小时窗口额度用尽：原文同时含 rate limit，必须说成额度用尽而不是降低并发。
+  const windowLimit = "Claude rate limit (five_hour) — resets 10:30:00 pm: You've hit your session limit · resets 10:30pm (Australia/Sydney)"
+  const windowNotice = shared.modelErrorNotice(windowLimit)
+  ok(shared.classifyModelError(windowLimit).kind === 'quota', '会话窗口额度用尽归入额度类')
+  ok(shared.classifyModelError(windowLimit).quotaScope === 'usage', '窗口额度用尽与请求频率限流分开')
+  ok(/额度已用尽/.test(windowNotice) && /恢复时间：10:30pm/.test(windowNotice), `额度用尽说清原因与恢复时间（${windowNotice}）`)
+  ok(!/降低并发/.test(windowNotice) && !/请求频率/.test(windowNotice), '额度用尽不误报成请求频率限流')
+  ok(shared.classifyModelError('429 Too Many Requests').quotaScope === 'rate', '429 仍归入频率限流')
+
   for (const [raw, expected] of [
     ['terminated', /响应流意外中断/],
+    ['insufficient balance', /余额/],
     ['WebSocket closed 1012', /服务重启/],
     ['You have hit your ChatGPT usage limit (plus plan). Try again in ~76 min.', /套餐用量上限/],
     ['429 Too Many Requests', /请求频率/],
+    ['Rate limit exceeded, please slow down', /请求频率/],
     ['401 invalid api key', /重新登录/],
     ['context_length_exceeded: maximum context length', /压缩会话/],
     ['503 overloaded', /故障或过载/],

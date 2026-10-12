@@ -15,7 +15,7 @@ if (!root) throw new Error('找不到 #root')
  *
  * 目的：验收测试（scripts/probe/*.js）需要直接调 store 的动作，
  * 而不是只靠模拟点击 —— 两者互补：点击测 UI 接线，store 测真实效果。
- * 不会加载任何远程内容（CSP 锁死），所以没有注入风险。
+ * 仅宿主显式隔离探针或开发态探针开放；普通窗口不暴露可改写的 store。
  */
 declare global {
   interface Window {
@@ -23,8 +23,11 @@ declare global {
     __yanSplit: typeof useSplitView
   }
 }
-window.__yanStore = useStore
-window.__yanSplit = useSplitView
+const probeMode = window.yan.probeMode || (import.meta.env.DEV && new URLSearchParams(window.location.search).get('probe') === '1')
+if (probeMode) {
+  window.__yanStore = useStore
+  window.__yanSplit = useSplitView
+}
 
 /* 声音提示：首次点击/按键时解锁 AudioContext（主进程已放开自动播放，这里兜底） */
 installAudioUnlock()

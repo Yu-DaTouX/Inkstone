@@ -401,7 +401,7 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
             document.documentElement.style.setProperty('--w-stream', `${v}px`)
           }}
           onPointerUp={(e) => void patchSettings({ streamWidth: clampStreamWidth(Number((e.target as HTMLInputElement).value)) })}
-          onKeyUp={(e) => void patchSettings({ streamWidth: clampStreamWidth(Number((e.target as HTMLInputElement).value)) })}
+          onKeyUp={(e) => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) void patchSettings({ streamWidth: clampStreamWidth(Number((e.target as HTMLInputElement).value)) }) }}
         />
         <Button
           size="sm"
@@ -550,7 +550,8 @@ function SoundTab() {
   const shownVol = volDraft ?? sound.volume
 
   const write = (patch: Partial<SoundSettings>): void => {
-    void patchSettings({ sound: { ...sound, ...patch } })
+    const latest = useStore.getState().settings?.sound ?? DEFAULT_SOUND
+    void patchSettings({ sound: { ...latest, ...patch, events: { ...latest.events, ...patch.events } } })
   }
 
   const events: { id: SoundEvent; name: string }[] = [
@@ -612,9 +613,9 @@ function SoundTab() {
                 previewSound('done', v)
               }}
               onKeyUp={(e) => {
+                if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) return
                 const v = Number((e.target as HTMLInputElement).value)
-                write({ volume: v })
-                previewSound('done', v)
+                if (v !== sound.volume) { write({ volume: v }); previewSound('done', v) }
               }}
             />
           </SettingRow>
@@ -660,20 +661,31 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
   const openBrowser = useStore((s) => s.openBrowser)
   const closeSettings = useStore((s) => s.closeSettings)
   const [detecting, setDetecting] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const alive = useRef(true)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
 
   const pickCwd = async (): Promise<void> => {
-    const p = await window.yan.pickCwd()
-    if (p) await changeCwd(p)
+    setActionError('')
+    try {
+      const p = await window.yan.pickCwd()
+      if (p) await changeCwd(p)
+    } catch (error) {
+      if (alive.current) setActionError(error instanceof Error ? error.message : String(error))
+    }
   }
   /* 最近用过的目录（主进程维护，最多 8 个） */
   const recentCwds = (settings?.recentCwds ?? []).filter((p) => p !== settings?.cwd)
 
   const redetect = async (): Promise<void> => {
     setDetecting(true)
+    setActionError('')
     try {
       await redetectPi()
+    } catch (error) {
+      if (alive.current) setActionError(error instanceof Error ? error.message : String(error))
     } finally {
-      setDetecting(false)
+      if (alive.current) setDetecting(false)
     }
   }
 
@@ -694,6 +706,7 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
 
   return (
     <div className="ui-rows">
+      {actionError ? <div className="set-warn" role="alert">{actionError}</div> : null}
       {/* 版本放最上面：它回答「我现在跑的是哪一份代码」 */}
       <SettingRow
         data-testid="about-release"

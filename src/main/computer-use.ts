@@ -15,6 +15,7 @@
  * 这样刚装完 uv、本进程 PATH 还没刷新时也能启动。关闭 = 删掉这一条。
  */
 import { spawn } from 'node:child_process'
+import { StringDecoder } from 'node:string_decoder'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -101,6 +102,13 @@ async function writeServers(shape: 'array' | 'object', raw: unknown, list: unkno
   await rename(tmp, file)
 }
 
+let serverWriteQueue: Promise<unknown> = Promise.resolve()
+function serializeServerWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const result = serverWriteQueue.then(operation, operation)
+  serverWriteQueue = result.then(() => undefined, () => undefined)
+  return result
+}
+
 const isOurs = (item: unknown): boolean => !!item && typeof item === 'object' && (item as { id?: unknown }).id === COMPUTER_USE_SERVER_ID
 
 export async function computerUseStatus(): Promise<ComputerUseStatus> {
@@ -114,11 +122,21 @@ export async function computerUseStatus(): Promise<ComputerUseStatus> {
   return { supported, uvx: supported ? findUvx() : null, enabled, canInstallUv: supported && !!findOnPath('winget') }
 }
 
+function killProcessTree(child: ReturnType<typeof spawn>): void {
+  if (process.platform === 'win32' && child.pid) {
+    const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+    killer.on('error', () => child.kill('SIGKILL'))
+    return
+  }
+  child.kill('SIGKILL')
+}
+
 function run(command: string, args: string[], timeoutMs: number): Promise<{ code: number | null; log: string }> {
   return new Promise((resolve) => {
     let log = ''
+    const decoder = new StringDecoder('utf8')
     const keep = (c: Buffer): void => {
-      log = (log + c.toString('utf8')).slice(-8000)
+      log = (log + decoder.write(c)).slice(-8000)
     }
     let child: ReturnType<typeof spawn>
     try {
@@ -127,7 +145,7 @@ function run(command: string, args: string[], timeoutMs: number): Promise<{ code
       resolve({ code: null, log: e instanceof Error ? e.message : String(e) })
       return
     }
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs)
+    const timer = setTimeout(() => killProcessTree(child), timeoutMs)
     child.stdout?.on('data', keep)
     child.stderr?.on('data', keep)
     child.on('error', (e) => {
@@ -136,6 +154,7 @@ function run(command: string, args: string[], timeoutMs: number): Promise<{ code
     })
     child.on('close', (code) => {
       clearTimeout(timer)
+      log = (log + decoder.end()).slice(-8000)
       resolve({ code, log })
     })
   })
@@ -175,8 +194,10 @@ export async function enableComputerUse(): Promise<ComputerUseResult> {
   const warm = await run(uvx, ['--python', '3.13', 'windows-mcp', '--help'], 10 * 60_000)
   if (warm.code !== 0) return { ok: false, error: `下载或启动 windows-mcp 失败（退出码 ${warm.code ?? '?'}）`, log: tail(warm.log) }
   try {
-    const { shape, list, raw } = await readRawServers()
-    await writeServers(shape, raw, [...list.filter((item) => !isOurs(item)), serverEntry(uvx)])
+    await serializeServerWrite(async () => {
+      const { shape, list, raw } = await readRawServers()
+      await writeServers(shape, raw, [...list.filter((item) => !isOurs(item)), serverEntry(uvx)])
+    })
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -185,8 +206,10 @@ export async function enableComputerUse(): Promise<ComputerUseResult> {
 
 export async function disableComputerUse(): Promise<ComputerUseResult> {
   try {
-    const { shape, list, raw } = await readRawServers()
-    await writeServers(shape, raw, list.filter((item) => !isOurs(item)))
+    await serializeServerWrite(async () => {
+      const { shape, list, raw } = await readRawServers()
+      await writeServers(shape, raw, list.filter((item) => !isOurs(item)))
+    })
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }

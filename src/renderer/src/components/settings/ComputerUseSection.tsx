@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import type { ComputerUseStatusView } from '../../../../shared/ipc'
 import { Button, Switch } from '../ui'
@@ -19,12 +19,15 @@ export function ComputerUseSection(): React.JSX.Element | null {
   const [busy, setBusy] = useState<'uv' | 'toggle' | null>(null)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [manual, setManual] = useState(false)
+  const alive = useRef(true)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await window.yan.computerUse.status())
+      const next = await window.yan.computerUse.status()
+      if (alive.current) setStatus(next)
     } catch {
-      setStatus(null)
+      if (alive.current) setStatus(null)
     }
   }, [])
   useEffect(() => {
@@ -38,27 +41,29 @@ export function ComputerUseSection(): React.JSX.Element | null {
     setResult(null)
     try {
       const r = await window.yan.computerUse.installUv()
+      if (!alive.current) return
       setManual(!!r.needsManual)
       setResult({ ok: r.ok, text: r.ok ? t('cu.uvInstalled') : [r.error, r.log].filter(Boolean).join('\n') })
     } catch (e) {
-      setResult({ ok: false, text: e instanceof Error ? e.message : String(e) })
+      if (alive.current) setResult({ ok: false, text: e instanceof Error ? e.message : String(e) })
     } finally {
-      setBusy(null)
+      if (alive.current) setBusy(null)
     }
-    await refresh()
+    if (alive.current) await refresh()
   }
   const toggle = async (next: boolean): Promise<void> => {
     setBusy('toggle')
     setResult(null)
     try {
       const r = await window.yan.computerUse.set(next)
+      if (!alive.current) return
       setResult(r.ok ? (next ? { ok: true, text: t('cu.enabled') } : null) : { ok: false, text: [r.error, r.log].filter(Boolean).join('\n') })
     } catch (e) {
-      setResult({ ok: false, text: e instanceof Error ? e.message : String(e) })
+      if (alive.current) setResult({ ok: false, text: e instanceof Error ? e.message : String(e) })
     } finally {
-      setBusy(null)
+      if (alive.current) setBusy(null)
     }
-    await refresh()
+    if (alive.current) await refresh()
   }
 
   return (

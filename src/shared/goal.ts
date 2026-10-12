@@ -436,11 +436,11 @@ export function checkReadySubmission(
     return { ok: false, code: 'missing_transition_id', message: '就绪提交必须带 transitionId（幂等键）' }
   }
   const confidence = typeof input.confidence === 'number' ? input.confidence : Number.NaN
-  if (!Number.isFinite(confidence) || confidence < READY_CONFIDENCE_THRESHOLD) {
+  if (!Number.isFinite(confidence) || confidence < READY_CONFIDENCE_THRESHOLD || confidence > 1) {
     return {
       ok: false,
       code: 'confidence_too_low',
-      message: `confidence 必须是 >= ${READY_CONFIDENCE_THRESHOLD} 的数字（收到 ${JSON.stringify(input.confidence)}）`
+      message: `confidence 必须是 ${READY_CONFIDENCE_THRESHOLD} 到 1 之间的数字（收到 ${JSON.stringify(input.confidence)}）`
     }
   }
   const raw = (input.understanding ?? {}) as Partial<ReadyUnderstanding>
@@ -597,7 +597,7 @@ export function sanitizeGoalBudget(value: unknown): GoalBudget | null {
   if (!value || typeof value !== 'object') return null
   const raw = value as Partial<GoalBudget>
   const num = (v: unknown): number | undefined =>
-    typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : undefined
+    typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : undefined
   const tokens = num(raw.tokens)
   const ms = num(raw.ms)
   if (tokens === undefined && ms === undefined) return null
@@ -1035,13 +1035,13 @@ function asNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
-/** 列表：数组、逗号分隔或换行分隔的字符串都接受（CLI 的 flag 只能是字符串）。 */
+/** 列表：数组或换行分隔；证据正文中的逗号不是列表边界。 */
 function asList(value: unknown): string[] {
   if (Array.isArray(value)) return value.map((item) => asText(item).trim()).filter(Boolean)
   const text = asText(value).trim()
   if (!text) return []
   return text
-    .split(/[,\n]/)
+    .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean)
 }

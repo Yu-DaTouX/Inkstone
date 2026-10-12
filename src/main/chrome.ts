@@ -66,15 +66,14 @@ export interface ChromeLaunchOptions {
 
 /**
  * 拼启动参数。纯函数，单测直接断言内容 —— 其中
- * `--remote-allow-origins=*` 是最容易被漏、漏了就一定连不上的一个：
- * 新版 Chrome 的 DevTools WebSocket 会校验 Origin 头，非 DevTools 前端
- * （我们）不带 / 带 null Origin 时会被直接拒。
+ * 只允许本机 DevTools 前端的 Origin；RawCdp 使用 Node WebSocket，不发送
+ * 页面 Origin。调试端口由调用方随机分配，避免占用固定端口。
  */
 export function buildChromeArgs(opts: ChromeLaunchOptions): string[] {
   const args = [
     `--user-data-dir=${opts.profileDir}`,
     `--remote-debugging-port=${opts.port}`,
-    '--remote-allow-origins=*',
+    '--remote-allow-origins=http://localhost,http://127.0.0.1',
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-features=Translate'

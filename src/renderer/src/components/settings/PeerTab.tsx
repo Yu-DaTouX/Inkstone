@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Badge, Button, EmptyState } from '../ui'
@@ -10,6 +10,7 @@ import {
   type PeerStatusView
 } from '../../../../shared/peer-protocol'
 import type { PeerHistoryMessage, PeerSessionRow } from '../../../../shared/ipc'
+import { peerBrowseBelongsTo } from './review2-settings-guards'
 
 function formatTime(at: number | undefined): string {
   if (!at) return '—'
@@ -46,12 +47,15 @@ export function PeerTab() {
   const [viewing, setViewing] = useState<{ id: string; messages: PeerHistoryMessage[] } | null>(null)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const alive = useRef(true)
+  const generation = useRef(0)
+  useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++ } }, [])
 
   const refresh = useCallback(async () => {
+    const request = ++generation.current
     try {
       const [next, remote] = await Promise.all([window.yan.peer.status(), window.yan.remote.status()])
-      setStatus(next)
-      setHostGrants(remote?.grants ?? [])
+      if (alive.current && request === generation.current) { setStatus(next); setHostGrants(remote?.grants ?? []) }
     } catch {
       /* 下一轮再试 */
     }
@@ -70,11 +74,13 @@ export function PeerTab() {
     setNotice(null)
     try {
       const result = await action()
+      if (!alive.current) return
       if (result && typeof result === 'object' && !result.ok) setNotice({ kind: 'err', text: result.error ?? t('peer.failed') })
       else if (okText) setNotice({ kind: 'ok', text: okText })
+    } catch (error) {
+      if (alive.current) setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
     } finally {
-      setBusy(false)
-      await refresh()
+      if (alive.current) { setBusy(false); await refresh() }
     }
   }
 
@@ -86,21 +92,36 @@ export function PeerTab() {
     })
 
   const loadSessions = async (peerId: string): Promise<void> => {
-    const result = await window.yan.peer.sessions(peerId)
-    if (!result.ok) return setNotice({ kind: 'err', text: result.error })
-    setBrowse({ peerId, projects: result.data.projects, sessions: result.data.sessions })
+    try {
+      const result = await window.yan.peer.sessions(peerId)
+      if (!alive.current) return
+      if (!result.ok) return setNotice({ kind: 'err', text: result.error })
+      if (alive.current) setBrowse({ peerId, projects: result.data.projects, sessions: result.data.sessions })
+    } catch (error) {
+      if (alive.current) setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
+    }
   }
 
   const openSession = async (peerId: string, sessionId: string): Promise<void> => {
-    const result = await window.yan.peer.history(peerId, sessionId)
-    if (!result.ok) return setNotice({ kind: 'err', text: result.error })
-    setBrowse((current) => (current ? { ...current, open: { sessionId, messages: result.data.messages } } : current))
+    try {
+      const result = await window.yan.peer.history(peerId, sessionId)
+      if (!alive.current) return
+      if (!result.ok) return setNotice({ kind: 'err', text: result.error })
+      setBrowse((current) => peerBrowseBelongsTo(current, peerId) ? { ...current!, open: { sessionId, messages: result.data.messages } } : current)
+    } catch (error) {
+      setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
+    }
   }
 
   const openImport = async (item: PeerImportView): Promise<void> => {
-    const result = await window.yan.peer.readImport(item.id)
-    if (!result.ok) return setNotice({ kind: 'err', text: result.error })
-    setViewing({ id: item.id, messages: result.data.messages })
+    try {
+      const result = await window.yan.peer.readImport(item.id)
+      if (!alive.current) return
+      if (!result.ok) return setNotice({ kind: 'err', text: result.error })
+      setViewing({ id: item.id, messages: result.data.messages })
+    } catch (error) {
+      if (alive.current) setNotice({ kind: 'err', text: error instanceof Error ? error.message : String(error) })
+    }
   }
 
   return (

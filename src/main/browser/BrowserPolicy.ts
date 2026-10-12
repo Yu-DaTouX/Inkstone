@@ -3,8 +3,7 @@
  *
  * 只做一件保守的事：把「点/按一个明显会引发副作用的东西」拦下来，
  * 让模型先调 `browser_request_user_control` 交给用户。
- * 它不是安全边界（真正的边界是 loopback token + 不暴露任意 JS），
- * 只是一道防手滑的提示。
+ * 它不是安全边界，只是一道防手滑的提示；页面控制仍受浏览器宿主与网络边界约束。
  */
 const HIGH_RISK = /\b(delete|remove|buy|purchase|pay|checkout|send|submit|authorize|grant|revoke|publish|post)\b|删除|购买|支付|付款|提交|发送|授权|发布/i
 

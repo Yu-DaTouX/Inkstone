@@ -32,8 +32,20 @@ class HumanApprovals:
         lines = []
         with self.lock:
             self.pending = {code: item for code, item in self.pending.items() if item["expires"] > now}
-            for question in result.get("data", {}).get("questions", []):
-                if not question.get("sensitive") or question.get("method") != "confirm":
+            data = result.get("data")
+            questions = data.get("questions") if isinstance(data, dict) else None
+            if not isinstance(questions, list):
+                return "砚返回的审批列表格式无效；请在电脑端核实。"
+            for question in questions:
+                if not isinstance(question, dict) or not question.get("sensitive") or question.get("method") != "confirm":
+                    continue
+                if (not isinstance(question.get("id"), str) or not question["id"]
+                        or not isinstance(question.get("sessionId"), str) or not question["sessionId"]
+                        or not isinstance(question.get("runId"), str) or not question["runId"]
+                        or not isinstance(question.get("approvalDigest"), str) or not question["approvalDigest"]
+                        or any(key in question and not isinstance(question[key], str) for key in ("title", "message"))
+                        or ("deadline" in question and (isinstance(question["deadline"], bool) or not isinstance(question["deadline"], (int, float))))):
+                    lines.append("跳过格式不完整的审批请求；请在电脑端核实。")
                     continue
                 if not question.get("approvalDigest"):
                     lines.append("此电脑端尚不支持人工批准回传，请更新砚后再试。")
@@ -65,15 +77,18 @@ class HumanApprovals:
                 return "上一决定的结果尚待确认，请重试原命令或在砚中核实，不要改用相反决定。"
             item["decision"] = confirmed
             question = item["question"]
-            # The host checks that this exact preview still describes a pending confirmation.
-            from urllib.parse import quote
-            result = client.request("POST", "/questions/" + quote(question["id"], safe="") + "/approval", {
-                "sessionId": question["sessionId"], "runId": question["runId"],
-                "digest": question["approvalDigest"], "confirmed": confirmed
-            }, item["request_id"])
-            if result.get("outcomeUnknown"):
-                return "连接中断，决定可能已经送达。请重试相同命令以复用请求编号，或到砚中核实。"
-            self.pending.pop(code, None)
+            request_id = item["request_id"]
+        # Never hold the shared state lock across a network request.
+        from urllib.parse import quote
+        result = client.request("POST", "/questions/" + quote(question["id"], safe="") + "/approval", {
+            "sessionId": question["sessionId"], "runId": question["runId"],
+            "digest": question["approvalDigest"], "confirmed": confirmed
+        }, request_id)
+        if result.get("outcomeUnknown"):
+            return "连接中断，决定可能已经送达。请重试相同命令以复用请求编号，或到砚中核实。"
+        with self.lock:
+            if self.pending.get(code) is item:
+                self.pending.pop(code, None)
         if result.get("ok"):
             return f"已将你的{'允许' if confirmed else '拒绝'}传回砚，只作用于此条请求。"
         if result.get("httpStatus") == 404:

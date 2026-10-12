@@ -46,8 +46,9 @@ const CALLBACK_PATH = '/auth/callback'
 const SCOPE = 'openid profile email offline_access'
 /** pi 传给 OpenAI 的调用方标识。保持一致 —— 别写 codex_cli_rs，那是 API 调用的伪装。 */
 const ORIGINATOR = 'pi'
-/** 回调主机：与 pi 一样允许环境变量覆盖（某些 VM/容器场景要监听别处）。 */
-const CALLBACK_HOST = process.env.PI_OAUTH_CALLBACK_HOST || '127.0.0.1'
+/** OAuth 回调必须绑定本机回环；拒绝环境变量注入非本机监听地址。 */
+const configuredCallbackHost = process.env.PI_OAUTH_CALLBACK_HOST?.trim().toLowerCase()
+const CALLBACK_HOST = configuredCallbackHost === 'localhost' || configuredCallbackHost === '127.0.0.1' ? configuredCallbackHost : '127.0.0.1'
 /** 用户在浏览器里拖太久就放弃，免得本地端口一直被占着。 */
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000
 
@@ -113,7 +114,7 @@ function resultPage(heading: string, message: string, details?: string): string 
 /**
  * 授权码 → 凭证。**一次授权码只能换一次**，所以全流程只从这里调一次。
  */
-async function exchangeCode(code: string, verifier: string): Promise<CodexLoginResult> {
+async function exchangeCode(code: string, verifier: string, signal: AbortSignal): Promise<CodexLoginResult> {
   let tokenRes: Response
   try {
     tokenRes = await fetch(TOKEN_URL, {
@@ -125,36 +126,39 @@ async function exchangeCode(code: string, verifier: string): Promise<CodexLoginR
         code,
         code_verifier: verifier,
         redirect_uri: REDIRECT_URI
-      })
+      }),
+      signal
     })
   } catch (e) {
     return { ok: false, error: `网络请求失败：${e instanceof Error ? e.message : String(e)}` }
   }
   if (!tokenRes.ok) {
-    const body = await tokenRes.text().catch(() => '')
-    return { ok: false, error: `换取 token 失败（${tokenRes.status}）：${body || tokenRes.statusText}` }
+    return { ok: false, error: `换取 token 失败（HTTP ${tokenRes.status}）` }
   }
   const json = (await tokenRes.json().catch(() => null)) as
     | { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown }
     | null
-  if (
-    !json ||
-    typeof json.access_token !== 'string' ||
-    typeof json.refresh_token !== 'string' ||
-    typeof json.expires_in !== 'number'
-  ) {
-    return { ok: false, error: `token 响应缺字段：${JSON.stringify(json)}` }
+  if (!json) return { ok: false, error: 'token 响应缺少必需字段：access_token、refresh_token、expires_in' }
+  const missing = [
+    ...(typeof json.access_token !== 'string' ? ['access_token'] : []),
+    ...(typeof json.refresh_token !== 'string' ? ['refresh_token'] : []),
+    ...(typeof json.expires_in !== 'number' ? ['expires_in'] : [])
+  ]
+  if (missing.length) return { ok: false, error: `token 响应缺少必需字段：${missing.join(', ')}` }
+  if (typeof json.access_token !== 'string' || typeof json.refresh_token !== 'string' || typeof json.expires_in !== 'number') {
+    return { ok: false, error: 'token 响应缺少必需字段' }
   }
   const accountId = extractAccountId(json.access_token)
   if (!accountId) return { ok: false, error: '无法从 token 里取到 accountId，登录未完成' }
 
+  if (signal.aborted) return { ok: false, error: '已取消登录' }
   const written = await mergeAuthEntry('openai-codex', {
     type: 'oauth',
     access: json.access_token,
     refresh: json.refresh_token,
     expires: Date.now() + json.expires_in * 1000,
     accountId
-  })
+  }, signal)
   if (!written.ok) return { ok: false, error: written.error ?? '写入 auth.json 失败' }
   return { ok: true, accountId }
 }
@@ -204,6 +208,8 @@ export async function startCodexLogin(): Promise<CodexLoginResult> {
     }
   })
 
+  const controller = new AbortController()
+
   /* ---- 2. 本地回调服务 ---- */
   const server: Server = createServer((req, res) => {
     const reply = (status: number, html: string): void => {
@@ -252,7 +258,7 @@ export async function startCodexLogin(): Promise<CodexLoginResult> {
      * （pi 是先回「成功」页再换 token，失败时那个页面会说谎）。
      */
     void (async () => {
-      const r = await exchangeCode(code, verifier)
+      const r = await exchangeCode(code, verifier, controller.signal)
       if (r.ok) reply(200, resultPage('登录成功', 'ChatGPT 已接入，可以关闭这个页面回到砚。'))
       else reply(500, resultPage('登录失败', '换取凭证失败。', r.error))
       settle(r)
@@ -275,8 +281,14 @@ export async function startCodexLogin(): Promise<CodexLoginResult> {
   }
 
   /* ---- 3. 开浏览器（这一步就是「不用回终端」的关键） ---- */
-  const timer = setTimeout(() => settle({ ok: false, error: '登录超时（5 分钟未完成）' }), LOGIN_TIMEOUT_MS)
-  active = { cancel: () => settle({ ok: false, error: '已取消登录' }) }
+  const timer = setTimeout(() => {
+    controller.abort()
+    settle({ ok: false, error: '登录超时（5 分钟未完成）' })
+  }, LOGIN_TIMEOUT_MS)
+  active = { cancel: () => {
+    controller.abort()
+    settle({ ok: false, error: '已取消登录' })
+  } }
 
   try {
     await shell.openExternal(url.toString())

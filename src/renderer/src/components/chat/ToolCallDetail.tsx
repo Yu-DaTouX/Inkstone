@@ -23,6 +23,8 @@ export function ToolCallDetail(props: Props) {
 function DetailView({ call, target, secs, onExpand }: Props & { onExpand?: () => void }) {
   const t = useT()
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const copyTimer = useRef<number | null>(null)
+  useEffect(() => () => { if (copyTimer.current !== null) window.clearTimeout(copyTimer.current) }, [])
   const kind = detailKind(call.name)
   const changes = readWorkspaceChanges(call.details)
   const args = call.args as Record<string, unknown> | undefined
@@ -39,6 +41,11 @@ function DetailView({ call, target, secs, onExpand }: Props & { onExpand?: () =>
       const input = call.args ? JSON.stringify(call.args, null, 2) : call.argsRaw ?? target
       await navigator.clipboard.writeText([input, call.output ?? ''].filter(Boolean).join('\n\n'))
       setCopyState('copied')
+      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
+      copyTimer.current = window.setTimeout(() => {
+        copyTimer.current = null
+        setCopyState('idle')
+      }, 1600)
     } catch { setCopyState('failed') }
   }
   return <div className="tool-view" data-kind={kind}>

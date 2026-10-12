@@ -30,21 +30,21 @@ export async function runBrowserNetworkTests(ok, mod) {
   }, 'iframe-session')
   const current = tracker.snapshot()
   ok(current.entries.length === 2, '同一请求 id 在不同 CDP frame session 中隔离')
-  ok(current.entries[0].url === 'https://example.com/path', 'URL 去掉用户名、密码、查询参数与片段')
+  ok(current.entries[0].url === 'https://example.com/', 'URL 仅保留 origin，路径中的凭证也不泄漏')
   ok(current.entries[0].status === 200 && current.entries[0].state === 'finished', '响应状态与完成状态汇总')
-  ok(current.entries[1].url === 'https://frame.example/private' && current.entries[1].state === 'pending', '跨 frame 请求保留安全 URL 与 pending 状态')
+  ok(current.entries[1].url === 'https://frame.example/' && current.entries[1].state === 'pending', '跨 frame 请求保留安全 URL 与 pending 状态')
   ok(!JSON.stringify(current).includes('secret') && !JSON.stringify(current).includes('cookie'), '快照不含 query secret 或 Cookie 值')
 
   for (let i = 0; i < 100; i++) {
     emit('Network.requestWillBeSent', {
       requestId: `bounded-${i}`,
       type: 'Other',
-      request: { url: `https://example.com/${i}`, method: 'GET' }
+      request: { url: `https://host-${i}.example.com/private-token`, method: 'GET' }
     })
   }
   const bounded = tracker.snapshot()
   ok(bounded.entries.length === bounded.limit && bounded.limit === 80, '网络账本超限时只保留最近 80 条')
-  ok(bounded.entries.at(-1)?.url.endsWith('/99'), '有界账本保留最新请求')
+  ok(bounded.entries.at(-1)?.url === 'https://host-99.example.com/', '有界账本保留最新请求')
 
   emit('Network.requestWillBeSent', {
     requestId: 'long-url',
@@ -52,5 +52,5 @@ export async function runBrowserNetworkTests(ok, mod) {
     request: { url: `https://example.com/${'x'.repeat(20_000)}?secret=hidden`, method: 'GET' }
   })
   const longUrl = tracker.snapshot().entries.at(-1)?.url ?? ''
-  ok(longUrl.length <= 2_048 && longUrl.endsWith('…'), '超长 URL 路径截断，网络快照大小有上限')
+  ok(longUrl === 'https://example.com/', '超长 URL 路径不进入快照，保留 origin 限制大小')
 }

@@ -39,18 +39,15 @@ export function usePresence(open: boolean, ms: number): { mounted: boolean; clos
       return
     }
 
-    // 关闭：如果本来就没挂，什么都不用做
-    setMounted((was) => {
-      if (!was) return was
-      setClosing(true)
-      timer.current = setTimeout(() => {
-        timer.current = null
-        setClosing(false)
-        setMounted(false)
-      }, ms)
-      return was
-    })
-  }, [open, ms])
+    // 关闭：只对仍挂载的内容安排退场；状态 updater 保持纯函数。
+    if (!mounted) return
+    setClosing(true)
+    timer.current = setTimeout(() => {
+      timer.current = null
+      setClosing(false)
+      setMounted(false)
+    }, ms)
+  }, [open, ms, mounted])
 
   // 卸载时清掉定时器
   useEffect(

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { ProviderQuota, QuotaWindow } from '../shared/ipc'
 import { resolveCodexAccountId, resolveProviderSecret } from './credentials'
 import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode'
+import { hostImageCredentials } from './image-credentials'
 import { claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
 
 /**
@@ -69,7 +70,8 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
    */
   const isCodex = provider === 'openai-codex'
   const openai = provider === 'openai'
-  const key = openai ? (process.env.OPENAI_ADMIN_KEY || await resolveProviderSecret(provider)) : await resolveProviderSecret(provider)
+  const codexCredential = isCodex ? await hostImageCredentials.codex() : null
+  const key = isCodex ? codexCredential?.access : openai ? (process.env.OPENAI_ADMIN_KEY || await resolveProviderSecret(provider)) : await resolveProviderSecret(provider)
   const known = provider === 'openrouter' || provider === 'deepseek' || provider === 'commandcode' || isCodex || openai
   if (!key) return { provider, supported: known, error: openai ? '请设置 OPENAI_ADMIN_KEY 以查询组织费用' : '未找到该供应商的 API Key', checkedAt }
   try {
@@ -81,7 +83,7 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
      * 渲染层统一按百分比画，不用再乘换算系数。
      */
     if (isCodex) {
-      const accountId = await resolveCodexAccountId()
+      const accountId = codexCredential?.accountId ?? await resolveCodexAccountId()
       if (!accountId) return { provider, supported: true, error: '凭证缺少 chatgpt-account-id，请重新登录 ChatGPT', checkedAt }
       const usage = await fetchCodexUsage(key, accountId)
       const windows: QuotaWindow[] = usage.windows

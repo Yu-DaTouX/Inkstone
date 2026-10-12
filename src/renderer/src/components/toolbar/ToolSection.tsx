@@ -113,6 +113,7 @@ export function Section({
   const bodyRef = useRef<HTMLDivElement>(null)
   const [mounted, setMounted] = useState(open)
   const [collapsedOnce, setCollapsedOnce] = useState(!open)
+  const heading = <><span className="rp-sec-title">{t(titleKey)}</span><span className="spacer" />{extra}</>
 
   useEffect(() => {
     if (open) {
@@ -151,22 +152,11 @@ export function Section({
     <section className={`rp-sec ${open ? 'open' : ''} ${compactWhenFloating ? 'rp-summary-sec' : ''}`} data-sec={testId} data-testid={testId}>
       <div className="rp-sec-row">
         {grip}
-        <button className="rp-sec-head" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {/*
-           * 标题前不再放图标，也不放折叠箭头（用户：「移除图标并把标题都变小一些」）。
-           *
-           * 原来是「有 icon 画 16px 图标，否则画 12px 折叠箭头」，两者都占
-           * 一格 + 一个 gap（共 24px）。右栏拖窄后这 24px 很贵 —— 标题会被
-           * flex 压成「上下…」。左边本来就有拖拽柄，再排一个图标格更挤。
-           *
-           * 开合状态由 `.rp-sec-head[aria-expanded]`、整行可点与 `.rp-sec.open`
-           * 展开动画给出 —— 不再为它占一行宽度。（不再画箭头是权衡：
-           * 右栏拖窄时宽度比多一个提示更重要。）
-           */}
-          <span className="rp-sec-title">{t(titleKey)}</span>
-          <span className="spacer" />
-          {extra}
-        </button>
+        {grip === null ? (
+          <div className="rp-sec-head" aria-expanded="true">{heading}</div>
+        ) : (
+          <button className="rp-sec-head" onClick={() => setOpen(!open)} aria-expanded={open}>{heading}</button>
+        )}
       </div>
       <div
         ref={bodyRef}

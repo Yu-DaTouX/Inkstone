@@ -99,6 +99,11 @@ export async function runMcpTests(ok, modules) {
     ok(Boolean(loaded.error) && /重复的服务 id/.test(loaded.error), '配置：重复 id 被指出（不静默）')
     ok(/transport 必须是/.test(String(loaded.error)) && /stdio 必须有 command/.test(String(loaded.error)), '配置：每条毛病都写清楚')
 
+    const coercionFile = join(root, 'coercion.json')
+    await writeFile(coercionFile, JSON.stringify({ servers: [{ id: 'coerce', transport: 'stdio', command: 'node', args: [8080, true], env: { PORT: 8080 } }] }))
+    const coerced = config.loadMcpServers({ YAN_MCP_SERVERS_FILE: coercionFile })
+    ok(coerced.servers[0].args?.join(',') === '8080,true' && coerced.servers[0].env?.PORT === '8080', '配置：数字和布尔参数 / 环境变量显式转字符串')
+
     const scoped = config.mcpServersForProject(
       [
         { id: 'global', transport: 'stdio', command: process.execPath },

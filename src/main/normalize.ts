@@ -11,7 +11,6 @@
  */
 import type { Usage, UIMessage, UIMessageImage, UIToolCall } from '../shared/ipc'
 import { modelErrorNotice } from '../shared/model-errors'
-import { isSubagentNotice } from '../shared/subagent-notice'
 import { estimateCost } from '../shared/model-pricing'
 
 /* pi 的原始类型（只在这里出现） */
@@ -144,7 +143,7 @@ export function normalizeMessage(
     // 技能展开块先折叠，再去掉客户端塞进去的 XML 包裹（顺序反了会先把 <skill> 标签剥掉）
     text = collapseSkillInvocation(text)
     // 保留宿主通知标记，展示层可在实时与历史中一致隐藏，消息编号仍保持稳定。
-    if (!isSubagentNotice(text)) text = text.replace(/^<[^>]{1,40}>/, '').replace(/<\/[^>]{1,40}>$/, '')
+    // JSONL 中的 user 文本是原文；不能凭首尾标签形状推断为宿主包装。
     return {
       id,
       ...entry,

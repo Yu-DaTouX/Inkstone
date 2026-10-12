@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http'
-import { access, mkdir, writeFile } from 'node:fs/promises'
+import { access, mkdir, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import type { CreateServiceTask, ServiceApproval, ServiceCapability, ServiceReceipt, ServiceSnapshot, ServiceTask, TaskApplyResult } from '../shared/agent-service'
 import { PiExecutor } from '../adapters/pi-executor'
@@ -52,7 +52,8 @@ export class AgentService {
     const config = this.options.modelConfig
     if (config) {
       const url = new URL(config.baseUrl)
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !config.provider || !config.apiKey || !config.model?.id || !['openai-completions', 'openai-responses', 'anthropic-messages'].includes(config.api) || !Number.isSafeInteger(config.model.contextWindow) || config.model.contextWindow <= 0 || !Number.isSafeInteger(config.model.maxTokens) || config.model.maxTokens <= 0) throw new Error('模型配置无效或协议尚未接入')
+      const loopback = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname.toLowerCase())
+      if (!['http:', 'https:'].includes(url.protocol) || (url.protocol === 'http:' && !loopback) || url.username || url.password || url.search || url.hash || !config.provider || !config.apiKey || !config.model?.id || !['openai-completions', 'openai-responses', 'anthropic-messages'].includes(config.api) || !Number.isSafeInteger(config.model.contextWindow) || config.model.contextWindow <= 0 || !Number.isSafeInteger(config.model.maxTokens) || config.model.maxTokens <= 0) throw new Error('模型配置无效或协议尚未接入；非回环地址必须使用 HTTPS')
     }
     try { await access(join(this.options.dataRoot, 'desktop.json')); throw new Error('独立运行服务不能使用桌面数据根；请选择单独数据目录') } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     this.release = await lockDataRoot(this.options.dataRoot)
@@ -105,9 +106,12 @@ export class AgentService {
       if (parent && request.files.some(file => !parent.authority.readRoots.some(root => inside(root, resolve(file))))) throw new Error('子任务输入超出父任务文件授权')
       const id = randomUUID()
       const workspace = parent ? join(parent.workspace, 'outputs', '.children', id) : join(this.store.root, 'tasks', id)
-      const inputs = await copyInputs(workspace, request.files)
       const authority = { readRoots: [join(workspace, 'inputs'), join(workspace, 'outputs')], writeRoots: [join(workspace, 'outputs')], network: this.options.modelConfig ? [new URL(this.options.modelConfig.baseUrl).origin] : [], programs: [], credentials: this.options.modelConfig ? [this.options.modelConfig.provider] : [], subagents: false }
       if (parent) assertNarrower(authority, parent.authority)
+      await mkdir(join(workspace, '..'), { recursive: true })
+      await mkdir(workspace)
+      let inputs
+      try { inputs = await copyInputs(workspace, request.files) } catch (error) { await rm(workspace, { recursive: true, force: true }); throw error }
       const task: ServiceTask = { id, title: request.title.trim(), ...(parent ? { parentId: parent.id } : {}), status: 'ready', generation: 0, createdAt: Date.now(), updatedAt: Date.now(), workspace, inputs, outputs: [], authority, budget: taskBudget(request.budget, parent?.budget), usage: { elapsedMs: 0, modelCalls: 0, toolCalls: 0 } }
       this.store.document.tasks.push(task); await this.store.save(); this.changed(); return structuredClone(task)
     })
@@ -143,7 +147,7 @@ export class AgentService {
     })
   }
   /** Durable request keys bind payloads. Unknown results are returned for reconciliation, never replayed. */
-  async once<T>(taskId: string, requestId: string, operation: string, payload: unknown, execute: () => Promise<T>): Promise<T> {
+  async once<T>(taskId: string, requestId: string, operation: string, payload: unknown, execute: () => Promise<T>, validate: () => void = () => {}): Promise<T> {
     if (!/^[a-zA-Z0-9._:-]{8,128}$/.test(requestId)) throw new Error('请求必须带 8–128 字符的幂等键')
     const key = `${taskId}:${requestId}`, expected = digest({ operation, payload })
     const pending = this.operations.get(key)
@@ -157,6 +161,7 @@ export class AgentService {
           if (old.state !== 'completed') throw new Error('请求结果待核实，禁止盲目重试')
           return { found: true, result: old.result as T }
         }
+        validate()
         receipt = { id: randomUUID(), taskId, generation: taskId === 'service' ? 0 : this.task(taskId).generation, requestId, operation, digest: expected, state: 'started' }
         this.store.document.receipts.push(receipt); await this.store.save(); return { found: false }
       })
@@ -171,6 +176,10 @@ export class AgentService {
     try { return await run } finally { this.operations.delete(key) }
   }
   async apply(id: string, approvalId: string, requestId: string): Promise<TaskApplyResult> {
+    const validate = () => {
+      const task = this.task(id), approval = this.store.document.approvals.find(a => a.id === approvalId)
+      if (this.live.has(id) || !approval || approval.taskId !== id || approval.generation !== task.generation || approval.kind !== 'apply' || approval.status !== 'approved' || !this.store.document.applyPlans[approvalId]) throw new Error('缺少当前运行的成果应用批准或应用计划')
+    }
     return this.once(id, requestId, 'apply', { approvalId }, () => this.mutate(async () => {
       const task = this.task(id), approval = this.store.document.approvals.find(a => a.id === approvalId)
       if (this.live.has(id) || !approval || approval.taskId !== id || approval.generation !== task.generation || approval.kind !== 'apply' || approval.status !== 'approved') throw new Error('缺少当前运行的成果应用批准')
@@ -179,7 +188,7 @@ export class AgentService {
       task.applyResult = await applyOutputs(join(task.workspace, 'outputs'), plan)
       // One approval authorizes one application attempt, including partial completion.
       approval.status = 'expired'; await this.store.save(); this.changed(); return structuredClone(task.applyResult)
-    }))
+    }), validate)
   }
   private async consume(task: ServiceTask, kind: 'modelCalls' | 'toolCalls'): Promise<void> {
     const limit = kind === 'modelCalls' ? 'maxModelCalls' : 'maxToolCalls'
@@ -205,7 +214,7 @@ export class AgentService {
       for (const approval of this.store.document.approvals) if (approval.taskId === id && approval.status === 'pending') approval.status = 'expired'
       const token = randomUUID(), privateDir = join(this.store.root, 'private', id)
       await mkdir(privateDir, { recursive: true })
-      await writeFile(join(privateDir, 'models.json'), JSON.stringify({ providers: { [config.provider]: { baseUrl: `${this.url}/model/${token}`, api: config.api, apiKey: config.apiKey, models: [{ ...config.model, name: config.model.name ?? config.model.id, input: config.model.input ?? ['text'], cost: config.model.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }))
+      await writeFile(join(privateDir, 'models.json'), JSON.stringify({ providers: { [config.provider]: { baseUrl: `${this.url}/model/${token}`, api: config.api, apiKey: token, models: [{ ...config.model, name: config.model.name ?? config.model.id, input: config.model.input ?? ['text'], cost: config.model.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }))
       await writeFile(join(privateDir, 'settings.json'), JSON.stringify({ defaultTools: ['read', 'write', 'edit'], packages: [], compaction: { enabled: true } }))
       const executor = new PiExecutor(task, { runtime, piDir: privateDir, sessionDir: join(privateDir, 'sessions'), guardExtension: this.options.guardExtension, provider: config.provider, model: config.model.id, authorityUrl: `${this.url}/authority`, authorityToken: token })
       const remaining = Math.min(...this.ancestors(task).map(t => t.budget.maxTimeMs - t.usage.elapsedMs))
@@ -279,13 +288,19 @@ export class AgentService {
       const config = this.options.modelConfig!
       const origin = new URL(config.baseUrl).origin
       if (!task.authority.network.includes(origin) || !task.authority.credentials.includes(config.provider)) return respond(res, 403, { error: '模型网络或凭证未授权' })
-      const body = await jsonBody(req, 32 * 1024 * 1024)
-      try { await this.mutate(() => this.consume(task, 'modelCalls')) } catch (error) { return respond(res, 429, { error: String(error) }) }
       const suffix = path.slice(`/model/${token}`.length)
       if (!/^\/(chat\/completions|responses|messages|complete|generate|completions)$/.test(suffix)) return respond(res, 403, { error: '不支持的模型端点' })
+      const body = await jsonBody(req, 32 * 1024 * 1024)
+      try { await this.mutate(() => this.consume(task, 'modelCalls')) } catch (error) { return respond(res, 429, { error: String(error) }) }
       const controller = new AbortController(); live.network.add(controller)
       const headers: Record<string, string> = { 'content-type': 'application/json' }
-      for (const name of ['authorization', 'x-api-key', 'anthropic-version', 'anthropic-beta']) if (typeof req.headers[name] === 'string') headers[name] = req.headers[name] as string
+      if (config.api === 'anthropic-messages') {
+        headers['x-api-key'] = config.apiKey
+        if (typeof req.headers['anthropic-version'] === 'string') headers['anthropic-version'] = req.headers['anthropic-version'] as string
+        if (typeof req.headers['anthropic-beta'] === 'string') headers['anthropic-beta'] = req.headers['anthropic-beta'] as string
+      } else {
+        headers.authorization = `Bearer ${config.apiKey}`
+      }
       try {
         const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}${suffix}`, { method: 'POST', headers, body: body.toString('utf8'), signal: controller.signal, redirect: 'error' })
         res.writeHead(response.status, { 'content-type': response.headers.get('content-type') ?? 'application/json' })

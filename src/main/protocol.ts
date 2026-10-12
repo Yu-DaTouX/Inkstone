@@ -357,6 +357,8 @@ export class PiRpc extends EventEmitter {
     // 去掉可能干扰子进程的 Electron 变量
     delete env.ELECTRON_NO_ATTACH_CONSOLE
     delete env.ELECTRON_FORCE_IS_PACKAGED
+    // 宿主远程接入令牌不是模型/工具凭证，不能继承给 pi 或它启动的 shell。
+    delete env.YAN_REMOTE_TOKEN
 
     // 不显式传 stdio：默认就是 pipe，这样 TS 能推出 ChildProcessWithoutNullStreams
     const child: ChildProcessWithoutNullStreams = spawn(this.probe.cmd, rpcArgs, {

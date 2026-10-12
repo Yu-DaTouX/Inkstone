@@ -41,7 +41,7 @@ export function isBroadTarget(raw) {
   if (!target) return false
   target = target.replace(/\\/g, '/').toLowerCase()
   if (['/', '/*', '~', '~/', '~/*', '.', './', './*', '*', '*.*', '..', '../', '../*'].includes(target)) return true
-  if (/^(~|\$home|\$\{home\}|%userprofile%|%homepath%|\$env:userprofile)(\/|$)/.test(target)) return true
+  if (/^(\$home|\$\{home\}|%userprofile%|%homepath%|\$env:userprofile)\/?$/.test(target)) return true
   if (target.split('/').includes('..')) return true
   /* 绝对路径：盘符或以 / 开头，且不超过两层（/home/x、c:/users、/usr/local） */
   if (/^([a-z]:)?\//.test(target)) {
@@ -51,7 +51,7 @@ export function isBroadTarget(raw) {
   return false
 }
 
-const SEGMENT_SPLIT = /&&|\|\||[;|\n]/
+const SEGMENT_SPLIT = /&&|\|\||[;&|\n]/
 
 function tokens(segment) {
   return segment.trim().match(/"[^"]*"|'[^']*'|\S+/g) ?? []
@@ -233,6 +233,9 @@ function shellWriteTargets(command) {
   while ((match = redirect.exec(command))) out.push(match[1])
   for (const segment of command.split(SEGMENT_SPLIT)) {
     const { head, args } = commandOf(segment)
+    if (head === 'yan') {
+      args.forEach((arg, index) => { if (arg === '--output' && args[index + 1]) out.push(args[index + 1]) })
+    }
     const positional = args.filter((a) => !/^-/.test(a) && !/^\d?>/.test(a))
     if (head === 'tee') out.push(...positional)
     else if (WRITE_COMMANDS_ALL_ARGS.has(head)) {

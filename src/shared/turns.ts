@@ -206,13 +206,17 @@ function haveSameSourceCwd(parts: readonly TurnText[]): boolean {
 export function splitParagraphs(text: string): string[] {
   const out: string[] = []
   let buf: string[] = []
-  let inFence = false
+  let fence: { char: string; length: number } | null = null
 
   for (const line of text.split('\n')) {
-    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
+    const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
+    if (marker) {
+      if (!fence) fence = { char: marker[1][0], length: marker[1].length }
+      else if (marker[1][0] === fence.char && marker[1].length >= fence.length && !marker[2].trim()) fence = null
+    }
 
     // 只在围栏外、且遇到空行时切段
-    if (!inFence && line.trim() === '') {
+    if (!fence && line.trim() === '') {
       if (buf.length) {
         out.push(buf.join('\n'))
         buf = []

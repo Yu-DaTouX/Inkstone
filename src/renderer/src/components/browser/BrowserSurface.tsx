@@ -57,9 +57,13 @@ export function BrowserSurface() {
     catch (e) { setError(e instanceof Error ? e.message : t('browser.syncFailed')) } finally { setSyncing(false) }
   }
   const changePermission = async (permission: string, origin: string, allowed: boolean): Promise<void> => {
-    const result = await window.yan.browser.setPermission(permission, origin, allowed)
-    if (!result.ok) setError(result.error ?? t('browser.permissionUpdateFailed'))
-    else setError('')
+    try {
+      const result = await window.yan.browser.setPermission(permission, origin, allowed)
+      if (!result.ok) setError(result.error ?? t('browser.permissionUpdateFailed'))
+      else setError('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t('browser.permissionUpdateFailed'))
+    }
   }
   const viewportRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -139,7 +143,9 @@ export function BrowserSurface() {
   const navigate = async (target?: string): Promise<void> => {
     let value = (target ?? address).trim()
     if (!value) return
-    if (!/^[a-z][a-z\d+.-]*:/i.test(value)) value = `https://${value}`
+    if (!/^[a-z][a-z\d+.-]*:/i.test(value)) {
+      value = /^(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|\[[\da-f:]+\])(?::\d+)?(?:[/?#]|$)/i.test(value) ? `http://${value}` : `https://${value}`
+    }
     /*
      * 导航序号：只让**最后一次**导航的结果说话。
      * 连续敲两次回车时，第一次的失败不能盖掉第二次的成功。
@@ -165,16 +171,15 @@ export function BrowserSurface() {
             title={tab.url}
           >
             <span className="ui-tab-label">{tab.id.startsWith('chrome:') ? 'Chrome · ' : ''}{tab.title || tab.url || t('browser.newTab')}</span>
-            <span
-              role="button"
-              tabIndex={-1}
+            <button
+              type="button"
               className="ui-tab-close"
               aria-label={t('browser.closeTab')}
               title={t('browser.closeTab')}
               onClick={(event) => { event.stopPropagation(); void window.yan.browser.closeTab(tab.id) }}
             >
               <Icon name="close" size={12} />
-            </span>
+            </button>
           </button>
         ))}
         <IconButton icon="plus" label={t('browser.newTab')} size="sm" className="browser-new-tab" onClick={() => void window.yan.browser.newTab()} />
@@ -281,10 +286,10 @@ export function BrowserSurface() {
               <span className="browser-sync-result">
                 {t('browser.permissionsBlocked', { n: state.permissions.length })}
               </span>
-              {state.permissions.slice(-8).map((permission) => (
+              {state.permissions.slice(-8).map((permission, index) => (
                 <div
                   className={`browser-permission-row ${permission.status === 'allowed' ? 'allowed' : 'blocked'}`}
-                  key={`${permission.permission}:${permission.origin}`}
+                  key={`${permission.permission}:${permission.origin}:${permission.status}:${index}`}
                 >
                   <span
                     className="browser-permission-meta"
@@ -317,10 +322,10 @@ export function BrowserSurface() {
               <span className="browser-sync-result">
                 {t('browser.blockedRequests', { n: state.blockedRequests.length })}
               </span>
-              {state.blockedRequests.slice(-5).map((item) => (
+              {state.blockedRequests.slice(-5).map((item, index) => (
                 <div
                   className="browser-permission-row blocked"
-                  key={`${item.host}:${item.reason}`}
+                  key={`${item.host}:${item.reason}:${item.from ?? ''}:${index}`}
                 >
                   <span
                     className="browser-permission-meta"

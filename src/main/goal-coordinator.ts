@@ -258,7 +258,7 @@ export async function consumeRepeatBlocks(id: string): Promise<void> {
    * 只清 `goals.json` 不够 —— 快照里那条「接着干」会照样发出去，
    * 把模型重新叫起来干刚被拦下的那件事。
    */
-  if (!isActiveGoalPhase(goal.phase)) await applyGoalResume(id)
+  if (!isActiveGoalPhase(goal.phase)) await cancelGoalResume(id)
   host.pushFrom(id, { ch: 'goal', payload: goal })
 }
 

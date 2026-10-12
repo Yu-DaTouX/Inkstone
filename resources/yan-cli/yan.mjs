@@ -504,7 +504,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
 }
 
 function fail(code, message, extra) {
-  process.stdout.write(JSON.stringify({ ok: false, error: message, ...(extra ?? {}) }) + '\n')
+  process.stderr.write(JSON.stringify({ ok: false, error: message, ...(extra ?? {}) }) + '\n')
   process.exit(code)
 }
 
@@ -691,10 +691,11 @@ function readJsonFile(path, label) {
 /* ------------------------------------------------------------ 主流程 */
 
 const { flags, positional } = parseArgs(process.argv.slice(2))
+if (flags.overwrite) fail(EXIT.usage, '--output 不支持覆盖已有文件；请选择新路径')
 
 if (flags.help || positional.length === 0) {
-  /* `yan <组> --help`：给出这一组的用法（按需读，不把全部动作堆进主用法） */
-  if (flags.help && positional.length === 1 && GROUP_USAGE[positional[0]]) {
+  /* `yan <组> [动作] --help`：给出所属分组的用法，动作级帮助不依赖宿主连接。 */
+  if (flags.help && positional.length >= 1 && GROUP_USAGE[positional[0]]) {
     process.stdout.write(GROUP_USAGE[positional[0]])
     process.exit(EXIT.ok)
   }
@@ -735,16 +736,14 @@ if (positional[0] === 'context' && positional[1] === 'budget') {
 }
 
 /* 参数：优先用参数文件，其余 flag 原样带上（如 --scope available）。 */
-let params = {}
-if (typeof flags['query-file'] === 'string') params = readJsonFile(flags['query-file'], '参数文件')
-else if (typeof flags['request-file'] === 'string')
-  params = readJsonFile(flags['request-file'], '请求文件')
-else {
-  for (const [k, v] of Object.entries(flags)) {
-    if (k === 'output' || k === 'help') continue
-    params[k] = v
-  }
+const flagParams = {}
+for (const [k, v] of Object.entries(flags)) {
+  if (['output', 'help', 'query-file', 'request-file'].includes(k)) continue
+  flagParams[k] = v
 }
+let params = { ...flagParams }
+if (typeof flags['query-file'] === 'string') params = { ...params, ...readJsonFile(flags['query-file'], '参数文件') }
+else if (typeof flags['request-file'] === 'string') params = { ...params, ...readJsonFile(flags['request-file'], '请求文件') }
 
 /* CLI 的连字符选项与请求文件里的 camelCase 保持兼容。 */
 if (params.readOnly === undefined && params['read-only'] !== undefined) {
@@ -834,8 +833,8 @@ try {
  */
 if (payload?.ok && typeof flags.output === 'string' && typeof payload.resultFile === 'string') {
   try {
-    const { copyFileSync } = await import('node:fs')
-    copyFileSync(payload.resultFile, flags.output)
+    const { copyFileSync, constants } = await import('node:fs')
+    copyFileSync(payload.resultFile, flags.output, constants.COPYFILE_EXCL)
     payload.copiedTo = flags.output
   } catch (err) {
     payload.copyError = String(err?.message ?? err)
