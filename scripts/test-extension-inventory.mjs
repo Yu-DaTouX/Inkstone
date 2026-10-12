@@ -120,6 +120,8 @@ export async function runExtensionInventoryTests(ok) {
    * 生命周期钩子 —— 不得注册模型工具；pi 命令原则上也不注册。
    *
    * 扫描全部随包适配，防止未进入专项测试的文件重新注册退役入口。
+   * 唯一例外：shell-fallback.js 用 pi 的 createBashToolDefinition 同名覆盖内置 bash
+   * （不新增工具，只换 Windows 上的执行方式，见 ARCHITECTURE）；参数一致由 test-bash-transport 实测。
    */
   {
     const dir = join('resources', 'pi-extensions')
@@ -127,7 +129,13 @@ export async function runExtensionInventoryTests(ok) {
     const offenders = []
     for (const file of files) {
       const source = await readFile(join(dir, file), 'utf8')
-      if (/\.registerTool\s*\(/.test(source)) offenders.push(`${file}:registerTool`)
+      const registrations = source.match(/\.registerTool\s*\(/g)?.length ?? 0
+      const bashOverride =
+        file === 'shell-fallback.js' &&
+        registrations === 1 &&
+        /const template = core\.createBashToolDefinition\(/.test(source) &&
+        /\.registerTool\(\{\s*\.\.\.template,\s*execute:/.test(source)
+      if (registrations && !bashOverride) offenders.push(`${file}:registerTool`)
       if (/\.registerCommand\s*\(/.test(source)) {
         offenders.push(`${file}:registerCommand`)
       }

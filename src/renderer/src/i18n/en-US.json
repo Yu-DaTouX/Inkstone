@@ -731,7 +731,7 @@
   "pkg.builtin.response-detail": "Response detail level",
   "pkg.builtin.response-detailDesc": "Controls how detailed replies are",
   "pkg.builtin.shell-fallback": "Shell fallback",
-  "pkg.builtin.shell-fallbackDesc": "Uses Windows PowerShell when Git Bash is missing",
+  "pkg.builtin.shell-fallbackDesc": "Uses Windows PowerShell when Git Bash is missing; with Git Bash, delivers commands through a temp file so backslashes and long commands arrive intact; keeps Chinese output readable, points python at the installed Python, and stops PowerShell scripts that bash would rewrite",
   "pkg.builtin.task-plan": "Task plan",
   "pkg.builtin.task-planDesc": "Keeps the session's task list",
   "pkg.builtinBadge": "built-in",

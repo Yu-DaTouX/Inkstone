@@ -731,7 +731,7 @@
   "pkg.builtin.response-detail": "回复详细程度",
   "pkg.builtin.response-detailDesc": "按设置控制回复的详细程度",
   "pkg.builtin.shell-fallback": "命令行兜底",
-  "pkg.builtin.shell-fallbackDesc": "没有 Git Bash 时改用 Windows 自带的 PowerShell",
+  "pkg.builtin.shell-fallbackDesc": "没有 Git Bash 时改用 Windows 自带的 PowerShell；有 Git Bash 时经临时文件交付命令，避免反斜杠被改掉、长命令被截断；中文输出不乱码，python 指向已安装的 Python，并拦下会被 bash 改坏的 PowerShell 写法",
   "pkg.builtin.task-plan": "任务计划",
   "pkg.builtin.task-planDesc": "维护会话里的任务清单",
   "pkg.builtinBadge": "内置",
