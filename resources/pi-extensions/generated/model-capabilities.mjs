@@ -1,5 +1,5 @@
 /* 由 src/shared/custom-provider.ts 生成，勿手改；重新生成：node scripts/build-model-capabilities.mjs
- * source-sha256: 3dad156877d0dd9efe03f22dd8df0cf2e2400701157e876b729d17e12cfab267
+ * source-sha256: 5c5e1abfa5834f6cac6b4c23c3d113c9be34a3ad78cb0f550fa7ecc0c6cb0f44
  */
 // src/shared/custom-provider.ts
 var PI_API_IDS = [
