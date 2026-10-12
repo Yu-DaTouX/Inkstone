@@ -5,9 +5,9 @@
  *   ① 默认工作文件夹是「文档\砚」而不是整个用户主目录；
  *   ② 命令行工具（bash / git）检测接口可用，引导里有这一行，且不再让用户去终端 `pi → /login`；
  *   ③ 日常模式首页默认不出空间 / 资料卡；
- *   ④ 权限选择器在模式菜单里，切到「每次询问」会落盘并在按钮上出徽标；
+ *   ④ 输入区的权限选择器只有两档，切换会落盘并更新按钮文字；
  *   ⑤ 批准卡片：权限类带「记住」，删除类没有，拒绝能把卡片收起；
- *   ⑥ 自定义服务：模型可不填，「获取模型列表」对连不上的地址给出可读错误而不是崩。
+ *   ⑥ 自定义服务（「接入」的第三个分区）：模型可不填，「获取模型列表」对连不上的地址给出可读错误而不是崩。
  */
 ;(async () => {
   const out = []
@@ -68,23 +68,25 @@
     /* ③ 日常首页 */
     ok(!q('[data-testid="wb-card-space"]') && !q('[data-testid="wb-card-sources"]'), '日常首页没有空间 / 资料卡')
 
-    /* ④ 权限选择器 */
-    const modeButton = q('[data-testid="work-mode-button"]')
-    ok(!!modeButton, '输入区有模式按钮')
-    if (modeButton) {
-      click(modeButton)
-      ok(await until(() => q('[data-testid="permission-option-danger"]')), '模式菜单里有权限分段')
-      ok(!!q('[data-testid="permission-option-all"]') && !q('[data-testid="permission-option-ask"]'), '只有「危险批准」「全部允许」两档')
-      ok(q('[data-testid="permission-option-danger"]')?.getAttribute('aria-checked') === 'true', '当前是危险批准')
-      click(q('[data-testid="permission-option-all"]'))
-      ok(await until(() => store.getState().settings?.permissionMode === 'all'), '选「全部允许」后写进设置')
-      ok(await until(() => q('[data-testid="permission-badge"]')), '按钮上出现「全部允许」徽标')
+    /* ④ 权限选择器：输入区的两档下拉，按钮文字即当前档位 */
+    const picker = q('[data-testid="permission-picker"]')
+    const option = (value) => q(`.ui-choice-menu [role="menuitemradio"][data-value="${value}"]`)
+    ok(!!picker, '输入区有权限选择器')
+    if (picker) {
+      const dangerLabel = picker.querySelector('.ui-choice-text')?.textContent ?? ''
+      click(picker)
+      ok(await until(() => option('danger')), '权限菜单能打开')
+      ok(document.querySelectorAll('.ui-choice-menu [role="menuitemradio"]').length === 2 && !!option('all'), '只有「自动批准」「不受限制」两档')
+      ok(option('danger')?.getAttribute('aria-checked') === 'true', '当前是自动批准（危险操作需确认）')
+      click(option('all'))
+      ok(await until(() => store.getState().settings?.permissionMode === 'all'), '选「不受限制」后写进设置')
+      ok(await until(() => (q('[data-testid="permission-picker"] .ui-choice-text')?.textContent ?? '') !== dangerLabel), '按钮文字切到新档位')
       const saved = await window.yan.getSettings()
       ok(saved.permissionMode === 'all', '设置已落盘')
       /* 还原，别影响别的场景 */
-      click(q('[data-testid="work-mode-button"]'))
-      if (await until(() => q('[data-testid="permission-option-danger"]'))) click(q('[data-testid="permission-option-danger"]'))
-      ok(await until(() => !q('[data-testid="permission-badge"]')), '切回危险批准后徽标消失')
+      click(q('[data-testid="permission-picker"]'))
+      if (await until(() => option('danger'))) click(option('danger'))
+      ok(await until(() => store.getState().settings?.permissionMode === 'danger' && q('[data-testid="permission-picker"] .ui-choice-text')?.textContent === dangerLabel), '切回自动批准后按钮文字复原')
     }
 
     /* ⑤ 批准卡片（直接往 store 放请求：验渲染与按钮，不依赖模型去触发） */
@@ -102,6 +104,8 @@
 
     /* ⑥ 自定义服务：模型可不填；获取失败给可读错误 */
     store.getState().openSettings('auth')
+    /* 「接入」分为订阅 / API Key / 自定义服务三个分区，未访问的分区不挂载 */
+    if (await until(() => q('[data-testid="settings-section-custom-api"]'), 8000)) click(q('[data-testid="settings-section-custom-api"]'))
     if (await until(() => q('[data-testid="custom-api-add"]'), 8000)) {
       click(q('[data-testid="custom-api-add"]'))
       ok(await until(() => q('[data-testid="custom-api-fetch-models"]')), '表单里有「获取模型列表」')
