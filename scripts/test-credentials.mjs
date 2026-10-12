@@ -154,7 +154,10 @@ export async function runCredentialsTests(ok) {
   )
 
   calls = asked()
-  ok(calls.length === deep.length, `深查给每一项都问了 pi（${deep.length} 项）`, `实际 ${calls.length} 次`)
+  /* 只供宿主生图用的凭证（火山方舟）pi 不认识，深查不问 pi，保持浅查结果 */
+  const hostOnly = deep.filter((x) => x.id === 'volcengine-ark')
+  ok(hostOnly.length === 1 && !calls.includes('volcengine-ark'), '深查：只供宿主用的火山方舟不问 pi')
+  ok(calls.length === deep.length - hostOnly.length, `深查给其余每一项都问了 pi（${deep.length - hostOnly.length} 项）`, `实际 ${calls.length} 次`)
   ok(
     calls.every((x) => x.length > 0),
     '深查：每次探测都带了非空 provider 名（空名会让 pi 直接报错）'
