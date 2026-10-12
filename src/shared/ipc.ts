@@ -17,13 +17,15 @@ export type {
   CustomProviderDiscoverResult,
   CustomProviderInput,
   CustomProviderTestResult,
-  CustomProviderView
+  CustomProviderView,
+  LocalModelServer
 } from './custom-provider'
 import type {
   CustomProviderDiscoverResult,
   CustomProviderInput,
   CustomProviderTestResult,
-  CustomProviderView
+  CustomProviderView,
+  LocalModelServer
 } from './custom-provider'
 /* 资料库（实施-25 P03）：契约与不变量在 shared/library.ts，接口只转发 */
 export type {
@@ -1203,6 +1205,8 @@ export interface AppSettings {
    * `undefined` = 没改过 = **开**；只有明确关掉才是 `false`。
    */
   subagentNotify?: boolean
+  /** 输入框下方显示本轮速度与缓存命中率。`undefined` = 没改过 = 开；只有明确关掉才是 `false`。 */
+  usageUnderInput?: boolean
   /**
    * 手机接入（远程访问，需求稿第 3 步）。`undefined` = 从没开过 = 关闭，不监听任何端口。
    * 形状与默认值见 `shared/remote-protocol.ts` 的 RemoteAccessSettings。
@@ -1456,7 +1460,7 @@ export function normalizeToolHidden(v: unknown): string[] {
  *   渲染端在拖动时也要夹 —— 不夹的话拖过头会产生 `-9439px` 这种非法值，
  *   而非法值会让 `grid-template-columns` 整条声明失效（那一拖就完全没反应）。
  */
-export const RAIL_MIN = 210
+export const RAIL_MIN = 200
 export const RAIL_MAX = 1200
 export const PANEL_MIN = 220
 export const PANEL_MAX = 1200
@@ -2169,6 +2173,14 @@ export type MainPushBody =
   | { ch: 'tool'; payload: ToolPatch }
   /** 子代理运行状态变化（整条快照，转录有界） */
   | { ch: 'subagent'; payload: SubagentRun }
+  /**
+   * 子代理流式增量。
+   *
+   * `run` 的其余字段与 `subagent` 同形，但 `transcript` **只含自 `transcriptFrom` 起的消息**：
+   * 流式期间约 30 次/秒，整条发等于把最多 200 条转录（含工具输出）反复克隆过 IPC。
+   * 渲染端按 `prev.transcript.slice(0, transcriptFrom)` 拼接；形状对不上时主进程退回整条推送。
+   */
+  | { ch: 'subagent-patch'; payload: { id: string; run: SubagentRun; transcriptFrom: number } }
   /** 子代理被移除（用户清掉记录时） */
   | { ch: 'subagent-remove'; payload: string }
   /** 宿主要求在前台打开某个 Agent 运行（`hub:<任务 id>`） */
@@ -3024,6 +3036,11 @@ export interface AttachmentPruneResult {
   kept: number
 }
 
+export interface VisibleRunnerSession {
+  sessionId?: string
+  sessionFile?: string
+}
+
 export interface YanBridge {
   agentService: import('./agent-service').ServiceBridge
   appUpdate: {
@@ -3057,6 +3074,8 @@ export interface YanBridge {
     deferred?: boolean
     error?: string
   }>
+  /** 同步正在显示的会话（含只读分屏），用于保护其空闲运行实例。 */
+  setVisibleRunnerSessions(sessions: VisibleRunnerSession[]): Promise<boolean>
   /** 所有运行实例的状态（左栏状态槽用；也可用来补上错过的推送） */
   runnerStatuses(): Promise<RunnerStatus[]>
   /** 停掉**某一个**运行实例（只影响它，不涉及别的会话） */
@@ -3391,6 +3410,11 @@ export interface YanBridge {
   /** 连接测试：endpoint = URL/凭证检查（免费）；billable = 真实模型请求（计费） */
   /** 从端点的 /models 拉模型 ID（密钥留空时用磁盘上已保存的） */
   discoverCustomModels(input: Partial<CustomProviderInput>): Promise<CustomProviderDiscoverResult>
+  /** 探测本机的 Ollama / LM Studio（对话）与 SD WebUI / ComfyUI（生图），只读模型列表 */
+  detectLocalModels(): Promise<LocalModelServer[]>
+  /** 检测时额外探测的地址（局域网主机、非默认端口），返回规范化后的列表 */
+  localModelUrls(): Promise<string[]>
+  saveLocalModelUrls(urls: string[]): Promise<string[]>
   testCustomProvider(
     id: string,
     mode: 'endpoint' | 'billable',

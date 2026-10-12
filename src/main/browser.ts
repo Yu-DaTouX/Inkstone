@@ -163,6 +163,14 @@ interface TargetParts {
   network: NetworkTracker
 }
 
+/**
+ * 私网目标 DNS 缓存的上限。
+ *
+ * TTL 只有 2 秒，过期项必须真删：之前只判断 `expiresAt` 是否过期、从不删键，
+ * 跨站浏览一多就是一张只增不减的主机名表（同文件里权限与拦截记录都有条数上限）。
+ */
+const PRIVATE_DNS_CACHE_LIMIT = 200
+
 /** 浏览器运行时（**宿主独占**）。模型侧入口是 `yan browser …`，不再提供 HTTP bridge。 */
 export class BrowserController {
   private readonly tabs = new Map<string, BrowserTab>()
@@ -192,7 +200,10 @@ export class BrowserController {
   private blockedRequests: BrowserBlockedRequest[] = []
   /** 逐站权限是临时的：进程退出即清空，不写入设置或浏览器 profile。 */
   private readonly permissionGrants = new Set<string>()
-  /** DNS 只短暂缓存，避免每个图片/字体请求都重复解析而留下长窗口。 */
+  /**
+   * DNS 只短暂缓存，避免每个图片/字体请求都重复解析而留下长窗口。
+   * 过期项与溢出由 `resolvesToPrivateTarget` 负责清理（见 `PRIVATE_DNS_CACHE_LIMIT`）。
+   */
   private readonly privateDnsCache = new Map<string, { private: boolean; expiresAt: number }>()
   /** 外部 Chrome 目标；可与内嵌标签同时存在 */
   private external: ExternalTarget | null = null
@@ -1341,7 +1352,20 @@ export class BrowserController {
     const cached = this.privateDnsCache.get(key)
     if (cached && cached.expiresAt > Date.now()) return cached.private
     const privateTarget = await resolvesToPrivateAddress(key)
-    this.privateDnsCache.set(key, { private: privateTarget, expiresAt: Date.now() + 2000 })
+    const now = Date.now()
+    /*
+     * 过期项要真删：TTL 只有 2 秒，命中过期又重查时旧键会一直留着，
+     * 跨站浏览一多就是一张永不回收的主机名表（同文件里权限/拦截记录都有上限，只有这张没有）。
+     * 超上限时才扫一遍，不给每次解析加开销。
+     */
+    if (this.privateDnsCache.size >= PRIVATE_DNS_CACHE_LIMIT) {
+      for (const [host, entry] of this.privateDnsCache) if (entry.expiresAt <= now) this.privateDnsCache.delete(host)
+      for (const host of this.privateDnsCache.keys()) {
+        if (this.privateDnsCache.size < PRIVATE_DNS_CACHE_LIMIT) break
+        this.privateDnsCache.delete(host)
+      }
+    }
+    this.privateDnsCache.set(key, { private: privateTarget, expiresAt: now + 2000 })
     return privateTarget
   }
 

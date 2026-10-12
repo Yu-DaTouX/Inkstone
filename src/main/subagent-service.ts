@@ -34,6 +34,8 @@ export interface SubagentServiceDeps {
   shellExtension?(): string | undefined
   confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean>
   onChange(run: SubagentRun): void
+  /** 流式增量推送；不传时整条推送（见 SubagentOptions.onPatch） */
+  onPatch?(payload: { id: string; run: SubagentRun; transcriptFrom: number }): void
   onRemove(id: string): void
   /** 运行收口后（终态、差异已定）回调一次 */
   onFinished?(run: SubagentRun): void
@@ -69,6 +71,7 @@ export class SubagentService {
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
       confirmDanger: (params, cwd, origin) => this.deps.confirmDanger?.(params, cwd, origin) ?? Promise.resolve(false),
       onChange: (run) => this.deps.onChange(run),
+      ...(this.deps.onPatch ? { onPatch: (payload) => this.deps.onPatch?.(payload) } : {}),
       onRemove: (id) => this.deps.onRemove(id),
       onFinished: (run) => this.deps.onFinished?.(run)
     })

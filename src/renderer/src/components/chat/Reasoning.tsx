@@ -335,8 +335,13 @@ export function useTypewriter(text: string, enabled: boolean): string {
   useEffect(() => {
     target.current = text
     if (!enabled) {
-      cache.current = { text, units: toUnits(text) }
-      shownCount.current = cache.current.units.length
+      /*
+       * 历史 / 非流式态直接用整串，不做字素切分。
+       * 字素数组是「一个字符一个字符串对象」，对一段几万字的推理可以放大十几到几十倍，
+       * 而这条分支根本用不到它（只有 rAF 逐字输出才需要）。
+       */
+      cache.current = { text: '', units: [] }
+      shownCount.current = 0
       setShown(text)
       return
     }

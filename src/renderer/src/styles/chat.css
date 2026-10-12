@@ -583,7 +583,22 @@
   max-width: 100%;
 }
 
+/* 同一回合的图片两列并排，窄屏回到单列；过程图折叠后同样排列 */
+.turn-artifact-grid {
+  display: grid;
+  align-items: start;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.turn-artifact-grid.multi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 640px) {
+  .turn-artifact-grid.multi { grid-template-columns: minmax(0, 1fr); }
+}
+.turn-artifact-process .turn-progress-toggle { margin-bottom: 0; }
+.turn-artifact-process .turn-progress-body { margin: var(--sp-1) 0 0; }
+
 .artifact-card {
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border-soft);
   border-radius: var(--r-md);
@@ -615,13 +630,42 @@
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
+.artifact-meta { flex: none; }
+/* 并排时标题行变窄：模型名先省略，文件名与操作按钮保留 */
+.artifact-provider {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .artifact-description {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
   padding: 0 var(--sp-2) var(--sp-2);
   color: var(--fg-dim);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   line-height: 1.5;
 }
+.artifact-description-text { flex: 1; min-width: 0; }
+/* 默认两行；全文在「展开」里，也在标题的悬停提示里 */
+.artifact-description-text.clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.artifact-description-toggle {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.artifact-description-toggle:hover { text-decoration: underline; }
 
 .artifact-image-wrap {
   display: grid;
@@ -681,6 +725,12 @@
   border-radius: var(--r-md);
   /* 点击放大（与下面「右侧预览」同一个动作，只是图上直接点得到） */
   cursor: zoom-in;
+}
+
+/* 边长不超过 64px 的小图（像素材质、图标）放大到预览高度，按像素硬边缩放，不糊成一团 */
+.artifact-image.pixel {
+  height: calc(25vh - 20px);
+  image-rendering: pixelated;
 }
 
 .artifact-image-wrap.failed {
@@ -3406,10 +3456,9 @@ img.chat-image-open {
   gap: var(--sp-3);
   min-width: 0;
 }
+/* 提示符 › 挂在左侧留白里，问候、说明与下面各段共用同一条左边线 */
 .start-greet {
-  display: flex;
-  align-items: baseline;
-  gap: 1ch;
+  position: relative;
   margin: 0;
   color: var(--fg);
   font-family: var(--font-body);
@@ -3418,10 +3467,13 @@ img.chat-image-open {
   line-height: var(--lh-tight);
 }
 .start-prompt {
+  position: absolute;
+  right: 100%;
+  padding-right: 1ch;
   color: var(--accent);
 }
 .start-hint {
-  margin: calc(var(--sp-5) * -1 + var(--sp-1)) 0 0 2ch;
+  margin: calc(var(--sp-5) * -1 + var(--sp-1)) 0 0;
   color: var(--fg-mute);
   font-size: var(--fs-base);
 }
@@ -3588,7 +3640,9 @@ img.chat-image-open {
   min-width: 0;
   font-size: var(--fs-base);
 }
+/* 只放项目目录名；极长的名字才省略 */
 .start-path {
+  min-width: 0;
   overflow: hidden;
   color: var(--fg-dim);
   text-overflow: ellipsis;
@@ -3635,7 +3689,7 @@ img.chat-image-open {
 /* 窄：放不下两栏时只留左栏（问候、项目与入口），用量整段让位，顶部留白收小 */
 @container (max-width: 760px) {
   .empty-stream {
-    padding: var(--sp-5) var(--sp-4) var(--sp-2);
+    padding: var(--sp-5) var(--sp-4) var(--sp-2) var(--sp-6);
   }
   .start {
     grid-template-columns: minmax(0, 1fr);

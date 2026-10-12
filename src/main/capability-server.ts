@@ -160,6 +160,10 @@ const KNOWN_COMMANDS = new Set([
   'tasks.apply',
   'artifact.attach',
   'image.generate',
+  /* 本机 ComfyUI：查看状态、按需启动、关掉砚自己拉起的进程 */
+  'image.local.status',
+  'image.local.start',
+  'image.local.stop',
   'question.ask',
   'context.recall',
   'context.find',

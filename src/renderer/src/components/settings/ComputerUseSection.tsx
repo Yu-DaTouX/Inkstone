@@ -93,15 +93,14 @@ export function ComputerUseSection(): React.JSX.Element | null {
                 {t('cu.uvDocs')}
               </Button>
             ) : null}
-            <Button size="sm" variant="ghost" onClick={() => void refresh()}>
-              {t('set.extRecheck')}
-            </Button>
           </div>
         </>
       ) : null}
       {result ? <div className={`ui-row-desc set-install-log ${result.ok ? '' : 'err'}`}>{result.text}</div> : null}
+      <div className="ui-row-desc">{t('cu.scope')}</div>
       <div className="set-install-actions">
-        <span className="ui-row-desc">{t('cu.scope')}</span>
+        <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void refresh()}>{t('set.extRecheck')}</Button>
+        <Button size="sm" variant="ghost" onClick={() => void window.yan.browser.openExternal('https://pypi.org/project/windows-mcp/#history')}>{t('set.releasePage')}</Button>
         <Button size="sm" variant="ghost" onClick={() => void window.yan.browser.openExternal(REPO)}>
           {t('cu.repo')}
         </Button>

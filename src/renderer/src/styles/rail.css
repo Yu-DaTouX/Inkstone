@@ -134,7 +134,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden auto;
-  padding: 0 var(--sp-2) var(--sp-3);
+  padding: 0 var(--sp-1) var(--sp-3);
   container-type: inline-size;
   container-name: railbody;
 }
@@ -486,7 +486,7 @@ button.rail-label:hover {
   align-items: center;
   min-width: 0;
   height: 28px;
-  padding-right: var(--sp-2);
+  padding-right: var(--sp-1);
   border-radius: var(--r-sm);
   color: var(--fg-dim);
   transition:
@@ -514,7 +514,7 @@ button.rail-label:hover {
   min-width: 0;
   height: 100%;
   /* 分支按层级缩进；缩进写在按钮里，选中底色仍铺满整行 */
-  padding: 0 var(--sp-1) 0 calc(20px + var(--branch-depth, 0) * var(--sp-3));
+  padding: 0 var(--sp-1) 0 calc(var(--sp-2) + var(--branch-depth, 0) * var(--sp-3));
   color: inherit;
   font-size: var(--fs-sm);
   text-align: left;
@@ -581,8 +581,9 @@ button.rail-label:hover {
   gap: var(--sp-1);
   min-width: 0;
 }
+/* 标题只占自己的宽度，时间紧跟其后；标题过长才被省略 */
 .srow-name {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -601,11 +602,13 @@ button.rail-label:hover {
 }
 .srow-time {
   flex: none;
-  min-width: 20px;
+  min-width: 0;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
   text-align: right;
+  letter-spacing: -0.04em;
+  margin-left: var(--sp-1);
   transition: opacity var(--dur) var(--ease);
 }
 .srow-acts {

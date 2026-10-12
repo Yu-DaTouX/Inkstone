@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CodexAccountView } from '../../../shared/account-quota'
+import { windowPct } from '../../../shared/quota-mini'
 import { modelKey, type ModelChoice } from '../../../shared/model-selection'
 import { modelErrorText } from '../../../shared/model-errors'
 import { useT } from '../i18n'
@@ -41,6 +43,9 @@ export function ModelCatalog({ current, onSelect, compact = false, needsAuth = (
   const [cursor, setCursor] = useState(0)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
+  const [accounts, setAccounts] = useState<CodexAccountView[]>([])
+  /* 账号 key → 「五小时 100% · 本周 47%」；额度要联网查，晚到不挡住切换 */
+  const [usage, setUsage] = useState<Record<string, string>>({})
   const search = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const providerOrder = useStore(s => s.settings?.modelProviderOrder) ?? []
@@ -64,6 +69,34 @@ export function ModelCatalog({ current, onSelect, compact = false, needsAuth = (
       .sort((a, b) => rank(a.provider) - rank(b.provider) || newestFirst(a, b))
   }, [models, favorites, query, provider, favoriteOnly, providerOrder])
   useEffect(() => { const timer = window.setTimeout(() => search.current?.focus(), 0); return () => clearTimeout(timer) }, [])
+  /* 选了 Codex（或当前模型就是 Codex）时才读已保存的 ChatGPT 账号，多于一个才显示切换 */
+  const codexShown = provider === 'openai-codex' || (!provider && current?.provider === 'openai-codex')
+  const loadAccounts = (): void => { void window.yan.codexAccounts().then(setAccounts).catch(() => setAccounts([])) }
+  useEffect(() => {
+    if (!codexShown) return
+    loadAccounts()
+    let live = true
+    void window.yan.accountQuota().then(r => {
+      if (!live) return
+      const next: Record<string, string> = {}
+      for (const c of r.cards) {
+        if (c.source !== 'yan' || c.provider !== 'openai-codex') continue
+        next[c.key] = c.windows.filter(w => !w.informational).slice(0, 2)
+          .map(w => `${w.label} ${Math.round(windowPct(w, 1) ?? 0)}%`).join(' · ')
+      }
+      setUsage(next)
+    }).catch(() => {})
+    return () => { live = false }
+  }, [codexShown])
+  const switchAccount = async (key: string): Promise<void> => {
+    setPending(true); setError('')
+    try {
+      const r = await window.yan.codexAccountSwitch(key)
+      if (!r.ok) setError(r.error ?? '')
+      loadAccounts()
+    } finally { setPending(false) }
+  }
+
   useEffect(() => { setCursor(0); if (list.current) list.current.scrollTop = 0 }, [query, provider, favoriteOnly])
   useEffect(() => {
     if (!keyboardCursor.current) return
@@ -109,6 +142,13 @@ export function ModelCatalog({ current, onSelect, compact = false, needsAuth = (
         onReorder={order => { void patch({ modelProviderOrder: order }).catch(e => setError(modelErrorText(e))) }}
         onChange={setProvider} options={[{ value: '', label: t('models.allProviders') }, ...providers.map(p => ({ value: p, label: p, reorderable: true }))]} />
     </div>
+    {codexShown && accounts.length > 1 ? <div className="model-account" data-testid="models-account">
+      <span className="model-account-label">{t('models.account')}</span>
+      <ChoiceSelect value={accounts.find(a => a.active)?.key ?? ''} label={t('models.account')} testId="models-account-select"
+        className="model-provider" disabled={pending} align="left"
+        onChange={key => { void switchAccount(key) }}
+        options={accounts.map(a => ({ value: a.key, label: a.label || a.email || a.key, description: [a.label && a.email ? a.email : a.plan, usage[a.key]].filter(Boolean).join(' · ') || undefined }))} />
+    </div> : null}
     <div ref={list} className="mt-list model-rows" role="group" aria-label={t('models.all')}>
       {rows.map((m, i) => {
         const key = modelKey(m), on = !!current && key === modelKey(current), ready = available.has(key)

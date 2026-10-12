@@ -34,6 +34,7 @@
 import type { AgentController } from './agent'
 import type { RunnerStatus, RuntimeEnvelope, SessionScope } from '../shared/ipc'
 import { executionBusy, runEnvelope, runStatus } from '../core/run-state'
+import { canReclaimIdle, IDLE_RECLAIM_ENABLED, IDLE_RECLAIM_SCAN_MS } from './runner-reclaim'
 
 /**
  * 同时运行的会话实例上限（含当前正在查看的那个）。
@@ -124,10 +125,18 @@ export class RunnerRegistry {
   private selectTail: Promise<void> = Promise.resolve()
   /** 同一 runner 的资源激活请求合并，避免同时启动两个替代 pi 进程。 */
   private restartOperations = new Map<string, Promise<SelectResult>>()
+  private reclaimOperation?: Promise<string | null>
+  private reclaimTimer?: ReturnType<typeof setInterval>
+  private disposed = false
 
   constructor(
     private opts: {
       limit?: number
+      now?: () => number
+      isSessionVisible?: (state: ReturnType<AgentController['getState']>) => boolean
+      /** 首版保守保护所有有子代理归属的会话，包括结束通知尚未投递的窗口。 */
+      isParentProtected?: (sessionId: string | undefined, runId: string) => boolean
+      onReclaimed?: (entry: { id: string; sessionId?: string; idleMs: number; remaining: number }) => void
       /** 造一个新的 pi 会话实例。id 用于给 IPC 事件标身份 */
       createAgent: (id: string, cwd: string, generation?: number) => AgentController
       /** Apply desktop defaults only to a new conversation, never to restored history. */
@@ -152,6 +161,84 @@ export class RunnerRegistry {
       isolationOf?: (cwd: string) => { state: 'waiting' | 'blocked'; branch: string } | undefined
     }
   ) {}
+
+  private now(): number {
+    return this.opts.now?.() ?? Date.now()
+  }
+
+  /** 运行事件也算活动；回合结束、bash/提问/队列收尾均重新起算空闲时间。 */
+  noteActivity(id: string): void {
+    const runner = this.runners.get(id)
+    if (runner) runner.lastActiveAt = this.now()
+  }
+
+  /** 显示集合更新前触碰旧集合，关掉分屏列之后从此刻重新起算。 */
+  noteVisibleActivity(): void {
+    for (const runner of this.runners.values()) {
+      if (this.opts.isSessionVisible?.(runner.agent.getState()) ?? true) this.noteActivity(runner.id)
+    }
+  }
+
+  private activateRunner(id: string): void {
+    if (this.activeId && this.activeId !== id) this.noteActivity(this.activeId)
+    this.activeId = id
+  }
+
+  startIdleReclaim(): void {
+    if (!IDLE_RECLAIM_ENABLED || this.disposed || this.reclaimTimer) return
+    this.reclaimTimer = setInterval(() => {
+      void this.reclaimIdle().catch((error) => console.error('[runner-reclaim]', error))
+    }, IDLE_RECLAIM_SCAN_MS)
+    this.reclaimTimer.unref?.()
+  }
+
+  /** 与选择和重载共用串行链；并行扫描合并，不积压多个回收请求。 */
+  reclaimIdle(): Promise<string | null> {
+    if (this.reclaimOperation) return this.reclaimOperation
+    const operation = this.serialize(async () => {
+      if (!IDLE_RECLAIM_ENABLED || this.disposed) return null
+      const now = this.now()
+      for (const runner of [...this.runners.values()].sort((a, b) => a.lastActiveAt - b.lastActiveAt)) {
+        const state = runner.agent.getState()
+        const queue = runner.agent.queueSnapshot()
+        const facts = {
+          active: runner.id === this.activeId,
+          hidden: runner.hidden === true,
+          busy: this.busy(runner),
+          busyCwd: this.hasBusyCwd(runner.cwd, runner.id),
+          ready: runner.agent.getConn().state === 'ready',
+          saved: !!state?.sessionFile,
+          queued: queue.steering.length > 0 || queue.followUp.length > 0,
+          visible: this.opts.isSessionVisible?.(state) ?? true,
+          parentProtected: this.opts.isParentProtected?.(state?.sessionId, runner.id) ?? false,
+          restarting: this.restartOperations.has(runner.id),
+          lastActiveAt: runner.lastActiveAt
+        }
+        if (facts.active || facts.busy || facts.busyCwd || facts.queued || facts.visible || facts.parentProtected || facts.restarting || !facts.ready) {
+          runner.lastActiveAt = now
+        }
+        if (!canReclaimIdle(facts, now)) continue
+        const idleMs = now - runner.lastActiveAt
+        // 判定到摘登记之间没有 await；后到的 select 只能在关闭完成后载回。
+        if (await this.stopOne(runner.id)) {
+          this.opts.onReclaimed?.({ id: runner.id, sessionId: state?.sessionId, idleMs, remaining: this.size })
+          return runner.id
+        }
+      }
+      return null
+    })
+    this.reclaimOperation = operation
+    void operation.finally(() => {
+      if (this.reclaimOperation === operation) this.reclaimOperation = undefined
+    }).catch(() => undefined)
+    return operation
+  }
+
+  private serialize<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.selectTail.then(work, work)
+    this.selectTail = next.then(() => undefined, () => undefined)
+    return next
+  }
 
   get limit(): number {
     return this.opts.limit ?? RUNNER_LIMIT
@@ -288,15 +375,7 @@ export class RunnerRegistry {
    * **任何一条路径都不会停止别的实例。**
    */
   async select(target: SelectTarget): Promise<SelectResult> {
-    const next = this.selectTail.then(
-      () => this.selectNow(target),
-      () => this.selectNow(target)
-    )
-    this.selectTail = next.then(
-      () => undefined,
-      () => undefined
-    )
-    return next
+    return this.serialize(() => this.selectNow(target))
   }
 
   private async selectNow(target: SelectTarget): Promise<SelectResult> {
@@ -304,8 +383,8 @@ export class RunnerRegistry {
       const hit = (target.sessionId && this.findBySessionId(target.sessionId)) ||
         (target.sessionFile ? this.findBySessionFile(target.sessionFile) : undefined)
       if (hit) {
-        hit.lastActiveAt = Date.now()
-        if (target.activate !== false) this.activeId = hit.id
+        hit.lastActiveAt = this.now()
+        if (target.activate !== false) this.activateRunner(hit.id)
         this.opts.onChanged?.()
         return this.result(hit, 'hit')
       }
@@ -389,8 +468,8 @@ export class RunnerRegistry {
         idle.cwd = target.cwd
         idle.generation = generation
         idle.projectId = target.projectId
-        idle.lastActiveAt = Date.now()
-        if (target.activate !== false) this.activeId = idle.id
+        idle.lastActiveAt = this.now()
+        if (target.activate !== false) this.activateRunner(idle.id)
         try {
           await previous.stop()
         } catch {
@@ -424,8 +503,8 @@ export class RunnerRegistry {
         return { ok: false, error: res.error }
       }
       idle.cwd = target.cwd
-      idle.lastActiveAt = Date.now()
-      if (target.activate !== false) this.activeId = idle.id
+      idle.lastActiveAt = this.now()
+      if (target.activate !== false) this.activateRunner(idle.id)
       this.opts.onChanged?.()
       return this.result(idle, 'reuse')
     }
@@ -448,13 +527,13 @@ export class RunnerRegistry {
       cwd: target.cwd,
       projectId: target.projectId,
       generation,
-      createdAt: Date.now(),
+      createdAt: this.now(),
       hidden: target.hidden,
-      lastActiveAt: Date.now()
+      lastActiveAt: this.now()
     }
     const previousActive = this.activeId
     this.runners.set(id, runner)
-    if (target.activate !== false) this.activeId = id
+    if (target.activate !== false) this.activateRunner(id)
 
     // 新实例一旦失败就不能只摘登记：`stopAll` 只遍历仍登记的对象，
     // 漏登记等于漏回收（R02）。start / switch 的失败返回和抛异常都走同一条回收路径。
@@ -522,7 +601,7 @@ export class RunnerRegistry {
   restartOne(id: string): Promise<SelectResult> {
     const current = this.restartOperations.get(id)
     if (current) return current
-    const operation = this.restartOneNow(id)
+    const operation = this.serialize(() => this.restartOneNow(id))
     this.restartOperations.set(id, operation)
     void operation.finally(() => {
       if (this.restartOperations.get(id) === operation) this.restartOperations.delete(id)
@@ -582,7 +661,7 @@ export class RunnerRegistry {
     } catch {
       /* 替代实例已就绪；旧实例停止失败不应切回一个可能已半停的进程。 */
     }
-    runner.lastActiveAt = Date.now()
+    runner.lastActiveAt = this.now()
     this.opts.onChanged?.()
     return this.result(runner, 'reuse')
   }
@@ -633,6 +712,9 @@ export class RunnerRegistry {
 
   /** 顶掉所有实例（退出、语言/凭证变更需要重建进程时用） */
   async stopAll(): Promise<void> {
+    this.disposed = true
+    if (this.reclaimTimer) clearInterval(this.reclaimTimer)
+    this.reclaimTimer = undefined
     const all = [...this.runners.values()]
     this.runners.clear()
     this.activeId = null
@@ -707,7 +789,8 @@ export class RunnerRegistry {
     if (!runner) return false
     runner.hidden = false
     const activate = this.activeId === sourceId
-    if (activate) this.activeId = destinationId
+    runner.lastActiveAt = this.now()
+    if (activate) this.activateRunner(destinationId)
     return activate
   }
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useT } from '../../i18n'
-import { Button, LinkButton, SettingRow, Tabs } from '../ui'
+import { Button, Disclosure, LinkButton, SettingRow, Tabs } from '../ui'
 import { PackagesTab } from './PackagesTab'
 import { INKSTONE_PLUGINS } from '../../../../shared/inkstone-plugins'
 import type { MarketSearchResult } from '../../../../shared/plugin-market'
@@ -12,9 +12,10 @@ function SourceLink({ url, label }: { url: string; label?: string }): React.JSX.
   return <LinkButton url={url} label={label} onOpen={href => void window.yan.browser.openExternal(href)} />
 }
 
-export function PluginMarketTab(): React.JSX.Element {
+export function PluginMarketTab({ initial = 'inkstone' }: { initial?: 'inkstone' | 'pi' }): React.JSX.Element {
   const t = useT()
-  const [page, setPage] = useState<'inkstone' | 'pi'>('inkstone')
+  const [page, setPage] = useState<'inkstone' | 'pi'>(initial)
+  useEffect(() => { setPage(initial) }, [initial])
   const [query, setQuery] = useState('')
   const [applied, setApplied] = useState('')
   const [offset, setOffset] = useState(0)
@@ -80,6 +81,7 @@ export function PluginMarketTab(): React.JSX.Element {
         {note ? <div role="status" className="ui-row-desc market-note">{note}</div> : null}
       </div> : <div className="ui-rows" data-testid="market-pi">
         <div className="ui-row-desc">{t('market.piDesc')}</div>
+        <Disclosure title={t('market.search')} testId="market-catalog">
         <form className="pkg-install-row" onSubmit={event => { event.preventDefault(); setOffset(0); setApplied(query.trim()); setRefresh(value => value + 1) }}>
           <input className="ui-input" data-testid="market-search" aria-label={t('market.search')} placeholder={t('market.search')} value={query} onChange={event => setQuery(event.target.value)} maxLength={100} />
           <Button size="sm" type="submit" disabled={loading}>{t('market.searchBtn')}</Button>
@@ -104,6 +106,7 @@ export function PluginMarketTab(): React.JSX.Element {
           <span className="ui-row-desc">{t('market.range', { from: offset + 1, to: Math.min(total, offset + PAGE), total })}</span>
           <Button size="sm" variant="ghost" disabled={loading || offset + PAGE >= total} onClick={() => setOffset(value => value + PAGE)}>{t('market.next')}</Button>
         </div> : null}
+        </Disclosure>
         <div ref={installRef}><PackagesTab selectedSource={selected} selectionKey={selectionKey} /></div>
       </div>}
     </div>

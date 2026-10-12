@@ -10,6 +10,7 @@ import { Rail } from './components/rail/Rail'
 import { applyBackground, customForTheme } from './lib/background'
 import { APPEARANCE_EVENT, applyTypography } from './lib/appearance'
 import { useStreamHeight } from './lib/useStreamHeight'
+import { useRunnerVisibility } from './lib/use-runner-visibility'
 import { Workspace, WorkspacePane } from './components/workbench/Workspace'
 import { conversationKeyOf, rememberConversationKey, workspaceKeyFor } from './state/workspace-key'
 import { splitTileKey, displayedSessionOf, reconcileSplit, useSplitView, type SplitSessionRef } from './state/split-view'
@@ -200,6 +201,7 @@ export default function App() {
     [peekedSessionId, peekedPath, session?.sessionId, session?.sessionFile]
   )
   const split = storedSplit ? reconcileSplit(storedSplit, displayedSession) : null
+  useRunnerVisibility(split?.tiles ?? (displayedSession ? [displayedSession] : []))
   rememberConversationKey(session)
   useLayoutEffect(() => { useSplitView.getState().sync(displayedSession) }, [displayedSession, storedSplit])
   /*
@@ -940,16 +942,19 @@ export default function App() {
              * 这里不再占一行，也不再有独立的像素 spinner。
              */}
 
+            {/* 与输入框同一行、高度为 0 的锚点：按钮贴着输入框上沿，不受输入框高度变化影响 */}
             {!stick ? (
-              <button
-                className="jump-bottom"
-                onClick={jumpToBottom}
-                /* 纯图标按钮：辅助技术需要名称，悬停也需要提示 */
-                aria-label={t('chat.jumpToBottom')}
-                title={t('chat.jumpToBottom')}
-              >
-                <span className="jump-ico" aria-hidden="true">↓</span>
-              </button>
+              <div className="jump-anchor">
+                <button
+                  className="jump-bottom"
+                  onClick={jumpToBottom}
+                  /* 纯图标按钮：辅助技术需要名称，悬停也需要提示 */
+                  aria-label={t('chat.jumpToBottom')}
+                  title={t('chat.jumpToBottom')}
+                >
+                  <span className="jump-ico" aria-hidden="true">↓</span>
+                </button>
+              </div>
             ) : null}
 
             {/* 交接 / 上下文整理的一行非阻塞状态（实施-14 F5）：没事就不占地方 */}

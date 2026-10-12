@@ -1213,6 +1213,29 @@ function applyBrowserVisibility(get: () => Store): void {
  */
 let sessionSwitchGate = 0
 
+/**
+ * 打开的文件标签数量上限。
+ *
+ * 每条预览是主进程截断后的**最多 2MB 文本**（`yan:readPreview` 的契约），
+ * 而表只在 `closeFileTab` 里减：一路点下去就把浏览过的历史文件全留在内存里，
+ * 切会话也不清。超出时丢最早打开的那条（当前这条永远保留），并交还它的资源归属。
+ */
+const FILE_TAB_LIMIT = 12
+const withFileTab = (
+  current: Record<string, FilePreviewState>,
+  key: string,
+  value: FilePreviewState
+): Record<string, FilePreviewState> => {
+  const all: Record<string, FilePreviewState> = { ...current, [key]: value }
+  for (const stale of Object.keys(all)) {
+    if (Object.keys(all).length <= FILE_TAB_LIMIT) break
+    if (stale === key) continue
+    delete all[stale]
+    releaseResource('file:' + stale)
+  }
+  return all
+}
+
 export const useStore = create<Store>((rawSet, get) => {
   /*
    * 包装 set：凡是新增的 **error 通知**，同时写一份进日志抽屉
@@ -3100,7 +3123,7 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     set({
       filePreview: next,
-      filePreviews: key ? { ...get().filePreviews, [key]: next } : get().filePreviews
+      filePreviews: key ? withFileTab(get().filePreviews, key, next) : get().filePreviews
     })
   },
 

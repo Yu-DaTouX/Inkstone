@@ -1065,6 +1065,10 @@ const CASES = {
    * 不会因为移除模型工具而退化成静态提示。
    */
   questioncli: { probe: 'scripts/probe/question-cli.js', delay: 9000, cost: 0, budget: 180000 },
+  // 图生图：DeepSeek 经 yan image generate（edit 模式）改一张项目内的图；出图通道由本机凭证决定（花 token，且会用生图额度）
+  imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
+  // 图生图：DeepSeek 经 yan image generate（edit 模式）改项目内一张图；出图通道取本机凭证，会用生图额度（花 token）
+  imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   // 图片真的发给模型（花 token —— 需要视觉模型，Ling 是纯文本的）
   image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1, model: TEST_VISION_MODEL },
   // 排队 + Esc 回收：需要真流式，也花 token
@@ -1552,6 +1556,7 @@ function buildFixtureProject(base) {
 
   mk()
   put('README.md', '# fixture project\n\n合成项目，只用于边界场景。\n')
+  writeFileSync(join(dir, 'imgsrc.png'), makePng(64, [32, 96, 200]))
   mk('empty')
   mk('deep', 'a', 'b', 'c', 'd', 'e')
   put(join('deep', 'a', 'b', 'c', 'd', 'e', 'f.txt'), 'deep\n')

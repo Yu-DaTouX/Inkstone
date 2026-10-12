@@ -327,17 +327,35 @@ task-update.json：
           HTML / Markdown 只按代码文本预览，不会在砚内执行。
 `,
   image: `yan image generate [选项]
+yan image local status | start | stop
 
 生成或编辑图片，并在对话中直接显示受控产物：
   yan image generate --prompt "深色圆角方形的砚应用图标"
   请求文件示例：
-    {"prompt":"…","provider":"auto|codex|openai|compatible",
-     "model":"gpt-image-2","size":"1024x1024","quality":"auto",
+    {"prompt":"…","provider":"auto|codex|openai|compatible|google|doubao|local",
+     "size":"1024x1024","quality":"auto",
      "background":"auto|transparent|opaque","format":"png"}
+  编辑已有图片：加 "mode":"edit","sourcePaths":["项目内的图片.png"]（最多 4 张，
+  只能是当前项目或砚产物目录里的 PNG/JPEG/WebP）。
+  model 一般不填，由所选通道决定默认值（codex / openai 默认 gpt-image-2.5-flare，
+  要细节更好、能多等一会时填 gpt-image-2.5-sunburst）。provider=local 用本机或设置里添加的
+  SD WebUI 系 / ComfyUI 服务；ComfyUI 套用它里面已保存的工作流（含子图与导出的 API 格式；
+  文生图 / 图生图按名称依次尝试，缺节点或要云端 API 节点的自动跳过，model 可填工作流文件名），
+  只替换提示词、种子与尺寸。ComfyUI 已安装但没开时砚会自己启动（约几十秒），
+  本机生图首次加载模型可能还要几分钟。google / doubao 不填 model 时自动用服务商列表里最新的一档。
 
-provider=auto 优先使用本机 Codex ChatGPT 登录态；使用 OpenAI 或 OpenAI-compatible
-API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供应商。
-生成结果会自动挂到当前助手消息并在对话中预览。
+本机 ComfyUI 的开关（只关砚自己启动的，用户自己开的不动）：
+  yan image local status   在不在运行、是谁开的、空闲多久后自动关
+  yan image local start    要连续出多张本机图时可先启动，省得第一张等
+  yan image local stop     用完马上关掉、释放显存；不关也会在空闲 10 分钟后自动关
+
+provider=auto 依次选：ChatGPT 登录（砚内或 Codex CLI）→ OpenAI 兼容端点 → OpenAI
+→ Google Gemini → 火山方舟（豆包 Seedream）→ 本机 SD WebUI / ComfyUI（含已安装、可按需启动的 ComfyUI）。
+使用 OpenAI、兼容端点、Google、豆包前砚会弹出确认，拒绝后不会发送请求，也不会静默换供应商。
+一条通道都没有时（image_provider_unavailable），把报错里的选项告诉用户并询问；
+不要自己下载模型或安装生图软件。
+生成结果会自动挂到当前助手消息并在对话中预览；输出的 summary.path 是图片文件的绝对路径，
+要缩放、裁切或复制时直接用它。
 
 codemode 脚本里也能生图：models.getAvailableOfType("image") 查可用的生图模型，
 models.generateImages() 生成，image() 在结果里展示；生图可能要几分钟，别给脚本设短的 timeout_ms。
@@ -564,7 +582,7 @@ const GROUP_SPECS = {
     required: { attach: ['path'] }
   },
   image: {
-    actions: ['generate'],
+    actions: ['generate', 'local'],
     required: { generate: ['prompt'] }
   },
   question: {
@@ -706,6 +724,12 @@ if (positional[0] === 'context' && positional[1] === 'budget') {
     fail(EXIT.usage, '用法：yan context budget status，或 yan context budget adjust --request-file context-budget.json')
   }
   command = `context.budget.${action}`
+} else if (positional[0] === 'image' && positional[1] === 'local') {
+  const action = positional[2] ?? 'status'
+  if (!['status', 'start', 'stop'].includes(action)) {
+    fail(EXIT.usage, '用法：yan image local status | start | stop')
+  }
+  command = `image.local.${action}`
 } else {
   command = `${positional[0]}.${positional[1]}`
 }

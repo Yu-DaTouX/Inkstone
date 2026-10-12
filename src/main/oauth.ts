@@ -32,18 +32,18 @@ import { randomBytes, createHash } from 'node:crypto'
 import { shell } from 'electron'
 import type { CodexLoginResult } from '../shared/ipc'
 import { mergeAuthEntry } from './credentials'
+import { CLIENT_ID, TOKEN_URL, extractAccountId } from './codex-token'
+
+export { refreshCodexCredential, type CodexOAuthCredential } from './codex-token'
 
 /* ------------------------------------------------ 与 pi 逐字一致的常量 */
 
-const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
 const AUTH_BASE_URL = 'https://auth.openai.com'
 const AUTHORIZE_URL = `${AUTH_BASE_URL}/oauth/authorize`
-const TOKEN_URL = `${AUTH_BASE_URL}/oauth/token`
 const REDIRECT_URI = 'http://localhost:1455/auth/callback'
 const CALLBACK_PORT = 1455
 const CALLBACK_PATH = '/auth/callback'
 const SCOPE = 'openid profile email offline_access'
-const JWT_CLAIM_PATH = 'https://api.openai.com/auth'
 /** pi 传给 OpenAI 的调用方标识。保持一致 —— 别写 codex_cli_rs，那是 API 调用的伪装。 */
 const ORIGINATOR = 'pi'
 /** 回调主机：与 pi 一样允许环境变量覆盖（某些 VM/容器场景要监听别处）。 */
@@ -62,32 +62,6 @@ function createPkce(): { verifier: string; challenge: string } {
   const verifier = base64url(randomBytes(32))
   const challenge = base64url(createHash('sha256').update(verifier).digest())
   return { verifier, challenge }
-}
-
-/** 取 JWT 的 payload（access token 是 JWT，accountId 藏在自定义 claim 里）。 */
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  try {
-    const parts = token.split('.')
-    if (parts.length !== 3) return null
-    const parsed = JSON.parse(Buffer.from(parts[1] ?? '', 'base64url').toString('utf8')) as unknown
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * 从 access token 里取 `chatgpt_account_id`。
- *
- * 拿不到就直接判失败 —— 缺 accountId 的凭证 pi 能存但用不了：额度查询会报
- * 「凭证缺少 chatgpt-account-id，请重新登录 ChatGPT」（见 quota.ts）。
- * 与其写一个残缺凭证让用户以后自己踩，不如当场报错。
- */
-function extractAccountId(accessToken: string): string | null {
-  const claim = decodeJwtPayload(accessToken)?.[JWT_CLAIM_PATH]
-  if (!claim || typeof claim !== 'object') return null
-  const id = (claim as Record<string, unknown>).chatgpt_account_id
-  return typeof id === 'string' && id.length > 0 ? id : null
 }
 
 /**
@@ -183,40 +157,6 @@ async function exchangeCode(code: string, verifier: string): Promise<CodexLoginR
   })
   if (!written.ok) return { ok: false, error: written.error ?? '写入 auth.json 失败' }
   return { ok: true, accountId }
-}
-
-/** pi 存在 auth.json 里的 ChatGPT 凭证形状。 */
-export interface CodexOAuthCredential {
-  type: 'oauth'
-  access: string
-  refresh: string
-  expires: number
-  accountId: string
-}
-
-/**
- * 用 refresh token 换新凭证，请求体与 pi 的刷新逐字一致（grant_type / refresh_token / client_id）。
- * 只给砚自己保存的**非当前**账号用：当前账号由 pi 刷新，宿主不插手。
- * refresh token 会轮换，调用方必须马上保存返回的新凭证，否则这个账号要重新登录。
- */
-export async function refreshCodexCredential(refresh: string): Promise<CodexOAuthCredential> {
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh, client_id: CLIENT_ID }),
-    signal: AbortSignal.timeout(15_000)
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(res.status === 400 || res.status === 401 ? '登录已失效，请重新登录这个账号' : `刷新登录失败（${res.status}）${body ? '：' + body.slice(0, 120) : ''}`)
-  }
-  const json = (await res.json().catch(() => null)) as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown } | null
-  if (!json || typeof json.access_token !== 'string' || typeof json.refresh_token !== 'string' || typeof json.expires_in !== 'number') {
-    throw new Error('刷新登录的响应缺字段')
-  }
-  const accountId = extractAccountId(json.access_token)
-  if (!accountId) throw new Error('刷新后的令牌里没有 accountId')
-  return { type: 'oauth', access: json.access_token, refresh: json.refresh_token, expires: Date.now() + json.expires_in * 1000, accountId }
 }
 
 /* ------------------------------------------------------------ 主流程 */

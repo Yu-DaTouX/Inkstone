@@ -19,6 +19,8 @@
   document.activeElement.click()
   await sleep(300)
   check(!!q('[data-testid="market-pi"]'), '方向键切到 pi 插件页')
+  check(!q('[data-testid="market-catalog"]')?.open, '目录默认收起，先显示管理入口')
+  click('[data-testid="market-catalog"] summary')
   for (let i = 0; i < 140 && !q('[data-testid="market-results"] [data-testid="market-choose"]'); i++) await sleep(100)
   check(!!q('[data-testid="market-results"] [data-testid="market-choose"]'), '实际 npm 目录在桌面内返回插件')
   click('[data-testid="market-results"] [data-testid="market-choose"]')

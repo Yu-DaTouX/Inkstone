@@ -6,6 +6,7 @@ import { useStore } from '../../state/store'
 import type { AuthProviderInfo, OAuthLoginEvent } from '../../../../shared/ipc'
 import { CustomProviderForm } from './CustomProviderForm'
 import { Button, Disclosure, Input, SettingGroup, SettingRow, Spinner } from '../ui'
+import { SettingsSections } from './SettingsSections'
 
 /**
  * 「接入」设置页 —— 模型凭证管理。
@@ -232,8 +233,9 @@ export function AuthTab() {
         ) : null}
       </div>
 
-      {/* 插件订阅与按量登录路径明确区分；登录由各 Provider 的协议处理。 */}
-      <SettingGroup title={t('auth.subs')}>
+      <SettingsSections sections={[
+        { id: 'subscriptions', label: t('auth.subs'), content: <>
+      <SettingGroup>
         <ClaudeSubscriptionSection />
         <div className="ui-rows">
           {subs.map((p) => (
@@ -331,8 +333,10 @@ export function AuthTab() {
           ))}
         </div>
       </SettingGroup>
+        </> },
+        { id: 'api-keys', label: t('auth.keys'), content: <>
       {keys.length > 0 ? (
-      <SettingGroup title={t('auth.keys')}>
+      <SettingGroup>
         <div className="ui-rows">
           {keysReady.map(keyRow)}
           {keysOther.length > 0 ? (
@@ -345,10 +349,9 @@ export function AuthTab() {
       ) : null}
 
 
-      {/* 自定义 API 服务（真源是 pi 的 models.json） */}
-      <SettingGroup title={t('customApi.title')}>
-        <CustomProviderForm />
-      </SettingGroup>
+        </> },
+        { id: 'custom-api', label: t('customApi.title'), content: <CustomProviderForm /> }
+      ]} />
 
       {/* 按活动分配模型：低频配置，收在页尾 */}
       <SettingGroup>

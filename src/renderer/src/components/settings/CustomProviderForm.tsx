@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useT } from '../../i18n'
 import { refreshModelsAfterRestart } from '../../state/refresh-models'
-import type { CustomProviderInput, CustomProviderTestResult, CustomProviderView } from '../../../../shared/ipc'
+import type { CustomProviderInput, CustomProviderTestResult, CustomProviderView, LocalModelServer } from '../../../../shared/ipc'
 import { CUSTOM_API_CHOICES } from '../../../../shared/custom-provider'
 import { Icon } from '../../icons/Icon'
-import { Button } from '../ui'
+import { Button, Disclosure } from '../ui'
 
 /**
  * 「接入」设置页的自定义 API 服务（实施-23 M2）。
@@ -53,6 +53,52 @@ export function CustomProviderForm() {
   })
 
   const [fetching, setFetching] = useState(false)
+  /* 本机服务探测：null = 还没探测过 */
+  const [locals, setLocals] = useState<LocalModelServer[] | null>(null)
+  const [detecting, setDetecting] = useState(false)
+  /* 额外探测的地址（局域网主机、非默认端口），由宿主存盘 */
+  const [extraUrls, setExtraUrls] = useState<string[]>([])
+  const [urlDraft, setUrlDraft] = useState('')
+
+  const detectLocal = async (): Promise<void> => {
+    setDetecting(true)
+    setMsg(null)
+    try {
+      const [found, urls] = await Promise.all([window.yan.detectLocalModels(), window.yan.localModelUrls()])
+      setLocals(found)
+      setExtraUrls(urls)
+    } finally {
+      setDetecting(false)
+    }
+  }
+
+  const saveUrls = async (urls: string[]): Promise<void> => {
+    setExtraUrls(await window.yan.saveLocalModelUrls(urls))
+    setUrlDraft('')
+    await detectLocal()
+  }
+
+  /** 把探测到的对话服务填进表单；已存在同名服务时改为编辑它（沿用已存的 key） */
+  const fillFromLocal = async (server: LocalModelServer): Promise<void> => {
+    const id = server.suggestedId ?? 'yan-local'
+    const existing = list?.find((item) => item.id === id)
+    const base: CustomProviderInput = {
+      id,
+      api: 'openai-completions',
+      baseUrl: server.baseUrl,
+      models: [],
+      ...(existing?.hasApiKey ? {} : { apiKey: 'local' })
+    }
+    setFetching(true)
+    try {
+      const found = await window.yan.discoverCustomModels(base)
+      const models = found.ok ? (found.entries ?? found.models.map((model) => ({ id: model }))) : server.models.map((model) => ({ id: model }))
+      setDraft({ ...base, models: models.length ? models : [{ id: '' }] })
+      setMsg({ kind: 'ok', text: t('customApi.localKeyHint') })
+    } finally {
+      setFetching(false)
+    }
+  }
 
   /** 从端点拉模型填进表单（保留已填的行，只追加没有的 ID） */
   const fetchModels = async (): Promise<void> => {
@@ -287,8 +333,85 @@ export function CustomProviderForm() {
         <div className="ui-row custom-api-add-row">
           <Button icon="plus" type="button" data-testid="custom-api-add" onClick={() => setDraft(blank())}>{t('customApi.add')}
           </Button>
+          <Button type="button" disabled={detecting} data-testid="custom-api-detect-local" onClick={() => void detectLocal()}>
+            {detecting ? t('customApi.detecting') : t('customApi.detectLocal')}
+          </Button>
         </div>
       )}
+
+      {!draft ? <Disclosure title={t('customApi.getLocal')} testId="custom-api-local-downloads">
+        <div className="ui-row-desc">{t('customApi.getLocalHint')}</div>
+        <div className="set-install-actions">
+          <Button size="sm" onClick={() => void window.yan.browser.openExternal('https://ollama.com/download')}>Ollama</Button>
+          <Button size="sm" onClick={() => void window.yan.browser.openExternal('https://lmstudio.ai/download')}>LM Studio</Button>
+          <Button size="sm" onClick={() => void window.yan.browser.openExternal('https://www.comfy.org/download')}>ComfyUI</Button>
+        </div>
+      </Disclosure> : null}
+
+      {!draft && locals ? (
+        <>
+          {locals.length ? (
+            locals.map((server) => {
+              const added = list?.some((item) => item.baseUrl.replace(/\/+$/, '') === server.baseUrl)
+              const count = server.kind === 'comfyui'
+                ? t('customApi.localWorkflows', { n: server.models.length })
+                : t('customApi.localModels', { n: server.models.length })
+              const state = !server.running
+                ? t('customApi.localStopped')
+                : server.purpose === 'image'
+                  ? t('customApi.localImage')
+                  : ''
+              return (
+                <div className="ui-row custom-api-row" key={`${server.kind}:${server.baseUrl}`} data-testid={`custom-api-local-${server.kind}`}>
+                  <div className="custom-api-row-main">
+                    <span className="ui-row-name">{server.name}</span>
+                    <span className="ui-row-desc">
+                      {server.running ? server.baseUrl : server.installDir ?? server.baseUrl}
+                      {server.running || server.models.length ? ` · ${count}` : ''}
+                      {state ? ` · ${state}` : ''}
+                    </span>
+                  </div>
+                  <span className="spacer" />
+                  {server.purpose === 'chat' && server.running ? (
+                    <Button type="button" disabled={fetching || busy} data-testid={`custom-api-local-use-${server.kind}`} onClick={() => void fillFromLocal(server)}>
+                      {added ? t('customApi.localAdded') : t('customApi.localUse')}
+                    </Button>
+                  ) : null}
+                </div>
+              )
+            })
+          ) : (
+            <div className="ui-row-desc" data-testid="custom-api-local-none">{t('customApi.localNone')}</div>
+          )}
+          {extraUrls.map((url) => (
+            <div className="ui-row custom-api-row" key={`extra:${url}`} data-testid="custom-api-local-url">
+              <div className="custom-api-row-main">
+                <span className="ui-row-desc">{t('customApi.localUrlSaved', { url })}</span>
+              </div>
+              <span className="spacer" />
+              <Button type="button" disabled={detecting} onClick={() => void saveUrls(extraUrls.filter((item) => item !== url))}>
+                {t('customApi.remove')}
+              </Button>
+            </div>
+          ))}
+          <div className="ui-row">
+            <input
+              className="ui-input"
+              value={urlDraft}
+              placeholder={t('customApi.localUrlPlaceholder')}
+              aria-label={t('customApi.localUrlPlaceholder')}
+              data-testid="custom-api-local-url-input"
+              onChange={(event) => setUrlDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && urlDraft.trim()) void saveUrls([...extraUrls, urlDraft])
+              }}
+            />
+            <Button type="button" disabled={detecting || !urlDraft.trim()} data-testid="custom-api-local-url-add" onClick={() => void saveUrls([...extraUrls, urlDraft])}>
+              {t('customApi.localUrlAdd')}
+            </Button>
+          </div>
+        </>
+      ) : null}
 
       {testId
         ? (() => {
