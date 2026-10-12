@@ -9,14 +9,32 @@
  * 缺失时可以由用户一键装受管的 PortableGit（`git-runtime.ts`）；装好后它的目录已经
  * 在本进程的 PATH 上，这里看到的就是「有」，并标出它来自受管那份。
  */
-import { existsSync } from 'node:fs'
+import { existsSync, lstatSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 import { MANAGED_GIT_ROOT, findSystemBash, findSystemGit } from './git-runtime'
 import type { ToolchainStatus, ToolStatus } from '../shared/ipc'
 
 const GIT_DOWNLOAD = 'https://git-scm.com/download/win'
+const POWERSHELL_DOWNLOAD = 'https://aka.ms/powershell'
+
+/**
+ * 没有 bash 时 pi 把命令行工具换成 PowerShell，优先 PowerShell 7（pwsh），没有就用系统自带的 5.1。
+ * 商店版 pwsh.exe 是指向受保护目录的链接，existsSync 跟随链接会得到 false，只看链接本身。
+ */
+function hasPowerShell7(): boolean {
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') ?? 'PATH'
+  return (process.env[pathKey] ?? '').split(delimiter).some((dir) => {
+    if (!dir) return false
+    try {
+      lstatSync(join(dir, 'pwsh.exe'))
+      return true
+    } catch {
+      return false
+    }
+  })
+}
 
 async function configuredShellPath(): Promise<string | undefined> {
   try {
@@ -46,7 +64,9 @@ async function detectBash(): Promise<ToolStatus> {
   if (found) return { ok: true, path: found, ...(isManaged(found) ? { managed: true } : {}) }
   return {
     ok: false,
-    hint: `这台设备没有找到 bash，内置的命令行工具暂时不能用。可以一键安装 Git（约 57MB，装在砚的数据目录，不改系统）；也可以自己安装 Git for Windows（${GIT_DOWNLOAD}）后重启砚。`
+    hint: hasPowerShell7()
+      ? `这台设备没有找到 bash，命令行暂时改用 PowerShell 7，日常命令能用，但 bash 脚本和 Unix 工具用不了。建议一键安装 Git（约 57MB，装在砚的数据目录，不改系统），或自行安装 Git for Windows（${GIT_DOWNLOAD}）后重启砚。`
+      : `这台设备没有找到 bash，命令行暂时改用系统自带的 PowerShell 5.1，处理中文和调用外部程序时容易出错。建议一键安装 Git（约 57MB，装在砚的数据目录，不改系统）；暂不装 Git 的话，可安装 PowerShell 7（winget install Microsoft.PowerShell 或 ${POWERSHELL_DOWNLOAD}）后重启砚。`
   }
 }
 

@@ -64,7 +64,8 @@ export class SubagentService {
     this.controller = new SubagentController({
       cwd: s.cwd,
       piBin: s.piBin,
-      extensions: [this.deps.codemodeExtension?.(), this.deps.guardExtension?.(), this.deps.shellExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
+      /* shell 先于 guard：会被改坏的 PowerShell 写法先拦下，不先请用户审批 */
+      extensions: [this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
       confirmDanger: (params, cwd, origin) => this.deps.confirmDanger?.(params, cwd, origin) ?? Promise.resolve(false),
       onChange: (run) => this.deps.onChange(run),
