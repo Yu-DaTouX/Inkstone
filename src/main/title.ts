@@ -14,7 +14,8 @@
  * 缓存：同一会话只生成一次，结果落在 ~/.pi/agent/yan/titles.json。
  * 失败一律静默降级 —— 标题生成失败不该影响任何事。
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { PiRpc } from './protocol'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
@@ -37,12 +38,25 @@ type TitleMap = Record<string, string>
 const MANUAL_FILE = join(YAN_DIR, 'manual-titles.json')
 
 async function loadMap(file: string): Promise<TitleMap> {
+  const raw = await readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null
+    throw error
+  })
+  if (raw === null) return {}
+  const parsed: unknown = JSON.parse(raw)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('标题文件结构无效')
+  return Object.fromEntries(Object.entries(parsed).filter(([key, value]) => key && typeof value === 'string'))
+}
+
+async function writeMapAtomic(file: string, value: TitleMap): Promise<void> {
+  await mkdir(YAN_DIR, { recursive: true })
+  const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
   try {
-    const raw = await readFile(file, 'utf8')
-    const j = JSON.parse(raw) as TitleMap
-    return j && typeof j === 'object' ? j : {}
-  } catch {
-    return {}
+    await writeFile(temp, JSON.stringify(value, null, 2), 'utf8')
+    await rename(temp, file)
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => undefined)
+    throw error
   }
 }
 
@@ -74,10 +88,9 @@ export async function setManualTitle(
   try {
     const all = await loadMap(MANUAL_FILE)
     const trimmed = name.trim()
-    if (trimmed) all[sessionId] = trimmed.slice(0, 60)
+    if (trimmed) all[sessionId] = Array.from(trimmed).slice(0, 60).join('')
     else delete all[sessionId]
-    await mkdir(YAN_DIR, { recursive: true })
-    await writeFile(MANUAL_FILE, JSON.stringify(all, null, 2), 'utf8')
+    await writeMapAtomic(MANUAL_FILE, all)
     return { ok: true }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -93,8 +106,7 @@ async function saveTitle(sessionId: string, title: string): Promise<void> {
     if (keys.length > 300) {
       for (const k of keys.slice(0, keys.length - 300)) delete all[k]
     }
-    await mkdir(YAN_DIR, { recursive: true })
-    await writeFile(TITLES_FILE, JSON.stringify(all, null, 2), 'utf8')
+    await writeMapAtomic(TITLES_FILE, all)
   } catch {
     /* 存不下就算了，标题本来是可再生的 */
   }
@@ -148,7 +160,7 @@ function cleanTitle(raw: string): string {
   // 只取第一行（模型有时会多写一行解释）
   s = s.split('\n')[0].trim()
   // 上限（见 TITLE_MAX 的说明）。宁可我截，也不要一个撑破左栏的标题。
-  if (s.length > TITLE_MAX) s = s.slice(0, TITLE_MAX)
+  if (Array.from(s).length > TITLE_MAX) s = Array.from(s).slice(0, TITLE_MAX).join('')
   return s
 }
 
@@ -293,10 +305,10 @@ export async function generateTitle(opts: {
       }
     })
 
-    rpc.on('exit', (code) => {
+    rpc.on('exit', () => {
       clearTimeout(timer)
       // 进程提前退出也算失败
-      if (!settled && code !== 0) done(null, 'title_process_exit')
+      if (!settled) done(null, 'title_process_exit')
     })
 
     rpc.on('stderr', (line) => {

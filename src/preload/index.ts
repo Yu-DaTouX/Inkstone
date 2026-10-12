@@ -139,6 +139,7 @@ const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
 type Ok = { ok: boolean; error?: string }
 
 const api: YanBridge = {
+  probeMode: process.argv.includes('--yan-isolated-probe'),
   agentService: {
     snapshot: () => invoke('yan:service:snapshot'),
     create: request => invoke('yan:service:create', request),
@@ -584,7 +585,7 @@ const api: YanBridge = {
     cancel: () => invoke<void>('yan:storage:cancel')
   },
   openFileDefault: (p, cwd) => invoke<{ ok: boolean; revealed?: boolean; error?: string }>('yan:openFileDefault', p, cwd),
-  revealPath: (p) => invoke<void>('yan:revealPath', p),
+  revealPath: (p) => invoke<{ ok: boolean }>('yan:revealPath', p),
 
   /* ---- 界面缩放（0 = 自动） ---- */
   getZoom: () => invoke<ZoomState>('yan:getZoom'),
@@ -593,10 +594,11 @@ const api: YanBridge = {
   /* ---- 文件树 ---- */
   listDir: (rel, showHidden, context?: FileRequestContext) => invoke<DirListing>('yan:listDir', rel, showHidden === true, context),
   compactionInfo: (win) => invoke<CompactionInfo>('yan:compactionInfo', win),
-  /* 项目信任（实施-07 S2b-2）：只读状态 + 用户显式信任一个目录（**不自动继承**） */
+  /* 显式授予或撤销目录信任；不自动继承到其他目录。 */
   trust: {
     status: (cwd?: string) => invoke<TrustStatusView>('yan:trust:status', cwd),
-    allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd)
+    allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd),
+    revoke: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:revoke', cwd)
   },
   contextBudget: (win) => invoke<ContextPolicyResolution>('yan:contextBudget', win),
   contextBudgetV1: () => invoke<ContextBudgetSessionPolicyV1 | null>('yan:contextBudgetV1'),

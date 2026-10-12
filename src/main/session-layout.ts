@@ -5,7 +5,9 @@
  * sessionId -> projectId / scope / 最近访问时间。这样“项目内会话”不等同于
  * 把隐藏文件写进仓库，也不会破坏 pi 或后续同步层读取会话。
  */
-import { readFile, mkdir, writeFile } from 'node:fs/promises'
+import { parsePersistedDocument } from './persisted-document'
+import { readFile, mkdir, writeFile, rename, copyFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type {
   ProjectRecord,
@@ -123,16 +125,30 @@ function sanitizeDocument(value: unknown): SessionLayoutDocument {
 async function readFromDisk(): Promise<SessionLayoutDocument> {
   if (cached) return cached
   try {
-    cached = sanitizeDocument(JSON.parse(await readFile(SESSION_LAYOUT_FILE, 'utf8')))
-  } catch {
-    cached = { version: 1, entries: [] }
+    cached = sanitizeDocument(parsePersistedDocument(await readFile(SESSION_LAYOUT_FILE, 'utf8'), { entries: 'array' }))
+    return cached
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      cached = { version: 1, entries: [] }
+      return cached
+    }
+    if (error instanceof SyntaxError) {
+      await copyFile(SESSION_LAYOUT_FILE, `${SESSION_LAYOUT_FILE}.corrupt-${Date.now()}-${randomUUID()}`).catch(() => undefined)
+    }
+    throw error
   }
-  return cached
 }
 
 async function persist(document: SessionLayoutDocument): Promise<void> {
   await mkdir(YAN_DIR, { recursive: true })
-  await writeFile(SESSION_LAYOUT_FILE, JSON.stringify(document, null, 2), 'utf8')
+  const temp = `${SESSION_LAYOUT_FILE}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temp, JSON.stringify(document, null, 2), 'utf8')
+    await rename(temp, SESSION_LAYOUT_FILE)
+  } catch (error) {
+    await import('node:fs/promises').then(({ rm }) => rm(temp, { force: true })).catch(() => undefined)
+    throw error
+  }
 }
 
 async function update(mutator: (document: SessionLayoutDocument) => SessionLayoutDocument): Promise<SessionLayoutDocument> {
@@ -140,8 +156,8 @@ async function update(mutator: (document: SessionLayoutDocument) => SessionLayou
     const current = sanitizeDocument(await readFromDisk())
     const rawNext = mutator(current)
     const next = rawNext === current ? current : sanitizeDocument(rawNext)
-    cached = next
     if (next !== current) await persist(next)
+    cached = next
     return next
   })
   writeTail = task.then(() => undefined, () => undefined)

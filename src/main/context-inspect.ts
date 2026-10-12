@@ -1,5 +1,6 @@
 /** 保存 / 读取 context-inspect 薄层上报的快照（每会话一份，覆盖写）。 */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseContextInspectSnapshot, type ContextInspectSnapshot } from '../shared/context-inspect'
@@ -16,8 +17,16 @@ export function saveContextInspect(sessionId: unknown, raw: unknown, dataDir: st
   if (!snapshot || !isSafeSessionId(sessionId)) return false
   try {
     mkdirSync(join(dataDir, 'context-inspect'), { recursive: true })
-    writeFileSync(inspectFile(dataDir, sessionId), JSON.stringify(snapshot), 'utf8')
-    return true
+    const target = inspectFile(dataDir, sessionId)
+    const temp = `${target}.${process.pid}.${randomUUID()}.tmp`
+    try {
+      writeFileSync(temp, JSON.stringify(snapshot), 'utf8')
+      renameSync(temp, target)
+      return true
+    } catch {
+      rmSync(temp, { force: true })
+      throw new Error('context-inspect atomic write failed')
+    }
   } catch {
     return false
   }

@@ -340,6 +340,17 @@ function ArtifactCard({ artifact }: { artifact: TurnArtifact }) {
   const [htmlExpanded, setHtmlExpanded] = useState(false)
   const [htmlReload, setHtmlReload] = useState(0)
   const fileUrl = toFileUrl(artifact.path)
+  /*
+   * 打开类操作指向**源文件**：受控副本只用于预览。
+   *
+   * 用户报过这个问题：卡片上点「在文件夹中显示」打开的是 `artifacts/` 里那份
+   * 副本，找不到自己的原文档。源文件可能已被删除，那就回退到副本（至少能看到副本）。
+   */
+  const openTarget = artifact.sourcePath ?? artifact.path
+  const reveal = async (): Promise<void> => {
+    const result = await window.yan.revealPath(openTarget)
+    if (result?.ok === false && openTarget !== artifact.path) await window.yan.revealPath(artifact.path)
+  }
   const isHtml = isHtmlArtifact(artifact)
   const isCode = artifact.kind === 'code' || isHtml
   const isImage = artifact.kind === 'image' || artifact.kind === 'svg'
@@ -365,10 +376,20 @@ function ArtifactCard({ artifact }: { artifact: TurnArtifact }) {
   return (
     <section
       className="artifact-card"
+      role="group"
+      aria-label={artifact.filename}
       data-artifact-id={artifact.id}
       /* 单击在软件内打开，双击在资源管理器定位；按钮与下载链接自己处理点击 */
       onClick={(e) => { if (!unavailable && !(e.target as HTMLElement).closest('a,button')) void previewFile(artifact.path) }}
-      onDoubleClick={(e) => { if (!unavailable && !(e.target as HTMLElement).closest('a,button')) void window.yan.revealPath(artifact.path) }}
+      onDoubleClick={(e) => { if (!unavailable && !(e.target as HTMLElement).closest('a,button')) void reveal() }}
+      tabIndex={unavailable ? undefined : 0}
+      onKeyDown={(event) => {
+        if (unavailable || event.target !== event.currentTarget) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          void previewFile(artifact.path)
+        }
+      }}
       title={unavailable ? undefined : t('artifact.cardHint')}
     >
       <div className="artifact-head">
@@ -395,8 +416,8 @@ function ArtifactCard({ artifact }: { artifact: TurnArtifact }) {
         </> : null}
         {!unavailable ? <span className="artifact-actions">
           <IconButton size="sm" icon="sidebar-right" label={t('artifact.previewHint')} onClick={() => void previewFile(artifact.path)} />
-          <IconButton size="sm" icon="folder-open" label={t('artifact.revealHint')} onClick={() => void window.yan.revealPath(artifact.path)} />
-          <IconButton size="sm" icon="copy" label={t('artifact.copyPathHint')} onClick={() => void navigator.clipboard.writeText(artifact.path)} />
+          <IconButton size="sm" icon="folder-open" label={t('artifact.revealHint')} onClick={() => void reveal()} />
+          <IconButton size="sm" icon="copy" label={t('artifact.copyPathHint')} onClick={() => void navigator.clipboard.writeText(openTarget)} />
         </span> : null}
       </div>
       {artifact.description && !isImage ? <ArtifactDescription text={artifact.description} /> : null}

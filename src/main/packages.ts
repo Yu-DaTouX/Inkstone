@@ -21,8 +21,8 @@
  * 有任务在跑时直接**拒绝**（不排队、不偷偷重启）—— 那正是方案要求的
  * "安排安全的生效时机"，代价是用户要多点一下。
  */
-import { execFile } from 'node:child_process'
-import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { execFile, spawn } from 'node:child_process'
+import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 
@@ -53,6 +53,7 @@ export interface PackageListing {
   projectSettings: string
   entries: PackageEntry[]
   error?: string
+  settingsError?: string
 }
 
 /** `npm:@scope/name` / `npm:name@1.2.3` / `git:...` / 本地路径 → 包名 */
@@ -66,7 +67,7 @@ export function packageNameOf(source: string): string {
   }
   if (raw.startsWith('git:') || /^https?:|^ssh:/.test(raw)) {
     /* git 源：仓库名（去掉 .git） —— 实际包名可能与目录名不同，读 package.json 时以它为准 */
-    return body.replace(/\.git$/, '').split('/').pop()?.split(':').pop() ?? body
+    return body.replace(/(?:\.git)?(?:[#@][^/#@]+)?$/, '').split('/').pop()?.split(':').pop() ?? body
   }
   /* npm 源：去掉版本后缀；@scope/name 要保住 scope */
   const noVersion = body.replace(/@[^@/]+$/, '')
@@ -84,17 +85,30 @@ export function versionOf(source: string): string | null {
 function readJson<T>(path: string): T | null {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as T
-  } catch {
-    return null
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw new Error(`无法读取或解析 ${path}：${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
 /** settings.json 里的 `packages`（空数组是正常状态，文件不存在也是） */
 export function readPackageSources(settingsPath: string): string[] {
   const json = readJson<{ packages?: unknown }>(settingsPath)
+  if (json === null) return []
   const list = json?.packages
   if (!Array.isArray(list)) return []
-  return list.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+  const valid = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:@[a-z0-9][a-z0-9._-]*)?$/i
+  return list.flatMap((entry) => {
+    if (typeof entry !== 'string' || !entry.trim()) return []
+    const source = entry.trim()
+    const safe = source.startsWith('npm:')
+      ? valid.test(source.slice(4))
+      : /^(?:git:|https?:|ssh:)/.test(source)
+        ? !source.slice(source.indexOf(':') + 1).startsWith('-')
+        : /^(?:\.{1,2}[\\/]|[a-zA-Z]:[\\/])/.test(source)
+    if (!safe) throw new Error(`packages 中有无效来源「${source}」：${settingsPath}`)
+    return [source]
+  })
 }
 
 /**
@@ -176,7 +190,8 @@ export function listPackages(cwd: string, agentDirOverride?: string): PackageLis
       userSettings,
       projectSettings,
       entries: [],
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      settingsError: error instanceof Error ? error.message : String(error)
     }
   }
 }
@@ -260,6 +275,19 @@ export function validatePackageSource(source: string): string | null {
     /^\.{1,2}[\\/][^\s]*$/.test(s) ||
     /^[a-zA-Z]:[\\/][^\s]*$/.test(s)
   if (!ok) return '只接受 npm: / git: / https:// / ssh:// 或本地路径'
+  if (s.startsWith('ssh://')) {
+    try {
+      const url = new URL(s)
+      if (!url.hostname || url.hostname.startsWith('-')) return 'SSH 来源必须使用有效主机名，不能以 - 开头'
+    } catch {
+      return 'SSH 来源 URL 无效'
+    }
+  }
+  const body = s.replace(/^(?:npm|git|https?|ssh):/, '')
+  if (body.startsWith('-')) return '来源内容不能以 - 开头（那会被当成命令行选项）'
+  if (s.startsWith('npm:') && !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:@[^\s]+)?$/i.test(body)) {
+    return 'npm 来源必须是有效的包名，可选版本号'
+  }
   return null
 }
 
@@ -301,27 +329,38 @@ function runPi(
     return Promise.resolve({ ok: false, output: '找不到 pi 的可执行入口（resolvePi 没解析出来）' })
   }
   return new Promise((resolve) => {
-    execFile(
+    let timedOut = false
+    let settled = false
+    let child: ReturnType<typeof execFile>
+    const timer = setTimeout(() => {
+      timedOut = true
+      if (process.platform === 'win32' && child.pid) {
+        const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+        killer.unref()
+      } else child.kill('SIGKILL')
+    }, 180_000)
+    child = execFile(
       process.execPath,
       [bin, ...args],
       {
         cwd,
         windowsHide: true,
-        timeout: 180_000,
         maxBuffer: 8 * 1024 * 1024,
         encoding: 'utf8',
         env: {
           ...process.env,
           ...envOverrides,
-          /* 与 Yan 启动 pi 时同一个 agent 目录 —— 否则装的是一处、跑的是另一处 */
           PI_CODING_AGENT_DIR: agentDirNow(),
           ELECTRON_RUN_AS_NODE: '1',
           GIT_TERMINAL_PROMPT: '0'
         }
       },
       (error, stdout, stderr) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
         const out = `${String(stdout ?? '')}${String(stderr ?? '')}`.trim()
-        resolve({ ok: !error, output: out })
+        resolve({ ok: !error, output: timedOut ? `${out}${out ? '\\n' : ''}操作超时；Windows 已尝试结束 pi/npm/git 进程树，仍可能有未能结束的外部进程。` : out })
       }
     )
   })
@@ -426,6 +465,10 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
   }
 
   const local = request.local === true
+  if (local && !cwd) return { ok: false, error: '缺少当前项目目录，拒绝改为项目级安装' }
+  if (local && !(await ctx.isProjectTrusted?.(cwd))) {
+    return { ok: false, error: '当前项目尚未获 Pi 项目信任；请先显式信任该目录，再重试安装' }
+  }
   /*
    * ⚠️ 卸载/更新时要先把**路径形态的 source 转成绝对路径**。
    *
@@ -445,9 +488,9 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
         : source
   const args =
     request.kind === 'install'
-      ? ['install', asArg, ...(local ? ['-l'] : [])]
+      ? ['install', ...(local ? ['-l'] : []), asArg]
       : request.kind === 'remove'
-        ? ['remove', asArg, ...(local ? ['-l'] : [])]
+        ? ['remove', ...(local ? ['-l'] : []), asArg]
         : ['update', asArg]
 
   const res = await runPi(args, cwd || process.cwd())
@@ -470,5 +513,12 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
 export function writePackageSourcesForTest(settingsPath: string, sources: string[]): void {
   const json = readJson<Record<string, unknown>>(settingsPath) ?? {}
   json.packages = sources
-  writeFileSync(settingsPath, JSON.stringify(json, null, 2), 'utf8')
+  const tmp = `${settingsPath}.${process.pid}.${Date.now()}.tmp`
+  try {
+    writeFileSync(tmp, JSON.stringify(json, null, 2), { encoding: 'utf8', flag: 'wx' })
+    renameSync(tmp, settingsPath)
+  } catch (error) {
+    rmSync(tmp, { force: true })
+    throw error
+  }
 }

@@ -15,8 +15,9 @@
  * · 写入的是**绝对路径**（与 pi 自己的写法同一形态）；判定复用 `projectTrustedFrom`
  *   （它实现了 pi 的「从 cwd 向上找第一个条目」规则），保证界面显示的与 pi 实际认的一致。
  */
-import { readFile, rename, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { readFile, rename, mkdir, realpath, stat, open, unlink } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { join, resolve, isAbsolute } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 import { projectTrustedFrom } from './compaction'
 
@@ -34,15 +35,19 @@ export interface TrustStatus {
 
 async function readTable(): Promise<Record<string, unknown>> {
   try {
-    const raw = JSON.parse(await readFile(join(PI_AGENT_DIR, TRUST_FILE_NAME), 'utf8'))
-    return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
-  } catch {
-    /* 文件不存在 / 坏了都当「没有任何条目」——与 pi 的行为一致（它也是当没配） */
-    return {}
+    const raw: unknown = JSON.parse(await readFile(join(PI_AGENT_DIR, TRUST_FILE_NAME), 'utf8'))
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('项目信任文件格式无效，已拒绝覆盖')
+    return raw as Record<string, unknown>
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    throw error
   }
 }
 
-const norm = (p: string): string => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
+const norm = (p: string): string => {
+  const path = p.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
+  return process.platform === 'win32' ? path.toLowerCase() : path
+}
 
 /**
  * 查这个目录的信任状态。
@@ -86,21 +91,37 @@ export async function trustStatus(cwd: string): Promise<TrustStatus> {
  * 可能先命中旧的那条 `false`。写入用 tmp + rename：中途断电不能留下半份 JSON ——
  * 那会让 pi 认为整张表都读不了（等于所有项目都失去信任）。
  */
-export async function allowTrust(cwd: string): Promise<{ ok: boolean; entry: string; error?: string }> {
-  const abs = resolve(cwd)
-  if (!abs) return { ok: false, entry: '', error: '目录为空' }
-  try {
-    const table = await readTable()
-    const existing = Object.keys(table).find((k) => norm(k) === norm(abs))
-    /* 键用手上这条的**原样拼写**（pi 认的是它自己写的那个键），没有就新增绝对路径 */
-    const key = existing ?? abs
-    table[key] = true
-    const file = join(PI_AGENT_DIR, TRUST_FILE_NAME)
-    const tmp = `${file}.tmp-${process.pid}`
-    await writeFile(tmp, JSON.stringify(table, null, 2), 'utf8')
-    await rename(tmp, file)
-    return { ok: true, entry: key }
-  } catch (error) {
-    return { ok: false, entry: '', error: error instanceof Error ? error.message : String(error) }
+let writeTail: Promise<unknown> = Promise.resolve()
+function setTrust(cwd: string, trusted: boolean): Promise<{ ok: boolean; entry: string; error?: string }> {
+  const operation = async () => {
+    let temp: string | undefined
+    try {
+      if (typeof cwd !== 'string' || !isAbsolute(cwd)) throw new Error('必须提供绝对目录')
+      const abs = await realpath(cwd)
+      if (!(await stat(abs)).isDirectory()) throw new Error('不是目录')
+      const table = await readTable()
+      const key = Object.keys(table).find((name) => norm(name) === norm(abs)) ?? abs
+      table[key] = trusted
+      await mkdir(PI_AGENT_DIR, { recursive: true })
+      const file = join(PI_AGENT_DIR, TRUST_FILE_NAME)
+      temp = `${file}.${randomUUID()}.tmp`
+      const handle = await open(temp, 'wx', 0o600)
+      try { await handle.writeFile(JSON.stringify(table, null, 2), 'utf8'); await handle.sync() } finally { await handle.close() }
+      await rename(temp, file)
+      return { ok: true, entry: key }
+    } catch (error) {
+      if (temp) await unlink(temp).catch(() => undefined)
+      return { ok: false, entry: '', error: error instanceof Error ? error.message : String(error) }
+    }
   }
+  const result = writeTail.then(operation, operation)
+  writeTail = result.catch(() => undefined)
+  return result
+}
+export function allowTrust(cwd: string): Promise<{ ok: boolean; entry: string; error?: string }> {
+  return setTrust(cwd, true)
+}
+/** 显式拒绝当前目录，避免删除条目之后重新继承父目录的 true。 */
+export function revokeTrust(cwd: string): Promise<{ ok: boolean; entry: string; error?: string }> {
+  return setTrust(cwd, false)
 }

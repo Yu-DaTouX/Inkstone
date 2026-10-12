@@ -97,6 +97,10 @@ export function resolveForkRefs(
     if (!raw) continue
     const wantDir = /[\\/]$/.test(raw)
     let ref = normalizeSlashes(raw)
+    if (hasDotDot(raw)) {
+      out.push({ ref: normalizeSlashes(raw), state: 'outside', abs: null, kind: null })
+      continue
+    }
     if (isAbsolutePath(raw)) {
       const converted = toRepoRelative(base, raw)
       if (!converted) {
@@ -104,9 +108,6 @@ export function resolveForkRefs(
         continue
       }
       ref = converted
-    } else if (hasDotDot(raw)) {
-      out.push({ ref: normalizeSlashes(raw), state: 'outside', abs: null, kind: null })
-      continue
     }
     if (seen.has(ref.toLowerCase())) continue
     seen.add(ref.toLowerCase())

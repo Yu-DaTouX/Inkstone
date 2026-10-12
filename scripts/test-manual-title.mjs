@@ -38,9 +38,12 @@ export async function runManualTitleTests(ok, mod, dataDir) {
     const failed = await setManualTitle('sess-bad', '写不进去')
     ok(failed.ok === false, '写盘失败时返回 ok:false', JSON.stringify(failed))
     ok(typeof failed.error === 'string' && failed.error.length > 0, '失败时带上原因', String(failed.error))
-    const after = await manualTitles()
-    ok(!('sess-bad' in after), '失败的写入不会留下半个名字', JSON.stringify(after))
+    let rejectedRead = false
+    try { await manualTitles() } catch { rejectedRead = true }
+    ok(rejectedRead, '读取故障明确报错，不把读失败伪装为空标题表')
     await rm(file, { recursive: true, force: true })
+    const after = await manualTitles()
+    ok(!('sess-bad' in after), '恢复读取后没有失败写入的名字', JSON.stringify(after))
   }
 
   /* ---- 4. 恢复正常后仍能写入（失败不是永久性的） ---- */

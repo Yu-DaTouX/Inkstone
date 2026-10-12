@@ -232,7 +232,7 @@ export function normalizeTaskItem(raw: unknown): TaskItemShape | undefined {
   if (text.length === 0) return undefined
   const status = normalizeTaskStatus(t.status)
   /* 两个字段不一致时以「完成」为准：勾上了就不该还在跑 */
-  const done = status === 'done' || Boolean(t.done)
+  const done = status === 'done' || t.done === true
   /* 只在**认得出**显式状态时才带上它，否则保持老数据的形状 */
   return { text, done, ...(status ? { status: done ? ('done' as const) : status } : {}) }
 }

@@ -49,11 +49,17 @@ export async function runPackagesTests(ok) {
 
     ok(validatePackageSource('npm:pi-zh-cn') === null, '合法 npm 源通过')
     ok(validatePackageSource('npm:@scope/pkg@1.0.0') === null, '合法 + 版本通过')
+    ok(validatePackageSource('npm:--registry=http://attacker') !== null, 'npm body 选项注入被拒绝')
+    ok(validatePackageSource('ssh://-oProxyCommand=evil') !== null, 'ssh body 选项注入被拒绝')
+    ok(validatePackageSource('ssh://git@-evil/repo') !== null, '带用户名的 SSH 选项主机名被拒绝')
+    ok(validatePackageSource('ssh://git@github.com/user/repo.git') === null, '合法 SSH 仓库来源通过')
+    ok(validatePackageSource('ssh://') !== null, '空 SSH 主机名被拒绝')
     ok(validatePackageSource('git:github.com/u/r') === null, '合法 git 源通过')
     ok(validatePackageSource('C:\\work\\ext') === null, '合法本地路径通过')
     ok(validatePackageSource('-l') !== null, '**以 - 开头会被当成 CLI 选项 → 必须拒绝**', String(validatePackageSource('-l')))
     ok(validatePackageSource('--no-approve') !== null, '长选项同样拒绝', String(validatePackageSource('--no-approve')))
     ok(validatePackageSource('npm:a b') !== null, '含空格拒绝', String(validatePackageSource('npm:a b')))
+    ok(validatePackageSource('npm:../../outside') !== null, 'npm 路径穿越形式被拒绝')
     ok(validatePackageSource('') !== null, '空拒绝', String(validatePackageSource('')))
     ok(validatePackageSource('foo') !== null, '没有来源前缀的裸名字拒绝（避免猜是 npm 还是 git）', String(validatePackageSource('foo')))
   }

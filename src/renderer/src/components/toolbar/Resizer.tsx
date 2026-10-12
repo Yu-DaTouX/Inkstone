@@ -156,6 +156,17 @@ export function Resizer({ side, review = false }: { side: 'rail' | 'panel'; revi
     apply(next)
   }
 
+  const cancel = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const start = startRef.current
+    if (!start) return
+    startRef.current = null
+    setWillCollapse(false)
+    setDragging(null)
+    document.body.classList.remove('resizing')
+    apply(start.base)
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* pointer already ended */ }
+  }
+
   const finish = (e: React.PointerEvent<HTMLDivElement>): void => {
     const st = startRef.current
     if (!st) return
@@ -212,6 +223,13 @@ export function Resizer({ side, review = false }: { side: 'rail' | 'panel'; revi
    * 设置里换了宽度（比如另一个窗口改的 / 启动时读盘）→ 同步到 CSS 变量。
    * 拖动中不要跟 —— 否则会与手指的位置打架。
    */
+  useEffect(() => () => {
+    if (startRef.current) {
+      document.body.classList.remove('resizing')
+      document.documentElement.style.setProperty(cssVar, `${startRef.current.base}px`)
+    }
+  }, [cssVar])
+
   useEffect(() => {
     if (dragging !== null) return
     if (stored > 0) document.documentElement.style.setProperty(cssVar, `${stored}px`)
@@ -233,7 +251,7 @@ export function Resizer({ side, review = false }: { side: 'rail' | 'panel'; revi
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={finish}
-      onPointerCancel={finish}
+      onPointerCancel={cancel}
       onDoubleClick={reset}
       onKeyDown={onKeyDown}
     />

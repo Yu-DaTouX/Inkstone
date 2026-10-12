@@ -649,6 +649,7 @@ export function nextContextStage(
   }
   if (!candidates.length) return null
 
+  candidates.sort((a, b) => a.at - b.at)
   const ahead = candidates.find((c) => c.at > used)
   if (ahead) return ahead
   const last = candidates[candidates.length - 1]
@@ -801,7 +802,9 @@ export function overridesOfEffectiveDocument(
   if (item.v !== 1) return {}
   const byModel = item.byModel && typeof item.byModel === 'object' ? item.byModel : {}
   const provider = modelKey && modelKey.includes('/') ? modelKey.split('/')[0] : ''
-  if (modelKey && byModel[modelKey]) return { ...byModel[modelKey] }
-  if (provider && byModel[provider]) return { ...byModel[provider] }
-  return { ...(item.default && typeof item.default === 'object' ? item.default : {}) }
+  return {
+    ...(sanitizeContextPolicyOverrides(item.default) ?? {}),
+    ...(provider && Object.hasOwn(byModel, provider) ? sanitizeContextPolicyOverrides(byModel[provider]) ?? {} : {}),
+    ...(modelKey && Object.hasOwn(byModel, modelKey) ? sanitizeContextPolicyOverrides(byModel[modelKey]) ?? {} : {})
+  }
 }

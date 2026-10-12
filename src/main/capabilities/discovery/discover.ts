@@ -79,8 +79,8 @@ export function npmCandidateOf(raw: unknown, discoveredAt: string): CapabilityCa
   if (!name || !version) return null
   const links = (pkg.links ?? {}) as Record<string, unknown>
   const publisher = (pkg.publisher ?? {}) as Record<string, unknown>
-  const repository = str(links.repository)
-  const npmUrl = str(links.npm) ?? `https://www.npmjs.com/package/${name}`
+  const repository = safeSourceUrl(links.repository)
+  const npmUrl = safeSourceUrl(links.npm) ?? `https://www.npmjs.com/package/${encodeURIComponent(name)}`
   return {
     candidateId: `npm:${name}@${version}`,
     kind: 'skill',
@@ -108,13 +108,19 @@ async function searchNpm(
   const candidates: CapabilityCandidate[] = []
   let pages = 0
   for (let page = 0; page < MAX_PAGES_PER_SOURCE; page++) {
-    const url = `${NPM_SEARCH_URL}?text=${encodeURIComponent(query)}&size=20&from=${page * 20}`
+    const base = safeSourceUrl(NPM_SEARCH_URL)
+    if (!base) throw new Error('NPM_SEARCH_URL 只允许 HTTPS（本机测试可用 localhost HTTP）')
+    const urlObject = new URL(base)
+    urlObject.searchParams.set('text', query)
+    urlObject.searchParams.set('size', '20')
+    urlObject.searchParams.set('from', String(page * 20))
+    const url = urlObject.href
     const res = await fetchImpl(url, {
       signal: AbortSignal.timeout(timeoutMs),
       headers: { accept: 'application/json' }
     })
     if (!res.ok) throw new Error(`npm registry 返回 HTTP ${res.status}`)
-    const body = (await res.json()) as { objects?: unknown[] }
+    const body = await readBoundedJson(res, 1024 * 1024) as { objects?: unknown[] }
     pages++
     const objects = asArray(body.objects)
     if (objects.length === 0) break
@@ -235,10 +241,30 @@ export function skillDirectoryCandidateOf(raw: unknown, directoryUrl: string, di
 
 async function readBoundedBytes(response: Response, limit: number, label: string): Promise<Uint8Array> {
   const length = response.headers?.get('content-length')
-  if (length && Number.isFinite(Number(length)) && Number(length) > limit) throw new Error(`${label}超过 ${limit} 字节`)
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > limit) throw new Error(`${label}超过 ${limit} 字节`)
-  return bytes
+  if (length && Number.isFinite(Number(length)) && Number(length) > limit) {
+    await response.body?.cancel().catch(() => undefined)
+    throw new Error(`${label}超过 ${limit} 字节`)
+  }
+  const reader = response.body?.getReader()
+  if (!reader) return new Uint8Array()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > limit) {
+        await reader.cancel()
+        throw new Error(`${label}超过 ${limit} 字节`)
+      }
+      chunks.push(value)
+    }
+  } finally { reader.releaseLock() }
+  const result = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength }
+  return result
 }
 
 async function readBoundedJson(response: Response, limit: number): Promise<unknown> {
@@ -320,7 +346,7 @@ async function skillMdCandidateOf(
     if (!detailUrl) return null
     const detailResponse = await fetchImpl(detailUrl, {
       signal: AbortSignal.timeout(timeoutMs),
-      redirect: 'manual',
+      redirect: 'error',
       headers: { accept: 'application/json' }
     })
     if (!detailResponse.ok) throw new Error(`Skill 详情返回 HTTP ${detailResponse.status}`)
@@ -342,7 +368,7 @@ async function skillMdCandidateOf(
 
   const response = await fetchImpl(rawUrl, {
     signal: AbortSignal.timeout(timeoutMs),
-    redirect: 'manual',
+    redirect: 'error',
     headers: { accept: 'text/markdown, text/plain;q=0.9, application/octet-stream;q=0.5' }
   })
   if (!response.ok) throw new Error(`Skill 文件返回 HTTP ${response.status}`)
@@ -398,23 +424,24 @@ async function searchSkillDirectory(
     const url = skillDirectoryRequestUrl(SKILL_DIRECTORY_URL, query, cursor)
     const response = await fetchImpl(url, {
       signal: AbortSignal.timeout(timeoutMs),
-      redirect: 'manual',
+      redirect: 'error',
       headers: { accept: 'application/json' }
     })
     if (!response.ok) throw new Error(`Skill 目录返回 HTTP ${response.status}`)
     const body = await readBoundedJson(response, 2 * 1024 * 1024) as Record<string, unknown> | unknown[]
     const list = Array.isArray(body) ? body : asArray(body.skills ?? body.entries ?? body.results ?? body.items)
     pages++
-    /* 同一页的 raw / detail 请求并行，但每条仍独立 fail-closed，避免公网慢条目拖住整轮。 */
-    const pageCandidates = await Promise.all(list.map(async (entry) => {
-      try {
-        return skillDirectoryCandidateOf(entry, SKILL_DIRECTORY_URL, discoveredAt)
-          ?? await skillMdCandidateOf(entry, SKILL_DIRECTORY_URL, fetchImpl, timeoutMs, discoveredAt)
-      } catch {
-        /* 单条 Skill 损坏或下线不应让整个目录源伪装成失败；可用条目仍可返回。 */
-        return null
-      }
-    }))
+    /* 控制目录单页与并发量，避免一个大响应触发无界请求扇出。 */
+    const pageCandidates: Array<CapabilityCandidate | null> = []
+    for (let start = 0; start < Math.min(list.length, 60); start += 4) {
+      const batch = list.slice(start, start + 4)
+      pageCandidates.push(...await Promise.all(batch.map(async (entry) => {
+        try {
+          return skillDirectoryCandidateOf(entry, SKILL_DIRECTORY_URL, discoveredAt)
+            ?? await skillMdCandidateOf(entry, SKILL_DIRECTORY_URL, fetchImpl, timeoutMs, discoveredAt)
+        } catch { return null }
+      })))
+    }
     candidates.push(...pageCandidates.filter((candidate): candidate is CapabilityCandidate => candidate !== null))
     const metadata = Array.isArray(body) ? undefined : body.metadata as Record<string, unknown> | undefined
     cursor = str(metadata?.nextCursor) ?? str((body as Record<string, unknown>).nextCursor)
@@ -443,7 +470,7 @@ export function mcpCandidateOf(raw: unknown, discoveredAt: string): CapabilityCa
   const packages = asArray(server.packages)
   const remote = (remotes[0] ?? null) as Record<string, unknown> | null
   const pkg = (packages[0] ?? null) as Record<string, unknown> | null
-  const remoteUrl = str(remote?.url)
+  const remoteUrl = safeSourceUrl(remote?.url)
   const remoteType = str(remote?.type)
   const transport: CandidateTransport | undefined =
     remoteUrl || remoteType === 'streamable-http' ? 'streamable-http' : pkg ? 'stdio' : undefined
@@ -462,7 +489,7 @@ export function mcpCandidateOf(raw: unknown, discoveredAt: string): CapabilityCa
           ...(fileSha256 ? { fileSha256 } : {})
         }
       : undefined
-  const repository = str((server.repository as Record<string, unknown> | undefined)?.url)
+  const repository = safeSourceUrl((server.repository as Record<string, unknown> | undefined)?.url)
   const registryUrl = `${MCP_REGISTRY_URL}?search=${encodeURIComponent(name)}`
   const requirements: string[] = []
   if (pkg) {
@@ -489,7 +516,7 @@ export function mcpCandidateOf(raw: unknown, discoveredAt: string): CapabilityCa
     ...(remoteUrl ? { remoteUrl } : {}),
     requirements,
     auth: 'unknown',
-    installKind: remoteUrl ? 'remote' : pkg ? 'mcp-package' : 'remote',
+    installKind: remoteUrl ? 'remote' : pkg ? 'mcp-package' : 'unknown',
     verification: 'metadata-only'
   }
 }
@@ -504,13 +531,19 @@ async function searchMcpRegistry(
   let pages = 0
   let cursor: string | undefined
   for (let page = 0; page < MAX_PAGES_PER_SOURCE; page++) {
-    const url = `${MCP_REGISTRY_URL}?search=${encodeURIComponent(query)}&limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
+    const base = safeSourceUrl(MCP_REGISTRY_URL)
+    if (!base) throw new Error('MCP_REGISTRY_URL 只允许 HTTPS（本机测试可用 localhost HTTP）')
+    const urlObject = new URL(base)
+    urlObject.searchParams.set('search', query)
+    urlObject.searchParams.set('limit', '20')
+    if (cursor) urlObject.searchParams.set('cursor', cursor)
+    const url = urlObject.href
     const res = await fetchImpl(url, {
       signal: AbortSignal.timeout(timeoutMs),
       headers: { accept: 'application/json' }
     })
     if (!res.ok) throw new Error(`MCP Registry 返回 HTTP ${res.status}`)
-    const body = (await res.json()) as { servers?: unknown[]; metadata?: Record<string, unknown> }
+    const body = await readBoundedJson(res, 2 *  1024 * 1024) as { servers?: unknown[]; metadata?: Record<string, unknown> }
     pages++
     const servers = asArray(body.servers)
     for (const server of servers) {

@@ -80,9 +80,12 @@ export async function runQuestionLogTests(ok) {
   ok(capped.length === 50, '每个会话最多留 50 条', String(capped.length))
   ok(capped[capped.length - 1].question === 'q59' && capped[0].question === 'q10', '裁剪保留最近的那一批', `${capped[0].question}..${capped[capped.length - 1].question}`)
 
-  /* 坏文件 / 手改过的内容不能让界面崩掉 */
+  /* 坏文件必须明确报错并保留，不能当空表覆盖。 */
   writeFileSync(file, '{ not json', 'utf8')
-  ok(store.list('session-a').length === 0, '文件坏了按空表处理（不抛错）')
+  let rejectedCorrupt = false
+  try { store.list('session-a') } catch { rejectedCorrupt = true }
+  ok(rejectedCorrupt, '文件坏了明确拒绝读取')
+  ok(readFileSync(file, 'utf8') === '{ not json', '坏文件原文保留')
   writeFileSync(
     file,
     JSON.stringify({
@@ -99,6 +102,12 @@ export async function runQuestionLogTests(ok) {
     }),
     'utf8'
   )
+  let rejectedUnsafeKey = false
+  try { store.list('session-a') } catch { rejectedUnsafeKey = true }
+  ok(rejectedUnsafeKey, '文档含非法会话 key 时拒绝读取，不静默丢弃后写回')
+  const validDocument = JSON.parse(readFileSync(file, 'utf8'))
+  delete validDocument.sessions['../bad']
+  writeFileSync(file, JSON.stringify(validDocument), 'utf8')
   const cleaned = store.list('session-a')
   ok(cleaned.length === 1 && cleaned[0].question === '好条目', '读盘时逐条校验，坏条目被丢掉', JSON.stringify(cleaned))
   ok(store.list('../bad').length === 0, '非法会话 key 直接跳过')

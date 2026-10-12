@@ -93,7 +93,7 @@ export function UsageBar() {
   }
 
   return (
-    <div className="usagebar" data-testid="usagebar" tabIndex={0} role="button" aria-label={t('sb.label')}>
+    <div className="usagebar" data-testid="usagebar">
       {/* 左组：本轮账单。模型/强度在最右，上下文在右栏。 */}
 
       {streaming && !speed ? (

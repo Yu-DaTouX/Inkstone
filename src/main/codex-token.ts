@@ -54,7 +54,7 @@ export function isCodexCredential(v: unknown): v is CodexOAuthCredential {
  * 用 refresh token 换新凭证，请求体与 pi 的刷新逐字一致（grant_type / refresh_token / client_id）。
  * refresh token 会轮换，调用方必须马上保存返回的新凭证，否则这个账号要重新登录。
  */
-export async function refreshCodexCredential(refresh: string): Promise<CodexOAuthCredential> {
+export async function refreshCodexCredential(refresh: string, storedAccountId?: string): Promise<CodexOAuthCredential> {
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -69,7 +69,7 @@ export async function refreshCodexCredential(refresh: string): Promise<CodexOAut
   if (!json || typeof json.access_token !== 'string' || typeof json.refresh_token !== 'string' || typeof json.expires_in !== 'number') {
     throw new Error('刷新登录的响应缺字段')
   }
-  const accountId = extractAccountId(json.access_token)
-  if (!accountId) throw new Error('刷新后的令牌里没有 accountId')
+  const accountId = extractAccountId(json.access_token) ?? storedAccountId
+  if (!accountId) throw new Error('刷新后的令牌里没有 accountId，且没有已存 accountId 可回退')
   return { type: 'oauth', access: json.access_token, refresh: json.refresh_token, expires: Date.now() + json.expires_in * 1000, accountId }
 }

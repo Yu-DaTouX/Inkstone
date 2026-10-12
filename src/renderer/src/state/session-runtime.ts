@@ -347,14 +347,16 @@ export function pruneSessionRuntimes(map: SessionRuntimeMap, protectedKeys: Read
     !value.uiRequests.length && !value.queue.steering.length && !value.queue.followUp.length)
     .sort((a, b) => (b[1].touchedAt ?? 0) - (a[1].touchedAt ?? 0))
   let count = 0
+  let draftCount = 0
   let bytes = 0
   let out = map
   for (const [key, value] of cold) {
     const size = historyBytes(value.messages)
-    if (count < 16 && bytes + size <= 32 * 1024 * 1024) { count += 1; bytes += size; continue }
+    if (!(value.draft && value.messages.length === 0) && count < 16 && bytes + size <= 32 * 1024 * 1024) { count += 1; bytes += size; continue }
     if (out === map) out = { ...map }
-    if (value.draft) {
-      // Draft-only entries remain small and do not hold history or model capability arrays.
+    if (value.draft && draftCount < 16) {
+      // Keep a small number of the newest drafts without retaining their history.
+      draftCount += 1
       out[key] = { ...emptyRuntime(value.runtime), draft: value.draft, touchedAt: value.touchedAt }
     } else delete out[key]
   }

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -363,6 +363,18 @@ export async function runArtifactTests(modules = {}) {
     await rm(external, { force: true })
 
     /*
+     * 挂载已有文件要记下源路径：预览读受控副本，但「在文件夹中显示」与
+     * 「复制路径」必须能给回用户自己的那份文件（否则只会打开 artifacts 副本）。
+     */
+    const inside = join(project, 'notes.md')
+    await writeFile(inside, '# 笔记\n')
+    const attached = await store.attach({ sessionFile, messageId: 'assistant-attach', cwd: project, sourcePath: 'notes.md' })
+    assert(attached.sourcePath === (await realpath(inside)), 'attached artifact should remember the source file path')
+    assert(attached.path !== attached.sourcePath, 'preview should still read the controlled copy, not the source file')
+    const generated = await store.save({ sessionFile, messageId: 'assistant-generated', filename: 'shot.png', bytes: PNG })
+    assert(generated.sourcePath === undefined, 'generated artifacts have no source file to open')
+
+    /*
      * 并发保存：每一条都必须留在 manifest 里（O01 回归）。
      * 旧实现的 list → push → writeFile 没有串行化：8 个并发保存都成功，
      * 但最终 manifest 只剩最后写入的那一条（文件都在，清单丢了）。
@@ -429,6 +441,8 @@ export async function runArtifactTests(modules = {}) {
           artifactDir: root
         }
       })
+      // 宿主先核对产物归属；审批测试必须提供已保存会话。
+      agent['state'] = { sessionFile }
       let denied = false
       try {
         await agent['runCapabilityCommand']('image.generate', { prompt: 'gate test', provider: 'compatible' })

@@ -33,6 +33,14 @@ import { GitInstallControl } from './GitInstallControl'
  * · 只在**首次启动且检测到问题时**自动弹出。已经能用的用户不该被打扰
  *   （用 localStorage 记住「看过了」）。
  */
+function OnboardingRow({ ok, title, desc, action, testId }: { ok: boolean; title: string; desc: React.ReactNode; action?: React.ReactNode; testId: string }) {
+  return <div className={`ob-row ${ok ? 'ob-ok' : 'ob-todo'}`} data-testid={testId} data-ok={ok ? '1' : '0'}>
+    <span className="ob-check" aria-hidden>{ok ? <Icon name="check" size={12} /> : null}</span>
+    <div className="ob-row-main"><div className="ob-row-title">{title}</div><div className="ob-row-desc">{desc}</div></div>
+    {action ? <div className="ob-row-act">{action}</div> : null}
+  </div>
+}
+
 export function Onboarding({ onClose }: { onClose: () => void }) {
   const t = useT()
   const piInfo = useStore((s) => s.piInfo)
@@ -47,6 +55,9 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
   useFocusTrap(card, true, isTop)
 
   const [ready, setReady] = useState<{ n: number; total: number; fromEnv: number } | null>(null)
+  const [authError, setAuthError] = useState('')
+  const authGeneration = useRef(0)
+  const toolsGeneration = useRef(0)
 
   /**
    * 重新检测凭证。
@@ -61,21 +72,23 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
    * 毫秒级；deep 查会逐项问 pi，那是设置页里点「重新检测」才做的事。
    */
   const detect = useCallback(async () => {
+    const generation = ++authGeneration.current
+    setAuthError('')
     try {
       const list = await window.yan.authProviders(false)
       const okList = list.filter((x) => x.status === 'ready')
-      setReady({
-        n: okList.length,
-        total: list.length,
-        fromEnv: okList.filter((x) => x.source === 'env').length
-      })
-    } catch {
+      if (generation !== authGeneration.current) return
+      setReady({ n: okList.length, total: list.length, fromEnv: okList.filter((x) => x.source === 'env').length })
+    } catch (error) {
+      if (generation !== authGeneration.current) return
       setReady(null)
+      setAuthError(error instanceof Error ? error.message : String(error))
     }
   }, [])
 
   useEffect(() => {
     void detect()
+    return () => { authGeneration.current++ }
   }, [detect])
 
   const piOk = !!piInfo?.version
@@ -87,14 +100,17 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
   /* 新装的 Windows 设备常缺 Git for Windows：没有 bash，命令行工具与改动审阅都用不了 */
   const [tools, setTools] = useState<ToolchainStatus | null>(null)
   const detectTools = useCallback(async () => {
+    const generation = ++toolsGeneration.current
     try {
-      setTools(await window.yan.toolchainStatus())
+      const result = await window.yan.toolchainStatus()
+      if (generation === toolsGeneration.current) setTools(result)
     } catch {
-      setTools(null)
+      if (generation === toolsGeneration.current) setTools(null)
     }
   }, [])
   useEffect(() => {
     void detectTools()
+    return () => { toolsGeneration.current++ }
   }, [detectTools])
   const toolsOk = !tools || (tools.bash.ok && tools.git.ok)
 
@@ -106,31 +122,6 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
    *    把这一行改成了两列 grid —— 操作区的两个按钮被挤成 21px 宽、
    *    文字截断并压在说明文字上（N20）。前缀化的类名不会误命中通用选择器。
    */
-  const Row = ({
-    ok,
-    title,
-    desc,
-    action,
-    testId
-  }: {
-    ok: boolean
-    title: string
-    desc: React.ReactNode
-    action?: React.ReactNode
-    testId: string
-  }) => (
-    <div className={`ob-row ${ok ? 'ob-ok' : 'ob-todo'}`} data-testid={testId} data-ok={ok ? '1' : '0'}>
-      <span className="ob-check" aria-hidden>
-        {ok ? <Icon name="check" size={12} /> : null}
-      </span>
-      <div className="ob-row-main">
-        <div className="ob-row-title">{title}</div>
-        <div className="ob-row-desc">{desc}</div>
-      </div>
-      {action ? <div className="ob-row-act">{action}</div> : null}
-    </div>
-  )
-
   return (
     <div className="ob-scrim" role="dialog" aria-modal="true" aria-label={t('ob.title')}>
       <div className="ob-card" ref={card} data-testid="onboarding">
@@ -148,7 +139,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
 
         <div className="ob-body">
           {/* ① pi 本体 */}
-          <Row
+          <OnboardingRow
             testId="ob-pi"
             ok={piOk}
             title={t('ob.piTitle')}
@@ -170,7 +161,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
           />
 
           {/* ② 模型接入 */}
-          <Row
+          <OnboardingRow
             testId="ob-auth"
             ok={authOk}
             title={t('ob.authTitle')}
@@ -187,7 +178,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
                   ) : null}
                 </>
               ) : (
-                t('ob.authMissing')
+                authError ? `${t('ob.recheck')}: ${authError}` : t('ob.authMissing')
               )
             }
             action={
@@ -205,7 +196,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
 
           {/* ③ 命令行工具（bash / git）；检测不到状态时不显示，避免误报 */}
           {tools ? (
-            <Row
+            <OnboardingRow
               testId="ob-tools"
               ok={toolsOk}
               title={t('ob.toolsTitle')}
@@ -222,7 +213,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
           ) : null}
 
           {/* ④ 连通性 */}
-          <Row
+          <OnboardingRow
             testId="ob-conn"
             ok={connOk}
             title={t('ob.connTitle')}
@@ -230,7 +221,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
           />
 
           {/* ⑤ 模型列表（能列出模型 = pi 跑起来了） */}
-          <Row
+          <OnboardingRow
             testId="ob-models"
             ok={modelOk}
             title={t('ob.modelTitle')}

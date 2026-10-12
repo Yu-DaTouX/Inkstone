@@ -6,8 +6,7 @@
  * 没有任何学习数据时不创建导出目录。
  */
 
-import { existsSync } from 'node:fs'
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { buildLearningExport, type LearningRawData } from '../shared/learning-export'
@@ -21,11 +20,12 @@ const SOURCES: Record<keyof LearningRawData, string> = {
   learningMemory: 'learning-memory.json'
 }
 
-async function readRaw(file: string): Promise<unknown> {
+async function readRaw(file: string): Promise<unknown | undefined> {
   try {
     return JSON.parse(await readFile(file, 'utf8'))
-  } catch {
-    return undefined
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw new Error(`学习数据文件读取或解析失败：${file}`, { cause: error })
   }
 }
 
@@ -37,7 +37,12 @@ export async function exportLearningData(
   let any = false
   for (const [key, name] of Object.entries(SOURCES) as [keyof LearningRawData, string][]) {
     const path = join(root, name)
-    if (!existsSync(path)) continue
+    try {
+      await stat(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      throw error
+    }
     raw[key] = await readRaw(path)
     any = true
   }
@@ -49,10 +54,24 @@ export async function exportLearningData(
   const staging = `${dir}.tmp-${process.pid}-${now}`
   await rm(staging, { recursive: true, force: true })
   await mkdir(staging, { recursive: true })
-  for (const file of files) await writeFile(join(staging, file.name), file.content, 'utf8')
   const old = `${dir}.old-${process.pid}-${now}`
-  if (existsSync(dir)) await rename(dir, old)
-  await rename(staging, dir)
-  await rm(old, { recursive: true, force: true })
+  let movedOld = false
+  try {
+    for (const file of files) await writeFile(join(staging, file.name), file.content, 'utf8')
+    try { await stat(dir); await rename(dir, old); movedOld = true }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    try {
+      await rename(staging, dir)
+    } catch (error) {
+      if (movedOld) await rename(old, dir).catch((rollback) => {
+        throw new Error(`导出目录替换失败，旧目录回滚也失败：${String(rollback)}`, { cause: error })
+      })
+      throw error
+    }
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  }
+  if (movedOld) await rm(old, { recursive: true, force: true })
   return { dir, files: (await readdir(dir)).sort() }
 }

@@ -13,7 +13,7 @@
  *   · 提取不到就如实标 unsupported，符合 §1「状态如实显示」。
  * 代价是复杂版式会丢掉顺序与位置，note 里明确写清楚。
  */
-import { readFile } from 'node:fs/promises'
+import { open, stat } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { inflateSync } from 'node:zlib'
 import type { LibraryKind, LibraryParseStatus } from '../shared/library'
@@ -85,13 +85,22 @@ export async function parseLibraryFile(filePath: string, kind: LibraryKind): Pro
 
 async function parsePlainText(filePath: string, ext: string): Promise<ParseOutcome> {
   let buf: Buffer
+  let truncated: boolean
   try {
-    buf = await readFile(filePath)
+    const info = await stat(filePath)
+    if (!info.isFile()) return { status: 'failed', note: '不是普通文件' }
+    truncated = info.size > MAX_TEXT_BYTES
+    const handle = await open(filePath, 'r')
+    try {
+      buf = Buffer.alloc(Math.min(info.size, MAX_TEXT_BYTES))
+      const { bytesRead } = await handle.read(buf, 0, buf.length, 0)
+      buf = buf.subarray(0, bytesRead)
+      truncated ||= bytesRead < info.size
+    } finally { await handle.close() }
   } catch (error) {
     return { status: 'failed', note: `读不到文件：${error instanceof Error ? error.message : String(error)}` }
   }
-  const truncated = buf.byteLength > MAX_TEXT_BYTES
-  const slice = truncated ? buf.subarray(0, MAX_TEXT_BYTES) : buf
+  const slice = buf
   let text = slice.toString('utf8')
   /* 字节被截断时可能切在多字节字符中间，去掉尾部的替换符 */
   if (truncated) text = text.replace(/\uFFFD+$/, '')
@@ -117,7 +126,15 @@ async function parsePlainText(filePath: string, ext: string): Promise<ParseOutco
 async function parsePdf(filePath: string): Promise<ParseOutcome> {
   let buf: Buffer
   try {
-    buf = await readFile(filePath)
+    const info = await stat(filePath)
+    if (!info.isFile()) return { status: 'failed', note: '不是普通文件' }
+    if (info.size > MAX_PDF_BYTES) return { status: 'unsupported', note: `PDF 超过 ${Math.round(MAX_PDF_BYTES / 1024 / 1024)}MB，仅作为附件保留` }
+    buf = Buffer.alloc(info.size)
+    const handle = await open(filePath, 'r')
+    try {
+      const { bytesRead } = await handle.read(buf, 0, buf.length, 0)
+      if (bytesRead !== info.size) return { status: 'failed', note: 'PDF 在读取期间发生变化，请重试' }
+    } finally { await handle.close() }
   } catch (error) {
     return { status: 'failed', note: `读不到文件：${error instanceof Error ? error.message : String(error)}` }
   }
@@ -142,7 +159,7 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
   /** 超出解压预算（或预算已用完）而被跳过的流数 */
   let skipped = 0
 
-  const marker = /stream(\r\n|\r|\n)/g
+  const marker = /(?<![A-Za-z])stream(\r\n|\r|\n)/g
   let hit: RegExpExecArray | null
   while ((hit = marker.exec(raw))) {
     const start = hit.index + hit[0].length
@@ -150,11 +167,12 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
     if (end < 0) break
     streams += 1
     const slice = buf.subarray(start, end)
+    const declaredFlate = /\/Filter\s*(?:\[\s*)?\/FlateDecode\b/.test(raw.slice(Math.max(0, hit.index - 2048), hit.index))
     let content = ''
     const remaining = MAX_PDF_TOTAL_BYTES - produced
     if (remaining <= 0) {
       skipped += 1
-      marker.lastIndex = end
+      marker.lastIndex = end + 'endstream'.length
       continue
     }
     try {
@@ -165,7 +183,12 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
       if (code === 'ERR_BUFFER_TOO_LARGE' || /maxOutputLength/i.test(error instanceof Error ? error.message : '')) {
         /* 超出预算的流不当成"未压缩流"继续读 —— 那会把压缩数据当文本乱解一气 */
         skipped += 1
-        marker.lastIndex = end
+        marker.lastIndex = end + 'endstream'.length
+        continue
+      }
+      if (declaredFlate) {
+        skipped += 1
+        marker.lastIndex = end + 'endstream'.length
         continue
       }
       /* 未压缩的流：原样使用 */
@@ -174,15 +197,15 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
     produced += content.length
     const text = extractPdfText(content)
     if (text.trim()) pieces.push(text)
-    marker.lastIndex = end
+    marker.lastIndex = end + 'endstream'.length
   }
 
   const text = pieces.join('\n\n').replace(/\n{3,}/g, '\n\n').trim()
   if (streams === 0) return { status: 'failed', pages, note: 'PDF 里没有内容流（文件可能损坏）' }
-  const skippedNote = skipped > 0 ? `（${skipped} 个内容流超出解压上限，已跳过）` : ''
+  const skippedNote = skipped > 0 ? `（${skipped} 个内容流超出预算或解压失败，已跳过）` : ''
   if (text.length < MIN_TEXT_CHARS) {
     if (skipped > 0 && !pieces.length) {
-      return { status: 'failed', pages, note: `内容流解压后超出上限${skippedNote}，没有可用的文本层` }
+      return { status: 'failed', pages, note: `内容流超出预算或解压失败${skippedNote}，没有可用的文本层` }
     }
     return { status: 'unsupported', pages, note: `PDF 里没有可提取的文本层（扫描件或纯图片页），已作为附件保留${skippedNote}` }
   }
@@ -203,17 +226,29 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
  */
 export function extractPdfText(content: string): string {
   const out: string[] = []
-  const re = /\([^()]*\)/g
   let last = 0
-  let hit: RegExpExecArray | null
-  while ((hit = re.exec(content))) {
-    const between = content.slice(last, hit.index)
+  for (let i = 0; i < content.length; i += 1) {
+    if (content[i] !== '(') continue
+    const start = i
+    let depth = 1
+    let escaped = false
+    for (i += 1; i < content.length && depth > 0; i += 1) {
+      const ch = content[i]
+      if (escaped) { escaped = false; continue }
+      if (ch === String.fromCharCode(92)) { escaped = true; continue }
+      if (ch === '(') depth += 1
+      else if (ch === ')') depth -= 1
+    }
+    if (depth !== 0) break
+    const end = i
+    const between = content.slice(last, start)
     if (out.length) {
       if (/\bT[dD]\b|\bT\*/.test(between)) out.push('\n')
       else if (/\bTj\b|\bTJ\b/.test(between)) out.push(' ')
     }
-    out.push(decodePdfString(hit[0].slice(1, -1)))
-    last = hit.index + hit[0].length
+    out.push(decodePdfString(content.slice(start + 1, end - 1)))
+    last = end
+    i -= 1
   }
   return out.join('').replace(/[ \t]+\n/g, '\n')
 }
@@ -297,14 +332,14 @@ export function extractHtmlText(html: string): { text: string; title?: string } 
   body = body.replace(/<[^>]*>/g, ' ')
   body = body.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (whole: string, name: string) => {
     const key = name.toLowerCase()
-    if (ENTITIES[key] !== undefined) return ENTITIES[key]
+    if (Object.hasOwn(ENTITIES, key)) return ENTITIES[key]
     if (key.startsWith('#x')) {
       const code = parseInt(key.slice(2), 16)
-      return Number.isFinite(code) ? String.fromCodePoint(code) : whole
+      return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole
     }
     if (key.startsWith('#')) {
       const code = parseInt(key.slice(1), 10)
-      return Number.isFinite(code) ? String.fromCodePoint(code) : whole
+      return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole
     }
     return whole
   })

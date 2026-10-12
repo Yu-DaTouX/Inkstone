@@ -75,7 +75,7 @@ export function RelaySection({ draft, status, busy, configure, run }: {
                 ) : null}
                 <div className="remote-pairing-detail">
                   <div className="ui-row-desc">{pairing.kind === 'agent' ? t('remote.relayAgentHint') : t('remote.relayPhoneHint')}</div>
-                  <div className="ui-row-desc">{t('remote.relayExpires', { seconds: secondsLeft })}</div>
+                  <div className="ui-row-desc">{t('remote.relayExpires', { seconds: secondsLeft })} Pairing links contain credentials and remain in the system clipboard until replaced.</div>
                   <Button size="sm" data-testid="remote-relay-copy" onClick={() => { void navigator.clipboard.writeText(pairing.link).then(() => setCopied(true)).catch(() => setCopied(false)) }}>
                     {copied ? t('remote.relayCopied') : t('remote.relayCopy')}
                   </Button>

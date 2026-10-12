@@ -108,7 +108,9 @@ export function activeContextPolicy(
  *   · **不写 `YAN_CONTEXT_POLICY`**：那个 env 的优先级高于设置面板，
  *     宿主自己写它会让用户设置被静默忽略。
  */
-let lastEffectiveRevision: string | null = null
+const effectiveRevisions = new Map<string, string>()
+const desiredRevisions = new Map<string, string>()
+const effectiveWrites = new Map<string, Promise<string | null>>()
 
 export async function syncEffectivePolicyFile(
   dataDir: string,
@@ -119,18 +121,21 @@ export async function syncEffectivePolicyFile(
   }
 ): Promise<string | null> {
   const revision = contextPolicyRevision(input)
-  if (revision === lastEffectiveRevision) return revision
-  const doc = buildEffectivePolicyDocument(input)
-  try {
-    await mkdir(dataDir, { recursive: true })
-    await writeFile(
-      join(dataDir, 'context-policy.effective.json'),
-      `${JSON.stringify(doc)}\n`,
-      'utf8'
-    )
-    lastEffectiveRevision = revision
-    return revision
-  } catch {
-    return null
-  }
+  const key = join(dataDir, 'context-policy.effective.json')
+  desiredRevisions.set(key, revision)
+  const prior = effectiveWrites.get(key)
+  if (!prior && effectiveRevisions.get(key) === revision) return revision
+  const write = (prior ?? Promise.resolve(null)).catch(() => null).then(async () => {
+    /* A queued stale settings snapshot must never overwrite a newer registration. */
+    if (desiredRevisions.get(key) !== revision) return null
+    if (effectiveRevisions.get(key) === revision) return revision
+    try {
+      await mkdir(dataDir, { recursive: true })
+      await writeFile(key, `${JSON.stringify(buildEffectivePolicyDocument(input))}\n`, 'utf8')
+      effectiveRevisions.set(key, revision)
+      return revision
+    } catch { return null }
+  })
+  effectiveWrites.set(key, write)
+  try { return await write } finally { if (effectiveWrites.get(key) === write) effectiveWrites.delete(key) }
 }

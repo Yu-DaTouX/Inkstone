@@ -13,7 +13,7 @@
  *     **只作为候选**登记（带 `external:<工具>` 标签和原始摘录），由用户在设置页确认。
  * 外部工具自报的「用户已同意」不被采信；同一段文字重复提交按指纹去重，不会被当成新证据。
  */
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProjectRecord } from '../shared/ipc'
 import { KNOWLEDGE_KINDS, registeredProjectIdForCwd, type ProjectIdentity, type ProjectKnowledge } from '../shared/project-memory'
@@ -80,8 +80,17 @@ export async function ingestMemoryInbox(registry: readonly ProjectRecord[]): Pro
     const results: InboxCandidateResult[] = []
     let fileError: string | null = null
     try {
-      const raw = await readFile(path, 'utf8')
-      if (Buffer.byteLength(raw) > MAX_INBOX_BYTES) throw new Error('文件超过 256KB')
+      const info = await stat(path)
+      if (!info.isFile()) throw new Error('收件箱条目不是普通文件')
+      if (info.size > MAX_INBOX_BYTES) throw new Error('文件超过 256KB')
+      const handle = await open(path, 'r')
+      let raw: string
+      try {
+        const bytes = Buffer.alloc(info.size)
+        const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0)
+        if (bytesRead !== info.size) throw new Error('收件箱文件读取期间发生变化')
+        raw = bytes.toString('utf8')
+      } finally { await handle.close() }
       const parsed = JSON.parse(raw) as { version?: unknown; tool?: unknown; candidates?: unknown }
       if (parsed.version !== 1) throw new Error('version 必须是 1')
       if (typeof parsed.tool !== 'string' || !TOOL_RE.test(parsed.tool)) throw new Error('tool 必须是 1–40 位字母数字名称')
@@ -106,8 +115,10 @@ export async function ingestMemoryInbox(registry: readonly ProjectRecord[]): Pro
 }
 
 async function ingestCandidate(index: number, tool: string, item: unknown, registry: readonly ProjectRecord[]): Promise<InboxCandidateResult> {
+  try {
   const raw = (item ?? {}) as { scope?: unknown; project?: unknown; kind?: unknown; text?: unknown; tags?: unknown; source?: unknown }
-  const scope: MemoryScope = raw.scope === 'project' ? 'project' : 'personal'
+  if (raw.scope !== 'project' && raw.scope !== 'personal') return { index, ok: false, error: 'scope 只能是 project 或 personal' }
+  const scope: MemoryScope = raw.scope
   let identity: ProjectIdentity = PERSONAL_IDENTITY
   let opts: ProjectKnowledgeStoreOptions = PERSONAL_STORE
   if (scope === 'project') {
@@ -139,6 +150,9 @@ async function ingestCandidate(index: number, tool: string, item: unknown, regis
   return outcome.ok
     ? { index, ok: true, scope, id: outcome.entry.id }
     : { index, ok: false, scope, error: `${outcome.code}：${outcome.message}` }
+  } catch (error) {
+    return { index, ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 /* ── 导出：供其他工具查询 ───────────────────────────────────── */

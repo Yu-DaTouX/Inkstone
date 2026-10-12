@@ -29,7 +29,7 @@
  * 桌面端提供输入框只是把它变成 GUI —— 与 TUI 的 `/login` 是同一件事。
  * 而且写入时会**合并**（不会碰其它 provider 的条目）。
  */
-import { readFile, writeFile, mkdir, stat, readdir, realpath, rmdir, utimes } from 'node:fs/promises'
+import { readFile, mkdir, stat, readdir, realpath, rmdir, utimes, open, rename, unlink } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import type { AuthProviderInfo, AuthStatus, FileListingStatus, FileRequestContext, PathCompletionResult } from '../shared/ipc'
@@ -168,12 +168,32 @@ const HOST_ONLY_PROVIDERS = new Set(['volcengine-ark'])
 /* ------------------------------------------------------------------ 读写 */
 
 async function readAuth(): Promise<Record<string, unknown>> {
+  let raw: string
   try {
-    const raw = await readFile(AUTH_FILE, 'utf8')
-    const j = JSON.parse(raw) as unknown
-    return j && typeof j === 'object' ? (j as Record<string, unknown>) : {}
-  } catch {
-    return {}
+    raw = await readFile(AUTH_FILE, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    throw error
+  }
+  const value = JSON.parse(raw) as unknown
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('auth.json 格式无效；为保护现有凭证，已拒绝写入')
+  return value as Record<string, unknown>
+}
+
+async function writeAuthAtomic(data: Record<string, unknown>): Promise<void> {
+  const tmp = `${AUTH_FILE}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
+  let handle: Awaited<ReturnType<typeof open>> | undefined
+  try {
+    handle = await open(tmp, 'wx', 0o600)
+    await handle.writeFile(JSON.stringify(data, null, 2) + '\n', 'utf8')
+    await handle.sync()
+    await handle.close()
+    handle = undefined
+    await rename(tmp, AUTH_FILE)
+  } catch (error) {
+    await handle?.close().catch(() => undefined)
+    await unlink(tmp).catch(() => undefined)
+    throw error
   }
 }
 
@@ -253,7 +273,7 @@ export async function updateAuthFile<T>(
   try {
     const data = await readAuth()
     const { write, result } = await fn(data)
-    if (write) await writeFile(AUTH_FILE, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
+    if (write) await writeAuthAtomic(data)
     return result
   } finally {
     await release()
@@ -268,10 +288,14 @@ export async function updateAuthFile<T>(
  *（见那里的注释），与 pi 的 token 刷新、与设置页的其它写入互斥。
  * 文件权限尽量设 0600（与 pi 一致；Windows 上这个位不生效，但不报错）。
  */
+function validProviderId(provider: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(provider) && !['__proto__', 'prototype', 'constructor'].includes(provider)
+}
+
 export async function setApiKey(provider: string, key: string): Promise<{ ok: boolean; error?: string }> {
   const id = provider.trim()
   const val = key.trim()
-  if (!id) return { ok: false, error: 'provider 不能为空' }
+  if (!validProviderId(id)) return { ok: false, error: 'provider 名称无效' }
   if (!val) return { ok: false, error: 'API key 不能为空' }
   return mergeAuthEntry(id, { type: 'api_key', key: val })
 }
@@ -284,9 +308,11 @@ export async function setApiKey(provider: string, key: string): Promise<{ ok: bo
  * 两边的写入路径**共用这一个函数**，免得以后只改一处导致其中一条路把别人的
  * 凭证抹掉。
  */
-export async function mergeAuthEntry(provider: string, value: unknown): Promise<{ ok: boolean; error?: string }> {
+export async function mergeAuthEntry(provider: string, value: unknown, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }> {
+  if (!validProviderId(provider)) return { ok: false, error: 'provider 名称无效' }
   try {
     await updateAuthFile((data) => {
+      if (signal?.aborted) throw new Error('已取消登录')
       data[provider] = value
       return { write: true, result: undefined }
     })
@@ -298,6 +324,7 @@ export async function mergeAuthEntry(provider: string, value: unknown): Promise<
 
 /** 移除一个 provider 的凭证（界面上就是「退出登录」） */
 export async function clearAuth(provider: string): Promise<{ ok: boolean; error?: string }> {
+  if (!validProviderId(provider)) return { ok: false, error: 'provider 名称无效' }
   try {
     await updateAuthFile((data) => {
       if (!(provider in data)) return { write: false, result: undefined }
@@ -427,9 +454,14 @@ export async function listAuthProviders(
 
   if (!deep) return base
 
-  // deep：对每一项问 pi（比较慢，界面上要有 loading）
-  return Promise.all(
-    base.map(async (c) => {
+  // 深查保留 UI 可见等待状态；宿主同时最多启动 3 个 pi 子进程，避免一口气并发启动全部 provider。
+  const results = new Array<AuthProviderInfo>(base.length)
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(3, base.length) }, async () => {
+    while (cursor < base.length) {
+      const index = cursor++
+      const c = base[index]
+      results[index] = await (async () => {
       /*
        * 探测用的名字：
        *   · 目录里的自定义项 → 直接用 id（它就是 auth.json 的键）
@@ -453,8 +485,11 @@ export async function listAuthProviders(
       if (r.status === 'ready') return { ...c, status: 'ready' as const }
       if (r.status === 'missing') return { ...c, status: 'missing' as const }
       return c
-    })
-  )
+      })()
+    }
+  })
+  await Promise.all(workers)
+  return results
 }
 
 /** auth.json 是否存在、有多少条（界面上用来提示「凭证放在哪」） */
@@ -504,7 +539,7 @@ export async function completePath(
   const namePart = (slash >= 0 ? raw.slice(slash + 1) : raw).toLowerCase()
 
   // 拒绝跳出 cwd 的路径（`..`、绝对路径）
-  if (dirPart.includes('..') || /^[A-Za-z]:/.test(dirPart) || dirPart.startsWith('/')) return result('invalid')
+  if (dirPart.split(/[\\/]+/).includes('..') || /^[A-Za-z]:/.test(dirPart) || dirPart.startsWith('/')) return result('invalid')
 
   let root: string
   try {

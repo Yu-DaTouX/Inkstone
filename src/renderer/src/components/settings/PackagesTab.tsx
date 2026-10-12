@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { modelErrorText } from '../../../../shared/model-errors'
 import { useT } from '../../i18n'
@@ -11,6 +11,7 @@ import type {
   PackageListingView
 } from '../../../../shared/ipc'
 import { Button, Disclosure, SettingRow } from '../ui'
+import { isCurrentGeneration } from './review2-settings-guards'
 
 /**
  * 内置能力的文案表（id → zh-CN 的 i18n 键）。
@@ -78,15 +79,23 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
   const [attach, setAttach] = useState<AttachmentUsage | null>(null)
   const [attachBusy, setAttachBusy] = useState(false)
   const [attachNote, setAttachNote] = useState('')
+  const loadGeneration = useRef(0)
+  const mounted = useRef(true)
+  const attachGeneration = useRef(0)
 
   useEffect(() => {
-    void window.yan.attachments
-      .usage()
-      .then(setAttach)
-      .catch(() => {})
-  }, [])
+    mounted.current = true
+    const generation = ++attachGeneration.current
+    void window.yan.attachments.usage().then((usage) => {
+      if (isCurrentGeneration(attachGeneration.current, generation)) { setAttach(usage); setAttachNote('') }
+    }).catch((error) => {
+      if (generation === attachGeneration.current) setAttachNote(`${t('pkg.failed')}: ${modelErrorText(error)}`)
+    })
+    return () => { mounted.current = false; attachGeneration.current++; loadGeneration.current++ }
+  }, [t])
 
   const cleanAttachments = async (): Promise<void> => {
+    if (!attach || !window.confirm(`${t('pkg.attachClean')} · ${t('pkg.attachSize', { files: attach.files, size: fmtSize(attach.bytes) })}?`)) return
     setAttachBusy(true)
     setAttachNote(t('pkg.attachScanning'))
     try {
@@ -108,9 +117,12 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
   const [showRaw, setShowRaw] = useState(false)
 
   const load = useCallback(async (): Promise<void> => {
+    const generation = ++loadGeneration.current
     try {
-      setListing(await window.yan.packages.list(cwd))
+      const next = await window.yan.packages.list(cwd)
+      if (isCurrentGeneration(loadGeneration.current, generation)) setListing(next)
     } catch (e) {
+      if (!isCurrentGeneration(loadGeneration.current, generation)) return
       setListing({
         ok: false,
         agentDir: '',
@@ -124,6 +136,7 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
 
   useEffect(() => {
     void load()
+    return () => { loadGeneration.current++ }
   }, [load])
 
   /*
@@ -144,17 +157,20 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
   }, [])
 
   const run = async (kind: 'install' | 'remove' | 'update', src: string, targetLocal: boolean): Promise<void> => {
+    const generation = loadGeneration.current
     setBusy(`${kind}:${targetLocal ? 'project' : 'user'}:${src}`)
     setShowRaw(false)
     let res: PackageActionResultView
     try { res = await window.yan.packages.action({ kind, source: src, local: targetLocal, cwd }) }
     catch (error) { res = { ok: false, error: error instanceof Error ? error.message : String(error) } }
+    if (!mounted.current) return
+    if (generation !== loadGeneration.current) { setBusy(''); return }
     setResult(res)
     setBusy('')
     /* 主进程会把执行后的列表带回来（省一次往返，界面立刻是对的） */
     if (res.listing) setListing(res.listing)
     else await load()
-    if (res.ok && kind === 'install') setSource('')
+    if (res.ok && kind === 'install' && mounted.current) setSource('')
   }
 
   return (

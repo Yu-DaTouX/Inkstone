@@ -32,7 +32,7 @@ export async function runChromeProfileTests(ok) {
   /* ---- 2. 选哪个子 profile ---- */
   console.log('\n--- 13. 选择子 profile ---')
   ok(pickProfileName(['Default', 'Profile 1']) === 'Default', 'Default 优先', pickProfileName(['Default', 'Profile 1']))
-  ok(pickProfileName(['Profile 1', 'Profile 2']) === 'Profile 1', '没有 Default 时取 Profile N', pickProfileName(['Profile 1', 'Profile 2']))
+  ok(pickProfileName(['Profile 1', 'Profile 2']) === 'Profile 2', '没有 Default 或 last_used 时取最大 Profile 编号', pickProfileName(['Profile 1', 'Profile 2']))
   ok(pickProfileName(['Guest Profile', 'System Profile']) === null, '只有非用户 profile 时返回 null')
   ok(pickProfileName(['Default'], { YAN_CHROME_PROFILE: 'Profile 3' }) === 'Default', 'override 不存在时回落 Default')
   ok(

@@ -58,7 +58,13 @@ export async function runLearningExportTests(ok, shared, main, fs) {
     ok(!existsSync(join(root, 'learning-export')), '确实没有导出目录')
     const coursesFile = join(root, 'courses.json')
     writeFileSync(coursesFile, JSON.stringify(raw.courses))
-    writeFileSync(join(root, 'exercises.json'), '{ 坏 JSON')
+    const exercisesFile = join(root, 'exercises.json')
+    writeFileSync(exercisesFile, '{ 坏 JSON')
+    let rejectedCorrupt = false
+    try { await main.exportLearningData(root, 2) } catch { rejectedCorrupt = true }
+    ok(rejectedCorrupt, '坏 JSON 阻止导出，不生成假完整备份')
+    ok(readFileSync(exercisesFile, 'utf8') === '{ 坏 JSON', '坏原始文件保留')
+    writeFileSync(exercisesFile, JSON.stringify(raw.exercises ?? {}))
     const res = await main.exportLearningData(root, 2)
     ok(!!res && res.files.includes('course-co_1.md'), '有课程文件时导出课程 Markdown')
     ok(readFileSync(coursesFile, 'utf8') === JSON.stringify(raw.courses), '原始文件不被修改')

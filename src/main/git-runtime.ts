@@ -304,6 +304,9 @@ export async function installManagedGit(options: InstallOptions = {}): Promise<{
   const toolsDir = join(root, '..')
   const file = join(toolsDir, `${pin.version}.download.exe`)
   const stage = `${root}.staging`
+  const backup = `${root}.old-${process.pid}-${Date.now()}`
+  let movedOld = false
+  let installedNew = false
   try {
     await mkdir(toolsDir, { recursive: true })
     await rm(stage, { recursive: true, force: true })
@@ -341,16 +344,38 @@ export async function installManagedGit(options: InstallOptions = {}): Promise<{
       throw new Error('解压后的目录里没有找到 git.exe / bash.exe')
     }
     if (!options.extract) await gitVersionOf(join(stage, 'cmd', 'git.exe'))
-    await rm(root, { recursive: true, force: true })
-    await rename(stage, root)
-    await writeFile(join(root, 'install.json'), JSON.stringify({ version: pin.version, sha256: pin.sha256, at: Date.now() }, null, 2), 'utf8')
+    await writeFile(join(stage, 'install.json'), JSON.stringify({ version: pin.version, sha256: pin.sha256, at: Date.now() }, null, 2), 'utf8')
+    if (existsSync(root)) {
+      await rename(root, backup)
+      movedOld = true
+    }
+    try {
+      await rename(stage, root)
+      installedNew = true
+    } catch (error) {
+      if (movedOld) {
+        await rename(backup, root)
+        movedOld = false
+      }
+      throw error
+    }
     await refreshManagedGit(root)
+    if (movedOld) {
+      await rm(backup, { recursive: true, force: true })
+      movedOld = false
+    }
     report({ phase: 'done', message: `已安装 Git ${pin.version}` })
     return { ok: true }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     await rm(file, { force: true }).catch(() => undefined)
     await rm(stage, { recursive: true, force: true }).catch(() => undefined)
+    if (movedOld) {
+      if (installedNew) await rm(root, { recursive: true, force: true }).catch(() => undefined)
+      if (!existsSync(root)) {
+        await rename(backup, root).then(() => { movedOld = false }).catch(() => undefined)
+      }
+    }
     report({ phase: 'error', message })
     return { ok: false, error: message }
   } finally {

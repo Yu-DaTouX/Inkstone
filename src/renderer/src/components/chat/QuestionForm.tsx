@@ -61,14 +61,20 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
             <label className="qform-label" htmlFor={`qf-${f.name}`}>{f.label}{f.optional ? <span className="qform-optional">{t('qf.optional')}</span> : null}</label>
             {f.kind === 'choice' || f.kind === 'multi' ? (
               <>
-                <div className="qform-options" role={f.kind === 'multi' ? 'group' : 'radiogroup'} aria-label={f.label}>
+                <div className="qform-options" role="group" aria-label={f.label}>
                   {f.options!.map((raw) => {
                     /* 宿主已规范化成对象；兼容直接给文字的旧请求 */
                     const o = typeof raw === 'string' ? { label: raw as string, description: undefined, icon: undefined } : raw
                     const on = f.kind === 'multi' ? (v as string[]).includes(o.label) : v === o.label
                     return (
                       <button key={o.label} type="button" className={`qform-option${on ? ' on' : ''}`} aria-pressed={on} disabled={busy}
-                        onClick={() => set(f.name, f.kind === 'multi' ? (on ? (v as string[]).filter((x) => x !== o.label) : [...(v as string[]), o.label]) : on ? '' : o.label)}>
+                        onClick={() => {
+                          if (f.kind === 'multi') set(f.name, on ? (v as string[]).filter((x) => x !== o.label) : [...(v as string[]), o.label])
+                          else {
+                            setOther((prev) => ({ ...prev, [f.name]: '' }))
+                            set(f.name, on ? '' : o.label)
+                          }
+                        }}>
                         <BlockIcon name={o.icon} size={14} className="qform-option-icon" />
                         <span className="qform-option-text">
                           <span className="qform-option-label">{o.label}</span>
@@ -80,7 +86,12 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
                   })}
                 </div>
                 <input className="ui-input qform-other" id={`qf-${f.name}`} placeholder={t('q.customReply')} value={other[f.name] ?? ''} disabled={busy}
-                  onChange={(e) => { setOther((prev) => ({ ...prev, [f.name]: e.target.value })); setMissing((prev) => prev.filter((n) => n !== f.name)) }} />
+                  onChange={(e) => {
+                    const text = e.target.value
+                    setOther((prev) => ({ ...prev, [f.name]: text }))
+                    if (f.kind === 'choice' && text.trim()) set(f.name, '')
+                    else setMissing((prev) => prev.filter((n) => n !== f.name))
+                  }} />
               </>
             ) : f.kind === 'range' ? (
               <div className="qform-range">

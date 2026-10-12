@@ -72,6 +72,8 @@ function safeNetworkUrl(value: unknown): string {
     url.password = ''
     url.search = ''
     url.hash = ''
+    // Paths commonly carry one-time links or credentials; snapshots need only origin.
+    url.pathname = '/'
     const safe = url.toString()
     return safe.length <= MAX_URL_LENGTH ? safe : `${safe.slice(0, MAX_URL_LENGTH - 1)}…`
   } catch {

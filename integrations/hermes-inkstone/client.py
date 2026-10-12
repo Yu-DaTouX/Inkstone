@@ -1,11 +1,13 @@
 """Small synchronous client for Inkstone's existing remote/v1 protocol."""
 import json
+import ipaddress
 import os
 import re
 import socket
 import uuid
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from http.client import HTTPException
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
@@ -39,6 +41,14 @@ def normalize_url(value):
         raise ConfigurationError("INKSTONE_URL has an invalid host or port.") from None
     if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ConfigurationError("INKSTONE_URL must be an HTTP(S) address without credentials, query or fragment.")
+    loopback = parsed.hostname.lower() == "localhost" or parsed.hostname.lower().endswith(".localhost")
+    if not loopback:
+        try:
+            loopback = ipaddress.ip_address(parsed.hostname).is_loopback
+        except ValueError:
+            pass
+    if parsed.scheme == "http" and not loopback:
+        raise ConfigurationError("Non-loopback Hermes connections require HTTPS; use a VPN/tunnel or a trusted TLS endpoint.")
     if parsed.path.rstrip("/") not in ("", "/remote/v1") or port == 0:
         raise ConfigurationError("INKSTONE_URL must point to the desktop root or /remote/v1.")
     return urlunsplit((parsed.scheme, parsed.netloc, "/remote/v1", "", ""))
@@ -117,7 +127,7 @@ class Client:
             if result.get("code") == "agent_scope":
                 result["hint"] = "This is a Hub-only Reef token. Pair this plugin as a separate remote client; do not reuse that token."
             return result
-        except (URLError, TimeoutError, socket.timeout, OSError):
+        except (URLError, TimeoutError, socket.timeout, OSError, HTTPException):
             return {"ok": False, "code": "connection_failed", "outcomeUnknown": method == "POST",
                     "error": "Cannot reach Inkstone. Check desktop remote access, address and network. A submitted operation may already have executed; do not blindly resend."}
 

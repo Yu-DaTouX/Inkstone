@@ -23,6 +23,7 @@ import { Icon } from '../../icons/Icon'
 import { Button } from '../ui'
 import { installImeFallback, installTerminalRenderer, terminalAppearance, terminalFontReady } from './terminal-appearance'
 import { APPEARANCE_EVENT } from '../../lib/appearance'
+import { boundedPending } from '../settings/review2-settings-guards'
 
 /**
  * xterm 的主题：**从 tokens.css 的 CSS 变量读**，不写死两份色值。
@@ -70,10 +71,12 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  const fitCallbackRef = useRef<() => void>(() => {})
   /** 当前已接收到的输出序号（用于重连去重） */
   const seqRef = useRef(0)
   /** 输入回调要读到最新活动 id，但不重建 xterm 实例 */
   const activeIdRef = useRef<string | null>(activeId)
+  const [attachError, setAttachError] = useState('')
   const [exited, setExited] = useState<number | null>(null)
   const [ready, setReady] = useState(false)
 
@@ -95,6 +98,7 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
     }
     if (activeId) void window.yan.terminal.resize(activeId, term.cols, term.rows)
   }, [activeId])
+  useEffect(() => { fitCallbackRef.current = fit }, [fit])
 
   /* 建立 xterm 实例（一次），主题跟随 data-theme */
   useEffect(() => {
@@ -130,7 +134,7 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
       let fitTimer: ReturnType<typeof setTimeout> | undefined
       const observer = new ResizeObserver(() => {
         clearTimeout(fitTimer)
-        fitTimer = setTimeout(() => fit(), 90)
+        fitTimer = setTimeout(() => fitCallbackRef.current(), 90)
       })
       observer.observe(host)
       /* 主题、背景色与代码字体切换：xterm 不读 CSS 变量，得手动同步一次 */
@@ -141,7 +145,7 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
           void terminalFontReady({ ...appearance, fontFamily: family }).then(() => {
             if (disposed) return
             term.options.fontFamily = family
-            fit()
+            fitCallbackRef.current()
           })
         }
       }
@@ -165,7 +169,7 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
     return () => { disposed = true; release() }
     // 实例只建一次；activeId 的变化由下面那个 effect 处理
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [available])
 
   /*
    * attach 之前到达的实时块先进队列。
@@ -187,7 +191,11 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
         const seq = payload.seq ?? 0
         const data = payload.data ?? ''
         if (!attachedRef.current) {
-          pendingRef.current.push({ seq, data })
+          const queued = boundedPending(pendingRef.current, { seq, data }, 512, 2 * 1024 * 1024)
+          if (!queued) {
+            pendingRef.current = []
+            setAttachError('终端连接缓冲超限，请重新连接')
+          } else pendingRef.current = queued
           return
         }
         /* 重连回放的块序号 ≤ 快照序号时已经写过了，丢弃 */
@@ -215,6 +223,7 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
       return
     }
     let alive = true
+    setAttachError('')
     void window.yan.terminal.attach(activeId).then((snapshot) => {
       if (!alive) return
       if (snapshot) {
@@ -235,6 +244,11 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
       void window.yan.terminal.resize(activeId, term.cols, term.rows)
       term.focus()
       fit()
+    }).catch((cause) => {
+      if (!alive) return
+      attachedRef.current = true
+      pendingRef.current = []
+      setAttachError(cause instanceof Error ? cause.message : String(cause))
     })
     return () => {
       alive = false
@@ -305,6 +319,7 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
           </Button>
         ) : null}
       </div>}
+      {attachError ? <div className="term-unavailable-text" role="alert" data-testid="terminal-attach-error">{attachError}</div> : null}
       <div className="term-host" ref={hostRef} data-testid="terminal-host" />
     </div>
   )

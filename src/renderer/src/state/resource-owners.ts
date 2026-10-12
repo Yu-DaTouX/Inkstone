@@ -33,7 +33,14 @@ function save(map: Record<string, string>): void {
 
 /** 资源 id 用工作区窗格 id 的形态：`browser`、`terminal:<id>`、`file:<key>` */
 export function resourceOwner(resource: string): string | undefined {
-  return load()[resource]
+  const map = load()
+  const owner = map[resource]
+  if (owner !== undefined) {
+    delete map[resource]
+    map[resource] = owner
+    cache = map
+  }
+  return owner
 }
 
 /** 还没有主人的资源归给 `owner`；已有主人的不动。返回实际的主人 */

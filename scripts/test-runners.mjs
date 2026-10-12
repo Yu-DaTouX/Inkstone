@@ -426,7 +426,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
         const { reg: cwdReg } = make()
         const created = await cwdReg.select({ cwd: 'C:/same/project/' })
         const runner = cwdReg.agentOf(created.id)
-        ok(runner?.calls.contextBudgetInitializations === 1, '只为宿主新建的会话初始化上下文策略 V1')
+        ok(runner?.calls.contextBudgetInitializations === 0, '宿主新建会话不再初始化已退役的上下文预算')
         const stopped = await cwdReg.stopByCwd('c:\\same\\project')
         ok(stopped === 1, 'stopByCwd 会识别大小写、斜杠和尾部斜杠差异', `stopped=${stopped}`)
         ok(cwdReg.size === 0, '规范化路径停止后实例已移除')

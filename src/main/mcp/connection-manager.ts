@@ -175,7 +175,7 @@ export class McpConnectionManager {
           throw new McpConnectionCancelledError()
         }
         conn.client = client
-        conn.transport = undefined
+        conn.transport = transport
         conn.status = 'ready'
         conn.error = undefined
       } catch (error) {
@@ -204,14 +204,19 @@ export class McpConnectionManager {
   }
 
   /** 断线后立刻反映到状态上：下一次调用会重新握手，而不是拿死连接一直报错。 */
-  private dropClient(conn: Connection, error: unknown): void {
+  private async dropClient(conn: Connection, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error)
+    const client = conn.client
+    const transport = conn.transport
     conn.client = null
+    conn.transport = undefined
     conn.connecting = undefined
     conn.status = looksLikeAuthFailure(message) ? 'needs-auth' : 'disconnected'
     conn.error = message
     /* 断线后工具表可能变了，缓存必须跟着失效，否则会拿到过期 schema。 */
     this.toolCache.delete(conn.config.id)
+    if (client) await client.close().catch(() => undefined)
+    else if (transport) await transport.close().catch(() => undefined)
   }
 
   /**
@@ -264,7 +269,7 @@ export class McpConnectionManager {
       conn.tools = tools
       return tools
     } catch (error) {
-      if (generation === conn.generation) this.dropClient(conn, error)
+      if (generation === conn.generation) await this.dropClient(conn, error)
       throw error
     }
   }
@@ -297,7 +302,7 @@ export class McpConnectionManager {
         () => this.cancelConnection(conn)
       )
     } catch (error) {
-      if (generation === conn.generation) this.dropClient(conn, error)
+      if (generation === conn.generation) await this.dropClient(conn, error)
       throw error
     }
   }

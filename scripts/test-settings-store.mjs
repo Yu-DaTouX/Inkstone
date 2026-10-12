@@ -14,9 +14,9 @@ export const app = {
 `
 
 export async function runSettingsStoreTests(ok) {
-  const { mkdtemp, mkdir, readFile, rename, rm } = await import('node:fs/promises')
+  const { mkdtemp, mkdir, readFile, writeFile, rename, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
-  const { join } = await import('node:path')
+  const { join, parse } = await import('node:path')
   const { pathToFileURL } = await import('node:url')
   const temp = await mkdtemp(join(tmpdir(), 'yan-settings-store-'))
   process.env.YAN_PI_DIR = join(temp, 'pi')
@@ -43,7 +43,7 @@ export async function runSettingsStoreTests(ok) {
       }
     ]
   })
-  const { getSettings, patchSettings } = await import(pathToFileURL(outfile).href)
+  const { getSettings, patchSettings, validateRendererSettingsPatch, updateSettings } = await import(pathToFileURL(outfile).href)
 
   /* 桌面设置落在 YAN_DIR（由 YAN_DATA_DIR 覆盖），不是 pi 目录 */
   const FILE = join(temp, 'data', 'desktop.json')
@@ -65,24 +65,50 @@ export async function runSettingsStoreTests(ok) {
     failed = true
   }
   ok(failed, '写盘失败时 patchSettings 如实抛错（不再假装成功）')
-  const during = await getSettings()
-  ok(
-    !(during.projectNames ?? {})['/probe'],
-    '失败后缓存里没有留下那次改动（没有返回一个没保存成功的新值）',
-    JSON.stringify(during.projectNames)
-  )
+  let readRejected = false
+  try { await getSettings() } catch { readRejected = true }
+  ok(readRejected, '设置路径是目录等非 ENOENT 读取错误时明确拒绝，不降级为空设置')
+  let whitelistRejected = false
+  try { validateRendererSettingsPatch({ piBin: 'evil' }) } catch { whitelistRejected = true }
+  ok(whitelistRejected, '渲染补丁拒绝 piBin')
+  for (const key of ['guardAllowRoots', 'unknown', '__proto__']) {
+    let rejected = false
+    try { validateRendererSettingsPatch({ [key]: [] }) } catch { rejected = true }
+    ok(rejected, `渲染补丁拒绝 ${key}`)
+  }
 
   /* ---- 恢复文件：磁盘上仍是旧值，队列也没被毒化 ---- */
   await rm(FILE, { recursive: true, force: true })
   await rename(`${FILE}.backup`, FILE)
-  /*
-   * 这里直接看磁盘（不走 getSettings）：文件被换成目录期间读盘本身会失败，
-   * getSettings 会降级成默认值并缓存 —— 那是读盘的既定降级，不是本次回归对象。
-   */
+  /* 直接核对旧文件：读取故障与写入故障都不能更改它。 */
   const broken = JSON.parse(await readFile(FILE, 'utf8'))
   ok(broken.theme === 'light', '磁盘上的旧值没被半截写入破坏', broken.theme)
   const again = await patchSettings({ theme: 'dark' })
   ok(again.theme === 'dark' && JSON.parse(await readFile(FILE, 'utf8')).theme === 'dark', '一次失败不影响后续写入')
 
+  const normalized = await patchSettings({ theme: 'invalid', remoteAccess: { enabled: 'yes', port: -1 }, showSpaces: 'yes' })
+  ok(normalized.theme === 'dark' && normalized.remoteAccess.enabled === false && normalized.showSpaces === undefined, '读写共用清洗，不持久化非法 UI 值')
+  const detached = await getSettings()
+  detached.profile.name = 'must-not-mutate-cache'
+  ok((await getSettings()).profile.name !== detached.profile.name, '设置快照不泄露嵌套缓存引用')
+  ok(!!validateRendererSettingsPatch({ lastMainModel: { provider: 'fixture', id: 'model' }, modelFavorites: [] }), '白名单保留模型选择和收藏入口')
+  const allowed = join(temp, 'allowed'); await mkdir(allowed)
+  const roots = (await patchSettings({ guardAllowRoots: [parse(temp).root, 'relative', allowed] })).guardAllowRoots
+  ok(roots.length === 1 && roots[0] === allowed, '允许普通绝对目录，拒绝磁盘根及相对路径')
+  await Promise.all([
+    updateSettings((current) => ({ projectNames: { ...current.projectNames, one: 'One' } })),
+    updateSettings((current) => ({ projectNames: { ...current.projectNames, two: 'Two' } }))
+  ])
+  const concurrent = await getSettings()
+  ok(concurrent.projectNames.one === 'One' && concurrent.projectNames.two === 'Two', '串行读改写保留并发字段更新')
+  const saved = await readFile(FILE, 'utf8')
+  for (const content of ['{broken', 'null', '[]']) {
+    await writeFile(FILE, content)
+    let refused = false
+    try { await patchSettings({ theme: 'light' }) } catch { refused = true }
+    ok(refused && await readFile(FILE, 'utf8') === content, '损坏 JSON 或结构保留原文件并拒绝覆盖')
+  }
+  await writeFile(FILE, saved)
+  await patchSettings({ theme: 'dark' })
   await rm(temp, { recursive: true, force: true })
 }

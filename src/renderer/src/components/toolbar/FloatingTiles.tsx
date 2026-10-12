@@ -121,7 +121,12 @@ export function FloatingTiles() {
   const [notice, setNotice] = useState('')
   const restoreRects = useRef<Record<string, FloatPxRect>>({})
   const releaseRef = useRef<(() => void) | null>(null)
+  const noticeTimer = useRef<number | null>(null)
   const t = useT()
+
+  useEffect(() => () => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+  }, [])
 
   /* 可用区跟随窗口/缩放/栏宽变化重算；几何变了就把磁贴重新夹一遍 */
   useEffect(() => {
@@ -209,7 +214,11 @@ export function FloatingTiles() {
       if (!safe) {
         /* 没有能完整容纳磁贴的 DOM 区：退回工具页并说明原因，不永久压住网页 */
         setNotice(t('tl.noRoom'))
-        window.setTimeout(() => setNotice(''), 3200)
+        if (noticeTimer.current) clearTimeout(noticeTimer.current)
+        noticeTimer.current = window.setTimeout(() => {
+          noticeTimer.current = null
+          setNotice('')
+        }, 3200)
         void setToolLayout(setTilePlacement(layout, state.id, 'docked'))
         return
       }

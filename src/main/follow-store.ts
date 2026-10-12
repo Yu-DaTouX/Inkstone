@@ -14,7 +14,8 @@
  * 新关注的 `enabled` 必须由调用方显式给 `true`，否则就是一条**提议**。
  */
 
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { parsePersistedDocument } from './persisted-document'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { YAN_DIR } from './paths'
@@ -85,9 +86,13 @@ export class FollowStore {
       this.ready = (async () => {
         try {
           const text = await readFile(followPath(this.root), 'utf8')
-          this.doc = sanitizeFollowDocument(JSON.parse(text))
-        } catch {
-          this.doc = emptyFollowDocument()
+          this.doc = sanitizeFollowDocument(parsePersistedDocument(text, { watches: 'array', runs: 'array' }))
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            this.doc = emptyFollowDocument()
+            return
+          }
+          throw new Error('关注文件读取或解析失败，已拒绝覆盖', { cause: error })
         }
       })()
     }
@@ -261,14 +266,9 @@ export class FollowStore {
       await mkdir(dirname(path), { recursive: true })
       await writeFile(temp, JSON.stringify(doc), 'utf8')
       await rename(temp, path)
-    } catch {
-      try {
-        const text = await readFile(path, 'utf8')
-        this.doc = sanitizeFollowDocument(JSON.parse(text))
-      } catch {
-        this.doc = emptyFollowDocument()
-      }
-      throw new Error('关注落盘失败')
+    } catch (error) {
+      await rm(temp, { force: true }).catch(() => undefined)
+      throw new Error('关注落盘失败', { cause: error })
     }
     this.doc = doc
     return this.doc

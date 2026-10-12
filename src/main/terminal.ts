@@ -35,6 +35,26 @@ export const BUFFER_LIMIT = 200_000
 /** 超过上限时裁到多少（留一点余量，避免每来一个字符就裁一次） */
 const BUFFER_KEEP = 120_000
 
+export function safeTerminalCut(buffer: string, desired: number): number {
+  let cut = Math.max(0, desired)
+  const newline = buffer.indexOf('\n', cut)
+  if (newline >= 0 && newline - cut < 4096) cut = newline + 1
+  // Do not start a replay in the middle of a CSI/OSC escape sequence.
+  const esc = buffer.lastIndexOf('\x1b', cut)
+  if (esc >= 0) {
+    const sequence = buffer.slice(esc + 1, cut)
+    const complete = sequence.startsWith('[')
+      ? /[\x40-\x7e]$/.test(sequence.slice(1))
+      : sequence.startsWith(']')
+        ? /\x07$|\x1b\\$/.test(sequence.slice(1))
+        : sequence.length >= 1
+    if (!complete) cut = esc
+  }
+  const code = buffer.charCodeAt(cut)
+  if (code >= 0xdc00 && code <= 0xdfff) cut += 1
+  return cut
+}
+
 export interface TerminalSessionInfo {
   id: string
   /** 会话标题（壳名 · 目录名），标签上显示 */
@@ -91,6 +111,7 @@ export type TerminalSink = (event:
   | { kind: 'exit'; id: string; exitCode: number | null }) => void
 
 let loadError: string | null = null
+let spawnError: string | null = null
 let ptyModule: typeof import('node-pty') | null = null
 
 /**
@@ -115,7 +136,7 @@ export function terminalAvailable(): boolean {
 
 /** 加载失败原因（诊断 / 设置页展示；成功时为 null） */
 export function terminalLoadError(): string | null {
-  return loadError
+  return loadError ?? spawnError
 }
 
 const sessions = new Map<string, TerminalEntry>()
@@ -205,9 +226,11 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
       env: { ...process.env, ...options.env, TERM: 'xterm-256color' }
     })
   } catch (error) {
-    loadError = error instanceof Error ? error.message : String(error)
+    // 壳或 cwd 启动失败不代表原生模块不可用，下一次启动仍应允许重试。
+    spawnError = error instanceof Error ? error.message : String(error)
     return null
   }
+  spawnError = null
 
   const info: TerminalSessionInfo = {
     id,
@@ -230,7 +253,8 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     current.screen?.write(data, current.seq)
     current.chunks.push({ seq: current.seq, data })
     if (current.buffer.length > BUFFER_LIMIT) {
-      current.buffer = current.buffer.slice(current.buffer.length - BUFFER_KEEP)
+      const cut = safeTerminalCut(current.buffer, current.buffer.length - BUFFER_KEEP)
+      current.buffer = current.buffer.slice(cut)
       /* 只丢最旧的增量：整段清空会让界面下一次轮询被迫整屏重建（重置滚动位置、清空回滚）。 */
       let kept = 0, from = current.chunks.length
       while (from > 0 && kept + current.chunks[from - 1].data.length <= BUFFER_KEEP) { from -= 1; kept += current.chunks[from].data.length }

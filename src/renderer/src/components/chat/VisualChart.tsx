@@ -2,6 +2,8 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import { niceScale, type ChartBlock } from '../../../../shared/visual-blocks'
 import { VisualSources } from './VisualParts'
+import { sparklinePoints } from './sparkline-points'
+export { sparklinePoints } from './sparkline-points'
 
 /**
  * 图表：按容器真实像素绘制（字号不随窗口被等比放大），比例尺由宿主计算。
@@ -234,9 +236,8 @@ function HorizontalPlot({ block, W }: { block: ChartBlock; W: number }) {
 
 export function Sparkline({ values, tone }: { values: number[]; tone?: string }) {
   const W = 96, H = 28
-  const lo = Math.min(...values), hi = Math.max(...values)
-  const span = hi - lo || 1
-  const pts = values.map((v, i) => `${(i / (values.length - 1)) * (W - 4) + 2},${H - 3 - ((v - lo) / span) * (H - 6)}`)
+  const pts = sparklinePoints(values, W, H)
+  if (!pts.length) return null
   const last = pts[pts.length - 1].split(',')
   return (
     <svg className={`vb-spark${tone ? ` ${tone}` : ''}`} width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden>

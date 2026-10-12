@@ -6,7 +6,7 @@
  * 当作模型 provider 列在设置页，搜索 key 不属于模型接入。密钥只在主进程读取，
  * 渲染端只能拿到「是否已配置」。文件字段是 `<服务>Key`，旧版只有 `braveKey`，保持兼容。
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from '../paths'
 import {
@@ -35,6 +35,7 @@ async function read(): Promise<SearchConfigFile> {
 async function write(next: SearchConfigFile): Promise<void> {
   await mkdir(YAN_DIR, { recursive: true })
   await writeFile(CONFIG_FILE(), JSON.stringify(next, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
+  if (process.platform !== 'win32') await chmod(CONFIG_FILE(), 0o600)
 }
 
 function stateOf(cfg: SearchConfigFile, id: SearchProviderId): SearchProviderState {

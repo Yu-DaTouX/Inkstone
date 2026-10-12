@@ -63,10 +63,13 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
   /* 只读预览（消息里的文件链接）：相对路径按**当前会话 cwd** 解析 */
   handle('yan:readPreview', async (p: string, line?: number, requestedCwd?: string, lineEnd?: number) => {
     const s = await getSettings()
-    const cwd = typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : s.cwd
+    const resolved = await resolveFileContext(s, s.cwd, { cwd: requestedCwd ?? s.cwd })
+    if (!resolved.ok) {
+      return { ok: false, path: String(p ?? ''), abs: '', name: '', size: 0, kind: 'other' as const, error: resolved.error }
+    }
     return readPreview(
       String(p ?? ''),
-      cwd,
+      resolved.context.cwd,
       typeof line === 'number' ? line : undefined,
       typeof lineEnd === 'number' ? lineEnd : undefined
     )
@@ -74,8 +77,9 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
   /* 变化提示：只 stat（不读内容），与 readPreview 同一条越界校验链 */
   handle('yan:statPreview', async (p: string, requestedCwd?: string) => {
     const s = await getSettings()
-    const cwd = typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : s.cwd
-    return statPreview(String(p ?? ''), cwd)
+    const resolved = await resolveFileContext(s, s.cwd, { cwd: requestedCwd ?? s.cwd })
+    if (!resolved.ok) return { ok: false, abs: '', mtimeMs: 0, size: 0, error: resolved.error }
+    return statPreview(String(p ?? ''), resolved.context.cwd)
   })
 
   /* ---- 文件树 ---- */

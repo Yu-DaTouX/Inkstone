@@ -81,6 +81,8 @@ export interface Watch {
   updatedAt: number
   /** 上次真的看过的时间（没看过就是 undefined —— 不写「已跟进」）。 */
   lastCheckedAt?: number
+  /** 失败也记录尝试，但不冒充已经查看成功。 */
+  lastAttemptAt?: number
   /** 下次该看的时间；一次性关注做完就为 undefined。 */
   nextDueAt?: number
   /** 最近一次运行的结局（列表上显示）。 */
@@ -406,7 +408,8 @@ export function applyRunToWatch(
 ): Watch {
   return {
     ...watch,
-    lastCheckedAt: run.at,
+    ...(run.outcome !== 'failed' ? { lastCheckedAt: run.at } : {}),
+    lastAttemptAt: run.at,
     lastOutcome: run.outcome,
     updatedAt: run.at,
     nextDueAt: nextDueAfter(watch, run.at)
@@ -437,7 +440,7 @@ export function sanitizeWatch(raw: unknown): Watch | undefined {
   const createdAt = Number.isFinite(w.createdAt) ? Number(w.createdAt) : 0
   const updatedAt = Number.isFinite(w.updatedAt) ? Number(w.updatedAt) : createdAt
   const lastCheckedAt = Number.isFinite(w.lastCheckedAt) ? Number(w.lastCheckedAt) : undefined
-  const nextDueAt = Number.isFinite(w.nextDueAt) ? Number(w.nextDueAt) : undefined
+  const nextDueAt = Number.isFinite(w.nextDueAt) ? Number(w.nextDueAt) : nextDueAfter(valid.value, createdAt)
   const lastOutcome =
     typeof w.lastOutcome === 'string' && (FOLLOW_OUTCOMES as readonly string[]).includes(w.lastOutcome)
       ? (w.lastOutcome as FollowOutcome)
@@ -448,6 +451,7 @@ export function sanitizeWatch(raw: unknown): Watch | undefined {
     createdAt,
     updatedAt,
     ...(lastCheckedAt !== undefined ? { lastCheckedAt } : {}),
+    ...(Number.isFinite(w.lastAttemptAt) ? { lastAttemptAt: Number(w.lastAttemptAt) } : {}),
     ...(nextDueAt !== undefined ? { nextDueAt } : {}),
     ...(lastOutcome !== undefined ? { lastOutcome } : {})
   }

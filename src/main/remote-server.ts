@@ -139,7 +139,6 @@ const SESSION_ID_MAX = 200
 const PAIR_RATE_WINDOW_MS = 60_000
 const PAIR_RATE_LIMIT = 10
 const CORS_HEADERS = {
-  'access-control-allow-origin': '*',
   'access-control-allow-headers': `authorization, content-type, x-yan-remote-token, ${REMOTE_IDEMPOTENCY_HEADER}`,
   'access-control-allow-methods': 'GET, POST, OPTIONS'
 }
@@ -268,6 +267,7 @@ export class RemoteServer {
   /** 幂等键 → 结果（有效期内同一键只执行一次；执行中的请求共享同一个 Promise） */
   private readonly idempotency = new Map<string, { at: number; result: Promise<RemoteOperationResult> }>()
   private pairAttempts: number[] = []
+  private readonly pairAttemptsBySource = new Map<string, number[]>()
 
   constructor(private readonly options: RemoteServerOptions) {
     const explicit = options.token?.trim()
@@ -494,6 +494,14 @@ export class RemoteServer {
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const origin = req.headers.origin
+    if (origin) {
+      let allowed = false
+      try { const incoming = new URL(origin); allowed = ['http:', 'https:'].includes(incoming.protocol) && incoming.host === req.headers.host } catch { /* 不开放无效网页来源 */ }
+      if (!allowed) { writeError(res, 403, '网页来源不受允许'); return }
+      res.setHeader('access-control-allow-origin', origin)
+      res.setHeader('vary', 'Origin')
+    }
     const url = new URL(req.url ?? '/', `http://${this.options.host}:${this.boundPort}`)
     if (req.method === 'OPTIONS') {
       res.writeHead(204, CORS_HEADERS)
@@ -515,6 +523,15 @@ export class RemoteServer {
     const caller = await this.authorize(req)
     if (!caller) {
       writeError(res, 401, '需要有效的远程访问令牌', 'unauthorized')
+      return
+    }
+
+    if (req.method === 'POST' && url.pathname === '/remote/v1/devices/self/revoke') {
+      if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone' || !this.options.devices) return writeError(res, 403, '需要配对手机令牌')
+      await this.readJson(req)
+      const revoked = await this.options.devices.revoke(caller.device.id)
+      writeJson(res, revoked ? 200 : 404, revoked ? { ok: true } : { ok: false, error: '设备已撤销' })
+      if (revoked) this.disconnectDevice(caller.device.id)
       return
     }
 
@@ -547,11 +564,11 @@ export class RemoteServer {
         ...(this.options.handlers.answer ? ['answer'] : []),
         ...(this.options.handlers.humanApproval && caller.device && (caller.device.kind ?? 'phone') === 'phone' ? ['human-approval'] : []),
         ...(this.options.handlers.artifact ? ['artifacts'] : []),
-        ...(this.options.devices ? ['device-name'] : []),
+        ...(this.options.devices ? ['device-name', 'device-revoke'] : []),
         ...(this.options.handlers.models ? ['models', 'thinking', 'send-images'] : []),
         ...(this.options.handlers.hubSnapshot && this.options.handlers.hubCommand ? ['agent-hub'] : [])
       ]
-      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'models', 'thinking', 'send-images', 'agent-hub'])]
+      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'agent-hub'])]
       const allowed = isPeer ? [] : caller.device?.kind === 'agent' ? ['agent-hub'] : configured
       const negotiation = negotiateCapabilities(implemented, configured, allowed)
       writeJson(res, 200, {
@@ -913,11 +930,19 @@ export class RemoteServer {
     }
     const now = Date.now()
     this.pairAttempts = this.pairAttempts.filter((at) => now - at < PAIR_RATE_WINDOW_MS)
-    if (this.pairAttempts.length >= PAIR_RATE_LIMIT) {
+    const source = req.socket?.remoteAddress ?? 'unknown'
+    for (const [key, attempts] of this.pairAttemptsBySource) {
+      const recent = attempts.filter((at) => now - at < PAIR_RATE_WINDOW_MS)
+      if (recent.length) this.pairAttemptsBySource.set(key, recent)
+      else this.pairAttemptsBySource.delete(key)
+    }
+    const recent = this.pairAttemptsBySource.get(source) ?? []
+    if (recent.length >= PAIR_RATE_LIMIT || this.pairAttempts.length >= PAIR_RATE_LIMIT * 10 || (!this.pairAttemptsBySource.has(source) && this.pairAttemptsBySource.size >= 1000)) {
       writeError(res, 429, '配对尝试过于频繁，请稍后再试', 'rate_limited')
       return
     }
     this.pairAttempts.push(now)
+    this.pairAttemptsBySource.set(source, [...recent, now])
     const body = await this.readJson(req)
     /* agent 身份只能经中继隧道、且隧道按中继配对用途标明 agent 时配对；直连请求声称 agent 一律拒绝。 */
     if (body.kind === 'agent') {
@@ -1011,7 +1036,6 @@ export class RemoteServer {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-store',
       connection: 'keep-alive',
-      'access-control-allow-origin': '*',
       'x-accel-buffering': 'no'
     })
     if (!this.writeSse(res, `event: ready\ndata: ${JSON.stringify({ apiVersion: REMOTE_API_VERSION, at: Date.now(), latestSeq: this.seq })}\n\n`)) return

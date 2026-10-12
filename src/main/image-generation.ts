@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
-import { extname, isAbsolute, relative, resolve } from 'node:path'
+import { extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { AssistantArtifact, ImageGenerationStage } from '../shared/ipc'
 import type { LocalModelServer } from '../shared/custom-provider'
 import { ArtifactStore } from './artifacts'
@@ -77,7 +77,7 @@ export async function detectImageProviders(
   return {
     codex,
     openai: !!openai,
-    compatible: !!process.env.YAN_IMAGE_API_BASE?.trim() && (!!process.env.YAN_IMAGE_API_KEY?.trim() || !!openai),
+    compatible: !!process.env.YAN_IMAGE_API_BASE?.trim() && !!process.env.YAN_IMAGE_API_KEY?.trim(),
     google: !!google,
     doubao: !!doubao,
     local,
@@ -233,15 +233,20 @@ async function errorReason(response: Response): Promise<string> {
     const message = typeof json.error === 'string' ? json.error : json.error?.message ?? json.message ?? json.detail
     if (typeof message === 'string' && message.trim()) return message.trim().slice(0, 200)
   } catch {
-    /* 不是 JSON */
+    /* 非 JSON 错误体可能含隐私或 HTML，不回显原文 */
   }
-  return text.trim().slice(0, 200)
+  return `HTTP ${response.status}：服务未返回可读错误信息`
 }
 
 class ImageProviderError extends Error {
   constructor(readonly code: string, readonly reason?: string) {
     super(reason ? `${code}: ${reason}` : code)
   }
+}
+
+async function responseJson<T>(response: Response, prefix: string): Promise<T> {
+  try { return await response.json() as T }
+  catch { throw new ImageProviderError(`${prefix}_invalid_response`, `HTTP ${response.status}：响应不是有效 JSON`) }
 }
 
 async function httpError(prefix: string, response: Response): Promise<ImageProviderError> {
@@ -292,7 +297,7 @@ const MAX_SOURCE_BYTES = 20 * 1024 * 1024
 
 function inside(root: string, path: string): boolean {
   const rel = relative(resolve(root), path)
-  return !!rel && !rel.startsWith('..') && !isAbsolute(rel)
+  return !!rel && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
 }
 
 /**
@@ -495,7 +500,7 @@ async function openAiImage(req: ImageGenerationRequest, sources: SourceImage[], 
   }
   if (!response.ok) throw await httpError('image_api', response)
   report?.('generating')
-  const json = await response.json() as { data?: Array<{ b64_json?: string; revised_prompt?: string }> }
+  const json = await responseJson<{ data?: Array<{ b64_json?: string; revised_prompt?: string }> }>(response, 'image_api')
   const b64 = json.data?.[0]?.b64_json
   if (!b64) throw new ImageProviderError('image_api_result_missing')
   return { bytes: Buffer.from(b64, 'base64'), model, revisedPrompt: json.data?.[0]?.revised_prompt }
@@ -511,6 +516,7 @@ function cachedLatest(cacheKey: string, load: () => Promise<string | null>): Pro
   if (!pending) {
     pending = load().catch(() => null)
     latestModels.set(cacheKey, pending)
+    void pending.then((value) => { if (value === null && latestModels.get(cacheKey) === pending) latestModels.delete(cacheKey) })
   }
   return pending
 }
@@ -528,14 +534,21 @@ function compareVersions(a: string, b: string): number {
 /** 最新的 gemini-X.Y-flash-image（正式版，不含 lite / preview / pro） */
 function latestGoogleImageModel(base: string, key: string): Promise<string | null> {
   return cachedLatest(`google ${base} ${key.slice(-6)}`, async () => {
-    const response = await fetch(`${base}/models?pageSize=200`, { headers: { 'x-goog-api-key': key }, signal: AbortSignal.timeout(10_000) })
-    if (!response.ok) return null
-    const json = await response.json() as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> }
-    const versions = (json.models ?? [])
-      .filter((model) => model.supportedGenerationMethods?.includes('generateContent'))
-      .map((model) => /^(?:models\/)?gemini-([\d.]+)-flash-image$/.exec(model.name ?? '')?.[1])
-      .filter((version): version is string => !!version)
-      .sort(compareVersions)
+    const versions: string[] = []
+    let pageToken = ''
+    for (let page = 0; page < 5; page += 1) {
+      const query = new URLSearchParams({ pageSize: '200', ...(pageToken ? { pageToken } : {}) })
+      const response = await fetch(`${base}/models?${query}`, { headers: { 'x-goog-api-key': key }, signal: AbortSignal.timeout(10_000) })
+      if (!response.ok) return null
+      const json = await response.json() as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }>; nextPageToken?: string }
+      versions.push(...(json.models ?? [])
+        .filter((model) => model.supportedGenerationMethods?.includes('generateContent'))
+        .map((model) => /^(?:models\/)?gemini-([\d.]+)-flash-image$/.exec(model.name ?? '')?.[1])
+        .filter((version): version is string => !!version))
+      pageToken = json.nextPageToken ?? ''
+      if (!pageToken) break
+    }
+    versions.sort(compareVersions)
     return versions.length ? `gemini-${versions.at(-1)}-flash-image` : null
   })
 }
@@ -582,10 +595,10 @@ async function googleImage(req: ImageGenerationRequest, sources: SourceImage[], 
   })
   if (!response.ok) throw await httpError('google', response)
   report?.('generating')
-  const json = await response.json() as {
+  const json = await responseJson<{
     promptFeedback?: { blockReason?: string }
     candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; inlineData?: { mimeType?: string; data?: string } }> } }>
-  }
+  }>(response, 'google')
   if (json.promptFeedback?.blockReason) throw new ImageProviderError('google_image_blocked', json.promptFeedback.blockReason)
   const parts = json.candidates?.[0]?.content?.parts ?? []
   const image = parts.find((part) => part.inlineData?.data)
@@ -620,7 +633,7 @@ async function doubaoImage(req: ImageGenerationRequest, sources: SourceImage[], 
   })
   if (!response.ok) throw await httpError('doubao', response)
   report?.('generating')
-  const json = await response.json() as { data?: Array<{ b64_json?: string }>; error?: { message?: string } }
+  const json = await responseJson<{ data?: Array<{ b64_json?: string }>; error?: { message?: string } }>(response, 'doubao')
   const b64 = json.data?.find((item) => item.b64_json)?.b64_json
   if (!b64) throw new ImageProviderError('doubao_image_result_missing', json.error?.message)
   return { bytes: Buffer.from(b64, 'base64'), model }
@@ -648,7 +661,7 @@ async function sdWebUiImage(req: ImageGenerationRequest, sources: SourceImage[],
   })
   if (!response.ok) throw await httpError('local', response)
   report?.('generating')
-  const json = await response.json() as { images?: string[] }
+  const json = await responseJson<{ images?: string[] }>(response, 'local')
   const b64 = json.images?.[0]
   if (!b64) throw new ImageProviderError('local_image_result_missing')
   return { bytes: Buffer.from(b64.replace(/^data:[^,]+,/, ''), 'base64'), model: model || server.name }
@@ -732,6 +745,8 @@ async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], s
   const entries = await waitForImage(listComfyWorkflows(server.baseUrl).catch(() => []), signal)
   const wanted = stringParam(req.model, '')
   const candidates = comfyCandidates(entries, wanted, sources.length > 0)
+  const requestedWorkflow = wanted || process.env.YAN_COMFYUI_WORKFLOW?.trim() || ''
+  const namedHit = !!requestedWorkflow && candidates.length === 1 && entries.some((entry) => entry.name === candidates[0].name && (entry.name === requestedWorkflow || entry.name.toLowerCase().replace(/\.json$/, '').split('/').at(-1) === requestedWorkflow.toLowerCase().replace(/\.json$/, '').split('/').at(-1)))
   if (!candidates.length) {
     throw new ImageProviderError('local_workflow_missing', sources.length ? '没有可用的图生图工作流（含 LoadImage）' : '没有可用的文生图工作流')
   }
@@ -739,7 +754,7 @@ async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], s
   const images: string[] = []
   for (const source of sources) images.push(await comfyUpload(server, source, signal))
   const size = parseSize(req.size)
-  const built = await buildComfyPrompt(server, candidates, !!(wanted || process.env.YAN_COMFYUI_WORKFLOW?.trim()), {
+  const built = await buildComfyPrompt(server, candidates, namedHit, {
     prompt: req.prompt,
     ...(size ? { width: size.width, height: size.height } : {}),
     ...(images.length ? { images } : {})
@@ -794,6 +809,7 @@ async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], s
       if (!file.ok) throw await httpError('local', file)
       return { bytes: Buffer.from(await file.arrayBuffer()), model: chosen.name }
     }
+    cancelQueued()
     throw new ImageProviderError('local_timeout')
   } finally {
     signal?.removeEventListener('abort', cancelQueued)
@@ -803,8 +819,8 @@ async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], s
 /* ------------------------------------------------------------ mock */
 
 function mockSvg(prompt: string): Buffer {
-  const safe = prompt.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c] ?? c))
-  return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="180" fill="#101318"/><circle cx="512" cy="450" r="240" fill="#303A47"/><path d="M350 450h324v170H350z" fill="#F3F4F6"/><text x="512" y="820" fill="#98A2B3" font-size="34" text-anchor="middle" font-family="sans-serif">${safe.slice(0, 60)}</text></svg>`, 'utf8')
+  const safe = Array.from(prompt).slice(0, 60).join('').replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c] ?? c))
+  return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="180" fill="#101318"/><circle cx="512" cy="450" r="240" fill="#303A47"/><path d="M350 450h324v170H350z" fill="#F3F4F6"/><text x="512" y="820" fill="#98A2B3" font-size="34" text-anchor="middle" font-family="sans-serif">${safe}</text></svg>`, 'utf8')
 }
 
 /* ------------------------------------------------------------ 入口 */
@@ -906,8 +922,8 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
       }
     } else generated = await sdWebUiImage(req, sources, server, report, signal)
   } else {
-    const openAiKey = await credentials.secret('openai')
-    const key = provider === 'compatible' ? process.env.YAN_IMAGE_API_KEY?.trim() || openAiKey : openAiKey
+    // 自定义端点只能使用显式配置的专用凭证，不能携带另一供应商的密钥。
+    const key = provider === 'compatible' ? process.env.YAN_IMAGE_API_KEY?.trim() : await credentials.secret('openai')
     if (!key) throw new ImageProviderError(provider === 'compatible' ? 'compatible_api_key_missing' : 'openai_api_key_missing')
     generated = await openAiImage({ ...req, model: stringParam(req.model, defaultImageModel(provider)) }, sources, imageProviderEndpoint(provider, availability), key, report, signal)
   }

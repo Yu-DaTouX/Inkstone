@@ -100,8 +100,13 @@ export async function runWorktreeLinkTests(ok) {
   {
     writeFileSync(file, '{ 这不是 JSON')
     const fresh = new WorktreeLinkStore({ root })
+    let rejectedCorrupt = false
+    try { await fresh.load() } catch { rejectedCorrupt = true }
+    ok(rejectedCorrupt, '坏关系文件明确报错，不能当空表覆盖')
+    ok(readFileSync(file, 'utf8') === '{ 这不是 JSON', '坏文件原文保留')
+    // 在隔离夹具中显式恢复正常文档，验证重新加载。
+    writeFileSync(file, JSON.stringify({ version: 1, links: [] }))
     await fresh.load()
-    ok(fresh.links().length === 0, '文件坏了 → 当空表（少一行追溯不该让应用起不来）', String(fresh.links().length))
 
     /* 真实落盘的内容能被**另一个实例**读回（这才是「重启后还在」） */
     await fresh.link({ sessionId: 'persist', worktree: 'C:/w2', branch: 'main' })

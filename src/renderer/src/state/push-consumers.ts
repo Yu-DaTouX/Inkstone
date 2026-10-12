@@ -92,7 +92,16 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
       set({ editorInject: m.payload })
       break
     case 'proc':
-      if (m.payload.state === 'ready') set({ conn: 'ready', connDetail: '' })
+      if (m.payload.state === 'ready') {
+        const becameReady = ctx.get().conn !== 'ready'
+        set({ conn: 'ready', connDetail: '' })
+        if (becameReady) {
+          const current = ctx.get()
+          void current.reloadModels()
+          void current.reloadCommands()
+          void current.refreshSessions()
+        }
+      }
       else if (m.payload.state === 'starting') set({ conn: 'starting' })
       else if (m.payload.state === 'exited') {
         // pi 都已退出：不能再宣称「回合进行中」，否则推理窗口会永远不折
@@ -136,12 +145,18 @@ export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): bo
        */
       set({ questionLog: m.payload.entries, questionLogSession: m.payload.sessionId })
       break
-    case 'ui-request':
-      /* 新问题到达 → 自动展开面板（用户收起了也不该把新问题藏起来） */
-      set({ uiRequests: [...s.uiRequests, m.payload], uiCollapsed: false })
-      // 需要用户介入（模型提问 / 扩展要选择）—— 提示音 + 通知
-      ctx.alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
+    case 'ui-request': {
+      const duplicate = s.uiRequests.some((request) => request.id === m.payload.id)
+      /* 宿主重放/同步可重复到达：同 ID 更新内容，不重复追加或打提示音。 */
+      set({
+        uiRequests: duplicate
+          ? s.uiRequests.map((request) => request.id === m.payload.id ? m.payload : request)
+          : [...s.uiRequests, m.payload],
+        ...(!duplicate ? { uiCollapsed: false } : {})
+      })
+      if (!duplicate) ctx.alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
       break
+    }
     case 'ui-resolved':
       /* 答复或超时：只移除对应请求。 */
       set({ uiRequests: s.uiRequests.filter((r) => r.id !== m.payload.id) })

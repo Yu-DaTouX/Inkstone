@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { splitTileKey, useSplitView, type SplitSessionRef } from '../../state/split-view'
@@ -13,6 +14,8 @@ const KEY_STEP = 24
  */
 export function SplitResizer({ left, right }: { left: SplitSessionRef; right: SplitSessionRef }) {
   const t = useT()
+  const dragCleanup = useRef<(() => void) | null>(null)
+  useEffect(() => () => dragCleanup.current?.(), [])
   const weightOf = (tile: SplitSessionRef): number => useSplitView.getState().weights[splitTileKey(tile)] ?? 1
 
   /* 两列合计的宽度与份额不变，按新的左列宽度重新分 */
@@ -23,7 +26,10 @@ export function SplitResizer({ left, right }: { left: SplitSessionRef; right: Sp
     const wa = start?.a ?? a.getBoundingClientRect().width
     const wb = start?.b ?? b.getBoundingClientRect().width
     const total = wa + wb
-    const next = Math.max(MIN_COLUMN, Math.min(total - MIN_COLUMN, wa + dx))
+    if (total <= 0) return
+    const next = total < 2 * MIN_COLUMN
+      ? Math.max(0, Math.min(total, wa + dx))
+      : Math.max(MIN_COLUMN, Math.min(total - MIN_COLUMN, wa + dx))
     const share = weightOf(left) + weightOf(right)
     useSplitView.getState().setWeights({ [splitTileKey(left)]: share * next / total, [splitTileKey(right)]: share * (total - next) / total })
   }
@@ -47,15 +53,23 @@ export function SplitResizer({ left, right }: { left: SplitSessionRef; right: Sp
         const release = useStore.getState().acquireOverlayBlocker('split-resize')
         document.body.classList.add('split-resizing')
         const move = (ev: PointerEvent): void => shift(el, ev.clientX - x0, { a, b })
+        let finished = false
         const up = (): void => {
+          if (finished) return
+          finished = true
           document.removeEventListener('pointermove', move)
           document.removeEventListener('pointerup', up)
+          document.removeEventListener('pointercancel', up)
           window.removeEventListener('blur', up)
           document.body.classList.remove('split-resizing')
           release()
+          if (dragCleanup.current === up) dragCleanup.current = null
         }
+        dragCleanup.current?.()
+        dragCleanup.current = up
         document.addEventListener('pointermove', move)
         document.addEventListener('pointerup', up)
+        document.addEventListener('pointercancel', up)
         window.addEventListener('blur', up)
       }}
       onDoubleClick={() => useSplitView.getState().setWeights({ [splitTileKey(left)]: 1, [splitTileKey(right)]: 1 })}

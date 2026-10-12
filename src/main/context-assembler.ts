@@ -89,7 +89,13 @@ export class ContextAssembler {
         if (taken >= maxSources) break
         /* 只带有正文的引用：附件 / 没有文本层的资料由界面按引用打开，不进上下文 */
         if (!refReadable(doc, ref)) continue
-        const opened = await this.library.openRef(ref, { maxChars })
+        let opened: Awaited<ReturnType<LibraryService['openRef']>>
+        try {
+          opened = await this.library.openRef(ref, { maxChars })
+        } catch {
+          // 单条资料不可读不应阻断整轮；继续装配其余有效引用。
+          continue
+        }
         if (!opened.text?.trim()) continue
         sources.push({
           ref,
@@ -120,7 +126,13 @@ export class ContextAssembler {
    * 返回装配结果（调用方可能想推给界面）；**写盘失败只吞掉，不抛**。
    */
   async assembleAndWrite(runtimeKey: string, request: AssembleContextRequest): Promise<ContextAssembly> {
-    const assembly = await this.assemble(request)
+    let assembly: ContextAssembly
+    try {
+      assembly = await this.assemble(request)
+    } catch {
+      // 装配是可选增强；资料库故障时仍允许 pi 继续本轮对话。
+      assembly = assembleContext({ activity: request.activity }, request.budget)
+    }
     try {
       await writeContextSnapshot(runtimeKey, assembly, this.root)
     } catch {

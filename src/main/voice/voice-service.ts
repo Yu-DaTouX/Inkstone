@@ -11,8 +11,11 @@
 import { app, net } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
+import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { cpus, freemem, tmpdir, totalmem } from 'node:os'
 import { basename, dirname, join } from 'node:path'
@@ -42,7 +45,8 @@ const MODELS_DIR = join(VOICE_DIR, 'models')
 const BIN_DIR = join(VOICE_DIR, 'bin')
 const BINARY_NAMES = ['whisper-cli.exe', 'whisper-cli']
 /** 程序 zip 的上限：官方 CPU 版只有几 MB，远超这个数说明拿错了东西 */
-const MAX_BINARY_ZIP_BYTES = 1024 * 1024 * 1024
+const MAX_BINARY_ZIP_BYTES = 100 * 1024 * 1024
+const MAX_BINARY_ENTRY_BYTES = 64 * 1024 * 1024
 /** plan 的有效期：确认框开太久就重新核实一次大小 */
 const PLAN_TTL_MS = 30 * 60_000
 
@@ -56,11 +60,11 @@ export class VoiceService {
   private progress: VoiceDownloadProgress | null = null
   private abort: AbortController | null = null
   private backend: 'cuda' | 'cpu' | 'unknown' = 'unknown'
-  private worker: { process: ChildProcess; key: string; url: string } | null = null
+  private worker: { process: ChildProcess; key: string; url: string; token: string; proxy: ReturnType<typeof createHttpServer> } | null = null
   private workerStart: Promise<string> | null = null
 
   constructor(private readonly getSettings: () => Promise<VoiceInputSettings | undefined>) {
-    app.on('before-quit', () => { this.worker?.process.kill(); this.worker = null; this.abort?.abort() })
+    app.on('before-quit', () => { this.worker?.process.kill(); this.worker?.proxy.close(); this.worker = null; this.abort?.abort() })
   }
 
   /** Keep the selected model resident between dictations; only localhost receives audio. */
@@ -70,17 +74,18 @@ export class VoiceService {
     const key = `${binary}|${model}|${language}`
     if (this.workerStart) await this.workerStart
     if (this.worker?.key === key) return this.worker.url
-    this.worker?.process.kill(); this.worker = null
+    this.worker?.process.kill(); this.worker?.proxy.close(); this.worker = null
     this.workerStart = (async () => {
       const port = await new Promise<number>((resolve, reject) => {
         const listener = createServer(); listener.on('error', reject)
         listener.listen(0, '127.0.0.1', () => { const address = listener.address(); listener.close(() => typeof address === 'object' && address ? resolve(address.port) : reject(new Error('无法分配本地转写端口'))) })
       })
       const child = spawn(executable, ['-m', model, '--host', '127.0.0.1', '--port', String(port), '-l', language, '-t', String(Math.max(1, Math.min(8, cpus().length - 1)))], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
-      const url = `http://127.0.0.1:${port}`
+      const childUrl = `http://127.0.0.1:${port}`
+      const token = randomUUID()
       let log = '', failure = ''
       child.on('error', (error) => { failure = error.message })
-      child.on('exit', (code) => { failure = `转写服务退出（${code}）：${log.slice(-1200)}`; if (this.worker?.process === child) this.worker = null })
+      child.on('exit', (code) => { failure = `转写服务退出（${code}）：${log.slice(-1200)}`; if (this.worker?.process === child) { this.worker.proxy.close(); this.worker = null } })
       const collect = (chunk: Buffer): void => { log = (log + chunk.toString()).slice(-16000); if (/CUDA.*(device|GPU)|using CUDA|ggml_cuda_init: found/i.test(log)) this.backend = 'cuda'; else if (/use gpu\s*=\s*0|CPU backend/i.test(log)) this.backend = 'cpu' }
       child.stdout?.on('data', collect); child.stderr?.on('data', collect)
       this.backend = 'unknown'
@@ -88,7 +93,24 @@ export class VoiceService {
         const deadline = Date.now() + 90_000
         while (Date.now() < deadline) {
           if (failure) throw new Error(failure)
-          try { const response = await fetch(url, { signal: AbortSignal.timeout(1000) }); if (response.status < 500) { this.worker = { process: child, key, url }; return url } } catch { /* Model is still loading. */ }
+          try { const response = await fetch(childUrl, { signal: AbortSignal.timeout(1000) }); if (response.status < 500) {
+            const proxy = createHttpServer((req, res) => {
+              if (req.headers.authorization !== `Bearer ${token}`) { res.writeHead(401).end(); return }
+              const upstream = httpRequest(new URL(req.url ?? '/', childUrl), { method: req.method, headers: { ...req.headers, host: `127.0.0.1:${port}` } }, (reply) => {
+                res.writeHead(reply.statusCode ?? 502, reply.headers)
+                reply.pipe(res)
+              })
+              req.pipe(upstream)
+              upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end() })
+            })
+            const proxyPort = await new Promise<number>((resolve, reject) => {
+              proxy.once('error', reject)
+              proxy.listen(0, '127.0.0.1', () => { const address = proxy.address(); typeof address === 'object' && address ? resolve(address.port) : reject(new Error('无法启动本地鉴权代理')) })
+            })
+            const url = `http://127.0.0.1:${proxyPort}`
+            this.worker = { process: child, key, url, token, proxy }
+            return url
+          } } catch { /* Model is still loading. */ }
           await new Promise((resolve) => setTimeout(resolve, 150))
         }
         throw new Error('转写模型加载超时')
@@ -265,20 +287,23 @@ export class VoiceService {
       const response = await net.fetch(plan.url, { signal })
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
       const total = Number(response.headers.get('content-length')) || plan.bytes
+      if (plan.sizeKnown && total !== plan.bytes) throw new Error('下载大小与确认时不一致，请重新核实')
       if (plan.target.kind === 'binary' && total > MAX_BINARY_ZIP_BYTES) throw new Error('程序包大小异常，已停止')
       if (this.progress) this.progress.total = total
       const out = createWriteStream(part)
-      const reader = response.body.getReader()
-      try {
-        for (;;) {
-          const { done, value } = await reader.read()
-          if (done) break
-          if (!out.write(value)) await new Promise<void>((resolve) => out.once('drain', () => resolve()))
-          if (this.progress) this.progress.received += value.byteLength
+      let received = 0
+      const counting = new TransformStream<Uint8Array, Uint8Array>({
+        transform: (chunk, controller) => {
+          received += chunk.byteLength
+          if (plan.sizeKnown && received > plan.bytes) throw new Error('下载内容超过确认时的文件大小')
+          if (plan.target.kind === 'binary' && received > MAX_BINARY_ZIP_BYTES) throw new Error('程序包超过 100 MiB 上限，已停止')
+          if (this.progress) this.progress.received = received
+          controller.enqueue(chunk)
         }
-      } finally {
-        await new Promise<void>((resolve) => out.end(() => resolve()))
-      }
+      })
+      await pipeline(Readable.fromWeb(response.body.pipeThrough(counting) as import('node:stream/web').ReadableStream), out)
+      if (this.progress) this.progress.received = received
+      if (plan.sizeKnown && received !== plan.bytes) throw new Error('下载大小与确认时不一致，请重新核实')
       if (this.progress && this.progress.received < total) throw new Error('下载不完整')
 
       if (plan.target.kind === 'model') {
@@ -286,7 +311,7 @@ export class VoiceService {
       } else {
         if (this.workerStart) await this.workerStart.catch(() => undefined)
         if (this.worker) {
-          const worker = this.worker.process; this.worker = null
+          const worker = this.worker.process; this.worker.proxy.close(); this.worker = null
           if (worker.exitCode === null) await new Promise<void>((resolve) => { worker.once('exit', () => resolve()); worker.kill() })
         }
         await installBinaryZip(part)
@@ -321,7 +346,9 @@ export class VoiceService {
         const form = new FormData()
         form.set('file', new Blob([new Uint8Array(wav).buffer], { type: 'audio/wav' }), 'dictation.wav')
         form.set('response_format', 'json'); form.set('language', lang)
-        const response = await fetch(`${url}/inference`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) })
+        const worker = this.worker
+        if (!worker || worker.url !== url) throw new Error('本地转写服务已重启，请重试')
+        const response = await fetch(`${url}/inference`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${worker.token}` }, signal: AbortSignal.timeout(120_000) })
         if (!response.ok) throw new Error(`本地转写服务 HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`)
         const result = await response.json() as { text?: string; error?: string }
         const text = (result.text ?? '').trim()
@@ -395,8 +422,11 @@ async function sampleCpuLoad(): Promise<number | null> {
 
 /** 从官方 zip 里取出 exe / dll，拍平到 bin 目录（先解到临时目录，齐了再替换） */
 async function installBinaryZip(zipPath: string): Promise<void> {
-  const zip = new ZipReader(await readFile(zipPath), MAX_BINARY_ZIP_BYTES)
+  const packed = await readFile(zipPath)
+  if (packed.length > MAX_BINARY_ZIP_BYTES) throw new Error('程序包超过 100 MiB 上限，已停止')
+  const zip = new ZipReader(packed, MAX_BINARY_ZIP_BYTES)
   const wanted = zip.names().filter((name) => /\.(exe|dll)$/i.test(name) && !name.endsWith('/'))
+  if (wanted.some((name) => (zip.entries.get(name)?.size ?? 0) > MAX_BINARY_ENTRY_BYTES)) throw new Error('程序包单个文件超过 64 MiB 上限，已停止')
   if (wanted.reduce((sum, name) => sum + (zip.entries.get(name)?.size ?? 0), 0) > 2 * MAX_BINARY_ZIP_BYTES) throw new Error('程序包解压后过大，已停止')
   if (!wanted.some((name) => /(^|\/)whisper-cli\.exe$/i.test(name))) throw new Error('程序包里没有 whisper-cli.exe')
   const staging = join(VOICE_DIR, `bin-${randomUUID()}`)

@@ -38,7 +38,7 @@ export function NativeContextTab() {
       <SettingRow name={t('ctx.autoCompact')} desc={available ? undefined : t('ctx.nativeUnavailable')}>
         <Switch label={t('ctx.autoCompact')} checked={session?.autoCompactionEnabled === true} disabled={!available || session?.autoCompactionEnabled === undefined} onChange={on => void setAutoCompaction(on)} />
       </SettingRow>
-      {session?.autoCompactionEnabled !== false ? (
+      {session?.autoCompactionEnabled === true ? (
         <SettingRow
           col
           ctlClassName="ctx-compact-ctl"

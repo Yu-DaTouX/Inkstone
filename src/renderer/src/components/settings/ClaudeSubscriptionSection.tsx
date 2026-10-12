@@ -11,6 +11,12 @@ export function ClaudeSubscriptionSection() {
   const [message, setMessage] = useState('')
   const [installed, setInstalled] = useState<boolean | null>(null)
   const [version, setVersion] = useState<string | undefined>()
+  const refresh = async (): Promise<void> => {
+    const result = await window.yan.packages.list(cwd)
+    const entry = result.entries.find(entry => entry.installed && (entry.name === 'pi-claude-bridge' || /(?:^|[/@:])pi-claude-bridge(?:@|$)/.test(entry.source)))
+    setInstalled(result.ok ? !!entry : null)
+    setVersion(entry?.version ?? undefined)
+  }
   useEffect(() => {
     let alive = true
     void window.yan.packages.list(cwd).then(result => {
@@ -26,7 +32,7 @@ export function ClaudeSubscriptionSection() {
     setBusy(true); setMessage('')
     try {
       const result = await window.yan.packages.action({ kind: 'install', source: 'npm:pi-claude-bridge@0.9.2', local: false, cwd })
-      if (result.ok) { setInstalled(true); setVersion('0.9.2') }
+      if (result.ok) await refresh()
       setMessage(result.ok ? t('cc.installed') : result.error ?? t('delegate.failed'))
     } catch (error) { setMessage(String(error)) } finally { setBusy(false) }
   }

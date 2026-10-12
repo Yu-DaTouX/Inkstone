@@ -130,7 +130,7 @@ export function legacyPlaybookToSkill(raw: unknown): (UserSkillInput & { id: str
     if (!stepTitle) continue
     index += 1
     const effect = textOf(step.effect)
-    const label = EFFECT_LABELS[effect] ?? '只读'
+    const label = Object.hasOwn(EFFECT_LABELS, effect) ? EFFECT_LABELS[effect] : '只读'
     if (effect === 'write' || effect === 'external') needsConfirm = true
     const scope = listOf(step.scope)
     const detail = textOf(step.detail)

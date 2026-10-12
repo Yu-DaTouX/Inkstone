@@ -8,7 +8,7 @@ import { Button } from '../ui'
  * 批准卡片：宿主要问用户时，在输入框上方内嵌出现（取代原生弹窗）。
  *
  * 一次只显示最早的一条，其余排队并在角上计数。没有「点外面关闭」：
- * 关不掉的卡片才不会被误当成答复；Esc 等同于「拒绝」（失败方向安全）。
+ * 关不掉的卡片才不会被误当成答复；焦点位于卡片时 Esc 等同于「拒绝」。
  * 不抢输入框焦点：用户可能正在打字，卡片靠 role=alertdialog 与视觉强调引起注意。
  */
 export function ApprovalCard() {
@@ -29,7 +29,7 @@ export function ApprovalCard() {
     if (!current) return
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return
-      /* 只在焦点位于卡片内时响应，避免与输入框里的 Esc（中止运行）抢键 */
+      /* 只在焦点位于卡片内时响应；输入框获得焦点时 Esc 保留给中止运行。 */
       if (!cardRef.current?.contains(document.activeElement)) return
       event.preventDefault()
       void answerApproval(current.id, 'deny')

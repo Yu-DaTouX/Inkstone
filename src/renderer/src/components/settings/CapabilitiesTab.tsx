@@ -90,6 +90,7 @@ export function CapabilitiesTab(): React.JSX.Element {
 
   const verify = async (serverId: string): Promise<void> => {
     setNotice('')
+    try {
     const started = await window.yan.capabilities.verify(serverId)
     if (!started.ok || !started.operationId) {
       setNotice(started.error ?? tk('cap.verifyFailed'))
@@ -112,6 +113,12 @@ export function CapabilitiesTab(): React.JSX.Element {
     }
     if (mounted.current) {
       setOperations((old) => ({ ...old, [serverId]: { operationId, state: 'error' } }))
+    }
+    } catch (error) {
+      if (mounted.current) {
+        setOperations((old) => ({ ...old, [serverId]: { operationId: '', state: 'error' } }))
+        setNotice(error instanceof Error ? error.message : tk('cap.verifyFailed'))
+      }
     }
   }
 
@@ -367,7 +374,7 @@ export function CapabilitiesTab(): React.JSX.Element {
                   >
                     {install?.busy ? t('set.opencliInstalling') : backend.available ? t('set.opencliUpdate') : t('set.opencliInstall')}
                   </Button>
-                  {!backend.available ? <Button size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText('npm install -g @jackwener/opencli')}>
+                  {!backend.available ? <Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard?.writeText('npm install -g @jackwener/opencli').then(() => setNotice('Copied install command.')).catch((error) => setNotice(error instanceof Error ? error.message : String(error))) }}>
                     {t('set.opencliCopyCmd')}
                   </Button> : null}
                   {install?.needsNode || (!backend.available && /node|npm/i.test(backend.detail ?? '')) ? (
@@ -447,7 +454,7 @@ function SearchApiRow() {
       ))}
       {config?.hintDismissed && !config.configured ? (
         <div className="set-install-actions">
-          <Button size="sm" variant="ghost" data-testid="cap-search-api-rehint" onClick={() => void window.yan.search.setApiHintDismissed(false).then(load)}>
+          <Button size="sm" variant="ghost" data-testid="cap-search-api-rehint" onClick={() => { void window.yan.search.setApiHintDismissed(false).then(load).catch(() => undefined) }}>
             {t('search.apiHintReenable')}
           </Button>
         </div>
@@ -466,12 +473,14 @@ function SearchProviderRow({ provider, state, onChanged }: { provider: SearchPro
     event.preventDefault()
     if (busy || !key.trim()) return
     setBusy(true)
-    const res = await window.yan.search.setApiKey(provider.id, key)
-    setBusy(false)
-    if (!res.ok) { setError(res.error ?? t('search.apiSaveFailed')); return }
-    setError('')
-    setKey('')
-    await onChanged()
+    try {
+      const res = await window.yan.search.setApiKey(provider.id, key)
+      if (!res.ok) { setError(res.error ?? t('search.apiSaveFailed')); return }
+      setError('')
+      setKey('')
+      await onChanged()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t('search.apiSaveFailed')) }
+    finally { setBusy(false) }
   }
   const clear = async (): Promise<void> => {
     await window.yan.search.clearApiKey(provider.id)

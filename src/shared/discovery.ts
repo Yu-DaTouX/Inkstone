@@ -16,7 +16,8 @@ import { createHash } from 'node:crypto'
 
 export type CandidateKind = 'skill' | 'mcp-server'
 export type CandidateAuth = 'none' | 'configured' | 'required' | 'unknown'
-export type CandidateInstallKind = 'skill-files' | 'pi-package' | 'mcp-package' | 'remote'
+/** unknown 仅元数据，不表示可以连接或安装。 */
+export type CandidateInstallKind = 'skill-files' | 'pi-package' | 'mcp-package' | 'remote' | 'unknown'
 export type CandidateVerification = 'metadata-only' | 'source-checked' | 'smoke-passed'
 export type CandidateTransport = 'stdio' | 'streamable-http'
 
@@ -111,7 +112,8 @@ export const MAX_QUERY_CHARS = 120
 export function sanitizeDiscoveryQuery(raw: string): string {
   let text = String(raw ?? '')
   text = text.replace(/https?:\/\/\S+/gi, ' ')
-  text = text.replace(/[A-Za-z]:\\[^\s"']*/g, ' ')
+  text = text.replace(/[A-Za-z]:[\\/][^\s"']*/g, ' ')
+  text = text.replace(/(?:\\\\[^\s\\]+\\|(?:\.\.?\\)?)[^\s"'\\]+(?:\\[^\s"'\\]+)+/g, ' ')
   text = text.replace(/(?:\/[\w.$-]+){2,}/g, ' ')
   text = text.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, ' ')
   text = text.replace(/\b(?:sk|pk|ghp|gho|api|token|secret|bearer)[-_][A-Za-z0-9_-]{12,}\b/gi, ' ')
@@ -134,7 +136,8 @@ const INSTALL_COST_BONUS: Record<CandidateInstallKind, number> = {
   'skill-files': 4,
   'pi-package': 3,
   'mcp-package': 2,
-  remote: 1
+  remote: 1,
+  unknown: 0
 }
 
 const AUTH_BONUS: Record<CandidateAuth, number> = {

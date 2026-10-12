@@ -143,6 +143,8 @@ export default function App() {
   const onboardDecided = useRef(false)
   /** 左栏由标题栏开关显式控制，首次收起，后续恢复保存的展开状态。 */
   const railPinned = useStore((s) => s.railPinned)
+  const railPinnedRef = useRef(railPinned)
+  railPinnedRef.current = railPinned
   const setRailPinned = useStore((s) => s.setRailPinned)
   /* 浏览器开关与工具栏独立：入口在标题栏，收起工具栏不影响浏览器 */
   const browserOpen = useStore((s) => s.browserState.open)
@@ -164,7 +166,7 @@ export default function App() {
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoverRail = (inside: boolean): void => {
     if (peekTimer.current) clearTimeout(peekTimer.current)
-    peekTimer.current = setTimeout(() => setRailPeek(inside && !railPinned), inside ? 140 : 260)
+    peekTimer.current = setTimeout(() => setRailPeek(inside && !railPinnedRef.current), inside ? 140 : 260)
   }
   useEffect(() => { if (railPinned) setRailPeek(false) }, [railPinned])
   useEffect(() => () => { if (peekTimer.current) clearTimeout(peekTimer.current) }, [])

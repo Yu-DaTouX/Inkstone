@@ -126,13 +126,13 @@ function legacyWorkspaceMode(): WorkspaceMode | null {
  * 声音总是按事件播（与窗口焦点无关）；系统通知只在**窗口不在前台**时发 ——
  * 用户正看着窗口时再弹一个通知是打扰，对齐 opencode 的 attention。
  */
-function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string): void {
+function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string, title?: string): void {
   const sound = settings?.sound
   if (!sound?.enabled || !sound.events?.[event]) return
   playSound(event, sound.volume)
   if (sound.notifications && typeof document !== 'undefined' && !document.hasFocus()) {
     void window.yan
-      .notifyAttention({ kind: event, title: attentionTitle(event), body })
+      .notifyAttention({ kind: event, title: title || attentionTitle(event), body })
       .catch(() => {
         /* 通知失败不影响主流程 */
       })
@@ -390,7 +390,7 @@ export interface Store {
    * 这个 id 在发送那一刻并不存在。所以先排队，等第一条新的 user 消息到达时
    * 把队首那批绑上（发送是串行的，队首就是这次那条）。
    */
-  pendingSourceLinks: { sessionId: string; sourceIds: string[] }[]
+  pendingSourceLinks: { sessionId: string; sourceIds: string[]; attempts?: number }[]
   /**
    * 滚到某条消息并短暂高亮（来源菜单的「定位消息」）。
    *
@@ -1212,6 +1212,20 @@ function applyBrowserVisibility(get: () => Store): void {
  * 也不再向主进程请求激活。
  */
 let sessionSwitchGate = 0
+let approvalBootstrapSeq = 0
+let approvalChanges = new Map<string, ApprovalRequest | null>()
+let settingsPatchQueue: Promise<unknown> = Promise.resolve()
+let workspaceModePatchSeq = 0
+let rightPanelPatchSeq = 0
+async function persistSettingsPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
+  const operation = settingsPatchQueue.then(async () => {
+    const next = await window.yan.patchSettings(patch)
+    useStore.setState({ settings: next })
+    return useStore.getState().settings ?? next
+  })
+  settingsPatchQueue = operation.catch(() => undefined)
+  return operation
+}
 
 /**
  * 打开的文件标签数量上限。
@@ -1370,6 +1384,8 @@ export const useStore = create<Store>((rawSet, get) => {
   /* ------------------------------------------------------------- 初始化 */
 
   bootstrap: async () => {
+    const bootstrapApprovals = ++approvalBootstrapSeq
+    approvalChanges = new Map()
     /* 每个启动请求各自的完成时刻（相对 bootstrap 起点），用来看谁拖慢首屏 */
     const timedBoot = <T,>(name: string, p: Promise<T>): Promise<T> => p.finally(() => { try { performance.measure('yan:boot:' + name, 'yan:bootstrap-start') } catch { /* 标记缺失时忽略 */ } })
     const api = window.yan
@@ -1441,7 +1457,15 @@ export const useStore = create<Store>((rawSet, get) => {
     // 模型 / 斜杠命令在启动后单独拉（要等 pi ready）
     void get().reloadModels()
     void window.yan.pendingApprovals().then((approvals) => {
-      if (approvals.length) set({ approvals })
+      if (bootstrapApprovals !== approvalBootstrapSeq) return
+      const byId = new Map(approvals.map((item) => [item.id, item]))
+      for (const [id, item] of approvalChanges) {
+        if (item) byId.set(id, item)
+        else byId.delete(id)
+      }
+      for (const item of get().approvals) if (!approvalChanges.has(item.id)) byId.set(item.id, item)
+      set({ approvals: [...byId.values()] })
+      approvalChanges.clear()
     }).catch(() => undefined)
     /* 新设备常缺 Git / bash：只在启动时提示一次，缺什么说什么 */
     void window.yan
@@ -1494,6 +1518,8 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   applyPush: (m) => {
+    if (m.ch === 'approval') approvalChanges.set(m.payload.id, m.payload)
+    else if (m.ch === 'approval-close') approvalChanges.set(m.payload.id, null)
     const s = get()
 
     /* 会话与运行实例的身份、事件归属判定统一在 push-routing.ts */
@@ -1688,9 +1714,13 @@ export const useStore = create<Store>((rawSet, get) => {
           set({ notices: pushNotice(get().notices, 'error', `压缩失败：${endedRun.error ?? '未知原因'}`) })
         }
         if (finished) {
+          /* 标题用会话名、正文用回复开头：只看通知就知道是哪个任务、答了什么 */
           const sid = s.session?.sessionId
           const label = (sid && (s.manualTitles[sid] || s.titles[sid])) || s.session?.sessionName || ''
-          alertAttention(s.settings, 'done', label || undefined)
+          const reply = [...s.messages].reverse().find((msg) => msg.role === 'assistant' && msg.text.trim())?.text ?? ''
+          const excerpt = reply.replace(/[#>*_`|]+/g, ' ').replace(/\s+/g, ' ').trim()
+          const body = excerpt.length > 120 ? `${excerpt.slice(0, 119)}…` : excerpt
+          alertAttention(s.settings, 'done', body || undefined, label ? `${attentionTitle('done')} · ${label}` : undefined)
         }
         if (Array.isArray(m.payload.availableThinkingLevels)) {
           set({ thinkingLevels: m.payload.availableThinkingLevels })
@@ -1724,7 +1754,16 @@ export const useStore = create<Store>((rawSet, get) => {
                   set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x !== head) })
                 }
               })
-              .catch(() => undefined)
+              .catch(() => {
+                const latest = get().pendingSourceLinks.find((item) => item === head)
+                if (latest && (latest as { attempts?: number }).attempts === undefined) {
+                  set({ pendingSourceLinks: get().pendingSourceLinks.map((item) => item === head ? { ...item, attempts: 1 } : item) })
+                } else if (latest && ((latest as { attempts: number }).attempts < 3)) {
+                  set({ pendingSourceLinks: get().pendingSourceLinks.map((item) => item === head ? { ...item, attempts: (latest as { attempts: number }).attempts + 1 } : item) })
+                } else if (latest) {
+                  set({ pendingSourceLinks: get().pendingSourceLinks.filter((item) => item !== head) })
+                }
+              })
           }
         }
         break
@@ -2419,6 +2458,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   newSession: async (target) => {
+    ++sessionSwitchGate
     const res = await piCall(() => window.yan.newSession(target))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '新建失败') })
@@ -2749,14 +2789,23 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     const cache = { ...get().sessionRuntimes }
     const normalize = (value: string): string => value.replace(/\\/g, '/').toLowerCase()
+    const removedIds = new Set(get().sessions.filter((item) => normalize(item.path) === normalize(path)).map((item) => item.id))
     for (const [key, snapshot] of Object.entries(cache)) {
-      if (snapshot.session?.sessionFile && normalize(snapshot.session.sessionFile) === normalize(path)) delete cache[key]
+      if (snapshot.session?.sessionFile && normalize(snapshot.session.sessionFile) === normalize(path)) {
+        delete cache[key]
+        removedIds.add(snapshot.session.sessionId)
+      }
     }
-    set({ sessionRuntimes: cache })
+    const manualTitles = { ...get().manualTitles }
+    const titles = { ...get().titles }
+    const titleCandidates = { ...get().titleCandidates }
+    for (const id of removedIds) { delete manualTitles[id]; delete titles[id]; delete titleCandidates[id] }
+    set({ sessionRuntimes: cache, manualTitles, titles, titleCandidates })
     await get().refreshSessions()
   },
 
   fork: async (entryId) => {
+    ++sessionSwitchGate
     if (!(await get().ensureActivated())) return false
     const sourceRunner = get().activeRunnerId
     const res = await piCall(() => window.yan.fork(entryId))
@@ -2764,8 +2813,19 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '分叉失败') })
       return false
     }
-    const [branchState, branchMessages] = await Promise.all([window.yan.getState(), window.yan.getMessages()])
-    if (get().activeRunnerId !== sourceRunner) return false
+    let branchState: SessionState | null
+    let branchMessages: UIMessage[]
+    try { [branchState, branchMessages] = await Promise.all([window.yan.getState(), window.yan.getMessages()]) }
+    catch (error) {
+      set({ notices: pushNotice(get().notices, 'warning', `分叉已创建，但无法立即激活；原会话已保留。可从会话列表打开新分叉。${String(error)}`) })
+      await get().refreshSessions()
+      return true
+    }
+    if (get().activeRunnerId !== sourceRunner) {
+      set({ notices: pushNotice(get().notices, 'warning', '分叉已创建，但当前会话已变化；原会话已保留，可从列表打开新分叉。') })
+      await get().refreshSessions()
+      return true
+    }
     if (branchState) set({ session: branchState, messages: branchMessages, pendingActivation: null, peekedPath: null, peekedSessionId: null, peekNote: null })
     set({
       queue: EMPTY_QUEUE,
@@ -2790,6 +2850,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   clone: async () => {
+    ++sessionSwitchGate
     const res = await piCall(() => window.yan.clone())
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '复制失败') })
@@ -3084,7 +3145,18 @@ export const useStore = create<Store>((rawSet, get) => {
   previewFile: async (path, line, cwd, lineEnd) => {
     set({ filePreview: { path, cwd, line, lineEnd, loading: true, data: null } })
     /* 原生网页由活动页切换（→file）自动隐藏，不再单独 setVisible */
-    const data = await window.yan.readPreview(path, line, cwd, lineEnd)
+    let data: Awaited<ReturnType<typeof window.yan.readPreview>>
+    try { data = await window.yan.readPreview(path, line, cwd, lineEnd) }
+    catch (error) {
+      const cur = get().filePreview
+      if (cur?.path === path && cur.cwd === cwd && cur.line === line && cur.lineEnd === lineEnd) {
+        const failed = { ...cur, loading: false, data: null }
+        const filePreviews = { ...get().filePreviews }
+        if (cur.key) filePreviews[cur.key] = failed
+        set({ filePreview: failed, filePreviews, notices: pushNotice(get().notices, 'error', `预览失败：${String(error)}`) })
+      }
+      return
+    }
     /* 期间用户可能已经换了别的文件 / 关掉了预览：只认最后一次请求 */
     const cur = get().filePreview
     if (!cur || cur.path !== path || cur.cwd !== cwd || cur.line !== line || cur.lineEnd !== lineEnd) return
@@ -3260,12 +3332,12 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   patchProfile: async (p) => {
-    const next = await window.yan.patchSettings({ profile: { ...get().settings?.profile, ...p } as UserProfile })
+    const next = await persistSettingsPatch({ profile: { ...get().settings?.profile, ...p } as UserProfile })
     set({ settings: next })
   },
 
   patchSettings: async (p) => {
-    set({ settings: await window.yan.patchSettings(p) })
+    set({ settings: await persistSettingsPatch(p) })
   },
 
   installGit: async () => {
@@ -3338,16 +3410,15 @@ export const useStore = create<Store>((rawSet, get) => {
      * 不能把界面停在一个磁盘上没写成功的档（对齐 setWorkMode）。
      */
     const prev = get().workspaceMode
+    const request = ++workspaceModePatchSeq
     set({ workspaceMode: mode })
     try {
-      const next = await window.yan.patchSettings({ workspaceMode: mode })
-      set({ settings: next, workspaceMode: next.workspaceMode ?? mode })
+      const next = await persistSettingsPatch({ workspaceMode: mode })
+      if (request === workspaceModePatchSeq) set({ settings: next, workspaceMode: next.workspaceMode ?? mode })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      set({
-        workspaceMode: prev,
-        notices: pushNotice(get().notices, 'error', `切换工作区模式失败：${message}`)
-      })
+      if (request === workspaceModePatchSeq) set({ workspaceMode: prev })
+      set({ notices: pushNotice(get().notices, 'error', `切换工作区模式失败：${message}`) })
     }
   },
 
@@ -3358,7 +3429,8 @@ export const useStore = create<Store>((rawSet, get) => {
    * 不在中间帧里 set({settings})，否则整个界面会跟着重渲染，拖拽会卡。
    */
   setPanelWidth: async (patch) => {
-    set({ settings: await window.yan.patchSettings(patch as Partial<AppSettings>) })
+    try { set({ settings: await persistSettingsPatch(patch as Partial<AppSettings>) }) }
+    catch (error) { set({ notices: pushNotice(get().notices, 'error', `保存面板宽度失败：${String(error)}`) }) }
   },
 
   setToolLayout: async (next) => {
@@ -3366,7 +3438,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const { layout, applied } = commitTileLayout(current, next)
     /* 迟到的旧 revision 不写盘；等 revision 的重复写也跳过（幂等） */
     if (!applied) return
-    set({ settings: await window.yan.patchSettings({ toolLayout: layout }) })
+    set({ settings: await persistSettingsPatch({ toolLayout: layout }) })
   },
 
   toolDropTarget: null,
@@ -3374,7 +3446,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
   setToolHeight: async (id, px) => {
     const cur = get().settings?.toolHeights ?? {}
-    set({ settings: await window.yan.patchSettings({ toolHeights: { ...cur, [id]: Math.round(px) } } as Partial<AppSettings>) })
+    set({ settings: await persistSettingsPatch({ toolHeights: { ...cur, [id]: Math.round(px) } } as Partial<AppSettings>) })
   },
 
   /* --------------------------------------------------------------- 附件 */
@@ -3706,26 +3778,41 @@ export const useStore = create<Store>((rawSet, get) => {
   },
   toggleAlwaysOnTop: async () => {    // 乐观更新：窗口层级的切换必须立即反馈（否则按钮会“点一下没反应”再跳）
     const next = !get().alwaysOnTop
+    const previous = !next
     set({ alwaysOnTop: next })
-    const real = await window.yan.win.setAlwaysOnTop(next)
-    // 以主进程回报的真实状态为准
-    set({ alwaysOnTop: real })
+    try {
+      const real = await window.yan.win.setAlwaysOnTop(next)
+      // 只接受本次请求的回执，乱序旧回执不得盖掉后续点击。
+      if (get().alwaysOnTop !== next) return
+      set({ alwaysOnTop: real })
+    } catch (error) {
+      if (get().alwaysOnTop === next) set({ alwaysOnTop: previous })
+      set({ notices: pushNotice(get().notices, 'error', `置顶设置失败：${String(error)}`) })
+      return
+    }
     set({
       notices: pushNotice(
         get().notices,
         'info',
-        real ? '窗口已置顶（总是显示在最上层）' : '已取消置顶'
+        get().alwaysOnTop ? '窗口已置顶（总是显示在最上层）' : '已取消置顶'
       )
     })
   },
   setRightPanelOpen: async (v) => {
     // 乐观更新：右栏要立刻响应，不能等 IPC 往返
+    const request = ++rightPanelPatchSeq
     const s = get().settings
+    const previous = s?.rightPanelOpen ?? true
     if (s) set({ settings: { ...s, rightPanelOpen: v } })
     /* 收起整个工作栏时，原生网页也必须一起不可见（新语义） */
     applyBrowserVisibility(get)
-    const next = await window.yan.patchSettings({ rightPanelOpen: v })
-    set({ settings: next })
+    try {
+      const next = await persistSettingsPatch({ rightPanelOpen: v })
+      if (request === rightPanelPatchSeq) set({ settings: next })
+    } catch (error) {
+      if (request === rightPanelPatchSeq) set({ settings: get().settings ? { ...get().settings!, rightPanelOpen: previous } : get().settings })
+      set({ notices: pushNotice(get().notices, 'error', `保存工作区显示失败：${String(error)}`) })
+    }
     applyBrowserVisibility(get)
   },
   toggleRightPanel: async () => {

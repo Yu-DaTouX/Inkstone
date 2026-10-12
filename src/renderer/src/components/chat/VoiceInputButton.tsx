@@ -125,7 +125,8 @@ export function VoiceInputButton({ onText, disabled }: { onText: (text: string) 
   if (phase.kind === 'recording') {
     const seconds = Math.floor((now - phase.startedAt) / 1000)
     return (
-      <span className="voice-input recording" role="status" data-testid="voice-recording">
+      <span className="voice-input recording" data-testid="voice-recording">
+        <span className="sr-only" role="status">{t('voice.recordingAnnouncement')}</span>
         <span className="voice-dot" aria-hidden="true" />
         <span className="voice-time">{`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}</span>
         <button type="button" className="ctool" onClick={stop} title={t('voice.stop')} data-testid="voice-stop">

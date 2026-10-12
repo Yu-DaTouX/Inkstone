@@ -20,6 +20,7 @@ import {
 } from '../../lib/background'
 import { APPEARANCE_EVENT, applyTypography, listLocalFonts } from '../../lib/appearance'
 import type { AppSettings } from '../../../../shared/ipc'
+import { isCurrentGeneration } from './review2-settings-guards'
 import {
   FONT_BODY_DEFAULT,
   FONT_BODY_MAX,
@@ -40,10 +41,20 @@ const START_COLOR: Record<BackgroundTheme, string> = { dark: '#17191d', light: '
 
 function useDebounced(): (fn: () => void, ms: number) => void {
   const timer = useRef<number | undefined>(undefined)
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+  const pending = useRef<(() => void) | null>(null)
+  useEffect(() => () => {
+    window.clearTimeout(timer.current)
+    pending.current?.()
+    pending.current = null
+  }, [])
   return (fn, ms) => {
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(fn, ms)
+    pending.current = fn
+    timer.current = window.setTimeout(() => {
+      const commit = pending.current
+      pending.current = null
+      commit?.()
+    }, ms)
   }
 }
 
@@ -59,6 +70,9 @@ export function BackgroundSetting() {
   const [draft, setDraft] = useState<string | null>(null)
   const [hexText, setHexText] = useState<string | null>(null)
   const debounce = useDebounced()
+  const revision = useRef(0)
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const value = draft ?? saved ?? START_COLOR[theme]
   const active = preset === CUSTOM_BACKGROUND_ID
   const used = clampBackground(value, theme)
@@ -71,11 +85,16 @@ export function BackgroundSetting() {
   }, [theme])
 
   const preview = (hex: string): void => {
+    const currentRevision = ++revision.current
     setDraft(hex)
     if (applyBackground(document.documentElement, CUSTOM_BACKGROUND_ID, hex, theme)) window.dispatchEvent(new Event(APPEARANCE_EVENT))
     debounce(() => {
       const key = theme === 'light' ? 'backgroundCustomLight' : 'backgroundCustom'
-      void patchSettings({ backgroundPreset: CUSTOM_BACKGROUND_ID, [key]: hex }).finally(() => setDraft(null))
+      void patchSettings({ backgroundPreset: CUSTOM_BACKGROUND_ID, [key]: hex }).then(() => {
+        if (mounted.current && isCurrentGeneration(revision.current, currentRevision)) setDraft(null)
+      }).catch(() => {
+        if (mounted.current && isCurrentGeneration(revision.current, currentRevision)) setDraft(hex)
+      })
     }, 250)
   }
 
@@ -171,6 +190,9 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }) {
   const [text, setText] = useState<string | null>(null)
   const [fonts, setFonts] = useState<string[]>([])
   const debounce = useDebounced()
+  const revision = useRef(0)
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   /* 'maple' 是缺省：主进程清洗时落成「没设置」 */
   const patchFont = (choice: string, name?: string): Promise<void> =>
     patchSettings(
@@ -186,7 +208,12 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }) {
   const commit = (name: string): void => {
     const clean = sanitizeFontName(name)
     if (name !== '' && !clean) return
-    void patchFont('custom', clean ?? '').finally(() => setText(null))
+    const currentRevision = ++revision.current
+    void patchFont('custom', clean ?? '').then(() => {
+      if (mounted.current && isCurrentGeneration(revision.current, currentRevision)) setText(null)
+    }).catch(() => {
+      if (mounted.current && isCurrentGeneration(revision.current, currentRevision)) setText(name)
+    })
   }
 
   return (
@@ -225,6 +252,7 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }) {
             onChange={(e) => {
               const name = e.target.value
               setText(name)
+              revision.current++
               debounce(() => commit(name), 500)
             }}
             onKeyDown={(e) => {

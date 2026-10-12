@@ -15,12 +15,22 @@ export class InteractionStore {
   get(session: string): InteractionValues {
     const file = this.path(session)
     if (!existsSync(file)) return {}
-    if (statSync(file).size > INTERACTION_FILE_LIMIT) throw new Error('Interaction state is too large')
-    const data = JSON.parse(readFileSync(file, 'utf8'))
-    if (data?.version !== 1 || data.session !== session || !data.values || typeof data.values !== 'object' || Array.isArray(data.values)) throw new Error('Invalid interaction state')
+    const recover = (): InteractionValues => {
+      const backup = `${file}.corrupt-${randomUUID()}`
+      renameSync(file, backup)
+      console.warn('[interaction-state] 已隔离损坏的交互状态', backup)
+      return {}
+    }
+    if (statSync(file).size > INTERACTION_FILE_LIMIT) return recover()
+    let data
+    try { data = JSON.parse(readFileSync(file, 'utf8')) } catch (error) {
+      if (error instanceof SyntaxError) return recover()
+      throw error
+    }
+    if (data?.version !== 1 || data.session !== session || !data.values || typeof data.values !== 'object' || Array.isArray(data.values)) return recover()
     const values: InteractionValues = Object.create(null)
     for (const [key, value] of Object.entries(data.values)) {
-      if (!validInteractionKey(key) || typeof value !== 'string' || Buffer.byteLength(value) > INTERACTION_VALUE_LIMIT) throw new Error('Invalid interaction value')
+      if (!validInteractionKey(key) || typeof value !== 'string' || Buffer.byteLength(value) > INTERACTION_VALUE_LIMIT) return recover()
       values[key] = value
     }
     return values

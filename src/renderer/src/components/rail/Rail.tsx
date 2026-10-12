@@ -218,6 +218,10 @@ export function Rail() {
   const [projDraft, setProjDraft] = useState('')
   const [projectMenu, setProjectMenu] = useState<{ id: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
   const [projectError, setProjectError] = useState('')
+  const patchRailSettings = async (patch: Parameters<typeof patchSettings>[0]): Promise<boolean> => {
+    try { await patchSettings(patch); setProjectError(''); return true }
+    catch (cause) { setProjectError(cause instanceof Error ? cause.message : t('rail.projectError')); return false }
+  }
   const [groupingProject, setGroupingProject] = useState<string | null>(null)
   const [groupDraft, setGroupDraft] = useState('')
   /** 正在重命名哪个分组（groupId）；null = 没有（N01） */
@@ -868,8 +872,8 @@ export function Rail() {
                         }
                       },
                       { id: 'rail-project-rename', label: t('rail.renameProject'), icon: 'pencil', onSelect: () => { setProjDraft(p.label); setProjRename(p.cwd) } },
-                      { id: 'rail-project-reveal', label: t('rail.reveal'), icon: 'folder-open', onSelect: () => { void window.yan.revealPath(p.cwd) } },
-                      { id: 'rail-project-copy', label: t('rail.copyPath'), onSelect: () => { void navigator.clipboard.writeText(p.cwd) } },
+                      { id: 'rail-project-reveal', label: t('rail.reveal'), icon: 'folder-open', onSelect: () => { void window.yan.revealPath(p.cwd).catch((cause) => setProjectError(cause instanceof Error ? cause.message : t('rail.projectError'))) } },
+                      { id: 'rail-project-copy', label: t('rail.copyPath'), onSelect: () => { void navigator.clipboard.writeText(p.cwd).catch((cause) => setProjectError(cause instanceof Error ? cause.message : t('rail.projectError'))) } },
                       {
                         id: 'rail-project-remove',
                         label: showArchived ? t('rail.restoreProject') : t('rail.removeProject'),
@@ -882,7 +886,7 @@ export function Rail() {
                            * 项目会从列表里消失，用户需要先知道会话去哪了。
                            */
                           if (showArchived) {
-                            void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, archived: false, updatedAt: Date.now() } : project) })
+                            void patchRailSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, archived: false, updatedAt: Date.now() } : project) })
                             return
                           }
                           setProjectToRemove({ id: p.projectId!, name: p.label })
@@ -898,11 +902,10 @@ export function Rail() {
                       if (!name) return
                       const existing = projectGroups.find((group) => group.name.toLowerCase() === name.toLowerCase())
                       const group = existing ?? { id: `group-${Date.now().toString(36)}`, name, createdAt: Date.now() }
-                      void patchSettings({ projectGroups: existing ? projectGroups : [...projectGroups, group], projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) })
-                      setGroupingProject(null)
+                      void patchRailSettings({ projectGroups: existing ? projectGroups : [...projectGroups, group], projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) }).then((ok) => { if (ok) setGroupingProject(null) })
                     }}>{t('rail.saveGroup')}</button>
-                    {projectGroups.map((group) => <button key={group.id} onClick={() => { void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) }); setGroupingProject(null) }}>{group.name}</button>)}
-                    <button onClick={() => { void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: undefined, updatedAt: Date.now() } : project) }); setGroupingProject(null) }}>{t('rail.noGroup')}</button>
+                    {projectGroups.map((group) => <button key={group.id} onClick={() => { void patchRailSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) }).then((ok) => { if (ok) setGroupingProject(null) }) }}>{group.name}</button>)}
+                    <button onClick={() => { void patchRailSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: undefined, updatedAt: Date.now() } : project) }).then((ok) => { if (ok) setGroupingProject(null) }) }}>{t('rail.noGroup')}</button>
                   </div> : null}
                   {pOpen ? (() => {
                     /*

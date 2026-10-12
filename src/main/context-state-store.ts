@@ -29,6 +29,7 @@
  * `dir` 参数是为了让测试与 live 场景把文件写到隔离目录 —— 生产调用不传。
  */
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import {
   inspectArchiveFile,
@@ -66,6 +67,14 @@ export function contextStateDir(dir?: string): string {
  * 但仍然排除分隔符与 `.` / `..`。
  */
 const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,200}$/
+
+async function quarantineInvalid(path: string): Promise<void> {
+  try {
+    await rename(path, `${path}.invalid-${Date.now()}-${randomUUID()}`)
+  } catch {
+    // 保留无法隔离的原文件；本次调用仍按校验失败处理。
+  }
+}
 
 export function isSafeSessionId(sessionId: unknown): sessionId is string {
   return typeof sessionId === 'string' && SESSION_ID_RE.test(sessionId) && sessionId !== '.' && sessionId !== '..'
@@ -138,6 +147,18 @@ async function writeJsonAtomic(
   }
 }
 
+/* Per-file serialization ensures a stale load cannot quarantine a concurrent replacement. */
+const fileOperations = new Map<string, Promise<unknown>>()
+function withFileLock<T>(file: string, work: () => Promise<T>): Promise<T> {
+  const previous = fileOperations.get(file) ?? Promise.resolve()
+  const current = previous.catch(() => undefined).then(work)
+  fileOperations.set(file, current)
+  return current.finally(() => { if (fileOperations.get(file) === current) fileOperations.delete(file) })
+}
+function lockKey(sessionId: string, opts: StoreOptions, suffix: string): string {
+  return `${contextStateDir(opts.dir)}\\0${sessionId}${suffix}`
+}
+
 /* ---------------------------------------------------------------- 状态读写 */
 
 export type ContextStateLoad =
@@ -162,7 +183,7 @@ export interface StoreOptions {
  * 引用不存在的原始条目）。这是有意的破坏性修复：与其让下一轮再读到
  * 同一份坏状态，不如当场清掉，下一轮由生成侧重建。
  */
-export async function loadContextState(sessionId: string, opts: StoreOptions = {}): Promise<ContextStateLoad> {
+async function loadContextStateUnlocked(sessionId: string, opts: StoreOptions = {}): Promise<ContextStateLoad> {
   const path = contextStatePath(sessionId, opts.dir)
   let text: string
   try {
@@ -176,7 +197,7 @@ export async function loadContextState(sessionId: string, opts: StoreOptions = {
   try {
     parsed = JSON.parse(text)
   } catch (error) {
-    await unlink(path).catch(() => undefined)
+    await quarantineInvalid(path)
     return {
       status: 'discarded',
       reason: 'invalid',
@@ -189,7 +210,7 @@ export async function loadContextState(sessionId: string, opts: StoreOptions = {
   if (inspected.status === 'ok') {
     /* 文件里的 sessionId 必须就是我们要读的那一个 —— 防止文件名与内容对不上 */
     if (inspected.state.sessionId !== sessionId) {
-      await unlink(path).catch(() => undefined)
+      await quarantineInvalid(path)
       return {
         status: 'discarded',
         reason: 'invalid',
@@ -206,7 +227,7 @@ export async function loadContextState(sessionId: string, opts: StoreOptions = {
     return { status: 'ok', state: inspected.state, path }
   }
 
-  await unlink(path).catch(() => undefined)
+  await quarantineInvalid(path)
   return {
     status: 'discarded',
     reason: inspected.status,
@@ -221,7 +242,7 @@ export async function loadContextState(sessionId: string, opts: StoreOptions = {
  * 调用方应当传入 `raw`（原始条目索引）—— 没有它就只能做形状校验，
  * 无法发现「状态指向的 entry 已经不在原始会话里」。
  */
-export async function saveContextState(state: ContextStateFile, opts: StoreOptions = {}): Promise<void> {
+async function saveContextStateUnlocked(state: ContextStateFile, opts: StoreOptions = {}): Promise<void> {
   assertSafeSessionId(state?.sessionId)
   const inspected = inspectContextStateFile(state, opts.raw ?? {})
   if (inspected.status !== 'ok') {
@@ -233,6 +254,13 @@ export async function saveContextState(state: ContextStateFile, opts: StoreOptio
   })
 }
 
+export function loadContextState(sessionId: string, opts: StoreOptions = {}): Promise<ContextStateLoad> {
+  return withFileLock(lockKey(sessionId, opts, ''), () => loadContextStateUnlocked(sessionId, opts))
+}
+export function saveContextState(state: ContextStateFile, opts: StoreOptions = {}): Promise<void> {
+  return withFileLock(lockKey(state.sessionId, opts, ''), () => saveContextStateUnlocked(state, opts))
+}
+
 /* ---------------------------------------------------------------- 归档读写 */
 
 export type ArchiveLoad =
@@ -241,7 +269,7 @@ export type ArchiveLoad =
   | { status: 'discarded'; reason: 'invalid' | 'incompatible'; issues: ValidationIssue[]; path: string }
   | { status: 'unreadable'; error: string; path: string }
 
-export async function loadArchive(sessionId: string, opts: StoreOptions = {}): Promise<ArchiveLoad> {
+async function loadArchiveUnlocked(sessionId: string, opts: StoreOptions = {}): Promise<ArchiveLoad> {
   const path = contextArchivePath(sessionId, opts.dir)
   let text: string
   try {
@@ -255,7 +283,7 @@ export async function loadArchive(sessionId: string, opts: StoreOptions = {}): P
   try {
     parsed = JSON.parse(text)
   } catch (error) {
-    await unlink(path).catch(() => undefined)
+    await quarantineInvalid(path)
     return {
       status: 'discarded',
       reason: 'invalid',
@@ -267,7 +295,7 @@ export async function loadArchive(sessionId: string, opts: StoreOptions = {}): P
   const inspected = inspectArchiveFile(parsed, opts.raw ?? {})
   if (inspected.status === 'ok') {
     if (inspected.archive.sessionId !== sessionId) {
-      await unlink(path).catch(() => undefined)
+      await quarantineInvalid(path)
       return {
         status: 'discarded',
         reason: 'invalid',
@@ -284,11 +312,11 @@ export async function loadArchive(sessionId: string, opts: StoreOptions = {}): P
     return { status: 'ok', archive: inspected.archive, path }
   }
 
-  await unlink(path).catch(() => undefined)
+  await quarantineInvalid(path)
   return { status: 'discarded', reason: inspected.status, issues: inspected.issues, path }
 }
 
-export async function saveArchive(archive: ArchiveFile, opts: StoreOptions = {}): Promise<void> {
+async function saveArchiveUnlocked(archive: ArchiveFile, opts: StoreOptions = {}): Promise<void> {
   assertSafeSessionId(archive?.sessionId)
   const inspected = inspectArchiveFile(archive, opts.raw ?? {})
   if (inspected.status !== 'ok') {
@@ -300,6 +328,13 @@ export async function saveArchive(archive: ArchiveFile, opts: StoreOptions = {})
   })
 }
 
+export function loadArchive(sessionId: string, opts: StoreOptions = {}): Promise<ArchiveLoad> {
+  return withFileLock(lockKey(sessionId, opts, ''), () => loadArchiveUnlocked(sessionId, opts))
+}
+export function saveArchive(archive: ArchiveFile, opts: StoreOptions = {}): Promise<void> {
+  return withFileLock(lockKey(archive.sessionId, opts, ''), () => saveArchiveUnlocked(archive, opts))
+}
+
 /* ---------------------------------------------------------------- 清理 */
 
 /**
@@ -309,7 +344,7 @@ export async function saveArchive(archive: ArchiveFile, opts: StoreOptions = {})
  * 删错了也不致命 —— 这些都是可重建的派生物，原始 JSONL 才是历史。
  * 返回是否真的删掉了东西。
  */
-export async function deleteContextStates(sessionIds: readonly string[], opts: StoreOptions = {}): Promise<number> {
+async function deleteContextStatesUnlocked(sessionIds: readonly string[], opts: StoreOptions = {}): Promise<number> {
   const dir = contextStateDir(opts.dir)
   let removed = 0
   for (const sessionId of sessionIds) {
@@ -355,6 +390,15 @@ export async function listContextStateSessionIds(opts: StoreOptions = {}): Promi
     if (isSafeSessionId(id)) ids.add(id)
   }
   return [...ids]
+}
+
+export async function deleteContextStates(sessionIds: readonly string[], opts: StoreOptions = {}): Promise<number> {
+  let removed = 0
+  for (const id of [...new Set(sessionIds)].sort()) {
+    if (!isSafeSessionId(id)) continue
+    removed += await withFileLock(lockKey(id, opts, ''), () => deleteContextStatesUnlocked([id], opts))
+  }
+  return removed
 }
 
 /* ---------------------------------------------------------------- 小工具 */

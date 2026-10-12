@@ -39,7 +39,7 @@
  * 但也因此**换机器/换 Chrome 安装位置会失效**（这里不做跨机迁移）。
  */
 import { execFile } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, cpSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, cpSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -74,15 +74,16 @@ export interface ChromeProfileLocation {
  * `Profile 1/2/…`。选择顺序：
  *   ① 环境变量 `YAN_CHROME_PROFILE` 指定（测试与高级用户）
  *   ② `Default` 存在就用它
- *   ③ 否则取 `Profile *` 里**最近修改**的那个（最可能是常用号）
- * 纯函数：传入 readdir 结果，便于单测，不自己碰文件系统。
+ *   ③ 否则取 Local State 的 `last_used`；没有可用记录时按 profile 编号取最大项。
+ * 纯函数：传入目录项与 last_used，便于单测，不自己碰文件系统。
  */
-export function pickProfileName(entries: string[], env: NodeJS.ProcessEnv = process.env): string | null {
+export function pickProfileName(entries: string[], env: NodeJS.ProcessEnv = process.env, lastUsed?: string): string | null {
   const override = env.YAN_CHROME_PROFILE?.trim()
   if (override && entries.includes(override)) return override
   if (entries.includes('Default')) return 'Default'
   const profiles = entries.filter((e) => /^Profile \d+$/.test(e))
-  return profiles.length ? profiles[0] : null
+  if (lastUsed && profiles.includes(lastUsed)) return lastUsed
+  return profiles.sort((a, b) => Number(a.slice(8)) - Number(b.slice(8))).at(-1) ?? null
 }
 
 /** 定位真实 Chrome profile；找不到返回 null（没装 Chrome 或没登录过） */
@@ -98,7 +99,12 @@ export function findChromeProfile(
   } catch {
     return null
   }
-  const name = pickProfileName(entries, env)
+  let lastUsed: string | undefined
+  try {
+    const state = JSON.parse(readFileSync(join(root, 'Local State'), 'utf8')) as { profile?: { last_used?: unknown } }
+    if (typeof state.profile?.last_used === 'string') lastUsed = state.profile.last_used
+  } catch { /* 不存在或损坏时由 profile 目录回退 */ }
+  const name = pickProfileName(entries, env, lastUsed)
   if (!name) return null
   const dir = join(root, name)
   try {
@@ -180,7 +186,7 @@ function copyOne(from: string, to: string): void {
  * 历史同步成功、cookie 因为 Chrome 没关而失败，是完全正常且有用的一半结果。
  * 返回值逐项说明，UI 才能给出准确的提示，而不是一句笼统的「同步失败」。
  */
-export function syncChromeProfile(targetProfileDir: string, location: ChromeProfileLocation): Omit<ChromeSyncReport, 'chromeRunning' | 'cookiesSynced'> {
+export function syncChromeProfile(targetProfileDir: string, location: ChromeProfileLocation, options: { skipCookies?: boolean } = {}): Omit<ChromeSyncReport, 'chromeRunning' | 'cookiesSynced'> {
   const copied: string[] = []
   const failed: { item: string; reason: string }[] = []
   mkdirSync(targetProfileDir, { recursive: true })
@@ -226,14 +232,17 @@ export function syncChromeProfile(targetProfileDir: string, location: ChromeProf
    * 那是把「没同步」变成「本来能用的也坏了」。所以 cookie 拿不到时，
    * Local State 也一并跳过，并如实说明。
    */
-  let cookieOk = true
-  for (const item of COOKIE_ITEMS) {
+  let cookieOk = !options.skipCookies
+  if (options.skipCookies) {
+    failed.push({ item: 'Cookies / Local State', reason: 'Chrome 正在运行；退出后可同步 Cookie 与解密密钥' })
+  }
+  for (const item of options.skipCookies ? [] : COOKIE_ITEMS) {
     const okOne = copyItem(item)
     if (!item.optional && !okOne) cookieOk = false
   }
   if (cookieOk) {
     copyItem(COOKIE_KEY_ITEM)
-  } else {
+  } else if (!options.skipCookies) {
     failed.push({ item: COOKIE_KEY_ITEM.rel, reason: 'Cookie 未能同步，密钥一并跳过（否则会弄坏本已可用的 cookie）' })
   }
 
@@ -260,12 +269,7 @@ export async function syncLocalChromeData(targetProfileDir: string): Promise<Chr
       cookiesSynced: false
     }
   }
-  if (chromeRunning) return {
-    found: true, source: location.root, target: targetProfileDir,
-    copied: [], failed: [{ item: 'Chrome profile', reason: '请先退出 Chrome 后导入；运行中的配置文件不进行覆盖。已连接时可使用浏览器菜单复制 Cookie。' }],
-    chromeRunning: true, cookiesSynced: false
-  }
-  const base = syncChromeProfile(targetProfileDir, location)
+  const base = syncChromeProfile(targetProfileDir, location, { skipCookies: chromeRunning })
   const cookiesSynced = false // Copying encrypted files does not verify a working login session.
   return { ...base, chromeRunning, cookiesSynced }
 }

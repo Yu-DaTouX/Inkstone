@@ -2,6 +2,8 @@
  * 检查点（回退代码）的 IPC 适配：列出、预览、恢复、撤销。
  * 目录与会话身份都取当前活动实例，渲染端不能指定别的目录。
  */
+import { reserveWorkspaceMutation } from '../workspace-mutation'
+import { resolve } from 'node:path'
 import type { IpcRegistrar } from './registrar'
 import type { SessionHost } from '../session-host'
 import { listCheckpoints, previewCheckpoint, restoreCheckpoint } from '../checkpoints'
@@ -17,6 +19,18 @@ export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost): voi
     const key = state.conversationId ?? state.sessionId
     return key ? { cwd: agent.workingDirectory, key } : null
   }
+  const restore = async (id: unknown): Promise<CheckpointRestoreResult> => {
+    const t = target()
+    if (!t || typeof id !== 'string') return { ok: false, error: '没有活动会话', restored: 0 }
+    const release = reserveWorkspaceMutation(t.cwd)
+    if (!release) return { ok: false, error: '项目正在回退，请稍后重试', restored: 0 }
+    const cwdKey = (cwd: string) => process.platform === 'win32' ? resolve(cwd).toLowerCase() : resolve(cwd)
+    try {
+      const busy = host.runners()?.statuses().some((runner) => cwdKey(runner.cwd) === cwdKey(t.cwd) && (runner.running || runner.waiting || (host.runners()?.agentOf(runner.id)?.getState()?.pendingMessageCount ?? 0) > 0))
+      if (busy || host.ac()?.getState()?.isAgentRunning || (host.ac()?.getState()?.pendingMessageCount ?? 0) > 0) return { ok: false, error: '同一项目的会话仍在运行，请先停止再回退代码', restored: 0 }
+      return await restoreCheckpoint(t.cwd, id, t.key)
+    } finally { release() }
+  }
   handle('yan:checkpoints:list', async (): Promise<CheckpointRecord[]> => {
     const t = target()
     return t ? listCheckpoints(t.cwd, t.key) : []
@@ -27,16 +41,9 @@ export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost): voi
     return previewCheckpoint(t.cwd, recordId)
   })
   handle('yan:checkpoints:restore', async (recordId: unknown): Promise<CheckpointRestoreResult> => {
-    const t = target()
-    if (!t || typeof recordId !== 'string') return { ok: false, error: '没有活动会话', restored: 0 }
-    /* 回退会改文件：正在跑的回合可能正在写同一批文件，先要求它停下 */
-    if (host.ac()?.getState()?.isAgentRunning) return { ok: false, error: '会话正在运行，请先停止再回退代码', restored: 0 }
-    return restoreCheckpoint(t.cwd, recordId, t.key)
+    return restore(recordId)
   })
   handle('yan:checkpoints:undo', async (undoId: unknown): Promise<CheckpointRestoreResult> => {
-    const t = target()
-    if (!t || typeof undoId !== 'string') return { ok: false, error: '没有活动会话', restored: 0 }
-    if (host.ac()?.getState()?.isAgentRunning) return { ok: false, error: '会话正在运行，请先停止再撤销', restored: 0 }
-    return restoreCheckpoint(t.cwd, undoId, t.key)
+    return restore(undoId)
   })
 }

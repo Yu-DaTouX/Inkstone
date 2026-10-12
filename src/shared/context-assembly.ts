@@ -108,7 +108,8 @@ const JOIN = '\n'
 function clip(text: string, max: number): { text: string; truncated: boolean } {
   if (max <= 0) return { text: '', truncated: text.length > 0 }
   if (text.length <= max) return { text, truncated: false }
-  return { text: text.slice(0, max), truncated: true }
+  const end = max > 0 && /[\uD800-\uDBFF]/.test(text[max - 1]) && /[\uDC00-\uDFFF]/.test(text[max] ?? '') ? max - 1 : max
+  return { text: text.slice(0, end), truncated: true }
 }
 
 /**

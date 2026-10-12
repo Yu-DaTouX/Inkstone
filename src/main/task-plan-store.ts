@@ -18,8 +18,8 @@
  * ══════════════════════════════════════════════════════════════════
  * 四条必须守住的性质（S3 的出口就是它们）
  * ══════════════════════════════════════════════════════════════════
- * **① 只追加。** 历史行一个字节都不重写：旧版本（哪怕只差一个 revision）
- *   永远读得回来。整份覆盖写会让「上一轮列了什么」在崩溃/并发下消失。
+ * **① 追加提交，历史有界。** 正常操作只追加；超过保留线后原子压缩为最近记录，
+ *   以避免单会话日志无限增长。最新状态记录始终保留，较早的操作历史可能被淘汰。
  *
  * **② 同一个会话串行。** 两次快速 `add` 必须排队（各读一次最新状态）。
  *   不串行的话两次都读到 `revision: 0`，第二次的清单会覆盖掉第一次的
@@ -35,7 +35,7 @@
  *
  * 本模块不 import pi、不注册工具、不碰会话文件。
  */
-import { mkdir, open, readFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { isSafeSessionId } from './context-state-store'
@@ -169,10 +169,11 @@ export function applyTaskPlanOperation(args: ApplyTaskPlanArgs): Promise<ApplyTa
     () => applyUnlocked(args),
     () => applyUnlocked(args)
   )
-  tails.set(
-    args.sessionId,
-    next.catch(() => undefined)
-  )
+  const settled = next.then(() => undefined, () => undefined)
+  tails.set(args.sessionId, settled)
+  void settled.then(() => {
+    if (tails.get(args.sessionId) === settled) tails.delete(args.sessionId)
+  })
   return next
 }
 
@@ -223,24 +224,61 @@ async function applyUnlocked(args: ApplyTaskPlanArgs): Promise<ApplyTaskPlanOutc
 async function appendRecord(path: string, record: TaskPlanLogRecord): Promise<void> {
   try {
     await mkdir(dirname(path), { recursive: true })
+    const previous = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return ''
+      throw error
+    })
+    const prefix = previous.length > 0 && !previous.endsWith('\n') ? '\n' : ''
+    const line = serializeTaskPlanLogRecord(record)
     const handle = await open(path, 'a')
     try {
-      await handle.writeFile(serializeTaskPlanLogRecord(record) + '\n', 'utf8')
+      await handle.writeFile(prefix + line + '\n', 'utf8')
       await handle.sync()
     } finally {
       await handle.close()
     }
 
     const text = await readFile(path, 'utf8')
-    const end = text.endsWith('\n') ? text.length - 1 : text.length
-    const lastLine = text.slice(text.lastIndexOf('\n', end - 1) + 1, end)
-    const parsed = parseTaskPlanLogLine(lastLine)
+    const writtenAt = text.lastIndexOf(line)
+    const parsed = writtenAt >= 0 ? parseTaskPlanLogLine(text.slice(writtenAt, writtenAt + line.length)) : null
     if (!parsed || parsed.data.revision !== record.data.revision) {
       throw new TaskPlanStoreError('write_failed', '任务日志写入后回读校验失败（这一条没有生效）')
     }
+    await compactTaskPlanLog(path)
   } catch (err) {
     if (err instanceof TaskPlanStoreError) throw err
     throw new TaskPlanStoreError('write_failed', `任务日志写不进去：${describe(err)}`)
+  }
+}
+
+const TASK_PLAN_LOG_MAX_BYTES = 8 * 1024 * 1024
+const TASK_PLAN_LOG_KEEP_RECORDS = 500
+
+async function compactTaskPlanLog(path: string): Promise<void> {
+  const text = await readFile(path, 'utf8')
+  if (Buffer.byteLength(text, 'utf8') <= TASK_PLAN_LOG_MAX_BYTES) return
+  const lines = text.split('\n').filter((line) => !!parseTaskPlanLogLine(line))
+  const kept: string[] = []
+  let bytes = 0
+  for (let i = lines.length - 1; i >= 0 && kept.length < TASK_PLAN_LOG_KEEP_RECORDS; i--) {
+    const size = Buffer.byteLength(lines[i] + '\n', 'utf8')
+    if (kept.length && bytes + size > TASK_PLAN_LOG_MAX_BYTES) break
+    kept.push(lines[i])
+    bytes += size
+  }
+  const temp = `${path}.${process.pid}.${Date.now()}.compact.tmp`
+  const handle = await open(temp, 'w')
+  try {
+    await handle.writeFile(kept.reverse().join('\n') + '\n', 'utf8')
+    await handle.sync()
+  } finally {
+    await handle.close()
+  }
+  try {
+    await rename(temp, path)
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => undefined)
+    throw error
   }
 }
 

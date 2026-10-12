@@ -21,14 +21,14 @@ import { Button, SettingRow } from '../ui'
  */
 export function KnowledgeTab() {
   const t = useT()
+  const [exportText, setExportText] = useState('')
   /* 运行期拼出来的 key（筛选项 / 复核原因），i18n 的 key 是编译期联合类型，这里集中断言一次 */
   const tk = (key: string): string => t(key as MessageKey)
   const switchSession = useStore((s) => s.switchSession)
   const closeSettings = useStore((s) => s.closeSettings)
-  const enabled = false
   /**
    * 当前会话的 cwd —— 项目身份变了，列表必须跟着重取。
-   * 只依赖 enabled 是不够的（R10）：设置页开着时切会话，界面会停在旧项目，
+   * 只按记忆范围刷新不够：设置页开着时切会话，界面会停在旧项目，
    * 而宿主的写操作按「此刻的会话」选项目 —— 这就是身份漂移。
    */
   const sessionCwd = useStore((s) => s.session?.cwd)
@@ -75,7 +75,7 @@ export function KnowledgeTab() {
       if (!guard.isCurrent(token)) return
       setView({
         ok: false,
-        enabled,
+        enabled: false,
         entries: [],
         counts: { all: 0, active: 0, candidate: 0, review: 0 },
         error: error instanceof Error ? error.message : String(error)
@@ -83,7 +83,7 @@ export function KnowledgeTab() {
     } finally {
       if (guard.isCurrent(token)) setLoading(false)
     }
-  }, [enabled, scope])
+  }, [scope])
 
   useEffect(() => {
     void refresh()
@@ -180,7 +180,7 @@ export function KnowledgeTab() {
           setNotice({ kind: 'ok', text: tk('set.knExported') })
         } catch {
           /* 剪贴板被拒（无权限）：把正文塞进 textarea 让用户自己复制，不静默失败 */
-          setEditing({ id: '__export__', text: res.markdown })
+          setExportText(res.markdown)
           setNotice({ kind: 'err', text: tk('set.knExportManual') })
         }
         return
@@ -256,6 +256,7 @@ export function KnowledgeTab() {
         ) : null}
       </div>
 
+      {loading && !view ? <div className="ui-row-desc" role="status">{tk('browser.loading')}</div> : null}
       {/* ③ 列表 */}
       {shown.length === 0 ? (
         <div className="ui-row col">
@@ -303,6 +304,7 @@ export function KnowledgeTab() {
         ))
       )}
 
+      {exportText ? <textarea className="ui-input" readOnly rows={12} value={exportText} aria-label={tk('set.knExport')} /> : null}
       {/* 导出为 Markdown：复制或另存，不会改写仓库里的文档 */}
       <SettingRow name={tk('set.knExport')} desc={tk('set.knExportHint')}>
         <Button size="sm" variant="ghost" disabled={busy === '__export__'} onClick={() => void exportMarkdown('copy')} data-testid="kn-export-copy">

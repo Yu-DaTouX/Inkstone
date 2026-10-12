@@ -36,7 +36,7 @@ import {
 } from 'node:fs'
 import { readdir, stat, statfs } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 
 /** 与应用数据无关的固定位置：迁移登记与结果不能放在要被搬走的目录里 */
@@ -114,12 +114,13 @@ function isJunction(p: string): boolean {
 }
 
 /** 目标位置校验：登记时与启动执行前共用（pending 文件可能残留、被改过或从别处拷来） */
-function checkTarget(from: string, to: string): string | undefined {
+export function checkTarget(from: string, to: string): string | undefined {
   if (/^[\\/]{2}/.test(to)) return '不能迁移到网络共享路径，请选本机磁盘上的文件夹'
   const rel = relative(from, to)
-  if (!rel || (!rel.startsWith('..') && !isAbsolute(rel))) return '不能迁移到原数据目录里面'
+
+  if (!rel || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))) return '不能迁移到原数据目录里面'
   const back = relative(to, from)
-  if (!back || (!back.startsWith('..') && !isAbsolute(back))) return '不能迁移到包含原数据目录的文件夹'
+  if (!back || (back !== '..' && !back.startsWith(`..${sep}`) && !isAbsolute(back))) return '不能迁移到包含原数据目录的文件夹'
   if (existsSync(to) && readdirSync(to).length > 0) return '目标文件夹不是空的，请选一个空文件夹或新建一个'
   return undefined
 }
@@ -158,11 +159,17 @@ export function runPendingStorageMove(): void {
     if (bad) return write({ ok: false, error: bad })
     const before = tally(from)
     mkdirSync(dirname(to), { recursive: true })
-    cpSync(from, to, { recursive: true, preserveTimestamps: true, errorOnExist: true, force: false })
+    const createdTarget = !existsSync(to)
+    try {
+      cpSync(from, to, { recursive: true, preserveTimestamps: true, errorOnExist: true, force: false })
     const after = tally(to)
     if (after.files !== before.files || after.bytes !== before.bytes) {
       rmSync(to, { recursive: true, force: true })
       return write({ ok: false, error: `复制核对不一致（${before.files} → ${after.files} 个文件），已撤回，原数据未动` })
+    }
+    } catch (error) {
+      if (createdTarget) rmSync(to, { recursive: true, force: true })
+      throw error
     }
     const backup = `${from}.迁移前备份-${Date.now()}`
     try {

@@ -60,6 +60,7 @@ export function useSessionSources(sessionId: string | undefined): SessionSources
 
   useEffect(() => {
     if (!sessionId) {
+      ++gate.current
       setState(EMPTY)
       return
     }

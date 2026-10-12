@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile, lstat } from 'node:fs/promises'
 
 /**
  * 本机控制桥使用的单实例参数。
@@ -34,6 +34,7 @@ const MAX_TEXT = 20_000
 
 /** 响应只落在临时目录，不能由请求参数指定任意写入路径。 */
 export function controlResponsePath(requestId: string): string {
+  if (!REQUEST_ID.test(requestId)) throw new Error('Invalid control request identity')
   return join(tmpdir(), 'yan-control', `response-${requestId}.json`)
 }
 
@@ -84,6 +85,9 @@ export function decodeControlCommand(argv: readonly string[]): ControlCommand | 
 
 export async function writeControlResponse(requestId: string, response: ControlResponse): Promise<void> {
   const path = controlResponsePath(requestId)
-  await mkdir(join(tmpdir(), 'yan-control'), { recursive: true })
-  await writeFile(path, JSON.stringify(response), 'utf8')
+  const directory = join(tmpdir(), 'yan-control')
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const info = await lstat(directory)
+  if (!info.isDirectory() || info.isSymbolicLink() || (typeof process.getuid === 'function' && info.uid !== process.getuid())) throw new Error('Unsafe control response directory')
+  await writeFile(path, JSON.stringify(response), { encoding: 'utf8', flag: 'wx', mode: 0o600 })
 }

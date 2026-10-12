@@ -5,9 +5,8 @@
 import { previewOffice } from '../office/office-service'
 import type { IpcRegistrar } from './registrar'
 
-export function registerOfficeIpc(ipc: IpcRegistrar, defaultCwd: () => Promise<string>): void {
+export function registerOfficeIpc(ipc: IpcRegistrar, resolveCwd: (requested: unknown) => Promise<string>): void {
   const { handle } = ipc
-  const cwdOf = async (requested: unknown): Promise<string> =>
-    typeof requested === 'string' && requested.trim() ? requested : defaultCwd()
-  handle('yan:office:preview', async (path: string, cwd?: string) => previewOffice(String(path ?? ''), await cwdOf(cwd)))
+  // 与文件树/文本预览共用宿主授权目录解析，不能把任意存在的 cwd 当预览根。
+  handle('yan:office:preview', async (path: string, cwd?: string) => previewOffice(String(path ?? ''), await resolveCwd(cwd)))
 }

@@ -37,9 +37,9 @@ export function updateKeepAwake(next: { working: boolean; whileWorking?: boolean
     acquire()
     return
   }
+  /* 关闭设置或进入禁止的电源状态，即使释放计时器已存在也立即释放。 */
+  if (next.whileWorking === false || onBattery() && next.onBatteryAllowed === false) { release(); return }
   if (blockerId === null || releaseTimer) return
-  /* 设置被关掉要立刻放；只是工作停了才延迟放 */
-  if (next.whileWorking === false || !next.working && onBattery() && next.onBatteryAllowed === false) { release(); return }
   releaseTimer = setTimeout(release, KEEP_AWAKE_RELEASE_MS)
 }
 

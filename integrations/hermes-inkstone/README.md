@@ -66,7 +66,9 @@ python ~/.hermes/plugins/inkstone/connect.py --check
 
 批准命令依赖 Hermes 本身验证消息发送者和允许访问该 profile 的用户。请只在自己的 Hermes CLI 或已限制到可信用户的聊天渠道启用；插件不是同一系统账户内恶意代码的隔离层，持有设备令牌的客户端属于可信授权边界。
 
-HTTP 仅用于回环地址或可信私有网络（例如你已有的 Tailscale 链路）；公网访问需要安全隧道或 HTTPS。插件不自动开放电脑端口、不自动启用中继、不修改防火墙。
+除回环地址外，插件强制使用 HTTPS；非回环 HTTP 会被拒绝，以免设备令牌与请求明文传输。请配置 HTTPS 入口，或在 VPN/Tailscale/WireGuard 内提供 TLS 端点。插件不自动开放电脑端口、不自动启用中继、不修改防火墙。
+
+连接文件包含设备令牌。Unix-like 系统会尽力设置权限为 `0600`；Windows 上 Python 的 `chmod(0o600)` 不会配置 NTFS ACL，实际访问仍由文件所在目录继承的 Windows ACL 决定。请将 Hermes profile 放在仅当前用户可访问的位置；若无法保证，请使用环境变量提供凭证并限制进程与 profile 的访问权限。
 
 ## 使用例子
 

@@ -232,8 +232,15 @@ export class WorkModeStore {
         revision: current.revision + 1,
         updatedAt: this.now()
       }
+      const previous = this.doc.entries[key]
       this.doc.entries[key] = next
-      await this.persist()
+      try {
+        await this.persist()
+      } catch (error) {
+        if (previous) this.doc.entries[key] = previous
+        else delete this.doc.entries[key]
+        throw error
+      }
       return { ok: true, state: { mode: next.mode, revision: next.revision } }
     })
   }

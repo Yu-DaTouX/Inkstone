@@ -8,7 +8,7 @@
  *   4. 对 SVG 做最小安全清理；HTML 仅经独立隔离预览执行，Markdown 不作为网页。
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rename, stat, writeFile, copyFile, unlink } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
 import type { AssistantArtifact } from '../shared/ipc'
 
@@ -94,6 +94,8 @@ export interface ArtifactSaveInput {
   messageId: string
   filename: string
   bytes: Buffer
+  /** 挂载已有文件时记下来源路径，供界面打开/定位原文件（预览仍读受控副本）。 */
+  sourcePath?: string
   provider?: string
   model?: string
   description?: string
@@ -138,6 +140,7 @@ export class ArtifactStore {
       bytes: bytes.length,
       createdAt: Date.now(),
       previewable: isPreviewable(kind),
+      ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(input.description ? { description: input.description } : {})
@@ -161,21 +164,26 @@ export class ArtifactStore {
       messageId: input.messageId,
       filename,
       bytes,
+      sourcePath: source,
       description: input.description
     })
   }
 
   async list(sessionFile: string): Promise<ArtifactManifestItem[]> {
+    const file = this.manifestPath(sessionFile)
+    let text: string
+    try { text = await readFile(file, 'utf8') }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
     try {
-      const raw = JSON.parse(await readFile(this.manifestPath(sessionFile), 'utf8')) as unknown
-      if (!Array.isArray(raw)) return []
-      return raw.filter((item): item is ArtifactManifestItem => {
-        if (!item || typeof item !== 'object') return false
-        const value = item as Partial<ArtifactManifestItem>
-        return typeof value.messageId === 'string' && !!value.artifact && typeof value.artifact.path === 'string'
-      })
-    } catch {
-      return []
+      const raw = JSON.parse(text) as unknown
+      if (!Array.isArray(raw) || raw.some((item) => !item || typeof item !== 'object' || typeof (item as Partial<ArtifactManifestItem>).messageId !== 'string' || !(item as Partial<ArtifactManifestItem>).artifact || typeof (item as Partial<ArtifactManifestItem>).artifact?.path !== 'string')) throw new Error('清单结构无效')
+      return raw as ArtifactManifestItem[]
+    } catch (error) {
+      await copyFile(file, `${file}.corrupt-${randomUUID()}.bak`).catch(() => undefined)
+      throw new Error(`成果清单损坏，为保护已有记录已拒绝写入：${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -205,8 +213,13 @@ export class ArtifactStore {
     const target = this.manifestPath(sessionFile)
     /* 原子替换：写到临时文件再 rename，不会留下写到一半的清单 */
     const temp = `${target}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
-    await writeFile(temp, JSON.stringify(items.slice(-MAX_MANIFEST_ITEMS), null, 2), 'utf8')
-    await rename(temp, target)
+    try {
+      await writeFile(temp, JSON.stringify(items.slice(-MAX_MANIFEST_ITEMS), null, 2), { encoding: 'utf8', flag: 'wx' })
+      await rename(temp, target)
+    } catch (error) {
+      await unlink(temp).catch(() => undefined)
+      throw error
+    }
   }
 
   async hydrateMessages(sessionFile: string, messages: import('../shared/ipc').UIMessage[]): Promise<import('../shared/ipc').UIMessage[]> {

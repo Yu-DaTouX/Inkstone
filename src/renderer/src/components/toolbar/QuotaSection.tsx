@@ -6,8 +6,9 @@ import { quotaTone } from '../../../../shared/quota-tone'
 import { money, quotaCompactWindows, windowPct } from '../../../../shared/quota-mini'
 import { claimDueQuotaWindows, decideQuotaRefresh } from '../../../../shared/quota-refresh'
 import { type QuotaWindow } from '../../../../shared/ipc'
-import { Button, IconButton, MiniMeter } from '../ui'
+import { Button, IconButton, Input, MiniMeter } from '../ui'
 import { DetailTrigger } from '../shell/DetailPopover'
+import { selectFiniteQuotaWindow } from './workspace-control-guards'
 
 /**
  * 额度自动刷新间隔（实施-20 U3）。
@@ -22,6 +23,9 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
   const settings = useStore((s) => s.settings)
   const patchSettings = useStore((s) => s.patchSettings)
   const budget = settings?.providerBudgets?.[provider]
+  const [budgetEditing, setBudgetEditing] = useState(false)
+  const [budgetDraft, setBudgetDraft] = useState('')
+  const [budgetError, setBudgetError] = useState('')
   const [quota, setQuota] = useState<Awaited<ReturnType<typeof window.yan.providerQuota>> | null>(null)
   const [loading, setLoading] = useState(false)
   /** 查询失败时的错误；**不**清掉 quota —— 保留上一次成功的快照（方案 7.2） */
@@ -173,9 +177,27 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
           : null
   const mainLabel = quota?.label ?? (hasWindows ? t('quota.usedMain') : t('quota.remaining'))
   const compactWindows = quotaCompactWindows(quota?.windows ?? [])
-  const ringWindow = compactWindows.reduce<QuotaWindow | null>((highest, item) =>
-    !highest || item.window.used / item.window.total > highest.used / highest.total ? item.window : highest, null)
-  const ringPct = ringWindow && ringWindow.total > 0 ? ringWindow.used / ringWindow.total * 100 : (mainPct ?? null)
+  const ringWindow = selectFiniteQuotaWindow(compactWindows.map((item) => item.window))
+  const ringPct = ringWindow ? ringWindow.used / ringWindow.total * 100 : (mainPct !== undefined && Number.isFinite(mainPct) ? mainPct : null)
+  const saveBudget = async (): Promise<void> => {
+    const amount = Number(budgetDraft)
+    if (!Number.isFinite(amount) || amount <= 0) return
+    try {
+      await patchSettings({ providerBudgets: { ...(settings?.providerBudgets ?? {}), [provider]: amount } })
+      setBudgetError('')
+      setBudgetEditing(false)
+    } catch (cause) {
+      setBudgetError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  const budgetControl = provider === 'openai' ? budgetEditing ? (
+    <form className="rp-quota-actions" data-testid="quota-budget-editor" onSubmit={(event) => { event.preventDefault(); void saveBudget() }}>
+      <Input numeric type="number" min="0.01" step="any" required value={budgetDraft} onChange={(event) => setBudgetDraft(event.target.value)} aria-label={t('quota.budgetPrompt')} data-testid="quota-budget-input" />
+      <Button size="sm" type="submit">{t('quota.setBudget')}</Button>
+      <Button size="sm" type="button" variant="ghost" onClick={() => { setBudgetEditing(false); setBudgetError('') }}>{t('git.cancel')}</Button>
+      {budgetError ? <div role="alert" data-testid="quota-budget-error">{budgetError}</div> : null}
+    </form>
+  ) : <Button size="sm" className="rp-btn" onClick={() => { setBudgetDraft(budget ? String(budget) : ''); setBudgetEditing(true) }}>{t('quota.setBudget')}</Button> : null
   /* 摘要条跟最紧的那个窗口；任一窗口已超限时条也标红 */
   const ringTone = ringPct === null ? '' : quotaTone(ringPct, anyExceeded)
   /* 空入口不渲染：没有供应商，或查不到任何可显示的数（不支持 / 未登录 / 出错）时整块不占位 */
@@ -299,22 +321,8 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
         />
       </div>
 
-      <div className="rp-quota-actions">
-        {/* 月预算只适用于按量计费的 openai 平台 key；订阅制（codex）没有这个概念 */}
-        {provider === 'openai' ? (
-          <Button size="sm" className="rp-btn" onClick={() => {
-              const value = window.prompt(t('quota.budgetPrompt'), budget ? String(budget) : '')
-              if (value === null) return
-              const n = Number(value)
-              if (!Number.isFinite(n) || n <= 0) return
-              void patchSettings({
-                providerBudgets: { ...(settings?.providerBudgets ?? {}), [provider]: n }
-              })
-            }}>
-            {t('quota.setBudget')}
-          </Button>
-        ) : null}
-      </div>
+      {/* Monthly budget is only available for metered OpenAI API keys. */}
+      {budgetControl}
     </>
   )
   /* Status-bar popover: one block per window, a large percentage and a quiet sub line. */
@@ -359,13 +367,7 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
       })}
       <div className="quota-pop-foot">
         {quota ? <span data-testid="quota-checked" title={new Date(quota.checkedAt).toLocaleString()}>{t('quota.checkedAt', { time: new Date(quota.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) })}</span> : <span>{loading ? '…' : ''}</span>}
-        {provider === 'openai' ? <Button size="sm" variant="ghost" onClick={() => {
-          const value = window.prompt(t('quota.budgetPrompt'), budget ? String(budget) : '')
-          if (value === null) return
-          const n = Number(value)
-          if (!Number.isFinite(n) || n <= 0) return
-          void patchSettings({ providerBudgets: { ...(settings?.providerBudgets ?? {}), [provider]: n } })
-        }}>{t('quota.setBudget')}</Button> : null}
+        {budgetControl}
       </div>
     </div>
   )

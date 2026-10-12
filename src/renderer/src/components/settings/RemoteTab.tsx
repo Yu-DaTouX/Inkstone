@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useT } from '../../i18n'
 import { Badge, Button, Disclosure, EmptyState, Segmented, SettingRow, Switch } from '../ui'
@@ -9,6 +9,7 @@ import {
 } from '../../../../shared/remote-protocol'
 import { useStore } from '../../state/store'
 import { RelaySection } from './RelaySection'
+import { canReplaceDraft, isCurrentGeneration } from './review2-settings-guards'
 
 type BindChoice = 'tailscale' | 'loopback' | 'custom'
 const WINDOWS_TAILSCALE_URL = 'https://tailscale.com/download/windows'
@@ -41,16 +42,30 @@ export function RemoteTab() {
   const [status, setStatus] = useState<RemoteAccessStatus | null>(null)
   const [draft, setDraft] = useState<RemoteAccessSettings>(saved)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const pending = useRef(0)
+  const savedRef = useRef(saved)
+  const refreshGeneration = useRef(0)
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; refreshGeneration.current++ } }, [])
   const [linkCopied, setLinkCopied] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
   const refresh = useCallback(async () => {
+    const generation = ++refreshGeneration.current
     try {
-      setStatus(await window.yan.remote.status())
+      const next = await window.yan.remote.status()
+      if (mounted.current && isCurrentGeneration(refreshGeneration.current, generation)) setStatus(next)
     } catch {
-      setStatus(null)
+      if (mounted.current && isCurrentGeneration(refreshGeneration.current, generation)) setStatus(null)
     }
   }, [])
+
+  useEffect(() => {
+    const previous = savedRef.current
+    savedRef.current = saved
+    setDraft((current) => canReplaceDraft(current, previous) ? saved : current)
+  }, [saved])
 
   useEffect(() => {
     void refresh()
@@ -64,26 +79,32 @@ export function RemoteTab() {
     const id = window.setInterval(() => {
       const current = Date.now()
       setNow(current)
-      if (status.pairing && current >= status.pairing.expiresAt) void refresh()
     }, 1000)
     return () => window.clearInterval(id)
-  }, [status?.pairing, refresh])
+  }, [status?.pairing])
 
   const run = async (action: () => Promise<RemoteAccessStatus | null>): Promise<void> => {
+    pending.current++
     setBusy(true)
+    setError('')
     try {
-      setStatus(await action())
+      const next = await action()
+      if (mounted.current) setStatus(next)
+    } catch (cause) {
+      if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setBusy(false)
+      pending.current--
+      if (mounted.current) setBusy(pending.current > 0)
     }
   }
 
   const configure = (next: RemoteAccessSettings): Promise<void> => {
-    setDraft(next)
     return run(async () => {
       const result = await window.yan.remote.configure(next)
       /* 设置已由主进程落盘；让 store 里的副本跟上，避免下次打开这一页读到旧值 */
       useStore.setState({ settings: await window.yan.getSettings() })
+      savedRef.current = next
+      setDraft(next)
       return result
     })
   }
@@ -123,6 +144,7 @@ export function RemoteTab() {
           />
         </SettingRow>
 
+      {error ? <div className="set-warn" role="alert">{error}</div> : null}
       <div className="ui-row col" data-testid="remote-pairing">
         <div className="ui-row-label">
           <div className="ui-row-name">{t('remote.pairTitle')}</div>
@@ -143,7 +165,7 @@ export function RemoteTab() {
                   <br />
                   {t('remote.pairExpires', { seconds: secondsLeft })}
                 </div>
-                <div className="ui-row-desc">{t('remote.scanHint')}</div>
+                <div className="ui-row-desc">{t('remote.scanHint')} · Copied pairing links and codes remain in the system clipboard until replaced.</div>
                 {status?.host === '127.0.0.1' ? <div className="set-warn">{t('remote.loopbackWarning')}</div> : null}
                 {pairingLink ? <Button size="sm" data-testid="remote-pairing-link-copy" onClick={() => {
                   void navigator.clipboard.writeText(pairingLink).then(() => setLinkCopied(true)).catch(() => setLinkCopied(false))

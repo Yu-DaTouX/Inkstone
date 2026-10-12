@@ -31,9 +31,13 @@ export function ArtifactScreen({
 
   useEffect(() => {
     if (!isText) return
-    client.artifactText(sessionId, artifact.id).then(setText).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : '读取成果失败')
+    let alive = true
+    setText(null)
+    setError(null)
+    client.artifactText(sessionId, artifact.id).then(value => { if (alive) setText(value) }).catch((err: unknown) => {
+      if (alive) setError(err instanceof Error ? err.message : '读取成果失败')
     })
+    return () => { alive = false }
   }, [artifact.id, client, isText, sessionId])
 
   return (

@@ -172,6 +172,18 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
           data-testid="plus-menu"
           ref={menuRef}
           tabIndex={-1}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              close()
+            }
+          }}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setOpen(false)
+              setComposing(false)
+            }
+          }}
           style={{ width: MENU_WIDTH, ...(anchor ? { left: anchor.left, bottom: anchor.bottom } : {}) }}
         >
           {composing ? (

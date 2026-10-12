@@ -32,7 +32,7 @@ NSIS 自动更新需要将同一次构建的 `latest.yml`、安装程序及对�
 
 ## Android 手机端
 
-手机端（`mobile/`）有自己的版本号（`mobile/package.json`，当前 0.1.0），和桌面版本分开。桌面构建不会编译这个目录，发布桌面版时按需单独打包手机端：
+手机端（`mobile/`）有自己的版本号（`mobile/package.json`，当前 0.1.1），和桌面版本分开。桌面构建不会编译这个目录，发布桌面版时按需单独打包手机端：
 
 ```powershell
 cd mobile

@@ -69,12 +69,12 @@ export async function runExtensionInventoryTests(ok) {
     ok(native[0].includes('目录清单不代表已加载') && !native[0].includes('--no-extensions'), '原生诊断不误报扩展被禁用或已加载')
     ok(native[2].includes('只读') && native[2].includes('不会覆盖或回写'), '原生发现保留旧任务记录只读边界')
 
-    // 4. 没有用户扩展：两行，且明确说「未检测到」
+    // 4. 没有用户扩展也说明历史任务只读边界，且明确说「未检测到」。
     await rm(extDir, { recursive: true, force: true })
     const clean = extensionDiagnostics({ piDir, yanThinPaths: ['/x/resources/pi-extensions/language.js'], nativeDiscovery: true })
-    ok(clean.length === 2, `干净环境 2 行（实际 ${clean.length}）`)
+    ok(clean.length === 3, `干净环境 3 行（实际 ${clean.length}）`)
     ok(clean[0].includes('未检测到用户扩展'), '第一行如实说没有')
-    ok(!clean.some((l) => l.includes('left-panel-tasks')), '干净环境不提旧任务条目（没有这个上下文）')
+    ok(clean.some((l) => l.includes('left-panel-tasks') && l.includes('只读')), '没有用户扩展也保留历史任务只读边界说明')
 
     // 5. 薄层一个都没有也不能崩（打包异常时仍要能启动并说清楚）
     const noThin = extensionDiagnostics({ piDir: join(root, 'missing'), yanThinPaths: [], nativeDiscovery: true })

@@ -16,7 +16,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
-import { realpath, stat, readFile } from 'node:fs/promises'
+import { realpath, stat, open } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { basename, resolve } from 'node:path'
 import type { GitActionExpected } from '../shared/git-actions'
@@ -42,6 +42,8 @@ export interface GitRunResult {
   stderr: string
   /** 非零退出时的 git 原始错误（stderr 优先） */
   error?: string
+  /** execFile 的超时终止不能被当成普通非零退出。 */
+  timedOut?: boolean
 }
 
 /**
@@ -116,13 +118,15 @@ export async function gitRun(
     })
     return { ok: true, stdout: String(res.stdout ?? ''), stderr: String(res.stderr ?? '') }
   } catch (error) {
-    const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown; code?: unknown }
+    const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown; code?: unknown; killed?: boolean; signal?: string }
     const stdout = String(e.stdout ?? '')
     const stderr = e.code === 'ENOENT' ? enoentMessage(cwd) : String(e.stderr ?? '')
+    const timedOut = e.killed === true && !!e.signal && e.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+    const message = (stderr || stdout || String(e.message ?? error)).trim() || 'git 命令失败'
     if (opts.allowFailure) {
-      return { ok: false, stdout, stderr, error: (stderr || stdout).trim() || undefined }
+      return { ok: false, stdout, stderr, error: message, timedOut }
     }
-    throw new Error((stderr || stdout || String(e.message ?? error)).trim() || 'git 命令失败')
+    throw Object.assign(new Error(message), { timedOut })
   }
 }
 
@@ -466,8 +470,15 @@ export async function readUntrackedMeta(absPath: string): Promise<UntrackedMeta 
       binary: false
     }
     if (s.size === 0) return meta
-    const buf = await readFile(absPath).catch(() => null)
-    if (!buf) return meta
+    const handle = await open(absPath, 'r')
+    let buf: Buffer
+    try {
+      buf = Buffer.alloc(Math.min(s.size, UNTRACKED_READ_LIMIT))
+      const { bytesRead } = await handle.read(buf, 0, buf.length, 0)
+      buf = buf.subarray(0, bytesRead)
+    } finally {
+      await handle.close()
+    }
     /*
      * 二进制嗅探用 git 的同一套判据（前 8000 字节里的 NUL）。
      * 不嗅探的后果很具体：一个未跟踪的 .bin / .exe 会被判成 text，
@@ -477,12 +488,11 @@ export async function readUntrackedMeta(absPath: string): Promise<UntrackedMeta 
     meta.binary = buf.subarray(0, 8000).includes(0)
     const text = buf.toString('utf8')
     meta.lfs = text.startsWith('version https://git-lfs.github.com/spec')
-    const slice = buf.length > UNTRACKED_READ_LIMIT ? buf.subarray(0, UNTRACKED_READ_LIMIT).toString('utf8') : text
     let count = 0
-    for (let i = 0; i < slice.length; i++) if (slice[i] === '\n') count++
-    if (slice.length && !slice.endsWith('\n')) count++
+    for (let i = 0; i < text.length; i++) if (text[i] === '\n') count++
+    if (text.length && !text.endsWith('\n')) count++
     meta.lines = count
-    meta.truncated = buf.length > UNTRACKED_READ_LIMIT
+    meta.truncated = s.size > UNTRACKED_READ_LIMIT
     return meta
   } catch {
     return null

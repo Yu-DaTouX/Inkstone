@@ -72,10 +72,28 @@ function checkedUrl(value: string, allowedOrigins: ReadonlySet<string>): string 
 async function readBounded(response: Response, limit: number): Promise<Uint8Array> {
   const length = response.headers?.get('content-length')
   if (length && Number.isFinite(Number(length)) && Number(length) > limit) {
+    await response.body?.cancel().catch(() => undefined)
     throw new SkillSourceError('file-too-large', `Skill 文件超过 ${limit} 字节上限`)
   }
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > limit) throw new SkillSourceError('file-too-large', `Skill 文件超过 ${limit} 字节上限`)
+  const reader = response.body?.getReader()
+  if (!reader) throw new SkillSourceError('empty-skill', 'Skill 文件响应没有正文')
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > limit) {
+        await reader.cancel()
+        throw new SkillSourceError('file-too-large', `Skill 文件超过 ${limit} 字节上限`)
+      }
+      chunks.push(value)
+    }
+  } finally { reader.releaseLock() }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
   try {
     /* SKILL.md 是文本；拒绝替换字符，避免 hash 对应的内容与模型实际看到的内容不一致。 */
     new TextDecoder('utf-8', { fatal: true }).decode(bytes)

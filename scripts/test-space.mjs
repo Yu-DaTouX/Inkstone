@@ -127,6 +127,7 @@ export async function runSpaceStoreTests(ok, mod, helpers) {
       const failRoot = await mkdtemp(join(tmpdir(), 'yan-space-fail-'))
       try {
         const failing = new SpaceStore({ root: failRoot })
+        await failing.load() // 先成功加载，下面只注入写盘故障而非首次读取故障。
         /* 用同名目录占住目标路径：rename 与直接写都会失败 */
         await mkdir(join(failRoot, 'spaces.json'), { recursive: true })
         let rejected = false

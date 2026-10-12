@@ -10,7 +10,7 @@
  * · 用户扩展**不删、不禁用**（AGENTS.md：不删用户已装的扩展）。
  *
  */
-import { readdirSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 /** pi 认的扩展文件后缀（`.ts` 由 pi 侧加载器转译，用户扩展常见就是它）。 */
@@ -32,15 +32,25 @@ export interface ExtensionExpectation {
  * 不能因为它去打扰用户，也不能把 IOException 当成「没有扩展」以外的结论。
  */
 export function readUserExtensions(piDir: string): string[] {
-  try {
-    return readdirSync(join(piDir, 'extensions'), { withFileTypes: true })
-      .filter((e) => !e.name.startsWith('.'))
-      .filter((e) => e.isDirectory() || EXTENSION_FILE.test(e.name))
-      .map((e) => e.name)
-      .sort((a, b) => a.localeCompare(b))
-  } catch {
-    return []
+  const dir = join(piDir, 'extensions')
+  let entries
+  try { entries = readdirSync(dir, { withFileTypes: true }) }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
   }
+  return entries
+    .filter((e) => !e.name.startsWith('.'))
+    .filter((e) => {
+      if (e.isDirectory() || EXTENSION_FILE.test(e.name)) return true
+      if (!e.isSymbolicLink()) return false
+      try {
+        const stat = statSync(join(dir, e.name))
+        return stat.isDirectory() || stat.isFile() && EXTENSION_FILE.test(e.name)
+      } catch { return false }
+    })
+    .map((e) => e.name)
+    .sort((a, b) => a.localeCompare(b))
 }
 
 /**
@@ -50,7 +60,10 @@ export function readUserExtensions(piDir: string): string[] {
  * 清单与加载策略分别描述，不把目录存在当作加载成功。
  */
 export function extensionDiagnostics(opts: ExtensionExpectation): string[] {
-  const user = readUserExtensions(opts.piDir)
+  let user: string[]
+  let readError: string | undefined
+  try { user = readUserExtensions(opts.piDir) }
+  catch (error) { user = []; readError = error instanceof Error ? error.message : String(error) }
   const thin = (opts.yanThinPaths ?? []).map((p) => basename(p)).filter(Boolean)
   const lines: string[] = []
 
@@ -62,7 +75,7 @@ export function extensionDiagnostics(opts: ExtensionExpectation): string[] {
           : '（旧版 runner 使用 --no-extensions，不自动加载；不删除、不改写）')
     )
   } else {
-    lines.push('[来源] 未检测到用户扩展（pi 的扩展目录是空的）')
+    lines.push(readError ? `[来源] 用户扩展目录读取失败：${readError}` : '[来源] 未检测到用户扩展（pi 的扩展目录是空的）')
   }
 
   lines.push(
@@ -70,12 +83,10 @@ export function extensionDiagnostics(opts: ExtensionExpectation): string[] {
       `（显式传入；承载宿主生命周期与授权适配，不注册模型工具；上下文由 Agent 原生管理，交互提问走宿主 yan question ask，归档回读走 yan context recall）`
   )
 
-  if (user.length) {
-    lines.push(
-      '[来源] 历史会话里的 `left-panel-tasks` 只读，砚内置任务计划写宿主日志（数据目录下的 task-plans），' +
-        '不会覆盖或回写旧条目'
-    )
-  }
+  lines.push(
+    '[来源] 历史会话里的 `left-panel-tasks` 只读，砚内置任务计划写宿主日志（数据目录下的 task-plans），' +
+      '不会覆盖或回写旧条目'
+  )
 
   return lines
 }

@@ -10,8 +10,8 @@ export function AppUpdateSection(): React.JSX.Element {
   const [error, setError] = useState('')
   useEffect(() => {
     let alive = true
-    const refresh = (): void => { void window.yan.appUpdate.status().then((value) => { if (alive) setStatus(value) }).catch((error) => { if (alive) setError(String(error)) }) }
-    refresh(); const timer = setInterval(refresh, 1000)
+    const refresh = (): void => { void window.yan.appUpdate.status().then((value) => { if (alive) { setStatus(value); setError('') } }).catch((error) => { if (alive) setError(String(error)) }) }
+    refresh(); const timer = setInterval(refresh, 5000)
     return () => { alive = false; clearInterval(timer) }
   }, [])
   const act = async (action: 'check' | 'download'): Promise<void> => {
@@ -25,7 +25,7 @@ export function AppUpdateSection(): React.JSX.Element {
       <Button size="sm" disabled={status?.phase === 'checking' || status?.phase === 'downloading'} onClick={() => void act('check')} data-testid="update-check">{t('update.check')}</Button>
       {status?.phase === 'available' ? <Button size="sm" onClick={() => void act('download')}>{t('update.download')}</Button> : null}
       {status?.phase === 'manual' ? <Button size="sm" onClick={() => { useStore.getState().closeSettings(); void useStore.getState().openBrowser(status.releaseUrl) }}>{t('update.releases')}</Button> : null}
-      {status?.phase === 'downloaded' ? <Button size="sm" onClick={() => { if (window.confirm(t('update.installConfirm'))) void window.yan.appUpdate.install().then((result) => { if (!result.ok) setError(result.error ?? '') }) }}>{t('update.install')}</Button> : null}
+      {status?.phase === 'downloaded' ? <Button size="sm" onClick={() => { if (window.confirm(t('update.installConfirm'))) void window.yan.appUpdate.install().then((result) => { if (!result.ok) setError(result.error ?? '') }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause))) }}>{t('update.install')}</Button> : null}
     </SettingRow>
   </>
 }

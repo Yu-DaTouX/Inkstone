@@ -166,8 +166,8 @@ function parseNameStatus(text: string): string[] {
     const raw = line.slice(tab + 1)
     /* rename/copy 的最后一列是新路径；普通项只有一列。 */
     const parts = raw.split('\t')
-    const path = parts[parts.length - 1]?.trim()
-    if (path) paths.push(status.startsWith('R') || status.startsWith('C') ? path : path)
+    const path = (status.startsWith('R') || status.startsWith('C') ? parts.at(-1) : parts[0])?.trim()
+    if (path) paths.push(path)
   }
   return paths
 }

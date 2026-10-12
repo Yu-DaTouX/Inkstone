@@ -53,10 +53,26 @@ function normalize(raw: unknown): McpServerConfig | { problem: string } {
   }
 
   const effect = typeof r.effect === 'string' && EFFECTS.has(r.effect) ? (r.effect as McpServerConfig['effect']) : undefined
+  const stringifyConfigValue = (value: unknown): string | null =>
+    typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) || typeof value === 'boolean' ? String(value) : null
   const env: Record<string, string> = {}
+  if (r.env !== undefined && (!r.env || typeof r.env !== 'object' || Array.isArray(r.env))) {
+    return { problem: `${id}: env 必须是对象` }
+  }
   if (r.env && typeof r.env === 'object') {
     for (const [key, value] of Object.entries(r.env as Record<string, unknown>)) {
-      if (typeof value === 'string') env[key] = value
+      const normalized = stringifyConfigValue(value)
+      if (normalized === null) return { problem: `${id}: env.${key} 必须是字符串、数字或布尔值` }
+      env[key] = normalized
+    }
+  }
+  if (r.args !== undefined && !Array.isArray(r.args)) return { problem: `${id}: args 必须是数组` }
+  const args: string[] = []
+  if (Array.isArray(r.args)) {
+    for (let index = 0; index < r.args.length; index++) {
+      const normalized = stringifyConfigValue(r.args[index])
+      if (normalized === null) return { problem: `${id}: args[${index}] 必须是字符串、数字或布尔值` }
+      args.push(normalized)
     }
   }
   return {
@@ -64,7 +80,7 @@ function normalize(raw: unknown): McpServerConfig | { problem: string } {
     ...(typeof r.title === 'string' && r.title.trim() ? { title: r.title.trim() } : {}),
     transport: transport as McpServerConfig['transport'],
     ...(typeof r.command === 'string' ? { command: r.command } : {}),
-    ...(Array.isArray(r.args) ? { args: r.args.filter((a): a is string => typeof a === 'string') } : {}),
+    ...(Array.isArray(r.args) ? { args } : {}),
     ...(Object.keys(env).length ? { env } : {}),
     ...(typeof r.url === 'string' ? { url: r.url } : {}),
     ...(typeof r.authRef === 'string' && r.authRef.trim() ? { authRef: r.authRef.trim() } : {}),

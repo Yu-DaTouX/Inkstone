@@ -9,6 +9,7 @@ import { classifyLink } from '../../../../shared/links'
 import { resolveRelativePath } from '../../../../shared/file-resource'
 import { officeFormatOf } from '../../../../shared/office'
 import { OfficePreview } from '../review/OfficeContent'
+import { filePreviewUrl } from '../../lib/file-preview-url'
 
 /**
  * 右侧的只读文件预览（方案 5.2 / 5.3 的「可查看」阶段）。
@@ -108,9 +109,7 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
   if (!preview) return null
 
   const isImage = data?.ok && data.kind === 'image'
-  const fileUrl = data?.abs
-    ? `file:///${encodeURI(data.abs.replace(/\\/g, '/').replace(/^\/+/, ''))}`
-    : ''
+  const fileUrl = data?.abs ? filePreviewUrl(data.abs) : ''
   /* docx / xlsx / pptx / pdf：宿主提取文字正文显示，也允许交给系统程序打开看版式 */
   const isOffice = !!data?.ok && (data.kind === 'binary' || data.kind === 'pdf') && !!officeFormatOf(data.name ?? '')
   const canOpenExternally = data?.ok && (data.kind === 'text' || data.kind === 'image' || isOffice)
@@ -261,11 +260,17 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
         ) : null}
 
         {isText && isMarkdown && mode === 'read' ? (
-          <div className="fp-markdown prose md" data-testid="file-preview-markdown">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-              {data.text ?? ''}
-            </ReactMarkdown>
-          </div>
+          <>
+            <div className="fp-markdown prose md" data-testid="file-preview-markdown">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                {lines.join('\n')}
+              </ReactMarkdown>
+            </div>
+            {(data.text?.split('\n').length ?? 0) > MAX_RENDER_LINES ? (
+              <div className="fp-note">{t('fp.tooManyLines', { n: MAX_RENDER_LINES })}</div>
+            ) : null}
+            {data?.truncated ? <div className="fp-note">{t('fp.truncated')}</div> : null}
+          </>
         ) : null}
 
         {isText && (!isMarkdown || mode === 'source') ? (

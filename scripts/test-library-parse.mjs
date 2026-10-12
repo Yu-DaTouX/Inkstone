@@ -133,7 +133,7 @@ export async function runLibraryParserTests(ok, parser, helpers) {
     const bomb = await write('bomb.pdf', makePdf(' '.repeat(20 * 1024 * 1024) + 'BT (ONLY_SYNTHETIC_OVERSIZE) Tj ET', { compress: true }))
     const bombOut = await parser.parseLibraryFile(bomb, 'file')
     ok(bombOut.status === 'failed', '解压超出上限的内容流被跳过（不返回 ok）', bombOut.status)
-    ok(/解压上限/.test(bombOut.note), 'note 说明是超出解压上限，而不是把压缩数据当未压缩流乱解', bombOut.note)
+    ok(/内容流超出预算或解压失败/.test(bombOut.note), 'note 说明是超出解压上限，而不是把压缩数据当未压缩流乱解', bombOut.note)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

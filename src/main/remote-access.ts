@@ -145,7 +145,7 @@ export class RemoteAccess {
     })
     await server.start()
     this.server = server
-    if (env && server.info.token) this.log(`旧版单令牌模式：token=${server.info.token}`)
+    if (env && server.info.token) this.log('旧版单令牌模式已启用')
   }
 
   /** 按设置启停中继桥与它专用的本机服务实例。 */

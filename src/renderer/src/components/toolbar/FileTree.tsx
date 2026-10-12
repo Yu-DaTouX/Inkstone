@@ -13,6 +13,7 @@ import type {
 } from '../../../../shared/ipc'
 import { Spinner } from '../ui'
 import { samePath } from '../../../../shared/session-path'
+import { indexVisiblePaths } from './workspace-control-guards'
 
 /** 绝对路径归一化：比较“已加入上下文”时忽略大小写与分隔符差异 */
 function normPath(p: string): string {
@@ -282,18 +283,16 @@ export function FileTree() {
 
   const toggleDir = useCallback(
     (path: string) => {
+      const opening = !open.has(path)
       setOpen((prev) => {
         const n = new Set(prev)
-        if (n.has(path)) {
-          n.delete(path)
-        } else {
-          n.add(path)
-          if (cache[path] === undefined) void load(path)
-        }
+        if (n.has(path)) n.delete(path)
+        else n.add(path)
         return n
       })
+      if (opening && cache[path] === undefined) void load(path)
     },
-    [cache, load]
+    [cache, load, open]
   )
 
   /**
@@ -336,7 +335,7 @@ export function FileTree() {
     for (const dir of dirs) if (cache[dir] === undefined && !loading.has(dir)) void load(dir)
     setFocusPath(rel)
     requestAnimationFrame(() => {
-      document.querySelector(`[data-testid="fs-row-${rel}"]`)?.scrollIntoView({ block: 'nearest' })
+      ;[...document.querySelectorAll<HTMLElement>('[data-tree-path]')].find((row) => row.dataset.treePath === rel)?.scrollIntoView({ block: 'nearest' })
     })
   }, [previewRelPath, cache, loading, load])
 
@@ -387,6 +386,7 @@ export function FileTree() {
    * 现在渲染直接按这个集合判断，顺序天然只有一份。
    */
   const visibleSet = useMemo(() => new Set(visiblePaths), [visiblePaths])
+  const visibleIndex = useMemo(() => indexVisiblePaths(visiblePaths), [visiblePaths])
 
   const focusTreePath = useCallback((path: string) => {
     setFocusPath(path)
@@ -540,6 +540,7 @@ export function FileTree() {
             loading={loading.has('')}
             focused={focusPath === ''}
             visiblePaths={visiblePaths}
+            visibleIndex={visibleIndex}
             onFocusPath={focusTreePath}
             onToggle={toggleDir}
           />
@@ -556,6 +557,7 @@ export function FileTree() {
               onAdd={addFileToContext}
               focusPath={focusPath}
               visiblePaths={visiblePaths}
+              visibleIndex={visibleIndex}
               onFocusPath={focusTreePath}
               visibleSet={visibleSet}
               inContextPaths={inContextPaths}
@@ -689,6 +691,7 @@ function TreeLevel({
   onAdd,
   focusPath,
   visiblePaths,
+  visibleIndex,
   onFocusPath,
   visibleSet,
   inContextPaths,
@@ -705,6 +708,7 @@ function TreeLevel({
   onAdd: (rel: string) => void
   focusPath: string
   visiblePaths: string[]
+  visibleIndex: Map<string, number>
   onFocusPath: (path: string) => void
   /** 可见集合（由 visiblePaths 派生）：渲染与键盘游走用同一份顺序 */
   visibleSet: Set<string>
@@ -769,6 +773,7 @@ function TreeLevel({
             !e.dir && cwd ? inContextPaths?.has(normPath(toAbsolutePath(cwd, childPath))) === true : false
           }
           visiblePaths={visiblePaths}
+          visibleIndex={visibleIndex}
           onFocusPath={onFocusPath}
           onToggle={onToggle}
           onPreview={onPreview}
@@ -788,6 +793,7 @@ function TreeLevel({
             onAdd={onAdd}
             focusPath={focusPath}
             visiblePaths={visiblePaths}
+            visibleIndex={visibleIndex}
             onFocusPath={onFocusPath}
             visibleSet={visibleSet}
             inContextPaths={inContextPaths}
@@ -824,6 +830,7 @@ function TreeRow({
   inContext,
   variant,
   visiblePaths,
+  visibleIndex,
   onFocusPath,
   onToggle,
   onPreview,
@@ -846,6 +853,7 @@ function TreeRow({
   /** root 行渲染为项目头：只是另一种视觉呈现，不新增层级 */
   variant?: 'head'
   visiblePaths: string[]
+  visibleIndex: Map<string, number>
   onFocusPath: (path: string) => void
   onToggle: (p: string) => void
   onPreview?: (rel: string) => void
@@ -885,7 +893,7 @@ function TreeRow({
         aria-expanded={dir ? open : undefined}
         onFocus={() => onFocusPath(path)}
         onKeyDown={(e) => {
-          const index = visiblePaths.indexOf(path)
+          const index = visibleIndex.get(path) ?? -1
           const move = (next: string | undefined) => {
             /* 根节点的路径是空字符串，不能把它当成“没有目标”。 */
             if (next === undefined) return

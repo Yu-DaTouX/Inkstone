@@ -41,6 +41,7 @@ export class RawCdp implements CdpChannel {
   private pending = new Map<number, Pending>()
   private attaching: Promise<void> | null = null
   private attached = false
+  private closed = false
   /** CDP 事件订阅（`method` → 回调集合）。下载等浏览器事件走这条路。 */
   private readonly listeners = new Map<string, Set<(params: Record<string, unknown>, sessionId?: string) => void>>()
 
@@ -66,6 +67,7 @@ export class RawCdp implements CdpChannel {
     if (this.attached) return
     if (this.attaching) return this.attaching
     this.attaching = (async () => {
+      if (this.closed) throw new Error('Chrome DevTools 连接已关闭')
       const ws = new (WebSocketCtor())(this.webSocketDebuggerUrl)
       await new Promise<void>((resolve, reject) => {
         let settled = false
@@ -90,7 +92,12 @@ export class RawCdp implements CdpChannel {
       })
       ws.addEventListener('message', (ev) => this.onMessage(ev.data))
       // 连接断开时让所有在途请求失败，避免永久挂起
-      ws.addEventListener('close', () => this.failAll(new Error('Chrome DevTools 连接已断开')))
+      ws.addEventListener('close', () => {
+        this.closed = true
+        this.attached = false
+        this.ws = null
+        this.failAll(new Error('Chrome DevTools 连接已断开'))
+      })
       this.ws = ws
       this.attached = true
       for (const method of CDP_DOMAINS) await this.send(method)
@@ -101,6 +108,7 @@ export class RawCdp implements CdpChannel {
   }
 
   async send<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<T> {
+    if (this.closed) throw new Error('Chrome DevTools 连接已关闭')
     if (!this.attached) await this.attach()
     const ws = this.ws
     if (!ws) throw new Error('Chrome DevTools 未连接')
@@ -136,6 +144,7 @@ export class RawCdp implements CdpChannel {
   async detach(): Promise<void> {
     const ws = this.ws
     this.attached = false
+    this.closed = true
     this.ws = null
     this.failAll(new Error('Chrome DevTools 通道已关闭'))
     try {

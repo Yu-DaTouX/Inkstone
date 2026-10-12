@@ -35,20 +35,48 @@ function useNow(active: boolean): number {
   return now
 }
 
+/** 结束且无需处理（完成 / 已停止）：可以收起，不再占版面 */
+const isQuiet = (outcome: SubagentOutcome): boolean => !outcome.live && !outcome.attention
+
 /**
  * 一组子代理（同一条助手消息触发的，或没有可挂靠消息的）。
  *
  * 按启动顺序保持位置稳定；运行与需要处理的状态由图标和文字表达。
+ * 两个及以上时组首一行汇总并行数量，已结束且无需处理的默认收进汇总行。
  */
 export function SubagentGroup({ runs }: { runs: SubagentRun[] }) {
+  const t = useT()
   const now = useNow(runs.some(isLive))
+  const [showQuiet, setShowQuiet] = useState(false)
   if (!runs.length) return null
   const ranked = runs
     .map((run) => ({ run, outcome: subagentOutcome(run) }))
     .sort((a, b) => a.run.startedAt - b.run.startedAt)
+  const grouped = ranked.length > 1
+  const live = ranked.filter(({ outcome }) => outcome.live).length
+  const attention = ranked.filter(({ outcome }) => outcome.attention).length
+  const quiet = ranked.length - live - attention
+  const shown = grouped && !showQuiet ? ranked.filter(({ outcome }) => !isQuiet(outcome)) : ranked
   return (
     <div className="sg-group" data-testid="subagent-group">
-      {ranked.map(({ run, outcome }) => (
+      {grouped ? (
+        <div className="sg-head" data-testid="subagent-group-head">
+          <span className="sg-head-text">
+            {[
+              t('sa.group.parallel', { n: ranked.length }),
+              live ? t('sa.group.live', { n: live }) : '',
+              attention ? t('sa.group.attention', { n: attention }) : '',
+              quiet ? t('sa.group.quiet', { n: quiet }) : ''
+            ].filter(Boolean).join(' · ')}
+          </span>
+          {quiet ? (
+            <Button size="sm" variant="ghost" aria-expanded={showQuiet} onClick={() => setShowQuiet((v) => !v)} data-testid="subagent-group-toggle">
+              {t(showQuiet ? 'sa.group.collapse' : 'sa.group.expand')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {shown.map(({ run, outcome }) => (
         <SubagentCard key={run.id} run={run} outcome={outcome} now={now} />
       ))}
     </div>
@@ -140,13 +168,15 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
         <Button size="sm" variant="ghost" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>{t('sa.noteDetails')}</Button>
         {live ? <Button variant="danger" size="sm" onClick={() => void stopSubagent(run.id)} data-testid={`subagent-note-stop-${run.id}`}>{t('sa.stop')}</Button> : null}
       </div>
-      <div className="sg-meta">
-        {meta.map((item) => (
-          <span key={item.key} className="sg-meta-item">
-            {item.node}
-          </span>
-        ))}
-      </div>
+      {!isQuiet(outcome) || expanded ? (
+        <div className="sg-meta">
+          {meta.map((item) => (
+            <span key={item.key} className="sg-meta-item">
+              {item.node}
+            </span>
+          ))}
+        </div>
+      ) : null}
       {live && (run.progressWarning || run.latestActivity) ? (
         <div className={`sg-line sg-activity${run.progressWarning ? ' sg-reason' : ''}`} title={run.progressWarning || run.latestActivity} data-testid={`subagent-note-activity-${run.id}`}>
           {run.progressWarning || run.latestActivity}
@@ -164,20 +194,16 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
               {t('sa.openDiff')}
             </Button>
           ) : null}
-          {live ? (
-            <Button variant="danger" size="sm" onClick={() => void stopSubagent(run.id)} data-testid={`subagent-note-stop-${run.id}`}>
-              {t('sa.stop')}
+          <>
+            <Button size="sm" onClick={() => void mergeSubagent(run.id)} data-testid={`subagent-note-merge-${run.id}`}>
+              {t('sa.merge')}
             </Button>
-          ) : (
-            <>
-              <Button size="sm" onClick={() => void mergeSubagent(run.id)} data-testid={`subagent-note-merge-${run.id}`}>
-                {t('sa.merge')}
-              </Button>
-              <Button variant="danger" size="sm" onClick={() => void discardSubagent(run.id)} data-testid={`subagent-note-discard-${run.id}`}>
-                {t('sa.discard')}
-              </Button>
-            </>
-          )}
+            <Button variant="danger" size="sm" onClick={() => {
+              if (window.confirm(t('sa.discardChanges'))) void discardSubagent(run.id)
+            }} data-testid={`subagent-note-discard-${run.id}`}>
+              {t('sa.discard')}
+            </Button>
+          </>
         </div>
       ) : null}
       {expanded ? <><div className="sg-line">{run.task}</div><div className="sg-meta">{run.model} · {t('sa.toolUses', { count: calls })}{run.usage?.output ? ` · ${t('sa.outputTokens', { count: compactTokens(run.usage.output) })}` : ''}{changed ? ` · ${t('sa.diffStats', { files: changed.files, additions: changed.additions, deletions: changed.deletions })}` : ''}</div><SubagentDetail run={run} /></> : null}

@@ -79,6 +79,7 @@ export function fileResourceLabel(canonicalPath: string): string {
  * 主进程的 `isAbsolute` 在 Windows 上同样认这种写法。
  */
 export function resolveRelativePath(baseDir: string, rel: string): string {
+  if (/^(?:[A-Za-z]:|[\\/])/.test(String(rel ?? ''))) return ''
   const base = String(baseDir ?? '').replace(/[\\/]+$/, '')
   const segs = base.replace(/\\/g, '/').split('/')
   for (const raw of String(rel ?? '').replace(/\\/g, '/').split('/')) {

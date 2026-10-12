@@ -20,7 +20,7 @@
  */
 import { open, realpath, stat } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
-import { basename, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { FilePreview, FileRefInfo, FileRefKind, FileTextResult } from '../shared/ipc'
 
 /** 单文件文本上限（方案 5.3 建议预览 2MB；超限截断，**不**因此拒绝引用） */
@@ -210,7 +210,8 @@ export async function readGrantedText(input: string): Promise<FileTextResult> {
     const fh = await open(real, 'r')
     try {
       buf = Buffer.alloc(size)
-      await fh.read(buf, 0, size, 0)
+      const { bytesRead } = await fh.read(buf, 0, size, 0)
+      buf = buf.subarray(0, bytesRead)
     } finally {
       await fh.close()
     }
@@ -259,7 +260,8 @@ export async function resolvePreviewTarget(
 
   if (!absolute) {
     const root = await realpath(cwd || process.cwd()).catch(() => resolve(cwd || process.cwd()))
-    if (real !== root && !real.startsWith(root + sep)) return { ok: false, error: '路径越界' }
+    const rel = relative(root, real)
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return { ok: false, error: '路径越界' }
   }
 
   let st
@@ -344,8 +346,8 @@ export async function readPreview(
     const fh = await open(real, 'r')
     try {
       const buf = Buffer.alloc(size)
-      await fh.read(buf, 0, size, 0)
-      const text = buf.toString('utf8')
+      const { bytesRead } = await fh.read(buf, 0, size, 0)
+      const text = buf.subarray(0, bytesRead).toString('utf8')
       const truncated = st.size > MAX_TEXT
       const allLines = text.split('\n')
       /*

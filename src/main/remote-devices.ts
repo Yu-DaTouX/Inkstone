@@ -8,7 +8,7 @@
  *   · 这里只管「是谁」；「能做什么」（例如敏感确认不能在手机上做）由远程服务的路由决定。
  */
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, unlink, writeFile, copyFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   REMOTE_PAIRING_CODE_RE,
@@ -85,20 +85,34 @@ export class RemoteDeviceStore {
     if (this.devices) return this.devices
     if (!this.loading) {
       this.loading = (async () => {
+        let text: string
         try {
-          const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<DeviceFile>
-          return parsed?.version === 1 && Array.isArray(parsed.devices)
-            ? parsed.devices.filter((device) =>
-                typeof device?.id === 'string' && typeof device.tokenHash === 'string' && /^[0-9a-f]{64}$/.test(device.tokenHash)
-              )
-            : []
-        } catch {
-          /* 文件不存在或损坏：从空设备表开始（损坏时所有旧令牌失效，比误认更安全） */
-          return []
+          text = await readFile(this.file, 'utf8')
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+          throw error
+        }
+        try {
+          const parsed: unknown = JSON.parse(text)
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new SyntaxError('设备表格式无效')
+          const document = parsed as Partial<DeviceFile>
+          if (document.version !== 1 || !Array.isArray(document.devices)) throw new SyntaxError('设备表格式无效')
+          return document.devices.filter((device) =>
+            typeof device?.id === 'string' && typeof device.tokenHash === 'string' && /^[0-9a-f]{64}$/.test(device.tokenHash)
+          )
+        } catch (error) {
+          await copyFile(this.file, `${this.file}.corrupt-${randomUUID()}`).catch(() => undefined)
+          throw error
         }
       })()
     }
-    const devices = await this.loading
+    let devices: StoredDevice[]
+    try {
+      devices = await this.loading
+    } catch (error) {
+      this.loading = null
+      throw error
+    }
     if (!this.devices) this.devices = devices
     return this.devices
   }

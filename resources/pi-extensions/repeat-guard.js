@@ -216,7 +216,7 @@ export default function repeatGuard(pi) {
    * 没有「只警告」这个返回值。所以第 3 次之后，在**下一次模型请求前**
    * 贴近最后一条 user 消息插一句 —— 不打断当前回合，但模型下一次决策能看到。
    */
-  pi.on('before_provider_request', (event) => {
+  pi.on('before_provider_request', (event, ctx) => {
     if (run < WARN_AT || warned) return undefined
     const payload = event?.payload
     const messages = payload?.messages
@@ -240,6 +240,17 @@ export default function repeatGuard(pi) {
      */
     const already = messages.find((m) => m?.role === 'system' || m?.role === 'developer')?.role
     const role = already === 'system' || already === 'developer' ? already : 'system'
+    if (ctx?.model?.provider === 'local') {
+      const current = messages[at]
+      const suffix = `\n\n${text}`
+      const content = current?.content
+      const nextContent = typeof content === 'string'
+        ? `${content}${suffix}`
+        : Array.isArray(content)
+          ? [...content, { type: 'text', text: suffix }]
+          : `${String(content ?? '')}${suffix}`
+      return { ...payload, messages: messages.map((message, index) => index === at ? { ...message, content: nextContent } : message) }
+    }
     const next = [...messages.slice(0, at), { role, content: text }, ...messages.slice(at)]
     return { ...payload, messages: next }
   })

@@ -4,6 +4,7 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { listSourceFiles, removeSourceFile } from '../../state/source-files'
 import type { SourceLinkView, SourceRefView } from '../../../../shared/ipc'
+import { sessionSourceStorageKey } from '../toolbar/workspace-control-guards'
 
 /**
  * 来源菜单（方案 §8 的 S1）。
@@ -29,6 +30,7 @@ import type { SourceLinkView, SourceRefView } from '../../../../shared/ipc'
 export type SourceFilter = 'all' | 'image' | 'file' | 'web'
 
 const WEB_KEY = 'yan.source-links.v1'
+const webKeyFor = sessionSourceStorageKey
 
 export interface WebLink {
   id: string
@@ -48,11 +50,22 @@ function loadJson<T>(key: string): T[] {
   }
 }
 
-function saveJson(key: string, list: unknown[]): void {
+function loadSessionWeb(sessionId: string): WebLink[] {
+  const key = webKeyFor(sessionId)
   try {
-    localStorage.setItem(key, JSON.stringify(list.slice(0, 200)))
+    if (localStorage.getItem(key) !== null) return loadJson<WebLink>(key)
+  } catch { return [] }
+  const legacy = loadJson<WebLink>(WEB_KEY).filter((link) => link.sessionId === sessionId)
+  if (legacy.length) saveJson(key, legacy)
+  return legacy
+}
+
+function saveJson(key: string, list: unknown[]): boolean {
+  try {
+    localStorage.setItem(key, JSON.stringify(list))
+    return true
   } catch {
-    /* 存不下不影响本次会话里看到的东西 */
+    return false
   }
 }
 
@@ -81,6 +94,7 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
   const [url, setUrl] = useState('')
   const [title, setTitle] = useState('')
   const [bad, setBad] = useState(false)
+  const [actionError, setActionError] = useState('')
   const [dir, setDir] = useState('')
   /*
    * 网页**搜索**入口（实施-07 S4）：只有在已发现兼容搜索能力时才出现。
@@ -98,6 +112,7 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
   const gate = useRef(0)
 
   const refresh = useCallback(async (): Promise<void> => {
+    setActionError('')
     const mine = ++gate.current
     const current = sessionId
     try {
@@ -119,7 +134,7 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
     }
     /* 网页：纯本地记录（登记 URL + 标题，不抓正文）。**搜索**是另一件事：
        只有已发现兼容搜索能力时菜单里才出现那枚入口，见下方 `webSearch` */
-    const links = loadJson<WebLink>(WEB_KEY).filter((x) => x.sessionId === current)
+    const links = loadSessionWeb(current)
     if (gate.current !== mine) return
     setWebs(
       links.map((l) => ({
@@ -165,10 +180,12 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
     void (async () => {
       for (const img of images) {
         if (thumbs[img.sourceId]) continue
-        const res = await window.yan.sources.readImage({ sessionId, sourceId: img.sourceId })
-        if (!alive) return
-        if (res.ok && res.base64) {
-          setThumbs((prev) => ({ ...prev, [img.sourceId]: `data:${res.mime ?? 'image/png'};base64,${res.base64}` }))
+        try {
+          const res = await window.yan.sources.readImage({ sessionId, sourceId: img.sourceId })
+          if (!alive) return
+          if (res.ok && res.base64) setThumbs((prev) => ({ ...prev, [img.sourceId]: `data:${res.mime ?? 'image/png'};base64,${res.base64}` }))
+        } catch {
+          // Keep this image's placeholder and continue loading the rest.
         }
       }
     })()
@@ -182,19 +199,26 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
   const shown = filter === 'all' ? all : all.filter((x) => x.kind === filter)
 
   const removeOne = async (item: SourceRefView): Promise<void> => {
+    setActionError('')
     if (item.kind === 'image') {
       /* 图片：连**我们存的副本**一起删 */
-      await window.yan.sources.removeImage({ sessionId, sourceId: item.sourceId }).catch(() => undefined)
+      const result = await window.yan.sources.removeImage({ sessionId, sourceId: item.sourceId })
+      if (!result.ok) throw new Error(result.error || t('src.remove'))
     } else if (item.kind === 'file') {
       /* 文件：只删**本会话**的登记 —— 原文件是用户的，这一层永远不碰 */
       removeSourceFile(sessionId, item.ref)
     } else {
-      saveJson(
-        WEB_KEY,
-        loadJson<WebLink>(WEB_KEY).filter((x) => `web:${x.id}` !== item.sourceId)
-      )
+      if (!saveJson(webKeyFor(sessionId), loadSessionWeb(sessionId).filter((x) => `web:${x.id}` !== item.sourceId))) {
+        throw new Error(t('src.remove'))
+      }
     }
     await refresh()
+  }
+
+  const removeWithFeedback = async (item: SourceRefView): Promise<void> => {
+    if (item.kind === 'image' && !window.confirm(`${t('src.remove')} · ${item.title}`)) return
+    try { await removeOne(item) }
+    catch (cause) { setActionError(cause instanceof Error ? cause.message : String(cause)) }
   }
 
   const addWeb = (): void => {
@@ -204,7 +228,7 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
       return
     }
     setBad(false)
-    const links = loadJson<WebLink>(WEB_KEY)
+    const links = loadSessionWeb(sessionId)
     links.unshift({
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       sessionId,
@@ -212,7 +236,7 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
       title: title.trim() || new URL(clean).host,
       addedAt: Date.now()
     })
-    saveJson(WEB_KEY, links)
+    if (!saveJson(webKeyFor(sessionId), links)) { setActionError(t('src.badUrl')); return }
     setUrl('')
     setTitle('')
     void refresh()
@@ -312,14 +336,14 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
                 data-testid="src-open"
                 title={item.kind === 'image' ? item.ref : item.ref}
                 onClick={() => {
-                  if (item.kind === 'web') void window.yan.browser.open(item.ref)
+                  if (item.kind === 'web') void window.yan.browser.open(item.ref).catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
                   /* 图片/文件：不在菜单里"打开"—— 复制路径交给系统的文件管理器更稳 */
-                  else void navigator.clipboard.writeText(item.ref).catch(() => undefined)
+                  else void navigator.clipboard.writeText(item.ref).catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
                 }}
               >
                 {item.kind === 'web' ? t('src.openWeb') : t('src.copyPath')}
               </button>
-              <button type="button" className="env-mini" data-testid="src-remove" onClick={() => void removeOne(item)}>
+              <button type="button" className="env-mini" data-testid="src-remove" onClick={() => void removeWithFeedback(item)}>
                 {t('src.remove')}
               </button>
             </div>
@@ -398,6 +422,7 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
         </button>
       </div>
       {bad ? <div className="env-error">{t('src.badUrl')}</div> : null}
+      {actionError ? <div className="env-error" role="alert" data-testid="src-action-error">{actionError}</div> : null}
       {/* 边界（方案 §6.4 的硬要求）：只是关联，不宣称上传/同步/远程执行；说的是「移除」，有条目时才出现 */}
       {counts.all > 0 ? <div className="env-carry-hint">{t('src.note')}</div> : null}
     </div>

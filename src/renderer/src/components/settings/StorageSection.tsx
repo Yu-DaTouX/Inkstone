@@ -17,7 +17,7 @@ export function StorageSection() {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    void window.yan.storage.info().then(setInfo).catch(() => undefined)
+    void window.yan.storage.info().then(setInfo).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
   }, [])
 
   const gb = (n: number): string => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : `${Math.round(n / 1024 ** 2)} MB`)
@@ -25,16 +25,20 @@ export function StorageSection() {
 
   const pick = async (): Promise<void> => {
     setError('')
-    const dir = await window.yan.storage.pick()
-    if (dir) setTarget(dir)
+    try {
+      const dir = await window.yan.storage.pick()
+      if (dir) setTarget(dir)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
   const confirm = async (): Promise<void> => {
     if (!target) return
     setBusy(true)
     setError('')
-    const r = await window.yan.storage.schedule(target, true)
-    setBusy(false)
-    if (!r.ok) setError(r.error ?? t('storage.failed'))
+    try {
+      const r = await window.yan.storage.schedule(target, true)
+      if (!r.ok) setError(r.error ?? t('storage.failed'))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
   }
 
   return (

@@ -34,7 +34,6 @@ export interface SessionSearchResult {
   total: number
 }
 
-const READ_PARALLEL = 4
 const MAX_INDEX_BYTES = 16 * 1024 * 1024
 const MAX_LINE_CHARS = 8 * 1024 * 1024
 
@@ -103,31 +102,9 @@ export async function listSessionFiles(): Promise<Array<{ path: string; mtimeMs:
 }
 
 async function refreshIndex(): Promise<void> {
-  const files = await listSessionFiles()
-  knownFiles = files
-  const alive = new Set(files.map((f) => f.path))
-  for (const path of index.keys()) if (!alive.has(path)) index.delete(path)
-  // Reserve the worst-case text quota per session, so concurrent readers cannot overshoot.
-  const selected = files.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, Math.floor(MAX_INDEX_BYTES / (2 * (400 * 1024 + 3))))
-  const retained = new Set(selected.map((f) => f.path))
-  for (const path of index.keys()) if (!retained.has(path)) index.delete(path)
-  const stale = selected.filter((f) => {
-    const hit = index.get(f.path)
-    return !hit || hit.mtimeMs !== f.mtimeMs || hit.size !== f.size
-  })
-  let next = 0
-  const worker = async (): Promise<void> => {
-    while (next < stale.length) {
-      const file = stale[next++]
-      try {
-        const text = await readSessionSearchText(file.path)
-        index.set(file.path, { mtimeMs: file.mtimeMs, size: file.size, text })
-      } catch {
-        index.delete(file.path)
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: READ_PARALLEL }, worker))
+  knownFiles = await listSessionFiles()
+  const live = new Set(knownFiles.map((file) => file.path))
+  for (const path of index.keys()) if (!live.has(path)) index.delete(path)
 }
 
 /** 保证索引是新的；同时只会有一次在建，其他调用等同一个结果 */
@@ -162,9 +139,19 @@ export async function searchSessionText(query: string, limit = 30): Promise<Sess
   for (const file of knownFiles) {
     const path = file.path
     let entry = index.get(path)
-    if (!entry) {
-      try { entry = { ...file, text: await readSessionSearchText(path) } }
-      catch { continue }
+    if (!entry || entry.mtimeMs !== file.mtimeMs || entry.size !== file.size) {
+      try {
+        entry = { ...file, text: await readSessionSearchText(path) }
+        index.set(path, entry)
+        let bytes = [...index.values()].reduce((sum, value) => sum + Buffer.byteLength(value.text), 0)
+        while (bytes > MAX_INDEX_BYTES && index.size > 1) {
+          const oldest = index.keys().next().value as string | undefined
+          if (!oldest) break
+          const removed = index.get(oldest)
+          index.delete(oldest)
+          bytes -= removed ? Buffer.byteLength(removed.text) : 0
+        }
+      } catch { index.delete(path); continue }
     }
     const hit = matchText(entry.text, tokens)
     if (hit) hits.push({ path, snippet: hit.snippet, matches: Math.min(hit.matches, 40), updatedAt: entry.mtimeMs })

@@ -372,11 +372,13 @@ export async function runGoalTests(ok) {
     const afterStop = await store.report(keyB, { reportId: 'rp-after-stop', phase: 'executing', goalRevision: 1 })
     ok(afterStop.ok === false && afterStop.code === 'stale_goal', '停止后旧 revision 的报告被拒（不假装还在跑）')
 
-    /* 脏 JSON 不能让整份文档作废 */
+    /* 脏 JSON 必须拒绝读取与覆盖，保留原文件。 */
     await writeFile(file, '{ 这不是 JSON', 'utf8')
     const store2 = new service.GoalStore({ root })
-    await store2.load()
-    ok(store2.state(keyA).phase === 'planning', '坏 JSON → 空目标（不抛、不把界面弄挂）')
+    let rejectedCorrupt = false
+    try { await store2.load() } catch { rejectedCorrupt = true }
+    ok(rejectedCorrupt, '坏 JSON 明确报错，不回落空目标')
+    ok(await readFile(file, 'utf8') === '{ 这不是 JSON', '坏 JSON 原文件保留，不被空状态覆盖')
 
     /* 落盘失败必须抛（不能报成功）：用一个占位目录顶掉文件名 */
     const rootBad = await mkdtemp(join(tmpdir(), 'yan-goal-bad-'))
@@ -799,7 +801,7 @@ export async function runGoalTests(ok) {
       await oldStore.load()
       ok(oldStore.resumeOf(keyOld)?.kind === 'ready', 'S3c 之前的记录（没有 kind）读进来还是就绪续行')
       const oldArmed = await oldStore.armContinue(keyOld)
-      ok(oldArmed.armed === true && oldArmed.round === 1, '旧文件（没有 autoContinues）从 0 开始计数')
+      ok(oldArmed.armed === false && oldArmed.reason === 'pending' && oldArmed.round === 0, '旧文件从 0 计数，未消费的 ready 记录阻止继续覆盖')
     } finally {
       await rm(rootOld, { recursive: true, force: true })
     }

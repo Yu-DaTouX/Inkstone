@@ -30,11 +30,14 @@ export function localDeviceId(): string {
 }
 
 export async function readConsentLedger(path = LEDGER_PATH): Promise<ConsentLedger> {
+  let text: string
   try {
-    return parseConsentLedger(JSON.parse(await readFile(path, 'utf8')))
-  } catch {
-    return emptyConsentLedger()
+    text = await readFile(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyConsentLedger()
+    throw error
   }
+  return parseConsentLedger(JSON.parse(text))
 }
 
 /** 串行地读—改—写 */

@@ -4,7 +4,10 @@
  * 刻意**不写 pi 的 settings.json** —— 那是 TUI 和扩展的领地，
  * 桌面端改它会污染用户的 pi 配置。
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, mkdir, copyFile, open, rename, unlink } from 'node:fs/promises'
+import { statSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { isAbsolute, parse, resolve } from 'node:path'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
@@ -336,6 +339,7 @@ function sanitizeProjectOrder(v: unknown): string[] {
 }
 
 let cached: AppSettings | null = null
+let cacheGeneration = 0
 
 /**
  * 设置写入的**串行队列**（N01 尾巴，2026-09-19 拓到）。
@@ -355,6 +359,7 @@ let writeQueue: Promise<unknown> = Promise.resolve()
 
 /** 清掉内存缓存（下次 getSettings 重新读盘） */
 function invalidate(): void {
+  cacheGeneration++
   cached = null
 }
 
@@ -381,145 +386,206 @@ async function defaultWorkFolder(): Promise<string> {
   }
 }
 
-export async function getSettings(): Promise<AppSettings> {
-  if (cached) return cached
-  try {
-    const raw = await readFile(FILE, 'utf8')
-    const parsed = JSON.parse(raw) as Partial<AppSettings>
-    cached = { ...DEFAULTS, ...parsed }
-    if (typeof parsed.cwd !== 'string' || !parsed.cwd) cached.cwd = await defaultWorkFolder()
-    /*
-     * 工作模式迁移的输入必须是**文件里的原值**，不能用合并后的：
-     * DEFAULTS 里有 `defaultWorkMode: 'standard'`，合完之后永远“合法”，
-     * 旧用户的 `autonomous: true` 就再也迁不过来了（探针会当场抓住）。
-     */
-    const fileWorkMode = parsed.defaultWorkMode
-    // 语言：文件里没有合法值就跟随系统（用户手动选过就听用户的）
-    if (!LANGS.includes(cached.lang as (typeof LANGS)[number])) cached.lang = detectLang()
-    if (!Array.isArray(cached.recentCwds)) cached.recentCwds = []
-    if (!cached.projectNames || typeof cached.projectNames !== 'object' || Array.isArray(cached.projectNames)) cached.projectNames = {}
-    cached.projectGroups = sanitizeProjectGroups(cached.projectGroups)
-    cached.projects = sanitizeProjects(cached.projects, cached.projectNames, cached.recentCwds, cached.cwd)
-    // 项目顺序：未知 / 已删除的项目 id 丢掉（否则设置文件会越来越长）
-    const knownProjects = cached.projects
-    cached.projectOrder = sanitizeProjectOrder(cached.projectOrder)
-      .filter((id) => knownProjects.some((project) => project.id === id))
-    if (!cached.providerBudgets || typeof cached.providerBudgets !== 'object' || Array.isArray(cached.providerBudgets)) cached.providerBudgets = {}
-    if (typeof cached.rightPanelOpen !== 'boolean') cached.rightPanelOpen = true
-    /*
-     * 工作区模式（实施-18 S0）：只认两个合法值；脏值 / 缺失一律归到
-     * `undefined`（磁盘上没有这个键），让渲染端能区分「没设置过」并做
-     * localStorage 一次性迁移。不写回 DEFAULTS，避免迁移信号被默认值淹没。
-     */
-    cached.workspaceMode = isWorkspaceMode(cached.workspaceMode) ? cached.workspaceMode : undefined
-    // 置顶：非布尔值一律当 false（不能因为读到个脏值就把窗口钉在最上层）
-    cached.alwaysOnTop = cached.alwaysOnTop === true
-    // 缩放：夹到合法区间，读不到就自动（不能因为脏值把界面撑成 3 倍）
-    cached.uiScale = clampScale(cached.uiScale)
-    cached.profile = sanitizeProfile(cached.profile)
-    cached.railWidth = clampPanelWidth(cached.railWidth, RAIL_MIN, RAIL_MAX)
-    cached.panelWidth = clampPanelWidth(cached.panelWidth, PANEL_MIN, PANEL_MAX)
-    cached.browserHeight = clampPanelWidth(cached.browserHeight, HEIGHT_MIN, HEIGHT_MAX)
-    // 分区顺序/隐藏集合：未知 id 一律丢掉（版本升级后旧 id 不该一直占位）
-    cached.toolOrder = normalizeToolOrder(cached.toolOrder)
-    cached.toolHidden = normalizeToolHidden(cached.toolHidden)
-    /* 磁贴布局：有版本化真源就归一化；没有就从旧的 order/hidden 一次性迁移 */
-    const storedToolLayout = cached.toolLayout as { version?: unknown } | undefined
-    cached.toolLayout = storedToolLayout && storedToolLayout.version !== undefined
-      ? normalizeToolLayout(storedToolLayout, TOOL_SECTIONS)
-      : migrateToolLayout(cached.toolOrder, cached.toolHidden, TOOL_SECTIONS)
-    cached.toolHeights = normalizeHeights(cached.toolHeights)
-    /*
-     * toolDetail 的迁移历史（见 AppSettings.toolDetail 的注释）：
-     *   v1  「已结束的能不能点开」—— 旧配置里的 false 只是默认值；
-     *   v2  改成「运行中是否自动展开」，迁移时把老配置一律升为 true；
-     *   v3（N03）默认值再改为 **收起**，且只有显式开关（toolDetailExplicit）
-     *       才算用户偏好。v2 迁移强制写入的 true 是默认值、不是偏好，
-     *       在 v3 里同样被重置 —— 否则升级后又会「自动展开干扰」。
-     *   规则是幂等的：没有显式偏好的配置每次都归到 false。
-     */
-    if (cached.toolDetailExplicit !== true) {
-      cached.toolDetail = false
-    } else {
-      // 显式偏好：非 true 一律当关（含缺失与脏值）
-      cached.toolDetail = cached.toolDetail === true
-    }
-    cached.streamWidth = clampStreamWidth(cached.streamWidth)
-    cached.autonomous = cached.autonomous === true
-    /*
-     * 工作模式（实施-05）：
-     *   · `defaultWorkMode` 合法就听它的；否则拿旧 `autonomous === true`
-     *     迁成 `autonomous`，其余 `standard` —— 迁移是幂等的（反复读同一份文件结果相同）。
-     *   · 模式快捷键（2026-09-22）：开关只有明确写 `false` 才算关，其余（含缺失）
-     *     保持 undefined = 开；旧字段 `workModeTab` 只在这里读一次（迁完不再写回）。
-     *     组合键要过 `normalizeWorkModeShortcut`（脏值回落成「没设过」）。
-     */
-    cached.defaultWorkMode = migrateLegacyAutonomous(fileWorkMode, cached.autonomous)
-    cached.codemodeEnabled = cached.codemodeEnabled !== false
-    /* 旧档位迁到「危险批准」时关掉项目外写入确认（见 isLegacyPermissionMode） */
-    cached.guardOutsideWrites = !isLegacyPermissionMode(cached.permissionMode) && cached.guardOutsideWrites === true
-    cached.permissionMode = normalizePermissionMode(cached.permissionMode)
-    cached.lastMainModel = cleanModelChoice(cached.lastMainModel)
-    cached.lastSubagentModel = cached.lastSubagentModel === 'follow' ? 'follow' : cleanModelChoice(cached.lastSubagentModel)
-    cached.modelFavorites = cleanModelFavorites(cached.modelFavorites)
-    cached.modelProviderOrder = cleanProviderOrder(cached.modelProviderOrder)
-    cached.checkpointsEnabled = cached.checkpointsEnabled !== false
-    cached.guardAllowRoots = cleanAllowRoots(cached.guardAllowRoots)
-    cached.capabilityStrategy =
-      cached.capabilityStrategy === 'existing-only' || cached.capabilityStrategy === 'search-and-recommend'
-        ? cached.capabilityStrategy
-        : 'auto-connect'
-    /*
-     * 按活动配置模型（实施-25 P18）：认不出的模型名丢掉（不能让一个乱字符串
-     * 变成「这个活动用某个不存在的模型」）。没配过时得到空配置。
-     */
-    cached.activityModels = sanitizeActivityModelConfig((parsed as { activityModels?: unknown }).activityModels)
-    /* 旧字段只在这里读一次（迁完不再写回）：`workModeTab === false` 等价于关掉模式快捷键 */
-    const legacyWorkModeTab = (cached as AppSettings & { workModeTab?: unknown }).workModeTab
-    cached.workModeShortcutEnabled =
-      cached.workModeShortcutEnabled === false || legacyWorkModeTab === false ? false : undefined
-    cached.workModeShortcut = normalizeWorkModeShortcut(cached.workModeShortcut)
-    cached.subagentNotify = cached.subagentNotify === false ? false : undefined
-    cached.usageUnderInput = cached.usageUnderInput === false ? false : undefined
-    // 发送键：只认三个已知值，脏值回落到 auto（默认行为）
-    cached.sendKey =
-      cached.sendKey === 'enter' || cached.sendKey === 'ctrlEnter' ? cached.sendKey : 'auto'
-    // 回复详细程度：只认三个已知值，脏值 / 缺失回落到 standard
-    cached.responseDetail =
-      cached.responseDetail === 'brief' || cached.responseDetail === 'detailed'
-        ? cached.responseDetail
-        : 'standard'
-    // 密度：只认三个已知值，脏值 / 缺失回落到 standard
-    cached.density =
-      cached.density === 'compact' || cached.density === 'comfortable'
-        ? cached.density
-        : 'standard'
-    cached.sound = sanitizeSound(cached.sound)
-    /*
-     * 上下文策略覆盖（N21-7）：非法数值一律丢掉、越界值夹到区间。
-     * 清洗后与默认值一致 → `undefined`，让“没改过”在磁盘上真的没有这个键。
-     */
-    cached.contextPolicy = sanitizeContextPolicyOverrides(cached.contextPolicy)
-    cached.contextPolicyByModel = sanitizeContextPolicyByModel(cached.contextPolicyByModel)
-    /*
-     * Deep Context（N21-8）：只认字面 `true`。
-     * 洗不进时结果是 `undefined`（而不是 `{enabled:false}`）—— 让「没改过」
-     * 在磁盘上真的没有这个键，以后调默认值时才不会把改过的人一起改掉
-     * （与 `railWidth: 0` / `contextPolicy` 同一个约定）。
-     */
-    cached.contextDeep = sanitizeContextDeep(cached.contextDeep)
-    /*
-     * `episode-fold` 的用户开关（P2-7）：同样是「没改过 = 磁盘上没有这个键」，
-     * 只不过默认方向相反（它在默认接管集里，所以只有明确关闭才落盘）。
-     */
-    cached.contextFold = sanitizeContextFold(cached.contextFold)
-    cached.projectKnowledge = sanitizeProjectKnowledge(cached.projectKnowledge)
-  } catch {
-    cached = { ...DEFAULTS }
-    cached.lang = detectLang()
-    cached.cwd = await defaultWorkFolder()
+function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
+  const settings = { ...DEFAULTS, ...parsed } as AppSettings
+  /*
+   * 工作模式迁移的输入必须是**文件里的原值**，不能用合并后的：
+   * DEFAULTS 里有 `defaultWorkMode: 'standard'`，合完之后永远“合法”，
+   * 旧用户的 `autonomous: true` 就再也迁不过来了（探针会当场抓住）。
+   */
+  const fileWorkMode = parsed.defaultWorkMode
+  // 语言：文件里没有合法值就跟随系统（用户手动选过就听用户的）
+  if (!LANGS.includes(settings.lang as (typeof LANGS)[number])) settings.lang = detectLang()
+  if (settings.theme !== 'light' && settings.theme !== 'dark') settings.theme = 'dark'
+  if (!Array.isArray(settings.recentCwds)) settings.recentCwds = []
+  if (!settings.projectNames || typeof settings.projectNames !== 'object' || Array.isArray(settings.projectNames)) settings.projectNames = {}
+  settings.projectGroups = sanitizeProjectGroups(settings.projectGroups)
+  settings.projects = sanitizeProjects(settings.projects, settings.projectNames, settings.recentCwds, settings.cwd)
+  // 项目顺序：未知 / 已删除的项目 id 丢掉（否则设置文件会越来越长）
+  const knownProjects = settings.projects
+  settings.projectOrder = sanitizeProjectOrder(settings.projectOrder)
+    .filter((id) => knownProjects.some((project) => project.id === id))
+  if (!settings.providerBudgets || typeof settings.providerBudgets !== 'object' || Array.isArray(settings.providerBudgets)) settings.providerBudgets = {}
+  if (typeof settings.rightPanelOpen !== 'boolean') settings.rightPanelOpen = true
+  /*
+   * 工作区模式（实施-18 S0）：只认两个合法值；脏值 / 缺失一律归到
+   * `undefined`（磁盘上没有这个键），让渲染端能区分「没设置过」并做
+   * localStorage 一次性迁移。不写回 DEFAULTS，避免迁移信号被默认值淹没。
+   */
+  settings.workspaceMode = isWorkspaceMode(settings.workspaceMode) ? settings.workspaceMode : undefined
+  // 置顶：非布尔值一律当 false（不能因为读到个脏值就把窗口钉在最上层）
+  settings.alwaysOnTop = settings.alwaysOnTop === true
+  // 缩放：夹到合法区间，读不到就自动（不能因为脏值把界面撑成 3 倍）
+  settings.uiScale = clampScale(settings.uiScale)
+  settings.profile = sanitizeProfile(settings.profile)
+  settings.railWidth = clampPanelWidth(settings.railWidth, RAIL_MIN, RAIL_MAX)
+  settings.panelWidth = clampPanelWidth(settings.panelWidth, PANEL_MIN, PANEL_MAX)
+  settings.browserHeight = clampPanelWidth(settings.browserHeight, HEIGHT_MIN, HEIGHT_MAX)
+  // 分区顺序/隐藏集合：未知 id 一律丢掉（版本升级后旧 id 不该一直占位）
+  settings.toolOrder = normalizeToolOrder(settings.toolOrder)
+  settings.toolHidden = normalizeToolHidden(settings.toolHidden)
+  /* 磁贴布局：有版本化真源就归一化；没有就从旧的 order/hidden 一次性迁移 */
+  const storedToolLayout = settings.toolLayout as { version?: unknown } | undefined
+  settings.toolLayout = storedToolLayout && storedToolLayout.version !== undefined
+    ? normalizeToolLayout(storedToolLayout, TOOL_SECTIONS)
+    : migrateToolLayout(settings.toolOrder, settings.toolHidden, TOOL_SECTIONS)
+  settings.toolHeights = normalizeHeights(settings.toolHeights)
+  /*
+   * toolDetail 的迁移历史（见 AppSettings.toolDetail 的注释）：
+   *   v1  「已结束的能不能点开」—— 旧配置里的 false 只是默认值；
+   *   v2  改成「运行中是否自动展开」，迁移时把老配置一律升为 true；
+   *   v3（N03）默认值再改为 **收起**，且只有显式开关（toolDetailExplicit）
+   *       才算用户偏好。v2 迁移强制写入的 true 是默认值、不是偏好，
+   *       在 v3 里同样被重置 —— 否则升级后又会「自动展开干扰」。
+   *   规则是幂等的：没有显式偏好的配置每次都归到 false。
+   */
+  if (settings.toolDetailExplicit !== true) {
+    settings.toolDetail = false
+  } else {
+    // 显式偏好：非 true 一律当关（含缺失与脏值）
+    settings.toolDetail = settings.toolDetail === true
   }
-  return cached
+  settings.streamWidth = clampStreamWidth(settings.streamWidth)
+  settings.autonomous = settings.autonomous === true
+  /*
+   * 工作模式（实施-05）：
+   *   · `defaultWorkMode` 合法就听它的；否则拿旧 `autonomous === true`
+   *     迁成 `autonomous`，其余 `standard` —— 迁移是幂等的（反复读同一份文件结果相同）。
+   *   · 模式快捷键（2026-09-22）：开关只有明确写 `false` 才算关，其余（含缺失）
+   *     保持 undefined = 开；旧字段 `workModeTab` 只在这里读一次（迁完不再写回）。
+   *     组合键要过 `normalizeWorkModeShortcut`（脏值回落成「没设过」）。
+   */
+  settings.defaultWorkMode = migrateLegacyAutonomous(fileWorkMode, settings.autonomous)
+  settings.codemodeEnabled = settings.codemodeEnabled !== false
+  /* 旧档位迁到「危险批准」时关掉项目外写入确认（见 isLegacyPermissionMode） */
+  settings.guardOutsideWrites = !isLegacyPermissionMode(settings.permissionMode) && settings.guardOutsideWrites === true
+  settings.permissionMode = normalizePermissionMode(settings.permissionMode)
+  settings.lastMainModel = cleanModelChoice(settings.lastMainModel)
+  settings.lastSubagentModel = settings.lastSubagentModel === 'follow' ? 'follow' : cleanModelChoice(settings.lastSubagentModel)
+  settings.modelFavorites = cleanModelFavorites(settings.modelFavorites)
+  settings.modelProviderOrder = cleanProviderOrder(settings.modelProviderOrder)
+  settings.checkpointsEnabled = settings.checkpointsEnabled !== false
+  settings.guardAllowRoots = cleanAllowRoots(settings.guardAllowRoots)
+  settings.capabilityStrategy =
+    settings.capabilityStrategy === 'existing-only' || settings.capabilityStrategy === 'search-and-recommend'
+      ? settings.capabilityStrategy
+      : 'auto-connect'
+  /*
+   * 按活动配置模型（实施-25 P18）：认不出的模型名丢掉（不能让一个乱字符串
+   * 变成「这个活动用某个不存在的模型」）。没配过时得到空配置。
+   */
+  settings.activityModels = sanitizeActivityModelConfig((parsed as { activityModels?: unknown }).activityModels)
+  /* 旧字段只在这里读一次（迁完不再写回）：`workModeTab === false` 等价于关掉模式快捷键 */
+  const legacyWorkModeTab = (settings as AppSettings & { workModeTab?: unknown }).workModeTab
+  settings.workModeShortcutEnabled =
+    settings.workModeShortcutEnabled === false || legacyWorkModeTab === false ? false : undefined
+  settings.workModeShortcut = normalizeWorkModeShortcut(settings.workModeShortcut)
+  settings.subagentNotify = settings.subagentNotify === false ? false : undefined
+  settings.usageUnderInput = settings.usageUnderInput === false ? false : undefined
+  // 发送键：只认三个已知值，脏值回落到 auto（默认行为）
+  settings.sendKey =
+    settings.sendKey === 'enter' || settings.sendKey === 'ctrlEnter' ? settings.sendKey : 'auto'
+  // 回复详细程度：只认三个已知值，脏值 / 缺失回落到 standard
+  settings.responseDetail =
+    settings.responseDetail === 'brief' || settings.responseDetail === 'detailed'
+      ? settings.responseDetail
+      : 'standard'
+  // 密度：只认三个已知值，脏值 / 缺失回落到 standard
+  settings.density =
+    settings.density === 'compact' || settings.density === 'comfortable'
+      ? settings.density
+      : 'standard'
+  settings.sound = sanitizeSound(settings.sound)
+  /*
+   * 上下文策略覆盖（N21-7）：非法数值一律丢掉、越界值夹到区间。
+   * 清洗后与默认值一致 → `undefined`，让“没改过”在磁盘上真的没有这个键。
+   */
+  settings.contextPolicy = sanitizeContextPolicyOverrides(settings.contextPolicy)
+  settings.contextPolicyByModel = sanitizeContextPolicyByModel(settings.contextPolicyByModel)
+  /*
+   * Deep Context（N21-8）：只认字面 `true`。
+   * 洗不进时结果是 `undefined`（而不是 `{enabled:false}`）—— 让「没改过」
+   * 在磁盘上真的没有这个键，以后调默认值时才不会把改过的人一起改掉
+   * （与 `railWidth: 0` / `contextPolicy` 同一个约定）。
+   */
+  settings.contextDeep = sanitizeContextDeep(settings.contextDeep)
+  /*
+   * `episode-fold` 的用户开关（P2-7）：同样是「没改过 = 磁盘上没有这个键」，
+   * 只不过默认方向相反（它在默认接管集里，所以只有明确关闭才落盘）。
+   */
+  settings.contextFold = sanitizeContextFold(settings.contextFold)
+  settings.projectKnowledge = sanitizeProjectKnowledge(settings.projectKnowledge)
+  settings.remoteAccess = sanitizeRemoteAccess(settings.remoteAccess)
+  /* 自动归档天数：0 / 脏值落成「没设置」，不写进文件 */
+  settings.keepAwakeWhileWorking = settings.keepAwakeWhileWorking === false ? false : undefined
+  settings.keepAwakeOnBattery = settings.keepAwakeOnBattery === false ? false : undefined
+  settings.visualAnswers = settings.visualAnswers === false ? false : undefined
+  /* 上下文裁剪与自动压缩：只有明确关才落 false；阈值只收档位里的值，缺省值不写进文件 */
+  settings.contextTrim = settings.contextTrim === false ? false : undefined
+  settings.contextTrimTokens = pickTokenStep(settings.contextTrimTokens, CONTEXT_TRIM_STEPS, DEFAULT_CONTEXT_TRIM_TOKENS)
+  settings.autoCompactTokens = pickTokenStep(settings.autoCompactTokens, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS)
+  settings.processLayout = settings.processLayout === 'side' || settings.processLayout === 'left' ? settings.processLayout : undefined
+  settings.liveThinking = settings.liveThinking === true ? true : undefined
+  {
+    settings.backgroundPreset = typeof settings.backgroundPreset === 'string' && /^[a-z]{3,16}$/.test(settings.backgroundPreset) && settings.backgroundPreset !== 'default' ? settings.backgroundPreset : undefined
+  }
+  {
+    settings.backgroundCustom = typeof settings.backgroundCustom === 'string' && /^#[0-9a-fA-F]{6}$/.test(settings.backgroundCustom) ? settings.backgroundCustom.toLowerCase() : undefined
+  }
+  {
+    settings.backgroundCustomLight = typeof settings.backgroundCustomLight === 'string' && /^#[0-9a-fA-F]{6}$/.test(settings.backgroundCustomLight) ? settings.backgroundCustomLight.toLowerCase() : undefined
+  }
+  /* 字体与字号：只收预设 id、白名单字体名与区间内整数；缺省值不写进文件 */
+  settings.fontUi = sanitizeFontUiPreset(settings.fontUi)
+  settings.fontUiCustom = sanitizeFontName(settings.fontUiCustom)
+  settings.fontCode = sanitizeFontCodePreset(settings.fontCode)
+  settings.fontCodeCustom = sanitizeFontName(settings.fontCodeCustom)
+  settings.fontSizeBody = sanitizeFontSize(settings.fontSizeBody, FONT_BODY_MIN, FONT_BODY_MAX, FONT_BODY_DEFAULT)
+  settings.fontSizeUi = sanitizeFontSize(settings.fontSizeUi, FONT_UI_MIN, FONT_UI_MAX, FONT_UI_DEFAULT)
+  settings.autoArchiveDays = normalizeAutoArchiveDays(settings.autoArchiveDays) || undefined
+  settings.voiceInput = sanitizeVoiceInput(settings.voiceInput)
+  settings.theme = settings.theme === 'light' ? 'light' : 'dark'
+  settings.lang = LANGS.includes(parsed.lang as (typeof LANGS)[number]) ? parsed.lang! : detectLang()
+  settings.toolDetailExplicit = settings.toolDetailExplicit === true ? true : undefined
+  settings.showSpaces = settings.showSpaces === true ? true : undefined
+  settings.recentCwds = settings.recentCwds.filter((cwd): cwd is string => typeof cwd === 'string' && !!cwd.trim()).filter((cwd, index, all) => all.indexOf(cwd) === index).slice(0, 8)
+  settings.projectNames = Object.fromEntries(Object.entries(settings.projectNames)
+    .filter(([path, name]) => path && typeof name === 'string' && !!name.trim())
+    .map(([path, name]) => [path, name.trim().slice(0, 64)]))
+  settings.providerBudgets = Object.fromEntries(Object.entries(settings.providerBudgets)
+    .filter(([provider, budget]) => provider && typeof budget === 'number' && Number.isFinite(budget) && budget >= 0))
+  return settings
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  if (cached) return structuredClone(cached)
+  const generation = cacheGeneration
+  let parsed: Partial<AppSettings>
+  let text: string | undefined
+  try {
+    text = await readFile(FILE, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw new Error(`设置读取失败：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  if (text === undefined) parsed = {}
+  else {
+    try {
+      const value: unknown = JSON.parse(text)
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置文件必须是对象')
+      parsed = value as Partial<AppSettings>
+    } catch (error) {
+      try { await copyFile(FILE, `${FILE}.corrupt-${randomUUID()}.bak`) } catch { /* 原文件仍保留，备份失败也不能覆写 */ }
+      throw new Error(`设置解析失败，已拒绝覆盖：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  if (typeof parsed.cwd !== 'string' || !parsed.cwd.trim() || !isAbsolute(parsed.cwd)) parsed.cwd = await defaultWorkFolder()
+  const loaded = sanitizeSettings(parsed)
+  // 直到默认目录及全部清洗完成才发布；期间发生更新则重新取得最新设置。
+  if (generation !== cacheGeneration) return getSettings()
+  cached = loaded
+  return structuredClone(loaded)
 }
 
 /**
@@ -566,11 +632,33 @@ function sanitizeVoiceInput(value: unknown): AppSettings['voiceInput'] {
 /** 允许写入的额外目录：只留非空字符串，去重，最多 30 个 */
 function cleanAllowRoots(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return [...new Set(value.filter((p): p is string => typeof p === 'string' && p.trim().length > 0).map((p) => p.trim()))].slice(0, 30)
+  const roots: string[] = []
+  for (const raw of value) {
+    if (typeof raw !== 'string' || !isAbsolute(raw)) continue
+    const candidate = resolve(raw)
+    const volumeRoot = parse(candidate).root
+    const systemRoots = new Set([`${volumeRoot}Windows`.toLowerCase(), '/system', '/usr', '/etc'])
+    if (candidate === volumeRoot || systemRoots.has(candidate.toLowerCase())) continue
+    try { if (statSync(candidate).isDirectory()) roots.push(candidate) } catch { /* missing/inaccessible roots are not trusted */ }
+  }
+  return [...new Set(roots)].slice(0, 30)
+}
+
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','showSpaces','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','capabilityStrategy','codemodeEnabled','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','activityModels','workModeShortcutEnabled','workModeShortcut','subagentNotify','usageUnderInput','contextPolicy','contextPolicyByModel','contextDeep','contextFold','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput'])
+export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
+  for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
+  return value as Partial<AppSettings>
+}
+
+export async function updateSettings(fn: (current: AppSettings) => Partial<AppSettings>): Promise<AppSettings> {
+  const task = writeQueue.then(async () => applyPatch(fn(await getSettings())), async () => applyPatch(fn(await getSettings())))
+  writeQueue = task.catch(() => undefined)
+  return task
 }
 
 export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
-  /* 排队：上一个写完才轮到本个（失败也不能断链，否则后面的永远等不到） */
+  /* 排队：上一个写完才轮到本个（失败也不能断链） */
   const task = writeQueue.then(() => applyPatch(patch), () => applyPatch(patch))
   writeQueue = task.catch(() => undefined)
   return task
@@ -590,7 +678,8 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
    */
   invalidate()
   const cur = await getSettings()
-  const next: AppSettings = { ...cur, ...patch }
+  let next: AppSettings = { ...cur, ...patch }
+  if (typeof next.cwd !== 'string' || !next.cwd.trim() || !isAbsolute(next.cwd)) next.cwd = cur.cwd
   next.codemodeEnabled = next.codemodeEnabled !== false
   next.guardOutsideWrites = next.guardOutsideWrites === true
   next.permissionMode = normalizePermissionMode(next.permissionMode)
@@ -601,9 +690,9 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.checkpointsEnabled = next.checkpointsEnabled !== false
   next.guardAllowRoots = cleanAllowRoots(next.guardAllowRoots)
 
-  if (patch.recentCwds) {
-    // 去重、保留最近 8 个
-    next.recentCwds = [...new Set(patch.recentCwds)].slice(0, 8)
+  if (Array.isArray(patch.recentCwds)) {
+    // 去重、保留最近 8 个，只保留绝对路径字符串。
+    next.recentCwds = [...new Set(patch.recentCwds.filter((path): path is string => typeof path === 'string' && isAbsolute(path)))].slice(0, 8)
   }
   if (patch.projectNames) {
     next.projectNames = Object.fromEntries(Object.entries(patch.projectNames)
@@ -703,18 +792,31 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.projectOrder = sanitizeProjectOrder(next.projectOrder)
     .filter((id) => next.projects.some((project) => project.id === id))
 
+  next = sanitizeSettings(next)
+  const temp = `${FILE}.${process.pid}.${randomUUID()}.tmp`
   try {
     await mkdir(DIR, { recursive: true })
-    await writeFile(FILE, JSON.stringify(next, null, 2), 'utf8')
+    const handle = await open(temp, 'wx')
+    try {
+      await handle.writeFile(JSON.stringify(next, null, 2), 'utf8')
+      await handle.sync()
+    } finally { await handle.close() }
+    await rename(temp, FILE)
+    try {
+      const dir = await open(DIR, 'r')
+      try { await dir.sync() } finally { await dir.close() }
+    } catch { /* 部分平台不支持目录 fsync */ }
   } catch (e) {
     /*
      * 写盘失败必须如实回报：不能更新缓存、更不能返回“已保存”的新设置。
      * 否则界面显示成功、重启后变回旧值，而调用方没有任何办法发现。
      * `invalidate()` 让下一次读取回到磁盘上的真实状态。
      */
+    await unlink(temp).catch(() => undefined)
     invalidate()
     throw new Error(`设置写入失败：${e instanceof Error ? e.message : String(e)}`)
   }
+  cacheGeneration++
   cached = next
-  return next
+  return structuredClone(next)
 }

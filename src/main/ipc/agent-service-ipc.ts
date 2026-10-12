@@ -1,11 +1,13 @@
 import { app, dialog, shell } from 'electron'
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import type { IpcRegistrar } from './registrar'
 import { AgentService, type ServiceModelConfig } from '../../core/agent-service'
 import type { CreateServiceTask } from '../../shared/agent-service'
 import { resolvePi } from '../protocol'
+import { getSettings } from '../settings'
+import { loadFileTaskModel, saveFileTaskModel } from '../file-task-model'
 import { YAN_DIR } from '../paths'
 import { PI_AGENT_DIR } from '../paths'
 import { resolveProviderSecret } from '../credentials'
@@ -17,13 +19,14 @@ async function getService(): Promise<AgentService> {
   if (service) return service
   if (starting) return starting
   starting = (async () => {
-    const probe = resolvePi()
-    let modelConfig: ServiceModelConfig | undefined
-    try { modelConfig = JSON.parse(await readFile(join(YAN_DIR, 'file-task-model.json'), 'utf8')) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    const settings = await getSettings()
+    const probe = resolvePi({ override: settings.piBin })
+    const modelConfig = await loadFileTaskModel()
     const runtime = probe.source !== 'shell' && probe.args.length ? { executable: probe.cmd, cli: probe.args[probe.args.length - 1], kind: 'electron' as const } : undefined
     const guardExtension = [join(process.resourcesPath, 'yan-thin', 'service-authority.js'), join(app.getAppPath(), 'resources', 'pi-extensions', 'service-authority.js'), join(process.cwd(), 'resources', 'pi-extensions', 'service-authority.js')].find(path => existsSync(path)) ?? ''
     const next = new AgentService({ dataRoot: join(YAN_DIR, 'file-task-service'), runtime, modelConfig, guardExtension })
-    await next.start(); service = next; return next
+    try { await next.start(); service = next; return next }
+    catch (error) { await next.close().catch(() => undefined); throw error }
   })()
   try { return await starting } finally { starting = null }
 }
@@ -64,7 +67,7 @@ export function registerAgentServiceIpc(ipc: IpcRegistrar, deps: { currentAgent(
     if (!apiKey) throw new Error('当前模型没有可复用的凭证，请先在设置中登录或配置 API Key')
     const cost = model.cost as ServiceModelConfig['model']['cost']
     const config: ServiceModelConfig = { provider: model.provider, baseUrl: model.baseUrl, api: model.api, apiKey, model: { id: model.id, name: String(model.name ?? model.id), contextWindow: Number(model.contextWindow) || 32000, maxTokens: Number(model.maxTokens) || 4096, reasoning: model.reasoning === true, input: Array.isArray(model.input) ? model.input as string[] : ['text'], ...(cost && [cost.input, cost.output, cost.cacheRead, cost.cacheWrite].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0) ? { cost } : {}) } }
-    await writeFile(join(YAN_DIR, 'file-task-model.json'), JSON.stringify(config, null, 2), { mode: 0o600 })
+    await saveFileTaskModel(config)
     await closeAgentService(); await getService()
     return true
   })

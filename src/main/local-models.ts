@@ -14,7 +14,8 @@
  * 生图通道只认正在运行的服务。这里不写模型配置，对话服务交给设置页填表单、由用户确认保存。
  */
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile, rename, unlink } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
 import type { LocalModelServer } from '../shared/custom-provider'
@@ -52,8 +53,9 @@ export async function readLocalModelUrls(): Promise<string[]> {
   try {
     const json = JSON.parse(await readFile(CONFIG_FILE, 'utf8')) as { urls?: unknown }
     return Array.isArray(json.urls) ? json.urls.filter((url): url is string => typeof url === 'string' && !!url.trim()) : []
-  } catch {
-    return []
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw new Error(`本地模型地址配置损坏；为保护原配置，已拒绝继续：${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -73,7 +75,14 @@ export function normalizeLocalModelUrls(urls: unknown[]): string[] {
 export async function saveLocalModelUrls(urls: unknown[]): Promise<string[]> {
   const clean = normalizeLocalModelUrls(urls)
   await mkdir(YAN_DIR, { recursive: true })
-  await writeFile(CONFIG_FILE, `${JSON.stringify({ urls: clean }, null, 2)}\n`, 'utf8')
+  const temp = `${CONFIG_FILE}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temp, `${JSON.stringify({ urls: clean }, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+    await rename(temp, CONFIG_FILE)
+  } catch (error) {
+    await unlink(temp).catch(() => undefined)
+    throw error
+  }
   imageCache = null
   return clean
 }
@@ -168,8 +177,8 @@ export function sortWorkflows(entries: ComfyWorkflowEntry[]): ComfyWorkflowEntry
   return [...entries].sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'text-to-image' ? -1 : 1))
 }
 
-export async function fetchComfyWorkflow(baseUrl: string, name: string): Promise<unknown> {
-  const response = await fetch(`${baseUrl}/api/userdata/${encodeURIComponent(`workflows/${name}`)}`, { signal: AbortSignal.timeout(10_000) })
+export async function fetchComfyWorkflow(baseUrl: string, name: string, signal?: AbortSignal): Promise<unknown> {
+  const response = await fetch(`${baseUrl}/api/userdata/${encodeURIComponent(`workflows/${name}`)}`, { signal: signal ?? AbortSignal.timeout(10_000) })
   if (!response.ok) throw new Error(`comfy_workflow_http_${response.status}`)
   return await response.json()
 }
@@ -182,17 +191,17 @@ function classify(json: unknown): WorkflowKind | null {
 export async function listComfyWorkflows(baseUrl: string): Promise<ComfyWorkflowEntry[]> {
   const response = await fetch(`${baseUrl}/api/userdata?dir=workflows&recurse=true`, { signal: AbortSignal.timeout(5_000) })
   if (!response.ok) return []
-  const names = ((await response.json().catch(() => [])) as unknown[]).filter((name): name is string => typeof name === 'string' && name.endsWith('.json'))
-  const out: ComfyWorkflowEntry[] = []
-  for (const name of names) {
+  const names = ((await response.json().catch(() => [])) as unknown[]).filter((name): name is string => typeof name === 'string' && name.endsWith('.json')).slice(0, 100)
+  const deadline = AbortSignal.timeout(2_500)
+  const out = await Promise.all(names.map(async (name): Promise<ComfyWorkflowEntry | null> => {
     try {
-      const kind = classify(await fetchComfyWorkflow(baseUrl, name))
-      if (kind) out.push({ name, kind })
+      const kind = classify(await fetchComfyWorkflow(baseUrl, name, deadline))
+      return kind ? { name, kind } : null
     } catch {
-      /* 读不到的跳过 */
+      return null
     }
-  }
-  return sortWorkflows(out)
+  }))
+  return sortWorkflows(out.filter((entry): entry is ComfyWorkflowEntry => !!entry))
 }
 
 async function probeComfy(root: string): Promise<LocalModelServer | null> {
