@@ -15,6 +15,13 @@ interface ConversationSession {
 }
 
 const known = new Map<string, string>()
+/**
+ * 对照表的条数上限（会话 id + 文件路径两条一对话）。
+ *
+ * 它只在「活动会话变了」时写入，以前没有删除：打开过的会话越多表越大。
+ * 值很短，封顶后先丢最早记住的；丢了的会话退回按路径/ id 取键（还是同一把键）。
+ */
+const MAX_KNOWN = 400
 const normPath = (p: string): string => p.replace(/[\\/]+/g, '/').toLowerCase()
 
 export function conversationKeyOf(session: ConversationSession | null | undefined): string {
@@ -27,6 +34,10 @@ export function rememberConversationKey(session: ConversationSession | null | un
   const key = conversationKeyOf(session)
   if (session.sessionId) known.set(`id:${session.sessionId}`, key)
   if (session.sessionFile) known.set(`path:${normPath(session.sessionFile)}`, key)
+  for (const oldest of known.keys()) {
+    if (known.size <= MAX_KNOWN) break
+    known.delete(oldest)
+  }
 }
 
 /** 分屏磁贴（只有 id 与路径）对应的工作区键 */

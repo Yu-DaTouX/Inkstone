@@ -41,7 +41,9 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
   const runner = useStore((state) => state.runners.find((r) => !!r.sessionFile && r.sessionFile === s.path))
   const titleCandidate = useStore((state) => state.titleCandidates[s.id])
   /** 可归入的空间（左栏空间分区已移除，会话归属改从本行菜单改） */
-  const running = runner?.running === true
+  /* 父回合已结束但子代理仍在跑时，这条会话照样算运行中（子代理归属认 parentSessionId） */
+  const hasRunningSubagent = useStore((state) => state.subagents.some((r) => r.parentSessionId === s.id && (r.status === 'running' || r.status === 'starting')))
+  const running = runner?.running === true || hasRunningSubagent
   const waiting = runner?.waiting === true
   const failure = runner?.failed ? t('rail.runnerFailed') : ''
   /*
@@ -135,6 +137,8 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
                   </span>
                 ) : null}
                 <span className="srow-name">{s.title}</span>
+                {/* 时间紧跟标题（标题多半很短，右对齐会留出一大段空白）；显示的时间必须与排序键一致，否则看起来“没排序” */}
+                <span className="srow-time">{relTime(s.lastActivityAt ?? s.updatedAt, t('rail.justNow'))}</span>
               </span>
               {/* 分叉自父会话的哪句话 */}
               {s.branchOrigin ? (
@@ -161,8 +165,6 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
           </button>
         ) : null}
 
-        {/* 显示的时间必须与排序键一致，否则看起来“没排序” */}
-        <span className="srow-time">{relTime(s.lastActivityAt ?? s.updatedAt, t('rail.justNow'))}</span>
       </div>
 
       {branchesOpen && children ? <div className="session-children" data-testid="rail-branch-tree">{children}</div> : null}

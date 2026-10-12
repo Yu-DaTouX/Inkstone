@@ -46,9 +46,30 @@ const MD_REHYPE: NonNullable<Options['rehypePlugins']> = [
 ]
 const MD_REHYPE_PLAIN: NonNullable<Options['rehypePlugins']> = []
 
-const MD_CACHE_LIMIT = 200
+const MD_CACHE_LIMIT = 80
 const MD_CACHE_MAX_CHARS = 20_000
+/**
+ * 缓存的是**已解析的元素树**（比源文本大得多），所以除条数外再按源文本总量封顶。
+ * 元素树不能按字节称重，用源文本长度当代理指标：既往实测里这一项能到几十 MB。
+ */
+const MD_CACHE_TOTAL_CHARS = 120_000
 const mdCache = new Map<string, React.ReactElement>()
+let mdCacheChars = 0
+const mdCacheSet = (text: string, element: React.ReactElement): void => {
+  const previous = mdCache.get(text)
+  if (previous !== undefined) {
+    mdCache.delete(text)
+    mdCacheChars -= text.length
+  }
+  mdCache.set(text, element)
+  mdCacheChars += text.length
+  for (const key of mdCache.keys()) {
+    if (mdCache.size <= MD_CACHE_LIMIT && mdCacheChars <= MD_CACHE_TOTAL_CHARS) break
+    if (key === text) continue
+    mdCache.delete(key)
+    mdCacheChars -= key.length
+  }
+}
 const MessageSourceCwd = createContext<string | undefined>(undefined)
 /** 正在流式输出的消息：结构化块写完前只占位，不报格式错误 */
 const MarkdownLive = createContext(false)
@@ -247,11 +268,7 @@ export const Markdown = memo(function Markdown({ text, sourceCwd, live = false }
   )
 
   if (!live && !unclosed && renderedText.length <= MD_CACHE_MAX_CHARS) {
-    if (mdCache.size >= MD_CACHE_LIMIT) {
-      const oldest = mdCache.keys().next().value
-      if (oldest !== undefined) mdCache.delete(oldest)
-    }
-    mdCache.set(renderedText, el)
+    mdCacheSet(renderedText, el)
   }
   return <MessageSourceCwd.Provider value={sourceCwd}><MarkdownLive.Provider value={live}>{el}</MarkdownLive.Provider></MessageSourceCwd.Provider>
 })

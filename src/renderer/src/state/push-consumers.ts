@@ -5,7 +5,7 @@
  * 没被认领的频道（会话、消息、工具调用、运行实例等核心投影）留在 store 里处理。
  * 消费者拿到的 `s` 是这条推送到达时的状态快照，与原先 applyPush 内的口径一致。
  */
-import type { AppSettings, MainPush, SoundEvent } from '../../../shared/ipc'
+import type { AppSettings, MainPush, SoundEvent, SubagentRun } from '../../../shared/ipc'
 import type { Notice, Store } from './store'
 import { releaseResource } from './resource-owners'
 
@@ -222,6 +222,21 @@ export function consumeSubagentPush(m: MainPush, s: Store, ctx: PushContext): bo
             ? s.subagents.map((r) => (r.id === run.id ? run : r))
             : [...s.subagents, run]
       })
+      break
+    }
+    case 'subagent-patch': {
+      /*
+       * 流式增量：只替换自 `transcriptFrom` 起的转录。
+       * 没有基线（刚重载、还没拉到这条）时忽略 —— 下一次整条推送会把它补上。
+       */
+      const { id, run, transcriptFrom } = m.payload
+      const previous = s.subagents.find((r) => r.id === id)
+      if (!previous) break
+      const merged: SubagentRun = {
+        ...run,
+        transcript: [...previous.transcript.slice(0, transcriptFrom), ...run.transcript]
+      }
+      set({ subagents: s.subagents.map((r) => (r.id === id ? merged : r)) })
       break
     }
     case 'subagent-remove':

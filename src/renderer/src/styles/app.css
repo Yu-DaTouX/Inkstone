@@ -148,6 +148,7 @@
 }
 .center > .composer-wrap {
   grid-row: 5;
+  grid-column: 1;
 }
 .stream {
   overflow: hidden auto;

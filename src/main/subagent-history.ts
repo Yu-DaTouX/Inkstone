@@ -104,5 +104,11 @@ export class SubagentHistory {
   async hide(run: SubagentRun, rootCwd: string): Promise<void> {
     this.hidden.add(run.id)
     try { await this.save(run, rootCwd) } catch (error) { this.hidden.delete(run.id); throw error }
+    /*
+     * 隐藏后不再留内存：`list()` 与 `get()` 都已按 `hidden` 过滤，
+     * 重启时 `readHistory()` 见到 `hidden: true` 也直接跳过、不会读回 `records`。
+     * 磁盘文件保留（用户的调用记录仍在原处），回收的只是内存里这一份。
+     */
+    this.records.delete(run.id)
   }
 }

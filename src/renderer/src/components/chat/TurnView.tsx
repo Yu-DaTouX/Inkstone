@@ -249,11 +249,7 @@ function AssistantTurnView({ turn, streaming, readOnly }: { turn: AssistantTurn;
             : null}
 
 
-        {turn.artifacts.length ? (
-          <div className="turn-artifacts" data-testid="turn-artifacts">
-            {turn.artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)}
-          </div>
-        ) : null}
+        {turn.artifacts.length ? <TurnArtifacts artifacts={turn.artifacts} /> : null}
 
         {/* 刚开始、什么都还没有时给个光标：还没有输出，所以是「停下」态的闪烁 */}
         {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? (
@@ -286,7 +282,54 @@ function TurnResponse({
   )
 }
 
-function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][number] }) {
+type TurnArtifact = AssistantTurn['artifacts'][number]
+
+const isGridImage = (artifact: TurnArtifact): boolean => artifact.previewable && (artifact.kind === 'image' || artifact.kind === 'svg')
+
+/**
+ * 图片两列并排；模型另外挂出了图时，生图结果（带 provider）算过程图，收进折叠。
+ * 其他成果整行排在图片之后。
+ */
+function TurnArtifacts({ artifacts }: { artifacts: TurnArtifact[] }) {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const groupId = useId()
+  const images = artifacts.filter(isGridImage)
+  const others = artifacts.filter((artifact) => !isGridImage(artifact))
+  const attached = images.filter((artifact) => !artifact.provider)
+  const primary = attached.length && attached.length < images.length ? attached : images
+  const process = images.filter((artifact) => !primary.includes(artifact))
+  const grid = (items: TurnArtifact[]) => (
+    <div className={`turn-artifact-grid${items.length > 1 ? ' multi' : ''}`}>
+      {items.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)}
+    </div>
+  )
+  return (
+    <div className="turn-artifacts" data-testid="turn-artifacts">
+      {primary.length ? grid(primary) : null}
+      {process.length ? (
+        <div className="turn-artifact-process">
+          <button
+            className="turn-progress-toggle"
+            onClick={() => setOpen((value) => !value)}
+            aria-expanded={open}
+            aria-controls={groupId}
+            data-testid="turn-artifact-process-toggle"
+          >
+            <Icon name="chevron-right" size={12} className="chev" />
+            <span>{t('artifact.processImages', { n: process.length })}</span>
+          </button>
+          <div id={groupId} className="turn-progress-body" hidden={!open}>
+            {open ? grid(process) : null}
+          </div>
+        </div>
+      ) : null}
+      {others.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)}
+    </div>
+  )
+}
+
+function ArtifactCard({ artifact }: { artifact: TurnArtifact }) {
   const t = useT()
   const previewFile = useStore((s) => s.previewFile)
   const [text, setText] = useState<string | null>(null)
@@ -299,6 +342,7 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
   const fileUrl = toFileUrl(artifact.path)
   const isHtml = isHtmlArtifact(artifact)
   const isCode = artifact.kind === 'code' || isHtml
+  const isImage = artifact.kind === 'image' || artifact.kind === 'svg'
   const unavailable = artifact.unavailable === true || artifact.bytes <= 0
   const readSource = isCode && (!isHtml || htmlMode === 'source')
 
@@ -355,8 +399,8 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
           <IconButton size="sm" icon="copy" label={t('artifact.copyPathHint')} onClick={() => void navigator.clipboard.writeText(artifact.path)} />
         </span> : null}
       </div>
-      {artifact.description ? <div className="artifact-description">{artifact.description}</div> : null}
-      {artifact.previewable && (artifact.kind === 'image' || artifact.kind === 'svg') ? (
+      {artifact.description && !isImage ? <ArtifactDescription text={artifact.description} /> : null}
+      {artifact.previewable && isImage ? (
         <div className={`artifact-image-wrap ${unavailable ? 'failed' : ''}`}>
           {!unavailable ? (
             <img
@@ -364,6 +408,10 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
               alt={artifact.filename}
               className="artifact-image"
               title={t('artifact.zoomHint')}
+              onLoad={(event) => {
+                const image = event.currentTarget
+                if (image.naturalWidth <= 64 && image.naturalHeight <= 64) image.classList.add('pixel')
+              }}
               onError={(event) => {
                 event.currentTarget.hidden = true
                 event.currentTarget.parentElement?.classList.add('failed')
@@ -373,6 +421,7 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
           {unavailable ? <span className="artifact-preview-error">{artifact.error || t('artifact.noPreview')}</span> : null}
         </div>
       ) : null}
+      {artifact.description && isImage ? <ArtifactDescription text={artifact.description} /> : null}
       {isHtml && !unavailable && htmlMode === 'page'
         ? <HtmlArtifactPreview key={artifact.path} path={artifact.path} filename={artifact.filename} expanded={htmlExpanded} reloadToken={htmlReload} />
         : isCode ? <>
@@ -381,6 +430,26 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
         </> : null}
       {!artifact.previewable && !isHtml ? <div className="artifact-binary">{unavailable ? (artifact.error || t('artifact.unavailable')) : t('artifact.binary')}</div> : null}
     </section>
+  )
+}
+
+/**
+ * 模型给图片/文件写的描述常常是一大段（生图的完整提示词）。默认只露两行，
+ * 太长才出现「展开」；点按钮不触发卡片的打开预览。
+ */
+function ArtifactDescription({ text }: { text: string }) {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const long = text.length > 90
+  return (
+    <div className="artifact-description">
+      <div className={`artifact-description-text${long && !open ? ' clamp' : ''}`}>{text}</div>
+      {long ? (
+        <button type="button" className="artifact-description-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {open ? t('artifact.descLess') : t('artifact.descMore')}
+        </button>
+      ) : null}
+    </div>
   )
 }
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { ComputerUseSection } from './ComputerUseSection'
+import { SettingsSections } from './SettingsSections'
 import type {
   CapabilitySearchResultView,
   CapabilitySettingsSnapshot,
@@ -28,11 +29,7 @@ export function CapabilitiesTab(): React.JSX.Element {
   const [notice, setNotice] = useState('')
   const [operations, setOperations] = useState<Record<string, CapabilityVerificationStatus>>({})
   const mounted = useRef(true)
-  /* 按需求找能力（实施-25 P17）：只说「缺什么、怎么接」，不装不改配置 */
-  /*
-   * 外部工具与浏览器（实施-27 D4）：搜索后端与浏览器扩展的状态。
-   * 只读探针（`yan:search:doctor`）—— 砚不装、不升级，只告诉你缺什么。
-   */
+  // 检测本机状态；安装与更新只在用户点击后执行。
   const [backend, setBackend] = useState<SearchBackendStatus | null>(null)
   const [backendBusy, setBackendBusy] = useState(false)
   /* 探针自己失败了（IPC 抛错）与「后端不可用」是两回事，不能都显示成「检测中…」 */
@@ -127,7 +124,9 @@ export function CapabilitiesTab(): React.JSX.Element {
   }
 
   return (
-    <div className="ui-rows" data-testid="set-capabilities">
+    <div data-testid="set-capabilities">
+      <SettingsSections sections={[
+        { id: 'general', label: t('set.general'), content: <div className="ui-rows">
       <SettingRow name={t('cap.codemodeTitle')} desc={t('cap.codemodeDesc')}>
         <Switch
           checked={settings?.codemodeEnabled !== false}
@@ -164,6 +163,10 @@ export function CapabilitiesTab(): React.JSX.Element {
           </button>
         ))}
       </SettingRow>
+      <ComputerUseSection />
+        </div> },
+        { id: 'connections', label: t('set.connections'), content: <div className="ui-rows">
+      <Disclosure title={t('cap.skillsTitle')} testId="cap-skills-details">
       <div className="ui-row set-row-col" data-testid="cap-skills">
         <div className="ui-row-label">
           <div className="ui-row-name">{t('cap.skillsTitle')}</div>
@@ -184,6 +187,7 @@ export function CapabilitiesTab(): React.JSX.Element {
         </div>
       </div>
 
+      </Disclosure>
       {snapshot?.nativeMcpAvailable ? <SettingRow col name={t('cap.nativeMcpTitle')} desc={t('cap.nativeMcpDesc')}>
         <Button data-testid="cap-native-mcp" disabled={!session?.sessionId || !!session.isAgentRunning || !!session.isStreaming || !!session.isCompacting} onClick={() => { closeSettings(); void send('/mcp') }}>{t('cap.nativeMcpOpen')}</Button>
       </SettingRow> : null}
@@ -240,6 +244,7 @@ export function CapabilitiesTab(): React.JSX.Element {
           })}
         </div>
       </div>
+      <Disclosure title={t('cap.searchTitle')}>
       <div className="ui-row set-row-col" data-testid="cap-search">
         <div className="ui-row-label">
           <div className="ui-row-name">{t('cap.searchTitle')}</div>
@@ -297,12 +302,9 @@ export function CapabilitiesTab(): React.JSX.Element {
         ) : null}
       </div>
 
-      <div className="ui-rows">
-        <ComputerUseSection />
-      </div>
-
-      <Disclosure title={t('set.extTools')} testId="cap-external" defaultOpen={!!backend && !backend.available}>
-        <div className="ui-rows">
+      </Disclosure>
+        </div> },
+        { id: 'external', label: t('set.searchTools'), content: <div className="ui-rows" data-testid="cap-external">
           {/* 外部工具与浏览器（实施-27 D4）：搜索后端在不在、扩展连没连 */}
           <div className="ui-row set-row-col" data-testid="cap-ext-tools">
             <div className="ui-row-label">
@@ -346,12 +348,12 @@ export function CapabilitiesTab(): React.JSX.Element {
                 <div className="ui-row-desc">{t('set.searchBackendExtHint')}</div>
               ) : null}
               {/* 安装渠道：命令行后端（npm）与浏览器扩展（Chrome 应用商店 / GitHub 发布包） */}
-              {backend && !backend.available && backend.code !== 'backend_unusable' ? (
+              {backend ? (
                 <div className="set-install-actions" data-testid="cap-search-install">
                   <Button
                     variant="primary"
                     size="sm"
-                    disabled={install?.busy}
+                    disabled={install?.busy || backendBusy}
                     onClick={() => {
                       setInstall({ busy: true })
                       void window.yan.search.installBackend().then(async (r) => {
@@ -363,12 +365,12 @@ export function CapabilitiesTab(): React.JSX.Element {
                       })
                     }}
                   >
-                    {install?.busy ? t('set.opencliInstalling') : t('set.opencliInstall')}
+                    {install?.busy ? t('set.opencliInstalling') : backend.available ? t('set.opencliUpdate') : t('set.opencliInstall')}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText('npm install -g @jackwener/opencli')}>
+                  {!backend.available ? <Button size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText('npm install -g @jackwener/opencli')}>
                     {t('set.opencliCopyCmd')}
-                  </Button>
-                  {install?.needsNode || /node|npm/i.test(backend.detail ?? '') ? (
+                  </Button> : null}
+                  {install?.needsNode || (!backend.available && /node|npm/i.test(backend.detail ?? '')) ? (
                     <Button size="sm" variant="ghost" onClick={() => void window.yan.browser.openExternal('https://nodejs.org/zh-cn/download')}>
                       {t('set.opencliGetNode')}
                     </Button>
@@ -378,8 +380,10 @@ export function CapabilitiesTab(): React.JSX.Element {
               {install?.text ? (
                 <div className={`ui-row-desc set-install-log ${install.ok ? '' : 'err'}`} data-testid="cap-search-install-result">{install.text}</div>
               ) : null}
-              {backend?.available ? (
                 <div className="set-install-actions" data-testid="cap-search-extension">
+                  <Button size="sm" variant="ghost" onClick={() => void window.yan.browser.openExternal('https://www.npmjs.com/package/@jackwener/opencli?activeTab=versions')}>
+                    {t('set.releasePage')}
+                  </Button>
                   <span className="ui-row-desc">{t('set.opencliExtension')}</span>
                   <Button size="sm" onClick={() => void window.yan.browser.openExternal('https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk')}>
                     {t('set.opencliExtStore')}
@@ -388,17 +392,17 @@ export function CapabilitiesTab(): React.JSX.Element {
                     {t('set.opencliExtZip')}
                   </Button>
                 </div>
-              ) : null}
             </div>
             <div className="ui-row-ctl">
-              <Button data-testid="cap-search-recheck" disabled={backendBusy} onClick={() => void checkBackend()}>
+              <Button data-testid="cap-search-recheck" disabled={backendBusy || install?.busy} onClick={() => void checkBackend()}>
                 {backendBusy ? t('set.searchBackendChecking') : t('set.extRecheck')}
               </Button>
             </div>
           </div>
 
-          <SearchApiRow />
+          <Disclosure title={t('search.apiTitle')}><SearchApiRow /></Disclosure>
 
+          <Disclosure title={t('set.browsers')}>
           <div className="ui-row set-row-col" data-testid="cap-browsers">
             <div className="ui-row-label">
               <div className="ui-row-name">{t('set.browsers')}</div>
@@ -411,8 +415,9 @@ export function CapabilitiesTab(): React.JSX.Element {
               <strong>{t('set.browserUser')}</strong> — {t('set.browserUserDesc')}
             </div>
           </div>
-        </div>
-      </Disclosure>
+          </Disclosure>
+        </div> }
+      ]} />
       {notice ? <div className="pkg-detail-warn" role="alert">{notice}</div> : null}
     </div>
   )

@@ -350,11 +350,22 @@
   user-select: text;
 }
 
+/* 与 .composer-wrap 同一网格行、高度 0；按钮在锚点上沿之上，也就是输入框上方 */
+.center > .jump-anchor {
+  grid-row: 5;
+  grid-column: 1;
+  align-self: start;
+  position: relative;
+  height: 0;
+  z-index: 4;
+  pointer-events: none;
+}
 .jump-bottom {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 12px;
+  bottom: 0;
+  pointer-events: auto;
   width: 26px;
   height: 26px;
   border-radius: 99px;

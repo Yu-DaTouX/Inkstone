@@ -468,6 +468,26 @@ export function describeDiscoveredModels(
   })
 }
 
+/**
+ * 本机探测到的模型服务。对话服务（Ollama / LM Studio）走 OpenAI 兼容接口，可一键填进自定义服务表单；
+ * 生图服务（SD WebUI / ComfyUI）只作为 `yan image generate` 的本地通道，不写入 models.json。
+ */
+export interface LocalModelServer {
+  /** openai = 其他 OpenAI 兼容的本机对话服务（llama.cpp、vLLM、Jan、KoboldCpp 等）；sdwebui 含 Forge / SD.Next 等兼容 /sdapi 的服务 */
+  kind: 'ollama' | 'lmstudio' | 'openai' | 'sdwebui' | 'comfyui'
+  purpose: 'chat' | 'image'
+  name: string
+  /** 对话服务是 OpenAI 兼容的 Base URL（带 /v1）；生图服务是服务根地址 */
+  baseUrl: string
+  /** 对话服务是模型 ID；SD WebUI 是检查点；ComfyUI 是可用的已保存工作流（文生图在前） */
+  models: string[]
+  /** 对话服务建议使用的 provider id（yan- 前缀） */
+  suggestedId?: string
+  /** false = 找到了安装目录但服务没在运行（启动后才能用） */
+  running: boolean
+  installDir?: string
+}
+
 export interface CustomProviderDiscoverResult {
   ok: boolean
   /** 模型 ID（兼容旧调用方） */

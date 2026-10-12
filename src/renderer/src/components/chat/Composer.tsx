@@ -6,6 +6,7 @@ import { displayedSessionOf, sameSplitSession } from '../../state/split-view'
 import { ComposerBorder } from './ComposerBorder'
 import { QuestionPanel } from './QuestionPanel'
 import { ModelThinkingPicker } from '../Pickers'
+import { ComposerUsage } from './ComposerUsage'
 import { ContextRing } from '../toolbar/NativeContextSection'
 import { VoiceInputButton } from './VoiceInputButton'
 import { findAtQuery, replaceAtQuery } from './at-query'
@@ -13,7 +14,6 @@ import { findSlashQuery, replaceSlashQuery } from './slash-query'
 import type { FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
 import { PlusMenu } from './PlusMenu'
 import { readFiles, fmtSize } from './attachment-files'
-import { Button } from '../ui'
 import { QueueStack, PermissionPicker } from './ComposerPickers'
 import { ApprovalCard } from './ApprovalCard'
 import { runPhaseText, useRunProgress } from './run-status'
@@ -1242,27 +1242,44 @@ export function Composer() {
           <VoiceInputButton onText={insertAtCursor} disabled={disabled} />
           <ContextRing />
           <ModelThinkingPicker />
-          <RunSlot running={running} onStop={() => void abort()} />
-          <button
-            className="send"
-            data-testid="send"
-            onClick={() => void submit()}
-            /* 有附件就能发 —— 与 submit() 的判据保持一致（否则按钮是灰的，点不动） */
-            disabled={!value.trim() && attachments.length === 0 ? true : disabled && !canRunLocalCommand}
-            title={
-              sendRule === 'ctrl'
-                ? t('composer.keyCtrlSend')
-                : expanded
-                  ? t('composer.sendTipTall')
-                  : undefined
-            }
-          >
-            <Icon name={bashMode ? 'terminal' : 'send'} size={12} />
-            <span>{bashMode ? t('composer.run') : t('composer.go')}</span>
-          </button>
+          <RunSlot />
+          {/*
+           * 发送与停止是同一个位置的两种状态：运行中且输入为空时是「■ 停止」，
+           * 一旦输入了内容（或带附件）就回到发送（排队）。不再并排放两个按钮。
+           */}
+          {running && !value.trim() && attachments.length === 0 ? (
+            <button
+              className="send stop"
+              data-testid="composer-stop"
+              aria-label={t('composer.stop')}
+              title={t('composer.stop')}
+              onClick={() => void abort()}
+            >
+              <span className="composer-stop-sq" aria-hidden />
+            </button>
+          ) : (
+            <button
+              className="send"
+              data-testid="send"
+              onClick={() => void submit()}
+              /* 有附件就能发 —— 与 submit() 的判据保持一致（否则按钮是灰的，点不动） */
+              disabled={!value.trim() && attachments.length === 0 ? true : disabled && !canRunLocalCommand}
+              title={
+                sendRule === 'ctrl'
+                  ? t('composer.keyCtrlSend')
+                  : expanded
+                    ? t('composer.sendTipTall')
+                    : undefined
+              }
+            >
+              <Icon name={bashMode ? 'terminal' : 'send'} size={12} />
+              <span>{bashMode ? t('composer.run') : t('composer.go')}</span>
+            </button>
+          )}
         </div>
       </div>
       </div>
+      <ComposerUsage />
 
       </div>
 
@@ -1271,26 +1288,19 @@ export function Composer() {
 }
 
 /**
- * 发送位左侧的运行控制：运行中是「■ 停止 计时」；只有上下文压缩在跑（没有回合）时
- * 是一行安静的阶段文字。计时与回合活动行同源（run-status）。
+ * 发送位左侧的运行状态：一行安静的「阶段文字 + 计时」，只读。停止动作在发送位的主按钮上。
+ * 计时与回合活动行同源（run-status）。
  */
-function RunSlot({ running, onStop }: { running: boolean; onStop: () => void }) {
+function RunSlot() {
   const t = useT()
   const progress = useRunProgress()
   const compaction = useStore((s) => s.session?.compaction)
   if (!progress) return null
   const elapsed = formatDuration(progress.elapsedMs)
   const text = runPhaseText(t, progress, compaction)
-  if (!running) {
-    return <span className="composer-run" role="status" aria-live="polite" data-testid="composer-run" title={text}>{text} <span className="composer-run-time">{elapsed}</span></span>
-  }
-  return (
-    <Button type="button" size="sm" className="composer-stop" data-testid="composer-stop" aria-label={`${t('composer.stop')} · ${text}`} title={text} onClick={onStop}>
-      <span className="composer-stop-sq" aria-hidden />
-      {t('composer.stop')}
-      <span className="composer-run-time">{elapsed}</span>
-    </Button>
-  )
+  /* 工具阶段的详情常是一整条命令，对话区的工具行已经显示了；这里只说「处理中」，完整内容放在悬停提示里 */
+  const shown = progress.phase === 'tool' ? t('chat.working') : text
+  return <span className="composer-run" role="status" aria-live="polite" data-testid="composer-run" title={text}>{shown} <span className="composer-run-time">{elapsed}</span></span>
 }
 
 function sameFileCwd(a: string, b: string): boolean {

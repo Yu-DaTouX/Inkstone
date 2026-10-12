@@ -126,7 +126,7 @@ export function NativeContextSection() {
   )
 }
 
-/** Composer entry: a ring with the percentage; the details open above it. */
+/** Composer entry, placed left of the model chip: a ring with the percentage; the details open above it. */
 export function ContextRing() {
   const t = useT()
   const { session, known, percent, tone } = useContextUsage()

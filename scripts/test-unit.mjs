@@ -263,6 +263,7 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 const { runSessionImageTests } = await import('./test-session-images.mjs')
 const { runArtifactTests } = await import('./test-artifacts.mjs')
 await runArtifactTests()
+await import('./test-image-generation-boundaries.mjs')
 const { runTurnTests } = await import('./test-turns.mjs')
 const { runTurnTimingTests } = await import('./test-turn-timing.mjs')
 const { runDurationTests } = await import('./test-duration.mjs')
@@ -2067,6 +2068,8 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 {
   const { runRunnerTests } = await import('./test-runners.mjs')
   await runRunnerTests(ok, RunnerRegistry)
+  const { runRunnerReclaimTests } = await import('./test-runner-reclaim.mjs')
+  await runRunnerReclaimTests(ok)
 }
 
 {

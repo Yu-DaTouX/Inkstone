@@ -155,6 +155,11 @@ export interface SubagentOptions {
   appendSystemPrompt?: string
   /** 运行状态变化时回调（主进程转成 push） */
   onChange: (run: SubagentRun) => void
+  /**
+   * 流式增量：`run` 的 `transcript` **只含自 `transcriptFrom` 起的消息**，其余字段与 `onChange` 同形。
+   * 渲染端按 `prev.transcript.slice(0, transcriptFrom)` 拼接。不传时退化为整条推送（`onChange`）。
+   */
+  onPatch?: (payload: { id: string; run: SubagentRun; transcriptFrom: number }) => void
   onRemove?: (id: string) => void
   /** 一次运行收口（差异与审阅状态已定）后回调一次；用来通知父会话 */
   onFinished?: (run: SubagentRun) => void
@@ -166,6 +171,11 @@ export interface SubagentOptions {
 
 export class SubagentController {
   private runs = new Map<string, Run>()
+  /**
+   * 上一次推给渲染端的转录「形状」（长度 + 首尾消息 id）。
+   * 只用来判断下一次能不能只发增量：形状对不上（被 200 条上限截断、换了一份转录）就退回整条推送。
+   */
+  private pushedTranscript = new Map<string, { length: number; firstId: string; lastId: string }>()
   /**
    * 正在准备隔离工作区、还没有进入 `runs` 的启动请求数。
    * 它们同样是"占用中"的槽位，见 `runningCount`。
@@ -242,6 +252,49 @@ export class SubagentController {
     clearTimeout(run.pushTimer)
     run.pushTimer = undefined
     this.opts.onChange(this.snapshot(run))
+    this.rememberPushedTranscript(run)
+  }
+
+  /** 记下这一次推送的转录形状（见 `pushedTranscript`） */
+  private rememberPushedTranscript(run: Run): void {
+    const transcript = run.transcript
+    if (!transcript.length) {
+      this.pushedTranscript.delete(run.id)
+      return
+    }
+    this.pushedTranscript.set(run.id, {
+      length: transcript.length,
+      firstId: transcript[0].id,
+      lastId: transcript[transcript.length - 1].id
+    })
+  }
+
+  /**
+   * 流式期间的推送：上一次那一段还是这一次的前缀时只发增量。
+   *
+   * 为什么需要：转录最多 200 条，而这条路径约 30 次/秒；每次整条发出去，
+   * 等于把整份转录（含工具输出）每秒做几十次结构化克隆过 IPC。
+   * 形状对不上就退回 `emit`（整条），正确性优先。
+   */
+  private emitDelta(run: Run): void {
+    const previous = this.pushedTranscript.get(run.id)
+    const transcript = run.transcript
+    const sameBase =
+      previous !== undefined &&
+      previous.length > 0 &&
+      previous.length <= transcript.length &&
+      transcript[0]?.id === previous.firstId &&
+      transcript[previous.length - 1]?.id === previous.lastId
+    if (!sameBase || !this.opts.onPatch) {
+      this.emit(run)
+      return
+    }
+    clearTimeout(run.pushTimer)
+    run.pushTimer = undefined
+    /* 从「上一次的最后一条」开始：那一条可能还在流式更新，要带上重发 */
+    const transcriptFrom = previous.length - 1
+    this.rememberPushedTranscript(run)
+    this.opts.onPatch({ id: run.id, run: { ...this.snapshot(run), transcript: transcript.slice(transcriptFrom) }, transcriptFrom })
   }
 
   private emitStream(run: Run): void {
@@ -249,7 +302,7 @@ export class SubagentController {
     run.pushTimer = setTimeout(() => {
       run.pushTimer = undefined
       // 清除记录后不能由迟到的计时器把它重新推回界面。
-      if (this.runs.get(run.id) === run) this.emit(run)
+      if (this.runs.get(run.id) === run) this.emitDelta(run)
     }, STREAM_PUSH_MS)
   }
 
@@ -261,6 +314,13 @@ export class SubagentController {
   get(id: string): SubagentRun | undefined {
     const run = this.runs.get(id)
     return run ? this.snapshot(run) : this.history.get(id)?.run
+  }
+
+  /** 保守保护父会话；不复制转录，结束/清除与通知之间也不会提前回收父进程。 */
+  hasParentRun(sessionId: string | undefined, runId: string): boolean {
+    const matches = (run: { parentSessionId?: string; parentRunId?: string }): boolean =>
+      (!!sessionId && run.parentSessionId === sessionId) || run.parentRunId === runId
+    return [...this.runs.values()].some(matches) || this.history.list().some(({ run }) => matches(run))
   }
 
   get runningCount(): number {
@@ -280,6 +340,7 @@ export class SubagentController {
       const live = this.runs.get(run.id)
       clearTimeout(live?.pushTimer)
       this.runs.delete(run.id)
+      this.pushedTranscript.delete(run.id)
       this.opts.onRemove?.(run.id)
     }
   }
@@ -415,6 +476,12 @@ export class SubagentController {
       if (!ready.ok) {
         await this.fail(id, '子代理启动超时', 'startup')
         return { ok: false, error: '子代理启动超时' }
+      }
+      /* 指定了模型却被 pi 悄悄换成别的（找不到、未登录等）：直接失败，不让任务在错误的模型上跑。 */
+      if (model && ready.model && modelMismatch(model, ready.model)) {
+        const message = `指定的模型 ${model} 没有生效（pi 实际使用 ${ready.model}），请核对模型名与登录状态后重试，不要改用其他模型`
+        await this.fail(id, message, 'startup')
+        return { ok: false, error: message }
       }
       /* 未显式指定模型时记下 pi 实际选用的那个，界面才能如实显示。 */
       if (ready.model) run.model = ready.model
@@ -973,6 +1040,13 @@ function modelLabel(raw: unknown): string | undefined {
   const { provider, id } = raw as { provider?: unknown; id?: unknown }
   if (typeof id !== 'string' || !id) return undefined
   return typeof provider === 'string' && provider ? `${provider}/${id}` : id
+}
+
+/** `--model` 写成 `provider/id`（可带 `:思考档位`）时才比较；通配或省略 provider 的写法交给 pi 解析。 */
+function modelMismatch(requested: string, actual: string): boolean {
+  const want = requested.replace(/:(off|minimal|low|medium|high|xhigh)$/i, '').trim()
+  if (!want.includes('/') || want.includes('*')) return false
+  return want.toLowerCase() !== actual.toLowerCase()
 }
 
 /** 列表里显示的那一行活动 */

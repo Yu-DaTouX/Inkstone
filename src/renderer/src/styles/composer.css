@@ -2028,6 +2028,27 @@
 .model-filters .model-provider { flex: 0 1 auto; min-width: 0; max-width: 46%; }
 .model-rows { display: flex; flex-direction: column; gap: 1px; padding: 0; max-height: 340px; min-height: 52px; overscroll-behavior: contain; }
 .model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; flex: none; padding-right: var(--sp-1); }
+/*
+ * 输入框下方的速度 / 命中率：一行安静的小字，居中。
+ * 绝对定位在输入框正下方、落在 .composer-wrap 本来就有的下内边距里：显示与否都不改变输入框的位置与高度。
+ */
+.composer-usage {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  height: var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.composer-usage > span { display: inline-flex; align-items: center; gap: var(--sp-1); }
 .mt-settings { flex: none; border-top: 1px solid var(--border-soft); }
 .mt-settings > .mt-head:last-child { border-bottom: 0; }
 /* 详细程度与可视化回答：名称在左、控件在右，两行同高，与上方思考强度共用标题样式与左右内边距 */
@@ -2160,3 +2181,7 @@
   outline-offset: 1px;
   border-radius: var(--r-md);
 }
+.model-account { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex: none; min-width: 0; padding-inline: var(--sp-1); color: var(--fg-mute); font-size: var(--fs-xs); }
+.model-account .model-provider { flex: 0 1 auto; min-width: 0; max-width: 70%; }
+.model-account { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex: none; min-width: 0; padding-inline: var(--sp-1); color: var(--fg-mute); font-size: var(--fs-xs); }
+.model-account .model-provider { flex: 0 1 auto; min-width: 0; max-width: 70%; }

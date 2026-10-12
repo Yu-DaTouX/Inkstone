@@ -21,10 +21,11 @@ try {
     await build({ entryPoints: ['src/main/subagents.ts'], outfile: modulePath, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
   }
   const { SubagentController } = await import(pathToFileURL(resolve(modulePath)).href)
-  const make = async (name, onChange) => {
+  const make = async (name, onChange, onPatch) => {
     let rpc
     const ctrl = new SubagentController({ cwd: scratch, archiveDir: join(scratch, name),
       prepare: async (rootCwd, id, isolation) => ({ isolation, rootCwd, cwd: rootCwd }), onChange,
+      ...(onPatch ? { onPatch } : {}),
       createRpc: () => {
         const handlers = new Map()
         rpc = { running: false, on(event, fn) { handlers.set(event, fn); return rpc }, spawn() { rpc.running = true },
@@ -70,10 +71,55 @@ try {
       ok(ctrl.get(id) === undefined && pushed.length === stopCount, '显式清除后不反弹')
     } finally { await ctrl.stopAll() }
   }
+  if (!baseline) {
+    /*
+     * 增量推送：同一份转录只发改动的那一段，渲染端按 `prev.slice(0, transcriptFrom)` 拼接。
+     * 这条路径约 30 次/秒，是子代理流式期间 IPC 字节量的主要来源。
+     */
+    const full = []
+    const patches = []
+    const { ctrl, rpc, id } = await make(
+      'delta',
+      (run) => full.push(JSON.parse(JSON.stringify(run))),
+      (payload) => patches.push(JSON.parse(JSON.stringify(payload)))
+    )
+    try {
+      for (let i = 0; i < 60; i++) rpc.emit({ type: 'message_end', message: message('历史内容。'.repeat(400) + i) })
+      rpc.emit({ type: 'message_start', message: message('') })
+      await sleep(55)
+      /* 渲染端的基线来自一次整条推送（真实场景里是 list / 首次 subagent 推送） */
+      let merged = JSON.parse(JSON.stringify(ctrl.get(id).transcript))
+      patches.length = 0
+      full.length = 0
+      let finalText = ''
+      for (let n = 0; n < 40; n++) {
+        finalText = '流式增量🖋️'.repeat(n + 1)
+        rpc.emit({ type: 'message_update', message: message(finalText) })
+        await sleep(20)
+      }
+      rpc.emit({ type: 'message_end', message: message(finalText) })
+      for (const patch of patches) merged = [...merged.slice(0, patch.transcriptFrom), ...patch.run.transcript]
+      ok(patches.length > 10, '流式期间确实走增量推送')
+      ok(JSON.stringify(merged) === JSON.stringify(ctrl.get(id).transcript), '增量拼接后与权威转录一致')
+      ok(patches.every((p) => p.run.transcript.length <= 2), '每次增量只带变化的那一两条')
+      const patchBytes = patches.reduce((n, p) => n + Buffer.byteLength(JSON.stringify(p)), 0)
+      const fullBytes = full.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)), 0)
+      /*
+       * 转录取的是主进程内存里的真实转录（这条基准里是 60 条带工具输出的历史）。
+       * 转录越大、流式越久，差距越大；这里给出的是一个保底比例。
+       */
+      ok(patchBytes * 5 < fullBytes, `增量字节远小于整条（${patchBytes} vs ${fullBytes}）`)
+    } finally { await ctrl.stopAll() }
+  }
   const runs = []
-  for (let round = 0; round < 3; round++) {
+  /* 第 4 轮走增量口径：同一负载下看推送字节降到多少（前 3 轮保持整条口径，与历史基线可比） */
+  const rounds = baseline ? 3 : 4
+  for (let round = 0; round < rounds; round++) {
+    const delta = round === 3
     let pushes = 0, bytes = 0, handlingMs = 0
-    const { ctrl, rpc, id } = await make(`bench-${round}`, run => { pushes++; bytes += Buffer.byteLength(JSON.stringify(run)) })
+    const { ctrl, rpc, id } = await make(`bench-${round}`,
+      run => { pushes++; bytes += Buffer.byteLength(JSON.stringify(run)) },
+      delta ? (payload) => { pushes++; bytes += Buffer.byteLength(JSON.stringify(payload)) } : undefined)
     try {
       for (let i = 0; i < 100; i++) rpc.emit({ type: 'message_end', message: message(`History ${i} ` + '历史内容。'.repeat(100)) })
       rpc.emit({ type: 'message_start', message: message('') })
@@ -95,7 +141,7 @@ try {
       const count = pushes
       await sleep(55)
       ok(pushes === count, '基准收口后无重复推送')
-      runs.push({ round: round + 1, updates: 500, transcriptMessages: ctrl.get(id).transcript.length, pushes, bytes, handlingMs })
+      runs.push({ round: round + 1, mode: delta ? 'delta' : 'full', updates: 500, transcriptMessages: ctrl.get(id).transcript.length, pushes, bytes, handlingMs })
     } finally { await ctrl.stopAll() }
   }
   const result = { tag: baseline ? 'before' : 'after', checks, scope: '假RPC；同一100条历史+500次更新；推送字节用JSON序列化测量，不是Electron IPC实际字节', runs }

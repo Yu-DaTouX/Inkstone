@@ -10,6 +10,7 @@ import type { CustomProviderInput } from '../../shared/custom-provider'
 import { discoverCustomProviderModels, listCustomProviders, removeCustomProvider, saveCustomProvider, testCustomProviderBillable, testCustomProviderEndpoint } from '../custom-providers'
 import { authFileInfo, clearAuth, listAuthProviders, setApiKey } from '../credentials'
 import { detectToolchain } from '../toolchain'
+import { detectLocalModelServers, readLocalModelUrls, saveLocalModelUrls } from '../local-models'
 import { cancelCodexLogin, startCodexLogin } from '../oauth'
 import { answerOAuthPrompt, cancelOAuthLogin, startOAuthLogin } from '../oauth-providers'
 import type { OAuthLoginEvent } from '../../shared/ipc'
@@ -57,6 +58,9 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
     return r
   })
   handle('yan:discoverCustomModels', async (input: Partial<CustomProviderInput>) => discoverCustomProviderModels(input))
+  handle('yan:detectLocalModels', async () => detectLocalModelServers())
+  handle('yan:localModelUrls', async () => readLocalModelUrls())
+  handle('yan:saveLocalModelUrls', async (urls: unknown) => saveLocalModelUrls(Array.isArray(urls) ? urls : []))
   handle('yan:removeCustomProvider', async (id: string) => {
     const r = await removeCustomProvider(id)
     if (r.ok) void restartAgent('自定义服务已移除')
@@ -117,7 +121,7 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
 
   /*
    * 「账号额度」磁贴与砚内多个 ChatGPT 账号。
-   * 切换 / 移除当前账号会改 auth.json，与登录一样非阻塞地重启 pi（等当前回合结束）。
+   * 移除当前账号与登录一样非阻塞地重启 pi（等当前回合结束）；切换只改 auth.json，pi 下次取凭证时自己重读。
    */
   handle('yan:accountQuota', async () => accountQuotaReport())
   handle('yan:accountQuotaSource', async (source: unknown, enabled: unknown) => {
@@ -128,9 +132,8 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   handle('yan:accountLabel', async (key: unknown, label: unknown) => setAccountLabel(String(key ?? ''), String(label ?? '')))
   handle('yan:codexAccounts', async () => listCodexAccounts((await readAccountQuotaPrefs()).labels))
   handle('yan:codexAccountSwitch', async (key: unknown) => {
-    const r = await switchCodexAccount(String(key ?? ''))
-    if (r.ok) void restartAgent('ChatGPT 账号已切换')
-    return r
+    /* pi 每次取凭证都按 auth.json 的文件版本重读，切换不必重启子进程 */
+    return switchCodexAccount(String(key ?? ''))
   })
   handle('yan:codexAccountRemove', async (key: unknown) => {
     const r = await removeCodexAccount(String(key ?? ''))

@@ -105,7 +105,8 @@ import type {
   AgentProfileState,
   YanBridge,
   ZoomState,
-  CustomProviderTestResult
+  CustomProviderTestResult,
+  LocalModelServer
 } from '../shared/ipc'
 import type { WebSearchAvailability } from '../shared/web-search'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from '../shared/checkpoints'
@@ -218,6 +219,7 @@ const api: YanBridge = {
   setSessionPinned: (sessionId, pinned) => invoke<{ ok: boolean; error?: string }>('yan:setSessionPinned', sessionId, pinned),
   setSessionSpace: (sessionId, spaceId) =>
     invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:setSessionSpace', sessionId, spaceId),
+  setVisibleRunnerSessions: (sessions) => invoke<boolean>('yan:setVisibleRunnerSessions', sessions),
   runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
   stopRunner: (id) => invoke<boolean>('yan:stopRunner', id),
   compact: () => invoke<Ok>('yan:compact'),
@@ -353,6 +355,9 @@ const api: YanBridge = {
   customProviders: () => invoke<CustomProviderView[]>('yan:customProviders'),
   saveCustomProvider: (input) => invoke<CustomProviderResult>('yan:saveCustomProvider', input),
   discoverCustomModels: (input) => invoke<CustomProviderDiscoverResult>('yan:discoverCustomModels', input),
+  detectLocalModels: () => invoke<LocalModelServer[]>('yan:detectLocalModels'),
+  localModelUrls: () => invoke<string[]>('yan:localModelUrls'),
+  saveLocalModelUrls: (urls) => invoke<string[]>('yan:saveLocalModelUrls', urls),
   removeCustomProvider: (id) => invoke<CustomProviderResult>('yan:removeCustomProvider', id),
   testCustomProvider: (id, mode, modelId) =>
     invoke<CustomProviderTestResult>('yan:testCustomProvider', id, mode, modelId),

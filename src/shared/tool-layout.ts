@@ -354,10 +354,10 @@ export function pxRectToNormalized(rect: FloatPxRect, area: FloatArea): ToolRect
 /**
  * 吸附阈值（px）。
  *
- * 8px 是「想对齐时够容易、不想对齐时不碍事」的常用取值。它是**像素**而非
+ * 4px 是「想对齐时够得着、不想对齐时不抢手」的常用取值。它是**像素**而非
  * 归一化值 —— 要跟鼠标/手指的精度走，不该跟窗口大小走。
  */
-export const SNAP_THRESHOLD = 8
+export const SNAP_THRESHOLD = 4
 
 /** 一条吸附参考线，拖动时画出来 —— 「吸到哪」必须看得见，否则像在抢控制权 */
 export interface SnapGuide {

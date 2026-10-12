@@ -68,8 +68,9 @@ export function EmptyStream() {
           <h2 className="start-label">{t('chat.project')}</h2>
           {cwd ? (
             <div className="start-project">
+              {/* 只显示目录名，完整路径在悬停提示里 */}
               <span className="start-path" title={cwd}>
-                {cwd}
+                {cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || cwd}
               </span>
               <button type="button" className="start-link" onClick={() => void pickProject()}>
                 {t('chat.changeProject')}

@@ -146,7 +146,9 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
   },
   { id: 'deepseek', name: 'DeepSeek', kind: 'api_key', hint: '', envVar: 'DEEPSEEK_API_KEY', authKey: 'deepseek' },
   { id: 'openai', name: 'OpenAI', kind: 'api_key', hint: '', envVar: 'OPENAI_API_KEY', authKey: 'openai' },
-  { id: 'google', name: 'Google Gemini', kind: 'api_key', hint: '', envVar: 'GEMINI_API_KEY', authKey: 'google' },
+  { id: 'google', name: 'Google Gemini', kind: 'api_key', hint: '对话与生图共用', envVar: 'GEMINI_API_KEY', authKey: 'google' },
+  /* pi 没有这个 provider：key 只供宿主的生图通道使用（Seedream） */
+  { id: 'volcengine-ark', name: '火山方舟（豆包）', kind: 'api_key', hint: '仅用于生图（Seedream）', envVar: 'ARK_API_KEY', authKey: 'volcengine-ark' },
   { id: 'zai-coding-cn', name: 'ZAI 编程套餐（国内）', kind: 'api_key', hint: '', envVar: 'ZAI_CODING_CN_API_KEY', authKey: 'zai-coding-cn' },
   { id: 'kimi-coding', name: 'Kimi For Coding', kind: 'api_key', hint: '', envVar: 'KIMI_API_KEY', authKey: 'kimi-coding' },
   { id: 'minimax-cn', name: 'MiniMax（国内）', kind: 'api_key', hint: '', envVar: 'MINIMAX_CN_API_KEY', authKey: 'minimax-cn' },
@@ -159,6 +161,9 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
   { id: 'nvidia', name: 'NVIDIA NIM', kind: 'api_key', hint: '', envVar: 'NVIDIA_API_KEY', authKey: 'nvidia' },
   { id: 'openrouter-key', name: 'OpenRouter（API key）', kind: 'api_key', hint: '', envVar: 'OPENROUTER_API_KEY', authKey: 'openrouter' }
 ]
+
+/** 宿主自己使用、pi 不认识的凭证（深查时不问 pi） */
+const HOST_ONLY_PROVIDERS = new Set(['volcengine-ark'])
 
 /* ------------------------------------------------------------------ 读写 */
 
@@ -440,6 +445,8 @@ export async function listAuthProviders(
        *    翻转成「未配置」，还提示去 /login 重新登录。别再把这个后缀
        *    替换加回来。
        */
+      /* 只给宿主用的 key pi 不认识，问 pi 只会得到「未配置」 */
+      if (HOST_ONLY_PROVIDERS.has(c.id)) return c
       const probeId = c.kind === 'subscription' || (c.hint === '' && c.name === c.id) ? c.id : c.authKey || c.id
       const r = await checkViaPi(pi.cmd, pi.args, probeId)
       // pi 说 ready / 说缺 → 以 pi 为准（它会考虑环境变量）

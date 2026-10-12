@@ -17,6 +17,7 @@ import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAut
 import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
+import { RunnerVisibility } from './runner-reclaim'
 import { getSettings, patchSettings } from './settings'
 import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
@@ -306,6 +307,7 @@ let exitRequestInFlight: Promise<{
  * 切换会话不再复用同一个进程，所以「切走」不会把后台任务停掉。
  */
 let runners: RunnerRegistry | null = null
+const runnerVisibility = new RunnerVisibility()
 let piPackageActivationScheduler: PiPackageActivationScheduler | null = null
 let skillFilesActivationScheduler: SkillFilesActivationScheduler | null = null
 let piPackageActivationTimer: ReturnType<typeof setTimeout> | null = null
@@ -369,6 +371,8 @@ const subagentService = new SubagentService({
     return answer === 'once'
   },
   onChange: (run) => push({ ch: 'subagent', payload: run }),
+  /* 流式增量：同一份转录只发变化的那一段（见 subagents.ts 的 emitDelta） */
+  onPatch: ({ id, run, transcriptFrom }) => push({ ch: 'subagent-patch', payload: { id, run, transcriptFrom } }),
   onRemove: (id) => push({ ch: 'subagent-remove', payload: id }),
   resolveAgentProfile: (id) => resolveAgentProfile(id),
   /* 结束后叫醒发起它的会话：按稳定会话 id 找实例，找不到（会话已关）就不投 */
@@ -834,8 +838,9 @@ function pushFrom(runnerId: string, msg: MainPush): void {
     msg = { ...msg, payload: { ...msg.payload, ...identity } }
   }
   const runtime = runners?.runtimeOf(runnerId)
-  // 停源是后台换段的一部分；旧进程的退出事件不能把当前聊天变成断线状态。
-  if (!runtime && handoffPending.get(runnerId)?.sourceState) return
+  // 已摘登记的进程（含回收/交接）的退出事件不能污染当前视图。
+  if (!runtime) return
+  runners?.noteActivity(runnerId)
   push({
     ...msg,
     ...(runtime ? { runtime } : {}),
@@ -1764,6 +1769,13 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   })
 
   runners = new RunnerRegistry({
+    isSessionVisible: (state) => runnerVisibility.includes(state),
+    isParentProtected: (sessionId, runId) => subagentService.current()?.hasParentRun(sessionId, runId) ?? false,
+    onReclaimed: ({ id, sessionId, idleMs, remaining }) => {
+      const text = `[运行实例回收] ${id} (${sessionId ?? 'unknown'}) 空闲 ${Math.floor(idleMs / 1000)} 秒，释放1个 pi 实例，剩余 ${remaining} 个`
+      console.log(text)
+      push({ ch: 'log', payload: { text } })
+    },
     prepareNewSession: async agent => {
       return applyRememberedModel(agent, (await getSettings()).lastMainModel)
     },
@@ -1951,7 +1963,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           const response = await dialog.showMessageBox(win, {
             type: 'warning',
             title: '确认外部图像 API 请求',
-            message: `即将通过 ${request.provider === 'compatible' ? 'OpenAI-compatible API' : 'OpenAI API'} 生成图片`,
+            message: `即将通过 ${({ compatible: 'OpenAI-compatible API', openai: 'OpenAI API', google: 'Google Gemini API', doubao: '火山方舟（豆包）API', local: '远程 SD WebUI / ComfyUI' } as const)[request.provider]} 生成图片`,
             detail: [
               `端点：${endpoint}`,
               `模型：${request.model}`,
@@ -2029,6 +2041,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       requestPiPackageActivationTick()
     }
   })
+
+  runners.startIdleReclaim()
 
   /* 重启后先把登记表里的隔离标记铺上；真实状态（已合回 / 被挡）由第一轮扫描修正 */
   void initializeIsolationView()
@@ -2321,6 +2335,10 @@ function registerIpc(): void {
     await ac()?.abortBash()
   })
 
+  handle('yan:setVisibleRunnerSessions', (sessions: unknown) => {
+    runners?.noteVisibleActivity()
+    return runnerVisibility.update(sessions)
+  })
   registerSessionIpc(ipc, sessionHost)
   registerCheckpointIpc(ipc, sessionHost)
   /* 启动后空闲时清掉过期的检查点 */
@@ -3251,8 +3269,13 @@ function createWindow(): void {
     else if (typeof args[2] === 'string' && Number(args[1]) >= 2) console.error('[renderer console]', args[2], args[4], args[3])
   })
   win.webContents.on('render-process-gone', (_e, details) => {
+    runnerVisibility.reset()
     console.error('[renderer gone]', details.reason)
   })
+  win.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) runnerVisibility.reset()
+  })
+  win.on('closed', () => runnerVisibility.reset())
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)

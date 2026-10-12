@@ -29,16 +29,21 @@ npm run launch
 | `npm run build` | 构建当前源码 |
 | `npm run test:unit` | 单元检查，依赖当前构建 |
 | `npm run test:agent-native-context` | 原生上下文边界、技能发现、运行时选择及打包路径 |
+| `node scripts/test-context-trim.mjs` | 裁剪与自动压缩专项：用量校准、长单轮工具组保护、批次收益/前缀不变/容量兜底及会话边界；无需构建，不调用模型 |
 | `npm run test:live -- <场景>` | Electron 场景检查，不自动构建 |
 | `npm run audit:refs` | 引用一致性审计 |
 | `npm run check:css-docs` | CSS 生成清单一致性 |
 | `npm run icons` | 从维护用原型生成图标模块 |
+
+生图边界专项 `node scripts/test-image-generation-boundaries.mjs` 现场编译当前宿主源码到独立目录，不覆盖应用 `out/`；以隔离凭证/数据和全桩 fetch 检查参考图目录联接逃逸、合法根别名、跨 store/生成/attach 并发保存与恢复、兼容通道默认模型及覆盖、停止/实例关闭/探测与确认中的取消、各适配器取消信号、ComfyUI 仅删除所属排队项和迟到成果抑制。它同时运行既有 artifact/适配器用例，已纳入 unit；不启动 ComfyUI、调用真实模型或网络，不代替真实服务/整窗/发行验收。
 
 按改动范围选择检查。live 场景配置见 `scripts/test-live.mjs`；涉及远程模型的场景可能产生费用，运行前确认 provider、模型和授权。测试使用独立数据目录，禁止复用真实用户凭证、会话或发布目录中的用户数据。
 
 视觉改动同时关注深浅主题、窄窗口、缩放、键盘操作与实际截图。生成截图保留在本地，不批量提交到仓库；主页配图单独维护。
 
 运行实例事务回归可单独运行 `node scripts/test-runners.mjs`，使用假 Agent 验证跨目录替换先准备、成功才提交，失败保留旧实例并回收替代进程；不调用模型。
+
+空闲回收专项 `node scripts/test-runner-reclaim.mjs` 现场编译、使用假 Agent 与注入时钟检查10分钟/60秒/一轮一个、活动/分屏/子代理/忙碌/未保存/队列/隐藏/同cwd/重载保护、退出清定时器、选择与重载并发及恢复代次，已纳入 unit。`node scripts/test-runner-reclaim-live.mjs` 用独立数据目录和真实随包 pi（Node 宿主、非 Electron 整窗）验证3个进程回收到1个、原会话/消息载回、不重放模型请求，Windows 下复用进程树工具记录工作集与退出PID；时间阈值通过注入时钟推进，不代表10分钟实等、长期放置或真实服务验收。它不启动外部模型任务、不读取个人凭证、不覆盖应用 `out/`；证据默认保存在本地独立目录，`YAN_RECLAIM_EVIDENCE` 可指定新的输出位置。
 
 子代理限制可直接运行 `node scripts/test-subagent-limits.mjs`，现场编译当前源码到临时目录，用独立数据目录、假 RPC 和临时 Git 验证10个并发名额及启动交接、10分钟停滞期限及进展续期、75秒收尾不被迟到事件延长、可选总期限和模型自主调用次数；不依赖应用构建、不启动 Electron或调用模型。
 
@@ -68,6 +73,8 @@ Remove-Item Env:YAN_MATRIX_ONLY, Env:YAN_SHOT_DIR
 
 ## 提交与反馈
 
+设置页分区专项：构建后设置 `YAN_LIGHT_PROBE=scripts/probe/settings-sections.js`，运行 `node scripts/test-light-client-live.mjs`，检查主题切换、未访问分区不挂载、同页草稿保留、旧深链接、键盘焦点、外置依赖入口和深浅/窄窗溢出。使用独立数据目录，不安装插件或调用模型；`YAN_LIGHT_EVIDENCE` 可指定新的证据目录。完成后清除本次环境变量。
+
 UX 反馈专项：构建后设置 `YAN_LIGHT_PROBE=scripts/probe/ux-feedback.js`、`YAN_LIGHT_FIXTURE_SESSIONS=1` 和 `YAN_LIGHT_INVALID_HISTORY=1`，运行 `node scripts/test-light-client-live.mjs`。实际 Electron 浅/深/窄窗检查两档权限真实设置、运行期停止入口、审批来源、搜索换词、CC 只读组合、设置键盘与附件清理失败说明；只用临时历史/附件，停止与来源跳转使用观察桩，不调用模型或安装插件。清理拒绝通过真实 IPC，结束后核对临时附件未变；完成后清除本次环境变量。
 
 安全与性能边界回归已纳入 `test:unit`，也可在构建后单独运行 `node scripts/test-security-performance-fixes.mjs`：用临时文件、真实本机 HTTP 和构建出的 Office worker 检查 ZIP 实际大小/累计预算、办公响应限长、流式搜索、冷历史检索、会话缓存回收及 SSE 慢连接/连接数上限。浏览器新窗口另运行 `node scripts/test-browser-popup-live.mjs`，启动独立隐藏 Electron 窗口，验证远程页面弹窗/重定向不能访问本机，正常公网新标签及明确打开的本地预览仍可用；不使用个人会话、凭证或模型。
@@ -78,12 +85,12 @@ UX 反馈专项：构建后设置 `YAN_LIGHT_PROBE=scripts/probe/ux-feedback.js`
 
 导航轨专项运行 `node scripts/test-outline-performance.mjs`：现场编译纯投影函数，在2002条合成消息、200次更新下交替比较旧全量分组/查找和历史引用缓存，逐字段核对结果，重复三轮；`YAN_OUTLINE_PERF_OUT` 可指定新的 JSON 证据文件。基础导航语义检查已纳入 unit。
 
-子代理流式专项运行 `node scripts/test-subagent-stream-performance.mjs`：独立数据目录与假 RPC 验证33ms快照合并、主动读取即时性、工具/结束/停止即时推送和清除后不反弹，并重复三轮100条历史与500次更新的序列化测量。`YAN_SUBAGENT_STREAM_OUT` 可指定新的 JSON 文件；`YAN_SUBAGENT_STREAM_MODULE` 可指定优化前编译的模块，配合 `--baseline` 运行同负载对照。字节数是 JSON 序列化体积，不是实际 IPC 字节；同步事件处理耗时不含异步推送回调，不能当作总 CPU 收益。并行运行隔离与收口检查也已纳入 unit。
+子代理流式专项运行 `node scripts/test-subagent-stream-performance.mjs`：独立数据目录与假 RPC 验证33ms快照合并、主动读取即时性、工具/结束/停止即时推送和清除后不反弹，以及增量推送（只发自上次推送起的转录，拼回后与权威转录一致）的字节量对比，并重复三轮100条历史与500次更新的序列化测量。`YAN_SUBAGENT_STREAM_OUT` 可指定新的 JSON 文件；`YAN_SUBAGENT_STREAM_MODULE` 可指定优化前编译的模块，配合 `--baseline` 运行同负载对照。字节数是 JSON 序列化体积，不是实际 IPC 字节；同步事件处理耗时不含异步推送回调，不能当作总 CPU 收益。并行运行隔离与收口检查也已纳入 unit。
 
 ### 写 live 探针时的三个坑（2026-10-11 踩到）
 
 - **过程入口默认折叠**：`TurnProcess` 只在展开时渲染工具行与推理块，而默认是否展开只看「并列布局 + 正在流式」。注入夹具（`applyPush({ch:'sync'})` 或 `setState({messages})`）后如果不先点开 `[data-testid="turn-process-toggle"]`，看到的是「一个工具行都没有」「终端没渲染」「推理块没渲染」这类**假象**。两个细节：注入当下 DOM 里还挂着上一条回合的入口，要先等新回合上屏再点；换新消息 id 会让过程重挂，每条用例都要重新铺开。`scripts/probe/toolrow.js` 的 `openProcess()` 是可抄的写法。
-- **设置页入口**：插件（包括附件清理那一节）在「市场 → pi 插件」下，`openSettings('packages')` 不是合法页 id（见 `Settings.tsx` 的 `SETTINGS_PAGES`），要用 `openSettings('market')` + 点 `market-pi-tab`。另外各探针的 `q()` 约定不一：有的收选择器，有的收 testid 名，改之前先看它自己的定义。
+- **设置页入口**：`openSettings('packages')` 是兼容深链接，直接选中「插件市场 → pi 插件」（包括附件清理）；也可用 `openSettings('market')` + 点 `market-pi-tab`。目录搜索默认收起，先展开 `market-catalog`。模型、自定义服务、能力等改为页内分区，先点对应 `settings-section-*`，不能只等旧表单出现。各探针的 `q()` 有的收选择器、有的收 testid 名，改之前先看定义。
 - **探针顶层要包 `try/catch`**：异常不兜住只会得到「没抓到 PROBE 输出」，连已跑过的断言一并丢掉，排查成本高得多。
 
 构建后可将 `YAN_LIGHT_PROBE` 设为 `scripts/probe/stream-smooth.js` 的绝对路径，再运行 `node scripts/test-light-client-live.mjs`。它在独立Electron目录中验证长历史、连续代码/中文/emoji输出、输入响应、无文字时活动行与过程入口可见、展开后工具可见、最终全文/代码高亮/表格与旧数据保留；不会调用模型。`YAN_LIGHT_WIDE_SIZE` 可改宽/深两次的窗口尺寸（默认 1440x1000），需验证并列过程栏时用 `1920x1000` 这类不会回退到正文内的宽度。工具详情专项 `scripts/probe/tool-detail-layouts.js` 检查两种过程布局的落位、单条详情只有一个滚动区、宽幅阅读的焦点归还、真实增删数与逐行 diff、以及七步长组的折叠口径；夹具是合成调用，不代表真实模型会话。需要订阅额度的 `node scripts/test-luna-progress-live.mjs --real-luna` 使用已有Codex OAuth的隔离副本，仅运行精确 `openai-codex/gpt-6-luna` low小任务，记录首字/工具时间；无其他模型回退，执行前须得到额度调用授权。模型是否先说进展是行为采样，不是延迟保证。
@@ -91,6 +98,8 @@ UX 反馈专项：构建后设置 `YAN_LIGHT_PROBE=scripts/probe/ux-feedback.js`
 Windows 上运行 `node scripts/measure-light-client.mjs` 记录三次空会话启动、空闲 CPU 与进程树工作集；`YAN_MEASURE_SCENARIO=long` 改用独立窗口的 2,000 条合成消息，记录首帧、120 次滚动采样和虚拟化 DOM 数量。`YAN_LIGHT_EXE` 指定独立目录包，`YAN_MEASURE_OUT` 指定新的证据文件；前后比较应使用同类运行方式。Chromium 探针关闭了帧率/后台限制，帧耗时不是实际显示器 FPS，工作集之和也不是独占物理内存。
 
 `node scripts/measure-subagents.mjs` 测真实 pi 的单/双子任务，使用本机模型屏障，每种三次；已授权时加 `--real-haiku` 测 CC Haiku 5.5 low 单/双子任务，每种一次，需设置 `YAN_CC_TEST_BRIDGE`。CC 数据包括 SDK/CLI 进程，不能混同普通 pi。记录任务完成及采样子进程退出，检查重新归属后的 PID；同步进程采样会增加测得的总时长，短任务采样峰值可能漏掉瞬时尖峰。
+
+`node scripts/measure-memory.mjs` 是内存审计通道：起隔离实例（独立 userData / 会话 / 数据 / pi 目录，不上屏）并开调试端口，用 CDP 读渲染端真实指标（V8 堆、DOM 节点与事件监听器数）并按 `--scales` 逐档注入合成消息，同时采样进程树工作集。`--verify` 验证渲染端文件预览标签的数量上限；`--steps`、`--idle` 是调试用分步/心跳模式。它不启动用户窗口、不碰真实数据目录；工作集按进程累加，不等于独占物理内存。
 
 ### 升级 pi 与兼容验证
 

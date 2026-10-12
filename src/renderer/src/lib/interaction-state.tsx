@@ -8,14 +8,39 @@ const empty: Snapshot = { values: {}, ready: false }
 const snapshots = new Map<string, Snapshot>()
 const listeners = new Set<() => void>()
 const pending = new Set<string>()
+/**
+ * 内存里的互动状态快照按会话封顶。
+ *
+ * 每条快照是 `Record<string, string>`，主进程侧单会话上限 4MB、单值 64KB，
+ * 而以前只写不删（无 `.delete`/`.clear`）：打开过的会话越多，这张表越大。
+ * 淘汰最久未访问的；正在显示的会话会在“使用”里被移到末尾，不会被选中。
+ */
+const MAX_SNAPSHOTS = 24
+const touch = (id: string): void => {
+  const value = snapshots.get(id)
+  if (!value) return
+  snapshots.delete(id)
+  snapshots.set(id, value)
+}
 const subscribe = (fn: () => void): (() => void) => { listeners.add(fn); return () => { listeners.delete(fn) } }
-const publish = (id: string, value: Snapshot): void => { snapshots.set(id, value); listeners.forEach((fn) => fn()) }
+const publish = (id: string, value: Snapshot): void => {
+  snapshots.delete(id)
+  snapshots.set(id, value)
+  for (const key of snapshots.keys()) {
+    if (snapshots.size <= MAX_SNAPSHOTS) break
+    if (key === id) continue
+    snapshots.delete(key)
+  }
+  listeners.forEach((fn) => fn())
+}
 
 export function useInteractionState() {
   const session = useContext(InteractionSession)
   const snapshot = useSyncExternalStore(subscribe, () => snapshots.get(session) ?? empty)
   useEffect(() => {
-    if (!session || snapshots.has(session) || pending.has(session)) return
+    if (!session) return
+    if (snapshots.has(session)) { touch(session); return }
+    if (pending.has(session)) return
     pending.add(session)
     void window.yan.interactions.get(session).then((values) => publish(session, { values, ready: true }))
       .catch((e) => publish(session, { ...empty, error: String(e) }))

@@ -9,9 +9,10 @@ import { previewSound } from '../../lib/sound'
 import { BackgroundSetting, FontSettings, FontSizeSettings } from './AppearanceCustomize'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
 import { BUILD_INFO, formatBuildTime } from '../../../../shared/build-info'
-import { Button, Disclosure, SettingGroup, SettingRow, Spinner, Switch } from '../ui'
+import { Button, Disclosure, SettingRow, Spinner, Switch } from '../ui'
 import { AppUpdateSection } from './AppUpdateSection'
 import { StorageSection } from './StorageSection'
+import { SettingsSections } from './SettingsSections'
 
 // Keep the modal shell eager so focus, Escape and native browser occlusion work while loading.
 const AuthTab = lazy(() => import('./AuthTab').then(m => ({ default: m.AuthTab })))
@@ -219,47 +220,28 @@ export function Settings({
           {page === 'auth' ? (
             <AuthTab />
           ) : page === 'appearance' ? (
-            <>
-              <AppearanceTab lang={lang} setLang={setLang} />
-              <SettingGroup title={t('set.input')}>
-                <InputTab />
-              </SettingGroup>
-              <SettingGroup title={t('set.sound')}>
-                <SoundTab />
-              </SettingGroup>
-            </>
+            <SettingsSections initial={tab === 'input' || tab === 'sound' ? tab : 'appearance'} sections={[
+              { id: 'appearance', label: t('set.appearance'), content: <AppearanceTab lang={lang} setLang={setLang} /> },
+              { id: 'input', label: t('set.input'), content: <InputTab /> },
+              { id: 'sound', label: t('set.sound'), content: <SoundTab /> }
+            ]} />
           ) : page === 'workspace' ? (
-            <>
-              <WorkspaceTab />
-              <SettingGroup title={t('set.context')}>
-                <ContextTab />
-              </SettingGroup>
-            </>
+            <SettingsSections initial={tab === 'context' ? 'context' : 'workspace'} sections={[
+              { id: 'workspace', label: t('set.general'), content: <WorkspaceTab /> },
+              { id: 'context', label: t('set.context'), content: <ContextTab /> }
+            ]} />
           ) : page === 'capabilities' ? (
             <>
               <CapabilitiesTab />
             </>
           ) : page === 'market' ? (
-            <PluginMarketTab />
+            <PluginMarketTab initial={tab === 'packages' ? 'pi' : 'inkstone'} />
           ) : page === 'devices' ? (
-            <>
-              <DevicesJump initial={tab === 'remote' || tab === 'peer' ? tab : 'voice'} />
-              <div id="devices-section-voice">
-              <SettingGroup title={t('set.voice')}>
-                <VoiceTab />
-              </SettingGroup>
-              </div>
-              <div id="devices-section-remote">
-              <SettingGroup title={t('set.remote')}>
-                <RemoteTab />
-              </SettingGroup>
-              </div>
-              <div id="devices-section-peer">
-              <SettingGroup title={t('set.peer')}>
-                <PeerTab />
-              </SettingGroup>
-              </div>
-            </>
+            <SettingsSections initial={tab === 'remote' || tab === 'peer' ? tab : 'voice'} sections={[
+              { id: 'voice', label: t('set.voice'), content: <VoiceTab /> },
+              { id: 'remote', label: t('set.remote'), content: <RemoteTab /> },
+              { id: 'peer', label: t('set.peer'), content: <PeerTab /> }
+            ]} />
           ) : (
             <AboutTab onShowOnboarding={onShowOnboarding} />
           )}
@@ -267,63 +249,6 @@ export function Settings({
         </div>
       </div>
     </div>
-  )
-}
-
-/* ------------------------------------------------------------- 设备页定位 */
-
-const DEVICE_SECTIONS = ['voice', 'remote', 'peer'] as const
-type DeviceSection = (typeof DEVICE_SECTIONS)[number]
-
-/**
- * 设备页顶部的分区定位条：吸顶，点击滚到对应分区，滚动时高亮当前分区。
- * 旧深链接（openSettings('remote' | 'peer')）落到本页后直接滚到对应分区。
- */
-function DevicesJump({ initial }: { initial: DeviceSection }) {
-  const t = useT()
-  const bar = useRef<HTMLElement>(null)
-  const [current, setCurrent] = useState<DeviceSection>(initial)
-  const jump = (section: DeviceSection, smooth: boolean) => {
-    setCurrent(section)
-    const root = bar.current?.closest('.settings-body')
-    const target = document.getElementById(`devices-section-${section}`)
-    if (!root || !target) return
-    const top = target.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - (bar.current?.offsetHeight ?? 0)
-    root.scrollTo({ top: section === 'voice' ? 0 : top, behavior: smooth && !prefersReducedMotion() ? 'smooth' : 'auto' })
-  }
-  useEffect(() => {
-    /* 分区内容懒加载，等一帧再定位 */
-    if (initial === 'voice') return
-    const id = window.setTimeout(() => jump(initial, false), 120)
-    return () => window.clearTimeout(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial])
-  useEffect(() => {
-    const root = bar.current?.closest('.settings-body')
-    if (!root) return
-    const onScroll = () => {
-      const edge = root.getBoundingClientRect().top + (bar.current?.offsetHeight ?? 0) + 24
-      let next: DeviceSection = 'voice'
-      for (const section of DEVICE_SECTIONS) {
-        const el = document.getElementById(`devices-section-${section}`)
-        if (el && el.getBoundingClientRect().top <= edge) next = section
-      }
-      if (root.scrollTop + root.clientHeight >= root.scrollHeight - 2) next = DEVICE_SECTIONS[DEVICE_SECTIONS.length - 1]
-      setCurrent(next)
-    }
-    root.addEventListener('scroll', onScroll, { passive: true })
-    return () => root.removeEventListener('scroll', onScroll)
-  }, [])
-  return (
-    <nav ref={bar} className="ui-tabs settings-jump" aria-label={t('set.devicesSections')}>
-      {DEVICE_SECTIONS.map((section) => (
-        <button key={section} type="button" className={`ui-tab ${current === section ? 'sel' : ''}`}
-          aria-current={current === section ? 'location' : undefined}
-          data-testid={`devices-jump-${section}`} onClick={() => jump(section, true)}>
-          {t(`set.${section}`)}
-        </button>
-      ))}
-    </nav>
   )
 }
 
@@ -529,6 +454,7 @@ function InputTab() {
   /** 运行中的工具调用是否自动展开详情（默认关） */
   const toolDetail = useStore((s) => s.settings?.toolDetail === true)
   const subagentNotify = useStore((s) => s.settings?.subagentNotify !== false)
+  const usageUnderInput = useStore((s) => s.settings?.usageUnderInput !== false)
 
   return (
     <div className="ui-rows">
@@ -552,6 +478,15 @@ function InputTab() {
           onChange={(next) => void patchSettings({ subagentNotify: next })}
           label={t('set.subagentNotify')}
           testId="set-subagent-notify"
+        />
+      </SettingRow>
+
+      <SettingRow name={t('set.usageUnderInput')} desc={t('set.usageUnderInputDesc')}>
+        <Switch
+          checked={usageUnderInput}
+          onChange={(next) => void patchSettings({ usageUnderInput: next })}
+          label={t('set.usageUnderInput')}
+          testId="set-usage-under-input"
         />
       </SettingRow>
 

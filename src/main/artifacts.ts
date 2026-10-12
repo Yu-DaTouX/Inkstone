@@ -15,6 +15,9 @@ import type { AssistantArtifact } from '../shared/ipc'
 const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024
 const MAX_MANIFEST_ITEMS = 200
 
+/** 同进程内跨 store 实例共享；队列空闲后释放，不长期缓存会话。 */
+const manifestTails = new Map<string, Promise<void>>()
+
 type ArtifactManifestItem = { messageId: string; artifact: AssistantArtifact }
 
 function safeFilename(raw: string, fallback = 'artifact'): string {
@@ -107,16 +110,6 @@ export interface ArtifactAttachInput {
 export class ArtifactStore {
   constructor(private readonly rootDir: string) {}
 
-  /**
-   * 每个会话的 manifest 读改写串行闸门。
-   *
-   * 为什么必须串行：`append()` 是「读 manifest → push → 写回」。多个保存
-   *（模型一次生成多张图、并发 attach）同时进行时会各自读到同一份旧清单，
-   * 再分别覆盖写回 —— 结果是文件都在，但只有最后一次的条目留在 manifest 里，
-   * 重启后其余产物不再挂回消息。按会话串行化整段读改写，并把写盘换成原子替换。
-   */
-  private readonly manifestTail = new Map<string, Promise<unknown>>()
-
   private sessionDir(sessionFile: string): string {
     return join(this.rootDir, safeSessionKey(sessionFile))
   }
@@ -133,7 +126,7 @@ export class ArtifactStore {
     const id = `art-${randomUUID()}`
     const dir = this.sessionDir(input.sessionFile)
     await mkdir(dir, { recursive: true })
-    const target = join(dir, `${id}-${filename}`)
+    const target = join(await realpath(dir), `${id}-${filename}`)
     await writeFile(target, bytes, { flag: 'wx' })
     const artifact: AssistantArtifact = {
       id,
@@ -187,13 +180,21 @@ export class ArtifactStore {
   }
 
   async append(sessionFile: string, messageId: string, artifact: AssistantArtifact): Promise<void> {
-    const key = safeSessionKey(sessionFile)
-    const prev = this.manifestTail.get(key) ?? Promise.resolve()
+    // 用真实目录作键：不同实例与目录联接别名也必须排同一条队列。
+    const dir = this.sessionDir(sessionFile)
+    await mkdir(dir, { recursive: true })
+    const canonical = await realpath(dir)
+    const key = process.platform === 'win32' ? canonical.toLowerCase() : canonical
+    const prev = manifestTails.get(key) ?? Promise.resolve()
     const next = prev.then(
       () => this.appendNow(sessionFile, messageId, artifact),
       () => this.appendNow(sessionFile, messageId, artifact)
     )
-    this.manifestTail.set(key, next.then(() => undefined, () => undefined))
+    const tail = next.then(() => undefined, () => undefined)
+    manifestTails.set(key, tail)
+    void tail.then(() => {
+      if (manifestTails.get(key) === tail) manifestTails.delete(key)
+    })
     return next
   }
 
@@ -212,8 +213,10 @@ export class ArtifactStore {
     const items = await this.list(sessionFile)
     if (!items.length) return messages
     const byMessage = new Map<string, AssistantArtifact[]>()
+    const root = await realpath(this.sessionDir(sessionFile)).catch(() => resolve(this.sessionDir(sessionFile)))
     for (const item of items) {
-      if (!isWithin(this.sessionDir(sessionFile), item.artifact.path)) continue
+      const source = await realpath(item.artifact.path).catch(() => resolve(item.artifact.path))
+      if (!isWithin(root, source)) continue
       let available = item.artifact.bytes > 0
       if (available) {
         try {

@@ -88,7 +88,8 @@ import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
 import { ArtifactStore } from './artifacts'
 import { hasBash } from './git-runtime'
-import { codexAuthAvailable, generateImage, resolveImageProvider, type ImageGenerationRequest } from './image-generation'
+import { comfyStatus, ComfyLaunchError, ensureComfyRunning, stopManagedComfy } from './comfy-launcher'
+import { defaultImageModel, detectImageProviders, generateImage, imageProviderEndpoint, imageProviderNeedsConfirmation, isImageProvider, resolveImageProvider, waitForImage, type ImageGenerationRequest } from './image-generation'
 import {
   capabilitySnapshot,
   modelKeyOf,
@@ -231,7 +232,7 @@ export interface GoalCommandHost {
 }
 
 export interface ExternalApiConfirmationRequest {
-  provider: 'openai' | 'compatible'
+  provider: 'openai' | 'compatible' | 'google' | 'doubao' | 'local'
   endpoint: string
   model: string
   prompt: string
@@ -285,13 +286,48 @@ function imageFailureDetail(error: unknown): string {
       : 'image_generation_failed'
   const labels: Record<string, string> = {
     external_api_denied: '已取消外部图像 API 请求',
+    image_cancelled: '已停止生图',
     image_provider_unavailable: '没有可用的图像模型',
+    image_provider_unknown: '不认识的图像服务',
     image_result_empty: '图像服务返回了空文件',
     artifact_empty: '生成结果为空文件',
+    codex_auth_missing: 'ChatGPT 登录不可用或已过期，请在设置里重新登录',
+    codex_auth_rejected: 'ChatGPT 登录被拒绝，请在设置里重新登录',
+    codex_rate_limited: 'ChatGPT 额度已用尽或请求过于频繁',
     codex_image_result_missing: '图像服务没有返回图片数据',
-    image_api_result_missing: '图像 API 没有返回图片数据'
+    codex_response_failed: 'ChatGPT 生图失败',
+    image_api_result_missing: '图像 API 没有返回图片数据',
+    image_api_auth_rejected: '图像 API 拒绝了凭证',
+    image_api_rate_limited: '图像 API 额度不足或请求过于频繁',
+    google_api_key_missing: '没有配置 Google Gemini API key',
+    google_auth_rejected: 'Google Gemini 拒绝了 API key',
+    google_rate_limited: 'Google Gemini 额度不足或请求过于频繁',
+    google_image_blocked: 'Google Gemini 拦截了这次生成',
+    google_image_result_missing: 'Google Gemini 没有返回图片',
+    doubao_api_key_missing: '没有配置火山方舟（豆包）API key',
+    doubao_auth_rejected: '火山方舟拒绝了 API key（或未开通该模型）',
+    doubao_rate_limited: '火山方舟额度不足或请求过于频繁',
+    doubao_image_result_missing: '火山方舟没有返回图片',
+    local_service_missing: '本机没有可用的生图服务',
+    local_launch_unavailable: '没有能自动启动的本机 ComfyUI',
+    local_launch_failed: '本机 ComfyUI 启动失败',
+    local_launch_timeout: '本机 ComfyUI 启动超时',
+    local_workflow_missing: 'ComfyUI 里没有可用的已保存工作流',
+    local_workflow_unsupported: 'ComfyUI 工作流无法自动套用',
+    local_upload_failed: '参考图上传到 ComfyUI 失败',
+    local_workflow_failed: '本机 ComfyUI 工作流执行失败',
+    local_timeout: '本机生图超时',
+    image_source_outside_project: '参考图必须在当前项目或砚的产物目录内',
+    image_source_missing: '找不到参考图',
+    image_source_unsupported: '参考图只支持 PNG / JPEG / WebP',
+    image_source_too_large: '参考图超过 20 MB',
+    image_source_too_many: '参考图最多 4 张'
   }
-  return labels[code] ?? `生成失败：${code}`
+  const reason = error && typeof error === 'object' && 'reason' in error && typeof (error as { reason?: unknown }).reason === 'string'
+    ? (error as { reason: string }).reason
+    : ''
+  const label = labels[code] ?? (/_http_\d+$/.test(code) ? `图像服务返回 HTTP ${code.replace(/^.*_http_/, '')}` : `生成失败：${code}`)
+  return reason ? `${label}：${reason}` : label
 }
 
 /* AgentController */
@@ -394,6 +430,7 @@ export class AgentController extends EventEmitter {
   private confirmCapabilityAuthorization?: (
     request: CapabilityAuthorizationPrompt
   ) => Promise<CapabilityAuthorizationChoice>
+  private readonly imageRequests = new Set<AbortController>()
   private confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
   private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
   private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
@@ -1297,6 +1334,7 @@ export class AgentController extends EventEmitter {
       })
     }
     if (command === 'image.generate') return this.runImageCommand(params)
+    if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return this.runLocalImageServiceCommand(command)
     /* 资料引用：按版本读片段与引用状态（对照做法在 research 技能）。 */
     if (command.startsWith('research.')) {
       if (!this.researchHost) {
@@ -1709,72 +1747,105 @@ export class AgentController extends EventEmitter {
     }
   }
 
+  /** 本机 ComfyUI 的状态与开关；stop 只关砚自己拉起的进程 */
+  private async runLocalImageServiceCommand(command: 'image.local.status' | 'image.local.start' | 'image.local.stop'): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    if (command === 'image.local.stop') {
+      const stopped = stopManagedComfy()
+      const status = await comfyStatus()
+      return { data: status, summary: { kind: 'comfyui', stopped, running: status.running, note: stopped ? '已关闭砚启动的 ComfyUI' : status.running ? '正在运行的 ComfyUI 不是砚启动的，没有关闭' : 'ComfyUI 没有在运行' } }
+    }
+    if (command === 'image.local.start') {
+      try {
+        const server = await ensureComfyRunning()
+        const status = await comfyStatus()
+        return { data: status, summary: { kind: 'comfyui', running: true, baseUrl: server.baseUrl, managed: status.managed, workflows: server.models.length } }
+      } catch (error) {
+        if (error instanceof ComfyLaunchError) throw new CapabilityCommandError(error.code, error.reason ? `ComfyUI 启动失败：${error.reason}` : 'ComfyUI 启动失败')
+        throw error
+      }
+    }
+    const status = await comfyStatus()
+    return { data: status, summary: { kind: 'comfyui', running: status.running, managed: status.managed, launchable: status.launchable, ...(status.idleStopAt ? { idleStopInSeconds: Math.max(0, Math.round((status.idleStopAt - Date.now()) / 1000)) } : {}), workflows: status.workflows.length } }
+  }
+
+  /** 仅取消这个实例拥有的请求，不影响其他会话的后台生成。 */
+  private cancelImages(): void {
+    for (const controller of this.imageRequests) controller.abort()
+  }
+
   private async runImageCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
     const request = params as unknown as ImageGenerationRequest
     const prompt = typeof request.prompt === 'string' ? request.prompt.trim() : ''
     if (!prompt) throw new CapabilityCommandError('image_prompt_missing', 'image.generate 需要 prompt')
-    const requestedProvider = request.provider
-    const resolved = resolveImageProvider(
-      requestedProvider,
-      await codexAuthAvailable(),
-      !!process.env.OPENAI_API_KEY?.trim()
-    )
+    if (request.provider !== undefined && !isImageProvider(request.provider)) {
+      throw new CapabilityCommandError('image_provider_unknown', 'image.generate 的 provider 只能是 auto、codex、openai、compatible、google、doubao、local')
+    }
+    // 在首次异步探测之前登记并固定归属，停止不能漏掉尚在探测或等待确认的请求。
+    const controller = new AbortController()
+    this.imageRequests.add(controller)
     const messageId = this.latestAssistantMessageId()
+    const sessionFile = this.state?.sessionFile ?? join(YAN_DIR, 'artifact-sessions', this.capabilityOpts?.sessionId ?? 'primary')
+    const cwd = this.cwd
     const progressId = `image-${randomUUID()}`
     const startedAt = Date.now()
-    const provider = resolved === 'unavailable' ? undefined : resolved
-    const model = typeof request.model === 'string' && request.model.trim() ? request.model.trim() : 'gpt-image-2'
+    let provider: Exclude<NonNullable<ImageGenerationRequest['provider']>, 'auto'> | undefined
+    let model = ''
+    let terminal = false
     const publishProgress = (stage: ImageGenerationProgress['stage'], detail?: string): void => {
-      const terminal = stage === 'done' || stage === 'error'
+      if (terminal || (controller.signal.aborted && stage !== 'error')) return
+      if (this.state?.sessionFile && this.state.sessionFile !== sessionFile) return
+      terminal = stage === 'done' || stage === 'error'
       const progress: ImageGenerationProgress = {
-        id: progressId,
-        stage,
-        startedAt,
-        updatedAt: Date.now(),
+        id: progressId, stage, startedAt, updatedAt: Date.now(),
         ...(terminal ? { endedAt: Date.now() } : {}),
-        ...(provider ? { provider } : {}),
-        model,
+        ...(provider ? { provider } : {}), model,
         ...(detail ? { detail } : {})
       }
       const message = this.messages.find((item) => item.id === messageId)
       if (message) {
-        message.imageProgress = [
-          ...(message.imageProgress ?? []).filter((item) => item.id !== progressId),
-          progress
-        ]
+        message.imageProgress = [...(message.imageProgress ?? []).filter((item) => item.id !== progressId), progress]
       }
       this.push({ ch: 'msg-update', payload: { id: messageId, patch: { imageProgress: [progress] } } })
+    }
+    const checkCancelled = (): void => {
+      if (controller.signal.aborted) throw new CapabilityCommandError('image_cancelled', '已停止生图')
     }
 
     publishProgress('queued', '已加入当前回合')
     try {
-      if (resolved === 'openai' || resolved === 'compatible') {
+      const availability = await waitForImage(detectImageProviders(), controller.signal)
+      checkCancelled()
+      const resolved = resolveImageProvider(request.provider, availability)
+      provider = resolved === 'unavailable' ? undefined : resolved
+      model = typeof request.model === 'string' && request.model.trim() ? request.model.trim() : defaultImageModel(resolved, availability)
+      if (resolved !== 'unavailable' && resolved !== 'codex' && resolved !== 'mock' && imageProviderNeedsConfirmation(resolved, availability)) {
         publishProgress('confirming', '等待确认外部图像 API 请求')
-        const allowed = await this.confirmExternalApi?.({
-          provider: resolved,
-          endpoint: resolved === 'compatible' ? (process.env.YAN_IMAGE_API_BASE ?? '') : 'https://api.openai.com/v1',
-          model,
-          prompt,
-          cwd: this.cwd
-        })
-        if (!allowed) throw new CapabilityCommandError('external_api_denied', '已取消：未获得 OpenAI-compatible API 请求确认')
+        const allowed = await waitForImage(Promise.resolve(this.confirmExternalApi?.({
+          provider: resolved, endpoint: imageProviderEndpoint(resolved, availability), model, prompt, cwd
+        })), controller.signal)
+        checkCancelled()
+        if (!allowed) throw new CapabilityCommandError('external_api_denied', '已取消：未获得外部图像 API 请求确认')
       }
-    const sessionFile = this.state?.sessionFile ?? join(YAN_DIR, 'artifact-sessions', this.capabilityOpts?.sessionId ?? 'primary')
-    const result = await generateImage({ ...request, prompt }, {
-      sessionFile,
-      messageId,
-      artifactDir: this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'),
-      onProgress: publishProgress
-    })
-    await this.attachArtifact(result.artifact, messageId, sessionFile)
-    publishProgress('done', `${result.artifact.filename} · ${result.artifact.bytes} bytes`)
-    return {
-      data: { artifact: result.artifact, provider: result.provider, model: result.model, revisedPrompt: result.revisedPrompt },
-      summary: { provider: result.provider, model: result.model, artifactId: result.artifact.id, filename: result.artifact.filename, bytes: result.artifact.bytes }
-    }
+      const result = await generateImage({ ...request, prompt, ...(provider ? { provider } : {}) }, {
+        cwd, availability, sessionFile, messageId,
+        artifactDir: this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'),
+        signal: controller.signal,
+        // 完成进度由宿主挂载后发布，避免提前报完成或停止后的迟到事件覆盖取消。
+        onProgress: (stage, detail) => { if (stage !== 'done') publishProgress(stage, detail) }
+      })
+      checkCancelled()
+      await this.attachArtifact(result.artifact, messageId, sessionFile)
+      publishProgress('done', `${result.artifact.filename} · ${result.artifact.bytes} bytes`)
+      return {
+        data: { artifact: result.artifact, provider: result.provider, model: result.model, revisedPrompt: result.revisedPrompt },
+        summary: { provider: result.provider, model: result.model, artifactId: result.artifact.id, filename: result.artifact.filename, path: result.artifact.path, bytes: result.artifact.bytes }
+      }
     } catch (error) {
-      publishProgress('error', imageFailureDetail(error))
-      throw error
+      const failure = controller.signal.aborted ? new CapabilityCommandError('image_cancelled', '已停止生图') : error
+      publishProgress('error', imageFailureDetail(failure))
+      throw failure
+    } finally {
+      this.imageRequests.delete(controller)
     }
   }
 
@@ -3373,6 +3444,7 @@ export class AgentController extends EventEmitter {
   }
 
   async abort(): Promise<{ steering: string[]; followUp: string[] }> {
+    this.cancelImages()
     await this.cancelContextMaintenanceV1('user_stopped')
     /* 用户主动停止：用时冻结在当下，并标明这不是正常完成（H-6）。 */
     this.turn.terminal = 'stopped'
@@ -4133,6 +4205,7 @@ export class AgentController extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    this.cancelImages()
     await this.cancelContextMaintenanceV1('runner_stopped')
     /* 端点随实例一起停：token 作废，旧 CLI 环境变量从此无效。 */
     this.capabilityServer?.stop()

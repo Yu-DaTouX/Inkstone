@@ -45,9 +45,9 @@
 .acct-card { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-2); }
 .acct-pane .acct-card + .acct-card { margin-top: var(--sp-2); }
 .acct-card-id { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
-.acct-card-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-.acct-card-head > .spacer { flex: 1; }
-.acct-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
+.acct-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); min-width: 0; }
+.acct-card-head > .spacer { flex: 1; min-width: 0; }
+.acct-name { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
 .acct-meta, .acct-msg, .acct-hint { color: var(--fg-mute); font-size: var(--fs-xs); }
 .acct-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .acct-edit { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }

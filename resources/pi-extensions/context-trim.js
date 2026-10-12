@@ -9,19 +9,21 @@
  *      大窗口模型（1M、272K）按 pi 默认要到「窗口 − 16K」才压缩，这里把触发线提前。
  *
  * ── 为什么按批次、挑时机裁剪 ──
- *   模型服务按前缀缓存，命中缓存的部分约为原价的一成。每改一条旧消息，它之后的内容都要按全价重发，
- *   实测（Codex，2026-10-10）一次裁剪那轮的全价输入从 0.5K 涨到 14.6K —— 短期内比不裁更贵。
- *   所以：① 等发送量超过软线，再一次裁到软线的 60%，不每轮小裁；
- *        ② 只在缓存大概率已经过期时开新的一批：距上次请求超过 CACHE_COLD_MS，或进程刚启动；
- *           发送量超过软线 HARD_RATIO 倍时不再等。
- *   已裁的条目记在进程内，只增不减，之后的请求前缀保持稳定。
+ *   修改旧消息可能使后续前缀不再命中；具体折扣、写入时机与有效期取决于服务商。
+ *   因此先规划候选批次，不直接改消息：新节省不足时继续复用原前缀，等候选积累后一次提交。
+ *   距上次请求超过 CACHE_COLD_MS 或新进程只表示缓存可能已冷，不保证服务端过期；
+ *   此时在软线尝试规划，否则要超过硬线。两种情况都需要足够批次收益。
+ *   接近已知模型窗口时，容量优先于缓存收益，但不突破技能和近期工具组等保护。
+ *   同一投影中已裁的条目保持存根，只有提交新批次才改变已有请求前缀。
  *
  * ── 边界 ──
- *   · 最近 KEEP_TURNS 轮原样保留；技能文件（SKILL.md）的读取结果不裁，那是模型要遵循的说明；
+ *   · 通常保留最近 KEEP_TURNS 轮；超过硬线时也可裁这些轮里的旧工具组，但每轮最近 KEEP_TOOL_GROUPS 组保留；
+ *     技能文件（SKILL.md）、错误结果及尚未完成的工具组不裁；
  *   · 裁剪开关与两个阈值读 desktop.json（每次读，切换下一次请求就生效）；读不到按缺省开；
  *     是否提前压缩跟随 pi 原生的自动压缩开关（pi 的 settings.json），砚不另设开关；
  *   · 阈值公式与 src/main/compaction.ts 的 inkstoneCompactAt 保持一致。
  */
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -33,13 +35,19 @@ const TRIM_WINDOW_RATIO = 0.3
 const COMPACT_WINDOW_RATIO = 0.9
 /** 一批裁到软线的这个比例以下，留出余量，避免下一轮又撞线。 */
 const TRIM_TARGET_RATIO = 0.6
-/** 超过软线这么多倍时不再等缓存过期。 */
+/** 超过软线这么多倍时允许规划新批次，但仍需通过收益门槛。 */
 const HARD_RATIO = 1.5
-/** 主流服务的前缀缓存在空闲 5–10 分钟后失效；超过这个间隔再裁不会额外破坏缓存。 */
+/** 新批次至少省软线的四分之一和当前发送量的五分之一，避免保护区移动导致逐轮小裁。 */
+const MIN_BATCH_THRESHOLD_RATIO = 0.25
+const MIN_BATCH_CONTEXT_RATIO = 0.2
+/** 到已知窗口的80%时优先腾空间；仍由 pi 原生压缩处理无法裁掉的内容。 */
+const CAPACITY_PRESSURE_RATIO = 0.8
+/** 缓存冷热的启发式间隔，不表示服务商承诺的TTL；超过间隔也不跳过批次收益门槛。 */
 export const CACHE_COLD_MS = 5 * 60 * 1000
 /** 压缩失败（例如 pi 认为可压缩的部分太少）后，上下文要再增长这么多倍才重试。 */
 const RETRY_GROWTH = 1.2
 const KEEP_TURNS = 3
+const KEEP_TOOL_GROUPS = 3
 /** 小于这个字符数（约 1K token）的输出不值得换成存根。 */
 const MIN_TRIM_CHARS = 4_000
 const IMAGE_TOKENS = 1_200
@@ -122,14 +130,49 @@ export function stubText(call, size) {
   return `[较早的工具输出已省略：${describeCall(call)}，${what}。需要时重新运行，或用 read 读原文件。]`
 }
 
+/** 原生用量锚在最近一次成功且有用量的回复；错误/取消不能覆盖它。 */
+function usageKey(message) {
+  const usage = message?.usage
+  if (message?.role !== 'assistant' || !usage || ['error', 'aborted'].includes(message.stopReason)) return undefined
+  const total = usage.totalTokens || ((usage.input ?? 0) + (usage.output ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0))
+  if (!(total > 0)) return undefined
+  return createHash('sha256').update(JSON.stringify([message.timestamp, message.provider, message.model, usage, message.content])).digest('hex')
+}
+
+function savedTokens(messages, trimmed) {
+  let saved = 0
+  for (const message of messages) if (message?.role === 'toolResult') saved += trimmed.get(message.toolCallId) ?? 0
+  return saved
+}
+
+/** 同一 assistant 发出的并行调用是一组；每个用户轮分别保护最近几组。 */
+function toolGroups(messages) {
+  const groups = new Map()
+  const results = new Set(messages.filter(m => m?.role === 'toolResult').map(m => m.toolCallId))
+  let turn = []
+  const protect = () => { for (const group of turn.slice(-KEEP_TOOL_GROUPS)) group.recent = true }
+  for (const message of messages) {
+    if (message?.role === 'user') { protect(); turn = [] }
+    if (message?.role !== 'assistant') continue
+    const calls = (message.content ?? []).filter(part => part?.type === 'toolCall')
+    if (!calls.length) continue
+    const group = { complete: calls.every(call => results.has(call.id)), recent: false }
+    turn.push(group)
+    for (const call of calls) groups.set(call.id, group)
+  }
+  protect()
+  return groups
+}
+
 /**
  * 纯函数：给出这一次请求要发的消息。
  *
  * `trimmed` 是进程内的已裁集合（toolCallId → 省下的 token），会被就地追加。
- * `projectedTokens` 是 pi 估算的完整上下文大小（未裁剪）。
- * `cacheCold` 为 true 表示缓存大概率已过期，可以在软线处开新的一批；否则要到硬线才开。
+ * `projectedTokens` 是未裁剪口径的上下文大小。宿主调用处先补回用量已包含的裁剪量，
+ * 再由这里扣一次当前存根节省；不能直接把 pi 的已裁请求用量当作未裁估值。
+ * `cacheCold` 只决定软线/硬线的规划时机；提交前仍要有足够收益，除非逼近已知 contextWindow。
  */
-export function trimMessages(messages, { trimmed, projectedTokens, threshold, cacheCold = true }) {
+export function trimMessages(messages, { trimmed, projectedTokens, threshold, cacheCold = true, contextWindow = 0 }) {
   const calls = new Map()
   for (const m of messages) {
     if (m?.role !== 'assistant') continue
@@ -147,22 +190,38 @@ export function trimMessages(messages, { trimmed, projectedTokens, threshold, ca
   if (userSeen < KEEP_TURNS) boundary = 0
 
   if (typeof projectedTokens === 'number' && threshold > 0) {
-    let saved = 0
-    for (const m of messages) if (m?.role === 'toolResult' && trimmed.has(m.toolCallId)) saved += trimmed.get(m.toolCallId)
-    let effective = projectedTokens - saved
-    if (effective > (cacheCold ? threshold : threshold * HARD_RATIO)) {
+    let effective = projectedTokens - savedTokens(messages, trimmed)
+    const hardLine = threshold * HARD_RATIO
+    const capacityPressure = contextWindow > 0 && Number.isFinite(contextWindow) && effective >= contextWindow * CAPACITY_PRESSURE_RATIO
+    if (capacityPressure || effective > (cacheCold ? threshold : hardLine)) {
+      const before = effective
+      const proposed = new Map()
       const target = Math.floor(threshold * TRIM_TARGET_RATIO)
-      for (let i = 0; i < boundary && effective > target; i++) {
-        const m = messages[i]
-        if (m?.role !== 'toolResult' || trimmed.has(m.toolCallId)) continue
-        const call = calls.get(m.toolCallId)
-        if (isSkillRead(call)) continue
-        const size = outputSize(m)
-        if (size.chars < MIN_TRIM_CHARS && size.images === 0) continue
-        const stubTokens = estimateTokens(stubText(call ?? { name: m.toolName }, size))
-        const gain = Math.max(0, size.tokens - stubTokens)
-        trimmed.set(m.toolCallId, gain)
-        effective -= gain
+      const groups = toolGroups(messages)
+      const cut = (start, end, recentTurns) => {
+        for (let i = start; i < end && effective > target; i++) {
+          const m = messages[i]
+          if (m?.role !== 'toolResult' || m.isError || trimmed.has(m.toolCallId) || proposed.has(m.toolCallId)) continue
+          const group = groups.get(m.toolCallId)
+          if (!group?.complete || (recentTurns && group.recent)) continue
+          const call = calls.get(m.toolCallId)
+          if (isSkillRead(call)) continue
+          const size = outputSize(m)
+          if (size.chars < MIN_TRIM_CHARS && size.images === 0) continue
+          const stubTokens = estimateTokens(stubText(call, size))
+          const gain = Math.max(0, size.tokens - stubTokens)
+          if (!gain) continue
+          proposed.set(m.toolCallId, gain)
+          effective -= gain
+        }
+      }
+      cut(0, boundary, false)
+      // 只有旧轮裁过后仍超过硬线，才放宽近期长轮；不为少量超软线破坏近期证据。
+      if (effective > hardLine || capacityPressure) cut(boundary, messages.length, true)
+      const minimumGain = Math.max(threshold * MIN_BATCH_THRESHOLD_RATIO, before * MIN_BATCH_CONTEXT_RATIO)
+      // 不足一批时完全不提交，既有存根和候选原文都保持不变；下一请求会重新规划。
+      if (capacityPressure || before - effective >= minimumGain) {
+        for (const [id, gain] of proposed) trimmed.set(id, gain)
       }
     }
   }
@@ -183,18 +242,47 @@ export default function contextTrimExtension(pi) {
   let compacting = false
   /** 上一次发请求的时间；进程刚启动时没有，视为缓存已冷。 */
   let lastRequestAt
+  let lastResponse
+  let requestSavings = 0
+  let projectionBoundary
+  const resetTrim = () => {
+    trimmed.clear()
+    lastResponse = undefined
+    requestSavings = 0
+    projectionBoundary = undefined
+    lastRequestAt = undefined
+  }
+  pi.on('session_start', resetTrim)
+  pi.on('session_tree', resetTrim)
+  pi.on('session_compact', resetTrim)
+  pi.on('message_end', (event) => {
+    const key = usageKey(event?.message)
+    if (key) lastResponse = { key, saved: requestSavings }
+  })
 
   pi.on('context', (event, ctx) => {
     const now = Date.now()
     const cacheCold = lastRequestAt === undefined || now - lastRequestAt > CACHE_COLD_MS
     lastRequestAt = now
+    requestSavings = 0
     const settings = readContextSettings()
     if (!settings.trim) return undefined
     const messages = event?.messages
     if (!Array.isArray(messages) || messages.length === 0) return undefined
+    // 原生 context_edit 会使此前用量失去参考意义，改为估算完整投影。
+    const branch = ctx?.sessionManager?.getBranch?.() ?? []
+    const boundary = branch.findLast(entry => entry.type === 'context_edit' || entry.type === 'compaction')?.id
+    if (boundary !== projectionBoundary) { lastResponse = undefined; projectionBoundary = boundary }
+    let anchor
+    for (let i = messages.length - 1; i >= 0 && !anchor; i--) anchor = usageKey(messages[i])
+    const resultIds = new Set(messages.filter(m => m?.role === 'toolResult').map(m => m.toolCallId))
+    for (const id of trimmed.keys()) if (!resultIds.has(id)) trimmed.delete(id)
+    const reflected = lastResponse && lastResponse.key === anchor ? lastResponse.saved : 0
     const usage = ctx?.getContextUsage?.()
     const threshold = trimAt(settings.trimTokens, usage?.contextWindow ?? 0)
-    const next = trimMessages(messages, { trimmed, projectedTokens: usage?.tokens ?? undefined, threshold, cacheCold })
+    const projectedTokens = typeof usage?.tokens === 'number' ? usage.tokens + reflected : undefined
+    const next = trimMessages(messages, { trimmed, projectedTokens, threshold, cacheCold, contextWindow: usage?.contextWindow ?? 0 })
+    requestSavings = savedTokens(messages, trimmed)
     return next ? { messages: next } : undefined
   })
 
@@ -229,7 +317,7 @@ export default function contextTrimExtension(pi) {
       holdUntil = undefined
       justCompacted = true
       /* 压缩后旧消息已换成摘要，旧的已裁记录不再对应任何消息 */
-      trimmed.clear()
+      resetTrim()
     }
     const failed = () => {
       compacting = false

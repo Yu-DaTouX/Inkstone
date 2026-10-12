@@ -606,27 +606,22 @@
 .composer-orbit::after {
   content: none;
 }
-.composer-stop {
-  gap: var(--sp-2);
-  font-variant-numeric: tabular-nums;
-}
-/* Button 把文字包在一个 span 里：方块与计时用外边距隔开 */
+/* 发送位的停止态：与发送同尺寸同底色，只换成实心方块 */
 .composer-stop-sq {
   display: inline-block;
   width: var(--sp-2);
   height: var(--sp-2);
-  margin-right: var(--sp-2);
   background: currentColor;
 }
-.composer-stop .composer-run-time {
-  margin-left: var(--sp-2);
+.send.stop .composer-stop-sq {
+  display: inline-block;
 }
 .composer-run-time {
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
 .composer-run {
-  max-width: 40ch;
+  max-width: 24ch;
   overflow: hidden;
   color: var(--fg-dim);
   font-size: var(--fs-xs);

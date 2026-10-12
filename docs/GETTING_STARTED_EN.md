@@ -17,7 +17,7 @@ Packages include the pi runtime, so you do not need to install Node.js or pi. Co
 ## Connect a model
 
 1. Open **Settings → Model access**.
-2. Choose a provider and sign in from the app or configure API credentials. CC subscription access requires Claude Code sign-in on this computer first, followed by the plugin installation entry on this page.
+2. Choose Sign in & subscriptions, API Key, or Custom providers. CC access requires Claude Code sign-in on this computer; the page offers bridge installation, official versions, and package management. Custom providers also offers local model detection and tool download links.
 3. Choose an available model and thinking level below the input area.
 
 A local profile name or avatar is for personalization and does not indicate a signed-in model account. Requests to remote models are sent to your selected provider.
@@ -38,7 +38,7 @@ This is an isolated offline preview, not a full browser. Inline scripts, styles,
 
 ## Codemode tool calls
 
-Open **Settings → Capabilities & plugins → Codemode** to turn it on or off. It is enabled by default, and changes apply from the next conversation turn. The Agent can batch tool calls and process results in scripts while retaining direct tool calls. Read-only subagents retain their execution restrictions. Legacy plan mode has left the default workflow.
+Open **Settings → Capabilities & plugins → General → Codemode** to turn it on or off. It is enabled by default, and changes apply from the next conversation turn. The Agent can batch tool calls and process results in scripts while retaining direct tool calls. Read-only subagents retain their execution restrictions. Legacy plan mode has left the default workflow.
 
 Codemode uses native pi capabilities, rather than adding a work mode. It is unavailable with an older pi or an explicitly disabled native Codemode extension.
 
@@ -68,9 +68,11 @@ Up to 10 subagents can run across the app at once. Each model decides how many t
 
 Recent subagent tool activity and final replies are saved locally and remain attached to their original conversation after restart. Click the task title to view its process; the full assignment remains in the card's Details rather than a separate original-task button in the process window. Older records recover activity from their retained native child-session files when available; missing content is not invented. Restoring history does not restart execution or resend completion notifications.
 
-Messages entered during a run wait for your choice to steer or queue. Stop ends the current run. Switching conversations does not stop background work. Files, browser, terminal, and subagent details open on demand and retain their owning conversation in split views.
+Messages entered during a run wait for your choice to steer or queue. Stop ends the current run, cancels that conversation's host-side image-generation wait, and suppresses late results. A submitted cloud request may still incur charges. ComfyUI cancellation removes only the owned queue item; it does not globally interrupt an already executing workflow or other tasks. Switching conversations does not stop background work. Files, browser, terminal, and subagent details open on demand and retain their owning conversation in split views.
 
 ## Plugins and remote access
+
+Long settings pages use topic tabs; switching within a page preserves unsaved forms. Low-frequency details and the package catalog are collapsed. OpenCLI installation/updates and Chrome extension downloads are under **Capabilities & plugins → Search & browser**. **Official versions** opens the publisher's page; it does not automatically check for a newer release.
 
 **Settings → Plugin market** has Inkstone and pi pages. Inkstone currently offers the Hermes plugin; exporting it does not install or pair it. The pi page supports package search, installation, updates, and removal, without guaranteeing graphical compatibility. See the [plugin market](PLUGIN_MARKET.md).
 
@@ -88,7 +90,7 @@ Before each new turn, Inkstone attempts to save a snapshot of an eligible projec
 
 - The conversation is unchanged; use “Branch” on the same row to go back in the conversation too.
 - Changes made by shell commands are covered, not only edit/write tools; files ignored by `.gitignore` and `node_modules` are untouched.
-- Skipped for the home folder or more than 30,000 files; turn it off under **Settings > Capabilities and plugins > Checkpoints**.
+- Skipped for the home folder or more than 30,000 files; turn it off under **Settings > Capabilities and plugins > General > Code checkpoints**.
 - Moving the data folder (Settings > About) carries the checkpoints along with the session files (the JSONL under `sessions/`).
 
 ## Two permission modes
