@@ -18,16 +18,41 @@
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
-  const store = window.__yanStore
+  // 发行版不暴露调试 store；只通过正式 IPC 和界面控件验收。
+  const runtimeLogs = []
+  const offLogs = window.yan.onPush((msg) => {
+    if (msg.ch === 'log') runtimeLogs.push(String(msg.payload.text ?? ''))
+    if (msg.ch === 'proc' && msg.payload.detail) runtimeLogs.push(msg.payload.detail)
+  })
+  const waitElement = async (selector) => {
+    for (let i = 0; i < 80; i += 1) {
+      const element = q(selector)
+      if (element) return element
+      await sleep(50)
+    }
+    throw new Error(`界面控件未出现：${selector}`)
+  }
+  const openSettings = async (tab) => {
+    ;(await waitElement('[data-testid="rail-settings"]')).click()
+    ;(await waitElement(`#settings-tab-${tab === 'context' ? 'workspace' : tab}`)).click()
+    if (tab === 'context') {
+      ;(await waitElement('[data-testid="settings-section-context"]')).click()
+      await waitElement('[data-testid="ctx-native-settings"]')
+    } else await waitElement('[data-testid="set-capabilities"]')
+  }
+  const closeSettings = async () => {
+    q('.settings-close')?.click()
+    await sleep(400)
+  }
 
   log('=== 打包产物：内置 pi ===')
   log('')
 
   // 1. 连接就绪 —— 打包后 pi 入口走 process.resourcesPath，找不到就会一直 starting
-  let st = store.getState().conn
+  let st = (await window.yan.agentStatus()).state
   for (let i = 0; i < 60 && st !== 'ready'; i++) {
     await sleep(500)
-    st = store.getState().conn
+    st = (await window.yan.agentStatus()).state
   }
   ok(st === 'ready', `conn = ${st}（应为 ready —— 打包里的 pi 真的起来了）`)
 
@@ -49,7 +74,7 @@
   ok(ta && !ta.disabled, '输入框可用')
 
   // 5. 扩展加载不报错（用户自己的扩展如 left-info-panel 仍然会加载）
-  const logs = store.getState().logs ?? []
+  const logs = runtimeLogs
   const extErr = logs.filter((l) => /extension_error/i.test(String(l)))
   log(`  日志里与扩展相关的报错行：${extErr.length}`)
   if (extErr.length) log('  ' + extErr.join('\n  '))
@@ -116,10 +141,10 @@
   log('')
   log('=== 原生 pi 上下文（解包态）===')
   try {
-    ok(store.getState().session?.contextPolicy === undefined, '当前会话没有启用旧宿主上下文策略')
+    ok((await window.yan.getState())?.contextPolicy === undefined, '当前会话没有启用旧宿主上下文策略')
     const waitCompaction = async (enabled) => {
       for (let i = 0; i < 40; i += 1) {
-        if (store.getState().session?.autoCompactionEnabled === enabled) return true
+        if ((await window.yan.getState())?.autoCompactionEnabled === enabled) return true
         await sleep(50)
       }
       return false
@@ -128,10 +153,10 @@
     ok(await waitCompaction(false), '关闭状态经 RPC 回传到当前会话')
     ok((await window.yan.setAutoCompaction(true)).ok === true, '原生 pi 自动压缩可重新开启')
     ok(await waitCompaction(true), '开启状态经 RPC 回传到当前会话')
-    store.getState().openSettings('context')
+    await openSettings('context')
     await sleep(500)
     ok(!!q('[data-testid="ctx-native-settings"]'), '上下文设置页渲染原生 pi 控件')
-    store.getState().closeSettings()
+    await closeSettings()
   } catch (error) {
     ok(false, `原生上下文在打包态验收失败：${error?.message ?? error}`)
   }
@@ -185,13 +210,16 @@
     ok(Array.isArray(builtin) && builtin.length > 0, '解包态内置能力列表可读')
     ok(!/(command|args|env|authRef)/i.test(serialized), '解包态能力快照不含命令 / 参数 / 环境 / 凭证引用字段')
 
-    store.getState().openSettings('capabilities')
+    await openSettings('capabilities')
     await sleep(700)
     ok(!!q('[data-testid="set-capabilities"]'), '解包态能力设置页已打开')
     ok(!!q('[data-testid="cap-strategy"]'), '解包态能力策略区域已渲染')
+    ;(await waitElement('[data-testid="settings-section-connections"]')).click()
+    await waitElement('[data-testid="cap-search"]')
     ok(!!q('[data-testid="cap-search"]'), '解包态能力搜索区域已渲染')
     ok(!!q('[data-testid="cap-skills"]'), '解包态技能区域已渲染（内置能力并入技能列表）')
     ok(!!q('[data-testid="cap-mcp"]'), '解包态 MCP 区域已渲染')
+    ;(await waitElement('[data-testid="settings-section-general"]')).click()
     const codemode = () => q('[data-testid="cap-codemode"]')
     const waitCodemode = async (enabled) => {
       for (let i = 0; i < 40; i += 1) {
@@ -205,14 +233,14 @@
     codemode()?.click()
     ok(await waitCodemode(false), '点击关闭 Codemode 更新界面')
     ok((await window.yan.getSettings()).codemodeEnabled === false, '关闭偏好经打包态 IPC 保存')
-    store.getState().closeSettings()
-    store.getState().openSettings('capabilities')
+    await closeSettings()
+    await openSettings('capabilities')
     await sleep(500)
     ok(await waitCodemode(false), '重开设置保留关闭偏好')
     codemode()?.click()
     ok(await waitCodemode(true), '点击重新开启 Codemode 更新界面')
     ok((await window.yan.getSettings()).codemodeEnabled === true, '重新开启偏好经打包态 IPC 保存')
-    store.getState().closeSettings()
+    await closeSettings()
   } catch (error) {
     ok(false, `解包态能力设置页验收报错：${error?.message ?? error}`)
   }
@@ -252,5 +280,6 @@
     ok(false, `解包态交互终端验收报错：${error?.message ?? error}`)
   }
 
+  offLogs()
   return out.join('\n')
 })()
