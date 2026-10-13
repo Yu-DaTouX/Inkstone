@@ -60,7 +60,9 @@
 
     /* ---- 造两个分组 + 四个项目（两个在 A、一个在 B、一个未分组）---- */
     const stamp = Date.now()
-    const cwdOf = (n) => `${store.getState().settings.cwd.replace(/[\\/][^\\/]*$/, '')}/yan-probe-group-${n}`
+    /* 场景带夹具项目：用里面预建的真实子目录（主进程对新项目 cwd 走 validateCwd，假目录会被拒）。 */
+    const probeRoot = String(store.getState().settings.cwd).replace(/[\\/]+$/, '')
+    const cwdOf = (n) => `${probeRoot}/probe-projects/p${n}`
     const groups = [
       { id: 'probe-group-a', name: '探针甲组', createdAt: stamp },
       { id: 'probe-group-b', name: '探针乙组', createdAt: stamp }
@@ -73,6 +75,25 @@
     ]
     const cwds = projects.map((p) => p.cwd)
     await store.getState().patchSettings({ projectGroups: groups, projects, recentCwds: cwds })
+    /*
+     * 左栏现在只显示**有会话的项目**：只造项目不造会话，分组标题根本不会渲染
+     * （实测 0 个）。给每个项目配一条合成会话。
+     */
+    const sessions = projects.map((p, i) => ({
+      id: `gr-s${i}`,
+      path: `${p.cwd}/session-${i}.jsonl`,
+      cwd: p.cwd,
+      projectId: p.id,
+      title: `会话 ${i + 1}`,
+      named: true,
+      createdAt: stamp,
+      updatedAt: stamp - i * 1000,
+      messageCount: 1
+    }))
+    store.setState({
+      sessions,
+      session: { ...(store.getState().session ?? {}), cwd: sessions[0].cwd, sessionFile: sessions[0].path }
+    })
     await settle()
 
     const before = titles()
@@ -142,7 +163,7 @@
     out.push('  解散后分组 = ' + JSON.stringify(st2.projectGroups.map((g) => g.name)))
     ok(st2.projectGroups.length === 1 && st2.projectGroups[0].id === 'probe-group-b', '甲组从设置里消失')
     ok(st2.projects.filter((p) => p.groupId === 'probe-group-a').length === 0, '原组内项目已脱离分组')
-    out.push('  解散后项目数 = ' + st2.projects.length + ' / cwds = ' + JSON.stringify(st2.projects.map((p) => p.cwd).filter((c) => /yan-probe-group/.test(c))))
+    out.push('  解散后项目数 = ' + st2.projects.length + ' / cwds = ' + JSON.stringify(st2.projects.map((p) => p.cwd).filter((c) => /probe-projects/.test(c))))
     ok(
       cwds.every((c) => st2.projects.some((p) => p.cwd === c)),
       '四个项目的记录都还在（解散分组只动 groupId，不删项目）'

@@ -283,7 +283,7 @@ export function Notices() {
     const active = new Set(notices.map((notice) => notice.id))
     dismissTimers.current?.clearMissing(active)
     for (const notice of notices) {
-      if (dismissTimers.current?.has(notice.id) || notice.action === 'git-install') continue
+      if (dismissTimers.current?.has(notice.id) || notice.action === 'git-install' || notice.action === 'app-update') continue
       const delay = notice.action || noticeLink(notice.text) ? 20_000 : notice.type === 'error' ? 12_000 : 5_000
       dismissTimers.current?.schedule(notice.id, delay, () => dismiss(notice.id))
     }
@@ -314,6 +314,23 @@ export function Notices() {
               <span className="notice-actions">
                 <GitInstallControl size="sm" />
                 <Button size="sm" variant="ghost" onClick={() => dismiss(n.id)}>{t('notice.dismiss')}</Button>
+              </span>
+            </div>
+          )
+        }
+        if (n.action === 'app-update') {
+          return (
+            <div
+              key={n.id}
+              className={`notice info notice-action ${isLeaving ? 'closing' : ''}`}
+              style={{ '--i': i } as React.CSSProperties}
+              data-testid="app-update-notice"
+            >
+              <Icon name="package" size={12} />
+              <span className="notice-text">{n.text ? t('update.notice', { v: n.text }) : t('update.available')}</span>
+              <span className="notice-actions">
+                <Button size="sm" variant="primary" onClick={() => { dismiss(n.id); openSettings('about') }} data-testid="app-update-notice-open">{t('update.noticeOpen')}</Button>
+                <Button size="sm" variant="ghost" onClick={() => dismiss(n.id)}>{t('update.noticeLater')}</Button>
               </span>
             </div>
           )

@@ -1934,7 +1934,7 @@
 .agent-list { display: flex; flex-direction: column; gap: 2px; }
 .agent-ended-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-top: var(--sp-2); padding: var(--sp-1) var(--sp-2); border: 0; background: none; color: var(--fg-mute); font: inherit; font-size: var(--fs-xs); cursor: pointer; border-radius: var(--r-sm); }
 .agent-ended-toggle:hover { background: var(--bg-2); color: var(--fg); }
-.agent-ended-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.agent-ended-toggle:focus-visible { outline: var(--focus-ring-w-strong) solid var(--focus-ring-color); outline-offset: -2px; }
 .agent-cli { gap: var(--sp-1); }
 .agent-cli > .btn.ghost { align-self: flex-start; }
 .agent-group-close { margin-left: auto; }

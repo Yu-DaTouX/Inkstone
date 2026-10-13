@@ -306,3 +306,13 @@
   color: var(--err);
   font-size: var(--fs-sm);
 }
+
+.project-directory-dialog {
+  overflow-y: auto;
+}
+.project-directory-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-2);
+  margin: 0 var(--sp-3) var(--sp-3);
+}

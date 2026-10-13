@@ -8,13 +8,14 @@
  * 断言会「通过」而应用其实是坏的。
  *
  * 用法：
- *   npm run test:live            全部
+ *   npm run test:live            默认零费用清单（整组仍需批准）
  *   npm run test:live -- live    只跑 DOM 体检（不烧 token）
  *   npm run test:live -- e2e     发一条真消息（烧 token，约 $0.001）
  *   npm run test:live -- sessions 会话切换 + 新建（不烧 token）
  */
 /* 日志管道断开（终端关闭 / agent 的 bash 会话结束）不能让我们中途死掉或弹框 */
 import './lib/stdio-guard.mjs'
+import { defaultLiveCases, validateSyntheticSelection, syntheticEnvironment } from './lib/live-synthetic-isolation.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import vm from 'node:vm'
 import {
@@ -58,7 +59,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
  * 绝不写回原目录。个别场景需要「没有凭证」的前提，见下面 `piDirNoAuth`。
  * 写成 `provider/id` 形式，交给 pi 的 `--model` 解析。
  */
-const TEST_MODEL = process.env.YAN_TEST_MODEL || 'commandcode/deepseek/deepseek-v4.1-flash'
+const SYNTHETIC_ONLY = process.env.YAN_TEST_SYNTHETIC_ONLY === '1'
+const TEST_MODEL = process.env.YAN_TEST_MODEL || (SYNTHETIC_ONLY ? 'openai/gpt-4o-mini' : 'commandcode/deepseek/deepseek-v4.1-flash')
 
 /**
  * Electron 可执行文件（直接 spawn，不经 npx）。
@@ -86,33 +88,16 @@ function modelForCase(fallback) {
 
 /** 每个场景：probe 脚本 + 等待多久（毫秒）+ 可选的预发按键 */
 const CASES = {
-  // 纯 DOM 体检：溢出 / 令牌 / 图标 / 字体栅格 / 分区渲染
-  /* 实施-18：日常模式的工作台首页与会话地图（cost 0，合成会话） */
-  dailyhome: { probe: 'scripts/probe/daily-workbench.js', delay: 9000, cost: 0 },
-  sessionmap: { probe: 'scripts/probe/daily-workbench.js', delay: 9000, cost: 0 },
-  /* 实施-28 T2/T5：任务收件箱（左栏入口 / 真实聚合 / Esc / 首页卡） */
-  taskinbox: { probe: 'scripts/probe/taskinbox.js', delay: 9000, cost: 0 },
   // 实施-26 R3/R4：画布轮次层（一轮一张卡 / 分支对齐 / 失败态；cost 0）
   turns: { probe: 'scripts/probe/turns.js', delay: 24000, cost: 0 },
   // 实施-21：运行阶段投影/显示（注入 store 快照，不跑模型）
   runprogress: { probe: 'scripts/probe/run-progress.js', delay: 9000, cost: 0 },
-  // 实施-25 P01：活动档案切换（UI → IPC → 落盘；cost 0）
-  agentprofile: { probe: 'scripts/probe/agent-profile.js', delay: 9000, cost: 0 },
-  // 实施-25 P02：主题空间（建空间 → 会话归属 → 归档；cost 0）
-  spaces: { probe: 'scripts/probe/spaces.js', delay: 9000, cost: 0 },
-  // 实施-25 P04：空间工作台（概览始终可达 / 四入口 / 按会话归属投影；cost 0）
-  spaceview: { probe: 'scripts/probe/spaceview.js', delay: 11000, cost: 0 },
   // 实施-25 P03：资料库（导入 → 解析 → 多引用方 → 软移除后旧引用仍可打开；cost 0）
   library: { probe: 'scripts/probe/library.js', delay: 9000, cost: 0 },
   // 实施-25 P05：活动行为与上下文装配（加入对话 → 引用可回到原文；cost 0）
-  activity: { probe: 'scripts/probe/activity.js', delay: 11000, cost: 0 },
   // 实施-25 P06a/P06b：可编辑成果（新建 → 编辑 → 版本 → 关闭重开 → agent 重写不吞用户段落 → 清单勾选 → 来源回原文；cost 0）
   // 实施-25 P15：内部 agent 分工（任务输入 / 结果汇总在卡片上看得见；cost 0，不真启动子代理）
   subagentbrief: { probe: 'scripts/probe/subagent-brief.js', delay: 12000, cost: 0 },
-  // 实施-25 P16：持续关注与提醒（应用没开不跟进 / 未启用不自行建立 / 只填不发；cost 0）
-  follow: { probe: 'scripts/probe/follow.js', delay: 24000, cost: 0 },
-  // 实施-25 P18：按活动配置模型（优先级 / 回退 / 边界文案；cost 0）
-  activitymodel: { probe: 'scripts/probe/activity-model.js', delay: 16000, cost: 0 },
   // 实施-23：自定义 API 服务表单（隔离 YAN_PI_DIR 下写入 models.json）
   customapi: { probe: 'scripts/probe/custom-api.js', delay: 9000, cost: 0 },
   // 实施-23 端到端：自定义 provider 走通「枚举 → 切换 → 真实对话 → 工具 → 取消 → 重开」。
@@ -165,6 +150,7 @@ const CASES = {
   linkpreview: { probe: 'scripts/probe/linkpreview.js', delay: 11000, cost: 0 },
   // 回复详细程度三档（方案 3.1）
   detail: { probe: 'scripts/probe/detail.js', delay: 10000, cost: 0 },
+  permissions: { probe: 'scripts/probe/permissions.js', delay: 9000, cost: 0 },
   // 模型菜单：可见行数 / 不越界 / 键盘选择（注入合成模型，不连 pi）
   modelmenu: {
     probe: 'scripts/probe/modelmenu.js',
@@ -173,7 +159,7 @@ const CASES = {
     wins: ['1440x900', '940x640']
   },
   // 子代理：真起一个独立 pi 子进程（方案第 8 节；本地模型也可能需要更长冷启动）
-  subagent: { probe: 'scripts/probe/subagent.js', delay: 12000, cost: 0, budget: 240000 },
+  subagent: { probe: 'scripts/probe/subagent.js', delay: 12000, cost: 1, budget: 240000 },
   /*
    * 实施-11 H-10：合成子代理推送快照在 Electron 渲染端回放（cost 0）。
    * 覆盖当前会话过滤、长转录自动跟随，以及用户上滚后继续输出不抢回位置；
@@ -329,6 +315,8 @@ const CASES = {
   // 发送键：规则可选 / 常显 / 生效（Enter 的语义不再随输入框高度隐式变化）
   sendkey: { probe: 'scripts/probe/sendkey.js', delay: 9000, cost: 0 },
   sendtail: { probe: 'scripts/probe/send-tail.js', delay: 9000, cost: 0 },
+  // 启动发现新版本：通知常驻，「查看更新」打开设置的关于页（不联网、不调模型）
+  updatenotice: { probe: 'scripts/probe/update-notice.js', delay: 9000, cost: 0 },
   // 悬着的消息：生成中发出去的先悬在输入框上方，由用户选插话 / 排队
   pending: { probe: 'scripts/probe/pending.js', delay: 9000, cost: 0 },
   /*
@@ -379,19 +367,20 @@ const CASES = {
   // 左栏会话重命名（行内输入；回归 Electron 不支持 window.prompt 的坑）
   rename: { probe: 'scripts/probe/rename.js', delay: 9000, cost: 0 },
   // 分组管理（N01）：重命名 + 空白/重名校验 + 解散但保留项目
-  grouprename: { probe: 'scripts/probe/grouprename.js', delay: 9000, cost: 0 },
+  grouprename: { probe: 'scripts/probe/grouprename.js', delay: 9000, cost: 0, fixture: true },
   /*
    * 项目「移除项目」= 归档：菜单入口 → 确认框 → 磁盘上 archived=true
    * → 归档视图里「恢复项目」把项目接回来。
    */
-  projectremove: { probe: 'scripts/probe/projectremove.js', delay: 9000, cost: 0 },
+  projectremove: { probe: 'scripts/probe/projectremove.js', delay: 9000, cost: 0, fixture: true },
+  projectdirectory: { probe: 'scripts/probe/project-directory.js', delay: 9000, cost: 0, fixture: true },
   /*
    * N01 拖拽排序：项目 / 分组顺序用**合成 PointerEvent** 走真实渲染路径
    * （实现里没有用 HTML5 draggable，所以合成事件与用户手拖是同一条），
    * 并回读 `yan.getSettings()` 证明顺序真的过了 IPC 落盘。
    * 探针里要等多次 420ms 的界面落定，所以预算给宽一点。
    */
-  railreorder: { probe: 'scripts/probe/rail-reorder.js', delay: 10000, cost: 0, budget: 150000 },
+  railreorder: { probe: 'scripts/probe/rail-reorder.js', delay: 10000, cost: 0, budget: 150000, fixture: true },
   // 项目默认只展开前五个（N17）：更多/收起 + 搜索 + 当前项目定位
   projectlimit: { probe: 'scripts/probe/projectlimit.js', delay: 9000, cost: 0 },
   // 窄侧栏会话标题可读性（N13）：最小宽度下量标题/缩进/状态槽
@@ -402,66 +391,10 @@ const CASES = {
   switcher: { probe: 'scripts/probe/switcher.js', delay: 9000, cost: 0 },
   rewind: { probe: 'scripts/probe/rewind.js', delay: 9000, cost: 0 },
   /*
-   * 工作模式（实施-05 S2）：旧配置迁移 / 菜单与键盘 / 会话级隔离。
-   *
-   * 两个关键设置：
-   *   · `legacyAutonomous: true` —— 预置一份**只有旧布尔**的 desktop.json，
-   *     验「旧 autonomous=true → 新会话自主」（新字段优先、迁移幂等）；
-   *   · `keys + keysDelay` —— Tab 快切是**渲染端**消费的真按键，探针得先
-   *     关掉首次引导、把焦点放进输入框，所以把第一枚按键推到 12s。
-   */
-  workmode: {
-    probe: 'scripts/probe/work-mode.js',
-    delay: 18000,
-    cost: 0,
-    budget: 120000,
-    legacyAutonomous: true,
-    keys: 'ctrl+tab,ctrl+tab',
-    keysDelay: 15000,
-    afterExit: 'workModePersisted'
-  },
-  /*
    * `+` 菜单（2026-09-22）：文件和文件夹 / 图片 / 能力。
    * cost 0：只验菜单结构、文案与几何，不点会开系统对话框的两项。
    */
   plusmenu: { probe: 'scripts/probe/plus-menu.js', delay: 15000, cost: 0, budget: 120000 },
-  /*
-   * 计划就绪转移端到端（实施-05 S3，**花一次模型**）：
-   * 切计划档 → 让模型用内联参数敲 `yan goal ready` → 宿主校验/幂等/落盘 →
-   * 模式自动切标准 + 工具卡认成「目标 · 砚内置」。
-   *
-   * 为何必须是真模型：整条链路（bash → `yan` 启动器 → 环境变量注入 → 身份校验）
-   * 里任何一段断了，单测都看不出来（与 `taskcli` 同一个理由）。
-   */
-  goal: {
-    probe: 'scripts/probe/goal.js',
-    delay: 12000,
-    cost: 1,
-    budget: 240000,
-    goalResumeExtLog: true,
-    afterExit: 'goalPersisted'
-  },
-  /* G-4：真实 ready → 待审 → 用户批准 → 向同一 runner 发送启动消息。 */
-  goalreview: {
-    probe: 'scripts/probe/goal-review.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 12000,
-    cost: 1,
-    budget: 360000,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    afterExit: 'goalReviewPersisted'
-  },
-  /* G-4：cost 0，用真实落盘待审状态验「修改计划」IPC 不误批准 / 启动。 */
-  goalreviewmodify: {
-    probe: 'scripts/probe/goal-review-modify.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 10000,
-    cost: 0,
-    goalReviewSeed: true,
-    afterExit: 'goalReviewModifyPersisted'
-  },
   // 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐
   context: { probe: 'scripts/probe/context.js', delay: 9000, cost: 0 },
   // 真实一轮后，浮层出现系统提示分段与工具定义明细（context-inspect 薄层 → context.inspect → yan:contextInspect）
@@ -509,98 +442,6 @@ const CASES = {
     env: { YAN_CONTEXT_POLICY: '{"workingSetCap":100,"emergencyRatio":0.001}' }
   },
   /*
-   * 请求前预算门的真实模型冒烟（实施-05 S4，cost 1）。
-   *
-   * 与 `hook-probe budget` / `budget-soft`（假 provider，cost 0）成对：
-   * 那边验「判得对、拦得住」；这边只验反面 —— **不误拦**。
-   * 工作集线压到 3000，真实对话第一轮就过线（soft），但物理线远在窗口那头：
-   * 这一轮必须照常发出并拿到回答，磁盘上只能有 soft，不能有 physical / abort。
-   */
-  budgetgate: {
-    probe: 'scripts/probe/budget-gate.js',
-    delay: 12000,
-    cost: 1,
-    budget: 240000,
-    contextExtLog: true,
-    afterExit: 'budgetGate',
-    /*
-     * 固定模型：默认那个免费档（LongCat 2.0）已于 2026-09-19 退役
-     * （`403 permission_error`：免费层下线），不固定就会变成一条无意义的红。
-     *
-     * 本场景**不看模型答了什么**（只要这一轮正常跑完）：deepseek 一闪模型在 RPC 链路的
-     * 极短问题上偶发空回复（手动 `--print` 同模型同提示正常）——那是模型侧，
-     * 判「有没有被误拦」的根据是磁盘上的 physical / budget-abort 断言（都为 0）。
-     */
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":3000}' }
-  },
-  /*
-   * 默认工作集（**不覆盖** `YAN_CONTEXT_POLICY`）下的真实长会话（实施-06）：
-   * 每轮 40000 行工具输出（≈50k token），8 轮足以让上下文越过硬线并触发压缩。
-   * 量的是生产默认软线 / 预留 / 防抖在真实长会话里守不守得住，
-   * 而不是测试通道里压线的变体。
-   */
-  contextpressure240k: {
-    probe: 'scripts/probe/context-pressure-240k.js',
-    delay: 12000,
-    cost: 1,
-    budget: 1500000,
-    contextExtLog: true,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    /*
-     * 关掉 tool-sweep，只留 compaction：默认接管里清扫的线在工作集 ×70%，
-     * 清扫真的生效后会把工具输出换成存根，上下文涨不到 240K 压缩线。
-     * 本场景量的是**默认 240K 工作集线上的压缩**，所以把清扫摘出去；
-     * “默认 kinds 下长会话被压在软线之下”那条由 `contextpressure` 与账本证据覆盖。
-     */
-    env: { YAN_CONTEXT_POLICY: '{"kinds":["recall","episode-fold","compaction"]}' },
-    piSettings: { compaction: { keepRecentTokens: 1 } }
-  },
-  /*
-   * C-3 大输入压力：**真的**把上下文推到工作集线上。
-   *
-   * `contextpressurebig` 已经证明：多轮小回合（每轮 ~1.8K token）在 700K 档
-   * 跑满 22 轮也只到 46K，压缩一次都没发生 —— 不是压缩把它压回去了，
-   * 而是输入量本身不够。这一档换驱动方式：每轮一段 200K 字符的用户消息
-   *（≈ 50K token），用户消息不会被 tool-sweep 拿走，增量确定。
-   * 档位由 `workingSetCap` 决定，同一个探针支持多档。
-   */
-  contextsoak300k: {
-    probe: 'scripts/probe/context-soak.js',
-    delay: 12000,
-    cost: 1,
-    budget: 1800000,
-    contextExtLog: true,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    piSettings: { compaction: { keepRecentTokens: 1 } },
-    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":300000,"kinds":["recall","compaction"]}' }
-  },
-  /* 同一条链路的**快档**（工作集 60K）：几轮就过线，用于快速回归“到线就压”。 */
-  contextsoak60k: {
-    probe: 'scripts/probe/context-soak.js',
-    delay: 12000,
-    cost: 1,
-    budget: 600000,
-    contextExtLog: true,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    piSettings: { compaction: { keepRecentTokens: 1 } },
-    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":60000,"kinds":["recall","compaction"]}' }
-  },
-  /*
-   * C-3 的受控最小验证：用真实约 1M 窗口端点（Claude Sonnet 5，commandcode）
-   * 确认 pi 报的窗口 / 砚的工作集数值一致、请求未越窗口。
-   * 只跑 3 轮，**不**把压缩次数当判据 —— 发满 1M 输入的压力矩阵需要单独预算。
-   */
-  contextpressure1m: {
-    probe: 'scripts/probe/context-pressure-1m.js',
-    delay: 12000,
-    cost: 1,
-    budget: 900000,
-    contextExtLog: true,
-    model: 'commandcode/claude-sonnet-5',
-    piSettings: { compaction: { keepRecentTokens: 1 } }
-  },
-  /*
    * C-3 大窗口端点验证：一条大填充 prompt 走完整链路，
    * 看 pi 报的窗口 / 上下文与预算诊断。
    */
@@ -614,7 +455,7 @@ const CASES = {
   },
   // 思考档位：真实模型（DeepSeek V4.1 Flash）切过去后必须显示真实档位，
   // 且不能被后续 state 推送清空（D11）。不调模型，只 set_model + 读档位。
-  thinkinglevels: { probe: 'scripts/probe/thinking-levels.js', delay: 14000, cost: 0 },
+  thinkinglevels: { probe: 'scripts/probe/thinking-levels.js', delay: 14000, cost: 0, needsCredentials: true },
   // 排队消息：显示在输入框上方 + 插队按钮接线
   queuestack: { probe: 'scripts/probe/queuestack.js', delay: 9000, cost: 0 },
   // 所有报错都进日志（store.set 包装的回归网）
@@ -630,7 +471,7 @@ const CASES = {
    * 自己跳过真实数据断言，颜色分级那段用打桩数据走真实渲染路径，仍然会跑。
    * ⚠️ 不进 `check`：方向判据依赖当月真实用量，放在 check 里会变成靠环境碰运气的红灯。
    */
-  quota: { probe: 'scripts/probe/quota.js', delay: 10000, cost: 0, budget: 120000 },
+  quota: { probe: 'scripts/probe/quota.js', delay: 10000, cost: 0, budget: 120000, needsCredentials: true },
   // 面板宽度拖拽（含夹取范围与键盘）
   resize: { probe: 'scripts/probe/resize.js', delay: 9000, cost: 0 },
   // 文件树边界：空目录 / 失效路径 / 多级 / 大目录分页 / 中文空格 / 同名文件 / 目录联接
@@ -639,7 +480,6 @@ const CASES = {
   atpathedge: { probe: 'scripts/probe/at-path-edge.js', delay: 11000, cost: 0, fixture: true },
   // 项目切换（N05）：视图与文件树跟着 cwd 走 / 草稿按实例隔离 / 附件绝对路径 / 失效与无权限目录的真实反馈
   projectswitch: { probe: 'scripts/probe/project-switch.js', delay: 10000, cost: 0, fixture: true, budget: 180000, projectSessions: true },
-  knowledgeasync: { probe: 'scripts/probe/knowledge-async.js', delay: 10000, cost: 0, fixture: true, budget: 180000, projectSessions: true },
   /*
    * 「每个项目最后一个会话」的恢复判断（实施-09 S3，cost 0）：不调模型。
    *
@@ -840,8 +680,6 @@ const CASES = {
   controlstates: { probe: 'scripts/probe/controlstates.js', delay: 9000, cost: 0, fixture: true },
   // 图标触点与无障碍名（H-8c）：sprite 接口 / 可访问名 / currentColor / 尺寸
   iconsurface: { probe: 'scripts/probe/iconsurface.js', delay: 9000, cost: 0, fixture: true },
-  // 目标的产物/参考（U-3b）：真 IPC 读回 / 展示 / 打开失败有反馈
-  goallinks: { probe: 'scripts/probe/goallinks.js', delay: 10000, cost: 0, fixture: true, goalSeed: true },
   // 布局：用量条合并 / 消息无上下文 / 右栏任务 / 左栏自动隐藏
   layout: { probe: 'scripts/probe/layout.js', delay: 9000, cost: 0 },
   // 用量条（输入/输出/缓存命中/输出速度）—— 会真调模型
@@ -956,6 +794,10 @@ const CASES = {
   e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1, budget: 200000 },
   // 宿主能力服务：模型在 bash 里调 `yan`，宿主校验身份后回结构化摘要（花 token）
   capability: { probe: 'scripts/probe/capability.js', delay: 12000, cost: 1, budget: 180000 },
+  // 随包技能清理：现存技能读得到、已删技能报不可用、帮助不指向技能（花 token）
+  skillcleanup: { probe: 'scripts/probe/skill-cleanup.js', delay: 12000, cost: 1, budget: 300000 },
+  // 重复动作兜底真实接线：相同调用第 5 次被拦；顺带确认 yan follow 已下线（花 token）
+  repeatguardlive: { probe: 'scripts/probe/repeat-guard-live.js', delay: 12000, cost: 1, budget: 360000 },
   // 子代理能力：父模型通过 yan CLI 启动子代理，UI 必须收到同一条实时 run（花 token）
   subagentmodel: {
     probe: 'scripts/probe/subagent-model.js',
@@ -963,48 +805,6 @@ const CASES = {
     cost: 1,
     budget: 260000,
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
-  },
-  /*
-   * 项目知识设置页（实施-03 S5，**不调模型**）：真开设置 → 读到 fixture →
-   * 确认 / 编辑 / 逻辑删除一次走完。落盘由 afterExit 核对（界面上“已消失”
-   * 不等于磁盘上真的删了）。
-   */
-  knowledgetab: {
-    probe: 'scripts/probe/knowledge-tab.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 12000,
-    budget: 120000,
-    cost: 0,
-    knowledgeSeed: 'candidate',
-    afterExit: 'knowledgeTab'
-  },
-  /*
-   * 项目知识的跨会话 / 项目 / 工作树隔离（实施-03 S6，**不调模型**）。
-   *
-   * 为什么要单独一条：`knowledgetab` 验的是「一条会话里界面能读能写」，
-   * 它看不出**两个项目 / 一棵工作树会不会共用一个知识空间**。而这正是
-   * 实施-03 §4 的硬要求（「工作树默认是独立项目知识空间」）。
-   *
-   * 这条场景用**真实路径前缀**复现旧 projectId 算法的截断缺陷：
-   * `legacyProjectId` 只取路径前 27 字节，而 fixture 根目录很长 ——
-   * `repo`（已登记）与 `repo-worktrees/iso`（真 git 工作树，未登记）会派生出
-   * **同一个 id**。修复前工作树会读到主仓库的知识（见 afterExit 与 HANDOFF）。
-   *
-   * `restart` 是这片新增的能力：第一次启动跑主探针 → 退出 → **用同一份
-   * `YAN_DATA_DIR` 再启动一次**跑重启探针，验「关掉应用再开，知识还在、隔离还在」。
-   * 探针之间用 localStorage 交接观察到的 id（同一个 `YAN_USER_DATA`，跨进程保留）。
-   */
-  knowledgeisolation: {
-    probe: 'scripts/probe/knowledge-isolation.js',
-    restart: { probe: 'scripts/probe/knowledge-isolation-restart.js', delay: 12000, budget: 120000 },
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 12000,
-    budget: 150000,
-    cost: 0,
-    knowledgeIsolationSeed: true,
-    afterExit: 'knowledgeIsolation'
   },
   /*
    * `yan knowledge …` 的真实闭环（实施-03 S4，花 token）：模型自己发现并用
@@ -1076,8 +876,6 @@ const CASES = {
    */
   questioncli: { probe: 'scripts/probe/question-cli.js', delay: 9000, cost: 0, budget: 180000 },
   // 图生图：DeepSeek 经 yan image generate（edit 模式）改一张项目内的图；出图通道由本机凭证决定（花 token，且会用生图额度）
-  imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
-  // 图生图：DeepSeek 经 yan image generate（edit 模式）改项目内一张图；出图通道取本机凭证，会用生图额度（花 token）
   imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   // 图片真的发给模型（花 token —— 需要视觉模型，Ling 是纯文本的）
   image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1, model: TEST_VISION_MODEL },
@@ -1312,12 +1110,6 @@ const CASES = {
     delay: 10000,
     cost: 0
   },
-
-  /*
-   * 实施-12 U-3a：目标浮层（cost 0 fixture）。
-   * 各相位/完成数/空标题/emoji/超长/加载失败与重试/点击不创建不停止。
-   */
-  goalpopover: { probe: 'scripts/probe/goalpopover.js', delay: 10000, cost: 0 },
 
   /*
    * 实施-12 U-2：项目上下文菜单（cost 0）。
@@ -1565,6 +1357,12 @@ function buildFixtureProject(base) {
   const put = (rel, text) => writeFileSync(join(dir, rel), text, 'utf8')
 
   mk()
+  /*
+   * 左栏「项目 / 分组」类探针要往 settings.projects 里塞多个项目，而主进程对新项目
+   * 的 cwd 走 `validateCwd`：目录不存在就直接拒绝（探针会在断言前抛错）。这里预建
+   * 一批真实目录，供 `probe-projects/pN` 用。
+   */
+  for (let i = 1; i <= 8; i++) mk('probe-projects', `p${i}`)
   put('README.md', '# fixture project\n\n合成项目，只用于边界场景。\n')
   writeFileSync(join(dir, 'imgsrc.png'), makePng(64, [32, 96, 200]))
   mk('empty')
@@ -1853,7 +1651,7 @@ function seedSessions(destRoot) {
 
   try {
     const real = join(homedir(), '.pi', 'agent', 'sessions')
-    if (existsSync(real)) {
+    if (!SYNTHETIC_ONLY && existsSync(real)) {
       const found = []
       const walk = (dir, depth) => {
         if (depth > 2) return
@@ -1879,7 +1677,7 @@ function seedSessions(destRoot) {
   }
 
   /* 排查加载速度用：YAN_TEST_EXTRA_SESSIONS 里（分号分隔）的会话文件会被拷进隔离目录 */
-  for (const extra of (process.env.YAN_TEST_EXTRA_SESSIONS ?? '').split(';').filter(Boolean)) {
+  for (const extra of (SYNTHETIC_ONLY ? [] : (process.env.YAN_TEST_EXTRA_SESSIONS ?? '').split(';').filter(Boolean))) {
     try {
       copyFileSync(extra, join(destDir, basename(extra)))
       n++
@@ -5627,7 +5425,7 @@ function runProbe(
   driverContext
 ) {
   return new Promise((resolvePromise) => {
-    const probeEnv = {
+    let probeEnv = {
       ...env,
       // 场景自己的环境变量（如 authEnv 要验「key 写在环境变量里」那条路）
       ...(caseEnv ?? {}),
@@ -5652,6 +5450,7 @@ function runProbe(
       /* 用例自己调第一枚按键的延时（探针要先关引导 / 拿到输入框焦点时用） */
       ...(keys && keysDelay ? { YAN_PROBE_KEYS_DELAY: String(keysDelay) } : {})
     }
+    if (SYNTHETIC_ONLY) probeEnv = syntheticEnvironment(probeEnv)
     // GUI 进程不能带 ELECTRON_RUN_AS_NODE：否则 Electron 二进制退化成纯 Node，
     // 无窗口、静默 exit 0，探针什么都拿不到（详见 scripts/test-packaged.mjs）。
     /*
@@ -5783,11 +5582,21 @@ function runProbe(
       const body = m[1]
       // 断言失败标记：✗ 或 “=0（应为 1）” 之类的显式否定
       const combined = [body, driven?.text].filter(Boolean).join('\n')
-      const bad = /✗/.test(combined)
+      /*
+       * 探针在准备阶段抛异常时只留一行「探针出错: …」，不带 ✗，进程还照样 exit 0 ——
+       * 那种情况断言一条都没跑，绝不能被当成通过（实测在 grouprename / projectremove /
+       * railreorder 上撞到过假通过）。
+       */
+      const crashed = /探针出错|探针异常|probe threw/i.test(combined)
+      const bad = /✗/.test(combined) || crashed
       resolvePromise({
         ok: !bad && code === 0 && (driven?.ok ?? true),
         text: combined + '\n',
-        hint: bad ? '输出里有 ✗ 的行' : undefined
+        hint: bad
+          ? crashed && !/✗/.test(combined)
+            ? '探针在断言前就抛错了（不算通过）'
+            : '输出里有 ✗ 的行'
+          : undefined
       })
     })
   })
@@ -5802,7 +5611,7 @@ async function main() {
   // 支持多个场景：npm run test:live -- live memory sessions
   const argv = process.argv.slice(2).filter((a) => !a.startsWith('-'))
   /* needsDownload：会真的联网下载大文件的场景，默认全量不跑，点名并设置 YAN_REAL_GIT_DOWNLOAD=1 才跑 */
-  let names = argv.length ? argv : Object.keys(CASES).filter((n) => !CASES[n].needsDownload)
+  let names = argv.length ? argv : defaultLiveCases(CASES)
   const skippedDownloads = names.filter((n) => CASES[n]?.needsDownload && process.env.YAN_REAL_GIT_DOWNLOAD !== '1')
   if (skippedDownloads.length) {
     console.log(`跳过需要联网下载的场景：${skippedDownloads.join(', ')}（设置 YAN_REAL_GIT_DOWNLOAD=1 才会真的下载）`)
@@ -5848,6 +5657,7 @@ async function main() {
      YAN_SESSIONS_DIR   会话文件（同时 pi 也会收到 --session-dir）
      YAN_DATA_DIR       桌面端设置（desktop.json） */
   const ISOLATED = process.env.YAN_TEST_ISOLATED !== '0'   // 调试时「=0」可跑真实环境
+  if (SYNTHETIC_ONLY) validateSyntheticSelection(names, CASES, ISOLATED)
   const sandboxRoot = ISOLATED ? mkdtempSync(join(tmpdir(), 'yan-test-')) : null
   if ((names.includes('remoteroutes') || names.includes('turntimingkill')) && !sandboxRoot) {
     console.error('✗ remoteroutes / turntimingkill 必须运行在隔离 sandbox 中；拒绝触碰真实用户数据。')
@@ -5969,7 +5779,12 @@ async function main() {
      *     只收 out/、build/icon.png、package.json 和 resources/pi-runtime，
      *     临时目录不可能进发布包；.gitignore 也已忽略 `auth.json`。
      */
-    const sourceAgentDir = process.env.YAN_PI_DIR?.trim() || join(homedir(), '.pi', 'agent')
+    const sourceAgentDir = SYNTHETIC_ONLY ? join(sandboxRoot, 'synthetic-source') : process.env.YAN_PI_DIR?.trim() || join(homedir(), '.pi', 'agent')
+    if (SYNTHETIC_ONLY) {
+      mkdirSync(sourceAgentDir, { recursive: true })
+      writeFileSync(join(sourceAgentDir, 'auth.json'), '{}', 'utf8')
+      writeFileSync(join(piDir, 'settings.json'), JSON.stringify({ packages: [], enableMcp: false }), 'utf8')
+    }
     const copied = []
     const routeOnly = names.length === 1 && names[0] === 'remoteroutes'
     if (!routeOnly) {
@@ -5982,7 +5797,7 @@ async function main() {
       }
     }
     if (copied.length) {
-      console.log(`  pi 文件：已复制 ${copied.join(' / ')} 到隔离目录（仅本次测试，不进包）`)
+      console.log(SYNTHETIC_ONLY ? '  pi 文件：仅使用临时空凭证，不读取个人模型目录' : `  pi 文件：已复制 ${copied.join(' / ')} 到隔离目录（仅本次测试，不进包）`)
     } else if (routeOnly) {      console.log('  pi 文件：远程路由场景使用独立本机 provider，不读取真实 auth.json / models.json')
     } else {
       console.log('  pi 文件：没找到凭证/模型目录 —— 依赖 pi 就绪的场景会失败')
@@ -6572,7 +6387,7 @@ async function main() {
     CASES.taskext.env = { YAN_PI_DIR: piDirTaskExt }
 
     console.log(`隔离目录：${sandboxRoot}`)
-    console.log(`  fixture：${seeded} 份（真实会话只读拷贝 + 合成；原件不受影响）`)
+    console.log(`  fixture：${seeded} 份（${SYNTHETIC_ONLY ? '仅合成，无个人凭证/会话' : '真实会话只读拷贝 + 合成；原件不受影响'}）`)
     console.log('  （不碰真实的会话、派生状态与 localStorage）')
     console.log('  （也不碰真实的 ~/.pi/agent/auth.json —— 里面是用户的密钥）')
   } else {

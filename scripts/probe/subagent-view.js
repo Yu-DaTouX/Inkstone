@@ -25,12 +25,15 @@
   const prefix = `probe-h10-${Date.now()}`
   const currentId = `${prefix}-current`
   const foreignId = `${prefix}-foreign`
+  const before = { messages: store.getState().messages, subagents: store.getState().subagents }
+  const parentMessageId = `${prefix}-assistant`
   const sessionId = store?.getState().session?.sessionId
   const makeRun = (id, parentSessionId) => ({
     id,
     task: `H-10 fixture ${id.endsWith('current') ? '当前会话' : '其它会话'}`,
     cwd: store?.getState().session?.cwd ?? '',
     parentSessionId,
+    parentMessageId,
     isolation: 'controlled-cwd',
     status: 'running',
     startedAt: Date.now() - 5000,
@@ -43,6 +46,7 @@
   try {
     if (!store || !sessionId) return '  ✗ 当前页面没有可用的渲染 store / sessionId'
 
+    store.setState({ messages: [{ id: `${prefix}-user`, role: 'user', text: '分工归属夹具' }, { id: parentMessageId, role: 'assistant', text: '安排分工' }] })
     out.push('=== 1. 当前会话归属过滤 ===')
     push(makeRun(currentId, sessionId))
     push(makeRun(foreignId, `${prefix}-another-session`))
@@ -76,11 +80,12 @@
     await sleep(250)
     ok(!q(`[data-testid="subagent-note-${currentId}"]`), '已合并的 run 不再占会话流')
   } catch (error) {
-    out.push(`  探针出错: ${error?.message ?? String(error)}`)
+    out.push(`  ✗ 探针出错: ${error?.message ?? String(error)}`)
   } finally {
     for (const id of [currentId, foreignId]) {
       store?.getState().applyPush({ ch: 'subagent-remove', payload: id })
     }
+    store.setState(before)
   }
 
   return out.join('\n')

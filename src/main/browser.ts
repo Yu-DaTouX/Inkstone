@@ -1432,6 +1432,7 @@ export class BrowserController {
      * 是否打开由用户自己决定。
      */
     const origin = item.getURL()
+    mkdirSync(directory, { recursive: true })
     item.setSavePath(path)
     item.once('done', (_event, state) => {
       if (state !== 'completed') return
@@ -1444,7 +1445,6 @@ export class BrowserController {
       }
       this.updateState()
     })
-    mkdirSync(directory, { recursive: true })
   }
 
   private pushError(detail: string): void {

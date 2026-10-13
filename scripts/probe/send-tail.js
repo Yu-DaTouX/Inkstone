@@ -22,6 +22,34 @@
     const base = store.getState().session
     if (!ok(!!base?.sessionId, '有当前会话')) return out.join('\n')
     const idle = { ...base, isAgentRunning: false, isStreaming: false }
+
+    /* 空会话启动页：过程并列时没有过程可放，宽度应与内联时相同，不被放宽 */
+    store.setState({ session: idle, runTail: null, messages: [] })
+    await sleep(300)
+    {
+      const html = document.documentElement
+      const savedLayout = html.dataset.procLayout
+      const streamEl = document.querySelector('.stream')
+      if (streamEl) streamEl.style.minWidth = '1440px'
+      const widthOf = (layout) => {
+        html.dataset.procLayout = layout
+        return document.querySelector('.empty-stream')?.getBoundingClientRect().width
+      }
+      const wi = widthOf('inline')
+      const ws = widthOf('side')
+      out.push(`  空会话启动页宽度：内联 ${Math.round(wi ?? -1)} / 并列 ${Math.round(ws ?? -1)}`)
+      ok(wi !== undefined && ws !== undefined && Math.abs(wi - ws) <= 1, '过程并列时空会话启动页不被放宽')
+      const empty = document.querySelector('.empty-stream')
+      if (empty) empty.style.marginInline = '0'
+      const wc = widthOf('side')
+      if (empty) empty.style.marginInline = ''
+      out.push(`  对照（无列内缩）：并列 ${Math.round(wc ?? -1)}`)
+      ok(wc !== undefined && wi !== undefined && wc - wi > 20, '对照：没有列内缩时启动页确实被放宽')
+      if (streamEl) streamEl.style.minWidth = ''
+      if (savedLayout === undefined) delete html.dataset.procLayout
+      else html.dataset.procLayout = savedLayout
+    }
+
     const now = Date.now()
     store.setState({
       session: idle,
@@ -65,6 +93,36 @@
     push({ ch: 'msg-add', payload: { id: 'm2', role: 'user', text: '第二问', timestamp: Date.now() } })
     await frame(); sample('用户消息到达')
     const pending = !!document.querySelector('.stream-pending [data-testid="working"]')
+    /* 过程并列（宽窗）时等待行要与回合正文同列，不能贴到左侧过程栏的位置 */
+    const html = document.documentElement
+    const savedLayout = html.dataset.procLayout
+    const streamEl = document.querySelector('.stream')
+    /* 并列只在对话区 ≥1240px 时生效；测试窗口不够宽时临时撑开对话区 */
+    const savedMinWidth = streamEl?.style.minWidth ?? ''
+    if (streamEl) streamEl.style.minWidth = '1440px'
+    const streamW = streamEl?.clientWidth ?? 0
+    for (const layout of ['side', 'left', 'inline']) {
+      html.dataset.procLayout = layout
+      const p = document.querySelector('.stream-pending .tact')?.getBoundingClientRect().left
+      const turn = prior()
+      const m = turn?.querySelector('.turn-main')?.getBoundingClientRect().left
+      const body = turn?.querySelector('.msg-body')?.getBoundingClientRect().left
+      out.push(`  等待行对齐（${layout}，对话区宽 ${streamW}px）：等待行 ${Math.round(p ?? -1)} / 回合正文 ${Math.round(m ?? -1)} / 回合外框 ${Math.round(body ?? -1)}`)
+      if (layout !== 'inline') ok(m !== undefined && body !== undefined && m - body > 100, `过程布局 ${layout} 已生效（正文让出一侧过程栏）`)
+      ok(p !== undefined && m !== undefined && Math.abs(p - m) <= 1, `过程布局 ${layout} 时等待行与回合正文左缘对齐`)
+    }
+    /* 对照：去掉等待行的列内缩（修复前的样子），并列时它会偏到左侧 */
+    html.dataset.procLayout = 'side'
+    const pendingEl = document.querySelector('.stream-pending')
+    if (pendingEl) pendingEl.style.marginInline = '0'
+    const cp = document.querySelector('.stream-pending .tact')?.getBoundingClientRect().left
+    const cm = prior()?.querySelector('.turn-main')?.getBoundingClientRect().left
+    out.push(`  对照（无列内缩）：等待行 ${Math.round(cp ?? -1)} / 回合正文 ${Math.round(cm ?? -1)}`)
+    ok(cp !== undefined && cm !== undefined && cm - cp > 100, '对照：没有列内缩时等待行确实错位到左侧')
+    if (pendingEl) pendingEl.style.marginInline = ''
+    if (streamEl) streamEl.style.minWidth = savedMinWidth
+    if (savedLayout === undefined) delete html.dataset.procLayout
+    else html.dataset.procLayout = savedLayout
     push({ ch: 'msg-add', payload: { id: 'm3', role: 'assistant', text: '', timestamp: Date.now() } })
     await frame(); sample('助手消息到达')
     const streamingLast = [...document.querySelectorAll('[data-turn-id]')].at(-1)

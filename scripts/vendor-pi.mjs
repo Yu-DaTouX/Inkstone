@@ -58,8 +58,7 @@ const PKG = '@earendil-works/pi-coding-agent'
  *         'runtime' = bundle 里扫不到、只有运行到某个分支才会 require 的
  */
 const MUST_HAVE = [
-  // bundle 里 import 出来的
-  '@earendil-works/chord',
+  // bundle 里 import 出来的（@earendil-works/chord 只在 1.2.0 之前的 pi 需要，见下方按依赖声明补入）
   'typebox',
   'undici',
   '@silvia-odwyer/photon-node',
@@ -325,6 +324,10 @@ try { requirePiUpgrade(installedVersion, piVersion, process.argv.includes('--all
 // Codemode resolves its WASM asset at runtime, so bundle imports cannot find it.
 if (piPackage.dependencies?.['quickjs-wasi']) {
   MUST_HAVE.push('quickjs-wasi')
+}
+// pi 1.2.0 去掉了 chord；旧版仍从 bundle 里 import 它
+if (piPackage.dependencies?.['@earendil-works/chord']) {
+  MUST_HAVE.push('@earendil-works/chord')
 }
 ok(`源：${piRoot}`)
 ok(`版本：pi ${piVersion}`)

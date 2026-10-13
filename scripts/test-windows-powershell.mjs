@@ -7,7 +7,7 @@
  * 用法：node scripts/test-windows-powershell.mjs
  */
 import assert from 'node:assert/strict'
-import { findPowerShellQuotingConflict as find, powerShellConflictReason } from '../resources/pi-extensions/windows-powershell.js'
+import { findPowerShellInBash, findPowerShellQuotingConflict as find, powerShellConflictReason, powerShellInBashReason } from '../resources/pi-extensions/windows-powershell.js'
 
 const blocked = [
   ['powershell -NoProfile -Command "Get-Process | Where-Object { $_.ProcessName -match \'electron\' }"', '$_'],
@@ -34,6 +34,36 @@ const allowed = [
 ]
 for (const command of allowed) assert.equal(find(command), null, command)
 assert.equal(find(undefined), null)
+
+/* bash 工具里直接写 PowerShell 命令：只拦引号外命令位置的 Verb-Noun */
+const inBash = [
+  ['rg -n "会话" docs/CODE_MAP.md; (Get-Content .local-docs/DECISIONS.md | Measure-Object -Line).Lines', 'Get-Content'],
+  ['Get-ChildItem -Recurse src', 'Get-ChildItem'],
+  ['cat a.txt | Select-String foo', 'Select-String'],
+  ['cd x && Remove-Item -Recurse tmp', 'Remove-Item']
+]
+for (const [command, name] of inBash) assert.equal(findPowerShellInBash(command), name, command)
+
+const notInBash = [
+  'git commit -m "说明 Get-Content 的用法"',
+  "echo 'Get-Content a | Measure-Object'",
+  'rg -n "Get-Content" docs/ | head',
+  'rg Get-Content docs/',
+  'grep -rn Set-Location src',
+  'echo Get-Content',
+  '# Get-Content a',
+  'ls -la # 对应 Get-ChildItem',
+  'cat <<EOF\nGet-Content a\nEOF',
+  'powershell -NoProfile -Command \'Get-Content a | Measure-Object -Line\'',
+  'pwsh -File a.ps1; Get-Date',
+  'npm run test-live; node scripts/foo-bar.mjs',
+  'my-tool --flag; git-lfs pull',
+  'x=1; Get_Foo-Bar',
+  'cd Some-Dir && ls'
+]
+for (const command of notInBash) assert.equal(findPowerShellInBash(command), null, command)
+assert.equal(findPowerShellInBash(undefined), null)
+assert.match(powerShellInBashReason('Get-Content'), /Get-Content.*bash/)
 
 assert.match(powerShellConflictReason('$_'), /`\$_`/)
 assert.match(powerShellConflictReason('`'), /反引号/)

@@ -58,17 +58,30 @@
     await sleep(150)
 
     const realDisabled = qa('[disabled]').filter(visible)
-    const rows = []
-    for (const el of [...realDisabled, ...host.children]) {
-      rows.push([clsOf(el), getComputedStyle(el).opacity])
-    }
+    /*
+     * 已登记的例外：空输入时发送键「中性底、不靠透明度」（composer.css 的
+     * `.send:disabled`），所以它不进「单一值」样本，而是单独按「取令牌或 1」验。
+     */
+    const isExempt = (el) => el.classList.contains('send')
+    const allSamples = [...realDisabled, ...host.children]
+    const rows = allSamples.filter((el) => !isExempt(el)).map((el) => [clsOf(el), getComputedStyle(el).opacity])
+    const exempt = allSamples.filter(isExempt).map((el) => getComputedStyle(el).opacity)
     const distinct = [...new Set(rows.map(([, v]) => v))]
     const tokenValue = getComputedStyle(document.documentElement).getPropertyValue('--ctl-disabled-opacity').trim()
-    out.push(`  禁用控件样本 ${rows.length} 个（真实可见 ${realDisabled.length} + 借用类名 ${host.children.length}）`)
+    out.push(`  禁用控件样本 ${rows.length} 个（真实可见 ${realDisabled.length} + 借用类名 ${host.children.length}；已排除 ${exempt.length} 个登记例外）`)
     out.push(`  不透明度取值：${distinct.join(' / ')}（令牌 --ctl-disabled-opacity=${tokenValue}）`)
     out.push('  样本：' + JSON.stringify(rows))
-    ok(distinct.length === 1, '所有 :disabled 控件的不透明度只有一个值', `实际 ${distinct.join('/')}`)
-    ok(distinct[0] === tokenValue, '该值就是令牌的值（没有各写一份）')
+    if (!rows.length) {
+      out.push('  ~ 跳过：样本里没有非例外的禁用控件')
+    } else {
+      ok(distinct.length === 1, '所有 :disabled 控件的不透明度只有一个值', `实际 ${distinct.join('/')}`)
+      ok(distinct[0] === tokenValue, '该值就是令牌的值（没有各写一份）')
+    }
+    if (exempt.length) {
+      const exemptValues = [...new Set(exempt)]
+      out.push(`  登记例外的取值：${exemptValues.join(' / ')}`)
+      ok(exemptValues.every((v) => v === tokenValue || v === '1'), '例外项只取令牌值或 1（没有随手写的其它值）')
+    }
     host.remove()
 
     /* ---------- ② 焦点环只有一个来源 ---------- */

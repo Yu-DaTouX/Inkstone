@@ -22,7 +22,7 @@ python scripts/check_env.py
 
 它输出 JSON，列出 `python-docx`、`openpyxl`、`python-pptx`、`pypdf`、LibreOffice 是否可用。
 
-- 缺少需要的库时：**不要自行安装**。告诉用户缺什么和安装命令（例如 `pip install python-docx openpyxl python-pptx`），也可以用 `yan capabilities need` 说明缺口，等用户决定。
+- 缺少需要的库时：**不要自行安装**。告诉用户缺什么和安装命令（例如 `pip install python-docx openpyxl python-pptx`），也可以按 `capabilities` 技能的顺序查有没有可接入的能力，等用户决定。
 - 没有 Python 时同样如实说明，不要改用手工拼 XML 之类的做法冒险改文件。
 
 ## 3. 改之前

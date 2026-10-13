@@ -49,12 +49,13 @@
   log('=== 3. tab 数量 ===')
   const tabs = qa('.settings-tab').map((x) => x.textContent)
   log('  tab: ' + JSON.stringify(tabs))
-  ok(tabs.length === 7, `六个设置页加关闭入口（实际 ${tabs.length}）`)
+  ok(tabs.length === 8, `七个设置页加关闭入口（实际 ${tabs.length}）`)
 
   log('')
-  log('=== 4. 上下文与记忆合并 ===')
-  const memTab = qa('.settings-tab').find((x) => /工作区与上下文|Workspace & context/.test(x.textContent))
-  ok(!!memTab, '设置里有「工作区与上下文」合并页')
+  log('=== 4. 上下文与记忆 ===')
+  /* 「会话」页内含工作区与上下文两个分区（按需挂载，断言前要先点开分区）。 */
+  const memTab = qa('.settings-tab').find((x) => /会话|Session/.test(x.textContent))
+  ok(!!memTab, '设置里有「会话」页（内含工作区与上下文）')
   ok(!q('.rightpanel .mem-sections'), '右栏里没有记忆面板')
   ok(!q('.review'), '没有记忆审阅条')
 
@@ -106,7 +107,13 @@
   if (soundTab) {
     click(soundTab)
     await sleep(500)
-    ok(!!q('[data-testid="set-sound"]'), '合并页渲染出声音设置组')
+    /* 声音是「外观与输入」页下的二级分区：按需挂载，得先点开它的导航项。 */
+    const soundSection = q('[data-testid="settings-section-sound"]')
+    if (soundSection && !q('[data-testid="set-sound"]')) {
+      click(soundSection)
+      await sleep(400)
+    }
+    ok(!!q('[data-testid="set-sound"]'), '外观与输入页的声音分区渲染出设置组')
     const sound0 = store.getState().settings?.sound
     ok(!!sound0 && typeof sound0.volume === 'number', 'store.settings 带 sound 配置')
     const enableBtn = q('[data-testid="set-sound-enabled"]')

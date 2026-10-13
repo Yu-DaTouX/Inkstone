@@ -124,14 +124,20 @@
       skip(`pi 未就绪，新建要走 pi（window.yan.newSession），无法判定`)
     } else if (newBtn) {
       click(newBtn)
-      const cleared = await until(() => qa('.msg').length === 0, 8000)
-      ok(cleared, '新建后消息清空（现在 ' + qa('.msg').length + ' 条）')
+      /*
+       * 判据必须用 store 的 messages，不能用 `.msg` 节点数：会话够长时走虚拟列表，
+       * 超过视口的消息本来就不在 DOM 里 —— 拿节点数当「清空」在那儿是恒真的假阳性
+       * （实测：新建后 `.msg` 已经 0 条，而 messages 还是 400）。
+       */
+      const cleared = await until(() => store.getState().messages.length === 0, 8000)
+      ok(cleared, '新建后会话消息清空（messages = ' + store.getState().messages.length + '）')
       /*
        * B3 之后「没有消息时看什么」有两档：日常模式是工作台首页（.wb-home），
        * 编码模式（或地图开着时）是对话空态（.empty-stream）。
-       * 只断言其中一个会把另一档误判成失败。
+       * 只断言其中一个会把另一档误判成失败；清空是异步的，要等空态真的挂上来。
        */
-      ok(!!q('.empty-stream') || !!q('.wb-home'), '新建后显示开场（对话空态或工作台首页）')
+      const opening = await until(() => !!q('.empty-stream') || !!q('.wb-home'), 5000)
+      ok(opening, '新建后显示开场（对话空态或工作台首页）')
     }
 
     out.push('')

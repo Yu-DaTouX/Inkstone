@@ -54,13 +54,32 @@
     }
 
     out.push('\n=== 合并页和低频选项 ===')
+    /* 设置页内的分区按需挂载：断言前先点开对应分区的导航项。 */
+    const openSection = async (id, expect) => {
+      const nav = q(`[data-testid="settings-section-${id}"]`)
+      if (nav) {
+        click(nav)
+        await sleep(150)
+      }
+      /* 内容区可能懒加载：等目标元素真的出现，而不是只等固定时长。 */
+      if (expect) for (let i = 0; i < 60 && !q(`[data-testid="${expect}"]`); i++) await sleep(100)
+    }
     click(q('#settings-tab-workspace'))
     await sleep(250)
+    await openSection('context', 'ctx-native-settings')
     ok(!!q('[data-testid="ctx-native-settings"]'), '工作区与上下文页提供 Agent 原生压缩操作')
     ok(!q('[data-testid="ctx-budget-v1"]') && !q('[data-testid="ctx-fold-toggle"]') && !q('[data-testid="kn-toggle-btn"]'), '退役宿主预算、折叠与知识开关不再出现')
     click(q('#settings-tab-capabilities'))
     await sleep(250)
+    await openSection('external', 'cap-external')
     ok(!!q('[data-testid="set-capabilities"]') && !!q('#settings-tab-market'), '能力保留原页，插件市场独立入口')
+    /* 搜索 API 的 key 输入收在「增强搜索」里的折叠面板里，先展开。 */
+    const disclosure = [...document.querySelectorAll('[data-testid="cap-external"] .ui-disclosure')]
+      .find((element) => /搜索 API|Search API/i.test(element.querySelector('summary')?.textContent ?? ''))
+    if (disclosure && !disclosure.open) {
+      click(disclosure.querySelector('summary'))
+      await sleep(300)
+    }
     const searchRow = q('[data-testid="cap-search-api"]')
     ok(!!searchRow, '能力页有「增强搜索」')
     for (const id of ['tavily', 'brave', 'firecrawl', 'context7']) {
@@ -70,9 +89,12 @@
     }
     click(q('#settings-tab-devices'))
     await sleep(250)
+    await openSection('remote', 'settings-remote')
+    await openSection('peer', 'settings-peer')
     ok(!!q('[data-testid="settings-remote"]') && !!q('[data-testid="settings-peer"]'), '语音、手机与砚互联共用设备页')
     click(q('#settings-tab-appearance'))
     await sleep(250)
+    await openSection('sound', 'set-sound-enabled')
     ok(q('[data-testid="set-sound-enabled"]')?.getAttribute('role') === 'switch', '声音布尔项使用 Switch')
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))

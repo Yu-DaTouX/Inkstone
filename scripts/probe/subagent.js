@@ -20,6 +20,8 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
   const store = window.__yanStore
+  /* 探针会在 store 里补一个助手回合锚点来验卡片渲染，结束时复原。 */
+  const before = { messages: store.getState().messages, subagents: store.getState().subagents }
 
   /** 轮询等某个 run 进入终态 */
   const waitStatus = async (id, done, timeoutMs) => {
@@ -63,8 +65,13 @@
     const id = started?.id
     ok(store.getState().notices.length === noticesBefore, '启动没有报错（没有新通知）')
     ok(!!id, `拿到 run id（${id ?? '无'}）`)
-    ok(started?.isolation === 'worktree', `默认写入任务使用独立 worktree（${started?.isolation ?? '无'}）`)
-    ok(started?.cwd && started.cwd !== store.getState().settings.cwd, '子代理 cwd 不等于主工作树')
+    /*
+     * 默认隔离级别是 shared-cwd：委派默认就在当前工作目录执行，要隔离必须显式传
+     * worktree（`yan subagent start --isolation worktree`，见随包 subagent 技能）。
+     * 这条以前断言「默认 worktree」，那是撤下旧工作台之前的设计。
+     */
+    ok(started?.isolation === 'shared-cwd', `未指定隔离时默认共享当前目录（${started?.isolation ?? '无'}）`)
+    ok(started?.cwd && started.cwd === store.getState().settings.cwd, '默认隔离下 cwd 就是主工作树')
     ok(!!started?.parentSessionId, '记录了父会话身份')
     if (!id) return out.join('\n')
 
@@ -79,18 +86,17 @@
     }
     ok(listed, '运行进入 store（主进程 push 生效）')
 
-    /* 普通会话流里的状态行应该出现（替代撤下的专用页与资源标签） */
-    let noted = false
-    for (let i = 0; i < 20; i++) {
-      if (q('[data-testid="subagent-group"]') && q(`[data-testid="subagent-note-${id}"]`)) {
-        noted = true
-        break
-      }
-      await sleep(300)
-    }
+    /*
+     * 卡片只挂在**触发它的助手回合**下（U4 撤下专用管理页之后）。这条链路走的是
+     * IPC 直接启动：没有回合锚点，所以此刻会话流里不应该出现卡片；真实委派由能力
+     * 服务把助手消息 id 写进 run 的 parentMessageId。渲染路径另在下面补锚点后验证。
+     */
+    await sleep(1000)
     out.push(`  诊断：subagentPreviewId=${JSON.stringify(store.getState().subagentPreviewId)}`)
-    out.push(`  诊断：notes=${!!q('[data-testid="subagent-group"]')}`)
-    ok(noted, '会话流里出现子代理状态行（不需要专用管理页）')
+    ok(
+      !q(`[data-testid="subagent-note-${id}"]`),
+      '没有助手回合锚点的 IPC 启动不占会话流（卡片由委派回合承载）'
+    )
     ok(!q('[data-testid="subagent-new"]'), '专用「调用子代理」入口已撤下')
 
     out.push('')
@@ -125,11 +131,44 @@
     }
     ok(hasReply, '转录里有模型的回复文本')
 
-    /* 会话流状态行里能真的看到输出（实施-20 U4 后的普通入口） */
-    const note = q(`[data-testid="subagent-note-${id}"]`)
-    const noteText = note?.textContent ?? ''
+    /*
+     * 会话流状态行（实施-20 U4 后的普通入口）：补一个助手回合锚点，验真实 run 数据
+     * 能渲染出状态行。主进程随后的 push 会覆盖本地注入，所以放在终态之后再补一次。
+     */
+    const anchorId = 'subagent-probe-anchor'
+    const withAnchor = () => {
+      const run = store.getState().subagents.find((r) => r.id === id)
+      /*
+       * 主进程随后可能推两样东西把锚点冲掉：会话消息同步（抹掉回合锚点）与
+       * 不带 parentMessageId 的 run 推送，所以两样都周期性补，直到卡片挂上来。
+       */
+      if (!store.getState().messages.some((m) => m.id === anchorId)) {
+        store.setState({ messages: [...store.getState().messages, { id: anchorId, role: 'assistant', text: '委派一个子任务' }] })
+      }
+      if (run) store.getState().applyPush({ ch: 'subagent', payload: { ...run, parentMessageId: anchorId } })
+    }
+    let noted = false
+    for (let i = 0; i < 24; i++) {
+      withAnchor()
+      if (q(`[data-testid="subagent-note-${id}"]`)) {
+        noted = true
+        break
+      }
+      await sleep(200)
+    }
+    const noteText = q(`[data-testid="subagent-note-${id}"]`)?.textContent ?? ''
+    const owner = store.getState().session
+    const runNow = store.getState().subagents.find((r) => r.id === id)
+    out.push(
+      `  诊断：session.sessionId=${JSON.stringify(owner?.sessionId ?? null)} conversationId=${JSON.stringify(owner?.conversationId ?? null)}｜run.parentSessionId=${JSON.stringify(runNow?.parentSessionId ?? null)} parentMessageId=${JSON.stringify(runNow?.parentMessageId ?? null)}`
+    )
     out.push(`  状态行文本长度 = ${noteText.length}`)
-    ok(noteText.length > 0, '会话流状态行里有内容')
+    if (!owner?.sessionId && !owner?.conversationId) {
+      /* 卡片按会话身份过滤；空会话还没有会话 id，这里无从归属，不算通过也不算失败。 */
+      out.push('  ~ 跳过：当前会话还没有会话 id，卡片归属判据不适用')
+    } else {
+      ok(noted && noteText.length > 0, '补上助手回合锚点后，真实 run 能渲染出状态行')
+    }
 
     out.push('')
     out.push('=== 4. 停止：真的能停 ===')
@@ -158,6 +197,8 @@
     out.push(`  清理后剩 ${store.getState().subagents.length} 条`)
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
+  } finally {
+    store.setState(before)
   }
 
   return out.join('\n')

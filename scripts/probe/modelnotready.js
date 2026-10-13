@@ -56,7 +56,8 @@
   const menu = q('[data-testid="model-menu"]')
   ok(!!menu, '未就绪时菜单仍可打开')
   if (menu) {
-    const empty = q('.mt-empty')
+    /* 空态用产品自己给的 testid（同风格的 models-error 也在旁边） */
+    const empty = q('[data-testid="models-empty"]')
     log(`  空态文字 = ${JSON.stringify(empty?.textContent ?? '(没有空态)')}`)
     ok(
       !!empty && /还没有可用模型|No models available/.test(empty.textContent ?? ''),

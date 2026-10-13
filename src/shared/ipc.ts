@@ -76,15 +76,6 @@ import type {
 export type { ContextMaintenanceOperationV1, ContextMaintenanceStateV1 } from './context-maintenance'
 import type { ContextMaintenanceOperationV1 } from './context-maintenance'
 export type { SourceStatus, SourceRefStatus, ResearchExcerpt } from './research'
-export type {
-  FollowRun,
-  FollowOutcome,
-  FollowKind,
-  Watch,
-  WatchView,
-  FollowCadence
-} from './follow'
-import type { FollowRun, Watch, WatchView } from './follow'
 export type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { AgentActivity } from './agent-profile'
@@ -989,6 +980,15 @@ export interface ProjectRecord {
   createdAt: number
   updatedAt: number
 }
+
+export interface ProjectDirectoryChange {
+  projectId: string
+  /** 对话框打开时的原目录；宿主在串行写入时检查，防止覆盖另一处修改。 */
+  expectedCwd: string
+  cwd: string
+}
+
+export type ProjectDirectoryResult = { ok: true; settings: AppSettings } | { ok: false; error: string }
 
 export interface ProjectGroup {
   id: string
@@ -2937,57 +2937,6 @@ export interface LibraryBridge {
 }
 
 /**
- * 持续关注（实施-25 P16）。
- *
- * 界面只读 `views`（带状态文案）与 `due`；写入只有保存 / 启用 / 停用 / 删掉，
- * 以及**模型看完后的回报**。注意这里**没有「立即执行」** —— 宿主不会自己去查。
- */
-export interface FollowBridge {
-  list(spaceId?: string | null): Promise<Watch[]>
-  /** 列表（含状态文案 / 是否只是提议 / 上次结果的一句话）。 */
-  views(spaceId?: string | null): Promise<(WatchView & { lastRunText?: string })[]>
-  /** 到点了该看的（**只数用户启用过的**）。 */
-  due(): Promise<Watch[]>
-  runs(input: { watchId: string; limit?: number }): Promise<FollowRun[]>
-  save(input: {
-    id?: string
-    title: string
-    kind?: string
-    spaceId?: string | null
-    cadence?: string
-    intervalMinutes?: number
-    resultPlace: string
-    notifyOn?: string
-    enabled?: boolean
-  }): Promise<FollowMutationResult>
-  update(input: {
-    id: string
-    title?: string
-    kind?: string
-    cadence?: string
-    intervalMinutes?: number
-    resultPlace?: string
-    notifyOn?: string
-    enabled?: boolean
-  }): Promise<FollowMutationResult>
-  remove(id: string): Promise<{ ok: boolean; error?: string }>
-  report(input: {
-    watchId: string
-    outcome: string
-    summary?: string
-    changed?: string[]
-    decisions?: string[]
-  }): Promise<{ ok: boolean; error?: string; code?: string; run?: FollowRun; watch?: Watch }>
-}
-
-export interface FollowMutationResult {
-  ok: boolean
-  error?: string
-  code?: string
-  watch?: Watch
-}
-
-/**
  * 按活动配置模型（实施-25 P18）。
  *
  * 只读写「哪个活动用哪个模型」与解析结果 —— 切模型本身仍走既有的
@@ -3466,6 +3415,8 @@ export interface YanBridge {
   /* 设置 */
   getSettings(): Promise<AppSettings>
   patchSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  /** 只改项目默认目录；不搬文件、不重写历史 cwd、不切换运行实例。 */
+  changeProjectDirectory(request: ProjectDirectoryChange): Promise<ProjectDirectoryResult>
   pickCwd(): Promise<string | null>
   setCwd(cwd: string): Promise<{ ok: boolean; cwd?: string; error?: string }>
 
@@ -3673,8 +3624,6 @@ export interface YanBridge {
   sources: SourcesBridge
   /** 资料库（实施-25 P03）：与 sources 并存，落在 library.json */
   library: LibraryBridge
-  /** 持续关注（实施-25 P16）：到点提醒与结果记录（没有后台调度）。 */
-  follow: FollowBridge
   /** 按活动配置模型（实施-25 P18）：只回答「该用哪个模型」，不动会话与学习状态。 */
   activity: ActivityBridge
   packages: PackagesBridge

@@ -36,14 +36,11 @@
       if (st().conn === 'ready' && st().settings) break
       await sleep(400)
     }
-    st().openSettings?.()
-    await sleep(500)
-
-    /* 进入「接入」页（设置页签的稳定钩子是 id，不是 data-testid） */
-    const tab = q('#settings-tab-auth') ?? q('[data-testid="settings-tab-auth"]')
-    click(tab)
+    st().openSettings('auth')
+    await until(() => q('[data-testid="settings-section-custom-api"]'), 8000)
+    click(q('[data-testid="settings-section-custom-api"]'))
     const ready = await until(() => q('[data-testid="custom-api"]'), 8000)
-    ok(ready, '设置 → 模型里有「自定义 API 服务」')
+    ok(ready, '设置 → 模型 → 自定义 API 分区按需挂载')
 
     /* 协议下拉只给受支持集合 */
     click(q('[data-testid="custom-api-add"]'))
@@ -102,8 +99,13 @@
     ok(/ms/.test(resultText), '结果带耗时')
     ok(qa('.custom-api-test .ui-row-desc').length >= beforeTest, '结果就地显示在按钮下方')
 
-    /* 删除 */
-    click(q('[data-testid="custom-api-remove-yan-probe"]'))
+    /* 只确认删除本探针的隔离假条目；不让隐藏窗口卡在原生确认框。 */
+    const originalConfirm = window.confirm
+    let deletionPrompt = ''
+    window.confirm = (message) => { deletionPrompt = String(message); return deletionPrompt.startsWith('Delete yan-probe?') }
+    try { click(q('[data-testid="custom-api-remove-yan-probe"]')) }
+    finally { window.confirm = originalConfirm }
+    ok(deletionPrompt.startsWith('Delete yan-probe?'), '删除前确认的是本探针条目，不自动同意其它对话框')
     const gone = await until(() => !q('[data-testid="custom-api-row-yan-probe"]'), 6000)
     ok(gone, '删除后条目消失')
     const after = await window.yan.customProviders()

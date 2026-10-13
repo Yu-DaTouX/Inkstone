@@ -3,7 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { ContextMenu } from '../common/ContextMenu'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import type { SessionSummary } from '../../../../shared/ipc'
+import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
 import { RailUser } from './RailUser'
 import { ancestorPaths, useSidebarJson, useSidebarValue } from './sidebar-state'
 import { RailViewMenu } from './RailViewMenu'
@@ -14,6 +14,7 @@ import { type TrashNotice, TrashNoticeBar, SessionDeleteDialog, ProjectRemoveDia
 import { SessionRow } from './SessionRow'
 import { useRailDrag } from './useRailDrag'
 import { useRailProjects } from './useRailProjects'
+import { ProjectDirectoryDialog } from './ProjectDirectoryDialog'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -236,6 +237,7 @@ export function Rail() {
    * 只存 id 与显示名：真正的归属数据在设置里，弹窗不该拿着一份会过期的副本。
    */
   const [projectToRemove, setProjectToRemove] = useState<{ id: string; name: string } | null>(null)
+  const [projectDirectoryEdit, setProjectDirectoryEdit] = useState<ProjectRecord | null>(null)
   /*
    * 删除成功后的**轻量通知**（方案 15.2）。
    * 为什么不再用模态框报成功：已经执行完的可逆操作不该继续遮挡界面、
@@ -872,6 +874,10 @@ export function Rail() {
                         }
                       },
                       { id: 'rail-project-rename', label: t('rail.renameProject'), icon: 'pencil', onSelect: () => { setProjDraft(p.label); setProjRename(p.cwd) } },
+                      { id: 'rail-project-directory', label: t('rail.changeDirectory'), icon: 'folder-open', onSelect: () => {
+                        const record = projectRecords.find((item) => item.id === p.projectId)
+                        if (record) setProjectDirectoryEdit({ ...record })
+                      } },
                       { id: 'rail-project-reveal', label: t('rail.reveal'), icon: 'folder-open', onSelect: () => { void window.yan.revealPath(p.cwd).catch((cause) => setProjectError(cause instanceof Error ? cause.message : t('rail.projectError'))) } },
                       { id: 'rail-project-copy', label: t('rail.copyPath'), onSelect: () => { void navigator.clipboard.writeText(p.cwd).catch((cause) => setProjectError(cause instanceof Error ? cause.message : t('rail.projectError'))) } },
                       {
@@ -978,6 +984,7 @@ export function Rail() {
         />
       ) : null}
 
+      {projectDirectoryEdit ? <ProjectDirectoryDialog key={projectDirectoryEdit.id} project={projectDirectoryEdit} onClose={() => setProjectDirectoryEdit(null)} /> : null}
       {projectToRemove ? (
         <ProjectRemoveDialog
           project={projectToRemove}

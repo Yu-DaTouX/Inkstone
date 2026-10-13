@@ -253,17 +253,8 @@ export function normalizeMessage(
 }
 
 /** 历史回放：把 toolResult 的结果回填到对应的 toolCall 上 */
-export function normalizeHistory(
-  raw: unknown[],
-  localizeImage?: (mimeType: string, data: string) => string,
-  /**
-   * 与 `raw` 同长的 entry id（会话文件解析时给出）。
-   *
-   * 只有 `session-reader` 会传：它逐行读到 `entry.id`，而 fork 用的就是这个
-   * id（实施-26 R0①）。实时事件流与 pi 的 `get_messages` 没有这一步。
-   */
-  entryIds?: (string | undefined)[]
-): UIMessage[] {
+/** Incremental history state shared by file and RPC normalization. */
+export function createHistoryBuilder(localizeImage?: (mimeType: string, data: string) => string) {
   const out: UIMessage[] = []
   const callIndex = new Map<string, { msg: UIMessage; call: UIToolCall }>()
 
@@ -277,11 +268,11 @@ export function normalizeHistory(
    * 跳过 system、按产出顺序编号，两代 pi 下两侧才是同一口径。
    */
   let seq = 0
-  for (let i = 0; i < raw.length; i++) {
-    const m = raw[i] as PiMessage
-    if (m?.role === 'system') continue
-    const norm = normalizeMessage(m, seq, localizeImage, entryIds?.[i])
-    if (!norm) continue
+  const append = (raw: unknown, entryId?: string): void => {
+    const m = raw as PiMessage
+    if (m?.role === 'system') return
+    const norm = normalizeMessage(m, seq, localizeImage, entryId)
+    if (!norm) return
 
     if (m.role === 'toolResult') {
       const hit = norm.toolCalls?.[0] ? callIndex.get(norm.toolCalls[0].id) : undefined
@@ -294,7 +285,7 @@ export function normalizeHistory(
         const images = norm.toolCalls![0].images
         if (images?.length) hit.call.images = images
         restoreNestedCalls(m, hit.msg, hit.call, callIndex)
-        continue
+        return
       }
     }
 
@@ -308,7 +299,17 @@ export function normalizeHistory(
     }
   }
 
-  return out
+  return { append, finish: (): UIMessage[] => out }
+}
+
+export function normalizeHistory(
+  raw: unknown[],
+  localizeImage?: (mimeType: string, data: string) => string,
+  entryIds?: (string | undefined)[]
+): UIMessage[] {
+  const builder = createHistoryBuilder(localizeImage)
+  for (let i = 0; i < raw.length; i++) builder.append(raw[i], entryIds?.[i])
+  return builder.finish()
 }
 
 /** pi persists bounded summaries, not the nested tools' full output. */

@@ -183,7 +183,7 @@ export function ModelCatalog({ current, onSelect, compact = false, needsAuth = (
             onClick={() => void toggleFavorite(m)}>{starred ? '★' : '☆'}</Button>
         </div>
       })}
-      {!rows.length ? <p className="ui-row-desc">{t(favoriteOnly ? 'models.noFavorites' : models.length ? 'picker.noMatch' : 'picker.noModels')}</p> : null}
+      {!rows.length ? <p className="ui-row-desc" data-testid="models-empty">{t(favoriteOnly ? 'models.noFavorites' : models.length ? 'picker.noMatch' : 'picker.noModels')}</p> : null}
     </div>
     {error ? <p className="ui-row-desc" role="alert" data-testid="models-error">{error}</p> : null}
   </div>

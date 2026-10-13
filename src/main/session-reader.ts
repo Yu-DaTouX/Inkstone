@@ -1,55 +1,10 @@
-/**
- * 从会话 JSONL 里解析消息 —— 让界面**立即**有内容。
- *
- * ══════════════════════════════════════════════════════════════════
- * 为什么需要它（实测数据）
- * ══════════════════════════════════════════════════════════════════
- * 打开一个大会话原来要走 `pi switch_session` + `pi get_messages`：
- *
- *   会话文件      消息数     pi 打开      直接解析
- *   4 MB         1090       97–300ms      ~20ms
- *   17 MB         723       **2780ms**    **59ms**   ← 快 47 倍
- *
- * 而且 pi 的 `get_messages` **不含压缩前的历史**（docs/rpc.md 明确写了，
- * 要拿完整历史得用 `get_entries`）。所以大上下文会话在界面上
- * 只剩当前窗口的那部分 —— 用户感觉就是「打开很卡，然后内容还少了」。
- *
- * 所以：**先读文件把内容铺上去**（60ms，用户感觉是瞬间），
- * 再让 pi 在后台切过去（为了后续对话能接上上下文）；
- * pi 切完推来的权威 `sync` 会覆盖一次。
- *
- * ══════════════════════════════════════════════════════════════════
- * 为什么不早点这么做（以及为什么现在可以）
- * ══════════════════════════════════════════════════════════════════
- * `sessions.ts` 的注释写着「我们不解析整个会话文件（格式是 version:3，会变）」——
- * 那个顾虑是对的，所以这里的设计是**纯附加、可失败**：
- *   · 任何一行解析不出来就跳过那一行（不让整个会话读不出来）
- *   · 整个文件读不出来就返回 null，调用方回退到「等 pi」
- *   · 只读 `message` 类型的 entry，格式认识不全也不影响主流程
- * 也就是说：这个模块坏了，退化到原来的行为，不会更糟。
- *
- * ══════════════════════════════════════════════════════════════════
- * 体积控制（17MB 里 75% 是超大 tool result）
- * ══════════════════════════════════════════════════════════════════
- * 实测：26 行 >100KB，合计 12.9MB / 17.1MB。最长一行 4MB ——
- * 是个 `toolResult`，内容是 **text + base64 图片**。
- *
- *   · 超长文本 → 截断 + 标记（界面上明说“已截断”，不假装完整）
- *   · 图片 → 交给调用方给的 `localizeImage` **落盘**，消息里只留文件地址
- *     （见 main/image-store.ts 的说明）。以前是“丢弃 + 占位”，结果是用户
- *     贴过的图在重启 / 切会话 / 压缩之后再也就看不到了 —— 体积问题的正解
- *     是别把 base64 放进消息，而不是把用户的内容丢掉。
- */
-import { open } from 'node:fs/promises'
-import { normalizeHistory } from './normalize'
+/** Bounded JSONL history parsing with versioned in-flight sharing. */
+import { open, realpath, stat } from 'node:fs/promises'
+import type { BigIntStats } from 'node:fs'
+import { StringDecoder } from 'node:string_decoder'
+import { createHistoryBuilder } from './normalize'
 import type { UIMessage } from '../shared/ipc'
 
-/**
- * 单行超过这个长度就整行跳过（不让一行拖垬内存）。
- *
- * 从 6MB 提到 48MB:用户的图一张就有 3.4MB base64，一条消息贴两张图
- * 就会超 6MB —— 那时整条消息被跳过，连文字也不剩。
- */
 const MAX_LINE_BYTES = 48 * 1024 * 1024
 
 /** tool result 的文本保留上限（超出截断并标记） —— 64KB ≈ 一个屏都看不完 */
@@ -135,93 +90,126 @@ function truncateDeep(v: unknown, depth = 0): { value: unknown; cut: number } {
   return { value: v, cut: 0 }
 }
 
-/**
- * 读一个会话文件，返回可直接渲染的消息。
- *
- * 失败一律返回 null（调用方回退到「等 pi 的 get_messages」）。
- *
- * `localizeImage` 由调用方注入（main 那边传 main/image-store.ts 的
- * `localizeImage`）：图片 base64 转成落盘后的文件地址，消息里不携带 base64。
- */
-export async function readSessionMessages(
-  path: string,
-  opts?: { localizeImage?: (mimeType: string, data: string) => string }
-): Promise<ReadResult | null> {
-  let fh
-  try {
-    fh = await open(path, 'r')
-  } catch {
-    return null
+
+type ReadOptions = { localizeImage?: (mimeType: string, data: string) => string }
+const inFlight = new Map<string, Promise<ReadResult | null>>()
+const localizers = new WeakMap<NonNullable<ReadOptions['localizeImage']>, number>()
+let localizerSeq = 0
+
+function sameFile(a: BigIntStats, b: BigIntStats): boolean {
+  return a.dev === b.dev && a.ino === b.ino
+}
+function sameVersion(a: BigIntStats, b: BigIntStats): boolean {
+  return sameFile(a, b) && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs
+}
+function freezeSnapshot<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) freezeSnapshot(child)
+    Object.freeze(value)
   }
+  return value
+}
 
+/** Shared snapshots are read-only; mutation/hydration requires an isolated copy. */
+export async function readSessionMessages(path: string, opts?: ReadOptions): Promise<ReadResult | null> {
   try {
-    const { size } = await fh.stat()
-    const buf = Buffer.alloc(size)
-    let read = 0
-    while (read < size) {
-      const r = await fh.read(buf, read, size - read, read)
-      if (r.bytesRead <= 0) break
-      read += r.bytesRead
+    const canonical = await realpath(path)
+    const version = await stat(path, { bigint: true })
+    let localizer = 0
+    if (opts?.localizeImage) {
+      localizer = localizers.get(opts.localizeImage) ?? ++localizerSeq
+      localizers.set(opts.localizeImage, localizer)
     }
+    const key = JSON.stringify([process.platform === 'win32' ? canonical.toLowerCase() : canonical,
+      String(version.dev), String(version.ino), String(version.size), String(version.mtimeNs), String(version.ctimeNs), localizer])
+    const existing = inFlight.get(key)
+    if (existing) return existing
+    const task = readStable(path, opts).then(result => result ? freezeSnapshot(result) : null)
+    inFlight.set(key, task)
+    try { return await task }
+    finally { if (inFlight.get(key) === task) inFlight.delete(key) }
+  } catch { return null }
+}
 
-    const raw = buf.toString('utf8')
-    const lines = raw.split('\n')
-
-    const normalized: unknown[] = []
-    /** 与 normalized 同长的 entry id —— 轮次分叉要用它当锚点（实施-26 R0①）。 */
-    const entryIds: (string | undefined)[] = []
-    let total = 0
-    let truncated = 0
-    let sessionId: string | undefined
-    let sourceCwd: string | undefined
-
-    for (const rawLine of lines) {
-      if (!rawLine) continue
-      /* 文件头保留身份与工作目录；cwd 决定该段历史里的相对文件链接根目录。 */
-      if ((!sessionId || !sourceCwd) && rawLine.includes('"type":"session"')) {
-        try {
-          const head = JSON.parse(rawLine) as { id?: unknown; cwd?: unknown }
-          if (!sessionId && typeof head.id === 'string' && head.id) sessionId = head.id
-          if (!sourceCwd && typeof head.cwd === 'string' && head.cwd.trim()) sourceCwd = head.cwd
-        } catch {
-          /* 头坏了不影响消息解析 */
+/** Read a bounded prefix; replacement/truncation gets one fresh attempt. */
+async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let fh
+    try {
+      fh = await open(path, 'r')
+      const before = await fh.stat({ bigint: true })
+      const size = Number(before.size)
+      if (!before.isFile() || !Number.isSafeInteger(size)) return null
+      const builder = createHistoryBuilder(opts?.localizeImage)
+      let total = 0, truncated = 0
+      let sessionId: string | undefined, sourceCwd: string | undefined
+      let parts: string[] = [], chars = 0, discarded = false, hasMessage = false, scanTail = ''
+      const piece = (text: string): void => {
+        if (!text) return
+        chars += text.length
+        const scan = scanTail + text
+        hasMessage ||= scan.includes('"type":"message"')
+        scanTail = scan.slice(-32)
+        if (chars > MAX_LINE_BYTES) { discarded = true; parts = [] }
+        if (!discarded) parts.push(text)
+      }
+      const flush = (): void => {
+        if (discarded) { if (hasMessage) truncated++ }
+        else if (chars) {
+          const rawLine = parts.join('')
+          if ((!sessionId || !sourceCwd) && rawLine.includes('"type":"session"')) {
+            try {
+              const head = JSON.parse(rawLine) as { id?: unknown; cwd?: unknown }
+              if (!sessionId && typeof head.id === 'string' && head.id) sessionId = head.id
+              if (!sourceCwd && typeof head.cwd === 'string' && head.cwd.trim()) sourceCwd = head.cwd
+            } catch { /* A malformed head does not hide valid messages. */ }
+          }
+          if (hasMessage) {
+            let value: unknown, entryId: string | undefined, parsed = false
+            try {
+              const entry = JSON.parse(rawLine) as { message?: unknown; id?: unknown }
+              if (entry.message && typeof entry.message === 'object') {
+                const result = truncateDeep(entry.message)
+                value = result.value; truncated += result.cut; total++
+                entryId = typeof entry.id === 'string' && entry.id ? entry.id : undefined
+                parsed = true
+              }
+            } catch { /* Ignore malformed JSONL records. */ }
+            if (parsed) builder.append(value, entryId)
+          }
         }
+        parts = []; chars = 0; discarded = false; hasMessage = false; scanTail = ''
       }
-      // 快筛：只关心消息 entry（custom entry 由 refreshTodos 单独处理）
-      if (!rawLine.includes('"type":"message"')) continue
-
-      if (rawLine.length > MAX_LINE_BYTES) {
-        // 单行过大（通常是超长纯文本）→ 整行跳过并计数
-        truncated++
-        continue
+      const decoder = new StringDecoder('utf8')
+      const buffer = Buffer.allocUnsafe(64 * 1024)
+      let offset = 0
+      const consume = (text: string): void => {
+        let start = 0, end: number
+        while ((end = text.indexOf('\n', start)) !== -1) {
+          piece(text.slice(start, end)); flush(); start = end + 1
+        }
+        piece(text.slice(start))
       }
-
-      try {
-        const entry = JSON.parse(rawLine) as { message?: unknown; id?: unknown }
-        const msg = entry.message
-        if (!msg || typeof msg !== 'object') continue
-
-        const r = truncateDeep(msg)
-        truncated += r.cut
-        total++
-        normalized.push(r.value)
-        entryIds.push(typeof entry.id === 'string' && entry.id ? entry.id : undefined)
-      } catch {
-        /* 单行坏了就跳过 —— 不让一行毁掉整个会话 */
+      while (offset < size) {
+        const { bytesRead } = await fh.read(buffer, 0, Math.min(buffer.length, size - offset), offset)
+        if (!bytesRead) break
+        offset += bytesRead
+        consume(decoder.write(buffer.subarray(0, bytesRead)))
       }
-    }
-
-    return {
-      messages: normalizeHistory(normalized, opts?.localizeImage, entryIds),
-      total,
-      truncated,
-      bytes: size,
-      ...(sessionId ? { sessionId } : {}),
-      ...(sourceCwd ? { sourceCwd } : {})
-    }
-  } catch {
-    return null
-  } finally {
-    await fh.close().catch(() => undefined)
+      consume(decoder.end())
+      const after = await fh.stat({ bigint: true })
+      const current = await stat(path, { bigint: true })
+      if (offset !== size || !sameFile(before, after) || !sameFile(before, current) ||
+          after.size < before.size || current.size < before.size ||
+          (after.size === before.size && !sameVersion(before, after)) ||
+          (current.size === before.size && !sameVersion(before, current))) continue
+      // A growing file contributes only newline-terminated records in the initial prefix.
+      // A stable closed file retains the historical valid-no-final-newline behavior.
+      if (after.size === before.size && current.size === before.size) flush()
+      return { messages: builder.finish(), total, truncated, bytes: size,
+        ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}) }
+    } catch { if (attempt === 0) continue; return null }
+    finally { await fh?.close().catch(() => undefined) }
   }
+  return null
 }

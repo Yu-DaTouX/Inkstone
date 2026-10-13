@@ -20,19 +20,22 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const store = window.__yanStore
 
-  const item = (label) =>
-    [...document.querySelectorAll('.usagebar .ub-item')].find(
-      (x) => x.querySelector('.ub-label')?.textContent === label
-    )
-  /* 取数值本身：`.ub-value` 里还嵌着单位 / 命中率 / live 点，去掉它们再比较 */
-  const val = (label) => {
-    const v = item(label)?.querySelector('.ub-value')
-    if (!v) return ''
-    const clone = v.cloneNode(true)
-    clone.querySelectorAll('.ub-unit, .ub-extra, .ub-live').forEach((x) => x.remove())
-    return (clone.textContent ?? '').trim()
+  /*
+   * 整轮用量的展示已从输入框下方的用量条改到**状态栏的花费详情浮层**
+   * （输入框下只留速度 + 命中率一行），所以断言改读浮层里的键值行：
+   * 先点 `sb-cost` 打开，再按标签取值。
+   */
+  const openCost = async () => {
+    document.querySelector('[data-testid="sb-cost"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    for (let i = 0; i < 40 && !document.querySelector('[data-testid="status-details"]'); i++) await sleep(100)
   }
-  const tip = (label) => item(label)?.getAttribute('title') ?? ''
+  const kv = (label) => {
+    const row = [...document.querySelectorAll('[data-testid="status-details"] .sb-kv-row')].find(
+      (x) => (x.querySelector('dt')?.textContent ?? '') === label
+    )
+    return (row?.querySelector('dd')?.textContent ?? '').trim()
+  }
+  const note = () => document.querySelector('[data-testid="status-details"] .sb-details-note')?.textContent ?? ''
   const tool = (id, name, startedAt, endedAt) => ({
     id,
     name,
@@ -82,11 +85,14 @@
     })
     await sleep(700)
 
-    ok(val('输出') === '100', `输出 = 10 + 90（不是只显示最后一条）`, `实际 ${JSON.stringify(val('输出'))}`)
-    ok(val('输入') === '3.00k', '输入 = 1000 + 2000（缩写 3.00k）', `实际 ${JSON.stringify(val('输入'))}`)
-    /* 缓存项常显命中率：8000 / (3000 输入 + 8000 缓存读) = 72.72%；读取量在悬停提示里 */
-    ok(val('缓存') === '72.72%', '缓存命中率 = 8000 / (3000 + 8000)', `实际 ${JSON.stringify(val('缓存'))}`)
-    ok(!val('输出').startsWith('≥'), '两条都报了用量 → 不标下限')
+    await openCost()
+    ok(!!document.querySelector('[data-testid="status-details"]'), '状态栏花费详情可以打开（用量展示的现行入口）')
+    ok(kv('输出') === '100 tok', '输出 = 10 + 90（不是只显示最后一条）', kv('输出'))
+    ok(kv('输入') === '3,000 tok', '输入 = 1000 + 2000', kv('输入'))
+    /* 命中率：8000 / (3000 输入 + 8000 缓存读) = 72.72%；读取量单独一行 */
+    ok(kv('缓存命中') === '72.72%', '缓存命中率 = 8000 / (3000 + 8000)', kv('缓存命中'))
+    ok(kv('缓存读取') === '8,000 tok', '缓存读取量单独列出', kv('缓存读取'))
+    ok(!kv('输出').startsWith('≥'), '两条都报了用量 → 不标下限')
 
     /* ---- 2. 有请求没报用量 → 标成下限并说明 ---- */
     store.setState({
@@ -102,8 +108,8 @@
       ]
     })
     await sleep(600)
-    ok(val('输出') === '≥90', '有请求没报用量 → 合计标 ≥（是下限）', `实际 ${JSON.stringify(val('输出'))}`)
-    ok(/下限|lower bound/.test(tip('输出')), '悬停说明为什么是下限', tip('输出').slice(0, 60))
+    ok(kv('输出') === '≥90 tok', '有请求没报用量 → 合计标 ≥（是下限）', kv('输出'))
+    ok(/下限/.test(note()), '浮层说明为什么是下限', note().slice(0, 60))
 
     /* ---- 3. 一条都没报 → 未知，不标下限 ---- */
     store.setState({
@@ -113,8 +119,8 @@
       ]
     })
     await sleep(500)
-    /* 一点用量都没有时用量条只留空容器（data-state=no-usage），不铺一排「—」；两种都不会误标下限 */
-    ok(val('输出') === '—' || (document.querySelector('[data-testid="usagebar"]')?.dataset.state === 'no-usage' && !/≥/.test(val('输出'))), '一条都没报 → 显示 —或空容器（未知 ≠ 下限）', `实际 ${JSON.stringify(val('输出'))}`)
+    /* 一点用量都没有时显示「—」（未知 ≠ 下限），不能误标成 ≥ */
+    ok(kv('输出') === '—' && !kv('输入').startsWith('≥'), '一条都没报 → 显示 —（未知 ≠ 下限）', kv('输出'))
 
     /* ---- 4. 回合页脚：用时的 tooltip 给出工具等待 ---- */
     store.setState({
@@ -134,17 +140,17 @@
     })
     await sleep(600)
     const footer = document.querySelector('[data-testid="turn-footer"]')
-    const elapsed = footer
-      ? [...footer.querySelectorAll('.turn-footer-item')].find((x) =>
-          /用时|elapsed/i.test(x.textContent ?? '')
-        )
-      : null
+    /* 回合页脚改成 `.tact-time`（旧 `.turn-footer-item` 已不存在），用时与 tooltip 在它上面 */
+    const elapsed = footer?.querySelector('.tact-time') ?? null
     ok(!!elapsed, '回合页脚有用时项')
     const title = elapsed?.getAttribute('title') ?? ''
     ok(/等工具|waiting on tools/.test(title), '用时 tooltip 说明「其中等工具」', title)
     ok(/\b2s\b/.test(title), '等待时长是区间并集 2s（不是 3s）', title)
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
+  } finally {
+    /* 关掉浮层，别让它盖住后面的场景 */
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   }
 
   return out.join('\n')

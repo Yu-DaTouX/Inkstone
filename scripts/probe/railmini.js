@@ -48,11 +48,15 @@
 
     /* ---- 造一个项目 + 8 条会话（排序按最近活动，第一条最新） ---- */
     const stamp = Date.now()
-    const base = String(store.getState().settings.cwd).replace(/[\\/][^\\/]*$/, '')
-    const cwd = `${base}/yan-probe-railfold`
+    /*
+     * 项目 cwd 必须真实存在：主进程对新项目走 `validateCwd`，写一个不存在的路径
+     * 会让 patchSettings 直接拒绝（以前拼 `<base>/yan-probe-railfold` 就是这么挂的，
+     * 整个场景在第一条断言前就异常退出）。直接用当前会话的 cwd。
+     */
+    const cwd = String(store.getState().settings.cwd)
     const sessions = Array.from({ length: 8 }, (_, i) => ({
       id: `rf-${i}`,
-      path: `${cwd}/session-${i}.jsonl`,
+      path: `${cwd}/yan-probe-railfold-session-${i}.jsonl`,
       cwd,
       projectId: 'rf-proj',
       title: `第 ${i + 1} 个会话`,
