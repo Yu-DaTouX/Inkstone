@@ -162,8 +162,9 @@ export function BrowserSurface() {
     <div className="browser-surface" data-testid="browser-surface">
       <div className="ui-tabs browser-tabs" role="tablist">
         {tabs.map((tab) => (
+          <div key={tab.id} className="ui-tab-group">
           <button
-            key={tab.id}
+            type="button"
             className={`ui-tab doc browser-tab ${tab.id.startsWith('chrome:') ? 'external' : ''}`}
             role="tab"
             aria-selected={tab.id === state.activeTabId}
@@ -171,6 +172,7 @@ export function BrowserSurface() {
             title={tab.url}
           >
             <span className="ui-tab-label">{tab.id.startsWith('chrome:') ? 'Chrome · ' : ''}{tab.title || tab.url || t('browser.newTab')}</span>
+          </button>
             <button
               type="button"
               className="ui-tab-close"
@@ -180,7 +182,7 @@ export function BrowserSurface() {
             >
               <Icon name="close" size={12} />
             </button>
-          </button>
+          </div>
         ))}
         <IconButton icon="plus" label={t('browser.newTab')} size="sm" className="browser-new-tab" onClick={() => void window.yan.browser.newTab()} />
       </div>

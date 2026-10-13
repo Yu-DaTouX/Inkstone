@@ -880,6 +880,9 @@ export class AgentController extends EventEmitter {
   private queueBusy = false
   /** clear_queue + 重排必须串行，避免两次撤回互相覆盖恢复结果。 */
   private queueOperations: Promise<void> = Promise.resolve()
+  /** 停止开始就使后台标题失效，不等待 MCP/RPC 关闭完成。 */
+  private titleLifecycle = 0
+  private stopping = false
 
   /** 供渲染端拉取（补上可能错过的 push） */
   getConn(): { state: 'starting' | 'ready' | 'exited' | 'error'; detail: string } {
@@ -898,6 +901,7 @@ export class AgentController extends EventEmitter {
   async start(): Promise<{ ok: boolean; error?: string }> {
     if (this.rpc?.running) return { ok: true }
 
+    this.stopping = false
     this.resetQueue()
     this.setConn('starting')
 
@@ -4160,7 +4164,9 @@ export class AgentController extends EventEmitter {
     opts: { force?: boolean; candidate?: boolean; lockHeld?: boolean; onlyIfSamplesChanged?: boolean; sessionId?: string } = {}
   ): Promise<string | null> {
     const st = this.state
-    if (!st || (opts.sessionId && st.sessionId !== opts.sessionId)) return null
+    const rpc = this.rpc
+    const titleLifecycle = this.titleLifecycle
+    if (!st || !rpc || this.stopping || (opts.sessionId && st.sessionId !== opts.sessionId)) return null
     /* lockHeld：调用方（regenerateTitle）已经在 await 之前占好位，别再判一次 */
     if (!opts.lockHeld && this.titleTried.has(st.sessionId)) return null
 
@@ -4195,7 +4201,7 @@ export class AgentController extends EventEmitter {
         allowManual: opts.candidate,
         persist: !opts.candidate
       })
-      if (!res?.title) return null
+      if (!res?.title || this.stopping || this.rpc !== rpc || this.titleLifecycle !== titleLifecycle) return null
 
       if (opts.candidate) return res.title
       this.titledSamples.set(sessionId, samplesKey)
@@ -4212,7 +4218,7 @@ export class AgentController extends EventEmitter {
         if (ok?.success) await this.refreshState()
       }
       // 停止或实例替换后不再推送迟到的标题结果。
-      if (!this.rpc) return null
+      if (this.stopping || this.rpc !== rpc || this.titleLifecycle !== titleLifecycle) return null
       this.push({ ch: 'session-title', payload: { sessionId, title: res.title } })
       return res.title
     } catch (e) {
@@ -4273,6 +4279,8 @@ export class AgentController extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    this.stopping = true
+    this.titleLifecycle += 1
     this.cancelImages()
     /* 端点随实例一起停：token 作废，旧 CLI 环境变量从此无效。 */
     this.capabilityServer?.stop()

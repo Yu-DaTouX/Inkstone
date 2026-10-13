@@ -10,17 +10,17 @@
 | 文件 | 颜色 | 其中可映射 | px | 其中可映射 | 时长 | 其中可映射 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `tokens.css` | 0 | 0 | 14 | 9 | 0 | 0 |
-| `ui.css` | 4 | 0 | 101 | 69 | 0 | 0 |
+| `ui.css` | 4 | 0 | 102 | 70 | 0 | 0 |
 | `app.css` | 4 | 0 | 15 | 8 | 0 | 0 |
 | `motion.css` | 2 | 0 | 198 | 189 | 0 | 0 |
 | `settings.css` | 6 | 1 | 83 | 48 | 0 | 0 |
 | `electron.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `highlight.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| `layout.css` | 2 | 0 | 2 | 0 | 0 | 0 |
-| `shell.css` | 3 | 1 | 43 | 24 | 0 | 0 |
+| `layout.css` | 1 | 0 | 0 | 0 | 0 | 0 |
+| `shell.css` | 3 | 1 | 42 | 23 | 0 | 0 |
 | `dialog.css` | 1 | 0 | 13 | 7 | 0 | 0 |
-| `rail.css` | 1 | 0 | 72 | 59 | 0 | 0 |
-| `chat.css` | 34 | 10 | 132 | 83 | 0 | 0 |
+| `rail.css` | 1 | 0 | 70 | 57 | 0 | 0 |
+| `chat.css` | 34 | 10 | 131 | 82 | 0 | 0 |
 | `composer.css` | 2 | 0 | 114 | 82 | 0 | 0 |
 | `approval.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `tools.css` | 3 | 0 | 284 | 212 | 0 | 0 |
@@ -31,22 +31,22 @@
 | `workspace.css` | 0 | 0 | 9 | 6 | 0 | 0 |
 | `icon-state.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `scheme.css` | 0 | 0 | 4 | 2 | 0 | 0 |
-| **合计** | **63** | **13** | **1346** | **988** | **0** | **0** |
+| **合计** | **62** | **13** | **1341** | **985** | **0** | **0** |
 
 ## 2. 无对应令牌的值（语义缺口）
 
 | 值 | 类别 | 出现次数 | 文件 |
 | --- | --- | ---: | --- |
-| `14px` | length | 42 | app.css, browser.css, chat.css, composer.css, layout.css, motion.css, rail.css, review.css, settings.css, tokens.css, tools.css, ui.css, workbench.css |
+| `14px` | length | 41 | app.css, browser.css, chat.css, composer.css, motion.css, rail.css, review.css, settings.css, tokens.css, tools.css, ui.css, workbench.css |
 | `18px` | length | 32 | browser.css, chat.css, composer.css, rail.css, settings.css, tools.css, ui.css, workbench.css |
 | `10px` | length | 24 | chat.css, composer.css, motion.css, rail.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
 | `26px` | length | 20 | app.css, browser.css, chat.css, composer.css, rail.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
 | `220px` | length | 16 | chat.css, motion.css, review.css, settings.css, shell.css, tools.css, ui.css, workbench.css, workspace.css |
-| `36px` | length | 14 | chat.css, composer.css, layout.css, review.css, tools.css, ui.css |
+| `36px` | length | 13 | chat.css, composer.css, review.css, tools.css, ui.css |
 | `320px` | length | 12 | chat.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
 | `420px` | length | 12 | chat.css, composer.css, review.css, tools.css, ui.css, workbench.css |
-| `rgb(0, 0, 0, 0.000)` | color | 10 | app.css, layout.css, rail.css, settings.css, tools.css, ui.css |
 | `180px` | length | 10 | browser.css, composer.css, dialog.css, settings.css, shell.css, tools.css, workbench.css |
+| `rgb(0, 0, 0, 0.000)` | color | 9 | app.css, layout.css, rail.css, settings.css, tools.css, ui.css |
 | `5px` | length | 9 | chat.css, composer.css, shell.css, tools.css, ui.css |
 | `120px` | length | 9 | composer.css, motion.css, settings.css, tools.css, workbench.css |
 | `11.5px` | length | 9 | review.css, settings.css |
@@ -161,11 +161,11 @@
 | `--think-max` | #f26b6b / #bf2e2e | motion.css |
 | `--h` | currentcolor / var(--accent) / var(--fg-dim) | motion.css |
 | `--t` | color-mix(in srgb, currentcolor 55%, transparent) / var(--accent-line) / var(--fg-mute) | motion.css |
-| `--w-rail` | var(--w-rail-collapsed) / var(--w-rail-user, 248px) / min(var(--w-rail-user, 210px), max(180px, calc(100vw - 360px - var(--w-right)))) / min(var(--w-rail-user, 180px), max(180px, calc(100vw - 360px - var(--w-right)))) | layout.css |
+| `--w-rail` | var(--w-rail-collapsed) / var(--w-rail-user, 224px) / min(var(--w-rail-user, 210px), max(180px, calc(100vw - 360px - var(--w-right)))) / min(var(--w-rail-user, 180px), max(180px, calc(100vw - 360px - var(--w-right)))) | layout.css |
 | `--artifact-html-h` | clamp(200px, 40vh, 380px) / clamp(320px, 75vh, 860px) | chat.css |
 | `--sg-tone` | var(--fg-mute) / var(--accent) / var(--ok) / var(--warn) / var(--err) | chat.css |
 
 ## 5. 概况
 
 - 令牌总数：158（被引用 149）
-- 令牌引用点：6006（含组件内联 style）
+- 令牌引用点：6022（含组件内联 style）

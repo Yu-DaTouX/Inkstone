@@ -1,4 +1,4 @@
-/** 命令块表：短组逐行可见，**七步及以上**折叠较早步骤，点开后分批取回历史。 */
+/** 命令块表：短组逐行可见，七步及以上默认只留失败步骤，点开查看完整历史。 */
 ;(async () => {
   const out = []
   const ok = (condition, label) => { out.push((condition ? '  ✓ ' : '  ✗ ') + label); return !!condition }
@@ -49,7 +49,7 @@
     ok(!!q('.tgroup .trow[data-state="running"] .ui-run-dot'), '运行行使用静态 RunDot')
     ok(!q('.tgroup .ui-spin'), '工具表没有第二个方点阵')
 
-    out.push('\n=== 长组：保留最近四步 ===')
+    out.push('\n=== 长组：默认只留失败步骤 ===')
     const many = [tool('m1', 'error'), ...Array.from({ length: 6 }, (_, index) => tool(`m${index + 2}`, 'ok'))]
     const long = await inject(many, 'long')
     ok(!!long && long.dataset.count === '7', '工具组记录七步')

@@ -739,6 +739,16 @@ select.ui-input {
 .ui-tab.sel .ico {
   color: var(--accent);
 }
+.ui-tab-group {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 240px;
+}
+.ui-tab-group > .ui-tab {
+  flex: 1;
+  min-width: 0;
+}
 .ui-tab-label {
   min-width: 0;
   overflow: hidden;

@@ -84,7 +84,8 @@ function safeJoin(cwd: string, rel: string): string | null {
   if (/^[A-Za-z]:/.test(cleaned)) return null
   const abs = resolve(join(root, cleaned))
   // 再确认一次（resolve 之后的边界判断，防拼接绕过）
-  if (abs !== root && !abs.startsWith(root + sep)) return null
+  const boundary = root.endsWith(sep) ? root : root + sep
+  if (abs !== root && !abs.startsWith(boundary)) return null
   return abs
 }
 

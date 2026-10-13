@@ -114,7 +114,7 @@
 | `--think-xhigh` | `#d38be0` | **motion**: #d38be0 |
 | `--w-body` | `720px` | **tokens**: 720px |
 | `--w-proc-side` | `240px` | **tokens**: 240px |
-| `--w-rail` | `var(--w-rail-user, 248px)` | **layout**: var(--w-rail-user, 248px) |
+| `--w-rail` | `var(--w-rail-user, 224px)` | **layout**: var(--w-rail-user, 224px) |
 | `--w-rail-collapsed` | `0px` | **layout**: 0px |
 | `--w-right` ⚠️ | `var(--w-panel-user, 336px)` | tokens: var(--w-panel-user, 264px) → **layout**: var(--w-panel-user, 336px) |
 | `--w-stream` | `clamp(calc(var(--w-body) + 2 * var(--sp-5)), calc(100vw - 680px), 920px)` | **tokens**: clamp(calc(var(--w-body) + 2 * var(--sp-5)), calc(100vw - 680px), 920px) |

@@ -813,7 +813,7 @@ export function checkContextBudgetRequestV1(input: ContextBudgetRequestCheckInpu
     return { decision: 'blocked', reason: 'hard_input_limit_exceeded', calculation }
   }
   if (input.inputTokens >= (calculation.reviewLine as number)) {
-    return { decision: input.countMode === 'exact' ? 'review' : 'review', reason: 'soft_review_line_reached', calculation }
+    return { decision: 'review', reason: 'soft_review_line_reached', calculation }
   }
   return { decision: 'send', reason: 'within_review_line', calculation }
 }

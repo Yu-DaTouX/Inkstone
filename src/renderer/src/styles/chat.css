@@ -1208,9 +1208,6 @@
   font-family: var(--font-ui);
   font-size: var(--fs-sm);
 }
-.trow-head:hover .trow-target {
-  color: var(--fg);
-}
 .trow[data-state='error'] .trow-target {
   color: var(--err);
 }
@@ -1246,22 +1243,6 @@
 }
 .trow-head .chev.on {
   transform: rotate(90deg);
-}
-.trow-dot {
-  display: block;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--r-full);
-  background: var(--fg-mute);
-}
-.trow-dot.ok {
-  background: var(--ok);
-}
-.trow-dot.err {
-  background: var(--err);
-}
-.trow-dot.warn {
-  background: var(--warn);
 }
 
 /* 展开 = 设计规范 §6 的 grow：0fr ↔ 1fr，旧内容被连续推开，不跳 */
@@ -1633,10 +1614,6 @@
   color: #d6d6d6;
   font-family: var(--font-ui);
   font-weight: var(--fw-medium);
-}
-
-.term-bar .spacer {
-  flex: 1;
 }
 
 .term-time {

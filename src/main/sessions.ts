@@ -540,7 +540,18 @@ export async function restoreSession(token: string): Promise<void> {
     }
     deleted.delete(token)
   } catch (error) {
-    for (const item of restored.reverse()) await rename(item.from, item.to).catch(() => undefined)
+    const stillDeleted = [...entry]
+    let rollbackFailures = 0
+    for (const item of restored.reverse()) {
+      try { await rename(item.from, item.to) }
+      catch {
+        // 回滚失败的条目已恢复在原处，重试时不能再从不存在的回收路径搬它。
+        stillDeleted.splice(stillDeleted.indexOf(item), 1)
+        rollbackFailures += 1
+      }
+    }
+    deleted.set(token, stillDeleted)
+    if (rollbackFailures) throw new Error(`恢复失败且 ${rollbackFailures} 个已恢复条目未能回滚；这些条目保留在原处，其余条目仍可重试恢复。`, { cause: error })
     throw error
   }
 }

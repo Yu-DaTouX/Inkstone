@@ -71,25 +71,27 @@ export async function readInboxState(root: string = YAN_DIR): Promise<InboxState
   }
 }
 
-export async function writeInboxState(state: InboxState, root: string = YAN_DIR): Promise<void> {
+export async function writeInboxState(state: InboxState, root: string = YAN_DIR): Promise<InboxState> {
   const path = join(root, INBOX_STATE_FILE)
   await mkdir(dirname(path), { recursive: true })
   /* 已读时间只保留最近 200 条：它是“顺手记一笔”的可见性，不是要留档的数据 */
   const recent = Object.entries(state.readUntil ?? {})
     .sort((a, b) => b[1] - a[1])
     .slice(0, 200)
+  const persisted: InboxState = { dismissed: (state.dismissed ?? []).slice(-DISMISS_MAX), readUntil: Object.fromEntries(recent) }
   const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
   try {
     await writeFile(
       temp,
       JSON.stringify(
-        { dismissed: (state.dismissed ?? []).slice(-DISMISS_MAX), readUntil: Object.fromEntries(recent) },
+        persisted,
         null,
         2
       ),
       'utf8'
     )
     await rename(temp, path)
+    return persisted
   } finally {
     await rm(temp, { force: true }).catch(() => undefined)
   }

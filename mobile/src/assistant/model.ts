@@ -40,8 +40,18 @@ type CompletionPayload = {
   usage?: { prompt_tokens?: number; completion_tokens?: number }
 }
 
+export function safeModelBaseUrl(input: string): string {
+  const url = new URL(input)
+  const host = url.hostname.toLowerCase()
+  const loopback = host === 'localhost' || host === '[::1]' || host === '::1' || /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(host)
+  if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))) {
+    throw new Error('模型地址必须使用 HTTPS；只有本机回环地址允许 HTTP，不允许在地址中携带凭证。')
+  }
+  return url.toString().replace(/\/+$/, '')
+}
+
 export async function chat(request: ChatRequest): Promise<ChatResult> {
-  const url = `${request.baseUrl.replace(/\/+$/, '')}/chat/completions`
+  const url = `${safeModelBaseUrl(request.baseUrl)}/chat/completions`
   const timeoutMs = request.timeoutMs ?? 120_000
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -75,7 +85,7 @@ export async function chat(request: ChatRequest): Promise<ChatResult> {
 
 /** 「测试连接」：拉一次模型列表，比发一条对话便宜，也不会消耗额度。 */
 export async function listModels(baseUrl: string, apiKey: string, timeoutMs = 15_000): Promise<string[]> {
-  const url = `${baseUrl.replace(/\/+$/, '')}/models`
+  const url = `${safeModelBaseUrl(baseUrl)}/models`
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {

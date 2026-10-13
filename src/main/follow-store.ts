@@ -15,7 +15,8 @@
  */
 
 import { parsePersistedDocument } from './persisted-document'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm } from 'node:fs/promises'
+import { writeFileDurable } from './write-file-durable'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { YAN_DIR } from './paths'
@@ -264,7 +265,7 @@ export class FollowStore {
     const temp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
     try {
       await mkdir(dirname(path), { recursive: true })
-      await writeFile(temp, JSON.stringify(doc), 'utf8')
+      await writeFileDurable(temp, JSON.stringify(doc))
       await rename(temp, path)
     } catch (error) {
       await rm(temp, { force: true }).catch(() => undefined)

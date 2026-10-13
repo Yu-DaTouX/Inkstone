@@ -9,28 +9,28 @@
 | 顺序 | 文件 | 层 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | `tokens.css` | tokens | 464 | 27 | 32 | 1 | 6 |
-| 2 | `ui.css` | ui | 1093 | 343 | 356 | 5 | 0 |
-| 3 | `app.css` | modules | 517 | 72 | 73 | 1 | 0 |
+| 2 | `ui.css` | ui | 1116 | 346 | 359 | 5 | 0 |
+| 3 | `app.css` | modules | 523 | 73 | 74 | 1 | 0 |
 | 4 | `motion.css` | modules | 1618 | 223 | 226 | 5 | 1 |
 | 5 | `settings.css` | modules | 1331 | 204 | 210 | 1 | 0 |
 | 6 | `electron.css` | modules | 38 | 14 | 15 | 0 | 0 |
 | 7 | `highlight.css` | modules | 173 | 81 | 81 | 0 | 0 |
-| 8 | `layout.css` | modules | 239 | 19 | 20 | 4 | 2 |
-| 9 | `shell.css` | modules | 690 | 141 | 145 | 2 | 7 |
+| 8 | `layout.css` | modules | 235 | 18 | 19 | 4 | 2 |
+| 9 | `shell.css` | modules | 701 | 142 | 146 | 2 | 7 |
 | 10 | `dialog.css` | modules | 309 | 44 | 45 | 0 | 0 |
-| 11 | `rail.css` | modules | 1129 | 207 | 216 | 0 | 0 |
-| 12 | `chat.css` | modules | 3647 | 571 | 637 | 6 | 0 |
-| 13 | `composer.css` | modules | 2163 | 339 | 345 | 2 | 0 |
+| 11 | `rail.css` | modules | 1132 | 207 | 216 | 0 | 0 |
+| 12 | `chat.css` | modules | 3695 | 576 | 644 | 7 | 0 |
+| 13 | `composer.css` | modules | 2183 | 342 | 348 | 2 | 0 |
 | 14 | `approval.css` | modules | 145 | 17 | 17 | 0 | 0 |
 | 15 | `tools.css` | modules | 3945 | 614 | 675 | 2 | 5 |
 | 16 | `browser.css` | modules | 423 | 49 | 53 | 0 | 0 |
 | 17 | `terminal.css` | modules | 82 | 10 | 10 | 0 | 0 |
 | 18 | `review.css` | modules | 741 | 97 | 98 | 0 | 0 |
 | 19 | `workbench.css` | modules | 1986 | 399 | 416 | 3 | 0 |
-| 20 | `workspace.css` | modules | 110 | 88 | 91 | 0 | 0 |
+| 20 | `workspace.css` | modules | 112 | 89 | 92 | 0 | 0 |
 | 21 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
-| 22 | `scheme.css` | modules | 966 | 184 | 194 | 0 | 0 |
-| | **合计** | | **21839** | **3552** | | | |
+| 22 | `scheme.css` | modules | 989 | 188 | 198 | 0 | 0 |
+| | **合计** | | **21971** | **3577** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -39,31 +39,31 @@
 | 文件 | 最终胜出 |
 | --- | ---: |
 | `tokens.css` | 23 |
-| `ui.css` | 321 |
-| `app.css` | 53 |
+| `ui.css` | 324 |
+| `app.css` | 54 |
 | `motion.css` | 165 |
 | `settings.css` | 204 |
 | `electron.css` | 7 |
 | `highlight.css` | 80 |
 | `layout.css` | 17 |
-| `shell.css` | 138 |
+| `shell.css` | 139 |
 | `dialog.css` | 44 |
 | `rail.css` | 196 |
-| `chat.css` | 510 |
-| `composer.css` | 337 |
+| `chat.css` | 521 |
+| `composer.css` | 341 |
 | `approval.css` | 16 |
 | `tools.css` | 614 |
 | `browser.css` | 49 |
 | `terminal.css` | 10 |
 | `review.css` | 97 |
 | `workbench.css` | 398 |
-| `workspace.css` | 88 |
+| `workspace.css` | 89 |
 | `icon-state.css` | 1 |
-| `scheme.css` | 184 |
+| `scheme.css` | 188 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）
 
-共 **179** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
+共 **171** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
 
 | 选择器 | 定义它的文件（按加载顺序） |
 | --- | --- |
@@ -172,7 +172,6 @@
 | `.prose` | electron → chat |
 | `.md pre code` | highlight → chat |
 | `.app.rail-off .rail` | layout → rail |
-| `html[data-theme='light'] .outline-preview` | layout → scheme |
 | `.statusbar` | shell → scheme |
 | `.sb-mode[data-mode='run']` | shell → scheme |
 | `.sb-mode[data-mode='wait']` | shell → scheme |
@@ -187,4 +186,5 @@
 | `.srow-dot.iso.blocked` | rail → scheme |
 | `.srow-dot.unread` | rail → scheme |
 | `.srow-time` | rail → scheme |
-| … | 另有 59 个 |
+| `.md h1` | chat → scheme |
+| … | 另有 51 个 |

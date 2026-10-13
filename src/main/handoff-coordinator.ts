@@ -247,17 +247,6 @@ export function handoffNotify(id: string, message: string, notifyType: 'info' | 
   })
 }
 
-/**
- * 判一次资格；够格就 arm 一次生成。返回「这次真的启动了生成」。
- *
- * `reason` 只进提示词与排障（哪条路径想起交接的）—— 资格本身按 §7 的四条走，
- * 与触发路径无关（压缩后 / 目标报告后都只是「再看一眼」）。
- *
- * ⚠️ 启动成功就**冻结源续跑**（§5.2「先登记操作所有权并冻结源续跑」）：
- * 既然要换片段，源片段就不该再 arm 一条新的「接着干」——
- * 否则交接与续跑同时在跑，谁先落地都不对。冻结只针对*未发出*的那一条；
- * 交接失败 / 放弃时会用 `maybeArmGoalContinue` 把续跑放回来。
- */
 /** Native agents own context recovery; old automatic handoff callers cannot arm work. */
 export async function tryArmHandoff(_id: string, _reason: string): Promise<boolean> { return false }
 
