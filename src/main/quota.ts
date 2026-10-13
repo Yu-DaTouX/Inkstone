@@ -3,10 +3,10 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ProviderQuota, QuotaWindow } from '../shared/ipc'
-import { resolveCodexAccountId, resolveProviderSecret } from './credentials'
+import { readAuthEntry, resolveCodexAccountId, resolveProviderSecret } from './credentials'
 import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode'
 import { hostImageCredentials } from './image-credentials'
-import { claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
+import { chatGptIdentity, claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
 
 /**
  * 取额度用的 HTTP 客户端。
@@ -225,10 +225,48 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
   }
 }
 
+/** 上次成功的结果最多展示这么久；再旧的数字不如不显示。 */
+const LAST_GOOD_MAX_AGE_MS = 24 * 60 * 60_000
+const lastGood = new Map<string, ProviderQuota>()
+
+function hasQuotaData(q: ProviderQuota): boolean {
+  return !!q.windows?.length || q.remaining !== undefined || q.used !== undefined
+}
+
+/** 缓存键：ChatGPT 订阅按当前登录的账号区分，换号后不会把上一个账号的数字当成当前账号的。 */
+async function lastGoodKey(provider: string, monthlyBudget?: number): Promise<string> {
+  if (provider === 'openai-codex') {
+    const entry = await readAuthEntry(provider).catch(() => undefined) as { access?: unknown; accountId?: unknown } | undefined
+    const accountId = typeof entry?.accountId === 'string' ? entry.accountId : undefined
+    return `${provider}|${chatGptIdentity(entry?.access, undefined, accountId).key ?? ''}`
+  }
+  return `${provider}|${monthlyBudget ?? ''}`
+}
+
+/**
+ * 给界面展示用的额度查询：本次失败且没有数字时（如服务商限流 429），退回本次运行内上次成功的结果，
+ * 用 `staleError` 标明原因，`checkedAt` 保持那次成功的时间。只在内存里，重启即清空。
+ * 换号与续跑判定要用新鲜数据，带 `staleError` 的结果不能拿来决定恢复或切换。
+ */
+export async function providerQuotaWithFallback(rawProvider: string, monthlyBudget?: number): Promise<ProviderQuota> {
+  const provider = rawProvider.trim().toLowerCase()
+  const fresh = await providerQuota(rawProvider, monthlyBudget)
+  const key = await lastGoodKey(provider, monthlyBudget)
+  if (hasQuotaData(fresh)) {
+    lastGood.set(key, fresh)
+    return fresh
+  }
+  const prior = lastGood.get(key)
+  if (!fresh.error || !prior || Date.now() - prior.checkedAt > LAST_GOOD_MAX_AGE_MS) return fresh
+  return { ...prior, error: undefined, staleError: fresh.error }
+}
+
 /**
  * ChatGPT 订阅的套餐限速窗口。右栏额度（当前账号）与「账号额度」磁贴（每个保存的账号）共用。
  * `/backend-api/codex/usage` 只需 OAuth access token + chatgpt-account-id，不需要 Admin Key；
  * 数字是百分比（used_percent），解析口径在 shared/account-quota.ts。
+ * 此查询目前使用 codex_cli_rs 的 originator/UA，与 OAuth 登录的 pi 标识不同；
+ * 保留现有请求头，不把它视为已核实的服务方契约，也不影响账号切换策略。
  */
 export async function fetchCodexUsage(accessToken: string, accountId: string): Promise<{ plan?: string; windows: QuotaWindow[]; limited: boolean }> {
   const r = await http('https://chatgpt.com/backend-api/codex/usage', {

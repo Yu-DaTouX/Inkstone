@@ -16,7 +16,9 @@ import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { readAuthEntry, resolveProviderSecret } from './credentials'
 import { fetchCodexUsage, providerQuota } from './quota'
-import { codexAccountTargets, type CodexAccountTarget } from './codex-accounts'
+import { codexAccountTargets, switchCodexAccount, type CodexAccountTarget } from './codex-accounts'
+import { failoverOrder, pickFailover, type CodexFailoverResult, type FailoverCandidate } from '../shared/quota-failover'
+import { blockedQuotaWindows } from '../shared/quota-resume'
 import {
   chatGptIdentity,
   claudeUsageWindows,
@@ -246,6 +248,37 @@ const CLI_CARDS: Record<AccountQuotaCliSource, () => Promise<AccountQuotaCard | 
 /* ------------------------------------------------------------ 汇总 */
 
 let inflight: Promise<AccountQuotaReport> | null = null
+
+/**
+ * 当前账号额度用尽时换到下一个还有额度的 ChatGPT 账号（同一个 openai-codex 服务，模型不变）。
+ * 顺序、跳过与可用判定见 shared/quota-failover.ts；这里逐个查额度，选中后复用普通的账号切换。
+ */
+export async function failoverCodexAccount(skip: string[]): Promise<CodexFailoverResult> {
+  const targets = await codexAccountTargets()
+  const activeKey = targets.find((t) => t.active)?.key
+  const order = failoverOrder(targets.map((t) => t.key), activeKey, skip)
+  if (!order.length) return { ok: false, error: '没有其它可切换的 ChatGPT 账号' }
+  const candidates = await Promise.all(order.map(async (key): Promise<FailoverCandidate> => {
+    const t = targets.find((x) => x.key === key)!
+    if (!t.credential) return { key, blocked: false, unknown: true }
+    try {
+      const usage = await fetchCodexUsage(t.credential.access, t.credential.accountId)
+      if (!usage.windows.length) return { key, blocked: false, unknown: true }
+      const blocked = blockedQuotaWindows(usage.windows)
+      const resets = blocked.map((w) => w.resetAt).filter((x): x is number => typeof x === 'number')
+      return { key, blocked: usage.limited || blocked.length > 0, resetAt: resets.length ? Math.max(...resets) : undefined }
+    } catch {
+      return { key, blocked: false, unknown: true }
+    }
+  }))
+  const pick = pickFailover(candidates)
+  if (!pick.ok) return { ok: false, earliestResetAt: pick.earliestResetAt }
+  const switched = await switchCodexAccount(pick.key)
+  if (!switched.ok) return { ok: false, error: switched.error }
+  const target = targets.find((t) => t.key === pick.key)
+  const prefs = await readAccountQuotaPrefs()
+  return { ok: true, key: pick.key, fromKey: activeKey, email: target?.email, label: prefs.labels[pick.key] }
+}
 
 /** 同时只跑一次：磁贴打开、切换后刷新、定时刷新撞在一起时共用同一份结果。 */
 export function accountQuotaReport(): Promise<AccountQuotaReport> {

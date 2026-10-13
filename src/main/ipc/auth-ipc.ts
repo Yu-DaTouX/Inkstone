@@ -17,7 +17,7 @@ import { cancelCodexLogin, startCodexLogin } from '../oauth'
 import { answerOAuthPrompt, cancelOAuthLogin, startOAuthLogin } from '../oauth-providers'
 import type { OAuthLoginEvent } from '../../shared/ipc'
 import { ACCOUNT_QUOTA_CLI_SOURCES, type AccountQuotaCliSource } from '../../shared/account-quota'
-import { accountQuotaReport, readAccountQuotaPrefs, setAccountLabel, setAccountQuotaSource } from '../account-quota'
+import { accountQuotaReport, failoverCodexAccount, readAccountQuotaPrefs, setAccountLabel, setAccountQuotaSource } from '../account-quota'
 import { captureActiveCodexAccount, listCodexAccounts, removeCodexAccount, switchCodexAccount } from '../codex-accounts'
 
 export interface AuthIpcDeps {
@@ -145,6 +145,9 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
     /* pi 每次取凭证都按 auth.json 的文件版本重读，切换不必重启子进程 */
     return switchCodexAccount(String(key ?? ''))
   })
+  handle('yan:codexAccountFailover', async (skip: unknown) =>
+    failoverCodexAccount(Array.isArray(skip) ? skip.filter((k): k is string => typeof k === 'string') : [])
+  )
   handle('yan:codexAccountRemove', async (key: unknown) => {
     const r = await removeCodexAccount(String(key ?? ''))
     if (r.ok && r.wasActive) void restartAgent('ChatGPT 账号已移除').catch((error) => console.error('[auth] 凭证更新后刷新失败', error))

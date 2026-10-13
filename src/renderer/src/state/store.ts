@@ -60,7 +60,8 @@ import type {
   GitInstallProgress,
   AgentProfileState,
   AgentProfilePatch,
-  ZoomState
+  ZoomState,
+  QuotaWindow
 } from '../../../shared/ipc'
 import { TOOL_SECTIONS } from '../../../shared/ipc'
 import type { CheckpointRecord } from '../../../shared/checkpoints'
@@ -74,6 +75,9 @@ import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import { keepLocalImages } from './keep-images'
+import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT, RESET_GRACE_MS } from '../../../shared/quota-resume'
+import { failoverSkip, QUOTA_FAILOVER_PROMPT } from '../../../shared/quota-failover'
+import { decideKeepRunning, KEEP_RUNNING_PROMPT, type KeepRunningTurn } from '../../../shared/keep-running'
 import { reuseIfSame } from './same-messages'
 import {
   rebindSessionRuntime,
@@ -194,6 +198,17 @@ export interface Store {
    * 以什么方式投递；不点就一直在那儿（回合结束后自动按「排队」发出）。
    */
   pendingSends: PendingSend[]
+  /** 额度用尽后等待恢复、恢复即自动续跑的登记；只存在于渲染端内存，同一时刻最多一条。 */
+  quotaResume: QuotaResumeWait | null
+  /** 额度用尽自动换号：登记后该会话再遇到额度用尽就依次换下一个账号；tried 是本轮已用过的账号 key。 */
+  quotaFailover: { sessionId: string; tried: string[] } | null
+  /** 持续运行：用户为这条会话手动打开，回合正常结束就自动发继续；count 是已自动继续的次数。只在渲染端内存。 */
+  keepRunning: { sessionId: string; count: number } | null
+  /**
+   * 本会话刚从空闲变为运行时的最后一条消息。主进程先推「开始运行」再推用户消息，
+   * 中间几帧里它是上一轮的回复，不能当成流式中；本次运行的第一条新消息到达就清掉。
+   */
+  runTail: { sessionId: string; id: string } | null
   messages: UIMessage[]
   sessions: SessionSummary[]
   /**
@@ -607,6 +622,19 @@ export interface Store {
   steerQueued: (queueId: string) => Promise<void>
   /** 撤回仍在队列中的消息并回填草稿；已被 pi 接收的消息会返回失败。 */
   removeQueued: (queueId: string) => Promise<void>
+  /**
+   * 当前会话额度用尽时登记「恢复后自动续跑」；额度接口不可查时返回 false。
+   * failoverAt：另一个账号预计先恢复的时间，到点改为换号续跑。
+   */
+  armQuotaResume: (failoverAt?: number) => Promise<boolean>
+  cancelQuotaResume: () => void
+  /** 换到下一个还有额度的 ChatGPT 账号并继续；之后该会话再遇额度用尽自动接着换。 */
+  failoverQuota: () => Promise<boolean>
+  cancelQuotaFailover: () => void
+  /** 额度浮层的开关：提前为当前会话开启 / 关闭额度用尽自动换号。 */
+  setQuotaFailover: (on: boolean) => void
+  /** 当前会话的持续运行开关。 */
+  setKeepRunning: (on: boolean) => void
   abort: () => Promise<void>
   runBash: (command: string) => Promise<void>
   abortBash: () => Promise<void>
@@ -849,6 +877,17 @@ const EMPTY_QUEUE: QueueState = { steering: [], followUp: [] }
  * 这是**还没决定怎么投**的本地草稿 —— 用户点「插话」或「排队」之后
  * 才走 `releaseSend` 变成 pi 队列里的一项。
  */
+/** 等额度恢复的会话与服务商；resetAt 是被卡住窗口里最晚的重置时间，接口没给就没有。 */
+export type QuotaResumeWait = {
+  sessionId: string
+  sessionFile?: string
+  provider: string
+  armedAt: number
+  resetAt?: number
+  /** 自动换号时另一个账号预计恢复的时间：比当前账号早就到点换过去 */
+  failoverAt?: number
+}
+
 export type PendingSend = {
   id: string
   text: string
@@ -871,6 +910,15 @@ function runtimeFromRunner(runner: RunnerStatus): RuntimeEnvelope {
  * 「这个结果还属于眼前这条会话吗」。带 `generation`：同一个实例被复用到
  * 新会话时 runId 不变而代次会变（N12），只比 runId 会漏掉那一种。
  */
+/** 当前正在流式输出的消息：运行中的最后一条，但不包括发送后、新消息到达前的上一轮回复。 */
+export function streamingMessageId(state: Pick<Store, 'session' | 'messages' | 'runTail'>, includeAgentRunning = true): string | undefined {
+  const running = state.session?.isStreaming || (includeAgentRunning && state.session?.isAgentRunning)
+  const id = running ? state.messages[state.messages.length - 1]?.id : undefined
+  if (!id) return undefined
+  const tail = state.runTail
+  return tail && tail.sessionId === state.session?.sessionId && tail.id === id ? undefined : id
+}
+
 export function identityForAwait(state: Pick<Store, 'session' | 'activeRunnerId' | 'runners'>): string {
   const runtime = runtimeForState(state)
   return runtime ? `${runtime.runId}|${runtime.sessionId}|${runtime.generation}` : ''
@@ -1212,6 +1260,103 @@ function applyBrowserVisibility(get: () => Store): void {
  * 也不再向主进程请求激活。
  */
 let sessionSwitchGate = 0
+/** 额度续跑的轮询：代次变了（取消 / 重新登记）就让旧的回调自己退出。 */
+let quotaResumeGen = 0
+let quotaResumeTimer: ReturnType<typeof setTimeout> | undefined
+/** 换号进行中 / 刚换完：同一次失败会同时发出 stop-reason 与 auto-retry 两个错误事件，不能各换一次。 */
+let failoverBusy = false
+let lastFailoverAt = 0
+const FAILOVER_DEDUPE_MS = 15_000
+/** 持续运行：回合结束后稍等再判定，让最后的消息补丁先到。 */
+const KEEP_RUNNING_SETTLE_MS = 800
+
+/** 最近一条用户消息之后的回复就是刚结束的回合。 */
+function lastTurnSummary(messages: UIMessage[]): KeepRunningTurn {
+  let start = messages.length
+  while (start > 0 && messages[start - 1].role !== 'user') start--
+  const turn = messages.slice(start).filter((m) => m.role === 'assistant')
+  return {
+    error: turn.some((m) => !!m.error),
+    toolCalls: turn.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0),
+    lastText: [...turn].reverse().find((m) => m.text.trim())?.text ?? ''
+  }
+}
+
+/**
+ * 回合正常结束后决定是否自动继续。只管当前会话；等额度恢复、正在换号、
+ * 用户已有排队或待投递的消息时都不叠加一条继续。
+ */
+async function runKeepRunning(sessionId: string): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, KEEP_RUNNING_SETTLE_MS))
+  const s = useStore.getState()
+  const keep = s.keepRunning
+  if (!keep || keep.sessionId !== sessionId || s.session?.sessionId !== sessionId) return
+  if (s.session.isAgentRunning || s.session.isStreaming || s.quotaResume || failoverBusy) return
+  if (s.queue.steering.length || s.queue.followUp.length || s.pendingSends.length) return
+  const decision = decideKeepRunning(lastTurnSummary(s.messages), keep.count)
+  if (decision.next === 'skip') return
+  if (decision.next === 'stop') {
+    const text = decision.reason === 'done' ? '任务已完成，已关闭持续运行'
+      : decision.reason === 'idle' ? '模型本轮没有调用工具，已暂停持续运行'
+        : `已连续自动继续 ${keep.count} 次，已暂停持续运行`
+    useStore.setState({ keepRunning: null, notices: pushNotice(s.notices, 'info', text) })
+    return
+  }
+  useStore.setState({ keepRunning: { ...keep, count: keep.count + 1 } })
+  await s.send(KEEP_RUNNING_PROMPT)
+}
+
+/**
+ * 按判定结果等到下次查询时间，额度不再报满就续跑。
+ * 每一步之后都核对代次：用户取消或重新登记后，旧回调不能再发消息。
+ */
+async function runQuotaResumeCheck(gen: number, known?: QuotaWindow[]): Promise<void> {
+  const wait = useStore.getState().quotaResume
+  if (gen !== quotaResumeGen || !wait) return
+  let windows = known
+  if (!windows) {
+    try {
+      const next = await window.yan.providerQuota(wait.provider, useStore.getState().settings?.providerBudgets?.[wait.provider])
+      if (gen !== quotaResumeGen) return
+      /* 旧数据只供展示：不能拿上次的窗口判定已恢复 */
+      windows = next.staleError ? undefined : next.windows
+    } catch {
+      windows = undefined
+    }
+  }
+  /* 这一次没查到（网络抖动等）不等于恢复：保留登记，下个周期再查。 */
+  if (!windows?.length) {
+    quotaResumeTimer = setTimeout(() => void runQuotaResumeCheck(gen), QUOTA_RESUME_POLL_MS)
+    return
+  }
+  const decision = decideQuotaResume(windows, Date.now())
+  if (!decision.ready) {
+    const state = useStore.getState()
+    /* 另一个账号先到恢复时间：结束等待，改走换号（仍用尽时换号会带着新的时间重新登记） */
+    if (wait.failoverAt !== undefined && Date.now() >= wait.failoverAt &&
+      state.quotaFailover?.sessionId === wait.sessionId && state.session?.sessionId === wait.sessionId) {
+      quotaResumeGen++
+      useStore.setState({ quotaResume: null })
+      void state.failoverQuota()
+      return
+    }
+    const next = wait.failoverAt !== undefined ? Math.min(decision.nextCheckAt, wait.failoverAt) : decision.nextCheckAt
+    useStore.setState({ quotaResume: { ...wait, resetAt: decision.resetAt } })
+    quotaResumeTimer = setTimeout(() => void runQuotaResumeCheck(gen), Math.max(1000, next - Date.now()))
+    return
+  }
+  quotaResumeGen++
+  useStore.setState({ quotaResume: null })
+  /* 用户等待期间换了会话：先回到登记时的那条，续跑才不会发错地方。 */
+  if (useStore.getState().session?.sessionId !== wait.sessionId) {
+    if (!wait.sessionFile) return
+    await useStore.getState().switchSession(wait.sessionFile)
+    if (useStore.getState().session?.sessionId !== wait.sessionId) return
+  }
+  /* 用户已经自己接着发了消息：不再叠加一条续跑。 */
+  if (useStore.getState().session?.isAgentRunning || useStore.getState().session?.isStreaming) return
+  await useStore.getState().send(QUOTA_RESUME_PROMPT)
+}
 let approvalBootstrapSeq = 0
 let approvalChanges = new Map<string, ApprovalRequest | null>()
 let settingsPatchQueue: Promise<unknown> = Promise.resolve()
@@ -1284,6 +1429,10 @@ export const useStore = create<Store>((rawSet, get) => {
   stats: null,
   queue: EMPTY_QUEUE,
   pendingSends: [],
+  quotaResume: null,
+  quotaFailover: null,
+  keepRunning: null,
+  runTail: null,
   messages: [],
   sessions: [],
   spaces: [],
@@ -1707,12 +1856,19 @@ export const useStore = create<Store>((rawSet, get) => {
           s.session?.sessionId === m.payload.sessionId && s.session?.compaction && !m.payload.compaction
             ? m.payload.lastCompaction
             : undefined
-        set({ session: m.payload })
+        const wasRunning = !!(s.session?.isAgentRunning || s.session?.isStreaming)
+        const nowRunning = !!(m.payload.isAgentRunning || m.payload.isStreaming)
+        const tailId = s.messages.at(-1)?.id
+        const runTail = !nowRunning ? null
+          : !wasRunning && s.session?.sessionId === m.payload.sessionId && tailId ? { sessionId: m.payload.sessionId, id: tailId }
+            : s.runTail?.sessionId === m.payload.sessionId ? s.runTail : null
+        set({ session: m.payload, runTail })
         if (endedRun?.status === 'completed') {
           set({ notices: pushNotice(get().notices, 'info', '上下文已压缩') })
         } else if (endedRun?.status === 'failed') {
           set({ notices: pushNotice(get().notices, 'error', `压缩失败：${endedRun.error ?? '未知原因'}`) })
         }
+        if (finished && s.keepRunning?.sessionId === m.payload.sessionId) void runKeepRunning(m.payload.sessionId)
         if (finished) {
           /* 标题用会话名、正文用回复开头：只看通知就知道是哪个任务、答了什么 */
           const sid = s.session?.sessionId
@@ -1729,7 +1885,7 @@ export const useStore = create<Store>((rawSet, get) => {
       }
       case 'msg-add': {
         // 真正开始干活了，启动期结束
-        const patch: Partial<Store> = { messages: [...s.messages, m.payload] }
+        const patch: Partial<Store> = { messages: [...s.messages, m.payload], runTail: null }
         if (s.startupPhase) patch.startupPhase = false
         set(patch)
         /*
@@ -1774,6 +1930,13 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'queue':
         set({ queue: m.payload })
         break
+      case 'agent-error': {
+        const wait = s.quotaFailover
+        /* 只处理登记过换号的当前会话；同一次失败的重复事件在去重窗口内忽略 */
+        if (wait && wait.sessionId === s.session?.sessionId && !failoverBusy && Date.now() - lastFailoverAt > FAILOVER_DEDUPE_MS &&
+          isQuotaWaitError(m.payload.text || m.payload.message)) void get().failoverQuota()
+        break
+      }
     }
   },
 
@@ -2365,6 +2528,98 @@ export const useStore = create<Store>((rawSet, get) => {
     return true
   },
 
+  armQuotaResume: async (failoverAt) => {
+    const session = get().session
+    const provider = session?.model?.provider
+    if (!session || !provider) return false
+    if (get().quotaResume) return true
+    const snapshot = await window.yan.providerQuota(provider, get().settings?.providerBudgets?.[provider])
+    if (!snapshot.windows?.length || snapshot.staleError) {
+      set({ notices: pushNotice(get().notices, 'error', snapshot.staleError ?? snapshot.error ?? '该服务商没有可查询的额度窗口，无法自动续跑') })
+      return false
+    }
+    const gen = ++quotaResumeGen
+    set({
+      quotaResume: {
+        sessionId: session.sessionId,
+        sessionFile: session.sessionFile,
+        provider,
+        armedAt: Date.now(),
+        resetAt: decideQuotaResume(snapshot.windows, Date.now()).resetAt,
+        failoverAt
+      }
+    })
+    void runQuotaResumeCheck(gen, snapshot.windows)
+    return true
+  },
+
+  failoverQuota: async () => {
+    const session = get().session
+    if (!session || session.model?.provider !== 'openai-codex') {
+      set({ notices: pushNotice(get().notices, 'error', '换账号续跑目前只支持 ChatGPT 订阅账号') })
+      return false
+    }
+    if (failoverBusy) return false
+    failoverBusy = true
+    try {
+      const armed = get().quotaFailover
+      const prior = armed?.sessionId === session.sessionId ? failoverSkip(armed.tried, lastFailoverAt, Date.now()) : []
+      /* 换号次数封顶：账号额度查询都说有余量、请求却一直失败时不能无限轮下去 */
+      const result = prior.length >= 8 ? { ok: false as const, error: '已连续换号多次仍失败，已停止' } : await window.yan.codexAccountFailover(prior)
+      if (get().session?.sessionId !== session.sessionId) return false
+      if (!result.ok) {
+        if (result.error) {
+          set({ quotaFailover: null, notices: pushNotice(get().notices, 'error', result.error) })
+          return false
+        }
+        /*
+         * 账号都用尽：保留自动换号，等当前账号恢复；别的账号更早恢复就到点换过去。
+         * 恢复时间已过但接口仍报满时按轮询间隔再试，不原地连续换号。
+         */
+        const now = Date.now()
+        const failoverAt = result.earliestResetAt === undefined ? undefined
+          : result.earliestResetAt + RESET_GRACE_MS > now ? result.earliestResetAt + RESET_GRACE_MS : now + QUOTA_RESUME_POLL_MS
+        set({
+          quotaFailover: { sessionId: session.sessionId, tried: [] },
+          notices: pushNotice(get().notices, 'error', '其它账号的额度也用尽了，改为等待额度恢复后续跑')
+        })
+        void get().armQuotaResume(failoverAt)
+        return false
+      }
+      set({
+        quotaFailover: { sessionId: session.sessionId, tried: [...new Set([...prior, ...(result.fromKey ? [result.fromKey] : []), result.key])] },
+        notices: pushNotice(get().notices, 'info', `已切换到 ${result.label || result.email || '另一个账号'}，继续运行`)
+      })
+      lastFailoverAt = Date.now()
+      /* 错误事件到达时上一轮可能还没完全收尾：等它结束再发，免得续跑被当成插话 */
+      for (let i = 0; i < 30 && (get().session?.isAgentRunning || get().session?.isStreaming); i++) await new Promise((r) => setTimeout(r, 500))
+      if (get().session?.sessionId !== session.sessionId) return false
+      return await get().send(QUOTA_FAILOVER_PROMPT)
+    } finally {
+      failoverBusy = false
+    }
+  },
+
+  cancelQuotaFailover: () => set({ quotaFailover: null }),
+
+  setQuotaFailover: (on) => {
+    const session = get().session
+    if (!on || !session) return set({ quotaFailover: null })
+    if (session.model?.provider !== 'openai-codex') return
+    set({ quotaFailover: { sessionId: session.sessionId, tried: [] } })
+  },
+
+  setKeepRunning: (on) => {
+    const sessionId = get().session?.sessionId
+    set({ keepRunning: on && sessionId ? { sessionId, count: 0 } : null })
+  },
+
+  cancelQuotaResume: () => {
+    quotaResumeGen++
+    clearTimeout(quotaResumeTimer)
+    set({ quotaResume: null })
+  },
+
   locateMessage: (messageId) => {
     const id = String(messageId ?? '')
     if (!id) return false
@@ -2433,6 +2688,8 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   abort: async () => {
+    /* 用户点停止就是要停：持续运行不能在这一轮收尾后又自动发继续 */
+    if (get().keepRunning) set({ keepRunning: null, notices: pushNotice(get().notices, 'info', '已停止，持续运行已关闭') })
     // pi 的约定：clear_queue 拿回排队文本 → abort → 文本回到输入框
     const cleared = await window.yan.abort()
     const back = [...cleared.steering, ...cleared.followUp].filter(Boolean)

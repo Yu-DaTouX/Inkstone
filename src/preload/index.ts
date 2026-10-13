@@ -120,6 +120,7 @@ import type { ContextActionSummary } from '../shared/context-actions'
 import type { ContextBackgroundUsageSummary } from '../shared/context-background-usage'
 import type { ContextInspectSnapshot } from '../shared/context-inspect'
 import type { AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from '../shared/account-quota'
+import type { CodexFailoverResult } from '../shared/quota-failover'
 /**
  * 白名单桥 —— renderer 全程 nodeIntegration:false + contextIsolation:true。
  * 这里的方法就是渲染端能碰到的**全部**能力（HANDOFF §9 原则 3）。
@@ -348,6 +349,7 @@ const api: YanBridge = {
   codexAccounts: () => invoke<CodexAccountView[]>('yan:codexAccounts'),
   codexAccountSwitch: (key) => invoke<Ok>('yan:codexAccountSwitch', key),
   codexAccountRemove: (key) => invoke<Ok>('yan:codexAccountRemove', key),
+  codexAccountFailover: (skip) => invoke<CodexFailoverResult>('yan:codexAccountFailover', skip),
   toolchainStatus: () => invoke<ToolchainStatus>('yan:toolchainStatus'),
   gitRuntimeStatus: () => invoke<GitRuntimeStatus>('yan:gitRuntimeStatus'),
   gitRuntimeInstall: () => invoke<{ ok: boolean; error?: string }>('yan:gitRuntimeInstall'),
