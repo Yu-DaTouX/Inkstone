@@ -81,9 +81,23 @@ flowchart LR
 - 书签与小部件状态：`src/main/interaction-state.ts` / `src/shared/interaction-state.ts`，入口 `ipc/workspace-data-ipc.ts`，渲染 `lib/interaction-state.tsx`、`ConversationOutline.tsx`、`WidgetBlock.tsx`；按会话与消息隔离，不改原会话。备份创建/校验由 `src/main/data-backup.ts` 与设置 `BackupSection.tsx` 提供，只收录会话、桌面设置和交互状态；恢复切换未实施。小范围检查：`node scripts/test-personal-state.mjs`（临时目录，无模型/Electron）；`node scripts/test-personal-state-electron.mjs` 使用正式preload/IPC、hook与sandbox iframe做隔离组件/进程重启检查，不代表整窗UI验收。
 - `src/main/paths.ts` 定义 `PI_AGENT_DIR`、`YAN_DIR`、Electron 用户目录及便携版路径。数据目录迁移在 `src/main/storage-move.ts`（`storage-move-boot.ts` 是 main 的第一个 import，下次启动时搬到新位置并在原处留目录联接；入口在设置 → 关于 → 数据位置）。会话文件里的任务 / 自定义条目由 `session-entries-lite.ts` 增量读取，不经 pi 的 `get_entries` 搬运整份会话。真实用户会话、凭证和发行版 `release/砚数据/` 只读；验证用独立 `YAN_*` 目录。
 - 窗口的可变 store 调试引用仅开发态 `?probe=1` 或宿主明确 `YAN_PROBE`（非打包）启用，后者经 preload 的只读 `probeMode` 传递，既有离线 probe 无需改页面 URL；普通窗口不开放。HTML 成果/小部件每次 prepare 生成独立快照 token，释放一个不删除其他预览。
-- pi 会话本体为 JSONL；砚的设置、任务与投影由各自 store 保存在 `YAN_DIR`。不要把界面缓存当作历史事实源。关注/目标/资料库/空间与会话布局在清洗前经 `persisted-document.ts` 核对文档结构；只有 ENOENT 视为首次创建，解析/结构/I/O 故障拒绝覆盖，rename 失败不回退截断写。配对设备表与中继身份损坏保留原文件、拒绝重建；凭证写入采用持锁临时文件同步后替换。定向隔离检查见 `scripts/test-review-data.mjs`、`test-review-settings.mjs`、`test-review-auth.mjs`。
+- pi 会话本体为 JSONL；砚的设置、任务与投影由各自 store 保存在 `YAN_DIR`。不要把界面缓存当作历史事实源。关注/目标/资料库/空间与会话布局在清洗前经 `persisted-document.ts` 核对文档结构；只有 ENOENT 视为首次创建，解析/结构/I/O 故障拒绝覆盖，rename 失败不回退截断写。配对设备表与中继身份损坏保留原文件、拒绝重建；凭证写入采用持锁临时文件同步后替换，但本地凭证仍可能以明文 JSON 保存：POSIX `0600` 不等于 Windows ACL 或 DPAPI，目前未接入系统凭证库，也未验证跨 Windows 账户的隔离；不要把原子写入当成加密或访问控制。定向隔离检查见 `scripts/test-review-data.mjs`、`test-review-settings.mjs`、`test-review-auth.mjs`。
 - `resources/pi-runtime/`、`out/`、`release/` 是生成物或分发内容。旧预算扩展生成流程已移除；`src/shared/context-budget-v1.ts` 仍供旧接口类型、设置解析与模型端点标识使用，不表示启用宿主预算。
 - 常用检查见 [贡献指南](CONTRIBUTING.md)。`test:unit` 依赖构建；`test:live` 不自动构建。运行、构建、实际界面和发行包分别说明证据。
+
+### 大纲导航与框架请求来源
+
+`App.tsx` 的滚动意图代次使旧挂载/快照恢复帧失效，流式贴底与虚拟滚动回调共同遵守导航抑制；`ConversationOutline.tsx` 只读取和监听所属 stream，避免分屏其他列干扰高亮。回归为 `scripts/test-outline-navigation.mjs` 和单场景 `test:live outline`。
+
+`browser.ts` 的 webRequest 门禁对 `subFrame` 使用父文档 URL 作来源，而不是初始为 about:blank 的目标帧；远程父文档、未知来源和 link-local 仍按原边界阻断。`scripts/test-browser-frame-origin.mjs` 检查来源选择及拒绝规则；`test:live browserframeboundary` 通过正式 CLI 的同运行 observe/ref 验证本地 iframe 操作与新 Fetch 响应，网络账本仍只暴露 origin，不以恢复 URL 路径消除探针失败。
+
+### 宿主可靠性边界
+
+- `agent.ts` 标题生成核对 RPC 与生命周期，停止/替换后的迟到结果不发布；`subagents.ts` 在关闭进程前登记用户停止意图，不把主动停止显示为提前退出。
+- `sessions.ts` 恢复中途失败先尝试回滚；无法回滚的已恢复条目留在原处，从重试清单排除，其余条目可重试。`files.ts` 的根路径边界兼容盘根；`ipc/files-ipc.ts` 清附件前后核对指纹，竞争删除的 ENOENT 可跳过，其他错误仍报告。
+- `task-inbox-sources.ts` 写入返回实际裁剪状态，IPC 成功后发布同一状态；`write-file-durable.ts` 为关注/目标/资料库/空间 store 提供排他临时文件写入及文件 sync，rename 仍由调用方负责。这不是完整事务、跨账户权限控制或突然断电验收。
+- `packages.ts` 超时终止监听 taskkill 错误并降级 kill；包来源测试写入器仅在 `scripts/helpers/package-sources-fixture.mjs`，不导出生产测试接口。`service-authority.js` 核执行回执 allowed；Hub MCP 拒绝非对象输入并捕获异步拒绝。
+- `FilePreview.tsx` Markdown 阅读投影最多 64K 字符，不切开代理对；完整文件仍通过正式文件能力读取。`session-runtime.ts` 缓存按请求 id 更新 UI deadline/timeout。手机独立模型 URL 要求 HTTPS（仅回环允许 HTTP），拒绝内嵌凭证、query、hash；不表示真实手机/供应商接入已验收。
 
 ## 下一轮代码整理从哪里下手
 

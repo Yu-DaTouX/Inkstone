@@ -28,6 +28,16 @@ await runAgentServiceTests()
 await runServiceCliTests()
 await runCapabilityNegotiationTests()
 await import('./test-security-performance-fixes.mjs')
+await import('./test-outline-navigation.mjs')
+await import('./test-browser-frame-origin.mjs')
+// 宿主边界回归：均为源码/现场编译/隔离文件夹具，不启动模型或用户服务。
+for (const script of [
+  'test-attachment-prune-race', 'test-browser-tab-buttons', 'test-files-root-boundary',
+  'test-inbox-ipc-bounds', 'test-mobile-model-url', 'test-open-path-boundary',
+  'test-package-sources-fixture', 'test-package-timeout-fallback', 'test-preview-markdown-bound',
+  'test-service-receipt-hub-null', 'test-session-restore-rollback', 'test-subagent-stop-intent',
+  'test-title-lifecycle', 'test-write-file-durable'
+]) await import(`./${script}.mjs`)
 
 const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
 const dataDir = await mkdtemp(join(tmpdir(), 'yan-data-'))
@@ -1826,6 +1836,25 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runModelErrorTests } = await import('./test-model-errors.mjs')
 await runModelErrorTests(ok)
+
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({ entryPoints: ['src/shared/quota-resume.ts'], outfile: 'out/test/quota-resume.mjs',
+    bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
+)
+const { runQuotaResumeTests } = await import('./test-quota-resume.mjs')
+await runQuotaResumeTests(ok)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({ entryPoints: ['src/shared/quota-failover.ts'], outfile: 'out/test/quota-failover.mjs',
+    bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
+)
+const { runQuotaFailoverTests } = await import('./test-quota-failover.mjs')
+await runQuotaFailoverTests(ok)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({ entryPoints: ['src/shared/keep-running.ts'], outfile: 'out/test/keep-running.mjs',
+    bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
+)
+const { runKeepRunningTests } = await import('./test-keep-running.mjs')
+await runKeepRunningTests(ok)
 
 /*
  * 跨会话交接的计数与契约（实施-05 S5a）：与目标状态同样分两份编译 ——

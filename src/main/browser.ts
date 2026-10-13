@@ -481,7 +481,10 @@ export class BrowserController {
           (t) => t.view.webContents.id === details.webContentsId
         )
         /* 发起方优先取已提交文档；新窗口首导航继承 opener，未知来源保持受限。 */
-        const frameUrl = (details as typeof details & { frame?: { url?: string } }).frame?.url
+        // subFrame 的 frame 是正在导航的目标，初次请求时常为 about:blank。
+        // 来源应取其父文档；不能把目标 URL 当来源，否则远程页可冒充本地预览。
+        const requestFrame = details.frame
+        const frameUrl = details.resourceType === 'subFrame' ? requestFrame?.parent?.url : requestFrame?.url
         const initiator = frameUrl || (details.resourceType === 'mainFrame' ? owner?.committedUrl || owner?.openerUrl : '') || ''
         const decision = decideRequestBoundary({
           targetHost: target.hostname,
@@ -940,10 +943,9 @@ export class BrowserController {
   /**
    * 手动重新同步本机 Chrome 数据。
    *
-   * 场景：用户先点了「接入」但当时 Chrome 还开着（cookie 没同步到），
-   * 后来退出了 Chrome 再点这个 —— 此时 cookie 能拷了。
-   * 因为托管 Chrome 已经把旧 cookie 读进内存，**必须重启才能生效**，
-   * 所以同步到 cookie 且当前已连接时自动重开一次（否则用户会以为又没生效）。
+   * 已连接时通过 Chromium API 在当前 Chrome 与内置浏览器之间复制 Cookie，
+   * 不向运行中的 profile 写数据库，也不为同步而重启浏览器。
+   * 未连接时才执行本机 profile 的受限文件同步；它不代表登录态已经验证。
    */
   async syncLocalProfile(): Promise<ChromeSyncReport> {
     // A connected managed Chrome is a live session, never a file-copy target.

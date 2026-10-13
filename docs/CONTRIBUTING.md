@@ -37,6 +37,10 @@ npm run launch
 
 生图边界专项 `node scripts/test-image-generation-boundaries.mjs` 现场编译当前宿主源码到独立目录，不覆盖应用 `out/`；以隔离凭证/数据和全桩 fetch 检查参考图目录联接逃逸、合法根别名、跨 store/生成/attach 并发保存与恢复、兼容通道默认模型及覆盖、停止/实例关闭/探测与确认中的取消、各适配器取消信号、ComfyUI 仅删除所属排队项和迟到成果抑制。它同时运行既有 artifact/适配器用例，已纳入 unit；不启动 ComfyUI、调用真实模型或网络，不代替真实服务/整窗/发行验收。
 
+宿主可靠性夹具可逐个运行 `node scripts/<脚本>.mjs`，也已登记在 `test:unit`：`test-title-lifecycle`、`test-open-path-boundary`、`test-files-root-boundary`、`test-inbox-ipc-bounds`、`test-attachment-prune-race`、`test-session-restore-rollback`、`test-subagent-stop-intent`、`test-package-timeout-fallback`、`test-package-sources-fixture`、`test-write-file-durable`、`test-service-receipt-hub-null`、`test-preview-markdown-bound`、`test-browser-tab-buttons`、`test-mobile-model-url`。这些为源码断言、现场方法或隔离文件夹具，不调用真实模型，不代表 Electron 整窗、真实账号/系统权限或跨平台验收；单个夹具通过不表示完整 unit 已跑。
+
+大纲导航专项 `node scripts/test-outline-navigation.mjs` 执行现场源码回调，覆盖旧恢复帧抢回、流式/虚拟滚动、快照和分屏归属，含旧策略负对照；`node scripts/test-browser-frame-origin.mjs` 执行真实请求来源选择与网络边界，含远程父页/未知来源拒绝和 link-local 例外。两者已登记 unit，但不替代真实窗口验收。`npm run test:live -- browserframeboundary` 是正式应用的本地 iframe/network 单场景，复用 browser-boundary 原断言，不访问外部站点或启动 Chrome；操作经 `yan browser observe/select/click`，不能混用桌面 observe 引用与 CLI 运行归属。`node scripts/test-browser-frame-network.mjs` 是独立 Electron/CDP 本地夹具，含无操作点击负对照，不包含应用宿主门禁或真实 CLI；因此未并入纯 unit，单独运行。
+
 按改动范围选择检查。live 场景配置见 `scripts/test-live.mjs`；涉及远程模型的场景可能产生费用，运行前确认 provider、模型和授权。测试使用独立数据目录，禁止复用真实用户凭证、会话或发布目录中的用户数据。
 
 视觉改动同时关注深浅主题、窄窗口、缩放、键盘操作与实际截图。生成截图保留在本地，不批量提交到仓库；主页配图单独维护。
@@ -70,6 +74,17 @@ npm run visual:matrix
 ```powershell
 Remove-Item Env:YAN_MATRIX_ONLY, Env:YAN_SHOT_DIR
 ```
+
+其他矩阵场景必须显式指定一个目标组，`YAN_MATRIX_ONLY` 不保证为所有历史场景自动选组。例如 PowerShell：
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+$env:YAN_MATRIX_ONLY = "widgetfixture"
+npm run visual:matrix -- 0  # 仅深色；另次使用组1检查浅色
+Remove-Item Env:YAN_MATRIX_ONLY
+```
+
+`widgetfixture` 使用正式隔离预览协议、仅替换数据根，无网络模型请求；`composerfocus` 检查真实输入框聚焦，`toolgroup` 检查现行过程入口/长组展开，均可逐次使用组0/1。`terminal` 深浅为组13/14。截图须实际打开检查，旧截图保留；这些合成数据检查不代替运行服务、持久交互状态或发行包验收。
 
 ## 提交与反馈
 

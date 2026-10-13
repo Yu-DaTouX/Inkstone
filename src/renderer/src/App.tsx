@@ -37,7 +37,7 @@ import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/setti
 import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
 import { StatusBar } from './components/shell/StatusBar'
 import { dismissBootSplash } from './lib/boot-splash'
-import { useStore } from './state/store'
+import { streamingMessageId, useStore } from './state/store'
 /* 全部样式经级联层入口加载：覆盖关系由层决定，见 styles/index.css */
 import './styles/index.css'
 
@@ -277,7 +277,10 @@ export default function App() {
    * true。随后的贴底 effect 就会把刚定位好的回合重新拉到底部。
    */
   const suppressStickScrollRef = useRef(false)
+  // 延迟恢复只属于发起时的阅读意图；导航或滚动后，旧帧不能再接管位置。
+  const scrollIntentRef = useRef(0)
   const setStickNow = (v: boolean): void => {
+    scrollIntentRef.current += 1
     stickRef.current = v
     setStick(v)
   }
@@ -294,7 +297,8 @@ export default function App() {
    * 只用一个的话，「思考 → 调工具」时回合会被当成已结束 → 推理窗口提前折叠
    * （用户报的 bug）。
    */
-  const streamingId = session?.isStreaming || session?.isAgentRunning ? messages[messages.length - 1]?.id : undefined
+  const runTail = useStore((s) => s.runTail)
+  const streamingId = streamingMessageId({ session, messages, runTail })
 
   /**
    * 回合分组 —— 把扁平的 messages 折成「一轮一块」。
@@ -548,7 +552,7 @@ export default function App() {
 
   /* ---- 贴底滚动：用户往上翻了就不打扰 ---- */
   useEffect(() => {
-    if (!stickRef.current) return
+    if (!stickRef.current || suppressStickScrollRef.current) return
     if (virtual) {
       // 虚拟列表：滚到最后一项的末尾
       vlistRef.current?.scrollToIndex(renderTurns.length - 1, { align: 'end' })
@@ -599,6 +603,7 @@ export default function App() {
     if (vlistKey === 0) vlistRemounts.current = 0
     /* 搬家前用户停在底部就搬完仍停在底部；往上翻着的不去动它 */
     const wasStick = stickRef.current
+    const intent = scrollIntentRef.current
     vlistSettlingRef.current = true
     let frames = 0
     let raf = 0
@@ -610,16 +615,16 @@ export default function App() {
         setVlistKey((k) => k + 1)
         return
       }
-      if (wasStick) {
-        stickRef.current = true
+      if (wasStick && intent === scrollIntentRef.current && stickRef.current && !suppressStickScrollRef.current) {
         vlistRef.current?.scrollToIndex(lastTurnIndexRef.current, { align: 'end' })
       }
+      // 首次有效布局后，真实滚动即可表达阅读意图；后续检查帧不再屏蔽它。
+      vlistSettlingRef.current = false
       if (++frames < 24) {
         raf = requestAnimationFrame(tick)
         return
       }
       vlistSettlingRef.current = false
-      if (wasStick) setStickNow(true)
     }
     raf = requestAnimationFrame(tick)
     return () => {
@@ -644,7 +649,12 @@ export default function App() {
     setStick(bottom)
     // 初始布局的 scroll 事件不代表用户阅读意图，也不能覆盖目标会话的快照。
     vlistSettlingRef.current = true
+    const intent = scrollIntentRef.current
     const raf = requestAnimationFrame(() => {
+      if (intent !== scrollIntentRef.current) {
+        vlistSettlingRef.current = false
+        return
+      }
       /* 按回合锚点恢复（两块的渲染方式不同，像素位置不通用），找不到锚点回合才用像素 */
       if (virtual) {
         const at = snap?.anchor ? turnsRef.current.findIndex((tt) => tt.id === snap.anchor!.turnId) : -1
@@ -785,7 +795,7 @@ export default function App() {
   /** 虚拟列表的滚动回调：用 handle 的尺寸算「是否贴底」 */
   const onVirtualScroll = () => {
     const h = vlistRef.current
-    if (!h || vlistSettlingRef.current) return
+    if (!h || suppressStickScrollRef.current || vlistSettlingRef.current) return
     const atBottom = h.scrollSize - h.scrollOffset - h.viewportSize < 40
     setStickNow(atBottom)
     noteScroll(h.scrollOffset, atBottom, centerRef.current?.querySelector<HTMLElement>('.stream'))

@@ -29,6 +29,8 @@
   /** 负对照：同样形状但解析到公网地址，不该被拦 */
   const PUBLIC_CONTROL = 'http://1-1-1-1.sslip.io/'
 
+  // The parent live harness can set this flag for the local-only frame/network lane.
+  const frameNetworkOnly = window.__yanBrowserFrameNetworkOnly === true
   const out = []
   let failures = 0
   const ok = (cond, label, extra = '') => {
@@ -42,10 +44,36 @@
   const q = (s) => document.querySelector(s)
   const store = window.__yanStore
   const st = () => store.getState().browserState
+  // Browser actions use the public CLI; preload deliberately exposes no select/click methods.
+  const browserAction = async (command) => {
+    const before = store.getState().messages.filter(message => message.role === 'bash').length
+    await window.yan.runBash(command)
+    const deadline = Date.now() + 25000
+    while (Date.now() < deadline) {
+      const messages = store.getState().messages.filter(message => message.role === 'bash')
+      const last = messages.length > before ? messages.at(-1) : null
+      const call = last?.toolCalls?.[0]
+      if (last?.bash && call && call.status !== 'running' && call.status !== 'pending') {
+        const receipts = (call.output ?? '').split('\n').map(line => { try { return JSON.parse(line) } catch { return null } }).filter(Boolean)
+        const receipt = receipts.at(-1)
+        if (command.startsWith('yan browser')) out.push(`  操作回执：exit=${last.bash.exitCode} ok=${receipt?.ok} code=${receipt?.code ?? ''}`)
+        return { ok: last.bash.exitCode === 0 && receipt?.ok === true, receipt, output: call.output ?? '' }
+      }
+      await sleep(120)
+    }
+    out.push(`  操作未完成：${command}`)
+    return { ok: false }
+  }
+  const actionObservation = async () => {
+    const run = await browserAction('yan browser observe')
+    if (!run.ok || !run.receipt?.resultFile) throw new Error('CLI observation failed')
+    const read = await browserAction(`node -e "process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))" "${run.receipt.resultFile}"`)
+    return JSON.parse(read.output)
+  }
   const until = async (fn, ms = 15000) => {
     const t0 = Date.now()
     while (Date.now() - t0 < ms) {
-      if (fn()) return true
+      if (await fn()) return true
       await sleep(150)
     }
     return false
@@ -75,58 +103,83 @@
   await sleep(300)
 
   /* ---- 1. 先证明本地服务是真的（否则后面每一节都是假结论） ---- */
-  out.push('=== 1. 本地 fixture 服务 ===')
-  /*
-   * 为什么不用 `fetch` 从这里探：渲染端的 CSP 不允许连 127.0.0.1
-   *（实测直接 Failed to fetch，一度把“服务好好的”误判成“拿不到服务”）。
-   * 改成走**网页视图**去读：既证明服务活着，又证明视图真的能连上它。
-   */
-  await store.getState().openBrowser(`${BOUNDARY}/whoami`)
-  await until(async () => (await docUrl()).startsWith(BOUNDARY), 15000)
-  const served = (await docText()).trim()
-  ok(/^cookie=none hash=none$/.test(served), '本地服务可达（此刻还没有 Cookie，符合预期）', served.slice(0, 48))
+  if (!frameNetworkOnly) {
+    out.push('=== 1. 本地 fixture 服务 ===')
+    /*
+     * 为什么不用 `fetch` 从这里探：渲染端的 CSP 不允许连 127.0.0.1
+     *（实测直接 Failed to fetch，一度把“服务好好的”误判成“拿不到服务”）。
+     * 改成走**网页视图**去读：既证明服务活着，又证明视图真的能连上它。
+     */
+    await store.getState().openBrowser(`${BOUNDARY}/whoami`)
+    await until(async () => (await docUrl()).startsWith(BOUNDARY), 15000)
+    const served = (await docText()).trim()
+    ok(/^cookie=none hash=none$/.test(served), '本地服务可达（此刻还没有 Cookie，符合预期）', served.slice(0, 48))
 
-  /* ---- 2. 本地预览：loopback 页面访问 loopback 服务必须放行 ---- */
-  out.push('')
-  out.push('=== 2. 本地预览边界（正向对照，不能一刀切拦死） ===')
-  await store.getState().openBrowser(BOUNDARY)
-  await until(async () => (await docUrl()).startsWith(BOUNDARY), 15000)
-  const localDoc = await docUrl()
-  ok(localDoc.startsWith(BOUNDARY), '本地页面真的加载了', localDoc)
-  ok(/download/i.test(await docText()), '页面内容被读到（说明没被拦）')
+    /* ---- 2. 本地预览：loopback 页面访问 loopback 服务必须放行 ---- */
+    out.push('')
+    out.push('=== 2. 本地预览边界（正向对照，不能一刀切拦死） ===')
+    await store.getState().openBrowser(BOUNDARY)
+    await until(async () => (await docUrl()).startsWith(BOUNDARY), 15000)
+    const localDoc = await docUrl()
+    ok(localDoc.startsWith(BOUNDARY), '本地页面真的加载了', localDoc)
+    ok(/download/i.test(await docText()), '页面内容被读到（说明没被拦）')
+  }
 
   /* ---- 2a. 同源 / 跨源 iframe：observe、select、click 与只读请求账本 ---- */
   out.push('')
   out.push('=== 2a. 同源与跨源 frame 表单 + network ===')
   await store.getState().openBrowser(`${BOUNDARY}/browser-fixture`)
   await until(async () => (await docUrl()).startsWith(`${BOUNDARY}/browser-fixture`), 15000)
-  await sleep(500)
-  const frameObservation = await window.yan.browser.observe()
+  let frameObservation
+  await until(async () => {
+    frameObservation = await window.yan.browser.observe()
+    return frameObservation.elements.some((e) => /same[- ]choice/i.test(e.name)) &&
+      frameObservation.elements.some((e) => /cross[- ]choice/i.test(e.name)) &&
+      frameObservation.elements.some((e) => /Continue frame/i.test(e.name))
+  }, 15000)
+  frameObservation ??= await window.yan.browser.observe()
   out.push(`  观察到 ${frameObservation.elements.length} 个元素、${frameObservation.frameCount ?? '?'} 个 frame：${JSON.stringify(frameObservation.elements.map((e) => ({ name: e.name, role: e.role, frameId: e.frameId, frameUrl: e.frameUrl })))}`)
+  out.push(`  视口诊断：${JSON.stringify([...document.querySelectorAll('.browser-viewport')].map(el => ({ rect: el.getBoundingClientRect().toJSON(), hidden: !!el.closest('[hidden]') })))} observation=${JSON.stringify({ ...frameObservation, elements: undefined }).slice(0, 1200)}`)
   const sameChoice = frameObservation.elements.find((e) => /same[- ]choice/i.test(e.name))
   const crossChoice = frameObservation.elements.find((e) => /cross[- ]choice/i.test(e.name))
-  const crossSubmit = frameObservation.elements.find((e) => /Submit frame/i.test(e.name))
+  const crossSubmit = frameObservation.elements.find((e) => /Continue frame/i.test(e.name))
   ok(!!sameChoice, 'observe 找到同源 iframe 下拉框', JSON.stringify(sameChoice ?? null))
   ok(!!crossChoice && !!crossChoice.frameId, 'observe 找到跨源 iframe 下拉框并附 frameId', JSON.stringify(crossChoice ?? null))
   ok(/localhost:39873\/browser-fixture-cross/.test(crossChoice?.frameUrl ?? ''), '跨源元素标出所属 frame URL，且剥掉 query 参数', crossChoice?.frameUrl ?? '')
   ok(!!crossSubmit && !!crossSubmit.frameId, 'observe 找到跨源 iframe 按钮并附 frameId', JSON.stringify(crossSubmit ?? null))
-  const chosen = sameChoice ? await window.yan.browser.select(sameChoice.ref, 'b') : { ok: false }
+  const sameAction = (await actionObservation()).elements.find(e => /same[- ]choice/i.test(e.name))
+  const chosen = sameAction ? await browserAction(`yan browser select --ref "${sameAction.ref}" --value b`) : { ok: false }
   ok(chosen.ok, '同源 iframe select 能执行并返回新观察')
-  const afterSelect = chosen.observation ?? (await window.yan.browser.observe())
+  const afterSelect = await actionObservation()
   const crossChoiceNext = afterSelect.elements.find((e) => /cross-choice/.test(e.name))
-  const crossChosen = crossChoiceNext ? await window.yan.browser.select(crossChoiceNext.ref, 'b') : { ok: false }
+  const crossChosen = crossChoiceNext ? await browserAction(`yan browser select --ref "${crossChoiceNext.ref}" --value b`) : { ok: false }
   ok(crossChosen.ok, '跨源 iframe select 能执行并返回新观察')
-  const afterCrossSelect = crossChosen.observation ?? (await window.yan.browser.observe())
-  const submitNext = afterCrossSelect.elements.find((e) => /Submit frame/.test(e.name))
-  const clicked = submitNext ? await window.yan.browser.click(submitNext.ref) : { ok: false }
+  const afterCrossSelect = await actionObservation()
+  const submitNext = afterCrossSelect.elements.find((e) => /Continue frame/.test(e.name))
+  const fixtureFetch = (entry) => entry.url === `${BOUNDARY}/` && entry.resourceType === 'Fetch' && entry.method === 'GET'
+  const beforeFetchCount = (await window.yan.browser.network()).entries.filter(fixtureFetch).length
+  const clicked = submitNext ? await browserAction(`yan browser click --ref "${submitNext.ref}"`) : { ok: false }
   ok(clicked.ok, '跨源 iframe 点击能投递到正确屏幕坐标')
   const updated = await until(async () => /frame submitted/.test(await docText()), 8000)
   ok(updated, '跨源 iframe 表单点击通过 postMessage 更新了父页面')
-  const network = await window.yan.browser.network()
+  let network
+  await until(async () => {
+    network = await window.yan.browser.network()
+    return network.entries.filter(fixtureFetch).length > beforeFetchCount &&
+      network.entries.filter(fixtureFetch).at(-1)?.state === 'finished'
+  }, 8000)
   out.push(`  network entries=${network.entries.length}: ${JSON.stringify(network.entries)}`)
-  const frameRequest = network.entries.find((entry) => entry.url.includes('/browser-fixture-network'))
-  ok(!!frameRequest && frameRequest.method === 'GET' && frameRequest.status === 200, 'network 收到页面请求及响应状态', JSON.stringify(frameRequest ?? null))
+  // The ledger intentionally strips paths too. This fixture issues exactly one
+  // parent-origin Fetch after the click; require a NEW request and its response.
+  const frameRequest = network.entries.filter(fixtureFetch).at(-1)
+  ok(network.entries.filter(fixtureFetch).length > beforeFetchCount && frameRequest?.status === 200 && frameRequest?.state === 'finished', 'network 收到页面请求及响应状态', JSON.stringify(frameRequest ?? null))
   ok(!network.entries.some((entry) => /private=fixture-secret/.test(entry.url)), 'network URL 剥掉 query 中的私有哨兵')
+
+  if (frameNetworkOnly) {
+    out.push('')
+    out.push(failures === 0 ? '✓ 全部通过' : `✗ ${failures} 项未通过`)
+    return out.join('\n')
+  }
 
   /* ---- 2b. 网页自己开窗口：新标签真建出来，但**不夺走**当前阅读页（H-9 第二阶段） ---- */
   out.push('')
