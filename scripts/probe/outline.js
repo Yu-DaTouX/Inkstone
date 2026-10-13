@@ -69,6 +69,7 @@
       await sleep(700)
       const topIdx = onIndex()
       out.push(`  滚到最顶 → 高亮第 ${topIdx + 1} / ${hits.length} 格`)
+      out.push(`  顶部诊断：scrollTop=${box.scrollTop} streams=${JSON.stringify(qa('.stream').map(node => ({ top: node.scrollTop, height: node.clientHeight, scroll: node.scrollHeight })))} callback=${String(store.getState().scrollToTurn).slice(0, 160)}`)
       ok(topIdx === 0, '滚到顶部时高亮第一格')
     }
   }
@@ -288,8 +289,8 @@
 
   /** 目标回合的顶部应靠近滚动区顶部（或已在顶部） */
   function after0(el) {
-    const firstUser = q('[data-turn-id]')
-    if (!firstUser) return true
+    const firstUser = [...el.querySelectorAll('[data-turn-id]')].find(node => node.dataset.turnId === ul[0]?.id)
+    if (!firstUser) return false
     return Math.abs(firstUser.getBoundingClientRect().top - el.getBoundingClientRect().top) < 260
   }
 })()

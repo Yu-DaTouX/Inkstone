@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useInteractionState } from '../../lib/interaction-state'
 import { useT } from '../../i18n'
-import { useStore } from '../../state/store'
+import { streamingMessageId, useStore } from '../../state/store'
 import { createOutlineProjector, type OutlineTurn } from '../../../../shared/outline-turns'
 import { formatDuration } from '../../../../shared/duration'
 import type { UIMessage } from '../../../../shared/ipc'
@@ -43,7 +43,7 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
   const t = useT()
   const storeMessages = useStore((s) => projected ?? s.messages)
   const storeScrollToTurn = useStore((s) => projected ? noopScroll : s.scrollToTurn)
-  const storeStreamingId = useStore((s) => projected ? projectedStreaming : (s.session?.isStreaming ? s.messages[s.messages.length - 1]?.id : undefined))
+  const storeStreamingId = useStore((s) => projected ? projectedStreaming : streamingMessageId(s, false))
   const messages = projected ?? storeMessages
   const streamingId = projected ? projectedStreaming : storeStreamingId
   const scrollToTurn = projected ? noopScroll : storeScrollToTurn
@@ -136,7 +136,7 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
     /** 视口里最靠上的一轮（内容不满一屏时的兜底） */
     let topmost = -1
     let topmostTop = Infinity
-    for (const el of scope.querySelectorAll<HTMLElement>('[data-turn-id]')) {
+    for (const el of box.querySelectorAll<HTMLElement>('[data-turn-id]')) {
       const id = el.dataset.turnId
       const idx = id ? turnIndexRef.current.get(id) : undefined
       if (idx === undefined) continue
@@ -169,6 +169,8 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
     const onScroll = (event: Event): void => {
       const target = event.target
       if (!(target instanceof HTMLElement) || !target.classList.contains('stream')) return
+      const scope = root.current?.offsetParent
+      if (!scope || scope.querySelector('.stream') !== target) return
       if (raf) return
       raf = requestAnimationFrame(() => {
         raf = 0

@@ -36,7 +36,7 @@ import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
 import { deflateSync } from 'node:zlib'
-import { dirname, join, resolve, basename } from 'node:path'
+import { dirname, join, resolve, basename, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir } from 'node:os'
 
@@ -328,6 +328,7 @@ const CASES = {
   virtualdiag: { probe: 'scripts/probe/virtualdiag.js', delay: 14000, cost: 0 },
   // 发送键：规则可选 / 常显 / 生效（Enter 的语义不再随输入框高度隐式变化）
   sendkey: { probe: 'scripts/probe/sendkey.js', delay: 9000, cost: 0 },
+  sendtail: { probe: 'scripts/probe/send-tail.js', delay: 9000, cost: 0 },
   // 悬着的消息：生成中发出去的先悬在输入框上方，由用户选插话 / 排队
   pending: { probe: 'scripts/probe/pending.js', delay: 9000, cost: 0 },
   /*
@@ -789,6 +790,15 @@ const CASES = {
     boundaryCookieCheck: true,
     afterExit: 'browserBoundaryDownloads',
     env: { YAN_CHROME_HEADLESS: '1', YAN_CHROME_SYNC: '0' }
+  },
+  // The exact boundary frame/network assertions, with no external sites or Chrome.
+  browserframeboundary: {
+    probe: 'scripts/probe/browser-boundary.js',
+    probePrefix: 'window.__yanBrowserFrameNetworkOnly = true;\n',
+    delay: 9000,
+    cost: 0,
+    usesBoundaryServer: true,
+    budget: 90000
   },
   browserframes: {
     probe: 'scripts/probe/browser-frames.js',
@@ -6605,7 +6615,7 @@ async function main() {
   }
 
   for (const name of names) {
-    const c = CASES[name]
+    const c = { ...CASES[name] }
     console.log(`\n${'='.repeat(64)}\n▶ ${name}  (${c.probe})\n${'='.repeat(64)}`)
     /* 每个场景都从同一份干净快照开始（见上方「场景间状态隔离」）。 */
     restoreScenarioState()
@@ -6697,6 +6707,12 @@ async function main() {
       )
     }
 
+    if (c.probePrefix) {
+      if (!sandboxRoot) throw new Error('Prefixed probes require an isolated data directory')
+      const wrapped = join(sandboxRoot, `probe-${name}.js`)
+      writeFileSync(wrapped, c.probePrefix + readFileSync(join(root, c.probe), 'utf8'))
+      c.probe = relative(root, wrapped)
+    }
     const syntaxErr = checkProbeSyntax(c.probe)
     if (syntaxErr) {
       console.log(`  ✗ 探针脚本语法错误：${syntaxErr}`)
