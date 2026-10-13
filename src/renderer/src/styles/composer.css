@@ -2111,8 +2111,8 @@
   background: var(--accent-soft);
 }
 .qform-option:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 .qform-option-icon {
   margin-top: 1px;

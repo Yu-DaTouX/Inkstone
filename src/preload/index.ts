@@ -23,14 +23,9 @@ import type {
   LibraryVersion,
   LibrarySource,
   ContextAssembly,
-  FollowBridge,
-  FollowMutationResult,
   ActivityBridge,
   ActivityModelResolution,
   ActivityModelRow,
-  FollowRun,
-  Watch,
-  WatchView,
   ForkContextResultView,
   ForkRefsReportView,
   WorktreeLinkView,
@@ -450,16 +445,6 @@ const api: YanBridge = {
     /* 本轮上下文装配结果（实施-25 P05）：只读，供界面 / 探针核对来源引用 */
     current: () => invoke<{ ok: boolean; error?: string; assembly?: ContextAssembly }>('yan:context:current')
   },
-  follow: {
-    list: (spaceId) => invoke<Watch[]>('yan:follow:list', spaceId),
-    views: (spaceId) => invoke<(WatchView & { lastRunText?: string })[]>('yan:follow:views', spaceId),
-    due: () => invoke<Watch[]>('yan:follow:due'),
-    runs: (input) => invoke<FollowRun[]>('yan:follow:runs', input),
-    save: (input) => invoke<FollowMutationResult>('yan:follow:save', input),
-    update: (input) => invoke<FollowMutationResult>('yan:follow:update', input),
-    remove: (id) => invoke<{ ok: boolean; error?: string }>('yan:follow:remove', id),
-    report: (input) => invoke<{ ok: boolean; error?: string; code?: string; run?: FollowRun; watch?: Watch }>('yan:follow:report', input)
-  } as FollowBridge,
   activity: {
     rows: (input) => invoke<ActivityModelRow[]>('yan:activity:modelRows', input),
     model: (input) => invoke<ActivityModelResolution>('yan:activity:model', input),
@@ -558,6 +543,7 @@ const api: YanBridge = {
   /* ---- 设置 ---- */
   getSettings: () => invoke<AppSettings>('yan:getSettings'),
   patchSettings: (patch) => invoke<AppSettings>('yan:patchSettings', patch),
+  changeProjectDirectory: (request) => invoke<import('../shared/ipc').ProjectDirectoryResult>('yan:project:changeDirectory', request),
   pickCwd: () => invoke<string | null>('yan:pickCwd'),
   setCwd: (cwd) => invoke<Ok>('yan:setCwd', cwd),
 

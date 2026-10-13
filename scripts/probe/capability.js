@@ -48,8 +48,9 @@
   const deadline = Date.now() + 150_000
   while (Date.now() < deadline) {
     await sleep(400)
-    if (qa('.trow').length > 0) sawTool = true
-    const busy = q('.cursor') || q('.trow[data-state="running"]')
+    /* 过程默认折叠，工具行不在 DOM 里；以回合的「过程」区出现为准 */
+    if (q('[data-testid="turn-process"]')) sawTool = true
+    const busy = q('.cursor') || q('[data-testid="working"]')
     if (sawTool && !busy) break
   }
 

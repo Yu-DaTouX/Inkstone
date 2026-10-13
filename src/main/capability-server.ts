@@ -185,13 +185,8 @@ const KNOWN_COMMANDS = new Set([
   'goal.ready',
   'goal.report',
   'goal.status',
-  /* 资料引用：按版本读片段；对照做法在 research 技能。 */
+  /* 资料引用：按版本读片段。 */
   'research.read',
-  /* 持续关注（实施-25 P16）：只能提议与回报（启用 / 删除是用户的事）。 */
-  'follow.list',
-  'follow.due',
-  'follow.save',
-  'follow.report',
   'knowledge.search',
   'knowledge.read',
   'knowledge.propose',

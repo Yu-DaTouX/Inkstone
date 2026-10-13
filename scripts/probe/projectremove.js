@@ -46,11 +46,26 @@
 
     /* ---- 造一个项目 ---- */
     const stamp = Date.now()
-    const cwd = `${store.getState().settings.cwd.replace(/[\\/][^\\/]*$/, '')}/yan-probe-remove`
+    /* 场景带夹具项目：用里面预建的真实子目录（主进程对新项目 cwd 走 validateCwd）。 */
+    const cwd = `${String(store.getState().settings.cwd).replace(/[\\/]+$/, '')}/probe-projects/p1`
     await store.getState().patchSettings({
       projects: [{ id: 'probe-rm', cwd, name: '探针待移除', archived: false, createdAt: stamp, updatedAt: stamp }],
       projectGroups: [],
       recentCwds: [cwd]
+    })
+    /* 左栏只显示**有会话的项目**：不注入会话就看不到项目行。 */
+    store.setState({
+      sessions: [{
+        id: 'pr-s0',
+        path: `${cwd}/session-0.jsonl`,
+        cwd,
+        projectId: 'probe-rm',
+        title: '待移除项目的会话',
+        named: true,
+        createdAt: stamp,
+        updatedAt: stamp,
+        messageCount: 1
+      }]
     })
     await until(() => !!rowOf('probe-rm') || !!q('[data-testid="rail-more-projects"]'), 6000)
     /* The sidebar previews only five projects; expand the list when this fixture

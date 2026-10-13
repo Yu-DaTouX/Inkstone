@@ -7,6 +7,11 @@ function directoryKey(path: string): string {
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized
 }
 
+/** 项目默认目录变化后，只有宿主已打开、且归属此项目的会话可继续访问旧目录。 */
+export async function isRunnerProjectCwd(cwd: string, projectId: string, runners: ReadonlyArray<{ cwd: string; projectId?: string }>): Promise<boolean> {
+  return isAuthorizedFileCwd(cwd, runners.filter((runner) => runner.projectId === projectId).map((runner) => runner.cwd))
+}
+
 export async function isAuthorizedFileCwd(cwd: string, allowedCwds: readonly string[]): Promise<boolean> {
   if (!isAbsolute(cwd)) return false
   const allowed = allowedCwds.filter((path) => typeof path === 'string' && isAbsolute(path))

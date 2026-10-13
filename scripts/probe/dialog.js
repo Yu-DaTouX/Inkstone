@@ -75,9 +75,14 @@
 
   out.push('')
   out.push('=== 3. Tab 圈定（合成事件；焦点移动是我们显式做的）===')
+  /*
+   * 与产品的焦点陷阱同口径：排除 tabIndex=-1。设置页签是 WAI-ARIA 的 roving
+   * tabindex（当前项 0、其余 -1，用方向键切页）—— 不排除它们就会拿一个“本来
+   * 就不该被 Tab 进入”的页签去和陷阱的第一个可聚焦元素比较，必然不等。
+   */
   const focusables = panel
     ? [...panel.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')].filter(
-        (el) => !el.disabled && el.getClientRects().length > 0
+        (el) => !el.disabled && el.getClientRects().length > 0 && el.tabIndex !== -1
       )
     : []
   out.push(`  面板内可聚焦元素: ${focusables.length}`)
@@ -267,13 +272,14 @@
     const controls = [
       ...panel2.querySelectorAll('[role="tab"], .seg-btn, .ui-row-ctl button, .ui-row-ctl input, .ui-row-ctl select')
     ]
-    const notFocusable = controls.filter((el) => el.tabIndex < 0)
+    /* 页签靠方向键切换（roving tabindex），不在「必须能被 Tab 聚焦」的范围内。 */
+    const notFocusable = controls.filter((el) => el.tabIndex < 0 && el.getAttribute('role') !== 'tab')
     const notNative = controls.filter(
       (el) => !['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A'].includes(el.tagName)
     )
     out.push(`  设置里的控件：${controls.length} 个，不可聚焦 ${notFocusable.length}，非原生 ${notNative.length}`)
     ok(controls.length >= 8, '设置面板里有很多可操作控件')
-    ok(notFocusable.length === 0, '所有控件都能被 Tab 聚焦（没有 tabindex=-1 的坑）')
+    ok(notFocusable.length === 0, '除页签（用方向键切换）外，控件都能被 Tab 聚焦')
     ok(notNative.length === 0, '全部是原生控件（Enter / Space 天然可用）')
 
     const density = q('[data-testid="set-density"]')

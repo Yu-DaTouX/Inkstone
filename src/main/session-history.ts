@@ -41,9 +41,10 @@ export async function readChainMessages(
   const readOne = async (file: string): Promise<ReadResult | null> => {
     const result = await readSessionMessages(file).catch(() => null)
     if (!result) return null
+    const isolated = structuredClone(result.messages)
     let messages = hydrate
-      ? await hydrate(file, result.messages).catch(() => result.messages)
-      : result.messages
+      ? await hydrate(file, isolated).catch(() => isolated)
+      : isolated
     if (result.sourceCwd) {
       messages = messages.map((message) => ({ ...message, sourceCwd: result.sourceCwd }))
     }

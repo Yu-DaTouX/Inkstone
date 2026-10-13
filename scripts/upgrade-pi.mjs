@@ -84,7 +84,7 @@ function repairHints() {
   log('修复清单（按顺序试）：')
   log('  1. 确认源 pi 完整：npm i -g @earendil-works/pi-coding-agent@latest')
   log('  2. 依赖闭包缺包时，在 pi 自己的目录补装：')
-  log('     npm i -g @earendil-works/chord typebox undici @silvia-odwyer/photon-node jiti')
+  log('     npm i -g typebox undici @silvia-odwyer/photon-node jiti   （pi 1.2.0 之前的版本另需 @earendil-works/chord）')
   log('  3. 指定一个已知可用的包目录重试：')
   log('     YAN_PI_SRC=<pi包目录> node scripts/vendor-pi.mjs')
   log('  4. 仍失败：把完整输出发出来（vendor-pi 会打印缺失的包名）')

@@ -40,7 +40,7 @@ import { join } from 'node:path'
  * 「什么时候派子代理」「任务清单什么时候建」这类判断在读帮助之前就要做，所以留在目录行里。
  */
 export const CAPABILITY_GUIDE = [
-  '砚提供了一组本机能力，通过 `yan` 命令使用（已在 PATH 中，无需安装）。你运行在 Inkstone（砚）桌面应用内，pi 是执行内核；系统命令用 bash 工具（Windows 上没有 Git Bash 时是 PowerShell 工具）。工具里执行成功不等于已在用户界面的交互终端里执行。',
+  '砚提供了一组本机能力，通过 `yan` 命令使用（已在 PATH 中，无需安装）。你运行在 Inkstone（砚）桌面应用内，pi 是执行内核；系统命令用 bash 工具（Windows 上没有 Git Bash 时是 PowerShell 工具）；bash 工具里写 bash 语法，不要混入 Get-Content 之类的 PowerShell 命令。工具里执行成功不等于已在用户界面的交互终端里执行。',
   '',
   '调用原则：',
   '- 用户要求执行时，在授权范围内用已有能力做完，不停在「可以帮你」或让用户代做；只讨论方案或询问用法时直接回答，不为展示而调用。',

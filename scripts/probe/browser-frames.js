@@ -98,9 +98,22 @@
     ok(clicked.run.receipt?.ok === true, 'click maps child-frame coordinates into the top-level viewport', JSON.stringify(clicked.run.receipt ?? null))
     ok(await until(async () => (await observe()).text.includes('frame submitted')), 'cross-origin frame action reaches the parent page')
 
-    const network = await window.yan.browser.network()
-    const request = network.entries.find((entry) => entry.url.includes('/browser-fixture-network'))
-    ok(!!request && request.method === 'GET' && request.status === 200, 'network exposes recent request method and response status', JSON.stringify(request ?? null))
+    /*
+     * 账本里的 URL 被有意抹成 origin（路径常带一次性链接/凭证），所以不能按路径找；
+     * 按方法 + 状态 + 资源类型找，并轮询等响应回填（请求发出到响应有一段间隔）。
+     */
+    const polled = await until(async () => {
+      const snapshot = await window.yan.browser.network()
+      const hit = snapshot.entries.some(
+        (entry) => entry.method === 'GET' && entry.status === 200 && ['Fetch', 'XHR'].includes(entry.resourceType ?? '')
+      )
+      return hit ? snapshot : null
+    })
+    const network = polled ?? (await window.yan.browser.network())
+    const request = network.entries.find(
+      (entry) => entry.method === 'GET' && entry.status === 200 && ['Fetch', 'XHR'].includes(entry.resourceType ?? '')
+    )
+    ok(!!request, 'network exposes recent request method and response status', JSON.stringify(request ?? null))
     ok(!JSON.stringify(network).includes('fixture-secret'), 'network snapshot strips URL query secrets')
     ok(network.entries.length <= network.limit && network.limit === 80, 'network snapshot remains bounded to 80 entries')
   } catch (error) {

@@ -312,11 +312,19 @@
       }
     } else {
       out.push('  ⚠️ 没有同时含解说与执行栏的回合')
-      /* H-1 移除了助手正文顶部的品牌 / 步数标签；回合仍保留左侧砚图标。 */
-      const mark = q('.msg.assistant .gutter .ico, .msg.assistant .gutter svg')
-      ok(!!mark, '助手回合有左侧砚图标')
       const single = qa('.msg.assistant').length
       out.push(`  助手回合数 = ${single}`)
+      /*
+       * H-1 移除了助手正文顶部的品牌 / 步数标签；回合仍保留左侧砚图标（sparkles）。
+       * 但会话很长时走虚拟列表，视口外/未挂载的行本来就不在 DOM 里 —— 那时不能用
+       * 节点数判定「图标缺失」（实测：消息 400 条、渲染块 0）。
+       */
+      if (!single) {
+        out.push('  ~ 跳过：当前没有渲染出的助手回合（长会话走虚拟列表），图标判据不适用')
+      } else {
+        const mark = q('.msg.assistant .gutter .ico, .msg.assistant .gutter svg')
+        ok(!!mark, '助手回合有左侧砚图标')
+      }
     }
   }
 
@@ -324,17 +332,17 @@
   out.push('')
   out.push('=== 9. 输入区运行条：只在运行时出现 ===')
   /*
-   * 输入区顶边的运行条（设计规范 §3.5）：运行时用 grow 长出一行
-   * 「方点阵 · 阶段文字 · 计时」，空闲时高度为 0；思考档位色落在方点阵与底线上。
+   * 输入区顶边的运行条（设计规范「界面重构」）：现在只是**无文字的钩子**——
+   * 运行时用 data-state / data-phase 表达状态，阶段文字与计时已并入回合活动行，
+   * 所以这里不再有行容器与方点阵；空闲时高度仍为 0，思考档位色仍落在边框上。
    *
-   * 这里验证三件事：结构（行容器）、空闲时不占高度、档位色彩。
-   * 方点阵的逐帧变化不断言 —— 那会引入时间敏感性。
+   * 验证三件事：结构已收敛（不再有行容器）、空闲时不占高度、档位色彩。
    */
   {
     const cb = q('[data-testid="composer-border"]')
     ok(!!cb, '输入框有运行条')
     if (cb) {
-      ok(!!cb.querySelector('.cborder-row'), '运行条有行容器')
+      ok(!cb.querySelector('.cborder-row'), '运行条已收敛为无文字钩子（不再有行容器）')
       if (cb.dataset.state === 'idle') {
         ok(cb.getBoundingClientRect().height < 2, '空闲时运行条不占高度（' + cb.getBoundingClientRect().height.toFixed(1) + 'px）')
       }

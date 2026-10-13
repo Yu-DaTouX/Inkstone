@@ -43,8 +43,6 @@ import type {
   LibraryVersion,
   SourceReference,
   ContextAssembly,
-  Watch,
-  WatchView,
   SessionTodoSnapshot,
   SlashCommand,
   SoundEvent,
@@ -172,7 +170,7 @@ export interface Notice {
   text: string
   at: number
   /** 带按钮的专用通知；文案与按钮由渲染层按语言生成 */
-  action?: 'search-api-hint' | 'git-install'
+  action?: 'search-api-hint' | 'git-install' | 'app-update'
 }
 
 export interface Store {
@@ -238,10 +236,6 @@ export interface Store {
   libraryVersions: LibraryVersion[]
   libraryRefs: LibraryRefRecordView[]
   libraryLoaded: boolean
-  /** 持续关注（P16）：带状态文案的列表 + 到点清单。 */
-  followViews: (WatchView & { lastRunText?: string })[]
-  followDue: Watch[]
-  followsLoaded: boolean
   /** 扩展（如 left-info-panel 的 panel_todos）维护的任务清单 */
   todos: SessionTodo[]
   /** 全部任务清单快照（含最新）——「历史任务」模块用 */
@@ -526,28 +520,6 @@ export interface Store {
   /** 拉资料列表；`spaceId: null` = 只看未归档到空间的 */
   refreshLibrary: (spaceId?: string | null) => Promise<void>
   importToLibrary: (view: LibraryImportView) => Promise<LibraryImportViewResult>
-  /* 持续关注（P16）：用户能建 / 启用 / 停用 / 删；宿主不会自己去查 */
-  refreshFollows: (spaceId?: string | null) => Promise<void>
-  saveWatch: (input: {
-    title: string
-    kind?: string
-    spaceId?: string | null
-    cadence?: string
-    intervalMinutes?: number
-    resultPlace: string
-    notifyOn?: string
-    enabled?: boolean
-  }) => Promise<boolean>
-  updateWatch: (input: {
-    id: string
-    title?: string
-    cadence?: string
-    intervalMinutes?: number
-    resultPlace?: string
-    notifyOn?: string
-    enabled?: boolean
-  }) => Promise<boolean>
-  removeWatch: (id: string) => Promise<boolean>
   /** 打开一条引用：只按 sourceId + version，旧版本照样能读 */
   openLibraryRef: (ref: SourceReference, maxChars?: number) => Promise<LibraryOpenView | null>
   removeLibrarySource: (sourceId: string) => Promise<boolean>
@@ -837,6 +809,13 @@ export interface Store {
   requestComposerFocus: (target: { sessionId?: string; path?: string }) => void
   consumeQueueRestore: () => void
   setSettings: (s: AppSettings) => void
+  /**
+   * 应用**服务端已落盘**的设置快照（例如项目目录更改的返回结果）。
+   *
+   * 必须排在 `settingsPatchQueue` 后面：其他设置改动都经这条队列写入，
+   * 裸 set 会让一个回包更晚的 patch 把这份快照覆盖回旧值。
+   */
+  applyServerSettings: (s: AppSettings) => void
   /** 打开设置面板并定位到某个 tab（ContextBar 点击时用） */
   /**
    * 启动连接状态自愈。
@@ -1444,9 +1423,6 @@ export const useStore = create<Store>((rawSet, get) => {
   libraryVersions: [],
   libraryRefs: [],
   libraryLoaded: false,
-  followViews: [],
-  followDue: [],
-  followsLoaded: false,
   todos: [],
   todoHistory: [],
   activeRunnerId: null,
@@ -1633,6 +1609,25 @@ export const useStore = create<Store>((rawSet, get) => {
         } else {
           for (const tool of missing) get().notify('warning', tool.hint ?? '')
         }
+      })
+      .catch(() => undefined)
+    /*
+     * 启动时的自动检查只在主进程里跑，结果原本要打开「设置 → 关于」才看得到。
+     * 检查还在进行时 `check()` 返回同一次检查；发现新版本就留一条不自动消失的通知。
+     */
+    void window.yan.appUpdate
+      .status()
+      .then((status) => status.automatic && status.packaged && (status.phase === 'checking' || status.phase === 'idle')
+        ? window.yan.appUpdate.check()
+        : status)
+      .then((status) => {
+        if (status.phase !== 'available' && status.phase !== 'manual') return
+        set({
+          notices: [
+            ...get().notices.filter((n) => n.id !== 'app-update'),
+            { id: 'app-update', type: 'info', text: status.latest ?? '', at: Date.now(), action: 'app-update' }
+          ]
+        })
       })
       .catch(() => undefined)
     // 界面缩放现状（设置面板要显示「自动 = 1.15×，屏幕 125%」）
@@ -2055,52 +2050,6 @@ export const useStore = create<Store>((rawSet, get) => {
     } catch {
       /* 保持原状 */
     }
-  },
-
-  refreshFollows: async (spaceId) => {
-    try {
-      const [views, due] = await Promise.all([
-        window.yan.follow.views(spaceId === undefined ? undefined : spaceId),
-        window.yan.follow.due()
-      ])
-      set({
-        followViews: Array.isArray(views) ? views : [],
-        followDue: Array.isArray(due) ? due : [],
-        followsLoaded: true
-      })
-    } catch {
-      /* 保持原状 */
-    }
-  },
-
-  saveWatch: async (input) => {
-    const res = await window.yan.follow.save(input)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '建关注失败') })
-      return false
-    }
-    await get().refreshFollows()
-    return true
-  },
-
-  updateWatch: async (input) => {
-    const res = await window.yan.follow.update(input)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '改关注失败') })
-      return false
-    }
-    await get().refreshFollows()
-    return true
-  },
-
-  removeWatch: async (id) => {
-    const res = await window.yan.follow.remove(id)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '删关注失败') })
-      return false
-    }
-    await get().refreshFollows()
-    return true
   },
 
   importToLibrary: async (view) => {
@@ -3945,6 +3894,12 @@ export const useStore = create<Store>((rawSet, get) => {
   requestComposerFocus: (target) => set({ composerFocus: { tick: get().composerFocus.tick + 1, at: Date.now(), sessionId: target.sessionId, path: target.path } }),
   consumeQueueRestore: () => set({ queueRestore: null }),
   setSettings: (s) => set({ settings: s }),
+  applyServerSettings: (s) => {
+    const operation = settingsPatchQueue.then(async () => {
+      useStore.setState({ settings: s })
+    })
+    settingsPatchQueue = operation.catch(() => undefined)
+  },
   startConnWatch: () => {
     /*
      * 连接状态自愈（单例心跳）。

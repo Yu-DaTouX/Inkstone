@@ -29,6 +29,7 @@ npm run launch
 | `npm run build` | 构建当前源码 |
 | `npm run test:unit` | 单元检查，依赖当前构建 |
 | `npm run test:agent-native-context` | 原生上下文边界、技能发现、运行时选择及打包路径 |
+| `node scripts/test-project-directory.mjs` | 更改项目文件夹专项：隔离设置/会话、目录占用及链接、并发与落盘失败、旧会话授权；不调用模型。UI 可单跑 `YAN_TEST_SYNTHETIC_ONLY=1 npm run test:live -- projectdirectory`（PowerShell 用 `$env:YAN_TEST_SYNTHETIC_ONLY='1'`，启动前清除 `ELECTRON_RUN_AS_NODE`） |
 | `node scripts/test-context-trim.mjs` | 裁剪与自动压缩专项：用量校准、长单轮工具组保护、批次收益/前缀不变/容量兜底及会话边界；无需构建，不调用模型 |
 | `npm run test:live -- <场景>` | Electron 场景检查，不自动构建 |
 | `npm run audit:refs` | 引用一致性审计 |
@@ -37,11 +38,17 @@ npm run launch
 
 生图边界专项 `node scripts/test-image-generation-boundaries.mjs` 现场编译当前宿主源码到独立目录，不覆盖应用 `out/`；以隔离凭证/数据和全桩 fetch 检查参考图目录联接逃逸、合法根别名、跨 store/生成/attach 并发保存与恢复、兼容通道默认模型及覆盖、停止/实例关闭/探测与确认中的取消、各适配器取消信号、ComfyUI 仅删除所属排队项和迟到成果抑制。它同时运行既有 artifact/适配器用例，已纳入 unit；不启动 ComfyUI、调用真实模型或网络，不代替真实服务/整窗/发行验收。
 
-宿主可靠性夹具可逐个运行 `node scripts/<脚本>.mjs`，也已登记在 `test:unit`：`test-title-lifecycle`、`test-open-path-boundary`、`test-files-root-boundary`、`test-inbox-ipc-bounds`、`test-attachment-prune-race`、`test-session-restore-rollback`、`test-subagent-stop-intent`、`test-package-timeout-fallback`、`test-package-sources-fixture`、`test-write-file-durable`、`test-service-receipt-hub-null`、`test-preview-markdown-bound`、`test-browser-tab-buttons`、`test-mobile-model-url`。这些为源码断言、现场方法或隔离文件夹具，不调用真实模型，不代表 Electron 整窗、真实账号/系统权限或跨平台验收；单个夹具通过不表示完整 unit 已跑。
+宿主可靠性夹具可逐个运行 `node scripts/<脚本>.mjs`，也已登记在 `test:unit`：`test-title-lifecycle`、`test-open-path-boundary`、`test-files-root-boundary`、`test-inbox-ipc-bounds`、`test-attachment-prune-race`、`test-session-restore-rollback`、`test-subagent-stop-intent`、`test-package-timeout-fallback`、`test-package-sources-fixture`、`test-write-file-durable`、`test-service-receipt-hub-null`、`test-preview-markdown-bound`、`test-browser-tab-buttons`、`test-mobile-model-url`、`test-session-read-equivalence`、`test-session-reader-stream`、`test-ui-survey-regressions`、`test-live-synthetic-isolation`。这些为源码断言、现场方法或隔离文件夹具，不调用真实模型，不代表 Electron 整窗、真实账号/系统权限或跨平台验收；单个夹具通过不表示完整 unit 已跑。
+
+会话读取（`src/main/session-reader.ts`、`normalize.ts` 的 `createHistoryBuilder`）的分块读取、等价语义与并发单飞见[代码地图](CODE_MAP.md)：`test-session-read-equivalence` 用固定夹具覆盖坏行、超长行、末尾截断、entryIds、工具配对与图片本地化；`test-session-reader-stream` 覆盖 5 并发共享一次遍历、快照不可变、增长/替换/截短重读与句柄回收。两者只读临时目录，不碰用户会话。
 
 大纲导航专项 `node scripts/test-outline-navigation.mjs` 执行现场源码回调，覆盖旧恢复帧抢回、流式/虚拟滚动、快照和分屏归属，含旧策略负对照；`node scripts/test-browser-frame-origin.mjs` 执行真实请求来源选择与网络边界，含远程父页/未知来源拒绝和 link-local 例外。两者已登记 unit，但不替代真实窗口验收。`npm run test:live -- browserframeboundary` 是正式应用的本地 iframe/network 单场景，复用 browser-boundary 原断言，不访问外部站点或启动 Chrome；操作经 `yan browser observe/select/click`，不能混用桌面 observe 引用与 CLI 运行归属。`node scripts/test-browser-frame-network.mjs` 是独立 Electron/CDP 本地夹具，含无操作点击负对照，不包含应用宿主门禁或真实 CLI；因此未并入纯 unit，单独运行。
 
-按改动范围选择检查。live 场景配置见 `scripts/test-live.mjs`；涉及远程模型的场景可能产生费用，运行前确认 provider、模型和授权。测试使用独立数据目录，禁止复用真实用户凭证、会话或发布目录中的用户数据。
+按改动范围选择检查。live 场景配置见 `scripts/test-live.mjs`；涉及远程模型的场景可能产生费用，运行前确认 provider、模型和授权；`cost: 0` 不保证没有外部请求，仍须核对探针和 fixture。测试使用独立数据目录，禁止复用真实用户凭证、会话或发布目录中的用户数据。
+
+无个人数据的单场景检查可在 PowerShell 设置 `$env:YAN_TEST_SYNTHETIC_ONLY='1'` 后运行 `npm run test:live -- <场景>`，结束后 `Remove-Item Env:YAN_TEST_SYNTHETIC_ONLY`。此模式仅允许隔离的 `cost: 0` 场景，使用空凭证与合成会话，剥离外层模型密钥/身份，不复制个人会话或模型目录；它不是网络沙箱，仍须先审查探针。纯 Node 回归为 `node scripts/test-live-synthetic-isolation.mjs`。`modelmenu` 验证当前滚动列表、供应商选择和键盘选模（选模动作打桩）；`detail` 验证详细程度设置；`context` 验证原生窗口用量投影；`permissions` 验证两档权限菜单、键盘浏览与正式 IPC 持久化；这些都不发送模型请求。
+
+任务收件箱、会话地图、空间/活动档案、持续关注、知识设置、旧工作模式和目标 UI 的 live/矩阵登记，以及依赖旧宿主工作集/预算的模型压力场景已退役，不能作为现行入口验收；纯 IPC 与历史数据兼容检查另行保留。矩阵保留旧数字组序，只有退役状态的组会拒绝空验收。`node scripts/test-visual-matrix.mjs` 无需构建或模型，检查退役登记、重复键、有效探针路径、菜单忙态与复位；`node scripts/test-review-browser.mjs` 编译本机夹具，检查下载目录先于保存路径、建目录失败和旧顺序负对照，不执行外部下载。
 
 视觉改动同时关注深浅主题、窄窗口、缩放、键盘操作与实际截图。生成截图保留在本地，不批量提交到仓库；主页配图单独维护。
 

@@ -21,11 +21,10 @@ try {
     } }] })
     return import(pathToFileURL(outfile).href)
   }
-  const follow = await load('src/main/follow-store.ts', 'follow')
   const goal = await load('src/main/goal-service.ts', 'goal')
   const library = await load('src/main/library-store.ts', 'library')
   const space = await load('src/main/space-store.ts', 'space')
-  for (const [name, Store, filename] of [['follow', follow.FollowStore, 'follows.json'], ['goal', goal.GoalStore, 'goals.json'], ['library', library.LibraryStore, 'library.json'], ['space', space.SpaceStore, 'spaces.json']]) {
+  for (const [name, Store, filename] of [['goal', goal.GoalStore, 'goals.json'], ['library', library.LibraryStore, 'library.json'], ['space', space.SpaceStore, 'spaces.json']]) {
     for (const [kind, content] of [['syntax', '{broken'], ['shape', 'null']]) {
       const dir = join(root, `${name}-${kind}`); await mkdir(dir)
       const path = join(dir, filename); await writeFile(path, content)

@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileTransportOperations } from './shell-transport.js'
 import { createPythonEnvFixer } from './windows-python.js'
-import { findPowerShellQuotingConflict, powerShellConflictReason } from './windows-powershell.js'
+import { findPowerShellInBash, findPowerShellQuotingConflict, powerShellConflictReason, powerShellInBashReason } from './windows-powershell.js'
 
 const UTF8_CONSOLE = 'chcp.com 65001 >/dev/null 2>&1'
 
@@ -94,7 +94,10 @@ export default async function shellFallback(pi) {
   }
   pi.on('tool_call', (event) => {
     if (event?.toolName !== 'bash') return undefined
-    const token = findPowerShellQuotingConflict(event.input?.command)
-    return token ? { block: true, reason: powerShellConflictReason(token) } : undefined
+    const command = event.input?.command
+    const token = findPowerShellQuotingConflict(command)
+    if (token) return { block: true, reason: powerShellConflictReason(token) }
+    const cmdlet = findPowerShellInBash(command)
+    return cmdlet ? { block: true, reason: powerShellInBashReason(cmdlet) } : undefined
   })
 }

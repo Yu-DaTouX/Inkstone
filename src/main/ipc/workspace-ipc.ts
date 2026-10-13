@@ -5,6 +5,7 @@
  */
 import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
+import { changeProjectDirectory } from '../project-directory'
 import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { compactionInfo } from '../compaction'
@@ -23,6 +24,7 @@ export interface WorkspaceIpcDeps {
 export function registerWorkspaceIpc(ipc: IpcRegistrar, deps: WorkspaceIpcDeps): void {
   const { rawHandle } = ipc
   const { handoffs } = deps
+  rawHandle('yan:project:changeDirectory', (_event, request: unknown) => changeProjectDirectory(request))
   /* ---- 自动压缩设置（只读 pi 的 settings.json）---- */
   rawHandle('yan:compactionInfo', async (_e, win: unknown) => {
     const s = await getSettings()

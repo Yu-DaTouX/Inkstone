@@ -502,7 +502,10 @@
     --w-proc-side: clamp(240px, calc((100cqw - var(--w-stream)) / 2 - var(--gap-proc-side) - var(--sp-3)), 440px);
     max-width: calc(var(--w-stream) + 2 * (var(--w-proc-side) + var(--gap-proc-side)));
   }
-  html:is([data-proc-layout='side'], [data-proc-layout='left']) .msg:not(.assistant) .msg-body {
+  /* 用户块、「已发送、尚无回复」的等待行与空会话启动页都只占中间正文列，与回合正文左缘对齐 */
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .msg:not(.assistant) .msg-body,
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .stream-pending,
+  html:is([data-proc-layout='side'], [data-proc-layout='left']) .empty-stream {
     margin-inline: calc(var(--w-proc-side) + var(--gap-proc-side));
   }
   html:is([data-proc-layout='side'], [data-proc-layout='left']) .msg.assistant .msg-body {

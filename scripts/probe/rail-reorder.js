@@ -104,8 +104,9 @@
 
     /* ---- 造 2 个分组 + 7 个项目（超过「前五项」预览上限，用来验折叠态的拖拽）---- */
     const stamp = Date.now()
-    const base = String(store.getState().settings.cwd ?? '').replace(/[\\/][^\\/]*$/, '')
-    const cwdOf = (n) => `${base}/yan-probe-reorder-${n}`
+    /* 场景带夹具项目：用里面预建的真实子目录（主进程对新项目 cwd 走 validateCwd）。 */
+    const base = String(store.getState().settings.cwd ?? '').replace(/[\\/]+$/, '')
+    const cwdOf = (n) => `${base}/probe-projects/p${n}`
     const groups = [
       { id: 'probe-reorder-a', name: '排序甲组', createdAt: stamp },
       { id: 'probe-reorder-b', name: '排序乙组', createdAt: stamp }
@@ -125,6 +126,20 @@
       projects,
       recentCwds: projects.map((p) => p.cwd),
       projectOrder: []
+    })
+    /* 左栏只显示**有会话的项目**：每个项目至少配一条会话，否则一个项目行都不出现。 */
+    store.setState({
+      sessions: projects.map((p, i) => ({
+        id: `pr-s${i}`,
+        path: `${p.cwd}/session-${i}.jsonl`,
+        cwd: p.cwd,
+        projectId: p.id,
+        title: `会话 ${i + 1}`,
+        named: true,
+        createdAt: stamp,
+        updatedAt: stamp - i * 1000,
+        messageCount: 1
+      }))
     })
     await settle()
 

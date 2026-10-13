@@ -18,6 +18,8 @@ import { runServiceCliTests } from './test-agent-service-cli.mjs'
 import { runCapabilityNegotiationTests } from './test-capability-negotiation.mjs'
 
 await runVisualMatrixTests()
+await import('./test-live-synthetic-isolation.mjs')
+await import('./test-ui-survey-regressions.mjs')
 await import('./test-light-client.mjs')
 await import('./test-light-hotpaths.mjs')
 await import('./test-model-selection.mjs')
@@ -36,7 +38,7 @@ for (const script of [
   'test-inbox-ipc-bounds', 'test-mobile-model-url', 'test-open-path-boundary',
   'test-package-sources-fixture', 'test-package-timeout-fallback', 'test-preview-markdown-bound',
   'test-service-receipt-hub-null', 'test-session-restore-rollback', 'test-subagent-stop-intent',
-  'test-title-lifecycle', 'test-write-file-durable'
+  'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory'
 ]) await import(`./${script}.mjs`)
 
 const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
@@ -2882,8 +2884,8 @@ await runGitRepoTests(ok)
   ok(skillHelp.status === 0 && /save/.test(skillHelp.stdout ?? '') && /replace/.test(skillHelp.stdout ?? ''), 'yan CLI：技能帮助说明 save 与覆盖规则')
   const researchHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'research', '--help'], { encoding: 'utf8' })
   ok(
-    researchHelp.status === 0 && /read/.test(researchHelp.stdout ?? '') && /skill:research/.test(researchHelp.stdout ?? ''),
-    'yan CLI：资料引用帮助给出按版本读取，并指向 research 技能'
+    researchHelp.status === 0 && /read/.test(researchHelp.stdout ?? '') && !/skill:/.test(researchHelp.stdout ?? ''),
+    'yan CLI：资料引用帮助给出按版本读取，且不指向未随会话加载的技能'
   )
 
   await rm(binDir, { recursive: true, force: true })
@@ -3664,34 +3666,6 @@ runSubagentBriefTests(ok, subagentBrief)
 }
 
 /*
- * 持续关注与提醒（实施-25 P16）：节奏 / 到点 / 提醒规则 / 落盘。
- * 重点是「应用没开就不跟进」「未启用的不自行建立」「没变化不打扰」。
- */
-const followShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/follow.ts'],
-    outfile: 'out/test/follow.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/follow.mjs'))
-)
-const followStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/follow-store.ts'],
-    outfile: 'out/test/follow-store.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/follow-store.mjs'))
-)
-const { runFollowTests, runFollowStoreTests } = await import('./test-follow.mjs')
-runFollowTests(ok, followShared)
-await runFollowStoreTests(ok, { FollowStore: followStore.FollowStore }, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
-
-/*
  * 按活动配置模型（实施-25 P18）：优先级 / 回退 / 边界文案 / 五行视图。
  * 重点是「回退要如实说」与「不指定也不乱挑」。
  */
@@ -3869,6 +3843,15 @@ await runBrowserNetworkTests(ok, browserNetworkMod)
 
 const { runAssistantLinkTests } = await import('./test-assistant-link.mjs')
 await runAssistantLinkTests(ok)
+
+/*
+ * 会话读取：固定夹具等价 + 分块/并发单飞。两条都是临时目录里的现场源码夹具，
+ * 不读用户会话、不启 Electron、不调模型。stream 会临时包装 fs/promises.open，
+ * 所以放在最后，避免影响前面的文件读取类检查。
+ */
+const { runSessionReadEquivalenceTests } = await import('./test-session-read-equivalence.mjs')
+await runSessionReadEquivalenceTests(ok)
+await import('./test-session-reader-stream.mjs')
 
 console.log(`\n${pass}/${pass + fail} 通过`)
 await rm(dataDir, { recursive: true, force: true })

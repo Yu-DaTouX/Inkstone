@@ -422,8 +422,6 @@ export class AgentController extends EventEmitter {
   private goalHost?: GoalCommandHost
   /** 资料引用：按版本读片段与引用状态。 */
   private researchHost?: GoalCommandHost
-  /** 持续关注（P16）：到点提醒与结果记录，没有后台调度器。 */
-  private followHost?: GoalCommandHost
   /** CLI 只能请求授权；最终选择由主进程的可见确认 UI 返回。 */
   private confirmCapabilityAuthorization?: (
     request: CapabilityAuthorizationPrompt
@@ -595,18 +593,18 @@ export class AgentController extends EventEmitter {
    * 失败一律回 `null`，调用方回退到 pi 的 `get_messages` —— 历史读不出来
    * 不应该比「只看到当前上下文」更糟。
    */
+  private readonly localizeHistoryImage = (mimeType: string, data: string): string =>
+    localizeImage(join(YAN_DIR, 'attachments'), mimeType, data)
+
   private async readHistoryOf(sessionFile: string): Promise<ReadResult | null> {
     /*
      * 图片在这里**落盘**，消息里只留文件地址（见 image-store.ts）：
      * 历史重读是唯一会把 base64 带进消息的路径，而它每次打开会话都会跑。
      */
-    const read =
-      this.readHistory ??
-      ((file: string) =>
-        readSessionMessages(file, {
-          localizeImage: (mimeType, data) => localizeImage(join(YAN_DIR, 'attachments'), mimeType, data)
-        }))
-    return read(sessionFile).catch(() => null)
+    if (this.readHistory) return this.readHistory(sessionFile).catch(() => null)
+    return readSessionMessages(sessionFile, { localizeImage: this.localizeHistoryImage })
+      .then(result => result ? { ...result, messages: structuredClone(result.messages) } : null)
+      .catch(() => null)
   }
 
   /** 当前直执行的 bash（RPC bash 命令，不走 LLM）。流式输出靠它累积。 */
@@ -691,10 +689,8 @@ export class AgentController extends EventEmitter {
     hubHost?: SubagentCommandHost
     /** 目标状态入口（`yan goal …`），由 index.ts 注入（模式与目标在同一侧）。 */
     goalHost?: GoalCommandHost
-    /** 资料引用：按版本读片段与引用状态；对照做法在 research 技能。 */
+    /** 资料引用：按版本读片段与引用状态。 */
   researchHost?: GoalCommandHost
-  /** 持续关注（实施-25 P16）：只能提议与回报，不能启用 / 删除 / 让宿主自己去查。 */
-  followHost?: GoalCommandHost
     confirmCapabilityAuthorization?: (
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
@@ -753,7 +749,6 @@ export class AgentController extends EventEmitter {
     this.hubHost = opts.hubHost
     this.goalHost = opts.goalHost
     this.researchHost = opts.researchHost
-    this.followHost = opts.followHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.confirmExternalApi = opts.confirmExternalApi
     this.confirmToolConsent = opts.confirmToolConsent
@@ -1337,25 +1332,12 @@ export class AgentController extends EventEmitter {
     }
     if (command === 'image.generate') return this.runImageCommand(params)
     if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return this.runLocalImageServiceCommand(command)
-    /* 资料引用：按版本读片段与引用状态（对照做法在 research 技能）。 */
+    /* 资料引用：按版本读片段与引用状态。 */
     if (command.startsWith('research.')) {
       if (!this.researchHost) {
         throw new CapabilityCommandError('research_unavailable', '研究入口当前不可用（宿主未注入）')
       }
       return this.researchHost.run(command, params, {
-        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
-        projectId: this.capabilityOpts?.projectId ?? ''
-      })
-    }
-    /*
-     * 持续关注（实施-25 P16）：模型能提议与回报，不能启用（那要用户点）、
-     * 不能删、也没有「你去后台盯一下」这种命令。
-     */
-    if (command.startsWith('follow.')) {
-      if (!this.followHost) {
-        throw new CapabilityCommandError('follow_unavailable', '关注入口当前不可用（宿主未注入）')
-      }
-      return this.followHost.run(command, params, {
         sessionId: this.capabilityOpts?.sessionId ?? 'primary',
         projectId: this.capabilityOpts?.projectId ?? ''
       })

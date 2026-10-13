@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { build } from '../node_modules/esbuild/lib/main.js'
+import ts from 'typescript'
+import vm from 'node:vm'
+import { join } from 'node:path'
 
 const entries = [
   ['src/main/chrome.ts', 'out/test/review-browser-chrome.mjs'],
@@ -43,8 +46,53 @@ const browserSource = await readFile('src/main/browser.ts', 'utf8')
 assert.match(browserSource, /mode: activeIsExternal \? 'external' : 'embedded'/)
 assert.match(browserSource, /this\.external && this\.activeMode === 'external'\) return/)
 assert.match(browserSource, /if \(this\.externalOpening\) return this\.externalOpening/)
-assert.ok(browserSource.includes("const filename = (begun?.filename ?? `download-${Date.now()}`).replace(/[<>:\"/\\\\|?*\\x00-\\x1f]/g, '_')"))
-assert.ok(browserSource.indexOf('item.setSavePath(path)') < browserSource.indexOf('await mkdir(directory', browserSource.indexOf('private async handleDownload')))
+const browserAst = ts.createSourceFile('browser.ts', browserSource, ts.ScriptTarget.Latest, true)
+let downloadMethod
+function visit(node) {
+  if (ts.isMethodDeclaration(node) && node.name.getText(browserAst) === 'handleDownload') downloadMethod = node
+  ts.forEachChild(node, visit)
+}
+visit(browserAst)
+assert.ok(downloadMethod, 'handleDownload must exist')
+const downloadCode = ts.transpileModule(`class DownloadFixture { ${downloadMethod.getText(browserAst)} }`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022 }
+}).outputText + '\nnew DownloadFixture()'
+
+async function checkDownload(methodCode, failMkdir = false) {
+  const order = []
+  let savedPath
+  const directory = join('fixture', 'downloads')
+  const host = vm.runInNewContext(methodCode, {
+    app: { getPath: (kind) => { assert.equal(kind, 'downloads'); return directory } },
+    join, randomUUID: () => 'fixture-id',
+    mkdirSync: (path, options) => {
+      order.push('mkdir')
+      assert.equal(path, directory)
+      assert.equal(options.recursive, true)
+      if (failMkdir) throw new Error('fixture mkdir failure')
+    }
+  })
+  const item = {
+    getFilename: () => 'bad<>:"/\\\\|?*\u0001.txt', getURL: () => 'https://fixture.test/download',
+    setSavePath: (path) => { order.push('save'); savedPath = path },
+    once: (event) => { assert.equal(event, 'done'); order.push('done') }
+  }
+  if (failMkdir) {
+    await assert.rejects(host.handleDownload(item), /fixture mkdir failure/)
+    assert.deepEqual(order, ['mkdir'], 'failed mkdir must not set a save path')
+    assert.equal(savedPath, undefined)
+  } else {
+    await host.handleDownload(item)
+    assert.deepEqual(order, ['mkdir', 'save', 'done'], 'directory must exist before setting the save path')
+    assert.equal(savedPath, join(directory, 'fixture-id-bad___________.txt'))
+  }
+}
+await checkDownload(downloadCode)
+await checkDownload(downloadCode, true)
+const legacyDownloadCode = ts.transpileModule(`class DownloadFixture { ${downloadMethod.getText(browserAst).replace('    mkdirSync(directory, { recursive: true })\n', '').replace('    item.setSavePath(path)', '    item.setSavePath(path)\n    mkdirSync(directory, { recursive: true })')} }`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022 }
+}).outputText + '\nnew DownloadFixture()'
+await assert.rejects(checkDownload(legacyDownloadCode), /directory must exist/, 'negative control must reject the old order')
 assert.match(browserSource, /handleDownload\(item, owner\)\.catch/)
 assert.match(browserSource, /const cdp = new RawCdp\(target\.webSocketDebuggerUrl\)[\s\S]{0,180}await cdp\.attach\(\)[\s\S]{0,900}await previousCdp\.detach\(\)/)
 

@@ -18,7 +18,7 @@ import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { RunnerVisibility } from './runner-reclaim'
-import { getSettings, patchSettings, validateRendererSettingsPatch } from './settings'
+import { getSettings, patchSettings, updateSettings, validateRendererSettingsPatch } from './settings'
 import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
 import { moveSessionLayout, rememberSession } from './session-layout'
@@ -52,7 +52,6 @@ import { registerAgentHubIpc } from './ipc/agent-hub-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
-import { registerFollowIpc } from './ipc/follow-ipc'
 import { registerLibraryIpc } from './ipc/library-ipc'
 import { registerSourcesIpc } from './ipc/sources-ipc'
 import { registerKnowledgeIpc } from './ipc/knowledge-ipc'
@@ -70,7 +69,7 @@ import { registerWorkspaceIpc } from './ipc/workspace-ipc'
 import { registerGoalIpc } from './ipc/goal-ipc'
 import { registerSpaceIpc } from './ipc/space-ipc'
 import { registerFilesIpc } from './ipc/files-ipc'
-import { isAuthorizedFileCwd } from './file-context'
+import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { canOpenDocument } from '../shared/document-open'
 import { registerAgentServiceIpc, closeAgentService } from './ipc/agent-service-ipc'
 import { lockDataRoot } from '../core/data-root-lock'
@@ -114,7 +113,6 @@ import { AgentProfileStore } from './agent-profile-store'
 import { SpaceStore } from './space-store'
 import { LibraryService } from './library-service'
 import { ContextAssembler } from './context-assembler'
-import { FollowStore } from './follow-store'
 import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, MainPush, SessionState } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -416,7 +414,7 @@ function bundledSkillPaths(): string[] {
   if (!root) return []
   try {
     return readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !['tutor', 'writing', 'research', 'follow', 'memory'].includes(entry.name))
+      .filter((entry) => entry.isDirectory())
       .map((entry) => join(root, entry.name, 'SKILL.md'))
       .filter((file) => existsSync(file))
   } catch {
@@ -506,6 +504,9 @@ function contextTrimExtensionPath(): string | undefined {
  *
  * 只有它能在运行时拦下一次工具调用（`tool_call` 钩子），RPC 面没有这个事件。
  */
+function repeatGuardExtensionPath(): string | undefined {
+  return yanThinResourcePath('repeat-guard.js')
+}
 /** 高危操作确认（薄层 tool_call 钩子；确认框在宿主）。 */
 function dangerGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('danger-guard.js')
@@ -533,6 +534,7 @@ function yanThinExtensionPaths(): string[] {
     capabilityGuideExtensionPath(),
     contextInspectExtensionPath(),
     contextTrimExtensionPath(),
+    repeatGuardExtensionPath(),
     dangerGuardExtensionPath(),
     ...providerExtensionPaths(),
   ].filter((p): p is string => !!p && isAgentContextExtension(p))
@@ -988,14 +990,6 @@ const library = new LibraryService()
  * 以及它们的正文，另起一个 store 只会让两份文档不一致。
  */
 const contextAssembler = new ContextAssembler({ library })
-
-/**
- * 持续关注（实施-25 P16）。
- *
- * 这个 store 里**没有调度器**：宿主不主动调模型（会变成后台花钱），
- * 它只回答「谁到点了」并把模型回报的结果记下来。
- */
-const follows = new FollowStore()
 
 /**
  * 切完视图后把目标实例的现状推给渲染端（N12）。
@@ -1580,6 +1574,9 @@ async function resolveFileContext(
     const project = settings.projects.find((item) => item.id === projectId)
     if (!project) return { ok: false, context: { ...provisional, cwd: checked.cwd }, error: '项目不存在或已被移除' }
     if (normalizeCwdForIdentity(project.cwd) !== normalizeCwdForIdentity(checked.cwd)) {
+      if (await isRunnerProjectCwd(checked.cwd, projectId, runners?.statuses() ?? [])) {
+        return { ok: true, context: { ...provisional, cwd: checked.cwd } }
+      }
       /*
        * 旧设置里可能存在两个 cwd 共用一个 id（同前缀目录 + 旧的项目 id
        * 截断算法，见 project-id.ts 的 D14 说明），按 id `find` 命中的是
@@ -1833,6 +1830,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         contextInspectExtension: contextInspectExtensionPath(),
         contextTrimExtension: contextTrimExtensionPath(),
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
+        repeatGuardExtension: repeatGuardExtensionPath(),
         dangerGuardExtension: dangerGuardExtensionPath(),
         providerExtensions: providerExtensionPaths(),
         bundledSkills: bundledSkillPaths(),
@@ -2492,7 +2490,16 @@ function registerIpc(): void {
     }
     let next: Awaited<ReturnType<typeof patchSettings>>
     try {
-      next = await patchSettings(patch as never)
+      next = await updateSettings((current) => {
+        // 目录更改与普通项目编辑共用写入队列，迟到的旧快照不能把目录改回去。
+        for (const project of patch.projects ?? []) {
+          const previous = current.projects.find((item) => item.id === project.id)
+          if (previous && normalizeCwdForIdentity(previous.cwd) !== normalizeCwdForIdentity(project.cwd)) {
+            throw new Error('项目文件夹已变化，请刷新后重试')
+          }
+        }
+        return patch as never
+      })
     } catch (e) {
       /*
        * 写盘失败（目录不可写、磁盘满、同名文件占住路径）：
@@ -2891,8 +2898,6 @@ function registerIpc(): void {
    */
   handle('yan:context:current', async () => ({ ok: false, error: AGENT_CONTEXT_ERROR }))
 
-
-  registerFollowIpc(ipc, { follows })
 
   registerActivityModelIpc(ipc)
 

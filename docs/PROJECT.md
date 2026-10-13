@@ -39,11 +39,10 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/shared/space.ts` + `src/main/space-store.ts` | 主题空间：非 Git 的会话归属与项目关联（历史数据兼容，无界面入口） |
 | `src/shared/library.ts` + `src/main/library-store.ts` / `library-parser.ts` / `library-service.ts` | 资料库：唯一事实源、版本绑定与解析（历史数据兼容，无界面入口） |
 | `src/shared/activity-flow.ts` + `src/shared/context-assembly.ts` / `src/main/context-assembler.ts` | 建任务阈值与历史资料装配的数据结构；自动装配和请求注入已停用，资料引用仍可回原文（无界面入口） |
-| `src/shared/research.ts` | 资料引用：引用状态（旧版本按版本保留、**只提示不改引用**）与按版本读片段；对照做法在 `resources/skills/research`（无界面入口） |
+| `src/shared/research.ts` | 资料引用：引用状态（旧版本按版本保留、**只提示不改引用**）与按版本读片段（无界面入口） |
 | `src/shared/user-skill.ts` + `src/main/user-skills.ts` | 用户技能：`YAN_DIR/skills/<名称>/SKILL.md` 的校验、保存（`yan skill save`）与按 `--skill` 加载；旧办事模板（`playbooks.json`）启动时一次性导出成技能，原文件保留。写法与执行约定见 `resources/skills/playbook` |
-| `src/shared/learning-export.ts` + `src/main/learning-export.ts` | 旧学习记录导出：`exportLearningData` 可把旧版留下的 courses / study-sessions / exercises / learning-memory 四个原始 JSON 整理成 `YAN_DIR/learning-export/` 下按课程分的 Markdown 与完整副本；只读原文件，不依赖各 store。**当前源码无调用点，启动时不会自动执行**。学习功能已改由 `tutor` 技能在对话中进行，讲解与出题做法见 `resources/skills/tutor` |
+| `src/shared/learning-export.ts` + `src/main/learning-export.ts` | 旧学习记录导出：`exportLearningData` 可把旧版留下的 courses / study-sessions / exercises / learning-memory 四个原始 JSON 整理成 `YAN_DIR/learning-export/` 下按课程分的 Markdown 与完整副本；只读原文件，不依赖各 store。**当前源码无调用点，启动时不会自动执行**。原 `tutor` 学习技能已于 2026-10-13 删除 |
 | `src/shared/subagent-brief.ts` | 内部 agent 分工：任务输入（目标 / 交付物 / 来源 / 边界）不猜、结果汇总如实标来源（**未决问题不自动抽取**）；何时拆分见 `resources/skills/subagent` |
-| `src/shared/follow.ts` + `src/main/follow-store.ts` | 持续关注与提醒：**应用没开就不跟进**（状态里没有「后台在跑」）、未启用的关注不自行建立、没变化不打扰、一次性关注看完就结束（界面已移除，无入口） |
 | `src/shared/activity-model.ts` | 按活动配置模型：优先级（活动 → 默认 → 跟随会话）可解释、回退如实标注、**不改任务身份与学习状态**（界面已移除，无入口） |
 | `src/shared/conversation-turns.ts` | 轮次投影（一轮问答 = 一个块），原会话地图的轮次级基础（界面已移除） |
 | `src/shared/session-map.ts` | 历史会话地图投影工具（界面已移除，无入口） |

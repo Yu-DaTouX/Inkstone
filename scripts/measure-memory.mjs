@@ -21,6 +21,7 @@ import { join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { createServer, get as httpGet } from 'node:http'
 import { sampleProcessTree } from './lib/process-sample.mjs'
+import { syntheticEnvironment } from './lib/live-synthetic-isolation.mjs'
 
 const requireEsm = createRequire(import.meta.url)
 const root = process.cwd()
@@ -43,7 +44,7 @@ const sessions = join(sandbox, 'sessions')
 const data = join(sandbox, 'data')
 const piAgent = join(sandbox, 'pi-agent')
 for (const d of [userData, sessions, data, piAgent]) mkdirSync(d, { recursive: true })
-for (const f of ['auth.json', 'models.json', 'models-store.json']) {
+for (const f of (process.env.YAN_TEST_SYNTHETIC_ONLY === '1' ? [] : ['auth.json', 'models.json', 'models-store.json'])) {
   const src = join(process.env.YAN_PI_DIR?.trim() || join(homedir(), '.pi', 'agent'), f)
   if (existsSync(src)) copyFileSync(src, join(piAgent, f))
 }
@@ -80,7 +81,7 @@ const port = await freePort()
 /* 主进程 inspector 端口（只在 --main-heap 时开） */
 const inspectPort = argv.includes('--main-heap') ? await freePort() : 0
 
-const env = { ...process.env }
+const env = process.env.YAN_TEST_SYNTHETIC_ONLY === '1' ? syntheticEnvironment(process.env) : { ...process.env }
 for (const k of ['ELECTRON_RUN_AS_NODE', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']) delete env[k]
 Object.assign(env, {
   YAN_USER_DATA: userData,
@@ -510,9 +511,16 @@ if (argv.includes('--main-heap')) {
   console.error('=== 主进程内存 ===')
   console.error(`  rss ${mib(usage.rss)} MiB | heapUsed ${mib(usage.heapUsed)} | heapTotal ${mib(usage.heapTotal)}`)
   console.error(`  external ${mib(usage.external)} | arrayBuffers ${mib(usage.arrayBuffers ?? 0)}`)
-  console.error(`  堆上限 ${mib(heapStats.heap_size_limit)} MiB，已用 ${((heapStats.used_heap_size / heapStats.heap_size_limit) * 100).toFixed(1)}%`)
+  // Electron's camel-case heap statistics use KiB; V8's snake-case fields use bytes.
+  const heapLimit = heapStats.heap_size_limit ?? heapStats.heapSizeLimit * 1024
+  const heapUsed = heapStats.used_heap_size ?? heapStats.usedHeapSize * 1024
+  console.error(`  堆上限 ${mib(heapLimit)} MiB，已用 ${((heapUsed / heapLimit) * 100).toFixed(1)}%`)
   /* 进程树与分类（工作集含共享页，和 rss 不可直接相减） */
   const breakdown = processBreakdown(child.pid)
+  mkdirSync(outDir, { recursive: true })
+  const report = join(outDir, `memory-main-${Date.now()}.json`)
+  writeFileSync(report, JSON.stringify({ usage, heapStats, breakdown }, null, 2))
+  console.error(`报告: ${report}`)
   for (const [kind, v] of Object.entries(breakdown.byKind)) console.error(`  [进程树] ${kind} x${v.count} ws=${v.workingSetMiB} private=${v.privateMiB}`)
   nodeWs.close()
   ws.close()

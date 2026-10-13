@@ -3342,7 +3342,7 @@ img.chat-image-open {
   color: var(--fg);
 }
 .vb-stepper-dot.done .vb-stepper-n { color: var(--accent); }
-.vb-stepper-dot:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.vb-stepper-dot:focus-visible { outline: var(--focus-ring-w) solid var(--focus-ring-color); outline-offset: var(--focus-ring-offset); }
 .vb-stepper-n {
   font-family: var(--font-ui);
   font-variant-numeric: tabular-nums;

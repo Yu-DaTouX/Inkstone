@@ -1207,18 +1207,17 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'procopen', 'procside', 'segmented', 'righttoolmenu', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
+    states: ['main', 'procopen', 'procside', 'segmented', 'righttoolmenu', 'artifact', 'imageprogress', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'ctxsettings', 'railmini', 'compaction', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'turntime', 'turnstatus', 'filelink', 'plusmenu', 'usageagg', 'usagepartial']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'procopen', 'procside', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
-  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'procside', 'modelmenu', 'railmini', 'spaceoverview', 'nativecontextsettings', 'nativecontext', 'huboverview', 'hubsplit', 'hubcreate', 'hubfallback'] },
-  /* 1280×800 加 spaceartifact：成果编辑器（实施-25 P06a）深浅各一张 */
-  { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'procopen', 'procside', 'segmented', 'righttoolmenu', 'reasoning', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'ctxsettings', 'railmini', 'compaction', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'turntime', 'turnstatus', 'filelink', 'plusmenu', 'usageagg', 'usagepartial'] },
+  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'procside', 'modelmenu', 'railmini', 'nativecontextsettings', 'nativecontext'] },
+  { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings'] },
   /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
-  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spacefollow', 'amconfig'] },
-  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spacefollow', 'amconfig'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workbenchhome', 'taskinbox', 'workmodemenu', 'envlinks', 'spaceoverview', 'spacefollow', 'amconfig', 'envnotgit'] },
-  { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['huboverview', 'hubfallback', 'main', 'settings', 'workbenchhome', 'taskinbox'] },
-  { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['huboverview', 'hubfallback', 'main', 'reasoning', 'workbenchhome', 'taskinbox'] },
+  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini'] },
+  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'toolgroup', 'taskcard', 'envlinks', 'envnotgit'] },
+  { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
+  { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] },
   /*
    * 单开一组：额度三档配色（绿 / 黄 / 红 + 「已用完」）。
    * 为什么单独一组而不塞进组 0：那个状态会把会话的 provider 换成受控桩名，
@@ -1267,8 +1266,8 @@ const GROUPS = [
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['projectmenubr'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['projectmenubr'] },
   /* 实施-16 G-4：待审计划的深色 / 浅色真窗口截图，使用合成目标状态。 */
-  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['goalreview'] },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['goalreview'] },
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: [] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: [] },
   /*
    * 实施-11 H-4 剩余视觉矩阵：文件相关 5 个状态在小窗 / 矮窗 / 125% / 150% 下的形态。
    * 为什么补齐：旧批次只在 1440x900 / 100% 看过这 5 个状态，而文件树 + 预览 +
@@ -1295,10 +1294,10 @@ const GROUPS = [
    * 实施-18：日常模式工作台首页与会话地图（深浅各一）。
    * 单开一组：状态会切 workspaceMode 并注入合成会话，不干扰其它组的 fixture。
    */
-  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['workbenchhome', 'sessionmap', 'mapturns', 'sessionpreview'] },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['workbenchhome', 'sessionmap', 'mapturns', 'sessionpreview'] },
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['mapturns', 'sessionpreview'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['mapturns', 'sessionpreview'] },
   /* 窄窗口：中栏只剩约 630px，泳道 + 连线 + 预览抽屉要经得起这个宽度 */
-  { w: 1180, h: 780, scale: 1, theme: 'light', states: ['sessionmap', 'mapturns', 'sessionpreview'] },
+  { w: 1180, h: 780, scale: 1, theme: 'light', states: ['mapturns', 'sessionpreview'] },
 /*
  * 轮次层的缩放与宽度覆盖（实施-26 R3 的出口要求：1280 宽 + 125% / 150% 缩放）。
  * 卡宽是固定的，缩放后最容易出问题的是「卡与卡之间的重叠」和泳道高度。
@@ -1379,52 +1378,6 @@ const STATES = {
       if (rows.length !== 4 || !document.querySelector('[data-tool-depth="2"]')) throw new Error('Nested tool rows missing');
       if (!rows.some(row => row.textContent.includes('记录未完成'))) throw new Error('Incomplete record label missing');
       return 'ok(4 nested tool rows)';
-    })()
-  `,
-  hubfallback: `
-    (async () => {
-      const host = document.querySelector('.hub-terminal');
-      if (host?.dataset.terminalRenderer !== 'webgl') return 'ok(default-renderer)';
-      const canvas = [...host.querySelectorAll('canvas')].find(canvas => canvas.getContext('webgl2'));
-      const lose = canvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context');
-      if (!lose) return 'no-context-loss-extension';
-      lose.loseContext();
-      await new Promise(resolve => setTimeout(resolve, 3500));
-      const preserved = host.querySelector('.xterm-accessibility-tree')?.textContent.includes('Ready');
-      return host.dataset.terminalRenderer === 'dom' && host.querySelector('.xterm-rows') && preserved ? 'ok(context-loss-fallback-preserved)' : 'fallback-failed';
-    })()
-  `,
-  hubsplit: `
-    (async () => {
-      document.querySelector('[aria-label="运行列表"]')?.click();
-      await new Promise(resolve => setTimeout(resolve, 500));
-      return 'ok';
-    })()
-  `,
-  huboverview: `
-    (async () => {
-      window.__yanStore.getState().closeSettings();
-      document.querySelector('[aria-label="还原工作区"]')?.click();
-      if (document.querySelector('.agent-run-list')) document.querySelector('[aria-label="运行列表"]')?.click();
-      if (document.querySelector('.agent-create')) [...document.querySelectorAll('.agent-create button')].find(button => button.textContent === '取消')?.click();
-      await new Promise(resolve => setTimeout(resolve, 200));
-      document.querySelector('[data-testid="open-agent-hub"]')?.click();
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const host = document.querySelector('.hub-terminal');
-      const canvas = new OffscreenCanvas(50, 50).getContext('2d');
-      canvas.font = '13px var(--font-mono)';
-      const unresolvedFont = canvas.font;
-      canvas.font = '13px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-code').trim();
-      return 'ok(renderer=' + host?.dataset.terminalRenderer + ', oldMeasureFont=' + unresolvedFont + ', resolvedMeasureFont=' + canvas.font + ')';
-    })()
-  `,
-  hubcreate: `
-    (async () => {
-      if (!document.querySelector('[data-testid="agent-workspace"]')) document.querySelector('[data-testid="open-agent-hub"]')?.click();
-      await new Promise(resolve => setTimeout(resolve, 200));
-      document.querySelector('[aria-label="添加 Agent"]')?.click();
-      await new Promise(resolve => setTimeout(resolve, 200));
-      return 'ok';
     })()
   `,
   projectmenutl: projectMenuCornerState('tl'),
@@ -1577,122 +1530,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /*
-   * 自主模式：输入框边框上的两条对称光带（DESIGN §4.2）。
-   *
-   * 实施-05 起“是不是自主”由**会话级工作模式**决定，不再是全局布尔 —— 所以
-   * 这里直接注入 store 的 `workMode`（视觉矩阵是 mock 环境，没有 IPC）。
-   * 静态图只能证明「这个状态存在」且「两条都在」；相位是否真对称（相隔半个周期）
-   * 靠 `workmode` 探针断言 `animation-delay`，以及现场看一眼。
-   */
-  autonomous: `
-    (async () => {
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      window.__yanStore.setState({ rightPanelOpen: true });
-      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
-      /*
-       * 实施-20 U1 起「切会话会关掉目标浮层」，而 autonomousrunning 会注入新的 sessionFile。
-       * 这两个状态要展示的正是展开的目标面板，所以显式打开，不再依赖上一个状态残留的
-       * goalPopoverOpen（否则同组窗口换个执行顺序就会拍出没有目标面板的图）。
-       */
-      st.setGoalPopoverOpen(true);
-      window.__yanStore.setState({
-        workMode: { mode: 'autonomous', revision: 1 },
-        goal: {
-          goalId: 'matrix-goal',
-          phase: 'executing',
-          revision: 2,
-          steps: [
-            { title: '确认用户要解决的问题', status: 'done' },
-            { title: '执行修改并验证', status: 'running' },
-            { title: '汇报结果与限制', status: 'pending' }
-          ],
-          evidence: ['已建立会话级目标', '正在执行第 2 步'],
-          blocker: null,
-          failure: null,
-          updatedAt: Date.now()
-        }
-      });
-      /* U-3a：目标现在是标题栏浮层，截图要把浮层打开 */
-      window.__yanStore.getState().setGoalPopoverOpen(true);
-      /* 真实使用时输入框就是聚焦的（聚焦时边框更亮，光带也更容易看清） */
-      document.querySelector('[data-testid="composer"]')?.focus();
-      return 'ok';
-    })()
-  `,
-  /*
-   * 自主模式 + **任务真的在跑**（实施-09 N10 的尾项）。
-   *
-   * 与 `autonomous` 的差别：那张是“刚切到自主、还什么都没发生”，
-   * 这张是“自主模式下有一回合在跑”——用户真正会盯着看的状态。
-   * 光带动画是常驻的（不区分跑没跑），所以这里证的是它与运行态界面
-   *（停止按钮 / 流式提示 / 左栏运行中那一行）同屏正常。
-   * 动画“真的在跑”由 `workmode` 探针量（playState + currentTime 递增）。
-   */
-  autonomousrunning: `
-    (() => {
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      window.__yanStore.setState({ rightPanelOpen: true });
-      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
-      const stamp = Date.now();
-      const cwd = String(st.settings.cwd);
-      const file = cwd + '/autorun.jsonl';
-      window.__yanStore.setState({
-        workMode: { mode: 'autonomous', revision: 1 },
-        goal: {
-          goalId: 'matrix-goal-running',
-          phase: 'executing',
-          revision: 2,
-          steps: [
-            { title: '确认用户要解决的问题', status: 'done' },
-            { title: '执行修改并验证', status: 'running' },
-            { title: '汇报结果与限制', status: 'pending' }
-          ],
-          evidence: ['目标已自动建立'],
-          blocker: null,
-          failure: null,
-          updatedAt: Date.now()
-        },
-        /*
-         * 只标「当前会话在跑」，**不替换 sessionFile**：换掉会触发实施-20 U1 的
-         * 「切会话关浮层」，而这个状态要展示的正是展开的目标面板。
-         * 假实例自己的 sessionFile 写在 runners 里。
-         */
-        session: { ...(st.session ?? {}), cwd, isStreaming: true, isAgentRunning: true },
-        activeRunnerId: 'vs-autorun',
-        runners: [{
-          id: 'vs-autorun', runId: 'vs-autorun', cwd, sessionFile: file, sessionId: 'autorun',
-          generation: 1, running: true, waiting: false, failed: false,
-          conn: 'ready', createdAt: stamp, lastActiveAt: stamp, isActive: true
-        }]
-      });
-      window.__yanStore.getState().setGoalPopoverOpen(true);
-      document.querySelector('[data-testid="composer"]')?.focus();
-      return 'ok';
-    })()
-  `,
-  /*
-   * 工作模式菜单（实施-05 §3）：原位显示「标准 / 计划 / 自主 ▾」，
-   * 菜单里每项带一句说明。状态为「计划 + 菜单展开」——这正是用户第一次
-   * 接触三档时要看到的样子。
-   */
-  workmodemenu: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      window.__yanStore.setState({ rightPanelOpen: false, workMode: { mode: 'clarify', revision: 2 } });
-      await sleep(60);
-      document.querySelector('[data-testid="work-mode-button"]')?.click();
-      await sleep(120);
-      return 'ok';
-    })()
-  `,
   toolgroup: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1823,10 +1660,12 @@ const STATES = {
      picker 在“忙”的时候是 disabled（`busy = session.isStreaming || isCompacting`），
      而 fixture 故意把会话摆成“正在流式”——不先把它放空，点击就完全没反应。 */
   modelmenu: `
-    (() => {
+    (async () => {
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
+      window.__yanStore.setState({ session: { ...st.session, isStreaming: false, isCompacting: false } });
+      await new Promise((r) => setTimeout(r, 150));
       const btn = document.querySelector('[data-testid="model-picker"]');
       if (!btn) return 'no-picker';
       if (btn.disabled) return 'picker-disabled';
@@ -1836,19 +1675,25 @@ const STATES = {
   `,
   /* 推理块（N04）：展开最后一段，并把对话滚到它 */
   reasoning: `
-    (() => {
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
-      /* 推理入口在过程树里：先展开各轮的过程 */
-      document.querySelectorAll('[data-testid="turn-process-toggle"][aria-expanded="false"]').forEach((b) => b.click());
+      /* 推理入口在过程树里：先展开各轮的过程，等 React 把树渲染出来再找入口 */
+      const processes = [...document.querySelectorAll('[data-testid="turn-process-toggle"]')];
+      processes.forEach((b) => { if (b.getAttribute('aria-expanded') !== 'true') b.click(); });
+      await sleep(300);
+      if (!processes.length) return 'no-process';
       const toggles = [...document.querySelectorAll('[data-testid="reasoning-toggle"]')];
+      if (!toggles.length) return 'no-reasoning';
       const last = toggles[toggles.length - 1];
       if (last && last.getAttribute('aria-expanded') !== 'true') last.click();
       const box = document.querySelector('.stream');
       if (box) box.scrollTop = box.scrollHeight;
-      return toggles.length ? 'ok' : 'no-reasoning';
+      await sleep(200);
+      return 'ok';
     })()
   `,
   /* 设置面板（N07） */
@@ -1963,6 +1808,13 @@ const STATES = {
         return false;
       };
       /*
+       * 设置分区是**按需挂载**的：openSettings('auth') 只到分组页，自定义 API 分区
+       * 得点它的导航项才渲染（同 scripts/probe/custom-api.js 的做法）。
+       */
+      await until(() => document.querySelector('[data-testid="settings-section-custom-api"]'));
+      click(document.querySelector('[data-testid="settings-section-custom-api"]'));
+      await until(() => document.querySelector('[data-testid="custom-api-add"]'));
+      /*
        * 走**表单本身**保存，而不是直接调 IPC：列表是组件的本地 state，
        * 直接调 IPC 保存不会让它刷新，截图里就看不到这条服务。
        * 存完再展开「连接测试」——那个面板只挂在已保存的条目上。
@@ -1987,13 +1839,18 @@ const STATES = {
   `,
   /* 能力设置页（实施-04 S7）：安全快照 + 三档策略 + MCP 状态卡。 */
   capabilities: `
-    (() => {
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const st = window.__yanStore.getState();
       st.setRailPinned(true);
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       window.__yanStore.setState({ settings: { ...st.settings, capabilityStrategy: 'auto-connect' } });
       st.openSettings('capabilities');
-      return 'ok';
+      await sleep(400);
+      /* 设置分区按需挂载：MCP 状态卡在「连接」分区，得先切过去 */
+      document.querySelector('[data-testid="settings-section-connections"]')?.click();
+      await sleep(400);
+      return document.querySelector('[data-testid="cap-mcp-server"]') ? 'ok' : 'no-mcp-server';
     })()
   `,
   codemodepreference: `
@@ -2005,13 +1862,18 @@ const STATES = {
     })()
   `,
   capabilitiesmcp: `
-    (() => {
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const st = window.__yanStore.getState();
       st.setRailPinned(true);
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       window.__yanStore.setState({ settings: { ...st.settings, capabilityStrategy: 'auto-connect' } });
       st.openSettings('capabilities');
-      return 'ok';
+      await sleep(400);
+      /* 技能 / MCP 都在「连接」分区（与 capabilities 同一入口，断言更全） */
+      document.querySelector('[data-testid="settings-section-connections"]')?.click();
+      await sleep(400);
+      return document.querySelector('[data-testid="cap-mcp-server"]') ? 'ok' : 'no-mcp-server';
     })()
   `,
   /*
@@ -2029,15 +1891,26 @@ const STATES = {
   `,
   nativecontext: `
     (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       window.__yanStore.getState().closeSettings();
-      await new Promise(resolve => setTimeout(resolve, 600));
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      await sleep(300);
       const st = window.__yanStore.getState();
       window.__yanStore.setState({ session: { ...st.session, isStreaming: false, isAgentRunning: false, isCompacting: true,
         compaction: { status: 'running', reason: 'threshold', startedAt: Date.now() - 2400 },
         lastCompaction: { status: 'completed', reason: 'manual', beforeTokens: 36230, afterTokens: 18400, startedAt: Date.now() - 60000, endedAt: Date.now() - 58000 }
       } });
-      await new Promise(resolve => setTimeout(resolve, 200));
-      return 'ok';
+      await sleep(250);
+      /* 原生上下文现在挂在输入框右下角的圆环浮层（composer-context），不再靠工具页分区 */
+      /* 圆环可能因设置关闭/重渲染被换实例：点开后再验一次，必要时重试 */
+      for (let i = 0; i < 6; i++) {
+        const ring = document.querySelector('[data-testid="composer-context"]');
+        if (!ring) return 'no-context-ring';
+        if (ring.getAttribute('aria-expanded') !== 'true') ring.click();
+        await sleep(250);
+        if (document.querySelector('[data-testid="ctx-main"]')) return 'ok';
+      }
+      return 'no-popover';
     })()
   `,
   ctxsettings: `
@@ -2090,43 +1963,6 @@ const STATES = {
    * 所以工作集与三条刻度都按 280k 算 —— 否则截图上「档位 均衡 600K」
    * 配着 240k 工作集，正是 D21 那类「同一个面板里的数自相矛盾」。
    */
-  ctxpreset: `
-    (async () => {
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
-      window.__yanStore.setState({
-        session: {
-          ...st.session,
-          isStreaming: false,
-          isAgentRunning: false,
-          contextPolicy: {
-            enabled: true,
-            kinds: ['tool-sweep', 'recall', 'episode-fold', 'compaction'],
-            source: 'model',
-            sourceKey: 'deepseek/deepseek-v4.1-flash',
-            overridden: ['workingSetCap'],
-            modelOverrides: { workingSetCap: 600000 },
-            budget: {
-              contextWindow: 400000,
-              responseReserve: 32000,
-              safetyMargin: 8000,
-              workingSet: 280000,
-              triggers: { sweep: 196000, fold: 238000, compact: 280000 },
-              emergency: 360000
-            }
-          }
-        }
-      });
-      await new Promise((r) => setTimeout(r, 250));
-      /* 详情展开：容量来源那一行只在展开态存在（C-5 尾） */
-      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
-      if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
-      await new Promise((r) => setTimeout(r, 350));
-      return 'ok';
-    })()
-  `,
   /*
    * `+` 菜单（2026-09-22）：codex 式「添加」入口。
    * 能力分组走**空态**（截图环境没装技能 / MCP）—— 空态也是要给人看的形态之一。
@@ -2138,175 +1974,6 @@ const STATES = {
       const btn = document.querySelector('[data-testid="composer-attach"]');
       if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
       await new Promise((r) => setTimeout(r, 450));
-      return 'ok';
-    })()
-  `,
-  /*
-   * 目标表单（2026-09-22）：目标 + **可衡量的成果**。
-   * 截的是「两栏都写好、可以开始」的那一刻 —— 空态与禁用态由探针覆盖。
-   */
-  plusgoal: `
-    (async () => {
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      const btn = document.querySelector('[data-testid="composer-attach"]');
-      if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
-      await new Promise((r) => setTimeout(r, 300));
-      document.querySelector('[data-testid="plus-goal"]')?.click();
-      await new Promise((r) => setTimeout(r, 300));
-      const setVal = (sel, text) => {
-        const el = document.querySelector(sel);
-        if (!el) return;
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-        setter?.call(el, text);
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      };
-      setVal('[data-testid="plus-goal-text"]', '把加号菜单做成 codex 式添加菜单');
-      setVal('[data-testid="plus-outcome-text"]', '三项可点 + 深浅两张截图 + 探针全绿');
-      await new Promise((r) => setTimeout(r, 350));
-      return 'ok';
-    })()
-  `,
-  /*
-   * 设了持续目标之后：右栏面板要显示**用户写的目标与达成判据**，
-   * 以及「持续目标」标记（它与档位无关，所以必须有可见标识）。
-   *
-   * ⚠️ 这里直接写 store 而不走 `setGoal` IPC：截图脚本只注册了一部分
-   * 数据型 IPC（见脚本末尾的“未注册”说明），走 IPC 会挂在没 handler 上。
-   */
-  goalpursued: `
-    (async () => {
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      /* 矩阵是同一页面连着跑多个状态：上一个状态（plusgoal）把 `+` 菜单开着，
-       * 不收掉就会混进这张图（实测踩到）—— 这一张要的是右栏面板。 */
-      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-      window.__yanStore.setState({
-        goal: {
-          goalId: 'goal-screenshot',
-          phase: 'executing',
-          revision: 3,
-          steps: [
-            { title: '加号菜单三档并排', status: 'done' },
-            { title: '目标表单与目标存储接线', status: 'done' },
-            { title: '单轮重复动作兜底', status: 'pending' },
-            { title: '计划档 / 自主档定位调整', status: 'pending' }
-          ],
-          evidence: ['plusmenu 场景 27 条断言全绿'],
-          blocker: null,
-          pursue: true,
-          brief: {
-            goal: '把加号菜单做成 codex 式添加菜单',
-            outcome: '三项可点 + 深浅两张截图 + 探针全绿'
-          },
-          failure: null,
-          updatedAt: Date.now()
-        }
-      });
-      window.__yanStore.getState().setGoalPopoverOpen(true);
-      await new Promise((r) => setTimeout(r, 450));
-      return 'ok';
-    })()
-  `,
-  /*
-   * 实施-16 G-4：澄清模式里显示待用户审阅的计划。
-   * 只注入合成状态，不调用目标写 IPC；截图检查计划文本与两个决策按钮。
-   */
-  goalreview: `
-    (async () => {
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-      window.__yanStore.setState({
-        workMode: { mode: 'clarify', revision: 6 },
-        goal: {
-          goalId: 'goal-review-screenshot',
-          phase: 'planning',
-          revision: 3,
-          steps: [], evidence: [], links: [], blocker: null, failure: null,
-          readyApproval: pendingReady: {
-            transitionId: 'tr-goal-review-screenshot',
-            goalId: 'goal-review-screenshot',
-            modeRevision: 6,
-            goalRevision: 3,
-            understanding: {
-              goal: '为目标增加计划审阅',
-              deliverable: '批准后开始执行',
-              scope: '当前会话的目标面板',
-              constraints: '批准前只允许只读操作',
-              acceptance: '用户可批准开始或要求修改计划'
-            },
-            createdAt: Date.now()
-          },
-          updatedAt: Date.now()
-        }
-      });
-      st.setGoalPopoverOpen(true);
-      await new Promise((r) => setTimeout(r, 500));
-      return 'ok';
-    })()
-  `,
-  /*
-   * 模式快捷键那行（2026-09-22）。
-   *
-   * 需要滚到它：外观页很长，不滚的话截出来是别的一行（脚本只截元素框）。
-   */
-  workmodekey: `
-    (async () => {
-      const st = window.__yanStore.getState();
-      st.openSettings('appearance');
-      await new Promise((r) => setTimeout(r, 600));
-      const key = document.querySelector('[data-testid="set-work-mode-key"]');
-      key?.closest('.ui-row')?.scrollIntoView?.({ block: 'center' });
-      await new Promise((r) => setTimeout(r, 500));
-      return 'ok';
-    })()
-  `,
-  ctxmodelpresets: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      S().setRailPinned(true);
-      S().closeSettings();
-      window.__yanStore.setState({
-        session: {
-          ...S().session,
-          model: {
-            id: 'meituan/LongCat-2.0:free',
-            name: 'LongCat 2.0',
-            provider: 'commandcode',
-            reasoning: false,
-            contextWindow: 1048576
-          }
-        },
-        settings: { ...S().settings, contextPolicyByModel: {} }
-      });
-      await sleep(300);
-      S().openSettings('context');
-      await sleep(600);
-      const target = document.querySelector('[data-testid="ctx-model-presets"]');
-      target?.scrollIntoView({ block: 'center' });
-      await sleep(500);
-      const balanced = document.querySelector('[data-testid="ctx-model-large-balanced"]');
-      if (!target || !balanced) return 'missing';
-      return balanced.disabled ? 'disabled' : 'ok';
-    })()
-  `,
-  /*
-   * 项目知识页（实施-03 S5）。
-   *
-   * 数据是桩（`yan:knowledge:list` 在矩阵主进程里直接返回）—— 这一张验的是
-   * 信息层次：开关、三个筛选 + 计数、条目的状态 / 来源 / 有效范围 / 需复核，
-   * 以及操作按钮窄窗口下会不会溢出。**不要**拿它当「真读到了项目知识」的证据
-   *（那是 live 场景的事）。
-   */
-  knowledgetab: `
-    (() => {
-      const st = window.__yanStore.getState();
-      st.setRailPinned(true);
-      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
-      window.__yanStore.setState({ settings: { ...st.settings, projectKnowledge: { enabled: true } } });
-      st.openSettings('knowledge');
       return 'ok';
     })()
   `,
@@ -2587,7 +2254,8 @@ const STATES = {
     })()
   `,
   fsnarrow: `
-    (() => {
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
@@ -2595,14 +2263,18 @@ const STATES = {
       /*
        * 不走 store 的 setPanelWidth：那是 async 且要等 patchSettings IPC，
        * 而截图脚本没跑主进程（没有该 handler）—— 实测会卡在这一步。
-       * 直接改本地 settings：布局的列宽就从这里读。
+       * 直接改本地 settings：窄栏意图仍保留（现右栏改成了工作区磁贴）。
        */
       window.__yanStore.setState({
         settings: { ...(st.settings || {}), panelWidth: 220, rightPanelOpen: true }
       });
+      /* 文件树现在按需成为工具磁贴：用现行启动器打开「文件」 */
+      window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'files' }));
+      await sleep(600);
       /* 展开无权限目录：要拍到的是「没有读取权限」这一行，而不是空白 */
       const np = document.querySelector('[data-testid="fs-row-noperm"]');
       if (np) np.click();
+      await sleep(300);
       return 'ok(noperm=' + (np ? 'clicked' : 'missing') + ')';
     })()
   `,
@@ -2618,8 +2290,13 @@ const STATES = {
       st.setRailPinned(true);
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       /*
-       * 已结束的工具被收进「运行了命令 N」组（ToolGroup），组不展开就没有 ToolRow。
-       * 先把所有组打开，再找那条带 workspaceChanges 的命令。
+       * 已结束的工具被收进「运行了命令 N」组（ToolGroup），而组又在默认收起的
+       * 「过程」里：先展开各轮过程，组和行才会进 DOM。
+       */
+      document.querySelectorAll('[data-testid="turn-process-toggle"][aria-expanded="false"]').forEach((b) => b.click());
+      await new Promise((r) => setTimeout(r, 400));
+      /*
+       * 再把所有工具组打开，最后找那条带 workspaceChanges 的命令。
        */
       /* aria-expanded 在**按钮**上，不在容器 div 上 ——
          读错了就会「已经开着又点一次」，把组重新关掉（实测踩过）。 */
@@ -2743,6 +2420,7 @@ const STATES = {
    */
   compaction: `
     (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
@@ -2764,14 +2442,18 @@ const STATES = {
           }
         }
       });
-      await new Promise((r) => setTimeout(r, 250));
-      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
-      if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
-      await new Promise((r) => setTimeout(r, 350));
+      await sleep(250);
+      for (let i = 0; i < 6; i++) {
+        const ring = document.querySelector('[data-testid="composer-context"]');
+        if (!ring) return 'no-context-ring';
+        if (ring.getAttribute('aria-expanded') !== 'true') ring.click();
+        await sleep(250);
+        if (document.querySelector('[data-testid="ctx-last-compaction"]')) break;
+      }
       const row = document.querySelector('[data-testid="ctx-last-compaction"]');
       if (row) row.scrollIntoView({ block: 'center' });
-      await new Promise((r) => setTimeout(r, 250));
-      return 'ok';
+      await sleep(250);
+      return row ? 'ok' : 'no-popover';
     })()
   `,
   /*
@@ -2779,40 +2461,6 @@ const STATES = {
    * 与 `compaction` 状态的分工：那张图看的是「失败时必须有话说」，
    * 这张看的是「成功那次的两个派生量」。
    */
-  compactionreclaim: `
-    (async () => {
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      window.__yanStore.setState({
-        session: {
-          ...st.session,
-          isStreaming: false,
-          isCompacting: false,
-          compaction: undefined,
-          lastCompaction: {
-            status: 'completed',
-            reason: 'threshold',
-            triggeredBy: 'policy',
-            policyStage: 'compact',
-            startedAt: Date.now() - 360000,
-            endedAt: Date.now() - 300000,
-            beforeTokens: 36230,
-            afterTokens: 18400
-          }
-        },
-        stats: { ...st.stats, contextUsage: { tokens: 30000, contextWindow: 400000, percent: 7.5 } }
-      });
-      await new Promise((r) => setTimeout(r, 250));
-      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
-      if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
-      await new Promise((r) => setTimeout(r, 350));
-      const row = document.querySelector('[data-testid="ctx-last-compaction-reclaim"]');
-      if (row) row.scrollIntoView({ block: 'center' });
-      await new Promise((r) => setTimeout(r, 250));
-      return 'ok';
-    })()
-  `,
   /*
    * 工作集视角（N21-3）：一张图里看四件事 ——
    *   · 主值是**工作集**（240k）而不是物理窗口（400k），带 data-mode
@@ -2991,11 +2639,12 @@ const STATES = {
       const box = document.querySelector('.stream');
       if (box) box.scrollTop = box.scrollHeight;
       await new Promise((r) => setTimeout(r, 250));
-      const bar = document.querySelector('[data-testid="usagebar"]');
+      const cost = document.querySelector('[data-testid="sb-cost"]');
       const footer = document.querySelector('[data-testid="turn-footer"]');
-      if (!bar) return 'no-usagebar';
-      if (bar.querySelector('[data-testid="ub-elapsed"]')) return 'duplicate-elapsed';
-      return footer ? 'ok' : 'no-turn-footer';
+      if (!cost) return 'no-sb-cost';
+      if (!footer) return 'no-turn-footer';
+      if (!footer.querySelector('.turn-time')) return 'no-turn-time';
+      return 'ok';
     })()
   `,
   /*
@@ -3017,13 +2666,18 @@ const STATES = {
           session: { ...st.session, isStreaming: true, isAgentRunning: true }
         });
         await new Promise((r) => setTimeout(r, 500));
-        const bar = document.querySelector('[data-testid="usagebar"]');
-        if (!bar) return 'no-usagebar';
-        const text = bar.textContent || '';
-        if (!/生成中|generating/i.test(text)) return 'no-generating';
-        if (!bar.querySelector('.ub-live')) return 'no-live-dot';
+        const mode = document.querySelector('.sb-mode');
+        if (!mode) return 'no-sb-mode';
+        if (mode.getAttribute('data-mode') !== 'run') return 'not-running';
+        const cost = document.querySelector('[data-testid="sb-cost"]');
+        if (!cost) return 'no-sb-cost';
+        if (!document.querySelector('[data-testid="status-details"]')) cost.click();
+        await new Promise((r) => setTimeout(r, 300));
+        const details = document.querySelector('[data-testid="status-details"]');
+        if (!details) return 'no-details';
+        const text = details.textContent || '';
         if (text.includes('tok/s')) return 'stale-speed';
-        if (bar.querySelector('[data-testid="ub-elapsed"]')) return 'stale-elapsed';
+        if (!text.includes('—')) return 'stale-usage';
         const box = document.querySelector('.stream');
         if (box) box.scrollTop = box.scrollHeight;
         await new Promise((r) => setTimeout(r, 250));
@@ -3072,6 +2726,16 @@ const STATES = {
         const box = document.querySelector('.stream');
         if (box) box.scrollTop = box.scrollHeight;
         await new Promise((r) => setTimeout(r, 250));
+        /* 用量明细已搬到状态栏花费浮层：点开花费，验合计 */
+        const cost = document.querySelector('[data-testid="sb-cost"]');
+        if (!cost) return 'no-sb-cost';
+        if (!document.querySelector('[data-testid="status-details"]')) cost.click();
+        await new Promise((r) => setTimeout(r, 300));
+        const details = document.querySelector('[data-testid="status-details"]');
+        if (!details) return 'no-details';
+        const text = details.textContent || '';
+        if (!text.includes('3,600') && !text.includes('3600')) return 'no-aggregate';
+        if (!text.includes('120')) return 'no-output';
         return 'ok';
       } catch (e) {
         return 'err:' + (e && e.message ? e.message : String(e));
@@ -3132,296 +2796,6 @@ const STATES = {
       }
     })()
   `,
-  /* 实施-25 P01：活动档案菜单（composer 工具栏上的活动切换浮层） */
-  agentprofilemenu: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      window.__yanStore.getState().closeSettings?.();
-      await sleep(200);
-      /* 直接给 store 一个 daily+research 档案：本状态只截浮层本身，不依赖 IPC */
-      window.__yanStore.setState({
-        agentProfile: { profile: 'daily', activity: 'research', revision: 1 }
-      });
-      await sleep(200);
-      document.querySelector('[data-testid="agent-profile-button"]')?.click();
-      await sleep(350);
-      return document.querySelector('[data-testid="agent-profile-menu"]') ? 'ok' : 'no-menu';
-    })()
-  `,
-  /* 实施-25 P02：主题空间区（左栏）——建一个空间、会话归属、展开空间树 */
-  railspaces: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      S().closeSettings?.();
-      await sleep(250);
-      /*
-       * 直接注入 store：本状态只截左栏，不依赖主进程的 getSpaces stub。
-       * refreshSpaces 在组件挂载时已调过（矩阵没注册该 IPC，它报错后保持原状）。
-       */
-      const sessions = S().sessions.map((s, i) => (i < 2 ? { ...s, spaceId: 'sp_demo' } : s));
-      window.__yanStore.setState({
-        spaces: [{
-          id: 'sp_demo',
-          name: '英语学习',
-          description: '每天一小时，从精读开始',
-          archived: false,
-          createdAt: Date.now() - 86400000,
-          updatedAt: Date.now()
-        }],
-        sessions
-      });
-      await sleep(350);
-      document.querySelector('[data-testid="rail-space-fold"]')?.click();
-      await sleep(400);
-      return document.querySelector('[data-testid="rail-space-tree"]') ? 'ok' : 'no-tree';
-    })()
-  `,
-  /*
-   * 空间工作台（实施-25 P04）：概览与资料两页。
-   *
-   * 直接注入 store：本状态只截中栏，不依赖主进程的 getSpaces / library.list stub
-   *（矩阵没注册那些 IPC，它们报错后 store 保持原状，正好不干扰注入的数据）。
-   */
-  spaceoverview: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      S().closeSettings?.();
-      await sleep(250);
-      const now = Date.now();
-      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
-      window.__yanStore.setState({
-        spaces: [{
-          id: 'sp_demo',
-          name: '英语学习',
-          description: '每天一小时，从精读开始',
-          archived: false,
-          createdAt: now - 86400000,
-          updatedAt: now
-        }],
-        sessions,
-        library: [
-          { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
-          { id: 'lib_d2', spaceId: 'sp_demo', kind: 'web', title: 'BBC Learning English', createdAt: now - 7200000, updatedAt: now - 7200000 }
-        ],
-        libraryVersions: [
-          { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', size: 91234, fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', textPath: 'library/text/lib_d1-v1.txt', chars: 8123, pages: 6, note: '已提取正文：6 页；纯文本，不含排版与图片', at: now - 3600000 } },
-          { sourceId: 'lib_d2', version: 1, identity: 'web:https://www.bbc.co.uk/learningenglish', ref: 'https://www.bbc.co.uk/learningenglish', title: 'BBC Learning English', fingerprint: 'fp-d2', addedAt: now - 7200000, available: true, parse: { status: 'ok', textPath: 'library/text/lib_d2-v1.txt', chars: 3200, note: '已提取正文', at: now - 7200000 } }
-        ],
-        libraryRefs: [
-          { owner: { kind: 'session', id: 'probe-a' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1800000, outcome: 'ok' },
-          { owner: { kind: 'session', id: 'probe-b' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1500000, outcome: 'ok' },
-          { owner: { kind: 'course', id: 'course-1' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1200000, outcome: 'ok' }
-        ],
-        libraryLoaded: true,
-        goal: {
-          goalId: 'g-demo',
-          phase: 'work',
-          revision: 3,
-          brief: { goal: '三个月把英语从看懂到能说' },
-          steps: [
-            { title: '精读 20 篇文章', status: 'done' },
-            { title: '跟读 50 段音频', status: 'running' },
-            { title: '写 3 篇短评', status: 'pending' }
-          ],
-          evidence: [],
-          links: []
-        },
-        todos: [
-          { id: 'td1', text: '把 Unit 3 的两个长句抄下来', done: false },
-          { id: 'td2', text: '听写第 12 段', done: true }
-        ]
-      });
-      /*
-       * 矩阵的当前会话（s1）**不在**会话列表里（列表是 mx1/mx2/… 这些夹具），
-       * 所以「按当前会话的归属决定展示哪个空间」永远匹配不上。
-       * 这里把当前会话切到列表里那条已归档的会话上 —— 这正是 T04-8 要做的投影：
-       * 展示哪个空间完全由当前会话的 spaceId 决定，别再另存一份。
-       */
-      const filed = sessions.find((x) => x.spaceId);
-      if (filed) {
-        const cur = S().session;
-        window.__yanStore.setState({
-          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
-        });
-      }
-
-      S().openSpaceView('overview');
-      await sleep(600);
-      return document.querySelector('[data-testid="space-overview"]') ? 'ok' : 'no-overview';
-    })()
-  `,
-  spacelibrary: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      const now = Date.now();
-      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
-      window.__yanStore.setState({
-        spaces: [{
-          id: 'sp_demo',
-          name: '英语学习',
-          description: '每天一小时，从精读开始',
-          archived: false,
-          createdAt: now - 86400000,
-          updatedAt: now
-        }],
-        sessions,
-        library: [
-          { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
-          { id: 'lib_d2', spaceId: 'sp_demo', kind: 'web', title: 'BBC Learning English', createdAt: now - 7200000, updatedAt: now - 7200000 }
-        ],
-        libraryVersions: [
-          { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', size: 91234, fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', textPath: 'library/text/lib_d1-v1.txt', chars: 8123, pages: 6, note: '已提取正文：6 页', at: now - 3600000 } },
-          { sourceId: 'lib_d2', version: 1, identity: 'web:https://www.bbc.co.uk/learningenglish', ref: 'https://www.bbc.co.uk/learningenglish', title: 'BBC Learning English', fingerprint: 'fp-d2', addedAt: now - 7200000, available: true, parse: { status: 'ok', textPath: 'library/text/lib_d2-v1.txt', chars: 3200, note: '已提取正文', at: now - 7200000 } }
-        ],
-        libraryRefs: [
-          { owner: { kind: 'session', id: 'probe-a' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1800000, outcome: 'ok' },
-          { owner: { kind: 'session', id: 'probe-b' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1500000, outcome: 'ok' },
-          { owner: { kind: 'course', id: 'course-1' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1200000, outcome: 'ok' }
-        ],
-        libraryLoaded: true,
-        /*
-         * 预览要正文。**不能真导入**（矩阵跑在真实数据目录上，写 library.json 就是污染用户数据），
-         * 所以这里把取正文这一步换成注入的正文；界面结构照旧走真实渲染路径。
-         * 真实「按 id + version 取正文」由 test:live -- library 覆盖。
-         */
-        openLibraryRef: async () => ({
-          ok: true,
-          outcome: 'ok',
-          source: { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
-          version: { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', size: 91234, fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 8123, pages: 6, note: '已提取正文：6 页', at: now - 3600000 } },
-          /* 用 join 而不是转义换行：这里是被写进模板字符串的内层源码，
-             反斜杠会先被外层吃掉一次（踩过）。 */
-          text: [
-            'Unit 3 · Reading',
-            '',
-            'When I was a child, my grandmother kept a small garden behind the house.',
-            'She never called it a garden; she called it “the outside room”.',
-            '',
-            'Every spring she would plant the same three things: tomatoes, mint and a',
-            'row of marigolds she never explained. I asked once. She said the marigolds',
-            'kept the others honest.',
-            '',
-            'I did not understand it then. I understand it better now.'
-          ].join(String.fromCharCode(10)),
-          truncated: false
-        })
-      });
-      /*
-       * 矩阵的当前会话（s1）**不在**会话列表里（列表是 mx1/mx2/… 这些夹具），
-       * 所以「按当前会话的归属决定展示哪个空间」永远匹配不上。
-       * 这里把当前会话切到列表里那条已归档的会话上 —— 这正是 T04-8 要做的投影：
-       * 展示哪个空间完全由当前会话的 spaceId 决定，别再另存一份。
-       */
-      const filed = sessions.find((x) => x.spaceId);
-      if (filed) {
-        const cur = S().session;
-        window.__yanStore.setState({
-          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
-        });
-      }
-
-      S().openSpaceView('library');
-      await sleep(500);
-      document.querySelector('[data-testid="space-lib-item-lib_d1"]')?.click();
-      await sleep(700);
-      return document.querySelector('[data-testid="space-library"]') ? 'ok' : 'no-library';
-    })()
-  `,
-  /*
-   * 成果页（实施-25 P06a/P06b）：列表 + 编辑器 + 版本历史 + 清单 + 来源。
-   * 与 spacelibrary 同一个理由直接注入 store：矩阵不注册数据型 IPC，
-   * 界面那一次拉取会落在没 handler 上，注入的夹具因此保持原样。
-   */
-  amconfig: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      S().openSettings('auth');
-      await sleep(1000);
-      document.querySelector('[data-testid="set-activity-models"]')?.scrollIntoView({ block: 'start' });
-      await sleep(400);
-      const rows = document.querySelectorAll('[data-testid^="am-row-"]');
-      return rows.length === 5 ? 'ok' : 'no-rows:' + rows.length;
-    })()
-  `,
-  /*
-   * 持续关注（实施-25 P16）：概览里的关注卡（到点 / 提议未启用 / 上次结果）。
-   * 单开一个状态：卡上那句「只在砚开着的时候看」与三种状态的对比是这一片的界面重点。
-   * 数据注入（矩阵不写 follows.json）。
-   */
-  spacefollow: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      const now = Date.now();
-      const watch = (over) => ({
-        title: '看看 README 有没有变',
-        kind: 'files',
-        spaceId: null,
-        cadence: 'interval',
-        intervalMinutes: 1440,
-        resultPlace: '写在空间概览里',
-        notifyOn: 'change',
-        enabled: true,
-        createdAt: now - 3 * 86400000,
-        updatedAt: now - 86400000,
-        origin: 'user',
-        ...over
-      });
-      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
-      window.__yanStore.setState({
-        spaces: [{
-          id: 'sp_demo', name: '英语学习', description: '每天一小时，从精读开始',
-          archived: false, createdAt: now - 86400000, updatedAt: now
-        }],
-        sessions,
-        followViews: [
-          {
-            watch: watch({ id: 'fw_due', title: '上游依赖有没有发新版本', kind: 'sources', nextDueAt: now - 3600000, lastCheckedAt: now - 86400000, lastOutcome: 'changed' }),
-            status: '到点了',
-            proposed: false,
-            lastRunText: '有变化：上游发了 v2，改了三处接口（等你定：要不要跟到 v2）'
-          },
-          {
-            watch: watch({
-              id: 'fw_review', title: '这周该复习的内容', kind: resultPlace: '只提醒，不自动开始学', nextDueAt: now + 3600000,
-              lastCheckedAt: now - 6 * 3600000, lastOutcome: 'no-change'
-            }),
-            status: '下次 27/09/2026, 11:18:49 pm',
-            proposed: false,
-            lastRunText: '没有变化：和上次一样'
-          },
-          {
-            watch: watch({
-              id: 'fw_proposed', title: '帮我盯着那份规范的更新', kind: 'custom',
-              resultPlace: '概览里记一笔', enabled: false, origin: 'agent', cadence: 'once'
-            }),
-            status: '还没启用（你点一下才会开始看）',
-            proposed: true
-          }
-        ],
-        followDue: [{ id: 'fw_due' }],
-        followsLoaded: true
-      });
-      const filed = sessions.find((x) => x.spaceId);
-      if (filed) {
-        const cur = S().session;
-        window.__yanStore.setState({
-          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
-        });
-      }
-      S().openSpaceView('overview');
-      await sleep(700);
-      document.querySelector('[data-testid="space-ov-follow-card"]')?.scrollIntoView({ block: 'center' });
-      await sleep(400);
-      const card = document.querySelector('[data-testid="space-ov-follow-card"]');
-      const due = document.querySelector('[data-testid="space-follow-due"]');
-      return card && due ? 'ok' : 'no-follow';
-    })()
-  `,
   /*
    * 清单成果（实施-25 P06b）：勾选列表本身就是正文的呈现方式；
    * 勾选是一次用户编辑（开新版本、进保护集），语义在单测与 live 探针里，这里只截界面。
@@ -3458,52 +2832,18 @@ const STATES = {
         const box = document.querySelector('.stream');
         if (box) box.scrollTop = box.scrollHeight;
         await new Promise((r) => setTimeout(r, 250));
+        /* 有一次请求没报用量：花费浮层里的合计前应带「≥」 */
+        const cost = document.querySelector('[data-testid="sb-cost"]');
+        if (!cost) return 'no-sb-cost';
+        if (!document.querySelector('[data-testid="status-details"]')) cost.click();
+        await new Promise((r) => setTimeout(r, 300));
+        const details = document.querySelector('[data-testid="status-details"]');
+        if (!details) return 'no-details';
+        if (!(details.textContent || '').includes('≥')) return 'no-partial-mark';
         return 'ok';
       } catch (e) {
         return 'err:' + (e && e.message ? e.message : String(e));
       }
-    })()
-  `,
-  contextbudget: `
-    (async () => {
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
-      window.__yanStore.setState({
-        session: {
-          ...st.session,
-          isStreaming: false,
-          isAgentRunning: false,
-          contextPolicy: {
-            enabled: true,
-            kinds: ['tool-sweep', 'recall', 'episode-fold', 'compaction'],
-            /* 形状与主进程推送一致：设置页读 overridden，缺它会让 ContextTab 崩 */
-            source: 'default',
-            overridden: [],
-            budget: {
-              /*
-               * 窗口必须与截图 fixture 的模型一致（400k，见 shot-fixture.js），
-               * 否则会出现“面板里的窗口 400k、兜底线却是 262k 窗口算出来的”这种
-               * 自相矛盾的截图（正是 D21/D22 那类误解）。
-               * 兜底线在 400k 上不被预留卡住（360k < 368k），所以这里看不出 D31 的
-               * 差别 —— 那一条由单测扫描 + 探针在**真实窗口**上断言（probe/context-budget.js 第 2 节）。
-               */
-              contextWindow: 400000,
-              responseReserve: 32000,
-              safetyMargin: 8000,
-              workingSet: 240000,
-              triggers: { sweep: 168000, fold: 204000, compact: 240000 },
-              emergency: 360000
-            }
-          }
-        }
-      });
-      await new Promise((r) => setTimeout(r, 250));
-      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
-      if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
-      await new Promise((r) => setTimeout(r, 350));
-      return 'ok';
     })()
   `,
   /*
@@ -3546,11 +2886,19 @@ const STATES = {
           }
         }
       });
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 350));
+      /* 上下文详情现在在输入框圆环浮层里（panelWidth 不再是右栏宽度） */
+      for (let i = 0; i < 6; i++) {
+        const ring = document.querySelector('[data-testid="composer-context"]');
+        if (!ring) return 'no-context-ring';
+        if (ring.getAttribute('aria-expanded') !== 'true') ring.click();
+        await new Promise((r) => setTimeout(r, 250));
+        if (document.querySelector('[data-testid="rp-context-actions"]')) break;
+      }
       const row = document.querySelector('[data-testid="rp-context-actions"]');
       if (row) row.scrollIntoView({ block: 'center' });
       await new Promise((r) => setTimeout(r, 250));
-      return 'ok';
+      return row ? 'ok' : 'no-popover';
     })()
   `,
   /*
@@ -3582,6 +2930,9 @@ const STATES = {
         ]
       });
       await sleep(350);
+      /* 日志现在是工作区磁贴（不在旧工具页里）：用现行启动器打开 */
+      window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'logs' }));
+      await sleep(600);
       /* 日志分区默认收起 —— 展开才看得到内容 */
       const head = document.querySelector('[data-testid="rp-log"] .rp-sec-head');
       if (!head) return 'no-log-section';
@@ -3651,6 +3002,9 @@ const STATES = {
         ]
       });
       await sleep(350);
+      /* 任务面板现在是工作区磁贴：用现行启动器打开 */
+      window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'tasks' }));
+      await sleep(600);
       const toggle = document.querySelector('[data-testid="todo-history-toggle"]');
       if (toggle && toggle.getAttribute('aria-expanded') !== 'true') {
         toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -3702,6 +3056,9 @@ const STATES = {
           : [...prev, { id: 'shot-task-card', role: 'assistant', text: '', toolCalls: [call] }]
       });
       await sleep(500);
+      /* 过程树默认收起：先展开各轮过程，工具组才会进 DOM */
+      document.querySelectorAll('[data-testid="turn-process-toggle"][aria-expanded="false"]').forEach((b) => b.click());
+      await sleep(400);
       /*
        * 先展开**还没开**的工具组（收起时内部的行不在 DOM 里），再展开那一行。
        * 只点没开的：菜单/组是开关，把已展开的点一下反而会收起来（这个坑犯过好几次）。
@@ -3915,8 +3272,9 @@ const STATES = {
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
-      document.querySelector('[data-testid="right-window-tab-tools"]')?.click();
-      await new Promise((r) => setTimeout(r, 220));
+      /* 文件树现在是工作区磁贴：用现行启动器打开，而不是已删除的工具页页签 */
+      window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'files' }));
+      await new Promise((r) => setTimeout(r, 600));
       window.__yanStore.getState().clearAttachments?.();
       const click = (el) => el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
       const ensureOpen = async (path) => {
@@ -3960,6 +3318,9 @@ const STATES = {
       st.closeSettings();
       st.setRailPinned(true);
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      /* 过程默认收起：先展开各轮过程，工具组和工具行才会进 DOM */
+      document.querySelectorAll('[data-testid="turn-process-toggle"][aria-expanded="false"]').forEach((b) => b.click());
+      await new Promise((r) => setTimeout(r, 400));
       /* aria-expanded 在**按钮**上，不在容器 div 上 ——
          读错了就会「已经开着又点一次」，把组重新关掉（实测踩过）。 */
       document.querySelectorAll('[data-testid="tool-group"]').forEach((g) => {
@@ -3991,6 +3352,9 @@ const STATES = {
       st.closeSettings();
       st.setRailPinned(true);
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      /* 清掉可能残留的菜单背景层（全屏 fixed，会挡住 elementFromPoint 的落点命中） */
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      document.querySelector('.tile-menu-backdrop')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
       const base = String(st.settings.cwd || '').replace(/[\\/][^\\/]*$/, '');
       const stamp = Date.now();
       const projects = [
@@ -4005,8 +3369,25 @@ const STATES = {
        * 直接 setState 而不走 patchSettings：截图脚本**故意不注册**写设置类 IPC
        * （见 registerStubHandlers 的说明），调它只会拿到
        * “No handler registered for 'yan:patchSettings'”。
+       *
+       * 现在的左栏只显示「有会话的项目」（useRailProjects）：只写 projects
+       * 而没有 sessions 时，除了当前项目其它行都不渲染。所以每个项目配一条
+       * 同 cwd / projectId 的合成会话，拖拽才有 6 行可排。
        */
+      const sessions = projects.map((p, i) => ({
+        id: 'vis-rs' + i,
+        path: p.cwd + '/vis-rs' + i + '.jsonl',
+        cwd: p.cwd,
+        projectId: p.id,
+        title: p.name + ' · 会话',
+        named: true,
+        createdAt: stamp - i * 1000,
+        updatedAt: stamp - i * 1000,
+        lastActivityAt: stamp - i * 1000,
+        messageCount: 2
+      }));
       window.__yanStore.setState({
+        sessions,
         settings: {
           ...st.settings,
           projectGroups: [
@@ -4019,17 +3400,26 @@ const STATES = {
         }
       });
       await new Promise((r) => setTimeout(r, 450));
+      /* 默认只显示前 5 个项目（PROJECT_PREVIEW）：先手动展开全部，
+         否则拖拽激活时的 expandAllProjects 会让列表重排，正在拖的那一行会被换掉。 */
+      const more = document.querySelector('[data-testid="rail-more-projects"]');
+      if (more && more.dataset.expanded !== '1') {
+        more.click();
+        await new Promise((r) => setTimeout(r, 350));
+      }
       const rows = [...document.querySelectorAll('[data-testid="rail-project-row"]')];
-      if (rows.length < 4) return 'rows=' + rows.length;
+      const draggable = rows.filter((el) => el.dataset.dragKind === 'project');
+      if (draggable.length < 2) return 'rows=' + rows.length + ',drag=' + draggable.length;
       /*
        * 拖动源与落点必须**同组**：跨组不接受落点（归属变更走右键菜单），
        * 选错就是一张没有插入线的图（实测踩过）。
        * 分组聚合后的顺序是：产品线 p1,p2,p3 → 实验线 p4,p5 → 未分组 p6。
        */
-      const from = rows[2];
-      const to = rows[0];
+      const from = draggable[1];
+      const group = from.dataset.dragGroup;
+      const to = draggable.find((el) => el !== from && el.dataset.dragGroup === group);
+      if (!to) return 'no-same-group';
       const a = from.getBoundingClientRect();
-      const b = to.getBoundingClientRect();
       const pe = (target, type, x, y) => target.dispatchEvent(new PointerEvent(type, {
         bubbles: true, cancelable: true, composed: true,
         clientX: x, clientY: y, button: 0, buttons: type === 'pointerup' ? 0 : 1,
@@ -4040,9 +3430,11 @@ const STATES = {
       /* 先越过 4px 阀值才进拖拽态 —— 与用户手拖走的是同一条路径 */
       pe(window, 'pointermove', a.left + 30, a.top + a.height / 2 + 10);
       await new Promise((r) => setTimeout(r, 40));
-      pe(window, 'pointermove', b.left + 30, b.top + b.height * 0.2);
+      /* 激活后重新量落点：列表重排后行可能微移；取行中线更稳 */
+      const b2 = to.getBoundingClientRect();
+      pe(window, 'pointermove', b2.left + 30, b2.top + b2.height / 2);
       await new Promise((r) => setTimeout(r, 260));
-      return 'ok';
+      return 'ok(rows=' + rows.length + ',drag=' + document.querySelectorAll('.is-dragging').length + ',hint=' + document.querySelectorAll('.drop-before,.drop-after').length + ')';
     })()
   `,
   /*
@@ -4355,7 +3747,12 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
         ]
       });
       window.__yanStore.setState({ rightPanelOpen: true });
-      await sleep(500);
+      await sleep(400);
+      /* 子代理卡片在「子 Agent」磁贴，「rp-subagents」在「任务」磁贴：两个都开 */
+      window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'tasks' }));
+      await sleep(300);
+      window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'agents' }));
+      await sleep(600);
       return document.querySelector('.sg-card') ? 'ok' : 'no-cards';
     })()
   `,
@@ -4394,118 +3791,12 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       });
       window.__yanStore.setState({ rightPanelOpen: true });
       await sleep(400);
+      /* 子代理卡片在「子 Agent」磁贴，「rp-subagents」在「任务」磁贴：两个都开 */
+      window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'tasks' }));
+      await sleep(300);
+      window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'agents' }));
+      await sleep(600);
       return document.querySelector('.sg-card') ? 'ok' : 'no-cards';
-    })()
-  `,
-  workbenchhome: `
-    (async () => {
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      /* 只改 store 真源：截图环境没注册 patchSettings，避免写盘报错通知 */
-      window.__yanStore.setState({ workspaceMode: 'daily' });
-      const now = Date.now();
-      window.__yanStore.setState({
-        messages: [],
-        sessions: [
-          { id: 'wb1', path: 'C:/yan-matrix/wb1.jsonl', cwd: 'C:/proj/inkstone', title: '整理额度卡与上下文 mini', named: true, projectId: 'p1', createdAt: now - 86400000, updatedAt: now - 3600000, messageCount: 12, lastActivityAt: now - 3600000 },
-          { id: 'wb2', path: 'C:/yan-matrix/wb2.jsonl', cwd: 'C:/proj/inkstone', title: '为图标体系收口做动作清单', named: true, projectId: 'p1', parentSession: 'C:/yan-matrix/wb1.jsonl', createdAt: now - 172800000, updatedAt: now - 7200000, messageCount: 5, lastActivityAt: now - 7200000 },
-          { id: 'wb3', path: 'C:/yan-matrix/wb3.jsonl', cwd: 'C:/proj/notes', title: '整理今天的学习笔记', named: true, projectId: 'p2', createdAt: now - 259200000, updatedAt: now - 10800000, messageCount: 8, lastActivityAt: now - 10800000 }
-        ],
-        todos: [
-          { text: '会话地图节点布局', done: true },
-          { text: '工作台首页四张卡', done: false, status: 'running' }
-        ],
-        goal: null,
-        goalLoading: false,
-        goalError: null
-      });
-      for (let i = 0; i < 40; i++) {
-        if (document.querySelector('[data-testid="workbench-home"]')) break;
-        await new Promise((r) => setTimeout(r, 120));
-      }
-      return document.querySelector('[data-testid="workbench-home"]') ? 'ok' : 'bad-workbenchhome';
-    })()
-  `,
-  taskinbox: `
-    (async () => {
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      const now = Date.now();
-      window.__yanStore.setState({
-        workspaceMode: 'coding',
-        inboxOpen: true,
-        messages: [],
-        sessions: ['waiting', 'failed', 'running'].map((id, index) => ({
-          id: 'inbox-' + id,
-          path: 'C:/yan-matrix/inbox-' + id + '.jsonl',
-          cwd: 'C:/proj/inkstone',
-          title: ['浏览器深度控制 · 搜索结果待审阅', '学习工作台 · 等待你回答练习题', '刷新项目依赖并检查构建结果', '整理工作区代码结构'][index],
-          named: true,
-          createdAt: now - (index + 1) * 86400000,
-          updatedAt: now - (index + 1) * 120000,
-          lastActivityAt: now - (index + 1) * 120000,
-          messageCount: 4
-        }))
-      });
-      for (let i = 0; i < 50; i++) {
-        if (document.querySelector('[data-testid="task-inbox"]')) break;
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      return document.querySelector('[data-testid="task-inbox"]') ? 'ok' : 'bad-taskinbox';
-    })()
-  `,
-  /*
-   * 实施-18：会话地图（三层：项目泳道 / 分支列 / 父子边）。
-   * 与首页同一批合成会话，保证两张图讲的是同一件事。
-   */
-  /*
-   * 实施-18：会话地图（项目泳道 / 分支列 / 父子边）。
-   *
-   * 地图只读 store 的会话元数据，不再走 peekSession 那类 IPC，
-   * 所以这里的合成会话写在 store 上就够（见 registerStubHandlers 的夹具）。
-   */
-  sessionmap: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const st = window.__yanStore.getState();
-      st.closeSettings();
-      st.setRailPinned(true);
-      /* 只改 store 真源，不触发写盘 */
-      window.__yanStore.setState({ workspaceMode: 'daily' });
-      const now = Date.now();
-      window.__yanStore.setState({
-        messages: [
-          { id: 'mx1', role: 'user', text: '先把这一段理清。', timestamp: now - 3600000 },
-          { id: 'mx2', role: 'assistant', text: '已整理成三条要点。', timestamp: now - 3500000 }
-        ],
-        sessions: [
-          { id: 'wb1', path: 'C:/yan-matrix/wb1.jsonl', cwd: 'C:/proj/inkstone', title: '整理额度卡与上下文 mini', named: true, projectId: 'p1', createdAt: now - 86400000, updatedAt: now - 3600000, messageCount: 12, lastActivityAt: now - 3600000 },
-          { id: 'wb2', path: 'C:/yan-matrix/wb2.jsonl', cwd: 'C:/proj/inkstone', title: '为图标体系收口做动作清单', named: true, projectId: 'p1', parentSession: 'C:/yan-matrix/wb1.jsonl', createdAt: now - 172800000, updatedAt: now - 7200000, messageCount: 5, lastActivityAt: now - 7200000 },
-          { id: 'wb3', path: 'C:/yan-matrix/wb3.jsonl', cwd: 'C:/proj/notes', title: '整理今天的学习笔记', named: true, projectId: 'p2', createdAt: now - 259200000, updatedAt: now - 10800000, messageCount: 8, lastActivityAt: now - 10800000 }
-        ],
-        todos: [],
-        goal: null,
-        goalLoading: false,
-        goalError: null
-      });
-      await sleep(320);
-      /* 入口在会话标题旁的视图切换器里 */
-      const toggle = document.querySelector('[data-testid="view-map"]');
-      if (!toggle) return 'bad-no-toggle';
-      toggle.click();
-      for (let i = 0; i < 60; i++) {
-        if (document.querySelector('[data-testid="map-node"]')) break;
-        await sleep(200);
-      }
-      const nodes = document.querySelectorAll('[data-testid="map-node"]');
-      if (nodes.length === 0) return 'bad-no-nodes';
-      /* 连线与泳道要跟节点同帧在：只剩卡片说明分支层级没接上 */
-      const edges = document.querySelectorAll('.wb-edge').length;
-      const lanes = document.querySelectorAll('.wb-lane').length;
-      await sleep(400);
-      return 'ok(' + nodes.length + ' nodes / ' + edges + ' edges / ' + lanes + ' lanes)';
     })()
   `,
   /*
@@ -4619,102 +3910,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return 'ok(rows=' + rows + ' forks=' + forks + ')';
     })()
   `,
-  browserboundary: `
-    (() => {
-      const state = window.__yanStore.getState().browserState;
-      window.__yanStore.setState({ browserState: { ...state, open: false } });
-      return 'ok';
-    })()
-  `,
-  browserblocked: `
-    (() => {
-      const state = window.__yanStore.getState().browserState;
-      window.__yanStore.setState({ browserState: { ...state, open: false } });
-      return 'ok';
-    })()
-  `,
-  /*
-   * 把 `railwaiting` 注入的假实例撤走：同一组后面的状态（以及下一次跑整组）
-   * 不该看到一个并不存在的会话在等输入。
-   */
-  railwaiting: `
-    (() => {
-      window.__yanStore.setState({ runners: [] });
-      return 'ok';
-    })()
-  `,
-  modelmenu: `
-    (() => {
-      const st = window.__yanStore.getState();
-      window.__yanStore.setState({ session: { ...st.session, isStreaming: true } });
-      document.querySelectorAll('[data-testid="model-picker"]').forEach((b) => b.click());
-      return 'ok';
-    })()
-  `,
-  /*
-   * 自主模式必须在同组里关掉：它会在后续每张图的输入框边框上留下光带
-   *（同一组共用同一个窗口）。实施-05 起模式在 store 的 `workMode` 上。
-   */
-  autonomous: `
-    (() => {
-      window.__yanStore.setState({ workMode: null, goal: null });
-      return 'ok';
-    })()
-  `,
-  /* 收尾：把 `autonomousrunning` 注入的假实例与模式都撤走（同一组共用窗口） */
-  autonomousrunning: `
-    (() => {
-      window.__yanStore.setState({ workMode: null, runners: [], activeRunnerId: null });
-      return 'ok';
-    })()
-  `,
-  /*
-   * 非 Git 的两张图都要把 cwd 还原：`session.cwd` 是同一组共用窗口上的全局状态，
-   * 不复位会让后面每张图都跟着显示成非 Git。菜单 / 审查面板也顺手关掉。
-   */
-  envnotgit: `
-    (() => {
-      const btn = document.querySelector('[data-testid="session-project"]');
-      if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click();
-      return 'ok';
-    })()
-  `,
-  workmodemenu: `
-    (() => {
-      window.__yanStore.setState({ workMode: null });
-      /* 组件自己监听 document mousedown 关菜单 —— 模拟一次点外部，
-         而不是直接移 DOM（浮层由 React 管，手拆会与它的状态不一致） */
-      document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      return 'ok';
-    })()
-  `,
-  /*
-   * 压缩态把 isCompacting 置 true，而「忙」时模型 picker 是 disabled ——
-   * 不复位的话，同一组里**排在后面**的状态会点不开菜单（实测踩过同类问题）。
-   */
-  compaction: `
-    (() => {
-      const st = window.__yanStore.getState();
-      window.__yanStore.setState({
-        session: { ...st.session, isCompacting: false, compaction: undefined, lastCompaction: undefined }
-      });
-      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
-      if (toggle && toggle.getAttribute('aria-expanded') === 'true') toggle.click();
-      return 'ok';
-    })()
-  `,
-  /*
-   * 拖拽截完必须**取消**而不是松手：松手会把这次拖拽真的提交，
-   * 后续状态的左栏顺序就跟着变（截图之间互相干扰）。
-   * Esc 是产品里真有的取消出口，顺便把它也走一遍。
-   * 造出来的分组/项目不清 —— railreorder 在组内排最后，不会串到别的图。
-   */
-  railreorder: `
-    (() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      return 'ok';
-    })()
-  `,
   /* 临时替换的会话内容在截图后恢复，避免后续画面依赖它们的残留。 */
   restoreMessages: `
     (() => {
@@ -4750,59 +3945,14 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
  * 同时统计关键元素是否真的在视口里（截图一片空白时能立刻看出来）。
  */
 const MUST_HAVE = {
-  huboverview: ['[data-testid="agent-workspace"]', '.agent-run-tabs', '.hub-terminal .xterm'],
-  hubsplit: ['.agent-run-list', '.hub-terminal .xterm'],
-  hubfallback: ['.hub-terminal .xterm', '.hub-terminal .xterm-accessibility-tree'],
-  hubcreate: ['[data-testid="agent-workspace"]', '.agent-create'],
   /* 2026-09-27 新增：左栏「最近」区 / 项目「移除」确认框。 */
   railrecent: ['[data-testid="rail-recent"]'],
   projectremove: ['[data-testid="rail-remove-project-confirm"]'],
-  /* 主题空间区（实施-25 P02）：入口 + 空间行 + 展开的空间树 */
-  railspaces: [
-    '[data-testid="rail-spaces"]',
-    '[data-testid="rail-space-row"]',
-    '[data-testid="rail-space-tree"]',
-    '[data-testid="rail-space-count"]'
-  ],
-  /*
-   * 空间工作台（实施-25 P04）：四入口必须都在，概览的几张卡必须真有内容 ——
-   * 只断言容器存在会漏掉「卡片渲染成空」那类问题。
-   */
-  spaceoverview: [
-    '[data-testid="space-workbench"]',
-    '[data-testid="space-tab-overview"]',
-    '[data-testid="space-tab-library"]',
-    '[data-testid="space-tab-artifact"]',
-    '[data-testid="space-tab-learning"]',
-    '[data-testid="space-overview"]',
-    '[data-testid="space-ov-goal"]',
-    '[data-testid="space-ov-continue"]',
-    '[data-testid="space-ov-sources"]',
-    '[data-testid="space-ov-need"]'
-  ],
-  spacelibrary: [
-    '[data-testid="space-library"]',
-    '[data-testid="space-lib-list"]',
-    '[data-testid="space-lib-item-lib_d1"]',
-    '[data-testid="space-lib-preview"]',
-    '[data-testid="space-lib-join"]'
-  ],
-  /* 成果页（实施-25 P06a/P06b）：列表 + 编辑器 + 版本历史 + 「你改过几段」+ 导出 + 来源回原文 */
-  agentprofilemenu: [
-    '[data-testid="agent-profile-button"]',
-    '[data-testid="agent-profile-menu"]',
-    '[data-testid="agent-profile-option-research"]'
-  ],
   /* 主界面（注意：fixture 里会话是「流式中」，所以这里不会出现「用时」——
      用时的视觉证据在 usageelapsed 状态里） */
   main: ['.rail', '.stream', '.composer, [data-testid="composer"]'],
   artifact: ['.stream', '[data-testid="turn-artifacts"]', '[data-artifact-id="matrix-artifact-svg"]', '.artifact-image', '.artifact-actions'],
   imageprogress: ['.stream', '[data-testid="image-progress-list"]', '.image-progress[data-stage="generating"]', '.image-progress-track'],
-  /* 自主模式：数据属性是探针/检查的钩子，光带本身在现场看（§4.2） */
-  autonomous: ['[data-testid="composer"]', '.composer-wrap[data-autonomous="1"]', '[data-testid="work-mode-button"][data-mode="autonomous"]', '[data-testid="goal-panel"]', '[data-goal-phase="executing"]', '.goal-step'],
-  /* 自主 + 任务在跑（N10）：光带在，且输入框那个键已经变成「停止」形态 */
-  autonomousrunning: ['.composer-wrap[data-autonomous="1"]', '[data-testid="send"].abort', '[data-testid="work-mode-button"][data-mode="autonomous"]', '[data-testid="goal-panel"]', '.goal-step'],
-  workmodemenu: ['[data-testid="work-mode-button"][data-mode="clarify"]', '[data-testid="work-mode-menu"]', '[data-testid="work-mode-option-autonomous"]'],
   modelmenu: ['[data-testid="model-picker"]', '[data-testid="model-menu"]'],
   toolgroup: ['.tgroup.is-expanded', '[data-testid="tool-group-collapse"]'],
   toolterm: ['.trow.open .term'],
@@ -4810,18 +3960,9 @@ const MUST_HAVE = {
   settings: ['.settings'],
   capabilities: ['.settings', '[data-testid="set-capabilities"]', '[data-testid="cap-strategy"]', '[data-testid="cap-mcp-server"]'],
   capabilitiesmcp: ['.settings', '[data-testid="cap-skills"]', '[data-testid="cap-mcp"]', '[data-testid="cap-mcp-server"]'],
-  knowledgetab: [
-    '.settings',
-    '[data-testid="kn-toggle"]',
-    '[data-testid="kn-filter"]',
-    '[data-testid="kn-item-k-demo0001"]',
-    '[data-testid="kn-review-k-demo0001"]',
-    '[data-testid="kn-export-copy"]'
-  ],
   nativecontextsettings: ['.settings', '[data-testid="ctx-native-settings"]'],
-  nativecontext: ['[data-testid="rp-context"]', '[data-testid="ctx-compacting-reason"]', '[data-testid="ctx-last-compaction"]', '[data-testid="rp-context-actions"] [role="switch"]'],
+  nativecontext: ['[data-testid="ctx-main"]', '[data-testid="ctx-tokens"]', '[data-testid="ctx-last-compaction"]', '[data-testid="rp-context-actions"] [role="switch"]', '[data-testid="rp-compact-now"]'],
   ctxsettings: ['.settings', '[data-testid="ctx-native-settings"]'],
-  ctxmodelpresets: ['.settings', '[data-testid="ctx-model-presets"]', '[data-testid="ctx-model-large-balanced"]', '[data-testid="ctx-model-large-long"]'],
   turntime: ['.stream', '[data-testid="turn-footer"]', '.turn-time'],
   turnstatus: ['.stream', '[data-testid="turn-footer"]'],
   filelink: ['.stream', 'a.md-link[data-link-kind="file"]'],
@@ -4904,16 +4045,9 @@ const MUST_HAVE = {
   ],
   envnotgit: ['[data-testid="env-menu"]', '[data-testid="env-notgit"]', '.env-sub'],
   compaction: [
-    '[data-testid="rp-context"]',
-    '[data-testid="ctx-compacting-reason"]',
+    '[data-testid="ctx-main"]',
     '[data-testid="ctx-last-compaction"]',
-    '[data-testid="ctx-last-compaction-error"]',
-    '[data-testid="ctx-project-ignored"]'
-  ],
-  compactionreclaim: [
-    '[data-testid="rp-context"]',
-    '[data-testid="ctx-last-compaction"]',
-    '[data-testid="ctx-last-compaction-reclaim"]'
+    '[data-testid="rp-context-actions"]'
   ],
   browserboundary: [
     '[data-testid="browser-surface"]',
@@ -4925,10 +4059,10 @@ const MUST_HAVE = {
     '[data-testid="browser-blocked-hint"]',
     '[data-testid="browser-download"]'
   ],
-  fsnarrow: ['[data-testid="rightpanel"]', '[data-testid="rp-files"]'],
+  fsnarrow: ['[data-testid="tile-workspace"]', '[data-testid="rp-files"]'],
   wschanges: ['[data-testid="workspace-changes"]', '[data-testid="ws-title"]'],
   wsunknown: ['[data-testid="workspace-changes"]', '[data-testid="ws-unknown"]'],
-  ctxnarrow: ['[data-testid="rp-context-actions"]', '[data-testid="rp-compact-now"]', '[data-testid="ctx-stages"]'],
+  ctxnarrow: ['[data-testid="ctx-main"]', '[data-testid="rp-context-actions"]', '[data-testid="rp-compact-now"]'],
   trashtoast: ['[data-testid="trash-notice"]', '[data-testid="trash-undo"]', '.rail-trash-name', '.srow'],
   sessionmenu: ['[data-testid="rail-session-menu"]', '[data-testid="rail-menu-time"]', '[data-testid="rail-session"]'],
   railreset: ['[data-testid="rail-session"]', '[data-testid="rail-more-sessions"]', '[data-testid="rail-toggle"]'],
@@ -4938,37 +4072,25 @@ const MUST_HAVE = {
   projectmenubr: ['[data-testid="rail-project-menu-panel"]', '[role="menuitem"]'],
   fileincontext: ['[data-testid="fs-tree"]', '[data-testid="file-preview"]', '[data-testid="fs-inctx-src/main/agent.ts"]', '[data-testid="composer"]'],
   usageelapsed: [
-    '[data-testid="usagebar"]',
+    '[data-testid="sb-cost"]',
     '[data-testid="turn-footer"]',
-    '.usagebar .ub-item',
+    '.turn-time',
     '[data-testid="composer"]'
   ],
   usageturn: [
-    '[data-testid="usagebar"]',
-    '.usagebar .ub-live',
-    '.usagebar .ub-item',
+    '.sb-mode[data-mode="run"]',
+    '[data-testid="sb-cost"]',
+    '[data-testid="status-details"]',
     '[data-testid="composer"]'
   ],
-  /* 实施-11 H-6b：整轮用量聚合 / 下限标记要真的渲染出来 */
+  /* 实施-11 H-6b：整轮用量聚合 / 下限标记要真的渲染出来（状态栏花费详情浮层） */
   usageagg: [
-    '[data-testid="usagebar"]',
-    '.usagebar .ub-item',
+    '[data-testid="sb-cost"]',
+    '.sb-kv',
     '[data-testid="turn-footer"]'
   ],
-  usagepartial: ['[data-testid="usagebar"]', '.usagebar .ub-item'],
-  contextbudget: [
-    '[data-testid="ctx-stages"]',
-    '[data-testid="ctx-stage-mark"]',
-    '[data-testid="ctx-next-stage"]',
-    '[data-testid="ctx-working-set-line"]',
-    '[data-testid="ctx-working-set"]'
-  ],
+  usagepartial: ['[data-testid="sb-cost"]', '.sb-kv'],
   /* C-5 尾：右栏「档位」行（大窗口试行档）—— 这一行不存在这张图就没意义 */
-  ctxpreset: [
-    '[data-testid="ctx-preset"]',
-    '[data-testid="ctx-working-set-line"]',
-    '[data-testid="ctx-stages"]'
-  ],
   /* C-6 低回收提示：这一行 + 工作集视角两件套都要在图里（下一步那行被有意抑制） */
   ctxincompressible: [
     '[data-testid="ctx-incompressible"]',
@@ -4983,23 +4105,6 @@ const MUST_HAVE = {
   ],
   /* `+` 菜单：菜单本体与入口按钮都要在图里 */
   plusmenu: ['[data-testid="plus-menu"]', '[data-testid="composer-attach"]'],
-  plusgoal: ['[data-testid="plus-goal-compose"]', '[data-testid="plus-goal-start"]'],
-  goalpursued: [
-    '[data-testid="goal-panel"]',
-    '[data-testid="goal-brief"]',
-    '[data-testid="goal-pursue"]'
-  ],
-  goalreview: [
-    '[data-testid="goal-entry"]',
-    '[data-testid="goal-popover"]',
-    '[data-testid="goal-panel"]',
-    '[data-testid="goal-review-setting"]',
-    '[data-testid="goal-pending-review"]',
-    '[data-testid="goal-approve-and-start"]',
-    '[data-testid="goal-modify-plan"]'
-  ],
-  /* 模式快捷键那一行（2026-09-22：从裸 Tab 改成可改键的全局组合键） */
-  workmodekey: ['.ui-row:has([data-testid="set-work-mode-key"])'],
   /* 子代理卡片：出错与有冲突各一张，冲突那张要带合并 / 放弃两个操作 */
   subagentfailed: [
     '[data-testid="rp-subagents"]',
@@ -5017,28 +4122,7 @@ const MUST_HAVE = {
   /* 主题过渡：只要主题按钮在（设置面板已打开），其余靠整窗图像判断 */
   themetransitionspread: ['[data-testid="theme-dark"]'],
   themetransitioncollapse: ['[data-testid="theme-light"]'],
-  /* H-10 过程页：详情壳与可滚动正文都要在 */
-  workbenchhome: [
-    '[data-testid="workbench-home"]',
-    '[data-testid="wb-card-focus"]'
-  ],
-  taskinbox: [
-    '[data-testid="task-inbox"]',
-    '[data-testid="inbox-refresh"]',
-    '[data-testid="inbox-filter-all"]',
-    '[data-testid="inbox-card"][data-status="needs_review"]',
-    '[data-testid="inbox-card"][data-status="waiting_user"]',
-    '[data-testid="inbox-card"][data-status="failed"]'
-  ],
-  taskinbox: ['[data-testid="task-inbox"]', '[data-testid="inbox-refresh"]', '[data-testid="inbox-filter-all"]'],
   subagentnote: ['[data-testid="rp-subagents"]', '.sg-card', '.sg-mark', '[data-testid="subagent-note-reason-sub-note-timeout"]'],
-  sessionmap: [
-    '[data-testid="map-node"]',
-    '.wb-lane',
-    '.wb-edge',
-    '[data-testid="map-search"]',
-    '[data-testid="map-info"]'
-  ],
   mapturns: [
     '[data-testid="map-node"]',
     '[data-testid="map-turns-toggle"]',
@@ -5064,64 +4148,6 @@ const MUST_HAVE = {
 
 }
 const AFTER_STATE = {
-  /* 主题空间：清掉注入的空间与归属，后面的图不带着它 */
-  railspaces: `
-    (() => {
-      const S = () => window.__yanStore.getState();
-      window.__yanStore.setState({
-        spaces: [],
-        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
-      });
-      return 'ok';
-    })()
-  `,
-  /*
-   * 空间工作台：关视图 + 清掉注入的空间 / 资料 / 目标 ——
-   * 否则同一组里排在后面的状态会带着这些 fixture（railspaces 那条注释踩过同一个坑）。
-   */
-  spaceoverview: `
-    (() => {
-      const S = () => window.__yanStore.getState();
-      S().closeSpaceView();
-      window.__yanStore.setState({
-        spaces: [],
-        library: [],
-        libraryVersions: [],
-        libraryRefs: [],
-        libraryLoaded: false,
-        goal: null,
-        todos: [],
-        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
-      });
-      return 'ok';
-    })()
-  `,
-  spacelibrary: `
-    (() => {
-      const S = () => window.__yanStore.getState();
-      S().closeSpaceView();
-      window.__yanStore.setState({
-        spaces: [],
-        library: [],
-        libraryVersions: [],
-        libraryRefs: [],
-        libraryLoaded: false,
-        /* 恢复成透传（setup 为了让预览有正文临时换过一个） */
-        openLibraryRef: async (ref, maxChars) =>
-          window.yan.library.open(ref, maxChars !== undefined ? { maxChars } : undefined),
-        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
-      });
-      return 'ok';
-    })()
-  `,
-  /* 成果页：关视图 + 清掉注入的成果夹具（含临时换过的取正文） */
-  agentprofilemenu: `
-    (() => {
-      window.__yanStore.setState({ agentProfile: null });
-      document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      return 'ok';
-    })()
-  `,
   browserboundary: `
     (() => {
       const state = window.__yanStore.getState().browserState;
@@ -5155,23 +4181,6 @@ const AFTER_STATE = {
     })()
   `,
   /*
-   * 自主模式必须在同组里关掉：它会在后续每张图的输入框边框上留下光带
-   *（同一组共用同一个窗口）。实施-05 起模式在 store 的 `workMode` 上。
-   */
-  autonomous: `
-    (() => {
-      window.__yanStore.setState({ workMode: null, goal: null });
-      return 'ok';
-    })()
-  `,
-  /* 收尾：把 `autonomousrunning` 注入的假实例与模式都撤走（同一组共用窗口） */
-  autonomousrunning: `
-    (() => {
-      window.__yanStore.setState({ workMode: null, runners: [], activeRunnerId: null });
-      return 'ok';
-    })()
-  `,
-  /*
    * 非 Git 的两张图都要把 cwd 还原：`session.cwd` 是同一组共用窗口上的全局状态，
    * 不复位会让后面每张图都跟着显示成非 Git。菜单 / 审查面板也顺手关掉。
    */
@@ -5179,15 +4188,6 @@ const AFTER_STATE = {
     (() => {
       const btn = document.querySelector('[data-testid="session-project"]');
       if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click();
-      return 'ok';
-    })()
-  `,
-  workmodemenu: `
-    (() => {
-      window.__yanStore.setState({ workMode: null });
-      /* 组件自己监听 document mousedown 关菜单 —— 模拟一次点外部，
-         而不是直接移 DOM（浮层由 React 管，手拆会与它的状态不一致） */
-      document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       return 'ok';
     })()
   `,
@@ -5201,8 +4201,9 @@ const AFTER_STATE = {
       window.__yanStore.setState({
         session: { ...st.session, isCompacting: false, compaction: undefined, lastCompaction: undefined }
       });
-      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
-      if (toggle && toggle.getAttribute('aria-expanded') === 'true') toggle.click();
+      /* 关掉输入框圆环浮层（详情不再靠工具页里的 ctx-details-toggle） */
+      const trigger = document.querySelector('[data-testid="composer-context"]');
+      if (trigger && trigger.getAttribute('aria-expanded') === 'true') trigger.click();
       return 'ok';
     })()
   `,
@@ -5259,8 +4260,20 @@ const AFTER_STATE = {
       return 'ok';
     })()
   `,
+  /* 花费详情浮层截图后关掉，避免遮挡后续状态的画面 */
+  usageturn: `(() => { const d = document.querySelector('[data-testid="status-details"]'); if (d) document.querySelector('[data-testid="sb-cost"]')?.click(); return 'ok'; })()`,
+  usageagg: `(() => { const d = document.querySelector('[data-testid="status-details"]'); if (d) document.querySelector('[data-testid="sb-cost"]')?.click(); return 'ok'; })()`,
+  usagepartial: `(() => { const d = document.querySelector('[data-testid="status-details"]'); if (d) document.querySelector('[data-testid="sb-cost"]')?.click(); return 'ok'; })()`,
+  /* 工具启动器菜单截图后关掉：菜单背景层是全屏 fixed 的，留着会遮住后续状态的截图与命中测试 */
+  righttoolmenu: `
+    (() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      const backdrop = document.querySelector('.tile-menu-backdrop');
+      backdrop?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+      return 'ok';
+    })()
+  `,
   subagentnote: `(() => { window.__yanStore.setState({ subagentRuns: [] }); return 'ok'; })()`,
-  sessionmap: `(() => { window.__yanStore.setState({ workspaceMode: 'coding' }); return 'ok'; })()`,
   /* 预览把当前会话指到了合成会话，截图后恢复基线 */
   sessionpreview: `
     (() => {
@@ -5563,20 +4576,23 @@ if (ONLY.includes('codemodepreference')) {
   for (const group of GROUPS.slice(0, 3)) group.states.push('codemodepreference');
 }
 
-/* 这些状态检查工具工作页；每张图开始前都回到同一个工具表面。 */
+/*
+ * 这些状态需要先回到同一个初始表面：关设置 / 关预览、打开右栏，
+ * 具体工具磁贴（文件 / 日志 / 任务 / 子代理）由各状态自己用
+ * `inkstone-workspace-launch` 打开。
+ */
 const TOOL_PANEL_STATES = new Set([
-  'huboverview', 'hubcreate', 'hubsplit', 'hubfallback',
   'nativecontext',
-  'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'wschanges', 'wsunknown',
+  'compaction', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'wschanges', 'wsunknown',
   'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'envlinks', 'sourcesearch',
-  'extdiag', 'taskhost', 'subagentnote', 'subagentfailed', 'compactionreclaim', 'ctxpreset', 'ctxincompressible', 'quotatone'
+  'extdiag', 'taskhost', 'subagentnote', 'subagentfailed', 'ctxincompressible', 'quotatone'
 ])
 const RESET_MESSAGE_STATES = new Set([
   'codemode',
   'segmented', 'artifact', 'imageprogress', 'toolgroup', 'toolterm', 'taskcard', 'turnfooter',
   'turntime', 'filelink', 'turnstatus', 'usageturn', 'usageagg', 'usagepartial'
 ])
-const RESET_SESSION_STATES = new Set(['autonomousrunning', 'forkdraft', 'railmini', 'railsessions'])
+const RESET_SESSION_STATES = new Set(['forkdraft', 'railmini', 'railsessions'])
 
 /*
  * 只跑某几组（下标，逗号分隔）：`YAN_MATRIX_GROUP=0,2`。
@@ -5859,8 +4875,7 @@ async function main() {
             const menu = document.querySelector('[data-testid="session-project"]');
             if (menu?.getAttribute('aria-expanded') === 'true') menu.click();
             await new Promise((r) => setTimeout(r, 160));
-            document.querySelector('[data-testid="right-window-tab-tools"]')?.click();
-            return 'tools-ready';
+            return 'surface-ready';
           })()
         `)
         await wait(220)
@@ -5883,6 +4898,11 @@ async function main() {
       if (state === 'railwaiting') {
         /* `chainjoin` changes message count; let Rail's delayed refreshSessions settle before replacing sessions. */
         await wait(1100)
+      }
+      if (state === 'railreorder') {
+        /* 前一个改过消息数的状态会让 Rail 在 800ms 后 refreshSessions（夹具会盖掉本状态的合成项目）；
+           先等它落地，再由本状态写入要拖的会话/项目，避免拖拽中途列表被换掉。 */
+        await wait(1000)
       }
       /*
        * 窗口被遮挡 / 隐藏时 Chromium 会跳过 View Transition 并暂停动画帧；
@@ -6021,6 +5041,6 @@ main()
   .then(() => clearTimeout(watchdog))
   .catch((err) => {
     clearTimeout(watchdog)
-    console.error('✗ 视觉矩阵失败：', err)
+    console.error('✗ 视觉矩阵失败：', err?.stack ?? err)
     app.exit(2)
   })

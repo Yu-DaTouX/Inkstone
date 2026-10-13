@@ -35,8 +35,12 @@
     }
     const models = store.getState().models
     out.push(`  可用模型 ${models.length} 个`)
+    if (models.length < 2) {
+      /* 纯合成模式（空凭证、不读个人模型目录）下没有可切换的模型：如实跳过。 */
+      out.push('  ~ 跳过：模型列表为空（合成模式无凭证/模型目录），切换断言不适用')
+      return out.join('\n')
+    }
     ok(models.length > 1, '真实模型列表里有多个模型（能测切换）')
-    if (models.length < 2) return out.join('\n')
 
     const first = store.getState().session?.model
     const others = models.filter((m) => key(m) !== key(first))
