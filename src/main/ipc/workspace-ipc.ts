@@ -11,7 +11,7 @@ import { compactionInfo } from '../compaction'
 import { DEFAULT_AUTO_COMPACT_TOKENS } from '../../shared/context-limits'
 import { allowTrust, revokeTrust, trustStatus } from '../project-trust'
 import { forkContext, forkFileRefs } from '../fork-rebind-service'
-import { providerQuota } from '../quota'
+import { providerQuotaWithFallback } from '../quota'
 import type { HandoffPackage } from '../../shared/handoff'
 import { normalizeSessionFileKey } from '../work-mode-service'
 import type { HandoffStore } from '../handoff-service'
@@ -98,5 +98,5 @@ export function registerWorkspaceIpc(ipc: IpcRegistrar, deps: WorkspaceIpcDeps):
     return forkContext(req, packageOf)
   })
 
-  rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
+  rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuotaWithFallback(String(provider ?? ''), Number(budget) || undefined))
 }

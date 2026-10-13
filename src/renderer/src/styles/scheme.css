@@ -281,6 +281,20 @@
 .msg-error > .ico {
   margin-top: var(--sp-1);
 }
+.msg-error:has(> .msg-error-action) {
+  flex-wrap: wrap;
+}
+.msg-error:has(> .msg-error-action) > span:not(.msg-error-action) {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.msg-error-action {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1 0 100%;
+  color: var(--fg-dim);
+}
 
 /* 解说比正式回答退一级 */
 .turn-commentary .md {
@@ -957,4 +971,18 @@ html[data-theme='light'] .outline-preview {
 /* 过程摘要在正文上方：与正文之间留一点距离（并列栏里的 .tproc 不在 .turn-main 内，不受影响） */
 .turn-main > .tproc {
   margin-bottom: var(--sp-3);
+}
+
+/* 额度浮层底部的长任务开关：一行标签加行尾开关 */
+.quota-pop-long {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.quota-pop-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-width: 0;
 }

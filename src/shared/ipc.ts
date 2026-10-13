@@ -126,6 +126,7 @@ import type { ToolLayout } from './tool-layout'
 /* 活动档案（实施-25 P01）：类型与纯逻辑在 `./agent-profile`，这里转发给渲染端。 */
 import type { AgentProfilePatch, AgentProfileState } from './agent-profile'
 import type { AccountQuotaCliSource, AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from './account-quota'
+import type { CodexFailoverResult } from './quota-failover'
 export type { AgentActivity, AgentProfile, AgentProfileKind, AgentProfilePatch, AgentProfileState } from './agent-profile'
 export type { WorkMode, WorkModeState } from './work-mode'
 export type { GoalState, GoalPhase, GoalLink, GoalLinkKind, PursuedBrief, ReadyApprovalMode } from './goal'
@@ -1407,6 +1408,8 @@ export interface ProviderQuota {
   currency?: string
   label?: string
   error?: string
+  /** 本次查询失败的原因；有它时其余字段是上次成功的旧数据（checkedAt 为那次的时间），只供展示 */
+  staleError?: string
   /**
    * 分窗口的额度（订阅制常见：5 小时 + 每周）。
    * 有它时右栏会在总额度下面逐条画进度条，而不是只给一个数字。
@@ -3405,6 +3408,8 @@ export interface YanBridge {
   codexAccounts(): Promise<CodexAccountView[]>
   /** 切到另一个保存的 ChatGPT 账号；pi 在当前回合结束后重启生效 */
   codexAccountSwitch(key: string): Promise<{ ok: boolean; error?: string }>
+  /** 额度用尽后换到下一个还有额度的 ChatGPT 账号；skip 是本轮已经试过的账号 key。 */
+  codexAccountFailover(skip: string[]): Promise<CodexFailoverResult>
   /** 移除保存的 ChatGPT 账号；是当前账号时同时退出登录 */
   codexAccountRemove(key: string): Promise<{ ok: boolean; error?: string }>
   /** 外部命令（bash / git）是否可用；缺失时带安装说明 */

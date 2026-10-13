@@ -6,7 +6,7 @@ import { quotaTone } from '../../../../shared/quota-tone'
 import { money, quotaCompactWindows, windowPct } from '../../../../shared/quota-mini'
 import { claimDueQuotaWindows, decideQuotaRefresh } from '../../../../shared/quota-refresh'
 import { type QuotaWindow } from '../../../../shared/ipc'
-import { Button, IconButton, Input, MiniMeter } from '../ui'
+import { Button, IconButton, Input, MiniMeter, Switch } from '../ui'
 import { DetailTrigger } from '../shell/DetailPopover'
 import { selectFiniteQuotaWindow } from './workspace-control-guards'
 
@@ -42,6 +42,19 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
   const supportedRef = useRef<boolean | null>(null)
   /** 相同窗口的过期响应不能驱动下一笔即时查询。 */
   const resetAttemptsRef = useRef(new Set<string>())
+  /* 长任务开关：都只作用于当前会话 */
+  const sessionId = useStore((s) => s.session?.sessionId)
+  const failoverOn = useStore((s) => !!s.session && s.quotaFailover?.sessionId === s.session.sessionId)
+  const keepRunning = useStore((s) => (s.session && s.keepRunning?.sessionId === s.session.sessionId ? s.keepRunning : null))
+  const setQuotaFailover = useStore((s) => s.setQuotaFailover)
+  const setKeepRunning = useStore((s) => s.setKeepRunning)
+  const [codexAccounts, setCodexAccounts] = useState(0)
+  useEffect(() => {
+    if (provider !== 'openai-codex') return
+    let live = true
+    void window.yan.codexAccounts().then((list) => { if (live) setCodexAccounts(list.length) }).catch(() => undefined)
+    return () => { live = false }
+  }, [provider])
 
   const refresh = useCallback(async () => {
     if (!provider) return
@@ -59,7 +72,8 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
         setError(next.error)
       } else {
         setQuota(next)
-        setError(next.error ?? '')
+        /* 主进程退回了上次成功的数据：显示旧数字并说明本次失败的原因 */
+        setError(next.staleError ?? next.error ?? '')
         checkedAtRef.current = Date.now()
       }
       supportedRef.current = next.supported ?? true
@@ -238,7 +252,7 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
       {/* 查询失败时保留旧快照，但必须说清它是什么时候的（方案 7.2） */}
       {error && !quota?.error ? (
         <div className="rp-dim" data-testid="quota-error">
-          {t('quota.stale', { msg: error })}
+          {quota ? t('quota.stale', { msg: error }) : t('acct.failed', { msg: error })}
         </div>
       ) : null}
 
@@ -343,7 +357,8 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
         </div>
       ) : null}
       {quota?.error ? <div className="rp-dim" data-testid="quota-error">{quota.supported ? quota.error : t('quota.unsupported')}</div> : null}
-      {error && !quota?.error ? <div className="rp-dim" data-testid="quota-error">{t('quota.stale', { msg: error })}</div> : null}
+      {/* 没有成功过的快照时只说失败，不能声称下面还有旧数据 */}
+      {error && !quota?.error ? <div className="rp-dim" data-testid="quota-error">{quota ? t('quota.stale', { msg: error }) : t('acct.failed', { msg: error })}</div> : null}
       {quota?.windows?.map((w) => {
         const realPct = windowPct(w, 1) ?? 0
         const tone = quotaTone(realPct, w.exceeded)
@@ -365,10 +380,29 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
           </div>
         )
       })}
-      <div className="quota-pop-foot">
-        {quota ? <span data-testid="quota-checked" title={new Date(quota.checkedAt).toLocaleString()}>{t('quota.checkedAt', { time: new Date(quota.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) })}</span> : <span>{loading ? '…' : ''}</span>}
-        {budgetControl}
-      </div>
+      {sessionId ? (
+        <div className="quota-pop-long" data-testid="quota-long-task">
+          <span className="quota-block-sub">{t('quota.long.title')}</span>
+          {provider === 'openai-codex' && codexAccounts > 1 ? (
+            <div className="quota-pop-switch" title={t('quota.failover.hint')}>
+              <span className="quota-block-label">{t('quota.long.failover')}</span>
+              <Switch label={t('quota.long.failover')} checked={failoverOn} testId="quota-auto-failover" onChange={setQuotaFailover} />
+            </div>
+          ) : null}
+          <div className="quota-pop-switch" title={t('quota.long.keepHint')}>
+            <span className="quota-block-label">{t('quota.long.keep')}</span>
+            <Switch label={t('quota.long.keep')} checked={!!keepRunning} testId="quota-keep-running" onChange={setKeepRunning} />
+          </div>
+          {keepRunning ? <span className="quota-block-sub" data-testid="quota-keep-count">{t('quota.long.count', { n: keepRunning.count })}</span> : null}
+        </div>
+      ) : null}
+      {/* 没有时间、没在加载、也没有预算控件时整行不占位，否则浮层底部留一块空白 */}
+      {quota || loading || budgetControl ? (
+        <div className="quota-pop-foot">
+          {quota ? <span data-testid="quota-checked" title={new Date(quota.checkedAt).toLocaleString()}>{t('quota.checkedAt', { time: new Date(quota.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) })}</span> : <span>{loading ? '…' : ''}</span>}
+          {budgetControl}
+        </div>
+      ) : null}
     </div>
   )
   if (variant === 'status') return (

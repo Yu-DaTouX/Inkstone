@@ -18,6 +18,8 @@ import { Caret, IconButton, Segmented } from '../ui'
 import { ChatImage } from './ChatImage'
 import { HtmlArtifactPreview } from './HtmlArtifactPreview'
 import { isHtmlArtifact } from '../../../../shared/html-artifact-preview'
+import { isQuotaWaitError } from '../../../../shared/quota-resume'
+import { QuotaResumeAction } from './QuotaResumeAction'
 
 /**
  * 回合视图 —— 把「一轮对话」渲染成**一块**。
@@ -175,6 +177,9 @@ function BashTurnView({ turn }: { turn: BashTurn }) {
 /* ------------------------------------------------------------------ 助手 */
 
 function AssistantTurnView({ turn, streaming, readOnly }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean }) {
+  /* 续跑按钮只给当前会话的最后一个回合：并排的其它会话和历史回合的旧错误不挂。 */
+  const lastMessageId = useStore((s) => s.messages.at(-1)?.id)
+  const canResume = !readOnly && !streaming && !!turn.error && !!lastMessageId && turn.sourceIds.includes(lastMessageId) && isQuotaWaitError(turn.error)
   /*
    * 成功进度只是过程状态：artifact 已经落盘后，用户需要看到的是最终文件，
    * 不是一张永远停在「已完成」的进度卡。失败则保留，方便解释原因并重试。
@@ -230,6 +235,7 @@ function AssistantTurnView({ turn, streaming, readOnly }: { turn: AssistantTurn;
           <div className="msg-error" role="alert">
             <Icon name="alert-circle" size={12} />
             <span>{turn.error}</span>
+            {canResume ? <QuotaResumeAction /> : null}
           </div>
         ) : null}
         {visibleImageProgress.length ? <ImageProgressList items={visibleImageProgress} /> : null}
