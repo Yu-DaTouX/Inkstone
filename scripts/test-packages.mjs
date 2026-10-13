@@ -16,6 +16,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
+import { writePackageSourcesForTest } from './helpers/package-sources-fixture.mjs'
 
 export async function runPackagesTests(ok) {
   const {
@@ -28,8 +29,7 @@ export async function runPackagesTests(ok) {
     listPackages,
     runPackageAction,
     installManagedPiPackage,
-    configurePackageContext,
-    writePackageSourcesForTest
+    configurePackageContext
   } = await import('../out/test/packages.mjs')
 
   /* ── 1. 纯逻辑：source 的形状 ─────────────────────────── */

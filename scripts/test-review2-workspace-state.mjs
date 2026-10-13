@@ -37,6 +37,13 @@ runtimes = runtime.pruneSessionRuntimes(runtimes, new Set())
 assert.equal(Object.keys(runtimes).length, 16, 'draft-only session cache is bounded')
 assert.ok(Object.values(runtimes).every((item) => item.draft), 'retained cache entries preserve drafts')
 assert.ok(!runtimes['draft-0'], 'least recently used draft is evicted')
+const deadlineRuntime = envelope('deadline')
+const deadlineKey = runtime.sessionRuntimeKey(deadlineRuntime)
+let deadlineMap = runtime.reduceSessionRuntime({}, deadlineRuntime, { ch: 'ui-request', payload: { id: 'deadline-question', kind: 'select', title: 'Pick', options: [], deadline: 1 } })
+deadlineMap = runtime.reduceSessionRuntime(deadlineMap, deadlineRuntime, { ch: 'ui-deadline', payload: { id: 'deadline-question', timeout: 30000, deadline: 12345 } })
+assert.equal(deadlineMap[deadlineKey].uiRequests[0].deadline, 12345, '延长截止时间写进会话缓存，不被下次投影复活旧值')
+assert.equal(deadlineMap[deadlineKey].uiRequests[0].timeout, 30000)
+assert.equal(deadlineMap[deadlineKey].uiRequests.length, 1)
 
 const consumers = await compile('src/renderer/src/state/push-consumers.ts')
 const request = { id: 'question-1', title: 'Pick', message: 'Choose', kind: 'select', options: [] }

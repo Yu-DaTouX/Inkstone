@@ -119,7 +119,12 @@
       `头部显示范围 1-5（实际 ${JSON.stringify(document.querySelector('[data-testid="file-preview-line"]')?.textContent ?? null)}）`
     )
 
-    /* 历史消息来源目录优先于当前 cwd：同名 README 应打开 docs 下的文件。 */
+    /* 历史 cwd 必须是已授权的项目/会话目录，不能仅靠伪造 sourceCwd 越过宿主边界。 */
+    const registered = await window.yan.patchSettings({ projects: [
+      ...(store.getState().settings?.projects ?? []),
+      { id: 'filelink-history-fixture', cwd: historicalCwd, name: '历史来源隔离夹具' }
+    ] })
+    ok(registered.projects.some((project) => project.cwd === historicalCwd), '历史来源隔离夹具已显式登记项目，不绕过宿主目录授权')
     store.getState().applyPush({
       ch: 'sync',
       payload: [
@@ -141,6 +146,7 @@
     historicalLink?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(1400)
     const historicalPreview = store.getState().filePreview
+    out.push(`  历史预览诊断：${JSON.stringify(historicalPreview?.data)}`)
     const normalizedAbs = String(historicalPreview?.data?.abs ?? '').replace(/[\\/]+/g, '/').toLowerCase()
     const normalizedHistorical = `${historicalCwd}/README.md`.replace(/[\\/]+/g, '/').toLowerCase()
     const normalizedActive = `${cwd}/README.md`.replace(/[\\/]+/g, '/').toLowerCase()
@@ -181,7 +187,8 @@
       !!document.querySelector('.fp-row[data-line="4000"]'),
       '目标行 4000 真的渲染出来了（不是估算滚动）'
     )
-    ok(!document.querySelector('.fp-row[data-line="1"]'), '没有把文件开头当成第一行')
+    const bigPreviewRoot = [...document.querySelectorAll('[data-testid="file-preview"]')].find((node) => node.getAttribute('data-file-name') === 'big.txt')
+    ok(!!bigPreviewRoot && !bigPreviewRoot.querySelector('.fp-row[data-line="1"]'), '没有把文件开头当成第一行（只核对当前 big.txt 预览，不误计其他文件窗格）')
 
     /* H-4 出口 7：文件不在了 —— 保留原路径 + 重试 + 定位父目录 */
     store.getState().applyPush({

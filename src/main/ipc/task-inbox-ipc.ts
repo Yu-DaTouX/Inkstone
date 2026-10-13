@@ -92,8 +92,9 @@ export function registerTaskInboxIpc(ipc: IpcRegistrar, deps: TaskInboxIpcDeps):
     const id = String(sessionId ?? '')
     if (id && !list.includes(id)) {
       const candidate = [...list, id]
-      await writeInboxState({ dismissed: candidate, readUntil: inboxReadUntil })
-      inboxDismissed = candidate
+      const persisted = await writeInboxState({ dismissed: candidate, readUntil: inboxReadUntil })
+      inboxDismissed = persisted.dismissed
+      inboxReadUntil = persisted.readUntil
       /* 名单变了要让下一次查询重算（TTL 缓存里还带着它） */
       inboxService.invalidate()
     }
@@ -104,8 +105,9 @@ export function registerTaskInboxIpc(ipc: IpcRegistrar, deps: TaskInboxIpcDeps):
     const id = String(sessionId ?? '')
     if (id) {
       const candidate = list.filter((x) => x !== id)
-      await writeInboxState({ dismissed: candidate, readUntil: inboxReadUntil })
-      inboxDismissed = candidate
+      const persisted = await writeInboxState({ dismissed: candidate, readUntil: inboxReadUntil })
+      inboxDismissed = persisted.dismissed
+      inboxReadUntil = persisted.readUntil
       inboxService.invalidate()
     }
     return { ok: Boolean(id), dismissed: inboxDismissed ?? [] }
@@ -118,8 +120,9 @@ export function registerTaskInboxIpc(ipc: IpcRegistrar, deps: TaskInboxIpcDeps):
     const id = String(sessionId ?? '')
     if (!id) return { ok: false }
     const candidate = { ...inboxReadUntil, [id]: Date.now() }
-    await writeInboxState({ dismissed: inboxDismissed ?? [], readUntil: candidate })
-    inboxReadUntil = candidate
+    const persisted = await writeInboxState({ dismissed: inboxDismissed ?? [], readUntil: candidate })
+    inboxDismissed = persisted.dismissed
+    inboxReadUntil = persisted.readUntil
     inboxService.invalidate()
     return { ok: true }
   }))

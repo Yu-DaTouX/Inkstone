@@ -27,6 +27,7 @@ import { filePreviewUrl } from '../../lib/file-preview-url'
 
 /** 一次最多渲染多少行（2MB 文本可能有几万行，全铺出来会卡） */
 const MAX_RENDER_LINES = 2000
+const MAX_MARKDOWN_CHARS = 64 * 1024
 
 /** `focus`：预览独占右栏（收起下方的文件树等分区），由右栏持有状态 */
 export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: { focus?: boolean; onToggleFocus?: () => void; resourceKey?: string } = {}) {
@@ -61,6 +62,12 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
     const all = data.text.split('\n')
     return all.length > MAX_RENDER_LINES ? all.slice(0, MAX_RENDER_LINES) : all
   }, [data?.text])
+  const markdownText = useMemo(() => {
+    let text = lines.join('\n').slice(0, MAX_MARKDOWN_CHARS)
+    const last = text.charCodeAt(text.length - 1)
+    if (last >= 0xd800 && last <= 0xdbff) text = text.slice(0, -1)
+    return text
+  }, [lines])
   /* 窗口化的文件：行号从真实起始行开始，不重新从 1 数 */
   const startLine = data?.windowStart ?? 1
 
@@ -261,9 +268,10 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
 
         {isText && isMarkdown && mode === 'read' ? (
           <>
+            {(data.text?.length ?? 0) > MAX_MARKDOWN_CHARS ? <div className="fp-note">{t('fp.truncated')}</div> : null}
             <div className="fp-markdown prose md" data-testid="file-preview-markdown">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                {lines.join('\n')}
+                {markdownText}
               </ReactMarkdown>
             </div>
             {(data.text?.split('\n').length ?? 0) > MAX_RENDER_LINES ? (
@@ -303,7 +311,7 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
                 )
               })}
             </pre>
-            {lines.length === MAX_RENDER_LINES ? (
+            {(data.text?.split('\n').length ?? 0) > MAX_RENDER_LINES ? (
               <div className="fp-note">{t('fp.tooManyLines', { n: MAX_RENDER_LINES })}</div>
             ) : null}
             {data?.truncated ? <div className="fp-note">{t('fp.truncated')}</div> : null}

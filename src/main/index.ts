@@ -2652,7 +2652,9 @@ function registerIpc(): void {
      * 界面无法区分「已打开」与「文件已经不在了」。
      * 「打开所在目录」的语义保留，只补上目标存在性校验与错误回传。
      */
-    if (!p) return { ok: false, error: 'empty path' }
+    if (typeof p !== 'string' || !p.trim()) return { ok: false, error: 'empty path' }
+    /* 在任何文件系统查询前拒绝 UNC，避免链接触发远端认证。 */
+    if (/^[\\/]{2}/.test(p.trim())) return { ok: false, error: 'network path' }
     if (!existsSync(p)) return { ok: false, error: 'missing' }
     const err = await shell.openPath(existsSync(dirname(p)) ? dirname(p) : p)
     return err ? { ok: false, error: err } : { ok: true }

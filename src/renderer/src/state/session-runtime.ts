@@ -278,6 +278,14 @@ export function reduceSessionRuntime(
       }
       break
     }
+    case 'ui-deadline':
+      next = {
+        ...next,
+        uiRequests: next.uiRequests.map((item) => item.id === message.payload.id
+          ? { ...item, timeout: message.payload.timeout, deadline: message.payload.deadline }
+          : item)
+      }
+      break
     case 'ui-resolved': {
       /*
        * 手机端答复后同样要从实例缓存里移除。

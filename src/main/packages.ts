@@ -22,7 +22,7 @@
  * "安排安全的生效时机"，代价是用户要多点一下。
  */
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 
@@ -336,6 +336,7 @@ function runPi(
       timedOut = true
       if (process.platform === 'win32' && child.pid) {
         const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+        killer.on('error', () => child.kill('SIGKILL'))
         killer.unref()
       } else child.kill('SIGKILL')
     }, 180_000)
@@ -502,23 +503,4 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
     }
   }
   return { ok: true, output: res.output || 'ok', listing: listPackages(cwd) }
-}
-
-/**
- * 确保 settings.json 的 `packages` 字段存在且是数组。
- *
- * 只由**测试**使用（`pi install` 自己会写这个字段）—— 放在这里是因为
- * 「真源长什么样」这个问题只该在这个文件里回答一次。
- */
-export function writePackageSourcesForTest(settingsPath: string, sources: string[]): void {
-  const json = readJson<Record<string, unknown>>(settingsPath) ?? {}
-  json.packages = sources
-  const tmp = `${settingsPath}.${process.pid}.${Date.now()}.tmp`
-  try {
-    writeFileSync(tmp, JSON.stringify(json, null, 2), { encoding: 'utf8', flag: 'wx' })
-    renameSync(tmp, settingsPath)
-  } catch (error) {
-    rmSync(tmp, { force: true })
-    throw error
-  }
 }

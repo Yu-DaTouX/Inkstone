@@ -13,7 +13,7 @@ async function rpc(command, params) {
   return response.json()
 }
 async function handle(message) {
-  if (message.id === undefined) return
+  if (!message || typeof message !== 'object' || Array.isArray(message) || message.id === undefined) return
   const reply = (result) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result })}\n`)
   try {
     if (message.method === 'initialize') return reply({ protocolVersion: message.params?.protocolVersion ?? '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'inkstone-hub', version: '1.0.0' } })
@@ -34,6 +34,6 @@ process.stdin.on('data', (data) => {
   let end
   while ((end = buffer.indexOf('\n')) >= 0) {
     const line = buffer.slice(0, end); buffer = buffer.slice(end + 1)
-    try { void handle(JSON.parse(line)) } catch { process.exitCode = 2 }
+    try { void handle(JSON.parse(line)).catch(() => { process.exitCode = 2 }) } catch { process.exitCode = 2 }
   }
 })

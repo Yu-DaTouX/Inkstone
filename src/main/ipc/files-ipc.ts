@@ -152,9 +152,15 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
      * 而附件是内容寻址、没有备份，删了不可逆 —— 宁可这一次什么也不清。
      */
     if (!existsSync(sessionsDir)) return { removed: 0, bytes: 0, kept: 0 }
-    const fingerprint = (): string => JSON.stringify(listSessionFiles(sessionsDir).sort().map((path) => {
-      const st = statSync(path)
-      return [path, st.size, st.mtimeMs, st.ctimeMs]
+    const fingerprint = (): string => JSON.stringify(listSessionFiles(sessionsDir).sort().flatMap((path) => {
+      try {
+        const st = statSync(path)
+        return [[path, st.size, st.mtimeMs, st.ctimeMs]]
+      } catch (error) {
+        // 扫描后消失的文件跳过；前后指纹变化仍会阻止删除附件。
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+        throw error
+      }
     }))
     const initial = fingerprint()
     const referenced = await referencedAttachmentNames(listSessionFiles(sessionsDir))

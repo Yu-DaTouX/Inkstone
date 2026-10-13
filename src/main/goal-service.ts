@@ -21,7 +21,8 @@
  */
 
 import { parsePersistedDocument } from './persisted-document'
-import { mkdir, rename, writeFile, rm } from 'node:fs/promises'
+import { mkdir, rename, rm } from 'node:fs/promises'
+import { writeFileDurable } from './write-file-durable'
 import { readFile } from 'node:fs/promises'
 import { readFileSync, statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -314,7 +315,7 @@ async function writeGoalResumeSnapshotUnlocked(
       }
     : { version: 1, runtimeKey, operationId: null, summary: null, kind: null, at: null }
   const temp = `${target}.${process.pid}.tmp`
-  await writeFile(temp, JSON.stringify(record), 'utf8')
+  await writeFileDurable(temp, JSON.stringify(record))
   try {
     await rename(temp, target)
   } catch (error) {
@@ -1291,7 +1292,7 @@ export class GoalStore {
     const temp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
     try {
       await mkdir(dirname(path), { recursive: true })
-      await writeFile(temp, JSON.stringify(this.doc), 'utf8')
+      await writeFileDurable(temp, JSON.stringify(this.doc))
       await rename(temp, path)
     } catch (error) {
       await rm(temp, { force: true }).catch(() => undefined)

@@ -22,6 +22,7 @@ export default function serviceAuthority(pi) {
   })
   pi.on('tool_result', async event => {
     // A missing result receipt must fail the turn rather than mask an unknown side effect.
-    await host('receipt', event)
+    const result = await host('receipt', event)
+    if (!result.allowed) throw new Error(result.reason ?? '找不到执行回执，结果待核实')
   })
 }

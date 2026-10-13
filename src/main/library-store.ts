@@ -12,7 +12,8 @@
  * 读-改-写之间不能让第二个提交插进来。
  */
 import { parsePersistedDocument } from './persisted-document'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm } from 'node:fs/promises'
+import { writeFileDurable } from './write-file-durable'
 import { dirname, join } from 'node:path'
 import {
   EMPTY_LIBRARY,
@@ -558,7 +559,7 @@ export class LibraryStore {
     try {
       await mkdir(dirname(target), { recursive: true })
       const payload = JSON.stringify(this.doc, null, 2)
-      await writeFile(temp, payload, 'utf8')
+      await writeFileDurable(temp, payload)
       await rename(temp, target)
     } catch (error) {
       await rm(temp, { force: true }).catch(() => undefined)

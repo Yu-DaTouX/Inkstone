@@ -25,9 +25,6 @@
   background: var(--bg-1);
   transition: border-color var(--dur) var(--ease);
 }
-.composer:focus-within {
-  border-color: var(--accent-line);
-}
 /* 自主模式：静态的强调色边界，不加光带（固定状态位置、克制反馈） */
 .composer-wrap.autonomous .composer {
   border-color: var(--accent-line);
@@ -2181,7 +2178,5 @@
   outline-offset: 1px;
   border-radius: var(--r-md);
 }
-.model-account { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex: none; min-width: 0; padding-inline: var(--sp-1); color: var(--fg-mute); font-size: var(--fs-xs); }
-.model-account .model-provider { flex: 0 1 auto; min-width: 0; max-width: 70%; }
 .model-account { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex: none; min-width: 0; padding-inline: var(--sp-1); color: var(--fg-mute); font-size: var(--fs-xs); }
 .model-account .model-provider { flex: 0 1 auto; min-width: 0; max-width: 70%; }

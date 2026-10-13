@@ -561,6 +561,10 @@ export class SubagentController {
   }
 
   private async stopRun(run: Run, cleanupReview: boolean): Promise<void> {
+    // 先声明停止意图，abort/close触发的退出回调不能再当作异常失败。
+    run.status = 'cancelled'
+    run.endReason = 'stopped'
+    run.error = undefined
     try {
       await run.rpc.command('abort')
     } catch {

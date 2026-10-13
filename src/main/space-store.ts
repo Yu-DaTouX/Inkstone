@@ -11,7 +11,8 @@
  *    绑定，删掉空间会让这些引用变成孤儿。真正的「移除」语义在 P03 定义。
  */
 import { parsePersistedDocument } from './persisted-document'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm } from 'node:fs/promises'
+import { writeFileDurable } from './write-file-durable'
 import { dirname, join } from 'node:path'
 import {
   MAX_SPACES,
@@ -256,7 +257,7 @@ export class SpaceStore {
     await mkdir(dirname(target), { recursive: true })
     const temp = `${target}.${process.pid}.tmp`
     const payload = JSON.stringify(candidate, null, 2)
-    await writeFile(temp, payload, 'utf8')
+    await writeFileDurable(temp, payload)
     try {
       await rename(temp, target)
     } catch (error) {
