@@ -45,6 +45,7 @@ export function QueueStack() {
         <div className="qrow pending" key={item.id} title={item.text} data-testid="queue-pending">
           <Icon name="send" size={12} />
           <span className="qrow-text">{item.text}</span>
+          {!!item.images?.length && <span className="qrow-tag">{t('queue.images', { n: item.images.length })}</span>}
           <span className="qrow-tag">{t('queue.hold')}</span>
           {roundRunning ? (
             <>
@@ -89,6 +90,7 @@ export function QueueStack() {
         <div className="qrow steering" key={item.id} title={item.text} data-testid="queue-row">
           <Icon name="queue" size={12} />
           <span className="qrow-text">{item.text}</span>
+          {!!item.images?.length && <span className="qrow-tag">{t('queue.images', { n: item.images.length })}</span>}
           <span className="qrow-tag">{t('queue.inserting')}</span>
           <button
             className="qrow-jump"
@@ -104,6 +106,7 @@ export function QueueStack() {
         <div className="qrow" key={item.id} title={item.text} data-testid="queue-row">
           <Icon name="history" size={12} />
           <span className="qrow-text">{item.text}</span>
+          {!!item.images?.length && <span className="qrow-tag">{t('queue.images', { n: item.images.length })}</span>}
           <button
             className="qrow-jump"
             data-testid="queue-steer"
