@@ -8,6 +8,7 @@ import { IconButton } from '../ui'
 import { ReasoningCapsule } from './Reasoning'
 import { ToolGroup } from './ToolRow'
 import { runPhaseText, useRunProgress } from './run-status'
+import { resolveTurnModelDisplay } from './turn-model-display'
 
 /**
  * 回合的活动行与执行过程（设计规范「界面重构」）。
@@ -119,10 +120,13 @@ export function TurnMeta({ turn }: { turn: AssistantTurn }) {
   }, [copyState])
   const reply = replyText(turn)
   const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatDuration(turn.elapsedMs) : null
-  if (!reply && !turn.timestamp && !elapsed) return null
+  const models = useStore((s) => s.models)
+  const modelDisplay = turn.model ? resolveTurnModelDisplay(turn.model, models) : null
+  if (!reply && !turn.timestamp && !elapsed && !turn.model) return null
   return (
     <div className="tact tact-foot" data-testid="turn-footer">
       {turn.timestamp ? <TurnClock timestamp={turn.timestamp} /> : null}
+      {modelDisplay ? <span className="tact-model" title={`${t('status.model')}: ${modelDisplay.label} (${modelDisplay.identity})`} aria-label={`${t('status.model')}: ${modelDisplay.label} (${modelDisplay.identity})`} data-testid="turn-model">{modelDisplay.label}</span> : null}
       {elapsed ? (
         <span className="tact-time" title={turn.waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) }) : t('tok.elapsedTip')}>{elapsed}</span>
       ) : null}

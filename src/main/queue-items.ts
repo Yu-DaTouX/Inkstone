@@ -9,7 +9,7 @@
  * 里有一条被消费了。这里只做“按原文摘掉一条”的判定，不碰进程与 IO，
  * 因此可以纯单测覆盖（`scripts/test-queue-items.mjs`）。
  */
-import type { QueueItem, QueueState } from '../shared/ipc'
+import type { QueueItem, QueueSnapshot, QueueState } from '../shared/ipc'
 
 /**
  * 从队列里摘掉一条匹配的项。
@@ -23,12 +23,13 @@ import type { QueueItem, QueueState } from '../shared/ipc'
  *
  * @returns 摘除后的新状态；没有任何变化时返回 null（调用方据此决定要不要推）
  */
-export function consumeQueuedItem(state: QueueState, text: string): QueueState | null {
+export function consumeQueuedItem(state: QueueState, text: string, images?: QueueItem['images']): QueueState | null {
   const want = (text ?? '').trim()
-  if (!want) return null
+  if (!want && !images?.length) return null
 
   const take = (list: QueueItem[]): QueueItem[] | null => {
-    const i = list.findIndex((item) => (item.text ?? '').trim() === want)
+    const i = list.findIndex((item) => (item.text ?? '').trim() === want &&
+      (images === undefined || sameQueueImages(item.images, images)))
     if (i < 0) return null
     return [...list.slice(0, i), ...list.slice(i + 1)]
   }
@@ -38,6 +39,40 @@ export function consumeQueuedItem(state: QueueState, text: string): QueueState |
   const followUp = take(state.followUp)
   if (followUp) return { steering: state.steering, followUp }
   return null
+}
+
+export function sameQueueImages(a: QueueItem['images'], b: QueueItem['images']): boolean {
+  return (a?.length ?? 0) === (b?.length ?? 0) &&
+    (a ?? []).every((image, index) => image.data === b?.[index].data && image.mimeType === b?.[index].mimeType)
+}
+
+/** 原生队列从同文本的队首消费，因此缩短快照时保留后面的身份。 */
+export function reconcileQueueItems(raw: string[], previous: QueueItem[], create: (text: string) => QueueItem): QueueItem[] {
+  const buckets = new Map<string, QueueItem[]>()
+  const counts = new Map<string, number>()
+  for (const text of raw) counts.set(text, (counts.get(text) ?? 0) + 1)
+  for (const item of previous) {
+    const bucket = buckets.get(item.text) ?? []
+    bucket.push(item)
+    buckets.set(item.text, bucket)
+  }
+  for (const [text, bucket] of buckets) {
+    const excess = bucket.length - (counts.get(text) ?? 0)
+    if (excess > 0) bucket.splice(0, excess)
+  }
+  return raw.map(text => buckets.get(text)?.shift() ?? create(text))
+}
+
+export function snapshotQueue(state: QueueState): QueueSnapshot {
+  const snapshot: QueueSnapshot = {
+    steering: state.steering.map(item => item.text),
+    followUp: state.followUp.map(item => item.text)
+  }
+  if ([...state.steering, ...state.followUp].some(item => item.images?.length)) {
+    const clone = (items: QueueItem[]) => items.map(item => ({ ...item, ...(item.images?.length ? { images: item.images.map(image => ({ ...image })) } : {}) }))
+    snapshot.items = { steering: clone(state.steering), followUp: clone(state.followUp) }
+  }
+  return snapshot
 }
 
 /**
