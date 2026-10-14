@@ -22,7 +22,7 @@ html[data-theme='light'] .settings-scrim {
   height: min(700px, calc(100vh - 64px));
   /* 内容区用窗口底色，导航用抬高一级的面板色：深浅两套主题里层级方向一致 */
   background: var(--bg-0);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-pop);
   overflow: hidden;
@@ -322,6 +322,16 @@ html[data-theme='light'] .settings-scrim {
   overflow-y: auto;
 }
 
+/* 技能按来源分组（本次会话 / 我的技能 / 随包 / 其他）：组内与列表同间距，组间留一行空 */
+.pkg-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pkg-group + .pkg-group {
+  margin-top: var(--sp-3);
+}
+
 /*
  * 名字必须靠左。`.ui-row` 的横向布局带了右对齐（标签左、控件右），
  * 列表项继承下来会整行被推到右边 —— 视觉矩阵的截图里看得一清二楚。
@@ -421,6 +431,17 @@ html[data-theme='light'] .settings-scrim {
   font-size: 11.5px;
   line-height: 1.6;
   color: var(--fg-mute);
+}
+
+/* 兼容 MCP 每条服务的「导入到 pi」块：动作行与分步结果按行排列；只做版面，控件外观来自 ui.css */
+.mcp-import-block,
+.mcp-import-outcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.mcp-import-block {
+  margin-top: var(--sp-1);
 }
 
 .pkg-ok,
@@ -1084,6 +1105,10 @@ html[data-theme='light'] .ob-scrim {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+}
+.cap-native-status {
+  margin-top: var(--sp-2);
+  white-space: pre-wrap;
 }
 /* 说明里的附加一行（状态、临时抬线、出口提示） */
 .set-line {

@@ -532,10 +532,12 @@
   white-space: nowrap;
 }
 
-/* 流式期间新内容柔化入场 */
-.msg.assistant.streaming .md > *:last-child {
-  animation: text-in var(--dur-180) ease-out;
-}
+/*
+ * 流式期间新内容柔化入场：已由 motion.css 的 .md-arrive 统一承担
+ * （方向 F：每个新顶层块整段淡入上移、60ms 错峰、上限 8）。
+ * 这里原先只对 `:last-child` 播 text-in，会让最后一个新块盖掉 .md-arrive，且
+ * 不覆盖列表 / 引用 / 标题等多块同时出现的情况。
+ */
 
 /*
  * 「定位消息」的落点高亮（来源菜单 → 跳到这条）。
@@ -1205,7 +1207,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-dim);
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
 .trow[data-state='error'] .trow-target {
@@ -1409,7 +1411,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-dim);
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
 }
 
 .fd-state {
@@ -1489,7 +1491,7 @@
 
 .wsc-root {
   padding: 3px var(--sp-2);
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--fg-mute);
   overflow: hidden;
@@ -1544,7 +1546,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   color: var(--fg-dim);
 }
 
@@ -1612,7 +1614,7 @@
 .term-title {
   flex: none;
   color: #d6d6d6;
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   font-weight: var(--fw-medium);
 }
 
@@ -2302,7 +2304,7 @@ img.chat-image-open {
 
 .fd-stat {
   flex: none;
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
@@ -2605,7 +2607,7 @@ img.chat-image-open {
 }
 .bubble-prompt {
   color: var(--accent);
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   font-weight: var(--fw-strong);
 }
 .bubble-text {
@@ -3691,4 +3693,13 @@ img.chat-image-open {
   .start-usage {
     display: none;
   }
+}
+
+/* 子代理卡片的「详情」：箭头随展开转向，展开时整张卡片有底色与边线 */
+.sg-detail-btn svg { transition: transform var(--dur) var(--ease); }
+.sg-detail-btn.on svg { transform: rotate(90deg); }
+.sg-card.is-open {
+  background: var(--bg-2);
+  border-left-color: var(--sg-tone);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
 }

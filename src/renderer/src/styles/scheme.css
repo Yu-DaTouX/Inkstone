@@ -10,10 +10,10 @@
 
 /* ───────────────────────────── 字体与正文层级 ───────────────────────────── */
 
-/* 只有 Regular：强调靠颜色与字号，不靠粗体（font-synthesis 在 tokens.css 的 body 上） */
+/* 人声正文：标题不再带 `## ` 前缀，加粗靠真实字重 */
 .md strong,
 .md b {
-  font-weight: var(--fw-regular);
+  font-weight: var(--fw-strong);
   color: var(--fg);
   background: linear-gradient(transparent 62%, var(--accent-soft) 62%);
 }
@@ -27,19 +27,17 @@
   margin: var(--sp-4) 0 var(--sp-3);
   color: var(--fg);
   font-size: var(--fs-h2);
-  font-weight: var(--fw-regular);
+  font-weight: var(--fw-medium);
   line-height: 1.5;
+  text-wrap: balance;
 }
 .md h3 {
   margin: var(--sp-5) 0 var(--sp-2);
   color: var(--fg);
   font-size: var(--fs-h3);
-  font-weight: var(--fw-regular);
+  font-weight: var(--fw-medium);
   line-height: 1.55;
-}
-.md h3::before {
-  content: '## ';
-  color: var(--fg-mute);
+  text-wrap: balance;
 }
 .md h4 {
   margin: var(--sp-4) 0 var(--sp-1);
@@ -52,6 +50,7 @@
 }
 .md p {
   margin: 0 0 var(--sp-3);
+  text-wrap: pretty;
 }
 .md th {
   color: var(--fg-mute);
@@ -212,6 +211,7 @@
   flex: none;
   width: 2ch;
   color: var(--fg-mute);
+  font-family: var(--font-mono);
   text-align: center;
 }
 .tact-k {
@@ -236,12 +236,20 @@
 .tact-item.err {
   color: var(--err);
 }
+.tact-model {
+  min-width: 0;
+  max-width: min(40%, 24ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tact-sp {
   flex: 1;
 }
 .tact-time,
 .tact .turn-time {
   color: var(--fg-mute);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
 .tact[data-kind='run'] .tact-glyph {
@@ -608,8 +616,10 @@
 /* ───────────────────────────── 输入框：单层平面，运行控制并入发送位 ───────────────────────────── */
 
 .composer {
-  border-radius: var(--r-sm);
+  border-radius: var(--r-xl);
+  border-color: var(--border-soft);
   background: var(--bg-2);
+  box-shadow: var(--shadow-soft);
 }
 .composer:focus-within {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
@@ -710,6 +720,10 @@
 }
 .srow-dot.iso.blocked {
   color: var(--warn);
+}
+/* 运行中的方点占位与字符状态点同宽，标题才不会比其他行靠左 */
+.srow-dot-run {
+  margin-inline: calc((2ch - 6px) / 2);
 }
 .srow-time {
   font-size: var(--fs-xs);
@@ -989,3 +1003,55 @@ html[data-theme='light'] .outline-preview {
   gap: var(--sp-3);
   min-width: 0;
 }
+
+/* ───────────────────────────── 状态栏运行状态：圆点 + 词，运行时圆点呼吸 ───────────────────────────── */
+.sb-mode[data-mode] {
+  grid-template-columns: auto auto;
+  column-gap: 6px;
+  align-items: center;
+  padding: 0 var(--sp-2);
+  letter-spacing: 0;
+}
+.sb-mode-dot {
+  grid-area: 1 / 1;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  opacity: 0.7;
+}
+.sb-mode[data-mode='run'] .sb-mode-dot,
+.sb-mode[data-mode='wait'] .sb-mode-dot {
+  background: currentColor;
+  border-color: transparent;
+  opacity: 1;
+}
+.sb-mode[data-mode='run'] .sb-mode-dot { animation: sb-breathe 1.6s ease-in-out infinite; }
+.sb-mode-label { grid-area: 1 / 2; }
+@keyframes sb-breathe { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .sb-mode[data-mode='run'] .sb-mode-dot { animation: none; } }
+
+/* ───────────────────────────── 顶栏子代理入口与浮层 ───────────────────────────── */
+.sa-indicator { gap: 4px; position: relative; color: var(--fg-dim); }
+.sa-indicator[data-live='1'] { color: var(--accent); }
+.sa-indicator[data-live='1'] .ico { animation: sb-breathe 1.6s ease-in-out infinite; }
+.sa-indicator-n { font-variant-numeric: tabular-nums; font-weight: 600; }
+.sa-indicator-flag { position: absolute; top: 2px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+.sa-pop { position: fixed; z-index: 80; width: min(360px, calc(100vw - 16px)); max-height: 60vh; overflow: auto; padding: var(--sp-3); font-size: var(--fs-sm); }
+.sa-pop-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.sa-pop-sum { color: var(--fg-mute); font-size: var(--fs-xs); }
+.sa-pop-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.sa-pop-row { --pop-tone: var(--fg-mute); display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); }
+.sa-pop-row:hover { background: var(--bg-2); }
+.sa-pop-row.tone-live { --pop-tone: var(--accent); }
+.sa-pop-row.tone-err { --pop-tone: var(--err); }
+.sa-pop-row.tone-warn { --pop-tone: var(--warn); }
+.sa-pop-row.tone-ok { --pop-tone: var(--ok); }
+.sa-pop-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pop-tone); }
+.sa-pop-row.tone-live .sa-pop-dot { opacity: .25; animation: sa-chase 1.6s ease-in-out calc(var(--i, 0) * 0.18s) infinite; box-shadow: none; }
+.sa-pop-row.tone-live { --room-tone: var(--accent); }
+.sa-pop-task { display: flex; flex-direction: column; min-width: 0; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.sa-pop-name, .sa-pop-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-pop-sub { color: var(--fg-mute); font-size: var(--fs-xs); }
+.sa-pop-time { color: var(--fg-mute); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.sa-pop-foot { display: flex; justify-content: flex-end; margin-top: var(--sp-2); }

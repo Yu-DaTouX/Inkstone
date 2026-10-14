@@ -39,10 +39,10 @@
   padding: var(--sp-1);
   font-family: var(--font-body);
   background: var(--bg-1);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   border-radius: var(--r-lg);
-  /* 与其它浮层一致：只靠边框与背景分层，不用投影（DESIGN §1 原则 2） */
-  box-shadow: none;
+  /* 与其它浮层一致：靠阴影与柔边分层，不画 1px 硬边 */
+  box-shadow: var(--shadow-pop);
 }
 
 /*

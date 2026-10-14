@@ -244,7 +244,7 @@
 
 /* ── 文件树 ── */
 .rp-fs {
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   letter-spacing: normal;
 }
 .rp-fs-state {
@@ -2195,7 +2195,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 .sp-parent {
   opacity: 0.75;
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
 }
 
 .sp-review {
@@ -2219,7 +2219,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   margin: var(--sp-1) 0;
   overflow: hidden;
   color: var(--fg-mute);
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
