@@ -1979,7 +1979,79 @@
 .tile-pane > .agent-workspace { background: var(--bg-0); }
 
 /* 轻量委派面板：控件样式由公共 ui 提供，此处只管理排布。 */
-.agent-workspace:has(> .delegate-form) { overflow-y: auto; }
+.agent-workspace:has(> .sa-form) .sa-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 .delegate-form { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); flex-shrink: 0; }
 .delegate-form .ui-input { width: 100%; }
 .delegate-target { overflow-wrap: anywhere; }
+
+/* ── 子代理平面图：版面与层级；按钮、输入框外观仍来自 ui.css ── */
+.sa-form { gap: var(--sp-2); padding: var(--sp-3); border-bottom: 1px solid var(--border); }
+.sa-form-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-2); }
+.sa-form-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-2); }
+.sa-form-foot .delegate-target { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-scroll { padding: var(--sp-3); }
+.sa-plan { position: relative; display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.sa-core {
+  display: flex; align-items: center; gap: var(--sp-2); align-self: flex-start; max-width: 100%;
+  padding: var(--sp-1) var(--sp-3); border: 1px solid var(--border); border-radius: 999px; background: var(--bg-2);
+  font-size: var(--fs-sm); color: var(--fg);
+}
+.sa-core-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-mute); flex: none; }
+.sa-core[data-live='1'] .sa-core-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft, transparent); }
+.sa-core-name { font-weight: 600; }
+.sa-core-model, .sa-core-count { color: var(--fg-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* 走廊：从中心节点向下的一条细线，每个区挂在它上面 */
+.sa-zone { position: relative; display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding-left: var(--sp-4); }
+.sa-zone::before { content: ''; position: absolute; left: 6px; top: calc(-1 * var(--sp-3)); bottom: 0; width: 1px; background: var(--border); }
+.sa-zone::after { content: ''; position: absolute; left: 6px; top: 10px; width: var(--sp-3); height: 1px; background: var(--border); }
+.sa-zone:last-child::before { bottom: auto; height: calc(10px + var(--sp-3)); }
+.sa-zone-head { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--fg-mute); letter-spacing: .02em; }
+.sa-zone-name { font-weight: 600; color: var(--fg-dim); }
+.sa-zone-n { font-variant-numeric: tabular-nums; }
+.sa-zone-head .btn { margin-left: auto; }
+.sa-rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 176px), 1fr)); gap: var(--sp-2); }
+.sa-room {
+  --room-tone: var(--fg-mute);
+  display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; min-height: 96px; padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border); border-top: 3px solid var(--room-tone); border-radius: var(--r-md, var(--r-sm)); background: var(--bg-1);
+  font-size: var(--fs-sm); color: var(--fg-dim);
+}
+.sa-room.tone-live { --room-tone: var(--accent); }
+.sa-room.tone-ok { --room-tone: var(--ok); }
+.sa-room.tone-warn { --room-tone: var(--warn); }
+.sa-room.tone-err { --room-tone: var(--err); background: var(--err-soft, var(--bg-1)); }
+.sa-room-open { display: flex; align-items: flex-start; gap: var(--sp-2); padding: 0; border: 0; background: none; color: var(--fg); font: inherit; font-weight: 600; text-align: left; cursor: pointer; min-width: 0; }
+.sa-room-open:hover .sa-room-task { text-decoration: underline; }
+.sa-room-mark { flex: none; width: 14px; text-align: center; color: var(--room-tone); }
+.sa-room.is-live .sa-room-mark::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--room-tone); animation: sa-chase 1.6s ease-in-out calc(var(--i, 0) * 0.18s) infinite; opacity: .25; }
+.sa-room-task { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.sa-room-meta { display: flex; flex-wrap: wrap; gap: 0 var(--sp-2); font-size: var(--fs-xs); color: var(--fg-mute); }
+.sa-room-state { color: var(--room-tone); font-weight: 600; }
+.sa-room-time { margin-left: auto; font-variant-numeric: tabular-nums; }
+.sa-room-line { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; font-size: var(--fs-xs); color: var(--fg-mute); }
+.sa-room.tone-err .sa-room-line { color: var(--err); }
+.sa-room-actions { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: auto; padding-top: var(--sp-1); }
+.sa-empty { padding-left: var(--sp-2); }
+/* 多个子代理同时运行：灯按从上到下的顺序依次亮起，像一道往下流的光 */
+@keyframes sa-chase { 0%, 55%, 100% { opacity: .25; box-shadow: none; } 15%, 30% { opacity: 1; box-shadow: 0 0 6px var(--room-tone, var(--accent)); } }
+@media (prefers-reduced-motion: reduce) { .sa-room.is-live .sa-room-mark::before { animation: none; } }
+
+/* ── 定时任务页：版面与层级；控件外观来自 ui.css ── */
+.sched { display: flex; flex-direction: column; width: min(720px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 48px)); border: 1px solid var(--border-soft); border-radius: var(--r-lg, var(--r-md)); background: var(--bg-1); box-shadow: var(--shadow-pop); overflow: hidden; }
+.sched-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
+.sched-title { flex: 1; margin: 0; font-size: var(--fs-lg, 16px); font-weight: 600; }
+.sched-list, .sched-form { display: flex; flex-direction: column; gap: var(--sp-3); min-height: 0; padding: var(--sp-4); overflow-y: auto; }
+.sched-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-3); }
+.sched-trigger { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
+.sched-when { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); color: var(--fg-dim); }
+.sched-days { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.sched-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); }
+.sched-card { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-2); }
+.sched-card[data-state='off'] { opacity: .75; }
+.sched-card[data-state='pending'] { border-color: var(--warn); }
+.sched-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.sched-card-name { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.sched-card-prompt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; color: var(--fg-dim); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.sched-card-meta { display: flex; flex-wrap: wrap; gap: 0 var(--sp-3); margin: 0; color: var(--fg-mute); font-size: var(--fs-xs); }
+.sched-card-error { margin: 0; color: var(--err); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.sched-card-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--sp-1); max-width: 220px; }

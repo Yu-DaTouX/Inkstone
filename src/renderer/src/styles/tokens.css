@@ -18,8 +18,9 @@
    里的引用不用改。 */
 @import '@mogeko/maple-mono-cn/dist/font/result.css';
 
-/* 全界面只用 Maple Mono CN 常规体（设计规范「界面重构」）：不再拼接雅黑切片，
-   也不让浏览器合成伪粗体（见下方 body 的 font-synthesis）。 */
+/* 全界面按「人声 / 机声」分工（设计规范 §2.2，方向 F）：人声用系统比例字体（缺省），
+   机声（代码 / 终端 / 路径 / 数字 / 提示符）用内嵌 Maple Mono CN（--font-mono）。
+   只有 Regular：不让浏览器合成伪粗体（见下方 body 的 font-synthesis）。 */
 
 /* 过程栏宽度注册为长度：容器查询里用 cqw 写的值在声明处就算成像素，后代继承定值 */
 @property --w-proc-side {
@@ -31,16 +32,15 @@
 /* 1. 令牌 */
 :root {
   /*
-   * 字体分工（设计规范 §2.2）：逐项扫读的界面骨架用等宽，连续阅读的段落用无衬线。
-   *   --font-ui   导航、列表行、元数据、路径、工具行、按钮、状态栏、快捷键
-   *   --font-code 代码、diff、终端
-   *   --font-body 对话正文、用户消息、推理、设置说明、页标题
+   * 字体分工（设计规范 §2.2，方向 F「双声部」）：
+   *   --font-ui / --font-body / --font-sans  人声：正文、标签、按钮、菜单（缺省系统比例字体）
+   *   --font-mono / --font-code              机声：代码、终端、路径、数字、提示符、diff
    */
   --font-mono: 'Maple Mono CN', ui-monospace, Consolas, monospace;
-  --font-sans: var(--font-mono);
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', system-ui, sans-serif;
   --font-code: var(--font-mono);
-  --font-ui: var(--font-mono);
-  --font-body: var(--font-mono);
+  --font-ui: var(--font-sans);
+  --font-body: var(--font-sans);
 
   --fs-xs: 11px;
   --fs-sm: 12px;
@@ -81,13 +81,12 @@
   --d-section-gap: 3px;  /* 右栏分区之间 */
   --d-message-gap: 32px; /* 消息回合之间（= 原来的 --sp-6） */
 
-  /* 4 / 6 / 8 / 12px 分级；大容器不再使用胶囊式圆角。 */
-  /* 方案 E：规整的小圆角（控件 4、菜单与卡片 6、对话框 8） */
+  /* 4 / 6 / 8 / 10 / 14px 分级；方向 F 放大一档（控件 6、按钮与输入 8、分组块与磁贴 10、输入框与浮层 14） */
   --r-xs: 3px;
-  --r-sm: 4px;
-  --r-md: 6px;
-  --r-lg: 8px;
-  --r-xl: 8px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
   /* 圆形组件（头像状、开关、滚动条）用 */
   --r-full: 999px;
 
@@ -128,9 +127,9 @@
   --ctl-h: calc(28px + var(--d-ctl));
   --ctl-h-lg: calc(32px + var(--d-ctl));
   --fw-regular: 400;
-  /* 只有 Regular 一个字面：三档令牌保留给模块引用，实际都按常规体渲染 */
-  --fw-medium: 400;
-  --fw-strong: 400;
+  /* 标题字重（方向 F）；选「终端风格」（Maple）时 applyTypography 把这两档回到 400 */
+  --fw-medium: 600;
+  --fw-strong: 700;
 
   /* 动效时长（B2 归口）——
      语义别名 --dur 是默认过渡；其余按毫秒值命名，值等于收口前的实际值，未做视觉调整。
@@ -228,6 +227,8 @@ html[data-theme='dark'] {
   /* 强调色实底上的文字；弹出层（菜单 / 对话框）唯一允许的投影 */
   --on-accent: #17191d;
   --shadow-pop: 0 14px 36px -14px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  /* 输入框的下投影：很淡的一层，方向 F */
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
 html[data-theme='light'] {
@@ -265,6 +266,8 @@ html[data-theme='light'] {
 
   --on-accent: #ffffff;
   --shadow-pop: 0 14px 36px -14px rgba(20, 30, 50, 0.28), 0 0 0 1px rgba(20, 30, 50, 0.05);
+  /* 输入框的下投影：很淡的一层，方向 F */
+  --shadow-soft: 0 1px 2px rgba(20, 30, 50, 0.06);
 }
 
 /* 2. 基础 */

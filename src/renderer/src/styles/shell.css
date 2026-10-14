@@ -445,15 +445,17 @@
   z-index: 1;
 }
 
-/* 模式色块：宽度固定，颜色 240ms 过渡，文字叠放交叉淡变 */
+/* 模式：宽度随语言自适应，文字叠放交叉淡变 */
 .sb-mode {
   display: grid;
   flex: none;
-  width: 52px;
+  width: auto;
+  min-width: 52px;
+  padding: 0 var(--sp-2);
   place-items: center;
   background: var(--bg-3);
   color: var(--fg-dim);
-  font-weight: var(--fw-strong);
+  font-weight: var(--fw-regular);
   letter-spacing: 0.06em;
   transition:
     background-color var(--mo-slow) var(--mo-ease),
@@ -507,6 +509,14 @@
 .sb-changed {
   color: var(--warn);
 }
+/* 机声：状态栏里的数值与花费用等宽，状态词与标签仍用界面字体（设计规范 §2.2 / §4.5） */
+.sb-changed,
+.sb-cost,
+.statusbar .usagebar,
+.sb-quota,
+.sb-kv dd {
+  font-family: var(--font-mono);
+}
 .sb-dot {
   width: 6px;
   height: 6px;
@@ -530,6 +540,35 @@
   flex: 1;
   min-width: 0;
 }
+
+/*
+ * 状态栏里的会话统计（单会话时从输入框下方搬来，见设计规范 §4.5）：
+ * 与其它段同一行、同一字号，取消 composer.css 里的绝对定位、居中和换行；
+ * 两个入口各占满状态栏高，点开是它们自己的详情浮层（不参与状态栏的详情，所以不用 .sb-seg）。
+ * 分屏时它们回到焦点磁贴的输入框下方，组件自己判断，这里只管单会话这一种形态。
+ */
+.statusbar .sb-usage {
+  position: static;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 0;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+}
+/* 右段从会话统计开始：它们之间用同一条细分隔线分段，与花费前的那条一致 */
+.statusbar .sb-quota {
+  border-left: 1px solid var(--border-soft);
+}
+.statusbar .sb-usage .cu-trigger {
+  height: auto;
+  min-height: 0;
+  border-radius: 0;
+}
+
 .sb-cost {
   border-left: 1px solid var(--border-soft);
 }
@@ -572,7 +611,8 @@
 }
 @container (max-width: 980px) {
   .sb-phone,
-  .sb-pi {
+  .sb-pi,
+  .sb-usage {
     display: none;
   }
   /* tok 单位在每项重复出现；窄窗只留数值，标签（输入 / 输出 / 缓存）足以说明 */

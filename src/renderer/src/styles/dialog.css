@@ -25,8 +25,8 @@
   display: flex;
   flex-direction: column;
   background: var(--bg-2);
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-lg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-xl);
   overflow: hidden;
 }
 
@@ -160,8 +160,8 @@
   width: min(640px, calc(100vw - 48px));
   max-height: 64vh;
   background: var(--bg-2);
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-lg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-xl);
   overflow: hidden;
 }
 .switcher-input {
@@ -240,6 +240,95 @@
   font-size: var(--fs-sm);
 }
 .switcher-foot {
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+/* 动作行右侧的真实键位；不可用动作整行禁用并说明原因 */
+.switcher-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.switcher-row.off {
+  color: var(--fg-mute);
+  cursor: default;
+}
+.switcher-row.off .switcher-title {
+  color: var(--fg-mute);
+}
+
+/* ── 快捷键表（Ctrl+/） ── */
+.shortcut-scrim {
+  padding: var(--sp-4);
+}
+.shortcut-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(72vh, 640px);
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-xl);
+  overflow: hidden;
+}
+.shortcut-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--fg-dim);
+}
+.shortcut-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--fg);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-medium);
+}
+.shortcut-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+}
+.shortcut-group {
+  padding-top: var(--sp-2);
+}
+.shortcut-group-title {
+  padding: var(--sp-1) 0;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sp-3);
+  min-height: var(--lh-row);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+}
+.shortcut-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--fg);
+  font-size: var(--fs-base);
+}
+.shortcut-note {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.shortcut-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.shortcut-foot {
   padding: var(--sp-2) var(--sp-3);
   border-top: 1px solid var(--border-soft);
   color: var(--fg-mute);

@@ -10,7 +10,20 @@
 .composer-wrap {
   position: relative;
   z-index: 3;
-  padding: var(--sp-2) var(--sp-5) var(--sp-3);
+  /*
+   * 卡片下沿到状态栏之间的囱吸。默认（单会话）只留一段：会话统计已经移到状态栏
+   * （见 shell.css 的 .statusbar .sb-usage），输入框到状态栏之间不再夹一行数字。
+   * 分屏（多会话磁贴）时统计行回到输入框下方，由下面的 :has() 把这里撑开，
+   * 那行在其中**垂直居中**（上下留白相当，见 .composer-usage）。
+   * 留白只能用这个下内边距做：统计行是绝对定位的，不占布局，显示与否都不改变
+   * 输入框的位置与高度。
+   */
+  --dock-pad: var(--sp-3);
+  padding: var(--sp-2) var(--sp-5) var(--dock-pad);
+}
+/* 分屏：统计行在输入框下方（.composer-usage 是 .composer-wrap 的子元素） */
+.composer-wrap:has(.composer-usage) {
+  --dock-pad: calc(var(--sp-4) + var(--sp-1));
 }
 
 .composer {
@@ -1977,7 +1990,7 @@
 }
 .composer-prompt {
   color: var(--accent);
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   font-size: var(--fs-body);
   font-weight: var(--fw-strong);
   line-height: var(--lh-body);
@@ -2026,32 +2039,56 @@
 .model-rows { display: flex; flex-direction: column; gap: 1px; padding: 0; max-height: 340px; min-height: 52px; overscroll-behavior: contain; }
 .model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; flex: none; padding-right: var(--sp-1); }
 /*
- * 输入框下方的速度 / 命中率：一行安静的小字，居中。
- * 绝对定位在输入框正下方、落在 .composer-wrap 本来就有的下内边距里：显示与否都不改变输入框的位置与高度。
+ * 会话统计行（分屏 / 多会话磁贴时）：两个安静、可键盘聚焦的入口，居中。
+ * 单会话时这两个入口在状态栏（shell.css 的 .statusbar .sb-usage），这里的定位不生效。
+ * 绝对定位在输入框正下方，行底落在 .composer-wrap 预留的下内边距（--dock-pad）底边上：
+ * 上方留白 = --dock-pad - 行高，下方是这一段再加分屏面板自己的底板留白，两者接近，
+ * 于是行在输入框与状态栏之间看起来居中。
+ * 绝对定位是为了显示与否都不改变输入框的位置与高度；窄窗允许两种摘要各占一行。
  */
 .composer-usage {
   position: absolute;
   top: 100%;
+  margin-top: calc(var(--dock-pad) - var(--sp-3));
   left: 0;
   right: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: var(--sp-4);
-  height: var(--sp-3);
+  gap: 0 var(--sp-4);
+  min-height: var(--sp-3);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   line-height: 1;
-  pointer-events: none;
-  white-space: nowrap;
 }
-.composer-usage > span { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.composer-usage .cu-trigger {
+  height: var(--sp-3);
+  min-height: 0;
+  padding: 0 var(--sp-1);
+  gap: var(--sp-1);
+}
+
+/* 会话统计 / Token 明细浮层：向上从触发器长出，行与状态栏详情同一套 .sb-kv 语言。
+   控件外观（字号、说明文字色）在 ui.css，这里只管浮层位置与说明间距。 */
+.cu-details {
+  position: fixed;
+  z-index: 80;
+  overflow: auto;
+}
+.cu-details .cu-note {
+  margin: var(--sp-3) 0 0;
+}
 .mt-settings { flex: none; border-top: 1px solid var(--border-soft); }
 .mt-settings > .mt-head:last-child { border-bottom: 0; }
 /* 详细程度与可视化回答：名称在左、控件在右，两行同高，与上方思考强度共用标题样式与左右内边距 */
 .mt-lines { display: flex; flex-direction: column; padding: var(--sp-1) var(--sp-3); }
 .mt-line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: var(--ctl-h-lg); }
 .mt-line > .seg, .mt-line > .switch-pill { flex: none; }
+/* 温度：滚轮 + 自定义输入并排，整行比其他行高 */
+.mt-temp-ctl { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+.mt-temp-ctl .ui-wheel { min-width: 64px; }
+.mt-temp-ctl .ui-input.num { width: 64px; }
 .mt-pop .ui-step-slider { padding-top: var(--sp-1); }
 .delegate-model-menu > .btn { flex: none; margin: var(--sp-2); }
 .delegate-form [data-testid="delegate-model"] { width: 100%; max-width: 100%; }
