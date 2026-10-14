@@ -9,6 +9,7 @@ import { encodeWav16k, VOICE_MAX_SECONDS } from '../../../../shared/voice-input'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { Tip } from '../ui'
 
 type Phase = { kind: 'idle' } | { kind: 'recording'; startedAt: number } | { kind: 'preparing' } | { kind: 'transcribing' } | { kind: 'error'; message: string }
 
@@ -133,28 +134,31 @@ export function VoiceInputButton({ onText, disabled }: { onText: (text: string) 
           <Icon name="stop" size={12} />
           <span>{t('voice.stop')}</span>
         </button>
-        <button type="button" className="ctool" onClick={cancel} title={t('voice.cancel')} aria-label={t('voice.cancel')} data-testid="voice-cancel">
-          <Icon name="close" size={12} />
-        </button>
+        <Tip label={t('voice.cancel')}>
+          <button type="button" className="ctool" onClick={cancel} aria-label={t('voice.cancel')} data-testid="voice-cancel">
+            <Icon name="close" size={12} />
+          </button>
+        </Tip>
       </span>
     )
   }
 
   return (
     <span className="voice-input">
-      <button
-        type="button"
-        className="ctool"
-        disabled={disabled || phase.kind === 'preparing' || phase.kind === 'transcribing'}
-        onClick={() => void start()}
-        title={t('voice.start')}
-        aria-label={t('voice.start')}
-        data-testid="voice-start"
-      >
-        <Icon name="mic" size={12} />
-        {phase.kind === 'preparing' ? <span>{t('voice.preparing')}</span> : null}
-        {phase.kind === 'transcribing' ? <span>{t('voice.transcribing')}</span> : null}
-      </button>
+      <Tip label={t('voice.start')}>
+        <button
+          type="button"
+          className="ctool"
+          disabled={disabled || phase.kind === 'preparing' || phase.kind === 'transcribing'}
+          onClick={() => void start()}
+          aria-label={t('voice.start')}
+          data-testid="voice-start"
+        >
+          <Icon name="mic" size={12} />
+          {phase.kind === 'preparing' ? <span>{t('voice.preparing')}</span> : null}
+          {phase.kind === 'transcribing' ? <span>{t('voice.transcribing')}</span> : null}
+        </button>
+      </Tip>
       {phase.kind === 'error' ? (
         <span className="voice-error" role="alert" data-testid="voice-error">
           {phase.message}

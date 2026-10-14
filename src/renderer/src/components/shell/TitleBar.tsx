@@ -1,8 +1,11 @@
 import type { ReactNode } from 'react'
 import { Icon } from '../../icons/Icon'
+import { Tip } from '../ui'
+import { KEY_BINDINGS } from '../../lib/host-actions'
 import { BrandMark } from './BrandMark'
 import { useI18n } from '../../i18n'
 import { menuAnchor } from '../workbench/Workspace'
+import { SubagentIndicator } from './SubagentIndicator'
 
 export type Theme = 'dark' | 'light'
 
@@ -68,18 +71,20 @@ export function TitleBar({
          * 侧栏开关：标题栏**最左上角**（对齐 Codex 的位置）。
          * 它不随侧栏收放而移动/消失 —— 这是它与「放进面板内部」的关键区别。
          */}
-        <button
-          className={`tb-icon ${railOpen ? 'on' : ''}`}
-          title={railOpen ? t('rail.collapse') : t('rail.expand')}
-          onClick={onToggleRail}
-          onPointerEnter={() => { if (!railOpen) onRailHover?.(true) }}
-          onPointerLeave={() => { if (!railOpen) onRailHover?.(false) }}
-          data-testid="rail-toggle"
-          data-open={railOpen ? '1' : '0'}
-          aria-expanded={railOpen}
-        >
-          <Icon name="sidebar-left" size={14} />
-        </button>
+        <Tip label={railOpen ? t('rail.collapse') : t('rail.expand')} shortcut={KEY_BINDINGS.toggleRail.keys}>
+          <button
+            className={`tb-icon ${railOpen ? 'on' : ''}`}
+            onClick={onToggleRail}
+            onPointerEnter={() => { if (!railOpen) onRailHover?.(true) }}
+            onPointerLeave={() => { if (!railOpen) onRailHover?.(false) }}
+            data-testid="rail-toggle"
+            data-open={railOpen ? '1' : '0'}
+            aria-label={railOpen ? t('rail.collapse') : t('rail.expand')}
+            aria-expanded={railOpen}
+          >
+            <Icon name="sidebar-left" size={14} />
+          </button>
+        </Tip>
         {/* 品牌只在这里出现一次：左栏收起时它仍然可见 */}
         <span className="tb-brand" data-testid="app-brand">
           <BrandMark size={16} />
@@ -99,94 +104,106 @@ export function TitleBar({
       {center ? <div className="tb-center">{center}</div> : <div className="tb-center" aria-hidden />}
 
       <div className="tb-right">
+        {/* 本会话的子代理：有在跑的或需处理的才出现 */}
+        <SubagentIndicator />
         {/*
          * 置顶开关。
          *
          * 面板开关搬走后就只剩它一个内容按钮（更靠右、更靠近窗口控制），
          * 与「齿轮在左栏底部」那种“入口贴着功能”的布局一致。
          */}
-        <button
-          className={`tb-icon tb-pin ${alwaysOnTop ? 'on' : ''}`}
-          title={alwaysOnTop ? t('tb.unpin') : t('tb.pin')}
-          onClick={onToggleAlwaysOnTop}
-          aria-pressed={!!alwaysOnTop}
-          data-testid="win-pin"
-          data-on={alwaysOnTop ? '1' : '0'}
-        >
-          <Icon name="pin" size={14} />
-        </button>
+        <Tip label={alwaysOnTop ? t('tb.unpin') : t('tb.pin')}>
+          <button
+            className={`tb-icon tb-pin ${alwaysOnTop ? 'on' : ''}`}
+            onClick={onToggleAlwaysOnTop}
+            aria-pressed={!!alwaysOnTop}
+            aria-label={alwaysOnTop ? t('tb.unpin') : t('tb.pin')}
+            data-testid="win-pin"
+            data-on={alwaysOnTop ? '1' : '0'}
+          >
+            <Icon name="pin" size={14} />
+          </button>
+        </Tip>
 
         {/* 工作区工具：打开文件、终端、审查等磁贴，菜单里另有排列与已隐藏面板 */}
-        <button
-          className="tb-icon"
-          title={t('tb.openTools')}
-          aria-label={t('tb.openTools')}
-          aria-haspopup="menu"
-          onClick={(e) => window.dispatchEvent(new CustomEvent('inkstone-workspace-open-tool', { detail: menuAnchor(e.currentTarget) }))}
-          data-testid="right-tool-menu"
-        >
-          <Icon name="tile" size={14} />
-        </button>
+        <Tip label={t('tb.openTools')}>
+          <button
+            className="tb-icon"
+            aria-label={t('tb.openTools')}
+            aria-haspopup="menu"
+            onClick={(e) => window.dispatchEvent(new CustomEvent('inkstone-workspace-open-tool', { detail: menuAnchor(e.currentTarget) }))}
+            data-testid="right-tool-menu"
+          >
+            <Icon name="tile" size={14} />
+          </button>
+        </Tip>
 
         {/* 内置浏览器开关：与工具栏独立（收起工具栏时浏览器仍可独占右栏） */}
-        <button
-          className={`tb-icon ${browserOpen ? 'on' : ''}`}
-          title={browserOpen ? t('browser.close') : t('browser.open')}
-          onClick={onToggleBrowser}
-          data-testid="browser-view-toggle"
-          data-open={browserOpen ? '1' : '0'}
-          aria-pressed={!!browserOpen}
-          aria-label={browserOpen ? t('browser.close') : t('browser.open')}
-        >
-          <Icon name="globe" size={14} />
-        </button>
+        <Tip label={browserOpen ? t('browser.close') : t('browser.open')}>
+          <button
+            className={`tb-icon ${browserOpen ? 'on' : ''}`}
+            onClick={onToggleBrowser}
+            data-testid="browser-view-toggle"
+            data-open={browserOpen ? '1' : '0'}
+            aria-pressed={!!browserOpen}
+            aria-label={browserOpen ? t('browser.close') : t('browser.open')}
+          >
+            <Icon name="globe" size={14} />
+          </button>
+        </Tip>
 
         {/* ---- Win11 窗口控制：46×32 方形，紧贴右上角 ---- */}
         <div className="wctrl">
-          <button
-            className="wbtn min"
-            title={t('tb.minimize')}
-            onClick={() => win.minimize()}
-            data-testid="win-min"
-          >
-            {/* 最小化：一条横线 */}
-            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-              <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
-            </svg>
-          </button>
-
-          <button
-            className="wbtn max"
-            title={maximized ? t('tb.restore') : t('tb.maximize')}
-            onClick={() => win.maximize()}
-            data-testid="win-max"
-          >
-            {maximized ? (
-              /* 还原：两个错开的方框 */
+          <Tip label={t('tb.minimize')}>
+            <button
+              className="wbtn min"
+              aria-label={t('tb.minimize')}
+              onClick={() => win.minimize()}
+              data-testid="win-min"
+            >
+              {/* 最小化：一条横线 */}
               <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-                <path d="M2.5 2.5h6v6h-6z" fill="none" stroke="currentColor" strokeWidth="1" />
-                <path d="M1.5 1.5h6" fill="none" stroke="currentColor" strokeWidth="1" />
-                <path d="M1.5 1.5v6" fill="none" stroke="currentColor" strokeWidth="1" />
+                <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
               </svg>
-            ) : (
-              /* 最大化：一个方框 */
-              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-                <rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1" />
-              </svg>
-            )}
-          </button>
+            </button>
+          </Tip>
 
-          <button
-            className="wbtn close"
-            title={t('tb.hide')}
-            onClick={() => win.close()}
-            data-testid="win-close"
-          >
-            {/* 关闭：X */}
-            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-              <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1" />
-            </svg>
-          </button>
+          <Tip label={maximized ? t('tb.restore') : t('tb.maximize')}>
+            <button
+              className="wbtn max"
+              aria-label={maximized ? t('tb.restore') : t('tb.maximize')}
+              onClick={() => win.maximize()}
+              data-testid="win-max"
+            >
+              {maximized ? (
+                /* 还原：两个错开的方框 */
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                  <path d="M2.5 2.5h6v6h-6z" fill="none" stroke="currentColor" strokeWidth="1" />
+                  <path d="M1.5 1.5h6" fill="none" stroke="currentColor" strokeWidth="1" />
+                  <path d="M1.5 1.5v6" fill="none" stroke="currentColor" strokeWidth="1" />
+                </svg>
+              ) : (
+                /* 最大化：一个方框 */
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                  <rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1" />
+                </svg>
+              )}
+            </button>
+          </Tip>
+
+          <Tip label={t('tb.hide')}>
+            <button
+              className="wbtn close"
+              aria-label={t('tb.hide')}
+              onClick={() => win.close()}
+              data-testid="win-close"
+            >
+              {/* 关闭：X */}
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1" />
+              </svg>
+            </button>
+          </Tip>
         </div>
       </div>
     </header>

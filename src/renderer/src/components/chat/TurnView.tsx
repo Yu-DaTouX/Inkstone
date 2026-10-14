@@ -8,7 +8,7 @@ import { InteractionPart } from '../../lib/interaction-state'
 import { Markdown } from './MessageParts'
 import { ToolGroup } from './ToolRow'
 import { TurnActivityLine, TurnClock, TurnMeta, TurnProcess } from './TurnProcess'
-import { ReasoningCapsule, useTypewriter } from './Reasoning'
+import { ReasoningCapsule } from './Reasoning'
 import { TurnSubagents } from './TurnSubagents'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
 import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared/turns'
@@ -537,16 +537,13 @@ function fmtArtifactBytes(n: number): string {
  * `primary`：最终回答（正文字色 + 正常行高）；
  * 否则是中间解说（稍淡一点，视觉上从属于回答）。
  *
- * key 用的是段的 id，所以新的一段出现时 React 会挂新节点 →
- * CSS 的 fade-in 动画就会跑（`animation` 只在节点首次挂载时触发）。
+ * 段身份保持稳定，顶层 Markdown 新块的入场由 Markdown 管理。
+ * 正文使用原生增量，不另按帧逐字播放；后台窗口也不等待 rAF 才显示文本。
  */
 function ParagraphImpl({ text, primary, sourceCwd, live, partId }: { text: string; primary?: boolean; sourceCwd?: string; live?: boolean; partId?: string }) {
-  /* 流式正文逐字推进（积压大时自动加速，超长文本与减少动效时直接给全文），避免一块一块地蹦出来 */
-  const smooth = !!live && text.length < 6000 && !(typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  const shown = useTypewriter(text, smooth)
   return (
     <div className={`turn-para ${primary ? 'primary' : ''}`}>
-      <InteractionPart.Provider value={partId ?? ''}><Markdown text={live ? shown : text} sourceCwd={sourceCwd} live={live} /></InteractionPart.Provider>
+      <InteractionPart.Provider value={partId ?? ''}><Markdown text={text} sourceCwd={sourceCwd} live={live} /></InteractionPart.Provider>
     </div>
   )
 }
@@ -570,15 +567,10 @@ const Paragraph = memo(
   (a, b) => a.text === b.text && a.primary === b.primary && a.sourceCwd === b.sourceCwd && a.live === b.live && a.partId === b.partId
 )
 
-/** 连续的短解说只收起已经完成的前几条；最后一条始终留在消息流里。 */
+/** 模型运行中发的进度文字：较早的几条收起，最新三条始终留在消息流里；不论长短。 */
+const PROGRESS_KEEP = 3
 function compactProgressCount(parts: readonly { text: string }[]): number {
-  let count = 0
-  while (count < parts.length - 1) {
-    const text = parts[count].text.trim()
-    if (!text || text.length > 100 || /\n|^(?:#|>|[-*+]\s|\d+\.\s|`)/.test(text)) break
-    count++
-  }
-  return count >= 3 ? count : 0
+  return Math.max(0, parts.length - PROGRESS_KEEP)
 }
 
 function CommentaryList({ parts, liveSourceId }: { parts: readonly AssistantTurn['commentary'][number][]; liveSourceId?: string }) {

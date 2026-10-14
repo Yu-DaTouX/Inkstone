@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import type { HubAgent, HubCommand, HubMode, HubSnapshot, HubTask } from '../../../../shared/agent-hub'
 import { useT, type MessageKey } from '../../i18n'
 import { Badge, Button, EmptyState, IconButton, Input, ListRow, Segmented, Select, Tab, Textarea } from '../ui'
+import { useConfirm } from '../ui/confirm'
 import { installImeFallback, installTerminalRenderer, terminalAppearance, terminalFontReady } from '../terminal/terminal-appearance'
 import { APPEARANCE_EVENT } from '../../lib/appearance'
 
@@ -11,6 +12,7 @@ const statusText: Record<HubTask['status'], MessageKey> = { queued: 'hub.status.
 
 export function AgentHubPanel({ onBack, initialTaskId }: { onBack: () => void; initialTaskId?: string }) {
   const tr = useT()
+  const confirm = useConfirm()
   const [snapshot, setSnapshot] = useState<HubSnapshot | null>(null)
   const [error, setError] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -109,7 +111,7 @@ export function AgentHubPanel({ onBack, initialTaskId }: { onBack: () => void; i
       <details className="hub-options"><summary>{tr('hubp.boundary')}</summary><p>{mode === 'managed' ? tr('hubp.boundary.managed') : tr('hubp.boundary.terminal')}</p></details>
       <Button variant="primary" type="submit" disabled={busy || !projectId || (mode !== 'terminal' && !prompt.trim())}>{mode === 'terminal' ? tr('hub.openTerminal') : tr('hubp.startTask')}</Button>
     </form> : null}
-    {snapshot?.resources.filter((r) => r.owner || r.waiting || r.uncertain || r.paused).map((r) => <div key={r.resourceId}><p>{r.resourceId} · {r.uncertain ? tr('hubp.res.uncertain') : r.paused ? tr('hubp.res.paused') : tr('hubp.res.inUse', { owner: r.owner ?? '' })} · {tr('hubp.res.waiting', { n: r.waiting })}</p>{r.uncertain ? <Button disabled={busy} onClick={() => { if (window.confirm(tr('hubp.res.recoverConfirm'))) void act({ action: 'recover-resource', resourceId: r.resourceId, epoch: r.epoch }) }}>{tr('hubp.res.recover')}</Button> : null}</div>)}
+    {snapshot?.resources.filter((r) => r.owner || r.waiting || r.uncertain || r.paused).map((r) => <div key={r.resourceId}><p>{r.resourceId} · {r.uncertain ? tr('hubp.res.uncertain') : r.paused ? tr('hubp.res.paused') : tr('hubp.res.inUse', { owner: r.owner ?? '' })} · {tr('hubp.res.waiting', { n: r.waiting })}</p>{r.uncertain ? <Button disabled={busy} onClick={() => void (async () => { if (await confirm({ title: tr('hubp.res.recover'), body: tr('hubp.res.recoverConfirm'), detail: r.resourceId, confirmLabel: tr('hubp.res.recover'), tone: 'danger' })) void act({ action: 'recover-resource', resourceId: r.resourceId, epoch: r.epoch }) })()}>{tr('hubp.res.recover')}</Button> : null}</div>)}
     {view === 'windows' ? <AgentWindows snapshot={snapshot} panels={panels} setPanels={setPanels} onRefresh={refresh} onError={setError} /> : <>
     <div className="hub-row"><Segmented size="sm" label={tr('hubp.filter')} value={attentionOnly ? 'attention' : 'all'} onChange={(value) => setAttentionOnly(value === 'attention')} options={[{ value: 'all', label: tr('hubp.filter.all') }, { value: 'attention', label: `${tr('hubp.filter.attention')} · ${snapshot?.tasks.filter((t) => ['waiting_input', 'needs_review', 'failed', 'uncertain'].includes(t.status)).length ?? 0}` }]} /></div>
     <div className="hub-task-list">{visibleTasks.map((t) => <ListRow key={t.id} className="hub-task" current={t.id === selected} onClick={() => setSelected(t.id)}><span className="hub-task-title">{t.title}</span><span className="hub-task-meta"><span>{t.agent}</span><Badge tone={t.status === 'failed' ? 'err' : ['waiting_input', 'needs_review', 'uncertain'].includes(t.status) ? 'warn' : 'neutral'}>{tr(statusText[t.status])}</Badge></span></ListRow>)}</div>
@@ -124,7 +126,7 @@ export function AgentHubPanel({ onBack, initialTaskId }: { onBack: () => void; i
       <div className="hub-row">
         {['queued', 'preparing', 'running', 'waiting_input'].includes(task.status) ? <Button disabled={busy} onClick={() => void act({ action: 'cancel', taskId: task.id })}>{tr('hubp.stopTask')}</Button> : null}
         {task.status === 'needs_review' ? <Button disabled={busy} onClick={() => void act({ action: 'accept', taskId: task.id })}>{tr('hubp.accept')}</Button> : null}
-        {['uncertain', 'failed', 'cancelled'].includes(task.status) ? <Button disabled={busy} onClick={() => { if (window.confirm(tr('hubp.resumeConfirm'))) void act({ action: 'resume', taskId: task.id }) }}>{tr('hubp.resume')}</Button> : null}
+        {['uncertain', 'failed', 'cancelled'].includes(task.status) ? <Button disabled={busy} onClick={() => void (async () => { if (await confirm({ title: tr('hubp.resume'), body: tr('hubp.resumeConfirm'), detail: task.title, confirmLabel: tr('hubp.resume'), tone: 'danger' })) void act({ action: 'resume', taskId: task.id }) })()}>{tr('hubp.resume')}</Button> : null}
       </div>
       {snapshot?.approvals.filter((a) => a.taskId === task.id).map((approval) => <div key={approval.id} className="hub-approval"><strong>{approval.title}</strong><pre>{approval.detail}</pre>{approval.questions?.map((q) => <label key={q.id}>{q.question}{q.options?.length ? <p>{q.options.join(' / ')}</p> : null}<Input disabled={approval.status !== 'pending'} value={answers[approval.id]?.[q.id] ?? ''} onChange={(e) => setAnswers((old) => ({ ...old, [approval.id]: { ...old[approval.id], [q.id]: e.target.value } }))} /></label>)}<p>{approval.status === 'pending' ? tr('hubp.approval.pending', { time: new Date(approval.expiresAt).toLocaleTimeString() }) : approval.status === 'sent' ? tr('hubp.approval.sent') : approval.status === 'resolved' ? tr('hubp.approval.resolved') : tr('hubp.approval.stale')}</p>{approval.status === 'pending' ? <div className="hub-row"><Button disabled={busy} onClick={() => void act({ action: 'answer', approvalId: approval.id, answer: 'accept', answers: answers[approval.id] })}>{approval.kind === 'question' ? tr('hubp.approval.reply') : tr('hubp.approval.allow')}</Button><Button disabled={busy} onClick={() => void act({ action: 'answer', approvalId: approval.id, answer: 'decline' })}>{tr('hub.ask.decline')}</Button></div> : null}</div>)}
       {task.terminalId ? <HubTerminal task={task} onError={setError} onRefresh={refresh} /> : null}

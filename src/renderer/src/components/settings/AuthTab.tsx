@@ -29,12 +29,17 @@ import { SettingsSections } from './SettingsSections'
 export function AuthTab() {
   const t = useT()
   const providerName = (p: AuthProviderInfo): string => {
-    const names: Record<string, MessageKey> = { anthropic: 'auth.anthropicMetered', xai: 'auth.name.xai', 'zai-coding-cn': 'auth.name.zai', 'minimax-cn': 'auth.name.minimax', 'qwen-token-plan-cn': 'auth.name.qwen', 'xai-api': 'auth.name.xaiApi', 'openrouter-key': 'auth.name.openrouterApi' }
+    const names: Record<string, MessageKey> = { anthropic: 'auth.anthropicMetered', xai: 'auth.name.xai', 'zai-coding-cn': 'auth.name.zai', 'minimax-cn': 'auth.name.minimax', 'qwen-token-plan-cn': 'auth.name.qwen', 'xai-api': 'auth.name.xaiApi', 'openrouter-key': 'auth.name.openrouterApi', 'volcengine-ark': 'auth.name.ark' }
     return names[p.id] ? t(names[p.id]) : p.name
   }
+  /*
+   * 接入说明（「为什么选它 / 有什么坑」）。
+   * 文案只在这里（i18n）；主进程只回传 id 与环境变量这些数据，
+   * 以前它还会回传中文句子，英文界面下就会冒出中文。
+   */
   const providerHint = (p: AuthProviderInfo): string => {
     const hints: Record<string, MessageKey> = { 'openai-codex': 'auth.hint.codex', anthropic: 'auth.hint.anthropic', 'github-copilot': 'auth.hint.copilot', openrouter: 'auth.hint.openrouter', commandcode: 'auth.hint.commandcode', 'xai-api': 'auth.hint.xaiApi' }
-    return hints[p.id] ? t(hints[p.id]) : p.hint
+    return hints[p.id] ? t(hints[p.id]) : ''
   }
   const [list, setList] = useState<AuthProviderInfo[] | null>(null)
   const [checking, setChecking] = useState(false)

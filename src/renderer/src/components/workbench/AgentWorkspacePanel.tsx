@@ -9,6 +9,7 @@ import { AgentHubPanel, HubTerminal } from './AgentHubPanel'
 import { AgentHubHome, agentName, agentStatusLabel } from './AgentHubHome'
 import { AgentRunChat } from './AgentRunChat'
 import { Badge, Button, EmptyState, IconButton, ListRow, Select, Tab, Textarea } from '../ui'
+import { useConfirm } from '../ui/confirm'
 
 /** 磁贴标题只留 Agent 名；任务标题有信息量时再补一小段（默认的「xx 终端」不重复）。 */
 function tileTitle(agent:string,title:string):string{
@@ -25,6 +26,7 @@ function rememberedTabs(): {active:string;opened:string[]} {
 /** 子任务与外部 CLI 共用界面，后端仍是唯一事实源。 */
 export function AgentWorkspacePanel({ onBack, initialRun, onExpand, expanded, onlyRun = false, managerOnly = false, onOpenRun, onTitleChange }: { onBack():void; initialRun?:string; onExpand?():void; expanded?:boolean; onlyRun?:boolean; managerOnly?:boolean; onOpenRun?(key:string):void; onTitleChange?(title:string):void }) {
   const t=useT()
+  const confirm=useConfirm()
   const session=useStore(s=>s.session)
   const sessionProject=useStore(s=>s.runners.find(r=>(r.runId??r.id)===s.activeRunnerId)?.projectId)
   const subagents=useStore(s=>s.subagents)
@@ -99,7 +101,7 @@ export function AgentWorkspacePanel({ onBack, initialRun, onExpand, expanded, on
     {list?<div className="agent-run-list">{runs.map(run=><ListRow key={run.key} current={run.key===selected?.key} onClick={()=>openRun(run.key)}><span>{run.title}</span><Badge tone={run.attention?'warn':'neutral'}>{run.agent} · {agentStatusLabel(t,run.status)}</Badge></ListRow>)}</div>:null}
     {messages&&selected&&task?<div className="agent-collaboration">
       <div className="agent-collab-head"><strong className="agent-collab-title">{t('hub.messages')}</strong>{task.parentSessionId?<span className="ui-badge accent">{t('hub.linked')}</span>:null}</div>
-      {taskMessages.map(m=><div key={m.id} className="agent-message"><div className="agent-message-meta"><span>{m.parentSessionId?t('hub.from.reportShort'):m.fromTaskId?t('hub.from.agent'):t('hub.from.you')}</span><span className={`ui-badge ${m.delivery==='failed'?'err':m.delivery==='queued'?'warn':''}`}>{m.delivery==='queued'?t('hub.delivery.queued'):m.delivery==='typed'?t('hub.delivery.typed'):m.delivery==='injected'?t('hub.delivery.accepted'):t('hub.delivery.failed')}</span></div><pre>{m.text}</pre>{m.delivery==='queued'&&m.packet&&task.mode==='terminal'?<Button size="sm" disabled={busy||task.inputOwner!=='desktop'||m.toRunId!==task.runId} onClick={()=>{if(window.confirm(t('hub.deliverConfirm')))void act({action:'deliver-message',messageId:m.id,epoch:task.inputEpoch??0})}}>{t('hub.deliver')}</Button>:null}</div>)}
+      {taskMessages.map(m=><div key={m.id} className="agent-message"><div className="agent-message-meta"><span>{m.parentSessionId?t('hub.from.reportShort'):m.fromTaskId?t('hub.from.agent'):t('hub.from.you')}</span><span className={`ui-badge ${m.delivery==='failed'?'err':m.delivery==='queued'?'warn':''}`}>{m.delivery==='queued'?t('hub.delivery.queued'):m.delivery==='typed'?t('hub.delivery.typed'):m.delivery==='injected'?t('hub.delivery.accepted'):t('hub.delivery.failed')}</span></div><pre>{m.text}</pre>{m.delivery==='queued'&&m.packet&&task.mode==='terminal'?<Button size="sm" disabled={busy||task.inputOwner!=='desktop'||m.toRunId!==task.runId} onClick={()=>void (async()=>{if(!(await confirm({title:t('hub.deliver'),body:t('hub.deliverConfirm'),detail:m.text,confirmLabel:t('hub.deliver'),tone:'danger'})))return;void act({action:'deliver-message',messageId:m.id,epoch:task.inputEpoch??0})})()}>{t('hub.deliver')}</Button>:null}</div>)}
     </div>:null}
     {!managerOnly ? <div className="agent-run-surface">
       {task?.status==='uncertain'?<div className="agent-ended ui-card" role="status" data-testid="agent-uncertain">

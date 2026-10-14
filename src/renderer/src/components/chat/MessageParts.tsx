@@ -1,6 +1,5 @@
-import { memo, useDeferredValue } from 'react'
+import { createContext, createElement, memo, useContext, useDeferredValue, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import ReactMarkdown, { type Options } from 'react-markdown'
-import { createContext, useContext } from 'react'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { useT } from '../../i18n'
@@ -11,6 +10,8 @@ import { fileUrl as toFileUrl } from '../../../../shared/file-url'
 import { ChatImage } from './ChatImage'
 import { VisualFence } from './VisualBlock'
 import { isVisualBlockLang } from '../../../../shared/visual-blocks'
+import { createArrivalTracker, markArrivalBlocks, type ArrivalNode, type ArrivalDecision, type ArrivalTracker } from '../../lib/stream-arrival'
+import { prefersReducedMotion } from '../../lib/usePresence'
 
 /**
  * 共享的渲染件：Markdown / 工具行 / 工具详情。
@@ -73,12 +74,70 @@ const mdCacheSet = (text: string, element: React.ReactElement): void => {
 const MessageSourceCwd = createContext<string | undefined>(undefined)
 /** 正在流式输出的消息：结构化块写完前只占位，不报格式错误 */
 const MarkdownLive = createContext(false)
+/** 流式新块到达的身份簿记，每个 Markdown 实例一份（见 lib/stream-arrival.ts） */
+const ArrivalTrackerContext = createContext<ArrivalTracker | null>(null)
 
-const MD_COMPONENTS = {
+type ArrivingTag = 'p' | 'ul' | 'ol' | 'blockquote' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
+
+/**
+ * 问一次「这个块要不要入场」。决定在块的整个生命周期内固定：块挂载时问一次，
+ * 之后同一 DOM 节点重渲染不再问、也就不会重播。
+ * 只有 `live`（当前流式消息）才可能入场；历史 / 恢复 / 压缩不是 live，直接不挂类。
+ */
+function useArrival(node?: HastNode): { className?: string; style?: CSSProperties } {
+  const live = useContext(MarkdownLive)
+  const tracker = useContext(ArrivalTrackerContext)
+  const key = node?.position?.start?.offset
+  const decided = useRef<ArrivalDecision | null>(null)
+  if (decided.current === null && tracker && key !== undefined && node?.properties?.['data-arrival-block'] === true) {
+    decided.current = tracker.decide(String(key), { live })
+  }
+  const decision = decided.current
+  if (!live || node?.properties?.['data-arrival-block'] !== true || !decision?.animate) return {}
+  return { className: 'md-arrive', style: { '--i': decision.stagger } as CSSProperties }
+}
+
+/** 顶层块包一层：标签不变（p / ul / …），只按需补 .md-arrive 与 --i 错峰 */
+function ArrivingBlock({
+  tag,
+  node,
+  className,
+  style,
+  children,
+  ...rest
+}: {
+  tag: ArrivingTag
+  node?: HastNode
+  className?: string
+  style?: CSSProperties
+  children?: React.ReactNode
+} & Record<string, unknown>) {
+  const arrival = useArrival(node)
+  const merged = [className, arrival.className].filter(Boolean).join(' ')
+  const mergedStyle = arrival.style ? { ...style, ...arrival.style } : style
+  return createElement(
+    tag,
+    { ...rest, ...(merged ? { className: merged } : {}), ...(mergedStyle ? { style: mergedStyle } : {}) },
+    children
+  )
+}
+
+const MD_COMPONENTS: Options['components'] = {
   a: LinkAnchor,
   img: MarkdownImage,
   code: InlineCodeLink,
   pre: MarkdownPre,
+  /* 流式新块整段到达（方向 F，设计规范 §6）：只覆盖顶层块，内联结构不动 */
+  p: (props) => <ArrivingBlock tag="p" {...props} />,
+  ul: (props) => <ArrivingBlock tag="ul" {...props} />,
+  ol: (props) => <ArrivingBlock tag="ol" {...props} />,
+  blockquote: (props) => <ArrivingBlock tag="blockquote" {...props} />,
+  h1: (props) => <ArrivingBlock tag="h1" {...props} />,
+  h2: (props) => <ArrivingBlock tag="h2" {...props} />,
+  h3: (props) => <ArrivingBlock tag="h3" {...props} />,
+  h4: (props) => <ArrivingBlock tag="h4" {...props} />,
+  h5: (props) => <ArrivingBlock tag="h5" {...props} />,
+  h6: (props) => <ArrivingBlock tag="h6" {...props} />,
   // 表格用等宽栅格，横向可滚
   table: ({ children }: { children?: React.ReactNode }) => (
     <div className="md-table-wrap">
@@ -215,16 +274,17 @@ function InlineCodeLink({ className, children }: { className?: string; children?
   )
 }
 
-type HastNode = { position?: { start?: { offset?: number } }; type: string; value?: string; tagName?: string; properties?: { className?: unknown }; children?: HastNode[] }
+type HastNode = { position?: { start?: { offset?: number } }; type: string; value?: string; tagName?: string; properties?: Record<string, unknown>; children?: HastNode[] }
 const hastText = (node: HastNode): string => node.type === 'text' ? node.value ?? '' : (node.children ?? []).map(hastText).join('')
 
 /** 代码块：`yan-chart` / `yan-cards` / `yan-flow` 交给结构化回答组件，其余照常 */
 function MarkdownPre({ node, children }: { node?: HastNode; children?: React.ReactNode }) {
   const live = useContext(MarkdownLive)
+  const arrival = useArrival(node)
   const code = node?.children?.find((child) => child.type === 'element' && child.tagName === 'code')
   const classes = Array.isArray(code?.properties?.className) ? code.properties.className as string[] : []
   const lang = classes.find((c) => c.startsWith('language-'))?.slice('language-'.length)
-  const plain = <pre>{children}</pre>
+  const plain = <pre className={arrival.className} style={arrival.style}>{children}</pre>
   if (!code || !isVisualBlockLang(lang)) return plain
   return <VisualFence blockId={String(node?.position?.start?.offset ?? '')} lang={lang} text={hastText(code)} live={live} fallback={plain} />
 }
@@ -249,6 +309,25 @@ export const Markdown = memo(function Markdown({ text, sourceCwd, live = false }
   // uses authoritative text immediately, without a delayed typewriter tail.
   const deferredText = useDeferredValue(text)
   const renderedText = live ? deferredText : text
+  /*
+   * 流式新块到达的身份簿记（方向 F，设计规范 §6）。每个 Markdown 实例一份，
+   * 随段落重挂载而重置；commit 在每次渲染提交后归零「1 个批次」的错峰序号。
+   * 历史 / 恢复不是 live，块不加 .md-arrive，tag 也动不了。
+   */
+  const arrivalTracker = useRef<ArrivalTracker | null>(null)
+  if (arrivalTracker.current === null) arrivalTracker.current = createArrivalTracker()
+  const tracker = arrivalTracker.current
+  const arrivalRehype = useMemo(() => {
+    if (!live) return { code: MD_REHYPE, plain: MD_REHYPE_PLAIN }
+    const markBlocks = () => (tree: unknown): void => {
+      tracker.observe(markArrivalBlocks(tree as ArrivalNode), { live: true, motion: !prefersReducedMotion() })
+    }
+    return { code: [markBlocks, ...MD_REHYPE], plain: [markBlocks, ...MD_REHYPE_PLAIN] }
+  }, [tracker, live])
+  useEffect(() => {
+    arrivalTracker.current?.commit()
+  })
+
   const cached = live ? undefined : mdCache.get(renderedText)
   if (cached) return <MessageSourceCwd.Provider value={sourceCwd}><MarkdownLive.Provider value={false}>{cached}</MarkdownLive.Provider></MessageSourceCwd.Provider>
 
@@ -259,7 +338,7 @@ export const Markdown = memo(function Markdown({ text, sourceCwd, live = false }
         remarkPlugins={MD_REMARK}
         // 未闭合的代码块**不做高亮**：它每帧都在变，highlightAuto 会
         // 拿半截代码去逐个试所有语言（实测单块 30ms）。
-        rehypePlugins={live || unclosed ? MD_REHYPE_PLAIN : MD_REHYPE}
+        rehypePlugins={live || unclosed ? arrivalRehype.plain : arrivalRehype.code}
         components={MD_COMPONENTS}
       >
         {renderedText}
@@ -270,7 +349,13 @@ export const Markdown = memo(function Markdown({ text, sourceCwd, live = false }
   if (!live && !unclosed && renderedText.length <= MD_CACHE_MAX_CHARS) {
     mdCacheSet(renderedText, el)
   }
-  return <MessageSourceCwd.Provider value={sourceCwd}><MarkdownLive.Provider value={live}>{el}</MarkdownLive.Provider></MessageSourceCwd.Provider>
+  return (
+    <MessageSourceCwd.Provider value={sourceCwd}>
+      <MarkdownLive.Provider value={live}>
+        <ArrivalTrackerContext.Provider value={arrivalTracker.current}>{el}</ArrivalTrackerContext.Provider>
+      </MarkdownLive.Provider>
+    </MessageSourceCwd.Provider>
+  )
 })
 
 /* ---------------------------------------------------------------- 工具详情 */

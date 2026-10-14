@@ -11,6 +11,7 @@ import type {
   PackageListingView
 } from '../../../../shared/ipc'
 import { Button, Disclosure, SettingRow } from '../ui'
+import { useConfirm } from '../ui/confirm'
 import { isCurrentGeneration } from './review2-settings-guards'
 
 /**
@@ -60,6 +61,7 @@ const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
  */
 export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin = true }: { selectedSource?: string; selectionKey?: number; showBuiltin?: boolean }): React.JSX.Element {
   const t = useT()
+  const confirm = useConfirm()
   const cwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd ?? '')
   const [listing, setListing] = useState<PackageListingView | null>(null)
   const [builtin, setBuiltin] = useState<BuiltinCapabilityView[]>([])
@@ -95,7 +97,9 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
   }, [t])
 
   const cleanAttachments = async (): Promise<void> => {
-    if (!attach || !window.confirm(`${t('pkg.attachClean')} · ${t('pkg.attachSize', { files: attach.files, size: fmtSize(attach.bytes) })}?`)) return
+    if (!attach) return
+    const size = t('pkg.attachSize', { files: attach.files, size: fmtSize(attach.bytes) })
+    if (!(await confirm({ title: t('pkg.attachClean'), body: `${t('pkg.attachDesc')}\n${t('pkg.attachCleanNote')}`, detail: size, confirmLabel: t('pkg.attachClean'), tone: 'danger' }))) return
     setAttachBusy(true)
     setAttachNote(t('pkg.attachScanning'))
     try {

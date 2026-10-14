@@ -29,7 +29,11 @@ const catalogs: Record<Lang, Record<MessageKey, string>> = {
 export type TVars = Record<string, string | number>
 export type TFunc = (key: MessageKey, vars?: TVars) => string
 
-function translate(lang: Lang, key: MessageKey, vars?: TVars): string {
+/**
+ * 非组件环境（store、主进程推送的回调）也能取到同一份翻译。
+ * 组件里请用 `useT()`；这里的 lang 要调用方自己给。
+ */
+export function translate(lang: Lang, key: MessageKey, vars?: TVars): string {
   const raw = catalogs[lang]?.[key] ?? catalogs['en-US']?.[key]
   let s: string = raw
   if (s === undefined) {

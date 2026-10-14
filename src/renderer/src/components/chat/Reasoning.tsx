@@ -297,7 +297,8 @@ function fallbackSentences(text: string): string[] {
  *   · `prefers-reduced-motion` 时不用动画（`enabled=false` 直接给全文）。
  */
 export function useTypewriter(text: string, enabled: boolean): string {
-  const [shown, setShown] = useState(enabled ? '' : text)
+  const [shown, setShown] = useState(text)
+  const mountedRef = useRef(false)
   /** 最新的完整文本（rAF 循环一直读它） */
   const target = useRef(text)
   /** 当前已经吐出来的**字素数** */
@@ -349,6 +350,11 @@ export function useTypewriter(text: string, enabled: boolean): string {
     const previousText = cache.current.text
     const replaced = !!previousText && !text.startsWith(previousText)
     const units = unitsFor(text)
+    if (!mountedRef.current) {
+      /* 挂载时已有的文本是早先流出来的（例如回合进行中展开过程列表），直接显示，不从头重播 */
+      mountedRef.current = true
+      render(units.length)
+    }
     if (units.length < shownCount.current) {
       /* 文本被替换成不相接的另一段（切会话 / 重新开始）→ 直接对齐 */
       cache.current = { text, units: toUnits(text) }

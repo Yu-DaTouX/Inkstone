@@ -8,6 +8,8 @@
  * 组件按需选片，适合这种「一条长连接不停灌数据」的场景。
  */
 import { create } from 'zustand'
+import { translate, type TFunc } from '../i18n'
+import { toolMissingText } from '../lib/toolchain-text'
 import type {
   AppSettings,
   Attachment,
@@ -73,6 +75,7 @@ import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import { keepLocalImages } from './keep-images'
+import { planQueueRecovery, type QueueImageRef } from './queue-images'
 import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT, RESET_GRACE_MS } from '../../../shared/quota-resume'
 import { failoverSkip, QUOTA_FAILOVER_PROMPT } from '../../../shared/quota-failover'
 import { decideKeepRunning, KEEP_RUNNING_PROMPT, type KeepRunningTurn } from '../../../shared/keep-running'
@@ -379,6 +382,8 @@ export interface Store {
    */
   composerInsert: string | null
   notices: Notice[]
+  /** 设置页主动查询的原生 MCP 状态；响应仍来自 pi 的 /mcp 通知。 */
+  nativeMcpStatus: { sessionId: string; pending: boolean; text: string } | null
   statuses: Record<string, string>
   /** 扩展想让输入框变成的文本（消费一次就清） */
   editorInject: string | null
@@ -804,6 +809,13 @@ export interface Store {
    * 这些提示同时也会进日志抽屉（error 类由 set 包装自动写入）。
    */
   notify: (type: Notice['type'], text: string) => void
+  /**
+   * 启动时查一次本机缺不缺 bash / git，缺了就留一条通知（Windows 上带「一键安装」按钮）。
+   *
+   * 由 App 在**判定这次不弹首次引导之后**调用：引导卡片里写的是同一件事，
+   * 首启同时冒出卡片和通知是重复的。探针模式仍会调它，保住缺 Git 的验收路径。
+   */
+  checkToolchainNotice: () => void
   consumeEditorInject: () => void
   /** 用户点开了一条会话：让输入框取得光标 */
   requestComposerFocus: (target: { sessionId?: string; path?: string }) => void
@@ -1029,6 +1041,62 @@ export interface FilePreviewState {
 /** 附件上限（方案 5.1：最多 20 个附件，图片合计 20MB） */
 const MAX_ATTACHMENTS = 20
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+const QUEUE_ATTACHMENT_LIMITS = { maxCount: MAX_ATTACHMENTS, maxImageBytes: MAX_IMAGE_BYTES }
+
+/**
+ * 把一次「队列内容放回草稿」落进状态。
+ *
+ * 撤回排队消息、放回待发送项、停止时回收队列，三处的差别只有通知文案，
+ * 落点规则必须一致（纯逻辑在 state/queue-images.ts，有单测）。
+ *
+ * 跨会话时文字写回**原会话**的草稿缓存，图片不回填：附件是全局字段，
+ * 往当前输入框塞图会让它出现在另一条会话里。图片确实放不回去就说一声，
+ * 不能默默吞掉 —— 那正是用户报的问题。
+ */
+function applyQueueRecovery(
+  current: Store,
+  input: { sessionId?: string; text: string; images?: QueueImageRef[]; idPrefix: string; notice?: string }
+): Partial<Store> {
+  const sameSession = current.session?.sessionId === input.sessionId
+  const recovery = planQueueRecovery({
+    sameSession,
+    text: input.text,
+    images: input.images,
+    existing: current.attachments,
+    limits: QUEUE_ATTACHMENT_LIMITS,
+    idPrefix: input.idPrefix
+  })
+  let notices = current.notices
+  if (recovery.droppedImages > 0) {
+    notices = pushNotice(notices, 'error', `有 ${recovery.droppedImages} 张排队时的图片没能放回输入框（已切换到其他会话或超过附件上限）`)
+  } else if (sameSession && input.notice && (recovery.queueRestore || recovery.restoredImages > 0)) {
+    notices = pushNotice(notices, 'info', input.notice)
+  }
+
+  if (sameSession) {
+    const patch: Partial<Store> = {}
+    if (recovery.queueRestore) {
+      patch.queueRestore = current.queueRestore ? `${recovery.queueRestore}\n${current.queueRestore}` : recovery.queueRestore
+    }
+    if (recovery.attachments !== current.attachments) patch.attachments = recovery.attachments
+    if (notices !== current.notices) patch.notices = notices
+    return patch
+  }
+
+  const patch: Partial<Store> = {}
+  if (input.sessionId && recovery.queueRestore) {
+    const cached = current.sessionRuntimes[input.sessionId]
+    const runtime = cached?.runtime ?? runtimeForState(current)
+    if (runtime) {
+      patch.sessionRuntimes = updateSessionRuntime(current.sessionRuntimes, { ...runtime, sessionId: input.sessionId }, {
+        draft: [recovery.queueRestore, cached?.draft].filter(Boolean).join('\n')
+      })
+    }
+  }
+  if (notices !== current.notices) patch.notices = notices
+  return patch
+}
 
 /** base64 字节的 sha256 前 32 位 hex —— 与主进程 `saveImage` 算指纹的方式**必须一致** */
 async function imageFingerprint(base64: string): Promise<string | null> {
@@ -1492,6 +1560,7 @@ export const useStore = create<Store>((rawSet, get) => {
   uiDrafts: {},
   composerInsert: null,
   notices: [],
+  nativeMcpStatus: null,
   statuses: {},
   widgets: {},
   piInfo: null,
@@ -1592,25 +1661,7 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ approvals: [...byId.values()] })
       approvalChanges.clear()
     }).catch(() => undefined)
-    /* 新设备常缺 Git / bash：只在启动时提示一次，缺什么说什么 */
-    void window.yan
-      .toolchainStatus()
-      .then((tools) => {
-        const missing = [tools.bash, tools.git].filter((tool) => !tool.ok && tool.hint)
-        if (!missing.length) return
-        if (tools.platform === 'win32') {
-          /* Windows：合成一条带「一键安装」按钮的通知（bash 与 git 同一个 Git 就能解决） */
-          set({
-            notices: [
-              ...get().notices.filter((n) => n.id !== 'git-install'),
-              { id: 'git-install', type: 'warning', text: missing[0].hint ?? '', at: Date.now(), action: 'git-install' }
-            ]
-          })
-        } else {
-          for (const tool of missing) get().notify('warning', tool.hint ?? '')
-        }
-      })
-      .catch(() => undefined)
+    /* 缺 bash / git 的通知挪到 App：要先知道这次弹不弹首次引导（见 checkToolchainNotice） */
     /*
      * 启动时的自动检查只在主进程里跑，结果原本要打开「设置 → 关于」才看得到。
      * 检查还在进行时 `check()` 返回同一次检查；发现新版本就留一条不自动消失的通知。
@@ -1653,7 +1704,8 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ runners: list, ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
       if (active) {
         const runtime = runtimeFromRunner(active)
-        const snapshot = findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId)
+        /* 只投影正在看的那条会话：只读打开别的会话时，忙着的实例还停在原会话上 */
+        const snapshot = snapshotForView(get(), findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId))
         if (snapshot) set(projectSnapshotKeepingPeek(get(), snapshot))
       }
     } catch {
@@ -1784,6 +1836,8 @@ export const useStore = create<Store>((rawSet, get) => {
             activeRunnerId: runId ?? null,
             goal: snapshot?.goal ?? null,
             handoff: null,
+            /* 没有缓存快照时用量也要清，否则上一条会话的累计会留着冒充这一条 */
+            stats: snapshot?.stats ?? null,
             pendingActivation: null
           })
           void get().syncRunners()
@@ -2596,18 +2650,27 @@ export const useStore = create<Store>((rawSet, get) => {
   releaseSend: async (id, mode) => {
     const item = get().pendingSends.find((p) => p.id === id)
     if (!item) return
+    const sessionId = get().session?.sessionId
     const ok = await get().send(item.text, item.images, mode)
-    /* 只有真的投出去才移掉卡片：失败时留在原地，用户能换个方式重试或放弃 */
-    if (ok) set({ pendingSends: get().pendingSends.filter((p) => p.id !== id) })
+    /* 只有真的投出去才移掉卡片；竞态下只移除发起时那一会话的原项目。 */
+    if (ok && get().session?.sessionId === sessionId) {
+      set({ pendingSends: get().pendingSends.filter((p) => p.id !== id) })
+    }
   },
 
   restoreSend: (id) => {
     const item = get().pendingSends.find((p) => p.id === id)
     if (!item) return
+    const sessionId = get().session?.sessionId
+    const current = get()
     set({
-      pendingSends: get().pendingSends.filter((p) => p.id !== id),
-      /* 与“撤回排队消息”走同一个回填通道（Composer 里消费 queueRestore） */
-      queueRestore: get().queueRestore ? `${item.text}\n${get().queueRestore}` : item.text
+      pendingSends: current.pendingSends.filter((p) => p.id !== id),
+      ...applyQueueRecovery(current, {
+        sessionId,
+        text: item.text,
+        images: item.images,
+        idPrefix: 'pending-image'
+      })
     })
   },
 
@@ -2622,31 +2685,45 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   removeQueued: async (queueId) => {
+    const sessionId = get().session?.sessionId
     const res = await piCall(() => window.yan.removeQueued(queueId))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '撤回失败') })
       return
     }
-    if (res.text) {
-      const previous = get().queueRestore
-      set({
-        queueRestore: previous ? `${res.text}\n${previous}` : res.text,
-        notices: pushNotice(get().notices, 'info', '已撤回排队内容，并放回输入草稿')
-      })
-    }
+    const current = get()
+    set(applyQueueRecovery(current, {
+      sessionId,
+      text: res.text ?? '',
+      images: res.images,
+      idPrefix: 'queue-image',
+      notice: '已撤回排队内容，并放回输入草稿'
+    }))
   },
 
   abort: async () => {
     /* 用户点停止就是要停：持续运行不能在这一轮收尾后又自动发继续 */
     if (get().keepRunning) set({ keepRunning: null, notices: pushNotice(get().notices, 'info', '已停止，持续运行已关闭') })
     // pi 的约定：clear_queue 拿回排队文本 → abort → 文本回到输入框
+    const sessionId = get().session?.sessionId
     const cleared = await window.yan.abort()
     const back = [...cleared.steering, ...cleared.followUp].filter(Boolean)
-    if (back.length) {
-      set({
-        queueRestore: back.join('\n'),
-        notices: pushNotice(get().notices, 'info', `已把 ${back.length} 条排队内容放回输入框`)
-      })
+    const items = [...(cleared.items?.steering ?? []), ...(cleared.items?.followUp ?? [])]
+    const current = get()
+    /*
+     * 停止是「整批放回」：文字按 steering → followUp 的顺序拼成一份草稿，
+     * 图片跟着这一批一起回填（旧主进程只给文本时，仍按 back 回填文字）。
+     * 一条排队消息的撤回走 removeQueued，那里文字与图片是逐条绑定的。
+     */
+    const texts = items.length ? items.map((item) => item.text ?? '').filter((text) => text) : back
+    if (texts.length || items.some((item) => item.images?.length)) {
+      set(applyQueueRecovery(current, {
+        sessionId,
+        text: texts.join('\n'),
+        images: items.flatMap((item) => item.images ?? []),
+        idPrefix: 'queue-image',
+        notice: `已把 ${texts.length} 条排队内容放回输入框`
+      }))
     }
   },
 
@@ -2683,6 +2760,8 @@ export const useStore = create<Store>((rawSet, get) => {
         goal: null,
         /* 交接状态也是会话级事实：新会话不能接着显示上一条的「整理未完成」 */
         handoff: null,
+        /* 用量同理：不主动清，旧会话的累计会一直留在新会话上 */
+        stats: null,
         pendingActivation: null
       })
     }
@@ -2733,10 +2812,17 @@ export const useStore = create<Store>((rawSet, get) => {
      */
     const sum = get().sessions.find((x) => x.path === path)
     /*
-     * 在新会话的权威快照到达前，不继续展示上一条会话的目标与交接状态
-     *（两者都是**会话级事实**；交接提示尤其显眼，留着会看着像「每条对话都在整理」）。
+     * 在新会话的权威快照到达前，不继续展示上一条会话的目标、交接**与用量**：
+     * 三者都是**会话级事实**。用量尤其会「以大充小」—— 旧的大会话累计留在屏幕上，
+     * 看起来像刚点开的小会话自己花了这么多；而只读预览（deferred）根本不会收到
+     * 新 stats，不主动清就永远清不掉。
+     *
+     * 同时把 `peekedSessionId` 提前钉到新会话：它才是「当前视图已铺上的目标身份」。
+     * 下面 peek / selectSession 都要 await，这段间隙里旧实例（可能正被复用到新会话）
+     * 迟到的 stats / sync / todos 会走 routePush 的 belongsToView 判定 —— 不提前认身份，
+     * 它们就会被当成当前视图的推送投影上来。
      */
-    set({ goal: null, handoff: null })
+    set({ goal: null, handoff: null, stats: null, peekedSessionId: sum?.id ?? null })
 
     /*
      * 运行缓存里已有这条会话的消息（后台在跑），或分屏里另一块正显示着它（split-snapshots）：同步先铺上，
@@ -2754,11 +2840,16 @@ export const useStore = create<Store>((rawSet, get) => {
 
     // ① 立即显示（不等 pi）
     performance.mark('yan:switch-start')
+    /* 新会话的内容铺上去之前，屏幕上不能还留着上一条会话的消息（读不出来、文件为空时尤其如此） */
+    const clearStale = (): void => {
+      if (!cachedMessages?.length) set({ messages: [], peekedPath: path, peekedSessionId: sum?.id ?? null, peekNote: null })
+    }
     try {
       const peek = await window.yan.peekSession(path)
       /* 用户又点了别的会话（这次 click 已经过期）：整段放弃，不写投影也不再请求激活 */
       if (gate !== sessionSwitchGate) return
       performance.mark('yan:switch-peeked')
+      if (!peek || !peek.messages.length) clearStale()
       if (peek && peek.messages.length) {
         set({
           messages: peek.messages,
@@ -2771,6 +2862,7 @@ export const useStore = create<Store>((rawSet, get) => {
     } catch {
       /* 读不出来就等 pi —— 不是致命错误；但过期了同样不继续 */
       if (gate !== sessionSwitchGate) return
+      clearStale()
     }
 
     // ② 切视图（N12：命中运行实例就只是切换订阅，**不停任何**会话）
@@ -3890,6 +3982,32 @@ export const useStore = create<Store>((rawSet, get) => {
 
   dismissNotice: (id) => set({ notices: get().notices.filter((n) => n.id !== id) }),
   notify: (type, text) => set({ notices: pushNotice(get().notices, type, text) }),
+  checkToolchainNotice: () => {
+    /* 新设备常缺 Git / bash：只在启动时提示一次，缺什么说什么 */
+    void window.yan
+      .toolchainStatus()
+      .then((tools) => {
+        const missing = [tools.bash, tools.git].filter((tool) => !tool.ok && tool.reason)
+        if (!missing.length) return
+        /*
+         * 文案按当前界面语言渲染：主进程只给原因码。
+         * 以前直接把主进程拼好的中文当通知正文，英文界面下整段都是中文。
+         */
+        const t: TFunc = (key, vars) => translate(get().settings?.lang ?? 'zh-CN', key, vars)
+        if (tools.platform === 'win32') {
+          /* Windows：合成一条带「一键安装」按钮的通知（bash 与 git 同一个 Git 就能解决） */
+          set({
+            notices: [
+              ...get().notices.filter((n) => n.id !== 'git-install'),
+              { id: 'git-install', type: 'warning', text: t('notice.toolsMissing'), at: Date.now(), action: 'git-install' }
+            ]
+          })
+        } else {
+          for (const tool of missing) get().notify('warning', toolMissingText(tool.reason, t))
+        }
+      })
+      .catch(() => undefined)
+  },
   consumeEditorInject: () => set({ editorInject: null }),
   requestComposerFocus: (target) => set({ composerFocus: { tick: get().composerFocus.tick + 1, at: Date.now(), sessionId: target.sessionId, path: target.path } }),
   consumeQueueRestore: () => set({ queueRestore: null }),

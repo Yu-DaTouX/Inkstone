@@ -554,6 +554,10 @@ export function Rail() {
           <span>{t('rail.new')}</span>
           <kbd className="ui-kbd plain">Ctrl N</kbd>
         </button>
+        <button className="rail-action" onClick={() => window.dispatchEvent(new CustomEvent('inkstone-schedule-open'))} data-testid="rail-schedule">
+          <Icon name="history" size={14} />
+          <span>{t('rail.schedule')}</span>
+        </button>
         <div className="rail-search-row">
         <label className="rail-search">
           <Icon name="search" size={12} />

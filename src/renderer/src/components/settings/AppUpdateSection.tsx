@@ -3,9 +3,11 @@ import type { AppUpdateStatus } from '../../../../shared/app-update'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, SettingRow, Switch } from '../ui'
+import { useConfirm } from '../ui/confirm'
 
 export function AppUpdateSection(): React.JSX.Element {
   const t = useT()
+  const confirm = useConfirm()
   const [status, setStatus] = useState<AppUpdateStatus | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -17,6 +19,15 @@ export function AppUpdateSection(): React.JSX.Element {
   const act = async (action: 'check' | 'download'): Promise<void> => {
     try { setStatus(await window.yan.appUpdate[action]()) } catch (error) { setError(String(error)) }
   }
+  const install = async (): Promise<void> => {
+    if (!(await confirm({ title: t('update.install'), body: t('update.installConfirm') }))) return
+    try {
+      const result = await window.yan.appUpdate.install()
+      if (!result.ok) setError(result.error ?? '')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
   return <>
     <SettingRow name={t('update.automatic')} desc={t('update.automaticHint')}>
       <Switch label={t('update.automatic')} checked={status?.automatic ?? true} onChange={(enabled) => { void window.yan.appUpdate.automatic(enabled).then(setStatus).catch((error) => setError(String(error))) }} testId="update-automatic" />
@@ -25,7 +36,7 @@ export function AppUpdateSection(): React.JSX.Element {
       <Button size="sm" disabled={status?.phase === 'checking' || status?.phase === 'downloading'} onClick={() => void act('check')} data-testid="update-check">{t('update.check')}</Button>
       {status?.phase === 'available' ? <Button size="sm" onClick={() => void act('download')}>{t('update.download')}</Button> : null}
       {status?.phase === 'manual' ? <Button size="sm" onClick={() => { useStore.getState().closeSettings(); void useStore.getState().openBrowser(status.releaseUrl) }}>{t('update.releases')}</Button> : null}
-      {status?.phase === 'downloaded' ? <Button size="sm" onClick={() => { if (window.confirm(t('update.installConfirm'))) void window.yan.appUpdate.install().then((result) => { if (!result.ok) setError(result.error ?? '') }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause))) }}>{t('update.install')}</Button> : null}
+      {status?.phase === 'downloaded' ? <Button size="sm" onClick={() => void install()}>{t('update.install')}</Button> : null}
     </SettingRow>
   </>
 }

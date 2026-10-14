@@ -12,6 +12,7 @@ import {
   type AccountQuotaSource
 } from '../../../../shared/account-quota'
 import { Badge, Button, Disclosure, EmptyState, IconButton, Input, SettingRow, Spinner, Switch } from '../ui'
+import { useConfirm } from '../ui/confirm'
 import { AgentMark } from '../workbench/AgentMark'
 import { resetText } from './QuotaSection'
 
@@ -30,6 +31,7 @@ const cap = (s?: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) 
  */
 export function AccountQuotaPane() {
   const t = useT()
+  const confirm = useConfirm()
   const [report, setReport] = useState<AccountQuotaReport | null>(null)
   const [loading, setLoading] = useState(false)
   /** 查询失败时保留上一次的数字，只加一行说明 */
@@ -85,7 +87,7 @@ export function AccountQuotaPane() {
   }
 
   const remove = async (card: AccountQuotaCard): Promise<void> => {
-    if (!window.confirm(t('acct.removeConfirm', { name: accountCardTitle(card) }))) return
+    if (!(await confirm({ title: t('acct.remove'), body: t('acct.removeConfirm', { name: accountCardTitle(card) }), confirmLabel: t('acct.remove'), tone: 'danger' }))) return
     setBusyKey(card.key)
     try {
       const r = await window.yan.codexAccountRemove(card.key)
