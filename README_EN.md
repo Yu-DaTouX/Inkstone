@@ -21,9 +21,9 @@
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-tiles-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-tiles-light.png">
-  <img src="docs/assets/inkstone/workspace-tiles-light.png" alt="Inkstone: the session list on the left, the conversation in the center, and a file and another AI's results side by side on the right." width="1280">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-e-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-e-light.png">
+  <img src="docs/assets/inkstone/workspace-e-light.png" alt="Inkstone: the session list on the left, the conversation in the center, and a file and another AI's results side by side on the right." width="1280">
 </picture>
 
 <p align="center"><sub>UI preview · All content in the screenshot is demo data</sub></p>

@@ -21,9 +21,9 @@
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-tiles-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-tiles-light.png">
-  <img src="docs/assets/inkstone/workspace-tiles-light.png" alt="砚的界面：左边是会话列表，中间是对话，右边并排打开文件和另一个 AI 的工作结果。" width="1280">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-e-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-e-light.png">
+  <img src="docs/assets/inkstone/workspace-e-light.png" alt="砚的界面：左边是会话列表，中间是对话，右边并排打开文件和另一个 AI 的工作结果。" width="1280">
 </picture>
 
 <p align="center"><sub>界面示意 · 图中内容均为演示数据</sub></p>

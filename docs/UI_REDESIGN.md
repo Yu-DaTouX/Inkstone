@@ -2,7 +2,9 @@
 
 [文档索引](README.md) · [设计规范](DESIGN_SYSTEM.md) · [品牌规范](BRAND.md) · [代码地图](CODE_MAP.md)
 
-状态：**P0–P5 完成；P6 已完成竖屏版式与安装核对，真实连接及宽屏待验收**。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文记录范围、界面清单、分阶段路线、进度、已作的决定与验证的边界（第 8、9 节）。
+> **历史记录**：本文是 v0.5（2026-09-28 定案）的分阶段计划与进度。现行界面方向是[设计规范](DESIGN_SYSTEM.md)文首的「界面重构（方向 E）」（2026-10-10），与本文冲突时以设计规范为准；本文不再更新进度。
+
+状态（截至 2026-10-02）：**P0–P5 完成；P6 已完成竖屏版式与安装核对，真实连接及宽屏待验收**。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文记录范围、界面清单、分阶段路线、进度、已作的决定与验证的边界（第 8、9 节）。
 
 原型源码：[`scripts/design/terminal-preview/`](../scripts/design/terminal-preview/README.md)（工作台演示、组件与令牌、动效规范、图标规范四块画板）。图标几何：[`scripts/design/icons/inkline.json`](../scripts/design/icons/inkline.json)。
 

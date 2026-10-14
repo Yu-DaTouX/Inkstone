@@ -135,7 +135,11 @@ Windows 上运行 `node scripts/measure-light-client.mjs` 记录三次空会话�
 
 Codemode 需要 `quickjs-wasi/quickjs.wasm` 和官方脚本 worker。版本与 RPC 握手通过后，仍需执行 `node scripts/test-pi-compatibility.mjs`、`npm run test:agent-native-context` 和 `node scripts/test-pi-native-tools.mjs --controller`。原生工具检查仅连接本机模型/MCP 夹具；可加 `--only`、`--no-mcp`、`--native-search`、`--guard`、`--profile-blocked` 或 `--image`（codemode `image()` 输出在实时事件、历史与宿主投影中的图片块）验证对应边界，`--compact` 验证原生压缩。构建、真实服务和发行包需要各自证据。
 
-升级还要核对 `parentToolCallId` 实时事件与 `toolResult.nestedCalls` 历史摘要、执行时 `tool_call` 护栏和各类子 pi 的加载策略。原生 MCP 使用 pi 的 `mcp.json`，旧宿主服务使用砚的 `mcp-servers.json`；两者不自动迁移凭证。原生 MCP 的 OAuth 登录由 pi 完成（`/mcp login <server>` 自动打开浏览器，授权链接以通知给出，浏览器到不了本机时由提问面板粘贴回调地址），凭证在 pi 的 `mcp-auth.json`，砚不读写。相关提交正文应写明目标版本、宿主适配、验证范围和剩余限制，不能只引用本地资料。
+升级还要核对 `parentToolCallId` 实时事件与 `toolResult.nestedCalls` 历史摘要、执行时 `tool_call` 护栏和各类子 pi 的加载策略。原生 MCP 使用 pi 的 `mcp.json`；未迁移的旧宿主服务仍读取 `mcp-servers.json`。通用 MCP 获取已停用，设置页逐条预览、确认导入并在校验后停用旧条目，`windows-mcp` 保留；不自动迁移 `authRef` 凭证，不重启当前运行实例。原生 MCP 的 OAuth 登录由 pi 完成（`/mcp login <server>` 自动打开浏览器，授权链接以通知给出，浏览器到不了本机时由提问面板粘贴回调地址），凭证在 pi 的 `mcp-auth.json`，砚不读写。相关提交正文应写明目标版本、宿主适配、验证范围和剩余限制，不能只引用本地资料。
+
+原生适配可按主题单独检查（不默认调用真实模型）：`test-virtual-model-native.mjs`、`test-readonly-model-registration.mjs`、`test-mcp-guard-native.mjs`、`test-mcp-native-import.mjs`、`test-mcp-native-verify.mjs`、`test-mcp-native-import-flow.mjs`、`test-terminal-status.mjs`、`test-terminal-native-protocol.mjs`、`test-taskbar-status.mjs`、`test-terminal-tab-status.mjs`、`test-confirm-queue.mjs`、`test-command-palette.mjs`、`test-tip.mjs`、`test-motion-presence.mjs`，均在 `scripts/`。原生夹具需要已生成的随包运行时；终端脚本的 `--pty` 只启动自己的本机终端，不发模型消息。Windows ConPTY 不可靠转发 OSC 输入回复，自建终端缺省设置 pi 原生 `PI_PROGRAM_STATUS=1`，显式环境值优先；不把普通 shell 存活当作工作报告。原生进程、本机模拟 Provider、假窗口、真实用户服务与视觉验收须分别报告。
+
+用户明确授权真实模型及额度后，可构建并单独运行 `npm run test:live -- bundlereal`：固定 Command Code 的 `deepseek/deepseek-v4.1-flash`，先读取当前额度，验证真实输入、流式正文、工具、显式只读子模型、实际模型与原生窗口，以及新块 DOM 动画不重播。工具循环与子任务通知可能触发多次付费请求；测试只在隔离模型副本中限制输出上限。既有 live 入口会将凭据、模型配置和选定历史复制到系统临时目录，原件不修改，退出时清理；它不等于不读取用户凭据。`npm run test:live -- arrivaldom` 仅用真实渲染器注入快照验证后台增量和块身份，不发模型消息。两者都不代替用户 MCP、整体截图或发行包验收，不加入默认单测的付费运行。
 
 Issue 应包含版本、复现步骤及必要截图；移除密钥、私人对话和个人路径。提交说明应写清修改原因、检查范围和剩余限制。构建成功、模拟数据和真实运行是不同的证据，不互相替代。
 

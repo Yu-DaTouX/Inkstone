@@ -19,6 +19,8 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 - 未提交的改动可能属于其他 agent。不回滚、不格式化、不顺手修改任务范围外的文件；共享热点文件（`src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts`、两份 i18n、`Settings.tsx`、`chat.css`、`scheme.css` 等）只做小范围编辑，编辑前重新读取。
 - 共享信息只写进仓库里的文件：现状写 `.local-docs/STATUS.md`，用户决定追加到 `.local-docs/DECISIONS.md`，交接写 `.local-docs/handoffs/`。agent 的私有记忆别人看不到，只放个人沟通偏好和指向这些文件的指针。
 - 任务预计跨会话或跨 agent 时，在 STATUS「进行中」登记主题与文件范围；收尾时更新 STATUS，没做完就写交接。
+- STATUS 是现状板，不是工作日志：收尾时改写或删除自己的条目，不在文首追加「已收尾 · 日期」段落；过程、命令、逐轮结果写进交接，STATUS 只留一句结论加链接，全文保持在 150 行以内。
+- 本地产物归位：日志、截图、清单放 `.local-docs/evidence/<日期>-<主题>/`，一次性脚本放 `.tmp/<任务>/`（已被 Git 忽略）；`.local-docs/` 根目录只留 README、STATUS、DECISIONS 三个文件。
 - 可以用 worktree 隔离长任务，分支名写明 agent 与主题。不删除、不重置其他 agent 的 worktree 与分支，清理由用户决定。
 
 ## 代码定位与跨平台决策
@@ -39,7 +41,7 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 - 能力保持单一正式入口；上下文、压缩、恢复与技能加载由 Agent 原生管理。砚只额外做两件可关闭的事：经 pi `context` 钩子裁剪发给模型的较早大段工具输出（不改会话文件、不做摘要），以及到「自动压缩上限」时调用 pi 原生 `compact()`；不恢复旧的预算、摘要、召回与自动续跑。pi 新增且与砚重复的能力优先适配原生实现；窗口、共享设备与必要授权协调放在宿主，随包 pi 扩展保持必要且薄。
 - 会话历史以持久化记录为准；后台事件必须核对会话归属，不能覆盖当前会话状态。
 - WebContentsView 属于原生层；浮层、焦点、窗口位置与缩放必须与主进程协调。
-- UI 遵循[设计规范](docs/DESIGN_SYSTEM.md)：控件外观只来自 `styles/ui.css` 与 `components/ui/`，模块 CSS 只管版面；保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。界面决定先写入设计规范再改代码。现行方向是设计规范文首的「界面重构（方向 E）」，与下文 v0.5 旧条目冲突时以它为准；其样式在 `styles/scheme.css`（modules 层最后，只写版面与层级），被它取代的模块旧规则按文件逐步删减。v0.5 的阶段记录见[界面重构计划](docs/UI_REDESIGN.md)。
+- UI 遵循[设计规范](docs/DESIGN_SYSTEM.md)：控件外观只来自 `styles/ui.css` 与 `components/ui/`，模块 CSS 只管版面；保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。界面决定先写入设计规范再改代码。界面以设计规范中的方向 E 及方向 F「双声部」修订为准；F 与旧写法冲突时优先 F，退役条目只作历史参考；其样式在 `styles/scheme.css`（modules 层最后，只写版面与层级），被它取代的模块旧规则按文件逐步删减。v0.5 的阶段记录见[界面重构计划](docs/UI_REDESIGN.md)。
 - 模型接入在应用设置中登录或配置凭证；本地档案不表示已登录模型服务。
 - 注释解释当前职责和边界，避免把实施编号与阶段流水写入新代码。
 - 含正则、反斜杠或嵌套引号的代码，不经 `node -e`、heredoc 等 shell 字符串传递，用编辑工具或写成脚本文件。

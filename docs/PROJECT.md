@@ -27,6 +27,10 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/main/capabilities/acquisition-commands.ts` / `browser-commands.ts` / `lookup-commands.ts` | `yan` 宿主工具：能力接入、浏览器、搜索与长期记忆；旧上下文预算命令已退役 |
 | `src/shared/agent-context.ts` / `src/main/agent.ts` | Agent 原生上下文边界与 pi 版本适配；过滤宿主上下文改写扩展，加载原生 MCP / codemode / 工具搜索，投影 `parentToolCallId` 与历史 `nestedCalls`，树状工具显示由 `src/shared/tool-call-tree.ts` 支持 |
 | `src/main/ui-requests.ts` / `turn-timing-tracker.ts` | 界面请求（扩展对话框与宿主提问）；回合计时与落盘 |
+| `src/main/mcp/native-import.ts` / `native-verify.ts` / `src/shared/mcp-native-import.ts` | 旧通用 MCP 的预览令牌、内容指纹、单条隔离 pi CLI 校验与分步停用；设置通过 `McpNativeImport.tsx` 与同目录纯流程调用 IPC，不搬 authRef 凭证 |
+| `src/main/terminal-status.ts` / `terminal.ts` / `components/toolbar/RightPanel.tsx` | OSC 7501 与 9;4 后备状态扫描、低频标签推送；Windows 任务栏仅投影已有运行/等待事实 |
+| `components/ui/confirm.tsx` / `confirm-queue.ts` / `Tip.tsx` | 应用内串行确认及取消优先焦点；统一非模态提示气泡，复用浮层阻挡与退场基座 |
+| `lib/host-actions.ts` / `use-host-actions.ts` / `composer-submit.ts` | 命令面板、快捷键表与分发共用前端动作/绑定；斜杠命令复用输入框正式执行路径 |
 | `src/main/storage-move.ts` / `storage-move-boot.ts` | 数据位置迁移：设置 → 关于 → 数据位置 登记目标，下次启动整体搬迁并在原处留目录联接，核对文件数与字节后才删原目录，失败撤回 |
 | `src/main/app-update.ts` + `src/shared/app-update.ts` | 应用更新：GitHub Release 检查；安装版经 electron-updater 下载、确认后重启安装，有任务运行时拒绝；便携版与开发版只给发布页入口 |
 | `src/main/computer-use.ts` | 电脑操作：检测 / 安装 uv，开关时改宿主 `mcp-servers.json` 里的 `windows-mcp` 条目，只开放界面操作工具；Python 与 windows-mcp 由用户的 uv 下载，不随包 |

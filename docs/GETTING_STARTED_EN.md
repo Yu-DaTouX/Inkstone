@@ -48,6 +48,8 @@ The model menu supports provider filters, search, shared favorites and continuou
 
 Under **Settings → Conversations → Context & memory**, configure native pi auto-compaction and omission of older tool output. Inkstone's early compaction threshold defaults to 250k tokens after a turn settles, capped at 90% of a smaller model window. Older tool-output omission uses an 80k soft threshold, reduced for smaller windows and applied in batches according to cache timing. It does not alter chat history or source files, and does not guarantee lower cost on every request. Both can be disabled; see the [architecture boundary](ARCHITECTURE.md#职责).
 
+The session-statistics entry below the input opens turn and model-request counts, model/tool time, average time to first token (TTFT), and output speed. The adjacent token-usage entry shows cumulative input, output, and cache usage for this conversation; both can be disabled in settings. Cumulative request tokens are not context occupancy, which remains a separate context ring. Missing values show `—`; known lower bounds show `≥`. Unrecorded historical timing is not invented. Status-bar cost details use the same conversation-wide scope, and a provider-reported zero does not prove that usage was free.
+
 The former project-knowledge and personal-memory confirmation page is no longer part of the default UI. Retained file formats do not imply a current settings entry.
 
 ## Bookmarks, widget state and backups
@@ -82,7 +84,15 @@ The Android client remains in testing and connects to a running computer for con
 
 Press `Ctrl+K` anywhere, whether or not the sidebar is open. Type a few words to search session titles, project names and **conversation text** at once (every word must appear); a snippet of the match is shown. Arrow keys select, Enter opens, `Esc` closes. With no input it lists recent sessions, so Enter takes you back to the previous one.
 
+Type `>` for action mode. Host actions and native slash commands reuse their existing execution paths. `Ctrl+/` opens the shortcut sheet (also available in Settings); `Ctrl+,` opens Settings, `Ctrl+B` toggles the sidebar, `Ctrl+L` focuses the composer, and `Ctrl+Shift+C` copies the last reply. New shortcuts yield to terminals, modals, and IME composition. No new global Esc-to-stop action is added. Icon hints support hover and keyboard focus; application confirmation dialogs start on Cancel. Operations without complete restoration do not promise Undo.
+
 The text index lives only in memory and is built from the local session files (pi JSONL); nothing is uploaded. When a terminal has focus, `Ctrl+K` is left to the shell.
+
+## MCP import and terminal reports
+
+New general MCP services use pi's native config. Legacy servers in Settings can be imported one at a time: preview the single entry, target, and warnings, then confirm. Writing, verification, and disabling the old entry report separate outcomes; partial failure does not erase a completed write. `authRef` credentials are not transferred; sign in again through pi when needed. `windows-mcp` remains managed by Inkstone. Import while work is idle: the old connection is disconnected, the new config waits for pi's next load, and the current instance is not automatically restarted. Nothing is automatically migrated without confirmation.
+
+Terminal tabs show working, blocked, done, or error only when a program reports it. A live shell is not presumed busy. Windows taskbar progress and wait badges project existing activity; background blocked terminals honor the notification setting. Native virtual-model routing and history restoration remain owned by pi; reply footers show the recorded actual model. Read-only subtasks do not load ordinary extensions and reject unavailable extension-dependent virtual models rather than silently substituting one. Without its extension, native history restoration may select the last recorded physical model.
 
 ## Checkpoints and Rewind code
 
