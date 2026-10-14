@@ -21,6 +21,8 @@ export interface BackgroundPreset {
 export const BACKGROUND_PRESETS: BackgroundPreset[] = [
   { id: 'default', key: 'set.bg.default' },
   { id: 'graphite', key: 'set.bg.graphite', dark: '#141414', light: '#f4f4f4' },
+  /* 墨灰（方向 F）：低彩度墨色，浅色主题为纸白；只改背景层级，不带文字灰 */
+  { id: 'ink', key: 'set.bg.ink', dark: '#18191b', light: '#f7f6f3' },
   { id: 'midnight', key: 'set.bg.midnight', dark: '#0f1623', light: '#eef2f8' },
   { id: 'forest', key: 'set.bg.forest', dark: '#101a16', light: '#eef5f1' },
   { id: 'plum', key: 'set.bg.plum', dark: '#1a1422', light: '#f6f0f8' },

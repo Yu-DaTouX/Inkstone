@@ -389,6 +389,59 @@
     )
 
     /*
+     * 背景色（模板 / 自定义）是挂在根元素上的**行内**令牌，会盖过主题里的默认值，
+     * 所以它必须和 `data-theme` 同一刻落（都在过渡的更新回调里）。早一步落的话，
+     * View Transition 的**旧快照**会带着新主题的底色 —— 现场表现就是切换瞬间
+     * 出现一块不对的浅色（只有非默认背景模板才会，默认模板根本没有行内覆盖）。
+     */
+    {
+      const root = document.documentElement
+      const bg = () => root.style.getPropertyValue('--bg-0') || '∅'
+      const savedPreset = store.getState().settings?.backgroundPreset ?? 'default'
+      await settle()
+      await store.getState().patchSettings({ backgroundPreset: 'ink' })
+      await sleep(300)
+      window.dispatchEvent(new CustomEvent('yan:theme', { detail: 'light' }))
+      await settle()
+
+      const seen = { atCall: null, early: null, inUpdate: null }
+      const raw = document.startViewTransition
+      const orig = raw.bind(document)
+      let armed = true
+      document.startViewTransition = (cb) => {
+        if (!armed) return orig(cb)
+        armed = false
+        seen.atCall = { theme: root.dataset.theme, bg: bg() }
+        /* 同一轮任务里（各个 effect 跑完之后）再采一次：这时不该已经变成新主题的底色 */
+        queueMicrotask(() => {
+          seen.early = bg()
+        })
+        return orig(() => {
+          cb()
+          seen.inUpdate = { theme: root.dataset.theme, bg: bg() }
+        })
+      }
+      window.dispatchEvent(new CustomEvent('yan:theme', { detail: 'dark' }))
+      for (let i = 0; i < 60 && seen.inUpdate === null; i++) await sleep(30)
+      document.startViewTransition = raw
+
+      ok(
+        seen.atCall?.theme === 'light' && seen.inUpdate?.theme === 'dark',
+        `换主题时 data-theme 走过渡的更新回调（调用瞬间 ${seen.atCall?.theme} → 回调内 ${seen.inUpdate?.theme}）`
+      )
+      ok(
+        seen.atCall && seen.early === seen.atCall.bg,
+        `旧快照之前不先改背景令牌（要留旧底色：调用瞬间 ${seen.atCall?.bg} → 同轮任务末 ${seen.early}）`
+      )
+      ok(
+        seen.inUpdate && seen.inUpdate.bg !== seen.atCall?.bg,
+        `回调里背景令牌跟着新主题重算（${seen.atCall?.bg} → ${seen.inUpdate?.bg}）`
+      )
+      await store.getState().patchSettings({ backgroundPreset: savedPreset })
+      await settle()
+    }
+
+    /*
      * 动画圆心 = **触发它的那个按钮**（DESIGN §5）。
      *
      * 走真实入口：打开设置面板、点真的主题按钮（`element.click()` 会带

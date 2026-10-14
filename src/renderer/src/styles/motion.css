@@ -37,6 +37,9 @@
   --mo-slow: 240ms;
   /* 位移距离：浮层不用滑很远，6px 就够表达「从哪来」 */
   --mo-shift: 4px;
+  /* 流式新块的错峰步进（方向 F，设计规范 §6）：60ms、上限 8。
+     --dur-* 的其它值在 tokens.css；本批只动 motion.css，60ms 定义在这里。 */
+  --dur-60: 60ms;
 
   /* 快进慢停 —— 浮层落位的主力曲线 */
   --mo-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -1238,6 +1241,17 @@ html[data-theme='light'] .rp-todo-now {
 /* 首次出现就长出来（新插入的块） */
 .ui-grow.enter {
   animation: mo-grow var(--mo-slow) var(--mo-ease) both;
+}
+
+/*
+ * 流式新块整段到达（方向 F，设计规范 §6）：段落 / 列表 / 引用 / 标题 / 代码块的
+ * 顶层元素由 MessageParts 在 live 且首次出现时挂上 .md-arrive，并用 --i 给错峰序号。
+ * 复用 mo-item-in（opacity 0 + 上移 3px），错峰 60ms、上限 8。
+ * 只有挂载那一刻播一次：已有块不重挂载 → 不重播；历史 / 恢复不是 live → 不挂类。
+ */
+.md-arrive {
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+  animation-delay: calc(var(--i, 0) * var(--dur-60));
 }
 
 /*

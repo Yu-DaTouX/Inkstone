@@ -26,7 +26,7 @@ export interface TypographySettings {
 /** 应用后广播：终端等读计算值的组件据此重新取字体与配色 */
 export const APPEARANCE_EVENT = 'yan:appearance'
 
-const FONT_TOKENS = ['--font-sans', '--font-ui', '--font-body', '--font-code'] as const
+const FONT_TOKENS = ['--font-sans', '--font-ui', '--font-body', '--font-code', '--fw-medium', '--fw-strong'] as const
 const SIZE_TOKENS = ['--fs-xs', '--fs-sm', '--fs-code', '--fs-base', '--fs-body', '--fs-lg', '--fs-h3', '--fs-h2', '--fs-stat', '--w-body'] as const
 
 function tokens(s: TypographySettings): Record<string, string> {
@@ -34,12 +34,18 @@ function tokens(s: TypographySettings): Record<string, string> {
   const ui = fontUiStack(s.fontUi, s.fontUiCustom)
   const code = fontCodeStack(s.fontCode, s.fontCodeCustom)
   const defaultUi = fontUiStack(undefined, undefined)
+  const defaultCode = fontCodeStack(undefined, undefined)
   if (ui !== defaultUi) {
     out['--font-sans'] = ui
     out['--font-ui'] = ui
     out['--font-body'] = ui
   }
-  if (code !== defaultUi) out['--font-code'] = code
+  if (code !== defaultCode) out['--font-code'] = code
+  /* 「终端风格」（Maple）只有 Regular：字重令牌回到 400，标题不依赖伪粗体 */
+  if (s.fontUi === 'maple') {
+    out['--fw-medium'] = '400'
+    out['--fw-strong'] = '400'
+  }
   const body = sanitizeFontSize(s.fontSizeBody, FONT_BODY_MIN, FONT_BODY_MAX, FONT_BODY_DEFAULT)
   if (body) {
     out['--fs-body'] = `${body}px`
