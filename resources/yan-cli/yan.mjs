@@ -55,9 +55,8 @@ const USAGE = `yan — 砚宿主能力 CLI
 常用：
   yan operations status --id <操作ID>
   yan capabilities search --query-file query.json [--scope available]
-  yan capabilities discover --query-file query.json
-  yan capabilities prepare --candidate <ID>
-  yan capabilities acquire --plan <ID> [--authorize] [--retry]
+  yan capabilities discover --query-text "<英文关键词>" [--repo owner/name]
+  yan capabilities acquire --candidate <ID>
   yan skill read --id <技能ID>
   yan mcp describe --server <ID> --tool <名称>
   yan mcp call --request-file request.json
@@ -78,6 +77,8 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan goal status
   yan knowledge search --query-file query.json
   yan subagent start --request-file subagent.json
+  yan schedule create --request-file schedule.json     新建定时任务（需用户在「定时任务」页确认后才运行）
+  yan schedule list | delete --id <ID> | pause --id <ID>
   yan subagent list
   yan subagent get --id <子代理ID>
   yan subagent stop --id <子代理ID>
@@ -122,27 +123,29 @@ const GROUP_USAGE = {
             yan capabilities search --query-file query.json
           query.json: {"queryText":"…","limit":12}
           只覆盖已装范围；缺能力要联网补齐走 discover（实施-04 S5 起）。
-  discover  联网检索**缺失**能力（公开目录元数据；Skill 走 npm registry，MCP 走官方 Registry）：
-              yan capabilities discover --query-text "read excel files"
+  discover  联网检索**缺失**能力。技能主要来自 GitHub 技能仓库（默认 anthropics/skills，
+            Claude Code 同款 SKILL.md 格式，描述是英文，检索词用英文短词），另查 npm 与官方 MCP Registry：
+              yan capabilities discover --query-text "pdf form"
+              yan capabilities discover --repo owner/name        # 用户点名的仓库：列出其中全部技能
               yan capabilities discover --query-file discover.json
             discover.json: {"queryText":"…","goalText":"…"}
-            检索词先脱敏（去掉路径 / 密钥 / 文件名）再外发；
-            返回候选与**每个源是否可用**；候选只证明发布来源（verification=metadata-only），
-            不等于已审计、也不等于能在这台机器上跑。
+            检索词先脱敏（去掉路径 / 密钥 / 文件名）再外发；返回候选与**每个源是否可用**。
+            github: 开头的技能候选固定到提交，接入时逐文件核对 Git 哈希；其他候选只证明发布来源。
             源全挂时如实说「暂时无法搜索」，**不会**编造包名。
-  prepare   由候选 ID 生成**接入计划**（只生成，不执行）：
-              yan capabilities prepare --candidate "mcp-registry:...@1.0.0"
+  prepare   由候选 ID 生成接入计划（acquire --candidate 会自动做这一步）：
+              yan capabilities prepare --candidate "github:anthropics/skills/skills/pdf@…"
             候选由宿主在 discover 后短暂保留（10 分钟），模型只能回传 ID。
-  acquire   执行接入计划（实施-04 §10）。
+  acquire   接入：
+              yan capabilities acquire --candidate <候选ID>
               yan capabilities acquire --plan <计划ID>
-              yan capabilities acquire --plan <计划ID> --authorize
-              yan capabilities acquire --plan <计划ID> --retry
-            远程 MCP：核验端点 → 写受管配置 → 连接复核，**当场可用**（不需要重启）。
-            目录候选是 metadata-only，默认停在 needs-authorization；
-            --authorize 表示你同意这个 host 的来源（只记 host，不记凭证，之后同类来源自动通过）。
-            已授权的 npm pi-package 会下载固定版本并校验 SRI，放入受管 staging；不会运行包代码。
-            安装、隔离 smoke 与激活仍等待安全边界 / 后续 S6b 实施。失败事务可对同一计划使用 --retry（最多一次）。
-本地 MCP 包与 Skill 文件会先走受管 staging、来源 / hash 复核和安全边界；Skill 正文还会做静态恶意内容审查：高风险 fail-closed，中风险保留提醒（即使候选由用户指定也不跳过）。包和服务器仍不提供 OS 沙箱，未提供依赖时明确停在 pending-boundary。
+            技能：下载并做内容审查后，砚在电脑上弹出**限时批准面板**（2 分钟，用户可加时），
+            用户选「仅本次会话使用」或「安装到我的技能」；跳过、回复别的话或超时都不安装。
+            命令会等到用户选择或超时才返回：
+              state=installed  → 立刻 read 返回的 skillFile 按说明继续（scope=session / user）
+              state=skipped    → 不要再次请求同一个技能；有 userReply 时按用户的话调整
+              state=blocked    → 内容审查发现疑似提示注入，已拒绝
+            你不能替用户批准，也不需要先在对话里征求同意。
+            MCP 服务已改由 pi 原生管理（/mcp），这里不登记 MCP。
 
 `,
   skill: `yan skill <动作> [选项]
@@ -378,6 +381,24 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
           用户固定档位时 agent 不会覆盖。调整无需逐次用户确认。
 
 `,
+  schedule: `yan schedule <动作> [选项]
+
+动作：
+  create --request-file schedule.json
+         {"name":"每日简报","prompt":"总结昨天的提交","daily":"09:00"}
+         触发写法任选其一："daily":"09:00"（每天）/ "weekdays":"09:00"（工作日）/
+         "every":60（每隔多少分钟，最小 5）/ "at":"2026-10-15 09:00"（只一次）/
+         "trigger":{"kind":"weekly","days":[1,3],"time":"18:30"}（0 = 周日）
+         可选："model":"provider/id"、"cwd":"工作文件夹"（默认当前会话目录）
+  list   列出全部定时任务与状态
+  delete --id <ID>   删除
+  pause  --id <ID>   暂停（启用要用户在界面里点）
+
+说明：
+  · 到点会新开一条会话，用 prompt 当第一条消息；只在砚运行时触发，错过的 24 小时内补跑一次。
+  · create 之后任务是「待确认」：必须由用户在「定时任务」页启用，所以创建后要告诉用户去确认。
+  · prompt 要自足：新会话看不到当前对话，把需要的背景写进去。
+`,
   subagent: `yan subagent <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
@@ -534,6 +555,10 @@ const GROUP_SPECS = {
     required: {
       read: ['id']
     }
+  },
+  schedule: {
+    actions: ['create', 'list', 'delete', 'pause'],
+    required: { create: ['prompt'], delete: ['id'], pause: ['id'] }
   },
   subagent: {
     actions: ['start', 'list', 'get', 'stop'],

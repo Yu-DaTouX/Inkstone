@@ -20,8 +20,6 @@ try {
   if (staged.manifest.files.length !== 1) throw new Error('manifest 文件数错误')
   if (!staged.securityReview.ok || staged.securityReview.scannerVersion !== 'yan-skill-security-1') throw new Error('staging 未留下通过的 Skill 安全审查')
   if (!staged.manifest.securityReview?.ok) throw new Error('manifest 未保存 Skill 安全审查')
-  const stagedReview = await skillFiles.reviewStagedSkillFiles(root, tx.operationId)
-  if (!stagedReview.ok || stagedReview.findings.some((finding) => finding.severity === 'high')) throw new Error('激活前 staging 复审异常')
   await skillFiles.writeActiveSkillFiles(root, 'project-a', staged.skills)
   const activeArgs = await skillFiles.activeSkillArgs(root, 'project-a')
   if (activeArgs.length !== 2) throw new Error('active --skill 参数错误')

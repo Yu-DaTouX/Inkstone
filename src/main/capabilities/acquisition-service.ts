@@ -38,8 +38,7 @@ import {
   type ArtifactEntry,
   type ArtifactLimits,
   type CapabilityReceipt,
-  type PiPackageActivationTarget,
-  type SkillFilesActivationTarget
+  type PiPackageActivationTarget
 } from '../../shared/acquisition'
 import type { SkillSecurityReview } from '../../shared/skill-security'
 
@@ -523,37 +522,6 @@ export class AcquisitionService {
       return tx
     }
     return this.saveTransaction({ ...tx, piPackageTarget: { ...target }, updatedAt: new Date().toISOString() })
-  }
-
-  /** Bind a staged Skill-file transaction to the exact project runner that requested it. */
-  async bindSkillFilesTarget(
-    operationId: string,
-    target: SkillFilesActivationTarget
-  ): Promise<AcquisitionTransaction> {
-    const tx = await this.get(operationId)
-    if (!tx) throw new AcquisitionStagingError('unknown-operation', `没有这个接入事务：${operationId}`)
-    if (tx.state !== 'pending-boundary') {
-      throw new AcquisitionStagingError('bad-target-state', `只有 pending-boundary 事务可绑定激活目标（当前 ${tx.state}）`)
-    }
-    if (
-      !/^[A-Za-z0-9._-]{1,120}$/.test(target.runnerId) ||
-      !Number.isSafeInteger(target.runnerGeneration) || target.runnerGeneration < 1 ||
-      !isAbsolute(target.cwd) || !isAbsolute(target.sessionFile) ||
-      !target.projectId || target.projectId !== tx.projectId ||
-      !/^[A-Za-z0-9._:-]{1,128}$/.test(target.goalId) ||
-      !Number.isSafeInteger(target.goalRevision) || target.goalRevision < 0 ||
-      (target.sourceHead !== null && !/^[a-f0-9]{40,64}$/i.test(target.sourceHead)) ||
-      target.continueId !== tx.operationId
-    ) {
-      throw new AcquisitionStagingError('bad-target', 'Skill 文件激活目标字段无效')
-    }
-    if (tx.skillFilesTarget) {
-      if (JSON.stringify(tx.skillFilesTarget) !== JSON.stringify(target)) {
-        throw new AcquisitionStagingError('target-conflict', '同一事务已绑定不同的项目 / runner / 会话，拒绝覆盖')
-      }
-      return tx
-    }
-    return this.saveTransaction({ ...tx, skillFilesTarget: { ...target }, updatedAt: new Date().toISOString() })
   }
 
   /**

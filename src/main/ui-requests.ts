@@ -70,6 +70,9 @@ export class UiRequests {
     message: string
     options?: string[]
     form?: import('../shared/question-form').QuestionField[]
+    placeholder?: string
+    /** `approval` = 接入批准（同一面板，徽标显示「授权」，只能在电脑上批准） */
+    purpose?: 'approval'
     timeout: number
   }): Promise<HostUiResponse> {
     const id = `yan-question-${randomUUID()}`
@@ -100,7 +103,9 @@ export class UiRequests {
          */
         deadline: 0,
         ...(request.options ? { options: request.options } : {}),
-        ...(request.form ? { form: request.form } : {})
+        ...(request.form ? { form: request.form } : {}),
+        ...(request.placeholder ? { placeholder: request.placeholder } : {}),
+        ...(request.purpose ? { purpose: request.purpose } : {})
       } as unknown as ExtensionUiRequest
       this.payloads.set(id, payload)
       this.host.push({ ch: 'ui-request', payload })
@@ -238,7 +243,8 @@ export class UiRequests {
   ): { ok: true } | { ok: false; code: 'question_not_pending' | 'sensitive_confirmation_requires_desktop' } {
     const request = this.pendingUiRequests().find((item) => item.id === id)
     if (!request) return { ok: false, code: 'question_not_pending' }
-    if (request.sensitive === true && !('cancelled' in answer)) {
+    /* 接入批准也只在电脑上点：手机端可以跳过，不能批准安装 */
+    if ((request.sensitive === true || request.purpose === 'approval') && !('cancelled' in answer)) {
       return { ok: false, code: 'sensitive_confirmation_requires_desktop' }
     }
     this.respondUi({ id, ...answer } as HostUiResponse & { id: string }, 'remote')

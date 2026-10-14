@@ -28,7 +28,7 @@
  *   · 不在这里写产品规则、语气要求、语言要求（那些各有归属）；
  *   · 目录里的组名要与 resources/yan-cli/yan.mjs 的 GROUP_USAGE 保持一致。
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -48,7 +48,7 @@ export const CAPABILITY_GUIDE = [
   '- 能力不可用、需要审批或用户接管时如实说明，不绕过限制，不猜用户答案。',
   '',
   '能力目录（用某组前先读 `yan <组> --help`；标了技能的，先用 read 打开技能清单里对应的 SKILL.md；已经读过就不必重读）：',
-  '- capabilities：不确定有没有某种能力时检索；缺能力要接入时读技能 capabilities',
+  '- capabilities：不确定有没有某种能力时检索；缺技能时读技能 capabilities，自己找合适的技能并申请接入（用户在批准面板决定）',
   '- browser：打开、操作或检查网页（填表、复现网页问题、需要登录的页面）',
   '- search：联网找资料、读网页正文、查开发库文档',
   '- question：信息不足、需要用户做决定时提问',
@@ -90,6 +90,37 @@ export function visualAnswersEnabled() {
 }
 
 /**
+ * 本次会话接入的技能（模型选择、用户在批准面板选了「仅本次会话」）。
+ *
+ * 它们不经 `--skill` 启动参数：同一个 pi 进程会切换会话，参数管不到「只给这个会话」。
+ * 宿主把文件放在 `YAN_DATA_DIR/capabilities/session-skills/<会话 id>/`，这里每轮按
+ * 当前会话 id 读 index.json，列出名称、用途与 SKILL.md 路径；清单只在接入时变化。
+ */
+export function sessionSkillsBlock(sessionId) {
+  if (typeof sessionId !== 'string' || !/^[A-Za-z0-9._-]{1,200}$/.test(sessionId) || sessionId === '.' || sessionId === '..') return ''
+  const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
+  const base = join(dir, 'capabilities', 'session-skills', sessionId)
+  let skills
+  try {
+    const index = JSON.parse(readFileSync(join(base, 'index.json'), 'utf8'))
+    skills = index?.version === 1 && index.sessionId === sessionId && Array.isArray(index.skills) ? index.skills : []
+  } catch {
+    return ''
+  }
+  const lines = skills
+    .filter((skill) => typeof skill?.name === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill.name))
+    .map((skill) => {
+      const path = join(base, skill.name, 'SKILL.md')
+      const description = String(skill.description ?? '').replace(/\s+/g, ' ').slice(0, 300)
+      return existsSync(path) ? `- ${skill.name}：${description} → ${path}` : ''
+    })
+    .filter(Boolean)
+  if (lines.length === 0) return ''
+  return ['本次会话接入的技能（只对这个会话生效；用法同其他技能：先 read 对应 SKILL.md，相对路径以它所在目录为基准）：', ...lines].join('\n')
+}
+const SESSION_SKILLS_SECTION = 'inkstone_session_skills'
+
+/**
  * 幂等标记：判断这段是否已经注入过。
  *
  * 不能只判断「系统提示里有没有 yan」—— 用户的 AGENTS.md 里也可能写了 yan。
@@ -98,17 +129,24 @@ export function visualAnswersEnabled() {
 const MARKER = '砚提供了一组本机能力，通过 `yan` 命令使用'
 
 export default function capabilityGuideExtension(pi) {
-  pi.on('before_agent_start', (event) => {
+  pi.on('before_agent_start', (event, ctx) => {
     const base = String(event?.systemPrompt ?? '')
     if (base.includes(MARKER)) return
     /* 先读 base 再写分区：覆盖用的整段文本里不会重复出现这一段 */
     const visual = visualAnswersEnabled()
+    let sessionSkills = ''
+    try {
+      sessionSkills = sessionSkillsBlock(ctx?.sessionManager?.getSessionId?.())
+    } catch {
+      /* 读不到会话 id 就不列 */
+    }
     const sections = event?.systemPromptOptions?.sections
     if (sections && typeof sections === 'object') {
       sections.inkstone_capabilities = CAPABILITY_GUIDE
       if (visual) sections[VISUAL_SECTION] = VISUAL_ANSWER_GUIDE
+      if (sessionSkills) sections[SESSION_SKILLS_SECTION] = sessionSkills
     }
-    const guide = visual ? `${CAPABILITY_GUIDE}\n\n${VISUAL_ANSWER_GUIDE}` : CAPABILITY_GUIDE
+    const guide = [CAPABILITY_GUIDE, visual ? VISUAL_ANSWER_GUIDE : '', sessionSkills].filter(Boolean).join('\n\n')
     return { systemPrompt: base ? `${base}\n\n${guide}` : guide }
   })
 }

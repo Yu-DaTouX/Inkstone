@@ -186,7 +186,10 @@ export function reviewSkillFiles(files: readonly SkillSecurityInput[]): SkillSec
         if (!rule.pattern.test(line)) continue
         if (findings.length >= SKILL_SECURITY_MAX_FINDINGS) {
           truncated = true
-          continue
+          /* 满额后高风险挤掉一条中风险：长文件里前面的命令示例不能把后面的提示注入挤出审查结果 */
+          const medium = rule.severity === 'high' ? findings.findLastIndex((finding) => finding.severity === 'medium') : -1
+          if (medium < 0) continue
+          findings.splice(medium, 1)
         }
         findings.push({
           code: rule.code,
