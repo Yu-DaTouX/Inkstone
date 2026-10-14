@@ -30,6 +30,9 @@ export type CandidateLocalPackage = {
   fileSha256?: string
 }
 
+/** GitHub 技能目录里的一个文件：路径相对技能目录，`sha` 是 Git 对象哈希。 */
+export type GithubSkillFile = { path: string; sha: string; size: number }
+
 export type CapabilityCandidate = {
   candidateId: string
   kind: CandidateKind
@@ -60,12 +63,14 @@ export type CapabilityCandidate = {
   skillFileHashes?: Record<string, string>
   /** 独立 Skill 目录给出的逐文件 HTTPS 来源；只允许宿主按这些 URL 读取。 */
   skillFileUrls?: Record<string, string>
+  /** GitHub 技能源：固定提交与逐文件 Git 哈希；接入时只按这里读取。 */
+  githubSkill?: { owner: string; repo: string; commit: string; dir: string; files: GithubSkillFile[] }
 }
 
 /** 一个目录源这一轮的取数结果 —— 失败也如实报，不假装「没找到」。 */
 export type DiscoverySourceReport = {
   sourceId: string
-  kind: 'npm-registry' | 'mcp-registry' | 'skill-directory'
+  kind: 'npm-registry' | 'mcp-registry' | 'skill-directory' | 'github-skills'
   url: string
   ok: boolean
   fetchedAt: string
@@ -245,6 +250,10 @@ export function stableDigestOf(candidate: CapabilityCandidate): string {
     [...(candidate.skillFiles ?? [])].sort().join('|'),
     Object.entries(candidate.skillFileHashes ?? {}).sort().map(([path, hash]) => `${path}:${hash}`).join('|'),
     Object.entries(candidate.skillFileUrls ?? {}).sort().map(([path, url]) => `${path}:${url}`).join('|'),
+    candidate.githubSkill
+      ? `${candidate.githubSkill.owner}/${candidate.githubSkill.repo}@${candidate.githubSkill.commit}:${candidate.githubSkill.dir}:` +
+        candidate.githubSkill.files.map((file) => `${file.path}=${file.sha}`).sort().join('|')
+      : '',
     candidate.installKind,
     [...candidate.sourceUrls].sort().join('|')
   ].join('\u0000')

@@ -161,19 +161,6 @@ export type PiPackageActivationTarget = {
   packageVersion: string
 }
 
-/** 持久的项目 Skill 文件激活目标；字段只用于恢复原 runner，不从模型回传的路径推断。 */
-export type SkillFilesActivationTarget = {
-  runnerId: string
-  runnerGeneration: number
-  cwd: string
-  sessionFile: string
-  projectId: string
-  goalId: string
-  goalRevision: number
-  sourceHead: string | null
-  continueId: string
-}
-
 export type AcquisitionTransaction = {
   operationId: string
   planId: string
@@ -187,7 +174,6 @@ export type AcquisitionTransaction = {
   updatedAt: string
   stagingDir?: string
   piPackageTarget?: PiPackageActivationTarget
-  skillFilesTarget?: SkillFilesActivationTarget
   /** 即使高危内容被拒，也把审查结果留在事务里，便于诊断而不落正文。 */
   securityReview?: SkillSecurityReview
   receipt?: CapabilityReceipt
@@ -279,11 +265,10 @@ export function retryAcquisition(tx: AcquisitionTransaction, at: string): Acquis
   delete next.failure
   /*
    * 激活目标描述的是**上一轮**的 runner / 会话 / 目标修订 / sourceHead；重试是新一轮尝试，
-   * 这些都已过期。不清掉的话 `bindPiPackageTarget` / `bindSkillFilesTarget` 会按
+   * 这些都已过期。不清掉的话 `bindPiPackageTarget` 会按
    * 「同一事务不能改绑」直接拒绝，重试就永远走不到重新绑定。
    */
   delete next.piPackageTarget
-  delete next.skillFilesTarget
   return next
 }
 

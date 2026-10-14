@@ -19,6 +19,11 @@
 
 /** 默认等待（用户 2026-09-26 拍板：3 分钟） */
 export const UI_TIMEOUT_DEFAULT = 3 * 60_000
+/**
+ * 接入批准（技能安装）的等待：比提问短。同一个面板、同样从看到起算、同样可加时；
+ * 到点没批准就跳过（用户 2026-10-13 要求）。
+ */
+export const UI_TIMEOUT_APPROVAL = 2 * 60_000
 /** 请求里能声明的最短等待 */
 export const UI_TIMEOUT_MIN = 5_000
 /** 请求里能声明的最长等待（模型自己传 `timeout` 时的上限） */

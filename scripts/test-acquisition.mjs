@@ -97,7 +97,7 @@ export async function runAcquisitionTests(ok, modules) {
     const retriedBound = shared.retryAcquisition(boundTx, at)
     ok(retriedBound.state === 'prepared', '重试：绑定的 pi 包事务回到 prepared')
     ok(
-      retriedBound.piPackageTarget === undefined && retriedBound.skillFilesTarget === undefined,
+      retriedBound.piPackageTarget === undefined,
       '重试：清除上一轮的激活目标绑定（否则重新绑定会被 target-conflict 拒绝）'
     )
 

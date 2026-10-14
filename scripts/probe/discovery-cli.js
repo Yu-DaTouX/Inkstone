@@ -130,8 +130,8 @@
 
   if (!online) {
     /* 离线：如实跳过，不假装验过（与 probe:chrome 同一口径）。 */
-    log('  ⤺ 跳过：两个目录源都不可用（离线环境）；失败原因已如实记录')
-    ok(sources.length === 2, '离线时仍记录了两个源的状态', JSON.stringify(sources.map((s) => s.sourceId)))
+    log('  ⤺ 跳过：目录源都不可用（离线环境）；失败原因已如实记录')
+    ok(sources.length >= 3, '离线时仍记录了每个源的状态（GitHub 技能 / npm / MCP Registry）', JSON.stringify(sources.map((s) => s.sourceId)))
     ok(candidates.length === 0, '离线时不编造候选（返回空）')
     ok(/暂时无法搜索/.test(String(receipt.reason ?? '')), '离线时给出「暂时无法搜索」这个可读原因')
     return out.join('\n')
@@ -150,15 +150,15 @@
   ok(candidates.length > 0, '真实目录返回了候选', String(candidates.length))
   ok(candidates.length <= 8, '候选被截到八项（§7.2 上限）', String(candidates.length))
   ok(
-    candidates.every((c) => c.verification === 'metadata-only'),
-    '候选一律标 metadata-only（目录元数据 ≠ 已验证）'
+    candidates.every((c) => /^github:/.test(String(c.candidateId)) ? c.verification === 'source-checked' : c.verification === 'metadata-only'),
+    '目录候选标 metadata-only；只有固定提交的 GitHub 技能标 source-checked'
   )
   ok(
     candidates.every((c) => Array.isArray(c.sourceUrls) && c.sourceUrls.length > 0),
     '每条候选都有可回溯的原始来源链接'
   )
   ok(
-    candidates.every((c) => /^(npm|mcp-registry):/.test(String(c.candidateId))),
+    candidates.every((c) => /^(npm|mcp-registry|github):/.test(String(c.candidateId))),
     '候选 ID 形状正确（来源前缀 + 确切版本）',
     String(candidates[0]?.candidateId)
   )
@@ -170,7 +170,7 @@
     sources.filter((s) => !s.ok).every((s) => typeof s.error === 'string' && s.error.length > 0),
     '失败的源带具体错误（不是笼统「不可用」）'
   )
-  ok(/脱敏|metadata-only/.test(String(receipt.notice ?? '')), '回执里有能力边界说明（模型不该把目录当已验证）')
+  ok(/不等于内容已审计/.test(String(receipt.notice ?? '')), '回执里有能力边界说明（模型不该把目录当已验证）')
 
   log('--- 2. 接入计划（prepare，只生成不执行）---')
 

@@ -221,9 +221,9 @@ function PanelBody({
     >
       <div className="qpanel-head">
         {/* 「提问」徽标：整张面板一眼要认出是 Agent 在问你，而不是又一个工具条 */}
-        <span className="qpanel-badge" data-testid="question-panel-badge">
-          <Icon name={req.method === 'confirm' ? 'alert-circle' : 'message-dots'} size={12} />
-          {t('chat.questionTag')}
+        <span className="qpanel-badge" data-testid="question-panel-badge" data-purpose={req.purpose}>
+          <Icon name={req.purpose === 'approval' ? 'shield-check' : req.method === 'confirm' ? 'alert-circle' : 'message-dots'} size={12} />
+          {req.purpose === 'approval' ? t('chat.approvalTag') : t('chat.questionTag')}
         </span>
         <span className="qpanel-title">{req.title ?? title}</span>
         <span className="spacer" />

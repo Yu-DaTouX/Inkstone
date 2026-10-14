@@ -1,4 +1,9 @@
-/** 受管 skill-files 最小接入器：固定声明文件、受管 staging、项目级 active 记录。 */
+/**
+ * Skill 文件路径规则，以及旧版「项目级 active」技能的读取。
+ *
+ * 新的技能接入走 `acquired-skills.ts`（本次会话 / 我的技能）；这里的 active 记录只为
+ * 兼容旧版本已接入的数据，启动时仍按项目以 `--skill` 传入。staging 与写入函数只剩测试夹具使用。
+ */
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -90,24 +95,6 @@ export async function stageSkillFiles(input: {
   return { manifest, skills, securityReview }
 }
 
-/**
- * 从受管 staging 重新读取 Skill 正文并复审。激活前不信任第一次扫描结果：
- * hash / manifest 证明文件没有被换掉，而这一步保证真正进入 active 的内容仍
- * 通过同一版本扫描器。调用方应先跑 `verifyStaged`，这里只负责内容审查。
- */
-export async function reviewStagedSkillFiles(root: string, operationId: string): Promise<SkillSecurityReview> {
-  const dir = stagingDirOf(root, operationId)
-  const manifest = JSON.parse(await readFile(join(dir, 'manifest.json'), 'utf8')) as StagedManifest
-  if (manifest.version !== 1 || manifest.operationId !== operationId || !Array.isArray(manifest.files) || manifest.files.length === 0) {
-    throw new Error('Skill staging manifest 无效，无法进行内容审查')
-  }
-  const files = await Promise.all(manifest.files.map(async (file) => {
-    const declared = declaredSkillFile(join(dir, 'payload'), file.path)
-    return { path: declared.path, content: await readFile(declared.absolute) }
-  }))
-  return reviewSkillFiles(files)
-}
-
 export async function writeActiveSkillFiles(
   root: string,
   projectId: string,
@@ -136,28 +123,6 @@ export async function writeActiveSkillFiles(
   const tmp = `${recordPath}.tmp-${Date.now()}`
   await writeFile(tmp, JSON.stringify({ version: 1, projectId, skills: materialized, ...(securityReview ? { securityReview } : {}) }, null, 2), 'utf8')
   await rename(tmp, recordPath)
-}
-
-/** Materialize only the verified operation payload; callers must run verifyStaged first. */
-export async function activateStagedSkillFiles(
-  root: string,
-  operation: { operationId: string; candidateId: string; projectId: string },
-  securityReview?: SkillSecurityReview
-): Promise<ManagedSkill[]> {
-  const manifest = JSON.parse(await readFile(join(stagingDirOf(root, operation.operationId), 'manifest.json'), 'utf8')) as StagedManifest
-  if (manifest.version !== 1 || manifest.operationId !== operation.operationId || !Array.isArray(manifest.files) || manifest.files.length === 0) {
-    throw new Error('Skill staging manifest 无效')
-  }
-  const skills = manifest.files.map((file) => ({
-    candidateId: operation.candidateId,
-    operationId: operation.operationId,
-    projectId: operation.projectId,
-    path: join(stagingDirOf(root, operation.operationId), 'payload', file.path),
-    relativePath: file.path,
-    sha256: file.sha256
-  }))
-  await writeActiveSkillFiles(root, operation.projectId, skills, securityReview)
-  return skills
 }
 
 export async function readActiveSkillFiles(root: string, projectId: string): Promise<ManagedSkill[]> {

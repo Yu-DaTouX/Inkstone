@@ -7,7 +7,7 @@
  */
 import type { CapabilityAuthorizationChoice, CapabilityAuthorizationPrompt, CapabilityRunOptions, GoalCommandHost } from '../agent'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { CapabilityCommandError } from '../capability-server'
 import { YAN_DIR } from '../paths'
 import { searchCapabilities } from '../../shared/capabilities'
@@ -25,9 +25,23 @@ import { draftRemoteMcpRegistration } from '../../shared/mcp-registration'
 import type { AcquireAuthorization } from '../../shared/mcp-registration'
 import { discoverCapabilities, planForCandidate } from './discovery/discover'
 import type { AcquisitionPlan, CapabilityCandidate } from '../../shared/discovery'
-import { declaredSkillFile, SkillSecurityError, stageSkillFiles } from './skill-files'
+import { declaredSkillFile } from './skill-files'
 import { fetchSkillFiles } from './skill-source'
-import { formatSkillSecurityReview } from '../../shared/skill-security'
+import { fetchGithubSkillFiles, parseSkillRepo } from './github-skills'
+import {
+  acquiredSkillName,
+  installAcquiredSkill,
+  listSessionSkills,
+  parseSkillFrontmatter,
+  reviewAcquiredSkill,
+  SOURCE_META_FILE,
+  type AcquiredSkillFile,
+  type AcquiredSkillScope
+} from './acquired-skills'
+import type { SkillSecurityFinding } from '../../shared/skill-security'
+import { UI_TIMEOUT_APPROVAL } from '../../shared/ui-timeout'
+import { existsSync } from 'node:fs'
+import { userSkillsDir } from '../user-skills'
 import { schemaRevisionOf } from '../../shared/mcp'
 import type { McpConnectionManager } from '../mcp/connection-manager'
 import type { RawSkillCommand } from './skill-service'
@@ -47,6 +61,22 @@ export interface CapabilityAcquisitionHost {
   getState(): SessionState | null
   confirmCapabilityAuthorization(): ((request: CapabilityAuthorizationPrompt) => Promise<CapabilityAuthorizationChoice>) | undefined
   bundledSkills(): string[]
+  /**
+   * 接入批准：与提问同一个面板与计时（用户看到才开始倒数，可加时）。
+   * 到点没答复以 `question_timeout` 拒绝，调用方按「跳过」处理。
+   */
+  requestApproval(request: { title: string; message: string; options: string[]; placeholder: string; timeout: number }): Promise<{ value?: string; cancelled?: boolean }>
+}
+
+/** 批准面板的两个选项（用户点的就是这段文字，按原文比对）。 */
+const SKILL_SCOPE_OPTIONS: Record<AcquiredSkillScope, string> = {
+  session: '仅本次会话使用',
+  user: '安装到我的技能（所有会话可用）'
+}
+const SCRIPT_EXT = /\.(?:py|js|mjs|cjs|ts|sh|bash|ps1|bat|cmd|rb|pl)$/i
+
+function formatSize(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
 export class CapabilityAcquisition {
@@ -175,10 +205,19 @@ export class CapabilityAcquisition {
     const queryText = paramString(params, ['queryText', 'query-text', 'query', 'text']) ?? ''
     const goalText = paramString(params, ['goal', 'goalText', 'goal-text'])
     const timeoutMs = paramNumber(params, 'timeoutMs')
+    /* 用户点名的 GitHub 技能仓库：`--repo owner/name`（也接受 github.com 链接），逗号分隔可多个 */
+    const repoParam = paramString(params, ['repo', 'repos'])
+    const skillRepos = repoParam
+      ? repoParam.split(',').map((item) => parseSkillRepo(item)).filter((item) => item !== null).map(({ owner, repo }) => `${owner}/${repo}`)
+      : []
+    if (repoParam && skillRepos.length === 0) {
+      throw new CapabilityCommandError('capability_repo_invalid', '--repo 要写成 owner/repo，例如 anthropics/skills')
+    }
     const outcome = await discoverCapabilities({
       queryText,
       ...(goalText ? { goalText } : {}),
-      ...(timeoutMs ? { timeoutMs } : {})
+      ...(timeoutMs ? { timeoutMs } : {}),
+      ...(skillRepos.length > 0 ? { skillRepos } : {})
     })
 
     const now = Date.now()
@@ -194,18 +233,23 @@ export class CapabilityAcquisition {
         query: outcome.query,
         reason: outcome.reason,
         sources: outcome.sources,
-        candidates: outcome.candidates.map(({ candidate, score, reasons }) => ({
-          ...candidate,
-          score,
-          scoreReasons: reasons
-        })),
+        candidates: outcome.candidates.map(({ candidate, score, reasons }) => {
+          /* 逐文件哈希只给宿主核对用，模型看到文件数即可 */
+          const { githubSkill, ...rest } = candidate
+          return {
+            ...rest,
+            ...(githubSkill ? { github: { repo: `${githubSkill.owner}/${githubSkill.repo}`, dir: githubSkill.dir, fileCount: githubSkill.files.length } } : {}),
+            score,
+            scoreReasons: reasons
+          }
+        }),
         /*
          * 说清这一层能做到什么：目录元数据**只证明发布来源存在**，
          * 不等于已审计、也不等于能在这台机器上跑（§8）。
          */
         notice:
-          '候选来自公开目录的元数据（verification=metadata-only）：只证明发布来源存在，不等于代码已审计，也不等于已验证可用。' +
-          '下一步用 yan capabilities prepare --candidate <候选ID> 生成接入计划（S5 只生成，不执行）。'
+          '候选来自公开目录：只证明发布来源存在，不等于内容已审计或已验证可用；github: 开头的技能固定到提交，接入时逐文件核对。' +
+          '技能用 yan capabilities acquire --candidate <候选ID> 接入：砚会弹出限时批准面板，由用户选择「仅本次会话」或「安装到我的技能」，不需要先在对话里征求同意。'
       },
       summary: {
         kind: 'capabilities',
@@ -297,11 +341,17 @@ export class CapabilityAcquisition {
    *   · 其它本地 installKind —— 未获精确授权时停住；相应下载 / 安装器未接通时保持 `pending-boundary`。
    */
   async runCapabilitiesAcquire(params: Record<string, unknown>) {
-    const planId = paramString(params, ['plan', 'planId', 'plan-id', 'id'])
+    let planId = paramString(params, ['plan', 'planId', 'plan-id', 'id'])
+    /* 直接给候选 ID 时先代为 prepare：计划仍由宿主生成并缓存，模型少走一步。 */
+    const shortcutCandidate = planId ? undefined : paramString(params, ['candidateId', 'candidate', 'candidate-id'])
+    if (shortcutCandidate) {
+      const prepared = await this.runCapabilitiesPrepare({ candidateId: shortcutCandidate })
+      planId = (prepared.data as { plan: AcquisitionPlan }).plan.planId
+    }
     if (!planId) {
       throw new CapabilityCommandError(
         'plan_required',
-        '需要 --plan <计划ID>（先跑 yan capabilities prepare --candidate <候选ID>）'
+        '需要 --plan <计划ID> 或 --candidate <候选ID>（候选来自 yan capabilities discover）'
       )
     }
     const entry = this.acquisitionPlans.get(planId)
@@ -347,6 +397,33 @@ export class CapabilityAcquisition {
     const operationId = operationIdOf({ planId: plan.planId, planRevision: plan.revision })
     const explicitAuthorize = params.authorize === true || params.authorize === 'true'
 
+    /*
+     * 通用 MCP 获取（远程登记与本地 mcp-package）已收口：不再写入砚的宿主 MCP 配置。
+     * 服务改由 pi 原生 mcp.json 承担；技能包与 pi-package 分支不受影响。
+     */
+    if (['remote', 'mcp-package'].includes(candidate.installKind)) {
+      return {
+        data: {
+          plan,
+          candidate,
+          operationId,
+          executable: false,
+          state: 'mcp-native-only',
+          notice:
+            '通用 MCP 服务的登记已收口到 pi 原生：砚不再写入宿主 MCP 配置。' +
+            '已登记的服务请用设置页的「导入到 pi」迁到 pi 原生 mcp.json；此获取分支不会下载或登记。'
+        },
+        summary: {
+          kind: 'capabilities',
+          action: 'acquire',
+          planId: plan.planId,
+          operationId,
+          state: 'mcp-native-only',
+          executed: false
+        }
+      }
+    }
+
     if (plan.policyResult === 'needs-auth' || plan.policyResult === 'unsupported') {
       const notice =
         plan.policyResult === 'needs-auth'
@@ -364,6 +441,9 @@ export class CapabilityAcquisition {
         }
       }
     }
+
+    /* 技能：限时批准面板 → 本次会话或「我的技能」；不走包授权、staging 与 runner 重启。 */
+    if (candidate.installKind === 'skill-files') return this.acquireSkill({ plan, candidate })
 
     /* §10：远程 MCP 不下载 —— 直接「核验端点 → 登记配置 → 连接 → 枚举工具」。 */
     if (candidate.installKind === 'remote') {
@@ -427,124 +507,6 @@ export class CapabilityAcquisition {
     let tx = created
     const explicitRetry = params.retry === true || params.retry === 'true'
     if (tx.state === 'failed' && explicitRetry) tx = await service.retry(tx.operationId)
-
-    /* skill-files：固定声明的本地文件先 staging；active 与 runner 重载交给安全边界调度器。 */
-    if (candidate.installKind === 'skill-files') {
-      const declared = candidate.skillFiles ?? []
-      try {
-        if (tx.state === 'prepared') {
-          const remoteFileUrls = candidate.skillFileUrls
-          const files = remoteFileUrls
-            ? (await fetchSkillFiles({
-                fileUrls: remoteFileUrls,
-                expectedHashes: candidate.skillFileHashes ?? {},
-                allowedOrigins: candidate.sourceUrls,
-                timeoutMs: 15_000
-              })).map(({ path, content }) => ({ path, content }))
-            : await Promise.all(declared.map(async (path) => {
-                const source = declaredSkillFile(this.host.cwd(), path)
-                return { path: source.path, content: await readFile(source.absolute) }
-              }))
-          const staged = await stageSkillFiles({
-            root: YAN_DIR,
-            operationId: tx.operationId,
-            candidateId: candidate.candidateId,
-            projectId: plan.projectId,
-            files,
-            ...(candidate.skillFileHashes ? { expectedHashes: candidate.skillFileHashes } : {})
-          })
-          const securityNotice = staged.securityReview.findings.length > 0
-            ? `${formatSkillSecurityReview(staged.securityReview)}；即使候选由用户指定，仍保留这份风险提醒。`
-            : undefined
-          if (securityNotice) {
-            this.host.push({
-              ch: 'log',
-              payload: { text: `[能力接入] ${securityNotice}` }
-            })
-          }
-          tx = await service.markBoundary(
-            tx.operationId,
-            'Skill 文件已完成 staging、hash 复核与内容安全审查；等待下一次 runner 安全启动',
-            new Date().toISOString(),
-            staged.securityReview
-          )
-        }
-        const sessionFile = this.host.getState()?.sessionFile
-        const runnerId = this.host.capabilityOpts()?.sessionId
-        const projectId = this.host.capabilityOpts()?.projectId
-        if (tx.state === 'pending-boundary' && !tx.skillFilesTarget && sessionFile && runnerId && projectId) {
-          const goalHost = this.host.goalHost()
-          const goalStatus = goalHost
-            ? await goalHost.run('goal.status', {}, { sessionId: runnerId, projectId })
-            : null
-          const goal = (goalStatus?.data as { goal?: { goalId?: unknown; revision?: unknown } } | undefined)?.goal
-          if (goalHost && (!goal || !Number.isSafeInteger(goal.revision) || (goal.revision as number) < 0)) {
-            throw new CapabilityCommandError('goal_snapshot_unavailable', '无法固定当前目标修订，事务保持待处理且不会自动激活')
-          }
-          const goalIdFromStatus = typeof goal?.goalId === 'string' && goal.goalId ? goal.goalId : undefined
-          const goalRevisionFromStatus = Number.isSafeInteger(goal?.revision) && (goal?.revision as number) >= 0
-            ? (goal?.revision as number)
-            : undefined
-          const goalId = goalIdFromStatus ?? plan.goalId
-          const goalRevision = goalRevisionFromStatus ?? 0
-          const sourceHead = (await readRepoState(this.host.cwd(), { withRefs: false }))?.head ?? null
-          tx = await service.bindSkillFilesTarget(tx.operationId, {
-            runnerId,
-            runnerGeneration: this.host.capabilityOpts()?.runnerGeneration ?? 1,
-            cwd: this.host.cwd(),
-            sessionFile,
-            projectId,
-            goalId,
-            goalRevision,
-            sourceHead,
-            continueId: tx.operationId
-          })
-        }
-        return {
-          data: {
-            plan,
-            candidate,
-            operationId,
-            transaction: tx,
-            securityReview: tx.securityReview,
-            executable: false,
-            state: tx.state,
-            skills: declared,
-            ...(tx.securityReview?.findings.length
-              ? { notice: `${formatSkillSecurityReview(tx.securityReview)}；即使候选由用户指定，仍保留这份风险提醒。` }
-              : {})
-          },
-          summary: {
-            kind: 'capabilities',
-            action: 'acquire',
-            planId: plan.planId,
-            operationId,
-            state: tx.state,
-            executed: tx.state === 'pending-boundary'
-          }
-        }
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error)
-        const securityReview = error instanceof SkillSecurityError ? error.review : undefined
-        if (securityReview) {
-          this.host.push({ ch: 'log', payload: { text: `[能力接入] ${formatSkillSecurityReview(securityReview)}；已阻止激活。` } })
-        }
-        tx = securityReview
-          ? await service.fail(tx.operationId, detail, new Date().toISOString(), securityReview)
-          : await service.fail(tx.operationId, detail)
-        return {
-          data: { plan, candidate, operationId, state: 'failed', securityReview: tx.securityReview, notice: detail },
-          summary: {
-            kind: 'capabilities',
-            action: 'acquire',
-            planId: plan.planId,
-            operationId,
-            state: 'failed',
-            executed: false
-          }
-        }
-      }
-    }
 
     let npmStaged = false
     let npmFailure: string | undefined
@@ -697,6 +659,199 @@ export class CapabilityAcquisition {
         downloaded: npmStaged,
         installed: false
       }
+    }
+  }
+
+  /** 候选 → 技能目录内的文件（路径相对技能目录）。目录源 / 本地声明只有单个 SKILL.md。 */
+  private async skillFilesOf(candidate: CapabilityCandidate): Promise<{ files: AcquiredSkillFile[]; dirName?: string }> {
+    if (candidate.githubSkill) {
+      const files = await fetchGithubSkillFiles(candidate.githubSkill)
+      return { files, dirName: candidate.githubSkill.dir.split('/').at(-1) || candidate.githubSkill.repo }
+    }
+    const listed = candidate.skillFileUrls
+      ? (await fetchSkillFiles({
+          fileUrls: candidate.skillFileUrls,
+          expectedHashes: candidate.skillFileHashes ?? {},
+          allowedOrigins: candidate.sourceUrls,
+          timeoutMs: 15_000
+        })).map(({ path, content }) => ({ path, content }))
+      : await Promise.all((candidate.skillFiles ?? []).map(async (path) => {
+          const source = declaredSkillFile(this.host.cwd(), path)
+          return { path: source.path, content: await readFile(source.absolute) }
+        }))
+    if (listed.length !== 1) throw new CapabilityCommandError('skill_multiple', '一个候选只能接入一个技能（这个候选声明了多个 SKILL.md）')
+    const [file] = listed
+    return {
+      files: [{ path: 'SKILL.md', content: typeof file.content === 'string' ? new TextEncoder().encode(file.content) : file.content }],
+      dirName: file.path.split('/').at(-2)
+    }
+  }
+
+  /** 批准面板正文：要装什么、从哪来、包含什么、审查结果。 */
+  private skillApprovalMessage(input: {
+    name: string
+    description: string
+    candidate: CapabilityCandidate
+    files: AcquiredSkillFile[]
+    warnings: SkillSecurityFinding[]
+    truncated: boolean
+    userBlocked?: string
+  }): string {
+    const { candidate, files } = input
+    const github = candidate.githubSkill
+    const source = github
+      ? `github.com/${github.owner}/${github.repo}${github.dir ? `/${github.dir}` : ''}（提交 ${github.commit.slice(0, 12)}）`
+      : (candidate.sourceUrls[0] ?? candidate.candidateId).replace(/^https?:\/\//, '')
+    const total = files.reduce((sum, file) => sum + file.content.byteLength, 0)
+    const scripts = files.filter((file) => SCRIPT_EXT.test(file.path))
+    const exts = [...new Set(scripts.map((file) => file.path.slice(file.path.lastIndexOf('.'))))].join(' ')
+    const review = input.warnings.length > 0
+      ? `需要留意 ${input.warnings.length} 处：${input.warnings.slice(0, 3).map((f) => `${f.detail}（${f.path}:${f.line}）`).join('；')}`
+      : input.truncated ? '命中较多，已截断，请自行查看来源' : '未发现高风险写法'
+    return [
+      `Agent 想接入技能「${input.name}」`,
+      `用途：${input.description.length > 240 ? `${input.description.slice(0, 239)}…` : input.description || '（没有描述）'}`,
+      `来源：${source}`,
+      `内容：${files.length} 个文件，${formatSize(total)}${scripts.length > 0 ? `；含 ${scripts.length} 个脚本（${exts}），按技能做事时模型可能运行它们` : ''}`,
+      `审查：${review}`,
+      ...(input.userBlocked ? [input.userBlocked] : []),
+      '不批准就点「跳过」；到时间没有选择也会自动跳过。'
+    ].join('\n')
+  }
+
+  /**
+   * 技能接入：取文件 → 内容审查 → 批准面板（限时）→ 写入本次会话或「我的技能」。
+   *
+   * 模型不能替用户批准：面板选项只由宿主生成，答复走 UI 请求通道。不批准、写了别的话
+   * 或超时都不装任何东西，并明确告诉模型不要重复请求。
+   */
+  private async acquireSkill(input: { plan: AcquisitionPlan; candidate: CapabilityCandidate }) {
+    const { plan, candidate } = input
+    const summary = (state: string, extra: Record<string, unknown> = {}) => ({
+      kind: 'capabilities',
+      action: 'acquire',
+      planId: plan.planId,
+      candidateId: candidate.candidateId,
+      state,
+      executed: state === 'installed',
+      ...extra
+    })
+    const sessionId = this.host.getState()?.sessionId
+    if (!sessionId) throw new CapabilityCommandError('session_missing', '当前没有会话，无法接入技能')
+
+    const already = (await listSessionSkills(YAN_DIR, sessionId)).find((skill) => skill.candidateId === candidate.candidateId)
+    if (already) {
+      return {
+        data: { state: 'installed', scope: 'session', name: already.name, skillFile: already.skillFile, notice: '本会话已接入这个技能，直接 read skillFile 继续。' },
+        summary: summary('installed', { scope: 'session', reused: true })
+      }
+    }
+
+    let files: AcquiredSkillFile[]
+    let name: string
+    let description: string
+    try {
+      const loaded = await this.skillFilesOf(candidate)
+      files = loaded.files
+      const skillMd = files.find((file) => file.path === 'SKILL.md')
+      const meta = skillMd ? parseSkillFrontmatter(new TextDecoder().decode(skillMd.content)) : {}
+      name = acquiredSkillName(meta.name, loaded.dirName, candidate.title)
+      description = meta.description ?? candidate.summary
+    } catch (error) {
+      const notice = `取技能文件失败，未安装：${error instanceof Error ? error.message : String(error)}`
+      return { data: { state: 'failed', candidate, notice }, summary: summary('failed') }
+    }
+
+    const { review, blocked, warnings } = reviewAcquiredSkill(files)
+    if (blocked.length > 0) {
+      const where = blocked.slice(0, 3).map((f) => `${f.path}:${f.line}「${f.excerpt}」`).join('；')
+      return {
+        data: { state: 'blocked', candidate, notice: `内容审查发现疑似提示注入，已拒绝接入：${where}。不要换个方式绕过，改用不装技能的办法。` },
+        summary: summary('blocked')
+      }
+    }
+
+    /* 「我的技能」不能与随包技能重名，也不覆盖用户自己写的同名技能。 */
+    const reserved = this.host.bundledSkills().map((path) => basename(dirname(path)))
+    const userDir = join(userSkillsDir(), name)
+    const userBlocked = reserved.includes(name)
+      ? `与砚随包技能「${name}」同名，只能在本次会话使用。`
+      : existsSync(userDir) && !existsSync(join(userDir, SOURCE_META_FILE))
+        ? `我的技能里已有自己写的「${name}」，只能在本次会话使用。`
+        : undefined
+    const options = userBlocked ? [SKILL_SCOPE_OPTIONS.session] : [SKILL_SCOPE_OPTIONS.session, SKILL_SCOPE_OPTIONS.user]
+
+    let answer: { value?: string; cancelled?: boolean }
+    try {
+      answer = await this.host.requestApproval({
+        title: `授权接入技能「${name}」`,
+        message: this.skillApprovalMessage({ name, description, candidate, files, warnings, truncated: review.truncated, userBlocked }),
+        options,
+        placeholder: '或告诉 Agent 换个做法（不安装）',
+        timeout: UI_TIMEOUT_APPROVAL
+      })
+    } catch (error) {
+      if (!(error instanceof CapabilityCommandError) || error.code !== 'question_timeout') throw error
+      return {
+        data: {
+          state: 'skipped',
+          reason: 'timeout',
+          candidate: { candidateId: candidate.candidateId, title: name },
+          notice: '用户没有在时限内批准，已自动跳过，未安装任何东西。不要再次请求这个技能；改用不装技能的办法继续，并在回复里说明缺了什么。'
+        },
+        summary: summary('skipped', { reason: 'timeout' })
+      }
+    }
+
+    const scope = (Object.keys(SKILL_SCOPE_OPTIONS) as AcquiredSkillScope[]).find((key) => answer.value === SKILL_SCOPE_OPTIONS[key])
+    if (!scope || !options.includes(SKILL_SCOPE_OPTIONS[scope])) {
+      const reply = answer.cancelled ? undefined : answer.value?.trim() || undefined
+      return {
+        data: {
+          state: 'skipped',
+          reason: reply ? 'user-reply' : 'declined',
+          candidate: { candidateId: candidate.candidateId, title: name },
+          ...(reply ? { userReply: reply } : {}),
+          notice: reply
+            ? '用户没有批准安装，而是回复了上面的 userReply；按用户的话调整做法，不要再次请求这个技能。'
+            : '用户选择不安装。不要再次请求这个技能；改用不装技能的办法继续，并在回复里说明缺了什么。'
+        },
+        summary: summary('skipped', { reason: reply ? 'user-reply' : 'declined' })
+      }
+    }
+
+    try {
+      const installed = await installAcquiredSkill({
+        root: YAN_DIR,
+        scope,
+        sessionId,
+        name,
+        description,
+        files,
+        source: {
+          candidateId: candidate.candidateId,
+          ...(candidate.sourceUrls[0] ? { url: candidate.sourceUrls[0] } : {}),
+          ...(candidate.repository ? { repository: candidate.repository } : {}),
+          ...(candidate.commit ? { commit: candidate.commit } : {})
+        },
+        reservedNames: reserved
+      })
+      return {
+        data: {
+          state: 'installed',
+          scope: installed.scope,
+          name,
+          skillFile: installed.skillFile,
+          ...(warnings.length > 0 ? { warnings: warnings.map((f) => `${f.detail}（${f.path}:${f.line}）`) } : {}),
+          notice: installed.scope === 'session'
+            ? '已接入本次会话（只对这个会话生效，其他会话看不到）。现在用 read 打开 skillFile，按其中说明继续；技能里的相对路径以 SKILL.md 所在目录为基准。'
+            : '已安装到「我的技能」，之后所有新会话都会加载。现在用 read 打开 skillFile，按其中说明继续；技能里的相对路径以 SKILL.md 所在目录为基准。'
+        },
+        summary: summary('installed', { scope: installed.scope, name })
+      }
+    } catch (error) {
+      const notice = `安装失败，未改动技能目录：${error instanceof Error ? error.message : String(error)}`
+      return { data: { state: 'failed', candidate: { candidateId: candidate.candidateId, title: name }, notice }, summary: summary('failed') }
     }
   }
 

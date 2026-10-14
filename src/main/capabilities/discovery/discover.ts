@@ -9,6 +9,8 @@
  *   §7.2 的硬要求「至少一条 Skill 路径和一条 MCP 路径可用、密钥缺失时仍能做目录检索」
  *   因此由 npm 的 Skill 包元数据路径与 MCP Registry 公开接口满足。另有显式配置的
  *   独立 Skill 目录适配器（见下方），它不默认联网，避免新安装平白多一次请求。
+ *   技能的主来源是 GitHub 技能仓库（`github-skills.ts`，默认 anthropics/skills）：
+ *   固定提交、逐文件 Git 哈希，候选可以直接接入。
  *
  * ── 为什么把适配器放在同一文件 ──
  *   这些适配器加起来只有一个职责：**把目录响应如实映射成候选**。分开成多个文件后，
@@ -31,6 +33,7 @@ import {
   type DiscoverySourceReport,
   type RankedCandidate
 } from '../../../shared/discovery'
+import { searchGithubSkills } from '../github-skills'
 
 export const MCP_REGISTRY_URL =
   process.env.YAN_MCP_REGISTRY_URL?.trim() || 'https://registry.modelcontextprotocol.io/v0/servers'
@@ -573,6 +576,8 @@ export async function discoverCapabilities(input: {
   now?: () => Date
   maxCandidates?: number
   platform?: string
+  /** 用户点名的 GitHub 技能仓库（owner/repo）：只查这些，并列出其中全部技能 */
+  skillRepos?: string[]
 }): Promise<DiscoveryOutcome> {
   const fetchImpl = input.fetchImpl ?? fetch
   const timeoutMs = input.timeoutMs ?? 12_000
@@ -580,8 +585,9 @@ export async function discoverCapabilities(input: {
   const query = sanitizeDiscoveryQuery(input.queryText)
   const sources: DiscoverySourceReport[] = []
   const candidates: CapabilityCandidate[] = []
+  const namedRepos = input.skillRepos?.filter(Boolean) ?? []
 
-  if (!discoveryQueryUsable(query)) {
+  if (!discoveryQueryUsable(query) && namedRepos.length === 0) {
     return {
       query,
       candidates: [],
@@ -623,7 +629,19 @@ export async function discoverCapabilities(input: {
     }
   }
 
-  await Promise.all([
+  const github = () => run('github-skills', 'github-skills', 'https://github.com', async () => {
+    const result = await searchGithubSkills({
+      query,
+      ...(namedRepos.length > 0 ? { repos: namedRepos, listAll: true } : {}),
+      fetchImpl,
+      timeoutMs,
+      discoveredAt: now().toISOString()
+    })
+    return { candidates: result.candidates, pages: result.pages }
+  })
+
+  await Promise.all(namedRepos.length > 0 ? [github()] : [
+    github(),
     run('npm-registry', 'npm-registry', NPM_SEARCH_URL, () => searchNpm(query, fetchImpl, timeoutMs, now().toISOString())),
     run('mcp-registry', 'mcp-registry', MCP_REGISTRY_URL, () =>
       searchMcpRegistry(query, fetchImpl, timeoutMs, now().toISOString())
@@ -637,7 +655,8 @@ export async function discoverCapabilities(input: {
 
   const ranked = selectCandidates(
     rankCandidates(candidates, { goalText: input.goalText ?? input.queryText, platform: input.platform }),
-    input.maxCandidates ?? MAX_CANDIDATES
+    /* 点名仓库是「列出这个仓库有什么」，不按八项截断 */
+    input.maxCandidates ?? (namedRepos.length > 0 ? 60 : MAX_CANDIDATES)
   )
   const okSources = sources.filter((s) => s.ok)
   const reason =
