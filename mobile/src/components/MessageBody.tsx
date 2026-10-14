@@ -40,7 +40,7 @@ export const MessageBody = memo(function MessageBody({ text }: { text: string })
       <Pressable key={index} style={[styles.code, { backgroundColor: p.bg2, borderColor: p.borderSoft }]}><Text selectable style={{ color: p.fg, fontFamily: mono, fontSize: font.sm, lineHeight: 19 }}>{block.value}</Text></Pressable>
     ) : block.value === '' ? <View key={index} style={{ height: 6 }} /> : (
       <Text key={index} selectable style={[styles.line, { color: p.fg }, block.kind === 'heading' && styles.heading]}>
-        {block.kind === 'heading' ? <Text style={{ color: p.fgMute }}>{'## '}</Text> : null}{block.kind === 'list' ? <Text style={{ color: p.fgMute, fontFamily: mono }}>{'- '}</Text> : null}<Inline value={block.value} />
+        {block.kind === 'list' ? <Text style={{ color: p.fgMute, fontFamily: mono }}>{'- '}</Text> : null}<Inline value={block.value} />
       </Text>
     ))}
     {folded ? <Pressable accessibilityRole="button" onPress={() => setExpanded(true)} style={{ minHeight: touch.min, justifyContent: 'center' }}><Text style={{ color: p.fgMute, fontSize: font.sm }}>展开完整消息</Text></Pressable> : null}
