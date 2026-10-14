@@ -19,7 +19,7 @@
 
 import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { TurnTerminalReason, TurnTimingMeta, UIMessage } from '../shared/ipc'
+import type { GenerationTiming, TurnTerminalReason, TurnTimingMeta, UIMessage } from '../shared/ipc'
 import type { WaitSpan } from '../shared/turns'
 
 export const TURN_TIMING_VERSION = 1
@@ -48,6 +48,14 @@ export interface TurnTimingRecord extends TurnTimingMeta {
   anchorId?: string
   /** 这一轮归属的消息 id（按出现顺序）；锚不可用时才回退到它 */
   sourceIds: string[]
+  /**
+   * 本逻辑回合各条助手消息（模型请求）的生成用时，按**助手消息出现顺序**对齐。
+   *
+   * 数组下标 = 本轮第几条助手消息，**不是** pi 的消息下标。恢复时按锚定回合里的
+   * 助手次序 zip，不拿实时 id 查表 —— 否则压缩 / 历史重排后 id 漂移会串消息。
+   * `null` 表示那一条没有记录（保持未知）；旧记录没有这个字段就是全部未知。
+   */
+  generationTimings?: (GenerationTiming | null)[]
   /** 单调毫秒（诊断用）：能看出墙钟是否被调整过，不用于展示 */
   monotonicMs?: number
   /**
@@ -159,8 +167,34 @@ function parseRecord(line: string): TurnTimingRecord | null {
       : {}),
     ...(typeof item.final === 'boolean' ? { final: item.final } : {}),
     ...(typeof item.runId === 'string' && item.runId ? { runId: item.runId } : {}),
-    ...(Array.isArray(item.waitSpans) ? { waitSpans: parseWaitSpans(item.waitSpans) } : {})
+    ...(Array.isArray(item.waitSpans) ? { waitSpans: parseWaitSpans(item.waitSpans) } : {}),
+    ...(Array.isArray(item.generationTimings)
+      ? { generationTimings: parseGenerationTimings(item.generationTimings) }
+      : {})
   }
+}
+
+/**
+ * 生成计时容错解析：保持数组长度（次序锚定），坏条目留 null。
+ * 只有 `durationMs` 是必需且有限的；`ttftMs` / `decodeMs` 缺失或非有限就不带，
+ * `startEvent` 起点标记原样保留。
+ */
+function parseGenerationTimings(raw: unknown[]): (GenerationTiming | null)[] {
+  return raw.map((entry) => {
+    if (!entry || typeof entry !== 'object') return null
+    const g = entry as Partial<GenerationTiming>
+    if (typeof g.durationMs !== 'number' || !Number.isFinite(g.durationMs) || g.durationMs < 0) return null
+    const out: GenerationTiming = { durationMs: Math.max(1, Math.round(g.durationMs)) }
+    /* 起点语义标记原样保留：旧记录没有就是没有，不改写也不猜。 */
+    if (g.startEvent === 'turn_start') out.startEvent = 'turn_start'
+    if (typeof g.ttftMs === 'number' && Number.isFinite(g.ttftMs) && g.ttftMs >= 0) {
+      out.ttftMs = Math.max(1, Math.round(g.ttftMs))
+    }
+    if (typeof g.decodeMs === 'number' && Number.isFinite(g.decodeMs) && g.decodeMs >= 0) {
+      out.decodeMs = Math.max(1, Math.round(g.decodeMs))
+    }
+    return out
+  })
 }
 
 /** 等待分段容错解析：只收形状完整、且区间不反向的条目。 */
@@ -207,6 +241,14 @@ export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimi
   for (const r of runs) {
     for (const s of r.waitSpans ?? []) waitSpans.push(s)
   }
+  /*
+   * 生成计时跨 run **按时间顺序拼接**：每个 run 的数组已经按它的助手消息顺序
+   * 对齐，串起来就是整个逻辑回合的助手请求次序（不同 run 是串行工作，不相加）。
+   */
+  const generationTimings: (GenerationTiming | null)[] = []
+  for (const r of runs) {
+    if (r.generationTimings?.length) generationTimings.push(...r.generationTimings)
+  }
   const anchorId = runs.map((r) => r.anchorId).find((a) => !!a)
   /*
    * output token 跨 run **相加**：自动继续会开新的 pi 回合（新 runId），
@@ -226,6 +268,7 @@ export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimi
     sourceIds,
     ...(anchorId ? { anchorId } : {}),
     ...(waitSpans.length ? { waitSpans } : {}),
+    ...(generationTimings.length ? { generationTimings } : {}),
     ...(outputTokens !== undefined ? { outputTokens } : {})
   }
 }
@@ -281,35 +324,56 @@ export async function readTurnTimings(
  * 下一条用户消息之前的最后一条助手消息。锚不在（分叉裁掉、压缩换过历史、
  * 会话文件被替）时回退到 `sourceIds`，再对不上就**静默丢弃** ——
  * 宁可不显示用时，也不能把它挂到别的回合上。
+ *
+ * 工具行自身的起止也从 `waitSpans` 补回：重读历史时 `UIToolCall` 没有
+ * `startedAt` / `endedAt`，切会话后输入区的工具用时就成了未知。恢复只认
+ * **锚定成功**的回合（`sourceIds` 回退路径不补，避免历史重排后串行），按
+ * `id + name` 命中同一条工具调用，且只填空缺字段，绝不覆盖已有的实时计时。
  */
 export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecord[]): UIMessage[] {
   if (!records.length || !messages.length) return messages
   const indexById = new Map<string, number>()
   messages.forEach((m, i) => indexById.set(m.id, i))
 
-  const targetOf = (record: TurnTimingRecord): string | undefined => {
+  /*
+   * 定位一条记录对应的**助手消息序列**（按消息出现顺序）。
+   *
+   * 优先用锚（用户消息 id）：它之后到下一条用户消息之前的所有助手消息
+   * 就是这一轮。锚不在（分叉裁掉、压缩换过历史、会话文件被替）时回退到
+   * `sourceIds`，仍按消息顺序取。返回序列而不是单条 id，是因为生成计时
+   * 要逐条挂；同时**只按次序 zip，不拿 id 当键** —— id 会随压缩漂移。
+   */
+  const assistantsOf = (record: TurnTimingRecord): { list: UIMessage[]; anchored: boolean } => {
     const anchor = record.anchorId
     if (anchor) {
       const start = indexById.get(anchor)
       if (start !== undefined) {
-        let target: string | undefined
+        const list: UIMessage[] = []
         for (let i = start + 1; i < messages.length; i += 1) {
           if (messages[i].role === 'user') break
-          if (messages[i].role === 'assistant') target = messages[i].id
+          if (messages[i].role === 'assistant') list.push(messages[i])
         }
-        if (target) return target
+        if (list.length) return { list, anchored: true }
       }
     }
-    for (let i = record.sourceIds.length - 1; i >= 0; i -= 1) {
-      if (indexById.has(record.sourceIds[i])) return record.sourceIds[i]
+    const sourceSet = new Set(record.sourceIds)
+    return {
+      list: messages.filter((m) => m.role === 'assistant' && sourceSet.has(m.id)),
+      anchored: false
     }
-    return undefined
   }
 
+  /* 工具调用按稳定 `id + name` 命中（id 单独可能被别的回合复用）。 */
+  const toolKey = (id: string, name: string): string => `${id}\u0000${name}`
+
   const patch = new Map<string, TurnTimingMeta>()
+  const genPatch = new Map<string, GenerationTiming>()
+  const toolPatch = new Map<string, Map<string, { startedAt: number; endedAt: number }>>()
   for (const record of records) {
-    const target = targetOf(record)
-    if (!target) continue
+    const { list: assistants, anchored } = assistantsOf(record)
+    if (!assistants.length) continue
+    /* 整轮用时仍挂在最后一条助手消息上（`groupIntoTurns` 取的就是它）。 */
+    const target = assistants[assistants.length - 1].id
     patch.set(target, {
       logicalTurnId: record.logicalTurnId,
       startedAt: record.startedAt,
@@ -317,10 +381,68 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
       elapsedMs: record.elapsedMs,
       terminalReason: effectiveTerminalReason(record)
     })
+    /*
+     * 逐条恢复每次模型请求的生成用时。
+     *
+     * 只有**数量一致**才按次序挂：数量对不上说明历史被压缩 / 重排过，
+     * 硬 zip 会把时间挂到别的请求上 —— 宁可不显示（保持未知），也不串消息。
+     */
+    const timings = record.generationTimings
+    if (timings?.length && timings.length === assistants.length) {
+      for (let i = 0; i < assistants.length; i += 1) {
+        const timing = timings[i]
+        if (timing) genPatch.set(assistants[i].id, timing)
+      }
+    }
+    /*
+     * 工具等待分段回填到工具行（只认锚定成功的回合，见函数头注释）。
+     * 值先做一次有效性过滤：非有限或时间倒挂的条目一律丢，不写进消息。
+     */
+    if (!anchored || !record.waitSpans?.length) continue
+    const spanByTool = new Map<string, WaitSpan>()
+    for (const span of record.waitSpans) {
+      if (typeof span.id !== 'string' || !span.id || typeof span.name !== 'string') continue
+      if (!Number.isFinite(span.startedAt) || !Number.isFinite(span.endedAt)) continue
+      if (span.endedAt < span.startedAt) continue
+      spanByTool.set(toolKey(span.id, span.name), span)
+    }
+    if (!spanByTool.size) continue
+    for (const assistant of assistants) {
+      const calls = assistant.toolCalls
+      if (!calls?.length) continue
+      let byTool: Map<string, { startedAt: number; endedAt: number }> | undefined
+      for (const call of calls) {
+        const span = spanByTool.get(toolKey(call.id, call.name))
+        if (!span) continue
+        /* 已有真实起止的字段不动；只补空缺。 */
+        const startedAt = call.startedAt === undefined ? span.startedAt : call.startedAt
+        const endedAt = call.endedAt === undefined ? span.endedAt : call.endedAt
+        if (startedAt === call.startedAt && endedAt === call.endedAt) continue
+        byTool ??= new Map()
+        byTool.set(toolKey(call.id, call.name), { startedAt, endedAt })
+      }
+      if (byTool) toolPatch.set(assistant.id, byTool)
+    }
   }
-  if (!patch.size) return messages
+  if (!patch.size && !genPatch.size && !toolPatch.size) return messages
   return messages.map((m) => {
     const meta = patch.get(m.id)
-    return meta ? { ...m, turnTiming: meta } : m
+    const timing = genPatch.get(m.id)
+    const tools = toolPatch.get(m.id)
+    if (!meta && !timing && !tools) return m
+    const toolCalls =
+      tools && m.toolCalls
+        ? m.toolCalls.map((call) => {
+            const span = tools.get(toolKey(call.id, call.name))
+            if (!span) return call
+            return { ...call, startedAt: span.startedAt, endedAt: span.endedAt }
+          })
+        : undefined
+    return {
+      ...m,
+      ...(meta ? { turnTiming: meta } : {}),
+      ...(timing ? { generationTiming: timing } : {}),
+      ...(toolCalls ? { toolCalls } : {})
+    }
   })
 }

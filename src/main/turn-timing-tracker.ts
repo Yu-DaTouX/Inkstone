@@ -92,6 +92,18 @@ export class TurnTimingTracker {
         .filter((m) => sourceIds.includes(m.id))
         .flatMap((m) => m.toolCalls ?? [])
     )
+    /*
+     * 每次模型请求的生成用时，按本轮**助手消息出现顺序**对齐。
+     * 下标不是 pi 的消息下标，恢复时按锚定回合里的助手次序 zip ——
+     * 拿实时消息 id 索引会在压缩 / 历史重排后串到别的消息上。
+     * 没有记录的位置留 null，保持次序不错位。
+     */
+    const sourceSet = new Set(sourceIds)
+    const generationTimings = messages
+      .filter((m) => sourceSet.has(m.id))
+      .map((m) => m.generationTiming ?? null)
+    /* 发起这次写入时的 run；用于 await 后判断是否还是同一段工作。 */
+    const runIdAtWrite = this.runId
     const endedAt = Date.now()
     const record = {
       v: TURN_TIMING_VERSION,
@@ -111,6 +123,7 @@ export class TurnTimingTracker {
       ...(anchorId ? { anchorId } : {}),
       sourceIds,
       ...(waitSpans.length ? { waitSpans } : {}),
+      ...(generationTimings.some(Boolean) ? { generationTimings } : {}),
       ...(this.outputTokens ? { outputTokens: this.outputTokens } : {}),
       monotonicMs: elapsedMs
     }
@@ -119,6 +132,6 @@ export class TurnTimingTracker {
       () => undefined,
       () => undefined
     )
-    if (await write) this.persisted = true
+    if (await write && this.runId === runIdAtWrite) this.persisted = true
   }
 }
