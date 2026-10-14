@@ -1,18 +1,4 @@
-/**
- * 远程 MCP 的**自动登记闭环**（实施-04 S6b-1，cost 0）—— 不调模型。
- *
- * 验的是「从确认未配置开始」的完整路径，四段缺一不可：
- *   ① `discover` 从一个**真目录服务**（本地 fixture，MCP Registry 形状）拿到远程候选；
- *   ② 未授权时 `acquire` **不登记**（如实停在 `needs-authorization`）；
- *   ③ `--authorize` 请求并由隔离 test fixture 模拟主进程确认之后，真的核验端点并写受管配置；
- *   ④ 登记完**当场**能在能力目录里看到、并且 `yan mcp call` 真的调得通 —— 不需要重启。
- *   ⑤ 同一计划重放不重复登记（幂等）。
- *
- * 两个服务都由 test-live 在 Node 侧起（探针在渲染进程起不了服务）：
- *   · 目录 fixture：`YAN_MCP_REGISTRY_URL` 指向它（npm 源同样指向本地，避免真联网）；
- *   · MCP HTTP fixture：`scripts/lib/mcp-http-fixture.mjs`（官方 SDK，真握手）。
- * 服务配置写进 sandbox（`YAN_MCP_SERVERS_FILE`），**不碰用户真实配置**。
- */
+/** 本机目录发现 → 原生 MCP 收口边界（cost 0）：授权与重放均不得恢复旧自动登记。 */
 ;(async () => {
   const out = []
   const ok = (cond, label, extra = '') => {
@@ -75,29 +61,8 @@
       return null
     }
   }
-  /*
-   * 请求文件写进**系统临时目录**：探针跑在项目根下，相对路径会把
-   * `mcp-reg-call.json` 这类中间文件留在仓库里（首次跑就污染了工作区）。
-   * 路径由 node 自己算 —— `$TEMP` 在 pi 的 bash 通道里不一定会展开。
-   */
-  const writeJson = async (name, value) => {
-    const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(value))))
-    const res = await runCli(
-      `node -e "const fs=require('fs'),p=require('path');fs.writeFileSync(p.join(require('os').tmpdir(),'yan-mcpreg-probe-${name}'),Buffer.from('${b64}','base64'))"`
-    )
-    return res.exitCode === 0
-  }
 
-  const tmpDirRes = await runCli(`node -e "process.stdout.write(require('os').tmpdir())"`)
-  const TMPDIR =
-    String(tmpDirRes.output)
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .pop() || '.'
-  const tmpFile = (name) => `${TMPDIR}\\yan-mcpreg-probe-${name}`
-
-  log('=== yan capabilities discover → 主进程确认授权 → 能力目录 → mcp call（cost 0）===')
+  log('=== discover → prepare → mcp-native-only；不调模型、不登记服务 ===')
 
   try {
     let ready = false
@@ -148,89 +113,20 @@
     )
     ok(pFull.executable === false, 'prepare 本身不执行（executable=false）')
 
-    /* ---- 3. 未授权 acquire：一个字节都不该写 ---- */
-    log('--- 3. acquire（未授权） ---')
-    const acq1 = await runCli(`yan capabilities acquire --plan ${planId}`)
-    const a1Rec = lastJson(acq1.output)
-    const a1Full = await readJsonFile(a1Rec && a1Rec.resultFile)
-    ok(a1Rec && a1Rec.ok === true, 'acquire 未授权时仍是正常回执（不是崩溃）')
-    ok(
-      a1Full && a1Full.state === 'needs-authorization' && a1Full.executable === false,
-      '未授权：停在 needs-authorization，executable=false',
-      JSON.stringify(a1Full && { state: a1Full.state, executable: a1Full.executable })
-    )
-    ok(
-      /--authorize/.test(String((a1Full && a1Full.notice) || '')),
-      '回执告诉模型下一步怎么做（--authorize）'
-    )
-
-    /* ---- 4. --authorize 只请求确认；隔离 live fixture 代替人工点击 ---- */
-    log('--- 4. acquire --authorize（确认由主进程授权边界处理） ---')
-    const acq2 = await runCli(`yan capabilities acquire --plan ${planId} --authorize`)
-    const a2Rec = lastJson(acq2.output)
-    const a2Full = await readJsonFile(a2Rec && a2Rec.resultFile)
-    log('  回执：' + JSON.stringify(a2Rec && a2Rec.summary))
-    ok(a2Rec && a2Rec.ok === true, '授权后的 acquire 成功（exit 0）')
-    ok(
-      a2Full && a2Full.state === 'resumed' && a2Full.executable === true,
-      '授权后真的登记并进入 resumed',
-      JSON.stringify(a2Full && { state: a2Full.state, executable: a2Full.executable })
-    )
-    const tools = (a2Full && a2Full.tools) || []
-    ok(
-      tools.includes('echo') && tools.includes('boom'),
-      '核验时真的连上并枚举到 fixture 的工具',
-      JSON.stringify(tools)
-    )
-    ok(!!(a2Full && a2Full.authorization && a2Full.authorization.host), '回执带回持久授权记录（只记 host）')
-    ok(
-      !/password|token|secret/i.test(JSON.stringify(a2Full && a2Full.authorization)),
-      '授权记录里不含凭证'
-    )
-    const serverId = a2Full && a2Full.serverId
-    ok(!!serverId, '回执给出 serverId', String(serverId))
-    if (!serverId) return out.join('\n')
-
-    /* ---- 5. 当场可见：不需要重启就能在能力目录里查到 ---- */
-    log('--- 5. capabilities search（当场可见） ---')
-    const search = await runCli('yan capabilities search --query-text "echo"')
-    const sRec = lastJson(search.output)
-    const sFull = await readJsonFile(sRec && sRec.resultFile)
-    const hit = ((sFull && sFull.hits) || []).find((h) => h.id === `mcp:${serverId}/echo`)
-    ok(!!hit, '登记后能力目录当场可见（无需重启）', JSON.stringify(((sFull && sFull.hits) || []).map((h) => h.id)))
-    if (hit) {
-      ok(hit.availability === 'ready', 'availability 是 ready', String(hit.availability))
-      ok(hit.kind === 'mcp-tool', 'kind 是 mcp-tool', String(hit.kind))
-      ok(hit.effect === 'unknown', 'effect 不由目录 / 服务自报（unknown）', String(hit.effect))
+    /* 通用 MCP 获取已停用，授权参数也不能恢复旧宿主登记。 */
+    const before = JSON.stringify((await window.yan.capabilities.snapshot()).mcpServers)
+    for (const authorize of [false, true, true]) {
+      const result = await runCli(`yan capabilities acquire --plan ${planId}${authorize ? ' --authorize' : ''}`)
+      const receipt = lastJson(result.output)
+      const full = await readJsonFile(receipt?.resultFile)
+      ok(receipt?.ok === true, '停用分支给出正常回执而非崩溃')
+      ok(full?.state === 'mcp-native-only' && full.executable === false, '无论授权或重放都不能登记旧宿主 MCP', JSON.stringify(full && { state: full.state, executable: full.executable }))
+      ok(/pi.*原生/.test(String(full?.notice || '')), '引导 pi 原生入口而非 --authorize')
+      ok(!full?.serverId && !full?.tools && !full?.authorization, '不冒充已连接、已授权或已登记')
+      ok(receipt?.summary?.executed === false, '摘要如实声明未执行')
     }
-
-    /* ---- 6. 真的能用：mcp call 走的是新登记的服务 ---- */
-    log('--- 6. mcp call ---')
-    const wroteCall = await writeJson('mcp-reg-call.json', {
-      serverId,
-      toolName: 'echo',
-      arguments: { text: 'hello-register' }
-    })
-    ok(wroteCall, '写好调用请求文件')
-    const call = await runCli(`yan mcp call --request-file "${tmpFile('mcp-reg-call.json')}"`)
-    const cRec = lastJson(call.output)
-    const cFull = await readJsonFile(cRec && cRec.resultFile)
-    ok(cRec && cRec.ok === true, 'mcp call 成功（exit 0）')
-    ok(
-      cRec && cRec.summary && cRec.summary.toolError === false,
-      '调用不是工具级错误',
-      JSON.stringify(cRec && cRec.summary)
-    )
-    ok(
-      JSON.stringify(cFull || {}).includes('http:hello-register'),
-      '返回值真的来自 fixture（不是编的）'
-    )
-
-    /* ---- 7. 幂等：同一计划重放不重复登记 ---- */
-    log('--- 7. 重放同一计划 ---')
-    const acq3 = await runCli(`yan capabilities acquire --plan ${planId} --authorize`)
-    const a3Full = await readJsonFile(lastJson(acq3.output)?.resultFile)
-    ok(a3Full && a3Full.replayed === true, '同一计划重放：只复核，不重复写配置', JSON.stringify(a3Full && a3Full.replayed))
+    const after = JSON.stringify((await window.yan.capabilities.snapshot()).mcpServers)
+    ok(before === after, '兼容服务快照未被获取分支改写')
   } catch (error) {
     log('探针异常：' + String((error && error.stack) || error))
     ok(false, '探针本身没抛异常')

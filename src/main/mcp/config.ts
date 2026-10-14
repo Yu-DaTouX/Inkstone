@@ -22,6 +22,10 @@ export interface McpConfigLoadResult {
   servers: McpServerConfig[]
   /** 配置有问题时的可读说明 —— **不静默**吞掉（否则「服务没连上」会变成谜）。 */
   error?: string
+  /** 解析出的原始文档（导入 pi 原生时保留未知字段用；数组或 `{ servers }` 形状都可能是它）。 */
+  document?: unknown
+  /** 实际读取的文件路径。 */
+  file?: string
 }
 
 /**
@@ -75,6 +79,7 @@ function normalize(raw: unknown): McpServerConfig | { problem: string } {
       args.push(normalized)
     }
   }
+  const migratedToNative = parseMigratedMark(r.migratedToNative)
   return {
     id,
     ...(typeof r.title === 'string' && r.title.trim() ? { title: r.title.trim() } : {}),
@@ -86,25 +91,49 @@ function normalize(raw: unknown): McpServerConfig | { problem: string } {
     ...(typeof r.authRef === 'string' && r.authRef.trim() ? { authRef: r.authRef.trim() } : {}),
     ...(typeof r.projectScope === 'string' && r.projectScope.trim() ? { projectScope: r.projectScope.trim() } : {}),
     ...(effect ? { effect } : {}),
-    ...(r.enabled === false ? { enabled: false } : {})
+    ...(r.enabled === false ? { enabled: false } : {}),
+    ...(migratedToNative ? { migratedToNative } : {})
+  }
+}
+
+/** `migratedToNative` 只认形状正确的标记；坏值静默丢弃（不因此拒绝整条服务）。 */
+function parseMigratedMark(raw: unknown): McpServerConfig['migratedToNative'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  if (typeof r.at !== 'string' || !r.at.trim() || typeof r.targetPath !== 'string' || !r.targetPath.trim()) return undefined
+  return {
+    at: r.at,
+    targetPath: r.targetPath,
+    ...(typeof r.nativeName === 'string' && r.nativeName.trim() ? { nativeName: r.nativeName.trim() } : {})
   }
 }
 
 export function loadMcpServers(env: NodeJS.ProcessEnv = process.env): McpConfigLoadResult {
   const file = mcpServersFile(env)
-  if (!existsSync(file)) return { servers: [] }
+  if (!existsSync(file)) return { servers: [], file }
+  let text: string
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch (error) {
+    return { servers: [], file, error: `无法读取 MCP 配置（${file}）：${error instanceof Error ? error.message : String(error)}` }
+  }
+  return parseMcpServersDocument(text, file)
+}
+
+/** 从已读到的文本解析配置；导入 pi 原生也走这里，保证与调用侧同一套清洗规则。 */
+export function parseMcpServersDocument(text: string, file: string): McpConfigLoadResult {
   let parsed: unknown
   try {
-    parsed = JSON.parse(readFileSync(file, 'utf8'))
+    parsed = JSON.parse(text)
   } catch (error) {
-    return { servers: [], error: `MCP 配置不是合法 JSON（${file}）：${error instanceof Error ? error.message : String(error)}` }
+    return { servers: [], file, error: `MCP 配置不是合法 JSON（${file}）：${error instanceof Error ? error.message : String(error)}` }
   }
   const list = Array.isArray(parsed)
     ? parsed
     : parsed && typeof parsed === 'object' && Array.isArray((parsed as { servers?: unknown }).servers)
       ? ((parsed as { servers: unknown[] }).servers as unknown[])
       : null
-  if (!list) return { servers: [], error: `MCP 配置必须是数组或 { servers: [...] }（${file}）` }
+  if (!list) return { servers: [], file, document: parsed, error: `MCP 配置必须是数组或 { servers: [...] }（${file}）` }
 
   const servers: McpServerConfig[] = []
   const problems: string[] = []
@@ -122,5 +151,5 @@ export function loadMcpServers(env: NodeJS.ProcessEnv = process.env): McpConfigL
     seen.add(result.id)
     servers.push(result)
   }
-  return { servers, ...(problems.length ? { error: problems.join('；') } : {}) }
+  return { servers, file, document: parsed, ...(problems.length ? { error: problems.join('；') } : {}) }
 }
