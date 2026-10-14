@@ -28,8 +28,8 @@
  *    实测：同一个 `reserveTokens` 放全局 → 第一轮就触发压缩；只放项目级
  *    且无 trust.json → 一轮都不触发；补上 trust.json → 又触发。
  *
- * ⚠️ 只读，不写 pi 的设置文件 —— 那是 TUI 和扩展的领地
- *    （与 main/settings.ts 的第一条约定相同）。
+ * ⚠️ 本文件只读 pi 的设置文件 —— 那是 TUI 和扩展的领地。唯一的例外在 native-compaction-line.ts：
+ *    它把自动压缩上限写成 compaction.modelOverrides 里砚自己的条目；这里按全局 reserveTokens 算原生线，砚的线另由 inkstoneCap 取先到者。
  */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -133,7 +133,7 @@ export async function compactionInfo(cwd: string, contextWindow: number, inkston
    */
   const win = Number.isFinite(contextWindow) && contextWindow > 0 ? Math.round(contextWindow) : 0
   const native = Math.max(0, win - effective.reserveTokens)
-  /* 砚的自动压缩上限（context-trim.js 在一轮结束后调 pi 原生 compact）：取两条线里先到的那条 */
+  /* 砚的自动压缩上限（一轮结束后由 context-trim.js 检查；运行中由 native-compaction-line.ts 写成原生 reserveTokens）：取两条线里先到的那条 */
   /* 提前压缩跟随 pi 的自动压缩开关：pi 关了就都不压 */
   const capped = inkstoneCap && effective.enabled ? autoCompactAt(inkstoneCap, win) : undefined
   const byInkstone = capped !== undefined && capped < native

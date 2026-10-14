@@ -31,8 +31,41 @@ export async function runTurnTests(ok) {
     ok(JSON.stringify(project(rows)) === JSON.stringify(groupIntoTurns(rows)), '流式结束使当前回合转为完成状态')
     const editedHistory = [history[0], { ...history[1], text: 'Edited history' }, question, current]
     ok(JSON.stringify(project(editedHistory)) === JSON.stringify(groupIntoTurns(editedHistory)), '历史编辑使对应缓存失效')
-    rows = [...history, { id: 'hidden-notice', role: 'user', text: '<subagent-notification id="x" status="done">\nResult\n</subagent-notification>' }, question, current]
-    ok(JSON.stringify(project(rows, current.id)) === JSON.stringify(groupIntoTurns(rows, current.id)), '隐藏宿主通知不制造回合边界')
+    /*
+     * 隐藏宿主通知（子代理结果）：不画成用户气泡，但它是**后续助手运行段**
+     * 的计时分界 —— 通知前已结束的段必须冻结 id / elapsedMs / usage。
+     */
+    const noticeBefore = {
+      id: 'notice-a',
+      role: 'assistant',
+      text: '通知前已答',
+      elapsedMs: 1200,
+      usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: 0 }
+    }
+    const noticeAfter = {
+      id: 'notice-b',
+      role: 'assistant',
+      text: '通知后继续',
+      elapsedMs: 300,
+      usage: { input: 7, output: 3, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: 0 }
+    }
+    const noticeRows = [
+      question,
+      noticeBefore,
+      { id: 'hidden-notice', role: 'user', text: '<subagent-notification id="x" status="done">\nResult\n</subagent-notification>' },
+      noticeAfter
+    ]
+    const noticeProjected = project(noticeRows)
+    ok(JSON.stringify(noticeProjected) === JSON.stringify(groupIntoTurns(noticeRows)), '隐藏宿主通知的投影与分组同口径')
+    ok(!noticeProjected.some((t) => t.kind === 'user' && t.id === 'hidden-notice'), '隐藏宿主通知不生成用户气泡')
+    const noticeAssistants = noticeProjected.filter((t) => t.kind === 'assistant')
+    ok(
+      noticeAssistants.length === 2 &&
+        noticeAssistants[0].id === 'notice-a' && noticeAssistants[0].elapsedMs === 1200 && noticeAssistants[0].usage?.totalTokens === 15 &&
+        noticeAssistants[1].id === 'notice-b' && noticeAssistants[1].elapsedMs === 300 && noticeAssistants[1].usage?.totalTokens === 10,
+      '通知把助手拆成两段：原段 id/elapsed/usage 冻结，后段独立计时',
+      JSON.stringify(noticeAssistants.map((t) => ({ id: t.id, elapsedMs: t.elapsedMs, total: t.usage?.totalTokens })))
+    )
     rows = [current, { id: 'shell-cache', role: 'bash', text: 'shell output' }, ...history]
     ok(JSON.stringify(project(rows)) === JSON.stringify(groupIntoTurns(rows)), '开头助手消息、bash边界与重排保持完整投影语义')
     ok(project([]).length === 0 && JSON.stringify(project(history)) === JSON.stringify(groupIntoTurns(history)), '切换空会话及返回历史不会混入旧投影')
@@ -46,9 +79,31 @@ export async function runTurnTests(ok) {
 
   {
     const notice = '<subagent-notification id="sub-1" status="done">\n后台结果\n</subagent-notification>'
-    const messages = [usr('u1', '继续任务'), asst('a1', '等待子代理'), usr('u2', notice), asst('a2', '收到结果，继续')]
+    const usage = (input, output) => ({ input, output, cacheRead: 0, cacheWrite: 0, totalTokens: input + output, cost: 0 })
+    const messages = [
+      usr('u1', '继续任务'),
+      asst('a1', '等待子代理', { elapsedMs: 1200, usage: usage(10, 5) }),
+      usr('u2', notice),
+      asst('a2', '收到结果，继续', { elapsedMs: 300, usage: usage(7, 3) })
+    ]
     const turns = groupIntoTurns(messages)
-    ok(turns.length === 2 && turns[0].kind === 'user' && turns[1].sourceIds.includes('a2'), '宿主通知不生成用户气泡或拆开助手回合')
+    ok(turns.length === 3 && turns[0].kind === 'user', '宿主通知不生成用户气泡（不新增用户轮）', `实际 ${turns.length} 轮`)
+    ok(turns[1]?.kind === 'assistant' && turns[1].id === 'a1' && turns[2]?.kind === 'assistant' && turns[2].id === 'a2', '宿主通知把助手拆成两个独立段')
+    /*
+     * 用户报的 bug：通知返回时，此前已结束的段被后续 run 的 elapsedMs / usage
+     * 覆盖。修复后通知先 flush，两段各自冻结且后段不复用旧用量。
+     */
+    ok(
+      turns[1]?.elapsedMs === 1200 && turns[1]?.usage?.totalTokens === 15 && JSON.stringify(turns[1]?.sourceIds) === JSON.stringify(['a1']),
+      '通知前已结束段 id/elapsed/usage 冻结',
+      JSON.stringify({ id: turns[1]?.id, elapsedMs: turns[1]?.elapsedMs, usage: turns[1]?.usage })
+    )
+    ok(
+      turns[2]?.elapsedMs === 300 && turns[2]?.usage?.totalTokens === 10 && JSON.stringify(turns[2]?.sourceIds) === JSON.stringify(['a2']),
+      '通知后新段独立计时，不复制旧段用量',
+      JSON.stringify({ id: turns[2]?.id, elapsedMs: turns[2]?.elapsedMs, usage: turns[2]?.usage })
+    )
+    ok(JSON.stringify(createTurnProjector()(messages)) === JSON.stringify(turns), '隐藏通知的投影与分组同口径')
     ok(currentTurnMessages(messages).some(m => m.id === 'a1'), '宿主通知不重置本轮用量范围')
   }
 
