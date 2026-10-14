@@ -171,7 +171,7 @@ export function BackgroundSetting() {
 }
 
 const UI_FONT_OPTS = [
-  { v: 'maple', key: 'set.font.maple' },
+  { v: 'maple', key: 'set.font.terminal' },
   { v: 'sans', key: 'set.font.sans' },
   { v: 'serif', key: 'set.font.serif' },
   { v: 'custom', key: 'set.font.custom' }
@@ -185,7 +185,7 @@ const CODE_FONT_OPTS = [
 function FontRow({ kind }: { kind: 'ui' | 'code' }) {
   const t = useT()
   const patchSettings = useStore((s) => s.patchSettings)
-  const preset = useStore((s) => (kind === 'ui' ? s.settings?.fontUi : s.settings?.fontCode)) ?? 'maple'
+  const preset = useStore((s) => (kind === 'ui' ? s.settings?.fontUi : s.settings?.fontCode)) ?? (kind === 'ui' ? 'sans' : 'maple')
   const custom = useStore((s) => (kind === 'ui' ? s.settings?.fontUiCustom : s.settings?.fontCodeCustom)) ?? ''
   const [text, setText] = useState<string | null>(null)
   const [fonts, setFonts] = useState<string[]>([])
@@ -193,7 +193,7 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }) {
   const revision = useRef(0)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
-  /* 'maple' 是缺省：主进程清洗时落成「没设置」 */
+  /* 界面缺省是 'sans'、代码缺省是 'maple'：主进程清洗时都落成「没设置」 */
   const patchFont = (choice: string, name?: string): Promise<void> =>
     patchSettings(
       (kind === 'ui'
