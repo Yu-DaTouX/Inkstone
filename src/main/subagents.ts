@@ -24,6 +24,7 @@ import { CapabilityServer } from './capability-server'
 import { nativePiToolsSupported } from '../shared/agent-context'
 import { modelErrorNotice } from '../shared/model-errors'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
+import { confirmRegisteredModel } from './subagents/registered-model'
 import {
   applyPatch,
   cleanupWorkspace,
@@ -36,6 +37,8 @@ const MAX_CONCURRENT = 10
 /** 停滞或显式总期限到限后，先请求收尾，宽限内未结束才停止。 */
 const STALL_TIMEOUT_MS = 10 * 60 * 1000
 const GRACE_MS = 75 * 1000
+/** 有工具调用在执行时（如整轮测试）静默是正常的，停滞期限放宽到这个倍数，仍保留对卡死命令的兜底。 */
+const TOOL_RUNNING_STALL_FACTOR = 6
 const PROGRESS_EVENTS = new Set(['agent_start', 'turn_start', 'turn_end', 'message_start', 'message_update', 'message_end',
   'tool_execution_start', 'tool_execution_update', 'tool_execution_end', 'auto_compaction_start', 'auto_compaction_end'])
 
@@ -97,6 +100,8 @@ interface Run extends SubagentRun {
   pushTimer?: NodeJS.Timeout
   /** 最近一次收到 pi 进展事件的时刻。 */
   lastProgressAt: number
+  /** 已开始、尚未结束的工具调用 id；只统计带 toolCallId 的事件。 */
+  runningTools: Set<string>
   totalMs?: number
   idleMs: number
   graceMs: number
@@ -151,6 +156,7 @@ export interface SubagentOptions {
   /** 退出 / 重启时的可恢复补丁目录。 */
   archiveDir?: string
   confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean>
+  resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   /** 传给子进程的扩展（默认不传：子代理不需要浏览器/提问扩展） */
   extensions?: string[]
   /** 追加系统提示（例如「你是子代理，目标明确、少寒暄」） */
@@ -439,6 +445,7 @@ export class SubagentController {
       msgSeq: 0,
       toolCalls: 0,
       lastProgressAt: Date.now(),
+      runningTools: new Set(),
       /* 上限在**创建时就固定**（而不是等回调里再读 env）：测试提前清掉覆盖值时，提示会写成另一个数。 */
       ...limitsFor(brief),
       /* 占位，下面立刻排定 */
@@ -484,6 +491,16 @@ export class SubagentController {
         const message = `指定的模型 ${model} 没有生效（pi 实际使用 ${ready.model}），请核对模型名与登录状态后重试，不要改用其他模型`
         await this.fail(id, message, 'startup')
         return { ok: false, error: message }
+      }
+      if (model && ready.model) {
+        const expectedApi = await ctx.resolveModelApi?.(ready.model, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId })
+        if (run.status !== 'starting') return { ok: false, error: '子代理在启动期间已停止' }
+        const selectionError = await confirmRegisteredModel(rpc, ready.model, { readOnly: isolation === 'controlled-cwd', expectedApi })
+        if (run.status !== 'starting') return { ok: false, error: '子代理在启动期间已停止' }
+        if (selectionError) {
+          await this.fail(id, selectionError, 'startup')
+          return { ok: false, error: selectionError }
+        }
       }
       /* 未显式指定模型时记下 pi 实际选用的那个，界面才能如实显示。 */
       if (ready.model) run.model = ready.model
@@ -789,11 +806,16 @@ export class SubagentController {
     return { ok: true }
   }
 
+  /** 当前生效的停滞期限：工具执行期间放宽，其余时间用基础值。 */
+  private stallLimit(run: Run): number {
+    return run.runningTools.size ? run.idleMs * TOOL_RUNNING_STALL_FACTOR : run.idleMs
+  }
+
   /** 进展续期停滞时钟；显式总期限独立计时，收尾计时不再续期。 */
   private armWatch(run: Run): void {
     if (run.wrapUp || (run.status !== 'running' && run.status !== 'starting')) return
     clearTimeout(run.timer)
-    const at = Math.min(run.totalMs ? run.startedAt + run.totalMs : Infinity, run.lastProgressAt + run.idleMs)
+    const at = Math.min(run.totalMs ? run.startedAt + run.totalMs : Infinity, run.lastProgressAt + this.stallLimit(run))
     run.timer = setTimeout(() => this.onWatch(run), Math.max(10, at - Date.now()))
   }
 
@@ -801,7 +823,7 @@ export class SubagentController {
     if (run.wrapUp || (run.status !== 'running' && run.status !== 'starting')) return
     const now = Date.now()
     if (run.totalMs && now >= run.startedAt + run.totalMs) void this.wrapUp(run, totalTimeoutText(run.totalMs))
-    else if (now >= run.lastProgressAt + run.idleMs) void this.wrapUp(run, stallTimeoutText(run.idleMs))
+    else if (now >= run.lastProgressAt + this.stallLimit(run)) void this.wrapUp(run, stallTimeoutText(this.stallLimit(run)))
     else this.armWatch(run)
   }
 
@@ -963,7 +985,9 @@ export class SubagentController {
       return
     }
 
+    if (type === 'tool_execution_end' && typeof evt.toolCallId === 'string') run.runningTools.delete(evt.toolCallId)
     if (type === 'tool_execution_start') {
+      if (typeof evt.toolCallId === 'string') run.runningTools.add(evt.toolCallId)
       run.toolCalls = (run.toolCalls ?? 0) + 1
       if (!run.wrapUp) run.latestActivity = `运行 ${String(evt.toolName ?? '工具')}`
       this.emit(run)

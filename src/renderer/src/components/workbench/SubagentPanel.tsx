@@ -7,7 +7,8 @@ import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { AgentMessageStream } from '../chat/AgentMessageStream'
-import { SubagentGroup } from '../chat/SubagentCards'
+import { SubagentPlan } from './SubagentPlan'
+import { selectSubagentRuns } from '../../state/subagent-view'
 import { Button, EmptyState, Field, Select, Textarea } from '../ui'
 import type { SubagentRun } from '../../../../shared/ipc'
 
@@ -44,7 +45,9 @@ export function SubagentPanel({ initialRun, onOpenRun, onTitleChange }: {
   const readOnlyError = subagentModelError(resolvedModel, true)
   const validationError = isolation === 'controlled-cwd' && readOnlyError ? t('delegate.ccReadOnly')
     : !resolvedModel ? t('delegate.noModel') : !selectedModel ? t('models.unavailable') : ''
-  const owned = runs.filter(run => (run.parentSessionId && [session?.sessionId, session?.conversationId].includes(run.parentSessionId)) || (runner && run.parentRunId === runner))
+  /* 只显示本会话派出的：以明确的 parentSessionId 为准；只有没记会话归属的旧记录才退回运行实例判断。 */
+  const sessionIds = [session?.sessionId, session?.conversationId].filter((v): v is string => !!v)
+  const owned = [...selectSubagentRuns(runs, { sessionIds }).all, ...(runner ? runs.filter(run => !run.parentSessionId && run.parentRunId === runner) : [])]
   const selected = owned.find(run => `subagent:${run.id}` === initialRun)
   useEffect(() => { void load() }, [load])
   useEffect(() => {
@@ -83,11 +86,16 @@ export function SubagentPanel({ initialRun, onOpenRun, onTitleChange }: {
   }
   if (initialRun) return selected ? <section className="agent-workspace" data-testid="subagent-detail"><AgentMessageStream run={selected} /></section> : <EmptyState icon="agent" title={t('delegate.missing')} />
   return <section className="agent-workspace" data-testid="subagent-panel">
-    <form className="delegate-form" onSubmit={event => void start(event)}>
+    <form className="delegate-form sa-form" onSubmit={event => void start(event)}>
+      <div className="sa-form-row">
       <Field label={t('delegate.model')}><Button ref={trigger} aria-label={t('delegate.model')} title={model === 'follow' ? `${t('delegate.follow')} · ${currentModel}` : `${modelLabel} · ${resolvedModel}`}
         aria-haspopup="dialog" aria-expanded={modelOpen} data-testid="delegate-model" onClick={() => setModelOpen(v => !v)}>
         {model === 'follow' ? t('delegate.follow') : modelLabel}
       </Button></Field>
+      <Field label={t('delegate.scope')}><Select aria-label={t('delegate.scope')} data-testid="delegate-scope" value={isolation} onChange={event => setIsolation(event.target.value as SubagentRun['isolation'])}>
+        <option value="shared-cwd">{t('delegate.folder')}</option><option value="controlled-cwd" disabled={!!readOnlyError}>{t('sa.readOnly')}</option><option value="worktree">{t('delegate.worktree')}</option>
+      </Select></Field>
+      </div>
       {modelOpen ? createPortal(<div className="mt-pop delegate-model-menu" ref={menu} role="dialog" aria-modal="true" aria-label={t('delegate.model')} data-testid="delegate-model-menu" style={anchor}>
         <Button size="sm" variant="ghost" active={model === 'follow'} data-testid="delegate-follow" onClick={() => {
           void patchSettings({ lastSubagentModel: 'follow' }).then(() => { setModel('follow'); setModelOpen(false) }).catch(e => setError(String(e)))
@@ -97,16 +105,15 @@ export function SubagentPanel({ initialRun, onOpenRun, onTitleChange }: {
           setModel(choice); setModelOpen(false); return true
         }} />
       </div>, document.body) : null}
+      <Field label={t('delegate.task')}><Textarea rows={2} data-testid="delegate-task" aria-label={t('delegate.task')} placeholder={t('delegate.task')} value={task} onChange={event => setTask(event.target.value)} /></Field>
+      <div className="sa-form-foot">
       <p className="ui-row-desc delegate-target" data-testid="delegate-target">{modelLabel}<br />{cwd || t('delegate.noFolder')}</p>
-      <Field label={t('delegate.task')}><Textarea rows={3} data-testid="delegate-task" aria-label={t('delegate.task')} placeholder={t('delegate.task')} value={task} onChange={event => setTask(event.target.value)} /></Field>
-      <Field label={t('delegate.scope')}><Select aria-label={t('delegate.scope')} data-testid="delegate-scope" value={isolation} onChange={event => setIsolation(event.target.value as SubagentRun['isolation'])}>
-        <option value="shared-cwd">{t('delegate.folder')}</option><option value="controlled-cwd" disabled={!!readOnlyError}>{t('sa.readOnly')}</option><option value="worktree">{t('delegate.worktree')}</option>
-      </Select></Field>
+        <Button type="submit" variant="primary" disabled={busy || !task.trim() || !!validationError}>{t('delegate.start')}</Button>
+      </div>
       {readOnlyError ? <p className="ui-row-desc" data-testid="delegate-readonly-hint">{t('delegate.ccReadOnly')}</p> : null}
       {validationError ? <p className="agent-workspace-error" role="alert">{validationError}</p> : null}
-      <div className="hub-row"><Button type="submit" variant="primary" disabled={busy || !task.trim() || !!validationError}>{t('delegate.start')}</Button></div>
     </form>
     {error ? <p className="agent-workspace-error" role="alert">{error}</p> : null}
-    <SubagentGroup runs={owned} />
+    <div className="sa-scroll"><SubagentPlan runs={owned} mainModel={currentModel} onOpen={run => onOpenRun?.(`subagent:${run.id}`)} /></div>
   </section>
 }

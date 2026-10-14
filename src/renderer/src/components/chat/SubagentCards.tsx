@@ -5,6 +5,7 @@ import { formatDuration } from '../../../../shared/duration'
 import { subagentOutcome, type SubagentOutcome } from '../../../../shared/subagent-outcome'
 import { useStore } from '../../state/store'
 import { Button } from '../ui'
+import { useConfirm } from '../ui/confirm'
 
 /** 详情里最多列多少条工具调用 */
 const DETAIL_LIMIT = 6
@@ -95,6 +96,7 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
   const stopSubagent = useStore((s) => s.stopSubagent)
   const mergeSubagent = useStore((s) => s.mergeSubagent)
   const discardSubagent = useStore((s) => s.discardSubagent)
+  const confirm = useConfirm()
   const [expanded, setExpanded] = useState(false)
   const { live, attention, tone } = outcome
   const readOnly = run.isolation === 'controlled-cwd'
@@ -146,9 +148,14 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
     }
   ]
   const openRun = () => window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: `subagent:${run.id}` }))
+  /* 砚不替子代理自动重来；pi 自带的重试用尽后由用户决定，用同一任务、模型与范围再派一个。 */
+  const retry = async () => {
+    const result = await window.yan.subagents.start(run.task, run.model, run.isolation)
+    if (result.ok) { void useStore.getState().loadSubagents(); window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: `subagent:${result.run?.id}` })) }
+  }
 
   return (
-    <div className={`sg-card tone-${tone}${attention ? ' is-attn' : ''}${live ? ' is-live' : ''}`} data-testid={`subagent-note-${run.id}`} data-outcome={outcome.key}>
+    <div className={`sg-card tone-${tone}${attention ? ' is-attn' : ''}${live ? ' is-live' : ''}${expanded ? ' is-open' : ''}`} data-testid={`subagent-note-${run.id}`} data-outcome={outcome.key}>
       <div className="sg-main">
         <span className="sg-mark" aria-hidden="true">
           {MARK[tone]}
@@ -165,8 +172,9 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
         <span className="sg-state" data-testid={`subagent-note-state-${run.id}`}>
           {t(`sa.state.${outcome.key}` as MessageKey)}
         </span>
-        <Button size="sm" variant="ghost" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>{t('sa.noteDetails')}</Button>
-        {live ? <Button variant="danger" size="sm" onClick={() => void stopSubagent(run.id)} data-testid={`subagent-note-stop-${run.id}`}>{t('sa.stop')}</Button> : null}
+        <Button size="sm" variant="ghost" className="sg-detail-btn" active={expanded} aria-expanded={expanded} trailingIcon="chevron-right" data-testid={`subagent-note-details-${run.id}`} onClick={() => setExpanded(v => !v)}>{t(expanded ? 'sa.noteHide' : 'sa.noteDetails')}</Button>
+        {run.status === 'error' ? <Button size="sm" onClick={() => void retry()} data-testid={`subagent-note-retry-${run.id}`}>{t('sa.retry')}</Button> : null}
+        {live ?<Button variant="danger" size="sm" onClick={() => void stopSubagent(run.id)} data-testid={`subagent-note-stop-${run.id}`}>{t('sa.stop')}</Button> : null}
       </div>
       {!isQuiet(outcome) || expanded ? (
         <div className="sg-meta">
@@ -198,9 +206,7 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
             <Button size="sm" onClick={() => void mergeSubagent(run.id)} data-testid={`subagent-note-merge-${run.id}`}>
               {t('sa.merge')}
             </Button>
-            <Button variant="danger" size="sm" onClick={() => {
-              if (window.confirm(t('sa.discardChanges'))) void discardSubagent(run.id)
-            }} data-testid={`subagent-note-discard-${run.id}`}>
+            <Button variant="danger" size="sm" onClick={() => void (async () => { if (await confirm({ title: t('sa.discardChanges'), body: t('sa.discardConfirm'), detail: run.id, confirmLabel: t('sa.discard'), tone: 'danger' })) void discardSubagent(run.id) })()} data-testid={`subagent-note-discard-${run.id}`}>
               {t('sa.discard')}
             </Button>
           </>

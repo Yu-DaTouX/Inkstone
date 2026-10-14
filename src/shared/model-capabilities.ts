@@ -37,9 +37,10 @@ export function normalizeModelInfo(raw: unknown): ModelInfo | undefined {
   const id = text(value.id)
   if (!id) return undefined
   const provider = text(value.provider) ?? 'unknown'
+  const api = text(value.api)
   const endpointKey = contextEndpointKeyV1({
     provider,
-    api: text(value.api),
+    api,
     modelId: id,
     baseUrl: value.baseUrl
   })
@@ -53,6 +54,7 @@ export function normalizeModelInfo(raw: unknown): ModelInfo | undefined {
     id,
     name,
     provider,
+    ...(api ? { api } : {}),
     ...(endpointKey ? { endpointKey } : {}),
     reasoning: value.reasoning === true,
     reasoningStatus: capabilityStatusForBoolean(value.reasoning),
