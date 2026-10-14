@@ -22,6 +22,8 @@ import { basename, delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { IPty } from 'node-pty'
 import { TerminalScreen } from './agent-hub/terminal-screen'
+import { PROGRAM_STATUS_REPLY, TerminalProgramStatusTracker } from './terminal-status'
+import type { TerminalProgramStatus } from '../shared/ipc'
 
 /**
  * 主进程是 ESM，而 `node-pty` 是原生 CJS 模块；用 `createRequire` 拿一个
@@ -65,6 +67,8 @@ export interface TerminalSessionInfo {
   rows: number
   alive: boolean
   exitCode?: number | null
+  /** 程序上报的状态投影；没有记录时为 undefined */
+  status?: TerminalProgramStatus
 }
 
 export interface TerminalSnapshot extends TerminalSessionInfo {
@@ -103,11 +107,14 @@ interface TerminalEntry {
   seq: number
   chunks: Array<{ seq: number; data: string }>
   screen?: TerminalScreen
+  /** OSC 7501 / 9;4 的解析记录（旁路，不改数据流） */
+  tracker: TerminalProgramStatusTracker
 }
 
 /** 推送回调：`data` 是实时输出，`exit` 是进程退出（两者都带会话身份） */
 export type TerminalSink = (event:
   | { kind: 'data'; id: string; data: string; seq: number }
+  | { kind: 'status'; id: string; status?: TerminalProgramStatus }
   | { kind: 'exit'; id: string; exitCode: number | null }) => void
 
 let loadError: string | null = null
@@ -197,12 +204,52 @@ function snapshotOf(entry: TerminalEntry): TerminalSnapshot {
   return { ...entry.info, buffer: entry.buffer, seq: entry.seq }
 }
 
+/** 把投影写进 info；`undefined` 时真的删字段（内部推送靠 `status === undefined` 表达清除） */
+function setEntryStatus(entry: TerminalEntry, status: TerminalProgramStatus | undefined): void {
+  if (status) {
+    entry.info = { ...entry.info, status }
+    return
+  }
+  if (!entry.info.status) return
+  const next = { ...entry.info }
+  delete next.status
+  entry.info = next
+}
+
+/**
+ * 消费一段输出里的程序状态：回应查询、更新记录、在变化时沿既有终端推送发出。
+ * 扫描失败不影响数据流——这里永远不向调用方抛。
+ */
+function applyStatusChunk(entry: TerminalEntry, data: string, id: string): void {
+  const { queries, changed } = entry.tracker.consume(data)
+  for (let i = 0; i < queries; i += 1) {
+    try {
+      entry.pty.write(PROGRAM_STATUS_REPLY)
+    } catch {
+      /* PTY 已不可写：回复不上不影响终端数据本身 */
+    }
+  }
+  if (!changed) return
+  setEntryStatus(entry, entry.tracker.status)
+  sink?.({ kind: 'status', id, status: entry.tracker.status })
+}
+
 /** 把一个会话的当前输出灌回监听方（重连用） */
 function emitBuffered(id: string): void {
   const entry = sessions.get(id)
   if (!entry || !sink) return
   if (entry.buffer) sink({ kind: 'data', id, data: entry.buffer, seq: entry.seq })
+  if (entry.info.status) sink({ kind: 'status', id, status: entry.info.status })
   if (!entry.info.alive) sink({ kind: 'exit', id, exitCode: entry.info.exitCode ?? null })
+}
+
+/** Windows ConPTY 会丢弃 OSC 输入回复；对自建终端声明 pi 原生报告支持，显式配置优先。 */
+export function terminalEnvironment(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    ...(platform === 'win32' && env.PI_PROGRAM_STATUS === undefined ? { PI_PROGRAM_STATUS: '1' } : {}),
+    TERM: 'xterm-256color'
+  }
 }
 
 export function startTerminal(options: TerminalStartOptions = {}): TerminalSnapshot | null {
@@ -223,7 +270,7 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
       cols,
       rows,
       cwd,
-      env: { ...process.env, ...options.env, TERM: 'xterm-256color' }
+      env: terminalEnvironment({ ...process.env, ...options.env })
     })
   } catch (error) {
     // 壳或 cwd 启动失败不代表原生模块不可用，下一次启动仍应允许重试。
@@ -242,12 +289,13 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     alive: true,
     exitCode: null
   }
-  const entry: TerminalEntry = { info, pty: child, buffer: '', seq: 0, chunks: [], screen: options.screenSnapshot ? new TerminalScreen(cols, rows) : undefined }
+  const entry: TerminalEntry = { info, pty: child, buffer: '', seq: 0, chunks: [], screen: options.screenSnapshot ? new TerminalScreen(cols, rows) : undefined, tracker: new TerminalProgramStatusTracker() }
   sessions.set(id, entry)
 
   child.onData((data) => {
     const current = sessions.get(id)
     if (!current) return
+    applyStatusChunk(current, data, id)
     current.buffer += data
     current.seq += 1
     current.screen?.write(data, current.seq)
@@ -265,7 +313,13 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
   child.onExit(({ exitCode }) => {
     const current = sessions.get(id)
     if (!current) return
+    /* 终端约定：进程退出时丢弃 working / blocked，done / error 保留 */
+    const statusCleared = current.tracker.exit()
     current.info = { ...current.info, alive: false, exitCode: exitCode ?? null }
+    if (statusCleared) {
+      setEntryStatus(current, undefined)
+      sink?.({ kind: 'status', id, status: undefined })
+    }
     sink?.({ kind: 'exit', id, exitCode: exitCode ?? null })
   })
 
@@ -333,7 +387,25 @@ export function killTerminal(id: string): boolean {
   }
   sessions.delete(id)
   entry.screen?.dispose()
+  /* 会话没了，状态也不该继续影响任务栏角标 */
+  if (entry.info.status) sink?.({ kind: 'status', id, status: undefined })
   return true
+}
+
+/** 只统计存活终端的明确工作报告，不把未上报的 shell 当作忙碌。 */
+export function hasWorkingTerminal(): boolean {
+  for (const entry of sessions.values()) {
+    if (entry.info.alive && entry.info.status?.state === 'working') return true
+  }
+  return false
+}
+
+/** 是否有终端处于 blocked：任务栏角标与后台通知的判定输入 */
+export function hasBlockedTerminal(): boolean {
+  for (const entry of sessions.values()) {
+    if (entry.info.alive && entry.info.status?.state === 'blocked') return true
+  }
+  return false
 }
 
 export function listTerminals(): TerminalSnapshot[] {
