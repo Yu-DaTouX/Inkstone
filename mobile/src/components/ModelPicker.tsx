@@ -63,7 +63,7 @@ export function ModelPicker({ sessionId, visible, onClose, onChanged }: { sessio
       <Pressable accessibilityLabel="关闭模型选择" onPress={() => { if (!busy) onClose() }} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />
       <SafeAreaView edges={['bottom', 'left', 'right']} style={{ width: '100%', maxWidth: 640, height: height * 0.78, backgroundColor: p.bg1, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', padding: space[3] }}>
-          <Text accessibilityRole="header" style={{ flex: 1, fontFamily: mono, fontSize: font.base, color: p.fgMute }}>{'## 模型'}</Text>
+          <Text accessibilityRole="header" style={{ flex: 1, fontFamily: mono, fontSize: font.base, color: p.fgMute }}>模型</Text>
           {busy ? <RunDot label="正在切换" /> : <IconButton name="close" label="关闭模型选择" onPress={onClose} />}
         </View>
         {canThinking ? <View style={{ paddingHorizontal: space[4], flexDirection: 'row', alignItems: 'center' }}>

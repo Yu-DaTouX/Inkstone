@@ -116,10 +116,10 @@ export function Header({ title, subtitle, left, right }: { title: string; subtit
   )
 }
 
-/** 分区标题：淡色等宽，前缀 `## `（桌面 h3 的写法），不加分隔线 */
+/** 分区标题：淡色等宽，不带 `## ` 前缀（与桌面 h3 一致），不加分隔线 */
 export function SectionTitle({ children }: { children: ReactNode }) {
   const p = usePalette()
-  return <Text accessibilityRole="header" style={[styles.section, { color: p.fgMute }]}>{'## '}{children}</Text>
+  return <Text accessibilityRole="header" style={[styles.section, { color: p.fgMute }]}>{children}</Text>
 }
 
 /** 元数据：等宽、淡色、表格数字（时间、计数、路径、电脑名） */
