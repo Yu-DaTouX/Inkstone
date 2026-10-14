@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
 import type {
+  NativeMcpImportCommitResponse,
+  NativeMcpImportPrepareResponse
+} from '../shared/mcp-native-import'
+import type {
   AppSettings,
   OAuthLoginEvent,
   OAuthLoginResult,
@@ -169,8 +173,8 @@ const api: YanBridge = {
   steer: (text) => invoke<Ok>('yan:steer', text),
   followUp: (text) => invoke<Ok>('yan:followUp', text),
   steerQueued: (queueId) => invoke<Ok>('yan:steerQueued', queueId),
-  removeQueued: (queueId) => invoke<{ ok: boolean; text?: string; error?: string }>('yan:removeQueued', queueId),
-  abort: () => invoke<{ steering: string[]; followUp: string[] }>('yan:abort'),
+  removeQueued: (queueId) => invoke<Awaited<ReturnType<YanBridge['removeQueued']>>>('yan:removeQueued', queueId),
+  abort: () => invoke<Awaited<ReturnType<YanBridge['abort']>>>('yan:abort'),
   newSession: (target) =>
     invoke<Ok & { id?: string; runId?: string; sessionId?: string; generation?: number }>('yan:newSession', target),
   switchSession: (path) => invoke<Ok>('yan:switchSession', path),
@@ -387,6 +391,16 @@ const api: YanBridge = {
       cwd
     ),
 
+  /* ---- 定时任务 ---- */
+  schedule: {
+    list: () => invoke('yan:schedule:list'),
+    create: (input) => invoke('yan:schedule:create', input),
+    update: (id, input) => invoke('yan:schedule:update', id, input),
+    setEnabled: (id, enabled) => invoke('yan:schedule:enabled', id, enabled),
+    remove: (id) => invoke('yan:schedule:remove', id),
+    runNow: (id) => invoke('yan:schedule:run', id)
+  },
+
   /* ---- 子代理（方案第 8 节） ---- */
   subagents: {
     list: () => invoke<SubagentRun[]>('yan:subagents:list'),
@@ -501,11 +515,18 @@ const api: YanBridge = {
   capabilities: {
     snapshot: () => invoke<CapabilitySettingsSnapshot>('yan:capabilities:settings'),
     discover: (queryText: string) => invoke<CapabilitySearchResultView>('yan:capabilities:discover', queryText),
+    sessionSkill: (action: 'promote' | 'remove', name: string) =>
+      invoke<{ ok: boolean; error?: string }>('yan:capabilities:sessionSkill', { action, name }),
     verify: (serverId: string) => invoke<{ ok: boolean; operationId?: string; error?: string }>('yan:capabilities:verify', serverId),
     verification: (operationId: string) =>
       invoke<CapabilityVerificationStatus | null>('yan:capabilities:verification', operationId),
     cancelVerification: (operationId: string) =>
-      invoke<{ ok: boolean; error?: string }>('yan:capabilities:cancelVerification', operationId)
+      invoke<{ ok: boolean; error?: string }>('yan:capabilities:cancelVerification', operationId),
+    /* 旧宿主 MCP 导入 pi 原生（方案合集 06）：预览不落盘，提交只在用户确认后调用。 */
+    prepareNativeImport: (serverId: string) =>
+      invoke<NativeMcpImportPrepareResponse>('yan:capabilities:prepareNativeImport', serverId),
+    commitNativeImport: (token: string) =>
+      invoke<NativeMcpImportCommitResponse>('yan:capabilities:commitNativeImport', token)
   },
   git: {
     state: (cwd) =>

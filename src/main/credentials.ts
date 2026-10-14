@@ -89,6 +89,9 @@ export async function resolveCodexAccountId(): Promise<string | undefined> {
  * 数据来源：pi 的 `docs/providers.md`（订阅表 + API key 表）。
  * 这里**刻意只放常见的**，不放全部 35 个 —— 一屏能读完比「完整」有用。
  * 其余 provider 依然可用（pi 自己认识它们），只是不在这里给引导。
+ *
+ * 只给 id / 名称 / 环境变量这些**数据**：给人读的说明与括号注在渲染端的 i18n
+ *（`auth.name.*` / `auth.hint.*`），因为主进程不知道界面语言。
  */
 const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
   // ---- 订阅制（OAuth，应用内登录；pi 的 /login 仍可用） ----
@@ -96,7 +99,6 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     id: 'openai-codex',
     name: 'ChatGPT Plus / Pro',
     kind: 'subscription',
-    hint: '用你的 ChatGPT 订阅额度（Codex）',
     envVar: '',
     authKey: '',
     loginCmd: 'pi',
@@ -107,7 +109,6 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     id: 'anthropic',
     name: 'Claude Pro / Max',
     kind: 'subscription',
-    hint: 'Anthropic 第三方客户端按 token 计费，不占用 Claude 套餐额度',
     envVar: 'ANTHROPIC_API_KEY',
     authKey: 'anthropic',
     loginCmd: 'pi',
@@ -117,18 +118,16 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     id: 'github-copilot',
     name: 'GitHub Copilot',
     kind: 'subscription',
-    hint: '用 Copilot 订阅；企业版可填自建域名',
     envVar: '',
     authKey: '',
     loginCmd: 'pi',
     inAppLogin: true
   },
-  { id: 'xai', name: 'xAI（Grok / X 订阅）', kind: 'subscription', hint: '', envVar: 'XAI_API_KEY', authKey: 'xai', loginCmd: 'pi', inAppLogin: true },
+  { id: 'xai', name: 'xAI（Grok / X 订阅）', kind: 'subscription', envVar: 'XAI_API_KEY', authKey: 'xai', loginCmd: 'pi', inAppLogin: true },
   {
     id: 'openrouter',
     name: 'OpenRouter',
     kind: 'subscription',
-    hint: 'OAuth 登录后会签发一个属于你的 API key（按 OpenRouter 余额计费）',
     envVar: 'OPENROUTER_API_KEY',
     authKey: 'openrouter',
     loginCmd: 'pi',
@@ -140,26 +139,25 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     id: 'commandcode',
     name: 'Command Code',
     kind: 'api_key',
-    hint: '订阅套餐（按 5 小时 / 每周滚动额度计费）',
     envVar: 'COMMANDCODE_API_KEY',
     authKey: 'commandcode'
   },
-  { id: 'deepseek', name: 'DeepSeek', kind: 'api_key', hint: '', envVar: 'DEEPSEEK_API_KEY', authKey: 'deepseek' },
-  { id: 'openai', name: 'OpenAI', kind: 'api_key', hint: '', envVar: 'OPENAI_API_KEY', authKey: 'openai' },
-  { id: 'google', name: 'Google Gemini', kind: 'api_key', hint: '对话与生图共用', envVar: 'GEMINI_API_KEY', authKey: 'google' },
+  { id: 'deepseek', name: 'DeepSeek', kind: 'api_key', envVar: 'DEEPSEEK_API_KEY', authKey: 'deepseek' },
+  { id: 'openai', name: 'OpenAI', kind: 'api_key', envVar: 'OPENAI_API_KEY', authKey: 'openai' },
+  { id: 'google', name: 'Google Gemini', kind: 'api_key', envVar: 'GEMINI_API_KEY', authKey: 'google' },
   /* pi 没有这个 provider：key 只供宿主的生图通道使用（Seedream） */
-  { id: 'volcengine-ark', name: '火山方舟（豆包）', kind: 'api_key', hint: '仅用于生图（Seedream）', envVar: 'ARK_API_KEY', authKey: 'volcengine-ark' },
-  { id: 'zai-coding-cn', name: 'ZAI 编程套餐（国内）', kind: 'api_key', hint: '', envVar: 'ZAI_CODING_CN_API_KEY', authKey: 'zai-coding-cn' },
-  { id: 'kimi-coding', name: 'Kimi For Coding', kind: 'api_key', hint: '', envVar: 'KIMI_API_KEY', authKey: 'kimi-coding' },
-  { id: 'minimax-cn', name: 'MiniMax（国内）', kind: 'api_key', hint: '', envVar: 'MINIMAX_CN_API_KEY', authKey: 'minimax-cn' },
-  { id: 'qwen-token-plan-cn', name: 'Qwen Token Plan（国内）', kind: 'api_key', hint: '', envVar: 'QWEN_TOKEN_PLAN_CN_API_KEY', authKey: 'qwen-token-plan-cn' },
-  { id: 'xai-api', name: 'xAI（API key）', kind: 'api_key', hint: '与上面的订阅是两条路', envVar: 'XAI_API_KEY', authKey: 'xai' },
-  { id: 'groq', name: 'Groq', kind: 'api_key', hint: '', envVar: 'GROQ_API_KEY', authKey: 'groq' },
-  { id: 'mistral', name: 'Mistral', kind: 'api_key', hint: '', envVar: 'MISTRAL_API_KEY', authKey: 'mistral' },
-  { id: 'together', name: 'Together AI', kind: 'api_key', hint: '', envVar: 'TOGETHER_API_KEY', authKey: 'together' },
-  { id: 'fireworks', name: 'Fireworks', kind: 'api_key', hint: '', envVar: 'FIREWORKS_API_KEY', authKey: 'fireworks' },
-  { id: 'nvidia', name: 'NVIDIA NIM', kind: 'api_key', hint: '', envVar: 'NVIDIA_API_KEY', authKey: 'nvidia' },
-  { id: 'openrouter-key', name: 'OpenRouter（API key）', kind: 'api_key', hint: '', envVar: 'OPENROUTER_API_KEY', authKey: 'openrouter' }
+  { id: 'volcengine-ark', name: '火山方舟（豆包）', kind: 'api_key', envVar: 'ARK_API_KEY', authKey: 'volcengine-ark' },
+  { id: 'zai-coding-cn', name: 'ZAI 编程套餐（国内）', kind: 'api_key', envVar: 'ZAI_CODING_CN_API_KEY', authKey: 'zai-coding-cn' },
+  { id: 'kimi-coding', name: 'Kimi For Coding', kind: 'api_key', envVar: 'KIMI_API_KEY', authKey: 'kimi-coding' },
+  { id: 'minimax-cn', name: 'MiniMax（国内）', kind: 'api_key', envVar: 'MINIMAX_CN_API_KEY', authKey: 'minimax-cn' },
+  { id: 'qwen-token-plan-cn', name: 'Qwen Token Plan（国内）', kind: 'api_key', envVar: 'QWEN_TOKEN_PLAN_CN_API_KEY', authKey: 'qwen-token-plan-cn' },
+  { id: 'xai-api', name: 'xAI（API key）', kind: 'api_key', envVar: 'XAI_API_KEY', authKey: 'xai' },
+  { id: 'groq', name: 'Groq', kind: 'api_key', envVar: 'GROQ_API_KEY', authKey: 'groq' },
+  { id: 'mistral', name: 'Mistral', kind: 'api_key', envVar: 'MISTRAL_API_KEY', authKey: 'mistral' },
+  { id: 'together', name: 'Together AI', kind: 'api_key', envVar: 'TOGETHER_API_KEY', authKey: 'together' },
+  { id: 'fireworks', name: 'Fireworks', kind: 'api_key', envVar: 'FIREWORKS_API_KEY', authKey: 'fireworks' },
+  { id: 'nvidia', name: 'NVIDIA NIM', kind: 'api_key', envVar: 'NVIDIA_API_KEY', authKey: 'nvidia' },
+  { id: 'openrouter-key', name: 'OpenRouter（API key）', kind: 'api_key', envVar: 'OPENROUTER_API_KEY', authKey: 'openrouter' }
 ]
 
 /** 宿主自己使用、pi 不认识的凭证（深查时不问 pi） */
@@ -444,7 +442,6 @@ export async function listAuthProviders(
       id,
       name: id,
       kind: 'api_key',
-      hint: '',
       envVar: '',
       authKey: id,
       status: 'ready',
@@ -479,7 +476,8 @@ export async function listAuthProviders(
        */
       /* 只给宿主用的 key pi 不认识，问 pi 只会得到「未配置」 */
       if (HOST_ONLY_PROVIDERS.has(c.id)) return c
-      const probeId = c.kind === 'subscription' || (c.hint === '' && c.name === c.id) ? c.id : c.authKey || c.id
+      /* 目录外的自定义项（name 就是 auth.json 的键）直接用 id 去问 */
+      const probeId = c.kind === 'subscription' || c.name === c.id ? c.id : c.authKey || c.id
       const r = await checkViaPi(pi.cmd, pi.args, probeId)
       // pi 说 ready / 说缺 → 以 pi 为准（它会考虑环境变量）
       if (r.status === 'ready') return { ...c, status: 'ready' as const }

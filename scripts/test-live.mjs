@@ -46,7 +46,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /*
  * 测试统一使用的模型（会让所有 cost>0 场景真实调模型）。
  *
- * 默认用 **commandcode 的 LongCat 2.0（免费）**：
+ * 默认用 **Command Code 的 DeepSeek v4.1 Flash（可能产生费用）**：
  *   供应商 provider = commandcode
  *   模型 id        = deepseek/deepseek-v4.1-flash
  * 免费档（`longcat-2.0:free` / `laguna-s-2.1-free`）额度触顶或不肯调工具时，
@@ -88,6 +88,9 @@ function modelForCase(fallback) {
 
 /** 每个场景：probe 脚本 + 等待多久（毫秒）+ 可选的预发按键 */
 const CASES = {
+  arrivaldom: { probe: 'scripts/probe/stream-arrival-dom.js', delay: 9000, cost: 0 },
+  // Explicit paid-model acceptance; fresh fixture cwd, no user MCP services.
+  bundlereal: { probe: 'scripts/probe/bundle-real-model.js', fixture: true, fixtureSub: 'repo', visible: true, delay: 9000, cost: 3, budget: 260000, env: { YAN_TEST_MODEL_MAX_TOKENS: '4096' } },
   // 实施-26 R3/R4：画布轮次层（一轮一张卡 / 分支对齐 / 失败态；cost 0）
   turns: { probe: 'scripts/probe/turns.js', delay: 24000, cost: 0 },
   // 实施-21：运行阶段投影/显示（注入 store 快照，不跑模型）
@@ -875,6 +878,8 @@ const CASES = {
    * 不会因为移除模型工具而退化成静态提示。
    */
   questioncli: { probe: 'scripts/probe/question-cli.js', delay: 9000, cost: 0, budget: 180000 },
+  /* 技能自接入：GitHub 发现 → 限时批准面板（会话 / 跳过 / 超时）→ 设置页分类；需联网，不调用模型 */
+  skillapprove: { probe: 'scripts/probe/skill-approve.js', delay: 9000, cost: 0, budget: 320000 },
   // 图生图：DeepSeek 经 yan image generate（edit 模式）改一张项目内的图；出图通道由本机凭证决定（花 token，且会用生图额度）
   imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   // 图片真的发给模型（花 token —— 需要视觉模型，Ling 是纯文本的）
@@ -976,26 +981,6 @@ const CASES = {
     delay: 12000,
     cost: 0,
     env: { YAN_SKILL_DIRECTORY_URL: 'https://api.skillmd.com/v1/search' }
-  },
-
-  /*
-   * 实施-04 S6b-2：用户已明确授权后的外部 Skill 整链。
-   *
-   * 这条场景使用与 skilldirnet 相同的真实 SkillMD 候选，但会继续走
-   * prepare → 精确隔离授权 → acquire → staging 前审查 → active 复审 →
-   * runner 重载 → 原目标续接。它不进默认 check，也不执行 Skill 正文脚本。
-   */
-  skillacquire: {
-    probe: 'scripts/probe/skill-acquire.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 12000,
-    budget: 240000,
-    cost: 1,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    env: { YAN_SKILL_DIRECTORY_URL: 'https://api.skillmd.com/v1/search' },
-    goalResumeExtLog: true,
-    afterExit: 'skillDirAcquire'
   },
 
   /*
@@ -3466,84 +3451,6 @@ function seedInterruptedSnapshot(sandboxRoot) {
   return `${basename(file)}：追加中途快照（final=false，logicalTurnId=${last.logicalTurnId}）`
 }
 
-/** 外部 Skill acquire 的退出后磁盘证据（实施-04 S6b-2）。 */
-async function checkSkillDirAcquire(sandboxRoot, _tempBefore, probeText = '') {
-  const lines = []
-  let allOk = true
-  const say = (condition, text, extra = '') => {
-    lines.push(`  ${condition ? '✓' : '✗'} ${text}${extra ? `  ${extra}` : ''}`)
-    if (!condition) allOk = false
-  }
-  if (!sandboxRoot) return { ok: false, lines: ['✗ skillacquire 必须在隔离 sandbox 中运行'] }
-
-  const acquisitionPath = join(sandboxRoot, 'data', 'capabilities', 'acquisition.json')
-  const operationId = /(?:^|\n)skillacquire\.operationId=([^\r\n]+)/.exec(probeText)?.[1]?.trim() ?? ''
-  let activePath = /(?:^|\n)skillacquire\.activePath=([^\r\n]+)/.exec(probeText)?.[1]?.trim() ?? ''
-  const runnerId = /(?:^|\n)skillacquire\.runnerId=([^\r\n]+)/.exec(probeText)?.[1]?.trim() ?? ''
-  say(Boolean(operationId), '探针输出了 operationId', operationId)
-  say(Boolean(runnerId), '探针输出了 runnerId', runnerId)
-
-  let log = null
-  try { log = JSON.parse(readFileSync(acquisitionPath, 'utf8')) } catch (error) {
-    say(false, '退出后能读取 acquisition.json', error instanceof Error ? error.message : String(error))
-    return { ok: false, lines }
-  }
-  const tx = operationId ? log?.transactions?.[operationId] : null
-  say(Boolean(tx), 'acquisition.json 中存在同一 operationId')
-  if (!tx) return { ok: false, lines }
-  if (!activePath) activePath = tx.receipt?.installedPaths?.[0] ?? ''
-  say(Boolean(activePath), '探针或事务回执提供了 active Skill 路径', activePath)
-
-  say(tx.state === 'resumed', '事务磁盘终态是 resumed', JSON.stringify({ state: tx.state, failure: tx.failure ?? null }))
-  const history = Array.isArray(tx.history) ? tx.history.map((step) => step.to) : []
-  say(history.includes('verifying'), '历史包含 verifying', JSON.stringify(history))
-  say(history.includes('activated'), '历史包含 activated', JSON.stringify(history))
-  say(history.includes('resumed'), '历史包含 resumed', JSON.stringify(history))
-  const review = tx.securityReview ?? tx.receipt?.securityReview
-  say(review?.version === 1, '事务 / receipt 保存结构化安全审查回执')
-  say(review?.scannerVersion === 'yan-skill-security-1', '审查回执固定 scannerVersion', String(review?.scannerVersion))
-  say(review?.ok === true, 'Skill 内容审查结论为 ok=true')
-  say(!review?.findings?.some((finding) => finding.severity === 'high'), '高风险 finding 数量为 0')
-  say(
-    review?.findings?.some((finding) => finding.code === 'command-execution' && finding.severity === 'medium'),
-    'medium 命令执行风险被保留为提醒'
-  )
-  say(Array.isArray(tx.receipt?.installedPaths) && tx.receipt.installedPaths.length > 0, 'receipt 保存 installedPaths', JSON.stringify(tx.receipt?.installedPaths ?? []))
-  say(activePath === tx.receipt?.installedPaths?.[0], '探针输出路径与 receipt 一致', JSON.stringify({ activePath, receipt: tx.receipt?.installedPaths?.[0] }))
-  say(existsSync(activePath) && statSync(activePath).isFile(), 'active Skill 文件退出后仍存在')
-  if (existsSync(activePath)) say(readFileSync(activePath, 'utf8').length > 0, 'active Skill 正文非空')
-  say(activePath.startsWith(join(sandboxRoot, 'data', 'capabilities', 'active')), 'active 路径仍在隔离受管目录内', activePath)
-
-  let grant = null
-  try { grant = JSON.parse(readFileSync(join(sandboxRoot, 'data', 'capabilities', 'package-authorizations.json'), 'utf8')) } catch (error) {
-    say(false, '退出后能读取精确授权记录', error instanceof Error ? error.message : String(error))
-  }
-  const grantItem = Array.isArray(grant?.items)
-    ? grant.items.find((item) => item.candidateId === tx.candidateId && item.digest === tx.digest && item.projectId === tx.projectId)
-    : null
-  say(Boolean(grantItem), '授权记录精确绑定 candidateId + digest + projectId')
-  say(grantItem?.allowLifecycleScripts === false, '授权明确禁用 lifecycle scripts')
-  say(grantItem?.via === 'settings-ui', '授权记录沿用正式 settings-ui grant 形状')
-
-  const safeRunnerId = runnerId.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'session'
-  const consumedPath = join(sandboxRoot, 'data', 'goal-resume', `${safeRunnerId}.consumed.json`)
-  let consumed = null
-  try { consumed = JSON.parse(readFileSync(consumedPath, 'utf8')) } catch (error) {
-    say(false, '退出后存在 goal-resume 消费证据', error instanceof Error ? error.message : String(error))
-  }
-  say(consumed?.operationId === operationId, 'goal-resume 消费了同一 operationId', JSON.stringify(consumed ?? null))
-  say(/即使候选由用户指定，仍保留这份风险提醒/.test(probeText), '用户指定候选也没有跳过安全提醒')
-  const resumeLogPath = join(tmpdir(), 'yan-goal-resume.log')
-  if (existsSync(resumeLogPath)) {
-    const resumeRows = readFileSync(resumeLogPath, 'utf8').trim().split(/\r?\n/).filter(Boolean).slice(-12)
-    lines.push(`  续接扩展尾部诊断：${resumeRows.join(' | ')}`)
-  } else {
-    lines.push('  续接扩展尾部诊断：没有日志文件')
-  }
-  say(!/✗/.test(probeText), '探针没有留下失败标记')
-  return { ok: allOk, lines }
-}
-
 const AFTER_EXIT = {
   exitSnapshot: checkExitSnapshot,
   remoteRoutes: checkRemoteRoutes,
@@ -3570,8 +3477,7 @@ const AFTER_EXIT = {
   turnTimingInterrupted: checkTurnTimingInterrupted,
   turnTimingHardKill: checkTurnTimingHardKill,
   budgetGate: checkBudgetGate,
-  questionModeLog: checkQuestionModeLog,
-  skillDirAcquire: checkSkillDirAcquire
+  questionModeLog: checkQuestionModeLog
 }
 
 /**

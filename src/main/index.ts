@@ -19,6 +19,8 @@ import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-stor
 import { RunnerRegistry } from './runners'
 import { RunnerVisibility } from './runner-reclaim'
 import { getSettings, patchSettings, updateSettings, validateRendererSettingsPatch } from './settings'
+import { syncNativeCompactionLines, type LineModel } from './native-compaction-line'
+import { DEFAULT_AUTO_COMPACT_TOKENS } from '../shared/context-limits'
 import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
 import { moveSessionLayout, rememberSession } from './session-layout'
@@ -35,15 +37,13 @@ import { PackageAuthorizationService } from './capabilities/package-authorizatio
 import { createPiPackageActivationHostPorts } from './capabilities/pi-package-activation-host'
 import { PiPackageActivationScheduler } from './capabilities/pi-package-scheduler'
 import { smokeStagedPiPackage } from './capabilities/pi-package-smoke'
-import { createSkillFilesActivationHostPorts } from './capabilities/skill-files-activation-host'
-import { SkillFilesActivationScheduler } from './capabilities/skill-files-scheduler'
 import { allowTrust, trustStatus } from './project-trust'
 import { setContextPolicySettings, syncEffectivePolicyFile } from './context-policy'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
 import { openableExternalUrl } from './external-url'
-import { disposeTerminals, setTerminalSink } from './terminal'
+import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, setTerminalSink } from './terminal'
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
@@ -60,6 +60,8 @@ import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
 import { registerPackagesIpc } from './ipc/packages-ipc'
 import { registerActivityModelIpc } from './ipc/activity-model-ipc'
 import { registerSubagentsIpc } from './ipc/subagents-ipc'
+import { registerScheduleIpc } from './ipc/schedule-ipc'
+import { ScheduleService } from './schedule-service'
 import { registerSessionIpc } from './ipc/session-ipc'
 import { registerCheckpointIpc } from './ipc/checkpoint-ipc'
 import { captureCheckpoint, pruneCheckpoints } from './checkpoints'
@@ -113,7 +115,7 @@ import { AgentProfileStore } from './agent-profile-store'
 import { SpaceStore } from './space-store'
 import { LibraryService } from './library-service'
 import { ContextAssembler } from './context-assembler'
-import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, MainPush, SessionState } from '../shared/ipc'
+import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, MainPush, SessionState, TerminalProgramStatus } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -303,7 +305,6 @@ let exitRequestInFlight: Promise<{
 let runners: RunnerRegistry | null = null
 const runnerVisibility = new RunnerVisibility()
 let piPackageActivationScheduler: PiPackageActivationScheduler | null = null
-let skillFilesActivationScheduler: SkillFilesActivationScheduler | null = null
 let piPackageActivationTimer: ReturnType<typeof setTimeout> | null = null
 let piPackageActivationRetryTimer: ReturnType<typeof setTimeout> | null = null
 let piPackageActivationInFlight = false
@@ -337,17 +338,60 @@ const agentHub = new AgentHubService({
     const target = runners?.agentForSession(id)
     return target ? target.send(text, undefined, 'followUp') : { ok: false, error: '主会话已关闭' }
   },
-  openRun: (taskId) => push({ ch: 'hub-open', payload: `hub:${taskId}` })
+  openRun: (taskId) => push({ ch: 'hub-open', payload: `hub:${taskId}` }),
+  changed: () => refreshTaskbar()
 })
 /**
  * 子代理：主进程级的生命周期服务。界面与模型（`yan subagent …`）共用同一个控制器，
  * RunnerRegistry 切会话 / 重启 pi 时重建 AgentController，但这个服务不跟着重建。
  */
+/**
+ * 定时任务：到点新开一条会话并发出指令（只在砚运行时触发）。
+ * 会话按当时的设置里的文件夹与项目归属创建，不抢前台；指令前加一行任务名，便于在会话列表里认出来。
+ */
+const scheduleService = new ScheduleService({
+  file: join(YAN_DIR, 'schedules.json'),
+  run: async (task) => {
+    const settings = await getSettings()
+    const cwdResult = await sessionHost.validateCwd(task.cwd || settings.cwd)
+    if (!cwdResult.ok) throw new Error(cwdResult.error)
+    if (!runners) {
+      const started = await sessionHost.startAgent()
+      if (!started.ok) throw new Error(started.error ?? 'pi 未运行')
+    }
+    const cwd = cwdResult.cwd
+    const projectId = sessionHost.projectIdForCwd(settings, cwd)
+    const scope = projectId ? 'project' : 'global'
+    const res = await runners!.select({ cwd, projectId, scope, activate: false })
+    if (!res.ok || !res.id) throw new Error(res.error ?? '无法新建会话（运行实例已满？）')
+    await sessionHost.rememberRunnerSession(res, { cwd, projectId, scope })
+    const agent = runners!.agentOf(res.id)
+    if (!agent) throw new Error('新会话没有启动')
+    if (task.model) {
+      const at = task.model.indexOf('/')
+      const set = await agent.setModel(task.model.slice(0, at), task.model.slice(at + 1))
+      if (!set.ok) throw new Error(set.error ?? '指定的模型不可用')
+    }
+    const sent = await agent.send(`[定时任务 · ${task.name}]\n${task.prompt}`)
+    if (!sent.ok) throw new Error(sent.error ?? '指令没有发出')
+    void sessionHost.pushRunnerSnapshot(res.id)
+    sessionHost.pushRunners()
+    return { sessionId: res.sessionId }
+  }
+})
 const subagentService = new SubagentService({
   codemodeExtension: codemodeExtensionPath,
   providerExtensions: providerExtensionPaths,
   guardExtension: dangerGuardExtensionPath,
   shellExtension: shellFallbackExtensionPath,
+  resolveModelApi: async (label, origin) => {
+    const parent = (origin.runId ? runners?.agentOf(origin.runId) : null) ??
+      (origin.sessionId ? runners?.agentForSession(origin.sessionId) : null) ?? null
+    if (!parent) throw new Error('来源会话已关闭，无法核对指定模型')
+    const selected = (await parent.listModels()).find(model => `${model.provider}/${model.id}` === label)
+    if (!selected) throw new Error(`来源会话中指定模型 ${label} 已不可用`)
+    return selected.api
+  },
   confirmDanger: async (params, cwd, origin) => {
     if ((await getSettings()).permissionMode === 'all') return true
     const detail = String(params.detail ?? '')
@@ -364,10 +408,19 @@ const subagentService = new SubagentService({
     })
     return answer === 'once'
   },
-  onChange: (run) => push({ ch: 'subagent', payload: run }),
+  onChange: (run) => {
+    push({ ch: 'subagent', payload: run })
+    refreshTaskbar()
+  },
   /* 流式增量：同一份转录只发变化的那一段（见 subagents.ts 的 emitDelta） */
-  onPatch: ({ id, run, transcriptFrom }) => push({ ch: 'subagent-patch', payload: { id, run, transcriptFrom } }),
-  onRemove: (id) => push({ ch: 'subagent-remove', payload: id }),
+  onPatch: ({ id, run, transcriptFrom }) => {
+    push({ ch: 'subagent-patch', payload: { id, run, transcriptFrom } })
+    refreshTaskbar()
+  },
+  onRemove: (id) => {
+    push({ ch: 'subagent-remove', payload: id })
+    refreshTaskbar()
+  },
   resolveAgentProfile: (id) => resolveAgentProfile(id),
   /* 结束后叫醒发起它的会话：按稳定会话 id 找实例，找不到（会话已关）就不投 */
   onFinished: createSubagentNotifier({
@@ -479,6 +532,11 @@ function languageExtensionPath(): string | undefined {
   return yanThinResourcePath('language.js')
 }
 
+/** 内置「采样温度」扩展：按 desktop.json 的 temperatureByModel 在请求里写 temperature。 */
+function temperatureExtensionPath(): string | undefined {
+  return yanThinResourcePath('temperature.js')
+}
+
 /**
  * 内置「能力入口说明」扩展的路径。
  *
@@ -511,9 +569,9 @@ function repeatGuardExtensionPath(): string | undefined {
 function dangerGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('danger-guard.js')
 }
-/** 内置服务扩展：pi 不认识、但凭证页提供的服务（Command Code），主会话与子代理都要加载 */
+/** 服务适配与脱敏错误诊断：主会话和子代理共用，不复制 pi 的请求或重试循环。 */
 function providerExtensionPaths(): string[] {
-  return [yanThinResourcePath('commandcode.js')].filter((p): p is string => !!p)
+  return [yanThinResourcePath('commandcode.js'), yanThinResourcePath('provider-diagnostics.js')].filter((p): p is string => !!p)
 }
 /**
  * 砚随包薄层扩展的**实际加载路径**（传给 pi 的 `--extension`）。
@@ -531,6 +589,7 @@ function yanThinExtensionPaths(): string[] {
     responseDetailExtensionPath(),
     preambleExtensionPath(),
     languageExtensionPath(),
+    temperatureExtensionPath(),
     capabilityGuideExtensionPath(),
     contextInspectExtensionPath(),
     contextTrimExtensionPath(),
@@ -567,9 +626,62 @@ const approvals = new ApprovalBroker({
         notice.show()
       }).catch(() => undefined)
     }
+    refreshTaskbar()
   },
-  close: (id) => push({ ch: 'approval-close', payload: { id } })
+  close: (id) => {
+    push({ ch: 'approval-close', payload: { id } })
+    refreshTaskbar()
+  }
 })
+
+let taskbarProjection: { windowId: number; busy: boolean; waiting: boolean } | undefined
+const blockedTerminalNotices = new Map<string, { kind: TerminalProgramStatus['kind']; ticket: symbol }>()
+
+/** 只投影既有运行事实；缓存外观避免每个流式增量都读图标或调用系统 API。 */
+function refreshTaskbar(force = false): void {
+  if (process.platform !== 'win32' || !win || win.isDestroyed()) return
+  const busy = runners?.hasBusy() === true || agentHub.hasLiveWork() || (subagentService.current()?.runningCount ?? 0) > 0 || hasWorkingTerminal()
+  const waiting = approvals.list().length > 0 || hasBlockedTerminal()
+  const previous = taskbarProjection?.windowId === win.id ? taskbarProjection : undefined
+  if (force || previous?.busy !== busy) {
+    win.setProgressBar(busy ? 2 : -1, busy ? { mode: 'indeterminate' as const } : undefined)
+  }
+  if (force || previous?.waiting !== waiting) {
+    win.setOverlayIcon(waiting ? trayImage() : null, waiting ? '有任务等待你的处理' : '')
+  }
+  taskbarProjection = { windowId: win.id, busy, waiting }
+}
+
+/** 只在进入 blocked 或等待类型变化时通知；异步读取设置后再次核对归属与前台状态。 */
+function notifyBlockedTerminal(id: string, status?: TerminalProgramStatus): void {
+  if (!status || status.state !== 'blocked') {
+    blockedTerminalNotices.delete(id)
+    return
+  }
+  if (blockedTerminalNotices.has(id) && blockedTerminalNotices.get(id)?.kind === status.kind) return
+  const ticket = Symbol('terminal-blocked')
+  blockedTerminalNotices.set(id, { kind: status.kind, ticket })
+  if (!win || win.isDestroyed() || win.isFocused()) return
+  void getSettings().then((settings) => {
+    if (blockedTerminalNotices.get(id)?.ticket !== ticket || !win || win.isDestroyed() || win.isFocused()) return
+    if (settings.sound?.notifications === false || !Notification.isSupported()) return
+    const title = status.kind === 'permission'
+      ? '终端在等你批准'
+      : status.kind === 'question'
+        ? '终端在等你回答'
+        : status.kind === 'auth'
+          ? '终端在等你登录'
+          : '终端在等你'
+    const notice = new Notification({ title, body: status.title || '切到该终端查看' })
+    notice.on('click', () => {
+      if (!win || win.isDestroyed()) return
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    })
+    notice.show()
+  }).catch(() => undefined)
+}
 
 /**
  * 给某个实例的事件标上身份（N12）。
@@ -877,7 +989,7 @@ function pushFrom(runnerId: string, msg: MainPush): void {
 
 /** Debounced safe-boundary activation; all trust/authorization decisions remain in the scheduler. */
 function requestPiPackageActivationTick(): void {
-  if (!piPackageActivationScheduler && !skillFilesActivationScheduler) return
+  if (!piPackageActivationScheduler) return
   if (piPackageActivationInFlight) {
     piPackageActivationAgain = true
     return
@@ -885,7 +997,7 @@ function requestPiPackageActivationTick(): void {
   if (piPackageActivationTimer) clearTimeout(piPackageActivationTimer)
   piPackageActivationTimer = setTimeout(() => {
     piPackageActivationTimer = null
-    const schedulers = [piPackageActivationScheduler, skillFilesActivationScheduler].filter(
+    const schedulers = [piPackageActivationScheduler].filter(
       (scheduler): scheduler is NonNullable<typeof scheduler> => scheduler !== null
     )
     if (schedulers.length === 0) return
@@ -942,6 +1054,7 @@ function pushRunners(): void {
   const statuses = runners?.statuses() ?? []
   push({ ch: 'runners', payload: statuses })
   refreshTrayMenu()
+  refreshTaskbar()
   void syncKeepAwake(statuses.some((r) => r.running))
 }
 
@@ -1042,6 +1155,7 @@ let releaseDesktopDataRoot: (() => Promise<void>) | undefined
 async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
+  scheduleService.stop()
   await closeAgentService().catch((error) => reportMainError('agent-service-shutdown', error))
   disposeKeepAwake()
   tray?.destroy()
@@ -1333,7 +1447,10 @@ async function createTray(): Promise<void> {
   /* 用户切换任务栏深浅时跟着换字形 */
   if (!trayThemeListening) {
     trayThemeListening = true
-    nativeTheme.on('updated', () => tray?.setImage(trayImage()))
+    nativeTheme.on('updated', () => {
+      tray?.setImage(trayImage())
+      refreshTaskbar(true)
+    })
   }
   tray.setToolTip('砚 · Yan')
   const settings = await getSettings()
@@ -1823,9 +1940,11 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         browserHost: () => browser,
         /* 模型通过 `yan subagent …` 进入同一套全局控制器。 */
         subagentHost: subagentService.capabilityHost,
+        scheduleHost: scheduleService,
         /* 目标状态（实施-05 S3）：会话键与模式 store 都在本文件一侧。 */
         preambleExtension: preambleExtensionPath(),
         languageExtension: languageExtensionPath(),
+        temperatureExtension: temperatureExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
         contextInspectExtension: contextInspectExtensionPath(),
         contextTrimExtension: contextTrimExtensionPath(),
@@ -2084,23 +2203,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       })
     })
   )
-  skillFilesActivationScheduler = new SkillFilesActivationScheduler(
-    acquisitions,
-    createSkillFilesActivationHostPorts({
-      root: YAN_DIR,
-      service: acquisitions,
-      authorizations: packageAuthorizations,
-      goals,
-      runners: {
-        activationSnapshot: (target) => runners?.activationSnapshot(target) ?? null,
-        agentOf: (id) => runners?.agentOf(id) ?? null,
-        restartOne: (id) => runners?.restartOne(id) ?? Promise.resolve({ ok: false, error: '运行实例注册表尚未就绪' }),
-        hasBusyCwd: (cwd) => runners?.hasBusyCwd(cwd) ?? false
-      },
-      isTrusted: async (cwd) => (await trustStatus(cwd)).trusted,
-      sourceHead: async (cwd) => (await readRepoState(cwd, { withRefs: false }))?.head ?? null
-    })
-  )
 
   const projectId = projectIdForCwd(settings, settings.cwd)
   /*
@@ -2352,7 +2454,16 @@ function registerIpc(): void {
   setTimeout(() => void pruneCheckpoints().catch(() => undefined), 60_000).unref?.()
 
   /* ---- 模型 / 思考 ---- */
-  handle('yan:listModels', async () => ac()?.listModels() ?? [])
+  /* 把自动压缩上限同步给 pi 原生压缩线（说明见 native-compaction-line.ts）；失败只影响长任务中途的压缩线 */
+  const syncCompactionLines = async (models: LineModel[]): Promise<void> => {
+    const cap = (await getSettings()).autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS
+    await syncNativeCompactionLines(models, cap).catch((e) => reportMainError('压缩线', e))
+  }
+  handle('yan:listModels', async () => {
+    const models = (await ac()?.listModels()) ?? []
+    void syncCompactionLines(models)
+    return models
+  })
   handle(
     'yan:setModel',
     async (provider: string, modelId: string) => ac()?.setModel(provider, modelId) ?? { ok: false, error: 'pi 未运行' }
@@ -2525,6 +2636,7 @@ function registerIpc(): void {
       })
     }
     if (patch.responseDetail !== undefined) agentResponseDetail = next.responseDetail
+    if ('autoCompactTokens' in patch) void ac()?.listModels().then(syncCompactionLines)
     if ('keepAwakeWhileWorking' in patch || 'keepAwakeOnBattery' in patch) void syncKeepAwake((runners?.statuses() ?? []).some((r) => r.running))
     /* 工作模式（实施-05）：新会话默认模式改完立即生效（已存过的会话不受影响） */
     if (patch.defaultWorkMode !== undefined) setDefaultWorkMode(next.defaultWorkMode)
@@ -2855,6 +2967,8 @@ function registerIpc(): void {
 
 
   /* ---- 子代理（方案第 8 节）---- */
+  registerScheduleIpc(ipc, scheduleService)
+  void scheduleService.start().catch((e) => reportMainError('定时任务', e))
   registerSubagentsIpc(ipc, {
     service: subagentService,
     parentContext: async () => {
@@ -2904,7 +3018,13 @@ function registerIpc(): void {
 
   registerTaskInboxIpc(ipc, { runnerStatuses: () => runners?.statuses() ?? [] })
 
-  registerCapabilitiesIpc(ipc, { currentAgent: () => ac() ?? undefined, registry: () => runners, thinExtensionPaths: yanThinExtensionPaths })
+  registerCapabilitiesIpc(ipc, {
+    currentAgent: () => ac() ?? undefined,
+    registry: () => runners,
+    thinExtensionPaths: yanThinExtensionPaths,
+    settings: () => getSettings(),
+    isProjectTrusted: async (cwd) => (await trustStatus(cwd)).trusted
+  })
 
 
   registerKnowledgeIpc(ipc, { currentCwd: () => ac()?.getState()?.cwd, knowledgeProjectId, window: () => win })
@@ -2997,10 +3117,11 @@ function createWindow(): void {
     show: false,
     frame: false,
     /*
-     * Windows 11 会给无边框窗口加系统圆角；个别设备上最大化 / 全屏后圆角仍在，
-     * 四角与直角的屏幕之间露出一道缝。界面本身是直角风格，窗口也用直角（Win10 与旧版本无影响）。
+     * 窗口外框圆角交回系统：Windows 11 给无边框窗口画圆角，且窗口最大化 / 贴边时
+     * 由 DWM 切回直角，不用自己跟着窗口状态改。Win10 及更早版本无此效果（仍是直角），
+     * macOS 与支持客户端装饰的 Linux 桌面按各自规则处理。
      */
-    roundedCorners: false,
+    roundedCorners: true,
     /* 与深色 --bg-0 / 启动画面底色一致；浅色主题在读到设置后改（见下方 getSettings） */
     backgroundColor: '#151515',
     webPreferences: {
@@ -3552,13 +3673,22 @@ app.whenReady().then(async () => {
   browser = new BrowserController(() => win, push)
   /* 终端输出转成渲染端可消费的推送（H-11）：只有活动窗口时才有接收方 */
   setTerminalSink((event) => {
-    if (event.kind === 'exit') void agentHub.terminalExit(event.id, event.exitCode)
+    if (event.kind === 'exit') {
+      blockedTerminalNotices.delete(event.id)
+      void agentHub.terminalExit(event.id, event.exitCode)
+    }
+    if (event.kind === 'status') {
+      notifyBlockedTerminal(event.id, event.status)
+      refreshTaskbar()
+    }
     push({
       ch: 'terminal',
       payload:
         event.kind === 'data'
           ? { id: event.id, kind: 'data', data: event.data, seq: event.seq }
-          : { id: event.id, kind: 'exit', exitCode: event.exitCode }
+          : event.kind === 'exit'
+            ? { id: event.id, kind: 'exit', exitCode: event.exitCode }
+            : { id: event.id, kind: 'status', status: event.status }
     })
   })
   registerIpc()

@@ -285,7 +285,16 @@ export function createTurnProjector(): typeof groupIntoTurns {
       group = []
     }
     for (const message of messages) {
-      if (message.role === 'user' && isSubagentNotice(message.text)) continue
+      /*
+       * 宿主子代理结果通知是**后续助手运行段**的计时分界，但不画成用户消息。
+       * 必须先封住正在累积的助手段再跳过：否则通知之后的助手消息会被并进
+       * 同一段，用新的 elapsedMs / usage 覆盖已结束那一段（用户报的「子代理
+       * 返回时刷新本条运行时间」）。这里同样不产出用户轮。
+       */
+      if (message.role === 'user' && isSubagentNotice(message.text)) {
+        flush()
+        continue
+      }
       if (message.role === 'user' || message.role === 'bash') {
         flush()
         group = [message]
@@ -318,6 +327,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     /** 回合内是否有请求没报用量（H-6b） */
     usagePartial: boolean
     last: UIMessage | undefined
+    model?: string
     timestamp?: number
     /** 从宿主元数据日志恢复出来的整轮计时（H-6） */
     timing?: TurnTimingMeta
@@ -437,7 +447,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       ...(cur.timing
         ? { terminalReason: cur.timing.terminalReason, timingRecorded: true }
         : {}),
-      model: cur.last?.model,
+      model: cur.model,
       responseDetail: cur.responseDetail,
       error: cur.last?.error,
       errorMsgId: cur.last?.error ? cur.last.id : undefined,
@@ -447,7 +457,15 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
   }
 
   for (const m of messages) {
-    if (m.role === 'user' && isSubagentNotice(m.text)) continue
+    /*
+     * 子代理结果通知：宿主后台输入，不是用户的新问题 —— 不画用户轮，
+     * 也不计入轮数；但它是**后续助手运行段**的计时分界。先 flush 已结束的
+     * 助手段，后续 assistant 才会独立计时，不复用旧 usage / elapsedMs。
+     */
+    if (m.role === 'user' && isSubagentNotice(m.text)) {
+      flush()
+      continue
+    }
     if (m.role === 'user') {
       flush()
       turns.push({ kind: 'user', id: m.id, msg: m })
@@ -565,6 +583,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
      */
     if (hasUsageNumbers(m.usage)) cur.usage = addUsage(cur.usage, m.usage)
     else cur.usagePartial = true
+    if (m.model) cur.model = m.model
     if (m.error) cur.last = m
     if (!cur.last) cur.last = m
     if (m.elapsedMs !== undefined || m.speed !== undefined) cur.last = m

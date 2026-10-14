@@ -51,6 +51,16 @@ import {
 const DIR = YAN_DIR
 const FILE = join(DIR, 'desktop.json')
 
+/** 采样温度表：只收 0–2 的有限数、保留两位小数；空表落成「没设过」，不写进文件。 */
+function cleanTemperatureByModel(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, number> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 2) out[key] = Math.round(value * 100) / 100
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 /**
  * 默认界面语言**跟随系统**（用户要求）。
  *
@@ -502,6 +512,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
    */
   settings.contextPolicy = sanitizeContextPolicyOverrides(settings.contextPolicy)
   settings.contextPolicyByModel = sanitizeContextPolicyByModel(settings.contextPolicyByModel)
+  settings.temperatureByModel = cleanTemperatureByModel(settings.temperatureByModel)
   /*
    * Deep Context（N21-8）：只认字面 `true`。
    * 洗不进时结果是 `undefined`（而不是 `{enabled:false}`）—— 让「没改过」
@@ -644,7 +655,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','showSpaces','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','capabilityStrategy','codemodeEnabled','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','activityModels','workModeShortcutEnabled','workModeShortcut','subagentNotify','usageUnderInput','contextPolicy','contextPolicyByModel','contextDeep','contextFold','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','showSpaces','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','capabilityStrategy','codemodeEnabled','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','activityModels','workModeShortcutEnabled','workModeShortcut','subagentNotify','usageUnderInput','contextPolicy','contextPolicyByModel','temperatureByModel','contextDeep','contextFold','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -732,6 +743,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
    * 这是可接受的：渲染端不拆分它。
    */
   if ('contextPolicy' in patch) next.contextPolicy = sanitizeContextPolicyOverrides(next.contextPolicy)
+  if ('temperatureByModel' in patch) next.temperatureByModel = cleanTemperatureByModel(next.temperatureByModel)
   if ('contextPolicyByModel' in patch) {
     next.contextPolicyByModel = sanitizeContextPolicyByModel(next.contextPolicyByModel)
   }

@@ -10,6 +10,7 @@
 import { mkdtemp, writeFile, mkdir, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { runVisualMatrixTests } from './test-visual-matrix.mjs'
 import { runHtmlArtifactPreviewTests } from './test-html-artifact-preview.mjs'
 import { runRunStateTests } from './test-run-state.mjs'
@@ -40,6 +41,17 @@ for (const script of [
   'test-service-receipt-hub-null', 'test-session-restore-rollback', 'test-subagent-stop-intent',
   'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory'
 ]) await import(`./${script}.mjs`)
+
+// 隔离脚本的环境变量与退出码；这些夹具不调用真实模型或用户服务。
+for (const script of [
+  'test-mcp-annotations-guard', 'test-terminal-status', 'test-taskbar-status',
+  'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills', 'test-tip',
+  'test-mcp-native-import-flow', 'test-readonly-model-registration', 'test-terminal-tab-status', 'test-confirm-queue',
+  'test-motion-presence'
+]) {
+  const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
+  if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)
+}
 
 const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
 const dataDir = await mkdtemp(join(tmpdir(), 'yan-data-'))
@@ -250,6 +262,18 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runAttachmentTests } = await import('./test-attachments.mjs')
 const { runKeepImagesTests } = await import('./test-keep-images.mjs')
+/* 排队消息回填到输入框时的图片与上限（纯逻辑） */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/queue-images.ts'],
+    outfile: 'out/test/queue-images.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+const { runQueueImageTests } = await import('./test-queue-draft-images.mjs')
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/same-messages.ts'],
@@ -1693,6 +1717,7 @@ await runSubagentUsageTests(ok)
 // 工具磁贴布局契约（U-0）：迁移/归一/夹取/并发写
 await runToolLayoutTests(ok)
 await runKeepImagesTests(ok)
+await runQueueImageTests(ok)
 await runSameMessagesTests(ok)
 await runAttachmentTests(ok)
 await runSessionImageTests(ok)

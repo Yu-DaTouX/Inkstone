@@ -12,6 +12,10 @@
  * 因为它们必须能在没有 DOM / Electron 的环境下被单测。
  */
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
+import type {
+  NativeMcpImportCommitResponse,
+  NativeMcpImportPrepareResponse
+} from './mcp-native-import'
 
 export type {
   CustomProviderDiscoverResult,
@@ -230,6 +234,38 @@ export interface TurnTimingMeta {
   terminalReason: TurnTerminalReason
 }
 
+/**
+ * 一次模型请求（一条 assistant 消息）的生成用时。
+ *
+ * 与整轮 `elapsedMs` / `speed` 的区别：这里回答「**这一次模型调用**花了多久、
+ * 首包等了多久、真正解码了多久」。用单调时钟（`performance.now()`）口径，
+ * 不受系统对时影响；工具执行与压缩不计在内。
+ *
+ * 起点语义（`startEvent`）：带 `startEvent: 'turn_start'` 时，起点是 pi 原生
+ * `turn_start`（每次模型请求前 emit），所以 `durationMs` / `ttftMs` **包含**请求
+ * 准备、排队、网络等待与 provider 内部重试；它不是「服务端纯推理时长」，也不是
+ * 「socket 精确发送时刻」，只是宿主能拿到的最早请求起点。没有该标记（旧记录 /
+ * 未拿到原生 turn_start 的回退）时，起点只是流的下限，`durationMs` 只能当下限，
+ * `ttftMs` 不参与会话平均。`decodeMs` 与起点语义无关，始终可用。
+ *
+ * 缺省语义：没有拿到首个真正内容（非空 `text_delta` / `thinking_delta`，
+ * 或 `toolcall_start`）时只给 `durationMs`，不给 `ttftMs` / `decodeMs` ——
+ * 宁可显示未知，也不编造首包延迟与解码速度。
+ */
+export interface GenerationTiming {
+  /** 请求起点 → `message_end` 的单调时长；无标记时是流的下限 */
+  durationMs: number
+  /** 首包延迟：请求起点 → 首个真正内容；无 `startEvent` 标记时不参与平均 */
+  ttftMs?: number
+  /** 解码时长：首个真正内容 → `message_end`（与起点语义无关，始终可用） */
+  decodeMs?: number
+  /**
+   * 起点语义标记：`'turn_start'` = 原生 turn_start（含请求准备 / 网络等待 /
+   * provider 内部重试）。旧记录与无原生起点的回退不带此字段。
+   */
+  startEvent?: 'turn_start'
+}
+
 export interface UIMessage {
   id: string
   /**
@@ -284,6 +320,13 @@ export interface UIMessage {
   speed?: number
   /** 本轮从开始生成到结束的墙钟耗时（ms），含工具往返 */
   elapsedMs?: number
+  /**
+   * 本条 assistant 消息（一次模型请求）的生成用时。
+   *
+   * 旧历史 / 未记录时缺省；恢复来自回合计时日志，按助手消息次序锚定，
+   * 不拿实时消息 id 索引（压缩 / 历史重排后 id 会漂移）。
+   */
+  generationTiming?: GenerationTiming
   /**
    * 宿主自己记录的整轮计时（实施-11 H-6）。
    *
@@ -569,6 +612,8 @@ export interface ModelInfo {
   id: string
   name: string
   provider: string
+  /** pi 原生实现类型；pi-virtual 表示扩展注册的虚拟模型，不包含凭证。 */
+  api?: string
   /** Non-secret runtime endpoint fingerprint; excludes URL credentials and query parameters. */
   endpointKey?: string
   reasoning: boolean
@@ -652,12 +697,21 @@ export interface BashRun {
 export interface QueueItem {
   id: string
   text: string
+  /** 原始图片附件由主进程按队列身份关联；pi 的 queue_update 本身只含文本。 */
+  images?: { data: string; mimeType: string }[]
 }
 
 /** 队列状态（queue_update） */
 export interface QueueState {
   steering: QueueItem[]
   followUp: QueueItem[]
+}
+
+/** 兼容原生文本快照；有图片时另带完整队列项，用于恢复与草稿回填。 */
+export interface QueueSnapshot {
+  steering: string[]
+  followUp: string[]
+  items?: QueueState
 }
 
 /**
@@ -926,11 +980,28 @@ export interface ToolStatus {
   ok: boolean
   /** 找到的可执行文件；没找到时为空 */
   path?: string
-  /** 没找到时给人读的原因与做法 */
-  hint?: string
   /** 用的是砚装在数据目录里的 PortableGit，不是系统自带的 */
   managed?: boolean
+  /**
+   * 没找到时的原因码（带参数）。
+   *
+   * 只传码、不传句子：文案由界面按当前语言渲染（`renderer/src/lib/toolchain-text.ts`）。
+   * 以前这里直接放拼好的中文，英文界面下就会冒出一整段中文。
+   */
+  reason?: ToolMissingReason
 }
+
+/**
+ * 外部命令缺失的原因。
+ *
+ * · `shell-path-missing` —— pi 设置里的 shellPath 指向不存在的文件（`path` 是它）
+ * · `bash-missing`       —— 没找到 bash，pi 会退到 PowerShell（`shell` 说明退到哪一档）
+ * · `git-missing`        —— 没找到 git
+ */
+export type ToolMissingReason =
+  | { code: 'shell-path-missing'; path: string }
+  | { code: 'bash-missing'; shell: 'pwsh' | 'powershell' }
+  | { code: 'git-missing' }
 
 export interface ToolchainStatus {
   platform: string
@@ -942,8 +1013,11 @@ export interface AuthProviderInfo {
   id: string
   name: string
   kind: AuthKind
-  /** 一句话说明（为什么选它 / 有什么坑） */
-  hint: string
+  /*
+   * 这里以前有一个 `hint`：一句话说明（为什么选它 / 有什么坑）。
+   * 现在这类文案只存在于渲染端的 i18n（`auth.hint.*` / `auth.name.*`）——
+   * 主进程不知道界面语言，在这里写中文会在英文界面上原样冒出来。
+   */
   /** 对应的环境变量名（空 = 该方式不走环境变量） */
   envVar: string
   /** 在 auth.json 里的键名（空 = 由 pi 的 OAuth 流程自己定） */
@@ -1038,8 +1112,8 @@ export interface AppSettings {
   backgroundCustom?: string
   /** 浅色主题的自定义页面底色 #rrggbb */
   backgroundCustomLight?: string
-  /** 界面与正文字体：缺省 = Maple Mono CN；custom = 用 fontUiCustom（预设与清洗见 shared/appearance.ts） */
-  fontUi?: 'sans' | 'serif' | 'custom'
+  /** 界面与正文字体：缺省系统无衬线；maple = 终端风格，custom = fontUiCustom */
+  fontUi?: 'sans' | 'serif' | 'maple' | 'custom'
   fontUiCustom?: string
   /** 代码与终端字体：缺省 = Maple Mono CN；custom = 用 fontCodeCustom */
   fontCode?: 'mono' | 'custom'
@@ -1284,6 +1358,8 @@ export interface AppSettings {
    * 未知 key 一律保留（用户可能只是暂时没选那个模型），但界面只列当前模型。
    */
   contextPolicyByModel?: Record<string, ContextPolicyOverrides>
+  /** 各模型自设的采样温度，key 为 `provider/modelId`，值 0–2；没有该 key = 用供应商默认值。 */
+  temperatureByModel?: Record<string, number>
   /**
    * Deep Context（N21-8）：**回答之前**先让扩展自己归纳一遗工作集。
    *
@@ -1792,9 +1868,31 @@ export interface PiProbe {
   tried: string[]
 }
 
-/* 内置浏览器 */
+/* 交互终端 */
 
-/** 应用内浏览器的可观察状态。 */
+/**
+ * 终端程序上报的状态（OSC 7501，9;4 为其后备）。
+ *
+ * 只描述程序自己的运行状态，不含提示词与模型输出；`clear` 表示程序要求清掉记录，
+ * 落到会话投影时对应的字段会被移除，不会保留成一条 `clear` 状态。
+ */
+export type TerminalProgramState = 'working' | 'blocked' | 'done' | 'error' | 'idle' | 'clear'
+
+/** `blocked` 的细分：权限、提问、登录。程序没给时缺省 */
+export type TerminalBlockedKind = 'permission' | 'question' | 'auth'
+
+/** 一条程序状态记录（首版只用根记录，忽略程序内的子记录 `id`） */
+export interface TerminalProgramStatus {
+  state: TerminalProgramState
+  kind?: TerminalBlockedKind
+  /** 0–100；仅 `working` 有意义 */
+  progress?: number
+  /** 已解码的短标题（来自 `msg` / `title`，超长会截断） */
+  title?: string
+  /** 上报程序标识 */
+  app?: string
+}
+
 /**
  * 交互终端（实施-11 H-11）。
  *
@@ -1811,6 +1909,8 @@ export interface TerminalSessionInfo {
   rows: number
   alive: boolean
   exitCode?: number | null
+  /** 程序上报的状态投影；没有记录时为 undefined */
+  status?: TerminalProgramStatus
 }
 
 /** 重连 / 首次打开时的一份完整快照（含已有输出的尾部） */
@@ -1992,6 +2092,8 @@ export interface ExtensionUiRequest {
    * 走输入区上方的非模态面板。
    */
   sensitive?: boolean
+  /** 宿主发起的接入批准（技能安装）：走同一个问题面板，徽标换成「授权」，手机端只能跳过 */
+  purpose?: 'approval'
   title?: string
   message?: string
   options?: string[]
@@ -2145,6 +2247,17 @@ export interface SubagentRun {
   result?: SubagentResult
 }
 
+/** 定时任务：界面与 `yan schedule` 共用同一个服务 */
+export interface ScheduleBridge {
+  list(): Promise<import('./schedule').ScheduledTask[]>
+  create(input: { name?: string; prompt: string; cwd?: string; model?: string; trigger: import('./schedule').ScheduleTrigger }): Promise<{ ok: boolean; error?: string; task?: import('./schedule').ScheduledTask }>
+  update(id: string, input: { name?: string; prompt?: string; cwd?: string; model?: string; trigger?: import('./schedule').ScheduleTrigger }): Promise<{ ok: boolean; error?: string; task?: import('./schedule').ScheduledTask }>
+  setEnabled(id: string, enabled: boolean): Promise<{ ok: boolean; error?: string; task?: import('./schedule').ScheduledTask }>
+  remove(id: string): Promise<{ ok: boolean }>
+  /** 立即触发一次，结果是新开的会话 */
+  runNow(id: string): Promise<{ ok: boolean; error?: string; sessionId?: string }>
+}
+
 /** 子代理控制器对外暴露的能力 */
 export interface SubagentBridge {
   list(): Promise<SubagentRun[]>
@@ -2295,10 +2408,11 @@ export type MainPushBody =
   /** 内置浏览器状态（WebContentsView 与 pi browser extension 共用） */
   | { ch: 'browser-state'; payload: BrowserState }
   /**
-   * 交互终端的实时输出 / 退出（H-11）。
-   * 按会话身份 `id` 分流：多标签时每条数据只进它自己的 xterm。
+   * 交互终端的实时输出 / 程序状态 / 退出（H-11）。
+   * 按会话身份 `id` 分流：多标签时每条数据只进它自己的 xterm；
+   * `kind: 'status'` 是终端程序（OSC 7501）上报的状态投影。
    */
-  | { ch: 'terminal'; payload: { id: string; kind: 'data' | 'exit'; data?: string; seq?: number; exitCode?: number | null } }
+  | { ch: 'terminal'; payload: { id: string; kind: 'data' | 'exit' | 'status'; data?: string; seq?: number; exitCode?: number | null; status?: TerminalProgramStatus } }
   /**
    * 主进程自己产生的日志（未捕获异常 / 未处理 Promise）。
    * 为什么要走 UI：Electron 默认会为 uncaughtException 弹一个原生
@@ -2752,6 +2866,14 @@ export interface CapabilitySkillSettingView {
   id: string
   title: string
   description: string
+  /**
+   * 分类：`session` 本次会话由模型接入（只对当前会话生效）；`user` 我的技能（用户安装或自己保存）；
+   * `bundled` 砚随包；`other` pi 原生发现或项目目录。老版本没有这个字段时按 `other` 显示。
+   */
+  origin?: 'session' | 'user' | 'bundled' | 'other'
+  /** 由 `yan capabilities acquire` 接入（有来源记录） */
+  acquired?: boolean
+  sourceUrl?: string
 }
 
 export interface CapabilityMcpServerSettingView {
@@ -2764,6 +2886,8 @@ export interface CapabilityMcpServerSettingView {
   endpointOrigin?: string
   status: 'ready' | 'connecting' | 'disconnected' | 'needs-auth' | 'error'
   toolCount: number | null
+  /** 已导入 pi 原生的标记；老客户端不认识这个字段也不影响原有条目的显示与删除。 */
+  migratedToNative?: import('./mcp').McpMigratedToNativeMark
 }
 
 export interface CapabilitySettingsSnapshot {
@@ -2812,9 +2936,15 @@ export interface CapabilityVerificationStatus {
 export interface CapabilitiesBridge {
   snapshot(): Promise<CapabilitySettingsSnapshot>
   discover(queryText: string): Promise<CapabilitySearchResultView>
+  /** 本次会话技能：保留到「我的技能」或从会话移除 */
+  sessionSkill(action: 'promote' | 'remove', name: string): Promise<{ ok: boolean; error?: string }>
   verify(serverId: string): Promise<{ ok: boolean; operationId?: string; error?: string }>
   verification(operationId: string): Promise<CapabilityVerificationStatus | null>
   cancelVerification(operationId: string): Promise<{ ok: boolean; error?: string }>
+  /** 07 预览确认用：只回传将写入的内容与令牌，不落盘、不停用旧条目。 */
+  prepareNativeImport(serverId: string): Promise<NativeMcpImportPrepareResponse>
+  /** 用户确认后提交；令牌只能来自 prepareNativeImport。 */
+  commitNativeImport(token: string): Promise<NativeMcpImportCommitResponse>
 }
 
 /* ── 会话来源的持久化资源引用（方案 §8 的 S1）────────── */
@@ -3049,13 +3179,13 @@ export interface YanBridge {
   followUp(text: string): Promise<{ ok: boolean; error?: string }>
   /** 把一条排队的消息插队（提升为 steering，在当前这轮就听） */
   steerQueued(queueId: string): Promise<{ ok: boolean; error?: string }>
-  /** 撤回一条仍在 Yan 队列快照中的消息，并把文本交回草稿。 */
-  removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; error?: string }>
+  /** 撤回一条仍在队列中的消息，并把文字与图片交回草稿。 */
+  removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }>
   /**
    * 中止。按 pi 的约定先 clear_queue 再 abort，把清出来的队列文本返回，
    * 客户端应把它放回输入框（否则用户排的话就白打了）。
    */
-  abort(): Promise<{ steering: string[]; followUp: string[] }>
+  abort(): Promise<QueueSnapshot>
   newSession(target?: { cwd?: string; projectId?: string; scope?: SessionScope }): Promise<{
     ok: boolean
     error?: string
@@ -3617,6 +3747,7 @@ export interface YanBridge {
 
   /* 子代理（方案第 8 节） */
   subagents: SubagentBridge
+  schedule: ScheduleBridge
 
   /* Git 审查（方案 G1，只读） */
   /** pi 插件包管理（§9 的 P2）：只改 pi 自己的 settings，不动生成的 pi-runtime */
