@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
+import { useConfirm } from '../ui/confirm'
 import { useStore } from '../../state/store'
 import { listSourceFiles, removeSourceFile } from '../../state/source-files'
 import type { SourceLinkView, SourceRefView } from '../../../../shared/ipc'
@@ -83,6 +84,7 @@ function normalizeUrl(input: string): string | null {
 
 export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; open: boolean; onClose?: () => void }): React.JSX.Element {
   const t = useT()
+  const confirm = useConfirm()
   const locateMessage = useStore((s) => s.locateMessage)
   const injectComposerText = useStore((s) => s.injectComposerText)
   const [images, setImages] = useState<SourceRefView[]>([])
@@ -216,7 +218,7 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
   }
 
   const removeWithFeedback = async (item: SourceRefView): Promise<void> => {
-    if (item.kind === 'image' && !window.confirm(`${t('src.remove')} · ${item.title}`)) return
+    if (item.kind === 'image' && !(await confirm({ title: t('src.remove'), body: t('src.note'), detail: item.title, confirmLabel: t('src.remove'), tone: 'danger' }))) return
     try { await removeOne(item) }
     catch (cause) { setActionError(cause instanceof Error ? cause.message : String(cause)) }
   }

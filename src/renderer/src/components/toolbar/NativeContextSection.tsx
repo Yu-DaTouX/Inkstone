@@ -15,7 +15,9 @@ function useContextUsage() {
   const usage = stats?.contextUsage
   const modelKey = session?.model ? `${session.model.provider}/${session.model.id}` : undefined
   const matches = !!usage && (!usage.modelKey || usage.modelKey === modelKey)
-  const windowSize = session?.model?.contextWindow ?? (matches ? usage?.contextWindow : undefined) ?? 0
+  const reportedWindow = matches ? usage?.contextWindow : undefined
+  const windowSize = typeof reportedWindow === 'number' && Number.isFinite(reportedWindow) && reportedWindow > 0
+    ? reportedWindow : session?.model?.contextWindow ?? 0
   const known = matches && typeof usage?.tokens === 'number' && windowSize > 0
   const tokens = known ? usage.tokens! : 0
   const percent = known ? (tokens / windowSize) * 100 : null

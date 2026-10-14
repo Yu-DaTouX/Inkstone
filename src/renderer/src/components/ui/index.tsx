@@ -15,6 +15,11 @@ import {
 } from 'react'
 import { Icon, type IconName } from '../../icons/Icon'
 import { APPEARANCE_EVENT } from '../../lib/appearance'
+import { Tip } from './Tip'
+
+// 统一提示气泡（components/ui/Tip）：替代原生 title。
+export { Tip } from './Tip'
+export { WheelPicker } from './WheelPicker'
 
 /**
  * 统一控件（v0.4）。外观唯一来源是 `styles/ui.css`；这里只把常用组合收成组件，
@@ -69,7 +74,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon: IconName
-  /** 必填：图标按钮没有可见文字，名称同时用作 title 与无障碍名称 */
+  /** 必填：图标按钮没有可见文字，名称同时用作无障碍名称与提示气泡文字 */
   label: string
   size?: ButtonSize
   /** 图标尺寸默认随按钮：sm 12 · md 14 · lg 16 */
@@ -80,21 +85,24 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon, label, size = 'md', iconSize, iconClassName, active, className, type, ...rest },
+  { icon, label, size = 'md', iconSize, iconClassName, active, className, type, title, ...rest },
   ref
 ) {
+  /* 提示气泡替代原生 title：`label` 是无障碍名称，调用方若给了更完整的 `title` 说明就用它当气泡内容。 */
+  const tip = typeof title === 'string' && title.trim() ? title : label
   return (
-    <button
-      ref={ref}
-      type={type ?? 'button'}
-      className={cx('btn icon', size !== 'md' && size, active && 'on', className)}
-      title={label}
-      aria-label={label}
-      {...(active !== undefined ? { 'aria-pressed': active } : {})}
-      {...rest}
-    >
-      <Icon name={icon} size={iconSize ?? (size === 'lg' ? 16 : size === 'sm' ? 12 : 14)} className={iconClassName} />
-    </button>
+    <Tip label={tip}>
+      <button
+        ref={ref}
+        type={type ?? 'button'}
+        className={cx('btn icon', size !== 'md' && size, active && 'on', className)}
+        aria-label={label}
+        {...(active !== undefined ? { 'aria-pressed': active } : {})}
+        {...rest}
+      >
+        <Icon name={icon} size={iconSize ?? (size === 'lg' ? 16 : size === 'sm' ? 12 : 14)} className={iconClassName} />
+      </button>
+    </Tip>
   )
 })
 
@@ -532,6 +540,25 @@ export function Tabs<T extends string>({
   )
 }
 
+/** 可关闭页签的关闭按钮：有名称时用提示气泡，否则保持裸按钮（调用方本就该给 closeLabel）。 */
+function CloseButton({ closeLabel, onClose }: { closeLabel?: string; onClose: () => void }) {
+  const span = (
+    <span
+      role="button"
+      tabIndex={-1}
+      className="ui-tab-close"
+      aria-label={closeLabel}
+      onClick={(event) => {
+        event.stopPropagation()
+        onClose()
+      }}
+    >
+      <Icon name="close" size={12} />
+    </span>
+  )
+  return closeLabel ? <Tip label={closeLabel}>{span}</Tip> : span
+}
+
 /** 单个页签；列表需要自定义内容（拖动、计数）时直接用它，外面自己包 role=tablist */
 export function Tab({
   selected,
@@ -570,19 +597,7 @@ export function Tab({
       {icon ? <Icon name={icon} size={12} /> : null}
       <span className="ui-tab-label">{children}</span>
       {onClose ? (
-        <span
-          role="button"
-          tabIndex={-1}
-          className="ui-tab-close"
-          aria-label={closeLabel}
-          title={closeLabel}
-          onClick={(event) => {
-            event.stopPropagation()
-            onClose()
-          }}
-        >
-          <Icon name="close" size={12} />
-        </span>
+        <CloseButton closeLabel={closeLabel} onClose={onClose} />
       ) : null}
     </button>
   )

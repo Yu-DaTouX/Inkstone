@@ -5,6 +5,7 @@ import type { CustomProviderInput, CustomProviderTestResult, CustomProviderView,
 import { CUSTOM_API_CHOICES } from '../../../../shared/custom-provider'
 import { Icon } from '../../icons/Icon'
 import { Button, Disclosure } from '../ui'
+import { useConfirm } from '../ui/confirm'
 import { mergeDiscoveredModels } from './review2-settings-guards'
 
 /**
@@ -18,6 +19,7 @@ import { mergeDiscoveredModels } from './review2-settings-guards'
  */
 export function CustomProviderForm() {
   const t = useT()
+  const confirm = useConfirm()
   const [list, setList] = useState<CustomProviderView[] | null>(null)
   const [draft, setDraft] = useState<CustomProviderInput | null>(null)
   const [busy, setBusy] = useState(false)
@@ -176,7 +178,7 @@ export function CustomProviderForm() {
   }
 
   const remove = async (id: string): Promise<void> => {
-    if (!window.confirm(`Delete ${id}? This also removes its stored API key.`)) return
+    if (!(await confirm({ title: t('customApi.remove'), body: t('customApi.removeConfirm'), detail: id, confirmLabel: t('customApi.remove'), tone: 'danger' }))) return
     setBusy(true)
     try {
       const result = await window.yan.removeCustomProvider(id)
@@ -193,6 +195,18 @@ export function CustomProviderForm() {
     } finally {
       if (alive.current) setBusy(false)
     }
+  }
+
+  const beginDraft = async (next: CustomProviderInput): Promise<void> => {
+    if (draft && JSON.stringify(draft) !== JSON.stringify(baseline.current) && !(await confirm({ title: t('customApi.edit'), body: t('customApi.discardConfirm'), tone: 'danger' }))) return
+    baseline.current = next
+    setDraft(next)
+  }
+
+  const cancelDraft = async (): Promise<void> => {
+    if (draft && JSON.stringify(draft) !== JSON.stringify(baseline.current) && !(await confirm({ title: t('customApi.cancel'), body: t('customApi.discardConfirm'), tone: 'danger' }))) return
+    baseline.current = null
+    setDraft(null)
   }
 
   const patchModel = (index: number, patch: Partial<CustomProviderInput['models'][number]>): void => {
@@ -219,9 +233,7 @@ export function CustomProviderForm() {
           <span className="spacer" />
           <Button type="button" data-testid={`custom-api-edit-${item.id}`} onClick={() => {
               const next = { id: item.id, api: item.api || 'openai-completions', baseUrl: item.baseUrl, models: item.models.length ? item.models : [{ id: '' }] }
-              if (draft && JSON.stringify(draft) !== JSON.stringify(baseline.current) && !window.confirm('Discard unsaved custom provider changes?')) return
-              baseline.current = next
-              setDraft(next)
+              void beginDraft(next)
             }}>
             {t('customApi.edit')}
           </Button>
@@ -337,7 +349,7 @@ export function CustomProviderForm() {
               {fetching ? t('customApi.fetching') : t('customApi.fetchModels')}
             </Button>
             <span className="spacer" />
-            <Button type="button" onClick={() => { if (!draft || JSON.stringify(draft) === JSON.stringify(baseline.current) || window.confirm('Discard unsaved custom provider changes?')) { baseline.current = null; setDraft(null) } }}>
+            <Button type="button" onClick={() => void cancelDraft()}>
               {t('customApi.cancel')}
             </Button>
             <Button variant="primary" type="button" disabled={busy} data-testid="custom-api-save" onClick={() => void save()}>

@@ -8,6 +8,7 @@
 import type { AppSettings, MainPush, SoundEvent, SubagentRun } from '../../../shared/ipc'
 import type { Notice, Store } from './store'
 import { releaseResource } from './resource-owners'
+import { isNativeMcpStatus } from '../lib/native-mcp-status'
 
 export interface PushContext {
   get(): Store
@@ -56,16 +57,20 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
       ctx.applyBrowserVisibility()
       break
     case 'terminal':
-      /*
-       * 只处理“退出”：输出正文（kind=data）不进 store —— 它由 `TerminalSurface`
-       * 直连 onPush 写进 xterm，走 store 会对每个 chunk 触发一次订阅重算。
-       */
+      /* 输出正文直连 xterm，不进 store；低频程序状态只投影到同 id 的标签。 */
       if (m.payload.kind === 'exit') {
         set({
           terminals: s.terminals.map((term) =>
-            term.id === m.payload.id ? { ...term, alive: false, exitCode: m.payload.exitCode ?? null } : term
+            term.id === m.payload.id ? {
+              ...term, alive: false, exitCode: m.payload.exitCode ?? null,
+              status: term.status?.state === 'working' || term.status?.state === 'blocked' ? undefined : term.status
+            } : term
           )
         })
+      }
+      else if (m.payload.kind === 'status') {
+        const report = m.payload
+        set({ terminals: s.terminals.map(term => term.id === report.id ? { ...term, status: report.status } : term) })
       }
       break
     case 'log':
@@ -176,6 +181,11 @@ export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): bo
       // 去重 + 限流：真实场景下扩展（例如用户自己的 left-info-panel）会在
       // 每次启动/每轮都 notify，不去重的话通知会直接刷满屏幕把界面遮住。
       const text = m.payload.message ?? ''
+      const query = s.nativeMcpStatus
+      if (query?.pending && m.runtime?.sessionId === query.sessionId && isNativeMcpStatus(text)) {
+        set({ nativeMcpStatus: { ...query, pending: false, text } })
+        break
+      }
 
       // 启动期的通知降级为日志。
       //

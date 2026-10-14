@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { ComputerUseSection } from './ComputerUseSection'
+import { McpNativeImport } from './McpNativeImport'
 import { SettingsSections } from './SettingsSections'
 import type {
   CapabilitySearchResultView,
@@ -12,6 +13,8 @@ import { SEARCH_PROVIDERS, type SearchApiConfigView, type SearchBackendStatus, t
 import { Button, Disclosure, SettingRow, Switch } from '../ui'
 
 const STRATEGIES = ['existing-only', 'search-and-recommend', 'auto-connect'] as const
+/** 技能列表的分组顺序 */
+const SKILL_ORIGINS = ['session', 'user', 'bundled', 'other'] as const
 
 export function CapabilitiesTab(): React.JSX.Element {
   const t = useT()
@@ -20,14 +23,23 @@ export function CapabilitiesTab(): React.JSX.Element {
   const patchSettings = useStore((s) => s.patchSettings)
   const session = useStore(s => s.session)
   const send = useStore(s => s.send)
-  const closeSettings = useStore(s => s.closeSettings)
+  const nativeMcpStatus = useStore(s => s.nativeMcpStatus)
+  const [nativeMcpBusy, setNativeMcpBusy] = useState(false)
+  const nativeMcpTimer = useRef<number | undefined>(undefined)
   const strategy = settings?.capabilityStrategy ?? 'auto-connect'
   const [snapshot, setSnapshot] = useState<CapabilitySettingsSnapshot | null>(null)
   const [searchText, setSearchText] = useState('')
   const [search, setSearch] = useState<CapabilitySearchResultView | null>(null)
   const [searching, setSearching] = useState(false)
-  const [notice, setNotice] = useState('')
+  /* 顶部提示区分错误与成功：成功不能复用 pkg-detail-warn + role="alert" 的警告外观 */
+  const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
+  const clearNotice = (): void => setNotice(null)
+  const noteError = (error: unknown, fallback: string): void =>
+    setNotice({ type: 'error', text: error instanceof Error ? error.message : typeof error === 'string' && error ? error : fallback })
+  const noteSuccess = (text: string): void => setNotice({ type: 'success', text })
   const [operations, setOperations] = useState<Record<string, CapabilityVerificationStatus>>({})
+  /** 正在保留 / 移除的会话技能名（防连点） */
+  const [skillBusy, setSkillBusy] = useState<string | null>(null)
   const mounted = useRef(true)
   // 检测本机状态；安装与更新只在用户点击后执行。
   const [backend, setBackend] = useState<SearchBackendStatus | null>(null)
@@ -63,7 +75,7 @@ export function CapabilitiesTab(): React.JSX.Element {
 
   useEffect(() => {
     mounted.current = true
-    void refresh().catch((error) => setNotice(error instanceof Error ? error.message : tk('cap.loadFailed')))
+    void refresh().catch((error) => noteError(error, tk('cap.loadFailed')))
     return () => {
       mounted.current = false
     }
@@ -73,15 +85,56 @@ export function CapabilitiesTab(): React.JSX.Element {
     void checkBackend()
   }, [checkBackend])
 
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(nativeMcpTimer.current)
+      useStore.setState({ nativeMcpStatus: null })
+    }
+  }, [session?.sessionId])
+
+  const queryNativeMcp = async (): Promise<void> => {
+    if (nativeMcpBusy) return
+    setNativeMcpBusy(true)
+    clearNotice()
+    try {
+      if (!(await useStore.getState().ensureActivated()) || !mounted.current) return
+      const sessionId = useStore.getState().session?.sessionId
+      if (!sessionId) return
+      const query = { sessionId, pending: true, text: '' }
+      useStore.setState({ nativeMcpStatus: query })
+      // pi 通过 notify 返回状态；先登记再发送，避免快速响应被漏掉。
+      window.clearTimeout(nativeMcpTimer.current)
+      const timer = nativeMcpTimer.current = window.setTimeout(() => {
+        if (useStore.getState().nativeMcpStatus === query) {
+          useStore.setState({ nativeMcpStatus: { ...query, pending: false, text: t('cap.nativeMcpTimeout') } })
+        }
+      }, 30_000)
+      try {
+        if (!(await send('/mcp')) && useStore.getState().nativeMcpStatus === query) {
+          useStore.setState({ nativeMcpStatus: null })
+          if (mounted.current) noteError(t('cap.loadFailed'), t('cap.loadFailed'))
+        }
+      } catch (error) {
+        if (useStore.getState().nativeMcpStatus === query) useStore.setState({ nativeMcpStatus: null })
+        if (mounted.current) noteError(error, t('cap.loadFailed'))
+      } finally {
+        // 发送完成不代表状态通知已到；定时器只会结算仍是本次查询的对象。
+        if (useStore.getState().nativeMcpStatus !== query) window.clearTimeout(timer)
+      }
+    } finally {
+      if (mounted.current) setNativeMcpBusy(false)
+    }
+  }
+
   const runSearch = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
     if (searching || searchText.trim().length < 2) return
     setSearching(true)
-    setNotice('')
+    clearNotice()
     try {
       setSearch(await window.yan.capabilities.discover(searchText))
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : tk('cap.searchFailed'))
+      noteError(error, tk('cap.searchFailed'))
       setSearch(null)
     } finally {
       setSearching(false)
@@ -89,11 +142,11 @@ export function CapabilitiesTab(): React.JSX.Element {
   }
 
   const verify = async (serverId: string): Promise<void> => {
-    setNotice('')
+    clearNotice()
     try {
     const started = await window.yan.capabilities.verify(serverId)
     if (!started.ok || !started.operationId) {
-      setNotice(started.error ?? tk('cap.verifyFailed'))
+      noteError(started.error, tk('cap.verifyFailed'))
       return
     }
     const operationId = started.operationId
@@ -117,14 +170,29 @@ export function CapabilitiesTab(): React.JSX.Element {
     } catch (error) {
       if (mounted.current) {
         setOperations((old) => ({ ...old, [serverId]: { operationId: '', state: 'error' } }))
-        setNotice(error instanceof Error ? error.message : tk('cap.verifyFailed'))
+        noteError(error, tk('cap.verifyFailed'))
       }
+    }
+  }
+
+  const sessionSkill = async (action: 'promote' | 'remove', name: string): Promise<void> => {
+    setSkillBusy(name)
+    clearNotice()
+    try {
+      const result = await window.yan.capabilities.sessionSkill(action, name)
+      if (!result.ok) noteError(result.error, tk('cap.skillActionFailed'))
+      else if (action === 'promote') noteSuccess(tk('cap.skillPromoted'))
+      await refresh().catch(() => undefined)
+    } catch (error) {
+      noteError(error, tk('cap.skillActionFailed'))
+    } finally {
+      if (mounted.current) setSkillBusy(null)
     }
   }
 
   const cancelVerification = async (serverId: string, operationId: string): Promise<void> => {
     const result = await window.yan.capabilities.cancelVerification(operationId)
-    if (!result.ok) setNotice(result.error ?? tk('cap.cancelFailed'))
+    if (!result.ok) noteError(result.error, tk('cap.cancelFailed'))
     const state = await window.yan.capabilities.verification(operationId)
     if (state) setOperations((old) => ({ ...old, [serverId]: state }))
     await refresh().catch(() => undefined)
@@ -181,22 +249,44 @@ export function CapabilitiesTab(): React.JSX.Element {
         </div>
         <div className="pkg-list">
           {!snapshot || snapshot.skills.length === 0 ? <div className="ui-row-desc">{t('cap.emptySkills')}</div> : null}
-          {snapshot?.skills.map((skill) => (
-            <div className="pkg-item" key={skill.id} data-testid="cap-skill">
-              <div className="pkg-item-main">
-                <span className="pkg-name" title={skill.title}>{skill.title}</span>
-                <span className="pkg-spacer" />
-                <span className="pkg-scope user">{t('cap.ready')}</span>
-              </div>
-              {skill.description ? <div className="pkg-detail-line">{skill.description}</div> : null}
-            </div>
-          ))}
+          {/* 按来源分组：本次会话（模型接入）在最前，可保留到我的技能或移除 */}
+          {SKILL_ORIGINS.map((origin) => {
+            const group = snapshot?.skills.filter((skill) => (skill.origin ?? 'other') === origin) ?? []
+            if (group.length === 0) return null
+            return (
+              <section key={origin} className="pkg-group" data-testid={`cap-skills-${origin}`}>
+                <h4 className="ui-group-title">{t(`cap.skillOrigin.${origin}` as MessageKey)}</h4>
+                {group.map((skill) => (
+                  <div className="pkg-item" key={skill.id} data-testid="cap-skill" data-origin={origin}>
+                    <div className="pkg-item-main">
+                      <span className="pkg-name" title={skill.title}>{skill.title}</span>
+                      {skill.acquired && origin === 'user' ? <span className="pkg-scope">{t('cap.skillAcquired')}</span> : null}
+                      <span className="pkg-spacer" />
+                      {origin === 'session' ? (
+                        <>
+                          <button type="button" className="env-mini" disabled={skillBusy === skill.title} data-testid="cap-skill-promote"
+                            onClick={() => void sessionSkill('promote', skill.title)}>{t('cap.skillPromote')}</button>
+                          <button type="button" className="env-mini" disabled={skillBusy === skill.title} data-testid="cap-skill-remove"
+                            onClick={() => void sessionSkill('remove', skill.title)}>{t('cap.skillRemove')}</button>
+                        </>
+                      ) : <span className="pkg-scope user">{t('cap.ready')}</span>}
+                    </div>
+                    {skill.description ? <div className="pkg-detail-line">{skill.description}</div> : null}
+                    {skill.sourceUrl ? <div className="pkg-detail-line pkg-dim" title={skill.sourceUrl}>{skill.sourceUrl.replace(/^https?:\/\//, '')}</div> : null}
+                  </div>
+                ))}
+              </section>
+            )
+          })}
         </div>
       </div>
 
       </Disclosure>
       {snapshot?.nativeMcpAvailable ? <SettingRow col name={t('cap.nativeMcpTitle')} desc={t('cap.nativeMcpDesc')}>
-        <Button data-testid="cap-native-mcp" disabled={!session?.sessionId || !!session.isAgentRunning || !!session.isStreaming || !!session.isCompacting} onClick={() => { closeSettings(); void send('/mcp') }}>{t('cap.nativeMcpOpen')}</Button>
+        <div>
+          <Button data-testid="cap-native-mcp" disabled={nativeMcpBusy || !!nativeMcpStatus?.pending || !session?.sessionId || !!session.isAgentRunning || !!session.isStreaming || !!session.isCompacting} onClick={() => void queryNativeMcp()}>{t('cap.nativeMcpOpen')}</Button>
+          {nativeMcpStatus && nativeMcpStatus.sessionId === session?.sessionId ? <div className="ui-row-desc cap-native-status" role="status" data-testid="cap-native-mcp-status">{nativeMcpStatus.pending ? t('cap.nativeMcpLoading') : nativeMcpStatus.text}</div> : null}
+        </div>
       </SettingRow> : null}
       <div className="ui-row set-row-col" data-testid="cap-mcp">
         <div className="ui-row-label">
@@ -246,6 +336,7 @@ export function CapabilitiesTab(): React.JSX.Element {
                     {operation.toolCount !== undefined ? ` · ${t('cap.toolCount', { count: operation.toolCount })}` : ''}
                   </div>
                 ) : null}
+                <McpNativeImport server={server} onChanged={refresh} />
               </article>
             )
           })}
@@ -374,7 +465,7 @@ export function CapabilitiesTab(): React.JSX.Element {
                   >
                     {install?.busy ? t('set.opencliInstalling') : backend.available ? t('set.opencliUpdate') : t('set.opencliInstall')}
                   </Button>
-                  {!backend.available ? <Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard?.writeText('npm install -g @jackwener/opencli').then(() => setNotice('Copied install command.')).catch((error) => setNotice(error instanceof Error ? error.message : String(error))) }}>
+                  {!backend.available ? <Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard?.writeText('npm install -g @jackwener/opencli').then(() => noteSuccess('Copied install command.')).catch((error) => noteError(error, String(error))) }}>
                     {t('set.opencliCopyCmd')}
                   </Button> : null}
                   {install?.needsNode || (!backend.available && /node|npm/i.test(backend.detail ?? '')) ? (
@@ -425,7 +516,8 @@ export function CapabilitiesTab(): React.JSX.Element {
           </Disclosure>
         </div> }
       ]} />
-      {notice ? <div className="pkg-detail-warn" role="alert">{notice}</div> : null}
+      {notice?.type === 'error' ? <div className="pkg-detail-warn" role="alert">{notice.text}</div> : null}
+      {notice?.type === 'success' ? <div className="ui-row-desc" role="status">{notice.text}</div> : null}
     </div>
   )
 }

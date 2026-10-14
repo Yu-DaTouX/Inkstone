@@ -2,7 +2,11 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { VList, type VListHandle } from 'virtua'
 import { IconSprite } from './icons/Icon'
 import { PeerApprovalDialog } from './components/shell/PeerApprovalDialog'
+import { ConfirmProvider, useCancelConfirms } from './components/ui/confirm'
 import { SessionSwitcher } from './components/shell/SessionSwitcher'
+import { ShortcutSheet } from './components/shell/ShortcutSheet'
+import { resolveShortcut } from './lib/host-actions'
+import { focusComposerInput } from './lib/use-host-actions'
 import { RewindDialog } from './components/shell/RewindDialog'
 import { useI18n, useT } from './i18n'
 import { TitleBar, type Theme } from './components/shell/TitleBar'
@@ -32,6 +36,7 @@ import { mergeQuestionLog } from '../../shared/question-log'
 import { isModalOpen } from './lib/modalLayer'
 import { Composer } from './components/chat/Composer'
 import { SubagentNote } from './components/chat/SubagentNote'
+import { SchedulePage } from './components/schedule/SchedulePage'
 import { Settings, type SettingsTab } from './components/settings/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
 import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
@@ -118,6 +123,18 @@ function themeButtonOrigin(): { x: number; y: number } | null {
   return center(byFocus) ?? center(document.querySelector(THEME_BUTTON_SELECTOR))
 }
 
+/** 会话切换时把未决确认按「未确认」结算，不给新会话留下旧操作的确认。 */
+function ConfirmSessionGuard(): null {
+  const cancel = useCancelConfirms()
+  const conversation = useStore((s) => conversationKeyOf(s.session))
+  const first = useRef(true)
+  useEffect(() => {
+    if (first.current) { first.current = false; return }
+    cancel()
+  }, [conversation, cancel])
+  return null
+}
+
 export default function App() {
   const { lang, setLang } = useI18n()
   const t = useT()
@@ -131,8 +148,12 @@ export default function App() {
   const [onboarding, setOnboarding] = useState(false)
   /* Ctrl+K 会话切换器 */
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  /* Ctrl+/ 快捷键表（只读） */
+  const [sheetOpen, setSheetOpen] = useState(false)
   /* 检查点：换会话、来新消息后刷新（用户消息上的「回退代码」据此出现） */
   const refreshCheckpoints = useStore((s) => s.refreshCheckpoints)
+  /** 缺 bash / git 的启动通知（在判定不弹引导之后才推，见下面的 effect） */
+  const checkToolchainNotice = useStore((s) => s.checkToolchainNotice)
   const checkpointKey = useStore((s) => s.session?.conversationId ?? s.session?.sessionId ?? '')
   const checkpointMessages = useStore((s) => s.messages.length)
   useEffect(() => {
@@ -172,6 +193,12 @@ export default function App() {
   useEffect(() => () => { if (peekTimer.current) clearTimeout(peekTimer.current) }, [])
   // 设置面板状态放 store（ContextBar 等深层组件要能直接打开）
   const settingsOpen = useStore((s) => s.settingsOpen)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  useEffect(() => {
+    const open = (): void => setScheduleOpen(true)
+    window.addEventListener('inkstone-schedule-open', open)
+    return () => window.removeEventListener('inkstone-schedule-open', open)
+  }, [])
   const settingsTab = useStore((s) => s.settingsTab as SettingsTab)
   const openSettings = useStore((s) => s.openSettings)
   const closeSettings = useStore((s) => s.closeSettings)
@@ -363,9 +390,25 @@ export default function App() {
      * 按（正确的）设计会让出 Shift+Tab / Ctrl+P —— hotkeys 那类场景
      * 的按键就全被吃掉了。手动从「关于」页打开不受影响。
      */
-    if (window.yan.isProbe) return
-    if (shouldAutoOnboard({ conn, piInfo, models })) setOnboarding(true)
-  }, [settings, conn, piInfo, models])
+    if (window.yan.isProbe) {
+      /*
+       * 探针里不弹引导，但缺 Git 的通知照旧推：`gitinstall` 验收脚本靠它
+       * 确认「一键安装」按钮在（见 scripts/probe/gitinstall.js）。
+       */
+      checkToolchainNotice()
+      return
+    }
+    /*
+     * 会弹引导时**不再推**工具链通知：卡片里的「命令行工具」行写的就是同一件事，
+     * 首启同时冒出卡片和右下通知是重复的（用户反馈）。引导关掉后这次启动不补推，
+     * 下次启动（此时已标记看过引导）才会以通知形式提醒。
+     */
+    if (shouldAutoOnboard({ conn, piInfo, models })) {
+      setOnboarding(true)
+      return
+    }
+    checkToolchainNotice()
+  }, [settings, conn, piInfo, models, checkToolchainNotice])
 
   /* ---- 设置只在首次到达时对齐 UI（之后以 UI 为准） ---- */
   useEffect(() => {
@@ -401,8 +444,23 @@ export default function App() {
   /* ---- 主题令牌挂在 <html data-theme>（DESIGN §2.6） ---- */
   useEffect(() => {
     const root = document.documentElement
+    /*
+     * 换肤的全部动作都放这里，因为 View Transition 是**先拍旧快照、再执行 update**：
+     * 背景色（模板 / 自定义）是挂在根元素上的行内令牌，会盖过主题里的默认值。
+     * 先前它在另一个 effect 里更新，比旧快照晚一点、比新快照早一点 ——
+     * 结果是旧快照带着新主题的底色（用户看到的「切换时闪过一块浅色」），
+     * 只有用了非默认背景色模板时才会出现。所以两者必须同一刻落。
+     * 事件在这里发：真正改了颜色的是这一处，下面的外观 effect 会因同值跳过。
+     */
     const apply = (): void => {
       root.dataset.theme = theme
+      const colors = applyBackground(
+        root,
+        settings?.backgroundPreset,
+        customForTheme(settings?.backgroundCustom, settings?.backgroundCustomLight, theme),
+        theme
+      )
+      if (colors) window.dispatchEvent(new Event(APPEARANCE_EVENT))
     }
     /*
      * 切换方向（DESIGN §5）：切到深色是「从中心向外晕开」，
@@ -533,15 +591,29 @@ export default function App() {
     window.dispatchEvent(new Event('yan:stream-width'))
   }, [settings?.streamWidth])
 
-  /* 背景色模板 / 自定义、字体与字号：覆盖根元素令牌，换主题时按新主题重算；有变化才广播给终端等读计算值的组件 */
+  /*
+   * 背景色模板 / 自定义：只在**设置本身**变化时落盘。
+   *
+   * 依赖里故意不放 theme：换主题时根元素上的行内背景令牌由主题 effect 的 apply
+   * 统一改写（那里和 data-theme 同一刻落），否则它会抢在 View Transition 的
+   * 旧快照之前把底色换成新主题的，动画里就会闪过一块不对的背景色。
+   */
   useEffect(() => {
     const root = document.documentElement
     const colors = applyBackground(root, settings?.backgroundPreset, customForTheme(settings?.backgroundCustom, settings?.backgroundCustomLight, theme), theme)
+    if (colors) window.dispatchEvent(new Event(APPEARANCE_EVENT))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.backgroundPreset, settings?.backgroundCustom, settings?.backgroundCustomLight])
+
+  /* 字体与字号：覆盖根元素令牌；有变化才广播给终端等读计算值的组件 */
+  useEffect(() => {
+    const root = document.documentElement
     const type = applyTypography(root, settings ?? {})
-    if (colors || type) window.dispatchEvent(new Event(APPEARANCE_EVENT))
-    if (type) window.dispatchEvent(new Event('yan:stream-width'))
+    if (type) {
+      window.dispatchEvent(new Event(APPEARANCE_EVENT))
+      window.dispatchEvent(new Event('yan:stream-width'))
+    }
   }, [
-    settings?.backgroundPreset, settings?.backgroundCustom, settings?.backgroundCustomLight, theme,
     settings?.fontUi, settings?.fontUiCustom, settings?.fontCode, settings?.fontCodeCustom, settings?.fontSizeBody, settings?.fontSizeUi
   ])
 
@@ -851,37 +923,64 @@ export default function App() {
     }
 
     const onKey = (e: KeyboardEvent): void => {
-      // 设置面板 / 对话框打开时，把按键原样留给它（表单要能做焦点导航）
-      if (isModalOpen()) return
-      const ctrl = e.ctrlKey || e.metaKey
-      // Ctrl+Shift+P 要排在 Ctrl+P 前面，否则会被后者先吃掉
-      if (ctrl && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') {
-        e.preventDefault()
-        guard('cycleModelBack')
-        return
-      }
-      if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') {
-        e.preventDefault()
-        guard('cycleModel')
-        return
-      }
-      if (e.shiftKey && !e.ctrlKey && !e.altKey && e.key === 'Tab') {
-        e.preventDefault()
-        guard('cycleThinking')
-        return
-      }
-      /* Ctrl+K：会话切换器（搜标题与正文，回车跳转） */
-      if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
-        /* 终端里 Ctrl+K 是 shell 的「删到行尾」，不抢 */
-        if ((e.target as HTMLElement | null)?.closest?.('.xterm')) return
-        e.preventDefault()
-        setSwitcherOpen((open) => !open)
-        return
-      }
-      /* Ctrl+N：新对话（左栏按钮上标着这个键位） */
-      if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'n') {
-        e.preventDefault()
-        void useStore.getState().newSession({ scope: 'global' })
+      /*
+       * 全局按键判定集中在 `resolveShortcut`（纯函数，单测覆盖）：
+       * 输入法组合态 / AltGraph / 长按重复不触发；模态打开时让位；
+       * 终端聚焦时 Ctrl+K / Ctrl+L / Ctrl+B / Ctrl+Shift+C 让给 xterm。
+       */
+      const shortcut = resolveShortcut({
+        key: e.key,
+        ctrl: e.ctrlKey,
+        meta: e.metaKey,
+        alt: e.altKey,
+        shift: e.shiftKey,
+        composing: e.isComposing,
+        repeat: e.repeat,
+        altGraph: typeof e.getModifierState === 'function' ? e.getModifierState('AltGraph') : false,
+        inTerminal: !!(e.target as HTMLElement | null)?.closest?.('.xterm'),
+        modalOpen: isModalOpen()
+      })
+      if (!shortcut) return
+      switch (shortcut) {
+        case 'cycleModelBack':
+          e.preventDefault()
+          guard('cycleModelBack')
+          return
+        case 'cycleModel':
+          e.preventDefault()
+          guard('cycleModel')
+          return
+        case 'cycleThinking':
+          e.preventDefault()
+          guard('cycleThinking')
+          return
+        case 'openSettings':
+          e.preventDefault()
+          openSettings()
+          return
+        case 'shortcutSheet':
+          e.preventDefault()
+          setSheetOpen(true)
+          return
+        case 'toggleRail':
+          e.preventDefault()
+          setRailPinned(!railPinnedRef.current)
+          return
+        case 'focusComposer':
+          e.preventDefault()
+          focusComposerInput()
+          return
+        case 'copyLastReply':
+          e.preventDefault()
+          void useStore.getState().copyLastReply()
+          return
+        case 'openSessionSwitcher':
+          e.preventDefault()
+          setSwitcherOpen((open) => !open)
+          return
+        case 'newSession':
+          e.preventDefault()
+          void useStore.getState().newSession({ scope: 'global' })
       }
     }
     window.addEventListener('keydown', onKey)
@@ -889,7 +988,7 @@ export default function App() {
       off?.()
       window.removeEventListener('keydown', onKey)
     }
-  }, [cycleModel, cycleModelBack, cycleThinking])
+  }, [cycleModel, cycleModelBack, cycleThinking, openSettings, setRailPinned])
 
   const appCls = [
     'app',
@@ -978,11 +1077,14 @@ export default function App() {
   )
 
   return (
+    <ConfirmProvider>
     <>
+      <ConfirmSessionGuard />
       <IconSprite />
       {/* 另一台砚申请本次连接时的所有者审批（全局，不依赖设置页是否打开） */}
       <PeerApprovalDialog />
-      {switcherOpen ? <SessionSwitcher onClose={() => setSwitcherOpen(false)} /> : null}
+      {switcherOpen ? <SessionSwitcher onClose={() => setSwitcherOpen(false)} onOpenShortcutSheet={() => setSheetOpen(true)} /> : null}
+      {sheetOpen ? <ShortcutSheet onClose={() => setSheetOpen(false)} /> : null}
       <RewindDialog />
       <div className={appCls}>
         <TitleBar
@@ -1091,12 +1193,18 @@ export default function App() {
 
       <UiDialog />
       <Notices />
+      <SchedulePage open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
 
       <Settings
         open={settingsOpen}
         tab={settingsTab}
         onClose={closeSettings}
         onTabChange={setSettingsTab}
+        /* 快捷键表：先收起设置，避免两层模态叠在一起 */
+        onShowShortcuts={() => {
+          closeSettings()
+          setSheetOpen(true)
+        }}
         /* 重新查看引导：先把设置收起来，否则两层模态叠在一起（引导是下层会被挡住） */
         onShowOnboarding={() => {
           closeSettings()
@@ -1104,5 +1212,6 @@ export default function App() {
         }}
       />
     </>
+    </ConfirmProvider>
   )
 }

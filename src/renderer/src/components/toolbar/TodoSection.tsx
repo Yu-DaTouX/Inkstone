@@ -4,6 +4,8 @@ import { useT } from '../../i18n'
 import { Section } from './ToolSection'
 import { useStore } from '../../state/store'
 import { RunDot, Button } from '../ui'
+import { PresenceList } from '../ui/PresenceList'
+import { useConfirm } from '../ui/confirm'
 import { visibleSubagentRuns } from '../../state/subagent-view'
 import { isLive } from '../chat/SubagentCards'
 
@@ -16,6 +18,7 @@ export function hasTaskTileContent(
 /** 任务分区里的子代理：和清单一起回答「现在有什么在进行」 */
 function SubagentsBlock() {
   const t = useT()
+  const confirm = useConfirm()
   const runs = useStore((s) => s.subagents)
   const session = useStore((s) => s.session)
   const clearSubagents = useStore((s) => s.clearSubagents)
@@ -23,6 +26,10 @@ function SubagentsBlock() {
   const visible = visibleSubagentRuns(runs, { sessionIds }).sort((a, b) => a.startedAt - b.startedAt)
   if (!visible.length) return null
   const finished = visible.filter((r) => !isLive(r)).length
+  const clearFinished = async (): Promise<void> => {
+    if (!(await confirm({ title: t('sa.clearFinished'), body: t('sa.clearFinishedConfirm'), detail: String(finished), confirmLabel: t('sa.clearFinished'), tone: 'danger' }))) return
+    void clearSubagents()
+  }
   return (
     <div className="rp-subagents" data-testid="rp-subagents">
       <div className="rp-sub-head">
@@ -30,7 +37,7 @@ function SubagentsBlock() {
         <span className="rp-count">{visible.length - finished}/{visible.length}</span>
         <span className="spacer" />
         {finished > 0 ? (
-          <Button size="sm" className="sa-act-btn" onClick={() => { if (window.confirm(`${t('sa.clearFinished')} · ${finished}`)) void clearSubagents() }} data-testid="subagent-notes-clear">
+          <Button size="sm" className="sa-act-btn" onClick={() => void clearFinished()} data-testid="subagent-notes-clear">
             {t('sa.clearFinished')}
           </Button>
         ) : null}
@@ -76,6 +83,7 @@ export function TodoSection() {
   const t = useT()
   const todos = useStore((s) => s.todos)
   const goal = useStore((s) => s.goal)
+  const session = useStore((s) => s.session)
   const hasMessageOutputs = useStore((s) => s.messages.some((message) =>
     !!message.artifacts?.length || (message.role === 'user' && !!message.images?.length)
   ))
@@ -261,12 +269,19 @@ export function TodoSection() {
           </button>
           {histOpen ? (
             <div className="rp-hist-body">
-              {/* 新的在前（最近的一轮最可能被回看） */}
-              {history
-                .slice(0, -1)
-                .reverse()
-                .map((snap) => (
-                  <div key={snap.id} className="rp-hist-item" data-testid={`todo-hist-${snap.round}`}>
+              {/*
+                新的在前（最近的一轮最可能被回看）。
+                这份清单每行自带稳定 id（custom entry 的 id），所以走 PresenceList：
+                新增一轮用 grow 长出、删除反向收起；排序不变、改文字不重播。
+                任务本体只有 text/done/status，没有稳定 id，不为它伪造身份。
+              */}
+              <PresenceList
+                items={history.slice(0, -1).reverse()}
+                getKey={(snap) => snap.id}
+                scope={session?.sessionId ?? session?.conversationId}
+              >
+                {(snap) => (
+                  <div className="rp-hist-item" data-testid={`todo-hist-${snap.round}`}>
                     <div className="rp-hist-meta">
                       <span className="rp-hist-round">
                         {t('rp.todoHistoryRound', { n: snap.round })}
@@ -300,7 +315,8 @@ export function TodoSection() {
                       ))}
                     </div>
                   </div>
-                ))}
+                )}
+              </PresenceList>
             </div>
           ) : null}
         </div>

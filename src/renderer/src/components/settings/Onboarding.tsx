@@ -7,6 +7,7 @@ import type { ToolchainStatus } from '../../../../shared/ipc'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import { Button, IconButton } from '../ui'
 import { GitInstallControl } from './GitInstallControl'
+import { toolMissingText } from '../../lib/toolchain-text'
 
 /**
  * 首次使用引导。
@@ -200,7 +201,15 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
               testId="ob-tools"
               ok={toolsOk}
               title={t('ob.toolsTitle')}
-              desc={toolsOk ? t('ob.toolsOk') : [tools.bash, tools.git].filter((tool) => !tool.ok && tool.hint).map((tool) => tool.hint).join(' ')}
+              desc={
+                toolsOk
+                  ? t('ob.toolsOk')
+                  : /* 缺什么写什么，每条一句；「怎么办」由旁边的安装按钮负责 */
+                    [tools.bash, tools.git]
+                      .filter((tool) => !tool.ok && tool.reason)
+                      .map((tool) => toolMissingText(tool.reason, t))
+                      .join(' ')
+              }
               action={
                 <>
                   {!toolsOk && tools.platform === 'win32' ? <GitInstallControl /> : null}

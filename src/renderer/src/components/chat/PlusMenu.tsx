@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { identityForAwait, useStore } from '../../state/store'
+import { Tip } from '../ui'
 
 /**
  * `+` 菜单（2026-09-22）：codex 式「添加」入口。
@@ -144,26 +145,28 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
 
   return (
     <div className="mode-picker" ref={rootRef}>
-      <button
-        ref={buttonRef}
-        className="ctool"
-        title={t('composer.attach')}
-        data-testid="composer-attach"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-            e.preventDefault()
-            setOpen(true)
-          } else if (e.key === 'Escape' && open) {
-            e.preventDefault()
-            close()
-          }
-        }}
-      >
-        <Icon name="plus" size={12} />
-      </button>
+      <Tip label={t('composer.attach')}>
+        <button
+          ref={buttonRef}
+          className="ctool"
+          data-testid="composer-attach"
+          aria-label={t('composer.attach')}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+              e.preventDefault()
+              setOpen(true)
+            } else if (e.key === 'Escape' && open) {
+              e.preventDefault()
+              close()
+            }
+          }}
+        >
+          <Icon name="plus" size={12} />
+        </button>
+      </Tip>
 
       {open ? (
         <div

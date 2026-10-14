@@ -3,10 +3,23 @@ import { createPortal } from 'react-dom'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
-import { Button, Segmented, StepSlider, Switch } from './ui'
+import { Button, Input, Segmented, StepSlider, Switch, WheelPicker } from './ui'
 import { ModelCatalog } from './ModelCatalog'
 import { useFocusTrap, useModalLayer } from '../lib/modalLayer'
 import { useAnchoredPopover } from '../lib/useAnchoredPopover'
+
+/** 温度滚轮的档位：0–2，步长 0.1；「默认」= 不覆盖，用供应商自己的默认值。 */
+const TEMP_DEFAULT = 'default'
+const TEMP_STEPS = Array.from({ length: 21 }, (_, i) => String(i / 10))
+const tempLabel = (value: string): string => {
+  const n = Number(value)
+  return Math.abs(n * 10 - Math.round(n * 10)) < 1e-9 ? n.toFixed(1) : n.toFixed(2)
+}
+
+/** 当前模型有可选档位且不在「关」档：此时请求带着思考参数，采样温度不生效。 */
+function hasLevelsOn(levels: readonly string[], level: string): boolean {
+  return levels.length > 1 && level !== 'off'
+}
 
 /** 模型与思考强度选择器：离散档位的点阵滑块，按当前模型报告的可用档位展示。 */
 export function ModelThinkingPicker() {
@@ -24,6 +37,8 @@ export function ModelThinkingPicker() {
   const visualAnswers = useStore((s) => s.settings?.visualAnswers) !== false
   const rememberedModel = useStore(s => s.settings?.lastMainModel)
   const models = useStore(s => s.models)
+  const temperatureByModel = useStore(s => s.settings?.temperatureByModel)
+  const [tempDraft, setTempDraft] = useState('')
   const [recoveryError, setRecoveryError] = useState('')
   const [recovering, setRecovering] = useState(false)
 
@@ -43,6 +58,29 @@ export function ModelThinkingPicker() {
   const headLevel = previewLevel ?? level
   const thinkingStatus = session?.thinkingLevelsStatus ?? (levels.length ? 'known' : 'unknown')
   const busy = !!session?.isStreaming || !!session?.isCompacting
+  /* 温度按模型记：切模型后各自保留；没设过 = 不覆盖 */
+  const thinkingOn = hasLevelsOn(levels, level)
+  const tempKey = cur ? `${cur.provider}/${cur.id}` : ''
+  const temp = tempKey ? temperatureByModel?.[tempKey] : undefined
+  const tempValue = temp === undefined ? TEMP_DEFAULT : String(temp)
+  const tempValues = TEMP_STEPS.includes(tempValue) || tempValue === TEMP_DEFAULT
+    ? [TEMP_DEFAULT, ...TEMP_STEPS]
+    : [TEMP_DEFAULT, ...[...TEMP_STEPS, tempValue].sort((a, b) => Number(a) - Number(b))]
+  const applyTemp = (next: number | undefined): void => {
+    if (!tempKey) return
+    const table = { ...temperatureByModel }
+    if (next === undefined) delete table[tempKey]
+    else table[tempKey] = next
+    void patchSettings({ temperatureByModel: table }).catch(error => useStore.getState().notify('error', String(error)))
+  }
+  useEffect(() => { setTempDraft(temp === undefined ? '' : tempLabel(String(temp))) }, [temp, tempKey])
+  const commitTempDraft = (): void => {
+    const text = tempDraft.trim().replace(',', '.')
+    if (!text) { applyTemp(undefined); return }
+    const n = Number(text)
+    if (!Number.isFinite(n)) { setTempDraft(temp === undefined ? '' : tempLabel(String(temp))); return }
+    applyTemp(Math.round(Math.min(2, Math.max(0, n)) * 100) / 100)
+  }
 
   /*
    * 凭证状态（D12）。
@@ -247,6 +285,22 @@ export function ModelThinkingPicker() {
                 options={(['brief', 'standard', 'detailed'] as const).map(detail => ({ value: detail, label: detailLabel(detail, t), testId: `detail-${detail}`, disabled: busy }))}
                 onChange={detail => { void patchSettings({ responseDetail: detail }).catch(error => useStore.getState().notify('error', String(error))) }} />
             </div>
+            {thinkingOn ? null : <>
+            {/* 温度：滚轮逐档调，也可直接输入自定义数值；按模型记；思考开着时请求不带温度，所以整行不显示 */}
+              <div className="mt-line mt-temp">
+                <span className="mt-head-title" title={t('picker.tempDesc')}>{t('picker.temp')}</span>
+                <div className="mt-temp-ctl">
+                  <WheelPicker values={tempValues} value={tempValue} label={t('picker.temp')} testId="temperature-wheel" stopTestPrefix="temperature"
+                    disabled={!cur}
+                    format={value => value === TEMP_DEFAULT ? t('picker.tempDefault') : tempLabel(value)}
+                    onChange={value => applyTemp(value === TEMP_DEFAULT ? undefined : Number(value))} />
+                  <Input numeric inputMode="decimal" aria-label={t('picker.temp')} data-testid="temperature-input"
+                    placeholder={t('picker.tempDefault')} disabled={!cur} value={tempDraft}
+                    onChange={event => setTempDraft(event.target.value)} onBlur={commitTempDraft}
+                    onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitTempDraft() } }} />
+                </div>
+              </div>
+            </>}
             {/* 可视化回答：图表、卡片、图解等由砚画出来；关掉后下一轮起模型不再使用，已有历史照常显示 */}
             <div className="mt-line mt-visual">
               <span className="mt-head-title" title={t('picker.visualDesc')}>{t('picker.visual')}</span>

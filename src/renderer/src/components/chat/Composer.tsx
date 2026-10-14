@@ -18,6 +18,8 @@ import { QueueStack, PermissionPicker } from './ComposerPickers'
 import { ApprovalCard } from './ApprovalCard'
 import { runPhaseText, useRunProgress } from './run-status'
 import { formatDuration } from '../../../../shared/duration'
+import { submitComposerInput } from '../../lib/composer-submit'
+import { Tip } from '../ui'
 
 /**
  * 输入区。四种输入模式共存：
@@ -137,6 +139,8 @@ export function Composer() {
   const compact = useStore((s) => s.compact)
   const setModel = useStore((s) => s.setModel)
   const models = useStore((s) => s.models)
+  const session = useStore((s) => s.session)
+  const thinkingLevels = useStore((s) => s.thinkingLevels)
   const openBrowser = useStore((s) => s.openBrowser)
   const editorInject = useStore((s) => s.editorInject)
   /* 办事模板（P14）的「填到输入框」：跨页中转，消费后清空 —— 只填不发。 */
@@ -681,154 +685,52 @@ export function Composer() {
     [cursor, value]
   )
 
-  const submit = async () => {
-    const raw = value.trim()
-
-    /*
-     * ⚠️ 这里曾经是一行 `if (!raw) return`，而它挡住了**只带图片**的发送：
-     *   用户拖一张图进来、一个字不打就点发送 —— 附件已经显示了，
-     *   但 submit 在第一行就返回了。用户报的「拖入文件可以正常显示但没办法发送」
-     *   就是这个。
-     *
-     * 正确的判据是「文字或附件至少有一个」——
-     * 这与输入框的 placeholder 提示（「发图片不必配文字」）也对得上。
-     * 文件引用同样适用：只有附件也能发。
-     */
-    if (!raw && attachments.length === 0) return
-
-    if (bashMode) {
-      // `!` 开头的走直接执行，不进模型（图片对它无意义）
-      const cmd = raw.slice(1).trim()
-      if (!cmd) return
-      setValue('')
-      await runBash(cmd)
-      return
-    }
-
-    const images = attachments
-      .filter((a) => a.kind !== 'file')
-      .map((a) => ({ data: a.data, mimeType: a.mimeType }))
-    /*
-     * 文件引用：**不**把内容拼进来（大文件会爆上下文），
-     * 只把路径交给模型，由它自己 `read`（方案 5.1）。
-     */
-    const fileRefs = attachments.filter((a) => a.kind === 'file' && a.path)
-    const outgoing = fileRefs.length
-      ? `${raw ? raw + '\n\n' : ''}${t('composer.fileRefs', {
-          list: fileRefs.map((a) => `- ${a.path}`).join('\n')
-        })}`
-      : raw
-
-    /*
-     * `/login` 不能当普通消息发给模型。
-     *
-     * pi 的订阅制登录是**交互式**的（OAuth 要开浏览器、回调回连 localhost），
-     * RPC 的 47 个命令里没有 login —— 直接发过去模型会把它当一句话回答
-     *（用户报的「输入 /login 模型没办法正常接受」）。
-     * 这里路由到「设置 → 模型」：那里列出了准确的登录方式。
-     */
-    if (raw === '/login' || raw.startsWith('/login ')) {
-      setValue('')
-      clearAttachments()
-      openSettings('auth')
-      return
-    }
-
-    /*
-     * N18：Yan 本地命令与 pi 命令共用一个注册表，但本地命令必须在桌面端
-     * 由明确的 UI 动作承接，不能把 `/new` / `/browser` 当自然语言发给模型。
-     * 参数仍保留在输入框语义里：`/model provider/id` 可以直接选中已发现的模型，
-     * 没有参数时打开状态页让用户从权威列表选择。
-     */
-    const localMatch = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(raw)
-    const localName = localMatch?.[1]?.toLowerCase()
-    const localArgs = localMatch?.[2]?.trim() ?? ''
-    const localCommand = localName
-      ? commands.find((command) => command.source === 'yan' && command.name.toLowerCase() === localName)
-      : undefined
-    const compatibilityCommand = localName
-      ? commands.find((command) => command.source === 'compatibility' && command.name.toLowerCase() === localName)
-      : undefined
-
-    if (compatibilityCommand || (localCommand && !localCommand.executable)) {
-      /*
-       * 兼容命令在桌面端**没有可执行动作**。
-       *
-       * ⚠️ 旧实现是 `setValue('') + clearAttachments()` 然后沉默：用户打了
-       * `/panel` 后输入框被清空、什么也没发生，只会以为「命令执行完了」。
-       * 而且草稿和附件是真丢了（用户会重新写一遍）。
-       * 现在：草稿与附件**原样保留**，只推一条说明为什么没动作。
-       *
-       * 同名 runtime 命令不会在此处「接管」：能走到这里的只有注册表里
-       * source=compatibility 的那条；即使 pi 侧也注册了同名命令，
-       * 它也不会被当成消息发出去（那会让模型收到一个斜杠命令文本）。
-       */
-      const command = compatibilityCommand ?? localCommand
-      notify('info', t('composer.compatCommand', { cmd: `/${command?.name ?? localName ?? ''}` }))
-      const note = command?.availability ?? command?.description
-      if (note) notify('info', note)
-      ref.current?.focus()
-      return
-    }
-
-    if (localCommand) {
-      if (localName === 'model') {
-        const spec = localArgs.toLowerCase()
-        const selected = spec
-          ? models.find((model) => {
-              const full = `${model.provider}/${model.id}`.toLowerCase()
-              return full === spec || model.id.toLowerCase() === spec || model.name.toLowerCase() === spec
-            })
-          : undefined
-        if (!selected) {
-          openSettings('status')
-          return
-        }
+  /*
+   * 提交分发统一走 `submitComposerInput`：命令面板里选中斜杠命令时调用的是
+   * 同一个函数，所以「面板执行」与「输入框回车」是同一段逻辑，不会两条路各写一份。
+   */
+  const submit = () =>
+    submitComposerInput({
+      text: value,
+      attachments,
+      commands,
+      models,
+      t,
+      session,
+      thinkingLevels,
+      roundRunning,
+      isCompacting: !!useStore.getState().session?.isCompacting,
+      actions: {
+        runBash,
+        openSettings,
+        /* 与旧行为一致：桌面端新建走全局新会话 */
+        newSession: () => newSession({ scope: 'global' }),
+        compact,
+        openBrowser,
+        setModel,
+        exportHtml: () => useStore.getState().exportHtml(),
+        copyLastReply: () => useStore.getState().copyLastReply(),
+        clone: () => useStore.getState().clone(),
+        setManualTitle: (id, title) => useStore.getState().setManualTitle(id, title),
+        setThinking: (level) => useStore.getState().setThinking(level),
+        notify
+      },
+      clearText: () => setValue(''),
+      clearAll: () => {
         setValue('')
         clearAttachments()
-        await setModel(selected.provider, selected.id)
-        return
-      }
-      setValue('')
-      clearAttachments()
-      if (localName === 'new') {
-        await newSession({ scope: 'global' })
-      } else if (localName === 'compact') {
-        await compact()
-      } else if (localName === 'browser') {
-        await openBrowser(localArgs || undefined)
-      } else {
-        await runPiBuiltin(t, localName ?? '', localArgs)
-      }
-      return
-    }
-
-    /* 运行中默认加入 follow-up 队列；压缩维护期间先保留，结束后再投递。 */
-    if (roundRunning) {
-      if (useStore.getState().session?.isCompacting) {
-        holdSend(outgoing, images.length ? images : undefined)
-        setValue(''); clearAttachments(); return
-      }
-      const savedAttachments = useStore.getState().attachments
-      setValue('')
-      clearAttachments()
-      const sent = await send(outgoing, images.length ? images : undefined, 'followUp')
-      if (!sent) {
-        useStore.setState((state) => ({ attachments: [...savedAttachments, ...state.attachments.filter((item) => !savedAttachments.some((saved) => saved.id === item.id))] }))
-        setValue((draft) => draft ? `${raw}\n${draft}` : raw)
-      }
-      return
-    }
-
-    const savedAttachments = useStore.getState().attachments
-    setValue('')
-    clearAttachments()
-    const sent = await send(outgoing, images.length ? images : undefined)
-    if (!sent) {
-      useStore.setState((state) => ({ attachments: [...savedAttachments, ...state.attachments.filter((item) => !savedAttachments.some((saved) => saved.id === item.id))] }))
-      setValue((draft) => draft ? `${raw}\n${draft}` : raw)
-    }
-  }
+      },
+      restoreText: (raw) => setValue((draft) => (draft ? `${raw}\n${draft}` : raw)),
+      restoreAttachments: (saved) => {
+        useStore.setState((state) => ({
+          attachments: [...saved, ...state.attachments.filter((item) => !saved.some((kept) => kept.id === item.id))]
+        }))
+      },
+      readAttachments: () => useStore.getState().attachments,
+      send,
+      holdSend,
+      focusComposer: () => ref.current?.focus()
+    })
 
   /**
    * 回合结束后把悬着的消息按「排队」投出去。
@@ -1310,15 +1212,16 @@ export function Composer() {
            * 一旦输入了内容（或带附件）就回到发送（排队）。不再并排放两个按钮。
            */}
           {running && !value.trim() && attachments.length === 0 ? (
-            <button
-              className="send stop"
-              data-testid="composer-stop"
-              aria-label={t('composer.stop')}
-              title={t('composer.stop')}
-              onClick={() => void abort()}
-            >
-              <span className="composer-stop-sq" aria-hidden />
-            </button>
+            <Tip label={t('composer.stop')}>
+              <button
+                className="send stop"
+                data-testid="composer-stop"
+                aria-label={t('composer.stop')}
+                onClick={() => void abort()}
+              >
+                <span className="composer-stop-sq" aria-hidden />
+              </button>
+            </Tip>
           ) : (
             <button
               className="send"
@@ -1372,36 +1275,6 @@ function sameFileCwd(a: string, b: string): boolean {
 function toAbsoluteFilePath(cwd: string, rel: string): string {
   const root = cwd.replace(/[\\/]+$/, '')
   return rel ? `${root}\\${rel.replace(/\//g, '\\')}` : root
-}
-
-/**
- * pi 终端内置命令在桌面端的落点。命令名与参数含义沿用 pi（/thinking 档位、/name 名称），
- * 动作交给已有的 store 方法，不另起一套实现。
- */
-async function runPiBuiltin(t: TFunc, name: string, args: string): Promise<void> {
-  const s = useStore.getState()
-  if (name === 'settings') s.openSettings()
-  else if (name === 'export') await s.exportHtml()
-  else if (name === 'copy') await s.copyLastReply()
-  else if (name === 'clone') await s.clone()
-  else if (name === 'name') {
-    if (args) await s.setManualTitle('', args)
-    else s.notify('info', t('composer.nameUsage'))
-  } else if (name === 'thinking') {
-    const levels = s.thinkingLevels
-    const level = args.toLowerCase()
-    if (!level) s.notify('info', t('composer.thinkingCurrent', { level: s.session?.thinkingLevel ?? 'off', levels: levels.join(' / ') || t('composer.thinkingUnsupported') }))
-    else if (levels.includes(level)) await s.setThinking(level)
-    else s.notify('error', t('composer.thinkingMissing', { level: args, levels: levels.join(' / ') || t('composer.none') }))
-  } else if (name === 'session') {
-    const info = s.session
-    const lines = [
-      info?.sessionName || info?.sessionId || t('composer.sessionNotStarted'),
-      info ? t('composer.messageCount', { n: info.messageCount }) : '',
-      info?.sessionFile ?? ''
-    ].filter(Boolean)
-    s.notify('info', lines.join(' · '))
-  }
 }
 
 /** 命令说明的第一句（到第一个句号 / 分号 / 括号为止），菜单一行放得下 */

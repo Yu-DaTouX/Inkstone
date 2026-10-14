@@ -27,6 +27,7 @@ import type {
 } from '../../../../shared/ipc'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
+import { useConfirm } from '../ui/confirm'
 import { useStore } from '../../state/store'
 import { compareWebUrl } from '../../../../shared/git'
 import { shortProject } from '../rail/rail-utils'
@@ -36,6 +37,7 @@ import { useGitWrite, useRepoState } from './useGitReview'
 
 export function EnvironmentMenu() {
   const t = useT()
+  const confirm = useConfirm()
   const session = useStore((s) => s.session)
   const settings = useStore((s) => s.settings)
   const project = session?.cwd ?? settings?.cwd
@@ -600,9 +602,9 @@ export function EnvironmentMenu() {
                 data-testid="env-push"
                 disabled={!!write.busy || !repoView.expected}
                 title={[repo.upstream || t('commit.noUpstream'), repo.unpushedCount ? t('env.pushN', { n: repo.unpushedCount }) : ''].filter(Boolean).join(' · ')}
-                onClick={() => {
+                onClick={async () => {
                   if (!repoView.expected) return
-                  if (!repo.upstream && !window.confirm(`${t('commit.setUpstream')} · origin/${repo.branch ?? t('env.detached')}`)) return
+                  if (!repo.upstream && !(await confirm({ title: t('commit.setUpstream'), body: t('commit.setUpstreamHint'), detail: `origin/${repo.branch ?? t('env.detached')}`, confirmLabel: t('commit.setUpstream') }))) return
                   void write.run(
                     {
                       kind: 'push',
@@ -672,8 +674,8 @@ export function EnvironmentMenu() {
                         trustMap[w.path]?.trusted ? (
                           <>
                             <span className="env-branch-tag" data-testid="env-worktree-trusted">{t('env.trusted')}</span>
-                            <button type="button" className="env-mini" title={t('env.trustRevokeNote')} onClick={() => {
-                              if (!window.confirm(`${t('env.trustRevokeNote')}\n${w.path}`)) return
+                            <button type="button" className="env-mini" title={t('env.trustRevokeNote')} onClick={async () => {
+                              if (!(await confirm({ title: t('env.trustRevoke'), body: t('env.trustRevokeNote'), detail: w.path, confirmLabel: t('env.trustRevoke'), tone: 'danger' }))) return
                               void window.yan.trust.revoke(w.path).then((result) => {
                                 if (result.ok) {
                                   setTrustMap((map) => ({ ...map, [w.path]: { trusted: false, entry: result.entry } }))
@@ -688,8 +690,8 @@ export function EnvironmentMenu() {
                             className="env-mini"
                             data-testid="env-worktree-trust"
                             title={t('env.trustAllowNote')}
-                            onClick={() => {
-                              if (!window.confirm(`${t('env.trustAllowNote')}\n${w.path}`)) return
+                            onClick={async () => {
+                              if (!(await confirm({ title: t('env.trustAllow'), body: t('env.trustAllowNote'), detail: w.path, confirmLabel: t('env.trustAllow') }))) return
                               setActionError('')
                               /*
                                * 信任是**用户显式动作**：不因为「同一个 Git 仓库」「remote 相同」
@@ -796,9 +798,9 @@ export function EnvironmentMenu() {
                           className="env-mini"
                           data-testid="env-worktree-remove"
                           disabled={!!write.busy}
-                          onClick={() => {
+                          onClick={async () => {
                             const deleteBranch = wtDeleteBranch
-                            if (!window.confirm(`${t('env.worktreeRemove')} · ${w.path}${deleteBranch ? ` · ${t('env.worktreeDeleteBranch')}` : ''}`)) return
+                            if (!(await confirm({ title: t('env.worktreeRemove'), body: `${t('env.worktreeRemoveNote')}${deleteBranch ? `\n${t('env.worktreeDeleteBranch')}` : ''}`, detail: w.path, confirmLabel: t('env.worktreeRemove'), tone: 'danger' }))) return
                             setWtDeleteBranch(false)
                             setWtBlockers([])
                             void window.yan.git

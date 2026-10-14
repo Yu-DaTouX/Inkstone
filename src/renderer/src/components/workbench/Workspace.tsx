@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { IconName } from '../../icons/Icon'
-import { IconButton, Menu, MenuItem, MenuSeparator, Select, Tab } from '../ui'
+import { Badge, IconButton, Menu, MenuItem, MenuSeparator, Select, Tab, type BadgeTone } from '../ui'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { loadWorkbenchState } from '../../state/workbench'
@@ -10,7 +10,7 @@ import { CHAT_PANE, DOCK_GAP, defaultWorkspaceLayout, dockGroups, hideDockPane, 
 /** Resource-owned commands shown in the tile menu; layout never decides what they do. */
 export interface PaneAction { label: string; icon?: IconName; danger?: boolean; run(): void }
 /** `hint` is the tab tooltip; `closeLabel` gives the tab its own × (closing the resource, not just hiding the tile). */
-interface PaneInfo { id: string; title: string; icon?: IconName; addLabel?: string; hint?: string; closeLabel?: string }
+interface PaneInfo { id: string; title: string; icon?: IconName; addLabel?: string; hint?: string; closeLabel?: string; badgeText?: string; badgeTone?: BadgeTone }
 interface PaneCommands { actions?: PaneAction[]; onAdd?(): void; onClose?(): void }
 interface WorkspaceContextValue {
   host: HTMLDivElement | null
@@ -18,6 +18,8 @@ interface WorkspaceContextValue {
   unregister(id: string): void
   open(id: string): void
   hide(id: string): void
+  /** Drops the pane from the arrangement (its owner stops rendering it); `hide` keeps it reopenable from the menu. */
+  close(id: string): void
   rects: Map<string, DockRect>
   /** The pane lifted by a drag; it follows the pointer above the other tiles. */
   floating: string | null
@@ -176,6 +178,7 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
   const unregister = useCallback((id: string) => setPanes(current => current.filter(p => p.id !== id)), [])
   const open = useCallback((id: string) => update(l => openDockPane(l, id)), [update])
   const hide = useCallback((id: string) => update(l => hideDockPane(l, id)), [update])
+  const close = useCallback((id: string) => update(l => withoutDockPane(l, id)), [update])
   const available = useMemo(() => new Set(panes.map(p => p.id)), [panes])
   availableRef.current = available
   /* A layout saved before sizes were kept records the size it is first shown at. */
@@ -216,7 +219,7 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
     if (floating && floatRect) result.set(floating, { x: floatRect.x + 1, y: floatRect.y + floatHead, w: floatRect.w - 2, h: floatRect.h - floatHead - 1 })
     return result
   }, [measured, available, layout.hidden, layout.maximized, floating, floatRect?.x, floatRect?.y, floatHead])
-  const context = useMemo(() => ({ host, register, unregister, open, hide, rects, commands, floating, sessionKey }), [host, register, unregister, open, hide, rects, commands, floating, sessionKey])
+  const context = useMemo(() => ({ host, register, unregister, open, hide, close, rects, commands, floating, sessionKey }), [host, register, unregister, open, hide, close, rects, commands, floating, sessionKey])
   /* After release the tile glides from the cursor into its slot. */
   const [settling, setSettling] = useState(false)
   useEffect(() => {
@@ -341,10 +344,9 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
               <div className={`ui-tabs tile-tabs${ids.length === 1 ? ' single' : ''}`} role="tablist" aria-label={t('tile.tabs')}>
                 {ids.map(id => { const pane = panes.find(p => p.id === id); return <span key={id} role="presentation" className="tile-tab" data-pane-tab={id}><Tab icon={pane?.icon} title={pane?.hint} selected={id === active}
                   onClick={() => { if (!justDragged()) open(id) }} onPointerDown={e => { if (!(e.target as HTMLElement).closest('.ui-tab-close')) beginDrag(id, e) }}
-                  onClose={pane?.closeLabel ? () => commands.get(id)?.onClose?.() : undefined} closeLabel={pane?.closeLabel}>{titleOf(id)}</Tab></span> })}
+                  onClose={() => { const close = commands.get(id)?.onClose; if (close) close(); else hide(id) }} closeLabel={pane?.closeLabel ?? t('tile.hideKeep')}>{titleOf(id)}{pane?.badgeText ? <>{' '}<Badge tone={pane.badgeTone} title={pane.hint}>{pane.badgeText}</Badge></> : null}</Tab></span> })}
                 {info?.addLabel ? <IconButton icon="plus" size="sm" label={info.addLabel} onClick={() => commands.get(active)?.onAdd?.()} /> : null}
               </div>
-              <IconButton size="sm" icon="close" label={t('tile.hideKeep')} onClick={() => hide(active)} />
             </div>
           })}
           {drag ? null : measured.separators.map(s => <div key={s.id} className={`tile-separator ui-splitter axis-${s.axis}`} style={position(s)} role="separator" tabIndex={0} aria-label={s.axis === 'x' ? t('tile.resizeWidth') : t('tile.resizeHeight')} aria-orientation={s.axis === 'x' ? 'vertical' : 'horizontal'} aria-valuenow={Math.round(s.ratio * 100)} aria-valuemin={10} aria-valuemax={90} onPointerDown={e => resize(s, e)} onKeyDown={e => {
@@ -390,9 +392,9 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
 }
 
 /** The portal parent and pane key stay stable across docking, preserving content state. */
-export function WorkspacePane({ id, title, icon, addLabel, hint, closeLabel, onAdd, onClose, actions, children, onVisibleChange }: PaneInfo & PaneCommands & { children: ReactNode; onVisibleChange?(visible: boolean): void }) {
+export function WorkspacePane({ id, title, icon, addLabel, hint, closeLabel, badgeText, badgeTone, onAdd, onClose, actions, children, onVisibleChange }: PaneInfo & PaneCommands & { children: ReactNode; onVisibleChange?(visible: boolean): void }) {
   const workspace = useWorkspace(), { register, unregister, rects, host, commands, floating } = workspace
-  useLayoutEffect(() => { register({ id, title, icon, addLabel, hint, closeLabel }) }, [id, title, icon, addLabel, hint, closeLabel, register])
+  useLayoutEffect(() => { register({ id, title, icon, addLabel, hint, closeLabel, badgeText, badgeTone }) }, [id, title, icon, addLabel, hint, closeLabel, badgeText, badgeTone, register])
   useLayoutEffect(() => () => unregister(id), [id, unregister])
   /* Commands are read when the menu opens, so they always use the latest resource state. */
   useLayoutEffect(() => { commands.set(id, { actions, onAdd, onClose }) })

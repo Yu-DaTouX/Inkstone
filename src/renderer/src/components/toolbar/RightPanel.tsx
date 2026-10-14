@@ -7,6 +7,7 @@ import { type ToolSectionId } from '../../../../shared/ipc'
 import { FileTree } from './FileTree'
 import { BrowserSurface } from '../browser/BrowserSurface'
 import { TerminalSurface } from '../terminal/TerminalSurface'
+import { terminalTabStatus } from '../../lib/terminal-tab-status'
 import { FilePreviewPane } from './FilePreview'
 import { fileResourceLabel } from '../../../../shared/file-resource'
 import { loadWorkbenchState } from '../../state/workbench'
@@ -103,7 +104,7 @@ export function RightPanel({ sessionKey, live = true }: { sessionKey?: string; l
   const request = useRef(0)
   const currentKey = useRef(key)
   currentKey.current = key
-  const { open, hide } = workspace
+  const { open, hide, close } = workspace
   const openAgent = useCallback((id: string) => {
     setOwnerKey(key)
     setAgents(ids => ownerKey !== key ? [id] : ids.includes(id) ? ids : [...ids, id])
@@ -188,15 +189,19 @@ export function RightPanel({ sessionKey, live = true }: { sessionKey?: string; l
   }
   launchRef.current = launch
   return <>
-    {live && tasksOpen ? <WorkspacePane id="tasks" title={t('tile.tasks')} icon="checklist"><TasksPane /></WorkspacePane> : null}
-    {live && logsOpen ? <WorkspacePane id="logs" title={t('tile.logs')} icon="activity"><LogsPane /></WorkspacePane> : null}
-    {live && accountsOpen ? <WorkspacePane id="accounts" title={t('tile.accounts')} icon="dashboard"><AccountQuotaPane /></WorkspacePane> : null}
+    {live && tasksOpen ? <WorkspacePane id="tasks" title={t('tile.tasks')} icon="checklist" closeLabel={t('tile.closeTab')} onClose={() => { setTasksOpen(false); close('tasks') }}><TasksPane /></WorkspacePane> : null}
+    {live && logsOpen ? <WorkspacePane id="logs" title={t('tile.logs')} icon="activity" closeLabel={t('tile.closeTab')} onClose={() => { setLogsOpen(false); close('logs') }}><LogsPane /></WorkspacePane> : null}
+    {live && accountsOpen ? <WorkspacePane id="accounts" title={t('tile.accounts')} icon="dashboard" closeLabel={t('tile.closeTab')} onClose={() => { setAccountsOpen(false); close('accounts') }}><AccountQuotaPane /></WorkspacePane> : null}
     {ownsBrowser ? <WorkspacePane id="browser" title={t('tile.browser')} icon="globe" onVisibleChange={setBrowserSurfaceActive}><BrowserSurface /></WorkspacePane> : null}
-    {live && fileTreeOpen ? <WorkspacePane id="files" title={t('tile.files')} icon="folder"><div className="tile-file-tree"><FileTree /></div></WorkspacePane> : null}
+    {live && fileTreeOpen ? <WorkspacePane id="files" title={t('tile.files')} icon="folder" closeLabel={t('tile.closeTab')} onClose={() => { setFileTreeOpen(false); close('files') }}><div className="tile-file-tree"><FileTree /></div></WorkspacePane> : null}
     {Object.entries(files).map(([id, preview]) => <WorkspacePane key={id} id={'file:' + id} title={preview.data?.name || fileResourceLabel(id) || t('tile.file')} icon="file" closeLabel={t('tile.closeFile')} onClose={() => closeFileTab(id)}><FilePreviewPane resourceKey={id} /></WorkspacePane>)}
-    {terminals.map((terminal, index) => <WorkspacePane key={terminal.id} id={'terminal:' + terminal.id} title={t('tile.terminalN', { n: index + 1 })} hint={[terminal.title, terminal.alive ? '' : t('tile.exited')].filter(Boolean).join(' · ')} addLabel={t('term.new')} onAdd={() => void newTerminal()} closeLabel={terminal.alive ? t('tile.endTerminal') : t('term.close')} onClose={() => void useStore.getState().closeTerminal(terminal.id)} actions={[{ label: t('term.new'), icon: 'plus', run: () => void newTerminal() }, { label: terminal.alive ? t('tile.endTerminal') : t('term.close'), icon: 'stop', danger: terminal.alive, run: () => void useStore.getState().closeTerminal(terminal.id) }]}><TerminalSurface terminalId={terminal.id} bare /></WorkspacePane>)}
-    {ownerKey === key && agentManager ? <WorkspacePane id="agents" title={t('hub.title')} icon="agent"><SubagentPanel onOpenRun={openAgent} /></WorkspacePane> : null}
-    {(ownerKey === key ? agents : []).map(id => <WorkspacePane key={key + id} id={'agent:' + id} title={agentTitles[id] || (id.startsWith('subagent:') ? t('hub.kind.subtask') : 'Agent · ' + id.slice(-6))} icon="agent">{id.startsWith('subagent:') ? <SubagentPanel initialRun={id} onTitleChange={title => { if (currentKey.current === key) setAgentTitles(old => old[id] === title ? old : { ...old, [id]: title }) }} /> : <Suspense fallback={null}><LegacyAgentPanel initialRun={id} onlyRun onBack={() => hide('agent:' + id)} /></Suspense>}</WorkspacePane>)}
+    {terminals.map((terminal, index) => {
+      const status = terminalTabStatus(terminal)
+      const label = status ? [t(status.key), status.progress === undefined ? '' : `${status.progress}%`].filter(Boolean).join(' ') : undefined
+      return <WorkspacePane key={terminal.id} id={'terminal:' + terminal.id} title={t('tile.terminalN', { n: index + 1 })} badgeText={label} badgeTone={status?.tone} hint={[terminal.title, label, terminal.status?.title, terminal.alive ? '' : t('tile.exited')].filter(Boolean).join(' · ')} addLabel={t('term.new')} onAdd={() => void newTerminal()} closeLabel={terminal.alive ? t('tile.endTerminal') : t('term.close')} onClose={() => void useStore.getState().closeTerminal(terminal.id)} actions={[{ label: t('term.new'), icon: 'plus', run: () => void newTerminal() }, { label: terminal.alive ? t('tile.endTerminal') : t('term.close'), icon: 'stop', danger: terminal.alive, run: () => void useStore.getState().closeTerminal(terminal.id) }]}><TerminalSurface terminalId={terminal.id} bare /></WorkspacePane>
+    })}
+    {ownerKey === key && agentManager ? <WorkspacePane id="agents" title={t('hub.title')} icon="agent" closeLabel={t('tile.closeTab')} onClose={() => { setAgentManager(false); close('agents') }}><SubagentPanel onOpenRun={openAgent} /></WorkspacePane> : null}
+    {(ownerKey === key ? agents : []).map(id => <WorkspacePane key={key + id} id={'agent:' + id} title={agentTitles[id] || (id.startsWith('subagent:') ? t('hub.kind.subtask') : 'Agent · ' + id.slice(-6))} icon="agent" closeLabel={t('tile.closeTab')} onClose={() => { setAgents(ids => ids.filter(x => x !== id)); close('agent:' + id) }}>{id.startsWith('subagent:') ? <SubagentPanel initialRun={id} onTitleChange={title => { if (currentKey.current === key) setAgentTitles(old => old[id] === title ? old : { ...old, [id]: title }) }} /> : <Suspense fallback={null}><LegacyAgentPanel initialRun={id} onlyRun onBack={() => hide('agent:' + id)} /></Suspense>}</WorkspacePane>)}
     {menu ? <div className="tile-menu-backdrop" onPointerDown={e => { if (e.target === e.currentTarget) setMenu(null) }}><Menu className="tile-layout-menu" label={t('tb.openTools')} data-testid="right-tool-menu-popover" style={{ top: menu.top, right: menu.right }}>
       {LAUNCH_ITEMS.map(([id, title, icon], i) => <MenuItem key={id} icon={icon} className="rp-tool-menu-item" autoFocus={i === 0} onClick={() => void launch(id)}>{t(title)}</MenuItem>)}
       <MenuSeparator />

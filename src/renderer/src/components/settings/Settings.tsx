@@ -90,7 +90,8 @@ export function Settings({
   tab,
   onClose,
   onTabChange,
-  onShowOnboarding
+  onShowOnboarding,
+  onShowShortcuts
 }: {
   open: boolean
   tab: SettingsTab
@@ -98,6 +99,8 @@ export function Settings({
   onTabChange: (t: SettingsTab) => void
   /** 「重新查看首次引导」：引导只在首次启动时自动出现，这里给一个找得到的入口 */
   onShowOnboarding: () => void
+  /** 「快捷键」：打开只读快捷键表（Ctrl+/）；调用方先收起设置 */
+  onShowShortcuts: () => void
 }) {
   const t = useT()
   const { lang, setLang } = useI18n()
@@ -222,7 +225,7 @@ export function Settings({
           ) : page === 'appearance' ? (
             <SettingsSections initial={tab === 'input' || tab === 'sound' ? tab : 'appearance'} sections={[
               { id: 'appearance', label: t('set.appearance'), content: <AppearanceTab lang={lang} setLang={setLang} /> },
-              { id: 'input', label: t('set.input'), content: <InputTab /> },
+              { id: 'input', label: t('set.input'), content: <InputTab onShowShortcuts={onShowShortcuts} /> },
               { id: 'sound', label: t('set.sound'), content: <SoundTab /> }
             ]} />
           ) : page === 'workspace' ? (
@@ -447,7 +450,7 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
 
 /* ------------------------------------------------------------- 输入 */
 
-function InputTab() {
+function InputTab({ onShowShortcuts }: { onShowShortcuts: () => void }) {
   const t = useT()
   const patchSettings = useStore((s) => s.patchSettings)
   const sendKey = useStore((s) => s.settings?.sendKey) ?? 'auto'
@@ -498,6 +501,13 @@ function InputTab() {
           label={t('set.toolDetail')}
           testId="set-tool-detail"
         />
+      </SettingRow>
+
+      {/* 只读快捷键表（Ctrl+/），与命令面板的动作表同源 */}
+      <SettingRow name={t('set.shortcuts')} desc={t('set.shortcutsDesc')}>
+        <Button size="sm" icon="key" onClick={onShowShortcuts} data-testid="set-shortcuts">
+          {t('set.shortcutsOpen')}
+        </Button>
       </SettingRow>
     </div>
   )
