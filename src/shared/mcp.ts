@@ -33,6 +33,18 @@ export interface McpServerConfig {
   /** 配置声明的副作用等级；缺省是 `unknown`（最保守）。 */
   effect?: 'read' | 'write' | 'external-action' | 'unknown'
   enabled?: boolean
+  /** 已导入 pi 原生后的标记：旧条目只停用、不删除，便于回退与给出迁移提示。 */
+  migratedToNative?: McpMigratedToNativeMark
+}
+
+/** 旧宿主 MCP 条目导入 pi 原生后留下的标记（写在 `YAN_DIR/mcp-servers.json` 里）。 */
+export interface McpMigratedToNativeMark {
+  /** 导入发生的时刻（ISO）。 */
+  at: string
+  /** 写入的 pi 原生配置文件（全局 `mcp.json` 或项目的 `.pi/mcp.json`）。 */
+  targetPath: string
+  /** pi 侧的服务名（当前与旧 id 相同，留字段以兼容改名）。 */
+  nativeName?: string
 }
 
 /** 服务侧报回的工具描述（`tools/list` 的单项）。 */

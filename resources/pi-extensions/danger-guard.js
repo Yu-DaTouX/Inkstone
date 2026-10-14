@@ -7,6 +7,7 @@
  * 只拦「做错了很难挽回」的那几类：大范围递归删除、丢弃未提交改动 / 强推的 Git 操作、
  * 删库、格式化磁盘、把网络内容直接交给 shell 执行、关机重启、发布包，以及写系统或
  * 凭证目录。普通的写文件、跑测试、装依赖都不问。
+ * 另外，MCP 工具不看命令文本，改看服务自报的注解（见下面「MCP 工具注解」段）。
  *
  * ⚠️ 这是**提醒式的护栏，不是沙箱**：靠命令文本识别，绕得开（拼接、编码、脚本里再调用）。
  *    它的作用是让「模型顺手敲出一条毁灭性命令」在执行前多一次人眼确认，不承诺挡住恶意。
@@ -169,6 +170,46 @@ export function detectDanger(toolName, input, cwd) {
     }
   }
   return [...new Set(reasons)]
+}
+
+/* ------------------------------------------------------------------ MCP 工具注解 */
+
+/** 服务自报注解只决定是否询问；缺注解默认询问，显式破坏优先于只读。 */
+export function mcpApprovalNeeded(annotations) {
+  const hints = annotations && typeof annotations === 'object' ? annotations : {}
+  if (hints.destructiveHint === true) return true
+  if (hints.readOnlyHint === true) return false
+  const mayDestroy = hints.destructiveHint ?? true
+  const mayReachOutside = hints.openWorldHint ?? true
+  return mayDestroy || mayReachOutside
+}
+
+/** `mcp__<服务>__<工具>` → 展示用的服务与工具名 */
+export function mcpTarget(toolName) {
+  const match = /^mcp__(.+?)__(.+)$/.exec(String(toolName ?? ''))
+  return { server: match?.[1] ?? '', tool: match?.[2] ?? String(toolName ?? '') }
+}
+
+/** 这次调用要不要问；返回原因数组（空 = 不问）。非 `mcp__` 工具一律不问。 */
+export function mcpCallDanger(toolName, annotations) {
+  const name = String(toolName ?? '')
+  if (!name.startsWith('mcp__')) return []
+  if (!mcpApprovalNeeded(annotations)) return []
+  const { server, tool } = mcpTarget(name)
+  const target = [server, tool].filter(Boolean).join(' / ')
+  return [`MCP 工具可能修改数据或对外操作：${target}`]
+}
+
+/** 从 `pi.getAllTools()` 取该工具的注解；取不到返回 undefined（调用方按「要问」处理） */
+function toolAnnotations(pi, toolName) {
+  try {
+    const tools = pi?.getAllTools?.()
+    if (!Array.isArray(tools)) return undefined
+    const found = tools.find((item) => (typeof item === 'string' ? item : item?.name) === toolName)
+    return found && typeof found === 'object' ? found.annotations : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /* ------------------------------------------------------------------ 项目之外的写入 */
@@ -365,10 +406,14 @@ async function askHost(toolName, input, reasons, outsideDirs = []) {
   const sessionId = process.env.YAN_SESSION_ID
   const projectId = process.env.YAN_PROJECT_ID
   if (!url || !token || !sessionId || !projectId) return { allowed: false, why: '宿主确认通道不可用' }
+  const fullDetail = typeof input?.prompt === 'string' && !String(toolName ?? '').startsWith('mcp__')
   const detail =
     toolName === 'bash' || toolName === 'powershell'
       ? String(input?.command ?? '')
-      : typeof input?.prompt === 'string' ? JSON.stringify(input) : String(input?.path ?? input?.file_path ?? input?.filePath ?? '')
+      /* MCP 工具参数名不固定，整份 JSON 展示；子 Agent 委派同理 */
+      : fullDetail || String(toolName ?? '').startsWith('mcp__')
+        ? JSON.stringify(input ?? {})
+        : String(input?.path ?? input?.file_path ?? input?.filePath ?? '')
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -376,7 +421,7 @@ async function askHost(toolName, input, reasons, outsideDirs = []) {
       body: JSON.stringify({
         apiVersion: 1,
         command: 'danger.confirm',
-        params: { tool: toolName, detail: typeof input?.prompt === 'string' ? detail : detail.slice(0, 2000), reasons, ...(outsideDirs.length ? { outsideDirs } : {}) },
+        params: { tool: toolName, detail: fullDetail ? detail : detail.slice(0, 2000), reasons, ...(outsideDirs.length ? { outsideDirs } : {}) },
         sessionId,
         projectId
       }),
@@ -399,7 +444,9 @@ export default function dangerGuardExtension(pi) {
     if (prefs.mode === 'all') return undefined
     const delegation = claudeDelegationDanger(name, event?.input ?? {}, ctx?.cwd)
     if (delegation.length && JSON.stringify(event?.input ?? {}).length > 20000) return { block: true, reason: 'Claude Code 委派任务过长，无法完整展示审批内容。请缩短任务，或使用砚子 Agent。' }
-    const reasons = [...detectDanger(name, event?.input ?? {}, ctx?.cwd), ...delegation]
+    /* 只有 MCP 工具才查注解，内置工具的调用路径不额外遍历工具表 */
+    const mcpReasons = name.startsWith('mcp__') ? mcpCallDanger(name, toolAnnotations(pi, name)) : []
+    const reasons = [...detectDanger(name, event?.input ?? {}, ctx?.cwd), ...delegation, ...mcpReasons]
     if (reasons.length === 0) return undefined
     const answer = await askHost(name, event?.input ?? {}, [...new Set(reasons)])
     if (answer.allowed) return undefined
