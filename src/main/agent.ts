@@ -14,11 +14,13 @@ import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
-import { saveUserSkill } from './user-skills'
+import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path'
+import { saveUserSkill, userSkillsDir } from './user-skills'
+import { acquiredUserSkillNames, listSessionSkills, promoteSessionSkill, removeSessionSkill } from './capabilities/acquired-skills'
 import { PiRpc, resolvePi } from './protocol'
 import { workspaceMutationInProgress } from './workspace-mutation'
 import { modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { isQuotaWaitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
 import { AGENT_CONTEXT_ERROR, agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
@@ -46,11 +48,11 @@ import {
   type PiMessage
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
-import { consumeQueuedItem } from './queue-items'
+import { consumeQueuedItem, reconcileQueueItems, sameQueueImages, snapshotQueue } from './queue-items'
 import { clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { projectPackageDirs } from './packages'
-import { turnTiming } from '../shared/turn-timing'
+import { generationTiming, turnTiming } from '../shared/turn-timing'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { mergeCommandDescriptors } from './command-registry'
 import { generateTitle, manualTitleOf } from './title'
@@ -82,6 +84,7 @@ import { activeSkillArgs } from './capabilities/skill-files'
 import { McpConnectionManager } from './mcp/connection-manager'
 import { loadMcpServers, mcpServersForProject } from './mcp/config'
 import { callMcpTool, describeMcpTool, McpToolError } from './mcp/tool-service'
+import { migratedMcpCommandNotice } from '../shared/mcp-native-import'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
@@ -104,11 +107,13 @@ import type {
   CustomEntry,
   ExtensionUiRequest,
   ForkPoint,
+  GenerationTiming,
   MainPush,
   AssistantArtifact,
   ImageGenerationProgress,
   ModelInfo,
   QueueItem,
+  QueueSnapshot,
   QueueMode,
   QueueState,
   SessionState,
@@ -122,6 +127,8 @@ import type {
 } from '../shared/ipc'
 import type { CapabilityStrategy, WorkMode } from '../shared/ipc'
 import type { SessionMoveAnswer, SessionMovePrompt } from './session-move'
+import type { ScheduleService } from './schedule-service'
+import { runScheduleCommand, ScheduleCommandError } from './schedule-commands'
 
 /** 流式文本的推送节流：60 帧够了，再多是给 IPC 白干活 */
 const FLUSH_MS = 16
@@ -388,6 +395,8 @@ export class AgentController extends EventEmitter {
   private preambleExtension?: string
   /** 界面语言扩展（每轮注入一句语言要求，见 resources/pi-extensions/language.js） */
   private languageExtension?: string
+  /** 采样温度扩展（每次请求读设置，见 resources/pi-extensions/temperature.js） */
+  private temperatureExtension?: string
   /** 能力入口说明扩展（每轮静态追加，不随设置变化）。 */
   private capabilityGuideExtension?: string
   /** 上下文构成观测薄层（只读上报系统提示分段与工具定义）。 */
@@ -417,6 +426,7 @@ export class AgentController extends EventEmitter {
   private getBrowserHost?: () => BrowserCommandHost | null
   /** `yan subagent …` 的宿主实现；不把它注册为 pi 工具。 */
   private subagentHost?: SubagentCommandHost
+  private scheduleHost?: ScheduleService
   private hubHost?: SubagentCommandHost
   /** `yan goal …` 的宿主实现（实施-05 S3）；同样不是 pi 工具。 */
   private goalHost?: GoalCommandHost
@@ -490,7 +500,25 @@ export class AgentController extends EventEmitter {
     push: (msg) => this.push(msg),
     getState: () => this.getState(),
     confirmCapabilityAuthorization: () => this.confirmCapabilityAuthorization,
-    bundledSkills: () => this.bundledSkills
+    bundledSkills: () => this.bundledSkills,
+    /* 接入批准复用提问面板；结果同样记进问答记录，对话里能看到当时怎么选的。 */
+    requestApproval: async (request) => {
+      let response: HostUiResponse | undefined
+      try {
+        response = await this.ui.requestHostUi({ method: 'select', purpose: 'approval', ...request })
+        return response
+      } finally {
+        const answer = typeof response?.value === 'string' && response.value.trim() ? response.value.trim() : null
+        const entries = questionLog.append(this.state?.sessionId, {
+          question: request.title,
+          options: request.options,
+          answer,
+          cancelled: answer === null,
+          at: Date.now()
+        })
+        if (entries) this.pushQuestionLog()
+      }
+    }
   })
 
   /** 权威消息列表 */
@@ -513,6 +541,16 @@ export class AgentController extends EventEmitter {
     startedAt?: number
     /** 首个 token 到达的时间（用于更准的速率：排除排队/首包延迟） */
     firstTokenAt?: number
+    /** 本次模型请求的单调起点（`performance.now()`，与墙钟 `startedAt` 分开） */
+    generationStartedMono?: number
+    /**
+     * 上述起点的语义：`'turn_start'` 表示来自原生 `turn_start`（请求准备 /
+     * 网络等待 / provider 内部重试都算进 duration 与 ttft）；缺省表示起点
+     * 只是流的下限（`message_start`），不得拿它当完整请求 TTFT 保存。
+     */
+    requestStartEvent?: 'turn_start'
+    /** 首个**真正内容**到达的单调时刻（非空 text/thinking delta 或 toolcall_start） */
+    firstContentMono?: number
     /** 累积 usage（message_update 里带的就是累积值） */
     usage?: Usage
     /**
@@ -534,6 +572,18 @@ export class AgentController extends EventEmitter {
 
   /** 当前回合的计时与元数据（见 turn-timing-tracker.ts） */
   private readonly turn = new TurnTimingTracker()
+  /**
+   * 最近一次原生 `turn_start` 的单调时刻（请求准备起点）。
+   *
+   * pi 在每次模型请求前 emit `turn_start`（`runAgentLoop` 起手一次、`runLoop`
+   * 内每次再请求一次），它早于该请求的 assistant `message_start`。收到后先
+   * 暂存，等 assistant `message_start` 消费成这次请求的 GT 起点。
+   *
+   * 为什么放在 Agent 而不是 `turn` 里：同一 native run 内消费官方子代理通知
+   * 会重置 turn 段（旧段封口、新段独立计时），而 turn_start 早于通知的
+   * `message_start`，跟着 turn 一起清会把通知后这次请求的起点丢掉。
+   */
+  private pendingRequestMono?: number
   /** 文本脏（有新的流式文本待推） */
   private dirty = false
   private flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -644,6 +694,7 @@ export class AgentController extends EventEmitter {
      * 的历史）。扩展注入是每轮读设置，切语言下一轮生效。
      */
     languageExtension?: string
+    temperatureExtension?: string
     /**
      * 能力入口说明扩展：把「怎么用 `yan`、输出怎么读」追加到系统提示。
      *
@@ -686,6 +737,8 @@ export class AgentController extends EventEmitter {
     browserHost?: () => BrowserCommandHost | null
     /** 子代理宿主入口，由 index.ts 注入，按当前 runner 绑定父会话。 */
     subagentHost?: SubagentCommandHost
+    /** 定时任务服务（`yan schedule …`） */
+    scheduleHost?: ScheduleService
     hubHost?: SubagentCommandHost
     /** 目标状态入口（`yan goal …`），由 index.ts 注入（模式与目标在同一侧）。 */
     goalHost?: GoalCommandHost
@@ -736,6 +789,7 @@ export class AgentController extends EventEmitter {
     this.responseDetailExtension = opts.responseDetailExtension
     this.preambleExtension = opts.preambleExtension
     this.languageExtension = opts.languageExtension
+    this.temperatureExtension = opts.temperatureExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.contextInspectExtension = opts.contextInspectExtension
     this.contextTrimExtension = opts.contextTrimExtension
@@ -746,6 +800,7 @@ export class AgentController extends EventEmitter {
     this.getResponseDetail = opts.getResponseDetail
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
+    this.scheduleHost = opts.scheduleHost
     this.hubHost = opts.hubHost
     this.goalHost = opts.goalHost
     this.researchHost = opts.researchHost
@@ -864,6 +919,10 @@ export class AgentController extends EventEmitter {
    */
   private queueState: QueueState = { steering: [], followUp: [] }
   private queueSequence = 0
+  private queueConsumed = new Set<string>()
+  private queueRemoved: QueueItem[] = []
+  private consumedEmptyQueue = { steering: 0, followUp: 0 }
+  private queueScope?: { rpc: PiRpc | null; sessionId?: string; generation?: number }
   /**
    * 是否正在做基于 clear_queue 的队列操作。
    *
@@ -940,6 +999,7 @@ export class AgentController extends EventEmitter {
         ...(this.preambleExtension ? ['--extension', this.preambleExtension] : []),
         // 界面语言 → 推理/回复语言：每轮读设置注入一句（不再用启动参数）
         ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
+        ...(this.temperatureExtension ? ['--extension', this.temperatureExtension] : []),
         // 能力入口说明：告诉模型有 `yan` 这个入口、输出怎么读（静态文本，不破缓存）
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
@@ -1265,6 +1325,15 @@ export class AgentController extends EventEmitter {
     if (command.startsWith('hub.')) {
       if (!this.hubHost) throw new CapabilityCommandError('hub_unavailable', '多 Agent 宿主当前不可用')
       return this.hubHost.run(command, params, { cwd: this.cwd, parentSessionId: this.state?.sessionId ?? this.capabilityOpts?.sessionId, parentRunId: this.capabilityOpts?.sessionId, projectId: this.capabilityOpts?.projectId })
+    }
+    if (command.startsWith('schedule.')) {
+      if (!this.scheduleHost) throw new CapabilityCommandError('schedule_unavailable', '定时任务当前不可用')
+      try {
+        return await runScheduleCommand(this.scheduleHost, command, params, { cwd: this.cwd })
+      } catch (error) {
+        if (error instanceof ScheduleCommandError) throw new CapabilityCommandError(error.code, error.message)
+        throw error
+      }
     }
     if (command.startsWith('subagent.')) {
       if (!this.subagentHost) {
@@ -1929,11 +1998,36 @@ export class AgentController extends EventEmitter {
   /** 安全投影给设置页：不回传命令参数、环境变量、认证引用或完整端点 URL。 */
   async capabilitySettingsSnapshot() {
     const commands = await this.rawCommands()
-    const skills = skillsFromCommands(commands).map(({ capability }) => ({
-      id: capability.id,
-      title: capability.title,
-      description: capability.description
-    }))
+    /* 技能分类：本次会话（模型接入）/ 我的技能 / 随包 / 其他（pi 原生发现、项目目录） */
+    const samePath = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b).toLowerCase()
+    const userRoot = resolve(userSkillsDir())
+    const acquiredUser = await acquiredUserSkillNames(YAN_DIR)
+    const loaded = skillsFromCommands(commands).map(({ capability, location }) => {
+      const origin = this.bundledSkills.some((path) => samePath(path, location))
+        ? 'bundled' as const
+        : resolve(location).toLowerCase().startsWith(`${userRoot.toLowerCase()}${sep}`)
+          ? 'user' as const
+          : 'other' as const
+      return {
+        id: capability.id,
+        title: capability.title,
+        description: capability.description,
+        origin,
+        ...(origin === 'user' && acquiredUser.has(basename(dirname(location))) ? { acquired: true } : {})
+      }
+    })
+    const sessionId = this.state?.sessionId
+    const sessionSkills = sessionId
+      ? (await listSessionSkills(YAN_DIR, sessionId)).map((skill) => ({
+          id: `session:${skill.name}`,
+          title: skill.name,
+          description: skill.description,
+          origin: 'session' as const,
+          acquired: true,
+          ...(skill.sourceUrl ? { sourceUrl: skill.sourceUrl } : {})
+        }))
+      : []
+    const skills = [...sessionSkills, ...loaded]
     const manager = this.mcpConnectionManager()
     const servers = manager.list().map((server) => {
       let endpointOrigin: string | undefined
@@ -1953,12 +2047,30 @@ export class AgentController extends EventEmitter {
         projectScoped: Boolean(server.projectScope),
         ...(endpointOrigin && endpointOrigin !== 'null' ? { endpointOrigin } : {}),
         status: manager.statusOf(server.id).status,
-        toolCount: manager.toolCountOf(server.id)
+        toolCount: manager.toolCountOf(server.id),
+        /* 已导入 pi 原生的条目：设置页可显示「已导入」而不删条目（方案合集 06）。 */
+        ...(server.migratedToNative ? { migratedToNative: server.migratedToNative } : {})
       }
     })
     const probe = resolvePi({ override: this.piBin })
     const version = probe.home ? await readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : undefined
     return { skills, servers, nativeMcpAvailable: nativePiToolsSupported(version) && commands.some(command => command.name === 'mcp'), configWarning: Boolean(this.mcpConfigError) }
+  }
+
+  /**
+   * 设置页对本次会话技能的操作：保留到「我的技能」或从会话移除。
+   * 只认当前会话的 index 里登记过的名字；保留后在新会话启动时由 `--skill` 加载。
+   */
+  async sessionSkillAction(action: 'promote' | 'remove', name: string): Promise<{ ok: boolean; error?: string }> {
+    const sessionId = this.state?.sessionId
+    if (!sessionId) return { ok: false, error: '当前没有会话' }
+    try {
+      if (action === 'remove') return { ok: await removeSessionSkill(YAN_DIR, sessionId, name) }
+      await promoteSessionSkill(YAN_DIR, sessionId, name, this.bundledSkills.map((path) => basename(dirname(path))))
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   }
 
   /** 只在用户明确点击「检查」时连接并刷新 MCP 工具表。 */
@@ -2003,7 +2115,7 @@ export class AgentController extends EventEmitter {
         scoreReasons: string[]
       }>
     }
-    const sourceIds = new Set(['npm-registry', 'mcp-registry', 'skill-directory'])
+    const sourceIds = new Set(['github-skills', 'npm-registry', 'mcp-registry', 'skill-directory'])
     return {
       query: data.query,
       reason: data.candidates.length === 0 && data.reason
@@ -2053,6 +2165,10 @@ export class AgentController extends EventEmitter {
     }
 
     const manager = this.mcpConnectionManager()
+    const migratedToNative = manager.list().find((entry) => entry.id === serverId)?.migratedToNative
+    if (migratedToNative) {
+      throw new CapabilityCommandError('mcp_migrated_to_native', migratedMcpCommandNotice(serverId, migratedToNative))
+    }
     if (action === 'call' && (await this.capabilityOpts?.getWorkMode?.()) === 'clarify') {
       const server = manager.list().find((entry) => entry.id === serverId)
       if (server?.effect !== 'read') {
@@ -2375,6 +2491,19 @@ export class AgentController extends EventEmitter {
         if (m?.role === 'user') {
           const norm = normalizeMessage(m, this.messages.length)
           if (norm) {
+            /*
+             * 同一 native run 内消费官方子代理通知。
+             *
+             * pi 在正忙时把 `followUp` 放进 `followUpQueue`，由同一个 `runLoop`
+             * `continue` 消费（见 vendor chunk-TJXZSVTD.js）—— 不新开 `agent_start`，
+             * 所以宿主唯一的 turn 重置点不会触发，旧段与新段会被当成同一段累计
+             * elapsed / 归属消息。这里在把通知 push 之前，先为上一个已结束段封口
+             * （`persist(true)` 冻结 final 与 elapsed），再起一段独立计时。
+             * 普通用户 steer / followUp 不触发，保持原行为。
+             */
+            if (isSubagentNotice(norm.text) && this.turn.messageIds.length > 0) {
+              this.finishTimingSegmentForNotice()
+            }
             this.messages.push(norm)
             this.indexCalls(norm)
             this.push({ ch: 'msg-add', payload: norm })
@@ -2385,7 +2514,7 @@ export class AgentController extends EventEmitter {
              * user 消息时不一定再推一次，于是界面会一直挂着「排队中」。
              * 这里以**消息真的出现**为准：按原文从快照里摘掉一条。
              */
-            this.consumeQueued(norm.text)
+            this.consumeQueued(norm.text, imagesOf(m.content) ?? [])
           }
         } else if (m?.role === 'assistant') {
           /*
@@ -2405,6 +2534,13 @@ export class AgentController extends EventEmitter {
            * id —— 这是对的，它们本来就是同一条消息。
            */
           const id = `m${this.messages.length}`
+          /*
+           * 原生 `turn_start` 已先到 → 用它的单调时刻作为这次请求的 GT 起点
+           * （含请求准备 / 网络等待 / provider 内部重试）；没拿到就回退到本条
+           * `message_start` 的流下限，只当 duration 的下限，不伪造 TTFT。
+           */
+          const requestStartMono = this.pendingRequestMono
+          this.pendingRequestMono = undefined
           this.streaming = {
             id,
             text: '',
@@ -2412,6 +2548,8 @@ export class AgentController extends EventEmitter {
             responseDetail: this.turn.responseDetail,
             tools: [],
             startedAt: Date.now(),
+            generationStartedMono: requestStartMono ?? performance.now(),
+            ...(requestStartMono !== undefined ? { requestStartEvent: 'turn_start' as const } : {}),
             // 增量游标从 0 开始（渲染端拿到的 msg-add 里 text 也是空）
             pushedText: 0,
             pushedThinking: 0
@@ -2441,6 +2579,18 @@ export class AgentController extends EventEmitter {
           (kind === 'text_delta' || kind === 'thinking_delta' || kind === 'toolcall_start')
         ) {
           this.streaming.firstTokenAt = Date.now()
+        }
+        /*
+         * 每次模型请求的 TTFT 口径与速率的 `firstTokenAt` 不同：只认**非空**内容。
+         * `text_delta` / `thinking_delta` 可能先来一个空 delta；把它当首包会让
+         * TTFT 偏小、decodeMs 偏大。toolcall_start 本身就是一个内容块，直接算。
+         */
+        if (!this.streaming.firstContentMono) {
+          const delta = String(ev.delta ?? '')
+          const realContent =
+            kind === 'toolcall_start' ||
+            ((kind === 'text_delta' || kind === 'thinking_delta') && delta.length > 0)
+          if (realContent) this.streaming.firstContentMono = performance.now()
         }
 
         if (kind === 'thinking_start') {
@@ -2502,6 +2652,8 @@ export class AgentController extends EventEmitter {
 
         const s = this.streaming
         const id = s.id
+        /* 这次模型请求的终点：取事件处理开始的单调时刻，不被后面的推送开销拖长。 */
+        const endedMono = performance.now()
         this.streaming = null
         // 这一条消息的工具从此属于历史消息 —— 索引要落到 id 上（渲染端也会收到全量快照）
         for (const c of s.tools) this.registerCall(c, id)
@@ -2513,6 +2665,8 @@ export class AgentController extends EventEmitter {
           this.turn.outputTokens = Math.max(this.turn.outputTokens ?? 0, finalUsage.output)
         }
         const sp = this.speedOf({ ...s, usage: finalUsage }, Date.now(), this.turn.startedAt)
+        /* 本次模型请求的用时（单调口径）；没有首个内容时只有 durationMs。 */
+        const genTiming = this.generationTimingOf(s, endedMono)
         const msg: UIMessage = {
           id,
           role: 'assistant',
@@ -2525,6 +2679,7 @@ export class AgentController extends EventEmitter {
           usage: finalUsage,
           speed: sp.speed,
           elapsedMs: sp.elapsedMs,
+          ...(genTiming ? { generationTiming: genTiming } : {}),
           responseDetail: s.responseDetail,
           model: m.model,
           timestamp: m.timestamp ?? Date.now(),
@@ -2672,18 +2827,21 @@ export class AgentController extends EventEmitter {
       }
 
       /* ---- 会话级 ---- */
+      case 'turn_start':
+        /*
+         * 每次模型请求前 pi 的原生起点：暂存给该请求的 assistant `message_start`
+         * 消费（见 pendingRequestMono）。重复 turn_start 直接覆盖成最新一次。
+         */
+        this.pendingRequestMono = performance.now()
+        break
+
       case 'agent_start':
         this.wroteThisRun = false
         this.turn.responseDetail = this.currentResponseDetail()
-        this.turn.startedAt = Date.now()
-        this.turn.startedMono = performance.now()
-        this.turn.messageIds = []
-        this.turn.terminal = 'completed'
-        this.turn.elapsedMs = undefined
-        this.turn.persisted = false
         /* 每个 pi 回合一个 run id（H-6b）：自动继续会开新 run、归同一个逻辑回合。 */
-        this.turn.runSeq += 1
-        this.turn.runId = `run-${this.turn.runSeq}-${Date.now().toString(36)}`
+        this.startTimingSegment()
+        /* 新 run 的原生 turn_start 随后到达；清掉上一 run 残留避免跨 run 串起点。 */
+        this.pendingRequestMono = undefined
         this.markStreaming(true)
         this.setAgentRunning(true)
         break
@@ -2693,6 +2851,7 @@ export class AgentController extends EventEmitter {
         this.setAgentRunning(false)
         this.turn.startedAt = undefined
         this.turn.startedMono = undefined
+        this.pendingRequestMono = undefined
         /* 回合结束才写元数据日志：中途写会得到一堆半截记录（H-6）。 */
         void this.persistTurnTiming()
         void this.refreshState()
@@ -2718,8 +2877,10 @@ export class AgentController extends EventEmitter {
         /*
          * 兜底写一次：失败 / 被中断的回合不一定走到 `agent_settled`。
          * Pi 可能在自动重试前先发 `agent_end`，此时 `willRetry` 为 true，
-         * 不能把仍会继续的逻辑回合提前冻结成终态。
+         * 不能把仍会继续的逻辑回合提前冻结成终态（但重试会重新 emit
+         * agent_start + turn_start，所以这里清起点是安全的）。
          */
+        this.pendingRequestMono = undefined
         if (evt.willRetry !== true) void this.persistTurnTiming()
         void this.refreshStats()
         break
@@ -2787,7 +2948,31 @@ export class AgentController extends EventEmitter {
         void this.listThinkingLevels()
         break
 
-      case 'auto_retry_start':
+      case 'auto_retry_start': {
+        /*
+         * 套餐 / 窗口用量用尽再等一下也不会好：pi 把
+         * “You have hit your ChatGPT usage limit (plus plan). Try again in ~31 min.”
+         * 这类 429 归为**可重试**（它的终局判定表只认 monthly usage limit /
+         * insufficient_quota / billing 等写法），于是照着服务端给的重试间隔一直等，
+         * 界面上就是额度到限后长时间空转（用户实测挂到几十分钟）。
+         *
+         * 这里不再等：识别到“额度用尽”就直接停掉这次等待，把决定权交回用户 ——
+         * 真想等的人可以在错误卡上选「额度恢复后继续」（那是明确要等，与重试不同）。
+         */
+        const retryError = modelErrorText(evt.errorMessage ?? evt.error)
+        if (isQuotaWaitError(retryError)) {
+          this.push({
+            ch: 'notify',
+            payload: {
+              id: `retry-quota-${Date.now()}`,
+              method: 'notify',
+              notifyType: 'warning',
+              message: `模型额度已到限，已停止自动重试。${modelErrorNotice(retryError)}`
+            }
+          })
+          void this.abortRetry()
+          break
+        }
         this.push({
           ch: 'notify',
           payload: {
@@ -2798,6 +2983,7 @@ export class AgentController extends EventEmitter {
           }
         })
         break
+      }
 
       case 'auto_retry_end':
         if (evt.success === false) {
@@ -2999,6 +3185,7 @@ export class AgentController extends EventEmitter {
     s.pushedThinking = s.thinking.length
 
     const sp = this.speedOf(s, Date.now(), this.turn.startedAt)
+    const genTiming = this.generationTimingOf(s)
     this.push({
       ch: 'msg-update',
       payload: {
@@ -3015,19 +3202,46 @@ export class AgentController extends EventEmitter {
            */
           usage: s.usage,
           speed: sp.speed,
-          elapsedMs: sp.elapsedMs
+          elapsedMs: sp.elapsedMs,
+          /* 请求用时逐帧更新；无首内容时只有 durationMs，不编 TTFT / decode。 */
+          ...(genTiming ? { generationTiming: genTiming } : null)
         }
       }
     })
   }
 
   /**
-   * 算输出速率（token/秒）与整轮用时。
+   * 起一段新的计时片段：重置段内累计并换独立 run 标识。
    *
-   * 口径本身在 `shared/turn-timing.ts`（纯函数、有单测）：速度用
-   * 「首个内容 token 到达」，整轮用时用 agent 回合起点，所以工具往返与重试
-   * 只进后者。这里只是把流式对象里的字段喂进去，不重复实现算法。
+   * 两个调用点共用：`agent_start`（新 native run）与同一 native run 内消费
+   * 官方子代理通知（旧段封口后）。只做字段归零，不动 pi 的 isRunning / 队列。
    */
+  private startTimingSegment(): void {
+    this.turn.startedAt = Date.now()
+    this.turn.startedMono = performance.now()
+    this.turn.messageIds = []
+    this.turn.terminal = 'completed'
+    this.turn.elapsedMs = undefined
+    this.turn.outputTokens = undefined
+    this.turn.persisted = false
+    this.turn.runSeq += 1
+    this.turn.runId = `run-${this.turn.runSeq}-${Date.now().toString(36)}`
+  }
+
+  /**
+   * 同一 native run 内收到官方子代理通知时的段边界：先把上一段冻结成 final
+   * （锚在通知前最后一条真实 user 上），再起新片段。
+   *
+   * `persist(true)` 在 await 前同步构造记录（anchor / sourceIds /
+   * generationTimings / elapsed 是旧段的快照），所以这里不 await 也不会被随后的
+   * 重置污染；`pendingRequestMono` 不清 —— 上一条 native `turn_start` 属于
+   * 通知后的新请求。
+   */
+  private finishTimingSegmentForNotice(): void {
+    void this.turn.persist(true, this.state?.sessionFile, this.messages)
+    this.startTimingSegment()
+  }
+
   /**
    * 把这一轮的整轮用时写进元数据日志（H-6）。
    *
@@ -3041,6 +3255,13 @@ export class AgentController extends EventEmitter {
     await this.turn.persist(final, this.state?.sessionFile, this.messages)
   }
 
+  /**
+   * 算输出速率（token/秒）与整轮用时。
+   *
+   * 口径本身在 `shared/turn-timing.ts`（纯函数、有单测）：速度用
+   * 「首个内容 token 到达」，整轮用时用 agent 回合起点，所以工具往返与重试
+   * 只进后者。这里只是把流式对象里的字段喂进去，不重复实现算法。
+   */
   private speedOf(
     s: {
       usage?: Usage
@@ -3057,6 +3278,35 @@ export class AgentController extends EventEmitter {
       turnStartedAt,
       endedAt
     })
+  }
+
+  /**
+   * 本次模型请求的生成用时。流式期间也给实时值（`durationMs` 随帧增长，
+   * 有首个真正内容后才有 `ttftMs` / `decodeMs`），终点默认取当前时刻。
+   */
+  private generationTimingOf(
+    s: { generationStartedMono?: number; firstContentMono?: number; requestStartEvent?: 'turn_start' },
+    endedMono = performance.now()
+  ): GenerationTiming | undefined {
+    if (s.generationStartedMono === undefined) return undefined
+    const g = generationTiming({
+      startedMono: s.generationStartedMono,
+      endedMono,
+      firstContentMono: s.firstContentMono,
+      ...(s.requestStartEvent ? { startEvent: s.requestStartEvent } : {})
+    })
+    if (!g) return undefined
+    /* 有原生 turn_start：duration / ttft 都从请求准备起点算，带标记。 */
+    if (g.startEvent === 'turn_start') return g
+    /*
+     * 回退到流下限（没拿到原生 turn_start）：duration / decode 仍是真实测得的
+     * 下限，但不保存 TTFT —— 它不含请求准备与网络等待，拿去当「请求首包延迟」
+     * 参与会话平均就是伪造。
+     */
+    return {
+      durationMs: g.durationMs,
+      ...(g.decodeMs !== undefined ? { decodeMs: g.decodeMs } : {})
+    }
   }
 
   /*
@@ -3125,31 +3375,39 @@ export class AgentController extends EventEmitter {
    * 新出现的文本才分配新 id。重复文本因此仍然有两个不同的可操作对象。
    */
   private queueItems(raw: string[], previous: QueueItem[]): QueueItem[] {
-    const buckets = new Map<string, QueueItem[]>()
-    for (const item of previous) {
-      const bucket = buckets.get(item.text) ?? []
-      bucket.push(item)
-      buckets.set(item.text, bucket)
-    }
-    return raw.map((text) => {
-      const bucket = buckets.get(text)
-      const kept = bucket?.shift()
-      if (kept) return kept
-      this.queueSequence += 1
-      return { id: `q-${this.queueSequence.toString(36)}`, text }
-    })
+    return reconcileQueueItems(raw, previous, text => this.newQueueItem(text))
   }
 
-  /** 更新本地队列身份并推给渲染端。 */
-  private publishQueue(steering: string[], followUp: string[]): QueueState {
+  private newQueueItem(text: string, images?: QueueItem['images']): QueueItem {
+    return { id: `q-${(++this.queueSequence).toString(36)}`, text,
+      ...(images?.length ? { images: images.map(image => ({ ...image })) } : {}) }
+  }
+
+  /** pi 对纯图片消息不清文本镜像；已经消费的空项不能被下一帧复活。 */
+  private liveQueueTexts(raw: string[], kind: 'steering' | 'followUp'): string[] {
+    let skip = this.consumedEmptyQueue[kind]
+    return raw.filter(text => text || skip-- <= 0)
+  }
+
+  /** 更新本地队列身份；原生先推缩短快照、后推 user 消息，记录已移除身份防止二次消费。 */
+  private publishQueue(steering: string[], followUp: string[], clearing = false): QueueState {
     const next: QueueState = {
-      steering: this.queueItems(steering, this.queueState.steering),
-      followUp: this.queueItems(followUp, this.queueState.followUp)
+      steering: this.queueItems(this.liveQueueTexts(steering, 'steering'), this.queueState.steering),
+      followUp: this.queueItems(this.liveQueueTexts(followUp, 'followUp'), this.queueState.followUp)
     }
+    if (!clearing) {
+      const retained = new Set([...next.steering, ...next.followUp].map(item => item.id))
+      this.queueRemoved.push(...[...this.queueState.steering, ...this.queueState.followUp]
+        .filter(item => !retained.has(item.id) && !this.queueConsumed.has(item.id)))
+    } else this.consumedEmptyQueue = { steering: 0, followUp: 0 }
     return this.publishQueueItems(next)
   }
 
   private publishQueueItems(next: QueueState): QueueState {
+    next = {
+      steering: next.steering.filter(item => !this.queueConsumed.has(item.id)),
+      followUp: next.followUp.filter(item => !this.queueConsumed.has(item.id))
+    }
     this.queueState = next
     this.push({ ch: 'queue', payload: {
       steering: next.steering.filter(item => !isSubagentNotice(item.text)),
@@ -3165,13 +3423,42 @@ export class AgentController extends EventEmitter {
    * followUp 要等回合结束。两边都可能出现相同文本（用户反复发同一句），
    * 所以只摘**第一条**匹配（FIFO），剩下的等后续消息再到。
    */
-  private consumeQueued(text: string): void {
-    /* 判定规则在 queue-items.ts（纯函数，有单测）；这里只管把结果推出去 */
-    const next = consumeQueuedItem(this.queueState, text)
-    if (next) this.publishQueueItems(next)
+  private consumeQueued(text: string, images: NonNullable<QueueItem['images']>): void {
+    const removed = this.queueRemoved.findIndex(item => item.text.trim() === text.trim() && sameQueueImages(item.images, images))
+    if (removed >= 0) {
+      const [item] = this.queueRemoved.splice(removed, 1)
+      if (this.queueBusy) this.queueConsumed.add(item.id)
+      return
+    }
+    const next = consumeQueuedItem(this.queueState, text, images)
+    if (!next) return
+    const retained = new Set([...next.steering, ...next.followUp].map(item => item.id))
+    for (const kind of ['steering', 'followUp'] as const) {
+      for (const item of this.queueState[kind]) {
+        if (retained.has(item.id)) continue
+        if (this.queueBusy) this.queueConsumed.add(item.id)
+        if (!item.text) this.consumedEmptyQueue[kind]++
+      }
+    }
+    this.publishQueueItems(next)
+    // 闸门内的快照可能早于本次消费，不能在 finally 把它重新加回来。
+    if (this.pendingQueueUpdate && text) {
+      for (const kind of ['steering', 'followUp'] as const) {
+        const index = this.pendingQueueUpdate[kind].indexOf(text)
+        const count = this.pendingQueueUpdate[kind].filter(value => value === text).length
+        if (index >= 0 && count > next[kind].filter(item => item.text === text).length) {
+          this.pendingQueueUpdate[kind].splice(index, 1)
+          break
+        }
+      }
+    }
   }
 
   private resetQueue(emit = false): void {
+    this.queueRemoved = []
+    this.queueConsumed.clear()
+    this.consumedEmptyQueue = { steering: 0, followUp: 0 }
+    this.pendingQueueUpdate = undefined
     this.queueState = { steering: [], followUp: [] }
     if (emit) this.push({ ch: 'queue', payload: this.queueState })
   }
@@ -3186,23 +3473,30 @@ export class AgentController extends EventEmitter {
 
   private requireRpc(): PiRpc {
     if (!this.rpc) throw new Error('pi 尚未就绪或已经停止')
+    if (this.queueScope && (this.queueScope.rpc !== this.rpc || this.queueScope.sessionId !== this.state?.sessionId || this.queueScope.generation !== this.capabilityOpts?.runnerGeneration)) throw new Error('会话已切换，队列操作已停止')
     return this.rpc
   }
 
   /** 发送与基于 clear_queue 的编辑共用闸门，最终投影采用同会话的末帧事件。 */
   private queueRun<T>(work: () => Promise<T>): Promise<T> {
-    /* 闸门里置队列操作标记：这一段时间内 pi 推的 queue_update 是中间态，不作数 */
+    const owner = { rpc: this.rpc, sessionId: this.state?.sessionId, generation: this.capabilityOpts?.runnerGeneration }
+    /* 等待闸门期间切了会话，旧操作不能落到新会话上。 */
     const guarded = async (): Promise<T> => {
+      if (owner.rpc !== this.rpc || owner.sessionId !== this.state?.sessionId || owner.generation !== this.capabilityOpts?.runnerGeneration) throw new Error('会话已切换，队列操作已停止')
       this.queueBusy = true
       const sessionId = this.state?.sessionId
       const generation = this.capabilityOpts?.runnerGeneration
+      this.queueScope = { rpc: this.rpc, sessionId, generation }
+      this.queueConsumed.clear()
       try {
         return await work()
       } finally {
+        this.queueScope = undefined
         this.queueBusy = false
         const pending = this.pendingQueueUpdate
         this.pendingQueueUpdate = undefined
         if (pending && pending.sessionId === this.state?.sessionId && pending.generation === this.capabilityOpts?.runnerGeneration && sessionId === pending.sessionId && generation === pending.generation) this.publishQueue(pending.steering, pending.followUp)
+        this.queueConsumed.clear()
       }
     }
     const previous = this.queueOperations
@@ -3213,15 +3507,38 @@ export class AgentController extends EventEmitter {
 
   private pendingQueueUpdate?: { steering: string[]; followUp: string[]; sessionId?: string; generation?: number }
 
-  private async refillQueue(steering: string[], followUp: string[]): Promise<void> {
-    if (!this.rpc) throw new Error('pi 尚未就绪，无法恢复排队消息')
-    for (const text of steering) {
-      const res = await this.requireRpc().command('steer', { message: text })
-      if (!res.success) throw new Error(res.error || '恢复插话队列失败')
+  private queuePayload(item: Pick<QueueItem, 'text' | 'images'>): Record<string, unknown> {
+    return { message: item.text, ...(item.images?.length ? {
+      images: item.images.map(image => ({ type: 'image', data: image.data, mimeType: image.mimeType }))
+    } : {}) }
+  }
+
+  private async submitQueueCommand(command: 'prompt' | 'steer' | 'follow_up', text: string,
+    images: QueueItem['images'], kind: 'steering' | 'followUp', payload: Record<string, unknown>) {
+    const item = this.newQueueItem(text, images)
+    const rpc = this.requireRpc()
+    this.queueState = { ...this.queueState, [kind]: [...this.queueState[kind], item] }
+    let queued = false
+    try {
+      const res = await rpc.command<{ disposition?: string }>(command, payload)
+      this.requireRpc()
+      queued = res.success && (!res.data?.disposition || res.data.disposition === 'queued')
+      return res
+    } finally {
+      if (!queued && this.queueScope?.rpc === this.rpc && this.queueScope.sessionId === this.state?.sessionId) {
+        this.queueState = { ...this.queueState, [kind]: this.queueState[kind].filter(value => value.id !== item.id) }
+      }
     }
-    for (const text of followUp) {
-      const res = await this.requireRpc().command('follow_up', { message: text })
-      if (!res.success) throw new Error(res.error || '恢复排队队列失败')
+  }
+
+  private async refillQueue(steering: QueueItem[], followUp: QueueItem[]): Promise<void> {
+    for (const [command, items] of [['steer', steering], ['follow_up', followUp]] as const) {
+      for (const item of items) {
+        if (this.queueConsumed.has(item.id)) continue
+        const res = await this.requireRpc().command(command, this.queuePayload(item))
+        this.requireRpc()
+        if (!res.success) throw new Error(res.error || '恢复队列失败')
+      }
     }
   }
 
@@ -3229,13 +3546,15 @@ export class AgentController extends EventEmitter {
    * 清空后重排失败时尽力恢复原始队列。调用方会把恢复失败明确带给用户，
    * 不把“命令发出去了”伪装成成功。
    */
-  private async restoreQueue(raw: { steering: string[]; followUp: string[] }): Promise<string | undefined> {
+  private async restoreQueue(raw: QueueState): Promise<string | undefined> {
     if (!this.rpc) return 'pi 尚未就绪，无法恢复排队消息'
     try {
       const cleared = await this.requireRpc().command('clear_queue')
+      this.requireRpc()
       if (!cleared.success) return cleared.error || '清空队列失败，无法恢复原顺序'
-      await this.refillQueue(raw.steering, raw.followUp)
-      this.publishQueue(raw.steering, raw.followUp)
+      this.consumedEmptyQueue = { steering: 0, followUp: 0 }
+      const live = this.publishQueueItems(raw)
+      await this.refillQueue(live.steering, live.followUp)
       return undefined
     } catch (error) {
       return error instanceof Error ? error.message : String(error)
@@ -3288,7 +3607,7 @@ export class AgentController extends EventEmitter {
       const sessionId = this.state?.sessionId
       const generation = this.capabilityOpts?.runnerGeneration
       if (!rpc) return { ok: false, error: 'pi 尚未就绪' }
-      const res = await rpc.command('prompt', payload)
+      const res = await this.submitQueueCommand('prompt', text, images, mode === 'steer' ? 'steering' : 'followUp', payload)
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: '会话已切换，发送结果未应用到当前会话' }
       await this.refreshState()
@@ -3296,12 +3615,12 @@ export class AgentController extends EventEmitter {
     })
   }
 
-  async steer(text: string): Promise<{ ok: boolean; error?: string }> {
+  async steer(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
     return this.queueRun(async () => {
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在回退代码，请稍后插话' }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
       if (!rpc) return { ok: false, error: 'pi 尚未就绪' }
-      const res = await rpc.command('steer', { message: text })
+      const res = await this.submitQueueCommand('steer', text, images, 'steering', this.queuePayload({ text, images }))
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: '会话已切换，插话结果未应用到当前会话' }
       await this.refreshState()
@@ -3309,12 +3628,12 @@ export class AgentController extends EventEmitter {
     })
   }
 
-  async followUp(text: string): Promise<{ ok: boolean; error?: string }> {
+  async followUp(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
     return this.queueRun(async () => {
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在回退代码，请稍后排队' }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
       if (!rpc) return { ok: false, error: 'pi 尚未就绪' }
-      const res = await rpc.command('follow_up', { message: text })
+      const res = await this.submitQueueCommand('follow_up', text, images, 'followUp', this.queuePayload({ text, images }))
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: '会话已切换，排队结果未应用到当前会话' }
       await this.refreshState()
@@ -3326,20 +3645,20 @@ export class AgentController extends EventEmitter {
    * 运行时重载前的队列快照。会话 JSONL 不包含尚未投递的 steering / follow-up，
    * 因此资源更新后重建 pi 时必须单独保存并恢复它们。
    */
-  queueSnapshot(): { steering: string[]; followUp: string[] } {
-    return {
-      steering: this.queueState.steering.map((item) => item.text),
-      followUp: this.queueState.followUp.map((item) => item.text)
-    }
+  queueSnapshot(): QueueSnapshot {
+    return snapshotQueue(this.queueState)
   }
 
   /**
    * 在空闲的新实例里恢复重载前的队列；调用方须先确保目标会话已经载入。
    * 队列变化由 pi 的 `queue_update` 事件回传，本地也同步一份以覆盖无事件的版本。
    */
-  async restoreQueueSnapshot(snapshot: { steering: string[]; followUp: string[] }): Promise<{ ok: boolean; error?: string }> {
-    const steering = snapshot.steering.map((text) => String(text)).filter((text) => text.length > 0)
-    const followUp = snapshot.followUp.map((text) => String(text)).filter((text) => text.length > 0)
+  async restoreQueueSnapshot(snapshot: QueueSnapshot): Promise<{ ok: boolean; error?: string }> {
+    const restore = (kind: 'steering' | 'followUp') => snapshot[kind].map((text, index) =>
+      this.newQueueItem(text, snapshot.items?.[kind][index]?.text === text ? snapshot.items[kind][index].images : undefined))
+      .filter(item => item.text.length > 0 || item.images?.length)
+    const steering = restore('steering')
+    const followUp = restore('followUp')
     if (steering.length === 0 && followUp.length === 0) return { ok: true }
     if (!this.rpc?.running) return { ok: false, error: 'pi 尚未就绪，无法恢复排队消息' }
     if (this.queueState.steering.length > 0 || this.queueState.followUp.length > 0) {
@@ -3347,13 +3666,17 @@ export class AgentController extends EventEmitter {
         steering: this.queueState.steering.map((item) => item.text),
         followUp: this.queueState.followUp.map((item) => item.text)
       }
-      if (JSON.stringify(existing) === JSON.stringify({ steering, followUp })) return { ok: true }
+      if (JSON.stringify(existing) === JSON.stringify({ steering: snapshot.steering, followUp: snapshot.followUp }) &&
+        (['steering', 'followUp'] as const).every(kind => this.queueState[kind].every((item, index) =>
+          sameQueueImages(item.images, snapshot.items?.[kind][index]?.images)))) return { ok: true }
       return { ok: false, error: '新实例已有不同的排队消息；为避免丢失或重复，拒绝覆盖' }
     }
     try {
-      await this.refillQueue(steering, followUp)
-      this.publishQueue(steering, followUp)
-      return { ok: true }
+      return await this.queueRun(async () => {
+        this.publishQueueItems({ steering, followUp })
+        await this.refillQueue(steering, followUp)
+        return { ok: true }
+      })
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
@@ -3368,46 +3691,45 @@ export class AgentController extends EventEmitter {
    * 所以失败不能吞：返回错误，由界面写进日志（用户要求「所有报错进日志」）。
    */
   async steerQueued(queueId: string): Promise<{ ok: boolean; error?: string }> {
+    return this.editQueued(queueId, true)
+  }
+
+  /** 撤回时连同原始图片返回，剩余条目按完整消息重建。 */
+  async removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
+    return this.editQueued(queueId, false)
+  }
+
+  private async editQueued(queueId: string, promote: boolean): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
     return this.queueRun(async () => {
       if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
       const target = this.queueItemOf(queueId)
-      if (!target) return { ok: false, error: '这条排队消息已被接收或撤回，无法插队' }
-
+      if (!target) return { ok: false, error: '这条排队消息已被接收或撤回' }
       try {
         const res = await this.requireRpc().command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
+        this.requireRpc()
         if (!res.success) return { ok: false, error: res.error }
-        const raw = { steering: res.data?.steering ?? [], followUp: res.data?.followUp ?? [] }
-        const current = this.publishQueue(raw.steering, raw.followUp)
-        const liveTarget = current[target.kind].find((item) => item.id === queueId)
+        const original = this.publishQueue(res.data?.steering ?? [], res.data?.followUp ?? [], true)
+        const liveTarget = original[target.kind].find(item => item.id === queueId)
         if (!liveTarget) {
-          const recovery = await this.restoreQueue(raw)
-          return {
-            ok: false,
-            error: recovery
-              ? `消息已被接收；恢复队列失败：${recovery}`
-              : '消息已被 pi 接收（已进入本轮对话），无法再插队'
-          }
+          const recovery = await this.restoreQueue(original)
+          return { ok: false, error: recovery
+            ? `消息已被接收；恢复队列失败：${recovery}`
+            : '消息已被 pi 接收（已进入本轮对话），无法再操作' }
         }
-
-        const restSteer = current.steering.filter((item) => item.id !== queueId).map((item) => item.text)
-        const restFollow = current.followUp.filter((item) => item.id !== queueId).map((item) => item.text)
+        const restSteer = original.steering.filter(item => item.id !== queueId)
+        const restFollow = original.followUp.filter(item => item.id !== queueId)
         try {
+          this.publishQueueItems({ steering: promote ? [...restSteer, liveTarget] : restSteer, followUp: restFollow })
           await this.refillQueue(restSteer, restFollow)
-          const promoted = await this.requireRpc().command('steer', { message: liveTarget.text })
-          if (!promoted.success) throw new Error(promoted.error || '插队失败')
-          this.publishQueueItems({
-            steering: [...current.steering.filter((item) => item.id !== queueId), liveTarget],
-            followUp: current.followUp.filter((item) => item.id !== queueId)
-          })
-          return { ok: true }
-        } catch (error) {
-          const recovery = await this.restoreQueue(raw)
-          return {
-            ok: false,
-            error: recovery
-              ? `插队失败，且恢复原队列失败：${recovery}`
-              : `插队失败，已恢复原队列：${error instanceof Error ? error.message : String(error)}`
+          if (promote) await this.refillQueue([liveTarget], [])
+          return promote ? { ok: true } : {
+            ok: true, text: liveTarget.text, ...(liveTarget.images?.length ? { images: liveTarget.images } : {})
           }
+        } catch (error) {
+          const recovery = await this.restoreQueue(original)
+          return { ok: false, error: recovery
+            ? `队列操作失败，且恢复原队列失败：${recovery}`
+            : `队列操作失败，未消费内容已恢复：${error instanceof Error ? error.message : String(error)}` }
         }
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -3415,84 +3737,29 @@ export class AgentController extends EventEmitter {
     })
   }
 
-  /**
-   * 撤回一条尚未被 pi 接收的消息。撤回成功返回原文，渲染端把它交回草稿；
-   * 目标在 clear_queue 的瞬间已经消失时先恢复其它条目，再明确报告不可撤回。
-   */
-  async removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; error?: string }> {
-    return this.queueRun(async () => {
-      if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-      const target = this.queueItemOf(queueId)
-      if (!target) return { ok: false, error: '这条排队消息已被接收或撤回，无法撤回' }
-
-      try {
-        const res = await this.requireRpc().command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
-        if (!res.success) return { ok: false, error: res.error }
-        const raw = { steering: res.data?.steering ?? [], followUp: res.data?.followUp ?? [] }
-        const current = this.publishQueue(raw.steering, raw.followUp)
-        const liveTarget = current[target.kind].find((item) => item.id === queueId)
-        if (!liveTarget) {
-          const recovery = await this.restoreQueue(raw)
-          return {
-            ok: false,
-            error: recovery
-              ? `消息已被接收；恢复队列失败：${recovery}`
-              : '消息已被 pi 接收（已进入本轮对话），无法撤回'
-          }
-        }
-
-        const restSteer = current.steering.filter((item) => item.id !== queueId).map((item) => item.text)
-        const restFollow = current.followUp.filter((item) => item.id !== queueId).map((item) => item.text)
-        try {
-          await this.refillQueue(restSteer, restFollow)
-          this.publishQueueItems({
-            steering: current.steering.filter((item) => item.id !== queueId),
-            followUp: current.followUp.filter((item) => item.id !== queueId)
-          })
-          return { ok: true, text: liveTarget.text }
-        } catch (error) {
-          const recovery = await this.restoreQueue(raw)
-          return {
-            ok: false,
-            error: recovery
-              ? `撤回失败，且恢复原队列失败：${recovery}`
-              : `撤回失败，已恢复原队列：${error instanceof Error ? error.message : String(error)}`
-          }
-        }
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) }
-      }
-    })
-  }
-
-  async abort(): Promise<{ steering: string[]; followUp: string[] }> {
+  async abort(): Promise<QueueSnapshot> {
     this.cancelImages()
     /* 用户主动停止：用时冻结在当下，并标明这不是正常完成（H-6）。 */
     this.turn.terminal = 'stopped'
     // 按 pi 的约定：先 clear_queue 再 abort，把排队的文本拿回来。
     // 否则用户打了一半又改主意的话，那几句话就白打了（rpc.md §clear_queue）。
-    let cleared: { steering: string[]; followUp: string[] } = { steering: [], followUp: [] }
+    let cleared: QueueSnapshot = { steering: [], followUp: [] }
     try {
       /*
        * 清空队列要走串行闸门：并发的「撤回 / 插队」收尾时会把剩余项 refill 回 pi，
        * 与这里的 clear_queue 交错的话，中止之后 pi 里会残留几帧「排队中」——
        * 用户看到中止了输入框上方还挂着消息。
        */
-      const res = await this.queueRun(async () =>
-        this.rpc ? this.rpc.command<{ steering?: string[]; followUp?: string[] }>('clear_queue') : undefined
-      )
-      if (res?.success && res.data) {
-        cleared = { steering: res.data.steering ?? [], followUp: res.data.followUp ?? [] }
-      }
-      /*
-       * 不管 clear_queue 有没有带回文本，本地快照都得跟着清（D9）。
-       *
-       * 为什么：pi 只在队列变化时推 `queue_update`，而它把排队项拿去当普通
-       * 消息消费时不一定推 —— 于是中止之后左栏/输入框上方还会挂着“排队中”，
-       * 用户会以为自己那几句话还在排队。到底有没有被消费，`cleared` 是权威；
-       * 快照只是展示，中止后应与 pi 对齐。
-       */
-      if (res?.success) this.resetQueue(true)
+      await this.queueRun(async () => {
+        if (!this.rpc) return undefined
+        const result = await this.requireRpc().command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
+        this.requireRpc()
+        if (result.success && result.data) {
+          cleared = snapshotQueue(this.publishQueue(result.data.steering ?? [], result.data.followUp ?? [], true))
+          this.resetQueue(true)
+        }
+        return result
+      })
     } catch {
       /* clear_queue 失败不阻碍中止；保留本地快照，等待后续 queue_update 对齐 */
     }

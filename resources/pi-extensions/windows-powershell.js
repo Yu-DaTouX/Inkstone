@@ -10,7 +10,7 @@
 
 const POWERSHELL = /\b(?:powershell|pwsh)(?:\.exe)?\b/gi
 /* PowerShell 自动变量与 `$env:`；以及 `$name =` 赋值（bash 会展开成 ` = ...`） */
-const PS_VARIABLE = /^\$(?:[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z_][A-Za-z0-9_]*)?|\{[^}\n]+\}|\(|[0-9])/i
+const PS_VARIABLE = /^\$(?:_(?![A-Za-z0-9_])|PSItem\b|PSVersionTable\b|PSScriptRoot\b|LASTEXITCODE\b|env:[A-Za-z_]|true\b|false\b|null\b|args\b|input\b|Matches\b|Error\b|host\b|[A-Za-z_][A-Za-z0-9_]*\s*=(?!=))/
 
 /** 从 PowerShell 命令名之后找本条命令里第一个双引号参数，返回 [起点, 终点)；没有则返回 null。 */
 function doubleQuotedScript(command, from) {
@@ -93,4 +93,22 @@ export function powerShellInBashReason(name) {
 export function powerShellConflictReason(token) {
   return `没有执行：这条命令在 bash 里用双引号把脚本交给 PowerShell，bash 会先处理其中的 ${token === '`' ? '反引号（当成命令替换）' : `\`${token}\`（当成 bash 变量展开）`}，PowerShell 收到的已经不是原脚本。` +
     '请改用单引号包住 -Command 的脚本（脚本里的单引号写成 \'\\\'\'），或先把脚本写进 .ps1 文件再用 -File 运行；确实要在双引号里写，就把 PowerShell 的 $ 和反引号写成 \\$、\\`。'
+}
+
+/* 命令位置的 powershell(.exe)，可带路径前缀；不碰引号里的字样与 pwsh */
+const LEGACY_POWERSHELL = /(?:^|[;&|(\n])[ \t]*(?:[^\s;&|()]*[\\/])?powershell(?:\.exe)?(?=\s|$)/i
+
+/**
+ * bash 里调用系统自带的 PowerShell 5.1 时返回 true。5.1 按系统代码页读无 BOM 的 .ps1，
+ * 中文在 GBK 系统上会乱码或解析失败；已装 PowerShell 7（pwsh）时应改用它。
+ * 只在调用方确认本机有 pwsh 之后使用；heredoc 无法可靠区分内容，放行。
+ */
+export function findLegacyPowerShell(command) {
+  if (typeof command !== 'string') return false
+  const text = unquoted(command)
+  return text !== null && LEGACY_POWERSHELL.test(text)
+}
+
+export function legacyPowerShellReason() {
+  return '没有执行：这台设备已装 PowerShell 7，请把命令里的 `powershell` / `powershell.exe` 改成 `pwsh`。系统自带的 5.1 按系统代码页读取无 BOM 的 .ps1，含中文的脚本会乱码或解析失败；pwsh 默认按 UTF-8 读取，参数写法不变。'
 }

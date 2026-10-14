@@ -1,6 +1,10 @@
 /**
  * 宿主依赖的外部命令检测：新装的 Windows 设备常常没有 Git for Windows。
  *
+ * 只回报 `ToolStatus.reason` 里的原因码，不拼句子 —— 给人读的文案由界面按当前语言
+ * 渲染（`renderer/src/lib/toolchain-text.ts`）。主进程不知道界面语言，写在这里的
+ * 中文会在英文界面上原样显示。
+ *
  * · bash —— pi 的内置 bash 工具在 Windows 上需要它。查找顺序与随包 pi 的
  *   `getShellConfig` 保持一致（见 `git-runtime.ts` 的 `findSystemBash`）；
  *   这里报「有」，pi 就一定找得到。
@@ -15,9 +19,6 @@ import { delimiter, join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 import { MANAGED_GIT_ROOT, findSystemBash, findSystemGit } from './git-runtime'
 import type { ToolchainStatus, ToolStatus } from '../shared/ipc'
-
-const GIT_DOWNLOAD = 'https://git-scm.com/download/win'
-const POWERSHELL_DOWNLOAD = 'https://aka.ms/powershell'
 
 /**
  * 没有 bash 时 pi 把命令行工具换成 PowerShell，优先 PowerShell 7（pwsh），没有就用系统自带的 5.1。
@@ -55,31 +56,17 @@ async function detectBash(): Promise<ToolStatus> {
 
   const custom = await configuredShellPath()
   if (custom && !existsSync(custom)) {
-    return {
-      ok: false,
-      hint: `pi 设置里的 shellPath 指向的文件不存在：${custom}。请改成真实的 bash.exe 路径，或删掉这一项后安装 Git。`
-    }
+    return { ok: false, reason: { code: 'shell-path-missing', path: custom } }
   }
   const found = await findSystemBash()
   if (found) return { ok: true, path: found, ...(isManaged(found) ? { managed: true } : {}) }
-  return {
-    ok: false,
-    hint: hasPowerShell7()
-      ? `这台设备没有找到 bash，命令行暂时改用 PowerShell 7，日常命令能用，但 bash 脚本和 Unix 工具用不了。建议一键安装 Git（约 57MB，装在砚的数据目录，不改系统），或自行安装 Git for Windows（${GIT_DOWNLOAD}）后重启砚。`
-      : `这台设备没有找到 bash，命令行暂时改用系统自带的 PowerShell 5.1，处理中文和调用外部程序时容易出错。建议一键安装 Git（约 57MB，装在砚的数据目录，不改系统）；暂不装 Git 的话，可安装 PowerShell 7（winget install Microsoft.PowerShell 或 ${POWERSHELL_DOWNLOAD}）后重启砚。`
-  }
+  return { ok: false, reason: { code: 'bash-missing', shell: hasPowerShell7() ? 'pwsh' : 'powershell' } }
 }
 
 function detectGit(): ToolStatus {
   const found = findSystemGit()
   if (found) return { ok: true, path: found, ...(isManaged(found) ? { managed: true } : {}) }
-  return {
-    ok: false,
-    hint:
-      process.platform === 'win32'
-        ? `这台设备没有找到 git，改动审阅、工作树、子任务隔离与检查点不可用。可以一键安装 Git（约 57MB，装在砚的数据目录，不改系统）；也可以自己安装 Git for Windows（${GIT_DOWNLOAD}）后重启砚。`
-        : '这台设备没有找到 git，改动审阅、工作树、子任务隔离与检查点不可用。请先安装 git。'
-  }
+  return { ok: false, reason: { code: 'git-missing' } }
 }
 
 export async function detectToolchain(): Promise<ToolchainStatus> {

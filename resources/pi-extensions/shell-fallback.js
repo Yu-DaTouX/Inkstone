@@ -16,15 +16,22 @@
  * 必须在 work-mode.js **之前**加载：它记录「宿主给的原始工具集」作恢复基线，要记到换好之后的这一份。
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, lstatSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileTransportOperations } from './shell-transport.js'
 import { createPythonEnvFixer } from './windows-python.js'
-import { findPowerShellInBash, findPowerShellQuotingConflict, powerShellConflictReason, powerShellInBashReason } from './windows-powershell.js'
+import { findLegacyPowerShell, findPowerShellInBash, legacyPowerShellReason, findPowerShellQuotingConflict, powerShellConflictReason, powerShellInBashReason } from './windows-powershell.js'
 
-const UTF8_CONSOLE = 'chcp.com 65001 >/dev/null 2>&1'
+/* 商店版 pwsh.exe 是指向受保护目录的链接，existsSync 会得到 false，只看链接本身 */
+function hasPwsh() {
+  return (process.env.PATH ?? '').split(delimiter).some((dir) => {
+    try { return !!dir && !!lstatSync(join(dir, 'pwsh.exe')) } catch { return false }
+  })
+}
+
+const UTF8_CONSOLE ='chcp.com 65001 >/dev/null 2>&1'
 
 function toolName(entry) {
   if (typeof entry === 'string') return entry
@@ -98,6 +105,7 @@ export default async function shellFallback(pi) {
     const token = findPowerShellQuotingConflict(command)
     if (token) return { block: true, reason: powerShellConflictReason(token) }
     const cmdlet = findPowerShellInBash(command)
-    return cmdlet ? { block: true, reason: powerShellInBashReason(cmdlet) } : undefined
+    if (cmdlet) return { block: true, reason: powerShellInBashReason(cmdlet) }
+    return findLegacyPowerShell(command) && hasPwsh() ? { block: true, reason: legacyPowerShellReason() } : undefined
   })
 }

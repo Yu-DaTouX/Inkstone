@@ -12,8 +12,8 @@ export const FONT_UI_PRESETS: readonly FontUiPreset[] = ['maple', 'sans', 'serif
 export const FONT_CODE_PRESETS: readonly FontCodePreset[] = ['maple', 'mono', 'custom']
 
 const MAPLE = "'Maple Mono CN', ui-monospace, Consolas, monospace"
-/** 各平台系统字体：Windows / macOS / Linux 依次排列，取第一个装了的 */
-const SANS = "system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Noto Sans SC', 'Source Han Sans SC', sans-serif"
+/** 界面与正文的缺省（人声）：系统比例字体，Windows / macOS / Linux 依次排列 */
+const SANS = "'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', system-ui, sans-serif"
 const SERIF = "'Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', 'Songti SC', SimSun, Georgia, 'Times New Roman', serif"
 const MONO = "ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Liberation Mono', monospace"
 
@@ -35,8 +35,9 @@ export function sanitizeFontName(value: unknown): string | undefined {
   return /^[\p{L}\p{N} ._-]{1,64}$/u.test(name) ? name : undefined
 }
 
-export function sanitizeFontUiPreset(value: unknown): Exclude<FontUiPreset, 'maple'> | undefined {
-  return value === 'sans' || value === 'serif' || value === 'custom' ? value : undefined
+/** 界面 / 正文字体预设：'sans' 是缺省（不落盘）；'maple'（终端风格）可显式落盘 */
+export function sanitizeFontUiPreset(value: unknown): Exclude<FontUiPreset, 'sans'> | undefined {
+  return value === 'maple' || value === 'serif' || value === 'custom' ? value : undefined
 }
 
 export function sanitizeFontCodePreset(value: unknown): Exclude<FontCodePreset, 'maple'> | undefined {
@@ -51,15 +52,15 @@ export function sanitizeFontSize(value: unknown, min: number, max: number, fallb
   return v === fallback ? undefined : v
 }
 
-/** 界面 / 正文字体栈；自定义字体名不可用时回到缺省 */
+/** 界面 / 正文字体栈；缺省（未设置或 'sans'）用系统比例字体，自定义字体名不可用时回到缺省 */
 export function fontUiStack(preset: string | undefined, custom: string | undefined): string {
-  if (preset === 'sans') return SANS
+  if (preset === 'maple') return MAPLE
   if (preset === 'serif') return SERIF
   if (preset === 'custom') {
     const name = sanitizeFontName(custom)
-    return name ? `"${name}", ${MAPLE}` : MAPLE
+    return name ? `"${name}", ${SANS}` : SANS
   }
-  return MAPLE
+  return SANS
 }
 
 /** 代码与终端字体栈：自定义字体名后接等宽回退 */

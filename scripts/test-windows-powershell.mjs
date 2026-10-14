@@ -7,7 +7,7 @@
  * 用法：node scripts/test-windows-powershell.mjs
  */
 import assert from 'node:assert/strict'
-import { findPowerShellInBash, findPowerShellQuotingConflict as find, powerShellConflictReason, powerShellInBashReason } from '../resources/pi-extensions/windows-powershell.js'
+import { findLegacyPowerShell, findPowerShellInBash, findPowerShellQuotingConflict as find, powerShellConflictReason, powerShellInBashReason } from '../resources/pi-extensions/windows-powershell.js'
 
 const blocked = [
   ['powershell -NoProfile -Command "Get-Process | Where-Object { $_.ProcessName -match \'electron\' }"', '$_'],
@@ -64,6 +64,10 @@ const notInBash = [
 for (const command of notInBash) assert.equal(findPowerShellInBash(command), null, command)
 assert.equal(findPowerShellInBash(undefined), null)
 assert.match(powerShellInBashReason('Get-Content'), /Get-Content.*bash/)
+
+/* 系统自带 5.1：命令位置的 powershell 才算，pwsh、引号与 heredoc 里的字样放行 */
+for (const command of ['powershell -NoProfile -File a.ps1', 'cd x && powershell.exe -File a.ps1', 'ls | powershell -Command -', '/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File a.ps1']) assert.equal(findLegacyPowerShell(command), true, command)
+for (const command of ['pwsh -File a.ps1', 'echo "powershell"', "git commit -m 'powershell.exe'", 'cat <<EOF\npowershell -File a\nEOF', 'ls powershell-notes', undefined]) assert.equal(findLegacyPowerShell(command), false, String(command))
 
 assert.match(powerShellConflictReason('$_'), /`\$_`/)
 assert.match(powerShellConflictReason('`'), /反引号/)

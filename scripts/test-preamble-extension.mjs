@@ -40,5 +40,5 @@ export async function runPreambleExtensionTests(ok, mod) {
     ok(typeof sections.docs === 'string' && sections.docs.includes('C:\\pi\\README.md'), '同名分区 docs 写入压缩版')
     ok(run(`${NATIVE_PREAMBLE}\n\n<docs>\nsomething else\n</docs>`).systemPrompt.includes('something else'), '认不出的文档段原样保留')
   }
-  ok(PROGRESS_GUIDANCE.includes('requests silence') && PROGRESS_GUIDANCE.includes('without narrating each routine call'), '进展约定尊重静默要求，不逐条播报工具')
+  ok(PROGRESS_GUIDANCE.includes('requests silence') && PROGRESS_GUIDANCE.includes('After each batch of tool calls') && PROGRESS_GUIDANCE.includes('Do not narrate every routine call'), '进展约定要求每批工具后给出更新，尊重静默要求，不逐条播报工具')
 }
