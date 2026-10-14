@@ -739,6 +739,23 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     } finally { await ctrl.stopAll() }
   }
 
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({ cwd: 'C:/events', createRpc: factory.createRpc, onChange: () => {}, prepare: fakePrepare })
+    const started = await ctrl.start('长命令', undefined, 'controlled-cwd')
+    const run = ctrl.runs.get(started.run.id)
+    try {
+      const rpc = factory.created[0]
+      rpc.emit('event', { type: 'tool_execution_start', toolName: 'bash', toolCallId: 't1' })
+      run.lastProgressAt = Date.now() - run.idleMs - 1
+      ctrl.onWatch(run)
+      ok(!run.wrapUp, '工具仍在执行时，超过基础停滞期限不收尾')
+      run.lastProgressAt = Date.now() - run.idleMs * 6 - 1
+      ctrl.onWatch(run)
+      ok(run.wrapUp?.reason === 'timeout', '工具执行也有放宽后的兜底期限')
+    } finally { await ctrl.stopAll() }
+  }
+
   /* 旧预算参数不再限制调用次数；模型自主完成任务。 */
   {
     const factory = makeRpcFactory()

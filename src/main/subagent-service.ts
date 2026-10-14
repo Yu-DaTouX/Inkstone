@@ -32,6 +32,7 @@ export interface SubagentServiceDeps {
   providerExtensions?(): string[]
   guardExtension?(): string | undefined
   shellExtension?(): string | undefined
+  resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean>
   onChange(run: SubagentRun): void
   /** 流式增量推送；不传时整条推送（见 SubagentOptions.onPatch） */
@@ -70,6 +71,7 @@ export class SubagentService {
       extensions: [this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
       confirmDanger: (params, cwd, origin) => this.deps.confirmDanger?.(params, cwd, origin) ?? Promise.resolve(false),
+      ...(this.deps.resolveModelApi ? { resolveModelApi: (label, origin) => this.deps.resolveModelApi!(label, origin) } : {}),
       onChange: (run) => this.deps.onChange(run),
       ...(this.deps.onPatch ? { onPatch: (payload) => this.deps.onPatch?.(payload) } : {}),
       onRemove: (id) => this.deps.onRemove(id),
