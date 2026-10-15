@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>砚 · 主窗口</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.ys{
+  --bg:#FAFAF8;--side:#F2F2EF;--surface:#FFFFFF;--hover:#E8E8E4;--hover-main:#F0F0EC;--bubble:#EFEFEB;--sunken:#F4F4F1;
+  --fg:#1D1D1B;--fg2:#5E5D59;--fg3:#6F6E69;--line:rgba(29,29,27,.08);--line2:rgba(29,29,27,.14);
+  --ink:#1D1D1B;--on-ink:#FFFFFF;--ink-hover:#3A3A37;
+  --accent:#4057D6;--sel:rgba(64,87,214,.10);--focus:#4057D6;
+  --run:#1F9D55;--run-t:#157A43;--ask:#D99A1E;--ask-t:#8F5B00;--ask-bg:#FBF3E2;--stall:#E0702E;--stall-t:#B04A12;--stall-bg:#FCEDE3;--fail:#D64545;--fail-t:#B42B2B;
+  --add:#157A43;--del:#B42B2B;--add-bg:#E9F5EE;--del-bg:#FBEBEB;
+  --shadow-comp:0 1px 2px rgba(0,0,0,.04),0 8px 28px -10px rgba(0,0,0,.12);
+  --shadow-pop:0 0 0 1px rgba(0,0,0,.06),0 16px 40px -10px rgba(0,0,0,.22);
+  --font:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC",system-ui,sans-serif;
+  --mono:"Cascadia Mono","Cascadia Code","JetBrains Mono","SF Mono",Consolas,"Microsoft YaHei UI",monospace;
+  --row:32px;--prose:15px;--prose-lh:26px;
+  color-scheme:light;
+  position:relative;height:100vh;min-height:600px;display:flex;overflow:hidden;
+  background:var(--bg);color:var(--fg);font-family:var(--font);font-size:13.5px;line-height:20px;
+  container-type:inline-size;container-name:app;text-autospace:normal;-webkit-font-smoothing:antialiased;
+}
+.ys[data-theme="dark"]{
+  --bg:#1E1E1C;--side:#191918;--surface:#272725;--hover:#2C2C2A;--hover-main:#262624;--bubble:#30302E;--sunken:#171716;
+  --fg:#ECECE9;--fg2:#B5B4AF;--fg3:#8F8E89;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.14);
+  --ink:#ECECE9;--on-ink:#1E1E1C;--ink-hover:#FFFFFF;
+  --accent:#8EA1F5;--sel:rgba(142,161,245,.14);--focus:#8EA1F5;
+  --run:#4CC38A;--run-t:#4CC38A;--ask:#E6B450;--ask-t:#E6B450;--ask-bg:rgba(230,180,80,.12);--stall:#F08C5A;--stall-t:#F08C5A;--stall-bg:rgba(240,140,90,.12);--fail:#F07070;--fail-t:#F07070;
+  --add:#4CC38A;--del:#F07070;--add-bg:rgba(76,195,138,.12);--del-bg:rgba(240,112,112,.12);
+  --shadow-comp:0 1px 2px rgba(0,0,0,.3),0 10px 30px -10px rgba(0,0,0,.55);
+  --shadow-pop:0 0 0 1px rgba(255,255,255,.08),0 18px 44px -10px rgba(0,0,0,.65);
+  color-scheme:dark;
+}
+.ys[data-density="compact"]{--row:28px;--prose:14px;--prose-lh:24px}
+.ys[data-density="comfortable"]{--row:36px;--prose:16px;--prose-lh:28px}
+.ys *{box-sizing:border-box}
+.ys ::selection{background:var(--sel)}
+.ys button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit}
+.ys button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:8px}
+.ys p{margin:0}
+.ys code{font-family:var(--mono);font-size:.86em;padding:1px 5px;border-radius:5px;background:var(--sunken)}
+.ys .num{font-variant-numeric:tabular-nums}
+.ys .muted{color:var(--fg3)}
+.ys .ico{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ys .ico.l{width:18px;height:18px}
+.ys ::-webkit-scrollbar{width:10px;height:10px}
+.ys ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:999px;border:3px solid transparent;background-clip:padding-box}
+.ys kbd{font-family:var(--font);font-size:11px;color:var(--fg3);font-variant-numeric:tabular-nums}
+
+.dot{width:8px;height:8px;border-radius:999px;flex:none;display:inline-block}
+.dot.run{background:var(--run);animation:ys-breathe 2.4s ease-in-out infinite}
+.dot.ask{background:var(--ask)}
+.dot.stall{background:var(--stall)}
+.dot.fail{background:var(--fail)}
+.dot.done{background:transparent}
+.dot.idle{background:transparent;box-shadow:inset 0 0 0 1.5px var(--fg3)}
+.dot.unread{width:6px;height:6px;background:var(--fg)}
+@keyframes ys-breathe{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes ys-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes ys-pop{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+.ys-in{animation:ys-in 180ms cubic-bezier(0,0,0,1)}
+
+.ys-side{width:264px;flex:none;display:flex;flex-direction:column;background:var(--side);min-height:0}
+.ys-side-top{height:48px;display:flex;align-items:center;gap:8px;padding:0 8px 0 16px;flex:none}
+.ys-mark{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px}
+.ys-side-top .sp{margin-left:auto}
+.ys-ic{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--fg2);flex:none}
+.ys-ic:hover{background:var(--hover);color:var(--fg)}
+.ys-main .ys-ic:hover{background:var(--hover-main)}
+.ys-act{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;margin:0 8px;border-radius:8px;color:var(--fg)}
+.ys-act:hover{background:var(--hover)}
+.ys-act kbd{margin-left:auto;opacity:0;transition:opacity 120ms}
+.ys-act:hover kbd{opacity:1}
+.ys-act .badge{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg3);font-variant-numeric:tabular-nums}
+.ys-act[aria-expanded="true"]{background:var(--hover)}
+.ys-gap{height:10px;flex:none}
+.ys-list{flex:1;min-height:0;overflow:auto;padding:4px 8px 8px}
+.ys-grp{display:flex;align-items:center;height:30px;margin-top:10px;padding:0 10px;color:var(--fg3);font-size:12px}
+.ys-row{display:flex;align-items:center;gap:10px;width:100%;height:var(--row);padding:0 10px;border-radius:8px;color:var(--fg)}
+.ys-row:hover{background:var(--hover)}
+.ys-row[aria-current="true"]{background:var(--hover);font-weight:600}
+.ys-row .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ys-row .m{font-size:12px;color:var(--fg3);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:400}
+.ys-row .m.ask{color:var(--ask-t);font-weight:600}
+.ys-row .m.stall{color:var(--stall-t);font-weight:600}
+.ys-row .dot.done{display:none}
+.ys-side-foot{display:flex;align-items:center;gap:4px;padding:8px;border-top:1px solid var(--line);flex:none}
+.ys-side-foot .dev{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg3);margin-left:6px}
+.ys-side-foot .sp{margin-left:auto}
+.ys-txt{height:30px;padding:0 10px;border-radius:8px;color:var(--fg2);font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
+.ys-txt:hover{background:var(--hover);color:var(--fg)}
+
+.ys-pop{position:absolute;left:16px;top:132px;width:400px;z-index:20;border-radius:14px;background:var(--surface);box-shadow:var(--shadow-pop);padding:8px;animation:ys-pop 160ms cubic-bezier(0,0,0,1)}
+.ys-pop .hd{display:flex;align-items:center;gap:8px;height:36px;padding:0 4px 0 10px}
+.ys-pop .hd b{font-weight:600}
+.ys-pop .hd .sp{margin-left:auto}
+.ys-prow{display:grid;grid-template-columns:8px 44px minmax(0,1fr) auto 44px;align-items:center;column-gap:10px;width:100%;height:36px;padding:0 10px;border-radius:8px;color:var(--fg)}
+.ys-prow:hover{background:var(--hover-main)}
+.ys-prow .code{font-size:12px;color:var(--fg3);font-variant-numeric:tabular-nums}
+.ys-prow .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ys-prow .st{font-size:12px;color:var(--fg3);white-space:nowrap}
+.ys-prow .st.ask{color:var(--ask-t);font-weight:600}
+.ys-prow .st.stall{color:var(--stall-t);font-weight:600}
+.ys-prow .num{font-size:12px;color:var(--fg3);text-align:right}
+.ys-pop .ft{display:flex;justify-content:flex-end;padding:6px 4px 2px;border-top:1px solid var(--line);margin-top:6px}
+
+.ys-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.ys-head{height:48px;flex:none;display:flex;align-items:center;gap:6px;padding-left:16px}
+.ys-head h1{margin:0;font-size:14px;line-height:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ys-head .proj{font-size:12.5px;color:var(--fg3);white-space:nowrap}
+.ys-head .sp{margin-left:auto}
+.ys-hbtn{height:30px;padding:0 10px;border-radius:8px;color:var(--fg2);display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}
+.ys-hbtn:hover,.ys-hbtn[aria-pressed="true"]{background:var(--hover-main);color:var(--fg)}
+.ys-hbtn .num{color:var(--fg3)}
+.ys-win{display:flex;margin-left:6px}
+.ys-win button{width:46px;height:48px;display:grid;place-items:center;color:var(--fg2)}
+.ys-win button:hover{background:var(--hover-main);color:var(--fg)}
+.ys-win button.close:hover{background:#C42B2B;color:#FFFFFF}
+.ys-open-side{display:none}
+.ys[data-side="closed"] .ys-side{display:none}
+.ys[data-side="closed"] .ys-open-side{display:grid}
+
+.ys-body{flex:1;min-height:0;display:flex}
+.ys-conv{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.ys-pill{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:5;display:flex;align-items:center;gap:10px;height:40px;padding:0 6px 0 14px;border-radius:999px;background:var(--surface);box-shadow:var(--shadow-pop);white-space:nowrap;animation:ys-in 200ms cubic-bezier(0,0,0,1);max-width:calc(100% - 32px)}
+.ys-pill b{font-weight:600}
+.ys-pill .what{color:var(--fg2);overflow:hidden;text-overflow:ellipsis}
+.ys-pill .go{height:28px;padding:0 12px;border-radius:999px;background:var(--ink);color:var(--on-ink);font-weight:600;font-size:12.5px;flex:none}
+.ys-pill .go:hover{background:var(--ink-hover)}
+.ys-scroll{flex:1;min-height:0;overflow:auto;padding:56px 24px 16px}
+.ys-col{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.ys-user{align-self:flex-end;max-width:80%;padding:10px 16px;border-radius:18px;background:var(--bubble);font-size:var(--prose);line-height:var(--prose-lh);text-wrap:pretty}
+.ys-user .q{display:block;font-size:12px;line-height:18px;color:var(--fg3);margin-bottom:2px}
+.ys-prose{font-size:var(--prose);line-height:var(--prose-lh);text-wrap:pretty}
+.ys-sum{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 10px 0 8px;margin-left:-8px;border-radius:8px;color:var(--fg2);font-size:13px;align-self:flex-start}
+.ys-sum:hover{background:var(--hover-main);color:var(--fg)}
+.ys-sum .chev{transition:transform 160ms cubic-bezier(.2,0,0,1)}
+.ys-sum[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.ys-sum .add{color:var(--add)}.ys-sum .del{color:var(--del)}
+.ys-steps{display:flex;flex-direction:column;margin-top:-10px;padding-left:2px}
+.ys-step{display:flex;align-items:center;gap:10px;min-height:28px;padding-left:20px;color:var(--fg2);font-size:13px}
+.ys-step .v{color:var(--fg);flex:none}
+.ys-step .tg{font-family:var(--mono);font-size:12.5px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ys-step .r{margin-left:auto;font-size:12px;color:var(--fg3);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ys-step .add{color:var(--add)}.ys-step .del{color:var(--del)}
+.ys-live{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--fg2);min-height:28px}
+.ys-live .tg{font-family:var(--mono);font-size:12.5px;color:var(--fg)}
+.ys-live .r{color:var(--fg3);font-variant-numeric:tabular-nums}
+.ys-sub{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--fg2);min-height:28px}
+.ys-sub b{color:var(--fg);font-weight:600}
+.ys-link{color:var(--accent);font-size:12.5px;height:24px;padding:0 6px;border-radius:6px}
+.ys-link:hover{background:var(--sel)}
+.ys-tools{display:flex;gap:2px;margin-top:-8px;opacity:.85}
+.ys-tools button{height:28px;padding:0 8px;border-radius:6px;color:var(--fg3);font-size:12px;display:inline-flex;align-items:center;gap:5px}
+.ys-tools button:hover{background:var(--hover-main);color:var(--fg)}
+.ys-tools .meta{font-size:12px;color:var(--fg3);display:inline-flex;align-items:center;padding:0 6px;font-variant-numeric:tabular-nums}
+
+.ys-ask{border-radius:14px;background:var(--surface);box-shadow:0 0 0 1px var(--line2),0 10px 28px -14px rgba(0,0,0,.18);padding:16px;display:flex;flex-direction:column;gap:12px}
+.ys-ask .hd{display:flex;align-items:center;gap:8px;font-weight:600}
+.ys-ask .hd .sp{margin-left:auto;font-weight:400;color:var(--fg3);font-size:12px;font-variant-numeric:tabular-nums}
+.ys-ask .why{color:var(--fg2);font-size:14px;line-height:22px}
+.ys-ask .cmd{font-family:var(--mono);font-size:13px;line-height:20px;background:var(--sunken);border-radius:8px;padding:10px 12px}
+.ys-ask .where{font-size:12.5px;color:var(--fg3)}
+.ys-ask .acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ys-ask .hint{font-size:12px;color:var(--fg3);margin-right:auto;font-variant-numeric:tabular-nums}
+.ys-btn{height:32px;padding:0 14px;border-radius:8px;font-weight:600;font-size:13px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.ys-btn.pri{background:var(--ink);color:var(--on-ink)}
+.ys-btn.pri:hover{background:var(--ink-hover)}
+.ys-btn.sec{color:var(--fg);box-shadow:inset 0 0 0 1px var(--line2)}
+.ys-btn.sec:hover{background:var(--hover-main)}
+.ys-rec{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--fg3)}
+.ys-note{border-radius:14px;background:var(--stall-bg);padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.ys-note .hd{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--stall-t)}
+.ys-note p{color:var(--fg2)}
+.ys-note .acts{display:flex;gap:8px;flex-wrap:wrap}
+.ys-kv{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px 16px;font-size:14px}
+.ys-kv dt{color:var(--fg3)}
+.ys-kv dd{margin:0}
+.ys-hero{display:flex;flex-direction:column;gap:6px}
+.ys-hero h2{margin:0;font-size:20px;line-height:28px;font-weight:600}
+
+.ys-comp{flex:none;padding:6px 24px 20px}
+.ys-cbox{max-width:760px;margin:0 auto;background:var(--surface);border-radius:20px;box-shadow:inset 0 0 0 1px var(--line2),var(--shadow-comp);transition:box-shadow 160ms}
+.ys-cbox:focus-within{box-shadow:inset 0 0 0 1px var(--fg3),var(--shadow-comp)}
+.ys-queue{display:flex;align-items:center;gap:8px;margin:10px 10px 0;padding:6px 6px 6px 12px;border-radius:12px;background:var(--sunken);font-size:12.5px;color:var(--fg2)}
+.ys-queue b{color:var(--fg);font-weight:600;white-space:nowrap}
+.ys-queue .txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ys-queue button{height:24px;padding:0 8px;border-radius:6px;color:var(--fg2)}
+.ys-queue button:hover{background:var(--hover-main);color:var(--fg)}
+.ys-ta{display:block;width:100%;border:0;outline:0;resize:none;background:transparent;color:var(--fg);font:inherit;font-size:15px;line-height:24px;padding:14px 18px 4px;field-sizing:content;min-height:52px;max-height:200px;caret-color:var(--accent)}
+.ys-ta::placeholder{color:var(--fg3)}
+.ys-ctl{display:flex;align-items:center;gap:4px;padding:6px 10px 10px}
+.ys-ctl .sp{margin-left:auto}
+.ys-tb{height:32px;padding:0 10px;border-radius:8px;color:var(--fg2);font-size:13px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.ys-tb:hover{background:var(--hover-main);color:var(--fg)}
+.ys-ring{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 8px;border-radius:8px;color:var(--fg3);font-size:12px;font-variant-numeric:tabular-nums}
+.ys-ring:hover{background:var(--hover-main);color:var(--fg2)}
+.ys-send{width:34px;height:34px;border-radius:999px;background:var(--ink);color:var(--on-ink);display:grid;place-items:center;flex:none}
+.ys-send:hover{background:var(--ink-hover)}
+.ys-stop{width:34px;height:34px;border-radius:999px;color:var(--fg);box-shadow:inset 0 0 0 1px var(--line2);display:grid;place-items:center;flex:none}
+.ys-stop:hover{background:var(--hover-main)}
+
+.ys-panel{width:420px;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--surface);border-left:1px solid var(--line);animation:ys-in 180ms cubic-bezier(0,0,0,1)}
+.ys-tabs{display:flex;align-items:center;gap:2px;height:48px;padding:0 6px 0 10px;flex:none;border-bottom:1px solid var(--line)}
+.ys-tab{height:30px;padding:0 10px;border-radius:8px;color:var(--fg2);font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.ys-tab:hover{background:var(--hover-main);color:var(--fg)}
+.ys-tab[aria-selected="true"]{background:var(--hover-main);color:var(--fg);font-weight:600}
+.ys-tabs .sp{margin-left:auto}
+.ys-files{padding:8px;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid var(--line);flex:none}
+.ys-file{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:8px;color:var(--fg2);width:100%}
+.ys-file:hover{background:var(--hover-main)}
+.ys-file[aria-current="true"]{background:var(--sel);color:var(--fg)}
+.ys-file .p{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ys-file .st{font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ys-file .add{color:var(--add)}.ys-file .del{color:var(--del)}
+.ys-diff{flex:1;min-height:0;overflow:auto;font-family:var(--mono);font-size:12px;line-height:20px;padding:8px 0}
+.ys-hunk{color:var(--fg3);padding:4px 14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ys-dl{display:grid;grid-template-columns:44px 16px minmax(0,1fr);padding-right:14px;white-space:pre}
+.ys-dl .ln{color:var(--fg3);text-align:right;padding-right:10px;font-variant-numeric:tabular-nums}
+.ys-dl .mk{color:var(--fg3)}
+.ys-dl.a{background:var(--add-bg)}.ys-dl.a .mk{color:var(--add)}
+.ys-dl.d{background:var(--del-bg)}.ys-dl.d .mk{color:var(--del)}
+.ys-term{flex:1;min-height:0;overflow:auto;font-family:var(--mono);font-size:12px;line-height:20px;padding:12px 14px;white-space:pre;background:var(--sunken)}
+.ys-term .pr{color:var(--fg3)}
+.ys-term .ok{color:var(--add)}
+.ys-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:24px;text-align:center;color:var(--fg3)}
+.ys-empty b{color:var(--fg);font-weight:600}
+
+@container app (max-width:1180px){
+  .ys-panel{position:absolute;right:0;top:48px;bottom:0;z-index:15;box-shadow:var(--shadow-pop)}
+}
+@container app (max-width:900px){
+  .ys-side{position:absolute;left:0;top:0;bottom:0;z-index:25;box-shadow:var(--shadow-pop)}
+  .ys-pop{left:8px;width:calc(100% - 16px)}
+  .ys-head .proj{display:none}
+}
+@container app (max-width:620px){
+  .ys-scroll{padding:56px 14px 12px}
+  .ys-comp{padding:6px 10px 12px}
+  .ys-ctl .opt{display:none}
+  .ys-hbtn .lbl{display:none}
+}
+@media (prefers-reduced-motion:reduce){.ys *{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+<div class="ys" data-theme="{{theme}}" data-density="{{density}}" data-side="{{sideState}}">
+
+<aside class="ys-side" aria-label="侧栏">
+  <div class="ys-side-top">
+    <div class="ys-mark">
+      <svg width="22" height="22" viewBox="0 0 22 22" role="img" aria-label="砚（占位标志）"><rect x="1" y="1" width="20" height="20" rx="6" fill="currentColor"></rect><path d="M6.5 8.5h9M6.5 11.5h6M6.5 14.5h7.5" style="stroke: var(--side)" stroke-width="1.6" stroke-linecap="round"></path></svg>
+      <span>砚</span>
+    </div>
+    <span class="sp"></span>
+    <button class="ys-ic" type="button" aria-label="收起侧栏" onClick="{{toggleSide}}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M9 4v16"></path></svg></button>
+  </div>
+  <button class="ys-act" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>新会话<kbd>Ctrl N</kbd></button>
+  <button class="ys-act" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>搜索<kbd>Ctrl K</kbd></button>
+  <div class="ys-gap"></div>
+  <button class="ys-act" type="button" aria-expanded="{{runsOpen}}" onClick="{{toggleRuns}}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>运行<span class="badge"><sc-if value="{{counts.ask}}" hint-placeholder-val="{{ true }}"><span class="dot ask"></span></sc-if><span>{{counts.active}}</span></span></button>
+  <button class="ys-act" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>定时任务</button>
+  <button class="ys-act" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="18" r="2.5"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7.5M6 8.5V21"></path></svg>代码评审</button>
+
+  <div class="ys-list">
+    <div class="ys-grp">pi-desktop</div>
+    <sc-for list="{{railA}}" as="r" hint-placeholder-count="4">
+      <button class="ys-row" type="button" aria-current="{{r.cur}}" onClick="{{r.open}}" title="{{r.title}}">
+        <span class="dot {{r.dot}}" role="img" aria-label="{{r.label}}"></span>
+        <span class="t">{{r.title}}</span>
+        <span class="m {{r.metaCls}}">{{r.meta}}</span>
+        <sc-if value="{{r.unread}}" hint-placeholder-val="{{ false }}"><span class="dot unread" role="img" aria-label="未读"></span></sc-if>
+      </button>
+    </sc-for>
+    <div class="ys-grp">release-tool</div>
+    <sc-for list="{{railB}}" as="r" hint-placeholder-count="1">
+      <button class="ys-row" type="button" aria-current="{{r.cur}}" onClick="{{r.open}}" title="{{r.title}}">
+        <span class="dot {{r.dot}}" role="img" aria-label="{{r.label}}"></span>
+        <span class="t">{{r.title}}</span>
+        <span class="m {{r.metaCls}}">{{r.meta}}</span>
+      </button>
+    </sc-for>
+    <div class="ys-grp">更早</div>
+    <button class="ys-row" type="button"><span class="dot done"></span><span class="t">周报整理</span></button>
+    <button class="ys-row" type="button"><span class="dot done"></span><span class="t">图片批量压缩脚本</span></button>
+    <button class="ys-row" type="button"><span class="dot done"></span><span class="t">博客评论区样式</span></button>
+  </div>
+
+  <div class="ys-side-foot">
+    <button class="ys-ic" type="button" aria-label="设置"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-9M14 17H5M17 4v6M8 14v6"></path></svg></button>
+    <span class="dev"><span class="dot" style="background: var(--run)"></span>手机已连接</span>
+    <span class="sp"></span>
+    <button class="ys-txt" type="button" onClick="{{replay}}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>重播</button>
+  </div>
+</aside>
+
+<sc-if value="{{runsOpenBool}}" hint-placeholder-val="{{ false }}">
+<div class="ys-pop" role="dialog" aria-label="运行总览">
+  <div class="hd"><b>运行</b><span class="muted">{{counts.active}} 个进行中</span><span class="sp"></span><button class="ys-ic" type="button" aria-label="关闭" onClick="{{toggleRuns}}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div>
+  <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+    <button class="ys-prow" type="button" onClick="{{r.open}}">
+      <span class="dot {{r.dot}}"></span>
+      <span class="code">{{r.code}}</span>
+      <span class="t">{{r.title}}</span>
+      <span class="st {{r.stCls}}">{{r.stText}}</span>
+      <span class="num">{{r.elapsed}}</span>
+    </button>
+  </sc-for>
+  <div class="ft"><button class="ys-link" type="button">打开运行总览页</button></div>
+</div>
+</sc-if>
+
+<div class="ys-main">
+  <header class="ys-head">
+    <button class="ys-ic ys-open-side" type="button" aria-label="展开侧栏" onClick="{{toggleSide}}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M9 4v16"></path></svg></button>
+    <h1>{{sess.title}}</h1>
+    <span class="proj">{{sess.project}}</span>
+    <span class="sp"></span>
+    <button class="ys-hbtn" type="button" aria-pressed="{{panelOpen}}" onClick="{{togglePanel}}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 8h6M3 16h6M15 8h6M15 12h4"></path></svg><span class="lbl">改动</span><span class="num">{{sess.changes}}</span></button>
+    <button class="ys-ic" type="button" aria-label="从这里分叉"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="18" r="2.5"></circle><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="6" r="2.5"></circle><path d="M18 8.5v1.5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8.5M12 12v3.5"></path></svg></button>
+    <button class="ys-ic" type="button" aria-label="更多"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="2.6"></path></svg></button>
+    <div class="ys-win">
+      <button type="button" aria-label="最小化"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"></path></svg></button>
+      <button type="button" aria-label="最大化"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"></rect></svg></button>
+      <button class="close" type="button" aria-label="关闭"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 7 7 17M7 7l10 10"></path></svg></button>
+    </div>
+  </header>
+
+  <div class="ys-body">
+    <div class="ys-conv">
+
+      <sc-if value="{{attention.show}}" hint-placeholder-val="{{ true }}">
+        <div class="ys-pill" role="status">
+          <span class="dot ask"></span><b>发布脚本</b><span class="what">等你确认 · git push --force · 已等 <span class="num">{{attention.wait}}</span></span>
+          <button class="go" type="button" onClick="{{openS14}}">查看</button>
+        </div>
+      </sc-if>
+
+      <div class="ys-scroll">
+
+      <sc-if value="{{isS12}}" hint-placeholder-val="{{ true }}">
+      <div class="ys-col">
+        <div class="ys-user">把 OAuth 登录改成 PKCE 流程，旧 token 要继续能用。改完跑一下 auth 相关的测试。</div>
+        <p class="ys-prose">先看一下现有的认证代码，再动 <code>oauth.ts</code>。旧 token 的刷新单独走一条分支，不影响新流程。</p>
+        <button class="ys-sum" type="button" aria-expanded="{{stepsOpen}}" onClick="{{toggleSteps}}"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>完成 3 步 · 改了 2 个文件 <span class="add num">+130</span><span class="del num">−17</span></button>
+        <sc-if value="{{stepsOpenBool}}" hint-placeholder-val="{{ false }}">
+          <div class="ys-steps ys-in">
+            <div class="ys-step"><span class="v">读取</span><span class="tg">src/auth/ 下 6 个文件</span><span class="r">0.8s</span></div>
+            <div class="ys-step"><span class="v">编辑</span><span class="tg">src/auth/oauth.ts</span><span class="r"><span class="add">+42</span> <span class="del">−17</span></span></div>
+            <div class="ys-step"><span class="v">新建</span><span class="tg">src/auth/pkce.ts</span><span class="r"><span class="add">+88</span></span></div>
+          </div>
+        </sc-if>
+        <div class="ys-sub"><span class="dot run"></span><span>子 Agent <b>补齐 PKCE 单元测试</b></span><span class="muted">Sonnet 5.5 · 只读 · {{s12.subNow}}</span><span class="muted num">{{s12.subTime}}</span><button class="ys-link" type="button">打开</button></div>
+        <sc-if value="{{s12.testRunning}}" hint-placeholder-val="{{ true }}">
+          <div class="ys-live"><span class="dot run"></span>正在运行 <span class="tg">npm test -- auth</span><span class="r">{{s12.testTime}}</span></div>
+        </sc-if>
+        <sc-if value="{{s12.testDone}}" hint-placeholder-val="{{ false }}">
+          <div class="ys-live ys-in"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--run)"><path d="M5 12.5 10 17 19 7"></path></svg><span class="tg">npm test -- auth</span><span class="r">56 项全部通过 · 0:56</span></div>
+          <div class="ys-user ys-in"><span class="q">插话 · 上一步结束后送达</span>顺便把 README 里的登录说明也更新一下。</div>
+          <p class="ys-prose ys-in">测试全部通过。旧 token 的刷新逻辑保留在 <code>legacyRefresh()</code> 里，新登录一律走 PKCE。README 的登录说明我也一起改了。</p>
+        </sc-if>
+        <sc-if value="{{s12.done}}" hint-placeholder-val="{{ false }}">
+          <div class="ys-tools ys-in">
+            <button type="button" aria-label="复制"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+            <button type="button" aria-label="重新生成"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg></button>
+            <button type="button" aria-label="回退代码到此轮之前"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg></button>
+            <span class="meta">Opus 5.5 · 12:20 · $0.84</span>
+          </div>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{isS14}}" hint-placeholder-val="{{ false }}">
+      <div class="ys-col">
+        <div class="ys-user">把 0.9.0 打好 tag 推上去，CI 过了就发 Release。</div>
+        <p class="ys-prose">测试通过，tag <code>v0.9.0</code> 已经打好。远端 <code>main</code> 比本地多 2 个提交，要覆盖只能强制推送。</p>
+        <button class="ys-sum" type="button" aria-expanded="false"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>完成 2 步 · npm test 通过 · 已打 tag</button>
+        <sc-if value="{{s14.ask}}" hint-placeholder-val="{{ true }}">
+        <section class="ys-ask" aria-label="需要你确认">
+          <div class="hd"><span class="dot ask"></span>需要你确认<span class="sp">已等 {{s14.wait}}</span></div>
+          <p class="why">强制推送会覆盖远端历史，远端多出的 2 个提交会丢失。</p>
+          <div class="cmd">git push --force origin main</div>
+          <div class="where">release-tool · 远端 origin · 分支 main</div>
+          <div class="acts">
+            <span class="hint">Alt+Y 允许 · Alt+N 拒绝 · {{s14.remain}} 后自动拒绝</span>
+            <button class="ys-btn sec" type="button" onClick="{{deny}}">拒绝</button>
+            <button class="ys-btn pri" type="button" onClick="{{allow}}">允许一次</button>
+          </div>
+        </section>
+        </sc-if>
+        <sc-if value="{{s14.allowedRec}}" hint-placeholder-val="{{ false }}">
+          <div class="ys-rec ys-in"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--run)"><path d="M5 12.5 10 17 19 7"></path></svg>你允许了 git push --force · {{s14.ago}}</div>
+        </sc-if>
+        <sc-if value="{{s14.pushing}}" hint-placeholder-val="{{ false }}">
+          <div class="ys-live ys-in"><span class="dot run"></span>正在运行 <span class="tg">git push --force origin main</span></div>
+        </sc-if>
+        <sc-if value="{{s14.pushed}}" hint-placeholder-val="{{ false }}">
+          <p class="ys-prose ys-in">已推送到 <code>origin/main</code>，CI 正在运行。通过后我再发 Release。</p>
+        </sc-if>
+        <sc-if value="{{s14.denied}}" hint-placeholder-val="{{ false }}">
+          <div class="ys-rec ys-in"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--fail)"><path d="M17 7 7 17M7 7l10 10"></path></svg>你拒绝了 git push --force · {{s14.ago}}</div>
+          <p class="ys-prose ys-in">好的，不强制推送。我先把远端的 2 个提交拉下来合并，跑完测试再正常推送。</p>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{isS11}}" hint-placeholder-val="{{ false }}">
+      <div class="ys-col">
+        <div class="ys-user">把 docs/README.md 里的命令示例跟新版启动脚本对齐。</div>
+        <button class="ys-sum" type="button" aria-expanded="false"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>完成 1 步 · 读取 2 个文件</button>
+        <sc-if value="{{s11.stalled}}" hint-placeholder-val="{{ true }}">
+          <section class="ys-note" aria-label="停滞">
+            <div class="hd"><span class="dot stall"></span>停滞 <span class="num">{{s11.stallTime}}</span> · 等待模型响应</div>
+            <p>请求已经发出，这段时间里没有收到任何输出。可能是服务繁忙，也可能是请求太大。</p>
+            <div class="acts"><button class="ys-btn sec" type="button">继续等待</button><button class="ys-btn sec" type="button">换模型重试</button><button class="ys-btn sec" type="button">停止</button></div>
+          </section>
+        </sc-if>
+        <sc-if value="{{s11.run}}" hint-placeholder-val="{{ false }}">
+          <p class="ys-prose ys-in">恢复了。正在把 README 里的 <code>npm start</code> 示例改成 <code>npm run launch</code>，并补上开发模式的说明。</p>
+          <div class="ys-live ys-in"><span class="dot run"></span>正在编辑 <span class="tg">docs/README.md</span></div>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{isT03}}" hint-placeholder-val="{{ false }}">
+      <div class="ys-col">
+        <div class="ys-hero"><h2>每日依赖安全检查</h2><span class="muted">定时任务 · 每天 09:00 · 下次：明天 09:00</span></div>
+        <dl class="ys-kv">
+          <dt>提示词</dt><dd>运行 <code>npm audit</code>，有高危漏洞就列出受影响的包和升级方案；不要自动升级。</dd>
+          <dt>上次运行</dt><dd>今天 09:00 · 已完成 · 用时 <span class="num">2:31</span> · 0 个高危</dd>
+          <dt>来源</dt><dd>在对话里由 Agent 用 <code>yan schedule</code> 创建</dd>
+        </dl>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{isS10}}" hint-placeholder-val="{{ false }}">
+      <div class="ys-col">
+        <div class="ys-user">把依赖升到最新的兼容版本，跑一遍测试。</div>
+        <p class="ys-prose">升级了 14 个依赖，其中 2 个是大版本（<code>vite</code> 7、<code>electron-builder</code> 26）。测试全部通过，改动已经提交。</p>
+        <div class="ys-tools"><span class="meta">Opus 5.5 · 6:51 · $0.61</span></div>
+      </div>
+      </sc-if>
+
+      </div>
+
+      <div class="ys-comp">
+        <div class="ys-cbox">
+          <sc-if value="{{comp.queued}}" hint-placeholder-val="{{ true }}">
+            <div class="ys-queue"><b>插话 1</b><span class="txt">顺便把 README 里的登录说明也更新一下。</span><button type="button">撤回</button></div>
+          </sc-if>
+          <textarea class="ys-ta" rows="1" aria-label="消息" placeholder="{{comp.placeholder}}"></textarea>
+          <div class="ys-ctl">
+            <button class="ys-ic" type="button" aria-label="添加：附件、引用文件、命令、语音"><svg class="ico l" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+            <button class="ys-tb" type="button">{{sess.model}}<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"></path></svg></button>
+            <button class="ys-tb opt" type="button">自动批准<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"></path></svg></button>
+            <span class="sp"></span>
+            <button class="ys-ring opt" type="button" title="上下文已用 {{sess.ctx}}%"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" style="stroke: var(--line2)" stroke-width="2"></circle><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="{{sess.dash}}" transform="rotate(-90 8 8)"></circle></svg>{{sess.ctx}}%</button>
+            <sc-if value="{{comp.running}}" hint-placeholder-val="{{ true }}">
+              <button class="ys-stop" type="button" aria-label="停止（Ctrl+.）"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="currentColor"></rect></svg></button>
+            </sc-if>
+            <button class="ys-send" type="button" aria-label="{{comp.sendLabel}}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width: 2"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{panelOpenBool}}" hint-placeholder-val="{{ false }}">
+    <aside class="ys-panel" aria-label="改动与工具">
+      <div class="ys-tabs" role="tablist" aria-label="面板页签">
+        <button class="ys-tab" type="button" role="tab" aria-selected="{{panel.changes}}" onClick="{{tabChanges}}">改动 <span class="muted num">{{sess.changes}}</span></button>
+        <button class="ys-tab" type="button" role="tab" aria-selected="{{panel.term}}" onClick="{{tabTerm}}">终端</button>
+        <button class="ys-tab" type="button" role="tab" aria-selected="false">文件</button>
+        <span class="sp"></span>
+        <button class="ys-ic" type="button" aria-label="关闭面板" onClick="{{togglePanel}}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 7 7 17M7 7l10 10"></path></svg></button>
+      </div>
+      <sc-if value="{{panel.showDiff}}" hint-placeholder-val="{{ true }}">
+        <div class="ys-files">
+          <button class="ys-file" type="button" aria-current="true"><span class="p">src/auth/oauth.ts</span><span class="st"><span class="add">+42</span> <span class="del">−17</span></span></button>
+          <button class="ys-file" type="button"><span class="p">src/auth/pkce.ts</span><span class="st"><span class="add">+88</span></span></button>
+          <sc-if value="{{s12.testDone}}" hint-placeholder-val="{{ false }}"><button class="ys-file ys-in" type="button"><span class="p">README.md</span><span class="st"><span class="add">+6</span> <span class="del">−4</span></span></button></sc-if>
+        </div>
+        <div class="ys-diff">
+          <div class="ys-hunk">@@ -82,9 +82,14 @@ export async function beginLogin(opts)</div>
+          <div class="ys-dl"><span class="ln">82</span><span class="mk"> </span><span>  const state = randomState()</span></div>
+          <div class="ys-dl d"><span class="ln">83</span><span class="mk">−</span><span>  const url = buildAuthUrl({ clientId, state })</span></div>
+          <div class="ys-dl a"><span class="ln">83</span><span class="mk">+</span><span>  const verifier = createVerifier()</span></div>
+          <div class="ys-dl a"><span class="ln">84</span><span class="mk">+</span><span>  const challenge = await toChallenge(verifier)</span></div>
+          <div class="ys-dl a"><span class="ln">85</span><span class="mk">+</span><span>  const url = buildAuthUrl({</span></div>
+          <div class="ys-dl a"><span class="ln">86</span><span class="mk">+</span><span>    clientId, state, challenge, method: 'S256',</span></div>
+          <div class="ys-dl a"><span class="ln">87</span><span class="mk">+</span><span>  })</span></div>
+          <div class="ys-dl d"><span class="ln">84</span><span class="mk">−</span><span>  saveSession({ state })</span></div>
+          <div class="ys-dl a"><span class="ln">88</span><span class="mk">+</span><span>  saveSession({ state, verifier })</span></div>
+          <div class="ys-dl"><span class="ln">89</span><span class="mk"> </span><span>  return url</span></div>
+          <div class="ys-dl"><span class="ln">90</span><span class="mk"> </span><span>}</span></div>
+          <div class="ys-hunk">@@ -140,6 +145,10 @@ export async function refresh(token)</div>
+          <div class="ys-dl"><span class="ln">145</span><span class="mk"> </span><span>export async function refresh(token) {</span></div>
+          <div class="ys-dl a"><span class="ln">146</span><span class="mk">+</span><span>  if (isLegacyToken(token)) {</span></div>
+          <div class="ys-dl a"><span class="ln">147</span><span class="mk">+</span><span>    return legacyRefresh(token)</span></div>
+          <div class="ys-dl a"><span class="ln">148</span><span class="mk">+</span><span>  }</span></div>
+          <div class="ys-dl"><span class="ln">149</span><span class="mk"> </span><span>  const res = await post('/token', {</span></div>
+        </div>
+      </sc-if>
+      <sc-if value="{{panel.showTerm}}" hint-placeholder-val="{{ false }}">
+        <div class="ys-term" role="log" aria-label="终端输出">
+          <div><span class="pr">$ </span>npm test -- auth</div>
+          <div> PASS  test/auth/pkce.spec.ts</div>
+          <div> PASS  test/auth/refresh.spec.ts</div>
+          <sc-if value="{{s12.testDone}}" hint-placeholder-val="{{ false }}"><div class="ok"> Tests: 56 passed, 56 total</div></sc-if>
+        </div>
+      </sc-if>
+      <sc-if value="{{panel.showEmpty}}" hint-placeholder-val="{{ false }}">
+        <div class="ys-empty"><b>{{panel.emptyTitle}}</b><span>{{panel.emptyBody}}</span></div>
+      </sc-if>
+    </aside>
+    </sc-if>
+  </div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light","section":"外观"},"density":{"editor":"enum","options":["standard","compact","comfortable"],"default":"standard","section":"外观"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { t: 0, current: 'S12', s14: 'ask', s14At: 0, side: true, runs: false, panel: false, tab: 'changes', steps: false };
+  }
+
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      this.setState((s) => ({ t: s.t + 1 }));
+    }, 1000);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+  }
+
+  two(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  clock(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const x = sec % 60;
+    return h ? h + ':' + this.two(m) + ':' + this.two(x) : m + ':' + this.two(x);
+  }
+
+  renderVals() {
+    const p = this.props;
+    const s = this.state;
+    const t = s.t;
+    const theme = p.theme === 'dark' ? 'dark' : 'light';
+    const density = p.density === 'compact' || p.density === 'comfortable' ? p.density : 'standard';
+
+    const s11Run = t >= 7;
+    const testDone = t >= 14;
+    const s12Done = t >= 20;
+    const s14State = s.s14 === 'ask' && 166 - t <= 0 ? 'denied' : s.s14;
+    const since = t - s.s14At;
+    const pushing = s14State === 'allowed' && since < 3;
+    const pushed = s14State === 'allowed' && since >= 3;
+    const go = (id) => () => this.setState({ current: id, runs: false });
+
+    const stText = { run: '运行中', ask: '等你确认', stall: '停滞', idle: '定时', done: '已完成' };
+    const mk = (r) => {
+      r.dot = r.status;
+      r.stCls = r.status === 'ask' || r.status === 'stall' ? r.status : '';
+      r.stText = r.status === 'stall' ? '停滞 ' + r.timer : (r.status === 'idle' ? '每天 09:00' : stText[r.status]);
+      r.open = go(r.target);
+      return r;
+    };
+    const s14Status = s14State === 'ask' ? 'ask' : (pushed ? 'done' : 'run');
+    const rows = [
+      mk({ code: 'S14', target: 'S14', title: '发布脚本', status: s14Status, elapsed: this.clock(485 + t) }),
+      mk({ code: 'S11', target: 'S11', title: '文档同步', status: s11Run ? 'run' : 'stall', timer: this.clock(80 + t), elapsed: this.clock(224 + t) }),
+      mk({ code: 'S12', target: 'S12', title: '登录流程改造', status: s12Done ? 'done' : 'run', elapsed: this.clock(s12Done ? 740 : 720 + t) }),
+      mk({ code: 'S12·1', target: 'S12', title: '子 Agent · 补齐 PKCE 单元测试', status: 'run', elapsed: this.clock(192 + t) }),
+      mk({ code: 'T03', target: 'T03', title: '每日依赖安全检查', status: 'idle', elapsed: '—' })
+    ];
+    const active = rows.filter((r) => r.status === 'run' || r.status === 'ask' || r.status === 'stall').length;
+    const asks = rows.filter((r) => r.status === 'ask').length;
+
+    const labels = { run: '运行中', ask: '等你确认', stall: '停滞', idle: '定时任务', done: '已完成' };
+    const rr = (r) => {
+      r.cur = String(s.current === r.id);
+      r.open = go(r.id);
+      r.label = labels[r.dot] || '';
+      return r;
+    };
+    const railA = [
+      rr({ id: 'S12', title: '登录流程改造', dot: s12Done ? 'done' : 'run', meta: s12Done ? '' : this.clock(720 + t), metaCls: '', unread: s12Done && s.current !== 'S12' }),
+      rr({ id: 'S11', title: '文档同步', dot: s11Run ? 'run' : 'stall', meta: s11Run ? this.clock(224 + t) : '停滞 ' + this.clock(80 + t), metaCls: s11Run ? '' : 'stall' }),
+      rr({ id: 'T03', title: '每日依赖安全检查', dot: 'idle', meta: '09:00', metaCls: '' }),
+      rr({ id: 'S10', title: '依赖升级', dot: 'done', meta: '', metaCls: '', unread: s.current !== 'S10' })
+    ];
+    const railB = [
+      rr({ id: 'S14', title: '发布脚本', dot: s14Status, meta: s14State === 'ask' ? '等你确认' : (pushed ? '' : this.clock(485 + t)), metaCls: s14State === 'ask' ? 'ask' : '' })
+    ];
+
+    const sessions = {
+      S12: { title: '登录流程改造', project: 'pi-desktop', model: 'Opus 5.5 · 中', ctx: 62, changes: testDone ? 3 : 2 },
+      S14: { title: '发布脚本', project: 'release-tool', model: 'GPT-6.1 · 高', ctx: 71, changes: 0 },
+      S11: { title: '文档同步', project: 'pi-desktop', model: 'Haiku 5.5', ctx: 22, changes: 0 },
+      T03: { title: '每日依赖安全检查', project: 'pi-desktop · 定时任务', model: 'V4.1 Flash', ctx: 9, changes: 0 },
+      S10: { title: '依赖升级', project: 'pi-desktop', model: 'Opus 5.5 · 中', ctx: 48, changes: 0 }
+    };
+    const base = sessions[s.current] || sessions.S12;
+    const circ = 40.84;
+    const sess = Object.assign({}, base, { dash: (base.ctx / 100 * circ).toFixed(1) + ' ' + circ });
+
+    const isS12 = s.current === 'S12';
+    const isS14 = s.current === 'S14';
+    const running = (isS12 && !s12Done) || (isS14 && (s14State === 'ask' || pushing || s14State === 'denied')) || (s.current === 'S11');
+    const empties = {
+      S14: ['还没有文件改动', '这个会话只运行了命令，输出在「终端」。'],
+      S11: ['还没有文件改动', 'Agent 改动文件后，差异会出现在这里。'],
+      T03: ['定时任务不直接改文件', '每次运行的结果在运行历史里查看。'],
+      S10: ['改动已经提交', '提交 a1b2c3d · 14 个依赖升级，可在代码评审里查看。']
+    };
+    const empty = empties[s.current] || empties.S11;
+    const showDiff = isS12 && s.tab === 'changes';
+    const showTerm = isS12 && s.tab === 'term';
+
+    return {
+      theme: theme,
+      density: density,
+      sideState: s.side ? 'open' : 'closed',
+      runsOpen: String(s.runs),
+      runsOpenBool: s.runs,
+      panelOpen: String(s.panel),
+      panelOpenBool: s.panel,
+      stepsOpen: String(s.steps),
+      stepsOpenBool: s.steps,
+      rows: rows,
+      railA: railA,
+      railB: railB,
+      counts: { active: active, ask: asks },
+      sess: sess,
+      isS12: isS12,
+      isS14: isS14,
+      isS11: s.current === 'S11',
+      isT03: s.current === 'T03',
+      isS10: s.current === 'S10',
+      attention: { show: s14State === 'ask' && !isS14, wait: this.clock(134 + t) },
+      s12: {
+        testRunning: !testDone,
+        testDone: testDone,
+        testTime: this.clock(42 + t),
+        done: s12Done,
+        subTime: this.clock(192 + t),
+        subNow: t < 10 ? '正在读取测试' : (t < 24 ? '正在编辑 pkce.spec.ts' : '正在运行测试')
+      },
+      s14: {
+        ask: s14State === 'ask',
+        pushing: pushing,
+        pushed: pushed,
+        denied: s14State === 'denied',
+        allowedRec: s14State === 'allowed',
+        wait: this.clock(134 + t),
+        remain: this.clock(166 - t),
+        ago: since < 60 ? '刚刚' : Math.floor(since / 60) + ' 分钟前'
+      },
+      s11: { stalled: !s11Run, run: s11Run, stallTime: this.clock(80 + t) },
+      comp: {
+        queued: isS12 && !testDone,
+        running: running,
+        sendLabel: running ? '插话（Enter）' : '发送（Enter）',
+        placeholder: running ? '插话，或按 Alt+Enter 排队到这一轮之后…' : '交代下一件事…（@ 引用文件，/ 命令）'
+      },
+      panel: {
+        changes: String(s.tab === 'changes'),
+        term: String(s.tab === 'term'),
+        showDiff: showDiff,
+        showTerm: showTerm,
+        showEmpty: !isS12,
+        emptyTitle: empty[0],
+        emptyBody: empty[1]
+      },
+      toggleSide: () => this.setState((x) => ({ side: !x.side })),
+      toggleRuns: () => this.setState((x) => ({ runs: !x.runs })),
+      togglePanel: () => this.setState((x) => ({ panel: !x.panel })),
+      toggleSteps: () => this.setState((x) => ({ steps: !x.steps })),
+      tabChanges: () => this.setState({ tab: 'changes' }),
+      tabTerm: () => this.setState({ tab: 'term' }),
+      openS14: () => this.setState({ current: 'S14', runs: false }),
+      allow: () => this.setState((x) => ({ s14: 'allowed', s14At: x.t })),
+      deny: () => this.setState((x) => ({ s14: 'denied', s14At: x.t })),
+      replay: () => this.setState({ t: 0, s14: 'ask', s14At: 0, current: 'S12', runs: false, steps: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

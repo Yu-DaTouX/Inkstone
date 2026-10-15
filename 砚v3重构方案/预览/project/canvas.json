@@ -1,0 +1,20 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-15T20:10:00+11:00" },
+  "title": "砚 v3 · 简洁版设计预览",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1440, "h": 900, "title": "主窗口 · 浅色（可操作）", "expand": "fill", "is_interactive": true },
+    "MainDark.dc.html": { "x": 1520, "y": 0, "w": 1440, "h": 900, "title": "主窗口 · 深色（可操作）", "expand": "fill", "is_interactive": true }
+  },
+  "order": ["Main.dc.html", "MainDark.dc.html"],
+  "notes": {
+    "title-main": { "x": 0, "y": -300, "text": "砚 v3 · 简洁版", "kind": "title1", "maxW": 2960 },
+    "how-to": {
+      "x": 3040, "y": 0, "w": 380, "fill": "blue",
+      "text": "默认只有侧栏和对话，其余按需出现。可以直接操作（点 Play 或进入全屏）：\n· 顶部提醒条「发布脚本 等你确认」→ 点「查看」，在卡片上允许或拒绝\n· 侧栏的圆点就是状态：运行中会轻微呼吸，等你确认是琥珀色，停滞会显示计时\n· 侧栏「运行」打开所有运行的总览；标题栏「改动」打开右侧面板\n· 等 14 秒：测试跑完，排队的插话自动送达；S11 的停滞几秒后恢复\n· 侧栏底部「重播」从头演示；Tweaks 可切换主题与密度\n\n左上角的标志是占位。所有会话、模型与数据均为演示数据。"
+    }
+  },
+  "designSystems": []
+}
