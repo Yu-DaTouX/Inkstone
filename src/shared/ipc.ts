@@ -31,8 +31,6 @@ export type {
   GitFailureCode
 } from './git-actions'
 import type { GitActionExpected, GitActionRequest, GitActionResult, GitFailure } from './git-actions'
-import type { KnowledgeCounts, KnowledgeEntryView } from './project-knowledge-view'
-import type { KnowledgeKind } from './project-memory'
 import type { WorkMode, WorkModeState } from './work-mode'
 import type { QuestionFrequency, SessionQuestionFrequency } from './question-frequency'
 import type { ApprovalChoice, ApprovalRequest, PermissionMode } from './approval'
@@ -82,7 +80,6 @@ export type SessionQuestionFrequencyResult =
       effective?: QuestionFrequency
       global?: QuestionFrequency
     }
-export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, KnowledgeReviewView } from './project-knowledge-view'
 
 export type { GitChangeEntry, GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
 
@@ -705,7 +702,6 @@ export interface AppSettings {
   responseDetail: 'brief' | 'standard' | 'detailed'
   density: 'compact' | 'standard' | 'comfortable'
   temperatureByModel?: Record<string, number>
-  projectKnowledge?: { enabled: boolean }
   sound: SoundSettings
   shortcutOverrides?: import('../renderer/src/app/shortcuts').ShortcutOverrides
 }
@@ -1389,37 +1385,6 @@ export interface PackagesBridge {
   action(req: PackageActionView): Promise<PackageActionResultView>
 }
 
-export interface KnowledgeListView {
-  ok: boolean
-  projectId?: string
-  enabled: boolean
-  entries: KnowledgeEntryView[]
-  counts: KnowledgeCounts
-  error?: string
-}
-
-export interface KnowledgeActionBase {
-  expectedRevision: number
-  expectedProjectId?: string
-  scope?: KnowledgeScope
-}
-
-export type KnowledgeScope = 'project' | 'personal'
-
-export type KnowledgeActionRequest =
-  | ({ action: 'confirm'; id: string } & KnowledgeActionBase)
-  | ({ action: 'update'; id: string; text?: string; tags?: string[]; kind?: KnowledgeKind } & KnowledgeActionBase)
-  | ({ action: 'supersede'; id: string; text: string; kind?: KnowledgeKind; tags?: string[] } & KnowledgeActionBase)
-  | ({ action: 'delete'; id: string; permanent?: boolean } & KnowledgeActionBase)
-
-export interface KnowledgeActionResult {
-  ok: boolean
-  error?: string
-  latestRevision?: number
-  entry?: KnowledgeEntryView
-  superseded?: KnowledgeEntryView[]
-}
-
 export type PeerResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string }
 
 export interface PeerSessionRow {
@@ -1437,21 +1402,6 @@ export interface PeerHistoryMessage {
   text?: string
   createdAt?: number
   artifacts?: Array<{ id: string; filename: string }>
-}
-
-export interface KnowledgeExportResult {
-  ok: boolean
-  markdown?: string
-  path?: string
-  canceled?: boolean
-  error?: string
-}
-
-export interface KnowledgeBridge {
-  list(scope?: KnowledgeScope): Promise<KnowledgeListView>
-  action(req: KnowledgeActionRequest): Promise<KnowledgeActionResult>
-  export(mode: 'copy' | 'save', scope?: KnowledgeScope): Promise<KnowledgeExportResult>
-  sourceSession(sessionId: string): Promise<{ ok: boolean; path?: string; title?: string; error?: string }>
 }
 
 export interface BuiltinCapabilityView {
@@ -1903,7 +1853,6 @@ export interface YanBridge {
 
   sources: SourcesBridge
   packages: PackagesBridge
-  knowledge: KnowledgeBridge
   builtinCapabilities: BuiltinCapabilitiesBridge
   search: {
     doctor(): Promise<SearchBackendStatus>
@@ -1964,7 +1913,6 @@ export interface YanBridge {
     startSession(peerId: string, projectId: string, text: string): Promise<PeerResult<{ sessionId: string | null; runId: string; projectId: string }>>
     abort(peerId: string, runId: string): Promise<PeerResult<unknown>>
     importSession(peerId: string, sessionId: string): Promise<PeerResult<import('./peer-protocol').PeerImportView>>
-    importKnowledge(peerId: string, remoteProjectId: string, localProjectId: string): Promise<PeerResult<{ accepted: number; rejected: number }>>
     readImport(importId: string): Promise<PeerResult<{ dir: string; messages: PeerHistoryMessage[] }>>
     revealImport(importId: string): Promise<boolean>
   }

@@ -1,10 +1,9 @@
 import { shell } from 'electron'
 import { PEER_OPERATIONS } from '../../shared/peer-protocol'
-import type { ProjectRecord } from '../../shared/ipc'
 import type { PeerClient } from '../peer-client'
 import type { IpcRegistrar } from './registrar'
 
-export function registerPeerIpc(ipc: IpcRegistrar, client: PeerClient, projects: () => Promise<ProjectRecord[]>): void {
+export function registerPeerIpc(ipc: IpcRegistrar, client: PeerClient): void {
   const { handle } = ipc
   const str = (value: unknown): string => (typeof value === 'string' ? value : '')
   handle('yan:peer:status', () => client.status())
@@ -22,11 +21,6 @@ export function registerPeerIpc(ipc: IpcRegistrar, client: PeerClient, projects:
   handle('yan:peer:startSession', (peerId: unknown, projectId: unknown, text: unknown) => client.startSession(str(peerId), str(projectId), str(text)))
   handle('yan:peer:abort', (peerId: unknown, runId: unknown) => client.abort(str(peerId), str(runId)))
   handle('yan:peer:importSession', (peerId: unknown, sessionId: unknown) => client.importSession(str(peerId), str(sessionId)))
-  handle('yan:peer:importKnowledge', async (peerId: unknown, remoteProjectId: unknown, localProjectId: unknown) => {
-    const local = (await projects()).find((project) => project.id === localProjectId)
-    if (!local) return { ok: false, error: '请先选择本机的一个项目' }
-    return client.importKnowledge(str(peerId), str(remoteProjectId), local)
-  })
   handle('yan:peer:readImport', (importId: unknown) => client.readImport(str(importId)))
   handle('yan:peer:revealImport', async (importId: unknown) => {
     const found = await client.readImport(str(importId))

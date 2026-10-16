@@ -65,7 +65,6 @@ export interface PeerHostHandlers {
   projectOfSession(sessionId: string): Promise<string | null>
   projectOfRun(runId: string): Promise<string | null>
   exportSession(sessionId: string): Promise<RemoteOperationResult>
-  knowledge(projectId: string): Promise<RemoteOperationResult>
   startSession(projectId: string, text: string): Promise<RemoteOperationResult>
 }
 
@@ -799,13 +798,6 @@ export class RemoteServer {
       const text = body.text
       this.log(`另一台砚申请在开放项目里新开任务：${device.name}`)
       await this.idempotent(req, res, { device }, true, () => handlers.startSession(projectId, text))
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 3 && parts[0] === 'projects' && parts[2] === 'knowledge') {
-      const projectId = decodeURIComponent(parts[1])
-      if (!gate('transfer', projectId)) return
-      this.writeOperation(res, await handlers.knowledge(projectId))
       return
     }
 

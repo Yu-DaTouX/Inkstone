@@ -63,9 +63,6 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
         async exportSession(sessionId) {
           return { ok: true, data: { version: 1, source: { sessionId }, messages: [], artifacts: [] } }
         },
-        async knowledge(projectId) {
-          return { ok: true, data: { version: 1, source: { projectId }, entries: [] } }
-        },
         async startSession(projectId, text) {
           started.push({ projectId, text })
           return { ok: true, data: { sessionId: 's-new', runId: 'r9', projectId } }
@@ -152,7 +149,6 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
       headers: { 'idempotency-key': 'peer-test-key-0101' }
     })
     ok(startDenied.status === 403 && started.length === 0, '砚对砚：没有发消息授权时不能新开任务')
-    ok((await call('/remote/v1/peer/projects/p-a/knowledge', { token: peer, connection: grant.connectionId })).status === 403, '砚对砚：没有复制授权时读不到项目记忆')
 
     stream.close()
     await wait(80)

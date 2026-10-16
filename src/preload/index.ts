@@ -69,10 +69,6 @@ import type {
   GitDiffResult,
   GitRefOption,
   GitRepoState,
-  KnowledgeActionResult,
-  KnowledgeActionRequest,
-  KnowledgeExportResult,
-  KnowledgeListView,
   MainPush,
   ModelInfo,
   WorktreeCreateResult,
@@ -381,13 +377,6 @@ const api: YanBridge = {
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
     action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)
   },
-  knowledge: {
-    list: (scope) => invoke<KnowledgeListView>('yan:knowledge:list', scope),
-    action: (req: KnowledgeActionRequest) => invoke<KnowledgeActionResult>('yan:knowledge:action', req),
-    export: (mode: 'copy' | 'save', scope) => invoke<KnowledgeExportResult>('yan:knowledge:export', mode, scope),
-    sourceSession: (sessionId: string) =>
-      invoke<{ ok: boolean; path?: string; title?: string; error?: string }>('yan:knowledge:sourceSession', sessionId)
-  },
   builtinCapabilities: {
     list: () => invoke<BuiltinCapabilityView[]>('yan:capabilities:builtin')
   },
@@ -557,7 +546,6 @@ const api: YanBridge = {
     startSession: (peerId, projectId, text) => invoke('yan:peer:startSession', peerId, projectId, text),
     abort: (peerId, runId) => invoke('yan:peer:abort', peerId, runId),
     importSession: (peerId, sessionId) => invoke('yan:peer:importSession', peerId, sessionId),
-    importKnowledge: (peerId, remoteProjectId, localProjectId) => invoke('yan:peer:importKnowledge', peerId, remoteProjectId, localProjectId),
     readImport: (importId) => invoke('yan:peer:readImport', importId),
     revealImport: (importId) => invoke('yan:peer:revealImport', importId)
   } as YanBridge['peer'],
