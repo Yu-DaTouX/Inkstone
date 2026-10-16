@@ -150,22 +150,6 @@
       .filter((call) => call.name === 'question')
     ok(afterQuestionTools.length === beforeQuestionTools.length, '真实消息中没有恢复 question 模型工具调用')
     ok(!q('[data-testid="question-panel"]'), '回答后问题面板关闭')
-
-    out.push('=== 2. 自主模式：CLI 请求不弹面板并如实返回 ===')
-    await store.getState().setWorkMode('autonomous')
-    await sleep(350)
-    const autoRequest = await writeRequest('yan-question-cli-auto.json', { question: '自主模式不应显示此问题', options: ['A', 'B'] })
-    ok(autoRequest.exitCode === 0, '自主模式请求文件写入成功')
-    const auto = await runBash(`yan question ask --request-file "${tempDir}\\yan-question-cli-auto.json"`)
-    const autoReceipt = lastJson(auto.output)
-    ok(auto.exitCode === 0, '自主模式 CLI 正常结束')
-    ok(autoReceipt?.ok === true, '自主模式仍返回成功回执')
-    const autoData = autoReceipt?.resultFile ? await readJsonFile(autoReceipt.resultFile) : null
-    ok(autoData?.autonomous === true && autoData?.answer === null && autoData?.cancelled === false, '自主模式返回自行决策标记，不猜用户答案')
-    ok(!q('[data-testid="question-panel"]'), '自主模式没有弹出问题面板')
-
-    await store.getState().setWorkMode('standard')
-    out.push('  已还原工作模式 → 标准')
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
   }

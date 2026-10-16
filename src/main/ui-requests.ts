@@ -94,7 +94,12 @@ export class UiRequests {
     clearTimeout(pending.hardTimer)
     this.payloads.delete(id)
     this.host.push({ ch: 'ui-resolved', payload: { id, by: 'timeout' } })
-    pending.reject(new CapabilityCommandError('question_timeout', '问题等待超时，未猜测用户答案'))
+    pending.reject(new CapabilityCommandError(
+      'question_timeout',
+      pending.started
+        ? '问题等待超时，未猜测用户答案'
+        : '问题等待超时：问题面板始终没有显示给用户（用户很可能没看到），未猜测用户答案'
+    ))
   }
 
   extendHostUi(id: string, extraMs?: unknown): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
