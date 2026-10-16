@@ -1,14 +1,3 @@
-/**
- * 旧宿主 MCP → pi 原生导入设置页流程（`mcp-native-import-flow.ts`）的定向测试。
- *
- * 直接加载真实模块（esbuild 转译后在 VM 里执行），验证范围核对与分步结果投影：
- * prepare → 取消不 commit、同 scope 批准只 commit 一次、卸载/换 runner/切会话/换项目
- * 不 commit、错误与部分完成如实投影、进行中防重复。不是源码 regex 匹配。
- *
- * 不启动 Electron / 不碰真实配置、服务、模型或运行窗口。
- *
- * 用法： node scripts/test-mcp-native-import-flow.mjs
- */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
@@ -54,14 +43,12 @@ const okResult = (over = {}) => ({
   ...over
 })
 
-/* ── 范围相等判定（直接单测） ── */
 check(sameMcpImportScope(scope(), scope()), '完全相同的范围视为同一范围')
 check(!sameMcpImportScope(scope(), scope({ activeRunnerId: 'r2' })), '换 runner 不是同一范围')
 check(!sameMcpImportScope(scope(), scope({ sessionId: 's2' })), '切会话不是同一范围')
 check(!sameMcpImportScope(scope(), scope({ projectKey: 'C:/other' })), '换项目不是同一范围')
 check(sameMcpImportScope(scope({ mounted: false }), scope()), 'mounted 不参与身份比较，只用于额外核对')
 
-/* ── 取消：不 commit ── */
 {
   let commits = 0
   const flow = createMcpImportFlow({
@@ -76,7 +63,6 @@ check(sameMcpImportScope(scope({ mounted: false }), scope()), 'mounted 不参与
   check(flow.busy === false, '结束后释放 busy')
 }
 
-/* ── 同 scope 批准：只 commit 一次，令牌来自 preview ── */
 {
   let commits = 0
   const tokens = []
@@ -92,7 +78,6 @@ check(sameMcpImportScope(scope({ mounted: false }), scope()), 'mounted 不参与
   check(tokens[0] === 'tok-1', 'commit 用的是 prepare 给的令牌')
 }
 
-/* ── prepare 返回后换 runner / 切会话 / 换项目：不弹确认也不 commit ── */
 for (const [field, value, label] of [
   ['activeRunnerId', 'r2', '换 runner'],
   ['sessionId', 's2', '切会话'],
@@ -113,7 +98,6 @@ for (const [field, value, label] of [
   check(commits === 0, `${label} 不 commit`)
 }
 
-/* ── 确认期间换 runner / 切会话 / 换项目：不 commit ── */
 for (const [field, value, label] of [
   ['activeRunnerId', 'r2', '换 runner'],
   ['sessionId', 's2', '切会话'],
@@ -132,7 +116,6 @@ for (const [field, value, label] of [
   check(commits === 0, `${label}（确认期间）不 commit`)
 }
 
-/* ── 确认期间组件卸载：即使确认框结算为 true 也不 commit ── */
 {
   let mounted = true
   let commits = 0
@@ -147,7 +130,6 @@ for (const [field, value, label] of [
   check(commits === 0, '卸载不 commit')
 }
 
-/* ── 已卸载时连 prepare 都不发 ── */
 {
   let prepares = 0
   const flow = createMcpImportFlow({
@@ -160,7 +142,6 @@ for (const [field, value, label] of [
   check(out.phase === 'scope-changed' && prepares === 0, '未挂载时不做 prepare')
 }
 
-/* ── 预览被拒 / 预览抛错：如实带出 code 与 error，不进入确认与提交 ── */
 {
   let confirms = 0
   let commits = 0
@@ -185,7 +166,6 @@ for (const [field, value, label] of [
   check(out.phase === 'failed' && out.code === 'ipc_error' && out.error === 'IPC 断了', '预览抛错归为 ipc_error 并保留原文')
 }
 
-/* ── 提交在写盘前被拒（无 result）：如实带出错误，旧条目未动 ── */
 {
   const flow = createMcpImportFlow({
     prepare: async () => ({ ok: true, preview: preview() }),
@@ -207,7 +187,6 @@ for (const [field, value, label] of [
   check(out.phase === 'failed' && out.code === 'ipc_error' && out.error === '提交 IPC 抛错', '提交抛错归为 ipc_error')
 }
 
-/* ── 部分完成：原生已写、校验失败、旧条目仍启用，不能投影成「没写」 ── */
 {
   const flow = createMcpImportFlow({
     prepare: async () => ({ ok: true, preview: preview() }),
@@ -236,7 +215,6 @@ for (const [field, value, label] of [
   check(/旧条目保持启用/.test(p.notice) && p.warnings[0] === 'authRef 凭证不迁移', 'notice 与 warnings 原样保留')
 }
 
-/* ── 校验通过但检测到外部改动：未停用旧条目 ── */
 {
   const flow = createMcpImportFlow({
     prepare: async () => ({ ok: true, preview: preview() }),
@@ -252,7 +230,6 @@ for (const [field, value, label] of [
   check(out.projection.deactivated === false, '未停用旧条目')
 }
 
-/* ── 缺字段的防御投影：缺步骤 / 缺 verification 时退回 skipped，不假装成功 ── */
 {
   const projection = projectMcpImportCommit({ ok: true, serverId: 'svc', nativeName: 'svc', targetPath: 'x' })
   check(projection.steps.nativeWrite === 'skipped' && projection.steps.verify === 'skipped' && projection.steps.hostDisable === 'skipped', '缺步骤退回未执行')
@@ -261,7 +238,6 @@ for (const [field, value, label] of [
   check(Array.isArray(projection.warnings) && projection.warnings.length === 0, '缺 warnings 退回空数组')
 }
 
-/* ── 进行中防重复：第二次点击返回 busy，全程只 commit 一次 ── */
 {
   let release
   const gate = new Promise((resolve) => { release = resolve })
@@ -282,7 +258,6 @@ for (const [field, value, label] of [
   check(flow.busy === false, '完成后释放 busy')
 }
 
-/* ── 已迁移范围推断：只按真实路径形状，不猜字段 ── */
 check(migratedTargetScope('C:/proj/.pi/mcp.json') === 'project', '项目 .pi/mcp.json 推断为项目范围')
 check(migratedTargetScope('C:\\proj\\.pi\\mcp.json') === 'project', 'Windows 反斜杠同样识别项目范围')
 check(migratedTargetScope('C:/agent/mcp.json') === 'global', 'agentDir 下的 mcp.json 推断为全局')

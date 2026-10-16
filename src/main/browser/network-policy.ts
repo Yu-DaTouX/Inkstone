@@ -1,13 +1,6 @@
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 
-/**
- * 浏览器网络边界用的地址判断。
- *
- * 这里只判断“不能被远程页面借道访问”的地址范围，不把普通公网地址
- * 猜成安全/不安全。域名会在请求发生时重新 lookup，避免只看 URL 主机名
- * 而漏掉 DNS rebinding 把同一域名切到内网地址的情况。
- */
 export function isPrivateAddress(raw: string): boolean {
   const address = raw.trim().replace(/^\[|\]$/g, '').split('%', 1)[0]
   const kind = isIP(address)
@@ -22,17 +15,10 @@ export function isPrivateAddress(raw: string): boolean {
     return isPrivateIpv4(`${ipv4 >>> 24}.${(ipv4 >>> 16) & 255}.${(ipv4 >>> 8) & 255}.${ipv4 & 255}`)
   }
 
-  // Unspecified, loopback, IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
   return value === 0n || value === 1n || inRange(value, 0xfc000000000000000000000000000000n, 7) ||
     inRange(value, 0xfe800000000000000000000000000000n, 10)
 }
 
-/**
- * Resolve a host at request time and report whether any returned address is
- * private. An empty/failed lookup is not classified as private here: Chromium
- * will still fail the request itself, while a transient resolver failure must
- * not turn every public page into a permanent deny.
- */
 export async function resolvesToPrivateAddress(hostname: string): Promise<boolean> {
   const value = hostname.trim().replace(/^\[|\]$/g, '').replace(/\.$/, '')
   if (isPrivateAddress(value)) return true
@@ -84,8 +70,6 @@ function parseIpv6(raw: string): bigint | null {
   if (halves.length > 2) return null
   const left = halves[0] ? halves[0].split(':') : []
   const right = halves.length === 2 && halves[1] ? halves[1].split(':') : []
-  // 只有写成 `::` 压缩形式时才需要补零。完整八组（如 fc00:0:0:0:0:0:0:1）
-  // 没有压缩段，expanded 天然为 0，不能再当成非法输入拒绝。
   const compressed = halves.length === 2
   if (!compressed && left.length !== 8) return null
   const expanded = compressed ? 8 - left.length - right.length : 0

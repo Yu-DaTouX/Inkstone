@@ -16,7 +16,6 @@ try {
   }
   const { groupIntoTurns } = await compile('src/shared/turns.ts', 'turns')
   const { createOutlineProjector } = await compile('src/shared/outline-turns.ts', 'outline')
-  // 优化前 ConversationOutline 的实际投影算法，作为逐字段等价性与测量对照。
   const before = (messages, streamingId) => {
     const all = groupIntoTurns(messages, streamingId)
     return all.filter(turn => turn.kind === 'user').map((user, index) => {
@@ -70,7 +69,6 @@ try {
     for (let i = 0; i < 200; i++) {
       const rows = [...history, { id: 'current', role: 'assistant', text: 'Streaming text\n\n'.repeat(i + 1) }]
       let old, next
-      // 交替顺序，避免总是让同一算法受益于热数据。
       for (const tag of i % 2 ? ['after', 'before'] : ['before', 'after']) {
         const start = performance.now()
         const result = tag === 'before' ? before(rows, 'current') : after(rows, 'current')

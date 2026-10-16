@@ -1,13 +1,8 @@
-/** 「上下文构成」快照：pi 已拼好的固定部分（系统提示分段 + 工具定义）的只读报告。 */
-
 export interface ContextInspectSection {
-  /** 稳定 id：preamble / tools / rules / docs / skills / project-context / cwd / appended / additions … */
   id: string
   label: string
-  /** 估算值，总量仍以 Agent 上报为准 */
   tokens: number
   chars: number
-  /** 截断后的原文，供「注入内容」查看 */
   text: string
 }
 
@@ -15,7 +10,6 @@ export interface ContextInspectTool {
   name: string
   description: string
   tokens: number
-  /** 当前是否启用（未启用的不计入发给模型的工具定义） */
   active: boolean
   source?: string
 }
@@ -43,7 +37,6 @@ function str(v: unknown, max: number): string {
   return v.slice(0, end)
 }
 
-/** 扩展经 HTTP 上报的内容不可信：逐字段收敛，形状不对返回 null。 */
 export function parseContextInspectSnapshot(raw: unknown): ContextInspectSnapshot | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>

@@ -22,12 +22,6 @@ import { PEER_CONNECTION_HEADER, PEER_OPERATIONS, type PeerOperation, type PeerP
 import type { PeerGrantRegistry } from './peer-grants'
 import type { HubAttentionItem, HubCommand, HubSnapshot } from '../shared/agent-hub'
 
-/**
- * 砚远程管理服务（电脑 ↔ 手机）。协议定义见 `src/shared/remote-protocol.ts`。
- *
- * 这是「手机查看与参与电脑上的任务」的协议边界，不是 Electron 的远程调试接口：
- * 只允许显式列出的会话操作、问题回答与成果读取；任务始终在电脑上执行。
- */
 export const REMOTE_API_VERSION = REMOTE_PROTOCOL_VERSION
 
 export type RemoteCommand =
@@ -58,77 +52,43 @@ export interface RemoteServerHandlers {
   hubSnapshot?(): Promise<HubSnapshot>
   hubAttention?(): HubAttentionItem[]
   hubCommand?(command: HubCommand, actor: string): Promise<RemoteOperationResult>
-  /** 返回不含绝对会话路径、凭证和其它桌面私密字段的快照。 */
   snapshot(): Promise<unknown>
-  /** 按稳定 sessionId 读取历史；路径解析留在主进程，不能由网络请求传入。 */
   history(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult>
   models?(sessionId: string): Promise<RemoteOperationResult>
   image?(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult>
-  /** 执行有限的远程会话操作。 */
   command(command: RemoteCommand): Promise<RemoteOperationResult>
-  /** 当前等待回答的问题（没有实现时远程端看不到问题） */
   questions?(): Promise<RemotePendingQuestion[]>
-  /** 回答一个问题；敏感确认由实现方拒绝（需要在电脑上处理） */
   answer?(questionId: string, answer: RemoteAnswer): Promise<RemoteOperationResult>
-  /** Trusted paired user client only; not the ordinary question-answer or legacy-token route. */
   humanApproval?(questionId: string, answer: RemoteHumanApproval): Promise<RemoteOperationResult>
-  /** 按会话 + 成果 id 找到受管文件（实现方负责核对归属，网络请求不能传路径） */
   artifact?(sessionId: string, artifactId: string): Promise<RemoteArtifactFile | RemoteOperationResult>
 }
 
-/**
- * 砚对砚：所有者一侧按项目开放的数据（实现方负责降敏；项目归属由实现方从本机记录判断）。
- * 路由层先用 PeerGrantRegistry 核对本次连接的操作与项目范围，再调这里。
- */
 export interface PeerHostHandlers {
-  /** 可以开放给对方的项目（所有者审批时从中勾选） */
   projects(): Promise<PeerProjectRef[]>
-  /** 给定项目里的会话摘要 */
   sessions(projectIds: string[]): Promise<unknown[]>
-  /** 会话属于哪个项目；找不到为 null */
   projectOfSession(sessionId: string): Promise<string | null>
-  /** 运行实例属于哪个项目 */
   projectOfRun(runId: string): Promise<string | null>
   exportSession(sessionId: string): Promise<RemoteOperationResult>
   knowledge(projectId: string): Promise<RemoteOperationResult>
-  /**
-   * 在开放的项目里新开一个会话并发出第一条消息（由这台电脑执行，不切换桌面当前视图）。
-   * 返回新会话的 sessionId 与运行实例 runId。
-   */
   startSession(projectId: string, text: string): Promise<RemoteOperationResult>
 }
 
 export interface RemoteServerOptions {
   host: string
   port: number
-  /**
-   * 旧版一次性令牌（YAN_REMOTE_TOKEN）。提供了设备表时可以不给，
-   * 此时只接受配对得到的设备令牌。
-   */
   token?: string
-  /** 手机配对与设备令牌；不提供时退回 v1 的单令牌模式 */
   devices?: RemoteDeviceStore
   handlers: RemoteServerHandlers
-  /** 砚对砚：本次连接授权与开放数据；不提供时 peer 设备什么也访问不了 */
   peers?: { grants: PeerGrantRegistry; handlers: PeerHostHandlers }
   onLog?: (text: string, level?: 'info' | 'error') => void
-  /**
-   * 中继隧道专用实例的标记：请求头 x-yan-relay 等于它，说明请求来自本机中继桥（见 relay-bridge/）。
-   * 只有这样的请求能配对出 agent（礁石）身份。直连实例不设置。
-   */
   relayToken?: string
 }
 
-/**
- * agent（礁石）可以用的 Agent Hub 命令：查看、派活、答复提问、停止。验收、终端输入等仍只在电脑或手机上。
- * Hub 内部按 `phone:<设备 id>` 记录操作者（与手机同一权限层级），范围由这里的白名单收窄。
- */
 export const AGENT_HUB_ACTIONS: ReadonlySet<string> = new Set(['create', 'cancel', 'answer', 'inspect'])
 
 export interface RemoteServerInfo {
   host: string
   port: number
-  /** 旧版单令牌；只用设备令牌时为 null */
   token: string | null
 }
 
@@ -143,10 +103,6 @@ const CORS_HEADERS = {
   'access-control-allow-methods': 'GET, POST, OPTIONS'
 }
 
-/*
- * 不把所有 MainPush 都转发给手机：browser-state、窗口坐标等是桌面专属或可能携带过多内容的事件。
- * 完整历史走受控的 history API；问题（ui-request / ui-deadline）转发，回答走 answer API。
- */
 const REMOTE_CHANNELS = new Set([
   'msg-add',
   'msg-update',
@@ -180,7 +136,6 @@ function validSessionId(value: string): boolean {
   return value.length > 0 && value.length <= SESSION_ID_MAX && !/[\r\n]/.test(value)
 }
 
-/** RunnerRegistry 的公开 runId 形状；中止必须明确指向一个实例。 */
 function validRunId(value: unknown): value is string {
   return typeof value === 'string' && /^r[1-9]\d{0,8}$/.test(value)
 }
@@ -189,7 +144,6 @@ function validText(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max
 }
 
-/** Decode only the bounded image formats accepted by the phone composer. */
 export function validateRemoteImages(value: unknown): RemoteImageInput[] | null {
   if (!Array.isArray(value) || value.length > 4) return null
   const images: RemoteImageInput[] = []
@@ -242,29 +196,19 @@ function constantTimeEqual(expected: string, actual: string | undefined): boolea
   return left.length === right.length && timingSafeEqual(left, right)
 }
 
-/** 解析一次请求的身份：旧版单令牌（device=null）或已配对设备 */
 type Caller = { device: RemoteDeviceSummary | null }
 
-/**
- * 只读/命令 API 的 HTTP + SSE 服务。
- *
- * 默认不启动：在设置里开启手机接入（或旧的 YAN_REMOTE_ENABLE 环境变量）后才监听。
- * 这样旧版本用户不会因为升级就突然多出一个网络监听端口。
- */
 export class RemoteServer {
   private server: Server | null = null
   private heartbeat: NodeJS.Timeout | null = null
   private readonly clients = new Set<ServerResponse>()
-  /** 砚对砚的事件流：只发心跳与授权状态，不转发桌面事件（避免越过项目范围） */
   private readonly peerClients = new Map<string, ServerResponse>()
   private readonly token: string | null
   private boundPort: number
-  /** 事件缓冲：断线重连时按 seq 补发 */
   private seq = 0
   private readonly buffer: RemoteEventEnvelope[] = []
   private bufferBytes = 0
   private readonly eventFrames = new WeakMap<RemoteEventEnvelope, { text: string; bytes: number }>()
-  /** 幂等键 → 结果（有效期内同一键只执行一次；执行中的请求共享同一个 Promise） */
   private readonly idempotency = new Map<string, { at: number; result: Promise<RemoteOperationResult> }>()
   private pairAttempts: number[] = []
   private readonly pairAttemptsBySource = new Map<string, number[]>()
@@ -338,12 +282,11 @@ export class RemoteServer {
       try {
         client.end()
       } catch {
-        /* 客户端已断开 */
       }
     }
     this.clients.clear()
     for (const client of this.peerClients.values()) {
-      try { client.end() } catch { /* 已断开 */ }
+      try { client.end() } catch { }
     }
     this.peerClients.clear()
     const server = this.server
@@ -352,26 +295,23 @@ export class RemoteServer {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 
-  /** 所有者撤销某次连接：断开它的事件流（授权本身已在登记表里作废） */
   disconnectConnection(connectionId: string): void {
     const client = this.peerClients.get(connectionId)
     if (!client) return
     this.peerClients.delete(connectionId)
-    try { client.end() } catch { /* 已断开 */ }
+    try { client.end() } catch { }
   }
 
-  /** 撤销设备后立即断开它的事件流（其它设备不受影响） */
   disconnectDevice(deviceId: string): void {
     this.options.peers?.grants.revokeDevice(deviceId)
     for (const client of this.clients) {
       if ((client as ServerResponse & { yanDeviceId?: string }).yanDeviceId === deviceId) {
-        try { client.end() } catch { /* 已断开 */ }
+        try { client.end() } catch { }
         this.clients.delete(client)
       }
     }
   }
 
-  /** 将主进程的有限状态事件推给已认证的手机客户端，并留在缓冲里供重连补发。 */
   publish(message: MainPush): void {
     if (!REMOTE_CHANNELS.has(message.ch)) return
     const envelope: RemoteEventEnvelope = {
@@ -449,12 +389,6 @@ export class RemoteServer {
     for (const [key, entry] of this.idempotency) if (entry.at < cutoff) this.idempotency.delete(key)
   }
 
-  /**
-   * 写操作的幂等执行。
-   *
-   * 手机在弱网下会重试：同一幂等键（按调用方隔离）在有效期内只执行一次，
-   * 重试拿到的是第一次的结果。没带键的旧客户端照常执行（required=true 的新接口必须带）。
-   */
   private async idempotent(
     req: IncomingMessage,
     res: ServerResponse,
@@ -497,7 +431,7 @@ export class RemoteServer {
     const origin = req.headers.origin
     if (origin) {
       let allowed = false
-      try { const incoming = new URL(origin); allowed = ['http:', 'https:'].includes(incoming.protocol) && incoming.host === req.headers.host } catch { /* 不开放无效网页来源 */ }
+      try { const incoming = new URL(origin); allowed = ['http:', 'https:'].includes(incoming.protocol) && incoming.host === req.headers.host } catch { }
       if (!allowed) { writeError(res, 403, '网页来源不受允许'); return }
       res.setHeader('access-control-allow-origin', origin)
       res.setHeader('vary', 'Origin')
@@ -514,7 +448,6 @@ export class RemoteServer {
       return
     }
 
-    /* 配对：不需要令牌，但需要电脑上当前显示的配对码；按分钟限速 */
     if (req.method === 'POST' && url.pathname === '/remote/v1/pair') {
       await this.pair(req, res)
       return
@@ -535,11 +468,6 @@ export class RemoteServer {
       return
     }
 
-    /*
-     * 砚对砚：peer 令牌只能走 /remote/v1/peer/*（外加 health / info），
-     * 手机路由对它一律拒绝；反过来手机令牌也不能冒充 peer。
-     */
-    /* 礁石（agent）只能看信息与 Agent Hub；其余手机接口一律拒绝。 */
     if (caller.device?.kind === 'agent') {
       const allowed = (req.method === 'GET' && (url.pathname === '/remote/v1/info' || url.pathname === '/remote/v1/hub' || url.pathname === '/remote/v1/hub/attention'))
         || (req.method === 'POST' && url.pathname === '/remote/v1/hub')
@@ -780,8 +708,6 @@ export class RemoteServer {
     writeError(res, 404, '远程 API 路径不存在')
   }
 
-  /* ---------------------------------------------------------------- 砚对砚 */
-
   private async handlePeer(req: IncomingMessage, res: ServerResponse, url: URL, device: RemoteDeviceSummary): Promise<void> {
     const peers = this.options.peers
     if (!peers) return writeError(res, 404, '这台电脑没有开启砚对砚互通', 'peer_disabled')
@@ -795,7 +721,6 @@ export class RemoteServer {
       return result.ok ? result.grant : null
     }
 
-    /* 申请本次连接：等所有者批准（最长两分钟） */
     if (req.method === 'POST' && parts.length === 1 && parts[0] === 'connect') {
       const body = await this.readJson(req)
       const operations = Array.isArray(body.operations)
@@ -810,7 +735,6 @@ export class RemoteServer {
       return
     }
 
-    /* 事件流：打开即激活授权；断开即作废，重连必须重新申请 */
     if (req.method === 'GET' && parts.length === 1 && parts[0] === 'events') {
       if (this.clients.size + this.peerClients.size >= 32) return writeError(res, 429, '事件连接过多，请关闭其他连接后重试')
       const grant = connectionId ? grants.activate(connectionId, device.id) : null
@@ -863,7 +787,6 @@ export class RemoteServer {
         return
       }
       if (req.method === 'GET' && parts.length === 4 && parts[2] === 'artifacts') {
-        /* 查看或复制任一授权即可读取成果文件 */
         const viewing = grants.check(connectionId, device.id, 'read', projectId)
         const allowed = viewing.ok ? viewing : grants.check(connectionId, device.id, 'transfer', projectId)
         if (!allowed.ok) return writeError(res, allowed.status, allowed.error, allowed.code)
@@ -896,7 +819,6 @@ export class RemoteServer {
       return
     }
 
-    /* 在开放项目里新开任务：与发消息同属 send 授权 */
     if (req.method === 'POST' && parts.length === 3 && parts[0] === 'projects' && parts[2] === 'sessions') {
       const projectId = decodeURIComponent(parts[1])
       if (!gate('send', projectId)) return
@@ -944,7 +866,6 @@ export class RemoteServer {
     this.pairAttempts.push(now)
     this.pairAttemptsBySource.set(source, [...recent, now])
     const body = await this.readJson(req)
-    /* agent 身份只能经中继隧道、且隧道按中继配对用途标明 agent 时配对；直连请求声称 agent 一律拒绝。 */
     if (body.kind === 'agent') {
       const relayed = !!this.options.relayToken && typeof req.headers['x-yan-relay'] === 'string' &&
         constantTimeEqual(this.options.relayToken, req.headers['x-yan-relay']) && req.headers['x-yan-relay-kind'] === 'agent'
@@ -1039,13 +960,11 @@ export class RemoteServer {
       'x-accel-buffering': 'no'
     })
     if (!this.writeSse(res, `event: ready\ndata: ${JSON.stringify({ apiVersion: REMOTE_API_VERSION, at: Date.now(), latestSeq: this.seq })}\n\n`)) return
-    /* 断线补齐：优先用 ?since=，其次 SSE 标准的 Last-Event-ID */
     const lastEventId = req.headers['last-event-id']
     const since = Number(sinceRaw ?? (typeof lastEventId === 'string' ? lastEventId : NaN))
     if (Number.isSafeInteger(since) && since >= 0) {
       const oldest = this.buffer[0]?.seq ?? this.seq + 1
       if (since > this.seq) {
-        /* 客户端的序号比服务端还新：服务端重启过，序号已经重新开始 */
         this.writeSse(res, `event: resync\ndata: ${JSON.stringify({ reason: 'server_restarted', latestSeq: this.seq })}\n\n`)
       } else if (since < oldest - 1) {
         this.writeSse(res, `event: resync\ndata: ${JSON.stringify({ reason: 'buffer_overflow', latestSeq: this.seq })}\n\n`)

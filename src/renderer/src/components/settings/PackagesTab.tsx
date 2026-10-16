@@ -14,15 +14,6 @@ import { Button, Disclosure, SettingRow } from '../ui'
 import { useConfirm } from '../ui/confirm'
 import { isCurrentGeneration } from './review2-settings-guards'
 
-/**
- * 内置能力的文案表（id → zh-CN 的 i18n 键）。
- *
- * 为什么用一张显式表而不是拼字符串：i18n 的键是**编译期检查**的
- *（`MessageKey` 是 zh-CN.json 的键联合），拼出来的字符串无法校验。
- * 表里的 id 必须与主进程 `builtinCapabilities()` 产出的 id 一致 ——
- * 主进程新增一个薄层扩展而这里忘了登记时，界面会退而成显示文件名，
- * 那是一个**看得见的缺口**，不是静默空白。
- */
 const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
   'task-plan': { name: 'pkg.builtin.task-plan', desc: 'pkg.builtin.task-planDesc' },
   browser: { name: 'pkg.builtin.browser', desc: 'pkg.builtin.browserDesc' },
@@ -40,25 +31,6 @@ const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
   'shell-fallback': { name: 'pkg.builtin.shell-fallback', desc: 'pkg.builtin.shell-fallbackDesc' }
 }
 
-/**
- * pi 插件（方案 §9 的 P2）。
- *
- * ── 这个界面要说清四件事（每一件都对应方案里的原话）──
- *
- * 1. **东西装在哪**：`agentDir` 是 pi 自己的 agent 目录（用户级），项目作用域是
- *    `<项目>/.pi/settings.json`。不告诉用户位置，出问题时他没法自己看。
- * 2. **谁维护**：列表里带 author / repository / 来源。「收录不代表官方维护或审核」
- *    —— 所以这里不出现任何"官方"的字样。
- * 3. **会执行代码**：扩展是**能执行任意代码**的，详情里明说来源与实际影响，
- *    **不宣称沙箱隔离**（我们也没有）。这里不做任何"安全扫描"的暗示。
- * 4. **什么时候生效**：pi 在**启动时**加载扩展，所以装完/卸完对**已经在跑**的
- *    实例没有影响 —— 界面上写清楚，并且主进程会在有任务运行时直接拒绝。
- *
- * 「安装成功 / 加载成功 / 当前会话可用」三态按方案要分开记。这里如实做前两态：
- * 安装成功 = pi 的 CLI 返回成功；加载成功 = 磁盘上真的能读到 package.json
- * （`installed`）。**不显示"当前会话可用"** —— 那需要 pi 重载，而我们没有把
- * 它当成已发生的事。
- */
 export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin = true }: { selectedSource?: string; selectionKey?: number; showBuiltin?: boolean }): React.JSX.Element {
   const t = useT()
   const confirm = useConfirm()
@@ -71,13 +43,6 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
   const [local, setLocal] = useState(false)
   useEffect(() => { if (selectedSource) setSource(selectedSource) }, [selectedSource, selectionKey])
 
-  /*
-   * 图片附件目录：占用 + 手动清理。
-   *
-   * 有意**不做自动清理**（查了本机的 Codex / opencode / Cline，三家也都不做）：
-   * 按时间删会删掉用户还没翻到的旧图。这里删的是「没有任何会话引用」的那些。
-   * 扫描要过一遍全部会话文件，所以会先给一句「正在扫描」。
-   */
   const [attach, setAttach] = useState<AttachmentUsage | null>(null)
   const [attachBusy, setAttachBusy] = useState(false)
   const [attachNote, setAttachNote] = useState('')
@@ -143,13 +108,6 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
     return () => { loadGeneration.current++ }
   }, [load])
 
-  /*
-   * 砚自带的受信能力（实施-02 S4）。
-   *
-   * 拉失败就不显示这一段（而不是显示一个空壳）：这段是**参考信息**，
-   * 它挂了不影响用户装/卸插件。但也不能默认为空就当作「砚没有内置能力」——
-   * 所以用单独的 state，与 packages 的失败互不污染。
-   */
   useEffect(() => {
     void (async () => {
       try {
@@ -171,7 +129,6 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
     if (generation !== loadGeneration.current) { setBusy(''); return }
     setResult(res)
     setBusy('')
-    /* 主进程会把执行后的列表带回来（省一次往返，界面立刻是对的） */
     if (res.listing) setListing(res.listing)
     else await load()
     if (res.ok && kind === 'install' && mounted.current) setSource('')
@@ -179,7 +136,6 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
 
   return (
     <div className="ui-rows" data-testid="set-packages">
-      {/* 安装：来源写 pi 能识别的形式；装完对新开的会话生效（运行中的回合不受影响） */}
       <SettingRow col data-testid="pkg-install" name={t('pkg.install')} desc={t('pkg.installDesc')}>
         <div className="pkg-install-row">
           <input
@@ -202,14 +158,12 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
           <Button size="sm" type="button" data-testid="pkg-install-btn" disabled={!!busy || !source.trim()} onClick={() => void run('install', source.trim(), local)}>
             {busy.startsWith('install') ? t('pkg.working') : t('pkg.installBtn')}
           </Button>
-          {/* 社区目录是一个网站（没有结构化接口），这里只负责打开它 */}
           <Button size="sm" variant="ghost" type="button" data-testid="set-pi-catalog-open" title={t('pkg.catalogDesc')} onClick={() => void window.yan.browser.open('https://pi.dev/packages')}>
             {t('pkg.catalog')}
           </Button>
         </div>
       </SettingRow>
 
-      {/* ③ 结果：成功带 pi 自己的输出，失败带原始输出（可展开） */}
       {result ? (
         <div className={result.ok ? 'pkg-ok' : 'pkg-fail'} data-testid="pkg-result">
           <div className="pkg-result-line">
@@ -233,7 +187,6 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
         </div>
       ) : null}
 
-      {/* ④ 已装列表（用户装的包：有版本、有来源、可卸载） */}
       <div className="ui-row col" data-testid="pkg-list">
         <div className="ui-row-label">
           <div className="ui-row-name" title={t('pkg.location', { dir: listing?.agentDir ?? '—' })}>{t('pkg.installed')}</div>
@@ -252,10 +205,6 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
                   </span>
                   {e.version ? <span className="pkg-ver">{e.version}</span> : null}
                   <span className={`pkg-scope ${e.scope}`}>{e.scope === 'project' ? t('pkg.scopeProject') : t('pkg.scopeUser')}</span>
-                  {/*
-                    登记着但磁盘上找不到 ≠ 正常：那说明包被删了或装失败了一半，
-                    用户点「更新」就能修 —— 但这必须**看得出来**。
-                  */}
                   {!e.installed ? <span className="pkg-missing">{t('pkg.missing')}</span> : null}
                   <span className="pkg-spacer" />
                   <button
@@ -292,10 +241,6 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
                     <div className="pkg-detail-line pkg-dim">{t('pkg.sourceLine', { src: e.source })}</div>
                     {e.repository ? <div className="pkg-detail-line pkg-dim">{t('pkg.repoLine', { url: e.repository })}</div> : null}
                     {e.license ? <div className="pkg-detail-line pkg-dim">{t('pkg.licenseLine', { license: e.license })}</div> : null}
-                    {/*
-                      这一句是方案 §9 的硬要求：「说明来源与实际影响，不宣称沙箱隔离」。
-                      它不是提示语，是这个功能的边界声明 —— 别为了整洁删掉。
-                    */}
                     <div className="pkg-detail-warn" data-testid="pkg-warn">
                       {t('pkg.warn')}
                     </div>
@@ -307,17 +252,11 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
         )}
       </div>
 
-      {/* ⑤ 砚内置能力：与「用户装的包」彻底分开（实施-02 S4） */}
       {showBuiltin && builtin.length > 0 ? (
         <Disclosure title={t('pkg.builtinCount', { n: builtin.length })} testId="set-builtin-caps">
           <div className="ui-row-desc">{t('pkg.builtinDesc')}</div>
           <div className="pkg-list">
             {builtin.map((cap) => {
-              /*
-               * 文案按 id 查；查不到就显示文件名。
-               * 不写「未知能力」也不隐藏 —— 新加一个薄层扩展却忘了登记文案，
-               * 应该是一个看得见的缺口，而不是静默吞掉。
-               */
               const text = BUILTIN_TEXT[cap.id]
               return (
                 <div className="pkg-item" key={cap.id} data-testid="builtin-cap" data-cap-id={cap.id}>
@@ -325,7 +264,6 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
                     <span className="pkg-name" data-testid="builtin-cap-name">
                       {text ? t(text.name) : (cap.file ?? cap.id)}
                     </span>
-                    {/* 内置能力**没有卸载按钮**：它随砚分发，不是 pi 装的包 */}
                     <span className="pkg-scope user">{t('pkg.builtinBadge')}</span>
                     {cap.file ? <span className="pkg-ver">{cap.file}</span> : null}
                   </div>
@@ -339,7 +277,6 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
         </Disclosure>
       ) : null}
 
-      {/* 图片附件：只统计占用，清理只删没有会话引用的那份 */}
       <SettingRow
         data-testid="set-attachments"
         name={t('pkg.attach')}
@@ -358,7 +295,6 @@ export function PackagesTab({ selectedSource = '', selectionKey = 0, showBuiltin
   )
 }
 
-/** 附件目录大小：超过一位小数就换单位，免得出现「1234.5678 KB」 */
 function fmtSize(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`

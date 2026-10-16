@@ -1,10 +1,3 @@
-/*
- * 随包 pi 自带模型目录的能力摘要（能否思考、协议、上下文、输出上限）。
- *
- * 文件由 scripts/gen-pi-model-catalog.mjs 从当前随包 pi 生成，放在薄层资源旁边：
- * 内置 Command Code 扩展在 pi 进程里读同一份，主进程在接入自定义服务时读它。
- * 找不到文件（资源漏打包）时返回空表 —— 接入照常进行，只是不能自动标出能否思考。
- */
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'

@@ -1,16 +1,3 @@
-/**
- * 交接计数与交接包契约（实施-05 S5a）的纯逻辑 + 存储单测。
- *
- * 分两层：
- *   · `src/shared/handoff.ts` —— 计入规则 / 去重键 / 资格判定 / 交接包清洗；
- *   · `src/main/handoff-service.ts` —— 真文件、真幂等、真「重启不归零」。
- *
- * 为什么存储层要单独测：它的失败模式都在磁盘边上 —— 一次压缩被 `state` 推送
- * 重放成几十次（去重失效）、重启后计数归零（阈值永远达不到）、交接成功后
- * 新片段没从零开始（一次交接后每次压缩都触发交接）。只看返回值一样验不出来。
- *
- * 用法：npm run test:unit
- */
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,8 +10,6 @@ export async function runHandoffTests(ok) {
 
   ok(shared.HANDOFF_AUTO_COMPACT_THRESHOLD === 2, '阈值是 2（§7：成功自动完整压缩累计两次）')
   ok(shared.HANDOFF_TALLY_KEY_LIMIT > 0 && shared.HANDOFF_TALLY_KEY_LIMIT <= 200, '去重键有上限（防无界）')
-
-  /* --------------------------------------------------- 计入规则 */
 
   const run = (patch = {}) => ({ status: 'completed', reason: 'threshold', startedAt: 100, endedAt: 200, ...patch })
   ok(shared.isCountableCompaction(run()), 'pi 原生自动压缩（threshold）计入')
@@ -47,8 +32,6 @@ export async function runHandoffTests(ok) {
   ok(shared.compactionKeyOf({ status: 'completed', reason: 'threshold' }) === null, '连时间都没有 → 没有稳定键')
   ok(shared.compactionKeyOf(null) === null, '空记录没有键')
 
-  /* --------------------------------------------------- 计数（幂等） */
-
   const tally0 = shared.emptyTally(0)
   ok(tally0.count === 0 && tally0.segmentId === 'initial', '空计数从 0 开始')
 
@@ -67,7 +50,6 @@ export async function runHandoffTests(ok) {
   const third = shared.applyCompactionTally(second.tally, run({ entryId: 'e-3' }), 5000)
   ok(third.tally.count === 3, '到阈值后继续累加（界面要看到「压了几次」，不封顶）')
 
-  /* 键上限：丢最旧的，计数不丢 */
   let many = shared.emptyTally(0)
   for (let i = 0; i < shared.HANDOFF_TALLY_KEY_LIMIT + 10; i++) {
     many = shared.applyCompactionTally(many, run({ entryId: `e-${i}` }), i).tally
@@ -78,8 +60,6 @@ export async function runHandoffTests(ok) {
 
   const reset = shared.resetTallyForNewSegment('seg-2', 9000)
   ok(reset.count === 0 && reset.segmentId === 'seg-2' && reset.keys.length === 0, '新片段从零开始')
-
-  /* --------------------------------------------------- 资格判定 */
 
   const goal = (patch = {}) => ({ goalId: 'g', phase: 'executing', revision: 3, steps: [], evidence: [], blocker: null, failure: null, updatedAt: 0, ...patch })
   const eligible = (patch = {}) =>
@@ -98,8 +78,6 @@ export async function runHandoffTests(ok) {
   ok(eligible({ mode: 'clarify' }).reason === 'not-autonomous', '计划档 → 不自动交接')
   ok(eligible({ busy: true }).reason === 'busy', '有后台工作（子代理 / 长命令）→ 先等，不遗弃')
 
-  /* --------------------------------------------------- 交接包清洗 */
-
   const source = { sourceSession: 'C:/tmp/s.jsonl', sourceHead: 'e-9', mode: 'autonomous', model: 'm', now: 111 }
   ok(shared.sanitizeHandoffPackage(null, source) === null, '非对象 → 不可用')
   ok(shared.sanitizeHandoffPackage({ deliverable: 'x' }, source) === null, '缺目标 → 不可用')
@@ -116,7 +94,6 @@ export async function runHandoffTests(ok) {
       blockers: [],
       files: ['src/a.ts'],
       notes: ['长命令还在跑'],
-      /* 模型不能自报来源：下面这些必须被覆盖 */
       sourceSession: 'evil',
       mode: 'standard',
       generator: 'user'
@@ -141,8 +118,6 @@ export async function runHandoffTests(ok) {
   ok(shared.handoffSummary(null) === '没有交接包', '没有包时摘要可读')
   ok(shared.handoffSummary(pkg).includes('未完成 1 项'), '摘要把未完成计数带出来')
 
-  /* --------------------------------------------------- 存储层 */
-
   const root = await mkdtemp(join(tmpdir(), 'yan-handoff-'))
   try {
     const store = new service.HandoffStore({ root, now: () => 5000 })
@@ -163,7 +138,6 @@ export async function runHandoffTests(ok) {
 
     ok(store.state(keyB).tally.count === 0, 'B 会话不受影响')
 
-    /* 重启不归零：换一个 store 实例重新读 */
     const reopened = new service.HandoffStore({ root })
     await reopened.load()
     ok(reopened.state(keyA).tally.count === 1, '重新读盘后计数还在（重启不归零）')
@@ -181,7 +155,6 @@ export async function runHandoffTests(ok) {
     const after = await store.startNewSegment(keyA, 'seg-2')
     ok(after.count === 0 && after.segmentId === 'seg-2', '交接成功后新片段从零开始')
 
-    /* 脏 JSON / 旧文件兼容 */
     await writeFile(file, '{ 这不是 JSON', 'utf8')
     const bad = new service.HandoffStore({ root })
     await bad.load()
@@ -198,7 +171,6 @@ export async function runHandoffTests(ok) {
     ok(old.state(keyA).package === null, '旧文件里没有包 → null（不造半份包）')
     ok(old.state(keyA).tally.segmentId === 'initial', '缺 segmentId 时回落 initial')
 
-    /* 落盘失败必须抛（与目标状态同因） */
     const rootBad = await mkdtemp(join(tmpdir(), 'yan-handoff-bad-'))
     try {
       const badStore = new service.HandoffStore({ root: rootBad })
@@ -216,10 +188,6 @@ export async function runHandoffTests(ok) {
       await rm(rootBad, { recursive: true, force: true })
     }
 
-    /*
-     * 自动交接开关（实施-05 S6）：用户 2026-09-19 拍板**默认开**。
-     * 这一条很容易被“顺手改成默认关”而不被任何东西拦住，所以钉在这里。
-     */
     ok(shared.handoffCommitEnabled({}) === true, '未设 YAN_HANDOFF_COMMIT → 默认开（用户拍板）')
     ok(shared.handoffCommitEnabled(undefined) === true, 'env 缺失也默认开')
     ok(shared.handoffCommitEnabled({ YAN_HANDOFF_COMMIT: '1' }) === true, '显式 1 → 开')

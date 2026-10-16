@@ -17,7 +17,6 @@ function reference(raw: unknown): ModelReference {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('文件任务模型配置无效')
   const value = raw as ServiceModelConfig
   if (typeof value.provider !== 'string' || !value.provider || typeof value.baseUrl !== 'string' || typeof value.api !== 'string' || !value.model || typeof value.model.id !== 'string') throw new Error('文件任务模型配置无效')
-  // 只复制非秘密字段，兼容旧配置但从不复用它的 apiKey 副本。
   return { provider: value.provider, baseUrl: value.baseUrl, api: value.api, model: value.model }
 }
 async function write(value: ModelReference): Promise<void> {
@@ -37,7 +36,6 @@ export function clearFileTaskModel(provider: string): Promise<void> {
     let raw: unknown
     try { raw = JSON.parse(await readFile(file, 'utf8')) } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-      // 用户明确清除凭证时，坏的旧凭证副本也不能留下；其他 I/O 错误仍传播。
       if (error instanceof SyntaxError) { await unlink(file); return }
       throw error
     }
@@ -55,7 +53,6 @@ export function loadFileTaskModel(): Promise<ServiceModelConfig | undefined> {
     if (Object.hasOwn(raw as object, 'apiKey')) await write(config)
     const auth = await readAuthEntry(config.provider)
     if (auth && typeof auth === 'object' && (auth as { type?: unknown }).type === 'oauth') throw new Error('文件任务入口不支持订阅 OAuth，请选择 API Key 模型')
-    // 自定义供应商的当前端点必须仍与保存时一致，不能向旧端点发送更新后的 key。
     let models: { providers?: Record<string, { baseUrl?: string; apiKey?: string }> }
     try { models = JSON.parse(await readFile(join(PI_AGENT_DIR, 'models.json'), 'utf8')) } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error

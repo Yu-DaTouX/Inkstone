@@ -1,4 +1,3 @@
-/** 更改项目文件夹：纯合成隔离应用，正式 UI → preload → IPC → 设置落盘，不调用模型。 */
 ;(async () => {
   const out = []
   const ok = (condition, text) => { out.push(`${condition ? '✓' : '✗'} ${text}`); if (!condition) throw new Error(text) }
@@ -34,11 +33,6 @@
     await wait(row)
     await open()
     ok(q('[data-testid="project-directory-mask"]').parentElement === document.body, '对话框 Portal 不受左栏裁剪')
-    /*
-     * 焦点在测试窗口里会晚到：探针窗口是 showInactive 打开的（document.hasFocus() 为 false），
-     * 系统会把 focus() 推迟到几百毫秒后才真正落到元素上。这里等它稳定下来，
-     * 真实窗口（激活状态）不需要这段等待。
-     */
     const inputEl = q('[data-testid="project-directory-input"]')
     await wait(() => document.activeElement === inputEl)
     ok(document.activeElement === inputEl, '打开后聚焦新目录输入框')
@@ -65,7 +59,6 @@
     ok(!(await window.yan.listSessions()).some((s) => key(s.cwd) === key(target)), '没有任何已有会话被搬到新目录')
     const stillListed = store.getState().settings.projects.find((p) => p.id === 'probe-directory')
     ok(!!stillListed && !stillListed.archived && key(stillListed.cwd) === key(target), '项目仍在列表中、未归档且指向新目录')
-    /* 项目行只在「有会话」或「是当前项目」时显示；挂一条新目录下的会话把它带回来 */
     const now2 = Date.now()
     store.setState({ sessions: [{ id: 'folder-session-2', path: `${target}/synthetic.jsonl`, cwd: target, projectId: 'probe-directory', title: '新目录里的会话', createdAt: now2, updatedAt: now2, messageCount: 1 }] })
     await sleep(350)
@@ -73,7 +66,6 @@
     await wait(row)
     await open()
     ok(key(q('#project-directory-old').value) === key(target), '再次打开显示已保存的新目录')
-    // 保持对话框供本场景独立截图；应用退出后仅销毁隔离数据。
   } catch (error) { out.push(`✗ 探针出错: ${error.message ?? String(error)}`) }
   return out.join('\n')
 })()

@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 const exec = promisify(execFile)
-/** 只停止本次创建的执行进程及其子树，并等待控制进程退出后才冻结成果。 */
 export async function stopHubChild(child: ChildProcess | null | undefined): Promise<boolean> {
   if (!child || child.exitCode !== null || child.signalCode !== null) return true
   const exited = new Promise<boolean>((resolve) => {

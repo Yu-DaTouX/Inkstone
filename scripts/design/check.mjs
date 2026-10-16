@@ -1,4 +1,3 @@
-// 设计稿静态自检 —— 不花模型额度
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,11 +9,9 @@ const src = readFileSync(FILE, "utf8");
 let fails = 0;
 const ok = (b, msg) => { console.log((b ? "  OK   " : "  FAIL ") + msg); if (!b) fails++; };
 
-// 待办项：不算失败，但会列出来，防止忘了
 const todos = [];
 const todo = (b, msg) => { if (!b) todos.push(msg); };
 
-/* ---- 1. 抽出 script 做语法检查 ---- */
 const m = src.match(/<script>([\s\S]*?)<\/script>/);
 ok(!!m, "<script> 存在");
 if (m) {
@@ -23,7 +20,6 @@ if (m) {
   console.log("         脚本 " + m[1].split("\n").length + " 行 -> " + tmp);
 }
 
-/* ---- 2. 标签配平 ---- */
 const VOID = new Set(["br","hr","img","input","meta","link","i","col","source"]);
 for (const tag of ["div","section","article","aside","header","footer","details","dl","button","span","p","style","script","html","body","textarea"]) {
   const open  = (src.match(new RegExp("<" + tag + "(?=[\\s>])", "g")) || []).length;
@@ -32,10 +28,8 @@ for (const tag of ["div","section","article","aside","header","footer","details"
   ok(open === close, `<${tag}>  开 ${open} / 闭 ${close}`);
 }
 
-/* ---- 3. i18n 键完整性 ---- */
 const s = m ? m[1] : "";
 const grab = (obj) => {
-  // 抓 LOCALES 里每个语言块内 "a.b": "..." 的键
   const out = new Set();
   for (const mm of obj.matchAll(/"([A-Za-z]+\.[A-Za-z]+)"\s*:/g)) out.add(mm[1]);
   return out;
@@ -57,20 +51,16 @@ ok(missEn.length === 0, "模板键都在 en-US 里" + (missEn.length ? " -> 缺 
 ok(onlyZh.length === 0 && onlyEn.length === 0, "两种语言键集合一致" +
    (onlyZh.length ? " 仅zh:" + onlyZh.join(",") : "") + (onlyEn.length ? " 仅en:" + onlyEn.join(",") : ""));
 
-/* ---- 4. 脏字符 ---- */
 const zw = [...src].map((c, i) => [c, i]).filter(([c]) => c === "\u200B" || c === "\uFEFF");
 ok(zw.length === 0, "无零宽字符" + (zw.length ? " -> " + zw.length + " 处" : ""));
 
-/* ---- 5. 设计约束（禁止项） ---- */
 const css = (src.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || "";
 ok(!/box-shadow\s*:(?!\s*0 0 0)/.test(css.replace(/box-shadow\s*:\s*0 0 0[^;]*/g, "")), "无投影(除峰谷点的光晕)");
 ok(!/linear-gradient|radial-gradient/.test(css), "无渐变");
-/* 圆角上限：装饰性胶囊（滚动条、进度条）允许 99px，其余不超过 --r-xl(14px) */
 const PILL_OK = /(webkit-scrollbar-thumb|\.meter)/;
 const badRadius = css.split("\n").filter(l => /border-radius\s*:\s*(99px|1[5-9]px|[2-9]\dpx)/.test(l) && !PILL_OK.test(l));
 ok(badRadius.length === 0, "无大药丸圆角（滚动条/进度条除外）" + (badRadius.length ? " -> " + badRadius.map(s => s.trim()).join(" | ") : ""));
 
-/* ---- 6. 深/浅主题令牌对称 ---- */
 const dark = (css.match(/data-theme="dark"\]\{([\s\S]*?)\}/) || [])[1] || "";
 const light = (css.match(/data-theme="light"\]\{([\s\S]*?)\}/) || [])[1] || "";
 const vars = (b) => new Set([...b.matchAll(/(--[\w-]+)\s*:/g)].map(x => x[1]));
@@ -78,9 +68,6 @@ const dv = vars(dark), lv = vars(light);
 const badLight = [...dv].filter(v => !lv.has(v) && !["--diff-add-bg","--diff-del-bg"].includes(v));
 ok(badLight.length === 0, "浅色主题令牌覆盖完整" + (badLight.length ? " -> 缺 " + badLight.join(", ") : ""));
 
-/* ---- 7. 栅格字体（硬约束） ---- */
-// 终端风格 UI 的前提：一个汉字 == 两个 ASCII 字符宽。
-// 只有拉丁步进为 0.5em 或 0.6em 的字体才凑得出整数比。
 const RATIO_OK = ["Maple Mono CN", "Sarasa Mono", "LXGW WenKai Mono"];
 const fontDecl = css.match(/--font-mono\s*:\s*([^;]+);/);
 const fontVal = fontDecl ? fontDecl[1] : "";
@@ -93,7 +80,6 @@ ok(hasFontFace, "@font-face 内嵌了字体（不能只靠系统回退）");
 ok(!/^\s*["']?(monospace|ui-monospace)/.test(fontVal),
    "--font-mono 首项不是裸 monospace（Windows 会掉到 Courier New）");
 
-/* ---- 8. 图标必须走 sprite，不能再用 Unicode 字形 ---- */
 const spritePath = join(HERE, "icons", "sprite.svg");
 const sprite = existsSync(spritePath) ? readFileSync(spritePath, "utf8") : "";
 const symbolIds = new Set([...sprite.matchAll(/<symbol id="([^"]+)"/g)].map(m => m[1]));
@@ -108,9 +94,6 @@ if (iconUses.length) {
   todo(false, "图标还是 Unicode 字符（`◐` `↺` `✓`），应换成 icons/sprite.svg 里的 sprite");
 }
 
-// 常见的“既当图标又当文字”的字符
-// 只扫「壳」（chrome），不扫代码/工具输出的正文 —— 那一块是 passthrough 内容，
-// 出现 `✓ src/foo.test.ts` 是 vitest 的真实输出，不是我们的图标（见 DESIGN.md §6）
 const chromeLines = [];
 let inCode = false;
 for (const line of src.split("\n")) {
@@ -125,9 +108,6 @@ if (unicodeIcons.length) {
   todo(false, `正文里还有 Unicode 图标字符: ${unicodeIcons.join(" ")} —— 确认这些是刻意保留的还是漏改`);
 }
 
-/* ---- 9. 上下文窗口数据必须是真的量级 ---- */
-// 模型的真实上限是 1,000,000（见 HANDOFF §5.5），写 128,000 会看不出真实观感。
-// 只看数字展示位置（`X / Y` 这种），不看注释里的说明文字。
 todo(!/\/\s*128,000/.test(src),
      "设计稿里还写着 128,000 的上下文窗口 —— 真实值是 1,000,000（HANDOFF §5.5）");
 const ctx = src.match(/<span>([\d,]+)\s*\/\s*([\d,]+)<\/span>\s*<span>([\d.]+)%/);
@@ -144,7 +124,6 @@ if (ctx) {
               `进度条宽度 ${bar[1]}% 与数字 ${real}% 一致`);
 }
 
-/* ---- 汇总 ---- */
 if (todos.length) {
   console.log("\n  待办（不算失败）:");
   for (const t of todos) console.log("    · " + t);

@@ -1,4 +1,3 @@
-/** 只读模型注册核对的失败方向；无真实 Provider、子进程或用户数据。 */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

@@ -1,4 +1,3 @@
-/** One failed subagent can be acknowledged without clearing others or rewriting its error. */
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'

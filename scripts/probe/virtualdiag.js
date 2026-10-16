@@ -1,8 +1,3 @@
-/**
- * 诊断：为什么长会话（虚拟化）时一项都不渲染。
- *
- * 只输出尺寸与结构，不做断言 —— 用来定位「卡死/白屏」。
- */
 ;(async () => {
   const out = []
   const q = (s) => document.querySelector(s)
@@ -31,7 +26,6 @@
   try {
     info('普通路径（真实会话）')
 
-    /* 注入 240 条 —— 与 virtual 探针同一份数据形态 */
     const fake = []
     for (let i = 0; i < 240; i++) {
       if (i % 3 === 0) fake.push({ id: 'd' + i, role: 'user', text: '第 ' + i + ' 条用户消息' })

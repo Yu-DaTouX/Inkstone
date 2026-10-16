@@ -3,25 +3,12 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { UsageOverview, useUsageStats } from './UsageOverview'
 
-/**
- * 空会话的启动页（设计规范「启动页」）。
- *
- * 与对话正文同一种终端排版，不对称两栏：左侧宽栏是提示符 `›` 起头的问候、
- * 当前项目与开始入口（竖排）；右侧窄栏下沉一截放本机用量。斜杠命令不在这里列（输入 `/` 时有提示）。
- * 各段只用小标题与留白分组，不加卡片底色与外框；窄时两栏叠成一列。
- *
- * 入口按钮的**标签**与**草稿**是两件事：标签是短词，草稿是要发给模型的自然语言。
- * 点击只填入可编辑草稿，由用户自己发送，不自动跑命令。
- */
 export function EmptyStream() {
   const t = useT()
-  /** 项目路径：会话运行时用 session.cwd，没有就用设置里选定的目录 */
   const cwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd ?? '')
   const changeCwd = useStore((s) => s.changeCwd)
-  /* 称呼用本机用户名（与用量同一次请求，结果已缓存） */
   const userName = useUsageStats('all')?.userName ?? ''
 
-  /** 建议：点了就填进输入框并聚焦 */
   const suggest = (text: string) => {
     const ta = document.querySelector<HTMLTextAreaElement>('[data-testid="composer"]')
     if (!ta) return
@@ -31,13 +18,11 @@ export function EmptyStream() {
     ta.focus()
   }
 
-  /** 选项目：走设置页同一个入口（主进程弹目录选择框） */
   const pickProject = async (): Promise<void> => {
     const p = await window.yan.pickCwd()
     if (p) await changeCwd(p)
   }
 
-  /** 「了解这个项目」：没选项目时先引导选项目，而不是发一句空话 */
   const startProject = async (): Promise<void> => {
     if (!cwd) {
       await pickProject()
@@ -68,7 +53,6 @@ export function EmptyStream() {
           <h2 className="start-label">{t('chat.project')}</h2>
           {cwd ? (
             <div className="start-project">
-              {/* 只显示目录名，完整路径在悬停提示里 */}
               <span className="start-path" title={cwd}>
                 {cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || cwd}
               </span>

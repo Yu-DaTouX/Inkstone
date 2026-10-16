@@ -1,18 +1,3 @@
-/**
- * 交互终端表面（实施-11 H-11）。
- *
- * 与浏览器不同，终端是**纯 DOM**（xterm.js 画在 canvas / DOM 上），所以不需要
- * 原生视图协调；它只是右栏工作窗口的又一个资源页。
- *
- * 三条设计决定：
- *   ① **输出只走推送、不走 store**：PTY 输出是高频的，每个 chunk 进一次
- *      zustand 会让整个右栏重算。这里直接订阅 `window.yan.onPush` 写进 xterm。
- *   ② **重连 = reset + 回放**：切标签 / 重开面板都重新 `attach`，主进程把
- *      有界缓冲推回来；快照上的 `seq` 用来丢弃已经包含在缓冲里的实时块，
- *      不靠时间窗猜。
- *   ③ **不可用要说清楚**：原生依赖装不上时显示原因与重试，而不是一个
- *      点了没反应的终端框（H-11 禁区：不做灰色永久占位按钮）。
- */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWorkspaceKey } from '../workbench/Workspace'
 import { Terminal } from '@xterm/xterm'
@@ -25,13 +10,6 @@ import { installImeFallback, installTerminalRenderer, terminalAppearance, termin
 import { APPEARANCE_EVENT } from '../../lib/appearance'
 import { boundedPending } from '../settings/review2-settings-guards'
 
-/**
- * xterm 的主题：**从 tokens.css 的 CSS 变量读**，不写死两份色值。
- *
- * 为什么不能用 `data-theme` 上硬编码的两份常量：主题不只深/浅两套（将来可能加），
- * 而且硬编码一份就多一份会和 tokens 漂移的真源。xterm 读不到 CSS 变量，
- * 所以只能在挂载与 `data-theme` 变化时把计算值取过来。
- */
 function currentTheme(): {
   background: string
   foreground: string
@@ -54,7 +32,6 @@ function currentTheme(): {
   }
 }
 
-/** `bare`: the workspace tile already shows the title and new/close commands. */
 export function TerminalSurface({ terminalId, bare = false }: { terminalId?: string; bare?: boolean } = {}) {
   const t = useT()
   const terminals = useStore((s) => s.terminals)
@@ -72,9 +49,7 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const fitCallbackRef = useRef<() => void>(() => {})
-  /** 当前已接收到的输出序号（用于重连去重） */
   const seqRef = useRef(0)
-  /** 输入回调要读到最新活动 id，但不重建 xterm 实例 */
   const activeIdRef = useRef<string | null>(activeId)
   const [attachError, setAttachError] = useState('')
   const [exited, setExited] = useState<number | null>(null)
@@ -94,13 +69,11 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
     try {
       fitAddon.fit()
     } catch {
-      /* 尺寸过小 / 正在卸载：忽略 */
     }
     if (activeId) void window.yan.terminal.resize(activeId, term.cols, term.rows)
   }, [activeId])
   useEffect(() => { fitCallbackRef.current = fit }, [fit])
 
-  /* 建立 xterm 实例（一次），主题跟随 data-theme */
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
@@ -124,20 +97,17 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
       fitRef.current = fitAddon
       setReady(true)
 
-      /* 用户输入 → 宿主 PTY */
       const dataSub = term.onData((data) => {
         const id = activeIdRef.current
         if (id) void window.yan.terminal.write(id, data)
       })
 
-      /* Tiles glide while being dragged; fit once the size settles instead of resizing the PTY every frame. */
       let fitTimer: ReturnType<typeof setTimeout> | undefined
       const observer = new ResizeObserver(() => {
         clearTimeout(fitTimer)
         fitTimer = setTimeout(() => fitCallbackRef.current(), 90)
       })
       observer.observe(host)
-      /* 主题、背景色与代码字体切换：xterm 不读 CSS 变量，得手动同步一次 */
       const syncAppearance = (): void => {
         term.options.theme = currentTheme()
         const family = terminalAppearance().fontFamily
@@ -167,21 +137,12 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
       }
     })
     return () => { disposed = true; release() }
-    // 实例只建一次；activeId 的变化由下面那个 effect 处理
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [available])
 
-  /*
-   * attach 之前到达的实时块先进队列。
-   *
-   * 为什么需要队列：快照（含已有缓冲）与实时推送走的是**两条不同的 IPC 通道**，
-   * 到达顺序不保证。若先收到实时块就直接写，后到的快照缓冲会把顺序搅反。
-   * 所以“attach 完成前只收不发”，完成后按序号回放，天然去重。
-   */
   const pendingRef = useRef<{ seq: number; data: string }[]>([])
   const attachedRef = useRef(false)
 
-  /* 订阅宿主推送：只收数据与退出 */
   useEffect(() => {
     const off = window.yan.onPush((msg) => {
       if (msg.ch !== 'terminal') return
@@ -198,7 +159,6 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
           } else pendingRef.current = queued
           return
         }
-        /* 重连回放的块序号 ≤ 快照序号时已经写过了，丢弃 */
         if (seq <= seqRef.current) return
         seqRef.current = seq
         termRef.current?.write(data)
@@ -209,7 +169,6 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
     return off
   }, [])
 
-  /* 活动会话变化：清屏 → attach（缓冲回放 + 排空队列） */
   useEffect(() => {
     const term = termRef.current
     if (!term || !ready) return
@@ -227,12 +186,10 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
     void window.yan.terminal.attach(activeId).then((snapshot) => {
       if (!alive) return
       if (snapshot) {
-        /* 快照里的缓冲直接写入（队列里同序号的回放块会被去重丢弃） */
         if (snapshot.buffer) term.write(snapshot.buffer)
         seqRef.current = snapshot.seq
         if (!snapshot.alive) setExited(snapshot.exitCode ?? null)
       }
-      /* 排空 attach 期间到达的实时块（按到达顺序，序号严格递增） */
       const queued = pendingRef.current
       pendingRef.current = []
       attachedRef.current = true
@@ -255,7 +212,6 @@ export function TerminalSurface({ terminalId, bare = false }: { terminalId?: str
     }
   }, [activeId, ready, fit])
 
-  /* 进入终端页时刷新一次宿主会话列表（重连 / 重启渲染进程后） */
   useEffect(() => {
     void refresh()
   }, [refresh])

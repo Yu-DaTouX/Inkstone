@@ -28,7 +28,7 @@ before()
 assert(active.includes('codemode') && active.includes('custom'), 'default enables codemode without replacing other tools')
 await writeFile(desktop, JSON.stringify({ codemodeEnabled: false }))
 assert(blocked(), 'a live opt-out blocks calls even before the next turn')
-active.push('codemode') // MCP or a restored session may reactivate the tool.
+active.push('codemode')
 before()
 assert(!active.includes('codemode') && active.includes('custom'))
 await writeFile(desktop, JSON.stringify({ codemodeEnabled: true }))
@@ -52,7 +52,6 @@ await writeFile(desktop, '{broken')
 before()
 assert(!active.includes('codemode') && blocked(), 'unreadable preference cannot undo an opt-out')
 
-// Exercise the actual settings store with an isolated directory and a locale stub.
 await writeFile(desktop, JSON.stringify({ theme: 'light' }))
 const outfile = resolve('out/test/codemode-settings.mjs')
 await build({ entryPoints: ['src/main/settings.ts'], outfile, bundle: true, packages: 'external', platform: 'node', format: 'esm', logLevel: 'silent', plugins: [{ name: 'electron-locale', setup(build) {

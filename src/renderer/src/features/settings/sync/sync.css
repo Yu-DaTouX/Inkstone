@@ -1,10 +1,4 @@
 @layer features {
-  /*
-   * 设置 → 同步的版面。
-   * 只写 flex / 间距 / 截断 / 滚动；颜色、圆角、字号一律取既有 token，
-   * 控件外观来自 `ui/ui.css`。本页挂在设置页的 `.settings-main` 内，
-   * 不再自己加页面内边距或滚动。
-   */
 
   .sync-page {
     display: flex;
@@ -64,8 +58,6 @@
     gap: var(--s-8);
   }
 
-  /* ---------------- 上次同步 ---------------- */
-
   .sync-last {
     display: flex;
     flex-direction: column;
@@ -111,8 +103,6 @@
     overflow-wrap: anywhere;
   }
 
-  /* ---------------- 冲突 ---------------- */
-
   .sync-conflicts {
     display: flex;
     flex-direction: column;
@@ -150,7 +140,6 @@
     color: var(--fg);
   }
 
-  /* 两份并排；窄屏换行。用 minmax(0, 1fr) 防长内容撑破列。 */
   .sync-conflict__sides {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -1,11 +1,3 @@
-/**
- * 会话统计投影（`src/shared/session-metrics.ts`）的定向单测。
- *
- * 纯函数、无 Electron / pi / 用户数据：用 esbuild 把模块打成一个中性 bundle
- * （没有 Node 内建依赖本身就被这步钉住），再用合成消息断言口径。
- *
- * 用法： node scripts/test-session-metrics.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -41,7 +33,6 @@ try {
   const NOTICE =
     '<subagent-notification id="s1" status="done">\n这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。'
 
-  /* ── A. 轮数 / 步数 / 消息求和；旧 speed 只作已记录 TPS，不充模型用时 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -81,7 +72,6 @@ try {
     eq(m.toolPartial, false, '起止齐全时不是下限')
   }
 
-  /* ── B. 优先用 stats（与消息对得上时） ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -107,7 +97,6 @@ try {
     eq(withWrite.hitRate, 900 / (1000 + 900 + 50) * 100, '缓存写入计入命中率分母')
   }
 
-  /* ── C. 长历史截断：归属受保护的 stats 就是完整会话值，不再靠请求数拒绝 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -131,7 +120,6 @@ try {
     eq(noFlag.total, 19998, '总数仍取 stats')
   }
 
-  /* ── D. stats 比消息还旧（更低）→ 用消息求和，标下限，花费仍可用 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -150,7 +138,6 @@ try {
     eq(m.cost, 0.2, '花费仍来自 stats（归属没变）')
   }
 
-  /* ── E. 同 id 重复：后者权威、首次位置保持；通知/提问仍过滤 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'q' },
@@ -168,7 +155,6 @@ try {
     eq(m.total, 2023, '累计只按去重后的消息求和')
   }
 
-  /* ── F. generationTiming 齐全：模型用时 / TTFT / TPS ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -196,7 +182,6 @@ try {
     eq(m.tpsPartial, false, '输出都被真实 decode 覆盖时不是部分')
   }
 
-  /* ── F2. 无 turn_start 标记：duration 只作下限，ttft 不进平均 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -205,7 +190,6 @@ try {
         role: 'assistant',
         text: 'x',
         usage: usage({ output: 100 }),
-        /* 旧记录 / 回退起点：有 duration 与 ttft，但没有原生起点标记 */
         generationTiming: { durationMs: 2000, ttftMs: 400, decodeMs: 1600 }
       }
     ]
@@ -217,7 +201,6 @@ try {
     eq(m.tps, 100 / 1.6, 'decodeMs 与起点语义无关，TPS 照常可用')
   }
 
-  /* ── G. 工具区间并集：重叠不重复计；缺起止是部分 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -237,7 +220,6 @@ try {
     eq(m.toolPartial, true, '有工具没有完整起止 → 用时是部分')
   }
 
-  /* ── H. 全部没有计时：明确未知，不编造 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -251,7 +233,6 @@ try {
     eq(m.tpsPartial, true, '有请求没被计时覆盖 → TPS 值不完整')
   }
 
-  /* ── I. 服务报 0 但会话有 Token：花费不可信 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -268,7 +249,6 @@ try {
     eq(m.costZero, true, '…会话已有 Token → 标记花费不可信')
   }
 
-  /* ── J. 一条用量都没报：未知而不是「下限 0」── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -281,7 +261,6 @@ try {
     eq(m.steps, 2, '步数照常按请求数')
   }
 
-  /* ── K. 未知 stats 0：有请求、没上报、stats 总量 0 → 未知而非 0 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -301,7 +280,6 @@ try {
     eq(m.costZero, false, '没有 Token 可对照，不能当免费提示')
   }
 
-  /* ── L. stats 有 total>0 但可见请求缺报：默认标下限；历史截断时信完整 stats ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -322,7 +300,6 @@ try {
     eq(truncated.partial, false, '历史截断且 stats 是完整会话值 → 不标下限')
   }
 
-  /* ── M. 历史截断但没有权威完整 stats：消息求和只是下限 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -336,7 +313,6 @@ try {
     eq(full.partial, false, '完整历史且都报过 → 不是下限')
   }
 
-  /* ── N. 无首内容（只有 durationMs）：不逼出 TPS ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -357,7 +333,6 @@ try {
     eq(m.ttftPartial, false, '一个 ttft 都没有时是未知，不是「部分」')
   }
 
-  /* ── O. 仅 speed：模型总用时未知，TPS 兼容；不把 speed 补成模型时间 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -370,7 +345,6 @@ try {
     eq(m.tpsPartial, false, '这一步被已记录 TPS 覆盖')
   }
 
-  /* ── P. NaN / Infinity / 负数：所有 usage / timing / 工具字段都过滤 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -411,7 +385,6 @@ try {
     eq(bad.cost, 0, 'Infinity 花费归 0，不传出精确的错误值')
   }
 
-  /* ── Q. 无 usage 的请求也让模型/TPS/TTFT 的完整性按实际 steps 算 ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -435,7 +408,6 @@ try {
     check(m.partial === true, '有请求缺 usage → 累计是下限')
   }
 
-  /* ── R. 有 generationTiming 但缺/非法 decodeMs：绝不用旧 speed 兜底造 TPS ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },
@@ -477,7 +449,6 @@ try {
     eq(legacy.modelMs, null, '旧 speed 不充模型总用时')
   }
 
-  /* ── S. historyPartial：计时只来自可见历史 → 有值即部分；没有 timing 仍 null ── */
   {
     const messages = [
       { id: 'u1', role: 'user', text: 'hi' },

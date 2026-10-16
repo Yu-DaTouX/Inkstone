@@ -58,8 +58,6 @@ try {
     try { await rename(replacement, file) }
     catch (error) {
       if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) throw error
-      // Windows may deny replacing an open destination. Invalidate that handle
-      // to exercise the bounded read-error/replacement retry rather than fake inode metadata.
       await handle.close(); await rename(replacement, file)
     }
   }

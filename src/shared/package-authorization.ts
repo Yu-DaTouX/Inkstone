@@ -1,10 +1,3 @@
-/**
- * 本地包代码执行授权（实施-04 §9 / §10）—— 纯逻辑，不碰磁盘或 UI。
- *
- * 远程 MCP 的 host 授权只允许连接 endpoint，不代表可在本机安装 / 执行代码；
- * 因此包授权必须绑定到精确候选指纹与 projectId。模型可请求 acquire，
- * 但不能通过传 `--authorize` 自行制造这条宿主策略。
- */
 export type PackageExecutionGrant = {
   candidateId: string
   digest: string

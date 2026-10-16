@@ -1,17 +1,3 @@
-/*
- * R 真实模型 v3 场景：真消息流式 / 停止（scripts/probe/v3-real-send.js）。
- *
- * 与前几条 v3 隔离探针的分工：v3-composer 用注入 store 验「运行中空输入显示停止」，
- * 这条**真的调模型**，验的是整条真链路：
- *   · 真发一条短消息 → 流式期间 `composer-run` 显示阶段文字 + 秒级计时；
- *   · 空输入时同一位置显示停止键（底栏最右侧）；
- *   · 第二条点停止能真的中止；结束后回到发送键；
- *   · 运行期间 `runners[].running` 与 `session.isAgentRunning` 全程一致（记录时间线）；
- *   · 结束后会话统计 token 增长。
- *
- * 只发 2 条短消息；模型固定 commandcode/deepseek/deepseek-v4.1-flash（由 test-live 注入）。
- * 不发附件、不跑本地命令；停止动作走界面按钮（store.abort）。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => {
@@ -26,7 +12,6 @@
       try {
         if (predicate()) return true
       } catch {
-        /* 还没就绪，继续轮询 */
       }
       await wait(50)
     }
@@ -35,7 +20,6 @@
   const q = (testId) => document.querySelector(`[data-testid="${testId}"]`)
   const store = window.__yanStore
 
-  /** 用 React 认的方式写进受控 textarea。 */
   const setValue = (el, text) => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
     setter.call(el, text)
@@ -48,7 +32,6 @@
   const runnerRunning = (s) => !!activeRunner(s)?.running
   const runningNow = (s) => sessionRunning(s) || runnerRunning(s)
 
-  /* 运行期间的时间线：每个 store 变更记录一次两者状态。 */
   const timeline = []
   let recording = false
 
@@ -63,7 +46,6 @@
     try {
       localStorage.setItem('yan.onboarded', '1')
     } catch {
-      /* 存储不可用不影响断言 */
     }
     const onboarding = document.querySelector('.v3-ob-overlay')
     if (onboarding) {
@@ -91,7 +73,6 @@
       return true
     }
 
-    /* ---- 1. 第一条：观察流式运行位，自然结束 ---- */
     out.push('')
     out.push('--- 1. 流式期间 RunSlot / 计时 ---')
     const statsBefore = store.getState().stats?.tokens?.total ?? 0
@@ -122,7 +103,6 @@
     const statsAfter = store.getState().stats?.tokens?.total ?? 0
     check(grew, `会话统计 token 增长（${statsBefore} → ${statsAfter}）`)
 
-    /* ---- 2. 第二条：空输入同位置停止 + 点停止中止 ---- */
     out.push('')
     out.push('--- 2. 空输入同位置停止 / 点停止中止 ---')
     timeline.length = 0
@@ -144,11 +124,8 @@
     check(await until(() => !!q('composer-send') && !q('composer-stop'), 15000), '中止后回到发送键')
     recording = false
 
-    /* ---- 3. runner / session 一致性时间线 ---- */
     out.push('')
     out.push('--- 3. runner.running 与 session.isAgentRunning 一致性 ---')
-    /* 把连续相同状态合并成组，只对持续 ≥300ms 的稳定组要求一致；
-       两条推送通道之间的亚采样级抖动不算不一致。 */
     const groups = []
     for (const s of timeline) {
       const last = groups[groups.length - 1]

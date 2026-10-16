@@ -1,15 +1,3 @@
-/**
- * L03 尾巴：子代理「模型自己失败」时的恢复（实施-09 S2 第六批）。
- *
- * 这一态不能用「杀掉 pi 进程」造假 —— 那测的是进程退出，不是模型失败。
- * 用**坏模型名**（`deepseek/deepseek-nonexistent`，`autocontinue` 场景同一手法）：
- * pi 接受这个模型名（只 warn），真正失败发生在上游请求，回 400 且**不产生用量**
- *（所以这条是 cost 0）。
- *
- * 探针只断言渲染端能看到的（终态 / error / 转录 / worktree 收口）；
- * 归档元数据与临时目录残留由 `afterExit: subagentFail` 在 Electron 退出后看
- *（探针按设计读不到 `YAN_DATA_DIR`）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -51,7 +39,6 @@
     await sleep(800)
 
     out.push('=== 1. 真实启动一个子代理（模型名是坏的）===')
-    /* 实施-20 U4 撤下了专用入口：这里直接用 store action 代表 agent 自行委派 */
     ok(!q('[data-testid="subagent-new"]'), '专用「调用子代理」入口已撤下（U4）')
     const taskText = 'YAN-SUBFAIL 只回答两个字：收到'
     await store.getState().startSubagent(taskText)
@@ -90,11 +77,6 @@
 
     out.push('')
     out.push('=== 3. 隔离工作区照常收口 ===')
-    /*
-     * 模型失败时 transcript 已经定了，但 finalize（读差异 / 清理）在它之后跑，
-     * 所以这里必须等。等的是 `diff`（finalizeOnce 写完它才 emit）——
-     * `review` 初始值就是 `none`，拿它当“等到了”的标志会立即通过。
-     */
     let settledRun = done
     const t0 = Date.now()
     while (Date.now() - t0 < 20000) {

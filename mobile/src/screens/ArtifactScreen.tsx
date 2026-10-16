@@ -5,10 +5,6 @@ import { useRemote } from '../state'
 import { font, mono, space, usePalette } from '../theme'
 import { EmptyState, Header, IconButton } from '../ui'
 
-/**
- * 查看成果：图片与文本直接显示真实文件内容（从电脑按成果 id 读取），其它格式提示到电脑上打开。
- * 需求稿：预览必须对应实际文件，不能用模型声称「已修改」的文字代替。
- */
 export function ArtifactScreen({
   sessionId,
   artifact,

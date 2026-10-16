@@ -1,7 +1,3 @@
-/**
- * 字体与字号：写到根元素的令牌上（--font-* / --fs-* / --w-body），模块 CSS 不需要知道用户设置。
- * 缺省值不写，删掉覆盖即回到 tokens.css。
- */
 import {
   FONT_BODY_DEFAULT,
   FONT_BODY_MAX,
@@ -23,7 +19,6 @@ export interface TypographySettings {
   fontSizeUi?: number
 }
 
-/** 应用后广播：终端等读计算值的组件据此重新取字体与配色 */
 export const APPEARANCE_EVENT = 'yan:appearance'
 
 const FONT_TOKENS = ['--font-sans', '--font-ui', '--font-body', '--font-code', '--fw-medium', '--fw-strong'] as const
@@ -41,7 +36,6 @@ function tokens(s: TypographySettings): Record<string, string> {
     out['--font-body'] = ui
   }
   if (code !== defaultCode) out['--font-code'] = code
-  /* 「终端风格」（Maple）只有 Regular：字重令牌回到 400，标题不依赖伪粗体 */
   if (s.fontUi === 'maple') {
     out['--fw-medium'] = '400'
     out['--fw-strong'] = '400'
@@ -53,7 +47,6 @@ function tokens(s: TypographySettings): Record<string, string> {
     out['--fs-h3'] = `${body + 2}px`
     out['--fs-h2'] = `${body + 5}px`
     out['--fs-stat'] = `${body + 7}px`
-    /* 正文列 = 48 个正文字宽（15px 时 720，与 tokens.css 一致） */
     out['--w-body'] = `${body * 48}px`
   }
   const uiSize = sanitizeFontSize(s.fontSizeUi, FONT_UI_MIN, FONT_UI_MAX, FONT_UI_DEFAULT)
@@ -68,7 +61,6 @@ function tokens(s: TypographySettings): Record<string, string> {
 
 let appliedKey: string | null = null
 
-/** 同值跳过：设置对象任何字段变化都会触发调用 */
 export function applyTypography(root: HTMLElement, s: TypographySettings): boolean {
   const next = tokens(s)
   const key = JSON.stringify(next)
@@ -81,10 +73,6 @@ export function applyTypography(root: HTMLElement, s: TypographySettings): boole
   return true
 }
 
-/**
- * 本机字体名（Local Font Access）：只在用户点开候选时调用；不支持或被拒绝时返回空表，
- * 调用方照常允许手动输入。结果按家族名去重，缓存一次。
- */
 let localFonts: Promise<string[]> | null = null
 export function listLocalFonts(): Promise<string[]> {
   if (localFonts) return localFonts

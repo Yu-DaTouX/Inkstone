@@ -1,12 +1,3 @@
-/**
- * 结构化图块入口（WP-32 §11.1/§11.5）。
- *
- * 复用 `shared/visual-blocks.ts` 的纯校验（历史数据仍是一段可读文字，校验失败退回代码块），
- * 但外观全部由 v3 组件与令牌决定，不引入任何 v2 样式。
- *
- * `yan-widget` 走 `WidgetBlock`：现有 `inkstone-html` 隔离协议 + 安全桥子集。
- * `mermaid` 由会话层的 `MermaidBlock` 渲染（主题来自 v3 令牌）；这里保留一个防御性回退。
- */
 import { useMemo, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -26,7 +17,6 @@ import {
 import { VisualChart } from './VisualChart'
 import { WidgetBlock } from './WidgetBlock'
 
-/** 只认一组受控语义名；未知图标不画（不用占位符假装）。 */
 const BLOCK_ICONS: Record<string, ReactNode> = {
   check: '✓',
   alert: '!',
@@ -42,7 +32,6 @@ function BlockIcon({ name }: { name?: string }): JSX.Element | null {
   return glyph ? <span className="v3-visual-icon" aria-hidden>{glyph}</span> : null
 }
 
-/** 单击进内部浏览器，双击交给系统浏览器（与正文链接一致）。 */
 function useOpenLink(): {
   open: (url: string) => (event: React.MouseEvent) => void
   external: (url: string) => (event: React.MouseEvent) => void
@@ -74,7 +63,6 @@ function VisualSources({ items }: { items?: VisualSource[] }): JSX.Element | nul
         try {
           host = new URL(source.url).hostname.replace(/^www\./, '')
         } catch {
-          /* 校验阶段已保证是 http(s)，这里只是显示用 */
         }
         return (
           <a
@@ -386,7 +374,6 @@ export interface VisualFenceProps {
   text: string
   live: boolean
   fallback: ReactNode
-  /** 消息内唯一位置标识，用于小部件交互状态身份。 */
   blockId?: string
 }
 
@@ -401,7 +388,6 @@ export function VisualFence({ lang, text, live, fallback, blockId }: VisualFence
     return live ? pending : <WidgetBlock html={text} fallback={fallback} blockId={blockId} />
   }
   if (lang === 'mermaid') {
-    /* 会话层已改走 `MermaidBlock`；这里只留防御性回退，不静默丢弃。 */
     return <>{fallback}</>
   }
   return <DataBlock lang={lang} text={text} live={live} fallback={fallback} pending={pending} />

@@ -1,16 +1,3 @@
-/**
- * v3 设置根页（WP-43 / S0）。
- *
- * 结构：左侧分区导航（外观 / 上下文 / 模型与服务 / 能力 / 用量 / 快捷键），右侧当前分区。
- * 外观、上下文、用量与快捷键由本页实现；模型与服务、能力由并行实现（S1 / S2）以
- * `features/settings/{models,capabilities}/index` 的无 props 组件提供，这里
- * 用 `import.meta.glob` 懒加载：模块还没落盘时如实说明限制，不造假数据、
- * 也不替对方建 stub 覆盖文件。
- *
- * 旧深链接：`openSettings(name)` 经 `deep-link.ts` 记录页名，这里用
- * `types.ts` 的纯函数映射到 v3 分区；映射不到的旧页/未知页会明确提示，
- * 不静默吞掉导航。
- */
 import {
   lazy,
   Suspense,
@@ -46,7 +33,6 @@ import '../settings.css'
 
 type Submodule = LazyExoticComponent<() => ReactElement>
 
-/** 从 glob 结果里取一个懒加载组件；没有文件（或没有导出）时返回 null。 */
 function pickLazy(record: Record<string, () => Promise<unknown>>, exportName: string): Submodule | null {
   const loader = Object.values(record)[0]
   if (!loader) return null
@@ -58,8 +44,6 @@ function pickLazy(record: Record<string, () => Promise<unknown>>, exportName: st
   })
 }
 
-/* 并行实现（S1 / S2）的入口：优先 `features/settings/{models,capabilities}/index`，
- * 没有 index 时回退到直接文件名（对方仍在落盘，不能假定 index 已存在）。 */
 const modelsGlob = {
   ...import.meta.glob('../index.ts'),
   ...import.meta.glob('../index.tsx'),
@@ -93,7 +77,6 @@ const SECTION_ICON: Record<SettingsSectionDef['icon'], ReactElement> = {
   refresh: <RefreshCw size={15} aria-hidden />
 }
 
-/** 分区 → 文案键（显式映射，避免用字符串拼 key 丢类型）。 */
 const SECTION_LABEL: Record<SettingsSectionId, keyof SettingsText> = {
   appearance: 'sectionAppearance',
   session: 'sectionSession',
@@ -202,11 +185,8 @@ function LegacyNotice({
 }
 
 export interface SettingsPageProps {
-  /** 外壳的「返回」（Header 已有；转发给消费方，当前仅在旧页提示里作为可选出口）。 */
   onBack?: () => void
-  /** 「运行总览」入口；不传时用量页走正式 v3 路由。 */
   onRuns?: () => void
-  /** 「重新查看首次引导」：由外壳注入时，关于页显示可点的重新查看入口。 */
   onShowOnboarding?: () => void
 }
 
@@ -218,7 +198,6 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
   const [section, setSection] = useState<SettingsSectionId>(DEFAULT_SETTINGS_SECTION)
   const [legacy, setLegacy] = useState<{ view: string; kind: 'unmigrated' | 'unknown' } | null>(null)
 
-  /* 深链接：旧页名 → v3 分区；映射不到就留在当前页并提示，不静默跳走。 */
   useEffect(() => {
     if (!request) return
     const resolved = resolveLegacyView(request.view)

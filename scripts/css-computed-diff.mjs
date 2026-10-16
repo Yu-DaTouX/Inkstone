@@ -1,16 +1,3 @@
-/**
- * 比较两批视觉矩阵的逐元素计算样式（`YAN_STYLE_DUMP=1` 产出的 *.styles.json）。
- *
- * 用途：样式结构重构（级联层、拆文件、令牌替换）承诺「看起来一模一样」。
- * `css-layer-check.mjs` 只能证明**同一选择器**的声明不变，证明不了选择器之间
- * 的特异性与层序关系；截图差异又说不出是哪个元素。这里直接比浏览器算出来的结果。
- *
- * 用法：
- *   node scripts/css-computed-diff.mjs <前一批目录> <后一批目录> [--ignore opacity,transform] [--limit 40]
- *
- * 输出按「类名 · 属性 · 前 → 后」聚合，同一处变化在多张图里出现只列一次并计数。
- * 运行中的循环动画（方点阵、流光）会让 opacity / transform 抖动，可用 --ignore 排除。
- */
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 

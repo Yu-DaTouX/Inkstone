@@ -1,17 +1,3 @@
-/**
- * 跨设备同步的 IPC 适配（`yan:sync:*`，WP-53 接线层）。
- *
- * 分工：
- *   · 同步算法全在 `src/main/sync/**`（SyncService）；本文件只把它接到 registrar 上，
- *     并把需要宿主能力的部分（目录 / 文件对话框、当前会话路径、启动时机）作为窄接口注入。
- *   · 本文件不 import Electron、不 import 主进程入口：可以用假 SyncService + 假对话框
- *     直接单测（见 scripts/test-v3-sync-ipc.mjs）。
- *
- * 约定：
- *   · 同步目录配置存在数据目录的 `sync-config.json`（SyncConfigStore），**不参与同步**；
- *   · 任何单项失败都返回可读错误，不让 IPC 抛异常到渲染端；
- *   · `runStartupSync()` 只记日志，不阻塞启动、不弹窗。
- */
 import { basename } from 'node:path'
 import type { IpcRegistrar } from './registrar'
 import { SyncConfigStore } from '../sync/config'
@@ -28,7 +14,6 @@ import type {
   SyncStatusView
 } from '../../shared/sync'
 
-/** 接线层用到的同步核心窄接口；真实 `SyncService` 结构上满足它。 */
 export interface SyncServiceLike {
   sync(): Promise<SyncReport>
   listConflicts(): Promise<ConflictRecord[]>
@@ -36,28 +21,18 @@ export interface SyncServiceLike {
 }
 
 export interface SyncIpcDeps {
-  /** 本机数据目录（`YAN_DIR`）。 */
   dataDir: string
-  /** pi 的会话目录；导入会话的落点。 */
   sessionsDir: string
-  /** 为给定同步目录构造同步服务；测试可注入假实现。 */
   makeService(syncRoot: string): SyncServiceLike
-  /** 弹出「选择同步文件夹」对话框；取消返回 null。 */
   pickSyncFolder(): Promise<string | null>
-  /** 弹出「把会话导出到」对话框；取消返回 null。 */
   pickExportPath(suggestedFileName: string): Promise<string | null>
-  /** 弹出「选择会话包」对话框；取消返回 null。 */
   pickImportFile(): Promise<string | null>
-  /** 当前活动会话文件；没有时返回 undefined。 */
   currentSessionPath?(): string | undefined
-  /** 配置存储；缺省按 dataDir 创建。 */
   config?: SyncConfigStore
   now?: () => number
-  /** 启动同步的日志出口；缺省 console.warn。 */
   log?: (message: string, error?: unknown) => void
 }
 
-/** 注册后返回的句柄：`runStartupSync()` 由主进程在就绪后调用。 */
 export interface SyncController {
   runStartupSync(): Promise<void>
 }
@@ -86,7 +61,6 @@ function summarize(report: SyncReport): {
   }
 }
 
-/** 冲突内容短预览：压平空白并截断，避免把整段提示词 / 设置塞进界面。 */
 function preview(payload: string | undefined): string | undefined {
   if (typeof payload !== 'string') return undefined
   const flat = payload.replace(/\s+/g, ' ').trim()
@@ -116,10 +90,6 @@ function isResolution(value: unknown): value is SyncResolution {
   return value === 'local' || value === 'remote' || value === 'both'
 }
 
-/**
- * 启动时同步一次：只在已配置同步目录时动作，失败只记日志。
- * 供主进程在窗口 / 设置就绪后调用，不得阻塞正常启动。
- */
 export async function runStartupSync(deps: SyncIpcDeps, injected?: SyncConfigStore): Promise<void> {
   const config = injected ?? deps.config ?? new SyncConfigStore(deps.dataDir)
   const log = deps.log ?? ((message: string, error?: unknown) => console.warn(message, error ?? ''))
@@ -136,9 +106,6 @@ export async function runStartupSync(deps: SyncIpcDeps, injected?: SyncConfigSto
   }
 }
 
-/**
- * 注册 `yan:sync:*`。返回的控制器带 `runStartupSync()`，与注册共用同一份配置存储。
- */
 export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncController {
   const { handle } = ipc
   const config = deps.config ?? new SyncConfigStore(deps.dataDir)
@@ -173,7 +140,6 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
 
   handle('yan:sync:configure', async (root?: unknown): Promise<SyncConfigureResult> => {
     try {
-      /* null = 清除；字符串 = 直接设置；其它 / 缺省 = 弹目录对话框。 */
       if (root === null) {
         const next = await config.setSyncRoot(undefined)
         return { ok: true, ...(next.syncRoot ? { syncRoot: next.syncRoot } : {}) }
@@ -219,7 +185,6 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
       if (!service) return []
       return (await service.listConflicts()).map(toView)
     } catch {
-      /* 列冲突失败不炸页面：返回空表，状态区会看到错误。 */
       return []
     }
   })

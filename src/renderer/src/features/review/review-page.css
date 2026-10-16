@@ -1,8 +1,4 @@
 @layer features {
-  /*
-   * 评审页（WP-50 界面部分）的版面与层级。控件外观全部来自 ui/ 的 primitives，
-   * 本文件只画三栏网格、列表、批注与底部 Git 条的位置；不重画控件皮肤、不新造颜色。
-   */
 
   .review-page {
     display: flex;
@@ -55,7 +51,6 @@
     line-height: var(--t-meta-lh);
   }
 
-  /* 三栏：来源 / 清单 · 差异 + 批注 · 运行 + 意见 */
   .review-grid {
     display: grid;
     grid-template-columns: minmax(200px, 1fr) minmax(0, 2.2fr) minmax(230px, 1fr);
@@ -199,7 +194,6 @@
     border-radius: var(--r-sm);
   }
 
-  /* 批注 */
   .review-annotations {
     display: flex;
     flex-direction: column;
@@ -266,7 +260,6 @@
     line-height: var(--t-meta-lh);
   }
 
-  /* 批注编辑器 */
   .review-editor {
     display: flex;
     flex-direction: column;
@@ -300,7 +293,6 @@
     gap: var(--s-6);
   }
 
-  /* 评审运行 / 意见 */
   .review-run {
     display: flex;
     flex-direction: column;
@@ -390,7 +382,6 @@
     color: var(--fg3);
   }
 
-  /* 底部 Git 条 */
   .review-gitbar {
     display: flex;
     align-items: center;

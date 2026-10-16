@@ -1,9 +1,3 @@
-/*
- * 辅助小窗版面（v3 WP-25d 快速提问 / WP-12 迷你小窗）。
- *
- * 只写版面与层级：控件外观来自 ui/ 与 patterns/，颜色 / 字号 / 间距 / 圆角只取令牌。
- * 两个窗口各自加载独立的 html，共用 design/index.css 的令牌与层顺序。
- */
 @layer features {
   html,
   body,
@@ -22,8 +16,6 @@
     border-radius: var(--r-lg);
     overflow: hidden;
   }
-
-  /* ---------------- 快速提问 ---------------- */
 
   .aux--quick {
     display: flex;
@@ -112,8 +104,6 @@
   .aux-ask__error {
     color: var(--fail-t);
   }
-
-  /* ---------------- 迷你小窗 ---------------- */
 
   .aux--mini {
     display: flex;

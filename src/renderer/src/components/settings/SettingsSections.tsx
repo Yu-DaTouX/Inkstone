@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Tabs } from '../ui'
 
-/** 同页切换保留草稿与正在执行的操作，未访问的分区不挂载。 */
 export function SettingsSections({ sections, initial }: {
   sections: { id: string; label: string; content: ReactNode }[]
   initial?: string

@@ -1,4 +1,3 @@
-/** 受管 CLI 的唯一共享工具入口。身份只继承本次 run 的宿主 token。 */
 let buffer = ''
 const tools = [
   { name: 'inkstone_reply', description: 'Report a result or ask a question to your parent task or explicitly linked Inkstone session. Does not grant permission. Reuse requestId on retry.', inputSchema: { type: 'object', properties: { summary: { type: 'string' }, requestId: { type: 'string' } }, required: ['summary', 'requestId'] } },

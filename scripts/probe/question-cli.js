@@ -1,11 +1,3 @@
-/**
- * `yan question ask` 宿主提问链路（cost 0）。
- *
- * 这条探针不让模型参与：真实 renderer 通过 `window.yan.runBash` 调真实 CLI，
- * CLI 再走真实 CapabilityServer / AgentController，问题请求进入真实问题面板，
- * 点击后答案回到同一个 CLI 请求并落到 resultFile。它用来证明 question.js
- * 移除模型工具后，唯一宿主入口仍然保留完整的等待 / 回答 / 自主模式语义。
- */
 ;(async () => {
   const out = []
   const ok = (cond, label, extra = '') => {
@@ -64,7 +56,6 @@
       try {
         return JSON.parse(lines[index])
       } catch {
-        /* 继续向前找 */
       }
     }
     return null

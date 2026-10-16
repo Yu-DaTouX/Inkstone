@@ -1,7 +1,3 @@
-/**
- * 回退代码的确认框：先列出会改哪些文件，确认后才动；做完可以一键撤销。
- * 会话里的对话不变，只恢复项目文件。
- */
 import { useEffect, useState } from 'react'
 import type { CheckpointPreview } from '../../../../shared/checkpoints'
 import { useT } from '../../i18n'

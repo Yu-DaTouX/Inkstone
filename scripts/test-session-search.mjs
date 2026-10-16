@@ -1,7 +1,3 @@
-/**
- * 会话正文检索的纯文字逻辑（src/shared/session-search-text.ts）。
- * 只测「取哪些文字进索引」与「怎么匹配」；文件遍历与缓存在主进程，不在这里。
- */
 export function runSessionSearchTests(ok, mod) {
   const { extractSearchText, matchText, queryTokens } = mod
   const line = (message) => JSON.stringify({ type: 'message', message })

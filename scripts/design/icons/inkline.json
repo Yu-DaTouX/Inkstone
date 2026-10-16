@@ -1,7 +1,6 @@
 {
   "$note": [
-    "砚线（Inkline）图标几何真源：语义名与 catalog.json 一一对应，npm run icons 从这里生成 sprite。",
-    "规则见 docs/DESIGN_SYSTEM.md §3.4：16 网格、12 活动区、恒定描边、方头斜接、直线与整圆为主。"
+    "砚线（Inkline）图标几何真源：语义名与 catalog.json 一一对应，npm run icons 从这里生成 sprite。"
   ],
   "status": "adopted",
   "grid": 16,

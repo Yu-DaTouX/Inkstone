@@ -1,18 +1,3 @@
-/**
- * 界面缩放：DPI 感知 + 手动档位 + 快捷键 + 设置面板。
- *
- * 为什么必须在这个文件里测（而不是纯逻辑单测）：
- *   纯逻辑（zoom-math.ts）用 test-zoom.mjs 测了取整公式，
- *   但「真实按键能不能改到缩放」这条路只能在这里测 ——
- *   Ctrl+= 是**主进程**用 before-input-event 拦的，
- *   合成 KeyboardEvent 不走那条路（见 index.ts 的说明）。
- *   所以这个场景带 keys（真实 sendInputEvent）。
- *
- * 本次实测抓到的两个真 bug（都已修，断言留着防回归）：
- *   ① 从自动值 1.152 按 Ctrl+- 只降到 1.15（差 0.2%，像没反应）
- *      → stepScaleFrom 加了「最小有效步长 4%」
- *   ② i18n 占位符写成 {{v}} 双花括号 → 界面上显示成「自动（{1.15}×）」
- */
 ;(async () => {
   const out = []
   const ok = (m) => out.push('  ✓ ' + m)
@@ -22,16 +7,6 @@
 
   try {
     out.push('=== 真实按键：Ctrl+= / Ctrl+= / Ctrl+- / Ctrl+0 ===')
-    /*
-     * 记录 effective 的变化序列。
-     *
-     * ⚠️ 轮询到条件成立，**不用固定 10 秒窗口** —— 这是本项目的硬约定
-     *    （HANDOFF：'探针不要用固定 sleep 等 UI，负载高时不够'）。
-     *    上一版就是固定 10s：在被前一个场景拖慢时，最后一下 Ctrl+0 还没到
-     *    采样就结束了，报成「没回到自动」。这类假失败浪费过时间。
-     *
-     * 结束条件：已经观察到 ≥4 次变化 **且** 末值回到自动；超时 30s 兜底。
-     */
     const seq = []
     let prev = null
     const t0 = Date.now()
@@ -68,18 +43,15 @@
     if (Math.abs(vals[vals.length - 1] - auto) < 1e-6) ok('Ctrl+0 回到自动 ' + auto.toFixed(3))
     else bad('Ctrl+0 没回到自动，末尾=' + vals[vals.length - 1])
 
-    // 步长可感知
     const d = Math.abs(1.3 - auto) / auto
     if (d > 0.04) ok('一步变化 ' + (d * 100).toFixed(1) + '%（按一下看得出来）')
     else bad('步长太小：' + (d * 100).toFixed(1) + '%')
 
-    // 落盘一致性
     const st = store.getState()
     out.push('  store.settings.uiScale=' + st.settings.uiScale + '  store.zoom.uiScale=' + (st.zoom && st.zoom.uiScale))
     if (st.settings.uiScale === 0 && st.zoom.uiScale === 0) ok('快捷键改完，设置状态与主进程一致（都回自动）')
     else bad('状态不一致')
 
-    // 界面上的选中态（设置 → 外观）
     const railBtn = document.querySelector('[data-testid="rail-settings"]')
     if (railBtn) {
       railBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -93,7 +65,6 @@
         else {
           const btns = [...ctl.querySelectorAll('button')]
           out.push('  档位文案：' + btns.map((b) => b.textContent.trim()).join(' / '))
-          // 占位符必须真的被替换
           const joined = btns.map((b) => b.textContent).join(' ')
           if (!/\{[a-zA-Z]+\}/.test(joined)) ok('档位文案里没有未替换的占位符')
           else bad('占位符没被替换：' + joined)

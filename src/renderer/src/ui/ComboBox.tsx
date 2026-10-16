@@ -19,17 +19,12 @@ export interface ComboBoxProps<T extends object = object> extends Omit<RACComboB
   label?: ReactNode
   description?: ReactNode
   errorMessage?: FieldErrorContent
-  /** 输入框占位文字。 */
   inputPlaceholder?: string
   children: ReactNode | ((item: T) => ReactNode)
   inputClassName?: string
   listClassName?: string
 }
 
-/**
- * 可输入的下拉选择：输入即过滤，方向键在选项中移动，`Enter` 选中。
- * 与 `Select` 的差别是允许自由文本（`allowsCustomValue` 时）。
- */
 export function ComboBox<T extends object = object>({
   label,
   description,

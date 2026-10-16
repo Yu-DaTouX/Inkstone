@@ -1,13 +1,4 @@
-/*
- * 会话分支树与「分支」页签（v3 · WP-26 / WP-30）的版面。
- *
- * 只服务分支树：容器、滚动、状态块、底部操作条，以及条目的**语义标识**（类型图标、
- * 书签、折叠隐藏数、当前叶子、活动分支）。行的悬停 / 选中 / 焦点 / 展开与禁用外观、
- * 层级缩进、箭头旋转全部来自正式原语 `ui/Tree.css`，这里不再自画第二套控件外观；
- * 状态词与计数用 `ui/Badge`。颜色与尺寸只用 `design/tokens.css` 的变量。
- */
 @layer features {
-  /* ── 工作区「分支」页签容器 ── */
   .wb-branch {
     display: flex;
     flex-direction: column;
@@ -46,7 +37,6 @@
     min-height: 0;
   }
 
-  /* ── 树本体：只在原语之上加滚动与条目内容的版面 ── */
   .branch-tree {
     display: flex;
     flex-direction: column;
@@ -63,7 +53,6 @@
     padding-right: var(--s-2);
   }
 
-  /* 条目类型图标与活动分支是语义标识，不是控件状态。 */
   .branch-kind {
     flex: none;
     color: var(--fg3);
@@ -96,7 +85,6 @@
     flex: none;
   }
 
-  /* ── 加载 / 空 / 错误状态块 ── */
   .branch-status {
     display: flex;
     flex-direction: column;
@@ -125,7 +113,6 @@
     overflow-wrap: anywhere;
   }
 
-  /* ── 保护提示与底部操作条 ── */
   .branch-note {
     flex: none;
     margin: 0;

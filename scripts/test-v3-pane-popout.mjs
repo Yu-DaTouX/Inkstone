@@ -1,13 +1,3 @@
-/**
- * 页签弹出窗纯本地单测（v3 · WP-30 弹出）。
- *
- * 不启动 Electron、不开窗口、不起 pi、不写用户数据。用 esbuild 把 `electron`
- * 换成内存替身（BrowserWindow 记录实例、bounds、发送的消息），因此控制器的真实
- * 生命周期逻辑（owner 锁定、epoch 丢弃、失效释放、动作白名单、关闭回收）都在
- * 覆盖范围内；几何与共享契约是纯函数，直接编译后断言。
- *
- * 可独立执行：node scripts/test-v3-pane-popout.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -38,7 +28,6 @@ async function checkAsync(name, fn) {
   console.log(`  ✓ ${name}`)
 }
 
-/** 内存版 electron：只实现控制器用到的最小 BrowserWindow 面。 */
 const electronMock = `export class BrowserWindow {
   constructor(options) {
     this.options = options
@@ -472,7 +461,6 @@ try {
   })
   await checkAsync('注入终端桥后：openTerminal 交 owner + terminalId，不请求 DOM 打开', async () => {
     const terminalSent = []
-    /* 单独一份桥，避免重订阅影响上一个客户端订阅的 onAction。 */
     const terminalBridge = {
       open: async () => ({ ok: true, code: 'ok', epoch: 1 }),
       update: () => {},

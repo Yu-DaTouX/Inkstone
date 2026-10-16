@@ -1,17 +1,7 @@
 import type { CdpChannel } from './CdpChannel'
 
-/** [x, y, width, height]，单位是**相对视口**的 CSS 像素。 */
 export type Box = [number, number, number, number]
 
-/**
- * 取元素相对视口的包围盒。
- *
- * 为什么单独抽出来：`DOM.getBoxModel` 返回的坐标已经扣掉了滚动偏移
- * （页面往下滚之后，视口上方的元素 y 为负），与 `Input.dispatch*`
- * 需要的坐标系一致。但**前提是测量必须发生在滚动之后** ——
- * `browser_observe` 拿到的盒子会随着 `scrollIntoViewIfNeeded` 立刻过期，
- * 所以点击/输入要在这里重新量一次，不能复用观察时的坐标。
- */
 export async function elementBox(cdp: CdpChannel, backendNodeId: number, sessionId?: string): Promise<Box | null> {
   const result = await cdp
     .send<{ model?: { content?: number[] } }>('DOM.getBoxModel', { backendNodeId }, sessionId)

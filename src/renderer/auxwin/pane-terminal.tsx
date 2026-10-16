@@ -1,17 +1,3 @@
-/**
- * 轻量终端弹出视图（v3 · WP-30 终端 transfer）。
- *
- * 这个组件只做一件事：把主进程已经绑好的**同一条 PTY**（`PaneTerminalLeaseView`）
- * 显示出来，并把键盘输入 / 尺寸送回主进程。它**不启动**主窗口 store、App 或 pi，
- * 也不建立、结束任何 PTY —— 新建 / 结束仍只属于主窗口的终端面板。
- *
- * 复用既有 xterm 薄层：`features/terminal/terminal-theme.ts` 的 v3 外观与
- * `components/terminal/terminal-appearance.ts` 的渲染器 / IME 补丁。推送过滤与
- * 乱序去重是纯逻辑 `shared/pane-terminal.ts#PaneTerminalStream`，可脱离 DOM 单测。
- *
- * 挂载：由 `aux/pane.tsx` 在探到终端 lease 时渲染（W4 装配补丁），因此本文件
- * 不是独立 html 入口，不新增构建目标。
- */
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -27,7 +13,6 @@ import {
 } from '../../shared/pane-terminal'
 import './pane-terminal.css'
 
-/* 白名单桥的形状与取值统一在 `pane-bridge.ts`；这里只转出供弹窗入口复用。 */
 export { paneTerminalBridge } from './pane-bridge'
 
 interface Dict {
@@ -68,7 +53,6 @@ type Phase = 'unsupported' | 'waiting' | 'ready' | 'exited' | 'invalidated'
 
 export interface PaneTerminalViewProps {
   bridge: PaneTerminalBridge | null
-  /** 关闭本窗口；缺省用 bridge.closeSelf()。 */
   onRequestClose?: () => void
 }
 
@@ -96,13 +80,11 @@ export function PaneTerminalView({ bridge, onRequestClose }: PaneTerminalViewPro
       try {
         fit.fit()
       } catch {
-        /* 窗口过小 / 正在卸载：忽略 */
       }
       void bridge?.resize(current.leaseId, term.cols, term.rows)
     }, 90)
   }
 
-  /* 建立 xterm（一次），用 lease 的快照接上。 */
   useEffect(() => {
     const host = hostRef.current
     if (!host || !bridge) return
@@ -129,7 +111,6 @@ export function PaneTerminalView({ bridge, onRequestClose }: PaneTerminalViewPro
       streamRef.current = null
     }
 
-    /* 先订阅，再取 lease：state() 之前到达的推送进早期缓冲，绑定后按 seq 去重。 */
     const offPush = bridge.onPush((event) => {
       const stream = streamRef.current
       if (!stream) {
@@ -168,7 +149,6 @@ export function PaneTerminalView({ bridge, onRequestClose }: PaneTerminalViewPro
 
         const stream = new PaneTerminalStream({ leaseId: view.leaseId, epoch: view.epoch, terminalId: view.terminalId })
         streamRef.current = stream
-        /* 早期缓冲先入队（未 attach），再由快照统一对齐序号。 */
         for (const event of earlyRef.current) stream.push(event)
         earlyRef.current = []
         if (view.snapshot?.buffer) term.write(view.snapshot.buffer)

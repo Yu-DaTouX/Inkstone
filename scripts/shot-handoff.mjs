@@ -1,15 +1,3 @@
-/**
- * 交接恢复视图截图（实施-15 A-3）。
- *
- * 注入一个「已提交、续接已发出但目的会话还没看到标记」的状态，然后展开详情 ——
- * 这正是 R6 说的**不确定状态**：不能拿 marker 等价为「跑起来了」，
- * 也不能因为看不到证据就悄悄重发。
- *
- * 注意：`HandoffNote` 每 4s 轮询一次 `getHandoff()`，会把我注入的状态覆盖掉，
- * 所以先把 `refreshHandoff` 换成 no-op。这只是截图夹具，不碰产品逻辑。
- *
- * 用法： YAN_SHOT_DIR=docs/design/preview electron scripts/shot-handoff.mjs
- */
 import { muteMissingHandlerNoise } from './lib/stdio-guard.mjs'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
@@ -60,7 +48,6 @@ async function main() {
   if (injected !== 'ok') throw new Error('fixture 注入失败: ' + injected)
   await wait(800)
 
-  /* 注入「已发出、待核实」的交接事务，并把轮询换成 no-op（否则 4s 就被覆盖） */
   const seeded = await win.webContents.executeJavaScript(`
     (() => {
       const s = window.__yanStore
@@ -109,7 +96,6 @@ async function main() {
     await win.webContents.executeJavaScript(`document.documentElement.dataset.theme = ${JSON.stringify(theme)}`)
     await wait(300)
     await save(`handoff-receipt-${theme}-1440x900-${STAMP}.png`)
-    /* 展开详情：最后确认步骤 + 待核实 + 两个选择 */
     const opened = await win.webContents.executeJavaScript(`
       (() => {
         const btn = document.querySelector('[data-testid="handoff-detail-toggle"]')
@@ -121,7 +107,6 @@ async function main() {
     if (opened !== 'ok') throw new Error('详情按钮不可用: ' + opened)
     await wait(400)
     await save(`handoff-receipt-${theme}-detail-1440x900-${STAMP}.png`)
-    /* 收起，下一轮主题重来 */
     await win.webContents.executeJavaScript(
       `document.querySelector('[data-testid="handoff-detail-toggle"]')?.click()`
     )

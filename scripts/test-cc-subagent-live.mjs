@@ -1,4 +1,3 @@
-/** Opt-in subscription child test: exact Haiku 5.5 low, no fallback. */
 import assert from 'node:assert/strict'
 import { mkdtemp,mkdir,writeFile,readFile } from 'node:fs/promises'
 import { tmpdir,homedir } from 'node:os'

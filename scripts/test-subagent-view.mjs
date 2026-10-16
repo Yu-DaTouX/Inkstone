@@ -1,4 +1,3 @@
-/** 子代理运行选择与归属（实施-11 H-10a）的纯函数测试。 */
 export async function runSubagentViewTests(ok) {
   const { dedupeRuns, selectSubagentRuns, subagentTabId, visibleSubagentRuns } = await import('../out/test/subagent-view.mjs')
 
@@ -20,7 +19,6 @@ export async function runSubagentViewTests(ok) {
     run('b', { parentSessionId: 'S' }),
     run('c', { parentSessionId: 'OTHER' }),
     run('d'),
-    /* 同一个 run 的两次推送：只保留最后一份 */
     run('a', { parentSessionId: 'S', parentMessageId: 'm1', status: 'done' })
   ]
 
@@ -41,7 +39,6 @@ export async function runSubagentViewTests(ok) {
   const empty = selectSubagentRuns([], { sessionIds: ['S'] })
   ok(empty.all.length === 0 && empty.running === 0, '没有任务时为空且不报错')
 
-  /* 0 / 1 / 20 个任务：计数与去重稳定 */
   const one = selectSubagentRuns([run('only', { parentSessionId: 'S' })], { sessionIds: ['S'] })
   ok(one.all.length === 1 && one.detached.length === 1, '1 个任务时计数为 1')
   const manyRuns = Array.from({ length: 20 }, (_, i) => run(`r${i}`, { parentSessionId: 'S', status: i % 2 === 0 ? 'running' : 'done' }))
@@ -50,7 +47,6 @@ export async function runSubagentViewTests(ok) {
   const withDuplicate = [...manyRuns, run('r0', { parentSessionId: 'S', status: 'done' })]
   ok(selectSubagentRuns(withDuplicate, { sessionIds: ['S'] }).all.length === 20, '20 个任务重复推送不会变成 21')
 
-  /* 界面上继续露面的：已合并 / 已放弃 / 已归档的即使刚结束也安静退场 */
   const now = 1_000_000
   const finished = (id, review) => run(id, { parentSessionId: 'S', status: 'done', endedAt: now - 1000, review })
   const visible = visibleSubagentRuns(

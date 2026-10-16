@@ -1,22 +1,3 @@
-/**
- * 联网发现编排与目录源适配器（实施-04 §7.2 / §8）。
- *
- * ── 为什么默认是这两个源 ──
- *   实测（2026-09-19）：**官方 MCP Registry**（`registry.modelcontextprotocol.io/v0/servers`）
- *   与 **npm registry 搜索**（`registry.npmjs.org/-/v1/search`）都免密钥、有结构化分页。
- *   而 pi 自己**没有包搜索命令**（`pi --help` 只有 install / remove / update / list / config），
- *   所以 Skill 侧没有「pi 官方包目录」可查 —— 这一条要如实写进候选，不能假装有。
- *   §7.2 的硬要求「至少一条 Skill 路径和一条 MCP 路径可用、密钥缺失时仍能做目录检索」
- *   因此由 npm 的 Skill 包元数据路径与 MCP Registry 公开接口满足。另有显式配置的
- *   独立 Skill 目录适配器（见下方），它不默认联网，避免新安装平白多一次请求。
- *   技能的主来源是 GitHub 技能仓库（`github-skills.ts`，默认 anthropics/skills）：
- *   固定提交、逐文件 Git 哈希，候选可以直接接入。
- *
- * ── 为什么把适配器放在同一文件 ──
- *   这些适配器加起来只有一个职责：**把目录响应如实映射成候选**。分开成多个文件后，
- *   「哪些字段是目录真的给了、哪些是我们推断的」反而更难一眼看全 —— 而这正是
- *   本片最容易被做错的地方（§8：`metadata-only` 不得声称已验证）。
- */
 import { createHash } from 'node:crypto'
 import {
   buildAcquisitionPlan,
@@ -38,18 +19,12 @@ import { searchGithubSkills } from '../github-skills'
 export const MCP_REGISTRY_URL =
   process.env.YAN_MCP_REGISTRY_URL?.trim() || 'https://registry.modelcontextprotocol.io/v0/servers'
 export const NPM_SEARCH_URL = process.env.YAN_NPM_SEARCH_URL?.trim() || 'https://registry.npmjs.org/-/v1/search'
-/**
- * 独立 Skill 目录是显式配置的可选来源；默认不配置，所以新安装不会凭空多一次联网请求。
- * 目录必须返回逐文件 URL + SHA-256，不能只返回一个 README 或模糊仓库地址。
- */
 export const SKILL_DIRECTORY_URL = process.env.YAN_SKILL_DIRECTORY_URL?.trim() || ''
 
 export type DiscoveryOutcome = {
-  /** 真正发出去的检索词（脱敏后）。本地原文与远端检索词分开记录（§7.1）。 */
   query: string
   candidates: RankedCandidate[]
   sources: DiscoverySourceReport[]
-  /** 全源失败 / 无候选时给模型的可读原因；有结果时为 null。 */
   reason: string | null
 }
 
@@ -63,16 +38,6 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
 
-/* --------------------------------------------------------------- npm 目录 */
-
-/**
- * npm 搜索结果 → 候选。
- *
- * **诚实边界**：npm 只告诉我们「有个包、这个版本、这个描述」。
- * 它**不能**证明这是 pi 技能包、更没证明包里真的有 `SKILL.md` ——
- * 所以 `verification` 恒为 `metadata-only`，并把这条限制写进 `requirements`，
- * 让模型（和用户）看到的是「目录线索」而不是「已验证的结果」。
- */
 export function npmCandidateOf(raw: unknown, discoveredAt: string): CapabilityCandidate | null {
   const entry = raw as { package?: Record<string, unknown> } | null
   const pkg = entry?.package
@@ -131,13 +96,10 @@ async function searchNpm(
       const candidate = npmCandidateOf(object, discoveredAt)
       if (candidate) candidates.push(candidate)
     }
-    /* npm 搜索没有稳定「还有下一页」标志：拿满一页才继续，拿不满就停。 */
     if (objects.length < 20) break
   }
   return { candidates, pages }
 }
-
-/* ------------------------------------------------------ 独立 Skill 目录 */
 
 function safeSkillPath(value: unknown): string | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined
@@ -171,13 +133,6 @@ function sourceUrlList(value: unknown): string[] | null {
   return urls.every(Boolean) ? [...new Set(urls as string[])] : null
 }
 
-/**
- * 独立 Skill 目录条目 → 候选。
- *
- * 这里故意只接受「每个 SKILL.md 都有确切 URL 和 SHA-256」的条目。
- * 只有仓库名、README 链接或没有版本 / commit 的结果不是可接入候选，避免把目录线索
- * 误当成固定制品。文件内容仍要在 acquire 阶段重新拉取并验 hash。
- */
 export function skillDirectoryCandidateOf(raw: unknown, directoryUrl: string, discoveredAt: string): CapabilityCandidate | null {
   const entry = raw as Record<string, unknown> | null
   if (!entry) return null
@@ -309,7 +264,6 @@ function sameOrigin(left: string, right: string): boolean {
   }
 }
 
-/** SkillMD 搜索列表把精确 commit 放在同源详情接口；从 raw URL 反推路径，避免信任列表里的仓库地址。 */
 function skillMdDetailUrl(directoryUrl: string, rawUrl: string): string | undefined {
   try {
     const directory = new URL(directoryUrl)
@@ -327,11 +281,6 @@ function skillMdDetailUrl(directoryUrl: string, rawUrl: string): string | undefi
   }
 }
 
-/**
- * SkillMD 这类独立目录用 `slug` + `raw_url` 表示单文件 Skill，而不是把
- * `files[]` 直接展开。这里必须重新读取 raw URL 计算 hash；目录的 `raw_md`
- * 只有 frontmatter，不能拿来冒充实际将被 staging 的正文。
- */
 async function skillMdCandidateOf(
   raw: unknown,
   directoryUrl: string,
@@ -434,7 +383,6 @@ async function searchSkillDirectory(
     const body = await readBoundedJson(response, 2 * 1024 * 1024) as Record<string, unknown> | unknown[]
     const list = Array.isArray(body) ? body : asArray(body.skills ?? body.entries ?? body.results ?? body.items)
     pages++
-    /* 控制目录单页与并发量，避免一个大响应触发无界请求扇出。 */
     const pageCandidates: Array<CapabilityCandidate | null> = []
     for (let start = 0; start < Math.min(list.length, 60); start += 4) {
       const batch = list.slice(start, start + 4)
@@ -453,15 +401,6 @@ async function searchSkillDirectory(
   return { candidates, pages }
 }
 
-/* ----------------------------------------------------------- MCP 目录 */
-
-/**
- * 官方 MCP Registry 条目 → 候选。
- *
- * `remotes` 给出可直接连的远程端点（无需本地安装），`packages` 给出本地包运行时。
- * 两者都如实映射；`transport` 只在目录明确给出取值时才写，不猜。
- * 认证一律 `unknown` —— registry 不声明这个，猜成 `none` 会误导用户。
- */
 export function mcpCandidateOf(raw: unknown, discoveredAt: string): CapabilityCandidate | null {
   const entry = raw as { server?: Record<string, unknown> } | null
   const server = entry?.server
@@ -559,15 +498,6 @@ async function searchMcpRegistry(
   return { candidates, pages }
 }
 
-/* --------------------------------------------------------------- 编排 */
-
-/**
- * 一轮发现：脱敏 → 并行查两个目录 → 合并 → 排名 → 截断。
- *
- * 单个源失败**不影响**另一个源（§7.2：密钥缺失时仍要能做目录检索）。
- * 全部失败或没有候选时，`reason` 给的是「暂时无法搜索」这类实话，
- * **绝不**返回编造的包名。
- */
 export async function discoverCapabilities(input: {
   queryText: string
   goalText?: string
@@ -576,7 +506,6 @@ export async function discoverCapabilities(input: {
   now?: () => Date
   maxCandidates?: number
   platform?: string
-  /** 用户点名的 GitHub 技能仓库（owner/repo）：只查这些，并列出其中全部技能 */
   skillRepos?: string[]
 }): Promise<DiscoveryOutcome> {
   const fetchImpl = input.fetchImpl ?? fetch
@@ -655,7 +584,6 @@ export async function discoverCapabilities(input: {
 
   const ranked = selectCandidates(
     rankCandidates(candidates, { goalText: input.goalText ?? input.queryText, platform: input.platform }),
-    /* 点名仓库是「列出这个仓库有什么」，不按八项截断 */
     input.maxCandidates ?? (namedRepos.length > 0 ? 60 : MAX_CANDIDATES)
   )
   const okSources = sources.filter((s) => s.ok)
@@ -669,11 +597,6 @@ export async function discoverCapabilities(input: {
   return { query, candidates: ranked, sources, reason }
 }
 
-/**
- * 接入计划（S5 只生成，**不执行**）。
- *
- * `needs-authorization` 是默认结果：目录元数据不足以自动接入（§9 的策略档位在 S6 接）。
- */
 export function planForCandidate(input: {
   candidate: CapabilityCandidate
   goalId: string

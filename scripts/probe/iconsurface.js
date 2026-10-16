@@ -1,17 +1,3 @@
-/*
- * 图标触点与无障碍名（实施-11 H-8c，cost 0，不调模型）。
- *
- * H-8a/b 已经把图标统一到 `Icon`（sprite + `currentColor`）。H-8c 管的是
- * **工作台 / 资源表面这些触点**：它们消费的是不是同一个接口，以及
- * 图标不承担无障碍名时，**承载它的控件有没有名字**。
- *
- * 检查项：
- *   ① 页面上的 svg 分类：sprite 引用（`<use href="#i-*">`）vs 内联 path
- *      —— 内联的要能说出理由（品牌图 / 第三方产物），否则就是漏接；
- *   ② 只含图标的可点击元素必须可访问名（`aria-label` / `title` / 文本）；
- *   ③ sprite 的每个 symbol 是否 `currentColor`（不写死颜色）；
- *   ④ 图标尺寸在允许档位（12/14/16）内且有实际渲染面积。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -30,8 +16,6 @@
     }
     await sleep(900)
 
-    /* ---------- ① svg 来源分类 ---------- */
-    /* sprite 容器没有 id：它是那个「里面装着 symbol 的隐藏 svg」 */
     const sprite = [...document.querySelectorAll('svg')].find((s) => s.querySelector('symbol'))
     const svgs = [...document.querySelectorAll('svg')].filter((s) => !sprite?.contains(s))
     const spriteUses = []
@@ -73,7 +57,6 @@
     }
     ok(spriteUses.length > 0, '功能图标确实走 sprite 接口（Icon → <use href="#i-*">）')
 
-    /* ---------- ② 图标钮必须可访问名 ---------- */
     const nameless = []
     const named = []
     for (const { svg } of spriteUses) {
@@ -92,7 +75,6 @@
     out.push(`  图标钮：有名字 ${named.length} 个，缺名字 ${nameless.length} 个`)
     ok(nameless.length === 0, '只含图标的可点击元素都有可访问名', nameless.slice(0, 5).join('，'))
 
-    /* ---------- ③ sprite 每个 symbol 必须是 currentColor ---------- */
     if (!sprite) {
       skip('没找到 sprite 容器，跳过 currentColor 检查')
     } else {
@@ -111,16 +93,7 @@
       out.push(`  sprite 共 ${symbols.length} 个 symbol；写死颜色的属性 ${hardCoded.length} 个`)
       ok(hardCoded.length === 0, 'sprite 全是 currentColor（颜色由所属控件给）', hardCoded.slice(0, 5).join('，'))
 
-      /*
-       * 深浅切换时图标颜色跟着走。
-       * 不拿单个样本断言 —— 首个可见图标可能正好是固定色图形（品牌 / 状态点）。
-       * 统计全体可见图标里有多少个颜色真的变了，比抽一个可靠。
-       */
       const visibleUses = spriteUses.filter(({ svg }) => visible(svg)).slice(0, 60)
-      /*
-       * 按**元素身份**比较，不按数组下标 —— 主题切换会让 DOM 顺序/数量变化，
-       * 下标一对一比出来的是噪声（上一次就是这么误报 4/60 的）。
-       */
       const snapshot = () => {
         const list = [...document.querySelectorAll('svg')]
           .filter((s) => !sprite?.contains(s))
@@ -137,16 +110,11 @@
         return map
       }
       const rootVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
-      /*
-       * 隐藏/离屏窗口的样式重算会被节流：`getComputedStyle` 可能一直返回旧主题的值。
-       * 先强制一次 reflow + 两帧，给渲染器一个落地的机会。
-       */
       const flush = async () => {
         void document.documentElement.offsetHeight
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
         void document.body.offsetHeight
       }
-      /* 级联链诊断：颜色卡在哪一层（svg 自身的继承 vs 祖先的令牌） */
       const chainOf = () => {
         const svg = [...document.querySelectorAll('svg.ico')].find(visible)
         if (!svg) return '(没有可见 .ico)'
@@ -185,7 +153,6 @@
       out.push('')
     }
 
-    /* ---------- ④ 尺寸与渲染面积 ---------- */
     const sizes = new Map()
     const zero = []
     for (const { svg } of spriteUses) {

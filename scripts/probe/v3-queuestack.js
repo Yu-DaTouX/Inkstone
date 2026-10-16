@@ -1,12 +1,3 @@
-/*
- * v3 排队消息 UI 隔离探针（v2 `probe/queuestack.js` 的 v3 DOM 版）。
- *
- * 语义同 v2：队列显示在输入框上方；follow-up 行有「插队」（steerQueued），
- * 两类待投递行都有「撤回」（removeQueued）。v3 的 QueueEditor 另加了编辑 /
- * 重排 / 删除（走 applyQueueOrder），本探针只验 v2 那两条接线，不点击新入口。
- *
- * 不花 token：直接往 store 注入 queue，并把 steerQueued / removeQueued 换成 spy。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => {
@@ -20,7 +11,6 @@
       try {
         if (predicate()) return true
       } catch {
-        /* 还没就绪 */
       }
       await wait(50)
     }
@@ -42,11 +32,9 @@
     )
     if (!store || !q('v3-sidebar')) throw new Error('v3 外壳或隔离探针 store 不可用')
 
-    /* 引导层不阻塞 store 注入，但仍标记看过并关掉，避免后续场景反复弹。 */
     try {
       localStorage.setItem('yan.onboarded', '1')
     } catch {
-      /* 忽略 */
     }
     const onboarding = document.querySelector('.v3-ob-overlay')
     if (onboarding) {
@@ -65,7 +53,6 @@
       removeQueued: async (queueId) => { retractCalls.push(queueId) }
     })
 
-    /* ---- 1. 位置：输入框上方 ---- */
     out.push('')
     out.push('--- 1. 位置 ---')
     check(await until(() => !!q('queue-stack')), '出现排队消息区（queue-stack）')
@@ -78,7 +65,6 @@
       check(sb.bottom <= cb.top + 2, `队列在输入框上方（stack.bottom=${Math.round(sb.bottom)} composer.top=${Math.round(cb.top)}）`)
     }
 
-    /* ---- 2. 内容与按钮 ---- */
     out.push('')
     out.push('--- 2. 内容与按钮 ---')
     const rows = qa('queue-row')
@@ -89,14 +75,12 @@
     check(jumps.length === 2, `只有 follow-up 行有插队按钮（实际 ${jumps.length}）`)
     check(text.includes('插话中'), 'steering 行显示「插话中」')
 
-    /* ---- 3. 插队按钮接线 ---- */
     out.push('')
     out.push('--- 3. 插队接线 ---')
     jumps[0]?.click()
     check(await until(() => calls.length === 1), '点击插队调用了 steerQueued')
     check(calls[0] === 'f1', `携带稳定 queueId=f1（实际 ${JSON.stringify(calls)}）`)
 
-    /* ---- 4. 撤回按钮接线 ---- */
     out.push('')
     out.push('--- 4. 撤回接线 ---')
     const retracts = qa('queue-retract')
@@ -105,7 +89,6 @@
     check(await until(() => retractCalls.length === 1), '点击撤回调用了 removeQueued')
     check(retractCalls[0] === 's1', `携带稳定 queueId=s1（实际 ${JSON.stringify(retractCalls)}）`)
 
-    /* 收尾：清空状态，别影响后续场景 */
     store.setState({ queue: { steering: [], followUp: [] } })
     await until(() => !q('queue-stack'), 2000)
     check(true, '探针结束（队列已清空）')

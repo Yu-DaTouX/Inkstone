@@ -1,10 +1,3 @@
-/**
- * 内置浏览器的 IPC 适配（`yan:browser:*`）。
- *
- * 浏览器控制器是原生层（WebContentsView），生命周期由应用入口管理：
- * 窗口重建时控制器会换一个实例，所以这里每次调用都经 `browserOf()` 取当前那个，
- * 而不是在注册时抓住一个引用。控制器还没建好时返回与真实结果同形的「未打开」值。
- */
 import type { BrowserController } from '../browser'
 import type { IpcRegistrar } from './registrar'
 
@@ -41,7 +34,6 @@ export function registerBrowserIpc(ipc: IpcRegistrar, browserOf: () => BrowserCo
   rawHandle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
     browserOf()?.setBounds(bounds)
   })
-  /* 文件预览占用同一区域时，把原生视图临时藏起来（方案 5.2） */
   rawHandle('yan:browser:setVisible', (_e, visible: unknown) => {
     browserOf()?.setViewVisible(visible !== false)
   })

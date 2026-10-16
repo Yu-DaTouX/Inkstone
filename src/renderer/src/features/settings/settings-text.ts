@@ -1,10 +1,3 @@
-/**
- * v3 设置自己的短文案。
- *
- * 放在 features/settings 下而不是 `app/v3-text.ts`：那是外壳与侧栏的共享文件
- * （R0 正在改 Shell/Header），也不写进两份共享 i18n JSON（热点、且 v3 未定稿）。
- * 键面只属于设置；等 v3 定稿后再统一并入 i18n。
- */
 import type { Lang } from '../../i18n'
 
 export interface SettingsText {
@@ -28,7 +21,6 @@ export interface SettingsText {
   loading: string
   notReady: string
 
-  /* 外观 */
   appearanceNote: string
   theme: string
   themeLight: string
@@ -63,7 +55,6 @@ export interface SettingsText {
   asciiBackgroundDesc: string
   language: string
 
-  /* 上下文 */
   sectionContext: string
   contextNote: string
   contextUnavailable: string
@@ -79,7 +70,6 @@ export interface SettingsText {
   contextWindowLabel: string
   contextUnknown: string
 
-  /* 界面版本 */
   uiVersion: string
   uiVersionV3: string
   uiVersionEnv: string
@@ -87,7 +77,6 @@ export interface SettingsText {
   uiVersionBack: string
   uiVersionFailed: string
 
-  /* 未迁移 / 缺失 */
   missingTitle: string
   missingBody: string
   unmigratedTitle: string
@@ -98,7 +87,6 @@ export interface SettingsText {
   backToAppearance: string
   backToChat: string
 
-  /* 用量 */
   usageNote: string
   rangeAll: string
   range30: string
@@ -115,6 +103,12 @@ export interface SettingsText {
   usageModelColumn: string
   usageTokensColumn: string
   usageShareColumn: string
+  usageCost: string
+  usageCostColumn: string
+  usageCurrency: string
+  usageCurrencyDesc: string
+  usageRate: string
+  usageRateDesc: string
   usageNoModels: string
   usageEmpty: string
   usageLoading: string
@@ -134,7 +128,6 @@ export interface SettingsText {
   usageNoDays: string
   usageDailyCap: string
 
-  /* 快捷键 */
   shortcutsNote: string
   shortcutColumnAction: string
   shortcutColumnKeys: string
@@ -232,7 +225,7 @@ const ZH: SettingsText = {
   backToAppearance: '返回外观',
   backToChat: '返回对话',
 
-  usageNote: '数据来自本机会话文件。图表与表格都是真实计数，不估算成本。',
+  usageNote: '数据来自本机会话文件。费用取模型返回的计价（美元），按下方货币与汇率换算。',
   rangeAll: '全部',
   range30: '近 30 天',
   range7: '近 7 天',
@@ -248,6 +241,12 @@ const ZH: SettingsText = {
   usageModelColumn: '模型',
   usageTokensColumn: 'Token',
   usageShareColumn: '占比',
+  usageCost: '费用',
+  usageCostColumn: '费用',
+  usageCurrency: '显示货币',
+  usageCurrencyDesc: '用量费用以美元记录，这里只改显示。原石按 1 原石 = 0.1 元人民币换算。',
+  usageRate: '1 USD = ? {code}',
+  usageRateDesc: '默认 {default}；当前 $1 显示为 {sample}。',
   usageNoModels: '这段时间没有模型用量。',
   usageEmpty: '这段时间还没有用量记录。',
   usageLoading: '正在统计本机用量…',
@@ -364,7 +363,7 @@ const EN: SettingsText = {
   backToAppearance: 'Back to Appearance',
   backToChat: 'Back to chat',
 
-  usageNote: 'Data comes from local session files. Charts and tables both use real counts; no cost estimates.',
+  usageNote: 'Data comes from local session files. Costs use the price reported with each model response (USD), converted with the currency and rate below.',
   rangeAll: 'All',
   range30: 'Last 30 days',
   range7: 'Last 7 days',
@@ -380,6 +379,12 @@ const EN: SettingsText = {
   usageModelColumn: 'Model',
   usageTokensColumn: 'Tokens',
   usageShareColumn: 'Share',
+  usageCost: 'Cost',
+  usageCostColumn: 'Cost',
+  usageCurrency: 'Display currency',
+  usageCurrencyDesc: 'Costs are recorded in USD; this only changes display. Primogems use 1 Primogem = ¥0.1 CNY.',
+  usageRate: '1 USD = ? {code}',
+  usageRateDesc: 'Default {default}; $1 currently shows as {sample}.',
   usageNoModels: 'No model usage in this range.',
   usageEmpty: 'No usage recorded in this range yet.',
   usageLoading: 'Crunching local usage…',

@@ -1,14 +1,3 @@
-/**
- * 工作区「额度」页签（v3）。
- *
- * 显示服务商的账号额度窗口（5 小时 / 周 / 月）与余额，数据来自主进程的
- * `window.yan.accountQuota()` 投影；这不是本机 Token 用量（那在首页用量与输入区
- * 会话统计里）。查询失败时保留上一次的数字并加一行说明，推算值标明来源，
- * 不伪装成官方额度。
- *
- * 只做显示、刷新与切换活跃 ChatGPT 账号（复用 `codexAccountSwitch`）。凭证与
- * 备注、添加 / 移除账号、CLI 来源开关留在设置里，不在这里复制第二套。
- */
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
@@ -27,13 +16,11 @@ import type { QuotaWindow } from '../../../../shared/ipc'
 import { workbenchPaneText } from './pane-text'
 import type { QuotaPaneProps } from './types'
 
-/** 页签开着时多久自动刷新一次：额度窗口最短 5 小时，再密只会撞服务端限流。 */
 const AUTO_REFRESH_MS = 5 * 60_000
 
 const sourceKey = (source: AccountQuotaSource): MessageKey => `acct.source.${source}` as MessageKey
 const cap = (value?: string): string => (value ? value.charAt(0).toUpperCase() + value.slice(1) : '')
 
-/** 剩余时长：3天4时 / 2时18分 / 12分（天级不再细到分钟） */
 function countdown(t: TFunc, ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   const d = Math.floor(total / 86400)
@@ -44,7 +31,6 @@ function countdown(t: TFunc, ms: number): string {
   return t('quota.durM', { m: Math.max(1, m) })
 }
 
-/** 重置时间：月窗口显示日期，其余显示倒计时；已到点显示「待刷新」，不在本地归零。 */
 export function resetLine(t: TFunc, window: QuotaWindow): { text: string; tip: string } {
   if (window.resetAt === undefined) return { text: '', tip: '' }
   const now = Date.now()
@@ -61,7 +47,6 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
   const t = useT()
   const { lang } = useI18n()
   const text = workbenchPaneText(lang)
-  /* 当前视图的 provider：把对应账号卡排到最前（主进程不知道当前会话用哪个）。 */
   const provider = useStore((s) => s.session?.model?.provider ?? '')
   const [report, setReport] = useState<AccountQuotaReport | null>(null)
   const [loading, setLoading] = useState(false)
@@ -90,7 +75,6 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
   useEffect(() => {
     alive.current = true
     void load()
-    /* 倒计时每 30 秒重算；数据只在可见且过期时重新查 */
     const tick = setInterval(() => setTick((value) => value + 1), 30_000)
     const poll = setInterval(() => {
       if (document.visibilityState === 'visible' && Date.now() - checkedAt.current >= AUTO_REFRESH_MS) void load()
@@ -213,7 +197,6 @@ export function QuotaCard({
           <div key={window.id} className="wb-quota-win" data-tone={tone} data-testid={`v3-wb-quota-win-${window.id}`}>
             <div className="wb-quota-win-top">
               <span className="wb-quota-win-label">{window.label}</span>
-              {/* 推算值必须标明来源，不能伪装成官方额度 */}
               {window.estimated ? (
                 <span title={t('quota.estimatedTip')}>
                   <Badge>{t('quota.estimated')}</Badge>

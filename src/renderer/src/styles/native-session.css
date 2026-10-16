@@ -1,15 +1,3 @@
-/*
- * pi 原生操作面板（会话树 / 模型循环范围 / 项目信任）的版面。
- *
- * 外观复用 .modal（dialog.css）、.btn / .ui-list-row / .ui-badge / .ui-empty（ui.css）；
- * 这里只写版面与层级，不重定义控件外观。遮罩、焦点圈定与原生视图让位由
- * components/chat/NativeSessionPanel.tsx 复用既有浮层基座完成。
- *
- * 登记位置：styles/index.css 的 modules 层、排在 dialog.css 之后。
- */
-
-/* 宽度沿用 .modal 的默认值（dialog.css），不另写像素值以免推高样式预算。 */
-
 .native-session-status {
   padding: var(--sp-5) var(--sp-3);
 }
@@ -28,8 +16,6 @@
   font-size: var(--fs-xs);
   overflow-wrap: anywhere;
 }
-
-/* ── 会话树 ── */
 
 .native-session-tree {
   flex: 1;
@@ -109,8 +95,6 @@
   font-size: var(--fs-xs);
 }
 
-/* ── 模型循环范围 ── */
-
 .native-session-scope-head {
   display: flex;
   align-items: baseline;
@@ -142,8 +126,6 @@
   align-items: center;
   gap: var(--sp-2);
 }
-
-/* ── 项目信任 ── */
 
 .native-session-trust {
   display: flex;

@@ -8,15 +8,9 @@ import { ancestorPaths } from './sidebar-state'
 import { shortProject } from './rail-utils'
 import { shouldIncludeSyntheticCurrent } from '../toolbar/workspace-control-guards'
 
-/**
- * 「按项目」视图的数据：把会话归到项目（没有会话的项目只保留当前项目），
- * 当前项目置顶、其余按拖拽顺序或最近活动排；再按持久化分组重排成屏幕上的顺序。
- * 只整理数据，不碰界面状态。
- */
 export function useRailProjects({ query, showArchived, sortBy, showArchivedSessions }: { query: string; showArchived: boolean; sortBy: RailSortBy; showArchivedSessions: boolean }) {
   const t = useT()
   const allSessions = useStore((s) => s.sessions)
-  /* 归档视图列已归档的会话，其余视图不列 */
   const sessions = useMemo(() => allSessions.filter((s) => showArchivedSessions === !!s.archivedAt), [allSessions, showArchivedSessions])
   const session = useStore((s) => s.session)
   const titles = useStore((s) => s.titles)
@@ -29,7 +23,6 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
   const projectGroups = settings?.projectGroups ?? EMPTY_GROUPS
   const projectOrder = settings?.projectOrder ?? EMPTY_IDS
 
-  /** 按项目（cwd）分组；当前项目永远排最前，其余按最近活动排 */
   const projects = useMemo(() => {
     const q = query.trim().toLowerCase()
     const activity = (s: SessionSummary): number => s.lastActivityAt ?? s.updatedAt
@@ -38,7 +31,6 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
     const currentSummary = sessions.find((item) => item.id === session?.sessionId || item.path === session?.sessionFile)
     const currentProjectId = activeProjectId ?? currentSummary?.projectId
 
-    /** 同一项目里的分支仍然按“根会话 + 子会话”连续展示。 */
     const orderFamily = (list: SessionSummary[]): SessionSummary[] => {
       const inList = new Set(list.map((s) => s.path))
       const children = new Map<string, SessionSummary[]>()
@@ -80,7 +72,6 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
         }]
       : []
 
-    // 用模型生成的短标题覆盖列表标题（如果有）；用户手动名优先。
     const all = [...synthetic, ...sessions].map((x) => {
       const manual = manualTitles[x.id]
       if (manual) return { ...x, title: manual, named: true }
@@ -127,10 +118,6 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
       else byProject.set(project.id, { ...project, list: [...list] })
     }
 
-    /*
-     * 没有会话的项目不占左栏：旧版本留下的空记录（临时目录、重复路径、只开过一次的文件夹）会堆成一长串空文件夹。
-     * 只保留当前项目（刚添加或刚切到的空项目仍在眼前），其余在有会话后自然出现；数据不删除。
-     */
     const sameCwd = (a: string, b?: string): boolean => !!b && a.toLowerCase() === b.toLowerCase()
     for (const record of projectRecords) {
       const label = record.name || projectNames[record.cwd] || shortProject(record.cwd)
@@ -141,7 +128,6 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
     }
     for (const s of filtered) addProject(projectFor(s), [s])
 
-    // 没有 ProjectRecord 的旧 cwd 仍要作为一个可访问的全局位置保留。
     for (const cwd of settings?.recentCwds ?? []) {
       const alreadyShown = [...byProject.values()].some((project) => project.cwd.toLowerCase() === cwd.toLowerCase())
       if (!alreadyShown && sameCwd(cwd, session?.cwd) && (!q || (projectNames[cwd] || cwd).toLowerCase().includes(q))) {
@@ -150,11 +136,6 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
     }
 
     const cur = session?.cwd
-    /*
-     * 项目顺序（N01）：用户拖过的按 `projectOrder`；没拖过的仍按最近活动排。
-     * 「当前项目置顶」保留 —— 它是切项目后的定位手段，与用户排的顺序不冲突
-     * （两者只能有一个在最上面，置顶优先）。
-     */
     const rank = rankOf(projectOrder)
     return [...byProject.values()]
       .map((project) => ({
@@ -178,8 +159,6 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
       })
   }, [sessions, query, session, t, titles, manualTitles, projectNames, projectRecords, projectOrder, settings?.recentCwds, showArchived, showArchivedSessions, runners, activeRunnerId, sortBy])
 
-  // 将项目实体按持久化分组重新排列；分组标题会在项目列表中作为一级标题显示。
-  // 组内仍保留项目原本的活动排序，未分组项目统一放在最后。
   const displayProjects = useMemo(() => {
     const groupIdFor = (project: (typeof projects)[number]): string | undefined =>
       project.projectId ? projectRecords.find((record) => record.id === project.projectId)?.groupId : undefined
@@ -199,7 +178,6 @@ export function useRailProjects({ query, showArchived, sortBy, showArchivedSessi
   return { projects, displayProjects }
 }
 
-/** Zustand selector 与 useMemo 依赖的稳定空值，禁止在渲染里临时创建。 */
 const EMPTY_PROJECT_NAMES: Record<string, string> = {}
 const EMPTY_IDS: string[] = []
 const EMPTY_RECORDS: NonNullable<ReturnType<typeof useStore.getState>['settings']>['projects'] = []

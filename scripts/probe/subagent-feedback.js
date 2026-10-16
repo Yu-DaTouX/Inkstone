@@ -1,4 +1,3 @@
-/** 隔离桌面的紧凑任务卡、后台通知与错误呈现；全部是合成数据。 */
 ;(async () => {
   const out = []
   const ok = (value, label) => out.push(`${value ? '✓' : '✗'} ${label}`)
@@ -60,7 +59,6 @@
     ok(!!q('[data-testid="subagent-note-stop-sub-feedback"]'), '运行中的任务保留停止入口')
     store.setState({ subagents: [{ ...run, status: 'running', endedAt: undefined, endReason: undefined, error: undefined, latestActivity: '工具已返回，继续处理' }] })
     ok(await wait(() => q('[data-testid="subagent-note-activity-sub-feedback"]')?.textContent.includes('工具已返回')), '普通运行显示真实进展')
-    // 同一回合并行的一组：已完成且无需处理的收进汇总行，运行中与出错的始终显示。
     const done = (id, i) => ({ ...run, id, task: `并行审查分区 ${i}`, status: 'done', endReason: 'completed', error: undefined, startedAt: run.startedAt + i })
     const group = [{ ...run, status: 'running', endedAt: undefined, endReason: undefined, error: undefined, latestActivity: '正在读取文件' }, done('sub-g1', 1), done('sub-g2', 2), { ...run, id: 'sub-g3', task: '并行审查分区 3', startedAt: run.startedAt + 3 }]
     store.setState({ subagents: group })
@@ -77,7 +75,6 @@
     ok(await wait(() => !q('[data-testid="subagent-note-sub-g1"]')), '可以再次收起')
     store.setState({ subagents: [done('sub-g1', 1)] })
     ok(await wait(() => q('[data-testid="subagent-note-sub-g1"]') && !q('[data-testid="subagent-group-head"]')), '单个子代理不显示汇总行也不折叠')
-    // 通过真实 IPC 读冷启动磁盘历史，而非只往渲染端塞一条假记录。
     await store.getState().loadSubagents()
     const restored = store.getState().subagents.find(item => item.id === 'sub-history')
     ok(restored?.transcript[0]?.toolCalls?.[0]?.output === '历史工具结果', '冷启动真实 IPC 恢复磁盘调用结果')
@@ -102,7 +99,6 @@
     ok(await wait(() => stream?.querySelector('[data-testid="tool-row"]')?.textContent.includes('example.ts')), '恢复的历史调用可以展开查看目标')
     stream?.querySelector('[data-testid="tool-row"]')?.click()
     ok(await wait(() => stream?.textContent.includes('历史工具结果')), '恢复的历史工具结果可再次展开查看')
-    // 保留历史过程窗口截图；主会话另核对紧凑卡片的已有截图。
     await sleep(2400)
   } catch (error) { out.push(`✗ ${error.stack || error}`) }
   return out.join('\n')

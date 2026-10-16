@@ -1,15 +1,3 @@
-/**
- * v3 输入框模型选择器的纯逻辑单测（WP-40，02 §10.4 / §8.7）。
- *
- * 只编译 `src/renderer/src/features/settings/models/models-model.ts`（纯函数，无 React /
- * store / DOM / 网络依赖），在 Node 里直接跑；不启动 Electron、不碰 pi、不读用户
- * 凭证、不拉模型、不发任何请求。可独立执行：
- *
- *   node scripts/test-v3-model-picker.mjs
- *
- * 覆盖：收藏置顶 / 最近使用分组、搜索过滤、服务分组与供应商顺序、
- * 价格与上下文窗口提示、最近使用的读写与去重、旧收藏 / 旧最近已不可用时不列出。
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
@@ -39,8 +27,6 @@ const {
   shortWindow
 } = mod
 
-/* ── 工具 ───────────────────────────────────────────────────── */
-
 const model = (over = {}) => ({
   id: over.id ?? 'm',
   name: over.name ?? 'M',
@@ -52,8 +38,6 @@ const model = (over = {}) => ({
 
 const keys = (sections) => sections.map((s) => `${s.kind}:${s.id}:${s.models.map((m) => `${m.provider}/${m.id}`).join(',')}`)
 
-/* ── 上下文窗口提示 ─────────────────────────────────────────── */
-
 assert.equal(shortWindow(0), '', '0 = 未知，不提示')
 assert.equal(shortWindow(-1), '', '负数当未知')
 assert.equal(shortWindow(999), '999')
@@ -61,8 +45,6 @@ assert.equal(shortWindow(1000), '1k')
 assert.equal(shortWindow(200_000), '200k')
 assert.equal(shortWindow(1_000_000), '1M')
 assert.equal(shortWindow(1_500_000), '1.5M', '非整百万保留一位小数')
-
-/* ── 价格提示 ───────────────────────────────────────────────── */
 
 assert.equal(priceLabel(undefined), '', '没有报价就不提示')
 assert.equal(priceLabel({ input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0 }), '$3 / $15')
@@ -78,8 +60,6 @@ assert.equal(
   '全 0 当作没有报价，不显示 $0'
 )
 assert.equal(modelCostOf({ id: 'x', cost: '!command' }), undefined, '可执行字符串不算报价')
-
-/* ── 最近使用读写 ───────────────────────────────────────────── */
 
 assert.deepEqual(parseRecentModels(null), [])
 assert.deepEqual(parseRecentModels('not json'), [], '坏值当空，不抛')
@@ -130,8 +110,6 @@ assert.equal(
   '超出上限时截断'
 )
 
-/* ── 选择器分组：收藏置顶 → 最近使用 → 服务分组 ─────────────── */
-
 const models = [
   model({ id: 'fav1', name: 'Fav', provider: 'a' }),
   model({ id: 'rec1', name: 'Rec One', provider: 'b' }),
@@ -151,21 +129,18 @@ assert.deepEqual(
   '收藏置顶、最近次之，且不重复出现在服务分组里'
 )
 
-/* 搜索同时过滤置顶与普通分组 */
 assert.deepEqual(
   keys(buildPickerSections({ models, favorites, recent, query: 'normal', providerOrder: [] })),
   ['provider:c:c/normal'],
   '搜索词过滤所有分组，收藏 / 最近不匹配时不显示'
 )
 
-/* 供应商顺序：用户排过的在前 */
 assert.deepEqual(
   keys(buildPickerSections({ models, favorites: [], recent: [], query: '', providerOrder: ['c'] })),
   ['provider:c:c/normal', 'provider:a:a/fav1', 'provider:b:b/other,b/rec2,b/rec1'],
   '用户排过的供应商在前，其余按字母；组内仍按版本号降序'
 )
 
-/* 旧收藏 / 旧最近已不在本机模型列表：不列出（没法选） */
 assert.deepEqual(
   keys(
     buildPickerSections({
@@ -180,14 +155,12 @@ assert.deepEqual(
   '不可用的旧收藏 / 旧最近不出现，也不占位'
 )
 
-/* 收藏但已不可用：不进收藏分组 */
 assert.deepEqual(
   keys(buildPickerSections({ models, favorites: [{ provider: 'gone', id: 'old' }], recent: [], query: '', providerOrder: [] })),
   ['provider:a:a/fav1', 'provider:b:b/other,b/rec2,b/rec1', 'provider:c:c/normal'],
   '收藏分组只含本机可用的收藏模型'
 )
 
-/* 空查询、无收藏无最近时退化为纯服务分组 */
 assert.deepEqual(
   keys(buildPickerSections({ models, favorites: [], recent: [], query: '', providerOrder: [] })),
   [

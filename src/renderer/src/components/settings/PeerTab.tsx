@@ -24,13 +24,6 @@ type Browse = {
   open?: { sessionId: string; messages: PeerHistoryMessage[] }
 }
 
-/**
- * 设置 · 砚互联（需求稿 5.4 / 第 6 节）。
- *
- * 上半：这台电脑被别的砚连接时，当前有效的「本次连接」授权与撤销（审批弹窗是全局的）。
- * 下半：这台电脑去连接别的砚 —— 配对、申请连接、在授权范围内浏览、复制副本、导入项目记忆。
- * 查看与复制分开：查看不在本机留副本；复制形成带来源的副本，缺失的附件如实标出。
- */
 export function PeerTab() {
   const t = useT()
   const localProjects = useStore((s) => s.settings?.projects ?? []).filter((project) => !project.archived)
@@ -57,7 +50,6 @@ export function PeerTab() {
       const [next, remote] = await Promise.all([window.yan.peer.status(), window.yan.remote.status()])
       if (alive.current && request === generation.current) { setStatus(next); setHostGrants(remote?.grants ?? []) }
     } catch {
-      /* 下一轮再试 */
     }
   }, [])
 
@@ -126,7 +118,6 @@ export function PeerTab() {
 
   return (
     <div className="ui-rows" data-testid="settings-peer">
-      {/* ① 这台电脑被连接 */}
       <div className="ui-row col" data-testid="peer-host">
         <div className="ui-row-label">
           <div className="ui-row-name">{t('peer.hostTitle')}</div>
@@ -155,7 +146,6 @@ export function PeerTab() {
         ))}
       </div>
 
-      {/* ② 连接其他砚 */}
       <div className="ui-row col" data-testid="peer-client">
         <div className="ui-row-label">
           <div className="ui-row-name">{t('peer.clientTitle')}</div>
@@ -362,7 +352,6 @@ export function PeerTab() {
         })}
       </div>
 
-      {/* ③ 已导入的副本 */}
       <div className="ui-row col" data-testid="peer-imports">
         <div className="ui-row-label">
           <div className="ui-row-name">{t('peer.importsTitle')}</div>

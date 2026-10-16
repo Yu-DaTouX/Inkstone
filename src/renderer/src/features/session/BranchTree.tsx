@@ -1,27 +1,3 @@
-/**
- * 会话分支树（v3 · WP-26 / WP-30 分支页）。
- *
- * 只投影并切换 pi 的**原生会话树**：数据来自主进程原生会话桥（`yan:nativeSession`），
- * 纯投影函数来自 `src/shared/native-session.ts`。这里不读、不写会话文件，也不做摘要：
- *   · 取树 = `{ action: 'tree', expectedSessionId }`；
- *   · 切换 = `{ action: 'navigate', expectedSessionId, entryId }`，只发稳定 `entryId`；
- *   · 主进程与 pi 扩展固定 `summarize:false`，因此本组件**不发**任何摘要参数，
- *     也不画「导航并摘要」按钮。
- *
- * 呈现与交互交给正式原语 `ui/Tree`（React Aria）：真实父子嵌套由 `TreeItem` 承载，
- * `aria-level` / 展开 / 选中 / 键盘漫游 / 禁用全部按 RAC 的 treegrid 语义，本文件不
- * 自己维护树状态机、不手写 `aria-level`。`buildTreeView` 的扁平行（含环 / 深 / 超量
- * 保护）在这里只做一次受限还原：按 `depth` 把可见行折回嵌套结构，保护统计仍如实显示。
- *
- * 可靠性（与 v2 面板同一口径，实现另写、不复制 v2 样式）：
- *   · 请求绑定 `owner.sessionId`；owner 变化即作废在途响应（序号闸门 + 卸载清理），
- *     旧会话的树不会覆盖新会话；
- *   · 会话忙（运行 / 流式 / 压缩中）或已有切换在途时禁用导航；错误可重试；
- *   · 深树 / 环 / 超量由共享纯函数限量，界面只如实显示保护统计。
- *
- * 文案：v3 未定稿，暂用本文件内的 zh/en 小字典（与相邻模块一致）；共享 i18n 的
- * `native.*` 由热点整合者统一并入，见交付补丁。
- */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import {
   Activity,
@@ -54,8 +30,6 @@ import { Badge, Button, Spinner } from '../../ui'
 import { Tree, TreeChevron, TreeItem, TreeItemContent, TreeItemLabel } from '../../ui/Tree'
 import type { WorkspaceOwner } from '../workbench/types'
 import './branch-tree.css'
-
-/* ------------------------------------------------------------------ 文案 */
 
 export interface BranchText {
   title: string
@@ -175,9 +149,6 @@ const KIND_ICON: Record<NativeEntryKind, LucideIcon> = {
   unknown: File
 }
 
-/* ------------------------------------------------------------------ 传输与请求 */
-
-/** 原生会话桥的最小接口面，与 `shared/native-session-host.ts` 的请求 / 结果一一对应。 */
 export interface BranchTransport {
   request: (request: NativeSessionHostRequest) => Promise<NativeSessionHostResult>
 }
@@ -186,7 +157,6 @@ export type BranchTreeLoad =
   | { ok: true; tree: NativeTreeNode[]; leafId: string | null }
   | { ok: false; error: string }
 
-/** 取树：只发 `tree` 动作，绑定 `expectedSessionId`。 */
 export async function loadBranchTree(
   transport: BranchTransport,
   expectedSessionId: string,
@@ -202,7 +172,6 @@ export async function loadBranchTree(
   }
 }
 
-/** 切换：只发 `navigate` 与稳定 `entryId`；不发摘要参数（原生固定 `summarize:false`）。 */
 export async function navigateBranch(
   transport: BranchTransport,
   expectedSessionId: string,
@@ -218,21 +187,11 @@ export async function navigateBranch(
   }
 }
 
-/* ------------------------------------------------------------------ 扁平行 → 受限嵌套 */
-
-/** 分支树的一个节点：稳定 `entryId` 的行 + 其可见子节点。 */
 export interface BranchNode {
   row: NativeTreeRow
   children: BranchNode[]
 }
 
-/**
- * 把 `buildTreeView` 的可见行折回嵌套结构。
- *
- * 输入已经是 DFS 前序、只含可见行的扁平数组（折叠 / 环 / 深 / 超量保护在
- * `buildTreeView` 里收口），因此这里只用 `depth` 入栈出栈，深度不会超过原保护的
- * `maxDepth`、节点数不会超过 `maxRows`，不再引入第二套树状态。
- */
 export function nestBranchRows(rows: readonly NativeTreeRow[]): BranchNode[] {
   const roots: BranchNode[] = []
   const stack: BranchNode[] = []
@@ -252,13 +211,6 @@ export interface BranchNodeContext {
   onNavigate: (entryId: string) => void
 }
 
-/**
- * 把受限嵌套结构渲染成 RAC 的 `TreeItem`。
- *
- * 嵌套 `TreeItem` 是 `TreeItemContent` 的兄弟节点，`aria-level` / 展开 / 选中由
- * RAC 依真实父子关系计算；这里只放行内容与语义标识（条目类型、书签、折叠隐藏数、
- * 当前叶子）。激活（Enter / 双击）仍走宿主显式导航，不做自动跳转。
- */
 export function renderBranchNodes(nodes: readonly BranchNode[], ctx: BranchNodeContext): JSX.Element[] {
   return nodes.map((node) => {
     const { row } = node
@@ -298,18 +250,11 @@ export function renderBranchNodes(nodes: readonly BranchNode[], ctx: BranchNodeC
   })
 }
 
-/* ------------------------------------------------------------------ 组件 */
-
 export interface BranchTreeProps {
-  /** 归属：请求与切换都绑定 `owner.sessionId`。 */
   owner: WorkspaceOwner
-  /** 原生会话桥；缺省时由宿主注入。 */
   transport: BranchTransport
-  /** 会话正忙（运行 / 流式 / 压缩中）：禁用切换。 */
   busy?: boolean
-  /** 外部刷新信号（例如面板上的刷新按钮）。 */
   reloadToken?: number
-  /** 切换成功后由宿主同步会话（`refreshSessions`）。 */
   onNavigated?: () => void
   className?: string
 }
@@ -348,13 +293,11 @@ export function BranchTree({
   useEffect(() => {
     aliveRef.current = true
     return () => {
-      /* 卸载即作废在途响应，关面板后旧数据不得回写。 */
       aliveRef.current = false
       runRef.current += 1
     }
   }, [])
 
-  /* 整树加载：owner / 刷新信号变化时重来，并丢弃此前在途响应。 */
   useEffect(() => {
     const run = ++runRef.current
     let cancelled = false
@@ -389,7 +332,6 @@ export function BranchTree({
   const stats = view?.stats ?? null
   const nested = useMemo(() => nestBranchRows(rows), [rows])
 
-  /** RAC 的展开集合 = 当前渲染了子节点的行；折叠仍由 `collapsed` 收口到 `buildTreeView`。 */
   const expandedKeys = useMemo(() => {
     const keys = new Set<string>()
     const visit = (nodes: readonly BranchNode[]): void => {
@@ -410,7 +352,6 @@ export function BranchTree({
 
   const selectedRow = rows.find((row) => row.entryId === selected) ?? null
 
-  /* 切换后**就地**重取树（不闪 loading、不丢折叠），成功后由宿主刷新会话列表。 */
   const refreshInPlace = useCallback(async (): Promise<void> => {
     if (!expectedSessionId) return
     const run = ++runRef.current

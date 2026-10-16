@@ -3,10 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!--
-      CSP：渲染进程不给 Node 权限，连的也只有本地 dev server。
-      引入新的远程域名（字体 CDN、遥测等）必须先改这里 —— 这是刻意的摩擦。
-    -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self';
@@ -21,10 +17,6 @@
     <script src="/boot-theme.js"></script>
   </head>
   <body>
-    <!--
-      启动画面（设计规范 §3.4.1）：写在静态 HTML 里，窗口首帧就有；
-      样式在 styles/shell.css + motion.css，数据就绪后由 lib/boot-splash.ts 淡出并移除。
-    -->
     <div id="boot" class="boot" aria-hidden="true">
       <svg class="boot-mark" viewBox="0 0 100 100" fill="none">
         <path class="boot-frame" pathLength="1" d="M68 22H26A4 4 0 0 0 22 26V72.5A5.5 5.5 0 0 0 27.5 78H72.5A5.5 5.5 0 0 0 78 72.5V52" stroke-width="6" stroke-linecap="butt" stroke-linejoin="round" />

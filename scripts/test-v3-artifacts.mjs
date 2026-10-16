@@ -1,15 +1,3 @@
-/**
- * 成果视图（WP-32 · R5）的 host-free 单测。
- *
- * 只现场编译三份**纯逻辑**文件，在 Node 里直接跑；不启动 Electron、不碰 pi、
- * 不读用户目录、不跑真实浏览器或模型：
- *
- *   src/renderer/src/features/artifacts/model.ts   身份 / 形态 / 活跃上限 / 安全桥 / 归属 / 预览分类
- *   src/shared/visual-blocks.ts                     结构化块校验（复用的既有纯逻辑）
- *   src/shared/html-artifact-preview.ts             离线协议与 CSP 契约（确认没有放宽）
- *
- *   node scripts/test-v3-artifacts.mjs
- */
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -31,7 +19,6 @@ const model = await loadTs('../src/renderer/src/features/artifacts/model.ts')
 const visuals = await loadTs('../src/shared/visual-blocks.ts')
 const html = await loadTs('../src/shared/html-artifact-preview.ts')
 
-/* ── 身份 ─────────────────────────────────────────────────────── */
 {
   const identity = { sessionId: 's1', messageId: 'm1', partIndex: 2, toolCallId: 't1' }
   assert.equal(model.identityKey(identity), model.identityKey({ ...identity }), '同身份得到同一个键')
@@ -40,7 +27,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   assert.equal(model.sameIdentity(identity, { ...identity, toolCallId: 'other' }), false)
 }
 
-/* ── 活跃框架上限与淘汰 ───────────────────────────────────────── */
 {
   const slots = (count, visible = true) =>
     Array.from({ length: count }, (_, i) => ({ key: `f${i}`, generation: 1, visible, lastSeenAt: i }))
@@ -51,7 +37,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   assert.deepEqual(model.framesToFreeFor(slots(4), 'new'), ['f0'], '新键满员时腾一个位置')
   assert.deepEqual(model.framesToFreeFor(slots(3), 'new'), [], '未满员不腾位')
 
-  /* 离屏的优先让位，即使它最近才见过 */
   const mixed = [
     { key: 'on', generation: 1, visible: true, lastSeenAt: 100 },
     { key: 'off', generation: 1, visible: false, lastSeenAt: 999 }
@@ -59,7 +44,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   assert.deepEqual(model.selectFrameEvictions(mixed, 1), ['off'], '离屏优先淘汰')
 }
 
-/* ── 尺寸钳制 ─────────────────────────────────────────────────── */
 {
   assert.equal(model.clampInlineHeight(400, 1000), 400)
   assert.equal(model.clampInlineHeight(900, 1000), 700, 'min(70vh, 720)')
@@ -71,7 +55,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   )
 }
 
-/* ── 归属 ─────────────────────────────────────────────────────── */
 {
   const owner = { key: 'k', sessionId: 's1', cwd: '/p', active: false }
   assert.equal(model.ownerAllowsInteractive(owner), false)
@@ -82,7 +65,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   assert.equal(model.ownerOwnsSession(owner, null), false)
 }
 
-/* ── 异步归属核对 ─────────────────────────────────────────────── */
 {
   const ok = await model.ownerScopedRead({ expectedKey: 'a', currentKey: () => 'a', read: async () => 42 })
   assert.deepEqual(ok, { ok: true, value: 42 })
@@ -105,7 +87,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   assert.deepEqual(failed, { ok: false, reason: 'error' })
 }
 
-/* ── 安全桥：来源 / 代号 / 白名单 / 限速 ───────────────────────── */
 {
   const ctx = { sourceOk: true, frameGeneration: 7 }
   const withGen = (message) => ({ ...message, yanGeneration: 7 })
@@ -170,7 +151,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
     '带账号信息的 URL 拒绝'
   )
 
-  /* MCP Apps 的工具/资源调用明确拒绝：普通 HTML 桥不冒充 MCP 宿主。 */
   for (const method of ['tools/call', 'resources/read', 'ui/resource-teardown']) {
     assert.deepEqual(model.decodeBridgeMessage(withGen({ method, params: {} }), ctx), { ok: false, error: 'unsupported' }, `${method} 拒绝`)
   }
@@ -190,7 +170,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   })
 }
 
-/* ── 限速：≤50 条/秒 ─────────────────────────────────────────── */
 {
   const limiter = new model.BridgeRateLimiter()
   for (let i = 0; i < model.BRIDGE_MESSAGE_RATE; i++) assert.equal(limiter.allow(1000 + i), true, `第 ${i + 1} 条放行`)
@@ -200,7 +179,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   assert.equal(limiter.allow(3000), true, '重置后放行')
 }
 
-/* ── 预览能力分类 ─────────────────────────────────────────────── */
 {
   assert.equal(model.previewKindOf('a.html'), 'html')
   assert.equal(model.previewKindOf('a.HTM'), 'html')
@@ -213,7 +191,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   assert.equal(model.previewNeedsOfficeIpc('text'), false)
 }
 
-/* ── 结构化块：复用既有纯校验，不重造解析器 ───────────────────── */
 {
   assert.equal(visuals.isVisualBlockLang('yan-chart'), true)
   assert.equal(visuals.isVisualBlockLang('mermaid'), true)
@@ -238,7 +215,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   assert.deepEqual(visuals.niceScale(95, '%'), { max: 100, ticks: [0, 25, 50, 75, 100] })
 }
 
-/* ── 离线协议 / CSP：确认没有放宽 ─────────────────────────────── */
 {
   assert.equal(html.HTML_ARTIFACT_SCHEME, 'inkstone-html')
   assert.equal(html.HTML_ARTIFACT_SANDBOX, 'allow-scripts')

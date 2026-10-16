@@ -1,4 +1,3 @@
-/* 用户截图回归：单次隔离窗口，只注入合成界面数据，不调用模型。 */
 ;(async () => {
   const out=[]
   const check=(ok,label)=>out.push(`  ${ok?'✓':'✗'} ${label}`)

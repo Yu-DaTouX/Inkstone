@@ -1,19 +1,3 @@
-/**
- * 会话标题生成。
- *
- * 用**独立的 pi 进程**跑一次极短的请求，把用户的第一句话总结成几个字。
- * 为什么不复用主会话：
- *   ① 会污染对话 —— 用户会看到「总结这句话」这种莫名其妙的消息
- *   ② 会改变上下文 —— 前缀一变，prompt cache 全失效（这个代价比一次请求贵得多）
- *   ③ 归纳任务不该出现在对话历史里
- *
- * 所以在 `--no-session --no-extensions` 下起一个用完即走的进程，
- * 并显式关掉所有会读 `.md` 的自动发现（见下面的参数注释），
- * thinking 关掉（归纳不需要推理，省钱也快）。
- *
- * 缓存：同一会话只生成一次，结果落在 ~/.pi/agent/yan/titles.json。
- * 失败一律静默降级 —— 标题生成失败不该影响任何事。
- */
 import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
@@ -24,17 +8,8 @@ import { appendContextBackgroundUsage } from './context-background-usage'
 
 const TITLES_FILE = join(YAN_DIR, 'titles.json')
 
-/** sessionId → 标题 */
 type TitleMap = Record<string, string>
 
-/**
- * 用户**手动**重命名的会话名（sessionId → 名字）。
- *
- * 为什么要与 titles.json 分开：自动生成的标题每轮都会重算（用户要求
- * 「每次对话标题需要 agent 生成一个新的」），如果把手动名写进同一张表，
- * 下一轮就会被自动标题覆盖 —— 用户报的「重命名不管用」有一半是这个原因。
- * 分开存之后，手动名是**粘性**的：有手动名就不再自动生成。
- */
 const MANUAL_FILE = join(YAN_DIR, 'manual-titles.json')
 
 async function loadMap(file: string): Promise<TitleMap> {
@@ -64,23 +39,15 @@ async function loadTitles(): Promise<TitleMap> {
   return loadMap(TITLES_FILE)
 }
 
-/** 加载手动重命名的会话名（渲染端启动时一次性拉走） */
 export async function manualTitles(): Promise<TitleMap> {
   return loadMap(MANUAL_FILE)
 }
 
-/** 某个会话是否有手动名（有则不再自动生成标题） */
 export async function manualTitleOf(sessionId: string): Promise<string | undefined> {
   const all = await loadMap(MANUAL_FILE)
   return all[sessionId]
 }
 
-/**
- * 写一个手动会话名（空串 = 清除，恢复自动标题）。
- *
- * 返回明确的成功/失败：这是**用户主动保存**的动作，不能像自动标题那样静默降级 ——
- * 写盘失败（权限、磁盘满）时界面必须先乐观显示后回退，否则重启才发现名字丢了。
- */
 export async function setManualTitle(
   sessionId: string,
   name: string
@@ -101,25 +68,19 @@ async function saveTitle(sessionId: string, title: string): Promise<void> {
   try {
     const all = await loadTitles()
     all[sessionId] = title
-    // 只留最近 300 条，别让它无限涨
     const keys = Object.keys(all)
     if (keys.length > 300) {
       for (const k of keys.slice(0, keys.length - 300)) delete all[k]
     }
     await writeMapAtomic(TITLES_FILE, all)
   } catch {
-    /* 存不下就算了，标题本来是可再生的 */
   }
 }
 
-/** 已缓存的标题（渲染端启动时一次性拉走，避免重复生成） */
 export async function cachedTitles(): Promise<TitleMap> {
   return loadTitles()
 }
 
-/* 生成 */
-
-/** 提示词：要短、要具体、不要标点。写死英文指令 + 中文示例，模型更稳 */
 function buildPrompt(samples: string[]): string {
   const body = samples
     .map((s, i) => `${i === 0 ? '开头' : i === samples.length - 1 ? '现在' : `第 ${i + 1} 句`}：${s}`)
@@ -139,27 +100,14 @@ function buildPrompt(samples: string[]): string {
   ].join('\n')
 }
 
-/**
- * 标题长度上限（汉字个数）。
- *
- * ⚠️ 原来是 8 —— 用户报「会话标题显示字很少」：8 个字写不出信息量
- *（“查看图片”“网线治丢包”），左栏里一排都长得很像。
- * 放到 18：能写下一个动词 + 一个对象，且不会撑破左栏。
- */
 const TITLE_MAX = 18
 
-/** 清洗模型输出 —— 它经常不听话地加引号或句号 */
 function cleanTitle(raw: string): string {
   let s = raw.trim()
-  // 去掉包裹的引号 / 书名号 / 括号
   s = s.replace(/^["'“”『「【\[(（]+/, '').replace(/["'“”』」】\])）]+$/, '')
-  // 去掉结尾标点
   s = s.replace(/[。！？!?.,，、；;：:]+$/, '')
-  // 去掉「标题：」这种前缀
   s = s.replace(/^(标题|title)\s*[:：]\s*/i, '')
-  // 只取第一行（模型有时会多写一行解释）
   s = s.split('\n')[0].trim()
-  // 上限（见 TITLE_MAX 的说明）。宁可我截，也不要一个撑破左栏的标题。
   if (Array.from(s).length > TITLE_MAX) s = Array.from(s).slice(0, TITLE_MAX).join('')
   return s
 }
@@ -169,36 +117,15 @@ export interface TitleResult {
   fromCache?: boolean
 }
 
-/**
- * 生成标题。失败返回 null（调用方静默忽略）。
- *
- * `cwd` 仍用用户自己的目录（保持 pi 的路径解析与用户环境一致）；
- * 但标题进程已显式关闭 context files / skills / 提示词模板的自动发现，
- * 所以项目的 AGENTS.md 不会影响归纳结果，也不会白白读进系统提示。
- *
- * `samples` 是要总结的几个片段（按时间顺序）：一般传
- * [第一句用户话, 最近一句用户话]，这样标题跟得上话题的移动。
- *
- * `force` 为 true 时**不用缓存**，重新生成：
- *   用户要求「每次对话标题需要 agent 生成一个新的」，所以每轮都会重算。
- *   缓存仍然写（给左栏与切会话时先用一个已有的值垫着）。
- */
 export async function generateTitle(opts: {
   sessionId: string
   samples: string[]
   cwd: string
   piBin?: string
-  /**
-   * 随首条消息附带的图片。用户报「首条消息带图时标题生成不了」——
-   * 只把文字交给归纳进程，纯图片的消息摘要不出任何东西。
-   * 把图片也传过去，模型能看着图起标题。
-   */
   images?: { data: string; mimeType: string }[]
   timeoutMs?: number
   force?: boolean
-  /** 手动标题存在时只生成候选，不把它当作当前标题返回。 */
   allowManual?: boolean
-  /** 候选标题不覆盖既有自动标题缓存，待用户明确采用后再落盘。 */
   persist?: boolean
 }): Promise<TitleResult | null> {
   const { sessionId, cwd, piBin } = opts
@@ -207,11 +134,9 @@ export async function generateTitle(opts: {
   const samples = opts.samples.map((s) => s.trim()).filter(Boolean)
   if (samples.length === 0) return null
 
-  // 手动重命名是**粘性**的：有手动名就不再自动生成（否则每轮又会盖掉）
   const manual = await manualTitleOf(sessionId)
   if (manual && !opts.allowManual) return { title: manual, fromCache: true }
 
-  // 已经有缓存且不要求重算 → 直接用
   if (!opts.force) {
     const cached = await loadTitles()
     if (cached[sessionId]) return { title: cached[sessionId], fromCache: true }
@@ -220,40 +145,19 @@ export async function generateTitle(opts: {
   const rpc = new PiRpc({
     cwd,
     piBin,
-    /*
-     * 标题是纯归纳任务，和项目内容无关 —— 显式关掉所有会读 `.md` 的
-     * 自动发现，别让项目的 AGENTS.md、技能清单和提示词模板挤进这个短任务的
-     * 系统提示：
-     *   --no-context-files     AGENTS.md / CLAUDE.md（仓库根 + 一路向上的祖先目录）
-     *   --no-skills            SKILL.md 描述（全局技能包也会被列进系统提示）
-     *   --no-prompt-templates  提示词模板
-     * 顺带的好处是启动更快、token 更少；标题质量不受影响 ——
-     * buildPrompt() 已经把全部要求写在自己的提示词里了。
-     *
-     * 注意：上面这些只关「发现」，不关显式传入的 --extension / --skill 路径。
-     */
     args: [
       '--no-session',
       '--no-extensions',
       '--no-context-files',
       '--no-skills',
       '--no-prompt-templates',
-      /*
-       * 测试/CI 用固定模型（与主 Agent、子代理同一套约定）：
-       * 不传的话 pi 会去读它自己的默认模型 —— 测试沙箱里没有那份设置，
-       * 于是标题永远生成不出来，而真实使用里看不出来（默认模型是有的）。
-       * 这也是 N11 真实模型验收当时跑不出标题的原因。
-       */
       ...(process.env.YAN_TEST_MODEL ? ['--model', process.env.YAN_TEST_MODEL] : [])
     ],
-    // 标题生成也会单独启动 pi；和主 Agent 使用相同的数据根，避免便携版
-    // 意外从 ~/.pi 读取凭证或在其中留下 pi 数据。
     env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }
   })
 
   let text = ''
   let settled = false
-  /* 供应商口径的用量（来自 `message_end` 的最终消息）；标题进程没报就是 null */
   let usage: ReturnType<typeof toUsage> = undefined
   let startedAt = 0
 
@@ -261,10 +165,6 @@ export async function generateTitle(opts: {
     const done = (r: TitleResult | null, errorCode?: string): void => {
       if (settled) return
       settled = true
-      /*
-       * 标题是一次真实的后台调用（而且跑在独立进程里，界面原本完全看不见）。
-       * 走到 done 就说明真的起了进程，所以失败也要记账 —— 只是没有 usage。
-       */
       appendContextBackgroundUsage(sessionId, {
         kind: 'title',
         ok: !!r?.title,
@@ -287,12 +187,10 @@ export async function generateTitle(opts: {
         const ev = evt.assistantMessageEvent as Record<string, unknown> | undefined
         if (ev?.type === 'text_delta') text += String(ev.delta ?? '')
       } else if (type === 'message_end') {
-        /* `message_end` 的 message 是最终权威消息，usage 在里面（与主会话同一字段口径） */
         const message = (evt as Record<string, unknown>).message as Record<string, unknown> | undefined
         const parsed = toUsage(message?.usage as Parameters<typeof toUsage>[0])
         if (parsed) usage = parsed
       } else if (type === 'agent_settled' || type === 'agent_end') {
-        // agent_settled 更权威（agent_end 之后可能还有重试）
         if (type !== 'agent_settled') return
         clearTimeout(timer)
         const title = cleanTitle(text)
@@ -307,18 +205,15 @@ export async function generateTitle(opts: {
 
     rpc.on('exit', () => {
       clearTimeout(timer)
-      // 进程提前退出也算失败
       if (!settled) done(null, 'title_process_exit')
     })
 
     rpc.on('stderr', (line) => {
-      // 只记不处理 —— 标题失败不该打扰用户
       console.error('[title] stderr:', line)
     })
 
     rpc.spawn()
 
-    // 起来之后再发指令
     void (async () => {
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 250))
@@ -326,16 +221,13 @@ export async function generateTitle(opts: {
           const st = await rpc.command('get_state')
           if (st.success) break
         } catch {
-          /* 还没起来 */
         }
       }
       try {
-        // 归纳不需要推理 —— 关掉省钱也快
         await rpc.command('set_thinking_level', { level: 'off' })
         startedAt = Date.now()
         await rpc.command('prompt', {
           message: buildPrompt(samples),
-          // pi 的 prompt 支持 images（见 rpc-types.d.ts 的 prompt 命令）
           ...(opts.images?.length
             ? { images: opts.images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType })) }
             : {})

@@ -1,7 +1,3 @@
-/**
- * 中继接入的离线检查：内存假中继 + 真实本机远程服务实例 + 模拟的手机 / 礁石客户端（同一套握手与加密）。
- * 不联网、不启动 Electron。用法：node scripts/test-relay-bridge.mjs
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { mkdtemp } from 'node:fs/promises'
@@ -19,7 +15,6 @@ await build({
 })
 const M = await import(pathToFileURL(join(root, 'relay.mjs')))
 
-/* ---------- 内存假中继：主机一个连接，客户端按编号转发（协议同礁石中继） ---------- */
 class FakeRelay {
   host = null
   clients = new Map()
@@ -43,7 +38,6 @@ class FakeRelay {
       close() { this.readyState = 3 }
     }
   }
-  /** 新客户端加入：返回 { send(text), frames[], closed } */
   join() {
     const id = this.next++
     const queue = []
@@ -64,7 +58,6 @@ class FakeRelay {
   }
 }
 
-/* ---------- 模拟客户端：握手、认证、隧道请求 ---------- */
 async function connect(relay, link, { pair = true, name = '测试手机', key } = {}) {
   const payload = JSON.parse(Buffer.from(link.split('#p=')[1], 'base64url').toString('utf8'))
   const conn = relay.join()
@@ -135,7 +128,6 @@ try {
     assert.deepEqual([phone.payload.k, phone.payload.m, phone.payload.v], ['yan', 'phone', 1])
     assert.match(phone.payload.r, /^wss:\/\/relay\.example\.test\/v1\/join\/[A-Za-z0-9_-]{22}$/)
     assert.equal((await phone.request('GET', '/remote/v1/health')).status, 200)
-    // 客户端声称 agent 也只会配对成手机
     const paired = await phone.request('POST', '/remote/v1/pair', { body: { code: phone.payload.y, deviceName: '我的手机', kind: 'agent' } })
     assert.equal(paired.status, 200)
     const { token, device } = paired.json()
@@ -143,7 +135,6 @@ try {
     const auth = { authorization: `Bearer ${token}` }
     assert.equal((await phone.request('GET', '/remote/v1/sessions', { headers: auth })).status, 200)
     assert.equal((await phone.request('GET', '/remote/v1/hub', { headers: auth })).status, 200, '经隧道（本机回环）的手机身份可以用 Hub')
-    // 已登记的公钥再次连接不需要配对码
     assert.equal((await bridge.status()).clients.filter((c) => c.kind === 'phone').length, 1)
   })
 
@@ -182,7 +173,6 @@ try {
     assert.equal((await c.request('GET', '/../etc/passwd')).status, 403)
     assert.equal((await c.request('GET', 'http://evil.test/remote/v1/health')).status, 403)
     assert.equal((await c.request('GET', '/other')).status, 403)
-    // 手机连接即使自带 x-yan-relay-kind: agent，也被白名单丢弃、由隧道按配对用途重写
     devices.startPairing()
     const r = await c.request('POST', '/remote/v1/pair', { headers: { 'x-yan-relay-kind': 'agent', 'x-yan-relay': 'x' }, body: { code: devices.currentPairing().code, deviceName: 'p', kind: 'agent' } })
     assert.equal(r.json().device.kind, 'phone')

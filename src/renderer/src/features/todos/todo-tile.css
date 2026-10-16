@@ -1,10 +1,3 @@
-/*
- * 待办磁贴的版面（层 features），挂在右侧工作区页签栏下方。
- *
- * 只写排版、层级与状态色；折叠按钮是本地行按钮（与 `.v3-entry` 同一层级），
- * 进行中的转圈来自 `ui/` 的 `Spinner`，勾与警告图标来自 lucide。
- * 高度上限 + 内部滚动，超过时磁贴不长高，会话列表不被挤没。
- */
 @layer features {
   .v3-todo {
     flex: none;
@@ -63,7 +56,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* 高度上限在磁贴内部消化：超出滚动，不撑高侧栏、不挤会话列表 */
   .v3-todo-scroll {
     max-height: 152px;
     overflow-y: auto;

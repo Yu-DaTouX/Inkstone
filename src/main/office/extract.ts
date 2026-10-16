@@ -1,12 +1,3 @@
-/**
- * 从办公文件里提取结构化正文（需求稿 3.4）。
- *
- * 只读、不改文件；不做排版还原。各格式的取法：
- *   · docx：word/document.xml 的段落（表格按行，单元格用「 | 」连接）
- *   · xlsx：每个工作表一节，每个非空单元格一行「A1: 值」（公式显示为「=公式 → 结果」）
- *   · pptx：每页一节，按形状顺序取文字；备注页另起「备注」
- *   · pdf：复用资料库的 PDF 正文提取（扫描件、加密件会如实报告）
- */
 import { OFFICE_MAX_LINES, type OfficeDocumentView, type OfficeFormat, type OfficeSection } from '../../shared/office'
 import { parsePdfBuffer } from '../library-parser'
 import { ZipReader } from './zip'
@@ -23,7 +14,6 @@ function decodeXml(text: string): string {
   })
 }
 
-/** 取一段 XML 里某个标签的所有文本节点（例如 w:t、a:t） */
 function textsOf(xml: string, tag: string): string[] {
   const pattern = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, 'g')
   const out: string[] = []
@@ -46,7 +36,6 @@ function docx(zip: ZipReader): OfficeSection[] {
   const xml = zip.text('word/document.xml')
   if (!xml) throw new Error('缺少 word/document.xml，不是有效的 Word 文档')
   const body = xml.replace(/<w:tbl>[\s\S]*?<\/w:tbl>/g, (table) => {
-    /* 表格：每行一段，单元格之间用「 | 」 */
     const rows = blocksOf(table, 'w:tr').map((row) =>
       blocksOf(row, 'w:tc').map((cell) => textsOf(cell, 'w:t').join('')).join(' | ')
     )

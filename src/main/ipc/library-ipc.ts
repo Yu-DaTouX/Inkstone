@@ -1,9 +1,3 @@
-/**
- * 资料库的 IPC 适配（`yan:library:*`）。
- *
- * 打开只收 `{ sourceId, version }`，没有「按路径找文件」的入口；
- * 引用判定只走 `refOutcome`，界面拿到的 outcome 就是唯一结论。
- */
 import type { IpcRegistrar } from './registrar'
 import { activeSources, refOutcome } from '../../shared/library'
 import type { LibraryKind, LibraryOwner, SourceReference } from '../../shared/library'
@@ -12,25 +6,13 @@ import type { SpaceStore } from '../space-store'
 
 export interface LibraryIpcDeps {
   library: LibraryService
-  /** 把资料挂到空间前核对空间存在 */
   spaces: SpaceStore
-  /** 资料「加入对话」后，若该会话正在前台，立刻重装它的上下文 */
   refreshActiveSessionContext(sessionId: string): Promise<void>
 }
 
 export function registerLibraryIpc(ipc: IpcRegistrar, deps: LibraryIpcDeps): void {
   const { handle } = ipc
   const { library, spaces, refreshActiveSessionContext } = deps
-  /*
-   * ---- 资料库（实施-25 P03）----
-   *
-   * 与 sources（会话级旧模型）**并存**：旧 handler 与旧参数一个都没动，
-   * 新增的是 librarySourceId 这一侧的引用（T03-7 的过渡）。
-   *
-   * 两条铁律体现在签名里：
-   *   · 打开只收 `{ sourceId, version }` —— 没有「按路径找文件」的入口；
-   *   · 判定只走 `refOutcome` —— 界面拿到的 outcome 就是唯一结论。
-   */
   handle('yan:library:list', async (req?: { spaceId?: string | null }) => {
     await library.store.load()
     const doc = library.store.document()
@@ -103,10 +85,6 @@ export function registerLibraryIpc(ipc: IpcRegistrar, deps: LibraryIpcDeps): voi
   handle('yan:library:addRef', async (owner: LibraryOwner, ref: SourceReference) => {
     if (!owner || !ref) return { ok: false, error: '缺少引用方或引用' }
     const added = await library.store.addRef(owner, ref)
-    /*
-     * 「加入对话」后立刻重装上下文（T05-3）：否则用户会看到刚加的资料
-     * 直到下一次切会话才进上下文 —— 那正是「界面显示加了、模型却看不到」。
-     */
     if (owner.kind === 'session') await refreshActiveSessionContext(owner.id)
     return { ok: true, added }
   })

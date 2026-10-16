@@ -1,4 +1,3 @@
-/** 当前IPC回调 + 真实隔离持久化：内存/磁盘限额一致，写失败不发布。 */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

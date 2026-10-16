@@ -9,7 +9,6 @@ import { selectSubagentRuns } from '../../state/subagent-view'
 import { Button, Tip } from '../ui'
 import { menuAnchor, type MenuAnchor } from '../workbench/Workspace'
 
-/** 顶栏里的子代理入口：本会话有子代理在跑（或有需处理的）才出现；点开列出它们，可直接停止或进面板。 */
 export function SubagentIndicator() {
   const t = useT()
   const session = useStore(s => s.session)

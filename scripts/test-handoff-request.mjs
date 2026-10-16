@@ -1,16 +1,3 @@
-/**
- * 交接包**生成链路**的契约与文件交换（实施-05 S5b-2）。
- *
- * 这一片把「谁写什么」钉死：
- *   · 宿主写**请求**（提示词已渲染好、两个 id、来源字段）；
- *   · 薄层写**结果**（模型原文 + 失败原因）；
- *   · 宿主读结果 → 解析 → 清洗 → 落盘。
- *
- * 判错的代价都很大：请求写错位置 = 薄层永远看不见（而界面看起来一切正常）；
- * 清洗放宽 = 半份包进事务（新会话接手时缺交付物）；文件不清 = 下一次交接拿到上次的遗物。
- *
- * 用法：npm run test:unit
- */
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
@@ -18,15 +5,9 @@ import { join, dirname } from 'node:path'
 export async function runHandoffRequestTests(ok, shared, service) {
   console.log('\n--- 实施-05 S5b-2 交接包生成（请求 / 结果 / 解析） ---')
 
-  /* --------------------------------------------------- 文件名清洗（两侧交叉校验） */
-
   const keys = ['r1', 'r-1_2.3', 'a b/c\\d', 'x'.repeat(200), '', '中文会话']
   for (const key of keys) {
     const mine = shared.handoffFileKey(key)
-    /*
-     * 薄层用 `YAN_SESSION_ID`、宿主用 runnerId，两边必须落到**同一个文件名**。
-     * 这里直接拿扩展里的 `safeKey()` 对拍（它不是可选项：不一致就是「请求写了没人看见」）。
-     */
     const theirs = String(key ?? '')
       .trim()
       .replace(/[^A-Za-z0-9._-]/g, '_')
@@ -36,8 +17,6 @@ export async function runHandoffRequestTests(ok, shared, service) {
 
   ok(shared.handoffFileKey('中文会话') === '____', '非 ASCII 一律替换（不允许路径分隔符逃逸）')
   ok(shared.handoffFileKey(123) === '', '非字符串 → 空（调用方据此放弃，不写坏文件）')
-
-  /* --------------------------------------------------- 请求契约 */
 
   const request = service.buildHandoffRequest({
     handoffId: 'h-1',
@@ -52,12 +31,6 @@ export async function runHandoffRequestTests(ok, shared, service) {
   ok(request.handoffId === 'h-1' && request.operationId === 'op-1', '请求带两个身份（交接 / 本次生成）')
   ok(request.systemPrompt === shared.HANDOFF_SYSTEM_PROMPT, '请求带稳定 system prompt（缓存友好）')
   ok(request.maxTokens === shared.HANDOFF_PACKAGE_MAX_TOKENS, '请求带输出上限')
-  /*
-   * 截断重试的契约（2026-09-27 现场修复）。
-   *
-   * 现场：交接包写到 7544 字符时被 4000 token 上限切断，而修复重试仍用同一个上限
-   * + 一句“必须包含全部列表” → 条件未变，失败必然复现。下面这几条钉住新约定。
-   */
   ok(
     request.escalatedMaxTokens === shared.HANDOFF_PACKAGE_MAX_TOKENS_ESCALATED,
     `请求带第二跳预算（${shared.HANDOFF_PACKAGE_MAX_TOKENS_ESCALATED}）`
@@ -109,12 +82,9 @@ export async function runHandoffRequestTests(ok, shared, service) {
   ok(shared.sanitizeHandoffRequest({ ...request, systemPrompt: '' }).systemPrompt === shared.HANDOFF_SYSTEM_PROMPT, '空 system → 默认文本')
   ok(shared.sanitizeHandoffRequest({ ...request, mode: '' }).mode === 'unknown', '空模式 → unknown（不编造）')
 
-  /* --------------------------------------------------- 结果契约 */
-
   const result = service.buildHandoffResult({ handoffId: 'h-1', operationId: 'op-1', text: '{}', ms: 1200, now: 2000 })
   ok(result.ms === 1200 && result.at === 2000, '结果带耗时与时间戳')
   ok(shared.sanitizeHandoffResult(result)?.text === '{}', '结果可被清洗读回')
-  /* 截断标记：显式写优先，旧扩展没写时用 stopReason 推断（两个版本的扩展都能被正确解读） */
   ok(shared.sanitizeHandoffResult({ ...result, truncated: true })?.truncated === true, '结果可标记截断')
   ok(
     shared.sanitizeHandoffResult({ ...result, stopReason: 'length' })?.truncated === true,
@@ -124,8 +94,6 @@ export async function runHandoffRequestTests(ok, shared, service) {
   ok(shared.sanitizeHandoffResult({ ...result, handoffId: '' }) === null, '缺交接 id 的结果 → 作废')
   const empty = shared.sanitizeHandoffResult(service.buildHandoffResult({ handoffId: 'h-1', operationId: 'op-1' }))
   ok(!!empty && empty.text === '' && empty.error === null, '「跑了但什么都没回」也是合法结果（宿主据此区分「没跑」）')
-
-  /* --------------------------------------------------- 模型输出解析 */
 
   const cases = [
     ['{"goal":"a","deliverable":"b"}', true],
@@ -143,8 +111,6 @@ export async function runHandoffRequestTests(ok, shared, service) {
   }
   ok(shared.parseHandoffOutput('[]').reason === 'no-json-object', '数组不是对象（reason 可读）')
   ok(shared.parseHandoffOutput('{}{}').ok === true, '多个对象时取第一个完整对象（宽容但不猜语义）')
-
-  /* --------------------------------------------------- 阈值覆盖与资格 */
 
   const tally = { segmentId: 'initial', count: 0, keys: [], updatedAt: 0 }
   const goal = { revision: 1, phase: 'executing', goalId: 'g', steps: [], evidence: [], updatedAt: 0 }
@@ -164,8 +130,6 @@ export async function runHandoffRequestTests(ok, shared, service) {
     '目标已完 → 不交接'
   )
 
-  /* --------------------------------------------------- 文件交换（真目录） */
-
   const root = await mkdtemp(join(tmpdir(), 'yan-handoff-req-'))
   try {
     const store = new service.HandoffRequestStore({ root })
@@ -182,30 +146,24 @@ export async function runHandoffRequestTests(ok, shared, service) {
     ok((await store.writeResult('r1', result)) === true, '写结果成功')
     ok((await store.readResult('r1'))?.operationId === 'op-1', '读回的结果对得上 operationId')
 
-    /* 半截文件（进程被杀时会留下）：一律当「没有」，不许抛 */
     const badPath = store.resultPath('r2')
     await mkdir(dirname(badPath), { recursive: true })
     await writeFile(badPath, '{"handoffId":"h-2",', 'utf8')
     ok((await store.readResult('r2')) === null, '坏 JSON → 当没有（不让一次坏写打断整条链）')
 
-    /* 清理：宿主消费后必须把两边都删掉，否则下一次交接会拿到遗物 */
     await store.clearRequest('r1')
     await store.clearResult('r1')
     ok((await store.readRequest('r1')) === null && (await store.readResult('r1')) === null, '清掉之后两侧都读不到')
 
-    /* 无内存态：另一个实例（模拟另一个进程）立刻能看到 */
     const other = new service.HandoffRequestStore({ root })
     await store.writeRequest('r3', request)
     ok((await other.readRequest('r3'))?.handoffId === 'h-1', '无内存态：换一个实例照样读得到（写方是另一个进程）')
-
-    /* --------------------------------------------------- 全链路（无模型）：请求 → 结果 → 解析 → 清洗 → 落盘 */
 
     const handoffs = new service.HandoffStore({ root })
     await handoffs.load()
     await store.writeRequest('r4', request)
     const got = await store.readRequest('r4')
     ok(!!got, '链路第 1 步：宿主写下请求')
-    /* 模拟薄层：拿到请求后回一份模型输出 */
     await store.writeResult(
       'r4',
       service.buildHandoffResult({
@@ -233,12 +191,10 @@ export async function runHandoffRequestTests(ok, shared, service) {
     const saved = Object.values(onDisk.entries)[0]
     ok(saved?.package?.goal === '把导入做快', '链路第 4 步：交接包真的落盘（重启后能读）')
 
-    /* 重启读回：来源字段要能从盘上恢复（缺来源的包一律当没有） */
     const reopened = new service.HandoffStore({ root })
     await reopened.load()
     ok(reopened.state(got.sessionKey).package?.deliverable === '一个可用的导入', '重启后交接包还在')
 
-    /* 缺必填栏 → 整份作废（半份包不许进事务） */
     ok(shared.sanitizeHandoffPackage({ goal: '只有目标' }, { sourceSession: 's', sourceHead: null, mode: 'm', model: null }) === null, '缺交付物 → 作废')
     ok(
       shared.sanitizeHandoffPackage({ goal: '  ', deliverable: 'x' }, { sourceSession: 's', sourceHead: null, mode: 'm', model: null }) === null,

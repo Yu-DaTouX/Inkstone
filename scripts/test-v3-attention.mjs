@@ -1,19 +1,3 @@
-/**
- * AttentionService 单测（v3 WP-12）。
- *
- * 现场用 esbuild 编译 `src/main/attention/index.ts`，在 node 里跑，**不启动
- * Electron、不起 pi、不写用户数据**。窗口 / 托盘都用假实现，只断言投影决策：
- *
- *   · `summarizeAttention`：等你确认 / 失败未读 / 完成未读 / 停滞 / 进行中的
- *     归类与排序；已读终态与用户停止不进入注意列表。
- *   · 任务栏：Windows 上有运行 → 不确定进度；有等待 → 覆盖图标 + 说明；
- *     非 Windows 不碰任务栏；主题切换强制重刷。
- *   · 托盘：提示随注意数变化；菜单沿用显示砚 / 新建会话 / 运行中的会话 / 退出，
- *     有注意项时子菜单顶部多一行「等你处理 N 项」；点击运行项回导航目标。
- *   · 宿主事实（终端 / Agent Hub / 批准）作为注册表之外的忙碌 / 等待兜底。
- *
- * 可独立执行：node scripts/test-v3-attention.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -26,7 +10,6 @@ async function compile(entry, outfile) {
   return outfile
 }
 
-/** 造一个运行快照；phase 直接给 `kind` 加上需要的字段。 */
 function run(runId, phase, overrides = {}) {
   return {
     runId,
@@ -81,7 +64,6 @@ function fakeTray() {
   }
 }
 
-/** 组装服务依赖；每个用例改自己关心的字段。 */
 function harness(overrides = {}) {
   const win = fakeWindow()
   const tray = fakeTray()
@@ -142,8 +124,6 @@ export async function runV3AttentionTests() {
   }
 }
 
-/* ───────────────────────── 汇总 ───────────────────────── */
-
 function runSummaryTests(mod) {
   const { summarizeAttention } = mod
 
@@ -169,32 +149,26 @@ function runSummaryTests(mod) {
   assert.deepEqual(s.failed.map((r) => r.runId), ['c'], '已读失败不进注意列表')
   assert.deepEqual(s.doneUnread.map((r) => r.runId), ['e'], '已读完成不进注意列表')
   assert.deepEqual(s.stalled.map((r) => r.runId), ['h'])
-  /* 进行中按 since 升序；needs-you / stalled / queued / running 都算。 */
   assert.deepEqual(s.active.map((r) => r.runId), ['a', 'i', 'h', 'b'])
   assert.equal(s.waiting, true)
   assert.equal(s.busy, true)
   assert.equal(s.attentionCount, 3, 'needs-you + 失败未读 + 完成未读')
   assert.equal(s.total, 9)
 
-  /* 失败 / 完成未读按时间从新到旧。 */
   const two = summarizeAttention([
     run('x', { kind: 'done', at: 10, seen: false }),
     run('y', { kind: 'done', at: 20, seen: false })
   ])
   assert.deepEqual(two.doneUnread.map((r) => r.runId), ['y', 'x'])
 
-  /* 全已读终态：不忙、不等待、无注意。 */
   const quiet = summarizeAttention([run('q', { kind: 'done', at: 1, seen: true }), run('r', { kind: 'stopped', at: 2, by: 'host' })])
   assert.equal(quiet.busy, false)
   assert.equal(quiet.attentionCount, 0)
 }
 
-/* ───────────────────────── 任务栏 ───────────────────────── */
-
 function runTaskbarTests(mod) {
   const { createAttentionService } = mod
 
-  /* 注意项驱动覆盖图标与任务栏进度。 */
   {
     const h = harness()
     h.state.runs = [run('a', { kind: 'needs-you', since: 1, request: { id: 'r', type: 'danger', summary: '删库' } })]
@@ -202,13 +176,11 @@ function runTaskbarTests(mod) {
     svc.ensureTray()
     assert.equal(svc.hasTray(), true)
     assert.equal(h.tray.state.tooltip, '砚 · Yan · 1 项待处理')
-    /* 创建托盘时 refreshTaskbar(true) 已应用一次。 */
     assert.equal(h.win.calls.progress.at(-1).p, 2)
     assert.deepEqual(h.win.calls.progress.at(-1).o, { mode: 'indeterminate' })
     assert.equal(h.win.calls.overlay.at(-1).icon, 'icon')
     assert.equal(h.win.calls.overlay.at(-1).desc, '有任务等待你的处理')
 
-    /* 解决后只留完成未读：不再覆盖，但仍有注意提示。 */
     h.state.runs = [run('a', { kind: 'done', at: 2, seen: false })]
     svc.refreshTaskbar()
     assert.equal(h.win.calls.progress.at(-1).p, -1)
@@ -216,13 +188,11 @@ function runTaskbarTests(mod) {
     assert.equal(h.win.calls.overlay.at(-1).desc, '')
     assert.equal(h.tray.state.tooltip, '砚 · Yan · 1 项待处理')
 
-    /* 全部已读：回到默认提示。 */
     h.state.runs = [run('a', { kind: 'done', at: 3, seen: true })]
     svc.refreshTaskbar()
     assert.equal(h.tray.state.tooltip, '砚 · Yan')
   }
 
-  /* 宿主事实兜底：注册表为空但有终端在跑 / 在等。 */
   {
     const h = harness()
     const svc = createAttentionService(h.deps)
@@ -237,7 +207,6 @@ function runTaskbarTests(mod) {
     assert.equal(h.win.calls.overlay.at(-1).icon, 'icon')
   }
 
-  /* 非 Windows：不调用任务栏 API。 */
   {
     const h = harness({ platform: 'linux' })
     h.state.runs = [run('a', { kind: 'running', since: 1, activity: 'thinking' })]
@@ -247,7 +216,6 @@ function runTaskbarTests(mod) {
     assert.equal(h.win.calls.overlay.length, 0)
   }
 
-  /* 主题切换：换字形并强制重刷任务栏。 */
   {
     const h = harness()
     h.state.runs = [run('a', { kind: 'running', since: 1, activity: 'thinking' })]
@@ -261,7 +229,6 @@ function runTaskbarTests(mod) {
     assert.ok(h.win.calls.progress.length > before, '主题切换强制重刷进度')
   }
 
-  /* 闪烁与释放。 */
   {
     const h = harness()
     const svc = createAttentionService(h.deps)
@@ -274,8 +241,6 @@ function runTaskbarTests(mod) {
     assert.equal(h.state.themeListener, null, '释放后不再监听主题')
   }
 }
-
-/* ───────────────────────── 托盘 ───────────────────────── */
 
 function runTrayTests(mod) {
   const { createAttentionService, buildAttentionMenu } = mod
@@ -320,18 +285,15 @@ function runTrayTests(mod) {
   assert.equal(live[0].label, '● 日志改造.jsonl · 运行中')
   assert.equal(live[1].label, 'r2 · 启动中')
 
-  /* 点击运行项 → 回到主窗口并带上稳定会话身份，不执行任何东西。 */
   live[0].click()
   assert.equal(h.log.show, 1)
   assert.deepEqual(h.log.select, [{ sessionFile: 'C:/x/日志改造.jsonl', sessionId: 's1', projectId: 'p1', cwd: 'C:/x' }])
 
-  /* 新建 / 退出回调只转发。 */
   menu[1].click()
   assert.equal(h.log.newSession, 1)
   menu[4].click()
   assert.equal(h.log.quit, 1)
 
-  /* 无运行：沿用迁移前的占位文案，且不出现注意行。 */
   const plain = buildAttentionMenu({
     zh: true,
     statuses: [],
@@ -342,7 +304,6 @@ function runTrayTests(mod) {
     { type: 'item', label: '暂无运行中的会话', enabled: false }
   ])
 
-  /* 英文文案来自同一份菜单模型。 */
   const en = buildAttentionMenu({
     zh: false,
     statuses,
@@ -353,7 +314,6 @@ function runTrayTests(mod) {
   assert.equal(en.find((n) => n.type === 'submenu').items[0].label, '1 need attention')
   assert.equal(en.find((n) => n.type === 'submenu').items[2].label, '● 日志改造.jsonl · Running')
 
-  /* macOS 在托盘图标旁显示注意数；Windows 不设 title。 */
   const mac = harness({ platform: 'darwin' })
   mac.state.runs = [run('a', { kind: 'done', at: 1, seen: false })]
   const macSvc = createAttentionService(mac.deps)

@@ -43,7 +43,6 @@ try {
     }
     const legacy = '{"legacy":"preserve second-round history"}\n'
     await writeFile(join(data, 'goals.json'), legacy)
-    // Retired retry state remains readable data; startup must not migrate or delete it.
     await writeFile(join(data, 'auto-continue.json'), legacy)
     const receipt = join(evidence, `${name}.txt`)
     const env = { ...process.env, YAN_USER_DATA: user, YAN_DATA_DIR: data, YAN_PI_DIR: pi, YAN_WIN: size,

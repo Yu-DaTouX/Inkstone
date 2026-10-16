@@ -1,36 +1,24 @@
-/**
- * 启动页用量概览：按本地日期汇总的会话、消息、token 与模型，以及按范围（全部 / 30 天 / 7 天）的聚合。
- *
- * 主进程逐个会话文件记一份按日的计数（usage-stats.ts，可增量），这里只做纯聚合，便于测试。
- */
-
 export type UsageRange = 'all' | '30d' | '7d'
 
-/** 某个会话文件在某一天（本地日期 YYYY-MM-DD）的计数 */
 export interface UsageDay {
-  /** 用户与助手消息数 */
   m: number
-  /** token 总数（助手回复的 totalTokens，含缓存读写） */
   t: number
-  /** 按本地小时的消息数（键 0–23） */
+  c?: number
   h: Record<string, number>
-  /** 按模型的 token 数（键为 provider/model） */
   models: Record<string, number>
+  modelCost?: Record<string, number>
 }
 
 export type FileUsage = Record<string, UsageDay>
 
 export interface UsageModelShare {
-  /** provider/model */
   key: string
   tokens: number
+  cost: number
 }
 
-/** Token 的两个来源：主会话与子代理。`tokens` 恒等于两者之和。 */
 export interface UsageTokenBreakdown {
-  /** 主会话原生会话文件的 token（含缓存读写） */
   main: number
-  /** 子代理原生会话文件的 token（含缓存读写） */
   subagents: number
 }
 
@@ -39,23 +27,16 @@ export interface UsageStatsView {
   sessions: number
   messages: number
   tokens: number
-  /**
-   * Token 按来源拆分；`tokens = tokenBreakdown.main + tokenBreakdown.subagents`。
-   * 会话数 / 消息数 / 活跃天数 / 高峰时段仍只统计主会话，不随这里变化。
-   */
   tokenBreakdown: UsageTokenBreakdown
+  cost: number
+  costBreakdown: UsageTokenBreakdown
   activeDays: number
-  /** 消息最多的本地小时；没有数据时为 null */
   peakHour: number | null
-  /** 按 token 排序的模型（最多 8 个） */
   models: UsageModelShare[]
-  /** 热力图：从最早一周的周一到今天，每天的 token 数 */
   heat: Array<{ date: string; tokens: number }>
-  /** 统计时间（ms） */
   at: number
 }
 
-/** 热力图显示的周数 */
 export const HEAT_WEEKS = 53
 
 export function localDay(ms: number): string {
@@ -71,20 +52,10 @@ function rangeStart(range: UsageRange, now: number): string | null {
   return localDay(d.getTime())
 }
 
-/**
- * 仅主会话的聚合（旧口径）。等价于没有子代理来源；`tokenBreakdown.subagents` 为 0。
- */
 export function aggregateUsage(files: FileUsage[], range: UsageRange, now = Date.now()): UsageStatsView {
   return aggregateUsageSources({ main: files, subagents: [] }, range, now)
 }
 
-/**
- * 主会话 + 子代理一起聚合。
- *
- * - Token（含缓存读写）与模型 / 热力图取两类来源；`tokens` 是拆分之和。
- * - 会话数、消息数、活跃天数、高峰时段只算主会话：未报告的“次数类”指标不被子代理改写。
- * - `now` 同时用于范围起点与热力图终点，避免跨日/跨范围边界不一致。
- */
 export function aggregateUsageSources(
   sources: { main: FileUsage[]; subagents: FileUsage[] },
   range: UsageRange,
@@ -96,6 +67,8 @@ export function aggregateUsageSources(
   let messages = 0
   let tokensMain = 0
   let tokensSubagents = 0
+  let costMain = 0
+  let costSubagents = 0
   const days = new Set<string>()
   const hours = new Array<number>(24).fill(0)
   const models = new Map<string, UsageModelShare>()
@@ -105,7 +78,6 @@ export function aggregateUsageSources(
     for (const file of files) {
       let touched = false
       for (const [day, u] of Object.entries(file)) {
-        /* 热力图保留全部天（近半年窗口），不受 range 影响 */
         perDay.set(day, (perDay.get(day) ?? 0) + u.t)
         if (!inRange(day)) continue
         if (isMain) {
@@ -115,16 +87,23 @@ export function aggregateUsageSources(
           }
           messages += u.m
           tokensMain += u.t
+          costMain += u.c ?? 0
           for (const [h, n] of Object.entries(u.h)) {
             const i = Number(h)
             if (i >= 0 && i < 24) hours[i] += n
           }
         } else {
           tokensSubagents += u.t
+          costSubagents += u.c ?? 0
         }
         for (const [key, n] of Object.entries(u.models)) {
-          const hit = models.get(key) ?? { key, tokens: 0 }
+          const hit = models.get(key) ?? { key, tokens: 0, cost: 0 }
           hit.tokens += n
+          models.set(key, hit)
+        }
+        for (const [key, c] of Object.entries(u.modelCost ?? {})) {
+          const hit = models.get(key) ?? { key, tokens: 0, cost: 0 }
+          hit.cost += c
           models.set(key, hit)
         }
       }
@@ -140,7 +119,6 @@ export function aggregateUsageSources(
   const today = new Date(now)
   today.setHours(0, 0, 0, 0)
   const start = new Date(today)
-  /* 从 HEAT_WEEKS 周前的那个周一开始，到今天为止 */
   start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - (HEAT_WEEKS - 1) * 7)
   for (const d = new Date(start); d.getTime() <= today.getTime(); d.setDate(d.getDate() + 1)) {
     const date = localDay(d.getTime())
@@ -153,6 +131,8 @@ export function aggregateUsageSources(
     messages,
     tokens,
     tokenBreakdown: { main: tokensMain, subagents: tokensSubagents },
+    cost: costMain + costSubagents,
+    costBreakdown: { main: costMain, subagents: costSubagents },
     activeDays: days.size,
     peakHour: peak > 0 ? hours.indexOf(peak) : null,
     models: [...models.values()].sort((a, b) => b.tokens - a.tokens).slice(0, 8),
@@ -161,17 +141,12 @@ export function aggregateUsageSources(
   }
 }
 
-/**
- * 读取 Token 拆分，兼容还没有 `tokenBreakdown` 字段的旧宿主结果：
- * 旧结果只统计主会话，保守按「全部为主会话、子代理 0」处理。
- */
 export function tokenBreakdownOf(stats: Pick<UsageStatsView, 'tokens' | 'tokenBreakdown'>): UsageTokenBreakdown {
   const breakdown = stats.tokenBreakdown
   if (breakdown && Number.isFinite(breakdown.main) && Number.isFinite(breakdown.subagents)) return breakdown
   return { main: stats.tokens, subagents: 0 }
 }
 
-/** 热力图分级（0–4）：按非零天的四分位数，避免一天极端值把其余全压成最浅 */
 export function heatLevels(values: number[]): number[] {
   const nonzero = values.filter((v) => v > 0).sort((a, b) => a - b)
   if (!nonzero.length) return values.map(() => 0)

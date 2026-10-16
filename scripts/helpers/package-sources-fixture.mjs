@@ -1,4 +1,3 @@
-/** 仅测试使用的settings.json包来源夹具；损坏文档拒写、原子替换。 */
 import { randomUUID } from 'node:crypto'
 import { closeSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 export function writePackageSourcesForTest(settingsPath, sources) {

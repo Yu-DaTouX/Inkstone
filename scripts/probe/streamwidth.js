@@ -1,12 +1,3 @@
-/**
- * 对话宽度自定义（用户要求：「对话宽度自定义（注意消息指引柄的位置）」）。
- *
- * 断言三件事：
- *   ① 设置里的 streamWidth 会写进 CSS 变量 --w-stream，并被内容列采用
- *   ② 0 = 恢复设计默认（变量被移除，回到 tokens.css 的 `--w-stream` clamp 解）
- *   ③ 导航轨（消息指引柄）在宽度变化后重新测量、仍贴在正文左侧
- *      （这正是用户特意提醒的「注意消息指引柄的位置」）
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -34,7 +25,6 @@
 
   out.push('')
   out.push('=== 2. 改宽 → 导航轨重新测量 ===')
-  // 注入 4 轮消息，让导航轨出现（<3 轮不渲染）
   const fake = []
   for (let i = 1; i <= 4; i++) {
     fake.push({ id: 'sw-u' + i, role: 'user', text: '第 ' + i + ' 个问题' })
@@ -52,7 +42,6 @@
       : NaN
     out.push(`  宽度 720 时刻度右缘距正文 ${gapAt720}px`)
 
-    // 加宽到 1100 → 内容列变宽（左缘左移），导轨必须跟着左移；刻度到正文的距离不变
     store.getState().patchSettings({ streamWidth: 1100 })
     await sleep(700)
     const bar2 = q('.outline-hit .outline-bar')
@@ -76,11 +65,6 @@
     document.documentElement.style.getPropertyValue('--w-stream') === '',
     '内联 --w-stream 已被移除（回落到设计默认值）'
   )
-  /*
-   * 设计默认不是字面 800px，而是 `--w-stream` 的 clamp 解：
-   * clamp(--w-body + 2*--sp-5, 100vw - 680px, 920px)。窗口宽度不同，解得不同
-   * （1440 宽窗口内宽下，下界 768px 胜出），所以按令牌现算期望值。
-   */
   const rootStyle = getComputedStyle(document.documentElement)
   const defaults = Math.max(
     (parseFloat(rootStyle.getPropertyValue('--w-body')) || 720) + 2 * (parseFloat(rootStyle.getPropertyValue('--sp-5')) || 24),
@@ -98,7 +82,6 @@
   const slider = q('[data-testid="set-stream-width"] input[type="range"]')
   ok(!!slider, '外观页有对话宽度滑块')
   if (slider) {
-    // React 受控 range：必须走原生 value setter，否则 React 的 value tracker 不认
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
     setter.call(slider, '640')
     slider.dispatchEvent(new Event('input', { bubbles: true }))
@@ -111,7 +94,6 @@
       (q('[data-testid="set-stream-width-now"]')?.textContent ?? '').includes('640'),
       '滑块旁边的数值同步显示'
     )
-    // 恢复默认
     click(q('[data-testid="set-stream-width-reset"]'))
     await sleep(600)
     ok((store.getState().settings?.streamWidth ?? -1) === 0, '「恢复默认」把宽度设回 0')

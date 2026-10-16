@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-/**
- * 静态检查 v3 值依赖链：不得引入旧全局样式、旧控件入口或界面字体包。
- * 跟踪静态 import/export、字符串动态 import 与字面量 import.meta.glob；纯类型跳过。
- * 第三方组件自身 CSS（如 xterm、KaTeX）不属于 v2 全局样式。
- * 这不是窗口截图、网络资源记录或性能验收，不能证明未知动态路径的运行行为。
- */
 import { existsSync, globSync, readFileSync, statSync } from 'node:fs'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -66,7 +60,6 @@ export function checkV3StyleIsolation(entry = resolve(renderer, 'app/ShellV3.tsx
     }
     const content = readFileSync(file, 'utf8')
     if (extname(file) === '.css') {
-      // 复用词法扫描跳过注释与内容字符串；CSS 的字符串 @import 也必须跟踪。
       const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, content)
       let token
       while ((token = scanner.scan()) !== ts.SyntaxKind.EndOfFileToken) {

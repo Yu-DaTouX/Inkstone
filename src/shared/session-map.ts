@@ -1,39 +1,19 @@
-/**
- * 会话地图的**纯逻辑**（实施-18 S1）。
- *
- * 从 `SessionSummary[]` 投影出泳道 / 节点 / 边 / 折叠簇 —— 不碰 DOM、
- * 不读 Electron、不写任何持久化。渲染（`SessionMap.tsx`）只负责把这里
- * 的结果摆到屏幕上，所以形态调整（D1/D2）不会波及数据层。
- *
- * 结构约定：
- *   · 泳道（lane）= 项目（`project:<id>`）或「全局 / 未归类」（`global`）；
- *   · 列 = 分支深度（`parentSession` 链，根为 0）；
- *   · 边 = 父子关系，只连接两端都可见的节点。
- */
-
 import type { SessionSummary } from './ipc'
 
-/** 超过这个节点数就折叠 —— 真机验证过上千条会话不能整体直出。 */
 export const SESSION_MAP_MAX_NODES = 300
 
-/** 深度上限：异常的父子链不在这里递归到栈溢出。 */
 const MAX_DEPTH = 64
 
 export interface SessionMapNode {
   path: string
   id: string
   title: string
-  /** 所属泳道：`project:<id>` 或 `global`。 */
   laneKey: string
   projectId?: string
-  /** 分支深度；父节点不可见 / 缺父时归 0。 */
   depth: number
-  /** 泳道内可见节点的排列序号（0 起）。 */
   row: number
   parentPath?: string
-  /** 全量（含被折叠节点）的直接子会话数。 */
   childCount: number
-  /** 在父节点之下按 createdAt 升序排第几（1 起）；无父则 undefined。 */
   branchIndex?: number
   lastActivityAt: number
   messageCount: number
@@ -41,16 +21,13 @@ export interface SessionMapNode {
   unread: boolean
   pinned: boolean
   current: boolean
-  /** 父会话缺失（被删除 / 迁移中）——已提升为根。 */
   orphan: boolean
-  /** 深度过深被截断，或可见父被折叠。 */
   truncated: boolean
 }
 
 export interface SessionMapEdge {
   from: string
   to: string
-  /** 子节点深度，渲染时用于分层。 */
   depth: number
 }
 
@@ -66,13 +43,11 @@ export interface SessionMapLane {
   projectId?: string
   nodes: SessionMapNode[]
   clusters: SessionMapCluster[]
-  /** 该泳道节点总数（含被折叠）。 */
   total: number
 }
 
 export interface SessionMapResult {
   lanes: SessionMapLane[]
-  /** 可见节点（展平，供渲染与键盘遍历）。 */
   nodes: SessionMapNode[]
   edges: SessionMapEdge[]
   clusters: SessionMapCluster[]
@@ -91,27 +66,17 @@ export interface SessionMapInput {
   pinned?: readonly string[]
   unread?: readonly string[]
   running?: readonly string[]
-  /** 当前项目：它的泳道排在最前。 */
   currentProjectId?: string
   maxNodes?: number
-  /** 用户显式展开的泳道（点击折叠簇）——这些泳道不参与折叠。 */
   expandLanes?: readonly string[]
 }
 
 export interface BranchIndex {
-  /** path → 直接子会话数 */
   branchCount: Map<string, number>
-  /** path → 在父之下按 createdAt 的第几个分支（1 起） */
   branchIndex: Map<string, number>
-  /** path → 子会话列表（按 createdAt 升序） */
   branchesOf: Map<string, SessionSummary[]>
 }
 
-/**
- * 分支编号（从 `Rail.tsx` 下沉）。
- *
- * 编号按 `createdAt` 升序 —— 与分支创建的先后一致。
- */
 export function buildBranchIndex(sessions: readonly SessionSummary[]): BranchIndex {
   const branchCount = new Map<string, number>()
   const branchIndex = new Map<string, number>()
@@ -138,12 +103,6 @@ function activityOf(s: SessionSummary): number {
   return s.lastActivityAt ?? s.createdAt ?? 0
 }
 
-/**
- * 自底向上算深度，带环与过深防御。
- *
- * 返回的 `truncated` 表示这条链在到达真根之前就断了（遇到环 / 超过
- * `MAX_DEPTH`），渲染时标注、不假装它是根会话。
- */
 function resolveDepth(
   path: string,
   byPath: Map<string, SessionSummary>,
@@ -171,13 +130,6 @@ function resolveDepth(
   return resolved
 }
 
-/**
- * 构建会话地图。
- *
- * 折叠规则：节点总数超过阈值时，按最近活动全局排序保留可见节点，
- * 其余归入所属泳道的「簇」。被折叠节点的子节点若仍可见，会提升为
- * 顶层（`truncated: true`），边只连接两端都可见的父子。
- */
 export function buildSessionMap(input: SessionMapInput): SessionMapResult {
   const maxNodes = Math.max(1, input.maxNodes ?? SESSION_MAP_MAX_NODES)
   const expandLanes = new Set(input.expandLanes ?? [])
@@ -190,14 +142,12 @@ export function buildSessionMap(input: SessionMapInput): SessionMapResult {
 
   const { branchCount, branchIndex } = buildBranchIndex(input.sessions)
 
-  // 可见集合：不超阈值就全要；超了按最近活动保留 maxNodes 个，每个泳道至少 1 个。
   const ordered = [...input.sessions].sort((a, b) => activityOf(b) - activityOf(a))
   let visible: Set<string>
   if (ordered.length <= maxNodes) {
     visible = new Set(ordered.map((s) => s.path))
   } else {
     visible = new Set<string>()
-    /* 用户展开的泳道整条保留，不占其它泳道的预算 */
     for (const s of input.sessions) {
       if (expandLanes.has(laneKeyOf(s))) visible.add(s.path)
     }
@@ -249,7 +199,6 @@ export function buildSessionMap(input: SessionMapInput): SessionMapResult {
     })
   }
 
-  // 泳道排序：当前项目优先，然后按泳道最近活动。
   const laneMap = new Map<string, SessionMapNode[]>()
   for (const n of nodes) {
     const arr = laneMap.get(n.laneKey) ?? []
@@ -267,10 +216,6 @@ export function buildSessionMap(input: SessionMapInput): SessionMapResult {
     return laneActivity(b) - laneActivity(a)
   })
 
-  /*
-   * 泳道内排序：根按活动降序，随后是它的子会话（按 createdAt，
-   * 与分支创建的先后一致）。这样每一列都是「父在上、子紧随其后」。
-   */
   const lanes: SessionMapLane[] = []
   for (const key of laneKeys) {
     const arr = laneMap.get(key) ?? []
@@ -289,7 +234,6 @@ export function buildSessionMap(input: SessionMapInput): SessionMapResult {
     for (const kids of byParent.values()) {
       kids.sort((a, b) => (byPath.get(a.path)?.createdAt ?? 0) - (byPath.get(b.path)?.createdAt ?? 0))
     }
-    /* 环防御：走不到的节点在最后补上，不静默丢节点 */
     const ordered: SessionMapNode[] = []
     const seen = new Set<string>()
     const walk = (n: SessionMapNode): void => {
@@ -329,7 +273,6 @@ export function buildSessionMap(input: SessionMapInput): SessionMapResult {
 
   for (const c of clusters) {
     if (lanes.some((l) => l.key === c.laneKey)) continue
-    // 某个泳道全部被折叠时，也要给它一条空泳道承载簇。
     lanes.push({ key: c.laneKey, projectId: byPath.get(c.paths[0])?.projectId, nodes: [], clusters: [c], total: c.count })
   }
 

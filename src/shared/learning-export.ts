@@ -1,14 +1,3 @@
-/**
- * 学习数据导出：把课程、学习位置、练习与作答、笔记、概念观察和复习项
- * 整理成可以直接阅读的 Markdown。
- *
- * 读法刻意宽松：输入是四个落盘文件的**原始 JSON**，不依赖各 store 的
- * 校验与类型 —— 学习功能收缩成技能之后，旧数据仍要能读出来。缺字段就跳过
- * 那一项，不因为一条坏数据放弃整份导出。
- *
- * 它不碰 electron / 文件系统，主进程与单测共用同一份规则。
- */
-
 export interface LearningRawData {
   courses?: unknown
   studySessions?: unknown
@@ -17,7 +6,6 @@ export interface LearningRawData {
 }
 
 export interface LearningExportFile {
-  /** 相对导出目录的文件名 */
   name: string
   content: string
 }
@@ -42,7 +30,6 @@ function time(value: unknown): string {
   return new Date(n).toISOString().replace('T', ' ').slice(0, 16)
 }
 
-/** 多行文本放进引用块，保持原样可读。 */
 function quote(text: string): string {
   return text
     .split('\n')
@@ -78,10 +65,6 @@ function sourceLine(ref: unknown): string {
 
 export const UNASSIGNED_COURSE_ID = '__unassigned__'
 
-/**
- * 按课程整理成若干 Markdown 文件，另加一份索引 `README.md`。
- * 不属于任何现存课程的笔记、练习等归到「未归属课程」。
- */
 export function buildLearningExport(raw: LearningRawData, exportedAt: number): LearningExportFile[] {
   const courses = arr(obj(raw.courses)?.courses)
   const sessions = arr(obj(raw.studySessions)?.sessions)

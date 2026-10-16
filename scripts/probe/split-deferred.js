@@ -1,10 +1,3 @@
-/*
- * 分屏 + 「只读打开」（`npm run test:live -- splitdeferred`，需要可见窗口；用 YAN_TEST_EXTRA_SESSIONS 拷入的真实会话更有说服力）。
- *
- * 同一工作目录里已有忙实例时，点另一侧的 `switchSession` 走 deferred：运行实例仍是原来那条，
- * 屏幕上的内容只是 peek 铺的。这里直接复现那个状态：当前会话在跑（isAgentRunning），
- * 把长会话的 peek 内容与 peekedPath 写进 store，再让分屏焦点换到它。验：焦点侧画得出正文。
- */
 ;(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const store = window.__yanStore
@@ -53,7 +46,6 @@
   const last = info()
   const m = /txt=(\d+)/.exec(last)
   const lb = liveEl.getBoundingClientRect(), ib = liveEl.querySelector('.stream-inner, .stream-row')?.getBoundingClientRect()
-  /* 正文列必须落在自己的对话区里：导航轨避让量曾被别的磁贴的 .stream 算成上千像素，正文被推出可视区 */
   if (ib && (ib.right > lb.right + 2 || ib.left < lb.left - 2)) throw new Error(`splitdeferred: 正文被推出对话区 stream=${Math.round(lb.left)}..${Math.round(lb.right)} inner=${Math.round(ib.left)}..${Math.round(ib.right)}`)
   if (!m || Number(m[1]) < 100) throw new Error('splitdeferred: 焦点侧白屏 ' + series.join(' '))
   return 'ok ' + series.join(' ')

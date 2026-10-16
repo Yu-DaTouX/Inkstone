@@ -1,10 +1,3 @@
-/**
- * 定时任务：到点新开一条会话，用任务里的指令（和模型）跑一遍。
- *
- * 只在砚运行时触发；砚没开着错过的任务，下次启动时（24 小时内）补跑一次，更早的直接跳到下一次。
- * 触发出来的会话和普通会话一样留在会话列表里，调度器不保存运行过程，只记上次触发与错误。
- * 数据是 `YAN_DIR/schedules.json`，一个文件，写入用临时文件替换。
- */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -17,7 +10,6 @@ import {
 } from '../shared/schedule'
 
 const TICK_MS = 30_000
-/** 错过多久以内的任务在启动时补跑 */
 const CATCH_UP_MS = 24 * 60 * 60_000
 
 export interface ScheduleInput {
@@ -30,7 +22,6 @@ export interface ScheduleInput {
 
 export interface ScheduleServiceOptions {
   file: string
-  /** 触发：新开会话并发出指令；失败抛错，错误文字记进任务 */
   run(task: ScheduledTask): Promise<{ sessionId?: string }>
   onChanged?(tasks: ScheduledTask[]): void
   now?(): number
@@ -76,7 +67,6 @@ export class ScheduleService {
     return structuredClone(this.tasks)
   }
 
-  /** 创建任务。模型创建的先停着等用户确认；用户创建的直接启用。 */
   async create(input: ScheduleInput, by: 'user' | 'model'): Promise<{ ok: true; task: ScheduledTask } | { ok: false; error: string }> {
     const checked = this.check(input)
     if (!checked.ok) return checked
@@ -134,7 +124,6 @@ export class ScheduleService {
     })
   }
 
-  /** 立即触发一次（不改变原有的下次时间） */
   async runNow(id: string): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
     await this.chain
     await this.load()
@@ -155,7 +144,6 @@ export class ScheduleService {
     return { ok: true, value: { name, prompt, trigger: trigger.trigger, ...(cwd ? { cwd } : {}), ...(model ? { model } : {}) } }
   }
 
-  /** 触发后（或启用 / 改时间后）算下一次；单次任务跑完就停用 */
   private advance(task: ScheduledTask, from: number, fresh = false): void {
     const next = nextRunAt(task.trigger, from)
     if (next === undefined) {
@@ -171,7 +159,6 @@ export class ScheduleService {
     for (const task of this.tasks) {
       if (task.enabled && task.nextRunAt !== undefined && task.nextRunAt <= now && !this.running.has(task.id)) {
         void this.fire(task, true).catch((error) => {
-          // 未能保存执行结果时停止调度，避免每次 tick 重复执行同一项。
           this.stop()
           console.error('[schedule] 保存运行结果失败，调度已暂停', error)
         })
@@ -200,7 +187,6 @@ export class ScheduleService {
           latest.lastSessionId = result.sessionId ?? latest.lastSessionId
           delete latest.lastError
         } else latest.lastError = result.error
-        // 运行期间的暂停、删除和重新排期不被旧快照覆盖。
         if (scheduled && latest.enabled && latest.nextRunAt === snapshot.nextRunAt && JSON.stringify(latest.trigger) === JSON.stringify(snapshot.trigger)) {
           this.advance(latest, startedAt)
         }
@@ -212,7 +198,6 @@ export class ScheduleService {
     }
   }
 
-  /** 在串行链内复制、保存，再发布；写失败不改变内存或推送成功状态。 */
   private mutate<T>(change: (tasks: ScheduledTask[]) => { result: T; changed?: boolean }): Promise<T> {
     const operation = this.chain.then(async () => {
       await this.load()

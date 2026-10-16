@@ -1,40 +1,21 @@
-/**
- * 建任务阈值：宿主在 `yan tasks apply` 的落点判断这次该不该建任务清单。
- *
- * 各活动「怎么做」由模型自己判断（整理有随包 organize 技能）。
- * 这里只留模型自觉做不到的一件事：**拦下简单问答的任务清单** —— 这是宿主对
- * 持久状态的把关，不能只靠模型自觉。
- *
- * 只对 `daily` 档案的活动流程生效；`coding` 会话里的任务清单是开发者一直在用的
- * 东西，不能因为「日常不该为简单问答建任务」被顺手改掉。
- */
-
 import type { AgentActivity, AgentProfileKind } from './agent-profile'
 
-/** 天然是多步的活动（在 daily 档案里总是允许建任务清单）。 */
 const MULTI_STEP_ACTIVITIES: ReadonlySet<AgentActivity> = new Set(['research', 'compose', 'organize', 'learn'])
 
 export function isMultiStepActivity(activity: AgentActivity): boolean {
   return MULTI_STEP_ACTIVITIES.has(activity)
 }
 
-/** 超过这个长度就不再算「简单问答」（阈值是有意保守的，宁可不拦）。 */
 export const SIMPLE_REQUEST_MAX_CHARS = 160
-/** coding 会话新建清单至少要几条待办（一两步的活不值得一份清单，也省 token）。 */
 export const CODING_MIN_ITEMS = 3
-/** 简单问答最多允许的待办条数。 */
 export const SIMPLE_TASK_MAX_ITEMS = 1
 
 export interface TaskCreationInput {
   profile: AgentProfileKind
   activity: AgentActivity
-  /** 用户当次要求原文；CLI 侧可能看不到，允许缺省。 */
   text?: string
-  /** 这次提交要写入的待办条数。 */
   itemCount: number
-  /** 用户明确要求「建任务 / 列个计划 / 持续跟进」。 */
   explicit?: boolean
-  /** 会话里已经有的待办条数：往已有清单上追加不算「新建」，不受最少条数限制。 */
   existingItems?: number
 }
 
@@ -45,23 +26,9 @@ export interface TaskCreationDecision {
   reason: TaskCreationReason
 }
 
-/**
- * 该不该为这次提交建任务清单。
- *
- * 判定顺序有意为之：
- *   1. **coding 一律放行** —— 显式选了代码助手，就不拦；
- *   2. 用户明确要计划 → 建（他想看清单，不要替他省）；
- *   3. 活动本身是多步流程（研究 / 创作 / 整理 / 学习）→ 建；
- *   4. 多条待办或长输入 → 建（确实是多步）；
- *   5. 其余（自动或直接回答 + 一句话 + 至多一条待办）→ **不建**：简单问答不建任务。
- *
- * `auto` 档不走第 3 步：活动本来就是模型当场判断的，宿主没资格拿旧 activity
- * 替它认定「这是个多步流程」——否则一个默认自动的会话会因为上次的活动而突然建清单。
- */
 export function decideTaskCreation(input: TaskCreationInput): TaskCreationDecision {
   if (input.explicit) return { create: true, reason: 'explicit' }
   if (input.profile === 'coding') {
-    /* 新建清单要真的是多步；已有清单上的追加照旧放行 */
     if ((input.existingItems ?? 0) > 0 || input.itemCount >= CODING_MIN_ITEMS) return { create: true, reason: 'coding' }
     return { create: false, reason: 'coding-small' }
   }
@@ -74,7 +41,6 @@ export function decideTaskCreation(input: TaskCreationInput): TaskCreationDecisi
   return { create: false, reason: 'simple-answer' }
 }
 
-/** 被拦下时给模型的一句可读说明（模型据此停止重试，而不是反复提交）。 */
 export function taskCreationRefusal(reason: TaskCreationReason): string | null {
   if (reason === 'coding-small') {
     return `任务不足 ${CODING_MIN_ITEMS} 步，宿主没有建立任务清单。直接动手即可；确实是多步任务时，一次写全所有步骤再提交，或让用户明确要求「列个计划」。`

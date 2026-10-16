@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-/**
- * WP-53 跨设备同步 A 阶段核心的合成验收。
- *
- *   node scripts/test-v3-sync.mjs
- *
- * 两个隔离的临时数据目录指向同一个临时同步文件夹，验证：
- *   1. 单向同步：设置 / 提示词 / 技能 / 书签 / 定时任务定义都能推过去；
- *   2. 双向不同项：两端各改不同项，往返后两端一致；
- *   3. 同项冲突：两端自上次同步后改同一条 → 保留双份（本机不动 + 带后缀的副本），绝不静默覆盖；
- *   4. 凭证不外泄：白名单外的 apiKey / token / secret / password / authorization / 本机路径不落同步目录；
- *   5. 损坏 / 半写入文件跳过、同步目录缺失只报告不崩溃；不删除任何文件；
- *   6. 会话导出 / 导入：导入生成新 id、不覆盖同名。
- *
- * 现场用 esbuild 打包真实生产模块 `src/main/sync/index.ts`（无 Electron 依赖），
- * 不启动 Electron、不连 pi、不调用真实模型、不读写用户真实数据、不访问网络。
- */
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -24,7 +8,6 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
-/* ── 现场编译生产模块 ───────────────────────────────────────── */
 const bundleFile = join(tmpdir(), `yan-v3-sync-${process.pid}-${randomUUID()}.mjs`)
 await build({
   entryPoints: [fileURLToPath(new URL('../src/main/sync/index.ts', import.meta.url))],
@@ -37,7 +20,6 @@ await build({
 const sync = await import(pathToFileURL(bundleFile).href)
 const { SyncService, exportSession, importSession, findForbiddenFields } = sync
 
-/* ── 微型断言 / 报告 ────────────────────────────────────────── */
 const report = { pass: 0, fail: 0 }
 let group = ''
 function section(name) {
@@ -61,7 +43,6 @@ async function check(message, fn) {
   }
 }
 
-/* ── 文件工具 ───────────────────────────────────────────────── */
 async function writeJson(file, value) {
   await mkdir(dirname(file), { recursive: true })
   await writeFile(file, JSON.stringify(value, null, 2))
@@ -90,11 +71,9 @@ async function walk(dir) {
 }
 const sha256 = (text) => createHash('sha256').update(text).digest('hex')
 
-/* 凭证值：这些字符串绝不能出现在同步目录里的任何文件中。 */
 const SECRETS = ['SECRET_KEY_123', 'leaky-token-value', 'shh-secret', 'p@ss-w0rd', 'Bearer leaky-auth', 'remote-token-value']
 const LOCAL_PATHS = ['C:/Users/Alice/project', 'C:/tools/whisper.exe']
 
-/** 克隆一份干净设置，再写入凭证与本机专属字段，验证白名单真的把它们挡在外面。 */
 function desktopSettings(overrides = {}) {
   return {
     theme: 'dark',
@@ -167,13 +146,11 @@ async function readLocalBookmarks(dir) {
         if (key.startsWith('bookmark:')) found.push({ session: raw.session, key, value })
       }
     } catch {
-      /* 忽略 */
     }
   }
   return found
 }
 
-/* ── 测试场地 ───────────────────────────────────────────────── */
 const root = await mkdtemp(join(tmpdir(), 'yan-v3-sync-'))
 const syncRoot = join(root, 'cloud-folder')
 await mkdir(syncRoot, { recursive: true })
@@ -186,9 +163,6 @@ function service(dataDir, deviceId, deviceName, syncFolder = syncRoot) {
 }
 
 try {
-  /* ══════════════════════════════════════════════════════════
-   * 1. 单向同步
-   * ══════════════════════════════════════════════════════════ */
   section('单向同步：A 推、B 拉，五类内容都过去')
   await seed(dataA, {
     prompt: '# review\n请审查这段改动。\n',
@@ -241,9 +215,6 @@ try {
     assert.ok(bookmarks.some((item) => item.session === sessionValue && item.key === 'bookmark:m1' && item.value === '1'))
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 2. 双向不同项
-   * ══════════════════════════════════════════════════════════ */
   section('双向不同项：A 改提示词、B 改设置，往返后两端一致')
   await writeText(join(dataA, 'prompts', 'review.md'), '# review v2\n请审查并给出测试建议。\n')
   await writeJson(join(dataB, 'desktop.json'), { ...(await readJson(join(dataB, 'desktop.json'))), theme: 'light' })
@@ -263,9 +234,6 @@ try {
     assert.equal((await readJson(join(dataB, 'desktop.json'))).theme, 'light')
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 3. 同项冲突：保留双份
-   * ══════════════════════════════════════════════════════════ */
   section('同项冲突：两端改同一条，保留双份、不静默覆盖')
   const conflictRoot = join(root, 'conflict-folder')
   await mkdir(conflictRoot, { recursive: true })
@@ -310,9 +278,6 @@ try {
     assert.equal(after, before)
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 4. 凭证不外泄
-   * ══════════════════════════════════════════════════════════ */
   section('凭证与外泄断言：同步目录里不得出现凭证明文或凭证字段名')
   await check('所有同步文件都不含凭证值 / 本机路径', async () => {
     const files = await walk(syncRoot)
@@ -347,15 +312,11 @@ try {
     }
   })
   await check('白名单另有直接保证：desktop.json 的凭证字段不被选中', () => {
-    // A 的 desktop.json 里确实有这些字段，但同步记录里没有。
     return readFile(join(dataA, 'desktop.json'), 'utf8').then((text) => {
       assert.ok(text.includes('apiKey') && text.includes('SECRET_KEY_123'), '夹具本身应含凭证')
     })
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 5. 损坏文件 / 半写入 / 缺少目录
-   * ══════════════════════════════════════════════════════════ */
   section('健壮性：损坏 / 半写入文件跳过，缺失目录只报告')
   const brokenFile = join(syncRoot, 'inkstone-sync', 'records', 'prompt', 'broken.json')
   const halfFile = join(syncRoot, 'inkstone-sync', 'records', 'skill', 'half.json')
@@ -402,9 +363,6 @@ try {
     assert.ok(missingReport.errors.some((item) => item.includes('不存在')), missingReport.errors.join('; '))
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 6. 会话导出 / 导入
-   * ══════════════════════════════════════════════════════════ */
   section('会话导出 / 导入：生成新 id、不覆盖同名')
   const sourceSession = join(root, 'sessions-src', 'original.jsonl')
   const originalId = 'sess-original-0001'

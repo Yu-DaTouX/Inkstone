@@ -1,4 +1,3 @@
-/** 子代理历史只保存纯快照；读回不创建进程、不恢复执行，也不重发完成通知。 */
 import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -51,7 +50,6 @@ export class SubagentHistory {
           : []
         let sourceCwd: string | undefined
         const interrupted = data.status === 'starting' || data.status === 'running'
-        // 旧版只写摘要；异常退出的快照也可能落后。只读本任务原生目录，不扫描主会话。
         if (!Array.isArray(data.transcript) || interrupted) {
           let nativeTranscript: UIMessage[] = []
           const sessionDir = join(this.dir, 'sessions', data.id)
@@ -80,20 +78,17 @@ export class SubagentHistory {
         }
         this.records.set(run.id, { run, rootCwd: data.rootCwd })
       } catch {
-        // 单条损坏不遮掉其他历史；原文件保留，不写回猜测的过程。
       }
     }
   }
 
   async save(run: SubagentRun, rootCwd: string, extra: Record<string, unknown> = {}): Promise<void> {
     if (!validId(run.id)) throw new Error('无效的子代理运行身份')
-    // 在排队时固定快照，不能在落盘前被后续流式消息回填改变。
     const snapshot = JSON.parse(JSON.stringify(run)) as SubagentRun
     const previous = this.writes.get(run.id) ?? Promise.resolve()
     const next = previous.catch(() => {}).then(async () => {
       await mkdir(this.dir, { recursive: true })
       const temp = join(this.dir, `${run.id}.${randomBytes(6).toString('hex')}.tmp`)
-      // 已确认的失败标记保持单调，排在后面的旧快照不能擦掉它。
       const dismissedAt = this.records.get(run.id)?.run.dismissedAt
       const saved = snapshot.status === 'error' && typeof dismissedAt === 'number' && Number.isFinite(dismissedAt)
         ? { ...snapshot, dismissedAt }
@@ -109,11 +104,6 @@ export class SubagentHistory {
   async hide(run: SubagentRun, rootCwd: string): Promise<void> {
     this.hidden.add(run.id)
     try { await this.save(run, rootCwd) } catch (error) { this.hidden.delete(run.id); throw error }
-    /*
-     * 隐藏后不再留内存：`list()` 与 `get()` 都已按 `hidden` 过滤，
-     * 重启时 `readHistory()` 见到 `hidden: true` 也直接跳过、不会读回 `records`。
-     * 磁盘文件保留（用户的调用记录仍在原处），回收的只是内存里这一份。
-     */
     this.records.delete(run.id)
   }
 }

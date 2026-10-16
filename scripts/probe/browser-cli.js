@@ -1,41 +1,3 @@
-/**
- * `yan browser …` 宿主能力命令（01-S4b）——真实窗口 + 真实 CLI + 真实浏览器服务，不调模型。
- *
- * ── 为什么能 cost 0 ──
- *   砚有一条**不经模型**的直执行 shell 通道（`window.yan.runBash` → pi 的 `bash` RPC），
- *   它继承的正是 pi 子进程的环境：PATH 前置了 `yan` 启动器、`YAN_CLI_*` 身份也在里面。
- *   所以这条场景验的是**真正的进程外 CLI → 宿主端点 → 浏览器服务**整条链，
- *   而不是在渲染端直接调 IPC（那条链由 `browser` / `browserboundary` 覆盖）。
- *
- * ── 这条场景在防什么 ──
- *   ① 扩展不再注册模型工具/命令 → 能力只能从 CLI 来（否则 01-S5 一移除装载就丢能力）；
- *   ② CLI 三个入口（KNOWN_COMMANDS / runBrowserCommand / yan.mjs 用法表）真的成对；
- *   ③ 失败要**可读且可分支**：打错子命令、漏参数、浏览器没开、参数不是数字、
- *      用户接管 —— 五种都不许变成 Node 堆栈；
- *   ④ 大结果落文件、stdout 只有摘要（否则一次 observe 就是几十 KB 进上下文）。
- *
- * ── 外网依赖 ──
- *   只有 `about:blank`（不依赖外网可达性）。
- *
- * ── 鼠标类动作为什么默认跳过（实测记录）──
- *   本套测试默认**不上屏**（`YAN_PROBE_HIDDEN=1`）。实测：
- *   `Input.dispatchMouseEvent{type:'mouseWheel'}` 在隐藏窗口里**永远不返回**
- *   （20s 超时；同一台机器同一版代码，`YAN_SHOW_WINDOW=1` 时 213ms 返回）。
- *   这是 Chromium 对不可见窗口不做输入分发导致的，**迁移前就存在**
- *   （旧 `browser_scroll` 走的是同一个 `InputController.scroll`），
- *   本片只是把它钉成可复现记录。
- *   所以 scroll 的真实滚动只在窗口上屏时断言，否则显式跳过并打印原因。
- *   —— 跳过不是假装通过：证据表里写明了它们在哪种条件下被验过。
- *
- *   同一类问题还有两个（都是**同一次实测发现的、迁移前就有的**）：
- *   · `Page.captureScreenshot` 在 WebContentsView **没有 bounds** 时会挂住
- *     —— 用户没打开浏览器面板就不给视图排尺寸，截图因此永远等不到应答；
- *     所以 §10 先按真实 UI 路径把面板打开再截图。
- *   · `click` / `type` 需要**带元素的页面**，而 `about:blank` 上一个可交互元素
- *     也没有；唯一现成的本地页面 fixture 属于 L04（它跟一批 Cookie 转移断言绑定，
- *     不能跟着开关一起拿过来）。它们与旧工具的等价性因此靠
- *   “同一服务方法、只换调用方” + 同链路的 `press` 实测来背书。
- */
 ;(async () => {
   const out = []
   const ok = (cond, label, extra = '') => {
@@ -52,7 +14,6 @@
   }
   if (!store) return early('  ⤺ 跳过：没有 window.__yanStore（探针没被注入）')
 
-  /** 跑一条直执行命令，等它结束（带硬超时：单步挂住不该让整个场景哑掉） */
   const runCli = async (command, waitMs = 20000) => {
     const started = Date.now()
     const raced = await Promise.race([
@@ -83,23 +44,19 @@
     return { ok: false, exitCode: null, output: '', error: '等工具行完成超时' }
   }
 
-  /** CLI 的最后一行 JSON 就是它的回执（stdout 只有这一段） */
   const lastJson = (text) => {
     const lines = String(text).split(/\r?\n/).filter((l) => l.trim().startsWith('{'))
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
         return JSON.parse(lines[i])
       } catch {
-        /* 继续往前找 */
       }
     }
     return null
   }
 
-  /** 堆栈的形状：Node 的「at … :行:列」——可读错误里不该出现它 */
   const looksLikeStack = (text) => /\n\s+at\s+\S/.test(text) || /\bat\s+\S+\s+\(\S+:\d+:\d+\)/.test(text)
 
-  /** 用 Node 读结果文件（渲染端拿不到任意文件读，直执行 shell 可以） */
   const readJsonFile = async (path) => {
     const res = await runCli(`node -e "process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))" "${path}"`)
     try {
@@ -109,7 +66,6 @@
     }
   }
 
-  /** 用 Node 写一个小文件（内容用 JSON.stringify，避开 shell 引号地狱） */
   const writeFile = async (name, expression) => {
     const res = await runCli(
       `node -e "require('fs').writeFileSync(process.argv[1], ${expression})" "${name}"`
@@ -142,7 +98,6 @@
     }
     await sleep(400)
 
-    /* ─────────────────────────────────────────── 0. 命令面 ─────────── */
     out.push('=== 0. 扩展面：browser 不再由扩展注册 ===')
     const commands = store.getState().commands ?? []
     const browserCommands = commands.filter((c) => String(c.name).toLowerCase() === 'browser')
@@ -154,7 +109,6 @@
     ok(browserCommands.some((c) => c.source === 'yan'), 'Yan 自己的 /browser 仍在本机命令表里')
     note('模型工具面（getAllTools）没有 RPC 出口；空壳 browser.js 已随 01-S5 收尾删除，由 test:unit 断言文件不存在')
 
-    /* ─────────────────────────────────────────── 1. --help ─────────── */
     out.push('')
     out.push('=== 1. yan browser --help 真的能跑 ===')
     const help = await runCli('yan browser --help')
@@ -167,7 +121,6 @@
     )
     ok(!looksLikeStack(help.output), '没有抛出堆栈')
 
-    /* ─────────────────────────────── 2. 打错的子命令 ─────────────── */
     out.push('')
     out.push('=== 2. 未知子命令：可读提示，不是 unknown_command ===')
     const typo = await runCli('yan browser frobnicate')
@@ -178,7 +131,6 @@
     ok(/navigate/.test(String(typoBody?.detail ?? '')), '详情里给出可用动作清单')
     ok(!looksLikeStack(typo.output), '没有堆栈')
 
-    /* ─────────────────────────────────── 3. 缺参数 ─────────────── */
     out.push('')
     out.push('=== 3. 缺参数：CLI 侧 usage 错 + 宿主侧业务错两道 ===')
     const missing = await runCli('yan browser navigate')
@@ -188,15 +140,6 @@
     ok(/--url/.test(String(missingBody?.error ?? '')), 'CLI 侧：指出缺 --url')
     ok(!looksLikeStack(missing.output), 'CLI 侧：没有堆栈')
 
-    /*
-     * 宿主侧那道防线用 `--request-file` 绕开 CLI 检查来验。
-     * 取值用 `{"ref":"   "}`：在 CLI 眼里“非空”（能过 usage 检查），
-     * 到宿主那里被 trim 成空 → 必须回 CapabilityCommandError。
-     *
-     * 请求文件用 `JSON.stringify` 写（**不在命令行里手写 JSON**）——
-     * cmd.exe 会把内层双引号拆碎，写出来就不是合法 JSON 了（第一版就踩到了）。
-     * 文件写在**会话工作目录**（本场景是 fixture 合成项目）。
-     */
     const reqName = 'yan-browser-cli-req.json'
     ok(
       await writeFile(reqName, `JSON.stringify({ref:'   '})`),
@@ -212,13 +155,6 @@
     )
     ok(!looksLikeStack(hostSide.output), '宿主侧：没有堆栈')
 
-    /*
-     * wait 的命令链（实施-27 S5）。
-     *
-     * 这里只验「参数被接住了」——真正的等待行为（条件判定、超时夹取、叠加是“且”）
-     * 由 `scripts/test-browser-wait.mjs` 用假 observation 钉住（不需要页面）。
-     * 一个“什么都不等”的 wait 必须被拒：它会白等满超时，而模型会以为等过了就好了。
-     */
     const waitNone = await runCli('yan browser wait')
     const waitNoneBody = lastJson(waitNone.output)
     out.push(`  wait 无条件退出码=${waitNone.exitCode}  回执=${JSON.stringify(waitNoneBody).slice(0, 160)}`)
@@ -228,13 +164,6 @@
       'wait 没有条件时回 code=missing_condition（不是 unknown_command，命令确实接上了）'
     )
 
-    /*
-     * select 的命令链（实施-27 S5）。
-     *
-     * 这里同样只验「参数被接住了」——页面侧赋值函数（匹配规则 / 事件派发 /
-     * not_select / no_option）由 `scripts/test-browser-select.mjs` 用假 <select> 钉住。
-     * `--value ""` 是合法值（选空白项），所以只能拦「根本没说跟什么值」。
-     */
     const selNoRef = await runCli('yan browser select --value cn')
     const selNoRefBody = lastJson(selNoRef.output)
     out.push(`  select 无 ref 退出码=${selNoRef.exitCode}  回执=${JSON.stringify(selNoRefBody).slice(0, 160)}`)
@@ -246,7 +175,6 @@
     ok(selNoValue.exitCode === 1, 'select 没给 value 时：退出码 1')
     ok(selNoValueBody?.code === 'missing_value', 'select 没给 value 时回 code=missing_value（不是 unknown_command）')
 
-    /* ──────────────────────────── 4. 浏览器没打开时的观察 ─────────── */
     out.push('')
     out.push('=== 4. 浏览器未打开：code=browser_not_open ===')
     await store.getState().closeBrowser()
@@ -260,7 +188,6 @@
     const networkNotOpen = await runCli('yan browser network')
     ok(lastJson(networkNotOpen.output)?.code === 'browser_not_open', 'network 在浏览器未打开时回可读 browser_not_open')
 
-    /* ─────────────────────────────────── 5. navigate ───────────── */
     out.push('')
     out.push('=== 5. navigate about:blank：真实调用 + 大结果落文件 ===')
     const nav = await runCli('yan browser navigate --url about:blank')
@@ -288,7 +215,6 @@
       ok(navFile?.url === 'about:blank' && navFile?.open === true, '结果文件里是完整状态（url/open）')
     }
 
-    /* ─────────────────────────────────── 6. observe ────────────── */
     out.push('')
     out.push('=== 6. observe：结构化观察（URL / generationId / 元素数）===')
     const obs = await runCli('yan browser observe')
@@ -305,7 +231,6 @@
       ok(typeof parsed?.text === 'string', '结果文件里有可见文本字段')
     }
 
-    /* ─────────────────────────────────── 7. 标签页 ─────────────── */
     out.push('')
     out.push('=== 7. state / new-tab / switch-tab / close-tab ===')
     const st = await runCli('yan browser state')
@@ -330,7 +255,6 @@
     await sleep(300)
     ok((store.getState().browserState.tabs ?? []).length === 1, '关掉后只剩一个标签')
 
-    /* ─────────────────────── 8. press / scroll ────────────────── */
     out.push('')
     out.push('=== 8. press：动作后带回新观察 ===')
     const press = await runCli('yan browser press --key Tab')
@@ -346,12 +270,6 @@
     ok(badBody?.ok === false && badBody?.code === 'invalid_number', '坏数字回 code=invalid_number（不把 NaN 传给 CDP）')
     ok(!looksLikeStack(badScroll.output), '坏参数没有堆栈')
 
-    /*
-     * ⚠️ `document.visibilityState` **不能**用来判断窗口是否真的上了屏：
-     * Electron 的 `show:false` 窗口在渲染端依然报 'visible'（实测）。
-     * 真正的判据是主进程那个开关（`YAN_PROBE_HIDDEN`），它对 pi 子进程可见，
-     * 而直执行 shell 继承的正是 pi 的环境 —— 所以用 node 问一次环境变量。
-     */
     const hiddenProbe = /^(1|true|yes)$/i.test(
       (await runCli(`node -e "process.stdout.write(String(process.env.YAN_PROBE_HIDDEN||''))"`)).output.trim()
     )
@@ -368,26 +286,14 @@
       )
     }
 
-    /* ─────────────────────────────────── 10. screenshot ─────────── */
     out.push('')
     out.push('=== 10. screenshot：PNG 落盘 + 摘要给路径 ===')
-    /*
-     * 截图同样需要**上屏**的窗口：隐藏窗口里 `Page.captureScreenshot`（fromSurface）
-     * 永不返回（实测 20s 超时；YAN_SHOW_WINDOW=1 时 227ms）。
-     * 本套测试默认不上屏（用户要求），所以默认跑显式跳过并在探针里标明原因；
-     * 真实证据在 YAN_SHOW_WINDOW=1 的那一轮（见证据文档）。
-     */
     if (hiddenProbe) {
       skip(
         'screenshot 的真实截图',
         'YAN_PROBE_HIDDEN：隐藏窗口里 Page.captureScreenshot(fromSurface) 不返回（实测 20s 超时；YAN_SHOW_WINDOW=1 时 227ms）'
       )
     } else {
-      /*
-       * 先把浏览器面板按**真实 UI 路径**打开：WebContentsView 的尺寸由渲染端
-       * 的 BrowserSurface 同步（`setBounds`）。面板关着时视图没有 bounds，
-       * 那是另一类“没有可绘制表面”的情形，不在本片验证范围。
-       */
       if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
       await sleep(400)
       await store.getState().openBrowser('about:blank')
@@ -419,14 +325,12 @@
       }
     }
 
-    /* ─────────────────────────────────── 11. download ──────────── */
     out.push('')
     out.push('=== 11. download：没有下载时也回可读结果 ===')
     const dl = await runCli('yan browser download')
     const dlBody = lastJson(dl.output)
     ok(dlBody?.ok === true && dlBody?.summary?.has === false, 'download 回 ok=true, has=false')
 
-    /* ─────────────────────── 12. request-user-control ──────────── */
     out.push('')
     out.push('=== 12. request-user-control：门禁仍然生效（没有放宽权限）===')
     const uc = await runCli('yan browser request-user-control --reason 探针')
@@ -445,7 +349,6 @@
     await sleep(200)
     ok(store.getState().browserState.userControl === false, '复位回 Agent 控制')
 
-    /* ─────────────── 13. click / type（需要带元素的页面）─────── */
     out.push('')
     out.push('=== 13. click / type ===')
     skip(

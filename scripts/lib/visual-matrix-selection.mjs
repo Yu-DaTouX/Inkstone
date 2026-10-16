@@ -1,4 +1,3 @@
-/** 模型菜单专项组使用稳定名称，runner 与 Electron 入口共用同一份配置。 */
 export const MODEL_MENU_GROUPS = [
   { name: 'modelmenufull-dark', w: 1280, h: 680, scale: 1, theme: 'dark', states: ['modelmenufull'] },
   { name: 'modelmenufull-light', w: 1280, h: 680, scale: 1, theme: 'light', states: ['modelmenufull'] },
@@ -12,7 +11,6 @@ export function selectRunGroups(wanted, only, defaults) {
   return only.every((state) => state === 'modelmenufull') ? names : [...defaults, ...names]
 }
 
-/** 保留旧数字组号，同时支持不随数组位置变化的命名组。 */
 export function selectMatrixGroups(groups, wanted) {
   return groups.filter((group, index) =>
     wanted.length === 0 || wanted.includes(String(index)) || (group.name && wanted.includes(group.name))

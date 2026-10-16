@@ -1,19 +1,3 @@
-/**
- * `yan capabilities search` / `yan skill read` 的**宿主链路**（实施-04 S2）—— 不调模型。
- *
- * ── 与 `capsearch`（cost 1）的分工 ──
- *   `capsearch` 验的是「模型会不会自己走发现链」；实测它读完技能正文靠的是 pi 原生
- *   `read` 工具（system prompt 里就给了 SKILL.md 的绝对路径），**不会**主动去敲
- *   `yan skill read`。这是官方设计，不是缺陷 —— 但那样就没人验 `yan skill read` 本身了。
- *   所以这里直连宿主：真 CLI → 真 `CapabilityServer` → 真技能文件，确定性地验
- *   发现 / 读取 / 内容 hash / 错误可分支四条。
- *
- * ── 为什么能 cost 0 ──
- *   砚有一条不经模型的直执行通道（`window.yan.runBash` → pi 的 `bash` RPC），
- *   它继承 pi 子进程的环境：PATH 前置了 `yan` 启动器、`YAN_CLI_*` 身份也在里面。
- *
- * 依赖：专属 piDir（含 `yan-capability-probe` 技能），见 test-live.mjs 的 sandbox 准备区。
- */
 ;(async () => {
   const out = []
   const ok = (cond, label, extra = '') => {
@@ -61,13 +45,11 @@
       try {
         return JSON.parse(lines[i])
       } catch {
-        /* 继续往前找 */
       }
     }
     return null
   }
   const looksLikeStack = (text) => /\n\s+at\s+\S/.test(text) || /\bat\s+\S+\s+\(\S+:\d+:\d+\)/.test(text)
-  /** 渲染端拿不到任意文件读，直执行 shell 可以。 */
   const readJsonFile = async (path) => {
     const res = await runCli(`node -e "process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))" "${path}"`)
     try {
@@ -76,14 +58,6 @@
       return null
     }
   }
-  /**
-   * 临时请求文件必须写进**系统临时目录**，不能写当前工作目录。
-   *
-   * 探针跑在项目根下：相对路径会把 `cap-*.json` 这类中间文件留在仓库里
-   * （实测已经把 `cap-query.json` / `cap-scope.json` 提交进工作区）。
-   * 路径由 node 自己算：`$TEMP` 在 pi 的 bash 通道里不一定展开。
-   * （与 `mcp-cli.js` 同一处置，先修正的那次注释在那边。）
-   */
   const writeJson = async (name, value) => {
     const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(value))))
     const res = await runCli(
@@ -118,7 +92,6 @@
     const SKILL_ID = 'skill:yan-capability-probe'
     const MARK = 'YAN-CAPABILITY-PROBE-OK 7f3a91'
 
-    /* ---- 1. 发现：按目标检索到技能 ---- */
     log('--- 1. capabilities search ---')
     const wrote = await writeJson('cap-query.json', { queryText: '能力探测回执', limit: 10 })
     ok(wrote, '写好查询文件')
@@ -141,7 +114,6 @@
       ok(/SKILL\.md$/i.test(String(hit.location)), '给出了 SKILL.md 的绝对路径', String(hit.location))
     }
 
-    /* ---- 2. 读取：按需拿正文 + 内容 hash ---- */
     log('--- 2. skill read ---')
     const read = await runCli(`yan skill read --id ${SKILL_ID}`)
     const readReceipt = lastJson(read.output)
@@ -156,7 +128,6 @@
       '正文已去 frontmatter'
     )
 
-    /* ---- 3. 错误要可读、可分支，不许变成堆栈 ---- */
     log('--- 3. 错误路径 ---')
     const missing = await runCli('yan skill read --id skill:does-not-exist')
     const missingReceipt = lastJson(missing.output)
@@ -170,15 +141,6 @@
     const badScopeReceipt = lastJson(badScope.output)
     ok(/capability_scope_unsupported/.test(String(badScopeReceipt && badScopeReceipt.code)), '不支持的 scope 有专属错误码')
 
-    /*
-     * 这一条原来验的是「S2 时期 discover 还没实现，必须回 not_implemented」。
-     * 实施-04 S5 落地后 `capabilities discover` **真的实现了**（联网检索的行为由
-     * `discnet` 场景覆盖），旧的“必须 not_implemented”已经变成**假要求** ——
-     * 继续留着它只会把“功能已经做出来”当成失败。
-     *
-     * 换成同一意图（**不许静默成功**、错误要可分支）的另一条本地校验：
-     * `capabilities prepare` 缺 `--candidate` 时必须回 `candidate_required`。
-     */
     const noCandidate = await runCli('yan capabilities prepare')
     const noCandidateReceipt = lastJson(noCandidate.output)
     ok(noCandidate.exitCode !== 0, 'prepare 缺 --candidate：非零退出')
@@ -190,11 +152,6 @@
       JSON.stringify(noCandidateReceipt?.error ?? noCandidateReceipt?.code ?? '(空)')
     )
 
-    /*
-     * 实施-04 S6a：`capabilities acquire` 已接通（不再是 not_implemented）。
-     * 缺 `--plan` → 参数层报错；给一个不存在的计划 → 如实报未知计划。
-     * 两条都只走参数 / 缓存校验：**不联网、不装包**（下载器是 S6b）。
-     */
     const noPlan = await runCli('yan capabilities acquire')
     const noPlanReceipt = lastJson(noPlan.output)
     ok(noPlan.exitCode !== 0, 'acquire 缺 --plan：非零退出')

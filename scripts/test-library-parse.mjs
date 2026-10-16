@@ -1,13 +1,3 @@
-/**
- * 资料解析（实施-25 P03 / T03-4）与服务层（W3）的单测。
- *
- * PDF 用**自造的最小文件**做 fixture，而不是签入二进制样本：
- *   · 未压缩流（老 PDF 常见）与 FlateDecode 流（新 PDF 常见）两条路都要走到；
- *   · 「没有文本层」与「解出来是乱码」必须落到**不同**状态 —— 前者是承诺范围，
- *     后者是数据问题，合成一个会让用户以为格式不支持。
- */
-
-/** 造一个最小 PDF：单页、一个内容流。 */
 export function makePdf(text, options = {}) {
   const LF = String.fromCharCode(10)
   const content = 'BT /F1 12 Tf 72 720 Td (' + text + ') Tj ET'
@@ -44,7 +34,6 @@ export async function runLibraryParserTests(ok, parser, helpers) {
 
   ok(typeof parser.parseLibraryFile === 'function', '解析器入口存在')
 
-  /* ---- HTML 正文 ---- */
   {
     const html = '<html><head><title>标题 A</title><style>p{color:red}</style></head><body><script>var x=1</script><h1>大标题</h1><p>第一段</p><p>第二段 &amp; 实体 &#65;</p></body></html>'
     const out = parser.extractHtmlText(html)
@@ -56,7 +45,6 @@ export async function runLibraryParserTests(ok, parser, helpers) {
     ok(out.text.split('\n').length >= 3, 'HTML：块级标签产生换行')
   }
 
-  /* ---- PDF 字符串解码 ---- */
   {
     const bs = String.fromCharCode(92)
     ok(parser.decodePdfString(`a${bs}n b`) === 'a\n b', 'PDF 字符串：换行转义')
@@ -66,7 +54,6 @@ export async function runLibraryParserTests(ok, parser, helpers) {
     ok(parser.decodePdfString(bom.toString('latin1')) === '汉字', 'PDF 字符串：UTF-16BE（带 BOM）')
   }
 
-  /* ---- 内容流提取 ---- */
   {
     const text = parser.extractPdfText('BT /F1 12 Tf 72 720 Td (Hello) Tj 72 700 Td (World) Tj ET')
     ok(text.includes('Hello') && text.includes('World'), '内容流：取出两段文本')
@@ -75,14 +62,12 @@ export async function runLibraryParserTests(ok, parser, helpers) {
     ok(joined.includes('Hello'), '内容流：TJ 数组内拼接不插空格', JSON.stringify(joined))
   }
 
-  /* ---- 可打印比例 ---- */
   {
     ok(parser.printableRatio('正常的中文 English 123！') > 0.9, '可打印比例：正常文本接近 1')
     ok(parser.printableRatio(String.fromCharCode(1, 2, 3, 4, 5)) < 0.2, '可打印比例：控制字符很低')
     ok(parser.printableRatio('') === 0, '可打印比例：空串为 0')
   }
 
-  /* ---- 文件解析：文本 / 附件 / PDF 各档 ---- */
   const root = await mkdtemp(join(tmpdir(), 'yan-libparse-'))
   try {
     const write = async (name, data) => {
@@ -122,10 +107,6 @@ export async function runLibraryParserTests(ok, parser, helpers) {
     ok((await parser.parseLibraryFile(pdfNoStream, 'file')).status === 'failed', 'PDF 无内容流 → failed（不是 unsupported）')
     ok((await parser.parseLibraryFile(notPdf, 'file')).status === 'failed', '扩展名是 pdf 但不是 PDF → failed')
 
-    /*
-     * 解压预算（H04 回归）：输入大小不能约束输出 ——
-     * 一个小压缩流能展开成几百倍的文本，而解压是同步跑在宿主调用链上的。
-     */
     ok(
       parser.MAX_PDF_STREAM_BYTES > 0 && parser.MAX_PDF_TOTAL_BYTES >= parser.MAX_PDF_STREAM_BYTES,
       '解压预算常量已导出（单流 ≤ 累计）'
@@ -145,7 +126,6 @@ export async function runLibraryServiceTests(ok, mod, helpers) {
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
 
-  /* ---- 路径逃逸：正文路径是我们写的，读取也要守住 ---- */
   {
     const root = join(tmpdir(), 'yan-lib-root')
     ok(resolveWithin(root, 'library/text/a.txt') !== null, '允许 root 内的相对路径')
@@ -181,7 +161,6 @@ export async function runLibraryServiceTests(ok, mod, helpers) {
     ok(again.decision === 'unchanged' && again.version === 1, '重复导入幂等（不产生第二版）')
     ok(service.store.document().versions.length === 1, '幂等导入后版本数仍是 1')
 
-    /* ---- 验收核心：改了文件，旧引用仍打开旧版本 ---- */
     await writeFile(doc, '第二版内容：完全不同的段落，长度也不同')
     const second = await service.import({ kind: 'file', ref: doc, title: '论文' })
     ok(second.decision === 'new-version' && second.version === 2, '内容变化 → 推进到第 2 版')
@@ -195,27 +174,23 @@ export async function runLibraryServiceTests(ok, mod, helpers) {
     const missing = await service.openRef({ sourceId, version: 99 })
     ok(missing.outcome === 'missing' && missing.text === undefined, '指向不存在版本的引用 → missing，不抛错')
 
-    /* ---- 旧引用提升（T03-3）：用到才建，重复不重复建档 ---- */
     const promote1 = await service.promoteLegacy({ sessionId: 'sess-legacy', legacyId: 'src-old-1', kind: 'file', title: '老资料', ref: doc })
     const promote2 = await service.promoteLegacy({ sessionId: 'sess-legacy', legacyId: 'src-old-1', kind: 'file', title: '老资料', ref: doc })
     ok(promote1.ok === true && promote1.mapped === true, '旧会话引用首次提升会建档并建映射')
     ok(promote2.sourceId === promote1.sourceId && promote2.decision === 'unchanged', '第二次提升命中已有映射（不重复建档）')
     ok(service.store.document().legacy.length === 1, '映射表只有一条')
 
-    /* ---- 软移除：旧引用仍能打开 ---- */
     await service.store.removeSource(sourceId)
     const removed = await service.openRef(ref1)
     ok(removed.outcome === 'removed', '移除后判定为 removed')
     ok((removed.text ?? '').includes('第一版内容'), '**移除后旧引用仍能打开旧版本**（T03-6）')
 
-    /* ---- 原件被删：如实标记，不静默消失 ---- */
     await rm(doc)
     const verified = await service.verifyAvailability([ref1, { sourceId, version: 2 }])
     ok(verified.checked === 2 && verified.unavailable === 2, '原件删除后复核出两条不可用', JSON.stringify(verified))
     const unavailable = await service.openRef(ref1)
     ok(unavailable.outcome === 'unavailable', '原件不可用优先于 removed 上报', unavailable.outcome)
 
-    /* ---- 原件没了就不该再建新资料 ---- */
     const failed = await service.import({ kind: 'file', ref: doc, title: '不存在的文件' })
     ok(failed.ok === false && !!failed.error, '导入已删除的文件如实失败（不建空资料）', failed.error)
   } finally {

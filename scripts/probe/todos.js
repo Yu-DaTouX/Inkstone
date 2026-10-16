@@ -22,7 +22,6 @@
     return false
   }
 
-  /** Open the task resource through the current workspace launcher. Session layouts may hide it. */
   const visibleTasksTile = () => {
     const pane = q('.tile-pane[data-workspace-pane="tasks"]')
     return pane && !pane.hidden ? pane : null
@@ -51,10 +50,7 @@
 
   log('=== 扩展集成：任务清单 + 启动通知 ===')
 
-  /* ================= 1. 启动期通知不弹窗 ================= */
   log('\n--- 1. 启动期通知降级 ---')
-  // 用户的 left-info-panel 扩展每次启动都会 notify（「信息面板已启用（overlay 44 列）…」），
-  // 它描述的是 TUI 的 overlay，在桌面端不适用。应该进日志而不是弹出来。
   const notices = qa('.notice')
   const extLogs = store.getState().logs.filter((l) => l.includes('[扩展]'))
   log('  弹窗数: ' + notices.length)
@@ -62,22 +58,8 @@
   ok(notices.length === 0, '启动期的 info 通知没有弹窗')
   ok(store.getState().startupPhase, '还处于启动期（没有真正开始对话）')
 
-  /* ================= 2. 任务清单从会话里读出来 ================= */
   log('\n--- 2. 任务清单（panel_todos 的产物）---')
 
-  /*
-   * fixture 里应该带一个有任务的会话；没有就现场造一个，免得测试依赖外部数据。
-   *
-   * ⚠️ 按 **path** 找，不能按 title 找。
-   *   本会话踩到过：改成「每轮用模型重新生成标题」之后，
-   *   前面的场景（live / sessions）一跑就会把这个 fixture 会话的标题
-   *   改成模型生成的短标题，于是这里 `title.includes('YAN-TODO')` 找不到，
-   *   于是走到“现场造”分支、而造出来的又没进 sessions 列表 → 整个场景失败。
-   *   单独跑 todos 是过的 —— 典型的“只在全量跑时暴露”。
-   *
-   *   fixture 的文件名里带 `yan-todo-fixture`（见 test-live.mjs），
-   *   那是它真正的身份，不会变。
-   */
   let target = store
     .getState()
     .sessions.find((s) => s.path.includes('yan-todo-fixture') || s.title.includes('YAN-TODO'))
@@ -87,11 +69,9 @@
     if (!target) return fail('造不出带任务的会话')
   }
 
-  /** 从会话读清单要走 pi（agent.ts 的 refreshTodos → `get_entries`）；采样一次 */
   const piReady = store.getState().conn === 'ready'
 
   await store.getState().switchSession(target.path)
-  // 先等会话身份确认，再等任务投影；只看 todos 长度会把上一条会话的迟到帧当成结果。
   const targetReady = await until(() => store.getState().session?.sessionFile === target.path, 15000)
   await until(() => targetReady && store.getState().todos.length > 0, 15000)
   const taskTileReady = await openTasksTile()
@@ -99,19 +79,12 @@
 
   const todos = store.getState().todos
   log('  store.todos = ' + JSON.stringify(todos))
-  /*
-   * ⚠️ 这份清单是**从会话里读的**（agent.ts 的 refreshTodos 调 pi 的 `get_entries`），
-   *    所以隔离测试环境（pi 起不来）里读到 0 条是**环境**，不是回归 ——
-   *    显式跳过，别把它读成「任务功能坏了」。
-   *    不依赖 pi 的那部分在下面第 6 节（直接往 store 注入）。
-   */
   if (piReady) {
     ok(todos.length > 0, `读到 ${todos.length} 条任务`)
   } else {
     log(`  ⤺ 跳过：pi 未就绪（conn=${store.getState().conn}），会话里的任务清单读不到`)
   }
 
-  /* ================= 3. 任务渲染正确（含完成态） ================= */
   log('\n--- 3. 任务区块 DOM ---')
   const grp = tq('[data-sec="rp-todo"]')
   if (piReady) ok(!!grp, '任务磁贴出现任务区块')
@@ -125,7 +98,6 @@
     log('  头部: ' + JSON.stringify(head))
     ok(head.includes(`${doneCount}/${todos.length}`), `头部显示进度 ${doneCount}/${todos.length}`)
 
-    // 完成/未完成的视觉区分
     const doneEls = items.filter((t) => t.classList.contains('done'))
     const openEls = items.filter((t) => !t.classList.contains('done'))
     ok(doneEls.length === doneCount, `done 类数量正确（${doneEls.length}）`)
@@ -142,8 +114,6 @@
       )
     }
 
-    // 任务属于可自由排列的工作区磁贴：只验证它在当前 pane/canvas 内，
-    // 不依赖固定右栏、固定列或固定相对主会话的位置。
     const pane = visibleTasksTile()
     const canvas = q('.tile-workspace-canvas')
     const r = grp.getBoundingClientRect()
@@ -156,13 +126,7 @@
     ok(q('.rail .todo') === null && q('.rail .rp-todo') === null, '任务清单不重复出现在左栏')
   }
 
-  /* ================= 4. 没有任务的会话不显示空区块 ================= */
   log('\n--- 4. 空任务不占位 ---')
-  /*
-   * ⚠️ 不要拿「第一个不是当前的会话」当「无任务的会话」——
-   *    那个会话可能也有任务（fixture 一变就假失败，实测全量跑时挂过）。
-   *    这里逐个试，直到找到一个确实没有任务的（并把它记下来用于后续断言）。
-   */
   let noTask = null
   for (const cand of store.getState().sessions.filter((x) => x.path !== target.path)) {
     await store.getState().switchSession(cand.path)
@@ -174,13 +138,11 @@
   }
   if (noTask) {
     ok(store.getState().todos.length === 0, '切到无任务的会话后 todos 清空（' + noTask.title + '）')
-    // TasksPane 对空内容保留 empty state；不再通过旧右栏的空分区位置判断。
     ok(tqa('[data-testid="tasks-pane"] .rp-todo').length === 0, '无任务会话的任务磁贴没有残留任务行')
   } else {
     log('  （只有一个会话，跳过）')
   }
 
-  /* ================= 5. 溢出回归（任务文字可能很长） ================= */
   log('\n--- 5. 溢出回归 ---')
   for (const sel of ['.rail', '.rail-body', '.status', '.tile-pane[data-workspace-pane="tasks"]', '[data-testid="tasks-pane"]', '.rp-todo-scroll']) {
     const el = q(sel)
@@ -189,44 +151,20 @@
     ok(over <= 0, `${sel} 无横向溢出（差 ${over}）`)
   }
 
-  /* ============ 6. 进度条 / 当前任务 / 动画（用户要求） ============ */
-
 
   log('\n--- 6. 进度条 / 当前任务 / 动画 ---')
 
-  /* 注入前再次走正式资源入口：切会话会恢复各自布局，任务 tile 可能被隐藏。 */
   const injectedTileReady = await openTasksTile()
   ok(injectedTileReady, '合成任务渲染前重新打开任务磁贴')
 
   const tstore = window.__yanStore
-  /**
-   * 回合是否运行中 —— 「正在进行」现在要求它（见 RightPanel 的 activeIdx）。
-   *
-   * 只有 `{text, done}` 的老数据里，「哪条正在做」是**推断**：第一个未完成的，
-   * **且回合真的在跑**。所以注入任务前必须把会话标成运行中 ——
-   * 否则这里断言的就是「停下也硬说有人在跑」那个旧行为。
-   */
   const PROBE_SESSION_ID = '__yan-todos-probe__'
   const setRunning = (v) => {
     const s = tstore.getState().session
-    /*
-     * 给这段纯渲染断言一个独立身份。否则真实 pi 在切换无任务会话后
-     * 迟到的 state/todos 帧仍属于同一个 runner，会把探针刚注入的状态
-     * 覆盖掉；这不是本段要测的会话切换链路。
-     */
     tstore.setState({
       session: { ...(s ?? {}), sessionId: PROBE_SESSION_ID, isAgentRunning: v, isStreaming: v }
     })
   }
-  /*
-   * ⚠️ 先等一次「静默」，再注入合成的运行中状态。
-   *
-   * 第 4 节为了找「没有任务的会话」连续切了好几次会话，而 pi 的 hydrate
-   * 是**异步**的 —— 它会在这之后迟到地推一次真实 `state`（store 里是整体替换
-   * `session`），把这里注入的 `isAgentRunning` 清成 false。
-   * 症状是下面四条「正在进行」相关断言全红（而实际上根本没有回合在跑）。
-   * 判据用「连续 1.5s 没有新的 session 对象」而不是固定 sleep：固定值只是在赌。
-   */
   {
     let changes = 0
     const unsub = tstore.subscribe((s, prev) => {
@@ -243,11 +181,9 @@
   }
   setRunning(true)
 
-  /** 造 N 个任务、前 d 个已完成 */
   const tmk = (n, d) =>
     Array.from({ length: n }, (_, i) => ({ text: '任务 ' + (i + 1), done: i < d }))
 
-  /* ---- 5 个任务，完成 2 个（用户描述的场景）---- */
   tstore.setState({ todos: tmk(5, 2) })
   await sleep(500)
 
@@ -263,31 +199,14 @@
   const tcount = tq('[data-testid="todo-count"]')
   ok(tcount?.textContent === '2/5', '计数显示 2/5（实际 ' + tcount?.textContent + '）')
 
-  /* ---- 当前任务 = 第一个未完成的 ---- */
-  /*
-   * 当前任务 = 第一个未完成的，而且**在任务本体那一行上**显示（用户要求）。
-   *
-   * 这里原来断言的是一个**单独的行**（todo-now，重复一遍当前任务名）。
-   * 用户提了「正在进行的任务在任务本体上显示 而不是单独开一栏」，
-   * 那一行已删，所以改断言三件事：
-   *   · 不存在单独的行
-   *   · 当前那条在列表里带 active（且只有一条）
-   *   · 它行内有「正在进行」+ spinner
-   */
   ok(!tq('[data-testid="todo-now"]'), '不再有单独的「正在做」行（已并入任务本体）')
   const tActive = tq('.rp-todo[data-active="1"]')
   log('  当前 = ' + JSON.stringify(tActive ? tActive.textContent : ''))
   ok(!!tActive && tActive.textContent.includes('任务 3'), '当前指向第 3 个（第一个未完成）')
   ok(tqa('.rp-todo.active').length === 1, '列表里恰好一条标为 active')
   const tLabel = tq('[data-testid="todo-active-label"]')
-  /* 进行中改由勾选框里的强调色方点表达，不再写「正在进行」字样 */
   ok(!!tLabel && !!tLabel.querySelector('*'), '当前那条的状态槽里有进行中标记')
 
-  /* ---- 回合停下来：未完成的那些不该再冒充「正在进行」---- */
-  /*
-   * 这是方案 4.5 的核心：只有 `done` 时「哪条在做」只能猜，于是只要还有
-   * 没做完的任务，界面上就永远有一条在转 —— agent 停了也照转。
-   */
   setRunning(false)
   await sleep(400)
   ok(!tq('.rp-todo[data-active="1"]'), '回合停下后没有条目被标为 active')
@@ -297,7 +216,6 @@
   await sleep(300)
   ok(!!tq('.rp-todo[data-active="1"]'), '回合又跑起来后「正在进行」回来')
 
-  /* ---- 勾完一个：宽度变化 + 闪动 ---- */
   tstore.setState({ todos: tmk(5, 3) })
   await sleep(200)
   ok(!!tmeter(), '进度条节点稳定（不是被重建）')
@@ -305,12 +223,6 @@
   ok(meterAfterDone?.dataset.pct === '60', '勾完变 60%（实际 ' + (meterAfterDone?.dataset.pct ?? 'undefined') + '）')
   ok(tqa('.rp-todo.flash').length === 1, '刚勾完那条带 flash（确认反馈）')
 
-  /*
-   * 显式 status 优先（pi 侧带了状态就不再猜）。
-   *
-   * 放在这里而不是更早：它会改掉 todos，从而打乱上面 flash 断言依赖的
-   * prevDone 基线（实测因此误报过一次 —— flash 变成 2 条）。
-   */
   tstore.setState({
     todos: [
       { text: '任务 1', done: true, status: 'done' },
@@ -328,7 +240,6 @@
     )
   }
 
-  /* ---- 受阻（方案 7.1）---- */
   tstore.setState({
     todos: [
       { text: '任务 1', done: true, status: 'done' },
@@ -354,18 +265,12 @@
     }
   }
 
-  /* ---- 行布局：状态槽 / 文本 / 状态说明（方案 7.1）---- */
   {
     const row = tqa('.rp-todo')[0]
     if (row) {
       const cs = getComputedStyle(row)
       ok(cs.display === 'grid', '任务行是 grid（状态槽 / 文本 / 状态说明）')
       const cols = cs.gridTemplateColumns.split(/\s+/).map((v) => parseFloat(v))
-      /*
-       * 实现是**四列**：2px 运行标记槽 + 16px 状态槽 + 文本 + 状态说明。
-       * 曾经是三列（16px 状态槽打头），后来加了左侧运行标记槽 —— 断言同步改了，
-       * 否则会一直假失败（这个场景当时就是因此没进 `npm run check`）。
-       */
       ok(cols.length === 3, `三列布局（状态槽 / 文本 / 状态说明）（实际 ${cs.gridTemplateColumns}）`)
       ok(Math.abs(cols[0] - 12) <= 1, `状态槽 12px（实际 ${cols[0]}px）`)
       ok(parseFloat(cs.columnGap) >= 8, `状态槽与文本间距 ≥ 8px（实际 ${cs.columnGap}）`)
@@ -377,15 +282,9 @@
     }
   }
 
-  /* ---- 全完成 ---- */
   await sleep(1000)
   tstore.setState({ todos: tmk(5, 5) })
   await sleep(300)
-  /*
-   * 全部完成时任务栏会**自动收起**（用户要求，todonew 专测）。
-   * 收起后 Section 不渲染 body → 进度条节点不在 DOM。
-   * 这里要验证的是「去掉推进动画」，所以先把分区重新展开再查。
-   */
   {
     const head = tq('[data-sec="rp-todo"] .rp-sec-head')
     if (head && head.getAttribute('aria-expanded') === 'false') {
@@ -397,7 +296,6 @@
   ok(!!tq('[data-testid="todo-all-done"]'), '全完成后有「全部完成」提示')
   ok(!tq('[data-testid="todo-active-label"]'), '全完成后不再有「正在进行」标记')
 
-  /* ---- 恢复真实数据（别把用户的会话状态改坏）---- */
   tstore.setState({ todos: [] })
   await sleep(200)
   ok(!tmeter(), '没有任务时不渲染进度条（不占位）')
@@ -407,15 +305,7 @@
 
 
 
-  /**
-   * 造一个带 left-panel-tasks custom entry 的会话。
-   * 放在隔离目录里（测试跑在 YAN_SESSIONS_DIR 上），所以不会污染真实数据。
-   */
   async function makeTodoSession() {
-    // 渲染端不能写文件，所以通过主进程的调试口子？没有。
-    // 换个做法：直接问 pi 跑一个 prompt，然后……太慢。
-    // 最简做法：用 window.yan 没有的能力 → 只能靠 fixture。
-    // 这里明确报告失败，让 fixture 负责提供数据。
     log('  ⚠️  需要 scripts/test-live.mjs 的 fixture 提供一个带 YAN-TODO 的会话')
     return null
   }

@@ -1,32 +1,10 @@
 #!/usr/bin/env node
-/**
- * v3 对比度检查（WP-01）。
- *
- * 按 WCAG 2.2 相对亮度公式，对 tokens.json 里「真实出现的组合」逐对计算对比度：
- *   · 正文 / 次要文字 / 元信息（fg / fg2 / fg3）在 bg · side · surface · bubble · sunken · hover 上
- *   · 状态词（run-t / ask-t / stall-t / fail-t / add / del）在真实底色与其浅底上
- *   · 主按钮文字 on-ink 在 ink / ink-hover 上
- *   · 非文字：焦点环 accent、状态点 run/ask/stall/fail、控件描边 line2 与相邻底色
- *
- * 阈值：
- *   · 文字 ≥ 4.5（方案 02 §5.2「逐对复核」；大字与非文字不在此列）
- *   · 焦点环与状态图形 ≥ 3（WCAG 1.4.11）
- *   · 状态点允许保留方案原值：语义由「阈值 + 文字标签」承担，脚本仍打印实际值，
- *     不达标以 [waived] 标出，绝不隐藏。
- *
- * 半透明令牌（rgba）先按 alpha 合成到真实底色再算，不把 alpha 当“已足够接近”。
- *
- * 用法：node scripts/design/check-v3-contrast.mjs [--json]
- *       任一 required 项低于阈值时退出码 1。
- */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const tokens = JSON.parse(readFileSync(join(root, 'src/renderer/src/design/tokens.json'), 'utf8'))
-
-/* ---------- 颜色工具 ---------- */
 
 function parseColor(input) {
   const s = String(input).trim()
@@ -70,19 +48,15 @@ const hex = (c) =>
     .map((v) => Math.round(v).toString(16).padStart(2, '0'))
     .join('')
 
-/* ---------- 令牌取值 ---------- */
-
 const MODES = ['light', 'dark']
 const roleLabel = { light: '浅色', dark: '深色' }
 
-/** 取某个颜色令牌在指定主题下的实际颜色；半透明令牌合成到 base 令牌上。 */
 function tokenColor(name, mode, base) {
   const raw = parseColor(tokens.color[name][mode === 'light' ? 0 : 1])
   if (raw.a >= 1 || !base) return raw
   return over(raw, tokenColor(base, mode))
 }
 
-/** bg 描述：字符串=不透明令牌；{ tint, over }=把 tint 合成到 over 上。 */
 function bgColor(spec, mode) {
   return typeof spec === 'string' ? tokenColor(spec, mode) : tokenColor(spec.tint, mode, spec.over)
 }
@@ -90,31 +64,23 @@ function bgColor(spec, mode) {
 const MAIN_BASES = ['bg', 'side', 'surface', 'bubble', 'sunken', 'hover', 'hover-main']
 const STATUS_BASES = ['bg', 'side', 'surface']
 
-/* ---------- 检查矩阵 ---------- */
-/** 每项：id, fg, bg, min, required, note。bg 为字符串或 {tint,over}。 */
 const checks = []
 const add = (fg, bases, min, required, note, kind) => {
   for (const bg of bases) checks.push({ fg, bg, min, required, note, kind })
 }
 
-// 正文 / 次要 / 元信息：所有真实阅读底色
 add('fg', MAIN_BASES, 4.5, true, '正文')
 add('fg2', MAIN_BASES, 4.5, true, '次要文字')
 add('fg3', MAIN_BASES, 4.5, true, '元信息/占位')
-// 主按钮
 add('on-ink', ['ink', 'ink-hover'], 4.5, true, '主按钮文字')
-// 链接/选中文字（accent 当文字用）
 add('accent', ['bg', 'side', 'surface'], 4.5, true, '链接/选中文字')
-// 状态词：状态圆点旁的文字标签
 add('run-t', STATUS_BASES, 4.5, true, '运行中文字')
 add('ask-t', [...STATUS_BASES, { tint: 'ask-bg', over: 'surface' }, { tint: 'ask-bg', over: 'bg' }], 4.5, true, '待确认文字')
 add('stall-t', [...STATUS_BASES, { tint: 'stall-bg', over: 'surface' }, { tint: 'stall-bg', over: 'bg' }], 4.5, true, '停滞文字')
 add('fail-t', [...STATUS_BASES, { tint: 'fail-bg', over: 'surface' }, { tint: 'fail-bg', over: 'bg' }], 4.5, true, '失败文字')
-// 差异增删文字
 add('add', [...STATUS_BASES, { tint: 'add-bg', over: 'surface' }, { tint: 'add-bg', over: 'bg' }], 4.5, true, '新增行文字')
 add('del', [...STATUS_BASES, { tint: 'del-bg', over: 'surface' }, { tint: 'del-bg', over: 'bg' }], 4.5, true, '删除行文字')
 
-// 选中底色上的文字（文本选区 / 选中行）
 const SEL_BASES = [
   { tint: 'sel', over: 'surface' },
   { tint: 'sel', over: 'bg' },
@@ -124,25 +90,19 @@ add('fg', SEL_BASES, 4.5, true, '正文·选中')
 add('fg2', SEL_BASES, 4.5, true, '次要文字·选中')
 add('accent', SEL_BASES, 4.5, true, '链接·选中')
 
-// 非文字：焦点环
 add('accent', ['bg', 'side', 'surface', 'bubble'], 3, true, '焦点环', 'nontext')
-// 非文字：状态点（允许方案原值，文字标签补偿，不达标标 waived）
 for (const dot of ['run', 'ask', 'stall', 'fail']) {
   checks.push({ fg: dot, bg: 'bg', min: 3, required: false, waived: true, note: `状态点 ${dot}`, kind: 'nontext' })
   checks.push({ fg: dot, bg: 'side', min: 3, required: false, waived: true, note: `状态点 ${dot}`, kind: 'nontext' })
   checks.push({ fg: dot, bg: 'surface', min: 3, required: false, waived: true, note: `状态点 ${dot}`, kind: 'nontext' })
 }
-// 非文字：控件描边（提示项，仅报告）
 add('line2', ['surface', 'bg'], 3, false, '控件描边（报告）', 'nontext')
-
-/* ---------- 执行 ---------- */
 
 const results = []
 for (const mode of MODES) {
   for (const c of checks) {
     const bg = bgColor(c.bg, mode)
     const raw = tokenColor(c.fg, mode)
-    // 半透明前景（如控件描边 line2）先合成到底色上再算，否则亮度会把 alpha 忽略掉。
     const fg = raw.a < 1 ? over(raw, bg) : raw
     const ratio = contrast(fg, bg)
     const pass = ratio >= c.min

@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 步骤摘要（ToolSteps）的现场回归。
- *
- * 目的：不用源码字符串断言，而是把**真实 ToolSteps.tsx** 用 esbuild 现场打包、
- * 用最小 React 浅渲染替身逐层驱动，钉住 WP-22 的行为：
- *   · 摘要默认折叠；有失败时摘要自动展开，且失败的那一步详情自动展开。
- *   · 运行中的那一步在折叠态单独铺在 `v3-steps-live`，带 spinner。
- *   · 长输出先截断为预览行，`展开/收起` 切换后铺全；短输出不给切换。
- *   · 摘要、步骤行、展开按钮都是原生按钮 / 共享 Button（可聚焦、带 `aria-expanded`）。
- *   · 增删统计只来自执行前后快照；拿不到快照不编造。
- *   · 嵌套调用缩进在父步骤下。
- *
- * 用法：node scripts/test-v3-steps.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型、不打开文件或网页。
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
@@ -22,8 +7,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 
@@ -41,8 +24,6 @@ function ok(cond, label, detail) {
   return pass
 }
 
-/* -------------------------------------------------------- 定时 / 全局桩 */
-
 function installGlobals() {
   globalThis.localStorage = {
     getItem: () => null,
@@ -56,7 +37,6 @@ function installGlobals() {
     try {
       fn(0)
     } catch {
-      /* 浅渲染没有真实帧 */
     }
     return 0
   }
@@ -64,8 +44,6 @@ function installGlobals() {
   globalThis.window = { setTimeout: () => 0, clearTimeout: () => {} }
   globalThis.__V3_LANG = 'zh-CN'
 }
-
-/* ------------------------------------------------------------ React 替身 */
 
 const REACT_SHIM = `/* v3 步骤回归的 React 浅渲染替身：状态放在 globalThis.__V3_HOOKS。 */
 const rt = () => globalThis.__V3_HOOKS
@@ -95,8 +73,6 @@ export function jsx(type, props, key) { const el = createElement(type, props); i
 export const jsxs = jsx
 export const jsxDEV = jsx
 `
-
-/* ------------------------------------------------------------------ 构建 */
 
 function abs(rel) {
   return normalize(resolve(ROOT, rel))
@@ -155,7 +131,6 @@ async function buildSteps(outdir) {
     plugins: [
       makeStubPlugin({
         'src/renderer/src/features/session/Icon.tsx': `export function Icon(props){ return { type: Icon, props, key: null } }`,
-        /* A6：ToolSteps 现在挂 McpAppResult/McpAppStepAudit；本测只测步骤摘要，把视图框桩掉。 */
         'src/renderer/src/features/artifacts/McpAppFrame.tsx': `export function McpAppResult(){ return null }\nexport function McpAppStepAudit(){ return null }`,
         'src/renderer/src/ui/index.ts': `export function Button(props){ return null }\nButton.__stub='ui-button'\nexport function IconButton(props){ return null }\nIconButton.__stub='ui-iconbutton'`,
         'src/renderer/src/i18n/index.tsx': `export function useI18n(){ return { lang: globalThis.__V3_LANG || 'zh-CN' } }
@@ -166,8 +141,6 @@ export function translate(_l, k){ return String(k) }`
   })
   return out
 }
-
-/* ------------------------------------------------------- 浅渲染 hook 运行时 */
 
 function makeHookRuntime() {
   const rt = {
@@ -240,8 +213,6 @@ function renderComponent(rt, type, props) {
   return rt.render(type, props)
 }
 
-/* ------------------------------------------------------------- 树遍历工具 */
-
 function collect(node, pred, out = []) {
   if (Array.isArray(node)) {
     for (const n of node) collect(n, pred, out)
@@ -263,8 +234,6 @@ function textOf(node) {
   if (Array.isArray(node)) return node.map(textOf).join('')
   return textOf(node.props?.children)
 }
-
-/* ------------------------------------------------------------------ fixture */
 
 const longOutput = (n) => Array.from({ length: n }, (_, i) => `line-${i + 1}`).join('\n')
 
@@ -291,8 +260,6 @@ const diffCall = (over = {}) =>
     },
     ...over
   })
-
-/* ------------------------------------------------------------------ main */
 
 async function main() {
   installGlobals()
@@ -413,7 +380,6 @@ async function main() {
   {
     const output = longOutput(60)
     const { tree } = renderStepsOpen([tool({ id: 'read-long', name: 'read', output })])
-    // 摘要展开后拿到步骤行，再手动展开详情
     const node = renderStepNode(tree, 'read-long')
     byTestId(node.tree, 'v3-step').props.onClick()
     const nodeOpen = renderComponent(node.rt, node.el.type, node.el.props)

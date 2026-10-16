@@ -1,8 +1,3 @@
-/**
- * SessionLayoutStore 的纯 Node 测试。
- * 验证“产品归属”和 pi JSONL 物理路径分离、旧会话迁移、pending 冲突、移动历史
- * 以及并发写入串行化。
- */
 export async function runSessionLayoutTests(ok, api) {
   const project = (id, cwd) => ({
     id,
@@ -67,7 +62,6 @@ export async function runSessionLayoutTests(ok, api) {
     '并发归属写入串行化，不丢任一会话记录'
   )
 
-  /* 归档与置顶：只在显式传入时变，其余写入（打开、移动）原样带过 */
   const base = await api.rememberSession({ sessionId: 'flag-a', sessionFile: 'C:/yan/sessions/flag-a.jsonl', cwd: 'C:/work/app', projectId: 'project-a', scope: 'project' })
   ok(!base.archivedAt && !base.pinned, '新会话默认未归档、未置顶')
   const archived = await api.setSessionFlags({ sessionId: 'flag-a', sessionFile: base.sessionFile, cwd: base.cwd }, { archived: true })

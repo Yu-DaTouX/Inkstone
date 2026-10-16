@@ -1,21 +1,3 @@
-/**
- * 交互终端（实施-11 H-11）。
- *
- * 为什么需要一层宿主服务：真正的交互终端要的是**伪终端**（PTY）——
- * 需要 TTY 语义（行编辑、Ctrl+C、进度输出、`resize` 通知）。一次性
- * `bash -c` 的输出流冒充不了它（H-11 禁区），Electron 自己也没有 PTY。
- * 所以这里用 `node-pty`（随包的原生依赖，N-API 预编译，无需 Electron 重编译）
- * 管理会话：开始 / 写入 / 缩放 / 关闭 / 退出，并给渲染端一个**可重连**的
- * 环形缓冲（面板重开或窗口刷新后还能看到之前的输出）。
- *
- * 三条边界：
- *   ① 原生依赖可能装不上（平台 / 架构不支持）—— 载荷失败时一律回落
- *      “不可用”，不让主进程 import 阶段就崩（`node-pty` 用惰性 require）。
- *   ② 工作目录由渲染端给，但**必须**在主进程校验成真实存在的目录，
- *      默认回落到会话工作目录 / 进程 cwd；不把任意字符串直接交给 spawn。
- *   ③ 输出是高频推送，但每个会话只保留**有界**的回滚缓冲
- *      （`BUFFER_LIMIT`），内存不随会话时长无界增长。
- */
 import { createRequire } from 'node:module'
 import { existsSync, statSync } from 'node:fs'
 import { basename, delimiter, join } from 'node:path'
@@ -25,23 +7,15 @@ import { TerminalScreen } from './agent-hub/terminal-screen'
 import { PROGRAM_STATUS_REPLY, TerminalProgramStatusTracker } from './terminal-status'
 import type { TerminalProgramStatus } from '../shared/ipc'
 
-/**
- * 主进程是 ESM，而 `node-pty` 是原生 CJS 模块；用 `createRequire` 拿一个
- * 运行时 require。**只取类型用 `import type`**（编译后不留任何静态 import），
- * 真正的加载全部在 `ptyOrNull()` 里惰性发生 —— 装不上的平台上主进程照常启动。
- */
 const requireNative = createRequire(import.meta.url)
 
-/** 每个会话保留的滚动缓冲（字符数）：够重连后看清最近的内容，又有界 */
 export const BUFFER_LIMIT = 200_000
-/** 超过上限时裁到多少（留一点余量，避免每来一个字符就裁一次） */
 const BUFFER_KEEP = 120_000
 
 export function safeTerminalCut(buffer: string, desired: number): number {
   let cut = Math.max(0, desired)
   const newline = buffer.indexOf('\n', cut)
   if (newline >= 0 && newline - cut < 4096) cut = newline + 1
-  // Do not start a replay in the middle of a CSI/OSC escape sequence.
   const esc = buffer.lastIndexOf('\x1b', cut)
   if (esc >= 0) {
     const sequence = buffer.slice(esc + 1, cut)
@@ -59,7 +33,6 @@ export function safeTerminalCut(buffer: string, desired: number): number {
 
 export interface TerminalSessionInfo {
   id: string
-  /** 会话标题（壳名 · 目录名），标签上显示 */
   title: string
   shell: string
   cwd: string
@@ -67,35 +40,22 @@ export interface TerminalSessionInfo {
   rows: number
   alive: boolean
   exitCode?: number | null
-  /** 程序上报的状态投影；没有记录时为 undefined */
   status?: TerminalProgramStatus
 }
 
 export interface TerminalSnapshot extends TerminalSessionInfo {
-  /** 已有的输出尾部（重连时先灌回 xterm，再接实时流） */
   buffer: string
-  /**
-   * 这份 buffer 对应的输出序号。
-   *
-   * 为什么需要：实时数据与缓冲重放走的是**同一条推送通道**，
-   * 重连瞬间两者会交叠。带一个单调序号，渲染端就可以“只收比快照更新的”，
-   * 不靠时间窗猜（那在慢机器上必错）。
-   */
   seq: number
 }
 
 export interface TerminalStartOptions {
-  /** 期望的工作目录；不存在 / 不是目录时回落到 `fallbackCwd` */
   cwd?: string
-  /** 主进程给的兜底目录（会话工作目录），同样会被校验 */
   fallbackCwd?: string
   cols?: number
   rows?: number
-  /** 仅宿主 Agent Hub 使用；普通终端 IPC 不转发这些字段。 */
   executable?: string
   args?: string[]
   env?: NodeJS.ProcessEnv
-  /** Hub 需要可恢复光标、样式与备用屏幕的快照。 */
   screenSnapshot?: boolean
 }
 
@@ -103,15 +63,12 @@ interface TerminalEntry {
   info: TerminalSessionInfo
   pty: IPty
   buffer: string
-  /** 输出序号：每次 data 自增；重连时用来丢弃已包含在快照里的推送 */
   seq: number
   chunks: Array<{ seq: number; data: string }>
   screen?: TerminalScreen
-  /** OSC 7501 / 9;4 的解析记录（旁路，不改数据流） */
   tracker: TerminalProgramStatusTracker
 }
 
-/** 推送回调：`data` 是实时输出，`exit` 是进程退出（两者都带会话身份） */
 export type TerminalSink = (event:
   | { kind: 'data'; id: string; data: string; seq: number }
   | { kind: 'status'; id: string; status?: TerminalProgramStatus }
@@ -121,10 +78,6 @@ let loadError: string | null = null
 let spawnError: string | null = null
 let ptyModule: typeof import('node-pty') | null = null
 
-/**
- * 惰性加载原生模块。**不要在模块顶层 require**：装不上的平台上，
- * 顶层 import 会让整个主进程起不来（终端只是可选能力，不是启动前提）。
- */
 function ptyOrNull(): typeof import('node-pty') | null {
   if (ptyModule) return ptyModule
   if (loadError) return null
@@ -141,7 +94,6 @@ export function terminalAvailable(): boolean {
   return ptyOrNull() !== null
 }
 
-/** 加载失败原因（诊断 / 设置页展示；成功时为 null） */
 export function terminalLoadError(): string | null {
   return loadError ?? spawnError
 }
@@ -153,7 +105,6 @@ export function setTerminalSink(next: TerminalSink | null): void {
   sink = next
 }
 
-/** 在 PATH 里找 .exe（不起子进程） */
 function findExe(name: string): string | null {
   for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
     const candidate = join(dir, name)
@@ -162,11 +113,6 @@ function findExe(name: string): string | null {
   return null
 }
 
-/**
- * 默认壳：Windows 优先 PowerShell 7（pwsh），其次系统自带的 Windows PowerShell，最后才是 cmd；
- * 类 Unix 用 SHELL（回退 sh）。`-NoLogo` 去掉每次开终端都打印的版权横幅。
- * 日常用法（查看磁盘、进程、整理文件）用 PowerShell 比 cmd 顺手得多，也和 pi 的 powershell 工具同一套命令。
- */
 function defaultShell(): { shell: string; args: string[] } {
   if (process.platform === 'win32') {
     const pwsh = findExe('pwsh.exe')
@@ -178,7 +124,6 @@ function defaultShell(): { shell: string; args: string[] } {
   return { shell: process.env.SHELL || '/bin/sh', args: [] }
 }
 
-/** 目录必须真实存在且是目录；否则返回 null（交给调用方回落） */
 function validDir(candidate: string | undefined): string | null {
   if (!candidate) return null
   try {
@@ -204,7 +149,6 @@ function snapshotOf(entry: TerminalEntry): TerminalSnapshot {
   return { ...entry.info, buffer: entry.buffer, seq: entry.seq }
 }
 
-/** 把投影写进 info；`undefined` 时真的删字段（内部推送靠 `status === undefined` 表达清除） */
 function setEntryStatus(entry: TerminalEntry, status: TerminalProgramStatus | undefined): void {
   if (status) {
     entry.info = { ...entry.info, status }
@@ -216,17 +160,12 @@ function setEntryStatus(entry: TerminalEntry, status: TerminalProgramStatus | un
   entry.info = next
 }
 
-/**
- * 消费一段输出里的程序状态：回应查询、更新记录、在变化时沿既有终端推送发出。
- * 扫描失败不影响数据流——这里永远不向调用方抛。
- */
 function applyStatusChunk(entry: TerminalEntry, data: string, id: string): void {
   const { queries, changed } = entry.tracker.consume(data)
   for (let i = 0; i < queries; i += 1) {
     try {
       entry.pty.write(PROGRAM_STATUS_REPLY)
     } catch {
-      /* PTY 已不可写：回复不上不影响终端数据本身 */
     }
   }
   if (!changed) return
@@ -234,7 +173,6 @@ function applyStatusChunk(entry: TerminalEntry, data: string, id: string): void 
   sink?.({ kind: 'status', id, status: entry.tracker.status })
 }
 
-/** 把一个会话的当前输出灌回监听方（重连用） */
 function emitBuffered(id: string): void {
   const entry = sessions.get(id)
   if (!entry || !sink) return
@@ -243,7 +181,6 @@ function emitBuffered(id: string): void {
   if (!entry.info.alive) sink({ kind: 'exit', id, exitCode: entry.info.exitCode ?? null })
 }
 
-/** Windows ConPTY 会丢弃 OSC 输入回复；对自建终端声明 pi 原生报告支持，显式配置优先。 */
 export function terminalEnvironment(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
   return {
     ...env,
@@ -273,7 +210,6 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
       env: terminalEnvironment({ ...process.env, ...options.env })
     })
   } catch (error) {
-    // 壳或 cwd 启动失败不代表原生模块不可用，下一次启动仍应允许重试。
     spawnError = error instanceof Error ? error.message : String(error)
     return null
   }
@@ -303,7 +239,6 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     if (current.buffer.length > BUFFER_LIMIT) {
       const cut = safeTerminalCut(current.buffer, current.buffer.length - BUFFER_KEEP)
       current.buffer = current.buffer.slice(cut)
-      /* 只丢最旧的增量：整段清空会让界面下一次轮询被迫整屏重建（重置滚动位置、清空回滚）。 */
       let kept = 0, from = current.chunks.length
       while (from > 0 && kept + current.chunks[from - 1].data.length <= BUFFER_KEEP) { from -= 1; kept += current.chunks[from].data.length }
       current.chunks = current.chunks.slice(from)
@@ -313,7 +248,6 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
   child.onExit(({ exitCode }) => {
     const current = sessions.get(id)
     if (!current) return
-    /* 终端约定：进程退出时丢弃 working / blocked，done / error 保留 */
     const statusCleared = current.tracker.exit()
     current.info = { ...current.info, alive: false, exitCode: exitCode ?? null }
     if (statusCleared) {
@@ -326,7 +260,6 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
   return snapshotOf(entry)
 }
 
-/** 写入用户输入（含 Ctrl+C 等控制字符，原样交给 PTY） */
 export function writeTerminal(id: string, data: string): boolean {
   const entry = sessions.get(id)
   if (!entry || !entry.info.alive) return false
@@ -338,11 +271,9 @@ export function writeTerminal(id: string, data: string): boolean {
   }
 }
 
-/** 缺失增量时用解析后的屏幕重建；不把任意截断的转义序列当成完整屏幕。 */
 export async function readTerminalUpdate(id: string, sinceSeq?: number): Promise<{ kind: 'snapshot' | 'delta'; data: string; seq: number; alive: boolean; cols: number; rows: number } | null> {
   const entry = sessions.get(id)
   if (!entry) return null
-  /* 界面每 150ms 轮询一次：增量只看序号，整屏序列化（含回滚）只在需要重建时做。 */
   const settled = await entry.screen?.settled()
   const seq = settled?.seq ?? entry.seq
   const first = entry.chunks[0]?.seq ?? entry.seq + 1
@@ -355,7 +286,6 @@ export async function readTerminalUpdate(id: string, sinceSeq?: number): Promise
   return { kind: 'snapshot', data: screen?.data ?? entry.buffer, seq: screen?.seq ?? seq, alive: entry.info.alive, cols: screen?.cols ?? cols, rows: screen?.rows ?? rows }
 }
 
-/** 缩放：先记住尺寸，再通知 PTY（供 curses 程序重排） */
 export function resizeTerminal(id: string, cols: number, rows: number): boolean {
   const entry = sessions.get(id)
   if (!entry || !entry.info.alive) return false
@@ -376,23 +306,19 @@ export function resizeTerminal(id: string, cols: number, rows: number): boolean 
   }
 }
 
-/** 关闭（用户点标签的关闭 / 会话销毁）：kill 之后从表里移除 */
 export function killTerminal(id: string): boolean {
   const entry = sessions.get(id)
   if (!entry) return false
   try {
     entry.pty.kill()
   } catch {
-    /* 已经退出的会话 kill 会抛，忽略即可 */
   }
   sessions.delete(id)
   entry.screen?.dispose()
-  /* 会话没了，状态也不该继续影响任务栏角标 */
   if (entry.info.status) sink?.({ kind: 'status', id, status: undefined })
   return true
 }
 
-/** 只统计存活终端的明确工作报告，不把未上报的 shell 当作忙碌。 */
 export function hasWorkingTerminal(): boolean {
   for (const entry of sessions.values()) {
     if (entry.info.alive && entry.info.status?.state === 'working') return true
@@ -400,7 +326,6 @@ export function hasWorkingTerminal(): boolean {
   return false
 }
 
-/** 是否有终端处于 blocked：任务栏角标与后台通知的判定输入 */
 export function hasBlockedTerminal(): boolean {
   for (const entry of sessions.values()) {
     if (entry.info.alive && entry.info.status?.state === 'blocked') return true
@@ -417,7 +342,6 @@ export function readTerminal(id: string): TerminalSnapshot | null {
   return entry ? snapshotOf(entry) : null
 }
 
-/** 渲染端订阅时，把已存在会话的缓冲回放一遍（断线重连） */
 export function attachTerminal(id: string): TerminalSnapshot | null {
   const entry = sessions.get(id)
   if (!entry) return null
@@ -425,7 +349,6 @@ export function attachTerminal(id: string): TerminalSnapshot | null {
   return snapshotOf(entry)
 }
 
-/** 退出应用 / 关闭窗口时清干净，避免留下孤儿子进程 */
 export function disposeTerminals(): void {
   for (const id of [...sessions.keys()]) killTerminal(id)
 }

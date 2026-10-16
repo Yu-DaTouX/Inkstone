@@ -5,15 +5,6 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import { normalizeRepositoryUrl } from './src/shared/build-info'
 
-/*
- * 构建信息（注入到代码里的常量）。
- *
- * 为什么需要它：正式版本（0.2.0）区分不了“同一版本的哪一次构建”。
- * 排查“改了代码但跑的还是旧进程”这类问题时，界面上能直接看到构建时间
- * 就是最短路径 —— 用户报过一次“修复没生效”，实际是旧实例还在跑。
- *
- * 注意：这里是**构建时**读一次，所以产物里的时间就是那次构建的时刻。
- */
 const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
   version?: string
   homepage?: string
@@ -23,13 +14,11 @@ let buildHash = ''
 try {
   buildHash = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim()
 } catch {
-  /* 没有 git（例如从压缩包构建）时不编造 hash，界面就是空 */
 }
 const buildInfo = {
   version: pkg.version ?? '',
   buildTime: new Date().toISOString(),
   buildHash,
-  /* 仓库地址同样只从 package.json 取一份，归一化逻辑在 shared/build-info.ts（可单测） */
   repositoryUrl: normalizeRepositoryUrl(
     typeof pkg.repository === 'string' ? pkg.repository : (pkg.repository?.url ?? pkg.homepage)
   )
@@ -39,25 +28,8 @@ const define = { __YAN_BUILD__: JSON.stringify(buildInfo) }
 export default defineConfig({
   main: {
     define,
-    /*
-     * MCP SDK **不能 externalize**（实施-04 S3）。
-     *
-     * `externalizeDepsPlugin()` 默认把 `dependencies` 全部留给运行时的
-     * node_modules 解析，而本项目的 `electron-builder.yml` 里有一条
-     * `'!node_modules/**'`（之前 main 侧确实一个 dependencies 都不用，
-     * 那是安全的）。加了 SDK 之后，externalize 的后果是：**装出来的应用里
-     * 没有这个包**，而它是 ESM 静态 import —— 主进程会直接起不来。
-     * 所以把它排除在 externalize 之外，真的 bundle 进 out/main。
-     */
     plugins: [
       externalizeDepsPlugin({
-        /*
-         * 这两个依赖都在主进程启动链上被静态 import：MCP SDK 是宿主
-         * 能力协议，tar 是 npm 制品的受限解包器。electron-builder 的
-         * app.asar 明确不带 node_modules，所以它们必须留在 bundle 里；
-         * 否则开发态 / 解包目录静态检查会通过，安装后的主进程却会在
-         * import 阶段弹出 ERR_MODULE_NOT_FOUND。
-         */
         exclude: ['@modelcontextprotocol/sdk', 'tar', 'electron-updater', '@xterm/headless', '@xterm/addon-serialize']
       })
     ],
@@ -65,14 +37,10 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/main/index.ts'),
-          // 额外入口：让脚本能直接 import 这些**不依赖 Electron** 的模块做单元测试
-          // （scripts/probe-pi.mjs 用 protocol，scripts/test-unit.mjs 用 sessions）
           protocol: resolve('src/main/protocol.ts'),
           sessions: resolve('src/main/sessions.ts'),
           'office-worker': resolve('src/main/office/worker.ts'),
           'zoom-math': resolve('src/main/zoom-math.ts'),
-          // S1 的派生状态：live 场景要在 Node 侧把状态种进隔离的 YAN_DATA_DIR
-          // 并在退出后检查清理结果（探针跑在渲染进程里，读写不了这个目录）
           'context-state-store': resolve('src/main/context-state-store.ts'),
           'context-watermark': resolve('src/main/context-watermark.ts')
         }
@@ -85,12 +53,6 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: { index: resolve('src/preload/index.ts') },
-        /*
-         * 输出 **CJS**（.cjs）：主窗口开了 `sandbox: true`，
-         * 而 sandboxed preload **不支持 ESM**（实测：输出 .mjs 时 preload
-         * 整个加载失败，`window.yan` 直接是 undefined，界面空白）。
-         * 改成 CJS 后 sandboxed preload 能正常加载。
-         */
         output: { format: 'cjs', entryFileNames: '[name].cjs' }
       }
     }
@@ -105,10 +67,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/renderer/index.html'),
-          // 辅助小窗（v3 WP-25d / WP-12）：独立 html 入口，共用主 preload 与新暴露的 auxBridge
           'auxwin/quick-ask': resolve('src/renderer/auxwin/quick-ask.html'),
           'auxwin/mini': resolve('src/renderer/auxwin/mini.html'),
-          // 页签弹出窗（v3 WP-30 弹出）：独立 html 入口，共用主 preload 与新暴露的 paneBridge
           'auxwin/pane': resolve('src/renderer/auxwin/pane.html')
         }
       }

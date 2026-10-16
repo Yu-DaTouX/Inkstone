@@ -1,4 +1,3 @@
-/** Isolated Electron test entry: synthetic model IPC, real settings IPC, no inference. */
 import { ipcMain } from 'electron'
 const handle=ipcMain.handle.bind(ipcMain)
 let selections=0,searches=0

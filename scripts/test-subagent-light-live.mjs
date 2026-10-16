@@ -1,4 +1,3 @@
-/** Real pi RPC child + loopback model; no account, credentials or user files. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'

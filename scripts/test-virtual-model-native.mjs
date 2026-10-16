@@ -1,28 +1,3 @@
-/**
- * 01 夹具核对：bundled pi 1.2.0 原生虚拟模型 + 分类器/子代理边界。
- *
- * 只做一件事：在隔离数据目录里，用**随包 pi 1.2.0**（current.json 选中的 generation）
- * 的原生 RPC 与扩展 API 注册一个本机 physical provider + router/virtual model，
- * 通过 loopback HTTP fixture 发一次无工具/纯模拟消息，核对：
- *
- *   1. `get_available_models` 是否包含虚拟 provider/id（含序列化字段）；
- *   2. `set_model` / `get_state` 是否仍显示虚拟模型被选中；
- *   3. 助手消息（message_end / 会话 JSONL）记录的是不是实际 physical 模型；
- *   4. `get_session_stats.contextUsage.contextWindow` 归属：首个响应前用虚拟声明值，
- *      之后用 physical 值；
- *   5. 重启（会话恢复）后虚拟选择是否保持，卸载扩展（--no-extensions）后是否回落到
- *      最近一次 physical 响应；
- *   6. 正式 `subagentPiArgs`（只读 vs 非只读原生发现）真实跑一遍的差别；
- *   7. codemode 脚本内层 `tools.bash` 是否真的触发 `tool_call` 钩子（父子 id 真实）。
- *
- * 约束（遵守 AGENTS.md 与本任务）：
- *  - 不接网络真实 provider、不用真实 auth/model/key、无模型费用；
- *  - 不运行 `yan subagent` 选择夹具（父宿主可能读真实凭证），只用隔离 RPC 进程；
- *  - 不修改任何产品代码、既有脚本、随包运行时或 danger-guard；
- *  - 临时目录只清本脚本自己的 mkdtemp，不动旧证据。
- *
- * 运行：node scripts/test-virtual-model-native.mjs
- */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
@@ -60,7 +35,6 @@ const equal = (actual, expected, label) => {
 }
 const delay = (ms) => new Promise((done) => setTimeout(done, ms))
 
-/** Child process must not inherit any real provider credential from the parent shell. */
 const CREDENTIAL = /(API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|_TOKEN$|^ANTHROPIC_|^OPENAI_|^GEMINI_|^GOOGLE_|^XAI_|^GROK_|^DEEPSEEK_|^OPENROUTER_|^AWS_|^AZURE_|^MISTRAL_|^COHERE_)/i
 function isolatedEnv(extra = {}) {
   const env = {
@@ -76,7 +50,6 @@ function isolatedEnv(extra = {}) {
   return env
 }
 
-/* -------- loopback HTTP fixture: OpenAI-compatible chat completions -------- */
 const requests = []
 function chunk(delta, finishReason = null, usage) {
   const body = { id: 'vm-fix', object: 'chat.completion.chunk', created: 0, model: 'vmfix-physical', choices: [{ index: 0, delta, finish_reason: finishReason }] }
@@ -90,7 +63,7 @@ const server = createServer((req, res) => {
   req.on('data', (part) => { body += part })
   req.on('end', () => {
     let payload = {}
-    try { payload = JSON.parse(body) } catch { /* still answer so pi does not hang */ }
+    try { payload = JSON.parse(body) } catch { }
     requests.push(payload)
     const messages = Array.isArray(payload.messages) ? payload.messages : []
     const lastUser = [...messages].reverse().find((m) => m.role === 'user')
@@ -113,7 +86,6 @@ const server = createServer((req, res) => {
 await new Promise((done) => server.listen(0, '127.0.0.1', done))
 const PORT = server.address().port
 
-/* -------- isolated files -------- */
 for (const dir of [PI_DIR, DATA_DIR, SESSIONS_DIR, CODEMODE_SESSIONS_DIR, EXTENSIONS_DIR]) await mkdir(dir, { recursive: true })
 await writeFile(join(PI_DIR, 'auth.json'), '{}')
 await writeFile(join(PI_DIR, 'models.json'), JSON.stringify({
@@ -134,7 +106,6 @@ await writeFile(join(PI_DIR, 'models.json'), JSON.stringify({
     }
   }
 }))
-// pi 1.2.0 native discovery only accepts .ts/.js; the fixtures are .mjs sources.
 await copyFile(resolve('scripts/fixtures/virtual-model-extension.mjs'), join(EXTENSIONS_DIR, 'virtual-model-extension.js'))
 await copyFile(resolve('scripts/fixtures/virtual-model-hook.mjs'), join(EXTENSIONS_DIR, 'virtual-model-hook.js'))
 
@@ -148,7 +119,6 @@ const writeSettings = (extra = {}) => writeFile(join(PI_DIR, 'settings.json'), J
 }))
 await writeSettings()
 
-/* -------- RPC driver (JSONL framing, matching src/main/protocol.ts) -------- */
 function startPi(args, extraEnv = {}) {
   const child = spawn(process.execPath, [CLI, '--mode', 'rpc', ...args], {
     cwd: ROOT,
@@ -210,7 +180,7 @@ function startPi(args, extraEnv = {}) {
   rpc.stop = async () => {
     if (rpc.exited) return
     const exited = new Promise((done) => child.once('exit', done))
-    try { child.stdin.end() } catch { /* already closed */ }
+    try { child.stdin.end() } catch { }
     const timer = setTimeout(() => child.kill(), 3000)
     await exited
     clearTimeout(timer)
@@ -224,13 +194,10 @@ const sessionEntries = async (file) => (await readFile(file, 'utf8')).trim().spl
 
 let proc1, proc2, proc3, procNative, procReadOnly, procUnknown, procCodemode
 try {
-  /* ================= Phase 1: native discovery, virtual model ================= */
   proc1 = startPi(['--session-dir', SESSIONS_DIR])
   const ready = await proc1.command('get_state')
   check(ready.success, `phase1 get_state: ${ready.error ?? 'ok'}`)
   results.phases.initialDefaultModel = ready.data.model ?? null
-  // 真实行为：pi settings.json 的 defaultModel 指向已注册虚拟模型时，pi 仍回落到该 provider
-  // 的 physical 模型；应用本身不依赖该字段（它显式 set_model），故仅记录。
   check(ready.data.model?.api !== 'pi-virtual', 'settings.json defaultModel does not select the registered virtual model (pi falls back to the provider physical model)')
 
   const available = (await proc1.command('get_available_models')).data.models
@@ -294,7 +261,6 @@ try {
   results.phases.sessionFile = sessionFile
   await proc1.stop()
 
-  /* ================= Phase 2: restore with the extension still present ================= */
   proc2 = startPi(['--session', sessionFile, '--session-dir', SESSIONS_DIR])
   const ready2 = await proc2.command('get_state')
   check(ready2.success, `phase2 get_state: ${ready2.error ?? 'ok'}`)
@@ -303,7 +269,6 @@ try {
   results.phases.restoredWithExtension = ready2.data.model
   await proc2.stop()
 
-  /* ================= Phase 3: restore without any extension (--no-extensions) ================= */
   proc3 = startPi(['--session', sessionFile, '--session-dir', SESSIONS_DIR, '--no-extensions'])
   const ready3 = await proc3.command('get_state')
   check(ready3.success, `phase3 get_state: ${ready3.error ?? 'ok'}`)
@@ -311,7 +276,6 @@ try {
   equal(ready3.data.model?.provider, VIRTUAL_PROVIDER, 'after uninstall: falls back to the physical provider id')
   equal(ready3.data.model?.id, PHYSICAL_ID, 'after uninstall: falls back to the physical model that answered last')
 
-  /* ================= Phase 4: real subagent launch args (native vs read-only) ================= */
   const { build } = await import('esbuild')
   const compiled = join(ROOT, 'subagent-pi-launch.mjs')
   await build({ entryPoints: [resolve('src/shared/subagent-pi-launch.ts')], outfile: compiled, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
@@ -362,7 +326,6 @@ try {
     await procReadOnly.stop()
   }
 
-  /* Is the read-only identity mismatch virtual-specific, or generic --model fallback? */
   procUnknown = startPi(['--session-dir', SESSIONS_DIR, '--no-extensions', '--model', `${VIRTUAL_PROVIDER}/does-not-exist`])
   try {
     const unknownReady = await procUnknown.command('get_state', {}, 15000)
@@ -373,7 +336,6 @@ try {
   }
   if (!procUnknown.exited) await procUnknown.stop()
 
-  /* ================= Phase 5: codemode inner tool_call hook ================= */
   await writeSettings({ defaultTools: ['+codemode'] })
   procCodemode = startPi(['--session-dir', CODEMODE_SESSIONS_DIR])
   const codemodeReady = await procCodemode.command('get_state')

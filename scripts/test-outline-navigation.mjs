@@ -1,5 +1,3 @@
-// Execute the actual App scroll callbacks/effects, not a parallel scrolling implementation.
-// No app build, Electron, account, store import or model request is needed.
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
@@ -62,7 +60,6 @@ function fixture({ virtual = true, sourceBlocks = blocks } = {}) {
   }
 }
 
-// A navigation arriving while the mount/blank recovery still has queued frames owns the position.
 function navigationDuringSettle(sourceBlocks = blocks) {
   const f = fixture({ sourceBlocks })
   f.effects.settle()
@@ -76,11 +73,10 @@ function navigationDuringSettle(sourceBlocks = blocks) {
 navigationDuringSettle()
 console.log('PASS navigation cancels stale settling tail frames and streaming follow')
 
-// A queued old bottom event between scrollToIndex and its next frame cannot reacquire stick.
 {
   const f = fixture()
   f.ctx.navigate(0)
-  f.handle.scrollOffset = 41175 // delayed event still reports old bottom geometry
+  f.handle.scrollOffset = 41175
   f.ctx.api.onVirtualScroll()
   assert.equal(f.ctx.stickRef.current, false, 'virtual callback must honor navigation suppression')
   f.effects.tail()
@@ -89,7 +85,6 @@ console.log('PASS navigation cancels stale settling tail frames and streaming fo
 }
 console.log('PASS delayed virtual bottom event cannot re-enable follow')
 
-// After the first usable mount frame, manual scrolling is not ignored for the remaining 24 frames.
 {
   const f = fixture()
   f.effects.settle()
@@ -102,7 +97,6 @@ console.log('PASS delayed virtual bottom event cannot re-enable follow')
 }
 console.log('PASS manual top cancels remaining mount frames')
 
-// A pending snapshot restore also loses ownership to explicit navigation.
 for (const virtual of [true, false]) {
   const f = fixture({ virtual })
   f.effects.restore()
@@ -113,7 +107,6 @@ for (const virtual of [true, false]) {
 }
 console.log('PASS pending snapshot restore cannot override virtual or ordinary navigation')
 
-// Retain streaming growth, initial tail settling, explicit return to latest, and snapshot behavior.
 {
   const f = fixture()
   f.effects.restore()
@@ -151,7 +144,6 @@ for (const virtual of [true, false]) {
 }
 console.log('PASS initial settle, snapshots, both streaming paths and explicit jump-bottom retained')
 
-// Verify this regression actually detects the captured wasStick root cause without changing files.
 const oldSettle = blocks.settle.replace(
   'if (wasStick && intent === scrollIntentRef.current && stickRef.current && !suppressStickScrollRef.current)',
   'if (wasStick)'
@@ -159,7 +151,6 @@ const oldSettle = blocks.settle.replace(
 assert.throws(() => navigationDuringSettle({ ...blocks, settle: oldSettle }), /stale wasStick/)
 console.log('PASS negative control: old wasStick policy reproduces navigation theft')
 
-// Execute the actual outline geometry helper against deliberately uneven/overscanned turns.
 const outline = ts.createSourceFile('ConversationOutline.tsx', outlineText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 const outlineBody = outline.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text === 'ConversationOutline').body
 const geometry = outlineBody.statements.find(s => ts.isVariableStatement(s) && s.declarationList.declarations.some(d => d.name.getText(outline) === 'activeFromGeometry')).getText(outline)
@@ -176,7 +167,6 @@ box.scrollTop = 41175
 assert.equal(ctx.geometry(), 2, 'tail highlights last tick')
 console.log('PASS outline top, uneven turn geometry and bottom boundaries')
 
-// The capture listener must ignore scrolls originating in another split pane.
 const listener = outlineBody.statements.find(s => ts.isExpressionStatement(s) && s.getText(outline).includes("document.addEventListener('scroll'")).getText(outline)
 class Stream { constructor() { this.classList = { contains: value => value === 'stream' } } }
 const ownStream = new Stream()
@@ -195,7 +185,6 @@ onScroll({ target: ownStream })
 assert.equal(scheduled, 1, 'own stream still schedules geometry update')
 console.log('PASS outline listener ignores foreign pane scroll')
 
-// Preserve the probe assertion, but never let a missing/wrong virtual row masquerade as success.
 const probeText = fs.readFileSync('scripts/probe/outline.js', 'utf8')
 const probe = ts.createSourceFile('outline.js', probeText, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
 let after0

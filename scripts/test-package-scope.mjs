@@ -6,7 +6,6 @@ import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
 
-// Real pi CLI, local sources only. Never reuse the user's settings or plugin directories.
 const dir = mkdtempSync(join(tmpdir(), 'inkstone-package-scope-'))
 const agent = join(dir, 'agent')
 const cwd = join(dir, 'project')
@@ -38,7 +37,6 @@ assert.deepEqual(result.listing.entries.map(e => e.scope), ['user'])
 assert.equal(result.listing.entries[0].installed, true, 'a local source shared with user scope remains installed')
 assert.deepEqual(readFileSync(userSettings), userBefore, 'project removal leaves user settings byte-identical')
 
-// Different settings directories give the same local package different relative sources.
 const projectSource = relative(join(cwd, '.pi'), source)
 write(projectSettings, { packages: [projectSource], fixture: 'project' })
 const projectRelativeBefore = readFileSync(projectSettings)

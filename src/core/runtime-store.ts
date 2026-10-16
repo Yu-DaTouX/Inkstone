@@ -10,7 +10,6 @@ export interface RuntimeDocument {
   applyPlans: Record<string, TaskApplyItem[]>
 }
 
-/** Single-writer durable facts. Writes are serialized and replaced atomically. */
 export class RuntimeStore {
   document: RuntimeDocument = { version: 1, tasks: [], approvals: [], receipts: [], applyPlans: {} }
   private tail: Promise<unknown> = Promise.resolve()
@@ -23,7 +22,6 @@ export class RuntimeStore {
       if (value.version !== 1 || !Array.isArray(value.tasks) || !Array.isArray(value.approvals) || !Array.isArray(value.receipts) || !value.applyPlans) throw new Error('不支持的运行记录格式')
       this.document = value
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    // Restart is reconciliation, never an implicit retry of side effects.
     for (const task of this.document.tasks) if (task.status === 'running') { task.status = 'uncertain'; task.error = '服务已重启，执行结果需核实' }
     for (const receipt of this.document.receipts) if (receipt.state === 'started') receipt.state = 'uncertain'
     await this.save()

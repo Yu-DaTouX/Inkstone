@@ -4,39 +4,12 @@ import { useT } from '../../i18n'
 import { ToolDetail } from './MessageParts'
 import type { UIToolCall } from '../../../../shared/ipc'
 
-/**
- * 终端窗口 —— 工具调用详情（用户要求：「类似终端窗口」+「可以调整窗口大小」）。
- *
- * ══════════════════════════════════════════════════════════════════
- * 这一版做了什么（相对上一版的 `.term` 静态卡片）
- * ══════════════════════════════════════════════════════════════════
- * ① **真正像终端**：
- *    · 标题栏左边是三个窗口灯（装饰）+ 终端脉冲图标 + 工具名
- *    · 右边是状态胶囊（运行中 / ✓ ok / ✕ error）+ 耗时 + 复制 + 展开
- *    · 正文第一行是 prompt 行（`$ 命令` 或 `> 工具名`），输出跟在后面
- * ② **可以调窗口大小**（用户明确要求）：
- *    · 下边缘拖动 = 调高度
- *    · 右边缘拖动 = 调宽度
- *    · 右下角拖动 = 同时调
- *    · 标题栏的展开按钮 = 一键到 72vh
- *    · 双击把手 / Home 键 = 复位
- *    尺寸存在 localStorage（所有终端共用上次调好的大小）。
- * ③ **键盘可用**：把手是 `role="separator"`，↑↓/←→ 调 24px（Shift 96px）。
- *
- * ⚠️ 为什么宽度也允许调：终端里长命令换行很难读，用户经常想「拉宽一点
- *    一行放下整条命令」。但正文列本身是限宽的，所以宽度不会超过父容器
- *    （CSS `max-width:100%` + JS 夹取双保险），拖到边缘就停。
- */
-
 const SIZE_KEY = 'yan.termSize'
-/** 再矮就只剩标题栏（但允许用户拉到只看命令） */
 const MIN_H = 56
-/** 半窗高是新默认值；已经手动调整过的尺寸继续从本地偏好读取。 */
 function defaultHeight(): number {
   return Math.max(MIN_H, Math.round(window.innerHeight * 0.5))
 }
 
-/** 从 localStorage 读上次的尺寸（脏数据一律当默认，别让坏值把窗口撑爆） */
 function loadSize(): { h: number; w: number } {
   try {
     const raw = localStorage.getItem(SIZE_KEY)
@@ -49,7 +22,6 @@ function loadSize(): { h: number; w: number } {
       }
     }
   } catch {
-    /* 读不到 / 解析失败都当没有 */
   }
   return { h: defaultHeight(), w: 0 }
 }
@@ -58,11 +30,9 @@ function saveSize(size: { h: number; w: number }): void {
   try {
     localStorage.setItem(SIZE_KEY, JSON.stringify(size))
   } catch {
-    /* 隐私模式等场景写不了，忽略 */
   }
 }
 
-/** 用户手动拉伸时允许超过默认半窗高。 */
 function maxHeight(): number {
   return Math.max(200, Math.round(window.innerHeight * 0.8))
 }
@@ -74,27 +44,21 @@ export function TerminalWindow({
   fitContent = false
 }: {
   call: UIToolCall
-  /** 命令原文 / 路径，标题与 prompt 行用 */
   target: string
   secs: number | null
-  /** 宽幅阅读由外层负责滚动，不使用嵌入终端的持久尺寸。 */
   fitContent?: boolean
 }) {
   const t = useT()
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [size, setSize] = useState(loadSize)
-  /** 尺寸的同步真源：拖动松手 / 键盘调完后落盘用它，不依赖异步 state */
   const sizeRef = useRef(size)
-  /** 拖动中挂的 document 监听清理函数（组件卸载时兑底） */
   const dragCleanup = useRef<(() => void) | null>(null)
   const [maxed, setMaxed] = useState(false)
   const [copied, setCopied] = useState(false)
-  /** 正在拖哪个把手（null = 没拖）；只用于 .dragging 视觉反馈 */
   const [drag, setDrag] = useState<'h' | 'w' | 'both' | null>(null)
 
   const running = call.status === 'running' || call.status === 'pending'
 
-  /* 输出文本（复制 / 提示用） */
   const output = call.output ?? ''
 
   const clampH = useCallback((h: number): number => Math.min(maxHeight(), Math.max(MIN_H, Math.round(h))), [])
@@ -128,16 +92,9 @@ export function TerminalWindow({
     try {
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     } catch {
-      /* 测试环境可能不实现 pointer capture */
     }
     document.body.classList.add('resizing-term')
 
-    /*
-     * 监听**同步**挂在 document 上（而不是放到 effect 里）。
-     * 放 effect 里要等一次 React 渲染才生效 —— 在同一帧内先 pointerdown
-     * 再 pointermove 时，第一次移动会被丢掉（探针实测：拖不动；键盘却能调）。
-     * 挂 document 还保证鼠标拖快了不会跑出小把手（与面板拖拽同一套）。
-     */
     const onMove = (ev: PointerEvent): void => {
       const dy = ev.clientY - st.y
       const dx = ev.clientX - st.x
@@ -146,7 +103,6 @@ export function TerminalWindow({
       if (st.kind === 'h' || st.kind === 'both') h = clampH(st.h + dy)
       if (st.kind === 'w' || st.kind === 'both') {
         const want = clampW(st.w + dx, st.maxW)
-        // 拉满 / 超过容器宽 → 归回 100%（用 0 表示），跟着窗口自适应
         w = want >= st.maxW ? 0 : want
       }
       setSizeBoth({ h, w })
@@ -166,10 +122,8 @@ export function TerminalWindow({
     document.addEventListener('pointercancel', finish)
   }
 
-  /* 组件在拖动中被卸载时，把 document 监听与 body class 收掉 */
   useEffect(() => () => dragCleanup.current?.(), [])
 
-  /* 键盘调大小（把手可聚焦） */
   const onKeyDown = (kind: 'h' | 'w' | 'both') => (e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 96 : 24
     let handled = true
@@ -201,13 +155,11 @@ export function TerminalWindow({
       setCopied(true)
       setTimeout(() => setCopied(false), 1400)
     } catch {
-      /* 剪贴板不可用就静默失败（与其它复制入口一致） */
     }
   }
 
   const toggleMax = (): void => setMaxed((v) => !v)
 
-  /* 内容为空时（比如纯 diff 之外的 read）也给一个最小高度，别只剩标题栏 */
   const style: React.CSSProperties = maxed
     ? { height: `min(${maxHeight()}px, 72vh)`, width: '100%' }
     : {
@@ -230,10 +182,6 @@ export function TerminalWindow({
           {call.name}
         </span>
         <span className="spacer" />
-        {/*
-         * ⚠️ 方案 4.3：窗口**内**不再重复状态胶囊（行上已经有状态与耗时）。
-         *    三色装饰灯也去掉了 —— 它们只是装饰，占宽度还像“假终端”。
-         */}
         {secs !== null ? <span className="term-time">{secs}s</span> : null}
         <button
           className={`term-act ${copied ? 'on' : ''}`}
@@ -254,7 +202,6 @@ export function TerminalWindow({
       </div>
 
       <div className="term-body">
-        {/* prompt 行：让「这是一次命令执行」一眼成立（终端里 `$ ` 的约定） */}
         <div className="term-prompt">
           <span className="term-prompt-sign" aria-hidden>{call.name === 'bash' ? '$' : '>'}</span>
           <span className="term-prompt-text">{target || call.name}</span>
@@ -265,7 +212,6 @@ export function TerminalWindow({
         </div>
       </div>
 
-      {/* 拖拽把手：下 / 右 / 右下角 */}
       <div
         className="term-grip term-grip-s"
         role="separator"

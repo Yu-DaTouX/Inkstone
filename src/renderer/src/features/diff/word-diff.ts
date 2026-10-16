@@ -1,13 +1,3 @@
-/**
- * 行内（词级）差异。纯函数，无 IO，不新增依赖。
- *
- * 用最长公共子序列（LCS）在**词元**上对齐，把两侧各自没对上的词元标成
- * changed。词元切分把连续 ASCII 单词 / 数字 / 下划线当一块，空白当一块，
- * 其余（含 CJK）按字符切 —— 中文句子如果整段当一个词，词差就没意义了。
- *
- * 输入长度有上限（见 `limits.ts`）：超过就不做 LCS，整行标成 changed。
- * 这是有意的降级 —— O(n·m) 的矩阵在恶意/异常输入上会把主线程拖死。
- */
 import { DIFF_LIMITS } from './limits'
 
 export interface WordSegment {
@@ -18,7 +8,6 @@ export interface WordSegment {
 export interface WordDiff {
   left: WordSegment[]
   right: WordSegment[]
-  /** 两侧是否真的不同（完全一致时为 false，调用方可以省掉高亮）。 */
   changed: boolean
 }
 
@@ -58,7 +47,6 @@ export function wordDiff(oldLine: string, newLine: string, limits: { maxWordToke
 
   const n = a.length
   const m = b.length
-  /* Uint16 足够：n,m ≤ 400，LCS 长度不超过 400 */
   const width = m + 1
   const dp = new Uint16Array((n + 1) * width)
   for (let i = 1; i <= n; i++) {

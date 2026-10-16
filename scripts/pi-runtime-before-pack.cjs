@@ -1,4 +1,3 @@
-/** Package only the selected generation, keeping the installed layout stable. */
 module.exports = async function beforePack(context) {
   const { selectedPiRuntime } = await import('./lib/pi-runtime-location.mjs')
   const { join } = require('node:path')

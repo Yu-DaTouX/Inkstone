@@ -1,11 +1,3 @@
-/*
- * v3 设置「语音输入」分页与「电脑操作」块隔离探针。
- *
- * 语音：旧深链接 `openSettings('voice')` 要落到能力页的「语音输入」分页（不是把人带到
- * 没有对应内容的页）；页内读真实只读 `voice.status()`，断言引擎 / 模型 / 语言三块和隐私
- * 说明在，切换识别语言走真实 patchSettings 并能读回（结束时还原）。
- * 电脑操作：连接分页里有这一块，开关在 uv 缺失时禁用；不点开关、不安装 uv、不下载模型。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => {
@@ -20,7 +12,6 @@
       try {
         if (predicate()) return true
       } catch {
-        /* 还没就绪 */
       }
       await wait(50)
     }
@@ -36,7 +27,6 @@
     try {
       localStorage.setItem('yan.onboarded', '1')
     } catch {
-      /* 忽略 */
     }
     const onboarding = document.querySelector('.v3-ob-overlay')
     if (onboarding) {

@@ -1,14 +1,3 @@
-/**
- * 设置 → 快捷键（v3，WP-25b 余项）。
- *
- * 展示 `app/shortcuts.ts` 的全局键位注册表（与 `ShellV3` 的实际按键分发同源），
- * 并允许逐项改绑：点某一项 → 录制新组合键 → 校验冲突 → 写入 `AppSettings.shortcutOverrides`；
- * 可单项或全部恢复默认。终端会让键（Ctrl+K/B/J）与不在注册表里的 Esc / Alt+Y/N
- * 保持固定，不提供改绑入口。
- *
- * 覆盖表经 `shortcutOverridesFromSettings` 清洗后应用；`ShellV3` 的绑定端在 `app/shortcuts.ts`
- * 侧做同样的覆盖应用（补丁见 `.tmp/v3-ui/hotspot/G2-shortcut-rebind.md`）。
- */
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
@@ -52,7 +41,6 @@ export function ShortcutsSettings(): ReactElement {
   const [recordingId, setRecordingId] = useState<ShortcutId | null>(null)
   const [notice, setNotice] = useState<RecordingNotice | null>(null)
 
-  /* 覆盖表来自设置；清洗后应用，脏值不参与展示与匹配。 */
   const overrides: ShortcutOverrides = useMemo(() => shortcutOverridesFromSettings(settings), [settings])
   const defs = useMemo(() => applyShortcutOverrides(overrides), [overrides])
   const conflicts = useMemo(() => findShortcutConflicts(defs), [defs])
@@ -65,7 +53,6 @@ export function ShortcutsSettings(): ReactElement {
     [patchSettings]
   )
 
-  /* 录制：窗口捕获阶段截住按键，不让外壳全局分发或输入框吃掉。 */
   useEffect(() => {
     if (!recordingId) return
     const onKey = (event: KeyboardEvent): void => {

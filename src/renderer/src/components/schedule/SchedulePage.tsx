@@ -34,7 +34,6 @@ function toTrigger(d: Draft): ScheduleTrigger {
 
 const when = (ms: number | undefined): string => ms ? new Date(ms).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 
-/** 定时任务页：列出任务、新建 / 编辑、启停、立即运行。到点的触发在主进程（只在砚运行时）。 */
 export function SchedulePage({ open, onClose }: { open: boolean; onClose(): void }) {
   const t = useT()
   const confirm = useConfirm()

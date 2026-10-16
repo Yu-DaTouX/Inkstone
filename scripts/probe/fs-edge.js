@@ -1,21 +1,3 @@
-/**
- * 文件树边界（L02）——在**合成 fixture 项目**上跑（`cwd` 由 test-live 指向它）。
- *
- * 为什么单独一个场景：`fs` 场景在源码树上跑，只能证明“能用的路径能用”；
- * 这里要把「容易出错、源码树里造不出来」的那几类一次性钉死：
- *   · 空目录     —— 必须给出「空」的明确状态，而不是空白行或错误
- *   · 失效/错型  —— 目录不存在、把文件当目录，主进程要报 missing 而不是空列表
- *   · 越界       —— `../..` 必须 invalid
- *   · 目录联接   —— 不跟随（不成为可展开路径），但要出现在「已隐藏」名单里
- *   · 多级 / 中文空格 / 同名文件 —— 真实文件系统上的身份与渲染
- *   · 大目录     —— 界面 50 一批分页（`fs-more`），不是一次性铺满
- *   · 无权限目录 —— 真 ACL 拒绝读取：主进程给 `permission`、界面给「无权限」而不是「空」
- *   · 窄右栏     —— `PANEL_MIN=220` 下行不横溢、超长名省略但 `title` 给全文、分页仍可用
- *   · 浏览器共存 —— 右栏上半原生浏览器视图时，下半文件树不重叠、不被挤掉
- *
- * 探针**不做**的事：不写文件、不删文件（fixture 由 test-live 造好，
- * 临时目录，跑完整批删除）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -40,7 +22,6 @@
   const rowsUnder = (prefix) => rowsOf().filter((r) => (r.dataset.path ?? '').startsWith(prefix))
 
   try {
-    /* 关引导层（与 fs 场景同一套做法） */
     localStorage.setItem('yan.onboarded', '1')
     for (let i = 0; i < 25; i++) {
       const card = document.querySelector('.ob-card')
@@ -52,7 +33,6 @@
       } else await sleep(150)
     }
 
-    /* H-3b：新会话默认停在「开始」页；文件分区在「工具」页。 */
     if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
     await sleep(400)
     document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -70,7 +50,6 @@
     }
     ok(true, 'cwd 指向合成 fixture 项目')
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 1. 主进程 listDir 的边界（真实文件系统） ===')
     const L = (rel, hidden) => window.yan.listDir(rel, hidden === true)
@@ -121,7 +100,6 @@
       ok(linkSkipped, '被跳过的链接出现在「已隐藏」名单里（不假装它不存在）', JSON.stringify(rootList.skipped))
     }
 
-    /* 排序：目录全部在文件之前（这是列表的既定语义，不是巧合） */
     const firstFileIdx = rootList.entries.findIndex((e) => !e.dir)
     const lastDirIdx = rootList.entries.map((e) => e.dir).lastIndexOf(true)
     ok(
@@ -130,7 +108,6 @@
       `lastDir=${lastDirIdx} firstFile=${firstFileIdx}`
     )
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 2. 界面：大目录分页（50 一批） ===')
     const rootReady = await until(() => rowsOf().length > 2, 8000)
@@ -138,7 +115,7 @@
     const rootRow = q('[data-testid="fs-row-root"]')
     ok(/fixture-project/i.test(rootRow?.textContent ?? ''), '根行显示 fixture 项目名', rootRow?.textContent?.trim())
 
-    const rootCount = rowsOf().length - 1 /* 根行自己 */
+    const rootCount = rowsOf().length - 1
     const bigRow = rowOf('big')
     if (!bigRow) {
       ok(false, '找不到 big 目录行')
@@ -146,15 +123,6 @@
       click(bigRow)
       const gotBatch = await until(() => rowsUnder('big/').length > 0, 8000)
       const firstBatch = rowsUnder('big/').length
-      /*
-       * 预算怎么算（2026-09-19 修）：
-       *
-       * 产品的语义是「**当前渲染的总行数**不超过一批（50）」—— 展开 big 时树会收起
-       * 兄弟目录，所以“已用额度”不等于“根层项数”。原来的期望写成 `50 - 1 - 根层项数`，
-       * 于是在根层 18 项时算出 31，而产品实际渲染 48 行（48 + 根行 + big 行 = 50，正好一批）。
-       * 改成：先数**展开后**的非 big 行，期望 = 50 − 它们；并直接钉住总行数 = 50。
-       * 这两条一起才能守住“一次性铺满 60 行”这类真缺陷（那时总行数会 > 50）。
-       */
       const nonBigRows = rowsOf().filter((r) => !(r.dataset.path ?? '').startsWith('big/')).length
       const expectedFirstBatch = Math.max(0, 50 - nonBigRows)
       const more = q('[data-testid="fs-more"]')
@@ -168,26 +136,15 @@
       if (more) {
         const beforePaths = rowsOf().map((r) => r.dataset.path)
         const renderedBefore = beforePaths.length
-        /*
-         * 用键盘激活（Enter）而不是 click：按钮在这批之后会**卸载** ——
-         * 焦点必须交给新露出的第一行，否则会掉到 body（N22-4 的焦点恢复断言）。
-         */
         more.focus()
         more.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-        click(more) // 探针里的 click 只是兜底（真实按钮对 Enter 也会触发 click）
+        click(more)
         const expanded = await until(() => rowsUnder('big/').length === 60, 4000)
         ok(expanded, '点「显示更多」后补上剩余行', `${rowsUnder('big/').length}/60`)
         await until(() => !q('[data-testid="fs-more"]'), 3000)
         ok(!q('[data-testid="fs-more"]'), '全部渲染完之后「显示更多」消失')
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
         const afterPaths = rowsOf().map((r) => r.dataset.path)
-        /*
-         * 焦点断言只钉两条性质，不钉"具体哪一行"：
-         *   ① 焦点还在树里的行上（按钮卸载后不许掉到 body）；
-         *   ② 它是这一批**新露出**的行（不是又跳回旧行）。
-         * 具体落点（实现里是 `allVisiblePaths[visibleLimit]`，即额度边界那一行）
-         * 会随"已缓存但未渲染"的行数变化 —— 钉死行号会让断言在别的 fixture 上假失败。
-         */
         const focused = document.activeElement
         const focusedPath = focused?.dataset?.treePath ?? ''
         const stillRow = focused?.classList?.contains('rp-fs-row') === true
@@ -199,12 +156,10 @@
         )
       }
     }
-    /* 收起 big，避免占用后面的渲染额度 */
     const bigRowAgain = rowOf('big')
     if (bigRowAgain) click(bigRowAgain)
     await until(() => rowsUnder('big/').length === 0, 3000)
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 3. 界面：空目录 / 多级 / 中文空格 ===')
     const emptyRow = rowOf('empty')
@@ -277,7 +232,6 @@
       ok(false, '找不到 uni 目录行')
     }
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 4. 同名文件：身份按完整路径区分 ===')
     store.getState().clearAttachments()
@@ -305,7 +259,6 @@
     store.getState().clearAttachments()
     store.getState().closePreview()
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 5. 溢出体检（中文长名字） ===')
     const over = rowsOf().filter((r) => r.scrollWidth > r.clientWidth + 1)
@@ -318,14 +271,8 @@
       out.push('  ⤺ 跳过：界面上没有「已隐藏」提示（这台机器没建出链接）')
     }
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 6. 无权限目录（真实 ACL：deny 当前用户读取） ===')
-    /*
-     * 这一条不能用 mock：要的正是 Node/Windows 在**真的**读不到目录时
-     * 主进程返回什么、界面又显示什么。fixture 用 `icacls /deny ...(RD)`
-     * 造出来；造不出来的机器（非 NTFS / 改不了 DACL）降级为「跳过」。
-     */
     const noperm = await L('noperm')
     out.push(`  listDir('noperm') → status=${noperm.status} entries=${noperm.entries.length}`)
     if (noperm.status === 'ok') {
@@ -359,15 +306,8 @@
       }
     }
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 7. 窄右栏（PANEL_MIN = 220px） ===')
-    /*
-     * 右栏最小宽度是 `PANEL_MIN=220`（`src/shared/ipc.ts`），不是随手取的数：
-     * 用户反馈的“窄栏下文件名看不清 / 布局破”就发生在这一档。
-     * 这里直接把宽度设到下限，再量：行不横溢 / 超长名省略但 title 给全文 /
-     * 大目录分页与「显示更多」仍然可用。
-     */
     const rpEl = () => q('[data-workspace-pane="files"]:not([hidden])')
     const widthOf = (el) => (el ? Math.round(el.getBoundingClientRect().width) : 0)
     const wBefore = widthOf(rpEl())
@@ -388,7 +328,6 @@
       )
     }    ok(overNarrow.length === 0, '窄栏下文件树行不横向溢出')
 
-    /* 超长名字：必须省略显示，但 `title` 里能拿到完整路径（悬停可见） */
     const clipped = rowsOf().filter((r) => {
       const n = r.querySelector('.rp-fs-name')
       return !!n && n.scrollWidth > n.clientWidth + 1
@@ -403,7 +342,6 @@
       '被省略的行都在 title 里给出完整路径'
     )
 
-    /* 窄栏下交互仍可用：展开大目录（分页按钮不能撑破） */
     const bigNarrow = rowOf('big')
     if (bigNarrow) {
       click(bigNarrow)
@@ -421,11 +359,9 @@
       ok(false, '窄栏下找不到 big 目录行')
     }
 
-    /* 恢复默认宽度，给下一节的浏览器共存用（0 = 用默认值） */
     pane.style.width = previousWidth
     await sleep(700)
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 8. 浏览器与文件磁贴共存 ===')
     await window.__yanOpenWorkspaceTool('浏览器', 'browser')

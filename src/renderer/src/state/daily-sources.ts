@@ -2,18 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { SourceLinkView, SourceRefView } from '../../../shared/ipc'
 import { listSourceFiles } from './source-files'
 
-/**
- * 读当前会话的来源（实施-18 S3）。
- *
- * 三类来源的存储方式不同（见 `SourceMenu` 的长注释）：图片在我们持有的
- * 副本里，文件只登记路径、由主进程复核，网页只有本地 URL 记录。这里把
- * 三路合成一份只读快照给工作台首页用，**不做登记/删除** —— 那些动作仍归
- * 来源菜单，避免两处写同一份 localStorage 登记。
- *
- * 与 `SourceMenu` 共用同样的 localStorage 键：那是同一份登记数据，
- * 各存一份会立刻漂移。
- */
-
 interface WebLink {
   id: string
   sessionId: string
@@ -64,7 +52,6 @@ export function useSessionSources(sessionId: string | undefined): SessionSources
       setState(EMPTY)
       return
     }
-    /* 迟到的响应不能画到已切换的会话上（来源按会话隔离） */
     const mine = ++gate.current
     setState((s) => ({ ...s, loading: true, error: false }))
     void (async () => {

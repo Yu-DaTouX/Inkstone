@@ -1,21 +1,3 @@
-/**
- * 定时发送安全 + 正式 T 来源回归（v3 WP-51 生产链）。
- *
- * 与 `test-v3-scheduled-runs.mjs`（纯 runs-host）不同：这里把**真实 RunnerRegistry**
- * 与**真实 runs-host** 接到 `src/main/index.ts` 里 `scheduleService.run()` 的**生产
- * 回调**上（AST 提取后原样执行），验证：
- *
- *   · 选择进行中（prepareNewSession 的 await 窗口）先收到 title/state/queued 信号，
- *     会话也不会先分到 S 号，而是走任务 id 的 T 号；
- *   · 发送前 `openScheduled` 用同一 CodeStore / Registry 登记 T，成功沿同一 ctx 收口；
- *   · setModel / send 失败用同一 ctx 收成 failed，不投别的会话；
- *   · 定时会话的子运行沿用父 T 号 `T01·n`；
- *   · 普通 select（不带来源）仍按会话 S 号，不受影响；
- *   · 同一任务再次触发：T 号稳定、runId 独立。
- *
- * 纯本地：esbuild 现场编译 + 假 agent / 隔离临时目录；不发指令、不启动 pi / Electron、
- * 不跑真实模型、不联网。运行视觉 / 真实定时不在本检查范围。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -51,7 +33,6 @@ async function readCodes(root) {
   }
 }
 
-/** 从工作区现文提取 scheduleService.run 与 pin 助手，原样在 vm 里执行。 */
 async function extractDispatch() {
   const source = await readFile('src/main/index.ts', 'utf8')
   const ast = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
@@ -79,7 +60,6 @@ let seq = 0
 let sessionSeq = 0
 const task = { id: 'task-dispatch', name: '早信号任务', prompt: 'fixture only', trigger: { kind: 'interval', minutes: 5 } }
 
-/** 假 agent：只暴露 RunnerRegistry / runs-host 会读的宿主事实。 */
 function makeRegistry(RunnerRegistry, runsHost, hooks = {}) {
   const sent = []
   const createAgent = (id, cwd, generation) => {
@@ -109,7 +89,6 @@ function makeRegistry(RunnerRegistry, runsHost, hooks = {}) {
       },
       async setModel() { return hooks.setModel ? hooks.setModel() : { ok: true } },
       async send(text) { sent.push({ sessionId: this.state.sessionId, text }); return { ok: true } },
-      /** 选择 await 窗口内的早期信号：真 pi 会在标题 / 状态就绪时推这些。 */
       emitEarly() {
         observer({ sessionId: this.state.sessionId, title: '早标题' }, { type: 'title', title: '早标题' })
         observer({ sessionId: this.state.sessionId }, { type: 'queued', reason: 'scheduled' })
@@ -162,7 +141,6 @@ try {
     newRunId: () => `run-${++seq}`
   })
 
-  /* ── 1. 选择 await 期间的早期信号必须先走 T 号，不能先分 S ── */
   const main = makeRegistry(RunnerRegistry, host)
   const context = makeContext(main.registry, host, sameRuntimeEnvelope, dispatchCode)
   const dispatch = (overrides = {}) => context.dispatch({ ...task, ...overrides })
@@ -183,7 +161,6 @@ try {
     host.observerFor({ generation: 1 })({ sessionId: session1 }, { type: 'agent-start' })
     verify(host.snapshot().runs.find((item) => item.runId === run1.runId).phase.kind === 'running', '同 ctx 进入 running')
 
-    /* ── 2. 定时会话的子运行沿用父 T 号（父运行仍在跑） ── */
     host.observeSubagentEvent(
       { id: 'sub-sched', parentSessionId: session1, task: '定时子任务' },
       { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta' } }
@@ -195,7 +172,6 @@ try {
     verify(host.snapshot().runs.find((item) => item.runId === run1.runId).phase.kind === 'done', '同 ctx 收成 done')
   }
 
-  /* ── 3. 普通 select（无来源）仍按 S 号，证明上面的 T 不是巧合 ── */
   const normal = await main.registry.select({ cwd: work })
   verify(normal.ok && !!normal.sessionId, '普通 select 成功（复用空闲实例）')
   const normalSession = normal.sessionId
@@ -206,7 +182,6 @@ try {
     '普通选择仍按会话 S 号登记'
   )
 
-  /* ── 4. setModel 失败：同一 ctx 收成 failed，不投别的会话 ── */
   const failing = makeRegistry(RunnerRegistry, host, { setModel: () => ({ ok: false, error: 'fixture 模型不可用' }) })
   const failContext = makeContext(failing.registry, host, sameRuntimeEnvelope, dispatchCode)
   await assert.rejects(() => failContext.dispatch({ ...task, id: 'task-fail', name: '失败任务', model: 'fixture/model' }), /fixture 模型不可用/); checks++
@@ -215,7 +190,6 @@ try {
   verify(!!failedRun, '失败的定时运行以同一注册表收成 failed')
   verify(!!failedRun && failedRun.code.startsWith('T'), '失败运行仍持有 T 号')
 
-  /* ── 5. 同一任务再次触发：T 号稳定、runId 独立 ── */
   const again = makeRegistry(RunnerRegistry, host)
   const againContext = makeContext(again.registry, host, sameRuntimeEnvelope, dispatchCode)
   await againContext.dispatch({ ...task, id: 'task-dispatch' })

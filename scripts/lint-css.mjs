@@ -1,18 +1,3 @@
-/**
- * CSS 守卫：grid 里的 `1fr` 必须写成 `minmax(0, 1fr)`。
- *
- * 为什么值得单独一个脚本：
- *   裸 `1fr` 的轨道最小值是 `auto`（= 内容的 min-content/max-content）。
- *   内容一宽（长会话名、长路径、长单词）轨道就超出容器，**溢出的部分被右邻的
- *   不透明列盖住** —— 表现为「文字被遮」「边框不见」，而且不报任何错。
- *   这个坑在本项目已经出现 3 次（.rail、设计稿 .rail、应用侧 4 处），
- *   靠肉眼在截图里找显然不划算。
- *
- * `minmax(0, 1fr)` 把最小值钉成 0，轨道就能跟着容器收缩，配合子元素的
- * `min-width:0` + `overflow:hidden` 才是正确的截断写法。
- *
- * 用法： node scripts/lint-css.mjs
- */
 import { readFile, readdir } from 'node:fs/promises'
 import { join, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,7 +9,6 @@ const TARGETS = [
   join(root, 'scripts/design/prototype.html')
 ]
 
-/** 收集要检查的文件 */
 async function collect(target) {
   if (target.endsWith('.html') || target.endsWith('.css')) return [target]
   const out = []
@@ -36,7 +20,6 @@ async function collect(target) {
   return out
 }
 
-/** 找出 grid-template-columns 里没被 minmax 包住的 fr */
 function findBareFr(css) {
   const hits = []
   const lines = css.split('\n')
@@ -46,14 +29,6 @@ function findBareFr(css) {
     if (!m) return
 
     const value = m[1]
-    /*
-     * 先把 minmax(...) 整段挖掉，剩下的 fr 就是「裸」的。
-     *
-     * 必须按**括号配对**扫描，不能用 `/minmax\([^)]*\)/`：
-     * 合法写法 `minmax(min(240px, 100%), 1fr)` 里的 `min(` 会先遇到一个 `)`，
-     * 非贪婪正则会提前收尾，把后面的 `, 1fr` 当成裸 fr 误报
-     *（P04 的 workbench.css 就这么被误判过）。
-     */
     const stripped = stripCalls(value, 'minmax')
     if (/\d+(\.\d+)?fr/.test(stripped)) {
       hits.push({ line: i + 1, text: line.trim(), value: value.trim() })
@@ -63,7 +38,6 @@ function findBareFr(css) {
   return hits
 }
 
-/** 把 `name( ... )` 整体（含嵌套括号）替换为空格，返回剩余文本。 */
 function stripCalls(value, name) {
   const head = new RegExp(`^${name}\\s*\\(`, 'i')
   let out = ''
@@ -94,14 +68,6 @@ const files = (await Promise.all(TARGETS.map(collect))).flat()
 let badFr = 0
 let badBrace = 0
 
-/**
- * 花括号平衡检查。
- *
- * 为什么需要（真实事故）：用脚本删 CSS 片段时留下了一个未闭合的 `{`，
- * 把后面**所有规则**都吞进了一个非法块 —— 结果压缩记号、高度把手、
- * 收起态按钮全部静默失效（CSS 不报错，只是不生效）。
- * 这类错误很难发现：浏览器什么都不说，只能靠量像素才看得出来。
- */
 function braceImbalance(css) {
   let depth = 0
   let firstBad = 0

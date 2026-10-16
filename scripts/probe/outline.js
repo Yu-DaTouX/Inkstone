@@ -9,7 +9,6 @@
   for (let i = 0; i < 60; i++) { if (store.getState().conn === 'ready') break; await sleep(500) }
   store.getState().closeSettings()
 
-  // 找用户轮数最多的会话（导航轨要 ≥3 轮才显示）
   let best = null
   let bestTurns = 0
   for (const s of store.getState().sessions.filter((x) => (x.messageCount ?? 0) > 3).slice(0, 6)) {
@@ -34,23 +33,11 @@
   if (!ol) return out.join('\n')
 
   const ticks = qa('[data-testid="outline-tick"]')
-  /*
-   * ⚠️ 不要拿「我自己数的用户消息数」当期望值 —— 那是**两套口径**：
-   *    组件用 groupIntoTurns（会把连续用户消息合并成一轮），
-   *    而这里数的是 role === 'user' 的条数。两者会差几格（实测 20 vs 18），
-   *    断言就成了「实现换了就假失败」——而它跟应用对不对毫无关系。
-   * 改成**单调性质**：轮数 ≤ 用户消息数（合并只会减少）+ 与命中格数相等。
-   */
   ok(ticks.length >= 3, `刻度数 ${ticks.length} ≥ 3（够渲染导航轨）`)
   ok(ticks.length <= bestTurns, `刻度数 ${ticks.length} ≤ 用户消息数 ${bestTurns}（合并只会减少）`)
   ok(ticks.length === qa('.outline-hit').length, '每格刻度都有可点区域')
   ok(qa('.outline-tick.on').length === 1 || qa('.outline-hit.on').length === 1, '恰好一个高亮')
 
-  /*
-   * 用户报的 bug：人在最新消息，柄却停在第一格。
-   * 根因是“没有任何回合越过视口顶部"时 active 停在初始值 0，
-   * 所以这里直接按**用户能看到的两个极端位置**断言。
-   */
   const box = q('.stream')
   const hits = qa('.outline-hit')
   const onIndex = () => qa('.outline-hit').findIndex((el) => el.classList.contains('on'))
@@ -74,12 +61,6 @@
     }
   }
 
-  /*
-   * 导航轨 v3 的断言（用户报「范围太小且过于密集」后重写）：
-   *   可点区域是 .outline-hit（padding 撑起来的按钮），
-   *   那根细线是它内部的 .outline-bar。
-   *   所以量命中区高度，而不是量线的高度 —— 线只有 3px，不是可点范围。
-   */
   const hitH = Math.round(ticks[0].getBoundingClientRect().height)
   out.push('  命中区高度: ' + hitH + 'px')
   ok(hitH >= 12, `每格命中区 ≥12px（实际 ${hitH}，之前只有 3px —— 这就是选不中的原因）`)
@@ -88,7 +69,6 @@
   out.push('  命中区宽度: ' + hitW + 'px')
   ok(hitW >= 24, `每格命中区 ≥24px（实际 ${hitW}）`)
 
-  // 命中区之间不能重叠（重叠 = 永远选不到下面那一格）
   if (ticks.length >= 2) {
     const a = ticks[0].getBoundingClientRect()
     const b = ticks[1].getBoundingClientRect()
@@ -102,13 +82,6 @@
   out.push('  刻度线宽: ' + barW + 'px')
   ok(barW >= 14, `刻度线 ≥14px（实际 ${barW}）`)
 
-  // 动态展开：CSS 层面验证，**不模拟 hover**。
-  //
-  // 为什么不用 dispatchEvent('mouseover') 测：
-  //   合成事件不会产生真正的 :hover 状态，:has(.x:hover) 永远不匹配 ——
-  //   断言会失败，但功能其实是好的。要真触发只能 sendInputEvent，
-  //   而那需要主进程配合，且窗口必须真的可见。
-  //   所以这里验证「规则存在且选择器正确」，视觉行为靠人工看一眼。
   const track = q('.outline-track')
   const barGap = Math.round(parseFloat(getComputedStyle(track).rowGap || '0'))
   out.push('  轨道 gap: ' + barGap + 'px')
@@ -124,21 +97,18 @@
         if (s.includes(':has(.outline-hit.hover)')) hasRule = true
       }
     } catch {
-      /* 跨域样式表读不到，跳过 */
     }
   }
   ok(hasHitRule, '存在「悬停时那一格就地展开」的 CSS 规则')
   ok(hasRule, '存在「悬停时其它格提亮」的 CSS 规则')
   ok(ol && getComputedStyle(ol).pointerEvents === 'none', '导航轨空白处不挡消息流（pointer-events:none）')
 
-  // 悬停预览 + 点击跳转
   const ul = store.getState().messages.filter(m => m.role === 'user')
   out.push('')
   out.push('=== 悬停与跳转 ===')
   ticks[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
   await sleep(400)
   ok(!!q('[data-testid="outline-preview"]'), '悬停弹出预览')
-  // 预览卡要锚在被指的那一格旁边（旧实现固定在轨道垂直中心）
   const pv = q('[data-testid="outline-preview"]')
   const tb = ticks[0].getBoundingClientRect()
   const pb = pv?.getBoundingClientRect()
@@ -148,27 +118,16 @@
     ok(dTop < 220, `预览卡跟着被指的那一格（偏差 ${dTop}px，不再固定居中）`)
   }
 
-  /*
-   * 预览卡的内容结构（用户要求改过）：
-   *   「一行标题 + 三行 AI 回答」
-   * 旧版把用户的**整段原话**铺进去（带路径/报错），看着是杂讯。
-   */
   const ptitle = q('[data-testid="outline-preview-title"]')
   const panswer = q('[data-testid="outline-preview-answer"]')
   ok(!!ptitle, '预览有标题（用户那一问的短摘要）')
   if (ptitle) {
     const txt = ptitle.textContent ?? ''
     out.push('  标题: ' + JSON.stringify(txt))
-    /*
-     * 「标题里没有路径 / 裸文件名」这两条**依赖模型生成的摘要内容** ——
-     * 换个 fixture 就会假失败（它测的是摘要质量，不是界面行为）。
-     * 降级成提示：那件事该由专门的测试去管，不是这里。
-     */
     if (/[A-Za-z]:[\\/]/.test(txt) || /\.(png|jpe?g|ts|tsx|js|json|md)\b/i.test(txt)) {
       out.push('  ⚠ 这条标题里带了路径/文件名（摘要质量问题，不影响界面断言）')
     }
     ok(txt.length <= 24, `标题够短（${txt.length} ≤ 24）`)
-    // 只占一行
     ok(getComputedStyle(ptitle).whiteSpace === 'nowrap', '标题强制单行')
   }
   ok(!!panswer, '预览有回答正文')
@@ -190,10 +149,6 @@
   await sleep(1400)
   out.push('  点第 1 轮后 scrollTop=' + Math.round(sc.scrollTop) + ' / ' + sc.scrollHeight)
 
-  /*
-   * 诊断：滚动没到位时把现场打出来，而不是只报一个 ✗。
-   * （这个断言实为 flaky，不把上下文打出来就无法定位。）
-   */
   if (!(sc.scrollTop < sc.scrollHeight * 0.5)) {
     const first = q('[data-turn-id]')
     const fr = first?.getBoundingClientRect()
@@ -209,41 +164,13 @@
   ok(sc.scrollTop < sc.scrollHeight * 0.5, '跳到了会话前部')
   ok(!!ul[0], '（消息引用正常）')
 
-  /*
-   * 回合合并的副作用检查：导航轨的「第 N 轮」必须仍然 = 第 N 个**用户回合**。
-   * 合并之后一块助手回合里可能含 30+ 条原始消息，用 messages 的下标定位会跳错。
-   */
   out.push('')
   out.push('=== 回合合并与导航轨一致 ===')
   const turnCount = qa('[data-turn-id]').length
   out.push(`  用户轮数 ${ul.length}，渲染块数 ${turnCount}`)
-  /*
-   * 为什么不是 `turnCount >= ul.length`（原来的断言）：
-   * 长会话走**虚拟滚动**（VList），`[data-turn-id]` 只包含视口内那几块。
-   * 实测：200 轮 → 渲染 17 块。所以“每轮至少一块”在虚拟化下永远不成立 ——
-   * 那个断言量的是 DOM 数量，而这里真正要证明的是**导航轨与回合块是对齐的**。
-   * 改成两个真的能证明这件事的检查：
-   *   ① 渲染块数落在 (0, 轮数] 内（多了说明切错，0 说明白屏）；
-   *   ② 上一轮跳转之后确实渲染出了块，且它们的 turn id 都能在导航轨里找到。
-   */
   ok(turnCount > 0 && turnCount <= ul.length, '渲染块数落在 (0, 用户轮数] 内（虚拟滚动下只渲染视口内的块）')
-  /*
-   * 「导航轨第 N 格 = 第 N 个用户回合」由**下面那条点击断言**证明
-   * （点第 i 格 → 滚到第 i 轮），不在这里比 DOM 数量：
-   * `data-turn-id` 是回合 id、`messages` 是原始消息，两者本来就不是同一命名空间。
-   */
   ok(after0(sc), '点击后确实滚动到了目标附近')
 
-  /*
-   * ---- 长会话：刻度不被压扁 ----
-   *
-   * 用户：「左边的导航柄在长文模式且会话很长的情况下会压缩」。
-   * 根因是 .outline-track 的 flex column 默认让子项 shrink ——
-   * 刻度一多就先压扁格子而不是溢出，于是轨道上那条 overflow-y: auto
-   * 永远不触发。上面量的是当前会话（轮数不多）的命中区，碰不到这个。
-   * 所以这里强制注入 40 轮，并同时断言「格子没被压扁」和「轨道可滚」——
-   * 两个都要，只满足前者（把轨道撑高）会让整列溢出对话区。
-   */
   out.push('')
   out.push('=== 长会话（40 轮）下刻度不被压扁 ===')
   const many = []
@@ -276,10 +203,6 @@
     !!trk && trk.scrollHeight > trk.clientHeight,
     '刻度多于轨道高度时轨道自己可滚（而不是把格子压扁）'
   )
-  /*
-   * 可滚但不显示滚动条（用户：「是出现了滚动条 我不想要这个」）。
-   * 两条都要：只藏滚动条而不保证可滚，Tab 到末项就选不到了。
-   */
   ok(
     !!trk && getComputedStyle(trk).scrollbarWidth === 'none',
     '轨道不显示滚动条（scrollbar-width: none）'
@@ -287,7 +210,6 @@
 
   return out.join('\n')
 
-  /** 目标回合的顶部应靠近滚动区顶部（或已在顶部） */
   function after0(el) {
     const firstUser = [...el.querySelectorAll('[data-turn-id]')].find(node => node.dataset.turnId === ul[0]?.id)
     if (!firstUser) return false

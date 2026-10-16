@@ -8,15 +8,6 @@ import { Button, Disclosure } from '../ui'
 import { useConfirm } from '../ui/confirm'
 import { mergeDiscoveredModels } from './review2-settings-guards'
 
-/**
- * 「接入」设置页的自定义 API 服务（实施-23 M2）。
- *
- * 真源是 pi 的 `models.json`：宿主负责读写与校验（`main/custom-providers.ts`），
- * 这里只做表单。两条硬边界：
- *   · 密钥**只去不回** —— 列表里只显示「已设置 / 未设置」，输入框不回显已存的值；
- *   · 协议是**受支持集合的下拉**，不是自由输入（M0 实测：pi 不校验 api 字段，
- *     填错了会在真正请求时才炸，界面必须替用户挡住）。
- */
 export function CustomProviderForm() {
   const t = useT()
   const confirm = useConfirm()
@@ -24,7 +15,6 @@ export function CustomProviderForm() {
   const [draft, setDraft] = useState<CustomProviderInput | null>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
-  /* 连接测试：面板一次只开一个，结果也只留最近一次（避免和上一条对不上号） */
   const [testId, setTestId] = useState<string | null>(null)
   const [testing, setTesting] = useState('')
   const [testResult, setTestResult] = useState<{ id: string; result: CustomProviderTestResult } | null>(null)
@@ -70,10 +60,8 @@ export function CustomProviderForm() {
   })
 
   const [fetching, setFetching] = useState(false)
-  /* 本机服务探测：null = 还没探测过 */
   const [locals, setLocals] = useState<LocalModelServer[] | null>(null)
   const [detecting, setDetecting] = useState(false)
-  /* 额外探测的地址（局域网主机、非默认端口），由宿主存盘 */
   const [extraUrls, setExtraUrls] = useState<string[]>([])
   const [urlDraft, setUrlDraft] = useState('')
 
@@ -100,7 +88,6 @@ export function CustomProviderForm() {
     await detectLocal()
   }
 
-  /** 把探测到的对话服务填进表单；已存在同名服务时改为编辑它（沿用已存的 key） */
   const fillFromLocal = async (server: LocalModelServer): Promise<void> => {
     const id = server.suggestedId ?? 'yan-local'
     const base: CustomProviderInput = {
@@ -125,7 +112,6 @@ export function CustomProviderForm() {
     }
   }
 
-  /** 从端点拉模型填进表单（保留已填的行，只追加没有的 ID） */
   const fetchModels = async (): Promise<void> => {
     if (!draft) return
     setFetching(true)
@@ -137,7 +123,6 @@ export function CustomProviderForm() {
         return
       }
       const entries: CustomProviderInput['models'] = found.entries ?? found.models.map((id) => ({ id }))
-      /* 已有的行保留用户填的名称与上下文，补上端点和 pi 目录给出的协议与思考能力 */
       setDraft((current) => current ? { ...current, models: mergeDiscoveredModels(current.models, entries, (model, entry) => ({
         ...entry, ...model, api: model.api ?? entry.api, baseUrl: model.baseUrl ?? entry.baseUrl,
         reasoning: model.reasoning === true || entry.reasoning === true || undefined,
@@ -158,7 +143,6 @@ export function CustomProviderForm() {
     try {
       const result = await window.yan.saveCustomProvider({
         ...draft,
-        /* 空白表示沿用旧值；空白字段不要覆盖磁盘上的 key */
         ...(draft.apiKey && draft.apiKey.trim() ? {} : { apiKey: undefined })
       })
       if (!alive.current) return
@@ -290,7 +274,6 @@ export function CustomProviderForm() {
             <input
               className="ui-input"
               type="password"
-              /* 不回显已存密钥：留空表示沿用 */
               value={draft.apiKey ?? ''}
               placeholder={t('customApi.apiKeyPlaceholder')}
               data-testid="custom-api-key"
@@ -457,7 +440,6 @@ export function CustomProviderForm() {
                   </Button>
                   <span className="spacer" />
                 </div>
-                {/* 成本提示必须就在按钮旁边：点下去之前就要知道哪一段会花钱 */}
                 <div className="ui-row-desc">{t('customApi.testCost')}</div>
                 {testResult?.id === item.id ? (
                   <div

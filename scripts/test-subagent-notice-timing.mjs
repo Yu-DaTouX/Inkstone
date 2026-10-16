@@ -1,26 +1,3 @@
-/**
- * 子代理结果通知作为「助手运行段计时分界」的定向测试。
- *
- * 背景（用户报的 bug）：派出的子代理返回时，此前**已经结束**的助手回复段
- * 运行时间被刷新。根因在 `groupIntoTurns()`：宿主子代理结果通知是 `user` 角色，
- * 分支里 `continue` 直接跳过、**没有封住正在累积的助手段**。于是通知之后的
- * 新 run 的 assistant 消息被并进同一段，`cur.last` / `cur.usage` 被新值替换，
- * 已结束段的 elapsedMs 与用量被覆盖。
- *
- * 这里钉住修复后的不变式（纯函数投影，不启动 Electron / pi / 模型）：
- *   · 通知是后续助手运行的计时分界，但**不画成用户轮**，也不进导航 / 队列；
- *   · 已结束段冻结：id / elapsedMs / usage 不被后续段替换；
- *   · 后续段独立计时，用量是真实新请求，不复制旧段；
- *   · 会话累计仍按真实请求累计，不重复也不丢失；
- *   · JSONL 计时恢复按**各自真实用户 / 通知边界**锚定，不串段、不覆写。
- *
- * 后段另钉宿主投递侧的**按兄弟运行情况自适应合并**（`subagent-notify.ts`）：无兄弟走 20 秒
- * 短窗口；有兄弟进等待批（0.5 × 首条运行时长，夹在 2 / 10 分钟）；等待期并入且截止不延后；
- * 出错立即带出等待批；兄弟全部结束（含被取消）提前收尾；跨父会话不混、开关关闭不投。
- * 用可注入时钟与假定时器覆盖，不真等分钟级窗口。
- *
- * 现场 esbuild 编译 + 临时数据目录，用 `node scripts/test-subagent-notice-timing.mjs` 单跑。
- */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -31,7 +8,6 @@ import { build } from 'esbuild'
 
 const temp = await mkdtemp(join(tmpdir(), 'yan-subagent-notice-'))
 const dataDir = join(temp, 'data')
-/* tracker 导入时就把 YAN_DIR 定死，必须在求值前设好。 */
 process.env.YAN_DATA_DIR = dataDir
 process.env.YAN_PI_DIR = join(temp, 'pi')
 
@@ -92,7 +68,6 @@ try {
     buildSubagentNotice({ id, task, status, isolation: 'controlled-cwd', model: 'gpt-x', result: { summary: '完成' } })
   const noticeMsg = (id, status) => ({ id, role: 'user', text: notice(id, status), timestamp: 1 })
 
-  /* ------------------------------------------------ 1. 核心：段冻结 + 独立计时 */
   console.log('\n--- 1. 通知分隔前后助手运行段：前一秒冻结，后一段独立计时 ---')
   const core = [
     user('m0', '把登录改好'),
@@ -127,7 +102,6 @@ try {
     check(second.usage?.totalTokens === 10 && second.usage?.input === 7, '后续段用量是真实新请求 10，不复制旧段', JSON.stringify(second.usage))
     check(JSON.stringify(second.sourceIds) === JSON.stringify(['m3']), '后续段只归属自己的助手消息', JSON.stringify(second.sourceIds))
 
-    /* projector 与 groupIntoTurns 必须同口径 */
     const projected = createTurnProjector()(core)
     check(
       projected.length === 3 &&
@@ -138,7 +112,6 @@ try {
     check(projected.every((t) => t.kind !== 'user' || t.msg.text !== core[2].text), 'projector 输出不含通知用户轮')
   }
 
-  /* ------------------------------------------------ 2. 多次 / 背靠背 / 重复状态通知 */
   console.log('\n--- 2. 多次通知、背靠背通知、重复状态通知 ---')
   {
     const many = [
@@ -170,7 +143,6 @@ try {
     check(bt.length === 2 && bt[1].elapsedMs === 200, '重复 / 背靠背通知不产生空段，也不刷前段', `实际 ${bt.length}`)
   }
 
-  /* ------------------------------------------------ 3. 通知结尾 / 真正用户下一轮 */
   console.log('\n--- 3. 真正用户消息仍是边界，通知后仍可接真实用户轮 ---')
   {
     const seq = [
@@ -194,7 +166,6 @@ try {
     )
   }
 
-  /* ------------------------------------------------ 4. 工具等待不跨段重复计 */
   console.log('\n--- 4. 工具等待区间不跨段重复计 ---')
   {
     const withTools = [
@@ -212,7 +183,6 @@ try {
     check(first.elapsedMs === 1200 && second.elapsedMs === 300, '带工具的段计时也各自冻结')
   }
 
-  /* ------------------------------------------------ 5. 会话累计 / 导航 / 用户轮 */
   console.log('\n--- 5. 会话累计、导航与轮数口径 ---')
   {
     const metrics = projectSessionMetrics(core, null)
@@ -226,7 +196,6 @@ try {
     check(outlines[0].elapsedMs === 1200, '导航取通知前已结束段的用时 1200')
     check(!outlines.some((o) => o.user.includes('subagent-notification')), '导航文本不含通知内容')
 
-    /* 通知不应出现在任何用户面向投影里 */
     const projectorTurns = createTurnProjector()(core)
     check(
       !projectorTurns.some((t) => t.kind === 'user' && isSubagentNotice(t.msg.text)),
@@ -234,12 +203,10 @@ try {
     )
   }
 
-  /* ------------------------------------------------ 6. JSONL 计时恢复按真实边界锚定 */
   console.log('\n--- 6. 历史计时日志按用户 / 通知边界恢复，不串段不覆写 ---')
   {
     const g1 = { durationMs: 1200, ttftMs: 200, decodeMs: 1000 }
     const g2 = { durationMs: 300, ttftMs: 50, decodeMs: 250 }
-    /* 重载后 id 由 normalize 顺序生成：用户 m0、助手 m1、通知 m2、助手 m3。 */
     const rec1 = {
       v: 1,
       logicalTurnId: 'm0',
@@ -293,7 +260,6 @@ try {
     )
   }
 
-  /* ------------------------------------------------ 7. tracker 真实锚定路径 */
   console.log('\n--- 7. TurnTimingTracker 为通知后的 run 单独锚定 ---')
   {
     const tracker = new TurnTimingTracker()
@@ -303,7 +269,6 @@ try {
     tracker.messageIds = ['m1']
     await tracker.persist(true, 'tracker-notice.jsonl', [user('m0', '把登录改好'), asst('m1', '已改好。')])
 
-    /* 新 run（子代理通知触发的后续运行）：agent_start 重置了 messageIds / runId。 */
     tracker.elapsedMs = 300
     tracker.runId = 'run-2'
     tracker.terminal = 'completed'
@@ -323,10 +288,8 @@ try {
     check(byAnchor.get('m2')?.sourceIds.includes('m3'), 'run-2 只归属自己的助手消息 m3')
   }
 
-  /* ------------------------------------------------ 8. 老记录无法确认时保持未知不串 */
   console.log('\n--- 8. 老记录 / 数据不完整时保持未知，不猜不串 ---')
   {
-    /* 锚找不到 → 回退 sourceIds；生成计时数量对不上 → 整段未知。 */
     const ghostGen = { durationMs: 999 }
     const ghost = {
       v: 1,
@@ -343,7 +306,6 @@ try {
     check(applied[1].turnTiming?.elapsedMs === 50, '锚丢失时整轮用时仍按 sourceIds 回退')
     check(applied[1].generationTiming === undefined, '生成计时数量对不上 → 保持未知（不把 999 硬挂上去）')
 
-    /* 旧记录没有 final → 不误报中断；没有 generationTimings → 保持未知。 */
     const legacy = {
       v: 1,
       logicalTurnId: 'm0',
@@ -359,7 +321,6 @@ try {
     check(legacyApplied[1].generationTiming === undefined, '旧记录缺生成计时保持未知，不拿墙钟冒充')
   }
 
-  /* ------------------------------------------------ 9. 根因复现（修复前源码） */
   console.log('\n--- 9. 根因复现：修复前 groupIntoTurns 会刷新已结束段 ---')
   {
     let oldSrc = ''
@@ -401,12 +362,10 @@ try {
     }
   }
 
-  /* ------------------------------------------------ 10. 宿主完成通知按自适应窗口合并 */
   console.log('\n--- 10. 子代理完成通知按兄弟运行情况自适应合并 ---')
   {
     const realSetTimeout = globalThis.setTimeout
     const realClearTimeout = globalThis.clearTimeout
-    /* 可注入时钟 / 假定时器：不真等分钟级窗口，测试里推进虚拟时间。 */
     let clock = null
     globalThis.setTimeout = (fn, ms) => clock.setTimeout(fn, ms)
     globalThis.clearTimeout = (timer) => clock.clearTimeout(timer)
@@ -427,7 +386,6 @@ try {
           return timer
         },
         clearTimeout(timer) { if (timer) timer.cleared = true },
-        /* 推进虚拟时间，按到期顺序触发；允许回调再挂新定时器。 */
         async advance(ms) {
           const target = now + ms
           for (;;) {
@@ -462,7 +420,6 @@ try {
       ...extra
     })
 
-    /* 每个场景一个干净时钟、一份 sent 与可变的兄弟计数。 */
     const scenario = (opts = {}) => {
       const clk = makeClock()
       clock = clk
@@ -478,11 +435,9 @@ try {
       })
       return { notify, sent, state }
     }
-    /* 等待批的截止定时器（轮询定时器更短，这里按 ms 过滤）。 */
     const deadlines = () => clock.pending().filter((t) => t.ms >= NOTICE_BATCH_MIN_WAIT_MS)
 
     try {
-      /* 规则 1：无兄弟 → 20 秒短窗口；单条文本逐字不变 */
       {
         const { notify, sent } = scenario({ siblings: { 'sess-a': 0 } })
         const run = finish('sub-one', 'sess-a')
@@ -499,7 +454,6 @@ try {
         check(sent[0].mode === 'followUp' && sent[0].images === undefined, '无兄弟：沿用 followUp 排队语义投递')
       }
 
-      /* 规则 2：有兄弟 → 等待批 = clamp(0.5 × 首条运行时长, 2 / 10 分钟) */
       {
         const half = scenario({ siblings: { 'sess-half': 1 } })
         half.notify(finish('sub-half', 'sess-half', { startedAt: 0, endedAt: 600_000 }))
@@ -517,7 +471,6 @@ try {
         check(deadlines().length === 1 && deadlines()[0].ms === NOTICE_BATCH_MAX_WAIT_MS, '有兄弟：长任务压到 10 分钟上限', JSON.stringify(clock.pending().map((t) => t.ms)))
       }
 
-      /* 规则 3：等待期并入同批，截止不延后 */
       {
         const { notify, sent } = scenario({ siblings: { 'sess-join': 1 } })
         notify(finish('sub-j1', 'sess-join', { startedAt: 0, endedAt: 600_000 }))
@@ -535,7 +488,6 @@ try {
         check(sent[0].text.includes('sub-j1') && sent[0].text.includes('sub-j2'), '等待期并入：两条合并进同一条消息')
       }
 
-      /* 规则 4：出错不等待，按短窗口带出已有等待批 */
       {
         const { notify, sent } = scenario({ siblings: { 'sess-err': 1 } })
         notify(finish('sub-e1', 'sess-err', { startedAt: 0, endedAt: 600_000 }))
@@ -551,7 +503,6 @@ try {
         check(sent[0].text.includes('status="error"'), '出错：合并条目标记为 error')
       }
 
-      /* 规则 5：兄弟全部结束 → 提前改用短窗口收尾 */
       {
         const { notify, sent, state } = scenario({ siblings: { 'sess-five': 1 } })
         notify(finish('sub-f1', 'sess-five', { startedAt: 0, endedAt: 600_000 }))
@@ -566,7 +517,6 @@ try {
         check(sent.length === 1 && sent[0].text.includes('sub-f1') && sent[0].text.includes('sub-f2'), '兄弟清空：两条合并投递，不等到 300000')
       }
 
-      /* 规则 5 + 取消：取消不通知，但它的结束触发提前收尾 */
       {
         const { notify, sent, state } = scenario({ siblings: { 'sess-cancel': 1 } })
         notify(finish('sub-c1', 'sess-cancel', { startedAt: 0, endedAt: 600_000 }))
@@ -582,7 +532,6 @@ try {
         check(!sent[0].text.includes('sub-c2'), '取消兄弟：自身不通知')
       }
 
-      /* 规则 5 兜底：没有事件时靠轮询发现兄弟已结束 */
       {
         const { notify, sent, state } = scenario({ siblings: { 'sess-poll': 1 } })
         notify(finish('sub-p1', 'sess-poll', { startedAt: 0, endedAt: 600_000 }))
@@ -596,7 +545,6 @@ try {
         check(sent.length === 1 && sent[0].text.includes('sub-p1'), '轮询兜底：到短窗口后投递')
       }
 
-      /* 多条无兄弟：短窗口内合并成一条，逐个列出原内容，但仍可识别为通知 */
       {
         const { notify, sent } = scenario({ siblings: { 'sess-merge': 0 } })
         notify(finish('sub-a', 'sess-merge'))
@@ -616,7 +564,6 @@ try {
         check(isSubagentNotice(sent[0].text), '多条：合并文本仍按通知识别（不显示为用户消息）')
         check(parseSubagentNotice(sent[0].text) !== null, '多条：合并文本仍可解析出标题行')
 
-        /* 窗口结束后再到的一条另起一批，不丢也不重复 */
         notify(finish('sub-d', 'sess-merge'))
         await settle()
         check(clock.pending().length === 1, '多条：窗口关闭后新到的通知另起一批')
@@ -624,7 +571,6 @@ try {
         check(sent.length === 2 && sent[1].text.includes('sub-d') && !sent[1].text.includes('sub-a'), '多条：新批次独立投递，不重复上一批')
       }
 
-      /* 跨父会话：各自的批次互不混合，只投给原父会话 */
       {
         const clk = makeClock()
         clock = clk
@@ -652,7 +598,6 @@ try {
         check(toB?.text.includes('sub-B1') && !toB?.text.includes('sub-A1'), '跨父会话：B 的消息不含 A 的运行')
       }
 
-      /* 关闭开关：不入队、不挂定时器、不投递 */
       {
         const { notify, sent } = scenario({ enabled: () => false })
         notify(finish('sub-off', 'sess-off'))

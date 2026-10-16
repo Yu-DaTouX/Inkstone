@@ -1,12 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 额度页签账号卡（`QuotaCard` / `resetLine`）的小检查。
- *
- * 用真实组件做静态渲染：窗口百分比与色调、推算标记、已达上限徽标、活跃 / 可切换
- * 账号的按钮、余额、错误与过期提示，以及重置文字（倒计时 / 月日期 / 待刷新）。
- * 不启动 Electron、不连 pi、不读用户数据、不调真实模型。
- * 用法：node scripts/test-v3-quota-card.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -35,7 +27,6 @@ globalThis.localStorage = {
 }
 Object.defineProperty(globalThis, 'navigator', { value: { language: 'zh-CN', clipboard: {} }, configurable: true })
 
-/* 临时目录放在仓库 .tmp 下（已被 Git 忽略），打包产物才能解析到 node_modules 里的 react。 */
 await mkdir(join(ROOT, '.tmp'), { recursive: true })
 const dir = await mkdtemp(join(ROOT, '.tmp', 'v3-quota-card-'))
 try {

@@ -1,28 +1,7 @@
-/**
- * 「失败子代理不再处理」的隔离回归：纯投影 + 聊天卡片 + 子 Agent 总览。
- *
- * 用户反馈：已失败的子 Agent 只有「重试 / 详情」，没有退出口。本轮修好后钉住：
- *   ① 纯投影 `subagentOutcome`：`error` 且带有效 `dismissedAt` → quiet / mute /
- *      `key='dismissed'` / 不再 attention / rank 2；原 `status` 与 `error` 原文不动。
- *   ② 聊天卡片 `SubagentGroup`：常规失败显示「不再处理」次要操作；点后调用
- *      `window.yan.subagents.dismiss(id)`，成功后 `loadSubagents` 重读快照，
- *      失败就地 `role=alert`；在途重复点击只发一次请求；不触发 retry/stop/clearAll；
- *      不乐观隐藏（快照未变时入口仍在）；待审阅（pending/conflict）不可点；
- *      已标记的卡片不再显示入口，进默认折叠的已完成区，详情仍保留失败原因。
- *   ③ 总览 `SubagentPlan`：同一 API、同一分区规则；已处理进「已完成」且默认折叠。
- *
- * 本脚本用 esbuild 现场编译到 `.tmp/`，React 用最小桩（只实现 useState/useRef/
- * useEffect），直接调用组件真实 `onClick` 驱动请求；不启动 Electron、不连接 pi、
- * 不访问网络、不读写真实用户数据。
- *
- * 导出 `runSubagentDismissTests(ok)`；直接运行本文件也会执行并在失败时置退出码。
- */
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
-
-/* ------------------------------------------------ 最小 React 桩：支持重渲染 */
 
 const FragmentType = Symbol('Fragment')
 
@@ -47,7 +26,6 @@ let hookIndex = 0
 let rootElement = null
 let latest = []
 
-/** 状态变更后按同一遍历顺序重放，扁平 hook 槽位随之复用。 */
 function scheduleRerender() {
   hookIndex = 0
   latest = renderChild(rootElement)
@@ -72,7 +50,6 @@ function useRef(initial) {
   return hookStates[i]
 }
 
-/* 时间类副作用在测试里不需要：只占一个槽位，保持 hook 顺序稳定。 */
 function useEffect() { hookIndex++ }
 
 function renderChild(node) {
@@ -119,8 +96,6 @@ function textOf(node) {
 
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
-/* --------------------------------------------------------------- 测试主体 */
-
 export async function runSubagentDismissTests(ok) {
   const check = typeof ok === 'function'
     ? ok
@@ -134,7 +109,6 @@ export async function runSubagentDismissTests(ok) {
   await mkdir(resolve('.tmp/subagent-dismiss-ui'), { recursive: true })
   const buildDir = await mkdtemp(resolve('.tmp/subagent-dismiss-ui/run-'))
   try {
-    /* 用 React 桩接管 JSX 与 hooks；组件源码原样编译，不改生产代码。 */
     const reactStub = { createElement, Fragment: FragmentType, useState, useRef, useEffect }
     globalThis.React = { createElement, Fragment: FragmentType }
     globalThis.__dismissReact = reactStub
@@ -231,7 +205,6 @@ export const Button = ({ variant, size, active, trailingIcon, icon, className, c
 
     const reset = () => { calls.dismiss.length = 0; calls.start.length = 0; calls.stop.length = 0; calls.clear = 0; calls.load = 0 }
 
-    /* ① 纯投影：dismissedAt 有效 → quiet / mute / dismissed；原记录不动。 */
     const dismissedInput = baseRun({ dismissedAt: 123 })
     const projected = subagentOutcome(dismissedInput)
     check(projected.key === 'dismissed', '投影：已处理的 key 是 dismissed')
@@ -243,7 +216,6 @@ export const Button = ({ variant, size, active, trailingIcon, icon, className, c
     check(subagentOutcome(baseRun({ dismissedAt: Number.NaN })).key === 'failed', '投影：无效 dismissedAt 不算已处理')
     check(subagentOutcome(baseRun({ endReason: 'timeout', dismissedAt: 1 })).key === 'dismissed', '投影：超时失败被标记后同样退出')
 
-    /* ② 聊天卡片：常规失败显示「不再处理」，点击驱动真实请求。 */
     reset()
     dismissImpl = async () => ({ ok: true })
     mount(createElement(SubagentGroup, { runs: [baseRun()] }))
@@ -251,7 +223,6 @@ export const Button = ({ variant, size, active, trailingIcon, icon, className, c
     check(byTestId(latest, 'subagent-note-dismiss-fail1')[0].props.title === 'T:sa.dismissHint', '入口带「保留错误记录」提示')
     check(byTestId(latest, 'subagent-note-retry-fail1').length === 1, '重试入口保留，不互相替代')
 
-    /* 成功：调用 API → loadSubagents 重读；快照未变不乐观隐藏。 */
     byTestId(latest, 'subagent-note-dismiss-fail1')[0].props.onClick()
     await flush()
     check(calls.dismiss.length === 1 && calls.dismiss[0] === 'fail1', '点击调用 dismiss(id)')
@@ -259,7 +230,6 @@ export const Button = ({ variant, size, active, trailingIcon, icon, className, c
     check(calls.start.length === 0 && calls.stop.length === 0 && calls.clear === 0, '不触发 retry / stop / clearAll')
     check(byTestId(latest, 'subagent-note-dismiss-fail1').length === 1, '快照未变时不乐观隐藏')
 
-    /* 失败：就地 role=alert；仍留在需处理区，原因保留。 */
     reset()
     dismissImpl = async () => ({ ok: false, error: 'nope' })
     mount(createElement(SubagentGroup, { runs: [baseRun()] }))
@@ -272,7 +242,6 @@ export const Button = ({ variant, size, active, trailingIcon, icon, className, c
     check(byTestId(latest, 'subagent-note-reason-fail1').map(textOf).includes('boom failed'), '失败原因仍在')
     check(calls.load === 0, '保存失败不重读快照（未乐观改动）')
 
-    /* 在途防重：同步连点只发一次请求。 */
     reset()
     let release
     dismissImpl = () => new Promise((res) => { release = res })
@@ -285,7 +254,6 @@ export const Button = ({ variant, size, active, trailingIcon, icon, className, c
     await flush()
     check(calls.load === 1, '在途请求完成后只重读一次')
 
-    /* 待审阅：pending / conflict 不能用「不再处理」绕过。 */
     for (const review of ['pending', 'conflict']) {
       reset()
       mount(createElement(SubagentGroup, { runs: [baseRun({ review })] }))
@@ -293,7 +261,6 @@ export const Button = ({ variant, size, active, trailingIcon, icon, className, c
       check(byTestId(latest, 'subagent-note-merge-fail1').length === 1, `待审阅 ${review} 仍走合并/放弃审阅`)
     }
 
-    /* 已处理：不再显示入口，进默认折叠的已完成区，详情仍保留失败原因。 */
     reset()
     mount(createElement(SubagentGroup, { runs: [baseRun({ dismissedAt: 123 })] }))
     check(byTestId(latest, 'subagent-note-fail1')[0].props['data-outcome'] === 'dismissed', '已处理卡片标记为 dismissed')
@@ -301,7 +268,6 @@ export const Button = ({ variant, size, active, trailingIcon, icon, className, c
     check(byTestId(latest, 'subagent-note-dismiss-fail1').length === 0, '已处理不再显示入口')
     check(byTestId(latest, 'subagent-note-reason-fail1').map(textOf).includes('boom failed'), '详情仍保留原始失败原因')
 
-    /* 同组混合：已处理的默认收进汇总行，展开后可见。 */
     mount(createElement(SubagentGroup, { runs: [baseRun({ id: 'active' }), baseRun({ id: 'done-dismiss', dismissedAt: 5 })] }))
     check(byTestId(latest, 'subagent-note-active').length === 1, '需处理的那条始终逐张显示')
     check(byTestId(latest, 'subagent-note-done-dismiss').length === 0, '已处理的默认收进汇总行')
@@ -310,7 +276,6 @@ export const Button = ({ variant, size, active, trailingIcon, icon, className, c
     check(byTestId(latest, 'subagent-note-done-dismiss').length === 1, '展开后可逐张查看已处理')
     check(byTestId(latest, 'subagent-note-dismiss-done-dismiss').length === 0, '展开的已处理卡片没有「不再处理」入口')
 
-    /* ③ 总览：同一 API；已处理进「已完成」且默认折叠。 */
     reset()
     dismissImpl = async () => ({ ok: true })
     mount(createElement(SubagentPlan, { runs: [baseRun()], onOpen: () => {} }))
@@ -336,8 +301,6 @@ export const Button = ({ variant, size, active, trailingIcon, icon, className, c
     await rm(buildDir, { recursive: true, force: true })
   }
 }
-
-/* -------------------------------------------------------------- 直接运行入口 */
 
 const invokedDirectly = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url
 if (invokedDirectly) {

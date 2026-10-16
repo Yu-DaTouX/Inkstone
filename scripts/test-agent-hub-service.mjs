@@ -14,7 +14,6 @@ const template = { id: 'fixture-template', name: 'Fixture', agent: 'codex', mode
 await hub.command({ action: 'save-template', template }, 'phone:one')
 assert.deepEqual(Object.keys(hub.templates.get(template.id)).filter((k) => ['inputOwner', 'approvalId', 'reviewOf'].includes(k)), [], 'templates must not carry old authority or frozen artifact identity')
 await assert.rejects(hub.command({ action: 'save-template', template }, 'pi:delegate'), /仅由/)
-// 用保持运行的离线执行器替代 launch；检查宿主事实与并发边界，不模拟模型成功。
 hub.adapters = [{ agent: 'codex', available: true, modes: ['managed', 'terminal'] }]
 hub.launch = async (task) => { task.status = 'running' }
 const request = (id) => ({ requestId: id, projectId: 'fixture', prompt: 'offline fixture', agent: 'codex', mode: 'managed' })
@@ -76,7 +75,6 @@ assert.equal(restored.live.size, 0)
 assert.equal(restored.hasBusy(), true, 'uncertain history retains resource guards')
 assert.equal(restored.hasLiveWork(), false, 'restored uncertain history does not trigger a running-task exit warning')
 {
-  /* 了结待核实：忽略只记为已停止；确认执行已结束进入待审阅，两者都只限电脑端，且不会把任务当成已验收。 */
   const id = saved.tasks[0].id
   await assert.rejects(restored.command({ action: 'resolve', taskId: id, outcome: 'executed' }, 'phone:one'), /仅电脑端/)
   await assert.rejects(restored.command({ action: 'resolve', taskId: id, outcome: 'bogus' }), /了结方式无效/)
@@ -85,7 +83,6 @@ assert.equal(restored.hasLiveWork(), false, 'restored uncertain history does not
   assert.notEqual(restored.tasks.get(id).status, 'completed')
   await assert.rejects(restored.command({ action: 'resolve', taskId: id, outcome: 'dismiss' }), /只有结果待核实/)
   assert.equal(restored.hasBusy(), false, 'resolving clears the uncertain guard')
-  /* 关闭记录：只隐藏提醒，不改变结论；运行中的不能关，手机端不能关。 */
   await assert.rejects(restored.command({ action: 'dismiss', taskId: id }, 'phone:one'), /仅电脑端/)
   await restored.command({ action: 'dismiss', taskId: id })
   assert.equal(restored.tasks.get(id).dismissed, true)

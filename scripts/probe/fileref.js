@@ -1,15 +1,3 @@
-/**
- * 文件引用（拖入的普通文件）在界面上的形态 + 主进程校验通道。
- *
- * 为什么合成注入而不是真拖：探针里造不出带真实路径的 `File`
- * （`webUtils.getPathForFile` 对合成对象返回空串），
- * 真实拖放留给真实窗口验收（方案 13）。
- *
- * 这里钉住的是：
- *   · 渲染端真的能走 `describeFiles` 这条 IPC，而且主进程会拒绝坏路径
- *   · 文件引用渲染成**独立标签**（不是图片缩略图卡片）
- *   · 只有附件、没有文字时也能发送（历史上被 `if (!raw) return` 挡住过）
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -67,11 +55,6 @@
     if (send) {
       const st = store.getState()
       out.push(`  发送按钮 disabled = ${send.disabled}（conn = ${st.conn}）`)
-      /*
-       * 发送按钮同时受**连接状态**与「有没有内容」两个条件控制。
-       * 探针环境里 pi 可能没就绪（conn !== ready），那 disabled 就是 true ——
-       * 这时不能把这个当失败，只报告状态。
-       */
       if (st.conn === 'ready') {
         ok(send.disabled === false, '只有附件（没有文字）时发送按钮可用')
       } else {
@@ -80,7 +63,6 @@
       }
     }
 
-    /* 清理：别把探针的附件留给后面的场景 */
     store.getState().clearAttachments()
     await sleep(200)
     ok(!q('.attach[data-kind="file"]'), '清理后标签消失')

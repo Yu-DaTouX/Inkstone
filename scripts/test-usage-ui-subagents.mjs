@@ -1,13 +1,3 @@
-/**
- * 首页 / v3 设置页的 Token 主子拆分 UI（U2）。
- *
- * 直接挂载生产展示组件（`UsageOverviewView`、`UsageStatsGrid`）用 `react-dom/server`
- * 渲染真实 DOM 字符串，不启动 Electron、不连真实模型、不读用户数据。
- * 数据由 production 的 `aggregateUsageSources` 生成，证明 UI 只消费 API 结果、不自己再算一份。
- *
- * 覆盖：合计与主子标签、旧宿主结果缺 `tokenBreakdown` 的回退、只有子代理仍有面板、
- * 主会话数如实为 0、范围变更后的内容、中英文、模型 / 热力图沿同一 API。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -64,7 +54,6 @@ export async function runUsageUiTests() {
 
   const tOf = (lang) => (key, vars) => i18n.translate(lang, key, vars)
 
-  /* 主会话 20K + 子代理 80K；子代理还带一个独立模型 p/b */
   const mainSub = shared.aggregateUsageSources(
     {
       main: [day(recent, 1, 20000, 9, { 'p/a': 20000 })],
@@ -87,7 +76,6 @@ export async function runUsageUiTests() {
       })
     )
 
-  /* 1. 合计与主子标签：主数字是 100K，下一行「主会话 20K · 子代理 80K」 */
   ok(mainSub.tokens === 100000 && mainSub.tokenBreakdown.main === 20000 && mainSub.tokenBreakdown.subagents === 80000, 'production 聚合：tokens = 主 + 子')
   const zhHtml = renderOverview(mainSub)
   ok(zhHtml.includes('data-testid="usage-tokens"') && zhHtml.includes('100K'), '主数字渲染 Token 合计 100K')
@@ -95,7 +83,6 @@ export async function runUsageUiTests() {
   ok(zhHtml.includes('title="Token 含子代理与缓存读写；会话、消息、活跃天数仍只计主会话。"'), '主数字带口径 tooltip')
   ok(zhHtml.includes('1') && zhHtml.includes('>会话<'), '会话数仍来自主会话（1）')
 
-  /* 2. 旧宿主结果缺 tokenBreakdown：按全主会话回退，不编子代理 */
   const legacy = { ...mainSub }
   delete legacy.tokenBreakdown
   const legacyFallback = shared.tokenBreakdownOf(legacy)
@@ -103,7 +90,6 @@ export async function runUsageUiTests() {
   const legacyHtml = renderOverview(legacy)
   ok(!legacyHtml.includes('子代理 0'), '缺 breakdown 的旧结果同样不出现拆分行')
 
-  /* 3. 只有子代理、主会话为 0：面板仍显示，主会话/消息如实 0 */
   const childOnly = shared.aggregateUsageSources(
     { main: [], subagents: [day(recent, 3, 80000, 9, { 'p/b': 80000 })] },
     'all',
@@ -115,11 +101,9 @@ export async function runUsageUiTests() {
   ok(!childHtml.includes('主会话 0'), '只有子代理时也不出现拆分行')
   ok(childHtml.includes('data-testid="usage-overview"') && childHtml.includes('>0</dd>'), '主会话会话数如实渲染 0')
 
-  /* 4. 主会话与子代理都没有：全部范围下整块隐藏 */
   const none = shared.aggregateUsageSources({ main: [], subagents: [] }, 'all', now)
   ok(renderOverview(none) === '', '无任何用量时（全部范围）用量面板不渲染')
 
-  /* 5. 范围变更后的内容：同一批文件按 all / 7d 聚合，面板显示对应数字 */
   const rangeMain = [day(recent, 1, 20000, 9, { 'p/a': 20000 }), day(old, 1, 50000, 9, { 'p/a': 50000 })]
   const rangeAll = shared.aggregateUsageSources({ main: rangeMain, subagents: [] }, 'all', now)
   const range7 = shared.aggregateUsageSources({ main: rangeMain, subagents: [] }, '7d', now)
@@ -129,18 +113,15 @@ export async function runUsageUiTests() {
   ok(sevenHtml.includes('20K') && !sevenHtml.includes('70K'), '近 7 天范围只渲染范围内的 20K，更早的 50K 不计入')
   ok(sevenHtml.includes('aria-pressed="true"') && sevenHtml.includes('7 天'), '范围切换按钮按下态跟随传入 range')
 
-  /* 6. 中英文：同一数据在中英 catalog 下都渲染出拆分行 */
   const enHtml = renderOverview(mainSub, { t: tOf('en-US') })
   ok(!enHtml.includes('Subagents 80K'), '英文同样只显示总数')
   ok(enHtml.includes('Tokens include subagents plus cache read/write; sessions, messages and active days still count main sessions only.'), '英文 tooltip 来自 en-US catalog')
 
-  /* 7. 模型 / 热力图沿同一 API：子代理模型 80K 与当日合计 100K 直接呈现 */
   const modelsHtml = renderOverview(mainSub, { tab: 'models' })
   ok(modelsHtml.includes('20K') && modelsHtml.includes('80K'), '模型页同时显示主会话模型 20K 与子代理模型 80K')
   ok(modelsHtml.includes('title="p/b"'), '子代理模型键直接来自 stats.models')
   ok(zhHtml.includes(`${recent} · 100K token`), '热力图单元格 token 数含子代理（当日 100K）')
 
-  /* 8. v3 设置页：同一 breakdown，缺字段同样回退 */
   const zhText = settingsText.settingsText('zh-CN')
   const enText = settingsText.settingsText('en-US')
   const gridZh = renderToStaticMarkup(createElement(grid.UsageStatsGrid, { stats: mainSub, text: zhText }))

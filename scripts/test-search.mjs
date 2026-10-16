@@ -2,15 +2,6 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-/**
- * 联网搜索的单元测试（实施-27 S1/S2）—— 纯逻辑 + 替身后端，不装 OpenCLI。
- *
- * 主要钉住三件事：
- *   ① 来源级状态：`empty` 与 `unavailable` / `timeout` / `error` 必须分得开；
- *   ② 合并规则：跨来源去重、每来源上限、总数上限与截断标记；
- *   3  后端调用的边界：找不到可执行文件 → unavailable；错误码可从 YAML 里抠出来。
- */
-
 export async function runSearchTests(ok, mod) {
   const {
     SEARCH_SOURCES,
@@ -34,14 +25,12 @@ export async function runSearchTests(ok, mod) {
 
   const T0 = 1_000_000
 
-  /* ---- 契约：来源白名单 ---- */
   {
     ok(SEARCH_SOURCES.map(s => s.id).join(',') === 'wikipedia,arxiv,hackernews,brave,tavily,bing,ddg,so360', '登记原有三个来源与五个网页来源')
     ok(SEARCH_SOURCES.every((s) => !s.needsBrowser), '已登记来源均不需要浏览器扩展')
     ok(new Set(SEARCH_SOURCES.map((s) => s.id)).size === SEARCH_SOURCES.length, '来源 id 不重复')
   }
 
-  /* ---- 查询解析 ---- */
   {
     ok(normalizeQuery({ text: '   ' }).code === 'empty_query', '空查询被拒（不是发出去等空结果）')
     const q = normalizeQuery({ text: '  flash attention  ' })
@@ -66,7 +55,6 @@ export async function runSearchTests(ok, mod) {
     ok(clamped.ok && clamped.timeoutMs === 1000, '超时至少 1s')
   }
 
-  /* ---- 文本清洗 ---- */
   {
     ok(decodeEntities('&quot;砚&quot; &amp; &#65;') === '"砚" & A', 'HTML 实体解码（含数字实体）')
     ok(decodeEntities('&#39;quoted&#39;') === "'quoted'", '数字实体 &#39; 仍能解码（实体表里删掉它不影响）')
@@ -77,7 +65,6 @@ export async function runSearchTests(ok, mod) {
     ok(cleanText(42) === undefined, '非字符串 → undefined')
   }
 
-  /* ---- URL 判重 ---- */
   {
     const a = normalizeUrlForDedupe('https://Example.com/a/?utm_source=x&b=1#frag')
     const b = normalizeUrlForDedupe('https://example.com/a?b=1')
@@ -85,7 +72,6 @@ export async function runSearchTests(ok, mod) {
     ok(normalizeUrlForDedupe('not a url') === 'not a url', '非 URL 原样返回（不抛）')
   }
 
-  /* ---- 行归一化 ---- */
   {
     const w = normalizeRow('wikipedia', { title: 'Inkstone', snippet: 'a &quot;stone&quot;', url: 'https://en.wikipedia.org/wiki/Inkstone' })
     ok(w && w.title === 'Inkstone' && w.snippet === 'a "stone"', 'wikipedia 三字段映射')
@@ -100,7 +86,6 @@ export async function runSearchTests(ok, mod) {
     ok(normalizeRow('arxiv', null) === null, 'null 行丢一条')
   }
 
-  /* ---- 合并：状态必须分得开 ---- */
   {
     const runs = [
       { source: 'wikipedia', rows: [{ title: 'W1', url: 'https://w/1' }], elapsedMs: 10 },
@@ -121,7 +106,6 @@ export async function runSearchTests(ok, mod) {
     ok(un.sources[0].code === 'backend_unavailable', '不可用带明确错误码')
   }
 
-  /* ---- 合并：去重与上限 ---- */
   {
     const dup = aggregate(
       [
@@ -138,7 +122,6 @@ export async function runSearchTests(ok, mod) {
     ok(perSource.items.length === 3, '每来源条数上限生效')
     ok(perSource.truncated === true, '被每来源上限裁过 → truncated')
 
-    /* 两个来源用不同 URL：否则跨来源去重会把第二个来源的行全吃掉（那测的是去重，不是上限） */
     const manyA = Array.from({ length: 10 }, (_, i) => ({ title: `a${i}`, url: `https://a/${i}` }))
     const manyB = Array.from({ length: 10 }, (_, i) => ({ title: `b${i}`, url: `https://b/${i}` }))
     const totalCap = aggregate(
@@ -150,7 +133,6 @@ export async function runSearchTests(ok, mod) {
     )
     ok(totalCap.items.length === 5, '总数上限生效')
     ok(totalCap.truncated === true, '被总数上限裁过 → truncated')
-    /* 被总数上限挤掉的来源不能被写成「没有结果」（否则 count 0 会被读成 empty） */
     ok(totalCap.sources[0].droppedByLimit === 5, '吃满份额后被上限截断：标出剩余未处理条数')
     ok(
       totalCap.sources[1].droppedByLimit === 10 && totalCap.sources[1].count === 0,
@@ -161,7 +143,6 @@ export async function runSearchTests(ok, mod) {
       '它仍是 ok（有结果，只是没收进来）—— 不是 empty'
     )
     ok(/被总数上限截断/.test(summarizeSources(totalCap.sources)), '摘要里说清是被上限截断，而不是干脏的「0 条」')
-    /* 不会被总数上限碰到的来源不应带这个字段 */
     ok(perSource.sources[0].droppedByLimit === undefined, '没被总数上限碰到的来源不标 droppedByLimit')
 
     const noElapsed = aggregate([{ source: 'arxiv', rows: [{ title: 'x', url: 'https://x/1' }] }], {
@@ -178,7 +159,6 @@ export async function runSearchTests(ok, mod) {
     ok(/跳过/.test(dirty.sources[0].message ?? '') , '脏行数如实写进状态说明')
   }
 
-  /* ---- 错误解析 ---- */
   {
     const e = parseBackendError('ok: false\nerror:\n  code: BROWSER_CONNECT\n  message: Browser Bridge extension not connected\n')
     ok(e.code === 'BROWSER_CONNECT', '从 YAML 里抠出 code')
@@ -186,7 +166,6 @@ export async function runSearchTests(ok, mod) {
     ok(parseBackendError('纯文本错误').message === '纯文本错误', '抠不出来就原样给文本（不吞）')
   }
 
-  /* ---- runSearch：并发、顺序、摘要 ---- */
   {
     const calls = []
     const deps = {
@@ -222,7 +201,6 @@ export async function runSearchTests(ok, mod) {
     )
   }
 
-  /* ---- 真实 spawn 的两个边界（不依赖 opencli 存在） ---- */
   {
     const missing = await createOpencliRunner('yan-opencli-does-not-exist')(SEARCH_SOURCES[0], 'q', {
       limit: 2,
@@ -234,21 +212,12 @@ export async function runSearchTests(ok, mod) {
     ok(!/ENOENT/i.test(missing.error.message ?? ''), 'ENOENT 不再原样丢出来（归一到可读文案）')
     ok(/yan-opencli-does-not-exist/.test(missing.error.message ?? ''), '文案里带上是哪个命令找不到')
 
-    /* 用系统的 node 当「后端」：它拿不到合法 JSON，会走 bad_output 分支（同样是可区分状态） */
     const bad = await createOpencliRunner('node')(SEARCH_SOURCES[0], 'q', { limit: 1, timeoutMs: 8000 })
     ok(bad.rows === null && !!bad.error, '输出不是 JSON 数组 → 不当作空结果')
     ok(bad.error.code !== 'timeout', '不是超时就不要写成超时')
   }
 
-  /* ---- 运行环境：Electron 下必须换成真实 node（回归） ---- */
   {
-    /*
-     * 背景：OpenCLI 用 commander 解析参数，而 commander 一看到
-     * `process.versions.electron` 就改按 Electron 语义切参数；在
-     * ELECTRON_RUN_AS_NODE 下 `argv[1]` 是入口脚本路径，于是子命令全部错位
-     * （`error: unknown command '…/main.js'`）—— 而 `--version` 走 OpenCLI
-     * 自己的快路径照样成功，doctor 会假绿。这两块都钉在这里。
-     */
     const inElectronFound = resolveJsRuntime(() => 'C:\\nodejs\\node.exe', 'C:\\electron\\electron.exe', true)
     ok(inElectronFound.file === 'C:\\nodejs\\node.exe', 'Electron 下跑 JS 入口改用 PATH 里的真实 node')
     ok(!inElectronFound.error, '找到真实 node 时不报错')
@@ -258,7 +227,6 @@ export async function runSearchTests(ok, mod) {
     ok(/commander|参数/.test(inElectronMissing.error ?? ''), '错误说明能指出 commander / 参数解析这个真实原因')
     ok(!/YAN_OPENCLI_JS/.test(inElectronMissing.error ?? ''), '不再把 YAN_OPENCLI_JS 说成能指定 node（它指的是 OpenCLI 入口）')
 
-    /* 显式指定 node：GUI 启动的 PATH 常常没有 node 时的唯一出路 */
     const viaNodeBin = resolveJsRuntime(() => null, 'C:\\electron\\electron.exe', true, process.execPath)
     ok(viaNodeBin.file === process.execPath && !viaNodeBin.error, 'YAN_NODE_BIN 指定存在文件时优先用它')
     const badNodeBin = resolveJsRuntime(
@@ -300,10 +268,6 @@ export async function runSearchTests(ok, mod) {
     ok(/unknown command/.test(fakeGreen.detail), '原始输出原样留在 detail 里（便于排查）')
     ok(fakeGreen.sources.every((s) => s.ready === false), '后端不可用 → 来源不再报 ready（口径一致）')
 
-    /*
-     * 超时也是假绿：doctor 已经打出头部但没跑完（daemon / 浏览器卡住）。
-     * 只凭「有输出」判不了「跑完了没」，所以探针必须把 timedOut 带回来。
-     */
     const timedOut = await searchDoctor({
       runner: async (args) =>
         args[0] === '--version'
@@ -314,7 +278,6 @@ export async function runSearchTests(ok, mod) {
     ok(timedOut.code === 'backend_unusable', '超时也归入 backend_unusable')
     ok(/超时/.test(timedOut.detail), 'detail 里写明是超时，而不是含糊的「跑不起来」')
 
-    /* --version 自己超时也要与「没装」分开：否则会误报「未检测到」 */
     const versionTimeout = await searchDoctor({
       runner: async (args) =>
         args[0] === '--version'
@@ -324,14 +287,12 @@ export async function runSearchTests(ok, mod) {
     ok(versionTimeout.available === false, '--version 探针超时 → 不报可用')
     ok(/超时/.test(versionTimeout.detail), '--version 超时也说清是超时（不是「未安装」）')
 
-    /* YAN_NODE_BIN 填成 Electron → 提前拦下（否则正好踩回 commander 的 electron 分支） */
     const binDir = mkdtempSync(join(tmpdir(), 'yan-nodebin-'))
     const fakeElectron = join(binDir, 'electron.exe')
     writeFileSync(fakeElectron, 'not-really-electron')
     const electronAsNode = resolveJsRuntime(() => null, 'C:\\electron\\electron.exe', true, fakeElectron)
     ok(!!electronAsNode.error && /Electron/.test(electronAsNode.error), 'YAN_NODE_BIN 指向 Electron → 如实拦下')
 
-    /* 未安装时的 detail 必须是可读中文：设置页现在会直接把它展示出来 */
     const savedPath = process.env.PATH
     try {
       process.env.PATH = ''
@@ -343,7 +304,6 @@ export async function runSearchTests(ok, mod) {
     }
   }
 
-  /* ---- 找 node 的过滤规则（注入 dirs / probe，离线可测） ---- */
   {
     const shim = join('/fake/shim')
     const real = join('/fake/real')

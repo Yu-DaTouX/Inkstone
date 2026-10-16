@@ -1,7 +1,3 @@
-/**
- * 检查点（回退代码）的集成测试：真 git、临时目录，不碰真实数据，不联网。
- * 用法： node scripts/test-checkpoints.mjs（用 esbuild 现场编译，不依赖 npm run build）
- */
 import { mkdtemp, mkdir, readFile, rm, writeFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -26,7 +22,6 @@ await build({ entryPoints: ['src/shared/checkpoints.ts'], outfile: 'out/test/che
 const shared = await import(pathToFileURL(resolve('out/test/checkpoints-shared.mjs')).href)
 
 {
-  /* 把界面上的一条用户消息对应到检查点：指纹一致且时间相近才算 */
   const { textFingerprint, matchCheckpoint } = shared
   const rec = (id, at, text, kind = 'turn') => ({ id, sessionKey: 's', at, textHash: textFingerprint(text), preview: text, kind })
   const records = [rec('r1', 1_000_000, '修一下登录'), rec('r2', 2_000_000, '修一下登录'), rec('r3', 3_000_000, '另一句'), rec('u1', 1_000_100, '修一下登录', 'restore')]

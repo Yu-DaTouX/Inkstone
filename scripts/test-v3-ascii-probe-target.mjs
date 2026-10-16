@@ -1,15 +1,3 @@
-/*
- * v3 ASCII 探针点击目标小检查（纯本地：不启动窗口 / Electron / 模型）。
- *
- * 覆盖：
- *   1) node --check 语法门；
- *   2) vm.Script 独立编译门（探针体是表达式语句，可在函数体外编译）；
- *   3) ASCII 开关块结构门：两次切换都经内部 input[role="switch"]，且第二次切换前
- *      有「主进程回显 false」的关闭前置断言，不再直接点击可见 label。
- *
- * 边界：只读 scripts/probe/v3-shell.js 源文本；不执行探针、不注册 test-live、
- * 不接触产品运行时。角色是静态守卫，不代表任何窗口场景已通过。
- */
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -26,11 +14,9 @@ const check = (ok, label) => {
   if (!ok) failures.push(label)
 }
 
-/* 1) 官方语法检查 */
 const syntax = spawnSync(process.execPath, ['--check', probePath], { encoding: 'utf8' })
 check(syntax.status === 0, `node --check 通过${syntax.status === 0 ? '' : `：${syntax.stderr.trim()}`}`)
 
-/* 2) 独立编译：语法通过但 --check 读取失败时也能暴露问题 */
 let compiled = true
 try {
   new vm.Script(source, { filename: probePath })
@@ -40,7 +26,6 @@ try {
 }
 check(compiled, 'vm.Script 编译通过')
 
-/* 3) ASCII 开关块结构（区间取自块首行到恢复挂载断言） */
 const blockStart = source.indexOf('const asciiToggle = query(')
 const blockEnd = source.indexOf('恢复缺省后空态重新挂载 ASCII 背景')
 const block = blockStart >= 0 && blockEnd > blockStart ? source.slice(blockStart, blockEnd) : ''

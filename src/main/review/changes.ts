@@ -1,21 +1,3 @@
-/**
- * 评审变更集适配（§10.2 / WP-50）。
- *
- * ── 它做什么 ──
- * 把「本会话改动 / 某分支相对主分支 / 某个 worktree / 未提交改动」四类来源
- * 统一成 `ReviewChangeSet`。**不造状态机**：未提交与 worktree / 会话来源
- * 直接复用既有 `git-inspect.readChanges`（它已经是唯一一条只读读通道），
- * 只有「分支相对主分支」的范围 diff 是这里新加的一段（既有通道只读工作树）。
- *
- * ── 硬边界 ──
- *   · 所有 git 命令都是**固定参数数组**、`--` 分隔、只用读子命令
- *     （`rev-parse` / `merge-base` / `diff`），绝不 add / commit / checkout；
- *   · 每个来源先经 `authorize`（主进程注入 `resolveFileContext`）确认目录，
- *     仓库根再授权一次；范围外的条目直接丢弃，不借 Git 泄露祖先根；
- *   · 路径经过 `normalizeReviewPath`，命令里带 `--literal-pathspecs`
- *     + `GIT_LITERAL_PATHSPECS=1`，不做 glob / 魔法；
- *   · 拿不到 git 或不在仓库里时返回可读错误，不静默回空列表。
- */
 import { realpath } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { readChanges as defaultReadChanges, readFileDiff as defaultReadFileDiff } from '../git-inspect'
@@ -35,7 +17,6 @@ import {
   type ReviewUnavailableReason
 } from '../../shared/review'
 
-/** 注入的 git 执行（测试注入假实现，生产用 gitRun）。 */
 export interface ReviewGitExec {
   run(
     cwd: string,
@@ -44,7 +25,6 @@ export interface ReviewGitExec {
   ): Promise<{ ok: boolean; stdout: string; stderr: string; error?: string; timedOut?: boolean }>
 }
 
-/** 生产用的只读执行：复用 git-service 的参数数组与只读环境。 */
 export function createGitRunExec(): ReviewGitExec {
   return {
     async run(cwd, args, opts) {
@@ -64,40 +44,24 @@ export function createGitRunExec(): ReviewGitExec {
   }
 }
 
-/** 可信的会话归属验证结果（主进程接线时给出）。 */
 export interface ReviewSessionOwnership {
   sessionId: string
-  /** 与检查点同一个会话键口径 */
   sessionKey: string
-  /** 该会话所属的规范目录 */
   cwd: string
   sessionPath?: string
 }
 
-/**
- * 会话归属验证注入口。
- *
- * 渲染端自报的 `sessionId` 不构成授权：主进程注册时注入这个函数，由它用正式
- * 会话注册表核对「这个会话确实属于这个目录」。**缺失即 fail-closed**，绝不
- * 把 `session` 来源静默当成未提交改动。
- */
 export type VerifyReviewSession = (input: {
   sessionId: string
   cwd: string
 }) => Promise<{ ok: true; ownership: ReviewSessionOwnership } | { ok: false; error: string }>
 
 export interface ReviewChangesDeps {
-  /** 工作树只读读通道；缺省复用 `git-inspect.readChanges` */
   readWorkingChanges?(cwd: string, authorize: AuthorizeReadCwd): Promise<GitChangesResult>
-  /** 工作树单文件补丁；缺省复用 `git-inspect.readFileDiff` */
   readWorkingDiff?(cwd: string, path: string, authorize: AuthorizeReadCwd): Promise<GitDiffResult>
-  /** 范围 diff 的执行；缺省 gitRun */
   exec?: ReviewGitExec
-  /** 解析仓库根；缺省 git-service.resolveRepo（测试注入假实现） */
   resolveRepo?: (cwd: string) => Promise<{ root: string } | null>
-  /** 会话归属验证；缺失时会话来源 fail-closed */
   verifySession?: VerifyReviewSession
-  /** 会话基线读取；缺省走影子仓库只读实现（测试注入假基线） */
   session?: SessionSourceDeps
 }
 
@@ -130,7 +94,6 @@ interface InspectScope {
 
 type ScopeResult = { status: 'ok'; scope: InspectScope } | { status: 'notrepo' } | { status: 'denied'; error: string }
 
-/** 授权 + 解析仓库 + 定出可读范围（与 git-inspect 同一套口径）。 */
 async function resolveScope(
   cwd: string,
   authorize: AuthorizeReadCwd,
@@ -151,7 +114,6 @@ async function resolveScope(
   return { status: 'ok', scope: { root, scopeAbs, scopeRel } }
 }
 
-/** `GitChangeEntry` → 评审文件状态。 */
 export function statusOf(entry: GitChangeEntry): ReviewFileStatus {
   if (entry.unmerged) return 'unmerged'
   if (entry.untracked) return 'untracked'
@@ -186,12 +148,6 @@ export interface ReviewBranchDiff {
   revision: string
 }
 
-/**
- * 解析分支比较的基准：显式 base → main → master → upstream。
- *
- * 返回 `{ ref, oid }`：`ref` 只用于显示与归属键，真正进 diff 范围的是
- * `oid`（解析后的提交），避免 diff 与 revision 绑定在可变 ref 上。
- */
 async function resolveBase(
   exec: ReviewGitExec,
   root: string,
@@ -210,7 +166,6 @@ async function resolveBase(
   return null
 }
 
-/** 解析一个 ref 为提交 OID；解析不出来返回 null。 */
 async function resolveCommitOid(exec: ReviewGitExec, root: string, ref: string): Promise<string | null> {
   const res = await exec.run(root, [...READ_GLOBALS, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
     timeoutMs: RANGE_TIMEOUT_MS,
@@ -220,7 +175,6 @@ async function resolveCommitOid(exec: ReviewGitExec, root: string, ref: string):
   return /^[0-9a-f]{40}$/.test(oid) ? oid : null
 }
 
-/** 合并 `git diff --name-status` 与 `--numstat`，产出文件条目。 */
 function mergeRangeEntries(
   nameStatus: { status: string; path: string }[],
   numstat: Map<string, { added: number; removed: number; binary: boolean }>
@@ -245,11 +199,6 @@ function mergeRangeEntries(
   return files
 }
 
-/**
- * 读一个范围 diff 的变更集（`base...HEAD`，即从共同祖先到 HEAD）。
- *
- * 只用只读子命令；范围限定在授权 scope 内，范围外的路径直接丢弃。
- */
 export async function readRangeChanges(
   cwd: string,
   opts: { base?: string; branch?: string },
@@ -337,15 +286,10 @@ export async function readRangeChanges(
     base: base.ref,
     branch: branch === 'HEAD' ? null : branch,
     head: headOid,
-    // revision 绑定解析后的 base / head OID：ref 移动（force push、重建分支）会让版本失效
     revision: `${baseOid}-${headOid}-${stableHash(statShape)}`
   }
 }
 
-/**
- * 解析 `--name-status -z`：`STATUS\0path\0`（`--no-renames` 下无旧路径段）。
- * 同时服务于范围 diff 与会话基线 diff。
- */
 export function parseNameStatusZ(stdout: string): { status: string; path: string }[] {
   const out: { status: string; path: string }[] = []
   const segs = stdout.split('\0')
@@ -360,7 +304,6 @@ export function parseNameStatusZ(stdout: string): { status: string; path: string
   return out
 }
 
-/** 解析 `git diff --numstat -z`：`added\tremoved\tpath\0`（`--no-renames` 下每文件一段）。 */
 export function parseNumstatZ(stdout: string): Map<string, { added: number; removed: number; binary: boolean }> {
   const out = new Map<string, { added: number; removed: number; binary: boolean }>()
   for (const seg of stdout.split('\0')) {
@@ -383,7 +326,6 @@ export function parseNumstatZ(stdout: string): Map<string, { added: number; remo
   return out
 }
 
-/** 从补丁里取增删行数与二进制标记；供 working 来源的 revision 与统计使用。 */
 function patchStats(patch: string): { added: number; removed: number; binary: boolean } {
   let added = 0
   let removed = 0
@@ -412,7 +354,6 @@ function patchStats(patch: string): { added: number; removed: number; binary: bo
   return { added, removed, binary }
 }
 
-/** 内容 revision 的读取上限：文件数与总字节都有界，超限时标记 partial。 */
 const MAX_REVISION_FILES = 400
 const MAX_REVISION_BYTES = 4_000_000
 const REVISION_CONCURRENCY = 6
@@ -423,18 +364,6 @@ interface WorkingRevisionResult {
   partial: boolean
 }
 
-/**
- * 读 working 来源的**内容** revision。
- *
- * 逐个改动文件走既有安全读通道（默认 `git-inspect.readFileDiff`）拿真实补丁，
- * 把「路径 + 状态 + 补丁摘要」一起哈希；因此同一文件改内容（即使 +/− 行数不变、
- * HEAD 与文件名都不变）revision 也会变。同时用补丁回填 added / removed / binary，
- * 使清单与正文同源。
- *
- * 有界：最多读 `MAX_REVISION_FILES` 个文件、总字节 `MAX_REVISION_BYTES`，
- * 并发上限 `REVISION_CONCURRENCY`；超限时 `partial` 为 true，调用方标记
- * `revisionPartial`，不假装 revision 覆盖了全部内容。
- */
 async function readWorkingContentRevision(
   cwd: string,
   files: ReviewFileEntry[],
@@ -478,7 +407,6 @@ async function readWorkingContentRevision(
   return { files: enriched, revision: `${head ?? 'no-head'}-${stableHash(material.join('|'))}`, partial }
 }
 
-/** 检查点基线的 name-status / numstat → 评审文件条目（同一快照）。 */
 function mapCheckpointEntries(
   nameStatus: { status: string; path: string }[],
   numstat: Map<string, { added: number; removed: number; binary: boolean }>
@@ -523,15 +451,6 @@ function failChangeSet(error: string, meta: Partial<ReviewChangeSet>): ReviewCha
   }
 }
 
-/**
- * 读一类变更集。四种来源各自的读法：
- *   · `session`：用已验证 cwd/sessionKey 的**首个 turn 检查点**作基线，读影子
- *     仓库的基线差异；无基线或验证缺失时返回明确 `unavailable`，**不回退**到
- *     未提交改动或主仓 HEAD；
- *   · `branch`：`base...head` 范围 diff，两端都解析成提交 OID；
- *   · `worktree` / `uncommitted`：复用既有 `git-inspect.readChanges`，revision 由
- *     逐文件真实补丁的内容摘要生成。
- */
 export async function readReviewChangeSet(
   query: ReviewChangeSetQuery,
   authorize: AuthorizeReadCwd,
@@ -648,7 +567,6 @@ export async function readReviewChangeSet(
   }
 }
 
-/** 从不可用的会话来源构造明确失败结果（不静默同源）。 */
 function failSessionUnavailable(
   unavailable: ReviewUnavailableReason,
   error: string,
@@ -657,13 +575,6 @@ function failSessionUnavailable(
   return failChangeSet(error, { source: 'session', unavailable, ...meta })
 }
 
-/**
- * 「本会话改动」来源：用已验证 cwd/sessionKey 的首个 turn 检查点作基线。
- *
- * 渲染端自报的 `sessionId` 只是查询键；安装时由主进程注入 `verifySession` 核对
- * 会话归属。验证缺失 / 失败 / 无基线一律返回 `unavailable`，界面据此提示改看
- * 「未提交改动」；绝不拿主仓 HEAD 或未提交改动冒充会话开始。
- */
 async function readSessionChangeSet(
   query: ReviewChangeSetQuery,
   authorize: AuthorizeReadCwd,
@@ -734,7 +645,6 @@ async function readSessionChangeSet(
   }
 }
 
-/** 校验会话 / 基线路径：拒绝绝对、盘符、NUL、空段、`.`、`..` 与 `-` 前缀。 */
 function safeReviewRelPath(input: unknown): string | null {
   const raw = String(input ?? '')
   if (!raw || raw.length > 4_096 || raw.includes('\0')) return null
@@ -761,12 +671,6 @@ function failDiff(path: string, error: string): GitDiffResult {
   }
 }
 
-/**
- * 读单个文件的真实补丁，与变更集同一来源 / 版本：
- *   · `session`：同会话基线快照（需要已验证的 `sessionId`；验证缺失即拒绝）；
- *   · `branch`：两端都解析成提交 OID 后读范围 diff；
- *   · `worktree` / `uncommitted`：既有工作树读通道。
- */
 export async function readReviewFileDiff(
   cwd: string,
   path: string,
@@ -850,7 +754,6 @@ function capUtf8(text: string, maxBytes: number): { text: string; truncated: boo
   return { text: buf.subarray(0, cut).toString('utf8'), truncated: true }
 }
 
-/** 合并批注计数到文件条目（service 用）。 */
 export function applyAnnotationCounts(files: ReviewFileEntry[], counts: Map<string, number>): ReviewFileEntry[] {
   return files.map((file) => ({ ...file, annotations: counts.get(file.path) ?? 0 }))
 }

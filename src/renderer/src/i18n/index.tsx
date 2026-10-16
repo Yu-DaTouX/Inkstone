@@ -3,24 +3,11 @@ import type { ReactNode } from 'react'
 import zhCN from './zh-CN.json'
 import enUS from './en-US.json'
 
-/**
- * i18n —— 严格按 docs/design/DESIGN.md §6。
- *
- * · 键名扁平 + 命名空间（rail.* / chat.* / set.* …）
- * · 基准语言 zh-CN，类型从它推导 → 漏翻译**编译期**报错
- * · 回退链：当前语言 → en-US → key 原文（并 console.warn）
- * · `{name}` 占位符
- *
- * 边界：只有「壳」是双语的，模型回复 / 工具输出 / pi 内置错误一律原样透传。
- */
-
 export const LANGS = ['zh-CN', 'en-US'] as const
 export type Lang = (typeof LANGS)[number]
 
-/** 基准语言里所有合法的键 */
 export type MessageKey = keyof typeof zhCN
 
-/** en-US 必须覆盖 zh-CN 的每一个键，少一个就在这里编译报错 */
 const catalogs: Record<Lang, Record<MessageKey, string>> = {
   'zh-CN': zhCN,
   'en-US': enUS satisfies Record<MessageKey, string>
@@ -29,10 +16,6 @@ const catalogs: Record<Lang, Record<MessageKey, string>> = {
 export type TVars = Record<string, string | number>
 export type TFunc = (key: MessageKey, vars?: TVars) => string
 
-/**
- * 非组件环境（store、主进程推送的回调）也能取到同一份翻译。
- * 组件里请用 `useT()`；这里的 lang 要调用方自己给。
- */
 export function translate(lang: Lang, key: MessageKey, vars?: TVars): string {
   const raw = catalogs[lang]?.[key] ?? catalogs['en-US']?.[key]
   let s: string = raw
@@ -74,7 +57,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(STORAGE_KEY, lang)
     } catch {
-      /* 忽略：存不了就只在本次会话生效 */
     }
   }, [lang])
 
@@ -99,7 +81,6 @@ export function useI18n(): I18nValue {
   return ctx
 }
 
-/** 只要 t 的简写 */
 export function useT(): TFunc {
   return useI18n().t
 }

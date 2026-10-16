@@ -1,19 +1,3 @@
-/**
- * 真实应用的验收测试（不是对着 mock 测）。
- *
- * 做法：用 `YAN_PROBE=<脚本>` 启动**真正的应用** —— 完整主进程、
- * preload、contextBridge、pi 子进程都在跑 —— 然后在渲染端执行断言。
- *
- * 为什么不在单独的 BrowserWindow 里测：那样 preload/IPC/pi 全都不存在，
- * 断言会「通过」而应用其实是坏的。
- *
- * 用法：
- *   npm run test:live            默认零费用清单（整组仍需批准）
- *   npm run test:live -- live    只跑 DOM 体检（不烧 token）
- *   npm run test:live -- e2e     发一条真消息（烧 token，约 $0.001）
- *   npm run test:live -- sessions 会话切换 + 新建（不烧 token）
- */
-/* 日志管道断开（终端关闭 / agent 的 bash 会话结束）不能让我们中途死掉或弹框 */
 import './lib/stdio-guard.mjs'
 import { defaultLiveCases, validateSyntheticSelection, syntheticEnvironment } from './lib/live-synthetic-isolation.mjs'
 import { spawn, execFileSync } from 'node:child_process'
@@ -43,71 +27,30 @@ import { tmpdir, homedir } from 'node:os'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/*
- * 测试统一使用的模型（会让所有 cost>0 场景真实调模型）。
- *
- * 默认用 **Command Code 的 DeepSeek v4.1 Flash（可能产生费用）**：
- *   供应商 provider = commandcode
- *   模型 id        = deepseek/deepseek-v4.1-flash
- * 免费档（`longcat-2.0:free` / `laguna-s-2.1-free`）额度触顶或不肯调工具时，
- * 用这个付费默认档继续跑；仍可用 `YAN_TEST_MODEL="..."` 覆盖。个别场景（如 image 要发图）需要视觉模型，
- * 在 CASES 里用 `model:` 单独覆盖。
- *
- * 想用别的模型：`YAN_TEST_MODEL="provider/modelId" npm run test:live -- e2e`。
- * 约束：模型必须能从真实 `~/.pi/agent/` 取到凭证。测试会把它**只读复制**进
- * 隔离的 YAN_PI_DIR（不复制就起不了 pi）；副本只写在系统临时目录、退出时清理，
- * 绝不写回原目录。个别场景需要「没有凭证」的前提，见下面 `piDirNoAuth`。
- * 写成 `provider/id` 形式，交给 pi 的 `--model` 解析。
- */
 const SYNTHETIC_ONLY = process.env.YAN_TEST_SYNTHETIC_ONLY === '1'
 const TEST_MODEL = process.env.YAN_TEST_MODEL || (SYNTHETIC_ONLY ? 'openai/gpt-4o-mini' : 'commandcode/deepseek/deepseek-v4.1-flash')
 
-/**
- * Electron 可执行文件（直接 spawn，不经 npx）。
- *
- * electron 包在 Node 里 require 出来就是可执行文件路径。走 npx 会多一层
- * cmd.exe，而 npx 自己可能先退（抢 npm 缓存锁、检查包），会把“应用还在
- * 跑探针”误判成“应用启动失败”—— 实测踩到过一次，还留下一个无头 GUI 实例。
- */
 const electronBin = createRequire(import.meta.url)('electron')
 
-/** 需要视觉的场景专用（Ling 是纯文本模型，发图会失败） */
 const TEST_VISION_MODEL =
   process.env.YAN_TEST_VISION_MODEL || 'commandcode/deepseek/deepseek-v4.1-flash'
 
-/*
- * 某些旧场景曾为远程免费模型写死 `model:`，用来绕过当时的供应商波动。
- * 当调用方明确选择本地模型时，这些「正常模型」不应偷偷把请求切回远程；
- * 仍保留故意不存在的模型与本地路由 fixture，因为它们本身就是失败 / 路由测试。
- */
 const USE_LOCAL_TEST_MODEL = TEST_MODEL.startsWith('local/')
 function modelForCase(fallback) {
   if (USE_LOCAL_TEST_MODEL && fallback && !/nonexistent|route-probe/i.test(fallback)) return TEST_MODEL
   return fallback ?? TEST_MODEL
 }
 
-/** 每个场景：probe 脚本 + 等待多久（毫秒）+ 可选的预发按键 */
 const CASES = {
   arrivaldom: { probe: 'scripts/probe/stream-arrival-dom.js', delay: 9000, cost: 0 },
-  // Explicit paid-model acceptance; fresh fixture cwd, no user MCP services.
   bundlereal: { probe: 'scripts/probe/bundle-real-model.js', fixture: true, fixtureSub: 'repo', visible: true, delay: 9000, cost: 3, budget: 260000, env: { YAN_TEST_MODEL_MAX_TOKENS: '4096' } },
-  // 实施-26 R3/R4：画布轮次层（一轮一张卡 / 分支对齐 / 失败态；cost 0）
   turns: { probe: 'scripts/probe/turns.js', delay: 24000, cost: 0 },
-  // 实施-21：运行阶段投影/显示（注入 store 快照，不跑模型）
   runprogress: { probe: 'scripts/probe/run-progress.js', delay: 9000, cost: 0 },
-  // 实施-25 P03：资料库（导入 → 解析 → 多引用方 → 软移除后旧引用仍可打开；cost 0）
   library: { probe: 'scripts/probe/library.js', delay: 9000, cost: 0 },
-  // 实施-25 P05：活动行为与上下文装配（加入对话 → 引用可回到原文；cost 0）
-  // 实施-25 P06a/P06b：可编辑成果（新建 → 编辑 → 版本 → 关闭重开 → agent 重写不吞用户段落 → 清单勾选 → 来源回原文；cost 0）
-  // 实施-25 P15：内部 agent 分工（任务输入 / 结果汇总在卡片上看得见；cost 0，不真启动子代理）
   subagentbrief: { probe: 'scripts/probe/subagent-brief.js', delay: 12000, cost: 0 },
-  // 实施-23：自定义 API 服务表单（隔离 YAN_PI_DIR 下写入 models.json）
   customapi: { probe: 'scripts/probe/custom-api.js', delay: 9000, cost: 0 },
-  // 实施-23 端到端：自定义 provider 走通「枚举 → 切换 → 真实对话 → 工具 → 取消 → 重开」。
-  // 真实请求有费用（成本档 2）；本机没有 deepseek 凭证时探针会自己跳过。
   customapie2e: { probe: 'scripts/probe/custom-api-e2e.js', delay: 12000, cost: 2 },
   live: { probe: 'scripts/probe/live.js', delay: 9000, cost: 0 },
-  // 08-S0：隔离 Electron 远程 API → 指定后台 runner → 精确 runId 中止（本机 provider，cost 0）
   remoteroutes: {
     probe: 'scripts/probe/remote-routes.js',
     delay: 15000,
@@ -116,65 +59,38 @@ const CASES = {
     driver: driveRemoteRoutes,
     afterExit: 'remoteRoutes'
   },
-  // 推理胶囊：渲染 / 展开 / 折叠 / 无推理不占位（不烧 token，注入数据）
   reasoning: { probe: 'scripts/probe/reasoning.js', delay: 9000, cost: 0 },
-  // 模型未知时选择器仍可见（用户报的「看不到模型选择」）
-  // 连接就绪后模型/思考档位列表要能补上（端到端）
   capabilityload: { probe: 'scripts/probe/capabilityload.js', delay: 9000, cost: 0 },
   capsettings: { probe: 'scripts/probe/capabilities-tab.js', delay: 12000, cost: 0, budget: 150000 },
   codemodesetting: { probe: 'scripts/probe/codemode-setting.js', delay: 9000, cost: 0 },
   modelnotready: { probe: 'scripts/probe/modelnotready.js', delay: 9000, cost: 0 },
-  // 全局快捷键：Ctrl+P 换模型 / Shift+Tab 换强度
-  // ⚠️ 必须用**真实**按键（sendInputEvent），因为快捷键是主进程
-  //    用 before-input-event 拦的 —— 渲染端的合成 KeyboardEvent 不走那条路，
-  //    用它测会「通过」而真实按键其实是坏的。
   hotkeys: {
     probe: 'scripts/probe/hotkeys.js',
     delay: 9000,
     cost: 0,
     keys: 'ctrl+shift+p,ctrl+p,shift+tab'
   },
-  // 弹窗行为：快捷键让位（真按键）/ 焦点圈定 / Esc / 焦点恢复 / 图标按钮名称
   dialog: {
     probe: 'scripts/probe/dialog.js',
     delay: 20000,
     cost: 0,
     keys: 'shift+tab,shift+tab,shift+tab,shift+tab'
   },
-  // 工具调用行：成功摘要 / 失败保留可展开入口（P1 4.2）
   toolrow: { probe: 'scripts/probe/toolrow.js', delay: 10000, cost: 0 },
-  // 工具结果里的图片（实时 base64 / 落盘 file:）+ 附件目录占用与手动清理（用户 2026-09-25）
   toolimages: { probe: 'scripts/probe/tool-images.js', delay: 10000, cost: 0 },
-  // 删除会话确认框：标题 / 按钮样式 / 不换行 / Esc 不误删（方案 15）
   trash: { probe: 'scripts/probe/trash.js', delay: 10000, cost: 0 },
-  // 文件引用：主进程校验通道 / 标签渲染 / 只有附件也能发（方案 5.1）
   fileref: { probe: 'scripts/probe/fileref.js', delay: 10000, cost: 0 },
-  // 链接路由 + 只读文件预览（方案 5.2）
   linkpreview: { probe: 'scripts/probe/linkpreview.js', delay: 11000, cost: 0 },
-  // 回复详细程度三档（方案 3.1）
   detail: { probe: 'scripts/probe/detail.js', delay: 10000, cost: 0 },
   permissions: { probe: 'scripts/probe/permissions.js', delay: 9000, cost: 0 },
-  // 模型菜单：可见行数 / 不越界 / 键盘选择（注入合成模型，不连 pi）
   modelmenu: {
     probe: 'scripts/probe/modelmenu.js',
     delay: 9000,
     cost: 0,
     wins: ['1440x900', '940x640']
   },
-  // 子代理：真起一个独立 pi 子进程（方案第 8 节；本地模型也可能需要更长冷启动）
   subagent: { probe: 'scripts/probe/subagent.js', delay: 12000, cost: 1, budget: 240000 },
-  /*
-   * 实施-11 H-10：合成子代理推送快照在 Electron 渲染端回放（cost 0）。
-   * 覆盖当前会话过滤、长转录自动跟随，以及用户上滚后继续输出不抢回位置；
-   * 这是 renderer/store 事件回放，不冒充主进程子代理 IPC 或真实模型任务。
-   */
   subagentview: { probe: 'scripts/probe/subagent-view.js', delay: 10000, cost: 0 },
-  /*
-   * 实施-11 H-10：本机确定性 provider 下的子代理主进程推送整链。
-   * 与 `subagent` 同一条真实链路（SubagentController → onChange push → IPC
-   * → renderer store），但模型指向本机 OpenAI 兼容 fixture，不发往外部、
-   * 不花额度；fixture 立即回文本。探针复用 `scripts/probe/subagent.js`。
-   */
   subagentlocal: {
     probe: 'scripts/probe/subagent.js',
     fixture: true,
@@ -183,32 +99,16 @@ const CASES = {
     budget: 240000,
     cost: 0
   },
-  /*
-   * 两个并发写入子代理的真实矩阵（L03）：真起两个 pi 子进程，各自在
-   * `HEAD` 的独立 worktree 里写文件，然后走合并 / 放弃 / 冲突 / 只读
-   * 白名单 / 退出归档。会真调模型（且要求它真的写文件），所以 cost: 1。
-   *
-   * 退出归档只能在 Electron **已经退出**之后看，所以真正的断言在
-   * `afterExit`（Node 侧检查 `YAN_DIR/subagents` 与临时 worktree 目录）。
-   */
   subagentpair: {
     probe: 'scripts/probe/subagentpair.js',
     fixture: true,
     fixtureSub: 'repo',
     delay: 14000,
-    /* 探针要排队跑几个真实模型任务，实测 1.5-2.5 分钟（budget 是最坏兜底，
-       跑完就退出；delay 只负责把窗口和应用起起来）。 */
     budget: 240000,
     cost: 1,
-    /* 免费 Ling 对工具调用的服从度不稳（有时只回话不写文件），这条链路要求模型
-       真的写文件，所以用已在 image 场景使用的 deepseek-v4.1-flash。 */
     model: 'commandcode/deepseek/deepseek-v4.1-flash',
     afterExit: 'subagentArchive'
   },
-  /*
-   * L03 尾巴：子代理**模型自身失败**时的恢复（实施-09 S2 第六批）。
-   * 坏模型名 → pi 只 warn、上游 400、**不产生用量**，所以是 cost 0。
-   */
   subagentfail: {
     probe: 'scripts/probe/subagent-fail.js',
     fixture: true,
@@ -219,18 +119,6 @@ const CASES = {
     model: 'deepseek/deepseek-nonexistent',
     afterExit: 'subagentFail'
   },
-  /*
-   * N12：真实 A/B 会话的后台生命周期。
-   *
-   * A（cwd=fixture/repo）发一个长任务跑起来，然后：
-   *   · 切到 B（不同 cwd）—— 允许，且 A **不能**被停掉；
-   *   · 切到 C（与 A 同 cwd）—— 必须明确拒绝并提示，视图不跟着走；
-   *   · 切回 A —— 内容还在，没串成 B 的；
-   *   · 单独停 A —— B 不受影响。
-   *
-   * 会话是运行时生成的合成会话（它们的 cwd 必须是 fixture 的绝对路径），
-   * 见 `writeAbSessions`；模型只用 deepseek（要它真的吐一段长文本）。
-   */
   sessionab: {
     probe: 'scripts/probe/sessionab.js',
     fixture: true,
@@ -241,16 +129,6 @@ const CASES = {
     model: 'commandcode/deepseek/deepseek-v4.1-flash',
     afterExit: 'sessionabArchive'
   },
-  /*
-   * 实施-09 S2 第二批：后台会话「等待输入」的真实窗口证据（cost 1）。
-   *
-   * 与 `ask` 的区别：那条证的是提问链路（扩展 → pi → 面板 → 回填），
-   * 全程停在**前台**；这条只证 N12 缺的那一态 —— 用户切走之后，
-   * 那个会话还挂着问题，左栏那一行要一直显示「等待输入」。
-   *
-   * 不复用 `ask`：它刻意不建第二条会话（切会话会让问题面板失去归属，
-   * 把原本稳的断言弄脏）；这里反过来，开场就只要两条会话与那次切走。
-   */
   askbackground: {
     probe: 'scripts/probe/ask-background.js',
     fixture: true,
@@ -260,24 +138,8 @@ const CASES = {
     cost: 1,
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
-  /*
-   * N12 失败态（实施-09 S2 第四批）：把 pi 入口指向一个「存在但立刻退出」的文件，
-   * 模拟内置运行时损坏 / 版本不匹配 —— 这是用户机器上真会出现的事。
-   * ⚠️ 为什么必须真写一个文件：`resolvePi` 对 `YAN_PI_BIN` 只做 `existsSync`
-   *    检查，不存在的路径会被**静默忽略**并回落到内置 pi（刻意的降级，
-   *    坏设置不该把应用弄成打不开）。所以不能拿一个编出来的路径做测试。
-   */
   runnerfailed: { probe: 'scripts/probe/runner-failed.js', fixture: true, fixtureSub: 'repo', delay: 9000, budget: 120000, cost: 0, brokenPi: true },
-  /*
-   * 渲染异常兜底（D8）：故意把 sessions 置成非法值把整棵树搞崩，
-   * 验证出现的是可读的兜底界面 + 重新加载出口（而不是整屏白）。
-   * 它必须独立成一个场景 —— boundary 接管后不会自动恢复。
-   */
   crash: { probe: 'scripts/probe/crash.js', delay: 9000, cost: 0 },
-  /*
-   * N19 的最后一条：@ 引用真的发出去后，模型有没有拿到**文件内容**。
-   * 发一次消息（免费模型），真正的断言在退出后的会话 JSONL 里。
-   */
   atrefsend: {
     probe: 'scripts/probe/atrefsend.js',
     fixture: true,
@@ -286,117 +148,56 @@ const CASES = {
     model: 'commandcode/longcat-2.0:free',
     afterExit: 'atrefsendArchive'
   },
-  /*
-   * 真实模型切换矩阵（N02）：只切模型不发消息（不花钱）。
-   * 验的是“切过去之后状态归谁”：档位跟随、快速连切不串、用量归属。
-   */
   modelswitch: { probe: 'scripts/probe/modelswitch.js', delay: 12000, cost: 0 },
-  // 界面密度三档：间距真的变、落盘、字号不变（方案 A1）
   density: { probe: 'scripts/probe/density.js', delay: 10000, cost: 0 },
-  // 左栏搜索：入口稳定 / 过滤 / 清空与关闭后的焦点（P1 4.1）
   railsearch: { probe: 'scripts/probe/railsearch.js', delay: 11000, cost: 0 },
-  // 性能实测：流式更新 / 面板收放 / 虚拟化窗口（方案 P2 要求先测量）
-  /*
-   * 性能基线：断言量的是**真实动画/渲染耗时**，而隐藏窗口里 Chromium 会把定时器
-   * 节流到 1 秒（实测 1000.1ms / 1000.4ms）——所以这条必须上屏跑。
-   * `visible: true` 就是给这种场景开的：单个场景要求可见窗口，
-   * 而其他场景仍然默认不上屏（用户要求测试不要弹窗）。
-   */
   perf: { probe: 'scripts/probe/perf.js', delay: 16000, cost: 0, visible: true },
-  // 启动耗时：只打印渲染端性能标记，用于改动前后对比
   bootspeed: { probe: 'scripts/probe/bootspeed.js', delay: 1500, cost: 0, visible: true },
-  // 切换会话耗时：只测量，用于改动前后对比
   switchspeed: { probe: 'scripts/probe/switchspeed.js', delay: 1000, cost: 0, visible: true, budget: 120000 },
-  // 只等着（外部用 CDP 抓 profile 时用）：YAN_PROBE_DEBUG_PORT=9333 npm run test:live -- hold
   hold: { probe: 'scripts/probe/hold.js', delay: 500, cost: 0, visible: true, budget: 150000 },
-  // 增量推送协议：textDelta / thinkingDelta / outputDelta 的拼接与兜底
   deltas: { probe: 'scripts/probe/deltas.js', delay: 12000, cost: 0 },
-  // 诊断：grid 容器的行/列是否依赖子元素数量（同类布局 bug 排查）
   layoutdiag: { probe: 'scripts/probe/layoutdiag.js', delay: 12000, cost: 0 },
-  // 诊断：长会话虚拟化为什么不渲染（只输出尺寸，不断言）
   virtualdiag: { probe: 'scripts/probe/virtualdiag.js', delay: 14000, cost: 0 },
-  // 发送键：规则可选 / 常显 / 生效（Enter 的语义不再随输入框高度隐式变化）
   sendkey: { probe: 'scripts/probe/sendkey.js', delay: 9000, cost: 0 },
   sendtail: { probe: 'scripts/probe/send-tail.js', delay: 9000, cost: 0 },
-  // 启动发现新版本：通知常驻，「查看更新」打开设置的关于页（不联网、不调模型）
   updatenotice: { probe: 'scripts/probe/update-notice.js', delay: 9000, cost: 0 },
-  // 悬着的消息：生成中发出去的先悬在输入框上方，由用户选插话 / 排队
   pending: { probe: 'scripts/probe/pending.js', delay: 9000, cost: 0 },
-  /*
-   * 待定消息的**真实链路**回归（真调模型）。
-   *
-   * `pending`（上面那条）直接把 store 的 `runners` 改掉来伪造「回合结束」，
-   * 绕过主进程推送链 —— 所以 2026-09-19 那个 bug（回合结束不刷 runners 快照，
-   * 待定消息永不自动投递）它能测出来才怪。这条走真实回合。
-   */
   pendingreal: { probe: 'scripts/probe/pending-real.js', delay: 15000, cost: 1 },
-  // 动效：入场 / **退场** / 减少动效 / 消息合并
-  // 界面缩放：DPI 取整 + 快捷键（带 keys，因为 Ctrl+= 是主进程拦的）
   zoom: {
     probe: 'scripts/probe/zoom.js',
     delay: 7000,
     cost: 0,
     keys: 'ctrl+=,ctrl+=,ctrl+-,ctrl+0'
   },
-  // 会话分支树（左栏入口 + 主进程裁剪）
   branch: { probe: 'scripts/probe/branch.js', delay: 10000, cost: 0 },
-  // 标题栏两端的面板开关 + 左栏模式菜单（参考 Codex）
   topbar: { probe: 'scripts/probe/topbar.js', delay: 9000, cost: 0 },
-  // v3 单场景隔离验收：不发消息，真实 Enter 验证确认卡，夹具供截图。
   'v3-shell': {
     probe: 'scripts/probe/v3-shell.js', delay: 9000, cost: 0,
     keys: 'ctrl+k,escape,enter', keysDelay: 11000, env: { YAN_UI: 'v3' }
   },
   'v3-user-polish': { probe: 'scripts/probe/v3-user-polish.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
   'v3-user-followup': { probe: 'scripts/probe/v3-user-followup.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  /*
-   * v3 ASCII 单目标隔离复核（独立探针）：只做「空态 → 外观开关 → 关闭/恢复」，
-   * 同一启动里对照 label.click（复现）/ 内部 input.click（计划有效交互）/ 真实 Space（观察）。
-   * 真实 Space 用既有 keys 机制（sendInputEvent，不是合成 KeyboardEvent）。
-   */
   'v3-ascii-once': {
     probe: 'scripts/probe/v3-ascii-once.js', delay: 9000, cost: 0, budget: 60000,
     keys: 'space', keysDelay: 15000, env: { YAN_UI: 'v3' }
   },
-  /*
-   * v3 侧栏待办磁贴（A1）：隔离注入清单验磁贴/折叠/滚动，切无待办会话验整块消失，
-   * 并用 keys 机制发真实 Ctrl+B 验收起无浮层。复用 todos 场景的只读 fixture 出口。
-   */
   'v3-todos': {
     probe: 'scripts/probe/v3-todos.js', delay: 9000, cost: 0, budget: 90000,
     keys: 'ctrl+b', keysDelay: 20000, env: { YAN_UI: 'v3' },
     afterExit: 'taskFixtureReadonly', readonlySession: 'yan-todo-fixture'
   },
-  // v3 输入框底栏（A2）：控件顺序 / 发送停止同位置 / 思考滑杆拖动预览与顶边档位色
   'v3-composer': { probe: 'scripts/probe/v3-composer.js', delay: 9000, cost: 0, budget: 90000, env: { YAN_UI: 'v3' } },
-  // v3 发送键规则（v2 sendkey 的 v3 DOM 版）：send 换成 spy，不出网
   'v3-sendkey': { probe: 'scripts/probe/v3-sendkey.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  // v3 输入框 / 命令与 @ 路径候选：注入假命令，路径走真实只读 IPC，不发消息
   'v3-completion': { probe: 'scripts/probe/v3-completion.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  // v3 侧栏项目菜单与归档视图：注入假项目 / 会话，设置写入走隔离目录
   'v3-projectmenu': { probe: 'scripts/probe/v3-projectmenu.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  // v3 工作区日志 / 额度页签：注入日志与账号卡，不切换真实账号
   'v3-logsquota': { probe: 'scripts/probe/v3-logsquota.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  // v3 手动派发子 Agent 表单：只验证表单，不提交、不启动子 Agent
   'v3-delegate': { probe: 'scripts/probe/v3-delegate.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  // v3 设置 · 语音输入分页与电脑操作块：只读状态，不下载、不安装、不开开关
   'v3-voicecu': { probe: 'scripts/probe/v3-voicecu.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  // v3 排队 UI（v2 queuestack 的 v3 DOM 版）：注入 queue + steer/retract spy
   'v3-queuestack': { probe: 'scripts/probe/v3-queuestack.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  /*
-   * v3 真实模型三连（cost 1，各真调模型）。
-   * Send：真发短消息验流式 RunSlot / 同位停止 / runner 与 session 一致 / token 增长。
-   * Todos：Agent 用 `yan tasks apply` 建 3 项并逐项完成，验侧栏磁贴实时出现与全勾。
-   * Review：fixtureSub 'review' 是故意做脏的临时 Git 仓库，经 window.yan.review
-   *         发起只读评审，验 R 运行登记 / 只读 / 收口一次 / 意见返回。
-   */
   'v3-real-send': { probe: 'scripts/probe/v3-real-send.js', fixture: true, delay: 12000, cost: 1, budget: 300000, env: { YAN_UI: 'v3' } },
   'v3-real-todos': { probe: 'scripts/probe/v3-real-todos.js', fixture: true, delay: 12000, cost: 1, budget: 360000, env: { YAN_UI: 'v3' } },
   'v3-real-review': { probe: 'scripts/probe/v3-real-review.js', fixture: true, fixtureSub: 'review', delay: 12000, cost: 1, budget: 360000, env: { YAN_UI: 'v3' } },
-  // 导航轨与消息列的对齐（收起/展开时距离必须稳定）
-  /* 几何测量（阅读位置不能被拉回底部）：同上，位置类断言在隐藏/未渲染窗口里不可信 */
   outlinepos: { probe: 'scripts/probe/outlinepos.js', delay: 9000, cost: 0, visible: true },
-  // 窄窗口 + 面板收起态（三档宽度都要过 —— 那三个 bug 只在窄窗口暴露）
   narrow: {
     probe: 'scripts/probe/narrow.js',
     delay: 9000,
@@ -409,76 +210,33 @@ const CASES = {
     cost: 0,
     wins: ['1456x900', '940x700']
   },
-  // 布局宽度扫描（P0-2 取基线用；只测量 + 最小可用宽度断言）
   narrowscan: {
     probe: 'scripts/probe/narrowscan.js',
     delay: 9000,
     cost: 0,
     wins: ['1600x1000', '1280x860', '1100x760', '1000x700', '940x640']
   },
-  // 任务模块：进行中就地显示 / 两行截断 / 全部完成自动收起 / 历史折叠 + 跳转
   todonew: { probe: 'scripts/probe/todonew.js', delay: 9000, cost: 0 },
-  // 左栏会话重命名（行内输入；回归 Electron 不支持 window.prompt 的坑）
   rename: { probe: 'scripts/probe/rename.js', delay: 9000, cost: 0 },
-  // 分组管理（N01）：重命名 + 空白/重名校验 + 解散但保留项目
   grouprename: { probe: 'scripts/probe/grouprename.js', delay: 9000, cost: 0, fixture: true },
-  /*
-   * 项目「移除项目」= 归档：菜单入口 → 确认框 → 磁盘上 archived=true
-   * → 归档视图里「恢复项目」把项目接回来。
-   */
   projectremove: { probe: 'scripts/probe/projectremove.js', delay: 9000, cost: 0, fixture: true },
   projectdirectory: { probe: 'scripts/probe/project-directory.js', delay: 9000, cost: 0, fixture: true },
-  /*
-   * N01 拖拽排序：项目 / 分组顺序用**合成 PointerEvent** 走真实渲染路径
-   * （实现里没有用 HTML5 draggable，所以合成事件与用户手拖是同一条），
-   * 并回读 `yan.getSettings()` 证明顺序真的过了 IPC 落盘。
-   * 探针里要等多次 420ms 的界面落定，所以预算给宽一点。
-   */
   railreorder: { probe: 'scripts/probe/rail-reorder.js', delay: 10000, cost: 0, budget: 150000, fixture: true },
-  // 项目默认只展开前五个（N17）：更多/收起 + 搜索 + 当前项目定位
   projectlimit: { probe: 'scripts/probe/projectlimit.js', delay: 9000, cost: 0 },
-  // 窄侧栏会话标题可读性（N13）：最小宽度下量标题/缩进/状态槽
   railtitle: { probe: 'scripts/probe/railtitle.js', delay: 9000, cost: 0 },
-  // 收起侧栏的 mini 项目文件夹（N14）：图标 / 名称 / 当前标记 / 全部项目浮层
   railmini: { probe: 'scripts/probe/railmini.js', delay: 9000, cost: 0 },
   railpeek: { probe: 'scripts/probe/railpeek.js', delay: 9000, cost: 0 },
   switcher: { probe: 'scripts/probe/switcher.js', delay: 9000, cost: 0 },
   rewind: { probe: 'scripts/probe/rewind.js', delay: 9000, cost: 0 },
-  /*
-   * `+` 菜单（2026-09-22）：文件和文件夹 / 图片 / 能力。
-   * cost 0：只验菜单结构、文案与几何，不点会开系统对话框的两项。
-   */
   plusmenu: { probe: 'scripts/probe/plus-menu.js', delay: 15000, cost: 0, budget: 120000 },
-  // 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐
   context: { probe: 'scripts/probe/context.js', delay: 9000, cost: 0 },
-  // 真实一轮后，浮层出现系统提示分段与工具定义明细（context-inspect 薄层 → context.inspect → yan:contextInspect）
   contextinspect: { probe: 'scripts/probe/context-inspect.js', delay: 9000, cost: 1, budget: 60000 },
-  // C-2b：三类整理（清扫 / 状态刷新 / 整轮压缩）在界面上分开显示，界面数 = 主进程数
   contextactions: { probe: 'scripts/probe/contextactions.js', delay: 9000, cost: 0 },
-  /*
-   * N21-2 压缩可观测：真实触发一次自动压缩 + 真实的手动压缩失败。
-   *
-   * ⚠️ **前提已过期（2026-09-19 处置：实施-06 §2 选项 ②，降级为说明）**。
-   * pi 0.85.1 不再按 `reserveTokens` 在回合结束自动压，所以下面那个「触发线落到 ≤ 0」
-   * 的手法已经失效 —— 跑起来会在「自动压缩真的发生」那一节红，**不是回归**。
-   * 不要再为了让它变绿去修这套前提；砚侧自动压缩链路的覆盖改用
-   * `contexttakeover`（`YAN_CONTEXT_POLICY` 驱动）与 `contexttakeoverstate`（接管成功分支）。
-   * 条目与探针保留在原处，以便将来 pi 恢复或被重新设计时能拿回来对照。
-   *
-   * 为什么要 `piSettings`：pi 的自动压缩只在「上下文 > 窗口 − reserveTokens」时触发。
-   * 默认 reserveTokens=16384，意味着要把上下文填到接近整个窗口 —— 即使拿最大的
-   * 免费模型也是几十万 token 的额度。把 reserveTokens 调成比任何窗口都大，
-   * 触发线就落到 ≤ 0：第一轮结束必然触发，事件形状与真实情况完全一致。
-   * keepRecentTokens=1 同理：不去压一个 20k 的尾巴。
-   *
-   * cost 1（会真调模型两次：一次正常回合 + 一次摘要请求）—— 所以不进 check 批量。
-   */
   compactionstatus: {
     probe: 'scripts/probe/compaction-status.js',
     delay: 9000,
     cost: 1,
     budget: 180000,
-    /* cwd = fixture 里那个**带项目级 pi 设置**的目录（见 buildFixtureProject） */
     fixture: true,
     fixtureSub: 'compact',
     piSettings: { compaction: { enabled: true, reserveTokens: 900000, keepRecentTokens: 1 } }
@@ -489,16 +247,8 @@ const CASES = {
     cost: 0,
     contextGuardSeed: true,
     budget: 90000,
-    /*
-     * 两条线都压到极低：切到任何有内容的旧会话都必然“在线上”，
-     * 于是“切换没有触发压缩”才是一条有效断言（而不是碰巧没过线）。
-     */
     env: { YAN_CONTEXT_POLICY: '{"workingSetCap":100,"emergencyRatio":0.001}' }
   },
-  /*
-   * C-3 大窗口端点验证：一条大填充 prompt 走完整链路，
-   * 看 pi 报的窗口 / 上下文与预算诊断。
-   */
   contextwindow1m: {
     probe: 'scripts/probe/context-window-1m.js',
     delay: 12000,
@@ -507,40 +257,15 @@ const CASES = {
     contextExtLog: true,
     model: 'commandcode/claude-sonnet-5'
   },
-  // 思考档位：真实模型（DeepSeek V4.1 Flash）切过去后必须显示真实档位，
-  // 且不能被后续 state 推送清空（D11）。不调模型，只 set_model + 读档位。
   thinkinglevels: { probe: 'scripts/probe/thinking-levels.js', delay: 14000, cost: 0, needsCredentials: true },
-  // 排队消息：显示在输入框上方 + 插队按钮接线
   queuestack: { probe: 'scripts/probe/queuestack.js', delay: 9000, cost: 0 },
-  // 所有报错都进日志（store.set 包装的回归网）
   logs: { probe: 'scripts/probe/logs.js', delay: 9000, cost: 0 },
-  // `/` 斜杠命令：自动重拉 + 常用优先 + Enter/Tab 填充
   slashcmd: { probe: 'scripts/probe/slashcmd.js', delay: 9000, cost: 0 },
-  // 分区内容高度可调
-  // 工具栏分区排序（拖拽 + 键盘）与工具库（收进库 / 拿回 / 上移下移 / 恢复默认）
-  /*
-   * 额度区：Command Code 的月度口径（`monthlyCredits` 是「剩余」不是「已用」）
-   * 与颜色分级（<70% 绿 / 70–95% 黄 / ≥95% 红）。
-   * 真实接口那段需要本机 commandcode 凭证 + 网络（只读，不花钱）；没有凭证时探针
-   * 自己跳过真实数据断言，颜色分级那段用打桩数据走真实渲染路径，仍然会跑。
-   * ⚠️ 不进 `check`：方向判据依赖当月真实用量，放在 check 里会变成靠环境碰运气的红灯。
-   */
   quota: { probe: 'scripts/probe/quota.js', delay: 10000, cost: 0, budget: 120000, needsCredentials: true },
-  // 面板宽度拖拽（含夹取范围与键盘）
   resize: { probe: 'scripts/probe/resize.js', delay: 9000, cost: 0 },
-  // 文件树边界：空目录 / 失效路径 / 多级 / 大目录分页 / 中文空格 / 同名文件 / 目录联接
   fsedge: { probe: 'scripts/probe/fs-edge.js', delay: 11000, cost: 0, fixture: true, budget: 150000 },
-  // @ 补全边界：多级 / 大目录截断 / 同名文件 / 引号 / 句中光标 / 切项目竞态
   atpathedge: { probe: 'scripts/probe/at-path-edge.js', delay: 11000, cost: 0, fixture: true },
-  // 项目切换（N05）：视图与文件树跟着 cwd 走 / 草稿按实例隔离 / 附件绝对路径 / 失效与无权限目录的真实反馈
   projectswitch: { probe: 'scripts/probe/project-switch.js', delay: 10000, cost: 0, fixture: true, budget: 180000, projectSessions: true },
-  /*
-   * 「每个项目最后一个会话」的恢复判断（实施-09 S3，cost 0）：不调模型。
-   *
-   * 与 `projectswitch` 的差别：那个验的是切过去之后草稿/文件树对不对；
-   * 这个验**恢复哪一个会话** —— 前提是 fixture 里有两条同项目的会话，
-   * 「消息最新的」与「用户真的打开过的」是**不同**的两条。
-   */
   projectopened: {
     probe: 'scripts/probe/project-opened.js',
     fixture: true,
@@ -551,28 +276,8 @@ const CASES = {
     cost: 0,
     afterExit: 'projectOpenedLayout'
   },
-  /*
-   * shell / 第三方工具的变更归属（L05）。cost 0：走直执行 shell 通道
-   *（`window.yan.runBash`），不需要模型生成。必须在**隔离的 fixture 目录**里跑，
-   * 因为它会真的建/改/删文件。
-   */
   tiledrag: { probe: 'scripts/probe/tile-drag-width.js', delay: 9000, cost: 0 },
   workspacechanges: { probe: 'scripts/probe/workspace-changes.js', delay: 10000, cost: 0, fixture: true, fixtureSub: 'repo', budget: 180000, projectPeers: true },
-  /*
-   * Git 审查 + 环境菜单（方案 G1）—— cost 0，不调模型。
-   *
-   * 场景 cwd 是 fixture 里那个**故意做脏**的 `review/` 仓库（见
-   * buildFixtureProject）：未暂存修改、已暂存新增、未暂存删除、已暂存重命名、
-   * 未跟踪文件、中文+空格路径、被改动的 PNG、含 NUL 的二进制。
-   * 「只读保证」不在这里断言 —— 那要靠退出后从 Node 侧逐字节比对
-   *（`afterExit: 'gitReviewReadonly'`），因为渲染进程里拿不到 git 的真实回答。
-   */
-  /*
-   * Git 写操作（方案 §5，G2）：暂存 / 取消暂存 / 提交 / 推送 / 拉取 /
-   * 切分支 / 新建分支 / 非法输入。
-   * cost 0（不调模型），但**会真的改 fixture 仓库** —— 退出后由
-   * `afterExit: gitWriteApplied` 用真 git 核对提交与远程。
-   */
   gitwrite: {
     probe: 'scripts/probe/git-write.js',
     fixture: true,
@@ -582,38 +287,16 @@ const CASES = {
     cost: 0,
     afterExit: 'gitWriteApplied'
   },
-  // 文件树（工具栏「文件」分区）：懒加载 / 排序 / 缩进 / 点文件插 @路径 / 溢出
-  /*
-   * 来源「定位消息」（方案 §8 的 S1，cost 0）：**不调模型** —— 它验的是
-   * 「关联已存在」之后的全部链路（落盘 / 菜单入口 / 跳到那条消息）。
-   * 发送时建立关联那一段需要模型回合，所以那一段只能在手动场景里跑。
-   */
   sourcelink: {
     probe: 'scripts/probe/source-locate.js',
     fixture: true,
-    /*
-     * 必须是**有 git 仓库的** fixture 子目录：来源区与环境菜单的其它分区
-     * 一起渲染在「这个是 git 项目」那个分支里（非 git 目录下整块换成一行提示），
-     * 所以 cwd 指到普通目录时 `env-source-menu` 根本不会出现。
-     * 选 `review`（只读仓库）而不是 `write` —— 本场景不写 git 任何东西。
-     */
     fixtureSub: 'review',
-    /*
-     * N12 的 A/B 合成会话（cwd = fixture/repo，带 user 消息）—— 本场景需要
-     * 「在 git 项目里、且带可定位消息」的会话：plain fixture 的 cwd 是家目录
-     *（非 git 仓库，来源区整块不渲染），而默认打开的那个是空会话。
-     */
     abSessions: true,
     delay: 11000,
     budget: 150000,
     cost: 0,
     afterExit: 'sourceLocateLinked'
   },
-  /*
-   * 来源「定位消息」的**发送链路**（同上一片，cost 1）：验的是关联怎么产生的 ——
-   * 发一条带图的消息，渲染端把附件对应的来源绑到 pi 刚写出的那条 user 条目上。
-   * 这一步需要真实模型回合（消息 id 由 pi 生成），所以**不进 `npm run check`**。
-   */
   sourcelinklive: {
     probe: 'scripts/probe/source-locate-send.js',
     fixture: true,
@@ -623,58 +306,26 @@ const CASES = {
     model: 'commandcode/deepseek/deepseek-v4.1-flash',
     afterExit: 'sourceLocateLinked'
   },
-  /*
-   * pi 包管理（方案 §9 的 P2，cost 0）：**真实**调用 pi 的 CLI 装一个本地包
-   * 再卸掉。用专属 fixture（`fixtureSub: 'pkgs'`）—— 它会在隔离的
-   * YAN_PI_DIR 下真写 settings.json 与包目录，所以绝不能挂在没有 fixture
-   * 的场景上（那会把 cwd 指到真实项目根）。不联网（本地路径源）。
-   */
   pkgs: { probe: 'scripts/probe/packages.js', fixture: true, fixtureSub: 'pkgs', delay: 12000, budget: 300000, cost: 0 },
   packagescope: { probe: 'scripts/probe/package-scope.js', fixture: true, fixtureSub: 'pkgs', delay: 9000, budget: 180000, cost: 0 },
   fs: { probe: 'scripts/probe/fs.js', delay: 9000, cost: 0 },
-  // 面板与工具栏：开关位置 / 命名 / 用户档案 / 收放
-  // 开关的几何对称性（展开↔收起逐像素对比 + 必须点得到）
   motion: { probe: 'scripts/probe/motion.js', delay: 9000, cost: 0 },
-  /*
-   * 凭证写在**环境变量**里的那条路。
-   * 必须单独一个场景，因为环境变量是**主进程启动时**读的，
-   * 不能在探针里造 —— 所以用 caseEnv 注入一个假 key。
-   */
   authEnv: {
     probe: 'scripts/probe/auth-env.js',
     delay: 9000,
     cost: 0,
     env: { OPENAI_API_KEY: 'sk-probe-dummy-not-a-real-key' }
   },
-  // 模型接入（凭证读写）—— ⚠️ 会用 YAN_PI_DIR 隔离，不碰真实 auth.json
   auth: { probe: 'scripts/probe/auth.js', delay: 9000, cost: 0 },
-  // @ 文件引用补全（pi 的 @files 用法）
   atPath: { probe: 'scripts/probe/at-path.js', delay: 9000, cost: 0 },
-  // 标题栏：置顶按钮位置 + 精简掉的重复入口
   titlebar: { probe: 'scripts/probe/titlebar.js', delay: 9000, cost: 0 },
-  // 内置浏览器：工具栏标题旁开关 → 右栏 WebContentsView/CDP → renderer/preload 状态闭环
   browser: { probe: 'scripts/probe/browser.js', delay: 9000, cost: 0 },
-  // 接入本机 Chrome（无头 + 隔离 profile，验 CDP 接入链路）
   externalchrome: {
     probe: 'scripts/probe/external-chrome.js',
     delay: 9000,
     cost: 0,
-    /*
-     * YAN_CHROME_SYNC=0：接入时不从**真实** Chrome 导入历史/cookie。
-     * 测试必须保持隔离 —— 否则跑一次探针就把用户的真实浏览历史
-     * 拷进临时目录（功能本身没问题，但在测试里不该发生）。
-     * 同步逻辑本身由 test:unit 的合成目录用例覆盖。
-     */
     env: { YAN_CHROME_HEADLESS: '1', YAN_CHROME_SYNC: '0' }
   },
-  /*
-   * L04 浏览器授权与网络边界：逐站权限真实请求、本地预览边界、DNS 重绑定、
-   * 下载来源与不自动打开、Cookie 真实转移但不输出值。
-   *
-   * 需要 Node 侧的本地 HTTP 服务（`usesBoundaryServer`）；
-   * 其中「远程页面借道本地服务」与 DNS 重绑定两节要公网/公网 DNS，
-   * 拿不到时会**显式跳过并打印原因**，不假装通过。
-   */
   browserboundary: {
     probe: 'scripts/probe/browser-boundary.js',
     delay: 9000,
@@ -685,7 +336,6 @@ const CASES = {
     afterExit: 'browserBoundaryDownloads',
     env: { YAN_CHROME_HEADLESS: '1', YAN_CHROME_SYNC: '0' }
   },
-  // The exact boundary frame/network assertions, with no external sites or Chrome.
   browserframeboundary: {
     probe: 'scripts/probe/browser-boundary.js',
     probePrefix: 'window.__yanBrowserFrameNetworkOnly = true;\n',
@@ -701,31 +351,22 @@ const CASES = {
     usesBoundaryServer: true,
     budget: 90000
   },
-  // S4: a real OpenCLI search result opens in Inkstone's browser and is confirmed by observe.
   searchopen: { probe: 'scripts/probe/search-open.js', delay: 12000, cost: 0, budget: 180000 },
-  // S0: exercise public, read-only browser demo pages for select, iframe, wait, type, press and screenshot.
   browserreal: { probe: 'scripts/probe/browser-real-sites.js', delay: 9000, cost: 0, budget: 240000 },
-  // 浅色主题：对比度 / 代码高亮 / 工具行
   light: { probe: 'scripts/probe/light.js', delay: 9000, cost: 0 },
-  // 新用户首次使用（无凭证的全新数据目录）：默认工作文件夹、Git/bash 检测、引导、权限选择器、批准卡片、自定义服务
   composersize: { probe: 'scripts/probe/composer-size.js', delay: 9000, cost: 0, wins: ['1440x900', '1100x700', '940x640', '900x520'] },
   questionshot: { probe: 'scripts/probe/question-shot.js', delay: 9000, cost: 0 },
   modelscroll: { probe: 'scripts/probe/modelscroll.js', delay: 9000, cost: 0 },
-  // 没有 Git 的新设备：PATH 与 Program Files 都找不到 git / bash（不真下载）
-  // 真实一键安装 Git：点按钮 → 真下载 PortableGit（约 57MB）→ 校验解压 → 重启 pi → 直执行 bash 命中受管那份
   gitinstall: { probe: 'scripts/probe/gitinstall.js', delay: 9000, cost: 0, freshDesktop: true, needsDownload: true, budget: 300000 },
-  // 空会话里保存凭证 → pi 重启 → 界面跟到新会话（不再停在旧会话上）
   restartempty: { probe: 'scripts/probe/restart-empty.js', delay: 9000, cost: 0 },
   nogit: { probe: 'scripts/probe/nogit.js', delay: 9000, cost: 0, freshDesktop: true },
   newuser: { probe: 'scripts/probe/newuser.js', delay: 9000, cost: 0, freshDesktop: true },
-  // 首次引导：第 2 栏「模型接入」按钮布局（N20；从设置→关于重新打开，不重置首次启动标记）
   onboarding: {
     probe: 'scripts/probe/onboarding.js',
     delay: 9000,
     cost: 0,
     wins: ['1440x900', '940x640']
   },
-  // 使用向导（首启多步配置）：六步推进、主题与压缩上限当场落盘、功能入口、几何
   wizard: {
     probe: 'scripts/probe/wizard.js',
     delay: 9000,
@@ -733,23 +374,13 @@ const CASES = {
     freshDesktop: true,
     wins: ['1440x900', '940x640']
   },
-  // 阶段 2 功能：斜杠菜单 / !bash / 图片附件 / 模型选择器 / 开关 / 重命名删除 / 分叉点
   features: { probe: 'scripts/probe/features.js', delay: 9000, cost: 0 },
-  // 对话导航轨：间距拉长 + 鼠标靠近动态展开
   outline: { probe: 'scripts/probe/outline.js', delay: 9000, cost: 0 },
   iconstate: { probe: 'scripts/probe/iconstate.js', delay: 9000, cost: 0 },
-  // 控件状态（V-1）：禁用只有一个值 / 焦点环只有一个来源 / 命中区 / 密度三档
   controlstates: { probe: 'scripts/probe/controlstates.js', delay: 9000, cost: 0, fixture: true },
-  // 图标触点与无障碍名（H-8c）：sprite 接口 / 可访问名 / currentColor / 尺寸
   iconsurface: { probe: 'scripts/probe/iconsurface.js', delay: 9000, cost: 0, fixture: true },
-  // 布局：用量条合并 / 消息无上下文 / 右栏任务 / 左栏自动隐藏
   layout: { probe: 'scripts/probe/layout.js', delay: 9000, cost: 0 },
-  // 用量条（输入/输出/缓存命中/输出速度）—— 会真调模型
   tokens: { probe: 'scripts/probe/tokens.js', delay: 9000, cost: 1 },
-  /*
-   * N11 标题：真机下的自动生成 / 单次生成锁 / 手动名粘性 / 候选→采用。
-   * cost 1（2 次聊天 + 几次很短的归纳请求）。
-   */
   title: {
     probe: 'scripts/probe/title.js',
     delay: 12000,
@@ -757,57 +388,29 @@ const CASES = {
     cost: 1,
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
-  /*
-   * N16 语言提示：界面语言 → 模型输出语言。cost 1（3 次调用），
-   * 用**互换语言**的对照（中文界面问英文 / 英文界面问中文）来断言
-   * "跟着界面语言走"而不是"跟着用户消息走"。
-   */
   language: {
     probe: 'scripts/probe/language.js',
     delay: 14000,
     budget: 300000,
     cost: 1,
     model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    /* 诊断：语言扩展把每次注入写一行到该文件（扩展里 YAN_LANG_EXT_LOG 才写） */
     env: { YAN_LANG_EXT_LOG: join(tmpdir(), 'lang-ext.log') }
   },
-  // 设置面板的当前布局（外观 / 声音 / 上下文 / 关于…）+ 记忆已整体移除的边界
   settings: { probe: 'scripts/probe/settings.js', delay: 9000, cost: 0 },
-  // 声音提示（对齐 opencode 的 attention）：事件触发 / 单事件开关 / 音量夹取
   sound: { probe: 'scripts/probe/sound.js', delay: 9000, cost: 0 },
-  // 工具调用栏的展开规则（注入合成回合，不烧 token）
   toolgroup: { probe: 'scripts/probe/toolgroup.js', delay: 9000, cost: 0 },
-  // 终端窗口：结构 / 三个拖拽把手 / 拖动与键盘调大小 / 展开恢复（不烧 token）
   terminal: { probe: 'scripts/probe/terminal.js', delay: 9000, cost: 0 },
-  /*
-   * 交互终端表面（实施-11 H-11）：开始页入口 → xterm 挂载 → 真实输入输出 →
-   * 断线重连 → 关标签真的 kill。原生依赖的包内真跑在 `test:packaged`。
-   */
   terminalsurface: { probe: 'scripts/probe/terminal-surface.js', delay: 11000, cost: 0, budget: 120000 },
-  // 对话宽度自定义 + 导航轨跟随（不烧 token）
   streamwidth: { probe: 'scripts/probe/streamwidth.js', delay: 9000, cost: 0 },
-  // 「正在处理」提示在整个 agent 回合内常驻（不烧 token）
   working: { probe: 'scripts/probe/working.js', delay: 9000, cost: 0 },
-  // 连接状态竞态回归（dev 下必现、build 下不现，很容易再犯）—— 会真调模型
   conn: { probe: 'scripts/probe/conn.js', delay: 9000, cost: 1 },
-  // 扩展集成：任务清单（panel_todos 的产物）+ 启动通知降级
   todos: {
     probe: 'scripts/probe/todos.js',
     delay: 9000,
     cost: 0,
-    /* 退出后验「旧会话文件没被改写」（实施-02 S1 的出口） */
     afterExit: 'taskFixtureReadonly',
     readonlySession: 'yan-todo-fixture'
   },
-  /*
-   * 实施-01 S5：带历史扩展的升级目录，验证默认 pi 的发现边界。
-   *
-   * 用专属 piDir（里面多一份 scripts/fixtures/task-ext 的 fixture 旧扩展，
-   * 它注册同名 `panel_todos` 并写旧标识 `left-panel-tasks`；另一个
-   * `notes-panel.ts` 与任务无关，只注册 `/notes`）。
-   * 验四件事：来源诊断能列全但明确不加载、两个扩展的通知 / 命令均不进入
-   * 当前 runner、历史会话仍可只读显示、砚不改旧会话（退出后字节比对）。
-   */
   taskext: {
     probe: 'scripts/probe/taskext.js',
     delay: 12000,
@@ -815,52 +418,27 @@ const CASES = {
     afterExit: 'taskFixtureReadonly',
     readonlySession: 'yan-todo-fixture'
   },
-  // 长会话虚拟化
-  /* 虚拟滚动：首屏渲染行数与滚动位置都是几何量 → 需要真实可见窗口 */
   virtual: { probe: 'scripts/probe/virtual.js', delay: 9000, cost: 0, visible: true },
   splitreal: { probe: 'scripts/probe/split-real.js', delay: 12000, cost: 0, visible: true },
   splitdrop: { probe: 'scripts/probe/split-drop.js', delay: 9000, cost: 0, visible: true },
   splitdeferred: { probe: 'scripts/probe/split-deferred.js', delay: 12000, cost: 0, visible: true },
   splitfive: { probe: 'scripts/probe/split-five.js', delay: 9000, cost: 0, visible: true },
   splitvirtual: { probe: 'scripts/probe/split-virtual.js', delay: 9000, cost: 0, visible: true },
-  // 会话切换 + 新建会话
   sessions: { probe: 'scripts/probe/sessions.js', delay: 9000, cost: 0 },
-  // 切换会话不能丢历史（含「切语言重建实例之后」这条路）
   historyswitch: { probe: 'scripts/probe/history-switch.js', delay: 9000, cost: 0 },
-  // 项目—会话归属：真实 IPC 迁移索引，不移动 pi 的 JSONL 文件
   sessionlayout: { probe: 'scripts/probe/sessionlayout.js', delay: 9000, cost: 0 },
-  // 窗口关闭隐藏到托盘，退出取消路径可重复。判据是真实的 isVisible()，默认的不上屏模式下恒为 false，所以要可见窗口
   tray: { probe: 'scripts/probe/tray.js', delay: 9000, cost: 0, visible: true, env: { YAN_EXIT_CHOICE: 'cancel' } },
-  //
-  // N12 退出变体（实施-09 S2 第五批）：保存并退出 + 退出进行中重复请求。
-  // `YAN_EXIT_CHOICE` 是原生对话框的 probe 替身 —— 只跳过“选哪个”这一步，
-  // 写快照 / 收实例 / 退出的链路完全相同；快照与进程表在 afterExit 看。
   exitsave: { probe: 'scripts/probe/exit-save.js', delay: 9000, cost: 0, afterExit: 'exitSnapshot', env: { YAN_EXIT_CHOICE: 'save' } },
-  // 同一套前置，换中断分支：快照 mode=interrupt（差别的判据在落盘文件里）
   exitinterrupt: { probe: 'scripts/probe/exit-interrupt.js', delay: 9000, cost: 0, afterExit: 'exitSnapshot', env: { YAN_EXIT_CHOICE: 'interrupt' } },
-  // 运行实例：身份过滤 + 左栏状态槽 + 单独停止（N12，注入合成推送）
   sessionrunners: { probe: 'scripts/probe/sessionrunners.js', delay: 9000, cost: 0 },
-  // 运行实例选择：真实主进程注册表路径（N12，不跑回合）
   runnerselect: { probe: 'scripts/probe/runnerselect.js', delay: 12000, cost: 0 },
-  // 真发一条消息，验证流式 + 工具卡
-  /*
-   * ⚠️ 这条探针内部的等待上限是 150s（它要看到流式 + 工具 + 正文），
-   * 而 budget 默认只有 90s —— 不够就会被杀在探针打印之前，
-   * 报出来的却是「没抓到 PROBE 输出 —— 应用可能启动失败」（误导）。
-   * 所以这里显式给足：delay 9s + budget 200s。
-   */
-  // 发送延迟：点发送 → 开始工作各段耗时（三个模型各一个场景，真实调用）
   latds: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   latluna: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'openai-codex/gpt-6-luna' },
   lathaiku: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'claude-bridge/haiku' },
   e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1, budget: 200000 },
-  // 宿主能力服务：模型在 bash 里调 `yan`，宿主校验身份后回结构化摘要（花 token）
   capability: { probe: 'scripts/probe/capability.js', delay: 12000, cost: 1, budget: 180000 },
-  // 随包技能清理：现存技能读得到、已删技能报不可用、帮助不指向技能（花 token）
   skillcleanup: { probe: 'scripts/probe/skill-cleanup.js', delay: 12000, cost: 1, budget: 300000 },
-  // 重复动作兜底真实接线：相同调用第 5 次被拦；顺带确认 yan follow 已下线（花 token）
   repeatguardlive: { probe: 'scripts/probe/repeat-guard-live.js', delay: 12000, cost: 1, budget: 360000 },
-  // 子代理能力：父模型通过 yan CLI 启动子代理，UI 必须收到同一条实时 run（花 token）
   subagentmodel: {
     probe: 'scripts/probe/subagent-model.js',
     delay: 12000,
@@ -868,13 +446,6 @@ const CASES = {
     budget: 260000,
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
-  /*
-   * `yan knowledge …` 的真实闭环（实施-03 S4，花 token）：模型自己发现并用
-   * 随包 CLI 检索 + 提议。
-   *
-   * 为什么断言在退出后：**「工具执行了」不等于「写进去了」**（§6 明文要求两边都看）。
-   * 磁盘上要多出一条 `candidate`（模型不能自证确认），而原来的 active 条目数量不变。
-   */
   knowledgecli: {
     probe: 'scripts/probe/knowledge-cli.js',
     fixture: true,
@@ -886,15 +457,6 @@ const CASES = {
     knowledgeSeed: true,
     afterExit: 'knowledgeCli'
   },
-  /*
-   * 宿主任务服务端到端（实施-02 S3，花 token）：
-   * 模型 → bash → `yan tasks apply` → 宿主任务日志 → 界面清单。
-   *
-   * 为什么必须有这条（单测与 `capability` 都不够）：单测证明落盘层对，
-   * `capability` 证明管道通 —— 但它们都没有证明「模型照这个用法写出来的任务
-   * 真的会出现在界面上」，也没有证明切会话来回能从磁盘读回。
-   * `fixture: true` 让 cwd 是合成项目（request 文件由 Node 侧预置在 `tasks/` 下）。
-   */
   taskcli: {
     probe: 'scripts/probe/taskcli.js',
     fixture: true,
@@ -903,12 +465,6 @@ const CASES = {
     budget: 300000,
     afterExit: 'taskCliLog'
   },
-  /*
-   * 真实多步任务（实施-02 S5，花 token）：与 `taskcli` 的分工是
-   * 「链路由谁驱动」——taskcli 用预置的请求文件验**写入链**，
-   * 这条从写请求文件到勾选全由模型自己做，验的是「真实多步任务下仍然三处一致」。
-   * 任务本身是真动作（在 fixture 里建三个文件），退出后能核对。
-   */
   taskplan: {
     probe: 'scripts/probe/taskplan.js',
     fixture: true,
@@ -917,12 +473,6 @@ const CASES = {
     budget: 420000,
     afterExit: 'taskPlanMultiStep'
   },
-  // 问答功能端到端：模型主动提问 → 弹窗 → 回答 → 回填（真调模型）
-  /*
-   * 问答（cost 1）：真弹窗 → 选答案 → 回填；第 6 节是「自主档不弹窗」。
-   * `questionExtLog` 把扩展读到的模式写成诊断行 —— 不弹窗可能是扩展拦住了，
-   * 也可能是模型自己没问，这两件事必须分开（afterExit 核对）。
-   */
   ask: {
     probe: 'scripts/probe/ask.js',
     delay: 9000,
@@ -931,41 +481,13 @@ const CASES = {
     questionExtLog: true,
     afterExit: 'questionModeLog'
   },
-  /*
-   * 01-S5 唯一提问入口（cost 0）：不让模型参与，直接走真实 renderer →
-   * yan question ask → CapabilityServer → 问题面板 → resultFile，确保 question
-   * 不会因为移除模型工具而退化成静态提示。
-   */
   questioncli: { probe: 'scripts/probe/question-cli.js', delay: 9000, cost: 0, budget: 180000 },
-  /* 技能自接入：GitHub 发现 → 限时批准面板（会话 / 跳过 / 超时）→ 设置页分类；需联网，不调用模型 */
   skillapprove: { probe: 'scripts/probe/skill-approve.js', delay: 9000, cost: 0, budget: 320000 },
-  // 图生图：DeepSeek 经 yan image generate（edit 模式）改一张项目内的图；出图通道由本机凭证决定（花 token，且会用生图额度）
   imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
-  // 图片真的发给模型（花 token —— 需要视觉模型，Ling 是纯文本的）
   image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1, model: TEST_VISION_MODEL },
-  // 排队 + Esc 回收：需要真流式，也花 token
   queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1 },
   queuebusy: { probe: 'scripts/probe/queue-busy.js', delay: 9000, cost: 1 },
-  // 队列撤回的失败与并发边界（N09）：撤回不存在的 id / 连点两次 / 同时两条 —— 不花 token
   queueretract: { probe: 'scripts/probe/queue-retract.js', delay: 9000, cost: 0 },
-  /*
-   * 实施-01 S4b：`yan browser …` 宿主能力命令（cost 0，不调模型）。
-   *
-   * 模型工具 `browser_*` 已从薄层移除（01-S4b），浏览器的全部模型面现在只有
-   * 这一族 CLI 命令 —— 所以这条场景是「扩展装载被移除后浏览器能力还在吗」的
-   * 直接证据（01-S5 的硬前置）。
-   *
-   * cost 0 的跑法：`window.yan.runBash` 是**不经模型**的直执行 shell 通道，
-   * 它继承 pi 子进程的环境（PATH 里的 yan 启动器 + YAN_CLI_* 身份），
-   * 所以验的是真进程外 CLI。只用 `about:blank`，不依赖外网可达性，
-   * 也**不需要本地 fixture 服务**（`usesBoundaryServer` 会顺带带上 L04 的
-   * Cookie 转移断言，那不属本片）。
-   * `fixture: true`：宿主侧缺参数那条要写一个临时请求文件，放合成项目里。
-   * 需要鼠标的 scroll / click / type 在默认（不上屏）模式下显式跳过，
-   * 理由与实测见 scripts/probe/browser-cli.js 的头注释。
-   *
-   * ⚠️ 还没进 `npm run check` 的场景清单（package.json 不在本片文件域内）。
-   */
   browsercli: {
     probe: 'scripts/probe/browser-cli.js',
     delay: 10000,
@@ -973,35 +495,14 @@ const CASES = {
     fixture: true,
     budget: 240000
   },
-  /*
-   * 同一条能力的**模型端到端**（花 token）：模型 → bash → `yan browser navigate`
-   * → 读回执 → 再 `yan browser observe` → 答出 URL。
-   *
-   * 为什么必须有：`browsercli` 验的是 CLI ↔ 宿主，它绿了也可能是“模型压根不会去用”。
-   * 16 个 `browser_*` 工具删掉后，模型能不能靠能力入口说明自己找到 `yan browser`，
-   * 只能这样验。不在默认门槛里跑（cost 1）。
-   */
   browserclimodel: {
     probe: 'scripts/probe/browser-cli-model.js',
     delay: 10000,
     cost: 1,
     budget: 260000,
-    /*
-     * 固定模型：默认那个免费模型（longcat-2.0:free）在 2026-09-19 实测对这一条
-     * 多步提示连续返回「模型返回错误」（模型侧错误，不是本片代码），
-     * 会变成假红。换成同一个免费档的 deepseek 一闪模型即可稳定跑完（实测通过）。
-     */
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
 
-  /*
-   * 实施-04 S2：能力目录 + 按需读技能正文的**模型端到端**。
-   *
-   * 它验的是「发现 → 读取 → 按目标执行」整条链：模型得自己从能力说明
-   * 找到 `yan capabilities search`，从候选里挑出技能，再 `skill read` 读正文。
-   * 提示词**不给命令名也不给技能名** —— 给了就只验执行链，验不到发现链。
-   * 需要专属 piDir（多一个技能），见下面 sandbox 准备区。不在默认门槛里（cost 1）。
-   */
   capsearch: {
     probe: 'scripts/probe/capability-search-model.js',
     delay: 10000,
@@ -1010,10 +511,6 @@ const CASES = {
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
 
-  /*
-   * 实施-04 S4：**模型自己发现 MCP 工具并调用**（cost 1）。
-   * 提示词不给服务名 / 工具名 / MCP 字样，验的就是发现链（mcpcli 只验执行链）。
-   */
   capmcp: {
     probe: 'scripts/probe/mcp-search-model.js',
     delay: 10000,
@@ -1022,19 +519,8 @@ const CASES = {
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
 
-  /*
-   * 实施-04 S5：`yan capabilities discover/prepare` 的宿主链路 + **真实目录检索**（cost 0）。
-   * 两个源都不可用时**跳过**（离线环境），不假装验过 —— 与 probe:chrome 同一口径。
-   */
   discnet: { probe: 'scripts/probe/discovery-cli.js', delay: 9000, cost: 0 },
 
-  /*
-   * 实施-04 S6b-2：真实独立 Skill 目录（SkillMD API）的只读发现。
-   *
-   * 不放进默认 check：公网目录不是仓库可控前提；手动运行这条场景时必须真的
-   * 看到 items → raw_url → SHA-256 → skill-files 候选链路，离线直接失败而不是
-   * 把「没有证据」记成通过。它不 prepare / acquire，不执行第三方正文。
-   */
   skilldirnet: {
     probe: 'scripts/probe/skill-directory.js',
     delay: 12000,
@@ -1042,67 +528,18 @@ const CASES = {
     env: { YAN_SKILL_DIRECTORY_URL: 'https://api.skillmd.com/v1/search' }
   },
 
-  /*
-   * 实施-04 S2：`yan capabilities search` / `yan skill read` 的**宿主链路**（cost 0）。
-   *
-   * 为什么不是「capsearch 已经验过就不用验」：`capsearch` 实测发现模型读技能
-   * 走的是 pi 原生 `read` 工具，根本没碰 `yan skill read` —— 那样就没人验它了。
-   * 这里直连宿主把发现 / 读取 / 内容 hash / 错误可分支四条确定性钉住。
-   * 复用同一份带技能的 piDir。
-   */
   capcli: { probe: 'scripts/probe/capability-cli.js', delay: 9000, cost: 0 },
 
-  /*
-   * 实施-04 S3：`yan mcp describe` / `yan mcp call` 的**宿主链路**（cost 0）。
-   *
-   * 连的是一个**真的 MCP 服务**（官方 SDK 的 stdio server，scripts/lib/mcp-stdio-fixture.mjs）：
-   * 验 describe 给 schemaRevision、正常调用、**工具级失败**与可重试的两类错
-   * （invalid_arguments / schema-changed）、大结果落盘。服务配置由 YAN_MCP_SERVERS_FILE 注入。
-   */
   mcpcli: { probe: 'scripts/probe/mcp-cli.js', delay: 9000, cost: 0 },
 
-  /*
-   * 实施-07 S4：来源搜索入口**有则出现**（cost 0）。
-   *
-   * 场景给一份真实 MCP 配置（同一个 stdio fixture，工具表里有 `web_search`），
-   * 宿主真的把它接进能力目录 —— 判定读的就是那份目录，不是占位开关。
-   */
   sourcecap: { probe: 'scripts/probe/source-capability.js', delay: 9000, cost: 0 },
 
-  /*
-   * 实施-04 S6b-1：远程 MCP 的**自动登记闭环**（cost 0）。
-   *
-   * 从「确认未配置」开始：真目录 fixture → discover 拿到候选 → 未授权不登记 →
-   * `--authorize` 真核验（本地 Streamable HTTP MCP fixture，官方 SDK 握手）→
-   * 写受管配置 → 能力目录当场可见 → `mcp call` 真的调得通 → 同一计划重放不重复登记。
-   * 配置与授权都落 sandbox（YAN_MCP_SERVERS_FILE），不碰用户真实配置。
-   */
   mcpregister: { probe: 'scripts/probe/mcp-register.js', delay: 9000, cost: 0, usesMcpRegisterFixture: true },
 
-  /*
-   * 实施-11 H-1：回合页脚的阅读秩序与整轮用时（cost 0）。
-   *
-   * 不调模型：注入多轮**已结束**的回合（含多工具 / 单工具 / 无用时 / 无元数据），
-   * 验助手顶部不再有「砚 / N 步 / 标准」、整轮用时只在底部出现一次且在正文之后、
-   * 用时带「含工具往返」的悬停说明、单工具不显示步数、没有点赞点踩。
-   * 整轮耗时**怎么算**不在这里断言 —— 那由 `test-turn-timing.mjs` 的纯逻辑钉住。
-   */
   turnfooter: { probe: 'scripts/probe/turn-footer.js', delay: 10000, cost: 0 },
 
-  /*
-   * 实施-11 H-1：**真实回合**的整轮用时（cost 1，会调模型）。
-   *
-   * 发一条必定调 bash 的消息，然后把界面上显示的整轮用时对上三件事：探针量的
-   * 墙钟、主进程推的 `elapsedMs`、以及由 output/speed 推导的生成时间（必须明显小于
-   * 整轮）。若速度改用回合起点、或页脚改用最后一次生成时间，这三条会同时红。
-   */
   turnfooterlive: {
     probe: 'scripts/probe/turn-footer-live.js',
-    /*
-     * 必须用 fixture 沙盒（`fixture-project/repo`，没有 AGENTS.md）：
-     * 本机 27B 量化模型在仓库完整上下（~8.6K）下**不调工具**，只回话；
-     * 在短项目上下文 + 不可猜任务下才稳定调工具（与历史 `local-tool-test` 一致）。
-     */
     fixture: true,
     fixtureSub: 'repo',
     delay: 12000,
@@ -1111,43 +548,12 @@ const CASES = {
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
 
-  /*
-   * 实施-11 H-2：右栏资源保留（cost 0）。
-   *
-   * 切右栏标签过去会 `closeBrowser()` —— 网页会话直接丢掉。现在切成“只隐藏、
-   * 不释放”，只有显式关标签才释放对应那一个。场景真开一个 about:blank 浏览器，
-   * 再走“切走 → 切回 → 收起右栏 → 逐个关标签”。
-   */
-
-  /*
-   * 实施-11 H-9a：原生网页显隐协调（cost 0）。
-   * 四条件判定 + overlay blocker token 归属：设置/审查/收起右栏/子代理详情
-   * 都不再各自 setVisible，而是由协调器按输入重算。
-   */
   overlayblockers: { probe: 'scripts/probe/overlayblockers.js', delay: 10000, cost: 0 },
 
 
-  /*
-   * 实施-12 U-4/U-5：工具磁贴的位置切换、单实例、键盘与拖动（cost 0）。
-   * 工具库 → 浮动 → 放回、键盘 Alt+←/→、拖动阈值/取消、越界夹取、恢复默认。
-   */
-
-  /*
-   * 实施-13 V-3：设置外壳与 Context/Auth/Capabilities/Packages 页（cost 0）。
-   * 键盘切 tab、真实锚点/空态、禁用防重复提交、长 id 全文出口。
-   */
   settingstabs: { probe: 'scripts/probe/settingstabs.js', delay: 10000, cost: 0 },
   remoteaccess: { probe: 'scripts/probe/remote-access.js', delay: 10000, cost: 0 },
 
-  /*
-   * 实施-13 V-4：右侧资源表面结构统一（cost 0）。
-   * 开始/工具/文件/审查各自的标题、关闭、空态/失败态。
-   */
-
-  /*
-   * 实施-12 U-6：浮动位置跨重启（cost 0，两次启动同一份 YAN_DATA_DIR）。
-   * 第一次写 floating → 退出 → 新进程里断言 rect 与渲染都还在。
-   */
   tilerestart: {
     probe: 'scripts/probe/tile-restart.js',
     restart: { probe: 'scripts/probe/tile-restart-restart.js', delay: 10000, cost: 0 },
@@ -1155,26 +561,12 @@ const CASES = {
     cost: 0
   },
 
-  /*
-   * 实施-12 U-2：项目上下文菜单（cost 0）。
-   * Portal/无布局位移/键盘/外点关闭。
-   */
   contextmenu: { probe: 'scripts/probe/contextmenu.js', delay: 10000, cost: 0 },
 
-  /*
-   * 会话行菜单的**真实点击**路径（cost 0）：在菜单项坐标上按完整指针序列
-   * 派发，并用 elementFromPoint 查遮挡。补 contextmenu / rename / contextstate
-   * 只用合成 click 时绕过的那部分。
-   */
   sessionmenuclick: { probe: 'scripts/probe/sessionmenuclick.js', delay: 9000, cost: 0 },
 
-  /* 同一会话是否在左栏多处渲染、右键是否同时开多个菜单（cost 0） */
   sessionmenudupe: { probe: 'scripts/probe/sessionmenudupe.js', delay: 9000, cost: 0 },
 
-  /*
-   * 实施-11 H-4（解析 / 呈现切片）：Markdown 文件链接的 `#L42` 与点击（cost 0）。
-   * 走 fixture 沙箱（`repo`），因为要点开 README.md 验证主进程真的读了文件。
-   */
   filelink: {
     probe: 'scripts/probe/filelink.js',
     fixture: true,
@@ -1182,10 +574,6 @@ const CASES = {
     delay: 10000,
     cost: 0
   },
-  /*
-   * 实施-11 H-4：由 Electron 外部的 Node 测试进程改写文件，
-   * 验证预览只提示变化、不自动替换内容，用户点“重新加载”后才读新内容。
-   */
   filestale: {
     probe: 'scripts/probe/file-stale.js',
     fixture: true,
@@ -1196,35 +584,18 @@ const CASES = {
     driver: driveFilePreviewMutation
   },
 
-  /*
-   * 实施-11 C-2：压缩可观测性的两个派生量（回收比例 / 此后新增量，cost 0）。
-   */
   compactionview: {
     probe: 'scripts/probe/compaction-view.js',
     delay: 10000,
     cost: 0
   },
 
-  /*
-   * 实施-11 H-6b：整轮用量聚合与工具等待分段（cost 0）。
-   *
-   * 注入多轮工具调用的回合，验：多条助手消息的 usage 相加（不是只显示末条）、
-   * 有请求没报用量时标下限、回合页脚 tooltip 给出「其中等工具」（区间并集）。
-   * 真实 provider 的单请求链路仍由 cost 1 的 `tokens` 覆盖。
-   */
   usageagg: {
     probe: 'scripts/probe/usage-agg.js',
     delay: 10000,
     cost: 0
   },
 
-  /*
-   * 实施-11 H-6：整轮计时的落盘与读回（cost 1，会调模型一次）。
-   *
-   * 前面两条计时场景验的是「算得对、显示得对」；这条验的是 **pi 会话 JSONL
-   * 不存 elapsedMs 时用时还能不能找回来** —— 真实回合 → peekSession 读文件 →
-   * 消息上带 turnTiming；退出后由 afterExit 核对 `YAN_DATA_DIR/turn-timing/`。
-   */
   turnrestore: {
     probe: 'scripts/probe/turn-timing-store-live.js',
     delay: 12000,
@@ -1232,11 +603,9 @@ const CASES = {
     cost: 1,
     fixture: true,
     fixtureSub: 'repo',
-    /* 真实的 before_provider_request 估算留痕（实施-11 C-4b 的取证入口） */
     contextExtLog: true,
     afterExit: 'turnTimingPersisted'
   },
-  /* H-6b：并发 A/B 会话必须各自归属自己的逻辑回合计时（本机 fixture，cost 0）。 */
   turntimingisolation: {
     probe: 'scripts/probe/turn-timing-isolation.js',
     delay: 12000,
@@ -1246,7 +615,6 @@ const CASES = {
     abSessions: true,
     afterExit: 'turnTimingIsolation'
   },
-  /* H-6b：观察真实 final:false 落盘后强制终止隔离 Electron，再从新进程读回中断状态。 */
   turntimingkill: {
     probe: 'scripts/probe/turn-timing-hardkill.js',
     delay: 12000,
@@ -1259,13 +627,6 @@ const CASES = {
     afterExit: 'turnTimingHardKill',
     afterExitOnFailure: true
   },
-  /*
-   * 实施-11 H-6b-2：中途被拿掉的回合读回后报「已中断」（cost 1）。
-   *
-   * 第一次启动跑真实回合写记录；重启前由测试进程向同一 `logicalTurnId`
-   * 追加一条 `final: false` 的中途快照（= 应用在飞行中被拿掉时盘上的样子）；
-   * 重启后第二个探针切进会话，验界面真的写「已中断」。
-   */
   turninterrupted: {
     probe: 'scripts/probe/turn-timing-store-live.js',
     delay: 12000,
@@ -1281,24 +642,8 @@ const CASES = {
 
 const TS = (offsetSec = 0) => new Date(Date.now() - offsetSec * 1000).toISOString()
 
-/** 窄右栏里一定要被省略的超长文件名（fixture 与探针共用同一个名字） */
 const LONG_NAME = '一个非常长的文件名用来验证窄栏下的省略显示-0123456789-abcdefghij-中文结尾.md'
 
-/**
- * 造「无权限目录」：用 ACL 把当前用户对目录的**读取/列举**权限显式拒绝。
- *
- *   `icacls <dir> /deny <user>:(RD)`
- *
- * 只 deny `RD`（Read Data / List Directory），**不** deny `WRITE_DAC` ——
- * 目录属主因此随时能 `/remove:d` 复位。实测若 deny 全权限，连 `rmSync`
- * 都会 EPERM，临时沙箱就删不掉了。
- *
- * Windows 上 Node 的 `readdir` 在这里报的是 **EPERM**（不是 EACCES），
- * 主进程 `statusForError` 两者都映射到 `permission`。
- *
- * 失败（非 NTFS / 组策略 / 改不了 DACL）不算错误：返回 false，
- * 探针把对应断言降级为「跳过」。
- */
 function denyDirRead(dir, user = process.env.USERNAME) {
   if (!user) return false
   try {
@@ -1309,28 +654,18 @@ function denyDirRead(dir, user = process.env.USERNAME) {
   }
 }
 
-/** 复位 `denyDirRead` 写下那条 deny 项（没有该项 / 目录不存在都算成功）。 */
 function allowDirRead(dir, user = process.env.USERNAME) {
   if (!user) return
   try {
     execFileSync('icacls', [dir, '/remove:d', user], { stdio: 'ignore' })
   } catch {
-    /* 尽力而为：目录不存在或本来没有 deny 项都不影响后续 */
   }
 }
 
-/** 跑一条 git 命令取 stdout（失败时抛） */
 function gitOut(cwd, args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
-/**
- * 生成一个合法的 PNG（真字节，不是 hex 常量碰运气）。
- *
- * 为什么需要真图：审查场景要断言「旧图来自 Git 对象、新图来自工作区，
- * 两者内容不同」。如果图本身解不开，`<img>` 会变成破图 —— 断言就变成
- * 在验一个坏掉的资源通道。
- */
 function makePng(size, rgb) {
   const crcTable = []
   for (let n = 0; n < 256; n += 1) {
@@ -1354,13 +689,13 @@ function makePng(size, rgb) {
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(size, 0)
   ihdr.writeUInt32BE(size, 4)
-  ihdr[8] = 8 /* bit depth */
-  ihdr[9] = 2 /* truecolor */
+  ihdr[8] = 8
+  ihdr[9] = 2
   const stride = size * 3 + 1
   const raw = Buffer.alloc(stride * size)
   for (let y = 0; y < size; y += 1) {
     const off = y * stride
-    raw[off] = 0 /* filter: none */
+    raw[off] = 0
     for (let x = 0; x < size; x += 1) {
       raw[off + 1 + x * 3] = rgb[0]
       raw[off + 2 + x * 3] = rgb[1]
@@ -1375,37 +710,14 @@ function makePng(size, rgb) {
   ])
 }
 
-/**
- * 造一棵内容完全确定的合成项目树，供 `fixture: true` 的场景当 cwd。
- *
- * 每一项都对应一条要验的边界：
- *   `empty/`            空目录（status='empty'，界面上是「空」提示而不是空白）
- *   `deep/a/b/c/d/e/`   多级目录（逐层展开 + 缩进递增）
- *   `dup/one|two/same.ts` 同名文件（身份必须按完整路径区分）
- *   `big/` 60 个文件    大目录（@ 补全 30 条截断；文件树 50 一批分页）
- *   `uni/中文 目录/`     中文 + 空格（Windows 路径上最容易出错的一类）
- *   `notadir.txt`       普通文件（当目录用时必须报 missing，不是空列表）
- *   `junction-dir/file` 目录联接 / 文件链接（主进程必须跳过，不暴露成可展开路径）
- *   `noperm/`           ACL 拒绝读取的真实无权限目录（status='permission'，不是「空」）
- *   `<超长中文名>.md`    窄右栏下必须省略显示、但 `title` 里能给全文
- *
- * 链接 / ACL 创建失败（Windows 未开开发者模式、非 NTFS、无改 DACL 权限）
- * 不影响其余断言：探针会把对应断言降级为「跳过」。
- */
 function buildFixtureProject(base) {
   const dir = join(base, 'fixture-project')
-  /* 上一轮的 `noperm/` 可能还带着 deny 读取的 ACL，先复位再删（否则 rmSync 报 EPERM）。 */
   allowDirRead(join(dir, 'noperm'))
   rmSync(dir, { recursive: true, force: true })
   const mk = (...parts) => mkdirSync(join(dir, ...parts), { recursive: true })
   const put = (rel, text) => writeFileSync(join(dir, rel), text, 'utf8')
 
   mk()
-  /*
-   * 左栏「项目 / 分组」类探针要往 settings.projects 里塞多个项目，而主进程对新项目
-   * 的 cwd 走 `validateCwd`：目录不存在就直接拒绝（探针会在断言前抛错）。这里预建
-   * 一批真实目录，供 `probe-projects/pN` 用。
-   */
   for (let i = 1; i <= 8; i++) mk('probe-projects', `p${i}`)
   put('README.md', '# fixture project\n\n合成项目，只用于边界场景。\n')
   writeFileSync(join(dir, 'imgsrc.png'), makePng(64, [32, 96, 200]))
@@ -1424,15 +736,6 @@ function buildFixtureProject(base) {
   put(join('uni', '中文 目录', '文件 名.ts'), 'export const 中文 = 1\n')
   put('notadir.txt', 'not a directory\n')
 
-  /*
-   * 带项目级 pi 设置的工作目录（N21-2 / D21）。
-   *
-   * pi 把「存在 `.pi/settings.json`」的项目视为需要信任（该文件能带 packages /
-   * extensions），而 RPC 模式没有信任弹窗 —— 所以这个文件的内容会被 pi **整份忽略**。
-   * 造出来就是为了让探针验证两件事：① 压缩参数真的不生效（跑的是全局值）；
-   * ② 界面把这件事说出来，而不是拿项目里的数字画一条永远对不上的触发线。
-   * 值故意与全局不同（全局 reserveTokens=900000，这里 4096），否则分不出读了哪份。
-   */
   mk('compact', '.pi')
   put(
     join('compact', '.pi', 'settings.json'),
@@ -1440,48 +743,28 @@ function buildFixtureProject(base) {
   )
   put(join('compact', 'README.md'), '# compact cwd\n\nN21-2 的项目级设置边界。\n')
 
-  /*
-   * 无权限目录（L02 / N19 共用的边界）：真的用 ACL 拒绝当前用户的读取权限，
-   * 而不是靠 mock。造不出来时探针跳过这条（见 `denyDirRead` 注释）。
-   */
   mk('noperm')
   put(join('noperm', 'secret.txt'), 'no permission\n')
   const noPermDenied = denyDirRead(join(dir, 'noperm'))
 
-  /* 窄右栏（PANEL_MIN = 220）下必须走省略 + title 全文，所以名字要明显超宽。 */
   put(LONG_NAME, 'long name\n')
 
-  /*
-   * 第二个工作目录（N12 的 A/B 矩阵）：运行实例只拒绝**同一** cwd 的并发，
-   * 所以「切走不停」必须要有一个不同 cwd 的会话可切。
-   */
   mk('other')
   put(join('other', 'README.md'), '# other cwd\n\nN12 用的第二个工作目录。\n')
   try {
     execFileSync('git', ['init', '-q'], { cwd: join(dir, 'other'), stdio: 'ignore' })
   } catch {
-    /* 不是必须的：这个目录只当 cwd 用，不建 worktree */
   }
 
-  /*
-   * 一个最小 Git 仓库（L03 的写入型子代理要建 worktree）。
-   * `LINE-BASE` 是给「两个子代理改同一行」的冲突场景预备的固定锚点。
-   */
   const repo = join(dir, 'repo')
   mk('repo')
   put(join('repo', 'README.md'), '# fixture repo\n\nLINE-BASE: 初始内容\n')
-  /*
-   * 5000 行文件（H-4 大文件窗口化）：真实定位到第 4000 行时，
-   * 读进来的应该只是围绕它的窗口，而不是前 2000 行。
-   */
   put(
     join('repo', 'big.txt'),
     Array.from({ length: 5000 }, (_, i) => `line ${String(i + 1).padStart(4, '0')}`).join('\n') + '\n'
   )
-  /* 文档内相对链接（H-4 出口 3）：`../README.md` 相对的是本文档目录 */
   mk('repo', 'docs')
   put(join('repo', 'docs', 'a.md'), '# fixture 文档\n\n[返回上一级](../README.md)\n')
-  /* 历史消息来源 cwd（H-4）：与 repo 根各放一个同名文件，内容和真实路径都可区分。 */
   put(join('repo', 'docs', 'README.md'), '# docs README\n\n历史来源目录 fixture。\n')
   const gitEnv = ['-c', 'user.name=yan-test', '-c', 'user.email=yan@test']
   try {
@@ -1494,26 +777,16 @@ function buildFixtureProject(base) {
     )
   }
 
-  /*
-   * Git 审查场景（G1）专用的仓库：故意做脏，覆盖方案 §13.1 的 Git 数据清单。
-   *
-   * 为什么另起一个目录而不是往上面的 repo/ 里塞改动：`subagentpair` 会在
-   * repo/ 里建 worktree 并断言「主工作树没被碰过」，一堆预置脏改动会让
-   * 那些断言的前提变味（它们要的是干净基线）。
-   */
   const reviewRepo = join(dir, 'review')
   mk('review')
   const rgit = (args) => execFileSync('git', args, { cwd: reviewRepo, stdio: 'ignore' })
   const rgitC = (...args) => execFileSync('git', [...gitEnv, ...args], { cwd: reviewRepo, stdio: 'ignore' })
   rgit(['init', '-q', '-b', 'main'])
-  /* 关掉 autocrlf：行数在不同平台要一致，否则断言会随机器变 */
   rgit(['config', 'core.autocrlf', 'false'])
   put(join('review', 'modify.txt'), 'one\ntwo\nthree\n')
   put(join('review', 'a-deleted.txt'), 'bye\n')
   put(join('review', 'renamed.txt'), 'rename me\n')
   {
-    /* 80 行的文件：待会儿只改首尾两行 → diff 里会出现两个 hunk，
-       中间那段就是界面上「N 行未修改」的折叠条 */
     const lines = []
     for (let i = 1; i <= 80; i += 1) lines.push(`line ${i}`)
     put(join('review', 'multi.txt'), lines.join('\n') + '\n')
@@ -1526,9 +799,7 @@ function buildFixtureProject(base) {
   rgitC('add', '-A')
   rgitC('commit', '-q', '-m', 'review fixture base')
 
-  /* ① 未暂存修改（+2 -1） */
   put(join('review', 'modify.txt'), 'one\nTWO\nthree\nfour\n')
-  /* ② 多 hunk（首行与末行） */
   {
     const lines = []
     for (let i = 1; i <= 80; i += 1) {
@@ -1538,41 +809,16 @@ function buildFixtureProject(base) {
     }
     put(join('review', 'multi.txt'), lines.join('\n') + '\n')
   }
-  /* ③ 未暂存删除 */
   rmSync(join(reviewRepo, 'a-deleted.txt'), { force: true })
-  /* ④ 已暂存重命名 */
   rgitC('mv', 'renamed.txt', 'renamed-new.txt')
-  /* ⑤ 已暂存新增 */
   put(join('review', 'staged-new.txt'), 'brand new\n')
   rgitC('add', 'staged-new.txt')
-  /* ⑥ 中文 + 空格路径的未暂存修改 */
   put(join('review', 'docs', '中文 目录', '说明.md'), '# 说明\n\n第一行\n改过的第二行\n')
-  /* ⑦ 未跟踪文件（文本） */
   put(join('review', 'untracked.txt'), 'u1\nu2\nu3\n')
-  /* ⑧ 图片改动（真的不同的一张图，颜色与尺寸都变） */
   writeFileSync(join(reviewRepo, 'pic.png'), makePng(24, [220, 48, 48]))
-  /* ⑨ 未跟踪的二进制文件（含 NUL 字节） */
   writeFileSync(join(reviewRepo, 'blob.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x00]))
-  /* ⑩ 未暂存修改（源码，用来验语法无关的纯文本 diff） */
   put(join('review', 'src', 'app.ts'), ['export function app() {', '  return 2', '}', ''].join('\n'))
 
-  /*
-   * G2 写操作的 fixture：一个**有真实 remote**的仓库。
-   *
-   * 与 review/ 分开是必须的：写操作会真的改仓库（提交、切分支、推送），
-   * 而 review/ 的每条断言都建立在它那份「故意做脏」的状态上 —— 共用一个
-   * 目录会让两边的断言互相污染，且失败原因极难区分。
-   *
-   * 预置：main（已推送到本地 bare remote）、feature（与 main 有内容差异，
-   * 用来验证切换真的换了工作区文件）、一处未暂存改动、一个未跟踪文件。
-   */
-  /*
-   * pi 包管理（P2）的 fixture：一个**最小的本地包**。
-   *
-   * 为什么用本地路径源：安装走的是 pi 自己的 CLI（`pi install <路径>`），
-   * 本地路径不需要联网，也不需要真的往用户目录里装东西 —— 测试全程
-   * 用隔离的 YAN_PI_DIR。放在 fixture 项目目录下，探针那边可以用 cwd 拼出来。
-   */
   mk('probe-ext')
   mk('probe-ext', 'extensions')
   put(join('probe-ext', 'package.json'), JSON.stringify({
@@ -1584,11 +830,6 @@ function buildFixtureProject(base) {
   }, null, 2))
   put(join('probe-ext', 'extensions', 'index.js'), 'export default {}\n')
 
-  /*
-   * pi 包管理（P2）的 fixture：一个最小的**本地包**，放在专属子目录里。
-   * 用本地路径源 —— 装它不需要联网，也不需要往用户目录里写东西
-   *（全程用隔离的 YAN_PI_DIR）。
-   */
   mk('pkgs')
   mk('pkgs', 'probe-ext')
   mk('pkgs', 'probe-ext', 'extensions')
@@ -1607,40 +848,25 @@ function buildFixtureProject(base) {
   const wgitC = (...args) => execFileSync('git', [...gitEnv, ...args], { cwd: writeRepo, stdio: 'ignore' })
   wgit(['init', '-q', '-b', 'main'])
   wgit(['config', 'core.autocrlf', 'false'])
-  /*
-   * 仓库里**必须**有身份：主进程的 git 继承的是测试进程的 env（没有
-   * GIT_AUTHOR_*），所以不配的话提交会以「身份未配置」被拒 —— 那是**正确**
-   * 的产品行为（分类与提示都对，真实仓库单测 G9-F 专门覆盖它），
-   * 但会让这个场景测不到「提交成功」的主路径。
-   */
   wgit(['config', 'user.name', 'yan-test'])
   wgit(['config', 'user.email', 'yan-test@example.com'])
   put(join('write', 'a.txt'), 'a1\na2\na3\n')
   put(join('write', 'b.txt'), 'b1\n')
-  /* dirty.txt 后面会改成未暂存状态，专门留给「携带未提交改动」那一节 */
   put(join('write', 'dirty.txt'), 'clean\n')
   mk('write', 'src')
   put(join('write', 'src', 'app.ts'), 'export const v = 1\n')
   wgitC('add', '-A')
   wgitC('commit', '-q', '-m', 'write fixture base')
-  /* feature：b.txt 的内容与 main 不同（切换后能验证工作区真的换了） */
   wgitC('switch', '-q', '-c', 'feature')
   put(join('write', 'b.txt'), 'b1 on feature\n')
   wgitC('commit', '-qam', 'feature changes b.txt')
   wgitC('switch', '-q', 'main')
-  /* bare remote：push / fetch 走真实 git 通道（本地路径，不碰网络） */
   const writeRemote = join(dir, 'write-remote.git')
   execFileSync('git', ['init', '-q', '--bare', writeRemote], { stdio: 'ignore' })
   wgit(['remote', 'add', 'origin', writeRemote])
   wgitC('push', '-q', '-u', 'origin', 'main')
-  /* 待暂存的改动 + 未跟踪文件（写操作的输入） */
   put(join('write', 'a.txt'), 'a1\nA2-CHANGED\na3\n')
   put(join('write', 'new.txt'), 'fresh\n')
-  /*
-   * 另外两份是**给 W2a（携带未提交改动）留的**：探针的 G2 部分只会暂存
-   * a.txt 与 new.txt，所以到第 11 节时 dirty.txt 仍是未暂存改动、
-   * notes.txt 仍是未跟踪文件 —— 携带那一节才有东西可带。
-   */
   put(join('write', 'dirty.txt'), 'dirty\n')
   put(join('write', 'notes.txt'), 'note\n')
 
@@ -1648,25 +874,15 @@ function buildFixtureProject(base) {
   try {
     symlinkSync(join(dir, 'deep'), join(dir, 'junction-dir'), 'junction')
   } catch {
-    /* 没权限建链接就跳过相关断言 */
   }
   try {
     symlinkSync(join(dir, 'README.md'), join(dir, 'junction-file'))
   } catch {
-    /* 同上 */
   }
   if (!noPermDenied) {
     console.log('  ⤺ 无权限目录没造成（icacls deny 失败），fsedge 会跳过那组断言')
   }
 
-  /*
-   * 宿主任务服务（实施-02 S3）的 request 文件：由 Node 侧预置，探针只让
-   * 模型跑 `yan tasks apply --request-file tasks/…`。
-   *
-   * 为什么不让模型自己写这份 JSON：那要多一次工具往返，而模型可能换个目录写、
-   * 或者把内容改掉 —— 本场景要验的是**宿主写入链**，不是 write 工具。
-   * 放在 fixture 子目录里：cwd 就是合成项目，绝不碰真实仓库。
-   */
   mk('tasks')
   put(
     join('tasks', 'task-set.json'),
@@ -1720,7 +936,6 @@ function seedSessions(destRoot) {
     console.log('  ⚠️  拷贝真实会话失败：' + e.message)
   }
 
-  /* 排查加载速度用：YAN_TEST_EXTRA_SESSIONS 里（分号分隔）的会话文件会被拷进隔离目录 */
   for (const extra of (SYNTHETIC_ONLY ? [] : (process.env.YAN_TEST_EXTRA_SESSIONS ?? '').split(';').filter(Boolean))) {
     try {
       copyFileSync(extra, join(destDir, basename(extra)))
@@ -1730,38 +945,21 @@ function seedSessions(destRoot) {
     }
   }
 
-  // 合成：带任务清单的会话（确定性，不依赖真实数据）
   writeTodoSession(destDir, 'yan-todo-fixture')
   n++
 
-  // 合成：一组「分支会话」——父会话 + 两个子会话（带 parentSession）
-  // 用来验左栏的「分支数 / 分支编号 / 分叉自哪句话」
   writeBranchFamily(destDir, 'yan-family')
   n += 3
 
-  // 合成：20 条消息的普通会话
   writePlainSession(destDir, 'yan-plain-fixture', 20)
   n++
 
-  /*
-   * 合成：规模用例（实施-26 R7）—— 400 条消息 = 200 轮。
-   * 轮次层会把「一个会话」撑成一条很长的卡链，这个 fixture 用来验
-   * 「展开几百轮不塌」（几何、渲染、泳道高度都要经得住）。
-   */
   writePlainSession(destDir, 'yan-bulk-fixture', 400)
   n++
 
   return n
 }
 
-/**
- * v3-shell 的用量取数夹具：主会话与子代理各一份**合成原生 JSONL**，让探针在
- * 真实隔离应用里经正式 `window.yan.usageStats` IPC 读它们（不重写渲染端取数）。
- *
- * 日期刻意错开：主会话在 30 天窗口内、7 天窗口外，于是 `7d` 范围下主会话 Token
- * 为 0、只有子代理 —— 用真实数据链验证「只有子代理时主会话显示 0」。探针里的
- * 期望常量与这里一一对应，改动时同步。
- */
 function writeV3UsageFixture(sandboxRoot) {
   const usageSessions = join(sandboxRoot, 'usage-sessions')
   const mainDir = join(usageSessions, '--C--Fixture--')
@@ -1887,13 +1085,6 @@ function writeTodoSession(dir, idBase) {
   writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
 }
 
-/**
- * 合成：一组「分支会话」——父会话 + 两个子会话。
- *
- * 子会话头里的 `parentSession` 指向父会话文件（pi 就是这么记分叉来源的），
- * 且子会话开头拷入了父会话的前缀（包括那句「源问题」）—— 与真实分叉一致，
- * 这样「分叉自哪句话」才能算出来。
- */
 function writeBranchFamily(dir, idBase) {
   const stamp = Date.now().toString(36)
   const cwd = homedir()
@@ -2002,12 +1193,6 @@ function writePlainSession(dir, idBase, count) {
   writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
 }
 
-/*
- * N21-3 的切会话守卫需要一个确定性「已经越过两条线」的旧会话。
- * 不能依赖运行机器上碰巧存在的大会话：隔离 fixture 可能只有几条小 JSONL，
- * 那样探针测到的是“前提不存在”，而不是切换没有触发压缩。
- * 这个文件只在 contextswitchguard 场景启动前写入，场景结束后立即删除。
- */
 function writeContextGuardSession(dir) {
   const id = `yan-context-guard-${Date.now().toString(36)}`
   const file = join(dir, `2026-01-06T00-00-00-000Z_${id}.jsonl`)
@@ -2054,20 +1239,6 @@ function writeContextGuardSession(dir) {
   return file
 }
 
-/**
- * N12 的 A/B 会话：三个合成会话，cwd 指向 fixture 项目。
- *
- * 为什么要在运行时造（而不是像其他 fixture 那样写在 seedSessions 里）：
- * 它们的 cwd 必须是 fixture 项目的**绝对路径**，而那个路径要等临时
- * 目录建好才知道。
- *
- *   A（`yan-ab-a`）  cwd = fixture/repo   —— 发长任务，验证运行中
- *   B（`yan-ab-b`）  cwd = fixture/other  —— 不同 cwd，切过去不能被拒
- *   C（`yan-ab-c`）  cwd = fixture/repo   —— 与 A 同 cwd，用来验证拒绝
- *
- * 会话平铺在 sessions 根目录：隔离测试里 `YAN_SESSIONS_DIR` 被接管，
- * pi 不再自己建项目子目录（见 `SESSIONS_DIR_IS_OVERRIDE`）。
- */
 function writeAbSessions(root, cwdA, cwdB) {
   const stamp = Date.now().toString(36)
   const made = []
@@ -2113,16 +1284,6 @@ function writeAbSessions(root, cwdA, cwdB) {
   return made
 }
 
-/**
- * N05 的两个**已落盘**合成会话（cwd = fixture 项目的 A / B）。
- *
- * 为什么必须是落盘的会话（而不像 N12 那样现开一个 `new_session`）：
- * 项目切换要验证的是「切回来还是原来那个会话」—— 草稿按 `sessionId` 存在运行时
- * 缓存里，换了会话就回不来。而刚 `new_session` 出来的会话还没有消息，
- * `listSessions` 解析不出 head、不会出现在会话列表里；空间实例又会在切走时被
- * 回收（实测：切到 B 后 `runners` 里已经没有 A）。那种情况下没有任何东西可以
- * 切回去，验的不是这段逻辑。落盘的会话才对齐用户的真实情形。
- */
 function writeProjectSwitchSessions(root, cwdA, cwdB, opts = {}) {
   const stamp = Date.now().toString(36)
   const made = []
@@ -2167,48 +1328,19 @@ function writeProjectSwitchSessions(root, cwdA, cwdB, opts = {}) {
       }
     ]
     writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
-    /*
-     * 排序键是**文件 mtime**（`sessions.ts` 用 `f.mtimeMs` 排），不是消息 timestamp。
-     * 三个文件先后写入相隔往往只有几毫秒，顺序不稳定 —— 实测就是它让 N05 的
-     * “该项目最近访问的会话”选到了 C。这里按 `skew` 显式把 mtime 拨开：
-     * skew 越大越旧（A 最新，C 最旧）。
-     */
     const t = (Date.now() - (900 + skew) * 1000) / 1000
     try {
       utimesSync(file, t, t)
     } catch {
-      /* 个别文件系统不支持改时间戳：不致命，只是排序回到不确定状态 */
     }
     made.push({ tag, cwd, file })
   }
   one('a', cwdA)
   one('b', cwdB)
-  /*
-   * D/E：**同一个子目录里的两条会话**，只在明确要求时造（`projectPeers: true`）。
-   *
-   * 存在意义只有一个：L05 要验“同 cwd 已有实例在跑时，切换必须被拒绝”，
-   * 而那需要两条同 cwd 的已落盘会话。
-   * ⚠️ 它们**必须**在另一个目录里（`peerCwd`，实测用 fixture 里的 `repo/`）：
-   * 摆在 A 旁边会参与 N05 的“该项目最近访问的会话”挑选（曾经让
-   * `projectswitch` 选到了新造的那条，断言就挂了）。
-   */
   if (opts.peers && opts.peerCwd) {
     one('d', opts.peerCwd, 0)
     one('e', opts.peerCwd, 100)
   }
-  /*
-   * 09-S3（S3）：同一个项目目录里的两条会话，用来验「恢复哪一个」。
-   *
-   *   hot    —— 消息时间比 `opened` 新（模拟后台跑过消息的会话）；
-   *   opened —— 消息时间旧，稍后由探针真的打开一次。
-   *
-   * ⚠️ 这里的 `skew` 是**加到偏移上**的（`TS(690 - skew)` ⇒ skew 越大消息越新），
-   * 与上下文的直觉相反 —— 第一版写反了，结果是 `opened` 的消息反而更新，
-   * “只按活动时间排会选错”这个前提直接不成立。
-   * 两条都故意把 mtime 拨到更旧（skew 大）—— mtime 不参与判定，
-   * 但没必要让它去影响别的场景的列表顺序。
-   * ⚠️ 只在明确要求时造：摆在 cwdA 旁边会参与 `projectswitch` 的挑选。
-   */
   if (opts.opened) {
     one('hot', cwdA, 300)
     one('opened', cwdA, 50)
@@ -2216,19 +1348,9 @@ function writeProjectSwitchSessions(root, cwdA, cwdB, opts = {}) {
   return made
 }
 
-/**
- * 探针脚本的语法检查。
- *
- * 它们会被当成字符串交给 `executeJavaScript`，所以语法错误不会在构建期
- * 暴露 —— 只会变成「没抓到 PROBE 输出 —— 应用可能启动失败」，
- * 跟真正的启动失败混在一起。实测踩过一次（重名 const），排查花了不少时间。
- *
- * @returns 错误信息，合法时返回 null
- */
 function checkProbeSyntax(probe) {
   try {
     const src = readFileSync(join(root, probe), 'utf8')
-    // 与 executeJavaScript 一致：按普通脚本（非 module）解析
     new vm.Script(src, { filename: probe })
     return null
   } catch (error) {
@@ -2236,50 +1358,14 @@ function checkProbeSyntax(probe) {
   }
 }
 
-/**
- * `episode-fold`（任务状态记忆）的**界面关闭路径**（P2-7）—— 配 `contextfoldpref` 场景。
- *
- * 这是一条**否定式断言**（「生成器一次都没跑」），而否定式断言最容易假通过：
- * 扩展没加载、回合没跑、根本没原料，都会得到同样的「零」。所以这里必须同时钉
- * 三件正向的事：设置真的落了盘、扩展真的在读这份设置（`hook:'skipped'` 那行里的
- * `kinds` 就是它的解析结果）、探针那个回合真的调了工具。
- * **「本该有」的对照**是同 env、同探针形态的 `contextfolddefault` —— 它用同一套
- * 条件（`YAN_CONTEXT_POLICY` 只降门槛、**不给 `kinds`**）证明默认集下真的会生成。
- */
-/* ══════════════════════════════════════════════════════════════════
- * 项目知识注入（实施-03 S3）
- * ══════════════════════════════════════════════════════════════════ */
-
-/** 项目知识 fixture 的项目 id / 条目 id / 正文（afterExit 也读这几个常量）。 */
 const KNOWLEDGE_FIXTURE_PROJECT_ID = 'proj-fixture'
 const KNOWLEDGE_FIXTURE_ENTRY_ID = 'kn-deploy'
 const KNOWLEDGE_FIXTURE_TEXT = '发布流程统一走 npm run dist，先跑完整门槛'
-/* 设置页场景专用的候选条目：确认按钮只对 candidate 出现 */
 const KNOWLEDGE_FIXTURE_CANDIDATE_ID = 'k-candidate01'
 const KNOWLEDGE_FIXTURE_CANDIDATE_TEXT = 'out/ 是构建产物目录，跑单测前先 build'
 
-/**
- * 预置一份项目知识（fixture）。
- *
- * 指纹用**真模块**算（靠 Node 的类型剥离直接 import `src/shared/project-memory.ts`）——
- * 手写一个 16 位 hex 也许能过形状校验，但那是 fixture 在替产品说谎，
- * 而这条场景的全部意义就是「真检索、真注入」。
- */
-/**
- * 预置一份带结构化链接的目标文档（U-3b，2026-09-23）。
- *
- * 为什么用预置而不是让探针写：写入通道只有 `yan goal report`（宿主 CLI），
- * 渲染进程内没有第二写入口 —— 探针能验的正是「读回来并对不对」。
- * 一条 `file` 故意指向不存在的路径（验失败反馈），一条 `url` 不会被点击
- * （不打开外部浏览器）。
- */
 async function seedGoalDocument(dataDir, sessionsDir) {
   const now = Date.now()
-  /*
-   * 每个会话都种一份：目标状态按**会话文件路径**索引，而哪个会话是当前窗口的
-   * 活动会话由 fixture 决定 —— 只种一个会碰运气（第一次实跑就碰空了）。
-   * 每份的 links 都自带 source.sessionId（指向自己）。
-   */
   const goalFor = (sessionKey) => ({
     goalId: 'g-probe-links',
     phase: 'executing',
@@ -2289,9 +1375,7 @@ async function seedGoalDocument(dataDir, sessionsDir) {
       { title: '验产物/参考展示', status: 'pending' }
     ],
     evidence: ['npm run test:unit 4712/4712'],
-    /* A-2：预算与“为什么没继续”——预置成“时间已到”的状态，看界面会不会说 */
     budget: { tokens: 200000, ms: 600000 },
-    /* 宿主算出的用量快照（A-2）：预置成已超上限，与下面的 budgetStop 一致 */
     budgetUsage: { tokens: 312000, at: now },
     budgetStop: { at: now, reason: 'tokens', detail: '已用 312000 tokens，达到预算 200000' },
     links: [
@@ -2300,7 +1384,6 @@ async function seedGoalDocument(dataDir, sessionsDir) {
         target: 'probe-missing-file.txt',
         label: '不存在的文件（验失败反馈）',
         source: { sessionId: sessionKey, messageId: 'm-probe' },
-        /* 模拟宿主先前已核验过：文件不在 → ok:false。核验逻辑本身由单测盯。 */
         check: { at: now, ok: false, method: 'exists', detail: '文件不存在（可能已被移动或删除）' },
         addedAt: now
       },
@@ -2322,11 +1405,6 @@ async function seedGoalDocument(dataDir, sessionsDir) {
     blocker: null,
     pursue: false,
     brief: null,
-    /*
-     * G-2：目标级核验快照。fixture 直接写文档（不走 `yan goal report`），
-     * 所以这里模拟宿主已经算过的结果 —— 与上面 links 的 check 同一批事实。
-     * 「宿主真的会算」由单测（GoalStore.report → 真文件 stat）盯。
-     */
     verification: {
       status: 'failed',
       at: now,
@@ -2384,7 +1462,6 @@ async function seedGoalDocument(dataDir, sessionsDir) {
   return files.length
 }
 
-/** G-4 cost 0 fixture：在真实隔离数据目录中预置一条可修改的待审 ready。 */
 async function seedPendingGoalReview(dataDir, sessionsDir) {
   const now = Date.now()
   const files = readdirSync(sessionsDir, { recursive: true })
@@ -2462,11 +1539,6 @@ async function seedProjectKnowledge(dataDir, opts = {}) {
     createdAt: now,
     updatedAt: now
   }
-  /*
-   * 「设置页」场景要多一条**候选**：确认按钮只对 `candidate` 出现，
-   * 而候选只能是模型提议出来的（宿主不会自己造）——所以 fixture 必须准备好，
-   * 否则那一列永远是空的，接口不接也不知道。
-   */
   const candidate = opts.withCandidate
     ? {
         ...entry,
@@ -2481,7 +1553,6 @@ async function seedProjectKnowledge(dataDir, opts = {}) {
         confidenceClass: 'inferred'
       }
     : null
-  /* 来源跳转要一个**真存在**的会话：fixture 会话 id 是动态的，由调用方查好传进来 */
   if (opts.sessionId) entry.evidence = [{ sessionId: opts.sessionId }]
   const entries = [entry, ...(candidate ? [candidate] : [])]
   const manifest = {
@@ -2502,32 +1573,17 @@ async function seedProjectKnowledge(dataDir, opts = {}) {
   )
 }
 
-/**
- * 实施-03 S6 的隔离 fixture 常量（probe 与 afterExit 都要用）。
- *
- * 为什么 id / 正文写在这里：探针只做界面断言，真正的字节（digest）核验在
- * Node 侧（探针按设计读不到 `YAN_DATA_DIR`）。两边得拿同一份常量。
- */
 const KNOWLEDGE_ISO_A_ID = 'kn-iso-a'
 const KNOWLEDGE_ISO_A_TEXT = 'fixture：主仓库的发布流程统一走 npm run dist'
 const KNOWLEDGE_ISO_B_ID = 'kn-iso-b'
 const KNOWLEDGE_ISO_B_TEXT = 'fixture：另一个项目的接口约定（与主仓库无关）'
 const KNOWLEDGE_ISO_TITLES = { a: 'YAN-ISO-A', b: 'YAN-ISO-B', w: 'YAN-ISO-W' }
-/** 跨重启交接观察结果的 localStorage 键（同一个 YAN_USER_DATA，进程退出后仍在）。 */
 const KNOWLEDGE_ISO_STASH_KEY = 'yan.probe.knowledge-iso.v1'
-/** 旧用户数据的哨兵（实施-03 §9：遗留 `memory.json` / `soul.md` 不主动删）。 */
 const LEGACY_DATA_SENTINELS = [
   { name: 'memory.json', body: '{"entries":[{"id":"old-1","text":"用户遗留的旧记忆，不许被删除或改写"}]}\n' },
   { name: 'soul.md', body: '# soul\n\n用户遗留的旧人设文件，逐字节不许变。\n' }
 ]
 
-/**
- * 把三个 cwd 的会话写进隔离会话目录。
- *
- * 为什么自己写而不复用 `writeProjectSwitchSessions`：那个函数只支持两个 cwd，
- * 而这片要验三处 —— 主仓库 A / 另一个项目 B / **未登记的 git 工作树 W**。
- * 用 `utimesSync` 把 mtime 拨开（排序键是文件 mtime，不是消息时间戳）。
- */
 function writeIsolationSessions(root, cwdA, cwdB, cwdW) {
   const stamp = Date.now().toString(36)
   const made = {}
@@ -2562,7 +1618,6 @@ function writeIsolationSessions(root, cwdA, cwdB, cwdW) {
     try {
       utimesSync(file, t, t)
     } catch {
-      /* 个别文件系统不支持改时间戳：不致命 */
     }
     made[key] = { tag, cwd, file }
   }
@@ -2572,21 +1627,6 @@ function writeIsolationSessions(root, cwdA, cwdB, cwdW) {
   return made
 }
 
-/**
- * 项目知识隔离 fixture（实施-03 S6）。
- *
- * 造出四种真实条件：
- *   ① A = 主仓库（`fixture-project/repo`，真 git 仓库）—— 用**旧算法**的 id 登记，
- *      这是「项目被自动登记」时的真实取值；
- *   ② B = 另一个项目（`fixture-project/other`）—— 它的旧 id 与 A 撞，所以登记时
- *      必须拿到哈希 id（与 `sanitizeProjects` 的碰撞退路一致）；
- *   ③ W = A 的**真 git 工作树**（`fixture-project/repo-worktrees/iso`）—— **不登记**，
- *      模拟「直接打开一条工作树会话」；它的旧 id 与 A 完全相同；
- *   ④ 旧的 `memory.json` / `soul.md` 哨兵：跑完必须逐字节不变。
- *
- * 修复前 ③ 会读到 ① 的知识（工作树与主仓库共用一个 id）—— 这条 fixture
- * 就是为那个缺陷准备的。
- */
 async function seedKnowledgeIsolation(sandboxRoot, fixtureProject, caseCwd) {
   const { pathToFileURL } = await import('node:url')
   const ids = await import(pathToFileURL(join(root, 'src/main/project-id.ts')).href)
@@ -2597,7 +1637,6 @@ async function seedKnowledgeIsolation(sandboxRoot, fixtureProject, caseCwd) {
   const worktreeRoot = join(fixtureProject, 'repo-worktrees')
   const cwdW = join(worktreeRoot, 'iso')
 
-  /* 真 git 工作树；git 不可用时退化成普通目录 —— 路径前缀（碰撞的成因）不受影响 */
   let worktreeIsReal = false
   try {
     mkdirSync(worktreeRoot, { recursive: true })
@@ -2678,7 +1717,6 @@ async function seedKnowledgeIsolation(sandboxRoot, fixtureProject, caseCwd) {
   mkdirSync(sessions, { recursive: true })
   const made = writeIsolationSessions(sessions, cwdA, cwdB, cwdW)
 
-  /* 旧用户数据哨兵：两份（pi 目录 + 数据目录），跑完都要逐字节不变 */
   const sentinels = []
   for (const base of [join(sandboxRoot, 'pi-agent'), join(sandboxRoot, 'data')]) {
     mkdirSync(base, { recursive: true })
@@ -2694,12 +1732,6 @@ async function seedKnowledgeIsolation(sandboxRoot, fixtureProject, caseCwd) {
   return { cwdA, cwdB, cwdW, idA, idB, legacyW, sessions: made, sentinels }
 }
 
-/**
- * 退出后检查：`yan knowledge propose` 真的落盘了，而且落的是 `candidate`。
- *
- * 三条：① 条目数增加；② 新条目是 `candidate`（模型不能自证确认）；
- * ③ 原 fixture 那条仍是唯一的 `active`（没有被顺手改写）。
- */
 async function checkKnowledgeCli(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -2731,12 +1763,6 @@ async function checkKnowledgeCli(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
-/**
- * 退出后检查：设置页里那三次操作真的落盘了。
- *
- * 三件：① 被删的那条 `status` 变成 `deleted` 且 revision 加了至少 3（确认 / 编辑 / 删除）；
- * ② 另一条 fixture 一点没被动过；③ 删掉的那条**正文不在导出材料里**（墓碑不回流）。
- */
 async function checkKnowledgeTab(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -2761,11 +1787,6 @@ async function checkKnowledgeTab(sandboxRoot, _tempBefore, probeText) {
     say(deleted?.status === 'deleted', '被删的那条状态是 deleted')
     say((deleted?.revision ?? 0) >= 4, `revision 至少加了 3（确认 / 编辑 / 删除）：${deleted?.revision}`)
     say(untouched?.status === 'active' && untouched?.revision === 1, '另一条 fixture 完全没被动过（active / rev 1）')
-    /*
-     * 墓碑不回流：删除后的正文不该出现在导出材料里。这里直接读墓碑正文（还在盘上，
-     * 逻辑删除保留可恢复），确认它**不等于**原来那条候选的文字 ——
-     * 若发现它还是 active 或 revision 没变，上面的断言已经先报错了。
-     */
     const tombstoneFile = join(
       sandboxRoot,
       'data',
@@ -2786,18 +1807,6 @@ async function checkKnowledgeTab(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
-/**
- * 退出后检查：项目知识的跨项目 / 工作树隔离 + 跨重启持久化 + 便携数据完整性
- *（实施-03 S6）。
- *
- * 为什么全部在退出后看：探针跑在渲染端，按设计读不到 `YAN_DATA_DIR` ——
- * 「界面上看不到 B 的知识」可能只是这一轮没刷新。真正的保证是磁盘上
- * 两个项目就是两个目录、各只有自己的条目；而重启后再读一次，证明它不是内存态。
- *
- * 反向验证：把 `capability.projectId` 的“未登记回退”改回裸 `legacyProjectId(cwd)`，
- * 工作树那条断言（探针里的 ids.w）会当场变红 —— 这就是旧算法 27 字节截断
- * 让工作树与主仓库共用 id 的缺陷（详见 HANDOFF 六栅）。
- */
 async function checkKnowledgeIsolation(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -2823,14 +1832,12 @@ async function checkKnowledgeIsolation(sandboxRoot, _tempBefore, probeText) {
   const knDir = (projectId) => join(sandboxRoot, 'data', 'project-knowledge', projectId)
   const readManifest = (projectId) => JSON.parse(readFileSync(join(knDir(projectId), 'manifest.json'), 'utf8'))
 
-  /* ── ① 前提：旧算法的 27 字节截断真的让工作树与主仓库同 id ── */
   say(
     ids.legacyProjectId(cwdW) === idA,
     '前提成立：工作树的旧算法 id 与主仓库完全相同（路径前 27 字节被截断）',
   )
   say(idB !== idA, '另一个项目的登记 id 与主仓库不同（碰撞退路生效）')
 
-  /* ── ② 磁盘上两个项目各只有自己那条 ── */
   try {
     const manifestA = readManifest(idA)
     const manifestB = readManifest(idB)
@@ -2856,7 +1863,6 @@ async function checkKnowledgeIsolation(sandboxRoot, _tempBefore, probeText) {
     say(false, '读项目 manifest 失败：' + (error instanceof Error ? error.message : String(error)))
   }
 
-  /* ── ③ 工作树不该拿到主仓库的知识 ── */
   try {
     const worktreeManifest = existsSync(join(knDir(idW), 'manifest.json')) ? readManifest(idW) : null
     lines.push(
@@ -2870,7 +1876,6 @@ async function checkKnowledgeIsolation(sandboxRoot, _tempBefore, probeText) {
     say(false, '读工作树知识目录失败：' + (error instanceof Error ? error.message : String(error)))
   }
 
-  /* ── ④ 探针自己报的 id：运行时真的用了「哈希退路」 ── */
   const idLine = /\[knowledgeisolation\] ids=(\{[^\n]*\})/.exec(probeText)
   let runtimeIds = null
   if (!idLine) {
@@ -2888,7 +1893,6 @@ async function checkKnowledgeIsolation(sandboxRoot, _tempBefore, probeText) {
     }
   }
 
-  /* ── ⑤ 重启：用同一份数据目录第二次启动，读到同一批 id 与条目 ── */
   const restartLine = /\[knowledgeisolation\] restart=(\{[^\n]*\})/.exec(probeText)
   if (!restartLine) {
     say(false, '没有拿到重启探针的输出（cross-process 持久化没验到）')
@@ -2906,14 +1910,12 @@ async function checkKnowledgeIsolation(sandboxRoot, _tempBefore, probeText) {
     }
   }
 
-  /* ── ⑥ 无开发目录依赖：知识不往仓库里写 ── */
   say(!existsSync(join(root, 'project-knowledge')), '开发仓库根目录下没有被创建 project-knowledge（数据只在 YAN_DIR）')
   say(
     existsSync(knDir(idA)) && knDir(idA).startsWith(join(sandboxRoot, 'data')),
     '知识目录落在隔离的 YAN_DIR 下',
   )
 
-  /* ── ⑦ 旧用户数据逐字节不变（实施-03 §9）── */
   for (const base of ['pi-agent', 'data']) {
     for (const sentinel of LEGACY_DATA_SENTINELS) {
       const path = join(sandboxRoot, base, sentinel.name)
@@ -2931,17 +1933,6 @@ async function checkKnowledgeIsolation(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
-/**
- * 退出后的落盘检查（L03）。
- *
- * 子代理的合并 / 放弃 / 冲突 / 只读封堵 / 退出归档，最终都体现在
- * `YAN_DIR/subagents/<id>.json` + `<id>.patch` 和临时 worktree 目录上。
- * 这些必须在 Electron **已经退出**之后看才说明问题 —— 退出归档
- * （D2）就是退出那一刻发生的事，渲染层看不到。
- *
- * 探针把固定标记（`YAN-ALPHA` 等）写进任务描述，这里按标记找回记录，
- * 并顺带直接查主工作树：这才是“主树没被污染”的独立证据。
- */
 function checkSubagentArchive(sandboxRoot, tempBefore) {
   const lines = []
   let ok = true
@@ -2962,7 +1953,6 @@ function checkSubagentArchive(sandboxRoot, tempBefore) {
     try {
       records.push(JSON.parse(readFileSync(join(dir, f), 'utf8')))
     } catch {
-      /* 写了一半的文件当作记录缺失，下面会报出 */
     }
   }
   lines.push(`  元数据 ${records.length} 份：${files.join(' ') || '（空）'}`)
@@ -2983,22 +1973,12 @@ function checkSubagentArchive(sandboxRoot, tempBefore) {
   const beta = expect('YAN-BETA', 'discarded', 'BETA')
   if (beta) say(patchExists(beta), 'BETA 的补丁留在归档目录（放弃但没丢）')
   expect('YAN-CONFLICT-D', 'merged', 'CONFLICT-D')
-  /*
-   * CONFLICT-C 在退出前一直是未审阅的冲突，所以退出时应该被归档
-   * （review 从 conflict 变成 archived）—— 这正是“未合并差异不因退出丢掉”
-   * 的证据。若它还停在 conflict，说明退出归档没跑到。
-   */
   const conflictC = expect('YAN-CONFLICT-C', 'archived', 'CONFLICT-C')
   if (conflictC) say(patchExists(conflictC) || !conflictC.diff?.files, 'CONFLICT-C 的冲突补丁也归档了')
-  /*
-   * LONGRUN 是专门留给退出的：它进去先写一个文件，再到长任务里。
-   * 不管退出时它仍在跑（中断）还是刚好结束（未审阅），都该落成 archived。
-   */
   const longrun = expect('YAN-LONGRUN', 'archived', 'LONGRUN')
   if (longrun) say(patchExists(longrun) || !longrun.diff?.files, 'LONGRUN 的退出归档落盘')
   expect('YAN-READONLY', 'none', 'READONLY')
 
-  /* 主工作树：合并的进来了、放弃与只读的没有 */
   const repo = join(sandboxRoot, 'fixture-project', 'repo')
   say(existsSync(join(repo, 'alpha.txt')), '主工作树留住了已合并的 alpha.txt')
   say(!existsSync(join(repo, 'beta.txt')), '被放弃的 beta.txt 没有进主工作树')
@@ -3007,17 +1987,14 @@ function checkSubagentArchive(sandboxRoot, tempBefore) {
   try {
     readme = readFileSync(join(repo, 'README.md'), 'utf8')
   } catch {
-    /* 读不到也算失败，下面两条会报出来 */
   }
   say(readme.includes('LINE-D'), '主工作树 README 是 CONFLICT-D 的版本')
   say(!readme.includes('LINE-C'), '冲突的 CONFLICT-C 没有被半截写入')
 
-  /* 退出后不能留下孤儿 worktree 容器 */
   const leftovers = readdirSync(tmpdir()).filter(
     (n) => n.startsWith('yan-subagent-') && !(tempBefore ?? new Set()).has(n)
   )
   for (const dir of leftovers) {
-    /* 把残留目录对回到任务标记，否则看不出是哪条链路漏了清理 */
     const id = /^yan-subagent-(sub-[0-9a-f]+)-/.exec(dir)?.[1]
     const owner = records.find((r) => r.id === id)
     lines.push(`    残留 ${dir} → ${owner ? String(owner.task ?? '').slice(0, 24) + `（${owner.review}）` : '未知任务'}`)
@@ -3027,17 +2004,6 @@ function checkSubagentArchive(sandboxRoot, tempBefore) {
   return { ok, lines }
 }
 
-/**
- * N12 退出后的落盘检查。
- *
- * 这里要回答的是“后台会话真的跑过了、而且结果落进了**它自己**的会话文件”：
- * A 的长任务回复只能出现在 A 的文件里，不能跑到 B/C 里去。
- * 当前会话在内存里看着对，不代表落盘也对 —— 切会话正是最容易把内容
- * 写错文件的一条路。
- *
- * 同时确认 A 的仓库工作树没被“数数”这种只读任务改坏（模型若真跑了写工具，
- * README 的锚点会消失）：这是“后台会话不越界动文件”的一道侧证。
- */
 function checkSessionabArchive(sandboxRoot) {
   const lines = []
   let ok = true
@@ -3063,7 +2029,6 @@ function checkSessionabArchive(sandboxRoot) {
         const o = JSON.parse(line)
         if (o.type === 'message') msgs.push(o.message)
       } catch {
-        /* 半截行忽略 */
       }
     }
     return msgs
@@ -3089,46 +2054,22 @@ function checkSessionabArchive(sandboxRoot) {
   const cText = textOf(msgsC, 'assistant')
 
   lines.push(`  A 落盘：${msgsA.length} 条消息，助手正文 ${aText.length} 字`)
-  /*
-   * 要证的是**后台会话真的在执行工具**——工具参数落在它自己的会话记录里，
-   * 而不是只存在于渲染层的内存里。
-   *
-   * ⚠️ 匹配 `sleep \d+` 而不是写死的 `sleep 90`：探针 3.5 节要等它**自然跑完**
-   * 才能验未读，所以那个秒数为了控制场景时长改过（现为 30）。
-   * 写死秒数就等于把测试与实现里的参数绑在一起，改一处红一处。
-   */
   say(/sleep \d+/.test(JSON.stringify(msgsA)), 'A 的会话记录里有那次工具调用（真执行了）')
-  /*
-   * 模型自己那个助手回合（fixture 里本来已有一个）——被中断时不一定写出正文，
-   * 所以数条数而不是找文本。
-   */
   say(msgsA.filter((m) => m?.role === 'assistant').length >= 2, 'A 的会话文件里多了模型自己的回合（被中断也算落盘）')
   say(!bText.includes('YAN-AB') || bText.includes('YAN-AB-B-REPLY'), 'B 的回复属于 B（没被 A 的内容覆盖）')
   say(cText.includes('YAN-AB-C-REPLY'), 'C 的回复原样保留（同 cwd 被拒的那次没写坏它）')
-  /*
-   * 串线的典型症状：A 的长回复被写到 B/C 的文件里。
-   * 判据用“C 的助手消息数”而不是关键字 —— 拒绝之后 C 不应该多出任何消息。
-   */
   say(msgsC.filter((m) => m?.role === 'assistant').length === 1, 'C 只有一个助手回合（被拒后确实没动它）')
 
   let readme = ''
   try {
     readme = readFileSync(join(sandboxRoot, 'fixture-project', 'repo', 'README.md'), 'utf8')
   } catch {
-    /* 读不到下面会报 */
   }
   say(readme.includes('LINE-BASE'), '与 A 同 cwd 的仓库工作树没被弄坏')
 
   return { ok, lines }
 }
 
-/**
- * `@` 引用的真实发送（N19 最后一条）。
- *
- * 要证的是一件在渲染层看不到的事：**选中的文件内容到底进没进模型上下文**。
- * pi 收到 prompt 时会把 `@路径` 展开，展开结果会落在会话 JSONL 里 ——
- * 所以断言只能在 Electron 退出之后做（读文件）。
- */
 function checkAtRefSend(sandboxRoot) {
   const lines = []
   let ok = true
@@ -3152,17 +2093,10 @@ function checkAtRefSend(sandboxRoot) {
   say(files.length > 0, `找到了会话文件（共 ${files.length} 个）`)
   if (!files.length) return { ok, lines }
 
-  /* 本场景新建的那个会话就是最新的一个 */
   const file = files[0].f
   const raw = readFileSync(join(sessionsRoot, file), 'utf8')
   lines.push(`  最新会话 = ${file}（${raw.length} 字节）`)
 
-  /*
-   * RPC 的 prompt 只接受 message / images / streamingBehavior —— **没有文件参数**，
-   * 所以 pi 不会把 `@路径` 展开成内容（那是 CLI 参数层 `pi @file "..."` 的行为）。
-   * 砚的 @ 补全因此是“把路径写进消息”，文案也写的是“附件文件，可直接读取”，
-   * 由模型自己调 read。要验的是**路径原样到了模型手里**。
-   */
   say(raw.includes('@README.md'), '引用路径原样送达模型（RPC 不展开 @，模型自行读取）')
   const readIt = raw.includes('fixture project')
   lines.push(`  （模型本轮是否真去读了该文件：${readIt ? '是' : '否'}；会话 ${raw.length} 字节）`)
@@ -3171,18 +2105,6 @@ function checkAtRefSend(sandboxRoot) {
   return { ok, lines }
 }
 
-/**
- * Git 审查（G1）的**只读断言**（退出后从 Node 侧比对）。
- *
- * 这是「打开审查/刷新/切范围不会改用户工作区与暂存区」的唯一硬证据：
- * 渲染进程里看不到 git 的原始输出，只能看界面。把 fixture 仓库在
- * 应用启动**之前**的 status / index / 已暂存差异记下来，跑完再逐字节比。
- *
- * ⚠️ 为什么这条特别重要：同一个仓库里另有一个 `collectDiff()`（子代理隔离）
- * 会执行 `git add -A` —— 那是**故意**的（它只动隔离 worktree 的独立 index）。
- * 一旦审查面板错误地复用了那条路径，用户打开一次审查就会发现自己的
- * 暂存区被清空并全部暂存。这条断言就是拦它的。
- */
 function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
   const lines = []
   let ok = true
@@ -3201,7 +2123,6 @@ function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
     execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 
   try {
-    /* 失败时把实际值打出来 —— 只说「不对」的断言要花一轮才知道「是什么」 */
     lines.push(
       '  ⓘ 实际：HEAD=' +
         read(['log', '-1', '--pretty=%s']) +
@@ -3224,7 +2145,6 @@ function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
     say(read(['rev-parse', '--abbrev-ref', 'HEAD']) === 'main', '收尾时停在 main 分支（探针最后切回来了）')
     say(read(['branch', '--list', 'live-made']) !== '', '新建的分支 live-made 真的存在')
 
-    /* 暂存过的 a.txt 已经随提交进了历史 → 工作区里它不再是「已暂存/已修改」 */
     const status = read(['status', '--porcelain'])
     const aLine = status.split('\n').find((l) => l.endsWith('a.txt')) ?? ''
     say(
@@ -3232,7 +2152,6 @@ function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
       'a.txt 没有留在「已暂存」里（暂存的内容随提交进了历史）[' + aLine + ']'
     )
 
-    /* 远程：bare 仓库收到了同一个提交（推送真的出去了） */
     const localHead = read(['rev-parse', 'HEAD'])
     const remoteHead = execFileSync('git', ['--git-dir', bare, 'rev-parse', 'main'], {
       encoding: 'utf8',
@@ -3245,11 +2164,6 @@ function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
 
   say(/\[gitwrite\]/.test(probeText), '探针确实跑到了写操作场景（输出里有 [gitwrite] 小结）')
 
-  /*
-   * 实施-07 S2b-2：`trust.json` 里真的多了两条（主仓库 + 工作树），且值为 true。
-   * 这一步只能 Node 侧做 —— 探针里读到的 "trusted: true" 只是主进程的回话，
-   * 磁盘上到底写没写、写成什么形状，得直接读文件才知道。
-   */
   try {
     const trustFile = join(sandboxRoot, 'pi-agent', 'trust.json')
     const table = JSON.parse(readFileSync(trustFile, 'utf8'))
@@ -3263,11 +2177,6 @@ function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
   }
   if (/\[gitwrite\]\s+[1-9]\d*\s+条失败/.test(probeText)) say(false, '探针自身有失败项（见上面的 ✗）')
 
-  /*
-   * 工作树来源关系（实施-07 S2）：探针已经用**主进程回读**验过一遍，
-   * 这里再从 Node 侧读那份 `worktree-links.json` —— 退出之后看磁盘，
-   * 是这套取证里最强的一层（渲染进程伪造不了它）。
-   */
   const sessionId = /worktreelink\.sessionId=([A-Za-z0-9._-]+)/.exec(probeText)?.[1]
   const worktree = /worktreelink\.worktree=(.+)/.exec(probeText)?.[1]?.trim()
   say(!!sessionId && !!worktree, `探针报告了新会话与工作树（${sessionId} / ${worktree}）`)
@@ -3279,7 +2188,6 @@ function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
     try {
       parsed = JSON.parse(readFileSync(linkFile, 'utf8'))
     } catch {
-      /* 下面如实报失败 */
     }
     const item = Array.isArray(parsed?.links) ? parsed.links.find((x) => x?.sessionId === sessionId) : null
     say(!!item, '磁盘上的那条关系就是探针登记的那条（会话 id 对得上）', JSON.stringify(item ?? null))
@@ -3294,12 +2202,6 @@ function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
   return { ok, lines }
 }
 
-/**
- * 「每个项目最后一个会话」的退出后检查（实施-09 S3，cost 0，进 `check`）。
- *
- * 探针已经用主进程回读验过一遍；这里再从 Node 侧读 `session-layout.json`，
- * 确认那条「打开过」的记录**真的落盘**，而且 `hot` 那条没有被误写。
- */
 async function checkProjectOpenedLayout(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -3323,7 +2225,6 @@ async function checkProjectOpenedLayout(sandboxRoot, _tempBefore, probeText) {
   try {
     doc = JSON.parse(readFileSync(file, 'utf8'))
   } catch {
-    /* 下面如实报失败 */
   }
   const entries = Array.isArray(doc?.entries) ? doc.entries : null
   say(!!entries, 'session-layout.json 是合法的（有 entries 数组）')
@@ -3337,14 +2238,6 @@ async function checkProjectOpenedLayout(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
-/** 退出后检查的注册表：CASES 里用 `afterExit: '子代理归档'` 引用 */
-/**
- * 来源「定位消息」的退出后检查（实施-07 S3，cost 0，进 `check`）。
- *
- * 探针已经说过「关联写进了主进程」—— 但那只是渲染端自己的话。这里从 Node 侧
- * 直接读沙箱里的 `links.json`：文件真的在、里面真的是那一条、而且只有一条。
- * 「落盘」这件事只能这样证明。
- */
 async function checkSourceLocateLinked(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -3385,7 +2278,6 @@ async function checkSourceLocateLinked(sandboxRoot, _tempBefore, probeText) {
     try {
       parsed = JSON.parse(readFileSync(hits[0], 'utf8'))
     } catch {
-      /* 下面会如实报失败 */
     }
     say(Array.isArray(parsed), '文件是合法 JSON 数组')
     const item = Array.isArray(parsed) ? parsed.find((x) => x?.sourceId === sourceId) : null
@@ -3395,15 +2287,6 @@ async function checkSourceLocateLinked(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
-/**
- * N12 退出变体（实施-09 S2 第五批）：退出快照的落盘证据。
- *
- * 探针在渲染端只能看到 `requestExit` 的返回值；快照文件得等 Electron 退出后
- * 再看 —— 探针按设计读不到 `YAN_DATA_DIR`，让它去读就是破坏测试边界。
- * 期望的 `mode` 与写盘时刻由探针打印在 PROBE 输出里，Node 侧照着核对，
- * 于是 `save` / `interrupt` 两个场景共用同一个检查，也不会退化成
- * 「只要文件存在就算过」（沙箱是整个批次共用的，陈留文件必须能分辨出来）。
- */
 function checkExitSnapshot(sandboxRoot, tempBefore, lastProbeText) {
   const lines = []
   let ok = true
@@ -3435,7 +2318,6 @@ function checkExitSnapshot(sandboxRoot, tempBefore, lastProbeText) {
   try {
     snapshot = JSON.parse(readFileSync(file, 'utf8'))
   } catch {
-    /* 下面会如实报失败 */
   }
   if (!snapshot) {
     say(false, '文件是合法 JSON')
@@ -3474,12 +2356,6 @@ function checkExitSnapshot(sandboxRoot, tempBefore, lastProbeText) {
   return { ok, lines }
 }
 
-/**
- * L03 尾巴：子代理「模型自己失败」的退出后证据（实施-09 S2 第六批）。
- *
- * 探针看得到终态与转录，看不到两件事：归档元数据里怎么记的、临时 worktree
- * 有没有收掉。这两件都在 Electron 退出后查 —— 与 `subagentArchive` 同一套方法。
- */
 function checkSubagentFail(sandboxRoot, tempBefore) {
   const lines = []
   let ok = true
@@ -3500,7 +2376,6 @@ function checkSubagentFail(sandboxRoot, tempBefore) {
     try {
       records.push(JSON.parse(readFileSync(join(dir, f), 'utf8')))
     } catch {
-      /* 写了一半的文件当作记录缺失，下面会报出来 */
     }
   }
   lines.push(`  元数据 ${records.length} 份：${files.join(' ') || '（空）'}`)
@@ -3513,7 +2388,6 @@ function checkSubagentFail(sandboxRoot, tempBefore) {
     say(run.endedAt > 0 && run.startedAt > 0, '有起止时间（可追溯）')
   }
 
-  /* 退出后不能留下孤儿 worktree 容器（与 subagentArchive 同一条判据） */
   const leftovers = readdirSync(tmpdir()).filter(
     (n) => n.startsWith('yan-subagent-') && !(tempBefore ?? new Set()).has(n)
   )
@@ -3522,23 +2396,10 @@ function checkSubagentFail(sandboxRoot, tempBefore) {
   return { ok, lines }
 }
 
-/**
- * 重启前的 seed（实施-11 H-6b-2）。
- *
- * 只在第二次启动前跑：它改的是第一次运行写下的数据。
- */
 const SEED_BEFORE_RESTART = {
   interruptedSnapshot: seedInterruptedSnapshot
 }
 
-/**
- * 把盘上最后一条计时记录改写成「中途快照」。
- *
- * 同一个 `logicalTurnId` 再追加一条 `final: false` —— 读回时后者胜，
- * 于是这一轮在界面上的样子就是「应用在飞行中被拿掉、只剩最后那次快照」。
- * 为什么不直接 SIGKILL：强杀之后连“最后一条快照是否已落盘”都不确定，
- * 测到的是调度运气；追加快照验的是同一段读侧逻辑，且每次可复现。
- */
 function seedInterruptedSnapshot(sandboxRoot) {
   if (!sandboxRoot) return '（无沙箱，跳过）'
   const dir = join(sandboxRoot, 'data', 'turn-timing')
@@ -3551,7 +2412,6 @@ function seedInterruptedSnapshot(sandboxRoot) {
   const snapshot = {
     ...last,
     final: false,
-    /* 中途快照的用时一定比收尾时短 —— 照着写，不然像是“压缩”了时间 */
     elapsedMs: Math.max(1, Math.round((Number(last.elapsedMs) || 1) * 0.4))
   }
   appendFileSync(file, `${JSON.stringify(snapshot)}\n`, 'utf8')
@@ -3587,13 +2447,6 @@ const AFTER_EXIT = {
   questionModeLog: checkQuestionModeLog
 }
 
-/**
- * 提问薄层的模式诊断（实施-05 S2）。
- *
- * `ask` 第 6 节的断言是「自主档不弹窗」。现在 question.js 只负责
- * `before_agent_start` 指引，宿主 `yan question ask` 在自主档由主进程直接短路；
- * 因此退出核对确认薄层真的读到了自主模式，并确认没有旧的 `execute` 钩子。
- */
 async function checkQuestionModeLog(sandboxRoot, _tempBefore, _probeText) {
   const lines = []
   let ok = true
@@ -3605,7 +2458,6 @@ async function checkQuestionModeLog(sandboxRoot, _tempBefore, _probeText) {
     lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
     return { ok: true, lines }
   }
-  /* 与 language 场景同一做法：诊断写 tmpdir 固定文件（沙箱会被清掉） */
   const logFile = join(tmpdir(), 'yan-question-ext.log')
   const records = (existsSync(logFile) ? readFileSync(logFile, 'utf8') : '')
     .split('\n')
@@ -3635,14 +2487,6 @@ async function checkQuestionModeLog(sandboxRoot, _tempBefore, _probeText) {
   return { ok, lines }
 }
 
-/**
- * 工作模式（实施-05 S2）退出后的磁盘核对。
- *
- * 界面上“切了模式”只是内存里的一个值；真正要钉的是：
- *   ① 每个会话各自一份（`work-modes.json` 里两条不同的值）；
- *   ② 模型侧读的那份快照真的落了盘（`work-mode/<runnerId>.json`）；
- *   ③ 迁移与「默认态不落盘」没有反过来擅自改写用户的 desktop.json。
- */
 async function checkWorkModePersisted(sandboxRoot, _tempBefore, _probeText) {
   const lines = []
   let ok = true
@@ -3668,7 +2512,6 @@ async function checkWorkModePersisted(sandboxRoot, _tempBefore, _probeText) {
     say(false, '读 work-modes.json 失败：' + (error instanceof Error ? error.message : String(error)))
   }
 
-  /* 模型侧（薄层扩展）读的那份快照 */
   try {
     const snapDir = join(dataDir, 'work-mode')
     const files = readdirSync(snapDir).filter((n) => n.endsWith('.json'))
@@ -3687,7 +2530,6 @@ async function checkWorkModePersisted(sandboxRoot, _tempBefore, _probeText) {
     say(false, '读 work-mode/ 快照失败：' + (error instanceof Error ? error.message : String(error)))
   }
 
-  /* desktop.json：旧字段保留、新字段不擅自回写、关掉的开关恢复后删键 */
   try {
     const settings = JSON.parse(readFileSync(join(dataDir, 'desktop.json'), 'utf8'))
     say(settings.autonomous === true, '旧 autonomous 原样留在磁盘上（不抹掉用户已写下的值）')
@@ -3703,20 +2545,8 @@ async function checkWorkModePersisted(sandboxRoot, _tempBefore, _probeText) {
   return { ok, lines }
 }
 
-/*
- * ── 「会话文件只读」基线（实施-02 S1）──
- *
- * 判据为什么是「前缀一致 + 只追加」而不是「整文件 sha 不变」：
- * pi 自己在载入会话时会往文件**追加**一条 `thinking_level_change`
- * （实测：原封不动的会话也会多这一行）。把它当成「被改写」就只能
- * 得到一个永远要放宽的断言，等于没验。
- * 真正要钉的是两件事：
- *   ① 原有内容一个字节都不许动（不批量转换、不回写旧标识）；
- *   ② 追加的行里不许出现任务类 custom entry（砚不得伪造任务写入）。
- */
 let taskFixtureBaseline = null
 
-/** 在 sandbox 会话目录里按文件名子串找一个 jsonl，记下原始文本 */
 function captureSessionFile(sessionsRoot, needle) {
   const found = []
   const walk = (dir, depth = 0) => {
@@ -3775,31 +2605,6 @@ async function checkTaskFixtureReadonly() {
   return { ok, lines }
 }
 
-/*
- * ── 宿主任务日志（实施-02 S3）──
- *
- * 退出后核对「磁盘上的真相」：
- *   ① `YAN_DIR/task-plans/<sessionId>.jsonl` 真的写了两行（且 revision 1 → 2）；
- *   ② 会话 JSONL 里**没有**任务条目 —— 宿主日志不寄在会话文件上
- *      （「不能直接编辑正在使用的 pi JSONL」，见 task-plan-store.ts 头注释）；
- *   ③ 文件名就是会话 id（没有 pending / 路径穿越那类不该出现的键）。
- *
- * 界面侧的证据（清单真的出现、切会话来回读得回）在探针里 ——
- * 这一支只回答「磁盘上是什么」。
- */
-/**
- * 计划就绪转移的磁盘核对（实施-05 S3，`goal` 场景）。
- *
- * 探针看到的 `getGoal()` 是**内存态**；这里在窗口关掉之后读磁盘，
- * 证明 commitReady 真做到了「先落盘再返回」，而且**恰好一次**：
- * transitions 里只有一条、goal.revision 只推进一步。
- */
-/**
- * 退出后检查：整轮计时的元数据日志真的落盘了（实施-11 H-6）。
- *
- * 渲染进程按设计看不到 `YAN_DATA_DIR`，所以「谁写了文件、写了什么」只能在
- * 退出后从磁盘上核对（与 context / goal 系场景同一条分工）。
- */
 async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = '') {
   const lines = []
   let ok = true
@@ -3826,7 +2631,6 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
       try {
         records.push(JSON.parse(line))
       } catch {
-        /* 坏行不致命（单测里单独验证过） */
       }
     }
   }
@@ -3849,21 +2653,7 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
     ['completed', 'failed', 'stopped', 'interrupted'].includes(String(last?.terminalReason)),
     `终止原因是四个合法值之一（实际 ${last?.terminalReason}）`
   )
-  /*
-   * H-6b：收尾写入必须带 `final: true`。
-   *
-   * 反过来说：盘上最后一条记录若带 `final: false`，说明应用是在回合飞行中
-   * 被拿掉的 —— 读回时会被归一成「中断」。这一条断言就是那个判据的另一半：
-   * 正常跑完的回合**不能**留下中途快照（否则历史会集体误报崩溃）。
-   */
   say(last?.final === true, `收尾记录带 final: true（实际 ${String(last?.final)}）`)
-  /*
-   * H-6b：逻辑回合身份与 run 分段。
-   *
-   * 这三条一起看才完整：`anchorId` 锚定用户消息（重读历史对得上）、
-   * `logicalTurnId` 等于它（自动继续归同一个逻辑回合、不会另起一个）、
-   * `runId` 区分同一逻辑回合里的多次 pi 回合（决定读回时覆盖还是累加）。
-   */
   say(/^m\d+$/.test(String(last?.anchorId ?? '')), `记录锚定用户消息 id（${last?.anchorId}）`)
   say(
     last?.logicalTurnId === last?.anchorId,
@@ -3880,13 +2670,6 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
     )
   }
 
-  /*
-   * 顺带：这一次真实请求的**扩展估算留痕**（实施-11 C-4b）。
-   *
-   * 为什么放在这里：同一场景同一次真实请求的产物，再开一个 cost 1 场景只为了
-   * 重复一遍同样的调用。断言的是“估算真的跑在真实链路里且三部分都在”，
-   * 不是“估得很准”—— 精度不属于本片能取证的范畴（见 HANDOFF 的剩余限制）。
-   */
   const extLog = join(sandboxRoot, 'ctx-ext.log')
   const rows = existsSync(extLog)
     ? readFileSync(extLog, 'utf8')
@@ -3901,11 +2684,6 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
         })
     : []
   const budgetRows = rows.filter((r) => String(r?.hook ?? '').startsWith('request-budget-'))
-  /*
-   * 新会话默认走预算 V1（宿主写 `context-budget-v1/<会话>/policy.json`），旧的
-   * `before_provider_request` 估算留痕在 V1 下被扩展有意跳过（context.js
-   * `contextBudgetV1Active`）。此时没有留痕行是设计如此，只在旧路径下才断言。
-   */
   const v1Dir = join(sandboxRoot, 'data', 'context-budget-v1')
   const v1Active = existsSync(v1Dir) && readdirSync(v1Dir).length > 0
   const skipTrace = v1Active && budgetRows.length === 0
@@ -3923,11 +2701,6 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
       row.messages > 0 && row.tools > 0,
       'messages 与 tools 都估到了（工具表不是 0）'
     )
-    /*
-     * `system` 允许是 0：pi 把系统提示放在 messages 里的 role:'system' 条目，
-     * 顶层并不总是有这个字段 —— 实测为 0 是真实现象，不是漏估。
-     * 真要认的那三件事由单测钉（字符串 / 数组 / 对象形状都要能算）。
-     */
     lines.push(`  system 段 = ${row.system}（pi 把它放在 messages 里时为 0，属于正常）`)
     say(
       row.estimatedTokens === row.messages + row.tools + row.system,
@@ -3945,7 +2718,6 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
   return { ok, lines }
 }
 
-/** 退出后检查：并发 A/B 会话的计时仍归属各自用户回合与会话文件（H-6b）。 */
 async function checkTurnTimingIsolation(sandboxRoot, _tempBefore, probeText = '') {
   const lines = []
   let ok = true
@@ -4012,10 +2784,6 @@ async function checkTurnTimingIsolation(sandboxRoot, _tempBefore, probeText = ''
   const a = checkSession('a')
   const b = checkSession('b')
   if (a && b) {
-    /*
-     * `sourceIds` 是各 runner 自己的 `m<序号>`，两边从相近的序号起步，相交只是撞号，
-     * 不能当作串档的证据。区分两个 runner 用 runId（每个 runner 各自生成）。
-     */
     say(
       !!a.runId && !!b.runId && a.runId !== b.runId,
       `A、B 两个 runner 各有自己的 runId（${a.runId} / ${b.runId}）`
@@ -4033,12 +2801,6 @@ async function checkTurnTimingIsolation(sandboxRoot, _tempBefore, probeText = ''
   return { ok, lines }
 }
 
-/**
- * 退出后检查：中途被拿掉的回合真的被读成「中断」（实施-11 H-6b-2）。
- *
- * 两段证据合起来才算闭环：盘上最后一条是 `final: false`（写侧/seed 的事实），
- * 而重启后的探针在真实界面里读到了「中断」（读侧 + UI）。
- */
 async function checkTurnTimingInterrupted(sandboxRoot, _tempBefore, probeText = '') {
   const lines = []
   let ok = true
@@ -4061,7 +2823,6 @@ async function checkTurnTimingInterrupted(sandboxRoot, _tempBefore, probeText = 
       try {
         records.push(JSON.parse(line))
       } catch {
-        /* 坏行不致命 */
       }
     }
   }
@@ -4076,7 +2837,6 @@ async function checkTurnTimingInterrupted(sandboxRoot, _tempBefore, probeText = 
   )
   say(last?.final === false, `盘上最后一条是中途快照（final=${String(last?.final)}）`)
 
-  /* 读侧归一：直接拿测试构建的同一份模块，不重写一遍规则 */
   const { pathToFileURL } = await import('node:url')
   const store = await import(pathToFileURL(join(root, 'out/test/turn-timing-store.mjs')).href)
   say(
@@ -4091,7 +2851,6 @@ async function checkTurnTimingInterrupted(sandboxRoot, _tempBefore, probeText = 
   return { ok, lines }
 }
 
-/** 退出后检查：真强杀发生在完整的 final:false 已落盘、pi 正等待下一次 completion 之后。 */
 async function checkTurnTimingHardKill(sandboxRoot, tempBefore, probeText = '') {
   const base = await checkTurnTimingInterrupted(sandboxRoot, tempBefore, probeText)
   const lines = [...base.lines]
@@ -4143,20 +2902,11 @@ async function checkGoalPersisted(sandboxRoot, _tempBefore, _probeText) {
     say(String(understanding.acceptance ?? '').includes('CSV'), '五栏（含验收标准）真的传到了宿主')
     say(transitions[0]?.[1]?.result?.mode === 'standard', '转移记录里写着「模式切标准」')
 
-    /*
-     * G-2：就绪转移（ready）**不是**完成回执 —— 它不触发核验，
-     * 所以这里应该是「没有核验结论」，而不是某个被当成通过的状态。
-     */
     say(
       !entry?.goal?.verification,
       `G-2：只做了 ready（没 report）→ 没有核验结论（实际 ${entry?.goal?.verification?.status ?? 'null'}）`
     )
 
-    /*
-     * 续行留痕（实施-05 S3b）：两类自定义条目都得在**会话文件**里 ——
-     * `yan-goal-resume` 是扩展写的消费证据，`yan-goal-ready` 是那条控制消息。
-     * 会话文件路径就是 goals.json 的键（宿主按会话文件索引）。
-     */
     const sessionFile = String(entries[0]?.[0] ?? '')
     if (sessionFile && existsSync(sessionFile)) {
       const text = readFileSync(sessionFile, 'utf8')
@@ -4186,7 +2936,6 @@ async function checkGoalPersisted(sandboxRoot, _tempBefore, _probeText) {
     say(false, '读 work-modes.json 失败：' + (error instanceof Error ? error.message : String(error)))
   }
 
-  /* 宿主写给薄层的续行快照（没有它，扩展再对也发不出去） */
   try {
     const dir = join(dataDir, 'goal-resume')
     const files = existsSync(dir) ? readdirSync(dir) : []
@@ -4201,7 +2950,6 @@ async function checkGoalPersisted(sandboxRoot, _tempBefore, _probeText) {
     say(false, '读 goal-resume/ 失败：' + (error instanceof Error ? error.message : String(error)))
   }
 
-  /* 续行扩展诊断（实施-05 S3b）：把「不该发」「发失败」「被活动抢了」分开 */
   const resumeLog = join(tmpdir(), 'yan-goal-resume.log')
   if (existsSync(resumeLog)) {
     const rows = readFileSync(resumeLog, 'utf8').trim().split('\n').filter(Boolean)
@@ -4214,7 +2962,6 @@ async function checkGoalPersisted(sandboxRoot, _tempBefore, _probeText) {
   return { ok, lines }
 }
 
-/** G-4：批准后的待审计划、目标转移、模式切换与启动消息必须一起落盘。 */
 async function checkGoalReviewPersisted(sandboxRoot, _tempBefore, probeText = '') {
   const lines = []
   let ok = true
@@ -4274,7 +3021,6 @@ async function checkGoalReviewPersisted(sandboxRoot, _tempBefore, probeText = ''
   return { ok, lines }
 }
 
-/** G-4 cost 0 反向分支：修改只清除待审快照，不产生 ready transition 或启动消息。 */
 async function checkGoalReviewModifyPersisted(sandboxRoot, _tempBefore, probeText = '') {
   const lines = []
   let ok = true
@@ -4320,26 +3066,6 @@ async function checkGoalReviewModifyPersisted(sandboxRoot, _tempBefore, probeTex
   return { ok, lines }
 }
 
-/**
- * 自主档连续续接的磁盘核对（实施-05 S3c，`goalloop` 场景）。
- *
- * 探针证明「新回合真的起了」；这里回答磁盘上的三个问题：
- *   ① 那是**继续**续行（`yan-goal-continue`），不是就绪续行；
- *   ② 宿主真的记了连续次数（`autoContinues`）；
- *   ③ 薄层的消费证据与诊断日志都留下了。
- *
- * 为何不硬断 `phase === 'executing'`：模型可能在续接轮里把目标报到
- * `completed` / `blocked`，那是合法推进（甚至更好）—— 那时计数按设计归零，
- * 不能用它判红。
- */
-/**
- * 请求前预算门的真实模型核对（实施-05 S4，`budgetgate` 场景）。
- *
- * 探针只能证「模型回了话」；磁盘上要回答三件事：
- *   ① 诊断真的记了（否则链路上根本没跑）；
- *   ② 只到 `soft`，**没有** `physical` / `budget-abort`（真实窗口下误拦是灾难性回归）；
- *   ③ 估算与真实 `usage.input` **同量级** —— 估算是拿来判生死的，估偏了就等于闸门失准。
- */
 async function checkBudgetGate(sandboxRoot, _tempBefore, _probeText) {
   const lines = []
   let ok = true
@@ -4380,7 +3106,6 @@ async function checkBudgetGate(sandboxRoot, _tempBefore, _probeText) {
   const aborted = records.filter((r) => r.hook === 'budget-abort')
   say(aborted.length === 0, '没有 abort（真实请求照常发出）')
 
-  /* 估算 vs 真实 usage.input（同量级即算通过；数字如实打印出来校准估算） */
   const sessionId = budgetRows.find((r) => r.sessionId)?.sessionId ?? null
   const sessionsDir = join(sandboxRoot, 'sessions')
   let usageInput = null
@@ -4406,13 +3131,6 @@ async function checkBudgetGate(sandboxRoot, _tempBefore, _probeText) {
     }
   }
   const estimate = budgetRows.length ? Number(budgetRows[budgetRows.length - 1].estimatedTokens) : 0
-  /*
-   * 估算 vs 真实 `usage.input` **只打印、不判红**：
-   * 这个场景的模型可能返回空内容（上游波动，与预算无关），那时 usage 只是
-   * 一个失败响应的数字，拿它当基准会把「模型侧抽风」误判成「闸门失准」。
-   * 估算精度的确定性证据在 `hook-probe budget-soft`：估算 13621 token ↔
-   * 真实请求体 55054 字符（4 字符/token 口径下偏差 ~1%）。
-   */
   if (usageInput == null) {
     lines.push('  · 没读到真实 usage.input（本轮模型可能返回空）：只核对诊断，不比数字')
   } else {
@@ -4500,19 +3218,6 @@ async function checkTaskCliLog(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
-/*
- * ── 真实多步任务（实施-02 S5）──
- *
- * 三处一致在这里落地：
- *   ① 工具调用 —— 探针已经断言过（界面上的 `yan tasks apply` 与来源徐标）；
- *   ② 原生任务清单 —— 探针把渲染端看到的 todos 打成 `taskplan.todos=…`；
- *   ③ 实际落盘 —— 宿主日志最后一行。
- * 退出后把 ② 与 ③ 逐条比对（文字与勾选状态），并确认会话 JSONL 里没有任务条目。
- *
- * 另加一条**真实动作**的核对：任务本身是「在 fixture 里建三个文件」，
- * 所以 step-1/2/3.txt 真的存在、而且非空，才算做完 —— 这条能拆穿
- *「只登记了计划、文件没建」或「嘴上说做完了」。
- */
 async function checkTaskPlanMultiStep(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -4537,7 +3242,6 @@ async function checkTaskPlanMultiStep(sandboxRoot, _tempBefore, probeText) {
     uiTodos = []
   }
 
-  /* ① 真实文件动作（任务本身：在 fixture 项目里建 step-1/2/3.txt） */
   const tasksDir = join(sandboxRoot, 'fixture-project', 'tasks')
   const steps = [1, 2, 3].map((n) => join(tasksDir, `step-${n}.txt`))
   const made = steps.filter((p) => existsSync(p))
@@ -4546,7 +3250,6 @@ async function checkTaskPlanMultiStep(sandboxRoot, _tempBefore, probeText) {
   say(made.length >= 2, '模型真的建了文件（多步任务确实执行了，不是只登记计划）')
   say(nonEmpty.length === made.length, '建出来的文件都有内容（不是空文件占位）')
 
-  /* ② 宿主日志（磁盘上的真相） */
   const dir = join(sandboxRoot, 'data', 'task-plans')
   const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')) : []
   lines.push(`任务日志：${files.length ? files.join('、') : '（空）'}；会话 id = ${sid || '（探针没报）'}`)
@@ -4578,7 +3281,6 @@ async function checkTaskPlanMultiStep(sandboxRoot, _tempBefore, probeText) {
   lines.push('  磁盘最后一行 todos = ' + JSON.stringify(diskTodos.map((t) => ({ text: t.text, done: t.done }))))
   say(diskTodos.length === 3, `日志最后一行是 3 条（实际 ${diskTodos.length}）`)
 
-  /* ③ 界面报告 vs 磁盘日志 —— 「三处一致」里的 ②③ */
   say(
     JSON.stringify(uiTodos.map((t) => t.text)) === JSON.stringify(diskTodos.map((t) => t.text)),
     '界面清单与磁盘日志的文字逐条一致（不是各显示一套）',
@@ -4593,7 +3295,6 @@ async function checkTaskPlanMultiStep(sandboxRoot, _tempBefore, probeText) {
     '日志里每条都有非空文字（没有空条目）'
   )
 
-  /* ④ 会话 JSONL 里不能有任务条目 */
   if (sessionFile && existsSync(sessionFile)) {
     const sessionText = readFileSync(sessionFile, 'utf8')
     say(
@@ -4608,18 +3309,6 @@ async function checkTaskPlanMultiStep(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
-/*
- * ── 孤儿 pi 进程检查（N12 / L03 的共同缺口）──
- *
- * 为什么需要它：D16（子代理跑完 pi 进程不退出）与 L03 的「退出后无残留」都是靠
- * 目录/文件间接推的 —— 目录能删不等于进程真的没了。这里直接看进程表。
- *
- * 判据：命令行含 `--mode rpc`（pi 的 RPC 入口）**且父进程已不在进程表里**。
- * 为什么不比 PID 基线：那要改所有 afterExit 检查的签名，而这条判据本身已经够准。
- * 为什么不会误报：用户自己正在跑的砚，它的 pi 进程父进程（Electron）是活的。
- * 返回 `null` = 拿不到进程表（非 Windows / 权限不足）：调用方**跳过**，
- * 不要把「查不到」当成「没残留」。
- */
 function orphanPiProcesses() {
   if (process.platform !== 'win32') return null
   const script = [
@@ -4649,25 +3338,12 @@ function orphanPiProcesses() {
   }
 }
 
-/*
- * ── L04 浏览器边界用的本地 HTTP 服务 ──
- *
- * 为什么必须有真实服务：下载来源、Cookie 真的转移过去了没有、本地预览
- * 能不能用 —— 这些没法用纯逻辑或 DOM 断言代替，而探针跑在渲染进程里
- * 起不了服务，`YAN_*` 环境变量也只有主进程读得到。所以服务开在 Node 侧，
- * 端口用**约定值**并把地址硬写在探针里。
- *
- * 端口被占用就直接报错不静默降级：换一个端口探针就连到别人身上了，
- * 那时失败原因会变得极难看懂。
- */
 const BOUNDARY_PORT = 39873
 const BOUNDARY_ORIGIN = `http://127.0.0.1:${BOUNDARY_PORT}`
 const REMOTE_ROUTE_API_PORT = 37893
 const REMOTE_ROUTE_TOKEN = 'yan-remote-route-probe-token-2026'
 let remoteRouteProbeState = null
-/* 交接故障 provider 的请求统计：afterExit 在场景结束后仍要读它 */
 let handoffFailureState = null
-/** Cookie 值哨兵：它**只能**出现在网络里，不许出现在任何日志/状态/结果里 */
 const BOUNDARY_SECRET = `yan-probe-cookie-${Date.now()}`
 
 function startRemoteRouteProvider() {
@@ -4753,15 +3429,6 @@ async function closeRemoteRouteProvider(provider) {
   await new Promise((resolvePromise) => provider.server.close(() => resolvePromise()))
 }
 
-/**
- * 实施-14 F7 / handoff 回执验证用的本机 OpenAI 兼容 provider（**不发往外部**）。
- *
- * 故障场景靠请求里有没有「跨会话交接」区分：普通回合回长文本，交接包生成回无效 JSON；
- * 本机成功场景则用一个受控 bash tool-call 报目标进展、回合法交接包，再回一条续接消息。
- *
- * 所有分支都是 fixture：只验证 Electron、Pi provider adapter、宿主和薄层的链路，不验证模型能力。
- * usage 按请求 / 回复的真实字符量估算并回报（不凭空造 token 数）。
- */
 function startHandoffFailureProvider(failureMode = 'invalid-json') {
   const successReceiptFixture = failureMode === 'handoff-start-receipt'
   const reportCommand = 'yan goal report --report-id rp-commit-1 --phase executing --goal-revision 0'
@@ -4807,10 +3474,8 @@ function startHandoffFailureProvider(failureMode = 'invalid-json') {
       try {
         payload = JSON.parse(raw)
         promptChars = JSON.stringify(payload.messages ?? []).length
-        /* pi 对压缩摘要可能发非流式请求：那种情况下回 SSE 它解析不了 */
         wantsStream = payload?.stream !== false
       } catch {
-        /* 坏 body 也照样按普通回合处理 */
       }
       const hasHandoffPrompt = raw.includes('跨会话交接')
       const isHandoff =
@@ -4873,11 +3538,9 @@ function startHandoffFailureProvider(failureMode = 'invalid-json') {
           ? 'handoff-start-receipt-fixture'
           : 'handoff-failure-fixture'
       if (failureMode === 'turn-timing') {
-        /* A 先短等、B 后长等：让两条真请求重叠，并能从各自落盘用时识别归属。 */
         await new Promise((resolvePromise) => setTimeout(resolvePromise, timingTag === 'B' ? 10000 : 4000))
       }
       if (failureMode === 'turn-timing-kill' && state.turnRequests > 1) {
-        /* 第二次 provider 请求保持在途，给 Node 父进程时间观察快照并强制结束 Electron。 */
         state.followupHeld = true
         state.responses.add(res)
         res.once('close', () => {
@@ -5069,7 +3732,6 @@ async function checkRemoteRoutes(_sandboxRoot, _tempBefore, probeText) {
 
 async function driveFilePreviewMutation({ caseCwd, delay }) {
   const file = join(caseCwd, 'README.md')
-  /* The app's probe starts after `delay`; mutate five seconds into its active run. */
   await new Promise((resolve) => setTimeout(resolve, Math.max(0, delay) + 5000))
 
   const original = readFileSync(file, 'utf8')
@@ -5107,7 +3769,6 @@ async function driveRemoteRoutes() {
     try {
       json = await response.json()
     } catch {
-      /* 无效 JSON 会由后续数据断言标红 */
     }
     return { status: response.status, json }
   }
@@ -5213,12 +3874,6 @@ function startBoundaryServer() {
       return
     }
     if (url.pathname === '/whoami') {
-      /*
-       * 只回「有没有 Cookie」+ 值的前 8 位哈希。
-       * 为什么回哈希而不是原值：本场景要在**输出里**断言“不得出现 Cookie 值”，
-       * 而回显原值就会把它带进页面文本 → 进 observe 结果 → 进日志，
-       * 那正好是我们要防的事。哈希能证明「到的是同一个值」。
-       */
       const cookie = /(?:^|;\s*)yan_probe_cookie=([^;]*)/.exec(req.headers.cookie ?? '')
       const value = cookie?.[1] ?? ''
       const hash = value ? createHash('sha256').update(value).digest('hex').slice(0, 8) : 'none'
@@ -5232,10 +3887,6 @@ function startBoundaryServer() {
       return
     }
     if (url.pathname === '/popup') {
-      /*
-       * 网页自己开窗口（H-9 第二阶段）：加载即调 `window.open` 开一个后台标签。
-       * 用真实页面触发，不靠界面或内部 API 造状态。
-       */
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       res.end(
         '<!doctype html><meta charset="utf-8"><title>popup-opener</title><body>opener' +
@@ -5276,14 +3927,6 @@ function startBoundaryServer() {
       return
     }
     if (url.pathname === '/ask') {
-      /*
-       * 真实发起权限请求 —— 不靠界面上调 `setPermission` 写记录，
-       * 而是让 Chromium 的 permission handler 真的跑一遍。
-       *
-       * 同时发两种（定位 + 通知）：不同 Chromium 版本对“无用户手势时
-       * 要不要问 handler”的处理不一样，哪种真的问到了就用哪种
-       *（探针从记录里读实际的名字，不硬编）。
-       */
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       res.end(
         '<!doctype html><meta charset="utf-8"><title>ask</title><body>ask' +
@@ -5303,11 +3946,6 @@ function startBoundaryServer() {
         '<a id="dl" href="/download">download</a>'
     )
   }
-  /*
-   * localhost prefers ::1 on Windows. Bind both loopback addresses so the
-   * cross-origin iframe fixture is reachable without exposing the fixture to
-   * the LAN (binding 0.0.0.0 would widen the local test server's audience).
-   */
   const servers = [createServer(handleRequest), createServer(handleRequest)]
   return new Promise((resolvePromise, rejectPromise) => {
     let ready = 0
@@ -5330,12 +3968,6 @@ function startBoundaryServer() {
   })
 }
 
-/**
- * 退出后（Electron 已关）检查下载真的落到了隔离目录里。
- *
- * 为什么放在退出后：`will-download` 的 `done` 回调与文件落盘是异步的，
- * 在应用还开着的时候查有竞态；关掉之后看的是终态。
- */
 function checkBrowserBoundaryDownloads(sandboxRoot) {
   const lines = []
   if (!sandboxRoot) return { ok: false, lines: ['✗ 非隔离模式无法检查下载目录'] }
@@ -5355,41 +3987,28 @@ function checkBrowserBoundaryDownloads(sandboxRoot) {
   return { ok, lines }
 }
 
-/*
- * 当前正在跑的 Electron 子进程。
- *
- * 为什么要全局记住它：这个脚本可能被 Ctrl+C / 被外层 timeout 杀掉。
- * 那时如果只是自己退出，Electron 会变成孤儿并继续往一个**没人读的管道**写日志 ——
- * 反复 EPIPE，而 Electron 默认会把 EPIPE 变成模态错误框，进程再也不退出
- *（2026-09-16 实测：一条 visual:matrix 链就这样挂了几个小时）。
- */
 let activeChild = null
 
-/** 收掉整棵进程树：Windows 上 child.kill() 只杀直接子进程，GPU/渲染/pi 会变孤儿。 */
 function killTree(child) {
   if (!child || child.exitCode !== null) return
   if (process.platform === 'win32' && child.pid) {
     try {
       execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
     } catch {
-      /* 已经退了 */
     }
   }
   try {
     child.kill()
   } catch {
-    /* 同上 */
   }
 }
 
-/** H-6b 的真强杀验收：在 final:false 已完整追加后强制终止隔离 Electron 进程树。 */
 function forceKillTree(child) {
   if (!child || child.exitCode !== null) return
   if (process.platform === 'win32' && child.pid) {
     try {
       execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
     } catch {
-      /* 后续 exit 事件会让场景失败或确认进程已结束 */
     }
     return
   }
@@ -5399,12 +4018,10 @@ function forceKillTree(child) {
     try {
       child.kill('SIGKILL')
     } catch {
-      /* 后续 exit 事件会让场景失败 */
     }
   }
 }
 
-/* Ctrl+C / 被 kill：先收子进程再退，别把它留成孤儿 */
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(sig, () => {
     killTree(activeChild)
@@ -5425,7 +4042,6 @@ function findIntermediateTurnTiming(dir) {
           if (!latest || Number(record.endedAt) > Number(latest.record.endedAt)) latest = { file, record }
         }
       } catch {
-        /* 只接受完整 JSON 行，忽略正在追加的尾行 */
       }
     }
   }
@@ -5440,19 +4056,10 @@ function runProbe(
   return new Promise((resolvePromise) => {
     let probeEnv = {
       ...env,
-      // 场景自己的环境变量（如 authEnv 要验「key 写在环境变量里」那条路）
       ...(caseEnv ?? {}),
       YAN_PROBE: probe,
       YAN_PROBE_DELAY: String(delay),
-      /*
-       * 默认**不上屏**：测试不应该在用户面前弹窗（用户明确要求）。
-       * 需要看真实窗口时：`YAN_SHOW_WINDOW=1 npm run test:live -- <场景>`。
-       *
-       * 之前默认是 `showInactive()`（不抢焦点但仍会出现在屏幕上）；
-       * 连跑十几个场景时，窗口不断出现本身就是在打断用户。
-       */
       ...(process.env.YAN_SHOW_WINDOW || visible ? {} : { YAN_PROBE_HIDDEN: '1' }),
-      /* 视觉验收通道：命令行给出 YAN_PROBE_SHOT 时透传给应用主进程截图（见 src/main/index.ts）。 */
       ...(process.env.YAN_PROBE_SHOT
         ? {
             YAN_PROBE_SHOT: process.env.YAN_PROBE_SHOT,
@@ -5460,44 +4067,12 @@ function runProbe(
           }
         : {}),
       ...(keys ? { YAN_PROBE_KEYS: keys } : {}),
-      /* 用例自己调第一枚按键的延时（探针要先关引导 / 拿到输入框焦点时用） */
       ...(keys && keysDelay ? { YAN_PROBE_KEYS_DELAY: String(keysDelay) } : {})
     }
     if (SYNTHETIC_ONLY) probeEnv = syntheticEnvironment(probeEnv)
-    // GUI 进程不能带 ELECTRON_RUN_AS_NODE：否则 Electron 二进制退化成纯 Node，
-    // 无窗口、静默 exit 0，探针什么都拿不到（详见 scripts/test-packaged.mjs）。
-    /*
-     * 还要剥掉**外层砚实例**的能力服务地址与身份：
-     * 从砚的 pi 子进程里跑 test:live 时，这几个变量会跟着继承下去。
-     * pi 子进程的环境本来由主进程覆盖，但能力服务没起来时就是「没有覆盖」，
-     * 那时被测试的实例里 `yan` 会打到外层那个真实实例（写真实用户数据目录）。
-     * 本轮在 test-packaged 里真撞到过（一个操作回执被写进了真实 ~/.pi）。
-     */
     for (const k of ['ELECTRON_RUN_AS_NODE', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']) {
       delete probeEnv[k]
     }
-    /*
-     * 直接拿 electron 包导出的可执行文件，**不走 npx**。
-     *
-     * 为什么：`spawn('npx', ['electron'], { shell: true })` 在 Windows 上
-     * 是 cmd.exe → npx → electron 三层。npx 会先抢 npm 缓存锁、检查包，
-     * 偶发几秒内就退出（实测：场景刚起了两个子代理，npx 先退了），于是
-     * test-live 判定“没抓到 PROBE 输出”，而 Electron 其实还在后台跑探针 ——
-     * 既拿不到证据，又留下一个没人管的 GUI 实例。
-     */
-    /*
-     * 「要求上屏」的隔离窗口（visible / YAN_SHOW_WINDOW）走主进程的 showInactive()：
-     * 显示但不抢焦点，所以窗口可能被别的窗口盖住。Windows 上 Chromium 的原生
-     * 遮挡检测（CalculateNativeWinOcclusion）会把被盖住的窗口判成 hidden，渲染端的
-     * document.visibilityState 变 hidden、requestAnimationFrame 停止出帧 —— 用真实
-     * 帧计时的 perf 探针就会假失败（实测同一份代码 3 分钟内一过一挂）。
-     *
-     * 主进程在 YAN_PROBE 下已关掉后台节流三开关（disable-background-timer-throttling /
-     * disable-renderer-backgrounding / disable-backgrounding-occluded-windows），但
-     * disable-backgrounding-occluded-windows 只挡住降频，不改遮挡导致的可见性判定。
-     * 这里只在真的要求上屏时补上关闭遮挡检测的参数，让隔离窗口始终按可见窗口渲染。
-     * 只作用于本次测试实例的命令行，不影响正常启动，也不伪装帧/放宽阈值。
-     */
     const showWindow = Boolean(process.env.YAN_SHOW_WINDOW || visible)
     const electronArgs = ['.']
     if (process.env.YAN_TEST_DPR) electronArgs.push(`--force-device-scale-factor=${process.env.YAN_TEST_DPR}`)
@@ -5523,22 +4098,14 @@ function runProbe(
       buf += d
     })
 
-    // 预发按键会额外占时间（第一枚前可自定义延时，之后每个组合等 1.5s）
     const keyCost = keys ? (keysDelay ?? 0) + keys.split(',').length * 1500 : 0
     const killChild = () => killTree(child)
-    /*
-     * delay 是“窗口显示后等多久才执行探针”（给应用启动/连上 pi 用），
-     * 不是探针的执行预算 —— 这两件事以前混在一起，于是为了给长场景留时间，
-     * 只能把 delay 往大里设，结果是白等：探针窗口其实还是 90s。
-     * 现在分开： 才决定探针能跑多久。
-     */
     const kill = setTimeout(killChild, delay + keyCost + (budget ?? 90_000))
     let intermediateSnapshot = null
     const snapshotPoll = hardKillAfterIntermediateTiming
       ? setInterval(() => {
           if (intermediateSnapshot || child.exitCode !== null || child.signalCode !== null) return
           const candidate = findIntermediateTurnTiming(join(env.YAN_DATA_DIR ?? '', 'turn-timing'))
-          /* 等第二次 provider 请求进入挂起态，确保 pi 已完成工具消息并确实仍在同一回合。 */
           if (candidate && handoffFailureState?.failureMode === 'turn-timing-kill' && handoffFailureState.followupHeld) {
             intermediateSnapshot = candidate
             forceKillTree(child)
@@ -5567,7 +4134,6 @@ function runProbe(
               }
             })
         } catch {
-          /* 强杀后的记录数是诊断证据；文件不可读时留空并由 afterExit 标红。 */
         }
         resolvePromise({
           ok: true,
@@ -5593,11 +4159,6 @@ function runProbe(
 
       const m = /---PROBE-START---\r?\n([\s\S]*?)\r?\n---PROBE-END---/.exec(buf)
       if (!m) {
-        /*
-         * 两种失败长得完全不同，必须分开报：探针自己打印过东西（说明应用起来了、
-         * 只是没走完），与**一句都没打印**（进程在探针输出前就没了 —— 最常见的是
-         * 场景预算不够、探针被 kill）。合成一个提示的话，排查会直接走向错方向。
-         */
         const hadOutput = buf.trim().length > 0
         resolvePromise({
           ok: false,
@@ -5610,13 +4171,7 @@ function runProbe(
       }
 
       const body = m[1]
-      // 断言失败标记：✗ 或 “=0（应为 1）” 之类的显式否定
       const combined = [body, driven?.text].filter(Boolean).join('\n')
-      /*
-       * 探针在准备阶段抛异常时只留一行「探针出错: …」，不带 ✗，进程还照样 exit 0 ——
-       * 那种情况断言一条都没跑，绝不能被当成通过（实测在 grouprename / projectremove /
-       * railreorder 上撞到过假通过）。
-       */
       const crashed = /探针出错|探针异常|probe threw/i.test(combined)
       const bad = /✗/.test(combined) || crashed
       resolvePromise({
@@ -5633,14 +4188,9 @@ function runProbe(
 }
 
 
-/* 入口：放在最后调用。
-   为什么不在顶层直接跑：fixture 生成器用了 `const TS`，而它在顶层被调用时
-   还在 TDZ（函数声明会提升，const 不会）—— 包成函数调用就绕开了。 */
 async function main() {
 
-  // 支持多个场景：npm run test:live -- live memory sessions
   const argv = process.argv.slice(2).filter((a) => !a.startsWith('-'))
-  /* needsDownload：会真的联网下载大文件的场景，默认全量不跑，点名并设置 YAN_REAL_GIT_DOWNLOAD=1 才跑 */
   let names = argv.length ? argv : defaultLiveCases(CASES)
   const skippedDownloads = names.filter((n) => CASES[n]?.needsDownload && process.env.YAN_REAL_GIT_DOWNLOAD !== '1')
   if (skippedDownloads.length) {
@@ -5656,7 +4206,6 @@ async function main() {
     }
   }
 
-  /* 早失败比晚失败好：确认探针脚本都存在（退役功能的场景条目要一并清掉） */
   for (const n of names) {
     try {
       readFileSync(join(root, CASES[n].probe), 'utf8')
@@ -5675,18 +4224,7 @@ async function main() {
     }
   }
 
-  /* 状态隔离 —— 每个测试批次用一套临时目录。
-     为什么必须做：验收测试会改应用状态（右栏分区顺序、主题、语言存在
-     localStorage；会话文件在 ~/.pi/agent/sessions）以及写记忆。
-     共用真实目录就会污染用户数据 —— 已经踩过两次：
-     · 会话目录里多了 6 个测试会话
-     · 记忆里留了 5 条编造的「已确认事实」（会误导后续对话）
-     · 右栏顺序被拖成了 status 开头
-     隔离三件事：
-     YAN_USER_DATA      Electron 的 localStorage / cache
-     YAN_SESSIONS_DIR   会话文件（同时 pi 也会收到 --session-dir）
-     YAN_DATA_DIR       桌面端设置（desktop.json） */
-  const ISOLATED = process.env.YAN_TEST_ISOLATED !== '0'   // 调试时「=0」可跑真实环境
+  const ISOLATED = process.env.YAN_TEST_ISOLATED !== '0'
   if (SYNTHETIC_ONLY) validateSyntheticSelection(names, CASES, ISOLATED)
   const sandboxRoot = ISOLATED ? mkdtempSync(join(tmpdir(), 'yan-test-')) : null
   if ((names.includes('remoteroutes') || names.includes('turntimingkill')) && !sandboxRoot) {
@@ -5694,21 +4232,9 @@ async function main() {
     process.exit(2)
   }
 
-  /*
-   * 合成 fixture 项目树（`fixture: true` 的场景把它当 cwd）。
-   *
-   * 为什么需要：文件树 / @ 补全的剩余边界（空目录、失效路径、大目录、
-   * 中文空格、同名文件、目录联接）需要一个**内容已知且可穷举**的项目；
-   * 源码树既不能造空目录，也不能保证里面有哪些文件，断言只能写成
-   * “看起来像”。fixture 建在临时目录里，不往项目根塞测试垃圾。
-   */
   const fixtureBase = sandboxRoot ?? mkdtempSync(join(tmpdir(), 'yan-fixture-'))
   const fixtureProject = buildFixtureProject(fixtureBase)
 
-  /*
-   * L04 场景的本地服务：只有真的要点它的场景才占端口。
-   * 服务挂了要直接失败 —— 没服务的 browserboundary 只会给出一堆看不懂的断言失败。
-   */
   let boundaryServer = null
   if (names.some((n) => CASES[n].usesBoundaryServer)) {
     try {
@@ -5733,21 +4259,12 @@ async function main() {
   let remoteRouteProvider = null
   let handoffFailureProvider = null
 
-  /*
-   * sandbox 里现在有 **pi 凭证副本**（为了让 pi 能起来），所以清理不能再只靠
-   * 正常跑完的那次 rmSync —— 被 Ctrl+C 或被 timeout 杀掉时，密钥会留在临时目录。
-   * 实测已经踩到：02:14 那批异常退出后，三个 yan-test-* 目录里的 auth.json 副本
-   * 一直留到被发现。这里把清理挂到进程退出，覆盖正常退出与 SIGINT/SIGTERM
-   *（SIGKILL 无法捕获，那就只能靠下次跑到时看见了）。
-   */
   if (sandboxRoot) {
     const cleanupSandbox = () => {
       try {
-        /* `noperm/` 带着 deny 读取的 ACL，不复位的话 rmSync 会 EPERM 把沙箱留在临时目录。 */
         allowDirRead(join(fixtureProject, 'noperm'))
         rmSync(sandboxRoot, { recursive: true, force: true })
       } catch {
-        /* 尽力而为，不能因为清理失败盖住真正的测试结果 */
       }
     }
     process.once('exit', cleanupSandbox)
@@ -5760,17 +4277,11 @@ async function main() {
       process.exit(143)
     })
   } else {
-    /*
-     * 非隔离模式（`YAN_TEST_ISOLATED=0`，仅排查用）下 fixture 是自己的临时目录，
-     * 不会被沙箱清理覆盖 —— 而 `noperm/` 的 ACL 会让它变成用户手动删不掉的垃圾。
-     * 所以这一支也必须挂退出清理。
-     */
     process.once('exit', () => {
       try {
         allowDirRead(join(fixtureProject, 'noperm'))
         rmSync(fixtureBase, { recursive: true, force: true })
       } catch {
-        /* 同上 */
       }
     })
   }
@@ -5780,35 +4291,9 @@ async function main() {
     const userData = join(sandboxRoot, 'userData')
     const sessions = join(sandboxRoot, 'sessions')
     const data = join(sandboxRoot, 'data')
-    /*
-     * pi 的凭证目录（auth.json）。
-     *
-     * ⚠️ 必须隔离：`auth` 场景会写入并删除一个测试凭证，
-     *   而 auth.json 里是用户的**真实密钥**。写坏了比污染
-     *   会话目录/记忆文件严重得多（那两件已经各踩过一次）。
-     */
     const piDir = join(sandboxRoot, 'pi-agent')
     for (const d of [userData, sessions, data, piDir]) mkdirSync(d, { recursive: true })
 
-    /*
-     * 给隔离环境准备 pi 的**凭证 + 模型目录**，否则 pi 根本起不来。
-     *
-     * 为什么需要两个文件：
-     *   · auth.json  —— 凭证；没有它 pi 只能起一个 unknown 模型。
-     *   · models.json —— 自定义 provider 定义。这台机器上的 `commandcode`
-     *     provider（69 个模型）就来自这里，**不在** pi 的内置目录里；
-     *     少了它，pi 解析 `--model commandcode/...` 会直接 "Model not found"
-     *     并退出，表现为 conn 一直卡在 starting、场景全部失败。
-     *   · models-store.json —— 目录缓存（存在就带上，省一次网络拉取）。
-     *
-     * ⚠️ 安全边界（用户明确要求：测试可以用，**打包切勿放进去**）：
-     *   · 只**读**源文件，写成 sandbox 里的副本；
-     *   · 除 auth.json 外已确认不含密钥字段；auth 场景改写也只动副本；
-     *   · sandbox 在系统临时目录，批次结束整个 rmSync 删除；
-     *   · **绝不写入项目目录** —— electron-builder 的 files / extraResources
-     *     只收 out/、build/icon.png、package.json 和 resources/pi-runtime，
-     *     临时目录不可能进发布包；.gitignore 也已忽略 `auth.json`。
-     */
     const sourceAgentDir = SYNTHETIC_ONLY ? join(sandboxRoot, 'synthetic-source') : process.env.YAN_PI_DIR?.trim() || join(homedir(), '.pi', 'agent')
     if (SYNTHETIC_ONLY) {
       mkdirSync(sourceAgentDir, { recursive: true })
@@ -5833,26 +4318,6 @@ async function main() {
       console.log('  pi 文件：没找到凭证/模型目录 —— 依赖 pi 就绪的场景会失败')
     }
 
-    /*
-     * 预置工作目录 = **项目根**（不是 home）。
-     *
-     * 为什么：隔离后 desktop.json 是空的，cwd 会落到 homedir()，
-     * 于是 fs 场景（文件树）只能看到家目录的杂项，
-     * 所有「应该有 docs/ src/ scripts/」这类断言都无法写。
-     * 指到项目根之后，文件树的断言才有确定的内容可测。
-     *
-     * 只写这一个字段 —— 其余设置由应用自己填默认值（不要在这里模拟）。
-     */
-    /*
-     * 测试前提修正（可选）：把测试模型的 `maxTokens` 压到实测可用的值。
-     *
-     * 为什么需要：dp 登记 `maxTokens: 393216`，pi 每次请求都会带上这个输出上限
-     *（能力字段），而 provider 的真实上限是 1,048,576 —— 留给输入的空间就只有
-     * ≈655K，**低于 pi 自己的自动压缩线**（窗口 − reserveTokens = 983,616）。
-     * 结果：pi 的阈值压缩永远来不及触发，只能靠 overflow 恢复兜底（已实测确认）。
-     * 要验「上下文真涨到大档位时压缩会不会工作」，就得把输入空间还给上下文。
-     * 只改隔离副本，不动真实 models.json；仅由 `YAN_TEST_MODEL_MAX_TOKENS` 显式开启。
-     */
     const maxTokensCap = Number(
       names.map((n) => CASES[n].env?.YAN_TEST_MODEL_MAX_TOKENS).find((v) => v) ?? 0
     )
@@ -5890,14 +4355,7 @@ async function main() {
       YAN_SESSIONS_DIR: sessions,
       YAN_DATA_DIR: data,
       YAN_PI_DIR: piDir,
-      /* 完整隔离批次会产生超过默认桌面快照上限的临时会话；不改变生产口径，
-       * 只让本次测试保留自己种下的早期 fixture。 */
       YAN_TEST_SESSION_LIST_LIMIT: '500',
-      /*
-       * 下载必须隔离：内置浏览器与本机 Chrome 都写 `app.getPath('downloads')`，
-       * 而那默认是**用户真实的下载目录** —— 测试往里丢文件，
-       * 用户会当成自己的文件（而且我们没法替他删）。
-       */
       YAN_DOWNLOADS_DIR: join(sandboxRoot, 'downloads')
     }
     mkdirSync(join(sandboxRoot, 'downloads'), { recursive: true })
@@ -5990,13 +4448,6 @@ async function main() {
               ? 'subagent-local-fixture'
               : 'handoff-fail-fixture'
         handoffFailureProvider = await startHandoffFailureProvider(failureMode)
-        /*
-         * ⚠️ provider 必须写进**默认的** pi 目录（`sandboxRoot/pi-agent`），
-         * 不能另建一个 `YAN_PI_DIR`：`piSettings`（`keepRecentTokens: 1`）是写进
-         * 那个目录的 `settings.json` 的，另建目录会让压缩参数失效 ——
-         * 实测后果是 pi 每次都报「Nothing to compact (session too small)」，
-         * 压缩计数永远攒不到阈值（整场场景白跑）。
-         */
         mkdirSync(piDir, { recursive: true })
         const modelsFile = join(piDir, 'models.json')
         let models = {}
@@ -6062,19 +4513,11 @@ async function main() {
       }
     }
 
-    /* 服务句柄不能让事件循环挂住 —— 跑完要关。 */
     if (boundaryServer) {
       process.once('exit', () => boundaryServer.close())
     }
 
-    // 从真实会话目录**只读**拷几份当 fixture。
-    // 为什么要拷：有些场景（切会话、长会话虚拟化）需要真实数据才有意义；
-    // 为什么是拷贝而不是直接引用：测试会改名/删除会话，不能动原件。
     const seeded = seedSessions(sessions)
-    /*
-     * v3-shell 的用量取数夹具：只跑该场景时，把会话目录指向只含「主会话用量样本」
-     * 的独立目录（通用合成会话不进用量统计），并另写一份子代理原生 JSONL。
-     */
     if (names.includes('v3-shell') && sandboxRoot && process.env.YAN_V3_USAGE_FIXTURE !== '0') {
       const v3Usage = writeV3UsageFixture(sandboxRoot)
       CASES['v3-shell'].env = { ...(CASES['v3-shell'].env ?? {}), YAN_SESSIONS_DIR: v3Usage.usageSessions }
@@ -6087,43 +4530,26 @@ async function main() {
       console.log(`  远程路由目标会话：${routeSession.id}（仅隔离 sandbox）`)
     }
 
-    /*
-     * N12 的 A/B 会话：cwd 必须是 fixture 项目的绝对路径，而那个路径
-     * 要等上面建完才知道，所以只能在这里补写（详见 `writeAbSessions`）。
-     */
     if (names.some((n) => CASES[n]?.abSessions)) {
       const made = writeAbSessions(sessions, join(fixtureProject, 'repo'), join(fixtureProject, 'other'))
       console.log(`  N12 A/B 会话：${made.map((m) => m.tag + '→' + m.cwd).join('，')}`)
     }
 
-    /*
-     * N05 的 A/B 会话：同样需要 fixture 的绝对路径，而且必须是**已落盘**的
-     * （详见 `writeProjectSwitchSessions`）。
-     */
     if (names.some((n) => CASES[n]?.projectSessions || CASES[n]?.projectPeers)) {
       const made = writeProjectSwitchSessions(sessions, fixtureProject, join(fixtureProject, 'other'), {
-        /* 只有明确要“同 cwd 第二条会话”的场景才造，而且造在另一个子目录里 */
         peers: names.some((n) => CASES[n]?.projectPeers),
         peerCwd: join(fixtureProject, 'repo'),
-        /* 09-S3：造「活动新但没打开过」/「活动旧但将被打工」的一对（见该函数注释） */
         opened: names.some((n) => CASES[n]?.openedSessions)
       })
       console.log(`  N05 项目会话：${made.map((m) => m.tag.toUpperCase() + '→' + m.cwd).join('，')}`)
     }
 
-    /*
-     * `auth` 场景要验的是「**没有**凭证时给出应用内登录入口」
-     * （`data-testid="auth-login-openai-codex"`）。而上面那个 piDir 为了能起 pi
-     * 复制了真实 auth.json，前提正好相反 —— 单独给它一个空目录。
-     * 只放 models.json：provider 定义仍要能解析，否则列表渲染不出来。
-     */
     const piDirNoAuth = join(sandboxRoot, 'pi-agent-no-auth')
     mkdirSync(piDirNoAuth, { recursive: true })
     const modelsForNoAuth = join(sourceAgentDir, 'models.json')
     if (existsSync(modelsForNoAuth)) copyFileSync(modelsForNoAuth, join(piDirNoAuth, 'models.json'))
     CASES.auth.env = { YAN_PI_DIR: piDirNoAuth }
     CASES.newuser.env = { YAN_PI_DIR: piDirNoAuth }
-    /* nogit：把 PATH 里带 git / bash 的目录摘掉，并把 Program Files 指到不存在的目录 */
     const pathWithoutGit = (process.env.PATH ?? '')
       .split(';')
       .filter((dir) => dir && !existsSync(join(dir, 'git.exe')) && !existsSync(join(dir, 'bash.exe')))
@@ -6148,11 +4574,6 @@ async function main() {
     }
 
 
-    /*
-     * `slashcmd` 验证受管技能如何进入命令列表。生产启动带 `--no-skills`，
-     * 因此技能通过与项目授权技能相同的显式 `--skill` 参数传入；其它场景
-     * 看不到这份夹具，不会改变它们的命令列表与系统提示。
-     */
     const piDirSkill = join(sandboxRoot, 'pi-agent-skill')
     for (const d of [piDirSkill, join(piDirSkill, 'skills', 'probe-skill')]) mkdirSync(d, { recursive: true })
     for (const f of ['auth.json', 'models.json', 'models-store.json']) {
@@ -6176,13 +4597,6 @@ async function main() {
       YAN_PROBE_SKILL: join(piDirSkill, 'skills', 'probe-skill', 'SKILL.md')
     }
 
-    /*
-     * 实施-23 端到端：把 DeepSeek 官方通道注册成**砚的自定义 provider**（yan-dp），
-     * 用来验证「新增模型之后，整条模型循环还能不能跑」。
-     *
-     * 密钥从真实 auth.json 的 `deepseek.key` 读出来，只写进系统临时目录的副本；
-     * 本机没有这份凭证时留空，探针会自己跳过（不会把一个空 key 当成通过）。
-     */
     const piDirCustomApi = join(sandboxRoot, 'pi-agent-custom-api')
     mkdirSync(piDirCustomApi, { recursive: true })
     for (const f of ['auth.json', 'models.json', 'models-store.json']) {
@@ -6222,12 +4636,6 @@ async function main() {
     }
     CASES.customapie2e.env = { YAN_PI_DIR: piDirCustomApi }
 
-    /*
-     * 实施-04 S2：`capsearch` 要验「模型自己发现技能 → 读正文 → 按目标执行」。
-     * 所以单独一份 piDir：与主 piDir 同样能起 pi，另外多一个**回执技能**，
-     * 其正文里带一行只有它才有的标记 —— 模型必须真的读到正文才写得出来。
-     * 其它场景看不到它，命令列表与系统提示不受影响。
-     */
     const piDirCapability = join(sandboxRoot, 'pi-agent-capability')
     for (const d of [piDirCapability, join(piDirCapability, 'skills', 'yan-capability-probe')])
       mkdirSync(d, { recursive: true })
@@ -6260,19 +4668,11 @@ async function main() {
       YAN_PI_DIR: piDirCapability,
       YAN_PROBE_SKILL: join(piDirCapability, 'skills', 'yan-capability-probe', 'SKILL.md')
     }
-    /*
-     * capcli 要验「已加载技能能被检索 / 读正文」。宿主带 `--no-skills`，
-     * 所以必须像受管技能那样用显式 `--skill` 传入（与 activeSkillArgs 同一条路）。
-     */
     CASES.capcli.env = {
       YAN_PI_DIR: piDirCapability,
       YAN_PROBE_SKILL: join(piDirCapability, 'skills', 'yan-capability-probe', 'SKILL.md')
     }
 
-    /*
-     * 实施-04 S3：`mcpcli` 要连一个真 MCP 服务。配置指向官方 SDK 的 stdio fixture；
-     * `command` 用当前 Node（test-live 就是 node 起的），不碰用户真实配置。
-     */
     const mcpServersFile = join(sandboxRoot, 'mcp-servers.json')
     writeFileSync(
       mcpServersFile,
@@ -6295,16 +4695,8 @@ async function main() {
     )
     CASES.mcpcli.env = { YAN_MCP_SERVERS_FILE: mcpServersFile }
     CASES.capsettings.env = { YAN_MCP_SERVERS_FILE: mcpServersFile }
-    /* 实施-07 S4：同一个 fixture 服务，但这条验的是「它能不能被认成搜索能力」 */
     CASES.sourcecap.env = { YAN_MCP_SERVERS_FILE: mcpServersFile }
 
-    /*
-     * 实施-04 S6b-1：`mcpregister` 要两个**真的本地服务**——
-     *   ① 目录 fixture（MCP Registry 返回形状）→ 让 discover 拿到远程候选；
-     *   ② Streamable HTTP MCP fixture（官方 SDK）→ 让 acquire 的端点核验真握手。
-     * npm 源也指向本地：这条场景验的是 MCP 路径，没必要为它真连公网。
-     * 两个服务都只绑 127.0.0.1；起不来就直失败（不静默降级成「没候选」）。
-     */
     if (names.some((n) => CASES[n].usesMcpRegisterFixture)) {
       const MCP_REG_FIXTURE_PORT = 39341
       const MCP_REG_CATALOG_PORT = 39342
@@ -6313,7 +4705,6 @@ async function main() {
         const url = new URL(req.url ?? '/', mcpRegCatalogOrigin)
         res.setHeader('content-type', 'application/json; charset=utf-8')
         if (url.pathname.startsWith('/npm')) {
-          /* npm 侧返回空目录：这条场景只验 MCP 路径。 */
           res.end(JSON.stringify({ objects: [] }))
           return
         }
@@ -6373,39 +4764,25 @@ async function main() {
         YAN_MCP_REGISTRY_URL: `${mcpRegCatalogOrigin}/v0/servers`,
         YAN_NPM_SEARCH_URL: `${mcpRegCatalogOrigin}/npm`,
         YAN_MCP_SERVERS_FILE: join(sandboxRoot, 'mcp-servers-register.json'),
-        /* 仅隐藏 live fixture 能模拟本机确认；产品 CLI 参数本身不是授权。 */
         YAN_PROBE_AUTO_AUTHORIZE_LOOPBACK_MCP: '1'
       }
       process.on('exit', () => {
         try {
           mcpRegCatalog.close()
         } catch {
-          /* 进程都要退了，关不掉也不影响结论 */
         }
         try {
           mcpRegHttpFixture.kill()
         } catch {
-          /* 同上 */
         }
       })
     }
 
-    /*
-     * 实施-04 S4：`capmcp` 除了同一份 MCP 配置，还要 MARKER ——
-     * fixture 在 `compute` 被调用时往它 append 一行，那是「调用真的到了服务端」的
-     * 唯一硬证据（回复里的数字可能是模型自己编的）。文件放 sandbox，不污染仓库。
-     */
     CASES.capmcp.env = {
       YAN_MCP_SERVERS_FILE: mcpServersFile,
       YAN_MCP_FIXTURE_MARKER: join(sandboxRoot, 'mcp-probe-marker.txt')
     }
 
-    /*
-     * 实施-01 S5：`taskext` 要验带历史扩展的升级目录，所以单独一份 piDir。
-     * 旧扩展从 `scripts/fixtures/task-ext/` 现拷（**不是**用户本机那份）——
-     * fixture 必须自包含，否则换一台机器场景就变成「不存在旧扩展」而静默变形。
-     * 默认不加载与历史只读行为在场景注释里说明。
-     */
     const piDirTaskExt = join(sandboxRoot, 'pi-agent-task-ext')
     for (const d of [piDirTaskExt, join(piDirTaskExt, 'extensions')]) mkdirSync(d, { recursive: true })
     for (const f of ['auth.json', 'models.json', 'models-store.json']) {
@@ -6416,11 +4793,6 @@ async function main() {
       join(root, 'scripts', 'fixtures', 'task-ext', 'left-info-panel.ts'),
       join(piDirTaskExt, 'extensions', 'left-info-panel.ts')
     )
-    /*
-     * 实施-02 S5：「旧扩展 + 无关扩展」共存。真实用户目录里往往还有别的扩展，
-     * 只放一个任务扩展验不出「无关扩展会不会被任务迁移影响」（诊断计数、
-     * 命令列表、清单来源判定三处都可能受它影响）。
-     */
     copyFileSync(
       join(root, 'scripts', 'fixtures', 'task-ext', 'notes-panel.ts'),
       join(piDirTaskExt, 'extensions', 'notes-panel.ts')
@@ -6437,18 +4809,6 @@ async function main() {
 
   let failed = 0
 
-  /*
-   * 场景间状态隔离（快照 → 每场景恢复）。
-   *
-   * 为什么需要：所有场景共用一个 sandbox，而派生状态会**累积** —— 交接链
-   *（session-chains / handoffs）、已装技能与包、场景新增的会话、localStorage
-   * 都会带到下一个场景。实测后果：`handoffchain` 与 `handoffpack` 同批串跑时，
-   * 后者的「起点链段数」被前者污染（单跑必过、串跑才红），只能一个个跑。
-   *
-   * 做法：setup 完成后拍一份快照，每个场景开跑前恢复。排除 `fixture-project`
-   *（合成项目树，带 deny ACL，且各场景按需自建）与快照目录自身。
-   * 非隔离模式（`YAN_TEST_ISOLATED=0`）完全不启用。
-   */
   const SCENARIO_SEED = '.seed'
   const SCENARIO_SEED_SKIP = new Set([SCENARIO_SEED, 'fixture-project'])
   const scenarioSeedRoot = sandboxRoot ? join(sandboxRoot, SCENARIO_SEED) : null
@@ -6473,86 +4833,28 @@ async function main() {
   for (const name of names) {
     const c = { ...CASES[name] }
     console.log(`\n${'='.repeat(64)}\n▶ ${name}  (${c.probe})\n${'='.repeat(64)}`)
-    /* 每个场景都从同一份干净快照开始（见上方「场景间状态隔离」）。 */
     restoreScenarioState()
 
-    /*
-     * 每个场景开跑前把设置文件**重置回已知状态**（且每档窗口都重置）——
-     * 所有场景共用一个隔离目录，而 desktop.json 是持久化的：
-     * 上一个场景改了 cwd / 缩放 / 面板宽度 / 分区顺序，下一个就会带着开跑。
-     * 实测后果：某场景改掉 cwd 后，后面的 atPath 拿到家目录、断言全落空，
-     * 而且「单跑必过、全量才炸」。
-     *
-     * 重置成「只有 cwd」而不是删文件：应用会用 DEFAULTS 补全其余字段。
-     */
-    /*
-     * 一个场景可能需要跑**多档窗口宽度**（narrow 就是）。
-     * 每档都要重置设置 —— 否则上一档留下的面板宽度/收起态会带过来。
-     */
     const wins = c.wins ?? [null]
     let allOk = true
     let hint
-    /* 退出后检查需要探针的输出（例如 S1 要它报告被删会话的 sessionId） */
     let lastProbeText = ''
-    /* 边界场景把 cwd 指到合成 fixture 项目（`fixtureSub` 可再下钻到子目录），其余场景用项目根。 */
     const caseCwd = c.fixture ? (c.fixtureSub ? join(fixtureProject, c.fixtureSub) : fixtureProject) : root
 
-    /*
-     * 隔离的 pi 全局设置（`piSettings`）。
-     *
-     * 为什么必须先删再写：所有场景共用一个隔离 piDir，而 `continue` 分支
-     *（语法错、场景失败）会跳过清理 —— 把“清理”放在**每个场景开头**
-     * 就不依赖控制流一定会走到收尾（与 desktop.json 每个场景重置同一个思路）。
-     *
-     * 为什么只写隔离目录：那是本次测试的临时副本（已含 auth.json 副本），
-     * 写它等于扮“用户自己的 pi 全局设置”；**真实** ~/.pi/agent 永远不被写。
-     */
     const piSettingsFile = sandboxRoot ? join(sandboxRoot, 'pi-agent', 'settings.json') : null
     if (piSettingsFile) {
       rmSync(piSettingsFile, { force: true })
-      /*
-       * 测试统一关掉思考强度（`defaultThinkingLevel: "off"`）。
-       *
-       * 为什么：dp 这类推理模型会把输出预算花在 reasoning 上 —— 一是让
-       * `finish_reason` 容易变成 `length`（pi 会把它当 length/overflow 恢复，
-       * 压缩就不再由砚的策略线驱动），二是把与命题无关的思考 token 掺进
-       * 每轮用量与断言。关掉之后测的才是「上下文涨到线 → 谁触发压缩」。
-       * 场景自己的 `piSettings` 仍可覆盖（展开在它后面）。
-       */
       const settings = { defaultThinkingLevel: 'off', ...(c.piSettings ?? {}) }
       writeFileSync(piSettingsFile, JSON.stringify(settings, null, 2), 'utf8')
     } else if (c.piSettings) {
       console.log('  ⤺ 跳过：非隔离模式（YAN_TEST_ISOLATED=0）不会写真实 pi 目录的 settings.json')
       continue
     }
-    /* 退出后检查需要的“场景开始前”快照（临时 worktree 容器） */
     const tempBefore = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('yan-subagent-')))
 
-    /*
-     * S1 的派生状态种子（`contextstate`）。
-     *
-     * 必须**每个场景开跑前**种，而不是批次开始时种一次：所有场景共用一个隔离
-     * 会话目录，而 `trash` 也会真删会话 —— 那会连带清掉先前种下的状态文件，
-     * 于是全量跑时 `contextstate` 的计数对不上。
-     * 它跟 `desktop.json` 的“每场景重置”是同一个道理。
-     */
-    /* 提问扩展诊断：每次跑前清空，退出后检查只看这一轮的（实施-05 S2） */
     if (c.questionExtLog) rmSync(join(tmpdir(), 'yan-question-ext.log'), { force: true })
     if (c.goalResumeExtLog) rmSync(join(tmpdir(), 'yan-goal-resume.log'), { force: true })
 
-    /*
-     * 探针脚本先过一遍**语法检查**。
-     *
-     * 它们是以字符串形式被 executeJavaScript 执行的，所以语法错误
-     * （比如重复声明一个 const）不会在构建期报错，只会表现为
-     * 「没抓到 PROBE 输出 —— 应用可能启动失败」，极难定位。
-     * 实测踩过一次（topbar 里重名 cur），这里提前拦住。
-     */
-    /*
-     * 「会话文件只读」的基线（todos / taskext）：Electron 起来之前记下 fixture
-     * 的原始字节，退出后再比 —— 前缀必须逐字节一致（见 checkTaskFixtureReadonly）。
-     * 每个场景都重置：不跳过声明就没基线，避免上一个场景的基线被顺手复用。
-     */
     taskFixtureBaseline = null
     if (c.readonlySession && sandboxRoot) {
       taskFixtureBaseline = captureSessionFile(join(sandboxRoot, 'sessions'), c.readonlySession)
@@ -6576,7 +4878,6 @@ async function main() {
       console.log(`\n✗ ${name} 未通过`)
       continue
     }
-    /* 隔离 fixture 的“只种一次”门（wins 多档时不能重复建工作树 / 重复写会话） */
     let isolationSeeded = false
     let goalSeeded = false
     let goalReviewSeeded = false
@@ -6584,20 +4885,12 @@ async function main() {
 
     for (const win of wins) {
       if (sandboxRoot) {
-        /* freshDesktop：不预置 cwd，验全新安装的默认工作文件夹 */
         const desktop = c.freshDesktop ? { lang: 'zh-CN' } : { cwd: caseCwd, lang: 'zh-CN' }
-        /* 视觉取证可选：命令行把初始主题固定为深/浅，不改生产默认。 */
         if (process.env.YAN_TEST_DESKTOP_THEME === 'light' || process.env.YAN_TEST_DESKTOP_THEME === 'dark') {
           desktop.theme = process.env.YAN_TEST_DESKTOP_THEME
         }
-        /* 工作模式迁移场景：只留旧布尔，验「旧 true → 新字段」的真实清洗 */
         if (c.legacyAutonomous) desktop.autonomous = true
         if (c.knowledgeSeed) {
-          /*
-           * 项目登记决定 `projectId`（宿主用登记里的 id，而不是现场派生）：
-           * fixture 写下的知识目录必须与它同名，所以登记也由 fixture 给定。
-           * 开关同样写在这里 —— 探针之后会从界面上把它关掉。
-           */
           desktop.projects = [
             {
               id: KNOWLEDGE_FIXTURE_PROJECT_ID,
@@ -6610,38 +4903,23 @@ async function main() {
           ]
           desktop.projectKnowledge = { enabled: true }
         }
-        /*
-         * 隔离 fixture（`knowledgeIsolationSeed`）自己写 desktop.json ——
-         * 默认那份不能覆盖它（否则第二次窗口开跑时项目登记会没，身份退回派生，
-         * 验的就变成另一回事了）。
-         */
         if (!c.knowledgeIsolationSeed) {
           writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify(desktop, null, 2), 'utf8')
         }
         if (c.knowledgeSeed) {
-          /*
-           * 来源跳转要一个真存在的会话：fixture 会话 id 是动态生成的，
-           * 所以从会话目录里现取一个（文件名 `<时间戳>_<id>.jsonl`）。
-           */
           let fixtureSessionId
           try {
-            /* 会话文件可能嵌在项目子目录里（`--C--Users-...--/<时间戳>_<id>.jsonl`），所以要递归找 */
             const file = readdirSync(join(sandboxRoot, 'sessions'), { recursive: true })
               .map((name) => String(name))
               .find((name) => name.endsWith('.jsonl'))
             if (file) fixtureSessionId = basename(file).replace(/\.jsonl$/, '').split('_').slice(1).join('_')
           } catch {
-            /* 没有会话目录就算了：来源会显示成「不可回读」，探针会跟着分支 */
           }
           await seedProjectKnowledge(join(sandboxRoot, 'data'), {
             withCandidate: c.knowledgeSeed === 'candidate',
             sessionId: c.knowledgeSeed === 'candidate' ? fixtureSessionId : undefined
           })
         }
-        /*
-         * 实施-03 S6：隔离 fixture 自己写 desktop.json / 会话 / 数据哨兵，
-         * 所以**不能**被上面的默认 desktop 覆盖。每场景只种一次（wins 可能多档）。
-         */
         if (c.knowledgeIsolationSeed && !isolationSeeded) {
           await seedKnowledgeIsolation(sandboxRoot, fixtureProject, caseCwd)
           isolationSeeded = true
@@ -6650,7 +4928,6 @@ async function main() {
           contextGuardFixturePath = writeContextGuardSession(join(sandboxRoot, 'sessions'))
           console.log(`  上下文守卫 fixture：${basename(contextGuardFixturePath)}（仅本场景）`)
         }
-        /* U-3b：目标文档带结构化链接（key = 真实会话文件路径，与宿主一致） */
         if (c.goalSeed && !goalSeeded) {
           const count = await seedGoalDocument(join(sandboxRoot, 'data'), join(sandboxRoot, 'sessions'))
           console.log(`  目标链接 fixture：${count} 个会话各一份`)
@@ -6663,7 +4940,6 @@ async function main() {
         }
       }
       if (win) console.log(`\n─── 窗口 ${win} ───`)
-      /* 坏 pi 入口：内容无所谓，只要立即退出（spawn 得到 code 不 0 的退出） */
       let brokenPiBin
       if (c.brokenPi && sandboxRoot) {
         brokenPiBin = join(sandboxRoot, 'broken-pi.js')
@@ -6672,28 +4948,13 @@ async function main() {
       const out = await runProbe(c, {
         ...env,
         ...(win ? { YAN_WIN: win } : {}),
-        /* 扩展诊断落到隔离沙箱（退出后检查读它） */
         ...(c.contextExtLog && sandboxRoot ? { YAN_CONTEXT_EXT_LOG: join(sandboxRoot, 'ctx-ext.log') } : {}),
-        /* 项目知识注入的诊断（同上，实施-03 S3） */
         ...(c.knowledgeExtLog && sandboxRoot ? { YAN_KNOWLEDGE_EXT_LOG: join(sandboxRoot, 'knowledge-ext.log') } : {}),
-        /*
-         * 提问扩展的模式诊断（实施-05 S2）：确认「自主档」真的到达扩展。
-         * 写 tmpdir 固定文件（与 language 场景同一做法）—— 场景失败时
-         * 沙箱会被清掉，写沙箱里就等于没有证据。
-         */
         ...(c.questionExtLog ? { YAN_QUESTION_EXT_LOG: join(tmpdir(), 'yan-question-ext.log') } : {}),
-        /* 续行扩展诊断（实施-05 S3b）：没发出时要知道是「不该发」还是「发失败」 */
         ...(c.goalResumeExtLog ? { YAN_GOAL_RESUME_EXT_LOG: join(tmpdir(), 'yan-goal-resume.log') } : {}),
-        /*
-         * 场景自己的环境变量。放在 `YAN_TEST_MODEL` 之前，
-         * 让场景也能覆盖模型之外的开关。
-         */
         ...(c.env ?? {}),
-        /* N12 失败态：见上面 brokenPiBin 的说明 */
         ...(brokenPiBin ? { YAN_PI_BIN: brokenPiBin } : {}),
-        /* 交接包生成的诊断（实施-05 S5b-2）：区分「没跑」「跑了失败」「写了但不能解析」 */
         ...(c.handoffExtLog && sandboxRoot ? { YAN_HANDOFF_EXT_LOG: join(sandboxRoot, 'handoff-ext.log') } : {}),
-        // 每个场景用自己的模型（默认免费 Ling；image 用视觉模型）
         YAN_TEST_MODEL: modelForCase(c.model)
       }, { sandboxRoot, fixtureProject, caseCwd, delay: c.delay })
       if (contextGuardFixturePath) {
@@ -6708,7 +4969,6 @@ async function main() {
         (name === 'handoffrecover' || name === 'handoffrecoverincomplete' || name === 'handoffrecoverproviderfail' || name === 'turntimingisolation' || name === 'turntimingkill') &&
         handoffFailureProvider
       ) {
-        /* 保留 state：afterExit 要核对 provider 请求计数与并行度。 */
         handoffFailureState = handoffFailureProvider.state
         await closeHandoffFailureProvider(handoffFailureProvider)
         handoffFailureProvider = null
@@ -6719,11 +4979,6 @@ async function main() {
         allOk = false
         hint = hint ?? out.hint
       }
-      /*
-       * 「不得输出 Cookie 值」（L04 的硬约束）：输出的每一行都过一遍哨兵。
-       * 放在这里而不是探针里：探针本身看不到自己产生了什么输出，
-       * 而 stdout + stderr 全在 `out.text` 里。
-       */
       if (c.usesBoundaryServer) {
         if (out.text.includes(BOUNDARY_SECRET)) {
           allOk = false
@@ -6731,10 +4986,6 @@ async function main() {
         } else {
           console.log('  ✓ 输出里没有 Cookie 值（哨兵未泄漏）')
         }
-        /*
-         * 光有「页面上有 Cookie」还不能说明复制对了 —— 哨兵值的哈希对得上
-         * 才能证明过去的是**同一个值**（而不是别的 Cookie，也不是空值）。
-         */
         if (c.boundaryCookieCheck) {
           const expectedHash = createHash('sha256').update(BOUNDARY_SECRET).digest('hex').slice(0, 8)
           if (out.text.includes(`cookieHash=${expectedHash}`)) {
@@ -6747,19 +4998,7 @@ async function main() {
       }
     }
 
-    /*
-     * 跨进程重启（实施-03 S6）：关掉应用后**用同一份 `YAN_DATA_DIR`
-     * 再启动一次**，跑第二个探针。
-     *
-     * 为什么不靠 wins 循环顺路验：那一支每档都会**重置 desktop.json**
-     *（项目登记跟着没了，projectId 会退回派生 —— 验的就是另一回事了）。
-     * 这里刻意不碰任何隔离文件，验的就是「上次写下的东西还在不在」。
-     */
     if (allOk && c.restart) {
-      /*
-       * 重启前的 seed（实施-11 H-6b-2）：第二次启动前才有意义 ——
-       * 它改的是**第一次运行写下的**数据。
-       */
       if (c.seedBeforeRestart) {
         const seed = SEED_BEFORE_RESTART[c.seedBeforeRestart]
         console.log(
@@ -6778,7 +5017,6 @@ async function main() {
         { ...env, YAN_TEST_MODEL: modelForCase(c.restart.model ?? c.model) }
       )
       process.stdout.write(out2.text)
-      /* 两轮输出拼在一起：afterExit 要同时看到首次与重启后的两份证据 */
       lastProbeText = lastProbeText + out2.text
       if (!out2.ok) {
         allOk = false
@@ -6786,10 +5024,6 @@ async function main() {
       }
     }
 
-    /*
-     * 退出后检查（若场景声明了）：此刻 Electron 已经关闭，才能看到
-     * 退出归档、临时 worktree 清理、以及主工作树的最终状态。
-     */
     if (c.afterExit && (allOk || c.afterExitOnFailure)) {
       const check = AFTER_EXIT[c.afterExit]
       if (!check) {
@@ -6821,22 +5055,15 @@ async function main() {
     try {
       rmSync(sandboxRoot, { recursive: true, force: true })
     } catch {
-      /* Windows 上偶有句柄未释放，留着也无害 */
     }
   } else {
-    /* 非隔离调试时 fixture 有自己的临时根目录，也要清掉。 */
     try {
       rmSync(fixtureBase, { recursive: true, force: true })
     } catch {
-      /* 同上 */
     }
   }
 
   console.log(`\n${'='.repeat(64)}`)
-  /*
-   * 全部场景跑完之后才查：每个场景的 Electron 这时都已退出，所以「父进程不在表里」
-   * 就等于「它被留下了」。一条检查覆盖所有场景（包括将来新加的）。
-   */
   const orphanPi = orphanPiProcesses()
   if (orphanPi === null) {
     console.log('\n孤儿进程：跳过检查（拿不到进程表，不把“查不到”当成“没残留”）')

@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-/**
- * 本机浏览器/MCP 控制页。
- *
- * 这个服务只绑定 127.0.0.1。它不连接 Electron 的 remote debugging 端口，
- * 而是让每个请求启动一个短命的第二 Electron 实例，由砚已有的
- * `second-instance` 通道把受限命令交给正在运行的主实例。
- *
- * 用法：
- *   node scripts/yan-control.mjs --server
- *   node scripts/yan-control.mjs status
- */
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
@@ -51,10 +40,8 @@ async function waitForResponse(requestId, timeoutMs = 8_000) {
         await unlink(path).catch(() => undefined)
         return parsed
       } catch {
-        /* Electron 可能还在写文件；下一轮重新读。 */
       }
     } catch {
-      /* 响应还没出现。 */
     }
     await sleep(25)
   }

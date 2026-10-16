@@ -1,39 +1,22 @@
-/**
- * 定时任务的数据形状与触发规则（纯函数，主进程与界面共用）。
- *
- * 一次触发 = 新开一条会话、用任务里的指令与模型跑一遍；任务本身只记「什么时候、做什么」，
- * 不保存运行过程，过程留在触发出来的会话里。
- */
-
 export type ScheduleTrigger =
-  /** 每天 HH:MM（本机时区） */
   | { kind: 'daily'; time: string }
-  /** 每周的指定几天（0 = 周日 … 6 = 周六）的 HH:MM */
   | { kind: 'weekly'; days: number[]; time: string }
-  /** 每隔 N 分钟，从创建 / 启用起算 */
   | { kind: 'interval'; minutes: number }
-  /** 只跑一次，绝对时间（毫秒） */
   | { kind: 'once'; at: number }
 
 export interface ScheduledTask {
   id: string
   name: string
-  /** 到点发给新会话的指令 */
   prompt: string
-  /** 工作目录；空表示用触发时设置里的当前文件夹 */
   cwd?: string
-  /** `provider/id`；空表示跟随当时的默认模型 */
   model?: string
   trigger: ScheduleTrigger
   enabled: boolean
-  /** 模型创建的任务先停着，等用户在页面上确认启用，免得无人值守地自行运行 */
   pendingApproval?: boolean
   createdBy: 'user' | 'model'
   createdAt: number
-  /** 下一次触发时间；停用时为空 */
   nextRunAt?: number
   lastRunAt?: number
-  /** 上一次触发出来的会话 */
   lastSessionId?: string
   lastError?: string
 }
@@ -47,7 +30,6 @@ export function parseTime(time: string): { h: number; m: number } | null {
   return hit ? { h: Number(hit[1]), m: Number(hit[2]) } : null
 }
 
-/** 校验并规整触发规则；不合法返回错误文字 */
 export function normalizeTrigger(value: unknown): { ok: true; trigger: ScheduleTrigger } | { ok: false; error: string } {
   const v = value as Record<string, unknown> | null
   if (!v || typeof v !== 'object') return { ok: false, error: '缺少触发方式' }
@@ -74,10 +56,6 @@ export function normalizeTrigger(value: unknown): { ok: true; trigger: ScheduleT
   return { ok: false, error: '触发方式只支持 daily / weekly / interval / once' }
 }
 
-/**
- * `after` 之后（不含）的下一次触发时间；单次任务已过期返回 undefined。
- * 每日 / 每周按本机时区的墙上时间算，所以跨夏令时也停在同一个钟点。
- */
 export function nextRunAt(trigger: ScheduleTrigger, after: number): number | undefined {
   if (trigger.kind === 'once') return trigger.at > after ? trigger.at : undefined
   if (trigger.kind === 'interval') return after + trigger.minutes * 60_000
@@ -96,7 +74,6 @@ export function nextRunAt(trigger: ScheduleTrigger, after: number): number | und
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
-/** 触发方式的一句话描述，给列表与确认用 */
 export function describeTrigger(trigger: ScheduleTrigger): string {
   if (trigger.kind === 'daily') return `每天 ${trigger.time}`
   if (trigger.kind === 'weekly') {

@@ -1,28 +1,3 @@
-/**
- * HI3 · A7 生产运行时归属整合的隔离集成验收。
- *
- * ── 它证明什么 ──
- *   · 真实 `RunnerRegistry` + 正式 `AgentController`（随包 pi 1.2.0、临时
- *     `PI_AGENT_DIR` / `YAN_DIR`）+ 真实 `McpAppHost` + 合成 stdio MCP 服务，
- *     走完「capture → spawn → RPC ready → nativeBootWitness → runtime facts →
- *     host list/call」的**无模型**生产链；不做任何 LLM 请求、不联网；
- *   · stop 发生在 capture / verify 的 await 期间时，旧回调不 spawn、不签发，
- *     不覆盖新状态；
- *   · legacy 连接事实（`getLegacyMcpHolderSnapshot`）纳入持有者判定：pi 已退出
- *     但 legacy ready/connecting 仍阻断；事实缺失（null）按可能持有；
- *   · `McpConnectionManager` 原地协调成员：A 转托管时 B 保持原连接不重建；
- *     关闭确认 / 未知语义如实回报，不把 Promise 吞错当已释放；
- *   · 原生别名 / 坏文件 / 缺事实一律拒绝；
- *   · 生产接线（index / agent / runners / ipc / host-switch）静态核对。
- *
- * ── 边界 ──
- *   只临时 `PI_AGENT_DIR` / `YAN_*` / `YAN_MCP_SERVERS_FILE` 隔离小测；不启动
- *   Electron 窗口、不碰真实用户数据 / 真实 pi 配置、不调用真实模型或第三方 MCP。
- *   `electron` 用合成 alias 桩（见 fixture 注释），仅为了在纯 Node 里构造真实
- *   AgentController。
- *
- * 命令：node scripts/test-mcp-app-runtime-integration.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -46,7 +21,6 @@ await mkdir(join(projectCwd, '.pi'), { recursive: true })
 await writeFile(piGlobalFile, '{"mcpServers":{}}\n', 'utf8')
 await writeFile(projectPiFile, '{"mcpServers":{}}\n', 'utf8')
 
-/* 必须在 import bundle 前设好：paths.ts 在模块加载时读这些环境变量。 */
 process.env.YAN_PI_DIR = piAgentDir
 process.env.YAN_DATA_DIR = yanDir
 process.env.YAN_MCP_SERVERS_FILE = hostConfigFile
@@ -79,7 +53,6 @@ const writeJson = async (path, value) => {
 }
 const read = (path) => readFile(resolve(path), 'utf8')
 
-/* ───────────────────────── 编译真实生产模块 ───────────────────────── */
 const bundleDir = join(process.cwd(), '.tmp', 'mcp-runtime-integration')
 await mkdir(bundleDir, { recursive: true })
 const outfile = join(bundleDir, `bundle-${process.pid}.mjs`)
@@ -102,13 +75,11 @@ await build({
   platform: 'node',
   format: 'esm',
   packages: 'external',
-  /* 纯 Node 里构造真实 AgentController：只桩掉浏览器窗口依赖，不调用它。 */
   alias: { electron: resolve('scripts/fixtures/mcp-app-runtime-integration-fixture.mjs') },
   logLevel: 'silent'
 })
 const m = await import(pathToFileURL(outfile).href)
 
-/* ═════════════════ 1. legacy 事实纳入持有者判定（纯判定） ═════════════════ */
 {
   const exited = { processRunning: false, conn: 'exited', projectId: null }
   ok(
@@ -146,7 +117,6 @@ const m = await import(pathToFileURL(outfile).href)
   )
 }
 
-/* ═════════════════ 2. 原生别名 / 坏文件（模块级真实文件） ═════════════════ */
 {
   const names = m.mcpAppHolderNames('demo-svc', {
     id: 'demo-svc',
@@ -180,7 +150,6 @@ const m = await import(pathToFileURL(outfile).href)
   await writeFile(projectPiFile, '{"mcpServers":{}}\n', 'utf8')
 }
 
-/* ═════════════════ 3. McpConnectionManager 原地协调 / 关闭确认 ═════════════════ */
 {
   const serverConfig = (id) => ({ id, transport: 'stdio', command: process.execPath, args: [fixtureServer, '--stdio'] })
   const manager = new m.McpConnectionManager([serverConfig('svc-A'), serverConfig('svc-B')])
@@ -198,7 +167,6 @@ const m = await import(pathToFileURL(outfile).href)
   eq(manager.statusOf('svc-B').status, 'ready', '3h 断 A 不碰 B 的连接')
   eq((await manager.closeConfirmed()).confirmed, true, '3i 关闭确认：全部确认')
 
-  /* 关闭确认的未知语义：内部 close 抛错必须如实回报，不吞成成功。 */
   const failing = new m.McpConnectionManager([])
   failing.connections.set('boom', {
     config: { id: 'boom', transport: 'stdio', command: 'x' },
@@ -215,7 +183,6 @@ const m = await import(pathToFileURL(outfile).href)
   await assert.doesNotReject(async () => failing.close(), '3k close() 仍尽力回收、不抛错')
 }
 
-/* ═════════════════ 4. 真实 pi 无模型启动链（capture → spawn → ready → witness → facts → host） ═════════════════ */
 let realReported = false
 try {
   await writeJson(hostConfigFile, {
@@ -271,7 +238,6 @@ try {
     await host.close().catch(() => undefined)
   }
 
-  /* 旧 boot 不能发布：stop 后见证作废，新实例换 bootId。 */
   const bootA = witness.bootId
   await agent.stop()
   eq(agent.nativeBootWitness(), null, '4i stop 后启动见证立即作废')
@@ -286,7 +252,6 @@ try {
   if (!realReported) console.log('（真实 pi 子用例未走完，见上方失败）')
 }
 
-/* ═════════════════ 5. stop 竞态：capture / verify 期间不 spawn、不签发 ═════════════════ */
 {
   const controller = delayingNativeConfigReader(m.defaultNativeConfigReader, { 1: 500 })
   const agent = new m.AgentController({ push: () => {}, cwd: projectCwd, nativeConfigReader: controller.reader })
@@ -315,7 +280,6 @@ try {
   await agent.stop().catch(() => undefined)
 }
 
-/* ═════════════════ 6. 生产接线静态核对 ═════════════════ */
 {
   const agentSrc = await read('src/main/agent.ts')
   ok(agentSrc.includes('captureNativeStartupWitness('), '6a agent.ts spawn 前采集启动见证')

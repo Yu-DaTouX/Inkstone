@@ -1,12 +1,3 @@
-/**
- * 子代理结束后宿主投递给父会话模型的通知。
- *
- * 模型不必轮询 `yan subagent list`：运行结束时宿主把一条简短通知送进父会话
- * （空闲就开新一轮，正忙就排队）。通知带固定标签，只作为模型后台输入，
- * 不显示在聊天与排队区；原始持久记录保留，历史重载使用同一识别规则。
- *
- * 纯函数，方便单测钉住格式。
- */
 import type { SubagentRun } from './ipc'
 import { subagentOutcome, type SubagentOutcomeKey } from './subagent-outcome'
 
@@ -18,7 +9,6 @@ const SUMMARY_MAX = 800
 export interface ParsedSubagentNotice {
   id: string
   status: string
-  /** 第一行：给人看的标题 */
   headline: string
   body: string
 }
@@ -28,7 +18,6 @@ function clip(text: string, max: number): string {
   return points.length > max ? `${points.slice(0, max).join('')}…` : points.join('')
 }
 
-/** 标题里的状态词：把超时 / 调用用完 / 报错说清，别都写成「失败」 */
 function headlineWord(key: SubagentOutcomeKey, status: string): string {
   if (key === 'timeout') return status === 'done' ? '超时后已收尾（结论可能不完整）' : '超时被停止（结论可能不完整）'
   if (key === 'budget') return status === 'done' ? '调用次数用完后已收尾（结论可能不完整）' : '调用次数用完被停止（结论可能不完整）'
@@ -37,7 +26,6 @@ function headlineWord(key: SubagentOutcomeKey, status: string): string {
   return '已完成'
 }
 
-/** 只对终态生成；返回的文本以标签包裹，整体作为一条消息投递 */
 export function buildSubagentNotice(
   run: Pick<SubagentRun, 'id' | 'task' | 'status' | 'isolation' | 'model' | 'diff' | 'review' | 'error' | 'result'> &
     Partial<Pick<SubagentRun, 'endReason'>>
@@ -74,7 +62,6 @@ export function parseSubagentNotice(text: string): ParsedSubagentNotice | null {
   return { id: match[1], status: match[2], headline: body.split('\n')[0] ?? '', body }
 }
 
-/** 兼容旧展示层剥掉结束标签的投影；普通提及标签的文本不隐藏。 */
 export function isSubagentNotice(text: string): boolean {
   return parseSubagentNotice(text) !== null ||
     /^<subagent-notification id="[^"]+" status="(?:done|error|cancelled)">\n[\s\S]*这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。\s*$/.test(text.trim())

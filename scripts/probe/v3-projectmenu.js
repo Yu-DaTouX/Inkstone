@@ -1,15 +1,3 @@
-/*
- * v3 侧栏项目菜单与归档视图隔离探针。
- *
- * 向 store 注入一个假项目、两条会话（一条在项目里、一条单独归档），验证：
- *   · 项目标题行有「…」与右键菜单，六个动作齐全；
- *   · 改名：就地输入框，Enter 经真实 patchSettings 写 projectNames 与记录名；
- *   · 更改目录：打开对话框，原目录只读；指向不存在的目录时宿主拒绝并在框内报错；
- *   · 复制路径：写入剪贴板的是项目目录；
- *   · 移除项目 = 归档：确认框 → 项目及其会话退出主列表 → 「已归档」入口计数 → 恢复回来；
- *   · 单独归档的会话出现在归档视图，取消归档调用 store.setSessionArchived。
- * 假数据只在渲染端 store 里；设置写入走隔离数据目录，未调模型、未碰真实会话文件。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => {
@@ -24,7 +12,6 @@
       try {
         if (predicate()) return true
       } catch {
-        /* 还没就绪 */
       }
       await wait(50)
     }
@@ -53,7 +40,6 @@
     try {
       localStorage.setItem('yan.onboarded', '1')
     } catch {
-      /* 忽略 */
     }
     const onboarding = document.querySelector('.v3-ob-overlay')
     if (onboarding) {
@@ -77,7 +63,6 @@
       settings: { ...settings, projects: [...(settings?.projects ?? []), record] },
       setSessionArchived: async (...args) => { archivedCalls.push(args); return true }
     })
-    /* 宿主也要认识这个项目，改名 / 改目录 / 归档的写入才能通过 */
     await store.getState().patchSettings({ projects: [...(settings?.projects ?? []), record] }).catch(() => undefined)
     store.setState({ sessions: [inProject, archivedAlone] })
 
@@ -155,7 +140,6 @@
     check(await until(() => !q('v3-archived-view'), 2000), '回到会话列表')
     check(await until(() => labelOf() === 'ProbeRenamed', 3000), '恢复后项目和会话回到主列表')
 
-    /* ---- 收尾 ---- */
     store.setState({ sessions: realSessions, setSessionArchived: realSetArchived })
     await store.getState().patchSettings({
       projects: (store.getState().settings?.projects ?? []).filter((p) => p.id !== PROJECT_ID),

@@ -1,14 +1,3 @@
-/**
- * 链感知的会话历史读取（实施-05 S5b-4）。
- *
- * 用户口径是「后台两份 JSONL、前端一条会话」—— 所以历史必须在**读侧**拼成
- * 一条时间线。这一片的三个失败形态都是静默的，必须靠单测钉住：
- *   · 顺序错（新段在前）→ 用户看到「对话倒着走」；
- *   · 少读一段（链上的文件被删）→ 历史悄悄断掉，没人知道；
- *   · 没有链的普通会话被多读一遍 → 每次打开都慢一倍。
- *
- * 用法：npm run test:unit
- */
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -35,7 +24,6 @@ export async function runSessionHistoryTests(ok, history, chainService) {
     const chains = new chainService.SessionChainStore({ root: join(root, 'data') })
     const single = await writeSession('single.jsonl', 's-single', ['只有这一段'], 'C:\\workspace\\single')
 
-    /* --------------------------------------------------- 没有链 */
     const one = await history.readChainMessages(single, chains)
     ok(one?.messages.length === 1 && one.messages[0].text === '只有这一段', '不在链上 → 读单文件（行为与以前一致）')
     ok(one?.segments === 1 && one.missing === 0, `记为 1 段、无缺失（实际 ${one?.segments}/${one?.missing}）`)
@@ -45,7 +33,6 @@ export async function runSessionHistoryTests(ok, history, chainService) {
     const noStore = await history.readChainMessages(single, null)
     ok(noStore?.messages.length === 1, '没传链 store 时等价单文件（调用方不必都认识链）')
 
-    /* --------------------------------------------------- 两段链 */
     const a = await writeSession('a.jsonl', 's-a', ['第一段的问题', '第一段的回答'], 'C:\\worktrees\\old')
     const b = await writeSession('b.jsonl', 's-b', ['续接后的第一句'], 'C:\\worktrees\\new')
     await chains.link(a, b, 'h-1')
@@ -80,11 +67,9 @@ export async function runSessionHistoryTests(ok, history, chainService) {
     const legacyRead = await history.readChainMessages(legacy, chains)
     ok(!legacyRead?.sourceCwd && !legacyRead?.messages[0]?.sourceCwd, '旧 session header 缺 cwd 时保留缺省来源')
 
-    /* 从旧段也能读到同样的完整历史（链上任一段都是同一条会话） */
     const fromOld = await history.readChainMessages(a, chains)
     ok(fromOld?.messages.length === 3 && fromOld.messages[0].text === '第一段的问题', '从旧段打开也拿到完整时间线')
 
-    /* --------------------------------------------------- 有一段文件没了 */
     const c = await writeSession('c.jsonl', 's-c', ['第三段'])
     await chains.link(b, c, 'h-2')
     await rm(b)
@@ -96,14 +81,12 @@ export async function runSessionHistoryTests(ok, history, chainService) {
       '保留下来的段按顺序拼'
     )
 
-    /* --------------------------------------------------- 全部读不到 */
     const g = join(sessions, 'g.jsonl')
     const h = join(sessions, 'h.jsonl')
     await chains.link(g, h, 'h-3')
     const nothing = await history.readChainMessages(h, chains)
     ok(nothing === null, '所有段都读不到 → null（调用方回退到 pi 的 get_messages）')
 
-    /* --------------------------------------------------- 删除整链 */
     const e = await writeSession('e.jsonl', 's-e', ['甲'])
     const f = await writeSession('f.jsonl', 's-f', ['乙'])
     await chains.link(e, f, 'h-4')

@@ -1,18 +1,4 @@
-/*
- * 命令面板样式（WP-25）。
- *
- * 层归属说明（CONTRACT 的全局层序 reset,tokens,base,primitives,patterns,features,utilities）：
- *   · 本文件里的**容器外观**与**列表行外观**（底色、描边、圆角、阴影、悬停/选中底色、
- *     次要文字颜色、错误文字颜色）写在 `@layer patterns` —— 这部分按合同归 patterns 层；
- *     之所以放在本目录文件里，是因为本任务只能写 `features/commands/**`，不能新增/修改
- *     `patterns/`。合并时可原样挪到 `patterns/command-palette.css`，选择器不用改。
- *   · **模块版面**（flex/grid、间距、高度、滚动、字号）写在 `@layer features`。
- *
- * 只使用 design/tokens.css 里的变量；没有私造变量。
- */
-
 @layer patterns {
-  /* 面板靠上，而不是居中：命令面板是「就近输入」，不是确认框 */
   .cmd-overlay {
     align-items: flex-start;
     padding-top: 12vh;
@@ -66,7 +52,6 @@
     color: var(--fg3);
   }
 
-  /* 清空按钮是版面内的轻量控件，不占用 ui 原语 */
   .cmd-clear {
     display: flex;
     align-items: center;
@@ -87,7 +72,6 @@
 }
 
 @layer features {
-  /* ui Dialog 的 body 默认有内边距与间距；面板自己管版面，这里清零 */
   .cmd-dialog .ui-dialog__body {
     gap: 0;
     padding: 0;

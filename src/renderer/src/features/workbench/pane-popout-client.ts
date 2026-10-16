@@ -1,15 +1,3 @@
-/**
- * 页签弹出窗的**主窗口客户端**（v3 · WP-30 弹出）。
- *
- * 这是唯一持有「打开时锁定的 owner + epoch」的主窗口侧对象，负责：
- *   · 把正式 `WorkspaceOwner` 折成弹出窗契约的 `PanePopoutOwner`；
- *   · 打开后立刻把当前受限投影推给主进程（再由主进程转给弹出窗）；
- *   · 订阅弹出窗动作，按 `ownerKey + epoch` 丢弃过期事件后交给注入的数据源。
- *
- * 本文件**不 import store**：投影从注入的 `PanePopoutDataSource.snapshot()` 取。
- * 这样它既能在没有 store 的情况下单测，也避免弹出链路把主窗口的整套状态机
- * 复制进第二个 renderer。Workbench / Shell 整合者只需提供一个快照函数。
- */
 import {
   isPanePopoutTab,
   isPopoutSupported,
@@ -31,7 +19,6 @@ import type { PanePopoutBridge } from '../../../auxwin/pane-bridge'
 import type { PaneTerminalBridge, PaneTerminalOpenResult } from '../../../../shared/pane-terminal'
 import type { WorkspaceOwner } from './types'
 
-/** 主窗口能提供给弹出窗的受限投影快照；由整合者从 store 映射而来。 */
 export interface PanePopoutSnapshot {
   locale?: PanePopoutLocale
   files?: { root: string; rows: PaneFileRow[]; truncated?: boolean; note?: string }
@@ -42,7 +29,6 @@ export interface PanePopoutSnapshot {
 
 export interface PanePopoutDataSource {
   snapshot(): PanePopoutSnapshot
-  /** 弹出窗通过主进程回投的动作；已通过 ownerKey + epoch 校验。 */
   onAction?(event: PaneActionEvent): void
 }
 
@@ -50,11 +36,8 @@ export interface PanePopoutClient {
   canPopout(tab: PanePopoutAnyTabId): boolean
   isOpen(tab: PanePopoutAnyTabId): boolean
   open(tab: PanePopoutAnyTabId, owner: WorkspaceOwner, options?: { viewId?: string; terminalId?: string }): Promise<PanePopoutOpenResult>
-  /** 终端页签：把主窗口已打开的 terminalId 交同 PTY 弹出（不 start/kill）。 */
   openTerminal(owner: WorkspaceOwner, terminalId: string): Promise<PaneTerminalOpenResult>
-  /** 宿主是否接入了终端弹出桥；未接入时终端页签按钮保持禁用。 */
   canPopoutTerminal(): boolean
-  /** 重新推送投影；缺省推所有已打开页签。 */
   refresh(tab?: PanePopoutTabId): void
   close(tab: PanePopoutAnyTabId): void
   dispose(): void
@@ -72,7 +55,6 @@ export function ownerToPanePopout(owner: WorkspaceOwner): PanePopoutOwner {
   }
 }
 
-/** 从快照取对应页签的投影；缺数据返回 null（弹出窗显示等待态，不伪造空列表）。 */
 export function projectionFromSnapshot(tab: PanePopoutTabId, snapshot: PanePopoutSnapshot): PaneProjection | null {
   switch (tab) {
     case 'files':
@@ -91,7 +73,6 @@ export function projectionFromSnapshot(tab: PanePopoutTabId, snapshot: PanePopou
 export function createPanePopoutClient(options: {
   bridge: PanePopoutBridge
   source: PanePopoutDataSource
-  /** 终端同 PTY 弹桥；缺省时终端页签仍按不支持处理，不画假按钮。 */
   terminalBridge?: PaneTerminalBridge
 }): PanePopoutClient {
   const { bridge, source } = options
@@ -109,7 +90,6 @@ export function createPanePopoutClient(options: {
   const offAction = source.onAction
     ? bridge.onAction((event) => {
         const entry = opened.get(event.tab)
-        /* 归属或代次对不上：这是切换 owner 前的迟到动作，丢弃。 */
         if (!entry || entry.ownerKey !== event.ownerKey || entry.epoch !== event.epoch) return
         source.onAction?.(event)
       })

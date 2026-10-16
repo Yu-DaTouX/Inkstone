@@ -1,17 +1,3 @@
-/**
- * A6-frame-ui · MCP App 沙箱框与渲染端消息桥的 host-free 单测。
- *
- * 现场用 esbuild 编译两份**纯逻辑**文件，在 Node 里用**假 window / 假 frame** 直接跑：
- *   src/renderer/src/features/artifacts/mcp-app-frame-model.ts
- *   src/renderer/src/features/artifacts/mcp-app-channel.ts
- * 不启动 Electron、不建真实 iframe、不联网、不连 MCP 服务、不调用真实模型。
- *
- * 覆盖：受控地址、静态 sandbox/allow、JSON-RPC 形状/体积/`__proto__`、握手前拒绝、
- * 跨代迟到丢弃、重复 id、限速、各 listener/port 清理、MessagePort 绑定、审批只在宿主。
- *
- * ⚠️ 未覆盖（需真实 Electron 窗口）：`protocol.handle` 实际响应、CSP 生效、
- * iframe sandbox 真实隔断、多主题/窄屏视觉、真实第三方 App 兼容性。
- */
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -49,8 +35,6 @@ async function loadTs(relativePath) {
 const model = await loadTs('../src/renderer/src/features/artifacts/mcp-app-frame-model.ts')
 const channelModule = await loadTs('../src/renderer/src/features/artifacts/mcp-app-channel.ts')
 const RateLimiter = (await loadTs('../src/renderer/src/features/artifacts/model.ts')).BridgeRateLimiter
-
-/* ── 测试替身 ───────────────────────────────────────────────────── */
 
 function fakeWindow() {
   const listeners = new Set()
@@ -134,10 +118,6 @@ function makeChannel(overrides = {}) {
     frame,
     calls,
     channel,
-    /**
-     * 收到下一次 dispatch 后，用**规范 JSON-RPC 2.0 信封**回它；
-     * 传入已经是信封（有 jsonrpc 字段）就原样使用。裸对象一律包成 result 信封。
-     */
     settle(result) {
       const resolve = resolveNext
       resolveNext = null
@@ -148,7 +128,6 @@ function makeChannel(overrides = {}) {
       resolve(envelope)
       return resolve
     },
-    /** 不过包：直接 resolve 任意值（用来验证裸对象/畸形应答被拒）。 */
     settleRaw(value) {
       const resolve = resolveNext
       resolveNext = null
@@ -162,7 +141,6 @@ const HASH = 'a'.repeat(32)
 const INST = 'b'.repeat(32)
 const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
 
-/* ── 1. 受控地址 ───────────────────────────────────────────────── */
 {
   ok(model.isMcpAppFrameUrl(VALID_URL), '合法 inkstone-app 地址通过')
   eq(model.isMcpAppFrameUrl('https://evil.example/app'), false, '普通 https 地址拒绝')
@@ -173,7 +151,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   ok(parsed && parsed.instanceId === INST, '解析出实例号用于绑定')
 }
 
-/* ── 2. 静态 sandbox / allow / referrer ────────────────────────── */
 {
   eq(model.MCP_APP_FRAME_SANDBOX, 'allow-scripts', 'sandbox 只有 allow-scripts')
   ok(!model.MCP_APP_FRAME_SANDBOX.includes('allow-same-origin'), '静态 sandbox 绝不含 allow-same-origin')
@@ -185,7 +162,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   ok(model.isExpectedMcpAppOrigin('null'), 'opaque origin 是期望值')
 }
 
-/* ── 3. 消息解码 / 体积 / 原型污染 ─────────────────────────────── */
 {
   const good = model.decodeMcpAppMessage({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'x' } })
   ok(good.ok && good.message.method === 'tools/call' && good.message.id === 7, '合法 JSON-RPC 解码')
@@ -207,7 +183,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(Object.prototype.hasOwnProperty.call(forwarded.params, '__proto__'), false, '转发副本不含 __proto__')
 }
 
-/* ── 4. 方法分类与握手状态机 ──────────────────────────────────── */
 {
   eq(model.classifyMcpAppMethod('ui/initialize'), 'initialize', 'initialize 分类')
   eq(model.classifyMcpAppMethod('tools/call'), 'sensitive', 'tools/call 敏感')
@@ -226,7 +201,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(model.clampMcpAppSize('x'), null, '非数字 size 忽略')
 }
 
-/* ── 4b. 宿主信封校验：单层、错 id、裸对象全失败 ── */
 {
   const good = model.parseMcpAppHostEnvelope({ jsonrpc: '2.0', id: 5, result: { ok: 1 } }, { hasId: true, id: 5 })
   ok(good.ok && good.kind === 'result' && good.result.ok === 1, '规范 result 信封通过')
@@ -243,7 +217,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(model.parseMcpAppHostEnvelope({ jsonrpc: '2.0', id: 5 }, { hasId: true, id: 5 }).ok, false, 'result/error 都缺拒绝')
 }
 
-/* ── 5. 描述符回退分类 ────────────────────────────────────────── */
 {
   eq(model.describeMcpAppView({ kind: 'ready', url: VALID_URL, instanceId: INST, title: 't', callId: 'c' }).mode, 'frame', 'ready + 受控地址 → frame')
   eq(model.describeMcpAppView({ kind: 'ready', url: 'https://evil', instanceId: INST }).mode, 'invalid', 'ready + 非法地址 → 安全拒绝')
@@ -253,7 +226,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(model.describeMcpAppView({ kind: 'error', error: 'boom' }).mode, 'error', 'error → 错误回退')
 }
 
-/* ── 6. 通道：source / origin / 清理 ──────────────────────────── */
 {
   const { win, frame, calls, channel } = makeChannel()
   channel.attach()
@@ -267,7 +239,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(win.listeners.size, 0, 'dispose 移除 message 监听')
 }
 
-/* ── 7. 握手前拒绝敏感调用 / 完成后放行 ───────────────────────── */
 {
   const { win, frame, calls, channel, settle } = makeChannel()
   channel.attach()
@@ -294,7 +265,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(frame.posted.at(-1).message.result.content[0].text, 'ok', '工具结果回投给 App')
 }
 
-/* ── 7b. host 拒绝 initialize：顶层 error、握并不 ready、裸对象也应失败 ── */
 {
   const { win, frame, calls, channel, settle } = makeChannel()
   channel.attach()
@@ -316,7 +286,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(bare.frame.posted.at(-1).message.error?.code, -32603, '畸形宿主应回明确错误，不进 ready')
 }
 
-/* ── 8. 不自动重放工具 ─────────────────────────────────────────── */
 {
   const { win, frame, calls, channel, settle } = makeChannel()
   channel.attach()
@@ -329,7 +298,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(channel.getPhase(), 'ready', 'size 通知不改握手状态')
 }
 
-/* ── 9. 去重与限速 ─────────────────────────────────────────────── */
 {
   const { win, frame, calls, channel, settle } = makeChannel()
   channel.attach()
@@ -350,7 +318,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(limited.calls.length, 3, '超过 3 条/秒被限速丢弃')
 }
 
-/* ── 10. 关闭后迟到结果丢弃 ───────────────────────────────────── */
 {
   const { win, frame, calls, channel, settle } = makeChannel()
   channel.attach()
@@ -366,7 +333,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(channel.getPhase(), 'closed', 'dispose 后状态关闭')
 }
 
-/* ── 11. 换代：旧代迟到丢弃 ───────────────────────────────────── */
 {
   const { win, frame, calls, channel, settle } = makeChannel()
   channel.attach()
@@ -383,7 +349,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   eq(frame.posted.length, postedBefore, '换代后旧 dispatch 结果不回投')
 }
 
-/* ── 12. MessagePort 只在已验证 source 上采纳 ─────────────────── */
 {
   const { win, frame, calls, channel, settle } = makeChannel()
   channel.attach()
@@ -402,7 +367,6 @@ const VALID_URL = `inkstone-app://${HASH}/${INST}/index.html`
   ok(port.closed, '换代关闭旧端口')
 }
 
-/* ── 13. 审计色调 ─────────────────────────────────────────────── */
 {
   eq(model.auditPhaseTone('completed'), 'ok', '完成是正向色')
   eq(model.auditPhaseTone('denied'), 'err', '拒绝是错误色')

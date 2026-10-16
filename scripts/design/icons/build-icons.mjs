@@ -1,22 +1,3 @@
-/**
- * build-icons.mjs —— 图标生成的**唯一入口**（npm run icons）。
- *
- * 链路：
- *   scripts/design/icons/catalog.json          语义 → 用途（唯一真源，手写）
- *   scripts/design/icons/inkline.json          「砚线」几何（手写，16 网格）
- *   → scripts/design/icons/sprite.svg          完整 sprite（设计稿 / 预览用）
- *   → src/renderer/src/icons/sprite.ts         渲染端内联 sprite（构建产物；手机端也读它）
- *   → scripts/design/icons/preview.html        对照预览页
- *   → scripts/design/prototype.html            设计稿内联子集（同步写入，无手工同步点）
- *
- * 统一属性：16×16、fill="none"、stroke="currentColor"、方头斜接；描边宽度写在 symbol 上，
- * 每条路径带 vector-effect="non-scaling-stroke"，所以 12 / 14 / 16px 三档一样粗
- * （设计规范 §3.4）。几何只允许 path，坐标落在 0…16 之内，不允许填充。
- *
- * 用法：
- *   node scripts/design/icons/build-icons.mjs            # 生成
- *   node scripts/design/icons/build-icons.mjs --check    # 只校验，有差异 exit 1
- */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,8 +13,6 @@ const catalog = JSON.parse(readFileSync(join(ICON_DIR, 'catalog.json'), 'utf8'))
 const { grid, strokeWidth, linecap, linejoin, icons } = catalog
 const source = catalog.libraries.inkline.source
 const inkline = JSON.parse(readFileSync(join(ICON_DIR, source), 'utf8'))
-
-/* ---------- 1. 校验编目本身 ---------- */
 
 const problems = []
 const byLibName = new Map()
@@ -57,9 +36,6 @@ if (problems.length) {
   process.exit(1)
 }
 
-/* ---------- 2. 几何 ---------- */
-
-/** 只接受 path 数据；坐标（含圆弧端点）不能出 0…grid */
 function geometry(semantic, name) {
   const d = String(inkline.icons[name].d ?? '').trim()
   if (!d) problems.push(`${semantic}: 几何为空`)
@@ -81,8 +57,6 @@ const symbols = Object.entries(icons)
 
 const sprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">${symbols.join('')}</svg>\n`
 
-/* ---------- 3. 产物 ---------- */
-
 const names = Object.keys(icons).sort()
 const ts = `/**
  * ⚠️ 自动生成，不要手改。来源：scripts/design/icons/catalog.json + ${source}
@@ -102,8 +76,6 @@ export type IconName = (typeof ICON_NAMES)[number]
 
 const preview = previewHtml()
 const protoNext = syncPrototype()
-
-/* ---------- 4. 写入 / 比对 ---------- */
 
 const outputs = [
   [join(ICON_DIR, 'sprite.svg'), sprite],
@@ -138,8 +110,6 @@ console.log(
   `${CHECK ? '✓ 已是最新' : changed ? `✓ 写入 ${changed} 个文件` : '✓ 无变化'} · ` +
     `${names.length} 个语义 / ${symbols.length} 个 symbol · sprite ${kb(sprite)}`
 )
-
-/* ---------- 预览页 ---------- */
 
 function previewHtml() {
   const groups = new Map()
@@ -201,8 +171,6 @@ ${sprite}
 `
 }
 
-/* ---------- 设计稿同步 ---------- */
-
 function syncPrototype() {
   const START = '<!-- ICON-SPRITE-START -->'
   const END = '<!-- ICON-SPRITE-END -->'
@@ -215,7 +183,6 @@ function syncPrototype() {
   const bare = html.slice(0, i) + html.slice(j + END.length)
   const used = new Set([...bare.matchAll(/#(i-[a-z0-9-]+)/g)].map((m) => m[1]))
   if (!used.has('i-sun') && !used.has('i-moon')) {
-    // 主题切换是运行时 JS，静态扫描扫不到
   }
   for (const id of ['i-sun', 'i-moon', 'i-folder', 'i-folder-open']) used.add(id)
   const missing = [...used].filter((id) => !names.includes(id.slice(2)))

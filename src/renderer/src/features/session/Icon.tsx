@@ -1,9 +1,3 @@
-/**
- * 会话模块用到的图标（lucide-react 薄封装）。
- *
- * 图标不是控件，也不含外观样式；这里只做「语义名 → lucide 组件」的映射，
- * 让会话标语不必散落各处 import。控件统一来自共享 `ui/`。
- */
 import type { JSX } from 'react'
 import {
   AlertCircle,

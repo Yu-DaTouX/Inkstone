@@ -9,21 +9,8 @@ import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode
 import { hostImageCredentials } from './image-credentials'
 import { chatGptIdentity, claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
 
-/**
- * 取额度用的 HTTP 客户端。
- *
- * ⚠️ 这里**必须用 Electron 的 net.fetch**，不能用全局 fetch。
- *    实测：同样的头，全局 fetch 请求 chatgpt.com 会被 Cloudflare 抦下
- *    （403 + “Just a moment…” 的 HTML 验证页），而 net.fetch 返回 200 ——
- *    因为 net.fetch 走的是 Chromium 的网络栈（有完整的 TLS 指纹/HTTP2）。
- *    探针里两种都试过，全局 fetch 解析 JSON 时会直接报 Unexpected token '<'。
- */
 const http = net.fetch.bind(net)
 
-/**
- * 供应商并没有统一的“余额”协议。这里只访问有公开、自助余额 API 的服务；
- * 不用模型调用来猜余额，也不把密钥发给渲染进程或第三方代理。
- */
 export async function providerQuota(rawProvider: string, monthlyBudget?: number): Promise<ProviderQuota> {
   const provider = rawProvider.trim().toLowerCase()
   const checkedAt = Date.now()
@@ -62,13 +49,6 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
       return { provider, supported: true, error, checkedAt }
     }
   }
-  /*
-   * ⚠️ openai 与 openai-codex 是**两条完全不同的路**：
-   *   · openai       = 平台 API key，能读的是「组织费用」（要 Admin Key）
-   *   · openai-codex = ChatGPT 订阅（OAuth），能读的是「套餐限速窗口」
-   * 二者共用 gpt-5.6-luna 这类模型名，但额度口径完全不同，
-   * 所以这里必须分开处理，不能拿 openai 那套去查订阅。
-   */
   const isCodex = provider === 'openai-codex'
   const openai = provider === 'openai'
   const codexCredential = isCodex ? await hostImageCredentials.codex() : null
@@ -76,32 +56,21 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
   const known = provider === 'openrouter' || provider === 'deepseek' || provider === 'commandcode' || isCodex || openai
   if (!key) return { provider, supported: known, error: openai ? '请设置 OPENAI_ADMIN_KEY 以查询组织费用' : '未找到该供应商的 API Key', checkedAt }
   try {
-    /*
-     * ChatGPT 订阅（Codex）的套餐限速窗口。
-     * `/backend-api/codex/usage` 实测可用（返回 primary/secondary 两个窗口），
-     * 只需 OAuth access token + chatgpt-account-id，不需要 Admin Key。
-     * 数字是**百分比**（used_percent），不是美元 —— 所以用 0–100 当作 used/total，
-     * 渲染层统一按百分比画，不用再乘换算系数。
-     */
     if (isCodex) {
       const accountId = codexCredential?.accountId ?? await resolveCodexAccountId()
       if (!accountId) return { provider, supported: true, error: '凭证缺少 chatgpt-account-id，请重新登录 ChatGPT', checkedAt }
       const usage = await fetchCodexUsage(key, accountId)
       const windows: QuotaWindow[] = usage.windows
       if (windows.length === 0) return { provider, supported: true, error: '订阅未返回限速窗口', checkedAt }
-      /* 最紧的窗口当主数字（谁先满谁先卡） */
       const binding = [...windows].sort((a, b) => b.used / b.total - a.used / a.total)[0]
       const plan = usage.plan ? usage.plan.toUpperCase() : ''
       return {
         provider,
         supported: true,
-        /* 百分比口径下 remaining 也是百分比（剩余可用百分比） */
         remaining: Math.max(0, binding.total - binding.used),
         used: binding.used,
         total: binding.total,
-        /* 订阅没有金额；用 percent 让渲染层知道单位 */
         currency: 'PERCENT',
-        // 套餐名称单独展示，避免与某个“最紧窗口”混在同一行。
         label: plan,
         windows,
         checkedAt
@@ -138,52 +107,18 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
       const r = await fetch('https://api.deepseek.com/user/balance', { headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const j = await r.json() as { is_available?: boolean; balance_infos?: Array<{ currency?: string; total_balance?: string }> }
-      /*
-       * DeepSeek 会同时返回多个币种（实测 USD 恒为 0.00，真实余额在 CNY）。
-       * 之前「优先取 USD」会永远显示 $0.00 —— 所以改为**优先取有余额的那条**，
-       * 没有正余额时再退回第一条。绝不能在解析失败时默认成 0：
-       * 那会假装「余额是 0」，而不是如实报告错误。
-       */
       const infos = j.balance_infos ?? []
       const info = infos.find((x) => Number(x.total_balance) > 0) ?? infos[0]
       if (!info) return { provider, supported: true, error: '余额接口未返回数据', checkedAt }
       return { provider, supported: true, remaining: Number(info.total_balance ?? 0), currency: info.currency ?? 'USD', checkedAt }
     }
     if (provider === 'commandcode') {
-      /*
-       * Command Code 是**订阅套餐**，没有「余额」，只有滚动窗口：
-       *   5 小时 / 每周 / 每月，各自有上限，超了就 429。
-       * `/alpha/billing/credits` 用 pi 里同一把 user_ key 就能读（实测）。
-       *
-       * ⚠️ 两个字段的口径不一样，**这是个踩过的坑**（2026-09 实测）：
-       *    · windowLimits.fiveHour / weekly → 窗口**已用**（used / cap / exceeded / resetAt）
-       *    · credits.monthlyCredits        → 本月**剩余**，不是已用
-       *    证据：weekly.cap = 35 ⇒ 套餐总额度 70；
-       *    几乎没消耗的月份接口给 monthlyCredits = 69.996221407，
-       *    而 fiveHour.used = weekly.used = 0.003778593，70 − 0.003778593 正好是它。
-       *    曾经按「已用」解释 → 面板显示已用 99.99%（看着像本月已经用完），
-       *    而官网 usage 页是 0% —— 方向正好反了。
-       *    （GOAT=$70；weekly cap $35=一半、fiveHour cap $14=五分之一，
-       *      所以那两个窗口的 cap 也确实是按套餐总额度切出来的。）
-       *    之前只显示 5h/周，漏了月度 —— 而月度才是「这个月总共能用多少」，
-       *    用户看官网时对不上就是这个原因。
-       *
-       * 没有硬编码 $70：分母由 weekly cap × 2 反推
-       * （实测每个套餐都按固定比例切：weekly = 总额度的一半），
-       * 反推不出来就只展示前两个窗口，绝不编一个数。
-       */
-      /*
-       * 三个窗口（5 小时 / 每周 / 本月）的解析在 `quota-commandcode.ts`：
-       * 那里有一个**方向相反**的口径坑（weekly.used 是已用、monthlyCredits 是剩余），
-       * 已经用接口真实快照写成单测钉住。这里只负责取数据。
-       */
       const cr = await fetch('https://api.commandcode.ai/alpha/billing/credits', {
         headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' }, signal: AbortSignal.timeout(10_000)
       })
       if (!cr.ok) throw new Error(`HTTP ${cr.status}`)
       const credits = await cr.json() as CommandCodeCredits
       const wl = credits.windowLimits ?? {}
-      /* 计费周期结束 = 月度窗口的重置时间。单独一个请求，失败就当没有（不影响前两个窗口） */
       const periodEnd = await fetch('https://api.commandcode.ai/alpha/billing/subscriptions', {
         headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' }, signal: AbortSignal.timeout(10_000)
       })
@@ -198,12 +133,6 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
       if (windows.length === 0) {
         return { provider, supported: true, error: wl.limited === false ? '套餐未启用额度窗口' : '未返回额度窗口', checkedAt }
       }
-      /*
-       * 主值口径（方案 7.2）：**本月已用**。
-       * 以前取「最紧窗口的 used」—— 那个数字随哪个窗口先撞线而变，
-       * 用户对着官网看时怎么也对不上。
-       * 月度窗口拿不到时才退回最紧窗口（并保留 label 说明口径）。
-       */
       const binding = [...windows].sort(
         (a, b) => (a.total - a.used) / a.total - (b.total - b.used) / b.total
       )[0]
@@ -226,7 +155,6 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
   }
 }
 
-/** 上次成功的结果最多展示这么久；再旧的数字不如不显示。 */
 const LAST_GOOD_MAX_AGE_MS = 24 * 60 * 60_000
 const lastGood = new Map<string, ProviderQuota>()
 
@@ -234,7 +162,6 @@ function hasQuotaData(q: ProviderQuota): boolean {
   return !!q.windows?.length || q.remaining !== undefined || q.used !== undefined
 }
 
-/** 缓存键：ChatGPT 订阅按当前登录的账号区分，换号后不会把上一个账号的数字当成当前账号的。 */
 async function lastGoodKey(provider: string, monthlyBudget?: number): Promise<string> {
   if (provider === 'openai-codex') {
     const entry = await readAuthEntry(provider).catch(() => undefined) as { access?: unknown; accountId?: unknown } | undefined
@@ -244,11 +171,6 @@ async function lastGoodKey(provider: string, monthlyBudget?: number): Promise<st
   return `${provider}|${monthlyBudget ?? ''}`
 }
 
-/**
- * 给界面展示用的额度查询：本次失败且没有数字时（如服务商限流 429），退回本次运行内上次成功的结果，
- * 用 `staleError` 标明原因，`checkedAt` 保持那次成功的时间。只在内存里，重启即清空。
- * 换号与续跑判定要用新鲜数据，带 `staleError` 的结果不能拿来决定恢复或切换。
- */
 export async function providerQuotaWithFallback(rawProvider: string, monthlyBudget?: number): Promise<ProviderQuota> {
   const provider = rawProvider.trim().toLowerCase()
   const fresh = await providerQuota(rawProvider, monthlyBudget)
@@ -262,13 +184,6 @@ export async function providerQuotaWithFallback(rawProvider: string, monthlyBudg
   return { ...prior, error: undefined, staleError: fresh.error }
 }
 
-/**
- * ChatGPT 订阅的套餐限速窗口。右栏额度（当前账号）与「账号额度」磁贴（每个保存的账号）共用。
- * `/backend-api/codex/usage` 只需 OAuth access token + chatgpt-account-id，不需要 Admin Key；
- * 数字是百分比（used_percent），解析口径在 shared/account-quota.ts。
- * 此查询目前使用 codex_cli_rs 的 originator/UA，与 OAuth 登录的 pi 标识不同；
- * 保留现有请求头，不把它视为已核实的服务方契约，也不影响账号切换策略。
- */
 export async function fetchCodexUsage(accessToken: string, accountId: string): Promise<{ plan?: string; windows: QuotaWindow[]; limited: boolean }> {
   const r = await http('https://chatgpt.com/backend-api/codex/usage', {
     headers: {

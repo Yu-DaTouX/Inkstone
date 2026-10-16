@@ -1,18 +1,3 @@
-/**
- * 回合分组 / 段落拆分 / 缓存命中率 的纯逻辑测试。
- *
- * 为什么单独一个文件：test-unit.mjs 已经很长（会话解析那一套），
- * 而这里的被测对象是**纯函数**，输入的构造方式完全不同。
- *
- * 为什么需要它们（都是实测出来的问题）：
- *   · 一个真实会话里出现**最长 34 条连续 assistant 消息** ——
- *     界面上就是 34 个「砚」块，读起来全是碎片，而它们是同一轮回答
- *   · 段落拆分如果不管代码围栏，会把一个 ``` 块切成两半，
- *     前半段丢掉语言标记 → 语法高亮直接废掉
- *   · 命中率的分母是 input + cacheRead + cacheWrite（pi 的 input 是**未命中**那部分），
- *     只看 input 会算出 >100%，漏掉 cacheWrite 则长会话会虚高到 ≈100%
- */
-
 export async function runTurnTests(ok) {
   const { groupIntoTurns, createTurnProjector, splitParagraphs, cacheHitRate, formatHitRate, turnUsage, turnUsageOf, addUsage, hasUsageNumbers, toolWaitSpans, waitSpansMs, currentTurnMessages } =
     await import('../out/test/turns.mjs')
@@ -31,10 +16,6 @@ export async function runTurnTests(ok) {
     ok(JSON.stringify(project(rows)) === JSON.stringify(groupIntoTurns(rows)), '流式结束使当前回合转为完成状态')
     const editedHistory = [history[0], { ...history[1], text: 'Edited history' }, question, current]
     ok(JSON.stringify(project(editedHistory)) === JSON.stringify(groupIntoTurns(editedHistory)), '历史编辑使对应缓存失效')
-    /*
-     * 隐藏宿主通知（子代理结果）：不画成用户气泡，但它是**后续助手运行段**
-     * 的计时分界 —— 通知前已结束的段必须冻结 id / elapsedMs / usage。
-     */
     const noticeBefore = {
       id: 'notice-a',
       role: 'assistant',
@@ -71,8 +52,6 @@ export async function runTurnTests(ok) {
     ok(project([]).length === 0 && JSON.stringify(project(history)) === JSON.stringify(groupIntoTurns(history)), '切换空会话及返回历史不会混入旧投影')
   }
 
-  /* ---------------------------------------------------------------- 构造 */
-
   const asst = (id, text, extra = {}) => ({ id, role: 'assistant', text, ...extra })
   const usr = (id, text) => ({ id, role: 'user', text })
   const tool = (id, name, status = 'ok') => ({ id, name, args: {}, status })
@@ -89,10 +68,6 @@ export async function runTurnTests(ok) {
     const turns = groupIntoTurns(messages)
     ok(turns.length === 3 && turns[0].kind === 'user', '宿主通知不生成用户气泡（不新增用户轮）', `实际 ${turns.length} 轮`)
     ok(turns[1]?.kind === 'assistant' && turns[1].id === 'a1' && turns[2]?.kind === 'assistant' && turns[2].id === 'a2', '宿主通知把助手拆成两个独立段')
-    /*
-     * 用户报的 bug：通知返回时，此前已结束的段被后续 run 的 elapsedMs / usage
-     * 覆盖。修复后通知先 flush，两段各自冻结且后段不复用旧用量。
-     */
     ok(
       turns[1]?.elapsedMs === 1200 && turns[1]?.usage?.totalTokens === 15 && JSON.stringify(turns[1]?.sourceIds) === JSON.stringify(['a1']),
       '通知前已结束段 id/elapsed/usage 冻结',
@@ -107,11 +82,8 @@ export async function runTurnTests(ok) {
     ok(currentTurnMessages(messages).some(m => m.id === 'a1'), '宿主通知不重置本轮用量范围')
   }
 
-  /* ------------------------------------------------ 11. 回合分组（合并） */
-
   console.log('\n--- 11. 回合分组（消息合并）---')
 
-  // 11.1 一个带工具的回合 → 只出一块
   {
     const t = groupIntoTurns([
       usr('u1', '帮我改标题'),
@@ -129,7 +101,6 @@ export async function runTurnTests(ok) {
     ok(a.responseDetail === 'detailed', '回合保留第一条 assistant 的实际回复档位')
   }
 
-  // 11.2 实测痛点：34 条连续 assistant → 1 块（旧实现是 34 个「砚」）
   {
     const msgs = [usr('u1', 'x')]
     for (let i = 0; i < 34; i++) {
@@ -141,7 +112,6 @@ export async function runTurnTests(ok) {
     ok(t[1].commentary.length === 33, '33 段解说 + 1 段回答', `实际 ${t[1].commentary.length}`)
   }
 
-  // 11.3 无工具的纯回答
   {
     const t = groupIntoTurns([usr('u1', '你好'), asst('a1', '你好，我是砚')])
     ok(t.length === 2 && t[1].tools.length === 0, '纯回答回合：无工具')
@@ -150,7 +120,6 @@ export async function runTurnTests(ok) {
     ok(t[1].responseDetail === 'unknown', '没有元数据的旧消息显示为未知档位')
   }
 
-  // 11.4 末尾停在工具上（没有最终文字）→ 提升最后一条解说
   {
     const t = groupIntoTurns([
       usr('u1', 'x'),
@@ -161,7 +130,6 @@ export async function runTurnTests(ok) {
     ok(a.commentary.length === 0, '提升后解说为空（不重复显示）')
   }
 
-  // 11.5 bash 直执行是独立一块
   {
     const t = groupIntoTurns([
       usr('u1', 'x'),
@@ -177,7 +145,6 @@ export async function runTurnTests(ok) {
     ok(t[2].kind === 'bash', '第三块是 bash')
   }
 
-  // 11.6 思考合并 + 耗时累加
   {
     const t = groupIntoTurns([
       usr('u1', 'x'),
@@ -190,7 +157,6 @@ export async function runTurnTests(ok) {
     ok(a.thinkingMs === 3000, '思考耗时累加', `实际 ${a.thinkingMs}`)
   }
 
-  // 11.7 错误不丢
   {
     const t = groupIntoTurns([
       usr('u1', 'x'),
@@ -200,7 +166,6 @@ export async function runTurnTests(ok) {
     ok(t[1].error === 'API 超时', '来回多次后错误仍然保留')
   }
 
-  // 11.8 流式标记
   {
     const t = groupIntoTurns([usr('u1', 'x'), asst('a1', '在写'), asst('a2', '接着写')], 'a2')
     ok(t[1].streaming === true, '正在流式的那条消息让回合标记为 streaming')
@@ -208,23 +173,11 @@ export async function runTurnTests(ok) {
     ok(t2[1].streaming === false, '没有流式 id 时不是 streaming')
   }
 
-  // 11.9 空输入
   {
     const t = groupIntoTurns([])
     ok(Array.isArray(t) && t.length === 0, '空消息数组 → 空回合数组（不抛）')
   }
 
-  /*
-   * 11.10 真实形态（实测的一条回合，17 条 assistant 消息）
-   *
-   * ```
-   *   msg 0      文字22字 + tools[bash,recall]   ← 领起句：「我先看看环境」
-   *   msg 1..15  无文字  + tools[bash,bash]×15   ← 干活
-   *   msg 16     文字1615字 + tools[]            ← 结论
-   * ```
-   * 期望：领起句 → 解说；1615 字的结论 → 回复。
-   * 旧实现也是这个结果（它是最后一条文字），所以这条是回归保护。
-   */
   {
     const msgs = [usr('u1', '帮我查 MCP')]
     msgs.push(asst('a0', '早上好！让我先看看你环境里的 MCP 配置。', { toolCalls: [tool('t0a', 'bash'), tool('t0b', 'recall')] }))
@@ -245,15 +198,6 @@ export async function runTurnTests(ok) {
     )
   }
 
-  /*
-   * 11.11 回复**跨多条消息**（用户报的顺序/归类问题的根因）
-   *
-   * 实测真实会话里，最后一次工具之后的文字会被拆成两条无工具消息：
-   *   a1: 1600 字的正文
-   *   a2: 「说一声就走。」
-   * 旧实现只把最后一条当回复 → 1600 字正文全进了解说，
-   * 界面上「回复」只剩一句「说一声就走。」（用户看到的就是这个）。
-   */
   {
     const t = groupIntoTurns([
       usr('u1', 'x'),
@@ -270,11 +214,6 @@ export async function runTurnTests(ok) {
     ok(!!a.response?.text.includes('说一声就走。'), '后续的无工具消息也并入回复')
   }
 
-  /*
-   * 11.12 回复**夹在工作中间**（工具 → 说话 → 工具）
-   *
-   * 这种文字是「两个阶段之间的过渡」，不该当结论。
-   */
   {
     const t = groupIntoTurns([
       usr('u1', 'x'),
@@ -287,7 +226,6 @@ export async function runTurnTests(ok) {
     ok(a.response?.text.startsWith('改完了'), '最后阶段之后的才是回复')
   }
 
-  // 11.13 宿主生图进度挂在助手回合上，阶段更新按 id 替换而不是堆重复条目
   {
     const t = groupIntoTurns([
       usr('u1', '生成一张图'),
@@ -303,8 +241,6 @@ export async function runTurnTests(ok) {
     ok(a.imageProgress[0]?.stage === 'done', '生图进度保留最新终态')
   }
 
-  /* ---------------------------------------------------- 12. 段落拆分 */
-
   console.log('\n--- 12. 段落拆分（按段落显示）---')
   {
     ok(splitParagraphs('一段').length === 1, '单段 → 1')
@@ -319,13 +255,10 @@ export async function runTurnTests(ok) {
 
     ok(splitParagraphs('   \n  \n ').length === 0, '全空白 → 0 段')
 
-    // 未闭合的围栏（流式中途）—— 不能因此把后面的都吞掉
     const open = '看这个：\n\n```ts\nconst a = 1'
     const op = splitParagraphs(open)
     ok(op.length === 2, '未闭合的围栏也能切出前面的段落', `实际 ${op.length}`)
   }
-
-  /* ------------------------------------------------- 13. 缓存命中率 */
 
   console.log('\n--- 13. 缓存命中率 ---')
   {
@@ -361,14 +294,11 @@ export async function runTurnTests(ok) {
     ok(formatHitRate(99.995) === '99.99%', '99.995% 同样截断，不显示 ≈ 也不显示 100%')
   }
 
-  /* ------------------------------------------- 14. 整轮用量聚合（H-6b） */
-
   console.log('\n--- 14. 整轮用量聚合（H-6b） ---')
   {
     const msg = (over = {}) =>
       ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, ...over })
 
-    /* 多轮工具调用：每条助手消息的 usage 是该次请求的**独立用量** → 相加 */
     const t = groupIntoTurns([
       usr('u1', 'x'),
       asst('a1', '中间', { toolCalls: [tool('t1', 'read')], usage: msg({ input: 10, output: 1, totalTokens: 11 }) }),
@@ -381,7 +311,6 @@ export async function runTurnTests(ok) {
     ok(Math.abs((u?.cost ?? 0) - 0.02) < 1e-9, 'cost 相加')
     ok(t[1].usagePartial === undefined, '两条都报了用量 → 不标 partial')
 
-    /* 有请求没报用量 → 聚合只是下限，界面标 ≥ */
     const t2 = groupIntoTurns([
       usr('u1', 'x'),
       asst('a1', '中间', { toolCalls: [tool('t1', 'read')] }),
@@ -390,12 +319,10 @@ export async function runTurnTests(ok) {
     ok(t2[1].usage?.output === 5, '没有用量的那条不参与相加', `实际 ${t2[1].usage?.output}`)
     ok(t2[1].usagePartial === true, '有请求没报用量 → 标 partial（界面显示 ≥）')
 
-    /* 一条都没报 → 是「未知」而不是「部分」 */
     const t3 = groupIntoTurns([usr('u1', 'x'), asst('a1', '答完')])
     ok(t3[1].usage === undefined, '一条都没报 → 无用量')
     ok(t3[1].usagePartial === undefined, '一条都没报不算 partial（未知 ≠ 部分）')
 
-    /* 纯函数自身 */
     ok(addUsage(undefined, undefined) === undefined, 'addUsage 两端都空 → undefined')
     ok(addUsage(undefined, msg({ output: 3 }))?.output === 3, 'addUsage 缺一端 → 原样返回另一端')
     ok(hasUsageNumbers(undefined) === false, '缺失不算有用量')
@@ -403,8 +330,6 @@ export async function runTurnTests(ok) {
     ok(hasUsageNumbers(msg({ cacheWrite: 1 })) === true, '只有 cacheWrite 也算有用量')
     ok(turnUsageOf([usr('u1', 'x'), asst('a1', '答', { usage: msg({ output: 7 }) })]).usage?.output === 7, 'turnUsageOf 直接从消息算聚合')
   }
-
-  /* --------------------------------------- 14.5 工具等待分段（H-6b） */
 
   console.log('\n--- 14.5 工具等待分段（H-6b） ---')
   {
@@ -434,13 +359,10 @@ export async function runTurnTests(ok) {
     ok(noWait[1].waitMs === undefined && noWait[1].waitSpans === undefined, '没有工具调用就不写等待字段')
   }
 
-  /* ----------------------------------------- 15. currentTurnMessages */
-
   console.log('\n--- 15. 当前回合范围（用量条只认本轮）---')
   {
     const msg = { input: 10, output: 50, cacheRead: 900, cacheWrite: 0, totalTokens: 960, cost: 0 }
 
-    // 15.1 只包含最后一个 user 分界之后的消息
     {
       const scope = currentTurnMessages([
         usr('u1', '第一轮'),
@@ -453,7 +375,6 @@ export async function runTurnTests(ok) {
       ok(!scope.some((m) => m.speed), '也取不到上一轮的速度（不会被标成实时）')
     }
 
-    // 15.2 刚发用户消息、还没有回复 → 空范围（而不是退回旧轮）
     {
       const scope = currentTurnMessages([
         usr('u1', '第一轮'),
@@ -463,7 +384,6 @@ export async function runTurnTests(ok) {
       ok(scope.length === 0, '新一轮还没回消息时范围为空', `实际 ${scope.length}`)
     }
 
-    // 15.3 bash 回合也是分界（与 groupIntoTurns 的回合定义一致）
     {
       const scope = currentTurnMessages([
         usr('u1', '第一轮'),
@@ -474,14 +394,12 @@ export async function runTurnTests(ok) {
       ok(scope.length === 1 && scope[0].id === 'a2', 'bash 消息同样开启新回合', scope.map((m) => m.id).join(','))
     }
 
-    // 15.4 一条分界消息都没有（会话文件片段）→ 退回全部，不把信息藏掉
     {
       const all = [asst('a1', '片段一'), asst('a2', '片段二')]
       const scope = currentTurnMessages(all)
       ok(scope.length === 2, '没有分界消息时返回全部消息', `实际 ${scope.length}`)
     }
 
-    // 15.5 同一轮内多条 assistant（工具往返）都算本轮
     {
       const scope = currentTurnMessages([
         usr('u1', '干活'),
@@ -492,15 +410,8 @@ export async function runTurnTests(ok) {
       ok(scope[scope.length - 1].speed === 55, '范围里能拿到本轮最新的速度')
     }
 
-    /*
-     * ------------------------------------------- 16. 工作段与推理位置
-     *
-     * 用户 2026-09-23 的要求：自主线跑时，**后一段的推理要显示在上一段正文之后**，
-     * 而不是全部写回整轮靠前的旧推理块（R1）。
-     */
     console.log('\n--- 16. 工作段（推理跟随正文位置）---')
 
-    // 16.1 推理1 → 正文A → 推理2 → 工具 → 正文B
     {
       const t = groupIntoTurns([
         usr('u1', '接着干'),
@@ -520,12 +431,7 @@ export async function runTurnTests(ok) {
         a.segments.every((s, i) => (i === 0 ? true : s.id !== a.segments[i - 1].id)),
         '每段 id 互不相同（DOM 可以用它做 stable key）'
       )
-      /* 整轮聚合字段仍然对（页脚 / 用量不因分段而变） */
       ok(a.tools.length === 2 && a.thinking.includes('第二段推理'), '整轮聚合仍包含全部工具与推理')
-      /*
-       * 整轮 response 是**拼接口径**（正文A + 正文B）—— 这正是界面不能继续用它渲染的原因：
-       * 多段时必须按 segments 逐段渲染，否则正文 A 会被拼到第 2 段推理后面。
-       */
       ok(
         a.response?.text.includes('正文A') && a.response?.text.includes('正文B'),
         '整轮回复仍是拼接口径（界面多段时不用它）'
@@ -533,7 +439,6 @@ export async function runTurnTests(ok) {
       ok(a.segments.filter((s) => s.response).length === 2, '两段正文 → 界面切到分段渲染路径')
     }
 
-    // 16.2 普通回合（解说 + 回复）：只有一段正文 → 界面保持旧渲染路径
     {
       const t = groupIntoTurns([
         usr('u1', '改个标题'),
@@ -547,7 +452,6 @@ export async function runTurnTests(ok) {
       ok(a.segments[0].commentary.length === a.commentary.length, '段内解说与整轮解说一致')
     }
 
-    // 16.3 段落拆分不改文案：正文 A 不因分段被改字或括起
     {
       const t = groupIntoTurns([usr('u1', 'x'), asst('a1', '正文A'), asst('a2', '正文B')])
       const a = t[1]
@@ -558,7 +462,6 @@ export async function runTurnTests(ok) {
       )
     }
 
-    // 16.4 会话链里的回复来源不同，分段字段必须保留各自 cwd。
     {
       const cwdA = 'C:\\worktrees\\history-a'
       const cwdB = 'C:\\worktrees\\history-b'

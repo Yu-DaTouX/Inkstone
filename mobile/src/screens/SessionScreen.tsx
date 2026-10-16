@@ -47,12 +47,6 @@ function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
   return entries
 }
 
-/**
- * 一个会话：历史、这个会话里等你回答的问题、发送文字、中止运行。
- *
- * 发送带幂等键：弱网下点两次或自动重试，电脑只收到一次。
- * 历史只读电脑上的持久记录（不在手机上拼流式片段），事件到达时重新拉取。
- */
 export function SessionScreen({
   sessionId,
   title,
@@ -124,7 +118,6 @@ export function SessionScreen({
   const runner = runners.find((entry) => entry.sessionId === sessionId)
   const pending = questions.filter((question) => question.sessionId === sessionId)
   const timeline = useMemo(() => makeTimeline(messages), [messages])
-  /* 运行信号只留一个：最后一段是过程时由它的活动行旋转，否则才由输入区上方的一行承担 */
   const runInList = !!runner?.running && timeline.at(-1)?.kind === 'tools'
   const snapBottom = (animated = false) => {
     if (alive.current && followBottom.current && listSize.current.viewport > 0) listRef.current?.scrollToOffset({ offset: Math.max(0, listSize.current.content - listSize.current.viewport), animated })
@@ -422,10 +415,6 @@ const styles = StyleSheet.create({
   artifact: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[2], gap: 2, maxWidth: '92%' },
   pending: { marginTop: space[4] },
   composer: { paddingHorizontal: space[4], paddingTop: space[2], paddingBottom: space[2], gap: space[2] },
-  /*
-   * `minWidth: 0` 不能省：Android 的 TextInput 在 row 里会按内容报一个很大的最小宽度，
-   * 缺少它时输入框不随屏幕／键盘缩窄（与本文件其它 row 容器同一处理）。
-   */
   inputFrame: { flexDirection: 'row', minWidth: 0, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], gap: space[2] },
   input: { flex: 1, minWidth: 0, minHeight: touch.min, maxHeight: 160, paddingVertical: space[3], fontSize: font.body, textAlignVertical: 'top' },
   composerActions: { flexDirection: 'row', gap: space[2], alignItems: 'center' },

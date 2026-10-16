@@ -1,18 +1,3 @@
-/**
- * 手机端 v3 令牌映射的纯检查（WP-60，03 §6.7）。
- *
- * 不启动 React Native、不构建应用、不连网络：用 esbuild 现场把
- * `mobile/src/theme-v3.ts` 与生成的 `mobile/src/theme.v3.generated.ts` 编译成内存 ESM，再断言：
- *   1. 开关 `THEME_V3_ENABLED` 默认 false（手机端当前外观不变）；
- *   2. 深浅两套都覆盖 `Palette` 接口声明的全部键（含可选键），无缺键、无空值；
- *   3. 每个键的取值都与生成令牌一一对应（防止映射随手改）；
- *   4. 正文 / 次要 / 元信息 / 主按钮文字 / 状态文字 / 链接色在 v3 下仍满足 WCAG 4.5:1。
- *
- * 对比度公式与 scripts/design/check-v3-contrast.mjs 相同；那个脚本是 CLI、顶层会 process.exit，
- * 不能直接 import，所以这里用等价的小实现。
- *
- * 用法：node scripts/test-mobile-theme-v3.mjs
- */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -30,12 +15,10 @@ async function loadTs(entry) {
 const v3 = await loadTs(themeV3Path)
 const gen = await loadTs(generatedPath)
 
-/* ---------- 1. 默认开关：不改变手机端当前外观 ---------- */
 assert.equal(v3.THEME_V3_ENABLED, false, 'THEME_V3_ENABLED 必须默认 false，手机端保持旧色板')
 assert.equal(v3.v3Palette('light'), v3.v3PaletteLight, "v3Palette('light') 应返回浅色 v3 色板")
 assert.equal(v3.v3Palette('dark'), v3.v3PaletteDark, "v3Palette('dark') 应返回深色 v3 色板")
 
-/* ---------- 2. 从 theme.ts 读出 Palette 契约，检查映射无缺键 ---------- */
 const themeTs = readFileSync(themeTsPath, 'utf8')
 const paletteBody = /export interface Palette \{([\s\S]*?)\}/.exec(themeTs)
 assert.ok(paletteBody, 'theme.ts 里找不到 Palette 接口')
@@ -53,7 +36,6 @@ for (const [name, palette] of [
   }
 }
 
-/* ---------- 3. 取值逐一对应生成令牌 ---------- */
 const mapping = (c) => ({
   bg0: c.bg,
   bg1: c.side,
@@ -91,7 +73,6 @@ for (const [name, palette, tokens] of [
   assert.deepEqual(extra, [], `${name} 出现映射表以外的键：${extra.join(', ')}`)
 }
 
-/* ---------- 4. 对比度（WCAG 2.2 相对亮度） ---------- */
 function parseColor(input) {
   const s = String(input).trim()
   let m = /^#([0-9a-f]{6})$/i.exec(s)

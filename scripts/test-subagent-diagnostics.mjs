@@ -1,18 +1,3 @@
-/**
- * 子代理启动 / 退出诊断的定向回归（原生产类，不 spawn 真 pi、不花额度）。
- *
- * 覆盖：
- *   · 有界脱敏 stderr 尾部 + 退出码进入早退原因，而不是被压成「启动期间已停止」；
- *   · 启动失败（ENOENT）走 spawn-error，且 exit / spawn-error 重复只收口一次；
- *   · 人工停止与双 exit 不改写 cancelled 终态；
- *   · stderr 末尾没有换行、退出/close 时序下不丢尾行（真实 PiRpc + 假子进程）。
- *
- * 这里验证的是 src/main/subagents.ts 与 src/main/protocol.ts 的真实实现，
- * 不是复制一套测试内部逻辑。
- *
- * ER10 主区移植说明：临时转译产物只写 .tmp/v3-ui/ER10-port/build/（不进 out/）；
- * 场景 6 的运行时形状用主区支持的 { kind:'node', executable, cli }（不存在路径）触发 ENOENT。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -47,7 +32,6 @@ const { PiRpc } = await import(`../${BUILD_DIR}/protocol-diagnostics.mjs`)
 
 const fakePrepare = async (rootCwd, id, isolation) => ({ isolation, rootCwd, cwd: rootCwd })
 
-/** 假 pi 客户端：可注入 spawn 后的“真实”早退行为。 */
 function makeRpcFactory(options = {}) {
   const created = []
   const createRpc = () => {
@@ -89,7 +73,6 @@ const ok = (condition, label) => {
   checks += 1
 }
 
-/* 1. stderr 尾部 + 退出码 → 早退返回真实原因，且脱敏/截断。 */
 {
   const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-diag-'))
   const factory = makeRpcFactory({
@@ -120,7 +103,6 @@ const ok = (condition, label) => {
   }
 }
 
-/* 2. 启动失败（ENOENT）+ 重复 exit / spawn-error 只收口一次。 */
 {
   const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-diag-'))
   const factory = makeRpcFactory({
@@ -151,7 +133,6 @@ const ok = (condition, label) => {
   }
 }
 
-/* 3. 人工停止 + 双 exit：保持 cancelled，且只通知一次。 */
 {
   const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-diag-'))
   const factory = makeRpcFactory({ ready: true })
@@ -179,7 +160,6 @@ const ok = (condition, label) => {
   }
 }
 
-/* 4. 纯函数：脱敏、截断、空行。 */
 {
   const key = sanitizeStderrLine('provider key sk-abcdef1234567890 here')
   ok(key.includes('[redacted]') && !key.includes('abcdef1234567890'), 'sk- 形状替换', key)
@@ -196,7 +176,6 @@ const ok = (condition, label) => {
   ok(/无法启动 pi/.test(spawn) && !/code=/.test(spawn), 'spawn 错误优先且不重复退出码', spawn)
 }
 
-/* 5. 真实 PiRpc + 假子进程：末尾无换行的 stderr 与退出码都不丢。 */
 {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-protocol-diag-'))
   const childPath = join(dir, 'fake-pi.mjs')
@@ -217,8 +196,6 @@ const ok = (condition, label) => {
   }
 }
 
-/* 6. 真实 PiRpc + 不存在的可执行文件：spawn-error 先于 exit 且只收口一次。
- *    （主区 runtime 形状：node + 不存在的 executable，同样触发 spawn ENOENT。） */
 {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-protocol-diag-'))
   try {
@@ -237,7 +214,6 @@ const ok = (condition, label) => {
   }
 }
 
-/* 7. 本地统一脱敏：JSON 字段（单/双引号）、HTTP 头、Basic/Bearer、URL 与查询参数。 */
 {
   const jsonDouble = sanitizeStderrLine('{"api_key":"dummy-local-credential"}')
   ok(jsonDouble.includes('[redacted]') && !jsonDouble.includes('dummy-local-credential'), 'JSON 双引号字段脱敏', jsonDouble)
@@ -261,7 +237,6 @@ const ok = (condition, label) => {
   ok(!spawnRedacted.includes('dummy-local-credential') && /无法启动 pi/.test(spawnRedacted), '拒绝启动原因也走本地统一脱敏', spawnRedacted)
 }
 
-/* 8. 启动错误存前脱敏：快照与历史文件都不含原始凭证。 */
 {
   const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-diag-'))
   const secret = 'dummy-local-credential'
@@ -296,7 +271,6 @@ const ok = (condition, label) => {
   }
 }
 
-/* 9. 真实 PiRpc：超长无换行 stderr 有界并明确标注截断。 */
 {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-protocol-long-'))
   const childPath = join(dir, 'fake-long-stderr.mjs')
@@ -320,7 +294,6 @@ const ok = (condition, label) => {
   }
 }
 
-/* 10. 后代进程暂持 pipe：真实 exit 立即失活，有限宽限内收口，不等后代生命周期。 */
 {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-protocol-grandchild-'))
   const pidFile = join(dir, 'gc.pid')
@@ -365,16 +338,13 @@ const ok = (condition, label) => {
       try {
         process.kill(gcPid)
       } catch {
-        /* 后代已自行退出 */
       }
     }
-    // 后代还占着工作目录时 Windows 会 EBUSY：等它退出并重试删除。
     await sleep(200)
     await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 }
 
-/* 11. 真实 PiRpc：延迟到达的多段 stderr 拼成一行，收口在最后一条之后。 */
 {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-protocol-delayed-'))
   const childPath = join(dir, 'fake-delayed-stderr.mjs')

@@ -7,27 +7,6 @@ import { listSourceFiles, removeSourceFile } from '../../state/source-files'
 import type { SourceLinkView, SourceRefView } from '../../../../shared/ipc'
 import { sessionSourceStorageKey } from '../toolbar/workspace-control-guards'
 
-/**
- * 来源菜单（方案 §8 的 S1）。
- *
- * ── 三类来源，各自的存在方式不同（这一点决定了实现）──
- *
- * | 类 | 我们持有字节吗 | 所以 |
- * |---|---|---|
- * | 图片 | **持有**（存到数据目录，按会话隔离） | 可以显示缩略图、可以真的删掉副本 |
- * | 文件 | **不持有**（只登记路径与 size:mtime 指纹） | 只能告诉用户"还在不在"，**永不删原文件** |
- * | 网页 | 不持有（只有 URL 与标题） | 只负责打开 |
- *
- * ── 状态只有两态，这是有意的（方案 §8）──
- * 「已关联」= 登记在案；「已读取」需要 pi 真的读过它。方案的原话是
- * 「证据不足时不显示后一状态」—— 所以我们不显示「已读取」，也不显示
- * 「本轮已参与上下文」（那个由发送时的附件列表决定，属于另一处 UI）。
- * 宁可少显示一个状态，也不显示一个我们证明不了的状态。
- *
- * ── 移除外键语义 ──
- * 「移除」删的是**会话对这个来源的引用**：图片连副本一起删（那是我们存的），
- * 文件**只删登记**（原文件是用户的），网页只删登记。并且**不改写已发送的历史**。
- */
 export type SourceFilter = 'all' | 'image' | 'file' | 'web'
 
 const WEB_KEY = 'yan.source-links.v1'
@@ -98,19 +77,8 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
   const [bad, setBad] = useState(false)
   const [actionError, setActionError] = useState('')
   const [dir, setDir] = useState('')
-  /*
-   * 网页**搜索**入口（实施-07 S4）：只有在已发现兼容搜索能力时才出现。
-   *
-   * 为什么不在这里自己发搜索请求：方案明写「不要自造私有搜索后端」——
-   * 搜索能力由用户接入的 MCP 工具 / 技能提供，宿主只负责“发现 + 把它交给模型”。
-   * 所以这个入口做的事是**往输入区写一条草稿**，让用户确认后发送。
-   */
   const [webSearch, setWebSearch] = useState<{ available: boolean; title?: string; location?: string } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  /*
-   * 迟到的响应要丢掉：来源按会话隔离，切会话后上一轮的 list/verifyFiles 可能
-   * 才回来 —— 那会把 A 会话的来源画到 B 会话的面板上。
-   */
   const gate = useRef(0)
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -126,7 +94,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
     } catch {
       if (gate.current === mine) setImages([])
     }
-    /* 文件引用：登记在本地，由主进程复核「还在不在」。按会话过滤后才发过去 */
     const refs = listSourceFiles(current)
     try {
       const verified = await window.yan.sources.verifyFiles({ sessionId: current, entries: refs })
@@ -134,8 +101,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
     } catch {
       if (gate.current === mine) setFiles([])
     }
-    /* 网页：纯本地记录（登记 URL + 标题，不抓正文）。**搜索**是另一件事：
-       只有已发现兼容搜索能力时菜单里才出现那枚入口，见下方 `webSearch` */
     const links = loadSessionWeb(current)
     if (gate.current !== mine) return
     setWebs(
@@ -157,7 +122,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
     if (open) void refresh()
   }, [open, refresh])
 
-  /* 能力目录查询单独一次（它会真连 MCP 服务，不能跟着每次 refresh 跑） */
   useEffect(() => {
     if (!open) return
     let alive = true
@@ -166,7 +130,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
         const res = await window.yan.sources.webSearch()
         if (alive) setWebSearch(res ?? { available: false })
       } catch {
-        /* 查不到就当没有：入口是增益，不该因为能力服务抖动而报错 */
         if (alive) setWebSearch({ available: false })
       }
     })()
@@ -175,7 +138,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
     }
   }, [open])
 
-  /* 缩略图按需读：一次读一张，失败就留着占位（不静默消失） */
   useEffect(() => {
     if (!open) return
     let alive = true
@@ -187,7 +149,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
           if (!alive) return
           if (res.ok && res.base64) setThumbs((prev) => ({ ...prev, [img.sourceId]: `data:${res.mime ?? 'image/png'};base64,${res.base64}` }))
         } catch {
-          // Keep this image's placeholder and continue loading the rest.
         }
       }
     })()
@@ -203,11 +164,9 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
   const removeOne = async (item: SourceRefView): Promise<void> => {
     setActionError('')
     if (item.kind === 'image') {
-      /* 图片：连**我们存的副本**一起删 */
       const result = await window.yan.sources.removeImage({ sessionId, sourceId: item.sourceId })
       if (!result.ok) throw new Error(result.error || t('src.remove'))
     } else if (item.kind === 'file') {
-      /* 文件：只删**本会话**的登记 —— 原文件是用户的，这一层永远不碰 */
       removeSourceFile(sessionId, item.ref)
     } else {
       if (!saveJson(webKeyFor(sessionId), loadSessionWeb(sessionId).filter((x) => `web:${x.id}` !== item.sourceId))) {
@@ -259,7 +218,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
         <span className="env-sub">{counts.all > 0 ? String(counts.all) : ''}</span>
       </div>
 
-      {/* 筛选：三类 + 全部。三类都为空时不显示（省一行噪声） */}
       {counts.all > 0 ? (
         <div className="src-filters">
           {(['all', 'image', 'file', 'web'] as SourceFilter[]).map((f) => (
@@ -289,7 +247,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
                 thumbs[item.sourceId] ? (
                   <img className="src-thumb" src={thumbs[item.sourceId]} alt={item.title} data-testid="src-thumb" />
                 ) : (
-                  /* 还没读出来 / 读失败：留占位而不是留空白，用户知道这里有一张图 */
                   <span className="src-thumb src-thumb-empty" title={t('src.thumbPending')}>
                     <Icon name="image" size={14} />
                   </span>
@@ -304,7 +261,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
                 <span className="src-title" title={item.kind === 'file' ? item.ref : item.origin || item.title}>
                   {item.title}
                 </span>
-                {/* 状态只有「已关联」这一种能证明的；不可用要明说原因 */}
                 <span className="src-tags">
                   <span className="src-tag">{t('src.linked')}</span>
                   {item.kind === 'file' && !item.available ? (
@@ -315,7 +271,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
                 </span>
               </div>
 
-              {/* 关联：只显示“能证明的”—— 有落盘关联才出现定位入口 */}
               {(() => {
                 const mine = links.filter((l) => l.sourceId === item.sourceId)
                 if (mine.length === 0) return null
@@ -339,7 +294,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
                 title={item.kind === 'image' ? item.ref : item.ref}
                 onClick={() => {
                   if (item.kind === 'web') void window.yan.browser.open(item.ref).catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
-                  /* 图片/文件：不在菜单里"打开"—— 复制路径交给系统的文件管理器更稳 */
                   else void navigator.clipboard.writeText(item.ref).catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
                 }}
               >
@@ -353,18 +307,12 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
         </div>
       )}
 
-      {/* 副本目录只和图片有关：没有图片时不占行；路径一行省略，悬停看全 */}
       {dir && images.length > 0 ? (
         <div className="env-carry-hint src-dir" title={dir}>
           {t('src.stored', { dir })}
         </div>
       ) : null}
 
-      {/* 网页来源：粘贴图片与文件走附件流，网址只能手填 */}
-      {/*
-        搜索入口：**没发现兼容搜索能力时整块不渲染** —— 不做“点了才知道不行”的按钮。
-        它只写草稿（不替用户发言），因此也不需要任何网络权限。
-      */}
       {webSearch?.available && webSearch.title ? (
         <div className="env-link-add" data-testid="src-websearch">
           <input
@@ -384,10 +332,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
               const query = searchQuery.trim()
               if (!query) return
               const hint = webSearch.location ? `（能力入口：${webSearch.location}）` : ''
-              /*
-               * 用 `injectComposerText` 而不是 `setSessionDraft`：草稿只在切会话时
-               * 同步进输入框，外部写它对当前这一屏不可见（实测踩到过）。
-               */
               injectComposerText(
                 `请用「${webSearch.title}」搜索网页：${query}\n${hint}搜到的链接与标题请作为网页来源登记。`
               )
@@ -425,7 +369,6 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
       </div>
       {bad ? <div className="env-error">{t('src.badUrl')}</div> : null}
       {actionError ? <div className="env-error" role="alert" data-testid="src-action-error">{actionError}</div> : null}
-      {/* 边界（方案 §6.4 的硬要求）：只是关联，不宣称上传/同步/远程执行；说的是「移除」，有条目时才出现 */}
       {counts.all > 0 ? <div className="env-carry-hint">{t('src.note')}</div> : null}
     </div>
   )

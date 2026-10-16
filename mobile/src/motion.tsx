@@ -3,7 +3,6 @@ import { AccessibilityInfo, Animated, Easing, StyleSheet, Text, View } from 'rea
 import Svg, { Path } from 'react-native-svg'
 import { font, mono, usePalette } from './theme'
 
-/** 与桌面 --mo-fast / --mo-base / --mo-slow、--mo-ease 同值（设计规范 §6） */
 const duration = { fast: 110, base: 170, slow: 240 }
 const ease = Easing.bezier(0.22, 1, 0.36, 1)
 
@@ -25,14 +24,9 @@ export function ContentEnter({ children }: { children: ReactNode }) {
     value.setValue(reduced ? 1 : 0)
     Animated.timing(value, { toValue: 1, duration: reduced ? 1 : duration.base, easing: ease, useNativeDriver: true }).start()
   }, [reduced, value])
-  /* `minWidth: 0` 让宽屏／折叠屏双栏时右栏能被屏幕宽度压窄，而不是被内容撑开。 */
   return <Animated.View style={{ flex: 1, minWidth: 0, opacity: value, transform: [{ translateY: value.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }] }}>{children}</Animated.View>
 }
 
-/*
- * 方点阵：3×3 方点，亮点沿外圈走一格一步、带一格尾迹，0.8s 一圈（桌面 `.ui-spin` 的同一个节拍）。
- * 取代系统转圈，运行、读取、按钮忙碌都用它。减少动画时停在第一帧，仍然可见。
- */
 const RING = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]] as const
 
 export function Spinner({ size = 12, mute = false, color, label }: { size?: number; mute?: boolean; color?: string; label?: string }) {
@@ -59,10 +53,6 @@ export function Spinner({ size = 12, mute = false, color, label }: { size?: numb
   return <View accessibilityRole={label ? 'progressbar' : undefined} accessibilityLabel={label} importantForAccessibility={label ? 'yes' : 'no-hide-descendants'} style={{ width: size, height: size }}>{cells}</View>
 }
 
-/*
- * 字符旋转：⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏，80ms 一格，活动行的运行信号（桌面活动行同一组字符）。
- * 减少动画时停在静态 ●，仍然可见。
- */
 const BRAILLE = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 export function GlyphSpinner({ color }: { color?: string }) {
@@ -79,17 +69,11 @@ export function GlyphSpinner({ color }: { color?: string }) {
 
 const glyphStyle = StyleSheet.create({ glyph: { width: 14, textAlign: 'center', fontFamily: mono, fontSize: font.sm } })
 
-/** Static marker for secondary running items; the active screen owns the only Spinner. */
 export function RunDot({ color, label }: { color?: string; label?: string }) {
   const p = usePalette()
   return <View accessibilityLabel={label} style={{ width: 6, height: 6, backgroundColor: color ?? p.accent }} />
 }
 
-/*
- * 启动画面（设计规范 §3.4.1，与桌面同一画面）：石框从右上开口起笔描出，`>` 淡入，
- * 光标 `_` 呼吸直到 `ready`；就绪时若还没描完，等描完（至多半秒）再淡出再卸载。最长 2.5 秒无条件淡出（电脑不可达时不让界面一直卡在启动画面）。
- * 系统启动画面（Android 12+）用同一底色，交接处不闪。减少动画时直接显示静态标志。
- */
 const AnimatedPath = Animated.createAnimatedComponent(Path)
 const FRAME_LENGTH = 182
 
@@ -123,7 +107,6 @@ export function BootSplash({ ready, onDone }: { ready: boolean; onDone: () => vo
   }, [reduced, draw, prompt, cursor])
   useEffect(() => {
     if (!ready && !timedOut) return
-    /* 就绪比描画早时，最多再等半秒让标志描完再淡出，不切掉半截 */
     const wait = reduced || introDone.current || timedOut ? 0 : 500
     const id = setTimeout(() => Animated.timing(fade, { toValue: 0, duration: reduced ? 1 : duration.base, easing: Easing.bezier(0.4, 0, 1, 1), useNativeDriver: true }).start(() => onDone()), wait)
     return () => clearTimeout(id)

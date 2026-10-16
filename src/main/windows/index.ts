@@ -1,10 +1,3 @@
-/**
- * 辅助小窗模块入口（v3 WP-25d 快速提问 + WP-12 迷你小窗）。
- *
- * 主进程接线只 import 这里：`createAuxWindows(host)` 建立窗口与全局快捷键，
- * `registerAuxIpc(aux)` 注册 `yan:aux:*`。纯逻辑（几何 / 状态 / 注意力投影 /
- * 发送）单独导出，供 scripts/test-v3-aux-windows.mjs 在不启动 Electron 的情况下回归。
- */
 export { createAuxWindows } from './aux-controller'
 export type { AuxHost, AuxWindows } from './aux-controller'
 export { registerAuxIpc } from './aux-ipc'

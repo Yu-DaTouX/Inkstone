@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 检查点回退（WP-26）的现场回归。
- *
- * 目标（纯本地、不恢复任何用户文件、不装 Electron、不连 pi、不调模型）：
- *   · TurnView 只在「真实命中检查点 + 属于当前活动会话 + 可写回合」时画「回退代码」；
- *     命中别的会话、peek 失活（rewindOwner 为 null）、只读回放都不画。分叉入口照旧。
- *   · RewindDialogV3 用真实 `window.yan.checkpoints.preview/restore/undo`：预览 → 确认 →
- *     撤销的相位推进会走通；失败给出错误文案。
- *   · 会话切换 / 视图失活：对话框关闭并作废在途响应，绝不把旧记录应用到新活动会话。
- *
- * 做法：把真实 `TurnView.tsx` / `RewindDialogV3.tsx` 与真实 store 现场 esbuild 出来，
- * UI / i18n 子模块打桩，用最小 React 浅渲染替身 + 可控 deferred 的 mock IPC 驱动。
- *
- * 用法：node scripts/test-v3-rewind.mjs
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
@@ -22,8 +7,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 
@@ -41,8 +24,6 @@ function ok(cond, label, detail) {
   return pass
 }
 
-/* -------------------------------------------------------- 全局 / 定时桩 */
-
 function installGlobals() {
   const storage = new Map()
   globalThis.localStorage = {
@@ -57,7 +38,6 @@ function installGlobals() {
     try {
       fn(0)
     } catch {
-      /* 浅渲染里没有真实帧，忽略 */
     }
     return 0
   }
@@ -86,7 +66,6 @@ async function flush() {
   await new Promise((r) => setTimeout(r, 0))
 }
 
-/** 可控的 `window.yan`：只实现 checkpoints，其余 async 空实现。 */
 function makeYan() {
   const calls = { preview: [], restore: [], undo: [] }
   const pending = { preview: null, restore: null, undo: null }
@@ -128,8 +107,6 @@ function installWindow(yan) {
   }
 }
 
-/* ------------------------------------------------------------ React 替身 */
-
 const REACT_SHIM = `/* v3 回退回归的 React 浅渲染替身：状态放在 globalThis.__V3_HOOKS。 */
 const rt = () => globalThis.__V3_HOOKS
 export const Fragment = Symbol.for('v3.fragment')
@@ -163,7 +140,6 @@ const I18N_STUB = `export function useT(){ return (k) => String(k) }
 export function useI18n(){ return { t:(k)=>String(k) } }
 export function translate(_l,k){ return String(k) }`
 
-/** RewindDialogV3 依赖的 v3 原语：只透传子树 / 记录按钮 props。 */
 const UI_STUB_FOR_DIALOG = `export function ModalOverlay(props){ return props.children }
 export function Modal(props){ return props.children }
 export function Dialog(props){ return props.children }
@@ -173,8 +149,6 @@ Button.__stub='button'
 Button.__calls=[]
 export function IconButton(){ return null }
 export function Badge(){ return null }`
-
-/* ------------------------------------------------------------------ 构建 */
 
 function abs(rel) {
   return normalize(resolve(ROOT, rel))
@@ -283,8 +257,6 @@ export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'
   return { turnOut, rewindOut }
 }
 
-/* ------------------------------------------------------- 浅渲染 hook 运行时 */
-
 function makeHookRuntime() {
   const rt = {
     cells: [],
@@ -368,8 +340,6 @@ const buttonByTestId = (tree, id) => collect(tree, (el) => el.type?.__stub === '
 const buttons = (tree) => collect(tree, (el) => el.type?.__stub === 'button')
 const domButtons = (tree) => collect(tree, (el) => el.type === 'button')
 
-/* ------------------------------------------------------------------ fixture */
-
 const USER_TEXT = '把登录改成 PKCE'
 const USER_TS = 1_700_000_000_000
 
@@ -384,8 +354,6 @@ function checkpointRecord(over = {}) {
     ...over
   }
 }
-
-/* ------------------------------------------------------------------ 主流程 */
 
 async function main() {
   installGlobals()
@@ -407,8 +375,6 @@ async function main() {
 
   const rt = makeHookRuntime()
   globalThis.__V3_HOOKS = rt
-
-  /* ============================================== TurnView：回退入口条件 */
 
   const { TurnView, useStore: turnStore, createTurnProjector, textFingerprint } = turnBundle
   const project = createTurnProjector()
@@ -450,8 +416,6 @@ async function main() {
     ok(!rewindButton(renderTurn({ rewindOwner: 'sess-a' })), '记录属于别的会话（并排 owner 不符）：不画，不操作全局当前会话')
     ok(!!forkButton(renderTurn({ rewindOwner: 'sess-a' })), '即便如此，分叉入口不受影响')
   }
-
-  /* ========================================== RewindDialogV3：预览确认撤销 + 归属 */
 
   const { RewindDialogV3, useStore: rewindStore } = rewindBundle
   const renderDialog = (ownerKey, active) => rt.render(RewindDialogV3, { ownerKey, active })
@@ -506,7 +470,6 @@ async function main() {
 
   group('RewindDialogV3：会话切换 / 视图失活立即关闭，迟到响应不覆盖新记录')
   {
-    /* ① 打开 cp-1（预览未决）后切视图：关闭并清空 rewind */
     const previewCp1 = defer()
     pending.preview = previewCp1
     rewindStore.setState({ rewind: { recordId: 'cp-1', preview: USER_TEXT } })
@@ -515,7 +478,6 @@ async function main() {
     renderDialog('B', true)
     ok(rewindStore.getState().rewind === null, '视图键变化：关闭对话框、清空 rewind', rewindStore.getState().rewind)
 
-    /* ② 换成 cp-2 重新打开；旧 cp-1 的响应迟到也绝不能覆盖 */
     const previewCp2 = defer()
     pending.preview = previewCp2
     rewindStore.setState({ rewind: { recordId: 'cp-2', preview: USER_TEXT } })
@@ -535,7 +497,6 @@ async function main() {
     ok(paths.length === 1 && paths[0].props.children === 'new.ts', '显示的是新记录的文件，不是迟到的旧文件', paths.map((e) => e.props.children))
     pending.preview = null
 
-    /* ③ 视图失活（active=false）同样关闭 */
     rewindStore.setState({ rewind: { recordId: 'cp-3', preview: USER_TEXT } })
     pending.preview = defer()
     renderDialog('A', true)

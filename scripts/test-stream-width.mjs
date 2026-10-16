@@ -1,11 +1,3 @@
-/**
- * 对话宽度（streamWidth）的纯逻辑测试。
- *
- * `clampStreamWidth` 同时被主进程（落盘前校验）和渲染端（拖动/滑块）调用，
- * 是「设置文件被手改成脏值也不会把界面撑坏」的唯一防线 —— 值得钉住边界：
- *   · 0 / 负数 / 非数字 → 0（= 用设计默认值）
- *   · 下限、上限、取整
- */
 export async function runStreamWidthTests(ok) {
   const { clampStreamWidth, STREAM_MIN, STREAM_MAX } = await import('../out/test/ipc.mjs')
 

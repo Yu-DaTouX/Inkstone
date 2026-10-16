@@ -1,12 +1,3 @@
-/**
- * L3 / H-8a·b 视觉验收前置（浅色）：把 artifact 卡片与图片进度条摆到会话里。
- *
- * 这两个表面正是之前引用**未定义主题变量**（--text / --panel / --line / --muted）
- * 的地方 —— 它们在浅色下一度回退成固定浅字深底。矩阵里只有深色的
- * `artifact` / `imageprogress` 状态，浅色要用真实主进程截图补。
- *
- * 探针脚本约定：自求值 async IIFE，不能用反引号 / ${}。
- */
 ;(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
@@ -30,7 +21,6 @@
   }
   await sleep(500)
 
-  /* 仓库根：页面在 <root>/out/renderer/index.html */
   const root = decodeURIComponent(location.pathname).replace(/\/out\/renderer\/index\.html$/, '').replace(/^\//, '')
   const pngPath = root + '/build/icon.png'
   const now = Date.now()
@@ -75,7 +65,6 @@
   })
   await sleep(1400)
 
-  /* 让卡片进入视口，并悬停到下载按钮上（hover 态也在截图里） */
   const card = q('[data-testid="turn-artifacts"]')
   if (card) card.scrollIntoView({ block: 'center' })
   await sleep(400)

@@ -1,7 +1,3 @@
-/**
- * 单独运行 danger-guard 判定测试（不经过完整 test:unit）。
- * 用法： node scripts/test-danger-guard-run.mjs
- */
 import { build } from '../node_modules/esbuild/lib/main.js'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'

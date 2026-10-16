@@ -4,11 +4,6 @@ import type { StorageInfoView } from '../../../../shared/ipc'
 import { BackupSection } from './BackupSection'
 import { Button, SettingRow } from '../ui'
 
-/**
- * 数据位置：会话、凭证、语音模型、浏览器配置默认都在 C 盘用户目录。
- * 这里可以把整个数据目录搬到别的盘（下次启动时执行，见 main/storage-move.ts）；
- * 原位置留一个目录联接，旧会话记录与终端里的 pi 照常可用。
- */
 export function StorageSection() {
   const t = useT()
   const [info, setInfo] = useState<StorageInfoView | null>(null)

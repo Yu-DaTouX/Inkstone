@@ -1,17 +1,3 @@
-/**
- * 首次引导（N20）：第 2 栏「模型接入」的两个按钮布局。
- *
- * 用户反馈：首次打开软件的「开始之前」里，第 2 栏「模型接入」的
- * 「重新检测」和「去配置」两个按钮 UI 错位。
- *
- * 怎么进到引导层：**不重置 `yan.onboarded`**，改从
- * 设置 → 关于 → 「重新查看」打开（这也是本轮新增的入口，见 Settings.tsx
- * 的 onShowOnboarding）。这样探针既能在真实组件上量布局，
- * 又不会动用户正式使用的首次启动标记。
- *
- * 量的是**几何**而不是 CSS 文本：两个按钮是否在同一个右边界上对齐、
- * 是否与第 2 栏的文案重叠、是否溢出卡片、文字有没有被裁。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -50,7 +36,6 @@
     }
     await sleep(600)
 
-    /* 探针环境本来就不会自动弹引导；这里只是保证它不会挡住后面的操作 */
     localStorage.setItem('yan.onboarded', '1')
 
     store.getState().openSettings('about')
@@ -90,25 +75,20 @@
       out.push(`  诊断 btn: width=${csBtn.width} minWidth=${csBtn.minWidth} overflow=${csBtn.overflow} ws=${csBtn.whiteSpace} box=${csBtn.boxSizing} pad=${csBtn.padding} display=${csBtn.display}`)
     }
 
-    /* ---- 几何断言 ---- */
     if (boxes.length === 2 && boxAct) {
       const [b0, b1] = boxes
 
-      /* 1. v0.4：并排（同一行、顶边对齐、互不重叠）；窄到放不下时整颗换行 */
       const sameRow = Math.abs(b0.y - b1.y) <= 1
       ok(sameRow ? b1.x >= b0.right - 1 : b1.y >= b0.bottom - 1, `两个按钮互不重叠（${sameRow ? '并排' : '已换行'}）`)
       ok(Math.abs(b0.h - b1.h) <= 1, '两个按钮同高')
 
-      /* 2. 不溢出操作区/第 2 栏/卡片 */
       ok(boxes.every((b) => b.right <= boxAct.right + 1), '按钮不溢出操作区右边界')
       ok(!!boxRow && boxes.every((b) => b.right <= boxRow.right + 1), '按钮不溢出第 2 栏')
       ok(!!boxCard && boxes.every((b) => b.right <= boxCard.right + 1), '按钮不溢出引导卡片')
 
-      /* 3. 不与文案重叠（文案区右边界必须在按钮左边界之外） */
       ok(!!boxDesc && boxDesc.right <= Math.min(b0.x, b1.x) + 1, `说明文字不与按钮重叠（文案 right=${boxDesc?.right}，按钮 left=${Math.min(b0.x, b1.x)}）`)
       ok(!!title && box(title).right <= Math.min(b0.x, b1.x) + 1, '标题不与按钮重叠')
 
-      /* 4. 文字完整：不被裁、不换行成两行 */
       const clipped = btns.filter((b) => b.scrollWidth > b.clientWidth + 1)
       out.push('  文字溢出检查 scrollWidth/clientWidth = ' + btns.map((b) => `${b.scrollWidth}/${b.clientWidth}`).join('  '))
       ok(clipped.length === 0, '按钮文字没有被裁（scrollWidth ≤ clientWidth）')
@@ -116,11 +96,9 @@
       ok(tall.length === 0, `按钮没有被压成多行（最高 ${Math.max(...boxes.map((b) => b.h)).toFixed(1)}px）`)
       ok(boxes.every((b) => b.h >= 20), '按钮高度正常（≥ 20px，可点击）')
 
-      /* 5. 并排时顶边对齐（观感上「错位」的另一种来源） */
       if (sameRow) ok(Math.abs(b0.y - b1.y) <= 1, '并排的两个按钮顶边对齐')
     }
 
-    /* ---- 交互：重新检测 / 去配置往返 ---- */
     out.push('')
     out.push('=== 交互：重新检测 / 去配置往返 ===')
     const recheck = q('[data-testid="ob-recheck-auth"]')
@@ -139,7 +117,6 @@
       out.push('  选中 tab = ' + JSON.stringify((selTab?.textContent || '').trim()))
       ok(/接入|Access|模型|Model/i.test(selTab?.textContent || ''), '设置停在「模型接入」页')
 
-      /* 从配置页返回：关掉设置，引导层应该还在（它是下层模态，不能被顶掉） */
       const closeTab = [...document.querySelectorAll('.settings-tab')].find((x) => /关闭|Close/.test(x.textContent || ''))
       if (closeTab) click(closeTab)
       await sleep(500)
@@ -157,7 +134,6 @@
       }
     }
 
-    /* 关闭引导，别影响后面的场景 */
     const done = q('[data-testid="ob-done"]') ?? q('[data-testid="ob-close"]')
     if (done) click(done)
     await sleep(400)

@@ -1,10 +1,3 @@
-/*
- * H-6b：并发会话的回合计时归属（cost 0，本机 OpenAI 兼容 fixture）。
- *
- * A、B 使用不同 cwd。通过应用暴露的 selectSession / send IPC 让 A、B 两个
- * 主进程 runner 同时工作；fixture 对 B 故意等待更久，从读回时长识别计时归属。
- * peekSession 验消息挂点；Electron 退出后由 afterExit 验独立计时文件与消息 id。
- */
 ;(async () => {
   const out = []
   const ok = (condition, label) => {
@@ -60,7 +53,6 @@
     ok(available, `本机 fixture 模型已载入（${fixtureModel}）`)
     if (!available) return out.join('\n')
 
-    /* ---- A 启动后通过主进程 IPC 选中 B，必须新建并行 runner ---- */
     await state().switchSession(A.path)
     const selectedA = await waitFor(
       () => norm(state().session?.sessionFile) === norm(A.path) ? true : null,

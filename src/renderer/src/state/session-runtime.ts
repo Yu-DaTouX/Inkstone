@@ -1,10 +1,3 @@
-/**
- * 按会话保存后台运行时状态。
- *
- * 这层是渲染端的“事实缓存”，不是第二套 UI：App 仍然把活动会话投影到
- * store 顶层字段，后台会话则在这里持续接收增量。切回会话时，主进程仍会
- * 发权威 sync；因此缓存既能让后台状态不丢，也不会把旧快照当成最终真相。
- */
 import type {
   Attachment,
   ExtensionUiRequest,
@@ -39,23 +32,11 @@ export interface SessionRuntimeSnapshot {
   statuses: Record<string, string>
   widgets: Record<string, string[]>
   widgetPlacements: Record<string, 'aboveEditor' | 'belowEditor'>
-  /** 输入框草稿；图片二进制不进缓存，避免把大块数据挂在会话状态上。 */
   draft: string
-  /**
-   * 输入框草稿的附件（图片与 fileRef）。
-   *
-   * 与 `draft` 同一层：只存输入框里还没发出去的那一份，不随消息历史增长；
-   * 上限由 store 在写入时按 QUEUE_ATTACHMENT_LIMITS 裁剪，冷会话裁剪时也
-   * 只保留一小段。图片 base64 就挂在这，所以只保留草稿态、不复制到别处。
-   */
   draftAttachments: Attachment[]
-  /** 当前会话的工作模式（实施-05）。null = 还没收到主进程推送，按默认渲染。 */
   workMode: WorkModeState | null
-  /** 当前会话的活动档案（实施-25 P01）。null = 还没收到推送。 */
   agentProfile: AgentProfileState | null
-  /** 当前会话的目标 / 计划事实快照。 */
   goal: GoalState
-  /** 当前会话最近一次成功拉到的能力/命令快照。 */
   models: ModelInfo[]
   thinkingLevels: string[]
   commands: SlashCommand[]
@@ -65,7 +46,6 @@ export type SessionRuntimeMap = Record<string, SessionRuntimeSnapshot>
 let lastTouched = 0
 const touch = (): number => (lastTouched = Math.max(Date.now(), lastTouched + 1))
 
-/** sessionId 是主键；启动早期还没有 sessionId 时用 runId 临时占位。 */
 export function sessionRuntimeKey(runtime: RuntimeEnvelope): string {
   return runtime.sessionId || `run:${runtime.runId}`
 }
@@ -115,12 +95,6 @@ export type SessionRuntimeDataPatch = Partial<
   Pick<SessionRuntimeSnapshot, 'draft' | 'draftAttachments' | 'models' | 'thinkingLevels' | 'commands' | 'uiRequests'>
 >
 
-/**
- * 写入不由 MainPush 直接携带的会话数据（草稿、能力列表、命令列表）。
- *
- * 这些写入同样经过 generation 闸门：快速切换/复用运行实例时，迟到的
- * 旧请求不能把新会话的列表或草稿覆盖掉。返回新 map，不修改调用方对象。
- */
 export function updateSessionRuntime(
   map: SessionRuntimeMap,
   runtime: RuntimeEnvelope,
@@ -133,14 +107,6 @@ export function updateSessionRuntime(
   return { ...map, [key]: { ...base, ...patch, touchedAt: touch() } }
 }
 
-/**
- * 按**显式 key** 写会话草稿数据。
- *
- * 切走后的恢复、只读浏览（deferred）时，正在看的会话与活动运行实例不是同一条，
- * `updateSessionRuntime` 按 runtime 推 key 会落到错误的会话。此函数让调用方
- * 明确指定要写哪条会话（稳定 sessionId、`run:<runId>` 或薄路径键 `file:<path>`），
- * `seed` 只在缓存里还没有该 key 时用来建最小快照，不是运行实例声明。
- */
 export function updateSessionRuntimeAt(
   map: SessionRuntimeMap,
   key: string,
@@ -154,7 +120,6 @@ export function updateSessionRuntimeAt(
   return { ...map, [key]: { ...base, ...patch, touchedAt: touch() } }
 }
 
-/** 把临时键快照里尚不存在于稳定键的数据合并过去（稳定键为准）。 */
 function mergeMigratedRuntime(
   target: SessionRuntimeSnapshot | undefined,
   source: SessionRuntimeSnapshot,
@@ -175,12 +140,6 @@ function mergeMigratedRuntime(
   }
 }
 
-/**
- * 启动早期的 runtime 可能暂时只有 `run:${runId}` 这个 key；pi 首次 state
- * 到达后才会给出稳定 sessionId。把尚未投影的数据迁移过去，避免草稿/能力
- * 列表在 Composer 切换 key 的瞬间消失。旧 key 暂不删除，防止仍在飞行的
- * 早期事件失去落点；运行实例回收时再统一清理。
- */
 export function migrateSessionRuntime(
   map: SessionRuntimeMap,
   runtime: RuntimeEnvelope
@@ -188,21 +147,11 @@ export function migrateSessionRuntime(
   if (!runtime.sessionId) return map
   const targetKey = sessionRuntimeKey(runtime)
   let out = map
-  /*
-   * `run:<runId>` 是启动早期（还没有稳定 sessionId）的临时键；
-   * `pending:<runId>` 是 pi 已给临时 id、还没换成真实 uuid 的键。两者都应在
-   * 稳定 sessionId 到达时把草稿 / 能力列表迁过去。
-   */
   const sourceKeys = [`run:${runtime.runId}`, `pending:${runtime.runId}`]
   for (const sourceKey of sourceKeys) {
     if (sourceKey === targetKey) continue
     const source = out[sourceKey]
     if (!source) continue
-    /*
-     * pending 临时键要防「实例被复用到新会话」：同 runId 但代次不同时，
-     * 那是另一条会话的旧草稿，不能跟着迁到新 uuid（代次复用不认错）。
-     * `run:` 键保留原行为 —— 启动早期 run 键与首帧 state 的代次可能确实不同。
-     */
     if (
       sourceKey.startsWith('pending:') &&
       runtime.generation !== undefined &&
@@ -265,10 +214,6 @@ function patchTool(list: UIMessage[], msgId: string, call: UIToolCall, outputDel
   return out
 }
 
-/**
- * 把一条带身份的主进程事件归并到对应会话。
- * 旧代次只会返回原 map；这条规则是后台切换不串线的第二道闸门。
- */
 export function reduceSessionRuntime(
   map: SessionRuntimeMap,
   runtime: RuntimeEnvelope,
@@ -283,12 +228,6 @@ export function reduceSessionRuntime(
   let next = previous ? { ...previous, runtime } : emptyRuntime(runtime)
   switch (message.ch) {
     case 'sync': {
-      /*
-       * 后台会话也会收到 sync。与 store 顶层的处理一致：同一会话正在流式时，
-       * pi 的 get_messages 里还没有这条未完成的助手消息，不能让整份快照把
-       * 缓存里的流式尾部删掉（否则后续 msg-update 落在空处，切回去正文也没了）。
-       * 只有确认在流式的这一条被保护，其余独有历史以快照为准。
-       */
       const protectedTailId = previous?.session?.isStreaming ? previous.messages.at(-1)?.id : undefined
       next = { ...next, messages: mergeSyncHistory(message.payload, next.messages, protectedTailId) }
       break
@@ -359,12 +298,6 @@ export function reduceSessionRuntime(
       }
       break
     case 'ui-resolved': {
-      /*
-       * 手机端答复后同样要从实例缓存里移除。
-       *
-       * 只清顶层 `uiRequests` 会留下「复活」缺陷：下一次 `runners` / `state` 推送
-       * 会把缓存快照投影回顶层，电脑端就会重新显示这条已经回答过的问题。
-       */
       next = { ...next, uiRequests: next.uiRequests.filter((item) => item.id !== message.payload.id) }
       break
     }
@@ -389,7 +322,6 @@ export function reduceSessionRuntime(
       break
     }
     default:
-      /* 全局推送（包括子代理），或只影响标题/日志的事件，不写入会话缓存。 */
       break
   }
 
@@ -428,15 +360,6 @@ function historyBytes(messages: UIMessage[]): number {
 
 const normDraftPath = (p?: string): string => (p ?? '').replace(/\\/g, '/').toLowerCase()
 
-/**
- * path-only 草稿（`file:<path>` 薄键）在拿到稳定 sessionId 后迁移到稳定键。
- *
- * 只读浏览（deferred）期间草稿写在 `file:<path>` 上；随后 state/sync 给出真实
- * sessionId 时，如果还留在薄键，切走再切回按稳定键就取不到了。这里把**同一
- * sessionFile** 的薄键文字与完整附件合并进稳定键，再删掉薄键 —— 不能只复制，
- * 否则下一次 hydrate 会把已经删除 / 已经成功清空的附件从薄键"复活"。
- * 只按规范化路径匹配，不认识的路径不迁移；附件按 id 去重，保留既有顺序。
- */
 export function migratePathDraft(
   map: SessionRuntimeMap,
   sessionFile: string | undefined,
@@ -463,7 +386,6 @@ export function migratePathDraft(
   return out
 }
 
-/** Keep visible/running sessions intact; cold histories can always be read from pi's JSONL. */
 export function pruneSessionRuntimes(map: SessionRuntimeMap, protectedKeys: ReadonlySet<string>): SessionRuntimeMap {
   const cold = Object.entries(map).filter(([key, value]) => !protectedKeys.has(key) &&
     !value.session?.isAgentRunning && !value.session?.isStreaming && !value.session?.isCompacting &&
@@ -478,12 +400,10 @@ export function pruneSessionRuntimes(map: SessionRuntimeMap, protectedKeys: Read
     if (!(value.draft && value.messages.length === 0) && count < 16 && bytes + size <= 32 * 1024 * 1024) { count += 1; bytes += size; continue }
     if (out === map) out = { ...map }
     if (value.draft && draftCount < 16) {
-      // Keep a small number of the newest drafts without retaining their history.
       draftCount += 1
       out[key] = {
         ...emptyRuntime(value.runtime),
         draft: value.draft,
-        /* 草稿附件也留在冷缓存里，否则切走再切回就只剩文字。 */
         draftAttachments: (value.draftAttachments ?? []).slice(0, 20),
         touchedAt: value.touchedAt
       }
@@ -492,7 +412,6 @@ export function pruneSessionRuntimes(map: SessionRuntimeMap, protectedKeys: Read
   return out
 }
 
-/** 接续只替换运行身份，用户草稿和完整历史保留；新实例的空快照不能覆盖它们。 */
 export function rebindSessionRuntime(
   map: SessionRuntimeMap,
   sourceSessionId: string,

@@ -1,15 +1,3 @@
-/**
- * 主题空间的存储（实施-25 P02 / W2）。
- *
- * 一份文档 `YAN_DIR/spaces.json`：空间 + 「空间 ↔ 项目」的显式关联记录。
- *
- * 为什么不把 spaceId 写进 project：那样一个文件夹只能属于一个空间，而现实中
- * 「同一个 repo 既在『重构』空间也在『学习』空间」是常态。关联记录是多对多，
- * 而且删掉关联不等于删项目。
- *
- * ⚠️ 空间**只归档、不物理删除**：资料库（P03）的引用按 `identity + version`
- *    绑定，删掉空间会让这些引用变成孤儿。真正的「移除」语义在 P03 定义。
- */
 import { parsePersistedDocument } from './persisted-document'
 import { mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { writeFileDurable } from './write-file-durable'
@@ -63,7 +51,6 @@ function sanitizeLink(raw: unknown): SpaceProjectLink | null {
   }
 }
 
-/** 读盘容错：坏条目丢掉，不让一份坏文档拦住启动。 */
 export function sanitizeSpaceDocument(raw: unknown): SpaceDocument {
   const source = raw && typeof raw === 'object' ? (raw as Partial<SpaceDocument>) : {}
   const spaces: Space[] = []
@@ -93,12 +80,6 @@ export type SpaceMutationResult =
   | { ok: true; space: Space }
   | { ok: false; error: 'bad-input' | 'not-found' | 'too-many'; detail?: string }
 
-/**
- * 空间存储。
- *
- * 写操作串成一条队列（与 work-mode / session-layout 同一个做法）：
- * 读-改-写之间不能让第二个提交插进来。
- */
 export class SpaceStore {
   private readonly root: string
   private readonly now: () => number
@@ -130,7 +111,6 @@ export class SpaceStore {
     return this.loadPromise
   }
 
-  /** 全部空间（含归档），最近更新的在前。 */
   list(): Space[] {
     return [...this.doc.spaces].sort((a, b) => b.updatedAt - a.updatedAt)
   }
@@ -168,7 +148,6 @@ export class SpaceStore {
     })
   }
 
-  /** 改名 / 改描述 / 归档。归档是唯一的「移除」入口（不物理删除）。 */
   async update(id: string, patch: { name?: string; description?: string | null; archived?: boolean }): Promise<SpaceMutationResult> {
     return this.enqueue(async () => {
       await this.load()
@@ -209,7 +188,6 @@ export class SpaceStore {
     })
   }
 
-  /** 建立「空间 ↔ 项目」关联（幂等）。 */
   async linkProject(spaceId: string, projectId: string): Promise<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }> {
     return this.enqueue(async () => {
       await this.load()
@@ -227,7 +205,6 @@ export class SpaceStore {
     })
   }
 
-  /** 解除关联。不动项目本身，也不动空间里的资料。 */
   async unlinkProject(spaceId: string, projectId: string): Promise<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }> {
     return this.enqueue(async () => {
       await this.load()
@@ -246,12 +223,6 @@ export class SpaceStore {
     return run
   }
 
-  /**
-   * 落盘（原子替换）。接受**候选文档**而不是读 `this.doc`：调用方先构造新状态、
-   * 落盘成功后再提交到内存 —— 写盘失败时内存不能先变，否则失败的操作会在
-   * 下一次保存时“偷偷”生效（实际复现：目录占位让第一次 create 失败，内存里
-   * 却留着那条空间，移开障碍后第二次保存把它一并写了进去）。
-   */
   private async flush(candidate: SpaceDocument): Promise<void> {
     const target = spaceDocumentPath(this.root)
     await mkdir(dirname(target), { recursive: true })

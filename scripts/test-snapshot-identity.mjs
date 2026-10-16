@@ -1,15 +1,3 @@
-/**
- * 快照归属（F03）—— 专题回归（不需要真实 pi / 模型）。
- *
- * 从 `src/main/index.ts` 里抽取**当前**的 `pushFrom` / `pushRunnerSnapshot` 函数文本，
- * 配真实 `RunnerRegistry` + 受控的延迟磁盘 / getMessages 夹具，验证：
- *   · 采集期间实例被复用换会话 → 旧 payload 整帧丢弃，**不会**贴新 runtime 封套；
- *   · 采集期间同实例 `pending:<runId>` → 真实 uuid 迁移（同代次）→ 允许；
- *   · 两个不同真实 sessionId（同代次）→ 丢弃，不能认旧真实 SID 为新真实 SID；
- *   · 没有切换的正常路径照常推送（不误伤）。
- *
- * 不是用户窗口观测：host hooks 与异步读盘是受控夹具，但函数文本与注册表是真实的。
- */
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import vm from 'node:vm'
@@ -136,9 +124,6 @@ export async function runSnapshotIdentityTests(ok) {
     return { frames, registry, firstId: first.id }
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ① 采集期间复用换会话：旧 payload 整帧丢弃
-   * ────────────────────────────────────────────────────────────── */
   {
     const { frames, registry, firstId } = await runCase({
       switchDuring: (reg) => reg.select({ cwd: 'C:/fixture', sessionFile: 'C:/fixture/B.jsonl' })
@@ -148,9 +133,6 @@ export async function runSnapshotIdentityTests(ok) {
     ok(registry.runtimeOf(firstId)?.sessionId === 'session-B', '前置：实例确实复用到 B')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ② 链条历史读盘期间换会话：同样整帧丢弃
-   * ────────────────────────────────────────────────────────────── */
   {
     const { frames } = await runCase({
       noReadDelay: true,
@@ -162,9 +144,6 @@ export async function runSnapshotIdentityTests(ok) {
     ok(syncs.length === 0, 'chainHistory 读盘期间换会话也不贴新封套', JSON.stringify(syncs))
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ③ pending:<runId> → 真实 uuid（同代次）：允许
-   * ────────────────────────────────────────────────────────────── */
   {
     const { frames } = await runCase({
       sessionId: 'pending:r1',
@@ -174,9 +153,6 @@ export async function runSnapshotIdentityTests(ok) {
     ok(frames.some((f) => f.ch === 'sync'), 'pending→uuid 同代次迁移不拦 sync', JSON.stringify(frames.filter((f) => f.ch === 'sync')))
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ④ 两个不同真实 sessionId（同代次）：丢弃
-   * ────────────────────────────────────────────────────────────── */
   {
     const { frames } = await runCase({
       sessionId: 'session-A',
@@ -185,9 +161,6 @@ export async function runSnapshotIdentityTests(ok) {
     ok(frames.filter((f) => f.ch === 'sync').length === 0, '同代次两个真实 SID 不能当成同一身份（丢弃 sync）', JSON.stringify(frames.filter((f) => f.ch === 'sync')))
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ⑤ 正常路径（读盘期间不切换）：照常推送，不误伤
-   * ────────────────────────────────────────────────────────────── */
   {
     const { frames } = await runCase({ sessionId: 'session-A' })
     const syncs = frames.filter((f) => f.ch === 'sync')

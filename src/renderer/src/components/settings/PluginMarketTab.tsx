@@ -7,7 +7,6 @@ import type { MarketSearchResult } from '../../../../shared/plugin-market'
 
 const PAGE = 24
 
-/** Original links open in the system browser: the built-in browser sits under the settings modal. */
 function SourceLink({ url, label }: { url: string; label?: string }): React.JSX.Element {
   return <LinkButton url={url} label={label} onOpen={href => void window.yan.browser.openExternal(href)} />
 }
@@ -41,12 +40,13 @@ export function PluginMarketTab({ initial = 'inkstone' }: { initial?: 'inkstone'
     return () => { generation.current++; setLoading(false) }
   }, [page, applied, offset, refresh])
 
-  const download = async (id: string): Promise<void> => {
+  const download = async (id: string, action: 'export' | 'mcp'): Promise<void> => {
     setExporting(true)
     setNote('')
     try {
-      const result = await window.yan.packages.exportPlugin(id)
-      if (!result.cancelled) setNote(result.ok ? t('market.exported', { path: result.path ?? '' }) : result.error ?? t('pkg.failed'))
+      const result = action === 'mcp' ? await window.yan.packages.addMcp(id) : await window.yan.packages.exportPlugin(id)
+      const done = action === 'mcp' ? (result.existed ? 'market.mcpExisted' : 'market.mcpAdded') : 'market.exported'
+      if (!result.cancelled) setNote(result.ok ? t(done, { path: result.path ?? '' }) : result.error ?? t('pkg.failed'))
     } catch { setNote(t('pkg.failed')) }
     finally { setExporting(false) }
   }
@@ -72,10 +72,10 @@ export function PluginMarketTab({ initial = 'inkstone' }: { initial?: 'inkstone'
           <div className="ui-row-desc">{t(plugin.targetKey)}</div>
           <SourceLink url={plugin.url} label={t('market.source')} />
           <div className="pkg-install-row">
-            <Button size="sm" disabled={exporting} data-testid="market-hermes-download" onClick={() => void download(plugin.id)}>
-              {exporting ? t('pkg.working') : t('market.download')}
+            <Button size="sm" disabled={exporting} data-testid={plugin.action === 'mcp' ? `market-${plugin.id}-mcp` : 'market-hermes-download'} onClick={() => void download(plugin.id, plugin.action)}>
+              {exporting ? t('pkg.working') : t(plugin.action === 'mcp' ? 'market.addMcp' : 'market.download')}
             </Button>
-            <span className="ui-row-desc">{t('market.installHint')}</span>
+            <span className="ui-row-desc">{t(plugin.hintKey)}</span>
           </div>
         </SettingRow>)}
         {note ? <div role="status" className="ui-row-desc market-note">{note}</div> : null}

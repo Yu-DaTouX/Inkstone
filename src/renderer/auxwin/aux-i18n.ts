@@ -1,9 +1,3 @@
-/**
- * 辅助小窗的本地文案（v3 WP-25d / WP-12）。
- *
- * 刻意不并进主界面的 i18n 目录：独立入口、独立窗口，键很少；并进共享目录会
- * 让多个 agent 在同一个 JSON 上冲突。中英文在这里必须成对出现（`Record` 保证）。
- */
 import type { AuxLocale, MiniStatusKey, QuickAskErrorCode } from './aux-bridge'
 
 type Dict = {

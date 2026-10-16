@@ -1,16 +1,3 @@
-/**
- * 本地数据源适配器：把各类本地存储读成统一记录、把远端记录合并回本地。
- *
- * 各存储的真实位置（见 docs/CODE_MAP.md）：
- *   · 设置          `<dataDir>/desktop.json`（`src/main/settings.ts`）
- *   · 提示词模板    `<piAgentDir>/prompts/*.md`（pi 原生用户级 prompt templates）
- *   · 用户技能      `<dataDir>/skills/<name>/SKILL.md`（`src/main/user-skills.ts`）
- *   · 书签          `<dataDir>/interaction-state/<sha256(session)>.json` 里的 `bookmark:*`（`src/main/interaction-state.ts`）
- *   · 定时任务定义  `<dataDir>/schedules.json`（`src/main/schedule-service.ts`）
- *
- * 这里不导入上面任何模块（settings.ts 依赖 Electron），只按文件格式读写，
- * 并按各自的格式校验；坏数据跳过，不删除。
- */
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
@@ -34,12 +21,10 @@ interface ReadResult {
   skipped: string[]
 }
 
-/** 一条记录写出前先跑凭证断言；返回违规字段，空数组表示可以写。 */
 export function forbiddenFieldsInRecord(record: SyncRecord): string[] {
   try {
     return findForbiddenFields(JSON.parse(record.payload))
   } catch {
-    // 文件类 payload（提示词 / 技能正文）不是 JSON，没有字段名可查。
     return []
   }
 }
@@ -57,8 +42,6 @@ async function readJson(file: string): Promise<unknown> {
   const text = await readFile(file, 'utf8')
   return JSON.parse(text)
 }
-
-/* ── 设置 ───────────────────────────────────────────────────── */
 
 async function readSettings(paths: SyncPaths): Promise<ReadResult> {
   if (!existsSync(paths.settingsFile)) return { records: [], skipped: [] }
@@ -89,16 +72,12 @@ async function applySettings(paths: SyncPaths, record: SyncRecord): Promise<void
       const raw = await readJson(paths.settingsFile)
       if (raw && typeof raw === 'object' && !Array.isArray(raw)) current = raw as Record<string, unknown>
     } catch {
-      // 本机设置读不了就不要覆盖：抛出让 service 记成错误。
       throw new Error('本机 desktop.json 解析失败，拒绝覆盖')
     }
   }
-  // 只合并白名单键，本机专属字段（路径、窗口几何、凭证等）原样保留。
   const merged = { ...current, ...incoming }
   await atomicWriteFile(paths.settingsFile, JSON.stringify(merged, null, 2))
 }
-
-/* ── 提示词模板 ─────────────────────────────────────────────── */
 
 const PROMPT_SUFFIX = '.md'
 
@@ -139,8 +118,6 @@ async function applyPrompt(paths: SyncPaths, record: SyncRecord): Promise<void> 
   await atomicWriteFile(join(paths.promptsDir, `${name}${PROMPT_SUFFIX}`), record.payload)
 }
 
-/* ── 用户技能 ───────────────────────────────────────────────── */
-
 async function readSkills(paths: SyncPaths): Promise<ReadResult> {
   const records: SyncRecord[] = []
   const skipped: string[] = []
@@ -180,8 +157,6 @@ async function applySkill(paths: SyncPaths, record: SyncRecord): Promise<void> {
   await atomicWriteFile(join(paths.skillsDir, name, 'SKILL.md'), record.payload)
 }
 
-/* ── 书签 ───────────────────────────────────────────────────── */
-
 interface BookmarkPayload {
   session: string
   key: string
@@ -189,7 +164,6 @@ interface BookmarkPayload {
 }
 
 function bookmarkKey(session: string, valueKey: string): string {
-  // key 里避开分隔符与非法文件名字符；payload 才是可读的 session / key。
   return `bookmark:${sha256Hex(`${session}\u0000${valueKey}`).slice(0, 32)}`
 }
 
@@ -270,9 +244,6 @@ async function applyBookmark(paths: SyncPaths, record: SyncRecord): Promise<void
   await atomicWriteFile(file, JSON.stringify({ version: 1, session, values }))
 }
 
-/* ── 定时任务定义 ───────────────────────────────────────────── */
-
-/** 只同步「任务是什么」，不同步 `cwd` / 运行状态等本机专属字段。 */
 export function pickScheduleDefinition(task: unknown): Record<string, unknown> | null {
   if (!task || typeof task !== 'object' || Array.isArray(task)) return null
   const source = task as Record<string, unknown>
@@ -323,15 +294,12 @@ async function applySchedule(paths: SyncPaths, record: SyncRecord): Promise<void
   const tasks = Array.isArray(doc.tasks) ? (doc.tasks as Record<string, unknown>[]) : []
   const index = tasks.findIndex((task) => task && typeof task === 'object' && (task as Record<string, unknown>).id === incoming.id)
   if (index >= 0) {
-    // 合并定义，保留本机运行字段（cwd / nextRunAt / lastRunAt / lastSessionId / lastError）。
     tasks[index] = { ...tasks[index], ...incoming }
   } else {
     tasks.push(incoming)
   }
   await atomicWriteFile(paths.schedulesFile, JSON.stringify({ v: 1, tasks }, null, 2))
 }
-
-/* ── 汇总 ───────────────────────────────────────────────────── */
 
 export class LocalStore {
   constructor(readonly paths: SyncPaths) {}

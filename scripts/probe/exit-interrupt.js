@@ -1,14 +1,3 @@
-/**
- * N12「退出变体」· 中断退出（实施-09 S2 第五批）。
- *
- * 与 `exit-save.js` 同一套前置，只差场景给的 `YAN_EXIT_CHOICE=interrupt`：
- * 这一个分支不保留「下次启动可以继续」的意图（`exit-snapshot.json` 的
- * `mode` 写 `interrupt`），并且必须把正在跑的 pi 子进程收掉 ——
- * 后者在 Node 侧由 test-live 的全局孤儿进程检查兜住（每个场景退出后都查）。
- *
- * 两个分支的差别若只在探针里断言，很容易写成「自说自话」；真正的判据是
- * 落盘快照的 `mode` 与进程表，分别由 `afterExit` 和全局检查负责。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {

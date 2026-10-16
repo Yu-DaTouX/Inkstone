@@ -13,7 +13,6 @@ import { SEARCH_PROVIDERS, type SearchApiConfigView, type SearchBackendStatus, t
 import { Button, Disclosure, SettingRow, Switch } from '../ui'
 
 const STRATEGIES = ['existing-only', 'search-and-recommend', 'auto-connect'] as const
-/** 技能列表的分组顺序 */
 const SKILL_ORIGINS = ['session', 'user', 'bundled', 'other'] as const
 
 export function CapabilitiesTab(): React.JSX.Element {
@@ -31,22 +30,17 @@ export function CapabilitiesTab(): React.JSX.Element {
   const [searchText, setSearchText] = useState('')
   const [search, setSearch] = useState<CapabilitySearchResultView | null>(null)
   const [searching, setSearching] = useState(false)
-  /* 顶部提示区分错误与成功：成功不能复用 pkg-detail-warn + role="alert" 的警告外观 */
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
   const clearNotice = (): void => setNotice(null)
   const noteError = (error: unknown, fallback: string): void =>
     setNotice({ type: 'error', text: error instanceof Error ? error.message : typeof error === 'string' && error ? error : fallback })
   const noteSuccess = (text: string): void => setNotice({ type: 'success', text })
   const [operations, setOperations] = useState<Record<string, CapabilityVerificationStatus>>({})
-  /** 正在保留 / 移除的会话技能名（防连点） */
   const [skillBusy, setSkillBusy] = useState<string | null>(null)
   const mounted = useRef(true)
-  // 检测本机状态；安装与更新只在用户点击后执行。
   const [backend, setBackend] = useState<SearchBackendStatus | null>(null)
   const [backendBusy, setBackendBusy] = useState(false)
-  /* 探针自己失败了（IPC 抛错）与「后端不可用」是两回事，不能都显示成「检测中…」 */
   const [backendFailed, setBackendFailed] = useState(false)
-  /** 用户点了「安装 OpenCLI」：进行中 / 结果（needsNode 时给 Node.js 下载入口） */
   const [install, setInstall] = useState<{ busy: boolean; ok?: boolean; needsNode?: boolean; text?: string } | null>(null)
 
   const checkBackend = useCallback(async (): Promise<void> => {
@@ -68,7 +62,6 @@ export function CapabilitiesTab(): React.JSX.Element {
   }, [])
 
   const refresh = useCallback(async (): Promise<void> => {
-    /* 内置能力只在「插件」一组里列一次（带说明），这里不重复 */
     const next = await window.yan.capabilities.snapshot()
     if (mounted.current) setSnapshot(next)
   }, [])
@@ -102,7 +95,6 @@ export function CapabilitiesTab(): React.JSX.Element {
       if (!sessionId) return
       const query = { sessionId, pending: true, text: '' }
       useStore.setState({ nativeMcpStatus: query })
-      // pi 通过 notify 返回状态；先登记再发送，避免快速响应被漏掉。
       window.clearTimeout(nativeMcpTimer.current)
       const timer = nativeMcpTimer.current = window.setTimeout(() => {
         if (useStore.getState().nativeMcpStatus === query) {
@@ -118,7 +110,6 @@ export function CapabilitiesTab(): React.JSX.Element {
         if (useStore.getState().nativeMcpStatus === query) useStore.setState({ nativeMcpStatus: null })
         if (mounted.current) noteError(error, t('cap.loadFailed'))
       } finally {
-        // 发送完成不代表状态通知已到；定时器只会结算仍是本次查询的对象。
         if (useStore.getState().nativeMcpStatus !== query) window.clearTimeout(timer)
       }
     } finally {
@@ -249,7 +240,6 @@ export function CapabilitiesTab(): React.JSX.Element {
         </div>
         <div className="pkg-list">
           {!snapshot || snapshot.skills.length === 0 ? <div className="ui-row-desc">{t('cap.emptySkills')}</div> : null}
-          {/* 按来源分组：本次会话（模型接入）在最前，可保留到我的技能或移除 */}
           {SKILL_ORIGINS.map((origin) => {
             const group = snapshot?.skills.filter((skill) => (skill.origin ?? 'other') === origin) ?? []
             if (group.length === 0) return null
@@ -403,7 +393,6 @@ export function CapabilitiesTab(): React.JSX.Element {
       </Disclosure>
         </div> },
         { id: 'external', label: t('set.searchTools'), content: <div className="ui-rows" data-testid="cap-external">
-          {/* 外部工具与浏览器（实施-27 D4）：搜索后端在不在、扩展连没连 */}
           <div className="ui-row set-row-col" data-testid="cap-ext-tools">
             <div className="ui-row-label">
               <div className="ui-row-name">{t('set.extTools')}</div>
@@ -432,11 +421,6 @@ export function CapabilitiesTab(): React.JSX.Element {
                       : t('set.searchBackendHint')}
                 </div>
               ) : null}
-              {/*
-                不可用时一律把 detail 摆出来 —— 它才是真正的原因：可能是「没装 opencli」，
-                也可能是「装了 opencli 但 PATH 里没 node」（只看上面那句「安装：npm i -g …」
-                会把后一种人带去重装已经装好的东西）。
-              */}
               {backend && !backend.available && backend.detail ? (
                 <div className="ui-row-desc" data-testid="cap-search-backend-detail">
                   {backend.detail.length > 240 ? backend.detail.slice(0, 240) + '…' : backend.detail}
@@ -445,7 +429,6 @@ export function CapabilitiesTab(): React.JSX.Element {
               {backend && backend.available && backend.code === 'extension_not_connected' ? (
                 <div className="ui-row-desc">{t('set.searchBackendExtHint')}</div>
               ) : null}
-              {/* 安装渠道：命令行后端（npm）与浏览器扩展（Chrome 应用商店 / GitHub 发布包） */}
               {backend ? (
                 <div className="set-install-actions" data-testid="cap-search-install">
                   <Button
@@ -458,7 +441,6 @@ export function CapabilitiesTab(): React.JSX.Element {
                         setInstall({ busy: false, ok: r.ok, needsNode: r.needsNode, text: r.ok ? t('set.opencliInstalled') : [r.error, r.log].filter(Boolean).join('\n') })
                         if (r.ok) await checkBackend()
                       }).catch((e: unknown) => {
-                        /* IPC 被拒绝时也要解除忙碌态，否则按钮永远停在「安装中」 */
                         setInstall({ busy: false, ok: false, text: e instanceof Error ? e.message : String(e) })
                       })
                     }}
@@ -522,10 +504,6 @@ export function CapabilitiesTab(): React.JSX.Element {
   )
 }
 
-/**
- * 增强搜索：凡是要用户自己注册 key 的服务都在这里逐项列出，填了才启用。
- * 模型仍只用 `yan search` 这一个入口，这些服务只是它背后更好的来源；密钥只存主进程。
- */
 function SearchApiRow() {
   const t = useT()
   const [config, setConfig] = useState<SearchApiConfigView | null>(null)

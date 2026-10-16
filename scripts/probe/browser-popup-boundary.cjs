@@ -36,11 +36,9 @@ const pause = () => new Promise(done => setTimeout(done, 350))
   await source.executeJavaScript(`window.open('http://audit.invalid:${port}/redirect');true`, true)
   await pause()
   assert.equal(hits.includes('/redirect-private'), false)
-  // A host-requested public first navigation also cannot redirect to private addresses.
   await controller.newTab(`http://audit.invalid:${port}/redirect`).catch(() => {})
   await pause()
   assert.equal(hits.includes('/redirect-private'), false)
-  // Explicit local previews stay usable, including while a remote popup is opening.
   await Promise.all([
     source.executeJavaScript(`window.open('http://127.0.0.1:${port}/concurrent-private');true`, true),
     controller.newTab(`http://127.0.0.1:${port}/explicit-local`)

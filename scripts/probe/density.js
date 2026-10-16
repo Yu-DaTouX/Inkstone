@@ -1,13 +1,3 @@
-/**
- * 界面密度：三档真的改变间距、真的落盘（方案 A1）。
- *
- * 为什么这么测：密度是**全局尺寸**改动，最容易出现「改了档位但界面没动」
- * 或者「标准档不再是原来的样子」。所以两件事都要钉住：
- *   ① 同一元素在 compact / standard / comfortable 下实测间距不同；
- *   ② standard 档的实测值 = 改动前的值（--sp-6 = 32px）。
- *
- * 不改字号是设计约束，这里也顺带断言一次（字号三档一致）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -25,7 +15,6 @@
     }
     await sleep(800)
 
-    /** 量一个真实元素的间距：优先消息，其次推理胶囊 */
     const target = () => q('.msg') ?? q('.reason') ?? q('.stream-row')
     const gapOf = () => {
       const el = target()
@@ -68,18 +57,15 @@
       `三档字号一致（${std.font}px）—— 密度只调间距`
     )
 
-    /* html 上的标记与设置同步（CSS 覆盖靠它） */
     ok(
       document.documentElement.dataset.density === 'comfortable',
       'html[data-density] 跟着设置变'
     )
 
-    /* 落盘：重新读一次设置 */
     const persisted = (await window.yan.getSettings())?.density
     out.push(`  落盘 density = ${JSON.stringify(persisted)}`)
     ok(persisted === 'comfortable', '档位落盘')
 
-    /* 收尾：改回 standard，别把探针的档位留给后面的场景 */
     await store.getState().patchSettings({ density: 'standard' })
     await sleep(300)
     ok(store.getState().settings?.density === 'standard', '能改回 standard')

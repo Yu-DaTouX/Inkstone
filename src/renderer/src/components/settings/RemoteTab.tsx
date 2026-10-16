@@ -14,7 +14,7 @@ import { canReplaceDraft, isCurrentGeneration } from './review2-settings-guards'
 type BindChoice = 'tailscale' | 'loopback' | 'custom'
 const WINDOWS_TAILSCALE_URL = 'https://tailscale.com/download/windows'
 const ANDROID_TAILSCALE_URL = 'https://tailscale.com/download/android'
-const MOBILE_GUIDE_URL = 'https://github.com/Yu-DaTouX/Inkstone/blob/main/docs/MOBILE_ACCESS.md'
+const MOBILE_GUIDE_URL = 'https://github.com/Yu-DaTouX/Inkstone'
 
 function openGuide(url: string): void {
   void window.yan.browser.openExternal(url)
@@ -29,13 +29,6 @@ function formatTime(at: number | null, never: string): string {
   return new Intl.DateTimeFormat(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(at)
 }
 
-/**
- * 设置 · 手机接入。
- *
- * 需求稿第 3 步：手机查看电脑上的任务、回复问题、发送文字；任务仍在这台电脑执行。
- * 这一页只管「谁能连、从哪连」：开关与监听地址、配对新手机、已配对设备与撤销。
- * 令牌只在手机配对那一刻交给手机，这一页永远看不到令牌本身。
- */
 export function RemoteTab() {
   const t = useT()
   const saved = useStore((s) => s.settings?.remoteAccess) ?? DEFAULT_REMOTE_ACCESS_SETTINGS
@@ -73,7 +66,6 @@ export function RemoteTab() {
     return () => window.clearInterval(interval)
   }, [refresh])
 
-  /* 配对码倒计时；到期后刷新一次状态（码已作废） */
   useEffect(() => {
     if (!status?.pairing) return undefined
     const id = window.setInterval(() => {
@@ -101,7 +93,6 @@ export function RemoteTab() {
   const configure = (next: RemoteAccessSettings): Promise<void> => {
     return run(async () => {
       const result = await window.yan.remote.configure(next)
-      /* 设置已由主进程落盘；让 store 里的副本跟上，避免下次打开这一页读到旧值 */
       useStore.setState({ settings: await window.yan.getSettings() })
       savedRef.current = next
       setDraft(next)
@@ -121,7 +112,6 @@ export function RemoteTab() {
 
   return (
     <div className="ui-rows" data-testid="settings-remote">
-      {/* 开关与运行状态同一行：状态是开关的结果，不单独占一行 */}
       <SettingRow name={t('remote.enable')} desc={<>
         {t('remote.enableDesc')}
         <div className="remote-status-line" data-testid="remote-status">
@@ -234,7 +224,6 @@ export function RemoteTab() {
           </ul>
         )}
       </div>
-      {/* 中继与监听地址都是连不上时才需要动的网络细节，收进同一个折叠区 */}
       <Disclosure title={t('remote.networkSettings')}>
       <RelaySection draft={draft} status={status} busy={busy} configure={configure} run={run} />
       <SettingRow name={t('remote.bind')} desc={t('remote.bindDesc')}>

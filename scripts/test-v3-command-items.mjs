@@ -1,15 +1,3 @@
-/**
- * v3 命令面板的纯逻辑单测（WP-25）。
- *
- * 只编译 `src/renderer/src/features/commands/command-items.ts`（纯函数，无 React / store /
- * DOM 依赖），在 Node 里直接跑；不启动 Electron、不碰 pi、不写用户数据、不拉模型。
- * 可独立执行：
- *
- *   node scripts/test-v3-command-items.mjs
- *
- * 覆盖：分词、匹配打分、排序稳定性、分组顺序、会话条数上限、禁用行不参与键盘导航、
- * 子串过滤，以及 IME 组字 Enter 不执行。
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
@@ -38,13 +26,11 @@ const {
   shouldExecuteOnEnter
 } = mod
 
-/* ── 分词 ───────────────────────────────────────────────────── */
 assert.deepEqual(commandTokens('  Foo  foo BAR '), ['foo', 'bar'], '去空白、转小写、去重')
 assert.deepEqual(commandTokens('a b c d e f g h'), ['a', 'b', 'c', 'd', 'e', 'f'], '最多保留 6 个词')
 assert.deepEqual(commandTokens(''), [])
 assert.deepEqual(commandTokens('   '), [])
 
-/* ── 匹配打分 ─────────────────────────────────────────────────── */
 const item = (over = {}) => ({
   id: over.id ?? 'x',
   group: over.group ?? 'action',
@@ -73,7 +59,6 @@ assert.equal(
   '多词缺一个即不命中'
 )
 
-/* ── 排序：分数优先，同分保持输入顺序（稳定） ───────────────── */
 const ranked = rankCommands(
   [
     item({ id: 'kw', label: 'Zed', keywords: 'alpha' }),
@@ -90,7 +75,6 @@ assert.deepEqual(
   '按 0/1/2 分排序；同分保持原顺序；不命中被过滤'
 )
 
-/* ── 分组：固定顺序、空组不出现 ─────────────────────────────── */
 const grouped = groupCommands(
   [
     item({ id: 's1', group: 'session' }),
@@ -114,7 +98,6 @@ assert.deepEqual(
 )
 assert.deepEqual(groupCommands([item({ group: 'action' })]).map((s) => s.group), ['action'], '空组不出现')
 
-/* ── 会话条数上限 ───────────────────────────────────────────── */
 const many = [
   item({ id: 'a1', group: 'action' }),
   ...Array.from({ length: 5 }, (_, i) => item({ id: `s${i}`, group: 'session' })),
@@ -127,7 +110,6 @@ assert.deepEqual(
 )
 assert.deepEqual(limitCommands(many, -1).length, many.length, '负数上限表示不限')
 
-/* ── 键盘导航跳过禁用行 ─────────────────────────────────────── */
 assert.deepEqual(
   navigableCommands([
     item({ id: 'a', disabled: true }),
@@ -137,7 +119,6 @@ assert.deepEqual(
   ['b']
 )
 
-/* ── IME 组字 Enter 不执行 ──────────────────────────────────── */
 assert.equal(shouldExecuteOnEnter({ key: 'Enter' }), true, '普通 Enter 执行')
 assert.equal(shouldExecuteOnEnter({ key: 'Enter', isComposing: true }), false, '组字中的 Enter 不执行（isComposing）')
 assert.equal(shouldExecuteOnEnter({ key: 'Enter', keyCode: 229 }), false, '组字中的 Enter 不执行（keyCode 229）')
@@ -145,7 +126,6 @@ assert.equal(shouldExecuteOnEnter({ key: 'Enter', isComposing: false, keyCode: 1
 assert.equal(shouldExecuteOnEnter({ key: 'a' }), false, '非 Enter 不执行')
 assert.equal(shouldExecuteOnEnter({ key: 'Escape' }), false)
 
-/* ── 端到端：空查询只列命令；输入后命令 + 会话一起过滤 ─────── */
 const actionItems = [
   item({ id: 'newSession', label: '新建会话', keywords: 'new chat 新建 新对话' }),
   item({ id: 'openRuns', label: '运行总览', keywords: 'runs overview 运行 总览' })

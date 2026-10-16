@@ -3,7 +3,6 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, SettingRow } from '../ui'
 
-/** 复用 pi 包管理；用户点选后才安装，不自动读取或迁移 Claude 登录凭证。 */
 export function ClaudeSubscriptionSection() {
   const t = useT()
   const cwd = useStore(s => s.session?.cwd ?? s.settings?.cwd ?? '')

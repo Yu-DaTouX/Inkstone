@@ -6,13 +6,6 @@ import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import { useStore } from '../../state/store'
 import { Button, Input } from '../ui'
 
-/**
- * 更改项目默认目录。
- *
- * 只编辑项目实体：不调用 setCwd、不切会话、不碰 runner，也不搬动磁盘文件。
- * 与 RailDialogs 的两个框同构 —— Portal 到 body（左栏收起时不能跟着消失）、
- * 领 overlay blocker（原生网页视图压不住 CSS z-index），失败留在框内可重试。
- */
 export function ProjectDirectoryDialog({ project, onClose }: { project: ProjectRecord; onClose: () => void }) {
   const t = useT()
   const [cwd, setCwd] = useState(project.cwd)
@@ -26,19 +19,10 @@ export function ProjectDirectoryDialog({ project, onClose }: { project: ProjectR
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
-  /* 原生网页是 WebContentsView，CSS 压不住：打开期间让它让位 */
   useEffect(() => useStore.getState().acquireOverlayBlocker('project-directory'), [])
   const { isTop } = useModalLayer(true, onClose)
   useFocusTrap(dialog, true, isTop)
 
-  /*
-   * 打开后把焦点稳定放到新目录输入框。
-   *
-   * 为什么不只靠 useFocusTrap 的初始聚焦：项目菜单关闭时会把焦点还给触发元素
-   * （Rail 的 onClose 同步 focus 到 `.proj-rename` 那个 span），它与初始聚焦的
-   * 先后不稳定 —— 探针里出现过焦点停在菜单触发元素上的情况。
-   * 这里连续几帧检查：焦点还没进对话框就补回来，之后不再干预用户自己的 Tab。
-   */
   useEffect(() => {
     let frames = 0
     let raf = 0
@@ -72,7 +56,6 @@ export function ProjectDirectoryDialog({ project, onClose }: { project: ProjectR
       const result = await window.yan.changeProjectDirectory({ projectId: project.id, expectedCwd: project.cwd, cwd })
       if (!mounted.current) return
       if (!result.ok) { setError(result.error); return }
-      /* 走设置队列应用服务端快照，并与左栏相邻路径一样刷新会话归属 */
       useStore.getState().applyServerSettings(result.settings)
       void useStore.getState().refreshSessions()
       onClose()
@@ -84,7 +67,6 @@ export function ProjectDirectoryDialog({ project, onClose }: { project: ProjectR
       className="modal-scrim"
       role="presentation"
       data-testid="project-directory-mask"
-      /* 用按下事件 + 自身判定：在只读输入框里拖选文字、在遮罩上松开时不该关掉对话框 */
       onPointerDown={(event) => { if (event.target === event.currentTarget && isTop) onClose() }}
     >
       <div
@@ -127,7 +109,6 @@ export function ProjectDirectoryDialog({ project, onClose }: { project: ProjectR
         </div>
         {error ? <p className="rail-delete-error" role="alert" data-testid="project-directory-error">{error}</p> : null}
         <footer className="modal-foot">
-          {/* 保存中仍然允许关掉界面：写入本身有重入保护，关掉后结果不再回写 */}
           <Button data-testid="project-directory-cancel" onClick={onClose}>{t('ui.cancel')}</Button>
           <Button variant="primary" disabled={busy || !cwd.trim()} data-testid="project-directory-save" onClick={save}>
             {busy ? t('rail.directorySaving') : t('rail.directorySave')}

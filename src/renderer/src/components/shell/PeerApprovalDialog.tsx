@@ -1,10 +1,3 @@
-/**
- * 另一台砚申请「本次连接」时的所有者审批（需求稿第 6 节）。
- *
- * 所有者勾选开放的项目（默认一个都不选）与允许的操作（只能在对方申请的范围内收窄），
- * 批准后授权只在这次连接有效：对方断开即失效，重连会再次弹出这里。
- * 关闭或忽略按拒绝处理；两分钟没处理，宿主自动拒绝。
- */
 import { useEffect, useRef, useState } from 'react'
 import type { PeerApprovalRequest, PeerOperation } from '../../../../shared/peer-protocol'
 import { useT } from '../../i18n'
@@ -31,7 +24,6 @@ export function PeerApprovalDialog() {
     })
   }, [])
 
-  /* 换到下一条申请时重置勾选：项目默认不开放，操作默认按对方申请的 */
   useEffect(() => {
     setProjects([])
     setOperations(current?.operations ?? [])

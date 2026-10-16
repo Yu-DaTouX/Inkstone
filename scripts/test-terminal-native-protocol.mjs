@@ -1,19 +1,3 @@
-/**
- * OSC 7501 原生兼容测试。
- *
- * 之前 `test-terminal-status.mjs` 的帧全是本仓库自造，通过不能证明与 pi 兼容。这里从
- * `resources/pi-runtime/current.json` 指定的真实 pi bundle 源里，用 TypeScript AST 抽出
- * 纯声明 `formatProgramStatus` / `isProgramStatusReply` / `truncateUtf8` 与
- * `PROGRAM_STATUS_QUERY` / `APP_PATTERN` / `CONTROL_CHARACTERS` / `MAX_MESSAGE_BYTES`，
- * 只注入 `Buffer` 放进 `node:vm` 运行——**不 import 整个 pi 包**（避免全局副作用），
- * 也不复制协议逻辑，不手改 vendor。
- *
- * 用 pi 真实编码器产出的帧喂本仓库正式的 `TerminalStatusScanner` /
- * `TerminalProgramStatusTracker`，并用 pi 真实的 `isProgramStatusReply` 判定本仓库的
- * 能力回复被接受、回复回显不被当成新查询。
- *
- * 不启动模型 / 网络 / PTY，不发任何 prompt。
- */
 import assert from 'node:assert/strict'
 import { readFile, readdir } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -41,7 +25,6 @@ const eq = (actual, expected, message) => {
   checks += 1
 }
 
-/** 从 current.json 指定的 generation 里找同时含全部目标声明的 chunk（优先用户点名的那个） */
 async function findPiChunk() {
   const manifest = JSON.parse(await readFile(join(RUNTIME_ROOT, 'current.json'), 'utf8'))
   assert.ok(typeof manifest.generation === 'string', 'current.json 缺少 generation')
@@ -57,7 +40,6 @@ async function findPiChunk() {
   return matches[0]
 }
 
-/** 用 TS AST 抽目标声明并拼成可独立执行的脚本 */
 function extractDeclarations(source, fileName) {
   const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
   const found = new Map()
@@ -79,7 +61,6 @@ function extractDeclarations(source, fileName) {
   return new Script(code, { filename: fileName })
 }
 
-/** 只注入 Buffer，运行真实编码器 */
 function loadPi(script) {
   const context = createContext({ Buffer })
   return script.runInContext(context)
@@ -136,7 +117,6 @@ export async function runNativeProtocolTests() {
     environment(untouched, 'win32')
     eq(untouched, {}, '不修改传入环境或全局process.env')
 
-    /* ---- 真实声明形状 ---- */
     eq(pi.PROGRAM_STATUS_QUERY, '\x1b]7501;?\x1b\\', 'pi PROGRAM_STATUS_QUERY 是精确查询')
     eq(pi.MAX_MESSAGE_BYTES, 2048, 'pi MAX_MESSAGE_BYTES = 2048')
     ok(pi.APP_PATTERN.test('my.app+v1-2'), 'pi APP_PATTERN 接受 . + -')
@@ -146,7 +126,6 @@ export async function runNativeProtocolTests() {
     eq(typeof pi.truncateUtf8, 'function', 'truncateUtf8 已抽出')
     eq(PI_PROGRAM_STATUS_QUERY, pi.PROGRAM_STATUS_QUERY, '本模块识别的查询帧与 pi 源码同值')
 
-    /* ---- pi 真实 matcher 接受本模块的能力回复；回复回显不被当成新查询 ---- */
     ok(pi.isProgramStatusReply(PROGRAM_STATUS_REPLY), '本模块 7501;?1 回复被 pi isProgramStatusReply 接受')
     ok(pi.isProgramStatusReply(PROGRAM_STATUS_QUERY + ''), '写回帧本身被 pi 接受')
     ok(pi.isProgramStatusReply('\x1b]7501;?\x07'), '空 payload + BEL 也被 pi 接受')
@@ -159,7 +138,6 @@ export async function runNativeProtocolTests() {
     }
     eq(new TerminalStatusScanner().write(pi.PROGRAM_STATUS_QUERY), [{ kind: 'query' }], '真实查询帧被识别')
 
-    /* ---- pi 真实编码器输出 → 本仓库正式 Tracker ---- */
     const projections = [
       [{ state: 'working' }, { state: 'working' }, 'working'],
       [{ state: 'working', app: 'pi' }, { state: 'working', app: 'pi' }, 'working + app'],
@@ -180,7 +158,6 @@ export async function runNativeProtocolTests() {
       eq(tracker.status, expected, `${label}: Tracker 落成投影`)
     }
 
-    /* clear：pi 用 state=clear 清记录 */
     {
       const working = pi.formatProgramStatus({ state: 'working' })
       const clear = pi.formatProgramStatus({ state: 'clear' })
@@ -191,7 +168,6 @@ export async function runNativeProtocolTests() {
       eq(tracker.status, undefined, 'clear 后无记录')
     }
 
-    /* 每个分割点 / 逐字符：真实帧跨块拼接等价 */
     {
       const frames = [
         [pi.formatProgramStatus({ state: 'working', app: 'pi', message: '多字节😀' }), { state: 'working', app: 'pi', title: '多字节😀' }],
@@ -211,7 +187,6 @@ export async function runNativeProtocolTests() {
       }
     }
 
-    /* multibyte msg：pi 截到 2048 字节且不切代理对 */
     {
       const long = pi.formatProgramStatus({ state: 'working', message: '编'.repeat(800) + '😀'.repeat(100) })
       const decoded = parseTerminalStatusReport(bodyOf(long))
@@ -223,11 +198,9 @@ export async function runNativeProtocolTests() {
       ok(Buffer.byteLength(pi.truncateUtf8('😀😀😀', 4), 'utf8') <= 4, 'pi truncateUtf8 不超字节上限')
     }
 
-    /* pi 的 app / kind 规范：非法 app 被 pi 丢弃；kind 只在 blocked 出现 */
     eq(parseTerminalStatusReport(bodyOf(pi.formatProgramStatus({ state: 'working', app: 'bad app' }))), { state: 'working' }, 'pi 丢弃非法 app，解析结果不带 app')
     eq(parseTerminalStatusReport(bodyOf(pi.formatProgramStatus({ state: 'working', kind: 'permission' }))), { state: 'working' }, '非 blocked 的 kind 不出现在真实帧里')
 
-    /* progress 是本模块的通用扩展字段，pi 1.2 formatter 不产出 */
     ok(!pi.formatProgramStatus({ state: 'working', message: 'x' }).includes('progress'), 'pi 1.2 formatter 不产出 progress')
     eq(parseTerminalStatusReport('7501;state=working:progress=42'), { state: 'working', progress: 42 }, 'progress 是本模块额外接受的扩展，不代表从 pi 收到百分比')
 
@@ -242,21 +215,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   else await runNativeProtocolTests()
 }
 
-/* ----------------------------------------------------------------------------------------
- * 可选：真实本机 PTY 探针（`node scripts/test-terminal-native-protocol.mjs --pty`）。
- *
- * 用隔离的临时 pi agent 目录（静态 models.json + fixture key）与临时 cwd，启动真实 pi TUI
- * （`--no-extensions --no-skills`），用生产 `TerminalProgramStatusTracker` 观察 OSC 7501。
- * 两幕：
- *   A 真实握手：等 pi 发出 `ESC ] 7501 ; ? ST`，用生产回复写回 PTY，记录是否收到后续帧。
- *   B 强制上报：`PI_PROGRAM_STATUS=1` 绕过握手，抓真实 idle / clear 帧喂正式 Tracker。
- * 指向本机 HTTP 计数器，记录零模型调用；不发任何 prompt。只杀自己新起的进程，
- * 结束时删除自己的临时目录。node-pty ABI 不匹配则如实报告。
- *
- * 已知平台限制：Windows 的 node-pty/ConPTY 会丢弃从 master 写入的 OSC(`ESC ]`)输入，
- * 因此幕 A 能把回复写出，但 pi 收不到，也就不会转成 supported；幕 B 用 pi 自己的
- * `PI_PROGRAM_STATUS=1` 开关拿真实上报帧，仍是真实 pi 输出。
- * -------------------------------------------------------------------------------------- */
 async function runPtyProbe() {
   const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
@@ -361,7 +319,6 @@ async function runPtyProbe() {
       return { term, tracker, state }
     }
 
-    /* 幕 A：真实 pi 发查询；生产 Tracker 回；记录 pi 是否转到 supported */
     const a = spawnPi()
     await waitFor(() => a.state.sawQuery, 20000)
     await sleep(3000)
@@ -379,10 +336,8 @@ async function runPtyProbe() {
       a.term.write('\x04')
       await sleep(1500)
     } catch {
-      /* 已退出 */
     }
 
-    /* 幕 B：Windows使用正式terminalEnvironment缺省值，不在夹具里硬编码覆盖。 */
     const b = spawnPi(process.platform === 'win32' ? {} : { PI_PROGRAM_STATUS: '1' }, true)
     eq(environment(baseEnv).PI_PROGRAM_STATUS, process.platform === 'win32' ? '1' : undefined, '实际宿主环境适配与平台一致')
     const gotIdle = await waitFor(() => b.tracker.status?.state === 'idle', 15000)
@@ -394,7 +349,6 @@ async function runPtyProbe() {
       b.term.write('\x04')
       await sleep(2500)
     } catch {
-      /* 已退出 */
     }
     ok(/7501;state=clear/.test(b.state.raw), '观察到真实 clear 帧（进程退出前清状态）')
 
@@ -403,11 +357,9 @@ async function runPtyProbe() {
     console.log(`terminal-native-pty: ${checks} 项本机 PTY 检查通过；HTTP 请求=${httpRequests}；幕A回复次数=${a.state.replies}；幕B idle=${JSON.stringify(b.state.statuses)}；幕B clear=${/7501;state=clear/.test(b.state.raw)}`)
   } finally {
     for (const lifetime of terms) {
-      // node-pty 的 kill 也负责释放 ConPTY 管道；收到退出事件后仍需释放原生句柄。
       try {
         lifetime.term.kill()
       } catch {
-        /* 退出事件与清理交错 */
       }
     }
     if (server) await new Promise((resolve) => server.close(resolve))

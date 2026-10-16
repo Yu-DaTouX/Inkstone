@@ -1,27 +1,5 @@
-/**
- * 额度区（右面板「额度」）在真实窗口里的两条验收：
- *
- *   ① Command Code 的**月度口径**：接口的 `credits.monthlyCredits` 是「本月剩余」，
- *      不是「已用」。搞反时面板会显示「本月已用 99.9%」，用户以为额度用完了
- *      （2026-09-21 用户报的就是这个）。这里走**真实链路**（真实凭证 → 主进程
- *      https → IPC → 渲染）读一遍，确认月份百分比是「几乎没用过」的量级。
- *   ② **颜色分级**：<70% 正常 / 70–95% 黄 / ≥95% 红。正常档的数字用前景色、
- *      条用强调色（绿色留给「完成」一类语义）。真实额度落不到 70 / 95
- *      这两个点上，所以这里只验「低用量 ⇒ 正常档」这一端（真实渲染）；
- *      黄 / 红两端与两个边界由 `test:unit` 的 `quotaTone` 单测钉住，
- *      整套配色另有视觉矩阵截图。
- *
- * ⚠️ 为什么不进 `npm run check`：① 需要本机 pi 的 commandcode 凭证与网络，
- *    而且「本月已用不到一半」这条方向判据依赖当月真实用量。没有凭证时本场景
- *    打印 `~` 跳过（不算失败），但放进 check 会变成靠环境碰运气的红灯。
- */
-
 ;(async () => {
   const out = []
-  /*
-   * 探针的 ok 约定：带条件调（与其他探针的 `ok('文案')` 不同，这里统一成
-   * test-unit 那种 `ok(条件, 文案)`）——输出里任何一行 `✗` 都会被 test-live 判失败。
-   */
   const ok = (cond, label, extra = '') => out.push((cond ? '  ✓ ' : '  ✗ ') + label + (extra ? '  ' + extra : ''))
   const info = (m) => out.push('  · ' + m)
   const skip = (m) => out.push('  ~ ' + m)
@@ -50,13 +28,11 @@
       } else await sleep(150)
     }
     if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
-    /* H-3b：新会话默认停在「开始」页；额度分区在「工具」页。 */
     await sleep(300)
     document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     const hasPanel = await until(() => q('[data-testid="rp-quota"]'), 6000)
     if (!hasPanel) ok(false, '右面板没有「额度」分区（工具布局把它隐藏了？）')
 
-    /* ────────────────── ① 真实接口 ────────────────── */
     out.push('')
     out.push('=== 1. 真实接口（只读，不打桩）===')
     const real = await window.yan.providerQuota('commandcode')
@@ -81,11 +57,6 @@
           Math.abs(real.remaining - Math.max(0, mo.total - mo.used)) < 1e-6,
           '主值 remaining 与月度窗口的 total − used 自洽'
         )
-        /*
-         * ★ 方向断言：口径反了的时候「已用」是 total − 剩余 ≈ 99.9%。
-         * 线放在 90%：真实用量会随月份涨（曾用 50% 做线，账号用过一半就误红）；
-         * 只有当月真的用到九成以上才会误报，那时请人工确认后再看这条。
-         */
         ok(
           mo.used < mo.total * 0.9,
           '本月已用不到总额度的九成（口径没反 —— 反了会是 99.9%）',
@@ -94,14 +65,8 @@
       }
     }
 
-    /* ────────────────── ② 面板渲染真实数据 ────────────────── */
     out.push('')
     out.push('=== 2. 面板显示的口径 ===')
-    /*
-     * 额度区查的是**当前会话模型**的供应商。测试环境里会话模型不一定是
-     * commandcode，所以这里给 store 补一个最小会话壳（只改查询目标，
-     * 不碰消息/统计）。这也是「真实渲染 + 真实数据」所需要的唯一前置。
-     */
     const before = store.getState().session?.model?.provider ?? ''
     if (before !== 'commandcode') {
       const s = store.getState().session
@@ -135,7 +100,6 @@
       ok(amountTip.includes(leftText), '剩余额度放在月度数值的悬停提示里', leftText)
     }
 
-    /* ────────────────── ③ 颜色（真实渲染） ────────────────── */
     out.push('')
     out.push('=== 3. 颜色分级：<70% 正常 / 70–95% 黄 / ≥95% 红 ===')
     const toneOf = (id) => {
@@ -146,7 +110,6 @@
     if (!painted) {
       skip('面板没渲染出月度窗口 —— 跳过颜色断言')
     } else {
-      /* 当前用量只有万分之几 → 三个窗口都是正常档：数字用前景色、条用强调色，不用绿色 */
       const cssVar = (name) => {
         const probe = document.createElement('span')
         probe.style.color = 'var(' + name + ')'
@@ -166,7 +129,6 @@
         const fill = el?.parentElement?.querySelector('.rp-meter > i')
         ok(!!fill && getComputedStyle(fill).backgroundColor === accentColor, `${id} 的条用强调色`)
       }
-      /* 有分窗口时「本月已用」就是本月那一行，不再单独摆一个大号主值 */
       ok(!q('[data-testid="quota-main-value"]'), '有分窗口时不重复显示主值')
       ok(!!q('[data-testid="quota-win-monthly-estimated"]'), '月度窗口带「推算」徽标')
       info('黄 / 红两端由单测（quotaTone 的 70 / 95 边界）与视觉矩阵覆盖 —— 真实额度落不到那两个点上')

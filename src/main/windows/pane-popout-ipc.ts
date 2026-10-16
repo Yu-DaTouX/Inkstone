@@ -1,15 +1,3 @@
-/**
- * 页签弹出窗的 IPC 适配（`yan:pane-popout:*`，v3 · WP-30 弹出）。
- *
- * 与 aux 小窗同一思路：不走只信任主窗口的 `registrar`，而是在这里按来源分流：
- *
- *   · `open / update / close` 只接受**主窗口**的 webContents；
- *   · `state / action / close-self` 只接受**弹出窗自己的** webContents
- *     （`controller.owns`）。
- *
- * 弹出窗因此拿不到主窗口的通用 `yan` 信任 —— 主窗口注册表本来就拒绝非主窗口，
- * 这里再收窄弹出窗能触发的动作面。
- */
 import { ipcMain } from 'electron'
 import type { WebContents } from 'electron'
 import { PANE_POPOUT_CHANNELS, isPanePopoutAnyTab } from '../../shared/pane-popout'

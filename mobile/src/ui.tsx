@@ -1,9 +1,3 @@
-/**
- * 手机端的统一控件：与桌面 components/ui 同一套意图（主要 / 次要 / 无框 / 危险、徽标、空状态、输入框），
- * 尺寸按触屏放大。页面只组合这些控件，不各自写一套按钮、输入框或状态行。
- *
- * 字体分工：正文与按钮用系统字体，活动行、元数据、字符状态与代码用等宽（见 theme.ts 的 mono）。
- */
 import { forwardRef, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native'
 import { font, icon, lineHeight, mono, radius, space, touch, usePalette, weight } from './theme'
@@ -11,7 +5,6 @@ import { Icon } from './icons'
 import { GlyphSpinner, RunDot } from './motion'
 import type { IconName } from '../../src/renderer/src/icons/sprite'
 
-/** 状态用词与桌面状态栏一致（设计规范 §7） */
 export const STATUS_TEXT = {
   run: '运行中',
   wait: '等你回答',
@@ -44,7 +37,6 @@ export function Button({
   label: string
   onPress: () => void
   variant?: Variant
-  /** 紧凑按钮 36dp，只用于行内次要操作；主要操作保持 44dp */
   compact?: boolean
   disabled?: boolean
   busy?: boolean
@@ -96,10 +88,6 @@ export function EmptyState({ children }: { children: ReactNode }) {
   return <Text style={[styles.empty, { color: p.fgMute }]}>{children}</Text>
 }
 
-/**
- * 页头：左侧返回或品牌 · 标题（可带一行等宽副标题：目录、电脑、连接状态）· 右侧操作。
- * 各页共用同一高度与对齐，切换页面时标题不跳位。
- */
 export function Header({ title, subtitle, left, right }: { title: string; subtitle?: ReactNode; left?: ReactNode; right?: ReactNode }) {
   const p = usePalette()
   return (
@@ -116,19 +104,16 @@ export function Header({ title, subtitle, left, right }: { title: string; subtit
   )
 }
 
-/** 分区标题：淡色等宽，不带 `## ` 前缀（与桌面 h3 一致），不加分隔线 */
 export function SectionTitle({ children }: { children: ReactNode }) {
   const p = usePalette()
   return <Text accessibilityRole="header" style={[styles.section, { color: p.fgMute }]}>{children}</Text>
 }
 
-/** 元数据：等宽、淡色、表格数字（时间、计数、路径、电脑名） */
 export function Meta({ children, color, numberOfLines, style }: { children: ReactNode; color?: string; numberOfLines?: number; style?: StyleProp<TextStyle> }) {
   const p = usePalette()
   return <Text numberOfLines={numberOfLines} style={[styles.meta, { color: color ?? p.fgMute }, style]}>{children}</Text>
 }
 
-/** 输入框：44dp、1px 描边；`code` 用于地址、配对码这类逐字核对的值，其余用正文字体 */
 export const Input = forwardRef<TextInput, TextInputProps & { code?: boolean; inset?: boolean }>(function Input({ code = false, inset = false, style, ...props }, ref) {
   const p = usePalette()
   return <TextInput
@@ -142,11 +127,6 @@ export const Input = forwardRef<TextInput, TextInputProps & { code?: boolean; in
 
 export type ActivityState = 'run' | 'wait' | 'done' | 'fail' | 'stop' | 'offline'
 
-/**
- * 活动行：回合顶部与输入区上方共用的一行状态（桌面「活动行」的手机版）。
- * 字符状态 ⠋ 运行 / ◆ 待回答 / ✓ 完成 / ✕ 失败 / ■ 停止 / ● 断线；运行中的旋转字符是整屏唯一的主要运行信号。
- * 文字始终在，不只靠颜色或动画表达；右侧放计数或用时。
- */
 export function ActivityLine({ state, text, meta }: { state: ActivityState; text: string; meta?: string }) {
   const p = usePalette()
   const color = { run: p.accent, wait: p.warn, done: p.ok, fail: p.err, stop: p.fgMute, offline: p.warn }[state]
@@ -157,7 +137,6 @@ export function ActivityLine({ state, text, meta }: { state: ActivityState; text
   </View>
 }
 
-/** 列表里的状态点：未读、连接状态；运行中由 RunDot 表达。 */
 export function StatusDot({ color, label }: { color: string; label?: string }) {
   return <View accessibilityLabel={label} style={[styles.dot, { backgroundColor: color }]} />
 }

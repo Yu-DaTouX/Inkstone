@@ -13,7 +13,6 @@
     const task = snapshot.tasks.find((item) => item.id === created.taskId)
     if (history.at(-1) !== task.status) history.push(task.status)
     for (const approval of snapshot.approvals.filter((item) => item.taskId === task.id && item.status === 'pending')) {
-      // 文件写入已在测试范围内获授权；其他额外执行请求留作失败证据。
       if (approval.kind === 'file') await window.yan.hub.command({ action: 'answer', approvalId: approval.id, answer: 'accept' })
       else return { ok: false, reason: 'Unexpected approval request', task, approval, history }
     }

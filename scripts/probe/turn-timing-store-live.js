@@ -1,17 +1,3 @@
-/*
- * 回合计时的**落盘与读回**（实施-11 H-6，cost 1）。
- *
- * `turnfooter`（cost 0）验呈现、`turnfooterlive` 验主进程怎么算；这条补的是
- * H-6 的原始问题：**pi 的会话 JSONL 不存 `elapsedMs`**，所以切会话 / 重载后
- * 整轮用时丢失。这里跑一个真实回合，然后：
- *
- *   1. 界面上有「用时」；
- *   2. `peekSession()` —— 走的是**读文件**那条路（切会话时先用它铺内容）——
- *      回来的消息带 `turnTiming`，且用时与界面一致；
- *   3. 退出后由 `afterExit` 核对元数据日志真的落在 `YAN_DATA_DIR/turn-timing/`。
- *
- * 三条一起才说明「用时不是只活在内存里的推送字段」。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -78,7 +64,6 @@
     ok(!!footer, '最后一个回合有页脚')
     ok(/用时/.test(footer?.textContent ?? ''), `页脚显示用时：「${(footer?.textContent ?? '').replace(/\s+/g, ' ').trim()}」`)
 
-    /* ---- 读回：peekSession 走的是文件路径，不是内存里的推送字段 ---- */
     const session = store.getState().session
     const sessionFile = session?.sessionFile
     out.push(`  turn-timing.sessionFile=${sessionFile ?? ''}`)
@@ -114,7 +99,6 @@
         '同一逻辑回合只挂一条（不会重复计）'
       )
     }
-    /* 旧的 JSONL 里没有 elapsedMs —— 用时只能是宿主日志来的 */
     ok(
       messages.filter((m) => m.role === 'assistant').every((m) => m.elapsedMs === undefined),
       'pi 的 JSONL 确实不存 elapsedMs（所以恢复只能靠宿主元数据）'

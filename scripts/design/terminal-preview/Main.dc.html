@@ -47,7 +47,6 @@ body{margin:0}
 </helmet>
 <div class="ink" data-theme="{{theme}}" style="width: 1440px; height: 900px; display: grid; grid-template-rows: 40px minmax(0, 1fr) 24px; background: var(--bg-0); color: var(--fg); font-family: var(--mono); font-size: 13px; line-height: 1.55; overflow: hidden; {{accentStyle}}">
 
-<!-- 标题栏 -->
 <header style="display: grid; grid-template-columns: 256px minmax(0, 1fr) auto; align-items: center; background: var(--bg-1); border-bottom: 1px solid var(--border-soft);">
 <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px;">
 <button class="hov" aria-label="收起左栏" style="width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--fg-dim);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path></svg></button>
@@ -74,10 +73,8 @@ body{margin:0}
 </div>
 </header>
 
-<!-- 主体三栏 -->
 <div style="display: grid; grid-template-columns: 256px minmax(0, 1fr) 312px; min-height: 0;">
 
-<!-- 左栏 -->
 <nav aria-label="会话" style="display: flex; flex-direction: column; min-height: 0; background: var(--bg-1); border-right: 1px solid var(--border-soft);">
 <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px;">
 <button class="hov" style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; background: var(--bg-3); color: var(--fg); font-weight: 500;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg><span style="flex-grow: 1; text-align: left;">新对话</span><span style="font-size: 11px; color: var(--fg-mute);">Ctrl N</span></button>
@@ -110,7 +107,6 @@ body{margin:0}
 </div>
 </nav>
 
-<!-- 中栏 -->
 <main style="display: grid; grid-template-rows: 44px minmax(0, 1fr) auto; min-width: 0; min-height: 0;">
 <div style="display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid var(--border-soft);">
 <h1 style="margin: 0; flex-grow: 1; min-width: 0; font-family: var(--sans); font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><sc-if value="{{titled}}" hint-placeholder-val="{{true}}"><span class="in" style="display: inline-block;">给远程端加上 peer 授权校验</span></sc-if><sc-if value="{{untitled}}" hint-placeholder-val="{{false}}"><span class="fade" style="color: var(--fg-mute);">新对话</span></sc-if></h1>
@@ -124,7 +120,6 @@ body{margin:0}
 <span style="height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--border-soft); border-radius: 6px; font-size: 11px; color: var(--fg-dim);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7"></path><path d="M18 10.5c0 4-6 3-11 6"></path></svg>pi-desktop:main</span>
 </div>
 
-<!-- 对话流：每个新块从高度 0 展开，旧内容被连续推上去 -->
 <div style="min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 24px; opacity: {{sceneOp}}; transition: opacity var(--mo-slow) var(--mo-ease);">
 <div style="width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; padding-bottom: 16px;">
 
@@ -218,7 +213,6 @@ body{margin:0}
 </div>
 </div>
 
-<!-- 输入区 -->
 <div style="padding: 0 24px 12px;">
 <div style="max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px;">
 <div class="tr orbit {{orbitOn}}" style="position: relative; border: 1px solid {{cmpBorder}}; border-radius: 12px; background: var(--bg-1);">
@@ -254,7 +248,6 @@ body{margin:0}
 </div>
 </main>
 
-<!-- 右栏：检查器 -->
 <aside aria-label="检查器" style="display: flex; flex-direction: column; min-height: 0; background: var(--bg-1); border-left: 1px solid var(--border-soft); font-size: 12px; overflow: hidden;">
 
 <section style="padding: 12px 16px; border-bottom: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 6px;">
@@ -318,7 +311,6 @@ body{margin:0}
 </aside>
 </div>
 
-<!-- 状态栏 -->
 <footer style="display: flex; align-items: stretch; background: var(--bg-1); border-top: 1px solid var(--border-soft); font-size: 11px; color: var(--fg-mute); font-variant-numeric: tabular-nums;">
 <span class="tr" style="display: flex; align-items: center; justify-content: center; width: 56px; background: {{modeBg}}; color: {{modeFg}}; font-weight: 600; letter-spacing: 0.06em;">{{modeText}}</span>
 <span style="display: flex; align-items: center; gap: 6px; padding: 0 12px; border-right: 1px solid var(--border-soft); color: var(--fg-dim);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7"></path><path d="M18 10.5c0 4-6 3-11 6"></path></svg>main <span style="color: var(--warn);">{{gitMod}}</span> <span style="color: var(--ok);">{{gitAdd}}</span></span>
@@ -433,7 +425,6 @@ class Component extends DCLogic {
     const done = ms >= T.done;
     const titled = ms >= T.title;
 
-    // 输入区：先打出提示词，发送后清空；运行中再打一条排队消息
     let cmpText = '';
     let typing = false;
     if (!sent && ms >= T.type0) {
@@ -448,7 +439,6 @@ class Component extends DCLogic {
     const cmpEmpty = cmpText.length === 0;
     const cmpPh = running ? '生成中，Enter 排队' : '说点什么…';
 
-    // 当前阶段文字（输入区顶边）
     const phases = [
       [T.s, '思考中'],
       [T.read[0], '读取 src/main/remote-server.ts'],
@@ -493,7 +483,6 @@ class Component extends DCLogic {
       return { show: ms >= T.diff0 + i * 70, num: d[0], sign: d[1], key: d[2], sep: d[3], ty: d[4], tail: d[5], bg: add ? 'var(--ok-soft)' : 'transparent', color: add ? 'var(--fg)' : 'var(--fg-mute)' };
     });
 
-    // 正文逐字流出
     let budget = ms >= T.prose ? Math.floor((ms - T.prose) / PROSE_CH) : 0;
     let caretPlaced = false;
     const prose = PROSE.map(function (b, bi) {
@@ -511,7 +500,6 @@ class Component extends DCLogic {
       return { show: started || typed > 0, li: b.li, cols: b.li ? '16px minmax(0, 1fr)' : 'minmax(0, 1fr)', pad: bi === 0 ? '0px' : '4px', pieces: pieces, caret: caret };
     });
 
-    // 检查器
     const taskDefs = [
       ['读现有配对流程', T.grep[1]],
       ['新建 peer-grants 存储', T.write[1]],
@@ -559,7 +547,6 @@ class Component extends DCLogic {
       return { show: show, letter: c[0], color: c[1], path: c[2], plus: '+' + c[3], minus: c[4] ? '−' + c[4] : '' };
     });
 
-    // 终端：同一个时钟驱动命令与输出
     const bashOn = ms >= T.bash[0] && ms < T.bash[1];
     const cmd = 'npm run typecheck';
     const cmdTyped = ms >= T.bash[0] ? cmd.slice(0, clamp(Math.floor((ms - T.bash[0]) / 25), 0, cmd.length)) : '';

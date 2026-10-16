@@ -1,13 +1,4 @@
-/**
- * 辅助小窗的窗口状态与纯逻辑（v3 WP-25d / WP-12）。
- *
- * 主进程不看渲染端的输入框：草稿留在渲染端，主进程只维护**窗口级**状态
- * （可见 / 提交中 / 错误 / 是否启用），这样打字不必每次往返 IPC。这里全是纯
- * reducer 与校验，可在 node 里直接断言（见 scripts/test-v3-aux-windows.mjs）。
- */
 import type { MiniItem, QuickAskErrorCode, AuxTarget } from './aux-types'
-
-/* ───────────────────────── 快速提问 ───────────────────────── */
 
 export interface QuickAskWindowState {
   visible: boolean
@@ -30,7 +21,6 @@ export type QuickAskAction =
   | { type: 'submit-ok' }
   | { type: 'submit-error'; code: QuickAskErrorCode; message?: string }
 
-/** 隐藏 / 重新打开时清掉上一次的错误，但不打断正在提交的那一次。 */
 export function quickAskReducer(state: QuickAskWindowState, action: QuickAskAction): QuickAskWindowState {
   switch (action.type) {
     case 'show':
@@ -48,20 +38,13 @@ export function quickAskReducer(state: QuickAskWindowState, action: QuickAskActi
   }
 }
 
-/**
- * 发送前的校验：空问题、选了「当前会话」却没有当前会话都直接拒绝。
- * 返回错误码；null 表示可以发送。
- */
 export function validateQuickAsk(prompt: string, target: AuxTarget, hasCurrent: boolean): QuickAskErrorCode | null {
   if (!prompt.trim()) return 'empty'
   if (target === 'current' && !hasCurrent) return 'no-current'
   return null
 }
 
-/* ───────────────────────── 迷你小窗 ───────────────────────── */
-
 export interface MiniWindowState {
-  /** 设置项：迷你小窗是否允许出现（默认关闭）。 */
   enabled: boolean
   visible: boolean
   items: MiniItem[]
@@ -90,7 +73,6 @@ export function miniReducer(state: MiniWindowState, action: MiniAction): MiniWin
   }
 }
 
-/** 条目在微型窗口里的高度估计：用于决定窗口高度（有上限，超过后内部滚动）。 */
 export const MINI_ROW_HEIGHT = 44
 export const MINI_HEADER_HEIGHT = 36
 export const MINI_MAX_HEIGHT = 420

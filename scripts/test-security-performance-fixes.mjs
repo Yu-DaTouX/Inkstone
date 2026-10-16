@@ -1,4 +1,3 @@
-/** Bounded regressions for browser provenance, archive budgets, search and remote/cache pressure. */
 import assert from 'node:assert/strict'
 import { build, transform } from 'esbuild'
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises'
@@ -88,7 +87,6 @@ try {
   console.log(`✓ 37MB streaming search bounded to ${text.length} chars, ${ticks} timer ticks in ${(performance.now() - start).toFixed(1)}ms`)
   await writeFile(join(temp, 'oversize.jsonl'), row('x'.repeat(9 * 1024 * 1024)) + row('after-oversize'))
   assert.equal(await readSessionSearchText(join(temp, 'oversize.jsonl')), 'after-oversize')
-  // 按实际 UTF-8 字节预算驱逐，而非固定会话条数；夹具要真正超过 16 MiB。
   for (let i = 0; i < 30; i++) await writeFile(join(process.env.YAN_SESSIONS_DIR, `${i}.jsonl`), row('all-histories-marker ' + i + ' 汉'.repeat(200000)))
   const searched = await searchSessionText('all-histories-marker', 100)
   assert.equal(searched.total, 30); assert.equal(searched.hits.length, 30); assert.ok(searched.indexed < searched.total)
@@ -129,10 +127,6 @@ try {
   const cleaned = await prune()
   assert.equal(cleaned.removed, 1); assert.ok(existsSync(join(imageDir, hash + '.png')))
 
-  /*
-   * 没有会话目录时**不清理**：全新安装、自定义数据目录、目录被移走都长这样。
-   * 那时「没扫到引用」不等于「附件是垃圾」—— 附件事后没有备份，删了不可逆。
-   */
   let missing
   await writeFile(join(imageDir, 'orphan.png'), 'synthetic orphan image')
   vm.runInNewContext((await transform(handlerSource, { loader: 'ts', target: 'es2022' })).code, {
@@ -142,9 +136,7 @@ try {
     PI_AGENT_DIR: join(temp, 'no-sessions-here'), YAN_DIR: temp, statSync, existsSync, ...attachments
   })
   const skipped = await missing()
-  /* vm 里的对象来自另一个 realm，`deepEqual` 会因原型不同报假失败，逐字段比。 */
   assert.equal(skipped.removed, 0); assert.equal(skipped.bytes, 0); assert.equal(skipped.kept, 0)
-  /* 上一步刚造一个孤儿附件：没有会话目录时它必须还在（不能「扫不到引用」就删）。 */
   assert.ok(existsSync(join(imageDir, 'orphan.png')), '没有会话目录时不清理孤儿附件')
   assert.ok(existsSync(join(imageDir, hash + '.png')), '有引用的附件当然也还在')
   console.log('✓ production attachment IPC refuses busy/corrupt/changing histories; stable scan removes only unreferenced fixture')

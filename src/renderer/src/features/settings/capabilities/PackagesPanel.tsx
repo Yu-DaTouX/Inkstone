@@ -1,14 +1,3 @@
-/**
- * pi 插件包 / 砚内置能力面板（S2，供「扩展」与「市场」共用）。
- *
- * 与 v2 `PackagesTab` 的语义一致，但重画为 v3 版面，并只复用正式 IPC：
- *   · 列表来自 `packages.list(cwd)`；安装 / 更新 / 卸载走 `packages.action`；
- *   · 「安装成功」= pi CLI 返回成功，「加载成功」= 磁盘上真能读到（`installed`）；
- *     不显示「当前会话可用」——那需要 pi 重载，不假装已发生。
- *   · 内置能力随砚分发，**没有卸载按钮**，与用户装的包分开展示。
- *
- * 不自动拉远端：本面板只读本地列表；`packages.search` 只由市场分页在用户点搜索时调用。
- */
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { useT } from '../../../i18n'
 import type { MessageKey } from '../../../i18n'
@@ -25,10 +14,6 @@ import { useConfirm } from './confirm'
 import { createOperationTracker, runGuardedOperation, type OperationTracker } from './operation-state'
 import { Actions, Empty, Group, Item, ItemHead, Meta, Note, Panel, Warn } from './parts'
 
-/**
- * 内置能力 id → i18n 键。与主进程 `builtinCapabilities()` 的 id 对齐；
- * 对不上就退而成显示文件名（看得见的缺口，不是静默空白）。
- */
 const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
   'task-plan': { name: 'pkg.builtin.task-plan', desc: 'pkg.builtin.task-planDesc' },
   browser: { name: 'pkg.builtin.browser', desc: 'pkg.builtin.browserDesc' },
@@ -47,12 +32,9 @@ const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
 }
 
 export interface PackagesPanelProps {
-  /** 市场「选择」后预填的来源。 */
   initialSource?: string
-  /** 变化时重新套用 `initialSource`（同一来源可再次选择）。 */
   selectionKey?: number
   showBuiltin?: boolean
-  /** 面板顶部的一段说明（可放回退 / 语义提示）。 */
   note?: ReactNode
 }
 
@@ -108,7 +90,6 @@ export function PackagesPanel({
     return () => {
       mounted.current = false
       generation.current++
-      /* 项目 / 挂载变化：未完成操作的结果不再属于当前上下文。 */
       tracker.invalidateScope()
     }
   }, [load, tracker])
@@ -152,7 +133,6 @@ export function PackagesPanel({
     await runGuardedOperation<PackageActionResultView>({
       tracker,
       isMounted: () => mounted.current,
-      /* 按本次操作自己的 token 设置 / 清除 busy：旧操作的 finally 不会解锁新操作。 */
       setBusy: (value) =>
         setBusy(value ? `${kind}:${targetLocal ? 'project' : 'user'}:${src}` : ''),
       action: async () => {
@@ -168,7 +148,6 @@ export function PackagesPanel({
         else await load()
         if (action.ok && kind === 'install') setSource('')
       },
-      /* 过期结果只在当前上下文提示，不冒充当前项目成功，也不静默丢弃。 */
       onStale: () => setStaleNotice(text('pkgStaleResult'))
     })
   }

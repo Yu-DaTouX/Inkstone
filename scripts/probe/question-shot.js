@@ -1,4 +1,3 @@
-/* 只摆出一条提问请求并停住，供 YAN_PROBE_SHOT 截图核对提问面板的外观（不断言）。 */
 ;(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const store = window.__yanStore

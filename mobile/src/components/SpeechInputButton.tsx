@@ -6,7 +6,6 @@ import { IconButton } from '../ui'
 import { Icon } from '../icons'
 import { RunDot, useReducedMotion } from '../motion'
 
-/** A real audio level, confined to the existing composer action row. */
 function VoiceWave({ level }: { level: number }) {
   const p = usePalette()
   const reduced = useReducedMotion()

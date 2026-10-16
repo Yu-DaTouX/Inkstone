@@ -1,4 +1,3 @@
-/** Current-conversation map, real isolated session logs; no model calls. */
 ;(async()=>{
 const out=[],store=window.__yanStore,sleep=ms=>new Promise(r=>setTimeout(r,ms)),q=s=>document.querySelector(s),qa=s=>[...document.querySelectorAll(s)];
 const ok=(value,label)=>out.push(`  ${value?'✓':'✗'} ${label}`);

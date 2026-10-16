@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * 原生会话 v3 面板（模型循环范围 / 项目信任 / 原始条目）小检查。
- *
- * 目标：不用源码字符串断言当唯一证据，把**真实生产模块**现场 esbuild 出来跑：
- *   · `features/session/native/native-surfaces-model.ts` —— 投影 / 限量 / 请求绑定；
- *   · `features/session/native/NativeSessionSurfaces.tsx` —— 面板模式映射、owner 归属、
- *     迟到查询 / 保存作废、空 / 错误 / 上限态；
- *   · 真实 `ui` 原语 + `react-dom/server` 做一组 SSR，核对控件语义确实落在 DOM。
- *
- * 另有一组纯本地 mock transport：不启动 Electron / 浏览器，不连真实 pi / 会话 /
- * 树 / 信任 / 历史 / 模型，不发真实 IPC。行为组里的 `ui` / i18n / store 用浅替身，
- * 只验证接线；真实控件语义由 SSR 组负责。
- *
- * 用法：node scripts/test-v3-native-surfaces.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -24,8 +9,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 function group(name) {
@@ -39,8 +22,6 @@ function ok(cond, label, detail) {
   process.stdout.write(`${pass ? '  ✓' : '  ✗'} ${label}${extra}\n`)
   return pass
 }
-
-/* ------------------------------------------------------- 浅渲染 React 替身 */
 
 const REACT_SHIM = `const rt = () => globalThis.__V3_HOOKS
 export const Fragment = Symbol.for('v3.fragment')
@@ -65,7 +46,6 @@ export function jsx(type, props, key) { const el = createElement(type, props); i
 export const jsxs = jsx
 `
 
-/* ui / i18n / store 的浅替身：替身只让组件树能构建，断言看元素 props。 */
 const UI_STUB = `export function Button() { return null }
 export function Checkbox() { return null }
 export function CheckboxGroup() { return null }
@@ -97,10 +77,6 @@ function makeStubMap() {
   )
 }
 
-/**
- * 行为组插件：`react` 换成浅 hook 运行时，`ui` / i18n / store 换成浅替身，
- * 其余本地模块（native-surfaces-model / native-session / view-identity）保持真实源码。
- */
 function stubPlugin(stubMap, reactShimPath, jsxShimPath) {
   return {
     name: 'v3-native-surfaces-stubs',
@@ -156,7 +132,6 @@ export { Button, Checkbox, CheckboxGroup, Badge, Dialog, Modal, ModalOverlay, Sp
   return outfile
 }
 
-/** SSR 组：真实 `ui` 原语 + 真实 react/react-dom/server；只替身 i18n / store。 */
 async function buildSsrBundle(outdir) {
   const entry = [
     "import * as React from 'react'",
@@ -200,8 +175,6 @@ async function buildSsrBundle(outdir) {
   })
   return outfile
 }
-
-/* ------------------------------------------------------- 浅渲染 hook 运行时 */
 
 function makeHookRuntime() {
   const rt = {
@@ -311,9 +284,6 @@ function findByType(node, type) {
   return hit
 }
 
-/* ------------------------------------------------------------------ transport */
-
-/** 可控 transport：每次请求挂起，测试自己决定何时、以何值 resolve。 */
 function controlledTransport() {
   const pending = []
   return {
@@ -327,8 +297,6 @@ function controlledTransport() {
     }
   }
 }
-
-/* ------------------------------------------------------------------ fixtures */
 
 const MODELS = [
   { provider: 'anthropic', id: 'claude-sonnet', name: 'Claude Sonnet' },
@@ -374,8 +342,6 @@ function installSsrGlobals() {
   }
 }
 
-/* ------------------------------------------------------------------ 主流程 */
-
 async function main() {
   const outdir = await mkdtemp(join(tmpdir(), 'yan-v3-native-surfaces-'))
   let mod
@@ -414,7 +380,6 @@ async function main() {
 
   const text = nativeSurfaceText('zh-CN')
 
-  /* ================================================== 组 1：纯投影与限量 */
   group('纯投影：模式判定 / 模型范围 / 信任 / 条目限量')
   {
     ok(isNativeSurfaceMode('scoped-models'), 'scoped-models 是合法面板模式')
@@ -484,7 +449,6 @@ async function main() {
     ok(preview.rows[0].preview.length <= 20, '预览字符受限')
   }
 
-  /* ================================================== 组 2：请求绑定 */
   group('请求绑定：expectedSessionId 与动作参数')
   {
     const t1 = controlledTransport()
@@ -541,7 +505,6 @@ async function main() {
     ok(thrown.ok === false && thrown.error === 'boom', '抛出的异常翻成失败结果')
   }
 
-  /* ================================================== 组 3：容器行为 */
   group('ScopeModelsSurface：加载 / 勾选 / 保存 / 迟到 / 错误')
   {
     const rt = makeHookRuntime()
@@ -575,7 +538,6 @@ async function main() {
     ok(view.props.notice === text.scope.saved && view.props.error === '', '保存成功显示提示')
     ok(view.props.dirty === false, '保存后回到未改动')
 
-    /* 全选（写空数组 = 全部） */
     view.props.onSelectAll()
     tree = await flush(rt, ScopeModelsSurface, props)
     view = findByType(tree, ScopeModelsView)
@@ -594,7 +556,6 @@ async function main() {
     view = findByType(tree, ScopeModelsView)
     ok(view.props.selected.size === 0 && view.props.dirty === true, '清空相对全部可用也是改动')
 
-    /* 迟到：owner 切走 */
     const rt2 = makeHookRuntime()
     globalThis.__V3_HOOKS = rt2
     const t2 = controlledTransport()
@@ -609,7 +570,6 @@ async function main() {
     ok(!!lateView && lateView.props.models.length === 3, 'B 的模型仍在')
     ok(lateView.props.scopeIsAll === true, '迟到 A 的响应未覆盖新会话')
 
-    /* 错误 + 重试 */
     const rt3 = makeHookRuntime()
     globalThis.__V3_HOOKS = rt3
     const t3 = controlledTransport()
@@ -621,7 +581,6 @@ async function main() {
     err = await flush(rt3, ScopeModelsSurface, { transport: t3, sessionId: 'sess-a', text })
     ok(t3.calls.filter((c) => c.action === 'scoped-models').length >= 2, '重试重新发请求')
 
-    /* 无 owner */
     const rt4 = makeHookRuntime()
     globalThis.__V3_HOOKS = rt4
     const t4 = controlledTransport()
@@ -652,7 +611,6 @@ async function main() {
     panel = findByType(tree, TrustPanel)
     ok(panel.props.view.trusted === true && panel.props.notice === text.trust.saved, '保存成功更新状态与提示')
 
-    /* 取消：不报错、不改状态 */
     const rt2 = makeHookRuntime()
     globalThis.__V3_HOOKS = rt2
     const t2 = controlledTransport()
@@ -669,7 +627,6 @@ async function main() {
     ok(panel2.props.error === '' && panel2.props.notice === '' && panel2.props.busy === false, '用户取消不当错误、不谎称保存、释放 busy')
     ok(panel2.props.view.trusted === false, '取消后状态不变')
 
-    /* 迟到保存：owner 切走后响应不得回写 */
     const rt3 = makeHookRuntime()
     globalThis.__V3_HOOKS = rt3
     const t3 = controlledTransport()
@@ -701,7 +658,6 @@ async function main() {
     ok(!!panel && panel.props.view.rows.length === 2, '条目视图渲染')
     ok(typeof panel.props.onRefresh === 'function' && !('onSave' in panel.props), '条目视图只有刷新，没有写动作')
 
-    /* 刷新 */
     panel.props.onRefresh()
     tree = await flush(rt, EntriesSurface, props)
     ok(t.calls.filter((c) => c.action === 'entries').length >= 2, '刷新重新发 entries 请求')
@@ -710,7 +666,6 @@ async function main() {
     panel = findByType(tree, EntriesPanel)
     ok(panel.props.view.rows.length === 1 && panel.props.view.rows[0].id === 'u2', '刷新后显示新条目')
 
-    /* 空 + 上限 */
     const rt2 = makeHookRuntime()
     globalThis.__V3_HOOKS = rt2
     const t2 = controlledTransport()
@@ -724,7 +679,6 @@ async function main() {
     const limitView = buildEntriesView(many, { maxRows: 3 })
     ok(limitView.truncated === true && limitView.shown === 3 && limitView.total === 8, '超过上限时视图标记截断')
 
-    /* 错误 + 重试 */
     const rt3 = makeHookRuntime()
     globalThis.__V3_HOOKS = rt3
     const t3 = controlledTransport()
@@ -739,7 +693,6 @@ async function main() {
     ok(!!findByType(errTree, EntriesPanel), '重试成功后恢复列表')
   }
 
-  /* ================================================== 组 4：宿主模式映射与归属 */
   group('NativeSessionSurfaces：模式映射 / 未知模式 / owner 关闭')
   {
     const store = {
@@ -784,7 +737,6 @@ async function main() {
     ok(findByTestId(tree, 'native-surface-unknown'), '未知面板类型显示明确错误框')
     ok(!!findByTestId(tree, 'native-surface-unknown-detail'), '未知模式有可读说明')
 
-    /* owner 关闭：会话切换 */
     const storeB = {
       nativeSessionPanel: { mode: 'trust', sessionId: 'sess-a' },
       closeNativeSessionPanel: () => {
@@ -805,7 +757,6 @@ async function main() {
     rt2.render(NativeSessionSurfaces, { transport })
     ok(storeB.closed === 1, '视图切到别的会话时关闭面板')
 
-    /* owner 关闭：peek 另一条会话 */
     const storeC = {
       nativeSessionPanel: { mode: 'scoped-models', sessionId: 'sess-a' },
       closeNativeSessionPanel: () => {
@@ -823,7 +774,6 @@ async function main() {
     rt3.render(NativeSessionSurfaces, { transport })
     ok(storeC.closed === 1, 'peek 到别的会话时关闭面板')
 
-    /* entries 子视图：scope 里点「查看原始条目」切到只读条目 */
     const storeD = {
       nativeSessionPanel: { mode: 'scoped-models', sessionId: 'sess-a' },
       closeNativeSessionPanel: () => {},
@@ -843,7 +793,6 @@ async function main() {
     ok(findByTestId(dTree, 'native-surface-entries'), '入口切到只读条目视图（同一 owner）')
   }
 
-  /* ================================================== 组 5：静态边界 */
   group('静态边界：只用 v3 原语，不自画控件外观')
   {
     const src = await readFile(join(ROOT, 'src/renderer/src/features/session/native/NativeSessionSurfaces.tsx'), 'utf8')
@@ -871,7 +820,6 @@ async function main() {
     ok(!css.includes('@import'), '模块 CSS 不 @import')
   }
 
-  /* ================================================== 组 6：真实原语 SSR */
   group('真实 v3 原语 SSR：勾选 / 状态 / 只读行落在真实 DOM')
   {
     installSsrGlobals()

@@ -1,4 +1,3 @@
-/* Shared UI actions for probes using the current workspace launcher. */
 window.__yanOpenWorkspaceTool = async (title, id) => {
   const wait = async predicate => {
     const end = Date.now() + 8000

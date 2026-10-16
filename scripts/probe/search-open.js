@@ -1,9 +1,3 @@
-/*
- * Real search → open → observe acceptance (实施-27 S4).
- * Uses one read-only Wikipedia query. Search results are treated as untrusted input:
- * only a plain HTTPS Wikipedia article URL without shell metacharacters is passed
- * to the CLI, and no page action other than navigation/observation is performed.
- */
 ;(async () => {
   const out = []
   const ok = (condition, label, detail = '') => {

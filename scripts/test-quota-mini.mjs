@@ -1,15 +1,6 @@
-/*
- * 额度摘要派生单测（src/shared/quota-mini.ts，实施-20 U2）。
- *
- * 这一片的用户问题是「mini 摘要错位 / 摘要与明细对不上」，
- * 所以断言集中在：同一份窗口数据、同一套格式化，摘要与明细拿到的
- * 数字必须来自同一次除法（只有小数位渲染不同）。
- */
-
 export async function runQuotaMiniTests(ok, mod) {
   const { money, quotaCompactWindows, windowPct, CURRENCY_SYMBOL } = mod
 
-  /* ── money：余额只写一个数字 + 一个单位 ── */
   ok(money(9.92, 'USD') === '$9.92', 'money：美元用 $ 前缀')
   ok(money(9.92, 'CNY') === '¥9.92', 'money：人民币用 ¥（DeepSeek 余额的真实场景）')
   ok(money(28, 'PERCENT') === '28.0%', 'money：PERCENT 伪币种渲染成百分比而不是 $28.00')
@@ -17,7 +8,6 @@ export async function runQuotaMiniTests(ok, mod) {
   ok(money(3) === '$3.00', 'money：缺省币种按美元')
   ok(Object.keys(CURRENCY_SYMBOL).includes('JPY'), 'money：符号表含 JPY')
 
-  /* ── quotaCompactWindows：只显示接口真的返回了的短周期 ── */
   const w = (id, label, used, total) => ({ id, label, used, total })
   const five = w('fiveHour', '5 小时', 25, 100)
   const week = w('weekly', '每周', 40, 100)
@@ -40,7 +30,6 @@ export async function runQuotaMiniTests(ok, mod) {
     '紧凑栏：primary 无数字标签时仍给出 5h'
   )
 
-  /* ── windowPct：摘要与明细共用同一次除法 ── */
   ok(windowPct(w('x', 'x', 5, 0)) === null, 'windowPct：total 为 0 时返回 null（不假装 0%）')
   ok(windowPct(w('x', 'x', 25, 100)) === 25, 'windowPct：整数百分比在 0 位下是 25')
   ok(windowPct(w('x', 'x', 25, 100), 1) === 25, 'windowPct：同一次除法在 1 位下仍是 25')

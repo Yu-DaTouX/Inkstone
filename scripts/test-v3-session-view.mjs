@@ -1,27 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 会话视图归属与成果真实身份的现场回归。
- *
- * 目的：不用源码字符串断言，而是把**真实渲染端组件与真实 store** 现场 esbuild
- * 出来、用最小 React 浅渲染替身驱动，钉住这一族缺陷：
- *   · SessionView 的滚动身份、流式 / 等待、问答日志筛选、批准 / 提问挂载
- *     必须按「当前视图」（peekedPath / peekedSessionId 优先）而不是运行实例
- *     投影的 session；A 仍在跑时看历史 B，不能把 A 的等待 / 流式 / 卡片当 B 的。
- *   · path-only peek（只有路径、没有 sessionId）不能冒认活动会话 A 的 id。
- *   · 跨会话相同短消息 id 时列表 key 必须带视图身份，切视图重挂安全。
- *   · TurnView → Markdown / TurnArtifacts 必须拿到真实消息身份（commentary.id、
- *     response.id、AssistantTurn.id）与逐段 sourceCwd；未知身份用 null。
- *
- * 三份 bundle：
- *   · logic：共享的 createTurnProjector（构造真实回合 fixture）；
- *   · viewstate：纯身份推导（真实函数，无 React）；
- *   · session：真实 SessionView + 真实 store，TurnView / ApprovalCard / QuestionCard
- *     / Icon / virtua / i18n 打桩，记录被渲染的 props 与 key；
- *   · turn：真实 TurnView + 真实 store，Markdown / TurnArtifacts 打桩，记录身份。
- *
- * 用法：node scripts/test-v3-session-view.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型、不打开文件或网页。
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
@@ -30,8 +7,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 let currentGroup = null
@@ -52,8 +27,6 @@ function ok(cond, label, detail) {
   return pass
 }
 
-/* -------------------------------------------------------- 定时 / 全局桩 */
-
 function installGlobals() {
   const storage = new Map()
   globalThis.localStorage = {
@@ -68,7 +41,6 @@ function installGlobals() {
     try {
       fn(0)
     } catch {
-      /* 浅渲染里没有真实帧，忽略 */
     }
     return 0
   }
@@ -94,8 +66,6 @@ function installWindow() {
     location: { href: 'http://localhost/' }
   }
 }
-
-/* ------------------------------------------------------------ React 替身 */
 
 const REACT_SHIM = `/* v3 会话视图回归的 React 浅渲染替身：状态放在 globalThis.__V3_HOOKS。 */
 const rt = () => globalThis.__V3_HOOKS
@@ -130,8 +100,6 @@ const VIRTUA_STUB = `export function VList(){ return null }
 VList.__stub = 'vlist'
 export const Virtualizer = VList
 `
-
-/* ------------------------------------------------------------------ 构建 */
 
 function abs(rel) {
   return normalize(resolve(ROOT, rel))
@@ -261,8 +229,6 @@ export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'
   return { logicOut, viewstateOut, sessionOut, turnOut }
 }
 
-/* ------------------------------------------------------- 浅渲染 hook 运行时 */
-
 function makeHookRuntime() {
   const rt = {
     cells: [],
@@ -344,8 +310,6 @@ function collect(node, pred, out = []) {
 const byStub = (tree, name) => collect(tree, (el) => el.type && el.type.__stub === name)
 const byTypeName = (tree, name) => collect(tree, (el) => typeof el.type === 'function' && el.type.name === name)
 
-/* ------------------------------------------------------------------ fixture */
-
 const approval = (over = {}) => ({
   id: 'ap',
   kind: 'danger',
@@ -415,8 +379,6 @@ async function main() {
   const { SessionView, useStore } = sessionBundle
   const { TurnView, useStore: turnStore } = turnBundle
 
-  /* ============================================================== 纯身份 */
-
   group('view-state：peek 优先、逐字段回退，不冒认活动会话')
   {
     const session = { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', conversationFile: 'A' }
@@ -444,8 +406,6 @@ async function main() {
     ok(approvalMatchesView({ sessionId: 'sub-x', subagentId: 'sub-1' }, sub, active) === true, '子代理批准按父会话归属到视图 A')
     ok(approvalMatchesView({ subagentId: 'missing' }, sub, active) === false, '来源解析不出时不强行匹配')
   }
-
-  /* ======================================================= SessionView 接线 */
 
   const rt = makeHookRuntime()
   globalThis.__V3_HOOKS = rt
@@ -498,7 +458,6 @@ async function main() {
 
   group('回到 A：保留原滚动身份，A 的等待 / 卡片重新出现')
   {
-    // 先在 A 上渲染一次，记下视图键（滚动记录按它隔离）
     const onA = renderSession({
       session: SESSION_A,
       messages: [msg('m0', 'user', 'A 的问题', { timestamp: 10 })],
@@ -508,7 +467,6 @@ async function main() {
     const aKey = onA.props['data-view-key']
     ok(aKey === 'A', 'A 的视图键取活动会话文件 A', aKey)
 
-    // 切到 B（同名短 id m0），再切回 A
     const onB = renderSession({
       session: SESSION_A,
       messages: [msg('m0', 'user', 'B 的问题', { timestamp: 10 })],
@@ -528,7 +486,6 @@ async function main() {
     ok(byStub(back, 'approval').length === 1, '回到 A：来源 A 的批准卡重新出现')
     ok(byStub(back, 'question').length === 1, '回到 A：A 的提问卡重新出现')
 
-    // 相同短消息 id 在不同视图下的 key 必须不同
     const keyA = byStub(onA, 'turnview')[0]?.key
     const keyB = byStub(onB, 'turnview')[0]?.key
     ok(keyA === 'A|m0' && keyB === 'B|m0' && keyA !== keyB, '跨会话相同短消息 id：key 带视图身份，切视图重挂安全', { keyA, keyB })
@@ -568,8 +525,6 @@ async function main() {
     ok(byStub(tree, 'question').length === 0, '提问没有来源身份：仍不冒认到 B 视图')
   }
 
-  /* ================================================= TurnView 成果真实身份 */
-
   const project = createTurnProjector()
   const baseMessages = () => [
     msg('u1', 'user', 'hi', { timestamp: 1 }),
@@ -603,7 +558,6 @@ async function main() {
     ok(turn.id === 'a1', 'AssistantTurn.id 是首条 assistant 消息 id a1', turn.id)
 
     const tree = renderTurn(turn, { sessionId: 'sess-a', streaming: false })
-    /* 过程收拢：解说收在过程行里，默认折叠时不铺开；展开后仍是同一身份与视图参数 */
     const proc = byTypeName(tree, 'TurnProcess')[0]
     ok(!!proc, '带工具的回合把解说收进过程行 TurnProcess')
     const folded = proc ? rt.render(proc.type, proc.props) : null
@@ -641,7 +595,6 @@ async function main() {
     ok(byStub(tree, 'turn-artifacts').length === 1, '已完成成果卡与生图进度并存，不被回退提示遮掉')
   }
 
-  /* ------------------------------------------------------------------ 汇总 */
   process.stdout.write(`\n${report.fail === 0 ? '全部通过' : '有失败项'}：${report.pass} 通过 / ${report.fail} 失败\n`)
   await rm(outdir, { recursive: true, force: true })
   process.exit(report.fail === 0 ? 0 : 1)

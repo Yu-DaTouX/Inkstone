@@ -1,24 +1,3 @@
-/**
- * 输入框上方常驻子代理区（运行中 / 需处理）的专项检查。
- *
- * 用户反馈：同一 child 在原回合卡和输入框上方各出现一次，输入区被第二套卡片撑高。
- * 本脚本钉住修订后的最小契约（只一行概览 + 查看入口，不再渲染任何卡片）：
- *   ① 真实选择器 `activeSubagentRuns`：当前视图里运行中或需处理的留下，
- *      正常完成 / 被停止的撤下；`parentSessionId` 优先，缺失归属不猜当前会话；
- *      旧记录没有 `parentSessionId` 但挂在当前视图运行实例下（`parentRunId` 命中）
- *      仍留下，不漏在跑的任务；同一 runId 的多次推送只保留最后一份。
- *   ② 真实组件 `ActiveSubagents`：只渲染一行概览与查看入口，0/1/3/10 个任务
- *      都不出现 `SubagentGroup` / 卡片；跨会话 / 后台被查看（peek）不串。
- *   ③ 点击查看派发真实工作区事件（单一任务 → `inkstone-agent-open` 的
- *      `subagent:<id>`；多任务 → `inkstone-workspace-launch` 的 `agents`），
- *      由真实 `RightPanel` 监听消费（见下），不落回没人消费的 store action。
- *
- * 现场用 esbuild 编译到系统临时目录；不启动 Electron、不连接 pi、不访问网络、
- * 不读写真实用户数据、不触碰用户窗口。
- *
- * 导出 `runSubagentActiveVisibilityTests(ok)` 供 test:unit 调用；直接运行本文件
- * 也会执行并在失败时置退出码。import 本模块不会执行测试、不退出、不改 global。
- */
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -27,21 +6,11 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { build } from 'esbuild'
 
-/** 按原 property descriptor 恢复 globalThis 上的临时全局：原本没有的才删除。 */
 function restoreGlobal(name, descriptor) {
   if (descriptor) Object.defineProperty(globalThis, name, descriptor)
   else delete globalThis[name]
 }
 
-/**
- * 真实事件消费方（源码核实，不凭印象）：
- *   · `src/renderer/src/components/toolbar/RightPanel.tsx` 监听 `inkstone-agent-open`，
- *     用 `/^(hub|subagent):[A-Za-z0-9-]+$/` 过滤后 `openAgent(id)` → `open('agent:'+id)`
- *     渲染既有 `SubagentPanel`；
- *   · 同一文件监听 `inkstone-workspace-launch`，`detail === 'agents'` 时
- *     `setAgentManager(true); open('agents')` 打开既有面板总览。
- * 这里的监听器复刻这两条 guard，用来确认点击派发的就是消费方真正会处理的事件。
- */
 function installRealConsumers(target, opened) {
   target.addEventListener('inkstone-agent-open', (event) => {
     const id = event.detail
@@ -57,14 +26,12 @@ export async function runSubagentActiveVisibilityTests(ok) {
     ? ok
     : (condition, label) => { if (!condition) throw new Error(`✗ ${label}`) }
 
-  /* 只改这几个临时全局；结束时按原 descriptor 还原，避免污染调用方。 */
   const realReact = Object.getOwnPropertyDescriptor(globalThis, 'React')
   const realActiveStore = Object.getOwnPropertyDescriptor(globalThis, '__activeStore')
   const realActiveButton = Object.getOwnPropertyDescriptor(globalThis, '__activeButton')
   const realPanelStore = Object.getOwnPropertyDescriptor(globalThis, '__panelStore')
   const realWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
 
-  /* 脱敏 fixture：只保留选择器/组件真正会读的字段，任务名不含真实内容。 */
   const run = (id, extra = {}) => ({
     id,
     task: `task-${id}`,
@@ -78,11 +45,9 @@ export async function runSubagentActiveVisibilityTests(ok) {
   })
 
   const selectorDir = await mkdtemp(join(tmpdir(), 'yan-active-subagents-'))
-  /* 组件包含 React 依赖：编译到项目内 .tmp/，node 才能从 node_modules 解析 bare import */
   await mkdir('.tmp/subagent-active-visibility', { recursive: true })
   const componentDir = await mkdtemp(resolve('.tmp/subagent-active-visibility/run-'))
   try {
-    /* ① 真实选择器 */
     const selectorOut = join(selectorDir, 'subagent-view.mjs')
     await build({
       entryPoints: ['src/renderer/src/state/subagent-view.ts'],
@@ -120,7 +85,6 @@ export async function runSubagentActiveVisibilityTests(ok) {
     check(!has('foreign'), '别的会话的子代理不串进当前会话')
     check(!has('orphan'), '没有归属字段且不属于当前视图的旧记录不猜当前会话')
 
-    /* 缺失归属的旧记录：只要挂在当前视图的运行实例下（parentRunId 命中）就留下。 */
     const fallback = activeSubagentRuns(
       [run('legacy', { parentRunId: 'R1' }), run('other-run', { parentRunId: 'R2' })],
       { sessionIds: ['S'], runIds: ['R1'] }
@@ -150,7 +114,6 @@ export async function runSubagentActiveVisibilityTests(ok) {
     const chain = activeSubagentRuns([run('child', { parentSessionId: 'CHILD' })], { sessionIds: ['S', 'CHILD'] })
     check(chain.length === 1, '显式会话链里的任务算当前会话')
 
-    /* ④ 视图归属推导：peek 优先，不看 activeRunnerId（后台查看 B、active 仍在 A）。 */
     const runnersAB = [
       { id: 'rA', runId: 'rA', sessionId: 'A', sessionFile: 'C:\\proj\\a.jsonl' },
       { id: 'rB', runId: 'rB', sessionId: 'B', sessionFile: 'c:/PROJ/b.jsonl' }
@@ -190,7 +153,6 @@ export async function runSubagentActiveVisibilityTests(ok) {
     const scopePending = subagentScopeForView({ peekedSessionId: null, peekedPath: 'C:/PROJ/B.jsonl', session: null, runners: runnersAB })
     check(scopePending.sessionIds.length === 0 && scopePending.runIds?.[0] === 'rB', '按路径预览（pending）时仍按路径找到视图实例')
 
-    /* ②③ 真实组件：脱敏 fixture 渲染常驻入口 */
     globalThis.React = { createElement, Fragment: undefined }
     globalThis.__activeStore = { subagents: [], session: null, runners: [] }
     globalThis.__activeButton = null
@@ -290,7 +252,6 @@ export const Textarea = ({ children, ...rest }) => h('textarea', rest, children)
       return renderToStaticMarkup(createElement(ActiveSubagents))
     }
 
-    /* 0 / 1 / 3 / 10 个任务：DOM 里都不能出现任何任务卡。 */
     for (const n of [0, 1, 3, 10]) {
       const runs = Array.from({ length: n }, (_, i) => run(`r${i}`, { parentSessionId: 'S' }))
       const html = render({ subagents: runs })
@@ -310,7 +271,6 @@ export const Textarea = ({ children, ...rest }) => h('textarea', rest, children)
     const noSession = render({ subagents: [run('orphan')], session: null })
     check(noSession === '', '没有会话归属时不猜当前会话，不渲染')
 
-    /* 后台被查看 / 分屏：peek 优先，只显示屏幕正在看的那条会话。 */
     const deferred = render({
       peekedSessionId: 'V',
       peekedPath: null,
@@ -327,7 +287,6 @@ export const Textarea = ({ children, ...rest }) => h('textarea', rest, children)
     })
     check(onlyOld === '', 'peek 的视图没有任务时，原活动会话的任务不串进来')
 
-    /* 缺失归属的旧记录按当前视图运行实例兜底（peek 时用视图的 runner）。 */
     const legacyView = render({
       peekedSessionId: 'V',
       peekedPath: null,
@@ -337,13 +296,11 @@ export const Textarea = ({ children, ...rest }) => h('textarea', rest, children)
     })
     check(legacyView.includes('data-testid="active-subagents"'), '旧记录缺归属但挂在当前视图运行实例下 → 仍显示，不漏在跑任务')
 
-    /* 运行中 → done：同一份快照推进后常驻入口撤下。 */
     const runningNow = render({ subagents: [run('job', { parentSessionId: 'S' })] })
     check(runningNow.includes('data-testid="active-subagents"'), '运行中占位')
     const doneAfter = render({ subagents: [run('job', { parentSessionId: 'S', status: 'done', review: 'none', endedAt: Date.now() })] })
     check(doneAfter === '', '运行中 → done（无需处理）后撤下')
 
-    /* 投影真实工作区事件：单一任务开详情，多任务开既有面板总览。 */
     const target = new EventTarget()
     const opened = []
     installRealConsumers(target, opened)
@@ -359,7 +316,6 @@ export const Textarea = ({ children, ...rest }) => h('textarea', rest, children)
     globalThis.__activeButton.onClick()
     check(opened.length === 1 && opened[0] === 'agents', '多任务点击 → inkstone-workspace-launch 的 agents 打开既有面板总览')
 
-    /* ⑤ 右侧面板与常驻区共用同一归属推导：后台查看 B 时列表 / 详情都只认 B。 */
     const runsViewB = [
       run('b-sid', { parentSessionId: 'B' }),
       run('b-legacy', { parentRunId: 'rB' }),
@@ -392,7 +348,6 @@ export const Textarea = ({ children, ...rest }) => h('textarea', rest, children)
     const detailMissing = renderPanel(viewBStore, 'subagent:a-legacy')
     check(detailMissing.includes('data-empty'), 'A 的旧任务在 B 视图面板里解析为缺失，不串入')
 
-    /* pending 路径预览：peekedSessionId 未定，只有路径，也要找到 B 的实例。 */
     const pendingPanel = renderPanel({
       peekedSessionId: null,
       peekedPath: 'C:/PROJ/B.jsonl',
@@ -402,7 +357,6 @@ export const Textarea = ({ children, ...rest }) => h('textarea', rest, children)
     })
     check(pendingPanel.includes('data-runs="b-legacy"'), '按路径预览时面板仍按路径找到 B 实例并列出其旧记录')
 
-    /* 单行点击派发的事件与面板归属一致：event 里的 run 在面板能解析到。 */
     const eventStore = {
       peekedSessionId: 'B',
       peekedPath: null,
@@ -438,8 +392,6 @@ export const Textarea = ({ children, ...rest }) => h('textarea', rest, children)
     await rm(componentDir, { recursive: true, force: true })
   }
 }
-
-/* -------------------------------------------------------------- 直接运行入口 */
 
 const invokedDirectly = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url
 if (invokedDirectly) {

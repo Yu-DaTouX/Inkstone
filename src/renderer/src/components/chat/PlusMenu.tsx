@@ -4,15 +4,6 @@ import { useT } from '../../i18n'
 import { identityForAwait, useStore } from '../../state/store'
 import { Tip } from '../ui'
 
-/**
- * `+` 菜单（2026-09-22）：codex 式「添加」入口。
- *
- * 为什么不再让 `+` 直接开图片选择器：图片只是**其中一种**能加进来的东西。
- * 「文件和文件夹」「图片」「能力」并排之后，用户不用先猜 `+` 会做什么。
- *
- * ⚠️ 菜单是 `fixed` 定位：`.composer` 有 `overflow: hidden`（圆角与自主光带
- *    需要它），`absolute` 会被整块裁掉 —— 与 `.mode-menu` / `.mt-pop` 同一个坑。
- */
 export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
   const t = useT()
   const pickImages = useStore((s) => s.pickImages)
@@ -22,14 +13,9 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
   const [open, setOpen] = useState(false)
   const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
   const [caps, setCaps] = useState<{ id: string; title: string; hint: string }[] | null>(null)
-  /* 目标表单：菜单内的第二层，不另开浮层（浮层叠浮层在窄屏上会互相遮） */
   const [composing, setComposing] = useState(false)
   const [goalText, setGoalText] = useState('')
   const [outcomeText, setOutcomeText] = useState('')
-  /*
-   * 可选补充栏（实施-16 G-1）：默认收起 —— 不展开时仍是原来的「目标 + 成果」两栏流程，
-   * 菜单长度和维护习惯不变；空字符串 = 用户没写，不往目标里塞默认句。
-   */
   const [extrasOpen, setExtrasOpen] = useState(false)
   const [deliverableText, setDeliverableText] = useState('')
   const [scopeText, setScopeText] = useState('')
@@ -40,7 +26,6 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
   const goalInputRef = useRef<HTMLTextAreaElement>(null)
   const MENU_WIDTH = 340
 
-  /* 打开时量按钮坐标并把焦点交给菜单 —— 否则方向键到不了菜单里 */
   useEffect(() => {
     if (!open) {
       setAnchor(null)
@@ -55,7 +40,6 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
     menuRef.current?.focus()
   }, [open])
 
-  /* 点外部关闭（菜单是浮层，不能一直挡着输入区） */
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
@@ -65,10 +49,6 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
-  /*
-   * 能力清单**打开时才拉**：它要读磁盘上的技能目录与 MCP 配置，
-   * 每次渲染都拉会把输入区变成一个会打磁盘的组件。
-   */
   useEffect(() => {
     if (!open || caps) return
     let alive = true
@@ -85,7 +65,6 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
           }))
         ])
       } catch {
-        /* 读不到就当没有能力 —— 菜单本身仍然可用 */
         if (alive) setCaps([])
       }
     })()
@@ -100,12 +79,10 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
     buttonRef.current?.focus()
   }
 
-  /* 进目标表单时把焦点交给第一栏 —— 否则键盘用户要 Tab 一路找过去 */
   useEffect(() => {
     if (open && composing) goalInputRef.current?.focus()
   }, [open, composing])
 
-  /** 建立持续目标：成功才把消息模板写进输入框（失败时输入框不该被动过） */
   const startGoal = async (): Promise<void> => {
     const goal = goalText.trim()
     const outcome = outcomeText.trim()
@@ -113,10 +90,6 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
     const deliverable = deliverableText.trim()
     const scope = scopeText.trim()
     const constraints = constraintsText.trim()
-    /*
-     * A7（实施-14 F5）：await 之前记下会话身份，回来先核对。
-     * 用户在等响应的这几百毫秒里切了会话时，不能把目标模板插到另一条会话的输入框。
-     */
     const before = identityForAwait(useStore.getState())
     const res = await setGoal({
       goal,
@@ -128,7 +101,6 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
     if (!res.ok) return
     if (identityForAwait(useStore.getState()) !== before) return
     close()
-    /* 种子消息带上用户写全的契约：模型第一轮就该看到补充字段，而不是只看到两栏 */
     const extra = [
       deliverable ? t('plus.goalSeedDeliverable', { value: deliverable }) : '',
       scope ? t('plus.goalSeedScope', { value: scope }) : '',
@@ -190,11 +162,6 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
           style={{ width: MENU_WIDTH, ...(anchor ? { left: anchor.left, bottom: anchor.bottom } : {}) }}
         >
           {composing ? (
-            /*
-             * 目标表单：目标 + **可衡量的成果**两栏。
-             * 第二栏不是可选的 —— 「不达成不结束」需要一条能验收的判据，
-             * 否则模型永远可以宣布自己完成了。
-             */
             <div className="plus-compose" data-testid="plus-goal-compose">
               <span className="plus-group-label">{t('plus.goalTitle')}</span>
               <label className="plus-field">
@@ -323,10 +290,6 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
           <div className="plus-group" data-testid="plus-capabilities">
             <span className="plus-group-label">{t('plus.capabilities')}</span>
             {caps === null ? null : caps.length === 0 ? (
-              /*
-               * 空态可直接点：用户看到「去设置里加」时的下一个动作就是去那里，
-               * 让他再自己找一遍设置入口是多一层无用功。
-               */
               <button
                 className="mode-item plus-empty"
                 data-testid="plus-cap-empty"

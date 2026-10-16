@@ -2,7 +2,6 @@ import type { TerminalSessionInfo } from '../../../shared/ipc'
 import type { MessageKey } from '../i18n'
 import type { BadgeTone } from '../components/ui'
 
-/** 只展示程序上报的事实；存活的Shell没有报告时不伪装成忙碌。 */
 export function terminalTabStatus(terminal: TerminalSessionInfo): { key: MessageKey; tone: BadgeTone; progress?: number } | null {
   const status = terminal.status
   if (!status || status.state === 'clear') return null

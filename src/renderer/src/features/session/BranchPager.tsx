@@ -1,14 +1,3 @@
-/**
- * 用户消息旁的「2/3 ‹ ›」同分叉点切换（v3 · 设计 §8.8）。
- *
- * 只呈现 `branch-pager-model.ts` 的纯投影：当前序号 / 兄弟总数，以及前后切换。
- * 控件全部来自正式原语 `ui/IconButton`，图标来自本目录 `Icon`；本文件与
- * `branch-pager.css` 只写版面，不自画按钮外观。键盘 `←` / `→` 只在 pager 自己
- * 获得焦点时处理，不注册全局监听、不抢输入框的方向键。
- *
- * 分支不存在 / 无稳定 `entryId` / 只有一个兄弟时，模型为空，这里不渲染任何东西
- * ——不放假按钮，也不拿消息文字或时间猜分支。
- */
 import { useMemo, type JSX, type KeyboardEvent } from 'react'
 import type { Lang } from '../../i18n'
 import { useI18n } from '../../i18n'
@@ -45,15 +34,10 @@ export function branchPagerText(lang: Lang): BranchPagerText {
   return lang === 'en-US' ? EN : ZH
 }
 
-/** 传给 `TurnView` 的只读绑定：模型表 + 切换在途 / 错误 / 忙状态 + 导航回调。 */
 export interface BranchPagerBinding {
-  /** key = 用户消息稳定 `entryId`；没有对应条目就不画 pager。 */
   models: ReadonlyMap<string, BranchPagerModel>
-  /** 在途导航的目标 `entryId`；非 null 时禁连续点击。 */
   pending: string | null
-  /** 导航失败的宿主原文；空串表示没有错误。 */
   error: string
-  /** 会话忙（运行 / 流式 / 压缩中）：只读展示，不切换。 */
   disabled: boolean
   onNavigate: (targetId: string) => void
 }

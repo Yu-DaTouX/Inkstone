@@ -1,6 +1,3 @@
-// Diagnostic fixture extension for the PB2 native-exe adapter tests.
-// Registers a destructive-annotated tool and dumps the visible tool list on session_start.
-// Only used by scripts/test-pi-bolt-native-adapter.mjs with an isolated data dir.
 import { writeFileSync } from 'node:fs'
 
 export default function pb2DiagExtension(pi) {

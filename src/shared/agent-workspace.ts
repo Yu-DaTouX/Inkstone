@@ -1,7 +1,6 @@
 import type { HubTask } from './agent-hub'
 import type { SubagentRun } from './ipc'
 
-/** 只读运行投影：保留正式后端身份，操作回到各自事实源。 */
 export interface AgentWorkspaceRun {
   key: string
   source: 'hub' | 'subagent'
@@ -11,7 +10,6 @@ export interface AgentWorkspaceRun {
   status: string
   live: boolean
   attention: boolean
-  /** 已不在运行，可以直接关闭这条记录 */
   closable: boolean
   terminal: boolean
   startedAt: number

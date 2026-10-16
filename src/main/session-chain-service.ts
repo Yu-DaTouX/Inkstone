@@ -1,23 +1,3 @@
-/**
- * 会话链的会话级存储（实施-05 S5b）。
- *
- * ══════════════════════════════════════════════════════════
- * 它守的是什么
- * ══════════════════════════════════════════════════════════
- * 「后台两份、前端一条」全靠这份关系：**哪几段属于同一条会话**。
- * 它一旦写错，界面就会出现两条会话（用户在侧栏看到不该存在的第二段）、
- * 或者历史拼错顺序（读侧按段顺序取文件）。所以三条不变式在这里钉死：
- *
- *   1. **一个段只属于一条链**（`sanitizeSessionChains` 也守这条）——
- *      合并两条链是**猜测**，宁可少一条关系也不要凭猜拼历史；
- *   2. **链内向后追加**（`link` 只往后接，历史不重排）—— 交接是单向过程；
- *   3. **落盘失败必须抛**（与目标 / 交接计数同因）：内存里有一条链、磁盘上没有，
- *      重启后界面就会突然多出一条会话 —— 那比「这次交接失败」糟得多。
- *
- * ⚠️ 这一层**不改写任何 JSONL**，只写 `YAN_DIR/session-chains.json`（旁挂关系）。
- *    真正的「创建目的会话 + 执行租约 + resume」是 S5b 的事务侧。
- */
-
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
@@ -34,10 +14,8 @@ import {
   type SessionChain
 } from '../shared/session-chain'
 
-/** 最多记多少条链（与其它 store 同量级）。 */
 const MAX_CHAINS = 2000
 
-/* 落盘文件名与契约同一份定义（避免两处常量漂移） */
 export { SESSION_CHAIN_FILE_NAME }
 
 export interface SessionChainDocument {
@@ -75,7 +53,6 @@ export class SessionChainStore {
     this.now = options.now ?? Date.now
   }
 
-  /** 全部链（界面 / 侧栏用；调用前请先 `load`）。 */
   chains(): SessionChain[] {
     return this.doc.chains
   }
@@ -84,26 +61,10 @@ export class SessionChainStore {
     return chainForFile(this.doc.chains, sessionFile)
   }
 
-  /**
-   * 这条会话在侧栏里该不该显示（只有代表段显示）。
-   *
-   * 不在任何链上 → 显示（孤立会话自己就是一条）。
-   */
   isRepresentative(sessionFile: string): boolean {
     return isRepresentative(this.doc.chains, sessionFile)
   }
 
-  /**
-   * 交接提交：把 `toFile` 作为 `fromFile` 所在链的新段。
-   *
-   * 四种情形都有确定行为：
-   *   · `fromFile` 已在某链上 → 向后追加（幂等：`toFile` 已在链上就原样返回）；
-   *   · `fromFile` 不在任何链上 → 新建一条链 `[from, to]`（首段交接）；
-   *   · `toFile` 已经属于**另一条**链 → 拒绝并原样返回（一个段只能属于一条链）；
-   *   · 键不可用（空 / 控制字符）→ 返回 `null`，不落盘。
-   *
-   * 返回提交后 `fromFile` 所在的链（调用方据此拿到代表段 = 新段）。
-   */
   async link(fromFile: string, toFile: string, handoffId: string | null): Promise<SessionChain | null> {
     return this.enqueue(async () => {
       const from = normalizeChainKey(fromFile)
@@ -112,7 +73,6 @@ export class SessionChainStore {
 
       const existingTo = chainForFile(this.doc.chains, to)
       const current = chainForFile(this.doc.chains, from)
-      /* `to` 已属于另一条链：拒绝，且不改任何东西（合并是猜测） */
       if (existingTo && existingTo !== current) return existingTo
 
       const at = this.now()
@@ -136,19 +96,11 @@ export class SessionChainStore {
     })
   }
 
-  /** 代表段（最后一段）；界面 / 发送目标都用它。 */
   representativeOf(sessionFile: string): string | null {
     const chain = this.chainOf(sessionFile)
     return chain ? (chainRepresentative(chain)?.sessionFile ?? null) : normalizeChainKey(sessionFile)
   }
 
-  /**
-   * 忘掉包含这个段的**整条链**（删除会话时调）。
-   *
-   * 为什么整条一起忘：段文件都进了回收站，链记录再留着就会让「代表段」
-   * 指向一个不存在的文件 —— 侧栏会因此把另一段（真实存在）也藏起来。
-   * 幂等：不在任何链上时返回 false，不动磁盘。
-   */
   async forget(sessionFile: string): Promise<boolean> {
     return this.enqueue(async () => {
       const key = normalizeChainKey(sessionFile)
@@ -171,7 +123,6 @@ export class SessionChainStore {
       const text = await readFile(sessionChainDocumentPath(this.root), 'utf8')
       this.doc = sanitizeSessionChainDocument(JSON.parse(text))
     } catch {
-      /* 文件不存在 / 读不了 / 坏 JSON：都当「还没有任何链」（每条会话各自一条） */
       this.doc = { version: 1, chains: [], updatedAt: 0 }
     }
   }
@@ -202,7 +153,6 @@ export class SessionChainStore {
       await writeFile(temp, JSON.stringify(this.doc), 'utf8')
       await rename(temp, path)
     } catch {
-      /* 落盘失败不报成功：回退内存态，让调用方看到失败 */
       try {
         const text = await readFile(path, 'utf8')
         this.doc = sanitizeSessionChainDocument(JSON.parse(text))

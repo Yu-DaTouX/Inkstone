@@ -1,30 +1,19 @@
-/** Layout contains resource references only. Moving a pane never changes its owner. */
 export type DockEdge = 'left' | 'right' | 'top' | 'bottom' | 'center'
 export type DockNode = { type: 'group'; id: string; panes: string[]; active: string } |
   { type: 'split'; id: string; axis: 'x' | 'y'; ratio: number; first: DockNode; second: DockNode }
-/**
- * `basis` is the canvas size the ratios were last set at. Splits beside the main conversation keep
- * the tool side's pixel size from that basis, so a wider rail or a smaller window narrows only the
- * conversation instead of every tile.
- */
 export interface WorkspaceLayout { version: 1; root: DockNode; hidden: string[]; maximized?: string; basis?: { w: number; h: number } }
 export interface DockRect { x: number; y: number; w: number; h: number }
 export interface DockGroupRect extends DockRect { group: Extract<DockNode, { type: 'group' }> }
 export interface DockSeparator extends DockRect { id: string; axis: 'x' | 'y'; ratio: number; bounds: DockRect }
 export const CHAT_PANE = 'chat'
-/** The second conversation of a split view; laid out like the main conversation, never as a tool tab. */
 export const PEER_PANE = 'chat-peer'
-/** Further conversations of a split view (up to five tiles in all): `chat-peer-2`, `chat-peer-3`, ... */
 export const isConversationPane = (id: string): boolean => id === CHAT_PANE || id === PEER_PANE || /^chat-peer-\d+$/.test(id)
-/** Pane id of the n-th conversation tile (0 is the main conversation). */
 export const conversationPaneId = (index: number): string => index <= 0 ? CHAT_PANE : index === 1 ? PEER_PANE : `${PEER_PANE}-${index}`
-/** Gap between tiles; the gap doubles as the resize separator. */
 export const DOCK_GAP = 8
 export const DOCK_MIN_CHAT = 280
 export const DOCK_MIN_TOOL = 160
 const group = (id: string, panes: string[]): DockNode => ({ type: 'group', id, panes, active: panes[0] })
 const uid = (): string => crypto.randomUUID()
-/** The default workspace is the main conversation alone; tools open beside it on demand. */
 export function defaultWorkspaceLayout(): WorkspaceLayout {
   return { version: 1, root: group('conversation', [CHAT_PANE]), hidden: [] }
 }
@@ -44,7 +33,6 @@ function removePane(node: DockNode, pane: string): DockNode | null {
 }
 const conversationCount = (n: DockNode): number => n.type === 'group' ? n.panes.filter(isConversationPane).length : conversationCount(n.first) + conversationCount(n.second)
 const onlyConversations = (n: DockNode): boolean => n.type === 'group' ? n.panes.every(isConversationPane) : onlyConversations(n.first) && onlyConversations(n.second)
-/** Wrap the widest all-conversation subtree around the main conversation, so k tiles end up with equal widths. */
 function addConversation(root: DockNode, pane: string): DockNode {
   const wrap = (n: DockNode): DockNode => {
     if (!holdsChat(n)) return n
@@ -61,7 +49,6 @@ export function openDockPane(layout: WorkspaceLayout, pane: string): WorkspaceLa
   let root = layout.root
   if (existing) root = mapNode(root, n => n.type === 'group' && n.id === existing.id ? { ...n, active: pane } : n)
   else if (isConversationPane(pane)) {
-    /* Another conversation joins the row of conversations at an even share; tools stay where they were. */
     root = addConversation(root, pane)
   } else {
     const candidates = dockGroups(root).filter(g => !g.panes.some(isConversationPane))
@@ -73,7 +60,6 @@ export function openDockPane(layout: WorkspaceLayout, pane: string): WorkspaceLa
   const previousMaxGroup = dockGroups(layout.root).find(g => g.panes.includes(layout.maximized ?? ''))
   return { ...layout, root, hidden: layout.hidden.filter(id => id !== pane), maximized: layout.maximized && existing?.id === previousMaxGroup?.id ? pane : undefined }
 }
-/** The arrangement with one pane lifted out; drag targets are measured on it so they stay still while tiles reflow. */
 export function withoutDockPane(layout: WorkspaceLayout, pane: string): WorkspaceLayout {
   const root = removePane(layout.root, pane)
   return root ? { ...layout, root, maximized: undefined } : layout
@@ -86,9 +72,7 @@ export function hideDockPane(layout: WorkspaceLayout, pane: string): WorkspaceLa
   })
   return { ...layout, root, hidden: [...new Set([...layout.hidden, pane])], maximized: layout.maximized === pane ? undefined : layout.maximized }
 }
-/** The size the moved pane already has along the new split, and the length of the target it splits. */
 export interface DockKeep { size: number; extent: number }
-/** With `keep`, the moved pane lands at the size it had instead of half of the target. */
 export function moveDockPane(layout: WorkspaceLayout, pane: string, targetId: string, edge: DockEdge, keep?: DockKeep): WorkspaceLayout {
   const groups = dockGroups(layout.root), source = groups.find(g => g.panes.includes(pane)), target = groups.find(g => g.id === targetId)
   if (!source || !target || (source.id === targetId && (source.panes.length === 1 || edge === 'center'))) return layout
@@ -108,14 +92,12 @@ export function resizeDockSplit(layout: WorkspaceLayout, id: string, ratio: numb
   return { ...layout, root: mapNode(layout.root, n => n.type === 'split' && n.id === id ? { ...n, ratio: Math.max(.1, Math.min(.9, ratio)) } : n) }
 }
 const holdsChat = (n: DockNode): boolean => n.type === 'group' ? n.panes.includes(CHAT_PANE) : holdsChat(n.first) || holdsChat(n.second)
-/** Re-express the ratios at the current size so the arrangement on screen becomes the new basis. */
 export function rebaseDockLayout(layout: WorkspaceLayout, available: Set<string>, width: number, height: number): WorkspaceLayout {
   if (layout.maximized) return layout
   const measured = measureDockLayout(layout, available, width, height)
   const shares = new Map(measured.separators.map(s => [s.id, s.ratio]))
   return { ...layout, root: mapNode(layout.root, n => n.type === 'split' && shares.has(n.id) ? { ...n, ratio: shares.get(n.id)! } : n), basis: { w: measured.width, h: measured.height } }
 }
-/** Validate persisted data defensively, with depth/node limits and unique resource references. */
 export function normalizeWorkspaceLayout(value: unknown): WorkspaceLayout {
   const fallback = defaultWorkspaceLayout()
   if (!value || typeof value !== 'object' || (value as WorkspaceLayout).version !== 1) return fallback
@@ -129,7 +111,6 @@ export function normalizeWorkspaceLayout(value: unknown): WorkspaceLayout {
     if (n.type === 'group' && Array.isArray(n.panes)) {
       const valid = n.panes.filter(id => typeof id === 'string' && id.length < 2048 && !panes.has(id) && !!panes.add(id))
       if (!valid.length) return null
-      // Main conversation can never be concealed behind a tool label.
       if (valid.includes(CHAT_PANE) && valid.length > 1) {
         return { type: 'split', id: uid(), axis: 'x', ratio: .65, first: group(n.id, [CHAT_PANE]), second: group(uid(), valid.filter(id => id !== CHAT_PANE)) }
       }
@@ -159,7 +140,6 @@ export function measureDockLayout(layout: WorkspaceLayout, available: Set<string
     if (!b[0]) return a
     return n.axis === 'x' ? [a[0] + b[0] + DOCK_GAP, Math.max(a[1], b[1])] : [Math.max(a[0], b[0]), a[1] + b[1] + DOCK_GAP]
   }
-  /* `b` is the same node laid out at the basis size; it tells how many pixels the tool side had. */
   const walk = (n: DockNode, r: DockRect, b: DockRect): void => {
     if (!visible(n)) return
     if (n.type === 'group') { groups.push({ ...r, group: n }); return }
@@ -178,7 +158,6 @@ export function measureDockLayout(layout: WorkspaceLayout, available: Set<string
     const second = horizontal ? { ...r, x: r.x + size + DOCK_GAP, w: total - size } : { ...r, y: r.y + size + DOCK_GAP, h: total - size }
     const basisFirst = horizontal ? { ...b, w: basisSize } : { ...b, h: basisSize }
     const basisSecond = horizontal ? { ...b, x: b.x + basisSize + DOCK_GAP, w: basisTotal - basisSize } : { ...b, y: b.y + basisSize + DOCK_GAP, h: basisTotal - basisSize }
-    /* The reported ratio is the share on screen, which is what keyboard nudges and rebasing start from. */
     separators.push({ ...separator, id: n.id, axis: n.axis, ratio: total > 0 ? size / total : n.ratio, bounds: r })
     walk(n.first, first, basisFirst); walk(n.second, second, basisSecond)
   }

@@ -19,18 +19,12 @@ export interface SelectProps<T extends object = object> extends Omit<RACSelectPr
   label?: ReactNode
   description?: ReactNode
   errorMessage?: FieldErrorContent
-  /** 未选中时的占位文字（RAC 本地化默认「Select an item」）。 */
   placeholder?: string
-  /** 拉起的列表框项，通常是 `<ListBoxItem>`。 */
   children: ReactNode | ((item: T) => ReactNode)
   triggerClassName?: string
   listClassName?: string
 }
 
-/**
- * 下拉选择。支持键盘：`Enter`/`Space` 打开，方向键选择，输入文字按前缀跳转。
- * 选项来自 `children`（可用 `items` + 渲染函数做动态集合）。
- */
 export function Select<T extends object = object>({
   label,
   description,

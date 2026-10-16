@@ -1,14 +1,6 @@
-/**
- * 「设置 → 快捷键」分区自己的短文案（WP-25b 余项）。
- *
- * 只服务这一个分区：外壳与侧栏的共享文案在 `app/v3-text.ts`，其余设置分区在
- * `features/settings/settings-text.ts`。放在本目录是为了让快捷键改绑的内容
- * 与逻辑、样式一起独立演进，不挤进共享文案表。中英两语同键同占位符。
- */
 import type { Lang } from '../../../i18n'
 
 export interface ShortcutsText {
-  /** 分区顶部说明：哪些能改、怎么改。 */
   note: string
   columnAction: string
   columnKeys: string

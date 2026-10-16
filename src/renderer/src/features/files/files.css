@@ -1,13 +1,3 @@
-/*
- * v3 文件面板版面（P3 · R1）。
- *
- * 层归属（design/index.css 的层序 reset,tokens,base,primitives,patterns,features,utilities）：
- *   · 行 / 状态文字 / 标题的**外观**（颜色、悬停与选中底色、圆角、图标色）写 `@layer patterns`；
- *     与 features/commands/command-palette.css 同一口径，合并时可原样挪去 `patterns/`。
- *   · 容器与行**版面**（flex、高度、缩进、滚动、截断）写 `@layer features`。
- * 颜色 / 字形 / 尺寸都取 design/tokens.css 的变量，不私造令牌。
- */
-
 @layer patterns {
   .v3-files {
     background: var(--bg);
@@ -107,10 +97,6 @@
     gap: var(--s-2);
   }
 
-  /*
-   * 缩进走 CSS 变量：像素由行内 `--files-depth` 算出，窄栏下由容器的横向
-   * overflow hidden 兜住，不在样式里写死某一层。
-   */
   .v3-files-row {
     flex: 1;
     min-width: 0;

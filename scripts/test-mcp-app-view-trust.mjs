@@ -1,14 +1,3 @@
-/**
- * FIX1-app-trust 的合成验收（专用小测）。
- *
- * 目标：证明 App 视图的只读调用**不再**因服务自报 `readOnlyHint` 就静默执行，
- * 而必须有宿主注入的服务器 App 授权；同时覆盖拒绝 / 记录 / 失效 grant / 边界。
- *
- * 全部纯合成、不联网、不调用模型、不读写真实用户数据（只建隔离临时目录占位）。
- * 被验模块：`src/main/mcp/app-view-approval.ts` + `src/main/mcp/app-view-trust.ts`。
- *
- * 用法：node scripts/test-mcp-app-view-trust.mjs
- */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,7 +15,6 @@ const ok = (condition, message, detail) => {
   }
 }
 
-/* 隔离数据目录：本测不做 IO，仅避免任何误读真实配置。 */
 const dataDir = await mkdtemp(join(tmpdir(), 'yan-mcp-app-view-trust-'))
 process.env.YAN_DATA_DIR = dataDir
 
@@ -56,8 +44,6 @@ const { approveAppViewCall, evaluateHostTrust, mcpServerIdentityFingerprint } = 
 ok(typeof approveAppViewCall === 'function', '加载 approveAppViewCall')
 ok(typeof evaluateHostTrust === 'function', '加载 evaluateHostTrust')
 ok(typeof mcpServerIdentityFingerprint === 'function', '加载 mcpServerIdentityFingerprint')
-
-/* ---------------------------------------------------------------- 固定夹具 */
 
 const NOW = 1_700_000_000_000
 const FP_A = 'a'.repeat(64)
@@ -94,8 +80,6 @@ const throwingAsk = (tracker) => () => {
   return Promise.reject(new Error('broker timeout'))
 }
 
-/* ---------------------------------------------------------------- 1. 无 grant 的只读不能静默执行 */
-
 {
   const tracker = { calls: 0 }
   const result = await approveAppViewCall({ ...baseCall, annotations: safeAnnotations }, allowAsk(tracker))
@@ -109,7 +93,7 @@ const throwingAsk = (tracker) => () => {
   const result = await approveAppViewCall(
     { ...baseCall, annotations: safeAnnotations },
     allowAsk(tracker),
-    { serverFingerprint: FP_A, now: NOW } // 有指纹但无 grants
+    { serverFingerprint: FP_A, now: NOW }
   )
   ok(result.allowed && result.asked && tracker.calls === 1, '有指纹无 grant 的只读仍须询问')
   ok(result.audit.trustVerdict === 'no-grant' && result.audit.persistentGrant === false, '无 grant 记录 no-grant 且不建立持久授权')
@@ -124,8 +108,6 @@ const throwingAsk = (tracker) => () => {
   )
   ok(!result.allowed && result.asked && /拒绝/.test(result.reason ?? ''), '无 grant 只读被拒不执行')
 }
-
-/* ---------------------------------------------------------------- 2. 一次 allow 不持久化 */
 
 {
   const trackerA = { calls: 0 }
@@ -143,8 +125,6 @@ const throwingAsk = (tracker) => () => {
   })
   ok(trackerB.calls === 1 && !again.allowed, '第二次调用仍重新询问（一次 allow 不持久化）')
 }
-
-/* ---------------------------------------------------------------- 3. trusted 只读可直接 call */
 
 {
   const tracker = { calls: 0 }
@@ -178,16 +158,12 @@ const throwingAsk = (tracker) => () => {
   ok(other.allowed && other.asked && tracker2.calls === 1, 'tool 范围 grant 不覆盖其它工具，仍需询问')
 }
 
-/* ---------------------------------------------------------------- 4. 破坏 / 未知仍逐次问（grant 不适用） */
-
 for (const [key, annotations] of [['破坏性', destructiveAnnotations], ['未知注解', undefined], ['缺注解', {}]]) {
   const tracker = { calls: 0 }
   const result = await approveAppViewCall({ ...baseCall, annotations }, allowAsk(tracker), ctx())
   ok(result.allowed && result.asked && tracker.calls === 1, `${key}调用即使有 grant 仍询问`)
   ok(result.audit.trustVerdict === 'bypassed', `${key}调用审计记为未用授权（bypassed）`)
 }
-
-/* ---------------------------------------------------------------- 5. 旧指纹 / 跨 server / 撤销 / 过期 / owner */
 
 {
   const tracker = { calls: 0 }
@@ -255,14 +231,12 @@ for (const [key, annotations] of [['破坏性', destructiveAnnotations], ['未�
   ok(r2.asked, '非法授权人不构成信任，仍询问')
 }
 
-/* ---------------------------------------------------------------- 6. 裸布尔 / iframe 自报 trust 不被接受 */
-
 {
   const tracker = { calls: 0 }
   const r = await approveAppViewCall(
     { ...baseCall, annotations: safeAnnotations, trust: true, trusted: true, source: 'iframe' },
     allowAsk(tracker),
-    { serverFingerprint: FP_A, trusted: true, now: NOW } // 只有裸布尔、没有 grants
+    { serverFingerprint: FP_A, trusted: true, now: NOW }
   )
   ok(r.allowed && r.asked && tracker.calls === 1, '裸布尔 trusted / iframe 自报 trust 不构成授权')
 
@@ -275,8 +249,6 @@ for (const [key, annotations] of [['破坏性', destructiveAnnotations], ['未�
   const r3 = evaluateHostTrust({ serverFingerprint: FP_A, tool: 'read', grants: true, now: NOW })
   ok(!r3.trusted && r3.verdict === 'no-grant', 'evaluateHostTrust 不接受布尔 grants')
 }
-
-/* ---------------------------------------------------------------- 7. visibility 边界与记录 */
 
 {
   const r = await approveAppViewCall(
@@ -299,8 +271,6 @@ for (const [key, annotations] of [['破坏性', destructiveAnnotations], ['未�
   }
 }
 
-/* ---------------------------------------------------------------- 8. all 档不额外问但记录 */
-
 {
   const tracker = { calls: 0 }
   const r = await approveAppViewCall(
@@ -312,8 +282,6 @@ for (const [key, annotations] of [['破坏性', destructiveAnnotations], ['未�
   ok(r.recorded && r.audit.permissionMode === 'all' && r.reasons.length > 0, 'all 档仍记录风险与档位')
   ok(r.audit.trustVerdict === 'bypassed', 'all 档审计记为未进入信任判定')
 }
-
-/* ---------------------------------------------------------------- 9. 询问异常 / 超时 / null / 缺答复 */
 
 for (const [key, ask] of [['异常', throwingAsk({ calls: 0 })], ['返回 null', nullAsk({ calls: 0 })]]) {
   const r = await approveAppViewCall({ ...baseCall, annotations: destructiveAnnotations }, ask, ctx())
@@ -334,8 +302,6 @@ for (const [key, ask] of [['异常', throwingAsk({ calls: 0 })], ['返回 null',
   ok(!r.allowed, 'ask 返回非法 shape（undefined）判拒绝')
 }
 
-/* ---------------------------------------------------------------- 10. 指纹工具 */
-
 {
   const a = mcpServerIdentityFingerprint({ id: 'srv', transport: 'stdio', command: 'node', args: ['--x'], env: { TOKEN: 'secret-token' } })
   const b = mcpServerIdentityFingerprint({ id: 'srv', transport: 'stdio', command: 'node', args: ['--x'], env: { TOKEN: 'secret-token' } })
@@ -344,8 +310,6 @@ for (const [key, ask] of [['异常', throwingAsk({ calls: 0 })], ['返回 null',
   ok(a !== c, '配置变化（args）指纹随之变化')
   ok(!a.includes('secret-token'), '指纹不泄露 env 里的凭证原文')
 }
-
-/* ---------------------------------------------------------------- 收尾 */
 
 await rm(dataDir, { recursive: true, force: true })
 

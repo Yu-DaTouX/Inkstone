@@ -1,14 +1,3 @@
-/**
- * 会话里的成果渲染（WP-32 · R5 唯一接入口）。
- *
- * v3 之前，成果卡片只是回退提示；这里把它们接到 `features/artifacts` 的新实现：
- *   · HTML 成果：`prepareHtmlArtifact` → `inkstone-html` 隔离协议 → `ArtifactFrame`（形态可切）；
- *   · 图片成果：受控副本地址显示，单击进右栏预览、双击定位源文件；
- *   · 代码/其它：只读文本或不假装可预览的元信息。
- *
- * 只有 R5 拥有本文件；`TurnView` 的接线由父会话完成（`turn.artifacts` 传进 `TurnArtifacts`）。
- * 本文件不导入任何 v2 样式或组件。
- */
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -32,21 +21,18 @@ const HTML_ERROR_KEYS: Record<HtmlArtifactPreviewError, MessageKey> = {
 const isImageArtifact = (artifact: AssistantArtifact): boolean =>
   artifact.previewable && (artifact.kind === 'image' || artifact.kind === 'svg')
 
-/** 把快照错误映射到本地文案；未知错误按读取失败处理。 */
 function htmlErrorKey(error: string | null): MessageKey {
   return error && Object.prototype.hasOwnProperty.call(HTML_ERROR_KEYS, error)
     ? HTML_ERROR_KEYS[error as HtmlArtifactPreviewError]
     : HTML_ERROR_KEYS.read
 }
 
-/** 一个回合的成果列表：图片两列并排，HTML/代码整行。 */
 export function TurnArtifacts({
   artifacts,
   sessionId = null,
   messageId = null
 }: {
   artifacts: AssistantArtifact[]
-  /** 可选真实消息身份；父会话尚未传时用 artifact.id 作为唯一安全 fallback。 */
   sessionId?: string | null
   messageId?: string | null
 }): JSX.Element | null {
@@ -93,7 +79,6 @@ function ArtifactCard({
   const identityKey = deriveArtifactIdentityKey(sessionId, messageId, artifact.id)
   const wantsHtml = isHtml && !unavailable && !showSource
 
-  /* 快照与 WidgetBlock 共用同一个有界生命周期；near 由本卡自己的观察驱动。 */
   const [near, nearRef] = useNearViewport<HTMLElement>()
   const snapshot = usePreviewSnapshot({
     identityKey,
@@ -103,7 +88,6 @@ function ArtifactCard({
     release: (url) => window.yan.releaseHtmlArtifact(url)
   })
 
-  /* 代码 / HTML 源码：走只读文本 IPC。 */
   useEffect(() => {
     const wantsText = isCode && !unavailable && (!isHtml || showSource)
     if (!wantsText) {

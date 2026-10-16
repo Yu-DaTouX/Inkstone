@@ -1,15 +1,3 @@
-/**
- * v3 设置「通用分区」（G1：会话 / 通知 / 权限安全 / 设备同步 / 数据 / 关于）的纯本地检查。
- *
- * 不启动 Electron、不连 pi、不读用户设置、不调模型、不联网、不 build：
- *   1. 用 esbuild 编译 `general-model.ts` 的纯逻辑，在 Node 里断言；
- *   2. 用 `react-dom/server` 渲染真实分区组件与展示件（注入假 store 数据），
- *      验证只使用既有字段 / 既有 IPC，不出现假开关；
- *   3. 静态检查源码契约：只走 v3 `ui/` 与真实 store 动作 / IPC，不引入 v2 组件或旧样式，
- *      不新造权限档或授权预算；CSS 落在 features 层。
- *
- * 可独立执行：node scripts/test-v3-settings-general.mjs
- */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -98,7 +86,6 @@ async function main() {
     const { createElement } = React
     const render = (element) => renderToStaticMarkup(element)
 
-    /* ── 1. 纯逻辑：分区与旧深链接映射 ─────────────────────── */
     assert.deepEqual(
       [...Model.GENERAL_SECTION_ORDER],
       ['session', 'notifications', 'security', 'devices', 'data', 'about'],
@@ -111,7 +98,6 @@ async function main() {
     )
     ok(!('sound' in Model.GENERAL_LEGACY_MAP), 'sound 仍归外观，不在通用分区重映射')
 
-    /* ── 2. 纯逻辑：数值与设置归一化 ───────────────────────── */
     assert.equal(Model.bytesText(0), '0 MB')
     assert.equal(Model.bytesText(-1), '0 MB')
     assert.equal(Model.bytesText(1024 ** 2 * 10), '10 MB')
@@ -136,7 +122,6 @@ async function main() {
     assert.equal(Model.piSourceLabel(undefined), '—')
     assert.equal(Model.GENERAL_LEGACY_MAP.workspace, 'session')
 
-    /* ── 3. 文案两语齐全且占位符一致 ───────────────────────── */
     const zh = General.generalText('zh-CN')
     const en = General.generalText('en-US')
     assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort(), '中英文案键一一对应')
@@ -149,13 +134,6 @@ async function main() {
       assert.deepEqual(zhVars, enVars, `文案 ${key} 中英占位符一致`)
     }
 
-    /* ── 4. SSR：六个分区只读真实 store 字段 ───────────────── */
-    /*
-     * 注：zustand 的 `useStore` 在 SSR 用 getInitialState 作为 server snapshot，
-     * `setState` 不会影响本次渲染。因此这里只验证组件在真实 store 形状下能渲染、
-     * testid 结构稳定；设置值 → 字段的接线由第 6 节静态检查覆盖，
-     * 取值边界由第 5 节的纯展示件覆盖。
-     */
     localStorage.setItem('yan.lang', 'zh-CN')
 
     const withProvider = (component) => render(createElement(i18n.I18nProvider, null, createElement(component)))
@@ -204,7 +182,6 @@ async function main() {
     const aboutNoNav = render(createElement(i18n.I18nProvider, null, createElement(General.AboutSettings)))
     ok(!aboutNoNav.includes('data-testid="v3-about-models"'), '没有导航回调时不摆点不动的假按钮')
 
-    /* ── 5. SSRs：展示件对边界值如实呈现 ───────────────────── */
     const rootsHtml = render(
       createElement(General.AllowRootsList, {
         roots: ['C:/a', 'D:/b'],
@@ -245,7 +222,6 @@ async function main() {
     )
     ok(factsReal.includes('data-testid="v3-data-location"') && factsReal.includes('12 MB'), '数据位置显示真实路径与体积')
 
-    /* ── 6. 静态接线：真字段 / 真 IPC / 无假开关 ───────────── */
     const dir = join(process.cwd(), 'src/renderer/src/features/settings/general')
     const read = (name) => readFile(join(dir, name), 'utf8')
     const sources = {
@@ -283,7 +259,6 @@ async function main() {
       }
     }
 
-    /* ── 7. CSS 落在 features 层，只做版面 ─────────────────── */
     const css = await readFile(join(dir, 'general.css'), 'utf8')
     const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
     ok(cssCode.includes('@layer features'), 'CSS 落在 features 层')

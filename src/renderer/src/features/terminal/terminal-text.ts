@@ -1,11 +1,3 @@
-/**
- * 终端面板自己的一小段文案。
- *
- * 为什么不在两份 i18n JSON 里加键：它们是与 v2 共用的热点文件，v3 终端尚未定稿，
- * 现在加键会给 v2 留下无用条目（与 `app/v3-text.ts` 同一约定）。能用现有键的
- * （`term.new` / `term.close` / `tile.endTerminal` / `term.exited` / `term.retry` …）
- * 一律走 `useT()`，这里只放 v3 终端独有的短语。
- */
 import type { Lang } from '../../i18n'
 
 export interface TerminalText {

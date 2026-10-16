@@ -1,17 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 输入框版面（A2 对照表 1–16）的小检查。
- *
- * 两份验证：
- *   · 纯模型 `features/composer/composer-layout.ts`：左右控件顺序、模式徽标与
- *     提示符、发送/停止四种情形、发送键提示。
- *   · 真实 `Composer.tsx` 浅渲染：把子组件打桩后按元素顺序核对 JSX 真身 ——
- *     队列在框外上方、附件在框内、提示符在文本框前、底栏左侧权限/＋、右侧
- *     语音/上下文/模型+思考/运行位/发送，统计行在框下方。
- *
- * 不启动 Electron、不连 pi、不读用户数据、不调真实模型、不截图。
- * 用法：node scripts/test-v3-composer-layout.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -42,7 +29,6 @@ function installGlobals() {
     try {
       fn(0)
     } catch {
-      /* 浅渲染没有真实帧 */
     }
     return 0
   }
@@ -59,8 +45,6 @@ function installGlobals() {
     location: { href: 'http://localhost/' }
   }
 }
-
-/* --------------------------------------------------------------- 浅渲染替身 */
 
 const REACT_SHIM = `const rt = () => globalThis.__V3_HOOKS
 export const Fragment = Symbol.for('v3.fragment')
@@ -179,8 +163,6 @@ async function buildComposer(outdir) {
   return outfile
 }
 
-/* ------------------------------------------------------------- hook 运行时 */
-
 function hookRuntime() {
   const rt = {
     cells: [],
@@ -247,8 +229,6 @@ function hookRuntime() {
   return rt
 }
 
-/* ------------------------------------------------------------- 树工具 */
-
 const children = (node) => {
   const c = node && node.props ? node.props.children : undefined
   if (c === undefined || c === null || c === false) return []
@@ -278,7 +258,6 @@ function byTestId(node, id) {
   return null
 }
 
-/** 取容器里「属于底栏控件」的直接子元素的语义名（跳过纯文本与 null）。 */
 function controlNames(node) {
   return children(node)
     .filter((child) => typeof child === 'object' && child)
@@ -288,8 +267,6 @@ function controlNames(node) {
     })
 }
 
-/* ------------------------------------------------------------------ 主流程 */
-
 async function main() {
   installGlobals()
   const outdir = await mkdtemp(join(tmpdir(), 'inkstone-v3-layout-'))
@@ -297,7 +274,6 @@ async function main() {
     const bundle = await import(pathToFileURL(await buildComposer(outdir)).href)
     const { Composer, __state, layout } = bundle
 
-    /* ---- 纯模型 ---- */
     ok(layout.COMPOSER_LEFT_ORDER.join('>') === 'mode>permission>plus>sendkey', '底栏左侧顺序：模式徽标→权限→＋→发送键提示')
     ok(layout.COMPOSER_RIGHT_ORDER.join('>') === 'voice>context>model-thinking>run>send', '底栏右侧顺序：语音→上下文环→模型+思考→运行位→发送')
     ok(layout.composerMode('!ls') === 'bash' && layout.composerMode('/model') === 'cmd' && layout.composerMode('你好') === null, '模式徽标判据与 v3 现有 bash/ slash 一致')
@@ -310,7 +286,6 @@ async function main() {
     ok(layout.composerSendKeyHint('auto', true) === 'enter', '长文模式 → 显示 Enter 规则')
     ok(layout.composerSendKeyHint('ctrlEnter', false) === 'ctrl', '发送键非默认 → 显示实际规则')
 
-    /* ---- 真实 Composer 浅渲染 ---- */
     const rt = hookRuntime()
     globalThis.__V3_HOOKS = rt
     Object.assign(__state, {
@@ -355,13 +330,11 @@ async function main() {
     )
     ok(byTestId(card, 'composer-send') !== null && byTestId(card, 'composer-stop') === null, '空闲时发送键在发送位')
 
-    /* 有字：仍是发送；运行中且有字：发送（插话）而非停止 */
     const ta = byTestId(card, 'composer-input')
     ta.props.onChange({ target: { value: '你好', selectionStart: 2 } })
     tree = rt.render(Composer, {})
     ok(byTestId(tree, 'composer-send') !== null && byTestId(tree, 'composer-stop') === null, '空闲 + 有字 → 发送')
 
-    /* 运行中 + 有字 → 发送（插话）；先切到运行态再输入，避免草稿按会话重置 */
     __state.runners = [{ runId: 'r1', running: true }]
     __state.activeRunnerId = 'r1'
     tree = rt.render(Composer, {})
@@ -371,7 +344,6 @@ async function main() {
     tree = rt.render(Composer, {})
     ok(byTestId(tree, 'composer-send') !== null && byTestId(tree, 'composer-stop') === null, '运行中 + 有字 → 发送（插话）')
 
-    /* 运行中 + 有附件 + 空 → 发送 */
     const ta3 = byTestId(tree, 'composer-input')
     ta3.props.onChange({ target: { value: '', selectionStart: 0 } })
     __state.attachments = [{ id: 'a1', name: 'x.png', mimeType: 'image/png', size: 1, data: '', preview: '', kind: 'image' }]
@@ -379,7 +351,6 @@ async function main() {
     ok(byTestId(tree, 'composer-send') !== null && byTestId(tree, 'composer-stop') === null, '运行中 + 有附件 → 发送')
     __state.attachments = []
 
-    /* 模式徽标与提示符 */
     const ta4 = byTestId(tree, 'composer-input')
     ta4.props.onChange({ target: { value: '!npm test', selectionStart: 9 } })
     tree = rt.render(Composer, {})
@@ -387,12 +358,10 @@ async function main() {
     ok(controlNames(tools2)[0] === '#composer-mode', '输入 `!` 时模式徽标排在最左')
     ok(byClass(tree, 'composer-prompt').props.children === '$', '直执行模式提示符为 $')
 
-    /* 发送键提示 */
     __state.settings = { sendKey: 'ctrlEnter' }
     tree = rt.render(Composer, {})
     ok(byTestId(tree, 'composer-keyhint') !== null, '发送键非默认时显示发送键提示')
 
-    /* 源文件不引用 v2 样式（静态核对；运行证据由 style-isolation 检查补） */
     const composerCssText = await readFile(join(ROOT, 'src/renderer/src/features/composer/composer.css'), 'utf8')
     ok(/\n\s*\.composer\s*\{[^}]*position:\s*relative/.test(composerCssText), '卡片为绝对定位的顶边提供定位上下文')
     ok(/\n\s*\.cborder\s*\{[^}]*position:\s*absolute/.test(composerCssText), '顶边绝对定位，不占用卡片高度')

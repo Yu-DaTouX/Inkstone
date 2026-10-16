@@ -1,30 +1,3 @@
-/**
- * CSS 归并工具（P0-1 样式收敛用）：把同一文件里**同名选择器**的多条规则
- * 合成一条。
- *
- * ══════════════════════════════════════════════════════════════════
- * 为什么需要它
- * ══════════════════════════════════════════════════════════════════
- * redesign.css 是多次评审叠加的产物，同一个选择器常常有两三条定义
- * （新的在前、旧的在后，靠后者覆盖）。后果：
- *   · 想知道「这条规则最终是什么」，得把整个文件翻一遍；
- *   · 想改一个样式，要判断改哪一条才有效；
- *   · 迁移工具不敢动它们（只搬走一条会改变层叠）。
- *
- * ── 为什么是「串接」而不是「取最终值」──
- * 合并时**保留全部声明、保持原有先后顺序**，只是把几条规则的选择器合并。
- * 这样计算后的结果与原来逐字等价（同属性后者仍然后覆盖前者），
- * 而简写/展开属性（`margin` 与 `margin-top`）的相互覆盖也不会被打乱 ——
- * 「取最终值」听起来更干净，但那种省略会真的改变结果。
- *
- * 合并后的规则放在**最后一条的位置**，所以它与其他选择器的相对次序不变。
- *
- * 用法：
- *   node scripts/css-consolidate.mjs <文件...> [--dry]
- *
- * 改完必须跑：
- *   node scripts/css-layer-check.mjs <改动前的 styles 快照> src/renderer/src/styles
- */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,10 +5,8 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dir = join(root, 'src/renderer/src/styles')
 
-/** 屏蔽注释但保留长度 —— 见 css-migrate.mjs 里的同类说明 */
 const mask = (css) => css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
 
-/** 扫描顶层规则（记录 head/body 的精确区间，便于原地改写） */
 function scan(cssRaw) {
   const css = mask(cssRaw)
   const blocks = []
@@ -56,7 +27,6 @@ function scan(cssRaw) {
         continue
       }
       if (head.startsWith('@')) {
-        /* @keyframes 之类：整块跳过（内部不是普通规则） */
         let d = 1
         let j = i + 1
         while (j < css.length && d > 0) {
@@ -126,11 +96,11 @@ for (const name of files) {
   const src = readFileSync(path, 'utf8')
   const blocks = scan(src)
 
-  const groups = new Map() // "media|selector" → [block...]
+  const groups = new Map()
   let multiSel = 0
   for (const b of blocks) {
     if (b.head.split(',').length !== 1) {
-      multiSel++ // 多选择器规则不碰（拆开会改变层叠归属）
+      multiSel++
       continue
     }
     const key = `${b.media}|${b.head}`

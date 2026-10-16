@@ -1,15 +1,3 @@
-/**
- * 子 Agent 侧边详情：从对话里点一条子 Agent 行打开，贴在会话区右侧。
- *
- * 第一层只给「它在做什么、现在怎样、结论是什么」；错误与需要处理的审阅放在
- * 结论之前，不能为了整洁藏起来。模型、范围等次要信息放在底部。
- * 动作：在跑时停止；失败 / 超时 / 停止后用同一任务、模型与范围重派一条（砚不自动
- * 重来，由用户决定）；分屏看完整转录是进一步动作。
- *
- * 归属：只在 `owner === 当前视图 key` 时渲染，切会话即不再显示；重派与停止只在
- * 视图就是活动会话时可用，避免把新的子 Agent 挂到别的会话下。
- * 宽会话区与正文并列（对话列让位），窄时作为覆盖抽屉；Esc 关闭并把焦点还给那一行。
- */
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -33,7 +21,6 @@ export function SubagentPanel({ ownerKey, viewActive }: { ownerKey: string; view
   const runId = useSubagentPanel((s) => (s.owner === ownerKey ? s.runId : null))
   const run = useStore((s) => (runId ? s.subagents.find((item) => item.id === runId) : undefined))
 
-  /* 换了视图，或这条运行已不在列表（被清理 / 合并后移除）：收起，不留空壳 */
   const owner = useSubagentPanel((s) => s.owner)
   useEffect(() => {
     if (owner && owner !== ownerKey) useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
@@ -71,7 +58,6 @@ function PanelBody({ run, viewActive }: { run: SubagentRun; viewActive: boolean 
     return () => { parent?.style.removeProperty('--subagent-width') }
   }, [shownWidth])
 
-  /* 打开时把焦点放进面板（标题），键盘用户能直接读与 Tab 到动作 */
   useEffect(() => {
     rootRef.current?.querySelector<HTMLElement>('.v3-sap-title')?.focus({ preventScroll: true })
   }, [])
@@ -87,7 +73,6 @@ function PanelBody({ run, viewActive }: { run: SubagentRun; viewActive: boolean 
     }
   }
 
-  /* 同一任务、模型与范围再派一条；新的那条在对话里出现后从它自己的行打开 */
   const retry = async (): Promise<void> => {
     setBusy('retry')
     try {

@@ -1,20 +1,3 @@
-/**
- * MCP Apps 归属守卫与旧连接回收的合成验收。
- *
- * 用 esbuild 编译 `src/main/mcp/{app-spec,app-host,app-ownership-guard,config}.ts`，
- * 在**隔离临时目录**（YAN 配置 + PI agent 目录 + 项目目录）里跑：
- *   · 默认 fail-closed；未注入 runner 持有情况一律拒绝；
- *   · pi 侧仍有同名条目（保存路径 / 全局 / 项目）、坏 JSON、读失败、未知 runner 都拒绝；
- *   · 明确确认旧 runner 已退出且 pi 侧无条目才允许连接，并发连接去重；
- *   · 删服务 / 禁用 / 改回 pi 后 `reconcile` 确实 await 断开并清缓存；
- *   · 切换中迟到的调用结果被丢弃；
- *   · 配置变更串行替换，旧连接先关再建新，不产生两条连接。
- *
- * 用注入的 fake manager 观测创建 / 关闭次数；**不代表真实 MCP 服务 / 稳定版规范兼容**，
- * 真实协议连接由 `test-mcp-app-host.mjs` + 合成服务器覆盖。
- *
- * 命令：node scripts/test-mcp-app-ownership.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -87,7 +70,6 @@ async function clearPiFiles() {
   await rm(projectPiFile, { force: true })
 }
 
-/* 编译到仓库内的临时子目录：external SDK 需要沿目录找到 node_modules。 */
 const bundleDir = join(process.cwd(), 'out', 'test', `mcp-ownership-${process.pid}`)
 await mkdir(bundleDir, { recursive: true })
 const outfile = join(bundleDir, 'bundle.mjs')
@@ -111,7 +93,6 @@ const host = await import(pathToFileURL(outfile).href)
 
 const fake = createFakeManagerFactory()
 const env = { YAN_MCP_SERVERS_FILE: hostConfigFile }
-/** 显式 stub：pi agent 目录 + 唯一受信项目 + 明确「无旧 runner」。 */
 const guard = (overrides = {}) =>
   new host.McpAppOwnershipGuard({
     agentDir: piAgentDir,
@@ -131,8 +112,6 @@ try {
   await writeHostConfig(baseServers())
   await clearPiFiles()
 
-  /* --------------------------------------------------- 1. fail-closed */
-
   {
     const bare = new host.McpAppHost({ env })
     await fails(() => bare.listToolsWithMeta('managed'), 'path-scope-unknown', '默认未注入：路径范围不明，拒绝连接')
@@ -144,8 +123,6 @@ try {
     await fails(() => noRunner.listToolsWithMeta('managed'), 'runtime-unknown', '未提供 runner 持有情况：拒绝连接（不默认无旧 runner）')
   }
 
-  /* --------------------------------------- 2. 显式事实齐备才允许连接 + 去重 */
-
   const appHost = newAppHost()
   {
     const [a, b] = await Promise.all([appHost.listToolsWithMeta('managed'), appHost.listToolsWithMeta('managed')])
@@ -153,8 +130,6 @@ try {
     ok(fake.forServer('managed').length === 1, '并发连接去重：同一服务只创建一个 manager')
     ok(appHost.statusOf('managed').status === 'ready', '连接去重后状态为 ready')
   }
-
-  /* ------------------------------- 3. pi 侧仍有条目：拒绝并关掉已有池连接 */
 
   {
     await writePiDoc(piGlobalFile, { mcpServers: { managed: { command: 'still-there' } } })
@@ -166,15 +141,11 @@ try {
     await rm(piGlobalFile, { force: true })
   }
 
-  /* ------------------------------- 4. global 与 project 位置同名都算冲突 */
-
   {
     await writePiDoc(projectPiFile, { mcpServers: { managed: { command: 'project-copy' } } })
     await fails(() => appHost.listToolsWithMeta('managed'), 'native-still-present', '全局服务在受信项目位置同名：同样拒绝')
     await rm(projectPiFile, { force: true })
   }
-
-  /* ------------------------------------------------ 5. 坏文件 / 读失败 */
 
   {
     await mkdir(piAgentDir, { recursive: true })
@@ -185,8 +156,6 @@ try {
     const readFailHost = newAppHost({ ownership: { readNativeConfig: async (path) => { throw new Error(`EACCES ${path}`) } } })
     await fails(() => readFailHost.listToolsWithMeta('managed'), 'native-unreadable', 'pi 配置读失败：拒绝连接')
   }
-
-  /* --------------------------- 6. 未知 runner / 有活跃 runner 都拒绝 */
 
   {
     const holdersHost = newAppHost({ ownership: { holdersFor: async () => [{ id: 'runner-1' }] } })
@@ -212,8 +181,6 @@ try {
     ok(flakyRecord.closes === 1, '事实来源抛错也先关闭旧池（不留旧连接）')
   }
 
-  /* ------------------------------------- 7. 项目范围不能靠 serverId 越权 */
-
   {
     await fails(() => appHost.callToolWithMeta('managed-project', 'tool', {}, { projectId: 'other' }), 'project-mismatch', '跨项目调用项目服务：拒绝')
     await fails(() => appHost.callToolWithMeta('managed-project', 'tool', {}), 'project-mismatch', '无项目身份调用项目服务：拒绝')
@@ -229,8 +196,6 @@ try {
       JSON.stringify(seenQuery)
     )
   }
-
-  /* ------------------------------- 8. 删服务 / 禁用 / 改回 pi 后 reconcile 断开 */
 
   {
     await appHost.listToolsWithMeta('managed')
@@ -252,8 +217,6 @@ try {
     ok(!backToPi.eligible && backToPi.closed && backToPi.code === 'not-managed', '改回 pi：reconcile 断开并拒绝')
   }
 
-  /* ------------------------------------------- 9. 切换中迟到结果被丢弃 */
-
   {
     await writeHostConfig(baseServers())
     await appHost.listToolsWithMeta('managed')
@@ -272,8 +235,6 @@ try {
     )
     ok(appHost.statusOf('managed').status === 'disconnected', '迟到结果被丢弃后旧池已关闭')
   }
-
-  /* ----------------------- 10. 配置变更串行替换：旧连接先关，不产生两条 */
 
   {
     await writeHostConfig(baseServers())

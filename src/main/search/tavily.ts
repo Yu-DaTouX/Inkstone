@@ -1,7 +1,3 @@
-/**
- * Tavily 搜索来源。与 Brave 并列：产出同样的 `SourceRun`，由 `aggregate.ts` 统一归一化，
- * 失败按来源如实上报。需要用户自己的 API key（设置 → 能力 → 增强搜索）。
- */
 import type { SourceRun } from './aggregate'
 import { callApi, parseJson } from './api-call'
 import { resolveSearchKey } from './config'
@@ -35,7 +31,6 @@ export async function runTavilySearch(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${key}` },
-      /* basic 每次 1 credit；advanced 要 2 credit，默认不替用户多花额度 */
       body: JSON.stringify({ query, max_results: Math.min(20, Math.max(1, opts.limit)), search_depth: 'basic', topic: 'general' })
     },
     opts.timeoutMs,

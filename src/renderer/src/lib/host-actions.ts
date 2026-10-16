@@ -1,20 +1,7 @@
-/**
- * 宿主动作表与键位判定（命令面板 / 快捷键表 / 全局按键分发的**唯一**纯数据源）。
- *
- * 为什么放在一个不依赖 React / store / DOM 的模块里：
- *   · 命令面板（Ctrl+K 的 `>` 模式）与快捷键表（Ctrl+/）必须用同一份清单，
- *     否则两处各维护一份，迟早对不上；
- *   · 键位分发、可用性判定、搜索过滤是纯逻辑，可以在 Node 里直接验证，
- *     不必启动 Electron（见 `scripts/test-command-palette.mjs`）。
- *
- * 这里**只做决策**：`runHostAction` 通过传入的 `HostActionRuntime` 调用各入口的
- * 正式动作，不 import store，也不自己写第二套事件或状态。
- */
 import type { TFunc } from '../i18n'
 
 export type HostT = TFunc
 
-/** 面板与快捷键表共用的键位绑定。`keys` 是逐键显示，顺序即按法。 */
 export type ShortcutBindingId =
   | 'openSettings'
   | 'shortcutSheet'
@@ -29,15 +16,10 @@ export type ShortcutBindingId =
 
 export interface KeyBinding {
   keys: string[]
-  /** 快捷键表分组；面板/表同源，这里只放全局组 */
   group: 'global'
   labelKey: string
 }
 
-/**
- * 键位表：既是快捷键表「全局」组的数据，也是宿主动作行右侧键位的来源。
- * 改键位只改这里；真正的拦截逻辑在 `resolveShortcut`。
- */
 export const KEY_BINDINGS: Record<ShortcutBindingId, KeyBinding> = {
   openSettings: { keys: ['Ctrl', ','], group: 'global', labelKey: 'sheet.openSettings' },
   shortcutSheet: { keys: ['Ctrl', '/'], group: 'global', labelKey: 'sheet.shortcutSheet' },
@@ -93,15 +75,11 @@ export interface HostActionDef {
   id: HostActionId
   section: HostActionSection
   labelKey: string
-  /** 面板里键位：指向 KEY_BINDINGS */
   binding?: ShortcutBindingId
-  /** 侧栏工具磁贴的 kind；`runHostAction` 走工作区启动入口 */
   tool?: 'files' | 'browser' | 'terminal' | 'tasks' | 'agents' | 'logs' | 'accounts'
-  /** 设置页导航 ID */
   settingsTab?: string
 }
 
-/** 前端固定宿主动作表（唯一一份）。 */
 export const HOST_ACTIONS: HostActionDef[] = [
   { id: 'newSession', section: 'session', labelKey: 'action.newSession', binding: 'newSession' },
   { id: 'newSessionProject', section: 'session', labelKey: 'action.newSessionProject' },
@@ -130,7 +108,6 @@ export const HOST_ACTIONS: HostActionDef[] = [
   { id: 'stopRun', section: 'ops', labelKey: 'action.stopRun' }
 ]
 
-/** 空输入时给的三条常用动作提示。 */
 export const QUICK_ACTION_IDS: HostActionId[] = ['newSession', 'openSettings', 'launchTerminal']
 
 export const HOST_SECTION_ORDER: HostActionSection[] = ['session', 'settings', 'view', 'tools', 'ops']
@@ -143,7 +120,6 @@ export function hostActionById(id: HostActionId): HostActionDef | undefined {
   return HOST_ACTIONS.find((action) => action.id === id)
 }
 
-/** 不可用原因（i18n key）；返回 undefined 表示可用。 */
 export function hostActionDisabledReason(
   action: HostActionDef,
   avail: HostActionAvailability
@@ -172,9 +148,6 @@ export function isHostActionDisabled(action: HostActionDef, avail: HostActionAva
   return hostActionDisabledReason(action, avail) !== undefined
 }
 
-/* ───────────────────────── 搜索：沿用会话切换器的 token 过滤 ───────────────────────── */
-
-/** 把查询拆成词；全部出现才算命中（与会话切换器同一实现）。 */
 export function tokensOf(query: string): string[] {
   return [...new Set(query.trim().toLowerCase().split(/\s+/).filter(Boolean))].slice(0, 6)
 }
@@ -185,7 +158,6 @@ export function matchesTokens(haystack: string, tokens: string[]): boolean {
   return tokens.every((token) => hay.includes(token))
 }
 
-/** 按顺序过滤宿主动作；labelOf 给出已翻译的名称。 */
 export function filterHostActions(
   query: string,
   labelOf: (action: HostActionDef) => string,
@@ -196,15 +168,12 @@ export function filterHostActions(
   return actions.filter((action) => matchesTokens(labelOf(action), tokens))
 }
 
-/** 按段落顺序分组（面板渲染用）。 */
 export function groupHostActions(actions: HostActionDef[]): { section: HostActionSection; actions: HostActionDef[] }[] {
   return HOST_SECTION_ORDER.map((section) => ({
     section,
     actions: actions.filter((action) => action.section === section)
   })).filter((group) => group.actions.length > 0)
 }
-
-/* ───────────────────────── 执行：只调用各入口的正式动作 ───────────────────────── */
 
 export interface HostActionResult {
   ok: boolean
@@ -224,10 +193,6 @@ export interface HostActionRuntime {
   openShortcutSheet(): void
 }
 
-/**
- * 执行一个宿主动作。成功/失败只表达「有没有抛出」，具体反馈由各正式动作负责。
- * 异步动作的会话 / runner 归属由调用方在动作前后核对（见命令面板）。
- */
 export async function runHostAction(id: HostActionId, rt: HostActionRuntime): Promise<HostActionResult> {
   const def = hostActionById(id)
   if (!def) return { ok: false, error: 'unknown-action' }
@@ -282,8 +247,6 @@ export async function runHostAction(id: HostActionId, rt: HostActionRuntime): Pr
   }
 }
 
-/* ───────────────────────── 全局按键判定 ───────────────────────── */
-
 export type ShortcutId =
   | 'openSettings'
   | 'shortcutSheet'
@@ -300,26 +263,13 @@ export interface KeyState {
   meta: boolean
   alt: boolean
   shift: boolean
-  /** 输入法组合态：Enter / 方向键等归输入法，不能当快捷键 */
   composing: boolean
-  /** 长按重复触发：只执行一次 */
   repeat: boolean
-  /** AltGraph（欧洲键盘的 AltGr 组合）不能被当成 Ctrl+Alt */
   altGraph: boolean
-  /** 焦点在终端内：让给 xterm */
   inTerminal: boolean
-  /** 有模态层打开：全局分发让位，只由最上层处理 */
   modalOpen: boolean
 }
 
-/**
- * 把一次 keydown 归纳为一个动作 ID；不适用时返回 null。
- *
- * 与 `App.tsx` 主进程 before-input-event 的关系：那边只拦 Ctrl+P / Ctrl+Shift+P /
- * Shift+Tab，且带模态守卫；这里只在按键真的到达渲染端时执行，并按 250ms 时间锁
- * 与主进程那条路去重（见 App.tsx）。新加的键（Ctrl+, / Ctrl+B / Ctrl+L /
- * Ctrl+Shift+C / Ctrl+/）主进程不拦，只走这里。
- */
 export function resolveShortcut(state: KeyState): ShortcutId | null {
   if (state.composing || state.repeat || state.altGraph || state.modalOpen || state.alt) return null
   const ctrl = state.ctrl || state.meta
@@ -328,28 +278,20 @@ export function resolveShortcut(state: KeyState): ShortcutId | null {
     const keys = KEY_BINDINGS[id].keys
     if (ctrl !== keys.includes('Ctrl') || state.shift !== keys.includes('Shift')) continue
     if (key !== keys[keys.length - 1]?.toLowerCase()) continue
-    // 终端持有这些操作；其余既有宿主键位保持原分发。
     if (state.inTerminal && ['toggleRail', 'focusComposer', 'copyLastReply', 'openSessionSwitcher'].includes(id)) continue
     return id
   }
   return null
 }
 
-/* ───────────────────────── 快捷键表的其余分组（同源说明数据） ───────────────────────── */
-
 export type ShortcutNoteGroup = 'input' | 'approval' | 'terminal'
 
 export interface ShortcutNote {
   labelKey: string
   keys?: string[]
-  /** 没有固定键位时的一句说明 */
   noteKey?: string
 }
 
-/**
- * 输入框 / 审批 / 终端三组只列真实存在的行为：
- * 输入框是 Composer 的按键，审批是确认框与批准卡片的按键，终端是砚明确让给 xterm 的键。
- */
 export const SHORTCUT_NOTE_GROUPS: { id: ShortcutNoteGroup; rows: ShortcutNote[] }[] = [
   {
     id: 'input',

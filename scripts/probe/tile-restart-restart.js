@@ -1,14 +1,3 @@
-/*
- * 工具磁贴跨重启（实施-12 U-6，第二次启动，cost 0）。
- *
- * 由 `test-live` 的 `restart` 分支拉起：同一份 YAN_DATA_DIR / YAN_USER_DATA，
- * 全新进程。要证明的是「浮动位置不是内存态」：
- *   · 读盘回来的 toolLayout 里 context 仍是 floating，rect 与上一次一致；
- *   · 界面真的把它渲染出来了（不是只躺在设置里）；
- *   · 默认布局没有被重启悄悄改写（其余项仍在停靠位）。
- *
- * 结束时恢复默认布局，不污染这份隔离设置。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -50,7 +39,6 @@
     ok(!!q('[data-testid="float-tile-context"]'), '重启后界面真的把它渲染成浮动磁贴')
     ok(!q('.rp-slot[data-tool-id="context"]'), '重启后工具页没有第二份 context 实例')
 
-    /* 恢复默认：重启后的清理也要走同一份布局契约 */
     const cur = store.getState().settings?.toolLayout
     await store.getState().setToolLayout({
       version: 2,

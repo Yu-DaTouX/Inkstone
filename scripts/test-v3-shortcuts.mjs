@@ -1,16 +1,3 @@
-/**
- * v3 快捷键注册表与命令面板前缀模式的纯逻辑单测（WP-25b / WP-25c）。
- *
- * 只编译 `src/renderer/src/app/shortcuts.ts` 与 `features/commands/command-items.ts`
- *（都是无 React / store / DOM 依赖的纯逻辑），在 Node 里直接跑；不启动 Electron、
- * 不碰 pi、不写用户数据、不拉模型、不注册任何全局键。可独立执行：
- *
- *   node scripts/test-v3-shortcuts.mjs
- *
- * 覆盖：注册表字段与冲突检测、按键精确匹配（Ctrl+B 与 Ctrl+Alt+B 不互相误触）、
- * IME / 模态 / 长按抑制、终端让键、与确认卡 Alt+Y/N 不冲突，以及
- * `>` / `@` / `#` / `?` 前缀解析、消息短摘与分组截断。
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
@@ -42,7 +29,6 @@ const {
   parsePaletteQuery
 } = items
 
-/* ── 注册表：id / 默认键 / 作用 / 是否可改 ───────────────────────── */
 assert.deepEqual(
   SHORTCUTS.map((def) => def.id),
   ['commandPalette', 'newSession', 'toggleSidebar', 'openRuns', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack',
@@ -70,7 +56,6 @@ assert.deepEqual(
 )
 assert.equal(shortcutSignature(SHORTCUTS.find((def) => def.id === 'goBack')), 'alt+arrowleft', '← 归一为 ArrowLeft')
 
-/* ── 冲突检测：注册表自身无重复，构造重复能被抓出 ───────────────── */
 assert.deepEqual(findShortcutConflicts(), [], '注册表内没有重复键位')
 const dupe = [
   { id: 'newSession', keys: ['Ctrl', 'Alt', 'B'], purposeKey: 'newSession', rebindable: false, scope: 'global', terminalsYield: false },
@@ -78,7 +63,6 @@ const dupe = [
 ]
 assert.equal(findShortcutConflicts(dupe).length, 1, '修饰键顺序不同但键位相同也要算冲突')
 
-/* ── 解析：精确修饰键匹配 ───────────────────────────────────────── */
 const key = (over = {}) => ({
   key: 'a',
   ctrl: false,
@@ -98,12 +82,10 @@ assert.equal(pressed({ key: ',', ctrl: true }), 'openSettings', 'Ctrl+, 设置')
 assert.equal(pressed({ key: '/', ctrl: true }), 'shortcutSheet', 'Ctrl+/ 快捷键表')
 assert.equal(pressed({ key: 'ArrowLeft', alt: true }), 'goBack', 'Alt+← 返回')
 
-/* Ctrl+B 与 Ctrl+Alt+B 互不误触 */
 assert.equal(pressed({ key: 'b', ctrl: true, alt: true }), 'toggleWorkspace', 'Ctrl+Alt+B 是工作区')
 assert.equal(pressed({ key: 'b', ctrl: true, shift: true }), null, 'Ctrl+Shift+B 没有绑定')
 assert.equal(pressed({ key: 'b', ctrl: true, alt: true, shift: true }), null, '多按 Shift 不算命中')
 
-/* ── 覆盖：生效键位随 ShortcutOverrides 变化 ───────────────────── */
 const overrides = { newSession: ['Ctrl', 'Alt', 'N'], openSettings: ['Ctrl', 'Shift', ','] }
 assert.equal(
   resolveV3Shortcut(key({ key: 'n', ctrl: true, alt: true }), overrides),
@@ -119,18 +101,15 @@ assert.equal(
 assert.equal(resolveV3Shortcut(key({ key: 'k', ctrl: true }), overrides), 'commandPalette', '未覆盖的项保持默认')
 assert.equal(resolveV3Shortcut(key({ key: 'b', ctrl: true }), overrides), 'toggleSidebar', '未覆盖的固定项保持默认')
 
-/* 与确认卡 Alt+Y / Alt+N 不冲突 */
 assert.equal(pressed({ key: 'y', alt: true }), null, 'Alt+Y 留给确认卡')
 assert.equal(pressed({ key: 'n', alt: true }), null, 'Alt+N 留给确认卡')
 assert.equal(pressed({ key: 'y', alt: true, ctrl: true }), null, 'Ctrl+Alt+Y 也没有绑定')
 
-/* ── 抑制：组字 / 长按 / AltGr / 模态 ──────────────────────────── */
 assert.equal(pressed({ key: 'k', ctrl: true, composing: true }), null, 'IME 组字中不触发')
 assert.equal(pressed({ key: 'k', ctrl: true, repeat: true }), null, '长按重复不触发')
 assert.equal(pressed({ key: 'k', ctrl: true, altGraph: true }), null, 'AltGr 组合不当 Ctrl+Alt')
 assert.equal(pressed({ key: 'k', ctrl: true, modalOpen: true }), null, '模态打开时不响应')
 
-/* ── 终端让键：Ctrl+K/B/J 给 xterm，其余全局键仍生效 ───────────── */
 assert.equal(pressed({ key: 'k', ctrl: true, inTerminal: true }), null, '终端里 Ctrl+K 让位')
 assert.equal(pressed({ key: 'b', ctrl: true, inTerminal: true }), null, '终端里 Ctrl+B 让位')
 assert.equal(pressed({ key: 'j', ctrl: true, inTerminal: true }), null, '终端里 Ctrl+J 让位')
@@ -138,7 +117,6 @@ assert.equal(pressed({ key: 'n', ctrl: true, inTerminal: true }), 'newSession', 
 assert.equal(pressed({ key: 'b', ctrl: true, alt: true, inTerminal: true }), 'toggleWorkspace', '终端里 Ctrl+Alt+B 仍切换工作区')
 assert.equal(pressed({ key: '/', ctrl: true, inTerminal: true }), 'shortcutSheet', '终端里 Ctrl+/ 仍开快捷键表')
 
-/* ── 前缀模式解析 ───────────────────────────────────────────────── */
 assert.deepEqual(COMMAND_PREFIXES, ['>', '@', '#', '?'], '前缀顺序即帮助顺序')
 assert.deepEqual(parsePaletteQuery(''), { mode: 'default', term: '' }, '空查询是默认模式')
 assert.deepEqual(parsePaletteQuery('new'), { mode: 'default', term: 'new' }, '普通查询不切模式')
@@ -150,11 +128,9 @@ assert.deepEqual(parsePaletteQuery('?'), { mode: 'help', term: '' }, '? 是帮�
 assert.deepEqual(parsePaletteQuery('>>'), { mode: 'action', term: '>' }, '第二个 > 作为检索词')
 assert.deepEqual(parsePaletteQuery('hello'), { mode: 'default', term: 'hello' })
 
-/* ── 列表分组顺序：旧默认不变，面板顺序含消息 / 帮助 ───────────── */
 assert.deepEqual(COMMAND_GROUP_ORDER, ['action', 'session'], '旧默认顺序保持不变')
 assert.deepEqual(PALETTE_GROUP_ORDER, ['action', 'session', 'message', 'help'], '面板渲染顺序')
 
-/* ── 消息短摘与分组截断 ─────────────────────────────────────────── */
 assert.equal(messageSnippet('  hello\n  world  '), 'hello world', '压平空白')
 assert.equal(messageSnippet('abcdef', 4), 'abc…', '超长截断并加省略号')
 assert.equal(messageSnippet('abcd', 4), 'abcd', '刚好不截断')

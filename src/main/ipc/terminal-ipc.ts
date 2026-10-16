@@ -1,9 +1,3 @@
-/**
- * 交互终端的 IPC 适配（`yan:terminal:*`）。
- *
- * 终端由宿主的 node-pty 持有；这里只做参数归一，不决定终端开在哪个目录以外的事情。
- * 调用方没给 cwd 时，用 `fallbackCwd()`（当前活动会话的工作目录）—— 终端默认开在项目里。
- */
 import type { TerminalStartRequest } from '../../shared/ipc'
 import {
   attachTerminal,

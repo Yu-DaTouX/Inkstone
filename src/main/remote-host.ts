@@ -1,11 +1,3 @@
-/**
- * 远程宿主：手机接入（远程协议 v2）与砚对砚所有者一侧的业务处理。
- *
- * 远程入口只拿到这里的处理器：会话摘要与历史（不含绝对路径）、有限的会话操作、
- * 问题回答、成果与图片读取，以及按本次连接授权开放的项目数据。
- * 桌面 IPC 与远程共用同一套运行注册表与会话规则；入口在启动前用
- * `configureRemoteHost` 接上这些宿主能力。
- */
 import type { BrowserWindow } from 'electron'
 import { nativeImage } from 'electron'
 import { join, dirname, basename, resolve } from 'node:path'
@@ -42,19 +34,10 @@ export interface RemoteHost extends SessionHost {
 
 let host: RemoteHost
 
-/** 入口启动时调用一次；远程服务只在这之后才会启动。 */
 export function configureRemoteHost(next: RemoteHost): void {
   host = next
 }
 
-/* -------------------------------------------------------------------------- */
-/* Android 远程管理                                                          */
-/* -------------------------------------------------------------------------- */
-
-/**
- * 远程 API 不返回会话文件绝对路径：手机只需要稳定 id 和展示信息，
- * 路径解析始终由主进程按 id 查找，避免网络请求变成任意文件读取入口。
- */
 export function remoteSessionSummary(summary: SessionSummary): Record<string, unknown> {
   return {
     id: summary.id,
@@ -76,7 +59,6 @@ export function remoteSessionSummary(summary: SessionSummary): Record<string, un
   }
 }
 
-/** SessionState 的远程降敏版本；cwd 只留目录名，sessionFile 不出进程。 */
 export function remoteSessionState(state: SessionState | null): Record<string, unknown> | null {
   if (!state) return null
   return {
@@ -124,7 +106,6 @@ export function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown
 
 export async function remoteSnapshot(): Promise<Record<string, unknown>> {
   const settings = await getSettings()
-  /* 远程列表与桌面同口径：只显示链代表段，旧段不重复出现。 */
   const summaries = await filterChainRepresentatives(await listSessions(200, settings.projects))
   const state = host.ac()?.getState() ?? null
   const connection = host.ac()?.getConn() ?? { state: 'exited' as const, detail: 'pi 未运行' }
@@ -148,18 +129,6 @@ export async function remoteSnapshot(): Promise<Record<string, unknown>> {
   }
 }
 
-/**
- * 侧栏列表只显示**代表段**（实施-05 S5b-4）。
- *
- * 交接后磁盘上确实是两份 JSONL，但用户看到的是**同一条会话** —— 把旧段也列出来
- * 会让用户以为凭空多了两条。规则：
- *   · 不在任何链上 / 是链的最后一段 → 显示；
- *   · 是链上的旧段 → 隐藏；
- *   · 代表段的标题为空（新段往往还没标题）→ 用**链首段**的标题顶上，
- *     否则侧栏上那条会话会变成一行「未命名」（用户看到自己的会话“换了名字”）。
- *
- * 路径与 id 仍是代表段的：打开 / 发送都落在当前活动段。
- */
 export async function filterChainRepresentatives(list: SessionSummary[]): Promise<SessionSummary[]> {
   await host.sessionChains.load()
   const chains = host.sessionChains.chains()
@@ -179,15 +148,6 @@ export async function filterChainRepresentatives(list: SessionSummary[]): Promis
   return out
 }
 
-/**
- * 把远程 / peer 传来的 sessionId 归一到它所在会话链的**代表段**。
- *
- * 列表只显示代表段后，旧段 id 仍可能来自手机缓存或对端旧列表；控制路径
- * （选择 / 发送 / 改模型 / 改名）若直接按旧段 id 找文件，新消息就会写进不再
- * 代表当前对话的旧段。归一化仍守项目边界：代表段与请求段必须属于同一项目
- * （含同为空），否则明确拒绝 —— peer 只获授权一个项目时，不能借归一化读到
- * 另一个项目的内容。
- */
 async function resolveChainSession(sessionId: string): Promise<
   { ok: true; summary: SessionSummary } | { ok: false; status: number; error: string }
 > {
@@ -215,7 +175,6 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
   const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
 
-  /* 链感知：远程端看到的也是「一条会话」（与桌面端口径一致） */
   const result = await host.readHistoryWithArtifacts(summary.path)
   if (!result) return { ok: false, status: 502, error: '无法读取该会话历史' }
   const page = remoteHistoryPage(result.messages, limit, before)
@@ -241,7 +200,6 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
   }
 }
 
-/** 通过稳定 sessionId 切换当前桌面查看实例，并复用现有 runner 规则。 */
 export async function remoteSelectSession(sessionId: string): Promise<RemoteOperationResult> {
   const resolved = await resolveChainSession(sessionId)
   if (!resolved.ok) return resolved
@@ -292,7 +250,6 @@ export async function remoteNewSession(): Promise<RemoteOperationResult> {
   return result.ok ? { ok: true, data: result } : { ok: false, status: 409, error: result.error }
 }
 
-/** 直接向目标会话发送，不改变桌面当前视图；必要时创建后台 runner。 */
 export async function withRemoteSession(sessionId: string, operation: (agent: AgentController, runId: string, summary: SessionSummary) => Promise<RemoteOperationResult>): Promise<RemoteOperationResult> {
   const resolved = await resolveChainSession(sessionId)
   if (!resolved.ok) return resolved
@@ -342,7 +299,6 @@ export async function remoteModels(sessionId: string): Promise<RemoteOperationRe
   const agent = status ? host.runners()?.agentOf(status.runId) : host.ac()
   if (!agent) return { ok: false, status: 503, error: '请先在电脑启动模型连接' }
   const models = await agent.listModels()
-  /* 思考档位属于当前模型：只有该会话已有运行实例时才给 */
   const levels = status ? await agent.listThinkingLevels().catch(() => []) : []
   const thinking = status && levels.length > 1 ? { level: agent.getState()?.thinkingLevel ?? 'off', levels } : null
   const current = status ? agent.getState()?.model : models.find((model) => summary.model === model.id || summary.model === `${model.provider}/${model.id}` || summary.model === `${model.provider}:${model.id}`)
@@ -411,7 +367,6 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
   return { ok: true, data: { sessionId: summary.id, name: command.name } }
 }
 
-/** 远程端能看到的成果字段：去掉电脑上的绝对路径（内容经 artifact 接口按 id 读取） */
 export function remoteArtifactOf(artifact: AssistantArtifact): RemoteArtifact {
   return {
     id: artifact.id,
@@ -425,7 +380,6 @@ export function remoteArtifactOf(artifact: AssistantArtifact): RemoteArtifact {
   }
 }
 
-/** 当前所有运行实例里等待回答的问题（手机端列出用） */
 function pendingRemoteQuestions(): RemotePendingQuestion[] {
   const questions: RemotePendingQuestion[] = []
   for (const status of host.runners()?.statuses() ?? []) {
@@ -457,7 +411,6 @@ export async function remoteQuestions(): Promise<RemotePendingQuestion[]> {
   return pendingRemoteQuestions()
 }
 
-/** Separate user-client boundary; ordinary model-facing answers still reject sensitive confirmations. */
 export async function remoteHumanApproval(questionId: string, answer: RemoteHumanApproval): Promise<RemoteOperationResult> {
   if (questionId.startsWith('approval:')) {
     const request = host.approvals?.list().find(item => `approval:${item.id}` === questionId)
@@ -472,7 +425,6 @@ export async function remoteHumanApproval(questionId: string, answer: RemoteHuma
   return applyHumanApproval(question, answer, confirmed => agent.respondUi({ id: questionId, confirmed }, 'remote'))
 }
 
-/** 手机回答问题：找到持有这个问题的实例；敏感确认由 AgentController 拒绝 */
 export async function remoteAnswer(questionId: string, answer: RemoteAnswer): Promise<RemoteOperationResult> {
   for (const status of host.runners()?.statuses() ?? []) {
     const agent = host.runners()?.agentOf(status.runId)
@@ -486,7 +438,6 @@ export async function remoteAnswer(questionId: string, answer: RemoteAnswer): Pr
   return { ok: false, status: 404, code: 'question_not_pending', error: '这个问题已经答复或已过期' }
 }
 
-/** 按会话 + 成果 id 找受管文件；只认该会话历史里登记过的成果，网络请求不能传路径 */
 export async function remoteArtifact(sessionId: string, artifactId: string): Promise<RemoteArtifactFile | RemoteOperationResult> {
   const settings = await getSettings()
   const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
@@ -507,7 +458,6 @@ export async function remoteArtifact(sessionId: string, artifactId: string): Pro
   }
 }
 
-/** Only images registered in this session and localized in the managed attachment directory. */
 export async function remoteMessageImage(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult> {
   const summary = (await listSessions(500, (await getSettings()).projects)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话' }
@@ -525,15 +475,6 @@ export async function remoteMessageImage(sessionId: string, messageId: string, i
   } catch { return { ok: false, status: 410, error: '图片已不可用' } }
 }
 
-/* -------------------------------------------------------------------------- */
-/* 砚对砚：所有者一侧（本次连接授权 + 按项目开放的数据）                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * 审批请求推给界面；决定经 `yan:peer-host:decide` 回来。
- * 某次连接作废（断开 / 撤销 / 超时）时断开它的事件流。
- */
-/** 这台电脑去连接别的砚（连接者一侧） */
 export const peerClient = new PeerClient()
 
 export const peerGrants = new PeerGrantRegistry({
@@ -561,7 +502,6 @@ export const peerHostHandlers: PeerHostHandlers = {
     const settings = await getSettings()
     const list = (await listSessions(500, settings.projects))
       .filter((summary) => !!summary.projectId && projectIds.includes(summary.projectId))
-    /* 对端看到的也是「一条会话」：只给链代表段；projectOfSession 仍按请求段项目授权。 */
     return (await filterChainRepresentatives(list)).map(remoteSessionSummary)
   },
   async projectOfSession(sessionId) {
@@ -570,7 +510,6 @@ export const peerHostHandlers: PeerHostHandlers = {
   async projectOfRun(runId) {
     return host.runners()?.statuses().find((status) => status.runId === runId)?.projectId ?? null
   },
-  /* 复制一份会话：消息降敏（不带绝对路径与内嵌图片），成果逐个标明源文件是否还在 */
   async exportSession(sessionId) {
     const summary = await peerSummaryOf(sessionId)
     if (!summary?.projectId) return { ok: false, status: 404, error: '找不到目标会话' }
@@ -608,10 +547,6 @@ export const peerHostHandlers: PeerHostHandlers = {
     }
     return { ok: true, data: exported }
   },
-  /*
-   * 在开放项目里新开任务：后台准备运行实例（不切换桌面当前视图），
-   * 新建会话后发出第一条消息。项目目录只从本机设置取，网络请求不能传路径。
-   */
   async startSession(projectId, text) {
     const project = (await getSettings()).projects.find((item) => item.id === projectId && !item.archived)
     if (!project) return { ok: false, status: 404, error: '找不到这个项目' }
@@ -632,7 +567,6 @@ export const peerHostHandlers: PeerHostHandlers = {
     if (!sent.ok) return { ok: false, status: 409, error: sent.error ?? '新任务未能接收消息' }
     return { ok: true, data: { sessionId: sessionId ?? null, runId: selected.runId ?? selected.id, projectId: project.id } }
   },
-  /* 共享项目记忆：只给已确认条目，保留来源电脑、条目 id 与版本 */
   async knowledge(projectId) {
     const project = (await getSettings()).projects.find((item) => item.id === projectId)
     if (!project) return { ok: false, status: 404, error: '找不到这个项目' }

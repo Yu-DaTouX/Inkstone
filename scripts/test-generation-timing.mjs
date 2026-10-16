@@ -1,21 +1,3 @@
-/**
- * 每次模型请求计时（generationTiming）与历史恢复的定向测试。
- *
- * 被测三块：
- *   · `src/shared/turn-timing.ts` 的 `generationTiming()` / `decodeTokensPerSecond()`：
- *     从单调时刻算「请求时长 / TTFT / 解码时长」，没有首 token 时不编 TTFT；
- *   · `src/main/agent.ts`：假事件驱动 `handleEvent`，验证 message_start/update/end/flush
- *     真的把计时挂到对应 assistant 消息上（流式逐帧 + 收尾权威值）；
- *   · `src/main/turn-timing-store.ts` + `turn-timing-tracker.ts`：落盘、按次序恢复、
- *     同 run 快照后者胜、多 run 合并不重复、压缩重排不串消息。
- *
- * 为什么必须单测：这些数字在界面上「看着正常」时也可能已经错了 ——
- * 挂错回合、跨请求累加、拿墙钟冒充模型时间都不会报错。所以这里用受控的
- * 单调时刻与临时目录把它钉死。
- *
- * 现场编译 + 临时目录，不启动 Electron / pi / 模型。用法：
- *   node scripts/test-generation-timing.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -25,7 +7,6 @@ import { build } from 'esbuild'
 
 const temp = await mkdtemp(join(tmpdir(), 'yan-generation-timing-'))
 const dataDir = join(temp, 'data')
-/* 必须在 bundle 求值前设好：`paths.ts` 在导入时就把 YAN_DIR 定死。 */
 process.env.YAN_DATA_DIR = dataDir
 process.env.YAN_PI_DIR = join(temp, 'pi')
 
@@ -39,11 +20,6 @@ const near = (a, b, eps = 1) => Math.abs(a - b) <= eps
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 try {
-  /*
-   * 编译产物放 `out/test/`（项目内，已被 Git 忽略）：bundle 里的 external
-   * （如 `@modelcontextprotocol/sdk`）要能从项目 node_modules 解析；临时目录
-   * 里加载会找不到包。测试数据仍在临时目录。
-   */
   const outfile = join(process.cwd(), 'out', 'test', 'generation-timing.mjs')
   await build({
     stdin: {
@@ -92,7 +68,6 @@ try {
     result: { summary: '完成' }
   })
 
-  /* ------------------------------------------------------------------ 纯算术 */
   console.log('\n--- 1. 一次请求的计时口径（纯函数）---')
   {
     const g = generationTiming({ startedMono: 1000, endedMono: 3000, firstContentMono: 1500 })
@@ -126,7 +101,6 @@ try {
     check(decodeTokensPerSecond(100, 0) === undefined, '解码时长为 0 → 不给 TPS')
   }
 
-  /* --------------------------------------------------------- 落盘 / 次序恢复 */
   console.log('\n--- 2. 生成计时落盘与按次序恢复（store）---')
   const base = {
     v: 1,
@@ -150,7 +124,6 @@ try {
     check(rec?.generationTimings?.length === 3, '生成计时原样读回（长度）', String(rec?.generationTimings?.length))
     check(JSON.stringify(rec.generationTimings[1]) === JSON.stringify(g2), '次序保留（第二条 = 第二个请求）', JSON.stringify(rec.generationTimings[1]))
 
-    /* 重载：消息 id 是重读历史重新生成的，顺序不变 */
     const messages = [user('m0'), asst('m1'), asst('m2'), asst('m3'), user('m4'), asst('m5')]
     const applied = store.applyTurnTimings(messages, [rec])
     check(JSON.stringify(applied[1].generationTiming) === JSON.stringify(g1), '重载后第一条请求拿回自己的计时')
@@ -161,7 +134,6 @@ try {
     check(applied[3].turnTiming?.elapsedMs === 4000, '整轮用时仍挂在最后一条助手消息上')
   }
 
-  /* 次序锚定：id 漂移（压缩 / 重排）也按助手次序挂，不按 id 查表 */
   {
     const record = { ...base, generationTimings: [g1, g2] }
     const shifted = [user('m0'), asst('m7'), asst('m8')]
@@ -174,7 +146,6 @@ try {
     )
   }
 
-  /* 数量对不上 → 整轮未知，不硬 zip 串到别的请求 */
   {
     const record = { ...base, generationTimings: [g1, g2, g3] }
     const onlyOne = [user('m0'), asst('m1'), user('m9')]
@@ -183,7 +154,6 @@ try {
     check(applied[1].turnTiming?.elapsedMs === 4000, '数量对不上不影响整轮用时的恢复')
   }
 
-  /* 空位保持次序：某次请求没有计时（中途被打断）也不能让后面的前移 */
   {
     const record = { ...base, generationTimings: [null, g2] }
     const applied = store.applyTurnTimings([user('m0'), asst('m1'), asst('m2')], [record])
@@ -191,7 +161,6 @@ try {
     check(JSON.stringify(applied[2].generationTiming) === JSON.stringify(g2), '空位之后的请求仍拿回自己的计时（没有错位）')
   }
 
-  /* 两个回合各自按键：不串回合 */
   {
     const recA = { ...base, logicalTurnId: 'm0', sourceIds: ['m1'], generationTimings: [g1] }
     const recB = {
@@ -213,7 +182,6 @@ try {
     )
   }
 
-  /* 旧记录没有生成计时 → 保持未知，不伪造 */
   {
     const legacy = {
       v: 1,
@@ -230,7 +198,6 @@ try {
     check(applied[1].turnTiming?.elapsedMs === 1000, '旧记录的整轮用时照常恢复')
   }
 
-  /* 坏条目 / 非有限值：保持数组长度，坏位置留空 */
   {
     const raw = {
       ...base,
@@ -261,13 +228,11 @@ try {
     )
   }
 
-  /* --------------------------------------------- 工具起止从 waitSpans 恢复 */
   console.log('\n--- 3. 历史工具 start/end 从 waitSpans 恢复 ---')
   {
     const tool = (id, name, timing) => ({ id, name, args: {}, status: 'ok', ...(timing ?? {}) })
     const asstWithTools = (id, calls) => ({ id, role: 'assistant', text: id, toolCalls: calls })
 
-    /* 并行两把工具：区间重叠，并集 = 1000→5000 = 4000（不是 2000+3000=5000） */
     const parallel = {
       ...base,
       logicalTurnId: 'm0',
@@ -297,7 +262,6 @@ try {
       String(waitSpansMs(toolWaitSpans(reloaded[1].toolCalls)))
     )
 
-    /* 已有实时计时的字段优先，不被历史值覆盖 */
     const liveFull = store.applyTurnTimings(
       [user('m0'), asstWithTools('m1', [tool('t1', 'bash', { startedAt: 10, endedAt: 20 })])],
       [parallel]
@@ -317,7 +281,6 @@ try {
       JSON.stringify(livePartial[1].toolCalls[0])
     )
 
-    /* 同 id 不同回合：各归各的，不串 */
     const recA = { ...parallel, logicalTurnId: 'm0', anchorId: 'm0', sourceIds: ['m1'] }
     const recB = {
       ...parallel,
@@ -336,7 +299,6 @@ try {
       `${twoTurns[1].toolCalls[0].startedAt} / ${twoTurns[3].toolCalls[0].startedAt}`
     )
 
-    /* 锚丢失：整轮用时仍可按 sourceIds 回退，但工具起止不补（宁缺勿串） */
     const lostAnchor = {
       ...parallel,
       anchorId: 'm-ghost',
@@ -353,7 +315,6 @@ try {
       '锚丢失的回退路径不补工具起止（保持未知，不串到别回合）'
     )
 
-    /* 锚定成功但 id + name 都对不上：保持未知 */
     const mismatched = store.applyTurnTimings(
       [user('m0'), asstWithTools('m1', [tool('t1', 'read')])],
       [parallel]
@@ -363,7 +324,6 @@ try {
       '锚定成功但工具 name 对不上 → 保持未知（id + name 才算同一条）'
     )
 
-    /* 非法值：非有限 / 时间倒挂一律丢弃（不写进消息） */
     const invalid = store.applyTurnTimings(
       [user('m0'), asstWithTools('m1', [tool('t1', 'bash'), tool('t2', 'bash')])],
       [
@@ -382,7 +342,6 @@ try {
     )
   }
 
-  /* --------------------------------------------------------- 快照 / 多 run 合并 */
   console.log('\n--- 4. 同 run 快照后者胜、多 run 合并不重复 ---')
   {
     await store.appendTurnTiming(dataDir, 'sess-runs', {
@@ -437,7 +396,6 @@ try {
     )
   }
 
-  /* ------------------------------------------------------- tracker 落盘 */
   console.log('\n--- 5. TurnTimingTracker 把生成计时写进回合计时日志 ---')
   {
     const tracker = new TurnTimingTracker()
@@ -452,7 +410,6 @@ try {
     check(JSON.stringify(rec.generationTimings[0]) === JSON.stringify(g1), 'tracker 落盘的生成计时与消息一致', JSON.stringify(rec.generationTimings[0]))
     check(rec.anchorId === 'm0', '锚定用户消息（恢复时按它的回合找回次序）')
 
-    /* 中途快照 + 收尾快照：同一 run 后者胜 */
     const tracker2 = new TurnTimingTracker()
     tracker2.elapsedMs = 1000
     tracker2.runId = 'run-1'
@@ -465,12 +422,10 @@ try {
     check(dup?.generationTimings?.length === 2, '中途 + 收尾快照合并成一条，不重复', String(dup?.generationTimings?.length))
     check(dup.elapsedMs === 2500, '收尾快照的用时覆盖中途值', String(dup.elapsedMs))
 
-    /* 会话日志真的落在临时目录里（没有写到真实用户数据） */
     const raw = await readFile(join(dataDir, 'turn-timing', 'tracker.jsonl'), 'utf8')
     check(raw.includes('"generationTimings"'), '生成计时确实写进了 turn-timing 日志')
   }
 
-  /* ------------------------------------------------ AgentController 假事件 */
   console.log('\n--- 6. 假事件驱动 streaming：start / update / end / flush ---')
   {
     const pushes = []
@@ -479,7 +434,6 @@ try {
     const updates = () => pushes.filter((m) => m.ch === 'msg-update')
     const lastUpdate = () => updates().at(-1)
 
-    /* 一次正常请求：原生 turn_start 先到（请求准备起点），再来空 delta、真正内容 */
     emit({ type: 'turn_start' })
     emit({ type: 'message_start', message: { role: 'assistant' } })
     const addPush = pushes.find((m) => m.ch === 'msg-add')
@@ -530,7 +484,6 @@ try {
     )
     check(near(genA.ttftMs + genA.decodeMs, genA.durationMs, 2), '收尾时 TTFT + decode ≈ 请求时长')
 
-    /* toolcall_start 也算首个真正内容 */
     emit({ type: 'turn_start' })
     emit({ type: 'message_start', message: { role: 'assistant' } })
     const idB = pushes.filter((m) => m.ch === 'msg-add').at(-1).payload.id
@@ -543,7 +496,6 @@ try {
     })
     check(lastUpdate().payload.id === idB && lastUpdate().payload.patch.generationTiming.ttftMs >= 1, '工具调用请求收尾也有完整计时')
 
-    /* 没有任何内容的请求：只给时长 */
     emit({ type: 'turn_start' })
     emit({ type: 'message_start', message: { role: 'assistant' } })
     const idC = pushes.filter((m) => m.ch === 'msg-add').at(-1).payload.id
@@ -556,7 +508,6 @@ try {
       JSON.stringify(genC)
     )
 
-    /* 没拿到原生 turn_start（事件缺失 / 回退）：duration 只当下限，不保存伪 TTFT */
     emit({ type: 'message_start', message: { role: 'assistant' } })
     const idD = pushes.filter((m) => m.ch === 'msg-add').at(-1).payload.id
     emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '回退' }, usage: { output: 7 } })
@@ -569,7 +520,6 @@ try {
     check(genD.ttftMs === undefined, '回退不保存伪 TTFT（不含请求准备 / 网络等待）')
     check(genD.decodeMs >= 1, '回退仍给真实的 decodeMs（首内容 → 结束）')
 
-    /* 多个 assistant 请求：各自一条，id 不串 */
     const finalIds = updates()
       .filter((m) => m.payload.patch.text !== undefined)
       .map((m) => m.payload.id)
@@ -577,7 +527,6 @@ try {
     check(finalIds.every((id) => [idA, idB, idC, idD].includes(id)), '收尾补丁没有挂到别的不存在的消息上')
   }
 
-  /* ------------------------------------------------ 原生 turn_start 覆盖请求准备等待 */
   console.log('\n--- 7. 原生 turn_start 作请求准备起点：duration/ttft 含等待，decode 不含 ---')
   {
     const pushes = []
@@ -585,7 +534,6 @@ try {
     const emit = (e) => ctl.handleEvent(e)
     const lastUpdate = () => pushes.filter((m) => m.ch === 'msg-update').at(-1)
 
-    /* 模拟请求已发出、header 500ms 后才回来：turn_start 早于 assistant message_start */
     emit({ type: 'turn_start' })
     await wait(500)
     emit({ type: 'message_start', message: { role: 'assistant' } })
@@ -597,7 +545,6 @@ try {
     check(g.ttftMs >= 450, 'TTFT 也从请求准备起点算（含等待）', String(g.ttftMs))
     check(g.decodeMs < 450, 'decode 只从首内容到结束，不含等待', String(g.decodeMs))
 
-    /* 下一次请求缺原生 turn_start → 回退，不拿流下限当请求首包延迟 */
     emit({ type: 'message_start', message: { role: 'assistant' } })
     emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'x' }, usage: { output: 5 } })
     emit({ type: 'message_end', message: { role: 'assistant', usage: { output: 5 }, stopReason: 'stop', timestamp: 2 } })
@@ -606,16 +553,10 @@ try {
     check(fb.decodeMs >= 1, '回退仍有 decodeMs')
   }
 
-  /* ------------------------------------------------ 同一 native run 内通知分段 + 恢复 */
   console.log('\n--- 8. 同一 native run 内消费官方通知：旧段冻结 final / 新段独立 / 恢复配对 ---')
   {
     const byIdOf = (list) => new Map(list.map((m) => [m.id, m]))
 
-    /*
-     * 驱动与 vendor 同序的事件流：agent_start → 每个请求前 turn_start →
-     * assistant message_start/end。oldCount 条旧助手之后，官方通知作为 followUp
-     * 以 user 角色到达（同一 run，不新开 agent_start），随后一个新助手。
-     */
     const runScenario = async (sessionName, oldCount) => {
       const ctl = new AgentController({ push: () => {}, cwd: process.cwd() })
       ctl.state = { sessionFile: join(temp, sessionName) }
@@ -629,7 +570,6 @@ try {
         emit({ type: 'message_start', message: { role: 'assistant' } })
         emit({ type: 'message_end', message: { role: 'assistant', usage: { output: 5 + i }, stopReason: 'stop', timestamp: 1 } })
       }
-      /* 通知触发的新请求：turn_start 先到（pending 不能被通知分段清掉） */
       emit({ type: 'turn_start' })
       emit({ type: 'message_start', message: { role: 'user', content: noticeText } })
       const pendingKept = ctl.pendingRequestMono !== undefined
@@ -689,7 +629,6 @@ try {
       check(applied.get(noticeId) !== undefined, `重载历史里通知 id ${noticeId} 存在`)
     }
 
-    /* 普通用户插话不改变分段 */
     const ctl3 = new AgentController({ push: () => {}, cwd: process.cwd() })
     ctl3.state = { sessionFile: join(temp, 'native-ordinary.jsonl') }
     const emit3 = (e) => ctl3.handleEvent(e)
@@ -703,7 +642,6 @@ try {
     check(ctl3.turn.messageIds.length === 1, '普通用户 steer 不重置段内归属')
   }
 
-  /* ------------------------------------------------ 旧段写入不反置新段 persisted */
   console.log('\n--- 9. 旧段异步写入不反置新段 persisted（新段中途快照不被吞） ---')
   {
     const t = new TurnTimingTracker()
@@ -711,7 +649,6 @@ try {
     t.messageIds = ['m1']
     t.elapsedMs = 100
     const p1 = t.persist(true, 'race.jsonl', [user('m0'), asst('m1', g1)])
-    /* 段边界：旧段写入还在飞行中，先同步换到 run-2 */
     t.messageIds = []
     t.elapsedMs = undefined
     t.persisted = false

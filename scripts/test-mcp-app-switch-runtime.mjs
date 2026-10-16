@@ -1,19 +1,3 @@
-/**
- * MA3 运行时守卫的**真实边界小测**。
- *
- * 目标（对应审查发现的接线安全缺口）：
- *   · 用真实 `RunnerRegistry` + 轻量 fake AgentController 证明 hidden（未提交交接）
- *     实例会阻断 `to-inkstone`，而不是用 `statuses()` 送上来的假数据；
- *   · 注册表缺失 / 快照异常时 `mcpAppHoldersFor` 必须抛 `holders_unavailable`，
- *     不当作「无人持有」；
- *   · 项目服务下，同 cwd 但未绑定 project 的实例按「可能持有」阻断；
- *   · 预览之后新增 hidden 实例 → 提交在写盘前被拒；
- *   · 提交成功后**不**自动重载 / 重启其它 runner（fake agent 的调用计数为 0）；
- *   · 收尾恰有一个 owner。
- *
- * 全部在隔离临时目录 + fake agent 上跑，不启动 Electron / pi / 真实模型，
- * 不读写真实用户配置；`piBin` 故意指向不存在的路径，以证明此路径不需要真实 pi。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -56,7 +40,6 @@ const rejects = async (work, code, message) => {
   ok(Boolean(thrown) && thrown.code === code, message, thrown ? `${thrown.code}: ${thrown.message}` : '没有抛错')
 }
 
-/* ───────────────────────── 编译真实模块 ───────────────────────── */
 const outfile = join(root, 'bundle.mjs')
 await build({
   stdin: {
@@ -70,13 +53,11 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
-  /* 依赖链里的 CJS 包会做 dynamic require，esbuild 的 ESM 输出需要补一个 require。 */
   banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
   logLevel: 'warning'
 })
 const m = await import(pathToFileURL(outfile).href)
 
-/* ───────────────────────── 隔离文件 ───────────────────────── */
 const HOST_GLOBAL = {
   servers: [
     {
@@ -114,7 +95,6 @@ async function resetFiles({ project = false } = {}) {
   }
 }
 
-/* ───────────────────────── fake AgentController ───────────────────────── */
 let sessionSeq = 0
 function makeFakeAgent({ cwd }) {
   const state = {
@@ -140,7 +120,6 @@ function makeFakeAgent({ cwd }) {
       return projectId
     },
     setRunnerGeneration() {},
-    /* HI3：空数组 = 已确认无 legacy 持有（fake 显式给出，不当未知）。 */
     getLegacyMcpHolderSnapshot: () => ({ services: legacyMcpServices.map((service) => ({ ...service })) }),
     setLegacyMcpServices(next) {
       legacyMcpServices = Array.isArray(next) ? next : []
@@ -204,7 +183,6 @@ const callTotals = (agents) => {
   return total
 }
 
-/* ───────────────────────── IPC harness（真实 registerMcpAppIpc） ───────────────────────── */
 const state = { registry: null, agents: new Map() }
 const deps = {
   currentAgent: () => state.registry?.active() ?? undefined,
@@ -263,7 +241,6 @@ async function assertSingleOwner(name, expected) {
   )
 }
 
-/* ───────────────────────── 纯判定：mayHoldMcpApp ───────────────────────── */
 {
   const exited = { processRunning: false, conn: 'exited' }
   const alive = { processRunning: true, conn: 'ready' }
@@ -283,7 +260,6 @@ async function assertSingleOwner(name, expected) {
   )
 }
 
-/* ───────────────────────── 1. hidden 实例阻断 + 恰一 owner ───────────────────────── */
 try {
   await resetFiles()
   const { registry, agents } = newRegistry()
@@ -294,7 +270,6 @@ try {
   const preview1 = await call('yan:mcpApp:prepareSwitch', 'weather')
   ok(preview1.ok && preview1.preview.blocked === false, '仅一个已退出实例时预览不阻断')
 
-  /* hidden runner（未提交交接）存活：不能靠 statuses()，必须来自内部窄快照。 */
   const hidden = await addHidden(registry, agents, { cwd: otherCwd, projectId: null, live: true, conn: 'ready' })
   ok(hidden.agent && hidden.agent.running === true, 'hidden runner 确实存活')
   const statuses = registry.statuses()
@@ -310,7 +285,6 @@ try {
   ok(commit1.result.notice.includes('运行实例'), '拒绝原因说明是运行实例', commit1.result.notice)
   await assertSingleOwner('hidden 阻断后', 'pi')
 
-  /* 移除 hidden 后：只有已退出实例，应能安全切换且恰一 owner。 */
   await registry.stopByCwd(otherCwd)
   const beforeCommit2 = callTotals(agents)
   const preview2 = await call('yan:mcpApp:prepareSwitch', 'weather')
@@ -338,7 +312,6 @@ try {
   await state.registry?.stopAll().catch(() => undefined)
 }
 
-/* ───────────────────────── 2. 注册表缺失 / 快照异常 → fail-closed ───────────────────────── */
 try {
   await rejects(
     () => m.mcpAppHoldersFor(null, { serverId: 'weather', scope: 'global' }),
@@ -356,7 +329,6 @@ try {
     '快照读取异常时抛 holders_unavailable'
   )
 
-  /* ownership 视图在注册表缺失时不得把异常抛给渲染端，而是标为不可切换（fail-closed）。 */
   await resetFiles()
   useRegistry(null, new Map())
   const ownership = await call('yan:mcpApp:ownership')
@@ -371,7 +343,6 @@ try {
   useRegistry(null, new Map())
 }
 
-/* ───────────────────────── 3. 项目服务：未绑定 project 的实例阻断 ───────────────────────── */
 try {
   await resetFiles({ project: true })
   const { registry, agents } = newRegistry()
@@ -392,7 +363,6 @@ try {
   eq(await readFile(hostConfigFile, 'utf8'), before3, '项目服务阻断时砚配置未动')
   await assertSingleOwner('项目服务阻断后', 'pi')
 
-  /* 已知属于其它项目的存活实例不阻断本项目。 */
   await registry.stopByCwd(projectCwd)
   await selectActive(registry, { cwd: projectCwd, projectId: 'p1', live: false, conn: 'exited' })
   const other = await addHidden(registry, agents, { cwd: otherCwd, projectId: 'p2', live: true, conn: 'ready' })
@@ -402,7 +372,6 @@ try {
   await state.registry?.stopAll().catch(() => undefined)
 }
 
-/* ───────────────────────── 4. 预览后切 runner → 写前拒绝 ───────────────────────── */
 try {
   await resetFiles()
   const { registry, agents } = newRegistry()
@@ -412,7 +381,6 @@ try {
   ok(preview4.ok, '预览成功')
   const before4 = { host: await readFile(hostConfigFile, 'utf8'), native: await readFile(nativeGlobal, 'utf8') }
 
-  /* 用户切到另一个 runner：active 变化，令牌必须作废。 */
   await registry.select({ cwd: otherCwd, activate: true })
   const commit4 = await call('yan:mcpApp:commitSwitch', preview4.preview.token)
   ok(commit4.ok === false && commit4.code === 'runner_changed', '预览后切换 runner 使提交被拒', commit4.code)
@@ -422,7 +390,6 @@ try {
   await state.registry?.stopAll().catch(() => undefined)
 }
 
-/* ───────────── 5. pi exited 但 legacy 连接仍 ready/connecting → 仍算持有 ───────────── */
 try {
   await resetFiles()
   const { registry, agents } = newRegistry()
@@ -440,7 +407,6 @@ try {
   agent.setLegacyMcpServices([{ serverId: 'weather', status: 'disconnected' }])
   const holdersAfter = await m.mcpAppHoldersFor(registry, { serverId: 'weather', scope: 'global' })
   ok(!holdersAfter.some((item) => item.runnerId === active.id), 'legacy disconnected：不算持有')
-  /* legacy 事实读取不到（null）→ 未知 → 可能持有。 */
   agent.getLegacyMcpHolderSnapshot = () => null
   const holdersUnknown = await m.mcpAppHoldersFor(registry, { serverId: 'weather', scope: 'global' })
   ok(holdersUnknown.some((item) => item.runnerId === active.id), 'legacy 事实缺失（null）：按可能持有')

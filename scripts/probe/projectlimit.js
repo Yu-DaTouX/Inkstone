@@ -1,13 +1,3 @@
-/**
- * 项目默认只展开前五个（N17）。
- *
- * 用户反馈：项目多了以后左栏一屏放不下，常用的几个被淹没。
- * 现在默认截断到前 5 个（**显示层**，归属不动），超出部分收在
- * 「更多项目（N）」后面；当前项目如果落在第 5 个之后，自动展开到它，
- * 搜索时临时显示全部匹配。
- *
- * 数据造在隔离目录的 desktop.json 里（patchSettings），不碰真实项目。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -36,7 +26,6 @@
     store.getState().setRailPinned(true)
     await settle()
 
-    /* ---- 造数据：甲组 5 个（排在最前）+ 乙组 2 个（会被截断）---- */
     const stamp = Date.now()
     const base = String(store.getState().settings.cwd).replace(/[\\/][^\\/]*$/, '')
     const mk = (n, groupId) => {
@@ -61,16 +50,6 @@
       recentCwds: all.map((x) => x.project.cwd),
       projectNames: { ...store.getState().settings.projectNames, ...projectNames }
     })
-    /*
-     * 把「当前项目」钉到指定项目。
-     *
-     * 为什么不能只改 session.cwd：Rail 的 isCurrent 判定是
-     * `activeProjectId ?? currentSummary?.projectId`（见 Rail.tsx），
-     * activeProjectId 来自运行实例、currentSummary 来自会话列表。
-     * 隔离环境里真实 runner 带着自己的 projectId，只改 session.cwd 时
-     * 「当前项目」根本不动 —— 这正是本探针之前 11 条断言全红的原因。
-     * 这里把运行实例清空并给会话列表挂上目标 projectId。
-     */
     const pinCurrentProject = (record) => {
       const file = 'C:/yan-probe/current.jsonl'
       store.setState({
@@ -93,7 +72,6 @@
       })
     }
 
-    /* 当前项目放在第一个（在前五之内） */
     pinCurrentProject(a[0].project)
     await settle()
 
@@ -109,7 +87,6 @@
     ok(hiddenNum > 0, `按钮显示隐藏的项目数（${hiddenNum}）`)
     ok(more?.dataset.expanded === '0', '默认处于折叠态')
 
-    /* ---- 展开 ---- */
     if (more) click(more)
     await settle()
     const expandedCount = projCount()
@@ -118,19 +95,16 @@
     ok(q('[data-testid="rail-more-projects"]')?.dataset.expanded === '1', '按钮变成展开态（文案为「收起」）')
     out.push('  展开后按钮文案 = ' + JSON.stringify((q('[data-testid="rail-more-projects"]')?.textContent || '').trim()))
 
-    /* ---- 收起 ---- */
     click(q('[data-testid="rail-more-projects"]'))
     await settle()
     ok(projCount() === 5, `收起后回到 5 个（实际 ${projCount()}）`)
 
-    /* ---- 当前项目在第 5 个之后：自动展开 ---- */
     pinCurrentProject(b[0].project)
     await sleep(700)
     out.push(`  当前项目=乙组首个 → 显示 ${projCount()} 个`)
     ok(projCount() === expandedCount, '当前项目在默认范围之外时自动展开（能看见自己在哪）')
     ok(!!q('.proj-head[data-current="1"]'), '当前项目行带 data-current 标记')
 
-    /* ---- 搜索：临时显示全部匹配，清空后回到折叠态 ---- */
     const search = q('[data-testid="rail-search"]')
     ok(!!search, '搜索框常驻')
     const body = q('.rail-body')
@@ -140,7 +114,6 @@
     out.push(`  搜「第6号」→ ${projCount()} 个项目`)
     ok(projCount() === 1, '搜索时只显示匹配的项目（不受 5 个限制）')
 
-    /* 清空：折叠状态、焦点、滚动位置都回来 */
     click(q('[data-testid="rail-search-clear"]'))
     await settle()
     ok(!!q('[data-testid="rail-search"]'), '清空按钮不会关掉搜索框')
@@ -149,16 +122,9 @@
     out.push(`  滚动位置 ${scrollBefore} → ${body?.scrollTop ?? 0}`)
     ok(Math.abs((body?.scrollTop ?? 0) - scrollBefore) <= 2, '滚动位置没有被搜索清空改动')
 
-    /* ---- 收尾 ---- */
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await sleep(200)
 
-    /*
-     * ---- N17：顺序与分组要落盘（重启后读的就是这个文件）----
-     *
-     * 探针里改完设置后，去主进程**重新读一次** settings（= 磁盘内容），
-     * 而不是只看渲染端自己的 store —— 后者只证明“界面记住了”。
-     */
     out.push('')
     out.push('=== 顺序与分组真的落盘（N17）===')
     await sleep(600)
@@ -167,10 +133,6 @@
     const persistedGroups = (persisted?.projectGroups ?? []).map((g) => g.name)
     out.push('  落盘 projects = ' + JSON.stringify(persistedIds))
     out.push('  落盘 groups = ' + JSON.stringify(persistedGroups))
-    /*
-     * 只断言“注入的那 7 个”的相对顺序：设置里还会有应用自己登记的当前项目
-     * （真实 cwd），要求整个数组相等会假失败。
-     */
     const injectedIds = all.map((x) => x.project.id)
     const positions = injectedIds.map((id) => persistedIds.indexOf(id))
     ok(positions.every((i) => i >= 0), '七个项目都落盘了')

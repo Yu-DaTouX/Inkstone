@@ -1,20 +1,3 @@
-/**
- * 会话稳定编号（v3 WP-10）。
- *
- * `YAN_DIR/session-codes.json` 维护 `scopeId → S数字 / T数字 / R数字`：
- *   · 会话：S12，按创建顺序递增、不复用；
- *   · 定时任务：T03；
- *   · 代码评审：R04；
- *   · 子 Agent 不占号，沿用父运行编号加 `·n`（由 registry 计算）。
- *
- * 编号**不写进 pi 会话文件**，只是砚自己的显示标识。首次启用 v3 时由上层调用
- * `backfill()` 按创建时间给旧会话补号。
- *
- * ── 失败语义 ──
- * 先落盘、成功后再提交内存（与 `space-store.ts` 一致）：写盘失败时编号不会
- * 先出现在内存里，registry 也就不会发布一个「其实没持久化」的编号。
- * 路径由调用方注入根目录，测试用隔离目录，绝不猜用户目录。
- */
 import { mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { parsePersistedDocument } from '../persisted-document'
@@ -57,7 +40,6 @@ function sanitizeEntry(raw: unknown): SessionCodeEntry | null {
   }
 }
 
-/** 读盘容错：坏条目丢掉，不让一份坏文档拦住启动。 */
 export function sanitizeSessionCodes(raw: unknown): SessionCodeDocument {
   const source = raw && typeof raw === 'object' ? (raw as Partial<SessionCodeDocument>) : {}
   const entries: SessionCodeEntry[] = []
@@ -80,7 +62,6 @@ export function formatRunCode(kind: CodeKind, n: number): string {
 export interface SessionCodeStoreOptions {
   root?: string
   now?: () => number
-  /** 注入落盘实现（测试用）；缺省临时文件 + rename */
   write?: (path: string, text: string, mode: 'create') => Promise<void>
 }
 
@@ -125,7 +106,6 @@ export class SessionCodeStore {
     return [...this.doc.entries]
   }
 
-  /** 分配或返回已有编号；首次落盘成功后才提交内存。 */
   assign(scopeId: string, kind: CodeKind, createdAt?: number): Promise<string> {
     const existing = this.byScope.get(scopeId)
     if (existing) return Promise.resolve(existing.code)
@@ -142,16 +122,6 @@ export class SessionCodeStore {
     })
   }
 
-  /**
-   * 按创建时间给旧会话补号；返回新分配的条数。已存在的编号不动。
-   *
-   * 确定性与安全边界：
-   *   · 同一 scopeId 重复出现只取一条（createdAt 最早；再同则 kind 字典序），
-   *     避免一次 backfill 给同一会话发出两个编号、白耗号段；
-   *   · 排序用 createdAt + scopeId 作为稳定并列键，与输入顺序无关；
-   *   · 编号取现有同类的最大号 +1，绝不与已有编号冲突；
-   *   · 已存在的 scopeId 全部跳过，重复启动结果相同。
-   */
   backfill(items: { scopeId: string; kind: CodeKind; createdAt: number }[]): Promise<number> {
     return this.enqueue(async () => {
       await this.load()

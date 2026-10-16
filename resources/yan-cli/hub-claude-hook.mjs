@@ -1,4 +1,3 @@
-/** 会话级 PreToolUse：宿主不答复或请求失败时明确拒绝，不修改个人全局 hooks。 */
 let input = ''
 for await (const chunk of process.stdin) {
   input += chunk
@@ -14,5 +13,5 @@ try {
   })
   const result = await response.json()
   if (response.ok && result.ok && result.summary?.allowed === true) decision = 'allow'
-} catch { /* 默认拒绝 */ }
+} catch { }
 process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision, permissionDecisionReason: decision === 'allow' ? 'Inkstone 用户已批准本次调用' : 'Inkstone 未获得本次调用的有效批准' } }))

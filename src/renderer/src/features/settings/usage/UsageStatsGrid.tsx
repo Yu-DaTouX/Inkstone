@@ -2,15 +2,9 @@ import type { ReactElement } from 'react'
 import type { UsageStatsResult } from '../../../../../shared/ipc'
 import type { SettingsText } from '../settings-text'
 import { compactNumber, peakHourText } from './usage-model'
+import { formatMoney } from '../../../../../shared/currency'
 
-/**
- * v3 设置页的用量指标网格 + Token 拆分说明（纯展示）。
- *
- * 由 `UsageSettings` 用同一次 `usageStats(range)` 结果渲染，不单独再扫一遍；
- * Token 值是含子代理与缓存读写的合计，不再拆分主会话与子代理，
- * 会话 / 消息 / 活跃天数 / 高峰时段仍只计主会话。
- */
-export function UsageStatsGrid({ stats, text }: { stats: UsageStatsResult; text: SettingsText }): ReactElement {
+export function UsageStatsGrid({ stats, text, money = (usd) => formatMoney(usd, undefined) }: { stats: UsageStatsResult; text: SettingsText; money?: (usd: number) => string }): ReactElement {
   const peak = peakHourText(stats.peakHour)
   return (
     <>
@@ -28,6 +22,10 @@ export function UsageStatsGrid({ stats, text }: { stats: UsageStatsResult; text:
           <dd data-testid="settings-usage-tokens" title={text.usageTokensHint}>
             {compactNumber(stats.tokens)}
           </dd>
+        </div>
+        <div className="settings-stat">
+          <dt>{text.usageCost}</dt>
+          <dd data-testid="settings-usage-cost">{money(stats.cost ?? 0)}</dd>
         </div>
         <div className="settings-stat">
           <dt>{text.usageActiveDays}</dt>

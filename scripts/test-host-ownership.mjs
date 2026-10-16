@@ -1,13 +1,3 @@
-/**
- * 发送目标归属（F02）—— 专题回归（不需要真实 pi / 模型）。
- *
- * 从 `src/main/index.ts` 抽取**当前**的 `normalizeExpectedRuntime` / `targetMatchesExpected` /
- * `resolveExpectedTarget` 函数文本，配真实 `RunnerRegistry`，验证：
- *   · `expectedRuntime` 严格校验：非法结构明确失败，不退化成「猜 active」；
- *   · 按 runId / generation 精确目标；两个真实 sessionId 不能互换，pending 迁移允许；
- *   · 目标 A 仍 valid 时，即使 active 是 B 也能定向 A，且不改变 active / 不切 cwd；
- *   · 定位不到或身份变化 → null（宿主据此明确失败，不发给 B、不丢输入）。
- */
 import fs from 'node:fs/promises'
 import vm from 'node:vm'
 import ts from 'typescript'
@@ -28,7 +18,6 @@ export async function runHostOwnershipTests(ok) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
   }).outputText
 
-  /* 真实 `yan:send` handler 文本：跨 await 归属在宿主层而不是纯 helper 上验证。 */
   let sendHandlerNode
   const findSendHandler = (node) => {
     if (ts.isCallExpression(node) && node.arguments[0]?.text === 'yan:send') sendHandlerNode = node.arguments[1]
@@ -90,9 +79,6 @@ export async function runHostOwnershipTests(ok) {
   vm.runInContext(code, context)
   const { normalizeExpectedRuntime, targetMatchesExpected, resolveExpectedTarget } = context
 
-  /* ──────────────────────────────────────────────────────────────
-   * ① normalizeExpectedRuntime：非法结构明确失败
-   * ────────────────────────────────────────────────────────────── */
   {
     ok(normalizeExpectedRuntime(undefined) === null, 'undefined → null（老调用）')
     ok(normalizeExpectedRuntime(null) === null, 'null → null（老调用）')
@@ -106,12 +92,8 @@ export async function runHostOwnershipTests(ok) {
     ok(normalizeExpectedRuntime({ runId: 5 }) === 'invalid', '非字符串 runId 非法')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ② 目标 A 仍 valid，active 是 B 也能定向 A（不 activate / 不改 cwd）
-   * ────────────────────────────────────────────────────────────── */
   {
     const a = await registry.select({ cwd: 'C:/proj', sessionFile: 'C:/proj/A.jsonl' })
-    /* 让 A 先忙，B 才会新建独立 runner，而不是复用 A 换 cwd。 */
     registry.agentOf(a.id).state = { ...registry.agentOf(a.id).state, isAgentRunning: true }
     const b = await registry.select({ cwd: 'C:/other', sessionFile: 'C:/other/B.jsonl' })
     registry.agentOf(a.id).state = { ...registry.agentOf(a.id).state, isAgentRunning: false }
@@ -123,16 +105,11 @@ export async function runHostOwnershipTests(ok) {
     ok(registry.activeRunnerId === b.id, '定向 A 不把 active 改成 A')
     ok(registry.agentOf(a.id)?.getState()?.sessionFile === 'C:/proj/A.jsonl', '定向不切 A 的 cwd / 会话')
 
-    /* generation 不符：明确失败 */
     ok(resolveExpectedTarget({ runId: runtimeA.runId, generation: runtimeA.generation + 9 }) === null,
       'generation 不符时目标定位失败（不猜）')
-    /* runId 不存在 */
     ok(resolveExpectedTarget({ runId: 'r-does-not-exist', generation: 1 }) === null, 'runId 不存在时定位失败')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ③ sessionId 定位：真实 id 精确匹配，pending:<runId> 退回 runId
-   * ────────────────────────────────────────────────────────────── */
   {
     const a = await registry.select({ cwd: 'C:/sid', sessionFile: 'C:/sid/A.jsonl' })
     const real = registry.runtimeOf(a.id)
@@ -143,9 +120,6 @@ export async function runHostOwnershipTests(ok) {
     void real
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ④ targetMatchesExpected：pending 迁移允许，两个真实 SID 不允许
-   * ────────────────────────────────────────────────────────────── */
   {
     const a = await registry.select({ cwd: 'C:/match', sessionFile: 'C:/match/A.jsonl' })
     const gen = registry.runtimeOf(a.id).generation
@@ -161,12 +135,6 @@ export async function runHostOwnershipTests(ok) {
     ok(targetMatchesExpected(a.id, { generation: gen + 1 }) === false, '代次不符不匹配')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ⑤ 真实 `yan:send` handler 跨 await 归属（真实 Registry + 可控门闸）。
-   *    反向期望：partial / 缺省 expected 在同 run 复用后必须零派发，
-   *    完整 tuple 仍拒，未换身份正常成功；覆盖 settings 冷缓存 / 检查点
-   *    await 与 handoff 等待三种真实挂起边界，合法迁移仍能通过。
-   * ────────────────────────────────────────────────────────────── */
   const deferred = () => {
     let resolve
     const promise = new Promise((r) => { resolve = r })
@@ -222,14 +190,12 @@ export async function runHostOwnershipTests(ok) {
     const agent = registry.agentOf(id)
     agent.state = { ...agent.state, isAgentRunning: running }
   }
-  /* select 会复用最久未活动的空闲 runner；先把已建 runner 占住才能拿到不同实例。 */
   const seedDistinct = async (registry, cwd, file) => {
     const id = await seedSend(registry, cwd, file)
     setIsAgentRunning(registry, id, true)
     return id
   }
 
-  /* 未换身份：partial / legacy 正常成功（固定必须保留的行为）。 */
   {
     const env = makeSendEnv()
     const id = await seedSend(env.registry)
@@ -251,7 +217,6 @@ export async function runHostOwnershipTests(ok) {
       '[handler] 未换身份时完整 tuple 正常发给 A', JSON.stringify(env.deliveries))
   }
 
-  /* 负对照：runId-only 在同 / 跨 cwd 复用后必须零派发。 */
   for (const [label, reuse] of [['同 cwd', reuseSameCwd], ['跨 cwd', reuseCrossCwd]]) {
     const env = makeSendEnv()
     const id = await seedSend(env.registry)
@@ -268,7 +233,6 @@ export async function runHostOwnershipTests(ok) {
     ok(env.checkpoints.length === 0, `[handler] runId-only + ${label}复用 → 零检查点副作用`)
   }
 
-  /* 负对照：缺省 expected（legacy）与 pending-only 在同 / 跨 cwd 复用后也必须零派发。 */
   for (const [label, reuse] of [['同 cwd', reuseSameCwd], ['跨 cwd', reuseCrossCwd]]) {
     const env = makeSendEnv()
     await seedSend(env.registry)
@@ -292,7 +256,6 @@ export async function runHostOwnershipTests(ok) {
     ok(env.checkpoints.length === 0, `[handler] pending-only + ${label}复用 → 零检查点副作用`)
   }
 
-  /* 负对照：完整 tuple 在复用后仍明确拒绝、零派发（原语义不回归）。 */
   {
     const env = makeSendEnv()
     const id = await seedSend(env.registry)
@@ -305,7 +268,6 @@ export async function runHostOwnershipTests(ok) {
       '[handler] 完整 tuple + 复用 → 零派发（负对照保持）', JSON.stringify({ res, deliveries: env.deliveries }))
   }
 
-  /* settings 缓存命中（微任务 await）：复用来不及插入，不能误伤正常发送。 */
   {
     const deliveries = []
     const registry = new RunnerRegistry({ limit: 3, createAgent: (id, cwd, generation) => mkSendAgent(id, cwd, generation, deliveries) })
@@ -328,9 +290,7 @@ export async function runHostOwnershipTests(ok) {
       '[handler] settings 缓存命中（微任务）时仍发给 A', JSON.stringify(deliveries))
   }
 
-  /* handoff 等待边界：合法迁移、目的复用与无目的三种情形。 */
   {
-    /* 合法迁移：legacy 入口钉 source；等待期 source 被复用，但按目的重新绑定后仍发给 D。 */
     const env = makeSendEnv()
     const destId = await seedDistinct(env.registry, 'C:/dest', 'D.jsonl')
     const sourceId = await seedDistinct(env.registry)
@@ -338,7 +298,7 @@ export async function runHostOwnershipTests(ok) {
     const settled = deferred()
     env.ctx.handoffPending.set(sourceId, { collecting: true, settled: settled.promise, destinationRunId: destId, request: { operationId: 'op' } })
     const sending = env.sendUser('A-msg', undefined, undefined, undefined)
-    await reuseSameCwd(env.registry) /* source 复用：合法迁移不应误伤 */
+    await reuseSameCwd(env.registry)
     settled.resolve()
     env.gate.resolve({ checkpointsEnabled: true })
     const res = await sending
@@ -346,22 +306,20 @@ export async function runHostOwnershipTests(ok) {
       '[handoff] 合法迁移：source 等待期复用仍按目的绑定发给 D', JSON.stringify({ res, deliveries: env.deliveries }))
   }
   {
-    /* 目的在入口钉住后、settled 之前被复用 → 明确拒绝，不盲套 source pin。 */
     const env = makeSendEnv()
     const destId = await seedDistinct(env.registry, 'C:/dest', 'D.jsonl')
     const sourceId = await seedDistinct(env.registry)
-    setIsAgentRunning(env.registry, destId, false) /* 目的保持空闲，才能被复用 */
+    setIsAgentRunning(env.registry, destId, false)
     const settled = deferred()
     env.ctx.handoffPending.set(sourceId, { collecting: true, settled: settled.promise, destinationRunId: destId, request: { operationId: 'op' } })
     const sending = env.sendUser('A-msg', undefined, undefined, undefined)
-    await env.registry.select({ cwd: 'C:/dest', sessionFile: 'C:/dest/D2.jsonl' }) /* 目的复用（应拒绝） */
+    await env.registry.select({ cwd: 'C:/dest', sessionFile: 'C:/dest/D2.jsonl' })
     settled.resolve()
     const res = await sending
     ok(res.ok === false && env.deliveries.length === 0,
       '[handoff] 目的在等待期被复用 → 零派发（不拿 source pin 盲套 dest）', JSON.stringify({ res, deliveries: env.deliveries }))
   }
   {
-    /* 可迁移但无目的：原目标在等待期被复用 → 拒绝。 */
     const env = makeSendEnv()
     const sourceId = await seedSend(env.registry)
     const settled = deferred()
@@ -374,7 +332,6 @@ export async function runHostOwnershipTests(ok) {
       '[handoff] 无目的可迁移且原目标被复用 → 零派发', JSON.stringify({ res, deliveries: env.deliveries }))
   }
   {
-    /* 非 collecting 交接的 abandonHandoff await 期间复用 → 拒绝。 */
     const abandonEntered = deferred()
     const abandonGate = deferred()
     const env = makeSendEnv({ abandonHandoff: async () => { abandonEntered.resolve(); await abandonGate.promise } })

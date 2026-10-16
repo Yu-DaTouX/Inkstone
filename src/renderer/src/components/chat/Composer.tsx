@@ -24,36 +24,18 @@ import { formatDuration } from '../../../../shared/duration'
 import { submitComposerInput } from '../../lib/composer-submit'
 import { Tip } from '../ui'
 
-/**
- * 输入区。四种输入模式共存：
- *
- *   · 普通文本      → prompt（发给模型）
- *   · `/` 开头       → 斜杠命令，带自动补全（扩展命令 / 提示词模板 / 技能）
- *   · `!` 开头       → 直接跑 shell，**不进模型**（`bash` 命令）
- *   · 贴/拖入图片    → 随 prompt 作为 images 发送
- *   · 拖入普通文件    → 作为**文件引用**（只带路径，模型按需读取）
- *
- * Enter 发送 / Shift+Enter 换行 / Esc 中止。
- * 生成中按 Enter 会**排队**（pi 的 follow-up，等这轮跑完再发）；
- * 想立刻插入当前这轮，用排队行右侧的「插队」（pi 的 steer）。
- */
-/** 输入框静止高度（px）；窗口高度不超过 SHORT_WINDOW_H 时用矮的那个，样式里有同一组数 */
 const REST_H = 64
 const REST_H_SHORT = 40
 const SHORT_WINDOW_H = 640
 
-/** 静止高度：两行，参照 Claude 的输入框；矮窗口（≤640px）收成一行半，把高度还给对话区 */
 export const composerRestHeight = (): number => (window.innerHeight <= SHORT_WINDOW_H ? REST_H_SHORT : REST_H)
 
-/** 输入框按内容（空时按占位文字）定高：不低于静止高度，最多 240px。分屏非焦点块的外观用同一规则，两边同高 */
 export function fitComposerHeight(el: HTMLTextAreaElement): void {
   el.style.height = 'auto'
   el.style.height = `${Math.min(Math.max(el.scrollHeight, composerRestHeight()), 240)}px`
 }
 
-/** 已经交出光标的那次「点开会话」（模块级：换块后新挂载的输入框不重复取） */
 let consumedComposerFocus = 0
-/** 切换太慢（读大会话）时过了这么久才显示出来，就不再抢光标：用户可能已经在别处操作 */
 const FOCUS_REQUEST_TTL = 4000
 
 export function Composer() {
@@ -66,38 +48,14 @@ export function Composer() {
   const abort = useStore((s) => s.abort)
   const runBash = useStore((s) => s.runBash)
   const running = useStore((s) => !!s.session?.isAgentRunning || !!s.session?.isStreaming)
-  /**
-   * 「模型在干活」的**回合级**判据（agent_start → agent_settled）。
-   *
-   * ⚠️ 不能用 `isStreaming` 代替：`isStreaming` 是 `session.isStreaming`，只在「有一条
-   *    assistant 消息正在流」时为真 —— 工具执行期间是 false，而那时 pi 同样
-   *    不接受不带 streamingBehavior 的 prompt（用户报过这个错）。
-   *    「生成中发送 = 先悬在输入框上方」必须用回合级判据，否则用户在工具执行时
-   *    发消息会被直接投出去，等于又替用户决定了投递方式。
-   *
-   * ⚠️ `isCompacting` 必须算进来（用户 2026-09-19：「自动压缩的时候仍要允许用户
-   *    发送消息」）。压缩期间 pi 照样不接受裸 prompt：
-   *      · 压缩发生在回合内部时 `running` 是真的，这条不影响；
-   *      · **pi 在回合之间自动压缩**（threshold）时 `agent_settled` 已经发过、
-   *        `running` 已经是 false，而 pi 忙着压缩 —— 那时按发送会**直接投出去**，
-   *        pi 报「Agent is already processing」而输入框已经被 `submit` 清空，
-   *        用户的消息就丢了（真正该做的是先进待定区，压缩完再自动按「排队」发）。
-   */
   const roundRunning = useStore(
     (s) => !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running || !!s.session?.isCompacting
   )
   const pendingSends = useStore((s) => s.pendingSends)
   const conn = useStore((s) => s.conn)
   const commands = useStore((s) => s.commands)
-  /** 常用排序（自动管理）、记录使用、以及列表的自动刷新 */
   const commandUse = useStore((s) => s.commandUse)
   const markCommandUsed = useStore((s) => s.markCommandUsed)
-  /**
-   * 发送键（用户可在设置里选）。
-   *
-   * `auto` 是默认值，也是**改动前的行为**：短输入框 Enter 发送，
-   * 长文模式里 Enter 换行。见 AppSettings.sendKey 的注释。
-   */
   const sendKey = useStore((s) => s.settings?.sendKey ?? 'auto')
   const reloadCommands = useStore((s) => s.reloadCommands)
   const openSettings = useStore((s) => s.openSettings)
@@ -110,11 +68,6 @@ export function Composer() {
   const activeGeneration = useStore((s) =>
     s.runners.find((runner) => (runner.runId ?? runner.id) === s.activeRunnerId)?.generation ?? 0
   )
-  /**
-   * 草稿键跟随**正在看**的会话：peek 优先，其次稳定 sessionId，只有路径时用
-   * 薄路径键 `file:<path>`，最后才退回活动实例的 run 键。旧 `activeRuntimeKey`
-   * 在 deferred 只读浏览时指向活动实例，会把别条会话的草稿读/写错。
-   */
   const draftKey = useStore((s) => composerDraftKey(s))
   const conversationKey = useStore((s) => s.session?.conversationId) ?? draftKey
   const cachedDraft = useStore((s) =>
@@ -147,7 +100,6 @@ export function Composer() {
   const thinkingLevels = useStore((s) => s.thinkingLevels)
   const openBrowser = useStore((s) => s.openBrowser)
   const editorInject = useStore((s) => s.editorInject)
-  /* 办事模板（P14）的「填到输入框」：跨页中转，消费后清空 —— 只填不发。 */
   const composerInsert = useStore((s) => s.composerInsert)
   const clearComposerInsert = useStore((s) => s.clearComposerInsert)
   const consumeEditorInject = useStore((s) => s.consumeEditorInject)
@@ -156,46 +108,17 @@ export function Composer() {
 
   const [dragging, setDragging] = useState(false)
   const [menu, setMenu] = useState<{ open: boolean; index: number }>({ open: false, index: 0 })
-  /** 最近一次 textarea 光标位置；null 表示还没有收到真实编辑事件。 */
   const [cursor, setCursor] = useState<number | null>(null)
   const hydratedDraftKey = useRef<string | null>(null)
   const skipDraftPersist = useRef(false)
 
-  /**
-   * 写长文模式。
-   *
-   * 这个状态**影响回车键的语义**：
-   *   普通模式 → Enter 发送，Shift+Enter 换行
-   *   长文模式 → Enter 换行，Ctrl+Enter 或点发送按钮才发
-   * 因为长文模式下 Enter 是“分段”，而不是“说完了”。
-   *
-   * ── 怎么进入（用户指定的两种方式）──
-   *   ① **双击 ↑ 键**（输入框为空时）—— Slack / Discord / Claude Code
-   *      都是这个手势，所以用户的肌肉记忆里已经有它了
-   *   ② **点一下拖拽柄** —— 看得见的入口，不用猜
-   *
-   * ⚠️ 拖拽柄上「拖」与「点」要分开：拖 = 调高度，点 = 切换模式。
-   *   判据是位移量（< 4px 算点）—— 与系统里拖拽/点击的惯例一致。
-   *   本会话实测过一个反面例子：用 64×10 的小把手配元素自己的
-   *   pointermove 监听，鼠标拖快了就“掉”（指针跑出把手）。
-   *   所以 move/up 挂在 document 上。
-   */
-  /** 上一次按 ↑ 的时间（双击判定） */
   const lastArrowUp = useRef(0)
 
   const [expanded, setExpanded] = useState(false)
-  /**
-   * 当前生效的发送规则 —— 输入区常显的那句提示就是从它来的。
-   *
-   * `auto` 模式下规则会跟着展开态变（这正是要写出来的原因）。
-   */
   const sendRule: 'enter' | 'ctrl' =
     sendKey === 'enter' ? 'enter' : sendKey === 'ctrlEnter' ? 'ctrl' : expanded ? 'ctrl' : 'enter'
-  /** 拖出来的高度（px）。0 = 用默认的 max-height */
   const [tall, setTall] = useState(0)
-  /** pointerup 后由 click 事件完成“点一下切换”；拖动则抑制 click */
   const resizeMoved = useRef(false)
-  /** 用户明确收起后，同一份长文本不能在自动长高检查里立刻重新展开。 */
   const collapsedValue = useRef<string | null>(null)
 
   const resetComposerHeight = useCallback((): void => {
@@ -205,19 +128,8 @@ export function Composer() {
   }, [])
 
   const restHeight = composerRestHeight
-  /** 展开后的默认高度：够写一段，但不至于占半个屏 */
   const TALL_H = 180
 
-  /**
-   * 让**这一次**高度变化走过渡。
-   *
-   * 为什么不给 textarea 常开 `transition: height`：它每次输入都可能自动长高，
-   * 常开的话打字时高度永远慢半拍，拖拽柄跟手也会变成“藕断丝连”。
-   * 所以只在「模式切换」这个瞬间把过渡打开，动画结束就关掉。
-   *
-   * 为什么需要它：以前点拖拽柄收起长文模式是**瞬跳**（180px 直接变回内容高），
-   * 而展开那一下是跟着手/或者感受不到跳变 —— 于是“关的时候没有动画”很突兀。
-   */
   const [heightAnimating, setHeightAnimating] = useState(false)
   const heightAnimTimer = useRef<number | null>(null)
   const animateHeight = useCallback((): void => {
@@ -235,7 +147,6 @@ export function Composer() {
     []
   )
 
-  /** 开关长文模式。开启时给一个默认高度；关闭时完全回到默认尺寸 */
   const toggleExpanded = useCallback((): void => {
     animateHeight()
     setExpanded((v) => {
@@ -251,13 +162,6 @@ export function Composer() {
     })
   }, [value, resetComposerHeight, animateHeight])
 
-  /**
-   * 拖拽柄：拖 = 调高，点 = 切换长文模式。
-   *
-   * 用 document 上的 pointermove/up（而不是元素自己的）——
-   * 鼠标拖得快时会跑出那个小把手，挂在元素上会“掉”。
-   * pointer 事件而不是 mouse：自动兼得触控与指针捕获。
-   */
   const resizeCleanup = useRef<(() => void) | null>(null)
   const resizing = useRef(false)
   useEffect(() => () => resizeCleanup.current?.(), [])
@@ -275,11 +179,9 @@ export function Composer() {
       let lastHeight = startT
       resizeMoved.current = false
       resizing.current = true
-      // Electron/Chromium 下确保快速拖动仍由这个把手持续接收指针事件。
       try {
         handle.setPointerCapture(e.pointerId)
       } catch {
-        /* 某些测试环境不实现 pointer capture，document 监听仍可工作 */
       }
       handle.classList.add('active')
       document.body.classList.add('resizing-composer')
@@ -287,7 +189,6 @@ export function Composer() {
       const onMove = (ev: PointerEvent): void => {
         const dy = startY - ev.clientY
         moved = Math.max(moved, Math.abs(dy))
-        // 只有真的动了才改动高度（否则轻微抖动会把“点击”变成“拖拽”）
         if (moved < 4) return
         const capNow = Math.max(96, Math.round(window.innerHeight * 0.35))
         const next = Math.max(40, Math.min(capNow, startT + dy))
@@ -308,11 +209,10 @@ export function Composer() {
         document.removeEventListener('pointercancel', onUp)
         if (resizeCleanup.current === onUp) resizeCleanup.current = null
         resizing.current = false
-        try { if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId) } catch { /* 已失去捕获或节点已卸载 */ }
+        try { if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId) } catch { }
 
         resizeMoved.current = moved >= 4
         if (moved < 4) return
-        // 拖回默认高度 → 退出长文模式（恢复 Enter 发送）
         if (lastHeight <= 48) {
           collapsedValue.current = value
           resetComposerHeight()
@@ -334,7 +234,6 @@ export function Composer() {
     resizeMoved.current = false
   }, [toggleExpanded])
 
-  /* ---- 扩展调 set_editor_text ---- */
   useEffect(() => {
     if (editorInject === null) return
     setValue((v) => (v ? `${v}\n${editorInject}` : editorInject))
@@ -342,7 +241,6 @@ export function Composer() {
     ref.current?.focus()
   }, [editorInject, consumeEditorInject])
 
-  /* ---- 办事模板的「填到输入框」（实施-25 P14 T14-3）---- */
   useEffect(() => {
     if (composerInsert === null) return
     setValue((v) => (v ? `${v}\n${composerInsert}` : composerInsert))
@@ -350,7 +248,6 @@ export function Composer() {
     ref.current?.focus()
   }, [composerInsert, clearComposerInsert])
 
-  /* ---- 中止时回收的排队文本回填 ---- */
   useEffect(() => {
     if (queueRestore === null) return
     setValue((v) => (v ? `${queueRestore}\n${v}` : queueRestore))
@@ -358,10 +255,6 @@ export function Composer() {
     ref.current?.focus()
   }, [queueRestore, consumeQueueRestore])
 
-  /*
-   * ---- 用户点开一条会话后取得光标 ----
-   * 分屏换块时输入框是在新磁贴里重新挂载的，所以挂载时也要看一眼有没有没消费的请求。
-   */
   const focusRequest = useStore((s) => s.composerFocus)
   const shownId = useStore((s) => displayedSessionOf(s)?.sessionId)
   const shownPath = useStore((s) => displayedSessionOf(s)?.path)
@@ -369,20 +262,15 @@ export function Composer() {
     if (focusRequest.tick === consumedComposerFocus || Date.now() - focusRequest.at > FOCUS_REQUEST_TTL) return
     if (!sameSplitSession(focusRequest, { sessionId: shownId, path: shownPath })) return
     consumedComposerFocus = focusRequest.tick
-    /* 已经消费：不在清理时取消，否则同一帧里再次渲染会把这一下光标弄丢 */
     requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }))
   }, [focusRequest, shownId, shownPath])
 
-  /* ---- 按会话恢复 / 保存输入框草稿 ---- */
   useEffect(() => {
     hydratedDraftKey.current = conversationKey || null
-    /* 这次 value / 附件变化来自“换会话/换草稿键”而不是用户输入，跳过一次回写。 */
     skipDraftPersist.current = true
     setValue(draftKey ? cachedDraft : '')
     setCursor(draftKey ? cachedDraft.length : null)
-    /* 附件与文字同一套 hydrate 边界：按草稿键把该会话的草稿附件载入输入框。 */
     hydrateComposerDraft(draftKey)
-    // cachedDraft 只在草稿键变化时取一次，避免每次敲字都重置输入框。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationKey, draftKey])
 
@@ -395,7 +283,6 @@ export function Composer() {
     setSessionDraft(value)
   }, [draftKey, conversationKey, setSessionDraft, value])
 
-  /* 窗口高度：矮窗口（900×520）时限制展开高度，见下方「自动长高」 */
   const [viewH, setViewH] = useState(() => window.innerHeight)
   useEffect(() => {
     const onResize = (): void => setViewH(window.innerHeight)
@@ -403,38 +290,15 @@ export function Composer() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  /* ---- 自动长高 ---- */
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    /*
-     * ⚠️ 这里曾经一句写死了：
-     *
-     *     el.style.height = `${min(max(scrollHeight,34),240)}px`
-     *
-     * 它每次 value 变化都执行 —— 于是**长文模式下拉出的高度被冲掉**：
-     * 在长文模式里按回车（value 变了）→ 高度被改成「内容高」→
-     * 输入框肉眼可见地变小（用户报的 bug）。
-     *
-     * 现在：tall > 0（长文模式/手动拖过）时，高度是**下限**而不是结果 ——
-     * 内容更多可以长高，但不会缩回去。
-     */
     const need = Math.min(Math.max(el.scrollHeight, restHeight()), 240)
-    /*
-     * 矮窗口里输入框不能把运行条、工具条和底部状态栏挤出窗口：
-     * 实际高度不超过窗口高度的 35%（存下的 tall 不改，窗口变高后恢复）。
-     */
     const cap = Math.max(96, Math.round(viewH * 0.35))
     const h = Math.min(tall > 0 ? Math.max(tall, need) : need, cap)
     el.style.height = `${h}px`
     el.style.maxHeight = tall > 0 ? `${Math.min(Math.max(tall, 240), cap)}px` : ''
 
-    /*
-     * 超过三行就**自动进入长文模式**（用户要求）。
-     * 判据用真实行高而不是数换行符 —— 一行很长的文字会被自动折行，
-     * 那也是「三行」。所以量 scrollHeight 与 lineHeight 的比。
-     * 只自动**进入**，不自动退出：编辑到一半高度自己收回去很难受。
-     */
     if (expanded) return
     if (collapsedValue.current === value) {
       resetComposerHeight()
@@ -450,13 +314,11 @@ export function Composer() {
   }, [value, tall, expanded, viewH])
 
   const disabled = conn !== 'ready'
-  /* N18：本地 Yan 命令不需要先连上 pi（例如 /login、/model、/browser）。 */
   const localCommandName = /^\/([^\s]+)/.exec(value.trim())?.[1]?.toLowerCase()
   const canRunLocalCommand = !!localCommandName && commands.some(
     (command) => command.source === 'yan' && command.executable && command.name.toLowerCase() === localCommandName
   )
 
-  /* ---- 模式判定 ---- */
   const bashMode = value.startsWith('!')
   const slashRange = useMemo(
     () => findSlashQuery(value, cursor ?? value.length),
@@ -467,19 +329,7 @@ export function Composer() {
   const slashMatches = useMemo(() => {
     if (slashQuery === null) return []
     const q = slashQuery.toLowerCase()
-    /*
-     * 排序：**用过的排前面**（用户要的「自动管理」）。
-     *
-     * 为什么不改成完全按频率排：命令列表是用户背下来的东西，
-     * 顺序乱变会让「第三个是 /compact」这种肌肉记忆失效。
-     * 所以只把**用过的**提到前面，其余仍按名字 —— 稳定又有用。
-     */
     const hit = commands
-      /*
-       * 实施-02 S4：`compatibility` 里标了 `hiddenInMenu` 的命令（目前只有
-       * `/panel`）不进候选列表。它人还在注册表里 —— 手打时由 submit 里的
-       * 兼容分支给明确反馈（而不是静默清空、也不是当消息发给模型）。
-       */
       .filter((c) => !c.hiddenInMenu)
       .filter((c) => c.name.toLowerCase().includes(q) || (c.description ?? '').toLowerCase().includes(q))
     return hit.sort((a, b) => {
@@ -493,47 +343,17 @@ export function Composer() {
     })
   }, [commands, slashQuery, commandUse])
 
-  /**
-   * `@` 文件引用补全。
-   *
-   * pi 的命令行支持 `@files`（把文件内容当上下文），这是它的核心用法之一，
-   * 但桌面端之前没有 —— 用户只能自己在路径里手打。
-   *
-   * ⚠️ 与 `/` 命令不同，这里**不能列整个文件树**：
-   *   仓库里动辄几万个文件，列出来既慢又没用。
-   *   所以只对**已经在输入里写出的路径前缀**做提示：
-   *   `@src/ma` → 提示 `@src/main/` 下有哪几个条目。
-   *   没写前缀时（刚打出一个 `@`）也只读项目根层，方便发现可用文件。
-   *
-   * 为什么不做成「文件选择器」：那需要主进程递归扫目录（慢、权限问题多），
-   * 而 pi 自己会处理 `@path` 的解析 —— 我们只需要帮用户**少打几个字**。
-   */
   const atQuery = useMemo(
     () => findAtQuery(value, cursor ?? value.length),
     [cursor, value]
   )
 
-  /**
-   * `@` 路径补全的候选。
-   *
-   * 异步去主进程查（只读一层目录），所以用 state 存。
-   * 防抖：每敲一个字都发 IPC 会白干活。
-   */
   const [paths, setPaths] = useState<string[]>([])
   const [pathsLoading, setPathsLoading] = useState(false)
   const [pathsError, setPathsError] = useState(false)
   const [pathsStatus, setPathsStatus] = useState<FileListingStatus>('empty')
   const [pathsTruncated, setPathsTruncated] = useState(false)
-  /** Esc / 接受文件候选后，旧的异步结果不能把菜单重新打开。 */
   const [atMenuDismissed, setAtMenuDismissed] = useState(false)
-  /**
-   * 同上，但针对 `/` 命令菜单（N18）。
-   *
-   * 为什么单独一个：Esc 关菜单时会顺手置 `atMenuDismissed`，而它在上面那个
-   * effect 的依赖里 —— effect 因此重跑，又因为 `slashQuery` 仍在、匹配仍在，
-   * 就把命令菜单**又打开**了（实测：按 Esc 菜单不消失）。
-   * 用户在命令名里继续打字时（`slashQuery` 变化）才算重新开始，那时清掉标记。
-   */
   const [slashMenuDismissed, setSlashMenuDismissed] = useState(false)
 
   useEffect(() => {
@@ -628,7 +448,6 @@ export function Composer() {
     slashQuery
   ])
 
-  /* 继续在命令名里打字 = 重新开始补全（清掉 Esc 留下的关闭标记） */
   useEffect(() => {
     setSlashMenuDismissed(false)
   }, [slashQuery])
@@ -642,36 +461,18 @@ export function Composer() {
       setValue(next.value)
       setCursor(next.cursor)
       setMenu({ open: false, index: 0 })
-      /* 记录使用 → 下次它排在前面（自动管理） */
       markCommandUsed(command.name)
       ref.current?.focus()
     },
     [cursor, markCommandUsed, value]
   )
 
-  /*
-   * 命令列表的**自动刷新**（用户要的「自动管理」）。
-   *
-   * 为什么需要：命令来自扩展 / 技能 / 提示词模板，它们是**运行时**加载的
-   * （启动那一刻可能还没就绪），而旧实现只在启动时拉一次 ——
-   * 之后新增的命令永远看不到，用户会以为「我的扩展没生效」。
-   *
-   * 策略：菜单一打开就检查，超过 30s 就重拉（一条子命令，很快，不烧钱）。
-   * 不用定时轮询：命令变更是低频事件，轮询会在后台白跑。
-   */
   useEffect(() => {
     if (slashQuery === null) return
     if (Date.now() - commandsAt < 30_000) return
     void reloadCommands()
   }, [slashQuery, commandsAt, reloadCommands])
 
-  /**
-   * 把 `@前缼` 补成 `@完整路径`。
-   *
-   * 目录（带尾斜杠）补完后**不关菜单** —— 用户通常要接着选下一层
-   * （`@src/` → `@src/main/` → `@src/main/agent.ts`）。
-   * 文件则补完就关。这是与 `/` 命令补全的关键差别。
-   */
   const completeAt = useCallback(
     (p: string) => {
       const range = findAtQuery(value, cursor ?? value.length)
@@ -679,7 +480,6 @@ export function Composer() {
       const next = replaceAtQuery(value, range, p)
       setValue(next.value)
       setCursor(next.cursor)
-      // 目录：保持菜单开（等下一层的结果自动刷新）；文件：关
       if (!p.endsWith('/')) {
         setAtMenuDismissed(true)
         setMenu({ open: false, index: 0 })
@@ -691,19 +491,7 @@ export function Composer() {
     [cursor, value]
   )
 
-  /*
-   * 提交分发统一走 `submitComposerInput`：命令面板里选中斜杠命令时调用的是
-   * 同一个函数，所以「面板执行」与「输入框回车」是同一段逻辑，不会两条路各写一份。
-   */
   const submit = () => {
-    /*
-     * 提交时钉住「正在看的会话」身份与附件快照。
-     *
-     * 失败恢复是异步的：await 期间用户可能切到别的会话。只 `setValue` 回填会把
-     * A 的草稿落进 B 的输入框。这里捕获提交这一刻的视图身份（peek 优先，不能
-     * 只看 activeRunner）与附件，交给 store 的 `recoverComposerInput` 按原会话落点；
-     * `readAttachments` 用这份快照，不读 await 回来时可能已是 B 的附件。
-     */
     const view = useStore.getState()
     const identity = composerSubmitIdentity(view)
     const attachmentsAtSubmit = view.attachments
@@ -723,7 +511,6 @@ export function Composer() {
       actions: {
         runBash,
         openSettings,
-        /* 与旧行为一致：桌面端新建走全局新会话 */
         newSession: () => newSession({ scope: 'global' }),
         compact,
         openBrowser,
@@ -741,7 +528,6 @@ export function Composer() {
         setValue('')
         clearAttachments()
       },
-      /* 失败恢复回原会话：文字与附件分别交给同一条 store 动作，按身份落点。 */
       restoreText: (raw) => recover(raw, []),
       restoreAttachments: (saved) => recover('', saved),
       readAttachments: () => attachmentsAtSubmit,
@@ -751,19 +537,11 @@ export function Composer() {
     })
   }
 
-  /**
-   * 回合结束后把悬着的消息按「排队」投出去。
-   *
-   * 一条一条发：`releaseSend` 成功后会改 `pendingSends`，本 effect 因此
-   * 再触发一次，顺序天然保持。投递失败时 `pendingSends` 不变、依赖不变，
-   * 所以不会重试到死 —— 卡片留在原地让用户处理。
-   */
   useEffect(() => {
     if (roundRunning || pendingSends.length === 0) return
     void useStore.getState().releaseSend(pendingSends[0].id, 'followUp')
   }, [roundRunning, pendingSends])
 
-  /* ---- 图片：粘贴 ---- */
   const onPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       const files = [...e.clipboardData.items]
@@ -777,7 +555,6 @@ export function Composer() {
     [addAttachments, notify, t]
   )
 
-  /* ---- 图片：拖放；普通文件 → 文件引用 ---- */
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       const internalPath = e.dataTransfer.getData('application/x-yan-file-path').trim()
@@ -787,11 +564,6 @@ export function Composer() {
         void addFileRefPaths([internalPath])
         return
       }
-      /*
-       * 从编辑器拖一段**选中的文字**进来时，dataTransfer 里没有 Files ——
-       * 这时候不要 preventDefault，否则浏览器自带的「拖入即插入文本」体验就没了
-       * （方案 5.1 明确要求保留）。
-       */
       if (!e.dataTransfer.types.includes('Files')) return
       e.preventDefault()
       setDragging(false)
@@ -810,12 +582,6 @@ export function Composer() {
     setCursor(el.selectionStart)
   }, [])
 
-  /**
-   * 把一段文本插到光标处（`+` 菜单里的「能力」用它把引用写进输入框）。
-   *
-   * 为何不直接 `setValue(value + text)`：那会把光标丢到末尾，
-   * 用户接着写的位置就没了。这里插在光标处，并把光标移到插入内容之后。
-   */
   const insertAtCursor = (text: string): void => {
     const el = ref.current
     const at = el && document.activeElement === el ? el.selectionStart : (cursor ?? value.length)
@@ -823,7 +589,6 @@ export function Composer() {
     setValue(next)
     const pos = at + text.length
     setCursor(pos)
-    /* 选区必须在 React 写完 value 之后设，否则会被这一帧的渲染覆盖 */
     requestAnimationFrame(() => {
       el?.focus()
       el?.setSelectionRange(pos, pos)
@@ -831,23 +596,10 @@ export function Composer() {
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    /* 原生 capture 兜底已经处理过的 Tab 不得再被 React 处理一次。 */
     if (e.defaultPrevented) return
 
-    /*
-     * 补全菜单的键盘导航。
-     *
-     * 两个菜单（`/` 命令与 `@` 文件）共用同一个 menu 状态与按键处理 ——
-     * 它们不会同时出现（`@` 只在 slashMatches 为空时才渲染）。
-     */
     const items = slashMatches.length > 0 ? slashMatches.map((c) => c.name) : atMatches
     if (menu.open && items.length > 0) {
-      /*
-       * 中文输入法组合期间，Enter / Tab / 方向键 / Esc 都是**输入法自己的**：
-       * Enter 确认候选、Esc 取消候选。这里必须让路，否则中文用户选词时
-       * 会把候选命令填进输入框（实测：组合态按 Enter → "/help " 被填入）。
-       * 下面的“发送键”分支一直有这个检查，菜单分支之前漏了。
-       */
       if (e.nativeEvent.isComposing) return
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -868,23 +620,12 @@ export function Composer() {
       if (e.key === 'Escape') {
         e.preventDefault()
         setAtMenuDismissed(true)
-        /* `/` 菜单也要记住“被 Esc 关过”：它有自己的重开 effect（见上面的说明） */
         if (slashMatches.length > 0) setSlashMenuDismissed(true)
         setMenu({ open: false, index: 0 })
         return
       }
     }
 
-    /*
-     * 双击 ↑ 进入 / 退出长文模式（用户指定的手势）。
-     *
-     * 为什么只在**输入框为空**时手：
-     *   有文字时 ↑ 是“把光标移到上一行”的正常编辑操作，不能抢。
-     *   空输入框里 ↑ 本来什么都不做 —— 把它借来当快捷方式无副作用。
-     *   （Slack / Discord / Claude Code 都是这个约定。）
-     *
-     * 400ms 内两次算双击：与系统的双击间隔一致，不另设参数。
-     */
     if (e.key === 'ArrowUp' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
       if (value.length === 0) {
         const now = Date.now()
@@ -895,28 +636,9 @@ export function Composer() {
           return
         }
         lastArrowUp.current = now
-        // 不 preventDefault —— 第一次 ↑ 该干什么还干什么
       }
     }
 
-    /* 工作模式仍可用全局 Ctrl+Tab 快切；裸 Tab 保持输入框的原生焦点移动。 */
-
-    /*
-     * 发送键。
-     *
-     * 三种规则（用户可在设置里选，见 AppSettings.sendKey）：
-     *   auto（默认）短输入框 Enter 发送；长文模式里 Enter 换行、
-     *         Ctrl/Cmd+Enter 发送 —— 用户明确要求过「写长文时别误发」。
-     *   enter      任何时候 Enter 发送（Shift+Enter 换行）
-     *   ctrlEnter  任何时候 Ctrl/Cmd+Enter 发送（Enter 换行）
-     *
-     * ⚠️ 为什么把这条规则提出来做成设置：`auto` 让「输入框高度」**隐式**
-     *    决定了 Enter 的语义 —— 按下去之前无法确定会发生什么。
-     *    现在规则既可选，也常显在输入区里（见下面的 sendRule 提示）。
-     *
-     * Ctrl/Cmd+Enter 在任何模式下都能发送 —— 这是跨应用的通用约定，
-     * 也是「写长文时想发出去」的退路。
-     */
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       const wantsSend =
         e.ctrlKey || e.metaKey
@@ -931,10 +653,8 @@ export function Composer() {
         void submit()
         return
       }
-      // 否则放行，让 textarea 插入换行
     }
 
-    /* 长文模式下 Esc 退出（不用先清空再双击 ↑） */
     if (e.key === 'Escape' && expanded && !running) {
       e.preventDefault()
       toggleExpanded()
@@ -964,30 +684,12 @@ export function Composer() {
       }}
       onDrop={onDrop}
     >
-      {/* 排队的消息：显示在输入框**上方**（用户要求） */}
       <QueueStack />
-      {/* 宿主要问用户的事（权限 / 高危 / 越界写入）：内嵌在输入框上方，不用原生弹窗 */}
       <ApprovalCard />
-      {/* 当前会话仍在跑 / 等人处理的子代理：常驻在输入框上方，不随消息滚走 */}
       <ActiveSubagents />
-      {/* 学习会话的快捷回应（只在「日常 · 学习」里出现） */}
-      {/*
-       * .composer-stack 只做一件事：给问题面板当定位父元素。
-       * 面板是浮层（`bottom: calc(100% + …)` 向上生长），得与输入框同层才贴得上；
-       * 又不能塞进 .composer —— 那张卡片有 overflow: hidden，浮层会被裁掉。
-       */}
       <div className="composer-stack">
-      {/* 环绕流光已取消（设计规范「界面重构」：只保留回合活动行一个运行信号）；外层保留作定位 */}
       <div className="composer-orbit" data-testid="composer-orbit">
       <div className={`composer ${expanded ? 'tall' : ''} ${heightAnimating ? 'animating' : ''}`}>
-        {/*
-         * 顶边框 **内含工作状态**（pi 的 renderTopBorder 做法）。
-         *
-         * 为什么放在输入框的边框上而不是消息流底部单独一行：
-         *   · 「它在干活」与「我能输入」是同一件事的两面 —— 放一起不用两头看
-         *   · 不额外占垂直空间（消息流已经很长了）
-         *   · 边框颜色顺便承载了当前思考强度
-         */}
         <ComposerBorder />
         <QuestionPanel />
         {attachments.length > 0 ? (
@@ -1018,7 +720,6 @@ export function Composer() {
 
         {menu.open && slashMatches.length > 0 ? (
           <div className="slash-menu" role="listbox" data-testid="slash-menu">
-            {/* 顶部回显当前查询（设计规范 §3.6：命令菜单的 `›` 输入行） */}
             <div className="slash-query" aria-hidden>
               <span className="slash-query-prompt">›</span>/{slashQuery}
             </div>
@@ -1039,17 +740,11 @@ export function Composer() {
                   aria-selected={i === menu.index}
                 >
                   <span className="slash-name">/{c.name}</span>
-                  {/* 只显示说明的第一句；全文在悬停提示里（技能说明常常是一整段） */}
                   <span className="slash-desc" title={c.description}>{firstClause(c.description)}</span>
                   {c.module ? <span className="slash-src">{c.module}</span> : null}
                 </button>
               </Fragment>
             ))}
-            {/*
-             * 底部按键说明。
-             * 为什么要写：菜单支持 ↑↓ / Enter / Tab / Esc，但这些都是**看不见的**，
-             * 不提示的话用户只会用鼠标点（或者以为只能点）。
-             */}
             <div className="slash-hint" data-testid="slash-hint">
               <span>
                 <kbd className="ui-kbd">↑↓</kbd> {t('composer.slashSelect')}
@@ -1065,8 +760,6 @@ export function Composer() {
           </div>
         ) : null}
 
-        {/* `@` 文件引用补全（pi 的 @files 用法）。
-            只列主进程返回的那一层目录结果，不递归扫项目。 */}
         {menu.open && slashMatches.length === 0 && atQuery !== null ? (
           <div className="slash-menu" role="listbox" data-testid="at-menu">
             {pathsLoading ? <div className="slash-empty" data-testid="at-loading">{t('composer.pathLoading')}</div> : null}
@@ -1102,7 +795,6 @@ export function Composer() {
           </div>
         ) : null}
 
-        {/* 拖拽调高：贴在顶边框上的一根小短横 */}
         <div
           className="composer-resize"
           onPointerDown={startResize}
@@ -1137,7 +829,6 @@ export function Composer() {
           }}
         />
 
-        {/* 提示符：普通输入是 `›`，`!` 开头的直执行命令是 `$`（设计规范 §3.5） */}
         <ExtensionWidgets placement="aboveEditor" />
         <div className="composer-line">
           <span className="composer-prompt" aria-hidden>
@@ -1149,11 +840,6 @@ export function Composer() {
             data-testid="composer"
             value={value}
             disabled={disabled}
-            /*
-             * 高度由上面那个 effect 统一写（它要知道 tall 与内容两个因素）。
-             * 这里**不能**再写一次 inline height —— 两处写同一个属性正是
-             * 「回车后变矮」那个 bug 的来源（React 写的会被 effect 覆盖，反之亦然）。
-             */
             placeholder={
               disabled
                 ? t('conn.starting')
@@ -1191,27 +877,6 @@ export function Composer() {
             <PlusMenu onInsert={insertAtCursor} />
 
 
-            {/*
-             * 当前发送规则 —— **常显**（不只是长文模式）。
-             *
-             * 为什么必须写出来：Enter 到底是发送还是换行，取决于
-             * 设置的发送键 + 是否长文模式。不写出来就得靠试 ——
-             * 而“试”的代价是一条没写完就发出去的消息。
-             *
-             * ⚠️ 不用 `!disabled` 包住：规则是**设置状态**的反映，
-             *    不是“现在能不能输入”。禁用时留空反而让探针
-             *    和用户都不知道当前规则是什么。
-             */}
-            {/*
-             * 只在**非默认状态**显示。
-             *
-             * 默认短输入框 + 默认发送键时，规则就是「Enter 发送 / Shift+Enter 换行」，
-             * 写出来只是给输入区添噪声（用户要求：默认不显示）。
-             * 真正需要写出来的是「不写就得靠试」的两种情况：
-             *   ① 长文模式 —— Enter 的语义变了（换行），发不出去会让人以为卡了
-             *   ② 用户改过发送键 —— 那是他自己配的，得让他看得见当前规则
-             * 两种情况下文字仍然与 `sendRule` 同源，不会出现“提示与行为不一致”。
-             */}
             {expanded || sendKey !== 'auto' ? (
               <span className="ctool-hint" data-testid="composer-keyhint">
                 {sendRule === 'enter' ? t('composer.keyEnterSend') : t('composer.keyCtrlSend')}
@@ -1219,22 +884,10 @@ export function Composer() {
             ) : null}
           </div>
 
-          {/*
-           * 模型 + 思考强度：放在**输入框内部**右下角（用户要求，
-           * 原来在输入框下方的 UsageBar 里）。
-           *   · 准备打字时先确认“用什么模型”，视线不用往下扫到输入区之外
-           *   · 与发送键同行 —— 这两个是同一个动作的前后两步
-           * 强度文字的颜色由 `.mt-level[data-level]` 按档位染（见 composer.css）。
-           */}
-          {/* 语音输入：本地转写后插入光标处，由用户编辑再发送 */}
           <VoiceInputButton onText={insertAtCursor} disabled={disabled} />
           <ContextRing />
           <ModelThinkingPicker />
           <RunSlot />
-          {/*
-           * 发送与停止是同一个位置的两种状态：运行中且输入为空时是「■ 停止」，
-           * 一旦输入了内容（或带附件）就回到发送（排队）。不再并排放两个按钮。
-           */}
           {running && !value.trim() && attachments.length === 0 ? (
             <Tip label={t('composer.stop')}>
               <button
@@ -1251,7 +904,6 @@ export function Composer() {
               className="send"
               data-testid="send"
               onClick={() => void submit()}
-              /* 有附件就能发 —— 与 submit() 的判据保持一致（否则按钮是灰的，点不动） */
               disabled={!value.trim() && attachments.length === 0 ? true : disabled && !canRunLocalCommand}
               title={
                 sendRule === 'ctrl'
@@ -1276,10 +928,6 @@ export function Composer() {
   )
 }
 
-/**
- * 发送位左侧的运行状态：一行安静的「阶段文字 + 计时」，只读。停止动作在发送位的主按钮上。
- * 计时与回合活动行同源（run-status）。
- */
 function RunSlot() {
   const t = useT()
   const progress = useRunProgress()
@@ -1287,7 +935,6 @@ function RunSlot() {
   if (!progress) return null
   const elapsed = formatDuration(progress.elapsedMs)
   const text = runPhaseText(t, progress, compaction)
-  /* 工具阶段的详情常是一整条命令，对话区的工具行已经显示了；这里只说「处理中」，完整内容放在悬停提示里 */
   const shown = progress.phase === 'tool' ? t('chat.working') : text
   return <span className="composer-run" role="status" aria-live="polite" data-testid="composer-run" title={text}>{shown} <span className="composer-run-time">{elapsed}</span></span>
 }
@@ -1301,7 +948,6 @@ function toAbsoluteFilePath(cwd: string, rel: string): string {
   return rel ? `${root}\\${rel.replace(/\//g, '\\')}` : root
 }
 
-/** 命令说明的第一句（到第一个句号 / 分号 / 括号为止），菜单一行放得下 */
 function firstClause(text?: string): string {
   if (!text) return ''
   const cut = text.search(/[。；;（(]|\.\s/)
@@ -1309,7 +955,6 @@ function firstClause(text?: string): string {
   return head.length > 24 ? `${head.slice(0, 23)}…` : head
 }
 
-/** 分类只影响候选菜单的视觉顺序，不改变 pi 原始命令的身份。 */
 function commandSourceRank(command: SlashCommand): number {
   return {
     yan: 0,
@@ -1331,17 +976,3 @@ function commandSourceLabel(t: TFunc, source: SlashCommand['source']): string {
     compatibility: 'composer.src.compatibility'
   } as const)[source])
 }
-
-/** 排队的插话 / 后续消息 —— 让「它知道我说了」可见 */
-
-/**
- * 输入区里的模型胶囊 —— 点它打开设置的「状态」页。
- *
- * 为什么在这里再放一个（用量条里已经有了）：
- *   用量条在输入框**下面**，视线是「打完字往下扫」；
- *   而这里是「准备打字时先确认用什么模型」。
- *   Agents-Anywhere 也是这个位置放模型选择器。
- */
-/* 输入区不再放模型胶囊 —— 
-   顶部头部与底部用量条已经显示了模型，
-   同一件事说三遍只会让人不确定该看哪个。 */

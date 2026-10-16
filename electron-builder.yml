@@ -68,7 +68,7 @@ files:
 extraResources:
   - from: integrations/hermes-inkstone
     to: integrations/hermes-inkstone
-    filter: ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py', 'README.md']
+    filter: ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py']
   - from: resources/pi-runtime/dist
     to: pi-runtime/dist
     filter: ['**/*']

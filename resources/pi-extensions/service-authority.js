@@ -1,4 +1,3 @@
-/** Dedicated to the independent host. Desktop permissions remain unchanged. */
 async function host(action, event) {
   const url = process.env.INKSTONE_AUTHORITY_URL
   const token = process.env.INKSTONE_AUTHORITY_TOKEN
@@ -13,7 +12,6 @@ async function host(action, event) {
 }
 export default function serviceAuthority(pi) {
   pi.on('session_start', () => { pi.setActiveTools(['read', 'write', 'edit']) })
-  // Model budgets are enforced by the host provider proxy, before network dispatch.
   pi.on('tool_call', async event => {
     try {
       const result = await host('tool', event)
@@ -21,7 +19,6 @@ export default function serviceAuthority(pi) {
     } catch (error) { return { block: true, reason: String(error) } }
   })
   pi.on('tool_result', async event => {
-    // A missing result receipt must fail the turn rather than mask an unknown side effect.
     const result = await host('receipt', event)
     if (!result.allowed) throw new Error(result.reason ?? '找不到执行回执，结果待核实')
   })

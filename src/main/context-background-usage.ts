@@ -1,4 +1,3 @@
-/** Reads historical host-context usage and records current title generation. */
 import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -12,7 +11,6 @@ import {
 import { isSafeSessionId } from './context-state-store'
 import { YAN_DIR } from './paths'
 
-/** 有界：保留旧账本的行数边界，避免标题记录无限增长 */
 const LOG_MAX_LINES = 500
 const LOG_KEEP_LINES = 300
 
@@ -24,12 +22,6 @@ export function contextBackgroundUsageFile(dataDir: string, sessionId: string): 
   return join(contextBackgroundUsageDir(dataDir), `${sessionId}.jsonl`)
 }
 
-/**
- * 读并聚合当前会话的后台调用用量。
- *
- * 读不到（文件不存在 / 权限 / 非法 sessionId）都返回**空统计**：
- * 这是诊断读数，读不到不该让任何调用方失败。
- */
 export async function readContextBackgroundUsage(
   sessionId: string | undefined | null,
   options: { dataDir?: string; limit?: number } = {}
@@ -45,11 +37,6 @@ export async function readContextBackgroundUsage(
   return summarizeBackgroundUsage(parseBackgroundUsageLines(text, options.limit ?? 500))
 }
 
-/**
- * 主进程写一条后台调用（目前只有标题生成）。
- *
- * 写失败一律静默：账本是读数，不能让它影响标题本身。
- */
 export function appendContextBackgroundUsage(
   sessionId: string,
   record: {
@@ -102,6 +89,5 @@ export function appendContextBackgroundUsage(
       }
     }
   } catch {
-    /* 账本写不进去不影响标题生成 */
   }
 }

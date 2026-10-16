@@ -1,11 +1,3 @@
-/**
- * 辅助小窗的渲染端桥（v3 WP-25d / WP-12）。
- *
- * 窗口由主进程创建，preload 通过 `contextBridge.exposeInMainWorld('auxBridge', …)`
- * 暴露白名单方法。类型在这里本地声明（不与主进程模块交叉 import），镜像
- * `src/main/windows/aux-types.ts` 的形状；两边由宿主接线与回归脚本共同看住。
- */
-
 export type AuxLocale = 'zh-CN' | 'en-US'
 export type AuxTarget = 'new' | 'current'
 export type MiniStatusKey = 'needs-you' | 'stalled' | 'failed' | 'done' | 'queued' | 'running'
@@ -97,7 +89,6 @@ export interface AuxBridge {
   onPush(cb: (msg: AuxPush) => void): () => void
 }
 
-/** 取 preload 暴露的 `auxBridge`；独立打开 html 调试时可能不存在。 */
 export function auxBridge(): AuxBridge | null {
   return (window as unknown as { auxBridge?: AuxBridge }).auxBridge ?? null
 }

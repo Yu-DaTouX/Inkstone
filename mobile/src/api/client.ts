@@ -1,12 +1,3 @@
-/**
- * 手机端的远程客户端：只和配对过的那台电脑说话。
- *
- * 协议定义在桌面仓库的 `src/shared/remote-protocol.ts`（类型导入，打包时被擦除）。
- * 三条纪律：
- *   · 每个请求带设备令牌；401 表示已被撤销，界面应回到配对页。
- *   · 写操作带幂等键：弱网重试时同一个键不会让电脑执行两次。
- *   · 事件流断线后带着最后收到的 seq 重连，服务端补发；收到 resync 时整体刷新。
- */
 import type {
   RemoteAnswer,
   RemoteEventEnvelope,
@@ -20,9 +11,7 @@ import { HistoryCache } from '../historyCache'
 import { bytesToUtf8, newClientKey, RelayError, RelayTunnel, toB64, type RelayConfig, type RelayPairing } from './relay'
 
 export interface Connection {
-  /** 例如 http://100.101.102.103:37892；经中继连接时为 relay://<电脑名> */
   baseUrl: string
-  /** 经中继连接（不用 Tailscale）：中继地址、电脑主机公钥与本机私钥 */
   relay?: RelayConfig
   token: string
   deviceId: string
@@ -37,7 +26,6 @@ export class RemoteHttpError extends Error {
   }
 }
 
-/** 幂等键：RN 没有 crypto.randomUUID，用时间 + 随机数拼一个足够唯一的键 */
 export function idempotencyKey(): string {
   const random = Array.from({ length: 4 }, () => Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0')).join('')
   return `m-${Date.now().toString(36)}-${random}`
@@ -106,7 +94,6 @@ function requestHeaders(init: { token?: string; body?: unknown; idempotencyKey?:
   return headers
 }
 
-/** 经中继隧道发请求：语义与直连相同（状态码、错误、401）。 */
 async function relayRequest<T>(
   relay: RelayConfig,
   path: string,
@@ -122,7 +109,6 @@ async function relayRequest<T>(
     try {
       json = JSON.parse(bytesToUtf8(res.body)) as Record<string, unknown>
     } catch {
-      /* 非 JSON */
     }
     if (res.status < 200 || res.status >= 300 || json.ok === false) {
       throw new RemoteHttpError(res.status, String(json.error ?? `请求失败（${res.status}）`), typeof json.code === 'string' ? json.code : undefined)
@@ -134,7 +120,6 @@ async function relayRequest<T>(
   }
 }
 
-/** 经中继配对：先用中继配对码完成加密隧道登记，再在隧道里用 6 位码换设备令牌。 */
 export async function pairViaRelay(pairing: RelayPairing, deviceName: string): Promise<Connection> {
   const relay: RelayConfig = { join: pairing.join, hostKey: pairing.hostKey, clientKey: newClientKey() }
   const tunnel = RelayTunnel.for(relay, deviceName)
@@ -154,7 +139,6 @@ export async function pairViaRelay(pairing: RelayPairing, deviceName: string): P
   }
 }
 
-/** 配对：不需要令牌，用电脑上显示的 6 位码换一个设备令牌 */
 export async function pair(baseUrl: string, code: string, deviceName: string): Promise<Connection> {
   const result = await request<RemotePairResponse>(baseUrl, '/remote/v1/pair', {
     method: 'POST',
@@ -277,7 +261,6 @@ export class RemoteClient {
     return (await this.post<{ data: { sessionId?: string } }>('/remote/v1/sessions/new', {}, key)).data
   }
 
-  /** 成果文件的地址与请求头（图片直接交给 <Image source={{ uri, headers }}>） */
   artifactSource(sessionId: string, artifactId: string): { uri: string; headers: Record<string, string> } {
     return {
       uri: `${this.connection.baseUrl}/remote/v1/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}`,
@@ -285,9 +268,6 @@ export class RemoteClient {
     }
   }
 
-  /**
-   * 把图片 / 成果地址变成 <Image> 能用的来源：直连原样返回；经中继时先经隧道取字节，转成 data URI。
-   */
   async resolveSource(source: { uri: string; headers: Record<string, string> }): Promise<{ uri: string; headers?: Record<string, string> }> {
     const relay = this.connection.relay
     if (!relay) return source
@@ -323,7 +303,6 @@ export class RemoteClient {
     }
     const declared = Number(response.headers.get('content-length'))
     if (Number.isFinite(declared) && declared > maxBytes) throw new RemoteHttpError(response.status, '成果文本超过 2 MiB，无法在手机端预览')
-    // RN fetch 通常没有流响应；支持流的实现才逐块限制读取。
     const body = (response as Response & { body?: { getReader(): {
       read(): Promise<{ done: boolean; value: Uint8Array }>
       cancel(): Promise<void>
@@ -357,28 +336,17 @@ export class RemoteClient {
   }
 }
 
-/* ---------------------------------------------------------------- 事件流 */
-
 export type StreamState = 'connecting' | 'open' | 'reconnecting' | 'closed'
 
 export interface EventStreamHandlers {
   onEvent(event: RemoteEventEnvelope): void
-  /** 服务端补不齐（重启过或断线太久）：调用方重新拉快照、问题和当前会话历史 */
   onResync(event: RemoteResyncEvent): void
   onState(state: StreamState): void
-  /** 401：令牌已被撤销 */
   onUnauthorized(): void
 }
 
-/**
- * SSE 客户端（基于 XMLHttpRequest 的增量 responseText）。
- *
- * 断线后指数退避重连（1s → 30s），每次都带 ?since=<最后收到的 seq>。
- * 电脑任务不会因为手机断线而停止；手机回来后补齐这期间的事件即可。
- */
 export class RemoteEventStream {
   private xhr: XMLHttpRequest | null = null
-  /** 经中继时的事件流取消函数 */
   private cancelRelay: (() => void) | null = null
   private lastSeq = 0
   private offset = 0
@@ -405,7 +373,6 @@ export class RemoteEventStream {
     this.handlers.onState('closed')
   }
 
-  /** 为控制内存主动换一条流：不是断线，不对外报「重新连接」，也不等退避 */
   private rotating = false
 
   private open(): void {
@@ -441,7 +408,6 @@ export class RemoteEventStream {
     xhr.send()
   }
 
-  /** 经中继的事件流：隧道分块送来 SSE 文本，按同样的格式解析。 */
   private openRelay(relay: RelayConfig): void {
     this.buffer = ''
     let received = 0
@@ -463,7 +429,6 @@ export class RemoteEventStream {
         if (this.stopped) return
         received += text.length
         this.consumeText(text)
-        /* 与直连一致：长时间的流定期重连，避免无限累积 */
         if (!this.stopped && received >= 1_000_000) {
           this.rotating = true
           this.cancelRelay?.()
@@ -483,7 +448,6 @@ export class RemoteEventStream {
     if (this.stopped) return
     this.consumeText(text.slice(this.offset))
     this.offset = text.length
-    /* RN 的 XHR 会保留整条 SSE 响应；定期重连，避免长任务持续占用内存。 */
     if (text.length >= 1_000_000) {
       const xhr = this.xhr
       this.rotate()

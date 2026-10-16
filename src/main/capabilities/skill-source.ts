@@ -1,9 +1,3 @@
-/**
- * 独立目录 Skill 文件的受限读取器（实施-04 S6b-2）。
- *
- * 目录只提供固定文件 URL 和 SHA-256；这里才真正读取正文。读取结果仍只是待 staging
- * 的字节，不执行 Markdown、脚本或包生命周期。调用方必须先完成现有的精确候选授权。
- */
 import { createHash } from 'node:crypto'
 import { normalizeSkillFilePath, type SkillFileInput } from './skill-files'
 
@@ -95,7 +89,6 @@ async function readBounded(response: Response, limit: number): Promise<Uint8Arra
   let offset = 0
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
   try {
-    /* SKILL.md 是文本；拒绝替换字符，避免 hash 对应的内容与模型实际看到的内容不一致。 */
     new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
     throw new SkillSourceError('invalid-utf8', 'SKILL.md 不是合法 UTF-8 文本')
@@ -106,12 +99,6 @@ async function readBounded(response: Response, limit: number): Promise<Uint8Arra
   return bytes
 }
 
-/**
- * 从独立目录给出的固定 URL 读取 Skill 文件。
- *
- * `fileUrls` 与 `expectedHashes` 都必须覆盖完全相同的安全相对路径集合；多余、缺失、
- * 路径穿越、跨来源跳转、超大文件、hash 漂移和非 2xx 响应都会 fail-closed。
- */
 export async function fetchSkillFiles(input: {
   fileUrls: Record<string, string>
   expectedHashes: Record<string, string>

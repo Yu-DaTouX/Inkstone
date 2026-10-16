@@ -1,26 +1,6 @@
-/**
- * State / Archive 基础设施的单测（N21-4 / S1）。
- *
- * 为什么这些断言值得钉住：状态文件是**要喂给模型的派生物**，
- * 它坏了不会让应用崩，只会让模型拿着过期或半份的世界模型干活
- * （"它怎么把我刚说过不能改的东西改了"）。这类故障在真实窗口里
- * 几乎看不出来，所以判据必须落在纯逻辑层：
- *
- *   ① schema 校验：缺字段 / 类型错 / 未知版本 → 一律不能进上下文；
- *   ② provenance：只能指向**原始条目身份**，指向数组下标 / token / 归档引用一律非法；
- *   ③ 禁止递归摘要（§12.7）：`sourceRange` 指到 episode / ctx:// 上就是摘要的摘要；
- *   ④ 原子写：失败**不覆盖** last-known-good；
- *   ⑤ 损坏 / 版本不认识 → 安全丢弃（文件删掉、返回原因）；
- *   ⑥ 会话删除 → 派生状态一并清理；
- *   ⑦ 水位：从真实会话文件读 entry 身份，半截行不计入。
- *
- * 不进 `cost: 1`，不碰真实用户目录：store 的 `dir` 全部指向临时目录。
- */
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-
-/* ---------------------------------------------------------------- 夹具 */
 
 const RAW = ['e1', 'e2', 'e3']
 
@@ -90,8 +70,6 @@ function archiveEntry(over = {}) {
 const codes = (issues) => issues.map((i) => i.code)
 const has = (issues, code) => codes(issues).includes(code)
 
-/* ---------------------------------------------------------------- 测试 */
-
 export async function runContextStateTests(ok, mods) {
   const { state, store, watermark } = mods
   const {
@@ -112,8 +90,6 @@ export async function runContextStateTests(ok, mods) {
   } = state
 
   const rawIndex = { knownEntryIds: RAW }
-
-  /* ============ A. schema 校验 ============ */
 
   console.log('\n— A. schema 校验 —')
 
@@ -200,8 +176,6 @@ export async function runContextStateTests(ok, mods) {
   }
   ok(emptyTaskState('任务', '阶段').decisions.length === 0 && validateTaskState(emptyTaskState('任务', '阶段'), rawIndex).ok, 'emptyTaskState 造出来的起点本身合法')
 
-  /* ============ B. Episode 与「禁止递归摘要」 ============ */
-
   console.log('\n— B. Episode / 禁止递归摘要（§12.7） —')
 
   const epOk = validateEpisodeState(episode(), rawIndex)
@@ -239,12 +213,6 @@ export async function runContextStateTests(ok, mods) {
     ok(res.status === 'invalid', 'Episode id 重复 → 拒绝')
   }
   {
-    /*
-     * 整份文件的递归摘要判定（S1 审查时修掉的缺口）：
-     * 一份 EpisodeState 的 sourceRange 指向**另一份** EpisodeState 时，
-     * 即使调用方没显式传 knownEpisodeIds，文件级校验也必须报 episode-ref。
-     * 只把“前面已解析的 id”传进去会放过“指向后面那份”的情况。
-     */
     const first = episode({ id: 'ep1' })
     const second = episode({ id: 'ep2', sourceRange: { from: 'ep1', to: 'e2' } })
     const res = inspectContextStateFile({ ...goodFile, episodes: [first, second] }, rawIndex)
@@ -258,8 +226,6 @@ export async function runContextStateTests(ok, mods) {
     ok(backward.status === 'invalid' && has(backward.issues, 'episode-ref'), '反向引用同样被拦（不依赖解析顺序）')
   }
   ok(validateEpisodeState(episode(), rawIndex).ok, '没有原始索引时只做形状校验（拿不到原始条目的场合）')
-
-  /* ============ C. 水位 ============ */
 
   console.log('\n— C. sourceWatermark —')
 
@@ -283,8 +249,6 @@ export async function runContextStateTests(ok, mods) {
     '条数相同但尾巴不同 → diverged（不是同一份历史）'
   )
   ok(watermarkRelation({ entryCount: -1, lastEntryId: null }, wmFull) === 'unknown', '水位形状非法 → unknown')
-
-  /* ============ D. Archive 元数据 ============ */
 
   console.log('\n— D. Archive 元数据 —')
 
@@ -321,8 +285,6 @@ export async function runContextStateTests(ok, mods) {
     }
     ok(inspectArchiveFile(file, rawIndex).status === 'invalid', '归档 ref 重复 → 拒绝')
   }
-
-  /* ============ E. Deep Context 只预留判据 ============ */
 
   console.log('\n— E. Deep Context（只预留接口，不发模型请求） —')
 
@@ -361,8 +323,6 @@ export async function runContextStateTests(ok, mods) {
   )
   ok(deepContextUsable(null, { sessionId: 'abc12345', watermark: wmFull, now }).reason === 'not-object', '形状不对 → 不能注入')
 
-  /* ============ F. 原子写与安全丢弃（真实文件系统） ============ */
-
   console.log('\n— F. 原子写 / 失败不覆盖 last-known-good / 安全丢弃 —')
 
   const dir = await mkdtemp(join(tmpdir(), 'yan-ctxstate-'))
@@ -381,7 +341,6 @@ export async function runContextStateTests(ok, mods) {
     JSON.stringify(await readdir(dir))
   )
 
-  /* 失败不覆盖 last-known-good：故意写一份 objective 为空的状态 */
   {
     let threw = null
     try {
@@ -403,7 +362,6 @@ export async function runContextStateTests(ok, mods) {
     )
   }
 
-  /* 损坏 JSON → 丢弃并删除 */
   {
     const sidBad = 'badjson1'
     const p = store.contextStatePath(sidBad, dir)
@@ -413,7 +371,6 @@ export async function runContextStateTests(ok, mods) {
     ok(!(await readdir(dir)).includes(`${sidBad}.json`), '损坏的状态文件被安全丢弃（不再留在盘上）')
   }
 
-  /* 版本不认识 → 丢弃 */
   {
     const sidOld = 'oldschema'
     await writeFile(
@@ -426,7 +383,6 @@ export async function runContextStateTests(ok, mods) {
     ok(!(await readdir(dir)).includes(`${sidOld}.json`), '不兼容状态被丢弃')
   }
 
-  /* 引用已消失的原始条目（原始会话被裁剪）→ 丢弃 */
   {
     const sidGone = 'goneentry'
     await store.saveContextState(
@@ -445,7 +401,6 @@ export async function runContextStateTests(ok, mods) {
     )
   }
 
-  /* 文件名与内容不一致 → 丢弃（防串会话） */
   {
     const sidMismatch = 'mismatch1'
     await writeFile(store.contextStatePath(sidMismatch, dir), JSON.stringify(goodFile), 'utf8')
@@ -453,7 +408,6 @@ export async function runContextStateTests(ok, mods) {
     ok(loaded.status === 'discarded' && loaded.reason === 'invalid', '文件里的 sessionId 与文件名不一致 → 丢弃')
   }
 
-  /* 路径穿越 */
   {
     let threw = false
     try {
@@ -464,8 +418,6 @@ export async function runContextStateTests(ok, mods) {
     ok(threw, 'sessionId 带路径分隔符 → 直接抛错（不许写出目录）')
     ok((await store.deleteContextStates(['../evil'], { dir })) === 0, '清理非法 id 直接跳过（不误删别的文件）')
   }
-
-  /* ============ G. 会话删除时清理派生状态 ============ */
 
   console.log('\n— G. 会话删除 → 清理派生状态 —')
 
@@ -483,7 +435,6 @@ export async function runContextStateTests(ok, mods) {
     { dir: dirClean, raw: rawIndex }
   )
   await writeFile(join(dirClean, `${drop}.json.999.1.tmp`), '{}', 'utf8')
-  /* 召回账本 / 审计也是按 sessionId 命名的派生物，删会话时要一起清掉 */
   await writeFile(join(dirClean, `${drop}.recall.json`), '{"turn":1,"activeTokens":10}', 'utf8')
   await writeFile(join(dirClean, `${drop}.recall.jsonl`), '{"kind":"recall"}\n', 'utf8')
   await writeFile(join(dirClean, `${keep}.recall.json`), '{"turn":1,"activeTokens":10}', 'utf8')
@@ -499,8 +450,6 @@ export async function runContextStateTests(ok, mods) {
     ok(ids.length === 1 && ids[0] === keep, '列派生状态时同一会话的状态与归档算一个', JSON.stringify(ids))
   }
   await rm(dirClean, { recursive: true, force: true })
-
-  /* ============ H. 从真实会话文件读原始条目身份 ============ */
 
   console.log('\n— H. 水位来自真实会话文件 —')
 
@@ -529,7 +478,6 @@ export async function runContextStateTests(ok, mods) {
     ok(!!index && !index.incompleteTail && index.unreadableEntries === 0, '完整文件不报截断')
   }
 
-  /* 超长正文行仍然只读前缀（这条是性能约束：会话单行可达 4MB） */
   {
     const longPath = join(wmDir, 'long.jsonl')
     const longLine = JSON.stringify({
@@ -544,7 +492,6 @@ export async function runContextStateTests(ok, mods) {
     ok(!!index && index.entryIds.join(',') === 'mc0,big1', '超长正文行照样只从开头取 id', JSON.stringify(index?.entryIds))
   }
 
-  /* 半截最后一行：被进程杀在半路，不计数也不算坏文件 */
   {
     const partialPath = join(wmDir, 'partial.jsonl')
     const body = lines.map((l) => JSON.stringify(l)).join('\n') + '\n'
@@ -554,7 +501,6 @@ export async function runContextStateTests(ok, mods) {
     ok(!!index && index.incompleteTail, '半截尾行会被标出来（水位停在上一条完整 entry）')
   }
 
-  /* 中间坏行：整份索引不可信 */
   {
     const brokenPath = join(wmDir, 'broken.jsonl')
     await writeFile(brokenPath, `${JSON.stringify(lines[0])}\n{oops\n${JSON.stringify(lines[2])}\n`, 'utf8')

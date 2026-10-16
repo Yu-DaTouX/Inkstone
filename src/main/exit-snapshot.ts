@@ -3,10 +3,6 @@ import { join } from 'node:path'
 import type { RunnerStatus } from '../shared/ipc'
 import { YAN_DIR } from './paths'
 
-/**
- * 退出时只保存运行实例的元数据，方便下次启动知道当时有哪些任务在跑。
- * 会话正文仍由 pi 自己的 JSONL 管理，这里绝不复制消息内容。
- */
 export const EXIT_SNAPSHOT_FILE = join(YAN_DIR, 'exit-snapshot.json')
 
 export type ExitSnapshotMode = 'save' | 'interrupt'

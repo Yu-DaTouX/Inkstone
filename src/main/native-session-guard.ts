@@ -7,7 +7,6 @@ const ACTIONS = new Set([
 ])
 const MUTATIONS = new Set(['navigate', 'reload', 'set-scoped-models', 'set-trust', 'import', 'new-session', 'share', 'export-jsonl'])
 
-/** Validate untrusted IPC input and bind it to the foreground session before any I/O. */
 export function validateNativeSessionRequest(
   input: unknown,
   state: SessionState | null,

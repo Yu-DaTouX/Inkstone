@@ -1,10 +1,3 @@
-/**
- * 读网页正文：搜到结果之后，把一个页面读成可直接引用的文本。
- *
- * 和搜索引擎来源一样在隐藏页面里加载（JS 渲染的页面也能读到），不带用户的登录态，
- * 不碰内置浏览器标签；本机与内网地址在请求层被拦（含域名解析到内网的情况）。
- * 需要登录或交互的页面应改用 `yan browser`。
- */
 import { isLinkLocalHost, isPrivateHost } from '../browser/network-boundary'
 import { HiddenPageTimeout, sleepUnlessAborted, withHiddenPage } from './hidden-page'
 
@@ -16,9 +9,7 @@ export interface ReadPageResult {
   finalUrl: string
   title: string
   text: string
-  /** 正文被 maxChars 截断了（原文更长） */
   truncated: boolean
-  /** 页面原文长度（字符） */
   totalChars: number
 }
 
@@ -28,10 +19,6 @@ export class ReadPageError extends Error {
   }
 }
 
-/**
- * 优先取 article / main 里文字最多的那个；砍掉导航、页脚、脚本等噪声。
- * 但站点常把「课程推广卡片」之类也做成 article —— 候选的文字不到整页的一半时，退回整页。
- */
 const EXTRACT = `(() => {
   const drop = 'script,style,noscript,nav,header,footer,aside,form,iframe,svg,[role=navigation],[aria-hidden=true]'
   const clean = (el) => {
@@ -77,16 +64,13 @@ export async function readPage(
       let stable = 0
       let prevLen = -1
       for (;;) {
-        /* 超时后 withHiddenPage 会 abort：这里立刻退出，不再在已销毁窗口上轮询 */
         if (signal.aborted) throw new HiddenPageTimeout(timeoutMs)
         if (loadError) throw new ReadPageError('network_error', loadError)
         try {
           last = (await win.webContents.executeJavaScript(EXTRACT)) as Snapshot
         } catch {
-          /* 正在跳转 */
         }
         if (last && last.text.length > 0 && last.finalUrl !== 'about:blank') {
-          /* 加载完成，或正文长度连续几次不再变化（慢脚本拖住 load 事件时也能交卷） */
           stable = last.text.length === prevLen ? stable + 1 : 0
           prevLen = last.text.length
           if (last.state === 'complete' || stable >= 4) break

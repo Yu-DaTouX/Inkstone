@@ -1,24 +1,6 @@
-/*
- * 砚内置「上下文构成」扩展 —— 只读地把「实际发给模型的固定部分」报给宿主。
- *
- * 界面上的上下文条原先只能按消息文本估算，系统提示与工具定义合成一项，
- * 看不出谁占了多少。这里在每轮第一次请求前读 pi 已经拼好的东西：
- *   · 系统提示：按 pi 的顶层 XML 段（tools / rules / docs / skills …）拆开；
- *   · 工具定义：每个工具的 name + description + 参数 schema 各估一份；
- * 然后通过 `context.inspect` 交给宿主，界面据此显示明细与「注入内容」。
- *
- * ── 边界 ──
- *   · 不改系统提示、不改消息、不发起任何模型请求（零占用）；
- *   · 内容不变就不重复上报（按指纹去重），失败只静默丢弃；
- *   · token 数是估算（宿主界面会标明），总量仍以 Agent 上报为准；
- *   · 思路参考 pi-context-view（MIT，dimk90），此处只取「读 pi 已有数据」这一部分。
- */
-
-/** 每段文本上报的字符上限，防止异常大的提示拖慢宿主 */
 const SECTION_TEXT_LIMIT = 24000
 const POST_TIMEOUT_MS = 3000
 
-/** pi 顶层 XML 段 → 界面用的稳定 id（未知段保留原名） */
 const SECTION_IDS = {
   tools: 'tools',
   rules: 'rules',
@@ -29,7 +11,6 @@ const SECTION_IDS = {
   cwd: 'cwd'
 }
 
-/** 估算 token：ASCII 约 4 字符 / token，CJK 与全角约 1.5 字符 / token */
 export function estimateTokens(text) {
   const s = String(text ?? '')
   let cjk = 0
@@ -40,7 +21,6 @@ export function estimateTokens(text) {
   return Math.ceil((s.length - cjk) / 4 + cjk / 1.5)
 }
 
-/** 跳过围栏代码块，找出顶层 `<name>\n … \n</name>` 段（与 pi 渲染方式一致） */
 export function findSections(prompt) {
   const sections = []
   let fence
@@ -63,7 +43,6 @@ export function findSections(prompt) {
   return sections
 }
 
-/** 把系统提示切成 [开场白][各 XML 段][段与段之间 / 末尾的追加文本] */
 export function splitPrompt(prompt) {
   const text = String(prompt ?? '')
   const parts = []
@@ -122,7 +101,6 @@ async function report(snapshot) {
       signal: AbortSignal.timeout(POST_TIMEOUT_MS)
     })
   } catch {
-    /* 观测失败不影响对话 */
   }
 }
 
@@ -136,7 +114,6 @@ export default function contextInspectExtension(pi) {
       lastKey = key
       void report(snapshot)
     } catch {
-      /* 同上 */
     }
     return undefined
   })

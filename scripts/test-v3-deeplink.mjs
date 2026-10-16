@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-/**
- * DeepLink（WP-20c）纯逻辑回归。
- *
- * 深链接是进程外输入面：解析、白名单、长度上限、拒绝 `file:`/`javascript:`/
- * 未知动作、预填文本不自动发送，全部在这里钉住；协议注册与转发用假对象验证，
- * 不启动 Electron、不连 pi、不读用户数据、不调模型。
- *
- * 可独立执行：node scripts/test-v3-deeplink.mjs
- */
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -26,7 +17,6 @@ async function loadTs(rel) {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 }
 
-/** 键集合与插入顺序无关的比较：共享类型若少/多字段，这里会立刻炸。 */
 const keys = (value) => Object.keys(value).sort()
 
 const D = await loadTs('../src/main/deeplink/protocol.ts')
@@ -47,8 +37,6 @@ const {
 
 assert.equal(DEEPLINK_SCHEME, 'inkstone')
 assert.equal(DEEPLINK_PREFIX, 'inkstone://')
-
-/* ── 1. 白名单动作：四种意图解析出稳定形状 ─────────────────── */
 
 let r = parseDeepLink('inkstone://session/abc-123')
 assert.equal(r.ok, true)
@@ -91,8 +79,6 @@ assert.deepEqual(
   '设置分区白名单与渲染端 v3 分区一致'
 )
 
-/* ── 2. 拒绝面：非白名单 scheme/host/参数一律不产生意图 ────── */
-
 const rejections = [
   ['', 'empty'],
   ['   ', 'empty'],
@@ -132,11 +118,8 @@ for (const [input, reason] of rejections) {
   assert.equal(parsed.reason, reason, `拒绝原因：${JSON.stringify(input)}`)
 }
 
-/* 拒绝结果不携带任何原始串，调用方拿不到可透传内容。 */
 const rejected = parseDeepLink('file:///etc/passwd')
 assert.deepEqual(keys(rejected), ['ok', 'reason'], '拒绝结果只有 ok/reason')
-
-/* ── 3. argv / open-url 提取 ───────────────────────────────── */
 
 assert.equal(firstDeepLinkArg(['--flag', 'E:\\app.exe', 'inkstone://runs']), 'inkstone://runs')
 assert.equal(firstDeepLinkArg(['  inkstone://runs  ', 'inkstone://settings']), 'inkstone://runs', '去空白，取第一条')
@@ -146,8 +129,6 @@ assert.equal(parseDeepLinkFromArgv([]), null, '没有深链接参数返回 null�
 assert.equal(parseDeepLinkFromArgv(['inkstone://pair?x=1']).ok, false, '候选非法时如实报告解析失败')
 assert.equal(parseDeepLinkFromArgv(['--x', 'inkstone://session/s1']).link.sessionId, 's1')
 assert.equal(parseDeepLinkFromOpenUrl('inkstone://runs').link.action, 'runs', 'open-url 单串走同一解析')
-
-/* ── 4. 协议注册（假注册器） ───────────────────────────────── */
 
 const { registerDeepLinkProtocol } = R
 const calls = []
@@ -173,8 +154,6 @@ assert.equal(
   '开发态拿不到入口脚本时不注册，避免系统启动错的目标'
 )
 assert.equal(calls.length, 0, '未注册时不调用注册器')
-
-/* ── 5. 转发器：投递、未就绪缓冲、非法不投递 ───────────────── */
 
 const { createDeepLinkRouter, DEEPLINK_CHANNEL, windowDeepLinkRouter } = S
 assert.equal(DEEPLINK_CHANNEL, 'yan:deeplink')
@@ -203,7 +182,6 @@ assert.equal(router.handleOpenUrl('javascript:alert(1)'), false, '非法 open-ur
 assert.equal(router.handleOpenUrl('file:///etc/passwd'), false)
 assert.equal(sent.length, 1, '被拒绝的链接一条都不会送进渲染端')
 
-/* 窗口未就绪：缓存最后一条，flush 后只补投这一条 */
 ready = false
 assert.equal(router.handleOpenUrl('inkstone://session/warm'), false)
 assert.equal(router.handleOpenUrl('inkstone://settings/usage'), false)
@@ -214,7 +192,6 @@ assert.deepEqual(sent.at(-1), { action: 'settings', section: 'usage' })
 assert.equal(router.pending(), null)
 assert.equal(router.flush(), false, '没有缓存时 flush 返回 false')
 
-/* windowDeepLinkRouter 的窗口判据：未创建/已销毁都不投递、不聚焦 */
 const noWindow = windowDeepLinkRouter(() => undefined, () => {
   throw new Error('不应聚焦')
 })
@@ -226,7 +203,6 @@ const destroyed = windowDeepLinkRouter(
 )
 assert.equal(destroyed.handleArgv(['inkstone://runs']), false)
 
-/* windowDeepLinkRouter 正常路径：真实窗口形状的对象即可 */
 const delivered = []
 const live = windowDeepLinkRouter(
   () => ({ isDestroyed: () => false, webContents: { send: (channel, link) => delivered.push([channel, link]) } }),
@@ -234,8 +210,6 @@ const live = windowDeepLinkRouter(
 )
 assert.equal(live.handleArgv(['inkstone://new?text=hi']), true)
 assert.deepEqual(delivered, [['yan:deeplink', { action: 'new-session', text: 'hi' }]])
-
-/* ── 6. 深链接只导航：意图里没有任何执行型字段 ─────────────── */
 
 for (const url of [
   'inkstone://session/s1',

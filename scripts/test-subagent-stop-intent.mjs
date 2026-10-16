@@ -1,13 +1,11 @@
-/** 执行当前stopRun/fail方法，模拟close同步触发提前退出，不创建子代理。 */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { runInNewContext } from 'node:vm'
 import { transform } from 'esbuild'
+import { sliceDeclaration } from './lib/source-slice.mjs'
 const source = await readFile('src/main/subagents.ts', 'utf8')
-const stopStart = source.indexOf('  private async stopRun(')
-const failStart = source.indexOf('  private async fail(')
-const stop = source.slice(stopStart, source.indexOf('\n  /**', stopStart))
-const fail = source.slice(failStart, source.indexOf('\n  /**', failStart))
+const stop = sliceDeclaration(source, '  private async stopRun(')
+const fail = sliceDeclaration(source, '  private async fail(')
 const { code } = await transform(`class Fixture { ${stop}\n${fail}\n } globalThis.Fixture=Fixture`, { loader: 'ts' })
 const context = { clearTimeout, Date }
 runInNewContext(code, context)

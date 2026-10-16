@@ -1,11 +1,3 @@
-/*
- * 分屏探针（视觉矩阵 `YAN_MATRIX_ONLY=splitview,splitfocus`，全部为合成数据）。
- *
- * 在当前会话旁边放一条合成的后台会话（运行中），检查：
- *   · 焦点一侧有完整输入框，另一侧只读、输入框收成一行；
- *   · `__FOCUS__` = chat：焦点在主会话位；= peer：焦点在旁边那一侧（两侧位置不交换）；
- *   · 当前会话里放一条 Codemode 调用，子调用嵌在父调用之下。
- */
 (async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const store = window.__yanStore
@@ -51,21 +43,18 @@
     ]
   })
   if ('__FOCUS__' === 'peer') {
-    /* 焦点在旁边那一侧：当前会话绑在 peer 位，合成会话在主会话位 */
     split.setState({ split: { tiles: [peerRef, liveRef], live: 1 } })
   } else {
     split.getState().close()
     split.getState().open(peerRef, liveRef)
   }
   await sleep(700)
-  /* 分屏时每条会话一列（会话 + 它自己的工具）：第 0 列在左 */
   const focusCol = '__FOCUS__' === 'peer' ? 1 : 0
   const idleCol = '__FOCUS__' === 'peer' ? 0 : 1
   if (!document.querySelector(`[data-split-column="${focusCol}"] [data-testid="split-live"] .composer-wrap`)) throw new Error('splitview: 焦点一侧没有输入框')
   const idle = document.querySelector(`[data-split-column="${idleCol}"] [data-testid="split-peer"]`)
   if (!idle?.querySelector('[data-testid="split-peer-input"]')) throw new Error('splitview: 非焦点一侧没有输入框外观')
   if (idle.querySelector('[data-testid="composer"]')) throw new Error('splitview: 非焦点一侧不该有可用的输入框')
-  /* 两侧输入框同高：焦点换块时版面不跳。焦点那块在运行时顶边框多一行状态、占位文字也不同，只在空闲时比高度 */
   const liveBusy = document.querySelector(`[data-split-column="${focusCol}"] .cborder`)?.dataset.state === 'working'
   if (!idle.querySelector('.cborder')) throw new Error('splitview: 非焦点一侧的输入框外观缺顶边框')
   const liveBox = document.querySelector(`[data-split-column="${focusCol}"] .composer`).getBoundingClientRect().height
@@ -80,7 +69,6 @@
   const b = document.querySelector('[data-split-column="1"]').getBoundingClientRect()
   const box = (r) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`
   if (!(a.right <= b.left + 1) || a.width < 200 || b.width < 200) throw new Error(`splitview: 两侧没有左右并排 chat=${box(a)} peer=${box(b)}`)
-  /* 两列之间的分隔条：往右拖 120px，左列变宽、右列变窄 */
   const resizer = document.querySelector('[data-testid="split-resizer"]')
   if (!resizer) throw new Error('splitview: 两列之间没有调宽度的分隔条')
   const rr = resizer.getBoundingClientRect()
@@ -89,14 +77,11 @@
   await sleep(200)
   const a2 = document.querySelector('[data-split-column="0"]').getBoundingClientRect().width
   const b2 = document.querySelector('[data-split-column="1"]').getBoundingClientRect().width
-  /* 右列已经是它的最小宽度（窄窗口、它那一列带着工具）时让不出宽度，拖不动是对的 */
   const minB = parseFloat(document.querySelector('[data-split-column="1"] .tile-workspace')?.style.minWidth || '340')
   if (b.width - 120 >= minB && !(a2 > a.width + 80 && b2 < b.width - 80)) throw new Error(`splitview: 拖分隔条没改变两列宽度 ${Math.round(a.width)}/${Math.round(b.width)} → ${Math.round(a2)}/${Math.round(b2)}`)
-  /* 双击分隔条回到等宽 */
   resizer.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
   await sleep(200)
   if (Math.abs(document.querySelector('[data-split-column="0"]').getBoundingClientRect().width - a.width) > 4) throw new Error('splitview: 双击分隔条没回到等宽')
-  /* 工具挂在会话旁边：从焦点会话开一个终端，只出现在焦点那一列 */
   window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'terminal' }))
   const t0 = Date.now()
   while (Date.now() - t0 < 6000 && !document.querySelector(`[data-split-column="${focusCol}"] [data-workspace-pane^="terminal:"]:not([hidden])`)) await sleep(100)

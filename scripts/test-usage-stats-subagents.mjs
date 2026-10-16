@@ -1,13 +1,3 @@
-/**
- * 首页用量：主会话 + 子代理 Token 合并与拆分（U1）。
- *
- * 用临时 `YAN_SESSIONS_DIR` / `YAN_DATA_DIR` 里的真实 JSONL 驱动 production 读取路径
- * （usage-stats.ts + usage-sources.ts），覆盖：合计与拆分、会话/消息/活跃天数/高峰时段不被
- * 子代理改写、模型/热力图纳入子代理、范围边界、缓存读写回退、独立来源枚举与真实路径去重、
- * 增量追加 / 截断重建 / 缓存重启与版本迁移 / 文件删除 / 坏行 / 缺目录。
- *
- * 不启动 Electron，不读真实用户数据。
- */
 import assert from 'node:assert/strict'
 import { appendFile, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -63,7 +53,6 @@ export async function runUsageStatsSubagentTests(ok) {
   await mkdir(mainDir, { recursive: true })
   await mkdir(subRoot, { recursive: true })
 
-  /* production 的路径常量在 import 时解析，必须先把临时目录写进 env */
   process.env.YAN_SESSIONS_DIR = mainDir
   process.env.YAN_DATA_DIR = dataDir
 
@@ -89,7 +78,6 @@ export async function runUsageStatsSubagentTests(ok) {
 
   const now = Date.now()
 
-  /* 1. 合计与拆分；会话/消息/活跃天数/高峰时段只算主会话 */
   await reset()
   await writeMain('m1.jsonl', [
     userLine(iso(now - DAY)),
@@ -115,7 +103,6 @@ export async function runUsageStatsSubagentTests(ok) {
   const defaults = await m.readUsageStats('all')
   ok(defaults.tokenBreakdown.subagents === 1500 && typeof defaults.userName === 'string', '默认入口 readUsageStats 返回同样的拆分')
 
-  /* 2. 模型先合并再取 top8，不把主/子各自 top8 丢数据 */
   await reset()
   const mainModels = Array.from({ length: 9 }, (_, i) => [`p-main/m${i + 1}`, (i + 1) * 10])
   await writeMain('models.jsonl', mainModels.map(([model, total]) => replyLine(iso(now - DAY), { provider: model.split('/')[0], model: model.split('/')[1], total })))
@@ -126,7 +113,6 @@ export async function runUsageStatsSubagentTests(ok) {
   ok(models.models.some((x) => x.key === 'p-main/m9'), '主会话大模型保留')
   ok(!models.models.some((x) => x.key === 'p-main/m1') && !models.models.some((x) => x.key === 'p-main/m2'), '最小的两个模型被截掉，没有按来源各取一份')
 
-  /* 3. all / 30d / 7d 边界：主与子都按范围裁剪 */
   await reset()
   await writeMain('range.jsonl', [replyLine(iso(now - 40 * DAY), { total: 700 }), replyLine(iso(now - DAY), { total: 100 })])
   await writeChild('child-range', 's.jsonl', [replyLine(iso(now - 40 * DAY), { total: 900 }), replyLine(iso(now - 3 * DAY), { total: 300 })])
@@ -138,20 +124,17 @@ export async function runUsageStatsSubagentTests(ok) {
   ok(week.tokenBreakdown.main === 100 && week.tokenBreakdown.subagents === 300 && week.tokens === 400, '7 天：子代理 3 天前的记录在内，40 天前的不在')
   ok(all.at === all.at && Number.isFinite(all.at), '返回统计时间 at')
 
-  /* 4. 没有 totalTokens 时按 input/output/cache 相加 */
   await reset()
   await writeChild('child-parts', 's.jsonl', [replyLine(iso(now - DAY), { input: 10, output: 5, cacheRead: 3, cacheWrite: 2 })])
   const parts = await reader()('all')
   ok(parts.tokenBreakdown.subagents === 20, '缓存读写回退：input+output+cacheRead+cacheWrite')
 
-  /* 5. 主会话为 0、只有子代理用量 */
   await reset()
   await writeChild('child-only', 's.jsonl', [replyLine(iso(now - DAY), { total: 640 })])
   const childOnly = await reader()('all')
   ok(childOnly.sessions === 0 && childOnly.messages === 0, '只有子代理时主会话指标仍为 0，不虚增')
   ok(childOnly.tokenBreakdown.main === 0 && childOnly.tokenBreakdown.subagents === 640 && childOnly.tokens === 640, '只有子代理时 Token 仍显示')
 
-  /* 6. 隐藏 / 完成 / 失败 / 取消状态的子代理只要落了真实 usage 都计入；快照 .json 不计 */
   await reset()
   await writeChild('hidden-1', 's.jsonl', [replyLine(iso(now - DAY), { total: 11 })])
   await writeChild('failed-2', 's.jsonl', [replyLine(iso(now - DAY), { total: 22 })])
@@ -162,7 +145,6 @@ export async function runUsageStatsSubagentTests(ok) {
   const statuses = await reader()('all')
   ok(statuses.tokenBreakdown.subagents === 66, '各状态子代理的真实 usage 相加，snapshot/result .json 与无 usage 行不计')
 
-  /* 7. 真实路径去重：同一物理文件的别名只算一次 */
   await reset()
   const aliasFile = join(mainDir, 'alias.jsonl')
   await writeFile(aliasFile, `${replyLine(iso(now - DAY), { total: 50 })}\n`)
@@ -186,7 +168,6 @@ export async function runUsageStatsSubagentTests(ok) {
     await symlink(linkedFile, linkAlias)
     linked = true
   } catch {
-    /* Windows 无权限创建符号链接时跳过 */
   }
   if (linked) {
     const linkedStat = (await import('node:fs/promises')).stat(linkAlias)
@@ -202,7 +183,6 @@ export async function runUsageStatsSubagentTests(ok) {
     ok(symStats.tokens === 77, '符号链接别名经 realpath 去重')
   }
 
-  /* 8. 增量追加 / 截断重建 / 文件删除 / 缓存重启 / 版本迁移 / 坏行 / 缺目录 */
   await reset()
   const incFile = join(mainDir, 'inc.jsonl')
   const first = replyLine(iso(now - DAY), { total: 100 })
@@ -219,21 +199,18 @@ export async function runUsageStatsSubagentTests(ok) {
   const restarted = reader()
   ok((await restarted('all')).tokens === 200, '新读取器从磁盘缓存重启后结果一致')
   const savedCache = JSON.parse(await readFile(cacheFile, 'utf8'))
-  ok(savedCache.version === 2, '缓存写出 v2 版本')
+  ok(savedCache.version === 3, '缓存写出 v3 版本')
   ok(Object.values(savedCache.files).every((entry) => entry.sourceKind === 'main' || entry.sourceKind === 'subagent'), '缓存条目带 sourceKind')
 
-  /* 版本 1 的旧缓存必须整体重建，而不是把新来源塞进去重复 */
   const realKey = Object.keys(savedCache.files)[0]
   await writeFile(cacheFile, JSON.stringify({ version: 1, files: { [realKey]: { size: 1, offset: 0, usage: { '2020-01-01': { m: 1, t: 999999, h: {}, models: {} } } } } }))
   const migrated = await reader()('all')
   ok(migrated.tokens === 200, '旧 v1 缓存被丢弃重建，不把旧计数当权威')
-  ok(JSON.parse(await readFile(cacheFile, 'utf8')).version === 2, '迁移后缓存升到 v2')
+  ok(JSON.parse(await readFile(cacheFile, 'utf8')).version === 3, '迁移后缓存升到 v3')
 
-  /* 坏行不阻其它正常行 */
   await reset()
   await writeMain('bad.jsonl', ['{not json at all', replyLine(iso(now - DAY), { total: 42 }), ''])
   ok((await reader()('all')).tokens === 42, '坏行跳过，正常行仍计入')
-  /* 缺目录容错 */
   await rm(mainDir, { recursive: true, force: true })
   await rm(subRoot, { recursive: true, force: true })
   const missing = await reader()('all')
@@ -241,7 +218,6 @@ export async function runUsageStatsSubagentTests(ok) {
   await mkdir(mainDir, { recursive: true })
   await mkdir(subRoot, { recursive: true })
 
-  /* 9. 旧宿主结果缺 tokenBreakdown 时保守按“全部主会话” */
   ok(s.tokenBreakdownOf({ tokens: 500 }).main === 500 && s.tokenBreakdownOf({ tokens: 500 }).subagents === 0, '缺 breakdown 的旧结果按全主会话兼容')
   const explicit = s.tokenBreakdownOf({ tokens: 500, tokenBreakdown: { main: 400, subagents: 100 } })
   ok(explicit.main === 400 && explicit.subagents === 100, '有新 breakdown 时原样返回')

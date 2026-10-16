@@ -1,14 +1,3 @@
-/**
- * v3 文件面板（P3 · R1）：真实项目文件树。
- *
- * 只做只读浏览：懒展开、加载 / 空 / 失败态、键盘树导航、长列表虚拟化。
- * 点击文件通过 `onPreview(绝对路径)` 交回父级（预览归 R5）；「加入当前会话上下文」
- * 走既有 `store.addFileRefPaths`（宿主校验 + 登记），且在 owner 已不是当前活动会话时
- * 拒绝执行 —— 不把文件错加到另一条会话。首版不做写 / 删 / 重命名 / 批量操作。
- *
- * 挂载：由 R0 的工作区面板持有 `owner`（`WorkspaceOwner`，字段与 `FilesOwner` 一致）。
- * 本组件不自己切会话、不改路由。
- */
 import { useCallback, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react'
 import { ChevronRight, Eye, EyeOff, File, Folder, FolderOpen, Plus, RefreshCw } from 'lucide-react'
 import { useI18n } from '../../i18n'
@@ -39,7 +28,6 @@ export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
 
   const onAdd = useCallback(
     (rel: string): void => {
-      /* 点击到执行之间 owner 可能已经切走：再核一次，绝不加到错会话。 */
       if (!canAttachToContext(owner, useStore.getState().session?.sessionId)) return
       void addFileRefPaths([toAbsolutePath(owner.cwd, rel)])
     },
@@ -249,7 +237,6 @@ function statusLabel(text: FilesText, state: FileTreeRow['state']): string {
   }
 }
 
-/** 1023 B → 1023B，1.4K，2.1M（行里只给量级）。 */
 function formatSize(size: number): string {
   if (size < 1024) return `${size}B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(size / 1024 < 10 ? 1 : 0)}K`

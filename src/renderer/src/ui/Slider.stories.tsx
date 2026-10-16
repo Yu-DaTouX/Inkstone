@@ -2,13 +2,6 @@ import { useState, type CSSProperties } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Slider } from './index'
 
-/**
- * v3 滑杆原语工作台（WP-05）。
- *
- * 显示外观一律来自 tokens.css 与 ui.css/Slider.css，本文件只摆版面。
- * 这里的每个故事都是纯结构展示；键盘、拖动、点击轨道与读屏实际效果需要
- * 真实运行验证，本目录不代替键鼠或视觉验收。
- */
 const meta = {
   title: 'v3/原语/Slider',
   component: Slider,
@@ -27,7 +20,6 @@ type Story = StoryObj<typeof meta>
 
 const column: CSSProperties = { display: 'grid', gap: 'var(--s-16)', maxWidth: 360 }
 
-/** 非受控：`defaultValue` 自己持有状态。 */
 export const Default: Story = {
   name: 'Slider · 默认（非受控）',
   args: {
@@ -46,7 +38,6 @@ export const Default: Story = {
   )
 }
 
-/** 受控：值完全由 `value` + `onChange` 决定。 */
 export const Controlled: Story = {
   name: 'Slider · 受控',
   render: () => <ControlledSlider />
@@ -70,7 +61,6 @@ function ControlledSlider() {
   )
 }
 
-/** 范围：数组值渲染两手柄，`thumbLabels` 给每个手柄可读名称。 */
 export const Range: Story = {
   name: 'Slider · 范围值',
   args: {
@@ -89,7 +79,6 @@ export const Range: Story = {
   )
 }
 
-/** 禁用：整组不可交互，外观降透明度。 */
 export const Disabled: Story = {
   name: 'Slider · 禁用',
   args: {
@@ -105,7 +94,6 @@ export const Disabled: Story = {
   )
 }
 
-/** 长标签：中英混排文字只作可读名称，不截断、不改写。 */
 export const LongLabel: Story = {
   name: 'Slider · 长标签（中英）',
   args: {
@@ -123,7 +111,6 @@ export const LongLabel: Story = {
   )
 }
 
-/** 错误：说明与错误文案各自成 id，滑杆 input 经异常信息关联，读屏可读出。 */
 export const Invalid: Story = {
   name: 'Slider · 错误与说明',
   args: {
@@ -145,7 +132,6 @@ export const Invalid: Story = {
   )
 }
 
-/** 竖向：轨道竖排，值在下方；仅展示方向支持。 */
 export const Vertical: Story = {
   name: 'Slider · 竖向',
   args: {

@@ -1,10 +1,3 @@
-/**
- * 归属切换的纯展示逻辑（无 React / store / DOM，便于单测）。
- *
- * 只把主进程给出的脱敏预览与分步结果翻成人话：方向、范围、目标文件、原生条目摘要
- *（env 只给键名、args 只给个数、url 只给 origin）与警告。令牌、完整配置与原始条目
- * 一概不出现在这里 —— 组件只把 token 原样回传主进程。
- */
 import type {
   McpAppOwnershipView,
   McpAppSwitchCommitResult,
@@ -158,20 +151,10 @@ export function mcpAppSwitchLabels(lang: string): McpAppSwitchLabels {
   return lang === 'en-US' ? EN : ZH
 }
 
-/** `ownership()` 响应解包结果：`ok:false` 是**可展示的失败**，不是空列表。 */
 export type McpAppOwnershipParseResult =
   | { ok: true; views: McpAppOwnershipView[] }
   | { ok: false; code: 'ownership_response_invalid' | 'backend_error'; error: string }
 
-/**
- * 校验并解包 `yan:mcpApp:ownership` 的对象响应。
- *
- * 主进程正式契约是 `{ servers, error? }`。这里刻意**不做兼容猜测**：
- *   · 后端 `error` 非空 → 原样报错（不显示成「空列表就是成功」）；
- *   · 缺 `servers` / 不是数组 / 条目缺 identity 字段 → 判为畸形响应并拒绝；
- *   · 只有 `servers: []` 且无 error 才是正常的空状态。
- * 纯函数，无 React / store / DOM 依赖，可直接单测。
- */
 export function parseMcpAppOwnershipResponse(raw: unknown): McpAppOwnershipParseResult {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ok: false, code: 'ownership_response_invalid', error: '主进程没有返回归属视图对象' }
@@ -218,7 +201,6 @@ function entryLines(summary: McpAppSwitchEntrySummary, labels: McpAppSwitchLabel
   return lines
 }
 
-/** 组装确认框里的预览细节；只使用脱敏字段与主进程给出的路径 / 警告。 */
 export function formatMcpAppSwitchPreview(
   preview: McpAppSwitchPreview,
   labels: McpAppSwitchLabels,
@@ -268,7 +250,6 @@ function stepState(state: string, labels: McpAppSwitchLabels): string {
   }
 }
 
-/** 分步结果的可读行（标签 + 原始枚举值，避免翻译掩盖真实状态）。 */
 export function formatMcpAppSwitchResult(result: McpAppSwitchCommitResult, labels: McpAppSwitchLabels): string[] {
   return [
     `${labels.stepNative}: ${stepState(result.steps.native, labels)}`,

@@ -1,19 +1,3 @@
-/**
- * 点阵数字（像素风）。
- *
- * ══════════════════════════════════════════════════════════
- * 为什么是手写点阵而不是像素字体
- * ══════════════════════════════════════════════════════════
- * 用户要求倒计时「像素化」。像素字体（Press Start 2P 之类）要带字体文件，
- * 而砚离线运行、不走网络字体 —— 引一份 5~50KB 的字体只为 4 个字符不值，
- * 也没法按剩余时间变点的大小 / 颜色。
- *
- * 3×5 点阵的每个点是一个真实 DOM 方块：颜色跟随 `currentColor`，
- * 所以低余量时换成警色、拖动时跟着主题走都自动生效。
- * 数字与冒号的字模是固定的（见下），`PixelDigits` 只做映射，没有状态。
- */
-
-/** 3 宽 × 5 高的字模；`1` = 亮点 */
 const GLYPHS: Record<string, readonly string[]> = {
   '0': ['111', '101', '101', '101', '111'],
   '1': ['010', '110', '010', '010', '111'],
@@ -29,16 +13,10 @@ const GLYPHS: Record<string, readonly string[]> = {
   ' ': ['000', '000', '000', '000', '000']
 }
 
-/** 未定义字符（理论上不会出现）统一按空格画，不抛错 —— 倒计时不该因为字体崩掉 */
 function glyphOf(ch: string): readonly string[] {
   return GLYPHS[ch] ?? GLYPHS[' ']
 }
 
-/**
- * 把一串字符渲染成点阵。
- *
- * `aria-label` 由调用方给（点阵本身对读屏没有意义），这里对辅助技术隐藏。
- */
 export function PixelDigits({ text, className = '' }: { text: string; className?: string }) {
   return (
     <span className={`px-digits ${className}`.trim()} aria-hidden="true">

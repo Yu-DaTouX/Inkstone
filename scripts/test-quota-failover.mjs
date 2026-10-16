@@ -1,4 +1,3 @@
-/** Account failover order and pick rules; no credentials or network. */
 export async function runQuotaFailoverTests(report) {
   const m = await import('../out/test/quota-failover.mjs')
   const ok = (label, cond) => report(!!cond, label)

@@ -1,7 +1,3 @@
-/**
- * 模型列表打开后可以自由滚动：组件在 agent 生成期间不停重渲染，
- * 不能每次都把列表拉回当前模型（用户报：生成时模型列表滚不动）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -31,7 +27,6 @@
     list.scrollTop = 0
     await sleep(100)
     const before = list.scrollTop
-    /* 模拟生成期间的高频重渲染：反复更新会话统计 / 触发订阅者 */
     for (let i = 0; i < 12; i++) {
       store.setState({ stats: { ...(store.getState().stats ?? {}) } })
       store.setState({ models: [...store.getState().models] })

@@ -16,7 +16,6 @@ export interface RadioProps extends RACRadioProps {
   children?: ReactNode
 }
 
-/** 单选项。圆点由 CSS 依据 `[data-selected]` 绘制。 */
 export const Radio = forwardRef<HTMLLabelElement, RadioProps>(function Radio(
   { className, children, ...props },
   ref
@@ -40,10 +39,6 @@ export interface RadioGroupProps extends RACRadioGroupProps {
   children?: ReactNode
 }
 
-/**
- * 单选组。方向键在组内移动选择、`Tab` 离开整组，由 RAC 的漫游焦点实现。
- * 想表达「开关」用 `Switch`，不要用只有两项的单选组。
- */
 export const RadioGroup = forwardRef<HTMLDivElement, RadioGroupProps>(function RadioGroup(
   { label, description, errorMessage, className, children, ...props },
   ref

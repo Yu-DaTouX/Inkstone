@@ -1,17 +1,3 @@
-/**
- * 工作区「概览」：纵向堆叠的磁贴列（参照 Claude Code 桌面版右栏）。
- *
- * 默认五张，顺序固定：环境、上下文、额度、后台任务、待办。每张磁贴一行标题：左侧标签 + 折叠箭头，
- * 右侧摘要值；有完整视图的磁贴（上下文、额度）末尾有「›」，切到对应视图。
- * 磁贴的数据全部来自现有投影，本文件不新增 IPC、不持有任何资源：
- *   · 环境：`owner.cwd`、store 的项目名 / 权限档，分支来自 `window.yan.git.state`；
- *   · 上下文：`useContextUsage`（输入框进度环同一来源）；
- *   · 额度：`window.yan.accountQuota()`，取当前 provider 的第一张账号卡的主窗口；
- *   · 后台任务：`store.subagents` 经 `visibleSubagentRuns`，与对话里子 Agent 行同一口径；
- *   · 待办：`store.todos`，行渲染复用 `TodoTileRows`。
- * 改动与输出内容不进默认概览；改动从头部「⋯」进入「改动」视图。
- * 拿不到的字段不显示，不造数据。磁贴折叠状态按磁贴 id 记在 localStorage（读写都 try/catch）。
- */
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import type { PressEvent } from 'react-aria-components'
 import { Check, ChevronDown, ChevronRight, Square } from 'lucide-react'
@@ -36,14 +22,8 @@ import type { WorkbenchTabId, WorkspaceOwner } from './types'
 import './workbench.css'
 
 export interface OverviewPaneProps {
-  /** 当前工作区归属；null = 尚无可归属会话，只剩与会话无关的磁贴 */
   owner: WorkspaceOwner | null
-  /** 「›」切到完整视图 */
   onOpenView: (tab: WorkbenchTabId) => void
-  /**
-   * 已不再被概览使用（输出内容磁贴已退出默认概览）；保留是为了不在本次改动里动调用方。
-   * 调用方下次整理时可与本字段一起删除。
-   */
   onPreview?: (path: string) => void
 }
 
@@ -68,7 +48,6 @@ function writeFolds(folds: FoldMap): void {
   try {
     localStorage.setItem(FOLD_KEY, JSON.stringify(folds))
   } catch {
-    /* 折叠记忆写失败不影响本次使用 */
   }
 }
 
@@ -77,9 +56,6 @@ function lastSegment(path: string): string {
   return parts[parts.length - 1] ?? path
 }
 
-/* ── 数据 hook ─────────────────────────────────────────────── */
-
-/** 分支所需的仓库状态：只读，与分支页签同一 `window.yan.git.state` 通道。 */
 function useGitRepo(cwd: string | null, refreshKey: string): GitRepoState | null {
   const [repo, setRepo] = useState<GitRepoState | null>(null)
   useEffect(() => {
@@ -113,7 +89,6 @@ interface QuotaSnapshot {
   card: AccountQuotaCard | null
 }
 
-/** 额度只取当前 provider 的第一张账号卡；挂载时查一次，之后随面板重挂重查。 */
 function useQuotaSnapshot(provider: string): QuotaSnapshot {
   const [snap, setSnap] = useState<QuotaSnapshot>({ state: 'loading', card: null })
   useEffect(() => {
@@ -136,18 +111,14 @@ function useQuotaSnapshot(provider: string): QuotaSnapshot {
   return snap
 }
 
-/** 运行中（含启动中）的后台任务。 */
 function isLiveRun(run: SubagentRun): boolean {
   return run.status === 'running' || run.status === 'starting'
 }
 
-/** 运行中在前，同组内按开始时间倒序（最近的在前）。 */
 function compareRuns(a: SubagentRun, b: SubagentRun): number {
   const live = Number(isLiveRun(b)) - Number(isLiveRun(a))
   return live !== 0 ? live : b.startedAt - a.startedAt
 }
-
-/* ── 磁贴外壳 ──────────────────────────────────────────────── */
 
 interface TileProps {
   id: TileId
@@ -155,7 +126,6 @@ interface TileProps {
   summary?: ReactNode
   folded: boolean
   onToggle: (id: TileId) => void
-  /** 有完整视图时给出：标题行末的「›」 */
   onOpen?: () => void
   openLabel?: string
   tone?: 'ok' | 'warn' | 'err'
@@ -181,8 +151,6 @@ function Tile({ id, title, summary, folded, onToggle, onOpen, openLabel, tone, c
     </section>
   )
 }
-
-/* ── 面板主体 ──────────────────────────────────────────────── */
 
 export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactElement {
   const { lang } = useI18n()
@@ -211,26 +179,21 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   }
   const isFolded = (id: TileId): boolean => folds[id] === true
 
-  /* 环境 */
   const projectName = cwd ? settings?.projectNames?.[cwd] || lastSegment(cwd) : ''
   const mode: PermissionMode = normalizePermissionMode(settings?.permissionMode)
   const modeLabel = t(`permission.label.${mode}` as 'permission.label.danger')
 
-  /* 分支（随回合结束刷新） */
   const gitRefresh = `${messages.length}:${agentRunning ? 1 : 0}`
   const repo = useGitRepo(cwd || null, gitRefresh)
   const branch = repo ? (repo.detached ? text.detached : repo.branch || text.noBranch) : null
 
-  /* 待办 */
   const todoModel = useMemo(() => buildTodoTileModel(todos, agentRunning), [todos, agentRunning])
   const hasTodos = hasTodoTileContent(todos)
 
-  /* 上下文 */
   const usage = useContextUsage()
   const contextSummary = usage.known && usage.percent !== null ? `${Math.round(usage.percent)}%` : '—'
   const contextTone = usage.tone !== 'ok' && usage.known ? usage.tone : undefined
 
-  /* 后台任务：与对话里的子 Agent 行同一口径（当前视图的会话 id） */
   const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
   const sessionIds = view.sessionId ? [view.sessionId] : []
   const runs: SubagentRun[] = visibleSubagentRuns(subagents, { sessionIds }).sort(compareRuns)
@@ -244,7 +207,6 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     return () => window.clearInterval(timer)
   }, [liveRuns])
 
-  /* 额度 */
   const quota = useQuotaSnapshot(provider)
   const primaryWindow = quota.card?.windows.find((w) => w.id === 'fiveHour' || w.id === 'primary') ?? quota.card?.windows[0]
   const primaryPct = primaryWindow ? windowPct(primaryWindow) : null
@@ -255,7 +217,6 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
 
   return (
     <div className="wb-overview" data-testid="wb-overview">
-      {/* 环境：常驻，缺哪个字段就不显示哪一行 */}
       <Tile id="env" title={text.tiles.env} summary={branch ?? undefined} folded={isFolded('env')} onToggle={toggle}>
         <dl className="wb-ov-rows">
           {projectName ? (
@@ -327,7 +288,6 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
           />
         </Tile>
       ) : quota.state === 'loading' || quota.state === 'error' ? (
-        /* 取数中 / 失败也占同一张磁贴，列不跳 */
         <Tile id="quota" title={text.tiles.quota} folded={isFolded('quota')} onToggle={toggle}>
           <p className="wb-ov-note">{quota.state === 'loading' ? text.quotaChecking : text.quotaFailed}</p>
         </Tile>
@@ -379,7 +339,6 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   )
 }
 
-/** 任务行的状态标记：运行中蓝点、完成对勾、失败红点。 */
 function TaskStatus({ status }: { status: SubagentRun['status'] }): ReactElement {
   if (status === 'running' || status === 'starting') {
     return (

@@ -1,9 +1,3 @@
-/**
- * 设置 → 同步 的短文案（中英同步）。
- *
- * 与 `settings-text.ts` 分开：这一页的文案只在同步分区用到，避免动到
- * 多个并行工单都会碰的共享文案文件；只有导航标签 `sectionSync` 放进 settings-text。
- */
 import type { Lang } from '../../../i18n'
 import type { SyncRecordKindView } from '../../../../../shared/sync'
 

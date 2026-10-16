@@ -1,4 +1,3 @@
-/** Real renderer: long history, incremental code/Chinese/emoji, input and final alignment. */
 ;(async () => {
   const out = [], store = window.__yanStore
   const sleep = ms => new Promise(done => setTimeout(done, ms))
@@ -61,7 +60,7 @@
     ok(inputLatencies.length === 5 && inputLatencies.at(-1) < 200, `流式期间输入可响应（最慢${inputLatencies.at(-1)?.toFixed(1)}ms）`)
     out.push('METRICS ' + JSON.stringify({ frames: durations.length, p95Ms: durations[95], slowFrames50ms: durations.filter(ms => ms > 50).length,
       maxInputPaintMs: inputLatencies.at(-1), visibleUpdates: paints, chars: text.length, messages: store.getState().messages.length }))
-    await sleep(1800) // Allow the harness to capture the completed Markdown state.
+    await sleep(1800)
     return out.join('\n')
   } catch (error) { out.push('✗ ' + String(error)); return out.join('\n') }
 })()

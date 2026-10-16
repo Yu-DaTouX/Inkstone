@@ -1,10 +1,3 @@
-/*
- * v3 Table 原语外观（WP-05）。
- *
- * 与 ui.css 同属 `primitives` 层；只写控件外观，不写业务版面。
- * 虚拟化时 RAC 把 `<table>` 换成 `<div>`，两者共用 `.ui-table` 基类，
- * 只有滚动容器相关的少数规则按元素名限定。
- */
 @layer reset, tokens, base, primitives, patterns, features, utilities;
 
 @layer primitives {
@@ -16,7 +9,6 @@
     font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
   }
 
-  /* 虚拟化时 RAC 渲染 div 作为滚动容器（行绝对定位由 RAC 布局负责）。 */
   div.ui-table {
     position: relative;
     overflow: auto;

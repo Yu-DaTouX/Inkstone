@@ -1,15 +1,3 @@
-/**
- * 新会话主页「墨迹」ASCII 背景的纯逻辑回归（features/ambient）。
- *
- * 现场编译 `src/renderer/src/features/ambient/ascii-field-model.ts` 并在 Node 里直接跑；
- * 不启动 Electron、不开 Canvas、不碰用户目录。覆盖：
- *   噪声确定性、网格尺寸、透明度与墨带、镂空遮罩、帧预算、
- *   不规则性（覆盖率随时间浮动、墨团与留白并存）、滴墨事件间隔不定、
- *   字形状态（边缘换字多于内部、不全屏闪烁）、色调占比、指针搅动、
- *   入场洇开 / 退场收拢、缓冲复用、帧节拍、动画策略与开关读取。
- *
- *   node scripts/test-v3-ascii-field.mjs
- */
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -31,7 +19,6 @@ const model = await loadTs('../src/renderer/src/features/ambient/ascii-field-mod
 const W = 1280
 const H = 720
 
-/* ── 1 · 噪声确定性 ─────────────────────────────────────────── */
 {
   const a = model.fieldValue(0.3, 0.7, 1.2, 42)
   assert.equal(a, model.fieldValue(0.3, 0.7, 1.2, 42), '同输入必得同输出')
@@ -46,7 +33,6 @@ const H = 720
   assert.ok(f >= 0 && f < 1, '分形噪声归一化到 [0,1)')
 }
 
-/* ── 2 · 网格尺寸 ───────────────────────────────────────────── */
 {
   assert.deepEqual(model.computeGrid(1920, 1080, 13), { cols: Math.ceil(1920 / 13), rows: Math.ceil(1080 / 13), cell: 13 })
   assert.deepEqual(model.computeGrid(0, 0, 13), { cols: 0, rows: 0, cell: 13 }, '零尺寸不产生负列')
@@ -54,7 +40,6 @@ const H = 720
   assert.ok(model.CELL_SIZE >= 12 && model.CELL_SIZE <= 14, '单元边长落在 12–14')
 }
 
-/* ── 3 · 透明度与墨带 ───────────────────────────────────────── */
 {
   for (let i = 0; i <= 40; i++) {
     const v = i / 40
@@ -82,7 +67,6 @@ const H = 720
   }
 }
 
-/* ── 4 · 镂空遮罩 ───────────────────────────────────────────── */
 {
   const zone = [{ x: 100, y: 100, rx: 50, ry: 50, feather: 0.5 }]
   assert.equal(model.maskFactor(100, 100, zone), 0, '区内全清')
@@ -101,7 +85,6 @@ const H = 720
   assert.equal(f.alpha[Math.floor(120 / f.cell) * f.cols + Math.floor(200 / f.cell)], 0, '镂空处不画')
 }
 
-/* ── 5 · 帧预算（纯逻辑基准） ───────────────────────────────── */
 {
   const input = { width: 1920, height: 1080, cell: model.CELL_SIZE, seed: model.FIELD_SEED }
   let frame = null
@@ -119,7 +102,6 @@ const H = 720
   assert.ok(frameAvg < 20, `单帧纯计算不应超过 20ms（实测 ${frameAvg.toFixed(2)}ms）`)
 }
 
-/* ── 6 · 不规则：覆盖率随时间浮动、墨团与留白并存 ─────────── */
 {
   const coverage = []
   for (let t = 0; t < 90; t += 3) {
@@ -152,7 +134,6 @@ const H = 720
   assert.ok(Math.max(...series) - Math.min(...series) > 0.08, '同一点的墨值随时间缓慢起伏')
 }
 
-/* ── 7 · 滴墨事件：有时有、有时无，间隔不定 ─────────────────── */
 {
   const counts = []
   for (let t = 0; t < 120; t += 0.5) counts.push(model.inkSources(t, model.FIELD_SEED, 16 / 9).drops.length)
@@ -172,7 +153,6 @@ const H = 720
   assert.ok(Math.hypot(src.plumes[0].x - later.plumes[0].x, src.plumes[0].y - later.plumes[0].y) > 0.02, '墨源会游走')
 }
 
-/* ── 8 · 字形状态：边缘换字多于内部，不全屏闪烁 ─────────────── */
 {
   assert.ok(model.edgeActivity(model.INK_CORE) > 0.99, '贴近墨芯阈值时边缘活跃度最高')
   assert.equal(model.edgeActivity(model.INK_CORE + 0.2), 0, '墨芯深处不活跃')
@@ -220,7 +200,6 @@ const H = 720
   assert.deepEqual(Array.from(a.alpha), Array.from(b.alpha), '透明度确定')
 }
 
-/* ── 9 · 透明度分级、色调占比、指针搅动 ─────────────────────── */
 {
   assert.equal(model.alphaLevel(0), -1)
   assert.equal(model.alphaLevel(0.001), 0)
@@ -259,7 +238,6 @@ const H = 720
   assert.ok(diff > 1, '指针附近墨流被搅动')
 }
 
-/* ── 10 · 入场洇开与退场收拢 ─────────────────────────────── */
 {
   const base = { width: W, height: H, time: 6, zones: [] }
   const start = model.computeFieldFrame({ ...base, enter: 0 })
@@ -313,7 +291,6 @@ const H = 720
   assert.ok(model.EXIT_MS <= 180, '退场短于 180ms')
 }
 
-/* ── 11 · 缓冲复用 ──────────────────────────────────────────── */
 {
   const input = { width: W, height: H, time: 3, zones: [] }
   const f = model.computeFieldFrame(input)
@@ -324,7 +301,6 @@ const H = 720
   assert.deepEqual(Array.from(recycled.alpha), Array.from(fresh.alpha), '复用缓冲不残留上一帧的透明度')
 }
 
-/* ── 12 · 动画策略与帧节拍 ─────────────────────────────────── */
 {
   assert.deepEqual(model.animationPolicy({ visible: true, focused: true, reducedMotion: false }), { active: true, fps: model.TARGET_FPS })
   assert.deepEqual(model.animationPolicy({ visible: true, focused: false, reducedMotion: false }), { active: true, fps: model.BLURRED_FPS })
@@ -354,7 +330,6 @@ const H = 720
   assert.ok(still.visible / still.alpha.length > 0.3, '减少动态时的静态画面完整（有墨团）')
 }
 
-/* ── 13 · 开关读取：字段缺失视为开 ──────────────────────────── */
 {
   assert.equal(model.asciiBackgroundEnabled(undefined), true)
   assert.equal(model.asciiBackgroundEnabled(null), true)

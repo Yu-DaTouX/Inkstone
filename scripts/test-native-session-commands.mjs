@@ -1,16 +1,3 @@
-/**
- * pi 原生输入命令的定向检查（不启动 Electron、不调用模型、不联网）。
- *
- * 覆盖两处本轮改动的纯逻辑：
- *   · `src/main/command-registry.ts` —— `/tree` `/import` `/reload` `/scoped-models`
- *     `/trust` `/share` 从「仅兼容显示」升级为可执行的 yan 命令，`/export` 带路径；
- *     `/hotkeys` `/changelog` 仍是兼容项（不能变成无效果按钮）。
- *   · `src/renderer/src/lib/composer-submit.ts` —— 命令路由到 `nativeSession`，
- *     `/compact` 后缀透传、`/export *.jsonl` 走 JSONL、`!`/`!!` 的上下文语义、
- *     失败保留草稿附件并报告原文、运行中拒绝替换/重载。
- *
- * 与 `test-command-palette.mjs` 用同一套 esbuild 加载真实模块的做法。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -40,7 +27,6 @@ async function load(entry, name) {
 
 const YAN = (name, executable = true) => ({ name, source: 'yan', executable })
 
-/** 记录型端口：把 nativeSession / store 动作调用顺序留下来。 */
 function recordingPort(over = {}) {
   const { actions: actionOverrides, ...rest } = over
   const calls = []
@@ -102,7 +88,6 @@ async function main() {
     const R = registry.module
     const S = submit.module
 
-    /* ── 注册表：新增命令是正式可执行的 yan 命令 ── */
     const { find } = registryCommands(R)
     for (const name of ['tree', 'import', 'reload', 'scoped-models', 'trust', 'share']) {
       const command = find(name)
@@ -117,14 +102,12 @@ async function main() {
     ok(exp?.usage === '/export [路径]', '/export 用法带可选路径')
     ok(exp?.description?.includes('jsonl'), '/export 说明区分 JSONL 与 HTML')
 
-    /* ── 注册表：/hotkeys /changelog 保持兼容并给出真实入口 ── */
     for (const name of ['hotkeys', 'changelog']) {
       const command = find(name)
       ok(command?.source === 'compatibility' && command.executable === false, `/${name} 仍是兼容项`)
       ok(!!command?.availability, `/${name} 说明桌面端入口（不是无效果按钮）`)
     }
 
-    /* ── 提交分发：命令列表 ── */
     const commands = [
       YAN('tree'),
       YAN('import'),
@@ -139,7 +122,6 @@ async function main() {
       { name: 'help', source: 'pi', executable: true }
     ]
 
-    /* 每条新增命令都路由到 nativeSession，并且只在成功后清空草稿 */
     const routed = [
       ['/tree', 'tree', undefined],
       ['/import C:\\sessions\\a.jsonl', 'import', 'C:\\sessions\\a.jsonl'],
@@ -157,7 +139,6 @@ async function main() {
       ok(!r.calls.some((c) => c[0] === 'send'), `${text} 不发给模型`)
     }
 
-    /* ── /export：.jsonl 走 JSONL，其余走 HTML（带路径） ── */
     let r = recordingPort({ text: '/export C:\\tmp\\a.jsonl', commands })
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'nativeSession' && c[1] === 'export-jsonl' && c[2] === 'C:\\tmp\\a.jsonl'), '/export *.jsonl 路由 JSONL')
@@ -172,7 +153,6 @@ async function main() {
     await S.submitComposerInput(r.port)
     eq(r.calls.find((c) => c[0] === 'exportHtml'), ['exportHtml', undefined], '/export 无路径时不传路径')
 
-    /* ── /compact 后缀作为自定义指令透传 ── */
     r = recordingPort({ text: '/compact 只保留代码改动', commands })
     await S.submitComposerInput(r.port)
     eq(r.calls.find((c) => c[0] === 'compact'), ['compact', '只保留代码改动'], '/compact 后缀透传')
@@ -180,7 +160,6 @@ async function main() {
     await S.submitComposerInput(r.port)
     eq(r.calls.find((c) => c[0] === 'compact'), ['compact', undefined], '/compact 无后缀不传参数')
 
-    /* ── 失败：保留草稿附件、报告原文，不先 clearAll ── */
     const failPort = (text, action, error) =>
       recordingPort({
         text,
@@ -213,7 +192,6 @@ async function main() {
     ok(r.calls.some((c) => c[0] === 'notify' && c[1] === 'error' && c[2] === '没有可导出的会话'), '/export 失败报告原文')
     ok(!r.calls.some((c) => c[0] === 'clearAll'), '/export 失败保留草稿')
 
-    /* ── 运行中：import / reload 明确拒绝，tree 等仍可打开 ── */
     for (const text of ['/import a.jsonl', '/reload']) {
       const run = recordingPort({ text, commands, roundRunning: true })
       await S.submitComposerInput(run.port)
@@ -225,13 +203,11 @@ async function main() {
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'nativeSession' && c[1] === 'tree'), '/tree 运行中仍可打开（只浏览不改会话）')
 
-    /* ── nativeSession 未接入：说明并保留草稿，不制造无效果按钮 ── */
     r = recordingPort({ text: '/tree', commands, actions: { nativeSession: undefined } })
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'notify' && c[1] === 'info'), '/tree 未接入时给出说明')
     ok(!r.calls.some((c) => c[0] === 'clearAll'), '/tree 未接入时保留草稿')
 
-    /* ── ! / !!：直执行与排除上下文 ── */
     r = recordingPort({ text: '!echo hi', commands })
     await S.submitComposerInput(r.port)
     eq(r.calls.find((c) => c[0] === 'runBash'), ['runBash', 'echo hi', undefined], '! 前缀直接执行且进入上下文')
@@ -242,7 +218,6 @@ async function main() {
     ok(r.calls.some((c) => c[0] === 'clearText'), '!! 只清文字不清附件')
     ok(!r.calls.some((c) => c[0] === 'clearAll'), '!! 不动附件')
 
-    /* ── 兼容命令与未知命令沿用既有行为 ── */
     for (const text of ['/hotkeys', '/changelog']) {
       const compat = recordingPort({ text, commands })
       await S.submitComposerInput(compat.port)

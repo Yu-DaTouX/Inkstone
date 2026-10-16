@@ -1,9 +1,3 @@
-/**
- * 技能自接入：GitHub 技能源（固定提交 + Git 哈希）、会话 / 我的技能两档落盘、内容审查分级、
- * capability-guide 按会话列出技能。全部用合成响应与临时目录，不联网、不启动 pi。
- *
- * 用法： node scripts/test-acquired-skills.mjs
- */
 import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -137,7 +131,6 @@ try {
   )
   await rejects(() => acq.installAcquiredSkill({ root, scope: 'session', sessionId: '../x', name: 'pdf', description: '', files: downloaded, source }), 'session-id', '会话 id 不安全时拒绝')
 
-  /* capability-guide：按 pi 会话 id 列出 */
   process.env.YAN_DATA_DIR = root
   const guide = await import('../out/test/capability-guide-session.mjs')
   const block = guide.sessionSkillsBlock(sessionId)
@@ -149,7 +142,6 @@ try {
   const result = hook({ systemPrompt: 'BASE', systemPromptOptions: { sections } }, { sessionManager: { getSessionId: () => sessionId } })
   ok(result.systemPrompt.includes(session.skillFile) && sections.inkstone_session_skills === block, '每轮注入系统提示与具名分区')
 
-  /* 我的技能：自己写的同名技能不覆盖 */
   await mkdir(join(root, 'skills', 'xlsx'), { recursive: true })
   await writeFile(join(root, 'skills', 'xlsx', 'SKILL.md'), '---\nname: xlsx\ndescription: mine\n---\n')
   await rejects(
@@ -166,7 +158,6 @@ try {
   ok(user.scope === 'user' && existsSync(join(root, 'skills', 'docx', 'SKILL.md')), '安装到我的技能')
   ok((await acq.acquiredUserSkillNames(root)).has('docx') && !(await acq.acquiredUserSkillNames(root)).has('xlsx'), '能区分接入的与自己写的')
 
-  /* 保留到我的技能 → 会话里移除 */
   await acq.promoteSessionSkill(root, sessionId, 'pdf')
   ok(existsSync(join(root, 'skills', 'pdf', 'scripts', 'fill.py')) && (await acq.listSessionSkills(root, sessionId)).length === 0, '会话技能保留到我的技能后从会话移除')
   ok(JSON.parse(await readFile(join(root, 'skills', 'pdf', acq.SOURCE_META_FILE), 'utf8')).scope === 'user', '保留后来源记录改为 user')

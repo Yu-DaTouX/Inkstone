@@ -1,4 +1,3 @@
-/** 静态隔离检查器的正负对照：只创建独立临时源码，不执行这些模块。 */
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'

@@ -1,13 +1,3 @@
-/**
- * `test-mcp-app-runtime-ownership.mjs` 的合成夹具。
- *
- * 只提供两样东西：
- *   · 可观测的 fake 连接管理器（记录创建 / 关闭次数、可加 gate 模拟迟到）；
- *   · 轻量 fake AgentController（满足 RunnerRegistry 必需方法，并暴露
- *     `nativeBootWitness()` 供 A7 事实源读取启动见证）。
- *
- * 不启动 Electron / pi / 真实模型 / 真实 MCP 服务，不读写真实用户配置。
- */
 export function createFakeManagerFactory() {
   const records = []
   const events = []
@@ -59,10 +49,6 @@ export function createFakeManagerFactory() {
   }
 }
 
-/**
- * 轻量 fake AgentController。`generation` 由 RunnerRegistry 在创建时注入；
- * `setWitness` 用来模拟「spawn 前采集 + ready 后签发」的结果（测试直接给最终见证）。
- */
 export function createFakeAgent({ cwd, generation = 1, sessionSeq = { value: 0 } }) {
   const index = ++sessionSeq.value
   const state = {
@@ -91,12 +77,10 @@ export function createFakeAgent({ cwd, generation = 1, sessionSeq = { value: 0 }
     setRunnerGeneration(next) {
       if (Number.isSafeInteger(next) && next > 0) generation = next
     },
-    /* A7：宿主启动见证；generation 随 runner 代次重盖，bootId/cwd 仍是进程启动时的。 */
     nativeBootWitness: () => (witness ? { ...witness, generation } : null),
     setWitness(next) {
       witness = next
     },
-    /* HI3：AgentController 侧 legacy 连接事实；空数组 = 已确认无 legacy 持有。 */
     getLegacyMcpHolderSnapshot: () => ({ services: legacyMcpServices.map((service) => ({ ...service })) }),
     setLegacyMcpServices(next) {
       legacyMcpServices = Array.isArray(next) ? next : []

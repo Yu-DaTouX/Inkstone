@@ -1,20 +1,7 @@
-/**
- * 界面语言扩展（resources/pi-extensions/language.js）的单测。
- *
- * 为什么值得钉住：语言要求从「启动参数 `--append-system-prompt`」搬到了
- * 「扩展每轮注入」—— 这条路一旦坏了，只有真调模型才看得出来（而且模型
- * 服从性是软的，失败会像“模型偶尔不听话”）。所以把**机制**确定性测掉：
- *   · 读到 zh-CN / en-US 时注入的句子是什么（推理与回复两种都要说清楚）；
- *   · 读不到设置 / 认不出的值时**什么都不注入**（不猜一种语言强加给模型）；
- *   · 与已有 systemPrompt 的拼接方式（不能把原提示顶掉）。
- *
- * 语言真的生效那部分仍然由 `npm run test:live -- language` 做（要真实模型）。
- */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-/** 造一个只带 desktop.json 的隔离数据目录，并让扩展读到它 */
 function withSettings(lang, fn) {
   const dir = mkdtempSync(join(tmpdir(), 'yan-lang-'))
   try {
@@ -35,7 +22,6 @@ function withSettings(lang, fn) {
 export async function runLanguageExtensionTests(ok, mod) {
   const { languageSystemPrompt, default: extension } = mod
 
-  /* 1. 句子本身：两句语言都要**明确覆盖推理**（用户报过“回复中文、推理还是英文”） */
   const zh = languageSystemPrompt('zh-CN')
   const en = languageSystemPrompt('en-US')
   ok(typeof zh === 'string' && zh.includes('推理'), 'zh-CN 的句子明确要求推理也跟随', String(zh))
@@ -43,7 +29,6 @@ export async function runLanguageExtensionTests(ok, mod) {
   ok(languageSystemPrompt('ja-JP') === null, '不认识的语言不注入任何要求', String(languageSystemPrompt('ja-JP')))
   ok(languageSystemPrompt(undefined) === null, '语言缺失时也不注入', String(languageSystemPrompt(undefined)))
 
-  /* 2. 机制：注册 before_agent_start，按设置返回 systemPrompt */
   const handlers = {}
   extension({ on: (name, fn) => (handlers[name] = fn) })
   ok(typeof handlers.before_agent_start === 'function', '扩展注册了 before_agent_start')
@@ -69,12 +54,6 @@ export async function runLanguageExtensionTests(ok, mod) {
     'desktop.json 坏了也不注入（不影响这一轮）'
   )
 
-  /*
-   * 3. 主通道：before_provider_request 在最后一条 user 消息**前**插一条独立消息。
-   *
-   * 为什么这条最要紧：只往系统提示末尾追加时，模型实测**不服从**
-   *（句子落在 11k 提示的最后 60 字符里）；改成贴近用户消息的独立消息后 2/2 服从。
-   */
   const provider = handlers.before_provider_request
   ok(typeof provider === 'function', '扩展注册了 before_provider_request')
 
@@ -130,10 +109,6 @@ export async function runLanguageExtensionTests(ok, mod) {
     '没有 user 消息时不动 payload'
   )
 
-  /*
-   * 4. 措辞单点：句子只应该在这一处维护。
-   *    如果哪天有人又把它复制回主进程（两处会漂移），这条会提醒。
-   */
   const { readFileSync } = await import('node:fs')
   const mainSrc = readFileSync('src/main/index.ts', 'utf8')
   ok(

@@ -1,13 +1,6 @@
-/*
- * 会话模块的**版面**（布局 / 间距 / 顺序），归入 `features` 层。
- *
- * 外观（颜色 / 边框 / 字体 / 阴影）在同目录 `ui/session-look.css`，归
- * `primitives` 层；`patterns/` 就位后应搬去那里。这里只写版面，不写控件外观。
- */
 @import './ui/session-look.css';
 
 @layer features {
-  /* 会话模块根容器：对话流占满剩余高度，卡片与输入框在下方 */
   .v3-session {
     display: flex;
     flex-direction: column;
@@ -17,11 +10,6 @@
     width: 100%;
   }
 
-  /*
-   * 对话流容器：占满剩余高度，滚动只发生在这一层。自身是容器，量的是正文实际
-   * 可用宽度（右侧面板并列时已扣掉让位），导航轨留白据此判定；`--stream-px` 是
-   * 正文左右留白，窄屏由下方媒体查询收紧。
-   */
   .v3-stream-host {
     position: relative;
     display: flex;
@@ -44,14 +32,12 @@
     padding: var(--s-20) var(--s-20) var(--s-32);
   }
 
-  /* virtua 的每一项：左右留白一致，内容由 .v3-msg 限宽 */
   .v3-stream-row {
     padding: 0 var(--s-20);
   }
 
   .v3-stream-row:first-child { padding-top: var(--s-20); }
   .v3-stream-row:last-child { padding-bottom: var(--s-32); }
-  /* 分屏列的非虚拟列表：外层 .v3-stream-inner 已留白，行本身不再加 */
   .v3-stream-inner > .v3-stream-row { padding: 0; }
 
   .v3-msg {
@@ -73,7 +59,6 @@
 
   .v3-commentary { display: flex; flex-direction: column; gap: var(--s-8); }
 
-  /* 过程行：摘要行沿用 .v3-steps-sum；标签占满剩余宽度，用时不挤压 */
   .v3-process { min-width: 0; }
   .v3-process-sum { min-width: 0; }
   .v3-process-label { flex: 1 1 auto; min-width: 0; }
@@ -87,7 +72,6 @@
 
   .v3-think, .v3-steps, .v3-code, .v3-fallback-note { min-width: 0; }
 
-  /* ---- 子 Agent：消息里一行摘要，详情在右侧面板 ---- */
   .v3-subagents { display: flex; flex-direction: column; gap: var(--s-6); margin: var(--s-6) 0; }
   .v3-subagents-sum { padding: 0 var(--s-8); }
   .v3-subagent { display: flex; min-width: 0; }
@@ -95,7 +79,6 @@
   .v3-subagent-kind, .v3-subagent-code, .v3-subagent-status, .v3-subagent-time { flex: none; }
   .v3-subagent-task { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* 子 Agent 侧边详情：会话区右侧的浮动面板 */
   .v3-session { position: relative; container-type: inline-size; --rail-gutter: calc(var(--s-8) + 28px + var(--s-8)); }
   .v3-sap {
     position: absolute;
@@ -124,34 +107,25 @@
   .v3-sap-resizer.ui-splitter { position: absolute; left: -1px; top: 0; bottom: 0; z-index: 4; }
   @keyframes v3-sap-in { from { opacity: 0; transform: translateX(var(--s-16)); } }
 
-  /* 会话区够宽时正文让位与面板并列；不够宽时面板覆盖在右侧 */
   @container (min-width: 1100px) {
     .v3-session[data-side-panel='1'] .v3-stream-host,
     .v3-session[data-side-panel='1'] .v3-asks { margin-right: calc(var(--subagent-width, 360px) + var(--s-16)); }
   }
 
-  /* ---- WP-21c 错误卡 / 压缩标记 / 分支摘要 ---- */
   .v3-errorcard { display: flex; flex-direction: column; gap: var(--s-6); }
   .v3-errorcard-head { display: flex; align-items: center; gap: var(--s-6); }
   .v3-errorcard-actions { display: flex; align-items: center; gap: var(--s-6); }
   .v3-compaction { display: flex; align-items: center; gap: var(--s-6); margin: var(--s-8) 0; }
   .v3-branchline { display: flex; align-items: center; gap: var(--s-6); margin: var(--s-4) 0 var(--s-8); }
 
-  /*
-   * Markdown 正文的列表标记：reset 层把 ul/ol 的 list-style 归零，这里只对
-   * 正文容器恢复。层级越高越深（ul 实心圆/空心圆/方块，ol 数字/字母/罗马数字），
-   * 不改 reset 全局，侧栏、菜单等列表仍无标记。
-   */
   .v3-prose ul { list-style-type: disc; }
   .v3-prose ol { list-style-type: decimal; }
   .v3-prose :is(ul, ol) ul { list-style-type: circle; }
   .v3-prose :is(ul, ol) ol { list-style-type: lower-alpha; }
   .v3-prose :is(ul, ol) :is(ul, ol) ul { list-style-type: square; }
   .v3-prose :is(ul, ol) :is(ul, ol) ol { list-style-type: lower-roman; }
-  /* GFM 任务列表自带 checkbox，不再叠加项目符号 */
   .v3-prose li.task-list-item { list-style: none; }
 
-  /* 确认 / 提问卡：与消息列同宽，贴在输入框上方 */
   .v3-asks {
     display: flex;
     flex-direction: column;
@@ -162,7 +136,6 @@
     margin: 0 auto;
     padding: 0 var(--s-20) var(--s-10);
     box-sizing: border-box;
-    /* 多条卡片时不要把对话区挤没 */
     max-height: 45vh;
     overflow-y: auto;
   }
@@ -173,7 +146,6 @@
     .v3-sap { animation: none; }
   }
 
-  /* 窄屏：对话列不再限宽，留白收紧 */
   @media (max-width: 720px) {
     .v3-stream-host { --stream-px: var(--s-12); }
     .v3-stream-inner { padding-top: var(--s-16); padding-bottom: var(--s-24); }
@@ -182,12 +154,6 @@
     .v3-msg.user .v3-user-body { max-width: 92%; }
   }
 
-  /*
-   * 导航轨不覆盖正文：对话流宽度不足以让列（最宽 720px）与轨道并排时，给正文左侧
-   * 留出轨道宽度（`--rail-gutter`）。量的是对话流容器，不按窗口宽度写死。
-   * 808px = 720px 列 + 轨道两侧留白（44px）：超过它时列居中即已避开轨道。
-   * 写在媒体查询之后，覆盖窄屏的左侧留白。
-   */
   @container (max-width: 808px) {
     .v3-stream-inner { padding-left: calc(var(--stream-px) + var(--rail-gutter)); }
     .v3-stream-row { padding-left: calc(var(--stream-px) + var(--rail-gutter)); }

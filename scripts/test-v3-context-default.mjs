@@ -1,17 +1,3 @@
-/**
- * 共享自动压缩缺省（400k）与随包扩展对齐的专项检查（C2 首次引导）。
- *
- * 不构建、不启动 Electron、不读用户真实设置、不调模型：
- *   1. 两端缺省一致：src/shared/context-limits.ts 与 resources/pi-extensions/context-trim.js
- *      的自动压缩缺省都是 400k，裁剪缺省仍是 80k；
- *   2. 未设置（空 desktop.json）时走 400k，UI 依赖的 shared 缺省自动跟随；
- *   3. 用户显式存下的 250k 与 pi 原生「自动压缩关闭」保持，不被新缺省迁移或覆盖；
- *   4. 小窗口的 90% 压缩线 / 30% 裁剪线比例护栏不变。
- *
- * 复用现有纯 helper（readContextSettings / pickTokenStep / autoCompactAt / compactAt），
- * 只在临时目录写合成文件，不触发 Agent、compact 或模型。
- * 可直接运行：node scripts/test-v3-context-default.mjs
- */
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -49,7 +35,6 @@ const {
 } = limits
 const { DEFAULT_COMPACT_TOKENS, DEFAULT_TRIM_TOKENS, readContextSettings, compactAt, trimAt } = ext
 
-/* ── 1. 两端缺省值 ─────────────────────────────────────────── */
 ok(DEFAULT_AUTO_COMPACT_TOKENS === 400_000, 'shared 自动压缩缺省为 400k', String(DEFAULT_AUTO_COMPACT_TOKENS))
 ok(DEFAULT_COMPACT_TOKENS === 400_000, '随包扩展自动压缩缺省为 400k', String(DEFAULT_COMPACT_TOKENS))
 ok(DEFAULT_AUTO_COMPACT_TOKENS === DEFAULT_COMPACT_TOKENS, '两端自动压缩缺省一致')
@@ -59,13 +44,11 @@ ok(
   '自动压缩档位未变'
 )
 ok(JSON.stringify([...CONTEXT_TRIM_STEPS]) === JSON.stringify([50_000, 80_000, 120_000]), '裁剪档位未变')
-/* UI 与 400k 缺省相等即视为“未设置”，不写进设置文件 */
 ok(
   pickTokenStep(DEFAULT_AUTO_COMPACT_TOKENS, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS) === undefined,
   '等于缺省值的档位不写入设置（UI 依赖 shared 缺省自动跟随）'
 )
 
-/* ── 2/3. readContextSettings：临时目录合成 desktop.json / pi settings.json ── */
 const piDir = mkdtempSync(join(tmpdir(), 'yan-v3-ctx-default-'))
 const previousPiDir = process.env.PI_CODING_AGENT_DIR
 const previousYanDir = process.env.YAN_DATA_DIR
@@ -73,7 +56,6 @@ process.env.PI_CODING_AGENT_DIR = piDir
 process.env.YAN_DATA_DIR = piDir
 
 try {
-  /* 未设置：空 desktop.json + pi settings.json 里没有 compaction → 全部走缺省 */
   writeFileSync(join(piDir, 'settings.json'), JSON.stringify({}))
   writeFileSync(join(piDir, 'desktop.json'), '{}')
   {
@@ -83,7 +65,6 @@ try {
     ok(s.compact === true && s.trim === true, '未设置时裁剪与提前压缩默认开启')
   }
 
-  /* 缺省文件不存在（读不到 desktop.json）时也走 400k */
   {
     process.env.YAN_DATA_DIR = join(piDir, 'missing')
     const s = readContextSettings()
@@ -91,7 +72,6 @@ try {
     process.env.YAN_DATA_DIR = piDir
   }
 
-  /* 显式 250k：必须保持，不被新缺省迁移或覆盖 */
   writeFileSync(join(piDir, 'desktop.json'), JSON.stringify({ autoCompactTokens: 250_000 }))
   {
     const s = readContextSettings()
@@ -102,7 +82,6 @@ try {
     '显式 250k 不再被当成缺省抹掉'
   )
 
-  /* pi 原生「自动压缩关闭」：compact 标志保持 false，不因缺省变更重开 */
   writeFileSync(join(piDir, 'settings.json'), JSON.stringify({ compaction: { enabled: false } }))
   {
     const s = readContextSettings()
@@ -111,7 +90,6 @@ try {
   }
   writeFileSync(join(piDir, 'settings.json'), JSON.stringify({ compaction: { enabled: true } }))
 
-  /* 关闭裁剪：同样保持 */
   writeFileSync(join(piDir, 'desktop.json'), JSON.stringify({ contextTrim: false }))
   {
     const s = readContextSettings()
@@ -125,7 +103,6 @@ try {
   else process.env.YAN_DATA_DIR = previousYanDir
 }
 
-/* ── 4. 小窗口比例护栏不变（两端公式一致） ─────────────────── */
 ok(autoCompactAt(400_000, 1_050_000) === 400_000, '大窗口不提前，按缺省 400k')
 ok(autoCompactAt(400_000, 300_000) === 270_000, '小窗口压缩线按 90% 提前')
 ok(autoCompactAt(400_000, 272_000) === 244_800, 'Codex 272K 窗口压到约 245K')

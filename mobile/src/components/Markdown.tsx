@@ -1,10 +1,3 @@
-/**
- * 轻量 Markdown 渲染。
- *
- * 只支持模型回答里真正会出现的几种：段落到空行、`#`～`###` 标题、`-` / `1.` 列表、`>` 引用、
- * `---` 分隔线、``` 代码块，以及行内的 `**粗**`、`*斜*`、`` `代码` ``。
- * 不引第三方依赖：手机上要的是可读，不是完整 CommonMark。
- */
 import { useMemo } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { font, mono, radius, space, weight } from '../theme'
@@ -19,7 +12,6 @@ type Block =
   | { kind: 'code'; lines: string[]; lang: string }
   | { kind: 'rule' }
 
-/** 行内解析：粗体、行内代码、斜体。顺序即优先级。 */
 function parseInline(line: string): Inline[] {
   const segments: Inline[] = []
   const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*)/g

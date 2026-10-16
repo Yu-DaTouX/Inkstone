@@ -1,4 +1,3 @@
-/* Deterministic Canvas film. All movement derives from a single time value. */
 const canvas = document.getElementById('film'), c = canvas.getContext('2d');
 const W=1920,H=1080,DURATION=48;
 const dark={bg:'#151515',panel:'#1b1b1a',raised:'#222221',fg:'#ecece8',dim:'#b4b4ac',mute:'#777770',line:'#363633',accent:'#93a4f4',ok:'#91b69a'};

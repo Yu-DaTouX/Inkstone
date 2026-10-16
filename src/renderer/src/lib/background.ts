@@ -1,27 +1,15 @@
-/**
- * 界面背景色：模板与自定义。
- *
- * 背景是一组层级令牌（--bg-0 页面底 … --bg-4 最高一层）。模板与自定义色都只给出
- * 「页面底色」，其余层级按明度台阶推出，保证层次关系与默认主题一致。
- * 自定义色会按主题夹在可读范围内：深色主题不会选出浅底、浅色主题不会选出深底，
- * 避免文字对比度失效。
- */
-
 export type BackgroundTheme = 'dark' | 'light'
 
 export interface BackgroundPreset {
   id: string
-  /** i18n 键 */
   key: string
   dark?: string
   light?: string
 }
 
-/** 缺省（id = default）不写任何覆盖，沿用 tokens.css */
 export const BACKGROUND_PRESETS: BackgroundPreset[] = [
   { id: 'default', key: 'set.bg.default' },
   { id: 'graphite', key: 'set.bg.graphite', dark: '#141414', light: '#f4f4f4' },
-  /* 墨灰（方向 F）：低彩度墨色，浅色主题为纸白；只改背景层级，不带文字灰 */
   { id: 'ink', key: 'set.bg.ink', dark: '#18191b', light: '#f7f6f3' },
   { id: 'midnight', key: 'set.bg.midnight', dark: '#0f1623', light: '#eef2f8' },
   { id: 'forest', key: 'set.bg.forest', dark: '#101a16', light: '#eef5f1' },
@@ -64,14 +52,12 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${to(r)}${to(g)}${to(b)}`
 }
 
-/** 自定义色夹进主题的可读范围 */
 export function clampBackground(hex: string, theme: BackgroundTheme): string {
   const [h, s, l] = hexToHsl(hex)
   const clamped = theme === 'dark' ? Math.min(l, 0.26) : Math.max(l, 0.9)
   return hslToHex(h, Math.min(s, 0.6), clamped)
 }
 
-/** 由页面底色推出整组层级令牌 */
 export function backgroundLadder(base: string, theme: BackgroundTheme): Record<(typeof TOKENS)[number], string> {
   const [h, s, l] = hexToHsl(base)
   const at = (delta: number): string => hslToHex(h, s, Math.min(1, Math.max(0, l + delta)))
@@ -99,20 +85,17 @@ export function backgroundLadder(base: string, theme: BackgroundTheme): Record<(
   }
 }
 
-/** 当前主题用的自定义色：浅色主题优先用单独设置的浅色底，否则沿用深色那一个 */
 export function customForTheme(custom: string | undefined, customLight: string | undefined, theme: BackgroundTheme): string | undefined {
   if (theme === 'light' && isHexColor(customLight)) return customLight
   return isHexColor(custom) ? custom : undefined
 }
 
-/** 当前设置对应的页面底色；null = 用默认主题 */
 export function resolveBackground(preset: string | undefined, custom: string | undefined, theme: BackgroundTheme): string | null {
   if (preset === CUSTOM_BACKGROUND_ID) return isHexColor(custom) ? clampBackground(custom, theme) : null
   const hit = BACKGROUND_PRESETS.find((p) => p.id === preset)
   return hit?.[theme] ?? null
 }
 
-/** 上次写入的底色：设置对象每次变化都会触发，同值时跳过整组 setProperty（避免无谓的样式重算） */
 let appliedKey: string | null = null
 
 export function applyBackground(root: HTMLElement, preset: string | undefined, custom: string | undefined, theme: BackgroundTheme): boolean {

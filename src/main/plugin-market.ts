@@ -1,12 +1,50 @@
-import type { MarketSearchResult } from '../shared/plugin-market'
-import { copyFile, mkdir, rm } from 'node:fs/promises'
+import type { MarketSearchResult, PluginExportResult } from '../shared/plugin-market'
+import { buildNativeMcpDocument } from '../shared/mcp-native-import'
+import { execFile } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-export const HERMES_PLUGIN_FILES = ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py', 'README.md']
+export const CODEGRAPH_MCP_NAME = 'codegraph'
+export const CODEGRAPH_MCP_SERVER = { command: 'codegraph', args: ['serve', '--mcp'] }
+export const CODEGRAPH_INSTALL = 'npm i -g @colbymchenry/codegraph'
+
+export function commandOnPath(command: string): Promise<boolean> {
+  return new Promise(done => {
+    execFile(process.platform === 'win32' ? 'where' : 'which', [command], { windowsHide: true, timeout: 5000 },
+      error => done(!error))
+  })
+}
+
+export async function addCodegraphMcp(agentDir: string, installed: (command: string) => Promise<boolean> = commandOnPath): Promise<PluginExportResult> {
+  if (!await installed(CODEGRAPH_MCP_SERVER.command)) return { ok: false, error: `没有找到 codegraph 命令，先运行 ${CODEGRAPH_INSTALL}` }
+  const path = join(agentDir, 'mcp.json')
+  let text: string | null = null
+  try { text = await readFile(path, 'utf8') }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return { ok: false, error: String(error) } }
+  let existing: unknown
+  if (text !== null) {
+    try { existing = JSON.parse(text) }
+    catch { return { ok: false, error: `${path} 不是合法 JSON，未改动` } }
+  }
+  const merged = buildNativeMcpDocument({ existing, name: CODEGRAPH_MCP_NAME, server: { ...CODEGRAPH_MCP_SERVER, args: [...CODEGRAPH_MCP_SERVER.args] } })
+  if (!merged.ok) return merged.code === 'name_conflict' ? { ok: true, path, existed: true } : { ok: false, error: merged.reason }
+  await mkdir(agentDir, { recursive: true })
+  const temp = `${path}.${randomBytes(6).toString('hex')}.tmp`
+  try {
+    await writeFile(temp, `${JSON.stringify(merged.document, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+    await rename(temp, path)
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => undefined)
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+  return { ok: true, path }
+}
+
+export const HERMES_PLUGIN_FILES = ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py']
 
 export async function exportHermesPlugin(source: string, parent: string): Promise<string> {
   const target = join(parent, 'inkstone')
-  // Atomic exclusive creation: never overwrite an installed plugin or follow a target symlink.
   try { await mkdir(target) }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('目标目录已有 inkstone，请选择其他目录，避免覆盖现有插件')
@@ -21,7 +59,6 @@ export async function exportHermesPlugin(source: string, parent: string): Promis
   }
 }
 
-/** Publisher-declared links are shown and opened externally, so only plain https URLs pass. */
 function httpsLink(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.length > 500) return undefined
   try {
@@ -33,7 +70,6 @@ function httpsLink(value: unknown): string | undefined {
 const cache = new Map<string, { expires: number; result: MarketSearchResult }>()
 const NAME = /^(?:@[a-z0-9._-]+\/)?[a-z0-9][a-z0-9._-]*$/
 
-/** Read npm metadata only. Installation remains an explicit pi package action. */
 export async function searchPiPackages(query: string, offset = 0, request: typeof fetch = fetch): Promise<MarketSearchResult> {
   const text = query.trim().slice(0, 100)
   const from = Math.max(0, Math.min(10000, Math.floor(offset)))

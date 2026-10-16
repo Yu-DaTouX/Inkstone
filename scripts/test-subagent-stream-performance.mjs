@@ -72,10 +72,6 @@ try {
     } finally { await ctrl.stopAll() }
   }
   if (!baseline) {
-    /*
-     * 增量推送：同一份转录只发改动的那一段，渲染端按 `prev.slice(0, transcriptFrom)` 拼接。
-     * 这条路径约 30 次/秒，是子代理流式期间 IPC 字节量的主要来源。
-     */
     const full = []
     const patches = []
     const { ctrl, rpc, id } = await make(
@@ -87,7 +83,6 @@ try {
       for (let i = 0; i < 60; i++) rpc.emit({ type: 'message_end', message: message('历史内容。'.repeat(400) + i) })
       rpc.emit({ type: 'message_start', message: message('') })
       await sleep(55)
-      /* 渲染端的基线来自一次整条推送（真实场景里是 list / 首次 subagent 推送） */
       let merged = JSON.parse(JSON.stringify(ctrl.get(id).transcript))
       patches.length = 0
       full.length = 0
@@ -104,15 +99,10 @@ try {
       ok(patches.every((p) => p.run.transcript.length <= 2), '每次增量只带变化的那一两条')
       const patchBytes = patches.reduce((n, p) => n + Buffer.byteLength(JSON.stringify(p)), 0)
       const fullBytes = full.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)), 0)
-      /*
-       * 转录取的是主进程内存里的真实转录（这条基准里是 60 条带工具输出的历史）。
-       * 转录越大、流式越久，差距越大；这里给出的是一个保底比例。
-       */
       ok(patchBytes * 5 < fullBytes, `增量字节远小于整条（${patchBytes} vs ${fullBytes}）`)
     } finally { await ctrl.stopAll() }
   }
   const runs = []
-  /* 第 4 轮走增量口径：同一负载下看推送字节降到多少（前 3 轮保持整条口径，与历史基线可比） */
   const rounds = baseline ? 3 : 4
   for (let round = 0; round < rounds; round++) {
     const delta = round === 3

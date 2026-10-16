@@ -1,9 +1,3 @@
-/**
- * Git 状态、写操作、用户工作树与托管网页的 IPC 适配（`yan:git:*`）。
- *
- * 渲染端只能传 cwd / 路径，不能传 git 命令：命令形状全部在主进程里固定，
- * 路径与 ref 在 git-service 里单独校验；写操作的防护在 git-actions.ts。
- */
 import type { IpcRegistrar } from './registrar'
 import { readExpected, readRepoState, listRefs, resolveRepo } from '../git-service'
 import { listRemotes, remoteWeb, runGitAction } from '../git-actions'
@@ -14,37 +8,19 @@ import type { AuthorizeReadCwd } from '../git-inspect'
 import type { WorktreeLinkStore } from '../worktree-links'
 
 export interface GitIpcDeps {
-  /** 这个目录有没有正在跑的任务（切分支、删工作树前必须问） */
   isCwdBusy(dir: string): boolean
-  /** 「会话 ↔ 工作树」来源关系 */
   worktreeOrigins: WorktreeLinkStore
-  /**
-   * 只读读取的目录授权（主进程注入 `resolveFileContext`）：成功才给规范 cwd。
-   * 逐文件改动与单文件补丁都先过这一关，且仓库根会再授权一次。
-   */
   authorizeReadCwd: AuthorizeReadCwd
 }
 
 export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
   const { handle } = ipc
   const { isCwdBusy, worktreeOrigins, authorizeReadCwd } = deps
-  /*
-   * ---- Git 状态（只读）----
-   *
-   * 渲染端只能传 cwd，**不能传 git 命令**（方案 §11）：
-   * 命令形状全部在主进程里固定，路径与 ref 在 git-service 里单独校验。
-   */
   handle('yan:git:state', async (cwd: string) => {
     try {
       const dir = String(cwd ?? '')
       const repo = await resolveRepo(dir)
       if (!repo) return { repo: null }
-      /*
-       * 一起把「预期版本」带回去：环境菜单里的写操作（切分支 / 拉取 / 推送）
-       * 同样要带上用户看到的那个版本，而菜单没有审查快照可用。
-       * 两次读取与菜单显示的内容是**同一个时刻**的（差几毫秒），
-       * 先读取预期版本，再读取供菜单显示的仓库状态。
-       */
       const expected = await readExpected(repo.root)
       return { repo: await readRepoState(repo.root), expected }
     } catch (error) {
@@ -67,13 +43,6 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     }
   })
 
-  /*
-   * ---- 逐文件改动与单文件补丁（只读，P3）----
-   *
-   * 渲染端只能传 cwd 与**授权范围内的相对路径**；命令形状、pathspec 校验、
-   * 只读开关都在 git-inspect.ts。授权经注入了 resolveFileContext 的
-   * `authorizeReadCwd`，缺授权一律 fail closed。
-   */
   handle('yan:git:changes', async (cwd: string) => {
     try {
       return await readChanges(String(cwd ?? ''), authorizeReadCwd)
@@ -114,15 +83,6 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     }
   })
 
-  /*
-   * ---- Git 写操作（方案 §5，G2）----
-   *
-   * 这是整个应用里**唯一**会改用户 Git 状态的入口。防护在 git-actions.ts 里
-   * （按仓库串行、执行前复核预期版本、不 stash/reset/force），这里只做三件事：
-   *   · 剥掉渲染端不该决定的东西（命令形状一律由主进程构造）
-   *   · 把「这个目录有没有在跑的任务」注入进去 —— 切分支前必须问（方案 §5.1）
-   *   · 兜异常，保证渲染端**永远**能拿到一个结果（否则界面会一直转圈）
-   */
   handle('yan:git:action', async (req: unknown) => {
     const raw = (req ?? {}) as Record<string, unknown>
     const cwd = String(raw.cwd ?? '')
@@ -193,13 +153,6 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
       }
     }
   })
-  /*
-   * ---- 用户工作树（方案 §6.2，W1）----
-   *
-   * 注意与子代理隔离工作树的区别：那条路径是「一次性容器 + --force 清理」，
-   * 这里建的会被用户长期使用，所以删除前逐项检查，且**没有** force 入口。
-   * 「有任务在跑」的判据与切分支同一个（注入的 runner 状态）。
-   */
   handle('yan:git:untracked', async (cwd: string) => listUntracked(String(cwd ?? '')))
   handle('yan:git:worktrees', async (cwd: string) => {
     try {
@@ -222,11 +175,6 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
           branch: String(raw.branch ?? ''),
           startPoint: typeof raw.startPoint === 'string' && raw.startPoint ? raw.startPoint : null,
           targetPath: typeof raw.targetPath === 'string' && raw.targetPath ? raw.targetPath : null,
-          /*
-           * 携带未提交改动（W2a）。这里**逐字段取值**而不是把 raw 直接传下去：
-           * 渲染端来的东西是不可信输入，多传一个字段就可能多一条能改用户仓库的路径。
-           * untracked 只收字符串，且由主进程再跟 `git ls-files --others` 对一遍。
-           */
           carry: (() => {
             const c = raw.carry as Record<string, unknown> | null | undefined
             if (!c || typeof c !== 'object') return null
@@ -273,13 +221,6 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     }
   })
 
-  /*
-   * 「会话 ↔ 工作树」的来源关系（实施-07 S2）。
-   *
-   * 登记发生在渲染端：「开新会话」是在**新目录**里开一条新会话，
-   * 而主进程这边 `newSession` / `select` 并不知道用户是从哪个工作树按钮点过来的。
-   * 读回是全量的 —— 界面要回答「这个会话从哪来」，而列表本身很小。
-   */
   handle('yan:git:worktreeLink', async (req: unknown) => {
     const raw = (req ?? {}) as Record<string, unknown>
     try {
@@ -305,19 +246,6 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     }
   })
 
-  /*
-   * remote 的托管网页地址（方案 §7 的托管网页比较，只读）。
-   * 渲染端拿到的只是一个 https 链接 —— 它**不能**让主进程跑任意 git 命令，
-   * 这条通道也一样（remote 名字由主进程自己挑）。
-   */
-  /*
-   * 关联 PR 的状态（§7）。**只读** —— 不创建、不合并、不评论。
-   *
-   * token 只从环境变量读（GITHUB_TOKEN / GH_TOKEN）：不落盘、不进设置，
-   * 也不去翻用户的 ~/.config/gh（那是 gh 自己的东西）。没有 token 时
-   * GitHub 允许匿名读公开仓库，私有仓库会返回 404/403，那时界面如实显示
-   * 「需要认证」—— 不编状态。
-   */
   handle('yan:git:prStatus', async (cwd: string) => {
     try {
       const token = process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim() || null

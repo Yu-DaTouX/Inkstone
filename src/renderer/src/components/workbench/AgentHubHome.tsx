@@ -11,7 +11,6 @@ type Mode = 'terminal' | 'managed' | 'readonly'
 
 const AGENT_STATUS: Record<string, MessageKey> = { queued: 'hub.status.queued', preparing: 'hub.status.preparing', running: 'hub.status.running', waiting_input: 'hub.status.waitingInput', needs_review: 'hub.status.needsReview', completed: 'hub.status.completed', failed: 'hub.status.failed', cancelled: 'hub.status.stopped', uncertain: 'hub.status.uncertain', working: 'hub.status.working', idle: 'hub.status.idle', starting: 'hub.status.preparing', done: 'hub.status.done', error: 'hub.status.failed', stopped: 'hub.status.stopped' }
 
-/** 运行状态的显示名；未知状态原样显示 */
 export function agentStatusLabel(t: TFunc, status: string): string { const key = AGENT_STATUS[status]; return key ? t(key) : status }
 const AGENT_NAME: Record<string, string> = { pi: 'pi', codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini', grok: 'Grok', antigravity: 'Antigravity' }
 const MODE_HINT: Record<Mode, MessageKey> = {
@@ -22,7 +21,6 @@ const MODE_HINT: Record<Mode, MessageKey> = {
 
 export function agentName(agent: string): string { return AGENT_NAME[agent] ?? agent }
 
-/** 3 分钟前 / 2 小时前 / 10/1 */
 function ago(t: TFunc, at: number | undefined): string {
   if (!at || !Number.isFinite(at)) return ''
   const s = Math.max(0, (Date.now() - at) / 1000)
@@ -42,7 +40,6 @@ function statusTone(run: AgentWorkspaceRun): string {
   return 'mute'
 }
 
-/** The collaboration overview: start a run, then find it in the grouped list. Runs open in their own tiles. */
 export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefresh }: {
   snapshot: HubSnapshot | null
   runs: AgentWorkspaceRun[]
@@ -63,10 +60,8 @@ export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefr
   const createId = useRef<{ id: string; signature: string } | undefined>(undefined)
   const adapters = useMemo(() => (snapshot?.adapters ?? []).filter(a => a.agent !== 'pi' && !HUB_LEGACY_AGENTS.includes(a.agent)), [snapshot])
   const project = projectId || sessionProject || snapshot?.projects[0]?.id || ''
-  /* Default to the first installed CLI that supports the chosen mode. */
   const usable = adapters.filter(a => a.available && a.modes.includes(mode === 'managed' ? 'managed' : 'terminal'))
   const chosen = agent && usable.some(a => a.agent === agent) ? agent : usable[0]?.agent ?? ''
-  /* Main working tree: whether it is a git repository and how many uncommitted changes would be carried along. */
   const [tree, setTree] = useState<{ project: string; git: boolean; changed: number } | null>(null)
   const [carry, setCarry] = useState(true)
   useEffect(() => {
@@ -85,7 +80,6 @@ export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefr
   const readonlyBlocked = mode === 'readonly' && project !== sessionProject
   const canSubmit = !busy && !!project && (mode === 'readonly' || !!chosen) && (mode === 'terminal' || !!prompt.trim() || attach.items.length > 0) && !readonlyBlocked && !(mode === 'managed' && notGit)
 
-  /* Installs run in an ordinary visible terminal; when that terminal exits the CLIs are detected again. */
   const terminals = useStore(s => s.terminals)
   const [installs, setInstalls] = useState<Record<string, string>>({})
   const [detecting, setDetecting] = useState(false)
@@ -104,7 +98,6 @@ export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefr
     setError('')
     const terminal = await useStore.getState().startTerminal({ cols: 100, rows: 24 })
     if (!terminal) { setError(t('hub.err.terminal')); return }
-    /* Give the shell a moment to start reading input before the command is typed. */
     await new Promise(resolve => setTimeout(resolve, 600))
     await window.yan.terminal.write(terminal.id, `npm install -g ${HUB_CLI_PACKAGES[cli]}\r`)
     setInstalls(old => ({ ...old, [cli]: terminal.id }))
@@ -113,7 +106,6 @@ export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefr
   const createHub = async (request: { agent: HubAgent; mode: 'terminal' | 'managed'; prompt: string }, attachments?: HubAttachmentInput[]) => {
     const full = { ...request, projectId: project, parentSessionId: sessionProject === project ? sessionId : undefined, includeWorkingChanges: carrying }
     const signature = JSON.stringify({ ...full, files: attachments?.map(a => a.name + a.data.length) })
-    /* Retrying the same request reuses its id so the host can de-duplicate it. */
     if (createId.current?.signature !== signature) createId.current = { id: crypto.randomUUID(), signature }
     const result = await window.yan.hub.command({ action: 'create', request: { ...full, attachments, requestId: createId.current.id } }) as { taskId: string }
     createId.current = undefined
@@ -135,7 +127,6 @@ export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefr
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
   }
 
-  /* 关闭记录只隐藏提醒：成果、报告和工作区保留，不验收。 */
   const closeRuns = async (list: AgentWorkspaceRun[]) => {
     setBusy(true); setError('')
     try {
@@ -143,7 +134,6 @@ export function AgentHubHome({ snapshot, runs, sessionProject, onOpenRun, onRefr
       await onRefresh()
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
   }
-  /* 进行中与需要处理合成一张表；已结束的折叠在一行后面，想看再展开。 */
   const active = runs.filter(r => r.live || r.attention)
   const ended = runs.filter(r => !r.live && !r.attention)
   const [showEnded, setShowEnded] = useState(false)

@@ -12,7 +12,6 @@ export interface OutlineTurn {
   steps: number
 }
 
-/** 每条导航轨独立缓存；已完成的回合不随当前流式文字重建。 */
 export function createOutlineProjector(): (messages: UIMessage[], streamingId?: string) => OutlineTurn[] {
   const projectTurns = createTurnProjector()
   const cache = new WeakMap<UserTurn, { reply: AssistantTurn | null; outline: OutlineTurn }>()

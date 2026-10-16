@@ -1,9 +1,3 @@
-/**
- * 内置「提问」薄层（resources/pi-extensions/question.js）的纯逻辑测试。
- *
- * 01-S5 收口后，question.js 只保留工作模式提示钩子；真正的交互请求由宿主
- * `yan question ask` 处理，因此这里必须明确断言它**不再注册模型工具**。
- */
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -40,7 +34,6 @@ export async function runQuestionTests(ok) {
     ok(registerCalls === 0, 'question.js 不再注册模型 question 工具（唯一入口是宿主 CLI）')
     ok(typeof handlers.before_agent_start === 'function', '仍保留工作模式提示钩子')
 
-    /* ---- 系统提示随会话模式切换 ---- */
     await setModeFile('standard')
     const std = handlers.before_agent_start({ systemPrompt: 'BASE' })
     ok(
@@ -50,10 +43,6 @@ export async function runQuestionTests(ok) {
         /yan question ask/.test(std.systemPrompt),
       '标准模式：系统提示指引模型调用 yan question ask'
     )
-    /*
-     * 选项数量：提示词与宿主硬校验（`agent.ts` 的 `options.length > 3`）
-     * 必须是同一个口径，否则模型给 4 个时会被宿主拒掉、白跑一轮。
-     */
     ok(
       /at most 3 concrete options/.test(std?.systemPrompt ?? ''),
       '标准模式：提示词把选项上限写成 3（与宿主硬校验同口径）'
@@ -79,7 +68,6 @@ export async function runQuestionTests(ok) {
       '自主模式：系统提示明确禁止调用 yan question ask'
     )
 
-    /* ---- 回退链（快照缺失时）---- */
     await clearModeFile()
     await setSettings({ defaultWorkMode: 'clarify', autonomous: true })
     const byNewField = handlers.before_agent_start({ systemPrompt: 'BASE' })

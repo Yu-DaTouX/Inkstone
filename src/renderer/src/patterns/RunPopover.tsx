@@ -23,11 +23,8 @@ import './run-status.css'
 export interface RunPopoverProps {
   isOpen: boolean
   onOpenChange: (open: boolean) => void
-  /** 锚点元素；在 `PopoverTrigger` 内使用时可不传，由 RAC 接管。 */
   triggerRef?: RefObject<Element | null>
-  /** 覆盖列表来源；缺省自订阅 `useRunsV3` 的全部运行。 */
   runs?: readonly RunSnapshot[]
-  /** 点某一行回到会话；不给则行不可点。 */
   onOpenSession?: (run: RunSnapshot) => void
   placement?: 'bottom start' | 'bottom end' | 'top start' | 'top end'
   className?: string
@@ -91,13 +88,6 @@ function PopoverRow({
   )
 }
 
-/**
- * 运行列表浮层（WP-14）。
- *
- * 与运行总览共用同一套排序（`sortRuns` → `compareRuns`），不推测 runner 阶段；
- * 每行只展示快照里真实存在的 code / title / model / status / tools / time，
- * 缺的显示「—」。上下文用量只读 `context.percent`，没有就不显示，绝不编一个额度。
- */
 export function RunPopover({
   isOpen,
   onOpenChange,
@@ -113,7 +103,6 @@ export function RunPopover({
   const source = runs ?? storeRuns
   const [now, setNow] = useState(() => Date.now())
 
-  /* 打开期间每 30 秒刷新一次「已持续」，关掉就停，不留定时器。 */
   useEffect(() => {
     if (!isOpen) return
     setNow(Date.now())

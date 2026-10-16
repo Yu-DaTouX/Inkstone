@@ -1,4 +1,3 @@
-/** Global two-level permissions: real UI and settings IPC, no prompt/model request. */
 ;(async () => {
   const out = [], store = window.__yanStore
   const q = s => document.querySelector(s), qa = s => [...document.querySelectorAll(s)]

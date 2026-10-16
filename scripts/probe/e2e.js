@@ -18,12 +18,10 @@
   const ta = q('[data-testid="composer"]')
   if (!ta) return fail('找不到输入框')
 
-  /* ---- 确认初始是空的（否则下面的断言没意义） ---- */
   /* eslint-disable no-unused-expressions */
   const nBefore = qa('.msg').length
   log('起始消息数: ' + nBefore)
 
-  /* ---- 输入（受控组件必须走原生 setter） ---- */
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
   setter.call(ta, '必须先调用 bash 工具执行命令 `echo yan-e2e-ok`，再根据工具返回的内容回复。不要自己编造输出，不要省略工具调用。')
   ta.dispatchEvent(new Event('input', { bubbles: true }))
@@ -34,7 +32,6 @@
 
   send.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
-  /* ---- 观察流式过程 ---- */
   let sawCursor = false
   let sawRunning = false
   let sawTool = false
@@ -54,14 +51,12 @@
       lastLen = txt.length
     }
 
-    // 收工条件：已有助手正文，且不再流式/执行工具
     const busy = !!q('.cursor') || !!q('.trow[data-state="running"]') || send.textContent.includes('中止')
     if (txt.length > 0 && !busy) break
   }
 
   await sleep(1200)
 
-  /* ---- 断言 ---- */
   const nAfter = qa('.msg').length
   log('结束消息数: ' + nAfter)
   ok(nAfter > nBefore, `新增了消息（${nBefore} → ${nAfter}）`)
@@ -70,7 +65,6 @@
   ok(grew, '助手正文在增长（真流式，不是一次性出完）')
   ok(sawTool, '出现了工具卡')
 
-  /* ---- 工具卡内容 ---- */
   log('--- 工具卡 ---')
   const tools = qa('.trow')
   const bash = tools.find((t) => t.dataset.tool === 'bash')
@@ -83,17 +77,14 @@
       (bash.querySelector('.trow-target')?.textContent ?? '').includes('echo'),
       'bash 摘要显示的是命令'
     )
-    // 成功的短输出按规则是折叠的，但摘要必须留着
     ok(!bash.classList.contains('open'), '成功的长输出默认折叠（智能展开规则）')
   }
 
-  /* ---- 助手正文 ---- */
   const body = qa('.msg.assistant .md').map((e) => e.textContent).join(' ').trim()
   log('--- 助手正文 ---')
   log('  ' + JSON.stringify(body.slice(0, 200)))
   ok(body.length > 0, '助手有正文')
 
-  /* ---- 收尾状态 ---- */
   log('--- 收尾状态 ---')
   const doneBtn = q('[data-testid="send"]')
   ok(!doneBtn.textContent.includes('中止'), '流式已结束（按钮回到「发送」）')

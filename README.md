@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/inkstone/hero-paper-ink.png" alt="Inkstone · 砚 — 纸墨与砚台品牌横幅" width="1280">
+  <img src="assets/inkstone/hero-paper-ink.png" alt="Inkstone · 砚 — 纸墨与砚台品牌横幅" width="1280">
 </p>
 
 <h1 align="center">让想法成形。</h1>
@@ -7,10 +7,8 @@
 
 <p align="center">
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><b>下载</b></a> ·
-  <a href="docs/GETTING_STARTED.md">使用指南</a> ·
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases">更新日志</a> ·
-  <a href="https://github.com/Yu-DaTouX/Inkstone/issues">反馈</a> ·
-  <a href="README_EN.md">English</a>
+  <a href="https://github.com/Yu-DaTouX/Inkstone/issues">反馈</a>
 </p>
 <p align="center">
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><img src="https://img.shields.io/github/v/release/Yu-DaTouX/Inkstone?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC" alt="最新版本"></a>
@@ -21,9 +19,9 @@
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/inkstone/workspace-e-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/inkstone/workspace-e-light.png">
-  <img src="docs/assets/inkstone/workspace-e-light.png" alt="砚的界面：左边是会话列表，中间是对话，右边并排打开文件和另一个 AI 的工作结果。" width="1280">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/inkstone/workspace-e-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/inkstone/workspace-e-light.png">
+  <img src="assets/inkstone/workspace-e-light.png" alt="砚的界面：左边是会话列表，中间是对话，右边并排打开文件和另一个 AI 的工作结果。" width="1280">
 </picture>
 
 <p align="center"><sub>界面示意 · 图中内容均为演示数据</sub></p>
@@ -32,18 +30,17 @@
 
 - **聊着把活干了**：像聊天一样交代任务，可以贴图片、用 `@` 指定文件。AI 每一步做了什么都能点开看。
 - **一个窗口就够**：对话、文件、网页、终端并排摆在一起，想怎么摆就怎么摆，不用来回切窗口。
-- **改坏了能退回**：发送前尝试为符合条件的项目保存本地快照；可先预览变更，再确认回退。限制见[使用指南](docs/GETTING_STARTED.md#检查点与回退代码)。
+- **改坏了能退回**：发送前尝试为符合条件的项目保存本地快照；可先预览变更，再确认回退。
 - **危险操作先问你**：大范围删除、丢弃改动这类操作，会先停下来等你点头。
 - **模型随你选**：在软件里登录，或填入 API Key 就能用，随时切换。
-- **插件按需添加**：在[插件市场](docs/PLUGIN_MARKET.md)下载砚适配的插件，或搜索、安装和管理 pi 生态包。
+- **插件按需添加**：在插件市场下载砚适配的插件，或搜索、安装和管理 pi 生态包。
 - **以前聊过的都找得到**：按 `Ctrl+K`，搜标题或聊天内容。
-
 
 ## 产品方向
 
 目标是简单易读的 UI、危险审批与原生模式两档权限、指定模型的子 Agent，以及轻量和性能。桌面目标覆盖 Windows、macOS、Linux；Android/iOS 作为连接电脑的工具。写作、学习、空间和资料库不再作为独立产品模块。
 
-当前开发版已接入 Claude Code 订阅插件、指定模型子 Agent 和两档权限，并补齐原生会话树、JSONL 导入/分支导出、热重载和模型循环范围等[会话操作](docs/GETTING_STARTED.md#pi-原生会话操作)；CC 只读子任务暂不支持。默认界面已退出旧计划/自主模式、空间、资料库与专用写作/学习流程。当前主要交付和验证 Windows，其他平台不能视为已支持；开发版改动未必包含在已下载的发行包中。功能与验证边界见[产品方向](docs/PRODUCT_DIRECTION.md)。
+当前主要交付和验证 Windows，其他平台不能视为已支持；开发版改动未必包含在已下载的发行包中。
 
 ## 开始使用
 
@@ -51,20 +48,20 @@
 2. 打开砚，在 **设置 → 模型** 里登录，或填入 API Key。
 3. 新建对话，说出你要做的事。
 
-安装包还没有数字签名，Windows 可能会弹出“未知发布者”提示，请只从本页下载。更多用法见 [使用指南](docs/GETTING_STARTED.md)。
+安装包还没有数字签名，Windows 可能会弹出“未知发布者”提示，请只从本页下载。
 
 ## 需要知道的
 
 - 目前只有 Windows 版。
 - 聊天记录和设置都存在你自己的电脑上。你发给 AI 的内容会发到你选的模型服务，费用由该服务收取。
-- 换电脑或换版本前，先看 [备份说明](docs/GETTING_STARTED.md#数据与备份)。
-- 安卓手机可以连上电脑看进度、回消息，目前还在测试，见 [手机接入说明](docs/MOBILE_ACCESS.md)。
-- Hermes 可通过独立插件查看会话、选择模型和提交任务，见 [Hermes 控制插件](integrations/hermes-inkstone/README.md)。
+- 换电脑或换版本前，先备份砚的数据目录。
+- 安卓手机可以在 **设置 → 远程** 里扫码配对电脑，看进度、回消息，目前还在测试。
+- Hermes 可通过 `integrations/hermes-inkstone/` 下的独立插件查看会话、选择模型和提交任务。
 
 遇到问题欢迎提 [Issue](https://github.com/Yu-DaTouX/Inkstone/issues)，写上版本号和操作步骤，截图时记得遮住密钥。
 
 <details>
-<summary>开发者：从源码运行与参与贡献</summary>
+<summary>开发者：从源码运行</summary>
 
 Inkstone 使用 Electron、React 和 TypeScript，并由 [pi](https://github.com/badlogic/pi-mono) 提供模型循环与工具执行。
 
@@ -77,16 +74,10 @@ npm install -g @earendil-works/pi-coding-agent
 npm run launch
 ```
 
-启动器会检查依赖、准备缺失的内置运行时并按需构建。已有工作区可双击 `启动-砚.cmd`；开发模式使用 `开发-砚.cmd` 或 `npm run launch:dev`。
-
-界面正在按 v3 重构：v3 是目标界面，规则见[设计规范](docs/DESIGN_SYSTEM.md)正卷、范围与状态见[界面重构记录](docs/UI_REDESIGN.md)。用 `YAN_UI=v3` 启动可试用，默认仍是 v2，目前不是功能对等的替代版；开发与回退见[贡献指南](docs/CONTRIBUTING.md#v3-开发外壳)。
-
-参与贡献前请阅读 [贡献指南](docs/CONTRIBUTING.md) 和 [AI 协作约定](AGENTS.md)。按功能定位代码见[代码地图](docs/CODE_MAP.md)，架构、构建与发布入口见[文档索引](docs/README.md)。
-
-既有普通文件任务与本机独立 Node 入口见[运行服务](docs/AGENT_SERVICE.md)，现列为精简复核对象，不作为新产品的必选流程。
+启动器会检查依赖、准备缺失的内置运行时并按需构建。已有工作区可双击 `启动-砚.cmd`；开发模式使用 `开发-砚.cmd` 或 `npm run launch:dev`。用 `YAN_UI=v3` 启动可试用 v3 界面。AI 协作约定见 [AGENTS.md](AGENTS.md)。
 
 </details>
 
 ## 许可证
 
-[MIT](LICENSE) · © 2026 Yu-DaTouX。第三方组件的许可见 [第三方许可](docs/THIRD-PARTY.md)。
+[MIT](LICENSE) · © 2026 Yu-DaTouX。第三方组件的许可见 [第三方许可](THIRD-PARTY.md)。

@@ -6,13 +6,6 @@ import { Button, Switch } from '../ui'
 const REPO = 'https://github.com/cursortouch/windows-mcp'
 const UV_DOCS = 'https://docs.astral.sh/uv/getting-started/installation/'
 
-/**
- * 电脑操作（Windows-MCP）：一行说明 + 开关。
- *
- * 需要 uv：没有时给「安装 uv」（winget）或官方说明链接；有了才能打开开关。
- * 打开时主进程先让 uv 下载 Python 与 windows-mcp（首次一两分钟），再登记为 MCP 服务，
- * 只开放看屏幕与操作界面的工具。
- */
 export function ComputerUseSection(): React.JSX.Element | null {
   const t = useT()
   const [status, setStatus] = useState<ComputerUseStatusView | null>(null)

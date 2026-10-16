@@ -1,24 +1,3 @@
-/**
- * v3 命令面板（WP-25 / WP-25c）。
- *
- * 做四件事：
- *   1. 把「v3 当前确能执行的动作」和「当前会话」摆成可搜索的列表，绑键盘，
- *      调**正式 store 动作**；
- *   2. 前缀模式（02 §13.1）：`>` 只看操作、`@` 只看会话、`#` 搜当前会话的消息、
- *      `?` 显示前缀帮助；不加前缀时维持旧行为（空查询只列操作，输入后操作 + 会话）；
- *   3. 工作区 / 设置各分区复用 v3 已有入口（`state/ui-v3`、`store.openSettings`、
- *      `features/workbench/activation`），不新建第二套导航；
- *   4. 自己订阅 store（会话 / 标题 / 主题 / 是否在跑），路由仍通过 `onNavigate`
- *      交回父 Shell；工作区与侧栏属于外壳界面状态，直接调 `state/ui-v3` 的正式动作。
- *
- * 边界：
- *   · 只列 v3 已迁移、确实能跑的命令；没迁移的 v2 宿主动作 / 斜杠命令 / 计划任务
- *     命令不造按钮（尤其不展示需要额外授权的旧命令）。
- *   · 停止只对**当前视图就是运行实例**的那条会话出现：peek 别的会话时不会误停后台会话。
- *   · 打开终端 / 浏览器页签只经由 `activateWorkspaceOwner` 的正式激活流程；
- *     未激活就如实失败，不静默挂到别的会话。
- *   · 不回滚、不猜「成功」：动作抛错或 store 报了错就停面板里显示，只有成功才关闭。
- */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
 import { Search, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
@@ -48,12 +27,9 @@ import {
 import { commandText } from './command-text'
 import './command-palette.css'
 
-/** 会话结果上限：搜索时最多列这么多条，避免几百条会话压满列表。 */
 const SESSION_LIMIT = 8
-/** 消息结果上限：`#` 模式一次最多列这么多条。 */
 const MESSAGE_LIMIT = 12
 
-/** 工作区动作 → 页签。 */
 const WORKSPACE_ACTION_TABS: Record<string, WorkbenchTabId> = {
   [COMMAND_ACTION_IDS.workspaceChanges]: 'changes',
   [COMMAND_ACTION_IDS.workspaceTerminal]: 'terminal',
@@ -65,24 +41,20 @@ const WORKSPACE_ACTION_TABS: Record<string, WorkbenchTabId> = {
 export interface CommandPaletteProps {
   isOpen: boolean
   onOpenChange: (open: boolean) => void
-  /** 父路由；面板只请求跳转，不自己改路由（工作区 / 侧栏是界面状态，另走 ui-v3）。 */
   onNavigate?: (route: 'chat' | 'runs' | 'settings') => void
 }
 
 interface RunResult {
   ok: boolean
   error?: string
-  /** 成功但不关闭（帮助行把前缀写回查询，方便继续输入）。 */
   keepOpen?: boolean
 }
 
-/** 路径最后一段（项目 / 未命名会话的兜底显示）。 */
 function shortPath(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean)
   return parts[parts.length - 1] || path
 }
 
-/** 行右侧的键位徽标与 ShellV3 的实际绑定同源（`app/shortcuts.ts`）。 */
 function shortcutKeys(id: ShortcutId): readonly string[] | undefined {
   return SHORTCUTS.find((def) => def.id === id)?.keys
 }
@@ -91,7 +63,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
   const { lang } = useI18n()
   const text = commandText(lang)
 
-  /* 面板打开期间的自有状态；每次打开重置 */
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -109,7 +80,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
   const manualTitles = useStore((s) => s.manualTitles)
   const messages = useStore((s) => s.messages)
 
-  /* 当前视图身份按 peek 成对取值（不回落 session）；只有视图就是运行实例时才认为在跑。 */
   const view = useMemo(
     () => sessionViewIdentity({ peekedSessionId, peekedPath, session }),
     [peekedSessionId, peekedPath, session]
@@ -126,7 +96,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
     setError(null)
     setBusy(false)
     busyRef.current = false
-    /* RAC 会自动聚焦第一个可聚焦元素；这里显式钉住搜索框，别让焦点落到别的控件。 */
     const id = window.setTimeout(() => inputRef.current?.focus(), 0)
     return () => window.clearTimeout(id)
   }, [isOpen])
@@ -137,7 +106,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
         id: COMMAND_ACTION_IDS.newSession,
         group: 'action',
         label: text.newSession,
-        /* 实际绑定见 app/shortcuts.ts：Ctrl+N。 */
         keywords: 'new chat session 新建 新对话',
         shortcut: shortcutKeys('newSession')
       },
@@ -247,7 +215,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
         keywords: 'settings usage tokens 设置 用量'
       }
     ]
-    /* 停止只对当前视图（就是运行实例）出现；peek 别的会话时不误停后台运行。 */
     if (running) {
       items.push({
         id: COMMAND_ACTION_IDS.stopSession,
@@ -279,8 +246,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
   const parsed = useMemo(() => parsePaletteQuery(query), [query])
   const trimmedTerm = parsed.term.trim()
 
-  /* `#` 模式只搜当前视图的消息；正文只作为检索词，行上只显示短摘。
-     面板关着或不在消息模式时不建这份列表，避免长会话每次流式更新都白算一遍。 */
   const messageItems = useMemo<CommandItem[]>(() => {
     if (!isOpen || parsed.mode !== 'message') return []
     return messages
@@ -313,13 +278,11 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
       case 'session':
         return limitCommands(rankCommands(sessionItems, parsed.term), SESSION_LIMIT)
       case 'message':
-        /* 空 `#` 不铺 2000 条历史；提示用户输入关键词。 */
         if (!trimmedTerm) return []
         return limitCommandGroup(rankCommands(messageItems, parsed.term), 'message', MESSAGE_LIMIT)
       case 'help':
         return rankCommands(helpItems, parsed.term)
       default: {
-        /* 空查询只列命令；输入后才搜会话（全部会话铺出来会淹掉命令）。 */
         const pool = trimmedTerm ? [...actionItems, ...sessionItems] : actionItems
         return limitCommands(rankCommands(pool, parsed.term), SESSION_LIMIT)
       }
@@ -330,7 +293,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
   const options = useMemo(() => navigableCommands(visible), [visible])
   const optionIndex = useMemo(() => new Map(options.map((item, index) => [item.id, index])), [options])
 
-  /* 查询变化后回到第一条，避免停在已消失的位置；上一次失败提示也不再挂在新结果上 */
   useEffect(() => {
     setActiveIndex(0)
     setError(null)
@@ -343,7 +305,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
 
   const safeIndex = options.length ? Math.min(Math.max(activeIndex, 0), options.length - 1) : -1
 
-  /* 键盘移动后把当前项滚进视野 */
   useEffect(() => {
     if (safeIndex < 0) return
     listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
@@ -357,7 +318,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
     })
   }
 
-  /** 打开一个工作区页签：先回对话路由，需要激活的页签走正式激活流程。 */
   const openWorkspaceTab = async (tab: WorkbenchTabId): Promise<RunResult> => {
     onNavigate?.('chat')
     const ui = useUiV3.getState()
@@ -371,7 +331,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
     return { ok: true }
   }
 
-  /** 切换工作区开合；与 ShellV3 的快捷键同一套激活规则。 */
   const toggleWorkspace = async (): Promise<RunResult> => {
     onNavigate?.('chat')
     const ui = useUiV3.getState()
@@ -391,7 +350,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
   const runItem = async (item: CommandItem): Promise<RunResult> => {
     const store = useStore.getState()
 
-    /* 帮助行：把前缀写回查询，面板不关，方便继续输入。 */
     if (item.helpPrefix) {
       setQuery(item.helpPrefix)
       return { ok: true, keepOpen: true }
@@ -407,11 +365,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
         return result.ok ? { ok: true } : { ok: false, error: result.error ?? text.failed }
       }
       case COMMAND_ACTION_IDS.focusSearch: {
-        /*
-         * 面板关闭时 RAC 会把焦点归还给打开前的元素，若同步派发会被抢回去。
-         * 放到下一个任务再派发，侧栏自己的监听把焦点放进搜索框。
-         * 侧栏未展开时 ShellV3 会先展开（监听同一事件）。
-         */
         window.setTimeout(() => window.dispatchEvent(new CustomEvent('yan-v3-focus-search')), 0)
         return { ok: true }
       }
@@ -432,10 +385,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
         onNavigate?.('settings')
         return { ok: true }
       case COMMAND_ACTION_IDS.openSideBySide: {
-        /*
-         * 「并排打开」：把最近活动的、还没在分屏里的另一条会话放到当前视图旁边。
-         * 身份按 peek 成对取值（与 view-state 同一口径），不拿运行实例的字段补缺。
-         */
         onNavigate?.('chat')
         const state = useStore.getState()
         const current = displayedSessionOf({
@@ -466,7 +415,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
         await store.abort()
         return { ok: true }
       default: {
-        /* 消息：定位到当前会话里的那条消息（可能要先回对话路由再等一帧） */
         if (item.messageId) {
           const messageId = item.messageId
           onNavigate?.('chat')
@@ -475,7 +423,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
           return { ok: true }
         }
         if (!item.sessionPath) return { ok: false, error: text.failed }
-        /* 会话切换成功与否以 store 的实际结果为准：错误 notice / peekedPath 对齐。 */
         const before = new Set(store.notices.map((notice) => notice.id))
         onNavigate?.('chat')
         await store.switchSession(item.sessionPath)
@@ -507,7 +454,6 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
       if (!result.keepOpen) onOpenChange(false)
       return
     }
-    /* 失败不假装成功：面板留着并显示原因，用户可重试或换一条。 */
     setError(result.error ?? text.failed)
   }
 

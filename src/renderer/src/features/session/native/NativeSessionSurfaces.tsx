@@ -1,22 +1,3 @@
-/**
- * 原生会话面板的 v3 呈现：模型循环范围 / 项目信任 / 原始条目。
- *
- * ── 边界 ──
- * · 只做投影与交互，**不碰 pi**：请求经 `NativeSurfaceTransport`（宿主桥
- *   `window.yan.nativeSession`）发出，动作由主进程负责。
- * · 会话树（`/tree`）由分支页签消费，本文件只把 `mode === 'tree'` 放行（返回 null），
- *   不复制树、不抢路由。
- * · 复用 v3 原语 `<Checkbox>` / `<CheckboxGroup>` / `<Button>` / `<Badge>` /
- *   `<Spinner>` 与 `<Dialog>` / `<Modal>` / `<ModalOverlay>`，不导入任何 v2 样式。
- * · 不调用 `ui.answer` / `ApprovalBroker`，不自己弹确认：`set-trust` 的破坏性确认由
- *   主进程以 `purpose: 'approval'` 的桌面 host 守卫负责。
- *
- * ── 归属与迟到响应 ──
- * · 面板打开时把 owner 钉在 `panel.sessionId` 上；视图身份（peek / 运行实例）一旦
- *   不再是这条会话，立即关闭面板。动作与加载都用**打开时的 owner**，不临时取当前
- *   会话充数，也不调用 `ensureActivated`。
- * · 每次加载 / 保存带自增 run 号，组件卸载或 owner 变化后到达的响应一律丢弃。
- */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import { AlertCircle, ArrowLeft, RotateCw } from 'lucide-react'
 import { useI18n } from '../../../i18n'
@@ -43,8 +24,6 @@ import {
   type TrustView
 } from './native-surfaces-model'
 import './native-surfaces.css'
-
-/* ------------------------------------------------------------------ 状态块 */
 
 function surfaceStatus({
   text,
@@ -79,8 +58,6 @@ function surfaceStatus({
   )
 }
 
-/* ------------------------------------------------------------------ 模型循环范围 */
-
 export interface ScopeModelsViewProps {
   text: NativeSurfaceText
   models: ScopedModelOption[]
@@ -97,7 +74,6 @@ export interface ScopeModelsViewProps {
   onShowEntries?: () => void
 }
 
-/** 纯呈现：模型列表 + 底部操作条；状态与请求在容器里。 */
 export function ScopeModelsView({
   text,
   models,
@@ -218,7 +194,6 @@ export function ScopeModelsSurface({
     }
   }, [])
 
-  /* owner / 重试令牌变化才重新加载；迟到响应按 run 号作废。 */
   useEffect(() => {
     const run = ++runRef.current
     setState({ phase: 'loading' })
@@ -306,8 +281,6 @@ export function ScopeModelsSurface({
   )
 }
 
-/* ------------------------------------------------------------------ 项目信任 */
-
 export interface TrustPanelProps {
   text: NativeSurfaceText
   view: TrustView
@@ -318,7 +291,6 @@ export interface TrustPanelProps {
   onShowEntries?: () => void
 }
 
-/** 纯呈现：目录、状态、命中条目与风险说明；`onToggle` 只是显式用户动作的入口。 */
 export function TrustPanel({ text, view, busy, error, notice, onToggle, onShowEntries }: TrustPanelProps): JSX.Element {
   const t = text.trust
   return (
@@ -371,7 +343,6 @@ export function TrustPanel({ text, view, busy, error, notice, onToggle, onShowEn
             {notice}
           </span>
         ) : null}
-        {/* 唯一操作按当前状态命名；确认与「撤销需重建实例」由主进程审批守卫负责，这里不自动触发。 */}
         <Button
           size="sm"
           variant={view.trusted ? 'danger' : 'primary'}
@@ -481,8 +452,6 @@ export function TrustSurface({ transport, sessionId, text, onSaved, onShowEntrie
   )
 }
 
-/* ------------------------------------------------------------------ 原始条目 */
-
 export interface EntriesPanelProps {
   text: NativeSurfaceText
   view: EntriesView
@@ -492,7 +461,6 @@ export interface EntriesPanelProps {
   onBack?: () => void
 }
 
-/** 纯呈现：只读条目行 + 体积上限说明；没有任何写动作按钮。 */
 export function EntriesPanel({ text, view, busy, error, onRefresh, onBack }: EntriesPanelProps): JSX.Element {
   const t = text.entries
   return (
@@ -626,14 +594,10 @@ export function EntriesSurface({ transport, sessionId, text, onBack }: EntriesSu
   return <EntriesPanel text={text} view={state.view} busy={busy} error={error} onRefresh={refresh} onBack={onBack} />
 }
 
-/* ------------------------------------------------------------------ 宿主 */
-
 export interface NativeSessionSurfacesProps {
-  /** 原生会话桥；缺省用 `window.yan.nativeSession`。 */
   transport?: NativeSurfaceTransport
 }
 
-/** v3 对话框基座：遮罩 / 焦点 / Esc 交给 v3 原语。 */
 function nativeSurfaceDialog({
   title,
   closeLabel,
@@ -664,13 +628,6 @@ function nativeSurfaceDialog({
   )
 }
 
-/**
- * Shell 唯一挂载点：把 `nativeSessionPanel` 的请求映射成 v3 对话框。
- *
- * · `tree` 返回 null（由 I1 的分支页签消费，不在这里复制树）；
- * · `scoped-models` / `trust` / `entries` 渲染对应 surface；
- * · 其它模式渲染明确的错误框，不静默吞掉请求。
- */
 export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps): JSX.Element | null {
   const { lang } = useI18n()
   const text = useMemo(() => nativeSurfaceText(lang), [lang])
@@ -688,14 +645,9 @@ export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps)
 
   const panelKey = panel ? `${panel.mode}:${panel.sessionId}` : ''
   useEffect(() => {
-    /* 换一个面板请求就回到主视图；entries 只是同一 owner 下的只读子视图。 */
     setShowEntries(false)
   }, [panelKey])
 
-  /*
-   * 归属守卫：视图身份（peek / 运行实例）不再是打开面板的会话时立即关闭，
-   * 旧 owner 的数据不会落到新前台。取身份与正式规则同源，不凭 session.cwd 猜。
-   */
   useEffect(() => {
     if (!panel) return
     const identity = viewIdentityOf({
@@ -782,12 +734,6 @@ export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps)
   })
 }
 
-/* ------------------------------------------------------------------ 嵌入用导出 */
-
-/**
- * 只读条目面板（不含对话框），供工作区「分支」页签等宿主按同一 owner 嵌入。
- * 与 `NativeSessionSurfaces` 共用同一份投影与请求口径。
- */
 export function NativeSessionEntriesPanel({
   transport,
   sessionId

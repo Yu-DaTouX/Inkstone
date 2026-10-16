@@ -1,25 +1,3 @@
-/**
- * 接入事务的宿主实现（实施-04 S6a）：**受管 staging + 校验 + receipt + 恢复复核**。
- *
- * ── 这一层负责什么 ──
- *   发现链（S5）给出「计划」，这里负责把「计划」变成「本机真的有一份东西，
- *   并且我们知道它是什么」：落盘到**受管目录**、按上限校验、算 hash、
- *   写 receipt、失败只清本次。真正的下载器 / 安装器（联网、`pi install`）
- *   是 S6b —— 本片**不联网、不装包、不碰用户已有安装**。
- *
- * ── 三条不能省的检查 ──
- *   1. **写之前先校验**：`../` / 绝对路径 / symlink / 解压膨胀一律拒收（§10 第 2 条）。
- *      落盘之后再查就已经晚了 —— 文件已经出去了。
- *   2. **落盘之后算 hash 并写进 manifest**：`resumeCheck` 靠它发现「文件被人换过」。
- *   3. **日志不是证据**：`activated` 只说明我们记过这一步；恢复时必须重新核对
- *      receipt + 文件 hash，否则「事务记录写过 activated」会掩盖资源已损坏（§10.2）。
- *
- * ── 为什么 operationId 是**确定性**的 ──
- *   §10：`acquire` 重试要用同一个 operationId，不能装两次。把它算成
- *   `planId + 计划版本` 的指纹，就天然满足「同一计划 → 同一事务」，
- *   不依赖谁来记住上次的 ID；而源内容真的变了（digest 不同）时，
- *   它会被当成「同一事务的内容变了」而**报错**，而不是悄悄又开一个事务。
- */
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join, dirname, isAbsolute, resolve, sep } from 'node:path'
@@ -62,7 +40,6 @@ export type StagedManifest = {
   createdAt: string
   files: StagedManifestFile[]
   totalBytes: number
-  /** 仅 Skill-files staging 会写入；是内容审查的可回读证据。 */
   securityReview?: SkillSecurityReview
 }
 
@@ -92,7 +69,6 @@ export function acquisitionLogPath(root: string): string {
   return join(acquisitionRoot(root), ACQUISITION_LOG_FILENAME)
 }
 
-/** operationId 只允许出现在路径里的安全字符（它来自哈希，这里只是双保险）。 */
 function safeSegment(operationId: string): string {
   const text = String(operationId ?? '').trim()
   if (!/^[A-Za-z0-9._-]{1,64}$/.test(text)) {
@@ -101,13 +77,6 @@ function safeSegment(operationId: string): string {
   return text
 }
 
-/**
- * 确定性事务 ID（§10）：同一计划 + 同一计划版本 → 同一 ID。
- *
- * 为什么**不把 digest 算进去**：算了它，源一变（版本 / commit / integrity 变了）就变成
- * 一个新事务 —— 等于「悄悄又装一遍」，而 §8 要求源内容变化时**旧计划失效**、
- * 由用户或策略重新确认。不含 digest，这种漂移才会撞到 «已存在但指纹不同» 而报错。
- */
 export function operationIdOf(input: { planId: string; planRevision?: number }): string {
   const stable = [input.planId, String(input.planRevision ?? 1)].join('\u0000')
   return createHash('sha256').update(stable).digest('hex').slice(0, 24)
@@ -128,7 +97,6 @@ function toBuffer(content: string | Uint8Array): Buffer {
 }
 
 export type AcquisitionServiceOptions = {
-  /** 受管根目录（生产是 `YAN_DIR`；测试用临时目录，两者互不影响）。 */
   root: string
   limits?: ArtifactLimits
 }
@@ -157,12 +125,6 @@ export class AcquisitionService {
     return log.transactions[operationId] ?? null
   }
 
-  /**
-   * 开始（或取回）一个接入事务。
-   *
-   * 幂等是**产品要求**而不是优化：同一个计划第二次进来必须拿回同一条事务，
-   * 否则重试会变成「又装一遍」（§10）。
-   */
   async begin(input: {
     planId: string
     planRevision?: number
@@ -179,7 +141,6 @@ export class AcquisitionService {
     const log = await this.readLog()
     const existing = log.transactions[operationId]
     if (existing) {
-      /* 同一 operationId 但内容指纹不同 = 有人在同一次尝试里换了源，拒绝复用。 */
       if (existing.digest !== input.digest) {
         throw new AcquisitionStagingError(
           'digest-mismatch',
@@ -201,12 +162,6 @@ export class AcquisitionService {
     return tx
   }
 
-  /**
-   * 把文件集落到本次受管 staging，并写 manifest。
-   *
-   * 顺序是刻意的：**先校验元数据 → 再落盘 → 最后写 manifest**。
-   * 任何一步失败都会把**本次** staging 整个删掉再抛 —— 不给下一次留下半份。
-   */
   async stage(input: {
     operationId: string
     files: readonly StagedFileInput[]
@@ -252,7 +207,6 @@ export class AcquisitionService {
       for (const file of input.files) {
         const relativePath = normalizeArtifactPath(file.path)
         if (relativePath === null) {
-          /* validateArtifactEntries 已经拦过一轮；这里是「两道锁」中的第二道。 */
           throw new AcquisitionStagingError('bad-path', `不接受的归档路径：${JSON.stringify(file.path)}`)
         }
         const target = resolve(payloadDir, relativePath)
@@ -279,17 +233,12 @@ export class AcquisitionService {
       )
       return manifest
     } catch (error) {
-      /* 失败只清**本次** staging（§10.2）；别的 operationId 目录一个字节都不动。 */
       await rm(dir, { recursive: true, force: true })
       await this.fail(input.operationId, error instanceof Error ? error.message : String(error), at)
       throw error
     }
   }
 
-  /**
-   * 远程分支专用：没有文件要落 staging，直接把事务从 `prepared` / `pending-boundary`
-   * 推进到 `acquiring`。§10：远程 MCP 走「验证端点 → 登记配置」，**不伪造下载步骤**。
-   */
   async markAcquiring(operationId: string, detail: string, at = new Date().toISOString()): Promise<AcquisitionTransaction> {
     const tx = await this.get(operationId)
     if (!tx) throw new AcquisitionStagingError('unknown-operation', `没有这个接入事务：${operationId}`)
@@ -297,7 +246,6 @@ export class AcquisitionService {
     return this.saveTransaction(advanceAcquisition(tx, 'acquiring', { at, detail }))
   }
 
-  /** 远程分支专用：登记完成、核验开始（核验是**真连一次**，见 `McpRegistrationService`）。 */
   async markVerifying(operationId: string, detail: string, at = new Date().toISOString()): Promise<AcquisitionTransaction> {
     const tx = await this.get(operationId)
     if (!tx) throw new AcquisitionStagingError('unknown-operation', `没有这个接入事务：${operationId}`)
@@ -305,7 +253,6 @@ export class AcquisitionService {
     return this.saveTransaction(advanceAcquisition(tx, 'verifying', { at, detail }))
   }
 
-  /** 重算 hash 复核 staging 与 manifest 是否一致（**不信任日志**）。 */
   async verifyStaged(operationId: string): Promise<{ ok: boolean; problems: string[] }> {
     const dir = this.stagingDirChecked(operationId)
     const problems: string[] = []
@@ -408,12 +355,6 @@ export class AcquisitionService {
     return { ok: problems.length === 0, problems }
   }
 
-  /**
-   * 验证通过 → 登记 receipt 并激活。未通过则**不激活**。
-   *
-   * `verify` 可注入：文件类走 staging 重算 hash，远程 MCP 走「再连一次枚举工具」。
-   * 默认值保持原行为，这样已有调用点不受影响。
-   */
   async activate(input: {
     operationId: string
     receipt: Omit<CapabilityReceipt, 'operationId' | 'activatedAt'> & { activatedAt?: string }
@@ -438,10 +379,6 @@ export class AcquisitionService {
     )
   }
 
-  /**
-   * 恢复复核：receipt + 资源实体都要对。**日志写没写过不算**（§10.2）。
-   * 文件类复核 staging 的 hash；远程类由调用方注入「再连一次」的复核。
-   */
   async resumeCheck(input: {
     operationId: string
     expected: { planId: string; digest: string; planRevision?: number }
@@ -466,10 +403,6 @@ export class AcquisitionService {
     return { ok: reasons.length === 0, reasons }
   }
 
-  /**
-   * 等边界（§10.1）：确实需要安装但**本轮不能装**（例如 pi 包要等当前回合安全结束）时，
-   * 停在 `pending-boundary` 而不是假装激活 —— 调度器随后从这条事务继续。
-   */
   async markBoundary(
     operationId: string,
     detail: string,
@@ -486,11 +419,6 @@ export class AcquisitionService {
     }))
   }
 
-  /**
-   * Bind a staged npm pi package to the exact project session that requested it.
-   * This is persisted before returning to pi so a later idle scheduler can recover
-   * the target without trusting transient model arguments.
-   */
   async bindPiPackageTarget(
     operationId: string,
     target: PiPackageActivationTarget
@@ -524,10 +452,6 @@ export class AcquisitionService {
     return this.saveTransaction({ ...tx, piPackageTarget: { ...target }, updatedAt: new Date().toISOString() })
   }
 
-  /**
-   * 激活复核通过 → `resumed`（§10.2：`resumed` 只能由**磁盘 / 连接证据**置位）。
-   * 调用方负责先跑 `resumeCheck`；这里只负责把这一步如实记进事务日志。
-   */
   async markResumed(operationId: string, detail: string, at = new Date().toISOString()): Promise<AcquisitionTransaction> {
     const tx = await this.get(operationId)
     if (!tx) throw new AcquisitionStagingError('unknown-operation', `没有这个接入事务：${operationId}`)
@@ -535,10 +459,6 @@ export class AcquisitionService {
     return this.saveTransaction(advanceAcquisition(tx, 'resumed', { at, detail }))
   }
 
-  /**
-   * 把可重试的失败退回 prepared，并清理**只属于该 operationId** 的 staging。
-   * 下载缓存不在 staging 根内，故不会被顺手删除；下一次安装仍须重新校验它。
-   */
   async retry(operationId: string, at = new Date().toISOString()): Promise<AcquisitionTransaction> {
     const tx = await this.get(operationId)
     if (!tx) throw new AcquisitionStagingError('unknown-operation', `没有这个接入事务：${operationId}`)
@@ -552,7 +472,6 @@ export class AcquisitionService {
     return this.saveTransaction(retryAcquisition(tx, at))
   }
 
-  /** 标记失败：分类由 `classifyAcquisitionFailure` 决定，认不出来就如实说 unknown。 */
   async fail(
     operationId: string,
     detail: string,
@@ -573,13 +492,10 @@ export class AcquisitionService {
     )
   }
 
-  /** 只删本次受管 staging（§10.2）；路径必须落在 staging 根下。 */
   async rollback(operationId: string): Promise<void> {
     const dir = this.stagingDirChecked(operationId)
     await rm(dir, { recursive: true, force: true })
   }
-
-  /* ------------------------------------------------------------- 内部 */
 
   private stagingDirChecked(operationId: string): string {
     const dir = stagingDirOf(this.root, operationId)

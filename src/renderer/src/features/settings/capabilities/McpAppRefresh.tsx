@@ -1,12 +1,3 @@
-/**
- * MCP App 工具快照的缓存状态与**显式刷新**（A6-frame-ui）。
- *
- * 规则（并入 DESIGN_SYSTEM v3「v3 MCP App 视图」）：
- *   · 这里是唯一的手动刷新入口：显示宿主当前缓存的工具数、是否需要刷新；
- *   · 刷新只重读宿主工具快照，**不自动重启会话、不重连服务、不执行任何工具**；
- *   · 工具 schema 变化要新会话或重载运行实例才生效，界面必须如实说明；
- *   · 不与 MA3 归属组件合并：归属开关只负责托管权，刷新只负责快照。
- */
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { Button } from '../../../ui'

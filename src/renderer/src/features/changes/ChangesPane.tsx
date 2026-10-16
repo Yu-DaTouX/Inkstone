@@ -1,18 +1,3 @@
-/**
- * ChangesPane：右侧工作区的「改动」页（R4）。**只读**。
- *
- * 它做的事：
- * · 按 `owner.cwd` 读正式 `window.yan.git`（仓库状态 + 未跟踪文件）；
- * · 经 `yan:git:changes` 读逐文件条目、经 `yan:git:diff` 读单文件真实补丁；
- * · 请求发出时**钉住 owner**，owner 变了就丢弃旧响应（序号闸门 + effect 清理）；
- * · 非 Git 目录、Git 缺失 / 失败都给一句明确提示，**不自动安装**；
- * · 选中文件后用 `DiffView` 显示补丁（默认走正式桥，也可注入替身）。
- *
- * 它不做的事（合同边界）：
- * · 不暂存 / 不取消暂存 / 不提交 / 不推送 / 不删除 —— 从不调用 `git.action`；
- * · 读取失败**不静默装空列表**：逐文件失败在界面上说明；
- * · 宿主没提供通道时明说「未提供」，不伪造数据。
- */
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
 import type { GitStatusEntry } from '../../../../shared/git'
@@ -25,11 +10,8 @@ import './changes-pane.css'
 
 export interface ChangesPaneProps {
   owner: ChangesOwner
-  /** 只读 Git 数据源；缺省包住正式 `window.yan.git`。 */
   gitSource?: ChangesGitSource
-  /** 按路径读单文件补丁；缺省走正式 `yan:git:diff`。 */
   loadPatch?: PatchLoader
-  /** `useI18n()` 的语言；缺省中文。 */
   lang?: string
   className?: string
 }
@@ -52,7 +34,6 @@ function defaultGitSource(): ChangesGitSource {
       return git.untracked(cwd)
     }
   }
-  /* 宿主没有逐文件通道时**不提供** `entries`：界面明说「未提供」，不当空列表。 */
   if (bridge()?.changes) {
     source.entries = async (cwd: string): Promise<GitStatusEntry[]> => {
       const git = bridge()
@@ -97,7 +78,6 @@ function classifyProblem(error: string, text: ReturnType<typeof changesText>): s
 }
 
 export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: ChangesPaneProps): ReactElement {
-  /* 面板按注册表挂载、不传 lang，缺省跟随界面当前语言（不再固定中文） */
   const uiLang = useI18n().lang
   const text = useMemo(() => changesText(lang ?? uiLang), [lang, uiLang])
   const source = useMemo(() => gitSource ?? defaultGitSource(), [gitSource])
@@ -120,7 +100,6 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const cwd = owner.cwd
   const generation = owner.generation ?? 0
 
-  /* 读仓库状态 / 未跟踪文件。序号闸门保证 owner 变化后旧响应被丢弃。 */
   useEffect(() => {
     const seq = ++seqRef.current
     let alive = true
@@ -133,18 +112,12 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     setPatch('')
     setPatchTruncated(false)
     setPatchError('')
-    /* 逐文件读取失败**不静默变空列表**：单独记错，在界面上说明。 */
     const entriesPromise: Promise<{ ok: true; entries: GitStatusEntry[] } | { ok: false; error: string }> = source.entries
       ? source
           .entries(cwd)
           .then((entries) => ({ ok: true as const, entries }))
           .catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) }))
       : Promise.resolve({ ok: true as const, entries: [] as GitStatusEntry[] })
-    /*
-     * 逐文件通道已经含未跟踪文件。有它时不再单独调 `untracked()` ——
-     * 那条通道返回的是**仓库根相对**路径，授权范围收窄到子目录时会把
-     * 范围外的未跟踪文件也列出来。
-     */
     const untrackedPromise: Promise<string[]> = source.entries
       ? Promise.resolve([] as string[])
       : source.untracked(cwd).catch(() => [] as string[])
@@ -168,7 +141,6 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     }
   }, [ownerKey, cwd, generation, tick, source])
 
-  /* 选中文件后读补丁；同样用序号闸门丢弃过期响应。 */
   useEffect(() => {
     if (!selected || !loader) {
       setPatch('')
@@ -289,7 +261,6 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
         </div>
       ) : null}
       {loading && !repo ? <p className="changes-pane__hint">{text.loading}</p> : null}
-      {/* 「不在 Git 仓库」是普通提示（次要文字色）；Git 缺失、查询失败才是错误色 */}
       {!loading && problem ? <p className={error ? 'changes-pane__hint changes-pane__hint--error' : 'changes-pane__hint'}>{problem}</p> : null}
       {repo ? (
         <>

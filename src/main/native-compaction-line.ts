@@ -1,18 +1,3 @@
-/**
- * 把「自动压缩上限」交给 pi 原生执行，让长任务运行中途也受它约束。
- *
- * context-trim.js 只在一轮结束（agent_settled）后才检查上限；一次连续跑几个小时的任务
- * 不会结束，上下文可以一直涨到 pi 原生线（窗口 − reserveTokens）才压缩。扩展里的
- * `ctx.compact()` 会先中止正在运行的 agent，不能在运行中使用；pi 原生的压缩检查
- * 则在每条回复后与下一次请求前都会执行，并支持按模型覆盖 `reserveTokens`。
- * 所以这里把「窗口 − 上限」写成该模型的 `compaction.modelOverrides[provider/id].reserveTokens`。
- *
- * 边界：
- * · 这是砚唯一写 pi 用户级 settings.json 的地方，只动 `compaction.modelOverrides` 里自己写过的条目；
- *   用户手写的覆盖不碰。写过哪些记在砚数据目录的 compaction-lines.json。
- * · pi 进程只在启动时读设置，已运行的会话要等下次启动才用新值；扩展的一轮结束检查仍在兜底。
- * · 上限不低于原生线的模型不需要覆盖，旧条目会被清掉。
- */
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { autoCompactAt } from '../shared/context-limits'
@@ -30,10 +15,6 @@ type Json = Record<string, unknown>
 
 const isObj = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v)
 
-/**
- * 纯函数：在已有设置上套用砚的覆盖，返回新设置与新的「自己写过」记录；没有变化返回 undefined。
- * `owned` 记的是砚写过的 reserveTokens，值与现存不一致就说明用户改过，不再认领。
- */
 export function applyLines(
   settings: Json,
   owned: Record<string, number>,
@@ -69,7 +50,6 @@ export function applyLines(
       changed = true
     }
   }
-  /* 没出现在这次模型列表里的旧记录保持原样，免得模型暂时不可用就丢掉认领 */
   for (const [key, value] of Object.entries(owned)) {
     if (!(key in nextOwned) && !models.some(m => `${m.provider}/${m.id}` === key)) nextOwned[key] = value
   }
@@ -106,7 +86,6 @@ async function writeAtomic(path: string, value: unknown): Promise<void> {
 
 let queue: Promise<unknown> = Promise.resolve()
 
-/** 串行执行：启动列模型与拖动滑块可能同时到达。设置文件读不懂（坏了）时不写，免得覆盖用户内容。 */
 export function syncNativeCompactionLines(models: LineModel[], cap: number): Promise<void> {
   const run = async (): Promise<void> => {
     const file = join(PI_AGENT_DIR, 'settings.json')

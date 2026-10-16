@@ -1,8 +1,3 @@
-/**
- * 用户技能：名称校验、SKILL.md 生成、旧办事模板转换与一次性导出。
- *
- * 导出与保存都在临时目录里跑（传 root），不碰真实数据目录。
- */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -10,7 +5,6 @@ import { tmpdir } from 'node:os'
 export async function runUserSkillTests(ok, shared, main, fs) {
   const { validateUserSkill, userSkillMarkdown, legacyPlaybookToSkill, legacyPlaybookSkillName } = shared
 
-  /* ---- 名称与内容校验 ---- */
   {
     ok(validateUserSkill({ name: 'weekly-report', description: '周报', body: '# 周报' }).ok, '合法的技能名与内容通过')
     ok(validateUserSkill({ name: 'Weekly', description: 'x', body: 'x' }).code === 'bad-name', '大写字母的名字被拒')
@@ -22,7 +16,6 @@ export async function runUserSkillTests(ok, shared, main, fs) {
     ok(multi.ok && multi.value.description === '第一行 第二行', 'description 折成一行')
   }
 
-  /* ---- SKILL.md 生成 ---- */
   {
     const md = userSkillMarkdown({ name: 'demo', description: '含冒号: 与 "引号"', body: '# 标题' })
     ok(md.startsWith('---\nname: demo\n'), 'frontmatter 以 name 开头')
@@ -30,7 +23,6 @@ export async function runUserSkillTests(ok, shared, main, fs) {
     ok(md.trimEnd().endsWith('# 标题'), '正文在 frontmatter 之后')
   }
 
-  /* ---- 旧办事模板转换 ---- */
   {
     ok(legacyPlaybookSkillName('pb_1A2b') === 'playbook-pb-1a2b', '旧 id 转成合法技能名')
     ok(legacyPlaybookSkillName('模板') === 'playbook-untitled', '无法转写的 id 落到 untitled')
@@ -54,7 +46,6 @@ export async function runUserSkillTests(ok, shared, main, fs) {
     ok(legacyPlaybookToSkill({ id: 'x' }) === undefined, '没有标题的旧条目跳过')
   }
 
-  /* ---- 导出与保存（临时目录） ---- */
   const root = await fs.mkdtemp(join(tmpdir(), 'yan-user-skill-'))
   try {
     ok((await main.userSkillPaths(root)).length === 0, '没有 skills 目录时返回空列表')

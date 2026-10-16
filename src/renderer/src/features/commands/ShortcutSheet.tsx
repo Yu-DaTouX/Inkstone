@@ -1,14 +1,3 @@
-/**
- * `Ctrl+/` 快捷键一览（WP-25b）。
- *
- * 只读对话框：全局组直接来自 `app/shortcuts.ts` 的注册表（与 ShellV3 的实际绑定同源，
- * 并按用户改绑后的生效键位显示），输入框 / 审批 / 终端三组复用 `lib/host-actions.ts` 的
- * `SHORTCUT_NOTE_GROUPS`，不另抄一份键位说明；确认卡真正实现的 `Alt+Y` / `Alt+N` 补在审批组首行。
- * 键位设置页本轮不做，所以这里没有可编辑入口。
- *
- * 模态外壳用 `ui/Dialog`：RAC 负责 Esc 关闭、点遮罩关闭与关闭后焦点归还；
- * `Dialog` 会把模态压入共享模态栈，全局快捷键在它打开时自然让位。
- */
 import type { ReactElement } from 'react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { SHORTCUT_NOTE_GROUPS, type ShortcutNote } from '../../lib/host-actions'
@@ -59,7 +48,6 @@ export function ShortcutSheet({ isOpen, onOpenChange }: ShortcutSheetProps): Rea
 
   if (!isOpen) return null
 
-  /* 打开时取一次生效键位：改绑后的键与 ShellV3 实际分发的一致，不拿默认值糊弄。 */
   const defs = applyShortcutOverrides(shortcutOverridesFromSettings(useStore.getState().settings))
 
   return (

@@ -11,7 +11,6 @@
   log(`  不能因为错过一次 push，界面就永远停在「正在启动 pi」。`)
   log('')
 
-  // 1. 启动后应该已经是 ready（或很快变成 ready）
   let st = store.getState().conn
   log('  初始 conn = ' + JSON.stringify(st))
   for (let i = 0; i < 40 && st !== 'ready'; i++) {
@@ -20,27 +19,21 @@
   }
   ok(st === 'ready', `最终 conn = ${st}（应为 ready）`)
 
-  // 2. 权威拉取必须能答（这是修复的核心）
   const status = await window.yan.agentStatus()
   log('  agentStatus() = ' + JSON.stringify(status))
   ok(typeof status?.state === 'string', 'agentStatus 返回状态')
   ok(status.state === 'ready', `agentStatus.state = ${status.state}`)
 
-  // 3. ready 时不该显示连接错误条
   ok(!q('.connbar'), '没有显示连接失败条')
 
-  // 4. 输入框可用（conn !== ready 时是 disabled 的）
   const ta = q('[data-testid="composer"]')
   ok(ta && !ta.disabled, '输入框可用（证明 ready 真的生效了，不只是变量对）')
 
-  // 5. 标题栏不再显示连接状态/工作目录（用户要求删掉），只在没连上时用 connbar 提示
   ok(!q('.tb-sync'), '标题栏没有「已连接 · 工作目录」那一段')
   ok(!q('.tb-cwd'), '标题栏没有工作目录按钮')
 
-  // 6. store 与主进程两边一致
   ok(status.state === store.getState().conn, 'store.conn 与主进程 agentStatus 一致')
 
-  // 7. 真发一句话，确认功能可用（不只状态对）
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
   setter.call(ta, '回复两个字：收到')
   ta.dispatchEvent(new Event('input', { bubbles: true }))

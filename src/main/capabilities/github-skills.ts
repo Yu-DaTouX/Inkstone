@@ -1,15 +1,3 @@
-/**
- * GitHub 技能源：按 Agent Skills 写法（`<目录>/SKILL.md` + 附带文件，Claude Code 的技能即此格式）
- * 从公开仓库找技能。
- *
- * 默认只查 `anthropics/skills`；`YAN_GITHUB_SKILL_REPOS`（逗号分隔 owner/repo）可追加，
- * 模型也可以用 `--repo` 指定用户点名的仓库。每次检索把仓库固定到一个提交：
- * 树里每个文件都有 Git 对象哈希，接入时逐文件按这个哈希核对，所以候选从发现到落盘
- * 指向同一份内容，不靠目录自报的 SHA-256。
- *
- * 未登录的 GitHub API 每小时 60 次：每个仓库一次检索只用两次（解析提交 + 读树），
- * 结果缓存 30 分钟；SKILL.md 正文走 raw 域名，按对象哈希缓存。
- */
 import { createHash } from 'node:crypto'
 import type { CapabilityCandidate, GithubSkillFile } from '../../shared/discovery'
 import { parseSkillFrontmatter } from './acquired-skills'
@@ -20,12 +8,10 @@ export const GITHUB_API_URL = process.env.YAN_GITHUB_API_URL?.trim() || 'https:/
 export const GITHUB_RAW_URL = process.env.YAN_GITHUB_RAW_URL?.trim() || 'https://raw.githubusercontent.com'
 export const DEFAULT_SKILL_REPOS = ['anthropics/skills']
 
-/** 单个技能能接入的上限：Anthropic 官方技能里最大的（含字体）约 5.5 MB、96 个文件。 */
 export const GITHUB_SKILL_LIMITS = {
   files: 200,
   fileBytes: 8 * 1024 * 1024,
   totalBytes: 16 * 1024 * 1024,
-  /** 一个仓库最多读多少个 SKILL.md 的描述（首次检索的请求量上限） */
   skillsPerRepo: 60
 } as const
 
@@ -40,7 +26,6 @@ export class GithubSkillError extends Error {
   }
 }
 
-/** `owner/repo`（也接受 github.com 链接）；不合法返回 null。 */
 export function parseSkillRepo(raw: string): { owner: string; repo: string } | null {
   const text = raw.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '')
   const parts = text.split('/')
@@ -58,7 +43,6 @@ export function configuredSkillRepos(): string[] {
   return [...new Set([...DEFAULT_SKILL_REPOS, ...extra])]
 }
 
-/** Git 对象哈希（`git hash-object`）：树里给的就是它，下载后按它核对。 */
 export function gitBlobSha(content: Uint8Array): string {
   return createHash('sha1').update(`blob ${content.byteLength}\0`).update(content).digest('hex')
 }
@@ -131,7 +115,6 @@ async function get(fetchImpl: FetchLike, url: string, accept: string, timeoutMs:
   return response
 }
 
-/** 读一个固定提交里的文件，并按 Git 对象哈希核对。 */
 async function rawFile(
   fetchImpl: FetchLike,
   source: { owner: string; repo: string; commit: string },
@@ -151,7 +134,6 @@ type RepoIndex = { owner: string; repo: string; commit: string; skills: RepoSkil
 const indexCache = new Map<string, { index: RepoIndex; at: number }>()
 const frontmatterCache = new Map<string, { name?: string; description?: string }>()
 
-/** 测试用：清空进程内缓存。 */
 export function clearGithubSkillCache(): void {
   indexCache.clear()
   frontmatterCache.clear()
@@ -159,7 +141,6 @@ export function clearGithubSkillCache(): void {
 
 type TreeEntry = { path?: unknown; type?: unknown; sha?: unknown; size?: unknown }
 
-/** 树 → 技能目录（含 SKILL.md 的目录；嵌套技能的文件不算进外层）。 */
 export function skillDirsOfTree(entries: readonly TreeEntry[]): Array<{ dir: string; skillSha: string; files: GithubSkillFile[] }> {
   const blobs = entries.filter(
     (entry): entry is { path: string; type: 'blob'; sha: string; size: number } =>
@@ -172,7 +153,6 @@ export function skillDirsOfTree(entries: readonly TreeEntry[]): Array<{ dir: str
   const dirs = blobs
     .filter((blob) => blob.path === 'SKILL.md' || blob.path.endsWith('/SKILL.md'))
     .map((blob) => ({ dir: blob.path === 'SKILL.md' ? '' : blob.path.slice(0, -'/SKILL.md'.length), skillSha: blob.sha }))
-    /* 模板与隐藏目录不是可用技能 */
     .filter(({ dir }) => !dir.split('/').some((part) => part.startsWith('.') || part === 'template' || part === 'templates'))
   return dirs.map(({ dir, skillSha }) => {
     const prefix = dir ? `${dir}/` : ''
@@ -269,7 +249,6 @@ export function githubSkillCandidate(index: RepoIndex, skill: RepoSkill, discove
   }
 }
 
-/** 检索词 → 命中的技能。指定了仓库时列出该仓库全部技能，交给排名排序。 */
 export async function searchGithubSkills(input: {
   query: string
   repos?: string[]
@@ -307,7 +286,6 @@ export async function searchGithubSkills(input: {
   return { candidates, pages, errors }
 }
 
-/** 按候选里固定的提交与对象哈希下载整个技能目录；路径相对技能目录。 */
 export async function fetchGithubSkillFiles(
   source: NonNullable<CapabilityCandidate['githubSkill']>,
   options: { fetchImpl?: FetchLike; timeoutMs?: number } = {}

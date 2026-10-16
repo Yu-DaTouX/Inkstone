@@ -1,4 +1,3 @@
-/** Desktop preferences identify a model by provider and id, never credentials. */
 export interface ModelChoice { provider: string; id: string; name?: string }
 
 export function modelKey(model: Pick<ModelChoice, 'provider' | 'id'>): string {
@@ -23,7 +22,6 @@ export function cleanModelFavorites(value: unknown): ModelChoice[] {
   }).slice(0, 256)
 }
 
-/** User-defined provider order for model menus; unknown providers keep alphabetical order after it. */
 export function cleanProviderOrder(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [...new Set(value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 200))].slice(0, 128)

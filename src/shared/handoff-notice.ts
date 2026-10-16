@@ -1,57 +1,15 @@
-/**
- * 交接 / 上下文整理的**非阻塞状态**判定（实施-14 F5 / H5）。
- *
- * ══════════════════════════════════════════════════════════
- * 它解决什么
- * ══════════════════════════════════════════════════════════
- * 用户报的是「两次完整压缩之后交接没有提示、偶尔报错」。F0 已经把每个阶段
- * 落成事件了，但事件流本身不是给用户看的 —— 这一层把「现在该不该说、
- * 说什么、能不能重试」判成一个纯函数，界面只负责渲染。
- *
- * ── 三条口径 ──
- *   ① **无感不等于静默**：正在整理时说「任务继续中」，不暴露会话迁移操作；
- *   ② **成功短暂、失败留住**：成功态只在时间窗内显示（过期自动收起），
- *      失败态一直留到用户处理（重试 / 停止）或下一次成功；
- *   ③ **不循环弹技术错误**：原因翻成人话，明细留在 `getHandoff().events`。
- *
- * ── 第四条（2026-09-23 用户现场补上）──
- *   ④ **常态不算失败**：资格不够（`below-threshold` / `no-goal` / `not-autonomous` / `busy`）、
- *      安全边界拒绝（`source-watermark-moved` 这类）、以及用户自己打断的中止都不弹提示。
- *      每次回合结束都会评估一次资格，**每个新会话第一眼就会有一条** `below-threshold` ——
- *      把它当失败，用户会在一条什么都没发生的会话里看到「整理未完成」
- *      （原文案甚至会说「这个片段还没有压够次数」）。想查「为什么没交接」去 events。
- *
- * ⚠️ 判据只用 `HandoffView` 里已有的字段（`pending` / `events`），
- * 不引入第二份状态 —— 否则事件与显示迟早会不一致。
- */
-
 import type { HandoffView } from './handoff'
 
 export type HandoffNoticeTone = 'working' | 'done' | 'failed'
 
 export interface HandoffNotice {
   tone: HandoffNoticeTone
-  /** 机器可读的失败原因（界面翻成人话；成功 / 进行中为 null） */
   reason: string | null
-  /** 失败时是否给「重试」入口（成功 / 进行中不给） */
   canRetry: boolean
 }
 
-/** 「这件事成了」的结论性事件。 */
 const SUCCESS_OUTCOMES = new Set(['package-ready', 'ok', 'resume-confirmed', 'state-inherited'])
 
-/**
- * 「这件事没成 / 被打断」的结论性事件。
- *
- * ⚠️ 不含 `result-mismatch`：那只是说明磁盘上有一份**别的**操作的结果文件，
- * 本次操作还在正常等待 —— 把它当失败会在每秒轮询里刷出一个假故障。
- *
- * ⚠️ 也**不含 `rejected`**（2026-09-23 改）：资格拒绝（`below-threshold` / `no-goal` /
- * `not-autonomous` / `busy` / `goal-not-active`）与安全边界拒绝（`source-watermark-moved` /
- * `goal-changed` / `mode-changed`）全是**常态**，不是故障 —— “这次不交接，因为还没到时候”。
- * 它们每个回合结束都会记一条（诊断日志本来就是干这个的），但界面照它弹提示，
- * 就会出现“每个对话都说整理未完成”（用户现场原文）。
- */
 const FAILED_OUTCOMES = new Set([
   'request-write-failed',
   'arm-threw',
@@ -66,29 +24,16 @@ const FAILED_OUTCOMES = new Set([
   'repeat-guard-failed'
 ])
 
-/**
- * `abandoned` 要看原因：只有「等超时」是故障。
- *
- * 用户发言 / 停止 / 点重试（`user-message` / `user-stop` / `manual-retry`）
- * 导致的中止是**用户自己的动作**，并且他会看到自己刚做的事 —— 再弹一行红只会添乱。
- */
 const FAILED_ABANDON_REASONS = new Set(['timeout'])
 
-/** 这条事件算不算「失败」（`abandoned` 要连原因一起看）。 */
 function isFailureEvent(event: { outcome: string; reason?: string | null }): boolean {
   if (!FAILED_OUTCOMES.has(event.outcome)) return false
   if (event.outcome === 'abandoned') return FAILED_ABANDON_REASONS.has(String(event.reason ?? ''))
   return true
 }
 
-/** 成功态保留多久（过期后这一行收起 —— 成功不需要一直占地方）。 */
 export const HANDOFF_DONE_WINDOW_MS = 60_000
 
-/**
- * 现在该显示什么（`null` = 什么都不显示）。
- *
- * 判定顺序：进行中 > 失败（且比最近一次成功更晚）> 近期成功 > 不显示。
- */
 export function handoffNoticeOf(
   view: HandoffView | null | undefined,
   now: number,
@@ -120,19 +65,8 @@ export function handoffNoticeOf(
   return null
 }
 
-/**
- * 失败原因 → 一句人话。
- *
- * 未登记的原因原样回传（宁可显示机器码，也不要把真实原因藏起来 ——
- * 用户报障时要能对上诊断日志）。
- */
 const REASON_TEXT: Record<string, string> = {
   'no-json-object': '模型未返回完整交接格式，仍保留原会话',
-  /*
-   * 与上面那条分开：它说的是“包太长，写到一半被输出长度限制切断”。
-   * 两者在界面上都不好听，但修法完全不同 —— 这一条加预算就行，
-   * 而且它不怪模型不听话。
-   */
   truncated: '交接包太长，输出被长度限制切断（已保留原会话）',
   'invalid-json': '交接内容格式错误，仍保留原会话',
   empty: '模型未返回交接内容',

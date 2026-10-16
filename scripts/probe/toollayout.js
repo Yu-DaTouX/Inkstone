@@ -1,10 +1,3 @@
-/*
- * 工具磁贴布局契约（实施-12 U-0，cost 0）。
- *
- * 验证：旧字段迁移出来的 toolLayout 覆盖全部已知分区；写入 floating 后经过一次
- * 「不相关 patch」触发主进程重新读盘，toolLayout 仍在 —— 证明它真的落了盘，
- * 不是只停在渲染端内存里。最后恢复原布局，不污染真实设置。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -27,7 +20,6 @@
     ok(ids.length >= 8 && new Set(ids).size === ids.length, `迁移后覆盖全部已知分区且无重复（${ids.length}）`)
     ok(layout?.tiles.every((t) => t.placement === 'docked'), '默认只有停靠，没有浮动/库位（实施-20 U5 后不再产生 library）')
 
-    /* 写一个浮动态，再触发一次不相关 patch 让主进程重新读盘 */
     const target = 'queue'
     const floated = {
       version: 2,
@@ -35,13 +27,12 @@
       tiles: layout.tiles.map((t) => (t.id === target ? { ...t, placement: 'floating', rect: { x: 0.7, y: 0.7, w: 0.25, h: 0.25 } } : t))
     }
     await yan.patchSettings({ toolLayout: floated })
-    await yan.patchSettings({}) // 空 patch：invalidate + 重读文件
+    await yan.patchSettings({})
     const after = await yan.getSettings()
     const q = after.toolLayout?.tiles.find((t) => t.id === target)
     ok(q?.placement === 'floating', `写入后经重新读盘仍在（${target}=${q?.placement}）`)
     ok(q?.rect && q.rect.x <= 0.75 && q.rect.y <= 0.75, '浮动 rect 落在可用区内')
 
-    /* 非法坐标归一化：越界 rect 会被读盘归一夹回 */
     await yan.patchSettings({
       toolLayout: {
         version: 2,
@@ -53,7 +44,6 @@
     const clamped = (await yan.getSettings()).toolLayout.tiles.find((t) => t.id === target)
     ok(clamped?.rect.x === 0.8 && clamped?.rect.y === 0, '越界坐标读盘时夹回可见区')
 
-    /* 恢复原布局 */
     await yan.patchSettings({ toolLayout: layout })
     await yan.patchSettings({})
     const restored = (await yan.getSettings()).toolLayout.tiles.find((t) => t.id === target)

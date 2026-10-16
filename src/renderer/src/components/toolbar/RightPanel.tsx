@@ -30,7 +30,6 @@ const LAUNCH_ITEMS: [string, MessageKey, IconName][] = [
   ['tasks', 'tile.tasks', 'checklist'], ['logs', 'tile.logs', 'activity'], ['accounts', 'tile.accounts', 'dashboard']
 ]
 
-/** Goal, task list and queued messages; the tile stays useful when the agent has none yet. */
 function TasksPane() {
   const t = useT()
   const hasTasks = useStore(s => hasTaskTileContent({
@@ -43,7 +42,6 @@ function TasksPane() {
   </div>
 }
 
-/** Extension status and the agent process log. */
 function LogsPane() {
   const t = useT()
   const empty = useStore(s => s.logs.length === 0 && !Object.keys(s.statuses).length && !Object.keys(s.widgets).length)
@@ -52,14 +50,6 @@ function LogsPane() {
   </div>
 }
 
-/**
- * Resource owners stay unchanged; this controller only opens their workspace panes.
- *
- * One instance per conversation column. `sessionKey` names the conversation the column belongs to
- * (defaults to the active one); terminals and file previews show only beside the conversation that
- * owns them (`resource-owners`). `live` is the focused column: only it answers launch requests and
- * shows tools that read the active conversation (tasks, logs). The native browser stays with its owner.
- */
 export function RightPanel({ sessionKey, live = true }: { sessionKey?: string; live?: boolean } = {}) {
   const t = useT()
   const workspace = useWorkspace()
@@ -67,21 +57,18 @@ export function RightPanel({ sessionKey, live = true }: { sessionKey?: string; l
   const key = sessionKey ?? conversationKeyOf(session)
   const liveRef = useRef(live)
   liveRef.current = live
-  /* 新对话还没有会话文件时的键是占位的：会话建好后，这一列里开的终端与文件跟到真键下 */
   const previousKey = useRef(key)
   if (previousKey.current !== key) {
     if (previousKey.current === PENDING_SESSION_KEY) reassignOwner(PENDING_SESSION_KEY, key)
     previousKey.current = key
   }
   const browser = useStore(s => s.browserState)
-  // 旧版本/宿主直接打开的浏览器只认领一次；切焦点不能改它的归属。
   if (live && browser.open) claimResource('browser', key)
   const ownsBrowser = browser.open && resourceOwner('browser') === key
   const filePreview = useStore(s => s.filePreview)
   const allFiles = useStore(s => s.filePreviews)
   const closeFileTab = useStore(s => s.closeFileTab)
   const allTerminals = useStore(s => s.terminals)
-  /* The focused column also adopts resources nobody owns yet (opened by the host or an older version). */
   const mine = (resource: string): boolean => { const owner = resourceOwner(resource); return owner === key || (live && !owner) }
   const terminals = allTerminals.filter(term => mine('terminal:' + term.id))
   const files = Object.fromEntries(Object.entries(allFiles).filter(([id]) => mine('file:' + id)))
@@ -94,7 +81,6 @@ export function RightPanel({ sessionKey, live = true }: { sessionKey?: string; l
   const [agents, setAgents] = useState<string[]>([])
   const [agentManager, setAgentManager] = useState(false)
   const [fileTreeOpen, setFileTreeOpen] = useState(false)
-  /* Simple tools mount once opened, and again when the saved layout still references them. */
   const [tasksOpen, setTasksOpen] = useState(false)
   const [logsOpen, setLogsOpen] = useState(false)
   const [accountsOpen, setAccountsOpen] = useState(false)
@@ -134,18 +120,15 @@ export function RightPanel({ sessionKey, live = true }: { sessionKey?: string; l
     window.addEventListener('inkstone-workspace-open-tool', show)
     return () => window.removeEventListener('inkstone-workspace-open-tool', show)
   }, [])
-  /* Other surfaces (status bar, cards) ask for a tool by kind; the launcher decides how it opens. */
   const launchRef = useRef<(kind: string) => Promise<void>>(async () => {})
   useEffect(() => {
     const run = (e: Event) => { const kind = (e as CustomEvent<string>).detail; if (liveRef.current && typeof kind === 'string') void launchRef.current(kind) }
     window.addEventListener('inkstone-workspace-launch', run)
     return () => window.removeEventListener('inkstone-workspace-launch', run)
   }, [])
-  // 别的列的文件不在这一列开窗格
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (live && filePreview?.key && mine('file:' + filePreview.key)) open('file:' + filePreview.key) }, [live, filePreview?.key, filePreview?.line, open])
   useEffect(() => { if (ownsBrowser) open('browser') }, [ownsBrowser, open])
-  /* "New" is judged against every terminal, not just this conversation's: switching back to a conversation must not reopen its terminals. */
   const previousTerminals = useRef(new Set(allTerminals.map(t => t.id)))
   useEffect(() => {
     if (live) for (const terminal of allTerminals) if (!previousTerminals.current.has(terminal.id) && mine('terminal:' + terminal.id)) open('terminal:' + terminal.id)
@@ -174,7 +157,6 @@ export function RightPanel({ sessionKey, live = true }: { sessionKey?: string; l
     if (kind === 'files') { setFileTreeOpen(true); open('files') }
     if (kind === 'agents') { setAgentManager(true); open('agents') }
     if (kind === 'browser') {
-      /* 浏览器已被别的会话占着时，用户在这里明确点开就把它移过来，否则菜单点了没反应 */
       const holder = resourceOwner('browser')
       if (state.browserState.open && holder && holder !== identity) { releaseResource('browser'); claimResource('browser', identity) }
       await state.openBrowser(); if (resourceOwner('browser') === identity && currentKey.current === identity && request.current === serial) open('browser') }
@@ -210,17 +192,6 @@ export function RightPanel({ sessionKey, live = true }: { sessionKey?: string; l
   </>
 }
 
-/**
- * 指针 Y 落在哪个分区的上半 / 下半（拖放插入位置）。
- *
- * ⚠️ 用 `.rp-slot` 上的 data-tool-id（**不带 rp- 前缀的原始 id**）来比，
- *    不能读 `.rp-sec` 的 data-sec（那是 `rp-queue` 这种 testid 形态）——
- *    顺序数组里存的是 `queue`，拿 testid 去 indexOf 会得到 -1，
- *    于是整个拖放静默失效（实测就错在这里）。
- *
- * 导出给 FloatingTiles 用：浮窗拖回工具页时也要显示同一条插入线，
- * 而它那里的指针事件根本不在这些 slot 上。
- */
 export function resolveToolDrop(
   clientY: number,
   excludeId?: string
@@ -236,20 +207,12 @@ export function resolveToolDrop(
   return null
 }
 
-/** 每个分区自己的内容与头部声明（与 SectionFrame 分开，避免把顺序逻辑重复七遍） */
 export const SECTION_REGISTRY: Record<
   ToolSectionId,
   {
-    /** 这个分区自己的内容 */
     Body: () => React.ReactElement | null
-    /** 头部右侧的附加信息（如任务的 2/4、日志行数） */
     Extra?: () => React.ReactElement | null
-    /** 返回 true 则整个分区不渲染（而不是渲染一个空的） */
     isEmpty?: (s: ToolPanelProbe) => boolean
-    /**
-     * 内容会滚动、高度值得调（文件树 / 日志）。
-     * 其余分区就几行，给它们加把手只是噪声。
-     */
     resizable?: boolean
   }
 > = {
@@ -276,7 +239,6 @@ export const SECTION_REGISTRY: Record<
   actions: { Body: () => <ActionsSection /> }
 }
 
-/** 空判据只投影所需字段，消息正文不进入分区注册表。 */
 type ToolPanelProbe = Pick<ReturnType<typeof useStore.getState>, 'todos' | 'goal' | 'logs' | 'statuses' | 'widgets'> & {
   hasMessageOutputs: boolean
   hasSubagents?: boolean

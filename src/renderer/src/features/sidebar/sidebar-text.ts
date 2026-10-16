@@ -1,4 +1,3 @@
-/** 侧栏自己的界面文案（中英各一份）；其余文案沿用 `rail.*` 键与 v3Text。 */
 export interface SidebarText {
   projectMenu: string
   archivedEntryCount: string

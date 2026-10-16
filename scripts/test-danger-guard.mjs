@@ -1,7 +1,3 @@
-/**
- * 高危操作确认的判定（resources/pi-extensions/danger-guard.js）。
- * 只测纯判定：命中要问、日常命令一个都不能误伤（误伤会让每天都在点确认框）。
- */
 export function runDangerGuardTests(ok, mod) {
   const { detectDanger, isBroadTarget } = mod
   const bash = (command) => detectDanger('bash', { command }, 'C:/proj')
@@ -87,7 +83,6 @@ export function runDangerGuardTests(ok, mod) {
   ok(detectDanger('read', { path: '/etc/hosts' }, '/x').length === 0, '读取不问')
   ok(isBroadTarget('/') && isBroadTarget('..') && !isBroadTarget('node_modules') && !isBroadTarget('/var/www/site/cache'), '大范围目标的口径')
 
-  /* ---- 写入项目之外（可选，设置里开关；默认关，只在「危险批准」档生效） ---- */
   const { outsideWrites } = mod
   const on = { outsideWrites: true, allowRoots: [] }
   const outside = (tool, input, cwd = 'C:/proj', prefs = on) => outsideWrites(tool, input, cwd, prefs)
@@ -115,7 +110,6 @@ export function runDangerGuardTests(ok, mod) {
   ok(outside('bash', { command: 'echo hi > ~/notes.txt' }, 'C:/proj').length === 1, '写家目录要问')
   ok(outside('bash', { command: 'echo hi > /tmp/x.txt' }).length === 0, '写临时目录不问')
 
-  /* ---- 删除改走回收站的辅助判定 ---- */
   const { hasDelete, shellDeleteTargets, isTempPath, trashHint } = mod
   ok(hasDelete('ls && rm a.txt') && !hasDelete('grep rm a.txt'), '删除只认命令位')
   ok(shellDeleteTargets('rm -rf build dist', 'C:/proj').join('|') === 'c:/proj/build|c:/proj/dist', '删除目标按会话目录解析')

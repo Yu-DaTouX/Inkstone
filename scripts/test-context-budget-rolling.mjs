@@ -1,4 +1,3 @@
-/** Historical archive search remains available after host maintenance retirement. */
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +8,6 @@ export async function runContextArchiveFindTests(ok, { recall }) {
   process.env.YAN_DATA_DIR = dir
   try {
     const sessionId = 'rolling-session'
-    /* ---- 4. 归档检索 ---- */
     const stateDir = join(dir, 'context-state')
     mkdirSync(stateDir, { recursive: true })
     const now = Date.now()

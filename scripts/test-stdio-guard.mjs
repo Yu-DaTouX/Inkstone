@@ -1,12 +1,3 @@
-/**
- * 主进程 stdio 护栏（`src/main/stdio-guard.ts`）的单测。
- *
- * 为什么这块值得钉死：它就是这次 EPIPE 事故的修复点，而它的错误恰恰是
- * **测试里看不出来、生产里很难复现**的那种 —— 「监听器里 throw 会把
- * 不可捕获的流错误升级成 uncaughtException，在 Electron 里变成模态框」。
- * 用假流把三类输入（EPIPE / 非 EPIPE / 上报通路自己抛错）一次覆盖完。
- */
-
 function fakeStream() {
   const listeners = []
   return {
@@ -14,7 +5,6 @@ function fakeStream() {
       if (event === 'error') listeners.push(listener)
       return this
     },
-    /** 模拟一次写入失败 */
     emitError(error) {
       for (const l of listeners) l(error)
     },
@@ -37,7 +27,6 @@ export function runStdioGuardTests(ok, mod) {
 
   console.log('\n--- 主进程 stdio 护栏（EPIPE 事故的修复点） ---')
 
-  /* ---- 1. EPIPE 只记录，不上报 ---- */
   {
     const calls = []
     const { stdout, guard } = setup({ onError: (s, e) => calls.push([s, e.code]) })
@@ -48,7 +37,6 @@ export function runStdioGuardTests(ok, mod) {
     ok(guard.brokenPipe('stderr') === false, '另一条流不受影响')
   }
 
-  /* ---- 2. 非 EPIPE 上报一次，且绝不 rethrow ---- */
   {
     const calls = []
     const { stdout, guard } = setup({ onError: (s, e) => calls.push([s, e.code]) })
@@ -77,7 +65,6 @@ export function runStdioGuardTests(ok, mod) {
     ok(calls.filter((s) => s === 'stderr').length === 1, '每条流各自计数（stderr 报 1 次）')
   }
 
-  /* ---- 3. 上报通路自己抛错也不能逃出去 ---- */
   {
     const { stdout } = setup({
       onError: () => {
@@ -93,7 +80,6 @@ export function runStdioGuardTests(ok, mod) {
     ok(!threw, 'onError 自己抛错时被咽下（否则等于绕回 uncaughtException）')
   }
 
-  /* ---- 4. 没有 onError 时不炸 ---- */
   {
     const { stdout, guard } = setup()
     let threw = false

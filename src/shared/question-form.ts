@@ -1,11 +1,3 @@
-/**
- * `yan question ask` 的表单形态：一次问清几项信息（单选卡片、多选、文字、日期、数字、滑块）。
- *
- * 宿主校验后交给问题面板；用户提交的答案以 JSON 字符串回到同一个请求 id，
- * 再由宿主解析成 `answers` 对象和一行可读摘要交还模型。单选沿用「最多 3 个选项」的口径
- * （2026-09-27 用户决定），多选最多 6 个；每个选择题都可以另写一句。
- */
-
 export type QuestionFieldKind = 'choice' | 'multi' | 'text' | 'date' | 'number' | 'range'
 
 export interface QuestionFieldOption {
@@ -51,7 +43,6 @@ function finite(value: unknown, where: string): number | undefined {
   return value
 }
 
-/** 校验并规范化模型给的 fields；不合格就整体拒绝，模型改完再问。 */
 export function parseQuestionFields(raw: unknown): QuestionField[] {
   if (!Array.isArray(raw)) throw new QuestionFormError('fields 应为数组')
   if (raw.length < 1 || raw.length > QUESTION_FORM_MAX_FIELDS) throw new QuestionFormError(`fields 应有 1–${QUESTION_FORM_MAX_FIELDS} 项`)
@@ -95,10 +86,6 @@ export function parseQuestionFields(raw: unknown): QuestionField[] {
   })
 }
 
-/**
- * 解析面板交回的 JSON 答案：只保留声明过的字段，按类型夹取，丢掉多余键。
- * 返回 null 表示答案无法解析（当作没回答）。
- */
 export function parseQuestionAnswers(fields: QuestionField[], raw: string): QuestionAnswers | null {
   let data: unknown
   try { data = JSON.parse(raw) } catch { return null }
@@ -123,7 +110,6 @@ export function parseQuestionAnswers(fields: QuestionField[], raw: string): Ques
   return out
 }
 
-/** 一行可读摘要（写进问答记录、给模型扫一眼）：「标签：值 · 标签：值」 */
 export function summarizeAnswers(fields: QuestionField[], answers: QuestionAnswers): string {
   return fields
     .map((field) => {

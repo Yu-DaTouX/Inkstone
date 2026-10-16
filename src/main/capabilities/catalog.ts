@@ -1,15 +1,3 @@
-/**
- * 能力目录组装（实施-04 §3 / §4）。
- *
- * 目录 = **内置能力清单**（砚随包提供的 `yan` 命令族）+ **pi 实际加载的 Skill**。
- *
- * 为什么内置能力要写成静态清单，而不是从 `KNOWN_COMMANDS` 反射出来：
- * 命令名（`tasks.apply`）对模型没有可读性，而目录存在的意义就是让模型
- * 「按目标挑能力」。清单里每条都要有**适用目标**，否则 `isUsableCapability`
- * 会把它挡在候选外 —— 这是刻意的：没有描述的能力等于不可发现。
- *
- * 这里**不**碰磁盘、不碰 RPC，输入就是 pi 的命令列表 —— 便于单测直接构造。
- */
 import type { Capability } from '../../shared/capabilities'
 import { dedupeCapabilities } from '../../shared/capabilities'
 import { mcpToolCapabilityId } from '../../shared/mcp'
@@ -33,10 +21,6 @@ function builtin(
   }
 }
 
-/**
- * 砚随包能力。`location` 写的是模型要敲的那条 `yan` 命令形状 ——
- * 目录给出的建议要能**直接执行**，不然模型还得再猜一次语法。
- */
 export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'tasks.apply',
@@ -93,11 +77,9 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
 export interface CatalogBuildResult {
   capabilities: Capability[]
   skills: SkillRecord[]
-  /** 同名但来源不同的能力 ID（实施-04 §6：冲突要提示，不能静默合并）。 */
   conflicts: string[]
 }
 
-/** 组装目录：内置清单 + pi 已加载技能，并按 ID 去重。 */
 export function buildCatalog(
   commands: readonly RawSkillCommand[],
   mcpTools: readonly McpCatalogEntry[] = []
@@ -112,31 +94,17 @@ export function buildCatalog(
   return { capabilities, skills, conflicts }
 }
 
-/**
- * MCP 工具进目录的输入。
- *
- * 为什么不让目录自己去连服务：目录是**纯函数**（不碰磁盘、不碰 RPC），
- * 单测才能直接构造输入。连服务那一步在宿主（`collectMcpCatalog`）做完再传进来。
- */
 export type McpCatalogEntry = {
   serverId: string
   toolName: string
   description?: string
   schemaRevision?: string
-  /** 服务自报的 readOnlyHint **不是**安全边界（§4），所以默认 `unknown`。 */
   effect?: Capability['effect']
   availability?: Capability['availability']
   owner?: Capability['source']['owner']
   projectScope?: string
 }
 
-/**
- * 把一条 MCP 工具投影成能力。
- *
- * 描述里**总是**补上「哪个服务的哪个工具」：服务给的描述可能很短
- * （`isUsableCapability` 只要求 ≥ 4 字符），而模型判断相关性靠的就是这段文字。
- * 服务没给描述时也不能留空 —— 留空等于这条能力不可发现。
- */
 export function mcpToolCapability(entry: McpCatalogEntry): Capability {
   const described = entry.description?.trim() ?? ''
   const origin = `MCP 服务 ${entry.serverId} 的工具 ${entry.toolName}`
@@ -151,7 +119,6 @@ export function mcpToolCapability(entry: McpCatalogEntry): Capability {
     ...(entry.schemaRevision ? { schemaRevision: entry.schemaRevision } : {}),
     source: {
       owner: entry.owner ?? 'user',
-      /* location 写成**能直接执行**的命令形状（与内置能力一致）。 */
       location: `yan mcp describe --server ${entry.serverId} --tool ${entry.toolName}`
     },
     availability: entry.availability ?? 'ready',

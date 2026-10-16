@@ -1,20 +1,8 @@
-/**
- * 交接 / 目标续接阶段诊断（实施-14 F0）的测试。
- *
- * 两层各自负责一半：
- *   · `shared/handoff-diagnostics.ts` —— **脱敏与形状**：它是唯一能保证
- *     「提示词全文 / 凭证不进日志」的地方，判错就是静默泄漏；
- *   · `main/handoff-diagnostics.ts` —— **落盘与有界**：JSONL 追加、坏行跳过、
- *     超限重写、跨实例读回。
- *
- * 用法：npm run test:unit
- */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 export async function runHandoffDiagnosticsTests(ok, shared, main) {
-  /* ---------------------------------------------- 脱敏（shared） */
 
   ok(
     shared.HANDOFF_EVENT_STAGES.includes('eligibility') && shared.HANDOFF_EVENT_STAGES.includes('commit'),
@@ -30,18 +18,12 @@ export async function runHandoffDiagnosticsTests(ok, shared, main) {
     'token= 赋值被替换'
   )
 
-  /* 长提示词：截断并标注原长，而不是原样留下 */
   const long = '交接包提示词'.repeat(200)
   const trimmed = shared.redactDiagnosticText(long)
   ok(String(trimmed).length < 200 && String(trimmed).endsWith(`…(共${long.length}字)`), '长文本截断并标注原长')
 
   ok(shared.redactDiagnosticText('') === null && shared.redactDiagnosticText(123) === null, '空 / 非字符串返回 null')
 
-  /*
-   * 按会话筛事件（实施-14 F8）。
-   * 这是「整理未完成的提示在每个对话里都显示」的直接防线：诊断流水是**全局**的，
-   * 界面只该看到自己这条会话的。
-   */
   {
     const ev = (sessionKey, runnerId, outcome) => ({
       at: 1,
@@ -112,8 +94,6 @@ export async function runHandoffDiagnosticsTests(ok, shared, main) {
   ok(shared.sanitizeHandoffEventLine({ at: 1, stage: 'wat' }) === null, '未知阶段的行读回为 null')
   ok(shared.sanitizeHandoffEventLine({ at: 0, stage: 'commit' }) === null, '没有时间的行读回为 null')
 
-  /* ---------------------------------------------- 落盘（main） */
-
   const root = await mkdtemp(join(tmpdir(), 'yan-handoff-diag-'))
   try {
     const file = main.handoffEventPath(root)
@@ -136,20 +116,17 @@ export async function runHandoffDiagnosticsTests(ok, shared, main) {
     ok(first.reason === 'below-threshold' && first.detail.count === 1, '落盘内容与内存一致')
     ok(!text.includes('\n\n'), '没有多写空行')
 
-    /* 跨实例读回：现场排障就是「重启后看上次发生了什么」 */
     const reread = new main.HandoffDiagnostics({ root, limit: 10 })
     await reread.load()
     ok(reread.recent().length === 3, '新实例能读回磁盘上的事件')
     ok(reread.recent()[2].outcome === 'unconfirmed', '读回的事件字段完整')
 
-    /* 有界：超过 limit 只留最新 */
     const small = new main.HandoffDiagnostics({ root, limit: 2 })
     await small.load()
     small.record({ stage: 'commit', outcome: 'stage', reason: 'committed' })
     await small.flush()
     ok(small.recent().length === 2, '内存有界（只留最新 limit 条）')
 
-    /* 坏行跳过：半行 / 非法 JSON 不能让整个历史读不出来 */
     const broken = join(root, 'broken')
     const brokenFile = main.handoffEventPath(broken)
     await rm(broken, { recursive: true, force: true })
@@ -163,7 +140,6 @@ export async function runHandoffDiagnosticsTests(ok, shared, main) {
     await tolerant.load()
     ok(tolerant.recent().length === 1 && tolerant.recent()[0].outcome === 'ok', '坏行跳过，好行保留')
 
-    /* 落盘永远等于内存：写很多条之后文件不会增长 */
     const rot = new main.HandoffDiagnostics({ root: join(root, 'rot'), limit: 3 })
     await rot.load()
     for (let i = 0; i < 15; i++) rot.record({ stage: 'generate', outcome: `e${i}` })
@@ -173,7 +149,6 @@ export async function runHandoffDiagnosticsTests(ok, shared, main) {
     ok(kept === 3, '落盘行数与内存上限一致（有界，不随调用次数漂）', String(kept))
     ok(rot.recent().length === 3 && rot.recent()[2].outcome === 'e14', '重写后内存仍是最新 3 条')
 
-    /* 写失败不能抛：root 指向一个文件（不是目录）时照样安静 */
     const bogus = new main.HandoffDiagnostics({ root: join(root, 'not-a-dir') })
     await writeFile(join(root, 'not-a-dir'), 'x', 'utf8')
     let threw = false

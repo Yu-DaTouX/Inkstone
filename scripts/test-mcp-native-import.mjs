@@ -1,11 +1,3 @@
-/**
- * 旧宿主 MCP 导入 pi 原生（方案合集 06 后端）。
- *
- * 现场编译 `src/main/mcp/native-import.ts`（会带上 config / shared），在**临时目录**里
- * 用假校验回调覆盖：stdio / http / projectScope / authRef / windows 跳过、同名碰撞、
- * 源与目标并发变化、写失败、校验失败/未接线、外部改动不被覆盖、迁移提示与未知字段保留。
- * 不启动 Electron、不连接真实服务、不调用真实 pi CLI。
- */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
@@ -75,7 +67,6 @@ const writeJson = async (path, value) => {
 const readJson = async (path) => JSON.parse(await readFile(path, 'utf8'))
 
 try {
-  /* ---------------------------------------------------------------- stdio 导入 */
 
   await writeJson(hostConfigFile, {
     unknownTop: { keep: true },
@@ -165,8 +156,6 @@ try {
     'stdio：令牌一次性，重复提交被拒'
   )
 
-  /* --------------------------------------------------- http + authRef + 项目范围 */
-
   await writeJson(hostConfigFile, {
     servers: [
       {
@@ -211,8 +200,6 @@ try {
     'http：旧条目凭证引用原样保留，只停用'
   )
 
-  /* ------------------------------------------------------- 边界：拒绝条件 */
-
   await writeJson(hostConfigFile, {
     servers: [{ id: 'p2', transport: 'http', url: 'https://x.test/mcp', projectScope: 'missing' }]
   })
@@ -250,8 +237,6 @@ try {
     '坏 JSON：原生配置无法解析时拒绝改写'
   )
 
-  /* --------------------------------------------------- 源 / 目标并发变化 */
-
   await writeJson(nativeGlobal, { mcpServers: {} })
   await writeJson(hostConfigFile, { servers: [{ id: 'srcmove', transport: 'stdio', command: 'node' }] })
   const srcPreview = await m.prepareNativeMcpImport({ host, serverId: 'srcmove', owner: { id: 'r' } })
@@ -275,8 +260,6 @@ try {
     'target_changed',
     '并发变化：原生配置在预览后被改动时拒绝提交'
   )
-
-  /* ----------------------------------------------------------- 写失败与部分状态 */
 
   await writeJson(nativeGlobal, { mcpServers: {} })
   await writeJson(hostConfigFile, { servers: [{ id: 'wfail', transport: 'stdio', command: 'node' }] })
@@ -324,8 +307,6 @@ try {
     vnoneResult.notice
   )
 
-  /* -------------------------------------------------- 身份绑定与外部改动保护 */
-
   await writeJson(hostConfigFile, { servers: [{ id: 'omis', transport: 'stdio', command: 'node' }] })
   const ownerPreview = await m.prepareNativeMcpImport({ host, serverId: 'omis', owner: { id: 'owner-a' } })
   await fails(
@@ -367,8 +348,6 @@ try {
     '外部改动：外部新增条目与旧条目的启用状态都保留'
   )
 
-  /* ------------------------------------------------------- 数组形式的旧配置 */
-
   await writeFile(hostConfigFile, JSON.stringify([{ id: 'arr', transport: 'stdio', command: 'node', extra: 1 }]))
   const arrPreview = await m.prepareNativeMcpImport({ host, serverId: 'arr', owner: { id: 'r' } })
   const arrResult = await m.commitNativeMcpImport({
@@ -382,8 +361,6 @@ try {
     Array.isArray(arrHost) && arrHost[0].enabled === false && arrHost[0].extra === 1 && arrHost[0].migratedToNative,
     '数组形式：未知字段保留，形状不变'
   )
-
-  /* -------------------------------------- 解析错误 / null / 项目变化 / 并发 / 上限 */
 
   await writeFile(
     hostConfigFile,
@@ -429,7 +406,6 @@ try {
     '项目变化：项目登记被移除后拒绝提交'
   )
 
-  /* 写入后读取旧源失败：必须返回 nativeWritten:true 的部分结果，而不是裸抛异常。 */
   await writeFile(nativeGlobal, JSON.stringify({ mcpServers: {} }))
   await writeJson(hostConfigFile, { servers: [{ id: 'readfail', transport: 'stdio', command: 'node' }] })
   const readFailPreview = await m.prepareNativeMcpImport({ host, serverId: 'readfail', owner: { id: 'r' } })
@@ -457,7 +433,6 @@ try {
   await rm(hostConfigFile, { recursive: true, force: true })
   await writeJson(hostConfigFile, { servers: [] })
 
-  /* 校验期间目标文件被外部改动：不停用旧条目。 */
   await writeFile(nativeGlobal, JSON.stringify({ mcpServers: {} }))
   await writeJson(hostConfigFile, { servers: [{ id: 'tgtverify', transport: 'stdio', command: 'node' }] })
   const tgtVerifyPreview = await m.prepareNativeMcpImport({ host, serverId: 'tgtverify', owner: { id: 'r' } })
@@ -486,7 +461,6 @@ try {
     '目标外部改动：旧条目仍启用'
   )
 
-  /* 令牌 claim 一次：并发提交同一令牌只有一个成功。 */
   await writeFile(nativeGlobal, JSON.stringify({ mcpServers: {} }))
   await writeJson(hostConfigFile, { servers: [{ id: 'concurrent', transport: 'stdio', command: 'node' }] })
   const concurrentPreview = await m.prepareNativeMcpImport({ host, serverId: 'concurrent', owner: { id: 'r' } })
@@ -503,7 +477,6 @@ try {
     settled.map((entry) => (entry.status === 'fulfilled' ? entry.value.ok : entry.reason?.code)).join(',')
   )
 
-  /* A：commit 必须用本次刚写入的完整文本的 SHA256 作为校验指纹传给 verifier。 */
   await writeFile(nativeGlobal, JSON.stringify({ mcpServers: {} }))
   await writeJson(hostConfigFile, { servers: [{ id: 'fppass', transport: 'stdio', command: 'node' }] })
   const fpPreview = await m.prepareNativeMcpImport({ host, serverId: 'fppass', owner: { id: 'r' } })
@@ -525,7 +498,6 @@ try {
     seenFingerprint
   )
 
-  /* 待确认上限：反复 preview 不确认时不能无限增长。 */
   await writeJson(hostConfigFile, { servers: [{ id: 'limit-svc', transport: 'stdio', command: 'node' }] })
   let limitHit
   for (let index = 0; index < 40; index++) {
@@ -538,7 +510,6 @@ try {
   }
   ok(limitHit && limitHit.code === 'too_many_pending', '待确认上限：超限后拒绝继续 preview', limitHit?.code)
 
-  /* 运行实例身份比对（IPC 提交前重核用的纯函数）。 */
   const identityA = { runnerId: 'r1', generation: 1, cwd: 'C:/a', projectId: null }
   ok(m.sameNativeMcpImportRuntime(identityA, { ...identityA }), '身份比对：相同身份视为同一实例')
   ok(!m.sameNativeMcpImportRuntime(identityA, { ...identityA, runnerId: 'r2' }), '身份比对：换 runner 视为不同实例')
@@ -546,7 +517,6 @@ try {
   ok(!m.sameNativeMcpImportRuntime(identityA, { ...identityA, cwd: 'C:/b' }), '身份比对：项目目录变化视为不同实例')
   ok(!m.sameNativeMcpImportRuntime(identityA, { ...identityA, projectId: 'p' }), '身份比对：项目身份变化视为不同实例')
 
-  /* atomicWrite：rename 前指纹核对与失败后临时文件清理。 */
   const fp = (text) => createHash('sha256').update(text === null ? '\u0000absent' : text).digest('hex')
   const atomicPath = join(root, 'atomic.json')
   await writeFile(atomicPath, 'original')

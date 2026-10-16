@@ -1,15 +1,3 @@
-/**
- * 把 src/shared/custom-provider.ts 打成随包 pi 扩展能直接 import 的 ESM：
- * resources/pi-extensions/generated/model-capabilities.mjs。
- *
- * 设置页的自定义服务（主进程）与内置 Command Code 扩展（pi 进程）用同一套
- * 「端点信息 + pi 模型目录 → 模型能力」的判断，不各写一份。生成物提交进仓库，
- * 改了 TS 源却忘了重新生成时 `--check` 失败（test-unit 会跑）。
- *
- * 用法：
- *   node scripts/build-model-capabilities.mjs          # 重新生成
- *   node scripts/build-model-capabilities.mjs --check  # 只比对
- */
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'

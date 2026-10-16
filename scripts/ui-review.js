@@ -40,7 +40,6 @@ last.text=tick<20?'':answer.slice(0,(tick-20)*4)
 last.toolCalls=tick<40?[]:[{id:'review-tool',name:'bash',args:{command:'npm run check'},status:tick<80?'running':'ok',startedAt:Date.now()-Math.max(0,tick-40)*250,...tick>=80?{endedAt:Date.now()}: {},output:lines.slice(0,Math.min(6,1+Math.floor((tick-40)/8))).join('\n')}]
 store.setState(s=>({messages,session:{...s.session,isStreaming:tick<40,isAgentRunning:tick<80},todos:[{text:'核对终端风格与层级',done:tick>=20},{text:'优化工具摘要与输入区',done:tick>=40},{text:'检查布局与交互（模拟）',done:tick>=80}]}))
 controls.querySelector('#review-phase').textContent=phase+' · '+Math.floor(tick/4)+'s'
-// Use the existing React click handler, not CSS hiding that prevents expansion.
 const row=document.querySelector('[data-tool="bash"] [data-testid="tool-row"]')
 if(row&&!row.dataset.reviewInitialized){row.dataset.reviewInitialized='true';if(row.getAttribute('aria-expanded')==='true')row.click()}
 }

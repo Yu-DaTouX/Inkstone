@@ -1,18 +1,3 @@
-/**
- * shell / 第三方工具的**变更归属**（L05）——真实窗口、真实 shell、不调模型。
- *
- * 为什么能 cost 0：砚有一条**不经模型**的直执行 shell 通道
- * （`window.yan.runBash` → pi 的 `bash` RPC），它改的就是会话工作目录。
- * 走它就能在真实进程、真实文件系统上验证“这条命令改了哪些文件”，
- * 而不需要让模型生成任何东西。
- *
- * 覆盖的边界（每一条都能让界面说谎，所以逐条钉）：
- *   · 新建 / 追加 / 删除 → created / modified / deleted，行数与 patch 对得上；
- *   · 什么都不改 → 不挂改动卡片（不是“0 个改动”的噪音）；
- *   · 改依赖目录（node_modules）→ 不算用户改动；
- *   · 大文件等长改写 → unknown（没读内容就不说“内容变了”）；
- *   · 同目录并发 → 两边都不认领（标 concurrent）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -27,7 +12,6 @@
   }
   if (!store) return early('  ⤺ 跳过：没有 window.__yanStore（探针没被注入）')
 
-  /** 跑一条直执行命令并等它结束，返回它那条消息里的 toolCall（含 details） */
   const runBash = async (command, waitMs = 20000) => {
     const res = await window.yan.runBash(command)
     const deadline = Date.now() + waitMs
@@ -43,7 +27,6 @@
     return { res, call: null, output: '' }
   }
 
-  /** 一条命令带来的目录改动（没有卡片就是 null） */
   const changesOf = (call) => (call && call.details ? call.details.workspaceChanges : undefined) ?? null
   const findFile = (wc, path) => (wc && wc.files ? wc.files.find((f) => f.path === path) : undefined)
 
@@ -72,7 +55,6 @@
 
     const NODE = 'node -e'
 
-    /* ---------------------------------------------------------- 1. 新建 */
     out.push('=== 1. 新建文件 ===')
     const created = await runBash(`${NODE} "require('fs').writeFileSync('ws-probe-a.txt','one\\n')"`)
     ok(created.res.ok === true, '命令执行成功', JSON.stringify(created.res))
@@ -86,7 +68,6 @@
     ok(!!(f1 && f1.patch), '给了逐行 patch', JSON.stringify((f1 && f1.patch) || '').slice(0, 60))
     ok(!wc1.unknown, '没有标“无法归属”', String(wc1 && wc1.unknown))
 
-    /* ---------------------------------------------------------- 2. 追加 */
     out.push('')
     out.push('=== 2. 修改已有文件 ===')
     const modified = await runBash(`${NODE} "require('fs').appendFileSync('ws-probe-a.txt','two\\n')"`)
@@ -97,7 +78,6 @@
     ok(f2 && f2.added >= 1, '给出新增行数', String(f2 && f2.added))
     ok(f2 && f2.beforeSize > 0 && f2.afterSize > f2.beforeSize, '前后大小都对（不是编的）', `${f2 && f2.beforeSize} → ${f2 && f2.afterSize}`)
 
-    /* --------------------------------------------------- 3. 什么都不改 */
     out.push('')
     out.push('=== 3. 什么都不改的命令 ===')
     const idle = await runBash(`${NODE} "console.log('ok')"`)
@@ -107,7 +87,6 @@
       ok(wc3.scanned > 0, '确实扫过目录（“没改”是结论，不是没扫）', String(wc3.scanned))
     }
 
-    /* ------------------------------------------------- 4. 依赖目录不算 */
     out.push('')
     out.push('=== 4. 依赖目录里的改动 ===')
     const dep = await runBash(
@@ -118,7 +97,6 @@
     out.push('  改动卡片 = ' + JSON.stringify(wc4))
     ok(!depHit, 'node_modules 里的改动不会被当成用户改动', JSON.stringify(wc4 && wc4.files))
 
-    /* ------------------------------------------------------ 5. 删除 */
     out.push('')
     out.push('=== 5. 删除文件 ===')
     const removed = await runBash(`${NODE} "require('fs').unlinkSync('ws-probe-a.txt')"`)
@@ -128,7 +106,6 @@
     ok(f5 && f5.status === 'deleted', '状态是 deleted', f5 && f5.status)
     ok(f5 && f5.afterSize === -1, '删除后大小写 -1（没有的东西不编大小）', String(f5 && f5.afterSize))
 
-    /* -------------------------------------------- 6. 大文件等长改写 */
     out.push('')
     out.push('=== 6. 大文件（没读内容） ===')
     await runBash(`${NODE} "require('fs').writeFileSync('ws-big.bin','a'.repeat(300000))"`)
@@ -141,15 +118,12 @@
     ok(f6 && f6.added === -1 && f6.patch === '', '行数与 patch 如实留空（-1 / 空串）', JSON.stringify(f6))
     await runBash(`${NODE} "require('fs').unlinkSync('ws-big.bin')"`)
 
-    /* ------------------------------------------ 7. 界面真的渲染出来 */
     out.push('')
     out.push('=== 7. 工具行里的改动卡片 ===')
     const made = await runBash(`${NODE} "require('fs').writeFileSync('ws-probe-ui.txt','ui\\n')"`)
     const callId = made.call && made.call.id
-    /* 展开那条工具行：卡片只在展开后渲染 */
     let card = null
     for (let i = 0; i < 25 && !card; i++) {
-      /* 已完成的步骤默认折叠在「已完成 N 步」里，先展开再找行 */
       document.querySelectorAll('[data-testid="tool-group-toggle"][aria-expanded="false"]').forEach((b) => b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
       await sleep(100)
       const rows = [...document.querySelectorAll('[data-testid="tool-row"]')]
@@ -169,16 +143,6 @@
     await runBash(`${NODE} "require('fs').unlinkSync('ws-probe-ui.txt')"`)
     await runBash(`${NODE} "require('fs').rmSync('node_modules',{recursive:true,force:true})"`)
 
-    /*
-     * -------------------------- 8. 同 cwd 第二个实例（并发共用目录的防线）
-     *
-     * L05 反复强调“不重复认领同一差异”。同 cwd 的会话在已有实例正忙时
-     * 会自动切到隔离工作树；这里确认它确实切走了，并且活跃 runner 的 cwd
-     * 与原工作目录不同，而不是默默让两个实例共用目录。
-     *
-     * 副作用（已修）：直执行 shell 原本不算“忙”，于是切换会复用到同一个
-     * 实例，新会话里直接报“已有一条命令在跑”—— 用户看着像卡死。
-     */
     out.push('')
     out.push('=== 8. 同 cwd 第二个实例 ===')
     const cwdNow = (store.getState().session && store.getState().session.cwd) || ''
@@ -225,7 +189,6 @@
       out.push('  隔离后的活跃 runner = ' + JSON.stringify(isolated && { cwd: isolated.cwd, sessionFile: isolated.sessionFile, running: isolated.running }))
       ok(switched && switched.ok === true, '同 cwd 会话切换成功', JSON.stringify(switched))
       ok(!!isolated && norm(isolated.cwd) !== norm(cwdNow), '冲突会话实际运行在不同 cwd 的隔离工作树', String(isolated && isolated.cwd))
-      /* 自动隔离不能打断原来的 shell：它仍应正常跑完 */
       const slowRes = await slow
       ok(slowRes && slowRes.ok === true, '隔离切换后原会话的命令仍正常跑完', JSON.stringify(slowRes))
 
@@ -233,7 +196,6 @@
         const moved = await window.yan.switchSession(elsewhere.path)
         out.push('  切到**别的目录**的会话 = ' + JSON.stringify(moved))
         ok(moved && moved.ok === true, '换一个工作目录仍然能切（拒绝只针对同 cwd）', JSON.stringify(moved))
-        /* 切回原会话，后面的清理命令才不会落到别处 */
         if (here) await window.yan.switchSession(here.path)
       }
     }

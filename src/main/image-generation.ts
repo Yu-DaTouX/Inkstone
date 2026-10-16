@@ -1,10 +1,3 @@
-/**
- * 生图适配层：`yan image generate` 宿主命令背后的各家服务。
- *
- * 通道：ChatGPT 订阅（codex）、OpenAI API、OpenAI 兼容端点、Google Gemini、火山方舟（豆包 Seedream）、
- * 本机 SD WebUI / ComfyUI，以及测试用的 mock。provider=auto 时按 AUTO_ORDER 选第一个可用的，
- * 不会在失败后静默换通道。凭证读取在 image-credentials.ts，本机服务探测在 local-models.ts。
- */
 import { randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -21,7 +14,6 @@ export const IMAGE_PROVIDERS = ['auto', 'codex', 'openai', 'compatible', 'google
 export type ImageProvider = (typeof IMAGE_PROVIDERS)[number]
 export type ResolvedImageProvider = Exclude<ImageProvider, 'auto'> | 'unavailable'
 
-/** auto 的选择顺序：已登录的订阅 → 显式配置的兼容端点 → 各家 API key → 本机服务 */
 const AUTO_ORDER = ['codex', 'compatible', 'openai', 'google', 'doubao', 'local'] as const
 
 export interface ImageGenerationRequest {
@@ -46,7 +38,6 @@ export interface ImageGenerationResult {
 
 export type ImageProgressReporter = (stage: ImageGenerationStage, detail?: string) => void
 
-/** 各通道当前是否可用（只看凭证与本机服务，不发计费请求） */
 export interface ImageAvailability {
   codex: boolean
   openai: boolean
@@ -54,7 +45,6 @@ export interface ImageAvailability {
   google: boolean
   doubao: boolean
   local: LocalModelServer | null
-  /** 本机没有在运行的生图服务、但有能由砚启动的 ComfyUI 安装目录时，出图前按需拉起 */
   localLaunch?: string | null
 }
 
@@ -85,7 +75,6 @@ export async function detectImageProviders(
   }
 }
 
-/** 请求里的 provider 优先；没写或写 auto 时看 YAN_IMAGE_PROVIDER，仍是 auto 就按顺序挑 */
 export function resolveImageProvider(requested: ImageProvider | undefined, available: ImageAvailability): ResolvedImageProvider {
   const configured = process.env.YAN_IMAGE_PROVIDER?.trim()
   const value = requested && requested !== 'auto' ? requested : isImageProvider(configured) ? configured : 'auto'
@@ -103,13 +92,10 @@ function envOr(name: string, fallback: string): string {
   return process.env[name]?.trim() || fallback
 }
 
-/** OpenAI 与 ChatGPT（Codex）通道的默认生图模型：GPT Image 2.5 的快速档（另一档是 gpt-image-2.5-sunburst） */
 const OPENAI_IMAGE_MODEL = 'gpt-image-2.5-flare'
 
-/** 没指定模型时各通道的默认值（可用环境变量改，免得服务商改名后要发版） */
 export function defaultImageModel(provider: ResolvedImageProvider, available?: ImageAvailability): string {
   switch (provider) {
-    // Google 与豆包实际请求前会按服务商的模型列表挑最新一档（见 latestGoogleImageModel / latestSeedreamModel），这里是列表拿不到时的兜底
     case 'google':
       return envOr('YAN_IMAGE_GOOGLE_MODEL', 'gemini-3.1-flash-image')
     case 'doubao':
@@ -121,14 +107,12 @@ export function defaultImageModel(provider: ResolvedImageProvider, available?: I
     case 'unavailable':
       return ''
     case 'compatible':
-      // 兼容端点多是中转服务，新模型上架常滞后，默认用上一代
       return envOr('YAN_IMAGE_COMPATIBLE_MODEL', 'gpt-image-2')
     default:
       return envOr('YAN_IMAGE_OPENAI_MODEL', OPENAI_IMAGE_MODEL)
   }
 }
 
-/** 确认框里显示的请求去向；codex 与本机回环服务不弹确认 */
 export function imageProviderEndpoint(provider: ResolvedImageProvider, available?: ImageAvailability): string {
   switch (provider) {
     case 'openai':
@@ -140,7 +124,6 @@ export function imageProviderEndpoint(provider: ResolvedImageProvider, available
     case 'doubao':
       return envOr('YAN_IMAGE_DOUBAO_BASE', DOUBAO_BASE)
     case 'local':
-      // 按需启动的 ComfyUI 只监听本机回环
       return available?.local?.baseUrl ?? (available?.localLaunch ? 'http://127.0.0.1' : '')
     case 'codex':
       return 'https://chatgpt.com/backend-api/codex'
@@ -158,13 +141,10 @@ function isLoopback(url: string): boolean {
   }
 }
 
-/** 会把提示词发到第三方并可能计费的通道，发送前要用户确认 */
 export function imageProviderNeedsConfirmation(provider: ResolvedImageProvider, available?: ImageAvailability): boolean {
   if (provider === 'openai' || provider === 'compatible' || provider === 'google' || provider === 'doubao') return true
   return provider === 'local' && !isLoopback(imageProviderEndpoint(provider, available))
 }
-
-/* ------------------------------------------------------------ 小工具 */
 
 function stringParam(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback
@@ -175,7 +155,6 @@ function formatOf(value: unknown): 'png' | 'jpeg' | 'webp' {
   return v === 'jpeg' || v === 'jpg' ? 'jpeg' : v === 'webp' ? 'webp' : 'png'
 }
 
-/** 服务商不一定按要求的格式返回（Gemini、Seedream 常给 JPEG）：按文件头决定扩展名 */
 function sniffFormat(bytes: Buffer): 'png' | 'jpeg' | 'webp' | undefined {
   if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png'
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg'
@@ -191,7 +170,6 @@ function parseSize(size: unknown): { width: number; height: number } | undefined
   return width > 0 && height > 0 ? { width, height } : undefined
 }
 
-/** Gemini 只接受固定的画面比例：取最接近的一档 */
 const GEMINI_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']
 export function nearestAspectRatio(size: unknown): string | undefined {
   const parsed = parseSize(size)
@@ -210,10 +188,6 @@ export function nearestAspectRatio(size: unknown): string | undefined {
   return best
 }
 
-/**
- * Seedream 4.5 起要求总像素不少于 2560×1440；按原比例放大到下限，边长取 16 的倍数。
- * `2K`、`4K` 这类写法与已满足下限的尺寸原样传。
- */
 const SEEDREAM_MIN_PIXELS = 2560 * 1440
 export function seedreamSize(size: unknown): string {
   const parsed = parseSize(size)
@@ -225,7 +199,6 @@ export function seedreamSize(size: unknown): string {
   return `${up(width)}x${up(height)}`
 }
 
-/** 错误响应里取一句可读原因（不回显请求头或整段响应体） */
 async function errorReason(response: Response): Promise<string> {
   const text = await response.text().catch(() => '')
   try {
@@ -233,7 +206,6 @@ async function errorReason(response: Response): Promise<string> {
     const message = typeof json.error === 'string' ? json.error : json.error?.message ?? json.message ?? json.detail
     if (typeof message === 'string' && message.trim()) return message.trim().slice(0, 200)
   } catch {
-    /* 非 JSON 错误体可能含隐私或 HTML，不回显原文 */
   }
   return `HTTP ${response.status}：服务未返回可读错误信息`
 }
@@ -256,7 +228,6 @@ async function httpError(prefix: string, response: Response): Promise<ImageProvi
   return new ImageProviderError(`${prefix}_http_${response.status}`, reason)
 }
 
-/** 生图常要一两分钟；整次请求的上限 */
 const REQUEST_TIMEOUT_MS = 6 * 60_000
 
 function imageSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
@@ -264,7 +235,6 @@ function imageSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
-/** 未支持 signal 的只读探测/凭证等待也能及时退出；迟到结果不会继续本次生成。 */
 export function waitForImage<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return pending
   return new Promise<T>((resolve, reject) => {
@@ -283,8 +253,6 @@ function checkImageCancelled(signal?: AbortSignal): void {
   if (signal?.aborted) throw new ImageProviderError('image_cancelled')
 }
 
-/* ------------------------------------------------------------ 参考图（编辑） */
-
 interface SourceImage {
   name: string
   mime: 'image/png' | 'image/jpeg' | 'image/webp'
@@ -300,10 +268,6 @@ function inside(root: string, path: string): boolean {
   return !!rel && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
 }
 
-/**
- * 编辑模式的参考图只能来自当前项目或砚的受控产物目录（上一张生成结果），
- * 免得模型把项目外的任意文件发给外部服务。
- */
 async function loadSources(paths: string[] | undefined, roots: { cwd?: string; artifactDir: string }): Promise<SourceImage[]> {
   if (!paths?.length) return []
   if (paths.length > MAX_SOURCES) throw new ImageProviderError('image_source_too_many', `最多 ${MAX_SOURCES} 张参考图`)
@@ -316,7 +280,6 @@ async function loadSources(paths: string[] | undefined, roots: { cwd?: string; a
     if (!(roots.cwd && inside(roots.cwd, path)) && !inside(roots.artifactDir, path)) {
       throw new ImageProviderError('image_source_outside_project', raw)
     }
-    // stat/readFile 会跟随联接与符号链接，必须在读取前校验真实目标与真实允许根。
     const source = await realpath(path).catch(() => null)
     if (!source) throw new ImageProviderError('image_source_missing', raw)
     if (!allowedRoots.some((root) => root && inside(root, source))) {
@@ -340,18 +303,9 @@ interface Generated {
   revisedPrompt?: string
 }
 
-/* ------------------------------------------------------------ ChatGPT（Codex） */
-
-/** 中转对话模型：只负责把提示词交给生图工具，用最便宜的一档，低推理 */
 const CODEX_RELAY_MODEL = 'gpt-6-luna'
-/** 订阅里没有上面那档时退回的模型 */
 const CODEX_RELAY_FALLBACK = 'gpt-5.5'
 
-/**
- * ChatGPT 后端没有独立的生图接口：由一个对话模型调用 image_generation 工具出图。
- * 提示词已由会话模型写好，中转模型被要求原样转交，不参与创作。
- * 请求里的 model 若是 gpt-image-* 只作记录，不能当对话模型发出去。
- */
 async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], credentials: ImageCredentialSource, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
   const auth = await credentials.codex()
   if (!auth) throw new ImageProviderError('codex_auth_missing')
@@ -375,7 +329,6 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
     }],
     tools: [{
       type: 'image_generation',
-      // 不写 model 时由 ChatGPT 后端自选，产物上的模型名就无从确认
       ...(pinModel ? { model: imageModel } : {}),
       size: stringParam(req.size, '1024x1024'),
       quality: stringParam(req.quality, 'auto'),
@@ -384,7 +337,6 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
     }],
     parallel_tool_calls: false,
     stream: true,
-    // Codex 的 ChatGPT 后端要求图像请求显式不存储；也符合本地文件产物的隐私边界。
     store: false
   })
   const send = (): Promise<Response> => fetch('https://chatgpt.com/backend-api/codex/responses', {
@@ -392,7 +344,6 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
     headers: {
       Authorization: `Bearer ${auth.access}`,
       ...(auth.accountId ? { 'chatgpt-account-id': auth.accountId } : {}),
-      /* 与令牌签发方一致：砚内登录与 pi 同一个 client，Codex CLI 的令牌沿用原来的标识 */
       originator: auth.source === 'yan' ? 'pi' : 'codex_desktop',
       'Content-Type': 'application/json',
       Accept: 'text/event-stream'
@@ -402,7 +353,6 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
   })
   report?.('requesting', auth.source === 'yan' ? '使用砚内 ChatGPT 登录' : '使用 Codex CLI 登录')
   let response = await send()
-  /* 订阅不开放所指模型（400 且提到 model）：报错点名中转模型就换回 gpt-5.5，否则去掉生图模型交给后端自选，并如实标成未知 */
   for (let retry = 0; response.status === 400 && retry < 2; retry += 1) {
     const reason = await errorReason(response)
     if (!/model/i.test(reason)) throw new ImageProviderError('codex_http_400', reason)
@@ -447,7 +397,6 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
           failure = event.response?.error?.message ?? event.error?.message ?? event.message ?? failure
         }
       } catch {
-        /* 每个事件在空行处完整切分；解析失败的行忽略 */
       }
     }
   }
@@ -463,8 +412,6 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
   if (!finalB64) throw new ImageProviderError(failure ? 'codex_response_failed' : 'codex_image_result_missing', failure?.slice(0, 200))
   return { bytes: Buffer.from(finalB64, 'base64'), model: imageModel, revisedPrompt }
 }
-
-/* ------------------------------------------------------------ OpenAI 及兼容端点 */
 
 async function openAiImage(req: ImageGenerationRequest, sources: SourceImage[], baseUrl: string, token: string, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
   const model = stringParam(req.model, defaultImageModel('openai'))
@@ -506,9 +453,6 @@ async function openAiImage(req: ImageGenerationRequest, sources: SourceImage[], 
   return { bytes: Buffer.from(b64, 'base64'), model, revisedPrompt: json.data?.[0]?.revised_prompt }
 }
 
-/* ------------------------------------------------------------ Google Gemini */
-
-/* 服务商的模型会按季度更新、旧型号下线；没指定模型时按列表挑最新一档，每个进程只查一次 */
 const latestModels = new Map<string, Promise<string | null>>()
 
 function cachedLatest(cacheKey: string, load: () => Promise<string | null>): Promise<string | null> {
@@ -531,7 +475,6 @@ function compareVersions(a: string, b: string): number {
   return 0
 }
 
-/** 最新的 gemini-X.Y-flash-image（正式版，不含 lite / preview / pro） */
 function latestGoogleImageModel(base: string, key: string): Promise<string | null> {
   return cachedLatest(`google ${base} ${key.slice(-6)}`, async () => {
     const versions: string[] = []
@@ -553,7 +496,6 @@ function latestGoogleImageModel(base: string, key: string): Promise<string | nul
   })
 }
 
-/** 最新的 Seedream：跳过已下线 / 即将下线的，按型号末尾的发布日期取最新 */
 function latestSeedreamModel(base: string, key: string): Promise<string | null> {
   return cachedLatest(`doubao ${base} ${key.slice(-6)}`, async () => {
     const response = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) })
@@ -610,8 +552,6 @@ async function googleImage(req: ImageGenerationRequest, sources: SourceImage[], 
   return { bytes: Buffer.from(image.inlineData.data, 'base64'), model, ...(note ? { revisedPrompt: note.slice(0, 500) } : {}) }
 }
 
-/* ------------------------------------------------------------ 火山方舟（豆包 Seedream） */
-
 async function doubaoImage(req: ImageGenerationRequest, sources: SourceImage[], key: string, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
   const base = envOr('YAN_IMAGE_DOUBAO_BASE', DOUBAO_BASE).replace(/\/+$/, '')
   const pinned = stringParam(req.model, '') || process.env.YAN_IMAGE_DOUBAO_MODEL?.trim() || ''
@@ -625,7 +565,6 @@ async function doubaoImage(req: ImageGenerationRequest, sources: SourceImage[], 
       prompt: req.prompt,
       size: seedreamSize(req.size),
       response_format: 'b64_json',
-      // 不传 sequential_image_generation：默认就是单张，且 5.0 flash 起不认这个字段
       watermark: false,
       ...(sources.length ? { image: sources.length === 1 ? dataUrl(sources[0]) : sources.map(dataUrl) } : {})
     }),
@@ -638,8 +577,6 @@ async function doubaoImage(req: ImageGenerationRequest, sources: SourceImage[], 
   if (!b64) throw new ImageProviderError('doubao_image_result_missing', json.error?.message)
   return { bytes: Buffer.from(b64, 'base64'), model }
 }
-
-/* ------------------------------------------------------------ 本机服务 */
 
 async function sdWebUiImage(req: ImageGenerationRequest, sources: SourceImage[], server: LocalModelServer, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
   const model = stringParam(req.model, server.models[0] ?? '')
@@ -667,13 +604,8 @@ async function sdWebUiImage(req: ImageGenerationRequest, sources: SourceImage[],
   return { bytes: Buffer.from(b64.replace(/^data:[^,]+,/, ''), 'base64'), model: model || server.name }
 }
 
-/** 本机生图比云端慢，首次还要加载十几 GB 的模型；排队与执行的总上限 */
 const LOCAL_TIMEOUT_MS = 15 * 60_000
 
-/**
- * 候选工作流的顺序：请求里的 model（工作流文件名，可省略 .json 与目录）或 YAN_COMFYUI_WORKFLOW 指定的只用它；
- * 否则按同类（编辑用图生图，其余用文生图）排好的顺序逐个尝试。
- */
 export function comfyCandidates(entries: ComfyWorkflowEntry[], wanted: string, edit: boolean): ComfyWorkflowEntry[] {
   const normalize = (name: string): string => name.toLowerCase().replace(/\.json$/, '').replace(/^.*\//, '')
   const named = wanted || process.env.YAN_COMFYUI_WORKFLOW?.trim() || ''
@@ -708,10 +640,6 @@ async function comfyObjectInfo(server: LocalModelServer, types: string[], cache:
   return cache
 }
 
-/**
- * 逐个尝试候选工作流：缺自定义节点、找不到提示词、或用到云端 API 节点（要 ComfyUI 账号与额度）的跳过，
- * 换下一个；用户点名的工作流不跳过云端节点，问题直接报出来。
- */
 async function buildComfyPrompt(
   server: LocalModelServer,
   candidates: ComfyWorkflowEntry[],
@@ -740,7 +668,6 @@ async function buildComfyPrompt(
   throw new ImageProviderError(candidates.length ? 'local_workflow_unsupported' : 'local_workflow_missing', problems.slice(0, 3).join('；') || undefined)
 }
 
-/** ComfyUI：用用户保存的工作流，只替换提示词、种子、尺寸、参考图与保存前缀 */
 async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], server: LocalModelServer, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
   const entries = await waitForImage(listComfyWorkflows(server.baseUrl).catch(() => []), signal)
   const wanted = stringParam(req.model, '')
@@ -771,7 +698,6 @@ async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], s
   if (!queued.ok) throw await httpError('local', queued)
   const promptId = ((await queued.json()) as { prompt_id?: string }).prompt_id
   if (!promptId) throw new ImageProviderError('local_image_result_missing')
-  // 只删除本次排队项；/interrupt 是全局中断，不能影响正在执行的其他会话或用户工作流。
   const cancelQueued = (): void => {
     void fetch(`${server.baseUrl}/queue`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -816,14 +742,10 @@ async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], s
   }
 }
 
-/* ------------------------------------------------------------ mock */
-
 function mockSvg(prompt: string): Buffer {
   const safe = Array.from(prompt).slice(0, 60).join('').replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c] ?? c))
   return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="180" fill="#101318"/><circle cx="512" cy="450" r="240" fill="#303A47"/><path d="M350 450h324v170H350z" fill="#F3F4F6"/><text x="512" y="820" fill="#98A2B3" font-size="34" text-anchor="middle" font-family="sans-serif">${safe}</text></svg>`, 'utf8')
 }
-
-/* ------------------------------------------------------------ 入口 */
 
 const PROVIDER_LABEL: Record<Exclude<ResolvedImageProvider, 'unavailable'>, string> = {
   codex: 'ChatGPT（Codex）',
@@ -835,14 +757,12 @@ const PROVIDER_LABEL: Record<Exclude<ResolvedImageProvider, 'unavailable'>, stri
   mock: '本地预览'
 }
 
-/** 一条通道都没有时告诉用户能做什么：已安装但没启动的本机生图服务优先点名 */
 async function unavailableHint(): Promise<string> {
   const stopped = (await detectLocalModelServers().catch(() => []))
     .filter((server) => server.purpose === 'image' && !server.running && server.installDir)
     .map((server) => `${server.name}（${server.installDir}）`)
   const remote = '在设置-模型接入登录 ChatGPT，或配置 OpenAI / Google Gemini / 火山方舟 API key'
   if (stopped.length) return `本机已安装 ${stopped.join('、')}，但没有运行，启动后重试；或${remote}`
-  // 本机生图要独立显卡、首次下载数 GB 模型，是否安装由用户决定
   return `${remote}；或在本机安装 ComfyUI 等生图软件（需要独立显卡，首次要下载数 GB 模型）。请把这些选项告诉用户并询问，不要自行下载或安装`
 }
 
@@ -850,11 +770,9 @@ export interface ImageGenerationContext {
   sessionFile: string
   messageId: string
   artifactDir: string
-  /** 编辑模式的参考图只允许来自这个目录或 artifactDir */
   cwd?: string
   onProgress?: ImageProgressReporter
   credentials?: ImageCredentialSource
-  /** 调用方已探测过就传进来，避免重复探测 */
   availability?: ImageAvailability
   signal?: AbortSignal
 }
@@ -913,7 +831,6 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
     }
     if (!server) throw new ImageProviderError('local_service_missing')
     if (server.kind === 'comfyui') {
-      // 砚拉起的 ComfyUI 出图期间不会被空闲计时关掉
       const release = holdManagedComfy(server.baseUrl)
       try {
         generated = await comfyImage(req, sources, server, report, signal)
@@ -922,7 +839,6 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
       }
     } else generated = await sdWebUiImage(req, sources, server, report, signal)
   } else {
-    // 自定义端点只能使用显式配置的专用凭证，不能携带另一供应商的密钥。
     const key = provider === 'compatible' ? process.env.YAN_IMAGE_API_KEY?.trim() : await credentials.secret('openai')
     if (!key) throw new ImageProviderError(provider === 'compatible' ? 'compatible_api_key_missing' : 'openai_api_key_missing')
     generated = await openAiImage({ ...req, model: stringParam(req.model, defaultImageModel(provider)) }, sources, imageProviderEndpoint(provider, availability), key, report, signal)

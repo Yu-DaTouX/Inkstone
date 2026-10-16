@@ -1,13 +1,3 @@
-/**
- * v3 能力设置自己的确认对话框（S2 内部使用）。
- *
- * 为什么不复用 v2 的 `components/ui/confirm`：那是旧组件与旧样式，任务边界
- * 禁止引入。这里只用 v3 的 `ui/Dialog` 组合出一个 Promise 式确认，样式全在
- * `capabilities.css` 的 features 层。
- *
- * 用途仅限「用户点击后、真正调正式 IPC 之前」的确认（安装 / 卸载 / 导入）。
- * 不是第二套授权机制：放行与否仍由主进程的能力服务判断。
- */
 import {
   createContext,
   useCallback,
@@ -23,7 +13,6 @@ import { useT } from '../../../i18n'
 export interface ConfirmOptions {
   title: string
   body?: string
-  /** 细节块（预览 / 影响范围），按等宽可换行展示。 */
   detail?: string
   confirmLabel: string
   cancelLabel?: string

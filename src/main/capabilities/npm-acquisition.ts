@@ -1,9 +1,3 @@
-/**
- * 把 prepare 固定的 npm 包落到 acquisition staging（实施-04 S6b-2）。
- *
- * 这里只下载、校验并复制普通文件；不运行 npm lifecycle、pi install 或包代码。
- * pi 包后续必须等目标项目的所有 runner 空闲后才可安装与激活。
- */
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -36,7 +30,6 @@ export type StagedNpmAcquisition = {
   packageSourceDir: string
 }
 
-/** 拉取 exact npm tarball，并确认事务、候选与文件指纹仍与 prepare 一致。 */
 export async function stageNpmAcquisition(input: StageNpmAcquisitionInput): Promise<StagedNpmAcquisition> {
   if (!input.integrity?.startsWith('sha512-')) {
     throw new NpmAcquisitionError('prepare-integrity-missing', 'npm 候选缺少 prepare 阶段固定的 SHA-512，拒绝下载')

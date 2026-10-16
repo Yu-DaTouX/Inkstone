@@ -4,13 +4,6 @@ import '../src/renderer/src/design/tokens.css'
 type ThemeName = 'system' | 'light' | 'dark'
 type DensityName = 'compact' | 'standard' | 'comfortable'
 
-/**
- * 全局装饰器：把工具栏选中的主题/密度写到 `<html>`，与产品一致。
- *
- * tokens.css 用 `:root[data-theme]` + `color-scheme`，颜色由 `light-dark()` 取值，
- * 阴影由 `[data-theme='dark']` 与 `prefers-color-scheme` 覆盖。
- * `system` 时删除 data-theme，让 `light-dark()` 走系统偏好。
- */
 const withThemeAndDensity: Decorator = (Story, context) => {
   const theme = (context.globals.theme ?? 'system') as ThemeName
   const density = (context.globals.density ?? 'standard') as DensityName
@@ -62,7 +55,6 @@ const preview: Preview = {
   parameters: {
     layout: 'padded',
     controls: { matchers: { color: /(background|color)$/i, date: /Date$/i } },
-    // addon-a11y：默认在面板报告（todo）；接入 CI 时改为 'error' 才算门禁。
     a11y: { test: 'todo' }
   }
 }

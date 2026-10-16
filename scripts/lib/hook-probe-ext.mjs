@@ -1,12 +1,3 @@
-/*
- * 钩子实测用的探针扩展（配合 `scripts/hook-probe.mjs`，不是随包分发的东西）。
- *
- * 除 S1_MODE 指定的那一件事外**不改行为**，这样打出来的时序就是如实的过程。
- *   plain    什么都不做
- *   block    tool_call 对 bash 返回 {block:true}
- *   abort    before_provider_request 第 2 次调 ctx.abort()
- *   compact  tool_call 里调 ctx.compact()
- */
 import { appendFileSync } from 'node:fs'
 
 const LOG = process.env.S1_LOG
@@ -31,7 +22,6 @@ export default function hookProbe(pi) {
   pi.on('context', (event) => {
     const msgs = event?.messages ?? []
     log({ hook: 'context', count: msgs.length, roles: msgs.map((m) => m.role ?? m.type) })
-    /* 不返回任何东西：不替换上下文 */
   })
 
   pi.on('before_provider_request', (event, ctx) => {
@@ -45,7 +35,6 @@ export default function hookProbe(pi) {
       toolNames: (payload.tools ?? []).map((t) => t.function?.name ?? t.name)
     })
     if (MODE === 'payload') {
-      /* 追加一条 system 消息：假 provider 那边的 roles 列表是决定性证据 */
       return {
         ...payload,
         messages: [...(payload.messages ?? []), { role: 'system', content: 'S1-INJECTED' }]

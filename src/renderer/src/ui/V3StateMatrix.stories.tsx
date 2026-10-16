@@ -37,19 +37,6 @@ import {
   TooltipTrigger
 } from './index'
 
-/**
- * v3 原语逐状态矩阵（组件工作台）。
- *
- * 覆盖 `ui/index.ts` 现有正式导出的交互与呈现状态：默认 / 悬停 / 按下 /
- * 键盘焦点 / 禁用 / 加载 / 选中 / 错误 / 只读，以及浅色·深色与三档密度。
- * 外观全部来自 `tokens.css` 与 `ui.css`，本文件只写版面，不写控件皮肤。
- *
- * 诚实边界：hover / press / focus / open 这类无法在静态故事里稳定复现的状态
- * 只通过 `parameters.stateMatrix.declared` 声明，没有被指针或键盘实测；
- * 本文件不调用宿主 API，数据全部是固定本地样例。配套的
- * `scripts/test-v3-story-coverage.mjs` 只做「能解析 + 覆盖清单一致」的静态核对，
- * 不代替 Storybook 交互测试、a11y 扫描或视觉验收。
- */
 const meta = {
   title: 'v3/状态矩阵',
   parameters: { layout: 'padded' }
@@ -59,8 +46,6 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const STATES = (...names: string[]) => names
-
-/* ---------- 按钮 ---------- */
 
 export const ButtonStates: Story = {
   name: 'Button / IconButton · 全套交互状态',
@@ -142,8 +127,6 @@ export const ButtonStates: Story = {
   )
 }
 
-/* ---------- 标签与键位 ---------- */
-
 export const BadgeKbdStates: Story = {
   name: 'Badge / Kbd · 状态词与键位',
   parameters: {
@@ -180,8 +163,6 @@ export const BadgeKbdStates: Story = {
     </div>
   )
 }
-
-/* ---------- 进度、骨架与转圈 ---------- */
 
 export const ProgressSkeletonStates: Story = {
   name: 'Progress / Meter / Spinner / Skeleton · 加载状态',
@@ -222,8 +203,6 @@ export const ProgressSkeletonStates: Story = {
   )
 }
 
-/* ---------- 分隔线 ---------- */
-
 export const SeparatorStates: Story = {
   name: 'Separator · 水平与垂直',
   parameters: {
@@ -244,8 +223,6 @@ export const SeparatorStates: Story = {
     </div>
   )
 }
-
-/* ---------- 集合：ListBox ---------- */
 
 export const ListBoxStates: Story = {
   name: 'ListBox · 选中 / 焦点 / 禁用',
@@ -284,8 +261,6 @@ export const ListBoxStates: Story = {
     </ListBox>
   )
 }
-
-/* ---------- 集合：Menu ---------- */
 
 export const MenuStates: Story = {
   name: 'Menu · 默认 / 禁用 / 子菜单 / 触发器',
@@ -331,8 +306,6 @@ export const MenuStates: Story = {
   )
 }
 
-/* ---------- Tabs ---------- */
-
 export const TabsStates: Story = {
   name: 'Tabs · 选中 / 焦点 / 禁用 / 可关闭',
   parameters: {
@@ -363,8 +336,6 @@ export const TabsStates: Story = {
     </Tabs>
   )
 }
-
-/* ---------- 对话框 ---------- */
 
 export const DialogStates: Story = {
   name: 'Dialog / Modal · 表面与触发器',
@@ -407,8 +378,6 @@ export const DialogStates: Story = {
   )
 }
 
-/* ---------- 浮层与提示 ---------- */
-
 export const PopoverTooltipStates: Story = {
   name: 'Popover / Tooltip · 展开与延迟',
   parameters: {
@@ -443,8 +412,6 @@ export const PopoverTooltipStates: Story = {
   )
 }
 
-/* ---------- 提示（Toast） ---------- */
-
 export const ToastStates: Story = {
   name: 'Toast · 队列与色调',
   parameters: {
@@ -478,8 +445,6 @@ export const ToastStates: Story = {
     </div>
   )
 }
-
-/* ---------- 主题与密度 ---------- */
 
 const DENSITIES = ['compact', 'standard', 'comfortable'] as const
 
@@ -556,8 +521,6 @@ export const ThemeDensityMatrix: Story = {
     </div>
   )
 }
-
-/* ---------- 局部帮助件（只用于故事版面，不是产品组件） ---------- */
 
 const noteStyle = {
   margin: 0,

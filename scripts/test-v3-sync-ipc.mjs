@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * WP-53 同步接线层（`src/main/ipc/sync-ipc.ts`）的合成验收。
- *
- *   node scripts/test-v3-sync-ipc.mjs
- *
- * 现场用 esbuild 打包真实生产模块（无 Electron 依赖），不启动 Electron、
- * 不连 pi、不调用真实模型、不读写用户真实数据、不访问网络。
- *
- * 覆盖：
- *   1. 未配置状态：status.configured=false，不创建同步服务；
- *   2. 配置 / 清除：目录对话框注入、显式路径、null 清除；
- *   3. 立即同步：真实计数透传、lastSync 落盘、未配置时可读错误；
- *   4. 冲突：列出带预览、resolve 透传 id 与三种方式、非法输入与异常不抛出；
- *   5. 导出 / 导入：路径由对话框注入，导入生成新会话、不覆盖同名；
- *   6. 启动同步 runStartupSync：失败只记日志、不抛异常、正常时写 lastSync；
- *   7. 真实 SyncService 的 resolveConflict：remote 采用他端、both 留两份并清冲突。
- */
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -25,7 +8,6 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
-/* ── 现场编译生产模块 ───────────────────────────────────────── */
 const bundles = []
 async function bundle(entry) {
   const outfile = join(tmpdir(), `yan-v3-${randomUUID()}.mjs`)
@@ -46,7 +28,6 @@ const syncMod = await bundle('../src/main/sync/index.ts')
 const { registerSyncIpc, runStartupSync } = ipcMod
 const { SyncService, SyncConfigStore } = syncMod
 
-/* ── 微型断言 / 报告 ────────────────────────────────────────── */
 const report = { pass: 0, fail: 0 }
 function section(name) {
   process.stdout.write(`\n▌${name}\n`)
@@ -68,7 +49,6 @@ async function check(message, fn) {
   }
 }
 
-/* ── 捕获注册器与假依赖 ─────────────────────────────────────── */
 function captureRegistrar() {
   const handlers = new Map()
   return {
@@ -177,9 +157,6 @@ const controller = registerSyncIpc(registrar.ipc, deps)
 void controller
 
 try {
-  /* ══════════════════════════════════════════════════════════
-   * 1. 未配置状态
-   * ══════════════════════════════════════════════════════════ */
   section('未配置：status 如实报告，不创建同步服务')
   await check('configured=false 且不调用 makeService', async () => {
     const status = await registrar.invoke('yan:sync:status')
@@ -194,9 +171,6 @@ try {
     assert.equal(syncCalls, 0)
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 2. 配置 / 清除
-   * ══════════════════════════════════════════════════════════ */
   section('配置 / 清除：目录对话框注入')
   await check('configure() 走注入的目录对话框并落盘', async () => {
     const result = await registrar.invoke('yan:sync:configure')
@@ -230,9 +204,6 @@ try {
     assert.equal(status.configured, false)
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 3. 立即同步：计数透传 + lastSync 落盘
-   * ══════════════════════════════════════════════════════════ */
   section('立即同步：计数透传与上次结果')
   await registrar.invoke('yan:sync:configure', syncRoot)
   await check('now 返回推送 / 拉取 / 冲突 / 跳过计数', async () => {
@@ -265,9 +236,6 @@ try {
     syncResult = saved
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 4. 冲突：列出与处理
-   * ══════════════════════════════════════════════════════════ */
   section('冲突：列出与逐条处理')
   await check('conflicts 带两侧设备 / 时间 / 预览', async () => {
     conflictsResult = [makeConflict({ localPayload: '{"theme":"dark"}', remotePayload: '{"theme":"light"}' })]
@@ -315,9 +283,6 @@ try {
     assert.equal(status.conflictCount, 0)
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 5. 会话导出 / 导入：路径注入
-   * ══════════════════════════════════════════════════════════ */
   section('会话导出 / 导入：路径由对话框注入')
   sessionFile = join(dataDir, 'sess-original.jsonl')
   await writeFile(
@@ -376,9 +341,6 @@ try {
     assert.match(result.error, /取消/)
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 6. 启动同步：失败只记日志
-   * ══════════════════════════════════════════════════════════ */
   section('启动同步 runStartupSync：失败只记日志')
   await check('已配置且 sync 成功：写 lastSync，不抛', async () => {
     syncResult = makeReport({ pushed: ['p1'], pulled: [], conflicts: [], skipped: [], errors: [] })
@@ -411,9 +373,6 @@ try {
     assert.deepEqual(messages, [])
   })
 
-  /* ══════════════════════════════════════════════════════════
-   * 7. 真实 SyncService 的 resolveConflict
-   * ══════════════════════════════════════════════════════════ */
   section('真实 SyncService：resolveConflict 采用他端 / 留两份')
   const realSync = join(root, 'real-sync')
   await mkdir(realSync, { recursive: true })
@@ -452,7 +411,6 @@ try {
   })
 
   await check('resolveConflict(both) 保留本机、他端另存、冲突清除', async () => {
-    /* 用提示词制造第二条冲突：两端各写一份。 */
     const promptA = join(dirA, 'prompts')
     await mkdir(promptA, { recursive: true })
     await writeFile(join(promptA, 'review.md'), 'A 版本')
@@ -467,9 +425,7 @@ try {
     const result = await serviceB.resolveConflict(conflict.id, 'both')
     assert.equal(result.ok, true, result.error)
     assert.equal((await serviceB.listConflicts()).length, 0)
-    /* 本机主版本保持不变。 */
     assert.equal(await readFile(join(promptDirB, 'review.md'), 'utf8'), 'B 新版本')
-    /* 他端版本落成带来源后缀的第二份。 */
     const { readdir } = await import('node:fs/promises')
     const files = await readdir(promptDirB)
     const copy = files.find((name) => name !== 'review.md' && name.endsWith('.md'))

@@ -1,16 +1,3 @@
-/**
- * pi 包管理（方案 §9 的 P2）—— 真实安装 / 卸载的端到端验证。
- *
- * ── 为什么单独一个场景、单独一个 fixture ──
- * 这一段会**真的调用 pi 的 CLI 装一个包**，所以：
- *   · 必须在**隔离的 YAN_PI_DIR** 下跑（fixture 用隔离目录），不碰用户真实装的；
- *   · 用**本地路径源**（fixture 里放一个最小包），全程不联网；
- *   · 不能挂在 panels 上 —— 那个场景没有 fixture，cwd 会落到真实项目根，
- *     往里写 probe-ext 就是污染仓库（第一次跑就是这么失败的：
- *     pi 报 `Path does not exist: ...\pi-desktop\probe-ext`）。
- *
- * 断言全部靠**回读**（列表来自主进程 → pi 的 settings.json），不看界面自报。
- */
 ;(async () => {
   const out = []
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -36,11 +23,6 @@
     out.push('  cwd = ' + cwd)
     out.push('  本地包 = ' + probeExt)
 
-    /*
-     * ① 配置：走 store 打开设置。
-     * 插件分区现在在「市场 → pi 插件」下；`openSettings('packages')` 不是设置页 id
-     * （合法值见 `SETTINGS_PAGES`），铺不出这块面板。
-     */
     store.getState().openSettings('market')
     await until(() => !!document.querySelector('[data-testid="market-pi-tab"]'), 6000)
     document.querySelector('[data-testid="market-pi-tab"]')?.click()
@@ -48,17 +30,14 @@
     if (!ready) return out.concat(['  ✗ 设置里没有「插件」分区']).concat(summary(out))
     ok('设置里有「插件」分区')
 
-    /* ② UI 结构（与 panels 的那组断言互为补充：这里只验要用的控件） */
     const src = document.querySelector('[data-testid="pkg-source"]')
     const btn = () => document.querySelector('[data-testid="pkg-install-btn"]')
     if (!src || !btn()) return out.concat(['  ✗ 缺来源输入或安装按钮']).concat(summary(out))
     ok('有来源输入与安装按钮')
 
-    /* ③ 隔离确认：起始时列表里不该有它（YAN_PI_DIR 是隔离的） */
     const hasIt = () => qa('[data-testid="pkg-name"]').some((x) => (x.textContent ?? '').includes('yan-probe-ext'))
     ok('起始时列表里没有这个包（隔离目录是干净的）', !hasIt())
 
-    /* ④ 真实安装 */
     const setVal = (el, v) => {
       const d = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value')
       d.set.call(el, v)
@@ -71,7 +50,6 @@
     const listed = await until(() => hasIt(), 90000)
     if (listed) ok('真实安装：pi 的 CLI 装上后列表里出现了它（yan-probe-ext）')
     else {
-      /* 失败时把 pi 自己的原始输出摊开 —— 排查第一现场 */
       const tgl = document.querySelector('[data-testid="pkg-detail-toggle"]')
       if (tgl) click(tgl)
       await until(() => !!document.querySelector('.gwrite-fail-raw'), 2000)
@@ -80,13 +58,11 @@
       bad('装完列表里没有 yan-probe-ext')
     }
 
-    /* ⑤ 元信息来自包自己的 package.json（不是从目录名猜的） */
     if (listed) {
       const row = qa('[data-testid="pkg-item"]').find((x) => (x.textContent ?? '').includes('yan-probe-ext'))
       if (row?.textContent?.includes('9.9.9')) ok('版本来自 package.json（9.9.9）')
       else bad('列表里没有版本号', (row?.textContent ?? '').slice(0, 60))
       if (/探针用的假扩展/.test(row?.textContent ?? '') || true) {
-        /* 描述在详情里 */
         const dbtn = row?.querySelector('[data-testid="pkg-detail"]')
         if (dbtn) {
           click(dbtn)
@@ -98,10 +74,6 @@
             else bad('详情里没有描述', text.slice(0, 60))
             if (/来源：/.test(text)) ok('详情里有来源')
             else bad('详情里没有来源')
-            /*
-             * 方案 §9 的硬要求：「说明来源与实际影响，不宣称沙箱隔离」。
-             * 这句是产品边界，不是提示语 —— 所以要有断言读它。
-             */
             const warn = document.querySelector('[data-testid="pkg-warn"]')?.textContent ?? ''
             if (/以你的身份运行代码/.test(warn) && /没有沙箱/.test(warn)) {
               ok('详情写明「以你的身份运行代码、没有沙箱」（不宣称沙箱隔离）')
@@ -111,7 +83,6 @@
         } else bad('有插件但没有「详情」按钮')
       }
 
-      /* ⑥ 卸载：闭环 */
       const rbtn = qa('[data-testid="pkg-item"]')
         .find((x) => (x.textContent ?? '').includes('yan-probe-ext'))
         ?.querySelector('[data-testid="pkg-remove"]')
@@ -123,12 +94,10 @@
       } else bad('列表项里没有「卸载」按钮')
     }
 
-    /* ⑦ 内置能力区：浏览器是**宿主能力**（01-S5 删掉了那个不注册任何东西的空壳 browser.js） */
     const builtinProbe = await window.yan.builtinCapabilities.list().then(
       (v) => ({ ok: true, value: v }),
       (e) => ({ ok: false, error: e?.message ?? String(e) })
     )
-    /* 只在 IPC 本身出问题时打诊断：区分「主进程没给清单」与「界面没渲染这一段」 */
     if (!builtinProbe.ok || (builtinProbe.value?.length ?? 0) === 0) {
       out.push('  内置能力 IPC 诊断 = ' + JSON.stringify(builtinProbe).slice(0, 300))
     }
@@ -144,7 +113,6 @@
       const stale = builtins.filter((el) => (el.querySelector('.pkg-ver')?.textContent ?? '') === 'browser.js')
       if (stale.length === 0) ok('内置能力区不再出现 browser.js 空壳文件')
       else bad('内置能力区仍有 browser.js', String(stale.length))
-      /* 文案表要与主进程的薄层清单同步：漏登记时名字会退化成文件名，这里就该红 */
       const fallbackNamed = builtins
         .map((el) => (el.querySelector('[data-testid="builtin-cap-name"]')?.textContent ?? '').trim())
         .filter((name) => /\.(?:js|mjs|cjs|ts)$/i.test(name))
@@ -152,7 +120,6 @@
       else bad('内置能力里有没登记文案的项', fallbackNamed.join(', '))
     }
 
-    /* ⑧ 收尾：关掉设置面板 */
     store.getState().closeSettings()
     await until(() => qa('.ui-rows').length === 0, 3000)
   } catch (error) {

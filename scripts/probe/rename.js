@@ -1,12 +1,3 @@
-/**
- * 左栏会话重命名（用户报「左栏会话没办法重命名」）。
- *
- * 根因：菜单里的重命名用 `window.prompt` —— **Electron 不支持 prompt()**
- * （调用返回 null 并报错），点了什么都不会发生。现在改成行内 input。
- *
- * 这个探针注入两条合成会话，走一遍「开菜单 → 点重命名 → 输入 → 回车」，
- * 断言手动名写进 store 且左栏显示新名字。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -67,7 +58,6 @@
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await sleep(400)
 
-  // 合成会话会在 setManualTitle 的 refreshSessions 后被清掉，所以要边刷边看
   let sawName = false
   for (let i = 0; i < 16; i++) {
     if (qa('.srow-name').some((e) => e.textContent === '新标题')) {
@@ -86,7 +76,6 @@
 
   out.push('')
   out.push('=== 4. Esc 取消不提交 ===')
-  // 重新注入，走一遍 Esc
   store.setState({
     sessions: [
       { id: 'rn1', path: 'C:/probe/rn1.jsonl', cwd: proj, title: '旧标题甲', createdAt: now - 5000, updatedAt: now, messageCount: 3 },

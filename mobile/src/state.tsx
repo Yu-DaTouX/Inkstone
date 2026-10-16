@@ -1,12 +1,3 @@
-/**
- * 手机端的连接与数据状态。
- *
- * 一个 RemoteClient + 一条事件流；收到事件时只刷新受影响的那部分：
- *   · ui-request / ui-resolved / ui-deadline → 重新拉问题列表
- *   · state / runners / proc → 重新拉快照（运行中状态、可中止的 runId）
- *   · msg-* / tool / session-title → 通知正在看的会话刷新历史，并刷新会话列表
- * 收到 resync（电脑重启过或断线太久）就全部重拉。
- */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { RemoteEventEnvelope, RemotePendingQuestion, RemoteInfo, RemoteModel } from '../../src/shared/remote-protocol'
 import { RemoteClient, RemoteEventStream, RemoteHttpError, type Connection, type SessionListItem, type StreamState } from './api/client'
@@ -37,7 +28,6 @@ interface RemoteState {
   previews: Record<string, { text: string; role: string; at?: number; reply?: ReadMark }>
   error: string | null
   refresh(): Promise<void>
-  /** 订阅某个会话的消息事件（返回取消订阅） */
   onSessionEvent(sessionId: string, listener: () => void): () => void
 }
 
@@ -154,7 +144,7 @@ export function RemoteProvider({
           const reply = [...history.messages].reverse().find((message) => message.role === 'assistant' && message.text?.trim())
           setPreviews((current) => ({ ...current, [session.id]: { text: last?.text?.replace(/\s+/g, ' ').trim().slice(0, 180) ?? '', role: last?.role ?? '', at: last?.timestamp, reply: reply?.timestamp ? { id: reply.id, at: reply.timestamp } : undefined } }))
           previewVersions.current.set(session.id, session.lastActivityAt ?? session.updatedAt)
-        } catch { /* Keep the last successful preview while the desktop reconnects. */ }
+        } catch { }
       }
     }
     void Promise.all([work(), work(), work()])
@@ -168,7 +158,6 @@ export function RemoteProvider({
     for (const set of listeners.current.values()) for (const listener of set) listener()
   }, [refreshStatus, refreshQuestions, refreshInfo])
 
-  /** Bounded refresh frequency without waiting for a continuous stream to become quiet. */
   const debounce = useCallback((key: string, run: () => void) => {
     const existing = timers.current.get(key)
     if (existing) return
@@ -188,7 +177,6 @@ export function RemoteProvider({
     void refresh()
     let streamTimer: ReturnType<typeof setTimeout> | null = null
     const events = new RemoteEventStream(connection, {
-      /* 短暂断开不立刻显示「重新连接」：1.5 秒内恢复就不闪状态行，也不让列表跳动 */
       onState: (state) => {
         if (streamTimer) { clearTimeout(streamTimer); streamTimer = null }
         if (state === 'open' || state === 'closed') setStream(state)
@@ -201,11 +189,6 @@ export function RemoteProvider({
         if (QUESTION_CHANNELS.has(event.channel)) debounce('questions', () => void refreshQuestions())
         if (STATUS_CHANNELS.has(event.channel)) {
           debounce('status', () => void refreshStatus())
-          /*
-           * 状态变化也要重取历史：流式的 `msg-add` 到达时电脑往往还没把消息写进会话文件，
-           * 真正写完要等回合结束（`state.isAgentRunning=false`）。只靠消息事件刷新，
-           * 手机端就会一直停在旧内容，必须手动下拉刷新才能看到最终回复。
-           */
           const sessionId = sessionOfEvent(event)
           if (sessionId) notifySession(sessionId)
         }
@@ -237,7 +220,6 @@ export function RemoteProvider({
 
   const unread = useMemo(() => new Set(sessions.filter((session) => {
     const reply = session.lastReply ?? previews[session.id]?.reply
-    /* 任一端看过都算已读：手机的已读标记与电脑记的打开时间取较晚者；电脑正开着的会话也算看过 */
     if (session.id === activeSessionId) return false
     const seen = Math.max(marks[session.id]?.at ?? 0, session.lastOpenedAt ?? 0)
     const readAt = seen || (marks._baseline?.at ?? Infinity)

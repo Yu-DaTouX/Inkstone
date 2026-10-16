@@ -1,13 +1,3 @@
-/**
- * MCP 服务归属切换的 IPC 适配（`yan:mcpApp:*`）。
- *
- * 与 `capabilities-ipc.ts` 的导入入口同一套边界：只读归属视图不连接、不落盘；
- * `prepareSwitch` 只生成绑定运行实例身份的短效令牌；`commitSwitch` 只在用户确认后
- * 由主窗口调用，并在写盘前后重核仍是同一个 runner / generation / 控制器 / 项目。
- *
- * 调用者身份、宿主路径、运行时守卫与断开连接全部由主进程提供，渲染端只能回传令牌；
- * 原始 pi 条目与完整配置不进入任何响应。
- */
 import type { IpcRegistrar } from './registrar'
 import type { AppSettings } from '../../shared/ipc'
 import type { AgentController } from '../agent'
@@ -31,18 +21,11 @@ import {
 import { mayHoldMcpApp, mayHoldMcpAppWithLegacy } from '../mcp/app-runtime-ownership'
 import type { McpAppSwitchHolder } from '../../shared/mcp-app-switch'
 
-/*
- * 保守范围闸门由 `mcp/app-runtime-ownership.ts` 统一提供（供 A7 宿主连接路径共用）：
- * 这里只 re-export，不各自维护一份口径。宿主连接的启动见证判定在 A7 facts 工厂里。
- * `mayHoldMcpAppWithLegacy` 额外并入 AgentController 侧 legacy 连接事实。
- */
 export { mayHoldMcpApp, mayHoldMcpAppWithLegacy }
 
 export interface McpAppIpcDeps {
-  /** 当前前台运行实例的控制器 */
   currentAgent(): AgentController | undefined
   registry(): RunnerRegistry | null
-  /** 受信设置：项目登记与 piBin 覆盖只从这里取，渲染端不能指定目录。 */
   settings(): Promise<AppSettings>
   isProjectTrusted(cwd: string): Promise<boolean>
 }
@@ -70,18 +53,6 @@ function switchErrorResponse(error: unknown): { ok: false; code: string; error: 
   return { ok: false, code: 'mcp_app_switch_failed', error: error instanceof Error ? error.message : String(error) }
 }
 
-/**
- * 运行时守卫：基于 RunnerRegistry 的**内部窄快照**列出可能仍持有该服务的实例。
- *
- * 与旧实现的区别：不用 `statuses()`（会漏掉 hidden / 后台交接实例），也不用
- * `busy` 猜测存活状态；注册表缺失 / 读取异常一律抛错，由上层拒绝切换。
- * 返回值只含 id / generation / busy，不把实例全集推给渲染端。
- *
- * 注意：`to-inkstone` 切换保持**保守** —— 本函数只用 `mayHoldMcpAppWithLegacy`
- *（进程确定退出、已知其它项目、且 AgentController 侧 legacy 无该 server 才算排除），
- * 不拿 A7 启动见证放行；见证化排除只用于宿主连接路径，
- * 不给切换路径放宽旧 runner 阻断。
- */
 export async function mcpAppHoldersFor(
   registry: RunnerRegistry | null,
   server: { serverId: string; scope: 'global' | 'project'; projectId?: string }
@@ -128,10 +99,6 @@ function buildSwitchHost(
     agentDir: PI_AGENT_DIR,
     projects: settings.projects.map((project) => ({ id: project.id, cwd: project.cwd })),
     holders: makeHoldersProvider(deps),
-    /*
-     * `to-pi` 写盘前确认唯一所有者：只断**该 server** 的宿主连接，
-     * 不 close 整个连接池（其它 service / 会话不受影响）。
-     */
     disconnectHost: async (serverId) => {
       await mcpAppHost().disconnect(serverId)
     },
@@ -147,7 +114,6 @@ export function registerMcpAppIpc(ipc: IpcRegistrar, deps: McpAppIpcDeps): void 
   const { handle } = ipc
   const { currentAgent, registry, settings } = deps
 
-  /* 只读归属视图：不连接、不落盘、不回传凭证。 */
   handle('yan:mcpApp:ownership', async () => {
     const loaded = loadMcpServers()
     if (loaded.error) return { servers: [], error: `砚的 MCP 配置存在解析问题：${loaded.error}` }
@@ -167,7 +133,6 @@ export function registerMcpAppIpc(ipc: IpcRegistrar, deps: McpAppIpcDeps): void 
             ...(config.projectScope ? { projectId: config.projectScope } : {})
           })
         } catch {
-          /* 运行时无法判断：不把异常抛给渲染端，按 fail-closed 标为不可切换。 */
           holdersUnknown = true
         }
         return mcpAppOwnershipView({
@@ -244,7 +209,6 @@ export function registerMcpAppIpc(ipc: IpcRegistrar, deps: McpAppIpcDeps): void 
     try {
       const current = await settings()
       const host = buildSwitchHost(deps, current, binding.identity.cwd)
-      /* `settings()` 是 await；期间运行实例可能已切换，提交前再核对一次。 */
       const runnerNow = registry()?.activeRunner()
       const runtimeNow = runnerNow ? registry()?.runtimeOf(runnerNow.id) : null
       const agentNow = registry()?.agentOf(binding.identity.runnerId)
@@ -262,16 +226,7 @@ export function registerMcpAppIpc(ipc: IpcRegistrar, deps: McpAppIpcDeps): void 
       }
       const result = await commitMcpAppSwitch({ host, token, owner: { id: binding.ownerId } })
       if (!result.ok) return { ok: true, result }
-      /*
-       * 归属切换后按**当前配置 + 当前事实**对该服务显式对账：不再合法的池连接断开，
-       * 无关服务不动。不自动重启 / 批量 reload 用户会话。
-       */
       await mcpAppHost().reconcile(binding.serverId).catch(() => undefined)
-      /*
-       * 不自动 `registry.reloadMcpServers()`：那会关闭**所有**运行实例的 MCP 连接，
-       * 改变其它会话的运行状态，且无法证明无副作用。只如实提示需要新会话 / 手动重载。
-       * FIX3 的连接资格自检独立 fail-closed，不依赖这里的即时重载。
-       */
       return {
         ok: true,
         result: {

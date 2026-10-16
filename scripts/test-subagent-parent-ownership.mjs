@@ -1,30 +1,3 @@
-/**
- * 子代理派活的父归属（专题回归，不需要真实 pi / 模型 / Electron）。
- *
- * 背景：界面在后台查看会话 B 时（active 仍在 A），派活表单的父归属必须落到 B，
- * 不能静默挂到 A。本脚本用**真实源码**钉住三件事：
- *
- *   A. 渲染端归属推导：真实 `subagent-view.ts` 的 `subagentOwnerForView`
- *      · 从屏幕正在看的视图（peek 优先）找到已有运行实例，给出 runId / sessionId /
- *        generation；B 视图即使 active 是 A 也只认 B 的实例；
- *      · 视图有稳定身份却找不到实例时 `needsRunner`：明确不派，绝不退回 active；
- *      · 身份尚未落定的启动早期不带 owner（宿主入口同步钉住当前父，正常兼容）。
- *
- *   B. IPC 适配：真实 `subagents-ipc.ts`
- *      · `expectedRuntime` 原样转给 `parentContext`；
- *      · 宿主定位失败抛错时返回 `{ ok:false, error }`，且**不** `setContext`、
- *        不 `start`（零 spawn）；
- *      · 不传 owner 时仍走原「当前父」入口（老调用 / CLI 兼容）。
- *
- *   C. 宿主显式 owner 解析：从 `src/main/index.ts` 抽取当前函数文本，配真实
- *      `RunnerRegistry`：
- *      · 只认已存在实例：非法 / 缺目标 / 旧代次 / 未知 runId 一律返回 null（明确失败）；
- *      · 后台 B 视图（active A）解析到 B 的 SID / run / cwd，且不改变 active；
- *      · 不同真实 SID 即使 runId 相同也不归 B；await 期间被复用（代次前进）不贴新 owner。
- *
- * 现场用 esbuild / TypeScript 转译到系统临时目录；不启动 Electron、不连 pi、
- * 不读写真实用户数据、不触碰用户窗口。
- */
 import fs from 'node:fs/promises'
 import vm from 'node:vm'
 import ts from 'typescript'
@@ -36,13 +9,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-/**
- * 编译真实 `SubagentPanel.tsx`，并把它的 `window.yan.subagents.start` 派活参数抓出来。
- *
- * 组件自身的第一个 `useState` 是任务输入；用一个只重写 `useState` 的 react shim
- * 把首帧任务预置成可提交值（其余 hook / 真 React 实例不变），再拦截 `<form onSubmit>`。
- * 每个用例用带 query 的 URL 重新导入，拿到干净的 seed 状态。
- */
 async function loadPanelHarness(panelDir) {
   const base = resolve('.tmp/subagent-parent-ownership')
   await fs.mkdir(base, { recursive: true })
@@ -113,7 +79,6 @@ export const Textarea = ({ children, ...rest }) => h('textarea', rest, children)
   return out
 }
 
-/** 用预置任务渲染真实面板，并返回它提交时传给宿主 start 的参数（不提交则 null）。 */
 async function panelDispatch(panelOut, caseId, store) {
   globalThis.__panelStore = {
     subagents: [], models: [], settings: { cwd: '/tmp' },
@@ -139,7 +104,6 @@ async function panelDispatch(panelOut, caseId, store) {
   return calls
 }
 
-/** 编译真实 TS 源并返回其 module（系统临时目录，结束删除）。 */
 async function loadBundle(entry, dir, name) {
   const outfile = join(dir, `${name}.mjs`)
   await build({
@@ -153,7 +117,6 @@ async function loadBundle(entry, dir, name) {
   return import(pathToFileURL(outfile).href)
 }
 
-/** RunnerRegistry 的测试 agent：只实现 registry / workspace 会用到的边界。 */
 function mkAgent(sessionId, sessionFile) {
   return {
     state: { sessionId, sessionFile, sessionName: 'n', cwd: undefined, isAgentRunning: false, isStreaming: false, isCompacting: false },
@@ -185,15 +148,11 @@ export async function runSubagentParentOwnershipTests(ok) {
   const realWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
   const realPanelStore = Object.getOwnPropertyDescriptor(globalThis, '__panelStore')
   try {
-    /* ──────────────────────────────────────────────────────────────
-     * D. 真实 SubagentPanel：派活参数带上视图 owner（不是 active）
-     * ────────────────────────────────────────────────────────────── */
     {
       const panelOut = await loadPanelHarness(panelDir)
       const runnerB = { id: 'rB', runId: 'rB', sessionId: 'B', sessionFile: 'C:/other/b.jsonl', projectId: 'pB', generation: 7, cwd: 'C:/other', running: false }
       const runnerA = { id: 'rA', runId: 'rA', sessionId: 'A', sessionFile: 'C:/proj/a.jsonl', projectId: 'pA', generation: 2, cwd: 'C:/proj', running: false }
 
-      /* 后台查看 B（active 仍在 A）：派活带 B 的 owner。 */
       const bCalls = await panelDispatch(panelOut, 'b', {
         peekedSessionId: 'B', peekedPath: null,
         session: { sessionId: 'A', conversationId: 'A-conv', cwd: 'C:/proj', model: { provider: 'p', id: 'm', name: 'M' } },
@@ -203,7 +162,6 @@ export async function runSubagentParentOwnershipTests(ok) {
       check(bCalls.length === 1, 'B 视图派活调用宿主一次')
       check(bCalls[0]?.[3]?.runId === 'rB' && bCalls[0]?.[3]?.sessionId === 'B' && bCalls[0]?.[3]?.generation === 7, '面板把 B 的 expectedRuntime（runId/sid/代次）传给宿主')
 
-      /* 有稳定 SID 但没有 B 实例：明确不派，不落到 active A。 */
       const blockedCalls = await panelDispatch(panelOut, 'blocked', {
         peekedSessionId: 'B', peekedPath: null,
         session: { sessionId: 'A', conversationId: 'A-conv', cwd: 'C:/proj', model: { provider: 'p', id: 'm', name: 'M' } },
@@ -212,7 +170,6 @@ export async function runSubagentParentOwnershipTests(ok) {
       })
       check(blockedCalls.length === 0, 'B 有稳定 SID 但无实例 → 面板不派活（不落到 active A）')
 
-      /* 身份尚未落定的启动早期：不带 owner，宿主入口钉当前父（兼容）。 */
       const startupCalls = await panelDispatch(panelOut, 'startup', {
         peekedSessionId: null, peekedPath: null,
         session: { sessionId: '', cwd: 'C:/proj', model: { provider: 'p', id: 'm', name: 'M' } },
@@ -221,9 +178,6 @@ export async function runSubagentParentOwnershipTests(ok) {
       })
       check(startupCalls.length === 1 && startupCalls[0]?.[3] === undefined, '启动早期面板不带 owner（宿主按当前父处理）')
     }
-    /* ──────────────────────────────────────────────────────────────
-     * A. 渲染端归属推导（真实 subagent-view.ts）
-     * ────────────────────────────────────────────────────────────── */
     {
       const { subagentOwnerForView, subagentScopeForView } = await loadBundle(
         fileURLToPath(new URL('../src/renderer/src/state/subagent-view.ts', import.meta.url)),
@@ -234,7 +188,6 @@ export async function runSubagentParentOwnershipTests(ok) {
         { id: 'rA', runId: 'rA', sessionId: 'A', sessionFile: 'C:\\proj\\a.jsonl', projectId: 'pA', generation: 3 },
         { id: 'rB', runId: 'rB', sessionId: 'B', sessionFile: 'c:/PROJ/b.jsonl', projectId: 'pB', generation: 7 }
       ]
-      /* 后台查看 B、active 留在 A。 */
       const viewB = { peekedSessionId: 'B', peekedPath: null, session: { sessionId: 'A', sessionFile: 'C:/proj/a.jsonl', conversationId: 'A-conv' }, runners }
       const ownerB = subagentOwnerForView(viewB)
       check(ownerB.expectedRuntime?.runId === 'rB', 'B 视图派活归属取 B 的实例（不是 active 的 A）')
@@ -242,34 +195,25 @@ export async function runSubagentParentOwnershipTests(ok) {
       check(ownerB.expectedRuntime?.projectId === 'pB', 'owner 带 B 的 projectId')
       check(ownerB.needsRunner === false, 'B 视图有实例时不阻止派活')
 
-      /* 归属与列表共用同一套「屏幕正在看哪条会话」。 */
       const scopeB = subagentScopeForView(viewB)
       check(scopeB.runIds?.[0] === 'rB' && scopeB.sessionIds.join(',') === 'B', '派活归属与列表归属指向同一视图实例')
 
-      /* 当前会话 A：正常取 A 的实例。 */
       const ownerA = subagentOwnerForView({ peekedSessionId: null, peekedPath: null, session: { sessionId: 'A', sessionFile: 'C:/proj/a.jsonl' }, runners })
       check(ownerA.expectedRuntime?.runId === 'rA' && ownerA.expectedRuntime?.sessionId === 'A', '当前会话 A 派活归属取 A 的实例')
 
-      /* 稳定 SID 但没有实例：明确不派。 */
       const noRunner = subagentOwnerForView({ peekedSessionId: 'B', peekedPath: null, session: { sessionId: 'A' }, runners: [runners[0]] })
       check(noRunner.needsRunner === true && noRunner.expectedRuntime === undefined, '有稳定 SID 但无运行实例 → needsRunner（明确不派）')
 
-      /* 按路径预览且没有实例：同样不派。 */
       const noRunnerPath = subagentOwnerForView({ peekedSessionId: null, peekedPath: 'C:/gone/x.jsonl', session: null, runners })
       check(noRunnerPath.needsRunner === true, '按路径预览找不到实例 → needsRunner')
 
-      /* 身份尚未落定的启动早期：不带 owner，交给宿主入口钉当前父。 */
       const startup = subagentOwnerForView({ peekedSessionId: null, peekedPath: null, session: { sessionId: '' }, runners })
       check(startup.needsRunner === false && startup.expectedRuntime === undefined, '启动早期无身份 → 不带 owner（宿主钉当前父）')
 
-      /* pending:<runId> 身份按 runId 找到实例。 */
       const pending = subagentOwnerForView({ peekedSessionId: 'pending:rB', peekedPath: null, session: null, runners })
       check(pending.expectedRuntime?.runId === 'rB', 'pending:<runId> 视图按 runId 找到实例')
     }
 
-    /* ──────────────────────────────────────────────────────────────
-     * B. IPC 适配（真实 subagents-ipc.ts）
-     * ────────────────────────────────────────────────────────────── */
     {
       const { registerSubagentsIpc } = await loadBundle(
         fileURLToPath(new URL('../src/main/ipc/subagents-ipc.ts', import.meta.url)),
@@ -308,9 +252,6 @@ export async function runSubagentParentOwnershipTests(ok) {
       check(starts.length === 2, '老调用仍能派活（兼容）')
     }
 
-    /* ──────────────────────────────────────────────────────────────
-     * C. 宿主显式 owner 解析（抽取 main/index.ts 当前函数 + 真实 registry）
-     * ────────────────────────────────────────────────────────────── */
     {
       const indexFile = fileURLToPath(new URL('../src/main/index.ts', import.meta.url))
       const source = await fs.readFile(indexFile, 'utf8')
@@ -358,7 +299,6 @@ export async function runSubagentParentOwnershipTests(ok) {
       vm.runInContext(code, context)
       const { parentContextFromOwner } = context
 
-      /* 前置：A 先忙，B 才会新建独立 runner；随后把 active 拉回 A。 */
       const a = await registry.select({ cwd: 'C:/proj', sessionFile: 'C:/proj/A.jsonl' })
       registry.agentOf(a.id).state = { ...registry.agentOf(a.id).state, isAgentRunning: true }
       const b = await registry.select({ cwd: 'C:/other', sessionFile: 'C:/other/B.jsonl' })
@@ -379,7 +319,6 @@ export async function runSubagentParentOwnershipTests(ok) {
       check(ctx?.parentGeneration === runtimeB.generation, '父代次来自同一目标实例（供 pending→真实迁移判定）')
       check(registry.activeRunnerId === a.id, '解析 B 不改变 active（仍停在 A）')
 
-      /* 非法 / 缺目标 / 旧代次 / 未知 runId：全部 null（宿主据此明确失败）。 */
       check(parentContextFromOwner(undefined, settings) === null, '未给 owner → null（由入口走默认路径）')
       check(parentContextFromOwner({}, settings) === null, '缺字段 owner → null')
       check(parentContextFromOwner('B', settings) === null, '非对象 owner → null')
@@ -387,26 +326,20 @@ export async function runSubagentParentOwnershipTests(ok) {
       check(parentContextFromOwner({ runId: b.id, generation: runtimeB.generation + 5 }, settings) === null, '旧 / 错代次 → null')
       check(parentContextFromOwner({ runId: b.id, sessionId: 'Z-real', generation: runtimeB.generation }, settings) === null, '同 runId 但不同真实 SID → null（不得归 B）')
 
-      /* pending → 真实 uuid 的同代次迁移仍算同一目标。 */
       setSession(registry, b.id, `pending:${b.id}`)
       const pendingOwner = { sessionId: `pending:${b.id}`, runId: b.id, generation: runtimeB.generation }
       setSession(registry, b.id, 'B-real')
       const migrated = parentContextFromOwner(pendingOwner, settings)
       check(migrated?.parentRunId === b.id && migrated?.parentSessionId === 'B-real', 'pending → 真实 uuid 同代次迁移可用，父 SID 用当前值')
 
-      /* await 期间实例被复用（代次前进）：不贴新 owner。 */
       setSession(registry, b.id, 'B-real')
       const captured = { sessionId: 'B-real', runId: b.id, generation: runtimeB.generation }
       setSession(registry, b.id, 'C-real')
       check(parentContextFromOwner(captured, settings) === null, '复用成别的真实 SID（同 runId）→ null，不把 B 的派活贴给 C')
 
-      /* A 的默认入口语义未被触碰：不传 owner 时 helper 只负责显式路径。 */
       check(parentContextFromOwner(null, settings) === null, 'null owner → null（默认路径不受影响）')
       check(registry.activeRunnerId === a.id, '全程 active 始终是 A')
 
-      /* ────────────────────────────────────────────────────────────
-       * E. 默认父在第一个 await 前同步捕获（double-await 不漂移）
-       * ──────────────────────────────────────────────────────────── */
       {
         const fakeAgents = new Map()
         const fakeRuntimes = new Map()
@@ -431,7 +364,6 @@ export async function runSubagentParentOwnershipTests(ok) {
         const capA = context.captureDefaultParent()
         check(capA?.runId === 'rA' && capA?.generation === 5 && capA?.sessionId === 'A-real', '默认父在第一个 await 前同步捕获 active A 的身份')
 
-        /* getSettings / service.get 双 await 期间 active 切到 B，A 未被复用。 */
         fakeActive = 'rB'
         await Promise.resolve()
         await Promise.resolve()
@@ -439,7 +371,6 @@ export async function runSubagentParentOwnershipTests(ok) {
         check(defCtx.parentRunId === 'rA' && defCtx.parentSessionId === 'A-real' && defCtx.parentGeneration === 5, '双 await 期间切 active B：派活仍准确挂捕获的 A 的身份')
         check(fakeActive === 'rB', '默认捕获不改动 active（B 不变）')
 
-        /* A 换代 / 真实 SID 变成 C / 实例被换：安全拒绝，不落当时的 active B。 */
         fakeRuntimes.set('rA', { runId: 'rA', generation: 6, sessionId: 'A-real' })
         let rejected = false
         try { context.parentContextFromCapture(capA, settings) } catch { rejected = true }
@@ -455,7 +386,6 @@ export async function runSubagentParentOwnershipTests(ok) {
         try { context.parentContextFromCapture(capA, settings) } catch { rejected = true }
         check(rejected, 'A 实例被换掉后安全拒绝')
 
-        /* 同代 pending → 真实 SID：放行并给出真实 SID。 */
         addFake('rA', 'pending:rA', 5, 'C:/proj')
         fakeActive = 'rA'
         const capPending = context.captureDefaultParent()
@@ -464,7 +394,6 @@ export async function runSubagentParentOwnershipTests(ok) {
         const migratedDefault = context.parentContextFromCapture(capPending, settings)
         check(migratedDefault.parentRunId === 'rA' && migratedDefault.parentSessionId === 'A-real', '同代 pending → 真实 SID 默认捕获可用')
 
-        /* 启动早期没有父：保持 cwd-only 兼容，绝不冒认后来出现的父。 */
         fakeActive = null
         const capNone = context.captureDefaultParent()
         check(capNone === null, '无 active 实例时捕获为 null（启动早期）')
@@ -472,7 +401,6 @@ export async function runSubagentParentOwnershipTests(ok) {
         const noneCtx = context.parentContextFromCapture(capNone, settings)
         check(noneCtx.parentRunId === undefined && noneCtx.cwd === settings.cwd, '启动早期不冒认后来出现的父（cwd-only 兼容）')
 
-        /* 显式 owner（含显式 null / 瘦字段 / 非法代次）走严格定位，绝不退回默认 active。 */
         fakeRuntimes.set('rA', { runId: 'rA', generation: 5, sessionId: 'A-real' })
         const explicitB = context.resolveSubagentParentContext(
           { sessionId: 'B-real', runId: 'rB', generation: 6 },
@@ -494,9 +422,6 @@ export async function runSubagentParentOwnershipTests(ok) {
         check(defaultCtx.parentRunId === 'rA', '未传 owner 走默认捕获的 active A')
       }
 
-      /* ────────────────────────────────────────────────────────────
-       * F. pending→真实 SID：真实控制器 + 生产 pushRunners 钩子
-       * ──────────────────────────────────────────────────────────── */
       {
         const { SubagentController } = await loadBundle(
           fileURLToPath(new URL('../src/main/subagents.ts', import.meta.url)),
@@ -537,7 +462,6 @@ export async function runSubagentParentOwnershipTests(ok) {
         putRun('sub-zero', { parentRunId: 'rA', parentGeneration: 0, parentSessionId: 'pending:rA' })
         check(adopt({ parentGeneration: 0 }).length === 1, 'parentGeneration 为 0 也是有效证明')
 
-        /* 生产钩子：真实 `pushRunners`（从 index.ts 抽取）在身份落定时通知真实 producer。 */
         putRun('sub-hook', { parentRunId: 'rA', parentGeneration: 5, parentSessionId: 'pending:rA' })
         const hookBefore = emitted.length
         context.runners = { statuses: () => [{ runId: 'rA', sessionId: 'A-real', generation: 5 }] }
@@ -549,17 +473,14 @@ export async function runSubagentParentOwnershipTests(ok) {
         context.pushRunners()
         check(controller.runs.get('sub-hook').parentSessionId === 'A-real', '生产 pushRunners 钩子在真实 SID 落定时通知 producer 完成迁移')
         check(emitted.length === hookBefore + 1 && emitted.at(-1).parentSessionId === 'A-real', '钩子只推一次 updated 快照')
-        /* 钩子可达性：state 推送确实会走到 pushRunners，而不是只有 fixture 调它。 */
         const indexSource = await fs.readFile(fileURLToPath(new URL('../src/main/index.ts', import.meta.url)), 'utf8')
         check(/if \(msg\.ch === 'state'\) pushRunners\(\)/.test(indexSource), '生产调用链：pushFrom 的 state 分支会通知 pushRunners（钩子可达）')
 
-        /* 换代 / 复用不同真实 SID：真实钩子不收养旧 pending。 */
         putRun('sub-reuse', { parentRunId: 'rA', parentGeneration: 5, parentSessionId: 'pending:rA' })
         context.runners = { statuses: () => [{ runId: 'rA', sessionId: 'A-real', generation: 6 }] }
         context.pushRunners()
         check(controller.runs.get('sub-reuse').parentSessionId === 'pending:rA', '新代次/复用不收养旧 pending')
 
-        /* selector 现状与迁移后：真实 subagent-view 只在真实 SID 视图里显示已迁移的 child。 */
         const { selectSubagentRuns } = await loadBundle(
           fileURLToPath(new URL('../src/renderer/src/state/subagent-view.ts', import.meta.url)),
           dir,
@@ -572,9 +493,6 @@ export async function runSubagentParentOwnershipTests(ok) {
         check(afterGroups.all.length === 1, '迁移后真实 SID 视图能看到这个 child')
       }
 
-      /* ────────────────────────────────────────────────────────────
-       * G. IPC 在 service.get 之前开始父捕获（dispatch 层顺序）
-       * ──────────────────────────────────────────────────────────── */
       {
         const { registerSubagentsIpc } = await loadBundle(
           fileURLToPath(new URL('../src/main/ipc/subagents-ipc.ts', import.meta.url)),
@@ -635,21 +553,18 @@ export async function runSubagentParentOwnershipTests(ok) {
         check(contexts[0].parentRunId === 'rA' && contexts[0].parentSessionId === 'A-real', 'service.get 等待期切 active B：派活仍挂捕获的 A')
         check(fakeActive === 'rB', '捕获不改动 active')
 
-        /* 第二次：等待期父换代 → 明确失败、零 spawn。 */
         fakeActive = 'rA'
         phase = 1
         order.length = 0
         const second = await start('task A2', 'model', 'shared-cwd', undefined)
         check(second.ok === false && starts.length === 1, '等待期父换代：明确失败、零 spawn、不 fallback')
 
-        /* 显式 owner B：active 仍是 A，也准确定位 B。 */
         phase = 2
         fakeActive = 'rA'
         const explicit = await start('task B', 'model', 'shared-cwd', { sessionId: 'B-real', runId: 'rB', generation: 6 })
         check(explicit.ok === true && contexts.at(-1).parentRunId === 'rB', '显式 owner 在 IPC 层定位 B（active 仍 A）')
         check(fakeActive === 'rA', '显式 owner 不改动 active')
 
-        /* 显式 null：无效，不 fallback 默认 active，零 spawn。 */
         const nullRes = await start('task', 'model', 'shared-cwd', null)
         check(nullRes.ok === false && starts.length === 2, '显式 null owner 在 IPC 层判无效、零 spawn')
       }
@@ -663,7 +578,6 @@ export async function runSubagentParentOwnershipTests(ok) {
   }
 }
 
-/* -------------------------------------------------------------- 直接运行入口 */
 const invokedDirectly = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url
 if (invokedDirectly) {
   let passed = 0

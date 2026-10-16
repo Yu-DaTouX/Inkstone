@@ -1,19 +1,3 @@
-/**
- * 流式重复检测器（src/shared/stream-loop-detector.ts）的专项回归。
- *
- * 重点钉住四件事：
- *   1. 固定每 32 字符检查 → 命中位置只由累计字符决定，不随 Provider 分块变化；
- *      单个大 delta 中间夹循环、尾部正常时也要在循环处命中。
- *   2. 末尾精确周期对「半行旋转」模板不再误排除（如 `。\n\n好` 相位的 `好。\n\n` 循环）。
- *   3. 完整行短语池：小词汇池洗牌能命中 *-lines；代码 / 表格 / JSON / 日志 / 分隔线不误停。
- *   4. 思考与正文两条流各自独立，一条消息至多命中一次；reset 后可重新检测。
- *
- * 用 esbuild 编译到系统临时目录，不写 out/，不启动 Electron / 不联网 / 不调用真实模型。
- * 可用 LOOP_SAMPLE 指定本地异常样本；未指定就跳过。
- * 只做本地重放，样本正文不进入仓库，公开测试不依赖用户附件。
- *
- * 用法：node scripts/test-stream-loop-detector.mjs
- */
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,7 +7,6 @@ const THINKING_REPEAT = 512
 const TEXT_REPEAT = 256
 const CHECK_INTERVAL = 32
 
-/** 把内容按给定分块长度序列喂给一个 feed(delta)，返回首个命中和累计字符数。 */
 function feedChunks(feed, content, sizes) {
   let pos = 0
   let i = 0
@@ -40,7 +23,6 @@ function feedChunks(feed, content, sizes) {
   return { hit: null, at: emitted }
 }
 
-/** 确定性伪随机，保证洗牌可复现。 */
 function makeRandom(seed) {
   let state = seed >>> 0
   return () => {
@@ -76,16 +58,13 @@ export async function runStreamLoopDetectorTests(ok) {
     const det = () => createStreamLoopDetector()
     const CYCLE = '好。\n\n'
 
-    /* ── 1. 固定 32 字符步进：命中位置与分块无关 ── */
     {
       const content = CYCLE.repeat(200)
       const ref = feedChunks((c) => det().onThinking(c), content, [100000])
-      // 每个分块序列都用同一个内容、同一份新检测器重跑
       const runs = [[1], [3], [7], [32], [5, 3, 17], [31, 1], [100000]].map((sizes) => {
         const d = det()
         return feedChunks((c) => d.onThinking(c), content, sizes)
       })
-      // hit.emittedChars 是检测器内部的 32 对齐检查点；r.at 只是「喂到哪一块才看到命中」。
       const at = runs[0].hit && runs[0].hit.emittedChars
       ok(ref.hit && ref.hit.rule === 'reasoning-cycle', '周期：thinking 合成循环命中 reasoning-cycle', JSON.stringify(ref.hit))
       ok(runs.every((r) => r.hit && r.hit.rule === 'reasoning-cycle' && r.hit.emittedChars === at), '周期：7 种分块命中规则与内部位置完全一致', runs.map((r) => (r.hit ? r.hit.emittedChars : 'null')).join(','))
@@ -93,7 +72,6 @@ export async function runStreamLoopDetectorTests(ok) {
       ok(at === 544, '周期：思考最快命中点为 544（512 门槛 + 4 字符模板对齐）', String(at))
     }
 
-    /* ── 2. 单个大 delta 中间有循环、尾部正常，不能漏报 ── */
     {
       const prefix = '思考开始。'.repeat(20)
       const loop = CYCLE.repeat(150)
@@ -104,17 +82,14 @@ export async function runStreamLoopDetectorTests(ok) {
       ok(r.hit && r.hit.rule === 'reasoning-cycle', '大 delta：中间循环也能命中', JSON.stringify(r.hit))
       const midAt = r.hit && r.hit.emittedChars
       ok(midAt > prefix.length && midAt < prefix.length + loop.length, '大 delta：命中发生在循环段内（不是靠最终尾巴）', `${midAt} ∈ (${prefix.length},${prefix.length + loop.length})`)
-      // 对照：把循环放在最前面、尾部同样是正常内容，也要命中
       const d2 = det()
       const r2 = feedChunks((c) => d2.onThinking(c), loop + suffix, [loop.length + suffix.length])
       ok(r2.hit && r2.hit.rule === 'reasoning-cycle' && r2.hit.emittedChars <= loop.length, '大 delta：循环在前、正常尾部在后仍命中', `${r2.hit && r2.hit.emittedChars}`)
     }
 
-    /* ── 3. 跨 delta 拆分（token 被切碎、行被切开）── */
     {
       const content = CYCLE.repeat(200)
       const d = det()
-      // 按单个字符喂，短句、换行都被拆开
       const r = feedChunks((c) => d.onThinking(c), content, [1])
       ok(r.hit && r.hit.rule === 'reasoning-cycle' && r.hit.emittedChars === 544, '跨 delta：逐字符喂入仍命中 544', JSON.stringify(r.hit))
       const d2 = det()
@@ -122,9 +97,8 @@ export async function runStreamLoopDetectorTests(ok) {
       ok(r2.hit && r2.hit.rule === 'reasoning-cycle' && r2.hit.emittedChars === 544, '跨 delta：不规则切分仍命中 544', JSON.stringify(r2.hit))
     }
 
-    /* ── 4. 半行旋转模板不再被「长度<2 的片段」误排除 ── */
     {
-      const rotated = '。\n\n好'.repeat(200) // 与 CYCLE 同周期，只是相位偏了 1 个字符
+      const rotated = '。\n\n好'.repeat(200)
       const d = det()
       const r = feedChunks((c) => d.onThinking(c), rotated, [1, 2, 3, 5, 7])
       ok(r.hit && r.hit.rule === 'reasoning-cycle' && r.hit.emittedChars === 544, '旋转相位：半行切片不再误排除', JSON.stringify(r.hit))
@@ -134,7 +108,6 @@ export async function runStreamLoopDetectorTests(ok) {
       ok(r2.hit && r2.hit.rule === 'reasoning-cycle', '旋转相位：另一种相位也命中', JSON.stringify(r2.hit))
     }
 
-    /* ── 5. 正文周期用更短门槛，且与思考流独立 ── */
     {
       const content = 'abc123XYZ'.repeat(100)
       const d = det()
@@ -143,13 +116,11 @@ export async function runStreamLoopDetectorTests(ok) {
       ok(r.hit && r.hit.rule === 'text-cycle', '正文：text-cycle 命中', JSON.stringify(r.hit))
       ok(r.hit && r.hit.emittedChars === 288, '正文：text 最快命中点为 288（256 门槛 + 9 字符模板对齐）', r.hit && String(r.hit.emittedChars))
 
-      // 思考流门槛是 512：同样的 9 字符周期在 288 处不该命中思考
       const d2 = det()
       const r2 = feedChunks((c) => d2.onThinking(c), content, [11])
       ok(r2.hit === null || r2.hit.emittedChars >= THINKING_REPEAT, '正文：同一内容按思考门槛不会过早命中')
     }
 
-    /* ── 6. 短语池：小词汇池洗牌命中 *-lines ── */
     {
       const lines = ['我们先看源码。', '接下来写测试。', '继续检查边界。', '请确认这个点。', '然后再做验证。', '最后整理结果。', '还需要补一个例。', '这里先停一下。']
       const random = makeRandom(20261015)
@@ -162,7 +133,6 @@ export async function runStreamLoopDetectorTests(ok) {
       ok(r.hit && r.hit.repeatedChars >= 2048, '短语池：重复质量达到 2048 门槛', r.hit && String(r.hit.repeatedChars))
     }
 
-    /* ── 7. 结构性重复不误停 ── */
     {
       const cases = [
         ['代码块', 'function tick() {\n  return value + 1;\n}\n'],
@@ -178,7 +148,6 @@ export async function runStreamLoopDetectorTests(ok) {
       }
     }
 
-    /* Markdown 围栏排除必须跟踪上下文，不能只靠代码行里的标点。 */
     {
       for (const marker of ['```', '~~~~']) {
         for (const sizes of [[1], [31, 7], [100000]]) {
@@ -199,7 +168,6 @@ export async function runStreamLoopDetectorTests(ok) {
       ok(longOpener.onText(`\`\`\`${'language'.repeat(50)}\n${CYCLE.repeat(1000)}\`\`\`\n`) === null, '围栏：超长起始行仍保留状态')
     }
 
-    /* ── 8. 正常长流不误停 + 有界短语池 ── */
     {
       const d = det()
       let text = ''
@@ -208,7 +176,6 @@ export async function runStreamLoopDetectorTests(ok) {
       ok(r.hit === null, '正常：12 万字符互异长流不命中', r.hit && JSON.stringify(r.hit))
     }
 
-    /* ── 9. 每条消息至多一次命中、reset 复位 ── */
     {
       const d = det()
       const r1 = feedChunks((c) => d.onThinking(c), CYCLE.repeat(200), [64])
@@ -221,7 +188,6 @@ export async function runStreamLoopDetectorTests(ok) {
       ok(d.onThinking('') === null && d.onText('') === null, '边界：空 delta 不命中')
     }
 
-    /* ── 10. 本地异常样本离线重放（可选）── */
     {
       const samplePath = process.env.LOOP_SAMPLE
       let raw = null

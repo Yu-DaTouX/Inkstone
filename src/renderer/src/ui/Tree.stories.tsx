@@ -12,14 +12,6 @@ import {
 } from './index'
 import './Tree.css'
 
-/**
- * v3 Tree 原语（WP-05）的状态故事。
- *
- * 外观一律来自 `Tree.css` 与 `design/tokens.css`，本文件不写控件样式；主题与密度
- * 由 `.storybook/preview.ts` 的全局装饰器切换。故事覆盖：层级、展开、禁用、空态、
- * 长名称，以及分组与多选。行内容用函数返回 `TreeItemContent`（RAC 的静态集合只认识
- * 直接的 `TreeItemContent` / `TreeItem` 子节点，不能包一层自定义组件）。
- */
 const meta = {
   title: 'v3/Tree',
   parameters: {
@@ -44,7 +36,6 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** 与产品一致的树表面：原语本身不含底色，交给所在面板。 */
 function TreeSurface({ children, width = 320 }: { children: ReactNode; width?: number }) {
   return (
     <div
@@ -62,15 +53,12 @@ function TreeSurface({ children, width = 320 }: { children: ReactNode; width?: n
   )
 }
 
-/** RAC 的行内容：chevron 由 slot 接入展开；叶子行由 CSS 隐藏箭头但保留对齐。 */
 const rowContent = (label: string, title?: string) => (
   <TreeItemContent>
     <TreeChevron />
     <TreeItemLabel title={title ?? label}>{label}</TreeItemLabel>
   </TreeItemContent>
 )
-
-/* ---------- 层级 ---------- */
 
 export const Hierarchy: Story = {
   name: '层级 · 三级目录',
@@ -105,8 +93,6 @@ export const Hierarchy: Story = {
   )
 }
 
-/* ---------- 展开 ---------- */
-
 function ExpansionDemo() {
   const [expanded, setExpanded] = useState<Set<string | number>>(new Set(['a']))
   return (
@@ -137,8 +123,6 @@ export const Expansion: Story = {
   render: () => <ExpansionDemo />
 }
 
-/* ---------- 禁用 ---------- */
-
 export const Disabled: Story = {
   name: '禁用 · 单行与整组',
   render: () => (
@@ -164,8 +148,6 @@ export const Disabled: Story = {
   )
 }
 
-/* ---------- 空态 ---------- */
-
 export const Empty: Story = {
   name: '空态 · 没有任何文件',
   render: () => (
@@ -174,8 +156,6 @@ export const Empty: Story = {
     </TreeSurface>
   )
 }
-
-/* ---------- 长名称 ---------- */
 
 export const LongNames: Story = {
   name: '长名称 · 单行省略',
@@ -198,8 +178,6 @@ export const LongNames: Story = {
     </TreeSurface>
   )
 }
-
-/* ---------- 分组与多选 ---------- */
 
 export const Sections: Story = {
   name: '分组与多选',

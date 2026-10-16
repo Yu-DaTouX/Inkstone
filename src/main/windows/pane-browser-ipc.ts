@@ -1,11 +1,3 @@
-/**
- * 浏览器原生弹出窗的受限 IPC（v3 · WP-30 弹出 · browser）。
- *
- * 弹出窗渲染端**拿不到**通用 `yan:browser:*`；这里只暴露它自己那一个视图的
- * 状态、坐标、导航与关闭。每个调用都先经控制器的 `ownsBrowser(sender)` 校验：
- * 来源必须是某个浏览器弹窗的目标窗口，且租约仍绑定着它；端口自己再校验一次
- * 目标窗口 / 归属 / 代次，形成两道门。
- */
 import { ipcMain } from 'electron'
 import type { WebContents } from 'electron'
 import { PANE_BROWSER_CHANNELS, type PaneBrowserStateView } from '../../shared/pane-popout'

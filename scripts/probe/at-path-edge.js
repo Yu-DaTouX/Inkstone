@@ -1,19 +1,3 @@
-/**
- * `@` 文件引用补全的边界（N19）——在**合成 fixture 项目**上跑。
- *
- * `atPath` 场景证明的是「能用的路径能用」；这里补的是容易出错、源码树里
- * 造不出来或不好断言的那几类：
- *   主进程 completePath：
- *     · 多级目录 / 中文空格 / 引号前缀
- *     · 同名文件（`dup/one/same.ts` 与 `dup/two/same.ts` 必须是两项）
- *     · 大目录 → 30 条上限 + `truncated` 标记（界面要说明「还有更多」）
- *     · 目录联接 / 把文件当目录 / 越界 / 绝对路径 → 明确拒绝
- *     · 无权限目录（ACL deny 读取）→ `permission`，不是「空目录」
- *   界面（真实 Composer）：
- *     · 中文空格候选被接受后**自动补引号**，且不破坏前面的正文
- *     · 多引用 + 句中光标只替换光标所在那一段
- *     · 切到别的 cwd 后，旧 cwd 的候选不能留在菜单里（迟到响应归属）
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -60,7 +44,6 @@
     const context = { cwd, generation: state.runners?.find((r) => (r.runId ?? r.id) === state.activeRunnerId)?.generation ?? 0 }
     const C = (prefix) => window.yan.completePath(prefix, cwd, context)
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 1. 主进程 completePath：正常路径 ===')
     const root = await C('')
@@ -105,7 +88,6 @@
     const partial = await C('re')
     ok(partial.paths.includes('README.md'), '前缀过滤生效', JSON.stringify(partial.paths))
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 2. 主进程 completePath：拒绝边界 ===')
     const outside = await C('../..')
@@ -124,10 +106,6 @@
       `status=${linkPrefix.status}`
     )
 
-    /*
-     * 无权限目录（与 L02 共用同一条 fixture 边界）：补全不能把「读不到」
-     * 当成「里面没东西」—— 否则用户看到一个空菜单，以为目录是空的。
-     */
     const nopermPrefix = await C('noperm/')
     out.push(`  completePath('noperm/') → status=${nopermPrefix.status} paths=${nopermPrefix.paths.length}`)
     if (nopermPrefix.status === 'ok') {
@@ -141,7 +119,6 @@
       ok(nopermPrefix.paths.length === 0, '无权限时不返回候选')
     }
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 3. 界面：接受候选的文本与光标 ===')
     const ta = q('.composer textarea')
@@ -195,7 +172,6 @@
     await until(() => !q('[data-testid="at-menu"]'), 2000)
     ok(!q('[data-testid="at-menu"]'), '接受文件后菜单关闭')
 
-    /* 多引用 + 句中光标：只替换光标所在那一段 */
     await type('先 @README.md 再看 @dup/o')
     const dupItems = await waitItems()
     ok(dupItems.length > 0, '多引用时仍能弹出候选')
@@ -205,22 +181,14 @@
     ok(ta.value === '先 @README.md 再看 @dup/one/', '只替换光标所在的那一处引用')
     await until(() => !q('[data-testid="at-menu"]'), 2000)
 
-    /* ---------------------------------------------------------- */
     out.push('')
     out.push('=== 4. 切换 cwd 后旧候选不能留在菜单里 ===')
     await type('@')
-    /* 让第一轮请求真的返回（菜单先显示 fixture 的根层） */
     const firstRound = await waitItems()
     ok(firstRound.length > 0, '切换前菜单显示 fixture 根层候选')
     ok(menuTexts().some((t) => t.includes('notadir.txt')), '第一轮候选确实来自 fixture（含 notadir.txt）')
 
     const parentDir = cwd.replace(/[\\/][^\\/]+[\\/]?$/, '')
-    /*
-     * 真实链路只改设置的 cwd；视图上的 cwd / 项目身份由「切到该项目会话」更新。
-     * 这里两者都改，模拟的是**切到另一个项目后继续输入**那一刻的状态：
-     * 运行实例的 cwd 与项目归属一起换成新项目，否则上下文校验会（正确地）
-     * 判定「项目与工作目录不匹配」而拒绝，断言就测不到候选归属了。
-     */
     await store.getState().changeCwd(parentDir)
     await sleep(300)
     const switched = store.getState()
@@ -230,15 +198,12 @@
         (r.runId ?? r.id) === switched.activeRunnerId ? { ...r, cwd: parentDir, projectId: undefined } : r
       )
     })
-    /* 输入不变（仍是 `@`），但 cwd 变了：必须重新按新 cwd 查询 */
     await sleep(400)
-    /* 切换会把输入框恢复成新会话的草稿（空）—— 这是正确的，重新输入即可 */
     out.push('  切换后 textarea = ' + JSON.stringify(ta.value))
     await type('@')
     const secondRound = await waitItems()
     const afterTexts = menuTexts()
     const menuEl = q('[data-testid="at-menu"]')
-    /* 直连主进程：把「界面为什么报错」和「主进程能不能读」分开 */
     const direct = await window.yan.completePath('', parentDir, { cwd: parentDir, generation: context.generation })
     out.push('  直连 completePath(parentDir) = ' + JSON.stringify({ status: direct.status, paths: direct.paths.slice(0, 5) }))
     out.push('  切换后菜单 = ' + JSON.stringify(menuEl ? menuEl.textContent.slice(0, 120) : '(未打开)'))
@@ -253,7 +218,6 @@
       '候选换成了新 cwd 的内容（能看到 fixture-project 目录本身）'
     )
 
-    /* 收尾：还原成空的输入，别影响后续场景 */
     await type('')
   } catch (e) {
     ok(false, '抛异常：' + (e && e.message ? e.message : String(e)))

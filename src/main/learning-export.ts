@@ -1,11 +1,3 @@
-/**
- * 学习数据导出到 `YAN_DIR/learning-export/`。
- *
- * 直接读四个落盘文件的原始 JSON（不经过各 store），学习功能收缩后也能用。
- * 导出是派生副本：每次调用整份重写；原始文件只读，不修改、不删除。
- * 没有任何学习数据时不创建导出目录。
- */
-
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
@@ -50,7 +42,6 @@ export async function exportLearningData(
 
   const dir = join(root, LEARNING_EXPORT_DIRNAME)
   const files = buildLearningExport(raw, now)
-  /* 先写到临时目录再整体换上，导出中途失败时不留下半份 */
   const staging = `${dir}.tmp-${process.pid}-${now}`
   await rm(staging, { recursive: true, force: true })
   await mkdir(staging, { recursive: true })

@@ -1,13 +1,8 @@
-/** Render Android legacy launcher bitmaps from the canonical prompt-stone SVG.
- * Run with `electron mobile/scripts/build-launcher-icons.mjs` from the repo root.
- * Adaptive icons use the matching vector in res/mipmap-anydpi-v26.
- */
 import { app, BrowserWindow } from 'electron'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const mark = readFileSync(new URL('../../build/prompt-stone.svg', import.meta.url), 'utf8')
-  /* 品牌资产规范（设计规范 §3.4.1）：与桌面同一块砖——石框前景色、`>_` 强调色 */
   .replace(/(<g id="stone-frame"[^>]*?)stroke="currentColor"/, '$1stroke="#ecece8"')
   .replace(/(<g id="prompt"[^>]*?)stroke="currentColor"/, '$1stroke="#93a4f4"')
 const densities = [['mdpi', 48], ['hdpi', 72], ['xhdpi', 96], ['xxhdpi', 144], ['xxxhdpi', 192]]

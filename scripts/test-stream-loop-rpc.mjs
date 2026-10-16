@@ -1,4 +1,3 @@
-/** Current host -> bundled pi -> loopback-only SSE model. No external models/credentials. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
@@ -76,7 +75,6 @@ try {
   const settled = label => wait(() => !agent.getState()?.isAgentRunning && !agent.getState()?.isStreaming, label)
   const repeat = (control, kind = 'text') => control.emit(kind === 'thinking' ? { reasoning_content: '好。\n\n'.repeat(400) } : { content: '好。\n\n'.repeat(400) })
 
-  // Clear/abort are serialized; duplicate text retains original IDs, concurrent manual stop does not abort twice.
   let c = await hold('TEXT-LOOP')
   check((await agent.send('DUPLICATE')).ok, 'first queue item accepted')
   check((await agent.send('DUPLICATE', undefined, 'steer')).ok, 'steering queue accepted')
@@ -124,7 +122,6 @@ try {
   await settled('thinking guard settles')
   check(logs(thinkingOffset).some(e => e.rule === 'reasoning-cycle' && e.event === 'break-requested'), 'real pi forwards thinking deltas into reasoning detector')
 
-  // Opt-in fixture switch exercises real pi automatic continuation without consuming reclaimed drafts.
   autoContinueEnabled = true
   c = await hold('AUTO-CONTINUE-ONCE')
   check((await agent.send('DO-NOT-AUTO-EXECUTE-DRAFT')).ok, 'auto continuation draft queued')
@@ -142,7 +139,6 @@ try {
   check(pushes.slice(autoOffset).some(e => e.ch === 'queue-reclaimed' && e.payload.followUp.includes('DO-NOT-AUTO-EXECUTE-DRAFT')), 'draft remains available for explicit recovery')
   check(logs(autoOffset).some(e => e.event === 'auto-continue-requested'), 'automatic attempt logged once')
 
-  // A second loop in the resumed run must not get another allowance from agent_start.
   c = await hold('AUTO-SECOND-LOOP')
   const limitOffset = pushes.length, limitRequests = requests.length
   plans.push('hold')
@@ -157,7 +153,6 @@ try {
   equal(agent.loopGuardAutoContinueCount, 1, 'agent_start did not reset one-shot allowance')
   check(logs(limitOffset).some(e => e.event === 'auto-continue-limit'), 'second loop explains one-shot limit')
 
-  // Manual stop while the guard's abort acknowledgement is delayed cancels the pending continuation.
   c = await hold('AUTO-MANUAL-CANCEL')
   let releaseAck, abortAckHeld = false
   const ackDelay = new Promise(done => { releaseAck = done })
@@ -177,7 +172,6 @@ try {
   equal(requests.length, manualRequests, 'manual stop cancels pending automatic continuation')
   await settled('manual cancel settled')
 
-  // Explicit new input wins over an automatic prompt waiting on the old abort acknowledgement.
   c = await hold('AUTO-USER-WINS')
   let releaseUserAck, userAckHeld = false
   const userAckDelay = new Promise(done => { releaseUserAck = done })
@@ -200,7 +194,6 @@ try {
   check(!logs(userOffset).some(e => e.event === 'auto-continue-requested'), 'explicit input cancels pending auto prompt')
   equal(agent.loopGuardAutoContinueCount, 0, 'explicit new task resets one-shot allowance')
 
-  // Disable at execution time, not only when the original run starts.
   c = await hold('AUTO-TOGGLE-OFF')
   let releaseToggle, toggleHeld = false
   const toggleDelay = new Promise(done => { releaseToggle = done })
@@ -219,7 +212,6 @@ try {
   equal(requests.length, toggleRequests, 'turning switch off before execution prevents resume')
   await settled('toggle off settled')
 
-  // Rollback switch really bypasses the host detector.
   process.env.YAN_STREAM_LOOP_GUARD = '0'
   c = await hold('GUARD-DISABLED')
   const disabledOffset = pushes.length
@@ -229,7 +221,6 @@ try {
   check(logs(disabledOffset).length === 0, 'environment switch disables detection')
   delete process.env.YAN_STREAM_LOOP_GUARD
 
-  // Fenced repeated plain text must finish normally, not just code-looking lines.
   c = await hold('FENCED-REPEAT')
   const fenceOffset = pushes.length
   c.emit({ content: '```text\n' + '好。\n\n'.repeat(600) + '```\n' })
@@ -237,7 +228,6 @@ try {
   await settled('fenced flow finishes naturally')
   check(logs(fenceOffset).length === 0, 'fenced repeats do not trigger automatic stop')
 
-  // Current background recovery cannot preserve image drafts, so do not clear/abort an image queue.
   c = await hold('IMAGE-QUEUE')
   const image = { data: 'YQ==', mimeType: 'image/png' }
   check((await agent.send('KEEP-IMAGE', [image])).ok, 'image queue accepted')
@@ -264,7 +254,6 @@ try {
   await agent.abort()
   await settled('manual failure stop')
 
-  // Natural completion while clear response is in-flight still returns cleared texts; never abort a later message.
   c = await hold('NATURAL-END-RACE')
   check((await agent.send('RETURN-ON-RACE')).ok, 'race queue accepted')
   const raceOffset = pushes.length, raceAbort = abortCount
@@ -290,7 +279,6 @@ try {
   check(!offline.loopGuardTripped && !offline.loopGuardStopTask, 'open tool block suppresses break')
   check(!offline.loopGuardAbortSent, 'open tool block issues no abort')
 
-  // Host-only fault injection for ownership and malformed RPC responses; not remote-model evidence.
   const hit = { rule: 'text-cycle', emittedChars: 288, repeatedChars: 256 }
   const scoped = new AgentController({ cwd: root, push: event => pushes.push(event) })
   scoped.state = { sessionId: 'original-session' }
@@ -311,7 +299,7 @@ try {
   scoped.turn.runId = 'replacement-run'
   scoped.streaming = { id: 'replacement-message' }
   scoped.queueState = { steering: [], followUp: [{ id: 'q-new', text: 'NEW-DRAFT' }] }
-  scoped.loopGuardStopping = false // restart owns the new run's lifecycle
+  scoped.loopGuardStopping = false
   releaseScope()
   await oldStop
   equal(staleAborts, 0, 'late clear response does not abort replacement run')

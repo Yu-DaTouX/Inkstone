@@ -4,7 +4,6 @@ import type { RemoteOperationResult } from './remote-server'
 import type { ApprovalRequest } from '../shared/approval'
 import { APPROVAL_TIMEOUT_MS } from './approval-broker'
 
-/** The same permission card shown on desktop, including full command and reasons. */
 export function remoteApprovalQuestion(request: ApprovalRequest): RemotePendingQuestion {
   const question: RemotePendingQuestion = {
     id: `approval:${request.id}`, sessionId: request.sessionId ?? null,
@@ -17,7 +16,6 @@ export function remoteApprovalQuestion(request: ApprovalRequest): RemotePendingQ
   return { ...question, approvalDigest: approvalDigest(question) }
 }
 
-/** Bind a human's preview to this exact pending operation, not merely a reusable UI ID. */
 export function approvalDigest(question: RemotePendingQuestion): string {
   return createHash('sha256').update(JSON.stringify([
     question.id, question.sessionId, question.runId, question.method,

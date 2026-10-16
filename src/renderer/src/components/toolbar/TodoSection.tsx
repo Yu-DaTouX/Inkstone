@@ -15,7 +15,6 @@ export function hasTaskTileContent(
   return s.todos.length > 0 || !!s.goal?.goalId || !!s.goal?.links?.length || s.hasMessageOutputs || s.hasSubagents === true
 }
 
-/** 任务分区里的子代理：和清单一起回答「现在有什么在进行」 */
 function SubagentsBlock() {
   const t = useT()
   const confirm = useConfirm()
@@ -47,7 +46,6 @@ function SubagentsBlock() {
   )
 }
 
-/** 任务完成数 / 总数（放在分区头部，不进 body） */
 export function TodoCount() {
   const todos = useStore((s) => s.todos)
   const done = todos.filter((x) => x.done).length
@@ -59,26 +57,6 @@ export function TodoCount() {
   )
 }
 
-/* 任务 —— 来自会话里的 custom entry（panel_todos） */
-
-/**
- * 任务栏 —— 进度条 + 逐行落位。
- *
- * ── 用户要求 ──
- * 「假设你列出五个任务 已完成两个 再执行当前任务时 显示一个进度条 并加入动画」
- *
- * 所以三件事：
- *   ① **进度条始终显示**（原先只有 ≥ 4 个任务才显示）——
- *      5 个任务完成 2 个时它不是装饰，而是「还剩多少」的唯一提示。
- *   ② 「当前正在做的那一条」要能认出来：
- *      显式 `status` 优先；只有老数据才退回「第一个未完成」，
- *      而且**要求回合真的在跑**（见下面 activeIdx）。
- *      它带一个转动的 spinner + 左条强调色 + 名字高亮。
- *   ③ 动画：
- *      · 进度条宽度变化用 transition（不是瞬跳）
- *      · 刚被勾完的那一条闪一下（确认反馈）
- *      · 当前条目的左条呼吸 + 进度条上有一道扫光
- */
 export function TodoSection() {
   const t = useT()
   const todos = useStore((s) => s.todos)
@@ -87,32 +65,18 @@ export function TodoSection() {
   const hasMessageOutputs = useStore((s) => s.messages.some((message) =>
     !!message.artifacts?.length || (message.role === 'user' && !!message.images?.length)
   ))
-  /**
-   * 回合是否真的在跑 —— 「正在进行」的兜底判据（见下面 activeIdx）。
-   *
-   * `isStreaming` 在工具执行期间是 false（见 shared/ipc.ts 的注释），
-   * 所以两个都要看，否则「调工具的那几十秒」会被当成已经停下。
-   */
   const hasSubagents = useStore((s) => visibleSubagentRuns(s.subagents, { sessionIds: [s.session?.sessionId, s.session?.conversationId].filter((v): v is string => !!v) }).length > 0)
   const agentRunning = useStore(
     (s) => s.session?.isAgentRunning === true || s.session?.isStreaming === true
   )
-  /** 全部任务清单快照（含最新）——历史任务模块用 */
   const history = useStore((s) => s.todoHistory)
   const scrollToTurn = useStore((s) => s.scrollToTurn)
-  /** 历史任务折叠模块是否展开（默认收起） */
   const [histOpen, setHistOpen] = useState(false)
   const done = useMemo(() => todos.filter((x) => x.done).length, [todos])
 
-  /*
-   * 任务栏的展开态（用户要求：「当任务完成时自动收起任务工具栏」）。
-   * 条件是**从“未全部完成”变为“全部完成”**那一刻收起；新任务出现时再展开。
-   * 用受控 open 传给 Section（之前 Section 自己管，外面插不进去）。
-   */
   const [open, setOpen] = useState(true)
   const prevTodoCount = useRef(todos.length)
   useEffect(() => {
-    /* 从无任务会话切回有任务会话时，任务本体不能继承上一份空态的收起状态。 */
     if (todos.length > 0 && prevTodoCount.current === 0) setOpen(true)
     prevTodoCount.current = todos.length
   }, [todos.length])
@@ -124,12 +88,6 @@ export function TodoSection() {
     prevAllDone.current = allDone
   }, [allDone])
 
-  /*
-   * 记住上一条被勾完的，用来给它加一下高亮闪动。
-   *
-   * 为什么要记「上一条」而不是直接看 done：勾完的条目不会消失，
-   * 光靠 done 无法区分「刚勾的」与「早就勾的」。
-   */
   const prevDone = useRef<Set<number>>(new Set())
   const [justDone, setJustDone] = useState<Set<number>>(new Set())
 
@@ -138,7 +96,6 @@ export function TodoSection() {
     const fresh = new Set<number>()
     for (const i of cur) if (!prevDone.current.has(i)) fresh.add(i)
     prevDone.current = cur
-    // 首次渲染时不要把全部已完成当成「刚完成」
     if (cur.size && fresh.size === cur.size) return
     if (fresh.size === 0) {
       if (justDone.size) setJustDone(new Set())
@@ -155,19 +112,6 @@ export function TodoSection() {
   }
 
   const pct = todos.length ? (done / todos.length) * 100 : 0
-  /*
-   * 「当前正在做」的那一条 —— 决定哪一行带 active + spinner。
-   *
-   * ⚠️ 以前是一句 `findIndex((x) => !x.done)`：只要还有没做完的任务，
-   *    界面上就**永远**有一条「正在进行」在转 —— agent 停了、报错了、
-   *    用户中断了，它照转。那不是状态，是猜测（方案 4.5）。
-   *
-   * 现在分两步：
-   *   ① pi 侧的清单带**显式 `status`** 时以它为准（有人 running 就是它；
-   *      有状态但没人 running → 真的没有正在做的那条）；
-   *   ② 只有 `{text, done}` 的老数据退回推断，但**要求回合真的在跑** ——
-   *      没在跑时，那些没做完的是「还没做」，不是「正在做」。
-   */
   const activeIdx = (() => {
     const explicit = todos.findIndex((x) => x.status === 'running')
     if (explicit >= 0) return explicit
@@ -192,7 +136,6 @@ export function TodoSection() {
       }
     >
       <div className="rp-todo-scroll">
-      {/* 进度条：**总是**显示（用户要的就是“已完成两个、五个任务”的比例感） */}
       <div
         className={`rp-meter ${active ? 'busy' : ''}`}
         data-testid="todo-meter"
@@ -201,7 +144,6 @@ export function TodoSection() {
       >
         <i style={{ width: `${pct}%` }} />
       </div>
-      {/* 只有真的全部勾完才说「全部完成」；空闲但还有没做的，不是完成 */}
       {allDone ? (
         <div className="rp-todo-all" data-testid="todo-all-done">
           <span className="rp-all-done">{t('rp.todoAllDone')}</span>
@@ -211,19 +153,10 @@ export function TodoSection() {
       <div className="rp-todos">
         {todos.map((todo, i) => {
           const isActive = i === activeIdx
-          /** 受阻：只有数据真的标了 blocked 才显示（方案 7.1） */
           const blocked = todo.status === 'blocked'
           return (
             <div
               key={i}
-              /*
-               * 行类名：
-               *   done      已完成（删除线 + 绿勾）
-               *   todo-open 未完成
-               *   active    当前正在做（行内会显示「正在进行」+ spinner）
-               *   flash     刚被勾完（闪一下）
-               * `--i` 给 CSS 做逐行落位
-               */
               className={`rp-todo ${todo.done ? 'done' : blocked ? 'blocked' : 'todo-open'} ${isActive ? 'active' : ''} ${justDone.has(i) ? 'flash' : ''}`}
               style={{ '--i': i } as React.CSSProperties}
               data-done={todo.done ? '1' : '0'}
@@ -231,7 +164,6 @@ export function TodoSection() {
               data-blocked={blocked ? '1' : '0'}
               title={todo.text}
             >
-              {/* 勾选框承载状态：完成 = 勾，进行中 = 强调色方点，受阻 = !；行尾不再重复写「已完成 / 未完成」 */}
               <span className="rp-box" aria-hidden data-testid={isActive ? 'todo-active-label' : undefined}>
                 {todo.done ? <Icon name="check" size={12} /> : blocked ? <Icon name="alert-circle" size={12} /> : isActive ? <RunDot /> : null}
               </span>
@@ -246,14 +178,6 @@ export function TodoSection() {
         })}
       </div>
 
-      {/*
-        历史任务（用户要求）：
-          · 「如果这段对话有历史任务 就显示一个历史任务的折叠模块 如果没有就不显示」
-          · 「在任务模块的旁边加入一个当前会话历史任务查看以及跳转」
-        两者用同一个入口：头部的「历史 N」按钮 = 在任务模块旁边；
-        点开后是折叠模块，每份清单带「跳转」。
-        history 里最后一份就是**当前**这份，所以只在 length > 1 时才算有历史。
-      */}
       {history.length > 1 ? (
         <div className="rp-todo-hist" data-testid="todo-history">
           <button
@@ -269,12 +193,6 @@ export function TodoSection() {
           </button>
           {histOpen ? (
             <div className="rp-hist-body">
-              {/*
-                新的在前（最近的一轮最可能被回看）。
-                这份清单每行自带稳定 id（custom entry 的 id），所以走 PresenceList：
-                新增一轮用 grow 长出、删除反向收起；排序不变、改文字不重播。
-                任务本体只有 text/done/status，没有稳定 id，不为它伪造身份。
-              */}
               <PresenceList
                 items={history.slice(0, -1).reverse()}
                 getKey={(snap) => snap.id}
@@ -290,11 +208,6 @@ export function TodoSection() {
                         {snap.todos.filter((x) => x.done).length}/{snap.todos.length}
                       </span>
                       <span className="spacer" />
-                      {/*
-                       * 跳转：滚到写这份清单时那一轮。
-                       * 用 store 的 scrollToTurn（与导航轨同一个实现）——
-                       * 一个应用里不该有两套「跳到第几轮」。
-                       */}
                       <button
                         className="rp-hist-jump"
                         onClick={() => scrollToTurn(Math.max(0, snap.round - 1))}
@@ -322,10 +235,6 @@ export function TodoSection() {
         </div>
       ) : null}
       </div>
-      {/*
-        产物 / 参考跟着任务卡片（用户要求：三合一看成一件事，默认保留任务）。
-        放在清单与历史之后 —— 它们是任务的**附属信息**，先看完任务本身。
-      */}
       <SubagentsBlock />
       <GoalOutputs />
     </Section>
@@ -333,19 +242,6 @@ export function TodoSection() {
   )
 }
 
-/**
- * 产物 / 参考的折叠组。
- *
- * 用户报：「右栏的 产物 参考 任务 的工具目前虽然是三合一 但是 UI 上看像是
- * 分离的」—— 三块并排是三张各自成卡的卡片，看不出是一回事。
- *
- * 现在它们同属**任务卡片**（`TodoSection` 的同一个 Section），产物与参考是
- * 卡片内的次级折叠，**默认收起**：用户要求「默认保留任务」，所以默认只留任务
- * 本体，产物/参考各占一行标题（行尾带条数），要看再展开。
- *
- * 收起时不渲染内容（不是藏起来）——与 Section 同一套语义：
- * 屏幕阅读器与探针不会读到看不见的内容。
- */
 function OutputGroup({
   testId,
   title,
@@ -376,7 +272,6 @@ function OutputGroup({
   )
 }
 
-/** 只展示当前会话实际登记的产物和参考；没有数据时不占磁贴空间。 */
 function GoalOutputs() {
   const t = useT()
   const goalLinks = useStore((s) => s.goal?.links)

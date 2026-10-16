@@ -1,22 +1,3 @@
-/**
- * 回合计时元数据（实施-11 H-6）。
- *
- * ══════════════════════════════════════════════════════════
- * 为什么需要它
- * ══════════════════════════════════════════════════════════
- * `elapsedMs` 是宿主推送消息时**附上的 UI 字段**，pi 的会话 JSONL 不存它。
- * 于是切会话 / 重载之后，整轮用时只剩完成时刻 —— 用户看到的是「这一轮好像
- * 没花时间」。这里把宿主自己算出来的整轮结果留一份，读历史时挂回消息上。
- *
- * ── 三条边界（与其它数据存储一致）──
- *   ① **不生成平行历史**：消息仍以 pi 会话 JSONL 为真源，这里只装饰已有消息；
- *   ② **坏行不致命**：一条解析不了就跳过，不能因为一行脏数据让整个会话读不出来；
- *   ③ **版本化**：记录带 `v`；将来字段变了，旧记录按「未知版本」忽略而不是猜。
- *
- * 位置：`YAN_DATA_DIR/turn-timing/<sessionId>.jsonl`，只追加。
- * 为什么按会话分文件：切会话只读自己那一份，不用扫全目录。
- */
-
 import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { GenerationTiming, TurnTerminalReason, TurnTimingMeta, UIMessage } from '../shared/ipc'
@@ -26,54 +7,13 @@ export const TURN_TIMING_VERSION = 1
 
 export interface TurnTimingRecord extends TurnTimingMeta {
   v: number
-  /**
-   * 这一段工作的 **run** id（实施-11 H-6b）。
-   *
-   * 一个 `logicalTurnId` 下可能有多个 run（自动继续会开新的 pi 回合）：
-   * 同一 run 的中途快照与终止快照是同一段工作（后者覆盖前者），
-   * 不同 run 是串起来的另一段工作（用时相加）。旧记录没有这个字段，
-   * 读回时保持「同一 ID 后者胜」的旧语义，不把历史翻倍。
-   */
   runId?: string
-  /** 工具等待分段（H-6b）：并行分支不重复计，求和走区间并集。 */
   waitSpans?: WaitSpan[]
-  /**
-   * 锚定的**用户消息 id**（`m<idx>`）。
-   *
-   * 为什么不用 assistant 消息 id：宿主推给界面的 assistant id 是临时生成的
-   * （`a<base36>`），pi 的 JSONL 里没有它，重读历史时对不上。而用户消息的 id
-   * 是两侧同一套 `normalizeMessage` 按顺序生成的 `m<idx>`，能对上。
-   * 读回时找这条用户消息之后、下一条用户消息之前的最后一条助手消息。
-   */
   anchorId?: string
-  /** 这一轮归属的消息 id（按出现顺序）；锚不可用时才回退到它 */
   sourceIds: string[]
-  /**
-   * 本逻辑回合各条助手消息（模型请求）的生成用时，按**助手消息出现顺序**对齐。
-   *
-   * 数组下标 = 本轮第几条助手消息，**不是** pi 的消息下标。恢复时按锚定回合里的
-   * 助手次序 zip，不拿实时 id 查表 —— 否则压缩 / 历史重排后 id 漂移会串消息。
-   * `null` 表示那一条没有记录（保持未知）；旧记录没有这个字段就是全部未知。
-   */
   generationTimings?: (GenerationTiming | null)[]
-  /** 单调毫秒（诊断用）：能看出墙钟是否被调整过，不用于展示 */
   monotonicMs?: number
-  /**
-   * 本轮模型报出的**输出 token**（实施-15 A-2 预算要用）。
-   *
-   * 为什么不存输入侧：pi 只在部分 provider 上报 input，缺失时拿它当 0
-   * 会把预算算得比真实小（反而更早停）。宁可只存确定有的那一半。
-   * 旧记录没有这个字段——读到就是 undefined，不当 0。
-   */
   outputTokens?: number
-  /**
-   * 写入这次快照时这一轮**是否已经收尾**（H-6b）。
-   *
-   * 为什么需要这个布尔：回合中途会写一次（`message_end`），终止时再写一次。
-   * 如果应用在两者之间被强杀，盘上就只剩中途那条 —— 而“没有终止记录”
-   * 本身就是一个结论：这一轮是被中断的，不是正常完成的。
-   * 旧记录没有这个字段，按 `true`（已收尾）处理，不把历史误报成中断。
-   */
   final?: boolean
 }
 
@@ -83,13 +23,6 @@ function isTerminalReason(value: unknown): value is TurnTerminalReason {
   return typeof value === 'string' && (TERMINAL_REASONS as string[]).includes(value)
 }
 
-/**
- * 会话 id → 文件名。
- *
- * 只保留 `[A-Za-z0-9._-]`：会话 id 来自宿主与 pi，理论上不含路径分隔符，
- * 但这是**文件名**，不做白名单就会给「用 id 做路径穿越」留口子。
- * 其它字符统一换成 `_`，空串回落到 `unknown`（宁可共用一个文件，也不写到目录外）。
- */
 export function sanitizeSessionId(sessionId: string): string {
   const cleaned = sessionId.replace(/[^A-Za-z0-9._-]/g, '_')
   return cleaned.length ? cleaned.slice(0, 120) : 'unknown'
@@ -99,14 +32,6 @@ export function turnTimingDir(dataDir: string): string {
   return join(dataDir, 'turn-timing')
 }
 
-/**
- * 计时日志的分桶 key。
- *
- * 用会话**文件名**而不是 `sessionId`：pi 的 `get_state` 在部分版本里不返回
- * sessionId（实测为空的会话根本不会落盘），而文件名是宿主两边 ——
- * `agent.hydrate()` 与 `peekSession` —— 都拿得到、且指向同一条会话的稳定标识。
- * 链式会话按段分桶：每段文件各有自己的日志，读哪段就取哪份。
- */
 export function timingKey(sessionFile: string | undefined | null): string | null {
   if (!sessionFile) return null
   const base = String(sessionFile).split(/[\\/]/).pop() ?? ''
@@ -118,7 +43,6 @@ export function turnTimingFile(dataDir: string, sessionId: string): string {
   return join(turnTimingDir(dataDir), `${sanitizeSessionId(sessionId)}.jsonl`)
 }
 
-/** 追加一条记录。写失败只返回 false —— 计时不是核心数据，不能因此中断回合。 */
 export async function appendTurnTiming(
   dataDir: string,
   sessionId: string,
@@ -174,18 +98,12 @@ function parseRecord(line: string): TurnTimingRecord | null {
   }
 }
 
-/**
- * 生成计时容错解析：保持数组长度（次序锚定），坏条目留 null。
- * 只有 `durationMs` 是必需且有限的；`ttftMs` / `decodeMs` 缺失或非有限就不带，
- * `startEvent` 起点标记原样保留。
- */
 function parseGenerationTimings(raw: unknown[]): (GenerationTiming | null)[] {
   return raw.map((entry) => {
     if (!entry || typeof entry !== 'object') return null
     const g = entry as Partial<GenerationTiming>
     if (typeof g.durationMs !== 'number' || !Number.isFinite(g.durationMs) || g.durationMs < 0) return null
     const out: GenerationTiming = { durationMs: Math.max(1, Math.round(g.durationMs)) }
-    /* 起点语义标记原样保留：旧记录没有就是没有，不改写也不猜。 */
     if (g.startEvent === 'turn_start') out.startEvent = 'turn_start'
     if (typeof g.ttftMs === 'number' && Number.isFinite(g.ttftMs) && g.ttftMs >= 0) {
       out.ttftMs = Math.max(1, Math.round(g.ttftMs))
@@ -197,7 +115,6 @@ function parseGenerationTimings(raw: unknown[]): (GenerationTiming | null)[] {
   })
 }
 
-/** 等待分段容错解析：只收形状完整、且区间不反向的条目。 */
 function parseWaitSpans(raw: unknown[]): WaitSpan[] {
   const spans: WaitSpan[] = []
   for (const item of raw) {
@@ -213,20 +130,9 @@ function parseWaitSpans(raw: unknown[]): WaitSpan[] {
   return spans
 }
 
-/**
- * 同一逻辑回合的多条记录 → 一条（H-6b）。
- *
- * 两类重复必须分开处理，这是本函数存在的理由：
- *   · **同一 run**（中途快照 + 终止快照）：是同一段工作的两次快照 → 后者胜；
- *   · **不同 run**（自动继续）：是串起来的另一段真实工作 → 用时**相加**。
- *
- * 旧记录（没有 `runId`）无法区分这两种，保持原来的「后者胜」——
- * 宁可少算，也不能把旧历史的时间翻倍。
- */
 export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimingRecord {
   const withRun = list.filter((r) => !!r.runId)
   if (!withRun.length) return list[list.length - 1]
-  /* 同一 run 后者胜（顺序写入，Map 覆盖即得）。 */
   const byRun = new Map<string, TurnTimingRecord>()
   for (const r of withRun) byRun.set(r.runId as string, r)
   const runs = [...byRun.values()].sort((a, b) => a.startedAt - b.startedAt)
@@ -241,20 +147,11 @@ export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimi
   for (const r of runs) {
     for (const s of r.waitSpans ?? []) waitSpans.push(s)
   }
-  /*
-   * 生成计时跨 run **按时间顺序拼接**：每个 run 的数组已经按它的助手消息顺序
-   * 对齐，串起来就是整个逻辑回合的助手请求次序（不同 run 是串行工作，不相加）。
-   */
   const generationTimings: (GenerationTiming | null)[] = []
   for (const r of runs) {
     if (r.generationTimings?.length) generationTimings.push(...r.generationTimings)
   }
   const anchorId = runs.map((r) => r.anchorId).find((a) => !!a)
-  /*
-   * output token 跨 run **相加**：自动继续会开新的 pi 回合（新 runId），
-   * 目标预算要的是这个逻辑回合一共吐了多少，不是最后那一段。
-   * 没有任何一段报过就是 undefined（"未知"）——不要当成 0 去让预算失效。
-   */
   const reported = runs.filter((r) => typeof r.outputTokens === 'number')
   const outputTokens = reported.length
     ? reported.reduce((n, r) => n + (r.outputTokens ?? 0), 0)
@@ -273,25 +170,10 @@ export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimi
   }
 }
 
-/**
- * 一条记录**最终**该报的终止原因（H-6b）。
- *
- * 只有一种改写：记录带着 `final === false`（中途快照）——那说明这一轮
- * 从来没有走到收尾，进程是在飞行中被拿掉的，所以是 `interrupted`。
- * 其余（`final === true` 或旧记录没这个字段）原样返回：宁可把中断显示成
- * 完成，也不能把正常结束的历史误报成中断。
- */
 export function effectiveTerminalReason(record: TurnTimingRecord): TurnTerminalReason {
   return record.final === false ? 'interrupted' : record.terminalReason
 }
 
-/**
- * 读回一个会话的全部记录（每个**逻辑回合**一条）。
- *
- * 盘上同一 `logicalTurnId` 可能出现多条：中途快照 / 终止快照 / 自动继续。
- * 合并规则见 `mergeTurnRecords()` —— 同 run 后者胜、不同 run 用时相加。
- * 旧记录（无 `runId`）保持「后者胜」，不改变已有行为。
- */
 export async function readTurnTimings(
   dataDir: string,
   sessionId: string
@@ -314,35 +196,11 @@ export async function readTurnTimings(
   return [...byId.entries()].map(([id, list]) => mergeTurnRecords(id, list))
 }
 
-/**
- * 把记录挂回消息（返回新数组，不改原对象）。
- *
- * 挂点选**这一轮的最后一条助手消息**：`groupIntoTurns` 取的就是它的
- * `elapsedMs`，挂在这里界面不需要认识新协议就能显示。
- *
- * 优先用 `anchorId`（用户消息 id）定位；它在历史里对得上时，找它之后、
- * 下一条用户消息之前的最后一条助手消息。锚不在（分叉裁掉、压缩换过历史、
- * 会话文件被替）时回退到 `sourceIds`，再对不上就**静默丢弃** ——
- * 宁可不显示用时，也不能把它挂到别的回合上。
- *
- * 工具行自身的起止也从 `waitSpans` 补回：重读历史时 `UIToolCall` 没有
- * `startedAt` / `endedAt`，切会话后输入区的工具用时就成了未知。恢复只认
- * **锚定成功**的回合（`sourceIds` 回退路径不补，避免历史重排后串行），按
- * `id + name` 命中同一条工具调用，且只填空缺字段，绝不覆盖已有的实时计时。
- */
 export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecord[]): UIMessage[] {
   if (!records.length || !messages.length) return messages
   const indexById = new Map<string, number>()
   messages.forEach((m, i) => indexById.set(m.id, i))
 
-  /*
-   * 定位一条记录对应的**助手消息序列**（按消息出现顺序）。
-   *
-   * 优先用锚（用户消息 id）：它之后到下一条用户消息之前的所有助手消息
-   * 就是这一轮。锚不在（分叉裁掉、压缩换过历史、会话文件被替）时回退到
-   * `sourceIds`，仍按消息顺序取。返回序列而不是单条 id，是因为生成计时
-   * 要逐条挂；同时**只按次序 zip，不拿 id 当键** —— id 会随压缩漂移。
-   */
   const assistantsOf = (record: TurnTimingRecord): { list: UIMessage[]; anchored: boolean } => {
     const anchor = record.anchorId
     if (anchor) {
@@ -363,7 +221,6 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
     }
   }
 
-  /* 工具调用按稳定 `id + name` 命中（id 单独可能被别的回合复用）。 */
   const toolKey = (id: string, name: string): string => `${id}\u0000${name}`
 
   const patch = new Map<string, TurnTimingMeta>()
@@ -372,7 +229,6 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
   for (const record of records) {
     const { list: assistants, anchored } = assistantsOf(record)
     if (!assistants.length) continue
-    /* 整轮用时仍挂在最后一条助手消息上（`groupIntoTurns` 取的就是它）。 */
     const target = assistants[assistants.length - 1].id
     patch.set(target, {
       logicalTurnId: record.logicalTurnId,
@@ -381,12 +237,6 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
       elapsedMs: record.elapsedMs,
       terminalReason: effectiveTerminalReason(record)
     })
-    /*
-     * 逐条恢复每次模型请求的生成用时。
-     *
-     * 只有**数量一致**才按次序挂：数量对不上说明历史被压缩 / 重排过，
-     * 硬 zip 会把时间挂到别的请求上 —— 宁可不显示（保持未知），也不串消息。
-     */
     const timings = record.generationTimings
     if (timings?.length && timings.length === assistants.length) {
       for (let i = 0; i < assistants.length; i += 1) {
@@ -394,10 +244,6 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
         if (timing) genPatch.set(assistants[i].id, timing)
       }
     }
-    /*
-     * 工具等待分段回填到工具行（只认锚定成功的回合，见函数头注释）。
-     * 值先做一次有效性过滤：非有限或时间倒挂的条目一律丢，不写进消息。
-     */
     if (!anchored || !record.waitSpans?.length) continue
     const spanByTool = new Map<string, WaitSpan>()
     for (const span of record.waitSpans) {
@@ -414,7 +260,6 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
       for (const call of calls) {
         const span = spanByTool.get(toolKey(call.id, call.name))
         if (!span) continue
-        /* 已有真实起止的字段不动；只补空缺。 */
         const startedAt = call.startedAt === undefined ? span.startedAt : call.startedAt
         const endedAt = call.endedAt === undefined ? span.endedAt : call.endedAt
         if (startedAt === call.startedAt && endedAt === call.endedAt) continue

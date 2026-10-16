@@ -8,7 +8,7 @@ import { font, mono, radius, space, usePalette } from '../theme'
 import { Button, Header, IconButton, Input, Meta, SectionTitle, STATUS_TEXT, StatusDot } from '../ui'
 import { deviceInfo } from '../device'
 
-const GUIDE = 'https://github.com/Yu-DaTouX/Inkstone/blob/main/docs/MOBILE_ACCESS.md'
+const GUIDE = 'https://github.com/Yu-DaTouX/Inkstone'
 
 export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDisableAlerts, onUnpair, onBack, onToggleSidebar, sidebarVisible, onOpenAssistantSettings }: {
   connection: Connection
@@ -19,7 +19,6 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
   onBack: () => void
   onToggleSidebar?: () => void
   sidebarVisible?: boolean
-  /** 打开「模型与服务商」；生活助手的密钥、模型都在那里配置 */
   onOpenAssistantSettings?: () => void
 }) {
   const p = usePalette()

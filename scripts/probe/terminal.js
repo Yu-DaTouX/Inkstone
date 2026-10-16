@@ -1,15 +1,3 @@
-/**
- * 终端窗口（用户要求：「更好的终端实现以及调整窗口大小」）。
- *
- * 断言：
- *   ① 运行中的工具调用自动展开成终端窗口，有标题栏 / prompt 行 / 状态胶囊
- *   ② 三个拖拽把手（下 / 右 / 右下角）都在
- *   ③ 拖动下把手能真的改变窗口高度
- *   ④ 展开按钮能把窗口放大，「恢复」能收回
- *   ⑤ 双击下把手复位
- *
- * 不烧 token：直接注入一条带运行中 bash 工具调用的助手回合。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -21,10 +9,6 @@
   const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
   const click = (el) => el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  /*
-   * 过程入口默认折叠，而折叠态下工具行**不在 DOM 里**（`TurnProcess` 的
-   * `open ? … : null`）。先铺开再找终端 —— 漏了这步只会看到「终端没渲染」。
-   */
   const openProcess = async () => {
     for (let i = 0; i < 25; i++) {
       const toggle = q('[data-testid="turn-process-toggle"]')
@@ -73,14 +57,6 @@
       }
     ]
   })
-  /*
-   * 让回合处于「进行中」，并打开「展开工具详情」。
-   *
-   * ⚠️ 只设 running 是**不够**的：`ToolRow` 的展开条件是
-   *   `open = manual ?? (running && autoDetail && autoOpen)`
-   * 而 `autoDetail` 来自 `settings.toolDetail`（默认 false）——
-   * 这是后来加的开关（让工具行默认一条条收起），探针当时没跟上。
-   */
   store.setState({
     session: { ...(store.getState().session ?? {}), isStreaming: true, isAgentRunning: true },
     settings: { ...(store.getState().settings ?? {}), toolDetail: true }
@@ -94,10 +70,6 @@
   out.push('')
   out.push('=== 1. 结构 ===')
   ok(!!q('.term-bar'), '有标题栏')
-  /*
-   * 方案 4.3：紧凑命令窗口去掉三色装饰灯、重复目标与重复状态。
-   * 这里断言它们**不在** —— 否则「紧凑」会慢慢长回去。
-   */
   ok(!q('.term-lights'), '标题栏没有三色装饰灯（方案 4.3）')
   ok(!q('.term-pill'), '窗口内不再重复状态胶囊（行上已有状态）')
   ok(!q('.term-cmd'), '标题栏不再重复命令（正文 prompt 行已有）')
@@ -112,7 +84,6 @@
     Math.abs(hDefault - window.innerHeight * 0.5) <= 2,
     `默认高度是半窗高（${Math.round(hDefault)}px）`
   )
-  /* 命令块表整列同宽（设计规范 §3.5），不再限半窗宽；不超出中栏即可 */
   ok(term.getBoundingClientRect().width <= (q('.center')?.getBoundingClientRect().width ?? window.innerWidth) + 2, '终端默认宽度不超出中栏')
 
   out.push('')
@@ -143,7 +114,6 @@
   const h1 = term.getBoundingClientRect().height
   ok(h1 > h0 + 40, `拖下把手后高度变大（${Math.round(h0)} → ${Math.round(h1)}）`)
 
-  // 键盘也能调（把手是可聚焦的 separator）
   grip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
   await sleep(150)
   const h2 = term.getBoundingClientRect().height
@@ -174,7 +144,6 @@
 
   out.push('')
   out.push('=== 5. 详情分型（方案 4.1）===')
-  /* 非命令工具不该套终端外壳：换一条 read 调用注入 */
   store.getState().applyPush({
     ch: 'sync',
     payload: [

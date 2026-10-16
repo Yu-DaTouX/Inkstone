@@ -1,4 +1,3 @@
-/** Isolated component integration: actual preload/IPC, React hook and sandbox DOM bridge; not the full app UI. */
 import { build } from 'esbuild'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

@@ -1,8 +1,3 @@
-/**
- * 自动归档的选择规则（src/shared/session-archive.ts）。纯函数，不起界面。
- *
- * 单独运行：node scripts/test-session-archive.mjs
- */
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
 

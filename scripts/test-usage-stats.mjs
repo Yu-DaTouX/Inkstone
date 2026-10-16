@@ -1,4 +1,3 @@
-/** 启动页用量概览：按行计数（main/usage-stats.ts countLine）与范围聚合（shared/usage-stats.ts）。不启动 Electron。 */
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -51,6 +50,30 @@ export async function runUsageStatsTests(ok) {
   ok(s.aggregateUsage([], 'all', now).peakHour === null, '没有数据时高峰时段为空')
   const lv = s.heatLevels([0, 1, 2, 3, 4, 100])
   ok(lv[0] === 0 && lv[5] === 4 && lv[1] >= 1, '热力图分级：零为 0，最大为 4')
+
+  const paid = (ts, total, cost) => Buffer.from(JSON.stringify({ type: 'message', timestamp: ts, message: { role: 'assistant', provider: 'p', model: 'q', usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: total, cost: { input: cost / 2, output: cost / 2, cacheRead: 0, cacheWrite: 0, total: cost } }, stopReason: 'stop' } }))
+  const c = {}
+  m.countLine(paid(at(0, 11), 100, 0.25), c)
+  m.countLine(paid(at(0, 12), 100, 1.5e-3), c)
+  m.countLine(reply(at(0, 13), 100), c)
+  ok(Math.abs(c[today].c - 0.2515) < 1e-9 && Math.abs(c[today].modelCost['p/q'] - 0.2515) < 1e-9, '费用取 usage.cost.total（含科学计数），零费用不记')
+  const sub = {}
+  m.countLine(paid(at(1, 9), 50, 0.1), sub)
+  const costed = s.aggregateUsageSources({ main: [c], subagents: [sub] }, 'all', now)
+  ok(Math.abs(costed.cost - 0.3515) < 1e-9 && Math.abs(costed.costBreakdown.subagents - 0.1) < 1e-9, '聚合费用：主会话与子代理合计并拆分')
+  ok(Math.abs(costed.models.find((x) => x.key === 'p/q').cost - 0.3515) < 1e-9, '按模型累计费用')
+  ok(s.aggregateUsage([a], 'all', now).cost === 0, '旧缓存没有费用字段时按 0')
+
+  const curOut = join(dir, 'currency.mjs')
+  await build({ entryPoints: ['src/shared/currency.ts'], outfile: curOut, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+  const cur = await import(pathToFileURL(curOut).href)
+  ok(cur.formatMoney(1.5, undefined, 'zh-CN') === '$1.50' && cur.formatMoney(0.0123, undefined) === '$0.012', '默认美元显示')
+  ok(cur.formatMoney(1, { currency: 'CNY', rates: { CNY: 7 } }) === '¥7.00', '人民币按自定义汇率换算')
+  ok(cur.formatMoney(1, { currency: 'YUANSHI', rates: { CNY: 7 } }) === '70 原石' && cur.formatMoney(1, { currency: 'YUANSHI' }, 'en-US') === '71 Primogems', '原石 = 0.1 元人民币，跟随人民币汇率')
+  ok(cur.formatMoney(2, { currency: 'JPY' }) === 'JP¥300', '日元不显示小数')
+  ok(cur.normalizeUsageCurrency({ currency: 'USD' }) === undefined && cur.normalizeUsageCurrency({ currency: 'BTC' }) === undefined, '默认或未知货币不落盘')
+  const kept = cur.normalizeUsageCurrency({ currency: 'EUR', rates: { EUR: 0.9, CNY: -1, JPY: 150, USD: 3 } })
+  ok(kept.currency === 'EUR' && kept.rates.EUR === 0.9 && !('CNY' in kept.rates) && !('JPY' in kept.rates) && !('USD' in kept.rates), '只保留有效且非默认的汇率')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

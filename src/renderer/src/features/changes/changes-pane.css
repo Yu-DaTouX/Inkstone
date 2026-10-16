@@ -1,5 +1,4 @@
 @layer features {
-  /* 「改动」页的版面与层级；控件外观（按钮、徽标、列表）仍归 ui/。 */
 
   .changes-pane {
     display: flex;
@@ -129,7 +128,6 @@
     white-space: nowrap;
   }
 
-  /* ── 单文件 diff ── */
   .changes-pane__detail {
     display: flex;
     flex-direction: column;

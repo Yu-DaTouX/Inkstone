@@ -1,13 +1,4 @@
 @layer patterns {
-  /*
-   * 运行状态点 / 提醒条 / 运行详情浮层（WP-11–14）。外观归 patterns。
-   *
-   * 语义不只靠颜色：运行是唯一呼吸的点；等你确认带外圈；停滞是空心环；
-   * 失败是方点；完成透明，未读时中间一个小点。读屏词由组件的 aria-label /
-   * title 提供，颜色只是辅助。
-   */
-
-  /* ---------------- 状态点 ---------------- */
 
   .run-dot {
     display: inline-block;
@@ -23,43 +14,36 @@
     background: transparent;
   }
 
-  /* 运行中：全窗口唯一的呼吸信号（回合活动行另算，这里只标这个运行） */
   .run-dot[data-kind='running'] {
     background: var(--run);
     animation: run-dot-breathe var(--dur-breathe) var(--ease) infinite;
   }
 
-  /* 排队：虚边空心，表示还没开始 */
   .run-dot[data-kind='queued'] {
     background: transparent;
     border: 1.5px dashed var(--run);
   }
 
-  /* 等你确认：实心 + 外圈 */
   .run-dot[data-kind='needs-you'] {
     background: var(--ask);
     box-shadow: 0 0 0 2px var(--ask-bg);
   }
 
-  /* 停滞：空心环（形状区别于实心的等待） */
   .run-dot[data-kind='stalled'] {
     background: transparent;
     border: 1.5px solid var(--stall);
   }
 
-  /* 失败：方点（形状区别于圆点） */
   .run-dot[data-kind='failed'] {
     background: var(--fail);
     border-radius: 2px;
   }
 
-  /* 已停止：暗色空心 */
   .run-dot[data-kind='stopped'] {
     background: transparent;
     border: 1.5px solid var(--line2);
   }
 
-  /* 完成：透明；未读时中间一个小点 */
   .run-dot[data-kind='done'] {
     background: transparent;
     border: none;
@@ -92,8 +76,6 @@
       animation: none;
     }
   }
-
-  /* ---------------- 提醒条 ---------------- */
 
   .run-pills {
     display: flex;
@@ -192,8 +174,6 @@
   .run-pill-all:hover {
     background: var(--sel);
   }
-
-  /* ---------------- 运行详情浮层 ---------------- */
 
   .run-pop {
     z-index: 40;

@@ -1,16 +1,3 @@
-/**
- * 任务模块的四条要求（用户消息 #17）。
- *
- *   ① 正在进行的任务在**任务本体上**显示，不单独开一栏
- *   ② 单个任务最多两行（完整文本放 title）—— 用户新要求，之前是 18 字
- *   ③ 全部任务完成时，任务栏自动收起（用户新要求）
- *   ③ 有历史任务就显示折叠模块，没有就不显示
- *   ④ 旁边有「历史任务查看 + 跳转」
- *
- * 历史数据来自会话里每一轮写的任务清单快照（main/agent.ts 的
- * todoSnapshotsFromEntries）—— 上一版只留最后一份，所以界面上看不到历史。
- * 这个场景直接注入快照，不需要真跑模型。
- */
 ;(async () => {
   const out = []
   const ok = (m) => out.push('  ✓ ' + m)
@@ -34,11 +21,6 @@
     const past1 = mk([['调研方案', true], ['写初稿', true]])
     const past2 = mk([['列大纲', true]])
 
-    /*
-     * 「正在进行」是**推断**出来的（第一个未完成 + 回合在跑，见 RightPanel 的
-     * activeIdx），所以注入任务前必须把会话标成运行中 —— 否则下面那些
-     * 「有 active 行」的断言测的就是旧行为（停下也硬说有人在跑）。
-     */
     const setRunning = (v) => {
       const s = store.getState().session
       store.setState({ session: { ...(s ?? {}), isAgentRunning: v, isStreaming: v } })
@@ -103,7 +85,6 @@
       } else {
         bad('两行夹取未生效（overflow=' + cs.overflow + ' max-height=' + cs.maxHeight + '）')
       }
-      // 27 字的文本不应再被按 18 字硬截（两行能放满）
       if (!longCell.textContent.includes('…')) ok('没有按 18 字硬截（' + longCell.textContent.length + ' 字符）')
       else bad('仍然在按字数截断：' + JSON.stringify(longCell.textContent))
     } else bad('没找到超长任务那个格子')

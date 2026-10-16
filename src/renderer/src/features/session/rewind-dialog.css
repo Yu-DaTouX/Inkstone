@@ -1,7 +1,3 @@
-/*
- * 回退对话框的版面（features 层）。
- * 外观（按钮 / 对话框表面）来自 `ui/`；这里只排文件清单、计数与底部操作区。
- */
 @layer features {
   .rewind-dialog {
     width: min(600px, 100%);

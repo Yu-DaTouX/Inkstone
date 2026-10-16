@@ -1,20 +1,3 @@
-/**
- * v3 评审页（WP-50 界面部分）的纯本地回归。
- *
- * 现场编译**真实生产模块**，用 `react-dom/server` 渲染生产展示件，用一个
- * **假 bridge** 核对页面只把动作转发给正式 `ReviewBridge` 方法名。全程不启动
- * Electron、不连 pi、不调用真实 git / gh / 模型、不联网、不写用户数据、不 build。
- *
- * 覆盖：
- *   · `review-model.ts`：四来源能力与「本会话与未提交同源」说明、归属键、迟到响应
- *     闸门、真实行锚校验、批注过期判定、Git 结果归类、gh 降级；
- *   · `review-client.ts`：每个动作只转发到正式方法名与参数，不发明第二套；
- *   · `ReviewFindingsPanel` / `ReviewAnnotationList` / `ReviewPage`：SSR 真实投影，
- *     来源选择、未接线说明、过期批注、会话同源说明都在；
- *   · 静态接线：只用 v3 `ui/`、本地模块与 features 层 CSS，不引 v2 控件 / styles。
- *
- * 可独立执行：node scripts/test-v3-review-ui.mjs
- */
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
@@ -92,7 +75,6 @@ async function buildBundle(outdir) {
   return outfile
 }
 
-/** 假 bridge：记录方法名与参数，按配置返回结果；绝不触达真实 git / gh / 模型。 */
 function mockBridge(responses = {}) {
   const calls = []
   const record = (name) => (...args) => {
@@ -170,7 +152,6 @@ async function main() {
     const en = Text.reviewText('en-US')
     const t = (lang) => (key, vars) => i18n.translate(lang, key, vars)
 
-    /* ── 1. 来源能力与「同源」说明 ─────────────────────────── */
     const sourceOptions = Model.reviewSourceOptions({ cwd: 'C:/work/repo' })
     ok(sourceOptions.length === 4, '四种来源都在')
     ok(
@@ -207,7 +188,6 @@ async function main() {
       '不同会话的归属键不同（切会话必须失效）'
     )
 
-    /* ── 2. 迟到响应闸门 ───────────────────────────────────── */
     {
       const gate = new Model.ReviewRequestGate()
       const id = gate.next()
@@ -221,7 +201,7 @@ async function main() {
         await delay(30)
         return 'late'
       })
-      gate.invalidate() /* 切来源 / 会话 */
+      gate.invalidate()
       const result = await pending
       ok(result.stale === true && result.value === undefined, '切来源后迟到的 changeSet 结果被丢弃')
     }
@@ -232,7 +212,7 @@ async function main() {
         await delay(30)
         return 'first'
       })
-      const second = gate.next() /* 新请求顶掉旧的 */
+      const second = gate.next()
       const old = await pending
       const fresh = await Model.guardedLoad(() => gate.isCurrent(second), async () => 'second')
       ok(old.stale === true && fresh.value === 'second', '后发请求顶掉更早的在途请求')
@@ -246,7 +226,6 @@ async function main() {
       ok(!result.stale && result.error === 'boom', '当前请求的错误如实返回')
     }
 
-    /* ── 3. 真实行锚与过期判定 ─────────────────────────────── */
     const anchors = Model.reviewLineAnchors(SAMPLE_PATCH)
     ok(anchors.newLines.join(',') === '1,2,3,4', '新侧真实行号来自补丁')
     ok(anchors.oldLines.join(',') === '1,2,3', '旧侧真实行号来自补丁')
@@ -298,13 +277,11 @@ async function main() {
     })
     ok(suggested.includes('feat/pkce') && suggested.includes('src/a.ts'), '提交信息建议取材真实分支与文件')
 
-    /* ── 4. 评审意见解析 ───────────────────────────────────── */
     const parsed = Model.parseFindingsText('```json\n' + JSON.stringify([finding({ severity: 'low' }), finding({ severity: 'high' })]) + '\n```')
     ok(parsed.findings.length === 2 && parsed.findings[0].severity === 'high', '意见解析并按严重度排序')
     const bad = Model.parseFindingsText('这不是 JSON')
     ok(bad.findings.length === 0 && !!bad.error, '非 JSON 不猜成意见，给出错误')
 
-    /* ── 5. 客户端只转发到正式 bridge 方法 ─────────────────── */
     const bridge = mockBridge({
       changeSet: { ok: true, id: 'cs-1' },
       annotations: { ok: true, annotations: [annotation()], revision: 3 },
@@ -354,7 +331,6 @@ async function main() {
     await Client.fetchDiff(bridge, { source: 'session', cwd: 'C:/w', path: 'a.ts', sessionId: 's1' })
     ok(bridge.calls[13].name === 'diff' && bridge.calls[13].args[0].sessionId === 's1', 'session 来源 diff 转发 sessionId')
 
-    /* ── 6. 展示件 SSR ─────────────────────────────────────── */
     const findingsHtml = render(
       createElement(Page.ReviewFindingsPanel, {
         text: zh,
@@ -409,7 +385,6 @@ async function main() {
     ok(annotationsHtml.includes('data-stale="1"') && annotationsHtml.includes(zh.annotationStale), '代码变化后批注标记过期')
     ok(annotationsHtml.includes('src/app.ts:2-3'), '批注显示真实行范围')
 
-    /* ── 7. 页面 SSR：来源选择、同源说明、无不自动请求 ─────── */
     const pageBridge = mockBridge({ changeSet: { ok: true } })
     const pageHtml = render(
       createElement(
@@ -436,7 +411,6 @@ async function main() {
     const enHtml = render(createElement(i18n.I18nProvider, null, createElement(Page.ReviewPage, { bridge: pageBridge, owner: OWNER, lang: 'en-US' })))
     ok(enHtml.includes(en.title) && !enHtml.includes(zh.title), '英文语言下用英文文案')
 
-    /* ── 8. 静态接线检查（不是视觉结论） ───────────────────── */
     const pageSrc = await readFile(join(process.cwd(), 'src/renderer/src/features/review/ReviewPage.tsx'), 'utf8')
     ok(pageSrc.includes("from '../../ui'"), '页面控件来自 v3 ui/ primitives')
     ok(pageSrc.includes("from './review-client'") && pageSrc.includes("from './review-model'"), '页面复用本地桥接与纯模型')

@@ -1,9 +1,3 @@
-/**
- * 预览面板自己的短文案（中英）。
- *
- * 与 `features/files/files-text.ts` 同一口径：两份 i18n JSON 是共享热点，
- * v3 未定稿前不加键；预览定稿后再统一并入 i18n。
- */
 import type { Lang } from '../../i18n'
 
 export interface PreviewText {

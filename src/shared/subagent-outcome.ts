@@ -1,12 +1,3 @@
-/**
- * 子代理此刻处在什么状态：界面卡片与结束通知共用的**唯一**说法。
- *
- * 原先界面只有「运行中 / 失败 / 已完成」三个词，超时、模型报错、调用用完、被停止、
- * 有部分结果都压成「失败」或「已完成」，读的人分不清哪条要处理。这里把
- * `status / endReason / review / wrapUp` 折成一个 `key`，再给出语气与是否需要人看。
- *
- * 纯函数，不碰 electron，主进程与渲染端、单测共用。
- */
 import type { SubagentRun } from './ipc'
 
 export type SubagentOutcomeKey =
@@ -22,26 +13,20 @@ export type SubagentOutcomeKey =
   | 'review'
   | 'conflict'
 
-/** 语气决定颜色：live 强调色、ok 绿、warn 琥珀、err 红、mute 灰 */
 export type SubagentTone = 'live' | 'ok' | 'warn' | 'err' | 'mute'
 
 export interface SubagentOutcome {
   key: SubagentOutcomeKey
   tone: SubagentTone
-  /** 还在跑（含启动与收尾） */
   live: boolean
-  /** 需要人处理：出错、超时或调用用完后结论可能不完整、待合并、有冲突 */
   attention: boolean
-  /** 结论可能不完整（超时 / 调用用完后收尾或被停） */
   partial: boolean
-  /** 排序：0 运行中 → 1 需要处理 → 2 其余 */
   rank: 0 | 1 | 2
 }
 
 type OutcomeInput = Pick<SubagentRun, 'status' | 'review'> &
   Partial<Pick<SubagentRun, 'endReason' | 'wrapUp' | 'dismissedAt'>>
 
-/** 宿主已持久标记「不再处理」且没有待审阅改动：原始失败原因仍在记录里，只是移出需处理区。 */
 export function isDismissed(run: Pick<SubagentRun, 'status'> & Partial<Pick<SubagentRun, 'dismissedAt'>>): boolean {
   return run.status === 'error' && typeof run.dismissedAt === 'number' && Number.isFinite(run.dismissedAt)
 }
@@ -66,7 +51,6 @@ export function subagentOutcome(run: OutcomeInput): SubagentOutcome {
     if (run.endReason === 'budget') return make('budget', 'warn', true)
     return make('failed', 'err', true)
   }
-  /* done：先看有没有等人处理的改动，再看是不是收尾出来的部分结论 */
   if (run.review === 'conflict') return make('conflict', 'err', true)
   if (run.review === 'pending') return make('review', 'warn', true)
   if (run.endReason === 'timeout') return make('timeout', 'warn', true)

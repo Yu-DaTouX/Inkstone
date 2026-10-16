@@ -1,12 +1,3 @@
-/**
- * MCP 工具按注解进审批（resources/pi-extensions/danger-guard.js）的定向检查。
- *
- * 为什么现场加载扩展：注解分支藏在 `tool_call` 处理的调用次序里（模式档、内置判定、
- * 委派判定之后），只测纯函数测不到接线。这里用假 pi 注册处理器、用本机 HTTP 假宿主
- * 接 `danger.confirm`，真实走一遍「要问 / 不问」的分叉；不执行任何真实危险命令。
- *
- * 用法：node scripts/test-mcp-annotations-guard.mjs
- */
 import { createServer } from 'node:http'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -22,8 +13,6 @@ const ok = (cond, name) => {
     console.log(`✗ ${name}`)
   }
 }
-
-/* ---------------------------------------------------------------- 假宿主 */
 
 const requests = []
 let decision = 'allow'
@@ -54,9 +43,6 @@ delete process.env.YAN_DANGER_GUARD
 const writePrefs = (mode) => writeFile(join(dataDir, 'desktop.json'), JSON.stringify({ permissionMode: mode }), 'utf8')
 await writePrefs('danger')
 
-/* ---------------------------------------------------------------- 假 pi */
-
-/* 形状对齐 pi 1.2.0：getAllTools() 每项带 name / annotations（只保留布尔 hint）。 */
 const tools = [
   { name: 'mcp__github__search_code', annotations: { readOnlyHint: true } },
   { name: 'mcp__github__delete_repo', annotations: { destructiveHint: true } },
@@ -90,8 +76,6 @@ const call = async (toolName, input, extra = {}) => {
   const asked = requests.length > before
   return { asked, result, request: asked ? requests[requests.length - 1] : undefined }
 }
-
-/* ---------------------------------------------------------------- 注解规则 */
 
 let hit = await call('mcp__github__search_code', { query: 'x' })
 ok(!hit.asked && hit.result === undefined, '只读 MCP 工具不问')
@@ -137,8 +121,6 @@ hit = await call('mcp__github__delete_repo', { repo: 'x' })
 ok(hit.result?.block === true && /MCP 工具可能修改数据或对外操作/.test(hit.result.reason ?? ''), '用户拒绝后拦下并说明原因')
 decision = 'allow'
 
-/* ---------------------------------------------------------------- 非 MCP 不变 */
-
 hit = await call('bash', { command: 'rm -rf /' })
 ok(hit.asked && hit.request?.params?.reasons?.some((r) => r.includes('递归删除大范围目录')), '内置 bash 高危判定不变')
 ok(hit.request?.params?.detail === 'rm -rf /', '内置 bash 仍展示命令原文')
@@ -151,8 +133,6 @@ ok(getAllToolsCalls === toolsScannedBefore, '内置工具调用不遍历 MCP 工
 hit = await call('write', { path: '/etc/hosts' })
 ok(hit.asked, '内置写入判定不变')
 
-/* ---------------------------------------------------------------- 档位与开关 */
-
 await writePrefs('all')
 hit = await call('mcp__github__delete_repo', { repo: 'x' })
 ok(!hit.asked && hit.result === undefined, '不受限制档直接放行 MCP 工具')
@@ -163,15 +143,11 @@ hit = await call('mcp__github__delete_repo', { repo: 'x' })
 ok(!hit.asked && hit.result === undefined, 'YAN_DANGER_GUARD=0 关闭整个护栏')
 delete process.env.YAN_DANGER_GUARD
 
-/* ---------------------------------------------------------------- 纯函数口径 */
-
 ok(mod.mcpApprovalNeeded(undefined) === true, '缺注解按要问处理')
 ok(mod.mcpApprovalNeeded({ readOnlyHint: true }) === false, '只读不问')
 ok(mod.mcpApprovalNeeded({ readOnlyHint: true, destructiveHint: true }) === true, '只读 + 破坏要问')
 ok(mod.mcpApprovalNeeded({ destructiveHint: false, openWorldHint: false }) === false, '非破坏且非开放世界不问')
 ok(mod.mcpCallDanger('bash', {})?.length === 0, '非 mcp__ 工具不产生 MCP 理由')
-
-/* ---------------------------------------------------------------- 收尾 */
 
 await new Promise((ready) => server.close(ready))
 await rm(dataDir, { recursive: true, force: true })

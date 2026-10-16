@@ -1,14 +1,3 @@
-/**
- * 标题样本挑选（`src/shared/title-samples.ts`）的纯逻辑单测。
- *
- * 为什么单独测这个：它决定「标题代表谁」。之前这段规则在
- * `agent.ts`（内存消息）与 `sessions.ts`（JSONL）里各写了一份 ——
- * 一处改了另一处不知道，就会出现“新会话标题与旧会话标题口径不一样”，
- * 而这种差异在界面上只表现为“标题怪怪的”，很难归因。
- *
- * 磁盘那条路径（`readTitleSamples`）由 `test-unit.mjs` 的 1b 节覆盖，
- * 这里覆盖界面的内存消息路径（含图片消息）。
- */
 export function runTitleSampleTests(ok, mod) {
   const { titleSamples, titleSampleText, titleSampleImages } = mod
 
@@ -16,7 +5,6 @@ export function runTitleSampleTests(ok, mod) {
 
   const u = (text, images) => ({ text, images })
 
-  /* ---- 1. 基本规则 ---- */
   {
     const one = titleSamples([u('只有一句')])
     ok(one.length === 1 && one[0] === '只有一句', '只有一条用户消息时不重复凑两条', JSON.stringify(one))
@@ -26,7 +14,6 @@ export function runTitleSampleTests(ok, mod) {
     ok(many[0] === '第一句' && many[1] === '最近一句', '取的是首条与最近一条（保序）', JSON.stringify(many))
   }
 
-  /* ---- 2. 空白与图片 ---- */
   {
     const blank = titleSamples([u('   '), u('\n\t'), u('  ')])
     ok(blank.length === 0, '全是空白 → 没有样本（调用方此时不该发起请求）', JSON.stringify(blank))
@@ -46,7 +33,6 @@ export function runTitleSampleTests(ok, mod) {
     ok(titleSampleText(u('', [])) === '', '既没文字也没图 → 空样本')
   }
 
-  /* ---- 3. 首图只带一张 ---- */
   {
     const imgs = titleSampleImages([
       u('首条', [{ data: 'a', mimeType: 'image/png' }, { data: 'b', mimeType: 'image/png' }])

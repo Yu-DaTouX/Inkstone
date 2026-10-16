@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * Splitter 原语纯逻辑 / mock 指针回归（WP-05）。
- *
- * 现场用 esbuild 编译真实 `src/renderer/src/ui/Splitter.tsx`（CSS 置空），在 Node 里
- * 直接调用它导出的纯函数，用普通对象模拟 PointerEvent 与键盘事件：
- *   · clampSplitValue / resolveSplitValue：区间夹取、受控优先、非有限值；
- *   · splitPointerDelta / splitValueFromPointer：横纵轴向与边界；
- *   · beginSplitDrag / ownsSplitDrag / moveSplitDrag：mock 指针（非主键、非主指针、
- *     别的 pointerId、越界拖动）；
- *   · splitValueForKey：方向键按轴向生效、Home / End、Shift 倍步、步长兜底；
- *   · 导出里确有 Splitter 组件。
- *
- * 只做纯计算，不启动 Electron / 浏览器、不读用户数据、不调用模型；**不**断言真实
- * DOM 指针捕获、真实键鼠事件或视觉结果 —— 那些留给运行验收。
- *
- * 用法：node scripts/test-v3-splitter.mjs
- */
 import assert from 'node:assert/strict'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -62,8 +45,6 @@ function check(name, fn) {
   }
 }
 
-/* ---------- 导出合同 ---------- */
-
 check('导出 Splitter 组件', () => {
   assert.equal(typeof Splitter, 'function')
 })
@@ -82,8 +63,6 @@ check('导出全部纯函数', () => {
     assert.equal(typeof fn, 'function')
   }
 })
-
-/* ---------- clampSplitValue ---------- */
 
 check('clampSplitValue：区间内原样', () => {
   assert.equal(clampSplitValue(50, 0, 100), 50)
@@ -108,8 +87,6 @@ check('clampSplitValue：NaN / Infinity 退回下界', () => {
   assert.equal(clampSplitValue(Number.NEGATIVE_INFINITY, 20, 80), 20)
 })
 
-/* ---------- resolveSplitValue（受控 / 非受控） ---------- */
-
 check('resolveSplitValue：未受控用 fallback', () => {
   assert.equal(resolveSplitValue(undefined, 30, 0, 100), 30)
 })
@@ -122,8 +99,6 @@ check('resolveSplitValue：受控越界仍夹取显示值', () => {
   assert.equal(resolveSplitValue(200, 30, 0, 100), 100)
   assert.equal(resolveSplitValue(-20, 30, 0, 100), 0)
 })
-
-/* ---------- 指针位移方向 ---------- */
 
 check('splitPointerDelta：竖线取 x，横线取 y', () => {
   assert.equal(splitPointerDelta('vertical', 7, 99), 7)
@@ -138,8 +113,6 @@ const pointer = (overrides = {}) => ({
   isPrimary: true,
   ...overrides
 })
-
-/* ---------- splitValueFromPointer ---------- */
 
 check('splitValueFromPointer：竖线按横向位移', () => {
   assert.equal(
@@ -202,8 +175,6 @@ check('splitValueFromPointer：越界夹取', () => {
   )
 })
 
-/* ---------- beginSplitDrag / ownsSplitDrag ---------- */
-
 check('beginSplitDrag：主键主指针开始拖动', () => {
   const session = beginSplitDrag(pointer(), 42)
   assert.ok(session)
@@ -223,8 +194,6 @@ check('ownsSplitDrag：按 pointerId 认领', () => {
   assert.equal(ownsSplitDrag(session, { pointerId: 8 }), false)
   assert.equal(ownsSplitDrag(null, { pointerId: 7 }), false)
 })
-
-/* ---------- moveSplitDrag（mock 指针拖动） ---------- */
 
 check('moveSplitDrag：无会话或别人的 pointerId 不动', () => {
   const session = beginSplitDrag(pointer({ pointerId: 7 }), 42)
@@ -246,8 +215,6 @@ check('moveSplitDrag：同一 pointerId 得到夹取后的新值', () => {
     100
   )
 })
-
-/* ---------- splitValueForKey ---------- */
 
 const key = (overrides = {}) => ({ key: '', min: 0, max: 100, step: 5, orientation: 'vertical', ...overrides })
 
@@ -294,8 +261,6 @@ check('splitValueForKey：无关按键返回 null', () => {
     assert.equal(splitValueForKey(key({ key: k, value: 50 })), null)
   }
 })
-
-/* ------------------------------------------------------------------ 汇总 */
 
 console.log(`\nv3 Splitter 纯逻辑：${report.pass} 通过 / ${report.fail} 失败`)
 if (report.fail > 0) process.exit(1)

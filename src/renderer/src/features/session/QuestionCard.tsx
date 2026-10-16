@@ -1,16 +1,3 @@
-/**
- * 提问卡（非模态）：宿主 / 扩展向用户提问时，在输入框上方内嵌出现。
- *
- * 与 v2 `chat/QuestionPanel.tsx` 的行为对齐，但不引入 v2 控件与 v2 CSS：
- *   · **非模态**、不遮罩、不圈定焦点、不 autoFocus（用户可能正在别处打字）；
- *   · 收起**不等于**取消：草稿与请求都还在，标题栏保留「有 N 个问题待回答」；
- *   · 超时到点**如实收起**，不替用户回答；点倒计时加时走 store（`extendUi`）；
- *     `deadline === 0`（宿主还没开始计时）时由 `startUiTimer` 起算；
- *   · 中文输入法组合期间 `Enter` 绝不提交。
- *
- * 兜底：不认识的 `method` 也渲染出一条可跳过 / 可取消的路径 —— 宁可多显示一条，
- * 也不能把真实请求留在队列里没人处理（那会让 pi 侧一直等）。
- */
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -30,11 +17,6 @@ export function QuestionCard(): JSX.Element | null {
   const [index, setIndex] = useState(0)
   const firstSeen = useRef(new Map<string, number>())
 
-  /*
-   * 全部请求都要有人接着：`ui-request` 只承载交互式请求，但为防未知 method
-   * 混进来，这里不过滤（除 v2 由模态框接管的 sensitive 之外也一样收，
-   * 只是加一个敏感标记，避免请求悬挂）。
-   */
   const list = requests
   const ids = list.map((r) => r.id).join('|')
 
@@ -93,10 +75,6 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
   const [expired, setExpired] = useState(false)
   const [bump, setBump] = useState(0)
 
-  /*
-   * `deadline` 的三种含义（见 `shared/ipc.ts`）：
-   *   · `> 0` 已开始计时；`0` 尚未开始（用户还没看到）；`undefined` 按 `timeout` 自算。
-   */
   const deadline = req.deadline === undefined ? (req.timeout ? fallbackStart + req.timeout : 0) : req.deadline
   const [remaining, setRemaining] = useState(() => (deadline ? Math.max(0, deadline - Date.now()) : 0))
 
@@ -112,7 +90,6 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
       setRemaining(Math.max(0, left))
       if (left <= 0) {
         setExpired(true)
-        /* 到点如实收起：不回应答（pi 侧会回超时），只从列表移除 */
         dismissRequest(reqId)
       }
     }
@@ -147,7 +124,6 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
 
   const onSubmitKey = (e: React.KeyboardEvent): void => {
     if (e.key !== 'Enter') return
-    /* 输入法组合中不提交（`isComposing` 与本地 ref 双保险） */
     if (composing.current || e.nativeEvent.isComposing) return
     if (canSubmit) answer({ value: trimmed })
   }

@@ -1,11 +1,3 @@
-/**
- * 砚对砚「本次连接」授权（所有者一侧）。规则见 `shared/peer-protocol.ts`。
- *
- * 全部在内存里：砚重启即清空。生命周期：
- *   申请 → 所有者批准（选项目与操作）→ 对方打开事件流（激活）→ 流断开 / 撤销 / 超时 → 作废。
- * 作废后同一个 connectionId 永远不再有效；对方重连必须重新申请、重新批准。
- * 每次请求由远程服务调用 `check`，核对设备、连接、操作类别与项目范围。
- */
 import { randomUUID } from 'node:crypto'
 import {
   PEER_ACTIVATION_TIMEOUT_MS,
@@ -36,11 +28,8 @@ export class PeerGrantRegistry {
 
   constructor(
     private readonly hooks: {
-      /** 把审批请求交给所有者界面 */
       ask: (request: PeerApprovalRequest) => void
-      /** 审批请求结束（批准 / 拒绝 / 超时），界面据此收起 */
       closed: (requestId: string) => void
-      /** 授权列表变化（界面刷新；撤销时远程服务断开对应事件流） */
       changed: (grants: PeerGrantView[], revoked?: string) => void
       now?: () => number
     }
@@ -58,10 +47,6 @@ export class PeerGrantRegistry {
     return [...this.pending.values()].map((item) => item.request)
   }
 
-  /**
-   * 对方砚申请连接；等到所有者决定（或超时）才返回。
-   * 同一设备同时只保留一个申请：新申请顶掉旧的（旧的按拒绝处理）。
-   */
   async request(device: RemoteDeviceSummary, operations: PeerOperation[], note: string, projects: PeerProjectRef[]): Promise<PeerGrantView | null> {
     for (const [id, item] of this.pending) {
       if (item.request.deviceId === device.id) this.finish(id, null)
@@ -83,7 +68,6 @@ export class PeerGrantRegistry {
       this.hooks.ask(request)
     })
     if (!decision?.approve) return null
-    /* 只能收窄：所有者选的项目必须在候选里，操作必须是对方申请过的 */
     const chosenProjects = projects.filter((project) => decision.projectIds.includes(project.id))
     const chosenOps = request.operations.filter((op) => decision.operations.includes(op))
     if (!chosenProjects.length || !chosenOps.length) return null
@@ -106,7 +90,6 @@ export class PeerGrantRegistry {
     return grant
   }
 
-  /** 所有者界面的决定 */
   decide(decision: PeerApprovalDecision): boolean {
     if (!this.pending.has(decision.requestId)) return false
     this.finish(decision.requestId, decision)
@@ -122,7 +105,6 @@ export class PeerGrantRegistry {
     this.hooks.closed(requestId)
   }
 
-  /** 事件流打开：只有尚未激活过的授权能激活（一次性，防止断线后重用） */
   activate(connectionId: string, deviceId: string): PeerGrantView | null {
     const grant = this.grants.get(connectionId)
     if (!grant || grant.deviceId !== deviceId || grant.activatedAt !== null) return null
@@ -133,7 +115,6 @@ export class PeerGrantRegistry {
     return grant
   }
 
-  /** 事件流断开 / 所有者撤销 / 设备撤销 */
   revoke(connectionId: string): boolean {
     if (!this.grants.delete(connectionId)) return false
     clearTimeout(this.activationTimers.get(connectionId))
@@ -152,7 +133,6 @@ export class PeerGrantRegistry {
     for (const id of [...this.pending.keys()]) this.finish(id, null)
   }
 
-  /** 每个 peer 请求的门禁 */
   check(connectionId: string | undefined, deviceId: string, operation: PeerOperation, projectId?: string): PeerCheck {
     const grant = connectionId ? this.grants.get(connectionId) : undefined
     if (!grant || grant.deviceId !== deviceId) {

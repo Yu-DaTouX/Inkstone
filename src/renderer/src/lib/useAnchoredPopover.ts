@@ -1,6 +1,5 @@
 import { useLayoutEffect, useState, type RefObject } from 'react'
 
-/** Follow the final layout during native window transitions, zoom and tile movement. */
 export function useAnchoredPopover(open: boolean, anchor: RefObject<HTMLElement | null>, width: number, height = 560, allowFlip = false, align: 'left' | 'right' = 'right') {
   const [position, setPosition] = useState<{ left?: number; right?: number; bottom: number | undefined; top: number | undefined; width: number; maxHeight: number; transformOrigin: string }>({ right: 12, bottom: 12, top: undefined, width, maxHeight: height, transformOrigin: 'bottom right' })
   useLayoutEffect(() => {
@@ -18,7 +17,6 @@ export function useAnchoredPopover(open: boolean, anchor: RefObject<HTMLElement 
         const roomBelow = window.innerHeight - belowTop - 12
         const roomAbove = window.innerHeight - bottom - top
         const below = allowFlip && roomAbove < Math.min(height, 220) && roomBelow > roomAbove
-        /* right：菜单右缘对齐触发器右缘；left：左缘对齐触发器左缘（触发器靠左时，向右展开，不压到侧栏） */
         const horizontal = align === 'left'
           ? { left: Math.max(12, Math.min(window.innerWidth - availableWidth - 12, rect.left)), right: undefined }
           : { left: undefined, right: Math.max(12, Math.min(window.innerWidth - availableWidth - 12, window.innerWidth - rect.right)) }
@@ -26,7 +24,6 @@ export function useAnchoredPopover(open: boolean, anchor: RefObject<HTMLElement 
           ...horizontal,
           bottom: below ? undefined : bottom, top: below ? belowTop : undefined, width: availableWidth,
           maxHeight: Math.max(1, Math.min(height, window.innerHeight * 0.72, below ? roomBelow : roomAbove)),
-          /* 浮层从触发器那一角长出：向上弹取底缘、向下弹取顶缘；对齐哪侧取哪侧 */
           transformOrigin: `${below ? 'top' : 'bottom'} ${align === 'left' ? 'left' : 'right'}`
         }
         const key = JSON.stringify(next)

@@ -1,6 +1,3 @@
-// 桌面砚 → 「生活助手」服务的本机 HTTP 客户端。
-// 职责边界：只负责与助手服务通信（HTTP + SSE + 断线重连），不保存记忆/事项，也不做提示词或回合逻辑。
-// 令牌由调用方从设置（safeStorage）读出后传入，这里不落盘、不写日志。
 import http from "node:http";
 
 export type AssistantStatus = "unconfigured" | "running" | "stopped" | "unauthorized" | "error";
@@ -46,7 +43,6 @@ export type AssistantTurnEvent = { turn_id: number; channel: string; user_text: 
 export type AssistantLinkOptions = {
   baseUrl: string;
   token: string;
-  /** 单次 HTTP 请求超时；模型回合最坏约 120 秒，默认 180 秒。 */
   timeoutMs?: number;
   log?: (message: string) => void;
   onStatus?: (status: AssistantStatus, detail?: string) => void;
@@ -192,9 +188,6 @@ export class AssistantLink {
     return this.request("POST", `/v1/deliveries/${deliveryId}/ack`);
   }
 
-  // ---------- SSE ----------
-
-  /** 开始订阅事件流；断线后指数退避重连，并用 Last-Event-ID 续传。 */
   startEvents(): void {
     this.stopped = false;
     this.openEvents();

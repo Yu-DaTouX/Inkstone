@@ -1,21 +1,6 @@
-/**
- * v3 模型价格字段的纯逻辑单测（WP-40）。
- *
- * 只编译两个纯模块，在 Node 里直接跑，不启动 Electron、不碰 pi、不读用户凭证、
- * 不发任何请求、不按模型名猜价格：
- *   · `src/main/models/price.ts` —— 主进程从 pi 原始记录取报价并接到 ModelInfo；
- *   · `src/renderer/src/features/settings/models/models-model.ts` —— 渲染端价格读取与
- *     展示（`modelCostOf` / `priceLabel`），用来核对两侧字段名一致。
- *
- * 可独立执行：
- *
- *   node scripts/test-v3-model-price.mjs
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 
-/* 两个模块打进同一个包：它们都 import shared/custom-provider，分开打会各带一份实现。
-   入口用 stdin，避免为一个测试新增中间文件。 */
 const result = await build({
   stdin: {
     contents: [
@@ -43,8 +28,6 @@ const model = (over = {}) => ({
   contextWindow: 0,
   ...over
 })
-
-/* ── 从 pi 原始记录取报价 ───────────────────────────────────── */
 
 const full = modelPriceOf({
   id: 'claude',
@@ -85,8 +68,6 @@ assert.equal(
   '明确全 0（免费 / 套餐）视为没有报价，不渲染 $0'
 )
 
-/* ── 接到 ModelInfo 上 ──────────────────────────────────────── */
-
 const normalized = model({ id: 'claude', provider: 'anthropic', contextWindow: 200_000 })
 const withCost = attachModelPrice(normalized, {
   id: 'claude',
@@ -101,8 +82,6 @@ const withoutCost = attachModelPrice(normalized, { id: 'claude' })
 assert.equal(withoutCost, normalized, '没有报价时原样返回')
 assert.equal('cost' in withoutCost, false, '没有报价时不写 cost: undefined（区分「没给」与「为 0」）')
 assert.equal(attachModelPrice(undefined, { cost: { input: 1, output: 1 } }), undefined, '模型缺失时安全返回')
-
-/* ── 与渲染端价格显示字段名一致 ─────────────────────────────── */
 
 assert.deepEqual(
   modelCostOf({ id: 'claude', cost: withCost.cost }),

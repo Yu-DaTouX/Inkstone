@@ -1,18 +1,3 @@
-/**
- * 设置 → 模型与服务的「自定义端点」区（WP-40，02 §10.4）。
- *
- * 把 v2 `components/settings/CustomProviderForm.tsx` 的能力搬到 v3：读 / 写 pi 的
- * `models.json`（宿主 `main/custom-providers.ts` 只动 `yan-` 前缀条目）。真源、校验与
- * 落盘都在宿主与共享纯逻辑里，这里只是表单。
- *
- * 硬边界：
- *   · 密钥**只去不回** —— 列表只显示「已设置 / 未设置」，输入框不回显已存密钥；
- *     设备端与界面都不读密钥明文；
- *   · 协议是受支持集合的下拉，不是自由输入（pi 不校验 api 字段，填错到请求时才炸）；
- *   · 真实的网络动作（获取模型列表 / 检测本机服务 / 测试连接）**只在用户点击后**由
- *     既有 `window.yan` 接口执行，页面打开不会自动探测、不自动登录、不自动发请求；
- *   · 所有外观来自 `ui/`，本文件只写版面类（样式在 `models-settings.css`）。
- */
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { Plus, RefreshCw, Trash2 } from 'lucide-react'
 import type {
@@ -56,7 +41,6 @@ export function CustomEndpointSettings(): ReactElement {
   const [locals, setLocals] = useState<LocalModelServer[] | null>(null)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [pendingRemove, setPendingRemove] = useState<CustomProviderView | null>(null)
-  /* 连接测试：一次只开一个面板，结果也只留最近一次，避免与上一条对不上号。 */
   const [testId, setTestId] = useState<string | null>(null)
   const [testing, setTesting] = useState('')
   const [testResult, setTestResult] = useState<{ id: string; result: CustomProviderTestResult } | null>(null)
@@ -110,7 +94,6 @@ export function CustomEndpointSettings(): ReactElement {
     setBusy(true)
     setMsg(null)
     try {
-      /* 密钥留空 = 沿用磁盘上的旧值，空白不覆盖。 */
       const result = await window.yan.saveCustomProvider({
         ...draft,
         ...(draft.apiKey && draft.apiKey.trim() ? {} : { apiKey: undefined })
@@ -153,7 +136,6 @@ export function CustomEndpointSettings(): ReactElement {
     }
   }
 
-  /** 从端点拉模型 ID 填进表单（保留已填行，只补缺）。用户点击才联网。 */
   const fetchModels = async (): Promise<void> => {
     if (!draft) return
     setFetching(true)
@@ -189,7 +171,6 @@ export function CustomEndpointSettings(): ReactElement {
     }
   }
 
-  /** 探测本机服务：只读本机端口列表。用户点击才执行。 */
   const detectLocal = async (): Promise<void> => {
     setDetecting(true)
     setMsg(null)
@@ -203,7 +184,6 @@ export function CustomEndpointSettings(): ReactElement {
     }
   }
 
-  /** 把探测到的对话服务填进表单；已存在同地址的服务改成编辑它，沿用已存密钥。 */
   const fillFromLocal = async (server: LocalModelServer): Promise<void> => {
     const next: CustomProviderInput = {
       id: server.suggestedId ?? 'yan-local',
@@ -321,7 +301,6 @@ export function CustomEndpointSettings(): ReactElement {
                   {testing === `${item.id}:billable` ? t('customApi.testRunning') : t('customApi.testBillable')}
                 </Button>
               </div>
-              {/* 成本提示就在按钮旁边：点下去之前就要知道哪一段会花钱 */}
               <p className="ms-note">{t('customApi.testCost')}</p>
               {testResult?.id === item.id ? (
                 <p
@@ -371,7 +350,6 @@ export function CustomEndpointSettings(): ReactElement {
             type="password"
             autoComplete="off"
             placeholder={t('customApi.apiKeyPlaceholder')}
-            /* 不回显已存密钥：留空表示沿用 */
             value={draft.apiKey ?? ''}
             isDisabled={busy}
             onChange={(value) => setDraft({ ...draft, apiKey: value })}

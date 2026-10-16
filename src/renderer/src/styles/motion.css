@@ -1,21 +1,4 @@
 
-/* 52. 动效系统 —— 弹窗 / 浮层 / 菜单
-   这一节取代第 43 节那套「一浮层一动画」。为什么要重做：
-   ① **没有退场**。React 在 open=false 的瞬间卸载节点，纯 CSS
-   只能演入场 —— 表现是「淡入放大」打开、「啪」一下消失，
-   两边不对称。现在配合 `usePresence()` 延迟卸载，
-   入场/退场各有自己的关键帧。
-   ② **曲线不好**。原来统一 `cubic-bezier(0.2,0,0.2,1)`（material
-   standard）是「快出慢进」，适合位移；浮层更想要
-   *快进慢停**（easeOutQuint 那一类），落位有「安定感」。
-   craft-agents 用的是 `cubic-bezier(0.22,1,0.36,1)`，抄过来。
-   ③ **没有层级差**。遮罩、面板、菜单项全用同一个时长，
-   看起来是整块一起动。现在分三档（fast/base/slow）+ 错开。
-   参考：craft-agents-oss（Apache-2.0）的动效令牌与
-   `data-[state=open]:animate-in …` 的用法。 */
-
-/* ── 基础段：本文件后面的规则在此之上细化（同特异性时后者胜） ── */
-
 @media (prefers-reduced-motion: reduce) {
   .mt-pop,
   .srow-menu,
@@ -28,32 +11,19 @@
   }
 }
 
-/* ── 基础段结束 ── */
-
 :root {
-  /* 时长：三档够用。菜单最快（要跟手），模态稍慢（体量大） */
   --mo-fast: 110ms;
   --mo-base: 170ms;
   --mo-slow: 240ms;
-  /* 位移距离：浮层不用滑很远，6px 就够表达「从哪来」 */
   --mo-shift: 4px;
-  /* 流式新块的错峰步进（方向 F，设计规范 §6）：60ms、上限 8。
-     --dur-* 的其它值在 tokens.css；本批只动 motion.css，60ms 定义在这里。 */
   --dur-60: 60ms;
 
-  /* 快进慢停 —— 浮层落位的主力曲线 */
   --mo-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  /* 退场用标准曲线（退场不需要「安定感」，只需要干脆） */
   --mo-ease-out: cubic-bezier(0.4, 0, 1, 1);
-  /* 只给运行中的循环（呼吸、脉冲）：两端对称，不抢入场曲线的「快进慢停」 */
   --mo-loop: cubic-bezier(0.45, 0, 0.55, 1);
-  /* 落位带一点回弹：只给小控件的手柄（分档滑块），浮层与面板仍用 --mo-ease */
   --mo-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
-/* 52.1 关键帧 */
-
-/* 入场：从上 / 从下 / 居中 */
 @keyframes mo-in-up {
   from {
     opacity: 0;
@@ -85,7 +55,6 @@
   }
 }
 
-/* 退场：与入场同向但更快、更小 —— 对称但不拖沓 */
 @keyframes mo-out-up {
   to {
     opacity: 0;
@@ -122,13 +91,6 @@
   }
 }
 
-/*
- * 菜单项 / 列表项逐个淡入。
- *
- * 为什么值得做：「一整块滑进来」和「内容一行行落位」的体感差别很大，
- * 后者让人看出「这是一个列表」，前者像一张图片。
- * 用 `--i` 控制错开量，调用方只需要给 style={{ '--i': index }}。
- */
 @keyframes mo-item-in {
   from {
     opacity: 0;
@@ -136,14 +98,12 @@
   }
 }
 
-/* 按下反馈 —— 按钮被点的那一下要有回应 */
 @keyframes mo-press {
   50% {
     transform: scale(0.96);
   }
 }
 
-/* 遮罩上的细微噪动：让「背景被压住」这件事看得出来 */
 @keyframes mo-scrim-in {
   from {
     opacity: 0;
@@ -155,7 +115,6 @@
   }
 }
 
-/* 52.2 应用：遮罩 */
 .modal-scrim,
 .settings-scrim {
   animation: mo-scrim-in var(--mo-base) var(--mo-ease) both;
@@ -165,7 +124,6 @@
   animation: mo-fade-out var(--mo-fast) var(--mo-ease-out) both;
 }
 
-/* 52.3 应用：居中模态（设置面板 / 扩展对话框） */
 .modal,
 .settings {
   animation: mo-in-center var(--mo-slow) var(--mo-ease) both;
@@ -175,17 +133,14 @@
   animation: mo-out-center var(--mo-fast) var(--mo-ease-out) both;
 }
 
-/* 设置面板内部的 tab 内容：切 tab 时淡入，别是硬切 */
 .settings-body > * {
   animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
 }
-/* 分组逐个落位 */
 .settings-body .ui-rows {
   animation: mo-item-in var(--mo-base) var(--mo-ease) both;
   animation-delay: calc(var(--i, 0) * var(--dur-22));
 }
 
-/* 插件市场：切页淡入，结果逐行落位（最多错开 8 行） */
 .market-panel {
   animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
 }
@@ -194,8 +149,6 @@
   animation-delay: calc(var(--i, 0) * var(--dur-22));
 }
 
-/* 52.4 应用：贴着触发器的浮层 */
-/* 向上弹（输入区附近的模型选择器） */
 .mt-pop {
   animation: mo-in-up var(--mo-base) var(--mo-ease) both;
   transform-origin: bottom center;
@@ -203,7 +156,6 @@
 .mt-pop.closing {
   animation: mo-out-up var(--mo-fast) var(--mo-ease-out) both;
 }
-/* 模型列表项错开落位 */
 .mt-pop .mt-item {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
   animation-delay: calc(var(--i, 0) * var(--dur-8));
@@ -211,13 +163,11 @@
 .mt-pop .mt-group {
   animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
 }
-/* 档位按钮：从左到右依次出现，像终端里打印出来 */
 .mt-pop .mt-stop {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
   animation-delay: calc(var(--i, 0) * var(--dur-26));
 }
 
-/* 项目环境菜单：从触发器下方落下，各组依次落位 */
 .env-menu {
   animation: mo-in-down var(--mo-base) var(--mo-ease) both;
   transform-origin: top right;
@@ -238,7 +188,6 @@
   }
 }
 
-/* 向下弹（会话行 / 列表项的操作菜单） */
 .row-menu,
 .row-menu-surface {
   animation: mo-in-down var(--mo-fast) var(--mo-ease) both;
@@ -254,9 +203,7 @@
   animation-delay: calc(var(--i, 0) * var(--dur-14));
 }
 
-/* 52.5 应用：通知条 —— 从右侧滑入 + 逐条错开 */
 .notices {
-  /* 通知是「从侧边进来」的，方向要固定，不能被 flex 布局的改动带跑 */
   perspective: 400px;
 }
 .notice {
@@ -267,11 +214,9 @@
   animation: mo-out-right var(--mo-fast) var(--mo-ease-out) both;
 }
 .notice:hover {
-  /* 点按反馈：悬停时轻微抬起来一点 */
   transform: translateX(-1px);
 }
 
-/* 52.6 应用：底部日志抽屉 —— 从下滑入 */
 .logdrawer {
   animation: mo-in-up var(--mo-slow) var(--mo-ease) both;
   transform-origin: bottom center;
@@ -280,12 +225,10 @@
   animation: mo-out-up var(--mo-fast) var(--mo-ease-out) both;
 }
 
-/* 52.7 应用：顶部连接条 —— 从上落下 */
 .connbar {
   animation: mo-in-drop var(--mo-base) var(--mo-ease) both;
 }
 
-/* 52.8 通用按压反馈 */
 .tb-icon:active,
 .rp-x:active,
 .mt-stop:active,
@@ -298,39 +241,19 @@
   animation: mo-press var(--dur-180) var(--mo-ease);
 }
 
-/* 52.9 减少动效
-   时长压到 1ms 而不是 `animation: none` ——
-   因为 `usePresence` 的延迟卸载是按时长算的，把动画整个删掉
-   会让「CSS 不动 / JS 还在等」出现一段空窗（浮层短暂消失又出现）。
-   var(--dur-1) 保证 `both` 填充语义仍在（终态就是 from/to 里那个值）。 */
 @media (prefers-reduced-motion: reduce) {
   .notice:hover {
     transform: none;
   }
 }
 
-/* 53. 导航轨预览卡 v2 —— 「一行标题 + 三行回答」
-   用户反馈：预览卡里铺的是用户**整段原话**（带路径、带报错、带换行），
-   看着是一块杂讯。卡片的目的是「让我认出这是哪一轮」，
-   不是「让我重读一遍原话」。
-   新结构：
-   ┌─────────────────────────────┐
-   │ 6 / 7            点击跳转   │  ← 序号
-   │ ─────────────────────────── │
-   │ 标题（用户那一问的短摘要）  │  ← 强调色，最多一行
-   │ AI 回答第一行               │  ← 灰色，最多三行
-   │ AI 回答第二行               │
-   │ AI 回答第三行…              │
-   └─────────────────────────────┘ */
 .outline-preview {
-  /* 上一节定义的：绝对定位、锚在被指那一格（top 由 JS 给） */
   width: 300px;
   max-width: 44vw;
   padding: 0;
   overflow: hidden;
 }
 
-/* 卡片内部按「块」排，不再用一条大 padding */
 .outline-preview .op-head {
   margin: 0;
   padding: 6px var(--sp-3);
@@ -338,19 +261,16 @@
   background: var(--bg-2);
 }
 
-/* ---- 标题：用户那一问的短摘要 ---- */
 .op-title {
   padding: var(--sp-2) var(--sp-3) var(--sp-1);
   color: var(--fg);
   font-size: var(--fs-base);
   font-weight: var(--fw-strong);
   line-height: 1.4;
-  /* 标题就一行 —— 它是「认出这一轮」的凭据，不是正文 */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 标题前的小竖线：与「回答」拉开层级，不用换颜色 */
 .op-title::before {
   content: '';
   display: inline-block;
@@ -362,22 +282,17 @@
   vertical-align: -1px;
 }
 
-/* ---- 回答：三行封顶 ---- */
 .op-answer {
-  /* 下方留白用 margin：clamp 盒带 padding-bottom 时，溢出裁切发生在 padding 边缘，
-     第三行会被切掉半截，或露出第四行的上沿 */
   padding: 0 var(--sp-3);
   margin-bottom: var(--sp-3);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   line-height: 1.5;
   max-height: calc(1.5em * 3);
-  /* 用户明确要求「三行」 */
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  /* 长英文/路径不要撑破卡片 */
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -388,26 +303,16 @@
   font-size: var(--fs-xs);
 }
 
-/* 浅色主题下标题的竖线要深一点才看得见 */
 html[data-theme='light'] .op-title::before {
   background: var(--accent);
 }
 
-/* 54. 回合视图：段落
-   用户要求「每次发送的信息要根据段落来显示」。
-   为什么值得做：模型经常一次吐好几段（解释 + 清单 + 结论），
-   合成一个死长的 <p> 读起来是一坨，而且**新到的内容无法单独提示**。
-   拆成段之后：
-   · 段间有间距，朗读节奏对了
-   · 新到的那一段自己淡入（key 是段的 id，React 会挂新节点）
-   · 最终回答与中间解说的层级差能用字号/颜色表达 */
 .turn-para {
   animation: text-in var(--dur-200) ease-out;
 }
 .turn-para + .turn-para {
   margin-top: var(--sp-3);
 }
-/* 段落内部：markdown 的首尾边距要去掉，否则段间距会翻倍 */
 .turn-para > .prose > :first-child {
   margin-top: 0;
 }
@@ -415,7 +320,6 @@ html[data-theme='light'] .op-title::before {
   margin-bottom: 0;
 }
 
-/* ---- 中间解说：工具调用之间它说的话，从属于最终回答 ---- */
 .turn-commentary {
   margin-bottom: var(--sp-3);
 }
@@ -423,7 +327,6 @@ html[data-theme='light'] .op-title::before {
   color: var(--fg-dim);
   font-size: var(--fs-sm);
 }
-/* 中间解说左侧加一条淡竖线 —— 一眼看出「这是过程，不是结论」 */
 .turn-commentary {
   border-left: 1px solid var(--border-soft);
   padding-left: var(--sp-3);
@@ -465,7 +368,6 @@ html[data-theme='light'] .op-title::before {
   }
 }
 
-/* ---- 最终回答：正文字色、正常字号 ---- */
 .turn-response {
   margin-bottom: var(--sp-2);
 }
@@ -473,7 +375,6 @@ html[data-theme='light'] .op-title::before {
   color: var(--fg);
 }
 
-/* 回合级统计放在正文之后，避免模型品牌 / 步数 / 回复档位打断阅读。 */
 .turn-footer {
   position: relative;
   display: flex;
@@ -490,7 +391,6 @@ html[data-theme='light'] .op-title::before {
   white-space: nowrap;
 }
 
-/* 停止 / 失败 / 中断：文字标记，不只靠颜色（可访问性）。 */
 .turn-footer-tag {
   padding: 0 var(--sp-1);
   border: 1px solid var(--border);
@@ -507,15 +407,6 @@ html[data-theme='light'] .op-title::before {
   cursor: help;
 }
 
-/*
- * 完整时间的第二条通道。
- *
- * `title` 只有鼠标悬停才出，键盘与触摸都读不到；`aria-label` 只服务
- * 屏幕阅读器。这里让可聚焦的时间在 focus 时用伪元素弹出完整时间 ——
- * 用 `:focus` 而不是 `:focus-visible`：触摸 / 脚本聚焦也要出，
- * outline 则只给键盘（`:focus-visible`）。
- * `pointer-events: none` 保证浮层不吃点击，位置相对 `.turn-footer`。
- */
 .turn-time:focus-visible {
   outline: var(--focus-ring-w-strong) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
@@ -545,7 +436,6 @@ html[data-theme='light'] .op-title::before {
   margin-top: var(--sp-1);
 }
 
-/* ---- 回合头部的「N 步」标记 ---- */
 .msg-turn-count {
   margin-left: var(--sp-2);
   padding: 0 var(--sp-1);
@@ -566,22 +456,11 @@ html[data-theme='light'] .op-title::before {
   font-size: var(--fs-xs);
 }
 
-/* 合并后的助手回合：块间距比其他消息稍小一点（它们本来就是一块） */
 .msg.assistant {
   margin-bottom: var(--sp-5);
 }
 
-/* 55. 工作执行栏
-   用户要求的回合内顺序：
-   ① 模型说话（中间解说，按段落）
-   ② 工作执行栏（干了多少活）      ← 一条横条，把两边隔开
-   ③ 回复（结论）
-   为什么要做成「一条横条」而不是一行文字：
-   它夹在「它说的」与「它答的」中间，是个**分界**。
-   靠背景 + 上下边框把它从正文里分离出来，读者一眼就知道
-   「上面是过程，下面是结论」。之前就是一行灰字，看不出分界。 */
 .turn {
-  /* 横条：左右拉到整宽，靠背景与上下细线立住 */
   margin: 2px 0 var(--sp-3);
   padding: 0 var(--sp-2);
   border-top: 1px solid var(--border-soft);
@@ -589,20 +468,16 @@ html[data-theme='light'] .op-title::before {
   background: color-mix(in srgb, var(--bg-1) 55%, transparent);
   border-radius: var(--r-xs);
 }
-/* 展开时去掉底边、让内容自然接上 */
 .turn.open {
   border-bottom-color: var(--border);
 }
 
-/* ---- 只有一条工具时的简式（直接一行 `→ name args`，不套横条）---- */
 .turn + .turn-para,
 .turn-para + .turn,
 .turn-response + .turn {
   margin-top: var(--sp-3);
 }
 
-/* 解说与执行栏、执行栏与回复之间的间距由它们自己的 margin 控制，
-   这里去掉重复叠加 */
 .turn-commentary + .turn {
   margin-top: var(--sp-2);
 }
@@ -610,24 +485,15 @@ html[data-theme='light'] .op-title::before {
   margin-top: var(--sp-3);
 }
 
-/* 回复前面没有执行栏时，它与解说之间的间距要够 */
 .turn-commentary + .turn-response {
   margin-top: var(--sp-4);
 }
 
-/* 浅色主题下横条的底要更明显一点，否则看不出是个「条」 */
 html[data-theme='light'] .turn {
   background: color-mix(in srgb, var(--bg-2) 70%, transparent);
   border-color: var(--border);
 }
 
-/* 56. 输入区运行条（设计规范 §3.5 / §4）
-   输入区顶边的一行，只在运行时用 grow 长出来：方点阵 · 阶段文字 · 计时。
-   思考档位色只落在方点阵与运行条底线上（七档冷→暖色阶，令牌见下），
-   文字用中性色 —— 整句染成高档位的暖色读起来像告警。 */
-
-/* 档位色也是模型菜单里的档位文字色：冷→暖的温度色阶（灰→青→蓝→鸢尾→兰紫→红），
-   相邻档插值顺滑、不撞色；深色 bg-1、bg-2 上 ≥4.5:1 */
 :root {
   --think-off: #868991;
   --think-minimal: #93a3b5;
@@ -641,7 +507,6 @@ html[data-theme='light'] .turn {
 .cborder {
   display: grid;
   grid-template-rows: 0fr;
-  /* 全出血：底线从输入框最左一直到最右，与左右边框接上 */
   margin: 0 calc(var(--sp-3) * -1) var(--sp-3);
   color: var(--think-off);
   user-select: none;
@@ -666,7 +531,6 @@ html[data-theme='light'] .turn {
   height: 30px;
   border-bottom: 1px solid color-mix(in srgb, currentColor 45%, transparent);
 }
-/* 档位 → 颜色。用属性选择器，加档位时只加一行 */
 .cborder[data-level='minimal'] {
   color: var(--think-minimal);
 }
@@ -693,7 +557,6 @@ html[data-theme='light'] .turn {
   gap: var(--sp-2);
   min-width: 0;
 }
-/* 方点阵跟着运行条取思考档位色：亮点是档位色，尾迹半透明 */
 .cborder-spinner {
   --h: currentColor;
   --t: color-mix(in srgb, currentColor 55%, transparent);
@@ -705,7 +568,6 @@ html[data-theme='light'] .turn {
   font-size: var(--fs-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* 文案变化时淡入：状态切换是「有新消息」，不该是硬切 */
   animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
 }
 .cborder-time {
@@ -715,7 +577,6 @@ html[data-theme='light'] .turn {
   font-variant-numeric: tabular-nums;
 }
 
-/* 浅色主题：同一色阶压暗才能读（bg-1 上 ≥4.5:1） */
 html[data-theme='light'] {
   --think-off: #64676e;
   --think-minimal: #566676;
@@ -726,15 +587,6 @@ html[data-theme='light'] {
   --think-max: #bf2e2e;
 }
 
-/* 57. 任务栏：进度条 + 当前任务 + 动画
-   用户要求：「列出五个任务、已完成两个、再执行当前任务时，
-   显示一个进度条，并加入动画」。
-   对应三件东西：
-   · .rp-meter        进度条（**总是**显示，不再只在 ≥4 个任务时）
-   · .rp-todo-now     当前正在做的那条（spinner + 强调色）
-   · .rp-running-mark  列表里同一条的独立运行标记 */
-
-/* ---- 进度条 ---- */
 .rp-meter {
   position: relative;
   height: 2px;
@@ -748,13 +600,11 @@ html[data-theme='light'] {
   height: 100%;
   border-radius: 1px;
   background: var(--accent);
-  /* 宽度变化要有过程 —— 勾完一条时「长过去」比瞬跳好读 */
   transition:
     width var(--dur-420) var(--mo-ease),
     background-color var(--dur-200) var(--mo-ease);
 }
 
-/* ---- 当前正在做的那条（常驻一行，带 spinner）---- */
 .rp-todo-now {
   display: grid;
   grid-template-columns: 14px auto minmax(0, 1fr);
@@ -774,7 +624,6 @@ html[data-theme='light'] {
   line-height: 1;
 }
 
-/* 全部完成时的一行提示（无 spinner，安静） */
 .rp-todo-all {
   margin: 0 0 6px;
 }
@@ -794,13 +643,11 @@ html[data-theme='light'] {
   font-weight: 700;
 }
 
-/* ---- 列表：逐行落位 ---- */
 .rp-todos .rp-todo {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
   animation-delay: calc(var(--i, 0) * var(--dur-24));
 }
 
-/* 当前条目：运行标记 + 名字提亮 */
 .rp-todo.active {
   position: relative;
 }
@@ -814,12 +661,6 @@ html[data-theme='light'] {
   border-color: var(--accent);
 }
 
-/*
- * 刚被勾完的那一条：闪一下。
- *
- * 为什么需要：勾选框很小，任务文字又长，用户不一定马上看到「它变了」。
- * 这一下闪动是**确认反馈** —— 与 pi 勾完任务时整行重绘同一个作用。
- */
 .rp-todo.flash {
   animation: rp-flash var(--dur-900) var(--mo-ease);
 }
@@ -849,7 +690,6 @@ html[data-theme='light'] {
   }
 }
 
-/* 浅色主题：进度条底与扫光都要够对比 */
 html[data-theme='light'] .rp-meter {
   background: var(--bg-3);
 }
@@ -858,10 +698,6 @@ html[data-theme='light'] .rp-todo-now {
 }
 
 
-/* 58. 设置 · 模型接入页
-   两条路要一眼分得开：订阅制（OAuth，需要终端里跑一次 pi）
-   与 API key（在这里填）。所以用两个小标题分隔，
-   并且订阅制那边**不给输入框**（给了会让人以为能在这里登录）。 */
 .auth-page {
   gap: var(--sp-2);
 }
@@ -874,7 +710,6 @@ html[data-theme='light'] .rp-todo-now {
   border-bottom: 1px solid var(--border-soft);
 }
 
-/* 凭证文件位置：一行灰色的说明，不抢视线 */
 .auth-path {
   display: flex;
   align-items: center;
@@ -891,7 +726,7 @@ html[data-theme='light'] .rp-todo-now {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl;      /* 路径太长时保留尾部（文件名比开头有用） */
+  direction: rtl;
   text-align: left;
 }
 .auth-path-count {
@@ -914,7 +749,6 @@ html[data-theme='light'] .rp-todo-now {
   color: var(--err);
 }
 
-/* 分区小标题 */
 .auth-sec-head {
   display: flex;
   align-items: center;
@@ -933,7 +767,6 @@ html[data-theme='light'] .rp-todo-now {
   font-size: var(--fs-xs);
 }
 
-/* 一行一个接入方式 */
 .auth-row {
   display: flex;
   align-items: center;
@@ -943,7 +776,6 @@ html[data-theme='light'] .rp-todo-now {
   min-width: 0;
 }
 .auth-row + .auth-row {
-  /* 细分隔线：一行行读下来不会糊成一片 */
   box-shadow: inset 0 1px 0 var(--border-soft);
 }
 .auth-row:hover {
@@ -973,7 +805,6 @@ html[data-theme='light'] .rp-todo-now {
   border-radius: 3px;
 }
 
-/* 状态点 */
 .auth-dot {
   width: 6px;
   height: 6px;
@@ -1000,7 +831,6 @@ html[data-theme='light'] .rp-todo-now {
   font-size: var(--fs-xs);
 }
 
-/* 订阅制那行给的命令提示（不是按钮 —— 它是「去终端做」） */
 .auth-cmd {
   display: inline-flex;
   align-items: center;
@@ -1019,7 +849,6 @@ html[data-theme='light'] .rp-todo-now {
   opacity: 0.6;
 }
 
-/* 「等待浏览器授权…」——OAuth 期间要告诉用户去浏览器点，别以为它卡住了 */
 .auth-waiting {
   display: inline-flex;
   align-items: center;
@@ -1030,7 +859,6 @@ html[data-theme='light'] .rp-todo-now {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
 }
 
-/* 订阅登录进行中：面板换到该行下面占满整行（版式；控件外观来自 ui.css） */
 .auth-row:has(.auth-login-panel) {
   flex-wrap: wrap;
 }
@@ -1073,7 +901,6 @@ html[data-theme='light'] .rp-todo-now {
   overflow-wrap: anywhere;
 }
 
-/* 填 key 的那一行 */
 .auth-actions,
 .auth-edit {
   display: flex;
@@ -1113,13 +940,6 @@ html[data-theme='light'] .rp-todo-now {
   line-height: 1.45;
 }
 
-/* ------------------------------------------------------------------
-   52.2 各模块搬来的关键帧（B2 归口）
-   规则：除本文件外，任何 CSS 都不许定义 @keyframes（npm run check:motion 拦）。
-   这些动画原本散在各模块文件里，
-   2026-09-27 原样搬过来，未改动几何与时长；使用点仍在各自模块。
-   ------------------------------------------------------------------ */
-
 @keyframes msg-located {
   0%,
   60% {
@@ -1152,20 +972,17 @@ html[data-theme='light'] .rp-todo-now {
   70% { opacity: 1; transform: translateY(-50%) }
   100% { opacity: 0; transform: translateY(-80%) }
 }
-/* 语音输入录音中的红点（composer.css 的 .voice-dot） */
 @keyframes voice-pulse {
   50% {
     opacity: 0.35;
   }
 }
 
-/* 状态栏运行点与顶栏子代理入口的呼吸（scheme.css 的 .sb-mode-dot / .sa-indicator） */
 @keyframes sb-breathe {
   50% {
     opacity: 0.35;
   }
 }
-/* 子代理灯依次亮起（scheme.css 的 .sa-pop-dot / workbench.css 的 .sa-room-mark）；--room-tone 由使用点继承 */
 @keyframes sa-chase {
   0%,
   55%,
@@ -1197,8 +1014,6 @@ html[data-theme='light'] .rp-todo-now {
     opacity: 1;
   }
 }
-/* 文件树的 .rp-fs / .rp-fs-row / .rp-fs-size 已全部搬到 tools.css
-   （2026-09-15 样式归属收拢：同名选择器不再跨文件叠加）。 */
 @keyframes term-blink {
   50% {
     opacity: 0;
@@ -1234,15 +1049,6 @@ html[data-theme='light'] .rp-todo-now {
   20% { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 
-/* ------------------------------------------------------------------
-   v0.5 基础件（设计规范 §6）：展开 · 方点阵 · 光标 · 环绕流光 · 分段滑块
-   类名以 ui- 开头，组件在 components/ui（Spinner / Grow / Caret）。
-   ------------------------------------------------------------------ */
-
-/*
- * 展开：新块从 0fr 长到 1fr，同步淡入；旧内容被连续推开，不跳。
- * 用法：外层 .ui-grow（可加 .open 控制收合），唯一的子元素负责裁切。
- */
 .ui-grow {
   display: grid;
   grid-template-rows: 1fr;
@@ -1259,27 +1065,15 @@ html[data-theme='light'] .rp-todo-now {
   grid-template-rows: 0fr;
   opacity: 0;
 }
-/* 首次出现就长出来（新插入的块） */
 .ui-grow.enter {
   animation: mo-grow var(--mo-slow) var(--mo-ease) both;
 }
 
-/*
- * 流式新块整段到达（方向 F，设计规范 §6）：段落 / 列表 / 引用 / 标题 / 代码块的
- * 顶层元素由 MessageParts 在 live 且首次出现时挂上 .md-arrive，并用 --i 给错峰序号。
- * 复用 mo-item-in（opacity 0 + 上移 3px），错峰 60ms、上限 8。
- * 只有挂载那一刻播一次：已有块不重挂载 → 不重播；历史 / 恢复不是 live → 不挂类。
- */
 .md-arrive {
   animation: mo-item-in var(--mo-base) var(--mo-ease) both;
   animation-delay: calc(var(--i, 0) * var(--dur-60));
 }
 
-/*
- * 方点阵：10×10，3×3 方点，亮点沿外圈转、带一格尾迹，0.8s 一圈。
- * 取代旋转图标与盲文字符（后者是 2×4 竖长条，和等宽字格对不齐）。
- * 颜色：--h 亮点 / --t 尾迹 / --o 其余点，默认强调色，.mute 用中性色。
- */
 .ui-spin {
   position: relative;
   display: inline-block;
@@ -1305,9 +1099,6 @@ html[data-theme='light'] .rp-todo-now {
   animation: mo-dots var(--dur-800) steps(1, end) infinite;
 }
 
-/*
- * 光标：2px 宽、1.2em 高。流式输出时常亮；停下后 1.06s step-end 闪烁。
- */
 .ui-caret {
   display: inline-block;
   width: 2px;
@@ -1321,11 +1112,6 @@ html[data-theme='light'] .rp-todo-now {
   animation: mo-blink var(--dur-1060) step-end infinite;
 }
 
-/*
- * 环绕流光：conic-gradient 边框经 mask 只露 1px 边，2.4s 一圈。
- * 只在一次运行持续 3 秒后出现（animation-delay），短回合不闪。
- * 宿主需要 position: relative 与圆角；.on 由运行状态控制。
- */
 @property --mo-ang {
   syntax: '<angle>';
   inherits: false;
@@ -1359,7 +1145,6 @@ html[data-theme='light'] .rp-todo-now {
     mo-orbit-in var(--mo-slow) var(--mo-ease) var(--dur-3000) both;
 }
 
-/* 分段滑块：选中底块沿横向滑到新位置（Segmented 组件写 --seg-x / --seg-w） */
 .seg.sliding {
   position: relative;
 }
@@ -1417,7 +1202,6 @@ html[data-theme='light'] .rp-todo-now {
     opacity: 1;
   }
 }
-/* 外圈 8 个点依次点亮：左上 → 右上 → 右下 → 左下，亮点后跟一格尾迹 */
 @keyframes mo-dots {
   0% {
     box-shadow: 4px 4px var(--h), 8px 4px var(--o), 12px 4px var(--o), 12px 8px var(--o), 12px 12px var(--o), 8px 12px var(--o), 4px 12px var(--o), 4px 8px var(--t), 8px 8px var(--o);
@@ -1446,7 +1230,6 @@ html[data-theme='light'] .rp-todo-now {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* 保留终态：方点阵停在第一帧，流光直接显示，展开直达 */
   .ui-spin::before,
   .ui-caret.idle,
   .ui-orbit.on::after,
@@ -1460,11 +1243,6 @@ html[data-theme='light'] .rp-todo-now {
   }
 }
 
-/*
- * 启动画面：石框从右上开口处起笔、逆时针描出， 随后淡入，光标  出现后按 --mo-loop 呼吸直到就绪；
- * 就绪后整体淡出。描画总时长 --boot-ms 由 lib/boot-splash.ts 按上次实测的就绪时间写入（缺省 --mo-slow × 2），
- * 让描完的一刻与就绪对齐。减少动画时全局规则把它们压成终态。
- */
 .boot { --boot-ms: calc(var(--mo-slow) * 2); }
 .boot-frame { stroke-dasharray: 1; stroke-dashoffset: 1; animation: boot-draw var(--boot-ms) var(--mo-ease) forwards; }
 .boot-prompt { opacity: 0; animation: boot-show var(--mo-base) var(--mo-ease) calc(var(--boot-ms) * 0.75) forwards; }
@@ -1485,29 +1263,18 @@ html[data-theme='light'] .rp-todo-now {
     opacity: 0.35;
   }
 }
-/* Shared slider feedback and Agent status indicators. */
-/* 思考滑块的块光标：按终端光标节拍在亮与半暗之间跳（不完全消失，手柄始终可见） */
 @keyframes ui-step-caret { 50% { opacity: 0.38; } }
 @keyframes ui-step-value-in { from { opacity: 0; transform: translateY(4px); } }
 @keyframes ui-status-pulse { 50% { opacity: 0.35; } }
 
-/* 左栏收起时悬停预览滑出 */
 @keyframes rail-peek-in {
   from { transform: translateX(-12px); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
 
-/* ------------------------------------------------------------------
-   状态变化的过渡：左栏、分屏、磁贴（设计规范 §6「会变化的都要有过渡」）
-   只用透明度与小位移；原生浏览器视图不受 CSS 影响，因此磁贴只淡入不位移。
-   减少动态偏好由 tokens.css 的全局规则压到 1ms。
-   ------------------------------------------------------------------ */
-
-/* 左栏：会话行挂载（展开项目、显示更多、置顶移位、筛选结果）轻落位 */
 .srow-wrap {
   animation: mo-item-in var(--mo-base) var(--mo-ease) both;
 }
-/* 归档 / 取消归档：先淡出收起，再由列表移除（SessionRow 延迟 150ms） */
 .srow-wrap.leaving {
   animation: mo-out-left var(--mo-fast) var(--mo-ease-out) both;
   pointer-events: none;
@@ -1518,17 +1285,14 @@ html[data-theme='light'] .rp-todo-now {
     transform: translateX(-8px);
   }
 }
-/* 分支子树、「更多会话」、项目下的会话：展开时整体淡入 */
 .session-children,
 .rail-more-sessions {
   animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
 }
-/* 行内重命名输入框出现 */
 .srow-rename-input,
 .proj-rename-input {
   animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
 }
-/* 拖拽落点：插入线与「放进项目」高亮淡入 */
 .proj-head.drop-before::before,
 .proj-head.drop-after::after,
 .proj-group-heading.drop-before::before,
@@ -1539,12 +1303,10 @@ html[data-theme='light'] .rp-todo-now {
 .proj-head.is-dragging {
   transition: opacity var(--mo-fast) var(--mo-ease);
 }
-/* 删除后的撤销条 */
 .rail-trash {
   animation: mo-in-up var(--mo-base) var(--mo-ease) both;
 }
 
-/* 分屏：新加入的一列淡入；关闭时先淡出再移除（closeSplitTile 加 .closing） */
 .split-column + .split-column {
   animation: mo-fade-in var(--mo-slow) var(--mo-ease) both;
 }
@@ -1557,11 +1319,9 @@ html[data-theme='light'] .rp-todo-now {
   animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
 }
 
-/* 工具磁贴：打开 / 重新显示时淡入（主会话磁贴不动，避免切会话闪烁） */
 .tile-pane:not([data-workspace-pane='chat']):not([hidden]) {
   animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
 }
-/* 浮动磁贴：从中心轻放大落位；吸附参考线与提示淡入 */
 .rp-float-tile {
   animation: mo-in-center var(--mo-base) var(--mo-ease) both;
 }
@@ -1573,7 +1333,6 @@ html[data-theme='light'] .rp-todo-now {
   animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
 }
 
-/* 结构化回答块：块淡入；柱子从基线长出、卡片与步骤逐个落位（错开上限由组件给的 --vb-i 决定） */
 .vb:not(.vb-pending) {
   animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
 }
@@ -1613,7 +1372,6 @@ html[data-theme='light'] .rp-todo-now {
   from { stroke-dashoffset: 2000; }
   to { stroke-dashoffset: 0; }
 }
-/* 第二批块：横向柱从左长出，指标卡逐个落位，分步面板切换淡入，追问条上浮 */
 .vb-hbar {
   transform-origin: left;
   animation: vb-hbar-grow var(--mo-slow) var(--mo-ease) both;
@@ -1636,7 +1394,6 @@ html[data-theme='light'] .rp-todo-now {
 @keyframes vb-hbar-grow {
   from { transform: scaleX(0); }
 }
-/* 问题表单：字段逐个落位，缺填提示淡入 */
 .qform-field {
   animation: mo-item-in var(--mo-base) var(--mo-ease) both;
 }
@@ -1644,7 +1401,6 @@ html[data-theme='light'] .rp-todo-now {
   animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
 }
 
-/* 已播放过入场动画的块（切换分屏会话后重新挂载）：直接给最终状态 */
 .vb-seen { display: contents; }
 .vb-seen[data-seen='1'] .vb:not(.vb-pending),
 .vb-seen[data-seen='1'] .vb:not(.vb-pending) * {

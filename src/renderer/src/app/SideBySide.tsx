@@ -1,21 +1,3 @@
-/**
- * 并排视图（WP-20b，方案 02 §7.7）。
- *
- * 对话区一分为二（乃至更多），每列有自己的会话头与输入框：焦点那一列渲染完整的
- * `SessionView` + `Composer`（也就是主 store 当前投影的会话），其余列是只读投影。
- * 点任意一列把焦点切过去（走正式 `switchSession` / 托盘选择），所以全局快捷键与
- * 输入框始终作用于**当前侧**；列自己的会话身份来自它的会话引用，不受别的会话的
- * 后台推送影响（那类推送到 `sessionRuntimes` 各自会话的键下）。
- *
- * 三种列：
- *   · 会话（焦点）—— 真输入框；
- *   · 会话（非焦点）—— 只读投影 + 同尺寸的输入框外观（点它即切焦点）；
- *   · 子 Agent 转录 —— `subagent:<runId>` 伪列，只读，不能激活（见 SideBySideLayout）。
- *
- * 窄屏由 `collapsedPanes` 退回单栏（分屏状态保留，宽回来恢复）；「关闭一侧」由列头
- * 的关闭按钮移除，剩一列时退出分屏、回到单视图。分屏状态本身属于 `state/split-view`，
- * 本文件只投影与渲染，不新造第二套布局状态。
- */
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
@@ -41,9 +23,7 @@ import {
 import './SideBySide.css'
 
 export interface SideBySideProps {
-  /** 分屏状态；`null` 表示单会话。 */
   split: SplitLayout | null
-  /** 窄窗：即使有分屏也只画焦点那一列。 */
   narrow: boolean
 }
 
@@ -51,7 +31,6 @@ export function SideBySide({ split, narrow }: SideBySideProps): JSX.Element {
   const layout = collapsedPanes(split, narrow)
   const weights = useSplitView((s) => s.weights)
 
-  /* 单会话：保持与外壳原来的版面一字不差（没有列头，不引入并列语义）。 */
   if (!layout) {
     return (
       <>
@@ -61,7 +40,6 @@ export function SideBySide({ split, narrow }: SideBySideProps): JSX.Element {
     )
   }
 
-  /** 关闭一列：关的是焦点列时先把焦点交给相邻会话，再移除；剩一列就退出分屏。 */
   const closePane = (index: number): void => {
     const view = useSplitView.getState()
     const current = view.split
@@ -100,8 +78,6 @@ export function SideBySide({ split, narrow }: SideBySideProps): JSX.Element {
   )
 }
 
-/* ------------------------------------------------------------------ 列框架 */
-
 function PaneFrame({
   target,
   live,
@@ -138,7 +114,6 @@ function PaneFrame({
   )
 }
 
-/** 会话在列表里的那条（先按 id，再按文件） */
 function useSplitSummary(target: SplitSessionRef) {
   return useStore(
     (s) =>
@@ -147,7 +122,6 @@ function useSplitSummary(target: SplitSessionRef) {
   )
 }
 
-/** 会话的显示名，与标题栏同一顺序：手动名 > 自动标题 > 会话列表标题 */
 function useSplitTitle(target: SplitSessionRef): string {
   const summary = useSplitSummary(target)
   const named = useStore((s) => {
@@ -157,7 +131,6 @@ function useSplitTitle(target: SplitSessionRef): string {
   return named.trim()
 }
 
-/** 列头右侧的项目名（有项目记录用记录名，否则退回目录最后一段） */
 function useSplitProject(target: SplitSessionRef): string {
   const summary = useSplitSummary(target)
   return useStore((s) => {
@@ -166,18 +139,12 @@ function useSplitProject(target: SplitSessionRef): string {
   })
 }
 
-/* ------------------------------------------------------------------ 非焦点会话（只读） */
-
 function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   const t = useT()
   const runtime = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId] : undefined))
   const cached = runtime?.messages
   const shown = useMemo(() => shownMessages(target), [target])
   const [history, setHistory] = useState<UIMessage[] | null>(null)
-  /*
-   * 只读一侧的内容按自己的会话取：运行缓存（后台还在跑就是实时）优先，
-   * 其次这条会话刚才在屏幕上的样子，最后读会话文件。绝不读活动会话的 messages。
-   */
   const messages = useMemo(() => newestMessages(cached, shown, history ?? undefined) ?? [], [cached, shown, history])
   const draft = runtime?.draft ?? ''
   const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
@@ -186,7 +153,6 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   const projectTurns = useMemo(() => createTurnProjector(), [])
   const turns = useMemo(() => projectTurns(messages, streamingId), [messages, streamingId, projectTurns])
 
-  /* 没有运行缓存也没有屏幕快照时才读盘（每次打开只读一次） */
   useEffect(() => {
     if (cached?.length || !target.path) return undefined
     let alive = true
@@ -209,7 +175,6 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
       className="v3-split-peer"
       data-testid="v3-split-peer"
       onClickCapture={(event) => {
-        /* 列头（关闭按钮）与列内按钮自己处理；拖选了文字也不切，留给用户复制 */
         if ((event.target as HTMLElement).closest('button, [data-split-own]')) return
         const selection = window.getSelection()
         if (selection && !selection.isCollapsed && event.currentTarget.contains(selection.anchorNode)) return
@@ -271,8 +236,6 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   )
 }
 
-/* ------------------------------------------------------------------ 子 Agent 转录列 */
-
 function AgentPane({ runId }: { runId: string }): JSX.Element {
   const t = useT()
   const run = useStore((s) => s.subagents.find((item) => item.id === runId))
@@ -316,12 +279,6 @@ function AgentPane({ runId }: { runId: string }): JSX.Element {
   )
 }
 
-/* ------------------------------------------------------------------ 焦点切换 */
-
-/**
- * 把焦点切到这一列。`requestComposerFocus` 让真输入框取得光标；会话有文件就正式切换，
- * 还没落盘的新会话只有 id，沿用托盘「按 id 选中运行实例」的同一条路径。
- */
 function focusSession(target: SplitSessionRef): void {
   const store = useStore.getState()
   store.requestComposerFocus(target)
@@ -341,26 +298,13 @@ function focusSession(target: SplitSessionRef): void {
   })
 }
 
-/* ------------------------------------------------------------------ 列宽拖动 */
-
-/**
- * 分屏相邻两列之间的分隔条。
- *
- * 交互全部由 `ui/Splitter` 原语实现：指针捕获、方向键 / Home / End、
- * `role="separator"` 与 aria 值、聚焦与禁用状态；这里只做两件事：
- *   · 从相邻两列的真实像素宽得出原语的像素 `value` 与拖动范围（min/max）；
- *   · 把原语给出的新像素宽换算成这两列的宽度份额（合计不变，其余列不动）。
- * 拖动靠原语在按下那一刻记的值 + 指针位移，不依赖 pointerdown 后立刻重渲。
- */
 function SplitResizer({ left, right }: { left: SplitSessionRef; right: SplitSessionRef }): JSX.Element {
   const t = useT()
-  /* 原语不转发 ref（配置式组件），用一层不产生盒子的宿主读取左右两列 */
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [pair, setPair] = useState<PairMetrics | null>(null)
   const leftKey = splitTileKey(left)
   const rightKey = splitTileKey(right)
 
-  /* 两列真实像素：挂载先量一次，窗口或列宽变化时复读；换列、卸载即断开观察 */
   useLayoutEffect(() => {
     const host = hostRef.current
     if (!host) return undefined
@@ -370,7 +314,6 @@ function SplitResizer({ left, right }: { left: SplitSessionRef; right: SplitSess
   const total = pair?.total ?? 0
   const bounds = pairBounds(total)
 
-  /* 原语给来新的左列像素宽：换算成这两列的份额（合计不变），其余列不动 */
   const resizeTo = (next: number): void => {
     if (!(total > 0)) return
     const share = (useSplitView.getState().weights[leftKey] ?? 1) + (useSplitView.getState().weights[rightKey] ?? 1)

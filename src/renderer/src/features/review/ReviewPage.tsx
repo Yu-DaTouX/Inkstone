@@ -1,19 +1,3 @@
-/**
- * v3 代码评审与 PR 页（WP-50 界面部分，§10.2）。
- *
- * 真实调用 V1 提供的正式桥 `window.yan.review`（`ReviewBridge`）：
- *   · 四种变更集来源（本会话 / 分支 / worktree / 未提交）按后端真实能力选择；
- *   · 文件清单 + 单文件真实补丁经 `DiffView` 展示；
- *   · 批注经正式桥增删改，锚在补丁里的真实行号上，归属键 `scopeKey` 与
- *     版本 `anchorRevision` 由后端校验；
- *   · 启动只读评审子运行（R 编号）、整理「按批注修改」的消息、提交 / 推送 / PR。
- *
- * 归属：所有在途的 changeSet / diff / annotations 响应都带请求闸门；切换来源、
- * 会话或目录后旧响应一律丢弃，不把上一个来源的数据写到当前界面上。
- *
- * 诚实边界：本会话来源与未提交改动在服务端同源（界面直接说明）；评审运行的进度
- * 事件尚未并入运行注册表，界面只显示返回的 R 编号，不当作评审已完成。
- */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { FileDiff, GitCommitHorizontal, GitPullRequest, RefreshCw, Send, Upload } from 'lucide-react'
 import type { GitDiffResult } from '../../../../shared/git'
@@ -71,19 +55,13 @@ import {
 import { reviewText, type ReviewUiText } from './review-text'
 import './review-page.css'
 
-/** 评审意见的文本来源。运行注册表的 R 事件 producer 接线后由宿主注入。 */
 export type ReviewFindingsLoader = (changeSet: ReviewChangeSet) => Promise<{ ok: boolean; text?: string; error?: string }>
 
 export interface ReviewPageProps {
-  /** 测试 / 宿主注入；缺省读 `window.yan.review`。 */
   bridge?: import('../../../../shared/review').ReviewBridge | null
-  /** 覆盖 owner 的派生（测试用）；缺省从 store 的当前视图推导。 */
   owner?: Partial<ReviewOwner>
-  /** 评审意见文本来源；未提供时界面如实说明事件通道尚未接线。 */
   loadFindings?: ReviewFindingsLoader
-  /** 覆盖语言（测试用）。 */
   lang?: string
-  /** 初始来源（测试 / 深链接用）；缺省「未提交改动」。 */
   initialSource?: ReviewChangeSource
 }
 
@@ -108,8 +86,6 @@ function severityTone(severity: ReviewFinding['severity']): 'fail' | 'stall' | '
   return severity === 'high' ? 'fail' : severity === 'medium' ? 'stall' : 'neutral'
 }
 
-/* ── 展示件（供 SSR 小检查直接渲染） ───────────────────── */
-
 export interface ReviewFindingsPanelProps {
   text: ReviewUiText
   status: FindingsStatus
@@ -119,7 +95,6 @@ export interface ReviewFindingsPanelProps {
   runError: string
 }
 
-/** 评审意见栏：只画解析成功的结构化意见；运行未接线时明确说明。 */
 export function ReviewFindingsPanel({ text, status, findings, error, run, runError }: ReviewFindingsPanelProps): ReactElement {
   return (
     <section className="review-findings" aria-label={text.findingsTitle} data-testid="review-findings">
@@ -188,7 +163,6 @@ export interface ReviewAnnotationListProps {
   onRemove(annotation: ReviewAnnotation): void
 }
 
-/** 批注列表：按真实路径与行范围显示；代码变过的批注标注「代码已变化」。 */
 export function ReviewAnnotationList({ text, annotations, changeSetRevision, busy, onEdit, onRemove }: ReviewAnnotationListProps): ReactElement {
   return (
     <div className="review-annotations" data-testid="review-annotations">
@@ -229,8 +203,6 @@ export function ReviewAnnotationList({ text, annotations, changeSetRevision, bus
     </div>
   )
 }
-
-/* ── 主页面 ─────────────────────────────────────────────── */
 
 export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings, lang: langProp, initialSource }: ReviewPageProps = {}): ReactElement {
   const { lang: appLang } = useI18n()
@@ -334,7 +306,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
   )
   const extrasK = `${extras.base ?? ''}|${extras.branch ?? ''}|${extras.worktreePath ?? ''}`
 
-  /* ── 读变更集：来源 / 会话 / 目录 / 刷新任一变化都使旧响应失效 ── */
   useEffect(() => {
     csGate.invalidate()
     diffGate.invalidate()
@@ -378,11 +349,9 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
       setChangeSet(result.value ?? null)
       setCsStatus('ready')
     })
-    // ownerK 与 extrasK 已覆盖 owner / 来源参数；extras 对象每次重建，故不直接进依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerK, source, extrasK, tick, bridge])
 
-  /* ── 读批注：绑定当前变更集的 id / scopeKey ── */
   useEffect(() => {
     if (!bridge || !changeSet || !changeSet.ok) return
     const id = annGate.next()
@@ -410,7 +379,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
     })
   }, [bridge, changeSet, tick])
 
-  /* ── 读单文件 diff：绑定当前变更集 + 选中路径 ── */
   useEffect(() => {
     if (!bridge || !changeSet || !changeSet.ok || !selectedPath) {
       setPatch('')
@@ -425,7 +393,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
       () => diffGate.isCurrent(id),
       () => {
         const query = reviewDiffQueryForChangeSet(changeSet, owner, selectedPath)
-        /* 会话来源缺少归属凭证时为空 —— 不改用别的来源，由客户端 fail-closed 挡下。 */
         return fetchDiff(bridge, query ?? { source: changeSet.source, cwd: changeSet.cwd, path: selectedPath })
       }
     ).then((result) => {
@@ -460,7 +427,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
 
   const refresh = useCallback(() => setTick((n) => n + 1), [])
 
-  /* ── 批注增删改（全部走正式桥，带当前 id / scopeKey / revision） ── */
   const reloadAnnotations = useCallback(async (): Promise<void> => {
     if (!bridge || !changeSet || !changeSet.ok) return
     const id = annGate.next()
@@ -569,7 +535,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
     }
   }, [bridge, changeSet, text])
 
-  /* ── 启动只读评审 ── */
   const startReview = useCallback(async (): Promise<void> => {
     if (!bridge || !changeSet || !changeSet.ok) return
     setRunBusy(true)
@@ -615,7 +580,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
     }
   }, [bridge, changeSet, owner, extras, modelKey, loadFindings])
 
-  /* ── 整理「按批注修改」的消息（不发送） ── */
   const makeAnnotationTask = useCallback(async (): Promise<void> => {
     if (!bridge || !changeSet || !changeSet.ok) return
     setTaskBusy(true)
@@ -640,7 +604,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
     if (typeof navigator !== 'undefined' && navigator.clipboard) void navigator.clipboard.writeText(value).catch(() => undefined)
   }, [])
 
-  /* ── Git 写动作（均需显式确认；结果按 code 降级） ── */
   const runGitAction = useCallback(
     async (work: () => Promise<ReviewGitOutcome>, okMessage: string): Promise<void> => {
       setGitBusy(true)
@@ -699,7 +662,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
     setGh(null)
     setGitNotice(null)
     if (!bridge) return
-    /* 只有用户打开 PR 对话框时才检测 gh —— 不在页面加载时自动查询真实 auth。 */
     setGhLoading(true)
     void fetchGhStatus(bridge, changeSet.cwd)
       .then((status) => setGh(status))
@@ -746,7 +708,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
       {owner.active === false ? <p className="review-hint">{text.activeHint}</p> : null}
 
       <div className="review-grid">
-        {/* 左：来源 + 文件清单 */}
         <div className="review-col review-col--sources">
           <RadioGroup
             aria-label={text.sourceLabel}
@@ -839,7 +800,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
           </div>
         </div>
 
-        {/* 中：差异 + 批注编辑 */}
         <div className="review-col review-col--diff">
           <header className="review-col-head">
             <h3 className="review-col-title">{text.diffTitle}</h3>
@@ -913,7 +873,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
           ) : null}
         </div>
 
-        {/* 右：评审运行 + 意见 */}
         <div className="review-col review-col--opinions">
           <section className="review-run" aria-label={text.startReview}>
             <header className="review-col-head">
@@ -967,7 +926,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
         </div>
       </div>
 
-      {/* 底部：Git 写动作 */}
       <footer className="review-gitbar" aria-label={text.gitBarLabel}>
         <span className="review-gitbar-target" title={changeSet?.cwd ?? owner.cwd}>
           <GitCommitHorizontal size={14} aria-hidden /> {text.targetCwd}: {changeSet?.cwd ?? owner.cwd ?? '—'}
@@ -1014,7 +972,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
         {gitBusy ? <p className="review-col-hint">{text.actionRunning}</p> : null}
       </footer>
 
-      {/* 提交确认 */}
       <ModalOverlay isDismissable isOpen={commitOpen} onOpenChange={setCommitOpen}>
         <Modal>
           <Dialog title={text.commitConfirmTitle} closeLabel={text.cancel}>
@@ -1039,7 +996,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
         </Modal>
       </ModalOverlay>
 
-      {/* 推送确认 */}
       <ModalOverlay isDismissable isOpen={pushOpen} onOpenChange={setPushOpen}>
         <Modal>
           <Dialog title={text.pushConfirmTitle} closeLabel={text.cancel}>
@@ -1071,7 +1027,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
         </Modal>
       </ModalOverlay>
 
-      {/* PR 确认（gh 缺失 / 未登录时降级） */}
       <ModalOverlay isDismissable isOpen={prOpen} onOpenChange={setPrOpen}>
         <Modal>
           <Dialog title={text.prConfirmTitle} closeLabel={text.cancel}>
@@ -1114,7 +1069,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
         </Modal>
       </ModalOverlay>
 
-      {/* 「按批注修改」的指令预览（不发送） */}
       <ModalOverlay isDismissable isOpen={!!task} onOpenChange={(open) => (open ? undefined : setTask(null))}>
         <Modal>
           <Dialog title={text.taskTitle} closeLabel={text.cancel}>
@@ -1148,8 +1102,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
     </section>
   )
 }
-
-/* ── 批注编辑器（行锚校验对齐补丁里的真实行号） ─────────── */
 
 interface AnnotationEditorProps {
   text: ReviewUiText

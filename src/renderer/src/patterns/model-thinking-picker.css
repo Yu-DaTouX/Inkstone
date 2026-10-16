@@ -1,11 +1,4 @@
 @layer patterns {
-  /*
-   * 模型与思考档选择器（v2 `ModelThinkingPicker` 的 v3 复刻）。
-   *
-   * 只写领域排版与档位色；按钮皮肤来自 `ui/`。档位色 `--think-*` 在
-   * `features/composer/composer.css` 的 `:root` 用现有令牌派生（v3 tokens.css
-   * 没有档位色令牌），这里引用时带兜底，单独加载也不会失去颜色。
-   */
 
   .mtp-wrap {
     display: inline-flex;
@@ -18,7 +11,6 @@
     min-width: 0;
   }
 
-  /* 不设固定上限：模型名在底栏剩余宽度内展开，真正挤时才省略（底栏由 features 层分配宽度） */
   .mtp-trigger {
     display: inline-flex;
     align-items: center;
@@ -38,7 +30,6 @@
     white-space: nowrap;
   }
 
-  /* 档位色点：与输入框顶边、档位字同一套颜色 */
   .mtp-dot {
     flex: none;
     width: var(--s-6);
@@ -67,7 +58,6 @@
     transform: rotate(180deg);
   }
 
-  /* 档位 → 颜色。加档位时只加一行；用同一份选择器覆盖点 / 徽标 / 刻度 / 标题值。 */
   .mtp-dot[data-level='off'],
   .mtp-level[data-level='off'],
   .mtp-head-level[data-level='off'],
@@ -146,8 +136,6 @@
     background: var(--think-max, var(--fail));
   }
 
-  /* ---------------------------------------------------------------- 浮层 */
-
   .mtp-pop {
     z-index: 40;
     width: min(420px, calc(100vw - 16px));
@@ -158,7 +146,6 @@
     box-shadow: var(--shadow-pop);
     color: var(--fg);
     overflow: clip;
-    /* 高度在浮层上固定：输入过滤只改列表内容，搜索框不随列表条数上下跳动 */
     height: min(460px, calc(100dvh - 24px));
     max-height: calc(100dvh - 24px);
     box-sizing: border-box;
@@ -205,7 +192,6 @@
     border-color: var(--accent);
   }
 
-  /* 列表占满固定高度里余下的部分，仅此区域纵向滚动 */
   .mtp-scroll {
     overflow-y: auto;
     min-height: 80px;
@@ -262,7 +248,6 @@
     background: var(--sel);
   }
 
-  /* 一行：模型名在左（可省略），属性标签与收藏星在右，淡色小字，不另起一行 */
   .mtp-item-main {
     display: flex;
     align-items: center;
@@ -331,8 +316,6 @@
     margin: var(--s-4) 0;
   }
 
-  /* ------------------------------------------------------------ 思考档位 */
-
   .mtp-thinking {
     display: flex;
     flex-direction: column;
@@ -355,7 +338,6 @@
     flex: 1;
   }
 
-  /* 当前值：前面一枚与滑块手柄同语言的小块光标，颜色跟着档位走 */
   .mtp-head-level {
     display: inline-flex;
     align-items: center;
@@ -386,7 +368,6 @@
     padding: var(--s-4) 9px 0;
   }
 
-  /* 档位 → 滑杆用色：点阵色另由画布解析，光标与当前档名共用这个实色变量 */
   .mtp-step {
     --mtp-think: var(--accent);
   }
@@ -412,7 +393,6 @@
     --mtp-think: var(--think-max, var(--fail));
   }
 
-  /* 轨道：只当点阵画布的载体，不画 v3 默认的填充条 —— 已点亮的点阵就是填充 */
   .mtp-track {
     height: 30px;
     border-radius: var(--r-xs);
@@ -427,7 +407,6 @@
     pointer-events: none;
   }
 
-  /* 解析档位色用的探针：不占位、不可见 */
   .mtp-probe {
     position: absolute;
     width: 0;
@@ -436,12 +415,6 @@
     visibility: hidden;
   }
 
-  /*
-   * 块状光标：档位色 + 发光，位置跟画布的弹簧前沿（`--step-x`），静止时按终端
-   * 节拍闪四次后常亮（闪烁不超过 5 秒，WCAG 2.2.2）。
-   * `left` 必须压过 React Aria 写在行内的离散档位位置，光标才跟点阵一起走；
-   * 放大用独立的 `scale` 属性，与行内的居中 `transform` 不打架。
-   */
   .mtp-thumb {
     top: 50%;
     left: var(--step-x, var(--mtp-pct)) !important;
@@ -487,7 +460,6 @@
     }
   }
 
-  /* 档位名一排：绝对定位对齐刻度端点，当前档染档位色 + 软底，点一下直接切档 */
   .mtp-scale {
     position: relative;
     height: 22px;
@@ -515,7 +487,6 @@
   .mtp-provider { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--s-8); }
   .mtp-tag, .mtp-head-level { white-space: nowrap; flex-shrink: 0; }
 
-  /* 首末两档的档名不越出轨道两端（光标半宽 = 5px） */
   .mtp-scale-item:first-child {
     transform: translateX(-5px);
   }
@@ -567,7 +538,6 @@
     }
   }
 
-  /* 减少动态效果：闪烁、放大与颜色过渡都停掉，档位名仍然可读 */
   @media (prefers-reduced-motion: reduce) {
     .mtp-step-value {
       animation: none;

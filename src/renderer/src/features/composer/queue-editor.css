@@ -1,5 +1,4 @@
 @layer features {
-  /* 队列编辑面板（WP-24b）。控件外观归 ui/；这里只排动作组与内联编辑区。 */
 
   .cq-actions {
     flex: none;
@@ -12,7 +11,6 @@
     flex: none;
   }
 
-  /* 删除是破坏性动作，只在悬停/聚焦时上色，避免整行都在喊。 */
   .cq-action-danger:hover,
   .cq-action-danger:focus-visible {
     color: var(--fail);

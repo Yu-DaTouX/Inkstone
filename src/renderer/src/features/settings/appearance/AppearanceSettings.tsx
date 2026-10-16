@@ -1,10 +1,3 @@
-/**
- * 设置 → 外观（v3）。
- *
- * 只接**现有受控字段**：主题 / 密度 / 界面字号 / 阅读字体(fontUi) / 代码字体(fontCode) /
- * 声音(sound) / 语言。打开页面不改任何设置，全部改动来自用户点击。
- * 动效没有受控字段，只读展示系统偏好，不另造后台开关。
- */
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import type { AppSettings } from '../../../../../shared/ipc'
@@ -25,7 +18,6 @@ import { useSwitchToV2 } from '../root/use-switch-to-v2'
 type Density = 'compact' | 'standard' | 'comfortable'
 type FontChoice = 'sans' | 'serif' | 'maple' | 'mono' | 'custom'
 
-/** 字体/字号这类字段在 `AppSettings` 里是可选联合类型，主进程会清洗非法值，这里按契约构造。 */
 function fontPatch(kind: 'ui' | 'code', preset: string, custom?: string): Partial<AppSettings> {
   return (
     kind === 'ui'
@@ -48,7 +40,6 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
   const shown = draft ?? custom
   const valid = shown === '' || sanitizeFontName(shown) !== undefined
 
-  /* 换预设后丢弃上一字体的草稿，避免把 A 的名字提交到 B 预设 */
   useEffect(() => {
     setDraft(null)
   }, [preset])
@@ -160,7 +151,6 @@ function SoundRow(): ReactElement {
   const [draft, setDraft] = useState<number | null>(null)
   const shown = draft ?? volume
 
-  /* 拖动只改本地值，松手/按键抬起再落盘，避免滑一下写很多次设置。 */
   const commit = (): void => {
     if (draft === null || !sound) return
     const next = draft
@@ -207,10 +197,6 @@ function DynamicBackgroundRow(): ReactElement {
   const settings = useStore((s) => s.settings)
   const enabled = asciiBackgroundEnabled(settings)
 
-  /*
-   * 字段随 `asciiBackground` 一起并入 AppSettings（见补丁说明）。未落地前主进程会
-   * 拒绝未知键，这里吞掉错误、界面回落为「开」，不假装已经写入。
-   */
   return (
     <SettingsRow label={text.asciiBackground} description={text.asciiBackgroundDesc}>
       <Switch

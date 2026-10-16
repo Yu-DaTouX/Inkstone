@@ -1,30 +1,8 @@
-/**
- * 普通工具的自动调用依据（需求稿 4.3）：契约与纯逻辑。
- *
- * 按「能力 + 操作 + 资源范围 + 设备 + 场景」统计**用户的真实答复**，
- * 同类操作积累了足够、稳定、近期的同意后才允许自动调用；否则照常询问。
- *
- * ── 硬规则 ──
- *  · 只有用户在确认框里点的「允许 / 拒绝」算数。没回复、模型推断、自动调用本身、
- *    执行成功与否都不记为同意（执行结果只说明工具能不能用）。
- *  · 危险类别（删除或覆盖、对外发送或发布、付费、权限与凭证、安装）以及看不出风险的操作，
- *    永远询问，不看同意率。模型可以把操作标成危险，不能把它标成安全。
- *  · 远程场景不使用本机记录：别人的同意、外部工具自报的同意都不能提高这里的权重。
- *  · 用户可以对某一类关闭自动调用（始终询问），也可以清空记录。
- *
- * 具体阈值是首版取值，集中放在 CONSENT_POLICY，便于以后按真实数据调整。
- */
-
 export interface ConsentKeyParts {
-  /** 能力，例如 `image.local`、`tool:ffmpeg` */
   capability: string
-  /** 操作，例如 `generate`、`convert` */
   action: string
-  /** 资源范围，例如模型路径、项目内目录；不同资源分开统计 */
   resource: string
-  /** 设备标识（本机为 hostname 派生），能力记录绑定设备 */
   device: string
-  /** 场景：本机任务或远程连接 */
   scene: 'local' | 'remote'
 }
 
@@ -38,11 +16,8 @@ export interface ConsentRecord {
 export interface ConsentEntry {
   key: string
   parts: ConsentKeyParts
-  /** 最近的答复（新的在后），最多保留 CONSENT_POLICY.keep 条 */
   records: ConsentRecord[]
-  /** 用户设定：`always-ask` 表示这一类永不自动 */
   override?: 'always-ask'
-  /** 最近一次自动放行的时间（只作展示，不计入同意） */
   lastAutoAt?: number
 }
 
@@ -52,24 +27,14 @@ export interface ConsentLedger {
 }
 
 export const CONSENT_POLICY = {
-  /** 至少这么多次真实答复才考虑自动 */
   minRecords: 5,
-  /** 按时间衰减后的有效样本数下限 */
   minEffective: 4,
-  /** 半衰期（天）：旧答复逐渐失去分量 */
   halfLifeDays: 30,
-  /**
-   * 同意率的 Wilson 下界（单侧 95%）至少这么高。
-   * 取 0.6：近期连续 5 次同意（下界约 0.65）即可自动；5 次里有 1 次拒绝（下界约 0.40）、
-   * 或答复分散在较长时间里（衰减后样本不足）都仍会询问。
-   */
   minLowerBound: 0.6,
-  /** 最近这么多次里出现过拒绝就回到询问 */
   recentWindow: 3,
   keep: 50
 } as const
 
-/** 看得出是危险类别的词：能力、操作或资源名里出现就一律询问 */
 const DANGER_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /(delete|remove|\brm\b|erase|wipe|purge|drop|truncate|overwrite|删除|清空|覆盖)/i, label: '删除或覆盖' },
   { re: /(send|email|mail|publish|post|upload|share|tweet|push|发送|发布|上传|分享|推送)/i, label: '对外发送或发布' },
@@ -84,7 +49,6 @@ export function consentKeyOf(parts: ConsentKeyParts): string {
 
 const PART_RE = /^[^\u0000-\u001f]{1,200}$/
 
-/** 请求参数 → 规范化的键；缺字段或含控制字符返回错误 */
 export function normalizeConsentParts(raw: {
   capability?: unknown
   action?: unknown
@@ -100,7 +64,6 @@ export function normalizeConsentParts(raw: {
   return { ok: true, parts: { capability, action, resource, device, scene } }
 }
 
-/** 危险类别判定；返回命中的类别名，未命中返回 null */
 export function dangerCategoryOf(parts: Pick<ConsentKeyParts, 'capability' | 'action' | 'resource'>): string | null {
   const text = `${parts.capability} ${parts.action} ${parts.resource}`
   return DANGER_PATTERNS.find((pattern) => pattern.re.test(text))?.label ?? null
@@ -146,16 +109,11 @@ function wilsonLower(p: number, n: number): number {
 
 export interface ConsentVerdict {
   mode: 'auto' | 'ask'
-  /** 给用户和模型看的依据 */
   reason: string
   danger: string | null
   stats: ConsentStats
 }
 
-/**
- * 这一次该不该问。
- * `declaredDanger`：调用方（模型）声明这是危险操作 —— 只能让结果更保守。
- */
 export function consentVerdict(entry: ConsentEntry | undefined, parts: ConsentKeyParts, now: number, declaredDanger = false): ConsentVerdict {
   const records = entry?.records ?? []
   const stats = consentStats(records, now)
@@ -179,7 +137,6 @@ export function consentVerdict(entry: ConsentEntry | undefined, parts: ConsentKe
   }
 }
 
-/** 记一次用户的真实答复（只有确认框的结果能走到这里） */
 export function recordConsent(ledger: ConsentLedger, parts: ConsentKeyParts, decision: ConsentDecision, now: number): ConsentLedger {
   const key = consentKeyOf(parts)
   const entries = ledger.entries.filter((entry) => entry.key !== key)
@@ -192,7 +149,6 @@ export function emptyConsentLedger(): ConsentLedger {
   return { version: 1, entries: [] }
 }
 
-/** 读盘时宽容解析：认不出的条目丢弃，不猜 */
 export function parseConsentLedger(value: unknown): ConsentLedger {
   const raw = value as { version?: unknown; entries?: unknown }
   if (!raw || raw.version !== 1 || !Array.isArray(raw.entries)) return emptyConsentLedger()
@@ -213,7 +169,6 @@ export function parseConsentLedger(value: unknown): ConsentLedger {
   return { version: 1, entries }
 }
 
-/** 设置页的一行 */
 export interface ConsentEntryView {
   key: string
   parts: ConsentKeyParts

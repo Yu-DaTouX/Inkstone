@@ -1,15 +1,3 @@
-/**
- * 会话切换器（Ctrl+K）：任何时候都能搜会话并直接跳过去，不依赖左栏是否展开。
- *
- * 三种结果合并显示：
- *   · 标题 / 项目名：在界面里即时过滤（不等主进程）；
- *   · 正文：主进程的会话检索（所有词都出现才算命中），带命中处的片段；
- *   · 动作：输入以 `>` 开头时切到宿主动作与斜杠命令（见 `lib/host-actions.ts`）。
- * 没输入时列出最近的会话，下面给三条常用动作提示，直接回车就回到上一个会话。
- *
- * 动作只调用各入口的正式动作：宿主动作走 `runHostAction`，斜杠命令走与输入框提交
- * 完全相同的 `submitComposerInput`，不新建事件或状态副本。
- */
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { SessionSearchHit, SessionSummary } from '../../../../shared/ipc'
 import { useT, type MessageKey, type TFunc } from '../../i18n'
@@ -95,7 +83,6 @@ export function SessionSwitcher({
   const switchSession = useStore((s) => s.switchSession)
   const acquireOverlayBlocker = useStore((s) => s.acquireOverlayBlocker)
   const { runtime, availability } = useHostActionRuntime(onOpenShortcutSheet)
-  /** 打开面板时的会话 / runner 身份：异步命令执行前后核对，切换后不投错会话 */
   const targetRef = useRef({
     runnerId: useStore.getState().activeRunnerId ?? '',
     sessionId: useStore.getState().session?.sessionId,
@@ -116,7 +103,6 @@ export function SessionSwitcher({
   const projectNames = settings?.projectNames ?? {}
   const projects = settings?.projects ?? []
 
-  /** `>` 动作模式：`>` 之后的内容作为动作查询 */
   const actionMode = query.startsWith('>')
   const actionQuery = actionMode ? query.slice(1) : ''
 
@@ -125,13 +111,11 @@ export function SessionSwitcher({
     return release
   }, [acquireOverlayBlocker])
 
-  /* Focus trap records the opener before moving focus into the search field. */
   useEffect(() => {
     const timer = window.setTimeout(() => input.current?.focus(), 0)
     return () => window.clearTimeout(timer)
   }, [])
 
-  /* 正文检索：停手 140ms 后再问主进程，只采纳最后一次的答复；动作模式不查正文 */
   useEffect(() => {
     const tokens = tokensOf(query)
     setSearchError(false)
@@ -260,7 +244,6 @@ export function SessionSwitcher({
   const runCommand = (row: CommandRow): void => {
     if (row.disabled) return
     onClose()
-    /* /new /login /settings 不受当前会话影响；其余命令先核对会话没被换过 */
     const sessionBound = !['new', 'login', 'settings'].includes(row.name)
     if (sessionBound && !sameTarget()) {
       useStore.getState().notify('info', t('switcher.targetChanged'))
@@ -330,11 +313,6 @@ export function SessionSwitcher({
   const onKeyDown = (e: React.KeyboardEvent): void => {
     if (e.target !== input.current) return
     if (e.nativeEvent.isComposing) return
-    /*
-     * Ctrl+/（快捷键表）与其它全局键在这里也要能开新层；其余交给 resolveShortcut 判定。
-     * 只说「打开快捷键表」这一段：面板自己是一个模态，resolveShortcut 在 modalOpen 时返回
-     * null，所以这里在面板内单独识别，作为 SetKey 的兜底入口。
-     */
     const shortcut = resolveShortcut({
       key: e.key,
       ctrl: e.ctrlKey,
@@ -369,7 +347,6 @@ export function SessionSwitcher({
     action.binding ? KEY_BINDINGS[action.binding].keys : undefined
 
   const renderRow = (row: Row): ReactElement => {
-    // active 按 rows 的全局下标算：分组渲染不改动选择顺序
     const index = rows.indexOf(row)
     const on = index === active
     const disabled = row.kind !== 'session' && row.disabled

@@ -1,20 +1,3 @@
-/**
- * 会话并发收尾边界 —— 直执行输入恢复 + 计划批准发送前复核（定向回归，不需要真实 pi / 模型）。
- *
- * 覆盖两处主审收尾：
- *   ① `composer-submit` 的 `!` / `!!` 直执行：`runBash` 现在回传成功 / 失败，失败或抛异常时
- *      把命令原文与附件放回，成功沿用既有「只清文字」；恢复是追加式，不覆盖 await 期间
- *      用户新敲的草稿；`!!` 的 `excludeFromContext` 不能丢。
- *   ② `goal-ipc` 的「批准并开始」自动发送：与桌面发送用同一道 `registry.guardExecute(id)`
- *      只读复核，且复核必须在模式 / 目标转移**之前** —— 拒绝时计划原样保留，用户可等原任务
- *      跑完 / 停止后再点批准，不丢目标。
- *
- * 前者直接编译真实 `composer-submit.ts` 驱动；后者用真实 `RunnerRegistry` + 假 Agent，
- * 把 `goal-ipc` 依赖的状态模块替换成 stub，驱动真实 IPC 处理函数。
- *
- * 导出 `runSessionConcurrencyFinalEdgesTests(ok)` 供 `test-unit.mjs` 接线；
- * 直接 `node scripts/test-session-concurrency-final-edges.mjs` 也能独立运行。
- */
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,11 +6,6 @@ import { build, transform } from '../node_modules/esbuild/lib/main.js'
 import ts from 'typescript'
 import { runComposerDraftOwnershipTests } from './test-composer-draft-ownership.mjs'
 
-/* ──────────────────────────────────────────────────────────────
- * 目标 / 模式状态 stub：goal-ipc 的依赖边界。
- * 真实 goal-coordinator / handoff-coordinator / work-mode-service 会拖起 Electron
- * 与磁盘状态，这里只替换它们的运行时导出；`shared/*` 保持真实。
- * ────────────────────────────────────────────────────────────── */
 const GOAL_COORDINATOR_STUB = `
 export function defaultWorkMode() { return { mode: 'standard', revision: 0 } }
 export function workModeKeyFor(id) { return globalThis.__yanEdgeHarness.key }
@@ -126,9 +104,6 @@ export async function runSessionConcurrencyFinalEdgesTests(ok) {
     return import(`data:text/javascript;base64,${code}`)
   }
 
-  /* ══════════════════════════════════════════════════════════════
-   * ① 真实 composer-submit：`!` / `!!` 直执行输入恢复
-   * ══════════════════════════════════════════════════════════════ */
   const { submitComposerInput } = await bundleToFile('../src/renderer/src/lib/composer-submit.ts', 'composer-submit.mjs')
 
   function makePort(overrides = {}) {
@@ -251,7 +226,6 @@ export async function runSessionConcurrencyFinalEdgesTests(ok) {
     const { port, calls, state } = makePort({
       text: '!long-task',
       runBash: () => {
-        /* 模拟 await 期间用户又敲了内容（甚至切了会话后重新输入） */
         state.text = '用户新敲的内容'
         return { ok: false, error: '失败' }
       }
@@ -269,9 +243,6 @@ export async function runSessionConcurrencyFinalEdgesTests(ok) {
     ok(calls.runBash.length === 0 && calls.clearText === 0, '空命令不调用 runBash、不清草稿', JSON.stringify(calls))
   }
 
-  /* ══════════════════════════════════════════════════════════════
-   * ② goal-ipc 批准自动发送前复核（真实 IPC 处理函数 + 真实 RunnerRegistry）
-   * ══════════════════════════════════════════════════════════════ */
   const { RunnerRegistry } = await bundleInMemory('../src/main/runners.ts')
   const { registerGoalIpc } = await bundleToFile('../src/main/ipc/goal-ipc.ts', 'goal-ipc.mjs', [goalIpcStubPlugin()])
 
@@ -513,13 +484,9 @@ export async function runSessionConcurrencyFinalEdgesTests(ok) {
     ok(harness.guardCalls.length === 0, 'revision 不符时不消耗复核', JSON.stringify(harness.guardCalls))
   }
 
-  /* ══════════════════════════════════════════════════════════════
-   * ③ 提交失败后的真实归属：真实 store + 真实 composer-submit 端口
-   * ══════════════════════════════════════════════════════════════ */
   section('composer 草稿归属：真实 store 驱动 A→B→失败→回 A 等场景')
   await runComposerDraftOwnershipTests(ok)
 
-  /* 不给同进程内其他测试留全局 stub 状态。 */
   delete globalThis.__yanEdgeHarness
 }
 

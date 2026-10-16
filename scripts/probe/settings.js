@@ -1,15 +1,3 @@
-/**
- * 设置面板 —— 入口、分区、以及「入口不该重复」。
- *
- * ⚠️ 这个场景整体重写过（2026-09-11）。原来它断言的是：
- *   「右栏（.status）已移除」「中间栏 > 1100px」「标题栏有设置按钮」
- * 这三条全部**已经不再是事实**：
- *   · 右栏回来了，但形态变了（常驻多分区状态栏，不是记忆面板）
- *   · 所以中间栏不再是 1100+（右栏占 264px）
- *   · 设置按钮从标题栏搬走了（用户要求：一个信息只在一个地方出现）
- * 断言绑定了当时的布局，布局变了它就失败 —— 这是「过时断言」，不是回归。
- * 现在改成验证**当前的设计意图**。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -53,7 +41,6 @@
 
   log('')
   log('=== 4. 上下文与记忆 ===')
-  /* 「会话」页内含工作区与上下文两个分区（按需挂载，断言前要先点开分区）。 */
   const memTab = qa('.settings-tab').find((x) => /会话|Session/.test(x.textContent))
   ok(!!memTab, '设置里有「会话」页（内含工作区与上下文）')
   ok(!q('.rightpanel .mem-sections'), '右栏里没有记忆面板')
@@ -84,11 +71,6 @@
     const pi = store.getState().piInfo
     ok(!!pi?.version && aboutBody.includes(pi.version), '关于页显示当前 pi 版本')
     ok(!!q('[data-testid="pi-redetect"]'), '关于页有「重新检测」按钮')
-    /*
-     * 项目主页：地址来自 package.json（构建时注入 BUILD_INFO）。
-     * 断言到 github 域名这一层 —— 只验“这一行在且带了地址”，
-     * 不把仓库全路径写死在探针里（否则改仓库就要同时改探针）。
-     */
     const repoButton = q('[data-testid="about-repo-open"]')
     ok(!!repoButton, '关于页有项目主页入口')
     ok(
@@ -107,7 +89,6 @@
   if (soundTab) {
     click(soundTab)
     await sleep(500)
-    /* 声音是「外观与输入」页下的二级分区：按需挂载，得先点开它的导航项。 */
     const soundSection = q('[data-testid="settings-section-sound"]')
     if (soundSection && !q('[data-testid="set-sound"]')) {
       click(soundSection)
@@ -135,7 +116,7 @@
         click(notifyBtn)
         await sleep(500)
         ok(store.getState().settings?.sound?.notifications === !beforeN, '通知开关可切换并落盘')
-        click(notifyBtn) // 恢复
+        click(notifyBtn)
         await sleep(500)
       }
       let previewOk = true
@@ -146,7 +127,6 @@
       }
       await sleep(120)
       ok(previewOk, '试听按钮可点击（合成音频路径不抛异常）')
-      // 改回关闭，避免影响后续断言（也顺带验证可逆）
       click(enableBtn)
       await sleep(500)
       ok(store.getState().settings?.sound?.enabled === false, '再点一次回到关闭')
@@ -155,7 +135,6 @@
 
   log('')
   log('=== 6. 右栏状态栏的分区 ===')
-  // 关掉设置看右栏；H-3b 后新会话默认在「开始」页，分区在「工具」页
   store.getState().closeSettings()
   await sleep(400)
   if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
@@ -165,21 +144,10 @@
   const secs = qa('[data-sec]').map((x) => x.getAttribute('data-sec'))
   log('  右栏分区: ' + JSON.stringify(secs))
   ok(!!q('[data-testid="composer-context"]'), '输入框提供上下文详情入口')
-  /*
-   * 分区清单变过（2026-09-12）：
-   *   · 「环境」（pi 版本 / 模型 / 计数 / 工作目录）**已删** —— 那些都有别处：
-   *     模型在标题栏、pi 版本在设置→关于、工作目录在文件树根部
-   *   · 新增「文件」（项目文件树）与「日志」（从底部搬过来）
-   * 所以断言改成验证**当前的分区集合**，不再绑到已删的 rp-env。
-   */
   await window.__yanOpenWorkspaceTool('文件', 'files')
   ok(!!q('[data-workspace-pane="files"]:not([hidden]) [role="tree"]'), '工具菜单打开文件树磁贴')
   ok(!secs.includes('rp-env'), '「环境」分区已移除（信息在别处，不再重复）')
 
-  /*
-   * 版本信息：排查“改了代码但跑的还是旧进程/旧包”时，
-   * 界面上能直接看到构建时间就是最短路径（用户实际踩过一次）。
-   */
   log('')
   log('=== 7. 关于：正式版本与构建版本 ===')
   store.getState().openSettings('about')

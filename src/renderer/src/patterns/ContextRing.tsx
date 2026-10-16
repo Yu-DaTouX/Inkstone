@@ -6,19 +6,6 @@ import { useStore } from '../state/store'
 import { contextBreakdown, type ContextCategory } from '../state/context-breakdown'
 import './context-ring.css'
 
-/**
- * 输入框底部一行里的上下文环（WP-24）。
- *
- * 权威边界：**总量只认 `stats.contextUsage`**（Agent 报的），分类占比才由
- * 当前可见消息文本估算（纯逻辑在 `state/context-breakdown.ts`）。
- * 没有可信总量时显示 `—`，绝不按窗口编一个百分比 —— 那会让人以为
- * 「还剩一半」而在下一次请求里溢出。
- *
- * 与 v2 的 `NativeContextSection` / `ComposerUsage` 的关系：只取「上下文占用」
- * 这一件事，会话统计与 token 明细仍归各自工位，这里不重复表达。
- */
-
-/** 把 token 数缩成 `383.8k / 1M` 一类的短写法；只用于展示。 */
 function shortTokens(n: number): string {
   if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}M`
   if (n >= 1000) return `${+(n / 1000).toFixed(1)}k`
@@ -34,12 +21,6 @@ const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
   free: 'ctx.cat.free'
 }
 
-/**
- * `stats.contextUsage` 与当前模型对齐后才可信。
- *
- * 旧快照（换了模型但统计还没跟上）不能冒充当前值 —— 与主进程
- * `contextUsage.modelKey` 的约定一致。
- */
 export function useContextUsage() {
   const session = useStore((s) => s.session)
   const stats = useStore((s) => s.stats)
@@ -59,7 +40,6 @@ export function useContextUsage() {
   return { session, usage, matches, windowSize, known, tokens, percent, tone }
 }
 
-/** 12px 的占用圆环；空数据时只画轨道，不画会误导的弧。 */
 function Ring({ percent, tone }: { percent: number | null; tone: 'ok' | 'warn' | 'err' }) {
   const R = 5
   const C = 2 * Math.PI * R
@@ -94,7 +74,6 @@ export function ContextRing({ className }: { className?: string } = {}) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
-  /* 切会话 / 换模型就收起：数字整体换掉，浮层不能停留在上一条的结论上。 */
   const boundKey = `${session?.sessionId ?? ''}|${session?.model?.provider ?? ''}/${session?.model?.id ?? ''}`
   useEffect(() => {
     setOpen(false)

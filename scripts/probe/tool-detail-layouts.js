@@ -94,7 +94,6 @@
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(100)
       row('bash').querySelector('.trow-head').click(); await sleep(80)
     }
-    // 长差异行必须换行可读；无基线写入不得染成整文件新增。
     await expand(row('edit'))
     const patch = row('edit').querySelector('.fd-patch')
     ok(getComputedStyle(patch).whiteSpace === 'pre-wrap' && getComputedStyle(patch).overflowWrap === 'anywhere', 'Long patch lines wrap rather than clip inside file container')
@@ -102,7 +101,6 @@
     await expand(row('write'))
     ok(!row('write').querySelector('.write-body').classList.contains('add') && !!row('write').querySelector('.fd-note'), 'Unknown write baseline displays a notice, not a fabricated added-file diff')
     row('write').querySelector('.trow-head').click(); await sleep(80)
-    // 长组（七步）仍保留折叠：toolgroup 探针的夹具在本机是坏的，这里补上同一口径的检查。
     const many = [
       { id: 'l1', name: 'bash', args: { command: 'echo m1' }, status: 'error', output: 'm1 failed' },
       ...Array.from({ length: 6 }, (_, index) => ({ id: `l${index + 2}`, name: 'bash', args: { command: `echo m${index + 2}` }, status: 'ok', output: 'ok' }))
@@ -119,11 +117,9 @@
     ok(qa('.tgroup .trow').length === 7, 'seven steps: expanding reveals every row')
     q('[data-testid="tool-group-collapse"]')?.click(); await sleep(300)
     ok(qa('.tgroup .trow').length === 1, 'seven steps: collapsing keeps the unsettled step')
-    // 回到截图用的夹具。
     store.setState({ messages: [{ id: 'layout-user', role: 'user', text: '查看命令调用与文件修改' },
       { id: 'layout-assistant', role: 'assistant', text: '文件修改与命令输出使用同一套详情；并列栏可宽幅查看。', toolCalls: calls }] })
     await sleep(400)
-    // 恢复夹具后是一个新回合，过程回到默认折叠：截图前重新铺开。
     const shotToggle = q('[data-testid="turn-process-toggle"]')
     if (shotToggle?.getAttribute('aria-expanded') === 'false') { shotToggle.click(); await sleep(250) }
     for (let n = 0; n < 20 && !row('edit'); n++) await sleep(200)

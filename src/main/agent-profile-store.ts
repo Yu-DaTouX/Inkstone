@@ -1,18 +1,3 @@
-/**
- * 活动档案的存储与快照（实施-25 P01 / W2）。
- *
- * 与 `work-mode-service` 同一套做法：
- *   · 文档 `YAN_DIR/agent-profiles.json`，带 schema 版本，写盘原子；
- *   · 会话键与工作模式**同一口径**（`normalizeSessionFileKey`）——
- *     同一份会话在图里、模式上、档案上必须是同一个键，否则「切会话不串」失守；
- *   · 每次发消息前把当前实例的档案写一份到
- *     `YAN_DIR/agent-profile/<runtimeKey>.json`，薄层扩展只读文件；
- *   · **关闭 / 缺失时也写文件**（= 默认档案），否则扩展会继续读到上一轮的档案。
- *
- * 为什么不让扩展直接读 `agent-profiles.json`：那是宿主文档（带 revision、
- * 可能很大），扩展只该看到「这个实例此刻是什么」。这与 work-mode 的交接方式一致。
- */
-
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
@@ -32,9 +17,7 @@ import { YAN_DIR } from './paths'
 import { normalizeSessionFileKey, sanitizeWorkModeKey } from './work-mode-service'
 
 export const AGENT_PROFILE_FILE_NAME = 'agent-profiles.json'
-/** 扩展读的那份快照目录。 */
 export const AGENT_PROFILE_SNAPSHOT_DIRNAME = 'agent-profile'
-/** 条目上限：只保留最近更新的这么多条。 */
 export const AGENT_PROFILE_MAX_ENTRIES = 2000
 
 export type { AgentProfileState, AgentProfilePatch } from '../shared/agent-profile'
@@ -53,7 +36,6 @@ export function agentProfileDocumentPath(root: string = YAN_DIR): string {
   return join(root, AGENT_PROFILE_FILE_NAME)
 }
 
-/** 新会话在 pi 给出稳定 id 之前使用的键（与 work-mode 同一约定）。 */
 export function pendingAgentProfileKey(runnerId: string): string {
   return `pending:${runnerId}`
 }
@@ -67,7 +49,6 @@ export function agentProfileSnapshotPath(runtimeKey: string, root: string = YAN_
   return join(root, AGENT_PROFILE_SNAPSHOT_DIRNAME, agentProfileSnapshotFileName(runtimeKey))
 }
 
-/** 会话文件路径 → 稳定键（与 work-mode 共用一个实现，口径必须一致）。 */
 export function normalizeProfileSessionKey(file: unknown): string | null {
   const key = normalizeSessionFileKey(file)
   if (!key) return null
@@ -94,7 +75,6 @@ function sanitizeEntry(raw: unknown): StoredAgentProfile | null {
   return entry
 }
 
-/** 读盘的容错口径：坏条目丢掉，不让一份坏档案拦住启动。 */
 export function sanitizeAgentProfileDocument(raw: unknown): AgentProfileDocument {
   const source = raw && typeof raw === 'object' ? (raw as Partial<AgentProfileDocument>) : {}
   const rawEntries = source.entries && typeof source.entries === 'object' ? source.entries : {}
@@ -117,7 +97,6 @@ export function sanitizeAgentProfileDocument(raw: unknown): AgentProfileDocument
   return { version: 1, entries }
 }
 
-/** 没有条目时返回默认档案（`revision 0` = 尚未落盘）。 */
 export function readAgentProfileState(
   doc: AgentProfileDocument,
   runtimeKey: string,
@@ -134,12 +113,6 @@ export function readAgentProfileState(
   return state
 }
 
-/**
- * 原子写扩展读的快照。
- *
- * 与 work-mode 同一个 Windows 教训：覆盖已存在文件的 `rename` 会偶发 `EPERM`，
- * 失败退化为直写。
- */
 export async function writeAgentProfileSnapshot(
   runtimeKey: string,
   state: AgentProfileState,
@@ -156,21 +129,7 @@ export async function writeAgentProfileSnapshot(
     ...(state.taskId ? { taskId: state.taskId } : {}),
     ...(state.courseId ? { courseId: state.courseId } : {}),
     revision: state.revision,
-    /*
-     * 角色文本与工具策略由**宿主**在这里渲染好。
-     *
-     * 为什么不写在薄层扩展里：文案是真源（`shared/agent-profile.ts`），
-     * 扩展再抄一份就会漂移（实施-01 的「薄层只做宿主表达不了的那一步」）。
-     * 扩展只负责把它放进 `systemPromptOptions`。
-     */
     roleSection: agentRoleSection(state.profile, state.activity),
-    /*
-     * 工具限制只对 `daily` 生效：那些 deny 表描述的是「某个日常活动该不该写文件」，
-     * 不是「这个会话能不能写文件」。
-     *
-     * `auto` 与 `coding` 都不限 —— 活动是模型当场判断的（或根本没选），
-     * 拿上一次的 activity 去禁 write/edit 会让一个代码会话突然写不了文件。
-     */
     deniedTools: state.profile === 'daily' ? [...activityDeniedTools(state.activity)] : [],
     at: new Date().toISOString()
   }
@@ -191,21 +150,12 @@ export interface AgentProfileSetResult {
   detail?: string
 }
 
-/**
- * 按会话保存的档案存储（提交形状定义在 shared，渲染端用同一个）。
- */
 const EMPTY_STATE: AgentProfileState = {
   profile: DEFAULT_AGENT_PROFILE,
   activity: DEFAULT_AGENT_ACTIVITY,
   revision: 0
 }
 
-/**
- * 按会话保存的档案存储。
- *
- * 写操作串成一条队列（与 work-mode / goal 同一个做法）：读-改-写之间不能让
- * 第二个提交插进来，否则 CAS 会因为「都读到旧值」而失效。
- */
 export class AgentProfileStore {
   private readonly root: string
   private readonly now: () => number
@@ -229,18 +179,11 @@ export class AgentProfileStore {
     this.loaded = true
   }
 
-  /** 只读当前状态（不改磁盘）。 */
   state(runtimeKey: string, fallback: AgentProfileKind = DEFAULT_AGENT_PROFILE): AgentProfileState {
     if (!this.loaded) return { ...EMPTY_STATE, profile: fallback }
     return readAgentProfileState(this.doc, runtimeKey, fallback)
   }
 
-  /**
-   * 提交一次档案变更。
-   *
-   * `expectedRevision` 给了就必须匹配（CAS）：两个窗口同时改同一个会话时，
-   * 后到的那个会拿到 `version-mismatch`，而不是静默覆盖。
-   */
   async set(runtimeKey: string, patch: AgentProfilePatch, expectedRevision?: number): Promise<AgentProfileSetResult> {
     return this.enqueue(async () => {
       const safe = sanitizeWorkModeKey(runtimeKey)
@@ -261,14 +204,13 @@ export class AgentProfileStore {
           if (current[key]) next[key] = current[key]
           return
         }
-        if (incoming === null) return // 显式清空
+        if (incoming === null) return
         next[key] = incoming
       }
       carry('spaceId')
       carry('taskId')
       carry('courseId')
 
-      /* 落盘前必须过一遍校验：拼错的枚举不能进文档（T01-4） */
       const check = validateAgentProfile(next)
       if (!check.ok) {
         return { ok: false, state: current, error: 'invalid-profile' as const, detail: check.reason }
@@ -284,7 +226,6 @@ export class AgentProfileStore {
     })
   }
 
-  /** 新会话拿到稳定键后迁移（迁移不算用户提交，revision 不变）。 */
   async adopt(fromKey: string, toKey: string): Promise<AgentProfileState> {
     return this.enqueue(async () => {
       const from = sanitizeWorkModeKey(fromKey)
@@ -307,12 +248,6 @@ export class AgentProfileStore {
     return run
   }
 
-  /**
-   * 落盘（原子替换）。
-   *
-   * 失败时把内存恢复到磁盘上的真实内容：业务方法都是「先改 this.doc、再调
-   * flush」，不回滚的话报过失败的操作会留在内存里，被下一次成功的写入一起提交。
-   */
   private async flush(): Promise<void> {
     const target = agentProfileDocumentPath(this.root)
     const temp = `${target}.${process.pid}.tmp`

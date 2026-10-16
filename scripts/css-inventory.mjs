@@ -1,14 +1,3 @@
-/**
- * 样式清单：谁定义了哪些规则、谁覆盖了谁。
- *
- * 用途：样式**归属表**。文件经 styles/index.css 按级联层加载：后面的层整体胜出，
- * 同层内同特异性时后加载者胜。于是「最终效果」不等于「任何单个文件的效果」，
- * 而是层层覆盖的结果。
- * 这个脚本把覆盖关系量化出来，迁移时才有依据（而不是凭感觉删）。
- *
- * 用法： node scripts/css-inventory.mjs [--md]
- *   --md  输出 Markdown（可直接贴进设计文档）
- */
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,22 +5,14 @@ import { readStyleEntries } from './lib/css-order.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/* 顺序与层不再手写：读样式入口 styles/index.css（见 scripts/lib/css-order.mjs 的头注释） */
 const ENTRIES = readStyleEntries(root)
 const ORDER = ENTRIES.map((e) => e.name)
 const LAYER = new Map(ENTRIES.map((e) => [e.name, e.layer ?? '（未分层）']))
 
 const dir = join(root, 'src/renderer/src/styles')
 
-/**
- * 抽出一个文件里的所有规则选择器。
- *
- * 手写小扫描器而不是正则一把梭：CSS 里 `{}` 是有嵌套的（@media / @keyframes），
- * 正则很容易把 `@media (…)` 的参数当成选择器，或者被 `url(a{b)` 这种内容骗到。
- * 这里只需要「选择器 → 出现次数」，所以按深度跟踪足够了。
- */
 function selectorsOf(src) {
-  const text = src.replace(/\/\*[\s\S]*?\*\//g, '') // 去注释
+  const text = src.replace(/\/\*[\s\S]*?\*\//g, '')
   const out = []
   let buf = ''
   let depth = 0
@@ -40,7 +21,6 @@ function selectorsOf(src) {
     if (ch === '{') {
       const head = buf.trim()
       if (depth === 0 && !head.startsWith('@')) {
-        // 顶层规则；逗号分隔的要拆开
         for (const one of head.split(',')) {
           const s = one.replace(/\s+/g, ' ').trim()
           if (s) out.push(s)
@@ -52,7 +32,6 @@ function selectorsOf(src) {
       depth = Math.max(0, depth - 1)
       buf = ''
     } else if (ch === ';' && depth === 0) {
-      // @import / @charset 之类
       buf = ''
     } else {
       if (depth === 0) buf += ch
@@ -62,7 +41,7 @@ function selectorsOf(src) {
 }
 
 const stats = []
-const owners = new Map() // selector → [file, ...]（按加载顺序）
+const owners = new Map()
 
 for (const name of ORDER) {
   const p = join(dir, name)
@@ -90,12 +69,10 @@ for (const name of ORDER) {
   }
 }
 
-/* 被多个文件定义的选择器（= 存在覆盖） */
 const conflicts = [...owners.entries()]
   .filter(([, files]) => files.length > 1)
   .sort((a, b) => b[1].length - a[1].length)
 
-/* 每个文件「最后一次定义」的 selector 数（即它在覆盖链里的贡献） */
 const winsBy = new Map()
 for (const [sel, files] of owners) {
   const last = files[files.length - 1]
@@ -152,7 +129,6 @@ L()
 const out = md.join('\n')
 const content = out.replace(/\n+$/, '') + '\n'
 if (process.argv.includes('--check')) {
-  /* 门禁：归属表必须与当前样式一致（V-0 D1） */
   const target = join(root, 'scripts/design/CSS-归属表.md')
   const existing = existsSync(target) ? readFileSync(target, 'utf8') : ''
   if (existing !== content) {

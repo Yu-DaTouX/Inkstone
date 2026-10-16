@@ -1,34 +1,17 @@
-/**
- * 托盘品牌素材装载（v3 L12）。
- *
- * 读 `build/tray/manifest.json`（`npm run icon` 生成），把所有主题 × 状态的
- * 帧用宿主给的 `createImage` **一次性预载进内存**。播放器（`tray-animation.ts`）
- * 之后只在内存里选帧，不再读盘、不再创建图片。
- *
- * manifest 是「真源 → 产物」的唯一桥：真实原生时长（例如运行 750ms 周期、
- * 25ms 帧长）只写在 manifest 里，runtime 不复制第二套 duration/mask 常量。
- *
- * 本模块不 import Electron —— `createImage` / `readFile` / `exists` 都由宿主注入，
- * 因此可以用假实现做「常量缓存不每 tick 加载」的回归。
- */
-
 export type TrayTheme = 'on-light' | 'on-dark'
 export type TrayAnimationState = 'idle' | 'running' | 'waiting'
 
 export interface TrayFrame {
   image: unknown
-  /** 真实原生时长（毫秒）。 */
   durationMs: number
 }
 
 export interface TrayFrameSet {
   frames: readonly TrayFrame[]
-  /** 减少动态 / 空闲时的静态亮帧。 */
   static?: unknown
 }
 
 export interface TrayAssetDeps {
-  /** 候选 `build/tray` 目录（按存在顺序）。 */
   dirs: readonly string[]
   createImage(path: string): unknown
   readFile(path: string): string
@@ -37,13 +20,9 @@ export interface TrayAssetDeps {
 }
 
 export interface TrayAssetStore {
-  /** 预载全部素材；成功返回 true。之后 `set()` 纯内存。 */
   load(): boolean
-  /** 同步取某主题 + 状态的帧集；缺失/坏 manifest 返回 undefined。 */
   set(state: TrayAnimationState, theme: TrayTheme): TrayFrameSet | undefined
-  /** manifest 是否已成功加载。 */
   ready(): boolean
-  /** manifest 里记录的真源哈希（诊断用）。 */
   sourceHash(): string | undefined
   dispose(): void
 }
@@ -62,7 +41,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-/** 校验 manifest 形状：版本、时间线、主题帧列表与时长一一对应。 */
 export function validateManifest(raw: unknown): Manifest {
   if (!isRecord(raw) || raw.version !== 1) throw new Error('manifest.version 必须是 1')
   if (!isRecord(raw.timelines) || !isRecord(raw.themes)) throw new Error('manifest 缺少 timelines / themes')
@@ -94,7 +72,6 @@ export function validateManifest(raw: unknown): Manifest {
 export function createTrayAssetStore(deps: TrayAssetDeps): TrayAssetStore {
   let manifest: Manifest | null = null
   let dir: string | null = null
-  /* 预载缓存：theme → state → 帧集；以及静态图缓存。 */
   const cache = new Map<string, TrayFrameSet>()
   const statics = new Map<string, unknown>()
 
@@ -102,7 +79,6 @@ export function createTrayAssetStore(deps: TrayAssetDeps): TrayAssetStore {
     try {
       deps.onWarn?.(message)
     } catch {
-      /* 诊断端口出错不影响装载。 */
     }
   }
 

@@ -1,9 +1,3 @@
-/*
- * 随包技能清理后的真实模型检查：模型 → bash → `yan skill read` / `yan research --help`。
- *
- * 现存随包技能要读得到；已删除的 tutor 要如实报不可用；资料引用帮助不再指向技能。
- * 模型照抄命令输出里的关键字段，探针再核对页面文本，避免只信模型的总结。
- */
 ;(async () => {
   const out = []
   const ok = (cond, s, detail) => {
@@ -48,7 +42,6 @@
     const reply = qa('.msg.assistant .md').map((e) => e.textContent).join('\n')
     out.push('  模型回复：' + reply.replace(/\s+/g, ' ').slice(-240))
     ok(sawTool, '模型发起了工具调用')
-    /* 过程默认折叠，展开后才有工具行 */
     for (const btn of qa('[data-testid="turn-process-toggle"]')) if (btn.getAttribute('aria-expanded') !== 'true') btn.click()
     await sleep(400)
     ok(qa('.trow').length >= 3, `三条命令都执行了（工具行 ${qa('.trow').length}）`)

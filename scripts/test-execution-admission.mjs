@@ -1,17 +1,3 @@
-/**
- * 同 cwd 同步执行入场（F05）—— 专题回归（不需要真实 pi / 模型）。
- *
- * `RunnerRegistry.select()` 与 `guardExecute` 都是**状态查询**：两个空闲实例在
- * `agent_start` / running 状态到达前都能通过。本脚本验证新加的同步 claim/token：
- *   · 两空闲同 cwd 并发「开始执行」即使 state 还没 running，也只能有一个入场；
- *   · 同实例重入返回同一 token（自己的插话 / 排队不被自己拦下）；
- *   · 不同 cwd 互不影响；同 cwd 另有忙碌实例时明确拒绝；
- *   · 失败 / 取消 / release 归还；进程删除、换代次后旧 token 不能误清新 claim；
- *   · `confirmExecute` 在真正入队前复核：claim 失效 / 换代会失败。
- *
- * 用真实 `RunnerRegistry` + 假 Agent：只驱动入场接口，不起 pi、不调模型、不碰磁盘。
- * ⚠️ 这是「同一物理 cwd 不同时开始执行」的保障，不是文件级全锁；不宣称覆盖所有内部入口。
- */
 import { build } from 'esbuild'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -83,7 +69,6 @@ export async function runExecutionAdmissionTests(ok) {
     agent.state = { ...agent.state, isAgentRunning: flag }
   }
 
-  /* 模拟 Agent 的 send：入口同步 claim → 等一段宿主 await → 入队前 confirm → finally release。 */
   const sendWithAdmission = async (reg, id, gate) => {
     const claim = reg.admitExecute(id)
     if (!claim.ok) return claim
@@ -96,9 +81,6 @@ export async function runExecutionAdmissionTests(ok) {
     }
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ① 两空闲同 cwd 并发：即使 state 还没 running 也只能一个入场
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/proj', sessionFile: 'C:/proj/a.jsonl' })
@@ -118,9 +100,6 @@ export async function runExecutionAdmissionTests(ok) {
     ok(reg.size === 2, '拒绝不新建 / 不停实例')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ② 同实例重入：自己的插话 / 排队不被自己拦下
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/reentrant', sessionFile: 'C:/reentrant/a.jsonl' })
@@ -132,9 +111,6 @@ export async function runExecutionAdmissionTests(ok) {
     reg.releaseExecute(a.id, one.token)
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ③ 不同 cwd：互不影响
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/one', sessionFile: 'C:/one/a.jsonl' })
@@ -143,9 +119,6 @@ export async function runExecutionAdmissionTests(ok) {
     ok(reg.admitExecute(b.id).ok === true, '不同 cwd 也能同时入场')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ④ 同 cwd 另有忙碌实例：明确拒绝（沿用 busy 判据）
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/busy', sessionFile: 'C:/busy/a.jsonl' })
@@ -156,9 +129,6 @@ export async function runExecutionAdmissionTests(ok) {
     ok(reg.admitExecute(a.id).ok === true, '忙碌的发起者自己继续放行')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ⑤ release 归还：失败 / 取消后别的实例可以入场
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/release', sessionFile: 'C:/release/a.jsonl' })
@@ -169,9 +139,6 @@ export async function runExecutionAdmissionTests(ok) {
     ok(reg.admitExecute(b.id).ok === true, '失败 / 取消 release 后 b 可以入场')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ⑥ 进程删除：旧 token 不能误清后来者的新 claim
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/removed', sessionFile: 'C:/removed/a.jsonl' })
@@ -184,9 +151,6 @@ export async function runExecutionAdmissionTests(ok) {
     ok(reg.confirmExecute(b.id, fresh.token) === true, '删除进程的旧 token release 不会清掉新实例的 claim')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ⑦ 换代次：旧 token 立即失效，不能清掉新 claim
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/epoch', sessionFile: 'C:/epoch/a.jsonl' })
@@ -203,9 +167,6 @@ export async function runExecutionAdmissionTests(ok) {
     ok(reg.admitExecute(a.id).ok === true, '新 claim 正常归还后可以再入场')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ⑧ confirmExecute：release / 换代后拒绝，真正入队前二次把关
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/confirm', sessionFile: 'C:/confirm/a.jsonl' })
@@ -216,9 +177,6 @@ export async function runExecutionAdmissionTests(ok) {
     ok(reg.confirmExecute(a.id, claim.token) === false, 'release 之后 confirm 失败')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ⑨ cwd 规范化：大小写 / 斜杠 / 末尾分隔符不能绕过
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/Proj/', sessionFile: 'C:/Proj/a.jsonl' })
@@ -228,9 +186,6 @@ export async function runExecutionAdmissionTests(ok) {
     ok(claim.ok && blocked.ok === false, '不同写法的同一物理目录不能同时入场', JSON.stringify(blocked))
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ⑩ 多实例 / 泄漏：全部归还后没有残留 claim
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/leak', sessionFile: 'C:/leak/a.jsonl' })
@@ -244,7 +199,6 @@ export async function runExecutionAdmissionTests(ok) {
   }
 }
 
-// 专项入口：只在内存中编译 runners / helper，不构建应用、不启动 pi。
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   let passed = 0
   let failed = 0

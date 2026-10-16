@@ -1,14 +1,3 @@
-/**
- * check-icons.mjs —— 图标体系的强制检查（npm run check:icons）。
- *
- * 拦四类问题：
- *   1. 生成物过期：sprite.ts / sprite.svg / preview.html / prototype.html 与 catalog 不一致
- *   2. 属性走样：symbol 不是 24×24 纯描边 currentColor，或出现实心填充
- *   3. 引用缺失：UI 里写了 sprite 中不存在的图标名
- *   4. 语义混用：同一个图标被两个语义借用（编目重复）
- *
- * 只读，不修文件；要修去跑 npm run icons。
- */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -23,8 +12,6 @@ const problems = []
 const catalog = JSON.parse(readFileSync(join(HERE, 'design/icons/catalog.json'), 'utf8'))
 const ts = readFileSync(TS, 'utf8')
 
-/* ---------- 1. 编目自洽 ---------- */
-
 const semanticToLib = new Map()
 for (const [semantic, def] of Object.entries(catalog.icons)) {
   if (semanticToLib.has(def.name)) {
@@ -34,8 +21,6 @@ for (const [semantic, def] of Object.entries(catalog.icons)) {
   }
   if (!def.use) problems.push(`编目缺用途说明：${semantic}`)
 }
-
-/* ---------- 2. ICON_NAMES 与编目一致 ---------- */
 
 const namesBlock = ts.match(/export const ICON_NAMES = (\[[\s\S]*?\]) as const/)
 if (!namesBlock) {
@@ -49,16 +34,12 @@ if (!namesBlock) {
   if (extra.length) problems.push(`ICON_NAMES 多出：${extra.join(', ')}`)
 }
 
-/* ---------- 3. 生成物是否过期 ---------- */
-
 try {
   execFileSync(process.execPath, [join(HERE, 'design/icons/build-icons.mjs'), '--check'], { stdio: 'pipe' })
 } catch (e) {
   const out = String(e.stdout || '') + String(e.stderr || '')
   problems.push('生成物与 catalog 不一致，请跑 npm run icons：\n     ' + out.trim().split('\n').join('\n     '))
 }
-
-/* ---------- 4. symbol 属性 ---------- */
 
 const sprite = ts.match(/export const ICON_SPRITE = "((?:[^"\\]|\\.)*)"/)
 if (!sprite) {
@@ -76,7 +57,6 @@ if (!sprite) {
       if (!tag.includes(must)) problems.push(`${id}: symbol 缺少 ${must}`)
     }
   }
-  // 实心填充：只放行极小圆点（Lucide 的 tag / key-round）
   for (const m of body.matchAll(/<(\w+)\b[^>]*\bfill="(?!none)([^"]*)"[^>]*>/g)) {
     const r = Number((m[0].match(/\br="([\d.]+)"/) || [])[1] ?? NaN)
     if (!(m[1] === 'circle' && Number.isFinite(r) && r <= 0.6)) {
@@ -84,8 +64,6 @@ if (!sprite) {
     }
   }
 }
-
-/* ---------- 5. UI 引用零缺失 ---------- */
 
 const usable = new Set(Object.keys(catalog.icons))
 const files = []
@@ -108,9 +86,6 @@ const take = (rel, name, ctx) => {
 for (const file of files) {
   const src = readFileSync(file, 'utf8')
   const rel = relative(ROOT, file).replace(/\\/g, '/')
-  // <Icon ... name=... />：
-  //   name="x" / name={'x'}  → 单一字面量，必须存在
-  //   name={表达式}           → 只抳「已废弃语义名」的残留（避开 kind 值误判）
   for (const m of src.matchAll(/<Icon\b[^>]*?\bname=(\{[^{}]*\}|"[^"]*"|'[^']*')/gs)) {
     const expr = m[1]
     const ctx = ('<Icon name=' + expr.replace(/\s+/g, ' ')).slice(0, 80)
@@ -124,15 +99,12 @@ for (const file of files) {
       }
     }
   }
-  // icon: 'x' —— 会话/设置菜单的对象字段
   for (const m of src.matchAll(/\bicon:\s*['"]([a-z0-9-]+)['"]/g)) take(rel, m[1], m[0])
 }
 
 for (const [rel, name, ctx] of refs) {
   problems.push(`引用了 sprite 中不存在的图标「${name}」：${rel} → ${ctx}`)
 }
-
-/* ---------- 结果 ---------- */
 
 if (problems.length) {
   console.error(`✗ 图标检查失败（${problems.length} 项）：`)

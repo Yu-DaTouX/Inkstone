@@ -1,10 +1,3 @@
-/**
- * 评审页的双语文案。
- *
- * 与 `state/runs-v3.ts` 的 `runUiText` 同一做法：文案跟着语言在模块内切换，
- * 不改共享 i18n 目录（那是待唯一整合者的冻结热点）。缺数据一律给「—」，
- * 不编造。
- */
 export interface ReviewUiText {
   title: string
   refresh: string
@@ -90,7 +83,6 @@ export interface ReviewUiText {
   commit: string
   push: string
   createPr: string
-  /** Git 写动作在目标目录不是仓库时的禁用原因（按钮 title） */
   gitNeedsRepo: string
   commitConfirmTitle: string
   commitConfirmBody: string

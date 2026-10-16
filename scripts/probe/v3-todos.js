@@ -1,21 +1,3 @@
-/*
- * v3 侧栏待办磁贴隔离探针（A1 验收）。
- *
- * 只在这一条隔离启动里观察 `features/todos` 的 DOM 行为，不发消息、不调模型、
- * 不联网、不碰用户数据；需要「运行中」时注 store（peekedSessionId 用探针
- * 专属身份，真实推送因归属不符不会覆盖顶层 todos）。
- *
- * 校验：fixture 会话真实读取（尽力，记录结果）→ 注入同形清单做确定性 DOM 断言：
- *   · 有待办才出现、x/y 计数、完成勾 / 进行中 / 受阻；
- *   · 折叠只剩标题、折叠状态按会话记住；
- *   · 超长清单内部滚动、侧栏会话列表不被挤没；
- *   · 切到无待办会话整块 DOM 不存在；
- *   · 真实 Ctrl+B 收起侧栏且不出现浮层遮罩。
- *
- * 与 v2 `probe/todos.js` 的分工：那条验 v2 右栏任务分区；这条只验 v3 磁贴。
- * 交互分层：几何、折叠、注入是程序化 DOM；Ctrl+B 是 test-live 的 keys 机制
- * （sendInputEvent）发的真实 Chromium 按键。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => {
@@ -30,7 +12,6 @@
       try {
         if (predicate()) return true
       } catch {
-        /* 还没就绪，继续轮询 */
       }
       await wait(50)
     }
@@ -40,14 +21,12 @@
   const qa = (testId) => [...document.querySelectorAll(`[data-testid="${testId}"]`)]
   const store = window.__yanStore
 
-  /* 与 scripts/test-live.mjs 的 writeTodoSession 一一对应：4 条、2 条已完成。 */
   const FIXTURE_TODOS = [
     { text: '读 spec 并确认范围', done: true },
     { text: '写 protocol.ts 的 JSONL 分帧', done: true },
     { text: '把渲染端的假数据换成 MainPush 补丁', done: false },
     { text: '补测试并用真实应用跑一遍回归', done: false }
   ]
-  /* 探针专属会话身份：让真实会话迟到的 todos 推送因归属不符而不投影到顶层。 */
   const PROBE_SID = '__v3-todos-probe__'
 
   try {
@@ -58,11 +37,9 @@
     )
     if (!store || !q('v3-sidebar')) throw new Error('v3 外壳或隔离探针 store 不可用')
 
-    /* 首次引导若挂着，模态会吞掉全局快捷键；先标记看过并关闭当前那一层。 */
     try {
       localStorage.setItem('yan.onboarded', '1')
     } catch {
-      /* 存储不可用不影响断言 */
     }
     const onboarding = document.querySelector('.v3-ob-overlay')
     if (onboarding) {
@@ -72,12 +49,10 @@
 
     check(await until(() => store.getState().sessions.length > 0, 10000), '隔离会话表已就绪')
 
-    /* 待办在右侧工作区顶部：先打开面板（没有待办时面板里不应有磁贴） */
     if (!q('v3-header-workspace')) throw new Error('缺少工作区开关（需要在聊天路由）')
     if (q('v3-header-workspace').getAttribute('aria-pressed') !== 'true') q('v3-header-workspace').click()
     check(await until(() => !!document.querySelector('.wb-panel:not([hidden])'), 4000), '右侧工作区已展开')
 
-    /* ---- 0. fixture 会话：尽力走真实读取链路，结果如实记录（不当作失败） ---- */
     const fixture = store
       .getState()
       .sessions.find((s) => (s.path || '').includes('yan-todo-fixture'))
@@ -95,7 +70,6 @@
       note('隔离会话表中没有 yan-todo-fixture，跳过真实读取；只做注入断言')
     }
 
-    /** 注入清单并把「当前视图」钉到探针身份，避免真实推送覆盖。 */
     const setTodos = (todos, running) => {
       const s = store.getState().session ?? {}
       store.setState({
@@ -111,7 +85,6 @@
       })
     }
 
-    /* ---- 1. 有待办才出现 + 计数 + 完成 / 进行中 ---- */
     out.push('')
     out.push('--- 1. 磁贴出现 / 计数 / 行状态 ---')
     setTodos(FIXTURE_TODOS, true)
@@ -129,7 +102,6 @@
     check(!!rows[2]?.querySelector('.v3-todo-mark')?.children.length, '进行中项状态槽有标记（spinner）')
     check(rows.filter((r) => r.getAttribute('data-kind') === 'pending').length === 1, '未开始项标为 pending')
 
-    /* ---- 2. 受阻（显式 status） ---- */
     out.push('')
     out.push('--- 2. 受阻行 ---')
     setTodos(
@@ -153,7 +125,6 @@
       '受阻状态用警示色（与普通文本不同）'
     )
 
-    /* ---- 3. 折叠 + 按会话记住 ---- */
     out.push('')
     out.push('--- 3. 折叠 / 按会话记住 ---')
     setTodos(FIXTURE_TODOS, true)
@@ -175,7 +146,6 @@
     q('v3-todo-toggle')?.click()
     check(await until(() => q('v3-todo')?.getAttribute('data-folded') === '0'), '可再展开')
 
-    /* ---- 4. 超长清单内部滚动，不挤会话列表 ---- */
     out.push('')
     out.push('--- 4. 超长清单 / 会话列表 ---')
     const many = Array.from({ length: 200 }, (_, i) => ({
@@ -198,7 +168,6 @@
     )
     check(document.documentElement.scrollWidth <= innerWidth + 1, '无页面横向溢出')
 
-    /* ---- 5. 切到无待办会话：整块不渲染 ---- */
     out.push('')
     out.push('--- 5. 无待办会话 ---')
     const noTodo =
@@ -217,7 +186,6 @@
     check(await until(() => !q('v3-todo')), '无待办会话磁贴 DOM 不存在')
     check(!document.querySelector('.v3-todo'), '磁贴 class 也不残留（无空态占位）')
 
-    /* ---- 6. 真实 Ctrl+B 收起，不出现浮层 ---- */
     out.push('')
     out.push('--- 6. Ctrl+B 收起无浮层 ---')
     const root = () => document.querySelector('.v3-root')

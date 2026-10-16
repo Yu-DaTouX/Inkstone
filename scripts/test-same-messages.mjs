@@ -1,7 +1,3 @@
-/**
- * 「内容相同就沿用旧引用」（state/same-messages.ts）的纯逻辑测试。
- * 两个方向都要有断言：相同要复用（否则千条会话重复渲染），不同必须替换（否则界面看不到更新）。
- */
 export async function runSameMessagesTests(ok) {
   const { reuseIfSame } = await import('../out/test/same-messages.mjs')
   console.log('\n--- 消息列表内容相同时沿用旧引用 ---')

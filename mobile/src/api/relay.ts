@@ -1,11 +1,3 @@
-/**
- * 经中继连接电脑：不用 Tailscale、不开端口。电脑上的砚主动连中继，手机加入同一个房间，
- * 两端用与礁石相同的协议握手（P-256 三重 ECDH + HKDF-SHA256 → AES-256-GCM 计数帧），中继只看到密文。
- * 握手后在加密通道里收发「HTTP 请求帧」，由电脑转给本机远程接口；事件流分块传回。
- *
- * React Native 没有 WebCrypto，这里用纯 JS 的 @noble 库（随机数由 react-native-get-random-values 提供）。
- * 协议与帧格式见礁石仓库 docs/specs/hub-relay.md 与桌面 src/main/relay-bridge/。
- */
 import { p256 } from '@noble/curves/nist.js'
 import { gcm } from '@noble/ciphers/aes.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
@@ -16,9 +8,6 @@ const LABEL = utf8ToBytes('reef-v1')
 const INFO = utf8ToBytes('reef-v1 keys')
 const HANDSHAKE_MS = 15_000
 
-/* ---------------------------------------------------------------- 编码 */
-
-/** UTF-8 编码（不依赖 TextEncoder）。 */
 export function utf8ToBytes(text: string): Uint8Array {
   const out: number[] = []
   for (const ch of text) {
@@ -34,9 +23,6 @@ export function utf8ToBytes(text: string): Uint8Array {
   return new Uint8Array(out)
 }
 
-/**
- * UTF-8 解码（不依赖 TextDecoder）。返回解出的文字与末尾不完整的字节数（流式续接用）；非法字节替换为 U+FFFD。
- */
 export function decodeUtf8(bytes: Uint8Array): { text: string; rest: number } {
   let text = ''
   let i = 0
@@ -77,7 +63,6 @@ export function bytesToUtf8(bytes: Uint8Array): string {
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 const B64_INDEX = new Map([...B64].map((c, i) => [c, i] as const))
 
-/** 标准 base64（不依赖 atob / btoa）；隧道帧里的 body / chunk 用它。 */
 export function toB64(bytes: Uint8Array): string {
   let out = ''
   for (let i = 0; i < bytes.length; i += 3) {
@@ -123,21 +108,14 @@ function concat(...parts: Uint8Array[]): Uint8Array {
   return out
 }
 
-/* ---------------------------------------------------------------- 配对链接 */
-
 export interface RelayPairing {
-  /** 中继加入地址 wss://…/v1/join/<room> */
   join: string
-  /** 电脑主机公钥（base64url，65 字节未压缩） */
   hostKey: string
   computerName: string
-  /** 一次性中继配对码 */
   relayCode: string
-  /** 砚 6 位配对码 */
   code: string
 }
 
-/** 解析电脑生成的中继配对链接：inkstone://relay#p=… 或 yan://relay#p=…（也接受只粘贴 #p=… 片段）。 */
 export function parseRelayLink(input: string): RelayPairing | null {
   const match = /^(?:(?:inkstone|yan):\/\/relay)?#p=([A-Za-z0-9_-]+)$/i.exec(input.trim())
   if (!match) return null
@@ -153,11 +131,9 @@ export function parseRelayLink(input: string): RelayPairing | null {
   }
 }
 
-/** 保存在钥匙串里的中继连接信息（客户端私钥只存这里）。 */
 export interface RelayConfig {
   join: string
   hostKey: string
-  /** 手机的长期私钥（base64url，32 字节） */
   clientKey: string
 }
 
@@ -165,10 +141,7 @@ export function newClientKey(): string {
   return toB64u(p256.utils.randomSecretKey())
 }
 
-/* ---------------------------------------------------------------- 加密通道 */
-
 function ecdh(secret: Uint8Array, publicRaw: Uint8Array): Uint8Array {
-  // noble 返回压缩点（33 字节）；WebCrypto 的 ECDH deriveBits 是 x 坐标，取后 32 字节保持一致。
   return p256.getSharedSecret(secret, publicRaw, true).slice(1)
 }
 
@@ -206,8 +179,6 @@ function clientChannel(clientSecret: Uint8Array, ephSecret: Uint8Array, hostRaw:
   return new Channel(okm.slice(0, 32), okm.slice(32, 64))
 }
 
-/* ---------------------------------------------------------------- 隧道 */
-
 export interface TunnelResponse {
   status: number
   headers: Record<string, string>
@@ -232,7 +203,6 @@ export class RelayError extends Error {
   }
 }
 
-/** 一条到电脑的加密隧道。断线后下一次请求自动重连（已登记的手机不需要配对码）。 */
 export class RelayTunnel {
   private static readonly shared = new Map<string, RelayTunnel>()
   private ws: WebSocket | null = null
@@ -253,7 +223,6 @@ export class RelayTunnel {
 
   constructor(private readonly config: RelayConfig, private readonly deviceName = '砚手机端') {}
 
-  /** 建立连接；首次配对时带上中继配对码。 */
   connect(pairCode?: string): Promise<void> {
     if (this.ready) return this.ready
     const attempt = new Promise<void>((resolve, reject) => {
@@ -316,7 +285,6 @@ export class RelayTunnel {
     try {
       ws?.close()
     } catch {
-      /* 已关闭 */
     }
     for (const p of this.pending.values()) p.reject(error)
     this.pending.clear()
@@ -362,7 +330,6 @@ export class RelayTunnel {
     this.ws.send(this.channel.seal(frame))
   }
 
-  /** 发一个请求；body 为已序列化的字符串。 */
   async request(method: 'GET' | 'POST', path: string, init: { headers?: Record<string, string>; body?: string; timeoutMs?: number } = {}): Promise<TunnelResponse> {
     const id = `m${++this.seq}`
     const result = new Promise<TunnelResponse>((resolve, reject) => {
@@ -387,7 +354,6 @@ export class RelayTunnel {
     return result
   }
 
-  /** 打开一条事件流（SSE）；返回取消函数。onEnd 在流结束或断线时调用。 */
   stream(path: string, headers: Record<string, string>, handlers: { onStart(status: number): void; onChunk(text: string): void; onEnd(error?: Error): void }): () => void {
     const id = `s${++this.seq}`
     let done = false

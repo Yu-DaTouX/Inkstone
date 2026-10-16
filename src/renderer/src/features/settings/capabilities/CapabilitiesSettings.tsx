@@ -1,16 +1,3 @@
-/**
- * v3「能力与插件」设置（S2）。
- *
- * 分组：连接（MCP）/ 技能 / 扩展 / 市场 / 提示词。外观只用 `ui/` 与 `patterns/`，
- * 版面在本目录的 `capabilities.css`（features 层）；业务状态仍走主 store 与正式 IPC。
- *
- * 无 props：S0 的 `SettingsPanelV3` 直接挂 `<CapabilitiesSettings />`。
- *
- * 有意不做的事（与任务边界一致）：
- *   · 不新建 MCP 安装 / 授权通道，只复用 `prepareNativeImport/commitNativeImport`；
- *   · 不自动迁移凭证、不自动联网、不自动探测远端；
- *   · 没有稳定接口的项（如提示词的编辑）只读展示并标限制。
- */
 import { useEffect, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { Tab, TabList, TabPanel, Tabs } from '../../../ui'
@@ -28,7 +15,6 @@ import './capabilities.css'
 
 export type CapabilitiesTabId = 'connections' | 'skills' | 'extensions' | 'market' | 'prompts' | 'voice'
 
-/** 旧 `openSettings(name)` 页名里能直接落到某个能力分页的那几个。 */
 const LEGACY_TAB: Record<string, CapabilitiesTabId> = { voice: 'voice', market: 'market' }
 
 export function CapabilitiesSettings(): ReactElement {
@@ -36,7 +22,6 @@ export function CapabilitiesSettings(): ReactElement {
   const text = useCapsText()
   const request = useSyncExternalStore(subscribeSettingsRequest, getSettingsRequest, getSettingsRequest)
   const [tab, setTab] = useState<CapabilitiesTabId>(() => LEGACY_TAB[request?.view ?? ''] ?? 'connections')
-  /* 已经停在能力页时再次收到 voice / market 深链接，也要落到对应分页（revision 每次都变） */
   useEffect(() => {
     const target = LEGACY_TAB[request?.view ?? '']
     if (target) setTab(target)

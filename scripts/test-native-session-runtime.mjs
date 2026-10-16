@@ -1,14 +1,3 @@
-/*
- * 原生会话桥的定向单测（不启动 pi、不联网、不碰真实用户目录）。
- *
- * 覆盖两层：
- *   · 扩展资源 `resources/pi-extensions/native-session-bridge.js` 的纯函数与命令处理器
- *     —— trust.json / settings.json 的官方格式读写、信封编解码、navigate/reload 回执；
- *   · 宿主模块 `src/main/native-session-runtime.ts`（用 esbuild 就地打包）—— 请求编码、
- *     回执拦截、id 匹配、超时/未就绪/未被识别三种失败，以及不可变老的 ctx 回执路径。
- *
- * 用法：node scripts/test-native-session-runtime.mjs
- */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -27,13 +16,11 @@ function ok(condition, label) {
   }
 }
 
-/** 动态导入扩展资源（纯 node builtins，可直接 import）。 */
 async function loadExtension() {
   const url = pathToFileURL(join(process.cwd(), 'resources', 'pi-extensions', 'native-session-bridge.js')).href
   return import(`${url}?t=${Date.now()}`)
 }
 
-/** 用 esbuild 把宿主 TS 模块打包成一个临时 ESM 再导入。 */
 async function loadRuntime() {
   const { build } = await import('esbuild')
   const outfile = join('out', 'test', 'native-session-runtime.mjs')
@@ -65,7 +52,6 @@ async function testTrust(ext, dir) {
   }
   ok(rejected, '非法值被拒绝，不静默吞掉')
 
-  /* 向上查找：精确命中优先，否则沿父目录 */
   const walked = ext.findNearestTrustEntry({ 'C:\\repo': true, 'C:\\repo\\sub': false }, 'C:\\repo\\sub\\deep')
   ok(walked?.path === 'C:\\repo\\sub' && walked.decision === false, '子目录显式 false 阻断父目录 true')
 
@@ -125,7 +111,6 @@ async function testEnvelopeAndReceipt(ext, runtime) {
   ok(runtime.parseReceipt('ordinary notification') === null, '普通通知不误判为回执')
 }
 
-/** 造一个受控的扩展 ctx / pi，跑命令处理器并收集 notify 回执。 */
 function makeFakeHost(ext, { settings = {}, cwd = process.cwd(), onNavigate, onReload } = {}) {
   const receipts = []
   const state = { stale: false, idle: true }
@@ -171,7 +156,6 @@ function makeFakeHost(ext, { settings = {}, cwd = process.cwd(), onNavigate, onR
   return { pi, ctx, receipts, state }
 }
 
-/** 从回执文本里取出 JSON。 */
 function receiptOf(text, runtime) {
   return runtime.parseReceipt(text)
 }
@@ -179,7 +163,6 @@ function receiptOf(text, runtime) {
 async function testExtensionHandlers(ext, runtime) {
   console.log('扩展命令处理器')
 
-  /* The bridge must be explicitly enabled by the desktop host. */
   delete process.env.YAN_NATIVE_BRIDGE
   const disabled = makeFakeHost(ext)
   ok(Object.keys(disabled.pi.commands).length === 0, '未开启宿主开关时不注册命令')
@@ -190,7 +173,6 @@ async function testExtensionHandlers(ext, runtime) {
   const off = loaded
   ok(Object.keys(off.pi.commands).length === 1, '命令表只有这一个宿主专用命令')
 
-  /* navigate_tree：固定 summarize:false，并回实际 branch */
   let seenOptions
   const nav = makeFakeHost(ext, {
     onNavigate: (targetId, options) => {
@@ -212,7 +194,6 @@ async function testExtensionHandlers(ext, runtime) {
     '导航回执带实际叶子与当前 branch'
   )
 
-  /* reload：await 后旧 ctx 已 stale，仍能用捕获的 ui 发完成回执 */
   const rel = makeFakeHost(ext)
   await rel.pi.commands[ext.NATIVE_COMMAND].handler(
     runtime.encodeEnvelope('rel-1', 'reload', {}),
@@ -221,7 +202,6 @@ async function testExtensionHandlers(ext, runtime) {
   const relReceipt = receiptOf(rel.receipts.at(-1), runtime)
   ok(relReceipt?.id === 'rel-1' && relReceipt.ok === true && relReceipt.result?.phase === 'completed', 'reload 用捕获的 ui 发完成回执（不碰 stale ctx）')
 
-  /* busy：不空闲时拒绝，且不执行操作 */
   let navigated = false
   const busy = makeFakeHost(ext, {
     onNavigate: () => {
@@ -237,7 +217,6 @@ async function testExtensionHandlers(ext, runtime) {
   const busyReceipt = receiptOf(busy.receipts.at(-1), runtime)
   ok(busyReceipt?.ok === false && busyReceipt.error?.code === 'busy' && !navigated, '会话不空闲时拒绝且不执行')
 
-  /* scoped_models_read：运行时 scoped + 设置里的原始 pattern */
   const scoped = makeFakeHost(ext, { settings: { enabledModels: ['a/b'] } })
   const scopedCtx = Object.assign(Object.create(Object.getPrototypeOf(scoped.ctx)), scoped.ctx, {
     scopedModels: [{ model: { provider: 'a', id: 'b', name: 'B' }, thinkingLevel: 'high' }]
@@ -250,7 +229,6 @@ async function testExtensionHandlers(ext, runtime) {
   ok(scopedReceipt?.result.scoped[0]?.id === 'b' && scopedReceipt.result.scoped[0]?.thinkingLevel === 'high', '读取运行时 scoped models')
   ok(scopedReceipt.result.enabledModels?.[0] === 'a/b', '读取设置里的原始 pattern')
 
-  /* trust_read / trust_save：真实落盘到隔离目录 */
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-native-test-'))
   const prevAgentDir = process.env.PI_CODING_AGENT_DIR
   process.env.PI_CODING_AGENT_DIR = dir
@@ -284,7 +262,6 @@ async function testExtensionHandlers(ext, runtime) {
     await rm(dir, { recursive: true, force: true })
   }
 
-  /* 非法信封：回一条 bad_request，不崩 */
   const bad = makeFakeHost(ext)
   await bad.pi.commands[ext.NATIVE_COMMAND].handler('not-base64!!', bad.ctx)
   const badReceipt = receiptOf(bad.receipts.at(-1), runtime)
@@ -294,7 +271,6 @@ async function testExtensionHandlers(ext, runtime) {
 async function testHostRuntime(runtime) {
   console.log('宿主 NativeSessionRuntime')
 
-  /** 假 transport：解码请求，用一个可控的 ctx 生成回执，再回灌 handleUi。 */
   function makeRuntime({ idle = true, dispatcher } = {}) {
     let instance
     const transport = {
@@ -316,7 +292,6 @@ async function testHostRuntime(runtime) {
     response: { success: true, command: 'prompt', data: { disposition: 'handled' } }
   }
 
-  /* 未就绪：不发送任何命令（避免被当提问交给模型） */
   const cold = new runtime.NativeSessionRuntime({ command: async () => { throw new Error('不应被调用') } }, 200)
   let coldErr
   try {
@@ -326,7 +301,6 @@ async function testHostRuntime(runtime) {
   }
   ok(coldErr?.code === 'bridge_unavailable', '未收到 hello 时拒绝发命令')
 
-  /* 正常导航 */
   const navRuntime = makeRuntime({
     dispatcher: (envelope, { idle }) => {
       if (envelope.op === 'hello') return hello
@@ -347,7 +321,6 @@ async function testHostRuntime(runtime) {
   const nav = await navRuntime.navigateTree('mid-3', { summarize: false })
   ok(nav.ok === true && nav.entryId === 'mid-3' && nav.leafId === 'leaf-9' && nav.cancelled === false, '导航回执解析为结构化结果')
 
-  /* 读出 scoped models：运行时条目 + 原始 pattern */
   const scopedRuntime = makeRuntime({
     dispatcher: (envelope) => {
       if (envelope.op === 'hello') return hello
@@ -362,7 +335,6 @@ async function testHostRuntime(runtime) {
   ok(snapshot.scopedModels[0]?.key === 'a/b' && snapshot.scopedModels[0]?.thinkingLevel === 'high', 'getScopedModels 返回 provider/id key')
   ok(snapshot.scopeIsAll === false && snapshot.enabledModels[0] === 'a/b', 'getScopedModels 带原始 pattern 与 scopeIsAll')
 
-  /* 写 scoped models：只持久化 + 标注重启生效 */
   const saveRuntime = makeRuntime({
     dispatcher: (envelope) => ({
       notify: runtime.RECEIPT_PREFIX + JSON.stringify({ v: 1, id: envelope.id, op: envelope.op, ok: true, result: { settingsFile: '/agent/settings.json', patterns: ['a/b'], effective: 'next-session' } }),
@@ -373,7 +345,6 @@ async function testHostRuntime(runtime) {
   const saved = await saveRuntime.saveScopedModels(['a/b'])
   ok(saved.ok === true && saved.requiresRestart === true && saved.enabledModels[0] === 'a/b' && saved.settingsPath.includes('settings.json'), 'saveScopedModels 回执映射为持久化结果')
 
-  /* 项目信任：自身条目 vs 祖先条目 */
   const trustRuntime = makeRuntime({
     dispatcher: (envelope) => {
       const result = envelope.args.decision === undefined
@@ -401,7 +372,6 @@ async function testHostRuntime(runtime) {
   const ancestor = await ancestorRuntime.getProjectTrust()
   ok(ancestor.effectiveTrusted === true && ancestor.explicitDecision === false && ancestor.ancestorTrustPath === 'C:\\proj', 'getProjectTrust：祖先条目 = ancestorTrustPath')
 
-  /* reload 以完成回执为准 */
   const reloadRuntime = makeRuntime({
     dispatcher: (envelope) => ({
       notify: runtime.RECEIPT_PREFIX + JSON.stringify({ v: 1, id: envelope.id, op: envelope.op, ok: true, result: { phase: 'completed' } }),
@@ -412,7 +382,6 @@ async function testHostRuntime(runtime) {
   const reloaded = await reloadRuntime.reload()
   ok(reloaded.ok === true, 'reload 以完成回执判定成功')
 
-  /* busy 回执 → NativeBridgeError('busy') */
   const busyRuntime = makeRuntime({ idle: false, dispatcher: (envelope) => {
     if (envelope.op === 'hello') return hello
     return {
@@ -429,7 +398,6 @@ async function testHostRuntime(runtime) {
   }
   ok(busyErr?.code === 'busy', 'busy 回执映射为 NativeBridgeError(busy)')
 
-  /* 命令没被识别 → 立刻报错，不等待、不重发 */
   const notHandled = new runtime.NativeSessionRuntime({
     command: async () => ({ success: true, command: 'prompt', data: { disposition: 'started' } })
   }, 300)
@@ -442,7 +410,6 @@ async function testHostRuntime(runtime) {
   }
   ok(notHandledErr?.code === 'command_not_handled', 'disposition 非 handled 时以 command_not_handled 中止')
 
-  /* 超时 */
   const stalled = new runtime.NativeSessionRuntime({
     command: async () => ({ success: true, command: 'prompt', data: { disposition: 'handled' } })
   }, 80)
@@ -456,13 +423,10 @@ async function testHostRuntime(runtime) {
   }
   ok(timeoutErr?.code === 'timeout' && Date.now() - started >= 60, '回执迟到时报超时')
 
-  /* 回执必须是本桥前缀才消费 */
   const rt = new runtime.NativeSessionRuntime({ command: async () => hello.response }, 200)
   ok(rt.handleUi({ method: 'notify', message: '普通通知' }) === false, '普通通知不被拦截')
   ok(rt.handleUi({ method: 'setStatus', message: hello.notify }) === false, '非 notify 方法不被拦截')
 
-  /* 顶层 await + esbuild 产物存在性（防陈旧产物）
-     这里只做一次导入即可，产物由 loadRuntime 生成 */
   ok(typeof runtime.NativeSessionRuntime === 'function', '宿主模块可加载')
 }
 
@@ -476,7 +440,6 @@ async function main() {
   await testExtensionHandlers(ext, runtime)
   await testHostRuntime(runtime)
 
-  /* 产物目录已存在即可，测试不改动源码 */
   ok(existsSync(join(process.cwd(), 'resources', 'pi-extensions', 'native-session-bridge.js')), '扩展资源文件存在')
 
   console.log(`\n通过 ${passed}，失败 ${failed}`)

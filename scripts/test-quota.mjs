@@ -1,18 +1,3 @@
-/**
- * Command Code 订阅额度的窗口解析（不联网、不用凭证）。
- *
- * 为什么值得单独测：`/alpha/billing/credits` 的同一个响应里，
- * `windowLimits.*.used` 是「已用」而 `credits.monthlyCredits` 是「本月剩余」——
- * 两个方向相反的字段。搞反的后果不是崩，而是**面板一直显示「本月已用 99.9%」**，
- * 用户以为额度用完了（2026-09-21 用户报的就是这个）。
- *
- * 这里的快照就是那天线上接口的原样字段（真账户、几乎没消耗）：
- *   monthlyCredits = 69.996221407，fiveHour.used = weekly.used = 0.003778593
- *   weekly.cap = 35 ⇒ 套餐总额度 70
- * 如果哪天有人把方向改回去，第一条断言就会红。
- */
-
-/** 真实快照：本月几乎没消耗（2026-09-21 抓的线上响应） */
 const LIVE_SNAPSHOT = {
   credits: { belowThreshold: false, creditThreshold: 0, monthlyCredits: 69.996221407, purchasedCredits: 0, freeCredits: 0 },
   windowLimits: {
@@ -43,11 +28,6 @@ export function runQuotaCommandCodeTests(ok, m) {
     ok(wk?.used === 0.003778593 && wk.total === 35, '每周窗口：used 直接取接口值', `${wk?.used} / ${wk?.total}`)
     ok(fh?.resetAt === 1790013986382 && wk?.resetAt === 1790600786382, '两个窗口的重置时间原样保留')
 
-    /*
-     * ★ 本次修复的核心断言。
-     * monthlyCredits 是「剩余」：已用 = 总额度(weekly.cap×2=70) − 剩余。
-     * 若按「已用」解释，这里会是 69.99 —— 面板就会显示「本月已用 99.99%」。
-     */
     ok(near(mo.used, 0.003778593), '本月：monthlyCredits 按「剩余」换算成已用（不是直接当已用）', `used=${mo.used}`)
     ok(mo.used < 1, '本月已用是「几乎没用过」的量级（方向没反）', `used=${mo.used}`)
     ok(mo.total === 70, '本月总额度 = weekly.cap × 2（推算，不写死 70）', `total=${mo.total}`)
@@ -57,7 +37,6 @@ export function runQuotaCommandCodeTests(ok, m) {
     ok(!('estimated' in fh) && !('estimated' in wk), '5 小时 / 每周是官方字段，不该被标成推算')
   }
 
-  /* 用了一半：剩余 35 → 已用 35 */
   {
     const mo = commandCodeWindows(
       { credits: { monthlyCredits: 35 }, windowLimits: { weekly: { used: 0, cap: 35 } } }
@@ -66,7 +45,6 @@ export function runQuotaCommandCodeTests(ok, m) {
     ok(mo.exceeded === false, '50% 不算超限')
   }
 
-  /* 用满：剩余 0 → exceeded */
   {
     const mo = commandCodeWindows(
       { credits: { monthlyCredits: 0 }, windowLimits: { weekly: { used: 35, cap: 35 } } }
@@ -74,7 +52,6 @@ export function runQuotaCommandCodeTests(ok, m) {
     ok(near(mo.used, 70) && mo.exceeded === true, '剩余 0 ⇒ 已用 70 且标记 exceeded')
   }
 
-  /* 剩余比推算上限还大（比如另外买了额度包）：不能算出负数已用 */
   {
     const mo = commandCodeWindows(
       { credits: { monthlyCredits: 80 }, windowLimits: { weekly: { used: 0, cap: 35 } } }
@@ -83,7 +60,6 @@ export function runQuotaCommandCodeTests(ok, m) {
     ok(mo.exceeded === false, '这种情况不算超限')
   }
 
-  /* 脏数据/缺字段：宁可少一个窗口，也不能编数字 */
   {
     const noWeeklyCap = commandCodeWindows({ credits: { monthlyCredits: 10 }, windowLimits: { fiveHour: { used: 1, cap: 14 } } })
     ok(noWeeklyCap.length === 1 && noWeeklyCap[0].id === 'fiveHour', 'weekly.cap 缺失 ⇒ 不产出月度窗口（不编分母）')
@@ -102,13 +78,6 @@ export function runQuotaCommandCodeTests(ok, m) {
   }
 }
 
-/**
- * 颜色分级（`src/shared/quota-tone.ts`）：<70% 绿 / 70–95% 黄 / ≥95% 红。
- *
- * 为什么用纯函数而不是 DOM 断言：真实额度不可能恰好落在 70 / 95 上，
- * 而边界恰恰是最容易写错的地方（`>` 还是 `>=`），所以直接钉住函数。
- * 「颜色真的显示成绿/黄/红」由 `test:live -- quota`（真实渲染）与视觉矩阵覆盖。
- */
 export function runQuotaToneTests(ok, m) {
   const { quotaTone, QUOTA_WARN_PCT, QUOTA_ERR_PCT } = m
 
@@ -126,7 +95,6 @@ export function runQuotaToneTests(ok, m) {
     [95, 'err'],
     [99.9, 'err'],
     [100, 'err'],
-    /* 超支也要如实红（不是夹取到 100 才红） */
     [137, 'err']
   ]
   for (const [pct, want] of cases) {

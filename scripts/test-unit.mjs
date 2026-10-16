@@ -1,12 +1,3 @@
-/**
- * 会话模块的单元测试（不启动 Electron、不碰 pi、不花 token）。
- *
- * 为什么单独做：listSessions 的解析逻辑是纯函数式的 ——
- * 名字来源、`~` 缩写、缓存、删除的路径防护都可以用合成文件确定性地验证。
- * 放在真实会话目录里跑会污染用户数据，所以用 YAN_SESSIONS_DIR 指向临时目录。
- *
- * 用法： npm run test:unit
- */
 import { mkdtemp, writeFile, mkdir, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -49,7 +40,6 @@ await runCapabilityNegotiationTests()
 await import('./test-security-performance-fixes.mjs')
 await import('./test-outline-navigation.mjs')
 await import('./test-browser-frame-origin.mjs')
-// 宿主边界回归：均为源码/现场编译/隔离文件夹具，不启动模型或用户服务。
 for (const script of [
   'test-attachment-prune-race', 'test-browser-tab-buttons', 'test-files-root-boundary',
   'test-inbox-ipc-bounds', 'test-mobile-model-url', 'test-open-path-boundary',
@@ -58,7 +48,6 @@ for (const script of [
   'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory'
 ]) await import(`./${script}.mjs`)
 
-// 隔离脚本的环境变量与退出码；这些夹具不调用真实模型或用户服务。
 for (const script of [
   'test-mcp-annotations-guard', 'test-terminal-status', 'test-taskbar-status',
   'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills', 'test-tip',
@@ -78,17 +67,8 @@ const dataDir = await mkdtemp(join(tmpdir(), 'yan-data-'))
 process.env.YAN_SESSIONS_DIR = dir
 process.env.YAN_DATA_DIR = dataDir
 
-// 必须在设置 env 之后 import（模块顶层读了这个变量）
 const { listSessions, deleteSession, readTitleSamples, restoreSession, SESSIONS_DIR } = await import('../out/main/sessions.js')
 
-/*
- * 回合分组的纯逻辑用 esbuild 现场编译。
- *
- * 为什么不用 out/main/*.js：`src/shared/turns.ts` 是共享层的模块，
- * 主进程的构建不会把它输出到 out/main（那是摇树后的产物，只有主进程
- * 真正 import 到的东西）。为了一个纯函数去改主进程的 import 图不值得 ——
- * 直接用项目里已有的 esbuild（vite 的依赖）转一下，几十毫秒。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/turns.ts'],
@@ -100,12 +80,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 回合计时口径（src/shared/turn-timing.ts）。
- *
- * 与 turns.ts 一样是共享层纯函数，主进程构建不会单独输出它；
- * 现场编译一份，避免测试依赖主进程的摇树结果（实施-11 H-1）。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/turn-timing.ts'],
@@ -117,12 +91,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 文件资源身份（src/shared/file-resource.ts，实施-11 H-4）。
- *
- * 主进程构建会把共享模块摇树进各自的产物，但这里是纯函数模块，
- * 现场编译一份，让测试盯住“标签身份”这一个语义。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/file-resource.ts'],
@@ -134,12 +102,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 人读时长（src/shared/duration.ts）。
- *
- * 回合页脚 / 图片进度 / 子代理列表共用它；同样是共享层纯函数，现场编译一份，
- * 不依赖主进程构建图（实施-11 H-7）。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/duration.ts'],
@@ -151,11 +113,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 回合计时元数据存储（src/main/turn-timing-store.ts）。
- *
- * 走 node 平台（真的写临时目录），不依赖主进程构建图（实施-11 H-6）。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/turn-timing-store.ts'],
@@ -167,14 +124,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 界面缩放的纯计算（src/main/zoom-math.ts）。
- *
- * 为什么不直接从 out/main/zoom-math.js import：它现在已经进了主进程
- * 构建入口（electron.vite.config.ts 的 input），但只要哪天有人把它
- * 从入口列表里删掉（它只被 zoom.ts import，而 zoom.ts 会被摇进 index.js），
- * 这个测试就会静默地找不到文件。现场编译一份不依赖构建图。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/zoom-math.ts'],
@@ -186,13 +135,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 流式增量推送（src/main/agent.ts）。
- *
- * 为什么不直接 import out/main/index.js：整个主进程入口会把 Electron 拉进来
- * （node 下跑不了）。而 AgentController 本身只依赖 node 内置与本地模块，
- * 所以单独 bundle 一份 —— 它的 handleEvent 是纯逻辑，不需要窗口、不需要 pi。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/agent.ts'],
@@ -200,11 +142,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     bundle: true,
     format: 'esm',
     platform: 'node',
-    /*
-     * MCP SDK 必须 external：它依赖 CJS 包（cross-spawn），内联进 ESM bundle
-     * 会把 `require` 变成 `Dynamic require ... is not supported`（04-S3 实测踩到）。
-     * 运行时不从项目 node_modules 解析，与主进程构建的 externalize 行为一致。
-     */
     external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
     plugins: [{ name: 'unit-electron-boundary', setup(builder) {
       builder.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'unit-electron' }))
@@ -230,13 +167,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * AI 文件产物与生图适配层。
- *
- * 这两个模块依赖 node fs / fetch，但不依赖 Electron；现场 bundle 让单测
- * 能在没有窗口、没有真实 API 请求的情况下钉住 manifest、SVG 清理、
- * provider 选择和受控目录边界。真实 Codex/API 调用另由本轮验收记录。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/artifacts.ts'],
@@ -257,7 +187,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
-/* 渲染端的代次守卫（纯逻辑）：现场编译一份，不依赖构建产物 */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/lib/latest-only.ts'],
@@ -271,7 +200,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 const { runLatestOnlyTests } = await import('./test-latest-only.mjs')
 await runLatestOnlyTests()
 
-/* 图片预览的本地保留（纯逻辑）：同样现场编译，不依赖构建产物 */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/keep-images.ts'],
@@ -282,7 +210,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
-/* 附件目录的占用 / 清理：跟文件系统打交道，用 node 平台编 */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/attachments.ts'],
@@ -295,7 +222,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runAttachmentTests } = await import('./test-attachments.mjs')
 const { runKeepImagesTests } = await import('./test-keep-images.mjs')
-/* 排队消息回填到输入框时的图片与上限（纯逻辑） */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/queue-images.ts'],
@@ -318,7 +244,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 const { runSameMessagesTests } = await import('./test-same-messages.mjs')
-/* 会话 JSONL 的读取：图片 base64 不能被体积截断（node 平台，要读真实文件） */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/session-reader.ts'],
@@ -353,7 +278,6 @@ const { runContextBackgroundUsageTests } = await import('./test-context-backgrou
 const { runResponseDetailTests } = await import('./test-response-detail.mjs')
 const { runSnapshotTests } = await import('./test-snapshots.mjs')
 
-/* 写入类工具的前后快照（diff 算法）。纯 node fs，现场编译一份。 */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/snapshots.ts'],
@@ -365,9 +289,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 链接路由（src/shared/links.ts）：纯函数，无依赖，单独 bundle。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/links.ts'],
@@ -379,10 +300,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 浏览器导航状态（H-9 第二阶段）：失败判定 / 草稿取舍 / 出错地址保留。
- * 纯函数，主进程与渲染端共用，所以从 shared 现场编译。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/browser-navigation.ts'],
@@ -394,10 +311,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 三类整理动作账本（实施-11 C-2b）：解析容错 + 分开累计，
- * 以及宿主侧真文件读取（含路径穿越判据）。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   Promise.all([
     build({
@@ -427,10 +340,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   ])
 )
 
-/*
- * 后台调用用量账：解析容错 + 命中率口径 + **跨端格式**（扩展写、宿主读）。
- * 两边的 kind 白名单与字段名是手抄的两份，漂移只有这个用例能发现。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   Promise.all([
     build({
@@ -452,9 +361,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   ])
 )
 
-/*
- * 工作窗口布局：按稳定会话身份隔离标签，不能把标题或 DOM 当作资源 id。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/workbench.ts'],
@@ -466,9 +372,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 短标题（U-3a/H-10a）：纯函数，不依赖 Electron。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/short-title.ts'],
@@ -480,9 +383,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 工具磁贴布局契约（U-0）：纯函数，不依赖 Electron。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/tool-layout.ts'],
@@ -494,9 +394,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 子代理累计 usage（H-10b）：纯函数，不依赖 Electron。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/subagent-usage.ts'],
@@ -508,9 +405,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 子代理运行归属（H-10a）：纯函数，不依赖 Electron。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/subagent-view.ts'],
@@ -522,9 +416,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 原生网页显隐协调（H-9a）：纯函数 + blocker 计数，不依赖 Electron。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/browser-visibility.ts'],
@@ -536,10 +427,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 文件引用（拖入的普通文件）的校验/授权/读取。
- * 这里不依赖 Electron，只是 node fs —— 单独 bundle 一份即可。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/file-refs.ts'],
@@ -551,11 +438,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-/*
- * 本机 Chrome profile 同步的纯逻辑（选 profile / 拼路径 / 逐项容错）。
- * 现场编译，理由同 turns.ts：这段逻辑只被 browser.ts import，
- * 主进程构建会把它摇进 index.js，不单独产出到 out/main。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/chrome-profile.ts'],
@@ -568,10 +450,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runChromeProfileTests } = await import('./test-chrome-profile.mjs')
 
-/*
- * 对话宽度钳取（src/shared/ipc.ts）。
- * ipc.ts 是纯类型/常量模块（无 electron / DOM 依赖），可以现场编译。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/ipc.ts'],
@@ -585,10 +463,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 const { runStreamWidthTests } = await import('./test-stream-width.mjs')
 const { runQuestionTests } = await import('./test-question.mjs')
 
-/*
- * 历史任务快照归并（src/main/todo-snapshots.ts）。
- * 纯函数（不碰 electron），现场编译一份测它 —— 不被主进程构建图影响。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/todo-snapshots.ts'],
@@ -605,10 +479,6 @@ const { runRepeatGuardTests } = await import('./test-repeat-guard.mjs')
 
 const { runGoalTests } = await import('./test-goal.mjs')
 
-/*
- * 任务计划的纯逻辑（实施-02 S2）：校验 / reducer / 幂等 / 历史解析。
- * 同一个模块也要给`yan` CLI 用，所以现场编译一份、不依赖构建图。
- */
 const taskPlan = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/task-plan.ts'],
@@ -621,11 +491,6 @@ const taskPlan = await import('../node_modules/esbuild/lib/main.js').then(({ bui
 )
 const { runTaskPlanTests } = await import('./test-task-plan.mjs')
 
-/*
- * 宿主任务服务（实施-02 S3）：真文件、真串行、真 CAS。
- * 与上面的纯逻辑分开测 —— 这一层的失败模式全在磁盘边上
- * （只追加 / 落盘失败不报成功 / 跨会话隔离），只用返回值验不出来。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/task-plan-store.ts'],
@@ -638,11 +503,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runTaskPlanStoreTests } = await import('./test-task-plan-store.mjs')
 
-/*
- * 项目知识的纯逻辑与存储层（实施-03 S2）：身份只认登记、CAS、原子 manifest、
- * 崩溃恢复、墓碑防复活、排他锁。两块都要现场编译：shared 的那份保持平台中立，
- * store 那份要真碰文件系统。
- */
 const projectMemory = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/project-memory.ts'],
@@ -665,7 +525,6 @@ const projectMemoryStore = await import('../node_modules/esbuild/lib/main.js').t
 )
 const { runProjectMemoryTests } = await import('./test-project-memory.mjs')
 
-/* 项目知识的检索纯逻辑（实施-03 S3）：无 IO，但入口单独编译，避免测试从源码 import。 */
 const projectMemorySearch = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/project-memory-search.ts'],
@@ -678,10 +537,6 @@ const projectMemorySearch = await import('../node_modules/esbuild/lib/main.js').
 )
 const { runProjectKnowledgeSearchTests } = await import('./test-project-memory-search.mjs')
 
-/*
- * 能力目录与技能服务（实施-04 S2）：shared 侧纯逻辑保持平台中立，
- * main 侧要真读 SKILL.md，所以两份分开编译。
- */
 const capabilityCatalogShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/capabilities.ts'],
@@ -714,9 +569,6 @@ const capabilityCatalogMain = await import('../node_modules/esbuild/lib/main.js'
 )
 const { runCapabilityCatalogTests } = await import('./test-capabilities.mjs')
 
-/*
- * 联网发现（实施-04 S5）：契约用 node:crypto 算指纹，所以两份都走 node 平台。
- */
 const discoveryShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/discovery.ts'],
@@ -739,10 +591,6 @@ const discoveryMain = await import('../node_modules/esbuild/lib/main.js').then((
 )
 const { runDiscoveryTests } = await import('./test-discovery.mjs')
 
-/*
- * 接入事务（实施-04 S6a）：契约是纯逻辑，服务要真读写受管目录。
- * 两份分开编译 —— 共享层带 node:crypto 的话渲染端就用不了它。
- */
 const acquisitionShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/acquisition.ts'],
@@ -841,10 +689,6 @@ const { runSkillSecurityTests } = await import('./test-skill-security.mjs')
 const { runPiPackageSchedulerTests } = await import('./test-pi-package-scheduler.mjs')
 const { runPiPackageSmokeTests } = await import('./test-pi-package-smoke.mjs')
 
-/*
- * MCP（实施-04 S3）：契约是纯逻辑；连接与工具服务要真起子进程（走官方 SDK）。
- * SDK 保持 external —— 真跑时从项目 node_modules 解析，不塞进 bundle。
- */
 const mcpShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/mcp.ts'],
@@ -889,10 +733,6 @@ const mcpToolService = await import('../node_modules/esbuild/lib/main.js').then(
 )
 const { runMcpTests } = await import('./test-mcp.mjs')
 
-/*
- * 远程 MCP 登记（实施-04 S6b-1）：契约是纯逻辑；登记服务要真写文件、
- * 默认 probe 还要真连 HTTP。SDK 保持 external（与连接管理器同一处置）。
- */
 const mcpRegistrationShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/mcp-registration.ts'],
@@ -916,7 +756,6 @@ const mcpRegistrationService = await import('../node_modules/esbuild/lib/main.js
 )
 const { runMcpRegistrationTests } = await import('./test-mcp-registration.mjs')
 
-/* 本地 MCP npm 包（实施-04 S6b-2）：固定 staging → bin 解析 → 真 stdio tools/list 冒烟。 */
 const mcpPackage = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/capabilities/mcp-package.ts'],
@@ -929,7 +768,6 @@ const mcpPackage = await import('../node_modules/esbuild/lib/main.js').then(({ b
   }).then(() => import('../out/test/mcp-package.mjs'))
 )
 const { runMcpPackageTests } = await import('./test-mcp-package.mjs')
-/* 项目知识视图层（实施-03 S5）：需复核是派生态，导出只含当前状态 */
 const projectKnowledgeView = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/project-knowledge-view.ts'],
@@ -942,10 +780,6 @@ const projectKnowledgeView = await import('../node_modules/esbuild/lib/main.js')
 )
 const { runProjectKnowledgeViewTests } = await import('./test-project-knowledge-view.mjs')
 
-/*
- * 扩展来源诊断（src/main/extensions-inventory.ts）：真实临时目录。
- * 它要能说清「用户扩展 / 砚薄层」各自是谁（实施-02 S1 的诊断出口）。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/extensions-inventory.ts'],
@@ -958,7 +792,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runExtensionInventoryTests } = await import('./test-extension-inventory.mjs')
 
-/* L03 子代理写入隔离 / 差异归档 / 干净主工作树合并。 */
 const subagentIsolation = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/subagent-isolation.ts'],
@@ -971,10 +804,6 @@ const subagentIsolation = await import('../node_modules/esbuild/lib/main.js').th
 )
 const { runSubagentIsolationTests } = await import('./test-subagent-isolation.mjs')
 
-/*
- * 子代理控制器的策略（src/main/subagents.ts，D1–D4）。
- * 注入假 RPC 与可控工作区，不 spawn 真 pi；只有退出清理那条用真 git。
- */
 const { SubagentController } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/subagents.ts'],
@@ -987,10 +816,6 @@ const { SubagentController } = await import('../node_modules/esbuild/lib/main.js
 )
 const { runSubagentControllerTests } = await import('./test-subagents.mjs')
 
-/*
- * 项目 id 派生与碰撞退路（src/main/project-id.ts，D14）。
- * 纯函数，不碰 settings 文件。
- */
 const projectId = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/project-id.ts'],
@@ -1003,10 +828,6 @@ const projectId = await import('../node_modules/esbuild/lib/main.js').then(({ bu
 )
 const { runProjectIdTests } = await import('./test-project-id.mjs')
 
-/*
- * 切项目时「该项目最近访问的会话」的选法（src/renderer/src/state/project-session.ts，N05）。
- * 渲染端模块，但它不 import React/zustand —— 只 import 类型 —— 所以能单独编译来测。
- */
 const projectSession = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/project-session.ts'],
@@ -1019,10 +840,6 @@ const projectSession = await import('../node_modules/esbuild/lib/main.js').then(
 )
 const { runProjectSessionTests } = await import('./test-project-session.mjs')
 
-/*
- * 队列快照的消费/回收规则（src/main/queue-items.ts，D9）。
- * 纯函数：判断“哪一条排队项已经被 pi 收走”，不碰进程与 IO。
- */
 const { runQueueItemsTests } = await import('./test-queue-items.mjs')
 const queueItems = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1035,11 +852,6 @@ const queueItems = await import('../node_modules/esbuild/lib/main.js').then(({ b
   }).then(() => import('../out/test/queue-items.mjs'))
 )
 
-/*
- * 运行实例注册表的策略（src/main/runners.ts，N12）。
- * 纯逻辑：用假 agent 验证「切会话不停任务」「忙碌实例不被顶掉」
- * 「到上限明确拒绝」这些策略，不需要起任何 pi 进程。
- */
 const { RunnerRegistry } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/runners.ts'],
@@ -1051,10 +863,6 @@ const { RunnerRegistry } = await import('../node_modules/esbuild/lib/main.js').t
   }).then(() => import('../out/test/runners.mjs'))
 )
 
-/*
- * 后台会话运行时缓存（src/renderer/src/state/session-runtime.ts）。
- * 这是与 DOM 无关的归并器，单测直接覆盖事件身份、增量和 generation 闸门。
- */
 const { rebindSessionRuntime, migrateSessionRuntime, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/session-runtime.ts'],
@@ -1066,7 +874,6 @@ const { rebindSessionRuntime, migrateSessionRuntime, reduceSessionRuntime, sessi
   }).then(() => import('../out/test/session-runtime.mjs'))
 )
 
-/* 渲染端推送的身份与归属判定（src/renderer/src/state/push-routing.ts），纯函数。 */
 const pushRouting = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/push-routing.ts'],
@@ -1078,7 +885,6 @@ const pushRouting = await import('../node_modules/esbuild/lib/main.js').then(({ 
   }).then(() => import('../out/test/push-routing.mjs'))
 )
 
-/* 项目/会话产品归属索引（src/main/session-layout.ts）。 */
 const sessionLayout = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/session-layout.ts'],
@@ -1090,7 +896,6 @@ const sessionLayout = await import('../node_modules/esbuild/lib/main.js').then((
   }).then(() => import('../out/test/session-layout.mjs'))
 )
 
-/* 退出时的运行实例元数据快照；不依赖 Electron，单独 bundle 验证落盘边界。 */
 const exitSnapshot = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/exit-snapshot.ts'],
@@ -1102,7 +907,7 @@ const exitSnapshot = await import('../node_modules/esbuild/lib/main.js').then(({
   }).then(() => import('../out/test/exit-snapshot.mjs'))
 )
 
-/* N18 命令注册表：来源分类、兼容项和同名命令策略。 */const commandRegistry = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+const commandRegistry = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/command-registry.ts'],
     outfile: 'out/test/command-registry.mjs',
@@ -1113,7 +918,6 @@ const exitSnapshot = await import('../node_modules/esbuild/lib/main.js').then(({
   }).then(() => import('../out/test/command-registry.mjs'))
 )
 
-/* `/subagent` 本地命令参数解析：前置/尾置只读开关必须走同一条安全路由。 */
 const subagentCommand = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/subagent-command.ts'],
@@ -1125,10 +929,6 @@ const subagentCommand = await import('../node_modules/esbuild/lib/main.js').then
   }).then(() => import('../out/test/subagent-command.mjs'))
 )
 
-/*
- * 工具卡来源判定（src/shared/tool-origin.ts，实施-02 S4）。
- * 纯函数，单独 bundle —— 它只回答「这条 bash 调用是不是 yan tasks apply」。
- */
 const toolOrigin = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/tool-origin.ts'],
@@ -1140,7 +940,6 @@ const toolOrigin = await import('../node_modules/esbuild/lib/main.js').then(({ b
   }).then(() => import('../out/test/tool-origin.mjs'))
 )
 
-/* N02 模型能力：不从模型名称猜测，区分已知 / 不支持 / 未知。 */
 const modelCapabilities = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/model-capabilities.ts'],
@@ -1152,7 +951,6 @@ const modelCapabilities = await import('../node_modules/esbuild/lib/main.js').th
   }).then(() => import('../out/test/model-capabilities.mjs'))
 )
 
-/* 构建信息：正式版本 / 构建版本的本地时间格式化。 */
 const buildInfo = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/build-info.ts'],
@@ -1164,7 +962,6 @@ const buildInfo = await import('../node_modules/esbuild/lib/main.js').then(({ bu
   }).then(() => import('../out/test/build-info.mjs'))
 )
 
-/* L04 网络边界：私网/IPv6/DNS rebinding 目标的纯逻辑。 */
 const networkPolicy = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/browser/network-policy.ts'],
@@ -1176,10 +973,6 @@ const networkPolicy = await import('../node_modules/esbuild/lib/main.js').then((
   }).then(() => import('../out/test/network-policy.mjs'))
 )
 
-/*
- * R04 手动标题落盘：读写都在 title.ts，但它同时装着会起 pi 进程的生成逻辑。
- * 单独 bundle 一份，只取 setManualTitle / manualTitles 两个入口 —— 不起进程。
- */
 const manualTitle = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/title.ts'],
@@ -1191,7 +984,6 @@ const manualTitle = await import('../node_modules/esbuild/lib/main.js').then(({ 
   }).then(() => import('../out/test/title.mjs'))
 )
 
-/* L04 网络边界判定：把「拦不拦」从 webRequest 回调里抽成了纯函数，单独编译。 */
 const networkBoundary = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/browser/network-boundary.ts'],
@@ -1203,7 +995,6 @@ const networkBoundary = await import('../node_modules/esbuild/lib/main.js').then
   }).then(() => import('../out/test/network-boundary.mjs'))
 )
 
-/* @ 文件引用补全：只编译纯函数，不把 React 组件拉进 Node 测试。 */
 const atQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/components/chat/at-query.ts'],
@@ -1216,10 +1007,6 @@ const atQuery = await import('../node_modules/esbuild/lib/main.js').then(({ buil
 )
 const { runAtQueryTests } = await import('./test-at-query.mjs')
 
-/*
- * N01 拖拽排序：顺序计算是纯函数（`src/shared/rail-order.ts`），
- * 与渲染组件分开编译 —— 真实指针行为交给 `test:live -- railreorder`。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/rail-order.ts'],
@@ -1232,7 +1019,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runRailOrderTests } = await import('./test-rail-order.mjs')
 
-/* 文件树与全项目文件名搜索：主进程只读 fs 模块，单独 bundle 以覆盖真实边界。 */
 const fileListing = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/files.ts'],
@@ -1245,7 +1031,6 @@ const fileListing = await import('../node_modules/esbuild/lib/main.js').then(({ 
 )
 const { runFileListingTests } = await import('./test-files.mjs')
 
-/* `/` 命令补全：光标范围与参数保留。 */
 const slashQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/components/chat/slash-query.ts'],
@@ -1258,7 +1043,7 @@ const slashQuery = await import('../node_modules/esbuild/lib/main.js').then(({ b
 )
 const { runSlashQueryTests } = await import('./test-slash-query.mjs')
 
-/* 能力列表响应的过期判定（sessionId 从 pending 过渡到 uuid 不该被判过期）。 */const capabilityRequest = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+const capabilityRequest = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/capability-request.ts'],
     outfile: 'out/test/capability-request.mjs',
@@ -1270,10 +1055,6 @@ const { runSlashQueryTests } = await import('./test-slash-query.mjs')
 )
 const { runCapabilityRequestTests } = await import('./test-capability-request.mjs')
 
-/*
- * N21-2 压缩可观测：事件归一化（src/main/compaction.ts）+ 文案映射
- *（src/renderer/src/state/compaction-view.ts）。两者都是纯函数。
- */
 const compactionEvents = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/compaction.ts'],
@@ -1295,7 +1076,6 @@ const compactionView = await import('../node_modules/esbuild/lib/main.js').then(
   }).then(() => import('../out/test/compaction-view.mjs'))
 )
 
-/* 主进程 stdio 护栏（EPIPE 事故的修复点）：纯逻辑，不依赖 Electron。 */
 const stdioGuard = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/stdio-guard.ts'],
@@ -1307,7 +1087,6 @@ const stdioGuard = await import('../node_modules/esbuild/lib/main.js').then(({ b
   }).then(() => import('../out/test/stdio-guard.mjs'))
 )
 
-/* 安卓远程管理层：HTTP/SSE 路由与认证边界，不启动 Electron 或 pi。 */
 const remoteServer = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/remote-server.ts'],
@@ -1319,7 +1098,6 @@ const remoteServer = await import('../node_modules/esbuild/lib/main.js').then(({
   }).then(() => import('../out/test/remote-server.mjs'))
 )
 const { runRemoteServerTests } = await import('./test-remote.mjs')
-/* 砚对砚：本次连接授权与项目范围门禁（设备表在临时目录，假数据） */
 const peerDeps = await import('../node_modules/esbuild/lib/main.js').then(async ({ build }) => {
   const out = {}
   for (const [entry, name] of [['src/main/remote-devices.ts', 'remote-devices'], ['src/main/peer-grants.ts', 'peer-grants']]) {
@@ -1330,10 +1108,6 @@ const peerDeps = await import('../node_modules/esbuild/lib/main.js').then(async 
 })
 const { runPeerTests } = await import('./test-peer.mjs')
 
-/*
- * N21-3 上下文策略：预算公式 + 触发决策在 shared（主进程与界面共用），
- * env 入口在主进程，阶段文案在渲染端。三块都是纯函数。
- */
 const contextPolicy = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/context-policy.ts'],
@@ -1365,11 +1139,6 @@ const contextView = await import('../node_modules/esbuild/lib/main.js').then(({ 
   }).then(() => import('../out/test/context-view.mjs'))
 )
 
-/*
- * Command Code 订阅额度的窗口解析（src/main/quota-commandcode.ts）。
- * 纯函数，但同一个响应里「已用」与「剩余」两种口径并存，极易搞反；
- * 用线上真实快照钉住「月度 = 总额度 − 剩余」这条换算。
- */
 const quotaCommandCode = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/quota-commandcode.ts'],
@@ -1381,7 +1150,6 @@ const quotaCommandCode = await import('../node_modules/esbuild/lib/main.js').the
   }).then(() => import('../out/test/quota-commandcode.mjs'))
 )
 
-/* 额度颜色分级（src/shared/quota-tone.ts）：渲染组件与单测用同一个函数，阈值不会漂。 */
 const quotaTone = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/quota-tone.ts'],
@@ -1393,13 +1161,6 @@ const quotaTone = await import('../node_modules/esbuild/lib/main.js').then(({ bu
   }).then(() => import('../out/test/quota-tone.mjs'))
 )
 
-/*
- * 历史消息编号（src/main/normalize.ts）。
- *
- * 盯住一个回归：Pi 0.87 起会把 system prompt 写进会话 JSONL，历史读回的
- * `m<idx>` 必须与实时视图同口径，否则回合计时锚点（`anchorId`）在重启后
- * 全部对不上（用时与「已中断」消失）。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/normalize.ts'],
@@ -1427,20 +1188,10 @@ console.log(`临时会话目录: ${dir}`)
 console.log(`模块用的目录: ${SESSIONS_DIR}`)
 ok(SESSIONS_DIR === dir, 'YAN_SESSIONS_DIR 生效（测试不会碰真实会话）')
 
-/*
- * 会话并发定向回归：同 cwd 冲突保护（主进程类）+ 渲染端身份 / 实时投影 / peek 竞态
- * + 切会话 stats 隔离。都只编译需要的模块，不启动 Electron / pi / 真实模型。
- * 三者是同一批修复，放在一起接线以免某条口径回退。
- */
 await runSessionConcurrencyConflictTests(ok)
 await runSessionConcurrencyFrontendTests(ok)
 await runSessionStatsIsolationTests(ok)
 
-/*
- * 本轮统一接线：并发发送守卫 / Command Code 额度展示 / 提问频率 / 常驻子代理区。
- * 四个脚本都已导出 run*(ok)，只现场编译或读临时 fixture，不启动 Electron / pi / 真实模型；
- * 导入不执行、不退出、不改 global。
- */
 await runSessionConcurrencySendGuardTests(ok)
 await runSessionConcurrencyFinalEdgesTests(ok)
 await runCommandCodeQuotaDisplayTests(ok)
@@ -1449,7 +1200,6 @@ await runQuestionFrequencySessionTests(ok)
 await runSubagentActiveVisibilityTests(ok)
 await runSubagentParentOwnershipTests(ok)
 
-/* 快照正文/归属、执行入场、代次恢复与账号额度的隔离回归，不调用模型。 */
 await runSessionSyncRaceTests(ok)
 await runHostOwnershipTests(ok)
 await runSnapshotIdentityTests(ok)
@@ -1462,7 +1212,6 @@ await mkdir(PROJECT, { recursive: true })
 
 const line = (o) => JSON.stringify(o) + '\n'
 
-/** 造一个会话文件 */
 async function makeSession(file, opts) {
   const p = join(PROJECT, file)
   let body = line({
@@ -1618,7 +1367,6 @@ ok(before === after || (before?.title === after?.title && before?.updatedAt === 
 
 console.log('\n--- 8. 删除的路径防护 ---')
 
-// 父子孙分支必须作为一棵树移动，并可完整撤销。
 const branchRoot = await makeSession('branch-root.jsonl', {
   id: 'branch-root', timestamp: new Date().toISOString(), cwd: 'C:\\branch', messages: ['root']
 })
@@ -1641,7 +1389,6 @@ ok(protectedRejected, '当前会话位于子树时拒绝删除父会话')
 const afterProtected = await listSessions()
 ok([branchRoot, branchChild, branchGrandchild].every((p) => afterProtected.some((s) => s.path === p)), '拒绝删除时不会移动任何分支文件')
 
-// 正常删除：先移入回收站，再允许本次运行内撤销
 const undoToken = await deleteSession(pPath)
 list = await listSessions()
 ok(!list.some((s) => s.id === 'ccc'), '删除后列表里没有了')
@@ -1649,7 +1396,6 @@ await restoreSession(undoToken)
 list = await listSessions()
 ok(list.some((s) => s.id === 'ccc'), '撤销后会话恢复到原路径')
 
-// 越界路径必须被拒
 let rejected = false
 try {
   await deleteSession(join(dir, '..', '..', 'evil.jsonl'))
@@ -1658,7 +1404,6 @@ try {
 }
 ok(rejected, '拒绝删除会话目录之外的文件')
 
-// 非 jsonl 必须被拒
 rejected = false
 try {
   await deleteSession(join(PROJECT, 'a.txt'))
@@ -1684,12 +1429,10 @@ ok(
 console.log('\n--- 10. 不存在的目录 ---')
 await rm(dir, { recursive: true, force: true })
 process.env.YAN_SESSIONS_DIR = join(dir, 'nope')
-// 模块常量已经定型，这里只能验证「已删除的目录」不会抛
 const empty = await listSessions()
 ok(Array.isArray(empty), '目录被删后仍返回数组', `${empty.length} 条`)
 
 
-// pi 定位（来源分类）——纯文件探测，不启 pi
 console.log('\n--- 11. pi 定位：来源分类 ---')
 const { resolvePi, bundledAvailable, piInfo, resetPiVersionCache } = await import('../out/main/protocol.js')
 
@@ -1697,20 +1440,17 @@ const piTmp = await mkdtemp(join(tmpdir(), 'yan-pi-'))
 const fakeCli = join(piTmp, 'fake-cli.js')
 await writeFile(fakeCli, '// stub\n', 'utf8')
 
-// 环境变量命中
 process.env.YAN_PI_BIN = fakeCli
 const envProbe = resolvePi()
 ok(envProbe.source === 'env', 'YAN_PI_BIN 命中时来源 = env', `source=${envProbe.source}`)
 ok(envProbe.args.includes(fakeCli), 'env 命中时参数指向该入口')
 
-// 设置项 override 优先于环境变量
 const ovProbe = resolvePi({ override: fakeCli })
 ok(ovProbe.source === 'override', 'piBin 优先于 YAN_PI_BIN', `source=${ovProbe.source}`)
 ok(ovProbe.home === undefined || typeof ovProbe.home === 'string', 'home 字段类型正确')
 
 delete process.env.YAN_PI_BIN
 
-// piInfo 透传来源（会跑一次 --version，stub 无输出 → 版本 undefined）
 resetPiVersionCache()
 const piInfoRes = await piInfo(fakeCli, { fresh: true })
 ok(piInfoRes.source === 'override', 'piInfo 透传来源', `source=${piInfoRes.source}`)
@@ -1720,64 +1460,50 @@ ok(typeof piInfoRes.bundledAvailable === 'boolean', 'piInfo.bundledAvailable 是
 await rm(piTmp, { recursive: true, force: true })
 
 
-// 回合分组 / 段落拆分 / 缓存命中率（纯函数，不启动 Electron）
 await runTurnTests(ok)
 await runTurnTimingTests(ok)
 await runDurationTests(ok)
 await runTurnTimingStoreTests(ok)
 
 
-// 界面缩放（纯函数：DPI 取整 / 夹取 / 梯子）
 await runZoomTests(ok)
 
 
-// 文件引用：路径校验 / 授权 / 文本读取截断（安全边界）
 await runFileRefTests(ok)
 
 
-// 链接路由：网页 / 文件 / 行号 / 危险协议（安全判断）
 await runLinkTests(ok)
 await runFileResourceTests(ok)
 
-// 本地文件 → file:// 地址（文件名里的 # ? % 与盘符，纯函数）
 const { runFileUrlTests } = await import('./test-file-url.mjs')
 await runFileUrlTests(ok)
 
-// 文件来源登记：按会话隔离的读写（localStorage 内存替身）
 const { runSourceFilesTests } = await import('./test-source-files.mjs')
 await runSourceFilesTests(ok)
 
-// 快速切会话：选择代次（渲染端 store + window.yan 桩）
 const { runSessionSwitchTests } = await import('./test-session-switch.mjs')
 await runSessionSwitchTests(ok)
 
 
-// 工作窗口状态：稳定会话身份 / 标签恢复 / 资源缺失回退
 await runWorkbenchTests(ok)
 
 
-// 原生网页显隐协调（H-9a）：四条件判定 + blocker 计数
 await runBrowserVisibilityTests(ok)
 
 
-// 浏览器导航状态（H-9b）：失败是否显示 / 草稿是否保留 / 出错地址保留
 await runBrowserNavigationTests(ok)
 
 
-// 三类整理动作账本（C-2b）：解析容错 / 两类分开累计 / 宿主读取判据
 await runContextActionTests(ok)
 await runContextBackgroundUsageTests(ok)
 
 
-// 子代理运行归属（H-10a）：attached/detached/foreign/unattributed
 await runSubagentViewTests(ok)
 
 
-// 子代理累计 usage（H-10b）：按消息 id 去重累计
 await runSubagentUsageTests(ok)
 
 
-// 工具磁贴布局契约（U-0）：迁移/归一/夹取/并发写
 await runToolLayoutTests(ok)
 await runKeepImagesTests(ok)
 await runQueueImageTests(ok)
@@ -1786,33 +1512,23 @@ await runAttachmentTests(ok)
 await runSessionImageTests(ok)
 
 
-// 短标题（U-3a/H-10a）：字素截断
 await runShortTitleTests(ok)
 
 
-// 回复详细程度扩展：三档注入 / standard 不注入 / 脏值回落
 await runResponseDetailTests(ok)
 
 
-// 写入类工具的前后快照与行级差异（安全证据）
 await runSnapshotTests(ok)
 
 
-// 本机 Chrome profile 同步（合成目录，不碰真实 profile）
 await runChromeProfileTests(ok)
 
 
-// 对话宽度钳取（纯函数）
 await runStreamWidthTests(ok)
 
 
-// 内置提问扩展（不启动 pi：import 后喂假 pi API）
 await runQuestionTests(ok)
 
-/*
- * 工作模式（实施-05 S2）：契约纯逻辑 + 会话级存储。
- * 两份分开编译：shared 那份是跨进程契约（可给 CLI 用），main 那份碰真文件。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/work-mode.ts'],
@@ -1835,10 +1551,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 await runWorkModeTests(ok)
 
-/*
- * 目标与计划就绪（实施-05 S3）：契约纯逻辑 + 会话级存储（幂等 / 先落盘）。
- * 与工作模式同样分两份编译：shared 那份是跨进程契约，main 那份碰真文件。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/goal.ts'],
@@ -1872,10 +1584,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 await runRepeatGuardTests(ok)
 await runGoalTests(ok)
 
-/*
- * 会话链（实施-05 S5b）：后台多段、前端一条。
- * 键归一化要与 `work-mode-service` 交叉校验，所以两份都要编出来。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/session-chain.ts'],
@@ -1898,10 +1606,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runSessionChainTests } = await import('./test-session-chain.mjs')
 await runSessionChainTests(ok, await import('../out/test/work-mode-service.mjs'))
-/*
- * 链感知历史（实施-05 S5b-4）：按段从旧到新拼接、缺段如实计数、没有链就是单文件。
- * 真实 JSONL + 真目录 —— 拼接逻辑不能靠 mock 验。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/session-history.ts'],
@@ -1919,7 +1623,6 @@ await runSessionHistoryTests(
   await import('../out/test/session-chain-service.mjs')
 )
 
-// Error presentation is shared by live replies, stored history and subagents.
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({ entryPoints: ['src/shared/model-errors.ts'], outfile: 'out/test/model-errors.mjs',
     bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
@@ -1946,10 +1649,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 const { runKeepRunningTests } = await import('./test-keep-running.mjs')
 await runKeepRunningTests(ok)
 
-/*
- * 跨会话交接的计数与契约（实施-05 S5a）：与目标状态同样分两份编译 ——
- * shared 那份是契约与纯逻辑，main 那份碰真文件（幂等 / 重启不归零）。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/handoff.ts'],
@@ -1975,14 +1674,8 @@ await runHandoffHostRegressionTests(ok)
 const { runHandoffTests } = await import('./test-handoff.mjs')
 await runHandoffTests(ok)
 await (await import('./test-handoff-context.mjs')).runHandoffContextTests(ok)
-/*
- * 交接包生成（实施-05 S5b-2）：请求 / 结果契约、模型输出解析、真目录上的文件交换、
- * 以及「请求 → 结果 → 解析 → 清洗 → 落盘」的全链路（不调模型）。
- * 顺带把薄层的 `safeKey()` 拿来做交叉校验 —— 两侧文件名规则不一致是静默失效。
- */
 const { runHandoffRequestTests } = await import('./test-handoff-request.mjs')
 await runHandoffRequestTests(ok, await import('../out/test/handoff.mjs'), await import('../out/test/handoff-service.mjs'))
-/* 交接事务（实施-05 S5b-3a）：阶段顺序 / 幂等 / 崩溃恢复 / 事务日志 */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/handoff-transaction.ts'],
@@ -2010,11 +1703,6 @@ await runHandoffTransactionTests(
   await import('../out/test/handoff-transaction-service.mjs'),
   await import('../out/test/handoff.mjs')
 )
-/*
- * 交接续接消息与消费证据 + 执行器（实施-05 S5b-3b）：
- * 标记与正文、以及「先停源 → 建目的 → 写链 → 发 resume → 证据」的全顺序与失败路径。
- * 执行器只靠注入的假依赖，不碰真 agent / runners。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/handoff-resume.ts'],
@@ -2049,11 +1737,6 @@ await runHandoffRunnerTests(
   await import('../out/test/session-chain-service.mjs'),
   await import('../out/test/handoff.mjs')
 )
-/*
- * 交接 / 目标续接的阶段诊断（实施-14 F0）：脱敏与有界落盘。
- * 分两份编译：shared 那份管「什么能写进日志」（凭证与提示词全文不能），
- * main 那份管「写不写得坏」（坏行跳过 / 超限重写 / 失败不抛）。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/handoff-diagnostics.ts'],
@@ -2080,10 +1763,6 @@ await runHandoffDiagnosticsTests(
   await import('../out/test/handoff-diagnostics.mjs'),
   await import('../out/test/handoff-diagnostics-main.mjs')
 )
-/*
- * 单一调度与操作所有权（实施-14 F2 / H1+H2）：纯函数，但正是现场那两类
- * 故障（一边交接一边续跑、旧 timeout 清新操作）的判定点。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/handoff-schedule.ts'],
@@ -2096,11 +1775,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runHandoffScheduleTests } = await import('./test-handoff-schedule.mjs')
 await runHandoffScheduleTests(ok, await import('../out/test/handoff-schedule.mjs'))
-/*
- * 交接状态一行提示（实施-14 F5）：窗口边界与优先级。
- * 判松会让每轮都显示“正在整理”，判紧就回到用户报的“没有提示”。
- * 同时验「提示只属于它自己那条会话」（F8）：拿事件筛器与判定串起来跑。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/handoff-notice.ts'],
@@ -2152,22 +1826,14 @@ await runExtensionInventoryTests(ok)
 
 await runSubagentIsolationTests(ok, subagentIsolation)
 
-/* 子代理控制器：并发槽位、上下文代次、只读白名单、退出清理（D1–D4）。 */
 await runSubagentControllerTests(ok, SubagentController)
 
-/* 项目 id 派生：同前缀目录不能共用一个 id（D14）。 */
 runProjectIdTests(ok, projectId)
 
-/* 切项目选哪条会话：选错就会新建会话、把用户草稿弄丢（N05）。 */
 runProjectSessionTests(ok, projectSession)
 
-/* 队列快照的消费与回收：被接收的插话不能一直挂着“排队中”（D9）。 */
 runQueueItemsTests(ok, queueItems)
 
-/*
- * shell / 第三方工具的目录级改动归属（L05）：
- * 同大小不同内容、touch 不算改动、并发不认领、大文件不编造行数。
- */
 const workspaceChanges = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/snapshots.ts'],
@@ -2181,9 +1847,6 @@ const workspaceChanges = await import('../node_modules/esbuild/lib/main.js').the
 const { runWorkspaceChangesTests } = await import('./test-workspace-changes.mjs')
 runWorkspaceChangesTests(ok, workspaceChanges)
 
-/*
- * 运行实例注册表（N12）：切换不停任务、忙碌实例不被牺牲、并发上限。
- */
 {
   const { runRunnerTests } = await import('./test-runners.mjs')
   await runRunnerTests(ok, RunnerRegistry)
@@ -2287,13 +1950,11 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 }
 
 {
-  /* 隐藏页面：请求层按解析地址拦 + 超时后真的停轮询（electron / dns 都换桩） */
   const { runHiddenPageTests } = await import('./test-hidden-page.mjs')
   await runHiddenPageTests(ok)
 }
 
 runAtQueryTests(ok, atQuery)
-/* Command Code 额度口径（月度是「剩余」不是「已用」）+ 颜色分级边界 */
 {
   const { runQuotaCommandCodeTests, runQuotaToneTests } = await import('./test-quota.mjs')
   runQuotaCommandCodeTests(ok, quotaCommandCode)
@@ -2304,27 +1965,18 @@ await runRailOrderTests(ok)
 runCapabilityRequestTests(ok, capabilityRequest)
 await runFileListingTests(ok, fileListing)
 
-// 模型接入：provider 名映射（假 pi 探针，不碰真实 auth.json）
 const { runCredentialsTests } = await import('./test-credentials.mjs')
 await runCredentialsTests(ok)
 
-// 设置的落盘语义：写盘失败要如实报错（隔离目录 + electron 桩）
 const { runSettingsStoreTests } = await import('./test-settings-store.mjs')
 await runSettingsStoreTests(ok)
 
-// 应用内登录 ChatGPT 订阅（electron/fetch 都换成桩，不联网不开浏览器）
 const { runOAuthTests } = await import('./test-oauth.mjs')
 await runOAuthTests(ok)
 
-// 流式增量推送协议（textDelta / thinkingDelta / outputDelta）
 const { runStreamDeltasTests } = await import('./test-stream-deltas.mjs')
 await runStreamDeltasTests(ok)
 
-/*
- * N11 标题样本次序：先 bundle 一份 shared/title-samples.ts 再断言。
- * 与上下文策略同样的理由 —— shared 层不进主进程构建图时，
- * out/ 里可能根本没有这个模块。
- */
 const titleSampleMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/title-samples.ts'],
@@ -2338,29 +1990,20 @@ const titleSampleMod = await import('../node_modules/esbuild/lib/main.js').then(
 const { runTitleSampleTests } = await import('./test-title-samples.mjs')
 runTitleSampleTests(ok, titleSampleMod)
 
-// N21-2：压缩事件归一化 + 文案映射
 const { runCompactionStatusTests } = await import('./test-compaction-status.mjs')
 runCompactionStatusTests(ok, compactionEvents, compactionView)
 
-// 主进程 stdio 护栏：EPIPE 只记录、非 EPIPE 只上报、绝不 rethrow
 const { runStdioGuardTests } = await import('./test-stdio-guard.mjs')
 runStdioGuardTests(ok, stdioGuard)
 
-// 安卓远程管理层：HTTP/SSE 路由与认证边界
 await runRemoteServerTests(ok, remoteServer)
 await runPeerTests(ok, { ...remoteServer, ...peerDeps })
-/* 设备表存储语义：并发配对只出一个令牌、写盘失败可恢复、撤销失败不回退内存 */
 const { runRemoteDeviceTests } = await import('./test-remote-devices.mjs')
 await runRemoteDeviceTests(ok, peerDeps)
 
-// N21-3：工作集预算 / 触发决策 / 阶段文案
 const { runContextPolicyTests } = await import('./test-context-policy.mjs')
 runContextPolicyTests(ok, contextPolicy, contextPolicyEnv, contextView)
 
-/*
- * 上下文预算 V1：同源算法边界 + 最终 provider hook 的 fail-closed 入口。
- * 隔离数据目录由本文件顶部的 YAN_DATA_DIR 指向临时目录；不接真实 provider。
- */
 const contextBudgetV1 = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/context-budget-v1.ts'],
@@ -2372,23 +2015,10 @@ const contextBudgetV1 = await import('../node_modules/esbuild/lib/main.js').then
   }).then(() => import('../out/test/context-budget-v1.mjs'))
 )
 
-/*
- * 界面语言扩展（resources/pi-extensions/language.js）。
- *
- * 它是**待分发的源码**（随包进 resources/pi-extensions），不是要构建的 src ——
- * 所以直接 import 那个 .js 文件；但它是 ESM + 顶层 `import node:fs`，
- * 因此在包内可以直接被 Node 加载（不在 isolated 环境也不依赖 Electron）。
- */
 const languageExtension = await import('../resources/pi-extensions/language.js')
 const { runLanguageExtensionTests } = await import('./test-language-extension.mjs')
 await runLanguageExtensionTests(ok, languageExtension)
 
-/*
- * 系统提示开场白扩展（resources/pi-extensions/preamble.js）。
- *
- * 它与语言扩展同属「改系统提示文本」的薄层，但职责不同：语言是每轮追加，
- * 开场白是定点替换（且与界面语言无关）。
- */
 const preambleExtension = await import('../resources/pi-extensions/preamble.js')
 const { runPreambleExtensionTests } = await import('./test-preamble-extension.mjs')
 await runPreambleExtensionTests(ok, preambleExtension)
@@ -2403,17 +2033,6 @@ await runPreambleExtensionTests(ok, preambleExtension)
 const { runAppUpdateTests } = await import('./test-app-update.mjs')
 await runAppUpdateTests(ok)
 
-/*
- * N21-4 / S1：State 与 Archive 基础设施。
- *
- * 三块都要**现场编译**：
- *   · `shared/context-state.ts` —— schema 与校验（纯逻辑，主进程/扩展共用）；
- *   · `main/context-watermark.ts` —— 从原始会话文件读条目身份与水位；
- *   · `main/context-state-store.ts` —— 原子写 / 安全丢弃 / 会话清理。
- * 前两块在 electron-vite 的构建图里**不是**独立入口（只被主进程入口
- * import 后摇进 index.js），所以不能靠 out/main 里的文件；store 虽然
- * 会作为额外入口构建，这里仍然自己编译一份，避免测试依赖构建产物。
- */
 const contextStateSchema = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/context-state.ts'],
@@ -2451,14 +2070,6 @@ await runContextStateTests(ok, {
   store: contextStateStore
 })
 
-/*
- * 实施-01 S5 / 06 出口③：归档回读已迁到宿主（`yan context recall`）。
- *
- * 这组断言的上一版写在上面的薄层测试里（直接调扩展注册的模型工具）。薄层不再
- * 注册任何模型工具之后，同一批能力边界（原文来源、预算拒绝、账本、审计、身份）
- * 必须由宿主的实现来承担 —— 所以它跟 context-state-store 打包在一起跑，
- * 而不是留在扩展侧。真实链路（模型经 CLI 取回）由 live 场景取。
- */
 const contextRecall = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/context-recall.ts'],
@@ -2475,7 +2086,6 @@ await runContextRecallTests(ok, { recall: contextRecall, store: contextStateStor
 const { runContextArchiveFindTests } = await import('./test-context-budget-rolling.mjs')
 await runContextArchiveFindTests(ok, { recall: contextRecall })
 
-/* 会话后台工作调度服务：串行链、优先级、自动继续退避与撤销（假依赖驱动） */
 const sessionWorkScheduler = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/session-work-scheduler.ts'],
@@ -2489,10 +2099,6 @@ const sessionWorkScheduler = await import('../node_modules/esbuild/lib/main.js')
 const { runSessionWorkSchedulerTests } = await import('./test-session-work-scheduler.mjs')
 await runSessionWorkSchedulerTests(ok, sessionWorkScheduler)
 
-/*
- * IPC 错误剥壳（src/shared/ipc-error.ts）：`piCall` 与渲染端直接 catch 的
- * 调用点共用同一套规则，它的输出就是用户看到的提示条文案。
- */
 const ipcError = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/ipc-error.ts'],
@@ -2506,11 +2112,6 @@ const ipcError = await import('../node_modules/esbuild/lib/main.js').then(({ bui
 const { runIpcErrorTests } = await import('./test-ipc-error.mjs')
 await runIpcErrorTests(ok, ipcError)
 
-/*
- * 「兼容搜索能力」判定（src/shared/web-search.ts，实施-07 S4）：来源菜单里那枚
- * 搜索入口只在命中时出现 —— 判松了会出现假能力（内置的 knowledge.search 就是最近的一条），
- * 判紧了功能永远不可达。纯函数，不连任何服务。
- */
 const webSearch = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/web-search.ts'],
@@ -2524,10 +2125,6 @@ const webSearch = await import('../node_modules/esbuild/lib/main.js').then(({ bu
 const { runWebSearchTests } = await import('./test-web-search.mjs')
 await runWebSearchTests(ok, webSearch)
 
-/*
- * 会话地图纯逻辑（src/shared/session-map.ts，实施-18 S1）：泳道 / 深度 / 边 /
- * 折叠 / 孤儿与环防御。同样现场编译，不依赖主进程的摇树结果。
- */
 const sessionMap = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/session-map.ts'],
@@ -2541,10 +2138,6 @@ const sessionMap = await import('../node_modules/esbuild/lib/main.js').then(({ b
 const { runSessionMapTests } = await import('./test-session-map.mjs')
 await runSessionMapTests(ok, sessionMap)
 
-/*
- * 额度摘要派生（src/shared/quota-mini.ts，实施-20 U2）：金额 / 窗口选择 / 百分比。
- * 断言的是「摘要与明细同源」—— 同一次除法、只有小数位渲染不同。
- */
 const quotaMini = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/quota-mini.ts'],
@@ -2558,10 +2151,6 @@ const quotaMini = await import('../node_modules/esbuild/lib/main.js').then(({ bu
 const { runQuotaMiniTests } = await import('./test-quota-mini.mjs')
 await runQuotaMiniTests(ok, quotaMini)
 
-/*
- * 额度刷新调度（src/shared/quota-refresh.ts，实施-20 U3）：用假时钟覆
- * 首次 / 周期 / 焦点 / 重置点 / 并发 / 不支持 / 切 provider 的决策。
- */
 const quotaRefresh = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/quota-refresh.ts'],
@@ -2575,10 +2164,6 @@ const quotaRefresh = await import('../node_modules/esbuild/lib/main.js').then(({
 const { runQuotaRefreshTests } = await import('./test-quota-refresh.mjs')
 await runQuotaRefreshTests(ok, quotaRefresh)
 
-/*
- * 运行阶段投影（src/shared/run-progress.ts，实施-21 P1）：多轮工具循环、
- * 终态优先、无可见 thinking 不报推理、长耗时阈值。
- */
 const runProgress = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/run-progress.ts'],
@@ -2592,10 +2177,6 @@ const runProgress = await import('../node_modules/esbuild/lib/main.js').then(({ 
 const { runRunProgressTests } = await import('./test-run-progress.mjs')
 await runRunProgressTests(ok, runProgress)
 
-/*
- * 自定义 API 服务（src/shared/custom-provider.ts，实施-23 M1）：校验、合并、
- * 密钥不回明文、保留用户手工条目。
- */
 const customProvider = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/custom-provider.ts'],
@@ -2609,12 +2190,6 @@ const customProvider = await import('../node_modules/esbuild/lib/main.js').then(
 const { runCustomProviderTests } = await import('./test-custom-provider.mjs')
 await runCustomProviderTests(ok, customProvider)
 
-/*
- * 工作树 Fork 的路径重绑定（src/shared/fork-rebind.ts，实施-07 S2b-3）：把源会话的文件引用
- * 拿到**工作树的仓库根**下重新解析并验证存在性。纯函数（文件系统由调用方注入）——
- * 这里必须钉住的是「`outside` 与 `missing` 不能混」、「`..` 与仓库外绝对路径不迁」、
- * 「Windows 大小写/分隔符差异不能当成“文件没了”」这三件容易写错的事。
- */
 const forkRebind = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/fork-rebind.ts'],
@@ -2628,11 +2203,6 @@ const forkRebind = await import('../node_modules/esbuild/lib/main.js').then(({ b
 const { runForkRebindTests } = await import('./test-fork-rebind.mjs')
 await runForkRebindTests(ok, forkRebind)
 
-/*
- * Fork 的语义注入正文（src/shared/fork-context.ts，实施-07 S2b-4）：新会话拿到的
- * 那段「接手必须知道的」。环境派生状态只能来自传入的 `env`，没有交接包时不许编造 ——
- * 这两条错了都不会报错，只会让新会话误解自己的处境。
- */
 const forkContextMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/fork-context.ts'],
@@ -2646,10 +2216,6 @@ const forkContextMod = await import('../node_modules/esbuild/lib/main.js').then(
 const { runForkContextTests } = await import('./test-fork-context.mjs')
 await runForkContextTests(ok, forkContextMod)
 
-/*
- * Git 状态的纯解析（src/shared/git.ts）：`git status` 的 NUL 分隔输出、rename 路径与托管网页地址。
- * 平台用 neutral —— 这个模块**不依赖 node 内置**（渲染端也要 import 它）。
- */
 const gitState = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/git.ts'],
@@ -2663,10 +2229,6 @@ const gitState = await import('../node_modules/esbuild/lib/main.js').then(({ bui
 const { runGitStateTests } = await import('./test-git-state.mjs')
 await runGitStateTests(ok, gitState)
 
-/*
- * Git **写操作**的纯逻辑（src/shared/git-actions.ts）：失败分类、输入校验、
- * 版本摘要、命令构造。真跑 git 的部分在 test-git-repo.mjs。
- */
 const gitActions = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/git-actions.ts'],
@@ -2680,11 +2242,6 @@ const gitActions = await import('../node_modules/esbuild/lib/main.js').then(({ b
 const { runGitActionTests } = await import('./test-git-actions.mjs')
 await runGitActionTests(ok)
 
-/*
- * Git 状态和写操作的**真实仓库**验证：数据层与真 git 的接口（临时目录、不碰用户数据）。
- * 与上面的纯解析测试是两层：那边验“我写的解析对不对”，这边验
- * “git 真的是这样输出的吗”，以及最要紧的“只读查询不会改暂存区”。
- */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   Promise.all([
     build({
@@ -2800,13 +2357,6 @@ console.log('\n--- G3. PR 状态（纯解析 + 一次真实 API）---')
 await runHostingTests(ok)
 await runGitRepoTests(ok)
 
-/*
- * 宿主能力服务（docs/plan/实施-01-默认pi架构迁移.md 的 S2）：身份校验与结果管道。
- *
- * 为什么用真实 HTTP 而不是 mock：这一片的出口就是「管道能跑」——
- * 端点、token、身份比对、结果落文件，任何一环断了都算没做完；
- * mock 掉就正好把要验的东西绕过去了。
- */
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
   await build({
@@ -2882,7 +2432,6 @@ await runGitRepoTests(ok)
     JSON.stringify(subagentRegistered.body)
   )
 
-  /* 项目知识（实施-03 S4）：登记面至少要认这三个动作 */
   for (const command of ['knowledge.search', 'knowledge.read', 'knowledge.propose']) {
     const res = await call({ ...me, command })
     ok(
@@ -2902,12 +2451,6 @@ await runGitRepoTests(ok)
   await rm(opsDir, { recursive: true, force: true })
 }
 
-/*
- * `yan` 启动器（src/main/yan-cli.ts）。
- *
- * 这几条断言的都是「打包后会出事的点」：用错运行时（用户的 node）、
- * 指错脚本（开发态的路径带进包里）、或者找不到 CLI 时默默生成一个坏启动器。
- */
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
   await build({
@@ -2944,15 +2487,6 @@ await runGitRepoTests(ok)
   })
   ok(missing === null, 'yan 启动器：找不到 CLI 时返回 null，不静默生成坏启动器')
 
-  /*
-   * ⚠️ 真跑一次随包 CLI，而不是只读它的文本。
-   *
-   * S3 那一轮只断言了启动器**文件内容**包含 ELECTRON_RUN_AS_NODE=1、
-   * 指向 yan.mjs —— 结果 help 文案里多了一对反引号（模板字符串里嵌
-   * 反引号），整个 CLI 直接语法错误，直到 cost 1 的 taskcli 才暴露：
-   * 模型看到的是 Node 的 ESM 报错堆栈，而单测全绿。
-   * 一条 `node --check` + 一次 `--help` 就能把这类错挡在门槛里。
-   */
   const { spawnSync } = await import('node:child_process')
   const syntax = spawnSync(process.execPath, ['--check', 'resources/yan-cli/yan.mjs'], { encoding: 'utf8' })
   ok(syntax.status === 0, 'yan CLI：语法可解析（node --check）', (syntax.stderr ?? '').split('\n')[0])
@@ -2967,12 +2501,6 @@ await runGitRepoTests(ok)
   const subagentHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'subagent', '--help'], { encoding: 'utf8' })
   ok(subagentHelp.status === 0 && /start/.test(subagentHelp.stdout ?? ''), 'yan CLI：子代理分组帮助可按需读取')
   const capabilityHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'capabilities', '--help'], { encoding: 'utf8' })
-  /*
-   * 能力接入的安全语义随技能接入改版落到「内容审查 + 限时批准面板」：旧 help 里的
-   * staging / --retry 文案已退役，但**安全语义仍要能被模型读到**（审查、只能用户批准、
-   * 可疑注入 fail-closed）。参数级 SRI / staging / retry 断言在 scripts/test-acquisition.mjs，
-   * 这里只钉住模型-facing 的帮助契约。
-   */
   ok(
     capabilityHelp.status === 0 &&
       /内容审查/.test(capabilityHelp.stdout ?? '') &&
@@ -2996,18 +2524,6 @@ await runGitRepoTests(ok)
   await rm(binDir, { recursive: true, force: true })
 }
 
-/*
- * 实施-02 S5：**证据链的前提**也要有防线。
- *
- * 这一片的证据全建在几份「看着不重要」的文件上，它们被删/被改之后
- * **没有任何测试会报错**（只会静默地少报几条）：
- *   · `scripts/fixtures/task-ext/notes-panel.ts` —— 少了它，taskext 退化成
- *     「只有一个扩展」，而场景仍全绿；
- *   · `CASES.taskplan` —— 少了它，S5 的真实多步任务证据就没了；
- *   · `electron-builder.yml` 的 `resources/yan-cli` —— 少了它，装出来的应用里
- *     模型敲 `yan` 只会得到「不是内部或外部命令」，而开发态一切照旧。
- * 所以在这里钉住「它们还在、而且还是它们该有的样子」。
- */
 {
   const { existsSync, readFileSync } = await import('node:fs')
 
@@ -3016,11 +2532,6 @@ await runGitRepoTests(ok)
   ok(existsSync('scripts/fixtures/task-ext/left-info-panel.ts'), 'S5 fixture：旧任务扩展还在')
   ok(notesText.length > 0, 'S5 fixture：无关扩展（notes-panel.ts）还在')
   ok(/registerCommand\('notes'/.test(notesText), 'S5 fixture：无关扩展真的注册了自己的 /notes 命令')
-  /*
-   * 用 “有没有写 custom entry” 当判据，而不是搜 `left-panel-tasks` 这个名字：
-   * fixture 的**注释**里就会出现那个词（它正是在解释「不能碰它」），
-   * 搜字符串会把这个 fixture 自己的说明文字当成违规。
-   */
   ok(
     !/appendEntry/.test(notesText),
     'S5 fixture：无关扩展不写任何 custom entry（否则它就不是「无关」了）'
@@ -3037,13 +2548,6 @@ await runGitRepoTests(ok)
   ok(/from: resources\/pi-extensions[\s\S]*to: yan-thin/.test(builder), '打包：砚薄层与 pi 用户扩展目录分离')
 }
 
-/*
- * 能力入口说明扩展（01-S3）。
- *
- * 这里锁的是**内容约定**而不是措辞：说明里必须同时有「怎么查用法」
- * 与「结果是摘要 + 文件，别整份读进上下文」—— 后者决定了 CLI 路线
- * 到底省不省 token；只要有一句就够了，多的不要。
- */
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
   await build({
@@ -3097,10 +2601,6 @@ await runGitRepoTests(ok)
   ok(second === undefined, '能力说明：幂等，已注入后不再重复追加')
 }
 
-/*
- * 高危操作确认的判定（resources/pi-extensions/danger-guard.js）：
- * 命中要问、日常命令不能误伤。只测纯判定，确认框在宿主。
- */
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
   await build({
@@ -3116,7 +2616,6 @@ await runGitRepoTests(ok)
   runDangerGuardTests(ok, dangerGuard)
 }
 
-/* 会话正文检索（切换器）：哪些文字进索引、怎么匹配 */
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
   await build({
@@ -3132,15 +2631,6 @@ await runGitRepoTests(ok)
   runSessionSearchTests(ok, searchText)
 }
 
-/*
- * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点
- * （如 Settings.tsx 的 `<div className="ui-row-desc">{t('…')}</div>`），
- * 没有 markdown 渲染。所以文案里写 `**正在运行**` 就会把星号原样画到
- * 界面上 —— set.toolDetailDesc 就是这么错的（已在截图里看到）。
- *
- * 这里只拦最容易被误用的加粗记号；要真的支持 markdown 时，
- * 把这条改成“该键允许 markdown”的名单。
- */
 {
   const { readFileSync } = await import('node:fs')
   const bad = []
@@ -3152,10 +2642,6 @@ await runGitRepoTests(ok)
   }
   ok(bad.length === 0, 'i18n 文案不含 markdown 加粗记号', bad.join(', '))
 
-  /*
-   * 新增的界面文案必须**两套都在**，且占位符一致：
-   * 漏了中文只会在界面里显示 key 名或丢掉变量，而两边跑起来都不报错。
-   */
   const zhJson = JSON.parse(readFileSync('src/renderer/src/i18n/zh-CN.json', 'utf8'))
   const enJson = JSON.parse(readFileSync('src/renderer/src/i18n/en-US.json', 'utf8'))
   const missingIso = ['rail.isolationWaiting', 'rail.isolationBlocked'].filter((k) => !zhJson[k] || !enJson[k])
@@ -3168,13 +2654,6 @@ await runGitRepoTests(ok)
   )
 }
 
-/*
- * 宿主提问的等待时间口径（src/shared/ui-timeout.ts）。
- *
- * 默认 3 分钟、面板上点一下 +2 分钟、延长后剩余封顶 30 分钟。同一个数被四处读
- *（主进程默认值 / 主进程延长 / 渲染端倒计时 / `yan question ask` 帮助），
- * 漂移不会报错，只会变成「面板说 3 分钟但 2 分钟就超时」这类难查的错。
- */
 {
   await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     build({
@@ -3190,18 +2669,6 @@ await runGitRepoTests(ok)
   await runUiTimeoutTests(ok)
 }
 
-/*
- * 实施-01 S4b/S5：`yan browser` CLI + 薄层不再注册任何东西。
- *
- * 四条一起看才站得住（缺一条就是“命令已接通但会报错”那一类）：
- *   ① `browser.js` **空壳扩展已删除** —— 01-S5 收尾时把那个「什么都不注册」的
- *      文件从随包薄层移除（它只是 pi 的加载占位，对能力零贡献），能力全部走 CLI；
- *   ② `browser.*` 真的登在 `KNOWN_COMMANDS` 里（且 `browser.evaluate` **有意不在**）；
- *   ③ `yan browser --help` 真能跑（S3 那次 yan.mjs 语法错只被 cost 1 场景抳到）；
- *   ④ 拼错子命令 / 漏参数给可读 JSON + 用法退出码，不是 Node 堆栈。
- *
- * ②——④ 都能在无 Electron、无 session 的情况下验完：本地校验刻意放在身份检查之前。
- */
 {
   const { spawnSync } = await import('node:child_process')
   const { readFile } = await import('node:fs/promises')
@@ -3210,14 +2677,9 @@ await runGitRepoTests(ok)
 
   console.log('\n--- 01-S4b 浏览器 CLI ---')
 
-  /* ① 空壳扩展已随 01-S5 收尾移除（能力在 yan browser CLI 里，见 ②—④） */
   const shellExt = new URL('../resources/pi-extensions/browser.js', import.meta.url)
   ok(!existsSync(shellExt), 'browser.js 空壳扩展已从随包薄层移除')
 
-  /*
-   * ①b 宿主文案不再点名旧工具名（01-S5d）：内部错误提示统一成 `yan browser …`。
-   * 断言「调用 browser_」这个特征串；`browser_observe_failed` 这类 code 名不受影响。
-   */
   const legacyHint = []
   for (const file of ['src/main/browser.ts', 'src/main/browser/ElementRegistry.ts']) {
     const source = await readFile(file, 'utf8')
@@ -3225,7 +2687,6 @@ await runGitRepoTests(ok)
   }
   ok(legacyHint.length === 0, '浏览器内部文案不点名旧工具名（统一写 yan browser …）', legacyHint.join('、'))
 
-  /* ② browser.* 已登记（用真实端点验，而不是读源码字符串） */
   await build({
     entryPoints: ['src/main/capability-server.ts'],
     outfile: 'out/test/capability-server-browser.mjs',
@@ -3283,7 +2744,6 @@ await runGitRepoTests(ok)
   server.stop()
   await rm(opsDir, { recursive: true, force: true })
 
-  /* ③ —— ④ 真跑随包 CLI（spawn），并且清掉身份环境变量 */
   const env = { ...process.env }
   for (const key of ['YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']) delete env[key]
   const runYan = (args) =>
@@ -3325,17 +2785,11 @@ await runGitRepoTests(ok)
   ok(/--url/.test(String(missingBody?.error ?? '')), 'yan CLI：漏参数指出缺哪个 flag')
   ok(!looksLikeStack(missingArg.stderr ?? ''), 'yan CLI：漏参数不抛堆栈')
 
-  /* 身份缺失要归到「宿主不可用」（退出码 3），不能和业务失败（1）混'  */
   const noHost = runYan(['browser', 'observe'])
   ok(noHost.status === 3, 'yan CLI：没有宿主环境变量时走「不可用」退出码 3')
   ok(/宿主能力服务不可用/.test(noHost.stderr ?? ''), 'yan CLI：说明是宿主不可用（不是命令不存在）')
 
-  /* dry 一下：用法表里的动作名必须与 GROUP_SPECS 一致（防手改时只改一处） */
   const cliText = await readFile('resources/yan-cli/yan.mjs', 'utf8')
-  /*
-   * 按**组名**取动作表，不能抓「第一个 `actions:`」——
-   * 那会让断言随着 GROUP_SPECS 的书写顺序改变而误判（加了 subagent 组就撞过一次）。
-   */
   const specActions = (group) => {
     const block =
       new RegExp(`${group}:\\s*\\{[\\s\\S]*?actions:\\s*\\[([\\s\\S]*?)\\]`).exec(cliText)?.[1] ?? ''
@@ -3357,7 +2811,6 @@ await runGitRepoTests(ok)
     'yan CLI：子代理每个动作都在用法里（不漏文案）',
     subagentUndocumented.join(', ')
   )
-  /* 项目知识（实施-03 S4）：三个动作都要既能被发现，也有用途说明 */
   const knowledgeActions = specActions('knowledge')
   ok(
     knowledgeActions.includes('search') && knowledgeActions.includes('read') && knowledgeActions.includes('propose'),
@@ -3375,11 +2828,6 @@ await runGitRepoTests(ok)
   })
   ok(knowledgeHelp.status === 0 && /search/.test(knowledgeHelp.stdout ?? ''), 'yan CLI：knowledge 分组帮助可按需读取')
 
-  /*
-   * 目标状态（实施-05 S3）：三道必须同时成立 ——
-   * CLI 有动作表、用法里每个动作都有说明、宿主 KNOWN_COMMANDS 已登记。
-   * 漏一处就是模型看到命令、发起请求，然后收到「unknown_command」这类接线语。
-   */
   const goalActions = specActions('goal')
   ok(
     goalActions.join(',') === 'ready,report,status',
@@ -3397,14 +2845,6 @@ await runGitRepoTests(ok)
   ok(unregistered.length === 0, 'yan CLI：目标状态命令已在宿主 KNOWN_COMMANDS 登记', unregistered.join(', '))
 }
 
-/*
- * 历史消息编号：必须与实时视图同一口径。
- *
- * Pi 0.87 起会把 system prompt 作为一条 `type:"message"` 写进会话 JSONL，
- * 而实时事件流看不到它。如果历史读回仍按 raw 下标编号，用户消息会从 `m0`
- * 变成 `m1`，实时写入的回合计时锚点就全部对不上（重启后用时与「已中断」
- * 消失）。这里把两代 JSONL 的形状都钉住。
- */
 {
   const { normalizeHistory, normalizeMessage } = await import('../out/test/normalize.mjs')
   const userMsg = { role: 'user', content: '你好' }
@@ -3430,10 +2870,6 @@ await runGitRepoTests(ok)
     '历史与实时的用户消息 id 一致（回合计时锚点才对得上）'
   )
 
-  /*
-   * entryId（实施-26 R0①）：会话文件里的 `entry.id` 是 fork 锚点，
-   * 必须挂到读回的消息上；实时路径没有它，保持 undefined。
-   */
   const withEntry = normalizeHistory([userMsg, asstMsg], undefined, ['90ac64b9', '23cb6928'])
   ok(
     withEntry[0]?.entryId === '90ac64b9' && withEntry[1]?.entryId === '23cb6928',
@@ -3444,10 +2880,6 @@ await runGitRepoTests(ok)
   ok(noEntry?.entryId === undefined, '实时消息（无文件上下文）不带 entryId')
 }
 
-/*
- * 轮次投影（实施-26 R1）：一轮问答 = 一张卡。
- * 纯逻辑，现场编译 —— 不依赖主进程构建图。
- */
 const conversationTurns = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/conversation-turns.ts'],
@@ -3461,10 +2893,6 @@ const conversationTurns = await import('../node_modules/esbuild/lib/main.js').th
 const { runConversationTurnsTests } = await import('./test-conversation-turns.mjs')
 await runConversationTurnsTests(ok, conversationTurns)
 
-/*
- * 轮次缓存（实施-26 R2）：渐进披露 / 版本失效 / LRU / 竞态闸门。
- * 渲染端纯逻辑，现场编译。
- */
 const turnCache = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/turn-cache.ts'],
@@ -3486,10 +2914,6 @@ const outlineTurns = await import('esbuild').then(({ build }) =>
 const { runOutlineTurnTests } = await import('./test-outline-turns.mjs')
 runOutlineTurnTests(ok, outlineTurns)
 
-/*
- * 活动档案（实施-25 P01）：角色文本/工具策略纯逻辑 + 存储与快照。
- * shared 那份保持平台中立；store 那份要真读写临时目录。
- */
 const agentProfileShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/agent-profile.ts'],
@@ -3518,7 +2942,6 @@ await runAgentProfileStoreTests(ok, agentProfileStore, {
   readFile: fsPromises.readFile,
   rm: fsPromises.rm
 })
-/* 薄层扩展的注入行为：直接加载 profile.js，不启动 pi */
 const agentProfileExtension = await import('../resources/pi-extensions/profile.js')
 await runAgentProfileExtensionTests(ok, agentProfileExtension, {
   mkdtemp: fsPromises.mkdtemp,
@@ -3527,9 +2950,6 @@ await runAgentProfileExtensionTests(ok, agentProfileExtension, {
   rm: fsPromises.rm
 }, agentProfileShared)
 
-/*
- * 主题空间（实施-25 P02）：契约纯逻辑 + 存储与关联记录。
- */
 const spaceShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/space.ts'],
@@ -3558,9 +2978,6 @@ await runSpaceStoreTests(ok, spaceStore, {
   rm: fsPromises.rm
 })
 
-/*
- * 资料库（实施-25 P03）：契约纯逻辑 + 存储（版本推进 / 软移除 / 旧引用映射）。
- */
 const libraryShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/library.ts'],
@@ -3589,10 +3006,6 @@ await runLibraryStoreTests(ok, libraryStore, {
   rm: fsPromises.rm
 })
 
-/*
- * 资料解析与服务层（实施-25 P03 / T03-4、W3）：PDF 两条路径、状态分档、
- * 版本推进后旧引用仍开旧版本、软移除与原件删除的如实上报。
- */
 const libraryParser = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/library-parser.ts'],
@@ -3626,10 +3039,6 @@ await runLibraryServiceTests(ok, libraryService, {
   rm: fsPromises.rm
 })
 
-/*
- * 活动流程与上下文装配（实施-25 P05 / T05-1、T05-2、T05-3、T05-5）：
- * 流程定义与建任务阈值是纯逻辑；装配器读真实资料库并写扩展快照。
- */
 const activityFlow = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/activity-flow.ts'],
@@ -3669,9 +3078,6 @@ await runContextAssemblerTests(ok, contextAssembler, {
   rm: fsPromises.rm
 })
 
-/*
- * 资料引用：引用状态与片段切片。重点是「旧引用按版本保留」。
- */
 const researchShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/research.ts'],
@@ -3685,9 +3091,6 @@ const researchShared = await import('../node_modules/esbuild/lib/main.js').then(
 const { runResearchTests } = await import('./test-research.mjs')
 runResearchTests(ok, researchShared)
 
-/*
- * 用户技能：名称校验、SKILL.md 生成、旧办事模板转换与一次性导出。
- */
 const userSkillShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/user-skill.ts'],
@@ -3712,9 +3115,6 @@ const userSkillMain = await import('../node_modules/esbuild/lib/main.js').then((
 const { runUserSkillTests } = await import('./test-user-skill.mjs')
 await runUserSkillTests(ok, userSkillShared, userSkillMain, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
 
-/*
- * 学习数据导出：四个原始 JSON → 可读 Markdown 与完整副本。
- */
 const learningExportShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/learning-export.ts'],
@@ -3739,10 +3139,6 @@ const learningExportMain = await import('../node_modules/esbuild/lib/main.js').t
 const { runLearningExportTests } = await import('./test-learning-export.mjs')
 await runLearningExportTests(ok, learningExportShared, learningExportMain, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
 
-/*
- * 内部 agent 分工（实施-25 P15）：任务输入 / 结果汇总。
- * 重点是「输入不猜」「摘要如实标来源」「未决问题不自动猜」。
- */
 const subagentBrief = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/subagent-brief.ts'],
@@ -3756,7 +3152,6 @@ const subagentBrief = await import('../node_modules/esbuild/lib/main.js').then((
 const { runSubagentBriefTests } = await import('./test-subagent-brief.mjs')
 runSubagentBriefTests(ok, subagentBrief)
 
-/* 子代理的结局说法、结束通知、任务输入限额与「别 sleep 轮询」 */
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
   const bundle = async (entry, out) => {
@@ -3770,10 +3165,6 @@ runSubagentBriefTests(ok, subagentBrief)
   runSubagentOutcomeTests(ok, { outcome, notice, brief: subagentBrief, repeatGuard })
 }
 
-/*
- * 按活动配置模型（实施-25 P18）：优先级 / 回退 / 边界文案 / 五行视图。
- * 重点是「回退要如实说」与「不指定也不乱挑」。
- */
 const activityModel = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/activity-model.ts'],
@@ -3787,10 +3178,6 @@ const activityModel = await import('../node_modules/esbuild/lib/main.js').then((
 const { runActivityModelTests } = await import('./test-activity-model.mjs')
 runActivityModelTests(ok, activityModel)
 
-/*
- * 联网搜索（实施-27 S1/S2）：来源白名单 / 归一化 / 去重与上限 / 来源级状态。
- * 后端用替身，不依赖本机装没装 OpenCLI；真实 spawn 只测「找不到可执行文件」这个边界。
- */
 const searchMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/search/opencli.ts'],
@@ -3804,10 +3191,6 @@ const searchMod = await import('../node_modules/esbuild/lib/main.js').then(({ bu
 const { runSearchTests } = await import('./test-search.mjs')
 await runSearchTests(ok, searchMod)
 
-/*
- * 增强搜索服务（Tavily / Firecrawl / Context7）与 key 配置：替身 fetch，不联网。
- * key 文件落在临时数据目录；`electron` 换成桩（read-page 依赖它，但这里不会走到隐藏窗口）。
- */
 {
   const { mkdtempSync, writeFileSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
@@ -3845,10 +3228,6 @@ await runSearchTests(ok, searchMod)
   }
 }
 
-/*
- * 受管结果落盘（capability-server）：所有 `yan` 命令共用的通用链路。
- * 超过大小上限时必须是**合法 JSON**（带 truncated/bytes/shape），不能是半截文本。
- */
 const capabilityServerMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/capability-server.ts'],
@@ -3862,10 +3241,6 @@ const capabilityServerMod = await import('../node_modules/esbuild/lib/main.js').
 const { runCapabilityResultTests } = await import('./test-capability-result.mjs')
 await runCapabilityResultTests(ok, capabilityServerMod)
 
-/*
- * 任务收件箱（实施-28 T1）：七态投影 / 排序 / 缺源降级 / 分页与缓存。
- * 契约为 neutral（无 Electron 依赖），服务为 node（只用标准库）。
- */
 const taskInboxMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/task-inbox.ts'],
@@ -3889,10 +3264,6 @@ const taskInboxServiceMod = await import('../node_modules/esbuild/lib/main.js').
 const { runTaskInboxTests } = await import('./test-task-inbox.mjs')
 await runTaskInboxTests(ok, taskInboxMod, taskInboxServiceMod)
 
-/*
- * 收件箱事实源组装（实施-28 T2）：把注册表 / 会话目录 / 任务日志接进契约。
- * 测试会覆盖掉重的那几个源，但真实默认实现也在同一次 bundle 里。
- */
 const taskInboxSourcesMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/task-inbox-sources.ts'],
@@ -3906,9 +3277,6 @@ const taskInboxSourcesMod = await import('../node_modules/esbuild/lib/main.js').
 const { runTaskInboxSourceTests } = await import('./test-task-inbox-sources.mjs')
 await runTaskInboxSourceTests(ok, taskInboxSourcesMod, taskInboxServiceMod)
 
-/*
- * 浏览器 wait 的条件判定（实施-27 S5）：纯函数，契约为 neutral。
- */
 const browserWaitMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/browser-wait.ts'],
@@ -3922,10 +3290,6 @@ const browserWaitMod = await import('../node_modules/esbuild/lib/main.js').then(
 const { runBrowserWaitTests } = await import('./test-browser-wait.mjs')
 await runBrowserWaitTests(ok, browserWaitMod)
 
-/*
- * 浏览器 select 的页面侧赋值函数（实施-27 S5）：
- * `SELECT_VALUE_FN` 是字符串（要发给 CDP），这里用 new Function 还原后喂假 <select>。
- */
 const buildNeutral = (entry, outfile) =>
   import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     build({
@@ -3949,11 +3313,6 @@ await runBrowserNetworkTests(ok, browserNetworkMod)
 const { runAssistantLinkTests } = await import('./test-assistant-link.mjs')
 await runAssistantLinkTests(ok)
 
-/*
- * 会话读取：固定夹具等价 + 分块/并发单飞。两条都是临时目录里的现场源码夹具，
- * 不读用户会话、不启 Electron、不调模型。stream 会临时包装 fs/promises.open，
- * 所以放在最后，避免影响前面的文件读取类检查。
- */
 const { runSessionReadEquivalenceTests } = await import('./test-session-read-equivalence.mjs')
 await runSessionReadEquivalenceTests(ok)
 await import('./test-session-reader-stream.mjs')

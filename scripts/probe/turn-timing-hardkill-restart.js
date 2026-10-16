@@ -1,4 +1,3 @@
-/* H-6b 真强杀读侧：新 Electron 进程按用户标记定位同一会话并验中断页脚。 */
 ;(async () => {
   const out = []
   const ok = (condition, label) => {

@@ -6,12 +6,6 @@ import { SpeechInputButton } from './SpeechInputButton'
 import { font, mono, radius, space, usePalette, weight } from '../theme'
 import { Badge, Button, Input, STATUS_TEXT } from '../ui'
 
-/**
- * 一个等待回答的问题。
- *
- * 敏感确认（删除、授权、付费……）在手机上只能「拒绝」：同意必须在电脑上做（需求稿第 6 节）。
- * 提交用幂等键，弱网重试不会重复作答；已被电脑端答复时服务端返回 409，这里当作「已处理」。
- */
 export function QuestionCard({
   question,
   sessionTitle,

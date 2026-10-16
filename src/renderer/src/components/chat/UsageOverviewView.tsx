@@ -3,15 +3,6 @@ import type { TFunc } from '../../i18n'
 import { HEAT_WEEKS, heatLevels, localDay, type UsageRange } from '../../../../shared/usage-stats'
 import type { ModelInfo, UsageStatsResult } from '../../../../shared/ipc'
 
-/**
- * 启动页本机用量的纯展示层：只接收已经取好的 `stats` 与回调，不自己请求、不碰 store/i18n 上下文。
- * 容器 `UsageOverview` 负责取数与状态，本组件负责排版，便于在无 Electron 的渲染测试里直接挂载。
- *
- * 主数字是 Token 合计（含子代理），下面一行安静文字给出「主会话 · 子代理」拆分；
- * 会话 / 消息 / 活跃天数 / 高峰时段仍只计主会话，不虚增。
- */
-
-/** 热力图显示的周数：放得进右栏（23rem）不截断 */
 const HEAT_SHOWN = 20
 
 export function compactNumber(n: number): string {
@@ -21,15 +12,7 @@ export function compactNumber(n: number): string {
   return n.toLocaleString()
 }
 
-/**
- * 切换控件的渲染槽。
- *
- * 缺省（不传 `renderToggle`）仍是本文件的文字按钮 `Toggle`，外观由 v2 的
- * `styles/chat.css` 负责；v3 的 `patterns/UsagePattern` 传真实 `Tabs` 原语。
- * 共享展示件不 import 任何 v3 控件或样式，两个外壳各自提供切换控件。
- */
 export interface UsageToggleProps {
-  /** `tab` 切换「概览 / 模型」，`range` 切换统计范围 */
   kind: 'tab' | 'range'
   value: string
   options: Array<{ value: string; label: string }>
@@ -39,7 +22,6 @@ export interface UsageToggleProps {
 }
 export type UsageToggleRenderer = (props: UsageToggleProps) => ReactNode
 
-/** 安静的文字切换：选中项正文色 + 下划强调线，其余淡色（不用分段控件的底块） */
 function Toggle<T extends string>({ value, options, onChange, label, testId }: {
   value: T
   options: Array<{ value: T; label: string }>
@@ -60,7 +42,6 @@ function Toggle<T extends string>({ value, options, onChange, label, testId }: {
 
 export type UsageOverviewTab = 'overview' | 'models'
 
-/** 占位用的空统计：从 HEAT_WEEKS 周前的周一到今天，每天 0；用于「取数中 / 无记录」仍保留框架。 */
 export function emptyUsageStats(range: UsageRange, now = Date.now()): UsageStatsResult {
   const today = new Date(now)
   today.setHours(0, 0, 0, 0)
@@ -74,6 +55,8 @@ export function emptyUsageStats(range: UsageRange, now = Date.now()): UsageStats
     messages: 0,
     tokens: 0,
     tokenBreakdown: { main: 0, subagents: 0 },
+    cost: 0,
+    costBreakdown: { main: 0, subagents: 0 },
     activeDays: 0,
     peakHour: null,
     models: [],
@@ -89,19 +72,13 @@ export interface UsageOverviewViewProps {
   stats: UsageStatsResult | null
   range: UsageRange
   tab: UsageOverviewTab
-  /** 模型菜单，用于把 provider/model 显示名还原成用户熟悉的名称 */
   models: ModelInfo[]
   t: TFunc
+  money?: (usd: number) => string
   onTabChange: (tab: UsageOverviewTab) => void
   onRangeChange: (range: UsageRange) => void
-  /** v3 用：注入真实 `Tabs` 原语；缺省保持 v2 文字按钮 */
   renderToggle?: UsageToggleRenderer
-  /**
-   * v3 用：取数中或本机无记录时仍渲染同一框架（数字为「—」或 0），不整块消失。
-   * 缺省 false，保持 v2「没有历史就不显示」的行为。
-   */
   keepWhenEmpty?: boolean
-  /** 无记录时框架里的一行说明（只在 `keepWhenEmpty` 时使用）。 */
   emptyNote?: string
 }
 
@@ -111,6 +88,7 @@ export function UsageOverviewView({
   tab,
   models,
   t,
+  money,
   onTabChange,
   onRangeChange,
   renderToggle,
@@ -119,7 +97,6 @@ export function UsageOverviewView({
   onOpenDetails,
   compact = false
 }: UsageOverviewViewProps) {
-  /* provider/model → 菜单里的显示名；找不到就取最后一段 id。同名的补上供应商以区分 */
   const names = useMemo(() => {
     const base = (key: string): string => {
       const slash = key.indexOf('/')
@@ -146,22 +123,18 @@ export function UsageOverviewView({
     return () => window.removeEventListener('resize', update)
   }, [])
   const gridStyle = { '--cell': `${Math.round(10 * pixelRatio) / pixelRatio}px`, gap: `${Math.max(1, Math.round(2 * pixelRatio)) / pixelRatio}px` } as CSSProperties
-  /* 主会话为 0 但只有子代理 Token 时仍要显示；会话/消息仍如实是 0 主会话 */
   const noHistory = !!stats && range === 'all' && stats.sessions === 0 && stats.tokens === 0
   if (!keepWhenEmpty && (!stats || noHistory)) return null
-  /* 取数中：同一框架，数字显示「—」；无记录：显示 0 并给一行说明 */
   const pending = !stats
   const note = noHistory ? emptyNote : undefined
   const data = stats ?? emptyUsageStats(range)
   const dash = (value: string): string => (pending ? '—' : value)
 
-  /* Token 总数单独做主数字；其余只留一行三项（最常用模型在「模型」页） */
   const tiles: Array<[string, string]> = [
     [t('usage.sessions'), dash(data.sessions.toLocaleString())],
     [t('usage.messages'), dash(compactNumber(data.messages))],
     [t('usage.activeDays'), dash(String(data.activeDays))]
   ]
-  /* 热力图只画近 HEAT_SHOWN 周：序列从周一开始，去掉更早的整周即可保持对齐 */
   const skip = Math.max(0, (HEAT_WEEKS - HEAT_SHOWN) * 7)
   const heat = data.heat.slice(skip)
   const total = data.models.reduce((sum, m) => sum + m.tokens, 0)
@@ -226,6 +199,7 @@ export function UsageOverviewView({
               {dash(compactNumber(data.tokens))}
             </span>
             <span className="start-label">{t('usage.tokens')}</span>
+            {money && data.cost > 0 ? <span className="start-label" data-testid="usage-cost" title={t('usage.costHint')}>· {dash(money(data.cost))}</span> : null}
           </div>
           {note ? <p className="start-hint" data-testid="usage-empty-note">{note}</p> : null}
           <dl className="start-stats">

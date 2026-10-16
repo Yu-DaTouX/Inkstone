@@ -1,17 +1,3 @@
-/**
- * 流式新块到达 + 列表增删呈现辅助的定向测试（设计规范 §6，方向 F）。
- *
- * 直接加载两个**纯 helper**（esbuild 转译后在 VM 里执行），不启动 Electron、
- * 不开窗口、不调用模型、不碰真实数据：
- *   · `src/renderer/src/lib/stream-arrival.ts` —— 流式新块身份簿记；
- *   · `src/renderer/src/lib/list-presence.ts` —— 列表增删呈现 diff。
- *
- * 覆盖：初次历史不动、live 新增一次 / 后续 token 不重播、错峰上限、
- * 清理与 scope 切换、稳定 id 排序不动、文字更新不动、删除退场不交互、
- * 减少动效。断言的是 helper 的可提取行为，不是源码 regex。
- *
- * 用法：node scripts/test-motion-presence.mjs
- */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
@@ -42,11 +28,6 @@ eq(ARRIVAL_MAX_STAGGER, 8, '到达错峰上限 8')
 eq(LIST_EXIT_MS, 240, '列表退场 240ms（与 --mo-slow 同源）')
 eq(LIST_MAX_STAGGER, 8, '列表错峰上限 8')
 
-/* ══════════════════════════════════════════════════════════════
- * 一、流式新块到达
- * ══════════════════════════════════════════════════════════════ */
-
-/* 1. 初次历史不动：非 live（历史回放 / 恢复 / 压缩）一律不入场 */
 {
   const t = createArrivalTracker()
   for (const key of ['0', '31', '99']) {
@@ -58,7 +39,6 @@ eq(LIST_MAX_STAGGER, 8, '列表错峰上限 8')
   eq(t.decide('0', { live: true }).animate, true, '同一 key 从未 live 见过，第一次 live 才入场')
 }
 
-/* 2. live 新增一次：新块入场；同一渲染批次幂等；后续 token 不重播 */
 {
   const t = createArrivalTracker()
   const first = t.decide('100', { live: true })
@@ -74,7 +54,6 @@ eq(LIST_MAX_STAGGER, 8, '列表错峰上限 8')
   eq(t.decide('140', { live: true }).animate, false, '第二批 token 不重播')
 }
 
-/* 3. 一次出现多个块：错峰 0..7，8 个封顶 */
 {
   const t = createArrivalTracker()
   const keys = Array.from({ length: 10 }, (_, i) => String(i * 20))
@@ -84,7 +63,6 @@ eq(LIST_MAX_STAGGER, 8, '列表错峰上限 8')
   eq(arrivalStaggerIndex(100), 7, '超大序号压到上限')
 }
 
-/* 4. 清理与 scope 切换：reset 后身份清空，新 scope 重新开始 */
 {
   const t = createArrivalTracker()
   t.decide('a', { live: true })
@@ -96,7 +74,6 @@ eq(LIST_MAX_STAGGER, 8, '列表错峰上限 8')
   eq(t.decide('a', { live: true }).animate, true, '换 scope 后同一 key 视为新块（新段落从空开始）')
 }
 
-/* 5. 减少动效：不位移不错峰，但登记身份，之后开启动效不补播 */
 {
   const t = createArrivalTracker()
   const d = t.decide('x', { live: true, motion: false })
@@ -106,13 +83,8 @@ eq(LIST_MAX_STAGGER, 8, '列表错峰上限 8')
   eq(t.decide('y', { live: true, motion: true }).animate, true, '动效开启后新块照常入场')
 }
 
-/* ══════════════════════════════════════════════════════════════
- * 二、列表增删
- * ══════════════════════════════════════════════════════════════ */
-
 const row = (id, label = id) => ({ id, item: { id, label } })
 
-/* 1. 初次历史不动：首次观察全部 stable、可交互；不产生退场 */
 {
   const p = createListPresence()
   const rows = p.reconcile([row('a'), row('b')])
@@ -120,7 +92,6 @@ const row = (id, label = id) => ({ id, item: { id, label } })
   eq(p.exitingIds().join(','), '', '首次无退场')
 }
 
-/* 2. 新增：只新增行 entering，错峰；已有行 stable */
 {
   const p = createListPresence()
   p.reconcile([row('a')])
@@ -131,7 +102,6 @@ const row = (id, label = id) => ({ id, item: { id, label } })
   eq(rows.find((r) => r.id === 'c').stagger, 1, '第二个新增 1')
 }
 
-/* 3. 稳定 id 排序不动：同一集合重排，不 entering / exiting */
 {
   const p = createListPresence()
   p.reconcile([row('a'), row('b'), row('c')])
@@ -141,7 +111,6 @@ const row = (id, label = id) => ({ id, item: { id, label } })
   eq(p.exitingIds().join(','), '', '排序不产生退场')
 }
 
-/* 4. 文字更新不动：id 不变，内容刷新，不 entering / exiting */
 {
   const p = createListPresence()
   p.reconcile([row('a', '原文'), row('b', '原 B')])
@@ -153,7 +122,6 @@ const row = (id, label = id) => ({ id, item: { id, label } })
   eq(removed.item.label, '新文（已改）', '退场快照保留最新内容，不倒退为初始文字')
 }
 
-/* 5. 删除退场不交互：退场行保留投影但不 interactive；settle 后移除 */
 {
   const p = createListPresence()
   p.reconcile([row('a'), row('b')])
@@ -170,7 +138,6 @@ const row = (id, label = id) => ({ id, item: { id, label } })
   eq(p.reconcile([row('a')]).map((r) => r.id), ['a'], 'settle 后不再渲染退场行')
 }
 
-/* 6. 退场中又回来：不再是退场投影，转为 entering */
 {
   const p = createListPresence()
   p.reconcile([row('a'), row('b')])
@@ -181,7 +148,6 @@ const row = (id, label = id) => ({ id, item: { id, label } })
   eq(p.exitingIds().join(','), '', '回归后不再是退场投影')
 }
 
-/* 7. 减少动效：删除不保留退场投影，立即移除 */
 {
   const p = createListPresence()
   p.reconcile([row('a'), row('b')])
@@ -190,7 +156,6 @@ const row = (id, label = id) => ({ id, item: { id, label } })
   eq(p.exitingIds().join(','), '', '减少动效不保留退场快照')
 }
 
-/* 7b. 动效中途关闭：已保留的退场投影立即清掉 */
 {
   const p = createListPresence()
   p.reconcile([row('a'), row('b')])
@@ -201,7 +166,6 @@ const row = (id, label = id) => ({ id, item: { id, label } })
   eq(rows.map((r) => r.id), ['a'], '只留存活行')
 }
 
-/* 8. 清理与 scope 切换：reset 后新 scope 的已有行不误播 */
 {
   const p = createListPresence()
   p.reconcile([row('a'), row('b')])
@@ -213,7 +177,6 @@ const row = (id, label = id) => ({ id, item: { id, label } })
   ok(rows.every((r) => r.phase === 'stable'), 'reset 后新 scope 全 stable（不误播）')
 }
 
-/* 9. 列表错峰上限 8 */
 {
   const p = createListPresence()
   p.reconcile([])

@@ -1,20 +1,3 @@
-/**
- * M2 · 已打开 MCP App 的动态主题通知链路（host-free 单测）。
- *
- * 覆盖（纯本地 mock，不启 Electron、不建真实 iframe、不联网、不连真实 MCP 服务）：
- *   1. 主题跟读纯助手：读 `<html data-theme>`、缺失时回落系统配色、变化才回调、dispose 清监听；
- *   2. `McpAppChannel`：握手 ready 后经受控 frame / MessagePort 推
- *      `ui/notifications/host-context-changed`；未 ready 只存最新待发；同一代只认最后
- *      请求（双切换乱序丢弃旧回包）；换代 / dispose 后旧回包不投递；loader 返回 null 不推；
- *      推主题通知不产生任何工具调用；非本框 origin 仍被拒；
- *   3. `McpAppViewService.hostContext()` 与 `ui/initialize` 同源，且按 instance / owner
- *      守卫；`theme:'system'` 按宿主注入的系统明暗解析，不再无条件兜底深色。
- *
- * ⚠️ 桥（preload / shared-ipc）属于其他批次，本文件只验证「模块已实现」，
- *    不验证真实渲染端到主进程的 invoke 通路，不宣称第三方 App 兼容已验。
- *
- * 运行：node scripts/test-v3-mcp-app-theme-update.mjs
- */
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -72,8 +55,6 @@ const { McpAppViewService, resolveMcpAppThemePreference, MCP_APP_DEFAULT_THEME }
 ok(typeof McpAppViewService === 'function', '加载 McpAppViewService')
 ok(typeof resolveMcpAppThemePreference === 'function', '加载 resolveMcpAppThemePreference')
 
-/* ------------------------------------------------------------------ 测试替身 */
-
 function fakeWindow() {
   const listeners = new Set()
   return {
@@ -128,7 +109,6 @@ function fakePort() {
   }
 }
 
-/** 可手动结算的宿主上下文读取口：每次调用入队一个 {resolve,reject}。 */
 function makeLoader() {
   const pending = []
   const call = () => new Promise((resolve, reject) => pending.push({ resolve, reject }))
@@ -181,7 +161,6 @@ function makeChannel(overrides = {}) {
       resolveNext = null
       resolve({ jsonrpc: '2.0', id: lastMessage?.id ?? null, result })
     },
-    /** 走到 ready：发一次 initialize 并回合法 result。 */
     async ready() {
       this.win.emit({
         data: { jsonrpc: '2.0', id: 1, method: 'ui/initialize', params: {} },
@@ -201,7 +180,6 @@ const tick = async () => {
   await Promise.resolve()
 }
 
-/* ------------------------------------------------------------------ 1. 主题跟读纯助手 */
 {
   const doc = (value) => ({ getAttribute: (name) => (name === 'data-theme' ? value : null) })
   ok(themeUpdate.readMcpAppResolvedTheme(doc('light')) === 'light', 'data-theme=light 读到浅色')
@@ -217,7 +195,6 @@ const tick = async () => {
   ok(themeUpdate.MCP_APP_DARK_QUERY === '(prefers-color-scheme: dark)', '深色查询串固定')
 }
 
-/* ------------------------------------------------------------------ 2. watcher：变化才回调、dispose 清理 */
 {
   let attr = 'dark'
   let observerCallback = null
@@ -275,7 +252,6 @@ const tick = async () => {
   ok(fired.length === 2, 'dispose 后属性变化不再回调')
 }
 
-/* ------------------------------------------------------------------ 3. 通道：ready 后推 host-context-changed */
 {
   const env = makeChannel()
   env.channel.attach()
@@ -297,7 +273,6 @@ const tick = async () => {
   ok(env.calls.length === dispatchBefore, '主题通知不产生任何工具调用 / dispatch')
 }
 
-/* ------------------------------------------------------------------ 4. 通道：握手 ready 后经 MessagePort 推送 */
 {
   const env = makeChannel()
   env.channel.attach()
@@ -319,7 +294,6 @@ const tick = async () => {
   ok(env.frame.posted.length === 0, '不再走 frame.postMessage（端口已接管）')
 }
 
-/* ------------------------------------------------------------------ 5. 未 ready：只存最新待发，ready 后补发 */
 {
   const env = makeChannel()
   env.channel.attach()
@@ -334,7 +308,6 @@ const tick = async () => {
   ok(env.frame.posted.at(-1).message.method === 'ui/notifications/host-context-changed', '补发 host-context-changed')
 }
 
-/* ------------------------------------------------------------------ 6. 双切换乱序：只认最后一次请求 */
 {
   const env = makeChannel()
   env.channel.attach()
@@ -343,7 +316,7 @@ const tick = async () => {
   env.channel.requestHostContext()
   env.channel.requestHostContext()
   ok(env.loader.count() === 2, '两次请求各读一次')
-  env.loader.resolveAt(0, { theme: 'light' }) // 旧请求晚回
+  env.loader.resolveAt(0, { theme: 'light' })
   await tick()
   ok(env.frame.posted.length === postedBefore, '被新请求覆盖的旧回包不投递')
   env.loader.resolveAt(1, { theme: 'dark' })
@@ -352,7 +325,6 @@ const tick = async () => {
   ok(env.frame.posted.at(-1).message.params.theme === 'dark', '投递的是最新主题')
 }
 
-/* ------------------------------------------------------------------ 7. 换代后旧异步回包不投递 */
 {
   const env = makeChannel()
   env.channel.attach()
@@ -366,7 +338,6 @@ const tick = async () => {
   ok(env.frame.posted.length === postedBefore, '换代后旧代主题回包不投递')
 }
 
-/* ------------------------------------------------------------------ 8. dispose / 端口清理后不投递 */
 {
   const env = makeChannel()
   env.channel.attach()
@@ -388,7 +359,6 @@ const tick = async () => {
   ok(port.closed && env.win.listeners.size === 0, 'dispose 关闭 MessagePort 并移除 window 监听')
 }
 
-/* ------------------------------------------------------------------ 9. loader 返回 null（归属失效）不推 */
 {
   const env = makeChannel()
   env.channel.attach()
@@ -409,7 +379,6 @@ const tick = async () => {
   ok(env2.frame.posted.length === posted2, '读取失败不推通知')
 }
 
-/* ------------------------------------------------------------------ 10. 未知 origin 仍被拒 */
 {
   const env = makeChannel()
   env.channel.attach()
@@ -419,7 +388,6 @@ const tick = async () => {
   ok(env.calls.length === dispatchBefore, '非期望 origin 的消息不派发（主题链路不放宽来源判定）')
 }
 
-/* ------------------------------------------------------------------ 11. 服务：theme='system' 按系统明暗解析 */
 {
   ok(resolveMcpAppThemePreference('system', true) === 'dark', 'system + 系统深色 → dark')
   ok(resolveMcpAppThemePreference('system', false) === 'light', 'system + 系统浅色 → light')
@@ -428,8 +396,6 @@ const tick = async () => {
   ok(resolveMcpAppThemePreference('weird', true) === 'dark', '未知偏好回退默认')
   ok(MCP_APP_DEFAULT_THEME === 'dark', '默认仍是深色')
 }
-
-/* ------------------------------------------------------------------ 12. 服务 hostContext 与 initialize 同源 + 守卫 */
 
 const SERVER = 'srv'
 const SERVER_CONFIG = { id: SERVER, transport: 'stdio', command: 'node', args: ['x.mjs'], enabled: true, ownedBy: 'inkstone' }
@@ -498,7 +464,6 @@ function makeService(extra = {}) {
 const rpc = (method, params, id) => ({ jsonrpc: '2.0', ...(id === undefined ? {} : { id }), method, params })
 
 await (async () => {
-  /* system 主题：初始化按系统明暗给明确值。 */
   const dark = makeService({ theme: async () => 'system', systemPrefersDark: () => true })
   const darkPrepared = await dark.prepare('call-1')
   const darkInit = await dark.dispatch(darkPrepared.instanceId, rpc('ui/initialize', {}, 1))
@@ -517,7 +482,6 @@ await (async () => {
     'system 浅色初始化带浅色变量'
   )
 
-  /* hostContext() 与 initialize 同源。 */
   const svc = makeService({ theme: async () => 'light' })
   const prepared = await svc.prepare('call-1')
   const init = await svc.dispatch(prepared.instanceId, rpc('ui/initialize', {}, 1))
@@ -530,11 +494,9 @@ await (async () => {
     'hostContext() 复用 M1 同源主题变量'
   )
 
-  /* 未知 / 未准备实例返回 null。 */
   ok((await svc.hostContext('missing-instance')) === null, '未知实例返回 null')
   ok((await svc.hostContext('')) === null, '空实例号返回 null')
 
-  /* 归属失效：prepare 后翻转守卫，hostContext() 必须返回 null。 */
   let active = true
   const guarded = makeService({ ownerGuard: { isActive: () => active }, theme: async () => 'light' })
   const guardedPrepared = await guarded.prepare('call-1')
@@ -546,20 +508,16 @@ await (async () => {
     '归属失效后 initialize 仍被拒（不放宽 owner）'
   )
 
-  /* release 后不能再读。 */
   ok((await svc.hostContext(prepared.instanceId)) !== null, 'release 前可读')
   await svc.release(prepared.instanceId)
   ok((await svc.hostContext(prepared.instanceId)) === null, 'release 后 hostContext() 返回 null')
 
-  /* close() 清空实例后同样不能读。 */
   const closed = makeService({ theme: async () => 'light' })
   const closedPrepared = await closed.prepare('call-1')
   ok((await closed.hostContext(closedPrepared.instanceId)) !== null, 'close 前可读')
   closed.close()
   ok((await closed.hostContext(closedPrepared.instanceId)) === null, 'close 后 hostContext() 返回 null')
 })()
-
-/* ------------------------------------------------------------------ 收尾 */
 
 console.log(`\n${checks} 项，${failures.length} 项失败`)
 if (failures.length > 0) {

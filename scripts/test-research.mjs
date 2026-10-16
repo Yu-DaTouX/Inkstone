@@ -1,13 +1,3 @@
-/**
- * 跨资料研究（实施-25 P13）—— 引用状态 / 多来源对照 / 片段切片。
- *
- * 三条最值得钉住的：
- *   · **旧引用按版本保留**：来源更新后只提示「已有新版本」，不改引用；
- *   · **不合并结论**：不同立场的两组并排列出，未标注立场的不算冲突；
- *   · **读不到的来源不进对照**：宁可少一份证据，也不把读不到的说成有效。
- */
-
-/** 造一份最小可用的资料库文档（只带一个来源与它的版本）。 */
 function libDoc(over = {}) {
   const source = {
     id: over.sourceId ?? 'lib_1',
@@ -46,7 +36,6 @@ export function runResearchTests(ok, mod) {
     excerptReadable
   } = mod
 
-  /* ---- 引用状态（T13-4） ---- */
   {
     const current = sourceStatus(libDoc(), { sourceId: 'lib_1', version: 1 })
     ok(current.status === 'current' && current.title === '对照材料 A', '能读到的当前版本：current', JSON.stringify(current))
@@ -71,7 +60,6 @@ export function runResearchTests(ok, mod) {
     ok(unreadable.status === 'unreadable', '没有可读正文：unreadable')
   }
 
-  /* ---- 片段切片 ---- */
   {
     const body = '零一二三四五六七八九十'
     ok(excerptText(body, { start: 2, end: 5 }, 100).text === '二三四', '有 locator 就切那一段')
@@ -81,7 +69,6 @@ export function runResearchTests(ok, mod) {
     ok(excerptText('', undefined, 10).text === '', '空正文返回空')
   }
 
-  /* ---- 读得到才算证据 ---- */
   {
     ok(excerptReadable('current') && excerptReadable('outdated'), '当前版与旧版本都能作为证据读')
     ok(!excerptReadable('removed') && !excerptReadable('missing') && !excerptReadable('unreadable'), '移除 / 找不到 / 读不到的都不算有效证据')

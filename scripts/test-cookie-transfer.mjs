@@ -1,9 +1,3 @@
-/**
- * Cookie transfer 的纯单元测试。
- *
- * 现场编译模块并用假的 CDP 通道喂合成 cookie，不读取或写入真实浏览器数据。
- * 用法：node scripts/test-cookie-transfer.mjs
- */
 import assert from 'node:assert/strict'
 import { build } from '../node_modules/esbuild/lib/main.js'
 

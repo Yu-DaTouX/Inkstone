@@ -43,12 +43,6 @@ function sameCwd(a: string, b: string): boolean {
     b.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 
-/**
- * Consumes durable `pending-boundary` npm pi-package transactions only when the
- * original project, goal snapshot, grant, trust and idle runner still match.
- * Every external effect is behind a port so crash/replay branches are testable
- * without installing or executing a real package.
- */
 export class PiPackageActivationScheduler {
   private readonly inFlight = new Map<string, Promise<PiPackageScheduleResult>>()
   private readonly cwdTails = new Map<string, Promise<unknown>>()
@@ -73,8 +67,6 @@ export class PiPackageActivationScheduler {
     const work = this.enqueueByCwd(operationId).catch(async (error): Promise<PiPackageScheduleResult> => {
       return {
         operationId,
-        /* Keep exceptions retryable and visible; the durable state may already
-         * be `activated`, but the post-activation boundary is not complete. */
         state: 'deferred',
         detail: `调度步骤异常，保持事务现场等待复核：${error instanceof Error ? error.message : String(error)}`
       }
@@ -182,17 +174,10 @@ export class PiPackageActivationScheduler {
     }
     if (this.ports.cwdBusy(target.cwd)) return { operationId, state: 'deferred', detail: '目标项目仍有 runner 忙碌' }
 
-    /*
-     * Runner ids and generations are process-local. After an app restart the
-     * exact session can be recovered under a new id/generation, so loaded-state
-     * evidence takes precedence over comparing it with the old process counter.
-     */
     let active = await this.ports.verifyActive(tx)
     let consumed = await this.ports.continuationConsumed(tx, runner)
     const alreadyRestarted = runner.generation > target.runnerGeneration
     const resumeNeedsKick = !consumed
-    /* Do not restart again while the thin layer's one-shot continuation is
-     * waiting for its idle confirmation; a second reload resets that timer. */
     const needsRestart = !alreadyRestarted && (!active.ok || resumeNeedsKick)
     if (needsRestart) {
       const beforeGeneration = runner.generation

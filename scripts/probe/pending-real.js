@@ -1,21 +1,3 @@
-/**
- * 待定消息的**真实链路**回归（cost 1，会真调模型）。
- *
- * 为什么必须单独一个场景：`pending`（cost 0）把 store 的 `send` 换成桩，
- * 并且**直接 `setState` 改 `runners`** 来伪造「回合结束」—— 它测的是渲染端的分支，
- * 完全绕过了主进程的推送链。而 2026-09-19 用户报的 bug 恰恰在主进程那一段：
- *
- *   回合结束（`agent_settled` → `setAgentRunning(false)`）只推 `state` 通道，
- *   而 `runners` 快照只在**实例生命周期**事件里推（起停 / 切会话 / 删除）。
- *   于是渲染端 `runners[active].running` 一直停在 `true`：
- *   `Composer` 的自动投递 effect 永不触发，卡片也一直给着「插话 / 排队」。
- *
- * 这个场景把整条链走一遍：真实模型回合 → 跑着时按 Enter 悬起 → 回合结束 → 自动投递。
- * 断言「回合结束后 runners 快照变 false」是修复点的直接证据（修复前这一条会 ✗）。
- *
- * 界面重构（7c10942）起，运行中按 Enter 默认直接排队（followUp），只有压缩维护期间才悬在待定区，
- * 所以这里断言的是「直接排队投出」；待定区的自动投递由 `pending`（cost 0）覆盖。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -35,7 +17,6 @@
 
   out.push('=== 待定消息：真实回合结束后的自动投递 ===')
 
-  /* pi 没起来就显式跳过、不报 ✗（约定：cost > 0 的场景手动跑时允许跳过） */
   for (let i = 0; i < 40; i++) {
     if (store.getState().conn === 'ready') break
     await sleep(500)
@@ -49,11 +30,9 @@
   ta.id = 'probe-composer'
 
   const pending = () => store.getState().pendingSends ?? []
-  /** 与 `Composer` / `QueueStack` 同一条判据：回合级 runners 快照 */
   const roundRunning = () =>
     !!store.getState().runners.find((r) => (r.runId ?? r.id) === store.getState().activeRunnerId)?.running
 
-  /* 记录投递方式，但不替掉真实 send —— 这条链必须真的走到 pi */
   const modes = []
   const realSend = store.getState().send
   store.setState({
@@ -94,7 +73,6 @@
 
   out.push('')
   out.push('=== 3. 等真实回合结束：排队消息被处理完，运行状态回落 ===')
-  /* 排队消息会在这一轮之后再开一轮，所以「结束」要等到整个队列处理完 */
   let ended = false
   for (let i = 0; i < 400; i++) {
     await sleep(300)

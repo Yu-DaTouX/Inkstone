@@ -1,12 +1,3 @@
-/**
- * 接入事务（`src/shared/acquisition.ts` + `src/main/capabilities/acquisition-service.ts`，实施-04 S6a）。
- *
- * 这一片能验的是两件事：**判断**（状态机、上限、失败分类、重试复用同一事务）
- * 与**真文件**（受管 staging 里的文件与 manifest 是否一致、失败有没有只清本次、
- * 恢复复核是不是真的重算 hash 而不是读日志）。
- * S6b-2 的 npm 制品准备使用本地 registry / tarball fixture：只验证固定版本、SHA-512、
- * 归档限制与受管解包，不访问互联网、不运行第三方脚本、也不改项目 pi 配置。
- */
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir, symlink } from 'node:fs/promises'
@@ -17,8 +8,6 @@ import * as tar from 'tar'
 export async function runAcquisitionTests(ok, modules) {
   const { shared, service, npmArtifact, npmAcquisition, packageAuthorizationShared, packageAuthorizationService } = modules
   const at = '2026-09-20T10:00:00.000Z'
-
-  /* ------------------------------------------------------- 1. 状态机（§10） */
 
   {
     ok(shared.canTransitionAcquisition('prepared', 'acquiring'), '状态机：prepared → acquiring 合法')
@@ -35,8 +24,6 @@ export async function runAcquisitionTests(ok, modules) {
     ok(!shared.isTerminalAcquisitionState('pending-boundary'), '状态机：pending-boundary 不算终态')
     ok(shared.isTerminalAcquisitionState('cancelled'), '状态机：cancelled 是终态')
   }
-
-  /* ------------------------------------------------ 2. 事务与重试（§10 / §10.2） */
 
   {
     const make = () =>
@@ -77,7 +64,6 @@ export async function runAcquisitionTests(ok, modules) {
     }
     ok(threw, '重试：用满次数后再重试必须报错，不静默放行')
 
-    /* 重试是新一轮尝试：上一轮绑定的激活目标（runner / 会话 / 目标修订 / sourceHead）已过期，必须清掉。 */
     let boundTx = make()
     boundTx.piPackageTarget = {
       runnerId: 'runner-a',
@@ -129,8 +115,6 @@ export async function runAcquisitionTests(ok, modules) {
     ok(!shared.receiptMatches(receipt, { planId: 'plan-9', digest: 'digest-a' }), 'receipt：换计划就不匹配')
   }
 
-  /* -------------------------------------------------- 3. 归档校验（§10 第 2 条） */
-
   {
     const v = (entries, limits) => shared.validateArtifactEntries(entries, limits)
     ok(v([{ path: 'demo/SKILL.md', bytes: 10 }]) === null, '校验：正常相对路径通过')
@@ -162,8 +146,6 @@ export async function runAcquisitionTests(ok, modules) {
     )
   }
 
-  /* ------------------------------------------------------ 4. 失败分类（§13） */
-
   {
     const c = (text) => shared.classifyAcquisitionFailure(new Error(text))
     ok(c('fetch failed') === 'network', '失败分类：网络')
@@ -173,8 +155,6 @@ export async function runAcquisitionTests(ok, modules) {
     ok(c('握手失败，端点不可达') === 'verification', '失败分类：验证')
     ok(c('some weird thing happened') === 'unknown', '失败分类：认不出来就如实说 unknown（不许猜成网络问题）')
   }
-
-  /* ------------------------------------------- 5. 真文件：受管 staging 全路径 */
 
   const root = await mkdtemp(join(tmpdir(), 'yan-acq-'))
   try {
@@ -214,7 +194,6 @@ export async function runAcquisitionTests(ok, modules) {
     ok(after.state === 'verifying' && after.attempts === 1, '真文件：落盘后进入 verifying，尝试计到 1')
     ok((await svc.verifyStaged(tx.operationId)).ok, '真文件：verifyStaged 重算 hash 一致')
 
-    /* 仅核对 manifest 列出的文件不够：额外文件也会被后续 smoke / installer 消费。 */
     const unexpected = join(service.stagingDirOf(root, tx.operationId), 'payload', 'demo', 'unexpected.js')
     await writeFile(unexpected, 'globalThis.unreviewed = true\n', 'utf8')
     const extraFile = await svc.verifyStaged(tx.operationId)
@@ -223,7 +202,6 @@ export async function runAcquisitionTests(ok, modules) {
     await rm(unexpected)
     ok((await svc.verifyStaged(tx.operationId)).ok, '真文件：移除额外文件后 staging 恢复通过复核')
 
-    /* 篡改文件后再复核：必须发现不一致（这条是「不看日志看资源」的核心证据）。 */
     await writeFile(staged, '# demo tampered\n', 'utf8')
     const tampered = await svc.verifyStaged(tx.operationId)
     ok(!tampered.ok && tampered.problems.length > 0, '真文件：文件被改过，verifyStaged 报不一致')
@@ -251,14 +229,11 @@ export async function runAcquisitionTests(ok, modules) {
     after = await svc.get(tx.operationId)
     ok(after.state === 'failed', '真文件：激活被拦后事务记为 failed')
 
-    /* 恢复复核：日志写过 activated 也不算数，文件不对就必须说不对。 */
     const resumeBad = await svc.resumeCheck({ operationId: tx.operationId, expected: { planId: 'plan-1', digest: 'digest-1' } })
     ok(!resumeBad.ok && resumeBad.reasons.length > 0, '真文件：resumeCheck 在资源损坏时不放行', resumeBad.reasons.join('；'))
 
-    /* 正常路径：重来一次干净的 stage → activate → resumeCheck 通过。 */
     const tx2 = await svc.begin({ planId: 'plan-2', candidateId: 'npm:demo@1.0.0', digest: 'digest-1', projectId: 'proj-1', at })
     await svc.stage({ operationId: tx2.operationId, at, files: [{ path: 'demo/SKILL.md', content: '# demo\n' }] })
-    /* 服务层必须提供状态机提示的重试入口，并且仅清本 operation 的旧 staging。 */
     const retried = await svc.retry(tx.operationId, at)
     ok(retried.state === 'prepared' && retried.attempts === 1, '真文件：retry 复用原事务并保留已消耗尝试数')
     ok(!retried.receipt && !retried.failure && !retried.stagingDir, '真文件：retry 清除上次失败的 receipt / failure / staging 指针')
@@ -291,7 +266,6 @@ export async function runAcquisitionTests(ok, modules) {
     const wrongPlan = await svc.resumeCheck({ operationId: tx2.operationId, expected: { planId: 'plan-9', digest: 'digest-1' } })
     ok(!wrongPlan.ok, '真文件：换计划后恢复复核不通过（源已变化）')
 
-    /* 被拒的归档：事务失败、**且本次 staging 目录不存在**。 */
     const tx3 = await svc.begin({ planId: 'plan-3', candidateId: 'npm:demo@1.0.0', digest: 'digest-3', projectId: 'proj-1', at })
     let rejected = null
     try {
@@ -306,7 +280,6 @@ export async function runAcquisitionTests(ok, modules) {
     )
     ok((await svc.get(tx3.operationId)).state === 'failed', '真文件：被拒的事务如实记为 failed')
 
-    /* rollback 只删本次：别的 operationId 目录必须原样都在。 */
     const kept = service.stagingDirOf(root, tx2.operationId)
     await svc.rollback(tx3.operationId)
     ok(existsSync(kept), '真文件：rollback 只删本次 staging，不碰别的受管目录')
@@ -320,7 +293,6 @@ export async function runAcquisitionTests(ok, modules) {
       '真文件：事务历史按步记录（可从日志看出走过哪些状态）'
     )
 
-    /* 等边界（§10.1）：确实要装但本轮不能装 → pending-boundary，而不是假装 activated。 */
     const tx4 = await svc.begin({ planId: 'plan-4', candidateId: 'npm:demo@1.0.0', digest: 'digest-4', projectId: 'proj-1', at })
     const bounded = await svc.markBoundary(tx4.operationId, '等调度', at)
     ok(bounded.state === 'pending-boundary', '真文件：等边界时停在 pending-boundary（不假装激活）')
@@ -352,7 +324,6 @@ export async function runAcquisitionTests(ok, modules) {
     }
     ok(targetConflict, '真文件：事务不能静默改绑到另一 runner')
 
-    /* 损坏的事务真源必须 fail closed，不能被下一次写入当空日志覆盖。 */
     const logPath = service.acquisitionLogPath(root)
     await writeFile(logPath, '{broken', 'utf8')
     let corruptLogRejected = false
@@ -364,7 +335,6 @@ export async function runAcquisitionTests(ok, modules) {
     ok(corruptLogRejected, '事务日志：损坏 JSON 时 fail closed，拒绝继续写')
     ok((await readFile(logPath, 'utf8')) === '{broken', '事务日志：损坏现场字节原样保留，不按空日志覆盖')
 
-    /* 越界的 operationId：不允许用形状去拼路径。 */
     let badId = false
     try {
       service.stagingDirOf(root, '../escape')
@@ -672,7 +642,6 @@ async function runNpmArtifactTests(ok, npmArtifact, npmAcquisition, acquisitionS
     }
     ok(redirectNotFollowed && redirectFetches === 1, 'npm 制品：不跟随 redirect 去请求第二个主机')
 
-    /* 同一 operationId 重放时重验 pinned SRI，并从可信 tarball 修复解包目录。 */
     const replayTarballFetches = tarballFetches
     await writeFile(join(artifact.packageDir, 'README.md'), '# local tampered\n')
     let replayMetadataFetches = 0
@@ -691,7 +660,6 @@ async function runNpmArtifactTests(ok, npmArtifact, npmAcquisition, acquisitionS
     ok(tarballFetches === replayTarballFetches, 'npm 制品：有效的 pinned tarball 缓存避免重新下载')
     ok((await readFile(join(replayed.packageDir, 'README.md'), 'utf8')) === expectedReadme, 'npm 制品：重试以通过 SHA-512 验证的 tarball 重建解包内容')
 
-    /* 缓存字节损坏时 fail closed，并保留现场供检查，不重新信任或覆盖。 */
     await writeFile(replayed.tarballPath, 'tampered cache')
     let cacheTamperRejected = false
     try {

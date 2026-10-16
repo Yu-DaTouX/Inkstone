@@ -1,12 +1,3 @@
-/**
- * 窄窗口 + 面板收起态：布局是否还可用。
- *
- * 用户报的三个 bug 都在这个交集里：
- *   ① 左栏收起后，展开按钮有 bug
- *   ② 左栏未展开时输入框消失
- *   ③ 右栏展开按钮位置不对
- * 所以这个探针只在窄窗口跑（YAN_WIN 控制），并且两种收起状态都量。
- */
 ;(async () => {
   const out = []
   const ok = (m) => out.push('  ✓ ' + m)
@@ -50,10 +41,6 @@
     out.push('  展开态开关 ' + JSON.stringify(exp))
     click(document.querySelector('[data-testid="rail-toggle"]'))
     await sleep(700)
-    /*
-     * 收起态的入口在**标题栏**（开关位置与面板收放无关，参考 Codex）——
-     * 所以这里断言「标题栏那个开关还在、还没动」，而不是找面板内的悬停按钮。
-     */
     const toggleNow = box('[data-testid="rail-toggle"]')
     out.push('  收起后标题栏开关 ' + JSON.stringify(toggleNow))
     if (toggleNow && exp && toggleNow.x === exp.x && toggleNow.y === exp.y) ok('收起后开关没动（入口始终在标题栏）')
@@ -70,18 +57,12 @@
     if (centerW2 >= centerW) ok('收起左栏后中栏变宽（推挤式布局正确）')
     else bad('收起后中栏反而变窄：' + centerW + ' → ' + centerW2)
 
-    // 展开回来
     const un = document.querySelector('[data-testid="rail-toggle"]')
     if (un) click(un)
     await until(() => store.getState().railPinned, 3000)
     await sleep(600)
 
     out.push('\n=== 3. 工具栏收起：开关位置 + 输入框 ===')
-    /*
-     * 开关在**标题栏右侧**（参考 Codex）—— 它是常驻的，
-     * 所以「收起后找不到入口」在结构上就不存在了。
-     * 断言：位置在收放前后**完全不变**（这才是「位置对」的定义）。
-     */
     const rpExp = box('[data-testid="right-tool-menu"]')
     await window.__yanOpenWorkspaceTool('文件', 'files')
     const rpUn = box('[data-testid="right-tool-menu"]')
@@ -90,7 +71,6 @@
     const pane = document.querySelector('[data-workspace-pane="files"]:not([hidden])')
     if (pane && pane.getBoundingClientRect().width >= 199) ok('窄窗文件磁贴保留最小阅读尺寸')
     else bad('文件磁贴没有可读宽度')
-    /* 关闭入口 = 磁贴页签上的 `.ui-tab-close`（文件页签 closeLabel 是「关闭标签页」）。 */
     document.querySelector('[data-pane-tab="files"]')?.querySelector('.ui-tab-close')?.click()
     await sleep(500)
     if (!document.querySelector('[data-workspace-pane="files"]:not([hidden])')) ok('文件磁贴可隐藏')
@@ -98,45 +78,20 @@
 
     out.push('\n=== 4. 两侧都收起（最窄的可用状态）===')
     click(document.querySelector('[data-testid="rail-toggle"]'))
-    /*
-     * ⚠️ 等**几何稳定**再读，不要固定 sleep。
-     *
-     * 左栏收起是一个滑动动画：固定等 700ms 会读到中间值（实测就是 48px），
-     * 而那个数字看着像"紧凑轨还占着位"。项目规则里写得很清楚 ——
-     * 「布局测量等几何稳定后再读数值」，这一条正是为了这种时候。
-     */
     await until(() => Math.abs((box('.rail-slot')?.w ?? -1)) < 1, 5000)
     const c4 = box('[data-testid="composer"]')
     const rw = box('.rail-slot')?.w ?? -1
-    /* 右栏收起后连元素都没有，所以量 grid 的第一/第三列 */
     const gridCols = getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns.split(' ')
     const pw = document.querySelector('[data-workspace-pane="files"]:not([hidden])')?.getBoundingClientRect().width ?? 0
     out.push('  rail=' + rw + ' right=' + pw + ' composer=' + JSON.stringify(c4))
     if (visible(c4)) ok('两侧都收起时输入框仍在（' + c4.w + '×' + c4.h + '）')
     else bad('两侧收起后输入框不见了！')
-    /*
-     * ⚠️ 断言要跟着**当前**设计走：紧凑轨（.rail-compact）已经不存在了
-     *（railmini 探针那边有「已彻底移除」的断言），现在是「收起 = 0 宽，
-     * 入口只留标题栏那一个」。原来那两条断言在找一个不存在的元素 ——
-     * 那是过时断言，不是回归。
-     */
     out.push(`  收起后：rail=${rw}px panel=${pw}px`)
-    /*
-     * 收起必须是 **0 宽**，三档窗口一视同仁。
-     *
-     * 这条断言曾经是「意图级」的（只要求明显窄于展开态）—— 因为窄窗口下
-     * 稳定停在 48px：紧凑图标轨删掉时，窄窗媒体查询里那条
-     * `.app.rail-off .workspace { --w-rail: 48px }` 没跟着清掉，而它的
-     * 特异性压过 `.app.rail-off` 继承下来的收起值（2026-09-18 修：值改成
-     * --w-rail-collapsed）。缺陷没了，就没有再放水的理由 —— 写死 0。
-     * 上面那句 until() 已等到几何稳定，读到的是终值而非动画中间值。
-     */
     if (rw < 1) ok(`左栏收起后 0 宽（${rw}px）`)
     else bad(`左栏收起后没让位：宽 ${rw}px（应为 0）`)
     if (pw === 0) ok('右栏收起后 0 宽（整个卸载，不占位）')
     else bad('右栏收起后仍有保留宽度：' + pw)
 
-    // 复位
     store.getState().setRailPinned(true)
     if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
   } catch (e) { bad('抛异常：' + (e && e.message ? e.message : String(e))) }

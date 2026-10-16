@@ -1,11 +1,3 @@
-/**
- * 宿主表单（`yan question ask` 带 fields）：一次问清几项。
- *
- * 这是 v2 `chat/QuestionForm.tsx` 的**纯逻辑提取**（CONTRACT 允许）：
- * 字段类型（choice / multi / text / date / number / range）、可选项与「另写一句」、
- * 必填校验、答案按 `name` 打包成 JSON 回传的规则都保持一致；只把外观换成
- * v3 类名与本目录的按钮原语，不引入 v2 控件或 v2 CSS。
- */
 import { useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import type { QuestionField } from '../../../../shared/question-form'

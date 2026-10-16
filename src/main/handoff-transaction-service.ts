@@ -1,23 +1,3 @@
-/**
- * 交接事务日志的存储（实施-05 S5b-3a）。
- *
- * ══════════════════════════════════════════════════════════
- * 它守的是什么
- * ══════════════════════════════════════════════════════════
- * §8 第 6 条要求「每一步写可恢复日志」，第 7 条要求「失败保留源会话」。
- * 这两条都只有在**日志本身先落盘**时才有意义：
- *
- *   · 顺序永远是「先写日志，再动外部状态」（建会话 / 切活动段 / 发消息）。
- *     反过来的话，崩溃一次就会出现「动作做了但没人知道」——
- *     而交接的动作连接着两个会话，没有任何一侧能自己发现这件事。
- *   · 幂等：`begin` 按 `handoffId` 去重（同一份交接重放不会建第二条事务）；
- *     `update` 在读-改-写队列里做，落盘失败**必须抛**并把内存态退回磁盘上的样子
- *     （与 goals / handoffs 同一套做法）。
- *
- * ⚠️ 这一层**不建会话、不切活动段、不发消息** —— 那是接线（S5b-3b）的活。
- * 这里只把「事务此刻走到哪一步」变成可读、可恢复、可单测的事实。
- */
-
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
@@ -42,15 +22,12 @@ import {
 
 export const HANDOFF_TRANSACTION_FILE_NAME = 'handoff-transactions.json'
 
-/** 最多留多少条事务（与其它 store 同量级）。 */
 const MAX_TRANSACTIONS = 200
 
-/** 保留多少条步骤日志（诊断够用，不无界增长）。 */
 const MAX_STEPS = 40
 
 export interface HandoffTransactionDocument {
   version: 1
-  /** 按 `handoffId` 索引（一次交接连着源与目的两个会话，不能用会话键） */
   transactions: Record<string, HandoffTransaction>
   updatedAt: number
 }
@@ -64,7 +41,6 @@ function safeStage(raw: unknown): HandoffStage {
   return stages.includes(raw as HandoffStage) ? (raw as HandoffStage) : 'pending'
 }
 
-/** 回执只收正数时间戳：脏值一律丢掉（宁可显示“没到过”，也不显示一个假时刻）。 */
 function sanitizeReceipts(raw: unknown): HandoffReceipts {
   if (!raw || typeof raw !== 'object') return {}
   const item = raw as Partial<HandoffReceipts>
@@ -93,12 +69,6 @@ function sanitizeStep(raw: unknown): HandoffStep | null {
   }
 }
 
-/**
- * 脏事务降级。
- *
- * 三个身份字段（`handoffId` / `sourceSession` / `resumeId`）缺一个就整条丢掉 ——
- * 没有它们的记录既回不到源会话，也判不了消费证据，留着只会让恢复逻辑乱猜。
- */
 export function sanitizeHandoffTransaction(raw: unknown): HandoffTransaction | null {
   if (!raw || typeof raw !== 'object') return null
   const item = raw as Partial<HandoffTransaction>
@@ -169,12 +139,10 @@ export class HandoffTransactionStore {
     this.now = options.now ?? Date.now
   }
 
-  /** 读一条事务（不落盘）。 */
   get(handoffId: string): HandoffTransaction | null {
     return this.doc.transactions[handoffId] ?? null
   }
 
-  /** 这个会话上有没有**未终结**的事务（源或目的任一侧都算）。 */
   activeForSession(sessionKey: string): HandoffTransaction | null {
     for (const tx of Object.values(this.doc.transactions)) {
       if (isTerminalStage(tx.stage)) continue
@@ -183,12 +151,6 @@ export class HandoffTransactionStore {
     return null
   }
 
-  /**
-   * 这个会话相关的最新一条事务（含已终结的）。
-   *
-   * 与 `activeForSession` 分开：恢复与「该不该再交接」关心的是**未终结**，
-   * 而界面 / 探针要能看见「上一次交接最后停在哪」（`resumed` 也算结论）。
-   */
   latestForSession(sessionKey: string): HandoffTransaction | null {
     let best: HandoffTransaction | null = null
     for (const tx of Object.values(this.doc.transactions)) {
@@ -198,31 +160,16 @@ export class HandoffTransactionStore {
     return best
   }
 
-  /**
-   * 这条事务是否涉及该会话。
-   *
-   * ⚠️ 必须**归一化后**比较：事务里的 `destinationSession` 是 pi 给的原始路径
-   *    （Windows 上是反斜杠），而调用方传进来的键来自 `workModeKeyFor`
-   *    （已归一化成正斜杠）。直接比字符串会让「刚交接完的会话」查不到自己的事务 ——
-   *    表现为界面永远看不到交接进度，重启恢复也认不出它。
-   */
   private touches(tx: HandoffTransaction, sessionKey: string): boolean {
     const key = normalizeChainKey(sessionKey)
     if (!key) return false
     return normalizeChainKey(tx.sourceSession) === key || normalizeChainKey(tx.destinationSession) === key
   }
 
-  /** 未终结的事务列表（崩溃恢复时逐个看）。 */
   openTransactions(): HandoffTransaction[] {
     return Object.values(this.doc.transactions).filter((tx) => !isTerminalStage(tx.stage))
   }
 
-  /**
-   * 开始一次交接。
-   *
-   * 幂等：同一个 `handoffId` 已经存在就原样返回（`created:false`）——
-   * 「决定交接」这件事可能被重放（state 推送、重试），不能建出两条事务。
-   */
   async begin(input: {
     handoffId: string
     sourceSession: string
@@ -239,7 +186,6 @@ export class HandoffTransactionStore {
     })
   }
 
-  /** 前进一格（幂等 + 落盘）。跳步 / 倒退返回 `advanced:false`。 */
   async step(
     handoffId: string,
     to: HandoffStage,
@@ -257,7 +203,6 @@ export class HandoffTransactionStore {
     })
   }
 
-  /** 记下目的会话（建出来之后调）。 */
   async setDestination(
     handoffId: string,
     destinationSession: string
@@ -275,7 +220,6 @@ export class HandoffTransactionStore {
     })
   }
 
-  /** 记下交接包（生成完之后调；`snapshot` 阶段会自动前进到 `validated`）。 */
   async setPackage(
     handoffId: string,
     pkg: HandoffPackage
@@ -292,7 +236,6 @@ export class HandoffTransactionStore {
     })
   }
 
-  /** 记一次 resume 发送尝试（发送**之前**调；`0` 与 `>= 2` 的含义见契约）。 */
   async noteResumeAttempt(handoffId: string): Promise<HandoffTransaction | null> {
     return this.enqueue(async () => {
       const tx = this.doc.transactions[handoffId]
@@ -305,7 +248,6 @@ export class HandoffTransactionStore {
     })
   }
 
-  /** 记一条回执（A-3）：`sent` / `persisted` / `started`，同一个只记第一次。 */
   async noteReceipt(handoffId: string, kind: ReceiptKind): Promise<HandoffTransaction | null> {
     return this.enqueue(async () => {
       const tx = this.doc.transactions[handoffId]
@@ -337,10 +279,6 @@ export class HandoffTransactionStore {
   private trim(): void {
     const ids = Object.keys(this.doc.transactions)
     if (ids.length <= MAX_TRANSACTIONS) return
-    /*
-     * 只丢**已终结**的最旧事务；未终结的一条都不丢 ——
-     * 丢掉它们等于把「下次启动该恢复什么」一起丢了。
-     */
     const removable = ids
       .filter((id) => isTerminalStage(this.doc.transactions[id].stage))
       .sort((a, b) => this.doc.transactions[a].updatedAt - this.doc.transactions[b].updatedAt)

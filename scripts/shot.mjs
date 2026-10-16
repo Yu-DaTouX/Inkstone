@@ -1,20 +1,4 @@
-/**
- * 用 Electron 自己截图（而不是 Edge headless）。
- *
- * 理由：只有走真实 Electron，preload / contextIsolation / file:// 下的 CSP
- * 和字体加载才和用户看到的一致。Edge 里跑出来的是「另一个页面」。
- *
- * 用法：
- *   npx electron scripts/shot.mjs <out.png> [宽] [高] [主题] [语言]
- * 例：
- *   npx electron scripts/shot.mjs docs/design/preview/yan-app-1440x900.png 1440 900 dark zh-CN
- *
- * ⚠️ 千万不要在入口用 top-level await `await app.whenReady()`。
- *    Electron 的 ESM 加载器要等整个模块图求值完才发 ready 事件，
- *    而 ready 又要等这个 await —— 直接死锁（表现为「什么都没发生」）。
- *    必须包在 main() 里调用。
- */
-import { muteMissingHandlerNoise } from './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
+import { muteMissingHandlerNoise } from './lib/stdio-guard.mjs'
 import { app, BrowserWindow } from 'electron'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -24,12 +8,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
 
 async function main() {
-  /*
-   * 截图/测量脚本**故意**不注册拉取型 IPC（返回空值会覆盖 fixture 注入的 store）：
-   * Electron 会把每次失败调用刷成一整段堆栈，既是这次 EPIPE 事故里被淹没的
-   * “原始错误”，也会把真错误顶出屏幕。这里显式静音并计数（结尾汇总），
-   * 其余 console.error 原样透传。
-   */
   muteMissingHandlerNoise()
   await app.whenReady()
 
@@ -45,8 +23,6 @@ async function main() {
     frame: false,
     backgroundColor: '#0b0b0d',
     webPreferences: {
-      /* 产物是 .cjs：sandboxed preload 不支持 ESM（见 electron.vite.config.ts）。
-         写成 index.mjs 会让 window.yan 缺失、截图整片空白。 */
       preload: join(root, 'out/preload/index.cjs'),
       sandbox: false,
       contextIsolation: true
@@ -55,7 +31,6 @@ async function main() {
 
   await win.loadFile(join(root, 'out/renderer/index.html'))
 
-  // 先把主题/语言落到 localStorage，再重载 —— 不然截的是默认态
   await win.webContents.executeJavaScript(`
     try {
       localStorage.setItem('yan.theme', ${JSON.stringify(theme)});
@@ -64,9 +39,6 @@ async function main() {
   `)
   await win.webContents.reload()
 
-  // 等字体真正就绪（内嵌 woff2 分片，不等会截到回退字形）。
-  // 必须用 `fonts.load` 主动触发「国」的分片加载：`fonts.ready` 在没 pending 请求时
-  // 立刻 resolve，测在分片落地之前就会得到 1em 的假值（与 visual-matrix.mjs 同因）。
   const cnWidth = await win.webContents.executeJavaScript(`
     document.fonts.load('12.5px "Maple Mono CN"', '国').then(() => {
       const el = document.createElement('span');

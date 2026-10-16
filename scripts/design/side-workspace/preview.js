@@ -1,4 +1,3 @@
-/* 示例终端使用真正的 xterm 字符网格；没有连接 PTY 或模型。 */
 const q=(s)=>document.querySelector(s), terms={};
 function colors(){const css=getComputedStyle(document.documentElement);return {background:css.getPropertyValue('--bg-1').trim(),foreground:css.getPropertyValue('--fg').trim(),cursor:css.getPropertyValue('--fg').trim()};}
 function fit(){for(const [id,t] of Object.entries(terms)){const el=q('#'+id+'-terminal');if(el.hidden||!el.clientWidth)continue;t.resize(Math.max(20,Math.floor(el.clientWidth/7.8)),Math.max(5,Math.floor(el.clientHeight/14.95)));}}

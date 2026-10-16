@@ -1,4 +1,3 @@
-/** Desktop setting persistence and renderer allow-list; isolated files, no models. */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'

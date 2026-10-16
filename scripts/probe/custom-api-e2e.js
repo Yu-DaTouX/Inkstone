@@ -1,14 +1,3 @@
-/*
- * 实施-23 端到端：新增模型 → pi 枚举 → 切换模型 → 真实对话 → 工具调用 → 取消 → 重开会话。
- *
- * 前提（由 `test-live` 的 `customapie2e` 场景准备）：隔离的 `YAN_PI_DIR` 里
- * 有一份 `models.json`，里面把 DeepSeek 官方通道注册成**自定义 provider** `yan-dp`
- * （协议 `openai-completions`，密钥从真实 auth.json 的 `deepseek.key` 复制，只落到系统临时目录）。
- *
- * ⚠️ 这个探针会**真实调用模型**（有费用）。它验证的正是「自定义接入之后，
- * 整条模型循环还能不能跑」—— 这是纯夹具证明不了的部分。
- * 本机拿不到 deepseek 凭证时，探针会打印跳过并正常结束。
- */
 ;(async () => {
   const out = []
   const ok = (cond, label, extra = '') => {
@@ -60,7 +49,6 @@
       await sleep(400)
     }
 
-    /* ---- 1. pi 枚举：自定义 provider 的模型出现在菜单里 ---- */
     click(q('[data-testid="model-picker"]'))
     await until(() => q('[data-testid="model-menu"]'), 8000)
     const filter = q('[data-testid="models-provider"]')
@@ -75,12 +63,10 @@
     }
     ok(true, '自定义 provider 的模型出现在菜单里（pi 真的枚举到了）')
 
-    /* ---- 2. 切换模型（点击菜单项，不是直接改 store） ---- */
     click(mine)
     await sleep(1500)
     ok(/自定义接入/.test(pickerText()), '切换后选择器显示新模型', pickerText())
 
-    /* ---- 3. 真实对话 ---- */
     const before = qa('.msg').length
     await send('只回复两个字：收到。不要调用任何工具。')
     const answered = await waitIdle()
@@ -88,7 +74,6 @@
     ok(qa('.msg').length > before, '消息流增加了新消息', `${before} → ${qa('.msg').length}`)
     ok(assistantText().trim().length > 0, '助手有正文', JSON.stringify(assistantText().trim().slice(0, 40)))
 
-    /* ---- 4. 工具调用 ---- */
     const toolsBefore = qa('.trow').length
     await send('必须先调用 bash 工具执行命令 `echo yan-custom-ok`，再根据工具返回的内容回复。不要自己编造输出。')
     await waitIdle()
@@ -98,7 +83,6 @@
     ok(!!bash, '有 bash 工具卡')
     if (bash) ok(bash.dataset.state === 'ok', `bash 状态 = ${bash.dataset.state}（应 ok）`)
 
-    /* ---- 5. 取消 ---- */
     const sentOk = await send('请连续执行 8 次 bash 命令，每次 `sleep 3`，中间不要停下来解释。')
     ok(sentOk, '取消用例的请求已发出')
     await until(() => busy(), 20_000)
@@ -110,7 +94,6 @@
     ok(stopped, '取消后回到空闲（不再有流式光标 / 运行中的工具）')
     ok(qa('.msg').length >= msgsBeforeAbort, '取消不会抹掉已有消息')
 
-    /* ---- 6. 会话重新打开（切走再切回） ---- */
     const currentFile = st().session?.conversationFile ?? st().session?.sessionFile
     const other = (st().sessions ?? []).find(
       (item) => (item.sessionFile ?? item.file ?? item.path) && (item.sessionFile ?? item.file ?? item.path) !== currentFile
@@ -130,7 +113,6 @@
       log('  ⚠ 跳过分组 6：隔离目录里没有第二个会话可切')
     }
 
-    /* ---- 收尾状态 ---- */
     ok(!q('.connbar'), '没有连接错误条')
     log('--- 自定义接入模型 ---')
     log('  选择器 = ' + pickerText())

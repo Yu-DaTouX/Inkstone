@@ -1,22 +1,9 @@
-/**
- * 结构化回答块：模型在回答里写带标签的代码块，宿主校验后用自己的组件画出来。
- *
- * - JSON 数据块（yan-chart / yan-stats / yan-cards / yan-record / yan-flow / yan-steps）：
- *   模型只给数据和文字，样式、比例尺、配色都由宿主决定 —— 换主题自动重画，
- *   历史里存的仍是文字，其他客户端里也能当普通代码读懂。校验失败就退回代码块，绝不猜着画。
- * - mermaid：标准 mermaid 语法，宿主离线渲染（严格安全级别）。
- * - yan-widget：自由 HTML/SVG 小部件，放进与 HTML 成果同一个隔离协议（无网络、无宿主对象），
- *   宿主注入主题变量；页面只能回报高度、请求把一段追问填进输入框，由用户决定是否发送。
- */
-
 export const VISUAL_DATA_LANGS = ['yan-chart', 'yan-stats', 'yan-cards', 'yan-record', 'yan-flow', 'yan-steps'] as const
 export type VisualDataLang = (typeof VISUAL_DATA_LANGS)[number]
 export const VISUAL_BLOCK_LANGS = [...VISUAL_DATA_LANGS, 'mermaid', 'yan-widget'] as const
 export type VisualBlockLang = (typeof VISUAL_BLOCK_LANGS)[number]
 
-/** 小部件 HTML 上限：内联在消息里，过大应改用 HTML 成果文件 */
 export const VISUAL_WIDGET_MAX_CHARS = 200_000
-/** mermaid 源码上限 */
 export const VISUAL_MERMAID_MAX_CHARS = 20_000
 
 export interface VisualSource {
@@ -52,7 +39,6 @@ export interface StatsBlock {
     value: string
     delta?: string
     trend?: Trend
-    /** 哪个方向是好事（决定涨跌着色），缺省 up */
     good?: 'up' | 'down'
     detail?: string
     spark?: number[]
@@ -90,7 +76,6 @@ export interface FlowBlock {
 export interface StepsBlock {
   kind: 'steps'
   title?: string
-  /** 最后一步的「下一步」回到第一步（事件循环这类循环过程） */
   loop: boolean
   steps: Array<{ title: string; body: string; icon?: string }>
 }
@@ -138,7 +123,6 @@ function num(value: unknown, where: string, { min = -Infinity }: { min?: number 
   return value as number
 }
 
-/** 只放行 http(s) 绝对地址，不带账号信息。 */
 export function safeHttpUrl(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > 2000) return null
   try {
@@ -165,12 +149,10 @@ function links(value: unknown, where: string): VisualLink[] | undefined {
 const CHART_TYPES: readonly ChartType[] = ['bar', 'hbar', 'stacked', 'line', 'area', 'dumbbell', 'diverging']
 function parseChart(data: Record<string, unknown>): ChartBlock {
   const declared = data.type === undefined ? 'bar' : CHART_TYPES.includes(data.type as ChartType) ? data.type as ChartType : fail(`type 只能是 ${CHART_TYPES.join(' / ')}`)
-  /* 单组柱状数据里出现负值（如零下气温）：改用偏离基准线的画法，而不是整块作废 */
   const rawSeries = Array.isArray(data.series) ? data.series : []
   const negative = rawSeries.length === 1 && Array.isArray((rawSeries[0] as { values?: unknown })?.values) && ((rawSeries[0] as { values: unknown[] }).values).some((v) => typeof v === 'number' && v < 0)
   const type: ChartType = negative && (declared === 'bar' || declared === 'hbar') ? 'diverging' : declared
   const labels = list(data.labels, 'labels', 1, LIMIT.labels).map((label, i) => str(label, `labels[${i}]`, 40))
-  /* 偏离基准线可以为负，其余都从 0 起画 */
   const min = type === 'diverging' ? -Infinity : 0
   const series = list(data.series, 'series', 1, LIMIT.series).map((raw, i) => {
     const item = obj(raw, `series[${i}]`)
@@ -191,7 +173,6 @@ function parseChart(data: Record<string, unknown>): ChartBlock {
     title: str(data.title, 'title'),
     subtitle: optStr(data.subtitle, 'subtitle'),
     unit: optStr(data.unit, 'unit', 12),
-    /* 数据必须写明出处：图表看起来越正式，越不能让来源缺席 */
     source: str(data.source, 'source（数据来源，必填）'),
     note: optStr(data.note, 'note', LIMIT.long),
     sources: sources(data.sources)
@@ -292,7 +273,6 @@ export function parseVisualBlock(lang: VisualDataLang, text: string): VisualPars
   }
 }
 
-/** 纵轴：取「好看」的上限（1/2/2.5/5 × 10ⁿ），刻度 4–5 格；百分比数据封顶 100。 */
 export function niceScale(maxValue: number, unit?: string): { max: number; ticks: number[] } {
   if (unit === '%' && maxValue <= 100 && maxValue > 50) return { max: 100, ticks: [0, 25, 50, 75, 100] }
   const raw = maxValue > 0 ? maxValue : 1

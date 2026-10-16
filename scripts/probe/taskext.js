@@ -1,21 +1,3 @@
-/**
- * 带历史扩展的升级目录：验证当前 pi 的发现策略与只读历史。
- *
- * 场景前提：专属 piDir 里放了一份 fixture 旧扩展（`scripts/fixtures/task-ext`），
- * 它注册同名 `panel_todos`、写旧标识 `left-panel-tasks`、注册 `/panel` 命令，
- * 并在 `session_start` 发通知，用来区分实际加载和目录清单。
- *
- * 原生 pi 允许用户扩展发现，旧版 runner 隔离发现；两种路径分别验证：
- *   · 诊断、session_start 通知与命令来源符合实际启动策略；
- *   · 历史会话里的旧任务条目仍能被砚只读显示，不会被迁移路径覆盖。
- * 第 4 节保留 `/panel` 的当前兼容行为记录，硬断言仍是「没有当自然语言发出去」。
- *
- * S5 把 piDir 扩成**两个扩展**（旧任务扩展 + 一个与任务无关的）：
- * 诊断计数、命令来源都要包含两份扩展，不能按任务关键词过滤。
- *
- * 另外解释一下为什么不在这里验「旧 JSONL 逐字节」：那要等 Electron 退出，
- * 由 `afterExit: taskFixtureReadonly` 在 Node 侧比（见 test-live.mjs）。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -52,7 +34,6 @@
 
     log('=== 带历史扩展目录：原生发现与只读历史 ===')
 
-    /* ================= 1. 启动期：通知降级 + 来源诊断 ================= */
     log('\n--- 1. 启动期通知与来源诊断 ---')
     await until(() => store.getState().conn === 'ready', 20000)
     const version = store.getState().piInfo?.version?.split('.').map(Number)
@@ -69,10 +50,6 @@
       '启动期通知没有弹成浮层（TUI 措辞不该打断桌面端）'
     )
 
-    /*
-     * 来源诊断是本片新增的「诊断样例」：出问题时（清单跳变 / 历史对不上）
-     * 第一件事就是分辨是谁写的。没有这几行就只能靠猜。
-     */
     const userLine = logs().find((l) => l.includes('[来源] 用户扩展'))
     const thinLine = logs().find((l) => l.includes('[来源] 砚内置薄层'))
     log('  来源诊断（用户）: ' + JSON.stringify(userLine ?? null))
@@ -82,11 +59,6 @@
     ok(!!userLine && (nativeDiscovery
       ? userLine.includes('由 pi 原生发现') && !userLine.includes('--no-extensions') && userLine.includes('目录清单不代表已加载')
       : userLine.includes('--no-extensions') && userLine.includes('不自动加载')), '来源诊断与当前 runner 的发现策略一致')
-    /*
-     * S5：诊断计的是**全部**用户扩展，不是只挑跟任务有关的那一个。
-     * 这一条能红的场景是真存在的：按名字/关键词过滤扩展时，
-     * 无关扩展会从清单里消失，用户就以为它没被加载。
-     */
     ok(!!userLine && /2 项/.test(userLine), '诊断数的是全部用户扩展（实际 2 项）', userLine ? '' : '（缺诊断行）')
     ok(
       !!userLine && userLine.includes('notes-panel.ts'),
@@ -99,20 +71,14 @@
     const taskLine = logs().find((l) => l.includes('left-panel-tasks'))
     ok(!!taskLine, '诊断说明了旧任务条目的只读语义', taskLine ? '' : '（缺这句话，用户无法判断两套清单的关系）')
 
-    /* ================= 2. pi 侧没有加载旧扩展 ================= */
     log('\n--- 2. pi 侧默认发现边界 ---')
     await until(() => store.getState().commands.length > 0, 10000)
     const panelAll = store.getState().commands.filter((c) => c.name.toLowerCase() === 'panel')
     const panelFromExt = panelAll.find((c) => c.source === 'extension')
     log('  commands 里的 panel: ' + JSON.stringify(panelFromExt ?? panelAll[0] ?? null))
     log('  同名 panel 条数: ' + panelAll.length + ' → ' + JSON.stringify(panelAll.map((c) => c.source)))
-    /*
-     * 这里反过来要求没有 **extension 来源**：本地兼容表里可能仍有一条 panel
-     *（`compatibility`，不可执行），但它不能被误当成旧扩展已经加载。
-     */
     ok(nativeDiscovery ? !!panelFromExt : !panelFromExt, '/panel 的扩展来源符合实际发现策略')
     ok(panelAll.some((c) => c.source === 'extension') === nativeDiscovery, '当前 runner 命令来源没有误判目录存在')
-    /* S5：无关扩展的命令也不能从用户目录偷偷进入当前 runner。 */
     const notesAll = store.getState().commands.filter((c) => c.name.toLowerCase() === 'notes')
     log('  commands 里的 notes: ' + JSON.stringify(notesAll.map((c) => c.source)))
     ok(
@@ -120,10 +86,7 @@
       '无关扩展 /notes 的来源也符合实际发现策略'
     )
 
-    /* ================= 3. 任务清单来自会话文件（只读） ================= */
     log('\n--- 3. 默认不加载时的历史任务清单来源 ---')
-    /* 前置场景可能刚改过会话标题 / 视图；先拿一次主进程索引，避免在
-     * 旧的渲染投影里选到目标但随后读的是上一条会话的任务状态。 */
     await store.getState().refreshSessions?.()
     const sessionRows = store.getState().sessions
     const target = sessionRows.find((s) => s.path.includes('yan-todo-fixture') || s.title.includes('YAN-TODO'))
@@ -131,12 +94,6 @@
       log('  ✗ fixture 里没有带任务的会话 —— 场景前提不成立')
       return out.join('\n')
     }
-    /*
-     * 身份与内容分两步确认：切会话时旧 runner 的 runtime 推送可能迟到，
-     * 只等 `todos` 会读到上一条投影的中间态（全量运行中确实撞到过一次）。
-     * 全量批次还可能让第一次选择落在迟到帧上；最多重走两次同一个稳定路径，
-     * 不放宽断言，也不接受“看起来像任务”的其它会话。
-     */
     let targetReady = false
     let tasksReady = false
     for (let attempt = 0; attempt < 3 && !tasksReady; attempt++) {
@@ -151,10 +108,6 @@
     const todos = store.getState().todos
     log('  todos = ' + JSON.stringify(todos.map((t) => t.text)))
     ok(todos.length === 4, `读到 fixture 会话里的 4 条（实际 ${todos.length}）`)
-    /*
-     * 内容必须是**会话文件里**那份：探针没有调用任何任务工具，
-     * 所以这些文字只可能来自宿主对 `get_entries` 的只读解析。
-     */
     ok(
       todos[0]?.text === '读 spec 并确认范围' && todos[1]?.text === '写 protocol.ts 的 JSONL 分帧',
       '清单内容与会话文件一致（宿主只读解析，不是扩展内存）'
@@ -165,7 +118,6 @@
     log('  todo-history 份数: ' + (hist?.length ?? 0))
     ok(gotHistory, '历史快照也读得到（旧条目不被当成新格式丢弃）')
 
-    /* ================= 4. /panel 的当前行为（基线，S4 修） ================= */
     log('\n--- 4. 手打 /panel 的当前行为（S1 记录基线） ---')
     const msgsBefore = store.getState().messages.length
     const noticesBefore = notices().length
@@ -174,12 +126,6 @@
     } else {
       setVal(ta(), '/panel')
       await sleep(300)
-      /*
-       * 先 Escape 关掉斜杠补全菜单再回车。
-       * 不关的话 Enter 会被菜单消费成「填入命令 + 尾空格」，根本没走到提交路径 ——
-       * 实测第一版就是这样：草稿变成 `/panel `，看起来像「保留了草稿」，其实什么也没测。
-       * Escape 必须派发到 **textarea**（菜单的按键处理挂在输入框上，document 收不到）。
-       */
       key(ta(), 'Escape')
       await until(() => !document.querySelector('.slash-menu'), 2000)
       log('  斜杠菜单已关：' + (document.querySelector('.slash-menu') ? '否（Enter 会被它吃掉）' : '是'))
@@ -196,18 +142,11 @@
       log('  回车前草稿 = ' + JSON.stringify(draftBeforeEnter.slice(0, 40)))
       log('  回车后草稿 = ' + JSON.stringify(draft.slice(0, 40)))
       log('  消息数 ' + msgsBefore + ' → ' + msgsAfter + '；通知 ' + noticesBefore + ' → ' + notices().length)
-      /*
-       * 这条是**硬断言**（两个阶段都成立）：/panel 是 TUI 命令，
-       * 无论 UI 怎么处理，都不能被当成自然语言发给模型 —— 模型看不见
-       * TUI 的 overlay，收到这五个字符只会瞎猜。
-       */
       ok(!sent, '/panel 没有被当成自然语言发出去')
-      /* 下面两条是 S1 的现状记录：S4 的目标是「草稿与附件都留着 + 有明确反馈」。 */
       log('  （记录）草稿是否被清空：' + (draft.trim() === '' ? '被清空' : '仍保留'))
       log('  （记录）是否给了反馈：' + (notices().length > noticesBefore ? '有' : '无'))
     }
 
-    /* ================= 5. 不串会话 ================= */
     log('\n--- 5. 切走之后不残留 ---')
     const other = store.getState().sessions.find((s) => s.path !== target.path)
     if (!other) {

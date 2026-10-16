@@ -1,19 +1,3 @@
-/**
- * v3 预览面板（P3 · R5）：查看具体文件的只读预览。
- *
- * 能力边界（与工作区契约、设计规范一致）：
- *   · 文本 / 源码：`yan:readPreview`（主进程 realpath 校验、只读、大小上限、越界拒绝）；
- *   · 图片：同样先经 `readPreview` 校验，命中后才用**主进程返回的** `abs` 只读地址；
- *     绝不对模型输出或原始 `path` 直接拼 `file://`；
- *   · Office（docx/xlsx/pptx/pdf）：`yan:office:preview` 由宿主提取正文；
- *   · 二进制：只显示元信息，不假装能预览；
- *   · 成果 HTML 走消息里的 `ArtifactFrame`（`inkstone-html` 协议），这里不另开协议、不放宽 CSP。
- *
- * 归属：选择与已加载视图都按 `previewScopeKey(owner)`（会话键 + cwd）绑定，在 render
- * 计算 `activePath` 之前就隔离——新 owner 的首帧不会拿旧 owner 的文件去请求，也不会
- * 显示旧内容；读取返回后再用 `ownerScopedRead` 核一次 owner，迟到响应不写进当前界面。
- * 规则与淘汰见 `preview-selection.ts`。
- */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Copy, FileText, FolderOpen, Image as ImageIcon, ExternalLink, RefreshCw, TriangleAlert } from 'lucide-react'
 import { useI18n } from '../../i18n'
@@ -36,7 +20,6 @@ import {
 } from './preview-selection'
 import './preview.css'
 
-/** 一次渲染的最大行数；更大的文件只显示窗口，不铺满 DOM。 */
 const MAX_RENDER_LINES = 2000
 
 type PreviewView =
@@ -51,17 +34,10 @@ type PreviewView =
 export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = previewText(lang)
-  /* 已加载的视图跟它所属的请求键一起存；key 不匹配当前请求就不显示，不靠先渲染再清。 */
   const [viewSlot, setViewSlot] = useState<{ key: string; view: PreviewView } | null>(null)
   const [reload, setReload] = useState(0)
-  /* 面板内点选按 owner 作用域绑定（不是单个 string）。 */
   const [selections, setSelections] = useState<ReadonlyMap<string, PreviewSelectionEntry>>(() => new Map())
 
-  /*
-   * 归属隔离发生在 render 里：先用当前 owner 的作用域取选择和外部 path，
-   * 得到 `activePath` 之后才做任何异步读取。切到没有绑定的 owner 就是 `undefined`，
-   * 首帧不会拿旧 owner 的路径去请求。外部 path 在同一个 owner 内换值就接管。
-   */
   const scopeKey = previewScopeKey(owner)
   const externalPath = path ?? null
   const resolved = resolvePreviewPath(selections.get(scopeKey), externalPath)
@@ -70,12 +46,9 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
   }
   const activePath = resolved.path
   const viewKey = previewViewKey(scopeKey, activePath, reload)
-  /* 最新 owner 键：异步读取返回后用它核对归属，切走就丢弃旧结果。 */
   const ownerKeyRef = useRef(owner.key)
   ownerKeyRef.current = owner.key
 
-  /* 成果 manifest 的渲染端投影：会话消息里已由主进程 hydrate；只有 owner
-     真的拥有当前 store 会话时才列，绝不把另一条会话的成果拿来冒充。 */
   const storeSessionId = useStore((store) => store.session?.sessionId)
   const messages = useStore((store) => store.messages)
   const ownsCurrent = ownerOwnsSession(owner, storeSessionId ?? null)
@@ -145,7 +118,6 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
     }
   }, [viewKey, activePath, owner.key, owner.cwd, text.failed])
 
-  /* 只有属于当前请求键的已加载视图才显示；其余一律按「加载中 / 空」重新取。 */
   const view: PreviewView =
     viewKey && viewSlot && viewSlot.key === viewKey
       ? viewSlot.view
@@ -155,7 +127,6 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
   const activeAbs = 'abs' in view ? view.abs : ''
   const name = 'name' in view ? view.name : ''
 
-  /* 面板内点选：绑给当前 owner 作用域，并记下当刻的外部 path。 */
   const openArtifact = useCallback(
     (artifactPath: string): void => {
       setSelections((prev) => recordPreviewSelection(prev, scopeKey, artifactPath, externalPath))
@@ -267,7 +238,6 @@ function PreviewBody({
     case 'image':
       return (
         <figure className="v3-preview-media" data-testid="v3-preview-image">
-          {/* 只用主进程 `readPreview` 校验后返回的 `abs`（realpath、普通文件、大小上限）。 */}
           <img src={filePreviewUrl(view.abs)} alt={view.name} draggable={false} />
           <figcaption className="v3-preview-hint">{text.imageNote}</figcaption>
         </figure>

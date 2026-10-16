@@ -1,23 +1,10 @@
-/**
- * 同步目录配置与「上次同步」摘要的落盘。
- *
- * 为什么单独一个小文件（`<数据目录>/sync-config.json`）而不是塞进 `desktop.json`：
- *   · `desktop.json` 的设置键走同步白名单，同步目录本身是本机专属路径，
- *     绝不能进入同步目录（否则两端会互相指向对方的路径）；
- *   · 这个文件不参与同步（不在 SyncService 的 SyncPaths 里），只记本机选择。
- *
- * 与同步基线（`sync-state.json`）分开：基线由 Synchroncore 维护，
- * 这里只记用户选择与最近一次结果，两者损坏互不影响。
- */
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { atomicWriteFile } from './atomic'
 
-/** 配置文件名；固定在数据目录根部，不随同步走。 */
 export const SYNC_CONFIG_FILE = 'sync-config.json'
 
-/** 最近一次同步的可读摘要。 */
 export interface SyncRunSummary {
   at: number
   ok: boolean
@@ -30,9 +17,7 @@ export interface SyncRunSummary {
 
 export interface SyncConfig {
   v: 1
-  /** 用户指定的同步文件夹；未配置时缺省。 */
   syncRoot?: string
-  /** 最近一次同步结果；切换同步目录会清空。 */
   lastSync?: SyncRunSummary
 }
 
@@ -51,7 +36,6 @@ function isRunSummary(value: unknown): value is SyncRunSummary {
   )
 }
 
-/** 读写同步配置的小存储；纯 Node，可在测试里指向临时数据目录。 */
 export class SyncConfigStore {
   private readonly file: string
   private cache?: SyncConfig
@@ -63,7 +47,6 @@ export class SyncConfigStore {
     return this.file
   }
 
-  /** 读配置；文件缺失 / 损坏一律回退为空配置，不抛异常、不删除原文件。 */
   async read(): Promise<SyncConfig> {
     if (this.cache) return this.cache
     if (!existsSync(this.file)) return (this.cache = { v: 1 })
@@ -74,7 +57,6 @@ export class SyncConfigStore {
       if (isRunSummary(raw?.lastSync)) config.lastSync = raw.lastSync
       return (this.cache = config)
     } catch {
-      /* 坏文件不让同步配置页整页失败：回退空配置，下次写入时覆盖。 */
       return (this.cache = { v: 1 })
     }
   }
@@ -84,7 +66,6 @@ export class SyncConfigStore {
     this.cache = config
   }
 
-  /** 设置 / 清除同步目录；目录变化时清掉旧目录的同步摘要，避免显示错位的「上次结果」。 */
   async setSyncRoot(root: string | undefined): Promise<SyncConfig> {
     const current = await this.read()
     if ((current.syncRoot ?? '') === (root ?? '')) return current
@@ -94,7 +75,6 @@ export class SyncConfigStore {
     return next
   }
 
-  /** 记录一次同步结果；没有配置同步目录时不写。 */
   async recordSync(summary: SyncRunSummary): Promise<void> {
     const current = await this.read()
     if (!current.syncRoot) return

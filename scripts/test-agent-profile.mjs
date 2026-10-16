@@ -1,13 +1,3 @@
-/**
- * 活动档案（实施-25 P01）的单测：契约纯逻辑 + 存储/快照。
- *
- * 为什么值得单测：
- *   · 角色文本决定「日常里的 agent 是不是代码助手」—— 这部分只有一处真源，
- *     搞错不会报错，只会让日常变得没用；
- *   · 「禁哪些工具」写错会表现为「模型说我没有工具」，最容易被当成模型问题；
- *   · 存储的 CAS 与会话键决定「切会话串不串」——串了在界面上看不出来。
- */
-
 const base = { profile: 'daily', activity: 'research' }
 
 export function runAgentProfileTests(ok, mod) {
@@ -26,13 +16,11 @@ export function runAgentProfileTests(ok, mod) {
   ok(DEFAULT_AGENT_PROFILE === 'auto', '默认档案是 auto（由 agent 按请求自行判断）')
   ok(DEFAULT_AGENT_ACTIVITY === 'answer', '默认活动是 answer')
 
-  /* ---- 枚举归一 ---- */
   ok(normalizeAgentProfileKind('daily') === 'daily', '合法 profile 原样返回')
   ok(normalizeAgentProfileKind('bad') === 'auto', '非法 profile 归一到 auto')
   ok(normalizeAgentActivity('learn') === 'learn', '合法 activity 原样返回')
   ok(normalizeAgentActivity('x') === 'answer', '非法 activity 归一到 answer')
 
-  /* ---- 校验：显式报错，不静默修好 ---- */
   {
     const okProfile = validateAgentProfile({ profile: 'daily', activity: 'learn', spaceId: ' sp1 ' })
     ok(okProfile.ok === true, '合法档案通过校验')
@@ -50,7 +38,6 @@ export function runAgentProfileTests(ok, mod) {
     ok(validateAgentProfile(null).ok === false, '非对象档案被拒')
   }
 
-  /* ---- 角色分区：coding 只带文档同步约定，auto / daily 注入各自的行为 ---- */
   {
     const coding = agentRoleSection('coding', 'research')
     ok(
@@ -90,7 +77,6 @@ export function runAgentProfileTests(ok, mod) {
     ok(learn?.content.includes('独立完成'), '导师角色明确「独立完成之前不算掌握」')
   }
 
-  /* ---- 工具策略：只禁必要的，永不禁 bash ---- */
   {
     const all = ['read', 'grep', 'find', 'ls', 'bash', 'write', 'edit']
     const research = filterToolsForActivity('research', all)
@@ -116,7 +102,7 @@ export function runAgentProfileTests(ok, mod) {
   }
 }
 
-/** 存储与快照：真临时目录、真原子写。 */export async function runAgentProfileStoreTests(ok, mod, helpers) {
+export async function runAgentProfileStoreTests(ok, mod, helpers) {
   const { AgentProfileStore, writeAgentProfileSnapshot, sanitizeAgentProfileDocument, normalizeProfileSessionKey, agentProfileSnapshotPath } = mod
   const { mkdtemp, readFile, rm } = helpers
   const { tmpdir } = await import('node:os')
@@ -126,13 +112,11 @@ export function runAgentProfileTests(ok, mod) {
   try {
     const store = new AgentProfileStore({ root })
 
-    /* ---- 默认：auto/answer，revision 0（未落盘） ---- */
     {
       const s = store.state('sess-a')
       ok(s.profile === 'auto' && s.activity === 'answer' && s.revision === 0, '没有条目时给默认档案')
     }
 
-    /* ---- 提交 ---- */
     {
       const r = await store.set('sess-a', { profile: 'daily', activity: 'learn' })
       ok(r.ok === true && r.state.activity === 'learn' && r.state.revision === 1, '提交后 revision=1')
@@ -152,14 +136,12 @@ export function runAgentProfileTests(ok, mod) {
       ok((await store.set('', { activity: 'answer' })).error === 'bad-key', '空键被拒')
     }
 
-    /* ---- 会话隔离：B 会话不受 A 影响 ---- */
     {
       const a = store.state('sess-a')
       const b = store.state('sess-b')
       ok(a.activity === 'research' && b.activity === 'answer', '档案按会话隔离，切会话不串')
     }
 
-    /* ---- adopt：迁移不算提交 ---- */
     {
       await store.set('pending:r1', { profile: 'daily', activity: 'compose' })
       const before = store.state('pending:r1').revision
@@ -169,7 +151,6 @@ export function runAgentProfileTests(ok, mod) {
       ok(store.state('pending:r1').revision === 0, '迁移后 pending 键不再持有档案')
     }
 
-    /* ---- 落盘 + 读回 ---- */
     {
       const raw = JSON.parse(await readFile(join(root, 'agent-profiles.json'), 'utf8'))
       ok(raw.version === 1, '文档带 schema 版本')
@@ -180,7 +161,6 @@ export function runAgentProfileTests(ok, mod) {
       ok(reloaded.state('sess-a').activity === 'research', '重启后档案仍在')
     }
 
-    /* ---- 快照：角色文本与工具策略由宿主渲染 ---- */
     {
       const snapPath = agentProfileSnapshotPath('sess-a', root)
       await writeAgentProfileSnapshot('sess-a', store.state('sess-a'), root)
@@ -189,7 +169,6 @@ export function runAgentProfileTests(ok, mod) {
       ok(snap.roleSection?.name === 'yan_role' && /研究/.test(snap.roleSection.content), '快照带上渲染好的角色分区')
       ok(Array.isArray(snap.deniedTools) && snap.deniedTools.includes('write'), '快照带上本活动禁用的工具')
 
-      // coding 档案：带「代码改完同步文档」的角色分区（扩展据此注入）
       const coding = { profile: 'coding', activity: 'answer', revision: 1 }
       await writeAgentProfileSnapshot('coding-sess', coding, root)
       const codingSnap = JSON.parse(await readFile(agentProfileSnapshotPath('coding-sess', root), 'utf8'))
@@ -199,10 +178,6 @@ export function runAgentProfileTests(ok, mod) {
       )
       ok(Array.isArray(codingSnap.deniedTools) && codingSnap.deniedTools.length === 0, 'coding 不禁用工具')
 
-      /*
-       * auto 档：注入自主判断的角色文本，但**不给工具限制** ——
-       * 活动是模型当场判断的，拿旧 activity 去禁 write/edit 会让代码会话写不了文件。
-       */
       const auto = { profile: 'auto', activity: 'research', revision: 1 }
       await writeAgentProfileSnapshot('auto-sess', auto, root)
       const autoSnap = JSON.parse(await readFile(agentProfileSnapshotPath('auto-sess', root), 'utf8'))
@@ -210,7 +185,6 @@ export function runAgentProfileTests(ok, mod) {
       ok(Array.isArray(autoSnap.deniedTools) && autoSnap.deniedTools.length === 0, 'auto 不禁用工具（即使上次活动是研究）')
     }
 
-    /* ---- 坏文档：丢掉坏条目，不整体失败 ---- */
     {
       const doc = sanitizeAgentProfileDocument({
         version: 1,
@@ -224,7 +198,6 @@ export function runAgentProfileTests(ok, mod) {
       ok(sanitizeAgentProfileDocument(null).entries && Object.keys(sanitizeAgentProfileDocument(null).entries).length === 0, '空文档不报错')
     }
 
-    /* ---- 会话键与 work-mode 同口径 ---- */
     {
       ok(
         normalizeProfileSessionKey('C:\\proj\\a.jsonl\\') === 'C:/proj/a.jsonl',
@@ -238,12 +211,6 @@ export function runAgentProfileTests(ok, mod) {
   }
 }
 
-/**
- * 薄层扩展的**真实注入行为**（T01-2 / T01-3 / T01-4）。
- *
- * 直接加载 `resources/pi-extensions/profile.js` 并调用它的 `before_agent_start`，
- * 不启动 pi：扩展只读快照文件 + 改 `systemPromptOptions`，这两件事都能在这里钉住。
- */
 export async function runAgentProfileExtensionTests(ok, extension, helpers, shared) {
   const { mkdtemp, writeFile, mkdir, rm } = helpers
   const { tmpdir } = await import('node:os')
@@ -268,8 +235,6 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
     return {
       on: (name, fn) => handlers.push({ name, fn }),
       getActiveTools: () => tools,
-      /* pi 对 handler 的同步抛出也会当成失败（它每个 handler 单独 try/catch）；
-         这里包一层 Promise，让同步 throw 也能被 allSettled 看到 */
       fire: (event) =>
         handlers
           .filter((h) => h.name === 'before_agent_start')
@@ -277,13 +242,6 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
     }
   }
 
-  /*
-   * 枚举一致性：薄层为了「接口不符预期就显式报错」自己写了一份白名单，
-   * 而真源在 `src/shared/agent-profile.ts`。两份曾经漂移（薄层漏了 `auto`），
-   * 症状不是「角色没注入」，而是每轮都弹
-   * 「扩展出错：档案 profile 取值非法：auto」。所以这里直接断言两份相等，
-   * 顺带覆盖顺序 —— 顺序不影响本扩展的行为，但影响「一致」这个词的含义。
-   */
   ok(
     extension.PROFILES.join(',') === shared.AGENT_PROFILES.join(','),
     '薄层 PROFILES 与 shared AGENT_PROFILES 一致（防枚举漂移）',
@@ -296,7 +254,6 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
   )
 
   try {
-    /* ---- 没有快照：不注入（旧会话保持 pi 原生） ---- */
     {
       await clearSnapshot()
       const pi = fakePi(['read', 'write', 'edit', 'bash'])
@@ -307,7 +264,6 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
       ok(options.selectedTools === undefined, '没有档案快照时不动工具表')
     }
 
-    /* ---- coding：roleSection 为 null，不注入、不禁工具 ---- */
     {
       await writeSnapshot({ version: 1, profile: 'coding', activity: 'answer', roleSection: null, deniedTools: [] })
       const pi = fakePi(['read', 'write', 'edit', 'bash'])
@@ -318,7 +274,6 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
       ok(options.selectedTools === undefined, 'coding 档案不禁用任何工具')
     }
 
-    /* ---- auto（默认档）：注入判断准则，且**不能**被薄层判成非法 ---- */
     {
       await writeSnapshot({
         version: 1,
@@ -340,7 +295,6 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
       ok(options.selectedTools === undefined, 'auto 档案不禁用任何工具')
     }
 
-    /* ---- daily + research：注入角色 + 收窄工具（保留 bash） ---- */
     {
       await writeSnapshot({
         version: 1,
@@ -361,7 +315,6 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
       )
     }
 
-    /* ---- 本轮上下文（实施-25 P05）：与角色一起注入，但失败口径不同 ---- */
     {
       const writeContext = async (record) => {
         await mkdir(join(root, 'agent-context'), { recursive: true })
@@ -391,7 +344,6 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
         String(options.sections.yan_context)
       )
 
-      /* 坏 JSON：上下文是增强，不注入、也**不报错**（与档案的显式失败相反） */
       await writeContext('{ 不是 JSON')
       const pi2 = fakePi(['read'])
       extension.default(pi2)
@@ -410,7 +362,6 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
       await rm(join(root, 'agent-context'), { recursive: true, force: true })
     }
 
-    /* ---- 工具名对象形态（pi 旧版 getActiveTools 返回值）也要兼容 ---- */
     {
       await writeSnapshot({
         version: 1,
@@ -426,7 +377,6 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
       ok(options.selectedTools.join(',') === 'read,bash', '工具名对象形态同样被过滤', JSON.stringify(options.selectedTools))
     }
 
-    /* ---- 失败显式：结构不符 / 快照坏 / 枚举非法一律报错 ---- */
     {
       await writeSnapshot({ version: 1, profile: 'daily', activity: 'research', roleSection: null, deniedTools: [] })
       const pi = fakePi(['read'])

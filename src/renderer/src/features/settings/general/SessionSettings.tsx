@@ -1,10 +1,3 @@
-/**
- * 设置 → 会话（v3）。
- *
- * 只接现有 `AppSettings` 字段：自动归档、运行中保持唤醒（可选电池）、检查点、
- * 子 Agent 完成通知。默认模型归「模型与服务」、权限档归「权限与安全」、
- * 上下文裁剪归「上下文」。
- */
 import type { ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'

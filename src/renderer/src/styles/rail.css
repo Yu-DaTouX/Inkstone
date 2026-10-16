@@ -1,11 +1,3 @@
-/*
- * 左栏：新对话与搜索 · 置顶 / 最近 · 项目与会话树 · 待我处理 · 用户。
- *
- * 属于 modules 层（见 styles/index.css）。每个选择器只在这里定义一次；
- * 尺寸对齐设计规范 §4：行高 28px、正文 12px、分区标题 11px 淡色 + 细线。
- */
-
-/* ── 栏体 ── */
 .rail-slot {
   position: relative;
   z-index: 5;
@@ -13,10 +5,6 @@
   overflow: hidden;
 }
 
-/*
- * flex 列而不是 grid 行：子元素「有时有、有时没有」（删除提示、分组菜单），
- * 固定行数的 grid 会漏掉隐式行。宽度跟随列宽（--w-rail，含用户拖出来的值）。
- */
 .rail {
   display: flex;
   flex-direction: column;
@@ -28,13 +16,11 @@
   font-size: var(--fs-sm);
 }
 
-/* 收起 = 0 宽，展开入口只在标题栏（rail-toggle）；把手一并去掉 */
 .app.rail-off .rail,
 .app.rail-off .resizer-rail {
   display: none;
 }
 
-/* ── 顶部：新对话 + 搜索 ── */
 .rail-top {
   display: flex;
   flex-direction: column;
@@ -117,7 +103,6 @@
   color: var(--fg);
 }
 
-/* ── 列表区 ── */
 .rail-section {
   display: flex;
   flex-direction: column;
@@ -125,10 +110,6 @@
   min-height: 0;
 }
 
-/*
- * 作为容器查询的上下文：栏宽是用户拖出来的，与窗口宽度无关，
- * 所以窄栏的取舍用容器查询（见文件末尾）。
- */
 .rail-body {
   flex: 1;
   min-width: 0;
@@ -139,7 +120,6 @@
   container-name: railbody;
 }
 
-/* 分区标题：「置顶 ──────」「项目 ────── +」 */
 .rail-section-head {
   display: flex;
   align-items: center;
@@ -252,7 +232,6 @@ button.rail-label:hover {
   transform: rotate(90deg);
 }
 
-/* ── 项目行：名称切项目，箭头折叠，⋯ 菜单，右侧计数 ── */
 .proj + .proj {
   margin-top: 2px;
 }
@@ -282,7 +261,6 @@ button.rail-label:hover {
 .proj-head[data-current='1'] .proj-pick .ico {
   color: var(--accent);
 }
-/* 项目收起时，下面的会话一并隐藏 */
 .proj-head.collapsed ~ * {
   display: none;
 }
@@ -340,7 +318,6 @@ button.rail-label:hover {
 .proj-fold .chev.open {
   transform: rotate(90deg);
 }
-/* 箭头与菜单只在悬停 / 聚焦时出现，静止时这一行只有名字与计数 */
 .proj-fold,
 .proj-rename {
   opacity: 0;
@@ -392,7 +369,6 @@ button.rail-label:hover {
   margin-left: 20px;
 }
 
-/* 分组标题（项目可以归到分组里） */
 .proj-group-heading {
   display: flex;
   align-items: center;
@@ -416,7 +392,6 @@ button.rail-label:hover {
 .proj-group-heading .spacer {
   flex: 1;
 }
-/* 分组菜单按钮：静止时隐形，但键盘聚焦时必须显形 */
 .proj-group-act {
   flex: none;
   padding: 1px 2px;
@@ -441,7 +416,6 @@ button.rail-label:hover {
   font-size: var(--fs-xs);
 }
 
-/* 「移到分组」就地展开的小面板 */
 .project-menu {
   display: flex;
   flex-direction: column;
@@ -476,7 +450,6 @@ button.rail-label:hover {
   font: inherit;
 }
 
-/* ── 会话行：状态点 · 标题 · 时间；悬停时时间让位给 ⋯ ── */
 .srow-wrap {
   position: relative;
 }
@@ -501,7 +474,6 @@ button.rail-label:hover {
   background: var(--bg-3);
   color: var(--fg);
 }
-/* 分屏里打开着、但不是焦点的会话：比悬停实一点、比选中浅一档 */
 .srow-row.open {
   background: var(--bg-2);
   color: var(--fg);
@@ -513,18 +485,15 @@ button.rail-label:hover {
   flex: 1;
   min-width: 0;
   height: 100%;
-  /* 分支按层级缩进；缩进写在按钮里，选中底色仍铺满整行 */
   padding: 0 var(--sp-1) 0 calc(var(--sp-2) + var(--branch-depth, 0) * var(--sp-3));
   color: inherit;
   font-size: var(--fs-sm);
   text-align: left;
 }
-/* 置顶与最近是跨项目捷径，不在项目下，少缩一级 */
 .rail-pins .srow,
 .rail-recent .srow {
   padding-left: var(--sp-2);
 }
-/* 静止行的空心点只在悬停时淡显：一列空心圈是噪音，位置仍保留以对齐标题 */
 .srow-dot {
   display: block;
   flex: none;
@@ -581,7 +550,6 @@ button.rail-label:hover {
   gap: var(--sp-1);
   min-width: 0;
 }
-/* 标题只占自己的宽度，时间紧跟其后；标题过长才被省略 */
 .srow-name {
   flex: 0 1 auto;
   min-width: 0;
@@ -589,14 +557,12 @@ button.rail-label:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 分支编号：这个会话是从别的会话分出来的第几个 */
 .srow-bno {
   flex: none;
   color: var(--accent);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
-/* 分叉来源在窄栏里只会挤掉标题：放在悬停提示里 */
 .srow-origin {
   display: none;
 }
@@ -617,7 +583,6 @@ button.rail-label:hover {
   right: 4px;
   display: flex;
   opacity: 0;
-  /* 隐藏时不接收指针事件，否则看不见的 ⋯ 会抢走「点行选中」的点击 */
   pointer-events: none;
   transition: opacity var(--dur) var(--ease);
 }
@@ -635,7 +600,6 @@ button.rail-label:hover {
   background: var(--bg-4);
 }
 
-/* 分叉开关：行尾的「分支数 ›」 */
 .srow-btoggle {
   display: inline-flex;
   align-items: center;
@@ -667,7 +631,6 @@ button.rail-label:hover {
   width: 100%;
 }
 
-/* ── 会话行菜单（Portal 到 body，定位由 ContextMenuSurface 负责） ── */
 .row-menu-surface {
   min-width: 208px;
 }
@@ -711,12 +674,10 @@ button.rail-label:hover {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--sp-1);
 }
-/* 用 plus 旋转成关闭叉 */
 .rail-trash-x {
   transform: rotate(45deg);
 }
 
-/* ── 拖拽排序：被拖的行变淡，落点画 2px 插入线 ── */
 body.rail-dragging * {
   user-select: none;
 }
@@ -727,14 +688,12 @@ body.rail-dragging .proj-group-heading,
 body.rail-dragging .srow {
   cursor: grabbing;
 }
-/* 被拖的行退出命中判定：否则 elementFromPoint 会命中它自己，落点算不出来 */
 .srow-wrap.is-dragging,
 .proj-head.is-dragging,
 .proj-group-heading.is-dragging {
   opacity: 0.45;
   pointer-events: none;
 }
-/* 拖到项目行上：改归属（整行虚线框），与换顺序的插入线区别开 */
 .proj-head.drop-into {
   background: var(--bg-3);
   outline: 1px dashed var(--accent);
@@ -768,7 +727,6 @@ body.rail-dragging .srow {
   bottom: -1px;
 }
 
-/* ── 删除确认与撤销提示 ── */
 .rail-delete-dialog {
   width: min(430px, calc(100vw - 32px));
 }
@@ -800,7 +758,6 @@ body.rail-dragging .srow {
 .rail-trash .spacer {
   flex: 1;
 }
-/* 窄栏下最多两行，超出截断；按钮不被多行文案拉高 */
 .rail-trash-text {
   display: -webkit-box;
   flex: 1 1 auto;
@@ -825,7 +782,6 @@ body.rail-dragging .srow {
   white-space: nowrap;
 }
 
-/* ── 底部：待我处理 + 用户 ── */
 .rail-inbox {
   display: flex;
   align-items: center;
@@ -851,7 +807,7 @@ body.rail-dragging .srow {
 }
 
 .rail-foot {
-  position: relative; /* .rail-user-pop 的定位基准 */
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -884,7 +840,6 @@ body.rail-dragging .srow {
   font-family: var(--font-body);
   line-height: 1;
 }
-/* 连接状态：头像右下角的小点 */
 .rail-avatar::after {
   content: '';
   position: absolute;
@@ -923,7 +878,6 @@ body.rail-dragging .srow {
   font-size: var(--fs-xs);
 }
 
-/* 头像自定义面板：贴在底栏上方 */
 .rail-user-pop {
   position: absolute;
   left: var(--sp-2);
@@ -1026,7 +980,6 @@ body.rail-dragging .srow {
   border: 1px solid var(--border);
   border-radius: var(--r-full);
 }
-/* 默认色：半色半透明的斜分表示「不指定」 */
 .rup-hue.none {
   background: linear-gradient(135deg, var(--bg-4) 50%, transparent 50%);
 }
@@ -1063,10 +1016,6 @@ body.rail-dragging .srow {
   overflow-wrap: anywhere;
 }
 
-/*
- * 窄栏（≤ 230px）：标题优先。相对时间与分支图标让位
- *（时间仍在会话菜单里），状态点不动 —— 它是后台运行状态的主入口。
- */
 @container railbody (max-width: 230px) {
   .srow-time,
   .srow-btoggle-ico,
@@ -1078,12 +1027,6 @@ body.rail-dragging .srow {
   }
 }
 
-/*
- * 左栏收起时的悬停预览：指针停在标题栏开关上，左栏以浮层滑出，不推挤中栏；
- * 指针离开开关与浮层后收回，点击开关才固定展开。
- * 位置在 .workspace 内（标题栏之下），宽度沿用用户拖出的左栏宽度。
- */
-/* 槽仍占着网格第一列（0 宽）：把它拿出文档流会让中栏顶进 0 宽的第一列、整块消失 */
 .app.rail-off.rail-peek .rail-slot {
   overflow: visible;
   z-index: 30;
@@ -1103,7 +1046,6 @@ body.rail-dragging .srow {
   animation: rail-peek-in var(--dur-200) var(--ease);
 }
 
-/* ── 视图菜单与非项目视图 ── */
 .rail-search-row {
   display: flex;
   align-items: center;
@@ -1125,7 +1067,6 @@ body.rail-dragging .srow {
 .rail-view-check .ico {
   color: var(--accent);
 }
-/* 状态 / 日期 / 不分组视图的会话行与置顶、最近同级，不缩进 */
 .rail-flat .srow {
   padding-left: var(--sp-2);
 }

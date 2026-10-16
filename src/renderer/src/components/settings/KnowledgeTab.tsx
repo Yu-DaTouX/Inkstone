@@ -5,32 +5,12 @@ import { useStore } from '../../state/store'
 import type { KnowledgeActionRequest, KnowledgeEntryView, KnowledgeListView, KnowledgeScope } from '../../../../shared/ipc'
 import { Button, SettingRow } from '../ui'
 
-/**
- * 「项目知识」设置页（实施-03 S5）。
- *
- * 这一页要回答三个问题，顺序也就是界面的顺序：
- *   ① **资料边界**：查看与主动发送；自动检索和上下文注入由 Agent 管理；
- *   ② **有哪些**：已确认 / 待确认 / 需复核三种筛选。**需复核是派生状态**
- *      （分支变了、引用路径没了、来源会话被删），由主进程判断后随列表下来；
- *   ③ **怎么处置**：确认（候选 → 已确认）、编辑、替代（新条目取代旧条目）、删除。
- *
- * 三条不可越过的口径（与主进程一致，见 `main/index.ts` 的 `yan:knowledge:*`）：
- *   · 身份只认**当前会话绑定的项目** —— 界面没有「切项目看别人的知识」这种入口；
- *   · 每条写操作都带 `expectedRevision`：磁盘上已经变了就报错让你刷新，**不静默覆盖**；
- *   · 「确认」是**用户动作**，界面显示的是真实来源与状态，不显示可信度百分比。
- */
 export function KnowledgeTab() {
   const t = useT()
   const [exportText, setExportText] = useState('')
-  /* 运行期拼出来的 key（筛选项 / 复核原因），i18n 的 key 是编译期联合类型，这里集中断言一次 */
   const tk = (key: string): string => t(key as MessageKey)
   const switchSession = useStore((s) => s.switchSession)
   const closeSettings = useStore((s) => s.closeSettings)
-  /**
-   * 当前会话的 cwd —— 项目身份变了，列表必须跟着重取。
-   * 只按记忆范围刷新不够：设置页开着时切会话，界面会停在旧项目，
-   * 而宿主的写操作按「此刻的会话」选项目 —— 这就是身份漂移。
-   */
   const sessionCwd = useStore((s) => s.session?.cwd)
 
   const [view, setView] = useState<KnowledgeListView | null>(null)
@@ -38,19 +18,13 @@ export function KnowledgeTab() {
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [filter, setFilter] = useState<'active' | 'candidate' | 'review'>('active')
-  /** 记忆范围：当前项目的知识，或跨项目的个人记忆（两边分开存放、分开确认） */
   const [scope, setScope] = useState<KnowledgeScope>('project')
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [replacing, setReplacing] = useState<{ id: string; text: string } | null>(null)
   const [asking, setAsking] = useState<{ id: string; permanent: boolean } | null>(null)
 
-  /**
-   * 请求代次：迟到的旧结果不得覆盖新结果（切会话 / 快速重试）。
-   * 另外卸载时也作废一次 —— 面板关掉之后到达的响应不许再 setState。
-   */
   const guardRef = useRef<LatestOnly | null>(null)
   if (guardRef.current === null) guardRef.current = createLatestOnly()
-  /** 上一次真正渲染出来的项目身份（用来判断是不是换了项目） */
   const projectRef = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -61,10 +35,6 @@ export function KnowledgeTab() {
       const next = await window.yan.knowledge.list(scope)
       if (!guard.isCurrent(token)) return
       setView(next)
-      /*
-       * 项目换了就把就地编辑收起来：编辑框里是上一个项目的文本，
-       * 现在列的是另一个项目的条目 —— 留着它只会让人误改。
-       */
       if ((next.projectId ?? null) !== projectRef.current) {
         projectRef.current = next.projectId ?? null
         setEditing(null)
@@ -89,7 +59,6 @@ export function KnowledgeTab() {
     void refresh()
   }, [refresh, sessionCwd])
 
-  /* 卸载后到达的结果一律丢弃 */
   useEffect(
     () => () => {
       ;(guardRef.current as LatestOnly).invalidate()
@@ -100,10 +69,6 @@ export function KnowledgeTab() {
   const entries = view?.entries ?? []
   const counts = view?.counts ?? { all: 0, active: 0, candidate: 0, review: 0 }
   const shown = entries.filter((entry) => {
-    /*
-     * 「已确认」= 所有 active（**包括**需复核的那几条）：它们仍然是已确认的知识，
-     * 把它从这一栏里藏起来用户就找不到了。「需复核」是一个**跨越状态**的视图。
-     */
     if (filter === 'active') return entry.status === 'active'
     if (filter === 'candidate') return entry.status === 'candidate'
     return entry.review.needed
@@ -113,13 +78,8 @@ export function KnowledgeTab() {
     setBusy(id)
     setNotice(null)
     try {
-      /* 带上界面当时显示的项目：宿主据此拒绝身份漂移（R10） */
       const res = await window.yan.knowledge.action({ ...req, expectedProjectId: view?.projectId, scope })
       if (!res.ok) {
-        /*
-         * CAS 冲突要说清是「有人先改了」而不是「你没权限」——
-         * `latestRevision` 存在就说明磁盘上有更新的一版。
-         */
         const text =
           res.latestRevision !== undefined
             ? `${res.error ?? tk('set.knFailed')}${t('set.knStale', { n: res.latestRevision })}`
@@ -142,7 +102,6 @@ export function KnowledgeTab() {
     }
   }
 
-  /** 来源跳转：拿会话文件路径（只有主进程知道）→ 切会话 → 关设置。 */
   const jumpTo = async (sessionId: string): Promise<void> => {
     setBusy(sessionId)
     setNotice(null)
@@ -155,7 +114,6 @@ export function KnowledgeTab() {
       closeSettings()
       await switchSession(res.path)
     } catch (error) {
-      /* IPC 自己抛错（通道断了 / 参数不合法）：必须就地告诉用户，不能静默 */
       setNotice({
         kind: 'err',
         text: error instanceof Error ? error.message : tk('set.knIpcFailed')
@@ -179,7 +137,6 @@ export function KnowledgeTab() {
           await navigator.clipboard.writeText(res.markdown)
           setNotice({ kind: 'ok', text: tk('set.knExported') })
         } catch {
-          /* 剪贴板被拒（无权限）：把正文塞进 textarea 让用户自己复制，不静默失败 */
           setExportText(res.markdown)
           setNotice({ kind: 'err', text: tk('set.knExportManual') })
         }
@@ -188,7 +145,6 @@ export function KnowledgeTab() {
       if (res.canceled) return
       setNotice({ kind: 'ok', text: `${tk('set.knExportSaved')}：${res.path ?? ''}` })
     } catch (error) {
-      /* 同上：导出通道出错要看得见 */
       setNotice({
         kind: 'err',
         text: error instanceof Error ? error.message : tk('set.knIpcFailed')
@@ -202,7 +158,6 @@ export function KnowledgeTab() {
     <div className="ui-rows">
       <SettingRow name={tk('set.knowledge')} desc={<span data-testid="kn-desc">{tk('ctx.nativeMaterials')}</span>} />
 
-      {/* 范围（本项目 / 个人记忆）+ 状态筛选 */}
       <SettingRow
         name={tk('set.knScope')}
         desc={
@@ -257,7 +212,6 @@ export function KnowledgeTab() {
       </div>
 
       {loading && !view ? <div className="ui-row-desc" role="status">{tk('browser.loading')}</div> : null}
-      {/* ③ 列表 */}
       {shown.length === 0 ? (
         <div className="ui-row col">
           <div className="ui-row-desc" data-testid="kn-empty">
@@ -305,7 +259,6 @@ export function KnowledgeTab() {
       )}
 
       {exportText ? <textarea className="ui-input" readOnly rows={12} value={exportText} aria-label={tk('set.knExport')} /> : null}
-      {/* 导出为 Markdown：复制或另存，不会改写仓库里的文档 */}
       <SettingRow name={tk('set.knExport')} desc={tk('set.knExportHint')}>
         <Button size="sm" variant="ghost" disabled={busy === '__export__'} onClick={() => void exportMarkdown('copy')} data-testid="kn-export-copy">
           {tk('set.knExportCopy')}
@@ -324,7 +277,6 @@ export function KnowledgeTab() {
   )
 }
 
-/** 一条知识。编辑 / 替代 / 删除都在这张卡里就地展开，不弹二级对话框。 */
 function KnowledgeRow({
   entry,
   busy,
@@ -367,7 +319,6 @@ function KnowledgeRow({
     <div className="ui-row col kn-item" data-testid={`kn-item-${entry.id}`}>
       <div className="set-ctrow">
         <div className="ui-row-label">
-          {/* 标题行只放「类型 · id」，正文在下面出**一次** —— 两处都放正文会让同一条看起来像两条（首版就是这个毛病，视觉矩阵抓到的） */}
           <span className="ui-row-name">
             {kindLabel} · <span className="kn-id">{entry.id}</span>
           </span>

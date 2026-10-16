@@ -1,16 +1,3 @@
-/**
- * 运行注册表宿主接线单测（v3 WP-10 接线）。
- *
- * 现场用 esbuild 编译 `src/main/runs-host.ts`（含它 import 的注册表 / 编号 /
- * 历史 / 推送合并 / 停滞监测），在隔离临时目录里跑，不启动 Electron、不碰 pi、
- * 不写用户数据目录。可独立执行：
- *
- *   node scripts/test-v3-runs-host.mjs
- *
- * 覆盖：初始化为了不改主入口可以失败降级、snapshot 的 flush + revision 对齐、
- * 编号未就绪时的信号缓冲、agent_settled 才终态、markSeen、危险确认按 id 归还、
- * dispose 等写盘。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -47,12 +34,10 @@ async function run() {
       newRunId: () => `run-${++seq}`
     })
 
-    /* ── 初始快照：revision 0、空列表 ── */
     let snap = host.snapshot()
     assert.equal(snap.revision, 0)
     assert.deepEqual(snap.runs, [])
 
-    /* ── 编号未就绪时缓冲信号；就绪后按序重放 ── */
     const observe = host.observerFor({ generation: 1 })
     const ctx1 = { sessionId: 's1', sessionPath: '/tmp/s1.jsonl', title: '会话一', model: { provider: 'p', id: 'm', label: 'M' } }
     observe(ctx1, { type: 'agent-start' })
@@ -70,7 +55,6 @@ async function run() {
     assert.equal(snap.runs[0].model.label, 'M')
     assert.ok(snap.revision > 0, 'snapshot 返回的 revision 必须 > 0')
 
-    /* ── snapshot 前 flush：普通变化先合并、snapshot 后 revision 对齐 ── */
     const ctx2 = { sessionId: 's2' }
     observe(ctx2, { type: 'agent-start' })
     await waitFor(() => host.snapshot().runs.some((r) => r.sessionId === 's2'))
@@ -83,11 +67,9 @@ async function run() {
     assert.equal(pushes[0].payload.revision, flushed.revision, 'push 的 revision 与 snapshot 返回一致')
     assert.equal(flushed.runs.find((r) => r.sessionId === 's2').phase.activity, 'thinking')
 
-    /* ── revision 单调递增 ── */
     const revisions = pushes.map((p) => p.payload.revision)
     assert.deepEqual(revisions, [...revisions].sort((a, b) => a - b))
 
-    /* ── markSeen：done 的运行标记已读并立即推送 ── */
     const doneRun = flushed.runs.find((r) => r.sessionId === 's1')
     const seen = host.markSeen(doneRun.runId)
     assert.equal(seen.ok, true)
@@ -95,7 +77,6 @@ async function run() {
     const marked = host.snapshot().runs.find((r) => r.runId === doneRun.runId)
     assert.equal(marked.phase.seen, true)
 
-    /* ── 危险确认：按正式 id 进入等你确认，resolve（含拒绝）归还运行态 ── */
     const ctx3 = { sessionId: 's3' }
     observe(ctx3, { type: 'agent-start' })
     await waitFor(() => host.snapshot().runs.some((r) => r.sessionId === 's3'))
@@ -119,13 +100,11 @@ async function run() {
       assert.equal(host.snapshot().runs.find((r) => r.sessionId === 's3').phase.kind, 'running')
     }
 
-    /* ── 进程退出（意外）记失败，不是 done ── */
     observe(ctx3, { type: 'pi-exit', code: 1, signal: null })
     const failed = host.snapshot().runs.find((r) => r.sessionId === 's3')
     assert.equal(failed.phase.kind, 'failed')
     assert.equal(failed.phase.cause, 'pi-exit')
 
-    /* ── 子 Agent：归到父会话编号下，agent_end 不终态、agent_settled 才终态 ── */
     const s2Run = host.snapshot().runs.find((r) => r.sessionId === 's2')
     host.observeSubagentEvent(
       { id: 'sub-1', parentSessionId: 's2', task: '子任务' },
@@ -139,7 +118,6 @@ async function run() {
     host.observeSubagentEvent({ id: 'sub-1', parentSessionId: 's2' }, { type: 'agent_settled', aborted: false })
     assert.equal(host.snapshot().runs.find((r) => r.kind === 'subagent').phase.kind, 'done', 'agent_settled 才是子代理终态')
 
-    /* ── dispose 等写盘；之后不再接收事件 ── */
     await host.dispose()
     const beforeCount = host.snapshot().runs.length
     observe(ctx1, { type: 'agent-start' })

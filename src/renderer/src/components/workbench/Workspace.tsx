@@ -7,9 +7,7 @@ import { useStore } from '../../state/store'
 import { loadWorkbenchState } from '../../state/workbench'
 import { CHAT_PANE, DOCK_GAP, defaultWorkspaceLayout, dockGroups, hideDockPane, isConversationPane, measureDockLayout, moveDockPane, normalizeWorkspaceLayout, openDockPane, rebaseDockLayout, resizeDockSplit, withoutDockPane, type DockEdge, type DockKeep, type DockRect, type DockSeparator, type WorkspaceLayout } from '../../state/workspace-layout'
 
-/** Resource-owned commands shown in the tile menu; layout never decides what they do. */
 export interface PaneAction { label: string; icon?: IconName; danger?: boolean; run(): void }
-/** `hint` is the tab tooltip; `closeLabel` gives the tab its own × (closing the resource, not just hiding the tile). */
 interface PaneInfo { id: string; title: string; icon?: IconName; addLabel?: string; hint?: string; closeLabel?: string; badgeText?: string; badgeTone?: BadgeTone }
 interface PaneCommands { actions?: PaneAction[]; onAdd?(): void; onClose?(): void }
 interface WorkspaceContextValue {
@@ -18,23 +16,15 @@ interface WorkspaceContextValue {
   unregister(id: string): void
   open(id: string): void
   hide(id: string): void
-  /** Drops the pane from the arrangement (its owner stops rendering it); `hide` keeps it reopenable from the menu. */
   close(id: string): void
   rects: Map<string, DockRect>
-  /** The pane lifted by a drag; it follows the pointer above the other tiles. */
   floating: string | null
   commands: Map<string, PaneCommands>
-  /** The conversation this workspace belongs to (resource ownership). */
   sessionKey: string
 }
 export type MenuAnchor = { top: number; right: number }
 type WorkspaceMenu = { kind: 'workspace'; at: MenuAnchor } | { kind: 'pane'; pane: string; at: MenuAnchor }
-/** Tool tiles have a tab row; the main conversation only has a slim grip. */
 const HEAD = 28, GRIP = 10, GRIP_MAXIMIZED = 24
-/**
- * Space between the tiles and the edges of the content area. The window edge on the right only keeps
- * a hairline, like the top; beside the rail the gap matches the gap between tiles.
- */
 const EDGE_LEFT = DOCK_GAP, EDGE_RIGHT = 2, EDGE_TOP = 2, EDGE_BOTTOM = DOCK_GAP
 export interface WorkspaceEdges { left: number; right: number }
 const DEFAULT_EDGES: WorkspaceEdges = { left: EDGE_LEFT, right: EDGE_RIGHT }
@@ -62,7 +52,6 @@ export function loadWorkspaceLayout(key: string): WorkspaceLayout {
     return migrated
   } catch { return defaultWorkspaceLayout() }
 }
-/** Key of the enclosing workspace, if any (a terminal outside a workspace has no owner). */
 export function useWorkspaceKey(): string | undefined {
   return useContext(WorkspaceContext)?.sessionKey
 }
@@ -71,12 +60,6 @@ export function useWorkspace() {
   if (!value) throw new Error('Workspace pane needs a workspace')
   return value
 }
-/**
- * One conversation's workspace: its conversation tile and the tools beside it, saved per conversation.
- * A split view puts several side by side; `active` marks the focused one, which alone answers
- * window-wide requests such as the arrange menu. `fit` makes the workspace at least as wide as its
- * tiles need, so a split view scrolls the row of conversations instead of squeezing one column.
- */
 export function Workspace({ sessionKey, active = true, fit = false, edges = DEFAULT_EDGES, children }: { sessionKey: string; active?: boolean; fit?: boolean; edges?: WorkspaceEdges; children: ReactNode }) {
   const t = useT()
   const edgeX = edges.left + edges.right
@@ -88,18 +71,15 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
   const [panes, setPanes] = useState<PaneInfo[]>([])
   const [host, setHost] = useState<HTMLDivElement | null>(null)
   const [size, setSize] = useState({ w: 1000, h: 700 })
-  /* Edits rebase the layout on the size on screen; until the canvas is measured there is nothing to rebase on. */
   const measuredSize = useRef<{ w: number; h: number } | null>(null)
   const availableRef = useRef(new Set<string>())
   const [menu, setMenu] = useState<WorkspaceMenu | null>(null)
   const [target, setTarget] = useState('')
   const [drag, setDrag] = useState<{ pane: string; target?: string; edge?: DockEdge; keep?: DockKeep } | null>(null)
-  /** Cursor position inside the canvas, kept apart so following the pointer never re-measures tiles. */
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const interactionCleanup = useRef<(() => void) | undefined>(undefined)
   const movedPointer = useRef(false)
-  /** The click that ends a drag is swallowed; later clicks (keyboard, menus) are not. */
   const dragEndedAt = useRef(0)
   const justDragged = () => performance.now() - dragEndedAt.current < 400
   const currentKey = useRef(sessionKey)
@@ -107,18 +87,15 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
   const acquireBlocker = useStore(s => s.acquireOverlayBlocker)
 
   const layout = saved.layout
-  /* Every edit starts from the arrangement as shown, so tiles beside the conversation keep the pixel size the user gave them. */
   const update = useCallback((fn: (l: WorkspaceLayout) => WorkspaceLayout) => setSaved(s => {
     const base = s.key === currentKey.current ? s.layout : loadWorkspaceLayout(currentKey.current), at = measuredSize.current
     const rebased = at ? rebaseDockLayout(base, availableRef.current, at.w, at.h) : base
     const next = fn(rebased)
-    /* Nothing changed (a resource of this conversation registering again after a switch): keep the saved arrangement as it was. */
     if (next === rebased && base.basis) return s.key === currentKey.current ? s : { key: currentKey.current, layout: base }
     return { key: currentKey.current, layout: next }
   }), [])
   useEffect(() => {
     interactionCleanup.current?.()
-    /* A pane that registered in the same commit already rebuilt the layout for the new key; reloading would drop it. */
     setSaved(s => s.key === sessionKey ? s : { key: sessionKey, layout: loadWorkspaceLayout(sessionKey) }); setMenu(null)
   }, [sessionKey])
   useEffect(() => {
@@ -126,7 +103,7 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
       const map = JSON.parse(localStorage.getItem(storageKey) ?? '{}')
       map[saved.key] = saved.layout
       localStorage.setItem(storageKey, JSON.stringify(map))
-    } catch { /* A preference write never prevents using the resource. */ }
+    } catch { }
   }, [saved])
   const measureScroll = useCallback((el: HTMLElement) => {
     const box = el.getBoundingClientRect()
@@ -137,14 +114,10 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    /* Measure the outer box, not clientWidth: a scrollbar that appears shrinks the client box, which
-       shrinks the canvas, which removes the scrollbar again and the layout oscillates. Flooring keeps
-       fractional device-pixel sizes from overflowing the container by a sub-pixel. */
     const observer = new ResizeObserver(() => measureScroll(el))
     observer.observe(el)
     return () => observer.disconnect()
   }, [measureScroll])
-  /* 列首尾变了（关掉最后一块等）盒子宽度不一定变，ResizeObserver 不会触发：边距变了就重量一次 */
   const lastEdgeX = useRef(edgeX)
   useLayoutEffect(() => {
     if (lastEdgeX.current === edgeX) return
@@ -160,7 +133,6 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
     document.addEventListener('keydown', escape)
     return () => { release(); document.removeEventListener('keydown', escape) }
   }, [menuOpen, acquireBlocker])
-  /* The title bar owns the entry; the anchor arrives with the request. */
   useEffect(() => {
     const show = (e: Event) => {
       if (!activeRef.current) return
@@ -181,17 +153,10 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
   const close = useCallback((id: string) => update(l => withoutDockPane(l, id)), [update])
   const available = useMemo(() => new Set(panes.map(p => p.id)), [panes])
   availableRef.current = available
-  /* A layout saved before sizes were kept records the size it is first shown at. */
   const needsBasis = !layout.basis && !layout.maximized && panes.length > 0
   useEffect(() => { if (needsBasis && measuredSize.current) update(l => l) }, [needsBasis, size, update])
-  /*
-   * Beside or into a tile (left, right, tabs) the tiles render the arrangement the drop would produce;
-   * above or below one they stay put and a border marks the half that tile would take.
-   * Saving waits for release.
-   */
   const dragPane = drag?.pane, dragTarget = drag?.target, dragEdge = drag?.edge, dragKeep = drag?.keep
   const stacked = dragEdge === 'top' || dragEdge === 'bottom'
-  /* The preview starts from the rebased arrangement, exactly as the committed move will. */
   const shown = useMemo(() => dragPane && dragTarget && dragEdge && !stacked ? moveDockPane(rebaseDockLayout(layout, available, size.w, size.h), dragPane, dragTarget, dragEdge, dragKeep) : layout, [layout, available, size, dragPane, dragTarget, dragEdge, dragKeep, stacked])
   const edgeZone = useMemo(() => {
     if (!dragPane || !dragTarget || !stacked) return null
@@ -203,7 +168,6 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
   }, [layout, available, size, dragPane, dragTarget, dragEdge, dragKeep, stacked])
   const measured = useMemo(() => measureDockLayout(shown, available, size.w, size.h), [shown, available, size])
   const minWidth = useMemo(() => fit ? measureDockLayout(layout, available, 0, size.h).width + edgeX : 0, [fit, layout, available, size.h, edgeX])
-  /* The lifted tile keeps its size and the spot where it was grabbed, as a window would. */
   const lift = useRef({ x: 0, y: 0, w: 0, h: 0 })
   const floating = drag && pointer ? drag.pane : null
   const floatRect = floating && pointer ? { x: pointer.x - lift.current.x, y: pointer.y - lift.current.y, w: lift.current.w, h: lift.current.h } : null
@@ -220,7 +184,6 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
     return result
   }, [measured, available, layout.hidden, layout.maximized, floating, floatRect?.x, floatRect?.y, floatHead])
   const context = useMemo(() => ({ host, register, unregister, open, hide, close, rects, commands, floating, sessionKey }), [host, register, unregister, open, hide, close, rects, commands, floating, sessionKey])
-  /* After release the tile glides from the cursor into its slot. */
   const [settling, setSettling] = useState(false)
   useEffect(() => {
     if (!settling) return
@@ -231,17 +194,11 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
     if (event.button !== 0 || layout.maximized) return
     event.preventDefault()
     interactionCleanup.current?.()
-    /* Only a real drag hides the native browser; a plain tab click must not flicker it. */
     let release: (() => void) | undefined
     const owner = sessionKey
     movedPointer.current = false
     const origin = { x: event.clientX, y: event.clientY }
     let drop: { target: string; edge: DockEdge; keep?: DockKeep } | undefined, started = false
-    /*
-     * Targets come from the arrangement without the dragged pane and stay fixed for the whole
-     * drag. Hit-testing the live preview instead would move the tile under the cursor and flip
-     * the target back and forth.
-     */
     const targets = measureDockLayout(withoutDockPane(layout, pane), available, size.w, size.h).groups
     const source = measured.groups.find(r => r.group.panes.includes(pane)), start = host?.getBoundingClientRect()
     if (source && start) lift.current = { x: event.clientX - start.left - source.x, y: event.clientY - start.top - source.y, w: source.w, h: source.h }
@@ -257,7 +214,6 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
       if (r) {
         const dx = (x - r.x) / r.w, dy = (y - r.y) / r.h
         const edge: DockEdge = dx < .24 ? 'left' : dx > .76 ? 'right' : dy < .24 ? 'top' : dy > .76 ? 'bottom' : 'center'
-        /* A pane keeps the size it was lifted with, so a width the user set is not undone by moving it. */
         const keep = edge === 'left' || edge === 'right' ? { size: lift.current.w, extent: r.w } : { size: lift.current.h, extent: r.h }
         if (edge !== 'center' || (!isConversationPane(pane) && !r.group.panes.some(isConversationPane))) next = { target: r.group.id, edge, ...(edge === 'center' ? {} : { keep }) }
       }
@@ -318,7 +274,6 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
           {measured.groups.map(r => {
             const ids = r.group.panes.filter(id => available.has(id) && !layout.hidden.includes(id))
             const active = ids.includes(r.group.active) ? r.group.active : ids[0]
-            /* The lifted tile leaves a placeholder where it will land (or where it came from). */
             const slot = !!floating && active === floating
             if (!active) return null
             return <div key={'frame-' + active} className={`tile-frame ui-tile${slot ? ' drop-slot tile-drop-preview' : ids.length === 1 && isConversationPane(active) ? ' primary' : ''}${layout.maximized ? ' maximized' : ''}`} style={position(r)} />
@@ -328,14 +283,12 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
             const active = ids.includes(r.group.active) ? r.group.active : ids[0]
             if (!active || active === floating) return null
             if (ids.length === 1 && isConversationPane(active)) {
-              /* A conversation keeps its own header; only a grip sits above it. */
               return <div key={'head-' + active} className="tile-heading tile-grip-zone" style={{ ...position(r), height: layout.maximized ? GRIP_MAXIMIZED : GRIP }} data-dock-group={r.group.id} onPointerDown={e => { if (!(e.target as HTMLElement).closest(".tile-grip-restore")) beginDrag(active, e) }}>
                 <button type="button" className="tile-grip ui-tile-grip" aria-label={t('tile.move', { title: titleOf(active) })} title={t('tile.gripHint')} onClick={e => openPaneMenu(active, menuAnchor(e.currentTarget))} />
                 {layout.maximized ? <IconButton className="tile-grip-restore" size="sm" icon="dock" label={t('tile.restore')} onClick={() => toggleMaximize(active)} /> : null}
               </div>
             }
             const info = panes.find(p => p.id === active)
-            /* Only tabs, "+" and hide stay visible; the pane menu opens on right-click (or the menu key) and double-click maximizes. */
             return <div key={'head-' + active} className="tile-heading ui-tile-head" style={{ ...position(r), height: HEAD }} data-dock-group={r.group.id} title={t('tile.headHint')}
               onPointerDown={e => { if (!(e.target as HTMLElement).closest('button')) beginDrag(active, e) }}
               onDoubleClick={e => { if (!(e.target as HTMLElement).closest('.ui-tab-close, .btn')) toggleMaximize(active) }}
@@ -391,12 +344,10 @@ export function Workspace({ sessionKey, active = true, fit = false, edges = DEFA
   </WorkspaceContext.Provider>
 }
 
-/** The portal parent and pane key stay stable across docking, preserving content state. */
 export function WorkspacePane({ id, title, icon, addLabel, hint, closeLabel, badgeText, badgeTone, onAdd, onClose, actions, children, onVisibleChange }: PaneInfo & PaneCommands & { children: ReactNode; onVisibleChange?(visible: boolean): void }) {
   const workspace = useWorkspace(), { register, unregister, rects, host, commands, floating } = workspace
   useLayoutEffect(() => { register({ id, title, icon, addLabel, hint, closeLabel, badgeText, badgeTone }) }, [id, title, icon, addLabel, hint, closeLabel, badgeText, badgeTone, register])
   useLayoutEffect(() => () => unregister(id), [id, unregister])
-  /* Commands are read when the menu opens, so they always use the latest resource state. */
   useLayoutEffect(() => { commands.set(id, { actions, onAdd, onClose }) })
   useLayoutEffect(() => () => { commands.delete(id) }, [id, commands])
   const rect = rects.get(id), visible = !!rect

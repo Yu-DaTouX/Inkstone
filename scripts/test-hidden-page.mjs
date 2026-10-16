@@ -1,11 +1,3 @@
-/**
- * 隐藏页面的超时取消与请求判定接线（O11 / H01 回归）。
- *
- * 用桩替换 `electron` 与 `node:dns/promises`：不开真窗口、不查真实 DNS、
- * 不发网络请求。这里验证的是两件容易写错的事：
- *   · 超时后 `fn` 里的轮询必须真的停下来（只销毁窗口不够）；
- *   · 请求层按“解析后的地址”判定，而不是只看 URL 字符串。
- */
 const ELECTRON_STUB = `
 export class BrowserWindow {
   constructor() {
@@ -29,7 +21,6 @@ export const session = {
   }
 }
 `
-/* 所有域名都解析到公网地址：判定必须依赖这个桩，不能真去看系统 DNS */
 const DNS_STUB = `
 export async function lookup() { return [{ address: '93.184.216.34', family: 4 }] }
 `
@@ -62,7 +53,6 @@ export async function runHiddenPageTests(ok) {
   const hidden = await bundle('src/main/search/hidden-page.ts', 'hidden-page.mjs')
   const reader = await bundle('src/main/search/read-page.ts', 'read-page.mjs')
 
-  /* ---- 可取消的等待 ---- */
   {
     const controller = new AbortController()
     const started = Date.now()
@@ -78,7 +68,6 @@ export async function runHiddenPageTests(ok) {
     ok(Date.now() - t2 < 500, '已经取消的 signal 也立即返回（addEventListener 不会再触发）', `${Date.now() - t2}ms`)
   }
 
-  /* ---- withHiddenPage：超时把 signal 交出去并 abort ---- */
   {
     let aborted = false
     let thrown = null
@@ -99,10 +88,8 @@ export async function runHiddenPageTests(ok) {
     ok(aborted, '超时后把 signal 置为已取消：轮询才有机会退出')
   }
 
-  /* ---- readPage：超时之后不再继续 executeJavaScript ---- */
   {
     globalThis.__hiddenJsCalls = 0
-    /* 永远没有正文（模拟慢站点 / 只有脚本没有文本的页面） */
     globalThis.__hiddenResult = { title: '', finalUrl: 'https://example.com/a', text: '', state: 'loading' }
     const result = await reader.readPage('https://example.com/a', { timeoutMs: 3_000 }).catch((error) => error)
     ok(
@@ -120,7 +107,6 @@ export async function runHiddenPageTests(ok) {
     )
   }
 
-  /* ---- 请求层判定接线：字符串看着是公网，但必须解析一次 ---- */
   {
     const decide = (url) =>
       new Promise((resolve) => {
@@ -135,7 +121,6 @@ export async function runHiddenPageTests(ok) {
     ok((await decide('about:blank')) === false, 'about: 不当网络请求判')
   }
 
-  /* 棚用的全局标记清掉（test-unit 是同一个进程） */
   delete globalThis.__hiddenResult
   delete globalThis.__hiddenJsCalls
   delete globalThis.__hiddenBeforeRequest

@@ -1,4 +1,3 @@
-/** 从实际办公文件提取文字，供文件预览使用；不还原版式与图片。 */
 import { useEffect, useState } from 'react'
 import type { OfficeDocumentView } from '../../../../shared/office'
 import { useT } from '../../i18n'
@@ -21,7 +20,6 @@ function useOfficeRequest<T>(run: () => Promise<T>, deps: unknown[]): Loaded<T> 
   return state
 }
 
-/** 文件预览栏：按节列出提取出的正文 */
 export function OfficePreview({ path, cwd, version }: { path: string; cwd?: string; version?: number }) {
   const t = useT()
   const state = useOfficeRequest<OfficeDocumentView>(() => window.yan.office.preview(path, cwd), [path, cwd, version])

@@ -8,23 +8,13 @@ import { formatHitRate } from '../../../../shared/turns'
 import { projectSessionMetrics, type SessionMetrics } from '../../../../shared/session-metrics'
 import type { ReactNode } from 'react'
 
-/**
- * 输入框下方的会话统计行（等价 v2 `ComposerUsage`）。安静小字、可键盘聚焦，
- * 点开向上弹出与触发器对齐的详情浮层。
- *
- * 位置：v3 没有状态栏，所以单会话与并排视图都在输入框下方显示；并排视图里只有
- * 焦点列渲染输入框，因此每屏只出现一处，不重复。数据全部来自
- * `projectSessionMetrics`，不在这里自己聚合，也不把当前回合的值当会话值。
- */
 type OpenPanel = 'session' | 'tokens' | null
 
-/** 求和类计时：缺记录时是下限，标 ≥ */
 function sumTime(ms: number | null, partial: boolean): string {
   if (ms === null) return '—'
   return `${partial ? '≥' : ''}${ms < 1000 ? `${Math.round(ms)}ms` : formatDuration(ms)}`
 }
 
-/** 平均值（TTFT）：不能用 ≥ 表达「部分」，只给已记录部分的均值 */
 function avgTime(ms: number | null): string {
   if (ms === null) return '—'
   return ms < 1000 ? `${Math.round(ms)}ms` : formatDuration(ms)
@@ -39,12 +29,10 @@ function tokenText(n: number | null, partial: boolean, unit: string): string {
   return `${partial ? '≥' : ''}${n.toLocaleString()} ${unit}`
 }
 
-/** 轮数/步数：历史未全部载入时只是可见记录的下限，标 ≥ */
 function countText(n: number, partial: boolean): string {
   return `${partial ? '≥' : ''}${n}`
 }
 
-/** 缩略数量（摘要入口用）：≥1000 记 K，≥1000000 记 M；详情仍走完整 locale 数 */
 function abbrevCount(n: number): string {
   const trim = (v: number): string => {
     const s = v.toFixed(1)
@@ -65,7 +53,6 @@ export function ComposerUsage() {
   const enabled = useStore((s) => s.settings?.usageUnderInput !== false)
   const messages = useStore((s) => s.messages)
   const stats = useStore((s) => s.stats)
-  /* peekedSessionId 优先：点历史会话时视图已先认到目标身份，浮层要立刻随它关掉 */
   const sessionKey = useStore((s) => s.peekedSessionId ?? s.session?.sessionId ?? s.session?.conversationId ?? null)
   const peekNote = useStore((s) => s.peekNote)
   const historyPartial = (peekNote?.truncated ?? 0) > 0
@@ -78,7 +65,6 @@ export function ComposerUsage() {
   const sessionTrigger = useRef<HTMLButtonElement>(null)
   const tokenTrigger = useRef<HTMLButtonElement>(null)
 
-  /* 切会话就关掉：数字会随会话整体换掉，浮层不能停留在上一条会话的结论上 */
   const boundSession = useRef(sessionKey)
   useEffect(() => {
     if (boundSession.current === sessionKey) return
@@ -86,14 +72,12 @@ export function ComposerUsage() {
     setOpen(null)
   }, [sessionKey])
 
-  /* 关闭开关时同步收起浮层（组件仍挂载，只是返回 null） */
   useEffect(() => {
     if (!enabled) setOpen(null)
   }, [enabled])
 
   if (!enabled) return null
   const showSession = metrics.steps > 0 || metrics.turns > 0
-  /* 已知 Token 才显示数字；未知但有请求时保留入口显示 —，全新空会话才隐藏 */
   const showTokens = metrics.total !== null || metrics.steps > 0
   if (!showSession && !showTokens) return null
 

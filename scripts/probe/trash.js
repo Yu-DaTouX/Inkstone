@@ -1,13 +1,3 @@
-/**
- * 删除会话的确认框：标题、按钮样式、不换行、Esc 不误删（方案 15）。
- *
- * 为什么只测确认框、不跑真删除：真实删除会动用户的会话文件。
- * 成功后的「轻量通知 + 撤销」需要真实删除才能看到，留给真实窗口验收
- * （后端删除/恢复本身由 test-unit 覆盖）。
- *
- * 这里钉住的是**回归点**：曾经「撤销删除」借用 `.send`（输入框发送按钮的
- * 圆形专用样式），四个中文字被挤进圆里换行；标题还停留在「删除这个会话」。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -30,17 +20,12 @@
     const before = store.getState().sessions.length
     out.push(`  会话数（删除前）= ${before}`)
 
-    /* 当前会话禁止删除，挑一条未选中的 */
     const row = qa('.srow-wrap').find((w) => w.querySelector('.srow') && !w.querySelector('.srow.sel'))
     ok(!!row, '找到一条非当前会话（当前会话禁止删除）')
     if (!row) return out.join('\n')
 
     click(row.querySelector('.srow-acts button'))
     await sleep(250)
-    /*
-     * 菜单是 Portal 到 body 的（实施-12 U-2），不在行内：
-     * 从菜单容器找，并核对它确实属于这一行。
-     */
     const sessionMenu = q('[data-testid="rail-session-menu"]')
     ok(
       sessionMenu?.getAttribute('data-session-path') === row.getAttribute('data-session-path'),
@@ -79,20 +64,11 @@
       ok(getComputedStyle(confirm).whiteSpace !== 'normal' || confirm.scrollWidth <= confirm.clientWidth + 1, '文字不换行')
     }
 
-    /* Esc 关闭，且**不能**发生删除 */
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await sleep(400)
     ok(!q('.rail-delete-dialog'), 'Esc 能关掉确认框')
     ok(store.getState().sessions.length === before, '只是打开又关闭，没有真的删除任何会话')
 
-    /* ================================================================
-     * N15：删除成功后的轻量通知条
-     *
-     * 这里有**真实删除**（默认跑在隔离的 YAN_SESSIONS_DIR 临时目录里，
-     * 删除的也是从真实会话只读拷贝出来的 fixture）。每个用例要么撤销、
-     * 要么接受的永久移除只发生在临时目录。
-     * ⚠️ YAN_TEST_ISOLATED=0 调试时会真的动当前会话目录，不要在这种模式下跑。
-     * ================================================================ */
     out.push('')
     out.push('=== N15：删除成功 → 通知条（30 秒计时 / 窄栏 / 撤销）===')
 
@@ -101,7 +77,6 @@
       el.dispatchEvent(new Event('input', { bubbles: true }))
     }
     const freeRows = () => qa('.srow-wrap').filter((w) => w.querySelector('.srow') && !w.querySelector('.srow.sel'))
-    /** 真删一条非当前会话；返回通知条元素（失败返回 null） */
     const deleteOne = async () => {
       const target = freeRows()[0]
       if (!target) return null
@@ -145,15 +120,9 @@
     ok(!!notice.querySelector('[data-testid="trash-undo"]'), '通知条上有撤销入口')
     out.push('  文案 = ' + JSON.stringify((notice.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60)))
 
-    /*
-     * 30 秒计时：等到 3.2 秒仍然在。旧实现里「删除成功」根本没有计时
-     *（只有恢复成功后 2.6 秒收走），所以这条同时钉住「不要立刻消失」。
-     * 不在这里等满 30 秒：那是交互体验数字，靠源码常量 + 手工确认。
-     */
     await sleep(3200)
     ok(!!q('[data-testid="trash-notice"]'), '3.2 秒后通知仍在（不是 2.6 秒就收走）')
 
-    /* 窄栏：文案最多两行、按钮不被挤成竖条 */
     await store.getState().setPanelWidth({ railWidth: 210 })
     await sleep(450)
     const n2 = q('[data-testid="trash-notice"]')
@@ -173,7 +142,6 @@
     const textBox = n2.querySelector('.rail-trash-text')?.getBoundingClientRect()
     ok(!!textBox && !!btnBox && textBox.right <= btnBox.left + 1, '文案区与按钮不重叠')
 
-    /* 撤销：会话回来 + 提示变「已恢复」 + 2.6 秒后自动收走 */
     if (undoBtn) click(undoBtn)
     for (let i = 0; i < 50; i++) {
       if (store.getState().sessions.length === countBefore) break
@@ -187,7 +155,6 @@
     await sleep(3000)
     ok(!q('[data-testid="trash-notice"]'), '恢复成功的提示随后自动收走')
 
-    /* 关闭按钮：只关提示，不误触发其它动作 */
     const n3 = await deleteOne()
     if (n3) {
       const closeBtn = n3.querySelector('.btn.icon')
@@ -199,7 +166,6 @@
       ok(!q('[data-testid="trash-notice"]'), '点关闭后通知立刻消失')
       ok(!q('.rail-delete-dialog'), '关闭通知不会打开任何对话框')
     }
-    /* 把左栏宽度交还给后面的场景 */
     await store.getState().setPanelWidth({ railWidth: 0 })
     await sleep(200)
   } catch (error) {

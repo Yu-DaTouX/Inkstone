@@ -43,7 +43,6 @@ assert.equal(openDockPane(maximum, 'terminal:a').maximized, 'terminal:a')
 assert.deepEqual(resizeDockSplit(split, 'missing', .2), split)
 const resized = resizeDockSplit(layout, layout.root.id, 500)
 assert.equal(resized.root.ratio, .9)
-// A narrower canvas (left rail expanded, window shrunk) narrows the conversation; tools keep their pixels.
 {
   const panes = new Set(['chat', 'browser', 'terminal:a'])
   let tiles = moveDockPane(openDockPane(openDockPane(defaultWorkspaceLayout(), 'browser'), 'terminal:a'), 'terminal:a', dockGroups(openDockPane(defaultWorkspaceLayout(), 'browser').root)[0].id, 'bottom')
@@ -55,9 +54,7 @@ assert.equal(resized.root.ratio, .9)
   assert.equal(Math.round(at(tiles, 1400, 700)['terminal:a'].h), Math.round(wide['terminal:a'].h))
   assert.equal(Math.round(at(tiles, 1400, 700).chat.h), Math.round(wide.chat.h) - 100)
   assert.deepEqual(at(tiles, 1400), wide)
-  // The conversation never goes under its minimum: the tool side gives way instead.
   assert(at(tiles, 600).chat.w >= 340)
-  // Rebasing keeps what is on screen, and survives a save/load.
   const rebased = rebaseDockLayout(tiles, panes, 1160, 800)
   assert.equal(Math.round(at(rebased, 1160).browser.w), Math.round(narrow.browser.w))
   assert.deepEqual(normalizeWorkspaceLayout(JSON.parse(JSON.stringify(rebased))), rebased)
@@ -65,7 +62,6 @@ assert.equal(resized.root.ratio, .9)
 }
 invariant(normalizeWorkspaceLayout({ version: 1, root: { type: 'group', id: 'bad', panes: ['chat', 'chat', 'terminal:a'], active: 'missing' }, hidden: ['chat'] }))
 assert.deepEqual(normalizeWorkspaceLayout({ version: 99 }), defaultWorkspaceLayout())
-// Exercise many layouts, including hidden resources, same-group splits and narrow recovery.
 let seed = 1937
 const rand = n => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed % n }
 const edges = ['left', 'right', 'top', 'bottom', 'center']

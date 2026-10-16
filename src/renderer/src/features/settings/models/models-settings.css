@@ -1,14 +1,5 @@
 @layer features {
-  /*
-   * 设置 → 模型与服务的版面（S1）。
-   * 只写 flex / 间距 / 截断 / 滚动；颜色、圆角、字号一律取现有 tokens，
-   * 控件外观来自 `ui/ui.css`（primitives 层）。模块不新增设计变量。
-   */
 
-  /*
-   * 本页挂在 S0 设置页的 `.settings-main` 内（padding / 滚动 / 左栏由父级提供），
-   * 所以根容器不再自己加页面内边距或滚动，避免套一层滚动与双层留白。
-   */
   .ms-page {
     display: flex;
     flex-direction: column;
@@ -99,7 +90,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* 目录工具条：搜索框占满剩余宽度，其余控件不收缩 */
   .ms-catalog .ms-toolbar .ms-search {
     flex: 1;
     min-width: 200px;
@@ -140,8 +130,6 @@
   .ms-fileinfo code {
     font-family: var(--font-mono);
   }
-
-  /* ---------------- 服务行 ---------------- */
 
   .ms-service {
     padding: var(--s-10) var(--s-12);
@@ -233,8 +221,6 @@
     background: var(--sunken);
   }
 
-  /* ---------------- 登录面板 ---------------- */
-
   .ms-oauth {
     display: flex;
     flex-direction: column;
@@ -283,8 +269,6 @@
   .ms-oauth-prompt p {
     margin: 0;
   }
-
-  /* ---------------- 思考能力 ---------------- */
 
   .ms-thinking {
     padding: var(--s-12);
@@ -340,8 +324,6 @@
     line-height: var(--t-meta-lh);
     color: var(--fg3);
   }
-
-  /* ---------------- 模型目录 ---------------- */
 
   .ms-list {
     display: flex;
@@ -426,8 +408,6 @@
     color: var(--fg3);
   }
 
-  /* ---------------- 确认对话框 ---------------- */
-
   .ms-confirm-body {
     margin: 0 0 var(--s-8);
     font-size: var(--t-meta);
@@ -446,8 +426,6 @@
     justify-content: flex-end;
     gap: var(--s-8);
   }
-
-  /* ---------------- 自定义端点 ---------------- */
 
   .ms-custom {
     display: flex;

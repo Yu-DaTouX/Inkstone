@@ -1,16 +1,3 @@
-/**
- * 评审运行 producer 单测（§10.2 / WP-50 的 R 运行接线）。
- *
- * 用 esbuild 现场编译 `src/main/review/review-runs.ts` 与 `src/main/runs-host.ts`，
- * 用**真实的运行注册表**验证投影；事件来源是假的「SubagentService 事件序列」
- * （直接调 producer.observe 喂 pi 原始事件），不启动 Electron、不碰 pi、
- * 不调用真实模型、不写用户数据目录。可独立执行：
- *
- *   node scripts/test-v3-review-runs.mjs
- *
- * 覆盖：正常（开始 / 进度 / 结束）、失败、停止、迟到事件、并发两评审、
- * 不覆盖同会话正在运行的主会话运行、未知 runId 忽略。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -54,7 +41,6 @@ async function run() {
     })
     const producer = producerMod.createReviewRunProducer({ registry: host.reviewRunPort(), now: () => now })
 
-    /* ── 1. 正常：开始即 open kind:'review'，进度投影，agent_settled 收口 ── */
     now = 2_000
     assert.equal(
       producer.begin({
@@ -105,7 +91,6 @@ async function run() {
     assert.equal(producer.size(), 0)
     ok('结束收口一次：agent_settled → done，登记表回收')
 
-    /* ── 2. 迟到事件不覆盖已终态，也不新建运行 ── */
     const beforeTotal = host.snapshot().runs.length
     now = 2_400
     producer.observe('sub-normal', messageEvent('text_delta'))
@@ -116,7 +101,6 @@ async function run() {
     assert.equal(producer.settle('sub-normal', 'done'), false, '重复收口不生效')
     ok('迟到事件 / 重复收口不覆盖终态，也不新建运行')
 
-    /* ── 3. 失败：模型错误 + agent_settled → failed（不再显示成已完成） ── */
     now = 3_000
     assert.equal(producer.begin({ runId: 'sub-fail', code: 'R02', sessionPath: '/sessions/s2.jsonl' }), true)
     producer.observe('sub-fail', messageEvent('text_delta'))
@@ -128,7 +112,6 @@ async function run() {
     assert.equal(producer.isActive('sub-fail'), false)
     ok('失败收口一次：模型错误 → failed')
 
-    /* ── 4. 停止：用户 / 宿主停止只读子运行时，宿主以同一 runId 收口成 stopped ── */
     now = 4_000
     assert.equal(producer.begin({ runId: 'sub-stop', code: 'R03' }), true)
     producer.observe('sub-stop', messageEvent('thinking_delta'))
@@ -139,7 +122,6 @@ async function run() {
     assert.equal(producer.settle('sub-stop', 'stopped'), false, '停止只收口一次')
     ok('停止收口一次：stopped，且重复调用幂等')
 
-    /* ── 5. 并发两评审：互不影响；同一属主会话不互相顶掉 ── */
     now = 5_000
     assert.equal(producer.begin({ runId: 'sub-x', code: 'R04', sessionPath: '/sessions/s3.jsonl' }), true)
     now = 5_100
@@ -165,7 +147,6 @@ async function run() {
     producer.settle('sub-y', 'stopped')
     ok('并发两评审：按 runId 隔离，互不覆盖')
 
-    /* ── 6. 不覆盖同属主会话正在运行的主会话运行 ── */
     now = 6_000
     host.observerFor()({ sessionId: 'owner-1', title: '主会话' }, { type: 'agent-start' })
     await waitFor(() => host.snapshot().runs.some((r) => r.sessionId === 'owner-1'))
@@ -178,7 +159,6 @@ async function run() {
     producer.settle('sub-owner', 'stopped')
     ok('评审运行用独立作用域，不顶掉同会话正在跑的主会话运行')
 
-    /* ── 7. 未知 runId / 未登记事件是空操作 ── */
     const total = host.snapshot().runs.length
     const before = producer.size()
     producer.observe('sub-unknown', messageEvent('text_delta'))

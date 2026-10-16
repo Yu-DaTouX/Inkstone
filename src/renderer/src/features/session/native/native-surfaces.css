@@ -1,10 +1,3 @@
-/*
- * 原生会话面板（模型循环范围 / 项目信任 / 原始条目）的 v3 版面。
- *
- * 只写版面与语义标识：控件外观全部来自 `ui/`（`.ui-checkbox` / `.ui-btn` /
- * `.ui-badge` / `.ui-field`），令牌只用 `design/tokens.css` 的变量。颜色不写裸值，
- * 按钮 / 勾选 / 悬停 / 焦点都不在这里重画。
- */
 @layer features {
   .native-surface-modal {
     width: min(720px, 100%);
@@ -105,8 +98,6 @@
     border-top: 1px solid var(--line);
   }
 
-  /* ── 模型循环范围 ── */
-
   .native-scope__group {
     min-height: 0;
   }
@@ -141,8 +132,6 @@
     font-family: var(--font-mono);
     font-size: var(--t-meta);
   }
-
-  /* ── 项目信任 ── */
 
   .native-trust__fields {
     display: flex;
@@ -179,8 +168,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  /* ── 原始条目 ── */
 
   .native-entries__list {
     display: flex;

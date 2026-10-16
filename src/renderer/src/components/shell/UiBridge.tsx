@@ -9,41 +9,18 @@ import { Button, IconButton } from '../ui'
 import { GitInstallControl } from '../settings/GitInstallControl'
 import { createPerIdTimers, optionKey } from './notice-timers'
 
-/** 退场时长 —— 与 motion.css 里的 `--mo-fast` 同源。改一处要改两处，所以写注释。 */
 const EXIT_MS = 110
 
-/**
- * 扩展 UI 桥 —— 把 pi 扩展的 select / confirm / input / editor
- * 映射成真正的模态框。
- *
- * 不做这层的话，装了 confirm 的扩展在桌面端会**静默卡住**
- * （pi 侧在等 extension_ui_response）。所以这不是装饰功能。
- *
- * notify 走 <Notices />，setStatus 走底部状态条，都不在这里。
- */
 export function UiDialog() {
   const requests = useStore((s) => s.uiRequests)
-  /*
-   * 只处理**安全敏感的**请求（方案第 6 节）：
-   * 普通 select / input / editor / confirm 已经改成输入区上方的非模态
-   * 问题面板（QuestionPanel.tsx），不应该再遮住聊天。
-   */
   const req = requests.find((r) => r.sensitive === true)
 
-  /*
-   * 扩展对话框的退场。
-   *
-   * ⚠️ 这里的模型与别处不同：`req` 一从 store 里消失，UiDialog 就会
-   * 返回 null，节点当场卸载。所以不能只靠 `usePresence(!!req)` ——
-   * 那句话永远来不及演退场。得把最后一个 req **留住**。
-   */
   const lastReq = useRef<ExtensionUiRequest | undefined>(undefined)
   if (req) lastReq.current = req
   const shown = req ?? lastReq.current
   const { mounted, closing } = usePresence(!!req, prefersReducedMotion() ? 1 : EXIT_MS)
 
   if (!mounted || !shown) return null
-  // key 用 id：换一个请求就重置内部状态
   return <DialogBody key={shown.id} req={shown} closing={closing} />
 }
 
@@ -56,7 +33,6 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
   const [expired, setExpired] = useState(false)
   const panel = useRef<HTMLDivElement>(null)
 
-  // pi 侧会自己超时解析，但我们也要收起来，否则框会一直挂着
   useEffect(() => {
     if (!req.timeout || req.timeout <= 0) return
     const id = setTimeout(() => {
@@ -68,20 +44,8 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
 
   const cancel = () => answerUi({ id: req.id, cancelled: true })
 
-  /*
-   * 模态层 + 焦点圈定。
-   *
-   * ⚠️ Esc 以前写在 input/textarea 的 onKeyDown 上 —— 那样只有当焦点
-   *    正好在输入框里才生效（select/confirm 类型完全没处理），
-   *    而且 input 的 Esc 与面板的 Esc 会**双重应答**同一个 id。
-   *    现在统一由 useModalLayer 处理（仅最上层 + 不依赖焦点位置），
-   *    输入框里只保留 Enter 提交。
-   *
-   * ⚠️ 必须在 `if (expired) return null` 之前调用 —— hooks 不能条件执行。
-   */
   const live = !closing && !expired
   const { isTop } = useModalLayer(live, cancel)
-  /* DialogBody 只在 mounted 时渲染（挂载即 live），所以节点一定在 */
   useFocusTrap(panel, live, isTop)
 
   if (expired) return null
@@ -178,10 +142,8 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
   )
 }
 
-/** 启动多久还没好才出连接条：切换项目时内核换进程是正常过程，不该闪一条提示 */
 const CONN_BAR_DELAY_MS = 1500
 
-/* 连接条：启动太久或失败时才出现（设计规范 §4：日常界面不写 pi，详情里保留原始诊断） */
 export function ConnBar({ conn }: { conn: 'starting' | 'ready' | 'exited' | 'error' }) {
   const t = useT()
   const logs = useStore((s) => s.logs)
@@ -235,8 +197,6 @@ export function ConnBar({ conn }: { conn: 'starting' | 'ready' | 'exited' | 'err
   )
 }
 
-/* ------------------------------------------------------------------ 通知 */
-/** 通知正文里的第一个网址（pi 的 MCP 登录会把授权链接放在通知里）；没有则返回 undefined。 */
 function noticeLink(text: string): string | undefined {
   return text.match(/https?:\/\/[^\s<>"']+/)?.[0]
 }
@@ -247,12 +207,6 @@ export function Notices() {
   const dismiss = useStore((s) => s.dismissNotice)
   const openSettings = useStore((s) => s.openSettings)
 
-  /*
-   * 退场：store 一移除通知，节点就没了 —— 所以要把刚被移除的**留住一会儿**。
-   *
-   * 为什么值得做：通知是我自己加频的（模型切换 / 压缩 / 复制 都弹），
-   * 只演入场的话每次都是「淡入→啪一下消失」，很不体面。
-   */
   const [leaving, setLeaving] = useState<typeof notices>([])
   const prev = useRef<typeof notices>([])
   const makeTimers = (): ReturnType<typeof createPerIdTimers> => createPerIdTimers({
@@ -278,7 +232,6 @@ export function Notices() {
     }
   }, [notices])
 
-  // 每条通知拥有自己的退场与自动消失时钟；其他通知更新不重置它。
   useEffect(() => {
     const active = new Set(notices.map((notice) => notice.id))
     dismissTimers.current?.clearMissing(active)

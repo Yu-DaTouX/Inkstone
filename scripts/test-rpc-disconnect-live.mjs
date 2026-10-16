@@ -1,4 +1,3 @@
-/** Actual pi stream interrupted, then formal RunnerRegistry reload; local model only. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdtemp,mkdir,writeFile,rm } from 'node:fs/promises'

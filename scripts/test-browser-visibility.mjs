@@ -1,4 +1,3 @@
-/** 原生网页显隐协调（实施-11 H-9a）：纯判定 + overlay blocker 计数。 */
 export async function runBrowserVisibilityTests(ok) {
   const { OverlayBlockers, shouldShowBrowser } = await import('../out/test/browser-visibility.mjs')
 

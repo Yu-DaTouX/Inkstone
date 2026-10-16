@@ -1,4 +1,3 @@
-/** Bounded evidence from the active JSONL ancestry, excluding sibling branches and image/thinking data. */
 export function handoffHistoryExcerpt(raw: string): string {
   const entries = new Map<string, Record<string, unknown>>()
   let head: string | null = null
@@ -48,7 +47,6 @@ export function handoffHistoryExcerpt(raw: string): string {
   return `当前分支节选：共 ${messages.length} 条消息，坏行 ${skipped}；不是完整历史，可回来源会话读原文。\n${[...blocks, ...tail].join('\n')}`
 }
 
-/** Only new generations use this stricter gate; existing stored packages remain readable. */
 export function handoffContinuationProblem(raw: unknown): string | null {
   if (!raw || typeof raw !== 'object') return 'missing-content-fields'
   const value = raw as Record<string, unknown>

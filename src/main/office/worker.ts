@@ -10,7 +10,6 @@ async function run(): Promise<void> {
   try {
     const size = (await file.stat()).size
     if (size > MAX_BYTES) throw new Error('文件超过 64MB，请用系统程序打开')
-    // A bounded read also handles a file growing after the initial stat.
     const buffer = Buffer.alloc(size + 1)
     let length = 0
     while (length < buffer.length) {

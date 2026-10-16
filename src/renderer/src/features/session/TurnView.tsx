@@ -1,16 +1,3 @@
-/**
- * 一轮对话的渲染：用户消息 / 助手回合 / 用户执行的 `!` 命令。
- *
- * 参考 v2 `chat/TurnView.tsx` 的回合结构与展示规则（一笔回答 = 一块、
- * 解说与正式回复分段、活动行固定在回合顶部、回复下方才是用时/模型/复制），
- * 但不引入 v2 控件与 v2 CSS；正文、思考、步骤分别由本目录的
- * `Markdown` / `Thinking` / `ToolSteps` 负责。
- *
- * v3 尚未迁移的能力（生图进度、并排打开子 Agent、回退对话框）
- * 在这里给出**明确可见的回退提示**或标注占位，不静默丢弃、也不伪造交互。
- * 子 Agent 行、错误卡、压缩标记与分支摘要由本目录的 `SubagentLine` /
- * `ErrorCard` / `CompactionMarker` / `BranchSummary` 负责。
- */
 import { memo, useEffect, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -46,25 +33,12 @@ export const TurnView = memo(function TurnView({ turn, streaming, readOnly = fal
   return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} />
 })
 
-/* ------------------------------------------------------------------ 用户 */
-
 function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: UserTurn; readOnly: boolean; rewindOwner: string | null; branchPager?: BranchPagerBinding }): JSX.Element | null {
   const t = useT()
   const msg = turn.msg
   const checkpoints = useStore((s) => s.checkpoints)
   const openRewind = useStore((s) => s.openRewind)
-  /*
-   * 分支 pager 只认这条用户消息自己的稳定 `entryId`（`ChatMessage.entryId`），
-   * 在 `SessionView` 投影出的模型表里查；查不到（无 id / 无真实兄弟分支）就不画。
-   * 分支树已由右侧「分支」页提供，这里只是同一分叉点旁的行内切换入口。
-   */
   const pagerModel = msg.entryId ? branchPager?.models.get(msg.entryId) ?? null : null
-  /*
-   * 回退代码只认**属于当前活动会话**的检查点：先按会话键过滤再匹配指纹，
-   * 不拿别的会话的记录凑数。`rewindOwner` 在视图失活（peek 别人 / 并排非焦点
-   * 归属不符）时为 null，于是这里不画按钮——宁可隐藏，也不操作全局当前会话。
-   * 回退只恢复项目文件，不碰对话、不自动分叉（分叉入口是上面的「分支」）。
-   */
   const owned = rewindOwner ? checkpoints.filter((record) => record.sessionKey === rewindOwner) : []
   const checkpoint = !readOnly && msg.text ? matchCheckpoint(owned, msg.text, msg.timestamp) : null
   if (isSubagentNotice(msg.text)) return null
@@ -133,8 +107,6 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
   )
 }
 
-/* -------------------------------------------------------- 用户执行的 ! 命令 */
-
 function BashTurnView({ turn }: { turn: BashTurn }): JSX.Element {
   const t = useT()
   const msg = turn.msg
@@ -147,13 +119,10 @@ function BashTurnView({ turn }: { turn: BashTurn }): JSX.Element {
   )
 }
 
-/* ------------------------------------------------------------------ 助手 */
-
 function failedCount(turn: AssistantTurn): number {
   return turn.tools.filter((c) => c.status === 'error' && !c.cancelled).length
 }
 
-/** 回复正文（复制用）：优先分段回复，其次整轮回复 */
 export function replyText(turn: AssistantTurn): string {
   const text = (turn.segments.length
     ? turn.segments.flatMap((segment) => segment.response ? [segment.response.text] : [])
@@ -162,10 +131,6 @@ export function replyText(turn: AssistantTurn): string {
 }
 
 function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null }): JSX.Element | null {
-  /*
-   * 只订阅消息条数，避免每个助手回合都随流式 token 重渲染；条数变化（新增消息 /
-   * 换会话由 turn prop 变化触发）时再取一次消息流算首 / 末边缘。
-   */
   useStore((s) => s.messages.length)
   const messages = useStore.getState().messages
   const promoted = turn.response?.hasTools ? (turn.responseParts?.length ? turn.responseParts : [turn.response]) : []
@@ -174,9 +139,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner }
   const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || liveImageProgress.length > 0 || !!turn.error
   const edge = viewEdge(turn.sourceIds, messages, !!streaming)
   if (!hasBody && !streaming) return null
-  /* 按真实发生顺序穿插：解说 → 这一批工具的一行摘要 → 正文；覆盖不全时退回旧排法，不丢内容。 */
   const flow = flowSegments(turn, commentary)
-  /* 过程收拢：回复之前的旁白与工具组合成一行；完成后，推理块也收进过程行内部 */
   const split = flow ? splitTurnProcess(flow) : null
   const processSegs = split?.process ?? []
   const thinkingInProcess = !streaming && processSegs.length > 0
@@ -256,14 +219,11 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner }
           </>
         )}
 
-        {/* 已完成成果走受控预览；生图进度仍明确标注迁移边界。 */}
         {turn.artifacts.length ? <TurnArtifacts artifacts={turn.artifacts} sessionId={sessionId} messageId={turn.id} /> : null}
         {liveImageProgress.length ? <ImageProgressFallbackNote /> : null}
 
-        {/* 子 Agent 行：正式运行投影 + 现有子代理投影合成；并排打开未迁移 */}
         <SubagentLine turn={turn} />
 
-        {/* 压缩标记是会话级事件，只画在最后一条助手回合，避免每个回合一串 */}
         {edge.last ? <CompactionMarker /> : null}
 
         {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
@@ -274,10 +234,6 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner }
   )
 }
 
-/**
- * 按段穿插所需的数据；任何一条解说 / 工具在分段里找不到就返回 null（整轮退回旧排法）。
- * 这样分段投影漏项时，界面最多是排法变回去，不会少一块内容。
- */
 function flowSegments(turn: AssistantTurn, commentary: readonly { id: string }[]): AssistantTurn['segments'] | null {
   if (!turn.segments.length) return null
   const toolCount = turn.segments.reduce((sum, seg) => sum + seg.tools.length, 0)
@@ -292,7 +248,6 @@ function flowSegments(turn: AssistantTurn, commentary: readonly { id: string }[]
   return turn.segments
 }
 
-/** 只有仍在生成的图片使用回退提示，不遮掉已经可用的成果。 */
 function ImageProgressFallbackNote(): JSX.Element {
   const tt = useSessionText()
   return (
@@ -303,17 +258,14 @@ function ImageProgressFallbackNote(): JSX.Element {
   )
 }
 
-/** 回合顶部的活动行：运行 / 完成 / 失败 / 停止，原地更新 */
 function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }): JSX.Element {
   return streaming ? <LiveActivity /> : <SettledActivity turn={turn} />
 }
 
-/** 运行中才挂心跳（每秒重渲染一次），历史回合不进这里，避免 N 个计时器 */
 function LiveActivity(): JSX.Element {
   const t = useT()
   const progress = useRunProgress()
   const compaction = useStore((s) => s.session?.compaction)
-  /* 跑工具时不重复写命令：命令就在下面那一步的行里，这里只说阶段 */
   const text = (progress?.phase === 'tool' ? t('chat.working') : runPhaseText(t, progress, compaction)) || t('chat.working')
   return (
     <div className="v3-act" data-kind="run" data-testid="v3-turn-activity">
@@ -345,7 +297,6 @@ function SettledActivity({ turn }: { turn: AssistantTurn }): JSX.Element {
   )
 }
 
-/** 回复下方一行：完成时刻 · 模型 · 用时 · 复制 */
 function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }): JSX.Element | null {
   const t = useT()
   const models = useStore((s) => s.models)
@@ -379,7 +330,6 @@ function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }
   )
 }
 
-/** 完成时刻：悬停 / 聚焦都能读到完整时间 */
 export function TurnClock({ timestamp }: { timestamp: number }): JSX.Element | null {
   const date = new Date(timestamp)
   if (!Number.isFinite(date.getTime())) return null

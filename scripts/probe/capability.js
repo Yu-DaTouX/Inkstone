@@ -1,14 +1,3 @@
-/*
- * 宿主能力服务端到端：**模型 → bash → `yan` CLI → 宿主端点**。
- *
- * 为什么必须有这一条（单测不够）：
- *   capability-server 的单测证明的是「端点本身对不对」；
- *   真正会出错的地方在**接线**上 —— 启动器有没有写对位置、
- *   PATH 有没有前置进 pi 子进程、环境变量有没有被 bash 工具继承、
- *   身份校验在真实调用链里过不过。这些只有让模型真的敲一次 `yan` 才知道。
- *
- * 花 token（cost: 1），所以不在默认门槛里跑。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -29,7 +18,6 @@
   const ta = q('[data-testid="composer"]')
   if (!ta) return fail('找不到输入框')
 
-  /* 受控组件必须走原生 setter，否则 React 收不到这次输入 */
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
   setter.call(
     ta,
@@ -43,12 +31,10 @@
   if (!send || send.disabled) return fail('发送键不可用')
   send.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
-  /* 等到出现工具行、且流式结束 */
   let sawTool = false
   const deadline = Date.now() + 150_000
   while (Date.now() < deadline) {
     await sleep(400)
-    /* 过程默认折叠，工具行不在 DOM 里；以回合的「过程」区出现为准 */
     if (q('[data-testid="turn-process"]')) sawTool = true
     const busy = q('.cursor') || q('[data-testid="working"]')
     if (sawTool && !busy) break
@@ -58,11 +44,6 @@
 
   const text = document.body.innerText || ''
 
-  /*
-   * 这两条才是真正的接线证据：
-   *   · 出现摘要字段 → 端点通了、身份过了、结果管道回得来；
-   *   · 没有「找不到命令」→ 启动器与 PATH 注入生效。
-   */
   ok(
     /operationId|resultFile|"ok"/.test(text),
     '命令输出里出现了宿主回的结构化摘要',

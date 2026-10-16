@@ -1,10 +1,3 @@
-/**
- * 侧栏会话的操作菜单（右键或行尾「…」打开）。
- *
- * 全部走主 store 的正式动作：分屏走 `useSplitView.open`，置顶 / 归档 / 改名 /
- * 重新生成标题 / 删除各用既有 store 方法，失败提示由 store 自己推 notice。
- * 删除先弹确认；当前会话不可删（与 v2 同一限制）。
- */
 import { useState, type JSX, type RefObject } from 'react'
 import { Columns2, FolderInput, FolderOpen, Globe, Pencil, Pin, PinOff, Archive, Sparkles, Trash2 } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
@@ -15,13 +8,11 @@ import { v3Text } from '../../app/v3-text'
 import { shortProject } from './sidebar-model'
 import type { SessionSummary } from '../../../../shared/ipc'
 
-/** 在旁边分屏打开一条会话；`at` 为插入位置（拖拽落点），不给就追加到最右。 */
 export function openSessionInSplit(item: { id: string; path: string }, at?: number): void {
   const current = displayedSessionOf(useStore.getState())
   useSplitView.getState().open({ sessionId: item.id, path: item.path }, current, at)
 }
 
-/** 移动目标：`move:global` 回到全局会话，`move:<项目 id>` 归入某个项目。 */
 type MenuKey = `move:${string}` | 'split' | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete'
 
 export interface SessionMenuProps {
@@ -40,7 +31,6 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
   const text = v3Text(lang)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const projects = useStore((s) => s.settings?.projects)
-  /* 可移动到的项目：未归档、且不是它现在所在的那个 */
   const moveTargets = (projects ?? []).filter((project) => !project.archived && project.id !== item.projectId)
 
   const run = (key: MenuKey): void => {

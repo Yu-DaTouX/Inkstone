@@ -1,25 +1,3 @@
-/**
- * MCP 服务归属的**双向切换事务**：pi 原生 ⇄ 砚托管。
- *
- * ── 它是什么 ──
- *   一个服务只归一方连接。切换不是「改一个开关」，而是两份文件的一次事务：
- *     · `to-inkstone`（pi → 砚托管）：从 pi 的 `mcp.json` 移出该条目，再在砚配置里
- *       写 `ownedBy:'inkstone'` + `appHost.natives[]`（逐字保存原条目供回退）；
- *     · `to-pi`（砚托管 → pi 原生）：把 `appHost.natives[]` 里的原条目写回 pi 文件，
- *       砚条目恢复 `enabled:false + ownedBy:'pi' + migratedToNative`。
- *
- * ── 安全边界（与 `native-import.ts` 同一套）──
- *   · `prepare` 只读预览并发放**绑定调用者身份**的短效令牌，不落盘、不连接；
- *   · `commit` 在**共享串行写链**里核对令牌 / 身份 / 两份文件指纹 / 有效期后写入；
- *   · 未知字段保留；写入前后都读文件核对指纹，外部改动一律拒绝；
- *   · 任何写后失败都如实回报 `steps` 与 `remediation`，绝不报告「完全未改」；
- *   · 原始 pi 条目只进砚配置的 `appHost.natives[]`，**不随预览回传渲染端**。
- *
- * ── 杜绝双连接 ──
- *   移除配置不等于停掉旧进程。首版只要存在**可能仍持有该服务的已加载 runner**，
- *   就拒绝 `to-inkstone` 的立即切换（由宿主注入的 `holders` 运行时守卫判定），
- *   不自动重启、不为了通过而删服务。`to-pi` 则在写盘前先断开砚宿主连接。
- */
 import { randomBytes } from 'node:crypto'
 import { readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -50,28 +28,17 @@ export class McpAppSwitchError extends Error {
   }
 }
 
-/** 受信项目登记：`projectId → cwd` 只由宿主提供，不按目录反推。 */
 export interface McpAppSwitchProject {
   id: string
   cwd: string
 }
 
-/**
- * 运行时守卫：返回**已加载、可能仍持有该服务**的运行实例。
- *
- * 非空即禁止 `to-inkstone` 立即切换 —— 配置移走不代表旧 pi 进程已停，
- * 首版不自动重启，宁可让用户先退出相关会话/重启。
- */
 export interface McpAppSwitchHolderProvider {
   holdersFor(server: {
     serverId: string
     scope: 'global' | 'project'
     projectId?: string
   }): Promise<McpAppSwitchHolder[]>
-  /**
-   * 实例集合 / 身份 / 连接事实的 epoch（可选但强烈建议）。
-   * `commit` 会在关键写入前复核；变了说明检查之后有新实例进入或进程状态改变。
-   */
   runtimeEpoch?(): string
 }
 
@@ -80,19 +47,11 @@ export interface McpAppSwitchOwner {
 }
 
 export interface McpAppSwitchHost {
-  /** pi 的 agent 目录（`PI_AGENT_DIR`）。 */
   agentDir: string
-  /** 砚 MCP 配置路径；缺省 `YAN_MCP_SERVERS_FILE` / `YAN_DIR/mcp-servers.json`。 */
   hostConfigFile?: string
   projects: readonly McpAppSwitchProject[]
-  /** 运行时守卫；缺省视为「无已加载实例」（测试可注入）。 */
   holders?: McpAppSwitchHolderProvider
-  /**
-   * `to-pi` 写盘前确认断开砚宿主的**目标服务**（只断该 server，不关整个连接池，
-   * 不影响其它服务 / 其它会话）。缺省跳过（由调用方保证）。
-   */
   disconnectHost?: (serverId: string) => Promise<void>
-  /** 写完 pi 配置后的存在性校验。缺省不校验，结果标 `unavailable`。 */
   verify?: (input: McpAppSwitchVerifyInput) => Promise<McpAppSwitchVerifyResult>
   writeText?: (path: string, text: string, expectedFingerprint?: string) => Promise<void>
   now?: () => number
@@ -113,19 +72,15 @@ interface PendingSwitch {
   agentDir: string
   targetContent: string
   hostContent: string
-  /** 失败补救用：native 文件的原始文本（null = 原文件不存在）。 */
   targetOriginalText: string | null
-  /** 失败补救用：砚配置的原始文本。 */
   hostOriginalText: string
   warnings: string[]
   targetFingerprint: string
   hostFingerprint: string
-  /** 预览时捕获的运行时 epoch；写盘前复核对得上才算一致。 */
   guardEpoch?: string
   expiresAt: number
 }
 
-/** 同时待确认的切换上限：防止反复 preview 只生成令牌而不确认。 */
 const MAX_PENDING_SWITCHES = 32
 
 const pendingSwitches = new Map<string, PendingSwitch>()
@@ -166,11 +121,6 @@ function pruneExpired(nowMs: number): void {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* 纯文档变换（保留未知字段；不做 IO）                                  */
-/* ------------------------------------------------------------------ */
-
-/** 首版不纳入托管的服务；返回原因供 UI 解释。 */
 export function mcpAppUnsupportedReason(config: McpServerConfig): string | undefined {
   if (config.id === WINDOWS_MCP_SERVER_ID) {
     return 'windows-mcp 保留在砚的连接里（电脑操作需要排队与用户接管），首版不纳入托管'
@@ -181,12 +131,10 @@ export function mcpAppUnsupportedReason(config: McpServerConfig): string | undef
   return undefined
 }
 
-/** 砚配置里保存的原 pi 条目（回退用）。 */
 export function mcpAppNativeRecord(config: McpAppServerConfig): McpAppNativeEntry | undefined {
   return config.appHost?.natives?.[0]
 }
 
-/** 当前服务此刻的归属：托管必须 `ownedBy:'inkstone'` + `appHost` + 未禁用。 */
 export function mcpAppSwitchDirectionOf(config: McpAppServerConfig): McpAppSwitchDirection {
   return isInkstoneManaged(config) ? 'to-pi' : 'to-inkstone'
 }
@@ -230,7 +178,6 @@ function upsertNativeRecord(natives: readonly unknown[], incoming: McpAppNativeE
   return [...rest, incoming]
 }
 
-/** 在砚文档里写托管声明（`to-inkstone`）：启用 + `ownedBy:'inkstone'` + `appHost`。 */
 function enrollHostEntry(options: {
   document: unknown
   serverId: string
@@ -251,7 +198,6 @@ function enrollHostEntry(options: {
   return { ok: true, document: applyHostEntry(options.document, located, patched) }
 }
 
-/** 在砚文档里写回退标记（`to-pi`）：停用 + `ownedBy:'pi'` + `migratedToNative`，并移除 `appHost`。 */
 function releaseHostEntry(options: {
   document: unknown
   serverId: string
@@ -275,7 +221,6 @@ function nativeEntryOf(document: unknown, name: string): { present: boolean; ent
   return { present: true, entry: servers[name] }
 }
 
-/** 从 pi 文档移除一条服务（保留其它服务与未知顶层字段）。 */
 function removeNativeEntry(document: unknown, name: string): { ok: true; document: unknown } | { ok: false; reason: string } {
   const root = asRecord(document)
   if (!root) return { ok: false, reason: 'pi 原生配置顶层必须是 JSON 对象' }
@@ -286,7 +231,6 @@ function removeNativeEntry(document: unknown, name: string): { ok: true; documen
   return { ok: true, document: { ...root, mcpServers: next } }
 }
 
-/** 把一条服务插入 pi 文档（同名一律拒绝；文件不存在时新建）。 */
 function insertNativeEntry(
   document: unknown,
   name: string,
@@ -308,10 +252,6 @@ function insertNativeEntry(
   return { ok: true, document: { ...root, mcpServers: { ...servers, [name]: entry } } }
 }
 
-/* ------------------------------------------------------------------ */
-/* 位置扫描（项目范围 / 全局同名项都须检查）                            */
-/* ------------------------------------------------------------------ */
-
 interface NativeLocation {
   path: string
   scope: 'global' | 'project'
@@ -332,7 +272,6 @@ function samePath(a: string, b: string): boolean {
   return a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
 }
 
-/** 扫描所有原生位置：目标位置是否已含该名字、其它位置是否有同名（歧义）。 */
 async function inspectNativeLocations(options: {
   host: McpAppSwitchHost
   name: string
@@ -360,23 +299,12 @@ function safeParse(text: string): unknown {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* 运行时守卫（fail-closed）                                            */
-/* ------------------------------------------------------------------ */
-
 interface HolderQuery {
   serverId: string
   scope: 'global' | 'project'
   projectId?: string
 }
 
-/**
- * 读取运行时持有者。**任何不确定都拒绝**：
- *   · provider 缺失 → 无法判断；
- *   · epoch 读取抛错 → 无法在写前复核；
- *   · holdersFor 抛错或返回非数组 → 无法确认无人持有。
- * 全部转成 `holders_unavailable`，绝不当作「无人持有」。
- */
 async function requireHolders(
   host: McpAppSwitchHost,
   query: HolderQuery
@@ -405,7 +333,6 @@ async function requireHolders(
   return { holders: holders as McpAppSwitchHolder[], ...(epoch !== undefined ? { epoch } : {}) }
 }
 
-/** 写盘前复核：provider 仍需可用、仍无持有者、epoch 未变，否则抛错拒绝。 */
 async function recheckHoldersBeforeWrite(
   host: McpAppSwitchHost,
   query: HolderQuery,
@@ -423,14 +350,6 @@ async function recheckHoldersBeforeWrite(
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* prepare                                                             */
-/* ------------------------------------------------------------------ */
-
-/**
- * 只读预览 + 生成一次性令牌：读两份文件、算指纹、构造将写入的内容。
- * 不落盘、不停用、不连接任何服务；原始 pi 条目留在令牌里只供宿主使用。
- */
 export async function prepareMcpAppSwitch(input: {
   host: McpAppSwitchHost
   serverId: string
@@ -463,7 +382,6 @@ export async function prepareMcpAppSwitch(input: {
 
   const direction = mcpAppSwitchDirectionOf(config)
 
-  /* 范围与目标位置：托管条目以 appHost 记录为准（那是当初移出的位置）。 */
   let scope: 'global' | 'project' = 'global'
   let projectId: string | undefined
   let projectCwd: string | undefined
@@ -508,7 +426,6 @@ export async function prepareMcpAppSwitch(input: {
     throw new McpAppSwitchError('target_invalid_json', `pi 原生配置不是合法 JSON（${targetPath}），拒绝改写`)
   }
 
-  /* 同名冲突：项目范围 / 全局都须检查；歧义时绝不静默挑一个。 */
   const { collisions } = await inspectNativeLocations({ host, name: nativeName, targetPath })
   if (collisions.length > 0) {
     throw new McpAppSwitchError(
@@ -577,7 +494,6 @@ export async function prepareMcpAppSwitch(input: {
     }
   }
 
-  /* 运行时守卫：to-inkstone 必须能确认「谁可能仍持有」；缺失 / 异常都拒绝，不当作无人持有。 */
   const holderQuery: HolderQuery = { serverId, scope, ...(projectId ? { projectId } : {}) }
   let holders: McpAppSwitchHolder[] = []
   let guardEpoch: string | undefined
@@ -643,15 +559,10 @@ export async function prepareMcpAppSwitch(input: {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* commit                                                              */
-/* ------------------------------------------------------------------ */
-
 function skippedSteps(): McpAppSwitchCommitResult['steps'] {
   return { native: 'skipped', host: 'skipped', verify: 'skipped', hostDisconnect: 'skipped' }
 }
 
-/** 写盘后失败时，用保存的原始文本把 native 文件恢复回去。 */
 async function restoreNative(
   writeText: (path: string, text: string, expectedFingerprint?: string) => Promise<void>,
   pending: PendingSwitch
@@ -660,7 +571,6 @@ async function restoreNative(
     const current = await readTextOrNull(pending.targetPath)
     const currentFingerprint = nativeMcpTextFingerprint(current)
     if (currentFingerprint !== nativeMcpTextFingerprint(pending.targetContent)) {
-      /* 目标已被外部改动，不敢覆盖；显式保留修复入口。 */
       return 'remediation-failed'
     }
     if (pending.targetOriginalText === null) {
@@ -717,7 +627,6 @@ async function precheckSwitch(host: McpAppSwitchHost, pending: PendingSwitch): P
   }
 }
 
-/** 提交：共享串行写链内核对令牌 / 身份 / 两份指纹后写入，并按分步结果如实回报。 */
 export async function commitMcpAppSwitch(input: {
   host: McpAppSwitchHost
   token: string
@@ -739,7 +648,6 @@ export async function commitMcpAppSwitch(input: {
     if (pending.agentDir !== host.agentDir || pending.hostConfigFile !== hostConfigPathOf(host)) {
       throw new McpAppSwitchError('host_mismatch', '切换令牌不是为当前宿主 / 数据目录生成的')
     }
-    /* 领取：自此同一令牌不能再用；写入失败也要重新 preview。 */
     pendingSwitches.delete(token)
 
     const writeText = host.writeText ?? atomicWrite
@@ -760,7 +668,6 @@ export async function commitMcpAppSwitch(input: {
       ...(pending.projectId ? { projectId: pending.projectId } : {})
     }
 
-    /* 1. to-inkstone：provider 缺失 / 无法判断 / 仍有存活实例都拒绝立即切换（不自动重启）。 */
     if (pending.direction === 'to-inkstone') {
       let resolved: { holders: McpAppSwitchHolder[]; epoch?: string }
       try {
@@ -785,7 +692,6 @@ export async function commitMcpAppSwitch(input: {
       }
     }
 
-    /* 2. 写前核对两份文件与状态。 */
     try {
       await precheckSwitch(host, pending)
     } catch (error) {
@@ -799,10 +705,6 @@ export async function commitMcpAppSwitch(input: {
       }
     }
 
-    /*
-     * 2.5 写前复核运行时：precheck 是 await，期间可能有新实例进入或进程状态改变。
-     * 预览时的检查不算数，关键写入前必须再看一次 epoch / 持有者。
-     */
     if (pending.direction === 'to-inkstone') {
       try {
         await recheckHoldersBeforeWrite(host, holderQuery, pending.guardEpoch)
@@ -817,7 +719,6 @@ export async function commitMcpAppSwitch(input: {
       }
     }
 
-    /* 3. to-pi：先把砚宿主连接断掉，确认唯一所有者后再写 pi。缺回调直接拒绝，不写盘。 */
     if (pending.direction === 'to-pi' && !host.disconnectHost) {
       return {
         ...base,
@@ -845,7 +746,6 @@ export async function commitMcpAppSwitch(input: {
       }
     }
 
-    /* 4. 写 pi 文件。 */
     try {
       await writeText(pending.targetPath, pending.targetContent, pending.targetFingerprint)
     } catch (error) {
@@ -858,7 +758,6 @@ export async function commitMcpAppSwitch(input: {
       }
     }
 
-    /* 5. 写砚配置；失败则按保存的原值恢复 pi 文件。 */
     try {
       await writeText(pending.hostConfigFile, pending.hostContent, pending.hostFingerprint)
     } catch (error) {
@@ -876,7 +775,6 @@ export async function commitMcpAppSwitch(input: {
       }
     }
 
-    /* 6. 复核 pi 侧存在性。 */
     let verify: McpAppSwitchCommitResult['steps']['verify'] = 'unavailable'
     let verifyDetail: string | undefined
     if (host.verify) {
@@ -921,12 +819,10 @@ export async function commitMcpAppSwitch(input: {
   })
 }
 
-/** 只读归属视图：给设置页判断能否切换与展示原因（不连接、不落盘）。 */
 export function mcpAppOwnershipView(input: {
   config: McpAppServerConfig
   holders: McpAppSwitchHolder[]
   projectScoped: boolean
-  /** 运行时持有情况无法判断（注册表缺失 / 异常）→ to-inkstone 按不可切换处理。 */
   holdersUnknown?: boolean
 }): McpAppOwnershipView {
   const { config, holders, projectScoped, holdersUnknown } = input

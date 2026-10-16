@@ -10,30 +10,13 @@ import { formatHitRate } from '../../../../shared/turns'
 import { projectSessionMetrics, type SessionMetrics } from '../../../../shared/session-metrics'
 import type { ReactNode } from 'react'
 
-/**
- * 会话统计入口：轮数/步数 · TPS 与 累计 Token · 缓存命中率。
- *
- * 由设置「显示会话统计与用量」（`usageUnderInput`）控制，默认开。
- * 位置随版面走，两处互斥（见 `placement`）：单会话在**状态栏**右段（`statusbar`，
- * `StatusBar` 渲染）；多会话磁贴（分屏）回到**输入框下方**（`inline`，`Composer` 渲染）。
- * 分屏里只有焦点磁贴渲染输入框，于是统计每屏只出现一处，不会两头重复。
- * 两个入口都可点击 / 键盘聚焦，点开向上弹出与触发器对齐的统一详情浮层：
- * 前者是会话统计（模型用时 / 工具用时 / 平均 TTFT / TPS），
- * 后者是 Token 明细（总数 / 命中率 / 未缓存输入 / 缓存读写 / 输出）。
- *
- * 数据全部来自 `projectSessionMetrics`（与状态栏花费详情同源），不在这里
- * 自己聚合，也不把当前回合的值当会话值。上下文占用仍由输入框右下角的圆环
- * 独立表达，这里不重复。
- */
 type OpenPanel = 'session' | 'tokens' | null
 
-/** 求和类计时：缺记录时是下限，标 ≥ */
 function sumTime(ms: number | null, partial: boolean): string {
   if (ms === null) return '—'
   return `${partial ? '≥' : ''}${ms < 1000 ? `${Math.round(ms)}ms` : formatDuration(ms)}`
 }
 
-/** 平均值（TTFT）：不能用 ≥ 表达「部分」，只给已记录部分的均值 */
 function avgTime(ms: number | null): string {
   if (ms === null) return '—'
   return ms < 1000 ? `${Math.round(ms)}ms` : formatDuration(ms)
@@ -48,12 +31,10 @@ function tokenText(n: number | null, partial: boolean, unit: string): string {
   return `${partial ? '≥' : ''}${n.toLocaleString()} ${unit}`
 }
 
-/** 轮数/步数：历史未全部载入时只是可见记录的下限，标 ≥ */
 function countText(n: number, partial: boolean): string {
   return `${partial ? '≥' : ''}${n}`
 }
 
-/** 缩略数量（摘要入口用）：≥1000 记 K，≥1000000 记 M；详情仍走完整 locale 数 */
 function abbrevCount(n: number): string {
   const trim = (v: number): string => {
     const s = v.toFixed(1)
@@ -69,7 +50,6 @@ function abbrevToken(n: number | null, partial: boolean, unit: string): string {
   return `${partial ? '≥' : ''}${abbrevCount(n)} ${unit}`
 }
 
-/** 渲染位置：状态栏右段（单会话）或输入框下方（分屏磁贴） */
 export type ComposerUsagePlacement = 'statusbar' | 'inline'
 
 export function ComposerUsage({ placement = 'inline' }: { placement?: ComposerUsagePlacement } = {}) {
@@ -78,7 +58,6 @@ export function ComposerUsage({ placement = 'inline' }: { placement?: ComposerUs
   const split = useSplitView((s) => !!s.split)
   const messages = useStore((s) => s.messages)
   const stats = useStore((s) => s.stats)
-  /* peekedSessionId 优先：点历史会话时视图已先认到目标身份，浮层要立刻随它关掉 */
   const sessionKey = useStore((s) => s.peekedSessionId ?? s.session?.sessionId ?? s.session?.conversationId ?? null)
   const peekNote = useStore((s) => s.peekNote)
   const historyPartial = (peekNote?.truncated ?? 0) > 0
@@ -100,7 +79,6 @@ export function ComposerUsage({ placement = 'inline' }: { placement?: ComposerUs
     if (returnFocus) target?.focus()
   }, [open])
 
-  /* 关闭归还键盘焦点：Esc 在捕获阶段拦下，避免同时触发输入框的「运行中 Esc 停止」 */
   useEffect(() => {
     if (!open) return
     const release = useStore.getState().acquireOverlayBlocker('composer-usage')
@@ -124,7 +102,6 @@ export function ComposerUsage({ placement = 'inline' }: { placement?: ComposerUs
     }
   }, [open, close])
 
-  /* 切会话就关掉：数字会随会话整体换掉，浮层不能停留在上一条会话的结论上 */
   const boundSession = useRef(sessionKey)
   useEffect(() => {
     if (boundSession.current === sessionKey) return
@@ -132,16 +109,13 @@ export function ComposerUsage({ placement = 'inline' }: { placement?: ComposerUs
     setOpen(null)
   }, [sessionKey])
 
-  /* 关闭开关时同步收起浮层并释放 overlay blocker：组件仍挂载（只是返回 null），不能只等卸载 */
   useEffect(() => {
     if (!enabled) setOpen(null)
   }, [enabled])
 
   if (!enabled) return null
-  /* 两处互斥：分屏时统计在焦点磁贴的输入框下方，单会话时在状态栏 */
   if (placement === 'statusbar' ? split : !split) return null
   const showSession = metrics.steps > 0 || metrics.turns > 0
-  /* 已知 Token 才显示数字；未知但有请求时保留入口显示 —，全新空会话才隐藏 */
   const showTokens = metrics.total !== null || metrics.steps > 0
   if (!showSession && !showTokens) return null
 

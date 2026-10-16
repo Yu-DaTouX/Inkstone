@@ -1,20 +1,11 @@
-/** Identify Inkstone without replacing pi tools, rules or project context.
- * An unknown upstream preamble keeps its text and receives an explicit identity suffix. */
-/** pi 内置 preamble（0.87.1 起，逐字取自 bundle 的 buildSystemPromptSections）。 */
 export const NATIVE_PREAMBLE =
   'You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.'
 
-/** Inkstone identity; pi remains the execution engine. */
 export const YAN_PREAMBLE =
   'You are an assistant operating inside Inkstone (砚), the desktop AI workspace. pi is the underlying execution engine, not the user-facing application. You help users through Inkstone and its available tools, reading files, executing commands, editing code, and writing new files.'
 
 export const PROGRESS_GUIDANCE = 'Work quietly. Before substantive tool work, say in one short line what you will do. Do not narrate routine steps or announce tool calls, and do not explain Inkstone internals (the yan CLI, skill files, subagent ids, host notifications, artifact commands) unless the user asks. Speak up mid-task only when a step fails, you change approach, you need the user, or a long task reaches a finding the user should see now. Never claim results you have not observed. Finish with the result itself: lead with what was found or changed, without recapping the process. If the user requests silence or only a final answer, follow that.'
 
-/*
- * pi 的 <docs> 段（约 370 token）列出全部文档路径与阅读要求，只在用户问 pi 本身时有用。
- * 砚的用户很少问 pi 内部，这里压成一行入口：保留主文档路径，其余目录在它旁边，用到时再读。
- * 认不出段落形状时原样保留。
- */
 const DOCS_BLOCK = /<docs>\n([\s\S]*?)\n<\/docs>/
 
 export function compactDocs(body) {
@@ -30,7 +21,6 @@ export default function preambleExtension(pi) {
     const docs = DOCS_BLOCK.exec(identity)
     const short = docs ? compactDocs(docs[1]) : undefined
     const compacted = short ? identity.replace(DOCS_BLOCK, `<docs>\n${short}\n</docs>`) : identity
-    /* 同时写具名分区：只转发结构化部分的 provider 用分区重新拼提示，同名分区覆盖 pi 内置的 docs */
     const sections = event?.systemPromptOptions?.sections
     if (short && sections && typeof sections === 'object') sections.docs = short
     const updated = compacted.includes(PROGRESS_GUIDANCE) ? compacted : `${compacted}\n\n${PROGRESS_GUIDANCE}`

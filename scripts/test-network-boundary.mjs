@@ -1,19 +1,6 @@
-/**
- * L04 网络边界判定（`src/main/browser/network-boundary.ts`）。
- *
- * 为什么值得单独测：这段逻辑决定「远程页面能不能借道访问本机服务」。
- * 以前它写在 `webRequest.onBeforeRequest` 回调里，判错的代价是**安全边界漏了**
- * 或者**本地预览被误杀**，而两者都只能靠真窗口碰运气发现。
- *
- * 这里钉住的核心是那条**发起方**语义：拿已提交文档判，且只有
- * 「用户/agent 明确要求的顶层导航」才放行内网地址。
- *（2026-09-16 实测过反例：以前用导航**目标**当发起方，于是
- * 远程页面 → 127.0.0.1 的顶层导航被放过 —— 见 live 场景 `browserboundary`。）
- */
 export async function runNetworkBoundaryTests(ok, mod) {
   const { decideRequestBoundary, isPrivateHost, isLinkLocalHost: isLinkLocal } = mod
 
-  /* ---- isPrivateHost：地址判断本身 ---- */
   ok(isPrivateHost('127.0.0.1'), '本机回环算内网')
   ok(isPrivateHost('localhost'), 'localhost 算内网')
   ok(isPrivateHost('app.localhost'), '*.localhost 算内网')
@@ -24,7 +11,6 @@ export async function runNetworkBoundaryTests(ok, mod) {
 
   const decide = (o) => decideRequestBoundary(o)
 
-  /* ---- 放行：拿不到已提交文档 / 发起方本来就是本地页面 ---- */
   ok(
     decide({ targetHost: '127.0.0.1', initiatorUrl: '', requestedByUs: false }) === 'block-private',
     '未知来源的新标签不能访问本机服务'
@@ -34,7 +20,6 @@ export async function runNetworkBoundaryTests(ok, mod) {
     '本地页面访问内网地址放行（本地预览）'
   )
 
-  /* ---- 明确要求的顶层导航：放行；其余一律拦 ---- */
   ok(
     decide({
       targetHost: '127.0.0.1',
@@ -110,7 +95,6 @@ export async function runNetworkBoundaryTests(ok, mod) {
   ok(isLinkLocal('fe80::1'), 'IPv6 link-local 被识别')
   ok(!isLinkLocal('169.255.0.1'), '相邻的公网段不被误判为 link-local')
 
-  /* ---- 公网目标：交给 DNS 判定，不在这一步拦 ---- */
   ok(
     decide({
       targetHost: 'example.com',
@@ -139,14 +123,6 @@ export async function runNetworkBoundaryTests(ok, mod) {
     'DNS 重绑定的判定**不看**“是不是我们发起的” —— 不能给 agent 留读本机服务的原语'
   )
 
-  /*
-   * ---- 隐藏页面（读网页正文 / 搜索结果页）的请求判定 ----
-   *
-   * 与内置浏览器不同：隐藏页面只读公开网页，没有「明确要求打开内网」的用法，
-   * 所以内网一律拦；公网域名必须**解析一次**再决定。
-   * 回归本体：原来这里只按 hostname 字符串判断，域名解析到 127.0.0.1 时
-   * 照样把本机服务读进了正文（2026-10-07 审核复现）。
-   */
   const blockHidden = mod.shouldBlockHiddenPageRequest
   ok(typeof blockHidden === 'function', '隐藏页面请求判定已导出')
   if (typeof blockHidden === 'function') {

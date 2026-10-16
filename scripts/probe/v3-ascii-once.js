@@ -1,18 +1,3 @@
-/*
- * v3 空态「动态 ASCII 背景」单目标隔离专项（独立探针，不复制整轮 v3-shell）。
- *
- * 目的：在既有冻结构建上，只用一次隔离启动，观察这条链路到底卡在哪一层——
- *   空态挂载 → 外观开关（label.click 复现 / 内部 input.click / 真实 Chromium Space）
- *   → store.settings.asciiBackground → window.yan.getSettings().asciiBackground
- *   → 关闭后空态背景 DOM 卸载 → 恢复后删键（不写 true）且背景重新挂载。
- *
- * 边界：不发消息、不调推理、不联网、不碰真实模型/数据/用户窗口；只读状态与点击真实控件。
- *
- * 交互分层（严格标注，避免拿程序路径冒充真实输入）：
- *   · label.click()          —— 复现原 v3-shell 的写法；不变只记录，不判本次失败。
- *   · 内部 input.click()     —— 计划好的有效 UI 交互（真实控件的 DOM 激活），承担关闭/恢复断言。
- *   · 真实 Chromium Space    —— 既有 keys 机制（sendInputEvent）发真键；作为观察项记录。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => out.push(`  ${condition ? '✓' : '✗'} ${label}`)
@@ -26,14 +11,12 @@
     }
     return false
   }
-  /* 需要等主进程/异步结果时用；只轮询，不改变被测状态。 */
   const untilAsync = async (predicate, timeout = 4000) => {
     const end = Date.now() + timeout
     while (Date.now() < end) {
       try {
         if (await predicate()) return true
       } catch {
-        /* 读取失败当作还没就绪，继续轮询 */
       }
       await wait(100)
     }
@@ -80,7 +63,6 @@
       return until(() => !!query('composer-input'), 6000)
     }
 
-    /* ---------- 阶段 0：前置状态必须是「缺省开」 ---------- */
     check(await openAppearance(), '外观分区打开并可看到动态背景开关')
     if (!label()) throw new Error('外观分区没有动态背景开关')
     const s0 = await readState()
@@ -89,7 +71,6 @@
     check(s0.labelSelected === 'true', `前置：开关 data-selected=true（实际 ${String(s0.labelSelected)}）`)
     check(s0.inputChecked === true, `前置：内部 input.checked=true（实际 ${String(s0.inputChecked)}）`)
 
-    /* ---------- 阶段 A：复现原始 label.click（记录，不判失败） ---------- */
     let labelClicks = 0
     const clickListener = () => {
       labelClicks += 1
@@ -115,7 +96,6 @@
       note('阶段A：label.click 未改变状态（与既有失败一致；这是复现记录，不作为本次运行失败）')
     }
 
-    /* ---------- 阶段 B：内部 input.click —— 计划有效交互，承担关闭/恢复断言 ---------- */
     check(await openAppearance(), '阶段B 前外观分区仍在')
     const b0 = await readState()
     check(b0.ipcAscii === undefined, '阶段B 前置：仍为缺省开（未写键）')
@@ -152,7 +132,6 @@
       '恢复缺省后空态重新挂载 ASCII 背景'
     )
 
-    /* ---------- 阶段 C：真实 Chromium Space（既有 keys 机制；观察项） ---------- */
     check(await openAppearance(), '阶段C 前外观分区打开')
     const c0 = await readState()
     note(`阶段C 前置：ipc=${String(c0.ipcAscii)} data-selected=${String(c0.labelSelected)} checked=${String(c0.inputChecked)}`)

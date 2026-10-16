@@ -1,10 +1,3 @@
-/*
- * 运行阶段投影单测（src/shared/run-progress.ts，实施-21 P1）。
- *
- * 覆盖：多轮工具循环、阶段优先级、取消/失败、没有可见 thinking 时不显示推理、
- * 工具结束后回到等待模型、长耗时阈值、空白回合。
- */
-
 export async function runRunProgressTests(ok, mod) {
   const { deriveRunProgress, runPhaseIsActive, resolveRunClock } = mod
   const base = {
@@ -29,7 +22,6 @@ export async function runRunProgressTests(ok, mod) {
   ok(resolveRunClock(first, { identity: first.identity, running: false, now: 10_000 }) === null, '结束清空运行计时')
   ok(resolveRunClock(first, { identity: 'new', running: true, startedAt: NaN, now: 12_000 })?.startedAt === 12_000, '非法报告起点不污染新运行计时')
 
-  /* ── 阶段由真实事件推进 ── */
   ok(phaseOf({ running: false, startedAt: null }) === 'settled', '没有在跑就是 settled')
   ok(phaseOf({}) === 'preparing', 'agent_start 之后、还没请求模型 → preparing')
   ok(phaseOf({ requested: true }) === 'requesting', '已发出请求 → requesting')
@@ -45,15 +37,12 @@ export async function runRunProgressTests(ok, mod) {
     '工具优先于正文（工具在跑时正文不推进）'
   )
 
-  /* ── 没有可见 thinking 就不显示“正在推理” ── */
   const noThink = deriveRunProgress({ ...base, requested: true, thinking: false })
   ok(noThink.phase === 'requesting', '没收到 thinking 时停在 requesting，不假装在推理')
 
-  /* ── 工具结束后等待模型：回到 requesting ── */
   const afterTool = deriveRunProgress({ ...base, requested: true, tool: null, streaming: false, thinking: false })
   ok(afterTool.phase === 'requesting', '工具结束后回到 requesting（不是停在 tool）')
 
-  /* ── 同一回合多轮工具 → 模型可以来回切 ── */
   const round1 = phaseOf({ requested: true, tool: { name: 'read' } })
   const round1done = phaseOf({ requested: true, tool: null })
   const round2 = phaseOf({ requested: true, tool: { name: 'bash' } })
@@ -62,7 +51,6 @@ export async function runRunProgressTests(ok, mod) {
     '工具 → 等待模型 → 再工具可以多次往返（没有线性完成度）'
   )
 
-  /* ── 终态优先，且取消 / 失败可区分 ── */
   ok(phaseOf({ terminal: 'completed' }) === 'settled', 'completed → settled')
   ok(phaseOf({ terminal: 'failed' }) === 'failed', 'failed → failed')
   ok(phaseOf({ terminal: 'stopped' }) === 'cancelled', 'stopped → cancelled（用户主动停）')
@@ -73,7 +61,6 @@ export async function runRunProgressTests(ok, mod) {
   )
   ok(phaseOf({ terminal: 'completed', running: false }) === 'settled', '完成后 running=false 仍是 settled')
 
-  /* ── 附注与长耗时 ── */
   const withTool = deriveRunProgress({ ...base, requested: true, tool: { name: 'grep' } })
   ok(withTool.detail === 'grep', 'tool 阶段带出工具名')
   ok(deriveRunProgress({ ...base, requested: true }).detail === undefined, '非 tool 阶段没有工具附注')
@@ -90,7 +77,6 @@ export async function runRunProgressTests(ok, mod) {
   )
   ok(deriveRunProgress({ ...base, startedAt: null }).elapsedMs === 0, '没有开始时间时不编造时长')
 
-  /* ── 压缩：独立于回合，且不被「仍在运行」顶掉 ── */
   ok(phaseOf({ running: true, compacting: true }) === 'compacting', '压缩中 → compacting（不再误报成生成回复）')
   ok(phaseOf({ streaming: true, compacting: true, requested: true }) === 'compacting', '压缩期间 isStreaming 为真也显示压缩')
   ok(phaseOf({ compacting: true, terminal: 'failed' }) === 'failed', '终态仍优先于压缩')

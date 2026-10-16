@@ -1,17 +1,3 @@
-/**
- * 轮次投影纯逻辑（`src/shared/conversation-turns.ts`，实施-26 R1）的单测。
- *
- * 为什么值得单测：轮次切分决定「一张卡 = 一轮问答」这件事本身。
- * 切错了在界面上看不出来 —— 只会表现为「卡片串在一起」「中断的那轮不见了」
- * 「自动继续被拆成两张卡」。渲染层补不了这个洞，所以在这里钉住切分口径。
- *
- * 覆盖（对应实施-26 每片执行卡 R1 的出口）：
- *   0 轮 / 单轮 / 多轮 / 工具往返 / 只有 assistant 无 user /
- *   stopped 与 interrupted 轮可见 / logicalTurnId 缺失时按 role 退化 /
- *   logicalTurnId 与 role 顺序冲突时以前者为准 / entryId 透传。
- */
-
-/** UIMessage 的最小构造器（这个测试只关心切分用到的字段）。 */
 const mk = (over = {}) => ({
   id: over.id ?? 'm0',
   role: over.role ?? 'assistant',
@@ -42,7 +28,6 @@ export function runConversationTurnsTests(ok, mod) {
     ok(turns.length === 1 && turns[0].question.text === '原任务', '后台通知不占导航轮次或替换用户问题')
   }
 
-  /* ---- 0 轮 ---- */
   {
     const none = buildConversationTurns([])
     ok(none.length === 0, '空消息：0 轮，不报错')
@@ -57,7 +42,6 @@ export function runConversationTurnsTests(ok, mod) {
     ok(leadingNoise.length === 0, '前导 bash / assistant 被丢弃，不构成轮')
   }
 
-  /* ---- 单轮 ---- */
   {
     const turns = buildConversationTurns([
       mk({ id: 'm0', role: 'user', text: '问题' }),
@@ -70,7 +54,6 @@ export function runConversationTurnsTests(ok, mod) {
     ok(turns[0]?.id === 'turn:m0', '单轮无 lid：轮 id = turn:<首条 user 的 id>')
   }
 
-  /* ---- 多轮 ---- */
   {
     const turns = buildConversationTurns([
       mk({ id: 'm0', role: 'user', text: 'Q1' }),
@@ -88,7 +71,6 @@ export function runConversationTurnsTests(ok, mod) {
     )
   }
 
-  /* ---- 工具往返：过程不算答案，但仍属于这一轮 ---- */
   {
     const turns = buildConversationTurns([
       mk({ id: 'm0', role: 'user', text: '读一下文件' }),
@@ -112,7 +94,6 @@ export function runConversationTurnsTests(ok, mod) {
     )
   }
 
-  /* ---- bash 直执行也计入工具往返 ---- */
   {
     const turns = buildConversationTurns([
       mk({ id: 'm0', role: 'user', text: '跑个命令' }),
@@ -127,7 +108,6 @@ export function runConversationTurnsTests(ok, mod) {
     ok(turns[0]?.toolCalls === 1, 'bash 直执行计入工具往返')
   }
 
-  /* ---- 中断轮必须可见 ---- */
   {
     const stopped = buildConversationTurns([
       mk({ id: 'm0', role: 'user', text: '问题' }),
@@ -153,7 +133,6 @@ export function runConversationTurnsTests(ok, mod) {
     ok(failed[0]?.incomplete === true, 'failed 轮：标记未完成')
   }
 
-  /* ---- logicalTurnId：同一回合的两条 user（自动继续）不拆卡 ---- */
   {
     const turns = buildConversationTurns([
       mk({ id: 'm0', role: 'user', text: '第一问', turnTiming: timing('t9') }),
@@ -175,12 +154,7 @@ export function runConversationTurnsTests(ok, mod) {
     ok(two.length === 2 && two[1]?.id === 't2', '不同 logicalTurnId：正常切成两轮')
   }
 
-  /* ---- lid 与 role 顺序冲突：以 lid 为准 ---- */
   {
-    /*
-     * 真实形态：旧历史（无 lid）在前、新回合（有 lid）在后。
-     * lid 一旦出现就接管 —— 新消息不能因为「有 user」而挂到旧轮上。
-     */
     const turns = buildConversationTurns([
       mk({ id: 'm0', role: 'user', text: '旧 Q' }),
       mk({ id: 'm1', role: 'assistant', text: '旧 A' }),
@@ -194,7 +168,6 @@ export function runConversationTurnsTests(ok, mod) {
     )
   }
 
-  /* ---- 退化：lid 缺失时按 role 顺序 ---- */
   {
     const turns = buildConversationTurns([
       mk({ id: 'm0', role: 'user', text: 'Q1' }),
@@ -209,7 +182,6 @@ export function runConversationTurnsTests(ok, mod) {
     )
   }
 
-  /* ---- entryId（R0① 的落点）：透传为 fork 锚点 ---- */
   {
     const turns = buildConversationTurns([
       mk({ id: 'm0', role: 'user', text: 'Q1', entryId: '90ac64b9' }),
@@ -219,7 +191,6 @@ export function runConversationTurnsTests(ok, mod) {
     ok(turns[0]?.answer?.entryId === '23cb6928', 'entryId 透传到 answer')
   }
 
-  /* ---- 起止时间：优先 turnTiming，缺失时退回消息 timestamp ---- */
   {
     const timed = buildConversationTurns([
       mk({ id: 'm0', role: 'user', text: 'Q', turnTiming: timing('t1', { startedAt: 111, endedAt: 222 }) }),

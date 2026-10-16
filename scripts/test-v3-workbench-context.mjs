@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * WP-30 剩余：工作区「上下文」页签的只读投影 + 面板拆分/专注规则。
- *
- * 目标：不用源码字符串断言，而是把三个**真实生产纯模块**现场 esbuild 出来跑：
- *   · `features/workbench/context-pane-view.ts` —— 用量可信判定、构成、文件/工具明细；
- *   · `features/workbench/panel-layout.ts` —— 拆分两格 / 专注单格 / 两格不撞页签；
- *   · `features/workbench/{types,mount-state}.ts` —— 上下文进入固定页签与恢复白名单，
- *     以及拆分页签一并登记（惰性挂载只增不减）。
- *
- * 同时钉住 W0 规则：终端 / 浏览器这类需要激活的页签在恢复时降级，只读的上下文页签
- *（`context`）按同一张 `WORKBENCH_ACTIVE_TABS` 表判定后原样恢复。
- *
- * 用法：node scripts/test-v3-workbench-context.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型、不跑真实 PTY。
- */
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -81,7 +66,6 @@ async function main() {
     restorableWorkbenchTab
   } = mod
 
-  /* ================================================= 组 1：页签注册与恢复规则 */
   group('页签注册：上下文进入固定页签与恢复白名单（W0）')
   {
     ok(WORKBENCH_TABS.includes('context'), '上下文在固定页签里', WORKBENCH_TABS)
@@ -92,7 +76,6 @@ async function main() {
     ok(restorableWorkbenchTab('terminal') === 'overview', '终端降级到概览，不隐式起 PTY')
     ok(restorableWorkbenchTab('browser') === 'overview', '浏览器降级到概览，不隐式导航')
 
-    /* 拆分打开时下半格与主格一并登记；关闭不注销。 */
     const empty = emptyMountState()
     const splitRegistered = nextVisited(empty, { open: true, activeTab: 'changes', extra: ['context'] })
     ok(splitRegistered.has('changes') && splitRegistered.has('context'), '拆分打开时主格与下半格都登记')
@@ -101,7 +84,6 @@ async function main() {
     ok(mountedTabs(splitRegistered).join(',') === 'changes,context', '登记后按固定顺序渲染', mountedTabs(splitRegistered))
   }
 
-  /* ==================================================== 组 2：拆分 / 专注版面 */
   group('拆分与专注：上下两格、单页签最大化、两格不撞页签')
   {
     const off = resolvePanelLayout({ split: false, focus: false, activeTab: 'changes', splitTab: 'context' })
@@ -146,7 +128,6 @@ async function main() {
     )
   }
 
-  /* ================================================== 组 3：上下文用量可信判定 */
   group('上下文用量：只认同模型对齐后的 agent 总量')
   {
     const model = { provider: 'anthropic', id: 'claude-x', contextWindow: 200_000 }
@@ -197,7 +178,6 @@ async function main() {
     ok(shortTokens(900) === '900' && shortTokens(1600) === '1.6k' && shortTokens(2_000_000) === '2M', 'token 短写法按量级收敛')
   }
 
-  /* ============================================ 组 4：构成与文件 / 工具结果明细 */
   group('上下文页签数据：构成、文件与工具结果明细、压缩过滤')
   {
     const model = { provider: 'anthropic', id: 'claude-x', contextWindow: 10_000 }
@@ -237,7 +217,6 @@ async function main() {
     })
     ok(unknown.slices.length === 0 && unknown.occupancy.length === 0, '没有可信总量时不画构成与明细')
 
-    /* 压缩过滤：since 之前的消息不计入明细。 */
     const filtered = contextOccupancy(messages, [{ id: 'tools', tokens: 5 }], 205)
     ok(filtered.find((r) => r.id === 'files').count === 0, 'since 之前的附件不计入')
     ok(filtered.find((r) => r.id === 'tools').count === 1, 'since 之后的工具结果仍计入')

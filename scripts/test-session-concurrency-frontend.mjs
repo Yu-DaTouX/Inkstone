@@ -1,21 +1,3 @@
-/**
- * 会话并发前端回归（渲染端身份 + 实时投影）。
- *
- * 覆盖用户报的两条现象与主审补的三处边界：
- *   · 同项目新建会话仍显示「生成中」——`newSession` 没清 `session` / 旧 `peeked` 身份，
- *     旧身份把新会话的推送挡在了归属判定之外；
- *   · 新建响应晚于新会话的 state/sync 到达时，响应不能把已经收到的状态清掉；
- *   · 切回正在运行的会话界面不更新——切回时只铺了消息，没恢复 `session` 实时状态；
- *     而且只读预览不会把该实例设成 active，`routePush` 会把它的实时帧当成后台帧丢掉；
- *   · peek 文件历史落后于流式缓存时不能删掉流式尾部，也不能用旧缓存覆盖较新的历史；
- *   · `queue-reclaimed` 收回的后台会话队列快照要清掉，否则草稿与缓存队列重复。
- *
- * 不启动 Electron、不连接 pi：用全局桩替代 `window.yan` / localStorage / rAF，
- * 把 store 单独 bundle 出来直接驱动真实状态机；push-routing 的纯函数另跑一组。
- *
- * 导出 `runSessionConcurrencyFrontendTests(ok)` 供 `test-unit.mjs` 接线；
- * 直接 `node scripts/test-session-concurrency-frontend.mjs` 也能独立运行。
- */
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,7 +12,6 @@ const settle = async () => {
 export async function runSessionConcurrencyFrontendTests(ok) {
   const section = (name) => console.log(`\n## ${name}`)
 
-  /* 保存现场：别的定向脚本 / 测试进程可能已经装过同名全局 */
   const savedGlobals = {
     window: globalThis.window,
     document: globalThis.document,
@@ -38,10 +19,8 @@ export async function runSessionConcurrencyFrontendTests(ok) {
     requestAnimationFrame: globalThis.requestAnimationFrame,
     cancelAnimationFrame: globalThis.cancelAnimationFrame
   }
-  /* 新版 Node 的 `navigator` 只有 getter，不能直接写回；只在原本没有时才补，并记录 */
   const hadNavigator = typeof globalThis.navigator !== 'undefined'
 
-  /* ---------------- 渲染端全局桩 ---------------- */
   const storage = new Map()
   globalThis.localStorage = {
     getItem: (key) => (storage.has(String(key)) ? storage.get(String(key)) : null),
@@ -51,7 +30,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
     key: () => null,
     length: 0
   }
-  /* 同步执行：store 里嵌套两层 rAF，异步桩会在脚本收尾后迟到。 */
   globalThis.requestAnimationFrame = (fn) => {
     fn(0)
     return 0
@@ -67,7 +45,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
   }
   if (!hadNavigator) globalThis.navigator = { userAgent: 'node' }
 
-  /* ---------------- 宿主 mock ---------------- */
   const calls = []
   const host = {
     sessions: [],
@@ -78,7 +55,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
     selectDelays: new Map(),
     selectDeferred: true,
     sessionIdFor: { A: 'sess-a', B: 'sess-b' },
-    /* 运行实例状态：默认空，避免 syncRunners 抢改 activeRunnerId 干扰断言 */
     runnerStatuses: []
   }
 
@@ -119,7 +95,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
         if (prop === 'runnerStatuses') return async () => host.runnerStatuses
         if (prop === 'listModels' || prop === 'listThinkingLevels' || prop === 'listCommands') return async () => []
         if (prop === 'getGoal') return async () => ({ goal: null })
-        /* 会显式记录停止类调用：切换会话不允许停任何实例 */
         if (prop === 'stopRunner' || prop === 'abort' || prop === 'abortSession' || prop === 'stop') {
           return async (...args) => {
             calls.push(`${String(prop)}:${JSON.stringify(args)}`)
@@ -137,7 +112,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
     location: { href: 'http://localhost/' }
   }
 
-  /* ---------------- 构建 ---------------- */
   const temp = await mkdtemp(join(tmpdir(), 'yan-session-concurrency-'))
   async function bundle(entry, name, define) {
     const outfile = join(temp, name)
@@ -162,7 +136,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       cancelAnimationFrame: 'globalThis.cancelAnimationFrame'
     })
 
-    /* ---------------- push-routing 纯逻辑 ---------------- */
     section('push-routing：谁的帧能改当前视图')
     {
       const runtimeA = { sessionId: 'sess-a', runId: 'r1', projectId: 'p', generation: 3 }
@@ -222,7 +195,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       ok(reused.project === false, '实例被复用到别的新会话时，旧会话迟到的帧不投影')
     }
 
-    /* ---------------- store：状态工厂 ---------------- */
     const EMPTY_QUEUE = { steering: [], followUp: [] }
     const msg = (id, text = id) => ({ id, role: 'assistant', text, timestamp: 1 })
     const statePayload = (sessionId, running, file) => ({
@@ -297,7 +269,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       })
     }
 
-    /* ---------------- 场景 1：A 正在跑 → 新建 B ---------------- */
     section('运行 A → 新建 B：旧身份/旧状态必须一起清掉')
     {
       resetView({
@@ -325,7 +296,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       ok(after.messages.length === 0, '新建后消息清空')
       ok(after.activeRunnerId === 'r2', '新建后对齐新实例 id', after.activeRunnerId)
 
-      /* 新会话的第一帧必须能投影上来 */
       useStore.getState().applyPush({
         ch: 'state',
         runtime: { sessionId: 'sess-b', runId: 'r2', generation: 1 },
@@ -334,7 +304,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       const b = useStore.getState()
       ok(b.session?.sessionId === 'sess-b' && b.session?.isAgentRunning === false, '新会话状态能投影，不再被旧身份挡掉', JSON.stringify(b.session))
 
-      /* 旧会话迟到的帧只能进缓存 */
       useStore.getState().applyPush({
         ch: 'msg-add',
         runtime: { sessionId: 'sess-a', runId: 'r1', generation: 2 },
@@ -348,7 +317,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       )
     }
 
-    /* ---------------- 场景 1b：新会话 state/sync 早于 IPC 响应到达 ---------------- */
     section('新建响应前已收到新会话 state/sync：响应不能清掉')
     {
       resetView({
@@ -365,7 +333,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
           })
         }
       })
-      /* 主进程先 pushRunnerSnapshot 再返回响应：这里模拟响应之前帧先到 */
       host.newSessionResult = { ok: true, id: 'r2', runId: 'r2', sessionId: 'sess-b', generation: 1 }
       host.newSessionDelay = 60
 
@@ -393,7 +360,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       ok(view.messages.some((m) => m.id === 'b-live'), '响应不清掉响应前已到的新会话消息', JSON.stringify(view.messages))
       ok(view.activeRunnerId === 'r2', '响应把运行身份对齐到新实例', view.activeRunnerId)
 
-      /* 已经铺上的消息仍能接收按 id 的增量补丁 */
       useStore.getState().applyPush({
         ch: 'msg-update',
         runtime: { sessionId: 'sess-b', runId: 'r2', generation: 1 },
@@ -405,14 +371,12 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       )
     }
 
-    /* ---------------- 场景 1c：复用运行实例时要核对代次 ---------------- */
     section('新建复用运行实例：不能把旧会话快照当成本次结果')
     {
       resetView({
         session: { sessionId: 'sess-a', sessionFile: 'A', cwd: 'C:/proj', isAgentRunning: true, isStreaming: true },
         messages: [msg('a1')],
         activeRunnerId: 'r0',
-        /* `run:r2` 是同一实例上一次服务 sess-old 留下的缓存（代次 1） */
         sessionRuntimes: {
           'run:r2': snapshot('sess-old', {
             runId: 'r2',
@@ -422,7 +386,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
           })
         }
       })
-      /* 响应没给 sessionId，且实例已被复用（generation 2）：不能投影代次 1 的旧快照 */
       host.newSessionResult = { ok: true, id: 'r2', runId: 'r2', generation: 2 }
       await useStore.getState().newSession({ cwd: 'C:/proj' })
       await settle()
@@ -432,7 +395,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       ok(view.activeRunnerId === 'r2', '运行身份仍对齐到目标实例')
     }
 
-    /* ---------------- 场景 1d：响应缺 generation 时不按 runId 认旧快照 ---------------- */
     section('新建缺 generation：sessionId 未命中时不能用同 runId 兜底')
     {
       resetView({
@@ -448,7 +410,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
           })
         }
       })
-      /* 响应给了 sessionId / runId 但没给 generation，且缓存里没有 'sess-new' */
       host.newSessionResult = { ok: true, id: 'r2', runId: 'r2', sessionId: 'sess-new' }
       const made = await useStore.getState().newSession({ cwd: 'C:/proj' })
       await settle()
@@ -462,7 +423,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       ok(view.session === null, 'generation 缺失且 sessionId 未命中时保持空白')
     }
 
-    /* ---------------- 场景 1e：sessionId / generation 都缺时不能凭 runId 认旧快照 ---------------- */
     section('新建缺 sessionId / generation：不能凭 runId 认旧快照')
     {
       resetView({
@@ -490,7 +450,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       ok(view.session === null, '缺身份信息时保持空白，不显示旧会话状态')
     }
 
-    /* ---------------- 场景 1f：generation 明确时支持 pending→uuid 同代匹配 ---------------- */
     section('新建 generation 明确：支持 pending→uuid 同代匹配')
     {
       resetView({
@@ -506,7 +465,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
           })
         }
       })
-      /* 响应给真实 uuid，缓存里是 pending:<runId>：同一实例同一代就是这条新会话 */
       host.newSessionResult = { ok: true, id: 'r2', runId: 'r2', sessionId: 'sess-new', generation: 3 }
       await useStore.getState().newSession({ cwd: 'C:/proj' })
       await settle()
@@ -519,7 +477,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       ok(view.session?.isAgentRunning === true, '找回的快照状态一并投影', JSON.stringify(view.session))
     }
 
-    /* ---------------- 场景 2：切回后台正在跑的 A ---------------- */
     section('切回后台在跑的 A：立刻恢复实时状态并继续更新')
     {
       resetView({
@@ -556,7 +513,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
         calls.join(',')
       )
 
-      /* 正在看的这条后台会话的完成帧要更新界面 */
       useStore.getState().applyPush({
         ch: 'state',
         runtime: { sessionId: 'sess-a', runId: 'r1', generation: 2 },
@@ -568,7 +524,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
         '正在看的后台会话的完成帧会更新界面，不会永远停在「生成中」'
       )
 
-      /* 别的会话（active 的 B）的帧不能改当前视图 */
       useStore.getState().applyPush({
         ch: 'state',
         runtime: { sessionId: 'sess-b', runId: 'r2', generation: 1 },
@@ -585,7 +540,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       )
     }
 
-    /* ---------------- 场景 3：缓存先铺、peek 历史后到 ---------------- */
     section('缓存与历史竞态：peek 历史不能删掉流式尾部')
     {
       resetView({
@@ -603,7 +557,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       })
       host.peekDelays.set('A', 60)
       const pending = useStore.getState().switchSession('A')
-      /* await 之前就应该已经铺上缓存，不等文件读取 */
       const immediate = useStore.getState()
       ok(immediate.messages[0]?.id === 'cache-a', '切换瞬间先铺运行缓存的消息', immediate.messages[0]?.id)
       ok(immediate.session?.sessionId === 'sess-a', '缓存里的会话状态同时切换', JSON.stringify(immediate.session))
@@ -618,7 +571,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       )
     }
 
-    /* ---------------- 场景 4：await peek 期间增量发生 ---------------- */
     section('await peek 期间流式增量：后续按 id 的补丁仍有落点')
     {
       resetView({
@@ -638,13 +590,11 @@ export async function runSessionConcurrencyFrontendTests(ok) {
           })
         }
       })
-      /* 文件还没写完，只到 m-user；内存里已经有正在流式的 m-live */
       host.peekResults.set('A', { messages: [msg('m-user')], sessionId: 'sess-a', truncated: 0, total: 1 })
       host.peekDelays.set('A', 60)
 
       const pending = useStore.getState().switchSession('A')
       await sleep(10)
-      /* await 期间流式增量到达（timestamp 不变，只有文本变长） */
       useStore.getState().applyPush({
         ch: 'msg-update',
         runtime: { sessionId: 'sess-a', runId: 'r1', generation: 2 },
@@ -658,7 +608,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
         'peek 不能让文件里的半截覆盖内存里更完整的流式版本',
         JSON.stringify(view.messages)
       )
-      /* 后续按 id 的补丁必须还有落点 */
       useStore.getState().applyPush({
         ch: 'msg-update',
         runtime: { sessionId: 'sess-a', runId: 'r1', generation: 2 },
@@ -670,7 +619,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       )
     }
 
-    /* ---------------- 场景 4b：只含用户历史的权威 sync 不能删掉流式尾部 ---------------- */
     section('权威 sync 只有用户历史：保住正在流式的助手尾部')
     {
       resetView({
@@ -696,13 +644,11 @@ export async function runSessionConcurrencyFrontendTests(ok) {
         useStore.getState().messages.find((m) => m.id === 'm-live')?.text === '已流式两百多字！',
         'sync 之后按 id 的增量仍有落点'
       )
-      /* 回合结束后不再流式：空快照仍能清 */
       useStore.getState().applyPush({ ch: 'state', runtime, payload: statePayload('sess-a', false, 'A') })
       useStore.getState().applyPush({ ch: 'sync', runtime, payload: [] })
       ok(useStore.getState().messages.length === 0, '清空会话后空 sync 生效，不复活旧历史')
     }
 
-    /* ---------------- 场景 5：文件确实更新时旧缓存不能盖新历史 ---------------- */
     section('文件历史确实更新：旧缓存的独有消息不补回')
     {
       resetView({
@@ -718,7 +664,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
           })
         }
       })
-      /* 文件里有更新（时间戳更大）的新消息，说明内存缓存整份落后 */
       host.peekResults.set('A', {
         messages: [msg('m-1'), { ...msg('m-new'), timestamp: 5 }],
         sessionId: 'sess-a',
@@ -733,7 +678,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       ok(view.messages.some((m) => m.id === 'm-new'), '文件里较新的历史保留')
     }
 
-    /* ---------------- 场景 6：mergePeekedHistory 纯函数 ---------------- */
     section('mergePeekedHistory：同 id 取更完整、内存尾部保留')
     {
       const file = [{ id: 'x', role: 'assistant', text: 'he', timestamp: 1 }]
@@ -761,7 +705,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       )
     }
 
-    /* ---------------- 场景 7：queue-reclaimed 清掉后台缓存队列 ---------------- */
     section('queue-reclaimed：后台缓存队列被清掉，不与草稿重复')
     {
       resetView({
@@ -793,7 +736,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       ok(view.queue === EMPTY_QUEUE || view.queue.steering.length === 0, '当前视图不是该会话时不误改它的队列')
     }
 
-    /* ---------------- 场景 8：快速切换，迟到的 peek 不覆盖新选择 ---------------- */
     section('快速切换：迟到的 peek 不覆盖较新选择')
     {
       resetView({
@@ -818,7 +760,6 @@ export async function runSessionConcurrencyFrontendTests(ok) {
       )
     }
 
-    /* ---------------- 场景 9：迟到的新建响应不覆盖较新选择 ---------------- */
     section('迟到的新建响应不覆盖较新选择')
     {
       resetView({

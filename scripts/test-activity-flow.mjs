@@ -1,10 +1,3 @@
-/**
- * 建任务阈值的单测。
- *
- * 「简单问答不建任务」的阈值一旦写错，要么给每句闲聊建一整套清单，
- * 要么把 coding 会话里的习惯改掉 —— 两种都不会报错，只会让人困惑。
- */
-
 export function runActivityFlowTests(ok, mod) {
   const { isMultiStepActivity, decideTaskCreation, taskCreationRefusal, SIMPLE_REQUEST_MAX_CHARS, SIMPLE_TASK_MAX_ITEMS } = mod
 
@@ -13,7 +6,6 @@ export function runActivityFlowTests(ok, mod) {
     ok(isMultiStepActivity(activity), `${activity} 是多步流程`)
   }
 
-  /* ---- T05-2：简单问答不建任务 ---- */
   {
     const dailyAnswerShort = decideTaskCreation({ profile: 'daily', activity: 'answer', itemCount: 1, text: '今天天气怎么样' })
     ok(dailyAnswerShort.create === false && dailyAnswerShort.reason === 'simple-answer', '日常 + 问答 + 一句话 → 不建任务')
@@ -27,7 +19,6 @@ export function runActivityFlowTests(ok, mod) {
     const codingExplicit = decideTaskCreation({ profile: 'coding', activity: 'answer', itemCount: 1, explicit: true })
     ok(codingExplicit.create === true && codingExplicit.reason === 'explicit', 'coding：用户明确要计划就建')
 
-    /* auto 档：活动由模型当场判断，宿主不看旧 activity 的流程 */
     const autoShort = decideTaskCreation({ profile: 'auto', activity: 'research', itemCount: 1, text: '今天天气怎么样' })
     ok(
       autoShort.create === false && autoShort.reason === 'simple-answer',

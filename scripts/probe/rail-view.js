@@ -1,11 +1,3 @@
-/*
- * 左栏视图探针（视觉矩阵 `YAN_MATRIX_ONLY=railview`，合成数据）。
- *
- * 塞几条不同状态、不同日期的合成会话，再点「视图」按钮：
- *   · __MODE__ = menu：打开视图菜单，检查两组共 7 个选项且「按项目」「最近活动」被选中；
- *   · __MODE__ = state：切到「按状态」，检查分区顺序为 等你回答 → 运行中 → 其余；
- *   · __MODE__ = date：切到「按日期」+「名称」排序，检查分区含 今天 / 更早。
- */
 (async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const store = window.__yanStore
@@ -39,7 +31,6 @@
     await sleep(250)
   }
   const mode = '__MODE__'
-  /* 上一个场景可能留着打开的菜单和非默认视图：先关菜单，再复位到「按项目 · 最近活动」 */
   const closeMenu = async () => { if (document.querySelector('[data-testid="rail-view-menu"]')) { document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); await sleep(200) } }
   await closeMenu()
   await click('rail-view'); await click('rail-view-group-project')

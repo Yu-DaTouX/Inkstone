@@ -15,12 +15,6 @@ const PHASE_LABEL: Record<GoalState['phase'], MessageKey> = {
   stopped: 'goal.stopped'
 }
 
-/**
- * 核验状态的文案（实施-16 G-2/G-3）。
- *
- * 四态各自一句话，刻意不用「成功 / 失败」两个词就包完：
- * `not_checked` 与 `manual_review` 都不是通过，不能渲染成绿色对钩。
- */
 const VERIFICATION_LABEL: Record<NonNullable<GoalState['verification']>['status'], MessageKey> = {
   not_checked: 'goal.verNotChecked',
   passed: 'goal.verPassed',
@@ -28,12 +22,6 @@ const VERIFICATION_LABEL: Record<NonNullable<GoalState['verification']>['status'
   manual_review: 'goal.verManual'
 }
 
-/**
- * 砚内置的目标 / 计划面板。
- *
- * 它不属于可拖拽的扩展工具分区：目标是宿主按会话维护的事实状态。
- * 进度报告仍由模型经 `yan goal report` 提交；用户动作仅限设定审阅偏好、批准或修改待审计划。
- */
 export function GoalContent() {
   const t = useT()
   const goal = useStore((s) => s.goal)
@@ -55,20 +43,11 @@ export function GoalContent() {
   const hasGoal = activeGoal !== null
   const steps = activeGoal?.steps ?? []
   const done = steps.filter((step) => step.status === 'done').length
-  /** 打开产物/参考时的失败原因（就地提示，不假装成功）。 */
   const [linkError, setLinkError] = useState<string | null>(null)
 
-  /*
-   * 产物 / 参考（U-3b）：file / artifact 走系统打开（受宿主路径校验），
-   * url 走外部浏览器。两条都是既有能力 —— 这里不新建打开通道。
-   */
   const openLink = useCallback(
     async (link: GoalLink) => {
       setLinkError(null)
-      /*
-       * 宿主已经把「还在不在」验过了（A-1）：核验失败就不用再去试打开，
-       * 直接把原因说出来 —— 这就是「失败原因可点开」。
-       */
       if (link.check && !link.check.ok) {
         setLinkError(link.check.detail)
         return
@@ -147,7 +126,6 @@ export function GoalContent() {
 
       {!hasGoal ? (
         goalError ? (
-          /* 加载失败不能说成「暂无目标」，否则用户会以为目标真没了 */
           <div className="goal-panel-empty goal-panel-error" data-testid="goal-error">
             <span>{t('goal.loadFailed')}</span>
             <small title={goalError}>{goalError}</small>
@@ -171,11 +149,6 @@ export function GoalContent() {
             <div className="goal-panel-display-title" data-testid="goal-display-title">{goalDisplayTitle(activeGoal)}</div>
           ) : null}
           {activeGoal.brief ? (
-            /*
-             * 用户自己写的目标与达成判据要**原样**显示在最上面：
-             * 下面那些步骤是模型登记的，而这两行是用户的验收标准 ——
-             * 不显示出来，用户就无从判断模型有没有把目标做小。
-             */
             <div className={`goal-brief ${briefExpanded ? 'expanded' : ''}`} data-testid="goal-brief">
               <div className="goal-brief-row">
                 <span className="goal-brief-key">{t('goal.briefGoal')}</span>
@@ -185,7 +158,6 @@ export function GoalContent() {
                 <span className="goal-brief-key">{t('goal.briefOutcome')}</span>
                 <span className="goal-brief-value">{activeGoal.brief.outcome}</span>
               </div>
-              {/* G-1 的可选补充字段：用户写了才显示，不代填 */}
               {activeGoal.brief.deliverable ? (
                 <div className="goal-brief-row" data-testid="goal-brief-deliverable">
                   <span className="goal-brief-key">{t('goal.briefDeliverable')}</span>
@@ -228,10 +200,6 @@ export function GoalContent() {
             {steps.length ? <span>{t('goal.progress', { done, total: steps.length })}</span> : null}
           </div>
 
-          {/*
-           * G-2/G-3：相位与核验分开写。`completed` 只说明模型交了完成声明，
-           * 它本身不是「已核验」——两句话必须在界面上同时看得到。
-           */}
           {activeGoal.phase === 'completed' ? (
             <div className="goal-panel-claim" data-testid="goal-model-claim">
               {t('goal.modelClaim')}

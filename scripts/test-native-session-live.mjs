@@ -1,4 +1,3 @@
-/** One isolated real-pi RPC scenario. No model requests, network uploads, Electron windows, or user data. */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

@@ -1,4 +1,3 @@
-/** N19 @ 文件引用的光标范围与替换规则。 */
 export function runAtQueryTests(ok, atQuery) {
   const { findAtQuery, replaceAtQuery } = atQuery
 

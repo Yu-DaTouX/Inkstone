@@ -1,25 +1,3 @@
-/**
- * 托管 MCP 工具的**模型代理通道**（设计 A2）合成验收。
- *
- * 覆盖：
- *   1. `McpAppProxyService.refresh()`：只连托管服务、只收 `modelVisible`、
- *      快照只放 name/描述/schema/注解（无 token / 命令 / URL / 凭证）；
- *   2. `call()`：参数转发、`structuredContent` / 原始 `_meta` 只留宿主、
- *      回给模型的只有 content 文本、32KB 超限受控落盘且不泄露原始 Meta；
- *   3. app-only / 未托管 / 未知道具 / 非法 owner / 非法 callId 明确失败；
- *   4. 每调用取消把 `AbortSignal` 透传到后端；
- *   5. 名字规范化碰撞整体拒绝（不静默覆盖）；旧入口 `yan mcp call` 同口径拦截；
- *   6. 快照过期 / 缺失 → 待用户刷新，不默认连接服务器；
- *   7. 薄扩展 `mcp-app-proxy.js`：注册名、注解保留、schema 刷新需 reload、
- *      schema/描述解析、`mcp.app.call` 转发；
- *   8. 真实随包 pi 1.2.0：`registerTool()` 的 annotations 能被 `getAllTools()` 看见
- *      （这是「审批同口径成立」的硬前提，验不过就如实失败）。
- *
- * 全程隔离：临时 `YAN_DATA_DIR` / `YAN_MCP_SERVERS_FILE` / `PI_*`，本机 stdio 夹具
- * 与回环假端点；不联网、不碰用户配置 / 凭证、不启动砚窗口。
- *
- * 运行：node scripts/test-mcp-app-proxy.mjs
- */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -46,7 +24,6 @@ const delay = (ms) => new Promise((done) => setTimeout(done, ms))
 const fixture = resolve('scripts/fixtures/mcp-app-server.mjs')
 const proxyExtension = resolve('resources/pi-extensions/mcp-app-proxy.js')
 
-/* 合成夹具与代理服务各自打一份；SDK 保持 external。 */
 const specOutfile = join(root, 'app-spec.mjs')
 await build({
   entryPoints: [resolve('src/main/mcp/app-spec.ts')],
@@ -56,7 +33,6 @@ await build({
   platform: 'neutral',
   logLevel: 'silent'
 })
-/* 现场编译到任务临时目录（仓库内、被忽略），不写共享 out/。 */
 const bundleDir = join(process.cwd(), '.tmp', 'MA2-proxy')
 await mkdir(bundleDir, { recursive: true })
 const proxyOutfile = join(bundleDir, 'mcp-app-proxy-bundle.mjs')
@@ -80,7 +56,6 @@ await build({
 const proxy = await import(pathToFileURL(proxyOutfile).href)
 const extension = await import(pathToFileURL(proxyExtension).href)
 
-/* 归属守卫缺省 fail-closed；测试显式注入 stub 事实（pi 侧无条目、无旧 runner）。 */
 const ownershipDir = join(root, 'pi-agent')
 await mkdir(ownershipDir, { recursive: true })
 proxy.configureMcpAppHostOwnership({
@@ -89,8 +64,6 @@ proxy.configureMcpAppHostOwnership({
   holdersFor: async () => [],
   readNativeConfig: async () => null
 })
-
-/* 隔离 stdio 夹具：直接用仓库里的合成服务器，SDK 从仓库 node_modules 解析。 */
 
 const configFile = join(yanDir, 'mcp-servers.json')
 await mkdir(yanDir, { recursive: true })
@@ -120,7 +93,6 @@ const owner = { sessionId: 's-runner-1', projectId: 'p-project-1' }
 const service = new proxy.McpAppProxyService({ env, dir: serviceDir, timeoutMs: 20_000 })
 
 try {
-  /* ============================ 1. 快照只来自显式刷新 ============================ */
 
   {
     ok(service.snapshotStatus().needsRefresh === true, '刷新前：没有快照 → 待用户刷新')
@@ -159,8 +131,6 @@ try {
     ok(proxy.mcpAppProxyToolsEnv(env).YAN_MCP_APP_TOOLS === service.snapshotPath(), 'env：新鲜快照注入 YAN_MCP_APP_TOOLS')
   }
 
-  /* ============================ 2. 调用 / 转发 / Meta 留宿主 ============================ */
-
   {
     const record = await service.call({ owner, callId: 'call-1', serverId: 'app-stdio', toolName: 'read_only_note', args: { text: 'hi' } })
     ok(record.ok && record.text === 'note:hi', '调用：参数转发到后端并返回模型可见文本')
@@ -179,7 +149,6 @@ try {
     off()
     ok(seen?.callId === 'call-2' && seen?.text === 'plain', '结构化结果回调：每次调用都会通知')
 
-    /* 32KB 超限：完整 content 受控落盘，且不泄露原始 Meta。 */
     const huge = await service.call({ owner, callId: 'call-huge', serverId: 'app-stdio', toolName: 'read_only_note', args: { text: 'x'.repeat(40_000) } })
     ok(huge.truncated && huge.textBytes > 40_000, '32KB：超限调用标记 truncated 并如实回报字节数')
     ok(typeof huge.spilledPath === 'string' && huge.text.includes('完整 content 已受控落盘'), '32KB：超限 content 受控落盘并在文本里给出路径')
@@ -214,8 +183,6 @@ try {
     )
   }
 
-  /* ============================ 3. 取消透传 ============================ */
-
   {
     const controller = new AbortController()
     const pending = service.call({ owner, callId: 'call-cancel', serverId: 'app-stdio', toolName: 'slow', args: {}, signal: controller.signal })
@@ -224,8 +191,6 @@ try {
     const error = await pending.then(() => null, (thrown) => thrown)
     ok(error?.code === 'cancelled', '取消：挂起调用以明确取消失败，不返回成功', error?.code)
   }
-
-  /* ============================ 4. 旧入口托管拦截 ============================ */
 
   {
     proxy.assertLegacyMcpAccessBlocked({ env, serverId: 'native-stdio', toolName: 'read_only_note', action: 'call' })
@@ -254,8 +219,6 @@ try {
     ok(true, '旧入口：快照外的工具 fail closed')
   }
 
-  /* ============================ 5. 名字碰撞整体拒绝 ============================ */
-
   {
     const collisionDir = join(root, 'collision')
     const collisionHost = {
@@ -279,8 +242,6 @@ try {
     )
   }
 
-  /* ================== 5b. 跨项目快照：按 runner 项目注入可见子集 ================== */
-
   {
     const scopedDir = join(root, 'scoped')
     const listCalls = []
@@ -303,13 +264,11 @@ try {
     }
     const scopedService = new proxy.McpAppProxyService({ env, dir: scopedDir, host: scopedHost })
 
-    /* 无 caller 项目：项目 A/B 一律不连；全局可见。 */
     const noCaller = await scopedService.refresh()
     ok(noCaller.written && noCaller.tools.length === 1, '无项目事实：只刷新全局，不连项目服务', String(noCaller.tools.length))
     ok(listCalls.length === 1 && listCalls[0].serverId === 'global-app', '无项目事实：listTools 只发生在全局服务', JSON.stringify(listCalls))
     ok(!listCalls.some((call) => call.projectId === 'p-b'), '无项目事实：绝不用目标 projectScope 当 caller 连 B')
 
-    /* 项目 A 前台：只连全局 + A，且 caller projectId 是 A（不是目标 scope 自证）。 */
     listCalls.length = 0
     const forA = await scopedService.refresh({ callerProjectId: 'p-a' })
     const ids = forA.tools.map((tool) => tool.serverId).sort().join(',')
@@ -321,7 +280,6 @@ try {
       JSON.stringify(listCalls)
     )
 
-    /* 显式空白名单 = 0 目标：不启动任何服务，不写快照。 */
     listCalls.length = 0
     const beforeEmpty = await readFile(scopedService.snapshotPath(), 'utf8')
     const empty = await scopedService.refresh({ serverIds: [], callerProjectId: 'p-a' })
@@ -334,8 +292,6 @@ try {
     ok(projTool?.projectScope === 'p-a', '跨项目快照：条目带各自 projectScope，供薄层按 runner 项目筛选')
     ok(proxy.MCP_APP_PROXY_PROJECT_ENV === 'YAN_MCP_APP_PROJECT_ID', '跨项目快照：项目身份环境变量名固定')
   }
-
-  /* ============ 5c. 配置读取失败 / 无可信 caller：默认拒绝，不写半份 ============ */
 
   {
     const failDir = join(root, 'config-fail')
@@ -354,8 +310,6 @@ try {
     await assert.rejects(readFile(failService.snapshotPath(), 'utf8'), '配置读取失败：没有留下快照')
   }
 
-  /* ============================ 6. 过期快照 ============================ */
-
   {
     const staleDir = join(root, 'stale')
     await mkdir(staleDir, { recursive: true })
@@ -370,8 +324,6 @@ try {
     ok(status.present && status.stale && status.needsRefresh === true, '过期快照：视为待用户刷新')
     ok(stale.registrableTools().length === 0, '过期快照：不拿旧表注册工具')
   }
-
-  /* ============================ 7. 薄扩展（假 pi） ============================ */
 
   {
     const makePi = () => {
@@ -410,18 +362,16 @@ try {
     ok(readOnlyDef?.parameters?.properties?.text?.type === 'string', '扩展：schema 逐字保留')
     ok(typeof readOnlyDef?.execute === 'function', '扩展：注册了 execute')
 
-    /* 空 schema / 缺注解：按最严补齐，仍然注册。 */
     const fallbackDef = piA.registered.get('mcp__app_stdio__no_visibility_note')
     ok(fallbackDef?.parameters?.type === 'object' && fallbackDef?.annotations === undefined, '扩展：缺 schema 补成空对象；缺注解不臆造')
 
-    /* 参数转发：执行时只打宿主能力端点。 */
     const calls = []
     const hostServer = createServer((req, res) => {
       let body = ''
       req.on('data', (chunk) => { body += chunk })
       req.on('end', () => {
         let payload = {}
-        try { payload = JSON.parse(body) } catch { /* 记录原文 */ }
+        try { payload = JSON.parse(body) } catch { }
         calls.push(payload)
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ ok: true, summary: { kind: 'mcp-app-call', text: 'proxied', isError: false } }))
@@ -440,7 +390,6 @@ try {
     ok(sent?.params?.arguments?.text === 'forwarded', '扩展：参数原样转发')
     ok(sent?.sessionId === 's-runner-1' && sent?.projectId === 'p-project-1', '扩展：身份按环境值回传（宿主逐一比对）')
 
-    /* 端点不可用：明确失败，不 fallback。 */
     const closedPort = await new Promise((done) => {
       const probe = createServer()
       probe.listen(0, '127.0.0.1', () => {
@@ -453,7 +402,6 @@ try {
     ok(failed?.isError === true && /调用失败|未获放行/.test(failed.content[0].text), '扩展：端点不可用明确失败，不降级')
     process.env.YAN_CLI_URL = `http://127.0.0.1:${hostServer.address().port}/rpc`
 
-    /* schema 刷新需 reload：文件变了，已注册的工具表不变。 */
     const snapshotB = join(root, 'ext-b.json')
     await writeSnapshot(snapshotB, [
       { name: 'mcp__app_stdio__client_capabilities', serverId: 'app-stdio', toolName: 'client_capabilities' }
@@ -467,7 +415,6 @@ try {
     extension.default(piB)
     ok(piB.registered.has('mcp__app_stdio__client_capabilities') && !piB.registered.has('mcp__app_stdio__read_only_note'), '刷新需 reload：新启动才读到新快照')
 
-    /* 跨项目筛选：只注册「全局 + 当前项目」，别的项目连 schema / 描述都不注册。 */
     const scopedSnap = join(root, 'ext-scoped.json')
     await writeSnapshot(scopedSnap, [
       { name: 'mcp__g__a', serverId: 'g', toolName: 'a' },
@@ -487,7 +434,6 @@ try {
       '扩展：只注册全局 + 本项目，别的项目 schema / 描述不注册'
     )
 
-    /* 碰撞 / 坏快照：整体不注册，fail closed。 */
     const collisionSnap = join(root, 'ext-collision.json')
     await writeSnapshot(collisionSnap, [
       { serverId: 's-1', toolName: 'x' },
@@ -505,7 +451,6 @@ try {
     extension.default(piBad)
     ok(piBad.registered.size === 0, '扩展：坏 JSON 不注册')
 
-    /* 还原环境 */
     await new Promise((done) => hostServer.close(done))
     if (savedFile === undefined) delete process.env.YAN_MCP_APP_TOOLS
     else process.env.YAN_MCP_APP_TOOLS = savedFile
@@ -521,8 +466,6 @@ try {
     else process.env.YAN_MCP_APP_PROJECT_ID = savedEnv.appProject
   }
 
-  /* ============ 8. 真实随包 pi：registerTool 注解能被 getAllTools 看见 ============ */
-
   {
     const runtimeDir = selectedPiRuntime(resolve('resources/pi-runtime'))
     const cli = join(runtimeDir, 'dist/bundle/cli.js')
@@ -532,13 +475,12 @@ try {
     const probeLog = join(root, 'proxy-probe.jsonl')
     for (const dir of [piDir, extDir, sessionsDir]) await mkdir(dir, { recursive: true })
 
-    /* 本机回环假 provider：只回一条普通助手消息，不需要真实凭据 / 外网。 */
     const providerRequests = []
     const providerServer = createServer((req, res) => {
       let body = ''
       req.on('data', (part) => { body += part })
       req.on('end', () => {
-        try { providerRequests.push(JSON.parse(body)) } catch { /* 仍应答 */ }
+        try { providerRequests.push(JSON.parse(body)) } catch { }
         const sse = (delta, finish) => `data: ${JSON.stringify({ id: 'proxy-fix', object: 'chat.completion.chunk', created: 0, model: 'proxy-physical', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
         res.writeHead(200, { 'content-type': 'text/event-stream' })
         res.write(sse({ role: 'assistant', content: 'PROXY-BOOT-OK' }))
@@ -640,7 +582,7 @@ try {
       let probe = []
       try {
         probe = (await readFile(probeLog, 'utf8')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
-      } catch { /* 探针没写出 */ }
+      } catch { }
       const session = probe.find((record) => record.kind === 'session_start')
       ok(Boolean(session), '真实 pi：session_start 探针记录了 getAllTools()')
       const tools = Array.isArray(session?.tools) ? session.tools : []
@@ -656,7 +598,7 @@ try {
       ok(!tools.some((tool) => tool.name.includes('app_only_refresh')), '真实 pi：app-only 工具没有注册')
       ok(tools.some((tool) => tool.name === 'mcp__app_stdio__slow'), '真实 pi：缺 visibility 的工具按最严仍给模型')
     } finally {
-      try { child.stdin.end() } catch { /* already closed */ }
+      try { child.stdin.end() } catch { }
       const exited = new Promise((done) => child.once('exit', done))
       const killTimer = setTimeout(() => child.kill(), 3000)
       await exited

@@ -1,33 +1,4 @@
-/*
- * 真实多步任务 + 任务计划（实施-02 S5）。
- *
- * 与 `taskcli`（S3）的区别 —— 两者的**证据类型不同**，缺一不可：
- *   · `taskcli`：request 文件由 Node 侧预置，验的是**宿主写入链**
- *     （模型照用法敲一条命令 → 界面清单 → 切会话读回）。它不验「模型能不能自己
- *     写这份 JSON」，因为那会引入模型侧的随机性，把写入链的信号淹掉。
- *   · 本场景：整条链**全由模型驱动** —— 它自己决定要几步、自己写请求文件、
- *     自己执行、自己在做完之后勾选。这正是 S5 的验收条件
- *     「真实模型（cost 1）：一个确实需要多步执行的可控任务，不能仅造 fixture」。
- *
- * 可观测的产物分三层（三处一致就是在**这一条**里核）：
- *   ① 工具调用：界面上的 `yan tasks apply` 工具行（且标为砚内置来源）；
- *   ② 原生任务清单：探针报告的 `taskplan.todos`（渲染端看到的）；
- *   ③ 实际落盘：`YAN_DATA_DIR/task-plans/<sessionId>.jsonl`
- *      —— 由 `afterExit: taskPlanMultiStep` 在 Electron 退出后逐行核对，
- *      并与 ② 逐条比对；同时确认会话 JSONL 里**没有**任务条目。
- *
- * 任务本身是真实动作（在 fixture 项目里建三个文件），所以退出后还能核对
- * 「模型是不是光在嘴上说完成」——`tasks/step-*.txt` 真的存在才算做完。
- *
- * 花 token（cost: 1），不在默认门槛里跑。
- */
 ;(async () => {
-  /*
-   * 提示词的两条要求都是为了**去随机性**，不是为了替模型做题：
-   *   · 任务给死（建三个文件、每步一行说明）→ 判据可枚举；
-   *   · 请求形状给死（action / items / index 从 0 开始）→ 验的是链路，
-   *     不是模型的 JSON 直觉。内容仍由模型自己写（清单文字、文件正文）。
-   */
   const PROMPT = [
     '请完成一个三步任务，并且全程用砚的内置任务计划跟踪进度。严格按顺序做，不要跳步：',
     '',
@@ -74,7 +45,6 @@
   }
   const roundRunning = () => !!store.getState()?.session?.isAgentRunning
 
-  /* 与 taskcli 同一套判据：回合级 `isAgentRunning`，不用工具行的 running（两次调用之间会闪） */
   const runTurn = async (text, budget = 300000) => {
     if (!ta()) throw new Error('找不到输入框')
     setVal(ta(), text)
@@ -119,17 +89,11 @@
     const ran = await runTurn(PROMPT)
     ok(ran, '回合跑完了（模型自主多步）')
 
-    /* 清单可能比回合结束稍晚（refreshTodos 是异步推送），给足等待 */
     await until(() => store.getState().todos.length > 0, 20000)
 
-    /* 七步及以上才折叠较早步骤；诊断时展开全部。 */
     qa('.tgroup-fold[aria-expanded="false"]').forEach((h) => click(h))
     await sleep(600)
 
-    /*
-     * 失败诊断：这三段能把「模型没按格式做」「yan 报错」「界面没刷新」区分开，
-     * 而只报一条 ✗ 分不清（免费模型不照做是常见结局，没有诊断就得白查一轮）。
-     */
     const calls = store.getState().messages.flatMap((m) => m.toolCalls ?? [])
     const names = calls.map((c) => c.name)
     log('  工具调用序列：' + JSON.stringify(names))
@@ -157,30 +121,15 @@
     const todos = store.getState().todos
     log('  todos = ' + JSON.stringify(todos.map((t) => ({ text: t.text, done: t.done }))))
 
-    /*
-     * 硬断言 1：模型真的用了任务计划（不是自己闷头建完文件就完事）。
-     * 这条是本场景存在的理由 —— 若它红，说明「要求模型使用任务计划」这件事
-     * 在当前提示与模型下不成立，需要改的是**指导语**（§7 的限制里说清楚了）。
-     */
     ok(applyCalls.length >= 2, `模型至少提交了两次任务计划（登记 + 勾选），实际 ${applyCalls.length}`)
     ok(todos.length === 3, `清单是 3 条（模型自己写的那三步），实际 ${todos.length}`)
     ok(
       todos.length === 0 || new Set(todos.map((t) => t.text.trim())).size === todos.length,
       '三条文字互不相同（不是复制同一条）'
     )
-    /* 至少有一条被勾上：证明 complete 真的走通了（全勾上更好，但不强求 —— 见 §7） */
     const doneCount = todos.filter((t) => t.done).length
     ok(doneCount >= 1, `至少一条被标完成（实际 ${doneCount}/${todos.length}）`)
 
-    /*
-     * 硬断言 2：这些调用在界面上标了**砚内置任务计划**来源。
-     * 走的是 S4 那条文本判定（`shared/tool-origin.ts`）——
-     * 这里顺带证明它在真实模型写出命令时也能命中（不是只有合成输入命中）。
-     */
-    /*
-     * 过程入口默认折叠（阅读优先），而折叠态下工具行**不在 DOM 里**。
-     * 真实回合可能有多个，全铺开再找 —— 不铺就会看到「0 条标记」这种假象。
-     */
     for (const fold of qa('[data-testid="turn-process-toggle"][aria-expanded="false"]')) {
       click(fold)
       await sleep(250)
@@ -198,11 +147,6 @@
       .map((r) => r.querySelector('.trow-target')?.textContent ?? '')
       .join(' | ')
     log('  标记行的标题：' + JSON.stringify(originTargets.slice(0, 160)))
-    /*
-     * 标题是**摘要**（折叠空白 + 截断到 120 字符，见 `summarizeTaskPlanCommand`）。
-     * 隔离目录的绝对路径很长时，命令尾部的 `yan tasks apply` 会被截掉 ——
-     * 拿标题做判据会假失败，所以截断时改看**调用数据**里的原始命令。
-     */
     const applyCmds = calls.filter((c) => /tasks apply/.test(String(c.args?.command ?? '')))
     log(`  含 \`yan tasks apply\` 的调用：${applyCmds.length} 条`)
     ok(
@@ -210,17 +154,11 @@
       '标记的正是 `yan tasks apply` 那条命令（标题被截断时用调用数据核对）'
     )
 
-    /*
-     * 硬断言 3：真实文件动作确实发生了（模型不是只登记计划）。
-     * 渲染端看不到磁盘，只能看**工具调用**里有没有 write；真实文件由
-     * `afterExit: taskPlanMultiStep` 在退出后核对。
-     */
     const writes = calls.filter((c) => c.name === 'write')
     const writeTargets = writes.map((c) => String(c.args?.path ?? c.args?.file_path ?? '')).join(' | ')
     log('  write 调用：' + writes.length + ' 次 → ' + JSON.stringify(writeTargets.slice(0, 200)))
     ok(writes.length >= 1, '模型真的写了文件（用 write 工具，不是嘴上说完成）')
 
-    /* 退出后检查的取证行：afterExit 靠这几行定位日志并与界面逐条比对 */
     log(`taskplan.sessionId=${sess()?.sessionId ?? ''}`)
     log(`taskplan.sessionFile=${sess()?.sessionFile ?? ''}`)
     log(`taskplan.todos=${JSON.stringify(todos.map((t) => ({ text: t.text, done: !!t.done })))}`)

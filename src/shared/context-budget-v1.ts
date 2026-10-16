@@ -1,8 +1,3 @@
-/**
- * Context budget V1. This module is deliberately pure so the host, UI and the
- * thin pi boundary can share one definition without importing runtime state.
- */
-
 export const CONTEXT_BUDGET_V1_TIERS = [200_000, 300_000, 500_000, 700_000] as const
 export type ContextBudgetTierV1 = (typeof CONTEXT_BUDGET_V1_TIERS)[number]
 export type ContextBudgetModeV1 = 'shared' | 'separate'
@@ -28,11 +23,6 @@ export interface ContextBudgetOutputAdapterV1 {
   adapterId: string
   fieldPath: readonly string[] | 'openai-completions-compat'
   accounting: string
-  /**
-   * 请求体里本来就不带输出上限、由服务端按模型上限截断的接口（ChatGPT 订阅的
-   * Codex 后端拒收 max_output_tokens）。字段缺失时以模型声明的 maxTokens 作 R；
-   * 字段存在时仍以字段为准。其余接口字段缺失仍然 fail closed。
-   */
   fallback?: 'model-max-tokens'
 }
 
@@ -170,12 +160,6 @@ export interface ContextBudgetPhasePolicyV1 {
   mode: 'auto' | 'fixed'
   selectedBudget: ContextBudgetTierV1
   autoMaxBudget: ContextBudgetTierV1
-  /**
-   * 临时的抬线（未过期时优先于 `selectedBudget`）。
-   *
-   * 为什么不直接改 `selectedBudget`：抬线是「让这次撞线先过去」，不是用户想要
-   * 一个新档位。写成独立一层，到期自然回落，用户不必记得手动改回来。
-   */
   temporaryBudgetOverride?: ContextBudgetTemporaryOverrideV1 | null
   selectionSource: 'agent' | 'host-reconcile' | 'user' | 'default'
   selectionReason: string
@@ -221,11 +205,6 @@ const MIN_ERROR_MARGIN = 2_048
 const ERROR_MARGIN_RATIO = 0.02
 const MIN_GROWTH = 16_000
 
-/**
- * API-specific output fields observed in the bundled pi 0.87.1 provider
- * builders. Unknown APIs intentionally have no adapter: a similarly named
- * field in an unrelated payload is not evidence of the request's real R.
- */
 export const CONTEXT_BUDGET_OUTPUT_ADAPTERS_V1: Readonly<Record<string, ContextBudgetOutputAdapterV1>> = {
   'anthropic-messages': {
     api: 'anthropic-messages', adapterId: 'anthropic-max-tokens-v1',
@@ -275,12 +254,10 @@ function valueAtPath(value: unknown, path: readonly string[]): unknown {
   return current
 }
 
-/** Resolve only the final output limit field defined by the selected provider API. */
 export function resolveContextBudgetOutputReserveV1(input: {
   api: unknown
   payload: unknown
   compat?: unknown
-  /** 模型声明的最大输出；只给声明了 fallback 的接口在字段缺失时使用 */
   modelMaxTokens?: unknown
 }): ContextBudgetOutputResolutionV1 {
   if (typeof input.api !== 'string') return { adapterId: 'unknown', outputReserve: null, reason: 'provider_api_unknown' }
@@ -291,8 +268,6 @@ export function resolveContextBudgetOutputReserveV1(input: {
     const compat = input.compat && typeof input.compat === 'object' && !Array.isArray(input.compat)
       ? input.compat as Record<string, unknown>
       : {}
-    // Pi's bundled OpenAI Completions adapter defaults to max_completion_tokens
-    // when a model compatibility record does not name a field explicitly.
     const field = compat.maxTokensField === undefined ? 'max_completion_tokens' : compat.maxTokensField
     if (field !== 'max_tokens' && field !== 'max_completion_tokens') {
       return { adapterId: adapter.adapterId, outputReserve: null, reason: 'provider_output_field_unknown' }
@@ -326,13 +301,6 @@ export function normalizeContextBudgetTierV1(value: unknown): ContextBudgetTierV
   return isContextBudgetTierV1(value) ? value : null
 }
 
-/**
- * 相邻档位 —— 「临时抬软线」与「降档」两个出口共用这一个纯函数。
- *
- * 逐档而不是一步到底：点一次只动一格，用户能看清代价（K 数真的变了）；
- * `ceiling`（自动最高档）是抬线的上限，越过它就不是「临时」而是改配置了。
- * 已经顶到边界时返回原值 —— 调用方据此判断「这一下没有可动的档」。
- */
 export function adjacentContextBudgetTierV1(
   current: unknown,
   direction: 'up' | 'down',
@@ -351,12 +319,6 @@ export function adjacentContextBudgetTierV1(
   return index > 0 ? tiers[index - 1] : normalized
 }
 
-/**
- * 「临时抬软线」的有效期。
- *
- * 30 分钟够把手里这轮对话处理完，又不至于让一次手滑变成长期花费 ——
- * 抬线本来就是为了让**这一次**不再撞线，不是要一个新档位。
- */
 export const CONTEXT_BUDGET_TEMPORARY_OVERRIDE_MS = 30 * 60 * 1000
 
 export interface ContextBudgetTemporaryOverrideV1 {
@@ -364,12 +326,6 @@ export interface ContextBudgetTemporaryOverrideV1 {
   expiresAt: number
 }
 
-/**
- * 真正生效的软线 —— 宿主（预算门、界面）与扩展必须用同一个数。
- *
- * 分两处算就会出现「界面显示 300K、扩展按 200K 拦」这种无法解释的现象。
- * 过期的覆盖视为不存在（惰性失效，不需要定时任务去清理）。
- */
 export function effectiveContextBudgetTierV1(input: {
   selectedBudget: unknown
   temporaryBudgetOverride?: unknown
@@ -387,10 +343,6 @@ export function effectiveContextBudgetTierV1(input: {
   return expiresAt > now ? tier : base
 }
 
-/**
- * Stable, non-secret endpoint identity for one runtime model configuration.
- * Custom endpoint query strings and credentials are intentionally excluded.
- */
 export function contextEndpointKeyV1(input: {
   provider: unknown
   api: unknown
@@ -429,7 +381,6 @@ export function contextEndpointKeyV1(input: {
   return `${input.provider}/${input.api}/${input.modelId}/${endpointFingerprint}`
 }
 
-/** Read only the bounded, body-free request snapshot written by the final pi hook. */
 export function sanitizeContextBudgetRuntimeSnapshotV1(
   raw: unknown,
   sessionId: string,
@@ -502,7 +453,6 @@ export function sanitizeContextBudgetRuntimeSnapshotV1(
   }
 }
 
-/** Conservative text estimate shared by host-side material planning and extension payload counts. */
 export function estimateTextTokensV1(text: unknown): number {
   if (typeof text !== 'string' || text.length === 0) return 0
   let wide = 0
@@ -530,7 +480,6 @@ export function contextBudgetErrorMarginV1(capacityBasis: number): number {
   return Math.max(MIN_ERROR_MARGIN, Math.ceil(capacityBasis * ERROR_MARGIN_RATIO))
 }
 
-/** Compute hard and soft limits from the actual endpoint shape and this request's R. */
 export function calculateContextBudgetV1(input: {
   capability: EndpointBudgetCapabilityV1 | null | undefined
   outputReserve: number | null | undefined
@@ -621,7 +570,6 @@ export function calculateContextBudgetV1(input: {
   }
 }
 
-/** Select the smallest legal tier from verified required material, never from stale history size. */
 export function selectAutoContextBudgetV1(input: AutoBudgetSelectionInputV1): AutoBudgetSelectionV1 {
   const current = normalizeContextBudgetTierV1(input.currentBudget) ?? 200_000
   const max = normalizeContextBudgetTierV1(input.autoMaxBudget) ?? 700_000
@@ -738,26 +686,13 @@ export function selectAutoContextBudgetV1(input: AutoBudgetSelectionInputV1): Au
   }
 }
 
-/**
- * 宿主按**实际发出的请求规模**回收档位（需求稿 8.3）。
- *
- * 上面的 selectAutoContextBudgetV1 只在 agent 主动 `yan context budget adjust` 时评估；
- * 整理完成后实际输入已经变小，但 agent 不调整时高档位会一直留着。这里在每个回合结束时，
- * 用这一回合最后一次真实请求的输入量判断：
- *   · 找比当前低、且实际输入不超过其软线 60% 的最小档位（留出下一回合的增长空间）；
- *   · 连续两个回合都满足才降，每次只降到这个候选档；达不到就把计数清零；
- *   · 只降不升 —— 升档仍由材料登记（adjust）与请求门禁负责。
- */
 export const CONTEXT_BUDGET_HOST_DOWNSHIFT_RATIO = 0.6
 export const CONTEXT_BUDGET_HOST_DOWNSHIFT_TURNS = 2
 
 export interface ObservedBudgetReconcileV1 {
-  /** 这个回合是否「用量低」（存在更低的合适档位） */
   lowTurn: boolean
-  /** 本回合后的连续低用量回合数 */
   lowTurns: number
   candidateBudget: ContextBudgetTierV1 | null
-  /** 需要把档位降到 candidateBudget */
   apply: boolean
   reason: string
 }
@@ -797,7 +732,6 @@ export function reconcileObservedContextBudgetV1(input: {
   }
 }
 
-/** Classify a prepared/final payload. Unknown counts or output settings fail closed. */
 export function checkContextBudgetRequestV1(input: ContextBudgetRequestCheckInputV1): ContextBudgetRequestCheckV1 {
   const calculation = calculateContextBudgetV1({
     capability: input.capability,

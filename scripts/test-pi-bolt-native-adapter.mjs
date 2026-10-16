@@ -1,25 +1,4 @@
 #!/usr/bin/env node
-/**
- * PB2 · 最小 native-exe PiRpc 适配器测试。
- *
- * 默认只跑**离线**部分（纯启动语义 + 真实 `PiRpc` 的 node/electron 参数与环境），
- * 不启动任何 pi、不碰用户数据、无网络。
- *
- * 设 `PB2_ADAPTER_LIVE=1` 后追加真实便携 exe 的对照：
- *   · 13/14 薄层 + 新 mcp-app-proxy 注册（真实 `PiRpc` native-exe 分支）；
- *   · 一轮 read/write（本机 127.0.0.1 deterministic provider，0 真实模型）；
- *   · danger-guard 走真实 `CapabilityServer` 宿主端点：允许 / 拒绝 / 错 token / 会话不符；
- *   · 端点级 401/403/api 版本/未知命令/取消透传；
- *   · codemode `tools.read` + `tools.bash` 交错重复对比（3 预热 + 7 正式）；
- *   · abort / 启动中取消 / 退出无残留。
- *
- * 候选 exe 路径与 SHA256 固定，运行前复核；不匹配就停止，不绕过。
- * 隔离数据写在系统临时目录，不读写真实 `PI_CODING_AGENT_DIR` / `YAN_*` / auth。
- *
- * 用法：
- *   node scripts/test-pi-bolt-native-adapter.mjs
- *   PB2_ADAPTER_LIVE=1 PI_BOLT_ADAPTER_EXE=<abs> node scripts/test-pi-bolt-native-adapter.mjs
- */
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
 import { join, resolve } from 'node:path'
@@ -71,8 +50,6 @@ function attach(rpc) {
 const { PiRpc } = await bundle('src/main/protocol.ts', 'protocol')
 const { runtimeProbe, ignoresElectronRunAsNode } = await bundle('src/main/pi-runtime-launch.ts', 'launch')
 
-/* ------------------------------------------------------------- 离线：启动语义 */
-
 section('纯启动语义（native-exe vs node/electron）')
 {
   const absExe = process.platform === 'win32' ? 'C:\\tools\\pi-bolt\\pi-bolt.exe' : '/opt/pi-bolt/pi-bolt'
@@ -119,8 +96,6 @@ section('真实 PiRpc：node/electron 参数与环境不变')
   check(defaultDiag.electron === '1', '默认定位保留 ELECTRON_RUN_AS_NODE=1')
 }
 
-/* ------------------------------------------------------------- 真实 exe 对照 */
-
 const live = process.env.PB2_ADAPTER_LIVE === '1'
 if (!live) {
   console.log(`\n离线部分：${total} 项，${failed} 项失败`)
@@ -152,7 +127,6 @@ function makeFixture(tag) {
   return bag
 }
 
-/** 启动一个真实 PiRpc（candidate 或 baseline），返回已 attach 的实例。 */
 function launch(kind, bag, { args, env = {}, port }) {
   writeModelsJson(bag.agent, port)
   const rpc = new PiRpc({
@@ -180,7 +154,6 @@ function postJson(url, body, { token, signal } = {}) {
   })
 }
 
-/* ---- L1：真实 native-exe 握手 + 全部薄层 + mcp-app-proxy 注册/执行 ---- */
 section('L1 真实 native-exe：薄层加载 + mcp-app-proxy 注册与宿主执行')
 try {
   const bag = makeFixture('l1')
@@ -250,7 +223,6 @@ try {
   check(false, 'L1 场景异常结束', String(error?.stack ?? error).slice(0, 600))
 }
 
-/* ---- L2：真实 native-exe 一轮 read + write ---- */
 section('L2 真实 native-exe：脚本 provider 一轮 read/write')
 try {
   const bag = makeFixture('l2')
@@ -270,7 +242,6 @@ try {
   check(false, 'L2 场景异常结束', String(error?.stack ?? error).slice(0, 600))
 }
 
-/* ---- L3：danger-guard 走真实宿主 CapabilityServer ---- */
 section('L3 真实 native-exe：danger-guard 宿主审批（允许/拒绝/错 token/会话不符）')
 try {
   const bag = makeFixture('l3')
@@ -332,7 +303,6 @@ try {
   check(false, 'L3 场景异常结束', String(error?.stack ?? error).slice(0, 600))
 }
 
-/* ---- L4：宿主端点级鉴权/版本/取消 ---- */
 section('L4 CapabilityServer 端点：401 / 403 / 版本 / 未知命令 / 取消透传')
 try {
   let aborted = false
@@ -378,7 +348,6 @@ try {
   check(false, 'L4 场景异常结束', String(error?.stack ?? error).slice(0, 600))
 }
 
-/* ---- L5：ApprovalBroker / remote-approval 绑定校验（纯） ---- */
 section('L5 ApprovalBroker / remote-approval：允许/拒绝/内容或会话变化')
 try {
   const opened = []
@@ -412,7 +381,6 @@ try {
   check(false, 'L5 场景异常结束', String(error?.stack ?? error).slice(0, 600))
 }
 
-/* ---- L6：codemode 交错重复对比（3 预热 + 7 正式） ---- */
 section('L6 codemode tools.read + tools.bash 交错重复对比')
 try {
   const bag = makeFixture('l6')
@@ -453,7 +421,6 @@ try {
   const baselineWs = []
   const errors = []
   for (let i = 0; i < warmups; i++) {
-    // ABBA 顺序预热，结果丢弃
     await measure('candidate')
     await measure('baseline')
   }
@@ -479,15 +446,12 @@ try {
   check(candidateWall.length >= rounds && baselineWall.length >= rounds, 'L6 采样轮次完整')
   check(Number.isFinite(candWallMed) && Number.isFinite(baseWallMed), 'L6 wall 中位数可用')
   const ratio = candWallMed / baseWallMed
-  /* JIT-off 解释执行在短 codemode 上变慢是 PB1 已观察到的预期取舍，不算总体回退；
-     但必须如实记录，不能在“总体利好”里藏掉这个退化。 */
   if (ratio > 1.5) note(`codemode wall 出现稳定退化（candidate/baseline=${ratio.toFixed(2)} > 1.50）：JIT-off 解释执行对短脚本不利，按可切换 runtime 接受，不是整机回退`)
   else check(ratio <= 1.5, `codemode wall 未出现稳定退化（candidate/baseline=${ratio.toFixed(2)}）`)
 } catch (error) {
   check(false, 'L6 场景异常结束', String(error?.stack ?? error).slice(0, 600))
 }
 
-/* ---- L7：abort / 启动中取消 / 退出无残留 ---- */
 section('L7 真实 native-exe：abort / 启动中取消 / 退出无残留')
 try {
   const alive = (pid) => { try { process.kill(pid, 0); return true } catch { return false } }

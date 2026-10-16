@@ -1,12 +1,3 @@
-/**
- * Fork 语义注入正文（`src/shared/fork-context.ts`，实施-07 S2b-4）单测。
- *
- * 这段正文是**给模型看的**：写错不会报错，只会让新会话误解自己的处境
- * （以为记得源会话、或者拿源会话的分支状态当真）。所以这里钉三件事：
- * ① 环境派生状态只可能来自传入的 `env`；② 没有交接包时不许编造；
- * ③ 标记行能被证据检测认出来（否则「注入过没有」在磁盘上不可判）。
- */
-
 export function runForkContextTests(ok, mod) {
   const { FORK_CONTEXT_TAG, forkContextMarker, buildForkContext, hasForkContextEvidence } = mod
 
@@ -21,8 +12,6 @@ export function runForkContextTests(ok, mod) {
     pkg: null
   }
 
-  /* ---------------------------------------------------------- 1. 标记行 */
-
   const text = buildForkContext(base)
   const first = text.split('\n')[0]
   ok(first === forkContextMarker('fk-abc123'), '标记行在正文第一行（能被 grep 到）', first)
@@ -35,8 +24,6 @@ export function runForkContextTests(ok, mod) {
     hasForkContextEvidence(`prefix\n${forkContextMarker('fk-abc123')}\nsuffix`, 'fk-abc123') === true,
     '标记行被别的内容包着也算（内容是整文件包含判断）'
   )
-
-  /* ---------------------------------------------------------- 2. 环境状态只来自 env */
 
   ok(text.includes('feat/git-review'), '分支名用的是传入的目标工作树分支')
   ok(text.includes('a1b2c3d4'), 'HEAD 用的是传入的短 sha')
@@ -55,8 +42,6 @@ export function runForkContextTests(ok, mod) {
 
   const noUpstream = buildForkContext({ ...base, env: { ...base.env, ahead: 0, behind: 0 } })
   ok(!noUpstream.includes('相对 upstream'), '没有跟踪差异时不说 upstream')
-
-  /* ---------------------------------------------------------- 3. 没有交接包就说没有 */
 
   ok(!text.includes('上一个会话留下的交接包'), '没有交接包时**不出现**交接包标题（不许编造）')
   ok(text.includes('没有留下交接包'), '没有交接包时如实说没有，并给“缺什么直接问”的出口')
@@ -87,8 +72,6 @@ export function runForkContextTests(ok, mod) {
   ok(!withPkg.includes('阻塞：'), '空列表不产生空标题（blockers 为空）')
   ok(withPkg.includes('sess-src') && !withPkg.includes('generator'), '宿主元数据（generator/model）不进正文')
 
-  /* ---------------------------------------------------------- 4. 文件引用对照 */
-
   ok(!text.includes('文件在这个工作树里的对照'), '没有引用时不写对照段')
   const withRefs = buildForkContext({
     ...base,
@@ -111,13 +94,6 @@ export function runForkContextTests(ok, mod) {
   ok(allOk.includes('2 个能对上。'), '全部对上时用句号收尾（不列出空的问题项）')
   ok(!allOk.includes('对不上的'), '全部对上时不出现“对不上的”字样')
 
-  /* ---------------------------------------------------------- 5. 附件（S2b-5） */
-
-  /*
-   * 附件不迁移 —— 正文里只能出现「有几个没带过来」，不能出现任何“带过来了”的说法。
-   * `null`（没数到）与 `{total: 0}`（真的一个都没有）都不能写这一段：
-   * 前者是未知，后者本来就没东西可说。
-   */
   ok(!text.includes('附件'), '没有附件信息时不写附件段落（不编造）')
   ok(
     !buildForkContext({ ...base, attachments: { total: 0 } }).includes('附件'),
@@ -128,8 +104,6 @@ export function runForkContextTests(ok, mod) {
   ok(withAttach.includes('没有带过来'), '附件一律说「没有带过来」（不说会带）')
   ok(!/已带入|已经带过|一并带过/.test(withAttach), '正文里不得出现任何“附件已带过来”的说法')
   ok(withAttach.includes('重新添加'), '给出出口（重新添加），而不是让模型去猜图片内容')
-
-  /* ---------------------------------------------------------- 6. 来源未知时不胡说 */
 
   const noSource = buildForkContext({ ...base, source: null })
   ok(!noSource.includes('来源会话：'), '拿不到来源会话时不写这一行（不填 (未知)）')

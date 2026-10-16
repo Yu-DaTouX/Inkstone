@@ -1,10 +1,3 @@
-/**
- * 桌面会话的宿主能力：运行注册表、当前前台实例、会话链、推送、cwd 校验、
- * 启动 pi、登记运行实例与读带成果的历史。
- *
- * 桌面 IPC（ipc/session-ipc.ts）与远程入口（remote-host.ts）拿到的是同一组能力，
- * 新增入口时复用它，而不是各自复制会话规则。实现都在应用入口。
- */
 import type { AgentController } from './agent'
 import type { RunnerRegistry } from './runners'
 import type { SessionChainStore } from './session-chain-service'

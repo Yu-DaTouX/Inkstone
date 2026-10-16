@@ -1,15 +1,3 @@
-/**
- * 真实模型切换矩阵（N02）。
- *
- * 与 `thinkinglevels` / `capabilityload` 的分工：那两个验“能力列表能不能拿到”，
- * 这个验**切过去之后状态归谁** —— 真实 pi、真实模型列表，但不发消息（不花钱）：
- *   · 切到另一个模型后，思考档位跟着它走，不是上一个模型的残留；
- *   · 快速连切（后发的先回）不能让旧响应覆盖新模型；
- *   · 上下文用量按模型归属：旧模型的 token 快照不能冒充新模型的容量。
- *
- * 判据都写成“性质”而不是固定值：模型列表是用户自己的，具体哪几个模型
- * 支持思考由供应商决定，环境一变固定值就会假失败。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -36,7 +24,6 @@
     const models = store.getState().models
     out.push(`  可用模型 ${models.length} 个`)
     if (models.length < 2) {
-      /* 纯合成模式（空凭证、不读个人模型目录）下没有可切换的模型：如实跳过。 */
       out.push('  ~ 跳过：模型列表为空（合成模式无凭证/模型目录），切换断言不适用')
       return out.join('\n')
     }
@@ -44,11 +31,9 @@
 
     const first = store.getState().session?.model
     const others = models.filter((m) => key(m) !== key(first))
-    /* 优先挑“支持推理”的，这样档位对比更有意义 */
     const pickA = others.find((m) => m.reasoning) ?? others[0]
     const pickB = others.find((m) => key(m) !== key(pickA)) ?? others[0]
 
-    /* ---- 1. 切到 A：状态跟着 A 走 ---- */
     out.push('')
     out.push('=== 1. 切到另一个模型 ===')
     out.push(`  切到 ${key(pickA)}`)
@@ -61,11 +46,9 @@
     out.push(`  A 的档位 = ${JSON.stringify(levelsA)}（status=${statusA}）`)
     ok(Array.isArray(levelsA), '切换后档位数组仍存在（没有变成未定义）')
 
-    /* ---- 2. 快速连切：旧响应不能覆盖新模型 ---- */
     out.push('')
     out.push('=== 2. 快速连切（迟到响应不得覆盖）===')
     out.push(`  先发 ${key(pickB)} 再发 ${key(pickA)}，不等待`)
-    /* 故意不 await 第一次：第二次请求先落地 */
     const p1 = store.getState().setModel(pickB.provider, pickB.id)
     await sleep(60)
     const p2 = store.getState().setModel(pickA.provider, pickA.id)
@@ -81,7 +64,6 @@
       '档位与最终模型一致（没有混进上一个模型的档位）'
     )
 
-    /* ---- 3. 切到“没有档位”的模型：档位必须被清空，不是残留 ---- */
     out.push('')
     out.push('=== 3. 切到无思考档位的模型 ===')
     const plain = models.find((m) => !m.reasoning && key(m) !== key(pickA))
@@ -98,7 +80,6 @@
       ok(lv.length <= 1 || st === 'unsupported', '不支持推理的模型不再挂着上一个模型的档位')
     }
 
-    /* ---- 4. 上下文用量按模型归属 ---- */
     out.push('')
     out.push('=== 4. 旧模型的 token 统计不冒充新模型 ===')
     const stats = store.getState().stats
@@ -121,7 +102,6 @@
       '上下文窗口要么未知、要么是正数（不会显示成旧模型的容量冒充）'
     )
 
-    /* ---- 5. 图像输入模型：能力标签跟着模型走 ---- */
     out.push('')
     out.push('=== 5. 切换图像输入模型 ===')
     const vis = models.find((m) => Array.isArray(m.input) && m.input.includes('image') && key(m) !== key(pickA))
@@ -138,7 +118,6 @@
       ok(cur?.contextWindow === vis.contextWindow, '上下文容量也跟着模型走（不是上一个模型的）')
     }
 
-    /* 收尾：切回原来的模型，别把用户的默认设置留在这个场景挑的模型上 */
     if (first) {
       await store.getState().setModel(first.provider, first.id)
       await sleep(800)

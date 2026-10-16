@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 
-/** 失败提示：分类 + 原文。原文可以折叠，但它才是排查的第一现场 */
 export function WriteFailure({ msg, hint, detail }: { msg: string; hint?: string; detail?: string }) {
   const t = useT()
   const [open, setOpen] = useState(false)

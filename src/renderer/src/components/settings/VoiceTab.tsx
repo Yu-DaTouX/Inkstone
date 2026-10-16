@@ -16,12 +16,6 @@ function fmtBytes(n: number): string {
   return `${Math.round(n / 1024 ** 2)} MB`
 }
 
-/**
- * 设置 · 语音输入（需求稿 3.5）。
- *
- * 转写全部在这台电脑上完成（whisper.cpp）。这一页负责：按配置推荐模型、
- * 下载前先给出核实过的大小与保存位置并等用户确认、或指定已有的程序与模型文件、选择识别语言。
- */
 export function VoiceTab() {
   const t = useT()
   const saved = useStore((s) => s.settings?.voiceInput)
@@ -47,7 +41,6 @@ export function VoiceTab() {
     void refresh()
   }, [refresh])
 
-  /* 下载进行中每秒刷新一次进度 */
   const downloading = status?.download?.state === 'running'
   useEffect(() => {
     if (!downloading) return undefined

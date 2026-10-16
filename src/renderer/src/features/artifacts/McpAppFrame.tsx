@@ -1,20 +1,3 @@
-/**
- * MCP App 沙箱框（A6-frame-ui）。
- *
- * 把宿主 `prepare(callId)` 拿到的 `inkstone-app:` 资源放进一个**独立的** iframe：
- *   · sandbox 固定 `allow-scripts`（无 `allow-same-origin`，opaque origin）；
- *   · `allow` 权限全关、`referrerPolicy="no-referrer"`、不加载 preload；
- *   · src 必须是 `parseMcpAppUrl` 认可的受控地址，否则显示安全拒绝；
- *   · 框外只显示「正在初始化 / 等待宿主确认」的说明条，**批准只发生在宿主的
- *     用户卡片里**，iframe 内的任何内容都不能伪造批准；
- *   · 没有资源 / 超限 / 读取失败时回退到已有工具文本，不自动重跑。
- *
- * 形态复用成果框架的 inline / fullscreen / pip 与几何纯函数（`./model`），但**不动**
- * `ArtifactFrame` 的控件实现：MCP App 需要自己的消息桥与 sandbox。
- *
- * 之后由整合补丁把 `McpAppResult` / `McpAppStepAudit` 接进 `ToolSteps`。
- * 文本与审计一律只读已记录内容，不把 `rawMeta` / `structuredContent` 塞进正文。
- */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from 'react'
 import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, ShieldAlert, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
@@ -44,8 +27,6 @@ import { McpAppChannel, type McpAppDispatchApi } from './mcp-app-channel'
 import { createMcpAppThemeWatcher } from './mcp-app-theme-update'
 import './artifacts.css'
 import './mcp-app-frame.css'
-
-/* ─────────────────────────────────────────────── 文案（离线并入正式 i18n） */
 
 interface AppLabels {
   waitingInitialize: string
@@ -109,7 +90,6 @@ function useAppLabels(): AppLabels {
   return lang === 'en-US' ? EN : ZH
 }
 
-/** 宿主桥：未接线时给出明确缺失，而不是崩在 `undefined`。 */
 export function readMcpAppApi(): McpAppViewApi | null {
   const yan = (window as unknown as { yan?: { mcpApps?: McpAppViewApi } }).yan
   return yan?.mcpApps ?? null
@@ -127,18 +107,13 @@ interface ConversationRect {
   height: number
 }
 
-/* ─────────────────────────────────────────────── 框 */
-
 export interface McpAppFrameProps {
   descriptor: Extract<McpAppViewDescriptor, { kind: 'ready' }>
   api: McpAppViewApi
-  /** 产生该 App 的工具调用；只用于展示与审计关联，不参与授权。 */
   callId: string
-  /** 若调用方已感知「靠近视口」，可传入避免重复观察。 */
   near?: boolean
   title?: string
   className?: string
-  /** 关闭内联形态（父级想把收起并进自己的状态）。 */
   onClose?: () => void
 }
 
@@ -178,7 +153,6 @@ export function McpAppFrame({
     }
   }, [])
 
-  /* 释放实例：卸载 / 切会话都要 release，绝不给旧会话挂新实例。 */
   useEffect(() => {
     const instanceId = descriptor.instanceId
     return () => {
@@ -186,7 +160,6 @@ export function McpAppFrame({
     }
   }, [api, descriptor.instanceId])
 
-  /* 计数派发：只用于「等待宿主处理」的界面提示，不影响授权。 */
   const countedApi = useMemo<McpAppDispatchApi>(
     () => ({
       dispatch: async (instanceId, message) => {
@@ -201,7 +174,6 @@ export function McpAppFrame({
     [api]
   )
 
-  /* 每个实例一条桥；卸载移除 window 监听、关闭端口、丢弃迟到应答。 */
   useEffect(() => {
     if (!trusted || !near) return undefined
     const channel = new McpAppChannel({
@@ -209,7 +181,6 @@ export function McpAppFrame({
       api: countedApi,
       window: window,
       getFrame: () => iframeRef.current?.contentWindow ?? null,
-      /* 桥未装配时 hostContext 缺失，保持不推主题通知（不自行拼值）。 */
       loadHostContext:
         typeof api.hostContext === 'function' ? () => api.hostContext(descriptor.instanceId) : undefined,
       hooks: {
@@ -223,10 +194,6 @@ export function McpAppFrame({
     channelRef.current = channel
     channel.attach()
     const unsubscribe = channel.subscribe(setPhase)
-    /*
-     * 主题跟读：document 已解析主题 / 系统配色变化时，通知通道去取一次受信宿主上下文并
-     * 推 `host-context-changed`。只触发读取，不自行拼主题值、不重建 iframe。
-     */
     const themeWatcher = createMcpAppThemeWatcher(
       {
         documentElement: document.documentElement,
@@ -266,7 +233,6 @@ export function McpAppFrame({
     }, 0)
   }, [onClose])
 
-  /* 全屏 Esc 退出：先让模态处理自己的 Esc。 */
   useEffect(() => {
     if (form !== 'fullscreen') return undefined
     const onKey = (event: KeyboardEvent): void => {
@@ -426,7 +392,6 @@ export function McpAppFrame({
             data-testid="v3-mcp-app-iframe"
             style={form === 'inline' && inlineOverflow && rawHeight ? { height: rawHeight, flex: 'none' } : undefined}
             onLoad={() => {
-              /* 新文档 = 新一代：重置握手/去重/限速，旧端口作废。 */
               channelRef.current?.nextGeneration()
             }}
           />
@@ -471,20 +436,12 @@ export function McpAppFrame({
   )
 }
 
-/* ─────────────────────────────────────────────── 工具步骤入口：prepare → 框 / 文本回退 */
-
 export interface McpAppResultProps {
-  /** 产生 App 的工具调用 id；挂载时触发一次资源加载，不执行工具。 */
   callId: string
   title?: string
   near?: boolean
 }
 
-/**
- * 工具步骤里的 App 入口：按明确 `callId` 调 `prepare`，只在拿到 `ready` 时渲染框。
- * 迟到结果（会话切走 / 卸载后返回）立即 `release`，不挂到当前会话。
- * `text` / `error` 是宿主给的文本回退，直接显示已有工具文本。
- */
 export function McpAppResult({ callId, title, near = true }: McpAppResultProps): JSX.Element | null {
   const labels = useAppLabels()
   const api = useMemo(readMcpAppApi, [])
@@ -499,7 +456,6 @@ export function McpAppResult({ callId, title, near = true }: McpAppResultProps):
     void api.prepare(callId).then(
       (next) => {
         if (!alive) {
-          /* 迟到：不要把实例挂到当前会话，直接释放。 */
           if (next.kind === 'ready') void Promise.resolve(api.release(next.instanceId)).catch(() => undefined)
           return
         }
@@ -519,7 +475,6 @@ export function McpAppResult({ callId, title, near = true }: McpAppResultProps):
   if (!descriptor) return <div className="v3-mcp-app-fallback" role="status" data-testid="v3-mcp-app-loading">{labels.waitingInitialize}</div>
 
   const render = describeMcpAppView(descriptor)
-  /* 文本回退：已有工具文本已经在步骤里显示，这里不再重复一块。 */
   if (render.mode === 'text') return null
   if (render.mode === 'error') {
     return <div className="v3-mcp-app-fallback failed" role="alert" data-testid="v3-mcp-app-fallback">{render.error || labels.loadFailed}</div>
@@ -538,8 +493,6 @@ export function McpAppResult({ callId, title, near = true }: McpAppResultProps):
   )
 }
 
-/* ─────────────────────────────────────────────── 步骤审计（只读已记录摘要） */
-
 const AUDIT_TONE_CLASS: Record<McpAppAuditTone, string> = {
   neutral: '',
   ask: 'ask',
@@ -555,11 +508,6 @@ function auditTime(at: number): string {
   }
 }
 
-/**
- * 工具步骤展开后的「App 调用记录」：`audit(callId)` 读已持久化摘要，按步骤细节的
- * 行式排版显示。只显示 `summary` 与阶段/权限档，**不显示 rawMeta / structuredContent**，
- * 也不触发任何工具调用。
- */
 export function McpAppStepAudit({ callId }: { callId: string }): JSX.Element | null {
   const labels = useAppLabels()
   const api = useMemo(readMcpAppApi, [])

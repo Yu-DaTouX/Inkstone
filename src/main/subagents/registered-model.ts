@@ -1,4 +1,3 @@
-/** CLI 可能合成同名模型；明确指定模型时用原生 set_model 核对注册，避免改用错误 API。 */
 export async function confirmRegisteredModel(
   rpc: { command(type: string, args?: Record<string, unknown>, options?: { timeoutMs?: number }): Promise<{ success: boolean; error?: string; data?: unknown }> },
   label: string,

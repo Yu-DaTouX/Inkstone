@@ -18,27 +18,19 @@ import { useConfirm } from '../ui/confirm'
 import { AgentMark } from '../workbench/AgentMark'
 import { resetText } from './QuotaSection'
 
-/** 磁贴开着时多久自动刷新一次：额度窗口最短 5 小时，再密只会撞服务端限流。 */
 const AUTO_REFRESH_MS = 5 * 60_000
 
-/** pi 的 provider 名 → AgentMark 的品牌标识；其余服务退回首字母。 */
 const MARK: Record<string, string> = { 'openai-codex': 'codex', anthropic: 'claude', gemini: 'gemini' }
 
 const sourceKey = (s: AccountQuotaSource): MessageKey => `acct.source.${s}` as MessageKey
 const cap = (s?: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '')
 
-/**
- * 「账号额度」磁贴：砚登录的各个账号（含多个 ChatGPT 账号的切换）与可选的本机 CLI 账号。
- * 数据与凭证都在主进程（account-quota.ts / codex-accounts.ts），这里只显示、改备注、发切换。
- */
 export function AccountQuotaPane() {
   const t = useT()
   const confirm = useConfirm()
-  /* 当前视图的 provider：用来把对应账号卡排到最前（主进程不知道当前会话用哪个）。 */
   const provider = useStore((s) => s.session?.model?.provider ?? '')
   const [report, setReport] = useState<AccountQuotaReport | null>(null)
   const [loading, setLoading] = useState(false)
-  /** 查询失败时保留上一次的数字，只加一行说明 */
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busyKey, setBusyKey] = useState<string | null>(null)
@@ -62,7 +54,6 @@ export function AccountQuotaPane() {
 
   useEffect(() => {
     void load()
-    /* 倒计时每 30 秒重算；数据只在可见且过期时重新查 */
     const tick = setInterval(() => setTick((v) => v + 1), 30_000)
     const poll = setInterval(() => {
       if (document.visibilityState === 'visible' && Date.now() - checkedAt.current >= AUTO_REFRESH_MS) void load()
@@ -218,7 +209,6 @@ function AccountCard({
 
   return (
     <section className="acct-card" data-testid={`acct-card-${card.source}-${card.provider}`}>
-      {/* 名字一行与暗色的邮箱 · 套餐 · 来源一行靠得更近，与下面的窗口分开 */}
       <div className="acct-card-id">
         <div className="acct-card-head">
           <AgentMark agent={MARK[card.provider] ?? card.provider} size={14} />
@@ -289,7 +279,6 @@ function AccountCard({
           <div key={w.id} className="quota-block" data-testid={`acct-win-${w.id}`}>
             <div className="quota-block-top">
               <span className="quota-block-label">{w.label}</span>
-              {/* 推算值必须与额度浮层一样标明来源，不能伪装成官方额度 */}
               {w.estimated ? (
                 <span className="ui-badge" title={t('quota.estimatedTip')} data-testid={`acct-win-${w.id}-estimated`}>
                   {t('quota.estimated')}

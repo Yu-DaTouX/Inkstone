@@ -1,9 +1,3 @@
-/**
- * 输入框的语音输入（需求稿 3.5）：录音 → 本地转写 → 插入输入框，由用户编辑后再发送。
- *
- * 只做转文字，不自动发送。状态如实对应：录音中（显示时长、可停止或取消）→ 转写中 → 完成或失败提示。
- * 程序或模型没准备好时，点按钮直接去「设置 → 语音输入」，不在输入区里弹下载。
- */
 import { useEffect, useRef, useState } from 'react'
 import { encodeWav16k, VOICE_MAX_SECONDS } from '../../../../shared/voice-input'
 import { Icon } from '../../icons/Icon'
@@ -21,11 +15,9 @@ export function VoiceInputButton({ onText, disabled }: { onText: (text: string) 
   const recorder = useRef<{ stop: () => void } | null>(null)
   const generation = useRef(0)
   const cancelled = useRef(false)
-  /* 转写结束时用最新的插入函数：录音期间用户可能还在打字 */
   const onTextRef = useRef(onText)
   onTextRef.current = onText
 
-  /* 录音计时；到上限自动停止并转写 */
   useEffect(() => {
     if (phase.kind !== 'recording') return undefined
     const id = window.setInterval(() => {
@@ -36,14 +28,12 @@ export function VoiceInputButton({ onText, disabled }: { onText: (text: string) 
     return () => window.clearInterval(id)
   }, [phase])
 
-  /* 失败提示停留几秒后收起 */
   useEffect(() => {
     if (phase.kind !== 'error') return undefined
     const id = window.setTimeout(() => setPhase({ kind: 'idle' }), 6000)
     return () => window.clearTimeout(id)
   }, [phase])
 
-  /* 组件卸载（切会话等）时释放麦克风，不留后台录音 */
   useEffect(
     () => () => {
       cancelled.current = true

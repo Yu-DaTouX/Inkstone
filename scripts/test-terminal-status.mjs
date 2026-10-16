@@ -1,12 +1,3 @@
-/**
- * 终端程序状态协议（`src/main/terminal-status.ts`）的纯函数检查。
- *
- * 只测解析与记录：跨块拼接与逐字符分割等价、超长（完整 / 分块）丢弃并恢复、
- * 严格 base64 / 控制字符拒绝、进度合法性、查询回复、7501 优先（含 id 子记录）、
- * 精确查询识别（带 payload 的回复 / 回显不反射）、按码点截断、msg 上限、
- * 重复字段拒绝、格式坏的 9;4 不清投影、退出清理。
- * 不启动终端、不加载 node-pty、不调用模型。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -30,7 +21,6 @@ async function loadModule() {
     metafile: true,
     logLevel: 'silent'
   })
-  // 纯模块：不应把 ipc.ts 等源码拉进 bundle
   assert.deepEqual(Object.keys(result.metafile.inputs), [ENTRY], '终端状态解析应是自包含纯模块')
   return import(pathToFileURL(outfile).href)
 }
@@ -64,7 +54,6 @@ export async function runTerminalStatusTests() {
       MAX_MESSAGE_BYTES
     } = mod
 
-    /* ---- 查询与跨块拼接 ---- */
     {
       const scanner = new TerminalStatusScanner()
       eq(scanner.write('\x1b]750'), [], '未成帧的 OSC 片段不产出事件')
@@ -79,7 +68,6 @@ export async function runTerminalStatusTests() {
       eq(PROGRAM_STATUS_QUERY.endsWith('\x1b\\'), true, '回复用 ST 终止')
     }
 
-    /* ---- 回复 / 详细回显不被当成新查询（不给自己的回复反射） ---- */
     {
       const tracker = new TerminalProgramStatusTracker()
       eq(tracker.consume(PROGRAM_STATUS_REPLY).queries, 0, '能力回复回显不触发查询')
@@ -88,7 +76,6 @@ export async function runTerminalStatusTests() {
       eq(tracker.consume('\x1b]7501;?\x1b\\').queries, 1, '精确查询仍然触发一次')
     }
 
-    /* ---- 上报跨块、base64 标题还原；块尾 ESC 是未完成 ST，不得提前落状态 ---- */
     {
       const tracker = new TerminalProgramStatusTracker()
       const encoded = b64('编译中')
@@ -102,7 +89,6 @@ export async function runTerminalStatusTests() {
       eq(tracker.status, { state: 'working', title: '编译中' }, '跨块拼接出 working 与标题')
     }
 
-    /* ---- 同帧在任意分割点 / 逐字符输入都等价 ---- */
     {
       const frame = `\x1b]7501;state=blocked:kind=permission:progress=42:app=pi:title=${b64('等待')}\x1b\\`
       const expected = { state: 'blocked', kind: 'permission', progress: 42, app: 'pi', title: '等待' }
@@ -122,13 +108,11 @@ export async function runTerminalStatusTests() {
       eq(legacyByChar.status, { state: 'working', progress: 42 }, '9;4 逐字符输入等价')
     }
 
-    /* ---- 无关 OSC 不受影响 ---- */
     {
       const tracker = new TerminalProgramStatusTracker()
       eq(tracker.consume('\x1b]0;window title\x07').changed, false, '标题等无关 OSC 不产出状态')
     }
 
-    /* ---- 9;4 后备与 7501 优先 ---- */
     {
       const tracker = new TerminalProgramStatusTracker()
       eq(tracker.consume('\x1b]9;4;1;40\x07').changed, true, '没有 7501 时 9;4 驱动记录')
@@ -143,7 +127,6 @@ export async function runTerminalStatusTests() {
     eq(legacyProgressToStatus({ state: 4 }), { state: 'idle' }, '9;4 state 4 = 暂停（不是等你）')
     eq(legacyProgressToStatus({ state: 9 }), null, '未知 9;4 状态丢弃')
 
-    /* ---- 9;4 严格结构：state 单个 0-4 数字、进度 0-100、最多四段 ---- */
     eq(parseLegacyProgress('9;4;0'), { state: 0 }, '无 progress 合法')
     eq(parseLegacyProgress('9;4;1;0'), { state: 1, value: 0 }, 'progress=0 合法')
     eq(parseLegacyProgress('9;4;4;100'), { state: 4, value: 100 }, 'progress=100 合法')
@@ -157,7 +140,6 @@ export async function runTerminalStatusTests() {
     eq(parseLegacyProgress('9;4;1;50;extra'), null, '9;4 多余参数丢弃')
 
     {
-      // 格式坏的 9;4 不能当成 state 0 去清除记录
       const tracker = new TerminalProgramStatusTracker()
       tracker.consume('\x1b]9;4;1;40\x07')
       eq(tracker.status, { state: 'working', progress: 40 }, '先有可投影的 9;4 状态')
@@ -169,7 +151,6 @@ export async function runTerminalStatusTests() {
       eq(tracker.status, undefined, '合法清除生效')
     }
 
-    /* ---- clear 与 blocked 细分 ---- */
     {
       const tracker = new TerminalProgramStatusTracker()
       tracker.consume('\x1b]7501;state=blocked:kind=permission\x1b\\')
@@ -186,12 +167,10 @@ export async function runTerminalStatusTests() {
     eq(parseTerminalStatusReport('7501;state=working:app=pi'), { state: 'working', app: 'pi' }, '合法 app 保留')
     eq(parseTerminalStatusReport('7501;state=working:app=bad app'), null, '非法 app 整条丢弃')
 
-    /* ---- 重复字段：整帧拒绝，不取首字段 ---- */
     eq(parseTerminalStatusReport('7501;state=working:state=done'), null, '重复 state 整帧拒绝')
     eq(parseTerminalStatusReport('7501;state=working:progress=1:progress=2'), null, '重复 progress 整帧拒绝')
     eq(parseTerminalStatusReport('7501;state=working:id=a:id=b'), null, '重复 id 整帧拒绝')
 
-    /* ---- id 子记录不驱动根记录，但 7501 仍关闭 9;4 ---- */
     eq(parseTerminalStatusReport('7501;state=done:id=agent-1'), null, '带 id 的上报整条不驱动根')
     {
       const tracker = new TerminalProgramStatusTracker()
@@ -210,14 +189,12 @@ export async function runTerminalStatusTests() {
       ok(scanner.programStatusSeen, '带 id 的上报也算程序在用 7501')
     }
 
-    /* ---- 进度合法性 ---- */
     eq(parseTerminalStatusReport('7501;state=working:progress=0'), { state: 'working', progress: 0 }, 'progress=0 合法')
     eq(parseTerminalStatusReport('7501;state=working:progress=100'), { state: 'working', progress: 100 }, 'progress=100 合法')
     eq(parseTerminalStatusReport('7501;state=working:progress=101'), null, 'progress=101 丢弃')
     eq(parseTerminalStatusReport('7501;state=working:progress=-1'), null, 'progress 负数丢弃')
     eq(parseTerminalStatusReport('7501;state=working:progress=abc'), null, 'progress 非数字丢弃')
 
-    /* ---- 严格 base64 与控制字符 ---- */
     eq(parseTerminalStatusReport('7501;state=working:msg=!!!'), null, '非 base64 整条丢弃')
     eq(parseTerminalStatusReport('7501;state=working:msg=a'), null, 'base64 长度非法丢弃')
     eq(parseTerminalStatusReport(`7501;state=working:msg=${b64('a\u0001b')}`), null, '解码后含控制字符整条丢弃')
@@ -226,7 +203,6 @@ export async function runTerminalStatusTests() {
     eq(decodeStatusText(b64('x'.repeat(200))).length, 120, '超长标题截断成短标题')
     eq(parseTerminalStatusReport('7501;state=working\x07'), null, '正文含控制字符整条丢弃')
 
-    /* ---- 按 Unicode 码点截断：不切断代理对（emoji / 多字节） ---- */
     {
       const long = 'x'.repeat(119) + '😀' + 'y'
       const decoded = decodeStatusText(b64(long))
@@ -236,7 +212,6 @@ export async function runTerminalStatusTests() {
       eq(parseTerminalStatusReport(`7501;state=working:msg=${b64(long)}`), { state: 'working', title: decoded }, '含 emoji 的 msg 整条解析')
     }
 
-    /* ---- msg 上限与 pi 的 MAX_MESSAGE_BYTES 一致 ---- */
     {
       eq(MAX_MESSAGE_BYTES, 2048, 'msg 字节上限 2048')
       eq(decodeStatusText(b64('a'.repeat(2048))).length, 120, '恰好 2048 字节仍合法')
@@ -244,14 +219,12 @@ export async function runTerminalStatusTests() {
       eq(parseTerminalStatusReport(`7501;state=working:msg=${b64('a'.repeat(2049))}`), null, '超限 msg 整条丢弃')
     }
 
-    /* ---- 真实 pi formatter 形态：字段用冒号，首个 7501 后用分号 ---- */
     {
       eq(parseTerminalStatusReport(`7501;state=blocked:kind=permission:app=pi:msg=${b64('等待')}`), { state: 'blocked', kind: 'permission', app: 'pi', title: '等待' }, '真实冒号字段顺序可任意')
       eq(parseTerminalStatusReport('7501;state=working:app=my.app+v1-2'), { state: 'working', app: 'my.app+v1-2' }, 'app 允许 . + -')
       eq(parseTerminalStatusReport('7501;state=working;app=pi'), null, '字段用分号（私造语法）整条丢弃')
     }
 
-    /* ---- 裸 ESC / ESC 后非反斜杠：丢弃未终止帧并回到下一个 OSC ---- */
     {
       const tracker = new TerminalProgramStatusTracker()
       const res = tracker.consume('\x1b]7501;state=working\x1bX\x1b]7501;state=done\x1b\\')
@@ -267,13 +240,11 @@ export async function runTerminalStatusTests() {
     }
     {
       const tracker = new TerminalProgramStatusTracker()
-      // 块尾 ESC 其实是下一条 OSC 的开头，不是残缺 ST
       tracker.consume('\x1b]7501;state=working\x1b')
       eq(tracker.consume(']7501;state=done\x1b\\').changed, true, '块尾 ESC 属于下一条 OSC 时仍能识别')
       eq(tracker.status, { state: 'done' }, '识别下一条 OSC 并落记录')
     }
 
-    /* ---- 超长（含头与终止符）丢弃并恢复：完整单块 ---- */
     {
       const bigB64 = b64('a'.repeat(MAX_SEQUENCE_BYTES))
       const overlong = `\x1b]7501;state=working:msg=${bigB64}\x1b\\`
@@ -289,7 +260,6 @@ export async function runTerminalStatusTests() {
       eq(sameChunk.status, { state: 'idle' }, '同块后续帧落记录')
     }
 
-    /* ---- 超长：分块，末尾 ESC 保留以识别被切开的 ST ---- */
     {
       const bigB64 = b64('a'.repeat(MAX_SEQUENCE_BYTES))
       const tracker = new TerminalProgramStatusTracker()
@@ -304,7 +274,6 @@ export async function runTerminalStatusTests() {
       eq(sameChunk.status, { state: 'done' }, '同块恢复后解析')
     }
 
-    /* ---- 退出清理 ---- */
     {
       const tracker = new TerminalProgramStatusTracker()
       tracker.consume('\x1b]7501;state=working\x1b\\')
@@ -319,7 +288,6 @@ export async function runTerminalStatusTests() {
       ok(blocked.exit(), '退出清掉 blocked')
     }
 
-    /* ---- 查询计数：一次查询回一次 ---- */
     {
       const tracker = new TerminalProgramStatusTracker()
       eq(tracker.consume('\x1b]7501;?\x1b\\\x1b]7501;?\x1b\\').queries, 2, '同块两条查询计两次')

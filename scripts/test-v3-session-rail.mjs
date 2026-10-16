@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 会话导航轨与停滞卡回归（WP-21b / WP-23b）。
- *
- * 不用源码字符串断言，而是把**真实组件与真实纯函数**现场 esbuild 出来、用最小
- * React 浅渲染替身驱动，钉住这几件事：
- *   · OutlineRail 用 `shared/outline-turns` 的真实投影列出用户回合；不足 3 轮不显示；
- *     点刻度把「用户回合下标」原样交给调用方，越界不猜；
- *   · userTurnRenderIndex 把用户回合下标换算成含助手块的回合数组下标，
- *     定位到的是**目标轮**而不是最后一轮（不拉到底部的那半）；
- *   · StalledCard 的原因 / 详情 / 计时来自 runs-v3 的 phase 与既有文案函数，
- *     自动重试显示倒计时，其余显示已停滞时长；
- *   · currentStalledRun 只认当前激活视图、只认 stalled，按 id 或归一化路径归属；
- *   · 轨道外观在「减少动态效果」下无过渡（读 CSS）。
- *
- * 用法：node scripts/test-v3-session-rail.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型、不打开文件或网页。
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -25,8 +8,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 
@@ -44,8 +25,6 @@ function ok(cond, label, detail) {
   return pass
 }
 
-/* -------------------------------------------------------- 定时 / 全局桩 */
-
 function installGlobals() {
   const storage = new Map()
   globalThis.localStorage = {
@@ -60,7 +39,6 @@ function installGlobals() {
     try {
       fn(0)
     } catch {
-      /* 浅渲染里没有真实帧，忽略 */
     }
     return 0
   }
@@ -84,7 +62,6 @@ function installWindow() {
     addEventListener: () => {},
     removeEventListener: () => {},
     location: { href: 'http://localhost/' },
-    /* StalledCard 用秒级定时刷新计时；测试里只登记，不真的跑。 */
     setInterval: (fn) => {
       const id = nextId++
       intervalIds.set(id, fn)
@@ -94,8 +71,6 @@ function installWindow() {
   }
   return intervalIds
 }
-
-/* ------------------------------------------------------------ React 替身 */
 
 const REACT_SHIM = `/* v3 会话轨回归的 React 浅渲染替身：状态放在 globalThis.__V3_HOOKS。 */
 const rt = () => globalThis.__V3_HOOKS
@@ -125,8 +100,6 @@ export function jsx(type, props, key) { const el = createElement(type, props); i
 export const jsxs = jsx
 export const jsxDEV = jsx
 `
-
-/* ------------------------------------------------------------------ 构建 */
 
 function abs(rel) {
   return normalize(resolve(ROOT, rel))
@@ -204,8 +177,6 @@ Icon.__stub = 'icon'`
   })
   return out
 }
-
-/* ------------------------------------------------------- 浅渲染 hook 运行时 */
 
 function makeHookRuntime() {
   const rt = {
@@ -289,8 +260,6 @@ const byTestId = (tree, id) => collect(tree, (el) => el.props?.['data-testid'] =
 const byStub = (tree, name) => collect(tree, (el) => el.type && el.type.__stub === name)
 const byTypeName = (tree, name) => collect(tree, (el) => typeof el.type === 'function' && el.type.name === name)
 
-/* ------------------------------------------------------------------ fixture */
-
 const msg = (id, role, text, extra = {}) => ({ id, role, text, ...extra })
 
 const CONVO = [
@@ -315,8 +284,6 @@ const runOf = (over = {}) => ({
   ...over
 })
 
-/* ------------------------------------------------------------------ 主流程 */
-
 async function main() {
   installGlobals()
   const intervalIds = installWindow()
@@ -333,8 +300,6 @@ async function main() {
 
   const { OutlineRail, userTurnRenderIndex, StalledCard, currentStalledRun, stallReason } = rail
 
-  /* ============================================================ 换算 */
-
   group('userTurnRenderIndex：用户回合下标 → 含助手块的回合下标')
   {
     const turns = [{ kind: 'user' }, { kind: 'assistant' }, { kind: 'user' }, { kind: 'assistant' }, { kind: 'user' }, { kind: 'assistant' }]
@@ -344,8 +309,6 @@ async function main() {
     ok(userTurnRenderIndex(turns, 3) === undefined, '越界的用户回合返回 undefined，不落到最后一轮', userTurnRenderIndex(turns, 3))
     ok(userTurnRenderIndex(turns, 2) !== turns.length - 1, '定位目标是目标轮（4），不是最后一轮（5）→ 不会强拉到底部')
   }
-
-  /* ====================================================== OutlineRail */
 
   group('OutlineRail：真实投影列用户回合，点击报告正确下标')
   {
@@ -370,12 +333,10 @@ async function main() {
   {
     const rt = makeHookRuntime()
     globalThis.__V3_HOOKS = rt
-    const short = CONVO.slice(0, 4) // 2 个用户回合
+    const short = CONVO.slice(0, 4)
     ok(byTestId(rt.render(OutlineRail, { messages: short, onJump: () => {} }), 'v3-outline-tick').length === 2, '2 轮也显示可点击的导航刻度')
     ok(rt.render(OutlineRail, { messages: [], onJump: () => {} }) === null, '空会话：返回 null')
   }
-
-  /* ====================================================== stallReason */
 
   group('stallReason：原因 / 详情 / 计时来自 runs-v3 的 phase 与文案函数')
   {
@@ -404,8 +365,6 @@ async function main() {
     ok(stallReason('en-US', { kind: 'stalled', since: 0, cause: 'loop' }, 1_000).word === 'Looping', '英文环境用英文短词')
   }
 
-  /* =================================================== currentStalledRun */
-
   group('currentStalledRun：只认激活视图、只认 stalled、按 id 或归一化路径归属')
   {
     const view = { sessionId: 'sess-a', sessionFile: 'C:/proj/A.jsonl', key: 'C:/proj/A.jsonl' }
@@ -421,8 +380,6 @@ async function main() {
     const older = runOf({ runId: 'old', startedAt: 1, phase: { kind: 'stalled', since: 5, cause: 'retry' } })
     ok(currentStalledRun([older, runOf()], view, true)?.runId === 'run-1', '同一会话多条停滞：取最新开始的那条')
   }
-
-  /* ======================================================= StalledCard */
 
   group('StalledCard：原因 / 计时 / 停止，不自动续跑')
   {
@@ -442,19 +399,15 @@ async function main() {
     buttons[0].props.onPress()
     ok(stopped === 1, '点击停止调用传入的动作（SessionView 接到 store.abort）', stopped)
 
-    /* 只有停滞才显示：运行中 / 无运行都为 null */
     ok(rt.render(StalledCard, { run: runOf({ phase: { kind: 'running', since: 0, activity: 'streaming' } }), onStop: () => {} }) === null, '运行中不显示停滞卡')
     ok(rt.render(StalledCard, { run: null, onStop: () => {} }) === null, '无运行不显示停滞卡')
 
-    /* 自动重试：卡片显示倒计时文本，并给计时器登记（有计时才订阅） */
     intervalIds.clear()
     tree = rt.render(StalledCard, { run: runOf({ phase: { kind: 'stalled', since: 0, cause: 'retry', retry: { attempt: 1, max: 2, resumeAt: Date.now() + 60_000 } } }), onStop: () => {} })
     ok(JSON.stringify(tree).includes('后重试'), '自动重试卡片显示倒计时')
     ok(intervalIds.size >= 1, '停滞期间登记秒级刷新计时器')
     ok(typeof tree.props.children !== 'undefined', '卡片内容完整')
   }
-
-  /* ====================================================== 减少动态 */
 
   group('悬停右缘才出现 + 减少动态效果：外观规则')
   {

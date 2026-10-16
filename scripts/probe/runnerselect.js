@@ -1,15 +1,3 @@
-/**
- * 运行实例选择：真实主进程路径（N12）。
- *
- * 与 `sessionrunners` 的分工：那边验证**渲染端**的身份过滤与状态槽，
- * 这里验证**主进程**的注册表在真实环境下确实按承诺工作：
- *   · 首次选择建实例；
- *   · 再选另一个会话时，空闲实例被复用（而不是新建/停止）；
- *   · 返回的 id 与状态快照里的 isActive 一致；
- *   · 选同一个会话是「命中」，不会再切一次。
- *
- * 不跑任何回合（不需要模型、不花 token）。pi 没起来时给出跳过说明。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -32,7 +20,6 @@
     const sessions = store.getState().sessions
     out.push(`  会话数 = ${sessions.length}  conn = ${store.getState().conn}`)
 
-    /* N05：三个入口都必须在主进程拒绝不存在的 cwd，且不能污染当前设置。 */
     const settingsBeforeCwd = await window.yan.getSettings()
     const invalidCwd = `${String(cwd).replace(/[\\/]+$/, '')}/__yan_missing_${Date.now()}`
     const badSet = await window.yan.setCwd(invalidCwd)
@@ -46,7 +33,6 @@
 
     const first = await window.yan.selectSession({ cwd })
     if (!first.ok) {
-      /* 约定：环境不满足用「⤺ 跳过」标记，不报 ✗（见 features.js 头部） */
       out.push(`  ⤺ 跳过：pi 未就绪（conn=${store.getState().conn}），无法验证主进程注册表路径`)
       out.push('    原因: ' + JSON.stringify(first.error))
       return out.join('\n')
@@ -63,7 +49,6 @@
     ok(list.every((r) => r.runId === r.id && typeof r.generation === 'number'), '状态快照带 runId 和 generation')
     ok(list.every((r) => typeof r.running === 'boolean'), '每个实例都带 running 布尔值')
 
-    /* 命中：同一个会话再选一次，不应产生新实例 */
     const target = sessions[0]
     if (target) {
       const hit1 = await window.yan.selectSession({ sessionFile: target.path, cwd: target.cwd || cwd })
@@ -86,7 +71,6 @@
       out.push('  （没有会话文件可切，跳过命中验证）')
     }
 
-    /* 单独停止：作用域只到那一个实例 */
     const before = await window.yan.runnerStatuses()
     const victim = before.find((r) => !r.isActive) ?? before[0]
     if (victim) {
@@ -97,17 +81,9 @@
       ok(!after.some((r) => r.id === victim.id), '被停的实例从注册表里消失')
     }
 
-    /*
-     * D5：跨项目复用空闲实例时必须换进程。
-     *
-     * pi 进程的 cwd 只在 spawn 时确定；只改注册表字段的话，新会话会落在
-     * 旧项目目录里。这里用真实存在、且与当前不同的目录（父目录）验证
-     * **pi 上报的 cwd**（statuses().cwd 来自 get_state）确实跟着变。
-     */
     const canonical = (s) => String(s ?? '').replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
     const parentCwd = String(cwd).replace(/[\\/][^\\/]+[\\/]?$/, '')
     if (parentCwd && canonical(parentCwd) !== canonical(cwd)) {
-      /* 先回到当前项目，制造一个空闲实例，让下面的跨项目切换走「复用」路径 */
       const back = await window.yan.selectSession({ cwd })
       ok(back.ok === true, '回到当前项目，准备验证跨项目复用', back.error ?? '')
       const moved = await window.yan.selectSession({ cwd: parentCwd })
@@ -130,7 +106,6 @@
           `cwd=${reported ?? '(未更新)'}`
         )
 
-        /* 切回去：让探针结束时环境与开始时一致 */
         await window.yan.selectSession({ cwd })
       }
     } else {

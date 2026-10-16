@@ -1,12 +1,4 @@
-/*
- * 会话导航轨与停滞卡的**外观**（颜色 / 边框 / 阴影 / 动效）。
- *
- * CONTRACT：外观本应抽到 `patterns/`；`patterns/` 由并发代理负责，这里不占用
- * 别人的文件，按会话模块的既有约定暂放本模块 `ui/` 子目录并归入 `primitives`
- * 层，类名保持不变。全部取值来自 design/tokens.json 生成的变量，不私造变量。
- */
 @layer primitives {
-  /* ---- 大纲轨 ---- */
   .v3-rail-track {
     border: 1px solid var(--line2);
     border-radius: var(--r-full);
@@ -30,7 +22,6 @@
   .v3-rail-tick:hover .v3-rail-bar,
   .v3-rail-tick:focus-visible .v3-rail-bar { width: 22px; background: var(--accent); }
 
-  /* ---- 停滞卡 ---- */
   .v3-stall {
     border: 1px solid var(--stall);
     border-radius: var(--r-md);
@@ -49,7 +40,6 @@
   .v3-stall-detail { margin: 0; color: var(--fg2); font-size: var(--t-meta); overflow-wrap: anywhere; }
   .v3-stall-note { margin: 0; color: var(--fg3); font-size: var(--t-meta); }
 
-  /* 「减少动态效果」下不出现任何过渡 */
   @media (prefers-reduced-motion: reduce) {
     .v3-rail-track,
     .v3-rail-bar { transition: none; animation: none; }

@@ -1,7 +1,3 @@
-/*
- * S0 read-only browser capability exercise against public demo pages. The only
- * page mutations are transient demo form state; no account or saved data is used.
- */
 ;(async () => {
   const out = []
   const ok = (condition, label, detail = '') => {

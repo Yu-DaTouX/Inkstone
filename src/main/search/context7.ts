@@ -1,11 +1,3 @@
-/**
- * Context7 开发文档查询：`yan search docs`。给库名（或已知的库 ID）和问题，
- * 返回该库**最新版本**的文档片段与示例。key 可选：不填也能用，只是限额低。
- *
- * 流程：库名 → `/v2/libs/search` 取候选 → 取排第一的（或调用方指定的 id）→
- * `/v2/context` 取片段。`/context` 直接回 markdown 文本；库改名时回 301 +
- * `redirectUrl`，跟一次。
- */
 import { callApi, parseJson, type ApiResult } from './api-call'
 import { resolveSearchKey } from './config'
 
@@ -28,7 +20,6 @@ export interface DocsLibrary {
 
 export interface DocsResult {
   library: DocsLibrary
-  /** 同名的其他候选（库名有歧义时给模型挑），最多 4 个 */
   alternatives: DocsLibrary[]
   text: string
   truncated: boolean

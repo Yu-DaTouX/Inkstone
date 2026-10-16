@@ -1,15 +1,3 @@
-/**
- * 工作模式（实施-05 S2）的纯逻辑与存储测试。
- *
- * 分两层：
- *   · `src/shared/work-mode.ts`   契约与纯函数（迁移 / 循环 / 清洗）；
- *   · `src/main/work-mode-service.ts`  —— 真文件、真 CAS、真迁移。
- *
- * 为什么存储层要单独测：它的失败模式都在磁盘边上（CAS 被并发写绕过、
- * pending 迁移把别人的值覆盖掉、脏 JSON 让整份文档作废）。只看返回值验不出来。
- *
- * 用法：npm run test:unit
- */
 import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,8 +5,6 @@ import { join } from 'node:path'
 export async function runWorkModeTests(ok) {
   const shared = await import('../out/test/work-mode.mjs')
   const service = await import('../out/test/work-mode-service.mjs')
-
-  /* ------------------------------------------------------------ 纯逻辑 */
 
   ok(shared.WORK_MODES.join(',') === 'standard,clarify,autonomous', '模式顺序固定：标准 → 计划 → 自主')
   ok(shared.isWorkMode('clarify') && !shared.isWorkMode('bogus') && !shared.isWorkMode(1), 'isWorkMode 只认三档字符串')
@@ -42,10 +28,6 @@ export async function runWorkModeTests(ok) {
   ok(shared.isWorkModeShortcutEnabled(true) === true, '模式快捷键：显式 true = 开')
   ok(shared.isWorkModeShortcutEnabled(false) === false, '模式快捷键：只有明确 false 才关')
 
-  /*
-   * 组合键工具（2026-09-22：模式切换从裸 Tab 改成 Ctrl+Tab，并且可改键）。
-   * 这里全是纯逻辑，所以能直接拿假事件对象验。
-   */
   ok(shared.DEFAULT_WORK_MODE_BINDING === 'Ctrl+Tab', '默认绑定是 Ctrl+Tab')
   ok(shared.formatKeyBinding(shared.parseKeyBinding('ctrl+shift+k')) === 'Ctrl+Shift+K', '解析后序列化会规范化（大小写与修饰键顺序）')
   ok(shared.parseKeyBinding('Cmd+Alt+Del')?.meta === true && shared.parseKeyBinding('Cmd+Alt+Del')?.alt === true, 'Meta/Cmd 是同一个修饰键')
@@ -78,8 +60,6 @@ export async function runWorkModeTests(ok) {
     shared.matchesKeyBinding('Ctrl+K', { key: 'K', ctrlKey: true, altKey: false, shiftKey: true, metaKey: false }) === false,
     '多按了修饰键就不算命中（不能“模糊匹配”）'
   )
-
-  /* ------------------------------------------------------------ 存储层 */
 
   const dir = await mkdtemp(join(tmpdir(), 'yan-work-mode-'))
   const file = join(dir, 'work-modes.json')
@@ -132,7 +112,6 @@ export async function runWorkModeTests(ok) {
   const okCas = await store.set('s1', 'standard', 2)
   ok(okCas.ok && okCas.state.mode === 'standard' && okCas.state.revision === 3, '版本一致时提交成功')
 
-  /* ---- pending → 稳定会话 ---- */
   await store.set('pending:r9', 'clarify')
   const adopted = await store.adopt('pending:r9', 'uuid-9')
   ok(adopted.mode === 'clarify' && adopted.revision === 1, '迁移把模式带到稳定 id，且不算一次用户提交')
@@ -145,12 +124,10 @@ export async function runWorkModeTests(ok) {
   ok(kept.mode === 'standard', '目标已有条目时保留目标（稳定会话的值更权威）')
   ok(store.snapshot().entries['pending:r10'] === undefined, '迁移时源键仍会被清掉')
 
-  /* ---- 重新读盘 ---- */
   const reloaded = make()
   await reloaded.load()
   ok(reloaded.state('s1').mode === 'standard' && reloaded.state('s1').revision === 3, '新实例读盘拿到已存的模式')
 
-  /* ---- 脏文档 ---- */
   await writeFile(
     file,
     JSON.stringify({
@@ -173,13 +150,11 @@ export async function runWorkModeTests(ok) {
   ok(entries.badRevision?.revision === 1, '脏文档：revision 脏值归 1')
   ok(entries['a\u0000b'] === undefined, '脏文档：非法键丢弃')
 
-  /* ---- 坏 JSON ---- */
   await writeFile(file, '{ not json', 'utf8')
   const broken = make()
   await broken.load()
   ok(broken.state('s1').revision === 0, '坏 JSON 当空文档（模式不是关键数据，不能拦住启动）')
 
-  /* ---- 扩展读的那份快照 ---- */
   const snapshotPath = service.workModeSnapshotPath('r1', dir)
   await service.writeWorkModeSnapshot('r1', { mode: 'clarify', revision: 2 }, dir)
   const snap1 = JSON.parse(await readFile(snapshotPath, 'utf8'))
@@ -190,7 +165,6 @@ export async function runWorkModeTests(ok) {
   ok(snap2.mode === 'standard' && snap2.revision === 3 && snap2.planApprovalPending, '模式快照可带待审标记并被覆盖')
   ok(service.workModeSnapshotFileName('a/b') === 'a_b.json', '快照文件名清洗后仍在同一目录')
 
-  /* ---- 薄层在待审期间动态收紧 goal CLI ---- */
   const oldDataDir = process.env.YAN_DATA_DIR
   const oldSessionId = process.env.YAN_SESSION_ID
   process.env.YAN_DATA_DIR = dir

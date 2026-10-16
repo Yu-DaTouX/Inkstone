@@ -1,13 +1,3 @@
-/*
- * v3 工作区「日志」「额度」页签隔离探针。
- *
- * 日志页：向 store 注入日志行与扩展状态，验证出页签、状态行、日志尾部 200 行、
- * 过滤（子串）、复制取当前可见行、无匹配提示；清空后给空状态。
- * 额度页：能覆盖 `window.yan.accountQuota` 时注入三张账号卡（正常 / 接近上限 / 已用尽
- * 推算窗口）验证窗口条、色调、重置文字、推算标记、切换按钮；覆盖不了（contextBridge
- * 冻结）就只走真实只读查询，断言页签不崩、刷新按钮存在、结果是卡片或空状态之一。
- * 不发消息、不调模型、不切换真实账号。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => {
@@ -22,7 +12,6 @@
       try {
         if (predicate()) return true
       } catch {
-        /* 还没就绪 */
       }
       await wait(50)
     }
@@ -43,7 +32,6 @@
     try {
       localStorage.setItem('yan.onboarded', '1')
     } catch {
-      /* 忽略 */
     }
     const onboarding = document.querySelector('.v3-ob-overlay')
     if (onboarding) {

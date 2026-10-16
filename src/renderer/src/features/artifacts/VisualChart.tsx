@@ -1,10 +1,3 @@
-/**
- * v3 图表渲染（WP-32 §11.5）。
- *
- * 复用 `shared/visual-blocks.ts` 的**纯校验**结果（`ChartBlock` / `niceScale`），
- * 但外观全部重写：系列色用令牌 `--data-1…8`，坐标轴/网格用 `--line`/`--fg3`，
- * 数字等宽。这里不导入任何 v2 样式或字体。
- */
 import { useMemo, type CSSProperties, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { niceScale, type ChartBlock } from '../../../../shared/visual-blocks'
@@ -20,7 +13,6 @@ export function fmtValue(value: number, unit?: string): string {
   return unit ? `${text}${unit === '%' ? '%' : ` ${unit}`}` : text
 }
 
-/** 数据表：每张图都提供「以表格查看」。 */
 function ChartTable({ block }: { block: ChartBlock }): JSX.Element {
   return (
     <div className="v3-md-table-wrap">
@@ -48,7 +40,6 @@ function ChartTable({ block }: { block: ChartBlock }): JSX.Element {
   )
 }
 
-/** 垂直柱 / 堆叠 / 折线 / 面积：统一按 max 归一化。 */
 function VerticalPlot({ block }: { block: ChartBlock }): JSX.Element {
   const stack = block.type === 'stacked'
   const max = useMemo(() => {
@@ -121,7 +112,6 @@ function VerticalPlot({ block }: { block: ChartBlock }): JSX.Element {
   )
 }
 
-/** 横向：hbar / 哑铃 / 偏离。 */
 function HorizontalPlot({ block }: { block: ChartBlock }): JSX.Element {
   const diverging = block.type === 'diverging'
   const max = useMemo(() => {

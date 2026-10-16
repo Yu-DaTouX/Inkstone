@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 回合「过程收拢」纯函数回归。
- *
- * 现场 esbuild 出真实 `features/session/turn-process.ts`，在 Node 里跑 `splitTurnProcess`
- * 与标签辅助函数，钉住 DESIGN_SYSTEM §5「过程收拢」的分段规则：
- *   · 只有回复：没有过程行；
- *   · 旁白 + 工具 + 回复：旁白与工具进过程行，回复在最后；
- *   · 只有工具（运行中）：全部进过程行，没有回复；
- *   · 多段旁白：按原顺序保留，最新一句用于运行中标签；
- *   · 回复段自身带的解说与工具也归入过程行，回复段只留正文；
- *   · 回复之后的段原样留在 tail，不被藏进过程行。
- *
- * 用法：node scripts/test-v3-turn-process.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型。
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
@@ -39,8 +24,6 @@ function group(name) {
   process.stdout.write(`\n▌${name}\n`)
 }
 
-/* ------------------------------------------------------------------ 构建 */
-
 async function loadModule() {
   const outdir = await mkdtemp(join(tmpdir(), 'v3-turn-process-'))
   const outfile = join(outdir, 'turn-process.mjs')
@@ -60,8 +43,6 @@ async function loadModule() {
   }
 }
 
-/* ------------------------------------------------------------ 夹具 */
-
 const text = (id, body, hasTools = true) => ({ id, text: body, hasTools })
 const tool = (id, name, status = 'ok', extra = {}) => ({ id, name, status, args: {}, ...extra })
 
@@ -78,8 +59,6 @@ function seg(id, { commentary = [], tools = [], response = null } = {}) {
     commentary
   }
 }
-
-/* ------------------------------------------------------------ 用例 */
 
 const mod = await loadModule()
 const { splitTurnProcess, processTools, processNotes, processSummaryLabel, runningTool, narrationLine, failedCount } = mod

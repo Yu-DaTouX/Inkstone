@@ -1,12 +1,3 @@
-/**
- * v3 设置「快捷键」分区（WP-25b 余项）的局部检查。
- *
- * 只做不启动 Electron / 不读用户设置 / 不调模型的事：
- *   1. 用 esbuild 编译纯逻辑（改绑 / 冲突 / 恢复默认 / 清洗 / 覆盖应用），在 Node 里断言；
- *   2. 静态检查分区源码仍复用注册表的纯函数、能录制与恢复、没有引入 v2 旧设置组件。
- *
- * 可独立执行：node scripts/test-v3-settings-shortcuts.mjs
- */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -26,7 +17,6 @@ async function loadTs(rel) {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 }
 
-/* ── 1. 改绑纯逻辑（复用 app/shortcuts.ts 的签名判定） ───────── */
 const bindings = await loadTs('../src/renderer/src/features/settings/shortcuts/bindings.ts')
 const shortcuts = await loadTs('../src/renderer/src/app/shortcuts.ts')
 const {
@@ -51,7 +41,6 @@ assert.equal(bindingFromKeyStroke(stroke({ key: 'Control', ctrl: true })), null,
 assert.equal(bindingFromKeyStroke(stroke({ key: 'k', ctrl: true, composing: true })), null, 'IME 组字中不收键')
 assert.equal(bindingFromKeyStroke(stroke({ key: 'k', ctrl: true, altGraph: true })), null, 'AltGr 不收键')
 
-/* ── 2. 可改项集合：终端让键保持固定，其余可改 ─────────────── */
 const rebindable = SHORTCUTS.filter((def) => def.rebindable).map((def) => def.id)
 assert.deepEqual(
   rebindable,
@@ -81,7 +70,6 @@ assert.deepEqual(
   'applyShortcutOverrides 不改动原注册表'
 )
 
-/* ── 3. 改绑校验：空 / 固定 / 缺修饰 / 冲突 ─────────────────── */
 assert.deepEqual(rebindShortcut('newSession', [], {}), { ok: false, reason: 'empty' }, '空键位拒绝')
 assert.deepEqual(
   rebindShortcut('toggleSidebar', ['Ctrl', 'Alt', 'Y'], {}),
@@ -107,7 +95,6 @@ const free = rebindShortcut('newSession', ['Ctrl', 'Alt', 'N'], {})
 assert.equal(free.ok, true)
 assert.deepEqual(free.overrides, { newSession: ['Ctrl', 'Alt', 'N'] })
 
-/* ── 4. 清洗：只收已知可改项、非空字符串数组 ───────────────── */
 assert.deepEqual(sanitizeShortcutOverrides(undefined), {})
 assert.deepEqual(sanitizeShortcutOverrides('nope'), {})
 assert.deepEqual(
@@ -128,7 +115,6 @@ assert.deepEqual(
 )
 assert.deepEqual(shortcutOverridesFromSettings(null), {}, '拿不到设置时是空覆盖')
 
-/* ── 5. 恢复默认 ───────────────────────────────────────────── */
 assert.deepEqual(clearShortcutOverrides({}, 'openRuns'), {}, '没有覆盖时保持原样')
 assert.deepEqual(clearShortcutOverrides({ openRuns: ['Ctrl', 'Alt', 'J'] }, 'openRuns'), {}, '只清一项')
 assert.deepEqual(clearShortcutOverrides({ openRuns: ['Ctrl', 'Alt', 'J'] }), {}, '不传 id 清全部')
@@ -136,7 +122,6 @@ assert.deepEqual(clearShortcutOverrides({ openRuns: ['Ctrl', 'Alt', 'J'] }), {},
 assert.deepEqual(findShortcutConflicts(SHORTCUTS), [], '默认注册表没有重复键位')
 assert.equal(findShortcutConflicts(applyShortcutOverrides({ newSession: ['Ctrl', 'K'] })).length, 1, '覆盖造成的重复能被抓出')
 
-/* ── 6. 文案两语齐全且占位符一致 ───────────────────────────── */
 const shortcutsTextMod = await loadTs('../src/renderer/src/features/settings/shortcuts/shortcuts-text.ts')
 const zh = shortcutsTextMod.shortcutsText('zh-CN')
 const en = shortcutsTextMod.shortcutsText('en-US')
@@ -147,7 +132,6 @@ for (const key of ['note', 'recording', 'restoreDefault', 'restoreAll', 'conflic
 assert.ok(zh.conflictWith.includes('{name}') && en.conflictWith.includes('{name}'), '冲突文案保留 {name} 占位符')
 assert.ok(zh.conflictFound.includes('{list}') && en.conflictFound.includes('{list}'), '总冲突文案保留 {list} 占位符')
 
-/* ── 7. 分区源码契约（静态） ───────────────────────────────── */
 const section = readFileSync(here('../src/renderer/src/features/settings/shortcuts/ShortcutsSettings.tsx'), 'utf8')
 assert.ok(section.includes('shortcutOverridesFromSettings'), '分区从设置读取并清洗覆盖')
 assert.ok(section.includes('applyShortcutOverrides'), '分区经改绑纯函数取生效键位')

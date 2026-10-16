@@ -51,7 +51,6 @@ assert.equal(pending.size, 0, 'removed notices release their timers')
 assert.equal(optionKey('same', 0) === optionKey('same', 1), false, 'duplicate display options receive distinct keys')
 timers.dispose()
 
-// Compile the real changed TSX modules in isolation: syntax/JSX regressions are caught without app build.
 const files = [
   'src/renderer/src/components/shell/UiBridge.tsx',
   'src/renderer/src/components/shell/PeerApprovalDialog.tsx',

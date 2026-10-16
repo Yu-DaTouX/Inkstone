@@ -4,9 +4,7 @@ export interface MarketPackage {
   description: string
   source: string
   publisher: string
-  /** npm package page; always present for a valid entry. */
   npmUrl: string
-  /** Repository or homepage declared by the publisher, https only. */
   homepage?: string
 }
 export interface MarketSearchResult {
@@ -20,4 +18,5 @@ export interface PluginExportResult {
   cancelled?: boolean
   path?: string
   error?: string
+  existed?: boolean
 }

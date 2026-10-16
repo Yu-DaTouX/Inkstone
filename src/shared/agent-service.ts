@@ -1,4 +1,3 @@
-/** Host-neutral contracts; persistent facts belong to the runtime service. */
 export type ServiceTaskStatus = 'ready' | 'running' | 'waiting_approval' | 'completed' | 'cancelled' | 'failed' | 'uncertain'
 export interface TaskAuthority {
   readRoots: string[]

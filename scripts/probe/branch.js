@@ -1,13 +1,3 @@
-/*
- * 会话分叉树（左栏）——用户要求：
- *   · 会话栏**不要**那个「分支」动作按钮（创建分支只在对话窗口里）
- *   · 分叉树**默认折叠**，开关放在**会话标题旁边**
- *   · 展开后列出每条分支：编号、分叉自哪句话、点击跳过去
- *   · 子会话行上也要有编号 `#N` 与来源
- *
- * 数据来自 pi 的 `session` 头 `parentSession`。fixture 是合成的分支家族
- * （父 + 两个子，见 test-live 的 writeBranchFamily），不依赖真实会话。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => { out.push((c ? '  ✓ ' : '  ✗ ') + s); return !!c }
@@ -16,7 +6,6 @@
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
   const sessionPath = (el) => el?.closest('.srow-wrap')?.getAttribute('data-session-path') || ''
-  /* 会话标题会被后续 session_info 改写；夹具身份只能看稳定文件路径。 */
   const isFamilyPath = (value) => String(value ?? '').toLowerCase().includes('yan-family-parent-')
   const hasFamilyRow = () => qa('.srow').some((el) => isFamilyPath(sessionPath(el)))
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -47,7 +36,6 @@
     }
     store.getState().setRailPinned(true)
     await until(() => store.getState().conn === 'ready', 25000)
-    /* 全量场景下前一条探针可能刚切过会话；显式刷新一次，避免拿到首帧的旧列表。 */
     await store.getState().refreshSessions?.()
     await until(
       () => store.getState().sessions.some((s) => isFamilyPath(s.path)),
@@ -55,13 +43,6 @@
     )
     await until(hasFamilyRow, 20000)
     await sleep(900)
-    /*
-     * 项目行现在拆成「切项目」+「折叠」（N05）。全量回归会把前面的场景
-     * 产生的项目 / localStorage 状态带进来：项目区可能本身收起，合成项目
-     * 也可能落在「更多项目」之后。这里按可见 UI 逐层打开，不能只点一遍
-     * 初始 DOM，否则刚好在项目列表异步刷新时就会把“找不到父会话”误报成
-     * 分叉树回归。
-     */
     const revealFamily = async () => {
       for (let i = 0; i < 20; i++) {
         const head = q('[data-testid="rail-projects-head"]')
@@ -71,9 +52,6 @@
         for (const h of qa('[data-testid="rail-project-fold"]')) {
           if (h.getAttribute('aria-expanded') === 'false') click(h)
         }
-        /* 全量回归时，合成家族可能落在某个项目的第 6 个会话之后；
-         * 只展开项目本身仍会把它藏在「更多会话」下面。把每个项目的会话
-         * 预览也打开，避免探针依赖前置场景恰好留下的 rail 展开状态。 */
         for (const moreSessions of qa('[data-testid="rail-more-sessions"]')) {
           if (moreSessions.getAttribute('data-expanded') !== '1') click(moreSessions)
         }
@@ -112,7 +90,6 @@
 
     log('=== 3. 展开后：递归树只挂在唯一父节点，行宽统一 ===')
     if (toggle) {
-      // 开关是 .srow 的兄弟（不能嵌在行按钮里），且紧挨标题
       ok(toggle.parentElement?.classList.contains('srow-row'), '开关与标题在同一行主体里')
       ok(!!toggle.closest('.srow-wrap')?.querySelector('.srow'), '行主体里还有会话按钮')
 

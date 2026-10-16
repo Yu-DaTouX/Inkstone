@@ -1,18 +1,3 @@
-/**
- * 浏览器页签原生视图跨窗口转移适配的纯本地单测（v3 · WP-30 弹出 · browser）。
- *
- * 不启动 Electron、不开真实窗口、不起浏览器、不联网、不写用户数据。
- *
- * 覆盖两段：
- *   1. `windows/pane-browser-transfer.ts` 的租约/移动/端口/失效逻辑 —— 用假
- *      WebContentsView / BrowserWindow / 宿主桥，直接断言 contentView 挂载关系、
- *      相同 webContents id、没有新建视图、没有 loadURL。
- *   2. `main/browser.ts` 的宿主侧 host-transfer 增量 API 与「主窗口旧
- *      setBounds / setViewVisible 不得移动或隐藏已借出视图」的守卫 —— 用 esbuild
- *      把 `electron` 换成内存替身后编译真实控制器。
- *
- * 可独立执行：node scripts/test-v3-pane-browser-transfer.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -44,8 +29,6 @@ async function checkAsync(name, fn) {
 }
 
 const dir = await mkdtemp(join(tmpdir(), 'v3-pane-browser-transfer-'))
-
-/* ── 内存 electron 替身：只实现 browser.ts 用到的面 ─────────────────── */
 
 const electronMock = `
 class FakeContentView {
@@ -137,8 +120,6 @@ async function compile(entry, outfile, useElectronMock) {
   })
   return import(pathToFileURL(outfile).href)
 }
-
-/* ── 假宿主 / 假视图 / 假窗口（适配器段） ──────────────────────────── */
 
 class FakeView {
   constructor(webContentsId) {
@@ -257,7 +238,6 @@ try {
   const transferMod = await compile('src/main/windows/pane-browser-transfer.ts', join(dir, 'transfer.mjs'), false)
   const shared = await compile('src/shared/pane-popout.ts', join(dir, 'shared.mjs'), false)
 
-  /* ═══════════════ 纯助手 ═══════════════ */
   console.log('坐标规整')
   check('非有限值丢弃，负坐标归零，宽高至少 1px', () => {
     assert.equal(transferMod.normalizeTransferBounds(null), null)
@@ -270,7 +250,6 @@ try {
     })
   })
 
-  /* ═══════════════ 适配器：借出 / 改挂 ═══════════════ */
   console.log('适配器：借出与改挂')
   resetCounters()
   {
@@ -327,7 +306,6 @@ try {
     })
   }
 
-  /* ═══════════════ 适配器：顺移目标窗口 ═══════════════ */
   console.log('适配器：换目标窗口')
   resetCounters()
   {
@@ -349,7 +327,6 @@ try {
     })
   }
 
-  /* ═══════════════ 适配器：端口校验 ═══════════════ */
   console.log('适配器：受限端口')
   resetCounters()
   {
@@ -396,7 +373,6 @@ try {
     })
   }
 
-  /* ═══════════════ 适配器：归还 / 失效幂等 ═══════════════ */
   console.log('适配器：归还与失效')
   resetCounters()
   {
@@ -456,7 +432,6 @@ try {
     })
   }
 
-  /* ═══════════════ 适配器：错误回滚 / 宿主回收 ═══════════════ */
   console.log('适配器：错误回滚与宿主回收')
   resetCounters()
   {
@@ -484,7 +459,6 @@ try {
     const view = host.addTab('tab-7', 507, source)
     const transfer = transferMod.createPaneBrowserTransfer(host)
     transfer.begin({ tabId: 'tab-7', ownerKey: 'sess-a', generation: 1, target })
-    /* 模拟宿主关闭页签：先本地失效，再由宿主回调 revoke。 */
     host.tabs.delete('tab-7')
     host.revokes.get('tab-7')?.('tab-closed')
     host.revokes.delete('tab-7')
@@ -517,7 +491,6 @@ try {
     })
   }
 
-  /* ═══════════════ 适配器：多页签 / 多归属隔离 ═══════════════ */
   console.log('适配器：多页签与多归属隔离')
   resetCounters()
   {
@@ -553,7 +526,6 @@ try {
     })
   }
 
-  /* ═══════════════ 共享契约桥 ═══════════════ */
   console.log('共享契约桥')
   resetCounters()
   {
@@ -591,7 +563,6 @@ try {
     })
   }
 
-  /* ═══════════════ 真实 browser.ts：借出守卫 ═══════════════ */
   console.log('浏览器控制器：借出守卫')
   resetCounters()
   {
@@ -628,7 +599,6 @@ try {
       assert.equal(begin.transfer.view, originalView)
       assert.equal(begin.transfer.sourceWindow, mainWin)
     })
-    /* 模拟适配器把视图改挂到独立窗口。 */
     mainWin.contentView.removeChildView(originalView)
     popupWin.contentView.addChildView(originalView)
     originalView.setVisible(true)
@@ -667,7 +637,6 @@ try {
       assert.equal(originalView.__visible, true)
     })
 
-    /* 页签关闭：宿主回收借出并回调适配器。 */
     const second = controller.beginHostTransfer({ tabId, ownerKey: 'sess-a', generation: 2, onRevoke: (reason) => { revoked = reason } })
     assert.equal(second.ok, true)
     await controller.closeTab(tabId)
@@ -679,7 +648,6 @@ try {
     await controller.close()
   }
 
-  /* ═══════════════ 真实适配器 × 真实控制器集成 ═══════════════ */
   console.log('适配器 × 控制器集成')
   resetCounters()
   {

@@ -1,7 +1,3 @@
-/**
- * 检查点（回退代码）的 IPC 适配：列出、预览、恢复、撤销。
- * 目录与会话身份都取当前活动实例，渲染端不能指定别的目录。
- */
 import { reserveWorkspaceMutation } from '../workspace-mutation'
 import { resolve } from 'node:path'
 import type { IpcRegistrar } from './registrar'
@@ -11,7 +7,6 @@ import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } fro
 
 export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost): void {
   const { handle } = ipc
-  /** 当前活动会话的项目目录与会话键；没有活动会话就是 null */
   const target = (): { cwd: string; key: string } | null => {
     const agent = host.ac()
     const state = agent?.getState()

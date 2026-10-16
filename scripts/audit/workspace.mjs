@@ -1,4 +1,3 @@
-/** Repository document check and private catalog. Never moves/deletes files or follows links. */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -66,7 +65,6 @@ if (args.includes('--report')) {
         if (ent.isDirectory()) { walk(p); continue }
         const stat = fs.statSync(path.join(root, p))
         const row = { path: p, category: category(p), git: tracked.has(p) ? 'tracked' : candidates.has(p) ? 'untracked' : 'ignored', bytes: stat.size, modified: stat.mtime.toISOString() }
-        // Windows device names and credentials are cataloged without reading contents.
         if (!p.startsWith('.local-docs/') && !/^(?:nul|con|prn|aux|com\d|lpt\d)(?:\.|$)/i.test(ent.name) && !/^(?:auth\.json|\.env(?:\..*)?|.*\.key)$/i.test(ent.name)) {
           if (/\.(?:md|txt|png|jpe?g|svg|gif|webp|ico|bmp|html|mmd)$/i.test(p)) {
             const data = fs.readFileSync(path.join(root, p))

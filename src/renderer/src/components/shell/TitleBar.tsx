@@ -10,46 +10,18 @@ import { SubagentIndicator } from './SubagentIndicator'
 export type Theme = 'dark' | 'light'
 
 interface Props {
-  /** 左栏（侧边栏）开关 —— 在标题栏最左上（对齐 Codex） */
   onToggleRail: () => void
   railOpen?: boolean
-  /** 左栏收起时，指针停在开关上预览左栏（悬停展开） */
   onRailHover?: (inside: boolean) => void
-  /** 内置浏览器开关 —— 与工具栏独立，收起工具栏不影响它 */
   onToggleBrowser?: () => void
   browserOpen?: boolean
   onSettings?: () => void
-  /** 窗口是否置顶 */
   alwaysOnTop?: boolean
   onToggleAlwaysOnTop?: () => void
   maximized?: boolean
-  /** 标题栏中段：会话标题与会话级入口（SessionHeader），与应用主栏合为一条 */
   center?: ReactNode
 }
 
-/**
- * 标题栏 —— Win11 风格。
- *
- * 布局（从左到右）：
- *   [侧栏开关] [砚] ······ [连接 · 工作目录] ······ [置顶] [工具栏开关] [— □ ✕]
- *
- * ── 面板开关为什么在标题栏两端（用户要求，参考 Codex 截图）──
- * 这两个开关的位置**与面板收放无关**：收起后它们仍在原处，
- * 所以不存在「收起后开关跟着消失 / 移位」的问题。
- *
- * 曾经把开关搬进面板内部（“开关贴着它控制的东西”），
- * 但那样收起后面板跟着塌陷，就必须给收起态**保留一条宽度**
- * （之前是 38px）来放那个按钮 —— 那条被保留下来的宽度让
- * 中栏变窄/变宽，连带把导航轨的位置算错（用户报的错位）。
- * 开关回到标题栏后，收起就是真的 0 宽，那条保留下来的宽度也就不用存在了。
- *
- * ── 为什么右侧只剩这几个 ──
- * 「中/EN」与「主题」在设置面板的「外观」tab 里有完整切换器，
- * 标题栏再放一份是重复入口。设置齿轮在左栏底部。
- *
- * 拖拽区由 electron.css 的 -webkit-app-region: drag 负责，
- * 所有按钮显式 no-drag。
- */
 export function TitleBar({
   onToggleRail,
   railOpen,
@@ -67,10 +39,6 @@ export function TitleBar({
   return (
     <header className="titlebar">
       <div className="tb-left">
-        {/*
-         * 侧栏开关：标题栏**最左上角**（对齐 Codex 的位置）。
-         * 它不随侧栏收放而移动/消失 —— 这是它与「放进面板内部」的关键区别。
-         */}
         <Tip label={railOpen ? t('rail.collapse') : t('rail.expand')} shortcut={KEY_BINDINGS.toggleRail.keys}>
           <button
             className={`tb-icon ${railOpen ? 'on' : ''}`}
@@ -85,33 +53,17 @@ export function TitleBar({
             <Icon name="sidebar-left" size={14} />
           </button>
         </Tip>
-        {/* 品牌只在这里出现一次：左栏收起时它仍然可见 */}
         <span className="tb-brand" data-testid="app-brand">
           <BrandMark size={16} />
           <span className="tb-name">砚</span>
           <span className="tb-word" aria-hidden>INKSTONE</span>
         </span>
-        {/* 会话标题在中段（SessionHeader），这里不重复；一个信息只在一个地方出现。 */}
       </div>
 
-      {/*
-       * 标题栏中段：会话标题与会话级入口（视图、环境、目标、会话菜单），
-       * 与应用主栏合为一条，参照 Claude 桌面端。没有「已连接 · 工作目录」：
-       * 连接失败有 .connbar 在正文上方提示，工作目录在设置里看。
-       * 这个元素必须在 —— .titlebar 是三列 grid（auto / 1fr / auto），
-       * 少一个子元素右侧那组会被摆到中列里拉宽。
-       */}
       {center ? <div className="tb-center">{center}</div> : <div className="tb-center" aria-hidden />}
 
       <div className="tb-right">
-        {/* 本会话的子代理：有在跑的或需处理的才出现 */}
         <SubagentIndicator />
-        {/*
-         * 置顶开关。
-         *
-         * 面板开关搬走后就只剩它一个内容按钮（更靠右、更靠近窗口控制），
-         * 与「齿轮在左栏底部」那种“入口贴着功能”的布局一致。
-         */}
         <Tip label={alwaysOnTop ? t('tb.unpin') : t('tb.pin')}>
           <button
             className={`tb-icon tb-pin ${alwaysOnTop ? 'on' : ''}`}
@@ -125,7 +77,6 @@ export function TitleBar({
           </button>
         </Tip>
 
-        {/* 工作区工具：打开文件、终端、审查等磁贴，菜单里另有排列与已隐藏面板 */}
         <Tip label={t('tb.openTools')}>
           <button
             className="tb-icon"
@@ -138,7 +89,6 @@ export function TitleBar({
           </button>
         </Tip>
 
-        {/* 内置浏览器开关：与工具栏独立（收起工具栏时浏览器仍可独占右栏） */}
         <Tip label={browserOpen ? t('browser.close') : t('browser.open')}>
           <button
             className={`tb-icon ${browserOpen ? 'on' : ''}`}
@@ -152,7 +102,6 @@ export function TitleBar({
           </button>
         </Tip>
 
-        {/* ---- Win11 窗口控制：46×32 方形，紧贴右上角 ---- */}
         <div className="wctrl">
           <Tip label={t('tb.minimize')}>
             <button
@@ -161,7 +110,6 @@ export function TitleBar({
               onClick={() => win.minimize()}
               data-testid="win-min"
             >
-              {/* 最小化：一条横线 */}
               <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
                 <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
               </svg>
@@ -176,14 +124,12 @@ export function TitleBar({
               data-testid="win-max"
             >
               {maximized ? (
-                /* 还原：两个错开的方框 */
                 <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
                   <path d="M2.5 2.5h6v6h-6z" fill="none" stroke="currentColor" strokeWidth="1" />
                   <path d="M1.5 1.5h6" fill="none" stroke="currentColor" strokeWidth="1" />
                   <path d="M1.5 1.5v6" fill="none" stroke="currentColor" strokeWidth="1" />
                 </svg>
               ) : (
-                /* 最大化：一个方框 */
                 <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
                   <rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1" />
                 </svg>
@@ -198,7 +144,6 @@ export function TitleBar({
               onClick={() => win.close()}
               data-testid="win-close"
             >
-              {/* 关闭：X */}
               <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
                 <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1" />
               </svg>

@@ -1,15 +1,3 @@
-/**
- * 工具步骤：**默认折叠**的一行摘要 +（展开后的）步骤列表 +（始终可见的）进行中步骤。
- *
- * 参考 v2 `chat/ToolRow.tsx` / `chat/TurnProcess.tsx` 的行为，但不引入 v2 控件与
- * v2 CSS：步骤行的分组、运行/失败始终可见、详情读取已记录内容（不重跑工具）等
- * 规则保留；差异与终端详情在 WP-30 右侧面板迁移前，先在行内显示原始命令与输出。
- *
- * 失败的那一步自动展开详情；长输出先截断成预览，展开/收起用共享按钮（原生可聚焦）。
- *
- * 纯逻辑（调用森林、是否收敛、目标摘要、文件差异读取）取自 `shared/tool-call-tree`
- * 与 `shared/ipc` 的类型，不复制 v2 组件。
- */
 import { useState, type JSX, type ReactNode } from 'react'
 import { useI18n, useT, type TFunc } from '../../i18n'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
@@ -21,10 +9,8 @@ import { Icon } from './Icon'
 import { Button, IconButton } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
 
-/** 长输出预览行数：超出先只渲染这么多行，展开后再铺全 */
 const OUTPUT_PREVIEW_LINES = 16
 
-/** 工具 → 详情类型；未知工具按「结果」处理 */
 export function detailKind(name: string): 'command' | 'change' | 'result' {
   if (name === 'bash' || name === 'powershell' || name === 'shell' || name === 'run' || name === 'exec') return 'command'
   if (name === 'edit' || name === 'write' || name === 'multi_edit' || name === 'multiEdit' || name === 'apply_patch' || name === 'patch') return 'change'
@@ -41,7 +27,6 @@ function isRunning(call: UIToolCall): boolean {
   return call.status === 'running' || call.status === 'pending'
 }
 
-/** 「改了 M 个文件 +a −d」的汇总：只统计有执行前后快照的改动，拿不到就不写 */
 function changeStats(tools: UIToolCall[]): { files: number; additions: number; deletions: number } | null {
   const paths = new Set<string>()
   let additions = 0
@@ -62,7 +47,6 @@ function changeStats(tools: UIToolCall[]): { files: number; additions: number; d
   return { files: paths.size, additions, deletions: counted > 0 ? deletions : -1 }
 }
 
-/** 摘要行：按类别写「已搜索 3 次, 已读取 2 个文件… 以及另外 4 项操作」，改动与失败跟在后面 */
 function summaryText(t: TFunc, zh: boolean, tools: UIToolCall[], failed: number): { label: string; stats: ReactNode } {
   const stats = changeStats(tools)
   const label = toolGroupLabel(tools, zh) + (failed > 0 ? (zh ? `（${failed} 个失败）` : ` (${failed} failed)`) : '')
@@ -84,7 +68,6 @@ export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | nul
   const forest = toolCallForest(tools)
   const running = tools.filter(isRunning)
   const failed = tools.filter((c) => c.status === 'error' && !c.cancelled).length
-  /* 失败时自动展开那一步（失败是首要信息）；用户手动开合优先 */
   const open = manual ?? failed > 0
   const { label, stats } = summaryText(t, zh, tools, failed)
 
@@ -101,7 +84,6 @@ export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | nul
           {forest.map((node) => <StepNode key={node.call.id} node={node} depth={0} />)}
         </div>
       ) : (
-        /* 折叠时仍把「正在跑的那一步」单独铺出来：运行中不能什么都看不见 */
         running.length ? (
           <div className="v3-steps-live" data-testid="v3-steps-live">
             {forest.filter((node) => !isSettledToolNode(node)).map((node) => <StepNode key={node.call.id} node={node} depth={0} />)}
@@ -109,7 +91,6 @@ export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | nul
         ) : null
       )}
 
-      {/* 详情去向提示：差异/终端在 WP-30 右侧面板落地前，先说清楚当前显示的是原始记录 */}
       {open && tools.some((c) => detailKind(c.name) === 'command' || detailKind(c.name) === 'change') ? (
         <div className="v3-steps-note"><Icon name="external" size={13} /><span>{tt('toolDetail')}</span></div>
       ) : null}
@@ -117,19 +98,16 @@ export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | nul
   )
 }
 
-/** 一步（可能带嵌套子调用）：标题行 + 展开详情 */
 function StepNode({ node, depth }: { node: ToolCallNode; depth: number }): JSX.Element {
   const t = useT()
   const [manual, setManual] = useState<boolean | null>(null)
   const call = node.call
   const running = isRunning(call)
   const failed = call.status === 'error' && !call.cancelled
-  /* 失败的那一步自动展开详情；用户手动开合优先 */
   const open = manual ?? failed
   const secs = durationSecs(call)
   const target = summarize(call) || t('tool2.noTarget')
   const state = running ? 'run' : failed ? 'err' : call.cancelled ? 'warn' : 'ok'
-  /* 第四级以下平铺，避免无限缩进 */
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children
 
   return (
@@ -149,7 +127,6 @@ function StepNode({ node, depth }: { node: ToolCallNode; depth: number }): JSX.E
   )
 }
 
-/** 展开后的已记录内容：不会重新执行工具，也不会重新读盘 */
 function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   const t = useT()
   const [copied, setCopied] = useState(false)
@@ -197,10 +174,6 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   )
 }
 
-/**
- * 已记录的输出：超过预览行数时先截断，再给一个共享按钮展开/收起。
- * 截断只发生在渲染层，不修改记录；按钮是原生按钮（Tab 可达，`aria-expanded` 反映状态）。
- */
 function StepOutput({ text }: { text: string }): JSX.Element {
   const tt = useSessionText()
   const [expanded, setExpanded] = useState(false)

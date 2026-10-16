@@ -1,23 +1,3 @@
-/*
- * 推理流（2026-09-23 用户决定版）。
- *
- * 这里不烧 token：直接往真实 renderer store 注入带 thinking 的助手消息，
- * 但渲染、状态、滚动和开合都走生产代码。
- *
- * 验收重点：
- *   · 默认**折叠**成一行，显示原文里最新的一句（正在成形的末句也算）
- *   · 单击头部在**原位**展开半窗宽、窗口高四分之一的详情，内部滚动，入口不掉
- *   · 开合只由用户动作驱动：流式不自动弹开，回合结束**不自动收起**
- *   · 展开后贴底才跟随新增内容；用户上滚阅读时位置保持
- *   · 逐字按字素推进，emoji 不被拆坏；reduced-motion 直接给全文且运行中切换生效
- *   · 没有推理不渲染空壳
- *   · 多段推理汇总在正文下方，正文续写时过程节点不重挂
- *   · 切会话（换消息 id）不继承展开状态
- *
- * ⚠️ 这份探针在 2026-09-23 之前断言的是**相反**的契约
- *    （默认展开 / 裁掉开头贴底 / 回合结束自动折叠 / 出现「展开全部」按钮）。
- *    改的是产品决定，不是修 bug；旧断言已按新契约反转，别再改回去。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -25,10 +5,6 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
   const store = window.__yanStore
-  /*
-   * 过程入口默认折叠（阅读优先），而折叠态下推理块**不在 DOM 里**
-   * （`TurnProcess` 只在 open 时渲染它）。先铺开再找它。
-   */
   const openProcess = async () => {
     for (let i = 0; i < 20; i++) {
       const toggle = q('[data-testid="turn-process-toggle"]')
@@ -41,7 +17,6 @@
     return false
   }
 
-  /* 外层（.reason-body）承载 aria/尺寸/滚动；内层 data-testid 只承载文字。 */
   const body = () => q('.reason-body')
   const inner = () => q('[data-testid="reasoning-body"]')
   const peek = () => q('[data-testid="reasoning-preview"]')?.textContent ?? null
@@ -49,12 +24,10 @@
     const el = body()
     return !!el && !el.hasAttribute('hidden') && el.getBoundingClientRect().height > 20
   }
-  /** 内容是否真的超出了钉住的高度 */
   const overflows = () => {
     const el = body()
     return !!el && el.scrollHeight > el.clientHeight + 1
   }
-  /** 是否贴着底边（= 显示的是最新内容） */
   const atBottom = () => {
     const el = body()
     return !!el && el.scrollTop + el.clientHeight >= el.scrollHeight - 2
@@ -71,11 +44,6 @@
     '关键是把羊先带过去，再把羊带回来。'.repeat(80)
 
   const push = (payload) => store.getState().applyPush({ ch: 'sync', payload })
-  /*
-   * 注入 + 展开过程入口：用例读的是过程里的推理块，而过程入口默认折叠
-   * （阅读优先），折叠态下推理块不在 DOM 里。注入当下 DOM 里还是上一条
-   * 回合的入口，点它没用 —— 所以先等新回合上屏再点。
-   */
   const pushOpen = async (payload) => {
     push(payload)
     await sleep(250)
@@ -121,7 +89,6 @@
   ok(!!cap, '推理块被渲染（上游有 thinking 文本）')
   if (!cap) return out.join('\n')
 
-  /* ---- 1. 流式期间也是默认折叠的最新句 ---- */
   const label = q('.reason-label')?.textContent ?? ''
   ok(/推理中|思考中/.test(label), `正在推理时标题 =「${label}」`)
   ok(!isOpen(), '流式推理也保持默认折叠（不再随回合自动展开）')
@@ -131,7 +98,6 @@
     '没有旧固定窗口、尺寸把手、回到最新按钮或「展开全部」出口'
   )
 
-  /* 逐字流式：body 的文字会逐步追上来，轮询等它追到结尾。收起时不挂全文，先展开再量。 */
   click('[data-testid="reasoning-toggle"]')
   await sleep(260)
   let shownLen = 0
@@ -147,7 +113,6 @@
   await sleep(260)
   ok((peek() ?? '').includes('关键是把羊先带过去，再把羊带回来。'), '折叠预览显示最新完整句而非首行')
 
-  /* ---- 2. 最新句的取句边界（中文 / 英文引号 / 句点版本号 / 无标点） ---- */
   {
     const cases = [
       ['第一句。正在处理', '正在处理'],
@@ -167,7 +132,6 @@
     }
   }
 
-  /* ---- 2b. 长句一行放不下时保留**尾端**（不靠 CSS，见 DESIGN V-2a） ---- */
   {
     const headText = '开头这些内容应该被截掉'.repeat(6)
     const tailText = '尾端标记🧭END'
@@ -189,10 +153,6 @@
     ok(peekEl?.firstElementChild?.getAttribute('dir') === 'ltr', '预览内层 dir=ltr（隔离 bidi，顺序不重排）')
   }
 
-  /*
-   * 详情栏不再有三行标题（用户：「直接写内容就行了 现在有三行标题太复杂」）。
-   * 只留正文 —— 模型的显式 Markdown 标题也不再被单独拎出来当标签。
-   */
   await pushOpen([
     { id: 'reason-title-user', role: 'user', text: 'title case' },
     { id: 'reason-title-assistant', role: 'assistant', text: '', thinking: '## 核对图片 URL\n\n先检查真实路径。' }
@@ -212,7 +172,6 @@
   )
   click('[data-testid="reasoning-toggle"]')
 
-  /* ---- 3. 单击头部：在原位展开全文 ---- */
   await injectThinking()
   setTurnStreaming(true)
   await sleep(600)
@@ -229,31 +188,19 @@
   ok(body().getBoundingClientRect().height <= window.innerHeight * 0.25 + 2, '全文展开后有高度上限')
   ok(/auto|scroll/.test(expandedCS.overflowY), '超出上限的部分自己滚动')
   ok(overflows(), '超长全文确实发生内部滚动')
-  /*
-   * 高度口径：窗口高的四分之一（用户 2026-09-25：「推理过程和命令的
-   * 展开大小也要限制为四分之一」，三处统一：产物图片含衬底 / 推理过程 /
-   * 命令列表）。早先是「半窗高」，那是「面积 1/4」的算法 ——
-   * 配上 50vw 的宽度实际会占掉中栏整宽 + 半个窗口高，看着像半屏。
-   */
   const capExpected = window.innerHeight * 0.25
   const capActual = body().getBoundingClientRect().height
   ok(
     Math.abs(capActual - capExpected) <= 2,
     `展开高度是窗口高的四分之一（${Math.round(capActual)}px ≈ ${Math.round(capExpected)}px）`
   )
-  /* 展开块现在是与命令块表同宽的整列，不再限半窗宽；只要不超出中栏 */
   ok(body().getBoundingClientRect().width <= (q('.center')?.getBoundingClientRect().width ?? window.innerWidth) + 1, '展开宽度不超出中栏')
 
-  /*
-   * 展开后不能被输入框挡住（用户：「展开这个窗口的时候会被输入框挡住」）。
-   * 断言展开态整体的底边不越过输入框顶边 —— 展开时会把块滚进可视区。
-   */
   const inputTop = q('.composer')?.getBoundingClientRect().top ?? window.innerHeight
   const openBottom = q('.reason')?.getBoundingClientRect().bottom ?? 0
   out.push(`  展开块底边 ${Math.round(openBottom)} / 输入框顶边 ${Math.round(inputTop)}`)
   ok(openBottom <= inputTop + 1, '展开后整块在输入框之上（不被挡住）')
 
-  /* 头部在 body 外面：body 内部滚动时它一动不动（收起入口不会滚丢） */
   const headTop1 = q('[data-testid="reasoning-toggle"]')?.getBoundingClientRect().top
   body().scrollTop = 99999
   await sleep(160)
@@ -262,8 +209,6 @@
   ok(headTop1 === headTop2, '推理块内部滚动时头部不动（收起入口不会滚丢）')
   ok(atBottom(), '滚到底后确实贴底')
 
-  /* ---- 4. 用户上滚阅读时，新内容不把位置抢回底部 ---- */
-  /* 离开「贴底」容差（24px）：scrollTop=0 时距底 49px，再更新才会验到“不跟随”。 */
   body().scrollTop = 0
   await sleep(80)
   out.push(
@@ -278,7 +223,6 @@
   out.push(`  上滚诊断：60ms ${midTop} → 500ms ${Math.round(held)}（期望保持 0）`)
   ok(held <= 1, '用户上滚阅读时新增内容不抢回底部（位置保持）')
 
-  /* 回到贴底后恢复跟随 */
   body().scrollTop = body().scrollHeight
   await sleep(80)
   out.push(`  回到底部：距底=${body().scrollHeight - body().clientHeight - body().scrollTop}`)
@@ -286,7 +230,6 @@
   await sleep(500)
   ok(atBottom(), '回到贴底后继续跟随新内容')
 
-  /* ---- 5. 同一头部入口收起，回到最新句预览 ---- */
   click('[data-testid="reasoning-toggle"]')
   await sleep(300)
   ok(body().getAttribute('aria-hidden') === 'true', '同一头部入口收起全文并对辅助技术隐藏')
@@ -294,7 +237,6 @@
   ok(!!peek(), '收起后回到一行最新句预览')
   ok(q('[data-testid="reasoning-toggle"]')?.getAttribute('aria-expanded') === 'false', '头部按钮 aria-expanded=false')
 
-  /* ---- 6. 回合结束既不自动弹开、也不自动收起 ---- */
   {
     patch('r-a1', { thinkingLive: false, thinkingMs: 4200 })
     setTurnStreaming(true)
@@ -318,7 +260,6 @@
     ok(!isOpen(), '收起后保持折叠（回合已结束也不自动弹开）')
   }
 
-  /* ---- 7. 短推理 / 无推理 ---- */
   {
     await pushOpen([
       { id: 'r-user3', role: 'user', text: '随便想想' },
@@ -348,7 +289,6 @@
     ok(!!q('[data-tools="1"]') || !!q('.trow'), '工具行照常渲染')
   }
 
-  /* ---- 8. reduced-motion 运行中切换：已挂载也要停动画（R5） ---- */
   {
     let reduce = false
     const listeners = new Set()
@@ -373,26 +313,12 @@
       for (const cb of [...listeners]) cb({ matches: v })
     }
 
-    /*
-     * 推理块只在**挂载时**注册 matchMedia 监听（见 `Reasoning.tsx` 的
-     * `useEffect(..., [])`），而上一个用例已经把它挂在页面上 —— React 会复用
-     * 同一个实例，effect 不会重跑，后面的 setReduce 就没人接。
-     * 先清空消息让它卸载，替换完再注入。
-     */
     push([])
     await sleep(250)
 
-    /* 超过 900 字素的突发块按现有防积压规则立即追齐；这里测逐字路径。 */
     const typewriterText = THINK.slice(0, 600)
-    /*
-     * 组件**挂载时已有的文本会直接显示**（"早先流出来的"，不从头重播），
-     * 所以不能一次性把 600 字推进去再断言「还在逐字」——那量到的必然是全量。
-     * 要先用一个短前缀让它带文本挂载，再把消息补到全文，走的才是已挂载
-     * 组件接收增量文本的逐字路径。
-     */
     await injectThinking(typewriterText.slice(0, 2))
     setTurnStreaming(true)
-    /* 推理块在过程里，先保证它进了 DOM 再开始量逐字进度 */
     await openProcess()
     await sleep(50)
     if (!inner()) click('[data-testid="reasoning-toggle"]')
@@ -412,7 +338,6 @@
     window.matchMedia = realMM
   }
 
-  /* ---- 9. 切会话不继承展开状态 ---- */
   {
     await pushOpen([
       { id: 'sessA-user', role: 'user', text: '会话 A' },
@@ -435,7 +360,6 @@
     ok((peek() ?? '').startsWith('乙会话'), '切会话后预览从新会话内容开始（流式逐字继续推进）')
   }
 
-  /* ---- 10. 多段回复的过程汇总与节点身份 ---- */
   {
     const messages = [
       { id: 'segment-user', role: 'user', text: '连续完成任务' },
@@ -444,7 +368,6 @@
     ]
     await pushOpen(messages)
     setTurnStreaming(true)
-    /* sync 后先等新回合替换旧会话；只等 reasoning 存在会抓到上一场景的节点。 */
     for (let i = 0; i < 40 && !q('[data-turn-id="segment-a"] [data-testid="reasoning"]'); i++) await sleep(50)
     const caps = [...document.querySelectorAll('[data-testid="reasoning"]')]
     const firstResponse = q('[data-testid="turn-response"]')
@@ -463,7 +386,6 @@
   }
 
   } catch (error) {
-    /* 抛异常时也要把已有输出交回去，否则只能看到「没抓到 PROBE 输出」。 */
     out.push('  ✗ 探针异常：' + (error?.message ?? String(error)))
   }
   return out.join('\n')

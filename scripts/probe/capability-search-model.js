@@ -1,19 +1,3 @@
-/**
- * 端到端：**模型 → 自己发现能力 → 读技能正文 → 按技能产出回执**（实施-04 S2）。
- *
- * ── 这条为什么非有不可 ──
- *   04-S2 出货的是「能力目录 + 按需读技能正文」。单测能证明目录的过滤 / 打分 /
- *   去重是对的，但证明不了**模型真的会走这条路**：它得自己从能力说明找到
- *   `yan capabilities search`，从候选里挑出那个技能，再 `yan skill read` 读正文。
- *   这里提示词**不给命令名，也不给技能名** —— 给了就只验执行链，验不到发现链。
- *
- * ── 为什么标记能当产物证据 ──
- *   技能正文里那行 `YAN-CAPABILITY-PROBE-OK 7f3a91` **只存在于技能文件里**；
- *   提示词、夹具、别处都没有。模型只有真的读到技能正文，才可能写出它 ——
- *   所以「回复里出现这行」与「文件里出现这行」共同构成因果证据，而不是巧合。
- *
- * 花 token（cost: 1），只单独跑：`npm run test:live -- capsearch`。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -76,7 +60,6 @@
       calls.push({
         name: c.name,
         args: c.args ?? {},
-        /* 命令正文在 args 里；output 只是 stdout，不能拿它认“敲了哪条命令”。 */
         command: String(c.args?.command ?? m.text ?? ''),
         output: String(c.output ?? '')
       })
@@ -87,14 +70,6 @@
   const searchCalls = bashCalls.filter((c) => /yan capabilities search/.test(c.command))
   const skillReadCalls = bashCalls.filter((c) => /yan skill read/.test(c.command))
   const writeCalls = bashCalls.filter((c) => /capability-probe\.txt/.test(c.command))
-  /*
-   * 读技能正文有**两条官方路径**（[证据-04-S1] §4.3）：
-   *   ① 模型用 pi 的 `read` 工具直接读 SKILL.md（system prompt 里就给了 location）；
-   *   ② 宿主侧 `yan skill read`（确定性入口，额外给 contentHash 与来源追踪）。
-   * 实测模型默认走 ① —— 这不是缺陷，是本片就该接受的现实；
-   * 所以这里**只断言「正文读到了」**，至于 ② 的链路是否可用，由 cost 0 的
-   * `capcli` 场景直接对宿主验（分工与 browsercli / browserclimodel 一致）。
-   */
   const readToolCalls = calls.filter(
     (c) => c.name === 'read' && /yan-capability-probe[\\/]SKILL\.md/i.test(String(c.args?.path ?? ''))
   )

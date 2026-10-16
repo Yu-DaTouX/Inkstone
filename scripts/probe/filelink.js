@@ -1,15 +1,3 @@
-/*
- * Markdown 文件链接的呈现与点击（实施-11 H-4 的解析 / 呈现切片，cost 0）。
- *
- * 搬运自 DeepSeek Harness 的 `file-link.ts`（见 shared/links.ts 的许可说明）：
- * 在原有 `path:42` 之外支持 GitHub 风格的 `path#L42` / `path#L42-L60`，
- * 并保证「范围不被当成文件名」。这里验的是**接进界面之后**的行为：
- *   · 文件链接带 `data-link-kind="file"` 与 `data-line`；
- *   · title 里带行号（悬停能读到完整路径 + 行号）；
- *   · 范围链接取首行，不把 `#L1-L5` 当路径；
- *   · 点击真的走 `previewFile(path, line)`（主进程读文件），不做进程内导航。
- */
-
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -29,7 +17,6 @@
     localStorage.setItem('yan.onboarded', '1')
     await sleep(400)
 
-    /* 注入一条含三种文件引用的助手消息：普通、#L 单行、#L 范围。 */
     store.getState().applyPush({
       ch: 'sync',
       payload: [
@@ -68,7 +55,6 @@
       `范围链接的 title 写明 1-5（「${range?.getAttribute('title') ?? ''}」）`
     )
 
-    /* 点击必须走主进程读文件，而不是把渲染进程导航走（窗口里没有地址栏）。 */
     ranged?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(1400)
     const preview = store.getState().filePreview
@@ -86,11 +72,6 @@
     ok(!!document.querySelector('[data-testid="file-preview-markdown"]'), '切回阅读后显示 Markdown 呈现')
     ok(location.hash === '' || !location.hash.includes('L3'), '链接的 #L3 没有触发进程内导航')
 
-    /*
-     * 范围高亮（H-4）：点 `#L1-L5`，源码里 1..5 行要真的被标出来。
-     * README 只有 3 行正文，所以断言“高亮的行都 ≤ 5 且从 1 开始”，
-     * 而不是写死五行（否则这个 fixture 改长/改短就会假红）。
-     */
     range?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(1400)
     const rangedPreview = store.getState().filePreview
@@ -119,7 +100,6 @@
       `头部显示范围 1-5（实际 ${JSON.stringify(document.querySelector('[data-testid="file-preview-line"]')?.textContent ?? null)}）`
     )
 
-    /* 历史 cwd 必须是已授权的项目/会话目录，不能仅靠伪造 sourceCwd 越过宿主边界。 */
     const registered = await window.yan.patchSettings({ projects: [
       ...(store.getState().settings?.projects ?? []),
       { id: 'filelink-history-fixture', cwd: historicalCwd, name: '历史来源隔离夹具' }
@@ -154,10 +134,6 @@
     ok(normalizedAbs === normalizedHistorical, `相对链接解析到历史 cwd 下的 README（${historicalPreview?.data?.abs ?? '-'}）`)
     ok(normalizedAbs !== normalizedActive, '没有误用当前会话 cwd 下的同名 README')
 
-    /*
-     * 大文件窗口化（H-4）：指向第 4000 行的链接必须真的定位到那一段 ——
-     * 不是只读文件开头、也不是估算滚动位置。
-     */
     store.getState().applyPush({
       ch: 'sync',
       payload: [
@@ -190,7 +166,6 @@
     const bigPreviewRoot = [...document.querySelectorAll('[data-testid="file-preview"]')].find((node) => node.getAttribute('data-file-name') === 'big.txt')
     ok(!!bigPreviewRoot && !bigPreviewRoot.querySelector('.fp-row[data-line="1"]'), '没有把文件开头当成第一行（只核对当前 big.txt 预览，不误计其他文件窗格）')
 
-    /* H-4 出口 7：文件不在了 —— 保留原路径 + 重试 + 定位父目录 */
     store.getState().applyPush({
       ch: 'sync',
       payload: [
@@ -221,7 +196,6 @@
       '父目录真的算出来了（不是空按钮）'
     )
 
-    /* H-4 出口 3：文档内相对链接按**文档目录**解析（`../README.md` → 根 README） */
     await store.getState().previewFile(`${cwd}\\docs\\a.md`, undefined, cwd)
     await sleep(1500)
     const docLink = document.querySelector(

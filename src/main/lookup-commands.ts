@@ -1,10 +1,3 @@
-/**
- * `yan search …` 与 `yan knowledge …` 的实现：联网搜索（多来源，部分失败照常返回、
- * 全部失败不静默降级）与长期记忆的检索 / 读取 / 提议。
- *
- * 知识的项目身份由宿主按当前会话绑定（能力服务参数里的 projectId），不接受请求里的
- * projectId；模型的提议只落候选，不能自报用户已确认。
- */
 import type { CapabilityRunOptions } from './agent'
 import { CapabilityCommandError } from './capability-server'
 import { memoryStoreOf } from './personal-memory'
@@ -25,23 +18,19 @@ import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
 import { searchProjectKnowledge } from '../shared/project-memory-search'
 import { paramNumber, paramString } from './command-params'
 
-/** 本地读到的正文短于这个字数，当作「没读到」（SPA 空壳、付费墙）；有 Firecrawl key 时换它再试 */
 const THIN_PAGE_CHARS = 200
 
 export interface LookupCommandsHost {
   capabilityOpts(): CapabilityRunOptions | undefined
   cwd(): string
-  /** 没配置搜索 API 且用户没点过「不再提示」时，让界面提醒一次 */
   notifySearchApiMissing?(): void
 }
 
 export class LookupCommands {
-  /** 每次应用运行只提醒一次，避免连续搜索反复弹 */
   private searchApiHintSent = false
 
   constructor(private readonly host: LookupCommandsHost) {}
 
-  /** CLI 的 kebab-case 与请求文件的 camelCase 都要认；空串当没传 */
   searchString(params: Record<string, unknown>, keys: string[]): string | undefined {
     for (const key of keys) {
       const value = params[key]
@@ -59,23 +48,10 @@ export class LookupCommands {
     return undefined
   }
 
-  /**
-   * `yan search <动作>` 的实现点（实施-27 S3）。
-   *
-   * 两条口径：
-   *   ① **不静默降级**：所有来源都没取到时抛 `search_backend_unavailable` /
-   *      `search_timeout`，而不是回一个空结果让人以为「世上没有」；
-   *   ② **部分失败照常返回**：来源级状态里写清楚谁 ok、谁 empty、谁 error，
-   *      能不能用交给模型判断。
-   */
   async runSearchCommand(action: string, params: Record<string, unknown>) {
     if (action === 'doctor') {
       const status = await searchDoctor()
       return {
-        /*
-         * 只把**结构化字段**回给模型：`status.detail` 是 `opencli doctor` 的原始输出，
-         * 里面可能带本机路径 / 浏览器连接细节。详细原因走设置页的 IPC，不进工具结果。
-         */
         data: {
           available: status.available,
           version: status.version,
@@ -88,7 +64,6 @@ export class LookupCommands {
           available: status.available,
           version: status.version,
           code: status.code ?? null,
-          /* 与 `search.query` 的 summary 保持同一形状（对象数组），别同一个 key 两种写法 */
           sources: status.sources.map((s) => ({ id: s.id, ready: s.ready }))
         }
       }
@@ -179,14 +154,9 @@ export class LookupCommands {
       .map((s) => String(s).trim())
       .filter((s): s is SearchSourceId => s.length > 0)
 
-    /*
-     * 没指定来源时：通用网页来源排在专业站点之前。有 Brave key 用 Brave；
-     * 没有就用 Bing 网页搜索兜底，并提醒一次「可以配置搜索 API」。
-     */
     if (sources.length === 0) {
       const [hasTavily, hasBrave] = await Promise.all([resolveSearchKey('tavily'), resolveSearchKey('brave')])
       const hasKey = !!(hasTavily || hasBrave)
-      /* 中文：Bing 中文市场 + 360（中文社区、博客）；其余：DuckDuckGo + Bing（技术词更准） */
       const web: SearchSourceId[] = detectLocale(text) === 'zh' ? ['bing', 'so360'] : ['ddg', 'bing']
       sources.push(
         ...(hasTavily ? (['tavily'] as SearchSourceId[]) : []),
@@ -205,24 +175,17 @@ export class LookupCommands {
         text,
         ...(sources.length ? { sources } : {}),
         limitPerSource: this.searchNumber(params, ['limit-per-source', 'limitPerSource', 'limit']),
-        /* 多个网页来源并用时，总量放宽，免得专业站点被挤掉 */
         limitTotal: this.searchNumber(params, ['limit-total', 'limitTotal']) ?? (sources.length > 3 ? 24 : undefined),
         timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
       },
       { runner: searchRunner(), now: () => Date.now() }
     )
 
-    /*
-     * 失败也要把**逐来源状态**带上（`data` 会被落进结果文件）：模型得知道
-     * 是谁超时、谁报错、谁没装后端，才能自我纠正 —— 只回一句话的话，
-     * `search_failed` 里「见 data.sources」这句就成了空指引。
-     */
     const sourcesData = {
       query: outcome.query,
       sources: outcome.sources,
       ...(outcome.ignoredSources?.length ? { ignoredSources: outcome.ignoredSources } : {})
     }
-    /* 查询根本没发出去（空词 / 太长 / 来源名全写错）—— 用原错误码，不归到「后端挂了」 */
     if (outcome.error) {
       throw new CapabilityCommandError(outcome.error.code, outcome.error.message, sourcesData)
     }
@@ -260,7 +223,6 @@ export class LookupCommands {
           id: s.source,
           status: s.status,
           count: s.count,
-          /* 被总数上限挤掉时也要说 —— 否则 stdout 里「count 0」会被读成「没结果」 */
           ...(s.droppedByLimit ? { droppedByLimit: s.droppedByLimit } : {}),
           ...(s.code ? { code: s.code } : {})
         })),
@@ -270,11 +232,6 @@ export class LookupCommands {
     }
   }
 
-  /**
-   * 读网页：默认用本地隐藏窗口；读不出来（超时 / 网络错误）或正文几乎为空时，
-   * 若用户配了 Firecrawl key 就换它兜底。`via` 可以强制其一。
-   * `bad_url` / `private_host` 不兜底——那是地址本身不该读，换服务也一样。
-   */
   private async readWithFallback(
     url: string,
     read: { maxChars?: number; timeoutMs?: number },
@@ -304,23 +261,7 @@ export class LookupCommands {
     }
   }
 
-  /**
-   * `yan knowledge <动作>` 的实现点（实施-03 §6）。
-   *
-   * 三条硬规则（实施-03 §3/§6）：
-   *   ① **身份不由请求给**：一律用宿主绑定的 `capabilityOpts.projectId`；
-   *      请求里带 `projectId` 时只有两种结果 —— 与宿主一致（忽略）或不一致（拒），
-   *      后者把「越权尝试」变成可观测的错误，而不是静默当成没传；
-   *   ② `propose` **不传 hostCheck** —— 模型自报 `user-confirmed` / `verified` 会被
-   *      存储层拒掉（新条目只会落 `candidate`，等用户确认才进注入）；
-   *   ③ 证据里的文件引用只接受**项目内相对路径**（绝对路径与 `..` 被拒）——
-   *      「文本引用不授予读取权限」是 §4 写死的边界。
-   */
   async runKnowledgeCommand(action: string, params: Record<string, unknown>) {
-    /*
-     * 范围：project = 当前项目知识（身份由宿主绑定）；personal = 全局个人记忆（固定身份、独立目录）。
-     * search 缺省两边都查；read 缺省先项目后个人；propose 缺省写项目。
-     */
     const rawScope = paramString(params, ['scope'])
     if (rawScope && rawScope !== 'project' && rawScope !== 'personal' && !(action === 'search' && rawScope === 'all')) {
       throw new CapabilityCommandError('knowledge_bad_scope', 'scope 只能是 project、personal（search 另可用 all）')
@@ -441,7 +382,6 @@ export class LookupCommands {
           supersedes: raw.supersedes,
           expectedRevision: raw.expectedRevision ?? 0
         }
-        /* 刻意不传 hostCheck：模型不能自证「用户确认」与「证据已核实」 */
       })
       if (!outcome.ok) {
         throw new CapabilityCommandError(`knowledge_${outcome.code}`, outcome.message)
@@ -463,7 +403,6 @@ export class LookupCommands {
   }
 }
 
-/** 按来源类型分流：直连 API 的来源走宿主 HTTP，其余交给 OpenCLI */
 function searchRunner(): AdapterRunner {
   const opencli = createOpencliRunner()
   return (source, query, opts) => {

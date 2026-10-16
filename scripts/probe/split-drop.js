@@ -1,10 +1,3 @@
-/*
- * 左栏会话拖进工作区：左半边 / 右半边落点（`npm run test:live -- splitdrop`，合成会话）。
- *
- * 用合成 PointerEvent 走和手拖同一条路径：pointerdown（会话行）→ pointermove（越过阈值）→
- * pointermove（落点）→ pointerup。验：拖动中两个落点都在、指针所在的那一半高亮；
- * 松手后会话放在那一侧（左 = 主会话位，右 = 旁边）；两侧的会话与焦点符合预期。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => { out.push((c ? '  ✓ ' : '  ✗ ') + s); return !!c }
@@ -27,7 +20,6 @@
   const canvas = document.querySelector('.tile-workspace-canvas')
   if (!canvas) return out.concat('  ✗ 没有工作区画布').join('\n')
 
-  /* 落点：每块磁贴的左半 / 右半；按「第几个落点」取指针位置（现算，磁贴数会变） */
   const zoneSpot = (i) => {
     const z = document.querySelectorAll('[data-split-at]')[i]
     const r = z?.getBoundingClientRect()

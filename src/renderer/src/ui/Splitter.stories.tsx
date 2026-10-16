@@ -2,17 +2,6 @@ import { useState, type CSSProperties, type ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Splitter, type SplitterOrientation } from './index'
 
-/**
- * Splitter 原语工作台（WP-05）。
- *
- * 把两条陪衬面板放进 flex 容器，中间夹一条 `<Splitter>`：面板 A 的尺寸直接由
- * 分隔条的当前值驱动，所以拖动 / 方向键都能看见版面跟着动。外观全部来自
- * `ui/Splitter.css` 与 `design/tokens.css`，故事只写版面。
- *
- * 覆盖：竖线（左右分栏）、横线（上下分行）、受控、非受控、极小尺寸、禁用、区间与步长。
- * Storybook 的 addon-a11y 会检查每个故事的 `role="separator"` 与标签；这里不做真实
- * 键盘 / 指针断言 —— 交互验证在 `scripts/test-v3-splitter.mjs` 与运行验收。
- */
 const meta = {
   title: 'v3/原语/Splitter',
   parameters: {
@@ -28,16 +17,12 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/* ---------- 竖线：左右分栏（受控） ---------- */
-
 export const Vertical: Story = {
   name: '竖线 · 左右分栏',
   render: () => (
     <SplitDemo orientation="vertical" initial={160} min={0} max={420} label="调整左右宽度" />
   )
 }
-
-/* ---------- 横线：上下分行（受控） ---------- */
 
 export const Horizontal: Story = {
   name: '横线 · 上下分行',
@@ -52,8 +37,6 @@ export const Horizontal: Story = {
     />
   )
 }
-
-/* ---------- 非受控 ---------- */
 
 export const Uncontrolled: Story = {
   name: '非受控值',
@@ -79,8 +62,6 @@ export const Uncontrolled: Story = {
     )
   }
 }
-
-/* ---------- 区间与步长（受控读值） ---------- */
 
 export const Bounds: Story = {
   name: '区间与步长',
@@ -108,8 +89,6 @@ export const Bounds: Story = {
   }
 }
 
-/* ---------- 极小尺寸 ---------- */
-
 export const Narrow: Story = {
   name: '极小尺寸',
   render: () => (
@@ -127,8 +106,6 @@ export const Narrow: Story = {
     </div>
   )
 }
-
-/* ---------- 禁用 ---------- */
 
 export const Disabled: Story = {
   name: '禁用',
@@ -148,8 +125,6 @@ export const Disabled: Story = {
   )
 }
 
-/* ---------- 故事内版面 ---------- */
-
 interface SplitDemoProps {
   orientation?: SplitterOrientation
   initial: number
@@ -160,11 +135,9 @@ interface SplitDemoProps {
   height?: number
   isDisabled?: boolean
   label: string
-  /** 用 `defaultValue` 而非 `value`，观察非受控路径。 */
   uncontrolled?: boolean
 }
 
-/** 受控 / 非受控一体：面板 A 的尺寸由分隔条当前值驱动。 */
 function SplitDemo({
   orientation = 'vertical',
   initial,
@@ -219,14 +192,12 @@ function Pane({ label, style }: { label: string; style: CSSProperties }) {
 
 interface FrameProps {
   orientation?: SplitterOrientation
-  /** 面板 A 的尺寸（`flex-basis`，px）。 */
   basis: number
   width?: number
   height?: number
   children: ReactNode
 }
 
-/** 两条陪衬面板 + 中间的分隔条；面板 A 按 `basis` 让位，面板 B 吃掉剩余空间。 */
 function Frame({ orientation = 'vertical', basis, width, height, children }: FrameProps) {
   const horizontal = orientation === 'horizontal'
   const style: CSSProperties = horizontal

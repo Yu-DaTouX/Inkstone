@@ -5,11 +5,6 @@ import { VisualSources } from './VisualParts'
 import { sparklinePoints } from './sparkline-points'
 export { sparklinePoints } from './sparkline-points'
 
-/**
- * 图表：按容器真实像素绘制（字号不随窗口被等比放大），比例尺由宿主计算。
- * 七种形态共用坐标与配色：系列色依次为 --vb-1..4，第二、四组用虚线 / 斜纹，图例不只靠颜色。
- */
-
 const PAD = { left: 52, right: 16, top: 20, bottom: 30 }
 
 function useWidth(): [React.RefObject<HTMLDivElement | null>, number] {
@@ -38,7 +33,6 @@ export function Chart({ block }: { block: ChartBlock }) {
   const t = useT()
   const [plotRef, W] = useWidth()
   const n = block.series.length
-  /* 类别多时纵向放不下（标签与数值互相压住），偏离型也改成横向 */
   const horizontal = block.type === 'hbar' || block.type === 'dumbbell' || (block.type === 'diverging' && block.labels.length > 8)
   const tall = horizontal && block.labels.length > 12
   const showLegend = n > 1
@@ -85,8 +79,6 @@ export function Chart({ block }: { block: ChartBlock }) {
   )
 }
 
-/* ---------------------------------------------------------------- 纵向：柱 / 堆叠 / 折线 / 面积 / 偏离 */
-
 function VerticalPlot({ block, W }: { block: ChartBlock; W: number }) {
   const t = useT()
   const H = Math.round(Math.min(200, Math.max(150, W * 0.32)))
@@ -96,7 +88,6 @@ function VerticalPlot({ block, W }: { block: ChartBlock; W: number }) {
   const totals = block.labels.map((_, j) => block.series.reduce((sum, s) => sum + s.values[j], 0))
   const peak = stacked ? Math.max(...totals) : Math.max(...block.series.flatMap((s) => s.values.map(Math.abs)))
   const half = block.max ? { max: block.max, ticks: [0, 1, 2, 3, 4].map((i) => Number(((block.max! / 4) * i).toPrecision(6))) } : niceScale(peak, block.unit)
-  /* 偏离：上下对称，0 在中间 */
   const lo = diverging ? -half.max : 0
   const hi = half.max
   const ticks = diverging ? [...half.ticks.slice(1).reverse().map((v) => -v), ...half.ticks] : half.ticks
@@ -173,8 +164,6 @@ function VerticalPlot({ block, W }: { block: ChartBlock; W: number }) {
   )
 }
 
-/* ---------------------------------------------------------------- 横向：长类别名的柱 / 前后对比哑铃 */
-
 function HorizontalPlot({ block, W }: { block: ChartBlock; W: number }) {
   const t = useT()
   const row = block.labels.length > 10 ? 22 : 26
@@ -185,7 +174,6 @@ function HorizontalPlot({ block, W }: { block: ChartBlock; W: number }) {
   const H = block.labels.length * row + 28
   const peak = Math.max(...block.series.flatMap((s) => s.values.map(Math.abs)))
   const half = block.max ? { max: block.max, ticks: [0, 1, 2, 3, 4].map((i) => Number(((block.max! / 4) * i).toPrecision(6))) } : niceScale(peak, block.unit)
-  /* 偏离：0 画在基线上，负的一侧只留数据需要的宽度 */
   const negPeak = Math.max(0, ...block.series.flatMap((s) => s.values.map((v) => -v)))
   const negMax = diverging && negPeak > 0 ? niceScale(negPeak, block.unit).max : 0
   const lo = -negMax
@@ -223,7 +211,6 @@ function HorizontalPlot({ block, W }: { block: ChartBlock; W: number }) {
             return (
               <g key={`${si}-${i}`} className={`vb-bar-group${si % 2 ? ' alt' : ''}`} style={{ ...color(si), '--vb-i': i } as React.CSSProperties}>
                 <rect className="vb-bar vb-hbar" x={Math.min(x(0), x(v))} y={top + 1} width={Math.max(0, Math.abs(x(v) - x(0)))} height={Math.max(2, barH - 2)} rx={Math.min(4, barH / 4)} />
-                {/* 负值的数字放在基线右侧：放在条的左端会压到类别名 */}
                 <text className="vb-value" x={x(Math.max(v, 0)) + 6} y={top + barH / 2} dominantBaseline="middle">{fmtValue(v, block.unit)}</text>
               </g>
             )
@@ -231,8 +218,6 @@ function HorizontalPlot({ block, W }: { block: ChartBlock; W: number }) {
     </svg>
   )
 }
-
-/* ---------------------------------------------------------------- 小趋势线（指标行用） */
 
 export function Sparkline({ values, tone }: { values: number[]; tone?: string }) {
   const W = 96, H = 28

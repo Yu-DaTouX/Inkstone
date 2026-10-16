@@ -1,13 +1,3 @@
-/**
- * 宿主提问等待时间（src/shared/ui-timeout.ts）的纯逻辑验证。
- *
- * 为什么要有它：这一段的口径同时被四处读（主进程默认值 / 主进程延长 /
- * 渲染端倒计时 / `yan question ask` 的帮助文案），任何一处漂移都不会报错 ——
- * 只会在真实提问里表现成「面板显示 3 分钟，但 2 分钟就超时」这种难查的错。
- * 所以这里把边界钉死，并顺带核对帮助文案里的例子与实际默认值一致。
- *
- * 用法：npm run test:unit（由 test-unit.mjs 调起）
- */
 import { readFileSync } from 'node:fs'
 
 export async function runUiTimeoutTests(ok) {
@@ -21,8 +11,6 @@ export async function runUiTimeoutTests(ok) {
     formatCountdown,
     requestedTimeout
   } = await import('../out/test/ui-timeout.mjs')
-
-  /* ── 默认值与区间 ─────────────────────────────────── */
 
   ok(UI_TIMEOUT_DEFAULT === 180_000, '默认等待是 3 分钟（用户 2026-09-26 拍板）', String(UI_TIMEOUT_DEFAULT))
   ok(UI_TIMEOUT_EXTEND === 120_000, '点一下加 2 分钟', String(UI_TIMEOUT_EXTEND))
@@ -42,8 +30,6 @@ export async function runUiTimeoutTests(ok) {
   ok(requestedTimeout(180_000) === 180_000, '合法值原样保留')
   ok(requestedTimeout('60000') === 60_000, '字符串数字也认（CLI 参数是字符串）')
 
-  /* ── 延长 ─────────────────────────────────────────── */
-
   const now = 1_000_000
   ok(extendDeadline(now + 60_000, now) === now + 60_000 + UI_TIMEOUT_EXTEND, '默认增量 = 2 分钟')
   ok(
@@ -61,16 +47,12 @@ export async function runUiTimeoutTests(ok) {
     '临近封顶时只补到上限（不会越过）'
   )
 
-  /* ── 倒计时文本 ───────────────────────────────────── */
-
   ok(formatCountdown(180_000) === '03:00', '3 分钟 → 03:00', formatCountdown(180_000))
   ok(formatCountdown(59_400) === '01:00', '59.4 秒向上取整到 01:00（不会停在 00:00 还活着）', formatCountdown(59_400))
   ok(formatCountdown(59_000) === '00:59', '59 秒 → 00:59', formatCountdown(59_000))
   ok(formatCountdown(0) === '00:00', '0 → 00:00')
   ok(formatCountdown(-5_000) === '00:00', '负数 → 00:00（不出现负号闪动）')
   ok(formatCountdown(3_600_000) === '1:00:00', '超过 1 小时改用 h:mm:ss', formatCountdown(3_600_000))
-
-  /* ── 与实际文案一致性 ─────────────────────────────── */
 
   const cli = readFileSync('resources/yan-cli/yan.mjs', 'utf8')
   const example = /"timeout":(\d+)/.exec(cli)

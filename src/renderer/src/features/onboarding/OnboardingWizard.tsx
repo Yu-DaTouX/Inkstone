@@ -1,18 +1,3 @@
-/**
- * v3 首次引导向导。
- *
- * 语义照搬主区六步向导，界面重做在 v3 原语上：
- *   · 六步：开始 / 外观 / 提醒 / 模型接入 / 上下文 / 功能入口；步骤条可点、可回看；
- *   · 每步当场落盘：直接调用现有 `patchSettings` 写 `theme` / `sound` / `autoCompactTokens`，
- *     中途关掉已改的部分保留；音量拖动期间只留本地值，松手 / 按键抬手才落盘；
- *   · 模型凭证只做引导：不读 auth.json、不查凭据、不发任何模型请求，只给一个
- *     打开「设置 → 模型与服务」的按钮；
- *   · 跳过 / 完成：右上角关闭 = 跳过引导，最后一步 = 开始使用，二者都由调用方
- *     在 `onClose(result)` 里标记看过（与主区一致，退出即不再自动弹出）。
- *
- * 模态外壳用 `ui/Dialog`：RAC 负责 Esc、点遮罩关闭与关闭后焦点归还，并把模态
- * 压进共享模态栈，全局快捷键在打开时让位。
- */
 import { useCallback, useState, type ReactElement } from 'react'
 import {
   Bell,
@@ -30,7 +15,6 @@ import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { AppSettings } from '../../../../shared/ipc'
 import { Button, Dialog, ListBoxItem, Modal, ModalOverlay, Radio, RadioGroup, Select, Spinner, Switch } from '../../ui'
-/* 音量滑杆：ui barrel 暂未导出 Slider，先按原语文件直接引入；样式随组件引入。 */
 import { Slider } from '../../ui/Slider'
 import '../../ui/Slider.css'
 import { AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt } from '../../../../shared/context-limits'
@@ -50,15 +34,11 @@ import {
 import { onboardingText, type OnboardingText } from './onboarding-text'
 import './onboarding.css'
 
-/** 关闭结果：走完最后一步 vs 直接跳过。调用方通常两者都标记「看过」。 */
 export type OnboardingResult = 'done' | 'skip'
 
 export interface OnboardingWizardProps {
-  /** 关闭回调；`result` 区分完成与跳过。 */
   onClose: (result: OnboardingResult) => void
-  /** 初始步；从设置里「重新查看引导」时可指定，默认回到第一步。 */
   initialStep?: OnboardingStepId
-  /** 打开模型设置的注入点；不传时走正式 `openSettings('models')`。 */
   onOpenSettings?: () => void
 }
 
@@ -80,11 +60,9 @@ export function OnboardingWizard({ onClose, initialStep, onOpenSettings }: Onboa
   const text = onboardingText(lang)
   const settings = useStore((s) => s.settings)
   const patchSettings = useStore((s) => s.patchSettings)
-  /* 只读 store 里已有的供应商状态，不在这里触发新的凭证探测（向导不读凭据）。 */
   const authReady = useStore((s) => s.authProviders.some((p) => p.status === 'ready'))
 
   const [index, setIndex] = useState(() => (initialStep ? stepIndexOf(initialStep) : 0))
-  /* 用户在本次向导里实际操作过的步骤；只有它们（以及已配置好的模型接入）显示 ✓。 */
   const [touched, setTouched] = useState<ReadonlySet<OnboardingStepId>>(() => new Set())
   const markTouched = useCallback((id: OnboardingStepId): void => {
     setTouched((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
@@ -100,7 +78,6 @@ export function OnboardingWizard({ onClose, initialStep, onOpenSettings }: Onboa
     onClose('skip')
   }
 
-  /* 各步正文同时挂载、叠在同一网格格子里，只显示当前步；弹窗高度因此取最高一步，切步不跳动。 */
   const renderPanel = (entry: OnboardingStepDef): ReactElement | null => {
     if (!settings && entry.id !== 'welcome' && entry.id !== 'auth' && entry.id !== 'done') {
       return (
@@ -237,7 +214,6 @@ function WelcomeStep({ text }: { text: OnboardingText }): ReactElement {
   )
 }
 
-/** 收尾只讲入口，不再配任何一项。 */
 function DoneStep({ text }: { text: OnboardingText }): ReactElement {
   return (
     <div className="v3-ob-lead">
@@ -254,7 +230,6 @@ function DoneStep({ text }: { text: OnboardingText }): ReactElement {
   )
 }
 
-/** 模型接入：只引导，不读凭据、不发请求。 */
 function AuthStep({ text, onOpen }: { text: OnboardingText; onOpen: () => void }): ReactElement {
   return (
     <div className="v3-ob-lead">
@@ -278,13 +253,11 @@ interface SettingStepProps {
   stepId: OnboardingStepId
   settings: AppSettings
   patchSettings: (patch: Partial<AppSettings>) => Promise<void>
-  /** 用户在本步实际改动了设置时调用，用于步骤条的 ✓。 */
   onTouch: () => void
 }
 
 type StepProps = Omit<SettingStepProps, 'stepId'>
 
-/** 落盘步骤（外观 / 提醒 / 上下文）：读现有设置、写现有设置键。 */
 function SettingStep({ text, stepId, settings, patchSettings, onTouch }: SettingStepProps): ReactElement {
   if (stepId === 'theme') return <ThemeStep text={text} settings={settings} patchSettings={patchSettings} onTouch={onTouch} />
   if (stepId === 'sound') return <SoundStep text={text} settings={settings} patchSettings={patchSettings} onTouch={onTouch} />
@@ -324,7 +297,6 @@ function SoundStep({ text, settings, patchSettings, onTouch }: StepProps): React
   const volume = typeof sound.volume === 'number' ? sound.volume : 0.4
   const [draft, setDraft] = useState<number | null>(null)
   const shown = draft ?? volume
-  /* 拖动只改本地值，RAC 的 onChangeEnd（松手 / 按键抬手）再落盘，避免滑一下写很多次设置。 */
   const commit = (value: number): void => {
     onTouch()
     setDraft(null)

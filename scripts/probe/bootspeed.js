@@ -1,8 +1,3 @@
-/*
- * 启动耗时：把渲染端的性能标记打出来（只测量，不断言，用于改动前后对比）。
- * 标记来自 store.bootstrap（yan:bootstrap-*、yan:boot:<请求名>）与 boot-splash（yan:splash-dismiss）。
- * 时间轴以页面导航起点为 0。
- */
 ;(async () => {
   const out = []
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

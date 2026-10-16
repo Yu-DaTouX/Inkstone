@@ -1,17 +1,3 @@
-/**
- * 上下文策略（N21-3）的纯逻辑单测。
- *
- * 三块被测逻辑都不碰 Electron / pi：
- *   · `src/shared/context-policy.ts` —— 工作集预算公式、触发决策、下一步阶段；
- *   · `src/main/context-policy.ts` —— `YAN_CONTEXT_POLICY` 的解析入口（按 env 记忆化）；
- *   · `src/renderer/src/state/context-view.ts` —— 阶段文案。
- *
- * 为什么值得这么细：这里决定的是**什么时候把用户的上下文压掉**。
- * 真实触发要求上下文涨到工作集（默认 240k），是几十万 token 的额度；
- * 「刚压完又压」「忙的时候插一刀」「压缩失败后每轮重试」这些坏行为
- * 在真实环境里既贵又难复现 —— 但它们全都能在这里用数字钉死。
- */
-
 export function runContextPolicyTests(ok, mod, mainMod, view) {
   const {
     DEFAULT_CONTEXT_POLICY,
@@ -36,14 +22,12 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
 
   const budgetOf = (win) => contextBudget(win)
 
-  /* ---- 1. 参考值：与方案里的表逐一对照（十进制 k，表就是这么算的） ---- */
   {
     const cases = [
       { win: 64_000, reserve: 16_000, margin: 8_000, workingSet: 40_000, emergency: 48_000 },
       { win: 128_000, reserve: 32_000, margin: 8_000, workingSet: 88_000, emergency: 96_000 },
       { win: 256_000, reserve: 32_000, margin: 8_000, workingSet: 179_200, emergency: 224_000 },
       { win: 1_000_000, reserve: 32_000, margin: 20_000, workingSet: 240_000, emergency: 900_000 },
-      /* C-3 出口 1 点名要的另外两档：512K 与 1,048,576（非十进制 1M） */
       { win: 512_000, reserve: 32_000, margin: 10_240, workingSet: 240_000, emergency: 460_800 },
       { win: 1_048_576, reserve: 32_000, margin: 20_972, workingSet: 240_000, emergency: 943_718 }
     ]
@@ -60,45 +44,32 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     }
   }
 
-  /* ---- 2. 真实模型的窗口（列表里真实存在的两个） ---- */
   {
     const small = budgetOf(128_000)
     const big = budgetOf(1_048_576)
     ok(small?.workingSet === 88_000, '128k 模型（gpt-5.3-codex-spark）工作集 88k')
     ok(big?.workingSet === 240_000, '1M 模型（deepseek-v4-flash）工作集被 240k 天花板压住')
-    /* 大窗口的兜底线必须**远在**工作集之上，否则两条线会互相打架 */
     ok((big?.emergency ?? 0) > (big?.workingSet ?? 0) * 2, '大窗口的物理兜底远高于工作集')
   }
 
-  /* ---- 3. 三阶段刻度与物理兜底 ---- */
   {
     const b = budgetOf(128_000)
     ok(b?.triggers.sweep === Math.round(88_000 * 0.7), '清理线 = 工作集 × 70%')
     ok(b?.triggers.fold === Math.round(88_000 * 0.85), '折叠线 = 工作集 × 85%')
     ok(b?.triggers.compact === 88_000, '压缩线 = 工作集本身')
-    /* 128k 窗口：90% 是 115.2k，但窗口 − 预留 = 96k 更小 —— 兜底不能吃掉输出空间 */
     ok(b?.emergency === 96_000, '物理兜底 = min(90% 窗口, 窗口 − 预留)，128k 下由预留决定')
     ok(b?.emergency === b.contextWindow - b.responseReserve, '小窗口：兜底线正好落在输出预留的边界上')
   }
 
-  /* ---- 3b. 兜底线的不变式（§12 修改 1 / D31）---- */
   {
-    /*
-     * 三个必须对所有窗口成立的性质。逐点扫窗口而不是只验参考表：
-     * 公式里有 min/max/clamp 三处转折，转折点附近最容易写错。
-     * 违规只累计不逐条打印 —— 700 行 ✓ 会把真正失败的那条淹掉。
-     */
     const bad = { reserve: [], above: [], ratio: [], positive: [] }
     let checked = 0
     for (let win = 1_000; win <= 2_048_000; win = win < 40_000 ? win + 500 : Math.round(win * 1.07)) {
       const b = budgetOf(win)
       if (!b) continue
       checked++
-      /* ① 硬规则：兜底线不能突破输出预留（就是它存在的理由） */
       if (b.emergency > b.contextWindow - b.responseReserve) bad.reserve.push(win)
-      /* ② 兜底仍是兜底：必须严格在压缩线之上，否则“不看上膛”会顶掉上膛与冷却 */
       if (b.emergency <= b.triggers.compact) bad.above.push(win)
-      /* ③ 比例仍是上限（用户把 emergencyRatio 调小时要生效） */
       if (b.emergency > Math.round(win * 0.9) + 1) bad.ratio.push(win)
       if (!(b.emergency > 0)) bad.positive.push(win)
     }
@@ -110,7 +81,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(checked > 50, `扫过足够多的窗口（${checked} 个）`)
   }
 
-  /* ---- 4. 不给出假预算的窗口 ---- */
   ok(contextBudget(0) === null, '窗口 0 → 没有预算（不编一条 0 的压缩线）')
   ok(contextBudget(Number.NaN) === null, '窗口 NaN → 没有预算')
   ok(contextBudget(-5) === null, '负数窗口 → 没有预算')
@@ -118,7 +88,7 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
 
   console.log('\n--- N21-3 触发决策 ---')
 
-  const budget = budgetOf(1_000_000) // triggers.compact = 240k，emergency = 900k
+  const budget = budgetOf(1_000_000)
   const step = (tokens, over = {}) =>
     contextPolicyStep({
       state: INITIAL_POLICY_STATE,
@@ -130,7 +100,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       ...over
     })
 
-  /* ---- 5. 什么时候不该动 ---- */
   {
     ok(step(1000).trigger === null, '远低于工作集：不动手')
     ok(step(239_999).trigger === null, '差一个 token 到线：不动手')
@@ -143,22 +112,18 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(step(999_999, { budget: null }).trigger === null, '没有预算：不动手')
   }
 
-  /* ---- 6. 到了工作集线 ---- */
   {
     const at = step(240_000)
     ok(at.trigger === 'compact', '到工作集线 → 压缩')
     ok(at.state.armed === false, '触发后卸膛（不会每轮都压）')
     ok(at.state.lastTriggerAt === 1_000_000, '记下触发时间（冷却用）')
 
-    /* 还没回落就又过线：不许再压一次 */
     ok(step(245_000, { state: at.state }).trigger === null, '用量没回落前不重复触发')
 
-    /* 忙的时候（回合/压缩进行中）不动手，且不消耗上膛状态 */
     const busy = step(300_000, { busy: true })
     ok(busy.trigger === null, '回合（或压缩）进行中不触发')
     ok(busy.state.armed === true, '忙的时候不消耗上膛状态')
 
-    /* 回落到线下 90% 以下 → 重新上膛 */
     const low = step(200_000, { state: at.state })
     ok(low.trigger === null, '回落后当然不触发')
     ok(low.state.armed === true, '回落到触发线 90% 以下重新上膛')
@@ -168,12 +133,7 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(later.trigger === 'compact', '冷却结束后可以再触发一次')
   }
 
-  /* ---- 6b. 压缩失败不能把策略永久关死（重试窗口） ---- */
   {
-    /*
-     * 场景：砚压了一次，但 pi 回 `Already compacted`（或扩展取消）——
-     * 上下文永远不会回落，只按“回落”上膛就会永久停在「已达工作集上限」。
-     */
     const first = step(240_000)
     ok(first.trigger === 'compact', '第一次触发')
     const soon = step(300_000, { state: first.state, now: 1_000_000 + POLICY_REARM_MS - 1 })
@@ -181,12 +141,10 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     const retry = step(300_000, { state: first.state, now: 1_000_000 + POLICY_REARM_MS })
     ok(retry.trigger === 'compact', '到了重试窗口：允许再试一次（否则策略永久失效）')
     ok(retry.state.lastTriggerAt === 1_000_000 + POLICY_REARM_MS, '重试也记时间（下一次重试再等一轮）')
-    /* 回落仍然是最快的上膛路径 */
     const 回落 = step(100_000, { state: first.state, now: 1_000_000 + 1000 })
     ok(回落.state.armed === true, '用量回落到线下：立刻重新上膛（不必等重试窗口）')
   }
 
-  /* ---- 7. 物理兜底 ---- */
   {
     const cold = { armed: false, lastTriggerAt: 1_000_000 }
     ok(step(899_999, { state: cold, now: 1_000_000 + POLICY_COOLDOWN_MS + 1 }).trigger === null, '物理兜底线之下不触发')
@@ -195,7 +153,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(fired.state.armed === false, '兜底触发后同样卸膛')
   }
 
-  /* ---- 8. 两条线都被覆盖参数压低时，低的先赢 ---- */
   {
     const policy = policyFrom(JSON.stringify({ workingSetCap: 1_000_000, emergencyRatio: 0.001 }))
     const tight = contextBudget(1_000_000, policy)
@@ -214,18 +171,12 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     )
   }
 
-  /* ---- 8b. 压缩成功后重新上膛（N21-4 尾压力测试发现） ---- */
   {
     const cold = { armed: false, lastTriggerAt: 1_000_000 }
     const warm = rearmAfterCompaction(cold)
     ok(warm.armed === true, '未上膛时，压缩成功结束 → 重新上膛')
     ok(warm.lastTriggerAt === cold.lastTriggerAt, '重新上膛不会改动上次触发时间（冷却仍按它算）')
     ok(rearmAfterCompaction(warm) === warm, '已经上膛时是幂等（返回同一个对象）')
-    /*
-     * 为什么这条值得单独立测：`armed` 只有「回落到线下」与 5 分钟窗口两条恢复路径，
-     * 当基线开销本身就压在工作集线上时两条都走不通 —— 策略会退化成 5 分钟压一次。
-     * 真实线索：22 个连续回合只压了 2 次、转录涨到工作集的 3 倍（压力测试）。
-     */
     const overLine = { armed: false, lastTriggerAt: 1_000_000 }
     const after = rearmAfterCompaction(overLine)
     const step2 = contextPolicyStep({
@@ -268,7 +219,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(policyFrom(JSON.stringify({ triggerRatios: { sweep: 0.5 } })).triggerRatios.sweep === 0.5, '阶段比例可单独覆盖')
   }
 
-  /* ---- 9. env 入口（优先级最高，见 N21-7 段） ---- */
   {
     const env = { YAN_CONTEXT_POLICY: JSON.stringify({ workingSetCap: 2222 }) }
     ok(activeContextPolicy(env).policy.workingSetCap === 2222, 'activeContextPolicy 读 YAN_CONTEXT_POLICY')
@@ -285,7 +235,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
 
   {
     const b = budgetOf(128_000)
-    /* 默认接管集（2026-09-18 用户拍板加进 `episode-fold`）：清理 + 召回 + 折叠 + 压缩 */
     const defaults = DEFAULT_CONTEXT_POLICY.kinds
     ok(
       defaults.join(',') === 'tool-sweep,recall,episode-fold,compaction',
@@ -297,7 +246,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       '折叠在默认里（2026-09-18 拍板；短会话由 foldEligible 挡住）'
     )
 
-    /* 只看压缩时（关掉清理）的行为仍要成立 —— 阶段 3 的那套判定不能丢 */
     const compactOnly = ['compaction']
     const next = nextContextStage(10_000, b, compactOnly)
     ok(next?.kind === 'compaction', '只接管压缩时，下一步预报压缩')
@@ -307,13 +255,10 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(nextContextStage(null, b, compactOnly)?.kind === 'compaction', '用量未知按 0 处理（说清下一步，不报错）')
     ok(nextContextStage(10_000, null, compactOnly) === null, '没有预算就没有下一步')
     ok(nextContextStage(10_000, b, []) === null, '什么都没接管时不预报任何阶段')
-    /* 默认接管了清理之后，“下一步”先到清理线，而不是压缩线 */
     ok(nextContextStage(10_000, b, defaults)?.kind === 'tool-sweep', '默认接管后下一步先是清理')
     ok(nextContextStage(b.triggers.compact + 1, b, defaults)?.reached === true, '默认接管下全过线 reached')
-    /* `recall` 是取回通道，不是工作集刻度：它不下场排序 */
     ok(nextContextStage(0, b, ['recall']) === null, '只有 recall 时不预报阶段（它不是刻度）')
 
-    /* 阶段 4 的 kinds 一旦接上，顺序就必须是 清理 → 折叠 → 压缩 */
     const full = ['tool-sweep', 'episode-fold', 'compaction']
     ok(nextContextStage(0, b, full)?.kind === 'tool-sweep', '接管了清理：下一步先是清理')
     ok(nextContextStage(b.triggers.sweep + 1, b, full)?.kind === 'episode-fold', '过了清理线：下一步是折叠')
@@ -324,7 +269,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
   console.log('\n--- N21-3 阶段文案 ---')
 
   {
-    /* 假 t：只验分支与占位符，措辞由 i18n 文件与 audit:refs 管 */
     const t = (key, vars) => (vars ? `${key}(${Object.values(vars).join(',')})` : key)
     ok(view.contextStageLabel(t, 'tool-sweep') === 'ctx.stageSweep', 'tool-sweep → 清理')
     ok(view.contextStageLabel(t, 'episode-fold') === 'ctx.stageFold', 'episode-fold → 折叠')
@@ -339,7 +283,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(/ctx\.nextReached/.test(reached), '已过线：改说“已达工作集上限”')
     ok(!reached.includes('88k'), '已过线时不再重复报“约 88k 时”')
 
-    /* 阶段顺序表：与主进程判定用的是同一套 kinds，界面不能自己另排一套 */
     ok(
       view.CONTEXT_STAGES.join(',') === 'tool-sweep,episode-fold,compaction',
       '阶段图例的顺序固定为 清理 → 折叠 → 压缩'
@@ -347,13 +290,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(view.formatTokens(1596) === '1.6k' && view.formatTokens(160000) === '160k', 'token 紧凑写法')
   }
 
-  /*
-   * N21-7：生效层解析。
-   *
-   * 这里钉住的是“界面上的数就是真正在用的数”的另一半 ——
-   * 用户改了设置却在界面看到别的值、模型级覆盖被用户级默默盖掉、
-   * env 测试通道被设置文件盖掉，这三类都会让“可解释”变成空话。
-   */
   console.log('\n--- N21-7 生效层解析（用户 / 供应商 / 模型 / env）---')
   {
     const {
@@ -393,7 +329,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     const env = resolveContextPolicy({ user: { workingSetCap: 1000 }, envRaw: '{"workingSetCap":5000}' })
     ok(env.source === 'env' && env.policy.workingSetCap === 5000, 'env（测试通道）优先于用户设置')
 
-    /* 上下文预算 V1 迁移规则：显式旧数值 / 开关覆盖保留 legacy，只改 kinds 不算 */
     const { hasExplicitLegacyOverride } = mod
     ok(hasExplicitLegacyOverride(plain) === false, '没有覆盖：新会话可默认启用 V1')
     ok(hasExplicitLegacyOverride(user) && hasExplicitLegacyOverride(spec) && hasExplicitLegacyOverride(env), '用户 / 模型 / env 数值覆盖：保留 legacy')
@@ -403,12 +338,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       '只改接管集（kinds）：不算旧数值覆盖'
     )
 
-    /*
-     * P2-7：`episode-fold` 的用户开关。
-     * 它不是一个数值（`applyOverrides` 认不了布尔），所以单独一层，
-     * 但最终效果必须表现在 `kinds` 上 —— 界面上的阶段预报与扩展真做的事
-     * 都是从这个数组读的，这里少改一处就会出现“界面说已接管、实际没跑”。
-     */
     const foldOff = resolveContextPolicy({ foldEnabled: false })
     ok(
       !foldOff.policy.kinds.includes('episode-fold') &&
@@ -472,11 +401,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     )
     ok(Object.keys(CONTEXT_POLICY_PRESETS.default).length === 0, '默认预设是空覆盖（用完默认）')
 
-    /*
-     * 实施-11：1M 模型试行档只允许落在精确的 provider/model 覆盖上。
-     * 这里不测 React 按钮，而是把按钮最终写入的纯数据与预算公式钉住：
-     * 全局默认不能被污染，较小窗口也不能把裸上限照搬进去。
-     */
     ok(
       LARGE_CONTEXT_POLICY_PRESETS.balanced.workingSetCap === 600_000 &&
         LARGE_CONTEXT_POLICY_PRESETS.balanced.windowRatio === 0.7,
@@ -507,12 +431,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       '较小窗口不会照搬 700k 裸上限（受 70% 窗口约束）'
     )
 
-    /*
-     * 实施-11 C-4：生效策略交给薄层的文档（revision + 分层覆盖）。
-     *
-     * 两侧（宿主 TS 与扩展 JS）用同一套挑选规则 —— 这里钉 TS 侧，
-     * 扩展侧的同名纯函数由 `test-context-budget.mjs` 用同一批输入验。
-     */
     {
       const { contextPolicyRevision, buildEffectivePolicyDocument, overridesOfEffectiveDocument } = mod
       const a = { user: { workingSetCap: 300_000 }, byModel: { 'a/b': { windowRatio: 0.6 } }, foldEnabled: true }
@@ -548,7 +466,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       ok(Object.keys(overridesOfEffectiveDocument(null, 'a/b')).length === 0, 'null 文档返回空覆盖')
     }
 
-    /* 主进程入口：登记设置层后按当前模型查表，env 仍然最高 */
     setContextPolicySettings({ user: { workingSetCap: 42_000 }, byModel: { 'm/a': { windowRatio: 0.5 } } })
     const a1 = activeContextPolicy({}, 'm/a')
     ok(
@@ -567,13 +484,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(activeContextPolicy({}).source === 'default', '清空设置层后回到默认值')
   }
 
-  /*
-   * C-5 尾：大窗口试行档的**识别**。
-   *
-   * 设置页（哪个按钮亮）与右栏（现在用哪一档）必须用同一个判据，
-   * 所以这个纯函数是两份界面唯一的真相源。判据是「恰好等于预设原文」——
-   * 「接近」就认的话，用户手填 650K 会被界面叫成「均衡 600K」。
-   */
   console.log('\n--- C-5 尾 试行档识别（largePresetOf）---')
   {
     ok(largePresetOf({ ...LARGE_CONTEXT_POLICY_PRESETS.balanced }) === 'balanced', '均衡档（预设原文）被识别')
@@ -602,16 +512,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     )
   }
 
-  /*
-   * C-6 前置核实：大窗口档不会被输出预留吞掉。
-   *
-   * 之前悬着的问题是“本次请求实际输出预留是多少”——如果是模型能力字段
-   * 393216 那种量级，1M 减去预留与余量后只剩 586784，连 600K 都要下调。
-   * 核实结果（pi 0.85.1，见实施-11 §C-6 前置核实）：压缩守护用
-   * `reserveTokens=16384`，请求的 maxTokens 就是 `model.maxTokens` 能力值、
-   * 不是每次硬预留；所以 1M − 16384 − 20k 余量 ≈ 963k，600K/700K 都有空间。
-   * 这里把“预留与余量确实被减掉了、但档位仍能到位”钉在预算函数上。
-   */
   console.log('\n--- C-6 前置核实：大窗口档与输出预留 ---')
   {
     const balanced = contextBudget(1_000_000, { ...DEFAULT_CONTEXT_POLICY, ...LARGE_CONTEXT_POLICY_PRESETS.balanced })
@@ -624,14 +524,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     )
     ok(!!long && long.responseReserve === 32_000, '1M 下输出预留仍按公式封顶 32K（不是模型能力字段）')
 
-    /*
-     * C-3 多档窗口预算矩阵（零成本档）。
-     *
-     * 为什么需要一张表而不是几个散点：预算由三重 `min`（cap / 窗口×ratio /
-     * 窗口−预留−余量）夹出来，散点看不住**跳档性质** —— 换档后是否单调、
-     * 是否始终低于物理兜底、小窗口会不会继承大档裸上限。
-     * 真端点端到端另由 `contextwindow1m` 等 cost 1 场景覆盖。
-     */
     console.log('\n  C-3 多档窗口预算矩阵（数值）：')
     const windows = [32_768, 65_536, 128_000, 200_000, 272_000, 512_000, 600_000, 1_000_000, 2_000_000]
     const presets = {
@@ -684,9 +576,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     }
 }
 
-  /*
-   * C-6：压缩防抖的“新增量”与“回落”两条放行口径。
-   */
   console.log('\n--- C-6 整轮压缩防抖（回落 80% / 新增门槛）---')
   {
     const b = contextBudget(1_000_000)
@@ -707,7 +596,6 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
         ...over
       })
 
-    /* 低回收：压完还在 232K（软线 240K 的 96%），此后只长了 2K → 不重复压 */
     const low = rearmAfterCompaction({ armed: false, lastTriggerAt: 1_000_000 }, 232_000)
     ok(low.armed === true && low.tokensAfterCompaction === 232_000, '压缩成功记录实际占用（232K）')
     const cooled = 1_000_000 + POLICY_COOLDOWN_MS + 1
@@ -715,18 +603,15 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       contextPolicyStep({ state: low, tokens: 234_000, budget: b, policy: DEFAULT_CONTEXT_POLICY, busy: false, now: cooled }).trigger === null,
       '低回收 + 低新增：冷却到了也不重复压'
     )
-    /* 此后新增到 16K → 放行（232K + 16K = 248K，仍在软线之上） */
     ok(
       contextPolicyStep({ state: low, tokens: 248_000, budget: b, policy: DEFAULT_CONTEXT_POLICY, busy: false, now: cooled }).trigger === 'compact',
       '此后新增达 16K：允许再压'
     )
-    /* 回落到软线 80% 以下 → 放行（此时 tokens 仍过线，但基准已重置） */
     const fell = rearmAfterCompaction({ armed: false, lastTriggerAt: 1_000_000 }, 150_000)
     ok(
       contextPolicyStep({ state: fell, tokens: 240_000, budget: b, policy: DEFAULT_CONTEXT_POLICY, busy: false, now: cooled }).trigger === 'compact',
       '回落到软线 80% 以下：压力解除，允许再压'
     )
-    /* 重试窗口仍然有效（上次可能压根没压成） */
     ok(
       contextPolicyStep({
         state: low,
@@ -738,13 +623,11 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       }).trigger === 'compact',
       '重试窗口到了：即使低回收也允许再试一次'
     )
-    /* 物理兜底不受防抖限制 */
     ok(
       contextPolicyStep({ state: low, tokens: 900_000, budget: b, policy: DEFAULT_CONTEXT_POLICY, busy: false, now: cooled }).trigger === 'emergency',
       '硬压力不被防抖放行拦住'
     )
 
-    /* 界面提示：低回收 + 新增不足 → true；数据不齐 → false */
     ok(incompressibleBaselineNotice(234_000, b, 232_000) === true, '低回收且新增不足 → 显示“主要为不可压缩基础开销”')
     ok(incompressibleBaselineNotice(256_000, b, 232_000) === false, '新增到了门槛 → 不再显示（它又要动手了）')
     ok(incompressibleBaselineNotice(234_000, b, 100_000) === false, '上次回收很好 → 不显示')

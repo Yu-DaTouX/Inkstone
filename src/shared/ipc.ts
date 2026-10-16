@@ -1,16 +1,3 @@
-/**
- * 主进程 ↔ 渲染进程的共享类型。
- *
- * 不依赖 pi 内部类型；消息在 src/main/normalize.ts 中归一化为 UIMessage，
- * RPC 事件由 src/main/agent.ts 适配。
- *
- * ⚠️ 这是全仓被 import 最多的文件（40+ 处），改它一律是**跨进程**改动：
- *   `preload/index.ts`（暴露）→ `main/index.ts`（handler）→ `state/store.ts`（消费）。
- *   新增 IPC 的完整四处清单见 `src/preload/index.ts` 头部。
- *
- * 两边都要用的纯逻辑（回合分组、链接判定、模型能力归一化）放在本层，
- * 因为它们必须能在没有 DOM / Electron 的环境下被单测。
- */
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
 import type {
   NativeMcpImportCommitResponse,
@@ -33,7 +20,6 @@ import type {
   CustomProviderView,
   LocalModelServer
 } from './custom-provider'
-/* 资料库（实施-25 P03）：契约与不变量在 shared/library.ts，接口只转发 */
 export type {
   LibraryDocument,
   LibraryKind,
@@ -56,11 +42,9 @@ import type {
   SourceReference
 } from './library'
 
-/* 主题空间（实施-25 P02）：契约在 shared/space.ts，接口只转发 */
 export type { Space, SpaceDocument, SpaceProjectLink } from './space'
 import type { Space, SpaceProjectLink } from './space'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from './checkpoints'
-/* 上下文装配（实施-25 P05）：契约在 shared/context-assembly.ts */
 export type { ContextAssembly, ContextCitation, ContextFragment, ContextSectionId } from './context-assembly'
 import type { ContextAssembly } from './context-assembly'
 export type {
@@ -86,7 +70,6 @@ export type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } f
 import type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { AgentActivity } from './agent-profile'
 import type { GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
-/* 写操作的请求 / 结果类型也在这里转发：preload 只 import 本文件（单一入口） */
 export type {
   GitActionExpected,
   GitActionKind,
@@ -96,12 +79,8 @@ export type {
   GitFailureCode
 } from './git-actions'
 import type { GitActionExpected, GitActionRequest, GitActionResult, GitFailure } from './git-actions'
-/* 项目知识的视图类型：纯逻辑在 `./project-knowledge-view`（可在无 Electron 环境单测），
-   这里只做转发，渲染端不必知道存储层。 */
 import type { KnowledgeCounts, KnowledgeEntryView } from './project-knowledge-view'
 import type { KnowledgeKind } from './project-memory'
-/* 工作模式（实施-05）：类型与纯逻辑在 `./work-mode`（主进程 / 单测 / CLI 共用），
-   这里转发给渲染端，界面不必知道存储层。 */
 import type { WorkMode, WorkModeState } from './work-mode'
 import type { QuestionFrequency, SessionQuestionFrequency } from './question-frequency'
 import type { ApprovalChoice, ApprovalRequest, PermissionMode } from './approval'
@@ -121,7 +100,6 @@ import type { WebSearchAvailability } from './web-search'
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
 import type { TaskInboxPage, TaskInboxQuery } from './task-inbox'
 import type { ToolLayout } from './tool-layout'
-/* 活动档案（实施-25 P01）：类型与纯逻辑在 `./agent-profile`，这里转发给渲染端。 */
 import type { AgentProfilePatch, AgentProfileState } from './agent-profile'
 import type { AccountQuotaCliSource, AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from './account-quota'
 import type { CodexFailoverResult } from './quota-failover'
@@ -129,7 +107,6 @@ export type { AgentActivity, AgentProfile, AgentProfileKind, AgentProfilePatch, 
 export type { WorkMode, WorkModeState } from './work-mode'
 export type { QuestionFrequency, SessionQuestionFrequency } from './question-frequency'
 
-/** 会话级提问频率的视图：偏好、本轮实际档与全局档。 */
 export interface SessionQuestionFrequencyView {
   runnerId: string
   sessionId?: string
@@ -141,7 +118,6 @@ export interface SessionQuestionFrequencyView {
   global: QuestionFrequency
 }
 
-/** 会话级提问频率的提交入参：显式身份 + 乐观锁 + 四态偏好。 */
 export interface SessionQuestionFrequencyInput {
   runnerId?: string
   sessionId?: string
@@ -164,13 +140,8 @@ export type { GoalState, GoalPhase, GoalLink, GoalLinkKind, PursuedBrief, ReadyA
 export type { HandoffView, HandoffPackage, HandoffTally } from './handoff'
 export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, KnowledgeReviewView } from './project-knowledge-view'
 
-/* Git 审查的类型与纯解析在 `./git` 里（它们要能在没有 Electron 的环境下单测），
-   这里只做转发，让渲染端可以从**一处**拿到全部跨进程类型。 */
 export type { GitChangeEntry, GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
 
-/* RPC */
-
-/** 带 id 的请求 → 响应关联 */
 export interface RpcResponse {
   id?: string
   type: 'response'
@@ -180,8 +151,6 @@ export interface RpcResponse {
   error?: string
 }
 
-/* 消息（渲染用） */
-
 export interface Usage {
   input: number
   output: number
@@ -189,30 +158,17 @@ export interface Usage {
   cacheWrite: number
   totalTokens: number
   cost: number
-  /** pi 没有这个模型的报价（记 0）时，主进程按公开 API 价补的估算；`cost` 里已包含它 */
   costEstimated?: boolean
 }
 
-/** 回复详细程度的实际采用值；旧历史没有记录时必须保留 unknown。 */
 export type ResponseDetail = 'brief' | 'standard' | 'detailed' | 'unknown'
 
-/** 工具调用（来自 assistant 的 toolCall 内容块，或 tool_execution_* 事件） */
-/**
- * 一张图片。
- *
- * `data` 是本次运行期内存里的 base64（刚贴/刚截出来那一份）；`url` 是历史重读时
- * 落盘后的 `file://` 地址。两者只会有一个 —— 几十 MB 的 base64 不能进 IPC，
- * 而只要它不留下来，重启 / 切会话之后就再也找不回图片。
- */
-/** 一次宿主提问的问答记录（只用于界面回放，不进模型上下文） */
 export interface QuestionLogEntry {
   id: string
   question: string
   options: string[]
-  /** 用户的回答；取消 / 超时为 null */
   answer: string | null
   cancelled: boolean
-  /** 回答时刻（绝对毫秒）：渲染端据此把它插回当时的对话位置 */
   at: number
 }
 
@@ -223,46 +179,26 @@ export interface UIMessageImage {
 }
 
 export interface UIToolCall {
-  /** Native pi codemode calls share the parent assistant message. */
   parentToolCallId?: string
-  /** pi persists child-call summaries without full result output. */
   historySummary?: boolean
   incomplete?: boolean
   nestedCallsIncomplete?: boolean
   id: string
   name: string
   args: unknown
-  /** 流式参数累积的原始 JSON 片段（未解析成功时用于显示） */
   argsRaw?: string
   status: 'pending' | 'running' | 'ok' | 'error'
-  /**
-   * 被取消 / 中断（用户点了停止）。
-   * 方案 4.1：取消要**单独显示**，不能和失败混为一谈 ——
-   * 红字会让人以为工具自己坏了。
-   */
   cancelled?: boolean
-  /** 已累积的输出文本 */
   output?: string
-  /** 工具结果里的图片（截图等）：与用户贴的图同一套落盘 / 显示路径 */
   images?: UIMessageImage[]
-  /** 结构化详情（diff / 截断信息等） */
   details?: unknown
   startedAt?: number
   endedAt?: number
 }
 
-/** 回合的终止原因（实施-11 H-6）。停止 / 失败不能假装成功。 */
 export type TurnTerminalReason = 'completed' | 'stopped' | 'failed' | 'interrupted'
 
-/**
- * 宿主侧记录的整轮计时（实施-11 H-6）。
- *
- * 与 `elapsedMs` 的区别：`elapsedMs` 是**推送时**附在消息上的 UI 字段，
- * pi 的 JSONL 不存它；这里是宿主另外落盘的版本化元数据，重载历史后用它
- * 把用时与终止原因恢复回来。两者同时存在时以推送值为准（那是本轮真实值）。
- */
 export interface TurnTimingMeta {
-  /** 稳定回合身份：同一回合的所有消息共用一个值（自动继续不会另起一个） */
   logicalTurnId: string
   startedAt: number
   endedAt: number
@@ -270,113 +206,36 @@ export interface TurnTimingMeta {
   terminalReason: TurnTerminalReason
 }
 
-/**
- * 一次模型请求（一条 assistant 消息）的生成用时。
- *
- * 与整轮 `elapsedMs` / `speed` 的区别：这里回答「**这一次模型调用**花了多久、
- * 首包等了多久、真正解码了多久」。用单调时钟（`performance.now()`）口径，
- * 不受系统对时影响；工具执行与压缩不计在内。
- *
- * 起点语义（`startEvent`）：带 `startEvent: 'turn_start'` 时，起点是 pi 原生
- * `turn_start`（每次模型请求前 emit），所以 `durationMs` / `ttftMs` **包含**请求
- * 准备、排队、网络等待与 provider 内部重试；它不是「服务端纯推理时长」，也不是
- * 「socket 精确发送时刻」，只是宿主能拿到的最早请求起点。没有该标记（旧记录 /
- * 未拿到原生 turn_start 的回退）时，起点只是流的下限，`durationMs` 只能当下限，
- * `ttftMs` 不参与会话平均。`decodeMs` 与起点语义无关，始终可用。
- *
- * 缺省语义：没有拿到首个真正内容（非空 `text_delta` / `thinking_delta`，
- * 或 `toolcall_start`）时只给 `durationMs`，不给 `ttftMs` / `decodeMs` ——
- * 宁可显示未知，也不编造首包延迟与解码速度。
- */
 export interface GenerationTiming {
-  /** 请求起点 → `message_end` 的单调时长；无标记时是流的下限 */
   durationMs: number
-  /** 首包延迟：请求起点 → 首个真正内容；无 `startEvent` 标记时不参与平均 */
   ttftMs?: number
-  /** 解码时长：首个真正内容 → `message_end`（与起点语义无关，始终可用） */
   decodeMs?: number
-  /**
-   * 起点语义标记：`'turn_start'` = 原生 turn_start（含请求准备 / 网络等待 /
-   * provider 内部重试）。旧记录与无原生起点的回退不带此字段。
-   */
   startEvent?: 'turn_start'
 }
 
 export interface UIMessage {
   id: string
-  /**
-   * pi 会话里这条消息的 **entry id**（`fork` 的锚点，实施-26 R0①）。
-   *
-   * `id` 是界面用的合成序号（`m<seq>`），**不能**拿它去 fork：
-   * pi 的 `get_fork_messages` 返回的是会话 JSONL 里 message entry 的 `entry.id`。
-   * 实测 R0：entry.id 与 fork 点**集合一致、顺序一致**，但合成 id 对不上。
-   *
-   * 只有从文件解析的历史（`readSessionMessages`）带它；实时事件流与
-   * pi 的 `get_messages`（hydrate）没有，缺省即为 undefined。
-   */
   entryId?: string
   role: 'user' | 'assistant' | 'bash'
-  /**
-   * 这条用户消息是**宿主提问的回答**，不是手打的。
-   *
-   * 只影响显示（行首标「提问」）；它由 `question-log` 合成，不在 pi 会话里。
-   */
   question?: boolean
-  /** 提问回答的结构化内容：题干与答案分开，界面把长题干折叠起来 */
   qa?: { question: string; answer?: string }[]
-  /** 来源会话段的工作目录；历史里的相对文件链接按原目录解析。 */
   sourceCwd?: string
-  /** 正文文本（assistant 可能持续增长） */
   text: string
-  /** 用户随消息附的图片（base64，不含 data: 前缀） */
   images?: UIMessageImage[]
-  /** 思考文本 */
   thinking?: string
   thinkingMs?: number
-  /**
-   * 思考是否**正在**流式输出。
-   *
-   * 为什么不能拿 `thinkingMs` 猜：一个回合里模型可能想好几次
-   * （每次工具往返前都想一遍），`thinkingMs` 是累加的，
-   * 第二段推理开始时它已经 > 0，猜不出「现在正在想」。
-   */
   thinkingLive?: boolean
   toolCalls?: UIToolCall[]
-  /** 由砚宿主受控落盘的 AI 文件产物；不把任意本机路径当成附件。 */
   artifacts?: AssistantArtifact[]
-  /** 宿主生图进度；只用于当前回合的实时展示，不写入 pi 会话历史。 */
   imageProgress?: ImageGenerationProgress[]
   usage?: Usage
-  /**
-   * 本轮的**输出速度**（token/秒）。
-   *
-   * 只在拿到真实 usage 时才有 —— 有的 provider 在流式期间不报 usage，
-   * 那就宁可空着，也不用「字符数 ÷ 时间」去猜（猜出来的数字看着精确，其实是编的）。
-   */
   speed?: number
-  /** 本轮从开始生成到结束的墙钟耗时（ms），含工具往返 */
   elapsedMs?: number
-  /**
-   * 本条 assistant 消息（一次模型请求）的生成用时。
-   *
-   * 旧历史 / 未记录时缺省；恢复来自回合计时日志，按助手消息次序锚定，
-   * 不拿实时消息 id 索引（压缩 / 历史重排后 id 会漂移）。
-   */
   generationTiming?: GenerationTiming
-  /**
-   * 宿主自己记录的整轮计时（实施-11 H-6）。
-   *
-   * pi 的会话 JSONL **不存** `elapsedMs`（它只是推送时附上的 UI 字段），
-   * 所以切会话 / 重载后这一轮用时只剩宿主元数据日志里有。读历史时把
-   * 记录挂回该回合的最后一条消息上，界面据此恢复用时与终止原因。
-   */
   turnTiming?: TurnTimingMeta
-  /** 本轮实际采用的回复详细程度；旧历史缺失时为 unknown。 */
   responseDetail?: ResponseDetail
-  /** 该消息是否属于某次工具结果的容器（不渲染为独立消息） */
   model?: string
   timestamp?: number
-  /** bash 直执行（RPC bash 命令，非 LLM 工具） */
   bash?: { command: string; exitCode: number | null; cancelled: boolean }
   error?: string
 }
@@ -402,32 +261,17 @@ export interface ImageGenerationProgress {
   detail?: string
 }
 
-/**
- * AI 产物统一视图。
- *
- * `path` 只允许指向砚自己的受控 artifact 目录；渲染端不会凭模型输出
- * 直接读取任意路径。产物同时进入会话消息与 artifact manifest，重启后可恢复。
- */
 export interface AssistantArtifact {
   id: string
   sourceId: string
   filename: string
   path: string
-  /**
-   * 挂载已有文件时的**源文件路径**（受控副本之外的原始位置）。
-   *
-   * 预览、图片展示与远端读取仍走 `path` —— 受控副本不随源文件变动，也不把
-   * 绝对路径交给浏览器层；但「在文件夹中显示」「复制路径」要用源路径，
-   * 否则用户看到的是 `artifacts/` 里那份副本，找不到自己的原文档。
-   * 生成物（生图、HTML 预览）没有源文件，此字段不存在。
-   */
   sourcePath?: string
   mediaType: string
   kind: 'image' | 'svg' | 'code' | 'document' | 'binary'
   bytes: number
   createdAt: number
   previewable: boolean
-  /** 历史 manifest 仍在，但受控文件已被移动 / 删除时保留卡片。 */
   unavailable?: boolean
   error?: string
   provider?: string
@@ -435,53 +279,27 @@ export interface AssistantArtifact {
   description?: string
 }
 
-/**
- * 队列投递模式（pi 的 set_steering_mode / set_follow_up_mode）。
- *   all            当前回合的工具跑完后，一次把排队的全投进去
- *   one-at-a-time  每完成一个回合投一条（pi 的默认值）
- */
 export type QueueMode = 'all' | 'one-at-a-time'
 
-/**
- * pi 内核的来源。
- *
- * 用户需要知道「现在跑的是哪个 pi」，出问题时第一件事就是区分
- * 内置运行时 / 系统安装 / 自定义入口 —— 三者版本和依赖都可能不同。
- */
 export type PiSource =
-  /** 设置项 piBin 显式指定 */
   | 'override'
-  /** 环境变量 YAN_PI_BIN */
   | 'env'
-  /** 随应用分发的内置运行时 */
   | 'bundled'
-  /** 系统里全局安装的 pi */
   | 'global'
-  /** 从 PATH 上的 pi shim 反推到的安装 */
   | 'path'
-  /** 都没找到，退回 PATH 上的 pi（需 shell） */
   | 'shell'
 
-/** pi 进程 / 版本信息（设置「关于」页与引导页用） */
 export interface PiInfo {
-  /** 找到的 pi 入口（CLI JS 路径；shell 兜底时是 'pi'） */
   bin: string
   version?: string
-  /** pi 包所在目录（显示用） */
   home?: string
-  /** 实际来源 */
   source?: PiSource
-  /** 是否为随应用分发的内置运行时（= source === 'bundled'） */
   bundled?: boolean
-  /** 内置运行时目录当前是否可用（用于「缺件修复」提示） */
   bundledAvailable?: boolean
-  /** 解析/探测过程中的警告（退回 shell、文件缺失等） */
   error?: string
 }
 
-/** 会话状态快照（get_state 的归一化） */
 export interface SessionState {
-  /** 用户可见会话身份在内部片段切换期间保持不变。 */
   conversationId?: string
   conversationFile?: string
   sessionId: string
@@ -490,61 +308,22 @@ export interface SessionState {
   model?: ModelInfo
   thinkingLevel: string
   availableThinkingLevels: string[]
-  /** 思考档位能力的权威来源状态：空数组不再等同于“查询失败”。 */
   thinkingLevelsStatus?: CapabilityStatus
-  /** 与当前 model 一起推送的能力快照；缺失字段表示上游没有提供该能力。 */
   capabilities?: ModelCapabilitySnapshot
   isStreaming: boolean
-  /**
-   * 回合级「正在干活」：从 agent_start 到 agent_settled，**覆盖工具执行**。
-   * `isStreaming` 在工具执行期间是 false（每条 assistant 消息结束就清），
-   * 所以「回合是否还在继续」要看这个。
-   */
   isAgentRunning?: boolean
   isCompacting: boolean
-  /**
-   * **正在进行的**压缩（`compaction_start` → `compaction_end` 之间）。
-   *
-   * 与 `isCompacting` 的分工：`isCompacting` 是 pi 自己报的事实（用来转 spinner、
-   * 禁按钮），这里多带一个**原因**（手动 / 阈值 / 溢出），因为「为什么突然在压缩」
-   * 是用户当下最需要知道而 pi 的 state 不给的信息。
-   * 两者不一致时以 `isCompacting` 为准（它是权威，见 `setStateFrom` 里的自愈）。
-   */
   compaction?: CompactionRun
-  /**
-   * **本次运行内最近一次已结束**的压缩。
-   *
-   * 为什么与 `compaction` 分开而不是一条记录：开始新一次压缩时**不能**把上一次的
-   * 结果擦掉 —— 「详情」里的「最近一次」应当在压缩进行中仍显示上一轮的真实结果，
-   * 结束后才被新结果覆盖。一条记录做不到这点（要么丢历史，要么两个字段打架）。
-   *
-   * ⚠️ 从磁盘打开的历史会话**没有**这条记录（会话文件里的 compaction 条目目前不读），
-   * 所以界面在它缺失时**不写「未发生过」**——那可能是假陈述。
-   */
   lastCompaction?: CompactionRun
   messageCount: number
   pendingMessageCount: number
   cwd: string
   autoCompactionEnabled?: boolean
-  /**
-   * 工作集预算（N21-3）。
-   *
-   * 只在「策略生效且模型窗口已知」时才有值；窗口未知（旧模型快照 / 未连上）
-   * 时为空 —— 那种情况下界面继续按物理窗口显示（阶段 1 的样子），
-   * 而不是编一个工作集出来。
-   */
   contextPolicy?: ContextPolicyView
   steeringMode?: QueueMode
   followUpMode?: QueueMode
 }
 
-/**
- * 所有异步运行时事件的身份封套。
- *
- * sessionId 是稳定的会话身份，runId 是当前本地运行实例，generation
- * 用来丢弃切换会话/刷新能力之后迟到的响应。projectId 只表达产品归属，
- * 不等同于 cwd，也不要求会话文件物理落在项目目录里。
- */
 export interface RuntimeEnvelope {
   sessionId: string
   runId: string
@@ -552,13 +331,6 @@ export interface RuntimeEnvelope {
   generation: number
 }
 
-/**
- * 渲染端提交 send / runBash 时钉住的归属。
- *
- * 与 `RuntimeEnvelope` 的差别：启动最早期运行实例可能还没拿到稳定 sessionId，
- * 此时只带 `runId` + `generation`，宿主按能核对的部分定位目标实例，
- * 而不是退回「猜当前 active」。老调用方不传时宿主仍走原有入口同步钉住。
- */
 export type ExpectedRuntimeOwner = {
   sessionId?: string
   runId: string
@@ -566,14 +338,7 @@ export type ExpectedRuntimeOwner = {
   generation?: number
 }
 
-/**
- * 一个会话运行实例的状态（N12）。
- *
- * 「正在查看的会话」与「正在运行的会话」是两件事：
- * 切到别的会话时，后台会话的 pi 进程继续跑，左栏用它画状态槽。
- */
 export interface RunnerStatus {
-  /** 兼容旧 UI 的别名；新代码使用 runId。 */
   id: string
   runId: string
   sessionFile?: string
@@ -581,80 +346,46 @@ export interface RunnerStatus {
   projectId?: string
   generation: number
   cwd: string
-  /** 回合在跑（agent_start → agent_settled） */
   running: boolean
-  /** 有扩展请求在等用户回答 */
   waiting: boolean
-  /** 连接失败 / 进程退出 */
   failed: boolean
   conn: 'starting' | 'ready' | 'exited' | 'error'
   createdAt: number
   lastActiveAt: number
-  /** 当前视图正在看的就是它 */
   isActive: boolean
-  /**
-   * 自动隔离状态（同一工作目录冲突时被自动换到隔离工作树的会话）。
-   *
-   * `waiting` = 主干还有会话在跑，等它空下来就自动合回；
-   * `blocked` = 合回被挡（冲突 / 主干有未解决条目等等），改动仍在隔离工作树里。
-   * 没有隔离的会话就没有这个字段。
-   */
   isolation?: 'waiting' | 'blocked'
-  /** 隔离分支名（左栏悬停提示用；与 `isolation` 同时出现） */
   isolationBranch?: string
 }
 
-/** 可 fork 的用户消息（get_fork_messages） */export interface ForkPoint {
+export interface ForkPoint {
   entryId: string
   text: string
 }
 
-/** 命令注册表中的来源。兼容项只用于说明，不应进入可执行候选。 */
 export type CommandSource = 'pi' | 'extension' | 'skill' | 'prompt' | 'yan' | 'compatibility'
 
-/** 统一斜杠命令描述（pi / 扩展 / 技能 / 提示词 / Yan 本地命令）。 */
 export interface CommandDescriptor {
   name: string
   description?: string
   source: CommandSource
   location?: string
-  /** 注册命令的模块或文件，供同名命令区分来源。 */
   module?: string
-  /** 是否可以由桌面端补全并执行。 */
   executable: boolean
   usage?: string
-  /** 能看见但当前桌面端不执行时，说明兼容边界。 */
   availability?: string
-  /**
-   * 不在 `/` 补全候选里出现，但**保留**在注册表内（实施-02 S4）。
-   *
-   * 为什么不是直接删掉这条命令：pi 运行时可能也报一个同名命令
-   *（例如用户扩展注册了 `panel`）。删掉本地这条，剩下的那条就会
-   * 变成「可执行」，用户手打 `/panel` 会被当成消息发给模型 ——
-   * 隐藏 + 手打时给明确反馈，才能保证它永远走不到模型那一侧。
-   */
   hiddenInMenu?: boolean
 }
 
-/** 旧名称保留给 renderer/preload 调用方，实际结构已是 CommandDescriptor。 */
 export type SlashCommand = CommandDescriptor
 
-/** 待发送的图片附件 */
 export interface Attachment {
   id: string
   name: string
   mimeType: string
   size: number
-  /** 图片：不带 `data:` 前缀的裸 base64；文件引用：空串 */
   data: string
-  /** 预览用（图片与 data 相同；文件引用为空串） */
   preview: string
-  /**
-   * `image`（默认，向后兼容）或 `file`。
-   * 文件引用**不携带内容** —— 只登记路径，模型按需 read，避免把大文件塞进上下文。
-   */
   kind?: 'image' | 'file'
-  /** 文件引用的绝对路径（仅 `kind === 'file'`） */
   path?: string
 }
 
@@ -662,34 +393,19 @@ export interface ModelInfo {
   id: string
   name: string
   provider: string
-  /** pi 原生实现类型；pi-virtual 表示扩展注册的虚拟模型，不包含凭证。 */
   api?: string
-  /** Non-secret runtime endpoint fingerprint; excludes URL credentials and query parameters. */
   endpointKey?: string
   reasoning: boolean
-  /** `reasoning: false` 与“上游没告诉我们”必须区分。 */
   reasoningStatus?: CapabilityStatus
-  /** pi 的真实输入模态；缺失表示能力未知，不等同于不支持。 */
   input?: Array<'text' | 'image' | string>
   inputStatus?: CapabilityStatus
   contextWindow: number
   contextWindowStatus?: CapabilityStatus
   maxTokens?: number
   maxTokensStatus?: CapabilityStatus
-  /**
-   * 每百万 token 的报价（美元），与 pi 模型元数据里的 `cost` 同形。
-   * pi 没给报价（订阅制、手写 models.json 未填、或全 0）时缺失 —— 界面据此不显示价格，
-   * 不按模型名猜，也不把 0 渲染成 $0。缓存档可省，`cleanModelCost` 会归 0。
-   */
   cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
 }
 
-/**
- * 能力字段的三态值。
- *
- * `unsupported` 只能来自上游明确返回空/false；`unknown` 表示这次协议
- * 没有提供该字段。UI 不得把 unknown 画成“明确不支持”。
- */
 export type CapabilityStatus = 'known' | 'unsupported' | 'unknown'
 
 export interface ModelCapabilitySnapshot {
@@ -722,13 +438,11 @@ export interface SessionStats {
     total: number
   }
   cost: number
-  /** `cost` 里有多少是按公开 API 价估算的（pi 没有报价的模型）；没有估算为 0 或缺省 */
   costEstimated?: number
   contextUsage?: {
     tokens: number | null
     contextWindow: number
     percent: number | null
-    /** 主进程标记这份统计对应的模型，旧/跨模型快照不能冒充当前值。 */
     modelKey?: string
     availability?: CapabilityStatus
     estimated?: boolean
@@ -738,7 +452,6 @@ export interface SessionStats {
   assistantMessages: number
 }
 
-/** 每个直执行 bash 任务的状态（RPC bash，不走 LLM） */
 export interface BashRun {
   id: string
   command: string
@@ -749,81 +462,43 @@ export interface BashRun {
   fullOutputPath?: string
 }
 
-/** 队列中的一条尚未投递消息；id 由 Yan 维护，不用文本或数组下标识别。 */
 export interface QueueItem {
   id: string
   text: string
-  /** 原始图片附件由主进程按队列身份关联；pi 的 queue_update 本身只含文本。 */
   images?: { data: string; mimeType: string }[]
 }
 
-/** 队列状态（queue_update） */
 export interface QueueState {
   steering: QueueItem[]
   followUp: QueueItem[]
 }
 
-/** 兼容原生文本快照；有图片时另带完整队列项，用于恢复与草稿回填。 */
 export interface QueueSnapshot {
   steering: string[]
   followUp: string[]
   items?: QueueState
 }
 
-/**
- * 扩展写进会话的任务清单（
- * 例如用户自己的 `left-info-panel.ts` 用 `pi.appendEntry('left-panel-tasks', {todos})`）。
- *
- * 为什么要读它：`panel_todos` 工具是 agent 用来维护进度的手段，
- * 如果桌面端不显示，agent 调了也是白调 —— 用户看不到。
- */
 export interface SessionTodo {
   text: string
   done: boolean
-  /**
-   * 显式状态（**可选**，来自 pi 侧写清单的那个扩展）。
-   *
-   * 为什么是可选的：写清单的是扩展（`panel_todos`，不在这个仓库里），
-   * 现有数据只有 `{text, done}`。桌面端不能假定它在 —— **有就用、
-   * 没有就退回推断**（见 RightPanel 里 `activeIdx` 的两步判定）。
-   */
   status?: TodoStatus
 }
 
-/**
- * 任务状态。
- *
- * 为什么需要：只有 `done` 时，「哪一条正在做」只能猜（第一个未完成的），
- * 于是只要还有没做完的任务，界面上就**永远**有一条在转 —— agent 早就
- * 停了也照转。那是猜测，不是状态（方案 4.5）。
- */
 export type TodoStatus = 'pending' | 'running' | 'done' | 'blocked'
 
-/**
- * 一份任务清单快照（会话里每轮都会写一份）。
- *
- * 为什么要保留历史：agent 重新规划任务时会写一份**新的**清单，
- * 旧的那份仍在会话文件里 —— 用户要能回头看「上一轮列了哪些任务」，
- * 并**跳回**当时那轮对话。所以快照要带上轮次号。
- */
 export interface SessionTodoSnapshot {
-  /** custom entry 的 id */
   id: string
   todos: SessionTodo[]
-  /** 写这份清单时已经过了几轮用户消息（跳转用；从 1 开始） */
   round: number
 }
 
-/** 会话里的一条 custom entry（扩展写的任意数据） */
 export interface CustomEntry {
   id: string
   customType: string
   data: unknown
 }
 
-/* 会话列表 */
-
-/** 会话正文检索的一条命中；path 与 SessionSummary.path 对应 */
 export interface SessionSearchHit {
   path: string
   snippet: string
@@ -833,7 +508,6 @@ export interface SessionSearchHit {
 
 export interface SessionSearchResult {
   hits: SessionSearchHit[]
-  /** 已建好索引的会话数 / 会话文件总数 */
   indexed: number
   total: number
 }
@@ -842,53 +516,25 @@ export interface SessionSummary {
   id: string
   path: string
   cwd: string
-  /** 优先用 session_info 里的名字，没有才退回首条用户消息 */
   title: string
-  /** 是否用的是用户起的名字（而不是首条消息） */
   named: boolean
-  /**
-   * 分叉自哪个会话文件（pi 的 `session` 头里的 `parentSession`）。
-   * 没有就是根会话；左栏据此显示「分支数 / 分支编号 / 分叉自哪句话」。
-   */
   parentSession?: string
-  /** 分叉自父会话的那句话（截断；读不到就没有） */
   branchOrigin?: string
-  /**
-   * 会话的**真实最近活动**：最后一条 message 的时间戳。
-   *
-   * ⚠️ 不能用文件 mtime（打开会话会写 session_info/标题 → mtime 变新 → 那一行跳到顶部），
-   * 也不能用 createdAt（那是**分叉时刻**，会让刚分叉出来的子会话全挤到最上面）。
-   * 只认 message 的时间戳，列表才能“新→旧”且打开不重排。
-   */
   lastActivityAt?: number
-  /** Latest visible assistant reply found in the bounded tail index. */
   lastReply?: { id: string; at: number; text: string }
   createdAt: number
   updatedAt: number
   messageCount: number
   model?: string
-  /** Yan 的产品语义归属；不代表 JSONL 物理存储位置。 */
   projectId?: string
-  /**
-   * 所属主题空间（实施-25 P02）。与 `projectId` **并列**的独立维度：
-   *
-   * 同一个会话可以有项目归属、也可以有空间归属，也可以两个都没有。
-   * 可空一等字段：已有 Code 会话保持 `null`，**不迁移**。
-   */
   spaceId?: string
-  /** 迁移中的旧会话可能暂时需要用户确认归属。 */
   scope?: SessionScope
-  /** 最近一次在 Yan 中打开的时间。 */
   lastOpenedAt?: number
-  /** 归档时间（见 SessionLayoutEntry.archivedAt）。 */
   archivedAt?: number
-  /** 置顶（见 SessionLayoutEntry.pinned）。 */
   pinned?: boolean
-  /** cwd 对应多个项目时保留候选，不静默选择。 */
   projectCandidates?: string[]
 }
 
-/** 会话在 Yan 产品模型中的归属范围。 */
 export type SessionScope = 'global' | 'project' | 'pending'
 
 export interface SessionMoveRecord {
@@ -899,22 +545,18 @@ export interface SessionMoveRecord {
   toScope: SessionScope
 }
 
-/** `session-layout.json` 中的一条会话归属记录。 */
 export interface SessionLayoutEntry {
   sessionId: string
   sessionFile?: string
   cwd: string
   scope: SessionScope
   projectId?: string
-  /** 主题空间归属（可空一等字段，与 `projectId` 并列）。 */
   spaceId?: string
   projectCandidates?: string[]
   createdAt: number
   updatedAt: number
   lastOpenedAt?: number
-  /** 归档时间；有值 = 已归档（列表默认不显示，可恢复）。只是产品层标记，JSONL 不动。 */
   archivedAt?: number
-  /** 置顶：存在宿主，手机端与多窗口共用，自动归档也据此跳过。 */
   pinned?: boolean
   moveHistory: SessionMoveRecord[]
 }
@@ -924,50 +566,22 @@ export interface SessionLayoutDocument {
   entries: SessionLayoutEntry[]
 }
 
-/**
- * 会话预览的结果（不经过 pi 的直读）。
- *
- * `truncated > 0` 时界面应提示「有内容被省略」——
- * 因为大会话里 75% 的体积是超长 tool result / base64 图片，
- * 那些被**有损降级**了（见 main/session-reader.ts）。
- */
 export interface PeekResult {
   messages: UIMessage[]
-  /** 文件里一共多少条 message entry */
   total: number
-  /** 被截断/丢弃的内容条数 */
   truncated: number
-  /** 文件字节数 */
   bytes: number
-  /**
-   * 会话 id（文件头 `type:"session"` 那条的 id）。
-   *
-   * 用来把「刚铺上的内容」与随后到达的 pi `sync` 认成同一条会话：
-   * 对不上就说明那条 `sync` 属于别的会话，不能拿它覆盖当前视图。
-   */
   sessionId?: string
 }
 
-/* 模型接入（凭证） */
-
-/** 能不能用：ready = 有可用凭证 */
 export type AuthStatus = 'ready' | 'missing' | 'unknown'
 
-/**
- * 应用内 OAuth 登录的结果。
- *
- * 失败时 `error` 是**给用户看的中文句子**（不是错误码）—— 流程里的每一种
- * 失败（端口被占、state 不匹配、换 token 被拒、超时、取消）都拼好人话再返回，
- * 因为它会直接显示在设置页上。
- */
 export interface CodexLoginResult {
   ok: boolean
-  /** 成功时的 ChatGPT 账号 id（从 access token 的 claim 里取）。 */
   accountId?: string
   error?: string
 }
 
-/** 数据位置（设置 → 关于） */
 export interface StorageInfoView {
   agentDir: string
   realDir: string
@@ -975,19 +589,14 @@ export interface StorageInfoView {
   movable: boolean
   bytes: number
   pendingTarget?: string
-  /** 原位置不在、旁边留着迁移前备份：数据没丢，在这里 */
   strandedBackup?: string
   lastResult?: { ok: boolean; at: number; from: string; to: string; error?: string; leftover?: string }
 }
 
-/** 应用内订阅登录（非 ChatGPT）的结果；error 是给用户看的句子 */
-/** 电脑操作（Windows-MCP）的状态投影 */
 export interface ComputerUseStatusView {
   supported: boolean
-  /** uvx 的位置；null = 还没装 uv */
   uvx: string | null
   enabled: boolean
-  /** 能用 winget 一键安装 uv */
   canInstallUv: boolean
 }
 
@@ -995,7 +604,6 @@ export interface ComputerUseActionResult {
   ok: boolean
   error?: string
   log?: string
-  /** 没有 winget，需要按 uv 官方说明手动安装 */
   needsManual?: boolean
 }
 
@@ -1005,7 +613,6 @@ export interface OAuthLoginResult {
   error?: string
 }
 
-/** 登录过程中推给设置页的事件（通道 yan:oauth） */
 export type OAuthLoginEvent =
   | { provider: string; type: 'auth_url'; url: string; message?: string }
   | { provider: string; type: 'device_code'; userCode: string; url: string; expiresInSeconds?: number }
@@ -1022,10 +629,8 @@ export type OAuthLoginEvent =
   | { provider: string; type: 'prompt_closed'; promptId: number }
   | { provider: string; type: 'done' }
 
-/** 接入方式：订阅制（OAuth）还是 API key */
 export type AuthKind = 'subscription' | 'api_key'
 
-/** 自定义服务的写入结果（错误是可读文案，不含密钥） */
 export interface CustomProviderResult {
   ok: boolean
   errors?: string[]
@@ -1034,26 +639,11 @@ export interface CustomProviderResult {
 
 export interface ToolStatus {
   ok: boolean
-  /** 找到的可执行文件；没找到时为空 */
   path?: string
-  /** 用的是砚装在数据目录里的 PortableGit，不是系统自带的 */
   managed?: boolean
-  /**
-   * 没找到时的原因码（带参数）。
-   *
-   * 只传码、不传句子：文案由界面按当前语言渲染（`renderer/src/lib/toolchain-text.ts`）。
-   * 以前这里直接放拼好的中文，英文界面下就会冒出一整段中文。
-   */
   reason?: ToolMissingReason
 }
 
-/**
- * 外部命令缺失的原因。
- *
- * · `shell-path-missing` —— pi 设置里的 shellPath 指向不存在的文件（`path` 是它）
- * · `bash-missing`       —— 没找到 bash，pi 会退到 PowerShell（`shell` 说明退到哪一档）
- * · `git-missing`        —— 没找到 git
- */
 export type ToolMissingReason =
   | { code: 'shell-path-missing'; path: string }
   | { code: 'bash-missing'; shell: 'pwsh' | 'powershell' }
@@ -1069,38 +659,14 @@ export interface AuthProviderInfo {
   id: string
   name: string
   kind: AuthKind
-  /*
-   * 这里以前有一个 `hint`：一句话说明（为什么选它 / 有什么坑）。
-   * 现在这类文案只存在于渲染端的 i18n（`auth.hint.*` / `auth.name.*`）——
-   * 主进程不知道界面语言，在这里写中文会在英文界面上原样冒出来。
-   */
-  /** 对应的环境变量名（空 = 该方式不走环境变量） */
   envVar: string
-  /** 在 auth.json 里的键名（空 = 由 pi 的 OAuth 流程自己定） */
   authKey: string
-  /** 订阅制需要跑的命令（目前统一是 `pi`，然后在里面 `/login`） */
   loginCmd?: string
-  /**
-   * 能不能**在应用内直接登录**（不用回终端）。
-   *
-   * ChatGPT 订阅走 src/main/oauth.ts；Claude Pro、Copilot、xAI、OpenRouter
-   * 由 src/main/oauth-providers.ts 驱动随包 pi 自己的登录模块。
-   */
   inAppLogin?: boolean
   status: AuthStatus
-  /**
-   * 凭证从哪里来的（status='ready' 时才有意义）。
-   *
-   * 为什么要把这个告诉界面：用户用**环境变量**配的 key 与写在 auth.json 里的
-   * 是两个不同的东西 —— 前者在设置里「移除」不了（要去改环境变量），
-   * 不区分的话界面上会给出一个点了没用的「退出」按钮。
-   */
   source?: 'auth.json' | 'env'
 }
 
-/* 设置 */
-
-/** 可独立归档、分组和迁移路径的项目实体。 */
 export interface ProjectRecord {
   id: string
   cwd: string
@@ -1113,7 +679,6 @@ export interface ProjectRecord {
 
 export interface ProjectDirectoryChange {
   projectId: string
-  /** 对话框打开时的原目录；宿主在串行写入时检查，防止覆盖另一处修改。 */
   expectedCwd: string
   cwd: string
 }
@@ -1126,432 +691,108 @@ export interface ProjectGroup {
   createdAt: number
 }
 
-/** 用户选择的能力发现与接入策略；宿主执行入口也必须强制执行。 */
 export type CapabilityStrategy = 'existing-only' | 'search-and-recommend' | 'auto-connect'
 
 export interface AppSettings {
-  /**
-   * 界面外壳：`v2` 现行界面，`v3` 新界面（侧栏 + 对话）。缺省 = v2。
-   * 环境变量 `YAN_UI=v2|v3` 优先于本设置；切换后重新载入窗口生效。
-   */
   uiVersion?: 'v2' | 'v3'
-  /** Last explicitly selected models and shared favorites; independent of session history. */
   lastMainModel?: import('./model-selection').ModelChoice
   lastSubagentModel?: import('./model-selection').ModelChoice | 'follow'
   modelFavorites?: import('./model-selection').ModelChoice[]
-  /** 模型菜单里供应商的显示顺序（用户拖动调整） */
   modelProviderOrder?: string[]
   cwd: string
   theme: 'dark' | 'light'
   lang: 'zh-CN' | 'en-US'
-  /** 手动指定 pi 入口（自动探测失败时用） */
   piBin?: string
-  /** Enable native pi Codemode in Inkstone; missing means enabled. */
   codemodeEnabled?: boolean
-  /** 新会话空态的「动态 ASCII 背景」；缺省 = 开，只有明确关才落 false。 */
   asciiBackground?: boolean
-  /** 闲置多少天自动归档会话；缺省 / 0 = 从不。置顶与有运行实例的会话永不归档。 */
   autoArchiveDays?: number
-  /** 有会话在跑时保持电脑不睡眠；缺省 = 开，只有明确关才存 false。 */
   keepAwakeWhileWorking?: boolean
-  /** 可视化回答（图表、卡片、图解等结构化块）：缺省 = 开；关掉后不再告诉模型这些写法，已有历史照常显示。 */
   visualAnswers?: boolean
-  /** 上下文超过软线后，把较早的大段工具输出换成存根再发给模型；缺省 = 开（只改发送视图，不改会话记录）。 */
   contextTrim?: boolean
-  /** 开始裁剪的上下文大小（token）；缺省 80000，窗口较小的模型按比例提前。 */
   contextTrimTokens?: number
-  /**
-   * 自动压缩上限（token）：一轮结束后上下文超过它就调用 pi 原生压缩；跟随 pi 的自动压缩开关，砚不另设开关。
-   * 缺省 400000，只收 AUTO_COMPACT_STEPS 里的挡位，窗口较小的模型按窗口的 90% 截断。
-   */
   autoCompactTokens?: number
-  /** 执行过程放在正文之后（inline，缺省）还是右侧并列一栏（side）；宽度不够时界面自动回到 inline，值不变。 */
   processLayout?: 'inline' | 'side' | 'left'
-  /** 背景色模板 id（缺省 = 默认；custom = 用 backgroundCustom）。深浅主题各自有一套模板色。 */
-  /** 思考链默认展开并实时显示；缺省 = 关（折叠成一行预览）。 */
   liveThinking?: boolean
   backgroundPreset?: string
-  /** 自定义页面底色 #rrggbb（深色主题；浅色未单独设置时也用它），会按当前主题夹进可读范围 */
   backgroundCustom?: string
-  /** 浅色主题的自定义页面底色 #rrggbb */
   backgroundCustomLight?: string
-  /** 界面与正文字体：缺省系统无衬线；maple = 终端风格，custom = fontUiCustom */
   fontUi?: 'sans' | 'serif' | 'maple' | 'custom'
   fontUiCustom?: string
-  /** 代码与终端字体：缺省 = Maple Mono CN；custom = 用 fontCodeCustom */
   fontCode?: 'mono' | 'custom'
   fontCodeCustom?: string
-  /** 正文字号 px（缺省 15） */
   fontSizeBody?: number
-  /** 界面字号 px（缺省 13） */
   fontSizeUi?: number
-  /** 靠电池供电时也保持唤醒；缺省 = 开。 */
   keepAwakeOnBattery?: boolean
-  /** 每轮发送前给项目文件存检查点，可回退；缺省为开 */
   checkpointsEnabled?: boolean
-  /** 「危险批准」档下，写入项目之外的路径前也确认；缺省为关 */
   guardOutsideWrites?: boolean
-  /** 日常模式里显示空间与资料库（标题栏入口、首页卡片、工作对象条）；缺省为隐藏，数据不受影响 */
   showSpaces?: boolean
-  /** 权限档位：danger = 只在高危时问（缺省）；all = 一律不问。没经确认的删除都移到回收站 */
   permissionMode?: PermissionMode
-  /** 用户允许 Agent 写入的额外目录（绝对路径） */
   guardAllowRoots?: string[]
-  /** 最近使用的目录 */
   recentCwds: string[]
-  /** 工作目录绝对路径 → 用户自定义项目名 */
   projectNames: Record<string, string>
-  /** 持久化项目实体；projectNames 是旧版本兼容映射。 */
   projects: ProjectRecord[]
-  /** 项目分组（空 groupId 表示未分组）。 */
   projectGroups: ProjectGroup[]
-  /**
-   * 用户拖拽定下的项目顺序（N01）；数组里是 {@link ProjectRecord.id}。
-   *
-   * 只存**用户显式排过**的项目：不在数组里的项目按原来的活动序排在后面，
-   * 所以新增/新打开的项目永远能出现在列表里，不会因为「没排过」而消失。
-   * 空数组 = 全部按活动序（升级前的默认表现）。
-   */
   projectOrder: string[]
-  /** 供应商月度预算（用于没有余额概念但提供费用 API 的平台） */
   providerBudgets: Record<string, number>
-  /** 右栏是否展开（默认展开，可用标题栏按钮或右栏的关闭按钮收起） */
   rightPanelOpen: boolean
-  /**
-   * 左栏工作区模式（编码 / 日常）的真源（实施-18 S0）。
-   *
-   * 不是 AgentMode；和后者可以任意组合。`undefined` = 磁盘上还没有这个键
-   * （与 `contextDeep` 同一个约定）—— 渲染端据此做一次性 localStorage 迁移，
-   * 迁移完成后只读这里，不再读 localStorage。
-   */
   workspaceMode?: WorkspaceMode
-  /**
-   * 窗口是否置顶。
-   *
-   * 默认 **false** —— 置顶是个强干扰行为（挡住所有其它窗口），
-   * 不能偷偷默认开。用户主动开了才记住。
-   */
   alwaysOnTop: boolean
-  /**
-   * 界面缩放倍率。**0 = 自动**（按所在屏幕的缩放算，见 main/zoom.ts）。
-   *
-   * 为什么默认自动：Electron 会跟随系统 DPI，但设计基准 12.5px 在 125%
-   * 下会落在 15.625 设备像素（非整数）→ 中文发虚、偏小。
-   * 自动模式把它对齐到整数设备像素并放大到舒适尺寸。
-   */
   uiScale: number
-  /** 左栏底部的用户档案（名字 / 头像 / 登录预留） */
   profile: UserProfile
-  /**
-   * 左栏宽度（px）。
-   *
-   * **0 = 用设计默认值**（300），而不是把 300 写死进设置文件 ——
-   * 这样以后调默认值时，没手动改过宽度的用户会跟着变，
-   * 改过的人保留自己的值。右栏同理。
-   */
   railWidth: number
-  /** 工具栏宽度（px）。0 = 用设计默认值 */
   panelWidth: number
-  /**
-   * 浏览器区域高度（px）。**0 = 用设计默认值**（55% 的右栏高度）。
-   * 只在浏览器与工具栏同时显示时可拖 —— 工具栏收起时浏览器独占整列，
-   * 这个值就不参与了。与 railWidth / panelWidth 同一个约定。
-   */
   browserHeight: number
-  /**
-   * 工具栏分区的显示顺序（存 id）。
-   *
-   * **空数组 = 用设计默认顺序** —— 与 railWidth 同一个思路：
-   * 以后调整默认顺序时，没手动改过的人会跟着变。
-   * 数组中出现的未知 id 会被忽略（版本升级后旧 id 可能有变动）。
-   */
   toolOrder: string[]
-  /**
-   * 被收进「工具库」的分区 id（即不在工具栏里显示的）。
-   * 在这里面的分区不是删除，随时可以从库里拿回来。
-   */
   toolHidden: string[]
-  /**
-   * 可移动工具磁贴的布局真源（实施-12 U-0）。
-   * 旧 `toolOrder` / `toolHidden` 仅在读盘时做一次迁移；U-4 接管 UI 后它们变成只读遗留。
-   */
   toolLayout?: ToolLayout
-  /**
-   * 运行中的工具调用是否**自动展开成详情**（N03）。
-   *
-   * 语义：它只决定「自动展开」，**不再决定历史能不能查看**。
-   * 所有已记录的调用随时可以点击查看详情；失败调用始终保留行内状态与入口。
-   *
-   * 默认 **false** —— 工具调用只留一行，开始 / 增量输出 / 结束都不自动展开，
-   * 避免一次跑十几条命令把回答顶出屏幕。这是显式偏好：
-   * 只有用户在设置里主动打开（同时写入 `toolDetailExplicit`）才会自动展开。
-   */
   toolDetail: boolean
-  /**
-   * 「用户在设置里显式切换过 toolDetail」的标记。
-   *
-   * 为什么需要它：`toolDetail` 的默认值改过两次，靠值本身无法区分
-   * 「用户选的」和「旧版本迁移写的默认值」。
-   *   · 旧语义 v1：已结束的能不能点开（旧配置里的 false 只是默认值）；
-   *   · v2：运行中是否自动展开，迁移时把老配置一律升为 true；
-   *   · v3（N03）：默认改为收起，**没有这个标记就归到 false**。
-   * 有标记的配置不会被迁移覆盖 —— 用户手动选过的偏好一直保留。
-   */
   toolDetailExplicit?: boolean
-  /**
-   * 分区内容高度（px），按分区 id 存。
-   * 只给「内容会滚动」的分区用（文件树 / 日志）—— 其余几行高的分区
-   * 调高度没意义，界面上也不给把手。
-   */
   toolHeights: Record<string, number>
-  /**
-   * 对话内容列的宽度（px）。**0 = 用设计默认值**（--w-stream，当前 800）。
-   *
-   * 与 railWidth / panelWidth 同一个约定：只在用户手动调过之后才落盘一个数字，
-   * 以后改默认值时没调过的人会跟着变。对话正文、输入框、用量条、导航轨
-   * 全都从同一个 --w-stream 变量取值，所以调它一处就整体对齐。
-   */
   streamWidth: number
-  /**
-   * 自主模式。
-   *
-   * ⚠️ **实施-05 起不再作为界面开关**：提问行为改成会话级工作模式
-   * （`defaultWorkMode` + 每会话状态）。这个字段只剩两个用途：
-   *   ① 旧配置迁移的输入（旧 `true` → `autonomous`，见 `migrateLegacyAutonomous`）；
-   *   ② 极旧版本的薄层扩展读 `desktop.json` 时的兜底。
-   * 新代码不得再读它决定行为，也不要删用户已写下的值。
-   */
   autonomous: boolean
-  /**
-   * 新会话的默认工作模式（实施-05）。
-   *
-   * 模式本身**按会话保存**（`YAN_DIR/work-modes.json`），这里只是新会话的初值。
-   * 迁移规则：新字段合法就听它的，否则旧 `autonomous === true` → `autonomous`，
-   * 其余 → `standard`（幂等）。
-   */
   defaultWorkMode: WorkMode
-  /**
-   * 歧义澄清提问频率（全局偏好，三档见 `shared/question-frequency.ts`）。
-   *
-   * 只调节模型每轮收到的提问指引，不是精确次数保证；下一轮生效，
-   * 不修改历史与当前运行轮。缺省 `balanced`，脏值安全归一。
-   */
   questionFrequency?: QuestionFrequency
-  /** 默认在已授权来源与权限范围内自动接入。 */
   capabilityStrategy: CapabilityStrategy
-  /**
-   * 按活动用不同模型（实施-25 P18）。
-   *
-   * `undefined` = 没配过（各活动都跟随会话当前模型）。
-   * 这个配置**只回答「该用哪个模型」** —— 不新建会话、不改任务与学习状态。
-   */
   activityModels?: ActivityModelConfig
-  /**
-   * 模式快捷键的开关（2026-09-22，替代旧的 `workModeTab`）。
-   *
-   * `undefined` = 没改过 = **开**；只有明确关掉才落 `false`
-   * （与 `contextFold` 同一个「默认态不落盘」约定）。
-   * 旧字段 `workModeTab: false`（裸 Tab 快切关掉）在读取时迁到这里，之后不再写回。
-   */
   workModeShortcutEnabled?: boolean
-  /**
-   * 子代理结束时是否自动通知发起它的会话（唤醒模型继续 / 汇总）。
-   * `undefined` = 没改过 = **开**；只有明确关掉才是 `false`。
-   */
   subagentNotify?: boolean
-  /** 主会话循环安全中止后最多自动续一次；缺省开启，false 关闭。 */
   streamLoopAutoContinue?: boolean
-  /** 输入框下方显示本轮速度与缓存命中率。`undefined` = 没改过 = 开；只有明确关掉才是 `false`。 */
   usageUnderInput?: boolean
-  /**
-   * 手机接入（远程访问，需求稿第 3 步）。`undefined` = 从没开过 = 关闭，不监听任何端口。
-   * 形状与默认值见 `shared/remote-protocol.ts` 的 RemoteAccessSettings。
-   */
+  usageCurrency?: import('./currency').UsageCurrencySettings
   remoteAccess?: import('./remote-protocol').RemoteAccessSettings
-  /** 电脑本地语音输入（需求稿 3.5）：选用的模型、已有程序路径、识别语言。见 `shared/voice-input.ts` */
   voiceInput?: import('./voice-input').VoiceInputSettings
-  /**
-   * 模式快捷键的组合键文本（例如 `Ctrl+Tab` / `Ctrl+Shift+M`）。
-   *
-   * - `undefined` = 没设过 = 用默认的 `Ctrl+Tab`；
-   * - `''` = 显式不要快捷键（与开关字段分工不同：这里表达「没有绑定」）；
-   * - 其余必须是合法组合键，规范化后再落盘（`normalizeWorkModeShortcut`）。
-   */
   workModeShortcut?: string
-  /**
-   * 发送键。
-   *
-   * - `auto`（**默认**）：短输入框里 Enter 发送；进入长文模式后 Enter 换行、
-   *   Ctrl/Cmd+Enter 发送。这是用户明确要求过的行为（写长文时不想误发）。
-   * - `enter`：任何时候 Enter 发送（Shift+Enter 换行）。
-   * - `ctrlEnter`：任何时候 Ctrl/Cmd+Enter 发送（Enter 换行）。
-   *
-   * 为什么要把它变成设置：`auto` 让「输入框高度」隐式决定了 Enter 的语义 ——
-   * 按下去之前无法确定会发生什么。显式之后，当前规则还会常显在输入区里
-   * （见 Composer 的 sendRule），不必靠试。
-   */
   sendKey: 'auto' | 'enter' | 'ctrlEnter'
-  /**
-   * 回复详细程度（方案 3.1）。
-   *
-   * 与推理强度（`thinkingLevel`）是**两件事**：
-   *   · 推理强度 = 让它想多深；
-   *   · 回复详细程度 = 它把结果讲多细。
-   * 三档都不得省略必要错误提示或改变任务完成范围，也不调低推理强度。
-   *
-   * 默认 `standard`：与改动前的行为一致（不注入任何额外提示）。
-   * 落地方式：内置扩展 `response-detail.js` 在 before_agent_start 里注入，
-   * 每轮开始时读一次有效设置，不逐 token 改提示。
-   */
   responseDetail: 'brief' | 'standard' | 'detailed'
-  /**
-   * 界面密度（方案 A1）：只改间距与行高，**不缩放字体**。
-   *
-   * 默认 `standard` = 改动前的观感（不能改老用户的界面）。
-   * 实现走 CSS 变量（`--d-row-gap` / `--d-section-gap` / `--d-message-gap`），
-   * 由 `html[data-density]` 覆盖 —— 而不是给所有尺寸统一乘倍数，
-   * 那样会把中文字体的像素对齐弄坏。
-   */
   density: 'compact' | 'standard' | 'comfortable'
-  /**
-   * 上下文策略数值（**用户级**覆盖，N21-7）。
-   *
-   * **缺省 / 空对象 = 用砚已验证的默认值**（240k / 0.7 / 三档 + 兜底），
-   * 与 `railWidth: 0` 是同一个约定：以后调默认值时，没手动改过的人会跟着变。
-   */
   contextPolicy?: ContextPolicyOverrides
-  /**
-   * 上下文策略的**模型级 / 供应商级**覆盖（N21-7）。
-   *
-   * key 有两种形式，查表顺序 specific → provider → generic：
-   *   · `provider/model`（如 `anthropic/claude-sonnet-4`）—— 只对这一个模型生效；
-   *   · `provider`（如 `anthropic`）—— 对该供应商的所有模型生效。
-   * 两者都不命中的模型回落到 `contextPolicy`（用户级）再回落默认值。
-   * 未知 key 一律保留（用户可能只是暂时没选那个模型），但界面只列当前模型。
-   */
   contextPolicyByModel?: Record<string, ContextPolicyOverrides>
-  /** 各模型自设的采样温度，key 为 `provider/modelId`，值 0–2；没有该 key = 用供应商默认值。 */
   temperatureByModel?: Record<string, number>
-  /**
-   * Deep Context（N21-8）：**回答之前**先让扩展自己归纳一遗工作集。
-   *
-   * 默认**关** —— 它不是「顺带多花点 token」，而是**同步阻塞**本轮请求
-   * （归纳必须在请求发出前完成），每轮最多多等 30s（`DEEP_TIMEOUT_MS`）。
-   * 用户主动开了才记住（与 `alwaysOnTop` 同一个约定）。
-   *
-   * 传给扩展走**扩展自己读 `desktop.json`**（与 `language` / `response-detail` /
-   * `question` 同一个约定），不是写进 `YAN_CONTEXT_POLICY`：后者的优先级**高于本设置**
-   * （它是测试通道），写进去会让这里的开关静默失效。走文件的好处是**改完立即生效**，
-   * 不用重建 pi 实例、也不动已有会话（测试另有 `YAN_CONTEXT_DEEP` 通道）。
-   */
   contextDeep?: { enabled: boolean }
-  /**
-   * 上下文状态生成 + 注入（`episode-fold`，N21-5～N21-6）的**用户开关**。
-   *
-   * 方向与 `contextDeep` **相反**：`episode-fold` 2026-09-18 已进默认接管集，
-   * 所以「没改过」（`undefined`）等于**开**；只有明确关掉才落 `{ enabled: false }`
-   * —— 与 `railWidth: 0` / `contextDeep` 同一条约定：磁盘上没有这个键 = 用户没改过，
-   * 以后调默认值时不会把改过的人一起改掉。
-   *
-   * 为什么需要一个独立字段，而不是让用户改 `kinds`：`kinds` 是「真正接管的阶段集」
-   * 这个产品决定的一部分（它一变，界面上的阶段预报与扩展真会做的事必须同时变），
-   * 不适合做成可自由编辑的一组勾选。用户需要的只是「这个功能我要不要」，
-   * 所以这里给一个开关，由主进程与扩展各自把它折算进 `kinds`。
-   *
-   * 传递链与 `contextDeep` 相同（渲染端 → 主进程 → `desktop.json` → 扩展读文件），
-   * 因此改完立即生效；`YAN_CONTEXT_POLICY` 显式给了 `kinds` 时它按测试通道优先。
-   */
   contextFold?: { enabled: boolean }
-  /**
-   * 项目知识检索与注入（实施-03 S3）的**用户开关**。
-   *
-   * 默认**关**（与 `contextDeep` 同向：没改过 = 磁盘上没有这个键）。
-   * 默认关的理由不是成本，而是**写入语义**：知识条目是「以后每轮都可能
-   * 被当材料注入」的长期数据，应该在用户明确同意后才开始积累与注入；
-   * 关闭时连检索都不做（不是「检索了但不注入」）。
-   *
-   * 传递链与 `contextDeep` 相同（渲染端 → 主进程 → `desktop.json` →
-   * 宿主检索 → 扩展读注入文件），所以**改完下一轮就生效**，
-   * 不用重建 pi 实例。UI 页在 S5，本片先落地机制与设置字段。
-   */
   projectKnowledge?: { enabled: boolean }
-  /**
-   * 声音提示（对齐 opencode 的 attention / sounds）。
-   *
-   * 默认**关**：突然出声比突然动画更吓人，想用的人自己开。
-   */
   sound: SoundSettings
-  /**
-   * 用户改绑的 v3 全局快捷键：`ShortcutId → 键位数组`，缺省项用注册表默认。
-   *
-   * 形状契约在渲染端 `renderer/src/app/shortcuts.ts` 的 `ShortcutOverrides`，
-   * 这里用类型查询引用同一份定义（纯类型，构建时擦除，不产生运行时依赖）。
-   * 主进程只原样读写，渲染端读取与按键绑定时都过 `sanitizeShortcutOverrides` 清洗。
-   */
   shortcutOverrides?: import('../renderer/src/app/shortcuts').ShortcutOverrides
 }
 
-/**
- * 会发出提示音的事件。
- *
- * 对齐 opencode 的 done / question / error 三类：
- *   · done      —— 一个回合跑完了（agent_settled）
- *   · question  —— 扩展/模型要用户做选择，需要人介入
- *   · error     —— 出错（扩展报错 / pi 进程错误）
- */
 export type SoundEvent = 'done' | 'question' | 'error'
 
 export interface SoundSettings {
-  /** 总开关 */
   enabled: boolean
-  /** 音量 0~1（opencode 默认 0.4） */
   volume: number
-  /**
-   * 窗口不在前台时是否发**系统通知**（Windows 通知中心）。
-   *
-   * 与声音独立：可以只要声音不要通知，或反之。默认 true（对齐 opencode）。
-   */
   notifications: boolean
-  /** 各事件单独开关（控制声音，也控制通知） */
   events: Record<SoundEvent, boolean>
 }
 
-/**
- * 渲染端请求一次系统通知。
- *
- * 为什么不在渲染端直接 new Notification：
- *   · 主进程能拿到窗口状态，点击通知后能把窗口拉回前台（restore + focus）；
- *   · Windows 上需要 AppUserModelID 才能显示 toast，那只能在主进程设；
- *   · 渲染端的 Web Notification 在打包后行为不一致，主进程一条路径更好控。
- */
 export interface AttentionNotify {
   kind: SoundEvent
   title: string
   body?: string
 }
 
-/** 音量的合法区间（主进程与渲染端共用，避免两边各写一份） */
 export const SOUND_VOLUME_MIN = 0
 export const SOUND_VOLUME_MAX = 1
 
-/**
- * 工具栏分区的 id。
- *
- * 为什么放 shared：主进程要拿它**校验**设置文件里的顺序/隐藏集合
- * （未知 id 直接丢掉，否则版本升级后旧 id 会一直占位），
- * 渲染端要按它排默认顺序。两处必须用同一份定义。
- */
-/**
- * 右栏工具分区的**默认顺序**，也是合法 id 的白名单。
- *
- * ⚠️ 顺序改过（2026-09 评审）：原来是 `context, quota, todo, …`，
- *    现在把 **任务** 提到最前 —— 它回答的是“现在该我做什么”，
- *    是唯一“越早看到越好”的分区；上下文与文件是查资料的。
- *    额度 / 队列 / 日志 / 扩展 / 操作都归到后面按需展开。
- *
- *    这只影响 `toolOrder` 为空（从未自定义过）的用户 —— 设置里存过顺序的
- *    人仍按自己的来（见 RightPanel 的 fullOrder），不会被默默重排。
- */
 export const TOOL_SECTIONS = ['todo', 'context', 'files', 'quota', 'queue', 'ext', 'log', 'actions'] as const
 export type ToolSectionId = (typeof TOOL_SECTIONS)[number]
 
@@ -1564,36 +805,22 @@ export interface ProviderQuota {
   currency?: string
   label?: string
   error?: string
-  /** 本次查询失败的原因；有它时其余字段是上次成功的旧数据（checkedAt 为那次的时间），只供展示 */
   staleError?: string
-  /**
-   * 分窗口的额度（订阅制常见：5 小时 + 每周）。
-   * 有它时右栏会在总额度下面逐条画进度条，而不是只给一个数字。
-   */
   windows?: QuotaWindow[]
   checkedAt: number
 }
 
 export interface QuotaWindow {
-  /** 稳定 id，仅用于 React key 与测试 */
   id: string
-  /** 展示名（由主进程按供应商语言给出） */
   label: string
   used: number
   total: number
-  /** 重置时间（毫秒时间戳），没有就不显示 */
   resetAt?: number
   exceeded?: boolean
-  /** 未登记的服务端限额（代号命名）：只展示，不参与「已用完」判断与告警配色 */
   informational?: boolean
-  /**
-   * 这个窗口的额度是**推算**出来的（不是接口给的官方字段）。
-   * 方案 7.2：界面必须标明来源，不能把推算值伪装成精确额度。
-   */
   estimated?: boolean
 }
 
-/** 把设置里读到的顺序规范化：只留合法 id、去重、并补上缺的（按默认相对位置放后面） */
 export function normalizeToolOrder(v: unknown): string[] {
   if (!Array.isArray(v)) return []
   const known = new Set<string>(TOOL_SECTIONS)
@@ -1604,12 +831,10 @@ export function normalizeToolOrder(v: unknown): string[] {
     seen.add(x)
     out.push(x)
   }
-  // 缺的按默认顺序补在后面（新版本新增分区时，老用户的顺序不会把新分区弄丢）
   for (const id of TOOL_SECTIONS) if (!seen.has(id)) out.push(id)
   return out
 }
 
-/** 隐藏集合：只留合法 id、去重 */
 export function normalizeToolHidden(v: unknown): string[] {
   if (!Array.isArray(v)) return []
   const known = new Set<string>(TOOL_SECTIONS)
@@ -1620,221 +845,86 @@ export function normalizeToolHidden(v: unknown): string[] {
   return [...seen]
 }
 
-/**
- * 面板宽度的允许区间。
- *
- * ⚠️ 放在 shared 是因为**两边都要夹**：
- *   主进程在落盘时夹（防设置文件被手改成脏值），
- *   渲染端在拖动时也要夹 —— 不夹的话拖过头会产生 `-9439px` 这种非法值，
- *   而非法值会让 `grid-template-columns` 整条声明失效（那一拖就完全没反应）。
- */
 export const RAIL_MIN = 200
 export const RAIL_MAX = 1200
 export const PANEL_MIN = 220
 export const PANEL_MAX = 1200
 
-/** 夹一个合法的面板宽度；0 / 非数字都当「用默认」 */
 export function clampPanelWidth(v: unknown, min: number, max: number): number {
   const n = typeof v === 'number' ? v : Number(v)
   if (!Number.isFinite(n) || n <= 0) return 0
   return Math.round(Math.min(max, Math.max(min, n)))
 }
 
-/**
- * 对话内容列宽度的允许区间（px）。
- *
- * 下限 560：再窄中文一行放不下几个字，代码块会疯狂折行；
- * 上限 1600：再宽就接近全屏，阅读行长会失控（这是当初设 --w-stream 的原因）。
- * 与面板宽度一样放在 shared —— 主进程落盘前夹、渲染端拖动时也夹。
- */
 export const STREAM_MIN = 560
 export const STREAM_MAX = 1600
 
-/** 夹一个合法的对话宽度；0 / 非数字都当「用默认」 */
 export function clampStreamWidth(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v)
   if (!Number.isFinite(n) || n <= 0) return 0
   return Math.round(Math.min(STREAM_MAX, Math.max(STREAM_MIN, n)))
 }
 
-/**
- * 项目信任的视图（实施-07 S2b-2）。
- *
- * `entry` 是**让结果是这个值的那条条目的键**（可能是父目录的那条）：
- * 只回一句「已信任 / 未信任」的话，用户没法判断该改哪一条。
- * 详见 `src/main/project-trust.ts`。
- */
 export interface TrustStatusView {
   cwd: string
   trusted: boolean
   entry: string | null
 }
 
-/**
- * 自动压缩的生效设置与触发点（读 pi 的 settings.json，只读）。
- * 界面用它说明「什么时候会自动压缩」—— 这个数字必须与 pi 实际行为一致。
- */
 export interface CompactionInfo {
-  /** 自动压缩开关（pi 的 compaction.enabled） */
   enabled: boolean
-  /** 为模型回答预留的 tokens（默认 16384） */
   reserveTokens: number
-  /** 压缩时保留的最近 tokens（默认 20000） */
   keepRecentTokens: number
-  /** 当前模型的上下文窗口 */
   contextWindow: number
-  /** 触发线 = contextWindow - reserveTokens；砚的自动压缩上限更早时取上限（见 cappedByInkstone） */
   threshold: number
-  /** 触发线来自砚设置里的「自动压缩上限」，而不是 pi 的 reserveTokens */
   cappedByInkstone?: boolean
-  /** 是否被用户改过（false = 全是 pi 的默认值） */
   custom: boolean
-  /**
-   * 生效值来自哪个文件（N21-2 顺手修正 D21/D22 时加）。
-   *
-   * `global` = `<pi 目录>/settings.json`（或默认值）；
-   * `project` = `<项目>/.pi/settings.json`（**且 pi 真的会读它**，见下）。
-   */
   scope?: 'global' | 'project'
-  /**
-   * 项目里配了压缩参数，但 pi 不会读它（未信任该项目）。
-   *
-   * 界面必须说出来：否则用户改了项目里的 `reserveTokens`，看到的却是一条
-   * 永远对不上的触发线 —— 而这正是“显示的数字与实际生效不符”那类最难发现的错。
-   */
   projectIgnored?: boolean
 }
 
-/**
- * 一次上下文压缩的触发原因（N21-2）。
- *
- * pi 0.85.1 只会给这三个（`compaction_start.reason`）：
- *   · `manual`    用户点了「压缩上下文」
- *   · `threshold` 上下文超过「窗口 − 预留」自动触发
- *   · `overflow`  上游报了上下文溢出，压缩后重试
- * 认不出的原因**不吞**：原文进 `CompactionRun.reasonRaw`，界面上显示原文 ——
- * 显示「未知原因」等于把上游的信息丢掉（与 capability 的三态同一个原则）。
- */
 export type CompactionReason = 'manual' | 'threshold' | 'overflow'
 
-/** 一次压缩的结局。`running` 只出现在 {@link SessionState.compaction} 里。 */
 export type CompactionStatus = 'running' | 'completed' | 'declined' | 'failed' | 'cancelled'
 
-/**
- * 一次上下文压缩的状态快照（N21-2 可观测）。
- *
- * 唯一来源是 pi 的 RPC 事件 `compaction_start` / `compaction_end` ——
- * 不引入 extension（方案 §3.1）。事件字段有两套形状，都归一化到这里：
- *   · durable lane 路径（自动压缩）：`reason` / `status` / `entryId` / `endedAt`
- *   · `Session.compact()` 路径（手动）：`result` / `aborted` / `errorMessage`，**没有 status**
- * 映射规则见 `src/main/compaction.ts` 的 `reduceCompaction`。
- */
 export interface CompactionRun {
   status: CompactionStatus
   reason?: CompactionReason
-  /** 上游给的原因认不出时保留原文（界面显示原文） */
   reasonRaw?: string
   startedAt?: number
   endedAt?: number
-  /** `status === 'failed'` 时 pi 的 `errorMessage`；不许静默 */
   error?: string
-  /** `completed` 时 pi 写入的摘要条目 id（durable lane 路径才会给） */
   entryId?: string
-  /**
-   * 压缩前 / 压缩后的估算 token（`result.tokensBefore` / `result.estimatedTokensAfter`）。
-   *
-   * 为什么要它：用户看到的只是“上下文突然短了一截”，这两个数就是那句话的
-   * 定量版本（“1.6k → 160”）。pi 不给就不显示 —— 不自己估。
-   */
   beforeTokens?: number
   afterTokens?: number
-  /**
-   * 这次压缩是**谁**发起的（N21-3）。
-   *
-   * 为什么不能只看 pi 的 `reason`：砚按工作集自动调用 `compact()` 时，
-   * pi 报的是 `reason: 'manual'`（对 pi 而言确实是“外部让它压的”），
-   * 而界面上写「手动」会让用户以为是自己点的按钮。发起方是砚自己知道的
-   * 事实，所以由砚补上这一列，而不是去猜或改写 pi 给的字段。
-   * 缺省（undefined）= 用户点的「压缩上下文」。
-   */
   triggeredBy?: 'policy'
-  /** `triggeredBy === 'policy'` 时命中的是哪条线：工作集上限 / 物理兜底 */
   policyStage?: 'compact' | 'emergency'
 }
 
-/**
- * 一次上下文变换的阶段（N21-0 定稿，N21-3 起进代码）。
- *
- * `compaction` 由 pi 原生完成；`tool-sweep` / `episode-fold` / `recall`
- * 属于阶段 4（pi 扩展的 `context` 钩子），**现在不会触发** ——
- * 界面上它们必须显示成「未接管」，不能画成已经生效的策略线。
- */
 export type ContextOperationKind = 'tool-sweep' | 'episode-fold' | 'compaction' | 'recall'
 
-/**
- * 工作集预算（方案 §5）。
- *
- * 为什么不是一个「窗口 × 70%」：那在小窗口上会和输出预留打架
- * （64k 窗口固定预留 32k 就只剩 12k 给上下文）。所以三条线取最小值，
- * 并显式暴露 `responseReserve` / `safetyMargin` 让界面能解释这个数是怎么来的。
- */
 export interface ContextBudget {
-  /** 物理窗口（模型能力表） */
   contextWindow: number
-  /** 为模型回答预留的 tokens */
   responseReserve: number
-  /** 安全余量（估算误差 / 工具结果膨胀） */
   safetyMargin: number
-  /** 有效工作集上限 */
   workingSet: number
-  /** 三阶段触发点（工作集预算的百分比 × 工作集） */
   triggers: { sweep: number; fold: number; compact: number }
-  /**
-   * 物理兜底：达到物理窗口的这个比例时无条件压缩。
-   * 但**不能突破输出预留** —— 取 `min(窗口 × 比例, 窗口 − responseReserve)`
-   * （64k 窗口下是 48k 而不是 57.6k，否则这条线自己就吃掉了回答空间）。见方案 §12.1 / D31。
-   */
   emergency: number
 }
 
-/**
- * 上下文策略参数（N21-0 定稿）。
- *
- * 阶段 3 起由砚用它决定「什么时候压缩」；`kinds` 说明**真正会执行的阶段**，
- * 界面据此把尚未接管的阶段画成未生效（而不是假装它会触发）。
- */
 export interface ContextPolicy {
   enabled: boolean
-  /** 工作集绝对上限（编码模式的参考实践：240k） */
   workingSetCap: number
-  /** 窗口比例线 */
   windowRatio: number
-  /** 输出预留的首选值与下限（区间上限是窗口的 25%） */
   responseReservePreferred: number
   responseReserveMin: number
-  /** 安全余量：`max(min, 窗口 × ratio)` */
   safetyMarginMin: number
   safetyMarginRatio: number
-  /** 物理兜底比例：**上限**，实际取 `min(比例 × 窗口, 窗口 − responseReserve)` */
   emergencyRatio: number
-  /** 三阶段在工作集里的位置（0–1） */
   triggerRatios: { sweep: number; fold: number; compact: number }
-  /** 真正会执行的阶段（默认：清理 + 召回 + 压缩） */
   kinds: ContextOperationKind[]
 }
 
-/**
- * 上下文策略的**可覆盖数值**（N21-7）。
- *
- * 只含数值字段，这是意的边界：
- *   · `enabled` 由「自动压缩」开关管（用户关的是“别自动动我的上下文”）；
- *   · `kinds`（真正接管的阶段集）是产品决定，不是可调参数 —— 它一变，
- *     界面上“哪些阶段已生效”和扩展真的会做的事必须同时变，不适合塞进设置；
- *     用户要关掉 `episode-fold` 时走 `AppSettings.contextFold` 那个专用开关。
- *
- * 同一份形状被三层复用：用户级（`AppSettings.contextPolicy`）、
- * 模型/供应商级（`AppSettings.contextPolicyByModel`）、以及预设。
- */
 export interface ContextPolicyOverrides {
   workingSetCap?: number
   windowRatio?: number
@@ -1846,48 +936,18 @@ export interface ContextPolicyOverrides {
   triggerRatios?: { sweep?: number; fold?: number; compact?: number }
 }
 
-/**
- * 策略数值的**生效层**（N21-7 的“可解释”）。
- *
- * lookup 顺序：`env` > `model`（`provider/model`）> `provider` > `user` > `default`。
- * 界面必须能说出“这个工作集上限是谁定的”，否则用户改了设置却看到另一个数
- * 时无从判断是哪一层赢 —— 这一块已经出过 D21/D22（界面数字 ≠ 实际生效值）。
- */
 export type ContextPolicySource = 'default' | 'user' | 'provider' | 'model' | 'env'
 
-/**
- * 推给界面的策略视图（N21-3）。
- *
- * 预算由**主进程**算完后随 `SessionState` 一起推 —— 而不是渲染端自己再算一遍：
- * 界面上那个数必须是砚真正用来做决定的那个数（“界面数字 ≠ 实际生效值”
- * 是这一块最不能犯的错，见 D21/D22）。
- */
 export interface ContextPolicyView {
   enabled: boolean
   kinds: ContextOperationKind[]
   budget: ContextBudget
-  /** 数值的生效层（N21-7） */
   source: ContextPolicySource
-  /** 命中的层 key：provider 层是供应商名，model 层是 `provider/model` */
   sourceKey?: string
-  /** 被覆盖（非默认）的字段名，界面据此解释“哪些值不是默认” */
   overridden: string[]
-  /**
-   * 当前**精确** `provider/model` 层的覆盖原文（没有精确覆盖时不传）。
-   *
-   * 只给界面判断「现在是不是在用某个大窗口试行档」（`largePresetOf`）——
-   * 只传 `source: 'model'` 不够：模型级也可以是自定义数值。
-   */
   modelOverrides?: ContextPolicyOverrides
 }
 
-/**
- * `window.yan.contextBudget(窗口)` 的返回（N21-7 扩充）。
- *
- * 与 `ContextPolicyView` 是同一份东西的两个入口：一个是随会话状态推送，
- * 一个是渲染端主动问某个窗口下的预算（测试拿它对参考值）。两处的预算
- * 必须由同一个 `contextBudget()` 算出，所以字段同名同义。
- */
 export interface ContextPolicyResolution {
   policy: ContextPolicy
   budget: ContextBudget | null
@@ -1896,90 +956,43 @@ export interface ContextPolicyResolution {
   overridden: string[]
 }
 
-/**
- * 「下一步会发生什么」（N21-3）。
- *
- * 只在**真正会执行的阶段**里挑（`ContextPolicy.kinds`），所以阶段 3 永远返回
- * compaction —— 清理 / 折叠虽然在工作集上有刻度，现在并不会触发。
- */export interface ContextNextStage {
+export interface ContextNextStage {
   kind: ContextOperationKind
-  /** 该阶段的触发点（tokens） */
   at: number
-  /** 已经过线（下一步就是“现在”） */
   reached: boolean
 }
 
-/**
- * 用户档案（左栏底部那个块）。
- *
- * ── 为什么全部本地存储 ──
- * 登录功能**尚未接入**（本地模式）。这里刻意不做一个假的「已登录」状态 ——
- * 本项目的约定是「界面上出现的每个值都必须真的来自某个地方」。
- * 所以 `signedIn` 恒为 false，界面上显示的是「本地模式」，
- * 点登录会明确告知未接入。字段先留着，接入时不用改数据结构。
- */
 export interface UserProfile {
-  /** 显示名。空 = 回落到系统用户名（见 main/settings.ts 的 DEFAULTS 推导） */
   name: string
-  /** 头像形式：首字（letter）或内置图标（icon） */
   avatarKind: 'letter' | 'icon'
-  /** letter 时用名字首字（空则用默认）；icon 时是图标名 */
   avatarValue: string
-  /** 头像底色色相（0–360）。-1 = 用默认中性色 */
   avatarHue: number
-  /**
-   * 是否已登录。
-   * ⚠️ **本地模式恒为 false** —— 登录尚未接入，不做假状态。
-   */
   signedIn: boolean
 }
 
-/** 探测 pi 的结果，用于诊断 */
 export interface PiProbe {
   ok: boolean
   cmd: string
   args: string[]
   version?: string
-  /** 命中的来源（见 PiSource） */
   source: PiSource
-  /** pi 包所在目录（显示用） */
   home?: string
   error?: string
   tried: string[]
 }
 
-/* 交互终端 */
-
-/**
- * 终端程序上报的状态（OSC 7501，9;4 为其后备）。
- *
- * 只描述程序自己的运行状态，不含提示词与模型输出；`clear` 表示程序要求清掉记录，
- * 落到会话投影时对应的字段会被移除，不会保留成一条 `clear` 状态。
- */
 export type TerminalProgramState = 'working' | 'blocked' | 'done' | 'error' | 'idle' | 'clear'
 
-/** `blocked` 的细分：权限、提问、登录。程序没给时缺省 */
 export type TerminalBlockedKind = 'permission' | 'question' | 'auth'
 
-/** 一条程序状态记录（首版只用根记录，忽略程序内的子记录 `id`） */
 export interface TerminalProgramStatus {
   state: TerminalProgramState
   kind?: TerminalBlockedKind
-  /** 0–100；仅 `working` 有意义 */
   progress?: number
-  /** 已解码的短标题（来自 `msg` / `title`，超长会截断） */
   title?: string
-  /** 上报程序标识 */
   app?: string
 }
 
-/**
- * 交互终端（实施-11 H-11）。
- *
- * 与浏览器 / 文件同属**资源**：有自己的稳定身份（`id`）与标题，可多标签、
- * 可重连。它是宿主 PTY 服务的前端投影 —— 渲染端只拿这三个字段，
- * 拿不到也不需要进程句柄。
- */
 export interface TerminalSessionInfo {
   id: string
   title: string
@@ -1989,14 +1002,11 @@ export interface TerminalSessionInfo {
   rows: number
   alive: boolean
   exitCode?: number | null
-  /** 程序上报的状态投影；没有记录时为 undefined */
   status?: TerminalProgramStatus
 }
 
-/** 重连 / 首次打开时的一份完整快照（含已有输出的尾部） */
 export interface TerminalSnapshot extends TerminalSessionInfo {
   buffer: string
-  /** 缓冲对应的输出序号（与实时推送同一单调序列，重连时用来去重） */
   seq: number
 }
 
@@ -2007,7 +1017,6 @@ export interface TerminalStartRequest {
   rows?: number
 }
 
-/** 终端能力可用性（原生依赖装不上时为 false，并附上原因） */
 export interface TerminalAvailability {
   available: boolean
   error?: string
@@ -2024,83 +1033,45 @@ export interface BrowserState {
   tabs?: BrowserTabState[]
   userControl?: boolean
   lastDownload?: { path: string; filename: string; size?: number; source?: string }
-  /**
-   * 网页权限记录（方案 9.2）。默认全部拒绝；允许只在本次应用运行期、
-   * 对精确 origin + permission 生效，不落盘，也不把 Cookie/页面存储值带进记录。
-   */
   permissions?: BrowserPermissionRecord[]
-  /**
-   * 被网络边界拦下来的请求（远程页面借道本地服务 / DNS 重绑定）。
-   *
-   * 为什么必须记下来：拦截表现为“页面就是打不开”—— 不给痕迹的话，
-   * 用户只会以为浏览器坏了。这里只留主机名与原因，不带 URL 路径、
-   * 查询参数或页面内容。
-   */
   blockedRequests?: BrowserBlockedRequest[]
   nativeBounds?: BrowserBounds
-  /** 统一标签栏当前激活的是内嵌 WebContentsView 还是外部 Chrome 代理标签 */
   mode?: 'embedded' | 'external'
-  /** 当前活动内嵌标签的主框架加载失败（外部 Chrome 不适用） */
   loadError?: BrowserLoadFailure
-  /** 外部 Chrome 连接状态；连接存在时保留，与当前是否激活无关 */
   external?: BrowserExternalState
 }
 
 export interface BrowserPermissionRecord {
   permission: string
-  /** 只保留 scheme + host + port，不保存路径、查询参数或页面正文。 */
   origin: string
   status: 'allowed' | 'blocked'
   at: number
 }
 
-/** 一次被拦下的请求（原因可追溯） */
 export interface BrowserBlockedRequest {
-  /** 只有主机名，没有路径/查询参数 */
   host: string
-  /** private-host = 地址本身就是内网；dns-rebind = 域名解析后落在内网 */
   reason: 'private-host' | 'dns-rebind'
-  /** 发起方（顶层页面）的主机名，用于说明“谁想访问本地服务” */
   from: string
   at: number
-  /** 同一 host + reason 被拦了几次（去重后只留最新一条） */
   count: number
 }
 
-/** 外部 Chrome（本机已安装的浏览器）的接入状态 */
 export interface BrowserExternalState {
   url: string
   title: string
   loading: boolean
-  /** 独立 profile 目录（用户需要在这里登录一次目标站点） */
   profileDir?: string
-  /** DevTools 调试端口 */
   debuggingPort?: number
-  /** 接入时从真实 Chrome 同步数据的结果（哪几项成功/失败） */
   sync?: ChromeSyncReport
 }
 
-/**
- * 本机 Chrome 数据同步报告。
- *
- * 为什么逐项报告而不是一个布尔值：历史随时能同步、Cookie 在 Chrome
- * 开着时拿不到 —— 「一半成功」是常态。只有一个布尔值的话，界面就只能
- * 笼统地说「同步失败」，用户不知道该做什么。
- */
 export interface ChromeSyncReport {
-  /** 找到本机 Chrome 的用户数据了吗 */
   found: boolean
-  /** 源（真实 Chrome 用户数据根目录） */
   source?: string
-  /** 目标（托管 profile） */
   target?: string
-  /** 成功同步的条目 */
   copied: string[]
-  /** 失败/跳过及原因 */
   failed: { item: string; reason: string }[]
-  /** 探测时 Chrome 是否在运行 */
   chromeRunning: boolean
-  /** Cookie 是否真的同步过来了（决定提示不提示「请先退出 Chrome」） */
   cookiesSynced: boolean
 }
 
@@ -2111,7 +1082,6 @@ export interface BrowserTabState {
   loading: boolean
   canGoBack: boolean
   canGoForward: boolean
-  /** 主框架加载失败（H-9 第二阶段）：界面据此给出重试 / 外部打开，并保留原 URL */
   loadError?: BrowserLoadFailure
 }
 
@@ -2157,27 +1127,16 @@ export interface BrowserBounds {
   height: number
 }
 
-/* 扩展 UI 桥 */
-
 export type ExtensionUiMethod = 'select' | 'confirm' | 'input' | 'editor' | 'notify' | 'setStatus' | 'setWidget' | 'setTitle' | 'set_editor_text'
 
 export interface ExtensionUiRequest {
   id: string
   method: ExtensionUiMethod
-  /**
-   * 安全敏感的确认（删除、支付、授权……）。
-   *
-   * 方案第 6 节：分类必须由**请求方声明**，不根据问题措辞推断。
-   * 标记为 true 时走模态框（焦点圈定 + 遮罩）；未标记的普通提问
-   * 走输入区上方的非模态面板。
-   */
   sensitive?: boolean
-  /** 宿主发起的接入批准（技能安装）：走同一个问题面板，徽标换成「授权」，手机端只能跳过 */
   purpose?: 'approval'
   title?: string
   message?: string
   options?: string[]
-  /** 宿主表单（`yan question ask` 带 fields 时）：面板按字段渲染，答案以 JSON 字符串回传 */
   form?: import('./question-form').QuestionField[]
   placeholder?: string
   prefill?: string
@@ -2189,66 +1148,31 @@ export interface ExtensionUiRequest {
   widgetPlacement?: 'aboveEditor' | 'belowEditor'
   text?: string
   timeout?: number
-  /**
-   * 截止时刻（绝对毫秒）。宿主发起的提问由宿主管理：
-   *   · `> 0` —— 倒计时到那一刻（`ui-deadline` 推送会更新它）；
-   *   · `0` —— 宿主还没开始计时（用户还没看到这一条），界面先不显示倒计时；
-   *   · 缺省 —— 扩展自己的请求，渲染端按 `timeout` 自己算。
-   */
   deadline?: number
 }
 
-/* 主进程 → 渲染进程 的推送
-   —— 全部是**已归一化**的 UI 补丁。渲染端不认识 pi 的协议细节，
-   协议知识只存在于 src/main/agent.ts 一处。 */
-
 export interface ToolPatch {
-  /** 工具调用属于哪条消息 */
   msgId: string
   call: UIToolCall
-  /**
-   * 输出的**增量**（append 语义）。
-   *
-   * 为什么需要它：工具输出是**最高频**的推送路径（一条 bash 命令的
-   * stdout 一秒几十上百个 chunk），而每个 chunk 都带完整累积输出。
-   * 那样每帧传输的是 O(已输出总量)，一次命令下来就是 O(N²) 字节，
-   * 长输出（例如一次 `npm run build`）会把 IPC 和渲染线程一起拖住。
-   * 有这个字段时渲染端只追加，不再被 `call.output` 覆盖。
-   */
   outputDelta?: string
 }
 
-/**
- * 消息补丁。
- *
- * `textDelta` / `thinkingDelta` 是**追加**语义：主进程只发新增的那一段，
- * 渲染端自己接到已显示的文本后面。
- *
- * 为什么不用全量 `text`：流式期间主进程每 16~120ms 推一次，
- * 每次都带整篇累积文本 —— 一篇 50KB 的回答推 300 帧就是 15MB 的
- * 结构化克隆 + React 状态复制。长回答越长，每帧越贵（O(N²)）。
- * 全量仍然保留：`message_end` / 中止 / 切换会话时用它做权威对齐。
- */
 export type MessagePatch = Partial<UIMessage> & {
   textDelta?: string
   thinkingDelta?: string
 }
 
-/** 子代理的一次运行（方案第 8 节 / L03）。 */
 export type SubagentReviewState = 'none' | 'pending' | 'conflict' | 'merged' | 'discarded' | 'archived'
 
 export interface SubagentDiffSummary {
   files: number
   additions: number
   deletions: number
-  /** 相对父项目根的路径；只传摘要，不把补丁正文塞进 IPC。 */
   paths: string[]
   truncated: boolean
-  /** 补丁归档位置；用户明确查看/合并/放弃后仍可追溯。 */
   patchPath?: string
 }
 
-/** 子代理 usage 累计（H-10b）；字段为 null 表示该项未知 */
 export interface SubagentUsageTotals {
   input: number | null
   output: number | null
@@ -2256,16 +1180,9 @@ export interface SubagentUsageTotals {
   cacheWrite: number | null
   totalTokens: number | null
   cost: number | null
-  /** 收到过 usage 的消息数；0 表示未知 */
   reportedMessages: number
 }
 
-/**
- * 子代理为什么结束。界面与通知据此说清是「做完了」还是「超时 / 调用用完 / 报错 / 被停」，
- * 而不是把它们都压成一个「失败」。
- *   · timeout / budget：到点后先让它收尾；收尾交出了结论则 status=done，硬停则 status=error
- *   · startup：pi 没起来；exited：进程自己退了；failed：其余启动或运行错误
- */
 export type SubagentEndReason = 'completed' | 'timeout' | 'budget' | 'model-error' | 'startup' | 'exited' | 'failed' | 'stopped'
 
 export type { SubagentBrief, SubagentResult } from './subagent-brief'
@@ -2273,281 +1190,110 @@ import type { SubagentBrief, SubagentResult } from './subagent-brief'
 
 export interface SubagentRun {
   id: string
-  /** 派给它的任务描述 */
   task: string
-  /** 它跑在哪个工作目录 */
   cwd: string
-  /** 启动时的父会话 / 运行实例；查看对象切换不改变这两个归属。 */
   parentSessionId?: string
   parentRunId?: string
-  /**
-   * 启动时父运行实例的代次；用来证明「同代 pending → 真实 SID」迁移。
-   * 可选：0 也是有效值（旧记录 / 模型入口没有这一栏就不猜）。
-   */
   parentGeneration?: number
-  /** 模型在某条助手消息中委派时，用它把子代理卡片挂回原回合。 */
   parentMessageId?: string
   projectId?: string
-  /** worktree = 默认写入隔离；controlled-cwd = 显式只读受控目录。 */
   isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd'
-  /** 审阅结束后为空；待审阅时指向 worktree，退出归档后指向补丁。 */
   resultPath?: string
   model?: string
-  /** pi 报告的思考强度（off / low / high …）；没拿到就缺省 */
   thinkingLevel?: string
-  /** pi 原生上下文快照；不同于多次模型调用的累计 usage，旧记录缺省为未知。 */
   contextUsage?: SessionStats['contextUsage']
   status: 'starting' | 'running' | 'done' | 'error' | 'cancelled'
   startedAt: number
   endedAt?: number
-  /** 最新一行活动（紧凑列表里显示） */
   latestActivity?: string
-  /** 超时收尾期间的原因；旧历史也可能保存无进展提醒。 */
   progressWarning?: string
-  /** 转录（有界：主进程只保留最后若干条，避免 IPC 越推越大） */
   transcript: UIMessage[]
   diff?: SubagentDiffSummary
   review: SubagentReviewState
   error?: string
-  /** 结束原因；运行中为空 */
   endReason?: SubagentEndReason
-  /** 用户确认不再处理该失败；保留 status/error 与原调用历史。 */
   dismissedAt?: number
-  /** 已发起的工具调用次数 */
   toolCalls?: number
-  /** 到点后正在收尾：已要求它立刻交出目前的结论，超过宽限仍不结束才会被停掉 */
   wrapUp?: { reason: 'timeout' | 'budget'; since: number }
-  /** H-10b：按消息 id 去重后的 usage 累计；没收到过就是 undefined（界面显示未知） */
   usage?: SubagentUsageTotals
-  /**
-   * 派活时写清的任务输入（实施-25 P15 T15-1）：目标 / 交付物 / 来源 / 边界。
-   *
-   * 子代理看不到父会话上下文，它只有这一段话；把这三样显式列出来，
-   * 并行的子任务才不会各跑各的方向。
-   */
   brief?: SubagentBrief
-  /**
-   * 结果汇总（实施-25 P15 T15-4）：摘要 / 来源 / 成果，交给主 agent 汇总后统一回答。
-   *
-   * 每次推送都重算（纯函数、转录有界）—— 它必须与转录同时前进。
-   */
   result?: SubagentResult
 }
 
-/** 定时任务：界面与 `yan schedule` 共用同一个服务 */
 export interface ScheduleBridge {
   list(): Promise<import('./schedule').ScheduledTask[]>
   create(input: { name?: string; prompt: string; cwd?: string; model?: string; trigger: import('./schedule').ScheduleTrigger }): Promise<{ ok: boolean; error?: string; task?: import('./schedule').ScheduledTask }>
   update(id: string, input: { name?: string; prompt?: string; cwd?: string; model?: string; trigger?: import('./schedule').ScheduleTrigger }): Promise<{ ok: boolean; error?: string; task?: import('./schedule').ScheduledTask }>
   setEnabled(id: string, enabled: boolean): Promise<{ ok: boolean; error?: string; task?: import('./schedule').ScheduledTask }>
   remove(id: string): Promise<{ ok: boolean }>
-  /** 立即触发一次，结果是新开的会话 */
   runNow(id: string): Promise<{ ok: boolean; error?: string; sessionId?: string }>
 }
 
-/** 子代理控制器对外暴露的能力 */
 export interface SubagentBridge {
   list(): Promise<SubagentRun[]>
   start(
     task: string,
     model?: string,
     isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd',
-    /**
-     * 界面在后台查看某条会话时，钉住该视图的运行实例作为父归属。
-     * 老调用不传时宿主仍在入口同步钉住当前父会话（CLI / 正常派活兼容）。
-     */
     expectedRuntime?: ExpectedRuntimeOwner
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }>
   stop(id: string): Promise<{ ok: boolean; error?: string }>
-  /** 单条失败确认；不删除历史，也不能绕过 worktree 审阅。 */
   dismiss(id: string): Promise<{ ok: boolean; error?: string }>
   stopAll(): Promise<void>
-  /** 清掉**已结束**的记录（运行中的不会被清） */
   clearFinished(): Promise<void>
-  /** 预览摘要已经随 list/push 返回；合并前仍会重新读取并检查补丁。 */
   merge(id: string): Promise<{ ok: boolean; error?: string }>
-  /** 明确放弃隔离 worktree；补丁归档仍保留，便于必要时找回。 */
   discard(id: string): Promise<{ ok: boolean; error?: string }>
 }
 
-/**
- * 主进程 → 渲染进程 的推送**内容**。
- *
- * ⚠️ 与 `MainPush` 分开：每条会话相关的推送都带 `runtime` 身份封套，
- * 渲染端才能把「后台会话的输出」与「当前正在看的会话」分开。全局推送
- *（设置 / 缩放 / 浏览器）不带它。
- */
 export type MainPushBody =
-  /** 全量替换消息列表（启动 / 切会话 / compact 之后） */
   | { ch: 'sync'; payload: UIMessage[] }
-  /** 新增一条消息 */
   | { ch: 'msg-add'; payload: UIMessage }
-  /** 增量更新一条消息（流式文本会高频触发，见 MessagePatch 的 delta 说明） */
   | { ch: 'msg-update'; payload: { id: string; patch: MessagePatch } }
-  /** 把宿主生成/接管的文件产物挂到真实 assistant 消息上。 */
   | { ch: 'artifact'; payload: { messageId: string; artifact: AssistantArtifact } }
-  /** 删掉一条消息 */
   | { ch: 'msg-remove'; payload: string }
-  /** 工具调用状态变化 */
   | { ch: 'tool'; payload: ToolPatch }
-  /** 子代理运行状态变化（整条快照，转录有界） */
   | { ch: 'subagent'; payload: SubagentRun }
-  /**
-   * 子代理流式增量。
-   *
-   * `run` 的其余字段与 `subagent` 同形，但 `transcript` **只含自 `transcriptFrom` 起的消息**：
-   * 流式期间约 30 次/秒，整条发等于把最多 200 条转录（含工具输出）反复克隆过 IPC。
-   * 渲染端按 `prev.transcript.slice(0, transcriptFrom)` 拼接；形状对不上时主进程退回整条推送。
-   */
   | { ch: 'subagent-patch'; payload: { id: string; run: SubagentRun; transcriptFrom: number } }
-  /** 子代理被移除（用户清掉记录时） */
   | { ch: 'subagent-remove'; payload: string }
-  /** 宿主要求在前台打开某个 Agent 运行（`hub:<任务 id>`） */
   | { ch: 'hub-open'; payload: string }
-  /** 会话状态变化 */
   | { ch: 'state'; payload: SessionState }
   | { ch: 'stats'; payload: SessionStats }
   | { ch: 'queue'; payload: QueueState }
-  /**
-   * 流式重复防护收回了排队内容（原文、顺序、图片与身份）。
-   *
-   * 为什么单开一条而不是复用 `queue`：`queue` 是 pi 的文本快照，回收还带着
-   * 图片与稳定 id，需要渲染端用 `applyQueueRecovery` 落回对应会话草稿。
-   * 归属由 `runtime` 封套给出：后台会话的回收也只进它的草稿缓存，
-   * 不覆盖当前会话草稿。
-   */
   | { ch: 'queue-reclaimed'; payload: QueueSnapshot & { sessionId: string } }
-  /** 会话里的任务清单变了（扩展通过 panel_todos 维护） */
   | { ch: 'todos'; payload: SessionTodo[] }
-  /**
-   * 当前会话的工作模式变了（实施-05）。
-   * 带 `runtime` 封套：A 会话切模式不得影响 B 会话的显示与提问行为。
-   */
   | { ch: 'work-mode'; payload: WorkModeState }
-  /** 宿主要问用户一件事（权限 / 高危 / 越界写入 / 工具同意）：界面以输入框上方的卡片呈现 */
   | { ch: 'approval'; payload: ApprovalRequest }
-  /** 这条批准请求已有结论（别处答复、超时或会话被中止），卡片应收起 */
   | { ch: 'approval-close'; payload: { id: string } }
-  /** 受管 Git 的安装进度（下载 / 校验 / 解压 / 完成 / 出错） */
   | { ch: 'git-install'; payload: GitInstallProgress }
-  /**
-   * 当前会话的活动档案变了（实施-25 P01）。
-   *
-   * 带 `runtime` 封套，与 `work-mode` 同一个理由：A 会话切活动不得影响
-   * B 会话的角色与工具策略。
-   */
   | { ch: 'agent-profile'; payload: AgentProfileState }
-  /**
-   * 当前会话的内置目标 / 计划状态（实施-05 S3）。
-   *
-   * 目标和工作模式都按会话隔离，但它是模型推进的事实快照，不能并入
-   * 可编辑的工具栏分区；右栏会把它作为独立的砚内置能力展示。
-   */
   | { ch: 'goal'; payload: GoalState }
-  /** 全部任务清单快照（含最新）。界面用它做「历史任务」模块 */
   | { ch: 'todo-history'; payload: SessionTodoSnapshot[] }
-  /** 扩展要弹窗，需要应答 */
   | { ch: 'ui-request'; payload: ExtensionUiRequest }
-  /**
-   * 某个待回答的问题被延长了等待（用户在面板倒计时上点了一下）。
-   *
-   * 为什么单开一条而不是重推 `ui-request`：重推会让渲染端当「新问题」处理（追加 / 提示音），
-   * 而这里只是同一个请求的截止时间变了。`deadline` 是绝对毫秒，渲染端每秒算剩余量。
-   */
   | { ch: 'ui-deadline'; payload: { id: string; timeout: number; deadline: number } }
-  /** 问题已答复或超时：各端据此移除对应请求 */
   | { ch: 'ui-resolved'; payload: { id: string; by: 'desktop' | 'remote' | 'timeout' } }
-  /**
-   * 当前会话的宿主提问记录（整表覆盖，切会话 / 重载后对齐）。
-   *
-   * 为什么要它：问答只在工具结果里，对话流看不到「用户到底回答了什么」。
-   * 用户要求把它显示成一条带「提问」提示的消息 —— **只回放**，
-   * 不再发一次给模型（模型本来就从工具结果里拿到了）。
-   */
   | { ch: 'question-log'; payload: { sessionId: string; entries: QuestionLogEntry[] } }
-  /** 扩展的 fire-and-forget 通知 */
   | { ch: 'notify'; payload: ExtensionUiRequest }
-  /**
-   * 模型侧错误（实施-05 S5c）。
-   *
-   * 为何单开一条而不是复用 `notify`：宿主要用它做**自动继续**的判据 ——
-   * 拿 `notify.message` 做文案匹配太脆（改一句文案就静默失效）。
-   *
-   * **消费者是宿主自己**（`main/index.ts` 的 `pushFrom` → `handleModelError`），
-   * 渲染端**不接**这条（用户看到的提示由宿主另发 `notify`）—— 所以
-   * `audit:refs` 会把它列进 `producedNotConsumed`，那是预期的，不是漏接线。
-   */
   | { ch: 'agent-error'; payload: { message: string; text: string; source: 'auto-retry' | 'stop-reason' } }
-  /** 状态栏条目（setStatus） */
   | { ch: 'status'; payload: { key: string; text?: string } }
-  /** 窗口标题（setTitle） */
   | { ch: 'title'; payload: string }
-  /**
-   * 会话标题生成好了（用模型总结用户第一句话）。
-   * ⚠️ 与上面的 'title'（扩展 setTitle，改的是窗口标题）不是一回事，别混。
-   */
-  /** 窗口最大化状态（用于切换「最大化 / 还原」图标） */
   | { ch: 'win-state'; payload: { maximized: boolean; alwaysOnTop: boolean } }
   | { ch: 'session-title'; payload: { sessionId: string; title: string } }
-  /** 扩展想把文本塞进输入框（set_editor_text） */
   | { ch: 'editor-text'; payload: string }
-  /**
-   * 扩展的 setWidget。
-   *
-   * 文本组件按原生位置显示在输入区上方或下方；未指定位置时默认上方。
-   * 不支持 TUI 组件工厂，只接收纯文本行。
-   */
   | { ch: 'widget'; payload: { key: string; lines?: string[]; placement?: 'aboveEditor' | 'belowEditor' } }
-  /** pi 版本 / 入口（启动时探测一次） */
   | { ch: 'pi-info'; payload: PiInfo }
-  /** pi 进程状态 / stderr / 错误 */
   | { ch: 'proc'; payload: { state: 'starting' | 'ready' | 'exited' | 'stderr' | 'error'; detail?: string; code?: number | null } }
-  /**
-   * 界面缩放变了（快捷键改的也走这条路）。
-   * 为什么要推：Ctrl+= 是主进程拦的，渲染端不知道设置变了，
-   * 设置面板里的选中态会与真实值不同步。
-   */
   | { ch: 'ui-scale'; payload: { uiScale: number; effective: number; scaleFactor: number; autoScale: number } }
-  /** 内置浏览器状态（WebContentsView 与 pi browser extension 共用） */
   | { ch: 'browser-state'; payload: BrowserState }
-  /**
-   * 交互终端的实时输出 / 程序状态 / 退出（H-11）。
-   * 按会话身份 `id` 分流：多标签时每条数据只进它自己的 xterm；
-   * `kind: 'status'` 是终端程序（OSC 7501）上报的状态投影。
-   */
   | { ch: 'terminal'; payload: { id: string; kind: 'data' | 'exit' | 'status'; data?: string; seq?: number; exitCode?: number | null; status?: TerminalProgramStatus } }
-  /**
-   * 主进程自己产生的日志（未捕获异常 / 未处理 Promise）。
-   * 为什么要走 UI：Electron 默认会为 uncaughtException 弹一个原生
-   * “A JavaScript error occurred in the main process”对话框，既打断
-   * 用户、又只在屏幕上存在几秒。这些信息应该和 pi 的 stderr 一样进
-   * 右栏日志抽屉，可回看、不弹框。
-   */
   | { ch: 'log'; payload: { text: string; level?: 'info' | 'error' } }
-  /** 搜索时发现没配置搜索 API：界面弹一次带「去设置 / 不再提示」的提醒 */
   | { ch: 'search-api-hint'; payload: Record<string, never> }
-  /**
-   * 运行实例状态快照（N12）。
-   * 它是**全局**推送（不属于某个会话）—— 左栏需要一次拿到所有实例的画法。
-   */
   | { ch: 'handoff-rebind'; payload: { sourceRunId: string; sourceSessionId: string; runtime: RuntimeEnvelope; state: SessionState; active: boolean } }
   | { ch: 'runners'; payload: RunnerStatus[] }
-  /**
-   * 运行注册表增量（v3 WP-10）。
-   *
-   * 全量由 `runs.snapshot()` 拉；这里只推变化，`revision` 单调递增。
-   * 渲染端先订阅、再取 snapshot，取回后只回放 `revision > snapshot.revision`
-   * 的增量，避免 snapshot 期间到达的旧 `running` 覆盖后来已到的 `done`。
-   */
   | { ch: 'runs'; payload: { revision: number; upsert: import('./runs').RunSnapshot[]; remove: string[] } }
-  /** 托盘菜单要求渲染端新建一个全局会话。 */
   | { ch: 'tray-new-session'; payload: null }
-  /** 另一台砚申请本次连接：所有者界面弹出审批（决定走 yan:peer-host:decide） */
   | { ch: 'peer-request'; payload: import('./peer-protocol').PeerApprovalRequest }
   | { ch: 'peer-request-closed'; payload: { requestId: string } }
-  /** `yan session move` 批准后的结果：会话文件头已改到新目录（界面刷新列表，正在看就在新目录重新打开） */
   | { ch: 'session-moved'; payload: { sessionId: string; sessionFile: string; cwd: string; ok: boolean; error?: string; continued?: boolean; continuationError?: string } }
-  /** 托盘菜单要求切到指定运行实例；没有 sessionFile 时用稳定 sessionId。 */
   | {
       ch: 'tray-select-session'
       payload: {
@@ -2559,49 +1305,17 @@ export type MainPushBody =
       }
     }
 
-/**
- * 主进程 → 渲染进程 的推送。
- *
- * 带 `runtime` 的表示「这条消息属于哪个会话/运行实例/代次」；渲染端对
- * **不是当前正在查看的实例**的事件不得写进当前视图（否则后台任务
- * 的输出会串到眼前这个会话里）。`sessionKey` 暂时保留给旧探针和旧构建。
- */
 export type MainPush = MainPushBody & {
   runtime?: RuntimeEnvelope
-  /** @deprecated use runtime.runId */
   sessionKey?: string
 }
 
 
-/**
- * Git 状态与写操作。读接口不改变用户的工作区与暂存区；写操作只走 `action`，
- * 它需要操作记录、并发协调与明确的用户确认。
- */
 export interface GitBridge {
-  /** 仓库状态（环境菜单）。非 Git 目录返回 `repo: null`，**不是错误** */
   state(cwd: string): Promise<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>
-  /** 可选基准（本地 / 远程跟踪 / 标签）与被**其它**工作树占用的分支 */
   refs(cwd: string): Promise<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>
-  /**
-   * 写操作（方案 §5，G2）：暂存 / 取消暂存 / 提交 / 切分支 / 新建分支 / 拉取 / 推送。
-   *
-   * ⚠️ 这是**唯一**会改用户 index / HEAD / 远程的接口。每个请求都带
-   * `expected`（乐观并发的预期版本）：主进程执行前复核，不一致就**不做**
-   * 并返回 `stale`，由界面刷新后让用户重新决定。
-   */
   action(req: GitActionRequest): Promise<GitActionResult>
-  /** 仓库配置的 remote 名（推送 / 拉取的下拉与校验） */
   remotes(cwd: string): Promise<string[]>
-  /**
-   * **用户工作树**（方案 §6.2，W1）。
-   *
-   * 与子代理的一次性隔离工作树是两回事：这里建的工作树在仓库旁边、用户看得见、
-   * 关掉应用还在，删除前会逐项检查未提交与未推送内容。契约里**没有** force 选项。
-   */
-  /**
-   * 关联 PR 的状态（方案 §7）。只读：不创建、不合并、不评论。
-   * 本机没有 `gh`，所以直接调 GitHub REST API —— 没有 token 时也能读公开仓库。
-   */
   prStatus(cwd: string): Promise<{
     ok: boolean
     state: 'none' | 'draft' | 'open' | 'merged' | 'closed'
@@ -2610,7 +1324,6 @@ export interface GitBridge {
     number?: number
     url?: string
     base?: string
-    /** PR 的 head.sha 与本地 head 不一致 → 本地有未推送的提交 */
     localAhead?: boolean
     host?: string
     owner?: string
@@ -2618,34 +1331,13 @@ export interface GitBridge {
     error?: 'unsupported' | 'auth' | 'rate-limit' | 'network' | 'not-found' | 'unknown'
     message?: string
   }>
-  /**
-   * remote 的**托管网页**地址（方案 §7 的托管网页比较）。
-   * 只读；认不出的托管站返回 null —— 不猜路径，免得给用户一个 404。
-   */
   remoteWeb(cwd: string): Promise<{ ok: boolean; web?: string | null; remote?: string | null; error?: string }>
-  /** 未跟踪文件（新建工作树时勾选要带过去的文件） */
   untracked(cwd: string): Promise<string[]>
-  /**
-   * 逐文件改动列表（P3，**只读**）：仓库状态明细，路径相对授权范围。
-   *
-   * 与 `state` 的聚合计数互补；命令形状、pathspec 校验、`GIT_OPTIONAL_LOCKS=0`
-   * 都在主进程。缺目录授权时 `ok:false`，不静默回空列表。
-   */
   changes(cwd: string): Promise<GitChangesResult>
-  /**
-   * 单个文件的真实补丁（P3，**只读**）：已暂存 + 未暂存两个真实片段拼接，
-   * 未跟踪文件给安全的新文件补丁。二进制只回说明行，超大按行截断并标记。
-   */
   diff(req: { cwd: string; path: string }): Promise<GitDiffResult>
   worktrees(cwd: string): Promise<WorktreeListing>
   worktreeCreate(req: WorktreeCreateRequest): Promise<WorktreeCreateResult>
   worktreeRemove(req: WorktreeRemoveRequest): Promise<WorktreeRemoveResult>
-  /**
-   * 「会话 ↔ 工作树」的来源关系（实施-07 S2）：登记 + 读回。
-   *
-   * 与 `session-chains.json` 是两回事：那边是「**同一条会话**的多个段」，
-   * 这边是「A 派生出**新**会话 B，B 在新目录里」—— 两条会话。
-   */
   worktreeLink(req: {
     sessionId: string
     sessionFile?: string
@@ -2656,37 +1348,21 @@ export interface GitBridge {
     fromCwd?: string
   }): Promise<{ ok: boolean; link?: WorktreeLinkView; error?: string }>
   worktreeLinks(): Promise<WorktreeLinkView[]>
-  /**
-   * 工作树 Fork 的文件引用重绑定（实施-07 S2b-3）。
-   *
-   * 把**当前会话**里 `@` 过的仓库内文件拿到目标工作树的仓库根下重新解析：
-   * 一律用仓库相对路径（绝对路径先转相对，转不了报 `outside` 不迁移）。
-   * 界面拿 `summary` 回答「我在源会话里提到的文件，在这个工作树里还能对上几个」。
-   */
   forkFileRefs(input: {
     worktree: string
     sourceFile?: string
     sourceCwd?: string
-    /** 显式引用（测试 / 将来的显式交接用）：给了就不再从会话里提取 */
     explicitRefs?: string[]
   }): Promise<ForkRefsReportView>
-  /**
-   * Fork 的语义注入正文（实施-07 S2b-4）。
-   *
-   * 返回的 `text` 由渲染端作为**输入框草稿**注入（不自动发送）：环境派生状态一律
-   * 在目标工作树重算，可迁移知识只来自源会话的交接包（没有就明说没有）。
-   */
   forkContext(input: {
     worktree: string
     sourceFile?: string
     sourceCwd?: string
     sourceSessionId?: string
-    /** 显式附件数（测试 / 将来的显式交接用）：给了就不去看源会话 */
     explicitAttachmentCount?: number
   }): Promise<ForkContextResultView>
 }
 
-/** 「会话 ↔ 工作树」的来源关系（界面上用来回答「这个会话从哪来」） */
 export interface WorktreeLinkView {
   sessionId: string
   sessionFile: string
@@ -2698,7 +1374,6 @@ export interface WorktreeLinkView {
   at: number
 }
 
-/** 工作树 Fork 的文件引用重绑定报告（实施-07 S2b-3）；界面只看 `summary` 与其中的 `problems` */
 export interface ForkRefsResolutionView {
   ref: string
   state: 'resolved' | 'missing' | 'type-mismatch' | 'outside'
@@ -2736,7 +1411,6 @@ export interface ForkContextResultView {
   behind: number
   refsTotal: number
   refsResolved: number
-  /** 源会话里的图片附件数（不迁移，只在正文里如实告知） */
   attachments: number
   hasPackage: boolean
   error?: string
@@ -2760,23 +1434,9 @@ export interface WorktreeListing {
   error?: string
 }
 
-/**
- * 把源工作区的未提交改动带到新工作树（方案 §6.2 的可选能力）。
- *
- * 三条都必须按方案来：
- *   · **分别**捕获已暂存 / 未暂存 / 用户勾选的未跟踪文件 —— 混在一起会让
- *     新工作树里的「已暂存」状态丢失（那是用户一行行挑出来的）
- *   · 目标侧**验证应用**（应用后比对两侧的 diff 摘要），不是「发出去就完事」
- *   · 源工作区与 index **一个字节都不动**（全程只用 `git diff` / `ls-files` 读）
- *
- * 只允许起点是当前 HEAD 时携带：patch 是相对源 HEAD 的，换了基线语义就不成立。
- */
 export interface CarryChanges {
-  /** 带已暂存的改动（进新工作树的 index，保持「已暂存」状态） */
   staged: boolean
-  /** 带未暂存的改动（只进工作区） */
   unstaged: boolean
-  /** 用户勾选的未跟踪文件（相对仓库根的路径） */
   untracked: string[]
 }
 
@@ -2785,7 +1445,6 @@ export interface WorktreeCreateRequest {
   branch: string
   startPoint: string | null
   targetPath: string | null
-  /** 不传 = 不携带（默认从已提交状态创建） */
   carry?: CarryChanges | null
 }
 
@@ -2816,11 +1475,7 @@ export interface WorktreeRemoveResult {
   failure?: GitFailure
 }
 
-/** 渲染进程 → 主进程 的调用（全都返回 Promise） */
-/* ── pi 插件包管理（方案 §9 的 P2）────────────────────── */
-
 export interface PackageEntryView {
-  /** settings 里那条原始字符串（例如 npm:pi-zh-cn 或 ..\my-ext） */
   source: string
   scope: 'user' | 'project'
   name: string
@@ -2828,14 +1483,12 @@ export interface PackageEntryView {
   description: string | null
   repository: string | null
   license: string | null
-  /** 磁盘上真能找到（settings 里登记着但没装上是**要显示出来的异常**） */
   installed: boolean
   path: string | null
 }
 
 export interface PackageListingView {
   ok: boolean
-  /** pi 的 agent 目录（界面上要能告诉用户「装到哪了」） */
   agentDir: string
   userSettings: string
   projectSettings: string
@@ -2846,16 +1499,13 @@ export interface PackageListingView {
 export interface PackageActionView {
   kind: 'install' | 'remove' | 'update'
   source: string
-  /** true = 装到当前项目（.pi/settings.json） */
   local?: boolean
   cwd: string
 }
 
 export interface PackageActionResultView {
   ok: boolean
-  /** pi 自己的输出（成功也带 —— 用户要看到它到底做了什么） */
   output?: string
-  /** 失败时的原始输出（给「展开」看） */
   detail?: string
   error?: string
   listing?: PackageListingView
@@ -2864,49 +1514,26 @@ export interface PackageActionResultView {
 export interface PackagesBridge {
   search(query: string, offset?: number): Promise<import('./plugin-market').MarketSearchResult>
   exportPlugin(id: string): Promise<import('./plugin-market').PluginExportResult>
+  addMcp(id: string): Promise<import('./plugin-market').PluginExportResult>
   list(cwd: string): Promise<PackageListingView>
   action(req: PackageActionView): Promise<PackageActionResultView>
 }
 
-/* ------------------------------------------------------- 项目知识（实施-03 S5） */
-
-/**
- * 项目知识页要的一次性快照。
- *
- * `projectId` 缺席 = 当前会话没绑定登记项目（或还没开会话）—— 界面显示
- * 空态而不是报错：新用户第一次打开设置时本来就是这种状态。
- */
 export interface KnowledgeListView {
   ok: boolean
   projectId?: string
-  /** 检索开关当前状态（与 `settings.projectKnowledge.enabled` 同源）。 */
   enabled: boolean
   entries: KnowledgeEntryView[]
   counts: KnowledgeCounts
   error?: string
 }
 
-/**
- * 写操作。四种都要 `expectedRevision`（CAS）：
- * 界面拿到的是某一版，用户点下去时若磁盘已变，宁可报「请刷新」也不静默覆盖。
- */
-/**
- * 写操作的公共字段。
- *
- * `expectedRevision` 是**条目**的 CAS：磁盘上版本对不上就报错，不静默覆盖。
- * `expectedProjectId` 是**项目身份**的 CAS：界面显示的是某个项目的列表，
- * 而宿主按「此刻的当前会话」选项目 —— 用户在这中间切了会话（或设置页一直
- * 开着）就会打到另一个项目上。带上这个字段让宿主拒绝身份漂移；
- * 缺省仍接受（兼容内部/旧调用），但设置页必须传。
- */
 export interface KnowledgeActionBase {
   expectedRevision: number
   expectedProjectId?: string
-  /** 记忆范围：当前项目（默认）或全局个人记忆 */
   scope?: KnowledgeScope
 }
 
-/** 长期记忆的归属：项目知识按当前会话的项目；个人记忆跨项目、独立存放 */
 export type KnowledgeScope = 'project' | 'personal'
 
 export type KnowledgeActionRequest =
@@ -2918,17 +1545,13 @@ export type KnowledgeActionRequest =
 export interface KnowledgeActionResult {
   ok: boolean
   error?: string
-  /** 失败时给最新版本，界面可以提示「磁盘上已更新」而不是反复重试。 */
   latestRevision?: number
   entry?: KnowledgeEntryView
-  /** 被这次操作替代掉的条目。 */
   superseded?: KnowledgeEntryView[]
 }
 
-/** 砚对砚请求的统一结果 */
 export type PeerResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string }
 
-/** 对方会话列表的一行（对方已降敏：没有绝对路径） */
 export interface PeerSessionRow {
   id: string
   title: string
@@ -2938,7 +1561,6 @@ export interface PeerSessionRow {
   messageCount: number
 }
 
-/** 对方历史里的一条消息（界面只用到这些字段） */
 export interface PeerHistoryMessage {
   id: string
   role: string
@@ -2949,9 +1571,7 @@ export interface PeerHistoryMessage {
 
 export interface KnowledgeExportResult {
   ok: boolean
-  /** Markdown 正文（`copy` 与 `save` 都会回传，界面可直接复制）。 */
   markdown?: string
-  /** `save` 时写到了哪里；取消保存对话框则不带这个字段。 */
   path?: string
   canceled?: boolean
   error?: string
@@ -2960,27 +1580,15 @@ export interface KnowledgeExportResult {
 export interface KnowledgeBridge {
   list(scope?: KnowledgeScope): Promise<KnowledgeListView>
   action(req: KnowledgeActionRequest): Promise<KnowledgeActionResult>
-  /** `copy` 只生成文本；`save` 会弹保存对话框写盘（不入仓库）。 */
   export(mode: 'copy' | 'save', scope?: KnowledgeScope): Promise<KnowledgeExportResult>
-  /** 来源跳转用：这个会话文件还在不在 / 在哪（不可回读时返回 null）。 */
   sourceSession(sessionId: string): Promise<{ ok: boolean; path?: string; title?: string; error?: string }>
 }
 
-/**
- * 「受信内置能力」一条（实施-02 S4）。
- *
- * 与 [PackageEntryView] 刻意不是同一个形状：内置能力**没有卸载、没有版本、
- * 没有仓库**，也不是从 pi 的包目录加载的 —— 共用一个类型会诱使界面
- * 给它加出一个「卸载」按钮。
- */
 export interface BuiltinCapabilityView {
-  /** 稳定 id（渲染端据此翻文案；未登记时界面退而成显示 file） */
   id: string
-  /** 实际加载的扩展文件名；宿主服务没有这一项 */
   file?: string
 }
 
-/** 内置能力的只读查询（没有对应的写操作，这是有意的）。 */
 export interface BuiltinCapabilitiesBridge {
   list(): Promise<BuiltinCapabilityView[]>
 }
@@ -2989,12 +1597,7 @@ export interface CapabilitySkillSettingView {
   id: string
   title: string
   description: string
-  /**
-   * 分类：`session` 本次会话由模型接入（只对当前会话生效）；`user` 我的技能（用户安装或自己保存）；
-   * `bundled` 砚随包；`other` pi 原生发现或项目目录。老版本没有这个字段时按 `other` 显示。
-   */
   origin?: 'session' | 'user' | 'bundled' | 'other'
-  /** 由 `yan capabilities acquire` 接入（有来源记录） */
   acquired?: boolean
   sourceUrl?: string
 }
@@ -3009,21 +1612,14 @@ export interface CapabilityMcpServerSettingView {
   endpointOrigin?: string
   status: 'ready' | 'connecting' | 'disconnected' | 'needs-auth' | 'error'
   toolCount: number | null
-  /**
-   * 此刻由哪一方连接：`pi`（legacy 连接管理器）或 `inkstone`（宿主单例）。
-   * 展示 `ownedBy` 必须走本字段，不允许在渲染端隐式 cast；老客户端忽略即可。
-   */
   ownedBy?: 'pi' | 'inkstone'
-  /** 已导入 pi 原生的标记；老客户端不认识这个字段也不影响原有条目的显示与删除。 */
   migratedToNative?: import('./mcp').McpMigratedToNativeMark
 }
 
 export interface CapabilitySettingsSnapshot {
   skills: CapabilitySkillSettingView[]
   servers: CapabilityMcpServerSettingView[]
-  /** Native pi server management is exposed through its own slash command. */
   nativeMcpAvailable?: boolean
-  /** 仅提示配置存在问题，不回传可能包含本地路径的原始错误。 */
   configWarning: boolean
 }
 
@@ -3064,18 +1660,13 @@ export interface CapabilityVerificationStatus {
 export interface CapabilitiesBridge {
   snapshot(): Promise<CapabilitySettingsSnapshot>
   discover(queryText: string): Promise<CapabilitySearchResultView>
-  /** 本次会话技能：保留到「我的技能」或从会话移除 */
   sessionSkill(action: 'promote' | 'remove', name: string): Promise<{ ok: boolean; error?: string }>
   verify(serverId: string): Promise<{ ok: boolean; operationId?: string; error?: string }>
   verification(operationId: string): Promise<CapabilityVerificationStatus | null>
   cancelVerification(operationId: string): Promise<{ ok: boolean; error?: string }>
-  /** 07 预览确认用：只回传将写入的内容与令牌，不落盘、不停用旧条目。 */
   prepareNativeImport(serverId: string): Promise<NativeMcpImportPrepareResponse>
-  /** 用户确认后提交；令牌只能来自 prepareNativeImport。 */
   commitNativeImport(token: string): Promise<NativeMcpImportCommitResponse>
 }
-
-/* ── 会话来源的持久化资源引用（方案 §8 的 S1）────────── */
 
 export type SourceKindView = 'image' | 'file' | 'web'
 
@@ -3084,49 +1675,34 @@ export interface SourceRefView {
   sessionId: string
   kind: SourceKindView
   title: string
-  /** 图片 = 我们存的副本；文件 = **用户原文件**（不复制）；网页 = URL */
   ref: string
   fingerprint: string
   origin: string
   addedAt: number
-  /** 资源还在不在（文件被删/改名要如实显示，不是静默消失） */
   available: boolean
   error?: string
   size?: number
 }
 
-/** 「来源 ↔ 消息」的关联（方案 §8 的 S1 「定位消息」） */
 export interface SourceLinkView {
   sourceId: string
-  /** 那条消息在界面上的 id（= 消息节点的 `data-msg-id`） */
   messageId: string
   at: number
 }
 
-/**
- * 资料库（实施-25 P03）。
- *
- * 与 `SourcesBridge`（会话级旧模型）**并存**：旧的 `sessionId` 参数一个都没改，
- * 新增的是 `librarySourceId` 这一侧的引用（T03-7 的过渡策略）。
- * 等确认旧路径没有回归之后再收口。
- */
 export interface LibraryRefRecordView {
   owner: LibraryOwner
   ref: SourceReference
   at: number
-  /** 该引用当前的状态：界面文案直接用它，避免同一状态在多处显示成不同样子 */
   outcome: RefOutcome
 }
 
 export interface LibraryImportView {
   kind: LibraryKind
-  /** 打开引用：文件 = 绝对路径；网页 = URL；文本 = 内容 */
   ref: string
   title: string
   spaceId?: string
-  /** 文本资料的内容 / 网页的 HTML 源 */
   content?: string
-  /** 导入后登记引用（会话 / 课程 / 成果） */
   owner?: LibraryOwner
 }
 
@@ -3142,41 +1718,30 @@ export interface LibraryImportViewResult {
 
 export interface LibraryOpenView {
   ok: boolean
-  /** 这条引用现在对用户意味着什么（removed / unavailable / missing / …） */
   outcome: RefOutcome
   source?: LibrarySource
   version?: LibraryVersion
-  /** 解析出来的正文（可能被 maxChars 截断） */
   text?: string
   truncated?: boolean
   error?: string
 }
 
 export interface LibraryBridge {
-  /** 列资料（默认全部活动资料；`spaceId: null` = 未归档到空间的那些） */
   list(req?: { spaceId?: string | null }): Promise<{
     ok: boolean
     error?: string
     sources: LibrarySource[]
-    /** 版本元数据（内容事实 + 状态）。界面要显示「几版」「哪版」就得有它。 */
     versions: LibraryVersion[]
     refs: LibraryRefRecordView[]
   }>
   import(view: LibraryImportView): Promise<LibraryImportViewResult>
-  /** 打开一条引用。**只按 sourceId + version 查表**，不按标题/路径找文件。 */
   open(ref: SourceReference, options?: { maxChars?: number }): Promise<LibraryOpenView>
-  /** 从空间移除（软移除：旧引用仍可打开） */
   remove(sourceId: string): Promise<{ ok: boolean; error?: string }>
   restore(sourceId: string): Promise<{ ok: boolean; error?: string }>
-  /** 改展示标题（不改版本里的历史标题，也不影响任何查找） */
   rename(sourceId: string, title: string): Promise<{ ok: boolean; error?: string; source?: LibrarySource }>
   attach(sourceId: string, spaceId: string | null): Promise<{ ok: boolean; error?: string }>
-  /** 复核原件可用性（只查 file: 的版本） */
   verify(refs: SourceReference[]): Promise<{ ok: boolean; error?: string; checked: number; unavailable: number }>
   addRef(owner: LibraryOwner, ref: SourceReference): Promise<{ ok: boolean; error?: string; added: boolean }>
-  /**
-   * 接管一条旧的会话级 `SourceRef`（T03-3）：用到才建映射，不做一次性搬迁。
-   */
   promoteLegacy(req: {
     sessionId: string
     legacyId: string
@@ -3185,24 +1750,11 @@ export interface LibraryBridge {
     ref: string
     spaceId?: string
   }): Promise<LibraryImportViewResult & { mapped?: boolean }>
-  /**
-   * 当前会话本轮装配出的上下文（只读诊断，实施-25 P05 / T05-3）。
-   *
-   * 返回的引用带 `sourceId + version + 字符区间`，界面 / 探针据此跳回原文；
-   * 它展示的是**真的会注入给模型的那份内容**（与扩展读的快照同源）。
-   */
   current(): Promise<{ ok: boolean; error?: string; assembly?: ContextAssembly }>
 }
 
-/**
- * 按活动配置模型（实施-25 P18）。
- *
- * 只读写「哪个活动用哪个模型」与解析结果 —— 切模型本身仍走既有的
- * 模型选择链路。`setModel` 传 `null` 表示「恢复成用默认」。
- */
-export interface ActivityBridge {  /** 五个活动各自会用什么模型（含理由与是否发生回退）；`current` 由界面传。 */
+export interface ActivityBridge {
   rows(input?: { current?: string | null }): Promise<ActivityModelRow[]>
-  /** 单个活动的解析结果（命令 / 快捷查看用）；传 `available` 才会做可用性检查。 */
   model(input: { activity: AgentActivity; current?: string | null; available?: string[] }): Promise<
     ActivityModelResolution & { text: string }
   >
@@ -3214,44 +1766,23 @@ export interface ActivityBridge {  /** 五个活动各自会用什么模型（�
 }
 
 export interface SourcesBridge {
-  /** 列出会话的**图片**副本（这是唯一由我们持有字节的一类）与来源关联表 */
   list(sessionId: string): Promise<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>
-  /** 存一张图片（base64，不带 data: 前缀）。同一份字节幂等 */
   addImage(req: { sessionId: string; name: string; mimeType: string; base64: string }): Promise<SourceRefView | null>
-  /** 复核文件引用：还在不在、有没有被改过（我们不复制大文件） */
   verifyFiles(req: { sessionId: string; entries: { path: string; name?: string; addedAt?: number }[] }): Promise<SourceRefView[]>
-  /**
-   * 登记「这几份来源参与了这条消息」。幂等（同一对重复登记不会堆第二条）。
-   * 形状不对的 sourceId 不报错、只记进 `skipped` —— 一条对不上不该让整批失败。
-   */
   link(req: { sessionId: string; sourceIds: string[]; messageId: string }): Promise<{ ok: boolean; added: number; skipped: number; error?: string }>
-  /** 移除**我们存的副本**。文件引用永远不删 —— 那是用户的原文件 */
   removeImage(req: { sessionId: string; sourceId: string }): Promise<{ ok: boolean; error?: string }>
-  /** 读回图片字节（缩略图） */
   readImage(req: { sessionId: string; sourceId: string }): Promise<{ ok: boolean; base64?: string; mime?: string; error?: string }>
-  /**
-   * 来源搜索入口的可用性（实施-07 S4）。**只读**：宿主不装也不调任何搜索服务，
-   * 只回答「当前有没有已接入的兼容搜索能力」—— 没命中就 `available:false`，
-   * 界面据此隐藏入口（方案明写：不自造私有搜索后端）。
-   */
   webSearch(): Promise<WebSearchAvailability>
 }
 
-/** 图片附件目录的占用（`~/.pi/agent/yan/attachments`） */
 export interface AttachmentUsage {
-  /** 目录里的文件数 */
   files: number
-  /** 占用字节 */
   bytes: number
 }
 
-/** 手动清理的结果 */
 export interface AttachmentPruneResult {
-  /** 删掉的文件数 */
   removed: number
-  /** 删掉的字节 */
   bytes: number
-  /** 仍被会话引用的文件数 */
   kept: number
 }
 
@@ -3260,12 +1791,6 @@ export interface VisibleRunnerSession {
   sessionFile?: string
 }
 
-/**
- * 运行历史的一条记录（`YAN_DIR/runs/YYYY-MM-DD.jsonl` 的一行）。
- *
- * 与 `src/main/runs/history.ts` 的 `RunHistoryRecord` 同形：共享层不能依赖主进程，
- * 所以在这里给出渲染端需要的同一份形状；写入端仍是唯一来源。
- */
 export interface RunsHistorySegment {
   phase: string
   from: number
@@ -3293,54 +1818,37 @@ export interface RunsHistoryRecord {
   counts: import('./runs').RunCounts
 }
 
-/** `yan:runs:history` 的查询：单日或闭区间，可附筛选。最多读 31 天。 */
 export interface RunsHistoryQuery {
-  /** 单日（本地日期 `YYYY-MM-DD`）；与 `range` 二选一，都缺省时取今天。 */
   date?: string
-  /** 闭区间；`to` 缺省等于 `from`。 */
   range?: { from: string; to?: string }
   filters?: {
-    /** 终态：done / stopped / failed。 */
     terminal?: RunsHistoryRecord['terminal'][]
     kind?: import('./runs').RunKind[]
     projectId?: string
     sessionId?: string
-    /** 模型 id 精确匹配。 */
     model?: string
-    /** 标题包含（不分大小写）。 */
     query?: string
   }
-  /** 最多返回多少条（默认 500，上限 2000）。 */
   limit?: number
 }
 
-/** `yan:runs:history` 的结果：按结束时间倒序，坏行跳过并把失败分片单列。 */
 export interface RunsHistoryResult {
   ok: boolean
   error?: string
   records: RunsHistoryRecord[]
-  /** 实际读取的日期分片（升序）。 */
   days: string[]
-  /** 命中上限，结果被截断。 */
   truncated: boolean
-  /** 读取失败的分片（权限 / IO），其余分片仍返回。 */
   failures?: { day: string; error: string }[]
 }
 
-/** `yan:runs:stop` 的结果：只接受仍在运行且已登记的那一次运行。 */
 export interface RunsStopResult {
   ok: boolean
   error?: string
   runId?: string
   kind?: import('./runs').RunKind
-  /**
-   * 停止会话运行时先 `clear_queue` 拿回的排队文本（形状同 `QueueSnapshot`）。
-   * 有值时渲染端必须放回输入框或逐条可见，不能静默丢弃。
-   */
   recovered?: { steering: string[]; followUp: string[] }
 }
 
-/** `inkstone://` 深链接导航意图：主进程已解析校验的白名单动作，渲染端只导航。 */
 export type DeepLinkIntent =
   | { action: 'session'; sessionId: string; entryId?: string }
   | { action: 'new-session'; text?: string }
@@ -3348,7 +1856,6 @@ export type DeepLinkIntent =
   | { action: 'runs' }
 
 export interface YanBridge {
-  /** 宿主显式启动隔离探针时为真；普通窗口与打包产品不开放 store 调试引用。 */
   readonly probeMode: boolean
   agentService: import('./agent-service').ServiceBridge
   appUpdate: {
@@ -3358,18 +1865,12 @@ export interface YanBridge {
     download(): Promise<import('./app-update').AppUpdateStatus>
     install(): Promise<{ ok: boolean; error?: string }>
   }
-  /* 会话控制 */
-  /**
-   * 切到某个会话（N12）：命中已有实例就只改视图，**不发停止命令**；
-   * 空闲实例会被复用；到并发上限时明确报错，而不是停掉正在跑的旧会话。
-   */
   selectSession(target: {
     sessionFile?: string
     sessionId?: string
     projectId?: string
     scope?: SessionScope
     cwd: string
-    /** 只是「看一眼」这条会话：不建运行实例、更不为它建隔离工作树 */
     preview?: boolean
   }): Promise<{
     ok: boolean
@@ -3378,73 +1879,27 @@ export interface YanBridge {
     sessionId?: string
     generation?: number
     via?: 'hit' | 'reuse' | 'new'
-    /** 只查看了、实例没动（调用方必须据此保持「未激活」状态） */
     deferred?: boolean
     error?: string
   }>
-  /** 同步正在显示的会话（含只读分屏），用于保护其空闲运行实例。 */
   setVisibleRunnerSessions(sessions: VisibleRunnerSession[]): Promise<boolean>
-  /** 所有运行实例的状态（左栏状态槽用；也可用来补上错过的推送） */
   runnerStatuses(): Promise<RunnerStatus[]>
-  /** 停掉**某一个**运行实例（只影响它，不涉及别的会话） */
   stopRunner(id: string): Promise<boolean>
-  /**
-   * 运行注册表（v3 WP-10）：全局运行状态，侧栏状态点与「运行总览」共用。
-   *
-   * 与 `runnerStatuses()`（进程级实例状态）分开：这里每轮一个运行实例，
-   * 回答的是「这次任务跑到哪一步、是否在等我」。
-   */
   runs: {
-    /** 先同步冲出待发增量，再取全量；返回的 revision 与紧随其后的推送对齐。 */
     snapshot(): Promise<{ revision: number; runs: import('./runs').RunSnapshot[] }>
-    /** 标记某次运行「已看过」（清除未读点）；返回它此前是否已登记。 */
     markSeen(runId: string): Promise<{ ok: boolean }>
-    /** 读运行历史（有界、坏行跳过）；供运行总览的日期切换与运行时间线使用。 */
     history(query: RunsHistoryQuery): Promise<RunsHistoryResult>
-    /**
-     * 停止一次仍在运行的运行。会话运行与界面停止按钮同一条路径（
-     * `AgentController.abort()` 的 clear_queue + abort 语义）；
-     * runId 不存在 / 已结束 / 不在登记表里一律 `{ ok: false }`。
-     */
     stop(runId: string): Promise<RunsStopResult>
   }
-  /**
-   * 代码评审（v3 WP-50，§10.2）：变更集 / 批注 / 提交 / 推送 / PR。
-   * 契约在 `shared/review.ts`，主进程接线在 `src/main/ipc/review-ipc.ts`。
-   *
-   * 注意：`annotationTask` 与 `start` 都带 `query`，由主进程**重新读**变更集；
-   * 渲染端不能靠传一个伪造的 changeSet 对象把评审运行指到别的目录。
-   */
   review: import('./review').ReviewBridge
-  /**
-   * 跨设备同步（v3 WP-53）：同步文件夹配置、立即同步、冲突逐条处理、会话导出 / 导入。
-   * 契约在 `shared/sync.ts`，主进程接线在 `src/main/ipc/sync-ipc.ts`。
-   */
   sync: import('./sync').SyncBridge
   start(cwd?: string): Promise<{ ok: boolean; error?: string; state?: SessionState }>
-  /**
-   * 发一条用户消息。
-   *
-   * `expectedRuntime` 是渲染端提交时钉住的归属（run + generation）：宿主据此
-   * 核对消息该投给哪个运行实例，不依赖「此刻 active 是谁」。老调用方不传时
-   * 宿主退回原有语义。
-   */
   send(text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   steer(text: string): Promise<{ ok: boolean; error?: string }>
   followUp(text: string): Promise<{ ok: boolean; error?: string }>
-  /** 把一条排队的消息插队（提升为 steering，在当前这轮就听） */
   steerQueued(queueId: string): Promise<{ ok: boolean; error?: string }>
-  /** 撤回一条仍在队列中的消息，并把文字与图片交回草稿。 */
   removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }>
-  /**
-   * 队列编辑 / 重排（WP-24b）：把目标顺序交给主进程 clear_queue 后重建。
-   * 失败且无法恢复原队列时返回 `dropped`，渲染端必须回填输入框。
-   */
   queueEdit(next: QueueState): Promise<{ ok: boolean; error?: string; dropped?: QueueItem[] }>
-  /**
-   * 中止。按 pi 的约定先 clear_queue 再 abort，把清出来的队列文本返回，
-   * 客户端应把它放回输入框（否则用户排的话就白打了）。
-   */
   abort(): Promise<QueueSnapshot>
   newSession(target?: { cwd?: string; projectId?: string; scope?: SessionScope }): Promise<{
     ok: boolean
@@ -3455,19 +1910,12 @@ export interface YanBridge {
     generation?: number
   }>
   switchSession(path: string): Promise<{ ok: boolean; error?: string }>
-  /** 移动产品归属；null = Yan 默认全局位置，不移动物理 JSONL 文件。 */
   moveSession(sessionId: string, projectId: string | null): Promise<{
     ok: boolean
     error?: string
     entry?: SessionLayoutEntry
   }>
 
-  /**
-   * 主题空间（实施-25 P02）。
-   *
-   * 与 `moveSession` 同一个边界：只改 Yan 的产品归属，不动 pi 的 JSONL。
-   * `list` 把空间与「空间 ↔ 项目」关联记录一起返回 —— 界面上两者总是一起用。
-   */
   getSpaces(): Promise<{ spaces: Space[]; links: SpaceProjectLink[] }>
   createSpace(input: { name: string; description?: string }): Promise<{
     ok: boolean
@@ -3476,7 +1924,6 @@ export interface YanBridge {
     spaces?: Space[]
     links?: SpaceProjectLink[]
   }>
-  /** 改名 / 改描述 / 归档。归档是唯一的「移除」入口（不物理删除）。 */
   updateSpace(
     id: string,
     patch: { name?: string; description?: string | null; archived?: boolean }
@@ -3487,7 +1934,6 @@ export interface YanBridge {
     spaces?: Space[]
     links?: SpaceProjectLink[]
   }>
-  /** 空间 ↔ 项目是显式多对多关联：同一文件夹可以同时属于多个空间。 */
   linkSpaceProject(
     spaceId: string,
     projectId: string
@@ -3496,59 +1942,35 @@ export interface YanBridge {
     spaceId: string,
     projectId: string
   ): Promise<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>
-  /** 归档 / 取消归档会话；只写 session-layout，不动 JSONL、不停 runner。 */
   setSessionArchived(sessionId: string, archived: boolean): Promise<{ ok: boolean; error?: string }>
-  /** 置顶 / 取消置顶；`paths` 供旧版本地置顶一次性迁移时批量写入。 */
   setSessionPinned(sessionId: string, pinned: boolean): Promise<{ ok: boolean; error?: string }>
-  /** 把会话放进空间（null = 移出）。不动 projectId。 */
   setSessionSpace(
     sessionId: string,
     spaceId: string | null
   ): Promise<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>
-  /** Native operations require an exact foreground session identity; never exposed through remote capability commands. */
   nativeSession(request: import('./native-session-host').NativeSessionHostRequest): Promise<import('./native-session-host').NativeSessionHostResult>
   compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }>
-  /**
-   * 给会话起名（写进 JSONL，TUI 的 /resume 也看得到）。
-   *
-   * ⚠️ `name` 不能为空 —— pi 的 `set_session_name` 对空串返回 `success:false`，
-   * 也就是说名字一旦设了就**清不掉**。调用方（renameSession）会拦空值。
-   */
   renameSession(name: string): Promise<{ ok: boolean; error?: string }>
 
-  /** 从某条用户消息处分叉 */
   fork(entryId: string): Promise<{ ok: boolean; error?: string; text?: string }>
-  /** 复制当前分支到新会话 */
   clone(): Promise<{ ok: boolean; error?: string }>
   forkPoints(): Promise<ForkPoint[]>
-  /** 导出当前会话为 HTML */
   exportHtml(outputPath?: string): Promise<{ ok: boolean; path?: string; error?: string }>
-  /**
-   * 将一份会话移到砚的回收站。返回的 token 只在本次应用运行期间可用于撤销。
-   * UI 必须先完成自己的明确确认，主进程仍会拒绝当前会话。
-   */
   deleteSession(path: string): Promise<{ ok: boolean; undoToken?: string; error?: string }>
-  /** 撤销本次运行内刚刚执行的会话删除。 */
   restoreSession(undoToken: string): Promise<{ ok: boolean; error?: string }>
 
-  /* 直执行 bash（不进 LLM 的工具调用）。`expectedRuntime` 与 send 同一归属口径。 */
   runBash(command: string, options?: { excludeFromContext?: boolean }, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   abortBash(): Promise<void>
 
-  /* 模型 / 思考 */
   listModels(): Promise<ModelInfo[]>
   setModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }>
   setThinking(level: string): Promise<{ ok: boolean; error?: string }>
   listThinkingLevels(): Promise<string[]>
 
-  /* 开关 */
   setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }>
   setAutoRetry(enabled: boolean): Promise<{ ok: boolean; error?: string }>
 
-  /* 工作模式（实施-05）：按**当前会话**读写，不是全局设置 */
-  /** 回答一条批准请求；请求已失效时 ok=false */
   answerApproval(id: string, choice: ApprovalChoice): Promise<{ ok: boolean }>
-  /** 当前还在等答复的批准请求（界面重载后找回卡片） */
   pendingApprovals(): Promise<ApprovalRequest[]>
   getWorkMode(): Promise<WorkModeState>
   setWorkMode(mode: WorkMode, expectedRevision?: number): Promise<{
@@ -3557,27 +1979,12 @@ export interface YanBridge {
     error?: string
   }>
 
-  /*
-   * 会话级提问频率覆盖（四态 inherit / sparse / balanced / eager）。
-   *
-   * 与工作模式共用会话记录（同一条稳定会话键、同一个 revision），但只管
-   * 「何时问」：`inherit` 跟随全局设置，显式值不被全局变更覆盖。请求带
-   * 预期身份（runnerId + sessionId / sessionFile）与 revision，宿主在持久化
-   * 前后都核对归属，避免迟到的 A 请求写到刚切过去的 B。
-   */
   getSessionQuestionFrequency(runnerId?: string): Promise<
     | ({ ok: true } & SessionQuestionFrequencyView)
     | { ok: false; error: string }
   >
   setSessionQuestionFrequency(input: SessionQuestionFrequencyInput): Promise<SessionQuestionFrequencyResult>
 
-  /*
-   * 活动档案（实施-25 P01）：同样按**当前会话**读写。
-   *
-   * `profile` 决定日常 / 代码两种角色；`activity` 决定日常里具体做什么
-   * （问答 / 研究 / 创作 / 整理 / 学习）。语言与详细程度不在这里 ——
-   * 它们已有全局设置，不存第二份。
-   */
   getAgentProfile(): Promise<AgentProfileState>
   setAgentProfile(patch: AgentProfilePatch, expectedRevision?: number): Promise<{
     ok: boolean
@@ -3586,25 +1993,10 @@ export interface YanBridge {
     detail?: string
   }>
 
-  /*
-   * 目标状态（实施-05 S3）：**只读**。
-   *
-   * 写入通道只有一条 —— 模型经 `yan goal ready|report`（宿主 CLI）。
-   * 这里不提供「界面直接改目标」的入口：否则就有两条腿改同一份状态，
-   * 幂等与 revision 的语义会被绕开。界面要看的是「现在到哪了」。
-   */
   getGoal(): Promise<{ goal: GoalState; mode: WorkModeState }>
-  /**
-   * 用户设定持续目标（`+` 菜单 → 目标）：目标 + 可衡量的成果 + 可选补充。
-   *
-   * 前两栏必填：允许缺「可衡量的成果」等于造一个永远没法验收的目标。
-   * 交付物 / 范围 / 约束（实施-16 G-1）可选，缺省就是用户没写。
-   * 一旦设上，非自主档也会在回合收尾后继续被叫醒（与档位正交）。
-   */
   setGoal(brief: PursuedBrief): Promise<
     { ok: true; goal: GoalState } | { ok: false; error: 'no_session' | 'incomplete' }
   >
-  /** 当前会话在澄清档提交 ready 时是否暂停，等待用户审阅计划。 */
   setGoalReadyApproval(mode: ReadyApprovalMode, expectedGoalRevision?: number): Promise<
     { ok: true; goal: GoalState } | { ok: false; error: string; goal: GoalState }
   >
@@ -3623,167 +2015,76 @@ export interface YanBridge {
     goalRevision: number
     modeRevision: number
   }): Promise<{ ok: true; goal: GoalState } | { ok: false; error: string; goal: GoalState }>
-  /**
-   * 放弃当前目标（实施-14 A2）。
-   *
-   * 与「按停止」（`yan:abort` → paused，可恢复）分开：这里是目标级终态
-   * （`phase: 'stopped'`），下一次要重新开工必须重新设目标或重新推进。
-   * 两者混在一起就会出现「停一下 = 目标没了」或「目标完了还能被自动叫醒」。
-   */
   stopGoal(): Promise<{ ok: boolean; goal?: GoalState | null; error?: string }>
-  /**
-   * 交接状态（实施-05 S5b-2）——**只读**。
-   *
-   * 写入通道只有一条：宿主自己（薄层只产原文，解析与落盘都在主进程）。
-   * 界面与探针需要的是「压了几次 / 包写了没有 / 这一刻在不在生成中」。
-   */
   getHandoff(): Promise<HandoffView>
-  /**
-   * 用户点「重试」（实施-14 F5）：清掉残留的生成现场再走一遍调度。
-   * 不是「强行交接」—— 资格不够时照旧如实拒绝（界面拿 `getHandoff().events` 看原因）。
-   */
   retryHandoff(): Promise<{ ok: boolean; error?: string }>
 
-  /**
-   * 用户人工确认「续接确实已在目的会话里跑起来」（实施-15 A-3）。
-   *
-   * 用在「已发出但磁盘上看不到证据」的情况：点一下就把事务判为已续接，
-   * **不重发**。没发过时宿主会拒绝（`not-sent`），不会凭空标完成。
-   */
   confirmHandoff(handoffId: string): Promise<{ ok: boolean; error?: string }>
 
-  /* 队列模式 */
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
 
-  /* 重试 / 轮换（TUI 的快捷键在桌面端也要有对应入口） */
   abortRetry(): Promise<{ ok: boolean; error?: string }>
   cycleModel(): Promise<{ ok: boolean; error?: string; to?: string }>
-  /** 反向切到上一个模型（Ctrl+Shift+P；pi 的 RPC 只有向前） */
   cycleModelBack(): Promise<{ ok: boolean; error?: string; to?: string }>
   cycleThinking(): Promise<{ ok: boolean; error?: string; to?: string }>
-  /** 取最后一条助手消息的纯文本（复制用） */
   lastAssistantText(): Promise<string | null>
 
-  /* pi 环境信息 */
   piInfo(): Promise<PiInfo>
-  /**
-   * 重新探测 pi（清掉版本缓存，强制重跑 --version）。
-   *
-   * 为什么需要：用户可能在应用运行期间 `npm i -g` 装了 pi、或补好了
-   * 内置运行时 —— 不重测的话界面一直停在启动时那个快照上。
-   */
   redetectPi(): Promise<PiInfo>
 
-  /* 命令 */
   listCommands(): Promise<SlashCommand[]>
 
-  /* 状态查询 */
   getState(): Promise<SessionState | null>
-  /**
-   * 拉当前连接状态。
-   *
-   * 为什么需要：`proc: ready` 是 push，而渲染端在 dev 模式下加载很慢，
-   * 可能错过这次推送 —— 界面就永远停在「正在启动 pi」。
-   * 所以启动时必顶拉一次权威状态。
-   */
   agentStatus(): Promise<{ state: 'starting' | 'ready' | 'exited' | 'error'; detail: string }>
   getMessages(): Promise<UIMessage[]>
   getStats(): Promise<SessionStats | null>
-  /** 已生成过的会话标题缓存（sessionId → title），启动时一次性拉走 */
   cachedTitles(): Promise<Record<string, string>>
-  /** 用户手动重命名的会话名（sessionId → name），优先于自动标题 */
   manualTitles(): Promise<Record<string, string>>
-  /** 写一个手动会话名（空串 = 清除，恢复自动标题）；写盘失败会带 error 返回 */
   setManualTitle(sessionId: string, name: string): Promise<{ ok: boolean; error?: string }>
-  /** 按稳定 sessionId 重生成短标题；不切换会话、不打断后台运行实例。 */
   regenerateTitle(sessionId: string): Promise<{ ok: boolean; title?: string; error?: string }>
-  /** 读会话里的 extension custom entries（任务清单的来源） */
   getCustomEntries(): Promise<CustomEntry[]>
-  /** 手动刷新任务清单 */
   refreshTodos(): Promise<SessionTodo[]>
 
-  /* 会话列表 */
   listSessions(): Promise<SessionSummary[]>
-  /** 检查点（回退代码）：只作用于当前活动会话的项目目录 */
   checkpoints: {
     list(): Promise<CheckpointRecord[]>
     preview(recordId: string): Promise<CheckpointPreview>
     restore(recordId: string): Promise<CheckpointRestoreResult>
     undo(undoId: string): Promise<CheckpointRestoreResult>
   }
-  /** 会话正文检索（切换器用）：所有词都出现才算命中，返回命中的会话文件与片段 */
   searchSessions(query: string, limit?: number): Promise<SessionSearchResult>
-  /** 启动页用量概览：会话、消息、token、活跃天数、高峰时段、模型与热力图 */
   usageStats(range: UsageRange): Promise<UsageStatsResult>
 
-  /**
-   * 快速预览会话消息（**直接读文件，不问 pi**）。
-   *
-   * 实测：打开 17MB 会话，pi 要 2780ms，直接解析只需 59ms。
-   * 而且 jsonl 里包含**压缩前的历史**，pi 的 get_messages 不含。
-   *
-   * `null` = 读不出来（调用方应回退到等 pi）。
-   */
   peekSession(path: string): Promise<PeekResult | null>
 
-  /* 模型接入（凭证） */
-  /** 列出接入方式与状态。deep=true 时逐个问 pi（慢，几百 ms × N） */
   authProviders(deep?: boolean): Promise<AuthProviderInfo[]>
-  /**
-   * 在应用内登录 ChatGPT 订阅（Codex）：开系统浏览器走 OAuth，回调落在
-   * 本机 1455 端口，成功后凭证合并写入 pi 的 auth.json。
-   *
-   * 这个 Promise 在流程**结束时** resolve（成功/失败/取消/超时都是），
-   * 所以界面可以一直 await 它来显示「等待浏览器授权…」。
-   */
   codexLogin(): Promise<CodexLoginResult>
-  /** 取消正在进行的 ChatGPT 登录（关掉本地回调、释放 1455 端口）。 */
   codexLoginCancel(): Promise<void>
-  /** 应用内登录其余订阅（Claude Pro/Max、Copilot、xAI、OpenRouter）；流程结束时 resolve */
   oauthLogin(provider: string): Promise<OAuthLoginResult>
-  /** 回答登录过程中的提问（粘贴回调地址、企业域名、选项） */
   oauthLoginAnswer(provider: string, promptId: number, value: string): Promise<boolean>
   oauthLoginCancel(provider: string): Promise<void>
-  /** 订阅登录过程事件；返回取消订阅 */
   onOAuthEvent(cb: (event: OAuthLoginEvent) => void): () => void
-  /** 写入一个 provider 的 API key（**合并**写入 auth.json） */
   setApiKey(provider: string, key: string): Promise<{ ok: boolean; error?: string }>
-  /** 移除某个 provider 的凭证（界面上的「退出」） */
   clearAuth(provider: string): Promise<{ ok: boolean; error?: string }>
-  /** auth.json 的路径与条目数（界面上告知凭证存在哪） */
   authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
-  /** 「账号额度」磁贴：砚的账号与已打开的本机 CLI 来源，各自的额度窗口或余额 */
   accountQuota(): Promise<AccountQuotaReport>
-  /** 打开 / 关闭一个本机 CLI 来源（Codex CLI、Claude Code、Gemini CLI） */
   accountQuotaSource(source: AccountQuotaCliSource, enabled: boolean): Promise<AccountQuotaPrefs>
-  /** 设置账号备注；空字符串恢复默认名 */
   accountLabel(key: string, label: string): Promise<AccountQuotaPrefs>
-  /** 砚保存的 ChatGPT 账号（不含凭证） */
   codexAccounts(): Promise<CodexAccountView[]>
-  /** 切到另一个保存的 ChatGPT 账号；pi 在当前回合结束后重启生效 */
   codexAccountSwitch(key: string): Promise<{ ok: boolean; error?: string }>
-  /** 额度用尽后换到下一个还有额度的 ChatGPT 账号；skip 是本轮已经试过的账号 key。 */
   codexAccountFailover(skip: string[]): Promise<CodexFailoverResult>
-  /** 移除保存的 ChatGPT 账号；是当前账号时同时退出登录 */
   codexAccountRemove(key: string): Promise<{ ok: boolean; error?: string }>
-  /** 外部命令（bash / git）是否可用；缺失时带安装说明 */
   toolchainStatus(): Promise<ToolchainStatus>
-  /** 受管 Git：当前状态 / 一键安装（需用户已确认）/ 取消 / 移除 */
   gitRuntimeStatus(): Promise<GitRuntimeStatus>
   gitRuntimeInstall(): Promise<{ ok: boolean; error?: string }>
   gitRuntimeCancel(): Promise<void>
   gitRuntimeRemove(): Promise<void>
-  /* 实施-23：自定义 API 服务（真源是 pi 的 models.json，只动 yan- 前缀条目） */
   customProviders(): Promise<CustomProviderView[]>
   saveCustomProvider(input: CustomProviderInput): Promise<CustomProviderResult>
   removeCustomProvider(id: string): Promise<CustomProviderResult>
-  /** 连接测试：endpoint = URL/凭证检查（免费）；billable = 真实模型请求（计费） */
-  /** 从端点的 /models 拉模型 ID（密钥留空时用磁盘上已保存的） */
   discoverCustomModels(input: Partial<CustomProviderInput>): Promise<CustomProviderDiscoverResult>
-  /** 探测本机的 Ollama / LM Studio（对话）与 SD WebUI / ComfyUI（生图），只读模型列表 */
   detectLocalModels(): Promise<LocalModelServer[]>
-  /** 检测时额外探测的地址（局域网主机、非默认端口），返回规范化后的列表 */
   localModelUrls(): Promise<string[]>
   saveLocalModelUrls(urls: string[]): Promise<string[]>
   testCustomProvider(
@@ -3792,75 +2093,29 @@ export interface YanBridge {
     modelId?: string
   ): Promise<CustomProviderTestResult>
 
-  /**
-   *  文件引用补全 —— 只读**一层**目录（不递归扫项目）。
-   * 返回相对 cwd 的路径，目录带尾斜杠。
-   */
-  /**
-   * 以当前查看实例的 cwd 做补全根；cwd 可显式传入，避免后台切换/迟到响应
-   * 把旧项目的候选路径串到新项目输入框里。
-   */
   completePath(prefix: string, cwd?: string, context?: FileRequestContext): Promise<PathCompletionResult>
-  /** 取消一个仍在主进程扫描中的全项目文件名搜索。 */
   cancelFileSearch(requestId: string): Promise<void>
-  /** 全项目文件名搜索：有界、可取消，并跳过大型依赖目录。 */
   searchFiles(request: FileSearchRequest): Promise<FileSearchResult>
 
-  /* 附件 */
-  /** 弹系统文件选择框，读成 base64（图片） */
   pickImages(): Promise<Attachment[]>
-  /**
-   * 「文件和文件夹」入口（`+` 菜单）：只返回**路径**，不读内容。
-   *
-   * 为什么不在这里读成附件：文件引用要过 `describeFiles` 的统一校验
-   * （越界、可读性、大小），并与拖入 / 文件树走同一条登记链路；
-   * 更要紧的是大文件**不能被复制进上下文**，只有路径才安全。
-   */
   pickFilePaths(): Promise<string[]>
 
-  /* 设置 */
   getSettings(): Promise<AppSettings>
   patchSettings(patch: Partial<AppSettings>): Promise<AppSettings>
-  /** 只改项目默认目录；不搬文件、不重写历史 cwd、不切换运行实例。 */
   changeProjectDirectory(request: ProjectDirectoryChange): Promise<ProjectDirectoryResult>
   pickCwd(): Promise<string | null>
   setCwd(cwd: string): Promise<{ ok: boolean; cwd?: string; error?: string }>
 
-  /* 扩展 UI 应答 */
   respondUi(res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }): void
-  /**
-   * 延长一个待回答问题的等待（用户在倒计时上点一下）。
-   *
-   * 为什么要往返主进程：超时是主进程的计时器在抱，只改界面上的数字等于骗用户。
-   * 返回新的剩余量与截止时刻；请求已经不在等待（已被回答 / 已超时）时回 `ok:false`。
-   */
   extendUi(id: string, extraMs?: number): Promise<{ ok: boolean; timeout?: number; deadline?: number; error?: string }>
-  /**
-   * 「这一条请求已经显示给用户了」→ 开始计时（幂等）。
-   *
-   * 为什么要这一趟：多条问题同时挂着时面板一次只显示一条，计时必须从
-   * **用户看到这一条**开始，否则后面几条会在用户还没翻到时就把时间扣完。
-   */
   startUiTimer(id: string): Promise<{ ok: boolean; timeout?: number; deadline?: number; error?: string }>
 
-  /**
-   * 发一条系统通知（仅当用户开了通知开关时由 store 调用）。
-   * 返回 shown=false 表示系统不支持/被拦，调用方不需要重试。
-   */
   notifyAttention(n: AttentionNotify): Promise<{ shown: boolean; simulated?: boolean; error?: string }>
 
-  /* 诊断 */
   probePi(): Promise<PiProbe>
   openPath(p: string): Promise<{ ok: boolean; error?: string }>
-  /**
-   * 用系统默认程序打开一个文件（对话里双击文件链接、预览里的「打开」）。
-   * 相对路径按 cwd 解析；可执行 / 脚本类文件不启动，只在文件管理器里定位。
-   */
   openFileDefault(p: string, cwd?: string): Promise<{ ok: boolean; revealed?: boolean; error?: string }>
-  /** 在系统文件管理器里定位一个文件 */
-  /** 在系统文件管理器里选中文件；路径不存在时返回 `{ ok: false }`，调用方据此回退到受控副本。 */
   revealPath(p: string): Promise<{ ok: boolean }>
-  /** 数据位置（会话、凭证、语音模型等）与迁移到非系统盘 */
   interactions: {
     get(session: string): Promise<import('./interaction-state').InteractionValues>
     set(session: string, key: string, value: string | null): Promise<import('./interaction-state').InteractionValues>
@@ -3869,119 +2124,49 @@ export interface YanBridge {
   storage: {
     info(): Promise<StorageInfoView>
     pick(): Promise<string | null>
-    /** 登记下次启动迁移；relaunch=true 时立即重启应用执行 */
     schedule(target: string, relaunch?: boolean): Promise<{ ok: boolean; error?: string }>
     cancel(): Promise<void>
   }
 
-  /**
-   * 是不是跑在验收探针里（主进程带了 `YAN_PROBE`）。
-   *
-   * 目前只用于**首次引导**：探针环境没有凭证，引导层会无条件自动弹出，
-   * 而它是一层模态（按设计会让出 Shift+Tab 这类快捷键），
-   * 会把 hotkeys 那类场景的按键全吃掉。真实用户路径不受影响。
-   */
   readonly isProbe: boolean
-  /** 环境变量 `YAN_UI` 指定的外壳（开发用）；未指定为 null，按设置 `uiVersion` 决定。 */
   readonly uiVersionEnv: 'v2' | 'v3' | null
 
-  /* 窗口 */
   win: {
     minimize(): void
     maximize(): void
     close(): void
-    /** 切换置顶（会被记住到设置里） */
     setAlwaysOnTop(v: boolean): Promise<boolean>
-    /** 请求真正退出；关闭按钮本身只隐藏到托盘。 */
     requestExit(): Promise<{
       action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting'
     }>
     lifecycle(): Promise<{ tray: boolean; visible: boolean; quitting: boolean }>
   }
 
-  /* 订阅（返回退订函数） */
   onPush(cb: (msg: MainPush) => void): () => void
-  /**
-   * 订阅主进程拦下的全局快捷键（Ctrl+P / Shift+Tab / Ctrl+±0）。
-   * 主进程用 before-input-event 先拦（输入法、焦点问题都拦得住），
-   * 再把动作名发过来；「下一档」怎么算由渲染端决定。
-   *
-   * 例外：缩放（Ctrl+= / Ctrl+- / Ctrl+0）由主进程自己直接改并回推
-   * `ui-scale` —— 它不需要渲染端参与决策。
-   */
   onHotkey(cb: (action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking') => void): () => void
-  /**
-   * 订阅主进程投递的 `inkstone://` 深链接意图（已解析校验，白名单动作）。
-   * 渲染端只按意图导航：打开会话 / 新建会话并预填草稿 / 打开设置分区 / 打开运行总览。
-   */
   onDeepLink(cb: (intent: DeepLinkIntent) => void): () => void
-  /**
-   * 告诉主进程「现在有模态层打开」，让它**暂停** cycleModel / cycleThinking 的
-   * 全局拦截（缩放不受影响）。
-   *
-   * 为什么必需：Shift+Tab / Ctrl+P 是在 `before-input-event` 里**先于渲染端**
-   * 被 preventDefault 的，渲染端再怎么判断都来不及 —— 设置面板里的表单
-   * 因此永远做不了反向焦点导航。守卫状态必须由渲染端上报。
-   */
   setHotkeyGuard(paused: boolean): void
-  /**
-   * 上报系统「减少动态效果」（L12）：渲染端读 `prefers-reduced-motion` 后单向 send。
-   * 主进程据此决定托盘状态符号是否播放柔和闪动；未上报前保持静态。
-   */
   setMotionPreference(reduced: boolean): void
-  /** 读界面缩放现状（含自动模式下算出的倍率与屏幕缩放） */
   getZoom(): Promise<ZoomState>
-  /** 设界面缩放（0 = 自动），返回生效后的状态 */
   setUiScale(v: number): Promise<ZoomState>
-  /** 列一层目录（文件树；相对 cwd，一层一次 —— 有意不递归） */
   listDir(rel: string, showHidden?: boolean, context?: FileRequestContext): Promise<DirListing>
-  /**
-   * 把拖入的 `File` 换成绝对路径（Electron 的 `webUtils`，不经主进程）。
-   * 只转换；校验与授权在 `describeFiles` 里做。
-   */
   pathForFile(file: File): string
-  /** 校验并登记一组文件引用（工作区外也允许，仅本次运行有效） */
   describeFiles(paths: string[]): Promise<FileRefInfo[]>
-  /** 读已登记文件的文本（只读预览）；未登记 / 二进制 / 超限会返回错误 */
   readFileText(path: string): Promise<FileTextResult>
-  /**
-   * 只读预览一个链接指向的文件。
-   * 相对路径按会话 cwd 解析，绝对路径也允许（但一律 realpath 校验）。
-   * `line` 来自 `path:42` 形式，界面用它滚到目标行。
-   */
   readPreview(path: string, line?: number, cwd?: string, lineEnd?: number): Promise<FilePreview>
-  /** 只为受控 HTML 成果建立限长、隔离的页面快照。 */
   prepareHtmlArtifact(path: string): Promise<HtmlArtifactPreviewResult>
   releaseHtmlArtifact(url: string): Promise<void>
-  /** 消息内小部件：整页 HTML 放进隔离协议，返回同样的预览地址（用完同样 releaseHtmlArtifact） */
   prepareHtmlWidget(html: string): Promise<HtmlArtifactPreviewResult>
-  /** 只查文件变没变（H-4 变化提示）：只 stat，不读内容 */
   statPreview(path: string, cwd?: string): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>
-  /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
   compactionInfo(contextWindow: number): Promise<CompactionInfo>
-  /**
-   * 项目信任（实施-07 S2b-2）。
-   *
-   * pi 的规则：目录不在 `trust.json` 里被标成 `true` 时，它会**整份忽略**该目录的
-   * 项目级配置；而 RPC 模式没有信任弹窗。工作树目录通常在仓库旁边，
-   * 所以「源目录被信任」不等于「工作树目录被信任」——这两个接口就是让用户
-   * **看得到、能显式处理**，而不是自己去终端跑一次 pi。**不自动继承**。
-   */
   trust: {
     status(cwd?: string): Promise<TrustStatusView>
     allow(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
     revoke(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
   }
-  /**
-   * 工作集预算（N21-3）。只算不决策：返回当前生效的策略与某个窗口下的预算。
-   * 界面用主进程推送的那份，这个接口主要给测试与诊断对参考值。
-   */
   contextBudget(contextWindow: number): Promise<ContextPolicyResolution>
-  /** 会话级 V1 档位；身份由宿主从当前 runner 决定。 */
   contextBudgetV1(): Promise<ContextBudgetSessionPolicyV1 | null>
-  /** True when this session has explicitly entered budget V1; legacy sessions remain unchanged. */
   contextBudgetV1Enabled(): Promise<boolean>
-  /** 最近一次 pi 最终请求检查；不含提示词正文，过期数据返回 null。 */
   contextBudgetSnapshotV1(): Promise<ContextBudgetRuntimeSnapshotV1 | null>
   contextBudgetMaintainV1(operationId?: string): Promise<{
     ok: boolean
@@ -3992,11 +2177,6 @@ export interface YanBridge {
   contextBudgetMaintenanceStatusV1(): Promise<ContextMaintenanceOperationV1 | null>
   setContextBudgetV1(update: ContextBudgetSelectionUpdateV1): Promise<ContextBudgetSelectionUpdateResultV1>
   setContextBudgetMaterialPinV1(update: ContextBudgetMaterialPinUpdateV1): Promise<ContextBudgetSelectionUpdateResultV1>
-  /**
-   * 「整理失败停下」的两个一键出口：临时抬软线 / 降档。
-   * 两个动作都会把停住的自动整理标成作废，阻塞随之解除（否则点完仍然发不出消息）。
-   * 抬线写的是**临时**覆盖：基础档不动，到期自动回落（`temporary` / `expiresAt`）。
-   */
   contextBudgetMaintenanceExitV1(request: {
     action: 'raise-line' | 'lower-tier'
     expectedRevision: string
@@ -4008,96 +2188,49 @@ export interface YanBridge {
     expiresAt?: number | null
     error?: string
   }>
-  /**
-   * 三类整理动作账本（实施-11 C-2b）。读取的是**当前活动会话**：
-   * 会话身份由主进程决定，界面不自报（与 `contextBudget` 同一约定）。
-   */
   contextActions(): Promise<ContextActionSummary>
-  /**
-   * 后台模型调用的真实用量账（整理摘要 / 深度归纳 / 任务状态 / 交接 / 标题）。
-   * 与 `contextActions` 同一约定：读的是**当前活动会话**，界面不自报会话身份。
-   */
   contextBackgroundUsage(): Promise<ContextBackgroundUsageSummary>
-  /** 当前会话最近一次上报的系统提示分段与工具定义（估算）；还没有对话时为 null */
   contextInspect(): Promise<ContextInspectSnapshot | null>
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
 
-  /**
-   * 图片附件目录：只给占用与手动清理。
-   *
-   * 有意不做自动 GC（Codex / opencode / Cline 也都不做）：按时间删会删掉
-   * 用户还没翻到的旧图，所以只删「没有任何会话引用」的那些。
-   */
   attachments: {
     usage(): Promise<AttachmentUsage>
     prune(): Promise<AttachmentPruneResult>
   }
 
-  /* 子代理（方案第 8 节） */
   subagents: SubagentBridge
   schedule: ScheduleBridge
 
-  /* Git 审查（方案 G1，只读） */
-  /** pi 插件包管理（§9 的 P2）：只改 pi 自己的 settings，不动生成的 pi-runtime */
-  /** 会话来源的持久化资源引用（§8 的 S1）：只持有我们自己存的那份副本 */
   sources: SourcesBridge
-  /** 资料库（实施-25 P03）：与 sources 并存，落在 library.json */
   library: LibraryBridge
-  /** 按活动配置模型（实施-25 P18）：只回答「该用哪个模型」，不动会话与学习状态。 */
   activity: ActivityBridge
   packages: PackagesBridge
-  /** 项目知识页（实施-03 S5）：读当前项目、确认 / 编辑 / 替代 / 删除、导出 */
   knowledge: KnowledgeBridge
-  /** 受信内置能力的只读查询（实施-02 S4）；与 packages 刻意分开 */
   builtinCapabilities: BuiltinCapabilitiesBridge
-  /**
-   * 搜索后端诊断（实施-27 S3）。只读探针：不装、不升级。
-   * 未安装 OpenCLI 时也返回可读结果（`available:false`），
-   * 设置页据此给出安装指引。
-   */
   search: {
     doctor(): Promise<SearchBackendStatus>
-    /** 用户点「安装 OpenCLI」：npm 全局安装；needsNode 表示先要装 Node.js */
     installBackend(): Promise<{ ok: boolean; needsNode?: boolean; error?: string; log?: string }>
-    /** 增强搜索各服务（Tavily / Brave / Firecrawl / Context7）的配置状态；密钥不返回渲染端 */
     apiConfig(): Promise<SearchApiConfigView>
     setApiKey(provider: SearchProviderId, key: string): Promise<{ ok: boolean; error?: string }>
     clearApiKey(provider: SearchProviderId): Promise<{ ok: boolean; error?: string }>
-    /** 「不再提示」开关；设置页可重新打开 */
     setApiHintDismissed(dismissed: boolean): Promise<void>
   }
-  /**
-   * 电脑操作（Windows-MCP）：状态只读；安装 uv、开关都由用户在设置页点。
-   * 开启时由 uv 下载 Python 与 windows-mcp，登记为只开放界面操作工具的 MCP 服务。
-   */
   computerUse: {
     status(): Promise<ComputerUseStatusView>
     installUv(): Promise<ComputerUseActionResult>
     set(enabled: boolean): Promise<ComputerUseActionResult>
   }
-  /**
-   * 任务收件箱（实施-28 T2）：会话 × 运行实例 × 任务计划的只读投影。
-   * 只读；`dismiss` / `restore` 只改本地忽略名单，不动会话数据。
-   */
   taskInbox: {
     page(query?: TaskInboxQuery): Promise<TaskInboxPage>
     dismiss(sessionId: string): Promise<{ ok: boolean; dismissed: string[] }>
     restore(sessionId: string): Promise<{ ok: boolean; dismissed: string[] }>
-    /** 记一笔「我看过了」（打开会话时调）——近似审阅判定的唯一依据 */
     seen(sessionId: string): Promise<{ ok: boolean }>
   }
-  /** 能力页读取当前 runner 的 Skill/MCP，并显式验证 / 取消 MCP 连接。 */
   capabilities: CapabilitiesBridge
-  /** MCP 服务归属双向切换（设计 A3）：预览只读，确认后提交；令牌只由主进程生成。 */
   mcpApp: McpAppBridge
-  /**
-   * MCP App 视图桥（A6）：prepare / dispatch / release / audit / snapshot / refresh。
-   * 渲染端只传 callId / instanceId / JSON-RPC 消息；owner / grant / 权限档由主进程派生。
-   */
   mcpApps: McpAppViewApi
   git: GitBridge
 
-  /* 内置浏览器 */
   browser: {
     getState(): Promise<BrowserState>
     open(url?: string): Promise<BrowserState>
@@ -4111,37 +2244,19 @@ export interface YanBridge {
     back(): Promise<{ ok: boolean; error?: string }>
     forward(): Promise<{ ok: boolean; error?: string }>
     reload(): Promise<{ ok: boolean; error?: string }>
-    /** 用系统默认浏览器打开地址（不传用当前标签页） */
     openExternal(url?: string): Promise<{ ok: boolean; error?: string }>
-    /**
-     * 接入本机 Chrome：独立 profile + 调试端口 + CDP。
-     * 之后所有 browser_* 工具都指向这个真实浏览器（含它的登录态）。
-     */
     openExternalChrome(url?: string): Promise<{ ok: boolean; error?: string }>
-    /** 断开本机 Chrome，并关掉我们拉起的那个进程 */
     closeExternalChrome(): Promise<BrowserState>
-    /** 重新同步本机 Chrome 的登录态与历史（退出 Chrome 后调用才拿得到 cookie） */
     syncLocalProfile(): Promise<ChromeSyncReport>
     syncPageStorage(): Promise<ChromeSyncReport>
-    /** 逐站临时权限；false 为撤销，进程退出后自动清空。 */
     setPermission(permission: string, origin: string, allowed: boolean): Promise<{ ok: boolean; error?: string }>
     setUserControl(value: boolean): Promise<BrowserState>
     setBounds(bounds: BrowserBounds): Promise<void>
-    /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时必须调） */
     setVisible(visible: boolean): Promise<void>
   }
-  /** 办公文件（docx / xlsx / pptx / pdf）：按结构提取的正文预览 */
   office: {
     preview(path: string, cwd?: string): Promise<import('./office').OfficeDocumentView>
   }
-  /**
-   * 电脑本地语音输入：状态与推荐、先核实再下载（plan → 用户确认 → download）、转写。
-   * `pick` 让用户选已有的程序或模型文件；选中后写进设置。
-   */
-  /**
-   * 砚对砚。host：这台电脑被连接时，所有者审批与撤销本次连接；
-   * 其余：这台电脑去连接别的砚（配对、申请连接、浏览、复制副本、导入项目记忆）。
-   */
   peer: {
     hostPending(): Promise<import('./peer-protocol').PeerApprovalRequest[]>
     hostDecide(decision: import('./peer-protocol').PeerApprovalDecision): Promise<boolean>
@@ -4154,7 +2269,6 @@ export interface YanBridge {
     sessions(peerId: string): Promise<PeerResult<{ projects: import('./peer-protocol').PeerProjectRef[]; sessions: PeerSessionRow[] }>>
     history(peerId: string, sessionId: string, before?: string): Promise<PeerResult<{ messages: PeerHistoryMessage[]; hasMore?: boolean; nextBefore?: string }>>
     send(peerId: string, sessionId: string, text: string): Promise<PeerResult<unknown>>
-    /** 在对方开放的项目里新开任务（需要 send 授权） */
     startSession(peerId: string, projectId: string, text: string): Promise<PeerResult<{ sessionId: string | null; runId: string; projectId: string }>>
     abort(peerId: string, runId: string): Promise<PeerResult<unknown>>
     importSession(peerId: string, sessionId: string): Promise<PeerResult<import('./peer-protocol').PeerImportView>>
@@ -4162,7 +2276,6 @@ export interface YanBridge {
     readImport(importId: string): Promise<PeerResult<{ dir: string; messages: PeerHistoryMessage[] }>>
     revealImport(importId: string): Promise<boolean>
   }
-  /** 普通工具的自动调用依据：查看每类操作的答复统计，设为始终询问 / 恢复 / 清空 */
   consent: {
     list(): Promise<import('./tool-consent').ConsentEntryView[]>
     change(key: string, action: 'always-ask' | 'allow-auto' | 'forget'): Promise<import('./tool-consent').ConsentEntryView[]>
@@ -4179,10 +2292,6 @@ export interface YanBridge {
     transcribe(wav: Uint8Array, language?: import('./voice-input').VoiceLanguage): Promise<import('./voice-input').VoiceTranscribeResult>
   }
 
-  /**
-   * 手机接入（远程访问）：开关与监听地址、配对码、已配对设备。
-   * 令牌只在手机配对那一刻返回给手机，渲染端永远拿不到。
-   */
   remote: {
     status(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     configure(settings: import('./remote-protocol').RemoteAccessSettings): Promise<import('./remote-protocol').RemoteAccessStatus | null>
@@ -4190,17 +2299,12 @@ export interface YanBridge {
     cancelPairing(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     revoke(deviceId: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     forget(deviceId: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
-    /** 中继接入：为手机（phone）或礁石（agent）生成配对链接 */
     relayPair(kind: 'phone' | 'agent'): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayCancel(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayRevoke(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayForget(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
   }
 
-  /**
-   * 交互终端（实施-11 H-11）：宿主 PTY 服务的薄接口。
-   * 写入 / 缩放 / 关闭都按会话身份 `id`；不暴露任何进程句柄。
-   */
   terminal: {
     available(): Promise<TerminalAvailability>
     list(): Promise<TerminalSnapshot[]>
@@ -4208,7 +2312,6 @@ export interface YanBridge {
     write(id: string, data: string): Promise<boolean>
     resize(id: string, cols: number, rows: number): Promise<boolean>
     kill(id: string): Promise<boolean>
-    /** 重新订阅一个已存在会话（重连）：回放已有缓冲并返回快照 */
     attach(id: string): Promise<TerminalSnapshot | null>
   }
   hub: {
@@ -4218,36 +2321,26 @@ export interface YanBridge {
   }
 }
 
-/** 界面缩放状态（主进程算出，渲染端只显示） */
 export interface ZoomState {
-  /** 0 = 自动 */
   uiScale: number
-  /** 实际应用的 zoom */
   effective: number
-  /** 窗口所在屏的系统缩放（1.25 = 125%） */
   scaleFactor: number
-  /** 自动模式下会用的倍率 */
   autoScale: number
 }
 
-/** 文件树的一个条目 */
 export interface DirEntry {  name: string
   dir: boolean
-  /** 文件字节数（目录没有） */
   size?: number
 }
 
-/** 文件树 / @ 补全 / 全项目搜索共用的请求身份。 */
 export interface FileRequestContext {
   cwd: string
   projectId?: string
-  /** 切项目或重新打开实例时递增；迟到响应不得覆盖新视图。 */
   generation: number
 }
 
 export type FileListingStatus = 'ok' | 'empty' | 'missing' | 'permission' | 'invalid' | 'error'
 
-/** `@` 补全的有界结果；paths 仍然保持相对 cwd 的路径格式。 */
 export interface PathCompletionResult {
   paths: string[]
   truncated: boolean
@@ -4258,7 +2351,6 @@ export interface PathCompletionResult {
 export interface FileSearchRequest extends FileRequestContext {
   requestId: string
   query: string
-  /** 主进程仍会夹到安全上限；调用方不应依赖更大的值。 */
   limit?: number
 }
 
@@ -4277,151 +2369,90 @@ export interface FileSearchResult {
   skippedDirs: number
 }
 
-/** 列一层目录的结果 */
 export interface DirListing {
-  /** 相对 cwd 的路径（根 = ''） */
   path: string
-  /** 展示用绝对路径（`~` 缩写）。越界或读不到时是空串 */
   abs: string
   entries: DirEntry[]
-  /**
-   * 被故意跳过的目录（node_modules / .git …）。
-   * 为什么要报出来：不报的话用户会以为文件树列不全。
-   */
   skipped: string[]
-  /** 是否因为条目太多而截断 */
   truncated: boolean
-  /** 读取状态；旧的 mock / 旧构建缺失时按兼容路径处理。 */
   status?: FileListingStatus
-  /** 失败时给局部提示，不把系统错误原文直接暴露到界面。 */
   error?: string
-  /** 过滤后实际可见的条目总数（用于解释截断）。 */
   totalEntries?: number
-  /** 请求身份回显；用于 renderer 的最后一道迟到响应闸门。 */
   request?: FileRequestContext
-  /** 只有根层带：项目名（cwd 的 basename） */
   rootName?: string
 }
 
-/* ---- 拖入 / 加入上下文的普通文件 ---- */
-/** 文件引用大致分类：决定「能不能在预览里看内容」 */
 export type FileRefKind = 'text' | 'image' | 'pdf' | 'binary' | 'other'
 
-/** 主进程校验并登记之后的文件引用 */
 export interface FileRefInfo {
   ok: boolean
-  /** 渲染端传来的原始路径（失败时用于回显） */
   input: string
-  /** 校验后的**真实**绝对路径（realpath）；失败时为空串 */
   path: string
   name: string
   size: number
   mimeType: string
   kind: FileRefKind
-  /** 失败原因（可直接显示） */
   error?: string
 }
 
-/** 读已登记文件的文本结果 */export interface FileTextResult {
+export interface FileTextResult {
   ok: boolean
   text?: string
-  /** 是否因为超过 2MB 而截断 */
   truncated?: boolean
   size?: number
   error?: string
 }
 
-/**
- * 写入类工具的执行前后快照（方案 5.3 的「可靠差异」阶段）。
- * 内容全文不传给渲染端（可能几 MB、可能是密钥类内容）。
- */
 export interface FileSnapshotSide {
   exists: boolean
   size: number
-  /** 内容哈希（前 16 位），只用于判断是否真变了 */
   hash?: string
-  /** 超过 2MB 没有读内容 */
   tooLarge?: boolean
 }
 
-/** 一次写入调用的真实差异 */
 export interface FileDiff {
   path: string
   before: FileSnapshotSide
   after: FileSnapshotSide
-  /** 新增 / 删除行数；-1 = 未知（拿不到内容） */
   added: number
   removed: number
-  /** unified 风格逐行差异；规模超限时为空串 */
   patch: string
   status: 'created' | 'deleted' | 'modified' | 'unchanged' | 'unknown'
 }
 
-/**
- * 单个文件在 shell / 第三方工具执行期间的改动（L05 变更归属）。
- *
- * ⚠️ 与 `FileDiff` 的区别：这是**目录级前后快照**算出来的，
- *    只知道“这个文件在这段时间里变了”，行数常常拿不到（只给了状态与大小）。
- *    不要为了好看编造行数 —— 拿不到就写 -1，界面会说“未读取”。
- */
 export interface WorkspaceChangeFile {
-  /** 相对工作目录的路径（统一正斜杠，便于展示与比较） */
   path: string
   status: 'created' | 'deleted' | 'modified' | 'unknown'
-  /** 改动前后大小（字节）；拿不到时为 -1 */
   beforeSize: number
   afterSize: number
-  /** 行级差异；拿不到（大文件 / 同大小但内容变了 / 只算了元信息）时为空串，行数为 -1 */
   added: number
   removed: number
   patch: string
 }
 
-/** shell / 第三方工具一次调用的目录级改动汇总 */
 export interface WorkspaceChanges {
-  /** 快照根（绝对路径，展示用） */
   root: string
-  /** 差异文件（超上限时只给前 N 个，总数看 total） */
   files: WorkspaceChangeFile[]
-  /** 真实差异文件总数 */
   total: number
-  /** 扫描了多少个文件（让“0 个改动”可信：不是没扫） */
   scanned: number
-  /**
-   * 有值 = **不把这次差异归给这次调用**，界面必须如实说明。
-   *   · `concurrent`：同一目录还有另一个任务在跑，两边都可能改；
-   *   · `truncated`：目录太大 / 有读不了的子目录，快照不完整；
-   *   · `unreadable`：根目录当时读不到。
-   */
   unknown?: 'concurrent' | 'truncated' | 'unreadable'
 }
 
-/** 只读文件预览的结果（消息里的文件链接 / 附件按需查看） */
 export interface FilePreview {
   ok: boolean
-  /** 链接里写的原路径（展示用，保持用户看到的样子） */
   path: string
-  /** realpath 后的绝对路径（失败时为空） */
   abs: string
   name: string
   size: number
   kind: FileRefKind
-  /** 只对文本文件有值（前 2MB） */
   text?: string
   truncated?: boolean
-  /** 读到的内容里有多少行（截断时是**已读部分**的行数，界面据此说明） */
   totalLines?: number
-  /** 大文件窗口化（H-4）：本次 text 从第几行开始（1 起；缺省即从第 1 行） */
   windowStart?: number
-  /** 窗口的最后一行（含） */
   windowEnd?: number
-  /** 修改时间（ms）：变化提示（H-4）拿它比对，不靠重新读内容 */
   mtimeMs?: number
-  /** 从 `path:42` 解析出的行号（1 起） */
   line?: number
-  /** `#L42-L60` 的范围末行（仅在真的比 line 长时出现，H-4 范围高亮） */
   lineEnd?: number
-  /** 读不到时的父目录（H-4「定位父目录」）；越界类错误不带 */
   dir?: string
   error?: string
 }

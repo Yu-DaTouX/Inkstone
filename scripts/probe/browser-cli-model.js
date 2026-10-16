@@ -1,18 +1,3 @@
-/**
- * 端到端：**模型 → bash → `yan browser …` → 结构化结果 → 基于结果继续下一轮**（01-S4b）。
- *
- * ── 与 `browsercli` 的分工 ──
- *   `browsercli`（cost 0）用直执行 shell 通道验 CLI ↔ 宿主这一层，确定性、不花 token；
- *   这一条只验**模型真的会不会这么用**：它得自己在 bash 里敲 `yan browser navigate`，
- *   读出回执里的结构化结果，再据此决定下一步（`yan browser observe`）。
- *
- * ── 为什么必须有 ──
- *   01-S4b 把 16 个 `browser_*` 模型工具全删了。删掉之后模型能拿到浏览器能力的
- *   **唯一**途径就是能力入口说明 + `yan --help`。如果说明没让它用起来，
- *   `browsercli` 全绿也证明不了产品还能用 —— 那正是 01-S5 移除扩展装载时最大的风险。
- *
- * 花 token（cost: 1），只在需要时单独跑：`npm run test:live -- browserclimodel`。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -36,11 +21,6 @@
   if (!ta) return fail('找不到输入框')
 
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-  /*
-   * 提示里**故意不给命令名**：本片删掉了 16 个工具，真正的风险是
-   * 「模型还能不能自己找到 `yan browser`」——那是 01-S5 的能力丢失风险。
-   * 如果直接告诉它敲什么，就只验了执行链，验不到发现链。
-   */
   setter.call(
     ta,
     '我需要你确认砚的内置浏览器现在能不能用。请自己找到砚提供的能力入口，' +
@@ -77,7 +57,6 @@
     for (const c of m.toolCalls ?? []) {
       calls.push({
         name: c.name,
-        /* 命令正文在 args 里；output 只是 stdout（所以不能用它认“敲了哪条命令”） */
         command: String(c.args?.command ?? m.text ?? ''),
         output: String(c.output ?? '')
       })

@@ -1,12 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 侧栏会话拖拽分屏的落点几何，以及侧栏「置顶」分区的纯逻辑回归。
- *
- * 现场编译 `features/sidebar/session-drag.ts` 与 `sidebar-model.ts`，只跑纯函数：
- * 不启动 Electron、不连 pi、不读用户数据。
- *
- *   node scripts/test-v3-session-drag.mjs
- */
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
@@ -31,7 +23,6 @@ async function loadTs(relativePath) {
 const drag = await loadTs('../src/renderer/src/features/sidebar/session-drag.ts')
 const model = await loadTs('../src/renderer/src/features/sidebar/sidebar-model.ts')
 
-/* ── 落点几何 ─────────────────────────────────────────────── */
 {
   const area = { left: 300, top: 50, width: 800, height: 600 }
   const single = drag.dropZonesFor(area, [])
@@ -56,14 +47,12 @@ const model = await loadTs('../src/renderer/src/features/sidebar/sidebar-model.t
   ok(drag.dropZonesFor(null, []).length === 0, '没有对话区不给落点')
 }
 
-/* ── 拖拽阈值 ─────────────────────────────────────────────── */
 {
   ok(!drag.passedThreshold(3, 4), '移动 5px 仍算点击')
   ok(drag.passedThreshold(6, 0), '移动 6px 开始拖拽')
   ok(drag.DRAG_THRESHOLD === 6, '阈值 6px')
 }
 
-/* ── 置顶分区 ─────────────────────────────────────────────── */
 {
   const s = (id, over = {}) => ({ id, path: `/s/${id}.jsonl`, cwd: '/p', title: id, updatedAt: 1, lastActivityAt: 1, ...over })
   const sessions = [s('a', { lastActivityAt: 5 }), s('b', { pinned: true, lastActivityAt: 3 }), s('c', { pinned: true, lastActivityAt: 9 }), s('d', { cwd: '/q', lastActivityAt: 2 })]

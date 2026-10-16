@@ -3,14 +3,12 @@ import { useStore } from '../../state/store'
 import { QUESTION_FREQUENCIES, normalizeQuestionFrequency } from '../../../../shared/question-frequency'
 import { SettingRow, Switch } from '../ui'
 
-/** 三档频率的界面文案（顺序与 shared 的 QUESTION_FREQUENCIES 一致）。 */
 const FREQUENCY_LABELS: Record<string, 'set.questionFrequencySparse' | 'set.questionFrequencyBalanced' | 'set.questionFrequencyEager'> = {
   sparse: 'set.questionFrequencySparse',
   balanced: 'set.questionFrequencyBalanced',
   eager: 'set.questionFrequencyEager'
 }
 
-/** 会话整理设置；旧空间和活动数据继续保留，不参与新会话入口。 */
 export function WorkspaceTab() {
   const t = useT()
   const days = useStore((s) => s.settings?.autoArchiveDays ?? 0)

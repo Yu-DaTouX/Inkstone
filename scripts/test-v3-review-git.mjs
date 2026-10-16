@@ -1,17 +1,3 @@
-/**
- * 评审 Git 写适配单测（WP-50）。
- *
- * 用 esbuild 现场编译 `src/main/review/git.ts`，注入 **fake exec / fake 确认**，
- * **绝不真的 commit / push / gh / 联网 / 读凭证**。可独立执行：
- *
- *   node scripts/test-v3-review-git.mjs
- *
- * 覆盖：
- *   · 参数数组调用（不是 shell 字符串）：含空格 / 分号的标题仍是单个 argv 元素；
- *   · push 与 PR 必须先过窄目标确认；没确认时 exec 一次都不调用；
- *   · 缺 gh 返回 `gh-missing`、未登录返回 `gh-not-authenticated`，都可恢复、不假成功；
- *   · 提交说明为空等本地校验在执行前拦下。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -48,7 +34,6 @@ try {
     }
   }
 
-  // 1. commit：固定 argv，参数数组
   {
     const git = fakeExec()
     git.run = async (cwd, args) => {
@@ -65,7 +50,6 @@ try {
     ok('commit 用参数数组、不经 shell；提交说明保留为单个 argv 元素')
   }
 
-  // 2. commit 空说明在执行前拦下
   {
     const git = fakeExec()
     const adapter = new ReviewGitAdapter({ gitExec: git, ghExec: fakeExec(), confirm: { confirm: async () => true } })
@@ -76,7 +60,6 @@ try {
     ok('空提交说明本地拦下，不调用 git')
   }
 
-  // 3. push 未确认：不发命令
   {
     const git = fakeExec()
     const requests = []
@@ -95,7 +78,6 @@ try {
     ok('push 未确认时不执行，确认请求带窄目标 remote/branch')
   }
 
-  // 4. push 已确认：固定 argv
   {
     const git = fakeExec()
     const adapter = new ReviewGitAdapter({ gitExec: git, ghExec: fakeExec(), confirm: { confirm: async () => true } })
@@ -105,7 +87,6 @@ try {
     ok('push 确认后 argv 固定为 buildPushArgs 的形状')
   }
 
-  // 5. gh 缺失
   {
     const adapter = new ReviewGitAdapter({
       gitExec: fakeExec(),
@@ -122,7 +103,6 @@ try {
     ok('缺 gh → gh-missing，可恢复且带安装指引')
   }
 
-  // 6. gh 未登录
   {
     const gh = {
       run: async (_cwd, args) => {
@@ -141,7 +121,6 @@ try {
     ok('gh 未登录 → gh-not-authenticated，可恢复且带登录指引')
   }
 
-  // 7. PR 成功：参数数组、确认目标、URL 解析
   {
     let ghCalls = []
     const gh = {
@@ -177,7 +156,6 @@ try {
     assert.ok(createArgs)
     assert.equal(createArgs[0], 'pr')
     assert.equal(createArgs[1], 'create')
-    // 标题含空格 / 分号，必须仍是单个元素
     const titleIndex = createArgs.indexOf('--title')
     assert.equal(createArgs[titleIndex + 1], '修复: 兼容旧 token; 以及更多')
     assert.ok(createArgs.includes('--draft'))
@@ -186,7 +164,6 @@ try {
     ok('PR 成功：argv 数组正确、标题 / 正文不拆词，确认请求含 draft/base')
   }
 
-  // 8. PR 未确认：认证通过后仍然不发 gh pr create
   {
     const ghCalls = []
     const gh = {
@@ -205,7 +182,6 @@ try {
     ok('PR 未确认时不调用 gh pr create')
   }
 
-  // 9. PR 本地校验
   {
     const adapter = new ReviewGitAdapter({ gitExec: fakeExec(), ghExec: fakeExec(), confirm: { confirm: async () => true } })
     const res = await adapter.createPullRequest({ cwd: '/repo', base: '', head: 'f', title: 'T', body: 'B', draft: false, remote: null })

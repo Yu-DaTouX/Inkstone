@@ -7,7 +7,6 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { build } from 'esbuild'
 import { runArtifactTests } from './test-artifacts.mjs'
 
-// 当前源码现场编译；所有网络均为桩，凭证/会话/成果与安装探测均隔离，不覆盖应用 out/。
 const root = await mkdtemp(join(tmpdir(), 'yan-image-boundaries-'))
 const compiled = await mkdtemp(resolve('node_modules/.inkstone-image-boundaries-'))
 const originalEnv = { ...process.env }
@@ -73,14 +72,12 @@ try {
   calls = []
   await assert.rejects(generateImage({ provider: 'compatible', prompt: 'x', mode: 'edit', sourcePaths: ['escape/secret.png'] }, context), { code: 'image_source_outside_project' }); checks++
   ok(calls.length === 0, 'junction escape must not upload any bytes')
-  // artifact 根内的联接同样不能逃逸；真实根本身是联接的合法项目仍可用。
   await mkdir(artifactDir, { recursive: true })
   await symlink(outside, join(artifactDir, 'escape'), linkType)
   await assert.rejects(generateImage({ provider: 'compatible', prompt: 'x', mode: 'edit', sourcePaths: [join(artifactDir, 'escape', 'secret.png')] }, context), { code: 'image_source_outside_project' }); checks++
   await generateImage({ provider: 'compatible', prompt: 'x', mode: 'edit', sourcePaths: ['normal.png'] }, { ...context, cwd: join(root, 'project-alias') })
   ok(calls.at(-1).init.body instanceof FormData, 'legitimate project root alias stays supported')
 
-  // 不同实例、生成入口与 attach 共用一个 manifest 队列，包括 artifact 根别名。
   const parallelSession = join(project, 'parallel.jsonl')
   await symlink(artifactDir, join(root, 'artifacts-alias'), linkType)
   const parallel = await Promise.all(Array.from({ length: 18 }, (_, i) => {
@@ -96,7 +93,6 @@ try {
   const hydrated = await new ArtifactStore(artifactDir).hydrateMessages(parallelSession, parallel.map((_, i) => ({ id: `parallel-${i}`, role: 'assistant', text: '' })))
   ok(hydrated.every(m => m.artifacts?.length === 1), 'all images restore on reload')
 
-  // 主进程取消：桩故意忽略 signal，迟到成功也不能落盘或发布 done/artifact。
   const makeAgent = (name, confirm = async () => true) => {
     const events = []
     const agent = new AgentController({ cwd: project, push: e => events.push(e), confirmExternalApi: confirm, capability: { sessionId: name, runnerGeneration: 1, projectId: 'fixture', artifactDir, opsDir: join(root, 'ops'), binDir: join(root, 'bin') } })
@@ -127,7 +123,6 @@ try {
     ok(agent.imageRequests.size === 0, 'settled cancellation releases request ownership')
   }
 
-  // 确认仍未回答时停止；之后允许的旧答案不能触发请求。
   const confirming = deferred(), answer = deferred()
   const gate = makeAgent('cancel-confirm', () => { confirming.resolve(); return answer.promise })
   let billed = 0
@@ -139,14 +134,12 @@ try {
   ok(billed === 0, 'late external approval must not start generation')
   ok(gate.agent.imageRequests.size === 0, 'canceled confirmation releases request ownership')
 
-  // 第一次异步探测前就已登记；立即停止也不能漏掉请求。
   const early = makeAgent('cancel-probe')
   const earlyPending = early.agent.runCapabilityCommand('image.generate', { provider: 'compatible', prompt: 'x' })
   const earlyRejected = assert.rejects(earlyPending, { code: 'image_cancelled' })
   await early.agent.abort(); await earlyRejected; checks++
   ok(billed === 0 && early.agent.imageRequests.size === 0, 'stop during provider probing must not send a request')
 
-  // 成功请求的确认模型与请求、成果一致；停止一个实例不会取消另一个实例。
   const aEntered = deferred(), bEntered = deferred(), aLate = deferred(), bLate = deferred()
   let confirmedModel
   const a = makeAgent('isolation-a'), b = makeAgent('isolation-b', async request => { confirmedModel = request.model; return true })
@@ -165,7 +158,6 @@ try {
   ok(br.summary.model === confirmedModel && b.events.some(e => e.ch === 'artifact'), 'another instance must finish normally')
   ok(!a.events.some(e => e.ch === 'artifact'), 'stopped instance must stay canceled')
 
-  // 各适配器请求都收到取消信号，且在返回迟到结果后不保存。
   for (const provider of ['openai', 'compatible', 'codex', 'google', 'doubao', 'local']) {
     const entered = deferred(), late = deferred(), cancel = new AbortController()
     let requestSignal
@@ -186,7 +178,6 @@ try {
   await assert.rejects(generateImage({ provider: 'mock', prompt: 'x' }, { ...context, sessionFile: savingFile, signal: savingCancel.signal, onProgress: stage => { if (stage === 'saving') savingCancel.abort() } }), { code: 'image_cancelled' }); checks++
   ok((await new ArtifactStore(artifactDir).list(savingFile)).length === 0, 'cancel at the saving boundary must not commit a manifest')
 
-  // ComfyUI 只删除自己已知的 prompt_id，不触发 /interrupt 全局中断。
   const workflow = {
     '1': { class_type: 'CLIPTextEncode', inputs: { text: 'saved' } },
     '2': { class_type: 'KSampler', inputs: { positive: ['1', 0], seed: 123 } },

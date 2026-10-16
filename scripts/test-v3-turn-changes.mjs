@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-/**
- * 回复末尾更改卡的汇总逻辑（`features/session/turn-changes.ts`，纯函数）。
- * 不启动 Electron、不调模型、不读用户数据。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'

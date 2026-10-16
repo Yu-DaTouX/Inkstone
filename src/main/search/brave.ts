@@ -1,13 +1,8 @@
-/**
- * Brave Search API 来源。与 OpenCLI 来源并列：产出同样的 `SourceRun`，
- * 由 `aggregate.ts` 统一归一化，失败按来源如实上报。
- */
 import type { SourceRun } from './aggregate'
 import { resolveBraveKey } from './config'
 
 const ENDPOINT = 'https://api.search.brave.com/res/v1/web/search'
 
-/** Brave 的 description 带 <strong> 等高亮标签，去掉后交给统一的文本清洗 */
 function stripTags(input: unknown): string {
   return typeof input === 'string' ? input.replace(/<[^>]*>/g, '') : ''
 }

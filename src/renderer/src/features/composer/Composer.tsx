@@ -26,22 +26,6 @@ import {
 } from './composer-layout'
 import './composer.css'
 
-/**
- * 输入框（WP-24，方案 §8.7）。发送 / 插话 / 排队三条语义都在这里定：
- *
- *   · 空闲：`Enter` 按设置发送（`sendKey`；默认 Enter，长文模式 Ctrl+Enter）；
- *   · 运行中：`Enter` = **插话**（pi `steer`），`Alt+Enter` = **排队**（pi `follow_up`），
- *     `Shift+Enter` 始终换行。压缩维护期间插话没有意义，两种键都走排队；
- *   · 中文输入法组字（`isComposing`）期间 `Enter` 一律不发送。
- *
- * 发送**成功才**清空草稿与附件；失败原样保留（文字回填、附件并回）。
- * 停止走 `store.abort`：内部是 `clear_queue` → `abort` → 文本与图片回收进
- * `queueRestore` / `attachments`，本组件只负责消费 `queueRestore` 回填，不重造。
- *
- * 不直接改 store、不导入 v2 样式；附件/队列/模型等正式动作全部走 store。
- */
-
-/** 已经交出光标的那次「点开会话」（模块级：切换会话时新挂载不重复取）。 */
 let consumedComposerFocus = 0
 
 const MIN_H = 56
@@ -53,13 +37,10 @@ export function Composer({ className }: { className?: string } = {}) {
   const [dragging, setDragging] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const cursorRef = useRef<number | null>(null)
-  /* 光标位置要驱动 `/` 与 `@` 候选，所以除了 ref 还要有一份 state。 */
   const [cursor, setCursor] = useState<number | null>(null)
   const lastEsc = useRef(0)
-  /* 一次提交在途时挡住重复回车（先发再清的那一小段窗口）。 */
   const submittingRef = useRef(false)
 
-  /* ---- store 订阅 ---- */
   const send = useStore((s) => s.send)
   const abort = useStore((s) => s.abort)
   const runBash = useStore((s) => s.runBash)
@@ -71,14 +52,11 @@ export function Composer({ className }: { className?: string } = {}) {
   const sendKey = useStore((s) => s.settings?.sendKey ?? 'auto')
   const sessionId = session?.sessionId
 
-  /* 回合级「在干活」：工具执行/压缩期间 isStreaming 为 false，必须用 running/compacting。 */
   const roundRunning = useStore(
     (s) => !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running || !!s.session?.isCompacting
   )
   const compacting = useStore((s) => !!s.session?.isCompacting)
 
-  /* 草稿：跟随「正在看的会话」（peek 身份优先）；尚未落盘时跟随 runId。
-   * 显示旧 session.conversationId 时不能压过 peeked 身份（D5）。 */
   const runtimeKey = useStore((s) => {
     if (s.peekedSessionId) return s.peekedSessionId
     const runner = s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
@@ -89,7 +67,6 @@ export function Composer({ className }: { className?: string } = {}) {
   const cachedDraft = useStore((s) => (runtimeKey ? s.sessionRuntimes[runtimeKey]?.draft ?? '' : ''))
   const setSessionDraft = useStore((s) => s.setSessionDraft)
 
-  /* 外部注入（消费一次就清） */
   const editorInject = useStore((s) => s.editorInject)
   const consumeEditorInject = useStore((s) => s.consumeEditorInject)
   const composerInsert = useStore((s) => s.composerInsert)
@@ -104,7 +81,6 @@ export function Composer({ className }: { className?: string } = {}) {
   const addFileRefPaths = useStore((s) => s.addFileRefPaths)
   const composerFocus = useStore((s) => s.composerFocus)
 
-  /* ---- 外部注入：追加在末尾（与 pi 的 set_editor_text 同一语义） ---- */
   useEffect(() => {
     if (editorInject === null) return
     setValue((v) => (v ? `${v}\n${editorInject}` : editorInject))
@@ -119,7 +95,6 @@ export function Composer({ className }: { className?: string } = {}) {
     ref.current?.focus()
   }, [composerInsert, clearComposerInsert])
 
-  /* ---- 停止回收的排队内容：回填到**当前**草稿之前 ---- */
   useEffect(() => {
     if (queueRestore === null) return
     setValue((v) => (v ? `${queueRestore}\n${v}` : queueRestore))
@@ -127,7 +102,6 @@ export function Composer({ className }: { className?: string } = {}) {
     ref.current?.focus()
   }, [queueRestore, consumeQueueRestore])
 
-  /* ---- 点开会话后取得光标 ---- */
   useEffect(() => {
     if (composerFocus.tick === consumedComposerFocus) return
     if (composerFocus.sessionId && composerFocus.sessionId !== sessionId) return
@@ -135,7 +109,6 @@ export function Composer({ className }: { className?: string } = {}) {
     requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }))
   }, [composerFocus, sessionId])
 
-  /* ---- 按会话恢复 / 保存草稿 ---- */
   const hydratedKey = useRef<string | null>(null)
   const skipPersist = useRef(false)
   useEffect(() => {
@@ -144,7 +117,6 @@ export function Composer({ className }: { className?: string } = {}) {
     setValue(runtimeKey ? cachedDraft : '')
     cursorRef.current = runtimeKey ? cachedDraft.length : null
     setCursor(cursorRef.current)
-    // 只在切换会话时取一次缓存，避免每次敲字都重置输入框。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationKey])
   useEffect(() => {
@@ -153,11 +125,9 @@ export function Composer({ className }: { className?: string } = {}) {
       return
     }
     if (!runtimeKey || hydratedKey.current !== conversationKey) return
-    /* 回写必须用恢复时的同一个键，否则会按一个键读、往另一个键写（D5）。 */
     setSessionDraft(value, runtimeKey)
   }, [runtimeKey, conversationKey, setSessionDraft, value])
 
-  /* ---- 自动增高：随内容长高，56–200px ---- */
   useEffect(() => {
     const el = ref.current
     if (!el) return
@@ -165,7 +135,6 @@ export function Composer({ className }: { className?: string } = {}) {
     el.style.height = `${Math.min(Math.max(el.scrollHeight, MIN_H), MAX_H)}px`
   }, [value])
 
-  /** 把一段文本插到光标处（光标不在输入框时按上次记下的位置）。 */
   const insertAtCursor = useCallback((text: string): void => {
     const el = ref.current
     setValue((current) => {
@@ -180,7 +149,6 @@ export function Composer({ className }: { className?: string } = {}) {
     })
   }, [])
 
-  /* 补全后把光标放到新位置（值更新渲染后再选区，否则会被受控值重置）。 */
   const placeCursor = useCallback((pos: number): void => {
     cursorRef.current = pos
     setCursor(pos)
@@ -203,7 +171,6 @@ export function Composer({ className }: { className?: string } = {}) {
     }))
   }, [])
 
-  /* 本地命令（`!` / `/` 的 yan 内置与兼容项）走共用分发；普通消息在这里按 v3 语义发。 */
   const isLocalCommand = (raw: string): boolean => {
     if (value.startsWith('!')) return true
     if (raw === '/login' || raw.startsWith('/login ')) return true
@@ -249,11 +216,6 @@ export function Composer({ className }: { className?: string } = {}) {
     })
   }, [value, commands, models, t, session, thinkingLevels, roundRunning, compacting, runBash, notify, clearAll, restoreAttachments, send])
 
-  /**
-   * 提交一次普通消息。`mode` 只在运行中有效：
-   *   steer = 插话（当前这轮就看到）· followUp = 排队（这轮跑完再发）。
-   * 成功才清空；失败把文字与附件原样放回。
-   */
   const submitMessage = useCallback(
     async (mode: 'steer' | 'followUp'): Promise<void> => {
       const raw = value.trim()
@@ -263,11 +225,6 @@ export function Composer({ className }: { className?: string } = {}) {
       submittingRef.current = true
       try {
       if (isLocalCommand(raw)) {
-        /*
-         * `!` / `/model` / `/thinking` 等要落到「当前实例」上：先保证正在看的
-         * 会话已激活。切换在途或激活失败时安全失败 —— 不执行、不清文字。
-         * 这些动作内部（composer-submit）会先清草稿，所以守卫必须在它之前。
-         */
         await runLocalCommandGuarded({
           raw: value,
           ensureActivated: () => useStore.getState().ensureActivated(),
@@ -280,7 +237,6 @@ export function Composer({ className }: { className?: string } = {}) {
         })
         return
       }
-      /* 本次提交的附件 id：成功只移除这些，等待期间新增的必须留下（D1）。 */
       const sentIds = attachments.map((a) => a.id)
       const images = attachments
         .filter((a) => a.kind !== 'file')
@@ -289,16 +245,9 @@ export function Composer({ className }: { className?: string } = {}) {
       const outgoing = fileRefs.length
         ? `${raw ? `${raw}\n\n` : ''}${t('composer.fileRefs', { list: fileRefs.map((a) => `- ${a.path}`).join('\n') })}`
         : raw
-      /*
-       * 先发再清：`store.send` 要读 store 里**还在**的附件来登记来源
-       * （`collectSourceIds`）。清空只发生在成功之后，失败时输入区原样保留，
-       * 不需要「先清再放回」那一步。
-       */
       const ok = roundRunning ? await send(outgoing, images.length ? images : undefined, mode) : await send(outgoing, images.length ? images : undefined)
       if (ok) {
-        /* 只清这一次提交的文本：等待期间若又敲了新字，保留它。 */
         setValue((draft) => (draft === value ? '' : draft))
-        /* 附件同理：只移除本次提交的 id，不在途新增的一起吞掉。 */
         useStore.setState((state) => ({ attachments: attachmentsAfterSubmit(state.attachments, sentIds) }))
       }
       } finally {
@@ -309,7 +258,6 @@ export function Composer({ className }: { className?: string } = {}) {
     [value, roundRunning, runCommandPath, notify, send, t]
   )
 
-  /* ---- 粘贴图片 ---- */
   const onPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       const files = [...e.clipboardData.items]
@@ -323,7 +271,6 @@ export function Composer({ className }: { className?: string } = {}) {
     [addAttachments, notify, t]
   )
 
-  /* ---- 拖放：内部路径 → 文件引用；图片 → 附件；普通文件 → 文件引用 ---- */
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       const internalPath = e.dataTransfer.getData('application/x-yan-file-path').trim()
@@ -348,21 +295,17 @@ export function Composer({ className }: { className?: string } = {}) {
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.defaultPrevented) return
-    /* 中文输入法组字期间（Enter 确认候选、Esc 取消候选）一律让路。 */
     if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
 
-    /* 补全菜单开着时，方向键 / Enter / Tab / Esc 归菜单。 */
     if (completion.handleKey(e)) return
 
     if (e.key === 'Enter') {
       const mod = e.ctrlKey || e.metaKey
       if (e.shiftKey) {
-        /* 始终换行 */
         return
       }
       if (roundRunning) {
         e.preventDefault()
-        /* 压缩维护期间「插话」没有意义，两种键都排队到这段之后。 */
         void submitMessage(compacting || e.altKey ? 'followUp' : 'steer')
         return
       }
@@ -375,7 +318,6 @@ export function Composer({ className }: { className?: string } = {}) {
     }
 
     if (e.key === 'Escape' && roundRunning) {
-      /* 输入框为空时连按两次 Esc 停止（方案 §8.7）。 */
       if (value.trim() || attachmentCount > 0) return
       e.preventDefault()
       const now = Date.now()
@@ -397,7 +339,6 @@ export function Composer({ className }: { className?: string } = {}) {
   const placeholder = roundRunning
     ? `${t('queue.steerNow')} · Enter ｜ ${t('queue.queueIt')} · Alt+Enter`
     : t('composer.ph')
-  /* 底栏的三种派生：模式徽标 / 提示符、发送或停止、发送键提示（见 composer-layout）。 */
   const mode = composerMode(value)
   const prompt = composerPrompt(value)
   const submitAction = composerSubmitAction({
@@ -422,7 +363,6 @@ export function Composer({ className }: { className?: string } = {}) {
       }}
       onDrop={onDrop}
     >
-      {/* 排队内容在**输入框外上方**（用户确认的对照表第 1 条） */}
       <QueueEditor />
       <div className="composer">
         <ComposerBorder />
@@ -457,7 +397,6 @@ export function Composer({ className }: { className?: string } = {}) {
             />
           </div>
           <div className="composer-bar">
-            {/* 左：模式徽标 · 权限 · ＋ · 发送键提示 */}
             <div className="composer-tools">
               {mode ? (
                 <span className="composer-mode" data-mode={mode} data-testid="composer-mode">
@@ -472,7 +411,6 @@ export function Composer({ className }: { className?: string } = {}) {
                 </span>
               ) : null}
             </div>
-            {/* 右：语音 · 上下文环 · 模型+思考 · 发送/停止；运行状态不在输入框里重复显示 */}
             <VoiceButton onText={insertAtCursor} />
             <ContextRing />
             <ModelThinkingPicker />

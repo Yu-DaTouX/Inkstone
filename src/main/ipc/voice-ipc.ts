@@ -1,7 +1,3 @@
-/**
- * 本地语音输入的 IPC 适配（`yan:voice:*`）。
- * 下载必须带 plan 返回的 planId（界面确认过大小与位置之后才有）；选已有文件走系统对话框，结果写进设置。
- */
 import { dialog, type BrowserWindow } from 'electron'
 import type { VoiceInputSettings, VoiceLanguage } from '../../shared/voice-input'
 import type { VoiceService } from '../voice/voice-service'

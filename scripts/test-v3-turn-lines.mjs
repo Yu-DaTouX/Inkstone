@@ -1,17 +1,4 @@
 #!/usr/bin/env node
-/**
- * WP-21c / WP-27a 会话内「行」的 host-free 回归。
- *
- * 现场 esbuild 出真实源码，在 Node 里跑：
- *   · 纯逻辑：`features/session/turn-lines.ts` 的错误归类、提示定位、压缩选择、
- *     分支来源匹配、视图边缘判定、子 Agent 行合成；
- *   · 浅渲染：真实 `SubagentLine` / `ErrorCard`，用最小 React 替身驱动，钉住
- *     「运行投影优先 / 只有 agent_settled 是终态」「未激活视图不给动作按钮」
- *     「并排打开」接到并排视图。
- *
- * 用法：node scripts/test-v3-turn-lines.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型、不开文件或网页。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -37,8 +24,6 @@ function ok(cond, label, detail) {
 function group(name) {
   process.stdout.write(`\n▌${name}\n`)
 }
-
-/* ------------------------------------------------------------ React 替身 */
 
 const REACT_SHIM = `const rt = () => globalThis.__V3_HOOKS
 export const Fragment = Symbol.for('v3.fragment')
@@ -73,7 +58,7 @@ function installGlobals() {
     setTimeout: () => 0,
     clearTimeout: () => {}
   }
-  globalThis.requestAnimationFrame = (fn) => { try { fn(0) } catch { /* 浅渲染无真实帧 */ } return 0 }
+  globalThis.requestAnimationFrame = (fn) => { try { fn(0) } catch { } return 0 }
   globalThis.cancelAnimationFrame = () => {}
 }
 
@@ -141,8 +126,6 @@ const flattenText = (node) => {
   return ''
 }
 
-/* ------------------------------------------------------------------ 构建 */
-
 const DEFINE = {
   'import.meta.env.DEV': 'false',
   'import.meta.env.PROD': 'true',
@@ -167,8 +150,6 @@ export function ModalOverlay(props){ return null } ModalOverlay.__stub='ui-modal
 const ICON_STUB = `export function Icon(){ return null } Icon.__stub='icon'
 `
 
-/* SubagentLine 经 SubagentReview 引入 v3 DiffView；本测试不渲染差异，
-   只把它替换成空组件，避免把 lucide-react（platform: neutral 下不可解析）拖进图里。 */
 const DIFF_STUB = `export function DiffView(){ return null } DiffView.__stub='diff'
 `
 
@@ -245,8 +226,6 @@ async function buildBundle(outdir) {
   return out
 }
 
-/* ------------------------------------------------------------------ fixture */
-
 const notice = (raw) => lib.modelErrorNotice(raw)
 
 const subagentRun = (over = {}) => ({
@@ -295,8 +274,6 @@ async function main() {
   lib = bundle
   rt = makeHookRuntime()
   globalThis.__V3_HOOKS = rt
-
-  /* ============================================================ 纯逻辑 */
 
   group('错误归类 → 可用动作（看脱敏原文，不被解释文案带偏）')
   {
@@ -405,8 +382,6 @@ async function main() {
     ok(lib.findSubagentSnapshot([{ runId: 'sub-1', kind: 'session' }], 'sub-1') === undefined, '只认 kind=subagent 的快照')
     ok(lib.findSubagentSnapshot([runSnapshot()], 'sub-1')?.runId === 'sub-1', '按 runId 找到子代理快照')
   }
-
-  /* ======================================================== 浅渲染 */
 
   const store = (over = {}) => {
     globalThis.__V3_STORE = {

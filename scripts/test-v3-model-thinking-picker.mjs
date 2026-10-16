@@ -1,15 +1,3 @@
-/**
- * v3 模型 + 思考档选择器（A2 思考强度复刻）的小检查。
- *
- *   · 纯模型 `composer-layout.ts`：七档映射、拖动只预览、松手才提交。
- *   · SSR 真实 `ThinkingSection`：档位滑杆用正式 `ui/Slider`（离散 step、
- *     min/max/value 与档位一致），头部按 `data-level` 染色并给出当前档位名。
- *   · 样式：`v3-step-value-in` 关键帧、`prefers-reduced-motion` 关闭动画、
- *     档位色取 `--think-*`；不 import v2 样式。
- *
- * 只做结构与纯文本检查；没有真实拖动、焦点或视觉验证，也不启动 Electron /
- * 构建 / 联网 / 连 pi。用法：node scripts/test-v3-model-thinking-picker.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -25,7 +13,6 @@ const ok = (cond, label) => {
   console.log(`✓ ${label}`)
 }
 
-/** React Aria 在导入期挂全局监听；SSR 只需要最小原型桩。 */
 function installGlobals() {
   const storage = new Map()
   globalThis.localStorage = {
@@ -60,7 +47,6 @@ function installGlobals() {
   }
 }
 
-/** 纯模型：单独编译成 ESM 直接跑。 */
 async function loadLayout() {
   const result = await build({
     entryPoints: [join(ROOT, 'src/renderer/src/features/composer/composer-layout.ts')],
@@ -73,7 +59,6 @@ async function loadLayout() {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 }
 
-/** SSR：真实 ThinkingSection + ui/Slider，只把 store / i18n / lucide 打桩。 */
 async function buildSsr(outdir) {
   const stubMap = new Map(
     Object.entries({
@@ -129,7 +114,6 @@ async function main() {
   installGlobals()
   const layout = await loadLayout()
 
-  /* ---- 档位映射 ---- */
   ok(layout.thinkingLevelIndex(LEVELS, 'off') === 0, 'off → 下标 0')
   ok(layout.thinkingLevelIndex(LEVELS, 'medium') === 3, 'medium → 下标 3')
   ok(layout.thinkingLevelIndex(LEVELS, 'max') === 6, 'max → 下标 6')
@@ -138,7 +122,6 @@ async function main() {
   ok(layout.thinkingLevelAt(LEVELS, 99) === 'max', '越界下标夹到最后一档')
   ok(layout.thinkingLevelAt([], 0) === null, '空档位表返回 null')
 
-  /* ---- 拖动只预览、松手才提交 ---- */
   for (let i = 0; i < LEVELS.length; i++) {
     const action = layout.thinkingDragAction(LEVELS, i)
     ok(action.kind === 'preview' && action.level === LEVELS[i], `拖动第 ${i} 档只返回 preview，不提交`)
@@ -147,7 +130,6 @@ async function main() {
   const commit = layout.thinkingCommitAction(LEVELS, 5, 'medium')
   ok(commit.kind === 'commit' && commit.level === 'xhigh', '确认到新档才提交 xhigh')
 
-  /* ---- SSR：真实 ThinkingSection + 正式 ui/Slider ---- */
   const outdir = await mkdtemp(join(ROOT, '.tmp/v3-thinking-'))
   try {
     const require = createRequire(import.meta.url)
@@ -182,7 +164,6 @@ async function main() {
     await rm(outdir, { recursive: true, force: true })
   }
 
-  /* ---- 样式与源文件 ---- */
   const pickerCss = await readFile(join(ROOT, 'src/renderer/src/patterns/model-thinking-picker.css'), 'utf8')
   const composerCss = await readFile(join(ROOT, 'src/renderer/src/features/composer/composer.css'), 'utf8')
   const pickerTsx = await readFile(join(ROOT, 'src/renderer/src/patterns/ModelThinkingPicker.tsx'), 'utf8')

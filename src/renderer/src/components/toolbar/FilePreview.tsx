@@ -11,35 +11,15 @@ import { officeFormatOf } from '../../../../shared/office'
 import { OfficePreview } from '../review/OfficeContent'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 
-/**
- * 右侧的只读文件预览（方案 5.2 / 5.3 的「可查看」阶段）。
- *
- * 边界（明确写出来，避免误以为它是编辑器）：
- *   · **只读** —— 不写回、不执行、不保存；
- *   · HTML / Markdown 只按文本显示，**不渲染**，所以不会执行脚本；
- *   · 文本前 2MB（主进程截断），超出明确标注；
- *   · 二进制只给元信息 + 「在资源管理器中显示」；
- *   · 行号来自链接里的 `path:42`，打开后滚到那一行。
- *
- * ⚠️ 为什么不自己 setBounds：原生 `WebContentsView` 由主进程管。
- *    这里只负责 DOM；浏览器视图的隐藏/恢复在 store 的 previewFile/closePreview。
- */
-
-/** 一次最多渲染多少行（2MB 文本可能有几万行，全铺出来会卡） */
 const MAX_RENDER_LINES = 2000
 const MAX_MARKDOWN_CHARS = 64 * 1024
 
-/** `focus`：预览独占右栏（收起下方的文件树等分区），由右栏持有状态 */
 export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: { focus?: boolean; onToggleFocus?: () => void; resourceKey?: string } = {}) {
   const t = useT()
   const preview = useStore((s) => resourceKey ? s.filePreviews[resourceKey] : s.filePreview)
   const previewFile = useStore((s) => s.previewFile)
   const checkPreviewStale = useStore((s) => s.checkPreviewStale)
   const openBrowser = useStore((s) => s.openBrowser)
-  /*
-   * 变化提示（H-4）轮询间隔：默认 5s；探针可用 `window.__YAN_PREVIEW_POLL_MS`
-   * 放快，但产品行为不靠那个变量（没设就是 5s）。
-   */
   const pollMs =
     Number((window as unknown as { __YAN_PREVIEW_POLL_MS?: number }).__YAN_PREVIEW_POLL_MS) || 5000
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -47,13 +27,11 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
 
   const data = preview?.data
   const isMarkdown = data?.kind === 'text' && /\.(?:md|markdown|mdown)$/i.test(data.name)
-  /* 范围高亮（H-4）：`#L42-L60` 是高亮区间，不是文件名的一部分 */
   const rangeStart = data?.line
   const rangeEnd = data?.lineEnd ?? data?.line
   const inRange = (n: number): boolean =>
     !!rangeStart && n >= rangeStart && n <= (rangeEnd ?? rangeStart)
 
-  /* 新资源默认阅读模式；带行号优先源码定位，但用户仍可切回阅读。 */
   useEffect(() => {
     setMode(preview?.line ? 'source' : 'read')
   }, [preview?.path, preview?.cwd, preview?.line])
@@ -68,10 +46,9 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
     if (last >= 0xd800 && last <= 0xdbff) text = text.slice(0, -1)
     return text
   }, [lines])
-  /* 窗口化的文件：行号从真实起始行开始，不重新从 1 数 */
   const startLine = data?.windowStart ?? 1
 
-  /* 滚到链接里指定的行（`path:42`） */  useEffect(() => {
+  useEffect(() => {
     const line = data?.line
     const el = bodyRef.current
     if (!line || !el) return
@@ -79,14 +56,12 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
     if (target) {
       el.scrollTop = Math.max(0, target.offsetTop - el.clientHeight / 3)
     } else {
-      /* 目标行不在这次渲染里：只在**同一段窗口**内按行高估算，不跨窗口瞎猜 */
       const base = data?.windowStart ?? 1
       const lh = 18
       el.scrollTop = Math.max(0, (line - base) * lh - el.clientHeight / 3)
     }
   }, [data?.line, data?.abs, data?.windowStart])
 
-  /* 变化提示（H-4）：只 stat 一下，不为了看一眼 mtime 重读整份内容 */
   useEffect(() => {
     const abs = data?.abs
     if (!abs || !data?.ok || typeof data.mtimeMs !== 'number') return
@@ -94,19 +69,7 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
     return () => window.clearInterval(timer)
   }, [data?.abs, data?.ok, data?.mtimeMs, pollMs, checkPreviewStale, resourceKey])
 
-  /**
-   * 图片的原始尺寸（从 `onLoad` 拿）。
-   *
-   * 主进程只给元信息，不给像素尺寸 —— 这里等图真的解码完再读 naturalWidth，
-   * 就不会为了显示一个数字去额外解析一遍文件。
-   */
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null)
-  /**
-   * 图片查看模式（用户要求：「当前的图片预览窗口没有凸显主题内容」）。
-   *   · `fit`   适应窗口（默认）：整张图都在，先看整体
-   *   · `actual` 1:1 原始像素：看细节，超出就滚动
-   * 点图切换，与文本文件的「阅读 / 源码」是同一套「同一资源两种看法」的语义。
-   */
   const [imgMode, setImgMode] = useState<'fit' | 'actual'>('fit')
   useEffect(() => {
     setImgSize(null)
@@ -117,16 +80,10 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
 
   const isImage = data?.ok && data.kind === 'image'
   const fileUrl = data?.abs ? filePreviewUrl(data.abs) : ''
-  /* docx / xlsx / pptx / pdf：宿主提取文字正文显示，也允许交给系统程序打开看版式 */
   const isOffice = !!data?.ok && (data.kind === 'binary' || data.kind === 'pdf') && !!officeFormatOf(data.name ?? '')
   const canOpenExternally = data?.ok && (data.kind === 'text' || data.kind === 'image' || isOffice)
   const isText = data?.ok && data.kind === 'text'
 
-  /**
-   * 阅读模式里的链接（H-4 出口 3）：
-   * 相对路径以**这篇文档所在目录**为基准（`../README.md` 指向文档的上一级），
-   * 而不是会话工作目录；URL 仍然进内部浏览器。
-   */
   const docDir = useMemo(
     () => (data?.abs ? data.abs.replace(/[\\/][^\\/]*$/, '') : ''),
     [data?.abs]
@@ -171,11 +128,6 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
             {data.lineEnd ? `${data.line}\u2013${data.lineEnd}` : data.line}
           </span>
         ) : null}
-        {/*
-          头部只留文件名 + 四个按钮（用户要求「文件名 简洁」）。
-          图片的尺寸/字节数都不进头部 —— 尺寸在图片区角落，字节数在 title 上。
-          右栏最窄时头部只有 300 多 px，多塞一个尺寸就把名字挤成「9…」。
-        */}
         {!isImage && data?.size ? <span className="fp-size">{fmtSize(data.size)}</span> : null}
         {isMarkdown ? (
           <Segmented
@@ -228,7 +180,6 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
         {dirOf(data?.abs || preview.path).replace(/[\\/]+/g, ' › ')}
       </div>
 
-      {/* 内容被外部改写：就地说一声，不自动重载、不抢回阅读位置 */}
       {preview.stale ? (
         <div className="fp-updated" data-testid="file-preview-updated" role="status">
           <Icon name="alert-circle" size={12} />
@@ -252,7 +203,6 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
             {data.error ?? t('fp.failed')}
             <div className="fp-path-line">{preview.path}</div>
             <button type="button" className="fp-retry" onClick={() => void previewFile(preview.path, preview.line, preview.cwd, preview.lineEnd)} data-testid="file-preview-retry">{t('fp.retry')}</button>
-            {/* 文件不在了就给一条去其父目录的出口（H-4）；越界类错误不带 dir */}
             {data.dir ? (
               <button
                 type="button"
@@ -283,7 +233,6 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
 
         {isText && (!isMarkdown || mode === 'source') ? (
           <>
-            {/* 大文件只给了窗口：先说清这是全文的哪一段，再画行（H-4） */}
             {data?.windowStart ? (
               <div className="fp-note" data-testid="file-preview-window">
                 {t('fp.window', {
@@ -337,11 +286,6 @@ export function FilePreviewPane({ focus = false, onToggleFocus, resourceKey }: {
                 }}
               />
             </button>
-            {/*
-              尺寸与当前模式做成角落浮层，**不进头部**：
-              头部只留文件名 + 四个按钮（用户要求「文件名 简洁」）。
-              右栏最窄时头部只有 300 多 px，多塞一个尺寸就把名字挤成「9…」。
-            */}
             <div className="fp-image-meta" data-testid="file-preview-image-meta">
               <span>{imgMode === 'fit' ? t('fp.imageFit') : t('fp.imageActual')}</span>
               {imgSize ? (
@@ -372,7 +316,6 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-/** 文件名已在磁贴标签上，路径行只给所在目录 */
 function dirOf(path: string): string {
   return path.replace(/[\\/]+[^\\/]*$/, '')
 }

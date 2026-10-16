@@ -1,10 +1,3 @@
-/**
- * 消息里的图片（用户贴的、模型回复里引用的）。
- *
- * 与 v2 的 ChatImage 行为一致但不复用 v2 组件（CONTRACT：不引入 v2 控件）：
- * 只有落盘文件（`file://` / 本地路径）能点开右栏预览，内联 base64 与网络图片
- * 只显示；网络图片点击交给内部浏览器。
- */
 import type { JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'

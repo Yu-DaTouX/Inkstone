@@ -1,16 +1,8 @@
-/**
- * 生活助手的本机配置：模型服务商与密钥。
- *
- * 和配对令牌一样只放系统钥匙串（Android Keystore），不写普通存储、不进日志。
- * 密钥在界面上只显示尾 4 位。
- */
 import * as Keychain from 'react-native-keychain'
 
 export type AssistantProvider = {
   id: string
-  /** 显示名，例如「Command Code」 */
   label: string
-  /** OpenAI 兼容根地址，例如 https://api.example.com/v1 */
   baseUrl: string
   model: string
   apiKey: string
@@ -19,9 +11,7 @@ export type AssistantProvider = {
 
 export type AssistantSettings = {
   providers: AssistantProvider[]
-  /** 当前使用的服务商；null 表示还没配置 */
   activeProviderId: string | null
-  /** 是否允许写记忆；关掉后只读不写 */
   remember: boolean
 }
 
@@ -60,7 +50,6 @@ export async function clearSettings(): Promise<void> {
   await Keychain.resetGenericPassword({ service: SERVICE })
 }
 
-/** 界面展示用：sk-1234abcd → ****abcd */
 export function maskKey(apiKey: string): string {
   const tail = apiKey.slice(-4)
   return apiKey.length <= 4 ? '****' : `****${tail}`

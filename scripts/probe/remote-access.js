@@ -1,4 +1,3 @@
-/* Isolated desktop runtime: settings links, listener, pairing code and QR. No model call. */
 ;(async () => {
   const out = []
   const check = (condition, label) => out.push(`${condition ? '  ✓' : '  ✗'} ${label}`)

@@ -1,17 +1,3 @@
-/**
- * Git 审查数据层的**真实仓库**验证（真 git、临时目录、不碰用户数据）。
- *
- * 为什么在纯解析单测之外还要这一层：`src/shared/git.ts` 的单测喂的是
- * 我**以为** git 会输出的字符串。真 git 的输出有版本差异与一堆边角
- * （`-z` 下 rename 的段排列、`--numstat` 对二进制给 `-`、删除文件的
- * `+++ /dev/null`、`core.autocrlf` 影响行数），只有真跑一遍才算数。
- *
- * 顺带钉住两条**只读保证**（方案 §13.1 的硬要求）：
- *   · 打开/刷新审查前后，工作区内容与 index 必须逐字节一致
- *   · 不能调用 subagent-isolation 的 collectDiff（它会 `git add -A`）
- *
- * 用法：npm run test:unit（由 test-unit.mjs 调起；每个仓库 < 100ms）
- */
 import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -24,8 +10,6 @@ const GIT_ENV = {
   GIT_AUTHOR_EMAIL: 'yan-test@example.com',
   GIT_COMMITTER_NAME: 'yan-test',
   GIT_COMMITTER_EMAIL: 'yan-test@example.com',
-  /* 屏蔽用户的全局 / 系统 gitconfig：init.defaultBranch、core.autocrlf、
-     diff.external 这些会让测试结果随机器而变。NUL 是 Windows 的空设备。 */
   GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
   GIT_CONFIG_SYSTEM: process.platform === 'win32' ? 'NUL' : '/dev/null',
   GIT_TERMINAL_PROMPT: '0'
@@ -47,10 +31,7 @@ export async function runGitRepoTests(ok) {
   const repo = join(root, 'demo')
   await mkdir(repo, { recursive: true })
 
-  /* ── 建一个普通仓库 ───────────────────────────────────── */
-
   git(repo, ['init', '-q', '-b', 'main'])
-  /* 关掉 autocrlf：它会让「行数」在不同平台不一致，而我们要断言行数 */
   git(repo, ['config', 'core.autocrlf', 'false'])
   git(repo, ['config', 'user.name', 'yan-test'])
   git(repo, ['config', 'user.email', 'yan-test@example.com'])
@@ -64,21 +45,16 @@ export async function runGitRepoTests(ok) {
   git(repo, ['add', '-A'])
   git(repo, ['commit', '-q', '-m', 'init'])
 
-  /* ── 造出各种工作区状态 ───────────────────────────────── */
-
-  await writeFile(join(repo, 'a.txt'), 'one\nTWO\nthree\nfour\n') // 未暂存修改
-  await rm(join(repo, 'gone.txt')) // 未暂存删除
-  await writeFile(join(repo, '中文 及空格.txt'), '第一行\n改过的第二行\n') // 中文+空格路径
-  git(repo, ['add', '中文 及空格.txt']) // → 已暂存修改
+  await writeFile(join(repo, 'a.txt'), 'one\nTWO\nthree\nfour\n')
+  await rm(join(repo, 'gone.txt'))
+  await writeFile(join(repo, '中文 及空格.txt'), '第一行\n改过的第二行\n')
+  git(repo, ['add', '中文 及空格.txt'])
   await writeFile(join(repo, 'staged-new.txt'), 'brand new\n')
-  git(repo, ['add', 'staged-new.txt']) // → 已暂存新增
-  git(repo, ['mv', 'old-name.txt', 'new-name.txt']) // → 已暂存重命名
-  await writeFile(join(repo, 'untracked.txt'), 'u1\nu2\nu3\n') // 未跟踪
+  git(repo, ['add', 'staged-new.txt'])
+  git(repo, ['mv', 'old-name.txt', 'new-name.txt'])
+  await writeFile(join(repo, 'untracked.txt'), 'u1\nu2\nu3\n')
   await mkdir(join(repo, 'assets'), { recursive: true })
-  /* 一个真的含 NUL 字节的二进制文件（PNG 头 + 0x00） */
   await writeFile(join(repo, 'assets', 'blob.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x00]))
-
-  /* ── 1. 仓库身份 ─────────────────────────────────────── */
 
   console.log('\n--- G1. 真实仓库：身份与状态 ---')
   {
@@ -96,8 +72,6 @@ export async function runGitRepoTests(ok) {
     ok((await resolveRepo(join(root, 'not-a-repo'))) === null, '空目录也返回 null')
   }
 
-  /* ── 9. 写操作（方案 §5，G2） ────────────────────────── */
-
   console.log('\n--- G9. 写操作（真实 git，全部在临时仓库里）---')
 
   {
@@ -105,7 +79,6 @@ export async function runGitRepoTests(ok) {
       '../out/test/git-actions-main.mjs'
     )
 
-    /* 写操作要建自己的仓库：G8 断言过的那份仓库状态不能被搅浑 */
     const mut = join(root, 'mut')
     await mkdir(mut, { recursive: true })
     git(mut, ['init', '-q', '-b', 'main'])
@@ -123,7 +96,6 @@ export async function runGitRepoTests(ok) {
     const commitCount = (dir = mut) => git(dir, ['rev-list', '--count', 'HEAD']).trim()
     const branchOf = (dir = mut) => git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()
 
-    /* A. 暂存 / 取消暂存 —— 只动选中的文件，且取消暂存**不碰工作区** */
     await writeFile(join(mut, 'a.txt'), 'A1 改过\nA2\n')
     await writeFile(join(mut, 'b.txt'), 'B1 改过\n')
     await writeFile(join(mut, 'c-new.txt'), '新文件\n')
@@ -148,12 +120,9 @@ export async function runGitRepoTests(ok) {
     ok(u1.ok === true, '取消暂存 a.txt 成功')
     ok(!cachedNames().split('\n').includes('a.txt'), 'a.txt 退出 index')
     ok(cachedNames().split('\n').includes('b.txt'), 'b.txt 仍在 index（没有连带取消）')
-    /* 最要紧的一条：取消暂存绝不能把工作区内容也还原掉 */
     const aContent = await readFile(join(mut, 'a.txt'), 'utf8')
     ok(aContent === 'A1 改过\nA2\n', '取消暂存后**工作区内容原样保留**（不是 checkout）', JSON.stringify(aContent))
 
-    /* B. 分级复核（方案 §5.2 的「不提交用户尚未审阅的内容」） */
-    /* B1. 提交：严格看 index —— 用户看到的那份内容变了就必须拒 */
     const staleExpect = await readExpected(mut)
     await act({ kind: 'unstage', cwd: mut, paths: ['b.txt'], expected: await readExpected(mut) })
     const indexNow = git(mut, ['ls-files', '-s'])
@@ -169,17 +138,12 @@ export async function runGitRepoTests(ok) {
     ok(commitCount() === countBeforeStale, '被拒时**没有产生提交**（未审阅的内容没被提交进去）', commitCount())
     ok(git(mut, ['ls-files', '-s']) === indexNow, '被拒时 index **逐字节未变**')
 
-    /* B2. 分级复核的**边界** —— 初版在这里做错了，真实运行才暴露。
-           暂存是幂等的（「把这个文件的当前内容放进 index」），所以 index 或
-           HEAD 在此期间被改过都不该拒：否则用户连点两次、或提交后立刻暂存，
-           都会撞上假冲突，而假冲突的代价是用户学会无视那句提示。 */
     const headExp = await readExpected(mut)
     await writeFile(join(mut, "b.txt"), "B1 又改了一次\n")
     git(mut, ["commit", "-q", "--allow-empty", "-m", "外部进程的提交"])
     const stageAfterHeadMove = await act({ kind: "stage", cwd: mut, paths: ["b.txt"], expected: headExp })
     ok(stageAfterHeadMove.ok === true, "HEAD 被别人挪走后暂存仍然成功（不制造假冲突）", JSON.stringify(stageAfterHeadMove.failure))
 
-    /* 但「未指定起点的新建分支」必须拦：新分支长在哪里由 HEAD 决定 */
     const headExp2 = await readExpected(mut)
     git(mut, ["commit", "-q", "--allow-empty", "-m", "又一次外部提交"])
     const cbStale = await act({
@@ -194,7 +158,6 @@ export async function runGitRepoTests(ok) {
     ok(cbStale.failure?.code === "stale", "失败码是 stale", cbStale.failure?.code)
     ok((cbStale.failure?.detail ?? "").includes("HEAD"), "指出是 HEAD 变了", cbStale.failure?.detail)
 
-    /* 起点显式给出时，期间的提交与这次创建无关 —— 同样不该拒 */
     const headExp3 = await readExpected(mut)
     git(mut, ["commit", "-q", "--allow-empty", "-m", "第三次外部提交"])
     const cbPinned = await act({
@@ -207,11 +170,8 @@ export async function runGitRepoTests(ok) {
     })
     ok(cbPinned.ok === true, "起点显式给出时不受 HEAD 变化影响", JSON.stringify(cbPinned.failure))
 
-    /* C. 全部暂存 / 全部取消暂存 */
     const sa = await act({ kind: 'stage-all', cwd: mut, expected: await readExpected(mut) })
     const dirtyBefore = git(mut, ['status', '--porcelain']).split('\n').filter(Boolean).length
-    /* 不断言具体文件名：上面的 B2 在中间提交过一次，硬编码文件数会随用例顺序漂移。
-       断言「index 覆盖了 status 列出的全部变更」才等于语义本身。 */
     ok(
       cachedNames().split('\n').filter(Boolean).length === dirtyBefore,
       `全部暂存：index 覆盖了 status 里的全部 ${dirtyBefore} 个变更文件`,
@@ -222,7 +182,6 @@ export async function runGitRepoTests(ok) {
     ok(cachedNames() === '', 'index 清空', cachedNames())
     ok((await readFile(join(mut, 'a.txt'), 'utf8')).includes('改过'), '全部取消暂存也没碰工作区')
 
-    /* D. 提交 */
     await act({ kind: 'stage-all', cwd: mut, expected: await readExpected(mut) })
     const before = commitCount()
     const c1 = await act({ kind: 'commit', cwd: mut, message: 'feat: 第一次提交', expected: await readExpected(mut) })
@@ -234,25 +193,20 @@ export async function runGitRepoTests(ok) {
     ok(c1.headBefore !== c1.headAfter, 'HEAD 前后不同')
     ok(typeof c1.headBefore === 'string' && c1.headBefore.length === 40, '结果里带着提交前的完整 HEAD', c1.headBefore)
 
-    /* 空说明：本地就拦下，不产生提交，也不让用户看到 git 的英文原文 */
     const n1 = commitCount()
     const empty = await act({ kind: 'commit', cwd: mut, message: '   ', expected: await readExpected(mut) })
     ok(empty.ok === false && empty.failure?.code === 'empty-message', '空提交说明被本地拦下', empty.failure?.code)
     ok(commitCount() === n1, '空说明没有产生提交')
 
-    /* 没有暂存内容时提交 → git 说 nothing to commit，分类要认出来 */
     const nothing = await act({ kind: 'commit', cwd: mut, message: 'x', expected: await readExpected(mut) })
     ok(nothing.ok === false && nothing.failure?.code === 'nothing-to-commit', '没内容可提交时分类为 nothing-to-commit', nothing.failure?.code)
 
-    /* E. hook 拒绝：必须原样把原因带回来，且**不提交** */
     const hookPath = join(mut, '.git', 'hooks', 'pre-commit')
     await writeFile(hookPath, '#!/bin/sh\necho "拒绝：这是测试 hook"\nexit 1\n', { mode: 0o755 })
     await writeFile(join(mut, 'a.txt'), 'A1 又要提交\nA2\n')
     await act({ kind: 'stage', cwd: mut, paths: ['a.txt'], expected: await readExpected(mut) })
     const hookCount = commitCount()
     const h1 = await act({ kind: 'commit', cwd: mut, message: '会被 hook 拒', expected: await readExpected(mut) })
-    /* 真 git 的 hook 拒绝**只透传 hook 自己的输出**（无前缀），所以这条
-       走的正是「分类不出来 → 查仓库里有没有 hook 文件 → 才敢说是 hook」的路径 */
     ok(h1.ok === false, 'pre-commit 拒绝时提交失败')
     ok(h1.failure?.code === 'hook', '分类为 hook（靠仓库里真有 hook 这个事实，不是猜）', h1.failure?.code)
     ok((h1.failure?.message ?? '').includes('pre-commit'), '失败说明里点名是哪个 hook', h1.failure?.message)
@@ -260,17 +214,13 @@ export async function runGitRepoTests(ok) {
     ok(commitCount() === hookCount, 'hook 拒绝后没有产生提交（没有 --no-verify 偷偷绕过）')
     await rm(hookPath, { force: true })
 
-    /* hook 不在时，同一句输出不能被当成 hook（否则就是编原因） */
     await act({ kind: 'stage', cwd: mut, paths: ['a.txt'], expected: await readExpected(mut) })
     const noHook = await act({ kind: 'commit', cwd: mut, message: '没有 hook 了', expected: await readExpected(mut) })
     ok(noHook.ok === true, '删掉 hook 后同样内容能提交（证明上一次失败真是 hook 拦的）')
 
-    /* F. 身份未配置：真 git 的文案 + 我们的分类 */
     const noId = join(root, 'noid')
     await mkdir(noId, { recursive: true })
     git(noId, ['init', '-q', '-b', 'main'])
-    /* 注意：这里**不设** user.name / user.email（git() 的 env 只影响 git 本身，
-       主进程的 gitRun 继承的是 process.env，两者互不干扰） */
     await writeFile(join(noId, 'x.txt'), 'x\n')
     git(noId, ['add', '-A'])
     const savedGlobal = process.env.GIT_CONFIG_GLOBAL
@@ -311,7 +261,6 @@ export async function runGitRepoTests(ok) {
       ok(!!idFail.hint, '给出可执行的下一步（去配 user.name/email）')
     }
 
-    /* G. 切换分支：脏工作区由 **git 自己**判，我们只转述 */
     git(mut, ['switch', '-q', '-c', 'feature'])
     await writeFile(join(mut, 'a.txt'), 'feature 上的版本\n')
     git(mut, ['commit', '-qam', 'feature 改动 a.txt'])
@@ -324,14 +273,12 @@ export async function runGitRepoTests(ok) {
     ok(branchOf() === 'main', '分支没有变')
     ok((await readFile(join(mut, 'a.txt'), 'utf8')) === 'main 上未提交的改动\n', '工作区内容原样保留（没被 stash/reset）')
 
-    /* 干净之后能切（脏不是一律禁止） */
     git(mut, ['checkout', '--', 'a.txt'])
     const sw2 = await act({ kind: 'switch-branch', cwd: mut, branch: 'feature', expected: await readExpected(mut) })
     ok(sw2.ok === true, '工作区干净后切换成功', JSON.stringify(sw2.failure))
     ok(branchOf() === 'feature', '真的切到了 feature', branchOf())
     ok(sw2.summary?.includes('feature') === true, '结果行说明切到了哪')
 
-    /* H. 有运行中的任务 → 拒绝切换（方案 §5.1） */
     configureWriteContext({ hasRunningTask: () => true })
     const busy = await act({ kind: 'switch-branch', cwd: mut, branch: 'main', expected: await readExpected(mut) })
     ok(busy.ok === false && busy.failure?.code === 'busy', '有运行任务时切换被拒', busy.failure?.code)
@@ -348,7 +295,6 @@ export async function runGitRepoTests(ok) {
     ok(busyCreate.ok === false && busyCreate.failure?.code === 'busy', '有运行任务时「新建并切换」也被拒')
     configureWriteContext({})
 
-    /* I. 新建分支：只创建 / 创建并切换 / 各种非法输入 */
     git(mut, ['switch', '-q', 'main'])
     const cb1 = await act({
       kind: 'create-branch',
@@ -403,7 +349,6 @@ export async function runGitRepoTests(ok) {
     })
     ok(cb5.ok === false && cb5.failure?.code === 'branch-missing', '起点不存在 → branch-missing', cb5.failure?.code)
 
-    /* J. push / fetch（本地 bare 仓库当 remote，真跑 git，不碰网络） */
     const bare = join(root, 'bare.git')
     git(root, ['init', '-q', '--bare', bare])
     git(mut, ['switch', '-q', 'main'])
@@ -427,7 +372,6 @@ export async function runGitRepoTests(ok) {
     const f1 = await act({ kind: 'fetch', cwd: mut, requestId: 'f1' })
     ok(f1.ok === true, '拉取成功', JSON.stringify(f1.failure))
 
-    /* 非快进：另一个克隆先推一个提交，本地再推就被拒 */
     const other = join(root, 'other')
     git(root, ['clone', '--quiet', '--branch', 'main', bare, other])
     git(other, ['config', 'user.name', 'yan-test'])
@@ -453,7 +397,6 @@ export async function runGitRepoTests(ok) {
     ok(!!ff.failure?.hint, '给出下一步（先拉取并自己合并/变基，不会自动 rebase）')
     ok(headOf() === localHead, '推送失败**不影响本地提交**（提交被保留）')
 
-    /* K. 并发写：同一仓库的写操作必须串行（否则会撞 index.lock） */
     await writeFile(join(mut, 'k1.txt'), '1\n')
     await writeFile(join(mut, 'k2.txt'), '2\n')
     const expK = await readExpected(mut)
@@ -470,15 +413,12 @@ export async function runGitRepoTests(ok) {
     ok(after.includes('k1.txt') && after.includes('k2.txt'), '两个文件都进了 index', after.join(','))
   }
 
-  /* ── 10. 用户工作树（方案 §6.2，W1） ────────────────── */
-
   console.log('\n--- G10. 用户工作树（真实 git worktree）---')
 
   {
     const { listWorktrees, createWorktree, removeWorktree, slugBranch, parseWorktreeList, defaultWorktreeContainer } =
       await import('../out/test/git-worktree.mjs')
 
-    /* 纯逻辑先测：目录名 slug 与 worktree list 的解析 */
     ok(slugBranch('feat/git-review') === 'feat-git-review', '分支名里的 / 变成 -（不多出一层目录）', slugBranch('feat/git-review'))
     ok(slugBranch('  spaced  name  ') === 'spaced-name', '空白收敛成单个 -', slugBranch('  spaced  name  '))
     ok(slugBranch('a:b*c?d') === 'a-b-c-d', 'Windows 非法字符被替换', slugBranch('a:b*c?d'))
@@ -488,7 +428,6 @@ export async function runGitRepoTests(ok) {
     const container = defaultWorktreeContainer('C:/proj/demo', 'demo')
     ok(container.replace(/\\/g, '/').endsWith('proj/demo-worktrees'), '默认容器在仓库**旁边**', container)
 
-    /* 真实格式：每条记录内部用换行，记录之间用 NUL（-z 的约定） */
     const rec = (...lines) => lines.join(String.fromCharCode(10)) + String.fromCharCode(0)
     const parsed = parseWorktreeList(
       rec('worktree C:/proj/demo', 'HEAD aaaa', 'branch refs/heads/main') +
@@ -503,7 +442,6 @@ export async function runGitRepoTests(ok) {
     ok(parsed[2].branch === null, 'detached 的 branch 是 null')
     ok(parsed[2].locked === true, 'locked 被认出来')
 
-    /* ── 真实仓库 ── */
     const wt = join(root, 'wt')
     await mkdir(wt, { recursive: true })
     git(wt, ['init', '-q', '-b', 'main'])
@@ -520,7 +458,6 @@ export async function runGitRepoTests(ok) {
     ok(listing0.worktrees[0].main === true, '那一条是主工作树')
     ok(listing0.repoRoot.endsWith('wt'), 'repoRoot 指向仓库根', listing0.repoRoot)
 
-    /* 创建：默认位置在仓库旁边 */
     const created = await createWorktree({ cwd: wt, branch: 'feat/one', startPoint: null, targetPath: null })
     ok(created.ok === true, '创建工作树成功', JSON.stringify(created.failure))
     ok(!!created.path && created.path.includes('wt-worktrees'), '默认落在 <仓库名>-worktrees 下', String(created.path))
@@ -532,11 +469,9 @@ export async function runGitRepoTests(ok) {
       git(created.path, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()
     )
     ok(existsSync(join(created.path, 'base.txt')), '已提交的文件被带过去了')
-    /* 主工作树没被碰过 */
     ok(!existsSync(join(wt, 'feat')), '主工作树里没有多出工作树目录')
     ok(git(wt, ['rev-parse', '--abbrev-ref', 'HEAD']).trim() === 'main', '主工作树仍在 main')
 
-    /* 未提交改动**不会**跟着过去（方案 §6.2 的硬要求） */
     await writeFile(join(wt, 'base.txt'), 'base changed\n')
     const created2 = await createWorktree({ cwd: wt, branch: 'feat/two', startPoint: null, targetPath: null })
     ok(created2.ok === true, '带脏工作区也能建（它只从 HEAD 长出来）')
@@ -546,7 +481,6 @@ export async function runGitRepoTests(ok) {
     )
     ok(git(wt, ['status', '--porcelain']).trim().length > 0, '主工作树的未提交改动原样保留')
 
-    /* 拒绝路径 */
     const dup = await createWorktree({ cwd: wt, branch: 'feat/one', startPoint: null, targetPath: null })
     ok(dup.ok === false && dup.failure?.code === 'branch-exists', '分支已存在 → 拒绝', dup.failure?.code)
     const badStart = await createWorktree({ cwd: wt, branch: 'feat/three', startPoint: 'no-such-ref', targetPath: null })
@@ -568,11 +502,9 @@ export async function runGitRepoTests(ok) {
     })
     ok(existing.ok === false && existing.failure?.code === 'path-rejected', '目标目录已存在 → 拒绝', existing.failure?.code)
 
-    /* 有运行任务时拒绝创建（与切分支同一判据） */
     const busy = await createWorktree({ cwd: wt, branch: 'feat/six', startPoint: null, targetPath: null }, () => true)
     ok(busy.ok === false && busy.failure?.code === 'busy', '有任务在跑 → 拒绝建工作树', busy.failure?.code)
 
-    /* 列出现在能看到两条（主 + 刚才建的） */
     const listing1 = await listWorktrees(wt)
     ok(listing1.worktrees.length === 3, '现在有三条工作树（主 + feat/one + feat/two）', String(listing1.worktrees.length))
     ok(
@@ -580,7 +512,6 @@ export async function runGitRepoTests(ok) {
       '两条被认成「砚创建的」（落在默认容器里）'
     )
 
-    /* ── 删除：三类内容挡着都要拒绝，且**逐条给原因** ── */
     const mainBlocked = await removeWorktree({ cwd: wt, path: wt })
     ok(mainBlocked.ok === false, '主工作树不能删')
     ok(
@@ -592,7 +523,6 @@ export async function runGitRepoTests(ok) {
     const notMine = await removeWorktree({ cwd: wt, path: root })
     ok(notMine.ok === false && notMine.failure?.code === 'path-rejected', '不在工作树列表里的路径 → 拒绝', notMine.failure?.code)
 
-    /* 未提交改动挡着 */
     await writeFile(join(created.path, 'dirty.txt'), 'x\n')
     const dirtyBlocked = await removeWorktree({ cwd: wt, path: created.path })
     ok(dirtyBlocked.ok === false, '有未提交改动 → 拒绝删除')
@@ -604,7 +534,6 @@ export async function runGitRepoTests(ok) {
     ok(existsSync(created.path), '被拒之后目录还在（没有偷偷删）')
     ok((await readFile(join(created.path, 'dirty.txt'), 'utf8')) === 'x\n', '被拒之后未提交的内容也还在')
 
-    /* 未推送提交挡着（没有上游时按「无法判断」列出） */
     await rm(join(created.path, 'dirty.txt'), { force: true })
     git(created.path, ['commit', '-q', '--allow-empty', '-m', '工作树里的提交'])
     const unpushedBlocked = await removeWorktree({ cwd: wt, path: created.path })
@@ -615,7 +544,6 @@ export async function runGitRepoTests(ok) {
       JSON.stringify(unpushedBlocked.blockers)
     )
 
-    /* 推上去之后就能删了 */
     const bare2 = join(root, 'wt-remote.git')
     git(root, ['init', '-q', '--bare', bare2])
     git(created.path, ['remote', 'add', 'origin', bare2])
@@ -629,15 +557,8 @@ export async function runGitRepoTests(ok) {
       String((await listWorktrees(wt)).worktrees.length)
     )
     ok(git(wt, ['branch', '--list', 'feat/one']).trim().length > 0, 'deleteBranch 为假时分支保留')
-    /* 主工作树最后确认还活着 */
     ok(existsSync(join(wt, 'base.txt')), '主工作树始终没被碰')
 
-    /* 清理第二条工作树（它还在，留着会让下一次跑测试的目录名冲突） */
-    /*
-     * ⚠️ 不再 remote add：worktree **共享同一份 .git/config**，第一个工作树
-     * 已经加过 origin 了，再加会报 `remote origin already exists`（第一次跑
-     * 测试就是这么被吞掉的 —— catch 顺手把后面的 push 也跳过了）。
-     */
     try {
       git(created2.path, ['push', '-q', '-u', 'origin', 'feat/two'])
     } catch (e) {
@@ -647,8 +568,6 @@ export async function runGitRepoTests(ok) {
     ok(removed2.ok === true, '第二条也能正常删除', JSON.stringify(removed2.failure ?? removed2.blockers))
     ok(git(wt, ['branch', '--list', 'feat/two']).trim().length === 0, 'deleteBranch 为真时分支被删掉（已合并/已推送）')
   }
-
-  /* ── 11. 携带未提交改动（W2a，真实仓库）───────────────── */
 
   {
     const { createWorktree } = await import('../out/test/git-worktree.mjs')
@@ -665,11 +584,6 @@ export async function runGitRepoTests(ok) {
     git(cRepo, ['add', '-A'])
     git(cRepo, ['commit', '-q', '-m', 'init'])
 
-    /*
-     * 造出三份**不同**的东西：已暂存、未暂存、未跟踪。
-     * 分开造是为了能验证「已暂存的仍然暂存」—— 混在一起的话，
-     * 就算实现把所有改动都丢进工作区，看 status 也分辨不出来。
-     */
     writeFileSync(join(cRepo, 'a.txt'), 'a\nstaged\n')
     git(cRepo, ['add', 'a.txt'])
     writeFileSync(join(cRepo, 'keep.txt'), 'keep\nmodified\n')
@@ -678,7 +592,6 @@ export async function runGitRepoTests(ok) {
     writeFileSync(join(cRepo, 'exec-untracked.sh'), '#!/bin/sh\nls\n')
     chmodSync(join(cRepo, 'exec-untracked.sh'), 0o755)
 
-    /* 源仓库的 status 与 index：迁移前后必须**逐字节相同** */
     const srcStatusBefore = git(cRepo, ['status', '--porcelain=v1', '-z'])
     const srcIndexBefore = git(cRepo, ['diff', '--cached', '--binary'])
 
@@ -703,7 +616,6 @@ export async function runGitRepoTests(ok) {
         '说明里写明源工作区没被动过'
       )
 
-      /* ① 已暂存 → 在目标里仍然是**已暂存**（这是「分别捕获」的全部意义） */
       const dstStatus = git(dst, ['status', '--porcelain=v1'])
       ok(/^M  a\.txt$/m.test(dstStatus), '已暂存的改动在目标里仍然是已暂存（M + 空格）', JSON.stringify(dstStatus))
       ok(/^ M keep\.txt$/m.test(dstStatus), '未暂存的改动在目标里仍然是未暂存（空格 + M）')
@@ -711,25 +623,18 @@ export async function runGitRepoTests(ok) {
       ok(/^\?\? new-untracked\.txt$/m.test(dstStatus), '未跟踪文件过来了')
       ok(/^\?\? exec-untracked\.sh$/m.test(dstStatus), '未跟踪的脚本也过来了')
 
-      /* ② 内容与二进制保真 */
       ok(readFileSync(join(dst, 'keep.txt'), 'utf8') === 'keep\nmodified\n', '未暂存文件的内容一致')
       ok(
         Buffer.compare(readFileSync(join(dst, 'bin.dat')), Buffer.from([0, 9, 9, 3, 255, 254])) === 0,
         '二进制文件逐字节一致（没有被 utf8 破坏）'
       )
       ok(readFileSync(join(dst, 'new-untracked.txt'), 'utf8') === 'hello\n', '未跟踪文件内容一致')
-      /*
-       * 可执行位只在 POSIX 上有意义：NTFS 不用 mode 位表示可执行，
-       * 写进去的 chmod 也读不回来（git 自己也是靠 core.fileMode=false 绕开这件事）。
-       * 所以这里**分平台**断言，而不是假装 Windows 也能验。
-       */
       if (process.platform === 'win32') {
         ok(true, '可执行位：Windows 上跳过（NTFS 不用 mode 位表示可执行）')
       } else {
         ok((statSync(join(dst, 'exec-untracked.sh')).mode & 0o777) === 0o755, '未跟踪文件的可执行位保持')
       }
 
-      /* ③ 目标侧验证：两侧的 diff 摘要一致 */
       ok(
         git(dst, ['diff', '--cached', '--numstat']).trim() === git(cRepo, ['diff', '--cached', '--numstat']).trim(),
         '目标与源的「已暂存」摘要一致'
@@ -740,12 +645,10 @@ export async function runGitRepoTests(ok) {
       )
     }
 
-    /* ④ 源仓库一个字节都没动（这是方案里最容易做错的一条） */
     ok(git(cRepo, ['status', '--porcelain=v1', '-z']) === srcStatusBefore, '源仓库的 status 逐字节不变')
     ok(git(cRepo, ['diff', '--cached', '--binary']) === srcIndexBefore, '源仓库的 index 逐字节不变')
     ok(readFileSync(join(cRepo, 'keep.txt'), 'utf8') === 'keep\nmodified\n', '源工作区文件内容不变')
 
-    /* ⑤ 起点不是 HEAD 时不许带 carry（patch 相对 HEAD，换基线语义不成立） */
     const badStart = await createWorktree({
       cwd: cRepo,
       branch: 'carry-bad-start',
@@ -759,9 +662,7 @@ export async function runGitRepoTests(ok) {
       JSON.stringify(badStart.failure?.code)
     )
 
-    /* ⑥ 冲突状态下拒绝迁移并解释 */
     {
-      /* mkdtempSync 已经把目录建好了，不要再 mkdirSync（会 EEXIST） */
       const xRoot = mkdtempSync(join(tmpdir(), 'yan-git-conflict-'))
       git(xRoot, ['init', '-q', '-b', 'main'])
       git(xRoot, ['config', 'user.email', 't@example.com'])
@@ -778,7 +679,6 @@ export async function runGitRepoTests(ok) {
       try {
         git(xRoot, ['merge', 'other'])
       } catch {
-        /* 冲突是预期的 */
       }
       const conflictCarry = await createWorktree({
         cwd: xRoot,
@@ -797,7 +697,6 @@ export async function runGitRepoTests(ok) {
         '拒绝原因里说明是冲突',
         String(conflictCarry.failure?.message ?? '').slice(0, 50)
       )
-      /* 被拒之后不该留下半个工作树 */
       ok(
         git(xRoot, ['worktree', 'list']).trim().split('\n').length === 1,
         '被拒时没有留下半个工作树'
@@ -805,7 +704,6 @@ export async function runGitRepoTests(ok) {
       await rm(xRoot, { recursive: true, force: true }).catch(() => {})
     }
 
-    /* ⑦ 勾选的文件不再是未跟踪状态 → 拒绝（提示重新选） */
     {
       writeFileSync(join(cRepo, 'gone.txt'), 'x\n')
       git(cRepo, ['add', 'gone.txt'])
@@ -825,7 +723,6 @@ export async function runGitRepoTests(ok) {
       await rm(join(cRepo, 'gone.txt'), { force: true }).catch(() => {})
     }
 
-    /* ⑧ 不带 carry 时说明里必须写明「不会自动带入」 */
     const plain = await createWorktree({
       cwd: cRepo,
       branch: 'carry-plain',
@@ -846,8 +743,6 @@ export async function runGitRepoTests(ok) {
 
     await rm(cRoot, { recursive: true, force: true }).catch(() => {})
   }
-
-  /* ── 12. 清理 ────────────────────────────────────────── */
 
   await rm(root, { recursive: true, force: true }).catch(() => {})
 }

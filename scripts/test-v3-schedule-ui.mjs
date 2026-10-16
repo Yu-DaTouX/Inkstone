@@ -1,21 +1,3 @@
-/**
- * v3 定时任务页（WP-51 界面部分）的纯本地回归。
- *
- * 现场编译**真实生产模块**，用 `react-dom/server` 渲染**生产展示件**，不启动
- * Electron、不连 pi、不起定时器、不调用真实模型、不读写用户数据、不联网、不 build：
- *   · `schedule-draft.ts`：草稿 ↔ 触发规则往返；提交校验只走 `shared/schedule`
- *     的 `normalizeTrigger`（最小间隔 / HH:MM / 至少一天）与指令长度上限。
- *   · `schedule-client.ts`：用假 bridge 核对每个动作转发到既有 IPC 方法名与参数，
- *     页面的增删改启停不是自己发明的第二套。
- *   · `ScheduleTaskCard`：SSR 真实投影，列出已配置任务的启用 / 待确认 / 已暂停状态、
- *     下次与上次时间、模型与上次运行错误；不使用假数据。
- *   · `ScheduleTasksPage`：注入假 bridge 渲染页面外壳（标题、新建入口、运行说明），
- *     确认没有自动执行、也没有新状态机。
- *   · 静态接线检查（不是视觉结论）：页面只用 v3 `ui/` 与本地模块，不引入 v2 控件或
- *     `styles/*`；CSS 落在 features 层，不重画控件皮肤。
- *
- * 可独立执行：node scripts/test-v3-schedule-ui.mjs
- */
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
@@ -38,7 +20,6 @@ function installGlobals() {
     removeItem: (k) => storage.delete(String(k)),
     clear: () => storage.clear()
   }
-  /* v3 控件来自 React Aria；SSR 不依赖真实 DOM，但它们在 import 期读 HTMLElement。 */
   function ElementShim() {}
   ElementShim.prototype = { focus() {}, blur() {}, addEventListener() {}, removeEventListener() {} }
   globalThis.HTMLElement = ElementShim
@@ -57,7 +38,6 @@ function installGlobals() {
     location: { href: 'http://localhost/' }
   }
   globalThis.document = {
-    /* React Aria 只在 readyState !== 'loading' 时挂真实全局事件；SSR 里保持 loading。 */
     readyState: 'loading',
     addEventListener: () => {},
     removeEventListener: () => {},
@@ -92,7 +72,6 @@ async function buildBundle(outdir) {
   return outfile
 }
 
-/** 假 IPC bridge：记录每次调用的方法名与参数，按配置返回结果。 */
 function mockBridge(responses = {}) {
   const calls = []
   const record = (name) => (...args) => {
@@ -139,7 +118,6 @@ async function main() {
     const zh = t('zh-CN')
     const render = (element) => renderToStaticMarkup(element)
 
-    /* ── 1. 草稿 ↔ 触发规则往返 ─────────────────────────────── */
     const onceAt = new Date(2026, 0, 2, 9, 30, 0, 0).getTime()
     const cases = [
       ['daily', { kind: 'daily', time: '09:05' }],
@@ -160,7 +138,6 @@ async function main() {
     ok(Draft.blankDraft('C:/work').cwd === 'C:/work', '新建草稿带上默认工作目录')
     ok(Draft.WEEK_ORDER.join(',') === '1,2,3,4,5,6,0', '星期顺序为周一到周日')
 
-    /* ── 2. 提交校验沿用 shared/schedule 规则 ───────────────── */
     const empty = Draft.checkDraft({ ...Draft.blankDraft(), prompt: '   ' })
     ok(!empty.ok && empty.code === 'needPrompt', '空指令被拒（needPrompt）')
     const noAt = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x', kind: 'once', at: '' })
@@ -182,7 +159,6 @@ async function main() {
     const longPrompt = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x'.repeat(12001) })
     ok(!longPrompt.ok, '超长指令被拒')
 
-    /* ── 3. 客户端只转发既有 IPC ─────────────────────────────── */
     const input = Draft.checkDraft({ ...Draft.blankDraft(), name: 'n', prompt: 'p' }).input
     const bridge = mockBridge({
       list: [task()],
@@ -205,7 +181,6 @@ async function main() {
     await Client.runTaskNow(bridge, 't1')
     ok(bridge.calls[5].name === 'runNow' && bridge.calls[5].args[0] === 't1', 'runTaskNow 调用 runNow(id)')
 
-    /* ── 4. 任务卡片 SSR：状态、时间与错误如实展示 ──────────── */
     const card = (over) =>
       render(
         createElement(Page.ScheduleTaskCard, {
@@ -234,7 +209,6 @@ async function main() {
 
     ok(Page.formatWhen(undefined) === '—', '缺失时间显示破折号，不猜值')
 
-    /* ── 5. 页面外壳 SSR：注入假 bridge，不自动执行 ─────────── */
     const pageClient = mockBridge({ list: [] })
     const pageHtml = render(createElement(i18n.I18nProvider, null, createElement(Page.ScheduleTasksPage, { client: pageClient })))
     ok(pageHtml.includes('data-testid="v3-schedule-page"'), '页面根节点使用 v3-schedule-page')
@@ -243,7 +217,6 @@ async function main() {
     ok(!pageHtml.includes('data-testid^="schedule-t"') && !pageHtml.match(/data-testid="schedule-t/), '首帧没有任务快照时不渲染假任务')
     ok(pageClient.calls.length === 0, 'SSR 首帧不发任何 IPC（请求在 effect 里）')
 
-    /* ── 6. 静态接线：只走 v3 ui/ 与既有 IPC ───────────────── */
     const pageSrc = await readFile(join(process.cwd(), 'src/renderer/src/features/schedule/ScheduleTasksPage.tsx'), 'utf8')
     ok(pageSrc.includes("from '../../ui'"), '页面控件来自 v3 ui/ primitives')
     ok(pageSrc.includes("from './schedule-draft'") && pageSrc.includes("from './schedule-client'"), '页面复用本地草稿与 IPC 转发模块')

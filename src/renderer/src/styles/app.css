@@ -1,22 +1,11 @@
-/* 基础组件样式：应用骨架、标题栏、导航、对话和通用控件。
-   原型参考 docs/design/prototype.html；加载顺序见 src/renderer/src/main.tsx。 */
-
-/* 3. 骨架 */
 .app {
   height: 100vh;
   display: grid;
   grid-template-rows: var(--h-titlebar) minmax(0, 1fr) var(--statusbar-h);
 }
-/* ⚠️ 这里曾经是 `display: none` —— 它会让滑出动画完全失效
-   （display 不可过渡，元素直接消失）。
-   收起时的宽度处理统一在 layout.css 里（--w-rail: 0 + 推挤）。 */
 
-/* ---- 标题栏 ---- */
 .titlebar {
   display: grid;
-  /* 0 号原则：grid 的 1fr 要写 minmax(0,1fr)，否则轨道最小值是 auto(=内容宽)，
-     内容一宽就撑破容器，溢出的部分被右邻不透明列盖住（文字被遮 / 边框不见）。
-     详见 DESIGN.md §8。 */
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-3);
@@ -24,7 +13,6 @@
   background: var(--bg-1);
   border-bottom: 1px solid var(--border);
   user-select: none;
-  /* 会话头的环境菜单、目标浮层从这里向下展开，要盖在工作区之上 */
   position: relative;
   z-index: 60;
 }
@@ -35,7 +23,6 @@
   min-width: 0;
 }
 
-/* 名字是身份的第一眼，给正常前景色 + 一点点字距 */
 .tb-name {
   color: var(--fg);
   font-size: var(--fs-base);
@@ -48,8 +35,6 @@
   gap: var(--sp-1);
 }
 
-/* 布局列数在 layout.css 里统一管（三列：左栏 / 中栏 / 右栏）。
-   这里只保留最低限度的骨架，避免两处规则打架。 */
 .workspace {
   display: grid;
   min-height: 0;
@@ -116,30 +101,14 @@
   font-size: var(--fs-xs);
 }
 
-/* 5. 中栏 —— 连续性 + 对话 + 审阅条 + 输入 */
 .center {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  /*
-   * 行：标题 / 连接条 / 对话区 / 交接提示 / 输入区。
-   *
-   * ⚠️ 为什么改成「四个 auto/1fr + 显式绑行」：
-   *    原来写的是 `auto minmax(0,1fr) auto auto`，靠子元素**出现顺序**占行。
-   *    而 `.connbar` 只在连接异常时渲染 —— 它一出现就把 `minmax(0,1fr)`
-   *    那一行抢走，对话区被挤到 `auto` 行。
-   *    普通列表靠内容撑开还看不出来；**虚拟化长会话时 VList 的项是绝对定位的**，
-   *    `.stream` 只剩 56px（padding），视口里一项都排不出来，
-   *    界面上等同于白屏卡死（实测：注入 240 条后 stream 高 56px、渲染 0 条）。
-   *
-   *    现在把行定义成 auto/auto/1fr/auto/auto/auto，并给对话区与底部控件**显式行号**：
-   *    连接条在不在，都不影响对话区拿到剩余空间。
-   */
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   min-height: 0;
   background: var(--bg-0);
 }
 
-/* 显式绑行（`.outline` / `.jump-bottom` 是 absolute，不参与行分配） */
 .center > .stream {
   grid-row: 3;
 }
@@ -153,14 +122,8 @@
 .stream {
   overflow: hidden auto;
   scrollbar-gutter: stable;
-  /*
-   * 底部 32 → 16：用户报「输出的消息和消息输入框之间的间隙太大」。
-   * 实际间隙是三处相加：.msg 的 margin-bottom 24 + 这里的 padding-bottom
-   * 32 + .composer-wrap 的 padding-top 12 = 68px。三者都要收。
-   */
   padding: var(--sp-5) 0 var(--sp-4);
   min-width: 0;
-  /* 顶部一小段轻渐隐，滚到标题栏下的消息淡出而不是被一刀切断；比上内边距矮，所以停在顶端时首条消息不受影响 */
   -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.35), #000 var(--sp-4));
   mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.35), #000 var(--sp-4));
 }
@@ -170,34 +133,15 @@
   padding: 0 var(--sp-5);
 }
 
-/* 已发送、模型尚无输出时的等待行：流末尾的一项 */
 .stream-pending {
   min-width: 0;
 }
 
-/* 消息单列：身份靠用户块的 `›` 提示符与块底色表达，不再占一条角色符号槽 */
 .msg {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   margin-bottom: var(--sp-5);
 }
-/*
- * 最后一条消息不留下边距：它直接顶着输入框，那 24px 会变成「间隙」的一半
- * （用户报「输出的消息和消息输入框之间的间隙太大」）。
- * 中间的消息之间保持原间距 —— 那是正文的呼吸，不是间隙。
- *
- * ⚠️ 这里必须用 `.stream-inner > .msg:last-child`（(0,3,0)），
- *    不能只写 `.msg:last-child`（(0,2,0)）：motion.css 的
- *    `.msg.assistant { margin-bottom: var(--sp-5) }` 也是 (0,2,0)，
- *    而 motion.css 在 app.css 之后加载 —— 同特异性下它赢，
- *    那 24px 就会原样漏过去（实测过：间隙停在 48px 下不去）。
- *
- * 两条选择器分别对应两种渲染路径：
- *   · 普通（短）会话：.stream-inner 直接排 .msg
- *   · 虚拟化长会话：VList → .stream-row 包一层。这里**不能**写
- *     `.stream > .stream-row` —— VList 中间还有一层容器（实测：
- *     最后 .stream-row 的 padding-bottom 已归零，但 .msg 的 24px 还在）。
- */
 .stream-inner > .msg:last-child,
 .stream-row:last-child > .msg:last-child {
   margin-bottom: 0;
@@ -242,7 +186,6 @@
   left: 0;
   color: var(--fg-mute);
 }
-/* 行内代码：用 token，浅/深主题各一套（浅色下青色在浅灰底上几乎读不到） */
 .prose code {
   background: var(--code-inline-bg);
   border: 1px solid var(--border);
@@ -316,15 +259,9 @@ kbd {
   cursor: default;
   filter: none;
 }
-/* 6. 右栏 —— 工具与状态面板
-   （上下文 / 额度 / 任务 / 队列 / 文件 / 扩展 / 日志 / 操作，顺序可调） */
 .status {
   background: var(--bg-1);
   border-left: 1px solid var(--border);
-  /* overflow-y:auto 会把 overflow-x 也变成 auto（CSS 规则：一个轴非 visible，另一个可见值会变 auto）。
-     于是纵向滚动条出现→clientWidth 少 9px→内容立刻横向溢出→冒出一条横向滚动条。
-     scrollbar-gutter: stable 预先留位，宽度不变就不会触发；overflow-x 再堵死。
-     同理见 .rail-body / .stream。 */
   overflow: hidden auto;
   scrollbar-gutter: stable;
   padding: var(--sp-3);
@@ -374,7 +311,6 @@ kbd {
   padding: var(--sp-2) var(--sp-3);
 }
 
-/* ---- 状态 ---- */
 .kv {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -438,31 +374,6 @@ kbd {
   box-shadow: 0 0 0 3px var(--warn-soft);
 }
 
-/*
- * 7. 响应式降级 —— 已移到 sidebar-review.css
- *
- * ⚠️ 这里曾经是（右栏还在、左栏只有「展开/收起」两态的年代的写法）：
- *
- *     @media (max-width: 900px) {
- *       :root { --w-rail: 0px; }
- *       .rail { display: none; }
- *     }
- *
- *   它已经**完全失效**，而且失效得很隐蔽：
- *     · `:root{--w-rail:0px}` 被 sidebar-review.css 的
- *       `:root{--w-rail: var(--w-rail-user, 260px)}` 覆盖（同特异性、后加载）
- *     · `.rail{display:none}` 被后加载的 `.rail{display:flex}` 覆盖（同理，现在在 rail.css）
- *   所以无论窗口多窄都不会生效 —— 它不是「有效但过时」，而是死代码。
- *   实测（视口 818px，max-900 媒体查询为 true）里左栏仍然 210px 且可见。
- *
- *   现在的窄屏规则统一由 sidebar-review.css 管（它最后加载），
- *   断点与宽度按实测的「对话区最小可用宽度」定。
- */
-
-/* ---- 渲染异常兜底（D8）----
-   这张卡片只在 React 渲染期抛错、整棵树被卸载时出现。
-   要求：不依赖应用骨架的任何布局变量（那时候 app 结构可能正处在坏状态），
-   全部用最基础的令牌，且高度自撑满视口。 */
 .crash {
   height: 100vh;
   display: grid;
@@ -516,7 +427,6 @@ kbd {
   gap: var(--sp-2);
 }
 
-/* 崩溃页的说明是一段话：用无衬线（设计规范 §2.2） */
 .crash-body {
   font-family: var(--font-body);
 }

@@ -1,10 +1,3 @@
-/**
- * 真实数据重启复核（只读）——用**用户真实数据的一份副本**启动隔离实例，
- * 看会话列表 / 目标 / 工作模式能不能被正确读出来。
- *
- * 副本路径由外部环境变量给出（`YAN_PI_DIR` 等），探针本身不碰任何目录；
- * 它只回答「界面里到底加载到了什么」。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -26,7 +19,6 @@
   try {
     await S().refreshSessions?.()
   } catch {
-    /* 读不到就保持原状，下面按现状报告 */
   }
   await sleep(2000)
 
@@ -45,7 +37,6 @@
   )
   ok(sessions.length > 0, `真实会话列表可读（${sessions.length} 条）`)
 
-  /* 打开一条有正文的真实历史会话：验证 Pi 0.87 下老会话文件仍能读出消息。 */
   const candidate = sessions.find((s) => Number(s.messageCount ?? 0) >= 5 && s.path)
   if (candidate) {
     log(`  打开历史会话：${String(candidate.title ?? '').slice(0, 20)}（摘要说 ${candidate.messageCount} 条）`)
@@ -69,10 +60,6 @@
   }
 
   const goal = S().goal
-  /*
-   * 真实目标持久化：打开**确实有目标记录**的真实会话，看宿主能不能按 sessionFile
-   * 从副本 goals.json 把 phase / revision 读回来。
-   */
   const GOAL_SAMPLE_IDS = [
     '01a0b84f-c768-73f1-b85c-3e70fe80ab18',
     '01a0b8af-39d6-7097-802a-78659a5258a2',
@@ -89,7 +76,6 @@
     try {
       await S().switchSession(String(s.path))
     } catch {
-      /* 打开失败就记下来 */
     }
     await sleep(1500)
     goalProbe.push({

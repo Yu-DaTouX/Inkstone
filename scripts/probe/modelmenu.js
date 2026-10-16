@@ -1,4 +1,3 @@
-/** Current scroll-list/provider-menu and keyboard contract; selection is stubbed, no inference. */
 ;(async () => {
   const out = [], store = window.__yanStore
   const q = s => document.querySelector(s), qa = s => [...document.querySelectorAll(s)]

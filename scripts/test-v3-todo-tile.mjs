@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * 侧栏待办磁贴（`features/todos/`）的纯本地回归。
- *
- * 两组检查：
- *   ① 纯模型 `todo-tile-model.ts`：空清单 / 部分完成 / 全部完成 / 超长列表 /
- *      显式 status 与无 status 的推断口径 / 折叠按会话记忆。
- *   ② 用 `react-dom/server` 直接渲染生产版面件 `TodoTileView`，把**无待办时
- *      输出为空**钉在 DOM 上，并核对计数、勾、进行中标记、受阻标记与折叠。
- *
- * 另做静态接线检查（不是视觉结论）：Sidebar 挂载位置、容器只读 `store.todos`、
- * `todos` 推送只走当前视图投影、并排切换焦点列走正式 `switchSession`。
- *
- * 用法：node scripts/test-v3-todo-tile.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型、不联网、不 build。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -32,17 +17,10 @@ const ok = (condition, label, detail) => {
   console.log(`✓ ${label}`)
 }
 
-/* ------------------------------------------------------------------ 构建 / 全局桩 */
-
 function abs(rel) {
   return normalize(resolve(ROOT, rel))
 }
 
-/*
- * 生产 `ui/` 原语（React Aria）在 import 期会读 `window` / `HTMLElement` 并挂
- * 全局焦点监听；SSR 渲染本身不依赖真实 DOM，这里给最小原型桩（与其余 v3
- * SSR 回归同一做法），以免把测试退回成假控件。
- */
 function installGlobals() {
   const storage = new Map()
   globalThis.localStorage = {
@@ -99,12 +77,8 @@ async function buildBundle(outdir) {
   return outfile
 }
 
-/* ------------------------------------------------------------------ fixture */
-
 const todo = (text, over = {}) => ({ text, done: false, ...over })
 const kinds = (model) => model.rows.map((row) => row.kind)
-
-/* ------------------------------------------------------------------ main */
 
 async function main() {
   installGlobals()
@@ -126,8 +100,6 @@ async function main() {
         ...props
       })
     )
-
-  /* ---- ① 纯模型 ---- */
 
   const empty = Model.buildTodoTileModel([], true)
   ok(!Model.hasTodoTileContent([]), '空清单 hasTodoTileContent=false（整块不渲染）')
@@ -171,8 +143,6 @@ async function main() {
   ok(Model.isTodoTileFolded(f2, 'session-a') === false, '再次切换恢复展开')
   ok(Model.toggleTodoTileFold(f0, '') === f0, '空会话 id 不落折叠键（避免会话串状态）')
 
-  /* ---- ② SSR 生产版面件 ---- */
-
   const emptyHtml = render({ todos: [] })
   ok(emptyHtml === '', '无待办时生产版面件输出为空字符串（不占高度、无标题、无空态）', emptyHtml)
 
@@ -207,8 +177,6 @@ async function main() {
 
   const enHtml = render({ todos: [todo('blocked', { status: 'blocked' })], lang: 'en-US' })
   ok(enHtml.includes('Todos') && enHtml.includes('Blocked'), '英文语言走自有常量', { en: enHtml.includes('Todos'), blocked: enHtml.includes('Blocked') })
-
-  /* ---- 静态接线（源码检查，不是视觉结论） ---- */
 
   const sidebar = await readFile(join(ROOT, 'src/renderer/src/features/sidebar/Sidebar.tsx'), 'utf8')
   ok(!sidebar.includes('TodoTile'), '待办磁贴已不在左侧栏')

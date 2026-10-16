@@ -1,24 +1,3 @@
-/**
- * 交接计数与交接包的会话级存储（实施-05 S5a）。
- *
- * ══════════════════════════════════════════════════════════
- * 它守的是什么
- * ══════════════════════════════════════════════════════════
- * §7 的计数必须满足两条硬性质，两条都由磁盘行为决定：
- *
- *   1. **幂等**：`state` 推送会把 `lastCompaction` 重放很多遍。
- *      同一份压缩记录只能计一次 —— 去重键（`compactionKeyOf`）先查后写。
- *   2. **重启不归零**：计数写进 `YAN_DIR/handoffs.json`（按**会话文件路径**索引，
- *      与模式 / 目标同一套键），重启后接着数。否则「重启一次就躲开阈值」
- *      会让交接永远不发生，而且看起来像「还没压够」。
- *
- * 并发策略与 goal / work-mode 一致：进程内一条串行队列，读-改-写都在队列里，
- * 原子替换（临时文件 + `rename`，Windows 上退化为直写）。落盘失败**必须抛** ——
- * 与目标状态同因：宁可下一次重算，也不要留下「内存里数到了、磁盘上没有」的假状态。
- *
- * ⚠️ 这一层只存计数与交接包，**不建目的会话、不动执行租约**（S5b 的事务）。
- */
-
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
@@ -44,12 +23,10 @@ import { normalizeSessionFileKey } from './work-mode-service'
 
 export const HANDOFF_FILE_NAME = 'handoffs.json'
 
-/** 最多记多少个会话（与 work-modes / goals 同量级）。 */
 const MAX_ENTRIES = 2000
 
 export interface HandoffEntry {
   tally: HandoffTally
-  /** 最近一次生成的交接包（S5a-2 由模型写、宿主校验后落这里）。 */
   package: HandoffPackage | null
   updatedAt: number
 }
@@ -67,7 +44,6 @@ function emptyEntry(): HandoffEntry {
   return { tally: emptyTally(), package: null, updatedAt: 0 }
 }
 
-/** 脏计数一律降级成「没数过」；键只保留字符串。 */
 function sanitizeTally(raw: unknown): HandoffTally {
   if (!raw || typeof raw !== 'object') return emptyTally()
   const item = raw as Partial<HandoffTally>
@@ -81,7 +57,6 @@ function sanitizeTally(raw: unknown): HandoffTally {
   }
 }
 
-/** 脏文档一律降级成空文档，不抛（用户手改坏了文件不能让应用起不来）。 */
 export function sanitizeHandoffDocument(raw: unknown): HandoffDocument {
   if (!raw || typeof raw !== 'object') return { version: 1, entries: {} }
   const doc = raw as Partial<HandoffDocument>
@@ -92,10 +67,6 @@ export function sanitizeHandoffDocument(raw: unknown): HandoffDocument {
     const item = (value ?? {}) as Partial<HandoffEntry>
     entries[id] = {
       tally: sanitizeTally(item.tally),
-      /*
-       * 交接包的清洗要来源字段：读盘时来源就是这条记录自己的键 ——
-       * 缺来源的包一律当「没有」（形如半个包的东西不许进事务）。
-       */
       package: sanitizeHandoffPackage(item.package, {
         sourceSession: id,
         sourceHead: item.package?.sourceHead ?? null,
@@ -126,20 +97,12 @@ export class HandoffStore {
     this.now = options.now ?? Date.now
   }
 
-  /** 读当前状态（不落盘）。未知会话返回空计数 + 没有交接包。 */
   state(sessionKey: string): HandoffEntry {
     const key = normalizeSessionFileKey(sessionKey)
     if (!key) return emptyEntry()
     return this.doc.entries[key] ?? emptyEntry()
   }
 
-  /**
-   * 记一次压缩（幂等）。
-   *
-   * 返回 `counted:false` 时 `reason` 说明为什么没计（`duplicate` / `manual-or-unknown` /
-   * `failed` / `no-stable-key`）—— 诊断与单测都靠它区分「去重挡住了」和「本来就不该计」。
-   * 未计数的调用**不落盘**（避免每次 state 推送都写一次文件）。
-   */
   async recordCompaction(
     sessionKey: string,
     run: CompactionRun | null | undefined
@@ -158,7 +121,6 @@ export class HandoffStore {
     })
   }
 
-  /** 写入一份已校验过的交接包（S5a-2 生成之后调）。 */
   async setPackage(sessionKey: string, pkg: HandoffPackage): Promise<void> {
     return this.enqueue(async () => {
       const key = normalizeSessionFileKey(sessionKey)
@@ -170,12 +132,6 @@ export class HandoffStore {
     })
   }
 
-  /**
-   * 交接成功：新片段从零开始数（§7「成功移交的新片段从零开始」）。
-   *
-   * 旧的 `keys` 一并丢掉是对的 —— 那些压缩属于**上一个片段**，
-   * 新片段要重新攒够 2 次才值得再交接一次。
-   */
   async startNewSegment(sessionKey: string, segmentId: string): Promise<HandoffTally> {
     return this.enqueue(async () => {
       const key = normalizeSessionFileKey(sessionKey)
@@ -189,7 +145,6 @@ export class HandoffStore {
     })
   }
 
-  /** 保证文档已从磁盘读过（幂等）。 */
   async load(): Promise<void> {
     if (this.loaded) return
     this.loaded = true
@@ -197,7 +152,6 @@ export class HandoffStore {
       const text = await readFile(handoffDocumentPath(this.root), 'utf8')
       this.doc = sanitizeHandoffDocument(JSON.parse(text))
     } catch {
-      /* 文件不存在 / 读不了 / 坏 JSON：都当「还没有任何计数」 */
       this.doc = { version: 1, entries: {} }
     }
   }
@@ -230,7 +184,6 @@ export class HandoffStore {
       await writeFile(temp, JSON.stringify(this.doc), 'utf8')
       await rename(temp, path)
     } catch {
-      /* 落盘失败不报成功：把内存态退回磁盘上的样子，让下一次调用重新走一遍 */
       try {
         const text = await readFile(path, 'utf8')
         this.doc = sanitizeHandoffDocument(JSON.parse(text))
@@ -241,20 +194,6 @@ export class HandoffStore {
     }
   }
 }
-
-/* ------------------------------------------------------------ 请求 / 结果文件（S5b-2） */
-
-/*
- * 为什么用文件而不是 IPC / 事件：
- *
- * 宿主与薄层是两个进程里的两套代码，中间只有磁盘。目标续行（S3b/S3c/S5c）已经用
- * 同一套「宿主写快照 → 薄层消费」的模式跑通了三条链路，交接包只是反向一次：
- * 宿主写**请求**、薄层写**结果**。好处是崩溃后两侧都能从磁盘看出「上次做到哪」，
- * 而不是「有一条消息发没发出去只有天知道」。
- *
- * 文件很小、生命周期很短（生成完就删），所以不做单独的 sweep ——
- * 请求没被消费时由薄层的 TTL 兜住，结果没被消费时由下一次交接覆盖。
- */
 
 export const HANDOFF_REQUEST_DIR = 'handoff-request'
 export const HANDOFF_RESULT_DIR = 'handoff-result'
@@ -267,12 +206,6 @@ export function handoffResultPath(runnerId: string, root: string = YAN_DIR): str
   return join(root, HANDOFF_RESULT_DIR, `${handoffFileKey(runnerId)}.json`)
 }
 
-/**
- * 组装一份请求（宿主侧渲染好提示词）。
- *
- * `operationId` 与 `handoffId` 分开：`handoffId` 是**这次交接**的身份（事务日志里贯穿），
- * `operationId` 是**这一次生成**的身份（重做一次交接包时换新的，旧结果据此作废）。
- */
 export function buildHandoffRequest(input: {
   handoffId: string
   operationId: string
@@ -292,13 +225,6 @@ export function buildHandoffRequest(input: {
     maxTokens: HANDOFF_PACKAGE_MAX_TOKENS,
     maxAttempts: 2,
     retryPrompt: '上次交接输出不完整或格式不合格。重新依据原始材料输出完整 JSON；必须包含全部列表，remaining 与 nextActions 不为空，不猜测事实。',
-    /*
-     * 截断时的第二跳：抬预算 + 换提示。
-     *
-     * 上一版只有上面那一句提示，而它写的是“必须包含全部列表”——
-     * 模型被推着写**更多**，预算却没动 → 同一个上限上再次截断。
-     * 下面这两句反过来说：预算管够，但要求别灌水，并给了先保什么的优先级。
-     */
     escalatedMaxTokens: HANDOFF_PACKAGE_MAX_TOKENS_ESCALATED,
     retryPromptTruncated:
       '上次输出在写到一半时被长度限制切断了（不是格式问题）。这次预算已经扩大，但仍然要在完整的前提下避免冗余：不要重复粘贴原文、不要逐条抄长代码。若仍然很长，按这个优先级保底：goal 与 deliverable 先写完整，然后是 remaining、nextActions、constraints、acceptance。',
@@ -309,7 +235,6 @@ export function buildHandoffRequest(input: {
   }
 }
 
-/** 薄层与单测都用的结果组装（`error` 与 `text` 可以同时为空 —— 那是「跑了但什么都没回」）。 */
 export function buildHandoffResult(input: {
   handoffId: string
   operationId: string
@@ -343,9 +268,6 @@ async function readJsonIfAny(path: string): Promise<unknown> {
   }
 }
 
-/**
- * 请求 / 结果文件的门面（无内存状态 —— 每次调用都看磁盘，因为写入方是另一个进程）。
- */
 export class HandoffRequestStore {
   private readonly root: string
 
@@ -361,7 +283,6 @@ export class HandoffRequestStore {
     return handoffResultPath(runnerId, this.root)
   }
 
-  /** 写请求。`runnerId` 洗不出可用文件名时返回 `false`（调用方据此放弃这次交接，不写坏文件）。 */
   async writeRequest(runnerId: string, request: HandoffRequest): Promise<boolean> {
     const path = this.requestPath(runnerId)
     if (!handoffFileKey(runnerId)) return false

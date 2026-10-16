@@ -1,4 +1,3 @@
-/* 隔离的 v3 界面夹具：不发送消息、不执行命令、不接触真实模型。 */
 ;(async () => {
   const out = []
   const check = (condition, label) => out.push(`  ${condition ? '✓' : '✗'} ${label}`)
@@ -11,14 +10,12 @@
     }
     return false
   }
-  /* 需要等主进程/异步结果时用；同样只轮询，不改变被测状态。 */
   const untilAsync = async (predicate, timeout = 4000) => {
     const end = Date.now() + timeout
     while (Date.now() < end) {
       try {
         if (await predicate()) return true
       } catch {
-        /* 读取失败当作还没就绪，继续轮询 */
       }
       await wait(100)
     }
@@ -67,10 +64,6 @@
     check(lightBg !== getComputedStyle(document.body).backgroundColor, '亮暗主题实际背景不同')
     const asciiToggle = query('v3-ascii-background-toggle')
     check(!!asciiToggle, '外观分区有动态背景开关')
-    /*
-     * RAC Switch 的可见 label 直接 click 在该构建上不触发切换（既有专项已证）。
-     * 这里把点击目标改为内部 role="switch" 输入：仍是程序化 DOM 激活，不代表真实鼠标/键盘。
-     */
     const asciiSwitch = () => query('v3-ascii-background-toggle')?.querySelector('input[role="switch"]')
     check(!!asciiSwitch(), '动态背景开关内部是 role="switch" 的输入')
     check((await window.yan.getSettings()).asciiBackground === undefined, '动态背景缺省不写该键（视为开）')
@@ -89,7 +82,6 @@
     check(await until(() => query('composer-input')), '返回会话')
     check(await until(() => !!query('v3-ascii-field')), '恢复缺省后空态重新挂载 ASCII 背景')
     query('composer-input')?.focus()
-    /* Ctrl+K 由场景的 keysDelay 定时注入；前面的设置往返可能很快，等待窗口要覆盖到注入时刻之后。 */
     check(await until(() => query('v3-command-input'), 20000), '真实 Ctrl+K 打开命令面板')
     check(document.activeElement === query('v3-command-input'), '命令面板接管搜索焦点')
     check(await until(() => [...document.querySelectorAll('.cmd-option__label')].some((el) => /并排|side by side/i.test(el.textContent ?? ''))), '命令面板有「并排打开」入口')
@@ -123,7 +115,6 @@
       approvalFocusedAtEnter = event.target === query('v3-approval-once') && document.activeElement === query('v3-approval-once')
     }
     window.addEventListener('keyup', onNativeKey, true)
-    // CASES 的 keys/keysDelay 从 Electron 输入栈发送真实 Enter，而不是合成 DOM 默认动作。
     check(await until(() => nativeEnterSeen, 10000), '收到真实 Chromium Enter 按键')
     check(approvalFocusedAtEnter, '真实 Enter 到达时焦点和事件目标确实仍是允许按钮')
     await wait(100)
@@ -137,7 +128,6 @@
     check(answered.at(-1)?.id === pending.id && answered.at(-1)?.choice === 'once', '明确点击仅答复原请求一次')
     store.setState({ approvals: oldApprovals, answerApproval: oldAnswer })
 
-    // 原生按键阶段已经结束；后续界面检查不改变 Ctrl+K / Enter 的时序。
     const workspaceButton = query('v3-header-workspace')
     check(!!workspaceButton, '工作区有明确打开入口')
     workspaceButton?.click()
@@ -167,7 +157,6 @@
     check(await until(() => panel && !panel.hidden && panel.getBoundingClientRect().width > 0), '重新打开保留面板，不创建终端资源')
     check(document.querySelectorAll('.wb-pane').length <= 6, '叶子实例数量不随操作增加')
 
-    // 这些页面首次打开只读隔离的本机元数据，不点击登录、深检、导入或安装。
     store.getState().openSettings('auth')
     check(await until(() => query('ms-tab-services')), '模型与服务正式懒加载入口可挂载')
     query('v3-settings-nav-appearance')?.click()
@@ -195,10 +184,8 @@
     query('v3-back')?.click()
     check(await until(() => query('composer-input')), '能力页返回对话，不执行配置写入')
 
-    /* ===== 首页本机用量：正式 IPC 取数 + 真实 v3 Tabs + pane 容器布局 ===== */
     out.push('')
     out.push('--- 首页用量（正式取数 / v3 pattern / pane 布局）---')
-    /* 期望值与 scripts/test-live.mjs 的 writeV3UsageFixture 一一对应：主 3000/4 条消息（15 天前）、子 5000（今天）。 */
     const usageExpect = { main: 3000, sub: 5000, messages: 4 }
     check(await until(() => !!document.querySelector('.v3-empty-page'), 6000), '空态根节点带 v3-empty-page')
     const emptyPage = document.querySelector('.v3-empty-page')
@@ -212,7 +199,6 @@
     const usageDisplay = query('usage-overview') ? getComputedStyle(query('usage-overview')).display : 'missing'
     check(paneNarrow ? usageDisplay === 'none' : usageDisplay !== 'none', `对话列${paneNarrow ? '窄' : '宽'}时用量面板${paneNarrow ? '收起' : '展开'}（display=${usageDisplay}）`)
 
-    /* 直接调用正式 preload → 主进程 IPC，不重写 window.yan.usageStats */
     const statsAll = await window.yan.usageStats('all')
     const stats30 = await window.yan.usageStats('30d')
     const stats7 = await window.yan.usageStats('7d')
@@ -283,11 +269,9 @@
         '键盘方向键切换范围页签（合成 KeyboardEvent；非真实 Chromium 输入）'
       )
       await clickRange('全部')
-      /* 视觉取证：宽对话列 + 用量面板停一会儿（截图 burst 抓帧）。 */
       await wait(2400)
     }
 
-    /* 并排把对话 pane 收窄：验证容器查询按 pane 而不是 window（同一个宽窗口）。 */
     const splitStore = window.__yanSplit
     if (splitStore && !paneNarrow) {
       const st = store.getState()
@@ -326,7 +310,6 @@
       }
     }
 
-    /* 浅色主题取证：临时切到浅色停一会儿，再切回深色（只影响本地窗口，不写全局偏好）。 */
     {
       const shotSettings = query('v3-header-settings')
       shotSettings?.click()
@@ -349,7 +332,6 @@
     query('wb-tab-changes')?.click()
     await until(() => panel && !panel.hidden && panel.getBoundingClientRect().width > 0)
 
-    // 只注入视图记录，不调用模型；保留到截图结束，便于人工打开真实窗口截图复核。
     store.getState().applyPush({ ch: 'sync', payload: [
       { id: 'v3-ui-fixture-u1', role: 'user', text: '请检查这次 UI 升级的进度。' },
       { id: 'v3-ui-fixture-a1', role: 'assistant', text: '界面采用侧栏 + 对话。基础控件、消息与输入区域正在逐项整合。\n\n- 旧界面仍为默认\n- 运行状态由主进程提供\n- 未验收的能力不会标记为完成\n\n```ts\nconst uiVersion = "v3"\n```' },
@@ -380,10 +362,6 @@
     check(await until(() => !document.querySelector('.mtp-tag-price')), '关闭选择器后价格标签卸载')
     store.setState({ models: modelsBefore })
 
-    /*
-     * 五个子代理：合成运行快照，走**真实运行镜像与运行总览渲染**。
-     * 只注数据，不模拟状态机、不启动子代理、不调用模型。
-     */
     const runsStore = window.__yanRuns
     check(!!runsStore, '运行镜像 store 在隔离探针中可用')
     if (runsStore) {
@@ -431,7 +409,6 @@
       query('v3-header-workspace')?.click()
       await wait(1)
       query('wb-close')?.click()
-      /* 先停在对话视图：看五个子代理在后台跑时侧栏与会话头的提示。 */
       await wait(9000)
       query('v3-runs-entry')?.click()
       check(await until(() => !!document.querySelector('.runs-page')), '运行总览可以打开')
@@ -447,13 +424,6 @@
       check(await until(() => !!query('runs-history-date')), '运行历史区有时间线日期入口')
       check(document.querySelectorAll('.runs-history-view button').length === 2, '时间线 / 列表视图切换入口存在')
     }
-    /*
-     * ── 收尾：整个场景结束前后都不得挂载终端 ─────────────────────────
-     * 工作区页签是持久化的：如果留下 terminal，下一次「只点开工作区」也会
-     * 隐式起 PTY。这里把页签选回「改动」（面板此时多是隐藏的：只改选择，
-     * 不打开、不挂叶子），确认工作区已关闭，再断言 DOM 无终端宿主、宿主
-     * 终端表为空。`terminal.list` 是只读 IPC，不新建 / 接管任何 PTY。
-     */
     query('wb-tab-changes')?.click()
     await wait(50)
     const endPanel = document.querySelector('.wb-panel')

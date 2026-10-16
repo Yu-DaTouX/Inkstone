@@ -1,4 +1,3 @@
-// Run the exact webRequest initiator selection from browser.ts against the real boundary policy.
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'

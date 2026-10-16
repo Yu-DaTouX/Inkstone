@@ -16,7 +16,6 @@ function timeAgo(at: number): string {
   return minutes < 1 ? '刚刚' : minutes < 60 ? `${minutes} 分钟` : minutes < 1440 ? `${Math.floor(minutes / 60)} 小时` : `${Math.floor(minutes / 1440)} 天`
 }
 
-/** Projects are navigation; recent messages and live activity remain visible at the root. */
 export function HomeScreen({ onOpen, onOpenAssistant, onSettings, onHub, alertsEnabled, onEnableAlerts, selectedSessionId, project, onProjectChange }: {
   onOpen: (sessionId: string, title: string) => void
   onOpenAssistant: () => void
@@ -47,7 +46,6 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, onHub, alertsE
   }, [sessions])
   const activeIds = new Set(runners.filter((r) => r.running || r.waiting).map((r) => r.sessionId))
   for (const question of questions) if (question.sessionId) activeIds.add(question.sessionId)
-  /* 活动会话只列正在运行或等你回答的；未读回复留在「最近」里用圆点提示 */
   const visible = [...sessions].filter((s) => (!project || folderKey(s) === project.id)
     && `${s.title} ${s.cwdName ?? ''} ${previews[s.id]?.text ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()))
     .sort((a, b) => activityAt(b) - activityAt(a))
@@ -58,7 +56,6 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, onHub, alertsE
     const waiting = runner?.waiting || questions.some((q) => q.sessionId === session.id)
     const current = session.id === activeSessionId || runner?.isActive
     return <Pressable accessibilityRole="button" accessibilityLabel={`${session.title}${waiting ? `，${STATUS_TEXT.wait}` : runner?.running ? `，${STATUS_TEXT.run}` : current ? '，电脑当前打开' : ''}`} onPress={() => onOpen(session.id, session.title)} style={({ pressed }) => [styles.session, { backgroundColor: selectedSessionId === session.id ? p.bg3 : 'transparent', opacity: pressed ? 0.6 : 1 }]}>
-      {/* 行首字符状态（与桌面左栏一致）：运行 ● 强调色、等待 ◆ 警示色、未读 ● 淡强调；其余留空保持对齐 */}
       <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.glyph, { color: waiting ? p.warn : p.accent }]}>{waiting ? '◆' : runner?.running || unread.has(session.id) ? '●' : ' '}</Text>
       <View style={styles.rowMain}>
         <Text numberOfLines={1} style={{ color: p.fg, fontSize: font.body }}>{session.title || '未命名会话'}</Text>
@@ -146,6 +143,5 @@ const styles = StyleSheet.create({
   activity: { paddingHorizontal: space[4] },
   alertPrompt: { minHeight: touch.min, paddingHorizontal: space[4], flexDirection: 'row', alignItems: 'center', gap: space[2] },
   dock: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[4], paddingVertical: space[3] },
-  /* `minWidth: 0` 让搜索框随屏幕／键盘缩窄，而不是被输入内容撑开（同 SessionScreen 的输入框）。 */
   search: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[3], borderWidth: 1, borderRadius: radius.md }
 })

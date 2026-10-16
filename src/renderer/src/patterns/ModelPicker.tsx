@@ -19,22 +19,6 @@ import type { ModelChoice } from '../../../shared/model-selection'
 import type { ModelInfo } from '../../../shared/ipc'
 import './model-picker.css'
 
-/**
- * 输入框底部一行的模型与思考档选择器（WP-24，方案 §8.7 / §10.4）。
- *
- * 一个按钮承载两件事：当前模型（图标 + 名字）与思考强度（短标签）。点开
- * 同一个浮层里换模型、调强度 —— 它们是同一个决定，分两个入口会让人来回找。
- *
- * 权威边界：
- *   · 模型列表 / 当前模型 / 可用档位全部来自 store（`models` / `session`），
- *     不在组件里猜；
- *   · 档位标签与 v2 的 7 档一一对应，不合并不改写；
- *   · 没配凭证的服务商标「未配置」，但不拦截选择 —— 交给 pi 报真实错误；
- *   · 收藏读设置里的 `modelFavorites`（收藏置顶）；「最近使用」只写
- *     `inkstone.v3.modelPicker.recent` 这个 v3 本地键，不进主进程字段；
- *   · 价格 / 上下文提示只在模型自带数据时显示，不按模型名猜。
- */
-
 const LEVEL_LABEL: Record<string, MessageKey> = {
   off: 'think.off',
   minimal: 'think.minimal',
@@ -66,7 +50,6 @@ export function ModelPicker({ className }: { className?: string } = {}) {
 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  /* 「最近使用」是 v3 本地浏览偏好，坏了不影响选择。 */
   const [recent, setRecent] = useState<ModelChoice[]>(() => {
     if (typeof localStorage === 'undefined') return []
     try {
@@ -77,7 +60,6 @@ export function ModelPicker({ className }: { className?: string } = {}) {
   })
   const triggerRef = useRef<HTMLSpanElement>(null)
 
-  /* pi 没拿到模型时会报一个名为 unknown 的占位：界面上不直接露出这个词。 */
   const cur =
     session?.model && session.model.id !== 'unknown' && session.model.name !== 'unknown' ? session.model : undefined
   const level = session?.thinkingLevel ?? 'off'
@@ -85,12 +67,10 @@ export function ModelPicker({ className }: { className?: string } = {}) {
   const levelLabel = (l: string): string => (LEVEL_LABEL[l] ? t(LEVEL_LABEL[l]) : l)
   const busy = !!session?.isStreaming || !!session?.isCompacting
 
-  /* 打开时才拉凭证状态：它要读 auth.json 并探测环境变量。 */
   useEffect(() => {
     if (open) void loadAuthProviders()
   }, [open, loadAuthProviders])
 
-  /* 关闭时清空搜索，下次打开是干净列表。 */
   useEffect(() => {
     if (!open) setQuery('')
   }, [open])
@@ -98,7 +78,6 @@ export function ModelPicker({ className }: { className?: string } = {}) {
   const needsAuth = (provider: string): boolean => {
     if (authProviders.length === 0) return false
     const info = authProviders.find((p) => p.id === provider || p.authKey === provider)
-    /* 目录里没有这个供应商 → 不判断，不当成未配置（宁可少标一个徽标）。 */
     return !!info && info.status !== 'ready'
   }
 
@@ -111,7 +90,6 @@ export function ModelPicker({ className }: { className?: string } = {}) {
 
   const selectedKey = cur ? keyOf(cur) : undefined
 
-  /** 收藏置顶 / 最近使用的分组标题；服务分组直接用 provider id。 */
   const sectionTitle = (section: PickerSection): string => {
     if (section.kind === 'favorites') return t('models.favorites')
     if (section.kind === 'recent') return text('pickerRecent')
@@ -124,7 +102,6 @@ export function ModelPicker({ className }: { className?: string } = {}) {
       try {
         localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(next))
       } catch {
-        /* 存储不可用只影响下次打开，不影响本次选择 */
       }
       return next
     })

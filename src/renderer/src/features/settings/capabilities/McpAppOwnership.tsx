@@ -1,16 +1,3 @@
-/**
- * MCP 服务归属双向切换（v3 设置 · 能力 · 连接）。
- *
- * ── 交互规则（需并入设计规范）──
- *   1. 必须两次用户动作：先点「预览切换」，读完确认框内容后再点「确认切换」。
- *      预览只读配置、不改真实 pi 配置，也绝不自动提交。
- *   2. 有已加载运行实例可能仍持有该服务、或缺少 appHost 回退记录时禁用按钮，
- *      并在行内解释原因（首版不自动重启会话）。
- *   3. 走受控 IPC（`yan:mcpApp:*`，主窗口校验）；组件只持有一次性 token 并原样
- *      回传，不接收完整配置 / 原始条目，也不把 token 或配置写进日志 / 模型上下文。
- *   4. 切换方向由主进程按当前归属判定，渲染端不能指定；托管与交回都不会「再开一条连接」。
- *   5. 结果按 steps + remediation 如实展示；部分失败不隐藏、不自动重试。
- */
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
@@ -29,10 +16,6 @@ import {
 } from './mcp-app-ownership'
 import { Empty, Group, Item, ItemHead, ListSkeleton, Meta, Note, StatusBadge, Warn } from './parts'
 
-/**
- * 桥接取用：`shared/ipc.ts` 的正式接线由整合补丁加入。
- * 这里用结构化类型读取，未接线时给出明确错误而不是崩在 `undefined`。
- */
 function bridge(): McpAppBridge | null {
   const yan = (window as unknown as { yan?: { mcpApp?: McpAppBridge } }).yan
   return yan?.mcpApp ?? null
@@ -68,7 +51,6 @@ export function McpAppOwnership(): ReactElement {
       return
     }
     try {
-      /* 响应是 `{ servers, error? }` 对象：解包失败不得当成空列表。 */
       const parsed = parseMcpAppOwnershipResponse(await api.ownership())
       if (!mounted.current) return
       if (!parsed.ok) {
@@ -209,7 +191,6 @@ function OwnershipRow({
       try {
         await onChanged()
       } catch {
-        /* 刷新失败不改写已发生的写盘事实 */
       }
     } catch (cause) {
       if (mounted.current) setOutcome({ phase: 'failed', code: 'exception', error: errorText(cause) })

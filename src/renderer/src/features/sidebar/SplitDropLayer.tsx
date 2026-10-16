@@ -1,9 +1,3 @@
-/**
- * 会话拖拽的落点预览层：拖动期间盖在窗口最上层，画出每个落点与跟手的会话标签。
- *
- * 只读 `useSessionDrag`；不接收指针（`pointer-events: none`），不进入读屏树 ——
- * 键盘与读屏用户走会话菜单里的「在旁边分屏打开」。
- */
 import type { JSX } from 'react'
 import { useI18n } from '../../i18n'
 import { v3Text } from '../../app/v3-text'

@@ -6,12 +6,6 @@ import type { QuestionField } from '../../../../shared/question-form'
 
 type Value = string | string[]
 
-/**
- * 问题面板里的表单形态（`yan question ask` 带 fields）：一次问清几项。
- *
- * 选择题是整行可点的卡片（单选再点一次取消），下面一行可以另写；
- * 日期、数字、滑块用原生输入；必填项没填时就地提示，不提交。答案按 name 打包成 JSON 交回宿主。
- */
 export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
   fields: QuestionField[]
   busy: boolean
@@ -63,7 +57,6 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
               <>
                 <div className="qform-options" role="group" aria-label={f.label}>
                   {f.options!.map((raw) => {
-                    /* 宿主已规范化成对象；兼容直接给文字的旧请求 */
                     const o = typeof raw === 'string' ? { label: raw as string, description: undefined, icon: undefined } : raw
                     const on = f.kind === 'multi' ? (v as string[]).includes(o.label) : v === o.label
                     return (

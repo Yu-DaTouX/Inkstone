@@ -1,22 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 提交归属现场回归（D1 / D2 / D3 / D4 / D5 / D6）。
- *
- * 目的：不用源码字符串断言，而是把**真实渲染端 store** 和**真实 Composer**
- * 现场 esbuild 出来，用可控 deferred 的 `window.yan` 桩驱动，钉住「消息/命令/
- * 附件/草稿到底归属哪条会话」这一族缺陷。
- *
- * 两份 bundle：
- *   · store 入口：真实 store + session-activation + v3-submit-ownership + composer-submit。
- *     验证 switchSession 代次闸门、ensureActivated 在途拒绝、失败清 pending、
- *     setSessionDraft 显式键、send 在 await 后重新核对视图身份。
- *   · Composer 入口：真实 Composer.tsx（react 用最小浅渲染替身，UI/pattern 子组件
- *     打桩）。验证 Composer 是否**真的接上**了这些机制：切换在途保留草稿、
- *     在途新增附件不被吞、草稿按 peek 身份读写、本地命令激活失败不执行不清字。
- *
- * 用法：node scripts/test-v3-composer-ownership.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型。
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
@@ -25,8 +7,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0, groups: [] }
 let currentGroup = null
@@ -47,8 +27,6 @@ function ok(cond, label, detail) {
   currentGroup?.lines.push({ pass, label })
   return pass
 }
-
-/* -------------------------------------------------------- 定时/全局桩 */
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 async function flush() {
@@ -78,7 +56,6 @@ function installGlobals() {
     try {
       fn(0)
     } catch {
-      /* 浅渲染里没有真实帧，忽略 */
     }
     return 0
   }
@@ -107,7 +84,6 @@ const SESSIONS = [
   { path: 'C', id: 'sess-c', cwd: 'C:/proj', scope: 'global', title: 'C' }
 ]
 
-/** 可控的 `window.yan`：明确方法的返回值/延迟，其余返回空实现。 */
 function makeYan() {
   const calls = { send: [], runBash: [], selectSession: [], peekSession: [], verifyFiles: [] }
   const pending = { send: null, verifyFiles: null, select: null, peek: null }
@@ -160,8 +136,6 @@ function installWindow(yan) {
   }
 }
 
-/* ------------------------------------------------------------ bundle 构建 */
-
 const REACT_SHIM = `/* v3 归属回归的 React 浅渲染替身：状态放在 globalThis.__V3_HOOKS。 */
 const rt = () => globalThis.__V3_HOOKS
 export const Fragment = Symbol.for('v3.fragment')
@@ -191,7 +165,6 @@ export const jsxs = jsx
 export const jsxDEV = jsx
 `
 
-/** Composer 依赖的界面/文案子模块打桩：只留下被回归覆盖的真实逻辑。 */
 const STUBS = {
   ui: `export function Button(){ return null }
 export const cx = (...a) => a.filter(Boolean).join(' ')
@@ -225,7 +198,6 @@ export function translate(_lang, k){ return String(k) }`,
 export function Square(){ return null }`
 }
 
-/** 需要打桩的界面/文案子模块：只保留被回归覆盖的真实业务逻辑。 */
 function makeStubMap() {
   return new Map(
     Object.entries({
@@ -341,8 +313,6 @@ export * as activation from '${posix(resolve(ROOT, 'src/renderer/src/state/sessi
   return { storeOut, composerOut }
 }
 
-/* ------------------------------------------------------- 浅渲染 hook 运行时 */
-
 function makeHookRuntime() {
   const rt = {
     cells: [],
@@ -434,8 +404,6 @@ function enterEvent() {
   }
 }
 
-/* ------------------------------------------------------------------ 主流程 */
-
 function resetStore(store, activation, overrides = {}) {
   activation?.resetSessionActivationForTest?.()
   store.setState({
@@ -488,12 +456,9 @@ async function main() {
   }
 
   const { useStore, activation } = storeBundle
-  /* Composer 是另一份现场 bundle，它自带一份 store / activation —— 组件测试
-   * 必须操作**它**的那份状态，否则测的就不是 Composer 真正读到的东西。 */
   const composerStore = composerBundle.useStore
   const composerActivation = composerBundle.activation
 
-  /* ============================================================ 组 1 */
   group('D4 切换在途：ensureActivated 拒绝发送，Composer 保留草稿')
   {
     const { yan: y1, calls, pending } = makeYan()
@@ -505,7 +470,6 @@ async function main() {
     })
     pending.peek = defer()
     const switching = useStore.getState().switchSession('A')
-    // 在第一个 await 返回之前，闸门必须已经登记
     ok(activation.isSessionSwitchInFlight(), 'switchSession 在首 await 前登记了「切换在途」')
     const allowed = await useStore.getState().ensureActivated()
     ok(allowed === false, '切换在途 ensureActivated 返回 false（不放行发送）')
@@ -524,7 +488,6 @@ async function main() {
     pending.peek = null
   }
 
-  /* ============================================================ 组 2 */
   group('D3 切换失败：不遗留 pendingActivation，下一次激活不落回旧目标')
   {
     const { yan: y2, calls, pending } = makeYan()
@@ -534,7 +497,6 @@ async function main() {
       activeRunnerId: 'run-a',
       runners: [{ runId: 'run-a', sessionId: 'sess-a', generation: 0, cwd: 'C:/proj' }]
     })
-    // ① 只读打开 B，留下待激活目标
     pending.select = defer()
     const openB = useStore.getState().switchSession('B')
     await flush()
@@ -543,7 +505,6 @@ async function main() {
     await flush()
     ok(useStore.getState().pendingActivation?.sessionFile === 'B', 'B 只读打开后登记待激活目标', useStore.getState().pendingActivation)
 
-    // ② 切 C 失败：pending 必须清掉
     calls.selectSession.length = 0
     pending.select = defer()
     const openC = useStore.getState().switchSession('C')
@@ -554,7 +515,6 @@ async function main() {
     ok(useStore.getState().pendingActivation === null, '切换失败后 pendingActivation 被清空', useStore.getState().pendingActivation)
     ok(useStore.getState().peekedSessionId === null, '切换失败后不再冒充新会话的视图身份', useStore.getState().peekedSessionId)
 
-    // ③ 下一次激活不能被引到 B
     calls.selectSession.length = 0
     const allowed = await useStore.getState().ensureActivated()
     ok(allowed === true, '失败后无待激活目标，ensureActivated 放行')
@@ -566,14 +526,12 @@ async function main() {
     pending.select = null
   }
 
-  /* ============================================================ 组 5 */
   group('D6 collectSourceIds 等待期间切会话：不发消息、不登记错误 sourceLink')
   {
     const { yan: y5, calls, pending } = makeYan()
     globalThis.window.yan = y5
     const fileAttachment = { id: 'f1', name: 'x.txt', mimeType: '', size: 1, data: '', preview: '', kind: 'file', path: 'C:/x.txt' }
 
-    // 正对照：不切会话时，来源确实按「正在看的」会话登记
     resetStore(useStore, activation, {
       session: null,
       peekedSessionId: 'sess-b',
@@ -598,7 +556,6 @@ async function main() {
       '来源 id 是本次附件复核出来的那个'
     )
 
-    // 负对照：等待来源期间切走
     resetStore(useStore, activation, {
       session: null,
       peekedSessionId: 'sess-b',
@@ -621,7 +578,6 @@ async function main() {
     pending.verifyFiles = null
   }
 
-  /* ============================================================ 组 4a */
   group('D5 setSessionDraft 显式键：读写的键由调用方指定，不再猜当前激活会话')
   {
     const { yan: y4 } = makeYan()
@@ -641,7 +597,6 @@ async function main() {
     ok(useStore.getState().sessionRuntimes['sess-a']?.draft === 'A 的草稿', '省略键时仍按 v2 语义写当前激活会话')
   }
 
-  /* ============================================================ 组 6a */
   group('D2 runLocalCommandGuarded：激活失败不执行、不清文字；成功才执行')
   {
     const { yan: y6, calls } = makeYan()
@@ -678,7 +633,6 @@ async function main() {
     ok(outcome2 === 'ran' && ran === 1, '纯界面命令不受激活状态影响，照常执行', { outcome2, ran })
   }
 
-  /* ============================================== Composer 接线（真实组件） */
   const { Composer } = composerBundle
   const hookRuntime = () => {
     const rt = makeHookRuntime()
@@ -686,7 +640,6 @@ async function main() {
     return rt
   }
 
-  /* ============================================================ 组 1b */
   group('D4 Composer 接线：切换在途发送被挡，输入框草稿原样保留')
   {
     const { yan: yc, calls, pending } = makeYan()
@@ -720,7 +673,6 @@ async function main() {
     pending.peek = null
   }
 
-  /* ============================================================ 组 3 */
   group('D1 Composer 接线：一次 send 在途时新添加的附件不被成功回调吞掉')
   {
     const { yan: yc, calls, pending } = makeYan()
@@ -741,7 +693,6 @@ async function main() {
     pending.send = defer()
     ta.props.onKeyDown(enterEvent())
     ok(await waitFor(() => calls.send.length === 1), '发送请求已到达 yan.send（在途）')
-    // 在途窗口内新增附件
     composerStore.getState().addAttachments([attachment('a2', 'two.png', 2)])
     ok(composerStore.getState().attachments.length === 2, '在途期间成功加入第二个附件', composerStore.getState().attachments.map((a) => a.id))
     pending.send.resolve({ ok: true })
@@ -754,7 +705,6 @@ async function main() {
     pending.send = null
   }
 
-  /* ============================================================ 组 4b */
   group('D5 Composer 接线：草稿跟着 peek 身份，而不是尚在旧会话的 session 投影')
   {
     const { yan: yc } = makeYan()
@@ -791,7 +741,6 @@ async function main() {
     )
   }
 
-  /* ============================================================ 组 6b */
   group('D2 Composer 接线：本地命令激活失败不执行不清字；激活成功才执行')
   {
     const { yan: yc, calls, pending } = makeYan()
@@ -821,7 +770,6 @@ async function main() {
     ok(ta.props.value === '!echo hi', '激活失败时命令原文保留在输入框', ta.props.value)
     pending.select = null
 
-    // 正路径：清掉待激活目标后，同一条命令必须真的执行
     composerStore.setState({ pendingActivation: null, notices: [] })
     calls.runBash.length = 0
     ta.props.onKeyDown(enterEvent())

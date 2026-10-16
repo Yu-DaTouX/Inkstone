@@ -1,10 +1,8 @@
-/* Runs inside the isolated visual-matrix renderer. All conversation/Agent data are fixtures. */
 ;(async () => {
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
   const assert = (condition, message) => { if (!condition) throw new Error(message) }
   const store = window.__yanStore, state = store.getState()
   state.closeSettings()
-  // Previous visual states may leave a model menu open; each scene owns its overlays.
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await wait(80)
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -31,7 +29,6 @@
   const move = async (id, target, edge) => {
     const h = groupFor(id), th = groupFor(target)
     assert(h && th, 'Visible pane needed for move ' + id + ' -> ' + target)
-    /* Tool tiles open their pane menu on right-click; the main session keeps its grip button. */
     const grip = h.querySelector('button[aria-label^="移动"]')
     if (grip) grip.click(); else { const r = h.getBoundingClientRect(); h.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.right - 40, clientY: r.top + 10 })) }
     await wait(50)
@@ -40,7 +37,6 @@
     const button = [...menu.querySelectorAll('button')].find(b => b.textContent === edge)
     assert(button && !button.disabled, 'Move option missing ' + edge); button.click(); await wait(100)
   }
-  // Reset fixture arrangements between window sizes, without destroying resources.
   window.dispatchEvent(new CustomEvent('inkstone-workspace-arrange')); await wait(60)
   ;[...document.querySelectorAll('[aria-label="调整工作区"] button')].find(b => b.textContent === '恢复默认排列').click()
   await wait(100)
@@ -50,13 +46,11 @@
   store.setState({ filePreviews: { [fkey]: preview }, filePreview: preview }); await wait(140)
   await move('file:' + fkey, 'chat', '左侧')
   const fileNode = byId('file:' + fkey), chatNode = byId('chat')
-  // Real local PTYs, without provider/model calls.
   let terms = store.getState().terminals
   if (terms.length < 2) { await store.getState().startTerminal({ cols: 80, rows: 24 }); await store.getState().startTerminal({ cols: 80, rows: 24 }) }
   terms = store.getState().terminals.slice(0, 2)
   await wait(400)
   const terminalA = 'terminal:' + terms[0].id, terminalB = 'terminal:' + terms[1].id
-  // All tools are initially a label group. Activate the specific terminal before splitting.
   await launcher('终端'); await wait(100)
   await move(terminalA, 'chat', '右侧')
   const toolHeading = [...document.querySelectorAll('.tile-heading')].find(h => h !== groupFor(terminalA) && [...h.querySelectorAll('[role="tab"]')].some(b => b.textContent.includes('终端')))
@@ -67,20 +61,17 @@
   await move(terminalB, terminalA, '下方')
   const terminalNode = byId(terminalA), textarea = terminalNode.querySelector('.xterm-helper-textarea')
   assert(textarea, 'xterm input is mounted')
-  // Write/read markers through real PTY service and validate isolation.
   await window.yan.terminal.write(terms[0].id, 'echo TILE_INPUT_A\r')
   await window.yan.terminal.write(terms[1].id, 'echo TILE_INPUT_B\r')
   await wait(250)
   const a = await window.yan.terminal.attach(terms[0].id), b = await window.yan.terminal.attach(terms[1].id)
   assert(a.buffer.includes('TILE_INPUT_A') && !a.buffer.includes('TILE_INPUT_B'), 'PTY A isolation')
   assert(b.buffer.includes('TILE_INPUT_B') && !b.buffer.includes('TILE_INPUT_A'), 'PTY B isolation')
-  // Resize using the keyboard control, and confirm no resource remount.
   const separator = document.querySelector('.tile-separator')
   separator.focus(); separator.dispatchEvent(new KeyboardEvent('keydown', { key: separator.getAttribute('aria-orientation') === 'vertical' ? 'ArrowLeft' : 'ArrowUp', bubbles: true }))
   await wait(100)
   assert(byId('chat') === chatNode && byId('file:' + fkey) === fileNode && byId(terminalA) === terminalNode && terminalNode.querySelector('.xterm-helper-textarea') === textarea, 'Pane DOM preserved on move/resize')
   const before = terminalNode.getBoundingClientRect()
-  /* Double-clicking the title bar maximizes and restores. */
   groupFor(terminalA).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await wait(80)
   assert(terminalNode.getBoundingClientRect().width > before.width, 'Maximize enlarges pane')
   groupFor(terminalA).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
@@ -90,7 +81,6 @@
   assert(terminalNode.hidden, 'Hide pane')
   await launcher('终端')
   assert(byId(terminalA) === terminalNode && terminalNode.querySelector('.xterm-helper-textarea') === textarea, 'Hidden terminal reuses xterm')
-  // Native browser surface and overlay exclusion.
   store.setState({ browserState: { ...store.getState().browserState, open: true, url: 'about:blank', title: '本机验证页面', tabs: [], mode: 'embedded' } }); await wait(130)
   await move('browser', terminalB, '左侧')
   byId('browser').scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -105,7 +95,6 @@
   await move('tasks', terminalA, '右侧')
   await launcher('日志'); await wait(100)
   await move('logs', 'tasks', '下方')
-  // Child message renderer fixture, with own cwd and no main composer/fork.
   const now = Date.now(), runId = 'workspace-child-one'
   store.setState({ subagents: [{ id: runId, task: '核对工作区布局', status: 'done', cwd: 'C:/fixture/child', parentSessionId: store.getState().session.sessionId, isolation: 'controlled-cwd', model: 'fixture/pi', startedAt: now - 7000, endedAt: now, transcript: [{ id: 'child-user', role: 'user', text: '核对工作区布局' }, { id: 'child-process', role: 'assistant', text: '查看两处布局配置。', toolCalls: [{ id: 'child-read', name: 'read', args: { path: 'src/layout.ts' }, status: 'ok', output: 'layout' }] }, { id: 'child-final', role: 'assistant', text: '## 检查结果\n\n布局引用保持唯一。\n\n查看 [布局文件](src/layout.ts:12)。' }] }] })
   window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: 'subagent:' + runId })); await wait(250)
@@ -120,7 +109,6 @@
   child.querySelector('a[data-link-kind="file"]').click(); await wait(30)
   assert(previewRequest?.[2] === 'C:/fixture/child', 'Child link uses child cwd: ' + JSON.stringify(previewRequest ?? null))
   store.setState({ previewFile })
-  // Pointer dragging cancellation and docking use the same transition as menus.
   const h = groupFor('browser'), hr = h.getBoundingClientRect(), target = groupFor('chat').getBoundingClientRect()
   const saved = localStorage.getItem('inkstone.workspace.tiles.v1')
   h.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: hr.left + 100, clientY: hr.top + 16, bubbles: true }))
@@ -139,7 +127,6 @@
   document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); await wait(320)
   assert(localStorage.getItem('inkstone.workspace.tiles.v1') !== saved, 'Pointer drop commits layout')
   assert(byId('chat') === chatNode && byId(terminalA) === terminalNode, 'Pointer drop keeps component identity')
-  // Session switch must not carry old agent pane identities into a new layout.
   const originalSession = store.getState().session
   const originalLayoutMap = JSON.parse(localStorage.getItem('inkstone.workspace.tiles.v1'))
   store.setState({ session: { ...originalSession, sessionId: 'fixture-workspace-b', conversationId: undefined, sessionFile: 'C:/fixture/workspace-b.jsonl', conversationFile: undefined } }); await wait(180)
@@ -150,7 +137,6 @@
   const restoredLayoutMap = JSON.parse(localStorage.getItem('inkstone.workspace.tiles.v1'))
   const originalKey = originalSession.conversationFile || originalSession.sessionFile || originalSession.conversationId || originalSession.sessionId
   assert(JSON.stringify(restoredLayoutMap[originalKey].root) === JSON.stringify(originalLayoutMap[originalKey].root), 'Session A layout restored')
-  // Keep overview readable in narrow windows by focusing chat; saved multicolumn layout remains.
   if (innerWidth < 1100) { groupFor('chat').querySelector('button[aria-label^="移动"]').click(); await wait(50); [...document.querySelectorAll('[aria-label="调整工作区"] button')].find(b => b.textContent === '放大面板').click() }
   await wait(130)
   return 'ok(workspace move/split/hide/maximize/cancel; stable panes; 2 real PTYs; native WebContentsView; shared child messages)'

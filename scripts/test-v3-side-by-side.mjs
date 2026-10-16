@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * 并排视图回归（WP-20b）。
- *
- * 现场编译**真实生产模块**，不用源码字符串断言：
- *   · `state/split-view.ts`（真实分屏状态与纯函数，zustand）；
- *   · `app/SideBySideLayout.ts`（列投影、窄屏退回、子 Agent 伪列、命令候选）。
- *
- * 钉住的规则：
- *   · 两条不同会话才能并排；同一条不重复开；只剩一列时退出分屏（关闭一侧回单视图）；
- *   · 窄屏只画焦点那一列，分屏状态保留（宽回来恢复）；
- *   · 子 Agent 转录列是伪会话，不能进 runner 可见性、不能被当成可激活会话；
- *   · 焦点换边时只替换焦点那一列，其他列（含子 Agent 列）不动；
- *   · 命令面板「并排打开」挑最近活动、未归档、且不在当前分屏里的会话。
- *
- * 用法：node scripts/test-v3-side-by-side.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型。
- */
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -54,8 +37,6 @@ const {
   useSplitView
 } = mod
 
-/* ------------------------------------------------------------------ 断言 */
-
 const report = { pass: 0, fail: 0 }
 function group(name) {
   process.stdout.write(`\n▌${name}\n`)
@@ -73,7 +54,6 @@ const B = { sessionId: 'sb', path: 'C:/projects/b/session.jsonl', uid: 'tb' }
 const C = { sessionId: 'sc', path: 'C:/projects/c/session.jsonl', uid: 'tc' }
 const SUB = subagentTileRef('run-1')
 
-/* ── 子 Agent 伪列 ─────────────────────────────────────────── */
 group('子 Agent 伪列身份')
 ok(subagentTileRef('run-1').sessionId === 'subagent:run-1', '伪列 id 带固定前缀')
 ok(subagentRunIdOf(SUB) === 'run-1', '能从伪列还原子 Agent runId')
@@ -87,7 +67,6 @@ ok(sessionTiles([SUB, A, { path: 'C:/only.jsonl' }]).length === 2, 'runner 可�
 ok(sessionTiles([SUB]).length === 0, '只有子 Agent 伪列时没有可报告的会话')
 ok(sessionTiles([SUB])[0] === undefined, '子 Agent 伪列不进可见性')
 
-/* ── 窄屏退回单栏 ─────────────────────────────────────────── */
 group('窄屏退回单栏')
 ok(collapsedPanes(null, false) === null, '无分屏 → 单会话版面')
 ok(collapsedPanes({ tiles: [A], live: 0 }, false) === null, '只剩一列也算无分屏')
@@ -99,7 +78,6 @@ ok(narrow && narrow.tiles.length === 1 && narrow.tiles[0] === B && narrow.live =
 const narrowSub = collapsedPanes({ tiles: [A, SUB], live: 0 }, true)
 ok(narrowSub && narrowSub.tiles.length === 1 && narrowSub.tiles[0] === A, '窄屏含子 Agent 列时仍只留焦点会话')
 
-/* ── 真实分屏状态：开 / 换焦点 / 关 ─────────────────────────── */
 group('真实分屏状态')
 ok(placeInSplit(null, C, A) !== null, '不同会话能并排')
 ok(placeInSplit(null, C, C) === null, '同一条会话不重复开')
@@ -121,7 +99,6 @@ const three = removeSplitTile({ tiles: [A, B, C], live: 1 }, 0)
 ok(three && three.tiles.length === 2 && three.tiles[0] === B && three.live === 0, '多列时关闭非焦点列，其余顺序不变')
 ok(sameSplitSession(A, { path: 'c:/PROJECTS/a/session.JSONL' }) === true, '路径比较大小写与分隔符不敏感')
 
-/* 走一遍 store 动作，确认「开 → 加一列 → 关闭回单视图」的真实状态流转 */
 useSplitView.getState().close()
 useSplitView.getState().open(B, A)
 ok(!!useSplitView.getState().split, 'store.open 后进入分屏')
@@ -137,7 +114,6 @@ ok(Object.keys(useSplitView.getState().weights).length === 0, '退出分屏后�
 useSplitView.getState().close()
 ok(useSplitView.getState().split === null, 'close 回到无分屏')
 
-/* ── 命令面板候选 ───────────────────────────────────────── */
 group('命令面板「并排打开」候选')
 const sessions = [
   { id: 'sa', path: 'C:/projects/a/session.jsonl', lastActivityAt: 100 },
@@ -153,8 +129,6 @@ ok(sideBySideCandidate(sessions, A, [{ path: 'C:/projects/b/session.jsonl' }]).i
 ok(sideBySideCandidate([{ id: 'sa', path: 'C:/projects/a/session.jsonl' }], A, []) === null, '没有别的会话时返回 null')
 ok(sideBySideCandidate(sessions, null, []).id === 'sb', '未知当前会话时仍按最近活动挑')
 ok(sideBySideCandidate(sessions.filter((item) => item.id !== 'sb' && item.id !== 'sc'), A, []) === null, '只剩归档会话时没有候选')
-
-/* ------------------------------------------------------------------ 收尾 */
 
 process.stdout.write(`\n${report.fail ? '✗' : '✓'} 并排视图回归：通过 ${report.pass}，失败 ${report.fail}\n`)
 process.exitCode = report.fail ? 1 : 0

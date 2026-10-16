@@ -1,4 +1,3 @@
-/** Compare release versions without relying on npm's transitive dependencies. */
 export function comparePiVersions(left, right) {
   const parse = (value) => {
     const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(value ?? '')

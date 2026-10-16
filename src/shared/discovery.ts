@@ -1,27 +1,11 @@
-/**
- * 能力联网发现：候选、排名与接入计划（实施-04 §7 / §8）。
- *
- * ── 这一层为什么必须是纯逻辑 ──
- *   发现链里最容易出错的不是 HTTP，而是**判断**：谁更可能可用、能不能在本机跑、
- *   认证有没有、来源可不可核实。把这些写成纯函数，单测才能直接构造候选去验，
- *   不必真的联网 —— 而联网那部分（适配器）只负责把目录响应**如实**映射成候选。
- *
- * ── 三条不能碰的红线 ──
- *   1. **下载量不是可信证明**（§8）：排名因子由目标匹配、平台、认证、可固定性决定。
- *      把下载量写进评分，等于把「热门」当成「可信」。
- *   2. **`metadata-only` 不得声称已验证**：目录只证明发布来源，不等于代码被审计过。
- *   3. **源全挂时不编造包名**：返回空 + 明确原因，让模型说「暂时无法搜索」。
- */
 import { createHash } from 'node:crypto'
 
 export type CandidateKind = 'skill' | 'mcp-server'
 export type CandidateAuth = 'none' | 'configured' | 'required' | 'unknown'
-/** unknown 仅元数据，不表示可以连接或安装。 */
 export type CandidateInstallKind = 'skill-files' | 'pi-package' | 'mcp-package' | 'remote' | 'unknown'
 export type CandidateVerification = 'metadata-only' | 'source-checked' | 'smoke-passed'
 export type CandidateTransport = 'stdio' | 'streamable-http'
 
-/** MCP Registry 给出的本地包线索；运行时/参数仍是不可信元数据，不能直接执行。 */
 export type CandidateLocalPackage = {
   registryType: string
   identifier: string
@@ -30,7 +14,6 @@ export type CandidateLocalPackage = {
   fileSha256?: string
 }
 
-/** GitHub 技能目录里的一个文件：路径相对技能目录，`sha` 是 Git 对象哈希。 */
 export type GithubSkillFile = { path: string; sha: string; size: number }
 
 export type CapabilityCandidate = {
@@ -46,28 +29,18 @@ export type CapabilityCandidate = {
   commit?: string
   integrity?: string
   transport?: CandidateTransport
-  /**
-   * 可直接连接的远程端点（仅 `installKind: 'remote'` 时有）。
-   *
-   * 为什么显式给一个字段而不是从 `sourceUrls` 里猜：目录地址与端点都是 URL，
-   * 猜错就会把**目录自己**当成要登记的服务（本地 fixture / 自建目录时尤其致命）。
-   */
   remoteUrl?: string
   localPackage?: CandidateLocalPackage
   requirements: string[]
   auth: CandidateAuth
   installKind: CandidateInstallKind
   verification: CandidateVerification
-  /** 固定声明的本地 Skill 文件；只允许宿主在接入时读取这些路径。 */
   skillFiles?: string[]
   skillFileHashes?: Record<string, string>
-  /** 独立 Skill 目录给出的逐文件 HTTPS 来源；只允许宿主按这些 URL 读取。 */
   skillFileUrls?: Record<string, string>
-  /** GitHub 技能源：固定提交与逐文件 Git 哈希；接入时只按这里读取。 */
   githubSkill?: { owner: string; repo: string; commit: string; dir: string; files: GithubSkillFile[] }
 }
 
-/** 一个目录源这一轮的取数结果 —— 失败也如实报，不假装「没找到」。 */
 export type DiscoverySourceReport = {
   sourceId: string
   kind: 'npm-registry' | 'mcp-registry' | 'skill-directory' | 'github-skills'
@@ -93,27 +66,11 @@ export type AcquisitionPlan = {
   policyResult: 'automatic' | 'needs-auth' | 'needs-authorization' | 'unsupported'
 }
 
-/* ------------------------------------------------------------------ 上限 */
-
-/** §7.2：每轮默认最多两次查询改写。 */
 export const MAX_QUERY_REWRITES = 2
-/** §7.2：每源最多两页。 */
 export const MAX_PAGES_PER_SOURCE = 2
-/** §7.2：候选最多八项。 */
 export const MAX_CANDIDATES = 8
-/** 检索词上限：太长会把本地信息（路径、正文）带出去。 */
 export const MAX_QUERY_CHARS = 120
 
-/* ---------------------------------------------------------------- 检索词脱敏 */
-
-/**
- * 把用户目标整理成**可以发给远端目录**的检索词（§7.1）。
- *
- * 去掉的是「只对本地有意义」的东西：URL、绝对路径、邮箱、密钥形状的串、
- * 长 hex（多半是 hash / 会话 id）、引号里的文件名或代码片段。
- * 不是万无一失的 DLP —— 它的职责是**默认不外发**，用户明确要检索远程数据时
- * 发送范围仍由任务授权决定。
- */
 export function sanitizeDiscoveryQuery(raw: string): string {
   let text = String(raw ?? '')
   text = text.replace(/https?:\/\/\S+/gi, ' ')
@@ -128,12 +85,9 @@ export function sanitizeDiscoveryQuery(raw: string): string {
   return text.slice(0, MAX_QUERY_CHARS).trim()
 }
 
-/** 脱敏后没剩下东西就别发请求 —— 空检索词只会拿回一屏噪音。 */
 export function discoveryQueryUsable(text: string): boolean {
   return sanitizeDiscoveryQuery(text).length >= 2
 }
-
-/* ------------------------------------------------------------------ 排名 */
 
 export type RankedCandidate = { candidate: CapabilityCandidate; score: number; reasons: string[] }
 
@@ -152,12 +106,6 @@ const AUTH_BONUS: Record<CandidateAuth, number> = {
   required: -2
 }
 
-/**
- * 排名（§8）。
- *
- * ⚠️ **刻意不含下载量**：热门 ≠ 可信。评分的每一项都指向「它能不能在这台机器上、
- * 这个项目里、以可核实的方式真的用起来」。
- */
 export function rankCandidates(
   candidates: readonly CapabilityCandidate[],
   options: { goalText?: string; platform?: string } = {}
@@ -220,19 +168,10 @@ export function rankCandidates(
   return scored.sort((a, b) => b.score - a.score || a.candidate.candidateId.localeCompare(b.candidate.candidateId))
 }
 
-/** 截断到 §7.2 的上限，并保持排名。 */
 export function selectCandidates(ranked: readonly RankedCandidate[], max = MAX_CANDIDATES): RankedCandidate[] {
   return ranked.slice(0, Math.max(0, max))
 }
 
-/* -------------------------------------------------------------- 稳定指纹 */
-
-/**
- * 候选 / 计划的稳定指纹：源内容变化（版本、commit、digest 变了）就必须失效。
- *
- * **不包含 `discoveredAt` 与任何排名结果** —— 那些每轮都变，算进去等于让计划
- * 永远「刚失效」，用户会看到无意义的重复确认。
- */
 export function stableDigestOf(candidate: CapabilityCandidate): string {
   const stable = [
     candidate.candidateId,
@@ -260,10 +199,6 @@ export function stableDigestOf(candidate: CapabilityCandidate): string {
   return createHash('sha256').update(stable).digest('hex').slice(0, 16)
 }
 
-/**
- * 计划 ID 绑定候选内容指纹：元数据 / artifact 一漂移就生成新 ID，
- * 旧 CLI 引用仍指向旧计划，不能被主进程映射到更新后的制品。
- */
 export function planIdOf(input: { candidateId: string; goalId: string; projectId: string; digest?: string }): string {
   return createHash('sha256')
     .update([input.candidateId, input.goalId, input.projectId, input.digest ?? ''].join('\u0000'))
@@ -271,13 +206,6 @@ export function planIdOf(input: { candidateId: string; goalId: string; projectId
     .slice(0, 16)
 }
 
-/**
- * 生成接入计划（**只生成，不执行** —— 执行是 S6）。
- *
- * `policyResult` 是策略判定，不是安全审计结论：
- *   · 需要认证 → `needs-auth`（不伪装可自动接入）；
- *   · 平台不支持 / 来源不可固定 → `unsupported`。
- */
 export function buildAcquisitionPlan(input: {
   candidate: CapabilityCandidate
   goalId: string

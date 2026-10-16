@@ -1,21 +1,3 @@
-/**
- * 悬在输入框上方、等着用户决定怎么投递的消息（用户 2026-09-19）。
- *
- * 用户原话：「用户发送的消息默认悬浮在输入框上方 让用户自己选择是插话还是排队」。
- *
- * 在这之前是主进程单方面定默认值（先是 followUp，后来改成 steer）——
- * 用户没有选择权，而且选错了才发现：followUp 那一版里消息半天不出现，
- * 用户去点队列行的「插队 / 撤回」，而 pi 已经在这轮结束时把它收下了，
- * 于是报「消息已被 pi 接收，无法撤回」。
- *
- * ⚠️ 这个探针**不调模型**（cost 0）：把 store 的 `send` 换成桩，只记录
- *    「投递方式（steer / followUp）与调用次数」。真调模型的投递路径
- *    在 `test:live -- queue`（cost 1）里。
- *
- * ⚠️ 判据必须是**回合级**的 `runners[active].running`，不是
- *    `session.isStreaming`：工具执行期间后者是 false，而那正是用户最想
- *    插话的时刻。第 6 节专门钉这条。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -33,7 +15,6 @@
   }
   if (!store) return early('  ⤺ 跳过：没有 window.__yanStore（探针没被注入）')
 
-  /** 用 React 认的方式写进受控输入框 */
   const setValue = (el, text) => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
     setter.call(el, text)
@@ -48,7 +29,6 @@
     (r) => (r.runId ?? r.id) === store.getState().activeRunnerId
   )?.running
 
-  /** 回合级的「在跑」标记（RunnerStatus.running = agent_start → agent_settled） */
   const runner = (running, streaming) => ({
     id: 'probe-run-1',
     runId: 'probe-run-1',
@@ -67,9 +47,7 @@
     isStreaming: streaming
   })
 
-  /* 记录每一次投递：文字 + 投递方式（steer / followUp） */
   const sent = []
-  /** 桩的返回可以控制“投递失败”那一支 */
   let sendOk = true
 
   try {
@@ -83,7 +61,6 @@
     if (!injected) return early('  ⤺ 跳过：输入框还没挂载')
     injected.id = 'probe-composer'
 
-    /* 把 send 换成桩：本场景一次模型都不调 */
     store.setState({
       send: async (text, images, mode) => {
         sent.push({ text, mode, images: images?.length ?? 0 })
@@ -152,12 +129,6 @@
 
     out.push('')
     out.push('=== 6. 判据是回合级，不是 isStreaming ===')
-    /*
-     * 工具执行期间 `session.isStreaming` 是 false（每条 assistant 消息
-     * message_end 就清掉），但 pi 仍然不接受不带 streamingBehavior 的 prompt ——
-     * 用户报的「模型工作的时候插话失效」就发生在这个窗口。
-     * 待定区的判定必须用回合级标记，否则那时候按 Enter 会直接投出去。
-     */
     store.setState({
       activeRunnerId: 'probe-run-1',
       runners: [runner(true, false)],
@@ -183,10 +154,6 @@
     await sleep(150)
     ok(pending().length === 1, '先悬起来一条')
     idle()
-    /*
-     * 用户没点任何按钮，回合结束了 —— 消息不能就这么一直挂着，
-     * 也不能悄悄丢掉；此时唯一有意义的语义就是排队。
-     */
     for (let i = 0; i < 30 && sent.length === 0; i++) await sleep(150)
     out.push(`  投递记录 = ${JSON.stringify(sent)} · 剩余待定 = ${pending().length}`)
     ok(sent.length === 1 && sent[0].text === 'YAN-PENDING-AUTO', '回合结束后自动投递')
@@ -211,20 +178,8 @@
 
     out.push('')
     out.push('=== 9. 自动压缩期间：也要能发消息（进待定区，不丢草稿） ===')
-    /*
-     * 用户 2026-09-19：「自动压缩的时候仍要允许用户发送消息」。
-     *
-     * 这一节钉的是**判据本身**：pi 在**回合之间**自动压缩（threshold）时
-     * `agent_settled` 早就发过、`runner.running` 已经是 false，只有
-     * `session.isCompacting` 为真。改动前这种时刻按 Enter 会**直接投出去**，
-     * pi 报「Agent is already processing」，而 `submit` 已经把输入框清空了
-     * —— 用户的消息就这样丢了。
-     */
     sent.length = 0
     idle()
-    /* 第 8 节故意留了一张“投递失败”的卡片、并把桩按在 sendOk=false 上 ——
-       两个都要先复位，本节只数自己造的这条
-       （restoreSend 会把文字回填到草稿，所以随后要再清一次输入框） */
     sendOk = true
     for (const leftover of pending()) store.getState().restoreSend(leftover.id)
     await sleep(200)
@@ -246,7 +201,6 @@
       ok(pending().length === 1, '消息进了待定区（“仍要允许用户发送消息”）')
       ok(cards().length === 1, '界面上看得见这条待投递消息')
       ok(q('#probe-composer').value === '', '输入框被清空，可以接着打下一条')
-      /* 压缩一结束：回合判据变 false → 自动按「排队」投出去 */
       store.setState({ session: { ...store.getState().session, isCompacting: false } })
       await sleep(500)
       out.push(`  压缩结束后自动投递 = ${JSON.stringify(sent)}`)
@@ -260,7 +214,6 @@
     out.push('')
     out.push('=== 10. 收尾：清掉探针造的状态 ===')
     sendOk = true
-    /* 上一节正常结束时待定区已经是空的（自动投递成功）—— 不能无条件取 [0].id */
     if (pending().length) store.getState().restoreSend(pending()[0].id)
     await sleep(150)
     setValue(q('#probe-composer'), '')

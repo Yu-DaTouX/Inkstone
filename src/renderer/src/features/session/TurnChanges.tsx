@@ -1,10 +1,3 @@
-/**
- * 回复末尾的「更改」卡：这一轮改了哪些文件、各自加减多少行。
- *
- * 数据只来自这一轮工具调用记录的执行前后快照，不读盘、不跑 git。「查看变更」打开右侧
- * 工作区的「改动」页签；「撤销」复用既有的回退对话框，只在这轮的用户消息能对上
- * 属于当前会话的检查点时出现，回退范围由对话框自己确认，这里不直接改文件。
- */
 import { useState, type JSX } from 'react'
 import { ChevronDown, ChevronUp, FilePen, Undo2 } from 'lucide-react'
 import { Button } from '../../ui'
@@ -16,11 +9,9 @@ import type { AssistantTurn } from '../../../../shared/turns'
 import { collectTurnChanges, splitChangePath, type TurnFileStatus } from './turn-changes'
 import './turn-changes.css'
 
-/** 默认先露出几个文件，其余折叠在「再显示」后面 */
 const VISIBLE_FILES = 3
 
 interface ChangesText {
-  /** 标题：按状态分别计数，只列出有的类别 */
   summary: (counts: Record<TurnFileStatus, number>) => string
   more: (n: number) => string
   less: string
@@ -55,7 +46,6 @@ function changesText(lang: Lang): ChangesText {
   return lang === 'en-US' ? EN : ZH
 }
 
-/** 这一轮之前最近的一条用户消息（回退检查点按它的文本指纹认） */
 function promptBefore(sourceIds: readonly string[]): { text: string; timestamp?: number } | null {
   const messages = useStore.getState().messages
   const first = messages.findIndex((m) => m.id === sourceIds[0])

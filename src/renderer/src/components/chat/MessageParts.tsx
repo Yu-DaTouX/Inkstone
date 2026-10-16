@@ -13,34 +13,6 @@ import { isVisualBlockLang } from '../../../../shared/visual-blocks'
 import { createArrivalTracker, markArrivalBlocks, type ArrivalNode, type ArrivalDecision, type ArrivalTracker } from '../../lib/stream-arrival'
 import { prefersReducedMotion } from '../../lib/usePresence'
 
-/**
- * 共享的渲染件：Markdown / 工具行 / 工具详情。
- *
- * 为什么从 Message.tsx 里拆出来：回合视图（TurnView.tsx）也要用它们。
- * Message.tsx 现在只剩「单条消息」的渲染，而应用主路径已经改成
- * TurnView —— 两边都需要工具行，放在这里才不会复制一份。
- */
-
-/* ---------------------------------------------------------------- Markdown */
-
-/*
- * ⚠️ 这里是整个界面**最热**的一段代码：流式期间每 16ms 会重渲染一轮，
- *    而历史上每次重渲染都把**整段会话的所有 Markdown 全部重新解析**。
- *    实测（2026-09 的一份 20MB 真实会话）：全量一次 535ms，60fps 下
- *    根本跑不动 —— 这就是用户报的「卡顿峰值」。所以做了三件事：
- *
- *  ① **插件数组提成常量**。以前是内联数组，每次渲染新建一个引用，
- *     react-markdown 内部按引用做 memo 就全失效了。
- *  ② **关掉 highlightAuto（detect: true）**。开着的时候，每一个**没写语言**
- *     的代码块都会跑一次 hljs.highlightAuto —— 它会拿全文去跟所有语言
- *     逐个试。实测单个未标注代码块 ≈ 30ms，而流式期间代码块还是
- *     未闭合的，每帧都要重试一次。这一项占了那 535ms 里的约 400ms。
- *     代价：没有语言标注的块不再自动上色（宁可不猜，也不卡）。
- *  ③ **结果缓存 + memo**。段落文本不变就直接复用上一次渲染的元素树。
- *
- * 未闭合的围欄（正在流的 ``` 块）**不入缓存**：它是中间态、每帧都变，
- * 进了缓存只会把真正稳定的历史段落挤出去（缓存本身也是 LRU）。
- */
 const MD_REMARK: NonNullable<Options['remarkPlugins']> = [remarkGfm]
 const MD_REHYPE: NonNullable<Options['rehypePlugins']> = [
   [rehypeHighlight, { detect: false, ignoreMissing: true }]
@@ -49,10 +21,6 @@ const MD_REHYPE_PLAIN: NonNullable<Options['rehypePlugins']> = []
 
 const MD_CACHE_LIMIT = 80
 const MD_CACHE_MAX_CHARS = 20_000
-/**
- * 缓存的是**已解析的元素树**（比源文本大得多），所以除条数外再按源文本总量封顶。
- * 元素树不能按字节称重，用源文本长度当代理指标：既往实测里这一项能到几十 MB。
- */
 const MD_CACHE_TOTAL_CHARS = 120_000
 const mdCache = new Map<string, React.ReactElement>()
 let mdCacheChars = 0
@@ -72,18 +40,11 @@ const mdCacheSet = (text: string, element: React.ReactElement): void => {
   }
 }
 const MessageSourceCwd = createContext<string | undefined>(undefined)
-/** 正在流式输出的消息：结构化块写完前只占位，不报格式错误 */
 const MarkdownLive = createContext(false)
-/** 流式新块到达的身份簿记，每个 Markdown 实例一份（见 lib/stream-arrival.ts） */
 const ArrivalTrackerContext = createContext<ArrivalTracker | null>(null)
 
 type ArrivingTag = 'p' | 'ul' | 'ol' | 'blockquote' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
 
-/**
- * 问一次「这个块要不要入场」。决定在块的整个生命周期内固定：块挂载时问一次，
- * 之后同一 DOM 节点重渲染不再问、也就不会重播。
- * 只有 `live`（当前流式消息）才可能入场；历史 / 恢复 / 压缩不是 live，直接不挂类。
- */
 function useArrival(node?: HastNode): { className?: string; style?: CSSProperties } {
   const live = useContext(MarkdownLive)
   const tracker = useContext(ArrivalTrackerContext)
@@ -97,7 +58,6 @@ function useArrival(node?: HastNode): { className?: string; style?: CSSPropertie
   return { className: 'md-arrive', style: { '--i': decision.stagger } as CSSProperties }
 }
 
-/** 顶层块包一层：标签不变（p / ul / …），只按需补 .md-arrive 与 --i 错峰 */
 function ArrivingBlock({
   tag,
   node,
@@ -127,7 +87,6 @@ const MD_COMPONENTS: Options['components'] = {
   img: MarkdownImage,
   code: InlineCodeLink,
   pre: MarkdownPre,
-  /* 流式新块整段到达（方向 F，设计规范 §6）：只覆盖顶层块，内联结构不动 */
   p: (props) => <ArrivingBlock tag="p" {...props} />,
   ul: (props) => <ArrivingBlock tag="ul" {...props} />,
   ol: (props) => <ArrivingBlock tag="ol" {...props} />,
@@ -138,7 +97,6 @@ const MD_COMPONENTS: Options['components'] = {
   h4: (props) => <ArrivingBlock tag="h4" {...props} />,
   h5: (props) => <ArrivingBlock tag="h5" {...props} />,
   h6: (props) => <ArrivingBlock tag="h6" {...props} />,
-  // 表格用等宽栅格，横向可滚
   table: ({ children }: { children?: React.ReactNode }) => (
     <div className="md-table-wrap">
       <table>{children}</table>
@@ -146,20 +104,6 @@ const MD_COMPONENTS: Options['components'] = {
   )
 }
 
-/**
- * 链接 = 统一入口（方案 5.2）。
- *
- * 以前是 `target="_blank"` 交给系统浏览器 —— 结果是：网页跳出应用、
- * 文件路径根本没有反应（Windows 下 `C:\a\b.ts` 也不是合法 URL）。
- *
- * 现在：
- *   · http/https → 右侧内部浏览器打开（菜单里另有外部浏览器入口）
- *   · 文件路径（绝对/相对/`path:42`）→ 右侧只读文件预览
- *   · 危险协议（javascript:/data:/vbs…）→ 不开，样式上也不像可点的链接
- *
- * 识别只作用于**显式链接**（Markdown 语法 / GFM 自动链接）：
- * 代码块、代码示例与流式输出里的半截路径不会被改写。
- */
 function LinkAnchor({ href, children }: { href?: string; children?: React.ReactNode }) {
   const t = useT()
   const openBrowser = useStore((s) => s.openBrowser)
@@ -169,17 +113,11 @@ function LinkAnchor({ href, children }: { href?: string; children?: React.ReactN
   const target = classifyLink(href)
 
   const onClick = (e: React.MouseEvent): void => {
-    /*
-     * 不用 preventDefault 的话，`<a href>` 会让整个渲染进程导航走 ——
-     * 而窗口里没有地址栏，导航走了就回不来了。
-     */
     e.preventDefault()
     e.stopPropagation()
     if (target.kind === 'url') void openBrowser(target.url)
     else if (target.kind === 'file') void previewFile(target.path, target.line, sourceCwd, target.lineEnd)
-    /* invalid：什么也不做（title 已说明原因） */
   }
-  /* 双击 = 交给系统：文件用默认程序打开（可执行类只定位），网址用外部浏览器 */
   const onDoubleClick = (e: React.MouseEvent): void => {
     e.preventDefault()
     e.stopPropagation()
@@ -203,7 +141,6 @@ function LinkAnchor({ href, children }: { href?: string; children?: React.ReactN
       href={target.kind === 'url' ? target.url : '#'}
       className={`md-link ${target.kind === 'invalid' ? 'blocked' : ''}`}
       data-link-kind={target.kind}
-      /* 行号给测试与范围高亮用；不带行号时不写属性（别把 undefined 写成字符串）。 */
       data-line={target.kind === 'file' && target.line ? String(target.line) : undefined}
       data-line-end={target.kind === 'file' && target.lineEnd ? String(target.lineEnd) : undefined}
       title={target.kind === 'invalid' ? title : `${title}
@@ -217,10 +154,6 @@ ${t('link.dblclickHint')}`}
   )
 }
 
-/**
- * 回复里的 Markdown 图片：本地路径按消息的工作目录解析成 file 地址；
- * 危险协议（data: / javascript: 等）不渲染。点击进右栏预览（见 ChatImage）。
- */
 function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   const sourceCwd = useContext(MessageSourceCwd)
   const target = classifyLink(src)
@@ -235,27 +168,17 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   return <ChatImage src={toFileUrl(abs)} alt={alt} sourceCwd={sourceCwd} className="md-image" />
 }
 
-/**
- * 行内代码里**整段就是**一个文件路径或网址时（模型常把路径写在反引号里），
- * 双击打开：文件进右栏预览，网址进内部浏览器。单击仍可正常选中文字；
- * 含空白的片段、没有扩展名的相对片段都不算，不改写普通代码。
- */
 function InlineCodeLink({ className, children }: { className?: string; children?: React.ReactNode }) {
   const t = useT()
   const openBrowser = useStore((s) => s.openBrowser)
   const previewFile = useStore((s) => s.previewFile)
   const sourceCwd = useContext(MessageSourceCwd)
   const text = typeof children === 'string' ? children : Array.isArray(children) && children.length === 1 && typeof children[0] === 'string' ? children[0] : null
-  /*
-   * 认三种：绝对路径 / 网址 / 带目录分隔符且有扩展名的相对路径（`src/a.ts`、`out/v.mp4`）。
-   * 相对路径按消息的工作目录解析，预览层会拒绝越出该目录的路径。
-   */
   const candidate = text && !className && !/\s/.test(text.trim()) &&
     (/^(?:[a-zA-Z]:[\\/]|https?:\/\/|file:\/\/)/.test(text.trim()) || /^[\w.@-][^:*?"<>|]*[\\/][^\\/]*\.[a-zA-Z0-9]{1,8}(?::\d+)?$/.test(text.trim()))
     ? classifyLink(text.trim())
     : null
   if (!candidate || candidate.kind === 'invalid') return <code className={className}>{children}</code>
-  /* 单击在软件内打开（文件进右栏、网址进内部浏览器），双击在资源管理器定位（网址用外部浏览器） */
   const open = (e: React.MouseEvent): void => {
     e.preventDefault()
     if (candidate.kind === 'url') void openBrowser(candidate.url)
@@ -277,7 +200,6 @@ function InlineCodeLink({ className, children }: { className?: string; children?
 type HastNode = { position?: { start?: { offset?: number } }; type: string; value?: string; tagName?: string; properties?: Record<string, unknown>; children?: HastNode[] }
 const hastText = (node: HastNode): string => node.type === 'text' ? node.value ?? '' : (node.children ?? []).map(hastText).join('')
 
-/** 代码块：`yan-chart` / `yan-cards` / `yan-flow` 交给结构化回答组件，其余照常 */
 function MarkdownPre({ node, children }: { node?: HastNode; children?: React.ReactNode }) {
   const live = useContext(MarkdownLive)
   const arrival = useArrival(node)
@@ -289,13 +211,11 @@ function MarkdownPre({ node, children }: { node?: HastNode; children?: React.Rea
   return <VisualFence blockId={String(node?.position?.start?.offset ?? '')} lang={lang} text={hastText(code)} live={live} fallback={plain} />
 }
 
-/** 相对路径按消息的工作目录补全（revealPath 只认绝对路径） */
 function resolveAgainstCwd(path: string, cwd?: string): string {
   if (/^[a-zA-Z]:[\\/]|^[\\/]/.test(path) || !cwd) return path
   return `${cwd.replace(/[\\/]+$/, '')}/${path.replace(/^\.[\\/]/, '')}`
 }
 
-/** 是否停在一个没闭合的代码围欄里（流式中的半截代码块） */
 function hasUnclosedFence(text: string): boolean {
   let n = 0
   for (const line of text.split('\n')) {
@@ -305,15 +225,8 @@ function hasUnclosedFence(text: string): boolean {
 }
 
 export const Markdown = memo(function Markdown({ text, sourceCwd, live = false }: { text: string; sourceCwd?: string; live?: boolean }) {
-  // Let input and tool status paint before expensive live Markdown work. Completion
-  // uses authoritative text immediately, without a delayed typewriter tail.
   const deferredText = useDeferredValue(text)
   const renderedText = live ? deferredText : text
-  /*
-   * 流式新块到达的身份簿记（方向 F，设计规范 §6）。每个 Markdown 实例一份，
-   * 随段落重挂载而重置；commit 在每次渲染提交后归零「1 个批次」的错峰序号。
-   * 历史 / 恢复不是 live，块不加 .md-arrive，tag 也动不了。
-   */
   const arrivalTracker = useRef<ArrivalTracker | null>(null)
   if (arrivalTracker.current === null) arrivalTracker.current = createArrivalTracker()
   const tracker = arrivalTracker.current
@@ -336,8 +249,6 @@ export const Markdown = memo(function Markdown({ text, sourceCwd, live = false }
     <div className="prose md">
       <ReactMarkdown
         remarkPlugins={MD_REMARK}
-        // 未闭合的代码块**不做高亮**：它每帧都在变，highlightAuto 会
-        // 拿半截代码去逐个试所有语言（实测单块 30ms）。
         rehypePlugins={live || unclosed ? arrivalRehype.plain : arrivalRehype.code}
         components={MD_COMPONENTS}
       >
@@ -358,16 +269,6 @@ export const Markdown = memo(function Markdown({ text, sourceCwd, live = false }
   )
 })
 
-/* ---------------------------------------------------------------- 工具详情 */
-
-/*
- * 这里曾经还有：`TOOL_ICON`、`READ_ONLY_TOOLS`、`summarize`、`shortPath`。
- * 它们都是给 `ToolCard` 服务的 —— 用户要求「工具调用模拟 codex」之后，
- * 一行式工具行（chat/ToolRow.tsx）自带自己的摘要与图标逻辑，
- * 这四个就没使用者了，一起删掉（避免出现两条并行的工具渲染路径）。
- */
-
-/** 提取 edit 的改动块，兼容当前 schema（edits[]）与旧 schema（顶层 oldText/newText） */
 function extractEdits(args: unknown): { oldText: string; newText: string }[] {
   const a = args as Record<string, unknown> | undefined
   if (!a || typeof a !== 'object') return []
@@ -381,7 +282,6 @@ function extractEdits(args: unknown): { oldText: string; newText: string }[] {
     }
   }
 
-  // 旧版 pi / 其它客户端可能把 old/new 放在顶层
   if (out.length === 0 && (typeof a.oldText === 'string' || typeof a.newText === 'string')) {
     out.push({ oldText: String(a.oldText ?? ''), newText: String(a.newText ?? '') })
   }
@@ -392,19 +292,10 @@ function extractEdits(args: unknown): { oldText: string; newText: string }[] {
   return out
 }
 
-/*
- * ⚠️ 这里曾经有一个 `ToolCard`（一张可展开的工具卡）。
- *    用户要求「工具调用模拟 codex」后，它被 `chat/ToolRow.tsx` 的一行式
- *    工具行取代（Codex 是一行一条命令，不是一张卡）。
- *    它连同 `toolArrow` / `toolIcon` / `summarize` / `shortPath`
- *    一起删掉了 —— 留在文件里会让人以为还有两条工具渲染路径。
- *    保留下来的只有 ToolDetail：它是**展开后的内容**，与怎么折叠无关。
- */
 export function ToolDetail({ call }: { call: UIToolCall }) {
   const t = useT()
   const a = (call.args ?? {}) as Record<string, unknown>
 
-  /* ---- edit：渲染成真正的 diff ---- */
   if (call.name === 'edit') {
     const edits = extractEdits(call.args)
     if (edits.length > 0) {
@@ -437,7 +328,6 @@ export function ToolDetail({ call }: { call: UIToolCall }) {
     }
   }
 
-  /* 没有前后快照时只能显示写入内容，不能推断整文件都是新增。 */
   if (call.name === 'write' && typeof a.content === 'string') {
     return (
       <>
@@ -452,10 +342,7 @@ export function ToolDetail({ call }: { call: UIToolCall }) {
     )
   }
 
-  /* ---- 通用：命令/参数 + 输出 ---- */
-  /* 只有命令本身的参数不再重复一遍 JSON：命令已经写在提示符那一行 */
   const onlyCommand = typeof a.command === 'string' && Object.keys(a).every((k) => k === 'command' || k === 'timeout')
-  /* Codemode 只带脚本时直接给脚本原文：JSON 会把换行转义成 \n，一屏读不出代码 */
   const onlyScript = typeof a.code === 'string' && Object.keys(a).every((k) => k === 'code' || k === 'timeout_ms')
   const argsText = onlyCommand ? '' : onlyScript ? String(a.code) : call.args && Object.keys(a).length ? JSON.stringify(call.args, null, 2) : call.argsRaw
 

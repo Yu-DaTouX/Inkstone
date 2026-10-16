@@ -1,9 +1,7 @@
-/* Runs inside the isolated visual-matrix renderer. Dragging a tile must keep the size it was lifted with. */
 ;(async () => {
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
   const assert = (condition, message) => { if (!condition) throw new Error(message) }
   const store = window.__yanStore, state = store.getState()
-  /* The window runs hidden, where CSS transitions stall; geometry must be read at its final value. */
   document.head.appendChild(Object.assign(document.createElement('style'), { textContent: '.tile-workspace *, .tile-workspace { transition: none !important }' }))
   state.closeSettings()
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -38,7 +36,6 @@
   const outside = scroll.filter(s => s.at[0] >= 1.02)
   assert(outside.length && outside.every(s => Math.abs(s.floatLeft - (s.pointerX - 40)) <= 3), 'Lifted tile stopped following the pointer outside the canvas: ' + JSON.stringify(outside.map(s => [s.floatLeft, s.pointerX])))
   assert(widths.every(w => w === before), 'Lifted tile width drifted: before=' + before + ' samples=' + JSON.stringify(samples))
-  /* Above or below a tile the others stay put and a border marks the half it would take; beside it they reflow live. */
   {
     const h0 = headings().find(h => !h.classList.contains('tile-grip-zone')), r0 = h0.getBoundingClientRect()
     const chatPane = () => document.querySelector('[data-workspace-pane="chat"]').getBoundingClientRect()
@@ -58,7 +55,6 @@
     assert(Math.abs(chatPane().width - rest.width) > 2, 'Tiles reflow live for a side drop: ' + JSON.stringify([restFrames, frames(), [...document.querySelectorAll('.tile-workspace')].map(w => w.className).join(), rest.left, rest.width, chatPane().left, chatPane().width, [...document.querySelectorAll('.tile-pane')].map(p => p.dataset.workspacePane + ':' + Math.round(p.getBoundingClientRect().left) + '+' + Math.round(p.getBoundingClientRect().width)).join(',')]))
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(320)
   }
-  /* Dropping beside another tile keeps the width the tile had, e.g. one the user dragged to size. */
   const label = tool.querySelector('[role="tab"]').textContent
   const headingOf = () => headings().find(h => [...h.querySelectorAll('[role="tab"]')].some(b => b.textContent === label))
   const from = headingOf().getBoundingClientRect(), chat = document.querySelector('[data-workspace-pane="chat"]').getBoundingClientRect()

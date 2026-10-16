@@ -225,7 +225,7 @@ function PhoneTerminal({ task, onRefresh, onError }: { task: HubTask; onRefresh:
         if (message.kind === 'ready') setReady(true)
         if (message.kind === 'size' && Number.isInteger(message.cols) && Number.isInteger(message.rows) && message.cols >= 2 && message.cols <= 1000 && message.rows >= 2 && message.rows <= 1000) { size.current = { cols: message.cols, rows: message.rows }; resize() }
         if (message.kind === 'input' && typeof message.data === 'string') void send(message.data)
-      } catch { /* 只接受本地终端协议 */ }
+      } catch { }
     }} />
     {mine ? <>
       <TextInput accessibilityLabel="终端输入" value={entry} onChangeText={setEntry} placeholder="发送到终端" placeholderTextColor={p.fgMute} style={{ color: p.fg, borderWidth: 1, borderColor: p.borderSoft, padding: space[2] }} onSubmitEditing={() => { void submit() }} />

@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-/**
- * 外部 Chrome 的端到端冒烟：启动一个**无头** Chrome（独立 profile + 调试端口），
- * 用 RawCdp 连上去，跑一遍「导航 → 观察 → 点击」，验证外部浏览器这条通道真的通。
- *
- * 为什么用无头：测试不该弹出一个真窗口、也不该要求用户登录。
- * 这里验证的是**通道与算法**（CDP 连接 + observer + input），
- * 与真实登录态无关 —— 登录是用户在独立 profile 里一次性完成的事。
- *
- * 用法： npm run probe:chrome
- *
- * 需要本机装了 Chrome / Chromium（没有就跳过并返回 0，便于 CI）。
- */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,7 +6,6 @@ import { join } from 'node:path'
 const root = process.cwd()
 const outDir = join(root, 'out', 'test')
 
-// 现场编译用到的 TS 模块（主进程构建会把它们打进 index.js，不单独产出）
 await import('../../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: [
@@ -103,7 +90,6 @@ try {
 
   console.log('\n=== 4. 点击生效（复用内置浏览器同一套 InputController）===')
   await input.click(registry.resolve(button.ref))
-  // 等页面标题被 onclick 改写
   let title = ''
   for (let i = 0; i < 30; i++) {
     await sleep(100)
@@ -118,7 +104,6 @@ try {
 } finally {
   await cdp?.detach().catch(() => undefined)
   stopChrome(child)
-  // Chrome 退出后 profile 可能还有短暂文件锁，重试删除
   for (let i = 0; i < 5; i++) {
     try {
       await rm(profileRoot, { recursive: true, force: true })

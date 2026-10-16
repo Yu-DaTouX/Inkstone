@@ -1,26 +1,3 @@
-/**
- * Command Code 额度「整段消失」的定向检查。
- *
- * 复现的用户报告：用 Command Code 模型（如 deepseek/deepseek-v4.1-flash）时，
- * 状态栏额度段与右栏「额度」都不显示。两处共用 QuotaSection，provider 取
- * `s.session.model.provider`（pi 对内置扩展报 `commandcode`）。
- *
- * 根因不在额度口径，而在渲染入口的「空入口」判定：只要没有主值 / 没有窗口 /
- * 没有月预算就整块 `return null`——把「查询失败 / 接口没返回窗口 / Promise 直接
- * reject」也一起藏了，连已经写好的错误行都不可达。
- *
- * 本脚本分两层，都不联网、不用凭证、不调真实模型：
- *   ① 纯逻辑：`shouldRenderQuotaSection` / `quotaSnapshotMatchesProvider` /
- *      窗口解析。钉住「已知支持额度接口的 provider 失败时要留下」，
- *      并核对失败 / 未返回窗口 ≠ 额度为零。
- *   ② 组件级脱敏 fixture：真跑 `QuotaSection`，mock `window.yan.providerQuota`，
- *      覆盖成功 / 缺凭证 / 未返回窗口 / Promise reject / 快速切 provider /
- *      A→B→A 旧请求不覆盖新请求 / 同 provider 预算变化不丢刷新 / stale 保留。
- *      React 用最小 hook harness 驱动（无 jsdom、无 Electron）。
- *
- * 导出的 `runCommandCodeQuotaDisplayTests(ok)` 供 test:unit 调用；直接运行本文件
- * 也会执行并在失败时置退出码。import 本模块不会执行测试、不改 global。
- */
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { resolve, join } from 'node:path'
@@ -42,9 +19,6 @@ async function loadPure(entry, name) {
   return import(pathToFileURL(outfile).href)
 }
 
-/* ------------------------------------------------------------------ 脱敏 fixture */
-
-/** 字段形状取自线上快照，数值已改写 —— 不冒充真实账户。 */
 const SNAPSHOT = {
   credits: { monthlyCredits: 69.996 },
   windowLimits: {
@@ -68,8 +42,6 @@ const ccPayload = (over = {}) => ({
   ...over
 })
 
-/* ---------------------------------------------------------- 最小 React hook harness */
-
 function depsEqual(a, b) {
   if (a === b) return true
   if (!a || !b || a.length !== b.length) return false
@@ -77,11 +49,6 @@ function depsEqual(a, b) {
   return true
 }
 
-/**
- * 只实现 QuotaSection 用到的那几个 hook（useState/useRef/useCallback/useEffect/
- * useMemo + JSX createElement）。按调用顺序存 slot，setState 触发一次重渲染，
- * 重渲染后跑 deps 变化过的 effect。足以在 Node 里真跑组件、不必引入 jsdom。
- */
 function createHarness(component, initialStore, variant = 'section') {
   const slots = []
   let cursor = 0
@@ -103,7 +70,7 @@ function createHarness(component, initialStore, variant = 'section') {
     for (const slot of slots) {
       if (!slot || slot.kind !== 'effect' || !slot.pending) continue
       slot.pending = false
-      if (typeof slot.cleanup === 'function') { try { slot.cleanup() } catch { /* ignore */ } }
+      if (typeof slot.cleanup === 'function') { try { slot.cleanup() } catch { } }
       const cleanup = slot.effect()
       slot.cleanup = typeof cleanup === 'function' ? cleanup : undefined
     }
@@ -183,7 +150,6 @@ const deferred = () => {
   return { promise, resolve: resolveFn, reject: rejectFn }
 }
 
-/* 组件 bundle 的 React / 展示层替身。真跑的只有 QuotaSection 与 shared 纯逻辑。 */
 const FIXTURES = {
   react: `
 const rt = () => globalThis.__quotaHarness
@@ -242,8 +208,6 @@ async function loadQuotaComponent(dir) {
   })
   return import(pathToFileURL(outfile).href)
 }
-
-/* ------------------------------------------------------------- 组件级场景（真跑组件） */
 
 async function runComponentScenarios(check, QuotaSection) {
   const realWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
@@ -310,7 +274,6 @@ async function runComponentScenarios(check, QuotaSection) {
   }
 
   try {
-    // ① 成功：真实组件 mock window.yan，拿到窗口即渲染，不出现错误行。
     {
       const h = make()
       await h.start()
@@ -321,7 +284,6 @@ async function runComponentScenarios(check, QuotaSection) {
       check(!h.hasTestId('quota-error'), '成功响应 → 没有错误行')
     }
 
-    // ② 缺凭证：后端 resolved 带 error，仍要留下错误行。
     {
       const h = make()
       await h.start()
@@ -331,7 +293,6 @@ async function runComponentScenarios(check, QuotaSection) {
       check(h.text().includes('acct.failed') && h.text().includes('未找到该供应商的 API Key'), '缺凭证原因可见')
     }
 
-    // ③ 接口返回但没有窗口：同样留下，不能当成 0 额度。
     {
       const h = make()
       await h.start()
@@ -340,7 +301,6 @@ async function runComponentScenarios(check, QuotaSection) {
       check(h.hasTestId('quota-error') && h.text().includes('未返回额度窗口'), '未返回窗口 → 如实显示原因')
     }
 
-    // ④ Promise 直接 reject：supported 停在 null，错误也必须可见（本轮关键修复）。
     {
       const h = make()
       await h.start()
@@ -350,7 +310,6 @@ async function runComponentScenarios(check, QuotaSection) {
       check(h.text().includes('acct.failed') && h.text().includes('网络错误'), 'reject 原因可见')
     }
 
-    // ④b 状态栏变体：reject 时悬停提示也要能解释「—」。
     {
       const h = make({ variant: 'status' })
       await h.start()
@@ -359,20 +318,18 @@ async function runComponentScenarios(check, QuotaSection) {
       check(h.titles().some((t) => t.includes('acct.failed') && t.includes('HTTP 500')), '状态栏摘要的悬停提示写明失败原因')
     }
 
-    // ⑤ 快速切 provider：旧 provider 的迟到成功不得串到新 provider。
     {
       const h = make()
       await h.start()
       await h.setProvider('deepseek')
       check(h.calls.length === 2 && h.calls[1].provider === 'deepseek', '切 provider 后为新 provider 发查询')
-      h.calls[0].resolve(ccPayload())            // 旧的 commandcode 迟到
+      h.calls[0].resolve(ccPayload())
       h.calls[1].resolve({ provider: 'deepseek', supported: true, remaining: 5, currency: 'CNY', checkedAt: 2 })
       await h.flush()
       check(h.text().includes('¥5.00'), 'deepseek 的余额正常显示')
       check(!h.hasTestId('quota-win-fiveHour'), 'commandcode 的旧窗口没有串进 deepseek')
     }
 
-    // ⑥ A→B→A：旧 A 的迟到结果不得覆盖新 A，也不得清掉新 A 的 loading。
     {
       const h = make()
       await h.start()
@@ -387,7 +344,6 @@ async function runComponentScenarios(check, QuotaSection) {
       check(h.text().includes('$2.00') && !h.text().includes('$99.00'), '旧 A 的迟到结果不覆盖新 A')
     }
 
-    // ⑦ 同 provider 预算变化：在飞时不并发，但回来后必须补跑最后一次刷新。
     {
       const h = make()
       await h.start()
@@ -402,7 +358,6 @@ async function runComponentScenarios(check, QuotaSection) {
       check(h.text().includes('$2.00'), '最终展示最新预算下的结果')
     }
 
-    // ⑧ stale 保留：失败但有上次成功数据时，显示旧数字并注明时间/原因。
     {
       const h = make()
       await h.start()
@@ -418,7 +373,6 @@ async function runComponentScenarios(check, QuotaSection) {
       check(h.text().includes('quota.stale') && h.text().includes('HTTP 429'), 'stale 时注明是上次成功的数据与本次失败原因')
     }
 
-    // ⑨ 明确不支持的自定义 API：不占空块（即使带 error）。
     {
       const h = make()
       await h.start()
@@ -438,8 +392,6 @@ async function runComponentScenarios(check, QuotaSection) {
     globalThis.clearInterval = realClearInterval
   }
 }
-
-/* ----------------------------------- models.json 取 key 统一 helper（正式 main/quota-credentials.ts） */
 
 async function loadQuotaCredentials() {
   const outfile = resolve(OUT, 'quota-credentials.mjs')
@@ -466,17 +418,12 @@ async function loadQuotaCredentials() {
 
 const jsonResponse = (body) => ({ ok: true, status: 200, json: async () => body })
 
-/**
- * 取 key 的统一来源：auth/env 优先、models.json 官方兜底。
- * 全部用假 env / 临时 models.json，不读真实凭证、不联网。
- */
 async function runQuotaCredentialSourceTests(check) {
   const creds = await loadQuotaCredentials()
   const dir = await mkdtemp(resolve(OUT, 'quota-creds-'))
   const modelsFile = join(dir, 'models.json')
   globalThis.__quotaCred = { authEntry: {} }
   try {
-    /* pi 的配置值语法：只认环境引用，命令型一律拒绝 */
     check(creds.resolveNativeConfigValue('sk-literal', {}) === 'sk-literal', '配置值：纯字符串原样返回')
     check(creds.resolveNativeConfigValue('$CC_KEY', { CC_KEY: 'env-key' }) === 'env-key', '配置值：$NAME 环境引用')
     check(creds.resolveNativeConfigValue('${CC_KEY}', { CC_KEY: 'env2' }) === 'env2', '配置值：${NAME} 环境引用')
@@ -484,7 +431,6 @@ async function runQuotaCredentialSourceTests(check) {
     check(creds.resolveNativeConfigValue('$$literal', {}) === '$literal', '配置值：$$ 还原字面量')
     check(creds.resolveNativeConfigValue('!echo pwned', {}) === undefined, '配置值：! 命令型 → 拒绝，不执行')
 
-    /* baseUrl 官方约束 */
     check(creds.extractModelsJsonQuotaKey('commandcode', { baseUrl: 'https://api.commandcode.ai/provider/v1', apiKey: 'user_static' }) === 'user_static', '官方 HTTPS 主机 + 静态 key → 可取')
     check(creds.extractModelsJsonQuotaKey('commandcode', { baseUrl: 'https://api.commandcode.ai.evil.test/v1', apiKey: 'user_x' }) === undefined, '相似官方域（后缀伪造）→ 不取')
     check(creds.extractModelsJsonQuotaKey('commandcode', { baseUrl: 'https://evil.test/api.commandcode.ai', apiKey: 'user_x' }) === undefined, '官方域名出现在路径 → 不取')
@@ -500,41 +446,28 @@ async function runQuotaCredentialSourceTests(check) {
     check(creds.extractModelsJsonQuotaKey('commandcode', { baseUrl: 'https://api.commandcode.ai', apiKey: '${CC_KEY}' }, {}) === undefined, 'models.json 环境引用（无 env）→ 缺失')
     check(creds.extractModelsJsonQuotaKey('commandcode', null) === undefined, '条目形状不对 → 不取')
 
-    /* 坏 JSON：不泄露、不执行 */
     await writeFile(modelsFile, '{ this is not json')
     check(await creds.readModelsJsonQuotaKey('commandcode', { agentDir: dir, env: {} }) === undefined, '坏 JSON → 缺失，不泄露不执行')
 
-    /*
-     * 来源分离：auth / env / models 三把不同的 key，按原生顺序 auth > models > env。
-     * 用 options.readAuth / options.env 明确注入来源，不从合并的 resolveSecret 猜。
-     */
     const authEntry = { type: 'api_key', key: 'user_auth_sentinel' }
     const readAuth = async () => authEntry
     const threeEnv = { COMMANDCODE_API_KEY: 'user_env_sentinel' }
 
-    /* 坏 JSON：三个来源都不取（此时即使 auth/env 都有 key，也不能发送） */
     await writeFile(modelsFile, '{ this is not json')
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth }) === undefined, '坏 JSON → auth/env/models 都不取')
 
     await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: { baseUrl: 'https://api.commandcode.ai', apiKey: 'user_models_sentinel' } } }))
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth }) === 'user_auth_sentinel', '三来源都有 key → 原生顺序 auth 胜出（不是 env）')
-    /* auth + env，无 models */
     await writeFile(modelsFile, JSON.stringify({ providers: {} }))
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth }) === 'user_auth_sentinel', 'auth + env、无 models → auth 胜出')
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth: async () => undefined }) === 'user_env_sentinel', 'env-only、无 models → 用原生内置 env')
-    /* models + env，无 auth */
     await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: { baseUrl: 'https://api.commandcode.ai', apiKey: 'user_models_sentinel' } } }))
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth: async () => undefined }) === 'user_models_sentinel', 'models + env、无 auth → models 胜出（原生 rawKey 优先于内置 env）')
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth: async () => ({ type: 'api_key', key: '   ' }) }) === 'user_models_sentinel', '空白 auth 视为缺失 → models 胜出')
-    /* auth-only / env-only（无 models 条目）保持可用 */
     await writeFile(modelsFile, JSON.stringify({ providers: {} }))
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: {}, readAuth }) === 'user_auth_sentinel', 'auth-only（无 models）→ 仍可用')
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth: async () => undefined }) === 'user_env_sentinel', 'env-only（无 models）→ 仍可用')
 
-    /*
-     * 生效端点不可证明时，三个来源都不取 —— 即使 auth / env 都存了 key。
-     * 这是本次修的真实漏洞：代理条目的 key 往往是用户存进 auth.json / env 的那一把。
-     */
     for (const [label, entry] of [
       ['代理域', { baseUrl: 'https://api.commandcode.ai.evil.test/v1', apiKey: 'user_models_sentinel' }],
       ['非 https', { baseUrl: 'http://api.commandcode.ai/provider/v1', apiKey: 'user_models_sentinel' }],
@@ -548,35 +481,26 @@ async function runQuotaCredentialSourceTests(check) {
       await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: entry } }))
       check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth }) === undefined, `端点不可证明（${label}）→ auth/env/models 都不取`)
     }
-    /* per-model override 指离官方：原生会用它，故整条不可证明 */
     await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: {
       baseUrl: 'https://api.commandcode.ai/provider/v1', apiKey: 'user_models_sentinel',
       models: [{ id: 'cc', baseUrl: 'https://api.commandcode.ai.evil.test/v1' }]
     } } }))
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth }) === undefined, 'per-model baseUrl 指离官方 → auth/env/models 都不取')
-    /* per-model 缺 baseUrl 或同为官方：可放行 */
     await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: {
       baseUrl: 'https://api.commandcode.ai/provider/v1', apiKey: 'user_models_sentinel',
       models: [{ id: 'cc' }, { id: 'cc2', baseUrl: 'https://api.commandcode.ai/provider/v1' }]
     } } }))
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: {} }) === 'user_models_sentinel', 'per-model 均为官方或缺省 → models key 可用')
 
-    /*
-     * models.json 声明了 apiKey 时，原生不再回退内置 env：
-     * 命令型 / 环境引用缺变量 → 如实报缺失，绝不拿全局 env 冒充另一把 key。
-     */
     await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: { baseUrl: 'https://api.commandcode.ai', apiKey: '!echo other-account-key' } } }))
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth: async () => undefined }) === undefined, '命令型 models apiKey + env → 报缺失（不拿 env 冒充）')
     await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: { baseUrl: 'https://api.commandcode.ai', apiKey: '${CC_MISSING_KEY}' } } }))
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth: async () => undefined }) === undefined, '环境引用缺变量的 models apiKey + env → 报缺失（不拿 env 冒充）')
-    /* commandcode 条目无 apiKey + env：扩展让位、无内置默认 → 不读 env */
     await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: { baseUrl: 'https://api.commandcode.ai/provider/v1' } } }))
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv }) === undefined, 'commandcode 条目无 apiKey + env → 报缺失（扩展让位，无原生 env 回退）')
-    /* 内置 provider 条目无 apiKey + env：原生会回退 env */
     await writeFile(modelsFile, JSON.stringify({ providers: { deepseek: { baseUrl: 'https://api.deepseek.com' } } }))
     check(await creds.resolveQuotaProviderSecret('deepseek', { agentDir: dir, env: { DEEPSEEK_API_KEY: 'sk_deepseek_env' } }) === 'sk_deepseek_env', '内置 provider 条目无 apiKey + env → 原生 env 回退生效')
 
-    /* 命令型 apiKey：既不返回值，也绝不落 shell（哨兵文件不存在） */
     const sentinel = join(dir, 'PWNED').replace(/\\/g, '/')
     await writeFile(modelsFile, JSON.stringify({
       providers: { commandcode: { baseUrl: 'https://api.commandcode.ai', apiKey: `!node -e "require('fs').writeFileSync('${sentinel}','x')"` } }
@@ -588,8 +512,6 @@ async function runQuotaCredentialSourceTests(check) {
     await rm(dir, { recursive: true, force: true })
   }
 }
-
-/* ------------------------------------- 状态栏入口（正式 main/quota.ts）与磁贴同源 */
 
 const QUOTA_MAIN_STUBS = {
   electron: `export const net = { fetch: (...a) => globalThis.__quotaNet.fetch(...a) }`,
@@ -622,10 +544,6 @@ async function loadQuotaMain() {
   return import(pathToFileURL(outfile).href)
 }
 
-/**
- * 状态栏额度（QuotaSection → yan:providerQuota → main/quota.ts）与磁贴共用同一个 helper。
- * 这里真跑正式 quota.ts（stub 网络），钉住 models.json-only 官方 key 也走同一个官方额度接口。
- */
 async function runStatusBarModelsKeyTest(check) {
   const dir = await mkdtemp(resolve(OUT, 'quota-main-'))
   const priorPi = process.env.YAN_PI_DIR
@@ -655,7 +573,6 @@ async function runStatusBarModelsKeyTest(check) {
     check(q.windows.find((w) => w.id === 'monthly')?.estimated === true, '状态栏入口：推算月窗口仍标 estimated')
     check(urls.every((u) => u.startsWith('https://api.commandcode.ai/')), '状态栏入口：只请求官方主机')
 
-    /* 代理条目 + auth/env 都有 key → 零官方 fetch，不产额度（不把代理 key 发官方） */
     urls.length = 0
     globalThis.__quotaNet.authEntry = { commandcode: { type: 'api_key', key: 'user_auth_sentinel' } }
     process.env.COMMANDCODE_API_KEY = 'user_env_sentinel'
@@ -666,7 +583,6 @@ async function runStatusBarModelsKeyTest(check) {
     check(qProxy.error === '未找到该供应商的 API Key', '状态栏入口：代理条目 + auth/env key → 报缺凭证（不取任何来源）')
     check(urls.length === 0, '状态栏入口：代理条目 + auth/env key → 零官方 fetch')
 
-    /* 无 models 条目 + env-only → 仍走官方额度接口 */
     urls.length = 0
     globalThis.__quotaNet.authEntry = {}
     await rm(join(dir, 'models.json'), { force: true })
@@ -684,8 +600,6 @@ async function runStatusBarModelsKeyTest(check) {
   }
 }
 
-/* ---------------------------- 随包 commandcode 扩展：env-only 注册声明 + 不覆盖用户 key */
-
 async function runCommandCodeExtensionAuthTest(check) {
   const mod = await import(pathToFileURL(resolve('resources/pi-extensions/commandcode.js')).href)
   const dir = await mkdtemp(resolve(OUT, 'cc-ext-'))
@@ -702,13 +616,11 @@ async function runCommandCodeExtensionAuthTest(check) {
     }))
     globalThis.fetch = async () => { throw new Error('test: no network') }
 
-    /* env-only：必须声明 pi 原生的环境引用，否则该 provider 永远 not_ready */
     process.env.COMMANDCODE_API_KEY = 'user_env_only'
     await mod.default(pi)
     check(calls.length === 1 && calls[0].id === 'commandcode', '扩展 env-only：注册 commandcode')
     check(calls[0]?.config.apiKey === '$COMMANDCODE_API_KEY', '扩展 env-only：声明 $COMMANDCODE_API_KEY 环境引用（pi 原生配置值语法）')
 
-    /* models.json 已有 commandcode：扩展让位，不注册 → 不覆盖用户手写 key */
     calls.length = 0
     delete process.env.COMMANDCODE_API_KEY
     await writeFile(join(dir, 'auth.json'), JSON.stringify({ commandcode: { type: 'api_key', key: 'user_auth' } }))
@@ -716,7 +628,6 @@ async function runCommandCodeExtensionAuthTest(check) {
     await mod.default(pi)
     check(calls.length === 0, '扩展：models.json 已有 commandcode → 让位不注册（不覆盖用户手写 key）')
 
-    /* auth.json-only（无 env）：注册也不带 apiKey，凭证仍走 pi credential 路径 */
     calls.length = 0
     await rm(join(dir, 'models.json'), { force: true })
     await mod.default(pi)
@@ -731,8 +642,6 @@ async function runCommandCodeExtensionAuthTest(check) {
   }
 }
 
-/* ------------------------------------------------------------------------ 入口 */
-
 export async function runCommandCodeQuotaDisplayTests(ok) {
   const check = typeof ok === 'function'
     ? ok
@@ -742,7 +651,6 @@ export async function runCommandCodeQuotaDisplayTests(ok) {
   const { commandCodeWindows } = await loadPure('src/main/quota-commandcode.ts', 'quota-commandcode')
   const { shouldRenderQuotaSection, quotaSnapshotMatchesProvider } = await loadPure('src/shared/quota-display.ts', 'quota-display')
 
-  /** 组件把当前状态映射成入参；这里只保留判定要用到的字段。 */
   const renderInput = (over = {}) => ({
     provider: 'commandcode',
     loading: false,
@@ -754,7 +662,6 @@ export async function runCommandCodeQuotaDisplayTests(ok) {
     ...over
   })
 
-  /* 1. 正常路径 */
   {
     const windows = commandCodeWindows(SNAPSHOT, Date.UTC(2026, 9, 21))
     check(windows.length === 3, '五个小时 / 每周 / 本月三个窗口都产出', windows.map((w) => w.id).join(', '))
@@ -762,7 +669,6 @@ export async function runCommandCodeQuotaDisplayTests(ok) {
     check(shouldRenderQuotaSection(renderInput({ hasMainText: true })), '有主值（即使窗口为空）→ 渲染')
   }
 
-  /* 2. 失败 / 未返回窗口：必须留下并说明。 */
   {
     const failed = renderInput({ supported: true, hasMainText: false, windowCount: 0 })
     check(shouldRenderQuotaSection(failed), '已知支持额度接口的 provider 查询失败 → 仍渲染错误行')
@@ -775,7 +681,6 @@ export async function runCommandCodeQuotaDisplayTests(ok) {
     check(shouldRenderQuotaSection(renderInput({ windowCount: noWindows.length })), '接口返回但没窗口 → 仍渲染，让原因可见')
   }
 
-  /* 3. Promise 直接 reject：supported 还没回来，错误也要可见。 */
   {
     check(
       shouldRenderQuotaSection(renderInput({ supported: null, loading: false, hasError: true })),
@@ -794,14 +699,12 @@ export async function runCommandCodeQuotaDisplayTests(ok) {
     )
   }
 
-  /* 4. 明确不支持 / 未知 provider */
   {
     check(!shouldRenderQuotaSection(renderInput({ provider: 'yan-local', supported: false })), '自定义 API（supported === false）→ 不渲染')
     check(!shouldRenderQuotaSection(renderInput({ provider: '' })), '没有 provider → 不渲染')
     check(shouldRenderQuotaSection(renderInput({ supported: null, loading: true })), '首次查询在飞 → 渲染占位，避免闪一下消失')
   }
 
-  /* 5. 切换供应商：旧快照不得串供应商 */
   {
     const commandSnapshot = { provider: 'commandcode', supported: true, windows: commandCodeWindows(SNAPSHOT, Date.UTC(2026, 9, 21)) }
     check(quotaSnapshotMatchesProvider(commandSnapshot.provider, 'commandcode'), '同一 provider → 快照可用')
@@ -812,7 +715,6 @@ export async function runCommandCodeQuotaDisplayTests(ok) {
     check(active === null, '派生出的 quota 为 null（不会把 Command Code 的窗口留给 deepseek）')
   }
 
-  /* 6. 真跑组件（脱敏 fixture，mock window.yan） */
   const dir = await mkdtemp(resolve(OUT, 'component-'))
   try {
     const { QuotaSection } = await loadQuotaComponent(dir)
@@ -821,17 +723,12 @@ export async function runCommandCodeQuotaDisplayTests(ok) {
     await rm(dir, { recursive: true, force: true })
   }
 
-  /* 7. models.json 取 key 统一来源（auth/env > models.json，官方域校验，不执行命令） */
   await runQuotaCredentialSourceTests(check)
 
-  /* 8. 状态栏入口（正式 main/quota.ts）与磁贴同源：models.json-only 官方 key 可取额度 */
   await runStatusBarModelsKeyTest(check)
 
-  /* 9. 随包 commandcode 扩展：env-only 注册声明环境引用；有 models.json 时让位不覆盖 */
   await runCommandCodeExtensionAuthTest(check)
 }
-
-/* -------------------------------------------------------------- 直接运行入口 */
 
 const invokedDirectly = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url
 if (invokedDirectly) {

@@ -1,11 +1,3 @@
-/**
- * 排队消息 UI（用户要求）：
- *   · 队列内容显示在**输入框上方**
- *   · follow-up 行右侧有「插队」按钮，点击调用 store.steerQueued(queueId)
- *   · 两种待投递行都有「撤回」按钮，点击调用 store.removeQueued(queueId)
- *
- * 不花 token：直接往 store 注入 queue，并把 steerQueued 换成 spy。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -35,7 +27,6 @@
   const F1 = '排队一：再补一个例子'
   const F2 = '排队二：最后总结'
 
-  // spy：把真实的 steerQueued 换掉，避免真去调 pi
   const calls = []
   const retractCalls = []
   store.setState({
@@ -87,7 +78,6 @@
   await sleep(250)
   ok(retractCalls.length === 1 && retractCalls[0] === 's1', `点击撤回携带稳定 queueId（实际 ${JSON.stringify(retractCalls)}）`)
 
-  // 收尾：清空状态，别影响后续
   store.setState({ queue: { steering: [], followUp: [] } })
   await sleep(150)
 

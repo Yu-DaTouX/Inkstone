@@ -1,4 +1,3 @@
-/** Session export must never truncate its source through path aliases. No Electron or model. */
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
@@ -53,7 +52,6 @@ try {
   verify(exportSessionJsonl({ sourcePath: source, outputPath: branch, overwrite: true, scope: 'full' }).ok, 'full overwrite succeeds')
   verify(fs.readFileSync(branch, 'utf8') === original, 'full overwrite truncates only approved output')
 
-  // Replace a previously absent output with a hard link immediately before open.
   const race = join(work, 'race.jsonl')
   const open = fs.openSync
   fs.openSync = (file, ...args) => {

@@ -1,9 +1,3 @@
-/**
- * 设置·外观里的个性化：背景色（模板 + 自定义面板）、字体、字号。
- *
- * 拖动取色器与字号滑块时只改根元素令牌做本地预览，停手后再落盘；
- * 落盘后的应用仍由 App 统一完成（同值跳过，不会重复写样式）。
- */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -36,7 +30,6 @@ import {
 type TKey = Parameters<ReturnType<typeof useT>>[0]
 
 const LADDER_TOKENS = ['--bg-0', '--bg-1', '--bg-2', '--bg-3', '--bg-4'] as const
-/** 自定义从未设置过时取色器的起点（与 tokens.css 的默认底色接近） */
 const START_COLOR: Record<BackgroundTheme, string> = { dark: '#17191d', light: '#f6f7f9' }
 
 function useDebounced(): (fn: () => void, ms: number) => void {
@@ -66,7 +59,6 @@ export function BackgroundSetting() {
   const customDark = useStore((s) => s.settings?.backgroundCustom)
   const customLight = useStore((s) => s.settings?.backgroundCustomLight)
   const saved = customForTheme(customDark, customLight, theme)
-  /* 拖动或输入中的本地值；落盘后清掉 */
   const [draft, setDraft] = useState<string | null>(null)
   const [hexText, setHexText] = useState<string | null>(null)
   const debounce = useDebounced()
@@ -78,7 +70,6 @@ export function BackgroundSetting() {
   const used = clampBackground(value, theme)
   const ladder = useMemo(() => backgroundLadder(used, theme), [used, theme])
 
-  /* 换主题后丢弃上一主题的草稿 */
   useEffect(() => {
     setDraft(null)
     setHexText(null)
@@ -130,7 +121,6 @@ export function BackgroundSetting() {
       </div>
 
       <div className={`bg-custom-panel ${active ? 'on' : ''}`} data-testid="set-background-custom">
-        {/* 预览块：实际底色 + 上一级底色 + 正文色样字；原生取色器透明地盖在上面 */}
         <label className="bg-picker-wrap" title={t('set.bg.pick')} style={{ background: used, borderColor: ladder['--bg-4'] }}>
           <span className="bg-picker-tile" style={{ background: ladder['--bg-2'] }} aria-hidden>
             Aa
@@ -193,7 +183,6 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }) {
   const revision = useRef(0)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
-  /* 界面缺省是 'sans'、代码缺省是 'maple'：主进程清洗时都落成「没设置」 */
   const patchFont = (choice: string, name?: string): Promise<void> =>
     patchSettings(
       (kind === 'ui'
@@ -293,7 +282,6 @@ function SizeRow({ kind }: { kind: 'body' | 'ui' }) {
   const shown = draft ?? saved
   useEffect(() => setDraft(null), [saved])
 
-  /* 拖动时只改令牌预览；松手落盘 */
   const preview = (v: number): void => {
     setDraft(v)
     if (applyTypography(document.documentElement, { ...(useStore.getState().settings ?? {}), [key]: v })) {

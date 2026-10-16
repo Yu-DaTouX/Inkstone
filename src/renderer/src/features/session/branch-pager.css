@@ -1,9 +1,3 @@
-/*
- * 用户消息旁「2/3 ‹ ›」分支切换的版面（v3 · 设计 §8.8）。
- *
- * 只写布局与文字层级：按钮的外观 / 禁用 / 焦点 / 悬停来自 `ui/IconButton`
- * （`@layer primitives`），这里不重画私有控件；颜色与尺寸只用令牌变量。
- */
 @layer features {
   .branch-pager {
     display: inline-flex;

@@ -1,4 +1,3 @@
-/** Real renderer integration with deterministic streamed snapshots; no model request. */
 ;(async () => {
   const store = window.__yanStore
   const before = store.getState()

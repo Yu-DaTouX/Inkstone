@@ -1,15 +1,3 @@
-/**
- * WP-24b 队列编辑 / 重排回归（纯逻辑，不启动 Electron、不连 pi、不拉模型）。
- *
- * 覆盖两部分：
- *   · `features/composer/queue-plan.ts` —— 渲染端「按 id 定位 → 算目标顺序」的纯函数；
- *   · `src/main/queue-edit.ts` —— clear_queue 取回 → 按新顺序重建 → 失败恢复的编排，
- *     用可控假端口驱动，钉住「失败时内容不丢」的 dropped 语义与恢复顺序。
- *
- * 另外用 v3 样式依赖检查器以新组件为入口，确认没有引入 v2 全局样式 / 旧控件。
- *
- * 用法：node scripts/test-v3-queue-edit.mjs
- */
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -45,9 +33,6 @@ async function load(relative) {
 const item = (id, text, images) => ({ id, text, ...(images ? { images } : {}) })
 const image = (data) => ({ data, mimeType: 'image/png' })
 
-/* ─────────────────────────────────────────────────────────────
- * 一、渲染端纯逻辑
- * ───────────────────────────────────────────────────────────── */
 {
   const plan = await load('../src/renderer/src/features/composer/queue-plan.ts')
   const { locateQueueItem, planQueueMove, planQueueEdit, planQueueRemove, droppedQueueText } = plan
@@ -96,9 +81,6 @@ const image = (data) => ({ data, mimeType: 'image/png' })
   ok(droppedQueueText({ steering: [], followUp: [] }) === '', '空队列返回空串')
 }
 
-/* ─────────────────────────────────────────────────────────────
- * 二、主进程重建编排（假端口）
- * ───────────────────────────────────────────────────────────── */
 function makePort({ clearResults, refillFailsAt = -1 }) {
   const calls = { clear: 0, adopt: [], publish: [], refill: [] }
   let refillIndex = 0
@@ -133,7 +115,6 @@ function makePort({ clearResults, refillFailsAt = -1 }) {
     steering: [item('s1', '插话', [image('img')])],
     followUp: [item('f1', '一'), item('f2', '二')]
   }
-  /* 目标：把 followUp 反过来（重排），并给 steering 改文本。 */
   const next = {
     steering: [item('s1', '插话改')],
     followUp: [item('f2', '二'), item('f1', '一')]
@@ -207,9 +188,6 @@ function makePort({ clearResults, refillFailsAt = -1 }) {
   }
 }
 
-/* ─────────────────────────────────────────────────────────────
- * 三、v3 样式依赖（以新组件为入口）
- * ───────────────────────────────────────────────────────────── */
 {
   process.stdout.write('\n▌ 样式依赖：新组件不引入 v2 全局样式 / 旧控件\n')
   const entry = fileURLToPath(

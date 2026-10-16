@@ -1,27 +1,13 @@
-/**
- * v3 会话模块自有的少量文案。
- *
- * ⚠️ 为什么不放两份 i18n：任务边界禁止修改 i18n（并发代理也在用）。
- * 这里只收「v3 尚未迁移、需要明确回退提示」这一类临时句子；等迁移完成后
- * 应当并入正式 i18n 并删除本文件。键名与语义都标注出来，避免被误当成长期文案源。
- */
 import { useI18n } from '../../i18n'
 
 export type SessionTextKey =
-  /** 结构化图块（yan-chart 等，WP-32 迁移） */
   | 'visual'
-  /** 尚未换装的生图进度 */
   | 'imageProgress'
-  /** 子 Agent 卡片（WP-27 迁移） */
   | 'subagent'
-  /** 工具差异 / 终端详情（WP-30 右侧面板迁移） */
   | 'toolDetail'
-  /** 工具长输出的展开与收起 */
   | 'outputMore'
   | 'outputLess'
-  /** 空会话骨架之外的占位 */
   | 'placeholder'
-  /* ---- WP-27a 子 Agent 行 ---- */
   | 'subagentOpen'
   | 'subagentDetails'
   | 'subagentNoSummary'
@@ -30,7 +16,6 @@ export type SessionTextKey =
   | 'subagentScopeShared'
   | 'subagentReviewPending'
   | 'subagentPartial'
-  /* 子 Agent 侧边详情 */
   | 'subagentPanel'
   | 'subagentKind'
   | 'subagentClose'
@@ -43,7 +28,6 @@ export type SessionTextKey =
   | 'subagentTranscript'
   | 'subagentDetailHint'
   | 'subagentGroup'
-  /* ---- WP-21c 错误卡 / 压缩标记 / 分支摘要 ---- */
   | 'compactionTitle'
   | 'branchFrom'
   | 'errorTitleRetryable'

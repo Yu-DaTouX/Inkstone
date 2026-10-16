@@ -1,8 +1,3 @@
-/**
- * 中继接入的互通检查：手机端的纯 JS 实现（mobile/src/api/relay.ts + client.ts，@noble 加密）
- * 对接桌面的真实中继桥与本机远程服务，经内存假中继：配对、请求、事件流、中文跨块解码、撤销。
- * 不联网、不启动 Electron / React Native。用法：node scripts/test-relay-mobile.mjs
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { mkdtemp } from 'node:fs/promises'
@@ -21,7 +16,6 @@ await build({
 })
 const D = await import(pathToFileURL(join(root, 'desk.mjs')))
 
-/* ---------- 内存假中继（同 test-relay-bridge.mjs） ---------- */
 const relay = { host: null, clients: new Map(), next: 1 }
 class HostSocket {
   readyState = 0
@@ -39,7 +33,6 @@ class HostSocket {
   }
   close() { this.readyState = 3 }
 }
-/** 手机端用的浏览器风格 WebSocket：连到假中继的 join */
 globalThis.WebSocket = class {
   constructor(url) {
     this.url = url
@@ -93,7 +86,6 @@ try {
   await check('手机扫码 → 经中继两层配对（纯 JS 加密与桌面 WebCrypto 互通）', async () => {
     const { link } = await bridge.pairLink('phone')
     for (const variant of [link, link.replace('yan://', 'inkstone://'), link.slice(link.indexOf('#'))]) assert.ok(M.parsePairingLink(variant)?.relay, variant.slice(0, 20))
-    // 给礁石（agent）的链接，手机端不接
     const agentLink = (await bridge.pairLink('agent')).link
     assert.equal(M.parsePairingLink(agentLink), null)
     const prefill = M.parsePairingLink((await bridge.pairLink('phone')).link)

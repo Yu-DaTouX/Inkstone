@@ -1,11 +1,3 @@
-/**
- * 单独验证「pi 能不能被找到并启动」—— 不启动 Electron 窗口。
- *
- * 用法： npm run probe-pi
- *
- * 应用里连不上 pi 时，先跑这个：它把 resolvePi 的每个候选路径、
- * 实际用的命令、spawn 结果、get_state 的原始返回都打出来。
- */
 import { resolvePi } from '../out/main/protocol.js'
 
 const probe = resolvePi({ override: process.env.YAN_PI_BIN })
@@ -51,7 +43,6 @@ const code = await new Promise((resolve) => {
     resolve(c)
   })
 
-  // 收到响应就收工
   const iv = setInterval(() => {
     if (out.includes('"id":"diag"')) {
       clearInterval(iv)
@@ -69,7 +60,6 @@ for (const l of lines) {
     const o = JSON.parse(l)
     if (o.id === 'diag') state = o
   } catch {
-    /* 非 JSON 行（扩展 print） */
   }
 }
 
@@ -82,7 +72,6 @@ if (state) {
   console.log('  上下文窗:', d.model?.contextWindow ?? '—')
   console.log('  思考档  :', d.thinkingLevel)
 
-  // 上下文窗口是这次踩过的坑（HANDOFF §5.5）：128000 就是没回填成功
   if (d.model?.contextWindow === 128000) {
     console.log('\n⚠️  上下文窗口是 128000 —— 说明 models.json 没回填。')
     console.log('   跑：node ~/.pi/agent/.dev/sync-model-context.mjs --write')

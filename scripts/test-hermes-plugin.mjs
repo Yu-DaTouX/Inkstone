@@ -1,4 +1,3 @@
-/** Real RemoteServer HTTP protocol + Python plugin handlers. No Electron/model/user data. */
 import { build } from 'esbuild'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

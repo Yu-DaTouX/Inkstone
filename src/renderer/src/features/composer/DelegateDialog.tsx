@@ -1,12 +1,3 @@
-/**
- * 手动派发子 Agent 的表单（输入区「＋」菜单进入）。
- *
- * 复用正式启动链 `window.yan.subagents.start(task, model, isolation)`，不另造任务模型：
- * 模型默认沿用上次选择（「跟随当前会话模型」或具体模型），执行位置三选一（当前文件夹 /
- * 只读 / worktree 隔离）。CC 订阅模型不支持只读，选了只读就把按钮收住并说明。
- * 派出成功后在旁边分屏打开这条子 Agent 的转录（手动派发的不一定挂在某一轮对话下，
- * 不打开就找不到）。派发归属固定为当前活动会话，所以只在正在看的就是活动会话时可用。
- */
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -60,7 +51,6 @@ function DelegateForm({ onDone }: { onDone: () => void }): JSX.Element {
           ? t('models.unavailable')
           : ''
 
-  /* 只读不可用时自动退回当前文件夹，避免提交一个必然失败的组合 */
   useEffect(() => {
     if (isolation === 'controlled-cwd' && readOnlyError) setIsolation('shared-cwd')
   }, [isolation, readOnlyError])
@@ -83,7 +73,6 @@ function DelegateForm({ onDone }: { onDone: () => void }): JSX.Element {
         setError(result.error ?? t('delegate.failed'))
         return
       }
-      /* 记住这次的模型选择：跟随就存 'follow'，具体模型存它的身份 */
       if (picked) {
         void patchSettings({
           lastSubagentModel: model === FOLLOW ? 'follow' : { provider: picked.provider, id: picked.id, name: picked.name }

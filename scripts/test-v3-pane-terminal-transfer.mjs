@@ -1,14 +1,3 @@
-/**
- * 终端页签同 PTY 弹出适配的纯本地单测（v3 · WP-30 终端 transfer）。
- *
- * 不启动 Electron、不碰 node-pty、不起 pi、不执行任何 shell 命令、不写用户数据。
- *   ① `shared/pane-terminal.ts` 的纯逻辑（owner 校验 / clamp / 快照折叠 / 推送流去重）；
- *   ② `main/windows/pane-terminal-transfer.ts` 用内存 window 替身驱动：
- *      同一 terminalId 复用、不 start/kill、乱序与迟到丢弃、失效、清理、resize、
- *      来源（主窗口 / 弹窗自身）分流。
- *
- *   node scripts/test-v3-pane-terminal-transfer.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { readFile } from 'node:fs/promises'
@@ -105,7 +94,6 @@ try {
   const shared = await compile('src/shared/pane-terminal.ts', join(dir, 'shared.mjs'), false)
   const adapterMod = await compile('src/main/windows/pane-terminal-transfer.ts', join(dir, 'adapter.mjs'), true)
 
-  /* ── ① 共享纯逻辑 ─────────────────────────────────────────────── */
   console.log('shared 契约')
   check('owner 形状校验：只认有 key/cwd/active 的对象', () => {
     assert.equal(shared.isPaneTerminalOwner({ key: 's', cwd: '/x', active: true }), true)
@@ -184,7 +172,6 @@ try {
     assert.equal(stream.push({ leaseId: 'L2', epoch: 9, terminalId: 't2', kind: 'data', data: 'ok', seq: 1 }).data, 'ok')
   })
 
-  /* ── ② 主进程适配器 ───────────────────────────────────────────── */
   const ownerA = { key: 'sess-a', sessionId: 'a', cwd: '/proj-a', active: true }
   const ownerB = { key: 'sess-b', sessionId: 'b', cwd: '/proj-b', active: true }
   const ownerInactive = { key: 'sess-a', sessionId: 'a', cwd: '/proj-a', active: false }

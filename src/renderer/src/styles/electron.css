@@ -1,9 +1,3 @@
-/* Electron 外壳适配
-   —— 只在桌面端生效，设计稿（浏览器）不需要这一段 */
-
-/* 自绘标题栏：
-   frame:false 之后整条 titlebar 就是窗口拖拽区，
-   其中所有可交互元素必须显式 no-drag，否则点不动。 */
 .titlebar {
   -webkit-app-region: drag;
 }
@@ -16,7 +10,6 @@
   -webkit-app-region: no-drag;
 }
 
-/* 整窗口禁止拖拽选中 UI 文字（正文/代码仍可选中） */
 .rail,
 .status,
 .titlebar,
@@ -24,14 +17,12 @@
   user-select: none;
 }
 
-/* 正文、气泡、代码允许选中复制 */
 .bubble,
 .prose,
 .composer textarea {
   user-select: text;
 }
 
-/* 去掉 Electron 默认的拖放文件高亮 */
 body {
   -webkit-user-drag: none;
 }

@@ -1,4 +1,3 @@
-/** Windows isolated startup/idle benchmark. No credentials, extensions or inference. */
 import { spawn, execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'

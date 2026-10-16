@@ -105,7 +105,6 @@ try {
   pass('shell transport removes this invocation file on normal close and rejected process exit')
   console.log(`review2 core-cli: ${checks.length} behavior checks passed`)
 } finally {
-  // Test data is isolated under the OS temp directory.
   const { rm } = await import('node:fs/promises')
   await rm(temp, { recursive: true, force: true })
 }

@@ -19,14 +19,6 @@ import {
 } from './index'
 import tokens from '../design/tokens.json'
 
-/**
- * v3 原语工作台（WP-03）。
- *
- * 只覆盖本轮 UI 代理交付的原语（Button / IconButton / TextField / Menu / Dialog / Tabs），
- * 与 UI 代理自己的故事文件分开；显示外观一律来自 tokens.css 与 ui.css，本文件不写控件样式。
- * 主题与密度由 .storybook/preview.ts 的全局装饰器切换；下面的矩阵用内联自定义属性
- * 或 `color-scheme` 在单页里并列展示同一套令牌。
- */
 const meta = {
   title: 'v3/原语',
   parameters: { layout: 'padded' }
@@ -34,8 +26,6 @@ const meta = {
 
 export default meta
 type Story = StoryObj<typeof meta>
-
-/* ---------- Button ---------- */
 
 export const ButtonVariants: Story = {
   name: 'Button · 变体与尺寸',
@@ -78,7 +68,6 @@ export const ButtonVariants: Story = {
   )
 }
 
-/** 点击后按钮获得键盘焦点；焦点环由统一令牌 --accent 提供。 */
 export const ButtonClickFocus: Story = {
   name: 'Button · 点击获得焦点',
   render: () => (
@@ -93,8 +82,6 @@ export const ButtonClickFocus: Story = {
     await expect(button).toHaveFocus()
   }
 }
-
-/* ---------- TextField（input） ---------- */
 
 export const TextFieldStates: Story = {
   name: 'TextField · 状态',
@@ -118,8 +105,6 @@ export const TextFieldStates: Story = {
   )
 }
 
-/* ---------- Menu ---------- */
-
 export const MenuInline: Story = {
   name: 'Menu · 会话操作',
   render: () => (
@@ -131,8 +116,6 @@ export const MenuInline: Story = {
     </Menu>
   )
 }
-
-/* ---------- Dialog ---------- */
 
 export const DialogSurface: Story = {
   name: 'Dialog · 确认卡',
@@ -155,8 +138,6 @@ export const DialogSurface: Story = {
   )
 }
 
-/* ---------- Tabs ---------- */
-
 export const TabsBasic: Story = {
   name: 'Tabs · 视图切换',
   render: () => (
@@ -174,8 +155,6 @@ export const TabsBasic: Story = {
     </Tabs>
   )
 }
-
-/* ---------- 三档密度 ---------- */
 
 const DENSITIES = ['compact', 'standard', 'comfortable'] as const
 type DensityName = (typeof DENSITIES)[number]
@@ -245,8 +224,6 @@ function DensityColumn({ name }: { name: DensityName }) {
   )
 }
 
-/* ---------- 浅色 / 深色 ---------- */
-
 export const ThemeMatrix: Story = {
   name: '主题 · 浅色 / 深色',
   render: () => (
@@ -259,7 +236,6 @@ export const ThemeMatrix: Story = {
 }
 
 function ThemeColumn({ mode }: { mode: 'light' | 'dark' }) {
-  // color-scheme 让 light-dark() 在这个子树里取对应一侧，因此同一页可并列两种主题。
   const style = {
     colorScheme: mode,
     background: 'var(--bg)',
@@ -297,8 +273,6 @@ function ThemeColumn({ mode }: { mode: 'light' | 'dark' }) {
     </section>
   )
 }
-
-/* ---------- 局部小组件（仅用于故事内布局） ---------- */
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (

@@ -1,18 +1,3 @@
-/**
- * v3「能力与插件」设置的安全窄修回归（S2）。
- *
- * 只编译本组新增/使用的纯模块（`operation-state.ts`、`native-preview.ts`、
- * `text.ts`）到 Node 里跑；不启动 Electron、不碰 pi、不写用户数据、不联网、
- * 不调用模型、不实际安装 / 删除技能。测试直接驱动生产 helper（不是源码字符串断言）：
- *
- *   · 技能删除：确认前/后的目标身份核对（取消零执行、换会话不执行）；
- *   · 包操作：await 期间项目变化后 busy 会清、旧 finally 不解锁新操作、卸载不写状态；
- *   · 导入预览：env 只键名、URL 只 http(s) origin、args 只个数、未知嵌套字段不展示，
- *     敏感值不出现在展示文本里，且 preview 不被改写；
- *   · 提示词：隐藏于菜单 ≠ 已禁用，空态用提示词文案而非技能文案。
- *
- *   node scripts/test-v3-capability-safety.mjs
- */
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -49,7 +34,6 @@ const { formatImportPreviewDetail, httpOriginOf, summarizeNativeEntry } = await 
 )
 const { capsText } = await loadTs('../src/renderer/src/features/settings/capabilities/text.ts')
 
-/* ── 包操作：项目变化后清自己的 busy，过期不冒充成功 ────────── */
 {
   const tracker = createOperationTracker()
   const action = deferred()
@@ -65,7 +49,6 @@ const { capsText } = await loadTs('../src/renderer/src/features/settings/capabil
     onResult: (value) => results.push(value),
     onStale: (value) => stales.push(value)
   })
-  /* 用户在 action await 期间切换了项目。 */
   tracker.invalidateScope()
   action.resolve({ ok: true, output: 'done' })
   await running
@@ -74,7 +57,6 @@ const { capsText } = await loadTs('../src/renderer/src/features/settings/capabil
   assert.deepEqual(stales, [{ ok: true, output: 'done' }], '过期结果走 onStale，不静默失败')
 }
 
-/* ── 包操作：旧 finally 不解锁之后发起的新操作 ───────────────── */
 {
   const tracker = createOperationTracker()
   const first = deferred()
@@ -109,7 +91,6 @@ const { capsText } = await loadTs('../src/renderer/src/features/settings/capabil
   )
 }
 
-/* ── 包操作：项目变化 + 新操作时，旧 finally 不清新锁 ────────── */
 {
   const tracker = createOperationTracker()
   const first = deferred()
@@ -125,7 +106,6 @@ const { capsText } = await loadTs('../src/renderer/src/features/settings/capabil
     onResult: () => {},
     onStale: (value) => stales.push(value)
   })
-  /* op1 await 期间切了项目，随后用户在（或程序）新范围里发起了 op2。 */
   tracker.invalidateScope()
   const runSecond = runGuardedOperation({
     tracker,
@@ -148,7 +128,6 @@ const { capsText } = await loadTs('../src/renderer/src/features/settings/capabil
   )
 }
 
-/* ── 包操作：卸载后不再回写状态 ─────────────────────────────── */
 {
   const tracker = createOperationTracker()
   const action = deferred()
@@ -172,7 +151,6 @@ const { capsText } = await loadTs('../src/renderer/src/features/settings/capabil
   assert.deepEqual(stales, [], '卸载后不提示')
 }
 
-/* ── 技能删除：取消零执行、确认后执行一次、换会话不执行 ───────── */
 {
   let runCalls = 0
   const cancelled = await runConfirmedOperation({
@@ -211,7 +189,6 @@ const { capsText } = await loadTs('../src/renderer/src/features/settings/capabil
       runCalls += 1
     }
   })
-  /* 确认框还开着，用户切到了另一个会话。 */
   scope = 'session-B'
   pending.resolve(true)
   const outcome = await running
@@ -237,7 +214,6 @@ const { capsText } = await loadTs('../src/renderer/src/features/settings/capabil
   assert.equal(runCalls, 0, '确认期间卸载则不执行')
 }
 
-/* ── 导入预览脱敏 ───────────────────────────────────────────── */
 assert.equal(httpOriginOf('https://user:pass@example.com:8443/a/b?token=x#h'), 'https://example.com:8443')
 assert.equal(httpOriginOf('http://example.com/x'), 'http://example.com')
 assert.equal(httpOriginOf('ws://example.com/x'), null, '非 http(s) 不给 origin')
@@ -320,7 +296,6 @@ assert.ok(/参数个数[:：]\s*3/.test(detail), 'args 只显示个数')
 assert.equal(JSON.stringify(entry), entrySnapshot, '脱敏只影响展示，不改写 preview.serverEntry')
 assert.equal(preview.token, 'TOKEN-SECRET-000', '不改写 preview.token（commit 仍用原令牌）')
 
-/* ── 提示词：隐藏是否已禁用 / 空态文案 ──────────────────────── */
 {
   const zhHidden = capsText('zh-CN', 'promptHiddenTag')
   assert.ok(!/禁用|停用/.test(zhHidden), 'hiddenInMenu 不得标为已禁用')

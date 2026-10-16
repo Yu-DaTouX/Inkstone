@@ -1,4 +1,3 @@
-/** 本机目录发现 → 原生 MCP 收口边界（cost 0）：授权与重放均不得恢复旧自动登记。 */
 ;(async () => {
   const out = []
   const ok = (cond, label, extra = '') => {
@@ -46,13 +45,11 @@
       try {
         return JSON.parse(lines[i])
       } catch {
-        /* 继续往前找 */
       }
     }
     return null
   }
 
-  /** 渲染端拿不到任意文件读，直执行 shell 可以。 */
   const readJsonFile = async (path) => {
     const res = await runCli(`node -e "process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))" "${path}"`)
     try {
@@ -75,7 +72,6 @@
     }
     if (!ok(ready, '宿主已就绪（conn=ready）')) return out.join('\n')
 
-    /* ---- 1. discover：从真目录服务拿到远程候选 ---- */
     log('--- 1. discover（本地目录 fixture） ---')
     const discover = await runCli('yan capabilities discover --query-text "fixture remote service"')
     const dRec = lastJson(discover.output)
@@ -97,7 +93,6 @@
       String(candidate.verification)
     )
 
-    /* ---- 2. prepare：生成计划，默认需要授权 ---- */
     log('--- 2. prepare ---')
     const prep = await runCli(`yan capabilities prepare --candidate '${candidate.candidateId}'`)
     const pRec = lastJson(prep.output)
@@ -113,7 +108,6 @@
     )
     ok(pFull.executable === false, 'prepare 本身不执行（executable=false）')
 
-    /* 通用 MCP 获取已停用，授权参数也不能恢复旧宿主登记。 */
     const before = JSON.stringify((await window.yan.capabilities.snapshot()).mcpServers)
     for (const authorize of [false, true, true]) {
       const result = await runCli(`yan capabilities acquire --plan ${planId}${authorize ? ' --authorize' : ''}`)

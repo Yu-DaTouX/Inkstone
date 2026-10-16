@@ -1,10 +1,3 @@
-/*
- * v3 全局样式 · reset 层。
- *
- * 只做「浏览器默认值归零」：不定义控件外观（那在 primitives），
- * 不声明颜色与尺寸令牌（那在 tokens），不写主题色。
- * 该文件在 `design/index.css` 的 @import 里进入 reset 层。
- */
 @layer reset {
   *,
   *::before,

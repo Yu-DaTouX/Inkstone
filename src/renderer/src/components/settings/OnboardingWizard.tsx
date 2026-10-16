@@ -10,31 +10,9 @@ import { BackgroundSetting, FontSettings, FontSizeSettings } from './AppearanceC
 import { SoundTab, useThemeSetter } from './Settings'
 import { AUTO_COMPACT_STEPS, autoCompactAt, DEFAULT_AUTO_COMPACT_TOKENS } from '../../../../shared/context-limits'
 
-/**
- * 首次使用向导：把「装完还要配什么」一次讲完。
- *
- * ══════════════════════════════════════════════════════════════════
- * 它和「开始之前」自检清单不是一回事
- * ══════════════════════════════════════════════════════════════════
- *   · 清单（`Onboarding.tsx`）回答「现在这样能不能用」——检测 pi、凭证、
- *     命令行工具、连通性，从「关于」页随时打开。
- *   · 向导回答「怎么把它配成我想要的样子」——主题、提醒、模型接入、上下文，
- *     最后告诉用户主要入口在哪。
- *
- * ── 设计取舍 ──
- * · **每步当场落盘**：直接写既有设置键（`theme` / `backgroundPreset` /
- *   `fontUi` / `sound` / `autoCompactTokens`），不攒草稿到最后一起提交。
- *   中途关掉窗口，已经改过的部分保留 —— 用户看到的效果就是最终状态。
- * · **不复制第二份表单**：外观、提醒、接入、上下文都复用设置页里那几个
- *   组件（`BackgroundSetting` / `SoundTab` / `AuthTab` / `StepSlider`），
- *   向导里改的值和设置页看到的必然一致。
- * · **步骤条可点**：允许回看或直接跳到某一步，不强制线性走完。
- * · **可以随时退出**（右上角 ×），退出即标记看过，不再自动出现。
- */
 const STEPS = ['welcome', 'theme', 'sound', 'auth', 'context', 'done'] as const
 type WizardStep = (typeof STEPS)[number]
 
-/** 最后一步列的入口，只写真实存在的行为（键位取自 `lib/host-actions.ts`）。 */
 const ENTRIES: { icon: IconName; key: MessageKey }[] = [
   { icon: 'message-dots', key: 'wiz.entryInput' },
   { icon: 'terminal', key: 'wiz.entryCommand' },
@@ -49,13 +27,11 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
   const step: WizardStep = STEPS[index]
   const isLast = index === STEPS.length - 1
 
-  /* 卡片本身就是一层模态：Esc 关闭 + 焦点圈定 + 通知主进程暂停快捷键 */
   const card = useRef<HTMLDivElement>(null)
   const body = useRef<HTMLDivElement>(null)
   const { isTop } = useModalLayer(true, onClose)
   useFocusTrap(card, true, isTop)
 
-  /* 切步后回到顶部：从「接入」切到「上下文」不该停在半中间 */
   useEffect(() => {
     body.current?.scrollTo({ top: 0 })
   }, [index])
@@ -82,7 +58,6 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
           />
         </div>
 
-        {/* 步骤条：可点，允许回看或跳到后面 */}
         <div className="wiz-steps" role="tablist" aria-label={t('wiz.title')}>
           {STEPS.map((id, i) => (
             <button
@@ -134,9 +109,6 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
   )
 }
 
-/* ------------------------------------------------------------ 各步 */
-
-/** 开场：说清要配几件事，以及每步都能改。 */
 function WelcomeStep() {
   const t = useT()
   const items: { icon: IconName; key: MessageKey }[] = [
@@ -161,7 +133,6 @@ function WelcomeStep() {
   )
 }
 
-/** 外观：主题、背景、字体、字号，全部复用设置页的控件。 */
 function ThemeStep() {
   const t = useT()
   const theme = useStore((s) => s.settings?.theme) ?? 'dark'
@@ -186,7 +157,6 @@ function ThemeStep() {
   )
 }
 
-/** 提醒：整块复用设置页的提醒分区（开关、音量、逐项试听）。 */
 function SoundStep() {
   const t = useT()
   return (
@@ -197,7 +167,6 @@ function SoundStep() {
   )
 }
 
-/** 模型接入：整块复用「模型」设置页，含订阅登录与 API Key。 */
 function AuthStep() {
   const t = useT()
   return (
@@ -208,12 +177,6 @@ function AuthStep() {
   )
 }
 
-/**
- * 上下文：只放一件用户此刻该做的决定 —— 自动压缩上限。
- *
- * 开关本身属于 pi（写在 pi 的 settings.json），砚不另设一个；
- * 这里只调砚的上限，并如实说明 pi 那边关着时它不生效。
- */
 function ContextStep() {
   const t = useT()
   const settings = useStore((s) => s.settings)
@@ -259,7 +222,6 @@ function ContextStep() {
   )
 }
 
-/** 收尾：告诉用户主要入口在哪，不是再配一项。 */
 function DoneStep() {
   const t = useT()
   return (

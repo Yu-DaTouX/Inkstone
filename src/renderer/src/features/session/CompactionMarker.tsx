@@ -1,10 +1,3 @@
-/**
- * 压缩标记行（WP-21c）。
- *
- * 复用 `state/compaction-view.ts` 的既有投影：进行中的压缩说原因，最近一次
- * 已结束的压缩说「起因 · 结局」，两端 token 都拿到时才写「150k → 32k」。
- * 从磁盘打开的历史会话没有这条记录，此时不写「未发生过」—— 只是不显示。
- */
 import type { JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'

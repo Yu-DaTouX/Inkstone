@@ -1,4 +1,3 @@
-/** 实际助手模型的历史归一化与回合投影；无 Provider、窗口或用户数据访问。 */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import vm from 'node:vm'

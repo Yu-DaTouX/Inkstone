@@ -1,14 +1,3 @@
-/**
- * 项目知识存储层（`src/shared/project-memory.ts` + `src/main/project-memory-store.ts`，
- * 实施-03 S2）的测试。
- *
- * 这一片是**唯一真的写项目知识的地方**，所以每条断言都要对着**磁盘上的文件**验，
- * 不能只看返回值 —— 返回值说成功而文件没变（或反过来）正是最坏的失败模式。
- *
- * 覆盖 S2 出口的五条性质：CAS 冲突 / 磁盘写失败 / 崩溃恢复（半写 manifest 保留上一版）/
- * 删除后旧候选不复活 / 过期锁**核实进程**后再回收。
- * 全部用隔离临时目录，不碰真实用户数据。
- */
 export async function runProjectMemoryTests(ok, modules) {
   const memory = modules.memory
   const store = modules.store
@@ -34,19 +23,14 @@ export async function runProjectMemoryTests(ok, modules) {
     const names = await readdir(join(dirOf(id), 'entries')).catch(() => [])
     return names.sort()
   }
-  /** 提交一次（正常路径用；失败就抛，免得断言里漏判 ok） */
   const commit = async (identity, request, hostCheck) => {
     const res = await store.commitKnowledge({ identity, request, hostCheck, opts })
     if (!res.ok) throw new Error(`意外失败：${res.code} ${res.message}`)
     return res
   }
-  /** 造一个「新建」请求（模型侧形状：只有内容，没有身份 / 置信权） */
   const draft = (extra = {}) => ({ expectedRevision: 0, kind: 'fact', text: '默认文字', ...extra })
 
   try {
-    /* ══════════════════════════════════════════════════════════════
-     * 一、纯逻辑：身份只认项目登记
-     * ══════════════════════════════════════════════════════════════ */
     console.log('\n--- 1. 项目身份：只认登记，不认自报 / 不认 cwd 反推 ---')
     {
       const good = memory.resolveProjectIdentity('proj-a', registry)
@@ -84,9 +68,6 @@ export async function runProjectMemoryTests(ok, modules) {
       ok(traversal?.code === 'bad_project_id', '存储层的目录函数也挡路径穿越')
     }
 
-    /* ══════════════════════════════════════════════════════════════
-     * 二、纯逻辑：指纹与校验
-     * ══════════════════════════════════════════════════════════════ */
     console.log('\n--- 2. 文本指纹：空白 / 全角半角归一，原文不动 ---')
     {
       const d1 = memory.textDigest('  用 pnpm 而不是 npm  ')
@@ -139,13 +120,9 @@ export async function runProjectMemoryTests(ok, modules) {
       ok(emoji.ok, '正好 4000 个 emoji 允许（按 code point）')
     }
 
-    /* ══════════════════════════════════════════════════════════════
-     * 三、纯逻辑：状态迁移与 CAS
-     * ══════════════════════════════════════════════════════════════ */
     console.log('\n--- 4. 状态迁移（纯 reducer）：CAS / 置信类 / 替代 ---')
     {
       const base = memory.emptyKnowledgeManifest('proj-a', '2026-09-19T00:00:00.000Z')
-      /* 每次调用都换一个新 id：真实 store 每次提交都会生成新的 uuid */
       let newIdSeq = 0
       const ctxFor = (extra = {}) => ({
         newId: `k-new-${++newIdSeq}`,
@@ -410,9 +387,6 @@ export async function runProjectMemoryTests(ok, modules) {
       ok(memory.knowledgeNeedsReview(entry, { branch: 'release' }) === false, '拿不到文件清单时不乱报')
     }
 
-    /* ══════════════════════════════════════════════════════════════
-     * 七、存储层：真实文件
-     * ══════════════════════════════════════════════════════════════ */
     console.log('\n--- 7. 落盘：不可变 revision + 原子 manifest ---')
     {
       const res = await commit(A, draft({ text: '第一条真正落盘的知识', tags: ['落盘'] }))
@@ -441,7 +415,6 @@ export async function runProjectMemoryTests(ok, modules) {
       ok(second.manifest.revision === 2, 'manifest 版本递增')
       ok(await store.listKnowledge(B, opts).then((list) => list.length === 0), 'B 项目读不到 A 的知识（物理隔离）')
 
-      /* 崩溃留下的半写文件：抢到锁之后应当被收掉（否则会惍惍攒垃圾） */
       const stale1 = `${store.manifestPath(dirOf('proj-a'))}.12345.1.tmp`
       const stale2 = `${entryPath('proj-a', res.entry.id, 7)}.12345.1.tmp`
       await writeFile(stale1, 'half', 'utf8')
@@ -481,7 +454,6 @@ export async function runProjectMemoryTests(ok, modules) {
 
     console.log('\n--- 9. 磁盘写失败：manifest 保持上一版 ---')
     {
-      /* (a) 正文写不进去：先把 revision 的目标路径占成目录 */
       const blocked = 'k-blocked00000'
       const before = await manifestBytes('proj-a')
       const beforeList = await store.listKnowledge(A, opts)
@@ -496,7 +468,6 @@ export async function runProjectMemoryTests(ok, modules) {
       ok((await manifestBytes('proj-a')) === before, '正文失败后 manifest 没变')
       ok((await store.listKnowledge(A, opts)).length === beforeList.length, '失败的条目没有被算进去')
 
-      /* (b) manifest 提交阶段失败：把备份位置占成目录 */
       const beforeManifest = await manifestBytes('proj-a')
       await rm(store.manifestBackupPath(dirOf('proj-a')), { recursive: true, force: true })
       await mkdir(store.manifestBackupPath(dirOf('proj-a')), { recursive: true })
@@ -531,7 +502,6 @@ export async function runProjectMemoryTests(ok, modules) {
         `崩溃前的状态：manifest ${good.revision} / 条目 revision 2`
       )
 
-      /* (a) 半写的 manifest（JSON 截断）→ 退回备份 */
       await writeFile(store.manifestPath(dirOf('proj-b')), goodManifest.slice(0, Math.floor(goodManifest.length / 2)), 'utf8')
       const recovered = await store.loadManifest('proj-b', opts)
       ok(recovered.status === 'recovered' && recovered.reason === 'backup', '半写 manifest → 从备份恢复', recovered.status)
@@ -545,15 +515,12 @@ export async function runProjectMemoryTests(ok, modules) {
       ok(after.status === 'ok', '恢复后主文件被写回（下一次读就是正常的 ok）')
       ok((await store.listKnowledge(B, opts))[0].text === '崩溃恢复前的第一条', '列表回到上一版的正文')
 
-      /* (b) 合法 JSON 但形状不对 → 同样走备份 */
       await writeFile(store.manifestPath(dirOf('proj-b')), '{}\n', 'utf8')
       const recovered2 = await store.loadManifest('proj-b', opts)
       ok(recovered2.status === 'recovered' && recovered2.reason === 'backup', '形状不对的 manifest 也走备份恢复')
 
-      /* (c) 主文件与备份都没了 → 从 revision 文件重建索引 */
       await rm(store.manifestPath(dirOf('proj-b')), { force: true })
       await rm(store.manifestBackupPath(dirOf('proj-b')), { force: true })
-      /* 再留一个「写了一半」的高 revision，重建必须跳过它 */
       await writeFile(entryPath('proj-b', target.entry.id, 99), '{"schemaVersion":1,"id":', 'utf8')
       const rebuilt = await store.loadManifest('proj-b', opts)
       ok(rebuilt.status === 'recovered' && rebuilt.reason === 'rebuild', 'manifest 全丢 → 从 revision 重建', rebuilt.status)
@@ -565,7 +532,6 @@ export async function runProjectMemoryTests(ok, modules) {
       )
       ok((await store.listKnowledge(B, opts))[0].text === '崩溃恢复前的第二条', '重建后读到的是完整的最高一版')
 
-      /* (d) manifest 与备份都坏、又没有可重建的正文 → unreadable，且拒绝写入 */
       const brokenProj = { projectId: 'proj-broken', cwd: 'C:\\work\\broken' }
       const brokenDir = dirOf('proj-broken')
       await mkdir(brokenDir, { recursive: true })
@@ -604,7 +570,6 @@ export async function runProjectMemoryTests(ok, modules) {
       const revive = await store.commitKnowledge({ identity: A, request: draft({ text: secret }), opts })
       ok(!revive.ok && revive.code === 'revives_deleted', '同一段文字再提一次被拒（旧候选不复活）', revive.ok ? '' : revive.code)
 
-      /* 永久删除：正文真的不再留在磁盘上 */
       const permanentTarget = await commit(A, draft({ text: '这条要永久删掉', kind: 'fact' }))
       const permanent = await store.deleteKnowledge({
         identity: A,
@@ -644,7 +609,6 @@ export async function runProjectMemoryTests(ok, modules) {
       const dir = dirOf('proj-a')
       const lockFile = store.lockPath(dir)
       const beforeList = await store.listKnowledge(A, opts)
-      /** 刚过期（1 秒前）的锁：主要用来观察「进程是否活着」这条判据 */
       const writeLock = (record) =>
         writeFile(
           lockFile,
@@ -656,11 +620,9 @@ export async function runProjectMemoryTests(ok, modules) {
           'utf8'
         )
 
-      /* 正常路径：提交完锁就没了 */
       await commit(A, draft({ text: '锁的正常路径' }))
       ok(await readFile(lockFile, 'utf8').then(() => false).catch(() => true), '正常提交后锁文件被释放')
 
-      /* (a) 持有者进程**还活着**（就是本进程）+ 锁已过期 → 不能抢 */
       await writeLock({ pid: process.pid, host: hostname(), token: 'alive-holder' })
       const locked = await store
         .commitKnowledge({ identity: A, request: draft({ text: '别人还在写' }), opts: { ...opts, lockWaitMs: 150 } })
@@ -672,7 +634,6 @@ export async function runProjectMemoryTests(ok, modules) {
         '抢不到锁时没有动别人的锁文件'
       )
 
-      /* (b) 持有者进程**已经死了**（真起子进程再等它退出）→ 核实后回收 */
       const deadPid = findDeadPid(spawnSync, process.execPath)
       ok(deadPid !== null, '找到一个确实已退出的 pid', String(deadPid))
       ok(store.isProcessAlive(deadPid) === false, `真的死掉的 pid（${deadPid}）被判为不活着`)
@@ -687,7 +648,6 @@ export async function runProjectMemoryTests(ok, modules) {
       ok(reclaimed.ok, '过期锁的持有者已死 → 核实后回收并写入成功', reclaimed.ok ? '' : reclaimed.code)
       ok(await readFile(lockFile, 'utf8').then(() => false).catch(() => true), '回收后锁被释放')
 
-      /* (c) 认不出的锁文件（写了一半）→ 等一小段宽限期才敢收 */
       await writeFile(lockFile, '{"pid":', 'utf8')
       const waitShort = await store
         .commitKnowledge({ identity: A, request: draft({ text: '宽限期内不抢' }), opts: { ...opts, lockWaitMs: 150 } })
@@ -703,7 +663,6 @@ export async function runProjectMemoryTests(ok, modules) {
       })
       ok(waitLong.ok, '超过宽限期的半写锁文件被当作垃圾收掉')
 
-      /* (d) 别的主机留下的锁：无法核实进程 → 宽限期内不抢 */
       await writeLock({ pid: 4242, host: 'another-machine', token: 'foreign' })
       const foreign = await store
         .commitKnowledge({ identity: A, request: draft({ text: '别的主机' }), opts: { ...opts, lockWaitMs: 200 } })
@@ -714,12 +673,8 @@ export async function runProjectMemoryTests(ok, modules) {
       ok((await store.listKnowledge(A, opts)).length >= beforeList.length, '锁的测试没有破坏既有数据')
     }
 
-    /* ══════════════════════════════════════════════════════════════
-     * 八、读路径的容错
-     * ══════════════════════════════════════════════════════════════ */
     console.log('\n--- 13. 读路径容错 + 与旧存储无关 ---')
     {
-      /* 指针在、正文缺失：展示路径退回更早的完好 revision，写入路径拒绝 */
       const res = await commit(A, { expectedRevision: 0, kind: 'fact', text: '第一版', id: 'k-fallback000' })
       await commit(A, { expectedRevision: 1, kind: 'fact', text: '第二版', id: res.entry.id })
       await rm(entryPath('proj-a', res.entry.id, 2))
@@ -731,7 +686,6 @@ export async function runProjectMemoryTests(ok, modules) {
         .catch((err) => err)
       ok(writeFail?.code === 'read_failed', '写入路径读不到当前版本就拒绝（不拿旧版本做 CAS）', writeFail?.code)
 
-      /* 旧记忆存储：不读、不转换、不碰（用真实文件证明） */
       const legacy = join(dirOf('proj-a'), 'memory.json')
       await writeFile(legacy, JSON.stringify([{ text: '旧记忆条目' }]), 'utf8')
       const list = await store.listKnowledge(A, opts)
@@ -760,7 +714,6 @@ export async function runProjectMemoryTests(ok, modules) {
     await rm(root, { recursive: true, force: true })
   }
 
-  /** 把一个目录下所有文件的内容拼起来（搜正文用） */
   async function readAllText(dir) {
     let text = ''
     for (const name of await readdir(dir).catch(() => [])) {
@@ -772,13 +725,6 @@ export async function runProjectMemoryTests(ok, modules) {
   }
 }
 
-/**
- * 找一个**确实已经退出**的 pid。
- *
- * 不用 `999999` 这种「大概没人用」的号：那验的是「猜」而不是「核实」；
- * 也不用刚 spawn 完就扔掉的 pid —— Windows 上可能已经被复用。
- * 这里真起子进程、等它退出，再确认 `kill(pid, 0)` 报不在。
- */
 function findDeadPid(spawnSync, execPath) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const child = spawnSync(execPath, ['-e', 'process.exit(0)'], { encoding: 'utf8' })

@@ -1,4 +1,3 @@
-/** Current turn-anchored subagent information hierarchy; synthetic runs, no inference. */
 ;(async () => {
   const out = [], store = window.__yanStore, q = s => document.querySelector(s)
   const sleep = ms => new Promise(r => setTimeout(r, ms))

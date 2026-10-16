@@ -1,9 +1,3 @@
-/**
- * 中继通道的端到端加密：P-256 三重 ECDH 握手 + HKDF-SHA256 + AES-256-GCM 计数帧。
- *
- * 与礁石（Reef）App 协议逐字一致（礁石仓库 docs/specs/app.md「握手」），这样砚、礁石服务端、
- * 礁石 App、砚手机端可以共用同一个 Cloudflare 中继，中继只看到密文。这里独立实现，不依赖礁石代码。
- */
 import { webcrypto } from 'node:crypto'
 
 const subtle = webcrypto.subtle
@@ -18,7 +12,6 @@ export const RELAY_PROTOCOL_VERSION = 1
 export interface KeyPair {
   privateKey: webcrypto.CryptoKey
   publicKey: webcrypto.CryptoKey
-  /** 65 字节未压缩公钥 */
   raw: Uint8Array
 }
 
@@ -86,7 +79,6 @@ async function finish(
   return { c2s: await key(okm.slice(0, 32)), s2c: await key(okm.slice(32, 64)) }
 }
 
-/** 客户端一侧（测试与将来的桌面客户端用）。 */
 export async function clientSession(input: { clientStatic: KeyPair; clientEph: KeyPair; serverStaticRaw: Uint8Array; serverEphRaw: Uint8Array }): Promise<SecureChannel> {
   const serverStatic = await importPublic(input.serverStaticRaw)
   const serverEph = await importPublic(input.serverEphRaw)
@@ -99,7 +91,6 @@ export async function clientSession(input: { clientStatic: KeyPair; clientEph: K
   return new SecureChannel(keys.c2s, keys.s2c)
 }
 
-/** 主机一侧（砚）。 */
 export async function serverSession(input: { serverStatic: KeyPair; serverEph: KeyPair; clientStaticRaw: Uint8Array; clientEphRaw: Uint8Array }): Promise<SecureChannel> {
   const clientStatic = await importPublic(input.clientStaticRaw)
   const clientEph = await importPublic(input.clientEphRaw)
@@ -118,10 +109,6 @@ function counterBytes(n: number): Uint8Array {
   return out
 }
 
-/**
- * 一条连接上的加密通道。每个方向独立计数，IV = 4 字节 0 + 8 字节计数；
- * 接收方只接受恰好等于期望计数的帧，篡改、重放、乱序都会抛错（调用方应断开）。
- */
 export class SecureChannel {
   private sendCount = 0
   private recvCount = 0

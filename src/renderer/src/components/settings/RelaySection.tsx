@@ -4,10 +4,6 @@ import { useT } from '../../i18n'
 import { Badge, Button, EmptyState, Input, SettingRow, Switch } from '../ui'
 import type { RemoteAccessSettings, RemoteAccessStatus, RemoteRelaySettings } from '../../../../shared/remote-protocol'
 
-/**
- * 设置 · 手机接入 · 中继接入：砚主动连中继，手机端与礁石经端到端加密隧道连进来（不用 Tailscale、不开端口）。
- * 开关与地址写进 remoteAccess.relay；配对链接与设备撤销只在主进程内存 / 中继设备表里处理。
- */
 export function RelaySection({ draft, status, busy, configure, run }: {
   draft: RemoteAccessSettings
   status: RemoteAccessStatus | null

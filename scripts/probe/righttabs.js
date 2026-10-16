@@ -1,4 +1,3 @@
-/* 窄右栏的磁贴标签栏必须保住图标、标题与关闭按钮各自的位置。 */
 ;(async () => {
   const out = []
   const check = (value, name) => out.push(`  ${value ? '✓' : '✗'} ${name}`)
@@ -17,42 +16,20 @@
   try {
     localStorage.setItem('yan.onboarded', '1')
     const store = window.__yanStore
-    /*
-     * 先等会话就绪：文件磁贴的身份靠 `fileResourceKey({ projectId, workspaceRoot, … })`，
-     * 而 workspaceRoot 取 session.cwd —— 会话还没铺好时它为空，
-     * `previewFile` 就拿不到 key，标签「不会建」（H-4 的「无身份不建标签」），
-     * 看起来就像「窄窗下标签不见了」。多窗口场景的第二个窗口很容易撞上这个。
-     */
     for (let i = 0; i < 60; i++) {
       const s = store.getState()
       if (s.conn === 'ready' && s.session?.cwd) break
       await sleep(300)
     }
     if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
-    /*
-     * 右栏现在是**磁贴工作区**（`Workspace.tsx`）：每个磁贴组有自己的一条
-     * 标签栏（`.tile-heading .tile-tabs`），窗口标签不再是一条全局横栏 ——
-     * 旧的 `right-window-tabs` / `right-window-tab-*` 已经没有了。
-     */
     check(!!document.querySelector('[data-testid="tile-workspace"]'), '右栏磁贴工作区已挂载')
 
     const probePath = 'C:/__inkstone_right_tab_width_probe__.md'
-    /*
-     * 先关掉预览再打开：磁贴的自动打开挂在 `useEffect(..., [filePreview?.key])` 上
-     * （`RightPanel.tsx`），同一个 key 不会重新触发 —— 第二次测量（同一个页面实例）
-     * 就会看到「store 里有预览记录、却没有磁贴」。
-     */
     store.getState().closePreview()
     await sleep(250)
     await store.getState().previewFile(probePath)
     const found = await until(() => !!document.querySelector('[data-pane-tab^="file:"] .ui-tab'), 9000)
     const fileTab = document.querySelector('[data-pane-tab^="file:"] .ui-tab')
-    /*
-     * 拿不到就如实跳过，不当成失败：资源归属（`resource-owners.ts`）写在
-     * localStorage 里，先开的那一列已把 `file:<key>` 认领走时，后一列不会
-     * 再渲染这个磁贴（`mine()` 过滤）。多窗口场景的第二档很容易撞上，
-     * 而这不是产品缺陷。
-     */
     if (!found || !fileTab) {
       const panes = [...document.querySelectorAll('[data-workspace-pane]')].map((el) => el.dataset.workspacePane)
       out.push('  ⤺ 跳过：这一档拿不到文件磁贴（资源归属在另一列）')
@@ -68,10 +45,6 @@
     const head = fileTab.closest('.tile-heading')
     const bar = fileTab.closest('.tile-tabs')
     const label = fileTab.querySelector('.ui-tab-label')
-    /*
-     * 同一栏里可能有多个标签（浏览器与文件可以合并成一组）：逐个检查，
-     * 而不是只看第一个 —— 原探针“两个窗口标签”的意图就在这里。
-     */
     const tabs = [...(bar?.querySelectorAll('.ui-tab') ?? [])]
     out.push(
       `  窗口 ${innerWidth}px；标签栏 ${Math.round(box(head)?.width ?? 0)}px；` +
@@ -93,10 +66,6 @@
     check(tabs.every((tab, i) => i === 0 || box(tabs[i - 1]).right <= box(tab).left + 1), '相邻标签互不重叠')
     check((label?.textContent ?? '').includes('__inkstone_right_tab_width_probe__'), '标签文本就是文件名（截断时仍能看到自己那一份）')
 
-    /*
-     * 浏览器与文件都是右栏资源：两个磁贴各自成组时，标签栏不能互相挤压。
-     * 原探针的「第二个标签」现在含义是「第二个磁贴标签栏」。
-     */
     await store.getState().openBrowser('about:blank')
     const twoBars = await until(() => document.querySelectorAll('.tile-heading .tile-tabs').length >= 2)
     if (twoBars) {
@@ -109,7 +78,6 @@
       skip('浏览器与文件没有落在同一条标签栏里（默认布局各自成组；合并成一组时本段会逐个检查）')
     }
 
-    /* 上下文分区（默认在工具磁贴里）：最窄右栏下压缩按钮仍然可见可点 */
     const contextHead = document.querySelector('[data-testid="rp-context"] .rp-sec-head')
     if (contextHead) {
       if (contextHead.getAttribute('aria-expanded') !== 'true') contextHead.click()

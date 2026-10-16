@@ -1,11 +1,3 @@
-/**
- * 项目—会话归属（Phase 2）。
- *
- * 这条探针不依赖 pi 是否能连上模型，只验证真实应用的 IPC 链路：
- *   listSessions → session-layout.json 迁移/投影
- *   moveSession → 只改变 Yan 的产品归属，不移动物理 JSONL
- *   再移回全局 → moveHistory 与路径保持可追溯
- */
 ;(async () => {
   const out = []
   const ok = (condition, text) => {
@@ -67,7 +59,6 @@
     ok((global.entry?.moveHistory?.length ?? 0) >= 2, '项目↔全局迁移写入 moveHistory')
 
     if (beforeSettings) {
-      // 只恢复本次探针对设置的临时项目；session-layout 会保留迁移历史，供上面的断言完成。
       await window.yan.patchSettings({ projects: beforeSettings.projects })
     } else {
       skip('没有拿到 renderer 设置快照，未恢复项目列表')

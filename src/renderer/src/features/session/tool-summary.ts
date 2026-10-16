@@ -1,9 +1,3 @@
-/**
- * 一组连续工具调用的一行摘要（对话里按发生顺序穿插在文字之间）。
- *
- * 写法是「已搜索 3 次, 已读取 2 个文件 … 以及另外 4 项操作」：按类别数一遍，最多点名
- * 前两类，其余归入「另外 N 项」，失败数跟在后面。纯函数，不读调用详情，不重跑工具。
- */
 import type { UIToolCall } from '../../../../shared/ipc'
 
 type Kind = 'read' | 'search' | 'fetch' | 'run' | 'edit' | 'other'
@@ -35,7 +29,6 @@ const EN: Record<Exclude<Kind, 'other'>, (n: number) => string> = {
   edit: (n) => `Edited ${n} ${n === 1 ? 'file' : 'files'}`
 }
 
-/** 一步的目标文字（命令 / 文件名 / 查询词等）：步骤行与过程行的运行标签共用 */
 export function summarize(call: UIToolCall): string {
   const a = call.args as Record<string, unknown> | undefined
   if (!a || typeof a !== 'object') return ''

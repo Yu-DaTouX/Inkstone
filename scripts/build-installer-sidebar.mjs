@@ -1,17 +1,4 @@
 #!/usr/bin/env npx electron
-/**
- * 生成 NSIS 安装器的品牌图：欢迎 / 完成页侧栏（164×314）与内页页眉（150×57）。
- *
- * 配色与应用界面同源（v0.4 设计规范，见 docs/DESIGN_SYSTEM.md）：
- *   · 侧栏 = 深色主题的窗口底 `--bg-0` + 靛蓝强调 `--accent` 的提示砚标志；
- *   · 页眉 = NSIS 内页本身是白底，所以用浅色主题的底与强调色。
- * 平色，不用发光与渐变 —— 安装器是用户对砚的第一眼，应当和打开后的界面一致。
- *
- * NSIS 只接受 24-bit BMP：有 ffmpeg 时本脚本直接转换并写入 build/*.bmp，
- * 没有时只写 PNG，并提示手动转换。
- *
- * 用法：npm run installer:sidebar
- */
 import './lib/stdio-guard.mjs'
 import { app, BrowserWindow } from 'electron'
 import { execFileSync } from 'node:child_process'
@@ -27,13 +14,11 @@ const source = readFileSync(join(buildDir, 'prompt-stone.svg'), 'utf8')
   .replace(/<\/svg>\s*$/i, '')
   .replace(/<title>[\s\S]*?<\/title>/i, '')
 
-/* 与 src/renderer/src/styles/tokens.css 保持一致 */
 const DARK = { bg: '#151515', line: 'rgba(255,255,255,0.08)', fg: '#ecece8', dim: '#b4b4ac', mute: '#92928a', accent: '#93a4f4' }
 const LIGHT = { bg: '#ffffff', fg: '#252522', mute: '#73736b', accent: '#5264c8' }
 
 const FONT = `'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif`
 
-/* 品牌资产规范（设计规范 §3.4.1）：石框用前景色、`>_` 用强调色；浅底上用砖形应用图标 */
 const colored = (frame, accent) => source
   .replace(/(<g id="stone-frame"[^>]*?)stroke="currentColor"/, `$1stroke="${frame}"`)
   .replace(/(<g id="prompt"[^>]*?)stroke="currentColor"/, `$1stroke="${accent}"`)
@@ -72,10 +57,6 @@ const headerHtml = `<!doctype html>
 <div class="txt"><span class="name">砚</span><span class="en">Inkstone</span></div>
 ${tileMark(32)}`
 
-/*
- * 欢迎页动画帧（build/installer-anim/frame-NN.bmp，installer.nsh 的 nsDialogs 定时器逐帧换图）：
- * 与启动画面同一段：石框描出 → `>` → 光标出现，之后光标在最后两帧间呼吸。
- */
 const DRAW_FRAMES = 12
 const animFrameHtml = (index) => {
   const t = Math.min(1, index / (DRAW_FRAMES - 1))
@@ -90,9 +71,7 @@ const animFrameHtml = (index) => {
 }
 
 app.commandLine.appendSwitch('force-device-scale-factor', '1')
-/* 逐张渲染：关掉上一张的窗口时不能让应用按默认行为退出 */
 app.on('window-all-closed', () => {})
-/* 位图里不能带 ClearType 彩边：它按屏幕子像素排布渲染，缩放或换屏后就是色边 */
 app.commandLine.appendSwitch('disable-lcd-text')
 
 async function render(html, width, height, name) {
@@ -104,7 +83,6 @@ async function render(html, width, height, name) {
     useContentSize: true,
     webPreferences: { backgroundThrottling: false }
   })
-  /* data URL：连续两个窗口 loadFile 同目录临时文件时，第二次会偶发 ERR_FAILED */
   await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
   await new Promise((resolve) => setTimeout(resolve, 300))
   const png = (await win.webContents.capturePage()).toPNG()
@@ -142,7 +120,6 @@ app.whenReady().then(async () => {
     const png = await render(animFrameHtml(i), 164, 314, 'installer-anim/' + name)
     if (!toBmp(png, join(animDir, name + '.bmp'))) console.log('未找到 ffmpeg，动画帧只写了 PNG：' + png)
   }
-  /* 中间 PNG 只是转换用，不留在 build/ 里 */
   for (const f of readdirSync(animDir)) if (f.endsWith('-generated.png')) fs.unlinkSync(join(animDir, f))
   console.log(`写入 build/installer-anim/（${DRAW_FRAMES + 1} 帧）`)
   app.exit(0)

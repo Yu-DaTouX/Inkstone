@@ -1,22 +1,3 @@
-/**
- * 提交失败后的草稿 / 附件归属（真实 store + 真实 composer-submit 端口）。
- *
- * 复现主审 2026-10-15 的真遗漏：
- *   提交时只按 activeRunner 取会话身份，`!` 直执行 / 普通发送失败的恢复回调
- *   又只 `setValue` / 并顶层 attachments，没有校验「提交时看的是哪条会话」。
- *   await 期间从 A 切到 B，失败的 A 命令就落进 B 的输入框，A 的附件也并进 B。
- *
- * 这里不启动 Electron、不连 pi：把 `state/store.ts` 与 `lib/composer-submit.ts`
- * 单独 bundle 出来，用**真实 store 动作** `recoverComposerInput` 驱动端口的
- * restoreText / restoreAttachments；端口只做与 Composer.tsx 相同的接线
- * （提交时捕获身份与附件快照）。
- *
- * 覆盖：A→B→失败→切回 A、同会话追加（保留 await 期间新输入）、pending→uuid、
- * 仅路径 deferred、附件不重复（图片 + fileRef）、实例复用到新代次、抛异常。
- *
- * 导出 `runComposerDraftOwnershipTests(ok)`；直接
- * `node scripts/test-composer-draft-ownership.mjs` 也能独立运行。
- */
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,7 +7,6 @@ import { build } from '../node_modules/esbuild/lib/main.js'
 export async function runComposerDraftOwnershipTests(ok) {
   const section = (name) => console.log(`\n## ${name}`)
 
-  /* 保存现场：别的定向脚本可能已经装过同名全局；结束时原样还回去。 */
   const had = {
     window: 'window' in globalThis,
     document: 'document' in globalThis,
@@ -185,7 +165,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       })
     }
 
-    /** 与 Composer.tsx 的 submit 接线一致：提交时钉身份 + 附件快照，失败交给真实 store 动作。 */
     function makePort({ text = '', onBash, onSend } = {}) {
       const view = useStore.getState()
       const identity = composerSubmitIdentity(view)
@@ -227,7 +206,6 @@ export async function runComposerDraftOwnershipTests(ok) {
         },
         clearAll: () => {
           box.text = ''
-          /* 与 Composer.tsx 一致：经 store 动作清空，才能同步清掉草稿附件缓存。 */
           useStore.getState().clearAttachments()
         },
         restoreText: (raw) => recover(raw, []),
@@ -236,12 +214,10 @@ export async function runComposerDraftOwnershipTests(ok) {
         send: async (outgoing, images, mode) => (onSend ? onSend(outgoing, images, mode) : true),
         holdSend: () => {},
         focusComposer: () => {},
-        /** 测试侧读取端口 box，模拟 Composer 本地 state。 */
         __box: box
       }
     }
 
-    /* ──────────────────────────────────────────────────────────── */
     section('`!` A→B→失败：命令回 A 的草稿缓存，不动 B')
     {
       viewA({ attachments: [img('a1')] })
@@ -249,7 +225,6 @@ export async function runComposerDraftOwnershipTests(ok) {
         text: '!deploy A',
         onBash: () => {
           viewB()
-          /* 只读浏览切换不自动清附件：B 的顶层附件是它自己的（这里为空） */
           return { ok: false, error: 'boom' }
         }
       })
@@ -261,7 +236,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       ok((after.sessionRuntimes.A?.draft ?? '').includes('A-old'), '追加不覆盖 A 原有草稿', JSON.stringify(after.sessionRuntimes.A?.draft))
       ok(!(after.sessionRuntimes.B?.draft ?? '').includes('!deploy A'), 'B 的草稿缓存没被写脏', JSON.stringify(after.sessionRuntimes.B?.draft))
       ok(after.attachments.length === 0, 'B 的附件区没有被 A 的附件污染', JSON.stringify(after.attachments))
-      /* 切回 A：Composer 读的就是 A 的草稿键，能取回。 */
       useStore.setState({ session: { sessionId: 'A', sessionFile: 'A', cwd: 'C:/p' }, peekedSessionId: 'A', peekedPath: 'A' })
       ok((useStore.getState().sessionRuntimes.A?.draft ?? '').includes('!deploy A'), '切回 A 草稿缓存里能取回命令')
     }
@@ -287,7 +261,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       ok(cached.find((a) => a.id === 'f1')?.path === 'C:/p/readme.md', 'fileRef 的 path 完整缓存', JSON.stringify(cached.find((a) => a.id === 'f1')))
       ok(!after.notices.some((n) => /附件/.test(n.text)), '附件已缓存，不再提示丢弃', JSON.stringify(after.notices))
 
-      /* 回到 A：按草稿键 hydrate，图片 + fileRef 完整取回。 */
       useStore.setState({
         session: { sessionId: 'A', sessionFile: 'A', cwd: 'C:/p' },
         peekedSessionId: 'A',
@@ -301,11 +274,9 @@ export async function runComposerDraftOwnershipTests(ok) {
       ok(restored.find((a) => a.id === 'f1')?.path === 'C:/p/readme.md', '取回的 fileRef path 不变', JSON.stringify(restored.find((a) => a.id === 'f1')))
       ok(restored.length === 2, '取回不重复', JSON.stringify(restored.map((a) => a.id)))
 
-      /* 两次 hydrate 不重复（replace 语义）。 */
       useStore.getState().hydrateComposerDraft('A')
       ok(useStore.getState().attachments.length === 2, '再次 hydrate 不重复堆叠', JSON.stringify(useStore.getState().attachments.map((a) => a.id)))
 
-      /* 成功发送：清掉提交的附件缓存；再次 hydrate 不复活。 */
       useStore.getState().clearAttachments()
       useStore.getState().hydrateComposerDraft('A')
       ok(useStore.getState().attachments.length === 0, '成功发送后再次 hydrate 不复活旧附件', JSON.stringify(useStore.getState().attachments.map((a) => a.id)))
@@ -339,7 +310,6 @@ export async function runComposerDraftOwnershipTests(ok) {
         }
       })
       await submitComposerInput(port)
-      /* B 自己另有一份草稿附件（在 viewB 覆盖之后写入）。 */
       useStore.setState({
         sessionRuntimes: {
           ...useStore.getState().sessionRuntimes,
@@ -358,7 +328,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       const port = makePort({
         text: '成功发送',
         onSend: () => {
-          /* await 期间用户又添了一个文件引用 */
           useStore.getState().addAttachments([fileRef('a2', 'C:/p/a2.md')])
           return true
         }
@@ -395,7 +364,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       const port = makePort({
         text: '!path cross',
         onBash: () => {
-          /* await 期间视图离开路径 A，切到 B */
           setView({
             session: { sessionId: 'B', sessionFile: 'B', cwd: 'C:/p' },
             peekedSessionId: 'B',
@@ -414,7 +382,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       ok((after.sessionRuntimes['file:a']?.draftAttachments ?? []).some((a) => a.id === 'a1'), '附件写到薄路径键', JSON.stringify(after.sessionRuntimes['file:a']?.draftAttachments))
       ok(after.sessionRuntimes['run:rB'] === undefined, '没有把 A 的东西写进活动 runner B 的键', JSON.stringify(Object.keys(after.sessionRuntimes)))
 
-      /* 回到路径 A：按薄路径键 hydrate 取回。 */
       useStore.setState({ session: null, peekedSessionId: null, peekedPath: 'A', attachments: [] })
       useStore.getState().hydrateComposerDraft('file:a')
       const restored = useStore.getState().attachments
@@ -427,7 +394,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       const port = makePort({
         text: '重试前的话',
         onSend: () => {
-          /* 模拟 await 期间用户已经在输入框里新敲了内容 */
           port.__box.text = '新敲的内容'
           return false
         }
@@ -435,7 +401,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       await submitComposerInput(port)
       const after = useStore.getState()
       ok(after.queueRestore === '重试前的话', '失败文字进 queueRestore', JSON.stringify(after.queueRestore))
-      /* Composer 的消费 effect 就是这套规则：把 queueRestore 放到已有内容前面。 */
       const composed = after.queueRestore ? `${after.queueRestore}\n${port.__box.text}` : port.__box.text
       ok(composed === '重试前的话\n新敲的内容', '恢复后输入框保留 await 期间新输入且顺序正确', JSON.stringify(composed))
       const ids = after.attachments.map((a) => a.id)
@@ -452,7 +417,6 @@ export async function runComposerDraftOwnershipTests(ok) {
         text: '!echo dup',
         onBash: () => ({ ok: false, error: 'fail' })
       })
-      /* `!` 只 clearText，附件仍在顶层；恢复 saved 与 existing 是同一份，必须去重。 */
       await submitComposerInput(port)
       const after = useStore.getState()
       ok(after.attachments.filter((a) => a.id === 'dup').length === 1, '同一附件不重复堆叠', JSON.stringify(after.attachments))
@@ -472,7 +436,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       const port = makePort({
         text: '!pending cmd',
         onBash: () => {
-          /* await 期间 pi 就绪：同一实例拿到真实 uuid */
           useStore.setState({
             session: { sessionId: 'A', sessionFile: 'A', cwd: 'C:/p' },
             peekedSessionId: 'A',
@@ -502,7 +465,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       const port = makePort({
         text: '!into A',
         onBash: () => {
-          /* 同一实例先落 uuid（缓存也迁移到 A），再切到 B —— 恢复必须落到 A 的 uuid 缓存。 */
           const runtimes = useStore.getState().sessionRuntimes
           setView({
             session: { sessionId: 'B', sessionFile: 'B', cwd: 'C:/p' },
@@ -558,7 +520,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       const port = makePort({
         text: '!stale gen',
         onBash: () => {
-          /* 同一 runId 被复用到新会话 C，代次递增 */
           setView({
             session: { sessionId: 'C', sessionFile: 'C', cwd: 'C:/p' },
             peekedSessionId: 'C',
@@ -582,7 +543,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       const port = makePort({
         text: '!same gen',
         onBash: () => {
-          /* 视图已无常驻会话身份，但 rA 实例被挂到 B（同 runId 同代次） */
           setView({
             session: null,
             peekedSessionId: null,
@@ -615,7 +575,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       ok(after.queueRestore === '!boom', '抛异常时文字回到输入框', JSON.stringify(after.queueRestore))
     }
   } finally {
-    /* 还原全局，避免污染同进程里后面的测试。 */
     for (const [key, value] of Object.entries(saved)) {
       if (had[key]) globalThis[key] = value
       else delete globalThis[key]

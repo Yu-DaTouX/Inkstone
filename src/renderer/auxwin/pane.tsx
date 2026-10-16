@@ -1,13 +1,3 @@
-/**
- * 页签弹出窗渲染入口（v3 · WP-30 弹出）。
- *
- * 独立窗口里**没有主窗口的 store**：本页只渲染主进程推送的受限投影
- * （`PaneStateView`），动作经 `paneBridge.action` 交回主进程校验后转给主窗口。
- * 窗口在打开时锁定 owner 与 epoch；本页不推导全局前台、不读会话状态机。
- *
- * 未支持的页签（browser / terminal / preview）由控制器直接拒绝，不会走到本页；
- * 但这里仍按 `unsupported` 的矩阵渲染一句明确说明，不画假可用按钮。
- */
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ArrowLeft, ArrowRight, CornerUpLeft, Folder, File, RefreshCw, RotateCw, X } from 'lucide-react'
@@ -326,25 +316,12 @@ function PaneApp(): ReactElement {
   )
 }
 
-/*
- * 弹窗渲染端的缩放近似：原生视图端口收 DIP，而 getBoundingClientRect 返回 CSS
- * 像素。优先用主进程随状态下发的弹窗 zoomFactor（与主窗口一致），状态未就绪时
- * 退回 devicePixelRatio；两者都是近似，真机缩放未验（见交付说明）。
- */
 function dipScale(zoomFactor: number | undefined): number {
   if (typeof zoomFactor === 'number' && Number.isFinite(zoomFactor) && zoomFactor > 0) return zoomFactor
   const dpr = window.devicePixelRatio
   return Number.isFinite(dpr) && dpr > 0 ? dpr : 1
 }
 
-/**
- * 浏览器原生弹出视图。
- *
- * 这里**不渲染网页**：真正的 WebContentsView 由主进程改挂到本窗口 contentView，
- * 覆盖在 `.pane-browser__native` 占位区的 DIP 坐标上。本组件只画工具条（地址栏、
- * 前进 / 后退 / 刷新、归还主窗口、关闭）并逐帧把占位区坐标换算成 DIP 后发出去。
- * 地址栏与历史可用性来自主进程状态，不自己维护第二份 navigation 状态机。
- */
 function PaneBrowserView({ bridge }: { bridge: PaneBrowserBridge | null }): ReactElement {
   const [state, setState] = useState<PaneBrowserStateView | null>(null)
   const [url, setUrl] = useState('')
@@ -384,7 +361,6 @@ function PaneBrowserView({ bridge }: { bridge: PaneBrowserBridge | null }): Reac
     }
   }, [bridge])
 
-  /* 占位区逐帧跟随：几何签名不变就不重复发 IPC，避免打扰原生层。 */
   useEffect(() => {
     if (!bridge) return
     const el = viewportRef.current
@@ -411,7 +387,6 @@ function PaneBrowserView({ bridge }: { bridge: PaneBrowserBridge | null }): Reac
     return () => cancelAnimationFrame(frame)
   }, [bridge, state?.zoomFactor])
 
-  /** 工具条动作：成功后重取一次状态，让地址栏与前进 / 后退可用性跟上。 */
   const run = (action: () => Promise<unknown>): void => {
     void action()
       .then(() => refresh())
@@ -492,7 +467,6 @@ function PaneBrowserView({ bridge }: { bridge: PaneBrowserBridge | null }): Reac
         </div>
       ) : (
         <main className="pane-browser">
-          {/* 原生 WebContentsView 由主进程挂到本占位区的 DIP 坐标上；这里只留空位，不画假内容。 */}
           <div className="pane-browser__native" ref={viewportRef} role="region" aria-label={dict.browser} data-tab-id={state.tabId} />
         </main>
       )}
@@ -500,11 +474,6 @@ function PaneBrowserView({ bridge }: { bridge: PaneBrowserBridge | null }): Reac
   )
 }
 
-/**
- * 弹出窗可能是三类：DOM 投影页（paneBridge）、终端 lease（paneTerminalBridge）
- * 或浏览器原生视图（paneBrowserBridge）。三者共用同一 aux/pane.html；这里按主进程
- * 已绑定的 lease 探测一次，因此不新增构建入口，也不把三套 UI 复制到主窗口。
- */
 function PaneRoot(): ReactElement {
   const [mode, setMode] = useState<'checking' | 'terminal' | 'browser' | 'projection'>('checking')
   useEffect(() => {

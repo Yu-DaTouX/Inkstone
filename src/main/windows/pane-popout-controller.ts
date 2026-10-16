@@ -1,22 +1,3 @@
-/**
- * 页签弹出窗控制器（v3 · WP-30 弹出）。
- *
- * 复用 aux 小窗的生命周期骨架：惰性创建、close 即回收、`owns()` 校验来源、
- * `dispose()` 统一销毁、位置与缩放跟随主窗口。差异在**归属纪律**：
- *
- *   · 窗口在 `open` 时锁定一份 `PanePopoutOwner`，并分配自增 `epoch`；
- *   · 主窗口推送的投影只有 `ownerKey + epoch` 都与当前会话一致才接受，否则丢弃
- *     （切 owner 后迟到的旧响应不会覆盖新内容）；
- *   · `invalidate(ownerKey)` 会进入不可操作态并释放投影数据，窗口保留让用户读到
- *     失效原因，由用户或宿主再关闭。
- *
- * 浏览器页签不做 DOM 投影，而是把**同一个** WebContentsView 改挂到弹窗
- * contentView（`options.browserTransfer`，见 pane-browser-transfer.ts）；终端页签
- * 交给 `options.terminalTransfer`（见 pane-terminal-transfer.ts，只 attach 同一 PTY），
- * 两者缺省时仍返回 `unsupported` 与最小后续清单，**不创建窗口**。预览仍不支持。
- * 真实 BrowserWindow 工厂在本文件底部的 `createPanePopoutWindow`；单测用 esbuild
- * 把 `electron` 换成替身。
- */
 import { BrowserWindow } from 'electron'
 import {
   PANE_ALLOWED_ACTIONS,
@@ -58,12 +39,6 @@ interface PaneSession {
   window: PanePopoutWindow
 }
 
-/**
- * 浏览器原生弹出会话。
- *
- * `targetWebContentsId` 由适配器租约绑定，也是受限 IPC 校验来源窗口的依据；
- * 归还/释放都经 `browserTransfer` 端口，控制器不直接碰 WebContentsView。
- */
 interface BrowserSession {
   owner: PanePopoutOwner
   epoch: number
@@ -144,7 +119,6 @@ export function createPanePopoutController(
     session.window.send(PANE_POPOUT_CHANNELS.push, buildState(session))
   }
 
-  /** 归还浏览器视图并销毁弹窗；`returnView=false` 时只销毁窗口。 */
   const closeBrowserSession = (session: BrowserSession, returnView: boolean): void => {
     browserSessions.delete('browser')
     if (returnView && browserTransfer) {
@@ -173,7 +147,6 @@ export function createPanePopoutController(
       existing.window.show()
       return { ok: true, code: 'ok', epoch: existing.epoch }
     }
-    /* 换页签或换归属：先把旧视图还回主窗口，不让两个弹窗共用一个原生视图。 */
     if (existing) closeBrowserSession(existing, true)
 
     const session: BrowserSession = {
@@ -225,10 +198,6 @@ export function createPanePopoutController(
     return { ok: true, code: 'ok', epoch: session.epoch }
   }
 
-  /**
-   * 终端弹出：委托给注入的 transfer 端口。窗口与 lease 归端口所有，控制器只
-   * 转发一次 open，不复制终端状态机、不 start / kill PTY。
-   */
   const openTerminal = (request: PanePopoutOpenRequest): PanePopoutOpenResult => {
     if (!terminalTransfer) {
       return {
@@ -283,7 +252,6 @@ export function createPanePopoutController(
       let session = sessions.get(tab)
       if (session) {
         if (session.owner.key !== owner.key) {
-          /* 换归属：新 epoch，旧投影一律作废，等待主窗口按新 epoch 重推。 */
           session.epoch = ++epochCounter
           session.projection = null
           session.invalidated = false
@@ -458,10 +426,6 @@ export function createPanePopoutController(
   }
 }
 
-/**
- * 真实弹出窗工厂。普通可缩放窗口（不是无边框浮动层），位置与缩放复用 aux 的
- * `host` 事实；关闭即销毁，由控制器的 `onClosed` 回收会话。
- */
 export function createPanePopoutWindow(deps: PanePopoutWindowDeps): PanePopoutWindow {
   let destroyed = false
   const win = new BrowserWindow({

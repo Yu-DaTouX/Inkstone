@@ -1,20 +1,7 @@
-/**
- * pi 的原始消息类型 → UIMessage 的归一化。
- *
- * 为什么单独一个文件（原来在 agent.ts 里）：
- *   会话文件解析器（session-reader.ts）也要用它 —— 而 agent.ts 依赖 sessions.ts，
- *   如果让 sessions.ts 或 session-reader.ts 反向 import agent.ts 就会成环。
- *   这里只依赖 shared 下的类型与纯函数，谁都能安全地 import。
- *
- * 协议知识仍然集中：pi 的**字段名**只出现在这个文件与 agent.ts 里
- * （HANDOFF §9 原则 1）。
- */
 import type { Usage, UIMessage, UIMessageImage, UIToolCall } from '../shared/ipc'
 import { modelErrorNotice } from '../shared/model-errors'
 import { assistantModelIdentity } from '../shared/assistant-model'
 import { estimateCost } from '../shared/model-pricing'
-
-/* pi 的原始类型（只在这里出现） */
 
 export interface PiContentBlock {
   type: string
@@ -23,7 +10,6 @@ export interface PiContentBlock {
   id?: string
   name?: string
   arguments?: unknown
-  /** 图片块（ImageContent） */
   data?: string
   mimeType?: string
 }
@@ -42,7 +28,6 @@ export interface PiMessage {
   model?: string
   provider?: string
   stopReason?: string
-  /** `stopReason === 'error'` 时服务商给的原文 */
   errorMessage?: string
   timestamp?: number
   toolCallId?: string
@@ -55,12 +40,10 @@ export interface PiMessage {
   nestedCalls?: { calls?: unknown[]; complete?: boolean }
 }
 
-/** 助手消息的错误行：只在模型出错时有，文案按服务商原文分类。 */
 export function assistantError(m: PiMessage): string | undefined {
   return m.stopReason === 'error' ? modelErrorNotice(m.errorMessage) : undefined
 }
 
-/** `model` 给出时，pi 报 0 费用的消息按公开 API 价补估算（见 model-pricing.ts） */
 export function toUsage(u: PiMessage['usage'], model?: string): Usage | undefined {
   if (!u) return undefined
   const usage: Usage = {
@@ -77,14 +60,6 @@ export function toUsage(u: PiMessage['usage'], model?: string): Usage | undefine
   return estimate && estimate > 0 ? { ...usage, cost: estimate, costEstimated: true } : usage
 }
 
-/** 把 pi 的 AgentMessage 归一化成 UIMessage（历史回放用） */
-/**
- * 抽出一条消息里的图片。
- *
- * 用户贴的图与**工具结果里的图**（`yan browser` 截图、渲染出来的图表）在会话
- * JSONL 里是同一个形状：`{type:'image', data, mimeType}`，只是挂在不同的 role 上。
- * 历史重读时都走这里落盘，消息里只留文件地址。
- */
 export function imagesOf(
   content: unknown,
   localizeImage?: (mimeType: string, data: string) => string
@@ -94,24 +69,12 @@ export function imagesOf(
   for (const c of content as PiContentBlock[]) {
     if (c?.type !== 'image') continue
     const mimeType = c.mimeType ?? 'image/png'
-    /*
-     * 历史重读会注入 `localizeImage`：图片落盘，消息里只留文件地址。
-     * 几十 MB 的 base64 不能进 IPC，而只要它不留下来，重启 / 切会话
-     * 之后就再也找不回图片（用户报的「图片看不到」）。
-     * 实时事件流不走这里，它带来的 base64 原样保留。
-     */
     const url = localizeImage && c.data ? localizeImage(mimeType, c.data) : ''
     out.push(url ? { mimeType, data: '', url } : { mimeType, data: c.data ?? '' })
   }
   return out.length ? out : undefined
 }
 
-/**
- * pi 在 `/skill:名字 参数` 发出后把整份 SKILL.md 包成
- * `<skill name location>…</skill>\n\n参数` 再交给模型。模型要看到全文，
- * 用户只该看到自己敲的那一行，所以展示层折回 `/skill:名字 参数`。
- * 格式与 pi 的 parseSkillBlock 一致；对不上就原样返回，不猜。
- */
 const SKILL_BLOCK = /^<skill name="([^"]+)" location="[^"]+">\n[\s\S]*?\n<\/skill>(?:\n\n([\s\S]+))?$/
 
 export function collapseSkillInvocation(text: string): string {
@@ -128,7 +91,6 @@ export function normalizeMessage(
   entryId?: string
 ): UIMessage | null {
   const id = `m${idx}`
-  /* 会话文件里的 entry id 是 fork 锚点；实时事件流没有，保持缺省。 */
   const entry = entryId ? { entryId } : {}
 
   if (m.role === 'user') {
@@ -142,10 +104,7 @@ export function normalizeMessage(
       }
     }
 
-    // 技能展开块先折叠，再去掉客户端塞进去的 XML 包裹（顺序反了会先把 <skill> 标签剥掉）
     text = collapseSkillInvocation(text)
-    // 保留宿主通知标记，展示层可在实时与历史中一致隐藏，消息编号仍保持稳定。
-    // JSONL 中的 user 文本是原文；不能凭首尾标签形状推断为宿主包装。
     return {
       id,
       ...entry,
@@ -173,8 +132,6 @@ export function normalizeMessage(
         id: c.id!,
         name: c.name ?? 'unknown',
         args: c.arguments,
-        // 历史里的工具调用已经没有结果了（结果在单独的 toolResult 消息里），
-        // 后面用 toolResult 回填
         status: 'ok' as const
       }))
 
@@ -194,9 +151,7 @@ export function normalizeMessage(
   }
 
   if (m.role === 'toolResult') {
-    /* 工具跑出来的图（浏览器截图、渲染图表）与用户贴的图同源，同样要能看到。 */
     const images = imagesOf(m.content, localizeImage)
-    // 归一化成一条工具结果（挂不上就独立显示）
     return {
       id,
       ...entry,
@@ -208,7 +163,6 @@ export function normalizeMessage(
           name: m.toolName ?? 'tool',
           args: undefined,
           details: m.details,
-          /* 被取消的不是失败：方案 4.1 要求取消单独显示 */
           status: m.isError && !m.cancelled ? 'error' : 'ok',
           ...(m.cancelled ? { cancelled: true } : {}),
           output: Array.isArray(m.content)
@@ -254,21 +208,10 @@ export function normalizeMessage(
   return null
 }
 
-/** 历史回放：把 toolResult 的结果回填到对应的 toolCall 上 */
-/** Incremental history state shared by file and RPC normalization. */
 export function createHistoryBuilder(localizeImage?: (mimeType: string, data: string) => string) {
   const out: UIMessage[] = []
   const callIndex = new Map<string, { msg: UIMessage; call: UIToolCall }>()
 
-  /*
-   * ⚠️ 序号只按**真正产出的消息**递增，不能用 raw 下标。
-   *
-   * Pi 0.87 起会把 system prompt 作为一条 `type:"message"` 写进会话 JSONL，
-   * 而实时事件流与 context 钩子都看不到它。继续用 raw 下标编号会让 system
-   * 之后的每条消息 id 整体 +1：实时写入的回合计时锚点（`anchorId`，形如 `m0`）
-   * 在重启读回时全部对不上 —— 表现为用时与「已中断」凭空消失。
-   * 跳过 system、按产出顺序编号，两代 pi 下两侧才是同一口径。
-   */
   let seq = 0
   const append = (raw: unknown, entryId?: string): void => {
     const m = raw as PiMessage
@@ -279,7 +222,6 @@ export function createHistoryBuilder(localizeImage?: (mimeType: string, data: st
     if (m.role === 'toolResult') {
       const hit = norm.toolCalls?.[0] ? callIndex.get(norm.toolCalls[0].id) : undefined
       if (hit) {
-        // 挂到原有调用上，不新增消息（序号也不前进，与实时视图一致）
         hit.call.status = norm.toolCalls![0].status
         hit.call.output = norm.toolCalls![0].output
         hit.call.cancelled = norm.toolCalls![0].cancelled
@@ -314,7 +256,6 @@ export function normalizeHistory(
   return builder.finish()
 }
 
-/** pi persists bounded summaries, not the nested tools' full output. */
 function restoreNestedCalls(
   result: PiMessage,
   message: UIMessage,

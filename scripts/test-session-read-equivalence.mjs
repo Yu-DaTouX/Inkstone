@@ -1,14 +1,3 @@
-/**
- * 会话文件读取的等价与边界回归（不启动 Electron、不碰 pi、不读用户数据）。
- *
- * 覆盖任务要求的固定夹具：坏行、超长行（超单行上限）、文件截断（末尾半条 JSON）、
- * entryIds（轮次分叉锚点）、工具调用与结果配对、图片本地化、BOM/CRLF/跨块 UTF-8、
- * 空文件与缺失文件。期望值是从改动前的读取器上跑出来的既有行为（存于
- * `.local-docs/evidence/session-read-A-20261013/baseline-results.json`），
- * 这里改写为内联断言，脚本本身不依赖本地资料。
- *
- * 用法：npm run test:unit（或 node scripts/test-session-read-equivalence.mjs）
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -48,17 +37,13 @@ export const FIXTURES = {
   mixed: MIXED,
   bom: '\uFEFF' + head() + message('u', 'user', 'BOM 之后的消息'),
   crlf: (head() + message('u', 'user', 'CRLF')).replaceAll('\n', '\r\n'),
-  // 末尾半条 JSON：稳定文件下按旧行为解析失败并跳过，不干扰前面的完整记录
   truncated: head() + message('u', 'user', '完整') + '{"type":"message","message":',
-  // 跨块 UTF-8 与超长文本截断（单行超过 MAX_TEXT 时递归截断并计数）
   utf8: head() + message('u', 'user', 'x'.repeat(65400) + '中文🙂'.repeat(1000)),
-  // 图片本地化 + 工具调用/结果配对 + 超长 output 截断
   images:
     head() +
     message('u', 'user', [{ type: 'text', text: '图' }, { type: 'image', mimeType: 'image/png', data: 'A'.repeat(70000) }]) +
     message('a', 'assistant', [{ type: 'toolCall', id: 'big', name: 'bash', arguments: { command: 'x'.repeat(70000) } }]) +
     message('t', 'toolResult', [{ type: 'text', text: 'y'.repeat(100000) }], { toolCallId: 'big', toolName: 'bash', isError: false }),
-  // 单行超过 48MiB 上限：整行跳过并计入 truncated，后面的小消息仍能读到
   oversized: head() + message('big', 'user', 'z'.repeat(48 * 1024 * 1024 + 1)) + message('small', 'user', '仍可读取')
 }
 

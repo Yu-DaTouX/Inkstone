@@ -1,13 +1,3 @@
-/**
- * 会话导出 / 导入：纯函数，不碰同步目录、不依赖 Electron。
- *
- * 会话本体**不同步**（体积大、含本机 cwd 与运行历史）；用户要跨设备搬一条会话时，
- * 用「导出到指定路径 / 从指定路径导入」两个显式动作。
- *
- * 打包格式是一个 JSON：`{ v, kind:"inkstone-session", exportedAt, fileName, content }`，
- * content 为原会话 JSONL 原文。导入时生成新会话 id（改写文件头 `type:"session"` 的 id），
- * 目标文件名已存在时不覆盖，换一个新 id 再写。
- */
 import { existsSync } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
@@ -96,10 +86,6 @@ export async function importSession(
   const originalId = readSessionId(bundle.content)
   let sessionId = ''
   let file = ''
-  /*
-   * 生成新 id 并改写文件头；目标文件名冲突时换一个 id 重试，绝不覆盖同名会话。
-   * 会话文件名与 id 都是随机 uuid，正常情况下一次就成。
-   */
   for (let attempt = 0; attempt < 5; attempt++) {
     sessionId = nextId()
     file = join(sessionsDir, `${sessionId}.jsonl`)
@@ -117,7 +103,6 @@ export async function importSession(
   return { ok: true, path: file, sessionId, ...(originalId ? { renamedFrom: originalId } : {}) }
 }
 
-/** 从会话 JSONL 文件头里读原会话 id；读不到返回 undefined。 */
 export function readSessionId(content: string): string | undefined {
   for (const line of content.split('\n')) {
     if (!line.includes('"type":"session"')) continue
@@ -125,13 +110,11 @@ export function readSessionId(content: string): string | undefined {
       const parsed = JSON.parse(line) as { type?: unknown; id?: unknown }
       if (parsed?.type === 'session' && typeof parsed.id === 'string' && parsed.id) return parsed.id
     } catch {
-      /* 坏行跳过，继续找下一行。 */
     }
   }
   return undefined
 }
 
-/** 把文件头 `type:"session"` 那条的 id 换成 newId，其余行原样保留。 */
 export function rewriteSessionId(content: string, newId: string): string {
   const lines = content.split('\n')
   for (let index = 0; index < lines.length; index++) {
@@ -145,7 +128,6 @@ export function rewriteSessionId(content: string, newId: string): string {
         return lines.join('\n')
       }
     } catch {
-      /* 继续找。 */
     }
   }
   return content

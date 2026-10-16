@@ -1,16 +1,3 @@
-/**
- * v3 Table 原语：纯模型与 SSR 小检查。
- *
- * 只做本地静态检查：不启动浏览器/Electron、不连模型、不读用户数据、不写会话历史。
- * - 纯模型：稳定排序、空值顺序、虚拟窗口边界。
- * - SSR（react-dom/server）：真实渲染 `Table.tsx`，核对 aria-rowcount/rowindex/
- *   colindex、表头列宽、空态/加载态与受控选中、行禁用的可访问性属性。
- *
- * 说明：RAC `Virtualizer` 依赖运行时测量的视口尺寸，服务端渲染没有视口，
- * 因此默认布局下不渲染数据行（这本身就是「不整表渲染」的证据）；需要核对
- * 数据行 `aria-rowindex` 时，用一个只在无视口时强制给定高度的测试布局驱动
- * RAC 的真实行渲染路径。这里不冒充运行截图或性能验收。
- */
 import assert from 'node:assert/strict'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -137,9 +124,6 @@ async function loadSsrModule() {
 }
 
 try {
-  /*
-   * 纯模型：排序稳定性。
-   */
   const model = await loadPureModel()
   const { sortRows, computeTableWindow, compareTableValues } = model
 
@@ -188,9 +172,6 @@ try {
   assert.equal(compareTableValues(undefined, null), 0)
   assert.equal(compareTableValues('', 'a'), 1)
 
-  /*
-   * 纯模型：虚拟窗口边界。
-   */
   assert.deepEqual(computeTableWindow({ rowCount: 0, rowHeight: 32, viewportHeight: 200 }), {
     startIndex: 0,
     endIndex: -1,
@@ -246,12 +227,8 @@ try {
     renderedCount: 2
   })
 
-  /*
-   * SSR：真实组件渲染。
-   */
   const ssr = await loadSsrModule()
 
-  // 长表虚拟化：总量走 aria-rowcount，默认布局在没有视口时只渲染表头。
   assert.match(ssr.longVirtualized, /class="[^"]*ui-table/)
   assert.match(ssr.longVirtualized, /role="grid"/)
   assert.match(ssr.longVirtualized, /aria-rowcount="1001"/)
@@ -265,7 +242,6 @@ try {
   assert.match(ssr.longVirtualized, /left:200px;width:100px/, '表头第二列紧接第一列对齐')
   assert.match(ssr.longVirtualized, /class="[^"]*ui-table__column/)
 
-  // 强制窗口：驱动 RAC 真实行渲染，核对数据行 aria-rowindex 与列号。
   assert.match(ssr.forcedRows, /aria-rowcount="7"/)
   for (const index of [2, 3, 4, 5, 6, 7]) {
     assert.ok(ssr.forcedRows.includes(`aria-rowindex="${index}"`), `数据行 aria-rowindex=${index}`)
@@ -275,7 +251,6 @@ try {
   assert.equal(count(ssr.forcedRows, 'left:200px;width:100px'), 7, '表头与六行的第二列都对齐到 left:200px/width:100px')
   assert.equal(count(ssr.forcedRows, 'width:200px'), 7, '每行第一列 200px')
 
-  // 普通表：表头与表体列数一致（列对齐的 DOM 结构）；选中/禁用/排序可访问性属性。
   assert.equal(count(ssr.plain, '<th '), 2, '表头两列')
   assert.equal(count(ssr.plain, '<td '), 6, '三行各两列')
   assert.equal(count(ssr.plain, 'aria-selected="true"'), 2)
@@ -287,7 +262,6 @@ try {
   assert.match(ssr.plain, /data-key="r2"/)
   assert.match(ssr.plain, /class="[^"]*ui-table__row/)
 
-  // 空态与加载态。
   assert.match(ssr.empty, /data-empty/)
   assert.match(ssr.empty, /暂无数据/)
   assert.match(ssr.empty, /class="[^"]*ui-table__empty/)

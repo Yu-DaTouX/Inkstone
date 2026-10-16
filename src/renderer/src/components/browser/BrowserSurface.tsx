@@ -5,19 +5,6 @@ import { useStore } from '../../state/store'
 import { nextAddressInput } from '../../../../shared/browser-navigation'
 import { IconButton } from '../ui'
 
-/**
- * 浏览器主体。网页本身不是 iframe，而是主进程的 WebContentsView；
- * 这里仅负责地址栏、导航按钮和把可见区域坐标同步给主进程。
- *
- * ── UI 减负（用户反馈「浏览器栏太拥挤」）──
- * 之前所有操作挤在一行 42px 里：前进/后退/刷新 + 地址栏 + 外部浏览器 +
- * 「Chrome」文字按钮 + 加载提示 + 错误提示 + 关闭 + 「恢复 Agent」。
- * 现在拆成三层，各自只做一件事：
- *   ① 标签页    标签 + 新建
- *   ② 导航栏    前进/后退/刷新 + 地址栏 + Chrome + 「⋯」菜单 + 关闭
- *   ③ 状态行    只在加载中 / 出错时出现（不再挤占地址栏宽度）
- * 「在外部浏览器打开」「重新同步」「恢复 Agent」收进「⋯」菜单。
- */
 export function BrowserSurface() {
   const t = useT()
   const state = useStore((s) => s.browserState)
@@ -32,14 +19,8 @@ export function BrowserSurface() {
   const tabs = state.tabs ?? []
   const external = state.external
   const externalActive = state.mode === 'external' ? external : undefined
-  /* 空白页不在地址栏里显示 about:blank */
   const shownUrl = state.url === 'about:blank' ? '' : state.url
   const [address, setAddress] = useState(shownUrl)
-  /**
-   * 用户是否正在编辑地址栏（H-9 第二阶段）。
-   * 打开时不动草稿：后台导航（重定向 / 另一个标签 / 页面自己跳）
-   * 不能把用户正在输入的地址冲掉。提交后回到“跟随已提交地址”。
-   */
   const [addressDirty, setAddressDirty] = useState(false)
   const navSeq = useRef(0)
   const [error, setError] = useState('')
@@ -72,7 +53,6 @@ export function BrowserSurface() {
     setAddress((prev) => nextAddressInput(shownUrl, prev, addressDirty))
   }, [shownUrl, addressDirty])
 
-  /* 菜单：点外面 / 按 Esc 收起 —— 否则它会一直悬在那儿挡地址栏 */
   useEffect(() => {
     if (!menuOpen) return
     const onDown = (e: PointerEvent): void => {
@@ -110,11 +90,6 @@ export function BrowserSurface() {
         width: Math.max(0, right - left),
         height: Math.max(0, bottom - top)
       }
-      /*
-       * ResizeObserver 只保证尺寸变化，不保证位置变化（例如左栏收放、
-       * 右栏列宽过渡）。逐帧比较坐标，避免 WebContentsView 留在旧列。
-       * 只有实际变化才发 IPC，不会每帧重复设置原生视图。
-       */
       const signature = [bounds.x, bounds.y, bounds.width, bounds.height].map((v) => Math.round(v * 2) / 2).join(',')
       if (signature !== lastBounds) {
         lastBounds = signature
@@ -122,8 +97,6 @@ export function BrowserSurface() {
       }
       if (!disposed) frame = requestAnimationFrame(syncBounds)
     }
-    // Only one animation loop owns scheduling. ResizeObserver previously started
-    // another permanent loop on every resize, multiplying layout reads over time.
     frame = requestAnimationFrame(syncBounds)
     return () => {
       disposed = true
@@ -131,7 +104,6 @@ export function BrowserSurface() {
     }
   }, [])
 
-  /* 启动 Chrome 最长要等 20 秒：期间按钮置忙，避免用户以为没反应而连点 */
   const toggleChrome = async (): Promise<void> => {
     if (connecting) return
     setMenuOpen(false)
@@ -146,10 +118,6 @@ export function BrowserSurface() {
     if (!/^[a-z][a-z\d+.-]*:/i.test(value)) {
       value = /^(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|\[[\da-f:]+\])(?::\d+)?(?:[/?#]|$)/i.test(value) ? `http://${value}` : `https://${value}`
     }
-    /*
-     * 导航序号：只让**最后一次**导航的结果说话。
-     * 连续敲两次回车时，第一次的失败不能盖掉第二次的成功。
-     */
     const seq = ++navSeq.current
     const result = await window.yan.browser.navigate(value)
     if (seq !== navSeq.current) return
@@ -209,11 +177,6 @@ export function BrowserSurface() {
           />
         </form>
 
-        {/*
-         * 接入本机 Chrome：独立 profile + CDP。
-         * 这是浏览器的一项重要能力，所以留在主栏（不塞进菜单），
-         * 但收成图标大小，省宽度。
-         */}
         <IconButton
           icon="plug"
           size="sm"
@@ -226,7 +189,6 @@ export function BrowserSurface() {
           onClick={() => void toggleChrome()}
         />
 
-        {/* 用系统默认浏览器打开当前页：常用操作，直接放在工具栏 */}
         <IconButton
           icon="external"
           size="sm"
@@ -238,7 +200,6 @@ export function BrowserSurface() {
           onClick={() => void window.yan.browser.openExternal(state.url || address)}
         />
 
-        {/* 「⋯」菜单：低频操作收在这里，地址栏因此能拿到更多宽度 */}
         <div className="browser-menu-wrap" ref={menuRef}>
           <IconButton
             icon="menu"
@@ -255,14 +216,6 @@ export function BrowserSurface() {
         <IconButton icon="close" label={t('browser.close')} size="sm" iconSize={14} className="browser-close" onClick={() => void close()} />
       </div>
 
-      {/*
-       * 第三行：状态行 / 展开的「⋯」操作行。
-       *
-       * ⚠️ 菜单必须是**占位的一行**，不能做浮动下拉：
-       *    网页是主进程的原生 WebContentsView，永远盖在渲染层之上，
-       *    浮动下拉一旦伸到网页区域就会被遮住（和报错提示同一个坑）。
-       *    做成一行后它会占据 grid 第 3 行，网页区自然下移（ResizeObserver 同步坐标）。
-       */}
       {menuOpen ? (
         <div className="browser-actions" data-testid="browser-menu">
           {state.lastDownload ? (
@@ -279,10 +232,6 @@ export function BrowserSurface() {
             {syncing ? t('browser.syncing') : t('browser.storageCopy')}
           </button> : null}
           {syncNotice ? <span className="browser-sync-result" title={syncNotice}>{syncNotice}</span> : null}
-          {/*
-           * 被拒的权限请求（方案 9.2）：默认全部拒绝，但用户要能查
-           * 「这个网站要过什么、被拒了什么」—— 否则摄像头点了没反应只能猜。
-           */}
           {state.permissions?.length ? (
             <div className="browser-permission-list" data-testid="browser-permissions">
               <span className="browser-sync-result">
@@ -312,13 +261,6 @@ export function BrowserSurface() {
               ))}
             </div>
           ) : null}
-          {/*
-           * 被网络边界拦下的请求（本地预览边界 / DNS 重绑定）。
-           *
-           * 拦截是静默 `cancel`：不列出来的话，用户看到的就是“这个页面
-           * 就是打不开”，只会以为浏览器坏了。这里给出目标主机、原因，
-           * 以及**是谁想访问**（发起方顶层页面），方便判断是不是自己预期内的。
-           */}
           {state.blockedRequests?.length ? (
             <div className="browser-permission-list" data-testid="browser-blocked">
               <span className="browser-sync-result">
@@ -358,10 +300,6 @@ export function BrowserSurface() {
       ) : state.loading || error || state.loadError || state.userControl || state.lastDownload || state.blockedRequests?.length ? (
         <div className="browser-status" data-testid="browser-status">
           {state.loading ? <span className="browser-loading">{t('browser.loading')}</span> : null}
-          {/*
-           * 打不开该页面（H-9 第二阶段）：显示原因 + 两个出口 + **保留原地址**。
-           * 地址不能丢：用户要靠它判断“刚才到底打开的是什么”。
-           */}
           {state.loadError ? (
             <div className="browser-loaderror" data-testid="browser-load-error" role="alert">
               <span className="browser-error" title={state.loadError.description}>
@@ -386,10 +324,6 @@ export function BrowserSurface() {
               </span>
             </div>
           ) : null}
-          {/*
-           * 被拦下的请求也要在**收起菜单时可见**：那正是“页面打不开”的
-           * 原因，藏在「⋯」里等于让用户去猜。
-           */}
           {state.blockedRequests?.length ? (
             <span className="browser-error" data-testid="browser-blocked-hint">
               {t('browser.blockedRequests', { n: state.blockedRequests.length })}
@@ -409,10 +343,6 @@ export function BrowserSurface() {
               {error}
             </span>
           ) : null}
-          {/*
-           * 下载（方案 9.2）：显示文件名与**来源**，并说明没有自动打开。
-           * 下载下来的东西可能可执行，不能自动跑。
-           */}
           {state.lastDownload ? (
             <span className="browser-download" data-testid="browser-download" title={state.lastDownload.path}>
               {t('browser.downloaded', { name: state.lastDownload.filename })}
@@ -430,10 +360,6 @@ export function BrowserSurface() {
             {externalActive.profileDir ? <code className="browser-ext-path">{externalActive.profileDir}</code> : null}
             {externalActive.debuggingPort ? <span className="browser-ext-port">:{externalActive.debuggingPort}</span> : null}
 
-            {/*
-             * 数据同步状态 —— 用户报的「cookie 和历史没共享」就发生在这里。
-             * 如实列出成功了哪些、哪些没成功以及原因，而不是一句「已连接」。
-             */}
             {externalActive.sync ? (
               <div className="browser-ext-sync" data-testid="browser-ext-sync">
                 {externalActive.sync.found ? (
@@ -480,7 +406,6 @@ export function BrowserSurface() {
   )
 }
 
-/** 下载来源只显示主机名（完整 URL 放 title 里太长） */
 function downloadHost(url: string): string {
   try {
     return new URL(url).host

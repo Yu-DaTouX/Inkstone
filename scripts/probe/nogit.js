@@ -1,9 +1,3 @@
-/**
- * 没有 Git 的新设备（PATH 里没有 git / bash，Program Files 也被指到不存在的目录）：
- * 启动后给出带「一键安装 Git」按钮的通知，引导里同样有入口，状态接口如实报告缺失；
- * pi 仍然能起来、连接就绪（bash 工具退到 PowerShell，不是整个应用起不来）。
- * 不真的下载：下载与校验流程由 scripts/test-git-runtime.mjs 覆盖。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -44,7 +38,6 @@
 
     ok(await until(() => store.getState().conn === 'ready', 20000), '没有 Git 也能连上 pi（命令行工具退到 PowerShell）')
 
-    /* 引导里也有入口 */
     if (!q('.ob-card')) {
       store.getState().openSettings('about')
       if (await until(() => q('[data-testid="ob-reopen"]'))) q('[data-testid="ob-reopen"]').dispatchEvent(new MouseEvent('click', { bubbles: true }))

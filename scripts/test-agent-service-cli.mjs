@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 
-// Exercise the shipped JSONL entry and real cross-process writer exclusion.
 export async function runServiceCliTests() {
   const root = await mkdtemp(join(tmpdir(), 'inkstone-service-cli-'))
   const config = join(root, 'config.json'), source = join(root, 'input.txt')

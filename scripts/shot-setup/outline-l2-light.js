@@ -1,12 +1,3 @@
-/**
- * L2 / V-2b 视觉验收前置（**浅色**版）：与 outline-l2.js 相同，
- * 只是在截图前把主题令牌切成 light —— 深浅两种下都要看避让槽与预览卡。
- *
- * 为什么不复用同一个文件：`YAN_SHOT_SETUP` 只接受一个路径，
- * 而 executeJavaScript 执行的脚本不能 import 另一份（它不在模块图里）。
- *
- * 探针脚本约定：自求值 async IIFE，不能用反引号 / ${}。
- */
 ;(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)

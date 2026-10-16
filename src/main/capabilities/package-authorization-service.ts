@@ -1,4 +1,3 @@
-/** 按精确候选 / 指纹 / 项目持久化本地代码执行授权；调用入口只应来自宿主 UI。 */
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -53,7 +52,6 @@ export class PackageAuthorizationService {
     return grants.find((grant) => packageExecutionGrantCovers(grant, input)) ?? null
   }
 
-  /** 只供主进程的显式授权 UI 调用；CLI / 模型参数不得直接映射到这里。 */
   async grant(input: {
     candidateId: string
     digest: string

@@ -1,4 +1,3 @@
-/** 保存 / 读取 context-inspect 薄层上报的快照（每会话一份，覆盖写）。 */
 import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -11,7 +10,6 @@ function inspectFile(dataDir: string, sessionId: string): string {
   return join(dataDir, 'context-inspect', `${sessionId}.json`)
 }
 
-/** 写入失败不影响对话：这是诊断读数。 */
 export function saveContextInspect(sessionId: unknown, raw: unknown, dataDir: string = YAN_DIR): boolean {
   const snapshot = parseContextInspectSnapshot(raw)
   if (!snapshot || !isSafeSessionId(sessionId)) return false

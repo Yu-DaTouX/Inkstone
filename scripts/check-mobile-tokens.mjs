@@ -1,12 +1,3 @@
-/**
- * 手机端令牌同源检查。
- *
- * 手机端（React Native）不能直接读 CSS 变量，`mobile/src/theme.ts` 手写了一份色值。
- * 设计规范 §7 要求它与 `tokens.css` 同名同值：`bg0` ↔ `--bg-0`、`fgDim` ↔ `--fg-dim`。
- * 这里逐项比对深浅两套，改了桌面忘了手机（或反过来）就失败。
- *
- * 用法：node scripts/check-mobile-tokens.mjs
- */
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +6,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const css = readFileSync(join(root, 'src/renderer/src/styles/tokens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
 const ts = readFileSync(join(root, 'mobile/src/theme.ts'), 'utf8')
 
-/** 颜色归一：`#FFF` → `#ffffff`，`rgba(0,0,0,0.10)` → `rgba(0,0,0,0.1)` */
 function normColor(v) {
   const s = v.trim().toLowerCase().replace(/\s+/g, '')
   if (/^#[0-9a-f]{3}$/.test(s)) return '#' + [...s.slice(1)].map((c) => c + c).join('')
@@ -40,7 +30,6 @@ function tsBlock(name) {
   return out
 }
 
-/** `bg0` → `--bg-0`，`borderSoft` → `--border-soft` */
 const cssName = (key) => '--' + key.replace(/([A-Z])/g, '-$1').replace(/(\D)(\d)/g, '$1-$2').toLowerCase()
 
 const problems = []

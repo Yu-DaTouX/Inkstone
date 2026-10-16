@@ -1,15 +1,3 @@
-/**
- * MCP 契约 + 连接 + 工具服务（实施-04 S3）的测试。
- *
- * 分两层：
- *   · 纯逻辑（ID 规则 / 参数校验 / schema 指纹 / 错误分类 / 配置解析）—— 合成输入；
- *   · **真连**（`scripts/lib/mcp-stdio-fixture.mjs`，走官方 SDK，起真子进程）——
- *     握手、listTools、callTool、工具错误、schema-changed、大结果落盘、自报只读不管用。
- *
- * 为什么第二层非有不可：MCP 的坑全在「真的连上之后」—— 分页、`isError` 的语义、
- * 服务自报的 annotations。只看纯函数永远是绿的，也和真实服务无关。
- * 全部用隔离临时目录，不碰用户数据、不联网。
- */
 export async function runMcpTests(ok, modules) {
   const mcp = modules.mcp
   const config = modules.config
@@ -23,8 +11,6 @@ export async function runMcpTests(ok, modules) {
   const root = await mkdtemp(join(tmpdir(), 'yan-mcp-'))
   const fixture = resolve('scripts/lib/mcp-stdio-fixture.mjs')
 
-  /* ------------------------------------------------------- 1. ID 规则 */
-
   {
     ok(mcp.mcpToolCapabilityId('srv', 'echo') === 'mcp:srv/echo', 'ID：serverId + toolName')
     ok(
@@ -36,8 +22,6 @@ export async function runMcpTests(ok, modules) {
     ok(mcp.parseMcpToolId('skill:x') === null, 'ID：非 mcp 前缀反解为 null')
     ok(mcp.parseMcpToolId('mcp:srv') === null, 'ID：缺少工具名反解为 null')
   }
-
-  /* --------------------------------------------------- 2. 参数校验 */
 
   {
     const schema = {
@@ -54,8 +38,6 @@ export async function runMcpTests(ok, modules) {
     ok(mcp.checkToolArguments(null, {}).ok, '参数：没有 schema 时不做判断（放行）')
   }
 
-  /* --------------------------------------------- 3. schema 指纹 */
-
   {
     const a = mcp.schemaRevisionOf({ type: 'object', properties: { x: { type: 'string' } } })
     const b = mcp.schemaRevisionOf({ properties: { x: { type: 'string' } }, type: 'object' })
@@ -64,8 +46,6 @@ export async function runMcpTests(ok, modules) {
     ok(a !== c, 'schema 指纹：定义变化会变')
     ok(a === mcp.schemaRevisionOf({ type: 'object', properties: { x: { type: 'string' } } }), 'schema 指纹：稳定')
   }
-
-  /* --------------------------------------------- 4. 结果分类 */
 
   {
     const okResult = mcp.classifyMcpResult({ content: [{ type: 'text', text: 'hi' }] })
@@ -77,8 +57,6 @@ export async function runMcpTests(ok, modules) {
     })
     ok(/x/.test(rich.text) && /图片/.test(rich.text) && /资源/.test(rich.text), '结果：多类型内容都被表达')
   }
-
-  /* --------------------------------------------- 5. 配置解析 */
 
   {
     const file = join(root, 'cfg.json')
@@ -133,14 +111,10 @@ export async function runMcpTests(ok, modules) {
     ok(Boolean(brokenLoaded.error), '配置：脏 JSON 报可读错误（不静默当空）')
   }
 
-  /* --------------------------------------------- 6. 结果文件名安全 */
-
   {
     ok(toolService.safeResultSlug('../../etc/passwd') === '.._.._etc_passwd', '落盘文件名：路径分隔被替换')
     ok(!toolService.safeResultSlug('a/b\\c').includes('/'), '落盘文件名：不含目录分隔符')
   }
-
-  /* ------------------------------------- 7. 真连 stdio fixture */
 
   {
     const marker = join(root, 'sneaky-marker.txt')
@@ -157,11 +131,6 @@ export async function runMcpTests(ok, modules) {
 
     try {
       const tools = await manager.listTools('fx')
-      /*
-       * fixture 的工具数会被实施-04 / 07 的验证长出来：S4 加了 `compute`，
-       * S4（来源搜索）加了 `web_search`。这里断言**个数与名字**，不是为了钉住
-       * “永远 7 个”，而是让“新增工具没被 listTools 漏掉”可见。
-       */
       ok(tools.length === 7, '真连：listTools 拿到全部工具', tools.map((t) => t.name).join(','))
       ok(
         tools.some((t) => t.name === 'web_search'),
@@ -181,7 +150,6 @@ export async function runMcpTests(ok, modules) {
       const add = await toolService.callMcpTool(manager, 'fx', 'add', { a: 2, b: 3 }, { resultsDir })
       ok(add.text === '5', '真连：带必填参数的调用')
 
-      /* 参数不合 schema 要当场拒，而不是发出去让服务报错。 */
       let badArgs = null
       try {
         await toolService.callMcpTool(manager, 'fx', 'add', { a: 2 }, { resultsDir })
@@ -190,11 +158,9 @@ export async function runMcpTests(ok, modules) {
       }
       ok(badArgs && badArgs.code === 'invalid_arguments', '真连：漏必填参数回 invalid_arguments（不发出请求）')
 
-      /* 工具自己失败是**结果**，不是抛异常。 */
       const failed = await toolService.callMcpTool(manager, 'fx', 'fail', {}, { resultsDir })
       ok(failed.toolError === true, '真连：工具级错误是 toolError:true 的结果（与协议错误分开）')
 
-      /* schema 变了要回可重试的 schema-changed。 */
       let stale = null
       try {
         await toolService.callMcpTool(manager, 'fx', 'add', { a: 1, b: 1 }, { resultsDir, expectedRevision: 'deadbeef' })
@@ -203,7 +169,6 @@ export async function runMcpTests(ok, modules) {
       }
       ok(stale && stale.code === 'schema-changed', '真连：revision 过期回 schema-changed（可重试）')
 
-      /* 大结果落盘，stdout 只回摘要。 */
       const big = await toolService.callMcpTool(manager, 'fx', 'big', { bytes: 100_000 }, { resultsDir })
       ok(Boolean(big.resultFile) && big.bytes >= 100_000, '真连：大结果落盘并回报字节数')
       if (big.resultFile) {
@@ -211,13 +176,11 @@ export async function runMcpTests(ok, modules) {
         ok(info.size >= 100_000, '真连：落盘文件真的有那么大')
       }
 
-      /* 服务自报 readOnlyHint 但会写盘 —— 我们只如实展示，不当权限。 */
       const sneaky = await toolService.callMcpTool(manager, 'fx', 'sneaky', {}, { resultsDir })
       ok(sneaky.text === 'done', '真连：sneaky 调用成功')
       const markerText = await readFile(marker, 'utf8').catch(() => '')
       ok(markerText.includes('sneaky-wrote'), '边界：自报 readOnlyHint 的服务**真的写了盘** —— 所以不能当安全边界')
 
-      /* 不存在的工具 / 服务要可读。 */
       let noTool = null
       try {
         await toolService.describeMcpTool(manager, 'fx', 'nope')
@@ -228,11 +191,8 @@ export async function runMcpTests(ok, modules) {
     } finally {
       await manager.close()
     }
-    /* 关掉之后不该还有活着的子进程 —— 这里只能验状态被复位。 */
     ok(manager.statusOf('fx').status === 'disconnected', '关闭：状态复位为 disconnected')
   }
-
-  /* -------------------------------- 7b. stdio 环境变量护栏 */
 
   {
     const manager = new managerMod.McpConnectionManager([
@@ -254,8 +214,6 @@ export async function runMcpTests(ok, modules) {
     ok(manager.statusOf('blocked-env').status === 'error', '环境变量：拒绝后不启动 stdio 子进程')
     await manager.close()
   }
-
-  /* ------------------------------ 7c. 超时同时清理底层 stdio */
 
   {
     const manager = new managerMod.McpConnectionManager(
@@ -279,8 +237,6 @@ export async function runMcpTests(ok, modules) {
     ok(manager.statusOf('timeout-cleanup').status === 'disconnected', '超时：底层连接清理后状态为 disconnected')
     await manager.close()
   }
-
-  /* ------------------------------------------- 8. 取消正在进行的握手 */
 
   {
     const manager = new managerMod.McpConnectionManager(
@@ -310,19 +266,15 @@ export async function runMcpTests(ok, modules) {
     await manager.close()
   }
 
-  /* ------------------------------------- 9. 真连 HTTP fixture */
-
   {
     const { spawn } = await import('node:child_process')
     const net = await import('node:net')
-    /* 端口随机：固定端口在并行跑测试时会撞车，而「撞车」看着像功能坏了。 */
     const port = 39000 + Math.floor(Math.random() * 900)
     const child = spawn(process.execPath, [resolve('scripts/lib/mcp-http-fixture.mjs')], {
       stdio: 'ignore',
       env: { ...process.env, YAN_MCP_HTTP_PORT: String(port) }
     })
 
-    /* 轮询 TCP 就绪，不用固定 sleep（慢机器上 sleep 不够，快机器上白等）。 */
     let up = false
     for (let i = 0; i < 80; i++) {
       up = await new Promise((res) => {
