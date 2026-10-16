@@ -11,6 +11,7 @@
  */
 import type { Usage, UIMessage, UIMessageImage, UIToolCall } from '../shared/ipc'
 import { modelErrorNotice } from '../shared/model-errors'
+import { assistantModelIdentity } from '../shared/assistant-model'
 import { estimateCost } from '../shared/model-pricing'
 
 /* pi 的原始类型（只在这里出现） */
@@ -39,6 +40,7 @@ export interface PiMessage {
     cost?: { total?: number }
   }
   model?: string
+  provider?: string
   stopReason?: string
   /** `stopReason === 'error'` 时服务商给的原文 */
   errorMessage?: string
@@ -184,7 +186,7 @@ export function normalizeMessage(
       thinking: thinking || undefined,
       toolCalls: toolCalls.length ? toolCalls : undefined,
       usage: toUsage(m.usage, m.model),
-      model: m.model,
+      model: assistantModelIdentity(m),
       responseDetail: 'unknown',
       timestamp: m.timestamp,
       error: assistantError(m)

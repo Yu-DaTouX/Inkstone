@@ -9,6 +9,10 @@ export async function runHandoffHostRegressionTests(ok) {
   const ast = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true)
   const coordinatorSource = await readFile(new URL('../src/main/handoff-coordinator.ts', import.meta.url), 'utf8')
   const coordinatorAst = ts.createSourceFile('handoff-coordinator.ts', coordinatorSource, ts.ScriptTarget.Latest, true)
+  const runStateSource = await readFile(new URL('../src/core/run-state.ts', import.meta.url), 'utf8')
+  const runStateAst = ts.createSourceFile('run-state.ts', runStateSource, ts.ScriptTarget.Latest, true)
+  const sameEnvelopeNode = runStateAst.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'sameRuntimeEnvelope')
+  if (!sameEnvelopeNode) throw new Error('Missing sameRuntimeEnvelope dependency')
   const functions = ['collectHandoffResult', 'revalidateHandoff']
   const extracted = coordinatorAst.statements.filter((node) => ts.isFunctionDeclaration(node) && functions.includes(node.name?.text))
   if (extracted.length !== functions.length) throw new Error('Missing host functions for behavioral regressions')
@@ -100,13 +104,27 @@ export async function runHandoffHostRegressionTests(ok) {
   }
   visit(ast)
   if (!sendHandler) throw new Error('Missing production send handler')
-  const sendCode = ts.transpileModule(`const sendUser = ${sendHandler.getText(ast)}`, {
+  const ownershipNames = ['normalizeExpectedRuntime', 'targetMatchesExpected', 'resolveExpectedTarget', 'pinSendTarget', 'pinnedTargetMatches']
+  const ownershipHelpers = ast.statements.filter(node => ts.isFunctionDeclaration(node) && ownershipNames.includes(node.name?.text))
+  if (ownershipHelpers.length !== ownershipNames.length) throw new Error('Missing production send ownership dependencies')
+  const sendCode = ts.transpileModule(`${ownershipHelpers.map(node => node.getText(ast)).join('\n')}\n${sameEnvelopeNode.getText(runStateAst).replace(/^export /, '')}\nconst sendUser = ${sendHandler.getText(ast)}`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None }
   }).outputText
-  for (const selected of ['source', 'dest', 'stopped', 'cancelled']) {
+  for (const selected of ['source', 'dest', 'stopped', 'cancelled', 'blocked']) {
     const gate = deferred(), sent = []
     const op = { collecting: true, settled: gate.promise, destinationRunId: 'dest' }
-    const registry = { activeRunnerId: selected === 'cancelled' ? 'source' : selected, agentOf: (id) => ({ running: id !== 'stopped', send: async () => { sent.push(id); return { ok: true } } }) }
+    const guarded = []
+    const agents = new Map()
+    const agentFor = (id) => {
+      if (!agents.has(id)) agents.set(id, { running: id !== 'stopped', send: async () => { sent.push(id); return { ok: true } } })
+      return agents.get(id)
+    }
+    const registry = {
+      activeRunnerId: ['cancelled', 'blocked'].includes(selected) ? 'source' : selected,
+      agentOf: (id) => agentFor(id),
+      runtimeOf: (id) => ({ runId: id, generation: 1, sessionId: `sess-${id}` }),
+      guardExecute: (id) => { guarded.push(id); return selected === 'blocked' ? { ok: false, error: 'fixture-cwd-conflict' } : { ok: true } }
+    }
     const ctx = vm.createContext({
       handoffPending: new Map(selected === 'stopped' ? [] : [['source', op]]), runners: registry,
       goals: { load: async () => {}, state: () => ({}), resumeOf: () => null, isPaused: () => false, setPaused: async () => {}, resetAutoContinues: async () => {} },
@@ -121,6 +139,10 @@ export async function runHandoffHostRegressionTests(ok) {
     gate.resolve()
     const result = await sending
     if (selected === 'cancelled') ok(!result.ok && sent.length === 0, '等待交接期间停止，保留输入而不发送')
-    else ok(result.ok && sent.join() === (selected === 'stopped' ? 'restarted' : 'dest'), `${selected} 发送绑定正确实例，不受异步期间切会话影响`)
+    else if (selected === 'blocked') ok(!result.ok && !sent.length && guarded.join() === 'dest', '交接后同目录冲突拒绝，守卫绑定目的实例且不发送')
+    else {
+      ok(result.ok && sent.join() === (selected === 'stopped' ? 'restarted' : 'dest'), `${selected} 发送绑定正确实例，不受异步期间切会话影响`)
+      ok(guarded.join() === (selected === 'stopped' ? 'restarted' : 'dest'), `${selected} 发送前冲突检查绑定同一实例`)
+    }
   }
 }

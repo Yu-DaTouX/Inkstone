@@ -18,6 +18,8 @@
  *
  * ── 边界 ──
  *   · 通常保留最近 KEEP_TURNS 轮；超过硬线时也可裁这些轮里的旧工具组，但每轮最近 KEEP_TOOL_GROUPS 组保留；
+ *     单轮长会话没有旧轮可裁，另按预算判定：超过阈值时裁近期轮内、早于最近 KEEP_RECENT_TOOL_RESULTS 个结果
+ *     （或约 KEEP_RECENT_TOOL_TOKENS token）的大段输出与图片，最近一次助手消息引用的结果始终保留；
  *     技能文件（SKILL.md）、错误结果及尚未完成的工具组不裁；
  *   · 裁剪开关与两个阈值读 desktop.json（每次读，切换下一次请求就生效）；读不到按缺省开；
  *     是否提前压缩跟随 pi 原生的自动压缩开关（pi 的 settings.json），砚不另设开关；
@@ -29,7 +31,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 export const DEFAULT_TRIM_TOKENS = 80_000
-export const DEFAULT_COMPACT_TOKENS = 250_000
+/** 自动压缩上限的缺省值，与 src/shared/context-limits.ts 的 DEFAULT_AUTO_COMPACT_TOKENS 必须一致（test-unit 有对照断言）。 */
+export const DEFAULT_COMPACT_TOKENS = 400_000
 /** 窗口较小的模型按比例提前：裁剪线不超过窗口的 30%，压缩线不超过窗口的 90%（给 pi 原生保底线留余量）。 */
 const TRIM_WINDOW_RATIO = 0.3
 const COMPACT_WINDOW_RATIO = 0.9
@@ -48,9 +51,13 @@ export const CACHE_COLD_MS = 5 * 60 * 1000
 const RETRY_GROWTH = 1.2
 const KEEP_TURNS = 3
 const KEEP_TOOL_GROUPS = 3
+/** 单轮长会话兜底：近期轮内也只裁早于这么多工具结果、且早于约这么多 token 的部分。 */
+const KEEP_RECENT_TOOL_RESULTS = 8
+const KEEP_RECENT_TOOL_TOKENS = 20_000
 /** 小于这个字符数（约 1K token）的输出不值得换成存根。 */
 const MIN_TRIM_CHARS = 4_000
-const IMAGE_TOKENS = 1_200
+/** 实测约 2.8k token/张（含包装），低于此值会低估图片的裁剪收益。 */
+const IMAGE_TOKENS = 2_800
 
 /**
  * 提前压缩跟随 pi 原生的「自动压缩」开关（设置页同一个开关，pi 写在全局 settings.json 的 compaction.enabled）：
@@ -164,6 +171,33 @@ function toolGroups(messages) {
   return groups
 }
 
+/** 近期轮内保留的最近工具结果：从新到旧累计，至少 KEEP_RECENT_TOOL_RESULTS 个且约 KEEP_RECENT_TOOL_TOKENS token。 */
+function recentToolResults(messages) {
+  const keep = new Set()
+  let count = 0
+  let tokens = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m?.role !== 'toolResult') continue
+    if (count >= KEEP_RECENT_TOOL_RESULTS && tokens >= KEEP_RECENT_TOOL_TOKENS) break
+    keep.add(m.toolCallId)
+    count += 1
+    tokens += outputSize(m).tokens
+  }
+  return keep
+}
+
+/** 最近一次带工具调用的助手消息引用的结果，不能换成存根。 */
+function activeToolResults(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m?.role !== 'assistant') continue
+    const ids = (m.content ?? []).filter(part => part?.type === 'toolCall').map(part => part.id)
+    if (ids.length) return new Set(ids)
+  }
+  return new Set()
+}
+
 /**
  * 纯函数：给出这一次请求要发的消息。
  *
@@ -193,15 +227,17 @@ export function trimMessages(messages, { trimmed, projectedTokens, threshold, ca
     let effective = projectedTokens - savedTokens(messages, trimmed)
     const hardLine = threshold * HARD_RATIO
     const capacityPressure = contextWindow > 0 && Number.isFinite(contextWindow) && effective >= contextWindow * CAPACITY_PRESSURE_RATIO
-    if (capacityPressure || effective > (cacheCold ? threshold : hardLine)) {
+    const overBudget = effective > threshold
+    if (capacityPressure || overBudget) {
       const before = effective
       const proposed = new Map()
       const target = Math.floor(threshold * TRIM_TARGET_RATIO)
       const groups = toolGroups(messages)
-      const cut = (start, end, recentTurns) => {
+      const cut = (start, end, recentTurns, keep) => {
         for (let i = start; i < end && effective > target; i++) {
           const m = messages[i]
           if (m?.role !== 'toolResult' || m.isError || trimmed.has(m.toolCallId) || proposed.has(m.toolCallId)) continue
+          if (keep?.has(m.toolCallId)) continue
           const group = groups.get(m.toolCallId)
           if (!group?.complete || (recentTurns && group.recent)) continue
           const call = calls.get(m.toolCallId)
@@ -215,11 +251,20 @@ export function trimMessages(messages, { trimmed, projectedTokens, threshold, ca
           effective -= gain
         }
       }
-      cut(0, boundary, false)
-      // 只有旧轮裁过后仍超过硬线，才放宽近期长轮；不为少量超软线破坏近期证据。
-      if (effective > hardLine || capacityPressure) cut(boundary, messages.length, true)
+      // 旧轮：冷缓存到软线、热缓存到硬线才开新批，未超线时保持前缀不变。
+      if (capacityPressure || effective > (cacheCold ? threshold : hardLine)) {
+        cut(0, boundary, false)
+        // 只有旧轮裁过后仍超过硬线，才放宽近期长轮；不为少量超软线破坏近期证据。
+        if (effective > hardLine || capacityPressure) cut(boundary, messages.length, true)
+      }
+      // 第二条判定：单轮长会话没有旧轮可裁，超过预算就到近期轮内继续裁，最近若干步仍保留。
+      if (overBudget && effective > target) {
+        const keep = recentToolResults(messages)
+        for (const id of activeToolResults(messages)) keep.add(id)
+        cut(boundary, messages.length, true, keep)
+      }
       const minimumGain = Math.max(threshold * MIN_BATCH_THRESHOLD_RATIO, before * MIN_BATCH_CONTEXT_RATIO)
-      // 不足一批时完全不提交，既有存根和候选原文都保持不变；下一请求会重新规划。
+      // 不足一批时完全不提交，既有存根和候选原文都保持不变；下一请求会重新规划，已裁集合只增不减。
       if (capacityPressure || before - effective >= minimumGain) {
         for (const [id, gain] of proposed) trimmed.set(id, gain)
       }

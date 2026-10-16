@@ -131,12 +131,13 @@ export function runRunnerTests(ok, RunnerRegistry) {
       ok(first.state.sessionFile === 'C:/s1.jsonl', '忙碌实例仍停在原会话上（上下文没被换走）')
       ok(reg.size === 2, '现在有 2 个实例')
 
-      /* ---- 4. 同 cwd 忙碌且已写过文件：隔离不了时静默放行（不再拒绝、不报错），不牺牲后台会话 ---- */
-      /* 两个实例都忙：放行时只会撞并发上限，不会动任何实例 */
+      /* ---- 4. 同 cwd 忙碌：一律失败关闭（不再看“写过没写过”，也不牺牲后台会话） ---- */
+      /* 两个实例都忙，且没有注入隔离回调：明确报「同一工作目录」冲突，不动任何实例 */
       made[1].state = { ...made[1].state, isAgentRunning: true }
       const rConflict = await reg.select({ cwd: 'C:/a/', sessionFile: 'C:/s-conflict.jsonl' })
-      ok(!/同一工作目录/.test(rConflict.error ?? ''), '同一工作目录有写过文件的忙碌会话时不再报「同一工作目录」冲突', JSON.stringify(rConflict.error))
-      ok(first.calls.stop === 0, '放行时没有停止原会话')
+      ok(rConflict.ok === false && /同一工作目录/.test(rConflict.error ?? ''), '同一工作目录有忙碌会话时明确拒绝', JSON.stringify(rConflict))
+      ok(first.calls.stop === 0, '拒绝时没有停止原会话')
+      ok(reg.size === 2, '拒绝后实例数量不变')
 
       /*
        * ---- 4b. 直执行 shell 在跑也算忙（L05） ----
@@ -161,7 +162,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
         madeB[0].bashRunning = true
         ok(regB.hasBusyCwd('c:/z/') === true, 'cwd 忙碌查询也包含直执行 bash')
         const b2 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z2.jsonl' })
-        ok(!/同一工作目录/.test(b2.error ?? ''), '直执行 shell 在跑时，同 cwd 的切换也不再被拦', JSON.stringify(b2))
+        ok(b2.ok === false && /同一工作目录/.test(b2.error ?? ''), '直执行 shell 在跑时，同 cwd 的切换被拒绝', JSON.stringify(b2))
         madeB[0].bashRunning = false
         const b3 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z2.jsonl' })
         ok(b3.ok, 'shell 跑完后同 cwd 又能正常切换/复用', JSON.stringify(b3))
@@ -214,7 +215,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
         const agentD = regD.agentOf(d1.id)
         agentD.state = { ...agentD.state, isAgentRunning: true }
         const d2 = await regD.select({ cwd: 'C:/same', sessionFile: 'C:/same2.jsonl' })
-        ok(d2.ok === true && regD.size === 2, '隔离结果与原 cwd 相同 = 没隔离成：静默放行', JSON.stringify(d2))
+        ok(d2.ok === false && regD.size === 1, '隔离结果与原 cwd 相同 = 没隔离成：仍然拒绝', JSON.stringify(d2))
 
         /* 隔离失败：原因进报错，原来的文案还在 */
         const regE = new RunnerRegistry({
@@ -230,9 +231,9 @@ export function runRunnerTests(ok, RunnerRegistry) {
         const agentE = regE.agentOf(e1.id)
         agentE.state = { ...agentE.state, isAgentRunning: true }
         const e2 = await regE.select({ cwd: 'C:/nr', sessionFile: 'C:/nr2.jsonl' })
-        ok(e2.ok === true && regE.size === 2, '隔离失败（不是 Git 仓库）时静默放行，不报错', JSON.stringify(e2))
+        ok(e2.ok === false && /不是 Git 仓库/.test(e2.error ?? ''), '隔离失败（不是 Git 仓库）时拒绝，并带上原因', JSON.stringify(e2))
 
-        /* 对方只是聊天 / 只读（本回合没写过文件）：根本不算冲突，不碰隔离 */
+        /* 忙碌但本回合没写过文件：同样算冲突（“没写过”不等于“不会写”） */
         const seenF = []
         const regF = new RunnerRegistry({
           limit: 3,
@@ -244,7 +245,9 @@ export function runRunnerTests(ok, RunnerRegistry) {
         agentF.state = { ...agentF.state, isAgentRunning: true }
         agentF.wrote = false
         const f2 = await regF.select({ cwd: 'C:/chat', sessionFile: 'C:/chat2.jsonl' })
-        ok(f2.ok === true && seenF.length === 0 && regF.size === 2, '对方没写过文件：直接并行，不触发隔离', JSON.stringify(f2))
+        ok(f2.ok === false && /同一工作目录/.test(f2.error ?? ''), '本回合没写过文件的忙碌会话同样被拒绝', JSON.stringify(f2))
+        ok(seenF.length === 1, '没写过文件也会走一次冲突回调（不再跳过隔离）', JSON.stringify(seenF))
+        ok(regF.size === 1, '拒绝后没有新建实例')
       }
 
       /*
@@ -708,6 +711,39 @@ export function runRunnerTests(ok, RunnerRegistry) {
           ok(reg.activeRunner()?.id === firstId, `${mode}：activeId 已还原`)
           await reg.stopAll()
         }
+      }
+
+      /* ---- 16b. 同 cwd 复用失败：generation 只前进，旧会话与队列恢复（F07） ---- */
+      {
+        const { reg, agents } = make()
+        const first = await reg.select({ cwd: 'C:/epoch', sessionFile: 'C:/epoch/A.jsonl' })
+        const agent = agents[0]
+        const before = reg.runtimeOf(first.id)
+        agent.queue = { steering: ['旧队列一'], followUp: ['旧队列二'] }
+        ok(before?.generation === first.generation, '前置：初始代次与注册表一致')
+        /* 复用失败：目标 B 切换返回失败，且失败时实例仍停在 A。 */
+        agent.switchSession = async (p) => {
+          agent.calls.switchSession.push(p)
+          if (p.endsWith('B.jsonl')) return { ok: false, error: 'isolated switch failure' }
+          agent.state = { ...agent.state, sessionFile: p }
+          return { ok: true }
+        }
+        let changes = 0
+        reg.opts.onChanged = () => { changes++ }
+        const failed = await reg.select({ cwd: 'C:/epoch', sessionFile: 'C:/epoch/B.jsonl' })
+        ok(!failed.ok && /isolated switch failure/.test(failed.error ?? ''), '复用失败明确报错', JSON.stringify(failed))
+        const after = reg.runtimeOf(first.id)
+        ok((after?.generation ?? 0) > (before?.generation ?? 0),
+          '失败后 generation 只前进，不写回小旧数（否则高代缓存会挡住恢复后的权威快照）',
+          `${before?.generation} → ${after?.generation}`)
+        ok(agent.capabilityGeneration === after?.generation, '失败后 capability generation 与新代次一致')
+        ok(agent.state.sessionFile === 'C:/epoch/A.jsonl', '失败后恢复到旧会话（没有停在 B）', agent.state.sessionFile)
+        ok(agent.calls.restoredQueues.length === 1, '失败路径恢复了旧未投递队列，没有因为不回滚就漏掉',
+          JSON.stringify(agent.calls.restoredQueues))
+        ok(changes >= 1, '失败也要通知宿主用新代次重发权威快照')
+        const hit = await reg.select({ cwd: 'C:/epoch', sessionFile: 'C:/epoch/A.jsonl' })
+        ok(hit.ok && hit.id === first.id, '失败后原会话仍可命中，选择队列可继续使用', JSON.stringify(hit))
+        await reg.stopAll()
       }
 
       /* ---- 17. 受管资源激活只重载目标 runner，并保住会话与队列 ---- */

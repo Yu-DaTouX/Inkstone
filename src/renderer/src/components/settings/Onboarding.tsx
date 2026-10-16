@@ -267,35 +267,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
   )
 }
 
-/** 是否该自动弹出引导（首次启动 + 有问题） */
-const SEEN_KEY = 'yan.onboarded'
-
-export function shouldAutoOnboard(state: {
-  conn: string
-  piInfo: { version?: string } | null
-  models: unknown[]
-}): boolean {
-  try {
-    if (localStorage.getItem(SEEN_KEY) === '1') return false
-  } catch {
-    // file:// 下可能读不到 —— 那就当没看过（宁可多提示一次）
-  }
-  /*
-   * 只在**确实有问题**时弹：
-   *   · pi 没找到（version 探测失败）→ 一定弹
-   *   · 连不上 pi 或没有可用模型 → 弹
-   * 一切正常就不打扰（用户可能只是换了台机器，但环境已就绪）。
-   */
-  if (!state.piInfo?.version) return true
-  if (state.conn !== 'ready') return true
-  if (state.models.length === 0) return true
-  return false
-}
-
-export function markOnboarded(): void {
-  try {
-    localStorage.setItem(SEEN_KEY, '1')
-  } catch {
-    /* 忽略 */
-  }
-}
+/*
+ * 「看过引导」的标记与首次自动弹出判定在 `onboarding-state.ts`：
+ * 首启打开的是配置向导（OnboardingWizard.tsx），这份清单改为从「关于」页按需打开。
+ */

@@ -35,6 +35,15 @@ import type { AgentController } from './agent'
 import type { RunnerStatus, RuntimeEnvelope, SessionScope } from '../shared/ipc'
 import { executionBusy, runEnvelope, runStatus } from '../core/run-state'
 import { canReclaimIdle, IDLE_RECLAIM_ENABLED, IDLE_RECLAIM_SCAN_MS } from './runner-reclaim'
+import {
+  admissionClaimedBy,
+  guardSameCwdExecute,
+  SAME_CWD_ADMISSION_ERROR,
+  SAME_CWD_BUSY_ERROR,
+  type ExecuteAdmissionClaim,
+  type ExecuteAdmissionPort,
+  type ExecuteGuardResult
+} from './session-send-guard'
 
 /**
  * 同时运行的会话实例上限（含当前正在查看的那个）。
@@ -128,6 +137,89 @@ export class RunnerRegistry {
   private reclaimOperation?: Promise<string | null>
   private reclaimTimer?: ReturnType<typeof setInterval>
   private disposed = false
+  /** 同步执行入场的单调 token 与当前占用（按物理 cwd 归一后键控）。 */
+  private admissionCounter = 0
+  private admissions = new Map<string, ExecuteAdmissionClaim>()
+
+  /** 回收已不存在 / 换代 / 换 cwd 的登记，旧 token 不能清掉后来者的新 claim。 */
+  private pruneAdmissions(): void {
+    for (const [key, claim] of this.admissions) {
+      const runner = this.runners.get(claim.runId)
+      if (!runner || runner.generation !== claim.generation || canonicalCwd(runner.cwd) !== key) {
+        this.admissions.delete(key)
+      }
+    }
+  }
+
+  /**
+   * 同一物理 cwd 的同步执行入场：先到者拿到 token，后到者明确拒绝。
+   *
+   * 这是对 `guardExecute`（状态查询）之外的那段 await 窗口的补齐：两个空闲实例
+   * 都能通过查询，但同步 claim 只有一个成功。同实例重入返回同一 token —— 它自己
+   * 的插话 / 排队不能被自己拦下。
+   */
+  admitExecute(id: string): { ok: true; token: number } | { ok: false; error: string } {
+    const runner = this.runners.get(id)
+    if (!runner) return { ok: false, error: '运行实例不存在' }
+    this.pruneAdmissions()
+    const key = canonicalCwd(runner.cwd)
+    const existing = this.admissions.get(key)
+    if (existing) {
+      if (admissionClaimedBy(existing, id, runner.generation)) return { ok: true, token: existing.token }
+      return { ok: false, error: SAME_CWD_ADMISSION_ERROR }
+    }
+    if (this.hasBusyCwd(runner.cwd, id)) return { ok: false, error: SAME_CWD_BUSY_ERROR }
+    const token = ++this.admissionCounter
+    this.admissions.set(key, { token, runId: id, generation: runner.generation, cwd: runner.cwd })
+    return { ok: true, token }
+  }
+
+  /** 真正入队前再核一次：claim 仍归本实例、同代次、token 未变。 */
+  confirmExecute(id: string, token: number): boolean {
+    const runner = this.runners.get(id)
+    if (!runner) return false
+    const claim = this.admissions.get(canonicalCwd(runner.cwd))
+    if (claim && claim.token === token && admissionClaimedBy(claim, id, runner.generation)) return true
+    // claim 已被观测为运行态（running）时由既有 busy 复核兜底；不能因此放行别的写者。
+    return this.busy(runner) && this.hasBusyCwd(runner.cwd, id) === false
+  }
+
+  /** 失败 / 取消 / 回合结束时归还 claim；只有持有它的 token 能清掉它。 */
+  releaseExecute(id: string, token: number): void {
+    for (const [key, claim] of this.admissions) {
+      if (claim.token === token && claim.runId === id) {
+        this.admissions.delete(key)
+        return
+      }
+    }
+  }
+
+  /** 注入给 Agent 的执行入场口；实例不存在时保持失败关闭。 */
+  executionPort(id: string): ExecuteAdmissionPort {
+    return {
+      claim: () => this.admitExecute(id),
+      confirm: (token) => this.confirmExecute(id, token),
+      release: (token) => this.releaseExecute(id, token)
+    }
+  }
+
+  /**
+   * 按渲染端钉住的 runtime 精确定位运行实例（F02）。
+   * runId 优先；只有 sessionId 时按真实 id 匹配，`pending:<runId>` 退回 runId。
+   */
+  resolveExpectedRunner(expected: { sessionId?: string; runId?: string; generation?: number } | null | undefined): string | null {
+    if (!expected) return null
+    let runner = expected.runId ? this.runners.get(expected.runId) : undefined
+    if (!runner && expected.sessionId && !expected.sessionId.startsWith('pending:')) {
+      runner = this.findBySessionId(expected.sessionId)
+    }
+    if (!runner && expected.sessionId?.startsWith('pending:')) {
+      runner = this.runners.get(expected.sessionId.slice('pending:'.length))
+    }
+    if (!runner) return null
+    if (expected.generation !== undefined && runner.generation !== expected.generation) return null
+    return runner.id
+  }
 
   constructor(
     private opts: {
@@ -394,13 +486,15 @@ export class RunnerRegistry {
      * 两个忙碌实例不能共用一个物理 cwd：即使它们是不同会话文件，
      * 工具调用仍可能同时修改同一工作树。命中已有实例必须在上面优先
      * 返回；这里只有“要创建/载入另一个运行实例”时才拒绝。
+     *
+     * 判据只有「同 cwd + 忙」，不再看 `hasWrittenThisRun()`：正跑着的回合随时
+     * 可能在**之后**的工具调用里写文件，“此刻还没写过”不等于“不会写”。只读 /
+     * 聊天的会话目前没有可靠的模型层判据（模型身份、提示词都不保证工具面），
+     * 所以不能拿它当放行理由 —— 那正是「先放进来、随后两边同时写」的竞态。
+     * 宁可保守拦一下，下面给出「等 / 停原任务」的明确提示。
      */
     const conflict = [...this.runners.values()].find(
-      (runner) =>
-        canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) &&
-        this.busy(runner) &&
-        /* 只读 / 聊天的会话不动文件，不算冲突；直执行 bash 一律按写文件处理 */
-        (runner.agent.hasRunningBash() || (runner.agent.hasWrittenThisRun?.() ?? true))
+      (runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) && this.busy(runner)
     )
     if (conflict) {
       /*
@@ -414,15 +508,41 @@ export class RunnerRegistry {
        */
       if (target.preview) return { ok: true, deferred: true, sessionId: target.sessionId }
       /*
-       * 先问宿主能不能自动隔离（换一个不冲突的物理目录继续）。
-       * 隔离结果必须**真的换了目录**才继续：返回同一个 cwd 等于没解决问题，
-       * 放行会直接违反下面这条并发边界的全部意义。
+       * 先问宿主能不能自动隔离（Git 仓库里换一个不冲突的工作树继续）。
+       * 隔离结果必须**真的换了目录**才继续：返回同一个 cwd 等于没解决问题。
        */
       const escalated = await this.opts.resolveCwdConflict?.(target)
       if (escalated && 'cwd' in escalated && canonicalCwd(escalated.cwd) !== canonicalCwd(target.cwd)) {
         target = { ...target, cwd: escalated.cwd }
+        /*
+         * 隔离目标目录自己也可能已经有忙碌实例（典型是 `autoIsolations.bySession()`
+         * 复用了某条已存在的隔离工作树，而该树里另有会话在跑）。这里只按与上面相同的
+         * 判据再复核**一次**，不再触发第二轮隔离：目标目录也忙就明确拒绝，既不会在忙
+         * 目录上再起一个写入者，也不会递归建树。
+         */
+        if (this.hasBusyCwd(target.cwd)) {
+          return {
+            ok: false,
+            error:
+              '隔离目标目录里还有会话正在运行，无法在这里再开一个：两个同时写文件的回合会互相覆盖。' +
+              '请等它跑完或停止它。'
+          }
+        }
+      } else {
+        /*
+         * 隔离不了（非 Git 仓库、宿主不处理、或返回了同一个目录）一律**失败关闭**：
+         * 明确拒绝这次激活，让用户等原任务跑完 / 停止它，而不是静默放行、让两个
+         * 可能写文件的实例共用同一个物理 cwd。这里只加一道判断，不引入文件锁或
+         * 新的状态机。
+         */
+        const reason = escalated && 'reason' in escalated && escalated.reason ? `（${escalated.reason}）` : ''
+        return {
+          ok: false,
+          error:
+            `同一工作目录还有会话正在运行，无法在这里再开一个：两个同时写文件的回合会互相覆盖。${reason}` +
+            '请等它跑完或停止它；Git 仓库会自动建隔离工作树，非 Git 目录没有安全的隔离基线。'
+        }
       }
-      /* 隔离不了（如目录不是 Git 仓库）就静默放行：不拦、不弹提示 */
     }
 
     /* 复用空闲实例：不忙的那个可以被切到别的会话（旧会话已落盘，随时能载回） */
@@ -479,9 +599,9 @@ export class RunnerRegistry {
         return this.result(idle, 'reuse')
       }
 
-      const oldGeneration = idle.generation
       const oldProjectId = idle.projectId
       const oldSessionFile = idle.agent.getState()?.sessionFile
+      const oldQueue = idle.agent.queueSnapshot?.() ?? { steering: [], followUp: [] }
       idle.generation = nextGeneration()
       idle.agent.setRunnerGeneration(idle.generation)
       idle.projectId = target.projectId
@@ -493,11 +613,20 @@ export class RunnerRegistry {
       if (res.ok && !target.sessionFile && this.opts.prepareNewSession) res = await this.opts.prepareNewSession(idle.agent)
       if (!res.ok) {
         // A failed remembered default must not replace the conversation being reused.
-        if (!target.sessionFile && oldSessionFile) {
+        // 只有真的被切走才切回旧文件；失败即保留在旧会话时不要多切一次（那会清掉队列）。
+        const currentFile = idle.agent.getState()?.sessionFile
+        if (!target.sessionFile && oldSessionFile && currentFile !== oldSessionFile) {
           try { await idle.agent.switchSession(oldSessionFile) } catch { /* Keep the original setup error. */ }
         }
-        idle.generation = oldGeneration
-        idle.agent.setRunnerGeneration(oldGeneration)
+        /*
+         * 代次只前进：这次复用已经用新代次淘汰了旧请求，把 generation 写回小旧数
+         * 会让「中间高代次事实」把恢复后的权威快照挡在缓存外（F07）。恢复到同一
+         * 旧会话即可，代次保持新值；上层 onChanged 用新代次重发完整快照。
+         */
+        // 失败路径清掉的未投递队列要尽力恢复，不能因为不回滚代次就漏掉旧任务。
+        if ((oldQueue.steering.length || oldQueue.followUp.length) && typeof idle.agent.restoreQueueSnapshot === 'function') {
+          try { await idle.agent.restoreQueueSnapshot(oldQueue) } catch { /* 恢复失败不覆盖原始错误 */ }
+        }
         idle.projectId = oldProjectId
         this.opts.onChanged?.()
         return { ok: false, error: res.error }
@@ -678,6 +807,7 @@ export class RunnerRegistry {
     const r = this.runners.get(id)
     if (!r) return false
     this.runners.delete(id)
+    this.pruneAdmissions()
     if (this.activeId === id && !preserveSelection) this.activeId = null
     try {
       await r.agent.stop()
@@ -715,6 +845,7 @@ export class RunnerRegistry {
     this.reclaimTimer = undefined
     const all = [...this.runners.values()]
     this.runners.clear()
+    this.admissions.clear()
     this.activeId = null
     for (const r of all) {
       try {
@@ -736,6 +867,22 @@ export class RunnerRegistry {
     const key = canonicalCwd(cwd)
     return [...this.runners.values()].some(
       (runner) => runner.id !== exceptRunId && canonicalCwd(runner.cwd) === key && this.busy(runner)
+    )
+  }
+
+  /**
+   * 发送 / 直执行等「实际开始执行」的入口在命中已有实例后复核同 cwd 冲突。
+   *
+   * select 的冲突扫描不覆盖 hit 路径，这里用同一判据补一次，且**只读**：不停别的
+   * 会话、不改任何实例状态，只决定这次开始执行要不要拒绝。发起者自己已经在跑的
+   * 实例放行 —— 那是对同一条会话的插话 / 排队，不是第二个写者。
+   */
+  guardExecute(id: string): ExecuteGuardResult {
+    const runner = this.runners.get(id)
+    if (!runner) return { ok: true }
+    return guardSameCwdExecute(
+      { runnerId: runner.id, cwd: runner.cwd, selfBusy: this.busy(runner) },
+      (cwd, exceptRunId) => this.hasBusyCwd(cwd, exceptRunId)
     )
   }
 

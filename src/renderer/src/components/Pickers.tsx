@@ -5,6 +5,7 @@ import { useT } from '../i18n'
 import { useStore } from '../state/store'
 import { Button, Input, Segmented, StepSlider, Switch, WheelPicker } from './ui'
 import { ModelCatalog } from './ModelCatalog'
+import { SessionQuestionFrequencyPicker } from './SessionQuestionFrequencyPicker'
 import { useFocusTrap, useModalLayer } from '../lib/modalLayer'
 import { useAnchoredPopover } from '../lib/useAnchoredPopover'
 
@@ -307,6 +308,8 @@ export function ModelThinkingPicker() {
               <Switch checked={visualAnswers} label={t('picker.visual')} testId="visual-answers-toggle"
                 onChange={on => { void patchSettings({ visualAnswers: on }).catch(error => useStore.getState().notify('error', String(error))) }} />
             </div>
+            {/* 会话级提问频率：与全局设置分开，按当前会话生效；复用同一分段控件 */}
+            <SessionQuestionFrequencyPicker />
           </div>
           </div>
         </div>, document.body

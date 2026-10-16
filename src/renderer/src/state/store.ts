@@ -16,6 +16,7 @@ import type {
   AuthProviderInfo,
   BrowserState,
   ChromeSyncReport,
+  ExpectedRuntimeOwner,
   ExtensionUiRequest,
   QuestionLogEntry,
   FilePreview,
@@ -74,16 +75,29 @@ import { readSpaceView, writeSpaceView, type SpaceView } from './space-view'
 import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
-import { keepLocalImages } from './keep-images'
-import { planQueueRecovery, type QueueImageRef } from './queue-images'
+import { mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
+import { planQueueRecovery, mergeQueueAttachments, type QueueImageRef } from './queue-images'
+import {
+  composerDraftForView,
+  composerDraftKey,
+  composerSubmitIdentity,
+  planComposerRecovery,
+  recoveryRuntimeFor,
+  sameComposerView,
+  type ComposerSubmitIdentity
+} from './composer-recovery'
 import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT, RESET_GRACE_MS } from '../../../shared/quota-resume'
 import { failoverSkip, QUOTA_FAILOVER_PROMPT } from '../../../shared/quota-failover'
 import { decideKeepRunning, KEEP_RUNNING_PROMPT, type KeepRunningTurn } from '../../../shared/keep-running'
 import { reuseIfSame } from './same-messages'
 import {
   rebindSessionRuntime,
+  migratePathDraft,
   pruneSessionRuntimes,
+  sessionRuntimeKey,
   updateSessionRuntime,
+  updateSessionRuntimeAt,
+  type SessionRuntimeDataPatch,
   type SessionRuntimeMap,
   type SessionRuntimeSnapshot
 } from './session-runtime'
@@ -166,6 +180,9 @@ function readCommandUse(): Record<string, number> {
 /* Store */
 
 export type ConnState = 'starting' | 'ready' | 'exited' | 'error'
+
+/** 扩展文本组件的位置：pi 原生 `setWidget` 的 `widgetPlacement`。 */
+export type WidgetPlacement = 'aboveEditor' | 'belowEditor'
 
 export interface Notice {
   id: string
@@ -268,6 +285,9 @@ export interface Store {
   shortcutRecording: boolean
   /** 设置面板开关与当前 tab（放 store 里，好让 ContextBar 等组件能直接打开） */
   settingsOpen: boolean
+  nativeSessionPanel: { mode: import('../../../shared/native-session').NativeSessionMode; sessionId: string } | null
+  closeNativeSessionPanel: () => void
+  nativeSession: (action: import('../lib/composer-submit').NativeSessionAction, args?: string) => Promise<import('../../../shared/native-session-host').NativeSessionHostResult>
   settingsTab: string
   /**
    * 左栏是否钉住（常驻）。
@@ -349,10 +369,12 @@ export interface Store {
   /** pi 入口 / 版本（右栏「环境」分区） */
   piInfo: PiInfo | null
   /**
-   * 扩展的 setWidget 文本块（key → lines）。
-   * TUI 里它显示在输入框上方；桌面端收进右栏「扩展」分区。
+   * 扩展的 setWidget 文本块（key → lines）。位置见 `widgetPlacements`；
+   * 缺省显示在输入区上方（pi 原生 aboveEditor）。
    */
   widgets: Record<string, string[]>
+  /** 每个扩展文本组件的原生位置；缺省或未知值都按 `aboveEditor` 处理。 */
+  widgetPlacements: Record<string, WidgetPlacement>
   /** 跳到第 N 轮用户对话（导航轨点击时用，由 App 实现具体滚动） */
   scrollToTurn: (i: number) => void
   uiRequests: ExtensionUiRequest[]
@@ -553,6 +575,14 @@ export interface Store {
   /** 把当前输入框草稿写入当前会话运行时缓存（不保存图片二进制）。 */
   setSessionDraft: (value: string) => void
   /**
+   * 按**正在看**的会话草稿键把草稿附件载入输入框。
+   *
+   * 附件以草稿为单位随会话切换（与文字同一套 hydrate 边界）：切到哪条会话，
+   * 输入框就显示哪条会话的草稿附件。找不到缓存时置空，不把上一条会话的附件
+   * 留在输入框里。
+   */
+  hydrateComposerDraft: (key: string) => void
+  /**
    * 往输入框**追加**一段文本（不发送）。
    *
    * 为什么不直接用 `setSessionDraft`：草稿只在**切会话**时从 store 同步进输入框
@@ -600,6 +630,22 @@ export interface Store {
   /** 撤回仍在队列中的消息并回填草稿；已被 pi 接收的消息会返回失败。 */
   removeQueued: (queueId: string) => Promise<void>
   /**
+   * 提交失败时按**提交时钉住的视图身份**恢复草稿与附件。
+   *
+   * 与 `restoreSend` / `removeQueued` 复用同一段落点规则
+   * （`applyQueueRecovery`）：还在原会话就把文字（`queueRestore` 追加，保留
+   * await 期间新输入）与附件回填输入框；已切走就只把文字写回原会话的草稿
+   * 缓存，附件不塞进当前会话。deferred 浏览时视图会话与 active runner
+   * 不同，所以身份必须由调用方在提交时捕获后传入。
+   */
+  recoverComposerInput: (input: {
+    identity: ComposerSubmitIdentity
+    text: string
+    attachments: Attachment[]
+    idPrefix?: string
+    notice?: string
+  }) => void
+  /**
    * 当前会话额度用尽时登记「恢复后自动续跑」；额度接口不可查时返回 false。
    * failoverAt：另一个账号预计先恢复的时间，到点改为换号续跑。
    */
@@ -613,7 +659,7 @@ export interface Store {
   /** 当前会话的持续运行开关。 */
   setKeepRunning: (on: boolean) => void
   abort: () => Promise<void>
-  runBash: (command: string) => Promise<void>
+  runBash: (command: string, options?: { excludeFromContext?: boolean }) => Promise<{ ok: boolean; error?: string }>
   abortBash: () => Promise<void>
   /**
    * 新建会话。返回新会话的身份 —— 调用方需要它把「这个会话从哪来」记下来
@@ -635,7 +681,7 @@ export interface Store {
    * 「正在看的那条会话」是否已经在 pi 侧激活；没激活就先切（必要时才建隔离树）。
    * 返回 false = 切不动，调用方不要发消息。
    */
-  ensureActivated: () => Promise<boolean>
+  ensureActivated: (expected?: ComposerSubmitIdentity) => Promise<boolean>
   /** 只改 Yan 的产品归属，不移动 pi 的 JSONL，也不停止运行实例。 */
   moveSession: (sessionId: string, projectId: string | null) => Promise<boolean>
   /** 归档 / 取消归档、置顶 / 取消置顶：写宿主标记后刷新列表。 */
@@ -651,8 +697,8 @@ export interface Store {
   deleteSession: (path: string) => Promise<void>
   fork: (entryId: string) => Promise<boolean>
   clone: () => Promise<void>
-  exportHtml: () => Promise<void>
-  compact: () => Promise<void>
+  exportHtml: (outputPath?: string) => Promise<{ ok: boolean; error?: string }>
+  compact: (customInstructions?: string) => Promise<{ ok: boolean; error?: string }>
   stop: () => Promise<void>
 
   setModel: (provider: string, id: string, quiet?: boolean) => Promise<{ ok: boolean; error?: string }>
@@ -930,6 +976,77 @@ function runtimeForState(
   }
 }
 
+/**
+ * 这条 `sync` 允许保留的未完成流式尾部 id。
+ *
+ * 只有「正在看这条会话、实例代次一致、且确实在流式」时才保护最后一条消息；
+ * 清空 / 分叉 / 导入后 session 不再流式，`tail` 为 undefined，快照整份生效。
+ * `runTail`（刚开跑时末尾那条上一轮回复）由 streamingMessageId 排除。
+ */
+function syncProtectedTail(state: Store, runtime: RuntimeEnvelope | undefined): string | undefined {
+  if (!runtime) return undefined
+  const viewing = viewingSessionId(state)
+  if (viewing && runtime.sessionId && viewing !== runtime.sessionId) return undefined
+  const runner = state.runners.find((item) => (item.runId ?? item.id) === runtime.runId)
+  if (runner && runtime.generation !== undefined && runner.generation !== runtime.generation) return undefined
+  return streamingMessageId(state)
+}
+
+/**
+ * 从提交时钉住的视图身份解析宿主请求要带的 owner。
+ *
+ * 优先按身份里的 runId；没有（deferred 只读打开、尚未激活）时按稳定 sessionId /
+ * 路径在实例列表里找；都没有才退回 activeRunnerId —— 调用前已核对视图没变，
+ * 此刻的 active 就是目标实例。解析不出来就不带 owner，由宿主按运行时语义处理。
+ */
+/** 提交时是否钉住了一个可核对的身份（启动最早期什么都没落定时为 false）。 */
+function hasComposerIdentity(id: ComposerSubmitIdentity): boolean {
+  return !!(id.sessionId || id.path || id.runId)
+}
+
+function expectedRuntimeFor(state: Store, id: ComposerSubmitIdentity): ExpectedRuntimeOwner | undefined {
+  const norm = (p?: string): string => (p ?? '').replace(/\\/g, '/').toLowerCase()
+  const byRun = id.runId ? state.runners.find((item) => (item.runId ?? item.id) === id.runId) : undefined
+  const bySession = id.sessionId && !id.sessionId.startsWith('pending:')
+    ? state.runners.find((item) => item.sessionId === id.sessionId)
+    : undefined
+  const byPath = id.path ? state.runners.find((item) => norm(item.sessionFile) === norm(id.path)) : undefined
+  let runner = byRun ?? bySession ?? byPath
+  /*
+   * 身份里有明确的会话（sessionId / path）时，解析出的实例必须仍属于这条会话：
+   * 实例会被复用到别的会话（同 runId、代次 +1），按 runId 命中的旧实例不能把
+   * A 的消息钉成 B 的 owner。找不到本会话实例就不带 owner，由宿主按它自己的
+   * active 处理 —— 此刻视图已切到目标，宿主 active 也会跟着切过去。
+   */
+  if (runner && id.sessionId && !id.sessionId.startsWith('pending:') && runner.sessionId && runner.sessionId !== id.sessionId) {
+    runner = undefined
+  }
+  if (runner && id.path && runner.sessionFile && norm(runner.sessionFile) !== norm(id.path)) {
+    runner = undefined
+  }
+  /*
+   * 只有在钉住的身份**完全没用上**（启动最早期还没有 sessionId / path / runId）时，
+   * 才允许退回 activeRunnerId。视图已切到别的会话时绝不借用上一条活动实例：
+   * 那正是「切 A 后立即发送落到 B」的窗口（主审 F02 同根）。
+   */
+  if (!runner && !id.sessionId && !id.path && !id.runId && state.activeRunnerId) {
+    runner = state.runners.find((item) => (item.runId ?? item.id) === state.activeRunnerId)
+  }
+  if (!runner) return undefined
+  const runId = runner.runId ?? runner.id
+  if (!runId) return undefined
+  /*
+   * 启动最早期实例还没拿到稳定 sessionId 时只带 runId + generation，
+   * 让宿主按可核对的部分定位；带空字符串会被宿主当成非法身份拒收。
+   */
+  return {
+    ...(runner.sessionId ? { sessionId: runner.sessionId } : {}),
+    runId,
+    ...(runner.projectId ? { projectId: runner.projectId } : {}),
+    ...(runner.generation !== undefined ? { generation: runner.generation } : {})
+  }
+}
+
 function patchArtifact(list: UIMessage[], messageId: string, artifact: NonNullable<UIMessage['artifacts']>[number]): UIMessage[] {
   const index = list.findIndex((message) => message.id === messageId)
   if (index < 0) return list
@@ -938,6 +1055,25 @@ function patchArtifact(list: UIMessage[], messageId: string, artifact: NonNullab
   const out = list.slice()
   out[index] = { ...current, artifacts: [...(current.artifacts ?? []), artifact] }
   return out
+}
+
+/**
+ * 把扩展文本组件按 pi 原生位置分成上 / 下两组。
+ *
+ * 位置按 key 记录在 `widgetPlacements`；缺省、未知或已被清空的 key 都归入
+ * `aboveEditor`（与 pi 的原生缺省一致）。纯函数，不依赖界面，便于独立检查。
+ */
+export function widgetsByPlacement(
+  widgets: Record<string, string[]>,
+  placements: Record<string, WidgetPlacement | undefined>
+): { aboveEditor: Array<[string, string[]]>; belowEditor: Array<[string, string[]]> } {
+  const aboveEditor: Array<[string, string[]]> = []
+  const belowEditor: Array<[string, string[]]> = []
+  for (const [key, lines] of Object.entries(widgets)) {
+    if (placements[key] === 'belowEditor') belowEditor.push([key, lines])
+    else aboveEditor.push([key, lines])
+  }
+  return { aboveEditor, belowEditor }
 }
 
 /** 把后台缓存投影回顶层；主进程随后仍会用权威 sync/state 校正它。 */
@@ -951,6 +1087,11 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
     uiRequests: snapshot.uiRequests,
     statuses: snapshot.statuses,
     widgets: snapshot.widgets,
+    /*
+     * 位置随会话隔离：快照里没有该字段（旧缓存 / 会话缓存尚未补齐）时清空，
+     * 避免上一条会话的位置串到当前。可选取值在缓存类型补上后仍是同一语义。
+     */
+    widgetPlacements: snapshot.widgetPlacements ?? {},
     models: snapshot.models,
     thinkingLevels: snapshot.thinkingLevels,
     commands: snapshot.commands,
@@ -1003,6 +1144,69 @@ function findRuntimeSnapshot(
   return undefined
 }
 
+/**
+ * 按会话文件路径在运行缓存里找快照。
+ *
+ * `sessions` 列表还没收录这条会话（刚建、还没落盘解析出 head）时，只剩路径可用；
+ * 切会话要靠它把后台会话的实时状态铺上来。
+ */
+function findSnapshotByPath(map: SessionRuntimeMap, path: string): SessionRuntimeSnapshot | undefined {
+  const target = path.replace(/\\/g, '/').toLowerCase()
+  for (const snapshot of Object.values(map)) {
+    const file = snapshot.session?.sessionFile
+    if (file && file.replace(/\\/g, '/').toLowerCase() === target) return snapshot
+  }
+  return undefined
+}
+
+/**
+ * 新建会话的响应回来时，新会话的 `state` / `sync` / `runners` 可能**已经**先到了。
+ *
+ * 主进程新建实例后会立刻 `pushRunnerSnapshot()` 再返回 IPC 响应，两者没有先后保证；
+ * 先到的帧在旧视图下会被当成后台帧写进运行缓存。此时响应再无条件清空，界面就停在
+ * 空白，直到下一条推送 —— 而新会话可能已经没有下一条推送了。
+ *
+ * 认这条会话时必须核对身份：运行实例会被复用到新会话（`runId` 不变、`generation` 递增），
+ * 只按 `runId` 取会把上一条会话的旧快照当成本次新建的结果。优先按响应给的
+ * `res.sessionId` 精确匹配，否则只在 `generation` 一致时才接受同一 `runId` 的快照。
+ */
+function findNewSessionSnapshot(
+  map: SessionRuntimeMap,
+  sessionId: string | undefined,
+  runId: string | undefined,
+  generation: number | undefined
+): SessionRuntimeSnapshot | undefined {
+  const all = Object.values(map)
+  /*
+   * ① 响应带 `sessionId`：先按它精确取。`generation` 明确时还要求代次一致，
+   *    避免实例被复用后，同一 `sessionId` 的旧代次快照被当成本次新建结果。
+   */
+  if (sessionId) {
+    const exact = all.find(
+      (snapshot) =>
+        snapshot.runtime.sessionId === sessionId &&
+        (generation === undefined || snapshot.runtime.generation === generation)
+    )
+    if (exact) return exact
+  }
+  /*
+   * ② `generation` 缺失时不能再按 `runId` 兜底：没有代次就区分不了「新会话复用同一实例」
+   *    与「上次服务留下的旧快照」，只能要求精确 `sessionId`（已在上一步查过）。
+   */
+  if (generation === undefined || !runId) return undefined
+  /*
+   * ③ 代次明确：按 `runId` + 同代取。覆盖 `pending:<runId>` → 真实 uuid 的过渡 ——
+   *    响应给其中一个身份、缓存里是另一个，但同一实例同一代就是这条新会话。
+   */
+  return all.find(
+    (snapshot) => snapshot.runtime.runId === runId && snapshot.runtime.generation === generation
+  )
+}
+
+/* 消息历史合并（peek / sync）统一走 state/session-message-merge 的纯 helper。
+ * 仍从本模块 re-export `mergePeekedHistory`，保持既有脚本的导入路径不变。 */
+export { mergePeekedHistory }
+
 
 /**
  * 缓存投影是否可用于当前视图。
@@ -1045,32 +1249,127 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 const QUEUE_ATTACHMENT_LIMITS = { maxCount: MAX_ATTACHMENTS, maxImageBytes: MAX_IMAGE_BYTES }
 
 /**
- * 把一次「队列内容放回草稿」落进状态。
+ * 会话草稿缓存按**显式 key** 写附件时用的最小种子 runtime。
  *
- * 撤回排队消息、放回待发送项、停止时回收队列，三处的差别只有通知文案，
- * 落点规则必须一致（纯逻辑在 state/queue-images.ts，有单测）。
+ * 只为了在缓存里还没有该 key 时建一条空快照；`file:` 薄路径键不是运行实例，
+ * 所以 sessionId 留空。
+ */
+function draftSeedRuntime(state: Store, key: string): RuntimeEnvelope {
+  const cached = state.sessionRuntimes[key]
+  if (cached) return cached.runtime
+  const runner = state.runners.find(
+    (item) =>
+      item.sessionId === key ||
+      `run:${item.runId ?? item.id}` === key ||
+      (item.sessionFile ? `file:${item.sessionFile.replace(/\\/g, '/').toLowerCase()}` === key : false)
+  )
+  return {
+    sessionId: key.startsWith('file:') ? '' : key,
+    runId: runner?.runId ?? runner?.id ?? key,
+    projectId: runner?.projectId,
+    generation: runner?.generation ?? 0
+  }
+}
+
+/** 把输入框附件写进**视图会话**的草稿缓存（不跟随 active runner）。 */
+function writeDraftAttachments(
+  state: Store,
+  key: string,
+  attachments: Attachment[]
+): SessionRuntimeMap {
+  if (!key) return state.sessionRuntimes
+  return updateSessionRuntimeAt(state.sessionRuntimes, key, { draftAttachments: attachments }, draftSeedRuntime(state, key))
+}
+
+/**
+ * 把一次「内容放回草稿」落进状态。
  *
- * 跨会话时文字写回**原会话**的草稿缓存，图片不回填：附件是全局字段，
- * 往当前输入框塞图会让它出现在另一条会话里。图片确实放不回去就说一声，
- * 不能默默吞掉 —— 那正是用户报的问题。
+ * 撤回排队消息、放回待发送项、停止时回收队列、提交失败恢复，几处的差别只有
+ * 通知文案与「还在不在原会话」的判据，落点规则必须一致（纯逻辑在
+ * state/queue-images.ts 与 state/composer-recovery.ts，均有单测）。
+ *
+ * 跨会话时文字与附件都写回**原会话**的草稿缓存（附件不塞进当前输入框），
+ * 切回去按草稿键完整取回；真正超出附件上限的那部分才提示，不能默默吞掉。
+ *
+ * `sameSession` 可由调用方显式覆盖：提交失败恢复用的是**提交时**钉住的
+ * 视图身份，而 `session?.sessionId` 在 deferred 只读浏览时可能不是视图会话。
+ * `draftKey` 是跨会话时要写的草稿键（稳定 sessionId、`run:` 或薄 `file:` 键）。
  */
 function applyQueueRecovery(
   current: Store,
-  input: { sessionId?: string; text: string; images?: QueueImageRef[]; idPrefix: string; notice?: string }
+  input: {
+    sessionId?: string
+    text: string
+    images?: QueueImageRef[]
+    /** 完整附件（含 fileRef）；给了它就不再把 images 当图片转换。 */
+    attachments?: Attachment[]
+    idPrefix: string
+    notice?: string
+    /** 显式覆盖「还在原会话」判断。 */
+    sameSession?: boolean
+    /** 跨会话回填草稿的目标实例（拿到 pending→uuid 后的真实键）。 */
+    draftRuntime?: RuntimeEnvelope
+    /** 跨会话回填草稿的显式键（无运行实例时用薄路径键）。 */
+    draftKey?: string
+  }
 ): Partial<Store> {
-  const sameSession = current.session?.sessionId === input.sessionId
-  const recovery = planQueueRecovery({
-    sameSession,
-    text: input.text,
-    images: input.images,
-    existing: current.attachments,
-    limits: QUEUE_ATTACHMENT_LIMITS,
-    idPrefix: input.idPrefix
-  })
+  const sameSession = input.sameSession ?? current.session?.sessionId === input.sessionId
+  let recovery: { queueRestore: string | null; attachments: Attachment[]; cacheAttachments?: Attachment[] }
+  let restoredCount: number
+  let droppedCount: number
+  if (input.attachments) {
+    const plan = planComposerRecovery({
+      sameView: sameSession,
+      text: input.text,
+      attachments: input.attachments,
+      existing: current.attachments,
+      limits: QUEUE_ATTACHMENT_LIMITS
+    })
+    recovery = plan
+    restoredCount = plan.restoredAttachments
+    droppedCount = plan.droppedAttachments
+  } else {
+    const plan = planQueueRecovery({
+      sameSession,
+      text: input.text,
+      images: input.images,
+      existing: current.attachments,
+      limits: QUEUE_ATTACHMENT_LIMITS,
+      idPrefix: input.idPrefix
+    })
+    recovery = plan
+    restoredCount = plan.restoredImages
+    droppedCount = plan.droppedImages
+  }
+
+  /* 跨会话：解析目标草稿键（显式键优先，其次解析好的实例，最后退回 sessionId）。 */
+  const crossKey = sameSession
+    ? ''
+    : input.draftKey || (input.draftRuntime ? sessionRuntimeKey(input.draftRuntime) : input.sessionId || '')
+  let crossRuntimes: SessionRuntimeMap | undefined
+  if (crossKey) {
+    const cached = current.sessionRuntimes[crossKey]
+    const seed = cached?.runtime ?? input.draftRuntime ?? draftSeedRuntime(current, crossKey)
+    const dataPatch: SessionRuntimeDataPatch = {}
+    if (recovery.queueRestore) {
+      dataPatch.draft = [recovery.queueRestore, cached?.draft].filter(Boolean).join('\n')
+    }
+    if (recovery.cacheAttachments?.length) {
+      const merged = mergeQueueAttachments(cached?.draftAttachments ?? [], recovery.cacheAttachments, QUEUE_ATTACHMENT_LIMITS)
+      dataPatch.draftAttachments = merged.attachments
+      droppedCount += merged.skipped
+    }
+    if (Object.keys(dataPatch).length) {
+      crossRuntimes = updateSessionRuntimeAt(current.sessionRuntimes, crossKey, dataPatch, seed)
+    }
+  }
+
   let notices = current.notices
-  if (recovery.droppedImages > 0) {
-    notices = pushNotice(notices, 'error', `有 ${recovery.droppedImages} 张排队时的图片没能放回输入框（已切换到其他会话或超过附件上限）`)
-  } else if (sameSession && input.notice && (recovery.queueRestore || recovery.restoredImages > 0)) {
+  if (droppedCount > 0) {
+    notices = input.attachments
+      ? pushNotice(notices, 'error', `有 ${droppedCount} 个附件没能放回输入框（超过附件上限）`)
+      : pushNotice(notices, 'error', `有 ${droppedCount} 张排队时的图片没能放回输入框（已切换到其他会话或超过附件上限）`)
+  } else if (sameSession && input.notice && (recovery.queueRestore || restoredCount > 0)) {
     notices = pushNotice(notices, 'info', input.notice)
   }
 
@@ -1079,21 +1378,18 @@ function applyQueueRecovery(
     if (recovery.queueRestore) {
       patch.queueRestore = current.queueRestore ? `${recovery.queueRestore}\n${current.queueRestore}` : recovery.queueRestore
     }
-    if (recovery.attachments !== current.attachments) patch.attachments = recovery.attachments
+    if (recovery.attachments !== current.attachments) {
+      patch.attachments = recovery.attachments
+      /* 同视图恢复后草稿缓存的附件也要跟上，切走再切回不丢。 */
+      const key = composerDraftKey(current)
+      if (key) patch.sessionRuntimes = writeDraftAttachments(current, key, recovery.attachments)
+    }
     if (notices !== current.notices) patch.notices = notices
     return patch
   }
 
   const patch: Partial<Store> = {}
-  if (input.sessionId && recovery.queueRestore) {
-    const cached = current.sessionRuntimes[input.sessionId]
-    const runtime = cached?.runtime ?? runtimeForState(current)
-    if (runtime) {
-      patch.sessionRuntimes = updateSessionRuntime(current.sessionRuntimes, { ...runtime, sessionId: input.sessionId }, {
-        draft: [recovery.queueRestore, cached?.draft].filter(Boolean).join('\n')
-      })
-    }
-  }
+  if (crossRuntimes) patch.sessionRuntimes = crossRuntimes
   if (notices !== current.notices) patch.notices = notices
   return patch
 }
@@ -1307,6 +1603,29 @@ function applyBrowserVisibility(get: () => Store): void {
  * 也不再向主进程请求激活。
  */
 let sessionSwitchGate = 0
+
+/**
+ * 正在进行的 `switchSession`。
+ *
+ * `switchSession` 在第一个 await 前就把 `peekedPath` / `peekedSessionId` 乐观改成
+ * 目标，但 `pendingActivation` 要等宿主应答 `preview` 之后才写。这段窗口里
+ * `pendingActivation === null`，`ensureActivated` 会误判「已激活」直接放行；此时
+ * owner 解析找不到目标会话的实例，就会退回上一条活动 runner，把 A 的消息静默发到
+ * B（主审 F02 同根）。这里把「切换在飞」显式记下，`ensureActivated` 必须先等它落定。
+ */
+let sessionSwitchInFlight: { gate: number; done: Promise<void> } | null = null
+
+/** 开始一次可等待的会话切换；返回的 finish 要在切换结束（含提前返回）时调用。 */
+function beginSessionSwitch(gate: number): () => void {
+  let resolve!: () => void
+  const done = new Promise<void>((r) => { resolve = r })
+  sessionSwitchInFlight = { gate, done }
+  return () => {
+    if (sessionSwitchInFlight?.gate === gate) sessionSwitchInFlight = null
+    resolve()
+  }
+}
+
 /** 额度续跑的轮询：代次变了（取消 / 重新登记）就让旧的回调自己退出。 */
 let quotaResumeGen = 0
 let quotaResumeTimer: ReturnType<typeof setTimeout> | undefined
@@ -1517,6 +1836,25 @@ export const useStore = create<Store>((rawSet, get) => {
   settings: null,
   shortcutRecording: false,
   settingsOpen: false,
+  nativeSessionPanel: null,
+  closeNativeSessionPanel: () => set({ nativeSessionPanel: null }),
+  nativeSession: async (action, args) => {
+    if (!(await get().ensureActivated())) return { ok: false, error: '会话未能激活' }
+    const sessionId = get().session?.sessionId
+    if (!sessionId) return { ok: false, error: '当前没有可操作的会话' }
+    if (action === 'tree' || action === 'scoped-models' || action === 'trust') {
+      set({ nativeSessionPanel: { mode: action, sessionId } })
+      return { ok: true }
+    }
+    const result = await piCall(() => window.yan.nativeSession({ action, args, expectedSessionId: sessionId }))
+    if (result.ok) {
+      await get().refreshSessions()
+      if (action === 'reload') await Promise.all([get().reloadModels(), get().reloadCommands()])
+      const message = result.url ? `分享链接：${result.url}` : result.path ? `已完成：${result.path}` : '原生操作已完成'
+      get().notify('info', message)
+    }
+    return result
+  },
   settingsTab: 'appearance',
   /**
    * 左栏是否展开（持久化到 localStorage）。
@@ -1563,6 +1901,7 @@ export const useStore = create<Store>((rawSet, get) => {
   nativeMcpStatus: null,
   statuses: {},
   widgets: {},
+  widgetPlacements: {},
   piInfo: null,
   editorInject: null,
   composerFocus: { tick: 0, at: 0 },
@@ -1716,6 +2055,44 @@ export const useStore = create<Store>((rawSet, get) => {
   applyPush: (m) => {
     if (m.ch === 'approval') approvalChanges.set(m.payload.id, m.payload)
     else if (m.ch === 'approval-close') approvalChanges.set(m.payload.id, null)
+
+    /*
+     * 流式防护收回的排队内容是会话级草稿事实，显式归属指向 clear_queue 的原会话。
+     * 即使该会话不在前台，也要落进它自己的草稿缓存（applyQueueRecovery 的跨会话分支），
+     * 不能丢队列，也不能让后台回收覆盖当前会话草稿——所以要在
+     * `routePush` 的前台过滤之前处理。
+     */
+    if (m.ch === 'queue-reclaimed') {
+      const current = get()
+      const items = [...(m.payload.items?.steering ?? []), ...(m.payload.items?.followUp ?? [])]
+      const texts = [...m.payload.steering, ...m.payload.followUp].filter((text) => text)
+      const reclaimedCount = Math.max(texts.length, items.length)
+      if (reclaimedCount > 0) {
+        const patch = applyQueueRecovery(current, {
+          sessionId: m.payload.sessionId,
+          text: texts.join('\n'),
+          images: items.flatMap((item) => item.images ?? []),
+          idPrefix: 'queue-image',
+          notice: `检测到模型输出重复，已把 ${reclaimedCount} 条排队内容放回输入框`
+        })
+        /*
+         * `queue-reclaimed` 只说明队列已被清空并交回草稿，但它本身不是队列快照。
+         * 熔断时若 agent 已不再 ownsRun，主进程只发 reclaimed、**不再**发空 `queue`
+         * 推送（见 agent.ts `stopForLoopGuard` 的 `if (ownsRun()) this.resetQueue(true)`）。
+         * 不在这里清掉对应会话残留的队列快照，收回的文本会同时出现在草稿和缓存队列里。
+         */
+        const sessionId = m.payload.sessionId
+        if (sessionId) {
+          const cache = patch.sessionRuntimes ?? current.sessionRuntimes
+          const cached = cache[sessionId]
+          if (cached) patch.sessionRuntimes = { ...cache, [sessionId]: { ...cached, queue: EMPTY_QUEUE } }
+        }
+        if (sessionId && current.session?.sessionId === sessionId) patch.queue = EMPTY_QUEUE
+        set(patch)
+      }
+      return
+    }
+
     const s = get()
 
     /* 会话与运行实例的身份、事件归属判定统一在 push-routing.ts */
@@ -1753,12 +2130,16 @@ export const useStore = create<Store>((rawSet, get) => {
         const incoming = m.runtime?.sessionId
         if (s.peekedSessionId && incoming && incoming !== s.peekedSessionId) break
         /*
-         * 整份替换前先保住本地的图片预览：hydrate（压缩结束 / 切会话 / 重启）
-         * 推来的是从会话文件重读的那份，里面用户贴的图已经被体积保护丢掉了
-         * （见 keep-images.ts 的说明）。
+         * 整份替换前先合并本地实时帧：
+         *   · 图片预览必须保住（hydrate 从会话文件重读时用户贴的图已被体积保护丢掉，
+         *     见 keep-images.ts）；
+         *   · 同一条消息取内容更完整的一份（工具输出等更晚的增量）；
+         *   · pi 在 `message_end` 前不会把正在流的助手消息放进 `get_messages`，
+         *     而渲染端已经累积了正文 —— 只保护这条未完成流式尾部，别的独有历史
+         *     一律以快照为准（清空 / 分叉 / 导入仍能整份替换，见 session-message-merge）。
          */
         set({
-          messages: reuseIfSame(s.messages, keepLocalImages(s.messages, m.payload)) as typeof s.messages,
+          messages: reuseIfSame(s.messages, mergeSyncHistory(m.payload, s.messages, syncProtectedTail(s, m.runtime))) as typeof s.messages,
           peekedPath: null,
           peekedSessionId: null,
           peekNote: null
@@ -1911,7 +2292,14 @@ export const useStore = create<Store>((rawSet, get) => {
         const runTail = !nowRunning ? null
           : !wasRunning && s.session?.sessionId === m.payload.sessionId && tailId ? { sessionId: m.payload.sessionId, id: tailId }
             : s.runTail?.sessionId === m.payload.sessionId ? s.runTail : null
-        set({ session: m.payload, runTail })
+        /*
+         * state 第一次给出稳定 sessionId / sessionFile 时，把只读打开期间写在
+         * `file:<path>` 薄键上的草稿迁到稳定键，切走再切回按稳定键能取回。
+         * 用当前 map（routePush 刚把本帧写进缓存）而不是上面的 `s`，否则会盖掉它。
+         */
+        const cacheNow = get().sessionRuntimes
+        const migratedDrafts = migratePathDraft(cacheNow, m.payload.sessionFile, m.payload.sessionId)
+        set({ session: m.payload, runTail, ...(migratedDrafts !== cacheNow ? { sessionRuntimes: migratedDrafts } : {}) })
         if (endedRun?.status === 'completed') {
           set({ notices: pushNotice(get().notices, 'info', '上下文已压缩') })
         } else if (endedRun?.status === 'failed') {
@@ -2476,11 +2864,17 @@ export const useStore = create<Store>((rawSet, get) => {
 
   setSessionDraft: (value) => {
     const current = get()
-    const runtime = runtimeForState(current)
-    if (!runtime) return
+    /* 草稿跟随**正在看**的会话（deferred 时 peek 优先），不能写进活动实例的键。 */
+    const key = composerDraftKey(current)
+    if (!key) return
     set({
-      sessionRuntimes: updateSessionRuntime(current.sessionRuntimes, runtime, { draft: value })
+      sessionRuntimes: updateSessionRuntimeAt(current.sessionRuntimes, key, { draft: value }, draftSeedRuntime(current, key))
     })
+  },
+
+  hydrateComposerDraft: (key) => {
+    const snapshot = composerDraftForView(get(), key)
+    set({ attachments: snapshot.attachments })
   },
 
   injectComposerText: (text) => set({ editorInject: text }),
@@ -2507,8 +2901,17 @@ export const useStore = create<Store>((rawSet, get) => {
   /* --------------------------------------------------------------- 对话 */
 
   send: async (text, images, mode) => {
+    /*
+     * 提交时钉住「正在看的会话」身份：ensureActivated、来源登记、宿主 send 都不能
+     * 越过它。await 期间用户切到别的会话时安全失败（调用方把草稿 / 附件还回原会话），
+     * 宁可不发，也不把 A 的消息落到 B 上（主审 F02）。
+     */
+    const target = composerSubmitIdentity(get())
+    const guardView = hasComposerIdentity(target)
     /* 先把「正在看的那条会话」真正切到 pi 上（必要时才会建隔离树）；切不动就不发 */
-    if (!(await get().ensureActivated())) return false
+    if (!(await get().ensureActivated(target))) return false
+    /* ensureActivated 期间视图可能已经被换掉：目标变了就安全失败，不往新视图发。 */
+    if (guardView && !sameComposerView(get(), target)) return false
     /*
      * 來源定位消息（S1）：把这次要发出去的附件换成来源 id，先排队。
      * 拿不到 id 的（算不出指纹/文件已不在）就静静跳过 —— 一条来源定位不上
@@ -2516,10 +2919,14 @@ export const useStore = create<Store>((rawSet, get) => {
      */
     const sessionId = get().session?.sessionId
     const sourceIds = sessionId ? await collectSourceIds(get().attachments, sessionId) : []
+    /* 来源复核同样跨了 await：视图 / 归属变了就不再继续，不把来源绑到别条会话。 */
+    if (guardView && !sameComposerView(get(), target)) return false
     if (sourceIds.length) {
       set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, sourceIds }] })
     }
-    const res = await piCall(() => window.yan.send(text, images, mode))
+    /* 宿主请求带上提交时钉住的 owner（run + generation），由主进程核对归属。 */
+    const expected = expectedRuntimeFor(get(), target)
+    const res = await piCall(() => window.yan.send(text, images, mode, expected))
     if (!res.ok) {
       /* 没发出去：把刚排的那批撤掉，否则会绑到下一条真正发出去的消息上 */
       if (sourceIds.length) {
@@ -2701,6 +3108,25 @@ export const useStore = create<Store>((rawSet, get) => {
     }))
   },
 
+  recoverComposerInput: (input) => {
+    const current = get()
+    /* 还在提交时那条会话才回填输入框；否则只写回原会话草稿缓存。 */
+    const sameView = sameComposerView(current, input.identity)
+    const draftRuntime = sameView ? undefined : recoveryRuntimeFor(current, input.identity) ?? undefined
+    /* 没有可解析的运行实例时用提交时钉住的草稿键（含薄路径键），不盲写 active runner。 */
+    const draftKey = sameView ? undefined : draftRuntime ? undefined : input.identity.draftKey
+    set(applyQueueRecovery(current, {
+      sessionId: input.identity.sessionId,
+      text: input.text,
+      attachments: input.attachments,
+      idPrefix: input.idPrefix ?? 'composer-recover',
+      notice: input.notice,
+      sameSession: sameView,
+      draftRuntime,
+      draftKey
+    }))
+  },
+
   abort: async () => {
     /* 用户点停止就是要停：持续运行不能在这一轮收尾后又自动发继续 */
     if (get().keepRunning) set({ keepRunning: null, notices: pushNotice(get().notices, 'info', '已停止，持续运行已关闭') })
@@ -2729,11 +3155,31 @@ export const useStore = create<Store>((rawSet, get) => {
 
   /* ------------------------------------------------------------ bash */
 
-  runBash: async (command) => {
-    const res = await piCall(() => window.yan.runBash(command))
+  runBash: async (command, options) => {
+    /*
+     * 与 send 完全同一口径：提交时钉住「正在看的会话」身份，先等切换在飞落定
+     * 并真正激活，再按该身份取 owner。
+     *
+     * 只调 expectedRuntimeFor 不先激活是不够的：视图已乐观切到 A、宿主激活仍在
+     * 飞时，收紧后的 `expectedRuntimeFor` 解析不出 A 的实例会返回 undefined，
+     * 宿主 `yan:runBash` 无 owner 时按它自己的 active 处理 —— 那个窗口里 active
+     * 仍是上一条会话 B，`!cmd` 就会在 B 的 cwd 执行（比 send 更危险，可能误改
+     * 文件，主审 F02 同根）。所以先 `ensureActivated` 等这次切换落定；视图在
+     * 等待期间被换走则安全失败。
+     */
+    const target = composerSubmitIdentity(get())
+    const guardView = hasComposerIdentity(target)
+    if (!(await get().ensureActivated(target))) return { ok: false, error: '会话未能激活' }
+    /* ensureActivated 期间视图可能被换掉：目标变了就不执行，命令原文交给调用方恢复。 */
+    if (guardView && !sameComposerView(get(), target)) return { ok: false, error: '会话已切换，命令未执行' }
+    /* 宿主请求带提交时钉住的 owner，不依赖全局 active。 */
+    const expected = expectedRuntimeFor(get(), target)
+    const res = await piCall(() => window.yan.runBash(command, options, expected))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '命令执行失败') })
     }
+    /* 把成功 / 失败明确交给调用方：输入框直执行要据此决定是否恢复命令与附件。 */
+    return res
   },
 
   abortBash: async () => {
@@ -2741,8 +3187,18 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   newSession: async (target) => {
-    ++sessionSwitchGate
+    /* 本次新建的选择代次：比它晚的选择（切会话、另一次新建）不能被它迟到的响应顶掉 */
+    const gate = ++sessionSwitchGate
     const res = await piCall(() => window.yan.newSession(target))
+    if (gate !== sessionSwitchGate) {
+      /*
+       * 期间用户已经选了别的会话：不写投影，否则会把它刚切过去的视图/实例顶掉。
+       * 新建结果照实交回调用方（工作树登记等副作用用的是会话身份，不是投影）。
+       */
+      return res.ok
+        ? { ok: true, sessionId: res.sessionId ?? undefined, runId: res.runId ?? res.id }
+        : { ok: false, error: res.error }
+    }
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '新建失败') })
       return { ok: false, error: res.error }
@@ -2750,22 +3206,55 @@ export const useStore = create<Store>((rawSet, get) => {
     /*
      * N12：新会话可能落在**新实例**上（当前实例忙着的时候）。
      * 不先对齐 id，新实例的 sync/state 会被身份过滤当成「后台会话」丢掉。
+     *
+     * 视图身份、会话状态、消息必须一起切换：只清 messages / queue / stats 时，
+     * 上一条会话的 `session`（isAgentRunning）和 `peekedSessionId` 会留在原地 ——
+     * 旧身份会把新会话的推送挡在归属判定之外，界面就一直停在「生成中」。
+     *
+     * ⚠️ 但主进程是先 `pushRunnerSnapshot()` 再返回响应的，新会话的 state/sync 可能
+     *   **已经**按后台帧写进了缓存。这时不能再无条件清空：用响应里的身份去缓存里
+     *   找回这条新会话的快照，有就投影上去（复用实例要用 generation 核对），没有才清。
      */
-    if (res.id || res.runId) {
-      set({
-        queue: EMPTY_QUEUE,
-        pendingSends: [],
-        activeRunnerId: res.runId ?? res.id,
-        messages: [],
-        goal: null,
-        /* 交接状态也是会话级事实：新会话不能接着显示上一条的「整理未完成」 */
-        handoff: null,
-        /* 用量同理：不主动清，旧会话的累计会一直留在新会话上 */
-        stats: null,
-        pendingActivation: null
-      })
-    }
-    else set({ queue: EMPTY_QUEUE, pendingSends: [], pendingActivation: null })
+    const before = get()
+    const arrived = findNewSessionSnapshot(
+      before.sessionRuntimes,
+      res.sessionId ?? undefined,
+      res.runId ?? res.id,
+      res.generation
+    )
+    set({
+      pendingSends: [],
+      ...(res.id || res.runId ? { activeRunnerId: res.runId ?? res.id } : {}),
+      ...(arrived
+        ? projectRuntimeSnapshot(arrived)
+        : {
+            /* 新会话是空白的：上一条的消息、状态、目标、队列、待答问题都不能留下 */
+            messages: [],
+            session: null,
+            todos: [],
+            todoHistory: [],
+            uiRequests: [],
+            statuses: {},
+            widgets: {},
+            widgetPlacements: {},
+            workMode: null,
+            agentProfile: null,
+            goal: null,
+            /* 用量同理：不主动清，旧会话的累计会一直留在新会话上 */
+            stats: null
+          }),
+      queue: arrived?.queue ?? EMPTY_QUEUE,
+      /* 交接状态也是会话级事实：新会话不能接着显示上一条的「整理未完成」 */
+      handoff: null,
+      pendingActivation: null,
+      /* `peekedPath` / `peekedSessionId` 是旧会话的视图身份，留着会挡新会话的推送。
+       * 新身份已在上面按 `res.sessionId` + `res.generation` 从缓存里认过；这里不再
+       * 把 `peekedSessionId` 钉成 `res.sessionId` —— 它会随 pi 就绪从 `pending:<runId>`
+       * 过渡成真实 uuid，钉死反而会把新会话自己的 sync/帧挡在归属判定之外。 */
+      peekedPath: null,
+      peekedSessionId: null,
+      peekNote: null
+    })
     void get().syncRunners()
     void get().reloadModels()
     void get().reloadCommands()
@@ -2807,62 +3296,93 @@ export const useStore = create<Store>((rawSet, get) => {
     /* 本次点击的代次；后面每个 await 之后都要核对自己还没过期 */
     const gate = ++sessionSwitchGate
     /*
+     * 「切换在飞」要盖住乐观 `set` 之后、`pendingActivation` 写入之前的整段窗口：
+     * 期间 `ensureActivated` 不能把视图当已激活，必须先等这次切换落定（F02 同根）。
+     */
+    const finishSwitch = beginSessionSwitch(gate)
+    try {
+    /*
      * 会话身份先取：下面 ② 要用它（cwd / 归属），① 的 peek 也要用它把
      * 「刚铺上的内容」与随后 pi 的 sync 认成同一条会话。
      */
     const sum = get().sessions.find((x) => x.path === path)
     /*
-     * 在新会话的权威快照到达前，不继续展示上一条会话的目标、交接**与用量**：
-     * 三者都是**会话级事实**。用量尤其会「以大充小」—— 旧的大会话累计留在屏幕上，
-     * 看起来像刚点开的小会话自己花了这么多；而只读预览（deferred）根本不会收到
-     * 新 stats，不主动清就永远清不掉。
-     *
-     * 同时把 `peekedSessionId` 提前钉到新会话：它才是「当前视图已铺上的目标身份」。
-     * 下面 peek / selectSession 都要 await，这段间隙里旧实例（可能正被复用到新会话）
-     * 迟到的 stats / sync / todos 会走 routePush 的 belongsToView 判定 —— 不提前认身份，
-     * 它们就会被当成当前视图的推送投影上来。
+     * 运行缓存里已有这条会话（后台在跑），或分屏里另一块正显示着它（split-snapshots）：
+     * 取出来在下面**一次**铺上 —— 不等文件读取，也不等 pi。
      */
-    set({ goal: null, handoff: null, stats: null, peekedSessionId: sum?.id ?? null })
-
-    /*
-     * 运行缓存里已有这条会话的消息（后台在跑），或分屏里另一块正显示着它（split-snapshots）：同步先铺上，
-     * 不等文件读取 —— 否则焦点换边的这几十毫秒里，对话列还是上一条会话的内容或空白。
-     * 后面的 peek 与 pi 的权威同步照常覆盖。
-     */
+    const cachedSnapshot = (sum?.id ? get().sessionRuntimes[sum.id] : undefined) ??
+      findSnapshotByPath(get().sessionRuntimes, path)
     /* 分屏时先用这条会话在旁边那块里正显示的那份（与屏幕上一模一样，换块不跳），没有再用运行缓存 */
-    const runtimeMessages = sum?.id ? get().sessionRuntimes[sum.id]?.messages : undefined
     const splitShown = useSplitView.getState().split ? shownMessages({ sessionId: sum?.id, path }) : undefined
     /* 比最后一条消息的时间，不比条数（运行缓存把工具结果单列，条数多不代表新）；一样新用屏幕上那份 */
-    const cachedMessages = newestMessages(splitShown, runtimeMessages)
-    if (cachedMessages?.length) {
-      set({ messages: cachedMessages, peekedPath: path, peekedSessionId: sum?.id ?? null, peekNote: null })
-    }
+    const cachedMessages = newestMessages(splitShown, cachedSnapshot?.messages)
+    /*
+     * 视图身份、会话状态、消息必须**同时**切换，否则会留下上一条会话的事实：
+     *   · `session` 不清 → 上一条的 isAgentRunning / isStreaming 继续挂着，新会话
+     *     显示成「生成中」；`peekedSessionId` 还停在旧会话 → 新会话的推送被归属判定
+     *     挡掉，界面再也不更新（用户报的两条现象同源）。
+     *   · 缓存里有的（后台正跑的会话）要立刻连 `session` / stats 一起铺上，切回去
+     *     才有实时状态；只铺消息的话，会话在后台已经跑完也仍显示「生成中」。
+     * 目标、交接、用量、队列、待答问题、todos 都是会话级事实，缓存没有就清空，
+     * 不能让上一条的留在新视图上。
+     */
+    set({
+      peekedPath: path,
+      peekedSessionId: sum?.id ?? cachedSnapshot?.runtime.sessionId ?? null,
+      peekNote: null,
+      messages: cachedMessages ?? [],
+      session: cachedSnapshot?.session ?? null,
+      goal: cachedSnapshot?.goal ?? null,
+      handoff: null,
+      stats: cachedSnapshot?.stats ?? null,
+      queue: cachedSnapshot?.queue ?? EMPTY_QUEUE,
+      todos: cachedSnapshot?.todos ?? [],
+      todoHistory: cachedSnapshot?.todoHistory ?? [],
+      uiRequests: cachedSnapshot?.uiRequests ?? [],
+      statuses: cachedSnapshot?.statuses ?? {},
+      widgets: cachedSnapshot?.widgets ?? {},
+      widgetPlacements: cachedSnapshot?.widgetPlacements ?? {},
+      workMode: cachedSnapshot?.workMode ?? null,
+      agentProfile: cachedSnapshot?.agentProfile ?? null
+    })
 
     // ① 立即显示（不等 pi）
     performance.mark('yan:switch-start')
-    /* 新会话的内容铺上去之前，屏幕上不能还留着上一条会话的消息（读不出来、文件为空时尤其如此） */
-    const clearStale = (): void => {
-      if (!cachedMessages?.length) set({ messages: [], peekedPath: path, peekedSessionId: sum?.id ?? null, peekNote: null })
-    }
     try {
       const peek = await window.yan.peekSession(path)
       /* 用户又点了别的会话（这次 click 已经过期）：整段放弃，不写投影也不再请求激活 */
       if (gate !== sessionSwitchGate) return
       performance.mark('yan:switch-peeked')
-      if (!peek || !peek.messages.length) clearStale()
-      if (peek && peek.messages.length) {
-        set({
-          messages: peek.messages,
-          peekedPath: path,
-          peekedSessionId: peek.sessionId ?? sum?.id ?? null,
-          peekNote: peek.truncated > 0 ? { truncated: peek.truncated, total: peek.total } : null
-        })
+      if (peek) {
+        /*
+         * peek 读文件期间，正在看的会话的实时帧可能已经更新了顶层消息
+         * （流式增量、刚结束但文件还没落盘）。不能直接用文件历史整份覆盖，
+         * 否则会删掉流式尾部、后续按 id 的补丁无处落点。
+         */
+        const stableId = peek.sessionId ?? sum?.id
+        /* peek 给出稳定 sessionId：把只读期间的薄路径草稿迁到稳定键（空会话也要迁）。 */
+        const before = get()
+        const migrated = migratePathDraft(before.sessionRuntimes, path, stableId)
+        if (peek.messages.length) {
+          set({
+            messages: mergePeekedHistory(peek.messages, before.messages),
+            peekedPath: path,
+            peekedSessionId: stableId ?? null,
+            peekNote: peek.truncated > 0 ? { truncated: peek.truncated, total: peek.total } : null,
+            ...(migrated !== before.sessionRuntimes ? { sessionRuntimes: migrated } : {})
+          })
+        } else if (migrated !== before.sessionRuntimes) {
+          set({ sessionRuntimes: migrated })
+        }
         requestAnimationFrame(() => requestAnimationFrame(() => performance.mark('yan:switch-painted')))
       }
+      /*
+       * 读不出来（peek 为空）时保持上面铺的缓存 / 空白：屏幕上不会残留上一条
+       * 会话的消息，也不会把这几毫秒里刚收到的实时帧清掉（主进程随后仍会发权威 sync）。
+       */
     } catch {
       /* 读不出来就等 pi —— 不是致命错误；但过期了同样不继续 */
       if (gate !== sessionSwitchGate) return
-      clearStale()
     }
 
     // ② 切视图（N12：命中运行实例就只是切换订阅，**不停任何**会话）
@@ -2933,6 +3453,10 @@ export const useStore = create<Store>((rawSet, get) => {
     void get().reloadModels()
     void get().reloadCommands()
     void get().loadGoal()
+    } finally {
+      /* 无论是激活 / 失败 / 过期 / 提前返回，都要落定，等待者才不会被挂住。 */
+      finishSwitch()
+    }
   },
 
   /**
@@ -2941,10 +3465,37 @@ export const useStore = create<Store>((rawSet, get) => {
    * 返回 false 时调用方**不要**继续发消息 —— 消息会落到上一个会话的实例上（串会话）。
    * 这就是「查看不切实例」换来的代价，所以每个“真开始对话”的入口都要先过这一关。
    */
-  ensureActivated: async (): Promise<boolean> => {
+  ensureActivated: async (expected?: ComposerSubmitIdentity): Promise<boolean> => {
+    /*
+     * 先等掉正在进行的 `switchSession`：它在乐观视图已改、`pendingActivation`
+     * 还没写的窗口里让 `pendingActivation === null`。不等待就会把「视图已切 A、
+     * 实例还没就绪」当成已激活，发送带着上一条活动 runner 的 owner 出去
+     * （主审 F02 同根）。切换落定后要么补上 pendingActivation（下面继续真正激活），
+     * 要么实例已经切好。
+     */
+    for (let i = 0; i < 8 && sessionSwitchInFlight; i += 1) {
+      await sessionSwitchInFlight.done
+    }
+    /* 连点多次仍没落定：按「未激活」安全失败，由调用方保留草稿。 */
+    if (sessionSwitchInFlight) return false
     const pending = get().pendingActivation
     if (!pending) return true
+    /*
+     * 等待期间用户可能又切到别的会话：视图与钉住的目标不一致时不去激活别的
+     * 会话（`send` 随后也会按同视图校验安全失败）。
+     */
+    if (expected && hasComposerIdentity(expected) && !sameComposerView(get(), expected)) return false
+    /*
+     * 钉住发起时的选择代次与 pending 对象本身：await 期间用户可能又点了一条
+     * 会话（`switchSession` 会自增 gate 并换掉 pendingActivation）。此时这条
+     * 迟到的响应已经不代表当前选择，必须整段放弃 —— 不能去清新 pending、也
+     * 不能把旧实例写回 activeRunnerId，否则发送会落到别的会话上（主审 F02）。
+     */
+    const gate = sessionSwitchGate
     const res = await piCall(() => window.yan.selectSession(pending))
+    if (gate !== sessionSwitchGate || get().pendingActivation !== pending) return false
+    /* 身份完全没落定时不做同视图校验（无从判断），保持旧行为。 */
+    if (expected && hasComposerIdentity(expected) && !sameComposerView(get(), expected)) return false
     if (!res.ok || res.deferred) {
       set({
         notices: pushNotice(get().notices, 'error', res.error ?? '切换会话失败，消息没有发出')
@@ -2955,6 +3506,10 @@ export const useStore = create<Store>((rawSet, get) => {
       pendingActivation: null,
       ...(res.runId ?? res.id ? { activeRunnerId: res.runId ?? res.id } : {})
     })
+    /* 激活响应给出稳定 sessionId：把只读期间的薄路径草稿迁到稳定键。 */
+    const activatedCache = get().sessionRuntimes
+    const migrated = migratePathDraft(activatedCache, pending.sessionFile, res.sessionId)
+    if (migrated !== activatedCache) set({ sessionRuntimes: migrated })
     void get().syncRunners()
     void get().reloadModels()
     void get().reloadCommands()
@@ -3158,23 +3713,15 @@ export const useStore = create<Store>((rawSet, get) => {
     await get().refreshSessions()
   },
 
-  exportHtml: async () => {
-    const res = await piCall(() => window.yan.exportHtml())
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '导出失败') })
-      return
-    }
-    set({
-      notices: pushNotice(get().notices, 'info', `已导出：${res.path ?? ''}（已用系统默认程序打开）`)
-    })
+  exportHtml: async (outputPath) => {
+    const res = await piCall(() => window.yan.exportHtml(outputPath))
+    if (res.ok) get().notify('info', `已导出：${res.path ?? ''}（已用系统默认程序打开）`)
+    return res
   },
 
-  compact: async () => {
-    if (!(await get().ensureActivated())) return
-    const res = await piCall(() => window.yan.compact())
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '压缩失败') })
-    }
+  compact: async (customInstructions) => {
+    if (!(await get().ensureActivated())) return { ok: false, error: '会话未能激活' }
+    return piCall(() => window.yan.compact(customInstructions))
   },
 
   stop: async () => {
@@ -3790,7 +4337,10 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', '图片合计超过 20MB，已跳过放不下的那些') })
     }
 
-    set({ attachments: next })
+    const draftKey = composerDraftKey(get())
+    const after: Partial<Store> = { attachments: next }
+    if (draftKey) after.sessionRuntimes = writeDraftAttachments(get(), draftKey, next)
+    set(after)
 
     /*
      * 持久化（方案 §8 的 S1）。
@@ -3886,10 +4436,23 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   removeAttachment: (id) => {
-    set({ attachments: get().attachments.filter((a) => a.id !== id) })
+    const current = get()
+    const next = current.attachments.filter((a) => a.id !== id)
+    const draftKey = composerDraftKey(current)
+    set({
+      attachments: next,
+      ...(draftKey ? { sessionRuntimes: writeDraftAttachments(current, draftKey, next) } : {})
+    })
   },
 
-  clearAttachments: () => set({ attachments: [] }),
+  clearAttachments: () => {
+    const current = get()
+    const draftKey = composerDraftKey(current)
+    set({
+      attachments: [],
+      ...(draftKey ? { sessionRuntimes: writeDraftAttachments(current, draftKey, []) } : {})
+    })
+  },
 
   pickImages: async () => {
     get().addAttachments(await window.yan.pickImages())

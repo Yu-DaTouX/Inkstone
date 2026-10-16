@@ -117,33 +117,166 @@ export async function runExtensionInventoryTests(ok) {
 
   /*
    * 5. 架构检查（静态版）：砚薄层**只**承载宿主没有 CLI / RPC 等价物的
-   * 生命周期钩子 —— 不得注册模型工具；pi 命令原则上也不注册。
+   * 生命周期钩子 —— 不得注册模型工具；pi 命令只允许一个宿主专用例外。
    *
    * 扫描全部随包适配，防止未进入专项测试的文件重新注册退役入口。
-   * 唯一例外：shell-fallback.js 用 pi 的 createBashToolDefinition 同名覆盖内置 bash
-   * （不新增工具，只换 Windows 上的执行方式，见 ARCHITECTURE）；参数一致由 test-bash-transport 实测。
+   *
+   * 允许的例外有两个，都是**精确到文件、命令名、注册次数与环境闸门**的放行，
+   * 而不是放行整个文件：
+   *   · shell-fallback.js：用 pi 的 createBashToolDefinition 同名覆盖内置 bash
+   *     （不新增工具，只换 Windows 上的执行方式）；参数一致性由 test-bash-transport 实测。
+   *   · native-session-bridge.js：注册**唯一**宿主专用命令 `__inkstone_native`。
+   *     pi 1.2.0 的 `ctx.navigateTree()` / `ctx.reload()` 只挂在命令上下文上，
+   *     RPC 没有对应入口，宿主必须经这个扩展命令才能触达（见该文件头注释、
+   *     `src/main/native-session-runtime.ts` 与 `docs/ARCHITECTURE.md`）。它是宿主
+   *     内部通道：只有宿主用 `--extension` 显式加载并注入 `YAN_NATIVE_BRIDGE=1`
+   *     时才注册；`agent.ts` 拒绝用户直接发送 `/__inkstone_native`，
+   *     `command-registry.ts` 也会把它从命令表里过滤掉。
+   *
+   * 为防「白名单变成无保护空放行」，扫描写成纯函数，并用合成源码做负对照：
+   * 任意 registerTool、非宿主文件的 registerCommand、宿主文件里多注册 / 改名 /
+   * 不用导出的常量 / 缺环境闸门都必须被判为缺陷。
    */
   {
+    const HOST_ONLY_COMMAND_FILE = 'native-session-bridge.js'
+    const HOST_ONLY_COMMAND_NAME = '__inkstone_native'
+
+    /** 纯扫描：`sources` 是 [文件名, 源码] 的可迭代。返回缺陷描述数组。 */
+    function scanThinLayerSources(sources) {
+      const offenders = []
+      for (const [file, source] of sources) {
+        const toolCalls = source.match(/\.registerTool\s*\(/g)?.length ?? 0
+        const bashOverride =
+          file === 'shell-fallback.js' &&
+          toolCalls === 1 &&
+          /const template = core\.createBashToolDefinition\(/.test(source) &&
+          /\.registerTool\(\{\s*\.\.\.template,\s*execute:/.test(source)
+        if (toolCalls && !bashOverride) offenders.push(`${file}:registerTool`)
+
+        const commandCalls = source.match(/\.registerCommand\s*\(/g)?.length ?? 0
+        if (commandCalls === 0) continue
+        if (file !== HOST_ONLY_COMMAND_FILE) {
+          offenders.push(`${file}:registerCommand`)
+          continue
+        }
+        /* 唯一命令：恰好一次，且名字必须等于导出的 NATIVE_COMMAND 常量。 */
+        if (commandCalls !== 1) {
+          offenders.push(`${file}:registerCommand×${commandCalls}`)
+          continue
+        }
+        const declared = /export const NATIVE_COMMAND = '([^']+)'/.exec(source)
+        if (!declared || declared[1] !== HOST_ONLY_COMMAND_NAME) {
+          offenders.push(`${file}:registerCommand-name`)
+          continue
+        }
+        if (!/\.registerCommand\(\s*NATIVE_COMMAND\s*,/.test(source)) {
+          offenders.push(`${file}:registerCommand-arg`)
+          continue
+        }
+        /* host-only：必须在注册前拒绝非宿主环境；仅出现比较表达式不算闸门。 */
+        const hostGate = /if\s*\(\s*process\.env\.YAN_NATIVE_BRIDGE\s*!==\s*'1'\s*\)\s*return\b/.exec(source)
+        if (!hostGate || hostGate.index > source.indexOf('.registerCommand')) {
+          offenders.push(`${file}:registerCommand-ungated`)
+        }
+      }
+      return offenders
+    }
+
     const dir = join('resources', 'pi-extensions')
     const files = (await readdir(dir)).filter((f) => f.endsWith('.js')).sort()
-    const offenders = []
-    for (const file of files) {
-      const source = await readFile(join(dir, file), 'utf8')
-      const registrations = source.match(/\.registerTool\s*\(/g)?.length ?? 0
-      const bashOverride =
-        file === 'shell-fallback.js' &&
-        registrations === 1 &&
-        /const template = core\.createBashToolDefinition\(/.test(source) &&
-        /\.registerTool\(\{\s*\.\.\.template,\s*execute:/.test(source)
-      if (registrations && !bashOverride) offenders.push(`${file}:registerTool`)
-      if (/\.registerCommand\s*\(/.test(source)) {
-        offenders.push(`${file}:registerCommand`)
-      }
-    }
+    const sources = []
+    for (const file of files) sources.push([file, await readFile(join(dir, file), 'utf8')])
+
+    /* 真实随包薄层：只允许 native-session-bridge.js 的那一个宿主命令。 */
+    const offenders = scanThinLayerSources(sources)
     ok(
       offenders.length === 0,
-      `薄层不注册模型工具或 pi 命令（扫了 ${files.length} 个文件）`,
+      `薄层不注册模型工具，pi 命令只放行宿主专用那一个（扫了 ${files.length} 个文件）`,
       offenders.join('、')
+    )
+
+    /* 确认真实宿主命令名 / 注册次数 / host-only 闸门，而不是「没报错就算」。 */
+    const bridgeSource = sources.find(([file]) => file === HOST_ONLY_COMMAND_FILE)?.[1] ?? ''
+    ok(bridgeSource.includes(`export const NATIVE_COMMAND = '${HOST_ONLY_COMMAND_NAME}'`), '宿主命令名精确为 __inkstone_native')
+    ok((bridgeSource.match(/\.registerCommand\s*\(/g)?.length ?? 0) === 1, '宿主桥只注册一个命令')
+    ok(!/\.registerTool\s*\(/.test(bridgeSource), '宿主桥不注册任何模型工具')
+    ok(/YAN_NATIVE_BRIDGE\s*!==\s*'1'/.test(bridgeSource), '宿主桥由 YAN_NATIVE_BRIDGE 环境闸门限制')
+
+    /* 负对照：任何偏离都必须被扫描抓住。 */
+    const negative = [
+      ['任意文件 registerCommand', [['evil.js', "pi.registerCommand('help', { handler: () => {} })"]]],
+      ['任意文件 registerTool', [['evil.js', "pi.registerTool({ name: 'bash', execute: () => {} })"]]],
+      [
+        '宿主桥多注册一个命令',
+        [
+          [
+            HOST_ONLY_COMMAND_FILE,
+            `export const NATIVE_COMMAND = '${HOST_ONLY_COMMAND_NAME}'\n` +
+              `if (process.env.YAN_NATIVE_BRIDGE !== '1') return\n` +
+              `pi.registerCommand(NATIVE_COMMAND, { handler: () => {} })\n` +
+              `pi.registerCommand('sneaky', { handler: () => {} })\n`
+          ]
+        ]
+      ],
+      [
+        '宿主桥改名',
+        [
+          [
+            HOST_ONLY_COMMAND_FILE,
+            `export const NATIVE_COMMAND = '__inkstone_native2'\n` +
+              `if (process.env.YAN_NATIVE_BRIDGE !== '1') return\n` +
+              `pi.registerCommand(NATIVE_COMMAND, { handler: () => {} })\n`
+          ]
+        ]
+      ],
+      [
+        '宿主桥不引用导出的常量',
+        [
+          [
+            HOST_ONLY_COMMAND_FILE,
+            `export const NATIVE_COMMAND = '${HOST_ONLY_COMMAND_NAME}'\n` +
+              `if (process.env.YAN_NATIVE_BRIDGE !== '1') return\n` +
+              `pi.registerCommand('${HOST_ONLY_COMMAND_NAME}', { handler: () => {} })\n`
+          ]
+        ]
+      ],
+      [
+        '宿主桥缺少环境闸门',
+        [
+          [
+            HOST_ONLY_COMMAND_FILE,
+            `export const NATIVE_COMMAND = '${HOST_ONLY_COMMAND_NAME}'\n` +
+              `pi.registerCommand(NATIVE_COMMAND, { handler: () => {} })\n`
+          ]
+        ]
+      ],
+      [
+        '宿主桥闸门方向反转',
+        [[HOST_ONLY_COMMAND_FILE, bridgeSource.replace("YAN_NATIVE_BRIDGE !== '1'", "YAN_NATIVE_BRIDGE === '1'")]]
+      ],
+      [
+        '宿主桥注册后才检查环境',
+        [[HOST_ONLY_COMMAND_FILE, bridgeSource.replace("if (process.env.YAN_NATIVE_BRIDGE !== '1') return", '') + "\nif (process.env.YAN_NATIVE_BRIDGE !== '1') return\n"]]
+      ],
+      [
+        '宿主桥同时注册模型工具',
+        [
+          [
+            HOST_ONLY_COMMAND_FILE,
+            `export const NATIVE_COMMAND = '${HOST_ONLY_COMMAND_NAME}'\n` +
+              `if (process.env.YAN_NATIVE_BRIDGE !== '1') return\n` +
+              `pi.registerCommand(NATIVE_COMMAND, { handler: () => {} })\n` +
+              `pi.registerTool({ name: 'x', execute: () => {} })\n`
+          ]
+        ]
+      ]
+    ]
+    for (const [label, synthetic] of negative) {
+      ok(scanThinLayerSources(synthetic).length > 0, `负对照被抓：${label}`)
+    }
+    ok(
+      scanThinLayerSources([[HOST_ONLY_COMMAND_FILE, bridgeSource]]).length === 0,
+      '正对照：真实宿主桥单独扫描无缺陷'
     )
   }
 }

@@ -40,7 +40,7 @@ export async function runContextBackgroundUsageTests(ok) {
   ok(summary.input === 1050 && summary.cacheRead === 9000, '未缓存输入与缓存读取分别累计')
   ok(
     Math.abs(summary.cacheHitRate - (9000 / 10050) * 100) < 1e-9,
-    '命中率分母是 未缓存输入 + 缓存读取（与 turns.ts 同一口径）'
+    '命中率分母是 未缓存输入 + 缓存读取 + 缓存写入（与 turns.ts 同一口径）'
   )
   ok(shared.emptyBackgroundUsage().cacheHitRate === null, '没有读数时命中率是 null，不是 0%')
 
@@ -78,8 +78,8 @@ export async function runContextBackgroundUsageTests(ok) {
     ok(read.calls === 2, '扩展写的两条都被宿主读回来（两端字段口径一致）')
     ok(read.input === 500 && read.cacheRead === 4500, '供应商口径的用量原样保留')
     ok(
-      Math.abs(read.cacheHitRate - (4500 / 5000) * 100) < 1e-9,
-      '跨端后的命中率与单价一致'
+      Math.abs(read.cacheHitRate - (4500 / (500 + 4500 + 20)) * 100) < 1e-9,
+      '跨端后的命中率含缓存写入、与主会话同口径'
     )
     ok(read.kinds.find((item) => item.kind === 'deep').failed === 1, '主进程被挡下的后台调用也入账')
     ok(read.missingUsage === 1, '被挡下的那次没有 usage，记成缺报而不是 0')

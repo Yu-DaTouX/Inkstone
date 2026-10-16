@@ -25,7 +25,10 @@
     const s = [...arr].sort((a, b) => a - b)
     return { med: s[Math.floor(s.length / 2)] ?? 0, max: s[s.length - 1] ?? 0 }
   }
-  const frame = () => new Promise((r) => requestAnimationFrame(() => r()))
+  const frame = () => new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`真实动画帧5秒内未到达；visibility=${document.visibilityState}`)), 5000)
+    requestAnimationFrame(() => { clearTimeout(timeout); resolve() })
+  })
 
   const N = 240
 
@@ -109,7 +112,7 @@
     out.push(`  240 条消息 → DOM 里 ${dom} 个节点`)
     ok(dom > 0 && dom < 60, `窗口化生效（挂载 ${dom} 个，远小于 240）`)
   } catch (error) {
-    out.push('  探针出错: ' + (error?.message ?? String(error)))
+    out.push('  ✗ 探针出错: ' + (error?.message ?? String(error)))
   }
 
   return out.join('\n')

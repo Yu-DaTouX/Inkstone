@@ -11,11 +11,13 @@
  *     usage**，是实测值；
  *   · `estimatedInput` 是扩展侧请求体积估算，只用来核对「估算 vs 真实」的偏差，
  *     界面不得把它当成花费；
- *   · 命中率的分母是 `input + cacheRead`（与 `shared/turns.ts` 的 `cacheHitRate`
- *     同一口径）—— pi 报的 `input` 本身就是**未命中**的那部分。
+ *   · 命中率的分母是 `input + cacheRead + cacheWrite`（直接复用
+ *     `shared/turns.ts` 的 `cacheHitRate`，与主会话同一口径）—— pi 报的 `input`
+ *     本身就是**未命中**的那部分。
  *
  * 账本由扩展与主进程各写一段（同一个文件、同一行格式），这里只做解析与聚合。
  */
+import { cacheHitRate } from './turns'
 
 export type ContextBackgroundCallKind = 'summary' | 'deep' | 'state' | 'handoff' | 'title'
 
@@ -199,7 +201,6 @@ export function summarizeBackgroundUsage(records: ContextBackgroundCallRecord[])
     if (lastAt === null || record.at > lastAt) lastAt = record.at
   }
 
-  const promptTotal = input + cacheRead
   return {
     kinds,
     calls: records.length,
@@ -211,7 +212,7 @@ export function summarizeBackgroundUsage(records: ContextBackgroundCallRecord[])
     totalTokens,
     cost,
     estimatedInput,
-    cacheHitRate: promptTotal > 0 ? (cacheRead / promptTotal) * 100 : null,
+    cacheHitRate: cacheHitRate({ input, output, cacheRead, cacheWrite, totalTokens, cost }),
     missingUsage,
     lastAt
   }

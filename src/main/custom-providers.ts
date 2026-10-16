@@ -136,6 +136,51 @@ export function modelsEndpoint(baseUrl: string): string {
   return `${baseUrl.trim().replace(/\/+$/, '')}/models`
 }
 
+/**
+ * 协议感知的鉴权头。免费连通测试与「获取模型」共用这一条构造：
+ *   · Anthropic Messages：`x-api-key` + `anthropic-version`；
+ *   · Google Generative AI：`x-goog-api-key`；
+ *   · 其余（OpenAI 兼容、Mistral）：`Authorization: Bearer`。
+ * 密钥只进请求头，不写回结果消息，也不落日志。
+ */
+function providerAuthHeaders(api: string | undefined, apiKey: string): Record<string, string> {
+  const headers: Record<string, string> = {}
+  if (!apiKey) return headers
+  if (api === 'anthropic-messages') {
+    headers['x-api-key'] = apiKey
+    headers['anthropic-version'] = '2023-06-01'
+  } else if (api === 'google-generative-ai') {
+    headers['x-goog-api-key'] = apiKey
+  } else {
+    headers.Authorization = `Bearer ${apiKey}`
+  }
+  return headers
+}
+
+/**
+ * 协议感知的模型列表请求（免费连通测试与获取模型共用）。
+ *
+ * Anthropic 的 Base URL 通常不带 `/v1`（SDK 自己拼 `/v1/messages`），端点只在
+ * `/v1/models` 提供列表，404 时按同一套鉴权头补一次。返回最终 URL 与请求头，
+ * 供分页继续使用。
+ */
+async function fetchModelsPage(
+  api: string | undefined,
+  baseUrl: string,
+  apiKey: string,
+  signal: AbortSignal
+): Promise<{ url: string; response: Response; headers: Record<string, string> }> {
+  const trimmedBase = baseUrl.trim().replace(/\/+$/, '')
+  const headers = providerAuthHeaders(api, apiKey)
+  let url = modelsEndpoint(trimmedBase)
+  let response = await fetch(url, { headers, signal })
+  if (response.status === 404 && api === 'anthropic-messages' && !/\/v\d+$/.test(trimmedBase)) {
+    url = modelsEndpoint(`${trimmedBase}/v1`)
+    response = await fetch(url, { headers, signal })
+  }
+  return { url, response, headers }
+}
+
 async function readProviderEntry(id: string): Promise<Json | null> {
   const raw = await readRaw()
   if (!raw.ok) return null
@@ -157,18 +202,19 @@ export async function testCustomProviderEndpoint(id: string): Promise<CustomProv
   if (!entry) return { ok: false, mode: 'endpoint', ms: 0, message: '这个服务不在 models.json 里' }
   const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl : ''
   const apiKey = typeof entry.apiKey === 'string' ? entry.apiKey : ''
+  const api = typeof entry.api === 'string' ? entry.api : undefined
   if (!baseUrl) return { ok: false, mode: 'endpoint', ms: 0, message: '这条服务没有 Base URL' }
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
   try {
-    const response = await fetch(modelsEndpoint(baseUrl), {
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-      signal: controller.signal
-    })
+    const { response } = await fetchModelsPage(api, baseUrl, apiKey, controller.signal)
     const ms = Date.now() - started
     if (response.status === 401 || response.status === 403) {
       return { ok: false, mode: 'endpoint', ms, message: `凭证被拒绝（HTTP ${response.status}）` }
+    }
+    if (response.status === 404) {
+      return { ok: false, mode: 'endpoint', ms, message: `地址可达，但端点没有模型列表（HTTP 404）` }
     }
     if (!response.ok) {
       return { ok: false, mode: 'endpoint', ms, message: `端点返回 HTTP ${response.status}` }
@@ -281,28 +327,10 @@ export async function discoverCustomProviderModels(input: {
       return { ok: false, models: [], message: '服务地址已更改，请重新输入 API Key 后再获取模型' }
     }
   }
-  const headers: Record<string, string> = {}
-  if (apiKey) {
-    if (input.api === 'anthropic-messages') {
-      headers['x-api-key'] = apiKey
-      headers['anthropic-version'] = '2023-06-01'
-    } else if (input.api === 'google-generative-ai') {
-      headers['x-goog-api-key'] = apiKey
-    } else {
-      headers.Authorization = `Bearer ${apiKey}`
-    }
-  }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
   try {
-    let url = modelsEndpoint(baseUrl)
-    let response = await fetch(url, { headers, signal: controller.signal })
-    /* Anthropic 的 Base URL 通常不带 /v1（SDK 自己拼 /v1/messages），404 时补一次 */
-    const trimmedBase = baseUrl.replace(/\/+$/, '')
-    if (response.status === 404 && input.api === 'anthropic-messages' && !/\/v\d+$/.test(trimmedBase)) {
-      url = modelsEndpoint(`${trimmedBase}/v1`)
-      response = await fetch(url, { headers, signal: controller.signal })
-    }
+    const { url, response, headers } = await fetchModelsPage(input.api, baseUrl, apiKey, controller.signal)
     if (response.status === 401 || response.status === 403) {
       return { ok: false, models: [], message: `凭证被拒绝（HTTP ${response.status}），先检查 API Key` }
     }

@@ -2,9 +2,11 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { Icon } from '../../icons/Icon'
 import { useT, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
+import { composerDraftKey, composerSubmitIdentity } from '../../state/composer-recovery'
 import { displayedSessionOf, sameSplitSession } from '../../state/split-view'
 import { ComposerBorder } from './ComposerBorder'
 import { QuestionPanel } from './QuestionPanel'
+import { ExtensionWidgets } from './ExtensionWidgets'
 import { ModelThinkingPicker } from '../Pickers'
 import { ComposerUsage } from './ComposerUsage'
 import { ContextRing } from '../toolbar/NativeContextSection'
@@ -16,6 +18,7 @@ import { PlusMenu } from './PlusMenu'
 import { readFiles, fmtSize } from './attachment-files'
 import { QueueStack, PermissionPicker } from './ComposerPickers'
 import { ApprovalCard } from './ApprovalCard'
+import { ActiveSubagents } from './ActiveSubagents'
 import { runPhaseText, useRunProgress } from './run-status'
 import { formatDuration } from '../../../../shared/duration'
 import { submitComposerInput } from '../../lib/composer-submit'
@@ -107,17 +110,18 @@ export function Composer() {
   const activeGeneration = useStore((s) =>
     s.runners.find((runner) => (runner.runId ?? runner.id) === s.activeRunnerId)?.generation ?? 0
   )
-  /** 草稿跟随稳定 sessionId；尚未落盘的会话暂时跟随 runId。 */
-  const activeRuntimeKey = useStore((s) => {
-    const runner = s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
-    const sessionId = s.session?.sessionId ?? runner?.sessionId
-    return sessionId || (s.activeRunnerId ? `run:${s.activeRunnerId}` : '')
-  })
-  const conversationKey = useStore((s) => s.session?.conversationId) ?? activeRuntimeKey
+  /**
+   * 草稿键跟随**正在看**的会话：peek 优先，其次稳定 sessionId，只有路径时用
+   * 薄路径键 `file:<path>`，最后才退回活动实例的 run 键。旧 `activeRuntimeKey`
+   * 在 deferred 只读浏览时指向活动实例，会把别条会话的草稿读/写错。
+   */
+  const draftKey = useStore((s) => composerDraftKey(s))
+  const conversationKey = useStore((s) => s.session?.conversationId) ?? draftKey
   const cachedDraft = useStore((s) =>
-    activeRuntimeKey ? s.sessionRuntimes[activeRuntimeKey]?.draft ?? '' : ''
+    draftKey ? s.sessionRuntimes[draftKey]?.draft ?? '' : ''
   )
   const setSessionDraft = useStore((s) => s.setSessionDraft)
+  const hydrateComposerDraft = useStore((s) => s.hydrateComposerDraft)
   const activeProjectId = useStore((s) => {
     const runner = s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
     if (runner?.projectId) return runner.projectId
@@ -372,22 +376,24 @@ export function Composer() {
   /* ---- 按会话恢复 / 保存输入框草稿 ---- */
   useEffect(() => {
     hydratedDraftKey.current = conversationKey || null
-    /* 这次 value 变化来自“换会话”而不是用户输入，跳过一次回写。 */
+    /* 这次 value / 附件变化来自“换会话/换草稿键”而不是用户输入，跳过一次回写。 */
     skipDraftPersist.current = true
-    setValue(activeRuntimeKey ? cachedDraft : '')
-    setCursor(activeRuntimeKey ? cachedDraft.length : null)
-    // cachedDraft 只在 activeRuntimeKey 变化时取一次，避免每次敲字都重置输入框。
+    setValue(draftKey ? cachedDraft : '')
+    setCursor(draftKey ? cachedDraft.length : null)
+    /* 附件与文字同一套 hydrate 边界：按草稿键把该会话的草稿附件载入输入框。 */
+    hydrateComposerDraft(draftKey)
+    // cachedDraft 只在草稿键变化时取一次，避免每次敲字都重置输入框。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationKey])
+  }, [conversationKey, draftKey])
 
   useEffect(() => {
     if (skipDraftPersist.current) {
       skipDraftPersist.current = false
       return
     }
-    if (!activeRuntimeKey || hydratedDraftKey.current !== conversationKey) return
+    if (!draftKey || hydratedDraftKey.current !== conversationKey) return
     setSessionDraft(value)
-  }, [activeRuntimeKey, conversationKey, setSessionDraft, value])
+  }, [draftKey, conversationKey, setSessionDraft, value])
 
   /* 窗口高度：矮窗口（900×520）时限制展开高度，见下方「自动长高」 */
   const [viewH, setViewH] = useState(() => window.innerHeight)
@@ -689,8 +695,22 @@ export function Composer() {
    * 提交分发统一走 `submitComposerInput`：命令面板里选中斜杠命令时调用的是
    * 同一个函数，所以「面板执行」与「输入框回车」是同一段逻辑，不会两条路各写一份。
    */
-  const submit = () =>
-    submitComposerInput({
+  const submit = () => {
+    /*
+     * 提交时钉住「正在看的会话」身份与附件快照。
+     *
+     * 失败恢复是异步的：await 期间用户可能切到别的会话。只 `setValue` 回填会把
+     * A 的草稿落进 B 的输入框。这里捕获提交这一刻的视图身份（peek 优先，不能
+     * 只看 activeRunner）与附件，交给 store 的 `recoverComposerInput` 按原会话落点；
+     * `readAttachments` 用这份快照，不读 await 回来时可能已是 B 的附件。
+     */
+    const view = useStore.getState()
+    const identity = composerSubmitIdentity(view)
+    const attachmentsAtSubmit = view.attachments
+    const recover = (text: string, saved: typeof attachmentsAtSubmit): void => {
+      useStore.getState().recoverComposerInput({ identity, text, attachments: saved })
+    }
+    return submitComposerInput({
       text: value,
       attachments,
       commands,
@@ -708,7 +728,8 @@ export function Composer() {
         compact,
         openBrowser,
         setModel,
-        exportHtml: () => useStore.getState().exportHtml(),
+        exportHtml: (outputPath) => useStore.getState().exportHtml(outputPath),
+        nativeSession: (action, args) => useStore.getState().nativeSession(action, args),
         copyLastReply: () => useStore.getState().copyLastReply(),
         clone: () => useStore.getState().clone(),
         setManualTitle: (id, title) => useStore.getState().setManualTitle(id, title),
@@ -720,17 +741,15 @@ export function Composer() {
         setValue('')
         clearAttachments()
       },
-      restoreText: (raw) => setValue((draft) => (draft ? `${raw}\n${draft}` : raw)),
-      restoreAttachments: (saved) => {
-        useStore.setState((state) => ({
-          attachments: [...saved, ...state.attachments.filter((item) => !saved.some((kept) => kept.id === item.id))]
-        }))
-      },
-      readAttachments: () => useStore.getState().attachments,
+      /* 失败恢复回原会话：文字与附件分别交给同一条 store 动作，按身份落点。 */
+      restoreText: (raw) => recover(raw, []),
+      restoreAttachments: (saved) => recover('', saved),
+      readAttachments: () => attachmentsAtSubmit,
       send,
       holdSend,
       focusComposer: () => ref.current?.focus()
     })
+  }
 
   /**
    * 回合结束后把悬着的消息按「排队」投出去。
@@ -949,6 +968,8 @@ export function Composer() {
       <QueueStack />
       {/* 宿主要问用户的事（权限 / 高危 / 越界写入）：内嵌在输入框上方，不用原生弹窗 */}
       <ApprovalCard />
+      {/* 当前会话仍在跑 / 等人处理的子代理：常驻在输入框上方，不随消息滚走 */}
+      <ActiveSubagents />
       {/* 学习会话的快捷回应（只在「日常 · 学习」里出现） */}
       {/*
        * .composer-stack 只做一件事：给问题面板当定位父元素。
@@ -1117,6 +1138,7 @@ export function Composer() {
         />
 
         {/* 提示符：普通输入是 `›`，`!` 开头的直执行命令是 `$`（设计规范 §3.5） */}
+        <ExtensionWidgets placement="aboveEditor" />
         <div className="composer-line">
           <span className="composer-prompt" aria-hidden>
             {bashMode ? '$' : '›'}
@@ -1154,6 +1176,8 @@ export function Composer() {
             aria-activedescendant={menu.open && slashMatches.length ? `composer-slash-option-${menu.index}` : menu.open && atQuery !== null && atMatches.length ? `composer-at-option-${menu.index}` : undefined}
           />
         </div>
+
+        <ExtensionWidgets placement="belowEditor" />
 
         <div className="composer-bar">
           <div className="composer-tools">

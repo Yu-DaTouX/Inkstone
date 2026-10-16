@@ -1,14 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { formatDuration } from '../../../../shared/duration'
-import { subagentOutcome, type SubagentOutcome } from '../../../../shared/subagent-outcome'
+import { isDismissed, subagentOutcome, type SubagentOutcome } from '../../../../shared/subagent-outcome'
 import type { SubagentRun } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'
 import { Button } from '../ui'
 import { useConfirm } from '../ui/confirm'
-
-/** `provider/id` → `id`：提供商名太长，完整写法放在悬停里 */
-const shortModel = (model: string): string => model.slice(model.indexOf('/') + 1)
+import { resolveSubagentModelDisplay } from '../chat/turn-model-display'
 
 const MARK: Record<SubagentOutcome['tone'], string> = { live: '', ok: '✓', warn: '!', err: '✕', mute: '■' }
 
@@ -33,6 +31,8 @@ function useNow(active: boolean): number {
 export function SubagentPlan({ runs, mainModel, onOpen }: { runs: SubagentRun[]; mainModel?: string; onOpen(run: SubagentRun): void }) {
   const t = useT()
   const [showDone, setShowDone] = useState(false)
+  const models = useStore(s => s.models)
+  const favorites = useStore(s => s.settings?.modelFavorites)
   const ranked = runs.map(run => ({ run, outcome: subagentOutcome(run) })).sort((a, b) => b.run.startedAt - a.run.startedAt)
   const now = useNow(ranked.some(({ outcome }) => outcome.live))
   const zoneOf = (outcome: SubagentOutcome): Zone => outcome.live ? 'live' : outcome.attention ? 'attention' : 'done'
@@ -42,7 +42,7 @@ export function SubagentPlan({ runs, mainModel, onOpen }: { runs: SubagentRun[];
     <div className="sa-core" data-live={live > 0 ? '1' : '0'}>
       <span className="sa-core-dot" aria-hidden />
       <span className="sa-core-name">{t('sa.plan.main')}</span>
-      {mainModel ? <span className="sa-core-model" title={mainModel}>{shortModel(mainModel)}</span> : null}
+      {mainModel ? <span className="sa-core-model" title={mainModel}>{resolveSubagentModelDisplay(mainModel, models, favorites ?? []).label}</span> : null}
       <span className="sa-core-count">{t('sa.plan.total', { n: ranked.length })}</span>
     </div>
     {ranked.length === 0 ? <p className="sa-empty ui-row-desc" data-testid="subagent-plan-empty">{t('sa.plan.empty')}</p> : null}
@@ -53,7 +53,7 @@ export function SubagentPlan({ runs, mainModel, onOpen }: { runs: SubagentRun[];
         <header className="sa-zone-head">
           <span className="sa-zone-name">{t(ZONE_LABEL[zone])}</span>
           <span className="sa-zone-n">{items.length}</span>
-          {zone === 'done' ? <Button size="sm" variant="ghost" className="sg-detail-btn" active={showDone} aria-expanded={showDone} trailingIcon="chevron-right" data-testid="subagent-group-toggle" onClick={() => setShowDone(v => !v)}>{t(showDone ? 'sa.group.collapse' : 'sa.group.expand')}</Button> : null}
+          {zone === 'done' ? <Button size="sm" variant="ghost" className="ui-disclosure-trigger" active={showDone} aria-expanded={showDone} trailingIcon="chevron-right" data-testid="subagent-group-toggle" onClick={() => setShowDone(v => !v)}>{t(showDone ? 'sa.group.collapse' : 'sa.group.expand')}</Button> : null}
         </header>
         {folded ? null : <div className="sa-rooms">
           {items.map(({ run, outcome }, index) => <Room key={run.id} index={index} run={run} outcome={outcome} now={now} onOpen={() => onOpen(run)} />)}
@@ -67,14 +67,37 @@ function Room({ index, run, outcome, now, onOpen }: { index: number; run: Subage
   const t = useT()
   const stop = useStore(s => s.stopSubagent), merge = useStore(s => s.mergeSubagent), discard = useStore(s => s.discardSubagent)
   const confirm = useConfirm()
+  const models = useStore(s => s.models)
+  const favorites = useStore(s => s.settings?.modelFavorites)
   const { live, tone } = outcome
+  const [dismissBusy, setDismissBusy] = useState(false)
+  const [dismissFailed, setDismissFailed] = useState(false)
+  const dismissInFlight = useRef(false)
   const elapsed = formatDuration((run.endedAt ?? now) - run.startedAt, { minSeconds: 1 })
   const reviewing = !live && (run.review === 'pending' || run.review === 'conflict')
+  const canDismiss = run.status === 'error' && !isDismissed(run) && !reviewing
   const percent = run.contextUsage?.percent
   const line = live ? run.progressWarning || run.latestActivity : run.status === 'error' ? run.error : ''
   const retry = async () => {
     const result = await window.yan.subagents.start(run.task, run.model, run.isolation)
     if (result.ok && result.run) { void useStore.getState().loadSubagents(); window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: `subagent:${result.run.id}` })) }
+  }
+  /* 不再处理：同一宿主持久标记；成功后重读快照，失败就地提示，仍留在需处理区。 */
+  const dismiss = async () => {
+    if (dismissInFlight.current) return
+    dismissInFlight.current = true
+    setDismissBusy(true)
+    setDismissFailed(false)
+    try {
+      const result = await window.yan.subagents.dismiss(run.id)
+      if (!result.ok) { setDismissFailed(true); return }
+      await useStore.getState().loadSubagents()
+    } catch {
+      setDismissFailed(true)
+    } finally {
+      dismissInFlight.current = false
+      setDismissBusy(false)
+    }
   }
   return <article className={`sa-room tone-${tone}${live ? ' is-live' : ''}`} style={{ "--i": index } as React.CSSProperties} data-testid={`sa-room-${run.id}`} data-outcome={outcome.key}>
     <button type="button" className="sa-room-open" title={run.task} onClick={onOpen} data-testid={`sa-room-open-${run.id}`}>
@@ -83,15 +106,17 @@ function Room({ index, run, outcome, now, onOpen }: { index: number; run: Subage
     </button>
     <div className="sa-room-meta">
       <span className="sa-room-state">{t(`sa.state.${outcome.key}` as MessageKey)}</span>
-      <span title={run.model ?? ''}>{run.model ? shortModel(run.model) : '—'}</span>
+      <span title={run.model ?? ''}>{run.model ? resolveSubagentModelDisplay(run.model, models, favorites ?? []).label : '—'}</span>
       <span>{run.isolation === 'controlled-cwd' ? t('sa.readOnly') : t('sa.writes')}</span>
       {percent != null ? <span title={t('sa.contextHint')}>{Math.round(percent)}%</span> : null}
       <span className="sa-room-time">{elapsed}</span>
     </div>
     {line ? <p className="sa-room-line" title={line}>{line}</p> : null}
+    {dismissFailed ? <p className="sa-room-line" role="alert" data-testid={`sa-room-dismiss-failed-${run.id}`}>{t('sa.dismissFailed')}</p> : null}
     <div className="sa-room-actions">
       {live ? <Button size="sm" variant="danger" onClick={() => void stop(run.id)} data-testid={`sa-room-stop-${run.id}`}>{t('sa.stop')}</Button> : null}
       {run.status === 'error' ? <Button size="sm" onClick={() => void retry()} data-testid={`sa-room-retry-${run.id}`}>{t('sa.retry')}</Button> : null}
+      {canDismiss ? <Button size="sm" variant="ghost" disabled={dismissBusy} title={t('sa.dismissHint')} onClick={() => void dismiss()} data-testid={`sa-room-dismiss-${run.id}`}>{t('sa.dismiss')}</Button> : null}
       {reviewing ? <>
         <Button size="sm" onClick={() => void merge(run.id)}>{t('sa.merge')}</Button>
         <Button size="sm" variant="danger" onClick={() => void (async () => { if (await confirm({ title: t('sa.discardChanges'), body: t('sa.discardConfirm'), detail: run.id, confirmLabel: t('sa.discard'), tone: 'danger' })) void discard(run.id) })()}>{t('sa.discard')}</Button>

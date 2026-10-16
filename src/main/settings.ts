@@ -36,6 +36,7 @@ import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
 import { DEFAULT_PERMISSION_MODE, isLegacyPermissionMode, normalizePermissionMode } from '../shared/approval'
 import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode, normalizeWorkModeShortcut } from '../shared/work-mode'
+import { DEFAULT_QUESTION_FREQUENCY, normalizeQuestionFrequency } from '../shared/question-frequency'
 import { migrateToolLayout, normalizeToolLayout } from '../shared/tool-layout'
 import { AUTO_COMPACT_STEPS, CONTEXT_TRIM_STEPS, DEFAULT_AUTO_COMPACT_TOKENS, DEFAULT_CONTEXT_TRIM_TOKENS, pickTokenStep } from '../shared/context-limits'
 import { isWorkspaceMode } from '../shared/workspace-mode'
@@ -130,6 +131,8 @@ const DEFAULTS: AppSettings = {
   autonomous: false,
   /* 新会话的默认工作模式；旧 `autonomous` 只是迁移输入（见下方清洗） */
   defaultWorkMode: DEFAULT_WORK_MODE,
+  /* 歧义澄清提问频率：三档全局偏好，默认适中（见 shared/question-frequency.ts） */
+  questionFrequency: DEFAULT_QUESTION_FREQUENCY,
   capabilityStrategy: 'auto-connect',
   codemodeEnabled: true,
   guardOutsideWrites: false,
@@ -466,6 +469,8 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
    *     组合键要过 `normalizeWorkModeShortcut`（脏值回落成「没设过」）。
    */
   settings.defaultWorkMode = migrateLegacyAutonomous(fileWorkMode, settings.autonomous)
+  /* 提问频率：只认三档，脏值 / 缺失归到默认 `balanced` */
+  settings.questionFrequency = normalizeQuestionFrequency(settings.questionFrequency)
   settings.codemodeEnabled = settings.codemodeEnabled !== false
   /* 旧档位迁到「危险批准」时关掉项目外写入确认（见 isLegacyPermissionMode） */
   settings.guardOutsideWrites = !isLegacyPermissionMode(settings.permissionMode) && settings.guardOutsideWrites === true
@@ -491,6 +496,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
     settings.workModeShortcutEnabled === false || legacyWorkModeTab === false ? false : undefined
   settings.workModeShortcut = normalizeWorkModeShortcut(settings.workModeShortcut)
   settings.subagentNotify = settings.subagentNotify === false ? false : undefined
+  settings.streamLoopAutoContinue = settings.streamLoopAutoContinue === false ? false : undefined
   settings.usageUnderInput = settings.usageUnderInput === false ? false : undefined
   // 发送键：只认三个已知值，脏值回落到 auto（默认行为）
   settings.sendKey =
@@ -655,7 +661,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','showSpaces','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','capabilityStrategy','codemodeEnabled','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','activityModels','workModeShortcutEnabled','workModeShortcut','subagentNotify','usageUnderInput','contextPolicy','contextPolicyByModel','temperatureByModel','contextDeep','contextFold','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','showSpaces','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','questionFrequency','capabilityStrategy','codemodeEnabled','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','activityModels','workModeShortcutEnabled','workModeShortcut','subagentNotify','streamLoopAutoContinue','usageUnderInput','contextPolicy','contextPolicyByModel','temperatureByModel','contextDeep','contextFold','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -758,6 +764,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   if ('projectKnowledge' in patch) next.projectKnowledge = sanitizeProjectKnowledge(next.projectKnowledge)
   /* 工作模式（实施-05）：默认模式要合法；快捷键开关只有明确关才落 false，组合键要规范化 */
   if ('defaultWorkMode' in patch) next.defaultWorkMode = normalizeWorkMode(next.defaultWorkMode)
+  if ('questionFrequency' in patch) next.questionFrequency = normalizeQuestionFrequency(next.questionFrequency)
   if ('workModeShortcutEnabled' in patch) {
     next.workModeShortcutEnabled = next.workModeShortcutEnabled === false ? false : undefined
   }

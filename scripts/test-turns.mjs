@@ -9,8 +9,8 @@
  *     界面上就是 34 个「砚」块，读起来全是碎片，而它们是同一轮回答
  *   · 段落拆分如果不管代码围栏，会把一个 ``` 块切成两半，
  *     前半段丢掉语言标记 → 语法高亮直接废掉
- *   · 命中率的分母必须是 input + cacheRead（pi 的 input 是**未命中**那部分），
- *     只看 input 会算出 >100%
+ *   · 命中率的分母是 input + cacheRead + cacheWrite（pi 的 input 是**未命中**那部分），
+ *     只看 input 会算出 >100%，漏掉 cacheWrite 则长会话会虚高到 ≈100%
  */
 
 export async function runTurnTests(ok) {
@@ -329,11 +329,11 @@ export async function runTurnTests(ok) {
 
   console.log('\n--- 13. 缓存命中率 ---')
   {
-    const u = (input, cacheRead) => ({
+    const u = (input, cacheRead, cacheWrite = 0) => ({
       input,
       output: 0,
       cacheRead,
-      cacheWrite: 0,
+      cacheWrite,
       totalTokens: 0,
       cost: 0
     })
@@ -342,9 +342,15 @@ export async function runTurnTests(ok) {
     ok(cacheHitRate(u(0, 0)) === null, '全 0 → null（不能算出 NaN）')
 
     const r = cacheHitRate(u(467, 124032))
-    ok(Math.abs(r - 99.625) < 0.01, '命中率 = cacheRead/(input+cacheRead)', `实际 ${r?.toFixed(3)}`)
+    ok(Math.abs(r - 99.625) < 0.01, '命中率 = cacheRead/(input+cacheRead+cacheWrite)', `实际 ${r?.toFixed(3)}`)
     ok(cacheHitRate(u(0, 100)) === 100, '全是缓存命中 → 100%')
     ok(cacheHitRate(u(100, 0)) === 0, '完全没命中 → 0%')
+    const withWrite = cacheHitRate(u(467, 124032, 21468))
+    ok(
+      Math.abs(withWrite - (124032 / (467 + 124032 + 21468)) * 100) < 1e-9,
+      '缓存写入计入分母，长会话不会虚高到 ≈100%',
+      `实际 ${withWrite?.toFixed(3)}`
+    )
 
     ok(formatHitRate(99.98) === '99.98%', '99.98% 保留两位小数（不再写 ≈100%）')
     ok(formatHitRate(92.44) === '92.44%', '92.44% 保留两位小数')

@@ -33,6 +33,25 @@ export function executionBusy(state: ExecutionState | null, hasRunningBash: () =
   return pendingUiCount() > 0
 }
 
+/**
+ * 两份运行时封套是否指向**同一次执行身份**。
+ *
+ * 用于快照异步采集：采集开始时捕获一份，读完之后再取一份，不一致就不能把旧
+ * payload 贴到新封套上（F03）。判据按 runId + generation 归一，因为同代次里
+ * `sessionId` 会从 `pending:<runId>` 过渡到真实 uuid —— 那是同一实例的正常迁移，
+ * 不能当成过期；而两个不同的真实 sessionId 属于不同会话，必须判为不一致。
+ */
+export function sameRuntimeEnvelope(
+  a: { sessionId?: string; runId?: string; generation?: number } | null | undefined,
+  b: { sessionId?: string; runId?: string; generation?: number } | null | undefined
+): boolean {
+  if (!a || !b) return false
+  if (a.runId !== b.runId || a.generation !== b.generation) return false
+  if (a.sessionId === b.sessionId) return true
+  const pending = (value?: string) => !value || value.startsWith('pending:')
+  return pending(a.sessionId) || pending(b.sessionId)
+}
+
 /** Pending identity must keep the same runId and generation once pi is ready. */
 export function runEnvelope(run: RunIdentity, state: ExecutionState | null) {
   return {

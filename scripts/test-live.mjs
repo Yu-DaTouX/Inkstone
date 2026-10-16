@@ -674,6 +674,14 @@ const CASES = {
     cost: 0,
     wins: ['1440x900', '940x640']
   },
+  // 使用向导（首启多步配置）：六步推进、主题与压缩上限当场落盘、功能入口、几何
+  wizard: {
+    probe: 'scripts/probe/wizard.js',
+    delay: 9000,
+    cost: 0,
+    freshDesktop: true,
+    wins: ['1440x900', '940x640']
+  },
   // 阶段 2 功能：斜杠菜单 / !bash / 图片附件 / 模型选择器 / 开关 / 重命名删除 / 分叉点
   features: { probe: 'scripts/probe/features.js', delay: 9000, cost: 0 },
   // 对话导航轨：间距拉长 + 鼠标靠近动态展开
@@ -5378,7 +5386,24 @@ function runProbe(
      * test-live 判定“没抓到 PROBE 输出”，而 Electron 其实还在后台跑探针 ——
      * 既拿不到证据，又留下一个没人管的 GUI 实例。
      */
-    const child = spawn(electronBin, process.env.YAN_TEST_DPR ? ['.', `--force-device-scale-factor=${process.env.YAN_TEST_DPR}`] : ['.'], {
+    /*
+     * 「要求上屏」的隔离窗口（visible / YAN_SHOW_WINDOW）走主进程的 showInactive()：
+     * 显示但不抢焦点，所以窗口可能被别的窗口盖住。Windows 上 Chromium 的原生
+     * 遮挡检测（CalculateNativeWinOcclusion）会把被盖住的窗口判成 hidden，渲染端的
+     * document.visibilityState 变 hidden、requestAnimationFrame 停止出帧 —— 用真实
+     * 帧计时的 perf 探针就会假失败（实测同一份代码 3 分钟内一过一挂）。
+     *
+     * 主进程在 YAN_PROBE 下已关掉后台节流三开关（disable-background-timer-throttling /
+     * disable-renderer-backgrounding / disable-backgrounding-occluded-windows），但
+     * disable-backgrounding-occluded-windows 只挡住降频，不改遮挡导致的可见性判定。
+     * 这里只在真的要求上屏时补上关闭遮挡检测的参数，让隔离窗口始终按可见窗口渲染。
+     * 只作用于本次测试实例的命令行，不影响正常启动，也不伪装帧/放宽阈值。
+     */
+    const showWindow = Boolean(process.env.YAN_SHOW_WINDOW || visible)
+    const electronArgs = ['.']
+    if (process.env.YAN_TEST_DPR) electronArgs.push(`--force-device-scale-factor=${process.env.YAN_TEST_DPR}`)
+    if (showWindow) electronArgs.push('--disable-features=CalculateNativeWinOcclusion')
+    const child = spawn(electronBin, electronArgs, {
       cwd: root,
       env: probeEnv,
       windowsHide: true,

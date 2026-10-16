@@ -25,6 +25,7 @@
 @import './layout.css' layer(modules);
 @import './shell.css' layer(modules);
 @import './dialog.css' layer(modules);
+@import './native-session.css' layer(modules);
 @import './rail.css' layer(modules);
 @import './chat.css' layer(modules);
 @import './composer.css' layer(modules);

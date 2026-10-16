@@ -25,7 +25,7 @@ import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
 import { moveSessionLayout, rememberSession } from './session-layout'
 import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awake'
-import { rewriteSessionCwd, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
+import { rewriteSessionCwd, movedSessionContinuationPrompt, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import { readChainMessages } from './session-history'
 import { ArtifactStore } from './artifacts'
 import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames } from './html-artifact-preview'
@@ -59,20 +59,23 @@ import { registerTaskInboxIpc } from './ipc/task-inbox-ipc'
 import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
 import { registerPackagesIpc } from './ipc/packages-ipc'
 import { registerActivityModelIpc } from './ipc/activity-model-ipc'
-import { registerSubagentsIpc } from './ipc/subagents-ipc'
+import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
 import { registerScheduleIpc } from './ipc/schedule-ipc'
 import { ScheduleService } from './schedule-service'
 import { registerSessionIpc } from './ipc/session-ipc'
+import { registerNativeSessionIpc } from './ipc/native-session-ipc'
 import { registerCheckpointIpc } from './ipc/checkpoint-ipc'
 import { captureCheckpoint, pruneCheckpoints } from './checkpoints'
 import type { SessionHost } from './session-host'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerWorkspaceIpc } from './ipc/workspace-ipc'
 import { registerGoalIpc } from './ipc/goal-ipc'
+import { registerQuestionFrequencyIpc } from './ipc/question-frequency-ipc'
 import { registerSpaceIpc } from './ipc/space-ipc'
 import { registerFilesIpc } from './ipc/files-ipc'
 import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { canOpenDocument } from '../shared/document-open'
+import { normalizeQuestionFrequency } from '../shared/question-frequency'
 import { registerAgentServiceIpc, closeAgentService } from './ipc/agent-service-ipc'
 import { lockDataRoot } from '../core/data-root-lock'
 import { registerContextBudgetIpc } from './ipc/context-budget-ipc'
@@ -115,7 +118,8 @@ import { AgentProfileStore } from './agent-profile-store'
 import { SpaceStore } from './space-store'
 import { LibraryService } from './library-service'
 import { ContextAssembler } from './context-assembler'
-import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, MainPush, SessionState, TerminalProgramStatus } from '../shared/ipc'
+import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, MainPush, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
+import { sameRuntimeEnvelope } from '../core/run-state'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -362,24 +366,33 @@ const scheduleService = new ScheduleService({
     const cwd = cwdResult.cwd
     const projectId = sessionHost.projectIdForCwd(settings, cwd)
     const scope = projectId ? 'project' : 'global'
-    const res = await runners!.select({ cwd, projectId, scope, activate: false })
+    const registry = runners!
+    const res = await registry.select({ cwd, projectId, scope, activate: false })
     if (!res.ok || !res.id) throw new Error(res.error ?? '无法新建会话（运行实例已满？）')
+    const pin = pinSendTarget(res.id)
+    const selectedRuntime = { runId: res.runId ?? res.id, sessionId: res.sessionId, generation: res.generation }
+    const current = () => runners === registry && !!pin && pinnedTargetMatches(pin) && sameRuntimeEnvelope(pin, selectedRuntime)
+    if (!pin || !current()) throw new Error('定时任务的目标会话已变化，未发送指令')
     await sessionHost.rememberRunnerSession(res, { cwd, projectId, scope })
-    const agent = runners!.agentOf(res.id)
-    if (!agent) throw new Error('新会话没有启动')
+    if (!current()) throw new Error('定时任务的目标会话已变化，未发送指令')
+    const agent = pin.agent
     if (task.model) {
       const at = task.model.indexOf('/')
       const set = await agent.setModel(task.model.slice(0, at), task.model.slice(at + 1))
+      if (!current()) throw new Error('定时任务的目标会话已变化，未发送指令')
       if (!set.ok) throw new Error(set.error ?? '指定的模型不可用')
     }
+    const guard = registry.guardExecute(res.id)
+    if (!guard.ok) throw new Error(guard.error)
     const sent = await agent.send(`[定时任务 · ${task.name}]\n${task.prompt}`)
     if (!sent.ok) throw new Error(sent.error ?? '指令没有发出')
-    void sessionHost.pushRunnerSnapshot(res.id)
+    if (current()) void sessionHost.pushRunnerSnapshot(res.id)
     sessionHost.pushRunners()
     return { sessionId: res.sessionId }
   }
 })
-const subagentService = new SubagentService({
+/* 显式标注类型：下面的 runningSiblings 延迟到运行时才引用它，避免自引用推断成 any */
+const subagentService: SubagentService = new SubagentService({
   codemodeExtension: codemodeExtensionPath,
   providerExtensions: providerExtensionPaths,
   guardExtension: dangerGuardExtensionPath,
@@ -428,7 +441,9 @@ const subagentService = new SubagentService({
     find: (run) =>
       (run.parentSessionId ? runners?.agentForSession(run.parentSessionId) : null) ??
       (run.parentRunId ? runners?.agentOf(run.parentRunId) : null) ??
-      null
+      null,
+    /* 只读查同父会话仍在运行的兄弟：通知按它自适应合并窗口 */
+    runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0
   })
 })
 /** 安卓远程管理服务；默认关闭，避免升级后意外监听网络端口。 */
@@ -557,6 +572,10 @@ function contextTrimExtensionPath(): string | undefined {
   return yanThinResourcePath('context-trim.js')
 }
 
+function nativeSessionExtensionPath(): string | undefined {
+  return yanThinResourcePath('native-session-bridge.js')
+}
+
 /**
  * 单轮重复动作兜底的薄层路径（2026-09-22）。
  *
@@ -593,6 +612,7 @@ function yanThinExtensionPaths(): string[] {
     capabilityGuideExtensionPath(),
     contextInspectExtensionPath(),
     contextTrimExtensionPath(),
+    nativeSessionExtensionPath(),
     repeatGuardExtensionPath(),
     dangerGuardExtensionPath(),
     ...providerExtensionPaths(),
@@ -942,7 +962,7 @@ function scheduleSessionWork(id: string, reason: string): Promise<void> {
   return sessionWork.schedule(id, reason)
 }
 
-function pushFrom(runnerId: string, msg: MainPush): void {
+function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnvelope | null): void {
   const identity = handoffIdentities.get(runnerId)
   if (msg.ch === 'state' && identity && msg.payload.sessionId === identity.sessionId) {
     msg = { ...msg, payload: { ...msg.payload, ...identity } }
@@ -950,6 +970,11 @@ function pushFrom(runnerId: string, msg: MainPush): void {
   const runtime = runners?.runtimeOf(runnerId)
   // 已摘登记的进程（含回收/交接）的退出事件不能污染当前视图。
   if (!runtime) return
+  /*
+   * 快照异步采集期间换了会话 / 代次：旧 payload 不能贴上新封套（F03）。
+   * 同代次里的 `pending:<runId>` → 真实 uuid 迁移算同一身份，不退。
+   */
+  if (expectedRuntime && !sameRuntimeEnvelope(runtime, expectedRuntime)) return
   runners?.noteActivity(runnerId)
   push({
     ...msg,
@@ -1049,6 +1074,30 @@ function requestPiPackageActivationTick(): void {
   }, 300)
 }
 
+/**
+ * 运行实例的会话身份落定后的子代理父归属迁移。
+ *
+ * 空白新会话在 pi 写入前父身份是 `pending:<runId>`；拿到真实 SID 后，挂在这个
+ * 父实例下、同代次、且当时确实是该 pending 占位的子任务要把 `parentSessionId`
+ * 换成真实 SID，否则渲染端按真实 SID 过滤时会看不见它们。
+ * 只认现成控制器（`current()`，不 instantiate）；代次未知 / 不符、或已复用成别的
+ * 真实 SID 的记录都由 `SubagentController.adoptParentSession` 拒绝，绝不猜。
+ */
+function adoptSubagentParentSessions(statuses: RunnerStatus[]): void {
+  const ctrl = subagentService.current()
+  if (!ctrl) return
+  for (const status of statuses) {
+    const sessionId = status.sessionId
+    if (!sessionId || sessionId.startsWith('pending:')) continue
+    ctrl.adoptParentSession({
+      parentRunId: status.runId,
+      parentGeneration: status.generation,
+      fromSessionId: `pending:${status.runId}`,
+      toSessionId: sessionId
+    })
+  }
+}
+
 /** 把所有运行实例的状态推给渲染端（左栏状态槽） */
 function pushRunners(): void {
   const statuses = runners?.statuses() ?? []
@@ -1056,6 +1105,216 @@ function pushRunners(): void {
   refreshTrayMenu()
   refreshTaskbar()
   void syncKeepAwake(statuses.some((r) => r.running))
+  /* 这条通知链由 state 推送 / 实例变更触发，顺带把落定身份的父子归属接上。 */
+  adoptSubagentParentSessions(statuses)
+}
+
+/**
+ * 代次前进后的兜底完整快照（F07）。
+ *
+ * 实例在同一 cwd 复用失败时会用**新代次**恢复到旧会话；渲染端可能缓存着更高的
+ * 中间代次，只有用新代次重推一份权威快照（state + messages + stats）才能续上。
+ * onChanged 在实例身份变化时触发，这里只对「代次比上次发布更高」的实例补一帧；
+ * `pushRunnerSnapshot` 只读、不再触发 onChanged，所以不会递归。
+ */
+const publishedRunnerGenerations = new Map<string, number>()
+let epochSnapshotScheduled = false
+function scheduleEpochSnapshots(): void {
+  if (epochSnapshotScheduled) return
+  epochSnapshotScheduled = true
+  queueMicrotask(() => {
+    epochSnapshotScheduled = false
+    const statuses = runners?.statuses() ?? []
+    const live = new Set(statuses.map((s) => s.id))
+    for (const st of statuses) {
+      const known = publishedRunnerGenerations.get(st.id)
+      if (known === undefined) {
+        publishedRunnerGenerations.set(st.id, st.generation)
+        continue
+      }
+      if (st.generation <= known) continue
+      publishedRunnerGenerations.set(st.id, st.generation)
+      void pushRunnerSnapshot(st.id)
+    }
+    for (const key of [...publishedRunnerGenerations.keys()]) if (!live.has(key)) publishedRunnerGenerations.delete(key)
+  })
+}
+
+/** 渲染端提交时钉住的归属；老调用方不传时为 null。 */
+type ExpectedRuntimeInput = { sessionId?: string; runId?: string; generation?: number }
+
+/**
+ * 校验渲染端传入的 `expectedRuntime`。
+ *
+ * 前端已按 `RuntimeEnvelope` 声明类型，但宿主不能只信 IPC 形状：传了非对象、空字段
+ * 或非法代次时返回 `'invalid'`，宁可明确失败也不退回「猜当前 active」。
+ * 不传（旧 CLI / 内部调用）返回 null，由调用方在入口同步钉住当前目标。
+ */
+function normalizeExpectedRuntime(input: unknown): ExpectedRuntimeInput | null | 'invalid' {
+  if (input === undefined || input === null) return null
+  if (typeof input !== 'object') return 'invalid'
+  const { sessionId, runId, generation } = input as Record<string, unknown>
+  if (sessionId !== undefined && (typeof sessionId !== 'string' || !sessionId)) return 'invalid'
+  if (runId !== undefined && (typeof runId !== 'string' || !runId)) return 'invalid'
+  if (generation !== undefined && (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation <= 0)) return 'invalid'
+  if (sessionId === undefined && runId === undefined && generation === undefined) return 'invalid'
+  return { sessionId, runId, generation }
+}
+
+/** 目标实例当前是否仍匹配钉住的归属（所有 await 之后都复核）。 */
+function targetMatchesExpected(id: string, expected: ExpectedRuntimeInput | null): boolean {
+  if (!expected) return true
+  const runtime = runners?.runtimeOf(id)
+  if (!runtime) return false
+  if (expected.runId !== undefined && runtime.runId !== expected.runId) return false
+  if (expected.generation !== undefined && runtime.generation !== expected.generation) return false
+  if (expected.sessionId !== undefined && runtime.sessionId !== expected.sessionId) {
+    /*
+     * 只允许「提交时是 pending → 现在变真实 uuid」这一个方向；提交时已是真实 SID、
+     * 现在却变成 pending（换了会话）必须判为不一致。
+     */
+    if (!expected.sessionId.startsWith('pending:')) return false
+  }
+  return true
+}
+
+/** 用 expected runtime 精确定位运行实例；定位不到或身份不符返回 null（不 activate）。 */
+function resolveExpectedTarget(expected: ExpectedRuntimeInput | null): string | null {
+  if (!expected) return null
+  const id = runners?.resolveExpectedRunner(expected) ?? null
+  if (!id || !targetMatchesExpected(id, expected)) return null
+  return id
+}
+
+/**
+ * `yan:send` 入口在**第一个 `await` 之前**同步钉住的真实实例身份。
+ *
+ * 渲染端可以只给 runId / sessionId，或完全不传 `expectedRuntime`（旧调用）。这些
+ * 输入只核调用方给的维度，识别不了 await 期间同一 runId 被复用：复用只把
+ * generation / 真实 sessionId 往前推，runId 不变。入口额外钉住**当时运行实例的
+ * 真实代次与 Agent 对象**，之后所有 await 都用它复核；等价于把 partial 输入在宿主
+ * 侧补成完整 tuple，但旧调用方不必改参数。
+ */
+interface PinnedSendTarget {
+  runId: string
+  generation: number
+  sessionId?: string
+  /** 原始 Agent 引用：跨 cwd 复用会替换对象，同 cwd 复用看代次 / 真实 SID。 */
+  agent: AgentController
+}
+
+/** 同步钉住目标实例当时的真实身份；实例不存在返回 null（调用方明确失败）。 */
+function pinSendTarget(id: string): PinnedSendTarget | null {
+  const agent = runners?.agentOf(id)
+  const runtime = runners?.runtimeOf(id)
+  if (!agent || !runtime) return null
+  return { runId: runtime.runId, generation: runtime.generation, sessionId: runtime.sessionId, agent }
+}
+
+/** await 之后复核钉住的实例没被复用：Agent 对象、代次、SID 迁移方向都要一致。 */
+function pinnedTargetMatches(pin: PinnedSendTarget): boolean {
+  if (runners?.agentOf(pin.runId) !== pin.agent) return false
+  return sameRuntimeEnvelope(runners?.runtimeOf(pin.runId), pin)
+}
+
+/**
+ * 界面在后台查看某条会话时钉住的父运行实例 → 父上下文。
+ *
+ * 只认**已经存在**的实例：owner 非法 / 缺目标、或实例已被复用成别的会话
+ * （代次或真实 sessionId 不符）都返回 null，由调用方明确失败 —— 绝不退回
+ * `active`，否则「看 B 却在 A 上派活」会静默把父归属挂到 A。
+ * 这里同步读取，调用方已在 `getSettings()` 之后调用，跨 await 的复用由
+ * `targetMatchesExpected` 按 generation / sessionId 复核。
+ */
+function parentContextFromOwner(owner: unknown, settings: Awaited<ReturnType<typeof getSettings>>): SubagentParentContext | null {
+  const expected = normalizeExpectedRuntime(owner)
+  if (!expected || expected === 'invalid') return null
+  const id = resolveExpectedTarget(expected)
+  if (!id) return null
+  const state = runners?.agentOf(id)?.getState()
+  const runtime = runners?.runtimeOf(id)
+  if (!state || !runtime) return null
+  return {
+    cwd: state.cwd ?? settings.cwd,
+    parentSessionId: state.sessionId || runtime.sessionId,
+    parentRunId: id,
+    parentGeneration: runtime.generation,
+    projectId: state.cwd ? projectIdForCwd(settings, state.cwd) : undefined
+  }
+}
+
+/** 默认父（无 owner）在第一个 await 之前同步捕获的原始实例身份。 */
+interface CapturedParent {
+  runId: string
+  generation: number
+  sessionId?: string
+  cwd?: string
+  /** 原始 Agent 引用：await 之后用来证明实例没有被换掉。 */
+  agent: AgentController
+}
+
+/**
+ * 在**第一个 `await` 之前**同步捕获当前 active 运行实例的原始身份。
+ *
+ * 为什么要快照而不是等到 await 之后再读 `ac()` / `activeRunner()`：`getSettings()`
+ * 与 `service.get()` 都会让出事件循环，期间用户可能切到 B；之后再读 active 就会
+ * 把 A 的任务挂到 B 上。没有 active 实例时返回 `null`（启动早期），调用方不得
+ * 事后补认后来出现的父。
+ */
+function captureDefaultParent(): CapturedParent | null {
+  const active = runners?.activeRunner()
+  const id = active?.id
+  if (!id) return null
+  const agent = runners?.agentOf(id)
+  const runtime = runners?.runtimeOf(id)
+  if (!agent || !runtime) return null
+  const state = agent.getState()
+  return {
+    runId: runtime.runId,
+    generation: runtime.generation,
+    sessionId: runtime.sessionId,
+    cwd: state?.cwd ?? active?.cwd,
+    agent
+  }
+}
+
+/**
+ * 把捕获的默认父落成父上下文；await 之后复核实例没被换、同代次。
+ *
+ * 同代次里的 `pending:<runId>` → 真实 SID 属于同一身份，放行；换了实例、代次前进、
+ * 或真实 SID 变成另一条会话都明确抛错，绝不落到当时 active 的 B。没有捕获到父
+ * （启动早期）保持旧的 cwd-only 兼容，不冒认之后出现的实例。
+ */
+function parentContextFromCapture(captured: CapturedParent | null, settings: Awaited<ReturnType<typeof getSettings>>): SubagentParentContext {
+  if (!captured) return { cwd: settings.cwd }
+  if (runners?.agentOf(captured.runId) !== captured.agent) throw new Error('子代理父会话已不可用，未派发')
+  const runtime = runners?.runtimeOf(captured.runId)
+  if (!runtime || !sameRuntimeEnvelope(runtime, captured)) throw new Error('子代理父会话已不可用，未派发')
+  const state = captured.agent.getState()
+  return {
+    cwd: captured.cwd ?? state?.cwd ?? settings.cwd,
+    parentSessionId: state?.sessionId || runtime.sessionId,
+    parentRunId: captured.runId,
+    parentGeneration: captured.generation,
+    projectId: state?.cwd ? projectIdForCwd(settings, state.cwd) : undefined
+  }
+}
+
+/**
+ * 选择父上下文：带 owner（含显式 null）一律走严格定位，定位不到就抛错；
+ * 只有完全没传（`undefined`，老调用 / CLI）才用同步捕获的默认父。
+ */
+function resolveSubagentParentContext(
+  owner: unknown,
+  captured: CapturedParent | null,
+  settings: Awaited<ReturnType<typeof getSettings>>
+): SubagentParentContext {
+  if (owner !== undefined) {
+    const context = parentContextFromOwner(owner, settings)
+    if (!context) throw new Error('子代理父会话已不可用，未派发')
+    return context
+  }
+  return parentContextFromCapture(captured, settings)
 }
 
 /** 有会话在跑时按设置保持唤醒；读设置失败就按「没有设置」处理。 */
@@ -1120,30 +1379,41 @@ const contextAssembler = new ContextAssembler({ library })
 async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } = {}): Promise<void> {
   const ag = runners?.agentOf(id)
   if (!ag) return
+  /*
+   * 采集开始前钉住一次身份：getState / messages / chainHistory / stats 都按它核。
+   * 中间一旦换实例或换代次，旧 payload 直接丢弃，不晚贴当前会话封套。
+   */
+  const expected = runners?.runtimeOf(id)
+  if (!expected) return
   const st = ag.getState()
-  if (st) pushFrom(id, { ch: 'state', payload: st })
+  if (st) pushFrom(id, { ch: 'state', payload: st }, expected)
   try {
     let payload = await ag.getMessages()
+    if (runners?.agentOf(id) !== ag || !sameRuntimeEnvelope(runners?.runtimeOf(id), expected)) return
     if (opts.chainHistory && st?.sessionFile) {
       const chain = await readHistoryWithArtifacts(st.sessionFile).catch(() => null)
+      /* 读盘期间也要复核：不一致就整帧退场，绝不把旧链历史贴到新会话。 */
+      if (runners?.agentOf(id) !== ag || !sameRuntimeEnvelope(runners?.runtimeOf(id), expected)) return
       /* 只接受“真的不更短”的链历史：读盘给空时不能把界面清空 */
       if (chain?.messages?.length && chain.messages.length >= payload.length) payload = chain.messages
     }
-    pushFrom(id, { ch: 'sync', payload })
+    pushFrom(id, { ch: 'sync', payload }, expected)
   } catch {
     /* 拿不到就当空会话，下一次事件会补 */
   }
   void ag
-    .refreshStats()
+    .refreshStats({ expectGeneration: expected.generation })
     .then((stats) => {
-      if (stats) pushFrom(id, { ch: 'stats', payload: stats })
+      if (stats) pushFrom(id, { ch: 'stats', payload: stats }, expected)
     })
     .catch(() => {})
   void ag.refreshTodos().catch(() => {})
   /* 工作模式跟随实例推送：切会话 / 新建 / 启动都经这里，一处覆盖所有路径 */
   await pushWorkMode(id)
   await pushAgentProfile(id)
-  pushFrom(id, { ch: 'goal', payload: emptyGoal() })
+  if (runners?.agentOf(id) === ag && sameRuntimeEnvelope(runners?.runtimeOf(id), expected)) {
+    pushFrom(id, { ch: 'goal', payload: emptyGoal() }, expected)
+  }
   pushRunners()
 }
 
@@ -1340,10 +1610,17 @@ async function executeControlCommand(command: ControlCommand): Promise<ControlRe
 
     if (command.action === 'send') {
       showMainWindow()
-      const result = await ac()?.send(command.text ?? '')
-      return result?.ok
+      /* 控制通道发送也是「实际开始执行」的入口，同样先复核同 cwd 冲突。 */
+      const active = runners?.activeRunner()
+      if (active) {
+        const guard = runners!.guardExecute(active.id)
+        if (!guard.ok) return { ok: false, action: command.action, error: guard.error }
+      }
+      /* 控制通道在入口钉住目标实例，发送用 agentOf(id)，不再全局 ac() 重读。 */
+      const result = (active?.id ? await runners?.agentOf(active.id)?.send(command.text ?? '') : undefined) ?? { ok: false, error: 'pi 未运行' }
+      return result.ok
         ? { ok: true, action: command.action, data: { length: command.text?.length ?? 0 } }
-        : { ok: false, action: command.action, error: result?.error ?? 'pi 未运行' }
+        : { ok: false, action: command.action, error: result.error ?? 'pi 未运行' }
     }
 
     return { ok: false, action: command.action, error: '未知控制动作' }
@@ -1571,67 +1848,113 @@ async function validateCwd(cwd: unknown): Promise<{ ok: true; cwd: string } | { 
   }
 }
 
-/**
- * `yan session move`：Agent 发现任务属于另一个文件夹，请求把这条会话移过去。
- * 批准卡片问用户；允许后等这一轮结束再切换（moveSessionWhenIdle），回合中途不换目录。
- */
+interface SessionMoveJob {
+  sessionId: string
+  sessionFile: string
+  target: string
+  registry: RunnerRegistry
+  origin: PinnedSendTarget
+  continuation: (afterHostStop?: boolean) => boolean
+  claimed?: boolean
+}
+
+const pendingSessionMoves = new Map<string, SessionMoveJob>()
+
+/** 批准后仅为原会话移动一次；正常结束时由宿主续接，不依赖当前前台或重复用户请求。 */
 async function requestSessionMove(request: SessionMovePrompt): Promise<SessionMoveAnswer> {
-  const checked = await validateCwd(isAbsolute(request.dir) ? request.dir : resolve(request.cwd || process.cwd(), request.dir))
-  if (!checked.ok) return { decision: 'invalid', message: `${checked.error}。会话留在当前文件夹。` }
-  const target = checked.cwd
-  if (normalizeCwdForIdentity(target) === normalizeCwdForIdentity(request.cwd)) {
-    return { decision: 'same', target, message: '会话已经在这个文件夹里，不需要移动。' }
-  }
-  const choice = await approvals.ask({
-    kind: 'move',
-    tool: 'session',
-    title: '允许把这次会话移到另一个文件夹？',
-    detail: target,
-    reasons: [
-      ...(request.reason ? [request.reason] : []),
-      '本轮结束后切换：对话保留，之后的命令在这个文件夹里运行，并读取它的 AGENTS.md 与项目设置。'
-    ],
-    cwd: request.cwd,
-    canRemember: false
-  })
-  if (choice !== 'once' && choice !== 'remember') {
-    return {
-      decision: choice === 'deny' ? 'denied' : 'no-answer',
-      target,
-      message: choice === 'deny' ? '用户拒绝移动，继续在当前文件夹工作。' : '没有得到答复，会话留在当前文件夹。'
+  const key = normalizeCwdForIdentity(request.sessionFile)
+  const registry = runners
+  const hit = registry?.statuses().find(status => !!status.sessionFile && normalizeCwdForIdentity(status.sessionFile) === key)
+  const origin = hit ? pinSendTarget(hit.id) : null
+  if (!registry || !origin || origin.sessionId !== request.sessionId) return { decision: 'invalid', message: '来源会话已变化，没有移动。' }
+  if (pendingSessionMoves.has(key)) return { decision: 'invalid', message: '这条会话已有待完成的移动，请勿重复请求。' }
+  const job: SessionMoveJob = { sessionId: request.sessionId, sessionFile: request.sessionFile, target: request.dir, registry, origin, continuation: origin.agent.captureSessionMoveContinuation() }
+  pendingSessionMoves.set(key, job)
+  let scheduled = false
+  try {
+    const checked = await validateCwd(isAbsolute(request.dir) ? request.dir : resolve(request.cwd || process.cwd(), request.dir))
+    if (!checked.ok) return { decision: 'invalid', message: `${checked.error}。会话留在当前文件夹。` }
+    const target = job.target = checked.cwd
+    if (normalizeCwdForIdentity(target) === normalizeCwdForIdentity(request.cwd)) {
+      return { decision: 'same', target, message: '会话已经在这个文件夹里，不需要移动。' }
     }
-  }
-  void moveSessionWhenIdle({ sessionId: request.sessionId, sessionFile: request.sessionFile, target })
-  return {
-    decision: 'approved',
-    target,
-    message: `已批准：本轮结束后，会话的工作目录切换到 ${target}。请用一两句话说明接下来要做什么并结束本轮，下一轮会在新文件夹里继续。`
+    const choice = await approvals.ask({
+      kind: 'move', tool: 'session', title: '允许把这次会话移到另一个文件夹？', detail: target,
+      reasons: [
+        ...(request.reason ? [request.reason] : []),
+        '本轮正常结束后切换并继续尚未完成的原任务：对话保留，后续命令在新目录运行；人工停止或失败时不自动继续。'
+      ],
+      cwd: request.cwd, canRemember: false
+    })
+    if (choice !== 'once' && choice !== 'remember') {
+      return { decision: choice === 'deny' ? 'denied' : 'no-answer', target,
+        message: choice === 'deny' ? '用户拒绝移动，继续在当前文件夹工作。' : '没有得到答复，会话留在当前文件夹。' }
+    }
+    if (runners !== registry || !pinnedTargetMatches(origin)) return { decision: 'invalid', target, message: '批准期间来源会话已变化，没有移动。' }
+    scheduled = true
+    void moveSessionWhenIdle(job).catch(error => reportMainError('session-move', error)).finally(() => {
+      if (pendingSessionMoves.get(key) === job) pendingSessionMoves.delete(key)
+    })
+    return { decision: 'approved', target,
+      message: `已批准：本轮结束后，会话的工作目录切换到 ${target}。请用一两句话说明下一步并结束本轮；正常收尾后宿主会在新目录自动续接一次，不要在当前目录继续操作。人工停止或失败时不会自动续接。` }
+  } finally {
+    if (!scheduled && pendingSessionMoves.get(key) === job) pendingSessionMoves.delete(key)
   }
 }
 
-/** 等这条会话的回合结束（不在跑、也没有待回答的请求）再移动；最多等 30 分钟 */
-async function moveSessionWhenIdle(job: { sessionId: string; sessionFile: string; target: string }): Promise<void> {
-  const same = (a?: string) => !!a && normalizeCwdForIdentity(a) === normalizeCwdForIdentity(job.sessionFile)
-  const runnerOf = () => runners?.statuses().find((r) => same(r.sessionFile))
-  const deadline = Date.now() + 30 * 60_000
-  while (runnerOf()?.running || runnerOf()?.waiting) {
-    if (Date.now() > deadline) {
-      push({ ch: 'session-moved', payload: { sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target, ok: false, error: '等这一轮结束超时，会话没有移动' } })
-      return
-    }
-    await new Promise((r) => setTimeout(r, 500))
-  }
+async function continueMovedSession(job: SessionMoveJob, projectId?: string): Promise<{ continued: boolean; continuationError?: string }> {
   try {
-    /* pi 会往会话文件追加记录：先停掉用它的实例，再改文件头；界面随后在新目录重新打开 */
-    await runners?.stopBySessionFile(job.sessionFile)
+    if (shuttingDown || runners !== job.registry || !job.continuation(true)) throw new Error('原回合已停止、失败或失效，未自动继续')
+    const scope = projectId ? 'project' : 'global'
+    const selected = await job.registry.select({ sessionFile: job.sessionFile, sessionId: job.sessionId, cwd: job.target, projectId, scope, activate: false })
+    if (!selected.ok || !selected.id) throw new Error(selected.error ?? '无法在新目录恢复会话')
+    const pin = pinSendTarget(selected.id)
+    const fresh = pin?.agent.captureSessionMoveContinuation()
+    const selectedRuntime = { runId: selected.runId ?? selected.id, generation: selected.generation, sessionId: selected.sessionId }
+    const current = () => !shuttingDown && runners === job.registry && !!pin && pinnedTargetMatches(pin) &&
+      sameRuntimeEnvelope(pin, selectedRuntime) && pin.sessionId === job.sessionId &&
+      normalizeCwdForIdentity(pin.agent.getState()?.cwd ?? '') === normalizeCwdForIdentity(job.target) &&
+      job.continuation(true) && fresh?.() === true
+    if (!pin || !current()) throw new Error('恢复目标已变化，未自动继续')
+    await sessionHost.rememberRunnerSession(selected, { cwd: job.target, projectId, scope })
+    if (!current()) throw new Error('恢复期间会话已停止或变化，未自动继续')
+    const guard = job.registry.guardExecute(selected.id)
+    if (!guard.ok) throw new Error(guard.error)
+    const sent = await pin.agent.send(movedSessionContinuationPrompt(job.target))
+    if (!sent.ok) throw new Error(sent.error ?? '续接指令没有发出')
+    void sessionHost.pushRunnerSnapshot(selected.id)
+    return { continued: true }
+  } catch (error) {
+    return { continued: false, continuationError: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/** 等原实例空闲后移动；重复通知不重入，人工停止/模型失败只能移动，不能自动续跑。 */
+async function moveSessionWhenIdle(job: SessionMoveJob): Promise<void> {
+  const key = normalizeCwdForIdentity(job.sessionFile)
+  if (pendingSessionMoves.get(key) !== job || job.claimed) return
+  job.claimed = true
+  try {
+    const deadline = Date.now() + 30 * 60_000
+    for (;;) {
+      if (shuttingDown || runners !== job.registry || !pinnedTargetMatches(job.origin)) throw new Error('来源会话已关闭或变化，没有移动')
+      const state = job.origin.agent.getState()
+      if (!state?.isAgentRunning && !state?.isStreaming && !state?.isCompacting && job.origin.agent.getPendingUiCount() === 0) break
+      if (Date.now() > deadline) throw new Error('等这一轮结束超时，会话没有移动')
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+    const resume = job.continuation()
+    // 停止的是批准时捕获的实例，不能按当前前台重新寻找执行目标。
+    await job.registry.stopOne(job.origin.runId)
+    if (shuttingDown || job.origin.agent.running) throw new Error('原会话进程未安全关闭，没有改写会话文件')
     await rewriteSessionCwd(job.sessionFile, job.target)
     let settings = await getSettings()
-    const projectOf = () => settings.projects.find((p) => !p.archived && normalizeCwdForIdentity(p.cwd) === normalizeCwdForIdentity(job.target))
-    /* 新文件夹还不是项目：加进最近目录，设置会为它生成项目记录 */
+    const projectOf = () => settings.projects.find(p => !p.archived && normalizeCwdForIdentity(p.cwd) === normalizeCwdForIdentity(job.target))
     if (!projectOf()) settings = await patchSettings({ recentCwds: [job.target, ...(settings.recentCwds ?? [])] })
-    const project = projectOf()
-    await moveSessionLayout({ sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target }, project?.id ?? null)
-    push({ ch: 'session-moved', payload: { sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target, ok: true } })
+    await moveSessionLayout({ sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target }, projectOf()?.id ?? null)
+    const continuation = resume ? await continueMovedSession(job, projectOf()?.id) :
+      { continued: false, continuationError: '原回合已停止、失败或有新的输入，未自动继续' }
+    push({ ch: 'session-moved', payload: { sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target, ok: true, ...continuation } })
   } catch (error) {
     push({ ch: 'session-moved', payload: { sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target, ok: false, error: error instanceof Error ? error.message : String(error) } })
   } finally {
@@ -1948,6 +2271,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         capabilityGuideExtension: capabilityGuideExtensionPath(),
         contextInspectExtension: contextInspectExtensionPath(),
         contextTrimExtension: contextTrimExtensionPath(),
+        nativeSessionExtension: nativeSessionExtensionPath(),
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
         repeatGuardExtension: repeatGuardExtensionPath(),
         dangerGuardExtension: dangerGuardExtensionPath(),
@@ -1982,6 +2306,20 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           devResourcesDir: join(app.getAppPath(), 'resources'),
           getWorkMode: async () => (await resolveWorkMode(id ?? 'primary')).mode,
           getCapabilityStrategy: async () => (await getSettings()).capabilityStrategy,
+          /*
+           * 同步执行入场：Agent 在 send / steer / followUp / runBash 入口 claim，
+           * 真正入队前 confirm，失败 / 回合结束时 release。它只保障同一物理 cwd 不
+           * 同时开始执行，不是文件级锁。
+           */
+          ...(id
+            ? {
+                execution: runners?.executionPort(id) ?? {
+                  claim: () => ({ ok: false as const, error: '运行实例注册表尚未就绪' }),
+                  confirm: () => false,
+                  release: () => {}
+                }
+              }
+            : {}),
           onBashSettled: () => requestPiPackageActivationTick(),
           trashItem: (path: string) => shell.trashItem(path)
         },
@@ -2159,6 +2497,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       }),
     onChanged: () => {
       pushRunners()
+      scheduleEpochSnapshots()
       requestPiPackageActivationTick()
     }
   })
@@ -2350,29 +2689,95 @@ function registerIpc(): void {
     return { ...res, state: ac()?.getState() ?? undefined, settings }
   })
 
-  handle('yan:send', async (text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp') => {
-    let targetId = runners?.activeRunnerId
+  handle('yan:send', async (text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedInput?: unknown) => {
+    /*
+     * 归属检查在入口同步完成：有 expectedRuntime 就精确按 run/gen 定位（不盲用
+     * active、不改视图、不切 cwd）；旧调用不传时也在入口钉住当时的 active，
+     * 后面的 await 不再全局读 active 猜目标。
+     */
+    const expected = normalizeExpectedRuntime(expectedInput)
+    if (expected === 'invalid') return { ok: false, error: '发送目标身份无效，消息未发送' }
+    let targetId = expected ? resolveExpectedTarget(expected) ?? undefined : runners?.activeRunnerId
+    if (expected && !targetId) return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
     const handoffEntry = targetId ? [...handoffPending.entries()].find(([sourceId, op]) => sourceId === targetId || op.destinationRunId === targetId) : undefined
     const handoff = handoffEntry?.[1]
+    /*
+     * 入口同步钉住目标**当时的真实身份**：partial（只有 runId / sessionId）与
+     * 缺省 expected 的旧调用只核调用方给的维度，识别不了 await 期间同 runId
+     * 的复用；补上入口 pin 后，这些输入也按完整 tuple 复核。
+     */
+    let pin = targetId ? pinSendTarget(targetId) : null
+    /* await 之后复核：调用方给的维度 + 入口钉住的真实身份，任一不符都算换身份。 */
+    const sendOwnershipChanged = (id: string | null | undefined): boolean =>
+      (!!expected && (!id || !targetMatchesExpected(id, expected))) || (!!id && !!pin && !pinnedTargetMatches(pin))
+    /*
+     * 需要迁移到 handoff 目的时，入口也同步钉住**目的当时**的真实身份；settled
+     * 后先拿它复核目的没被复用，再按目的重新钉住供后续 await 复核。不能只钉
+     * source、settled 后把 source 的 pin 盲套到 dest 上。
+     */
+    const handoffDestPin = handoff?.destinationRunId && handoff.destinationRunId !== targetId
+      ? pinSendTarget(handoff.destinationRunId)
+      : null
     if (handoff?.collecting) {
       await handoff.settled
+      if (expected && (!targetId || !targetMatchesExpected(targetId, expected))) {
+        return { ok: false, error: '目标会话在等待交接时已变化，消息未发送；草稿已保留' }
+      }
       if (handoff.cancelled) return { ok: false, error: '交接已停止，请重新发送' }
-      targetId = handoff.destinationRunId ?? targetId
+      const destinationId = handoff.destinationRunId
+      if (destinationId) {
+        /* 目的在入口钉住后到 settled 之间被复用 → 明确失败，不把消息发给别的会话 */
+        if (handoffDestPin && !pinnedTargetMatches(handoffDestPin)) {
+          return { ok: false, error: '目标会话在等待交接时已变化，消息未发送；草稿已保留' }
+        }
+        /*
+         * 合法迁移：目的身份可能与入口 source 不同，必须按**目的此刻**的真实身份
+         * 重新钉住，后续 await 再核目的；不能拿 source 的 pin 盲套 dest。
+         */
+        targetId = destinationId
+        pin = pinSendTarget(targetId)
+        if (!pin) return { ok: false, error: '目标会话在等待交接时已变化，消息未发送；草稿已保留' }
+      } else if (pin && !pinnedTargetMatches(pin)) {
+        /* 没有目的可迁移：原目标必须保持原身份 */
+        return { ok: false, error: '目标会话在等待交接时已变化，消息未发送；草稿已保留' }
+      }
       if (targetId && handoffPending.get(targetId) === handoff) {
         await abandonHandoff(targetId, 'user-message', handoff.request.operationId)
       }
     } else if (handoff && targetId) {
       await abandonHandoff(handoffEntry![0], 'user-message', handoff.request.operationId)
     }
+    if (sendOwnershipChanged(targetId)) {
+      return { ok: false, error: '目标会话在等待时已变化，消息未发送；草稿已保留' }
+    }
     if (handoff && targetId && !runners?.agentOf(targetId)?.running) {
       return { ok: false, error: '会话正在恢复，请稍后重新发送' }
     }
-    if (!targetId || !runners?.agentOf(targetId)?.running) {
+    if (!expected && (!targetId || !runners?.agentOf(targetId)?.running)) {
+      /*
+       * 旧调用：入口没钉住目标且当前没有运行实例时，走原有启动兜底。
+       * 钉住 expectedRuntime 的调用不复用这段 —— 目标实例即使暂时空闲也是有效目标，
+       * 直接对它 send 即可，不能因此被换成别的 active。
+       */
       const r = await startAgent()
       if (!r.ok) return r
       targetId = runners?.activeRunnerId
+      /* 启动兜底后的目标同样要在下一个 await 前钉住真实身份 */
+      pin = targetId ? pinSendTarget(targetId) : null
+    }
+    if (sendOwnershipChanged(targetId)) {
+      return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
     }
     const id = targetId
+    /*
+     * 命中已有实例（hit）时 select 不经过同 cwd 冲突扫描，发送前在这里补一次只读复核：
+     * 同 cwd 另有忙碌实例就拒绝本次发送，避免开第二个写者。发起者自己的插话 / 排队由
+     * `guardExecute` 放行；只拒绝，不停别的会话、不把消息转投别的会话。
+     */
+    if (id) {
+      const guard = runners?.guardExecute(id)
+      if (guard && !guard.ok) return guard
+    }
     /*
      * 检查点：新一轮开始前给项目目录存一份快照（排队、插话不算新一轮）。
      * 快照在后台拍，发送不等它：用户消息上屏与模型开始都不被项目大小拖慢。
@@ -2383,8 +2788,15 @@ function registerIpc(): void {
       const agent = runners?.agentOf(id)
       const state = typeof agent?.getState === 'function' ? agent.getState() : null
       if (agent && state && !state.isAgentRunning && (await getSettings()).checkpointsEnabled !== false) {
+        if (sendOwnershipChanged(id)) {
+          return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
+        }
         void captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text)
       }
+    }
+    /* 最后一次 await 之后再核一遍：目标换了就明确失败，不把消息发到别的实例。 */
+    if (sendOwnershipChanged(id)) {
+      return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
     }
     return (id ? runners?.agentOf(id)?.send(text, images, mode) : undefined) ?? { ok: false, error: 'pi 未运行' }
   })
@@ -2439,7 +2851,19 @@ function registerIpc(): void {
   })
 
   /* ---- 直执行 bash ---- */
-  handle('yan:runBash', async (command: string) => ac()?.runBash(command) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:runBash', async (command: string, options?: { excludeFromContext?: boolean }, expectedInput?: unknown) => {
+    if (typeof command !== 'string' || !command.trim() || (options !== undefined && (!options || typeof options !== 'object' || (options.excludeFromContext !== undefined && typeof options.excludeFromContext !== 'boolean')))) return { ok: false, error: '命令参数无效' }
+    /* 直执行 bash 同样会写工作目录，且按 expectedRuntime 精确定位目标实例。 */
+    const expected = normalizeExpectedRuntime(expectedInput)
+    if (expected === 'invalid') return { ok: false, error: '执行目标身份无效' }
+    const id = expected ? resolveExpectedTarget(expected) ?? undefined : runners?.activeRunner()?.id
+    if (expected && !id) return { ok: false, error: '目标会话已不在或已切换，命令未执行' }
+    if (id) {
+      const guard = runners?.guardExecute(id)
+      if (guard && !guard.ok) return guard
+    }
+    return (id ? runners?.agentOf(id)?.runBash(command, options) : undefined) ?? { ok: false, error: 'pi 未运行' }
+  })
   handle('yan:abortBash', async () => {
     await ac()?.abortBash()
   })
@@ -2449,6 +2873,64 @@ function registerIpc(): void {
     return runnerVisibility.update(sessions)
   })
   registerSessionIpc(ipc, sessionHost)
+  registerNativeSessionIpc(ipc, sessionHost, {
+    confirm: (agent, prompt) => agent.confirmNativeOperation(prompt),
+    win: () => win,
+    runtime: async (agent, request) => {
+      if (request.action === 'navigate') return agent.nativeNavigate(request.entryId!)
+      if (request.action === 'reload') {
+        await agent.nativeReload()
+        await agent.listCommands()
+        return { ok: true }
+      }
+      if (request.action === 'scoped-models') {
+        const [snapshot, models] = await Promise.all([agent.nativeScopedModels(), agent.listModels()])
+        return {
+          ok: true, models,
+          scopedModelIds: snapshot.scopedModels.map(item => item.key)
+        }
+      }
+      if (request.action === 'trust') {
+        const snapshot = await agent.nativeProjectTrust()
+        return { ok: true, cwd: snapshot.cwd, trusted: snapshot.effectiveTrusted, trustEntry: snapshot.entry }
+      }
+      if (request.action === 'set-scoped-models' || request.action === 'set-trust') {
+        if (request.action === 'set-scoped-models') {
+          const models = await agent.listModels()
+          const available = new Set(models.map(model => `${model.provider}/${model.id}`))
+          if (request.modelIds!.some(id => !available.has(id))) return { ok: false, error: '所选模型已不可用，请刷新面板' }
+          await agent.nativeSetScopedModels(request.modelIds!)
+        } else {
+          await agent.nativeSetProjectTrust(request.trusted!)
+        }
+        const runnerId = runners?.idOf(agent)
+        const sessionFile = agent.getState()?.sessionFile
+        if (!runnerId || !sessionFile || !existsSync(sessionFile)) return { ok: true, requiresReload: true }
+        const restarted = await runners!.restartOne(runnerId)
+        if (!restarted.ok) return { ok: false, error: `原生设置已保存，但应用失败：${restarted.error ?? '请重新打开会话'}` }
+        const current = runners!.active()
+        if (current) {
+          const state = current.getState()
+          if (state) push({ ch: 'state', payload: state })
+          /* 读盘期间切走会话 / 换代次：旧消息不再属于这个视图，不推（F03 同一口径）。 */
+          const currentId = runners!.idOf(current)
+          const before = currentId ? runners!.runtimeOf(currentId) : null
+          const payload = await current.getMessages()
+          const after = currentId ? runners!.runtimeOf(currentId) : null
+          if (!before || (after && sameRuntimeEnvelope(after, before))) push({ ch: 'sync', payload })
+        }
+        pushRunners()
+        if (request.action === 'set-scoped-models' && current) {
+          const applied = await current.nativeScopedModels()
+          const keys = new Set(applied.scopedModels.map(item => item.key))
+          const wanted = new Set(request.modelIds!)
+          if (keys.size !== wanted.size || [...wanted].some(key => !keys.has(key))) return { ok: false, error: '用户级模型范围已保存，但当前项目的 pi 设置或启动范围覆盖了它；请检查项目 enabledModels' }
+        }
+        return { ok: true }
+      }
+      return { ok: false, error: '不支持的原生操作' }
+    }
+  })
   registerCheckpointIpc(ipc, sessionHost)
   /* 启动后空闲时清掉过期的检查点 */
   setTimeout(() => void pruneCheckpoints().catch(() => undefined), 60_000).unref?.()
@@ -2491,6 +2973,15 @@ function registerIpc(): void {
     handoffDiag,
     pushFrom,
     scheduleSessionWork
+  })
+
+  /* 会话级提问频率覆盖：与工作模式共用存储 / 快照，独立注册以便单独核对身份 */
+  registerQuestionFrequencyIpc(ipc, {
+    registry: () => runners,
+    workModes,
+    workModeKeyFor,
+    globalQuestionFrequency: async () => normalizeQuestionFrequency((await getSettings()).questionFrequency),
+    pushFrom
   })
 
   registerSpaceIpc(ipc, { registry: () => runners, agentProfiles, spaces })
@@ -2971,19 +3462,14 @@ function registerIpc(): void {
   void scheduleService.start().catch((e) => reportMainError('定时任务', e))
   registerSubagentsIpc(ipc, {
     service: subagentService,
-    parentContext: async () => {
+    parentContext: async (owner) => {
+      /*
+       * 父身份必须在**任何 await 之前**同步捕获：显式 owner 由渲染端自带身份；
+       * 默认（CLI / 正常派活）捕获当前 active 的原始实例引用。
+       */
+      const captured = captureDefaultParent()
       const settings = await getSettings()
-      const state = ac()?.getState()
-      const active = runners?.activeRunner()
-      const runtime = active?.id ? runners?.runtimeOf(active.id) : null
-      return {
-        cwd: state?.cwd ?? active?.cwd ?? settings.cwd,
-        /* 空白新会话在 pi 首次写入前可能还没有 sessionId；runtime 的
-         * pending:<runId> 是可追踪的明确占位，不把父子关系丢掉。 */
-        parentSessionId: state?.sessionId || runtime?.sessionId,
-        parentRunId: active?.id,
-        projectId: state?.cwd ? projectIdForCwd(settings, state.cwd) : undefined
-      }
+      return resolveSubagentParentContext(owner, captured, settings)
     }
   })
 

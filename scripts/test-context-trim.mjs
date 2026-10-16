@@ -71,7 +71,11 @@ export async function runContextTrimTests(ok, mod, limits) {
     const user = { role: 'user', content: [{ type: 'text', text: '一次长任务' }] }
     const long = [user, ...history(12).filter(m => m.role !== 'user')]
     const unchanged = JSON.stringify(long)
-    ok(trimMessages(long, { trimmed: new Map(), projectedTokens: 100_000, threshold: 80_000 }) === undefined, '长单轮：仅超软线仍保护近期证据')
+    const budgetOut = trimMessages(long, { trimmed: new Map(), projectedTokens: 100_000, threshold: 80_000 })
+    const budgetIds = stubbed(budgetOut ?? [])
+    ok(budgetIds.length > 0 && budgetIds[0] === 'c1', '长单轮：仅超预算就在近期轮内裁掉最早的输出')
+    ok(!budgetIds.includes('c5') && !budgetIds.includes('c9') && !budgetIds.includes('c12'), '长单轮：最近 8 个工具结果始终保留')
+    ok(JSON.stringify(long) === unchanged, '长单轮：预算裁剪也不修改持久化原消息')
     const out = trimMessages(long, { trimmed: new Map(), projectedTokens: 200_000, threshold: 80_000, cacheCold: false })
     const ids = stubbed(out ?? [])
     ok(ids.length === 9 && !ids.includes('c10') && !ids.includes('c11') && !ids.includes('c12'), '长单轮：超硬线可裁9组，但最后3组仍完整', ids.join(','))
@@ -99,6 +103,45 @@ export async function runContextTrimTests(ok, mod, limits) {
     }).filter(m => m.role !== 'user')]
     const multiIds = stubbed(trimMessages(multi, { trimmed: new Map(), projectedTokens: 900_000, threshold: 80_000, contextWindow: 1_000_000 }) ?? [])
     ok(multiIds.length === 6 && !multiIds.includes('c4') && !multiIds.includes('nc4'), '长轮：每个近期用户轮分别保留最近3组')
+  }
+
+  {
+    // 单轮长会话：超过预算时在近期轮内裁，且同输入多次调用、追加消息后裁剪边界都稳定。
+    const user = { role: 'user', content: [{ type: 'text', text: '一个用户轮里跑很多步' }] }
+    const msgs = [user, ...history(16).filter(m => m.role !== 'user')]
+    const ids = (out) => stubbed(out ?? msgs)
+    const first = new Map()
+    const out1 = trimMessages(msgs, { trimmed: first, projectedTokens: 100_000, threshold: 80_000, cacheCold: false })
+    const cut1 = ids(out1)
+    ok(cut1.length > 0 && cut1[0] === 'c1', '单轮长会话：超预算即裁，从最旧工具输出开始', cut1.join(','))
+    ok(!cut1.includes('c9') && !cut1.includes('c16'), '单轮长会话：最近 8 个工具结果仍保留')
+    const repeated = trimMessages(msgs, { trimmed: first, projectedTokens: 100_000, threshold: 80_000, cacheCold: false })
+    ok(JSON.stringify(ids(repeated)) === JSON.stringify(cut1), '单轮长会话：同一裁剪集合重复调用结果一致')
+    const copies = new Map()
+    const copyOut = trimMessages(msgs, { trimmed: copies, projectedTokens: 100_000, threshold: 80_000, cacheCold: false })
+    ok(JSON.stringify(ids(copyOut)) === JSON.stringify(cut1) && copies.size === first.size, '单轮长会话：同一份输入多次调用结果稳定')
+    const grown = [...msgs, ...history(2).filter(m => m.role !== 'user').map(m => {
+      const copy = structuredClone(m)
+      if (copy.toolCallId) copy.toolCallId = `g${copy.toolCallId}`
+      for (const p of copy.content ?? []) if (p.type === 'toolCall') p.id = `g${p.id}`
+      return copy
+    })]
+    const out2 = trimMessages(grown, { trimmed: first, projectedTokens: 100_000, threshold: 80_000, cacheCold: false })
+    const cut2 = ids(out2 ?? grown)
+    ok(cut1.every(id => cut2.includes(id)), '单轮长会话：追加消息后裁剪边界只前移，已裁集合不回收')
+  }
+
+  {
+    // 图片按每张约 2.8k token 估算：单张图片在最近窗口之外即可构成一批可提交的节省。
+    const user = { role: 'user', content: [{ type: 'text', text: '看图' }] }
+    const step = (i, content, name = 'bash', args = { command: `cat f${i}` }) => [
+      { role: 'assistant', content: [{ type: 'toolCall', id: `c${i}`, name, arguments: args }] },
+      { role: 'toolResult', toolCallId: `c${i}`, toolName: name, content: Array.isArray(content) ? content : [{ type: 'text', text: content }] }
+    ]
+    const msgs = [user, ...step(1, [{ type: 'image', data: 'x', mimeType: 'image/png' }], 'read', { path: 'shot.png' }), ...Array.from({ length: 8 }, (_, k) => step(k + 2, 'x'.repeat(12_000))).flat()]
+    const trimmed = new Map()
+    const out = trimMessages(msgs, { trimmed, projectedTokens: 10_000, threshold: 8_000, cacheCold: false })
+    ok(stubbed(out ?? []).includes('c1') && /1 张图片/.test(out.find(m => m.toolCallId === 'c1').content[0].text), '图片：单张图片按约 2.8k token 触发裁剪并用图片存根')
   }
 
   {
@@ -178,22 +221,22 @@ export async function runContextTrimTests(ok, mod, limits) {
       const ctx = (tokens) => ({ getContextUsage: () => ({ tokens, contextWindow: 1_050_000 }), compact: (o) => { compacts += 1; o.onComplete?.() } })
       handlers.agent_settled({}, ctx(150_000))
       ok(compacts === 0, '自动压缩：没到上限不压缩')
-      handlers.agent_settled({}, ctx(260_000))
+      handlers.agent_settled({}, ctx(410_000))
       ok(compacts === 1, '自动压缩：超过上限调用一次 pi 原生 compact')
       handlers.agent_settled({}, ctx(null))
       ok(compacts === 1, '自动压缩：压缩后用量未知时不重复触发')
-      handlers.agent_settled({}, ctx(255_000))
-      handlers.agent_settled({}, ctx(280_000))
+      handlers.agent_settled({}, ctx(405_000))
+      handlers.agent_settled({}, ctx(430_000))
       ok(compacts === 1, '自动压缩：压缩后仍在上限之上时不连续再压（每次压缩都要调模型）')
-      handlers.agent_settled({}, ctx(310_000))
+      handlers.agent_settled({}, ctx(490_000))
       ok(compacts === 2, '自动压缩：压缩后又增长超过 20% 才再压')
       handlers.agent_settled({}, ctx(120_000))
       let fails = 0
       const failing = (tokens) => ({ getContextUsage: () => ({ tokens, contextWindow: 1_050_000 }), compact: (o) => { fails += 1; o.onError?.(new Error('Nothing to compact')) } })
-      handlers.agent_settled({}, failing(260_000))
-      handlers.agent_settled({}, failing(280_000))
+      handlers.agent_settled({}, failing(410_000))
+      handlers.agent_settled({}, failing(430_000))
       ok(fails === 1, '自动压缩：失败后上下文没明显增长前不重试（不每轮报失败）')
-      handlers.agent_settled({}, failing(320_000))
+      handlers.agent_settled({}, failing(500_000))
       ok(fails === 2, '自动压缩：失败后增长超过 20% 再试')
     }
 
@@ -247,6 +290,16 @@ export async function runContextTrimTests(ok, mod, limits) {
       toggle.handlers.message_end({ message: untrimmedReply })
       settings(true)
       ok(stubbed(toggle.run([...follow, untrimmedReply], 20000)).length === 7, '开关：未裁请求的用量不再补回旧节省')
+
+      const singleStep = (i, text) => [
+        { role: 'assistant', content: [{ type: 'toolCall', id: `s${i}`, name: 'bash', arguments: { command: `cat s${i}` } }] },
+        { role: 'toolResult', toolCallId: `s${i}`, toolName: 'bash', content: [{ type: 'text', text }] }
+      ]
+      const longSingle = [{ role: 'user', content: [{ type: 'text', text: '单轮长会话' }] }, ...Array.from({ length: 16 }, (_, i) => singleStep(i + 1, 'x'.repeat(8400))).flat()]
+      settings(false)
+      ok(stubbed(toggle.run(longSingle, 20000)).length === 0, '开关：关闭后单轮长会话也不裁')
+      settings(true)
+      ok(stubbed(toggle.run(longSingle, 20000)).length > 0, '开关：重新打开后单轮长会话恢复裁剪')
 
       const smallBatch = [...turn(1, 'x'.repeat(8000)), ...Array.from({ length: 3 }, (_, i) => turn(i + 2, 'short')).flat()]
       const capacity = fixture()

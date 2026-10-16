@@ -93,10 +93,23 @@
   const snapAfter = await window.yan.terminal.attach(activeId)
   ok(snapAfter?.cols === 100 && snapAfter?.rows === 30, `resize 真的落到宿主（${snapBefore?.cols}x${snapBefore?.rows} → ${snapAfter?.cols}x${snapAfter?.rows}）`)
 
-  /* ⑤ 断线重连：切走再切回，同一会话拿回它的输出 */
-  q('[data-pane-tab="terminal:' + activeId + '"]')?.closest('.tile-heading')?.querySelector('[aria-label="收起面板，保留运行"]')?.click()
+  /* ⑤ 断线重连：隐藏磁贴（保留会话）再切回，同一会话拿回它的输出 */
+  /*
+   * 终端页签的关闭键是「结束终端」（真的 kill PTY），所以「隐藏但保留运行」
+   * 走工作区磁贴右键菜单里的「隐藏面板」。用真实 contextmenu → 菜单项，
+   * 不直接改 store；随后验证磁贴 hidden 且宿主会话仍在。
+   */
+  const termTab = q('[data-pane-tab="terminal:' + activeId + '"]')
+  termTab?.dispatchEvent(
+    new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 12, clientY: 12 })
+  )
+  await until(() => !!q('.tile-layout-menu'))
+  const hideItem = qa('.tile-layout-menu [role="menuitem"]').find((el) => el.textContent.trim() === '隐藏面板')
+  ok(!!hideItem, '磁贴右键菜单有「隐藏面板」')
+  hideItem?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(500)
-  ok(!q('[data-workspace-pane="terminal:' + activeId + '"]:not([hidden])'), '隐藏终端磁贴')
+  ok(!q('[data-workspace-pane="terminal:' + activeId + '"]:not([hidden])'), '隐藏终端磁贴（保留会话）')
+  ok((await window.yan.terminal.list()).some((t) => t.id === activeId), '隐藏磁贴没有 kill 会话（资源仍在）')
   await window.__yanOpenWorkspaceTool('终端', 'terminal:' + activeId)
   const tabBack = q('[data-pane-tab="terminal:' + activeId + '"] button[role="tab"]')
   click(tabBack)

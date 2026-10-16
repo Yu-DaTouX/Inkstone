@@ -30,7 +30,7 @@ SOFTWARE.
 
 | 组件 | 许可证 | 说明 |
 |---|---|---|
-| [pi](https://github.com/badlogic/pi-mono)（`@earendil-works/pi-coding-agent`） | MIT | **不随本项目分发**，由用户自行全局安装。砚通过子进程 + JSONL 调用它 |
+| [pi](https://github.com/badlogic/pi-mono)（`@earendil-works/pi-coding-agent`） | MIT | 发行包内置 pi 运行时，由 `vendor:pi` 准备；源码开发也使用仓库生成的运行时，不依赖全局安装。砚通过独立子进程 + JSONL 调用它 |
 | [Maple Mono CN](https://github.com/subframe7536/maple-font) | **SIL OFL 1.1** | 界面字体。经 [`@mogeko/maple-mono-cn`](https://www.npmjs.com/package/@mogeko/maple-mono-cn)（MIT，cn-font-split 重打包）以 npm 依赖引入 |
 | [reicon](https://github.com/) | MIT | 图标集，已抽取为内联 SVG sprite（`src/renderer/src/icons/`） |
 | [highlight.js](https://github.com/highlightjs/highlight.js) | BSD-3-Clause | 代码语法高亮。配色取自其 GitHub Dark / Light 主题 |

@@ -1307,7 +1307,7 @@ const GROUPS = [
 { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['mapturns'] }
 ]
 
-/** 引导态单独跑（要先把 onboarded 标记拿掉） */
+/** 向导态单独跑（要先把 onboarded 标记拿掉）；清单不再自动弹，走「关于」页打开 */
 const ONBOARDING_GROUPS = [
   { w: 1440, h: 900, scale: 1, theme: 'dark' },
   { w: 940, h: 620, scale: 1, theme: 'dark' },
@@ -2648,9 +2648,12 @@ const STATES = {
     })()
   `,
   /*
-   * 新一轮刚开始（R03）：会话里上一轮有非零 usage 与 speed，现在追加一条
-   * 用户消息并回到流式 —— 用量条必须显示「生成中」状态，**不能**把上一轮的
-   * 46 tok/s 标成实时速度，输入/输出/缓存也要是「—」而不是旧值。
+   * 新一轮刚开始（R03）：上一轮有非零 usage 与速度，现在追加一条用户消息并回到
+   * 流式。
+   *
+   * 本状态的契约是**上下文构成**（现行入口是输入框右下角的圆环浮层），不是
+   * 本会话累计用量（那是 `usageagg`）：回来的是一个正在跑的新回合，圆环/浮层
+   * 必须给出当前的上下文窗口构成，而不是把上一轮的 turn 数字当成新值。
    * 零费用：完全在渲染端注入状态，不调模型。
    */
   usageturn: `
@@ -2669,15 +2672,19 @@ const STATES = {
         const mode = document.querySelector('.sb-mode');
         if (!mode) return 'no-sb-mode';
         if (mode.getAttribute('data-mode') !== 'run') return 'not-running';
-        const cost = document.querySelector('[data-testid="sb-cost"]');
-        if (!cost) return 'no-sb-cost';
-        if (!document.querySelector('[data-testid="status-details"]')) cost.click();
-        await new Promise((r) => setTimeout(r, 300));
-        const details = document.querySelector('[data-testid="status-details"]');
-        if (!details) return 'no-details';
-        const text = details.textContent || '';
-        if (text.includes('tok/s')) return 'stale-speed';
-        if (!text.includes('—')) return 'stale-usage';
+        /* 上下文构成浮层（点击圆环；前置状态可能已经打开它，先看 aria-expanded） */
+        for (let i = 0; i < 10; i++) {
+          const ring = document.querySelector('[data-testid="composer-context"]');
+          if (!ring) return 'no-context-ring';
+          if (ring.getAttribute('aria-expanded') !== 'true') ring.click();
+          await new Promise((r) => setTimeout(r, 200));
+          if (document.querySelector('[data-testid="ctx-main"]')) break;
+        }
+        const main = document.querySelector('[data-testid="ctx-main"]');
+        if (!main) return 'no-context-main';
+        if (!document.querySelector('[data-testid="ctx-breakdown"]')) return 'no-context-breakdown';
+        const tokens = document.querySelector('[data-testid="ctx-tokens"]')?.textContent || '';
+        if (!/\\d/.test(tokens)) return 'no-context-tokens';
         const box = document.querySelector('.stream');
         if (box) box.scrollTop = box.scrollHeight;
         await new Promise((r) => setTimeout(r, 250));
@@ -2701,7 +2708,15 @@ const STATES = {
         st.setRailPinned(true);
         const u = (o) => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, ...o });
         const now = Date.now();
+        /*
+         * 「本会话用量」优先用 pi 的 stats；stats 在场时会盖掉这两条注入的消息。
+         * 清成「统计还没加载」的真实状态，才能验消息求和的合计。
+         */
+        /* 清掉 stats 前先留底：截图后恢复，避免影响后面的上下文构成画面。 */
+        window.__yanUsageaggStats = st.stats;
         window.__yanStore.setState({
+          stats: null,
+          peekNote: null,
           messages: [
             { id: 'm0', role: 'user', text: '把用量统计改对：多轮工具调用时要合计，不是只显示最后一次。', timestamp: now - 9000 },
             {
@@ -3722,6 +3737,8 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const base = (over) => ({
         cwd: 'C:/yan-worktrees/sub-note',
         parentSessionId: sessionId,
+        /* 历史卡只挂在触发它的助手回合下；常驻区只留一行概览。 */
+        parentMessageId: 'sub-note-anchor',
         isolation: 'controlled-cwd',
         model: 'deepseek/deepseek-v4.1-flash',
         thinkingLevel: 'high',
@@ -3735,6 +3752,10 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       });
       const summary = (text, from = 'last-message') => ({ summary: text, summaryTruncated: false, summaryFrom: from, sources: [], artifacts: [], openQuestions: [], at: now });
       window.__yanStore.setState({
+        messages: [
+          { id: 'sub-note-anchor-user', role: 'user', text: '并行核对几块：IPC 通道、登录流程与设置页测试。', timestamp: now - 720_000 },
+          { id: 'sub-note-anchor', role: 'assistant', text: '已派出多路，完成后汇总。', timestamp: now - 710_000 }
+        ],
         subagents: [
           base({ id: 'sub-note-done', task: '核对 IPC 通道一致性', status: 'done', startedAt: now - 130_000, endedAt: now - 60_000, endReason: 'completed', toolCalls: 9, result: summary('三处通道一致。') }),
           base({ id: 'sub-note-run', task: '把登录流程的错误分支补上测试并跑一遍', isolation: 'worktree', latestActivity: '运行 bash', toolCalls: 31 }),
@@ -3753,7 +3774,14 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       await sleep(300);
       window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'agents' }));
       await sleep(600);
-      return document.querySelector('.sg-card') ? 'ok' : 'no-cards';
+      /* 收起状态下的历史组需要先展开，才能看到全部历史卡（限定在会话流的组，不是右栏平面图）。 */
+      const groupToggle = document.querySelector('.sg-group [data-testid="subagent-group-toggle"]');
+      if (groupToggle && groupToggle.getAttribute('aria-expanded') !== 'true') groupToggle.click();
+      await sleep(400);
+      if (!document.querySelector('.sg-card')) return 'no-cards';
+      /* 常驻区只能是一行概览，不得再复制一套完整卡片。 */
+      if (document.querySelector('[data-testid="active-subagents"] .sg-card')) return 'overview-cards';
+      return 'ok';
     })()
   `,
   subagentfailed: `
@@ -3768,6 +3796,8 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const base = (over) => ({
         cwd: 'C:/yan-worktrees/sub-note-fail',
         parentSessionId: sessionId,
+        /* 历史卡挂在触发它的助手回合下；常驻区只留一行概览。 */
+        parentMessageId: 'sub-fail-anchor',
         isolation: 'worktree',
         status: 'error',
         startedAt: now - 92_000,
@@ -3777,6 +3807,10 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
         ...over
       });
       window.__yanStore.setState({
+        messages: [
+          { id: 'sub-fail-anchor-user', role: 'user', text: '升级依赖并整理分支编号，跑一遍测试。', timestamp: now - 220_000 },
+          { id: 'sub-fail-anchor', role: 'assistant', text: '已派出子任务。', timestamp: now - 210_000 }
+        ],
         subagents: [
           base({ id: 'sub-note-error', task: '升级依赖并跑一遍测试', endReason: 'model-error', error: '模型返回 429：免费额度已用完' }),
           base({
@@ -3797,6 +3831,40 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       window.dispatchEvent(new CustomEvent('inkstone-workspace-launch', { detail: 'agents' }));
       await sleep(600);
       return document.querySelector('.sg-card') ? 'ok' : 'no-cards';
+    })()
+  `,
+  /*
+   * 额度三档配色（官方窗口 + estimated 推算窗口 + 已用完）：`commandcode` 在视觉矩阵里
+   * 只在这个状态使用，fixture 的 `providerQuota` 按 provider 名返回三档数据。
+   * 现行入口是**状态栏的额度段**（`sb-quota` 的详情浮层），不是旧的 `rp-quota` 停靠分区。
+   */
+  quotatone: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      window.__yanStore.setState({
+        rightPanelOpen: true,
+        settings: st.settings ? { ...st.settings, rightPanelOpen: true } : st.settings,
+        session: {
+          ...(st.session ?? {}),
+          isStreaming: false,
+          isAgentRunning: false,
+          model: { provider: 'commandcode', id: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', contextWindow: 400000 }
+        }
+      });
+      await sleep(600);
+      for (let i = 0; i < 10; i++) {
+        const trigger = document.querySelector('[data-testid="sb-quota"]');
+        if (!trigger) return 'no-sb-quota';
+        if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+        await sleep(250);
+        if (document.querySelector('[data-testid="quota-win-fiveHour-pct"]')) break;
+      }
+      if (!document.querySelector('[data-testid="quota-win-monthly-pct"]')) return 'no-quota-windows';
+      return 'ok';
     })()
   `,
   /*
@@ -3980,11 +4048,12 @@ const MUST_HAVE = {
     '.center > .composer-wrap'
   ],
   quotatone: [
-    '[data-testid="rp-quota"]',
+    '[data-testid="sb-quota"]',
+    '[data-testid="quota-popover"]',
     '[data-testid="quota-win-fiveHour-pct"]',
     '[data-testid="quota-win-weekly-pct"]',
     '[data-testid="quota-win-monthly-pct"]',
-    '[data-testid="quota-main-value"]'
+    '[data-testid="quota-win-monthly-estimated"]'
   ],
   railsessions: ['[data-testid="rail-more-sessions"]', '[data-testid="rail-session"]'],
   /* 实施-09 S2：后台会话在等输入的 `?` 槽、以及与失败槽（第四批） */
@@ -4077,10 +4146,12 @@ const MUST_HAVE = {
     '.turn-time',
     '[data-testid="composer"]'
   ],
+  /* 新一轮上下文构成（输入框圆环浮层）；本会话累计用量在 usageagg。 */
   usageturn: [
     '.sb-mode[data-mode="run"]',
-    '[data-testid="sb-cost"]',
-    '[data-testid="status-details"]',
+    '[data-testid="composer-context"]',
+    '[data-testid="ctx-main"]',
+    '[data-testid="ctx-tokens"]',
     '[data-testid="composer"]'
   ],
   /* 实施-11 H-6b：整轮用量聚合 / 下限标记要真的渲染出来（状态栏花费详情浮层） */
@@ -4261,8 +4332,8 @@ const AFTER_STATE = {
     })()
   `,
   /* 花费详情浮层截图后关掉，避免遮挡后续状态的画面 */
-  usageturn: `(() => { const d = document.querySelector('[data-testid="status-details"]'); if (d) document.querySelector('[data-testid="sb-cost"]')?.click(); return 'ok'; })()`,
-  usageagg: `(() => { const d = document.querySelector('[data-testid="status-details"]'); if (d) document.querySelector('[data-testid="sb-cost"]')?.click(); return 'ok'; })()`,
+  usageturn: `(() => { const ring = document.querySelector('[data-testid="composer-context"]'); if (ring?.getAttribute('aria-expanded') === 'true') ring.click(); return 'ok'; })()`,
+  usageagg: `(() => { if (window.__yanUsageaggStats !== undefined) { window.__yanStore.setState({ stats: window.__yanUsageaggStats }); delete window.__yanUsageaggStats; } const d = document.querySelector('[data-testid="status-details"]'); if (d) document.querySelector('[data-testid="sb-cost"]')?.click(); return 'ok'; })()`,
   usagepartial: `(() => { const d = document.querySelector('[data-testid="status-details"]'); if (d) document.querySelector('[data-testid="sb-cost"]')?.click(); return 'ok'; })()`,
   /* 工具启动器菜单截图后关掉：菜单背景层是全屏 fixed 的，留着会遮住后续状态的截图与命中测试 */
   righttoolmenu: `
@@ -4273,7 +4344,9 @@ const AFTER_STATE = {
       return 'ok';
     })()
   `,
-  subagentnote: `(() => { window.__yanStore.setState({ subagentRuns: [] }); return 'ok'; })()`,
+  /* 子代理卡截图后清掉，别把常驻区概览留到后面的链/轨画面。 */
+  subagentnote: `(() => { window.__yanStore.setState({ subagents: [], subagentPreviewId: null }); return 'ok'; })()`,
+  subagentfailed: `(() => { window.__yanStore.setState({ subagents: [], subagentPreviewId: null }); return 'ok'; })()`,
   /* 预览把当前会话指到了合成会话，截图后恢复基线 */
   sessionpreview: `
     (() => {
@@ -4590,7 +4663,9 @@ const TOOL_PANEL_STATES = new Set([
 const RESET_MESSAGE_STATES = new Set([
   'codemode',
   'segmented', 'artifact', 'imageprogress', 'toolgroup', 'toolterm', 'taskcard', 'turnfooter',
-  'turntime', 'filelink', 'turnstatus', 'usageturn', 'usageagg', 'usagepartial'
+  'turntime', 'filelink', 'turnstatus', 'usageturn', 'usageagg', 'usagepartial',
+  /* 子代理卡需要回合锚点，注入的合成回合截图后要恢复，避免影响后面的链/轨画面。 */
+  'subagentnote', 'subagentfailed'
 ])
 const RESET_SESSION_STATES = new Set(['forkdraft', 'railmini', 'railsessions'])
 
@@ -4936,62 +5011,97 @@ async function main() {
     }
   }
 
-  /* ---- 首次引导（N20）：单独一轮（拆组调试时只有显式要它才跑） ---- */
+  /* ---- 首次使用向导：单独一轮（拆组调试时只有显式要它才跑） ---- */
   if (!WANT_ONBOARDING) {
-    console.log('\n（指定了 YAN_MATRIX_GROUP，且不含 onboarding：跳过引导组）')
+    console.log('\n（指定了 YAN_MATRIX_GROUP，且不含 onboarding：跳过向导组）')
   } else {
   /*
-   * 自动弹的入口在 App 里：`if (window.yan.isProbe) return`（探针模式不弹）。
-   * 这里不是探针模式，但隔离环境里 bootstrap 拿不到设置，弹不弹取决于时序；
-   * 为了截图稳定，走「关于页 → 查看首次引导」这条**真实存在**的入口，
-   * 渲染出来的引导层与首次启动时是同一个组件。
+   * 首启弹的是配置向导（自检清单改为从「关于」页打开）。
+   * 自动弹的入口在 App 里：`if (window.yan.isProbe) return`（探针模式不弹），
+   * 所以这里走「关于页 → 配置向导」这条**真实存在**的入口，
+   * 渲染出来的是与首次启动同一个组件、同一个初始步。
    */
   await win.webContents.executeJavaScript(`try { localStorage.removeItem('yan.onboarded') } catch {}`)
   await win.webContents.reload()
   await wait(600)
   await win.webContents.executeJavaScript(fixture)
   await wait(700)
-  const onboardingHow = await win.webContents.executeJavaScript(`
-    (() => {
-      const st = window.__yanStore.getState();
-      st.openSettings('about');
-      return 'opened-about';
-    })()
-  `)
-  await wait(600)
-  await win.webContents.executeJavaScript(`
-    (() => {
-      const btn = document.querySelector('[data-testid="ob-reopen"]');
-      if (btn) btn.click();
-      return btn ? 'clicked' : 'no-reopen-button';
-    })()
-  `)
-  await wait(700)
-  const onboardingShown = await win.webContents.executeJavaScript(
-    `!!document.querySelector('[data-testid="onboarding"]')`
+  /*
+   * 先看首启有没有自己弹出来 —— 这才是真实用户碰到的路径。
+   * 隔离环境里 bootstrap 拿不到设置，弹不弹有时序成分；没弹则退回
+   * 「关于页 → 配置向导」这条真实入口（同一个组件、同一个初始步）。
+   */
+  const autoOpened = await win.webContents.executeJavaScript(
+    `!!document.querySelector('[data-testid="wizard"]')`
   )
-  console.log(`\n引导层：${onboardingHow}，显示=${onboardingShown}`)
+  const onboardingHow = autoOpened ? 'auto-opened（首启自动弹）' : 'opened-about（从关于页打开）'
+  if (!autoOpened) {
+    await win.webContents.executeJavaScript(`
+      (() => {
+        window.__yanStore.getState().openSettings('about');
+        return 'opened-about';
+      })()
+    `)
+    await wait(600)
+    await win.webContents.executeJavaScript(`
+      (() => {
+        const btn = document.querySelector('[data-testid="wiz-reopen"]');
+        if (btn) btn.click();
+        return btn ? 'clicked' : 'no-reopen-button';
+      })()
+    `)
+    await wait(700)
+  }
+  const onboardingShown = await win.webContents.executeJavaScript(
+    `!!document.querySelector('[data-testid="wizard"]')`
+  )
+  console.log(`\n使用向导：${onboardingHow}，显示=${onboardingShown}`)
 
   for (const g of ONBOARDING_GROUPS) {
     const size = `${g.w}x${g.h}`
-    console.log(`\n▶ onboarding ${size} ${g.theme}`)
+    console.log(`\n▶ wizard ${size} ${g.theme}`)
     win.setSize(g.w, g.h)
     await wait(260)
     await win.webContents.executeJavaScript(`document.documentElement.dataset.theme = '${g.theme}'`)
     await wait(500)
+    /* 每组首图都回欢迎页，尺寸之间才是同一屏的比较 */
+    await win.webContents.executeJavaScript(
+      `(() => { document.querySelector('[data-testid="wiz-step-welcome"]')?.click(); return 'ok' })()`
+    )
+    await wait(320)
     const geometry = await win.webContents.executeJavaScript(`
       (() => {
         const d = document.documentElement;
-        const primary = document.querySelector('[data-testid="onboarding-primary"], .ob-primary, button');
         return {
           sw: d.scrollWidth, cw: d.clientWidth, sh: d.scrollHeight, ch: d.clientHeight,
           uiScale: window.__yanStore.getState().settings?.uiScale ?? null,
           theme: document.documentElement.dataset.theme || '',
-          must: { '引导层': !!document.querySelector('[data-testid="onboarding"]'), '主按钮': !!document.querySelector('[data-testid="ob-done"], .ob-btn') }
+          must: { '使用向导': !!document.querySelector('[data-testid="wizard"]'), '主按钮': !!document.querySelector('[data-testid="wiz-next"]') }
         };
       })()
     `)
-    await shot(`matrix-onboarding-${size}-100-${g.theme}-${STAMP}.png`, geometry)
+    await shot(`matrix-wizard-${size}-100-${g.theme}-${STAMP}.png`, geometry)
+
+    /* 大尺寸那组多截各步：外观 / 提醒 / 接入 / 上下文 / 功能入口 */
+    if (g.w === 1440) {
+      for (const step of ['theme', 'sound', 'auth', 'context', 'done']) {
+        await win.webContents.executeJavaScript(
+          `(() => { document.querySelector('[data-testid="wiz-step-${step}"]')?.click(); return 'ok' })()`
+        )
+        await wait(520)
+        const geo = await win.webContents.executeJavaScript(`
+          (() => {
+            const d = document.documentElement;
+            return {
+              sw: d.scrollWidth, cw: d.clientWidth, sh: d.scrollHeight, ch: d.clientHeight,
+              theme: document.documentElement.dataset.theme || '',
+              must: { '使用向导': !!document.querySelector('[data-testid="wizard"]'), '当前步': !!document.querySelector('[data-testid="wiz-panel-${step}"]') }
+            };
+          })()
+        `)
+        await shot(`matrix-wizard-step-${step}-${size}-${g.theme}-${STAMP}.png`, geo)
+      }
+    }
   }
   }
 

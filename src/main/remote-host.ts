@@ -124,7 +124,8 @@ export function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown
 
 export async function remoteSnapshot(): Promise<Record<string, unknown>> {
   const settings = await getSettings()
-  const summaries = await listSessions(200, settings.projects)
+  /* 远程列表与桌面同口径：只显示链代表段，旧段不重复出现。 */
+  const summaries = await filterChainRepresentatives(await listSessions(200, settings.projects))
   const state = host.ac()?.getState() ?? null
   const connection = host.ac()?.getConn() ?? { state: 'exited' as const, detail: 'pi 未运行' }
   const win = host.win()
@@ -178,6 +179,37 @@ export async function filterChainRepresentatives(list: SessionSummary[]): Promis
   return out
 }
 
+/**
+ * 把远程 / peer 传来的 sessionId 归一到它所在会话链的**代表段**。
+ *
+ * 列表只显示代表段后，旧段 id 仍可能来自手机缓存或对端旧列表；控制路径
+ * （选择 / 发送 / 改模型 / 改名）若直接按旧段 id 找文件，新消息就会写进不再
+ * 代表当前对话的旧段。归一化仍守项目边界：代表段与请求段必须属于同一项目
+ * （含同为空），否则明确拒绝 —— peer 只获授权一个项目时，不能借归一化读到
+ * 另一个项目的内容。
+ */
+async function resolveChainSession(sessionId: string): Promise<
+  { ok: true; summary: SessionSummary } | { ok: false; status: number; error: string }
+> {
+  const settings = await getSettings()
+  const list = await listSessions(500, settings.projects)
+  const requested = list.find((item) => item.id === sessionId)
+  if (!requested) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+  await host.sessionChains.load()
+  const representativePath = host.sessionChains.representativeOf(requested.path)
+  const requestedKey = normalizeChainKey(requested.path)
+  if (!representativePath || normalizeChainKey(representativePath) === requestedKey) {
+    return { ok: true, summary: requested }
+  }
+  const representativeKey = normalizeChainKey(representativePath)
+  const representative = list.find((item) => normalizeChainKey(item.path) === representativeKey)
+  if (!representative) return { ok: false, status: 409, error: '会话链的代表段已不可用，请刷新后重试' }
+  if ((representative.projectId ?? null) !== (requested.projectId ?? null)) {
+    return { ok: false, status: 409, error: '该会话链跨项目，已拒绝把操作归一到代表段' }
+  }
+  return { ok: true, summary: representative }
+}
+
 export async function remoteHistory(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult> {
   const settings = await getSettings()
   const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
@@ -211,9 +243,10 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
 
 /** 通过稳定 sessionId 切换当前桌面查看实例，并复用现有 runner 规则。 */
 export async function remoteSelectSession(sessionId: string): Promise<RemoteOperationResult> {
+  const resolved = await resolveChainSession(sessionId)
+  if (!resolved.ok) return resolved
+  const summary = resolved.summary
   const settings = await getSettings()
-  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
-  if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
 
   if (!host.runners()) {
     const started = await host.startAgent()
@@ -260,10 +293,11 @@ export async function remoteNewSession(): Promise<RemoteOperationResult> {
 }
 
 /** 直接向目标会话发送，不改变桌面当前视图；必要时创建后台 runner。 */
-export async function withRemoteSession(sessionId: string, operation: (agent: AgentController, runId: string) => Promise<RemoteOperationResult>): Promise<RemoteOperationResult> {
+export async function withRemoteSession(sessionId: string, operation: (agent: AgentController, runId: string, summary: SessionSummary) => Promise<RemoteOperationResult>): Promise<RemoteOperationResult> {
+  const resolved = await resolveChainSession(sessionId)
+  if (!resolved.ok) return resolved
+  const summary = resolved.summary
   const settings = await getSettings()
-  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
-  if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
 
   if (!host.runners()) {
     const started = await host.startAgent()
@@ -297,13 +331,14 @@ export async function withRemoteSession(sessionId: string, operation: (agent: Ag
   const agent = host.runners()!.agentOf(selected.id)
   if (!agent) return { ok: false, status: 503, error: '目标运行实例已退出' }
   host.pushRunners()
-  return operation(agent, selected.runId!)
+  return operation(agent, selected.runId!, summary)
 }
 
 export async function remoteModels(sessionId: string): Promise<RemoteOperationResult> {
-  const summary = (await listSessions(500, (await getSettings()).projects)).find((item) => item.id === sessionId)
-  if (!summary) return { ok: false, status: 404, error: '找不到目标会话' }
-  const status = host.runners()?.statuses().find((item) => item.sessionId === sessionId)
+  const resolved = await resolveChainSession(sessionId)
+  if (!resolved.ok) return resolved
+  const summary = resolved.summary
+  const status = host.runners()?.statuses().find((item) => item.sessionId === summary.id)
   const agent = status ? host.runners()?.agentOf(status.runId) : host.ac()
   if (!agent) return { ok: false, status: 503, error: '请先在电脑启动模型连接' }
   const models = await agent.listModels()
@@ -320,11 +355,11 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
 
   if (command.action === 'send') {
     if (command.images?.some((image) => nativeImage.createFromBuffer(Buffer.from(image.data, 'base64')).isEmpty())) return { ok: false, status: 400, error: '图片无法解码，请重新选择' }
-    return withRemoteSession(command.sessionId, async (agent, runId) => {
+    return withRemoteSession(command.sessionId, async (agent, runId, summary) => {
       const model = agent.getState()?.model
       if (command.images?.length && model?.input && !model.input.includes('image')) return { ok: false, status: 409, error: '当前模型不支持图片，请选择支持图片的模型' }
       const result = await agent.send(command.text, command.images)
-      return result.ok ? { ok: true, data: { ...result, runId, sessionId: command.sessionId } } : { ok: false, status: 409, error: result.error ?? '目标会话未能接收消息' }
+      return result.ok ? { ok: true, data: { ...result, runId, sessionId: summary.id } } : { ok: false, status: 409, error: result.error ?? '目标会话未能接收消息' }
     })
   }
   if (command.action === 'model') {
@@ -363,17 +398,17 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
     return { ok: true, data: { runId: command.runId, ...(await agent.abort()) } }
   }
 
-  const settings = await getSettings()
-  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === command.sessionId)
-  if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
-  const saved = await setManualTitle(command.sessionId, command.name)
+  const resolved = await resolveChainSession(command.sessionId)
+  if (!resolved.ok) return resolved
+  const summary = resolved.summary
+  const saved = await setManualTitle(summary.id, command.name)
   if (!saved.ok) return { ok: false, status: 500, error: saved.error ?? '保存会话名称失败' }
-  if (host.ac()?.getState()?.sessionId === command.sessionId) {
+  if (host.ac()?.getState()?.sessionId === summary.id) {
     const renamed = await host.ac()!.renameSession(command.name)
     if (!renamed.ok) return { ok: false, status: 409, error: renamed.error ?? '当前会话名称未能同步到 pi' }
   }
-  host.push({ ch: 'session-title', payload: { sessionId: command.sessionId, title: command.name } })
-  return { ok: true, data: { sessionId: command.sessionId, name: command.name } }
+  host.push({ ch: 'session-title', payload: { sessionId: summary.id, title: command.name } })
+  return { ok: true, data: { sessionId: summary.id, name: command.name } }
 }
 
 /** 远程端能看到的成果字段：去掉电脑上的绝对路径（内容经 artifact 接口按 id 读取） */
@@ -524,9 +559,10 @@ export const peerHostHandlers: PeerHostHandlers = {
   },
   async sessions(projectIds) {
     const settings = await getSettings()
-    return (await listSessions(500, settings.projects))
+    const list = (await listSessions(500, settings.projects))
       .filter((summary) => !!summary.projectId && projectIds.includes(summary.projectId))
-      .map(remoteSessionSummary)
+    /* 对端看到的也是「一条会话」：只给链代表段；projectOfSession 仍按请求段项目授权。 */
+    return (await filterChainRepresentatives(list)).map(remoteSessionSummary)
   },
   async projectOfSession(sessionId) {
     return (await peerSummaryOf(sessionId))?.projectId ?? null

@@ -120,6 +120,9 @@
 .ui-choice-hint { padding: var(--sp-1) var(--sp-2); border-top: 1px solid var(--border-soft); margin-top: var(--sp-1); color: var(--fg-mute); font-size: var(--fs-xs); }
 .btn.ui-choice-trigger > .ico:last-child { transform: rotate(90deg); opacity: 0.6; transition: transform var(--dur) var(--ease); }
 .btn.ui-choice-trigger[aria-expanded='true'] > .ico:last-child { transform: rotate(-90deg); }
+/* 折叠触发：末位箭头收起朝右、展开转 90° 朝下。只动末尾 .ico，不影响文字前的图标。 */
+.btn.ui-disclosure-trigger > .ico:last-child { transition: transform var(--dur) var(--ease); }
+.btn.ui-disclosure-trigger[aria-expanded='true'] > .ico:last-child { transform: rotate(90deg); }
 .ui-wheel { position: relative; isolation: isolate; min-width: 100px; overflow: hidden; }
 .ui-wheel-scroll { height: 110px; overflow: hidden; overscroll-behavior: contain; scrollbar-width: none; padding-block: 44px; box-sizing: border-box; perspective: 150px; perspective-origin: 50% 50%; mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.3), #000 32%, #000 68%, rgb(0 0 0 / 0.3)); }
 .ui-wheel-scroll::-webkit-scrollbar { display: none; }
@@ -673,7 +676,7 @@ select.ui-input {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-4);
-  padding: 12px var(--sp-3);
+  padding: var(--sp-3) var(--sp-3);
   border-radius: var(--r-md);
   transition: background var(--dur) var(--ease);
 }
@@ -1059,7 +1062,7 @@ select.ui-input {
 .ui-step-slider.disabled .ui-step-thumb { animation: none; box-shadow: none; }
 .ui-step-value { display: inline-block; animation: ui-step-value-in var(--dur-200) var(--mo-ease); }
 .ui-step-labels { position: relative; height: 22px; margin-top: 2px; }
-.ui-step-label { position: absolute; top: 0; transform: translateX(-50%); padding: 2px 4px; border: none; background: transparent; color: var(--fg-mute); font: inherit; font-size: var(--fs-xs); white-space: nowrap; cursor: pointer; border-radius: var(--r-xs); transition: color var(--dur-200) var(--ease), background var(--dur-200) var(--ease); }
+.ui-step-label { position: absolute; top: 0; transform: translateX(-50%); padding: 2px var(--sp-1); border: none; background: transparent; color: var(--fg-mute); font: inherit; font-size: var(--fs-xs); white-space: nowrap; cursor: pointer; border-radius: var(--r-xs); transition: color var(--dur-200) var(--ease), background var(--dur-200) var(--ease); }
 .ui-step-label.first { transform: translateX(-9px); }
 .ui-step-label.last { transform: translateX(calc(-100% + 9px)); }
 .ui-step-label:hover:not(:disabled) { color: var(--fg); background: var(--bg-3); }
@@ -1078,7 +1081,7 @@ select.ui-input {
 .ui-usage-legend { list-style: none; margin: 0; padding: 0; }
 .ui-usage-legend li { color: var(--fg); font-size: var(--fs-sm); }
 .ui-usage-legend li.free .ui-usage-name { color: var(--fg-mute); }
-.ui-usage-swatch { display: block; width: 10px; height: 10px; border-radius: 3px; }
+.ui-usage-swatch { display: block; width: 10px; height: 10px; border-radius: var(--r-xs); }
 .ui-usage-num { text-align: right; }
 .c-system { background: var(--fg-mute); }
 .c-user { background: var(--accent); }
@@ -1107,13 +1110,13 @@ select.ui-input {
 /* ── 抬高一级的块：表单卡片等（Agent 协作的新建区） ── */
 .ui-card { background: var(--bg-2); border: 1px solid var(--border-soft); border-radius: var(--r-md); }
 /* ── 选择片：单选的一组可点项（Agent 选择）；选中为强调描边 + 软底，不可用时置灰 ── */
-.ui-choice { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 var(--sp-2) 0 4px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-1); color: var(--fg-dim); font: inherit; font-size: var(--fs-sm); cursor: pointer; transition: border-color var(--dur-200) var(--ease), background var(--dur-200) var(--ease), color var(--dur-200) var(--ease); }
+.ui-choice { display: inline-flex; align-items: center; gap: calc(var(--sp-1) * 1.5); height: 26px; padding: 0 var(--sp-2) 0 var(--sp-1); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-1); color: var(--fg-dim); font: inherit; font-size: var(--fs-sm); cursor: pointer; transition: border-color var(--dur-200) var(--ease), background var(--dur-200) var(--ease), color var(--dur-200) var(--ease); }
 .ui-choice:hover:not(:disabled) { border-color: var(--border-str); color: var(--fg); }
 .ui-choice.sel { border-color: var(--accent-line); background: var(--accent-soft); color: var(--fg); }
 .ui-choice:disabled { opacity: var(--ctl-disabled-opacity); cursor: default; }
 .ui-choice small { color: var(--fg-mute); font-size: var(--fs-xs); }
 /* ── 字母标识：Agent/CLI 的首字母方块 ── */
-.ui-letter-mark { display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: var(--r-xs); background: var(--bg-3); color: var(--fg-dim); font-family: var(--font-mono); font-size: 11px; font-weight: var(--fw-medium); }
+.ui-letter-mark { display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: var(--r-xs); background: var(--bg-3); color: var(--fg-dim); font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-medium); }
 .ui-choice.sel .ui-letter-mark { background: var(--accent); color: var(--bg-0); }
 /* ── 状态：圆点 + 文字；live 用强调色，其余按语义色 ── */
 .ui-status { display: inline-flex; align-items: center; gap: 5px; color: var(--fg-mute); font-size: var(--fs-xs); white-space: nowrap; }
@@ -1126,7 +1129,7 @@ select.ui-input {
 @media (prefers-reduced-motion: reduce) { .ui-status.live .ui-status-dot { animation: none; } .ui-choice { transition: none; } }
 
 /* ── 文件片：附件（待发送与已发送）；图片待发送时带缩略图 ── */
-.ui-file-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; padding: 0 4px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-2); color: var(--fg-dim); font-size: var(--fs-xs); }
+.ui-file-chip { display: inline-flex; align-items: center; gap: calc(var(--sp-1) * 1.5); max-width: 220px; height: 28px; padding: 0 var(--sp-1); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-2); color: var(--fg-dim); font-size: var(--fs-xs); }
 .ui-file-chip img, .ui-file-chip-ext { width: 20px; height: 20px; flex: none; border-radius: var(--r-xs); object-fit: cover; }
 .ui-file-chip-ext { display: grid; place-items: center; background: var(--bg-3); color: var(--fg-mute); font-family: var(--font-mono); font-size: 9px; }
 .ui-file-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -22,6 +22,9 @@
   const store = window.__yanStore
   /* 探针会在 store 里补一个助手回合锚点来验卡片渲染，结束时复原。 */
   const before = { messages: store.getState().messages, subagents: store.getState().subagents }
+  let overviewSampler
+  const liveOverviewIds = new Set()
+  let duplicateLiveCards = false
 
   /** 轮询等某个 run 进入终态 */
   const waitStatus = async (id, done, timeoutMs) => {
@@ -54,6 +57,15 @@
      * 并核对普通会话流里的 SubagentNote 是否给出状态与人类操作。
      */
     const noticesBefore = store.getState().notices.length
+    const baselineIds = new Set(store.getState().subagents.map(run => run.id))
+    // 从启动前采样真实 live 状态，避免短回复完成后才检查本应撤下的概览。
+    overviewSampler = setInterval(() => {
+      const run = store.getState().subagents.find(run => !baselineIds.has(run.id) && run.task === '请只回答两个字：收到')
+      if (!run || ['done', 'error', 'cancelled'].includes(run.status)) return
+      const row = q('[data-testid="active-subagents"]')
+      if (row?.querySelector('[data-testid="active-subagents-summary"]')?.textContent.trim()) liveOverviewIds.add(run.id)
+      if (row?.querySelector('.sg-card')) duplicateLiveCards = true
+    }, 25)
     await store.getState().startSubagent('请只回答两个字：收到')
     await sleep(800)
     let started = null
@@ -87,16 +99,28 @@
     ok(listed, '运行进入 store（主进程 push 生效）')
 
     /*
-     * 卡片只挂在**触发它的助手回合**下（U4 撤下专用管理页之后）。这条链路走的是
-     * IPC 直接启动：没有回合锚点，所以此刻会话流里不应该出现卡片；真实委派由能力
-     * 服务把助手消息 id 写进 run 的 parentMessageId。渲染路径另在下面补锚点后验证。
+     * 历史卡片只挂在**触发它的助手回合**下（U4 撤下专用管理页之后）。这条链路走的是
+     * IPC 直接启动：没有回合锚点，所以此刻会话流里不应该出现完整卡片；真实委派由能力
+     * 服务把助手消息 id 写进 run 的 parentMessageId。
+     *
+     * 但输入框上方的常驻区（U01 后）要给出**一行概览**（运行中 a · 需处理 b）
+     * 加一个查看入口，不再复制第二套完整卡片。渲染路径另在下面补锚点后验证。
      */
     await sleep(1000)
     out.push(`  诊断：subagentPreviewId=${JSON.stringify(store.getState().subagentPreviewId)}`)
     ok(
       !q(`[data-testid="subagent-note-${id}"]`),
-      '没有助手回合锚点的 IPC 启动不占会话流（卡片由委派回合承载）'
+      '没有助手回合锚点时不落会话流卡片（卡片由委派回合承载）'
     )
+    const currentView = store.getState()
+    out.push(`  概览采样：status=${currentView.subagents.find(run => run.id === id)?.status}；sid=${currentView.session?.sessionId}；peek=${currentView.peekedSessionId}；parent=${started?.parentSessionId}`)
+    const overview = q('[data-testid="active-subagents"]')
+    ok(
+      liveOverviewIds.has(id),
+      '真实运行阶段常驻区给出一行概览（不是完成后才检查）'
+    )
+    clearInterval(overviewSampler)
+    ok(!duplicateLiveCards && !overview?.querySelector('.sg-card'), '常驻区不再复制一套完整卡片')
     ok(!q('[data-testid="subagent-new"]'), '专用「调用子代理」入口已撤下')
 
     out.push('')
@@ -167,7 +191,13 @@
       /* 卡片按会话身份过滤；空会话还没有会话 id，这里无从归属，不算通过也不算失败。 */
       out.push('  ~ 跳过：当前会话还没有会话 id，卡片归属判据不适用')
     } else {
-      ok(noted && noteText.length > 0, '补上助手回合锚点后，真实 run 能渲染出状态行')
+      ok(noted && noteText.length > 0, '补上助手回合锚点后，真实 run 能渲染出卡片状态行')
+      /* 同一个 child 在会话流里只能有一张卡；常驻区始终不再复制卡片。 */
+      ok(
+        document.querySelectorAll(`[data-testid="subagent-note-${id}"]`).length === 1,
+        '同一个子代理在会话流里只有一张卡（没有同一列表复制）'
+      )
+      ok(!q('[data-testid="active-subagents"] .sg-card'), '常驻区始终没有复制卡片')
     }
 
     out.push('')
@@ -196,8 +226,9 @@
     await sleep(300)
     out.push(`  清理后剩 ${store.getState().subagents.length} 条`)
   } catch (error) {
-    out.push('  探针出错: ' + (error?.message ?? String(error)))
+    out.push('  ✗ 探针出错: ' + (error?.message ?? String(error)))
   } finally {
+    clearInterval(overviewSampler)
     store.setState(before)
   }
 

@@ -88,13 +88,39 @@ function motionDecls(css) {
 /** 关键帧定义名 */
 const keyframeNames = (css) => [...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1])
 
+/**
+ * 去掉值里的函数调用（含容器名与嵌套括号）。
+ * 只按正则剥 `var(...)` 不够：`calc(var(--i, 0) * var(--dur-180))` 剥掉内层后
+ * 还剩 `calc( * …`，会被 split 成 `calc(` / `*`，误当成关键帧名。
+ */
+function stripFunctions(value) {
+  let out = ''
+  let ident = ''
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i]
+    if (ch === '(') {
+      /* 丢掉紧邻左括号的函数名（calc / var / cubic-bezier / steps …） */
+      out = out.slice(0, out.length - ident.length)
+      ident = ''
+      let depth = 1
+      for (i++; i < value.length && depth > 0; i++) {
+        if (value[i] === '(') depth++
+        else if (value[i] === ')') depth--
+      }
+      i--
+      out += ' '
+      continue
+    }
+    ident = /[\w-]/.test(ch) ? ident + ch : ''
+    out += ch
+  }
+  return out
+}
+
 /** 动画名引用 */
 function referencedNames(decl) {
   if (decl.prop !== 'animation') return []
-  return decl.value
-    .replace(/!important/g, ' ')
-    .replace(/var\([^)]*\)/g, ' ')
-    .replace(/\b(?:cubic-bezier|steps|linear)\([^)]*\)/g, ' ')
+  return stripFunctions(decl.value.replace(/!important/g, ' '))
     .split(/[\s,]+/)
     .filter((t) => t && !ANIM_KEYWORDS.has(t) && !/^[-+]?[\d.]/.test(t))
 }
@@ -185,7 +211,10 @@ function selftest() {
     ['a.css', '/* 200ms 与 cubic-bezier(0.2,0,0.2,1) 写在注释里不算 */ .x { animation: mo-in-up var(--dur-200) var(--ease); }', '注释被忽略', false],
     ['motion.css', ':root { --mo-ease: cubic-bezier(0.22, 1, 0.36, 1); } @keyframes mo-in-up { to { opacity: 1 } }', 'motion.css 里定义关键帧与曲线 token', false],
     ['a.css', '.x { transition: visibility var(--dur-0) linear var(--dur-220); }', '已 token 化的写法', false],
-    ['a.css', '.x { animation: mo-in-up var(--dur-200) var(--ease) both; }', '规范写法', false],
+    ['a.css', '.x { animation: mo-in-up var(--dur-200) var(--ease); }', '规范写法', false],
+    ['a.css', '.x { animation: mo-in-up var(--dur-200) ease-in-out calc(var(--i, 0) * var(--dur-180)) infinite; }', 'calc() 与乘号不被当成关键帧', false],
+    ['a.css', '.x { animation: mo-in-up calc(var(--dur-200) + var(--dur-180)) var(--ease); }', '嵌套 calc 与函数名不进关键帧', false],
+    ['a.css', '.x { animation: mo-in-up var(--dur-200) calc(var(--i, 0) * 0.18s) infinite; }', 'calc 里的裸时长仍要报（但不是关键帧问题）', true],
     ['a.css', '/* 只有开没有关\n.x { animation: mo-in-up var(--dur-200) var(--ease); }', '注释不配平要报', true],
     ['a.css', '.x { animation: mo-in-up var(--dur-200) var(--ease); }\n*/ 游离的关闭符号', '游离的注释关闭符号要报', true],
     ['a.css', '.x { animation: mo-in-up var(--nope-token); }', '未定义令牌（警告级）', true],

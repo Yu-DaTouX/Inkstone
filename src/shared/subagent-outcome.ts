@@ -17,6 +17,7 @@ export type SubagentOutcomeKey =
   | 'timeout'
   | 'budget'
   | 'failed'
+  | 'dismissed'
   | 'stopped'
   | 'review'
   | 'conflict'
@@ -37,7 +38,13 @@ export interface SubagentOutcome {
   rank: 0 | 1 | 2
 }
 
-type OutcomeInput = Pick<SubagentRun, 'status' | 'review'> & Partial<Pick<SubagentRun, 'endReason' | 'wrapUp'>>
+type OutcomeInput = Pick<SubagentRun, 'status' | 'review'> &
+  Partial<Pick<SubagentRun, 'endReason' | 'wrapUp' | 'dismissedAt'>>
+
+/** 宿主已持久标记「不再处理」且没有待审阅改动：原始失败原因仍在记录里，只是移出需处理区。 */
+export function isDismissed(run: Pick<SubagentRun, 'status'> & Partial<Pick<SubagentRun, 'dismissedAt'>>): boolean {
+  return run.status === 'error' && typeof run.dismissedAt === 'number' && Number.isFinite(run.dismissedAt)
+}
 
 export function subagentOutcome(run: OutcomeInput): SubagentOutcome {
   const partial = run.endReason === 'timeout' || run.endReason === 'budget'
@@ -54,6 +61,7 @@ export function subagentOutcome(run: OutcomeInput): SubagentOutcome {
   if (run.status === 'running') return make(run.wrapUp ? 'wrapUp' : 'running', run.wrapUp ? 'warn' : 'live', false, true)
   if (run.status === 'cancelled') return make('stopped', 'mute', false)
   if (run.status === 'error') {
+    if (isDismissed(run)) return make('dismissed', 'mute', false)
     if (run.endReason === 'timeout') return make('timeout', 'warn', true)
     if (run.endReason === 'budget') return make('budget', 'warn', true)
     return make('failed', 'err', true)

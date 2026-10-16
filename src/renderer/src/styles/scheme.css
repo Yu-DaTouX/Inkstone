@@ -723,7 +723,7 @@
 }
 /* 运行中的方点占位与字符状态点同宽，标题才不会比其他行靠左 */
 .srow-dot-run {
-  margin-inline: calc((2ch - 6px) / 2);
+  margin-inline: calc((2ch - var(--sp-1) * 1.5) / 2);
 }
 .srow-time {
   font-size: var(--fs-xs);
@@ -1007,7 +1007,7 @@ html[data-theme='light'] .outline-preview {
 /* ───────────────────────────── 状态栏运行状态：圆点 + 词，运行时圆点呼吸 ───────────────────────────── */
 .sb-mode[data-mode] {
   grid-template-columns: auto auto;
-  column-gap: 6px;
+  column-gap: calc(var(--sp-1) * 1.5);
   align-items: center;
   padding: 0 var(--sp-2);
   letter-spacing: 0;
@@ -1026,15 +1026,14 @@ html[data-theme='light'] .outline-preview {
   border-color: transparent;
   opacity: 1;
 }
-.sb-mode[data-mode='run'] .sb-mode-dot { animation: sb-breathe 1.6s ease-in-out infinite; }
+.sb-mode[data-mode='run'] .sb-mode-dot { animation: sb-breathe var(--dur-1600) ease-in-out infinite; }
 .sb-mode-label { grid-area: 1 / 2; }
-@keyframes sb-breathe { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .sb-mode[data-mode='run'] .sb-mode-dot { animation: none; } }
 
 /* ───────────────────────────── 顶栏子代理入口与浮层 ───────────────────────────── */
-.sa-indicator { gap: 4px; position: relative; color: var(--fg-dim); }
+.sa-indicator { gap: var(--sp-1); position: relative; color: var(--fg-dim); }
 .sa-indicator[data-live='1'] { color: var(--accent); }
-.sa-indicator[data-live='1'] .ico { animation: sb-breathe 1.6s ease-in-out infinite; }
+.sa-indicator[data-live='1'] .ico { animation: sb-breathe var(--dur-1600) ease-in-out infinite; }
 .sa-indicator-n { font-variant-numeric: tabular-nums; font-weight: 600; }
 .sa-indicator-flag { position: absolute; top: 2px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
 .sa-pop { position: fixed; z-index: 80; width: min(360px, calc(100vw - 16px)); max-height: 60vh; overflow: auto; padding: var(--sp-3); font-size: var(--fs-sm); }
@@ -1048,7 +1047,7 @@ html[data-theme='light'] .outline-preview {
 .sa-pop-row.tone-warn { --pop-tone: var(--warn); }
 .sa-pop-row.tone-ok { --pop-tone: var(--ok); }
 .sa-pop-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pop-tone); }
-.sa-pop-row.tone-live .sa-pop-dot { opacity: .25; animation: sa-chase 1.6s ease-in-out calc(var(--i, 0) * 0.18s) infinite; box-shadow: none; }
+.sa-pop-row.tone-live .sa-pop-dot { opacity: .25; animation: sa-chase var(--dur-1600) ease-in-out calc(var(--i, 0) * var(--dur-180)) infinite; box-shadow: none; }
 .sa-pop-row.tone-live { --room-tone: var(--accent); }
 .sa-pop-task { display: flex; flex-direction: column; min-width: 0; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .sa-pop-name, .sa-pop-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

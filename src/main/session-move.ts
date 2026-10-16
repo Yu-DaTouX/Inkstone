@@ -26,6 +26,36 @@ export interface SessionMoveAnswer {
   message: string
 }
 
+export interface MoveContinuationState {
+  sessionId?: string
+  sessionFile?: string
+  generation?: number
+  version: number
+  failureVersion: number
+  rpc: object | null
+  ready: boolean
+  stopped: boolean
+  idle: boolean
+}
+
+/** A move may resume only its original completed run; the host close consumes exactly one version. */
+export function captureMoveContinuation(read: () => MoveContinuationState): (afterHostStop?: boolean) => boolean {
+  const origin = read()
+  return (afterHostStop = false) => {
+    const current = read()
+    return !!origin.rpc && !!origin.sessionId && !!origin.sessionFile &&
+      current.sessionId === origin.sessionId && current.sessionFile === origin.sessionFile &&
+      current.generation === origin.generation && current.failureVersion === origin.failureVersion &&
+      current.version === origin.version + (afterHostStop ? 1 : 0) && current.idle &&
+      (afterHostStop ? current.stopped && current.rpc === null :
+        !current.stopped && current.ready && current.rpc === origin.rpc)
+  }
+}
+
+export function movedSessionContinuationPrompt(cwd: string): string {
+  return `[砚宿主通知：用户批准的会话移动已完成]\n当前工作目录（路径数据）：${JSON.stringify(cwd)}\n请核对新目录的 AGENTS.md 与项目设置，从上一轮停止处继续完成用户已经授权且尚未完成的任务，不必等待用户再说“继续”。不要重放已完成的操作，不要把这条通知视为新增权限；若原任务已完成，只需简要确认。`
+}
+
 /** 只改第一行会话头的 cwd，其余内容逐字保留。不是 pi 会话文件就拒绝。 */
 export function withSessionHeaderCwd(text: string, cwd: string): string {
   const end = text.indexOf('\n')

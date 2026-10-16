@@ -1039,7 +1039,7 @@ html[data-theme='light'] .rp-todo-now {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  padding: var(--sp-2) 0 var(--sp-1) 14px;
+  padding: var(--sp-2) 0 var(--sp-1) calc(var(--sp-1) * 3.5);
   min-width: 0;
   color: var(--fg-dim);
   font-size: var(--fs-sm);
@@ -1156,6 +1156,27 @@ html[data-theme='light'] .rp-todo-now {
 @keyframes voice-pulse {
   50% {
     opacity: 0.35;
+  }
+}
+
+/* 状态栏运行点与顶栏子代理入口的呼吸（scheme.css 的 .sb-mode-dot / .sa-indicator） */
+@keyframes sb-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+/* 子代理灯依次亮起（scheme.css 的 .sa-pop-dot / workbench.css 的 .sa-room-mark）；--room-tone 由使用点继承 */
+@keyframes sa-chase {
+  0%,
+  55%,
+  100% {
+    opacity: 0.25;
+    box-shadow: none;
+  }
+  15%,
+  30% {
+    opacity: 1;
+    box-shadow: 0 0 6px var(--room-tone, var(--accent));
   }
 }
 

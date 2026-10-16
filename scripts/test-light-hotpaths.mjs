@@ -6,6 +6,7 @@ import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import vm from 'node:vm'
 import { build } from 'esbuild'
+import ts from 'typescript'
 
 const source = await readFile('src/main/index.ts', 'utf8')
 const temp = await mkdtemp(join(tmpdir(), 'inkstone-hotpaths-'))
@@ -14,20 +15,61 @@ process.env.YAN_DATA_DIR = temp
 let checks = 0
 const check = (condition, label) => { assert(condition, label); checks++ }
 try {
+  /* handler 的归属校验依赖同文件纯函数，夹具执行真实函数，不用空桩绕过。 */
+  const sourceTree = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true)
+  const ownershipHelperNames = ['normalizeExpectedRuntime', 'targetMatchesExpected', 'resolveExpectedTarget', 'pinSendTarget', 'pinnedTargetMatches']
+  const ownershipHelpers = ownershipHelperNames.map(name => {
+    const node = sourceTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name)
+    assert(node, `Missing production helper: ${name}`)
+    return node.getText(sourceTree)
+  }).join('\n')
+  /* pin 复核用到真实 `sameRuntimeEnvelope`（pending → 真实 SID 的同身份迁移），不重写。 */
+  const runStateSource = await readFile('src/core/run-state.ts', 'utf8')
+  const runStateTree = ts.createSourceFile('run-state.ts', runStateSource, ts.ScriptTarget.Latest, true)
+  const sameEnvelopeNode = runStateTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'sameRuntimeEnvelope')
+  assert(sameEnvelopeNode, 'Missing production helper: sameRuntimeEnvelope')
+  const ownershipDeps = ownershipHelpers + '\n' + sameEnvelopeNode.getText(runStateTree).replace(/^export /, '')
   const compileHandler = async (name, end, ports) => {
     const start = source.indexOf(`  handle('yan:${name}',`)
     assert(start >= 0)
     const text = source.slice(start, source.indexOf(end, start))
     const { transform } = await import('esbuild')
-    const js = await transform(text, { loader: 'ts', target: 'es2022' })
+    const js = await transform(ownershipDeps + '\n' + text, { loader: 'ts', target: 'es2022' })
     let callback
     vm.runInNewContext(js.code, { ...ports, handle: (_channel, handler) => { callback = handler } })
     return callback
   }
+
+  /*
+   * fixture runners 必须执行**真实**的同 cwd 复核 helper（不绕过生产守卫）：
+   * this guard is now part of `yan:send`; a fixture that omitted it would crash,
+   * and one that faked it away would stop testing the production path.
+   */
+  const guardCompiled = await build({
+    entryPoints: [resolve('src/main/session-send-guard.ts')],
+    bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent'
+  })
+  const { guardSameCwdExecute } = await import(
+    `data:text/javascript;base64,${Buffer.from(guardCompiled.outputFiles[0].text).toString('base64')}`
+  )
+
   let sent, captured = 0, aborted = 0
-  const agent = { running: true, getState: () => ({ sessionId: 'session-a' }), workingDirectory: temp,
+  let busyElsewhere = false
+  const agent = { running: true, workingDirectory: temp, getState: () => ({ sessionId: 'session-a' }),
     send: (...args) => { sent = args; return { ok: true } }, abort: async () => { aborted++; return { steering: ['queued'], followUp: [] } } }
-  const ports = { runners: { activeRunnerId: 'a', agentOf: id => id === 'a' ? agent : undefined }, handoffPending: new Map(),
+  const runners = {
+    activeRunnerId: 'a',
+    agentOf: id => id === 'a' ? agent : undefined,
+    runtimeOf: id => id === 'a' ? { runId: id, generation: 1, sessionId: agent.getState()?.sessionId, sessionFile: agent.getState()?.sessionFile } : undefined,
+    guardExecute: id => {
+      const target = id === 'a' ? agent : undefined
+      return guardSameCwdExecute(
+        target ? { runnerId: id, cwd: target.workingDirectory, selfBusy: target.getState()?.isAgentRunning === true } : null,
+        () => busyElsewhere
+      )
+    }
+  }
+  const ports = { runners, handoffPending: new Map(),
     getSettings: async () => ({ checkpointsEnabled: true }), captureCheckpoint: async () => { captured++ }, ac: () => agent,
     startAgent: async () => { throw Error('unexpected restart') }, abandonHandoff: async () => {} }
   const send = await compileHandler('send', "  handle('yan:steer'", ports)
@@ -38,6 +80,18 @@ try {
   agent.getState = () => ({ sessionId: 'session-a', isAgentRunning: true })
   await send('queued message')
   check(captured === 1, '忙碌会话发送保持队列语义')
+
+  /* 同 cwd 另有忙碌实例：复核拒绝，且不发送、不创建检查点（不伪删 guard 绕过）。 */
+  agent.getState = () => ({ sessionId: 'session-a' })
+  busyElsewhere = true
+  const beforeSent = sent
+  const rejected = await send('blocked message')
+  check(rejected && rejected.ok === false && /同一工作目录/.test(rejected.error ?? ''), '同 cwd 冲突时发送前置复核拒绝')
+  check(sent === beforeSent, '被拒绝的发送不调用实例 send')
+  check(captured === 1, '被拒绝的发送不创建检查点')
+  busyElsewhere = false
+
+  agent.getState = () => ({ sessionId: 'session-a', isAgentRunning: true })
   const abort = await compileHandler('abort', '  /*\n   * 放弃目标', ports)
   const cleared = await abort()
   check(aborted === 1 && cleared.steering[0] === 'queued', '停止直接终止当前实例，并返回排队文本')
@@ -51,14 +105,49 @@ try {
       } }] })
     return import(pathToFileURL(out).href)
   }
+
+  /* producer 需要真实 store 与必要 workModeKey 宿主：缺 deps 会让生产加载域状态。 */
+  const workModeModule = await bundle('src/main/work-mode-service.ts', 'work-mode-service')
+  const { WorkModeStore, normalizeSessionFileKey, writeWorkModeSnapshot } = workModeModule
+  const store = new WorkModeStore({ root: temp })
+  await store.load()
+  const sessionFile = join(temp, 'sessions', 'a.jsonl')
+  const sessionKey = normalizeSessionFileKey(sessionFile)
+  agent.getState = () => ({ sessionId: 'session-a', sessionFile })
+
+  /* 上一份逐轮快照带待审标记与退休模式：待审要保留、退休模式不得复活。 */
+  await writeWorkModeSnapshot('a', { mode: 'autonomous', revision: 9, questionFrequency: 'inherit', planApprovalPending: true }, temp)
+
   const coordinator = await bundle('src/main/goal-coordinator.ts', 'coordinator')
   const messages = []
-  coordinator.configureGoalCoordinator({ pushFrom: (id, msg) => messages.push({ id, ...msg }) })
+  coordinator.configureGoalCoordinator({
+    runners: () => runners,
+    workModes: store,
+    agentProfiles: {}, spaces: {}, contextAssembler: {}, handoffDiag: {},
+    pushFrom: (id, msg) => messages.push({ id, ...msg })
+  })
   coordinator.goals.load = async () => { throw Error('ordinary compatibility push must not load goals') }
-  await coordinator.pushWorkMode('a'); await coordinator.pushAgentProfile('b')
-  check(messages[0].id === 'a' && messages[0].payload.mode === 'standard', '模式兼容推送保持运行身份且不读目标')
+  const inheritPush = await coordinator.pushWorkMode('a')
+  const profilePush = await coordinator.pushAgentProfile('b')
+  check(messages[0].id === 'a' && inheritPush.mode === 'standard' && inheritPush.revision === 0 && inheritPush.questionFrequency === 'inherit',
+    '模式兼容推送固定 standard / revision 0 / inherit，且不读目标')
   check(messages[1].id === 'b' && messages[1].payload.activity === 'answer', '档案兼容推送保持运行身份且不生成快照')
-  check(!(await readdir(temp)).some(name => ['work-mode', 'agent-profile', 'goals.json'].includes(name)), '兼容推送不生成旧领域文件')
+
+  await store.setQuestionFrequency(sessionKey, 'eager')
+  const explicitPush = await coordinator.pushWorkMode('a')
+  check(explicitPush.mode === 'standard' && explicitPush.revision === 1 && explicitPush.questionFrequency === 'eager',
+    '频率显式时推送携带 store 权威 revision 且模式固定 standard')
+
+  const snapshot = JSON.parse(await readFile(join(temp, 'work-mode', 'a.json'), 'utf8'))
+  check(snapshot.mode === 'standard', '逐轮快照固定 standard，不复活旧 autonomous')
+  check(snapshot.revision === 1, '逐轮快照携带 store 权威 revision')
+  check(snapshot.questionFrequency === 'eager', '逐轮快照携带显式频率')
+  check(snapshot.planApprovalPending === true, '逐轮快照保留上一份的必要待审标记')
+
+  const rootEntries = await readdir(temp)
+  check(!rootEntries.includes('goals.json'), '兼容推送不加载/创建目标存储（no-goals）')
+  check(!rootEntries.includes('agent-profile') && !rootEntries.includes('agent-profiles.json'), '兼容推送不创建档案快照（no-agent-profile）')
+  check(rootEntries.includes('work-mode'), '只允许频率必要的 work-mode 快照目录')
   const catalog = await bundle('src/main/capabilities/catalog.ts', 'catalog')
   const built = catalog.buildCatalog([])
   check(!built.capabilities.some(c => /^builtin:(goal|knowledge|follow|research)\./.test(c.id)), '默认模型目录不再推荐已退出的领域流程')

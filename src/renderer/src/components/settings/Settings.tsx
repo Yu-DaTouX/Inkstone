@@ -91,14 +91,17 @@ export function Settings({
   onClose,
   onTabChange,
   onShowOnboarding,
+  onShowWizard,
   onShowShortcuts
 }: {
   open: boolean
   tab: SettingsTab
   onClose: () => void
   onTabChange: (t: SettingsTab) => void
-  /** 「重新查看首次引导」：引导只在首次启动时自动出现，这里给一个找得到的入口 */
+  /** 「重新查看首次引导」：自检清单不自动出现，这里给一个找得到的入口 */
   onShowOnboarding: () => void
+  /** 「配置向导」：重新走一遍外观 / 提醒 / 接入 / 上下文 */
+  onShowWizard: () => void
   /** 「快捷键」：打开只读快捷键表（Ctrl+/）；调用方先收起设置 */
   onShowShortcuts: () => void
 }) {
@@ -246,7 +249,7 @@ export function Settings({
               { id: 'peer', label: t('set.peer'), content: <PeerTab /> }
             ]} />
           ) : (
-            <AboutTab onShowOnboarding={onShowOnboarding} />
+            <AboutTab onShowOnboarding={onShowOnboarding} onShowWizard={onShowWizard} />
           )}
           </Suspense>
         </div>
@@ -514,7 +517,7 @@ function InputTab({ onShowShortcuts }: { onShowShortcuts: () => void }) {
 }
 
 /** 主题存在 App 的 state + 主进程设置里；这里通过事件让 App 处理 */
-function useThemeSetter(): (t: 'dark' | 'light', origin?: { x: number; y: number }) => void {
+export function useThemeSetter(): (t: 'dark' | 'light', origin?: { x: number; y: number }) => void {
   return (next, origin) => {
     try {
       localStorage.setItem('yan.theme', next)
@@ -550,7 +553,7 @@ const DEFAULT_SOUND: SoundSettings = {
  * 提醒：回合完成 / 需要回答 / 出错时发声或发系统通知。
  * 每个事件都能单独关、都能试听 —— 不用真跑一轮就能确认音色。
  */
-function SoundTab() {
+export function SoundTab() {
   const t = useT()
   const sound = useStore((s) => s.settings?.sound) ?? DEFAULT_SOUND
   const patchSettings = useStore((s) => s.patchSettings)
@@ -658,7 +661,7 @@ function folderName(path: string): string {
   return parts[parts.length - 1] || path
 }
 
-function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
+function AboutTab({ onShowOnboarding, onShowWizard }: { onShowOnboarding: () => void; onShowWizard: () => void }) {
   const t = useT()
   const settings = useStore((s) => s.settings)
   const session = useStore((s) => s.session)
@@ -780,6 +783,12 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
       >
         <Button size="sm" onClick={() => void redetect()} disabled={detecting} data-testid="pi-redetect">
           {detecting ? t('set.piRedetecting') : t('set.piRedetect')}
+        </Button>
+      </SettingRow>
+
+      <SettingRow name={t('set.setupWizard')} desc={t('set.setupWizardDesc')}>
+        <Button size="sm" onClick={onShowWizard} data-testid="wiz-reopen">
+          {t('set.setupWizardAction')}
         </Button>
       </SettingRow>
 

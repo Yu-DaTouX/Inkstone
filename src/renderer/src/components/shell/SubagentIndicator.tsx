@@ -43,7 +43,7 @@ export function SubagentIndicator() {
   return <>
     <Tip label={t('sb.agentsTip')}>
       <button className={`tb-icon sa-indicator${at ? ' on' : ''}`} data-live={live.length ? '1' : '0'} data-testid="sb-agents" aria-haspopup="dialog" aria-expanded={!!at}
-        aria-label={t('sb.agents', { n: live.length || attention.length })} onClick={e => setAt(old => old ? null : menuAnchor(e.currentTarget))}>
+        aria-label={t('sb.agents', { n: live.length || attention.length })} onClick={e => { const anchor = menuAnchor(e.currentTarget); setAt(old => old ? null : anchor) }}>
         <Icon name="agent" size={14} />
         <span className="sa-indicator-n">{live.length || attention.length}</span>
         {live.length && attention.length ? <span className="sa-indicator-flag" aria-hidden /> : null}

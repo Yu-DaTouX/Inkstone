@@ -24,7 +24,7 @@ import { HANDOFF_AUTO_COMPACT_THRESHOLD, handoffCommitEnabled, handoffSummary, p
 import type { HandoffPackage } from '../shared/handoff'
 
 import { isActiveGoalPhase, keepsGoalResumeOnModeChange } from '../shared/goal'
-import { WorkModeStore, writeWorkModeSnapshot } from './work-mode-service'
+import { WorkModeStore, normalizeSessionFileKey, readWorkModeSnapshot, sameWorkModeIdentity, writeWorkModeSnapshot } from './work-mode-service'
 import type { WorkMode, WorkModeState } from '../shared/work-mode'
 import type { SessionState } from '../shared/ipc'
 
@@ -691,8 +691,51 @@ export async function inheritForHandoff(info: {
    * `goal-resume/<runnerId>.json`，写给 active runner 时后台交接会串到别人身上。
    */
   try {
+    /*
+     * 目的段归属：runner id 只说明哪个进程，同一实例会被复用到别的会话；快照文件
+     * 按 runner id 命名，迟到的旧写入会把 B 的快照覆盖成 A 的偏好。捕获目的 runner
+     * 的身份（generation + 稳定 sessionId / sessionFile）后，写作锁内与 rename 前
+     * 复校一次；身份不稳 / 已变化就不写，宁可让扩展回落标准档，也不复制错偏好。
+     *
+     * 内容取**目的键**的 store 权威值（revision / 频率），模式仍固定 `standard`
+     *（与 `pushWorkMode` 同一轻量契约，不复活旧档）；待审标记从上一份快照保留。
+     */
+    const captureIdentity = () => {
+      const runners = host.runners()
+      const session = runners?.agentOf(info.runId)?.getState()
+      return {
+        id: info.runId,
+        generation: runners?.runtimeOf(info.runId)?.generation,
+        sessionId: session?.sessionId,
+        sessionFile: session?.sessionFile
+      }
+    }
+    const identity = captureIdentity()
+    const key = host.workModeKeyFor(info.runId)
+    const guard = () =>
+      sameWorkModeIdentity(identity, captureIdentity()) && host.workModeKeyFor(info.runId) === key
     const state = await host.resolveWorkMode(info.runId)
-    await writeWorkModeSnapshot(info.runId, state)
+    await host.workModes.load()
+    const stored = host.workModes.state(key)
+    const existing = await readWorkModeSnapshot(info.runId).catch(() => null)
+    const sessionFile = normalizeSessionFileKey(identity.sessionFile) ?? undefined
+    await writeWorkModeSnapshot(
+      info.runId,
+      {
+        ...state,
+        revision: stored.revision,
+        questionFrequency: stored.questionFrequency,
+        ...(existing?.planApprovalPending ? { planApprovalPending: true } : {})
+      },
+      undefined,
+      {
+        guard,
+        owner: {
+          ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
+          ...(sessionFile ? { sessionFile } : {})
+        }
+      }
+    )
     /* 目的段的续行由交接那条 resume 驱动，源片段残留的「接着干」不许跟过来 */
     await host.applyGoalResume(info.runId)
   } catch {

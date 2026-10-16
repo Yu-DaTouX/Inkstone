@@ -9,11 +9,15 @@ import { subagentOutcome } from '../../../../shared/subagent-outcome'
 import { briefPrompt } from '../../../../shared/subagent-brief'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
+import { resolveSubagentModelDisplay } from './turn-model-display'
 
 /** A bounded child transcript uses the same turns as chat, without main-session actions. */
 export function AgentMessageStream({ run }: { run: SubagentRun }) {
   const t = useT(), outcome = subagentOutcome(run)
   const stop = useStore(s => s.stopSubagent), merge = useStore(s => s.mergeSubagent), discard = useStore(s => s.discardSubagent)
+  const models = useStore(s => s.models)
+  const favorites = useStore(s => s.settings?.modelFavorites)
+  const modelDisplay = run.model ? resolveSubagentModelDisplay(run.model, models, favorites ?? []) : null
   const root = useRef<HTMLDivElement>(null), follow = useRef(true)
   const turns = useMemo(() => {
     const prompt = run.brief ? briefPrompt(run.brief, run.task) : run.task
@@ -22,6 +26,7 @@ export function AgentMessageStream({ run }: { run: SubagentRun }) {
   useLayoutEffect(() => { if (follow.current && root.current) root.current.scrollTop = root.current.scrollHeight }, [turns])
   return <>
     <div className="agent-message-caption"><Badge>{t(`sa.state.${outcome.key}` as MessageKey)}</Badge>
+      {modelDisplay ? <span className="ui-row-desc" title={modelDisplay.identity} data-testid="subagent-stream-model">{modelDisplay.label}</span> : null}
       {outcome.live ? <Button size="sm" variant="danger" onClick={() => void stop(run.id)}>{t('sa.stop')}</Button> : null}
       {run.diff?.patchPath ? <Button size="sm" onClick={() => void window.yan.openPath(run.diff!.patchPath!)}>{t('sa.viewPatch')}</Button> : null}
       {run.review === 'pending' || run.review === 'conflict' ? <><Button size="sm" onClick={() => void merge(run.id)}>{t('sa.adopt')}</Button><Button size="sm" variant="danger" onClick={() => void discard(run.id)}>{t('sa.discardChanges')}</Button></> : null}

@@ -1,0 +1,184 @@
+/*
+ * pi 原生操作面板（会话树 / 模型循环范围 / 项目信任）的版面。
+ *
+ * 外观复用 .modal（dialog.css）、.btn / .ui-list-row / .ui-badge / .ui-empty（ui.css）；
+ * 这里只写版面与层级，不重定义控件外观。遮罩、焦点圈定与原生视图让位由
+ * components/chat/NativeSessionPanel.tsx 复用既有浮层基座完成。
+ *
+ * 登记位置：styles/index.css 的 modules 层、排在 dialog.css 之后。
+ */
+
+/* 宽度沿用 .modal 的默认值（dialog.css），不另写像素值以免推高样式预算。 */
+
+.native-session-status {
+  padding: var(--sp-5) var(--sp-3);
+}
+
+.native-session-status:not(.ui-empty) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.native-session-error-detail {
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+/* ── 会话树 ── */
+
+.native-session-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-1);
+}
+
+.native-session-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--ctl-h-sm);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  user-select: none;
+}
+
+.native-session-fold {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--sp-4);
+  height: var(--sp-4);
+  padding: 0;
+}
+
+.native-session-fold .ico {
+  transition: transform var(--dur-140) var(--ease);
+}
+
+.native-session-fold .ico.open {
+  transform: rotate(90deg);
+}
+
+.native-session-kind {
+  flex: none;
+  color: var(--fg-mute);
+}
+
+.native-session-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.native-session-meta {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.native-session-note {
+  margin: 0;
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.native-session-note[data-tone='err'] {
+  color: var(--err);
+}
+
+.native-session-note[data-tone='ok'] {
+  color: var(--ok);
+}
+
+.native-session-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* ── 模型循环范围 ── */
+
+.native-session-scope-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3) 0;
+}
+
+.native-session-desc {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+
+.native-session-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-1);
+}
+
+.native-session-model-row {
+  width: 100%;
+}
+
+.native-session-model-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* ── 项目信任 ── */
+
+.native-session-trust {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  overflow-y: auto;
+}
+
+.native-session-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.native-session-field-name {
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.native-session-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-code);
+  user-select: text;
+}
+
+.native-session-risk {
+  margin: 0;
+  color: var(--warn);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+}

@@ -91,7 +91,25 @@ export default async function commandcodeExtension(pi) {
   const catalog = readJson(join(here, 'generated', 'pi-model-catalog.json'))?.models ?? {}
   const cachePath = join(dir, CACHE_FILE)
   const register = (entries) =>
-    pi.registerProvider(PROVIDER, { name: 'Command Code', baseUrl: BASE_URL, api: 'openai-completions', models: toPiModels(entries, catalog) })
+    pi.registerProvider(PROVIDER, {
+      name: 'Command Code',
+      baseUrl: BASE_URL,
+      api: 'openai-completions',
+      /*
+       * 只在环境变量存在时声明 key 来源。
+       *
+       * pi 原生要求 provider 显式声明 API key 才把环境变量当凭证；随包扩展此前
+       * 没声明，于是「只在 COMMANDCODE_API_KEY 里配 key」的用户模型注册了却一直
+       * not_ready。这里用 pi 支持的配置值语法（`$NAME` 环境引用）声明，不落明文。
+       *
+       * 不会覆盖用户的 auth.json / models.json：
+       *   · auth.json 凭证在 pi 的 resolve 里优先于扩展声明的 apiKey；
+       *   · models.json 已有 `commandcode` 条目时，本函数开头已 `handWritten` 让位，
+       *     扩展根本不注册。
+       */
+      ...(process.env.COMMANDCODE_API_KEY ? { apiKey: '$COMMANDCODE_API_KEY' } : {}),
+      models: toPiModels(entries, catalog)
+    })
   const refresh = async () => {
     const entries = await fetchModels(catalog)
     if (!entries.length) return false

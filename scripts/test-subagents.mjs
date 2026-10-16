@@ -254,17 +254,17 @@ export async function runSubagentControllerTests(ok, SubagentController) {
         return { isolation, rootCwd, cwd: rootCwd }
       }
     })
-    const pending = Array.from({ length: 11 }, (_, i) => ctrl.start(`任务 ${i + 1}`))
-    ok(ctrl.runningCount === 10, '准备期间预占10个名额')
+    const pending = Array.from({ length: 25 }, (_, i) => ctrl.start(`任务 ${i + 1}`))
+    ok(ctrl.runningCount === 24, '准备期间预占24个名额')
     release()
     const results = await Promise.all(pending)
     const accepted = results.filter((r) => r.ok)
     const rejected = results.filter((r) => !r.ok)
-    ok(accepted.length === 10, '并发启动时10个通过（槽位在准备隔离区前就占住）', `通过=${accepted.length}`)
-    ok(rejected.length === 1, '第11个并发请求被拒绝', `拒绝=${rejected.length}`)
-    ok(/最多 10 个/.test(rejected[0]?.error ?? ''), '拒绝理由说明并发上限', JSON.stringify(rejected[0]?.error))
+    ok(accepted.length === 24, '并发启动时24个通过（槽位在准备隔离区前就占住）', `通过=${accepted.length}`)
+    ok(rejected.length === 1, '第25个并发请求被拒绝', `拒绝=${rejected.length}`)
+    ok(/最多 24 个/.test(rejected[0]?.error ?? ''), '拒绝理由说明并发上限', JSON.stringify(rejected[0]?.error))
     await ctrl.stop(accepted[0].run.id)
-    ok((await ctrl.start('释放后补位')).ok && ctrl.runningCount === 10, '停止后可补回一个名额')
+    ok((await ctrl.start('释放后补位')).ok && ctrl.runningCount === 24, '停止后可补回一个名额')
     await ctrl.stopAll()
     ok(ctrl.runningCount === 0, '停止全部后名额归零')
   }

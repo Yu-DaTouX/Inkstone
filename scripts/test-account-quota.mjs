@@ -105,7 +105,7 @@ export async function runAccountQuotaTests(ok) {
       entryPoints: ['src/main/codex-accounts.ts'], outfile: 'out/test/codex-accounts.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
       plugins: [{ name: 'electron-stub', setup(b) {
         b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' }))
-        b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const shell = { openExternal: async () => {} }' }))
+        b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: `export const app = { isPackaged: false, getPath: () => ${JSON.stringify(root)}, getLocale: () => 'zh-CN', getVersion: () => 'fixture' }; export const shell = { openExternal: async () => {} };` }))
       } }]
     })
     const m = await import(pathToFileURL(join(process.cwd(), 'out/test/codex-accounts.mjs')).href + `?t=${Date.now()}`)

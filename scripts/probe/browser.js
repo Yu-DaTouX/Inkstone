@@ -1,5 +1,7 @@
 /* 真实 Electron 探针：浏览器磁贴、原生视图与 renderer 状态闭环。 */
 (async () => {
+  const store = window.__yanStore
+  if (!store) throw new Error('测试 store 未就绪')
   let button = document.querySelector('[data-testid="browser-view-toggle"]')
   if (!button) {
     const panelToggle = document.querySelector('[data-testid="rightpanel-toggle"]')
@@ -87,7 +89,6 @@
      * 这里从 push 通道送一个新地址进去（与主进程发 state 的路径相同），
      * 断言输入框仍是草稿。
      */
-    const store = window.__yanStore
     const draftValue = 'draft-kept-by-user'
     setValue.call(input, draftValue)
     input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -164,7 +165,13 @@
    */
   const surfaceBox = () => document.querySelector('[data-testid="browser-surface"]')?.getBoundingClientRect()
   const browserTab = document.querySelector('[data-pane-tab="browser"]')
-  const hide = browserTab?.closest('.tile-heading')?.querySelector('button[aria-label="收起面板，保留运行"]')
+  /*
+   * 关闭入口已迁到工作区磁贴页签上的关闭键：`.ui-tab-close`（它渲染成
+   * `span[role=button]`，不是 `<button>`，所以旧的 `button[aria-label=…]`
+   * 找不到；浏览器页签没覆盖 closeLabel，用的是「收起面板，保留运行」）。
+   * 按当前真实数据标识定位，再验证隐藏真的发生、资源仍在。
+   */
+  const hide = browserTab?.querySelector('.ui-tab-close')
   if (!hide) throw new Error('浏览器磁贴缺少隐藏入口')
   {
     const tabId = (await window.yan.browser.getState()).activeTabId
@@ -174,6 +181,7 @@
     const afterH = surfaceBox()?.height ?? 0
     if (!panelGone) throw new Error('隐藏浏览器后磁贴仍在布局里')
     if (afterH > 0) throw new Error(`隐藏磁贴后网页仍有高度 ${afterH}`)
+    if (store.getState().browserNativeVisible) throw new Error('隐藏磁贴后原生网页仍可见')
     if ((await window.yan.browser.getState()).activeTabId !== tabId) throw new Error('隐藏磁贴丢失浏览器资源')
     document.querySelector('[data-testid="right-tool-menu"]').click()
     await new Promise((r) => setTimeout(r, 100))
@@ -182,6 +190,7 @@
     reopen.click()
     await new Promise((r) => setTimeout(r, 700))
     if (!((surfaceBox()?.height ?? 0) > 0)) throw new Error('重新打开后浏览器磁贴没有恢复')
+    if (!store.getState().browserNativeVisible) throw new Error('重新打开后原生网页没有恢复')
     if ((await window.yan.browser.getState()).activeTabId !== tabId) throw new Error('恢复磁贴改变了活动网页')
   }
 

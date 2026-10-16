@@ -198,13 +198,6 @@ const KNOWN_COMMANDS = new Set([
   'subagent.list',
   'subagent.get',
   'subagent.stop',
-  'hub.start',
-  'hub.list',
-  'hub.get',
-  'hub.stop',
-  'hub.handoff',
-  'hub.reply',
-  'hub.send',
   'browser.navigate',
   'browser.open',
   'browser.state',
@@ -232,6 +225,30 @@ const KNOWN_COMMANDS = new Set([
   'search.fetch',
   'search.doctor'
 ])
+
+/**
+ * 已退役的能力族：不再登记进默认白名单，调用时给出替代入口。
+ *
+ * 为什么保留一个「退役」分支而不是直接回 `unknown_command`：
+ * 旧会话、脚本和提示词里仍留着 `yan hub …`。直接当未知命令会让模型以为
+ * 自己拼错了、反复重试；这里明确说退役与替代方向，老调用一次就能改道。
+ * 历史 Hub 数据与只读界面后端不动，只是不再从普通会话宣告或执行。
+ */
+const RETIRED_COMMAND_HINTS: ReadonlyArray<{ prefix: string; message: string }> = [
+  {
+    prefix: 'hub.',
+    message:
+      '多 Agent 工作台命令（hub.*）已退役，不再从普通会话提供：请改用 `yan subagent start|list|get|stop` 派子代理；历史 Hub 记录仍可在界面查看。'
+  }
+]
+
+/** 命中退役族时回替代提示；否则回 null（普通未知命令走原路径）。 */
+function retiredCommandMessage(command: string): string | null {
+  for (const hint of RETIRED_COMMAND_HINTS) {
+    if (command.startsWith(hint.prefix)) return hint.message
+  }
+  return null
+}
 
 /**
  * 大结果被截断时给的「形状轮廓」：只描述结构，不复制内容。
@@ -400,6 +417,15 @@ export class CapabilityServer {
 
     const command = typeof body.command === 'string' ? body.command : ''
     if (!this.allowCommands.has(command)) {
+      /*
+       * 退役命令不在白名单里，但给的是**替代方向**而不是「未知命令」：
+       * 这样旧调用能一次改道，也不会被误判成模型拼错后反复重试。
+       */
+      const retirement = retiredCommandMessage(command)
+      if (retirement) {
+        reply(400, { ok: false, error: retirement, code: 'retired_command', detail: command })
+        return
+      }
       reply(400, { ok: false, error: 'unknown_command', detail: command })
       return
     }

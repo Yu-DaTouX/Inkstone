@@ -23,6 +23,15 @@
  *
  * 回退链（文件缺失时）：新字段 `defaultWorkMode` → 旧布尔 `autonomous` → 标准。
  * 新字段优先，所以从「自主」改回「标准」的用户不会被旧布尔再拽回自主。
+ *
+ * ── 提问频率（全局 + 会话覆盖）──
+ * 在标准 / 计划模式下，还要叠加用户设置的提问频率（少问 / 适中默认 / 多问，
+ * 见 `src/shared/question-frequency.ts`）。**会话级**四态（inherit / sparse /
+ * balanced / eager）写在宿主那份工作模式快照里：显式值优先，`inherit` 回落
+ * 到 `desktop.json.questionFrequency`。扩展每轮都重读两边，所以改设置或切会话
+ * 下一轮就生效。脏值 / 缺失归到 `balanced`。它只调「何时问」的指引，
+ * 不保证精确次数、不改历史与当前运行轮；自主模式仍固定不问，权限审批与
+ * 高风险确认不受影响。
  */
 
 import { appendFileSync, readFileSync } from 'node:fs'
@@ -47,6 +56,35 @@ function workModeFile() {
 const WORK_MODES = ['standard', 'clarify', 'autonomous']
 
 /**
+ * 提问频率三档（与 `src/shared/question-frequency.ts` 一致）。
+ *
+ * 扩展在无构建环境里运行，import 不了 shared 的 TS，所以这里保留一份等价实现；
+ * 两边由 `scripts/test-question-frequency.mjs` 对照，避免列表 / 默认档漂移。
+ */
+export const QUESTION_FREQUENCIES = ['sparse', 'balanced', 'eager']
+export const DEFAULT_QUESTION_FREQUENCY = 'balanced'
+
+/** 会话级四态（与 shared 的 `SESSION_QUESTION_FREQUENCIES` 一致）。 */
+export const SESSION_QUESTION_FREQUENCIES = ['inherit', ...QUESTION_FREQUENCIES]
+export const DEFAULT_SESSION_QUESTION_FREQUENCY = 'inherit'
+
+/** 非法 / 缺失值安全归一到默认档。 */
+export function normalizeQuestionFrequency(value) {
+  return QUESTION_FREQUENCIES.includes(value) ? value : DEFAULT_QUESTION_FREQUENCY
+}
+
+/** 非法 / 缺失值安全归一到继承（旧快照没有这个字段时也走这里）。 */
+export function normalizeSessionQuestionFrequency(value) {
+  return SESSION_QUESTION_FREQUENCIES.includes(value) ? value : DEFAULT_SESSION_QUESTION_FREQUENCY
+}
+
+/** 会话偏好 + 全局偏好 → 本轮实际档位；inherit 回落全局，显式值优先。 */
+export function resolveQuestionFrequency(sessionValue, globalValue) {
+  const preference = normalizeSessionQuestionFrequency(sessionValue)
+  return preference === 'inherit' ? normalizeQuestionFrequency(globalValue) : preference
+}
+
+/**
  * 模式诊断（只在 `YAN_QUESTION_EXT_LOG` 存在时写一行）。
  *
  * 为什么要它：「模式真的到达扩展了吗」在界面上看不出来 —— 交互面板由宿主
@@ -54,7 +92,7 @@ const WORK_MODES = ['standard', 'clarify', 'autonomous']
  * 落一行 `{hook,mode,sessionId,file}` 能把模式注入与宿主交互分开诊断
  * （与 `language.js` / `project-knowledge.js` 同一做法）。
  */
-function noteModeDiagnostic(hook, mode) {
+function noteModeDiagnostic(hook, mode, frequency) {
   const log = process.env.YAN_QUESTION_EXT_LOG
   if (!log) return
   try {
@@ -64,6 +102,7 @@ function noteModeDiagnostic(hook, mode) {
         at: new Date().toISOString(),
         hook,
         mode,
+        frequency: frequency ?? null,
         sessionId: process.env.YAN_SESSION_ID ?? null,
         file: workModeFile()
       }) + '\n',
@@ -74,14 +113,58 @@ function noteModeDiagnostic(hook, mode) {
   }
 }
 
-/** 当前会话的工作模式；脏值 / 缺失按回退链处理。 */
-function currentWorkMode() {
+/** 会话快照里的归属字段与当前 ctx 的稳定会话是否一致。
+ *
+ * 快照按 runner 写，实例被复用到另一条会话时，文件里可能还留着上一条会话的值。
+ * 宿主写入时记下 `sessionId` / `sessionFile`，这里与 `ctx.sessionManager` 核对；
+ * 不一致就当没有快照（回落全局 / 默认），不把旧会话的偏好带进新会话。
+ * 旧快照没有归属字段时维持旧行为。
+ */
+function normalizeOwnerPath(value) {
+  return typeof value === 'string' ? value.trim().replace(/[\\/]+/g, '/').replace(/\/+$/, '') : undefined
+}
+
+function ownerPathEquals(a, b) {
+  const left = normalizeOwnerPath(a)
+  const right = normalizeOwnerPath(b)
+  if (!left || !right) return false
+  return left === right || left.toLowerCase() === right.toLowerCase()
+}
+
+function snapshotOwnedBySession(record, ctx) {
+  const snapId = typeof record?.sessionId === 'string' && record.sessionId.trim() ? record.sessionId.trim() : undefined
+  const snapFile = typeof record?.sessionFile === 'string' && record.sessionFile.trim() ? record.sessionFile : undefined
+  if (!snapId && !snapFile) return true
+  let manager
   try {
-    const mode = JSON.parse(readFileSync(workModeFile(), 'utf8'))?.mode
-    if (WORK_MODES.includes(mode)) return mode
+    manager = ctx?.sessionManager
   } catch {
-    /* 文件还没写（宿主刚启动）—— 走回退链 */
+    manager = undefined
   }
+  const ctxId = typeof manager?.getSessionId === 'function' ? manager.getSessionId() : undefined
+  const ctxFile = typeof manager?.getSessionFile === 'function' ? manager.getSessionFile() : undefined
+  /* 拿不到任何 ctx 身份（旧 pi / 无会话）：无法核对，维持旧行为，不因此清空偏好 */
+  if (!ctxId && !ctxFile) return true
+  if (snapId && ctxId && snapId === ctxId) return true
+  if (snapFile && ownerPathEquals(snapFile, ctxFile)) return true
+  return false
+}
+
+/** 读宿主写的快照；归属不符 / 读不到都返回 null（调用方回落全局 / 默认）。 */
+function readOwnedSnapshot(ctx) {
+  try {
+    const record = JSON.parse(readFileSync(workModeFile(), 'utf8'))
+    if (!record || typeof record !== 'object') return null
+    return snapshotOwnedBySession(record, ctx) ? record : null
+  } catch {
+    return null
+  }
+}
+
+/** 当前会话的工作模式；脏值 / 缺失按回退链处理。 */
+function currentWorkMode(ctx) {
+  const snapshot = readOwnedSnapshot(ctx)
+  if (WORK_MODES.includes(snapshot?.mode)) return snapshot.mode
   try {
     const settings = JSON.parse(readFileSync(settingsFile(), 'utf8'))
     if (WORK_MODES.includes(settings?.defaultWorkMode)) return settings.defaultWorkMode
@@ -91,9 +174,55 @@ function currentWorkMode() {
   }
 }
 
-/** 标准模式：模糊时先问（改动前的默认行为） */
-const STANDARD_GUIDANCE = [
-  'Interactive questions: if a request is genuinely ambiguous, or a guess would materially change the result, ask first with `yan question ask`. Do not ask what you can verify yourself. Give at most 3 concrete options (the panel adds a free-text row); one question at a time unless several are truly independent.'
+/**
+ * 当前会话的提问频率；每轮读一次快照与全局设置，中途改设置或切会话下一轮生效。
+ *
+ * 优先级：会话快照里的显式档 → `desktop.json.questionFrequency` → `balanced`。
+ * `inherit`（含快照缺失 / 脏值）回落全局；显式值不被全局变更覆盖。
+ */
+export function currentQuestionFrequency(ctx) {
+  const sessionValue = readOwnedSnapshot(ctx)?.questionFrequency
+  const preference = normalizeSessionQuestionFrequency(sessionValue)
+  if (preference !== 'inherit') return preference
+  try {
+    return normalizeQuestionFrequency(JSON.parse(readFileSync(settingsFile(), 'utf8'))?.questionFrequency)
+  } catch {
+    return DEFAULT_QUESTION_FREQUENCY
+  }
+}
+
+/** 会话快照里的原始偏好（诊断用；缺项 / 脏值归一到 inherit）。 */
+export function currentSessionQuestionFrequency(ctx) {
+  return normalizeSessionQuestionFrequency(readOwnedSnapshot(ctx)?.questionFrequency)
+}
+
+/** 标准模式的机制说明：提问通道、选项数量与节流。频率档位只决定「什么时候问」。 */
+const STANDARD_MECHANICS = [
+  'Interactive questions use `yan question ask`. Give at most 3 concrete options (the panel adds a free-text row); one question at a time unless several are truly independent.'
+].join('\n')
+
+/**
+ * 三档频率对「何时问」的差别。
+ *
+ * 少问不是不问、多问不是每题都问：它们只调模型收到的指引，不是次数保证。
+ */
+const FREQUENCY_GUIDANCE = {
+  sparse: [
+    'Question frequency: SPARSE. Infer a reasonable reading and keep working, stating the assumption in one line; confirm only before a key decision or a risky / hard-to-reverse action.'
+  ].join('\n'),
+  balanced: [
+    'Question frequency: BALANCED (default). Ask when a materially different reading would change the result; do not ask what you can verify yourself.'
+  ].join('\n'),
+  eager: [
+    'Question frequency: EAGER. When several reasonable readings exist, confirm the goal with one short question before executing; never ask every few steps, never re-ask what is already settled, and never force a question onto a simple task.'
+  ].join('\n')
+}
+
+/**
+ * 频率偏好绝不放宽的边界（权限审批、高风险确认、工作模式、用户明确指定）。
+ */
+const QUESTION_BOUNDARY = [
+  'This preference only tunes guidance: it never relaxes approvals, permissions, or high-risk confirmations, and an explicit user instruction to ask (or not to ask) wins over the frequency setting without widening the granted scope.'
 ].join('\n')
 
 /**
@@ -154,18 +283,26 @@ const AUTONOMOUS_GUIDANCE = [
   '- If the same failure repeats without new information, report `blocked` instead of retrying the same thing.'
 ].join('\n')
 
-function guidanceFor(mode) {
+/**
+ * 按工作模式与提问频率拼装指引。
+ *
+ * ⚠️ 工作模式优先：自主档固定「不要问」，不拼接频率（否则会与禁止交互矛盾）；
+ * 计划档保留自己的只读约束与「先问关键问题」，频率作为补充。
+ */
+function guidanceFor(mode, frequency) {
   if (mode === 'autonomous') return AUTONOMOUS_GUIDANCE
-  if (mode === 'clarify') return CLARIFY_GUIDANCE
-  return STANDARD_GUIDANCE
+  const clause = FREQUENCY_GUIDANCE[normalizeQuestionFrequency(frequency)]
+  if (mode === 'clarify') return `${CLARIFY_GUIDANCE}\n${clause}\n${QUESTION_BOUNDARY}`
+  return `${STANDARD_MECHANICS}\n${clause}\n${QUESTION_BOUNDARY}`
 }
 
 export default function question(pi) {
   // 每轮开始前按当前模式调整系统提示（模式中途切换也能立刻生效）
-  pi.on('before_agent_start', (event) => {
-    const mode = currentWorkMode()
-    noteModeDiagnostic('before_agent_start', mode)
-    const extra = guidanceFor(mode)
+  pi.on('before_agent_start', (event, ctx) => {
+    const mode = currentWorkMode(ctx)
+    const frequency = currentQuestionFrequency(ctx)
+    noteModeDiagnostic('before_agent_start', mode, frequency)
+    const extra = guidanceFor(mode, frequency)
     const base = String(event?.systemPrompt ?? '')
     /* 同时写具名分区：只转发结构化部分的 provider（pi-claude-bridge → Claude Code）会丢掉整段覆盖的文本 */
     const sections = event?.systemPromptOptions?.sections

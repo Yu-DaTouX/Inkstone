@@ -3695,9 +3695,7 @@ img.chat-image-open {
   }
 }
 
-/* 子代理卡片的「详情」：箭头随展开转向，展开时整张卡片有底色与边线 */
-.sg-detail-btn svg { transition: transform var(--dur) var(--ease); }
-.sg-detail-btn.on svg { transform: rotate(90deg); }
+/* 子代理卡片的「详情」展开态：整张卡片有底色与边线；箭头转向由共享控件 .ui-disclosure-trigger 负责 */
 .sg-card.is-open {
   background: var(--bg-2);
   border-left-color: var(--sg-tone);

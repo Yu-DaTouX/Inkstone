@@ -90,7 +90,8 @@
     const pane = document.querySelector('[data-workspace-pane="files"]:not([hidden])')
     if (pane && pane.getBoundingClientRect().width >= 199) ok('窄窗文件磁贴保留最小阅读尺寸')
     else bad('文件磁贴没有可读宽度')
-    document.querySelector('[data-pane-tab="files"]')?.closest('.tile-heading')?.querySelector('[aria-label="收起面板，保留运行"]')?.click()
+    /* 关闭入口 = 磁贴页签上的 `.ui-tab-close`（文件页签 closeLabel 是「关闭标签页」）。 */
+    document.querySelector('[data-pane-tab="files"]')?.querySelector('.ui-tab-close')?.click()
     await sleep(500)
     if (!document.querySelector('[data-workspace-pane="files"]:not([hidden])')) ok('文件磁贴可隐藏')
     else bad('文件磁贴仍可见')
