@@ -39,9 +39,6 @@ import type {
   LibraryVersion,
   LibrarySource,
   ContextAssembly,
-  ActivityBridge,
-  ActivityModelResolution,
-  ActivityModelRow,
   ForkContextResultView,
   ForkRefsReportView,
   WorktreeLinkView,
@@ -477,11 +474,6 @@ const api: YanBridge = {
     promoteLegacy: (req) => invoke<LibraryImportViewResult & { mapped?: boolean }>('yan:library:promoteLegacy', req),
     current: () => invoke<{ ok: boolean; error?: string; assembly?: ContextAssembly }>('yan:context:current')
   },
-  activity: {
-    rows: (input) => invoke<ActivityModelRow[]>('yan:activity:modelRows', input),
-    model: (input) => invoke<ActivityModelResolution>('yan:activity:model', input),
-    setModel: (input) => invoke<{ ok: boolean; error?: string; rows?: ActivityModelRow[] }>('yan:activity:modelSet', input)
-  } as ActivityBridge,
   packages: {
     search: (query, offset) => invoke('yan:packages:search', query, offset),
     exportPlugin: (id) => invoke('yan:packages:exportPlugin', id),
