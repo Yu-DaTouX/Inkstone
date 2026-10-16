@@ -30,6 +30,11 @@ import { classifyAcquisitionFailure } from '../../shared/acquisition'
 import type { McpServerConfig } from '../../shared/mcp'
 import { McpConnectionManager } from '../mcp/connection-manager'
 import { loadMcpServers, mcpServersFile } from '../mcp/config'
+import {
+  createDefaultSettingsSafeAccess,
+  managedConfigById,
+  probeManagedServer
+} from '../mcp/settings-safe-access'
 import { acquisitionRoot } from './acquisition-service'
 
 export const AUTHORIZATIONS_FILENAME = 'authorizations.json'
@@ -47,7 +52,10 @@ export class McpRegistrationError extends Error {
 
 export type McpProbeResult = { tools: string[] }
 
-export type McpProbe = (config: McpServerConfig) => Promise<McpProbeResult>
+/** 核验上下文：调用者的真实项目身份，由登记入口注入，不从 `config.projectScope` 伪造。 */
+export type McpProbeContext = { projectId?: string }
+
+export type McpProbe = (config: McpServerConfig, context?: McpProbeContext) => Promise<McpProbeResult>
 
 export type McpRegistrationOutcome = {
   serverId: string
@@ -138,9 +146,28 @@ function configUrlOf(raw: unknown): string | null {
   return typeof url === 'string' ? url : null
 }
 
-/** 默认端点核验：真连一次并枚举工具（用与运行时**同一个**连接管理器）。 */
+/** 原始条目是否已声明由砚托管（不经归一化也认得，用于拒绝覆盖）。 */
+function isManagedRaw(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false
+  const record = raw as { ownedBy?: unknown; appHost?: unknown }
+  return record.ownedBy === 'inkstone' && Boolean(record.appHost && typeof record.appHost === 'object')
+}
+
+/** 默认端点核验：真连一次并枚举工具（与运行时走同一条归属路径）。 */
 function defaultProbe(timeoutMs = 20_000): McpProbe {
-  return async (config) => {
+  return async (config, context) => {
+    const access = createDefaultSettingsSafeAccess()
+    /*
+     * 归属按**最新配置**判断，不看已过期 manager；砚托管服务必须复用进程级
+     * 单例连接池（app-host）：登记/复核再 new 一个 McpConnectionManager 就会成为
+     * 第二条宿主连接。缺调用者项目身份时 `probeManagedServer` 明确拒绝，不从
+     * `config.projectScope` 伪造 caller。
+     */
+    if (managedConfigById(access, config.id)) {
+      return probeManagedServer(access, config.id, context?.projectId)
+    }
+    /* 已交回 pi 的服务：清掉 host 里可能残留的托管连接（不连新服务）。 */
+    await access.host().reconcile(config.id)
     const manager = new McpConnectionManager([config], timeoutMs)
     try {
       const tools = await manager.listTools(config.id)
@@ -210,6 +237,12 @@ export class McpRegistrationService {
     const raw = await readRawServers(path)
     const existing = raw.list.find((item) => configIdOf(item) === draft.serverId)
     if (existing) {
+      if (isManagedRaw(existing)) {
+        throw new McpRegistrationError(
+          'server-managed-by-inkstone',
+          `服务 ${draft.serverId} 正由砚托管，登记不会覆盖它；请先在设置 → 能力里交回 pi 原生`
+        )
+      }
       const url = configUrlOf(existing)
       if (url && url !== draft.config.url) {
         throw new McpRegistrationError(
@@ -221,7 +254,7 @@ export class McpRegistrationService {
 
     let probe: McpProbeResult
     try {
-      probe = await this.probe(draft.config)
+      probe = await this.probe(draft.config, { projectId: input.projectId })
     } catch (error) {
       const code = classifyAcquisitionFailure(error)
       const message = error instanceof Error ? error.message : String(error)
@@ -313,6 +346,12 @@ export class McpRegistrationService {
     const existing = raw.list.find((item) => configIdOf(item) === config.id)
     const existingConfig = existing && typeof existing === 'object' ? existing as Record<string, unknown> : null
     if (existingConfig) {
+      if (isManagedRaw(existingConfig)) {
+        throw new McpRegistrationError(
+          'server-managed-by-inkstone',
+          `服务 ${config.id} 正由砚托管，登记不会覆盖它；请先在设置 → 能力里交回 pi 原生`
+        )
+      }
       const same = existingConfig.transport === 'stdio' &&
         existingConfig.command === config.command &&
         JSON.stringify(existingConfig.args ?? []) === JSON.stringify(config.args ?? []) &&
@@ -324,7 +363,7 @@ export class McpRegistrationService {
 
     let probe: McpProbeResult
     try {
-      probe = await (input.probe ?? this.probe)(config)
+      probe = await (input.probe ?? this.probe)(config, { projectId: input.projectId })
     } catch (error) {
       const code = classifyAcquisitionFailure(error)
       const message = error instanceof Error ? error.message : String(error)
@@ -416,7 +455,7 @@ export class McpRegistrationService {
       }
     }
     try {
-      const probe = await this.probe(probeConfig)
+      const probe = await this.probe(probeConfig, { projectId: record.projectId })
       const missing = record.tools.filter((tool) => !probe.tools.includes(tool))
       if (missing.length && record.tools.length) {
         reasons.push(`${record.serverId} 少了登记时存在的工具：${missing.join(', ')}`)

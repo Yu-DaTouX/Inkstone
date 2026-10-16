@@ -1,0 +1,88 @@
+/*
+ * 快捷键表样式（WP-25b）。
+ *
+ * 层归属同 command-palette.css：
+ *   · `@layer patterns`：容器与行的**外观**（底色、描边、圆角、阴影、次要文字颜色）。
+ *   · `@layer features`：模块**版面**（flex/grid、间距、高度、滚动、字号）。
+ * 只使用 design/tokens.css 的变量。
+ */
+
+@layer patterns {
+  .sheet-overlay {
+    align-items: center;
+  }
+
+  .sheet-modal {
+    width: min(460px, calc(100vw - var(--s-32)));
+    max-height: min(78vh, 640px);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+  }
+
+  .sheet-group__title {
+    color: var(--fg3);
+  }
+
+  .sheet-row__note {
+    color: var(--fg3);
+  }
+}
+
+@layer features {
+  .sheet-dialog .ui-dialog__body {
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .sheet-hint {
+    margin: 0;
+    padding: 0 var(--s-16) var(--s-8);
+    color: var(--fg3);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .sheet-group {
+    padding: var(--s-4) var(--s-16);
+  }
+
+  .sheet-group + .sheet-group {
+    border-top: 1px solid var(--line);
+  }
+
+  .sheet-group__title {
+    margin: 0;
+    padding: var(--s-8) 0 var(--s-4);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font-weight: var(--t-title-w);
+    text-transform: none;
+  }
+
+  .sheet-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s-12);
+    padding: var(--s-6) 0;
+  }
+
+  .sheet-row__label {
+    min-width: 0;
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    color: var(--fg);
+  }
+
+  .sheet-row__note {
+    max-width: 60%;
+    text-align: right;
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .sheet-keys {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+  }
+}

@@ -1,0 +1,262 @@
+@layer features {
+  /*
+   * v3 首次引导向导的**版面**。
+   *
+   * 只写版面与层级：间距 / 字号 / 颜色全部引用既有 token，控件外观来自 ui/。
+   * 步骤条是可点的步骤指示（不是页签），沿用 v3 设置左栏导航的做法用原生
+   * button + feature CSS；对话框与页脚只是排版，不重定义按钮 / 开关外观。
+   */
+
+  /* 比通用对话框略宽，容纳六步步骤条；窄屏仍被 overlay 的内边距夹住 */
+  .v3-ob-modal {
+    width: min(640px, 100%);
+  }
+
+  .v3-ob-dialog {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* 只让步骤正文滚动，步骤条与页脚固定 */
+  .v3-ob-dialog .ui-dialog__body {
+    padding: var(--s-16);
+    gap: var(--s-16);
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .v3-ob-subtitle {
+    margin: 0;
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    color: var(--fg2);
+  }
+
+  /* ---------------- 步骤条 ---------------- */
+
+  .v3-ob-steps__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-4) var(--s-6);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .v3-ob-step {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-6);
+    height: 28px;
+    padding: 0 var(--s-8);
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--fg2);
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    cursor: pointer;
+  }
+
+  .v3-ob-step[data-active='1'] {
+    background: var(--sel);
+    color: var(--fg);
+  }
+
+  .v3-ob-step__dot {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--line2);
+    border-radius: var(--r-full);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg3);
+  }
+
+  .v3-ob-step[data-active='1'] .v3-ob-step__dot {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .v3-ob-step[data-past='1'] .v3-ob-step__dot {
+    background: var(--line);
+    color: var(--fg2);
+  }
+
+  /* ---------------- 步骤正文 ---------------- */
+
+  /*
+   * 各步叠在同一个网格格子里：格子高度取最高一步，切步时弹窗位置不跳。
+   * 非当前步 visibility: hidden，不占交互，也不进入读屏与焦点顺序。
+   */
+  .v3-ob-body {
+    display: grid;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .v3-ob-stage {
+    grid-area: 1 / 1;
+    min-width: 0;
+  }
+
+  .v3-ob-stage[data-active='0'] {
+    visibility: hidden;
+  }
+
+  .v3-ob-lead {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+  }
+
+  .v3-ob-lead-title {
+    margin: 0;
+    font: var(--t-h2) / var(--t-h2-lh) var(--font-ui);
+    font-weight: var(--t-h2-w);
+    color: var(--fg);
+  }
+
+  .v3-ob-lead-desc {
+    margin: 0;
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    color: var(--fg2);
+    text-wrap: pretty;
+  }
+
+  .v3-ob-note {
+    margin: 0;
+    padding: var(--s-10) var(--s-12);
+    border-radius: var(--r-md);
+    background: var(--sunken);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fg2);
+  }
+
+  .v3-ob-hint {
+    margin: 0;
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fg3);
+  }
+
+  .v3-ob-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .v3-ob-item {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    color: var(--fg);
+  }
+
+  .v3-ob-item__icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    color: var(--accent);
+  }
+
+  .v3-ob-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-8);
+  }
+
+  /* ---------------- 落盘步骤的行与控件 ---------------- */
+
+  .v3-ob-choice {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--s-16);
+  }
+
+  .v3-ob-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-16);
+    padding: var(--s-10) 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .v3-ob-row:first-of-type {
+    border-top: 0;
+  }
+
+  .v3-ob-row__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .v3-ob-row__label {
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    color: var(--fg);
+  }
+
+  .v3-ob-row__desc {
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fg3);
+  }
+
+  /* 音量用 ui Slider；只限定行内占位，轨道 / 手柄外观归原语 */
+  .v3-ob-slider {
+    flex: 1 1 auto;
+    max-width: 220px;
+  }
+
+  /* 提示音关闭时音量不可调：整条滑块变淡，交互由 RAC 的 isDisabled 拦住 */
+  .v3-ob-slider[data-disabled] {
+    opacity: 0.5;
+  }
+
+  .v3-ob-select {
+    width: 100%;
+    max-width: 240px;
+  }
+
+  /* ---------------- 页脚 ---------------- */
+
+  .v3-ob-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    padding-top: var(--s-12);
+    border-top: 1px solid var(--line);
+  }
+
+  .v3-ob-spacer {
+    flex: 1;
+  }
+
+  .v3-ob-progress {
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fg3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .v3-ob-optional {
+    color: var(--fg3);
+  }
+
+  /* 窄屏：步骤名与「可跳过」标记让位，只留序号，仍可点按跳转 */
+  @media (max-width: 560px) {
+    .v3-ob-step__name,
+    .v3-ob-optional {
+      display: none;
+    }
+  }
+}

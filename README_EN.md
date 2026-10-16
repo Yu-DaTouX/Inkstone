@@ -79,6 +79,8 @@ npm run launch
 
 The launcher checks dependencies, prepares the bundled runtime when needed, and builds the app when needed. Existing checkouts can double-click `启动-砚.cmd`. For development, use `开发-砚.cmd` or `npm run launch:dev`.
 
+The interface is being rebuilt as v3: v3 is the target UI, with rules in the [design system](docs/DESIGN_SYSTEM.md) and scope/status in the [UI rebuild record](docs/UI_REDESIGN.md). Start with `YAN_UI=v3` to try it; v2 is still the default and v3 is not yet a feature-complete replacement — see the [contributing guide](docs/CONTRIBUTING.md#v3-开发外壳).
+
 Read the [contribution guide](docs/CONTRIBUTING.md) and [AI collaboration rules](AGENTS.md). Find code by feature in the [code map](docs/CODE_MAP.md) (Chinese). Architecture, build, and release guidance are in the [documentation index](docs/README.md).
 
 Existing ordinary file tasks and the standalone local Node entry are documented in [agent service](docs/AGENT_SERVICE.md) (Chinese). They are listed for streamlining review and are not a required workflow for the new product.

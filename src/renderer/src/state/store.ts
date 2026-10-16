@@ -75,6 +75,7 @@ import { readSpaceView, writeSpaceView, type SpaceView } from './space-view'
 import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
+import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/browser-open'
 import { mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { planQueueRecovery, mergeQueueAttachments, type QueueImageRef } from './queue-images'
 import {
@@ -102,6 +103,8 @@ import {
   type SessionRuntimeSnapshot
 } from './session-runtime'
 import { routePush, viewingSessionId } from './push-routing'
+import { beginSessionSwitch as markSessionSwitch, endSessionSwitch as unmarkSessionSwitch } from './session-activation'
+import { pushBelongsToView, sameSessionFile, viewKeyRef } from './view-identity'
 import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTaskStatePush } from './push-consumers'
 import { addSourceFiles } from './source-files'
 import { newestMessages, shownMessages } from './split-snapshots'
@@ -285,10 +288,26 @@ export interface Store {
   shortcutRecording: boolean
   /** 设置面板开关与当前 tab（放 store 里，好让 ContextBar 等组件能直接打开） */
   settingsOpen: boolean
-  nativeSessionPanel: { mode: import('../../../shared/native-session').NativeSessionMode; sessionId: string } | null
+  /**
+   * 原生会话面板请求。它只是“请求打开”的信号：`mode` 决定呈现，`sessionId` 是
+   * 打开时的 owner（后续请求一律按它发，切走即关闭）。`tree` 由分支页签消费，
+   * `scoped-models` / `trust` / `entries` 由 `features/session/native` 消费。
+   */
+  nativeSessionPanel: {
+    mode: import('../../../shared/native-session').NativeSessionMode | 'entries'
+    sessionId: string
+  } | null
   closeNativeSessionPanel: () => void
   nativeSession: (action: import('../lib/composer-submit').NativeSessionAction, args?: string) => Promise<import('../../../shared/native-session-host').NativeSessionHostResult>
   settingsTab: string
+  /**
+   * 正式 `openSettings` 的请求序号，初始 0，每次调用都自增。
+   *
+   * 为什么单独存：`settingsOpen` 在 v3 里只会被打开、不会被关闭，
+   * 于是「同一个页名重复 openSettings」不产生字段变化，深链接订阅会漏掉。
+   * 用这个单调递增的序号，每次请求（哪怕同页、同毫秒）都能被观察到。
+   */
+  settingsRequestRevision: number
   /**
    * 左栏是否钉住（常驻）。
    * false 时鼠标靠近左边缘才展开、离开 1.5s 收回。
@@ -572,8 +591,14 @@ export interface Store {
   reloadCommands: () => Promise<void>
   /** 拉一次供应商凭证状态（D12）：模型菜单用来区分“未配凭证”与“不支持思考” */
   loadAuthProviders: () => Promise<void>
-  /** 把当前输入框草稿写入当前会话运行时缓存（不保存图片二进制）。 */
-  setSessionDraft: (value: string) => void
+  /**
+   * 把当前输入框草稿写入当前会话运行时缓存（不保存图片二进制）。
+   *
+   * `key` 省略时按 v2 语义写「当前已激活会话」（`runtimeForState`）；
+   * 传入显式键时写那条会话 —— v3 在「已点开、未激活」的窗口里必须把草稿
+   * 记到**正在看的**会话上，否则会写进上一条（D5）。
+   */
+  setSessionDraft: (value: string, key?: string) => void
   /**
    * 按**正在看**的会话草稿键把草稿附件载入输入框。
    *
@@ -645,6 +670,11 @@ export interface Store {
     idPrefix?: string
     notice?: string
   }) => void
+  /**
+   * 队列编辑 / 重排（WP-24b）：按目标顺序 clear_queue 后重建；
+   * 失败且原队列也没能恢复时，把 dropped 内容放回草稿，保证不丢。
+   */
+  applyQueueOrder: (next: QueueState) => Promise<void>
   /**
    * 当前会话额度用尽时登记「恢复后自动续跑」；额度接口不可查时返回 false。
    * failoverAt：另一个账号预计先恢复的时间，到点改为换号续跑。
@@ -719,7 +749,7 @@ export interface Store {
   changeCwd: (cwd: string) => Promise<void>
   /** 设界面缩放（0 = 自动） */
   setUiScale: (v: number) => Promise<void>
-  openBrowser: (url?: string) => Promise<void>
+  openBrowser: (url?: string, target?: BrowserOpenTarget) => Promise<void>
   closeBrowser: () => Promise<void>
   /* ---- 交互终端（实施-11 H-11） ---- */
   /** 从宿主拉一次会话列表与可用性（启用 / 面板打开 / 重连时调） */
@@ -1594,6 +1624,17 @@ function applyBrowserVisibility(get: () => Store): void {
 }
 
 /**
+ * 当前视图对应的会话键（与 `deriveWorkspaceOwner` 的 `viewIdentity` 同一取法）。
+ *
+ * 供浏览器打开守卫在 await 回来后复核「视图有没有切走」——必须现算，
+ * 不能用 `openBrowser` 发起时的快照，否则切会话后拿到的仍是旧键。
+ */
+function currentViewOwnerKey(view: Store): string {
+  /* 与 `deriveWorkspaceOwner` 同一取值：peek 存在时成对只取 peek，不拿旧会话补缺。 */
+  return workspaceKeyFor(viewKeyRef(view))
+}
+
+/**
  * 会话选择代次（不放进 state：它只是并发闸门，不需要渲染、也不需要持久化）。
  *
  * 为什么要它：`switchSession` 的「peek 内容 → 请求 pi 切换」跨了两次 await。
@@ -1620,8 +1661,10 @@ function beginSessionSwitch(gate: number): () => void {
   let resolve!: () => void
   const done = new Promise<void>((r) => { resolve = r })
   sessionSwitchInFlight = { gate, done }
+  markSessionSwitch(gate)
   return () => {
     if (sessionSwitchInFlight?.gate === gate) sessionSwitchInFlight = null
+    unmarkSessionSwitch(gate)
     resolve()
   }
 }
@@ -1785,6 +1828,39 @@ export const useStore = create<Store>((rawSet, get) => {
       return partial
     })
   }
+  /*
+   * v3 浏览器的打开编排（代次 + owner 占用安全失败）。逻辑在纯模块里，
+   * 这里只把 store 的 `get`/`set` 与既有协调入口绑成依赖，便于单测。
+   */
+  const browserOpener = new BrowserOpener({
+    open: (url) => window.yan.browser.open(url),
+    currentOwnerKey: () => currentViewOwnerKey(get()),
+    resourceOwner: () => resourceOwner('browser'),
+    claimResource: (owner) => claimResource('browser', owner),
+    releaseResource: () => releaseResource('browser'),
+    isBrowserOpen: () => get().browserState.open,
+    setBrowserState: (browserState) => set({ browserState }),
+    reveal: () => {
+      /* 浏览器是右栏资源：右栏收着就展开它，否则用户看不到刚打开的网页 */
+      if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
+      applyBrowserVisibility(get)
+    },
+    blocked: (reason) => {
+      const text =
+        reason === 'foreign-owner'
+          ? '内置浏览器当前归另一条会话；切回去或在那条会话里继续。'
+          : '内置浏览器正在被另一条会话打开，等它完成或切回去。'
+      set({ notices: pushNotice(get().notices, 'warning', text) })
+    },
+    failed: (message) => {
+      /*
+       * 这里不走 `piCall`（成功返回的是 BrowserState 而不是 `{ok}`），
+       * 所以剥壳要自己调 —— 否则用户看到的提示是
+       * `Error invoking remote method 'yan:browser:open': Error: 只允许打开 http(s) 网页`。
+       */
+      set({ notices: pushNotice(get().notices, 'error', stripIpcErrorPrefix(message)) })
+    }
+  })
   return {
   conn: 'starting',
   connDetail: '',
@@ -1856,6 +1932,7 @@ export const useStore = create<Store>((rawSet, get) => {
     return result
   },
   settingsTab: 'appearance',
+  settingsRequestRevision: 0,
   /**
    * 左栏是否展开（持久化到 localStorage）。
    *
@@ -2128,7 +2205,9 @@ export const useStore = create<Store>((rawSet, get) => {
          *   确认」时生效：等到属于它的那条就正常收下（并清掉待确认状态）。
          */
         const incoming = m.runtime?.sessionId
-        if (s.peekedSessionId && incoming && incoming !== s.peekedSessionId) break
+        /* peek 存在时成对核对；path-only 的 peek 只有文件身份，认不出 incoming 就
+         * fail closed，防止旧会话 A 迟到的 sync 覆盖正在查看的 B。 */
+        if (!pushBelongsToView(s, incoming)) break
         /*
          * 整份替换前先合并本地实时帧：
          *   · 图片预览必须保住（hydrate 从会话文件重读时用户贴的图已被体积保护丢掉，
@@ -2862,10 +2941,9 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  setSessionDraft: (value) => {
+  setSessionDraft: (value, key) => {
     const current = get()
-    /* 草稿跟随**正在看**的会话（deferred 时 peek 优先），不能写进活动实例的键。 */
-    const key = composerDraftKey(current)
+    key = key ?? composerDraftKey(current)
     if (!key) return
     set({
       sessionRuntimes: updateSessionRuntimeAt(current.sessionRuntimes, key, { draft: value }, draftSeedRuntime(current, key))
@@ -3125,6 +3203,25 @@ export const useStore = create<Store>((rawSet, get) => {
       draftRuntime,
       draftKey
     }))
+  },
+
+  applyQueueOrder: async (next) => {
+    const sessionId = get().session?.sessionId
+    const res = await piCall(() => window.yan.queueEdit(next))
+    if (res.ok) return
+    /* 主进程没能恢复原队列时，把这次要写的文本与图片放回草稿，保证内容不丢。 */
+    const dropped = res.dropped ?? []
+    if (dropped.length) {
+      const current = get()
+      set(applyQueueRecovery(current, {
+        sessionId,
+        text: dropped.map((item) => item.text ?? '').filter((text) => text).join('\n'),
+        images: dropped.flatMap((item) => item.images ?? []),
+        idPrefix: 'queue-image',
+        notice: '队列编辑失败，内容已放回输入框'
+      }))
+    }
+    set({ notices: pushNotice(get().notices, 'error', res.error ?? '队列编辑失败') })
   },
 
   abort: async () => {
@@ -3409,19 +3506,26 @@ export const useStore = create<Store>((rawSet, get) => {
     /* 这次点击已经过期：结果一律不采用（宿主侧的激活顺序由它自己的队列决定） */
     if (gate !== sessionSwitchGate) return
     if (!res.ok) {
+      const authoritative = get().session?.sessionId
+      const authoritativeMessages = authoritative ? get().sessionRuntimes[authoritative]?.messages : undefined
       set({
         notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'),
         peekedPath: null,
-        peekedSessionId: null
+        peekedSessionId: null,
+        pendingActivation: null,
+        ...(authoritativeMessages?.length ? { messages: authoritativeMessages } : {})
       })
       return
+    }
+    if (res.sessionId && !get().peekedSessionId && get().peekedPath) {
+      set({ peekedSessionId: res.sessionId })
     }
     /* 实例没动：保持 peek 显示，把「待激活」记下来 —— 发消息时才会真的切 */
     if (res.deferred) {
       set({
-        pendingActivation: { sessionFile: path, sessionId: sum?.id, projectId, scope, cwd },
+        pendingActivation: { sessionFile: path, sessionId: res.sessionId ?? sum?.id, projectId, scope, cwd },
         peekedPath: path,
-        peekedSessionId: sum?.id ?? null,
+        peekedSessionId: res.sessionId ?? sum?.id ?? null,
         notices: pushNotice(
           get().notices,
           'info',
@@ -3502,9 +3606,13 @@ export const useStore = create<Store>((rawSet, get) => {
       })
       return false
     }
+    const activated = get()
     set({
       pendingActivation: null,
-      ...(res.runId ?? res.id ? { activeRunnerId: res.runId ?? res.id } : {})
+      ...(res.runId ?? res.id ? { activeRunnerId: res.runId ?? res.id } : {}),
+      ...(res.sessionId && !activated.peekedSessionId && sameSessionFile(activated.peekedPath, pending.sessionFile)
+        ? { peekedSessionId: res.sessionId }
+        : {})
     })
     /* 激活响应给出稳定 sessionId：把只读期间的薄路径草稿迁到稳定键。 */
     const activatedCache = get().sessionRuntimes
@@ -3884,35 +3992,20 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  openBrowser: async (url) => {
-    const view = get()
-    const owner = view.peekedPath || view.peekedSessionId
-      ? workspaceKeyFor({ path: view.peekedPath ?? undefined, sessionId: view.peekedSessionId ?? undefined })
-      : conversationKeyOf(view.session)
-    const previousOwner = resourceOwner('browser')
+  openBrowser: async (url, target) => {
     /*
-     * 浏览器与文件预览占同一块区域，而且原生网页视图永远盖在 DOM 之上 ——
-     * 这里仅让主进程打开网页；右栏窗口协调器负责显隐，不能因为切到浏览器
-     * 就丢掉用户刚打开的文件标签。
+     * v3 传 target（面板的会话键）时启用代次 / 当前视图守卫：打开跨了 await，
+     * 这期间切会话或连点都不能让旧回包把旧 view 重新 show 出来，也不能让 B
+     * 在 A 尚在打开时抢走这个全局唯一的浏览器。
+     *
+     * v2 入口不传 target，owner 仍按旧规则从当前视图推导，走与改动前相同的
+     * 路径（认领后直接打开、写状态、apply 显隐）。
      */
-    try {
-      // 在异步 IPC 前绑定，避免打开期间切会话把浏览器认领到新焦点。
-      claimResource('browser', owner)
-      const browserState = await window.yan.browser.open(url)
-      set({ browserState })
-      /* 浏览器是右栏资源：右栏收着就展开它，否则用户看不到刚打开的网页 */
-      if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
-      applyBrowserVisibility(get)
-    } catch (error) {
-      if (!previousOwner && !get().browserState.open && resourceOwner('browser') === owner) releaseResource('browser')
-      /*
-       * 这里不走 `piCall`（成功返回的是 BrowserState 而不是 `{ok}`），
-       * 所以剥壳要自己调 —— 否则用户看到的提示是
-       * `Error invoking remote method 'yan:browser:open': Error: 只允许打开 http(s) 网页`。
-       */
-      const raw = error instanceof Error ? error.message : '打开浏览器失败'
-      set({ notices: pushNotice(get().notices, 'error', stripIpcErrorPrefix(raw)) })
-    }
+    const view = get()
+    const owner = target?.key ?? (view.peekedPath || view.peekedSessionId
+      ? workspaceKeyFor(viewKeyRef(view))
+      : conversationKeyOf(view.session))
+    await browserOpener.open({ owner, url, guard: target !== undefined })
   },
 
   closeBrowser: async () => {
@@ -4637,7 +4730,11 @@ export const useStore = create<Store>((rawSet, get) => {
      * 不依赖「关设置时顺便恢复浏览器」这种全局假设。
      */
     if (!settingsBlockerRelease) settingsBlockerRelease = get().acquireOverlayBlocker('settings')
-    set({ settingsOpen: true, settingsTab: tab ?? 'appearance' })
+    set({
+      settingsOpen: true,
+      settingsTab: tab ?? 'appearance',
+      settingsRequestRevision: get().settingsRequestRevision + 1
+    })
   },
   closeSettings: () => {
     set({ settingsOpen: false })

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { HtmlArtifactPreviewStore } from './html-artifact-preview-store'
 import { HTML_ARTIFACT_CSP, HTML_ARTIFACT_SCHEME } from '../shared/html-artifact-preview'
+import { parseMcpAppUrl } from '../shared/mcp-app-preview'
 
 // 在 app.ready 之前声明；独立文档不继承主窗口 CSP，也不获得同源权限。
 protocol.registerSchemesAsPrivileged([
@@ -32,7 +33,14 @@ export function registerHtmlArtifactProtocol(): void {
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
     const source = details.frame?.url ?? ''
     if (details.resourceType === 'subFrame') {
-      callback({ cancel: htmlArtifactPreviews.read(details.url) === null })
+      /*
+       * 同一 session 只能有一个 onBeforeRequest 监听，所以 MCP App 的 `inkstone-app:`
+       * iframe 必须在这里一并放行，不能另注册覆盖式 handler。
+       * 只按受控地址放行：正文 / CSP / 归属仍由 app-protocol 的协议 handler 再校验，
+       * 这里不放宽离线成果的 CSP。
+       */
+      const controlled = htmlArtifactPreviews.read(details.url) !== null || parseMcpAppUrl(details.url) !== null
+      callback({ cancel: !controlled })
     } else if (isPreviewUrl(source) || isPreviewUrl(details.referrer)) {
       callback({ cancel: !/^(data:|blob:)/.test(details.url) })
     } else {

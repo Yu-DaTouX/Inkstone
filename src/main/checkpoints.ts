@@ -42,6 +42,200 @@ const MAX_FILES = 30_000
 const MAX_LISTED_CHANGES = 200
 const EXTRA_EXCLUDES = ['node_modules/', '.venv/', 'venv/', '__pycache__/', '.gradle/', '.next/', '.cache/', '.turbo/']
 
+/* ── 只读读取会话基线（评审的「本会话改动」来源）──────────
+ *
+ * 评审要区分「本会话改了什么」和「工作树现在的未提交改动」，因此需要一个
+ * 本会话开始时刻的基线。基线就是该会话**最早的 turn 检查点**（发第一条消息前
+ * 种的快照）。读取走影子仓库的 diff-index，**不**用主仓 HEAD 冒充会话开始：
+ *   · 只反射影子仓库的 index（`git add -A` 到影子 git-dir，不碰项目的
+ *     `.git/index` 与工作树），不 commit、不写 `index.json`、不新建检查点记录；
+ *   · 所有 argv 固定、`--literal-pathspecs`、`--no-ext-diff` / `--no-textconv`
+ *     关掉会执行外部程序的 diff 通道，路径字面处理；
+ *   · 补丁按字节上限截断并标记，读取有超时。
+ */
+const CP_DIFF_TIMEOUT_MS = 20_000
+const CP_PATCH_TIMEOUT_MS = 30_000
+const CP_MAX_PATCH_BYTES = 4_000_000
+const CP_READ_GLOBALS = ['--literal-pathspecs'] as const
+const CP_DIFF_FLAGS = ['--no-ext-diff', '--no-textconv', '--no-color', '--no-renames'] as const
+
+/** 影子仓库里的检查点基线。 */
+export interface CheckpointBaseline {
+  /** 检查点记录 id */
+  id: string
+  /** 影子仓库里的快照提交 sha（40 位十六进制） */
+  sha: string
+  /** 快照时刻 */
+  at: number
+  /** 这一轮用户消息的开头 */
+  preview: string
+}
+
+/** `diff-index --cached` 的完整输出：文件清单与补丁来自同一份 index 快照。 */
+export interface CheckpointTreeDiff {
+  ok: boolean
+  error?: string
+  /** `--name-status -z` 原始输出 */
+  nameStatus: string
+  /** `--numstat -z` 原始输出 */
+  numstat: string
+  /** 基线 → 当前工作树的完整补丁（有界） */
+  patch: string
+  /** 补丁被字节上限截断 */
+  patchTruncated: boolean
+  timedOut?: boolean
+}
+
+/** 单个文件的基线补丁。 */
+export interface CheckpointFileDiff {
+  ok: boolean
+  error?: string
+  path: string
+  patch: string
+  truncated: boolean
+  binary: boolean
+  bytes: number
+}
+
+function isShadowSha(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value)
+}
+
+function capUtf8Bytes(text: string, maxBytes: number): { text: string; truncated: boolean } {
+  const buf = Buffer.from(text, 'utf8')
+  if (buf.length <= maxBytes) return { text, truncated: false }
+  let cut = buf.subarray(0, maxBytes).lastIndexOf(0x0a)
+  if (cut <= 0) cut = maxBytes
+  return { text: buf.subarray(0, cut).toString('utf8'), truncated: true }
+}
+
+/** 工作树相对路径：拒绝绝对路径、盘符、NUL、空段、`.`、`..` 与 `-` 前缀。 */
+function safeShadowPath(input: unknown): string | null {
+  const raw = String(input ?? '')
+  if (!raw || raw.length > 4096 || raw.includes('\0')) return null
+  if (/^[A-Za-z]:/.test(raw)) return null
+  const cleaned = raw.replace(/\\/g, '/')
+  if (cleaned.startsWith('/')) return null
+  if (cleaned.startsWith('-')) return null
+  const parts = cleaned.split('/')
+  if (parts.some((part) => part === '' || part === '.' || part === '..')) return null
+  return parts.join('/')
+}
+
+/** `diff-index --cached` 的固定 argv（读子命令，无写操作）。 */
+function checkpointDiffArgs(sha: string, extra: string[], paths?: string[]): string[] {
+  const args = [...CP_READ_GLOBALS, 'diff-index', '--cached', ...CP_DIFF_FLAGS, ...extra, sha]
+  if (paths && paths.length > 0) args.push('--', ...paths)
+  return args
+}
+
+/**
+ * 找某会话在本项目**最早的有效** turn 检查点作为会话基线。
+ *
+ * 记录按时间顺序排列，取第一个 `kind === 'turn'` 且快照对象仍存在的；
+ * 记录已被清理或对象缺失时跳过，不把手里的索引当成基线。
+ */
+export async function findSessionBaseline(cwd: string, sessionKey: string): Promise<CheckpointBaseline | null> {
+  if (!isCheckpointableDir(cwd) || !sessionKey) return null
+  const dir = projectDir(cwd)
+  const index = await readIndex(dir, cwd)
+  for (const record of index.records) {
+    if (record.kind !== 'turn' || record.sessionKey !== sessionKey) continue
+    const sha = shaOf(record)
+    if (!sha) continue
+    const present = await shadowGit(cwd, dir, ['cat-file', '-e', `${sha}^{commit}`], { allowFailure: true, timeout: 8_000 })
+    if (!present.ok) continue
+    return { id: record.id, sha, at: record.at, preview: record.preview }
+  }
+  return null
+}
+
+/**
+ * 只读读「检查点基线 → 当前工作树」的差异（文件清单 + 完整补丁）。
+ *
+ * 先复用 `snapshotTree` 把工作树现在的内容并进**影子** index（含新出现的
+ * 未跟踪文件；不碰项目 `.git`），再用 `diff-index --cached` 与基线比较。
+ * 三个读取都在同一条串行队列里，文件清单与补丁因此是同一份快照。
+ */
+export function readCheckpointTreeDiff(
+  cwd: string,
+  sha: string,
+  opts: { maxBytes?: number; timeoutMs?: number } = {}
+): Promise<CheckpointTreeDiff> {
+  const empty: CheckpointTreeDiff = { ok: false, nameStatus: '', numstat: '', patch: '', patchTruncated: false }
+  if (!isCheckpointableDir(cwd) || !isShadowSha(sha)) {
+    return Promise.resolve({ ...empty, error: '检查点基线不可用' })
+  }
+  const maxBytes = opts.maxBytes ?? CP_MAX_PATCH_BYTES
+  const timeoutMs = opts.timeoutMs ?? CP_DIFF_TIMEOUT_MS
+  return serialized(normalizeCwd(cwd), async () => {
+    const dir = projectDir(cwd)
+    const tree = await snapshotTree(cwd, dir)
+    if (!tree) return { ...empty, error: '没能读取项目文件当前的状态（文件过多或读取失败）' }
+    const [nameStatus, numstat, patchRes] = await Promise.all([
+      shadowGit(cwd, dir, checkpointDiffArgs(sha, ['--name-status', '-z']), { allowFailure: true, timeout: timeoutMs }),
+      shadowGit(cwd, dir, checkpointDiffArgs(sha, ['--numstat', '-z']), { allowFailure: true, timeout: timeoutMs }),
+      shadowGit(cwd, dir, checkpointDiffArgs(sha, ['--patch']), { allowFailure: true, timeout: CP_PATCH_TIMEOUT_MS })
+    ])
+    if (!nameStatus.ok && !nameStatus.stdout) {
+      return { ...empty, error: nameStatus.error ?? '读取会话基线差异失败' }
+    }
+    const capped = capUtf8Bytes(patchRes.stdout, maxBytes)
+    return {
+      ok: true,
+      nameStatus: nameStatus.stdout,
+      numstat: numstat.stdout,
+      patch: capped.text,
+      patchTruncated: capped.truncated,
+      ...(nameStatus.timedOut || numstat.timedOut || patchRes.timedOut ? { timedOut: true } : {})
+    }
+  })
+}
+
+/**
+ * 只读读单个文件相对检查点基线的补丁。
+ *
+ * 与 `readCheckpointTreeDiff` 同一来源：都先刷新影子 index，再对基线提交读
+ * `diff-index --cached`。正文按字节上限截断，二进制只回说明行。
+ */
+export function readCheckpointFileDiff(
+  cwd: string,
+  sha: string,
+  rawPath: string,
+  opts: { maxBytes?: number; timeoutMs?: number } = {}
+): Promise<CheckpointFileDiff> {
+  const fail = (error: string, path = String(rawPath ?? '')): CheckpointFileDiff => ({
+    ok: false,
+    error,
+    path,
+    patch: '',
+    truncated: false,
+    binary: false,
+    bytes: 0
+  })
+  if (!isCheckpointableDir(cwd) || !isShadowSha(sha)) return Promise.resolve(fail('检查点基线不可用'))
+  const rel = safeShadowPath(rawPath)
+  if (!rel) return Promise.resolve(fail('路径不合法'))
+  const maxBytes = opts.maxBytes ?? CP_MAX_PATCH_BYTES
+  const timeoutMs = opts.timeoutMs ?? CP_PATCH_TIMEOUT_MS
+  return serialized(normalizeCwd(cwd), async () => {
+    const dir = projectDir(cwd)
+    const tree = await snapshotTree(cwd, dir)
+    if (!tree) return fail('没能读取项目文件当前的状态', rel)
+    const res = await shadowGit(cwd, dir, checkpointDiffArgs(sha, ['--patch'], [rel]), { allowFailure: true, timeout: timeoutMs })
+    if (!res.ok && !res.stdout) return fail(res.error ?? '读取补丁失败', rel)
+    const capped = capUtf8Bytes(res.stdout, maxBytes)
+    return {
+      ok: true,
+      path: rel,
+      patch: capped.text,
+      truncated: capped.truncated,
+      binary: /(^|\n)(Binary files .+? differ|GIT binary patch)\s*(\n|$)/.test(capped.text),
+      bytes: Buffer.byteLength(res.stdout, 'utf8')
+    }
+  })
+}
+
 /** 索引里的记录比界面看到的多一个快照提交 sha */
 interface StoredRecord extends CheckpointRecord {
   sha: string

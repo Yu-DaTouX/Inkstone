@@ -31,7 +31,7 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `main/session-send-guard.ts` / `state/composer-recovery.ts` / `chat/ActiveSubagents.tsx` | 同目录发送复核、按会话缓存并恢复草稿/附件、输入框上方当前会话子代理概览；不是完整文件锁 |
 | `src/main/mcp/native-import.ts` / `native-verify.ts` / `src/shared/mcp-native-import.ts` | 旧通用 MCP 的预览令牌、内容指纹、单条隔离 pi CLI 校验与分步停用；设置通过 `McpNativeImport.tsx` 与同目录纯流程调用 IPC，不搬 authRef 凭证 |
 | `src/main/terminal-status.ts` / `terminal.ts` / `components/toolbar/RightPanel.tsx` | OSC 7501 与 9;4 后备状态扫描、低频标签推送；Windows 任务栏仅投影已有运行/等待事实 |
-| `components/ui/confirm.tsx` / `confirm-queue.ts` / `Tip.tsx` | 应用内串行确认及取消优先焦点；统一非模态提示气泡，复用浮层阻挡与退场基座 |
+| `components/ui/confirm.tsx` / `confirm-queue.ts` / `Tip.tsx`（v2） | 应用内串行确认及取消优先焦点；统一非模态提示气泡，复用浮层阻挡与退场基座 |
 | `lib/host-actions.ts` / `use-host-actions.ts` / `composer-submit.ts` | 命令面板、快捷键表与分发共用前端动作/绑定；斜杠命令复用输入框正式执行路径 |
 | `src/main/storage-move.ts` / `storage-move-boot.ts` | 数据位置迁移：设置 → 关于 → 数据位置 登记目标，下次启动整体搬迁并在原处留目录联接，核对文件数与字节后才删原目录，失败撤回 |
 | `src/main/app-update.ts` + `src/shared/app-update.ts` | 应用更新：GitHub Release 检查；安装版经 electron-updater 下载、确认后重启安装，有任务运行时拒绝；便携版与开发版只给发布页入口 |
@@ -41,7 +41,12 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/main/session-entries-lite.ts` | 会话文件里任务与自定义条目的增量读取，不经 pi 的 `get_entries` 搬运整份会话 |
 | `src/preload/index.ts` | 渲染端可用的宿主接口 |
 | `src/shared/ipc.ts` | IPC 契约与类型 |
-| `src/renderer/src/components/` | React 界面组件 |
+| `src/renderer/src/components/` | v2 React 界面组件（默认外壳） |
+| `src/renderer/src/main.tsx` / `src/shared/ui-version.ts` | 启动时按 `YAN_UI`、`uiVersion` 设置选择外壳；两套界面动态导入，不混载样式 |
+| `src/renderer/src/app/` / `ui/` / `patterns/` / `features/` | v3 外壳、React Aria 原语、组合形态与功能界面；共用原 store 与宿主能力，不表示 v2 界面功能已全部迁移 |
+| `src/renderer/src/design/tokens.json` / `scripts/design/build-tokens.mjs` | v3 令牌唯一来源与生成器；移动端候选色板与嵌入主题映射是生成物，不代表这些端已接入 |
+| `.storybook/` | 仅开发的 v3 组件故事与主题/密度预览，不进入桌面运行时 |
+| `src/shared/runs.ts` / `src/main/runs/` | 运行状态投影、稳定会话编号、停滞提示、批量发布与历史；不执行模型循环，不以 `agent_end` 标记完成 |
 | `src/renderer/src/components/workbench/` | 中栏的多 Agent 与子 Agent 视图：`AgentHubHome.tsx`、`AgentHubPanel.tsx`、`AgentWorkspacePanel.tsx`、`AgentRunChat.tsx`、`AgentAttachments.tsx`、`AgentMark.tsx`、`SubagentPanel.tsx`、`Workspace.tsx`。空间、资料库、关注、工作台首页、任务收件箱与会话地图界面已于 2026-10-09 移除，无界面入口 |
 | `src/shared/space.ts` + `src/main/space-store.ts` | 主题空间：非 Git 的会话归属与项目关联（历史数据兼容，无界面入口） |
 | `src/shared/library.ts` + `src/main/library-store.ts` / `library-parser.ts` / `library-service.ts` | 资料库：唯一事实源、版本绑定与解析（历史数据兼容，无界面入口） |
@@ -56,7 +61,7 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/shared/search.ts` + `src/main/search/` | 联网搜索（`yan search query / fetch / docs`，单一入口）：增强搜索服务按 `SEARCH_PROVIDERS` 登记，都需要用户自己注册 key、填了才启用，key 在 `search-config.json` 或环境变量——Tavily / Brave 进 `query` 来源链，Firecrawl 是 `fetch` 本地读不出正文时的兜底，Context7 是 `docs`（key 可选），共用 `api-call.ts` 的超时与错误码；来源白名单（首批 wikipedia / arxiv / hackernews，HTTP 直连不需要浏览器扩展）、归一化与 URL 去重、逐来源状态（`ok` / `empty` / `timeout` / `unavailable` / `error` 分开）、`spawn` 参数数组不经 shell；JS 入口**用真实 node 跑**（Electron 自带的 Node 会让 commander 的参数切分错位，子命令全部失效、而 `--version` 仍成功 → 假绿），PATH 里没有 node 时可用 `YAN_NODE_BIN` 显式指定；`scripts/probe/search.mjs` 是不依赖宿主的探针，`scripts/probe/search-electron.mjs` 专测 **Electron 运行时**（钉住上面那条假绿回归） |
 | `src/shared/task-inbox.ts` + `src/main/task-inbox-service.ts` | 任务收件箱：七态投影（`needs_review` 无精确来源，只能近似并标 `approximate`）、排序与筛选、注入式只读聚合（TTL 缓存 + 分页；某个来源坏了只丢那一项）；界面已移除，无入口 |
 | `src/renderer/src/icons/` + `scripts/design/icons/` | 图标体系：`catalog.json` 是语义 → 图标的唯一真源（55 个语义），`npm run icons` 生成 sprite；界面只用语义名，不写库里的原名 |
-| `src/renderer/src/styles/ui.css`、`src/renderer/src/components/ui/` | 统一控件（按钮、分段、开关、徽标、空状态）的唯一外观来源，规则见[设计规范](DESIGN_SYSTEM.md)，重构路线见[界面重构计划](UI_REDESIGN.md) |
+| `src/renderer/src/ui/`（v3）与 `src/renderer/src/styles/ui.css`、`src/renderer/src/components/ui/`（v2 现行） | 控件（按钮、分段、开关、徽标、空状态）外观的统一来源，规则见[设计规范](DESIGN_SYSTEM.md)，范围见[界面重构记录](UI_REDESIGN.md) |
 | `src/renderer/src/styles/motion.css` | 动效唯一真源（37 个关键帧）；时长 / 曲线令牌在 `tokens.css`，模块 CSS 只引用不定义 |
 | `src/renderer/src/state/` | 会话状态与事件投影 |
 | `src/renderer/src/styles/` | 样式、令牌与主题；入口 `index.css` 用级联层决定覆盖关系 |

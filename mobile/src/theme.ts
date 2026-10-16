@@ -6,6 +6,7 @@
  * 色值由 `npm run check:mobile-tokens` 与 tokens.css 比对。
  */
 import { useColorScheme } from 'react-native'
+import { THEME_V3_ENABLED, v3Palette } from './theme-v3'
 
 export interface Palette {
   bg0: string
@@ -22,6 +23,10 @@ export interface Palette {
   accentSoft: string
   accentLine: string
   onAccent: string
+  /** v3 墨色主按钮三项（WP-60）。旧色板不带，主按钮取值时回退 accent / onAccent。 */
+  ink?: string
+  inkHover?: string
+  onInk?: string
   ok: string
   warn: string
   warnSoft: string
@@ -92,5 +97,7 @@ export const touch = { min: 44, compact: 36 } as const
 export const mono = 'monospace'
 
 export function usePalette(): Palette {
-  return useColorScheme() === 'light' ? light : dark
+  const mode = useColorScheme() === 'light' ? 'light' : 'dark'
+  // 默认仍走旧色板；THEME_V3_ENABLED 打开后才用 theme-v3.ts 的 v3 映射。
+  return THEME_V3_ENABLED ? v3Palette(mode) : mode === 'light' ? light : dark
 }

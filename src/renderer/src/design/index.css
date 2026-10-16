@@ -1,0 +1,23 @@
+/*
+ * v3 样式入口（唯一）。
+ *
+ * 级联层只在这里声明一次；后面任何文件（`ui/`、`patterns/`、`features/` 的模块 CSS）
+ * 只要写 `@layer <名字> { … }` 就会落到既定顺序上，与 import 先后无关。
+ *   reset      浏览器默认值归零
+ *   tokens     设计令牌（由 scripts/design/build-tokens.mjs 从 tokens.json 生成）
+ *   base       元素级基础样式
+ *   primitives 统一控件外观（ui/ui.css）
+ *   patterns   领域模式（patterns/*.css）
+ *   features   各功能模块的版面
+ *   utilities  少量通用工具类
+ *
+ * v3 不导入任何 styles/*.css（v2 样式只属于 v2 外壳）。
+ *
+ * ⚠️ `@import` 必须出现在其他规则之前，但可以排在 `@layer` 声明语句之后 ——
+ * 这里先声明层顺序，再逐个把文件放进对应层，保证 tokens/base 的顺序与上文一致。
+ */
+@layer reset, tokens, base, primitives, patterns, features, utilities;
+
+@import './reset.css' layer(reset);
+@import './tokens.css' layer(tokens);
+@import './base.css' layer(base);

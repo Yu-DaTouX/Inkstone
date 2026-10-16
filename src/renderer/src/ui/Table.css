@@ -1,0 +1,105 @@
+/*
+ * v3 Table 原语外观（WP-05）。
+ *
+ * 与 ui.css 同属 `primitives` 层；只写控件外观，不写业务版面。
+ * 虚拟化时 RAC 把 `<table>` 换成 `<div>`，两者共用 `.ui-table` 基类，
+ * 只有滚动容器相关的少数规则按元素名限定。
+ */
+@layer reset, tokens, base, primitives, patterns, features, utilities;
+
+@layer primitives {
+  .ui-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    color: var(--fg);
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+  }
+
+  /* 虚拟化时 RAC 渲染 div 作为滚动容器（行绝对定位由 RAC 布局负责）。 */
+  div.ui-table {
+    position: relative;
+    overflow: auto;
+    padding: 0;
+    outline: none;
+  }
+
+  .ui-table__header {
+    color: var(--fg2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .ui-table__column {
+    position: relative;
+    padding: var(--s-6) var(--s-10);
+    text-align: start;
+    white-space: nowrap;
+    color: var(--fg2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+  .ui-table__column[data-allows-sorting] {
+    cursor: default;
+    user-select: none;
+  }
+  .ui-table__column[data-sort-direction]::after {
+    margin-inline-start: var(--s-4);
+    color: var(--accent);
+  }
+  .ui-table__column[data-sort-direction='ascending']::after {
+    content: '\2191';
+  }
+  .ui-table__column[data-sort-direction='descending']::after {
+    content: '\2193';
+  }
+
+  .ui-table__row {
+    color: var(--fg);
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+  }
+
+  .ui-table__cell {
+    padding: var(--s-6) var(--s-10);
+    text-align: start;
+    vertical-align: middle;
+  }
+
+  .ui-table__row[data-selected] {
+    background: var(--sel);
+  }
+  .ui-table__row[data-disabled] {
+    opacity: 0.5;
+  }
+  .ui-table__body[data-empty] .ui-table__cell {
+    padding: 0;
+  }
+
+  @media (hover: hover) {
+    .ui-table__row:hover:not([data-disabled]) {
+      background: var(--hover);
+    }
+    .ui-table__row[data-selected]:hover:not([data-disabled]) {
+      background: var(--sel);
+    }
+  }
+
+  .ui-table[data-focus-visible],
+  .ui-table__column[data-focus-visible],
+  .ui-table__cell[data-focus-visible],
+  .ui-table__row[data-focus-visible] {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .ui-table__empty,
+  .ui-table__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-8);
+    min-height: 96px;
+    padding: var(--s-24);
+    color: var(--fg3);
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    text-align: center;
+  }
+}

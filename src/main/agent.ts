@@ -55,6 +55,7 @@ import {
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { consumeQueuedItem, reconcileQueueItems, sameQueueImages, snapshotQueue } from './queue-items'
+import { applyQueueRewrite, type QueueRewriteResult } from './queue-edit'
 import { clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { projectPackageDirs } from './packages'
@@ -86,11 +87,34 @@ import { BrowserCommands } from './browser-commands'
 import { LookupCommands } from './lookup-commands'
 import { TurnTimingTracker } from './turn-timing-tracker'
 import { UiRequests, type HostUiResponse } from './ui-requests'
+import { runSignalFromUiRequest, runSignalFromUiResolved, signalFromQueueUpdate, signalsFromPiEvent } from './runs/pi-events'
+import type { RunModel, RunSignal } from '../shared/runs'
 import { paramString } from './command-params'
 import { activeSkillArgs } from './capabilities/skill-files'
 import { McpConnectionManager } from './mcp/connection-manager'
 import { loadMcpServers, mcpServersForProject } from './mcp/config'
+import {
+  captureNativeStartupWitness,
+  newBootId,
+  verifyNativeStartupWitness,
+  type McpNativeBootWitness,
+  type McpNativeConfigReader
+} from './mcp/app-native-witness'
+import { assertLegacyMcpAccessBlocked, runMcpAppProxyCommand } from './mcp/app-proxy-service'
+import { mcpAppHost } from './mcp/app-host'
+import { isInkstoneManaged } from './mcp/app-spec'
+import {
+  disconnectManagedServer,
+  managedRuntimeFacts,
+  reconcileLegacyManaged,
+  verifyManagedServer,
+  SettingsSafeAccessError,
+  type LegacyReconcileResult,
+  type SettingsSafeAccess
+} from './mcp/settings-safe-access'
 import { callMcpTool, describeMcpTool, McpToolError } from './mcp/tool-service'
+import type { McpServerStatus } from '../shared/mcp'
+import type { CapabilityMcpServerSettingView } from '../shared/ipc'
 import { migratedMcpCommandNotice } from '../shared/mcp-native-import'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
@@ -106,6 +130,7 @@ import {
   normalizeThinkingLevels,
   resolveThinkingLevels
 } from '../shared/model-capabilities'
+import { attachModelPrice } from './models/price'
 import type {
   BashRun,
   BrowserObservation,
@@ -161,6 +186,27 @@ const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 
 /** 推送补丁到渲染端（主进程注入） */
 type Push = (msg: MainPush) => void
+
+/**
+ * 旁路给运行注册表的压缩上下文（v3 WP-10）。
+ *
+ * 只带注册表需要的事实，不含消息 / 工具原始输出；由 AgentController 在
+ * **事件到达时**按当时的会话状态构造，所以旧会话的迟到事件不会套用新会话身份。
+ */
+export interface RunObserverContext {
+  sessionId: string
+  sessionPath?: string
+  title?: string
+  model?: RunModel
+}
+
+/**
+ * 只读旁路：把 pi / 宿主事件压缩成 run signals 交给宿主。
+ *
+ * 它**不**参与 pi 循环、不改消息投影、不影响原有 push 与授权流程 ——
+ * 只是把同一批事实另外归约一份给运行注册表。
+ */
+export type RunObserver = (ctx: RunObserverContext, signal: RunSignal) => void
 
 /* -------------------------------------------------- 浏览器（宿主能力服务） */
 
@@ -418,6 +464,12 @@ export class AgentController extends EventEmitter {
   private temperatureExtension?: string
   /** 能力入口说明扩展（每轮静态追加，不随设置变化）。 */
   private capabilityGuideExtension?: string
+  /** 托管 MCP 工具的模型代理薄层路径（读快照注册 mcp__ 工具，执行打回宿主端点）。 */
+  private mcpAppProxyExtension?: string
+  /** 工具快照文件路径；缺省表示没有可用缓存，代理薄层不注册任何托管工具。 */
+  private mcpAppToolsSnapshot?: string
+  /** 读 pi 原生 MCP 配置文本（A7 启动见证）；缺省 fs。 */
+  private nativeConfigReader?: McpNativeConfigReader
   /** 上下文构成观测薄层（只读上报系统提示分段与工具定义）。 */
   private contextInspectExtension?: string
   /** 旧工具输出裁剪与自动压缩上限（只改发给模型的视图，压缩走 pi 原生 compact）。 */
@@ -485,6 +537,12 @@ export class AgentController extends EventEmitter {
   /** 同步执行入场 token；成功后持有到回合结束，失败 / 取消立即归还。 */
   private executionAdmissionToken?: number
   private executionAdmissionTimer?: ReturnType<typeof setTimeout>
+  /**
+   * 运行注册表旁路（v3 WP-10）。
+   *
+   * 由主进程按 runner 实例注入；只收压缩后的 run signals，不参与执行控制。
+   */
+  private runObserver?: RunObserver
 
   /** 模型/思考能力变更串行化，避免快速点击时旧响应覆盖新状态。 */
   private capabilityChangeTail: Promise<void> = Promise.resolve()
@@ -493,6 +551,20 @@ export class AgentController extends EventEmitter {
    * 也不起多余进程。与 agent 同生命周期 —— `stop()` 时关掉，不留孤儿子进程。
    */
   private mcpManager?: McpConnectionManager
+  /**
+   * 因配置转托管而退役的旧 legacy manager。
+   * 不能立刻 `close()`：其上的活连接要由显式对账 **await 断开** 后才允许交给
+   * 砚宿主，否则会出现双连接窗口。见 `settings-safe-access.ts`。
+   */
+  private retiredMcpManagers: McpConnectionManager[] = []
+  /**
+   * 因配置转托管 / 删除而摘出的成员，正在释放底层连接（key = serverId）。
+   * 在确认关闭前，这些 serverId 仍视为**可能持有者**（见 `getLegacyMcpHolderSnapshot`）——
+   * 关闭悬挂时旧 holder 不能从事实里消失；关闭失败则保守保留。
+   */
+  private mcpReleasing = new Map<string, Promise<{ confirmed: boolean; unknown: number }>>()
+  /** `closeRetiredMcpManagers` 的串行链：并发收尾不重复关闭同一个 manager。 */
+  private retiredCloseTail: Promise<void> = Promise.resolve()
   /** 配置本身的毛病（坏条目 / 重复 id）；调用时如实带回，不静默。 */
   private mcpConfigError?: string
   /** `yan capabilities search / discover / prepare / acquire` 的实现（见 capabilities/acquisition-commands.ts） */
@@ -750,6 +822,15 @@ export class AgentController extends EventEmitter {
      * resources/pi-extensions/capability-guide.js）。
      */
     capabilityGuideExtension?: string
+    /** 托管 MCP 代理薄层路径（由 index.ts 注入；缺省不注册托管工具）。 */
+    mcpAppProxyExtension?: string
+    /** 工具快照文件；只在存在且未过期时注入，不落盘 token / 凭证。 */
+    mcpAppToolsSnapshot?: string
+    /**
+     * 读 pi 原生 MCP 配置文本（启动见证采集 / 复核用）。
+     * 缺省走 fs；宿主注入时也用于测试「采集 / 复核期间 stop」的竞态。
+     */
+    nativeConfigReader?: McpNativeConfigReader
     /** 上下文构成观测：只读上报，不改提示与消息。 */
     contextInspectExtension?: string
     /** 旧工具输出裁剪与自动压缩上限。 */
@@ -823,11 +904,20 @@ export class AgentController extends EventEmitter {
       onBashSettled?: () => void
       trashItem?: (path: string) => Promise<void>
     }
+    /**
+     * 运行注册表旁路（v3 WP-10）。
+     *
+     * 传的是压缩后的 run signals，不是消息 / 工具原始输出；主进程按 runner
+     * 实例注入并自带 generation，本类不把它并入任何 UI 路径。
+     */
+    observeRun?: RunObserver
   }) {
     super()
     const emit = opts.push
     this.push = (msg) => {
-      if (!this.suppressPush) emit(msg)
+      if (this.suppressPush) return
+      this.observeRunPush(msg)
+      emit(msg)
     }
     this.cwd = opts.cwd
     this.piBin = opts.piBin
@@ -841,6 +931,9 @@ export class AgentController extends EventEmitter {
     this.languageExtension = opts.languageExtension
     this.temperatureExtension = opts.temperatureExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
+    this.mcpAppProxyExtension = opts.mcpAppProxyExtension
+    this.mcpAppToolsSnapshot = opts.mcpAppToolsSnapshot
+    this.nativeConfigReader = opts.nativeConfigReader
     this.contextInspectExtension = opts.contextInspectExtension
     this.contextTrimExtension = opts.contextTrimExtension
     this.nativeSessionExtension = opts.nativeSessionExtension
@@ -868,6 +961,7 @@ export class AgentController extends EventEmitter {
     this.capabilityOpts = opts.capability
       ? { ...opts.capability, runnerGeneration: opts.capability.runnerGeneration ?? 1 }
       : undefined
+    this.runObserver = opts.observeRun
   }
 
   /**
@@ -887,7 +981,7 @@ export class AgentController extends EventEmitter {
        * 这两样只有 agent 实例知道。
        */
       const handlers: CapabilityHandlers = {
-        run: (command, params) => this.runCapabilityCommand(command, params)
+        run: (command, params, _ctx, signal) => this.runCapabilityCommand(command, params, signal)
       }
       const server = new CapabilityServer({
         opsDir: opts.opsDir,
@@ -988,6 +1082,13 @@ export class AgentController extends EventEmitter {
   /** 停止开始就使后台标题失效，不等待 MCP/RPC 关闭完成。 */
   private titleLifecycle = 0
   private stopping = false
+  /**
+   * A7：pi spawn 前采集、ready 后复核通过的启动见证。
+   * `nativeWitnessPending` 已采集待复核；`nativeWitness` 已签发。getter 只读，
+   * renderer / RPC 不能赋值；stop / 重启 / 热重载 / 进程退出即作废。
+   */
+  private nativeWitnessPending: McpNativeBootWitness | null = null
+  private nativeWitness: McpNativeBootWitness | null = null
 
   /** 供渲染端拉取（补上可能错过的 push） */
   getConn(): { state: 'starting' | 'ready' | 'exited' | 'error'; detail: string } {
@@ -1073,6 +1174,8 @@ export class AgentController extends EventEmitter {
          * 放最后：它要在其它扩展都不拦的时候才生效（不抢模式门禁的判断）。
          */
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
+        /* 托管 MCP 代理薄层：读快照注册 mcp__ 工具，执行时打回宿主能力端点。 */
+        ...(this.mcpAppProxyExtension ? ['--extension', this.mcpAppProxyExtension] : []),
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
         // 询问档：写文件 / 跑命令前先问（读设置，full 档不产生任何请求）
         ...(this.permissionGuardExtension ? ['--extension', this.permissionGuardExtension] : []),
@@ -1132,6 +1235,15 @@ export class AgentController extends EventEmitter {
           ? { YAN_RUNNER_ID: this.capabilityOpts.sessionId }
           : { YAN_RUNNER_ID: 'primary' }),
         YAN_RUNNER_EPOCH: String(this.capabilityOpts?.runnerGeneration ?? 1),
+        /*
+         * 托管 MCP 工具快照：只注入路径（快照不含 token / 配置 / 凭证）。
+         * 没有快照就没有这一项 —— 代理薄层不注册工具，等用户刷新。
+         * 项目身份一并注入：薄层据此只注册「全局 + 本项目」的工具，不注册别的项目。
+         */
+        ...(this.mcpAppToolsSnapshot ? { YAN_MCP_APP_TOOLS: this.mcpAppToolsSnapshot } : {}),
+        ...(this.mcpAppToolsSnapshot && this.capabilityOpts?.projectId
+          ? { YAN_MCP_APP_PROJECT_ID: this.capabilityOpts.projectId }
+          : {}),
         ...(this.capabilityOpts?.projectId
           ? { YAN_PROJECT_ID: this.capabilityOpts.projectId }
           : {}),
@@ -1175,6 +1287,19 @@ export class AgentController extends EventEmitter {
         this.push({ ch: 'state', payload: this.state })
       }
       this.setConn('exited', `pi 已退出（code=${code ?? 'null'}）`)
+      /* A7：进程已退，启动见证不再代表任何存活进程，立刻作废。 */
+      this.nativeWitness = null
+      this.nativeWitnessPending = null
+      /*
+       * 进程退出 → 运行注册表：主动停（回收 / 切换 / 退出）记「停止」，
+       * 意外退出记「失败」。两者都不是 done，不会把没跑完的一轮说成已完成。
+       * ctx 在退出到达时快照，不用延迟后的「当前会话」。
+       */
+      const runSink = this.runObserver
+      const runCtx = this.runObserverContext()
+      if (runSink && runCtx) {
+        runSink(runCtx, this.stopping ? { type: 'stopped', by: 'host' } : { type: 'pi-exit', code: code ?? null, signal: null })
+      }
     })
 
     rpc.on('ui', (req) => {
@@ -1182,6 +1307,32 @@ export class AgentController extends EventEmitter {
       this.ui.handleUi(req)
     })
     rpc.on('event', (evt) => this.handleEvent(evt))
+
+    /*
+     * A7：spawn 前记下真实原生配置的启动快照（全局 `PI_AGENT_DIR/mcp.json` +
+     * 本 cwd 项目 `.pi/mcp.json`；与砚实际传给 pi 的 agentDir / cwd 同源）。
+     * pi ready 后重读比对，两次一致才签发见证。
+     *
+     * 采集是 await：期间可能 stop / 重启 / 换项目。若 `this.rpc` 已不是当前这个
+     * rpc（或已进入 stopping），本次启动作废 —— 不 spawn、不签发、不覆盖新状态，
+     * 旧回调不得让 stop 之后的旧进程复活。
+     */
+    this.nativeWitness = null
+    this.nativeWitnessPending = null
+    {
+      const capture = await captureNativeStartupWitness({
+        agentDir: PI_AGENT_DIR,
+        cwd: this.cwd,
+        bootId: newBootId(),
+        generation: this.capabilityOpts?.runnerGeneration ?? 1,
+        projectId: this.capabilityOpts?.projectId ?? null,
+        ...(this.nativeConfigReader ? { readNativeConfig: this.nativeConfigReader } : {})
+      })
+      if (this.rpc !== rpc || this.stopping) {
+        return { ok: false, error: 'pi 启动在采集归属事实期间被取消' }
+      }
+      if (capture.ok) this.nativeWitnessPending = capture.witness ?? null
+    }
 
     rpc.spawn()
 
@@ -1194,6 +1345,25 @@ export class AgentController extends EventEmitter {
     }
 
     this.setConn('ready')
+
+    /*
+     * A7：pi 已就绪、原生配置已加载完；重读比对通过才签发启动见证。
+     * 复核同样可能被 stop / 重启打断：`this.rpc` 变了或已 stopping 就不签发，
+     * 也不让旧实例继续 hydrate。
+     */
+    {
+      const pending = this.nativeWitnessPending
+      this.nativeWitnessPending = null
+      if (pending) {
+        const confirmed = await verifyNativeStartupWitness(pending, {
+          ...(this.nativeConfigReader ? { readNativeConfig: this.nativeConfigReader } : {})
+        })
+        if (this.rpc === rpc && !this.stopping && confirmed.ok) this.nativeWitness = pending
+      }
+    }
+    if (this.rpc !== rpc || this.stopping) {
+      return { ok: false, error: 'pi 启动在复核归属事实期间被取消' }
+    }
 
     /*
      * 首次连接时主动问一次档位：pi 的 get_state 不提供它，而 store.reloadModels
@@ -1392,7 +1562,8 @@ export class AgentController extends EventEmitter {
    */
   private async runCapabilityCommand(
     command: string,
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    signal?: AbortSignal
   ): Promise<CapabilityCommandResult> {
     if (command.startsWith('browser.')) {
       return this.browserCommands.runBrowserCommand(command.slice('browser.'.length), params)
@@ -1446,6 +1617,9 @@ export class AgentController extends EventEmitter {
     }
     if (command === 'skill.save') {
       return this.runSkillSave(params)
+    }
+    if (command.startsWith('mcp.app.')) {
+      return this.runMcpAppCommand(command, params, signal)
     }
     if (command.startsWith('mcp.')) {
       return this.runMcpCommand(command.slice('mcp.'.length), params)
@@ -2058,16 +2232,130 @@ export class AgentController extends EventEmitter {
 
   /* ------------------------------------------------ MCP（实施-04 S3） */
 
-  /** 懒创建连接管理器；配置坏掉时把原因留着，调用时一并回报。 */
+  /**
+   * 懒创建 legacy 连接管理器；配置坏掉时把原因留着，调用时一并回报。
+   *
+   * **排除托管服务**：托管项只由 `McpAppHost` 单例连接，legacy manager 不再建
+   * 第二条。配置后来转托管时旧 manager 里可能仍留活连接 —— 成员变化就重建；
+   * 含托管项的旧 manager 退役进 `retiredMcpManagers`，等显式对账 await 断开。
+   */
   private mcpConnectionManager(): McpConnectionManager {
+    const loaded = loadMcpServers()
+    this.mcpConfigError = loaded.error
+    const visible = mcpServersForProject(loaded.servers, this.capabilityOpts?.projectId)
+    const legacyConfigs = visible.filter((server) => !isInkstoneManaged(server))
     if (!this.mcpManager) {
-      const loaded = loadMcpServers()
-      this.mcpConfigError = loaded.error
-      this.mcpManager = new McpConnectionManager(
-        mcpServersForProject(loaded.servers, this.capabilityOpts?.projectId)
+      this.mcpManager = new McpConnectionManager(legacyConfigs)
+      return this.mcpManager
+    }
+    /*
+     * 复用同一个 manager，只按 server 协调成员（不重建、不建第二注册表）：
+     * 转托管 / 删除的成员被立即摘出并异步释放；未变化的 legacy 成员（如 B）
+     * 保持原连接，避免新 manager 对同一个 B 再连一条。释放确认前，被摘出的
+     * serverId 仍经 `mcpReleasing` 计入持有者，不当成已安全交接。
+     */
+    const releases = this.mcpManager.syncServers(legacyConfigs)
+    for (const { serverId, release } of releases) {
+      this.mcpReleasing.set(serverId, release)
+      void release.then(
+        (outcome) => {
+          if (outcome.confirmed && this.mcpReleasing.get(serverId) === release) this.mcpReleasing.delete(serverId)
+        },
+        () => {
+          /* 关闭失败：保守保留，仍算可能持有 */
+        }
       )
     }
     return this.mcpManager
+  }
+
+  /** 单一归属路径的注入点：现役 + 退役 legacy manager 只读引用 + 宿主单例。 */
+  private settingsSafeAccess(): SettingsSafeAccess {
+    return {
+      loadServers: () => loadMcpServers(),
+      legacyManagers: () =>
+        [this.mcpManager, ...this.retiredMcpManagers].filter(
+          (manager): manager is McpConnectionManager => Boolean(manager)
+        ),
+      host: () => mcpAppHost()
+    }
+  }
+
+  /**
+   * 关闭退役 manager。**先不把事实清空**：关闭期间它们仍在持有快照里可见；
+   * 未能确认关闭的保守留在列表（下次再试），不因为 Promise 没抛错就当成已释放。
+   */
+  private closeRetiredMcpManagers(): Promise<void> {
+    const run = this.retiredCloseTail.then(() => this.closeRetiredNow(), () => this.closeRetiredNow())
+    this.retiredCloseTail = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  private async closeRetiredNow(): Promise<void> {
+    if (this.retiredMcpManagers.length === 0) return
+    const remaining: McpConnectionManager[] = []
+    for (const manager of this.retiredMcpManagers) {
+      const outcome = await manager.closeConfirmed().catch(() => ({ confirmed: false, unknown: 1 }))
+      if (!outcome.confirmed) remaining.push(manager)
+    }
+    this.retiredMcpManagers = remaining
+  }
+
+  /** 显式对账旧 legacy 残留，并清掉已确认断开的退役 manager。 */
+  private async reconcileLegacyForManaged(serverId: string): Promise<LegacyReconcileResult> {
+    const result = await reconcileLegacyManaged(
+      this.settingsSafeAccess(),
+      serverId,
+      this.capabilityOpts?.projectId
+    )
+    /*
+     * 该成员可能已被 `mcpConnectionManager()` 同步摘出并在异步释放，
+     * `reconcileLegacyManaged` 只在仍登记的 manager 里找得到它。
+     * 关闭确认回来前不得交给宿主。
+     */
+    const releasing = this.mcpReleasing.get(serverId)
+    if (releasing) {
+      const outcome = await releasing
+      if (!outcome.confirmed) {
+        throw new SettingsSafeAccessError(
+          'legacy-holder-unresolved',
+          `旧 MCP 连接 ${serverId} 的关闭未能确认，不交给砚宿主，避免双连接`
+        )
+      }
+      if (this.mcpReleasing.get(serverId) === releasing) this.mcpReleasing.delete(serverId)
+      result.legacyReleased = true
+    }
+    await this.closeRetiredMcpManagers()
+    return result
+  }
+
+  /**
+   * 只读旧 legacy MCP manager 的持有事实（**不创建 manager、不连接、不含凭证**）。
+   *
+   * 为什么需要：runner 窄快照只反映 pi RPC 进程；`AgentController` 的 legacy
+   * manager 可能在 pi 退出后仍活着。A7 的启动见证不能据此假定「无 legacy 连接」，
+   * 下一整合者应把本事实并入 runners 窄快照（补丁见交接报告）。
+   */
+  getLegacyMcpHolderSnapshot(): { services: Array<{ serverId: string; status: McpServerStatus }> } {
+    const managers = [this.mcpManager, ...this.retiredMcpManagers].filter(
+      (manager): manager is McpConnectionManager => Boolean(manager)
+    )
+    const services: Array<{ serverId: string; status: McpServerStatus }> = []
+    for (const manager of managers) {
+      for (const serverId of manager.listServerIds()) {
+        if (services.some((service) => service.serverId === serverId)) continue
+        services.push({ serverId, status: manager.statusOf(serverId).status })
+      }
+    }
+    /*
+     * 已摘出但尚未确认关闭的成员仍算可能持有：关闭悬挂时旧 holder 不能从
+     * 事实里消失，否则宿主会在旧 transport 还没关干净时接手。
+     */
+    for (const serverId of this.mcpReleasing.keys()) {
+      if (services.some((service) => service.serverId === serverId)) continue
+      services.push({ serverId, status: 'connecting' })
+    }
+    return { services }
   }
 
   /** 安全投影给设置页：不回传命令参数、环境变量、认证引用或完整端点 URL。 */
@@ -2103,30 +2391,62 @@ export class AgentController extends EventEmitter {
         }))
       : []
     const skills = [...sessionSkills, ...loaded]
-    const manager = this.mcpConnectionManager()
-    const servers = manager.list().map((server) => {
-      let endpointOrigin: string | undefined
-      if (server.transport === 'http' && server.url) {
-        try {
-          endpointOrigin = new URL(server.url).origin
-        } catch {
-          /* 配置校验已报错；UI 不需要拿到可能含凭证的原始字符串。 */
-        }
+    const endpointOriginOf = (server: { transport: string; url?: string }): string | undefined => {
+      if (server.transport !== 'http' || !server.url) return undefined
+      try {
+        const origin = new URL(server.url).origin
+        return origin === 'null' ? undefined : origin
+      } catch {
+        /* 配置校验已报错；UI 不需要拿到可能含凭证的原始字符串。 */
+        return undefined
       }
-      return {
+    }
+    const loadedForSettings = loadMcpServers()
+    this.mcpConfigError = loadedForSettings.error
+    const projectId = this.capabilityOpts?.projectId
+    const visible = mcpServersForProject(loadedForSettings.servers, projectId)
+    const managedConfigs = visible.filter((server) => isInkstoneManaged(server))
+    /* 展示前对账：配置刚转托管时，旧 legacy manager 里可能仍留活连接。 */
+    for (const managed of managedConfigs) await this.reconcileLegacyForManaged(managed.id)
+    const access = this.settingsSafeAccess()
+    const manager = this.mcpConnectionManager()
+    /* 对账后已无用的退役 manager 此刻可安全关闭。 */
+    await this.closeRetiredMcpManagers()
+    const servers: CapabilityMcpServerSettingView[] = []
+    for (const server of manager.list()) {
+      const endpointOrigin = endpointOriginOf(server)
+      servers.push({
         id: server.id,
         title: server.title ?? server.id,
         transport: server.transport,
         enabled: server.enabled !== false,
         effect: server.effect ?? 'unknown',
         projectScoped: Boolean(server.projectScope),
-        ...(endpointOrigin && endpointOrigin !== 'null' ? { endpointOrigin } : {}),
+        ...(endpointOrigin ? { endpointOrigin } : {}),
         status: manager.statusOf(server.id).status,
         toolCount: manager.toolCountOf(server.id),
+        ownedBy: 'pi',
         /* 已导入 pi 原生的条目：设置页可显示「已导入」而不删条目（方案合集 06）。 */
         ...(server.migratedToNative ? { migratedToNative: server.migratedToNative } : {})
-      }
-    })
+      })
+    }
+    /* 托管项：状态与工具数只读宿主已持有的缓存，不为展示而连接。 */
+    for (const config of managedConfigs) {
+      const facts = managedRuntimeFacts(access, config.id)
+      const endpointOrigin = endpointOriginOf(config)
+      servers.push({
+        id: config.id,
+        title: config.title ?? config.id,
+        transport: config.transport,
+        enabled: config.enabled !== false,
+        effect: config.effect ?? 'unknown',
+        projectScoped: Boolean(config.projectScope),
+        ...(endpointOrigin ? { endpointOrigin } : {}),
+        status: facts.status,
+        toolCount: facts.toolCount,
+        ownedBy: 'inkstone'
+      })
+    }
     const probe = resolvePi({ override: this.piBin })
     const version = probe.home ? await readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : undefined
     return { skills, servers, nativeMcpAvailable: nativePiToolsSupported(version) && commands.some(command => command.name === 'mcp'), configWarning: Boolean(this.mcpConfigError) }
@@ -2148,16 +2468,34 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  /** 只在用户明确点击「检查」时连接并刷新 MCP 工具表。 */
+  /**
+   * 只在用户明确点击「检查」时连接并刷新 MCP 工具表。
+   *
+   * 托管服务不得走 legacy 连接（否则是第二持有者）：先对账旧残留，再在同一
+   * `McpAppHost` 单例上 `reconcile` + `listToolsWithMeta`，项目身份取真实 runner
+   * 的 `capabilityProjectId`，不从 `config.projectScope` 伪造 caller。
+   */
   async verifyCapabilityMcp(serverId: string) {
+    const access = this.settingsSafeAccess()
+    const managed = await this.reconcileLegacyForManaged(serverId)
+    if (managed.managed) {
+      return verifyManagedServer(access, serverId, this.capabilityOpts?.projectId)
+    }
     const manager = this.mcpConnectionManager()
+    await this.closeRetiredMcpManagers()
     if (!manager.listServerIds().includes(serverId)) throw new Error('当前 runner 没有这个 MCP 服务')
     const tools = await manager.listToolsCached(serverId, { refresh: true })
     return { status: manager.statusOf(serverId).status, toolCount: tools.length }
   }
 
-  /** 只断开该 runner 的一个已登记服务；可用于中止握手或工具表刷新。 */
+  /**
+   * 只断开该 runner 的一个已登记服务；可用于中止握手或工具表刷新。
+   * 托管项只断 host 里该 server 的连接，**不 close 整个连接池**。
+   */
   async disconnectCapabilityMcp(serverId: string): Promise<boolean> {
+    const access = this.settingsSafeAccess()
+    const managed = await this.reconcileLegacyForManaged(serverId)
+    if (managed.managed) return disconnectManagedServer(access, serverId, this.capabilityOpts?.projectId)
     return this.mcpConnectionManager().disconnect(serverId)
   }
 
@@ -2221,6 +2559,33 @@ export class AgentController extends EventEmitter {
    * 配置只在宿主文件里（`YAN_DIR/mcp-servers.json`）—— 模型只能**用**已登记的服务，
    * 不能新增一个（新增等于给模型一个任意命令执行入口）。
    */
+  /**
+   * `mcp.app.call`：托管 MCP 工具的模型代理通道。
+   * owner 取本实例绑定的 (sessionId, projectId)，不接受请求自报；
+   * 端点已按同样两值鉴权，这里再钉到具体 runner 身份上。
+   */
+  private async runMcpAppCommand(
+    command: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal
+  ): Promise<CapabilityCommandResult> {
+    const sessionId = this.capabilityOpts?.sessionId
+    const projectId = this.capabilityOpts?.projectId
+    if (!sessionId || !projectId) {
+      throw new CapabilityCommandError('mcp_app_owner_unavailable', '宿主 runner 身份不可用，拒绝托管 MCP 代理调用')
+    }
+    return runMcpAppProxyCommand({
+      command: command.slice('mcp.app.'.length),
+      params,
+      owner: {
+        sessionId,
+        projectId,
+        ...(this.capabilityOpts?.runnerGeneration !== undefined ? { epoch: this.capabilityOpts.runnerGeneration } : {})
+      },
+      ...(signal ? { signal } : {})
+    })
+  }
+
   private async runMcpCommand(action: string, params: Record<string, unknown>) {
     if (action !== 'describe' && action !== 'call') {
       throw new CapabilityCommandError('not_implemented', `命令已接通但尚未实现：mcp.${action}`)
@@ -2239,6 +2604,12 @@ export class AgentController extends EventEmitter {
       throw new CapabilityCommandError('mcp_tool_required', '需要 --tool <工具名>（先用 yan mcp describe 拿 schema）')
     }
 
+    /*
+     * 托管服务：call / describe 都不得借旧连接管理器再建一条连接（第二持有者）。
+     * 这里不满足于「只拦 app-only」——模型可见的工具也一律打回代理通道，
+     * 由 mcp.app.call 走宿主同一条连接。fail closed，不建第二条连接。
+     */
+    assertLegacyMcpAccessBlocked({ serverId, toolName, action })
     const manager = this.mcpConnectionManager()
     const migratedToNative = manager.list().find((entry) => entry.id === serverId)?.migratedToNative
     if (migratedToNative) {
@@ -2556,8 +2927,88 @@ export class AgentController extends EventEmitter {
 
   /* ---------------------------------------------------------------- 事件 */
 
+  /**
+   * 事件到达时的运行上下文（v3 WP-10）。
+   *
+   * 会话尚未建立（`pending:`）时返回 null —— 那时还没有可归属的真实会话，
+   * 不猜、不登记。模型 / 标题 / 会话文件都是当时快照，事件不会被套用后来的身份。
+   */
+  private runObserverContext(): RunObserverContext | null {
+    const sessionId = this.state?.sessionId
+    if (!sessionId || sessionId.startsWith('pending:')) return null
+    const model = this.state?.model
+    return {
+      sessionId,
+      ...(this.state?.sessionFile ? { sessionPath: this.state.sessionFile } : {}),
+      ...(this.state?.sessionName ? { title: this.state.sessionName } : {}),
+      ...(model
+        ? {
+            model: {
+              provider: model.provider,
+              id: model.id,
+              label: model.name,
+              ...(this.state?.thinkingLevel ? { thinking: this.state.thinkingLevel } : {})
+            }
+          }
+        : {})
+    }
+  }
+
+  /**
+   * pi 事件旁路 → run signals（只读）。
+   *
+   * 只读原始事件、只提取状态类字段；不复制消息 / 工具原始输出，
+   * 也不改变下面 switch 的任何分支。会话切换的推送抑制窗口内一并跳过，
+   * 避免旧会话的迟到事件被归到新会话。
+   */
+  private emitRunSignals(evt: Record<string, unknown>, type: string): void {
+    const sink = this.runObserver
+    if (!sink || this.suppressPush) return
+    const ctx = this.runObserverContext()
+    if (!ctx) return
+    const now = Date.now()
+    for (const signal of signalsFromPiEvent(evt, now)) sink(ctx, signal)
+    /* 队列变化只影响「排队」阶段，单独映射（registry 侧还看当前是否已有运行）。 */
+    if (type === 'queue_update') {
+      const queued = signalFromQueueUpdate(evt)
+      if (queued) sink(ctx, queued)
+    }
+  }
+
+  /**
+   * 扩展界面请求 / 答复、生成标题旁路：直接用正式请求封套与 id，不另造请求。
+   *
+   * `ui-request` 只映射需要应答的对话类（select / confirm / input / editor）；
+   * `ui-resolved`（含拒绝、超时、远程答复）一律归还运行态；
+   * `session-title` 用**它自己的** sessionId 与标题更新运行标题，不用当前会话猜。
+   */
+  private observeRunPush(msg: MainPush): void {
+    const sink = this.runObserver
+    if (!sink) return
+    if (msg.ch === 'ui-request') {
+      const signal = runSignalFromUiRequest(msg.payload as unknown as Record<string, unknown>)
+      if (!signal) return
+      const ctx = this.runObserverContext()
+      if (ctx) sink(ctx, signal)
+      return
+    }
+    if (msg.ch === 'ui-resolved') {
+      const ctx = this.runObserverContext()
+      if (ctx) sink(ctx, runSignalFromUiResolved(msg.payload.id))
+      return
+    }
+    if (msg.ch === 'session-title' && msg.payload.sessionId) {
+      sink(
+        { sessionId: msg.payload.sessionId, title: msg.payload.title },
+        { type: 'title', title: msg.payload.title }
+      )
+    }
+  }
+
   private handleEvent(evt: Record<string, unknown>): void {
     const type = String(evt.type ?? '')
+    /* 先旁路归约运行状态：与下面的 UI 投影完全独立，失败也不影响它。 */
+    this.emitRunSignals(evt, type)
 
     switch (type) {
       /* ---- 助手消息：开始 ---- */
@@ -4157,6 +4608,27 @@ export class AgentController extends EventEmitter {
     return this.editQueued(queueId, false)
   }
 
+  /**
+   * 队列编辑 / 重排（WP-24b）：clear_queue 取回后按渲染端给的目标顺序重建。
+   * 编排在 queue-edit.ts（可假端口单测），这里只把私有队列动作接成端口。
+   */
+  async rewriteQueue(next: QueueState): Promise<QueueRewriteResult> {
+    return this.queueRun(async () => {
+      if (!this.rpc) return { ok: false, error: 'pi 尚未就绪', dropped: [...next.steering, ...next.followUp] }
+      const original: QueueState = { steering: [...this.queueState.steering], followUp: [...this.queueState.followUp] }
+      return applyQueueRewrite({
+        clearQueue: async () => {
+          const res = await this.requireRpc().command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
+          this.requireRpc()
+          return { success: res.success, error: res.error, steering: res.data?.steering ?? [], followUp: res.data?.followUp ?? [] }
+        },
+        adoptCleared: (steering, followUp) => this.publishQueue(steering, followUp, true),
+        publish: (queue) => { this.publishQueueItems(queue) },
+        refill: (steering, followUp) => this.refillQueue(steering, followUp)
+      }, original, next)
+    })
+  }
+
   private async editQueued(queueId: string, promote: boolean): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
     return this.queueRun(async () => {
       if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
@@ -4778,7 +5250,7 @@ export class AgentController extends EventEmitter {
     const res = await this.rpc.command<{ models?: ModelInfo[] }>('get_available_models')
     if (!res.success) return []
     return (res.data?.models ?? [])
-      .map((model) => normalizeModelInfo(model))
+      .map((raw) => attachModelPrice(normalizeModelInfo(raw), raw))
       .filter((model): model is ModelInfo => model !== undefined)
   }
 
@@ -5122,6 +5594,21 @@ export class AgentController extends EventEmitter {
     }))
   }
 
+  /**
+   * A7：宿主启动见证（只读内部事实）。
+   *
+   * bootId / cwd / servers 是该 pi 进程**启动时**采集并复核过的；generation 随
+   * runner 代次重盖（同进程换会话不该让见证失效；跨 cwd 重起会换新的 AgentController
+   * 实例，bootId 自然变化）。renderer / RPC 不能赋值或传入。
+   */
+  nativeBootWitness(): McpNativeBootWitness | null {
+    if (!this.nativeWitness) return null
+    return {
+      ...this.nativeWitness,
+      generation: this.capabilityOpts?.runnerGeneration ?? this.nativeWitness.generation
+    }
+  }
+
   /** RunnerRegistry increments this when an in-process runner changes sessions. */
   setRunnerGeneration(generation: number): void {
     if (this.capabilityOpts && Number.isSafeInteger(generation) && generation > 0) {
@@ -5165,6 +5652,13 @@ export class AgentController extends EventEmitter {
     const old = this.mcpManager
     this.mcpManager = undefined
     await old?.close().catch(() => undefined)
+    /*
+     * A7：热重载后无法证明「进程启动时加载了什么」，主动作废见证，
+     * 让该 runner 按可能持有处理（默认保守，不放行）。
+     */
+    this.nativeWitness = null
+    this.nativeWitnessPending = null
+    await this.closeRetiredMcpManagers()
   }
 
   async stop(): Promise<void> {
@@ -5179,9 +5673,15 @@ export class AgentController extends EventEmitter {
     this.capabilityServer?.stop()
     this.capabilityServer = undefined
     this.yanCliEnv = undefined
+    /* 快照是缓存文件，保留；这里只清运行时引用，避免旧实例复用过期路径。 */
+    this.mcpAppToolsSnapshot = undefined
+    /* A7：实例停止即作废启动见证，不能跨进程启动复用。 */
+    this.nativeWitness = null
+    this.nativeWitnessPending = null
     /* MCP 会起子进程；不停掉就会留下孤儿（Windows 上不会自己收）。 */
     await this.mcpManager?.close().catch(() => undefined)
     this.mcpManager = undefined
+    await this.closeRetiredMcpManagers()
     if (this.flushTimer) clearTimeout(this.flushTimer)
     this.flushTimer = null
     this.streaming = null

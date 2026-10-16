@@ -17,7 +17,12 @@
  */
 import type { ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { app, shell, WebContentsView, type BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, WebContentsView } from 'electron'
+import type {
+  BrowserTransferRevokeReason,
+  BrowserTransferView,
+  BrowserTransferWindow
+} from './windows/pane-browser-transfer'
 import { mkdir } from 'node:fs/promises'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -122,6 +127,14 @@ interface BrowserTab {
   /** Only a host-requested exact top-level URL gets the local-preview exception. */
   pendingMainFrameUrl: string | null
   openerUrl: string
+  /**
+   * 该页签的原生视图当前借给了独立窗口（值 = 借用方 owner key）。
+   *
+   * 借出期间视图挂在弹出窗的 contentView 上，主窗口自己的坐标同步与显隐
+   * 协调（`setBounds` / `setViewVisible`）必须完全跳过它 —— 否则旧路径会把
+   * 已经改挂出去的网页拉回主窗口或藏掉。
+   */
+  borrowedBy?: string
 }
 
 /**
@@ -171,9 +184,54 @@ interface TargetParts {
  */
 const PRIVATE_DNS_CACHE_LIMIT = 200
 
+/**
+ * 借出给独立窗口的页签句柄（host-transfer）。
+ *
+ * 视图对象与 webContents 身份不变：适配器只是把它从主窗口 contentView 摘下来、
+ * 挂到弹出窗 contentView 上；不新建视图、不 loadURL、不换浏览会话。
+ */
+export interface BrowserHostTransfer {
+  readonly tabId: string
+  readonly ownerKey: string
+  readonly generation: number
+  readonly webContentsId: number
+  readonly view: BrowserTransferView
+  /** 原有主窗口；主窗口已销毁时为 null。 */
+  readonly sourceWindow: BrowserTransferWindow | null
+  /** 只导航这一页签，不要求它是当前活动页签。 */
+  navigate(url: string): Promise<BrowserActionResult>
+  /** 只关闭这一页签，走既有回收路径。 */
+  closeTab(): Promise<void>
+}
+
+export interface BrowserHostTransferRequest {
+  tabId: string
+  ownerKey: string
+  generation: number
+  /** 宿主回收借出（页签关闭 / 控制器销毁）时回调，适配器据此幂等失效本地租约。 */
+  onRevoke(reason: BrowserTransferRevokeReason): void
+}
+
+export interface BrowserHostTransferResult {
+  ok: boolean
+  code: 'ok' | 'not-found' | 'destroyed' | 'owner-conflict'
+  message?: string
+  transfer?: BrowserHostTransfer
+}
+
 /** 浏览器运行时（**宿主独占**）。模型侧入口是 `yan browser …`，不再提供 HTTP bridge。 */
 export class BrowserController {
   private readonly tabs = new Map<string, BrowserTab>()
+  /** 借出给独立窗口的页签：tabId → 租约元数据（归属、代次、宿主句柄）。 */
+  private readonly hostTransfers = new Map<
+    string,
+    {
+      ownerKey: string
+      generation: number
+      transfer: BrowserHostTransfer
+      revoke: (reason: BrowserTransferRevokeReason) => void
+    }
+  >()
   private activeTabId: string | null = null
   private userControl = false
   private lastDownload: BrowserState['lastDownload']
@@ -572,8 +630,8 @@ export class BrowserController {
     const win = this.getWindow()
     if (!win) return this.getState()
     this.removeForeignBrowserViews(win)
-    for (const candidate of this.tabs.values()) candidate.view.setVisible(candidate.id === tab.id)
-    if (!win.contentView.children.includes(tab.view)) win.contentView.addChildView(tab.view)
+    this.showOnlyOwnedView(tab.id)
+    if (!tab.borrowedBy && !win.contentView.children.includes(tab.view)) win.contentView.addChildView(tab.view)
     if (next !== tab.view.webContents.getURL()) {
       tab.state.url = next
       tab.state.title = ''
@@ -637,7 +695,7 @@ export class BrowserController {
       this.removeForeignBrowserViews(win)
       win.contentView.addChildView(tab.view)
     }
-    for (const candidate of this.tabs.values()) candidate.view.setVisible(candidate.id === tab.id)
+    this.showOnlyOwnedView(tab.id)
     tab.state.url = url
     tab.state.loading = true
     /* 同 `open()`：这是**我们**（用户/agent）发起的顶层导航 */
@@ -659,7 +717,7 @@ export class BrowserController {
       if (!target) throw new Error('找不到浏览器标签页')
       await this.attachExternalTarget(target)
       this.activeMode = 'external'
-      for (const tab of this.tabs.values()) tab.view.setVisible(false)
+      this.hideOwnedViews()
       this.updateState()
       return this.getState()
     }
@@ -667,7 +725,7 @@ export class BrowserController {
     if (!tab) throw new Error('找不到浏览器标签页')
     this.activeMode = 'embedded'
     this.activeTabId = id
-    for (const candidate of this.tabs.values()) candidate.view.setVisible(candidate.id === id)
+    this.showOnlyOwnedView(id)
     this.updateState()
     return this.getState()
   }
@@ -697,8 +755,18 @@ export class BrowserController {
     }
     const tab = this.tabs.get(id)
     if (!tab) return this.getState()
-    const win = this.getWindow()
-    if (win && win.contentView.children.includes(tab.view)) win.contentView.removeChildView(tab.view)
+    /* 借出中的页签先让适配器失效租约，再走既有销毁路径。 */
+    const transfer = this.hostTransfers.get(id)
+    if (transfer) {
+      this.hostTransfers.delete(id)
+      tab.borrowedBy = undefined
+      try {
+        transfer.revoke('tab-closed')
+      } catch {
+        /* 适配器失效失败不应阻断关闭 */
+      }
+    }
+    this.detachViewFromAllWindows(tab.view)
     tab.observer.dispose()
     await tab.cdp.detach().catch(() => undefined)
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close()
@@ -708,7 +776,7 @@ export class BrowserController {
       const remaining = [...this.tabs.values()]
       const next = remaining[Math.min(Math.max(0, priorIndex), remaining.length - 1)]
       this.activeTabId = next?.id ?? null
-      for (const candidate of this.tabs.values()) candidate.view.setVisible(candidate.id === this.activeTabId)
+      this.showOnlyOwnedView(this.activeTabId)
     }
     this.updateState()
     return this.getState()
@@ -722,6 +790,128 @@ export class BrowserController {
     this.nativeBounds = undefined
     this.updateState()
     return this.getState()
+  }
+
+  /**
+   * 把一个页签的原生视图借给独立窗口（host-transfer 的宿主侧增量 API）。
+   *
+   * 只做三件事：登记借出、把视图从主窗口隐藏、返回只暴露这一个视图的句柄。
+   * 真正的 contentView 改挂由 `windows/pane-browser-transfer.ts` 的适配器执行 ——
+   * 本文件不复制一套窗口管理，也不让渲染端/弹出窗碰到通用浏览器通道。
+   *
+   * 已有借出且归属不同时拒绝（不抢别的归属正在看的页签）；同归属重复借出按最新
+   * 代次更新并复用视图。
+   */
+  beginHostTransfer(request: BrowserHostTransferRequest): BrowserHostTransferResult {
+    const tab = this.tabs.get(request.tabId)
+    if (!tab) return { ok: false, code: 'not-found', message: '找不到浏览器标签页' }
+    if (tab.view.webContents.isDestroyed()) return { ok: false, code: 'destroyed', message: '浏览器标签页已销毁' }
+    const existing = this.hostTransfers.get(tab.id)
+    if (existing && existing.ownerKey !== request.ownerKey) {
+      return { ok: false, code: 'owner-conflict', message: '该标签页已借给其它归属，不能抢占' }
+    }
+    if (tab.borrowedBy !== request.ownerKey) tab.view.setVisible(false)
+    tab.borrowedBy = request.ownerKey
+    const transfer: BrowserHostTransfer = {
+      tabId: tab.id,
+      ownerKey: request.ownerKey,
+      generation: request.generation,
+      webContentsId: tab.view.webContents.id,
+      view: tab.view,
+      sourceWindow: this.getWindow(),
+      navigate: (url) => this.navigateTransferredTab(tab.id, request.ownerKey, request.generation, url),
+      closeTab: async () => {
+        await this.closeTab(tab.id)
+      }
+    }
+    this.hostTransfers.set(tab.id, {
+      ownerKey: request.ownerKey,
+      generation: request.generation,
+      transfer,
+      revoke: request.onRevoke
+    })
+    return { ok: true, code: 'ok', transfer }
+  }
+
+  /**
+   * 归还借出的页签：清借出标记并把视图停回主窗口（隐藏）。
+   * 只有当前借出归属能归还；宿主已经回收过时返回 false。幂等。
+   */
+  endHostTransfer(tabId: string, ownerKey: string): boolean {
+    const record = this.hostTransfers.get(tabId)
+    if (!record || record.ownerKey !== ownerKey) return false
+    this.hostTransfers.delete(tabId)
+    const tab = this.tabs.get(tabId)
+    if (tab) {
+      tab.borrowedBy = undefined
+      this.parkTransferredView(tab)
+    }
+    return true
+  }
+
+  /** 借出期间只导航空档位的这一页签；租约已被替换/归还则拒绝。 */
+  private async navigateTransferredTab(
+    tabId: string,
+    ownerKey: string,
+    generation: number,
+    raw: string
+  ): Promise<BrowserActionResult> {
+    const record = this.hostTransfers.get(tabId)
+    const tab = this.tabs.get(tabId)
+    if (!record || record.ownerKey !== ownerKey || record.generation !== generation || !tab) {
+      return { ok: false, error: '标签页已归还主窗口' }
+    }
+    if (tab.view.webContents.isDestroyed()) return { ok: false, error: '标签页已关闭' }
+    const url = safeUrl(raw)
+    if (!url) return { ok: false, error: '只允许打开 http(s) 网页' }
+    if (url !== tab.view.webContents.getURL()) {
+      tab.state.url = url
+      tab.state.title = ''
+      tab.state.loading = true
+      /* 与 open() 一致：这是宿主/租约发起的顶层导航，供网络边界判定区分来源。 */
+      tab.pendingMainFrameUrl = url
+      this.updateState()
+      await tab.view.webContents.loadURL(url).catch(() => undefined)
+    }
+    if (tab.view.webContents.isDestroyed()) return { ok: false, error: '标签页已关闭' }
+    this.syncTabNavigation(tab)
+    this.updateState()
+    return { ok: true }
+  }
+
+  /** 只显示 activeId 指向且未借出的原生视图；借出的归独立窗口管。 */
+  private showOnlyOwnedView(activeId: string | null): void {
+    for (const tab of this.tabs.values()) {
+      if (tab.borrowedBy) continue
+      tab.view.setVisible(tab.id === activeId)
+    }
+  }
+
+  /** 隐藏所有未借出的原生视图。 */
+  private hideOwnedViews(): void {
+    for (const tab of this.tabs.values()) {
+      if (tab.borrowedBy) continue
+      tab.view.setVisible(false)
+    }
+  }
+
+  /** 从所有窗口的 contentView 摘除该视图（独立窗口可能已销毁或换过宿主）。 */
+  private detachViewFromAllWindows(view: WebContentsView): void {
+    for (const candidate of BrowserWindow.getAllWindows()) {
+      if (candidate.isDestroyed()) continue
+      if (candidate.contentView.children.includes(view)) candidate.contentView.removeChildView(view)
+    }
+  }
+
+  /** 把借出的视图停回主窗口并隐藏，交还主窗口的常规协调。 */
+  private parkTransferredView(tab: BrowserTab): void {
+    if (tab.view.webContents.isDestroyed()) return
+    this.detachViewFromAllWindows(tab.view)
+    const win = this.getWindow()
+    if (win && !win.isDestroyed() && !win.contentView.children.includes(tab.view)) {
+      win.contentView.addChildView(tab.view)
+    }
+    tab.view.setVisible(false)
   }
 
   async navigate(raw: string): Promise<BrowserActionResult> {
@@ -870,7 +1060,7 @@ export class BrowserController {
       }
       void this.external.network.start()
       this.activeMode = 'external'
-      for (const tab of this.tabs.values()) tab.view.setVisible(false)
+      this.hideOwnedViews()
       // 用户自己关掉 Chrome 时同步清状态
       chrome.once('exit', () => {
         if (this.external?.chrome === chrome) void this.closeExternalChrome()
@@ -1003,7 +1193,7 @@ export class BrowserController {
     stopChrome(ext.chrome)
     this.activeMode = 'embedded'
     const active = this.activeTab()
-    for (const tab of this.tabs.values()) tab.view.setVisible(tab.id === active?.id)
+    this.showOnlyOwnedView(active?.id ?? null)
     this.userControl = false
     this.updateState()
     return this.getState()
@@ -1116,12 +1306,12 @@ export class BrowserController {
    */
   setViewVisible(visible: boolean): void {
     if (!visible) {
-      for (const tab of this.tabs.values()) tab.view.setVisible(false)
+      this.hideOwnedViews()
       return
     }
     /* 外部 Chrome 是独立窗口，没有内嵌视图要恢复 */
     if (this.activeMode !== 'embedded') return
-    for (const tab of this.tabs.values()) tab.view.setVisible(tab.id === this.activeTabId)
+    this.showOnlyOwnedView(this.activeTabId)
   }
 
   setBounds(bounds: BrowserBounds): void {
@@ -1129,6 +1319,8 @@ export class BrowserController {
     if (this.external && this.activeMode === 'external') return
     const tab = this.activeTab()
     if (!tab || !this.state.open) return
+    /* 已借给独立窗口的页签由租约端口摆位，主窗口的旧坐标同步不得再动它。 */
+    if (tab.borrowedBy) return
     /*
      * 渲染端给的是**主窗口渲染进程的 CSS 像素**，而 `WebContentsView.setBounds`
      * 收的是窗口内容区的 **DIP**。两者只在界面缩放 = 100% 时相等：

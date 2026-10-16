@@ -35,10 +35,13 @@ flowchart LR
 
 ## 按问题找代码
 
+v3 是目标界面（`YAN_UI=v3`），入口从 `src/renderer/src/main.tsx` → `app/ShellV3.tsx`；外壳选择在 `src/shared/ui-version.ts`，主进程把 `YAN_UI` 显式传给 preload。新界面在 `ui/`、`patterns/`、`features/`，共用原 `state/store.ts` 与正式 IPC；令牌真源在 `design/tokens.json`。运行状态投影的模型与核心在 `src/shared/runs.ts`、`src/main/runs/`，不取代 pi 的模型循环。默认外壳目前仍是 v2——下表未标注的路径按 v2 现有实现理解，v3 的对应模块见[界面重构记录](UI_REDESIGN.md)；开发、回退与检查见[贡献指南](CONTRIBUTING.md#v3-开发外壳)。
+
 模型错误的分类、原文脱敏与提示集中于 `src/shared/model-errors.ts`，实时消息、历史读回和子 Agent 共用；宿主自动续跑的规划与存储源码已退役，不再读取旧自动续跑配置。
 
 | 任务或症状 | 主要入口 | 相邻契约与状态 |
 | --- | --- | --- |
+| v3 首页、本机用量与会话导航 | `features/session/V3EmptyState.tsx`、`features/ambient/AsciiField.tsx`、`features/usage/UsagePage.tsx`、`patterns/ModelThinkingPicker.tsx`、`features/session/OutlineRail.tsx` | 用量标题经 `state/ui-v3.ts` 导航到详情，复用 `useUsageStats` 与 `shared/usage-stats.ts`（53 周热图）；模型、收藏与思考仍用正式 store。`app/ShellV3.tsx` 的工作区与子代理详情通过 `ui/Splitter` 调宽；涟漪计算在 `ascii-field-model.ts`，发送时停帧淡出。 |
 | 会话创建、切换、历史或标题 | `src/main/runners.ts`、`sessions.ts`、`session-reader.ts`、`session-history.ts`、`title.ts` | `src/main/agent.ts`、`src/renderer/src/state/store.ts`、`src/shared/ipc.ts`；持久会话记录以 pi JSONL 为准。历史读文件走 `session-reader.ts`（64 KiB 分块 + `StringDecoder`、单行 48 MiB 上限、坏行跳过）→ `normalize.ts` 的 `createHistoryBuilder` 逐条归一化；同一文件同一版本的 peek/hydrate/远程历史并发读取单飞共享，返回深冻结快照（修改方先复制），读完即释放、不做常驻缓存，读取前后核对身份与版本，被替换或截短只重读一次；对应 `scripts/test-session-read-equivalence.mjs`、`scripts/test-session-reader-stream.mjs`。历史切换、新建、fork、clone 及托盘切换共用 `store.ts` 的**选择代次**决定归属：历史点击与托盘无路径选择共用代次，过期的 peek 不写投影、不再请求主进程激活，过期的托盘响应也不覆盖新选择；定向回归见 `scripts/test-session-switch.mjs` |
 | 会话移动与单次续接 | `src/main/index.ts` 的 `requestSessionMove` / `moveSessionWhenIdle` / `continueMovedSession`、`src/main/session-move.ts` | 用户批准后等待原回合正常收尾，关闭原实例再原位修改 JSONL 头与产品归属；宿主按原 SID 在新目录后台恢复并发送一次明确的宿主通知，不重放原请求、不抢前台。`agent.ts` 捕获原身份与输入/失败版本，人工停止、失败、新输入、归属变化、写入失败或重复请求不续；`state/push-consumers.ts` 只刷新视图。定向 `scripts/test-session-move-continuation.mjs` |
 | 定时任务与存储故障 | `src/main/schedule-service.ts`、`schedule-commands.ts`、`ipc/schedule-ipc.ts`、`index.ts` 的 `scheduleService` | 新会话调度在 select、归属记录和模型设置的异步边界复核 Agent 引用、runId、generation、sessionId；CRUD 在同一串行事务内复制、保存后再发布，失败不改变内存或批准状态；仅 ENOENT 可视为空文件，损坏/读失败保留原件并报错。定向 `scripts/test-schedule-safety.mjs` |

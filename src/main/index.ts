@@ -9,14 +9,19 @@ import { AGENT_CONTEXT_ERROR, isAgentContextExtension, nativePiToolsSupported } 
 import './storage-move-boot'
 import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
-import { constants as fsConstants, existsSync, readdirSync } from 'node:fs'
+import { constants as fsConstants, existsSync, readFileSync, readdirSync } from 'node:fs'
 import { access, appendFile, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { loadModelPricing } from './model-pricing'
+import { mcpAppProxyToolsEnv, mcpAppProxyService } from './mcp/app-proxy-service'
 import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt } from './agent'
 import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
+import { createRunsHost, type RunsHost } from './runs-host'
+import { createAttentionService, createTrayAssetStore, summarizeAttention, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
+import { createAuxWindows, createPaneBrowserTransfer, createPanePopoutController, createPaneTerminalTransfer, registerAuxIpc, registerPaneBrowserIpc, registerPanePopoutIpc, registerPaneTerminalIpc, submitQuickAsk, type AuxWindows, type PaneBrowserTransfer, type PanePopoutController, type PaneTerminalTransfer } from './windows'
+import { registerDeepLinkProtocol, windowDeepLinkRouter } from './deeplink'
 import { RunnerVisibility } from './runner-reclaim'
 import { getSettings, patchSettings, updateSettings, validateRendererSettingsPatch } from './settings'
 import { syncNativeCompactionLines, type LineModel } from './native-compaction-line'
@@ -29,6 +34,8 @@ import { rewriteSessionCwd, movedSessionContinuationPrompt, type SessionMoveAnsw
 import { readChainMessages } from './session-history'
 import { ArtifactStore } from './artifacts'
 import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames } from './html-artifact-preview'
+/* MCP App 资源协议：import 即早注册 `inkstone-app:` scheme（协议处理器等 A6 接线）。 */
+import './mcp/app-protocol'
 import { readRepoState } from './git-service'
 import { configureWriteContext } from './git-actions'
 import { configurePackageContext, installManagedPiPackage, listPackages } from './packages'
@@ -43,7 +50,7 @@ import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
 import { openableExternalUrl } from './external-url'
-import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, setTerminalSink } from './terminal'
+import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, readTerminal, resizeTerminal, setTerminalSink, writeTerminal } from './terminal'
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
@@ -57,13 +64,28 @@ import { registerSourcesIpc } from './ipc/sources-ipc'
 import { registerKnowledgeIpc } from './ipc/knowledge-ipc'
 import { registerTaskInboxIpc } from './ipc/task-inbox-ipc'
 import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
+import { registerMcpAppIpc } from './ipc/mcp-app-ipc'
+import { registerMcpAppViewIpc } from './ipc/mcp-app-view-ipc'
+import { McpAppViewService, createMcpAppViewRuntime, type McpAppViewRunnerFacts } from './mcp/app-view-service'
+import { McpAppViewAuditStore } from './mcp/app-view-audit'
+import { createMcpAppResourceLoader, registerMcpAppProtocol } from './mcp/app-protocol'
+import { mcpAppHost, closeMcpAppHost, configureMcpAppHostOwnership } from './mcp/app-host'
+import { loadMcpServers } from './mcp/config'
+import type { McpAppOwner } from '../shared/mcp-app-preview'
+import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { registerPackagesIpc } from './ipc/packages-ipc'
 import { registerActivityModelIpc } from './ipc/activity-model-ipc'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
 import { registerScheduleIpc } from './ipc/schedule-ipc'
 import { ScheduleService } from './schedule-service'
+import { SyncService } from './sync'
+import { SESSIONS_DIR } from './sessions'
 import { registerSessionIpc } from './ipc/session-ipc'
 import { registerNativeSessionIpc } from './ipc/native-session-ipc'
+import { registerRunsIpc } from './ipc/runs-ipc'
+import { registerReviewIpc } from './ipc/review-ipc'
+import { ReviewAgentCoordinator, ReviewAnnotationStore, ReviewGitAdapter, ReviewService, createReviewRunProducer, reviewRunModel, type ReviewRunProducer } from './review'
+import { registerSyncIpc } from './ipc/sync-ipc'
 import { registerCheckpointIpc } from './ipc/checkpoint-ipc'
 import { captureCheckpoint, pruneCheckpoints } from './checkpoints'
 import type { SessionHost } from './session-host'
@@ -78,6 +100,7 @@ import { canOpenDocument } from '../shared/document-open'
 import { normalizeQuestionFrequency } from '../shared/question-frequency'
 import { registerAgentServiceIpc, closeAgentService } from './ipc/agent-service-ipc'
 import { lockDataRoot } from '../core/data-root-lock'
+import { sameRuntimeEnvelope } from '../core/run-state'
 import { registerContextBudgetIpc } from './ipc/context-budget-ipc'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
@@ -118,8 +141,8 @@ import { AgentProfileStore } from './agent-profile-store'
 import { SpaceStore } from './space-store'
 import { LibraryService } from './library-service'
 import { ContextAssembler } from './context-assembler'
-import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, MainPush, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
-import { sameRuntimeEnvelope } from '../core/run-state'
+import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, MainPush, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
+import { toPaneTerminalSnapshot } from '../shared/pane-terminal'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -214,6 +237,8 @@ if (!hasSingleInstanceLock) {
       void dispatchControlCommand(command)
       return
     }
+    /* `inkstone://` 链接先于「显示窗口」处理；不是深链接（或已被拒绝）才回落到常规聚焦。 */
+    if (deepLinkRouter.handleArgv(commandLine)) return
     showMainWindow()
   })
 }
@@ -293,9 +318,23 @@ try {
 
 /* 全局状态 */
 let win: BrowserWindow | null = null
-let tray: Tray | null = null
-let trayThemeListening = false
 let trayLanguage: string | undefined
+/*
+ * 托盘品牌素材与运动偏好（L12）：启动时预载 build/tray/manifest.json + 全部帧。
+ * 减少动态效果由渲染端 matchMedia 上报；默认 false（未明确前保持静态）。
+ */
+let trayAssets: ReturnType<typeof createTrayAssetStore> | null = null
+let trayMotionAllowed = false
+/** 应用外注意投影（WP-12）：任务栏进度 / 覆盖图标 / 托盘。 */
+let attention: AttentionService | null = null
+/** 辅助小窗（WP-25d 快速提问 / WP-12 迷你小窗）。 */
+let auxWindows: AuxWindows | null = null
+/** 工作区页签弹出窗（WP-30 弹出）。 */
+let panePopout: PanePopoutController | null = null
+/** 终端页签同 PTY 弹出（WP-30 终端 transfer）：只 attach 既有 PTY，不 start/kill。 */
+let paneTerminal: PaneTerminalTransfer | null = null
+/** 浏览器页签原生视图转移端口（WP-30 弹出 · browser）。 */
+let paneBrowserTransfer: PaneBrowserTransfer | null = null
 let isQuitting = false
 let exitRequestInFlight: Promise<{
   action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting'
@@ -307,6 +346,56 @@ let exitRequestInFlight: Promise<{
  * 切换会话不再复用同一个进程，所以「切走」不会把后台任务停掉。
  */
 let runners: RunnerRegistry | null = null
+
+/**
+ * `yan:send` / 定时 `run` 在**第一个 `await` 之前**同步钉住的真实实例身份。
+ *
+ * 渲染端可以只给 runId / sessionId，或完全不传 `expectedRuntime`（旧调用）。这些
+ * 输入只核调用方给的维度，识别不了 await 期间同一 runId 被复用：复用只把
+ * generation / 真实 sessionId 往前推，runId 不变。入口额外钉住**当时运行实例的
+ * 真实代次与 Agent 对象**，之后所有 await 都用它复核。
+ */
+interface PinnedSendTarget {
+  runId: string
+  generation: number
+  sessionId?: string
+  /** 原始 Agent 引用：跨 cwd 复用会替换对象，同 cwd 复用看代次 / 真实 SID。 */
+  agent: AgentController
+}
+
+/** 同步钉住目标实例当时的真实身份；实例不存在返回 null（调用方明确失败）。 */
+function pinSendTarget(id: string): PinnedSendTarget | null {
+  const agent = runners?.agentOf(id)
+  const runtime = runners?.runtimeOf(id)
+  if (!agent || !runtime) return null
+  return { runId: runtime.runId, generation: runtime.generation, sessionId: runtime.sessionId, agent }
+}
+
+/** await 之后复核钉住的实例没被复用：Agent 对象、代次、SID 迁移方向都要一致。 */
+function pinnedTargetMatches(pin: PinnedSendTarget): boolean {
+  if (runners?.agentOf(pin.runId) !== pin.agent) return false
+  return sameRuntimeEnvelope(runners?.runtimeOf(pin.runId), pin)
+}
+
+/** 运行注册表（v3 WP-10）；初始化失败时为 null，其它功能照常。 */
+let runsHost: RunsHost | null = null
+/**
+ * 评审运行的 R 号 producer（§10.2 / WP-50）。跟 runsHost 一起建；
+ * 只读评审子运行的 pi 事件经它按 runId 投影成 `kind:'review'` 的运行。
+ */
+let reviewRuns: ReviewRunProducer | null = null
+/**
+ * MCP App 视图桥（v3 §12）。renderer 只传 callId/instanceId/JSON-RPC；
+ * owner/授权从实际前台 runner 派生。未就绪时为 null，IPC 返回明确未就绪。
+ */
+let mcpAppViewService: McpAppViewService | null = null
+/**
+ * App 视图的前台归属快照（会话切换 / 运行实例重启时旧视图立即失效）。
+ * 只存最小事实：这样一个模块级变量就能清掉旧会话的实例与在途调用。
+ */
+let appViewForeground: { runnerId: string; sessionId: string; sessionFile: string; generation: number } | null = null
+/** 同步控制器；`registerSyncIpc` 返回，就绪后调 `runStartupSync()`。 */
+let syncController: ReturnType<typeof registerSyncIpc> | null = null
 const runnerVisibility = new RunnerVisibility()
 let piPackageActivationScheduler: PiPackageActivationScheduler | null = null
 let piPackageActivationTimer: ReturnType<typeof setTimeout> | null = null
@@ -367,7 +456,8 @@ const scheduleService = new ScheduleService({
     const projectId = sessionHost.projectIdForCwd(settings, cwd)
     const scope = projectId ? 'project' : 'global'
     const registry = runners!
-    const res = await registry.select({ cwd, projectId, scope, activate: false })
+    /* 选择时就带来源：让 runner 在会话身份一就绪就绑 T 编号来源，早于早期信号。 */
+    const res = await registry.select({ cwd, projectId, scope, activate: false, origin: { kind: 'scheduled', scopeId: task.id } })
     if (!res.ok || !res.id) throw new Error(res.error ?? '无法新建会话（运行实例已满？）')
     const pin = pinSendTarget(res.id)
     const selectedRuntime = { runId: res.runId ?? res.id, sessionId: res.sessionId, generation: res.generation }
@@ -376,22 +466,49 @@ const scheduleService = new ScheduleService({
     await sessionHost.rememberRunnerSession(res, { cwd, projectId, scope })
     if (!current()) throw new Error('定时任务的目标会话已变化，未发送指令')
     const agent = pin.agent
-    if (task.model) {
-      const at = task.model.indexOf('/')
-      const set = await agent.setModel(task.model.slice(0, at), task.model.slice(at + 1))
-      if (!current()) throw new Error('定时任务的目标会话已变化，未发送指令')
-      if (!set.ok) throw new Error(set.error ?? '指定的模型不可用')
+    const sessionId = res.sessionId ?? agent.getState()?.sessionId
+    const sessionFile = agent.getState()?.sessionFile
+    /*
+     * 发送前登记这次定时运行：编号作用域是任务 id，T 号由现行 Codes 服务分配一次，
+     * 之后 pi 事件沿同一 RunContext 续写；失败 / 取消也走同一注册表终态收口。
+     */
+    const scheduled = runsHost && sessionId
+      ? await runsHost.openScheduled({
+          scopeId: task.id,
+          sessionId,
+          ...(res.generation !== undefined ? { generation: res.generation } : {}),
+          ...(sessionFile ? { sessionPath: sessionFile } : {}),
+          title: task.name
+        })
+      : null
+    try {
+      if (task.model) {
+        const at = task.model.indexOf('/')
+        const set = await agent.setModel(task.model.slice(0, at), task.model.slice(at + 1))
+        if (!current()) throw new Error('定时任务的目标会话已变化，未发送指令')
+        if (!set.ok) throw new Error(set.error ?? '指定的模型不可用')
+      }
+      const guard = registry.guardExecute(res.id)
+      if (!guard.ok) throw new Error(guard.error)
+      const sent = await agent.send(`[定时任务 · ${task.name}]\n${task.prompt}`)
+      if (!sent.ok) throw new Error(sent.error ?? '指令没有发出')
+    } catch (error) {
+      if (scheduled && runsHost) runsHost.failScheduled(scheduled, error instanceof Error ? error.message : String(error))
+      throw error
     }
-    const guard = registry.guardExecute(res.id)
-    if (!guard.ok) throw new Error(guard.error)
-    const sent = await agent.send(`[定时任务 · ${task.name}]\n${task.prompt}`)
-    if (!sent.ok) throw new Error(sent.error ?? '指令没有发出')
     if (current()) void sessionHost.pushRunnerSnapshot(res.id)
     sessionHost.pushRunners()
     return { sessionId: res.sessionId }
   }
 })
-/* 显式标注类型：下面的 runningSiblings 延迟到运行时才引用它，避免自引用推断成 any */
+const notifySubagentFinished = createSubagentNotifier({
+  enabled: async () => (await getSettings()).subagentNotify !== false,
+  find: (run) =>
+    (run.parentSessionId ? runners?.agentForSession(run.parentSessionId) : null) ??
+    (run.parentRunId ? runners?.agentOf(run.parentRunId) : null) ??
+    null,
+  runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0
+})
 const subagentService: SubagentService = new SubagentService({
   codemodeExtension: codemodeExtensionPath,
   providerExtensions: providerExtensionPaths,
@@ -434,17 +551,24 @@ const subagentService: SubagentService = new SubagentService({
     push({ ch: 'subagent-remove', payload: id })
     refreshTaskbar()
   },
+  /* 只读原始事件旁路：评审运行的 R 号投影用；未知子运行是空操作，不影响面板与控制。 */
+  onEvent: (runId, evt) => {
+    reviewRuns?.observe(runId, evt)
+  },
   resolveAgentProfile: (id) => resolveAgentProfile(id),
-  /* 结束后叫醒发起它的会话：按稳定会话 id 找实例，找不到（会话已关）就不投 */
-  onFinished: createSubagentNotifier({
-    enabled: async () => (await getSettings()).subagentNotify !== false,
-    find: (run) =>
-      (run.parentSessionId ? runners?.agentForSession(run.parentSessionId) : null) ??
-      (run.parentRunId ? runners?.agentOf(run.parentRunId) : null) ??
-      null,
-    /* 只读查同父会话仍在运行的兄弟：通知按它自适应合并窗口 */
-    runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0
-  })
+  /*
+   * 结束后叫醒发起它的会话：按稳定会话 id 找实例，找不到（会话已关）就不投。
+   * 评审子运行额外按 runId 收口一次 R 运行（结束 / 失败 / 停止各一次）；
+   * 不是评审运行就是空操作。
+   */
+  onFinished: (run) => {
+    reviewRuns?.settle(
+      run.id,
+      run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed',
+      run.error
+    )
+    notifySubagentFinished(run)
+  }
 })
 /** 安卓远程管理服务；默认关闭，避免升级后意外监听网络端口。 */
 /** 手机接入（远程访问）：按设置启停，见 remote-access.ts */
@@ -456,6 +580,82 @@ let remoteAccess: RemoteAccess | null = null
  */
 function ac(): AgentController | null {
   return runners?.active() ?? null
+}
+
+/**
+ * 当前**前台**运行实例的 App 视图事实（v3 §12）。
+ *
+ * 只从实际前台 runner + AgentController 状态派生 runnerId / generation / sessionFile /
+ * projectId / cwd。任一缺失返回 null —— 调用方必须 fail-closed，绝不回退到「旧 runner
+ * 还在」或请求自报的归属。
+ */
+function appViewForegroundFacts(): McpAppViewRunnerFacts | null {
+  const runner = runners?.activeRunner()
+  if (!runner) return null
+  const agent = runners?.agentOf(runner.id)
+  const envelope = runners?.runtimeOf(runner.id)
+  if (!agent || !envelope) return null
+  const sessionFile = agent.getState()?.sessionFile
+  const sessionId = envelope.sessionId
+  const projectId = agent.capabilityProjectId ?? envelope.projectId
+  if (!sessionFile || !sessionId || !projectId) return null
+  return {
+    sessionId,
+    sessionFile,
+    projectId,
+    runnerId: runner.id,
+    generation: envelope.generation,
+    cwd: runner.cwd
+  }
+}
+
+/**
+ * 前台归属变化时立即失效旧 App 视图（会话切换 / 运行实例重启）。
+ *
+ * 只在**真实前台**的 runnerId / sessionId / sessionFile / generation 发生变化时动作，
+ * 不因为后台实例仍存活就把它们的资源放行；具体拒绝仍由 ownerGuard 按全字段核对。
+ */
+function syncAppViewForeground(): void {
+  const facts = appViewForegroundFacts()
+  const next = facts ? { runnerId: facts.runnerId, sessionId: facts.sessionId, sessionFile: facts.sessionFile, generation: facts.generation } : null
+  const previous = appViewForeground
+  appViewForeground = next
+  if (!mcpAppViewService || !previous) return
+  if (
+    next &&
+    previous.runnerId === next.runnerId &&
+    previous.sessionId === next.sessionId &&
+    previous.sessionFile === next.sessionFile &&
+    previous.generation === next.generation
+  ) {
+    return
+  }
+  /* 前台切走、实例重启，或整个前台消失：旧视图立即失效并中止在途调用。 */
+  mcpAppViewService.invalidateRunnerId(previous.runnerId)
+  mcpAppViewService.invalidateSession(previous.sessionId)
+}
+
+/**
+ * 停一个运行实例，并先取消挂在它身上的交接（若有）。
+ *
+ * 「停止」按钮（`yan:abort`）与运行总览的批量停止必须逐字同路：每次停止都
+ * 先把 pending 的交接标记取消并 abandon（目的实例不是自己时也要停掉它），
+ * 再调 pi 的 `abort()`（内部先 clear_queue）。返回 clear_queue 拿回的排队
+ * 文本，调用方负责放回输入框，别让用户白打的那句话静默丢掉。
+ */
+const stopRunnerWithHandoff = async (runnerId: string | null, agent: AgentController | null): Promise<QueueSnapshot> => {
+  if (runnerId) {
+    // 仅处理确实存在的历史交接，普通停止不再写旧目标/续行状态。
+    for (const [sourceId, pending] of handoffPending) {
+      if (sourceId !== runnerId && pending.destinationRunId !== runnerId) continue
+      pending.cancelled = true
+      if (pending.destinationRunId && pending.destinationRunId !== runnerId) {
+        await runners?.agentOf(pending.destinationRunId)?.abort()
+      }
+      await abandonHandoff(sourceId, 'user-stop', pending.request.operationId)
+    }
+  }
+  return (await agent?.abort()) ?? { steering: [], followUp: [] }
 }
 
 /**
@@ -584,6 +784,10 @@ function nativeSessionExtensionPath(): string | undefined {
 function repeatGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('repeat-guard.js')
 }
+/** 托管 MCP 工具的模型代理薄层（设计 A2）：读快照注册 `mcp__` 工具。 */
+function mcpAppProxyExtensionPath(): string | undefined {
+  return yanThinResourcePath('mcp-app-proxy.js')
+}
 /** 高危操作确认（薄层 tool_call 钩子；确认框在宿主）。 */
 function dangerGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('danger-guard.js')
@@ -610,6 +814,7 @@ function yanThinExtensionPaths(): string[] {
     languageExtensionPath(),
     temperatureExtensionPath(),
     capabilityGuideExtensionPath(),
+    mcpAppProxyExtensionPath(),
     contextInspectExtensionPath(),
     contextTrimExtensionPath(),
     nativeSessionExtensionPath(),
@@ -621,6 +826,10 @@ function yanThinExtensionPaths(): string[] {
 
 function push(msg: MainPush): void {
   remoteAccess?.publish(msg)
+  /* 运行注册表增量一到达就重算注意投影：托盘提示 / 任务栏覆盖只在这里刷新。 */
+  if (msg.ch === 'runs') attention?.refreshTaskbar()
+  /* 迷你小窗的注意项列表也跟随运行注册表刷新（默认关闭时是空操作）。 */
+  if (msg.ch === 'runs') auxWindows?.notifyRuns()
   if (!win || win.isDestroyed()) return
   win.webContents.send('yan:push', msg)
 }
@@ -629,10 +838,12 @@ function push(msg: MainPush): void {
 const approvals = new ApprovalBroker({
   canAsk: () => !!win && !win.isDestroyed(),
   open: (request) => {
+    /* 运行注册表：只观察宿主危险确认（正式封套 + id），不另造请求。 */
+    runsHost?.observeApproval(request)
     push({ ch: 'approval', payload: request })
     /* 窗口在后台或最小化时卡片看不到：任务栏闪烁并发一条系统通知（不抢焦点），点通知回到窗口 */
     if (win && !win.isDestroyed() && !win.isFocused()) {
-      win.flashFrame(true)
+      attention?.flash()
       /* 系统通知跟随设置里的「系统通知」开关；任务栏闪烁不受它影响 */
       void getSettings().then((settings) => {
         if (settings.sound?.notifications === false || !Notification.isSupported()) return
@@ -649,28 +860,84 @@ const approvals = new ApprovalBroker({
     refreshTaskbar()
   },
   close: (id) => {
+    /* 允许 / 拒绝 / 超时 / 无答复都到达这里：一律归还运行态。 */
+    runsHost?.resolveApproval(id)
     push({ ch: 'approval-close', payload: { id } })
     refreshTaskbar()
   }
 })
 
-let taskbarProjection: { windowId: number; busy: boolean; waiting: boolean } | undefined
-const blockedTerminalNotices = new Map<string, { kind: TerminalProgramStatus['kind']; ticket: symbol }>()
+/**
+ * 应用外注意投影（v3 WP-12）。
+ *
+ * 迁移自本文件原先内联的 refreshTaskbar / createTray / refreshTrayMenu：
+ * 任务栏进度与覆盖图标、托盘提示与菜单改由运行注册表快照 + 宿主事实驱动。
+ * Electron 对象在这里构造；投影与菜单内容在 src/main/attention/**。
+ */
+attention = createAttentionService({
+  platform: process.platform,
+  snapshot: () => runsHost?.snapshot() ?? { revision: 0, runs: [] },
+  /* 尚未进运行注册表的忙碌 / 等待事实：终端、Agent Hub、子代理、批准中转。 */
+  hostBusy: () =>
+    runners?.hasBusy() === true || agentHub.hasLiveWork() || (subagentService.current()?.runningCount ?? 0) > 0 || hasWorkingTerminal(),
+  hostWaiting: () => approvals.list().length > 0 || hasBlockedTerminal(),
+  window: () => (win && !win.isDestroyed() ? (win as unknown as AttentionWindowPort) : undefined),
+  trayImage: () => trayImage(),
+  trayAnimationAssets: (state: TrayAnimationState, theme: TrayTheme): TrayFrameSet | undefined => trayAssets?.set(state, theme),
+  trayTheme: () => trayTheme(),
+  motionAllowed: () => trayMotionAllowed,
+  createTray: (image) => {
+    const created = new Tray(image as Electron.NativeImage)
+    return {
+      setImage: (next) => created.setImage(next as Electron.NativeImage),
+      setToolTip: (text) => created.setToolTip(text),
+      setContextMenu: (nodes) => created.setContextMenu(Menu.buildFromTemplate(toElectronMenu(nodes))),
+      on: (event, listener) => {
+        if (event === 'click') created.on('click', () => listener())
+        else created.on('double-click', () => listener())
+      },
+      setTitle: (title) => created.setTitle(title),
+      destroy: () => created.destroy()
+    }
+  },
+  language: () => trayLanguage,
+  statuses: () => runners?.statuses() ?? [],
+  showMainWindow,
+  newSession: () => push({ ch: 'tray-new-session', payload: null }),
+  selectSession: (target: TraySelectTarget) => {
+    showMainWindow()
+    push({ ch: 'tray-select-session', payload: target })
+  },
+  quit: () => void requestExit(),
+  onThemeChange: (listener) => {
+    nativeTheme.on('updated', listener)
+    return () => nativeTheme.removeListener('updated', listener)
+  }
+})
 
-/** 只投影既有运行事实；缓存外观避免每个流式增量都读图标或调用系统 API。 */
-function refreshTaskbar(force = false): void {
-  if (process.platform !== 'win32' || !win || win.isDestroyed()) return
-  const busy = runners?.hasBusy() === true || agentHub.hasLiveWork() || (subagentService.current()?.runningCount ?? 0) > 0 || hasWorkingTerminal()
-  const waiting = approvals.list().length > 0 || hasBlockedTerminal()
-  const previous = taskbarProjection?.windowId === win.id ? taskbarProjection : undefined
-  if (force || previous?.busy !== busy) {
-    win.setProgressBar(busy ? 2 : -1, busy ? { mode: 'indeterminate' as const } : undefined)
-  }
-  if (force || previous?.waiting !== waiting) {
-    win.setOverlayIcon(waiting ? trayImage() : null, waiting ? '有任务等待你的处理' : '')
-  }
-  taskbarProjection = { windowId: win.id, busy, waiting }
+/** 把托盘菜单模型翻成 Electron 模板；点击回调只导航，不执行。 */
+function toElectronMenu(nodes: AttentionMenuNode[]): Electron.MenuItemConstructorOptions[] {
+  return nodes.map((node) => {
+    if (node.type === 'separator') return { type: 'separator' as const }
+    if (node.type === 'submenu') return { label: node.label, submenu: toElectronMenu(node.items) }
+    return {
+      label: node.label,
+      ...(node.enabled === false ? { enabled: false } : {}),
+      ...(node.click ? { click: node.click } : {})
+    }
+  })
 }
+
+/** 注意投影的薄封装：调用点保持不变，实现移到 src/main/attention/**。 */
+function refreshTaskbar(force = false): void {
+  attention?.refreshTaskbar(force)
+}
+
+function refreshTrayMenu(): void {
+  attention?.refreshMenu()
+}
+
+const blockedTerminalNotices = new Map<string, { kind: TerminalProgramStatus['kind']; ticket: symbol }>()
 
 /** 只在进入 blocked 或等待类型变化时通知；异步读取设置后再次核对归属与前台状态。 */
 function notifyBlockedTerminal(id: string, status?: TerminalProgramStatus): void {
@@ -1102,6 +1369,8 @@ function adoptSubagentParentSessions(statuses: RunnerStatus[]): void {
 function pushRunners(): void {
   const statuses = runners?.statuses() ?? []
   push({ ch: 'runners', payload: statuses })
+  /* 前台会话变化（切换 / 重启 / 回收）就作废旧 App 视图，不只等 iframe 卸载。 */
+  syncAppViewForeground()
   refreshTrayMenu()
   refreshTaskbar()
   void syncKeepAwake(statuses.some((r) => r.running))
@@ -1184,37 +1453,6 @@ function resolveExpectedTarget(expected: ExpectedRuntimeInput | null): string | 
   const id = runners?.resolveExpectedRunner(expected) ?? null
   if (!id || !targetMatchesExpected(id, expected)) return null
   return id
-}
-
-/**
- * `yan:send` 入口在**第一个 `await` 之前**同步钉住的真实实例身份。
- *
- * 渲染端可以只给 runId / sessionId，或完全不传 `expectedRuntime`（旧调用）。这些
- * 输入只核调用方给的维度，识别不了 await 期间同一 runId 被复用：复用只把
- * generation / 真实 sessionId 往前推，runId 不变。入口额外钉住**当时运行实例的
- * 真实代次与 Agent 对象**，之后所有 await 都用它复核；等价于把 partial 输入在宿主
- * 侧补成完整 tuple，但旧调用方不必改参数。
- */
-interface PinnedSendTarget {
-  runId: string
-  generation: number
-  sessionId?: string
-  /** 原始 Agent 引用：跨 cwd 复用会替换对象，同 cwd 复用看代次 / 真实 SID。 */
-  agent: AgentController
-}
-
-/** 同步钉住目标实例当时的真实身份；实例不存在返回 null（调用方明确失败）。 */
-function pinSendTarget(id: string): PinnedSendTarget | null {
-  const agent = runners?.agentOf(id)
-  const runtime = runners?.runtimeOf(id)
-  if (!agent || !runtime) return null
-  return { runId: runtime.runId, generation: runtime.generation, sessionId: runtime.sessionId, agent }
-}
-
-/** await 之后复核钉住的实例没被复用：Agent 对象、代次、SID 迁移方向都要一致。 */
-function pinnedTargetMatches(pin: PinnedSendTarget): boolean {
-  if (runners?.agentOf(pin.runId) !== pin.agent) return false
-  return sameRuntimeEnvelope(runners?.runtimeOf(pin.runId), pin)
 }
 
 /**
@@ -1428,8 +1666,11 @@ async function shutdown(): Promise<void> {
   scheduleService.stop()
   await closeAgentService().catch((error) => reportMainError('agent-service-shutdown', error))
   disposeKeepAwake()
-  tray?.destroy()
-  tray = null
+  attention?.dispose()
+  auxWindows?.dispose()
+  panePopout?.dispose()
+  paneTerminal?.dispose()
+  paneBrowserTransfer?.dispose()
   try {
     await remoteAccess?.stop()
   } catch {
@@ -1445,6 +1686,20 @@ async function shutdown(): Promise<void> {
   } catch {
     /* 已死 */
   }
+  /* A7：实例已停，启动见证作废；同时关掉 MCP Apps 宿主连接池，不留连接。 */
+  /* MCP App 视图：先清实例与 store，再关宿主连接池（避免残留 iframe 读旧快照）。 */
+  try {
+    mcpAppViewService?.close()
+  } catch (error) {
+    reportMainError('mcp-app-view-shutdown', error)
+  }
+  mcpAppViewService = null
+  appViewForeground = null
+  try {
+    await closeMcpAppHost()
+  } catch {
+    /* 连接池已关 */
+  }
   /* 退出前把子代理一起收掉（方案 8.3：主任务停了，它的子任务不该变孤儿） */
   await agentHub.shutdown().catch((error) => reportMainError('agent-hub-shutdown', error))
   try {
@@ -1452,6 +1707,17 @@ async function shutdown(): Promise<void> {
   } catch {
     /* 忽略 */
   }
+  /*
+   * 运行注册表：停监测与推送，并等编号 / 运行历史写盘结束。
+   * 放在 runners.stopAll 之后 —— 进程退出信号已经归约进去，不会漏掉最后一轮。
+   */
+  try {
+    await runsHost?.dispose()
+  } catch (error) {
+    reportMainError('runs-host-shutdown', error)
+  }
+  runsHost = null
+  reviewRuns = null
   try {
     await browser?.dispose()
   } catch {
@@ -1482,6 +1748,17 @@ function showMainWindow(): void {
   win.show()
   win.focus()
 }
+
+/**
+ * `inkstone://` 只导航：把已校验意图投给渲染端，窗口未就绪时缓存最后一条等 flush()。
+ */
+const deepLinkRouter = windowDeepLinkRouter(() => win ?? undefined, showMainWindow)
+
+/* macOS：协议可能在应用 ready 之前唤醒，必须在 ready 之前监听。 */
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  deepLinkRouter.handleOpenUrl(url)
+})
 
 const CONTROL_KEYS: Readonly<Record<string, string>> = {
   esc: 'ESC',
@@ -1709,91 +1986,40 @@ function shellIconPath(): string | undefined {
  * 托盘字形（设计规范 §3.4.1）：无底砖的单色标志，按**系统任务栏**的深浅选浅色或深色字形。
  * 砖形应用图标缩到托盘尺寸会糊成一块，所以托盘单独一套；@1.5x/@2x 由 nativeImage 按文件名自动挑。
  */
+/** 系统任务栏深浅 → 托盘字形主题。 */
+function trayTheme(): TrayTheme {
+  return nativeTheme.shouldUseDarkColorsForSystemIntegratedUI ? 'on-dark' : 'on-light'
+}
+
+/** 托盘 build 目录候选（dev 与 packaged 都要能命中；packaged 走 app.asar 内 build/tray）。 */
+function trayDirs(): string[] {
+  return [join(app.getAppPath(), 'build', 'tray'), join(__dirname_, '..', '..', 'build', 'tray')]
+}
+
 function trayImage(): Electron.NativeImage {
-  const name = nativeTheme.shouldUseDarkColorsForSystemIntegratedUI ? 'tray-on-dark.png' : 'tray-on-light.png'
-  const candidates = [join(app.getAppPath(), 'build', 'tray', name), join(__dirname_, '..', '..', 'build', 'tray', name)]
+  const name = trayTheme() === 'on-dark' ? 'tray-on-dark.png' : 'tray-on-light.png'
+  const candidates = trayDirs().map((dir) => join(dir, name))
   const found = candidates.find((candidate) => existsSync(candidate))
   if (found) return nativeImage.createFromPath(found)
   const iconPath = shellIconPath()
   return iconPath ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty()
 }
 
-async function createTray(): Promise<void> {
-  if (tray) return
-  tray = new Tray(trayImage())
-  /* 用户切换任务栏深浅时跟着换字形 */
-  if (!trayThemeListening) {
-    trayThemeListening = true
-    nativeTheme.on('updated', () => {
-      tray?.setImage(trayImage())
-      refreshTaskbar(true)
+/*
+ * 预载托盘动画素材（L12）。缺 manifest / 坏 manifest 由 store 失败封闭，
+ * 托盘保持上面的静态精修标志。预载之后 timer 回调不再触达这里。
+ */
+function ensureTrayAssets(): void {
+  if (!trayAssets) {
+    trayAssets = createTrayAssetStore({
+      dirs: trayDirs(),
+      createImage: (path) => nativeImage.createFromPath(path),
+      readFile: (path) => readFileSync(path, 'utf8'),
+      exists: (path) => existsSync(path),
+      onWarn: (message) => push({ ch: 'log', payload: { text: `[托盘] ${message}` } })
     })
   }
-  tray.setToolTip('砚 · Yan')
-  const settings = await getSettings()
-  trayLanguage = settings.lang
-  refreshTrayMenu()
-  tray.on('click', showMainWindow)
-  tray.on('double-click', showMainWindow)
-}
-
-/**
- * 重建托盘菜单（阶段 3）。
- *
- * Electron 的 Tray 菜单不是 DOM，不能让 renderer 的左栏直接复用；每次
- * 运行实例快照变化时重建一份很小的原生菜单，保证“查看运行中的会话”
- * 不会停留在旧状态。菜单项只携带 sessionId/cwd，不把消息正文或 token
- * 放进系统菜单。
- */
-function refreshTrayMenu(): void {
-  if (!tray) return
-  const zh = trayLanguage !== 'en-US'
-  const statuses = runners?.statuses() ?? []
-  const live = statuses.filter((status) => status.running || status.waiting || status.conn === 'starting')
-  const sessionItems: Electron.MenuItemConstructorOptions[] = live.length
-    ? live.map((status) => {
-        const name = status.sessionFile
-          ? basename(status.sessionFile)
-          : status.sessionId || status.id
-        const state = status.waiting
-          ? (zh ? '等待回答' : 'Waiting')
-          : status.running
-            ? (zh ? '运行中' : 'Running')
-            : (zh ? '启动中' : 'Starting')
-        return {
-          label: `${status.isActive ? '● ' : ''}${name} · ${state}`,
-          click: () => {
-            showMainWindow()
-            push({
-              ch: 'tray-select-session',
-              payload: {
-                ...(status.sessionFile ? { sessionFile: status.sessionFile } : {}),
-                ...(status.sessionId ? { sessionId: status.sessionId } : {}),
-                ...(status.projectId ? { projectId: status.projectId } : {}),
-                cwd: status.cwd
-              }
-            })
-          }
-        }
-      })
-    : [{ label: zh ? '暂无运行中的会话' : 'No running sessions', enabled: false }]
-
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: zh ? '显示砚' : 'Show Yan', click: showMainWindow },
-    {
-      label: zh ? '新建会话' : 'New session',
-      click: () => {
-        showMainWindow()
-        push({ ch: 'tray-new-session', payload: null })
-      }
-    },
-    {
-      label: zh ? '查看运行中的会话' : 'Running sessions',
-      submenu: sessionItems
-    },
-    { type: 'separator' },
-    { label: zh ? '退出砚' : 'Quit Yan', click: () => void requestExit() }
-  ]))
+  trayAssets.load()
 }
 
 /* Agent 生命周期 */
@@ -2212,7 +2438,22 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   runners = new RunnerRegistry({
     isSessionVisible: (state) => runnerVisibility.includes(state),
     isParentProtected: (sessionId, runId) => subagentService.current()?.hasParentRun(sessionId, runId) ?? false,
+    /* 选择 / 复用 runner 后同步绑定定时来源，早于早期标题 / 状态信号。 */
+    onRunnerOrigin: ({ sessionId, generation, origin }) => {
+      if (!runsHost) return
+      if (origin) {
+        runsHost.bindScheduledOrigin({
+          scopeId: origin.scopeId,
+          ...(sessionId ? { sessionId } : {}),
+          generation
+        })
+      } else if (sessionId) {
+        runsHost.clearScheduledOrigin({ sessionId, generation })
+      }
+    },
     onReclaimed: ({ id, sessionId, idleMs, remaining }) => {
+      /* 实例被回收：清掉绑定它的 App 视图实例并 abort 迟到请求，不伤其它实例。 */
+      mcpAppViewService?.invalidateRunnerId(id)
       const text = `[运行实例回收] ${id} (${sessionId ?? 'unknown'}) 空闲 ${Math.floor(idleMs / 1000)} 秒，释放1个 pi 实例，剩余 ${remaining} 个`
       console.log(text)
       push({ ch: 'log', payload: { text } })
@@ -2247,6 +2488,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
     createAgent: (id, cwd, generation) =>
       new AgentController({
         push: (m) => pushFrom(id, m),
+        /* 运行注册表旁路（v3 WP-10）：只收压缩后 run signals，不影响 pi 循环。 */
+        observeRun: runsHost?.observerFor({ generation }) ?? undefined,
         cwd,
         piBin: settings.piBin,
         codemodeExtension: codemodeExtensionPath(),
@@ -2272,6 +2515,13 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         contextInspectExtension: contextInspectExtensionPath(),
         contextTrimExtension: contextTrimExtensionPath(),
         nativeSessionExtension: nativeSessionExtensionPath(),
+        /*
+         * 托管 MCP 工具的模型代理：薄层路径 + 新鲜快照路径。
+         * 快照缺失 / 过期时 mcpAppProxyToolsEnv() 返回空对象 → 不注入 env，
+         * 薄层不注册任何托管工具，等用户在设置里刷新（不默认连接服务器）。
+         */
+        mcpAppProxyExtension: mcpAppProxyExtensionPath(),
+        mcpAppToolsSnapshot: mcpAppProxyToolsEnv().YAN_MCP_APP_TOOLS,
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
         repeatGuardExtension: repeatGuardExtensionPath(),
         dangerGuardExtension: dangerGuardExtensionPath(),
@@ -2528,7 +2778,11 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       runners: {
         activationSnapshot: (target) => runners?.activationSnapshot(target) ?? null,
         agentOf: (id) => runners?.agentOf(id) ?? null,
-        restartOne: (id) => runners?.restartOne(id) ?? Promise.resolve({ ok: false, error: '运行实例注册表尚未就绪' }),
+        restartOne: async (id) => {
+          /* 重启前主动作废绑定该实例的 App 视图；完成后 gate 还会按新 generation 复核。 */
+          mcpAppViewService?.invalidateRunnerId(id)
+          return (await runners?.restartOne(id)) ?? { ok: false, error: '运行实例注册表尚未就绪' }
+        },
         hasBusyCwd: (cwd) => runners?.hasBusyCwd(cwd) ?? false
       },
       isTrusted: async (cwd) => (await trustStatus(cwd)).trusted,
@@ -2805,22 +3059,10 @@ function registerIpc(): void {
   handle('yan:followUp', async (text: string) => ac()?.followUp(text) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:steerQueued', async (queueId: string) => ac()?.steerQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:removeQueued', async (queueId: string) => ac()?.removeQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:queueEdit', async (next: QueueState) => ac()?.rewriteQueue(next) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:abort', async () => {
-    const id = runners?.activeRunnerId
-    if (id) {
-      // 仅处理确实存在的历史交接，普通停止不再写旧目标/续行状态。
-      for (const [sourceId, pending] of handoffPending) {
-        if (sourceId !== id && pending.destinationRunId !== id) continue
-        pending.cancelled = true
-        if (pending.destinationRunId && pending.destinationRunId !== id) {
-          await runners?.agentOf(pending.destinationRunId)?.abort()
-        }
-        await abandonHandoff(sourceId, 'user-stop', pending.request.operationId)
-      }
-    }
     // 把 clear_queue 拿回来的排队文本一并返回，客户端应放回输入框
-    const cleared = (await ac()?.abort()) ?? { steering: [], followUp: [] }
-    return cleared
+    return stopRunnerWithHandoff(runners?.activeRunnerId ?? null, ac())
   })
 
   /*
@@ -3041,11 +3283,78 @@ function registerIpc(): void {
 
   /* ---- 状态 ---- */
   handle('yan:getState', async () => ac()?.getState() ?? null)
+  /*
+   * 运行注册表（v3 WP-10 / WP-54）。
+   *
+   * snapshot 必须**先 flush** 待发增量再返回，使返回的 revision 与刚推送的
+   * 那一帧一致；渲染端先订阅、再取快照，随后只回放 revision 更大的增量。
+   * runsHost 此时可能还没初始化（registerIpc 在 whenReady 里早于它执行），
+   * 所以 deps 惰性读取：未就绪时 snapshot 返回空表，stop 一律不命中。
+   */
+  registerRunsIpc(ipc, {
+    snapshot: () => runsHost?.snapshot() ?? { revision: 0, runs: [] },
+    markSeen: (runId) => runsHost?.markSeen(runId) ?? { ok: false },
+    /*
+     * 会话运行的停止就是界面停止按钮那条路：按稳定 sessionId 找实例，
+     * 调同一个 AgentController.abort()（先 clear_queue 再 abort），不新造循环。
+     */
+    stopSessionRun: async ({ sessionId }) => {
+      const agent = runners?.agentForSession(sessionId) ?? null
+      if (!agent) return { ok: false, error: '找不到这次运行对应的会话实例' }
+      /*
+       * 与界面停止按钮逐字同路：先按实例反查 runner id（含隐藏实例），
+       * 取消挂在该运行上的交接，再 abort，并把 clear_queue 排队文本交回
+       * 渲染端放回输入框。
+       */
+      const cleared = await stopRunnerWithHandoff(runners?.idOf(agent) ?? null, agent)
+      return { ok: true, recovered: cleared }
+    },
+    /* 子 Agent 运行复用现有子代理 stop；运行 id 与子代理 id 同源。 */
+    stopSubagentRun: async (runId) => {
+      const service = subagentService.current()
+      if (!service) return { ok: false, error: '子 Agent 宿主未就绪' }
+      const result = await service.stop(runId)
+      return result.ok ? { ok: true } : { ok: false, ...(result.error ? { error: result.error } : {}) }
+    }
+  })
   handle('yan:agentStatus', async () =>
     ac()?.getConn() ?? { state: 'starting' as const, detail: '' }
   )
   handle('yan:getMessages', async () => ac()?.getMessages() ?? [])
   handle('yan:getStats', async () => ac()?.refreshStats() ?? null)
+
+  syncController = registerSyncIpc(ipc, {
+    dataDir: YAN_DIR,
+    sessionsDir: SESSIONS_DIR,
+    makeService: (root) => new SyncService({ dataDir: YAN_DIR, syncRoot: root, piAgentDir: PI_AGENT_DIR }),
+    pickSyncFolder: async () => {
+      if (!win) return null
+      const r = await dialog.showOpenDialog(win, {
+        title: '选择同步文件夹（建议放在 OneDrive / 坚果云 / Syncthing 管理的目录）',
+        properties: ['openDirectory', 'createDirectory']
+      })
+      return r.canceled ? null : r.filePaths[0] ?? null
+    },
+    pickExportPath: async (suggested) => {
+      if (!win) return null
+      const r = await dialog.showSaveDialog(win, {
+        title: '导出会话',
+        defaultPath: join(app.getPath('documents'), suggested),
+        filters: [{ name: '砚会话包', extensions: ['json'] }]
+      })
+      return r.canceled ? null : r.filePath ?? null
+    },
+    pickImportFile: async () => {
+      if (!win) return null
+      const r = await dialog.showOpenDialog(win, {
+        title: '选择会话包',
+        properties: ['openFile'],
+        filters: [{ name: '砚会话包', extensions: ['json'] }]
+      })
+      return r.canceled ? null : r.filePaths[0] ?? null
+    },
+    currentSessionPath: () => ac()?.getState()?.sessionFile
+  })
 
   registerAuthIpc(ipc, {
     restartAgent: (reason: string) => restartAgent(reason),
@@ -3187,6 +3496,18 @@ function registerIpc(): void {
   ipcMain.on('yan:hotkey-guard', (event, v) => {
     if (!isTrustedIpc(event) || typeof v !== 'boolean') return
     hotkeyGuardPaused = v
+  })
+
+  /*
+   * 减少动态效果（L12）：渲染端 matchMedia('(prefers-reduced-motion: reduce)') 是
+   * 系统偏好的真实通路 —— 主进程没有等价原生 API（不作为 nativeTheme 或
+   * isAccessibilitySupportEnabled 的近似）。来源必须是主窗口主 frame；未收到上报前
+   * trayMotionAllowed=false，托盘保持静态。
+   */
+  ipcMain.on('yan:motion-preference', (event, reduced) => {
+    if (!isTrustedIpc(event) || typeof reduced !== 'boolean') return
+    trayMotionAllowed = !reduced
+    refreshTaskbar()
   })
 
   /*
@@ -3423,7 +3744,7 @@ function registerIpc(): void {
   ipcMain.on('win:close', (event) => { if (isTrustedIpc(event)) win?.close() })
   rawHandle('win:requestExit', async () => requestExit())
   rawHandle('win:lifecycle', () => ({
-    tray: tray !== null,
+    tray: attention?.hasTray() ?? false,
     visible: !!win && !win.isDestroyed() && win.isVisible(),
     quitting: isQuitting
   }))
@@ -3473,7 +3794,122 @@ function registerIpc(): void {
     }
   })
 
-  registerGitIpc(ipc, { isCwdBusy: (dir: string) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir)), worktreeOrigins })
+  registerGitIpc(ipc, {
+    isCwdBusy: (dir: string) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir)),
+    worktreeOrigins,
+    /*
+     * 只读改动 / 差异读取的目录授权：复用文件树 / @ 补全用的同一套
+     * `resolveFileContext`。渲染端只能传 cwd，成不成、规范 cwd 是什么
+     * 全在这里定；仓库根会在 git-inspect 里再授权一次。
+     */
+    authorizeReadCwd: async (cwd: string) => {
+      const st = await getSettings()
+      const resolved = await resolveFileContext(st, st.cwd, { cwd })
+      return resolved.ok
+        ? { ok: true as const, cwd: resolved.context.cwd }
+        : { ok: false as const, error: resolved.error }
+    }
+  })
+
+  /*
+   * 代码评审（v3 WP-50，§10.2）。数据 / 批注 / 安全 Git 适配在 src/main/review/，
+   * 这里只做装配，四条线各接既有的唯一入口：
+   *   · 目录授权复用文件树同一套 `resolveFileContext`（同 `yan:git:changes` 的口径）；
+   *   · R 编号走运行注册表的正式编号存储（`runsHost.assignCode` → SessionCodeStore）；
+   *   · 推送 / 创建 PR 的窄目标确认接现有批准通道；
+   *   · 评审执行交既有 `SubagentService` 的只读子运行，不复制 pi 循环。
+   *
+   * 评审子运行经 `reviewRuns` 按 runId 一对一登记成 `kind:'review'` 的运行
+   * （R 号）：开始 / 进度 / 结束都投影到该运行，事件不回流到会话事件通道。
+   * 评审技能 `resources/skills/review/SKILL.md` 供交互式 `/skill:review` 使用；
+   * 只读子运行走 `--no-skills`，评审约束由 `shared/review.buildReviewPrompt`
+   * 写进任务文本。
+   */
+  const reviewService = new ReviewService({
+    authorize: async (cwd: string) => {
+      const st = await getSettings()
+      const resolved = await resolveFileContext(st, st.cwd, { cwd })
+      return resolved.ok
+        ? { ok: true as const, cwd: resolved.context.cwd }
+        : { ok: false as const, error: resolved.error }
+    },
+    annotations: new ReviewAnnotationStore(),
+    /*
+     * 会话归属验证：评审的「本会话改动」必须绑定到**真实运行实例**的会话，
+     * 渲染端自报的 sessionId 不构成授权。这里只认：
+     *   · 该 sessionId 对应一个 live runner，且拿到稳定的会话键；
+     *   · 请求目录与 runner 的 workingDirectory 一致（不能拿 A 目录配 B 会话）；
+     *   · 返回目录取 runner 的可信工作目录，不采用渲染端送来的 cwd。
+     * 任一不满足即 fail-closed，service 返回 unavailable，界面提示改看「未提交改动」。
+     */
+    verifySession: async ({ sessionId, cwd }) => {
+      const agent = runners?.agentForSession(sessionId)
+      const state = agent?.getState()
+      const sessionKey = state?.conversationId ?? state?.sessionId
+      if (!agent || !state || !sessionKey || !state.sessionFile) {
+        return { ok: false as const, error: '会话不属于当前运行实例' }
+      }
+      const norm = (value: string) => (process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value))
+      if (!cwd || norm(agent.workingDirectory) !== norm(cwd)) {
+        return { ok: false as const, error: '会话与请求的目录不一致' }
+      }
+      return {
+        ok: true as const,
+        ownership: { sessionId, sessionKey, cwd: agent.workingDirectory, sessionPath: state.sessionFile }
+      }
+    },
+    git: new ReviewGitAdapter({
+      confirm: {
+        /* 推送与建 PR 是对外动作：每次都必须过窄目标确认，不因权限档自动放行。 */
+        confirm: async (request) => {
+          const answer = await approvals.ask({
+            kind: 'danger',
+            tool: request.action === 'push' ? 'git push' : 'gh pr create',
+            title: request.action === 'push' ? '推送代码到远端' : '创建 Pull Request',
+            detail: request.summary,
+            reasons: [request.summary],
+            cwd: request.cwd,
+            canRemember: false
+          })
+          return answer === 'once' || answer === 'remember'
+        }
+      }
+    }),
+    agent: new ReviewAgentCoordinator({
+      assignCode: async (scopeId) => {
+        if (!runsHost) throw new Error('运行注册表尚未就绪，R 编号暂不可用')
+        return runsHost.assignCode(scopeId, 'review')
+      },
+      port: {
+        async startReview(input) {
+          const controller = await subagentService.get()
+          /* 只读子运行的父会话归属：与子代理面板同一套 setContext 入口。 */
+          controller.setContext({
+            cwd: input.cwd,
+            ...(input.sessionId ? { parentSessionId: input.sessionId } : {}),
+            ...(input.projectId ? { projectId: input.projectId } : {})
+          })
+          const result = await controller.start(input.prompt, input.model, 'controlled-cwd')
+          if (!result.ok || !result.run) return { ok: false, error: result.error ?? '评审运行启动失败' }
+          /*
+           * 只读子运行按 runId 映射为 `kind:'review'` 的 R 运行。登记失败只说明
+           * 运行总览里看不到这次评审（编号 / 注册表降级），不影响子运行本身。
+           */
+          const model = reviewRunModel(result.run.model, result.run.thinkingLevel)
+          reviewRuns?.begin({
+            runId: result.run.id,
+            code: input.code,
+            ...(input.sessionPath ? { sessionPath: input.sessionPath } : {}),
+            ...(input.projectId ? { projectId: input.projectId } : {}),
+            title: `代码评审 ${input.code}`,
+            ...(model ? { model } : {})
+          })
+          return { ok: true, runId: result.run.id }
+        }
+      }
+    })
+  })
+  registerReviewIpc(ipc, { service: reviewService })
 
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   registerSourcesIpc(ipc, { webSearchAvailability: async () => ac()?.webSearchAvailability() })
@@ -3511,6 +3947,33 @@ function registerIpc(): void {
     settings: () => getSettings(),
     isProjectTrusted: async (cwd) => (await trustStatus(cwd)).trusted
   })
+
+  registerMcpAppIpc(ipc, {
+    currentAgent: () => ac() ?? undefined,
+    registry: () => runners,
+    settings: () => getSettings(),
+    isProjectTrusted: async (cwd) => (await trustStatus(cwd)).trusted
+  })
+
+  /* MCP App 视图桥：service 在 ready 后装配，未就绪时 IPC 明确报未就绪。 */
+  registerMcpAppViewIpc(ipc, { service: () => mcpAppViewService })
+
+  /*
+   * A7：把**真实运行时事实**接进 MCP Apps 宿主归属守卫。
+   * - agentDir 用真实的 PI_AGENT_DIR（与传给 pi 的 PI_CODING_AGENT_DIR 同源）；
+   * - 项目登记从受信设置动态取；
+   * - registry 用当前 RunnerRegistry，holdersFor 走内部窄快照（含 hidden）+
+   *   启动见证 + legacy 连接事实；
+   * - 缺任何一项 / 读取异常都 fail-closed（守卫折算成 runtime-unknown 拒绝），
+   *   绝不在别处补一个空数组当「无人持有」。
+   */
+  configureMcpAppHostOwnership(
+    createMcpAppRuntimeOwnershipFacts({
+      registry: () => runners,
+      agentDir: PI_AGENT_DIR,
+      projects: async () => (await getSettings()).projects.map((project) => ({ id: project.id, cwd: project.cwd }))
+    })
+  )
 
 
   registerKnowledgeIpc(ipc, { currentCwd: () => ac()?.getState()?.cwd, knowledgeProjectId, window: () => win })
@@ -3612,7 +4075,10 @@ function createWindow(): void {
     backgroundColor: '#151515',
     webPreferences: {
       preload: join(__dirname_, '../preload/index.cjs'),
-      additionalArguments: process.env.YAN_PROBE && !app.isPackaged ? ['--yan-isolated-probe'] : [],
+      additionalArguments: [
+        ...(process.env.YAN_PROBE && !app.isPackaged ? ['--yan-isolated-probe'] : []),
+        ...(process.env.YAN_UI === 'v2' || process.env.YAN_UI === 'v3' ? [`--yan-ui=${process.env.YAN_UI}`] : [])
+      ],
       /*
        * 主窗口的进程沙盒（方案第 9 节）。
        *
@@ -3929,12 +4395,25 @@ function createWindow(): void {
   })
   win.webContents.on('render-process-gone', (_e, details) => {
     runnerVisibility.reset()
+    /* 渲染进程没了：所有 App iframe 失联，立即清实例并中止在途调用；运动偏好回到静态。 */
+    mcpAppViewService?.close()
+    trayMotionAllowed = false
+    refreshTaskbar()
     console.error('[renderer gone]', details.reason)
   })
   win.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) runnerVisibility.reset()
+    if (!isMainFrame || isInPlace) return
+    runnerVisibility.reset()
+    /* 主 frame 重载：旧 iframe 已销毁，主动失效并等新的 motion 上报。 */
+    mcpAppViewService?.close()
+    trayMotionAllowed = false
+    refreshTaskbar()
   })
-  win.on('closed', () => runnerVisibility.reset())
+  win.on('closed', () => {
+    runnerVisibility.reset()
+    mcpAppViewService?.close()
+    trayMotionAllowed = false
+  })
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -4153,6 +4632,8 @@ configureHandoffCoordinator({
 
 app.whenReady().then(async () => {
   try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { reportMainError('data-root-writer', error); app.exit(1); return }
+  /* 注册为 `inkstone://` 默认处理器；开发态带入口脚本，打包态只注册 scheme。 */
+  registerDeepLinkProtocol(app, { isPackaged: app.isPackaged, execPath: process.execPath, appPath: process.argv[1] })
   registerHtmlArtifactProtocol()
   void loadModelPricing()
   watchPowerSource()
@@ -4167,6 +4648,11 @@ app.whenReady().then(async () => {
       notifyBlockedTerminal(event.id, event.status)
       refreshTaskbar()
     }
+    /*
+     * 终端弹窗持有该 terminalId 的 lease 时，输出只投给它；弹窗关掉后自然回落到主窗口。
+     * 状态与退出两边都要知道：主窗口的终端页签在弹出期间仍要显示阻塞/退出，归还后不留旧状态。
+     */
+    if (paneTerminal?.forward(event) && event.kind === 'data') return
     push({
       ch: 'terminal',
       payload:
@@ -4178,8 +4664,266 @@ app.whenReady().then(async () => {
     })
   })
   registerIpc()
-  await createTray()
+  trayLanguage = (await getSettings()).lang
+  ensureTrayAssets()
+  attention?.ensureTray()
   createWindow()
+
+  /*
+   * 辅助小窗（WP-25d 快速提问 / WP-12 迷你小窗）。
+   *
+   * 窗口 / 状态 / 发送逻辑都在 src/main/windows/**；这里只提供宿主事实：
+   * 主窗口边界、项目与模型列表、注意力汇总，以及复用 sessionHost 的新会话路径。
+   * 导航复用既有的 `tray-select-session` 推送（只导航，不执行动作）。
+   */
+  auxWindows = createAuxWindows({
+    preloadPath: () => join(__dirname_, '../preload/index.cjs'),
+    loadEntry: (target, entry) => {
+      const page = entry === 'quick-ask' ? 'quick-ask' : 'mini'
+      if (process.env.ELECTRON_RENDERER_URL) void target.loadURL(`${process.env.ELECTRON_RENDERER_URL}/auxwin/${page}.html`)
+      else void target.loadFile(join(__dirname_, `../renderer/auxwin/${page}.html`))
+    },
+    locale: () => (trayLanguage === 'en-US' ? 'en-US' : 'zh-CN'),
+    anchorBounds: () => (win && !win.isDestroyed() ? win.getBounds() : undefined),
+    workArea: (bounds) => screen.getDisplayMatching(bounds).workArea,
+    zoomFactor: () => zoomState(win, peekUiScale()).effective,
+    listProjects: async () =>
+      (await getSettings()).projects.map((project) => ({ id: project.id, name: project.name, path: project.cwd })),
+    listModels: async () =>
+      ((await ac()?.listModels()) ?? []).map((model) => ({
+        key: `${model.provider}::${model.id}`,
+        id: model.id,
+        label: model.name,
+        provider: model.provider
+      })),
+    currentSession: async () => {
+      const status = runners?.statuses().find((item) => item.isActive)
+      if (!status) return null
+      return {
+        ...(status.sessionId ? { sessionId: status.sessionId } : {}),
+        ...(status.sessionFile ? { sessionPath: status.sessionFile } : {}),
+        ...(status.projectId ? { projectId: status.projectId } : {}),
+        cwd: status.cwd
+      }
+    },
+    attentionSummary: () => attention?.summary() ?? summarizeAttention([]),
+    submitQuickAsk: (payload) =>
+      submitQuickAsk(
+        {
+          activeRunId: () => runners?.activeRunnerId ?? null,
+          agentOf: (runId) => runners?.agentOf(runId) ?? null,
+          start: () => sessionHost.startAgent(),
+          createSession: async ({ projectId }) => {
+            const settings = await getSettings()
+            const cwdResult = await sessionHost.validateCwd(settings.cwd)
+            if (!cwdResult.ok) return { ok: false, error: cwdResult.error }
+            if (!runners) {
+              const started = await sessionHost.startAgent()
+              if (!started.ok) return { ok: false, error: started.error }
+            }
+            const registry = runners
+            if (!registry) return { ok: false, error: 'pi 未运行' }
+            const scope = projectId ? 'project' : 'global'
+            const res = await registry.select({ cwd: cwdResult.cwd, projectId, scope })
+            await sessionHost.rememberRunnerSession(res, {
+              cwd: cwdResult.cwd,
+              ...(projectId ? { projectId } : {}),
+              scope
+            })
+            if (res.ok && res.id) void sessionHost.pushRunnerSnapshot(res.id)
+            sessionHost.pushRunners()
+            return res.ok && res.id ? { ok: true, id: res.id } : { ok: false, error: res.error }
+          },
+          applyModel: async (runId, model) =>
+            (await runners?.agentOf(runId)?.setModel(model.provider, model.id)) ?? { ok: false, error: 'pi 未运行' }
+        },
+        payload
+      ),
+    openSession: (target) => {
+      const status = runners?.statuses().find(
+        (item) =>
+          (target.sessionId && item.sessionId === target.sessionId) ||
+          (target.sessionPath && item.sessionFile === target.sessionPath)
+      )
+      push({
+        ch: 'tray-select-session',
+        payload: {
+          ...(target.sessionPath ? { sessionFile: target.sessionPath } : {}),
+          ...(target.sessionId ? { sessionId: target.sessionId } : {}),
+          ...(target.projectId ? { projectId: target.projectId } : {}),
+          cwd: status?.cwd ?? target.cwd ?? ''
+        }
+      })
+    },
+    showMainWindow,
+    shortcut: () => 'Alt+Shift+Space',
+    /* 默认关闭；用户可见的开关是后续设置项，验收期用 YAN_AUX_MINI=1 打开。 */
+    miniEnabled: () => process.env.YAN_AUX_MINI === '1'
+  })
+  registerAuxIpc(auxWindows)
+  auxWindows.registerShortcut()
+  if (process.env.YAN_AUX_MINI === '1') auxWindows.showMini()
+
+  /*
+   * 浏览器原生视图转移端口：宿主能力来自 BrowserController 的 host-transfer
+   * 增量 API；端口本身只做租约、移动与受限端口，不复制浏览器服务。
+   */
+  const browserTransfer = createPaneBrowserTransfer({
+    beginHostTransfer: (request) =>
+      browser?.beginHostTransfer(request) ?? { ok: false, code: 'not-found', message: '浏览器未初始化' },
+    endHostTransfer: (tabId, ownerKey) => browser?.endHostTransfer(tabId, ownerKey) ?? false
+  })
+  paneBrowserTransfer = browserTransfer
+
+  /*
+   * 终端页签同 PTY 弹出（WP-30 终端 transfer）：只绑定主窗口已经打开的 PTY，
+   * 不 start / kill；输出经上面的 setTerminalSink relay 转投，弹窗关闭后回落主窗口。
+   */
+  paneTerminal = createPaneTerminalTransfer(
+    {
+      preloadPath: () => join(__dirname_, '../preload/index.cjs'),
+      loadEntry: (target) => {
+        if (process.env.ELECTRON_RENDERER_URL) void target.loadURL(`${process.env.ELECTRON_RENDERER_URL}/auxwin/pane.html`)
+        else void target.loadFile(join(__dirname_, '../renderer/auxwin/pane.html'))
+      },
+      anchorBounds: () => (win && !win.isDestroyed() ? win.getBounds() : undefined),
+      workArea: (bounds) => screen.getDisplayMatching(bounds).workArea,
+      zoomFactor: () => zoomState(win, peekUiScale()).effective,
+      locale: () => (trayLanguage === 'en-US' ? 'en-US' : 'zh-CN'),
+      read: (terminalId) => {
+        const snapshot = readTerminal(terminalId)
+        return snapshot ? toPaneTerminalSnapshot(snapshot) : null
+      },
+      write: (terminalId, data) => writeTerminal(terminalId, data),
+      resize: (terminalId, cols, rows) => resizeTerminal(terminalId, cols, rows),
+      /* 主窗口是信任边界；owner 只作归属绑定，终端必须真实存在（上面 read 再校验一次）。 */
+      authorize: (owner) => owner.active === true && owner.key.length > 0
+    },
+    {
+      onLeaseChange: (event) => {
+        if (win && !win.isDestroyed()) win.webContents.send('yan:pane-terminal:lease', event)
+      }
+    }
+  )
+
+  /*
+   * 工作区页签弹出窗（WP-30 弹出）。窗口生命周期 / owner+epoch 守卫在
+   * windows/pane-popout-*；这里只提供宿主事实（主窗口边界、工作区、缩放、语言）
+   * 与动作回投。browser / terminal 走各自的 transfer 适配器，preview 仍被拒绝。
+   */
+  panePopout = createPanePopoutController(
+    {
+      preloadPath: () => join(__dirname_, '../preload/index.cjs'),
+      loadEntry: (target) => {
+        if (process.env.ELECTRON_RENDERER_URL) void target.loadURL(`${process.env.ELECTRON_RENDERER_URL}/auxwin/pane.html`)
+        else void target.loadFile(join(__dirname_, '../renderer/auxwin/pane.html'))
+      },
+      anchorBounds: () => (win && !win.isDestroyed() ? win.getBounds() : undefined),
+      workArea: (bounds) => screen.getDisplayMatching(bounds).workArea,
+      zoomFactor: () => zoomState(win, peekUiScale()).effective,
+      locale: () => (trayLanguage === 'en-US' ? 'en-US' : 'zh-CN')
+    },
+    {
+      onAction: (event) => {
+        if (win && !win.isDestroyed()) win.webContents.send('yan:pane-popout:action-event', event)
+      },
+      /*
+       * 浏览器页签的原生视图转移端口：只把「借出/归还」这一层交出去。
+       * 控制器不碰 WebContentsView，适配器不碰控制器内部。
+       */
+      browserTransfer,
+      /* 终端页签的 transfer 端口：控制器只转发 open，窗口与 lease 归 W3T 适配器所有。 */
+      terminalTransfer: paneTerminal
+    }
+  )
+  registerPanePopoutIpc(panePopout, {
+    isMainWindow: (contents) => !!win && !win.isDestroyed() && win.webContents === contents
+  })
+  registerPaneBrowserIpc({ controller: panePopout, transfer: browserTransfer })
+  registerPaneTerminalIpc(paneTerminal, {
+    isMainWindow: (contents) => !!win && !win.isDestroyed() && win.webContents === contents
+  })
+
+  /*
+   * 同步目录已配置时，启动后同步一次；失败只记日志，不阻塞启动、不弹窗。
+   */
+  void syncController?.runStartupSync()
+  /*
+   * 冷启动由系统带链接拉起（Windows argv / macOS ready 前的 open-url）：渲染端
+   * 订阅要等页面加载完才就位，所以在 did-finish-load 之后补投，早发的链接不丢。
+   */
+  win?.webContents.once('did-finish-load', () => {
+    deepLinkRouter.flush()
+    deepLinkRouter.handleArgv(process.argv)
+  })
+
+  /*
+   * 运行注册表（v3 WP-10）：必须在首个 AgentController 创建（startAgent）之前
+   * 初始化，createAgent 才能把旁路接上。初始化失败只降级为 null ——
+   * 运行总览 / 侧栏状态点不可用，v2 会话功能照常继续。
+   */
+  try {
+    runsHost = await createRunsHost({ push })
+    reviewRuns = createReviewRunProducer({ registry: runsHost.reviewRunPort() })
+  } catch (error) {
+    runsHost = null
+    reviewRuns = null
+    reportMainError('runs-host', error)
+    push({
+      ch: 'log',
+      payload: {
+        text: `[runs] 运行注册表初始化失败，运行总览不可用：${error instanceof Error ? error.message : String(error)}`,
+        level: 'error'
+      }
+    })
+  }
+
+  /*
+   * MCP App 视图桥（v3 §12）：ready 之后注册 `inkstone-app:` 协议处理器。
+   *
+   * owner 事实只从**实际前台实例**派生（runnerId / generation / sessionFile /
+   * projectId / cwd），`current` 与 `currentProject` 同源；任何缺失都 fail-closed，
+   * 不造恒 true guard、不从 server.projectScope 自证 caller。`mcpAppHost()` 的连接资格
+   * 仍由 A7 的 ownership guard 决定，此处不改它；官方 grant 通道未接入时传 []（只读也逐次询问）。
+   */
+  const mcpAppViewRuntime = createMcpAppViewRuntime({
+    current: () => appViewForegroundFacts(),
+    /* A6R：refresh / snapshot 的可信 caller 项目，与 `current` 同口径。 */
+    currentProject: (): string | null => appViewForegroundFacts()?.projectId ?? null,
+    isActive: (owner: McpAppOwner): boolean => {
+      /* 全字段对照**当前前台**：旧 runner 只是还存活不能放行，也不能信 request 自报。 */
+      const facts = appViewForegroundFacts()
+      if (!facts) return false
+      return (
+        owner.runnerId === facts.runnerId &&
+        owner.sessionId === facts.sessionId &&
+        owner.sessionFile === facts.sessionFile &&
+        owner.projectId === facts.projectId &&
+        owner.generation === facts.generation
+      )
+    }
+  })
+
+  try {
+    mcpAppViewService = new McpAppViewService({
+      proxy: mcpAppProxyService(),
+      host: mcpAppHost(),
+      runtime: mcpAppViewRuntime.runtime,
+      ownerGuard: mcpAppViewRuntime.ownerGuard,
+      ask: (request) => approvals.ask(request),
+      audit: new McpAppViewAuditStore(),
+      serverConfigOf: (serverId) => loadMcpServers().servers.find((server) => server.id === serverId) ?? null,
+      permissionMode: async () => (await getSettings()).permissionMode ?? 'danger',
+      theme: async () => (await getSettings()).theme,
+      systemPrefersDark: () => nativeTheme.shouldUseDarkColors,
+      grantsOf: () => [],
+      fetchResource: createMcpAppResourceLoader(mcpAppHost())
+    })
+    registerMcpAppProtocol(mcpAppViewService.resourceStore())
+  } catch (error) {
+    mcpAppViewService = null
+    reportMainError('mcp-app-view', error)
+  }
 
   /*
    * 旧「办事模板」一次性导出成用户技能：放在首个 pi 实例启动之前，

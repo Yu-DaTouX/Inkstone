@@ -1,0 +1,79 @@
+@layer features {
+  /*
+   * 子 Agent worktree 审阅控件的版面与层级（WP-27b）。
+   *
+   * 控件外观（按钮）仍归 ui/；这里只画审阅区自己的排布、状态字与 diff 容器。
+   * 颜色只取 design/tokens.css 的变量，不新造颜色。
+   */
+
+  .v3-subagent-review {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    margin-top: var(--s-6);
+    color: var(--fg);
+    font-size: var(--t-meta);
+  }
+
+  .v3-subagent-review-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-6);
+  }
+
+  .v3-subagent-review-state {
+    color: var(--stall-t);
+    font-size: var(--t-meta);
+  }
+
+  .v3-subagent-review-note {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .v3-subagent-review-error {
+    margin: 0;
+    color: var(--fail-t);
+    font-size: var(--t-meta);
+    overflow-wrap: anywhere;
+  }
+
+  /* diff 容器给出确定高度，DiffView 自身按 100% 填充并内部滚动。 */
+  .v3-subagent-review-diff {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    height: min(24rem, 60vh);
+    margin-top: var(--s-4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  .v3-subagent-review-diff .v3-subagent-review-note {
+    padding: var(--s-8);
+  }
+
+  /* ---- 明确确认 ---- */
+  .v3-subagent-review-modal {
+    width: min(32rem, calc(100vw - 3rem));
+  }
+
+  .v3-subagent-review-body {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-ui);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+
+  .v3-subagent-review-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-6);
+    margin-top: var(--s-16);
+  }
+}

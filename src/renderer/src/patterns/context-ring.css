@@ -1,0 +1,199 @@
+@layer patterns {
+  /* 上下文环：输入框底部一行里的第 4 个控件（WP-24）。外观归 patterns。 */
+  .ctx-ring-wrap {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .ctx-ring {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-height: var(--size-btn);
+    padding: 0 var(--s-6);
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--fg2);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .ctx-ring:hover {
+    background: var(--sel);
+    color: var(--fg);
+  }
+
+  .ctx-ring:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .ctx-ring-svg {
+    display: block;
+    flex: none;
+  }
+
+  .ctx-ring-track {
+    stroke: var(--line2);
+  }
+
+  .ctx-ring-arc[data-tone='ok'] {
+    stroke: var(--accent);
+  }
+
+  .ctx-ring-arc[data-tone='warn'] {
+    stroke: var(--stall);
+  }
+
+  .ctx-ring-arc[data-tone='err'] {
+    stroke: var(--fail);
+  }
+
+  .ctx-ring-text {
+    font-size: var(--t-meta);
+    color: inherit;
+    min-width: 2.6em;
+    text-align: right;
+  }
+
+  /* 浮层由 RAC Popover 定位；这里只管外观。 */
+  .ctx-pop {
+    z-index: 40;
+    max-width: min(360px, calc(100vw - 16px));
+    padding: var(--s-12);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    color: var(--fg);
+  }
+
+  .ctx-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-10);
+    outline: none;
+    min-width: 260px;
+  }
+
+  .ctx-window-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-8);
+  }
+
+  .ctx-pop-title {
+    font-size: var(--t-ui);
+    font-weight: 600;
+  }
+
+  .ctx-window-total {
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .ctx-window-total.warn {
+    color: var(--stall);
+  }
+
+  .ctx-window-total.err {
+    color: var(--fail);
+  }
+
+  .ctx-usage-bar {
+    display: flex;
+    width: 100%;
+    height: 6px;
+    border-radius: var(--r-full);
+    background: var(--sunken);
+    overflow: hidden;
+  }
+
+  .ctx-seg {
+    display: block;
+    height: 100%;
+  }
+
+  .ctx-seg.c-system,
+  .ctx-swatch.c-system {
+    background: var(--fg3);
+  }
+
+  .ctx-seg.c-user,
+  .ctx-swatch.c-user {
+    background: var(--accent);
+  }
+
+  .ctx-seg.c-assistant,
+  .ctx-swatch.c-assistant {
+    background: var(--run);
+  }
+
+  .ctx-seg.c-thinking,
+  .ctx-swatch.c-thinking {
+    background: var(--stall);
+  }
+
+  .ctx-seg.c-tools,
+  .ctx-swatch.c-tools {
+    background: var(--fg2);
+  }
+
+  .ctx-legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .ctx-legend li {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--s-8);
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .ctx-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: var(--r-xs);
+  }
+
+  .ctx-legend li.free .ctx-swatch {
+    background: var(--sunken);
+    box-shadow: inset 0 0 0 1px var(--line2);
+  }
+
+  .ctx-legend-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ctx-legend-num {
+    text-align: right;
+  }
+
+  .ctx-note {
+    margin: 0;
+    font-size: var(--t-meta);
+    color: var(--fg3);
+  }
+
+  .ctx-estimate-note {
+    line-height: var(--t-meta-lh, 1.4);
+  }
+
+  .ctx-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-8);
+  }
+}

@@ -261,6 +261,11 @@ export interface SubagentOptions {
   onRemove?: (id: string) => void
   /** 一次运行收口（差异与审阅状态已定）后回调一次；用来通知父会话 */
   onFinished?: (run: SubagentRun) => void
+  /**
+   * 只读原始事件旁路（例如把只读评审子运行按 runId 投影成 R 运行）。
+   * 不改变事件处理、投影或控制；抛错也不会打断子代理的事件流。
+   */
+  onEvent?: (runId: string, evt: Record<string, unknown>) => void
   /** 造 pi 客户端（默认真的 PiRpc；单测注入假实现） */
   createRpc?: (opts: { cwd: string; piBin?: string; args: string[] }) => SubagentRpc
   /** 按所选方式准备工作目录；单测可注入准备过程。 */
@@ -1213,6 +1218,14 @@ export class SubagentController {
   }
 
   private handleEvent(run: Run, evt: Record<string, unknown>): void {
+    /* 只读旁路：评审运行的 R 号投影订阅原始事件；失败不影响子代理行为。 */
+    if (this.opts.onEvent) {
+      try {
+        this.opts.onEvent(run.id, evt)
+      } catch {
+        /* 只读订阅不能打断事件处理 */
+      }
+    }
     const type = String(evt.type ?? '')
     if (PROGRESS_EVENTS.has(type)) {
       run.lastProgressAt = Date.now()

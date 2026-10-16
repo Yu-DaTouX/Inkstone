@@ -1,0 +1,253 @@
+@layer features {
+  /* 定时任务页（WP-51 界面部分）的版面；控件外观归 ui/，本文件不重画控件皮肤。 */
+
+  .sched-page {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--s-20) var(--s-24) var(--s-32);
+  }
+
+  .sched-page > * {
+    max-width: var(--size-col);
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .sched-page-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-12);
+    margin-bottom: var(--s-12);
+  }
+
+  .sched-page-title {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    margin: 0;
+    font-size: var(--t-h2);
+    line-height: var(--t-h2-lh);
+    font-weight: var(--t-h2-w, 600);
+  }
+
+  .sched-page-notice {
+    margin-block: 0 var(--s-16);
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .sched-page-error,
+  .sched-form-error {
+    margin: 0 0 var(--s-12);
+    padding: var(--s-8) var(--s-12);
+    border: 1px solid var(--fail);
+    border-radius: var(--r-md);
+    background: var(--fail-bg);
+    color: var(--fail-t);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+  }
+
+  .sched-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+  }
+
+  .sched-empty {
+    margin: var(--s-24) 0 0;
+    color: var(--fg3);
+  }
+
+  .sched-empty-title {
+    margin: 0 0 var(--s-2);
+    color: var(--fg);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+  }
+
+  .sched-empty-body {
+    margin: 0;
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+  }
+
+  .sched-task-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .sched-task {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s-12);
+    padding: var(--s-12) var(--s-16);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+  }
+
+  .sched-task[data-state='pending'] {
+    border-color: var(--stall);
+  }
+
+  .sched-task[data-state='off'] {
+    background: var(--sunken);
+  }
+
+  .sched-task-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .sched-task-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-6);
+  }
+
+  .sched-task-title {
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+    color: var(--fg);
+  }
+
+  .sched-task-prompt {
+    margin: 0;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    color: var(--fg2);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .sched-task-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-8);
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sched-task-model {
+    overflow: hidden;
+    max-width: 18ch;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sched-task-error {
+    margin: 0;
+    color: var(--fail-t);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .sched-task-actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-6);
+  }
+
+  /* 表单：编辑对话框内的版面；控件皮肤仍在 ui/。 */
+  .sched-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+  }
+
+  .sched-form-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--s-12);
+  }
+
+  .sched-trigger {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+  }
+
+  .sched-kind {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-8) var(--s-16);
+  }
+
+  .sched-when {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: var(--s-12);
+  }
+
+  .sched-days {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-8) var(--s-12);
+  }
+
+  .sched-interval {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    color: var(--fg2);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+  }
+
+  .sched-notice {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .sched-form-foot,
+  .sched-confirm-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-8);
+  }
+
+  .sched-confirm-body {
+    margin: 0 0 var(--s-16);
+    color: var(--fg);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 640px) {
+    .sched-form-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sched-task {
+      flex-direction: column;
+    }
+
+    .sched-task-actions {
+      flex-wrap: wrap;
+    }
+  }
+}

@@ -17,6 +17,46 @@ import { selectFiniteQuotaWindow } from './workspace-control-guards'
  */
 const AUTO_QUOTA_REFRESH_MS = 60_000
 
+type QuotaWindowKind = 'fiveHour' | 'weekly' | 'monthly'
+
+const WINDOW_NAME_KEY = {
+  fiveHour: 'quota.win.fiveHour',
+  weekly: 'quota.win.weekly',
+  monthly: 'quota.win.monthly'
+} as const
+
+/**
+ * 窗口种类：先按 id 认，id 对不上再按标签字样认（供应商返回的标签可能是中文或英文）。
+ * 认不出来的窗口保留供应商给的标签原文。
+ */
+function quotaWindowKind(w: QuotaWindow): QuotaWindowKind | null {
+  if (w.id === 'fiveHour' || w.id === 'primary' || /小时|\bhours?\b|\b\d+\s*h\b/i.test(w.label)) return 'fiveHour'
+  if (w.id === 'weekly' || w.id === 'secondary' || /每周|本周|weekly|\bweek\b/i.test(w.label)) return 'weekly'
+  if (w.id === 'monthly' || /本月|月度|monthly|\bmonth\b/i.test(w.label)) return 'monthly'
+  return null
+}
+
+/** 窗口的展示名（随界面语言）：5 小时 / 每周 / 本月；认不出时用供应商的标签 */
+function windowName(t: TFunc, w: QuotaWindow): string {
+  const kind = quotaWindowKind(w)
+  return kind ? t(WINDOW_NAME_KEY[kind]) : w.label
+}
+
+/** 紧凑栏的短名：5h / 周 / 月（周、月随语言） */
+function compactWindowName(t: TFunc, w: QuotaWindow, fallback: string): string {
+  switch (quotaWindowKind(w)) {
+    case 'fiveHour': return '5h'
+    case 'weekly': return t('quota.win.weekShort')
+    case 'monthly': return t('quota.win.monthShort')
+    default: return fallback
+  }
+}
+
+/** 主值的标签：供应商的「余额」标签随语言显示 */
+function mainValueLabel(t: TFunc, label: string): string {
+  return /余额|balance/i.test(label) ? t('quota.balance') : label
+}
+
 /** `status`: the status-bar entry, a summary that opens the same details above it. */
 export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 'status' } = {}) {
   const t = useT()
@@ -227,7 +267,7 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
         : quota.used !== undefined
           ? money(quota.used, quota.currency)
           : null
-  const mainLabel = quota?.label ?? (hasWindows ? t('quota.usedMain') : t('quota.remaining'))
+  const mainLabel = quota?.label ? mainValueLabel(t, quota.label) : (hasWindows ? t('quota.usedMain') : t('quota.remaining'))
   const compactWindows = quotaCompactWindows(quota?.windows ?? [])
   const ringWindow = selectFiniteQuotaWindow(compactWindows.map((item) => item.window))
   const ringPct = ringWindow ? ringWindow.used / ringWindow.total * 100 : (mainPct !== undefined && Number.isFinite(mainPct) ? mainPct : null)
@@ -274,7 +314,7 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
             const pct = windowPct(window)
             return (
               <span className={pct === null ? '' : quotaTone(pct, window.exceeded)} key={window.id}>
-                <span className="rp-header-k">{label}</span> <b>{pct === null ? '—' : `${pct}%`}</b>
+                <span className="rp-header-k">{compactWindowName(t, window, label)}</span> <b>{pct === null ? '—' : `${pct}%`}</b>
               </span>
             )
           }) : <b>{mainText ?? (loading ? '…' : '—')}</b>}
@@ -326,7 +366,7 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
             return (
               /* 一个窗口两行：标签 | 条 | 百分比；下面一行暗色的「已用 / 总额  重置」对齐到条，窄栏时整段换行 */
               <div key={w.id} className="rp-quota-win" data-testid={`quota-win-${w.id}`}>
-                <span className="rp-quota-label">{w.label}</span>
+                <span className="rp-quota-label">{windowName(t, w)}</span>
                 <div className={`rp-meter ${tone}`} title={[amount, reset.tip].filter(Boolean).join(' · ') || undefined}>
                   <i style={{ width: `${barPct}%` }} />
                 </div>
@@ -417,7 +457,7 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
         return (
           <div key={w.id} className="quota-block" data-testid={`quota-win-${w.id}`}>
             <div className="quota-block-top">
-              <span className="quota-block-label">{w.label}</span>
+              <span className="quota-block-label">{windowName(t, w)}</span>
               {w.estimated ? <span className="ui-badge" title={t('quota.estimatedTip')} data-testid={`quota-win-${w.id}-estimated`}>{t('quota.estimated')}</span> : null}
               <span className={`quota-block-value ${tone.replace('ok', '')}`} data-testid={`quota-win-${w.id}-pct`}>{realPct.toFixed(1)}<small>%</small></span>
             </div>

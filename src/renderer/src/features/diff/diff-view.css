@@ -1,0 +1,238 @@
+@layer features {
+  /*
+   * DiffView 的版面与层级。控件外观（按钮）仍归 ui/，这里只画 diff 自己的行、
+   * 行号槽、折条与降级提示。颜色只取 design/tokens.css 的令牌，不新造颜色。
+   * 机声字体：diff 按设计规范用 --font-mono。
+   */
+
+  .diff-view {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    background: var(--bg);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .diff-view__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    flex: 0 0 auto;
+    padding: var(--s-6) var(--s-8);
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .diff-view__modes {
+    display: flex;
+    gap: var(--s-4);
+  }
+
+  .diff-view__nav {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+  }
+
+  .diff-view__nav-label {
+    min-width: 8ch;
+    text-align: center;
+    color: var(--fg3);
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+
+  .diff-view__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    background: var(--bg);
+  }
+
+  .diff-view__empty,
+  .diff-view__note {
+    padding: var(--s-12) var(--s-12);
+    color: var(--fg3);
+  }
+
+  .diff-view__degrade {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-8);
+    padding: var(--s-16) var(--s-16);
+  }
+
+  .diff-view__degrade-text {
+    margin: 0;
+    color: var(--fg2);
+  }
+
+  /* ── 文件头 ── */
+  .diff-view__file {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-8);
+    padding: var(--s-4) var(--s-10);
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    border-top: 1px solid var(--line);
+  }
+
+  .diff-view__file-path {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg);
+  }
+
+  .diff-view__file-stat {
+    display: flex;
+    gap: var(--s-6);
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .diff-view__stat-add {
+    color: var(--add);
+  }
+
+  .diff-view__stat-del {
+    color: var(--del);
+  }
+
+  /* ── hunk 头 ── */
+  .diff-view__hunk {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-8);
+    padding: var(--s-2) var(--s-10);
+    background: var(--sunken);
+    color: var(--fg2);
+    border-top: 1px solid var(--line);
+  }
+
+  .diff-view__hunk-text {
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .diff-view__hunk-section {
+    color: var(--fg3);
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── 统一视图行 ── */
+  .diff-view__line {
+    display: flex;
+    align-items: baseline;
+    white-space: pre;
+  }
+
+  .diff-view__line--add {
+    background: var(--add-bg);
+  }
+
+  .diff-view__line--del {
+    background: var(--del-bg);
+  }
+
+  .diff-view__gutter {
+    flex: 0 0 auto;
+    min-width: 3.5ch;
+    padding: 0 var(--s-6);
+    text-align: right;
+    color: var(--fg3);
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+
+  .diff-view__sign {
+    flex: 0 0 1.4ch;
+    color: var(--fg3);
+    user-select: none;
+  }
+
+  .diff-view__line--add .diff-view__sign {
+    color: var(--add);
+  }
+
+  .diff-view__line--del .diff-view__sign {
+    color: var(--del);
+  }
+
+  .diff-view__text {
+    flex: 1 1 auto;
+    padding-right: var(--s-12);
+  }
+
+  .diff-view__noeol {
+    padding: 0 var(--s-6);
+    color: var(--fg3);
+    font-style: italic;
+  }
+
+  /* ── 并排视图 ── */
+  .diff-view__split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .diff-view__cell {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+    /* 并排时窄，长行折行显示；要看完整不折行请切统一视图 */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .diff-view__cell + .diff-view__cell {
+    border-left: 1px solid var(--line);
+  }
+
+  .diff-view__cell--del {
+    background: var(--del-bg);
+  }
+
+  .diff-view__cell--add {
+    background: var(--add-bg);
+  }
+
+  .diff-view__cell--empty {
+    background: var(--sunken);
+  }
+
+  .diff-view__word {
+    border-radius: var(--r-xs);
+  }
+
+  .diff-view__cell--del .diff-view__word {
+    background: color-mix(in srgb, var(--del) 26%, transparent);
+  }
+
+  .diff-view__cell--add .diff-view__word {
+    background: color-mix(in srgb, var(--add) 26%, transparent);
+  }
+
+  /* ── 折叠未改动段 ── */
+  .diff-view__gap-row {
+    display: flex;
+    justify-content: center;
+    padding: var(--s-2) 0;
+    background: var(--sunken);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+}

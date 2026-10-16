@@ -1,101 +1,232 @@
 #!/usr/bin/env npx electron
 /**
- * 生成桌面外壳图标（设计规范 §3.4.1）：
- *   build/icon.ico   砖形应用图标，16/20/24/32/40/48/64/128/256
- *   build/icon.png   512 砖形（窗口图标、文档与其它平台）
- *   build/tray/      托盘单色字形：on-dark（浅色字形，给深色任务栏）/ on-light，各 @1x/@1.5x/@2x
+ * 品牌素材唯一生成入口（设计规范 §3.4.1）：
+ *   build/prompt-stone.svg      几何真源的 currentColor 投影（安装器 / 手机端按分组换色）
+ *   build/icon.ico              砖形应用图标，16/20/24/32/40/48/64/128/256
+ *   build/icon.png              512 砖形（窗口图标、文档与其它平台）
+ *   build/tray/*.png            托盘单色字形：on-light / on-dark 各 16/@1.5x/@2x，
+ *                               含 idle / running / waiting 静态与去重动画帧
+ *   build/tray/manifest.json    帧文件名 + 真实原生时长（runtime 只读它，不再手写常量）
+ *   src/shared/brand-geometry.ts 渲染端品牌组件 import 的几何常量
  *
- * 用法：npm run icon
+ * 用法：
+ *   npm run icon            重新生成上述产物
+ *   npm run check:brand     只校验产物与真源一致（--check），**不写任何文件**
  *
- * 几何只认 build/prompt-stone.svg：大尺寸直接渲染那份矢量；16 与 32（以及托盘）
- * 用 16 格像素网格画，24（以及托盘 1.5 倍）用 24 格——都是同一几何按 75% 落到
- * 整像素上的结果，线条不抗锯齿，任务栏与列表里不会发糊。20 是矢量放大到 75% 渲染。
+ * 几何、像素 mask、配色、透明度与缓动、各状态四段时长**只在**
+ * `resources/brand/inkstone-design.json` 定义；本脚本只做「真源 → 像素」的渲染。
+ * 16 与 32（以及托盘 1x/2x）用 16 格像素网格画，24 用 24 格，都是同一几何按 75%
+ * 落到整像素上的结果，线条不抗锯齿，任务栏与列表里不会发糊；20 与其余是矢量放大。
  *
  * 为什么用 Electron：项目里已有 Electron，离屏 canvas 能直接渲染 SVG，不必再引图形库。
+ * 运行时用独立临时 userData、show:false，绝不碰用户正在使用的砚窗口。
  */
-import './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
-import { app, BrowserWindow } from 'electron'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import './lib/stdio-guard.mjs' /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  DESIGN_PATH,
+  GEOMETRY_OUT,
+  MANIFEST_NAME,
+  SVG_OUT,
+  buildManifest,
+  dedupedFrames,
+  readDesign,
+  renderGeometryModule,
+  renderSvg,
+  trayFilePath,
+  validateDesign
+} from './lib/brand.mjs'
+import { syncBootBrand } from './design/sync-boot-brand.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const outDir = join(root, 'build')
+const checkOnly = process.argv.includes('--check')
 
-/* 品牌配色（设计规范 §3.4.1 的表） */
-export const BRAND = { tile: '#151515', rim: '#2c2c29', frame: '#ecece8', accent: '#93a4f4', trayOnLight: '#1b1b1a' }
+if (process.env.ELECTRON_RUN_AS_NODE) {
+  console.error('build-icon 需要真实的 Electron（离屏渲染）。请先 `unset ELECTRON_RUN_AS_NODE` 再运行。')
+  process.exit(1)
+}
 
-/*
- * 16 格像素字形：F = 石框，A = 提示符 `>_`。石框占 2..13 列/行（75%），
- * 顶边在第 10 列断开、右边从第 8 行起，对应矢量的右上开口。
- */
-const GLYPH = [
-  '................',
-  '................',
-  '..FFFFFFFFF.....',
-  '..F.............',
-  '..F.............',
-  '..F..A..........',
-  '..F...A.........',
-  '..F....A........',
-  '..F...A......F..',
-  '..F..A.......F..',
-  '..F......AAA.F..',
-  '..F..........F..',
-  '..F..........F..',
-  '..FFFFFFFFFFFF..',
-  '................',
-  '................'
-]
+const { design, hash } = readDesign(join(root, DESIGN_PATH))
+validateDesign(design)
+const colors = design.colors
 
-/*
- * 24 格像素字形（线宽 2px），用于 24：Win11 任务栏 100% 缩放下正是 24px，
- * 这一档最常被看到，单独画而不是矢量缩放。外角各去 1 像素，对应矢量的圆角转折。
- */
-const GLYPH24 = [
-  '........................',
-  '........................',
-  '........................',
-  '....FFFFFFFFFFFFFF......',
-  '...FFFFFFFFFFFFFFF......',
-  '...FF...................',
-  '...FF...................',
-  '...FF...................',
-  '...FF...................',
-  '...FF...AA..............',
-  '...FF....AA.............',
-  '...FF.....AA............',
-  '...FF......AA...........',
-  '...FF.....AA.......FF...',
-  '...FF....AA........FF...',
-  '...FF...AA....AAAA.FF...',
-  '...FF.........AAAA.FF...',
-  '...FF..............FF...',
-  '...FF..............FF...',
-  '...FFFFFFFFFFFFFFFFFF...',
-  '....FFFFFFFFFFFFFFFF....',
-  '........................',
-  '........................',
-  '........................'
-]
+/* 启动画面是静态 HTML 里的内联 SVG，必须随图标生成入口一起写入/校验（见 sync-boot-brand.mjs）。 */
+const boot = syncBootBrand({ root, design, checkOnly })
 
-/** 源 SVG：石框与提示符分组上色 */
-function markSvg(frame, accent) {
-  return readFileSync(join(outDir, 'prompt-stone.svg'), 'utf8')
-    .replace(/(<g id="stone-frame"[^>]*?)stroke="currentColor"/, `$1stroke="${frame}"`)
-    .replace(/(<g id="prompt"[^>]*?)stroke="currentColor"/, `$1stroke="${accent}"`)
+/* ───────────────────────── 渲染作业（纯数据） ───────────────────────── */
+
+const maskGrids = {}
+for (const [key, mask] of Object.entries(design.masks)) {
+  maskGrids[key] = mask
+}
+
+function cellsFor(gridKey, symbolLayer) {
+  const mask = maskGrids[String(gridKey)]
+  const cells = []
+  mask.frame.forEach((row, y) => {
+    for (let x = 0; x < row.length; x += 1) if (row[x] !== '.') cells.push({ x, y, layer: 'frame' })
+  })
+  mask[symbolLayer].forEach((row, y) => {
+    for (let x = 0; x < row.length; x += 1) if (row[x] !== '.') cells.push({ x, y, layer: 'symbol' })
+  })
+  return cells
+}
+
+function gridForPx(px) {
+  return String(px) === '24' ? 24 : 16
+}
+
+/** 托盘（无砖、单色）单元作业：theme 决定字形色，alpha 决定符号透明度。 */
+function trayJob(sizePx, theme, symbolLayer, alpha01) {
+  const grid = gridForPx(sizePx)
+  const symbol = theme === 'on-dark' ? colors.trayOnDark : colors.trayOnLight
+  return {
+    kind: 'tray',
+    size: sizePx,
+    grid,
+    alpha: alpha01,
+    cells: cellsFor(grid, symbolLayer),
+    fills: { frame: symbol, symbol }
+  }
+}
+
+/** 砖形像素作业（小尺寸 icon.ico 档）：底砖 + 框 + 强调色提示符。 */
+function pixelTileJob(sizePx, grid) {
+  return {
+    kind: 'pixel-tile',
+    size: sizePx,
+    grid,
+    alpha: 1,
+    cells: cellsFor(grid, 'prompt'),
+    fills: { tile: colors.tile, rim: colors.rim, frame: colors.frame, symbol: colors.accent }
+  }
+}
+
+async function main() {
+  const { app, BrowserWindow } = await import('electron')
+  const userData = mkdtempSync(join(tmpdir(), 'inkstone-icon-'))
+  app.setPath('userData', userData)
+  await app.whenReady()
+  const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } })
+  try {
+    await win.loadURL('data:text/html,<html><body></body></html>')
+
+    /* 尺寸档：ico 16/32 用 16 格、24 用 24 格；其余矢量。 */
+    const icoSizes = design.outputs.icoSizes
+    const gridOf = (size) => (size === 16 || size === 32 ? 16 : size === 24 ? 24 : 0)
+
+    const jobs = []
+    const targets = []
+    const addJob = (job, target) => {
+      jobs.push(job)
+      targets.push(target)
+    }
+
+    for (const size of icoSizes) {
+      const grid = gridOf(size)
+      addJob(grid ? pixelTileJob(size, grid) : { kind: 'tile', size }, { type: 'ico', size })
+    }
+    addJob({ kind: 'tile', size: design.outputs.iconPng }, { type: 'iconPng' })
+
+    /* 静态托盘：idle / running（=idle，>_ 亮态）/ waiting（? 亮态）。 */
+    const traySizes = design.outputs.traySizes
+    for (const theme of design.outputs.trayThemes) {
+      for (const { px } of traySizes) {
+        addJob(trayJob(px, theme, 'prompt', 1), { type: 'tray', rel: trayFilePath(design, theme, px, 'idle', 0, 'static-idle') })
+        addJob(trayJob(px, theme, 'question', 1), { type: 'tray', rel: trayFilePath(design, theme, px, 'waiting', 0, 'static-waiting') })
+      }
+    }
+
+    /* 动画帧：每个状态按去重后的真实时长出一批帧；帧内符号 alpha 来自真源。 */
+    for (const state of ['running', 'waiting']) {
+      const spec = design.animation.states[state]
+      dedupedFrames(design, state).forEach((frame, index) => {
+        const alpha01 = frame.alpha255 / 255
+        for (const theme of design.outputs.trayThemes) {
+          for (const { px } of traySizes) {
+            addJob(trayJob(px, theme, spec.symbol, alpha01), { type: 'tray', rel: trayFilePath(design, theme, px, state, index) })
+          }
+        }
+      })
+    }
+
+    const svgDataUrl =
+      'data:image/svg+xml;base64,' +
+      Buffer.from(renderSvg(design, { frame: colors.frame, accent: colors.accent }), 'utf8').toString('base64')
+
+    const rendered = await win.webContents.executeJavaScript(`${RENDER}(${JSON.stringify(jobs)}, ${JSON.stringify(svgDataUrl)}, ${JSON.stringify(colors)})`)
+    const pngs = rendered.map((b64) => Buffer.from(b64, 'base64'))
+    if (pngs.length !== jobs.length) throw new Error(`渲染帧数不符：期望 ${jobs.length}，实际 ${pngs.length}`)
+
+    const ico = icoSizes.map((size) => ({ size, data: pngs[targets.findIndex((t) => t.type === 'ico' && t.size === size)] }))
+    const outputs = [
+      { rel: SVG_OUT, data: Buffer.from(renderSvg(design), 'utf8') },
+      { rel: GEOMETRY_OUT, data: Buffer.from(renderGeometryModule(design, hash), 'utf8') },
+      { rel: `build/tray/${MANIFEST_NAME}`, data: Buffer.from(`${JSON.stringify(buildManifest(design, hash), null, 2)}\n`, 'utf8') },
+      { rel: 'build/icon.png', data: pngs[targets.findIndex((t) => t.type === 'iconPng')] },
+      { rel: 'build/icon.ico', data: icoFromPngs(ico) }
+    ]
+    targets.forEach((target, i) => {
+      if (target.type === 'tray') outputs.push({ rel: `build/tray/${target.rel}`, data: pngs[i] })
+    })
+
+    writeOrCheck(outputs)
+    await report(outputs, boot)
+  } finally {
+    win.destroy()
+    try {
+      rmSync(userData, { recursive: true, force: true })
+    } catch {
+      /* Electron 子进程释放句柄前偶发 EPERM；目录在系统临时区，留给 OS 回收。 */
+    }
+    app.exit(0)
+  }
+}
+
+function writeOrCheck(outputs) {
+  for (const { rel, data } of outputs) {
+    const abs = join(root, rel)
+    if (checkOnly) {
+      let existing
+      try {
+        existing = readFileSync(abs)
+      } catch {
+        throw new Error(`check:brand 缺失产物 ${rel}（先运行 npm run icon）`)
+      }
+      if (!existing.equals(data)) throw new Error(`check:brand 产物与真源不一致：${rel}`)
+    } else {
+      mkdirSync(dirname(abs), { recursive: true })
+      writeFileSync(abs, data)
+    }
+  }
+}
+
+async function report(outputs, boot) {
+  if (checkOnly) {
+    console.log(`check:brand 通过：${outputs.length} 个产物与真源一致（source ${hash.slice(0, 12)}），启动画面投影 ${boot.rel} 一致`)
+  } else {
+    const tray = outputs.filter((o) => o.rel.startsWith('build/tray/tray-')).length
+    console.log(
+      `写入品牌素材：${SVG_OUT}、build/icon.ico（${design.outputs.icoSizes.join('/')}）、build/icon.png（${design.outputs.iconPng}）、` +
+        `build/tray/（${tray} 张，含去重动画帧）、${MANIFEST_NAME}、${GEOMETRY_OUT}（source ${hash.slice(0, 12)}）、` +
+        `启动画面投影 ${boot.rel}${boot.changed ? '（已更新）' : '（无变化）'}`
+    )
+  }
 }
 
 /** ICO 容器打包多张 PNG（Vista 起 ICO 允许内嵌 PNG 数据） */
-function icoFromPngs(pngs) {
-  const count = pngs.length
+function icoFromPngs(entries) {
+  const count = entries.length
   const header = Buffer.alloc(6)
   header.writeUInt16LE(0, 0)
   header.writeUInt16LE(1, 2)
   header.writeUInt16LE(count, 4)
   const dir = Buffer.alloc(16 * count)
   let offset = 6 + 16 * count
-  pngs.forEach(({ size, data }, i) => {
+  entries.forEach(({ size, data }, i) => {
     const e = i * 16
     dir.writeUInt8(size >= 256 ? 0 : size, e + 0)
     dir.writeUInt8(size >= 256 ? 0 : size, e + 1)
@@ -107,76 +238,49 @@ function icoFromPngs(pngs) {
     dir.writeUInt32LE(offset, e + 12)
     offset += data.length
   })
-  return Buffer.concat([header, dir, ...pngs.map((p) => p.data)])
+  return Buffer.concat([header, dir, ...entries.map((e) => e.data)])
 }
 
 /*
- * 在离屏页面里画：job = { kind: 'tile' | 'pixel-tile' | 'tray', size, color? }
- * 返回 PNG 的 base64。
+ * 离屏页面里的渲染器：job 见 trayJob / pixelTileJob 的构造。
+ * 只用 canvas 2D，逐格 fillRect，不做抗锯齿；符号透明度由 job.alpha 提供。
  */
-const RENDER = `(async (jobs, svg, glyphs, B) => {
+const RENDER = `(async (jobs, svgUrl, B) => {
   const img = new Image()
-  img.src = svg
+  img.src = svgUrl
   await img.decode()
   const tile = (ctx, size, radius) => {
     ctx.beginPath(); ctx.roundRect(0, 0, size, size, radius); ctx.fillStyle = B.tile; ctx.fill()
     const w = Math.max(1, size / 100)
     ctx.beginPath(); ctx.roundRect(w / 2, w / 2, size - w, size - w, radius - w / 2); ctx.strokeStyle = B.rim; ctx.lineWidth = w; ctx.stroke()
   }
-  return jobs.map(({ kind, size, color, grid }) => {
-    const c = document.createElement('canvas'); c.width = c.height = size
+  const cells = (ctx, job) => {
+    const k = job.size / job.grid
+    for (const cell of job.cells) {
+      ctx.globalAlpha = cell.layer === 'frame' ? 1 : job.alpha
+      ctx.fillStyle = cell.layer === 'frame' ? job.fills.frame : job.fills.symbol
+      const x0 = Math.round(cell.x * k), y0 = Math.round(cell.y * k)
+      ctx.fillRect(x0, y0, Math.round((cell.x + 1) * k) - x0, Math.round((cell.y + 1) * k) - y0)
+    }
+    ctx.globalAlpha = 1
+  }
+  return jobs.map((job) => {
+    const c = document.createElement('canvas'); c.width = c.height = job.size
     const ctx = c.getContext('2d')
-    if (kind === 'tile') {
-      tile(ctx, size, size * 0.22)
-      /* 标志几何 22..78 占 56%；小尺寸放大到 75% */
-      const scale = size <= 24 ? 75 / 56 : 1
-      const d = size * scale, o = (size - d) / 2
+    if (job.kind === 'tile') {
+      tile(ctx, job.size, job.size * 0.22)
+      const scale = job.size <= 24 ? 75 / 56 : 1
+      const d = job.size * scale, o = (job.size - d) / 2
       ctx.drawImage(img, o, o, d, d)
     } else {
-      const glyph = glyphs[grid]
-      const k = size / grid
-      if (kind === 'pixel-tile') tile(ctx, size, size * 0.22)
-      glyph.forEach((row, y) => [...row].forEach((ch, x) => {
-        if (ch === '.') return
-        ctx.fillStyle = kind === 'tray' ? color : ch === 'A' ? B.accent : B.frame
-        const x0 = Math.round(x * k), y0 = Math.round(y * k)
-        ctx.fillRect(x0, y0, Math.round((x + 1) * k) - x0, Math.round((y + 1) * k) - y0)
-      }))
+      if (job.kind === 'pixel-tile') tile(ctx, job.size, job.size * 0.22)
+      cells(ctx, job)
     }
     return c.toDataURL('image/png').split(',')[1]
   })
 })`
 
-app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } })
-  try {
-    await win.loadURL('data:text/html,<html><body></body></html>')
-    const render = async (jobs) =>
-      (await win.webContents.executeJavaScript(`${RENDER}(${JSON.stringify(jobs)}, ${JSON.stringify(`data:image/svg+xml;base64,${Buffer.from(markSvg(BRAND.frame, BRAND.accent)).toString('base64')}`)}, ${JSON.stringify({ 16: GLYPH, 24: GLYPH24 })}, ${JSON.stringify(BRAND)})`))
-        .map((b64) => Buffer.from(b64, 'base64'))
-
-    mkdirSync(join(outDir, 'tray'), { recursive: true })
-
-    const icoSizes = [16, 20, 24, 32, 40, 48, 64, 128, 256]
-    /* 16/32 用 16 格，24 用 24 格（整数倍，像素对齐）；其余矢量 */
-    const gridOf = (size) => (size === 16 || size === 32 ? 16 : size === 24 ? 24 : 0)
-    const icoJobs = icoSizes.map((size) => (gridOf(size) ? { kind: 'pixel-tile', size, grid: gridOf(size) } : { kind: 'tile', size }))
-    const icoPngs = (await render(icoJobs)).map((data, i) => ({ size: icoSizes[i], data }))
-    writeFileSync(join(outDir, 'icon.ico'), icoFromPngs(icoPngs))
-    const [png512] = await render([{ kind: 'tile', size: 512 }])
-    writeFileSync(join(outDir, 'icon.png'), png512)
-
-    /* 托盘：Electron 按 @1.5x/@2x 后缀自动挑 DPI；1x/2x 用 16 格，1.5x 用 24 格，三档都像素对齐 */
-    const trays = []
-    for (const [name, color] of [['on-dark', BRAND.frame], ['on-light', BRAND.trayOnLight]]) {
-      for (const [suffix, size] of [['', 16], ['@1.5x', 24], ['@2x', 32]]) trays.push({ file: `tray-${name}${suffix}.png`, job: { kind: 'tray', size, color, grid: size === 24 ? 24 : 16 } })
-    }
-    const trayPngs = await render(trays.map((t) => t.job))
-    trays.forEach((t, i) => writeFileSync(join(outDir, 'tray', t.file), trayPngs[i]))
-
-    console.log(`写入 build/icon.ico（${icoSizes.join('/')}）、build/icon.png（512）、build/tray/（${trays.length} 张）`)
-  } finally {
-    win.destroy()
-    app.exit(0)
-  }
-}).catch((error) => { console.error(error); app.exit(1) })
+main().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})

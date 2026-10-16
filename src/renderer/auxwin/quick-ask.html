@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      CSP 与主窗口一致：渲染进程不给 Node 权限，只连本地 dev server。
+      主题在 apply-theme.ts 里从 localStorage 读，不用外部经典脚本，
+      避免打包后 aux 子目录的相对路径问题。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self';
+               style-src 'self' 'unsafe-inline';
+               font-src 'self' data:;
+               img-src 'self' data:;
+               connect-src 'self' ws://localhost:* http://localhost:*"
+    />
+    <title>快速提问 · 砚</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/auxwin/quick-ask.tsx"></script>
+  </body>
+</html>

@@ -66,7 +66,8 @@ for (const script of [
   'test-motion-presence', 'test-stream-loop-detector', 'test-stream-loop-settings', 'test-stream-loop-setting-ui',
   'test-native-session-export-alias', 'test-schedule-safety', 'test-subagent-terminal-races',
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
-  'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui'
+  'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
+  'test-v3-quota-card', 'test-v3-turn-changes'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)

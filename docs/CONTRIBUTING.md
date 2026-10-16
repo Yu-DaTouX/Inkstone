@@ -17,6 +17,24 @@ npm run launch
 
 启动器检查依赖与内置运行时，并按需构建。开发模式用 `npm run launch:dev`；已有工作区可使用根目录的两个启动脚本。
 
+## v3 开发外壳
+
+默认仍启动 v2。开发时设置 `YAN_UI=v3` 再启动；`YAN_UI=v2` 可强制回退，环境覆盖优先于持久设置 `uiVersion`。v3 尚未与旧界面功能对等、尚未通过发行验收：精简设置里有回退入口，环境固定版本时须先取消该环境覆盖。不要把开发外壳当成已交付的默认 UI。
+
+v3 与 v2 是两套互不混载的界面：v3 不导入 `styles/`，两套共用会话 store 与正式宿主 IPC。目录导航见[代码导览](PROJECT.md)与[界面重构记录](UI_REDESIGN.md)，样式与令牌边界见[设计规范](DESIGN_SYSTEM.md)。
+
+| 命令 | 作用 |
+| --- | --- |
+| `npm run tokens:v3` / `check:tokens:v3` | 从 `design/tokens.json` 生成令牌；核对生成物与逐对对比度 |
+| `npm run storybook` / `build:storybook` | 本机组件预览 / 静态构建；仅开发依赖，不进入应用运行时 |
+| `npm run test:v3-shell` | 外壳版本选择的纯函数检查 |
+| `npm run test:v3-ui-exports` / `test:stories` | 原语出口与故事覆盖的结构守卫 |
+| `node scripts/test-v3-*.mjs` | 各模块专项检查：运行注册表与宿主接线、审批键盘、命令过滤、模块归属与版面等 |
+| `npm run test:live -- v3-shell` | 构建后的隔离场景：外壳与确认卡（沿用 `YAN_TEST_SYNTHETIC_ONLY=1`） |
+
+这些都是纯逻辑、SSR 结构或静态接线检查，**不代替**交互、无障碍、真实模型或真机验收；一次只跑获准的 live 场景。构建通过不等于视觉验收通过。
+
+
 ## 修改前
 
 阅读 [架构简介](ARCHITECTURE.md)、[代码导览](PROJECT.md) 与 [AGENTS.md](../AGENTS.md)。检查工作区已有改动，只提交当前任务相关内容。提案与历史记录不代表执行授权。多个 AI agent 并行或接力时，按[多 Agent 协作流程](AGENT_WORKFLOW.md)登记状态与交接。

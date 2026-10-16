@@ -1,0 +1,802 @@
+/*
+ * 右侧工作区面板（P3 · R0）。
+ *
+ * 层归属：容器外观（底色 / 描边 / 圆角 / 阴影 / 层级）写 `@layer patterns`；
+ * 版面（flex / grid / 高度 / 滚动 / 间距）写 `@layer features`。颜色与尺寸
+ * 只用 `design/tokens.css` 里的变量，不私造令牌。
+ */
+
+@layer patterns {
+  .wb-panel {
+    background: var(--bg);
+    border-left: 1px solid var(--line);
+  }
+
+  .wb-tablist {
+    background: transparent;
+  }
+
+  .wb-pane-block,
+  .wb-nowire {
+    background: var(--sunken);
+    border-radius: var(--r-md);
+    color: var(--fg2);
+  }
+
+  .wb-cell-secondary {
+    border-top: 1px solid var(--line);
+  }
+
+  .wb-actions [data-active='1'] {
+    background: var(--sel);
+    color: var(--fg);
+  }
+
+  /* 上下文页签：构成条与图例的色只来自令牌；与上下文环同一套分类色。 */
+  .wb-ctx-bar {
+    background: var(--sunken);
+    border-radius: var(--r-full);
+  }
+
+  .wb-ctx-seg.c-system,
+  .wb-ctx-swatch.c-system {
+    background: var(--fg3);
+  }
+
+  .wb-ctx-seg.c-user,
+  .wb-ctx-swatch.c-user {
+    background: var(--accent);
+  }
+
+  .wb-ctx-seg.c-assistant,
+  .wb-ctx-swatch.c-assistant {
+    background: var(--run);
+  }
+
+  .wb-ctx-seg.c-thinking,
+  .wb-ctx-swatch.c-thinking {
+    background: var(--stall);
+  }
+
+  .wb-ctx-seg.c-tools,
+  .wb-ctx-swatch.c-tools {
+    background: var(--fg2);
+  }
+
+  .wb-ctx-legend li.free .wb-ctx-swatch {
+    background: var(--sunken);
+    box-shadow: inset 0 0 0 1px var(--line2);
+  }
+
+  .wb-ctx-total.warn {
+    color: var(--stall);
+  }
+
+  .wb-ctx-total.err {
+    color: var(--fail);
+  }
+}
+
+@layer features {
+  .wb-panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .wb-panel[data-mode='overlay'] {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(var(--size-panel), 100%);
+    z-index: 20;
+    box-shadow: var(--shadow-pop, 0 8px 32px rgb(0 0 0 / 0.18));
+  }
+
+  .wb-panel[data-mode='full'] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    z-index: 20;
+  }
+
+  /* 专注：面板占满主区（覆盖对话），对话列保持原状在下一层。 */
+  .wb-panel[data-focus='1'] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    z-index: 25;
+  }
+
+  .wb-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    padding: var(--s-6) var(--s-8) 0;
+    min-width: 0;
+  }
+
+  /* 页签栏外层：占满表头剩余宽度；溢出时两侧渐隐提示还有被遮住的页签（宽度由 JS 按滚动位置写入 data-fade-*） */
+  .wb-tabstrip {
+    --wb-fade-start: 0px;
+    --wb-fade-end: 0px;
+    flex: 1;
+    display: flex;
+    min-width: 0;
+  }
+
+  .wb-tabstrip[data-fade-start='1'] {
+    --wb-fade-start: 16px;
+  }
+
+  .wb-tabstrip[data-fade-end='1'] {
+    --wb-fade-end: 16px;
+  }
+
+  .wb-tabstrip > .ui-tabs {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .wb-tablist {
+    display: flex;
+    gap: 2px;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    mask-image: linear-gradient(to right, transparent 0, #000 var(--wb-fade-start), #000 calc(100% - var(--wb-fade-end)), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--wb-fade-start), #000 calc(100% - var(--wb-fade-end)), transparent 100%);
+  }
+
+  .wb-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .wb-close {
+    flex: none;
+  }
+
+  .wb-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    padding: var(--s-8);
+    overflow: hidden;
+  }
+
+  .wb-cells {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+  }
+
+  .wb-cells[data-split='1'] {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--s-8);
+  }
+
+  .wb-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .wb-cell-secondary {
+    padding-top: var(--s-8);
+  }
+
+  .wb-cell-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    padding-bottom: var(--s-4);
+  }
+
+  .wb-cell-head .ui-tabs {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .wb-panes {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .wb-pane {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* 非当前页签：保留实例但不参与布局 */
+  .wb-pane[hidden] {
+    display: none;
+  }
+
+  .wb-nowire,
+  .wb-pane-block {
+    margin: auto;
+    max-width: 32ch;
+    padding: var(--s-16);
+    text-align: center;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .wb-pane-block {
+    position: absolute;
+    inset: auto var(--s-16) var(--s-16);
+    margin: 0 auto;
+  }
+
+  .wb-empty {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  /* 上下文页签版面（外观在 patterns 层） */
+  .wb-ctx {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-16);
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: var(--s-4);
+  }
+
+  .wb-ctx-block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .wb-ctx-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-8);
+  }
+
+  .wb-ctx-subtitle {
+    margin: 0;
+    font-size: var(--t-meta);
+    font-weight: 600;
+    color: var(--fg2);
+  }
+
+  .wb-ctx-total {
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .wb-ctx-bar {
+    display: flex;
+    height: 6px;
+    overflow: hidden;
+  }
+
+  .wb-ctx-seg {
+    display: block;
+    height: 100%;
+  }
+
+  .wb-ctx-legend,
+  .wb-ctx-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .wb-ctx-legend li {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--s-8);
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .wb-ctx-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: var(--r-xs);
+  }
+
+  .wb-ctx-legend-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wb-ctx-legend-num {
+    text-align: right;
+  }
+
+  .wb-ctx-rows li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .wb-ctx-note,
+  .wb-ctx-record {
+    margin: 0;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh, 1.4);
+  }
+
+  .wb-ctx-note {
+    color: var(--fg3);
+  }
+
+  .wb-ctx-record {
+    color: var(--fg2);
+  }
+
+  .wb-pane-block button {
+    flex: none;
+    min-height: var(--size-btn);
+    padding: 0 var(--s-12);
+    border-radius: var(--r-sm);
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+}
+
+/* 日志 / 额度页签：版面在 features 层；额度条按告警程度换色在 patterns 层。 */
+@layer patterns {
+  .wb-quota-win[data-tone='warn'] .ui-progress__fill {
+    background: var(--ask);
+  }
+
+  .wb-quota-win[data-tone='err'] .ui-progress__fill {
+    background: var(--fail);
+  }
+
+  .wb-quota-msg {
+    color: var(--fail-t);
+  }
+
+  .wb-logs-body {
+    background: var(--sunken);
+    border-radius: var(--r-md);
+    color: var(--fg2);
+  }
+}
+
+@layer features {
+  .wb-logs,
+  .wb-quota {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-16);
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: var(--s-4);
+  }
+
+  .wb-logs-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .wb-logs-main {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .wb-logs-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+  }
+
+  .wb-logs-bar .wb-ctx-subtitle {
+    flex: none;
+    margin: 0;
+  }
+
+  .wb-logs-count {
+    flex: none;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .wb-logs-filter {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .wb-logs-body {
+    flex: 1;
+    min-height: 120px;
+    margin: 0;
+    padding: var(--s-8) var(--s-12);
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .wb-note-block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    margin: auto;
+    max-width: 36ch;
+    padding: var(--s-16);
+    text-align: center;
+  }
+
+  .wb-note-title,
+  .wb-note-body {
+    margin: 0;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .wb-note-title {
+    color: var(--fg);
+  }
+
+  .wb-note-body {
+    color: var(--fg3);
+  }
+
+  .wb-quota-head,
+  .wb-quota-id,
+  .wb-quota-win-top {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .wb-quota-head {
+    justify-content: space-between;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .wb-quota-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+    padding-bottom: var(--s-12);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .wb-quota-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  .wb-quota-meta,
+  .wb-quota-win-sub {
+    overflow: hidden;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wb-quota-win {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+  }
+
+  .wb-quota-win-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+  }
+
+  .wb-quota-win-value {
+    flex: none;
+  }
+
+  .wb-quota-msg {
+    margin: 0;
+    font-size: var(--t-meta);
+    overflow-wrap: anywhere;
+  }
+
+  /* 概览：视图切换与磁贴版面 */
+  .wb-view[hidden],
+  .wb-cells[hidden] {
+    display: none;
+  }
+
+  .wb-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .wb-head-title {
+    flex: 1;
+    min-width: 0;
+    padding-left: var(--s-4);
+    font-size: var(--t-meta);
+    font-weight: 600;
+  }
+
+  .wb-back {
+    flex: none;
+  }
+
+  .wb-overview {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-height: 0;
+    min-width: 0;
+    padding: var(--s-8);
+    overflow-y: auto;
+  }
+
+  .wb-tile {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .wb-tile-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .wb-tile-toggle {
+    flex: 1;
+    min-width: 0;
+    min-height: 28px;
+    justify-content: flex-start;
+    gap: var(--s-6);
+    padding: 0 var(--s-8);
+  }
+
+  /* 按钮把内容包进 label：撑满后摘要才能靠右 */
+  .wb-tile-toggle > .ui-btn__label {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+  }
+
+  .wb-tile-title {
+    flex: none;
+    font-size: var(--t-meta);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .wb-tile-summary {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+  }
+
+  .wb-tile-open {
+    flex: none;
+    margin-right: var(--s-4);
+  }
+
+  .wb-tile-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    min-width: 0;
+    padding: 0 var(--s-8) var(--s-8);
+    font-size: var(--t-meta);
+  }
+
+  .wb-ov-meter .ui-progress__track {
+    height: 4px;
+  }
+
+  .wb-ov-rows {
+    display: grid;
+    gap: var(--s-4);
+    margin: 0;
+  }
+
+  .wb-ov-row {
+    display: grid;
+    grid-template-columns: minmax(0, 4.5em) minmax(0, 1fr);
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .wb-ov-row dt {
+    color: var(--fg3);
+  }
+
+  .wb-ov-row dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .wb-ov-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+  }
+
+  .wb-ov-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .wb-ov-line {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .wb-ov-task {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .wb-ov-task-main,
+  .wb-ov-file {
+    flex: 1;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .wb-ov-task-main {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+  }
+
+  /* 任务行状态槽：定宽，蓝点 / 对勾 / 红点共用同一位置 */
+  .wb-ov-status {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+  }
+
+  .wb-ov-task-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wb-ov-task-time {
+    flex: none;
+    font-family: var(--font-mono);
+    color: var(--fg-dim);
+  }
+
+  .wb-ov-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--r-full);
+  }
+
+  .wb-ov-note {
+    margin: 0;
+    color: var(--fg-dim);
+    overflow-wrap: anywhere;
+  }
+}
+
+/* 概览磁贴的外观：卡片底与描边、状态色（版面在 features 层） */
+@layer patterns {
+  .wb-tile {
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+  }
+
+  .wb-ov-check {
+    color: var(--fg-dim);
+  }
+
+  .wb-tile[data-tone='warn'] .wb-tile-summary {
+    color: var(--stall);
+  }
+
+  .wb-tile[data-tone='err'] .wb-tile-summary {
+    color: var(--fail);
+  }
+
+  .wb-tile-summary {
+    color: var(--fg-dim);
+  }
+
+  .wb-ov-dot {
+    background: var(--fg3);
+  }
+
+  .wb-ov-dot.is-run {
+    background: var(--run);
+  }
+
+  .wb-ov-dot.is-ok {
+    background: var(--ok);
+  }
+
+  .wb-ov-dot.is-warn {
+    background: var(--stall);
+  }
+
+  .wb-ov-dot.is-err {
+    background: var(--fail);
+  }
+}

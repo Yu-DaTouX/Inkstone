@@ -18,6 +18,11 @@ publish:
 productName: 砚
 copyright: Copyright © 2026 Yu-DaTouX
 
+# DeepLink（WP-20c）：注册 `inkstone://`；实际处理逻辑在 src/main/deeplink/**。
+protocols:
+  - name: Inkstone Deep Link
+    schemes: [inkstone]
+
 directories:
   output: release
   buildResources: build

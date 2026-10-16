@@ -13,7 +13,7 @@
 
 ## 标志与主视觉
 
-图标源为 [prompt-stone.svg](../build/prompt-stone.svg)。开口石框与 `>_` 共同构成标志，保持其原始路径、线宽和比例；文字使用正常可读字形。
+图标设计真源为 [`resources/brand/inkstone-design.json`](../resources/brand/inkstone-design.json)（几何、16/24 像素 mask、配色与托盘状态时长），由 `npm run icon` 生成应用图标、托盘素材与 [`prompt-stone.svg`](../build/prompt-stone.svg)（生成物，`currentColor` 投影）。开口石框与 `>_` 共同构成标志，保持其原始路径、线宽和比例；文字使用正常可读字形。
 
 [浅色字标](assets/inkstone/wordmark-light.svg) 与 [深色字标](assets/inkstone/wordmark-dark.svg) 使用轮廓路径，不依赖访问者的字体。通过 [生成脚本](../scripts/build-brand-assets.ps1) 的 `-LightInk` 和 `-DarkInk` 参数调整颜色。
 

@@ -21,6 +21,9 @@ import { join, delimiter, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PiInfo, PiSource, PiProbe, RpcResponse } from '../shared/ipc'
 import { selectedPiRuntime } from './pi-runtime-location'
+import { ignoresElectronRunAsNode, runtimeProbe, type PiRpcRuntime } from './pi-runtime-launch'
+
+export type { PiRpcRuntime }
 
 const PKG = '@earendil-works/pi-coding-agent'
 /** cli 在包里的相对路径（package.json 的 bin 字段） */
@@ -299,8 +302,14 @@ export interface PiRpcOptions {
   env?: NodeJS.ProcessEnv
   /** Replace rather than inherit the parent environment (for credential-isolated smoke runs). */
   inheritEnv?: boolean
-  /** An explicit host runtime bypasses desktop/global discovery. */
-  runtime?: { executable: string; cli: string; kind: 'node' | 'electron' }
+  /**
+   * 显式宿主运行时，跳过桌面 / 全局发现。
+   *
+   * `node` / `electron` 保持既有语义（`<executable> <cli> --mode rpc`）；
+   * `native-exe` 用绝对路径 exe + 纯参数数组（无 CLI 前缀、不继承
+   * `ELECTRON_RUN_AS_NODE`），见 [runtimeProbe]。
+   */
+  runtime?: PiRpcRuntime
 }
 
 type Pending = {
@@ -353,9 +362,7 @@ export class PiRpc extends EventEmitter {
 
   constructor(private opts: PiRpcOptions) {
     super()
-    this.probe = opts.runtime
-      ? { ok: true, source: 'override', cmd: opts.runtime.executable, args: [opts.runtime.cli], tried: ['explicit host runtime'] }
-      : resolvePi({ override: opts.piBin })
+    this.probe = opts.runtime ? runtimeProbe(opts.runtime) : resolvePi({ override: opts.piBin })
   }
 
   get running(): boolean {
@@ -373,7 +380,7 @@ export class PiRpc extends EventEmitter {
       ...(this.opts.inheritEnv === false ? {} : process.env),
       ...(this.opts.env ?? {})
     }
-    if (this.opts.runtime?.kind === 'node') delete env.ELECTRON_RUN_AS_NODE
+    if (ignoresElectronRunAsNode(this.opts.runtime)) delete env.ELECTRON_RUN_AS_NODE
     else env.ELECTRON_RUN_AS_NODE = '1'
     // 去掉可能干扰子进程的 Electron 变量
     delete env.ELECTRON_NO_ATTACH_CONSOLE

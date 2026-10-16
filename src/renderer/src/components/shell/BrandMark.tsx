@@ -1,11 +1,13 @@
 /**
- * 品牌标记使用与 build/prompt-stone.svg 相同的几何路径，但在这里内联。
+ * 品牌标记的几何来自唯一真源 `resources/brand/inkstone-design.json`：由
+ * `npm run icon` 生成 `src/shared/brand-geometry.ts`，这里直接引用，不再手写一份路径。
  *
- * 不能把带 currentColor 的外部 SVG 直接当 CSS mask：Electron 的 Chromium
- * 在这条路径上可能把 mask 解析成整块不透明区域，最后只看到蓝色方块。
- * 内联 SVG 保留 currentColor，同时让透明背景和描边在深浅主题中都可靠。
- * 功能按钮仍使用 reicon；提示砚只出现在产品识别与品牌空状态中。
+ * 为什么渲染成内联 SVG 而不是外链 `build/prompt-stone.svg`：Electron 的 Chromium
+ * 把带 currentColor 的外部 SVG 当 CSS mask 时可能解析成整块不透明区域。内联保留
+ * currentColor，深浅主题都可靠。功能按钮仍使用 reicon；提示砚只出现在产品识别与空态。
  */
+import { BRAND_FRAME, BRAND_PROMPT, BRAND_VIEW_BOX } from '../../../../shared/brand-geometry'
+
 export function BrandMark({
   size = 20,
   className,
@@ -18,7 +20,7 @@ export function BrandMark({
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 100 100"
+      viewBox={BRAND_VIEW_BOX}
       className={['brand-mark', className].filter(Boolean).join(' ')}
       role={decorative ? undefined : 'img'}
       aria-label={decorative ? undefined : '砚'}
@@ -29,20 +31,24 @@ export function BrandMark({
       }}
     >
       <path
-        d="M70 22H25Q22 22 22 25V75Q22 78 25 78H75Q78 78 78 75V53"
+        d={BRAND_FRAME.path}
         fill="none"
         stroke="currentColor"
-        strokeWidth="6"
-        strokeLinejoin="round"
+        strokeWidth={BRAND_FRAME.strokeWidth}
+        strokeLinecap={BRAND_FRAME.linecap}
+        strokeLinejoin={BRAND_FRAME.linejoin}
       />
-      <path
-        d="M36 40L47 50L36 60M57 62H69"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="6"
-        strokeLinecap="square"
-        strokeLinejoin="miter"
-      />
+      {BRAND_PROMPT.map((part) => (
+        <path
+          key={part.path}
+          d={part.path}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={part.strokeWidth}
+          strokeLinecap={part.linecap}
+          strokeLinejoin={part.linejoin}
+        />
+      ))}
     </svg>
   )
 }

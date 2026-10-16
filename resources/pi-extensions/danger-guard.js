@@ -413,7 +413,9 @@ async function askHost(toolName, input, reasons, outsideDirs = []) {
       /* MCP 工具参数名不固定，整份 JSON 展示；子 Agent 委派同理 */
       : fullDetail || String(toolName ?? '').startsWith('mcp__')
         ? JSON.stringify(input ?? {})
-        : String(input?.path ?? input?.file_path ?? input?.filePath ?? '')
+        : String(input?.path ?? input?.file_path ?? input?.filePath ?? '') ||
+          /* 没有路径的工具（如 codemode）至少让用户看到要执行的内容，而不是空白 */
+          (typeof input?.code === 'string' ? input.code : JSON.stringify(input ?? {}))
   try {
     const response = await fetch(url, {
       method: 'POST',

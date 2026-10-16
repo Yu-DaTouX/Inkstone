@@ -1,0 +1,101 @@
+/*
+ * 并排视图版面（WP-20b）。层 features，只写列的排布与分隔，
+ * 列内对话流、输入框的版面仍由 `features/session`、`features/composer` 负责。
+ */
+@layer features {
+  .v3-split {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+  }
+
+  .v3-split-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* 焦点列的输入框描边加深（方案 02 §7.7）；外观只覆盖边框色，不重造控件 */
+  .v3-split-col[data-live='1'] .composer {
+    border-color: var(--line2);
+  }
+
+  .v3-split-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-height: var(--size-head);
+    padding: var(--s-4) var(--s-12) var(--s-4) var(--s-20);
+  }
+
+  .v3-split-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--t-title);
+    line-height: var(--t-title-lh);
+    font-weight: var(--t-title-w);
+    color: var(--fg2);
+  }
+
+  .v3-split-col[data-live='1'] .v3-split-title {
+    color: var(--fg);
+  }
+
+  .v3-split-proj {
+    flex: none;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg3);
+  }
+
+  /* 非焦点会话：只读投影铺满列，输入框外观贴在列底 */
+  .v3-split-peer {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .v3-split-state {
+    flex: none;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg2);
+  }
+
+  .v3-split-state[data-tone='run'] {
+    color: var(--run-t);
+  }
+
+  .v3-split-state[data-tone='warn'] {
+    color: var(--ask-t);
+  }
+
+  /* 分隔条占位：真正的 2px 线与命中区、悬停 / 聚焦 / 拖动外观都来自 ui/Splitter */
+  .v3-split-resizer {
+    display: contents;
+  }
+
+  .v3-split-empty {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    padding: var(--s-24);
+    color: var(--fg3);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+  }
+}

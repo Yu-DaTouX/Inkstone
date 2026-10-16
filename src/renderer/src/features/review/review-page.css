@@ -1,0 +1,508 @@
+@layer features {
+  /*
+   * 评审页（WP-50 界面部分）的版面与层级。控件外观全部来自 ui/ 的 primitives，
+   * 本文件只画三栏网格、列表、批注与底部 Git 条的位置；不重画控件皮肤、不新造颜色。
+   */
+
+  .review-page {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: var(--s-16) var(--s-20) var(--s-12);
+    gap: var(--s-12);
+    background: var(--bg);
+    color: var(--fg);
+    overflow: hidden;
+  }
+
+  .review-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .review-title {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    margin: 0;
+    font-size: var(--t-h2);
+    line-height: var(--t-h2-lh);
+    font-weight: var(--t-h2-w, 600);
+  }
+
+  .review-owner {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+  }
+
+  .review-hint {
+    margin: 0;
+    padding: var(--s-6) var(--s-10);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--stall-bg);
+    color: var(--stall-t);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  /* 三栏：来源 / 清单 · 差异 + 批注 · 运行 + 意见 */
+  .review-grid {
+    display: grid;
+    grid-template-columns: minmax(200px, 1fr) minmax(0, 2.2fr) minmax(230px, 1fr);
+    gap: var(--s-12);
+    flex: 1;
+    min-height: 0;
+  }
+
+  .review-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--s-10);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+  }
+
+  .review-col-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .review-col-title {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    text-transform: none;
+  }
+
+  .review-col-count {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+  }
+
+  .review-col-hint {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .review-col-error {
+    margin: 0;
+    padding: var(--s-6) var(--s-10);
+    border: 1px solid var(--fail);
+    border-radius: var(--r-sm);
+    background: var(--fail-bg);
+    color: var(--fail-t);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .review-source-note {
+    margin: 0;
+    padding: var(--s-6) var(--s-10);
+    border-left: 2px solid var(--accent);
+    background: var(--sunken);
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .review-sources {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .review-source--off {
+    opacity: 0.55;
+  }
+
+  .review-source-extra {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .review-files {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    min-height: 0;
+  }
+
+  .review-file {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+    font-size: var(--t-meta);
+  }
+
+  .review-file-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+  }
+
+  .review-file-status {
+    color: var(--fg3);
+    font-family: var(--font-mono);
+  }
+
+  .review-file-stat {
+    display: flex;
+    gap: var(--s-4);
+    font-family: var(--font-mono);
+  }
+
+  .review-add {
+    color: var(--add);
+  }
+
+  .review-del {
+    color: var(--del);
+  }
+
+  .review-diff {
+    flex: 1;
+    min-height: 220px;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+  }
+
+  /* 批注 */
+  .review-annotations {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .review-annotation-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .review-annotation {
+    padding: var(--s-6) var(--s-8);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+  }
+
+  .review-annotation[data-stale='1'] {
+    border-color: var(--stall);
+    background: var(--stall-bg);
+  }
+
+  .review-annotation-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .review-annotation-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .review-annotation-actions {
+    display: flex;
+    gap: var(--s-2);
+  }
+
+  .review-annotation-body {
+    margin: var(--s-4) 0 0;
+    color: var(--fg);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .review-annotation-stale {
+    margin: var(--s-4) 0 0;
+    color: var(--stall-t);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  /* 批注编辑器 */
+  .review-editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    padding: var(--s-8);
+    border: 1px dashed var(--line);
+    border-radius: var(--r-sm);
+  }
+
+  .review-editor-head {
+    color: var(--fg2);
+    font-size: var(--t-meta);
+  }
+
+  .review-editor-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--s-6);
+  }
+
+  .review-editor-anchors {
+    margin: 0;
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+  }
+
+  .review-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-6);
+  }
+
+  /* 评审运行 / 意见 */
+  .review-run {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .review-findings {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    margin-top: var(--s-8);
+  }
+
+  .review-run-code {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    margin: 0;
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+  }
+
+  .review-run-wiring {
+    margin: 0;
+    padding: var(--s-6) var(--s-10);
+    border: 1px solid var(--stall);
+    border-radius: var(--r-sm);
+    background: var(--stall-bg);
+    color: var(--stall-t);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .review-finding-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .review-finding {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    padding: var(--s-8);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+  }
+
+  .review-finding-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .review-finding-path {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .review-finding-message {
+    margin: 0;
+    color: var(--fg);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .review-finding-suggestion {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .review-finding-suggestion > span {
+    color: var(--fg3);
+  }
+
+  /* 底部 Git 条 */
+  .review-gitbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-8);
+    padding: var(--s-8) var(--s-10);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+  }
+
+  .review-gitbar-target {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+  }
+
+  .review-gitbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    margin-left: auto;
+  }
+
+  .review-git-notice {
+    flex: 1 0 100%;
+    margin: 0;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .review-git-notice--ok {
+    color: var(--fg2);
+  }
+
+  .review-git-notice--err {
+    color: var(--fail-t);
+  }
+
+  .review-confirm-body {
+    margin: 0 0 var(--s-8);
+    color: var(--fg2);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+  }
+
+  .review-confirm-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    margin: 0 0 var(--s-8);
+  }
+
+  .review-confirm-list > div {
+    display: flex;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .review-confirm-list dt {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .review-confirm-list dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+  }
+
+  .review-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-6);
+    margin-top: var(--s-8);
+  }
+
+  .review-task-message {
+    max-height: 280px;
+    margin: 0 0 var(--s-8);
+    overflow: auto;
+    padding: var(--s-8) var(--s-10);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 1100px) {
+    .review-grid {
+      grid-template-columns: minmax(0, 1fr);
+      overflow: auto;
+    }
+
+    .review-col {
+      max-height: none;
+      overflow: visible;
+    }
+  }
+}

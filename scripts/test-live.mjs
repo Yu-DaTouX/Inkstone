@@ -342,6 +342,57 @@ const CASES = {
   branch: { probe: 'scripts/probe/branch.js', delay: 10000, cost: 0 },
   // 标题栏两端的面板开关 + 左栏模式菜单（参考 Codex）
   topbar: { probe: 'scripts/probe/topbar.js', delay: 9000, cost: 0 },
+  // v3 单场景隔离验收：不发消息，真实 Enter 验证确认卡，夹具供截图。
+  'v3-shell': {
+    probe: 'scripts/probe/v3-shell.js', delay: 9000, cost: 0,
+    keys: 'ctrl+k,escape,enter', keysDelay: 11000, env: { YAN_UI: 'v3' }
+  },
+  'v3-user-polish': { probe: 'scripts/probe/v3-user-polish.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
+  'v3-user-followup': { probe: 'scripts/probe/v3-user-followup.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
+  /*
+   * v3 ASCII 单目标隔离复核（独立探针）：只做「空态 → 外观开关 → 关闭/恢复」，
+   * 同一启动里对照 label.click（复现）/ 内部 input.click（计划有效交互）/ 真实 Space（观察）。
+   * 真实 Space 用既有 keys 机制（sendInputEvent，不是合成 KeyboardEvent）。
+   */
+  'v3-ascii-once': {
+    probe: 'scripts/probe/v3-ascii-once.js', delay: 9000, cost: 0, budget: 60000,
+    keys: 'space', keysDelay: 15000, env: { YAN_UI: 'v3' }
+  },
+  /*
+   * v3 侧栏待办磁贴（A1）：隔离注入清单验磁贴/折叠/滚动，切无待办会话验整块消失，
+   * 并用 keys 机制发真实 Ctrl+B 验收起无浮层。复用 todos 场景的只读 fixture 出口。
+   */
+  'v3-todos': {
+    probe: 'scripts/probe/v3-todos.js', delay: 9000, cost: 0, budget: 90000,
+    keys: 'ctrl+b', keysDelay: 20000, env: { YAN_UI: 'v3' },
+    afterExit: 'taskFixtureReadonly', readonlySession: 'yan-todo-fixture'
+  },
+  // v3 输入框底栏（A2）：控件顺序 / 发送停止同位置 / 思考滑杆拖动预览与顶边档位色
+  'v3-composer': { probe: 'scripts/probe/v3-composer.js', delay: 9000, cost: 0, budget: 90000, env: { YAN_UI: 'v3' } },
+  // v3 发送键规则（v2 sendkey 的 v3 DOM 版）：send 换成 spy，不出网
+  'v3-sendkey': { probe: 'scripts/probe/v3-sendkey.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
+  // v3 输入框 / 命令与 @ 路径候选：注入假命令，路径走真实只读 IPC，不发消息
+  'v3-completion': { probe: 'scripts/probe/v3-completion.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
+  // v3 侧栏项目菜单与归档视图：注入假项目 / 会话，设置写入走隔离目录
+  'v3-projectmenu': { probe: 'scripts/probe/v3-projectmenu.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
+  // v3 工作区日志 / 额度页签：注入日志与账号卡，不切换真实账号
+  'v3-logsquota': { probe: 'scripts/probe/v3-logsquota.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
+  // v3 手动派发子 Agent 表单：只验证表单，不提交、不启动子 Agent
+  'v3-delegate': { probe: 'scripts/probe/v3-delegate.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
+  // v3 设置 · 语音输入分页与电脑操作块：只读状态，不下载、不安装、不开开关
+  'v3-voicecu': { probe: 'scripts/probe/v3-voicecu.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
+  // v3 排队 UI（v2 queuestack 的 v3 DOM 版）：注入 queue + steer/retract spy
+  'v3-queuestack': { probe: 'scripts/probe/v3-queuestack.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
+  /*
+   * v3 真实模型三连（cost 1，各真调模型）。
+   * Send：真发短消息验流式 RunSlot / 同位停止 / runner 与 session 一致 / token 增长。
+   * Todos：Agent 用 `yan tasks apply` 建 3 项并逐项完成，验侧栏磁贴实时出现与全勾。
+   * Review：fixtureSub 'review' 是故意做脏的临时 Git 仓库，经 window.yan.review
+   *         发起只读评审，验 R 运行登记 / 只读 / 收口一次 / 意见返回。
+   */
+  'v3-real-send': { probe: 'scripts/probe/v3-real-send.js', fixture: true, delay: 12000, cost: 1, budget: 300000, env: { YAN_UI: 'v3' } },
+  'v3-real-todos': { probe: 'scripts/probe/v3-real-todos.js', fixture: true, delay: 12000, cost: 1, budget: 360000, env: { YAN_UI: 'v3' } },
+  'v3-real-review': { probe: 'scripts/probe/v3-real-review.js', fixture: true, fixtureSub: 'review', delay: 12000, cost: 1, budget: 360000, env: { YAN_UI: 'v3' } },
   // 导航轨与消息列的对齐（收起/展开时距离必须稳定）
   /* 几何测量（阅读位置不能被拉回底部）：同上，位置类断言在隐藏/未渲染窗口里不可信 */
   outlinepos: { probe: 'scripts/probe/outlinepos.js', delay: 9000, cost: 0, visible: true },
@@ -1701,6 +1752,54 @@ function seedSessions(destRoot) {
   n++
 
   return n
+}
+
+/**
+ * v3-shell 的用量取数夹具：主会话与子代理各一份**合成原生 JSONL**，让探针在
+ * 真实隔离应用里经正式 `window.yan.usageStats` IPC 读它们（不重写渲染端取数）。
+ *
+ * 日期刻意错开：主会话在 30 天窗口内、7 天窗口外，于是 `7d` 范围下主会话 Token
+ * 为 0、只有子代理 —— 用真实数据链验证「只有子代理时主会话显示 0」。探针里的
+ * 期望常量与这里一一对应，改动时同步。
+ */
+function writeV3UsageFixture(sandboxRoot) {
+  const usageSessions = join(sandboxRoot, 'usage-sessions')
+  const mainDir = join(usageSessions, '--C--Fixture--')
+  mkdirSync(mainDir, { recursive: true })
+  const mainDay = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
+  const childDay = new Date().toISOString()
+  const messageLine = (id, role, timestamp, totalTokens) =>
+    JSON.stringify({
+      type: 'message',
+      id,
+      timestamp,
+      message: { role, content: `合成 fixture（${role}）` },
+      ...(totalTokens ? { provider: 'fixture', model: 'usage-main', usage: { totalTokens } } : {})
+    })
+  writeFileSync(
+    join(mainDir, 'usage-main.jsonl'),
+    [
+      JSON.stringify({ type: 'session', version: 3, id: 'usage-main', timestamp: mainDay, cwd: '/fixture' }),
+      messageLine('usage-main-u1', 'user', mainDay),
+      messageLine('usage-main-a1', 'assistant', mainDay, 1000),
+      messageLine('usage-main-u2', 'user', mainDay),
+      messageLine('usage-main-a2', 'assistant', mainDay, 2000)
+    ].join('\n') + '\n',
+    'utf8'
+  )
+  const childDir = join(sandboxRoot, 'data', 'subagents', 'sessions', 'usage-child')
+  mkdirSync(childDir, { recursive: true })
+  writeFileSync(
+    join(childDir, 'child.jsonl'),
+    [
+      JSON.stringify({ type: 'session', version: 3, id: 'usage-child', timestamp: childDay, cwd: '/fixture' }),
+      messageLine('usage-child-u1', 'user', childDay),
+      messageLine('usage-child-a1', 'assistant', childDay, 5000),
+      messageLine('usage-child-u2', 'user', childDay)
+    ].join('\n') + '\n',
+    'utf8'
+  )
+  return { usageSessions, mainTokens: 3000, subTokens: 5000, mainMessages: 4 }
 }
 
 function writeRemoteRouteSession(root, cwd) {
@@ -5972,6 +6071,17 @@ async function main() {
     // 为什么要拷：有些场景（切会话、长会话虚拟化）需要真实数据才有意义；
     // 为什么是拷贝而不是直接引用：测试会改名/删除会话，不能动原件。
     const seeded = seedSessions(sessions)
+    /*
+     * v3-shell 的用量取数夹具：只跑该场景时，把会话目录指向只含「主会话用量样本」
+     * 的独立目录（通用合成会话不进用量统计），并另写一份子代理原生 JSONL。
+     */
+    if (names.includes('v3-shell') && sandboxRoot && process.env.YAN_V3_USAGE_FIXTURE !== '0') {
+      const v3Usage = writeV3UsageFixture(sandboxRoot)
+      CASES['v3-shell'].env = { ...(CASES['v3-shell'].env ?? {}), YAN_SESSIONS_DIR: v3Usage.usageSessions }
+      console.log(
+        `  v3-shell 用量夹具：主会话 ${v3Usage.mainTokens} token / ${v3Usage.mainMessages} 消息（15 天前）+ 子代理 ${v3Usage.subTokens} token（今天，仅隔离 sandbox）`
+      )
+    }
     if (names.includes('remoteroutes')) {
       const routeSession = writeRemoteRouteSession(sessions, fixtureProject)
       console.log(`  远程路由目标会话：${routeSession.id}（仅隔离 sandbox）`)
@@ -6476,6 +6586,10 @@ async function main() {
       if (sandboxRoot) {
         /* freshDesktop：不预置 cwd，验全新安装的默认工作文件夹 */
         const desktop = c.freshDesktop ? { lang: 'zh-CN' } : { cwd: caseCwd, lang: 'zh-CN' }
+        /* 视觉取证可选：命令行把初始主题固定为深/浅，不改生产默认。 */
+        if (process.env.YAN_TEST_DESKTOP_THEME === 'light' || process.env.YAN_TEST_DESKTOP_THEME === 'dark') {
+          desktop.theme = process.env.YAN_TEST_DESKTOP_THEME
+        }
         /* 工作模式迁移场景：只留旧布尔，验「旧 true → 新字段」的真实清洗 */
         if (c.legacyAutonomous) desktop.autonomous = true
         if (c.knowledgeSeed) {

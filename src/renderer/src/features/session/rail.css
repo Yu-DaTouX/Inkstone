@@ -1,0 +1,78 @@
+/*
+ * 会话导航轨与停滞卡的**版面**（位置 / 间距 / 顺序），归入 `features` 层。
+ * 外观在同目录 `ui/rail-look.css`，归 `primitives` 层，取 design 令牌。
+ */
+@import './ui/rail-look.css';
+
+@layer features {
+  /*
+   * 大纲轨：贴在对话区右缘。默认透明且不接收指针，只有指针进入右侧窄带
+   * （`.v3-rail-zone`）时才展开，避免常驻遮挡正文与滚动条。
+   */
+  .v3-rail {
+    position: absolute;
+    top: var(--s-8);
+    bottom: var(--s-8);
+    left: var(--s-8);
+    z-index: 3;
+    width: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    pointer-events: none;
+  }
+  .v3-rail-zone {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 28px;
+    pointer-events: auto;
+  }
+  .v3-rail-track {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    max-height: 70%;
+    overflow-y: auto;
+    padding: var(--s-8) var(--s-6);
+    opacity: 0.65;
+    pointer-events: auto;
+    position: relative;
+    z-index: 1;
+    scrollbar-width: none;
+  }
+  .v3-rail-track::-webkit-scrollbar { display: none; }
+  /* 悬停右缘窄带时展开；指针进入轨道本身或键盘聚焦其中时保持展开。 */
+  .v3-rail-zone:hover ~ .v3-rail-track,
+  .v3-rail-track:hover,
+  .v3-rail-track:focus-within { opacity: 1; pointer-events: auto; }
+  .v3-rail-tick {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: var(--s-4) var(--s-2);
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  /* 停滞卡：与对话列同宽，贴在对话底部（输入区上方） */
+  .v3-stall {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    width: 100%;
+    max-width: var(--size-col);
+    margin: 0 auto;
+    padding: 0 var(--s-20) var(--s-10);
+    box-sizing: border-box;
+    font-size: var(--t-ui);
+  }
+  .v3-stall-head { display: flex; align-items: center; gap: var(--s-8); }
+  .v3-stall-foot { display: flex; align-items: center; gap: var(--s-8); }
+
+  @media (max-width: 720px) {
+    .v3-stall { padding: 0 var(--s-12) var(--s-8); }
+  }
+}
