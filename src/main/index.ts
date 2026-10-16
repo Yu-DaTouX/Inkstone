@@ -63,7 +63,6 @@ import { loadMcpServers } from './mcp/config'
 import type { McpAppOwner } from '../shared/mcp-app-preview'
 import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { registerPackagesIpc } from './ipc/packages-ipc'
-import { registerActivityModelIpc } from './ipc/activity-model-ipc'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
 import { registerScheduleIpc } from './ipc/schedule-ipc'
 import { ScheduleService } from './schedule-service'
@@ -2847,7 +2846,6 @@ function registerIpc(): void {
   handle('yan:context:current', async () => ({ ok: false, error: AGENT_CONTEXT_ERROR }))
 
 
-  registerActivityModelIpc(ipc)
 
 
 

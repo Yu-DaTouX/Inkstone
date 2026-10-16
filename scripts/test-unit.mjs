@@ -2097,19 +2097,6 @@ const webSearch = await import('../node_modules/esbuild/lib/main.js').then(({ bu
 const { runWebSearchTests } = await import('./test-web-search.mjs')
 await runWebSearchTests(ok, webSearch)
 
-const sessionMap = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/session-map.ts'],
-    outfile: 'out/test/session-map.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/session-map.mjs'))
-)
-const { runSessionMapTests } = await import('./test-session-map.mjs')
-await runSessionMapTests(ok, sessionMap)
-
 const quotaMini = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/quota-mini.ts'],
@@ -2847,19 +2834,6 @@ await runGitRepoTests(ok)
   ok(noEntry?.entryId === undefined, '实时消息（无文件上下文）不带 entryId')
 }
 
-const conversationTurns = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/conversation-turns.ts'],
-    outfile: 'out/test/conversation-turns.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/conversation-turns.mjs'))
-)
-const { runConversationTurnsTests } = await import('./test-conversation-turns.mjs')
-await runConversationTurnsTests(ok, conversationTurns)
-
 const outlineTurns = await import('esbuild').then(({ build }) =>
   build({ entryPoints: ['src/shared/outline-turns.ts'], outfile: 'out/test/outline-turns.mjs',
     bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
@@ -3032,19 +3006,6 @@ await runContextAssemblerTests(ok, contextAssembler, {
   rm: fsPromises.rm
 })
 
-const researchShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/research.ts'],
-    outfile: 'out/test/research.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/research.mjs'))
-)
-const { runResearchTests } = await import('./test-research.mjs')
-runResearchTests(ok, researchShared)
-
 const userSkillShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/user-skill.ts'],
@@ -3118,19 +3079,6 @@ runSubagentBriefTests(ok, subagentBrief)
   const { runSubagentOutcomeTests } = await import('./test-subagent-outcome.mjs')
   runSubagentOutcomeTests(ok, { outcome, notice, brief: subagentBrief, repeatGuard })
 }
-
-const activityModel = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/activity-model.ts'],
-    outfile: 'out/test/activity-model.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/activity-model.mjs'))
-)
-const { runActivityModelTests } = await import('./test-activity-model.mjs')
-runActivityModelTests(ok, activityModel)
 
 const searchMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({

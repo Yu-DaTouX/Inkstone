@@ -65,10 +65,6 @@ import type {
 } from './context-budget-v1'
 export type { ContextMaintenanceOperationV1, ContextMaintenanceStateV1 } from './context-maintenance'
 import type { ContextMaintenanceOperationV1 } from './context-maintenance'
-export type { SourceStatus, SourceRefStatus, ResearchExcerpt } from './research'
-export type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
-import type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
-import type { AgentActivity } from './agent-profile'
 import type { GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
 export type {
   GitActionExpected,
@@ -751,7 +747,6 @@ export interface AppSettings {
   defaultWorkMode: WorkMode
   questionFrequency?: QuestionFrequency
   capabilityStrategy: CapabilityStrategy
-  activityModels?: ActivityModelConfig
   workModeShortcutEnabled?: boolean
   subagentNotify?: boolean
   streamLoopAutoContinue?: boolean
@@ -1750,17 +1745,6 @@ export interface LibraryBridge {
   current(): Promise<{ ok: boolean; error?: string; assembly?: ContextAssembly }>
 }
 
-export interface ActivityBridge {
-  rows(input?: { current?: string | null }): Promise<ActivityModelRow[]>
-  model(input: { activity: AgentActivity; current?: string | null; available?: string[] }): Promise<
-    ActivityModelResolution & { text: string }
-  >
-  setModel(input: {
-    activity?: AgentActivity
-    model?: string | null
-    defaultModel?: string | null
-  }): Promise<{ ok: boolean; error?: string; rows?: ActivityModelRow[] }>
-}
 
 export interface SourcesBridge {
   list(sessionId: string): Promise<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>
@@ -2198,7 +2182,6 @@ export interface YanBridge {
 
   sources: SourcesBridge
   library: LibraryBridge
-  activity: ActivityBridge
   packages: PackagesBridge
   knowledge: KnowledgeBridge
   builtinCapabilities: BuiltinCapabilitiesBridge

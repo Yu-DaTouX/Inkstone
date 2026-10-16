@@ -5,7 +5,6 @@ export const SYNC_SETTINGS_WHITELIST = [
   'lastSubagentModel',
   'modelFavorites',
   'modelProviderOrder',
-  'activityModels',
   'codemodeEnabled',
   'autoArchiveDays',
   'keepAwakeWhileWorking',
