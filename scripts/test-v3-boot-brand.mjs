@@ -126,7 +126,7 @@ for (const file of readdirSync(abs('src/renderer'), { recursive: true })) {
 }
 
 const BOOT_RULE_RE = /\.boot[a-z-]*[^{}]*\{([^}]*)\}/g
-for (const rel of ['src/renderer/src/design/base.css', 'src/renderer/src/styles/motion.css']) {
+for (const rel of ['src/renderer/src/design/base.css']) {
   const css = read(rel)
   const rules = [...css.matchAll(BOOT_RULE_RE)]
   assert.ok(rules.length > 0, `${rel} 应有启动画面样式规则`)

@@ -77,13 +77,13 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   handle('yan:search:doctor', async () => searchDoctor())
   handle('yan:search:install', async () => installOpenCli())
   handle('yan:search:apiConfig', async () => searchApiConfig())
-  handle('yan:search:setApiKey', async (_e, provider: string, key: string) =>
+  handle('yan:search:setApiKey', async (provider: unknown, key: unknown) =>
     isSearchProviderId(provider) ? setSearchKey(provider, String(key ?? '')) : { ok: false, error: '不认识的搜索服务' }
   )
-  handle('yan:search:clearApiKey', async (_e, provider: string) =>
+  handle('yan:search:clearApiKey', async (provider: unknown) =>
     isSearchProviderId(provider) ? clearSearchKey(provider) : { ok: false, error: '不认识的搜索服务' }
   )
-  handle('yan:search:setApiHintDismissed', async (_e, dismissed: boolean) => setSearchHintDismissed(dismissed === true))
+  handle('yan:search:setApiHintDismissed', async (dismissed: unknown) => setSearchHintDismissed(dismissed === true))
 
   handle('yan:computerUse:status', async () => computerUseStatus())
   handle('yan:computerUse:installUv', async () => installUv())

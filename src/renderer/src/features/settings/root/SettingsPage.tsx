@@ -28,7 +28,6 @@ import {
   type SettingsSectionId
 } from '../types'
 import { getSettingsRequest, subscribeSettingsRequest } from './deep-link'
-import { useSwitchToV2 } from './use-switch-to-v2'
 import '../settings.css'
 
 type Submodule = LazyExoticComponent<() => ReactElement>
@@ -106,7 +105,6 @@ function SubmoduleHost({
 }): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
-  const { env, busy, error, switchToV2 } = useSwitchToV2(lang)
 
   if (Host) {
     return (
@@ -123,18 +121,10 @@ function SubmoduleHost({
         {body}
       </p>
       <div className="settings-actions">
-        <Button variant="secondary" size="sm" isDisabled={busy || env} onPress={() => void switchToV2()}>
-          {text.openLegacy}
-        </Button>
         <Button variant="ghost" size="sm" onPress={onDismiss}>
           {text.backToAppearance}
         </Button>
       </div>
-      {error ? (
-        <p className="settings-row__desc settings-row__desc--error" role="alert">
-          {error}
-        </p>
-      ) : null}
     </section>
   )
 }
@@ -152,8 +142,7 @@ function LegacyNotice({
 }): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
-  const { env, busy, error, switchToV2 } = useSwitchToV2(lang)
-  const title = kind === 'unmigrated' ? text.unmigratedTitle : text.unknownTitle
+  const title =kind === 'unmigrated' ? text.unmigratedTitle : text.unknownTitle
   const body = (kind === 'unmigrated' ? text.unmigratedBody : text.unknownBody).replace('{view}', view || text.unknownTitle)
 
   return (
@@ -163,9 +152,6 @@ function LegacyNotice({
         {body}
       </p>
       <div className="settings-actions">
-        <Button variant="secondary" size="sm" isDisabled={busy || env} onPress={() => void switchToV2()}>
-          {text.openLegacy}
-        </Button>
         <Button variant="ghost" size="sm" onPress={onDismiss}>
           {text.backToAppearance}
         </Button>
@@ -175,11 +161,6 @@ function LegacyNotice({
           </Button>
         ) : null}
       </div>
-      {error ? (
-        <p className="settings-row__desc settings-row__desc--error" role="alert">
-          {error}
-        </p>
-      ) : null}
     </section>
   )
 }

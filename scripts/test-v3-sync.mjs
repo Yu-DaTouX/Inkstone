@@ -79,7 +79,6 @@ function desktopSettings(overrides = {}) {
     theme: 'dark',
     lang: 'zh-CN',
     density: 'standard',
-    uiVersion: 'v3',
     autoCompactTokens: 250000,
     contextTrimTokens: 80000,
     apiKey: SECRETS[0],

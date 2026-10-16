@@ -29,7 +29,7 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 - 上下文、压缩、恢复、技能与 MCP 交给 pi 原生管理。砚只额外做两件可关闭的事：经 pi `context` 钩子裁剪发给模型的较早大段工具输出（不改会话文件、不做摘要），以及到「自动压缩上限」时调用 pi 原生 `compact()`；不恢复旧的预算、摘要、召回与自动续跑。主会话流式循环防护（`streamLoopAutoContinue`，默认开、可关）仅在安全中止确认后同任务续一次。pi 新增且与砚重复的能力优先适配原生实现；随包 pi 扩展保持必要且薄。
 - 会话历史以持久化记录为准；后台事件必须核对会话归属，不能覆盖当前会话状态。
 - WebContentsView 属于原生层；浮层、焦点、窗口位置与缩放必须与主进程协调。
-- 界面：v3 是目标界面（默认外壳仍是 v2，`YAN_UI=v3` 启用）。v3 控件外观只来自 `src/renderer/src/ui/`，功能 CSS 只管版面；令牌唯一来源是 `src/renderer/src/design/tokens.json`；v3 不导入 v2 的 `styles/`；两套界面共用正式 store 与 IPC。保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。
+- 界面：只有 v3 一套外壳（`src/renderer/src/app/ShellV3.tsx`），v2 已删除。控件外观只来自 `src/renderer/src/ui/`，功能 CSS 只管版面；令牌唯一来源是 `src/renderer/src/design/tokens.json`。保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。
 - 跨端共享稳定的会话、运行实例、事件与授权语义；平台专属的窗口、录音、文件和连接能力放在适配边界。不提前建全平台空壳。选型以个人开发者维护成本为条件，不换语言或应用壳。
 - 模型接入在应用设置中登录或配置凭证；本地档案不表示已登录模型服务。
 - Hermes 外部控制插件位于 `integrations/hermes-inkstone/`，复用远程会话 API，不嵌入桌面运行时。
@@ -39,7 +39,7 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 
 - 按用户要求与修改范围选择检查；`test:unit` 依赖构建，`test:live` 不自动构建。
 - 默认只跑与本次改动直接相关的小检查：`typecheck`、必要时 `build`、改动涉及的单个测试脚本或单个 `test:live` 场景。
-- 大测试先问用户，得到同意再跑：`npm run check`、完整 `test:unit`、多场景或整套 `test:live`、`visual:matrix` 整组、发行包验证，以及任何调用真实模型的场景。用户说过「不跑测试」时照办，交付说明写明没跑什么。
+- 大测试先问用户，得到同意再跑：`npm run check`、完整 `test:unit`、多场景或整套 `test:live`、发行包验证，以及任何调用真实模型的场景。用户说过「不跑测试」时照办，交付说明写明没跑什么。
 - 不替无关改动做测试：其他 agent 的未提交改动、任务范围外的既有失败，不自行排查或修复；记下现象与命令，在交付说明里报告。
 - Electron 启动前清除 `ELECTRON_RUN_AS_NODE`；不要关闭或重启用户窗口，除非已授权。
 - 远程模型场景运行前确认模型、额度和授权。模拟或本机 fixture 不代表真实模型验证。视觉结论应来自实际截图。

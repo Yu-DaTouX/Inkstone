@@ -42,14 +42,7 @@ function modelForCase(fallback) {
 }
 
 const CASES = {
-  arrivaldom: { probe: 'scripts/probe/stream-arrival-dom.js', delay: 9000, cost: 0 },
-  bundlereal: { probe: 'scripts/probe/bundle-real-model.js', fixture: true, fixtureSub: 'repo', visible: true, delay: 9000, cost: 3, budget: 260000, env: { YAN_TEST_MODEL_MAX_TOKENS: '4096' } },
-  turns: { probe: 'scripts/probe/turns.js', delay: 24000, cost: 0 },
   runprogress: { probe: 'scripts/probe/run-progress.js', delay: 9000, cost: 0 },
-  library: { probe: 'scripts/probe/library.js', delay: 9000, cost: 0 },
-  subagentbrief: { probe: 'scripts/probe/subagent-brief.js', delay: 12000, cost: 0 },
-  customapi: { probe: 'scripts/probe/custom-api.js', delay: 9000, cost: 0 },
-  customapie2e: { probe: 'scripts/probe/custom-api-e2e.js', delay: 12000, cost: 2 },
   live: { probe: 'scripts/probe/live.js', delay: 9000, cost: 0 },
   remoteroutes: {
     probe: 'scripts/probe/remote-routes.js',
@@ -59,87 +52,14 @@ const CASES = {
     driver: driveRemoteRoutes,
     afterExit: 'remoteRoutes'
   },
-  reasoning: { probe: 'scripts/probe/reasoning.js', delay: 9000, cost: 0 },
-  capabilityload: { probe: 'scripts/probe/capabilityload.js', delay: 9000, cost: 0 },
-  capsettings: { probe: 'scripts/probe/capabilities-tab.js', delay: 12000, cost: 0, budget: 150000 },
-  codemodesetting: { probe: 'scripts/probe/codemode-setting.js', delay: 9000, cost: 0 },
-  modelnotready: { probe: 'scripts/probe/modelnotready.js', delay: 9000, cost: 0 },
   hotkeys: {
     probe: 'scripts/probe/hotkeys.js',
     delay: 9000,
     cost: 0,
     keys: 'ctrl+shift+p,ctrl+p,shift+tab'
   },
-  dialog: {
-    probe: 'scripts/probe/dialog.js',
-    delay: 20000,
-    cost: 0,
-    keys: 'shift+tab,shift+tab,shift+tab,shift+tab'
-  },
-  toolrow: { probe: 'scripts/probe/toolrow.js', delay: 10000, cost: 0 },
-  toolimages: { probe: 'scripts/probe/tool-images.js', delay: 10000, cost: 0 },
-  trash: { probe: 'scripts/probe/trash.js', delay: 10000, cost: 0 },
   fileref: { probe: 'scripts/probe/fileref.js', delay: 10000, cost: 0 },
-  linkpreview: { probe: 'scripts/probe/linkpreview.js', delay: 11000, cost: 0 },
-  detail: { probe: 'scripts/probe/detail.js', delay: 10000, cost: 0 },
   permissions: { probe: 'scripts/probe/permissions.js', delay: 9000, cost: 0 },
-  modelmenu: {
-    probe: 'scripts/probe/modelmenu.js',
-    delay: 9000,
-    cost: 0,
-    wins: ['1440x900', '940x640']
-  },
-  subagent: { probe: 'scripts/probe/subagent.js', delay: 12000, cost: 1, budget: 240000 },
-  subagentview: { probe: 'scripts/probe/subagent-view.js', delay: 10000, cost: 0 },
-  subagentlocal: {
-    probe: 'scripts/probe/subagent.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 12000,
-    budget: 240000,
-    cost: 0
-  },
-  subagentpair: {
-    probe: 'scripts/probe/subagentpair.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 14000,
-    budget: 240000,
-    cost: 1,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    afterExit: 'subagentArchive'
-  },
-  subagentfail: {
-    probe: 'scripts/probe/subagent-fail.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 14000,
-    budget: 300000,
-    cost: 0,
-    model: 'deepseek/deepseek-nonexistent',
-    afterExit: 'subagentFail'
-  },
-  sessionab: {
-    probe: 'scripts/probe/sessionab.js',
-    fixture: true,
-    abSessions: true,
-    delay: 14000,
-    budget: 300000,
-    cost: 1,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    afterExit: 'sessionabArchive'
-  },
-  askbackground: {
-    probe: 'scripts/probe/ask-background.js',
-    fixture: true,
-    abSessions: true,
-    delay: 12000,
-    budget: 200000,
-    cost: 1,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash'
-  },
-  runnerfailed: { probe: 'scripts/probe/runner-failed.js', fixture: true, fixtureSub: 'repo', delay: 9000, budget: 120000, cost: 0, brokenPi: true },
-  crash: { probe: 'scripts/probe/crash.js', delay: 9000, cost: 0 },
   atrefsend: {
     probe: 'scripts/probe/atrefsend.js',
     fixture: true,
@@ -149,123 +69,45 @@ const CASES = {
     afterExit: 'atrefsendArchive'
   },
   modelswitch: { probe: 'scripts/probe/modelswitch.js', delay: 12000, cost: 0 },
-  density: { probe: 'scripts/probe/density.js', delay: 10000, cost: 0 },
-  railsearch: { probe: 'scripts/probe/railsearch.js', delay: 11000, cost: 0 },
-  perf: { probe: 'scripts/probe/perf.js', delay: 16000, cost: 0, visible: true },
   bootspeed: { probe: 'scripts/probe/bootspeed.js', delay: 1500, cost: 0, visible: true },
-  switchspeed: { probe: 'scripts/probe/switchspeed.js', delay: 1000, cost: 0, visible: true, budget: 120000 },
   hold: { probe: 'scripts/probe/hold.js', delay: 500, cost: 0, visible: true, budget: 150000 },
   deltas: { probe: 'scripts/probe/deltas.js', delay: 12000, cost: 0 },
-  layoutdiag: { probe: 'scripts/probe/layoutdiag.js', delay: 12000, cost: 0 },
-  virtualdiag: { probe: 'scripts/probe/virtualdiag.js', delay: 14000, cost: 0 },
-  sendkey: { probe: 'scripts/probe/sendkey.js', delay: 9000, cost: 0 },
-  sendtail: { probe: 'scripts/probe/send-tail.js', delay: 9000, cost: 0 },
-  updatenotice: { probe: 'scripts/probe/update-notice.js', delay: 9000, cost: 0 },
   pending: { probe: 'scripts/probe/pending.js', delay: 9000, cost: 0 },
   pendingreal: { probe: 'scripts/probe/pending-real.js', delay: 15000, cost: 1 },
-  zoom: {
-    probe: 'scripts/probe/zoom.js',
-    delay: 7000,
-    cost: 0,
-    keys: 'ctrl+=,ctrl+=,ctrl+-,ctrl+0'
-  },
-  branch: { probe: 'scripts/probe/branch.js', delay: 10000, cost: 0 },
-  topbar: { probe: 'scripts/probe/topbar.js', delay: 9000, cost: 0 },
   'v3-shell': {
     probe: 'scripts/probe/v3-shell.js', delay: 9000, cost: 0,
-    keys: 'ctrl+k,escape,enter', keysDelay: 11000, env: { YAN_UI: 'v3' }
+    keys: 'ctrl+k,escape,enter', keysDelay: 11000
   },
-  'v3-user-polish': { probe: 'scripts/probe/v3-user-polish.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  'v3-user-followup': { probe: 'scripts/probe/v3-user-followup.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
+  'v3-user-polish': { probe: 'scripts/probe/v3-user-polish.js', delay: 9000, cost: 0 },
+  'v3-user-followup': { probe: 'scripts/probe/v3-user-followup.js', delay: 9000, cost: 0 },
   'v3-ascii-once': {
     probe: 'scripts/probe/v3-ascii-once.js', delay: 9000, cost: 0, budget: 60000,
-    keys: 'space', keysDelay: 15000, env: { YAN_UI: 'v3' }
+    keys: 'space', keysDelay: 15000
   },
   'v3-todos': {
     probe: 'scripts/probe/v3-todos.js', delay: 9000, cost: 0, budget: 90000,
-    keys: 'ctrl+b', keysDelay: 20000, env: { YAN_UI: 'v3' },
+    keys: 'ctrl+b', keysDelay: 20000,
     afterExit: 'taskFixtureReadonly', readonlySession: 'yan-todo-fixture'
   },
-  'v3-composer': { probe: 'scripts/probe/v3-composer.js', delay: 9000, cost: 0, budget: 90000, env: { YAN_UI: 'v3' } },
-  'v3-sendkey': { probe: 'scripts/probe/v3-sendkey.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  'v3-completion': { probe: 'scripts/probe/v3-completion.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  'v3-projectmenu': { probe: 'scripts/probe/v3-projectmenu.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  'v3-logsquota': { probe: 'scripts/probe/v3-logsquota.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  'v3-delegate': { probe: 'scripts/probe/v3-delegate.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  'v3-voicecu': { probe: 'scripts/probe/v3-voicecu.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  'v3-queuestack': { probe: 'scripts/probe/v3-queuestack.js', delay: 9000, cost: 0, env: { YAN_UI: 'v3' } },
-  'v3-real-send': { probe: 'scripts/probe/v3-real-send.js', fixture: true, delay: 12000, cost: 1, budget: 300000, env: { YAN_UI: 'v3' } },
-  'v3-real-todos': { probe: 'scripts/probe/v3-real-todos.js', fixture: true, delay: 12000, cost: 1, budget: 360000, env: { YAN_UI: 'v3' } },
-  'v3-real-review': { probe: 'scripts/probe/v3-real-review.js', fixture: true, fixtureSub: 'review', delay: 12000, cost: 1, budget: 360000, env: { YAN_UI: 'v3' } },
-  outlinepos: { probe: 'scripts/probe/outlinepos.js', delay: 9000, cost: 0, visible: true },
-  narrow: {
-    probe: 'scripts/probe/narrow.js',
-    delay: 9000,
-    cost: 0,
-    wins: ['1456x1000', '1002x700', '940x700']
-  },
-  righttabs: {
-    probe: 'scripts/probe/righttabs.js',
-    delay: 9000,
-    cost: 0,
-    wins: ['1456x900', '940x700']
-  },
+  'v3-composer': { probe: 'scripts/probe/v3-composer.js', delay: 9000, cost: 0, budget: 90000 },
+  'v3-sendkey': { probe: 'scripts/probe/v3-sendkey.js', delay: 9000, cost: 0 },
+  'v3-completion': { probe: 'scripts/probe/v3-completion.js', delay: 9000, cost: 0 },
+  'v3-projectmenu': { probe: 'scripts/probe/v3-projectmenu.js', delay: 9000, cost: 0 },
+  'v3-logsquota': { probe: 'scripts/probe/v3-logsquota.js', delay: 9000, cost: 0 },
+  'v3-delegate': { probe: 'scripts/probe/v3-delegate.js', delay: 9000, cost: 0 },
+  'v3-voicecu': { probe: 'scripts/probe/v3-voicecu.js', delay: 9000, cost: 0 },
+  'v3-queuestack': { probe: 'scripts/probe/v3-queuestack.js', delay: 9000, cost: 0 },
+  'v3-real-send': { probe: 'scripts/probe/v3-real-send.js', fixture: true, delay: 12000, cost: 1, budget: 300000 },
+  'v3-real-todos': { probe: 'scripts/probe/v3-real-todos.js', fixture: true, delay: 12000, cost: 1, budget: 360000 },
+  'v3-real-review': { probe: 'scripts/probe/v3-real-review.js', fixture: true, fixtureSub: 'review', delay: 12000, cost: 1, budget: 360000 },
   narrowscan: {
     probe: 'scripts/probe/narrowscan.js',
     delay: 9000,
     cost: 0,
     wins: ['1600x1000', '1280x860', '1100x760', '1000x700', '940x640']
   },
-  todonew: { probe: 'scripts/probe/todonew.js', delay: 9000, cost: 0 },
-  rename: { probe: 'scripts/probe/rename.js', delay: 9000, cost: 0 },
-  grouprename: { probe: 'scripts/probe/grouprename.js', delay: 9000, cost: 0, fixture: true },
-  projectremove: { probe: 'scripts/probe/projectremove.js', delay: 9000, cost: 0, fixture: true },
-  projectdirectory: { probe: 'scripts/probe/project-directory.js', delay: 9000, cost: 0, fixture: true },
-  railreorder: { probe: 'scripts/probe/rail-reorder.js', delay: 10000, cost: 0, budget: 150000, fixture: true },
-  projectlimit: { probe: 'scripts/probe/projectlimit.js', delay: 9000, cost: 0 },
-  railtitle: { probe: 'scripts/probe/railtitle.js', delay: 9000, cost: 0 },
-  railmini: { probe: 'scripts/probe/railmini.js', delay: 9000, cost: 0 },
-  railpeek: { probe: 'scripts/probe/railpeek.js', delay: 9000, cost: 0 },
-  switcher: { probe: 'scripts/probe/switcher.js', delay: 9000, cost: 0 },
   rewind: { probe: 'scripts/probe/rewind.js', delay: 9000, cost: 0 },
-  plusmenu: { probe: 'scripts/probe/plus-menu.js', delay: 15000, cost: 0, budget: 120000 },
-  context: { probe: 'scripts/probe/context.js', delay: 9000, cost: 0 },
-  contextinspect: { probe: 'scripts/probe/context-inspect.js', delay: 9000, cost: 1, budget: 60000 },
-  contextactions: { probe: 'scripts/probe/contextactions.js', delay: 9000, cost: 0 },
-  compactionstatus: {
-    probe: 'scripts/probe/compaction-status.js',
-    delay: 9000,
-    cost: 1,
-    budget: 180000,
-    fixture: true,
-    fixtureSub: 'compact',
-    piSettings: { compaction: { enabled: true, reserveTokens: 900000, keepRecentTokens: 1 } }
-  },
-  contextswitchguard: {
-    probe: 'scripts/probe/context-switch-guard.js',
-    delay: 10000,
-    cost: 0,
-    contextGuardSeed: true,
-    budget: 90000,
-    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":100,"emergencyRatio":0.001}' }
-  },
-  contextwindow1m: {
-    probe: 'scripts/probe/context-window-1m.js',
-    delay: 12000,
-    cost: 1,
-    budget: 900000,
-    contextExtLog: true,
-    model: 'commandcode/claude-sonnet-5'
-  },
-  thinkinglevels: { probe: 'scripts/probe/thinking-levels.js', delay: 14000, cost: 0, needsCredentials: true },
   queuestack: { probe: 'scripts/probe/queuestack.js', delay: 9000, cost: 0 },
-  logs: { probe: 'scripts/probe/logs.js', delay: 9000, cost: 0 },
-  slashcmd: { probe: 'scripts/probe/slashcmd.js', delay: 9000, cost: 0 },
-  quota: { probe: 'scripts/probe/quota.js', delay: 10000, cost: 0, budget: 120000, needsCredentials: true },
-  resize: { probe: 'scripts/probe/resize.js', delay: 9000, cost: 0 },
-  fsedge: { probe: 'scripts/probe/fs-edge.js', delay: 11000, cost: 0, fixture: true, budget: 150000 },
-  atpathedge: { probe: 'scripts/probe/at-path-edge.js', delay: 11000, cost: 0, fixture: true },
-  projectswitch: { probe: 'scripts/probe/project-switch.js', delay: 10000, cost: 0, fixture: true, budget: 180000, projectSessions: true },
   projectopened: {
     probe: 'scripts/probe/project-opened.js',
     fixture: true,
@@ -276,27 +118,6 @@ const CASES = {
     cost: 0,
     afterExit: 'projectOpenedLayout'
   },
-  tiledrag: { probe: 'scripts/probe/tile-drag-width.js', delay: 9000, cost: 0 },
-  workspacechanges: { probe: 'scripts/probe/workspace-changes.js', delay: 10000, cost: 0, fixture: true, fixtureSub: 'repo', budget: 180000, projectPeers: true },
-  gitwrite: {
-    probe: 'scripts/probe/git-write.js',
-    fixture: true,
-    fixtureSub: 'write',
-    delay: 13000,
-    budget: 240000,
-    cost: 0,
-    afterExit: 'gitWriteApplied'
-  },
-  sourcelink: {
-    probe: 'scripts/probe/source-locate.js',
-    fixture: true,
-    fixtureSub: 'review',
-    abSessions: true,
-    delay: 11000,
-    budget: 150000,
-    cost: 0,
-    afterExit: 'sourceLocateLinked'
-  },
   sourcelinklive: {
     probe: 'scripts/probe/source-locate-send.js',
     fixture: true,
@@ -305,44 +126,6 @@ const CASES = {
     cost: 1,
     model: 'commandcode/deepseek/deepseek-v4.1-flash',
     afterExit: 'sourceLocateLinked'
-  },
-  pkgs: { probe: 'scripts/probe/packages.js', fixture: true, fixtureSub: 'pkgs', delay: 12000, budget: 300000, cost: 0 },
-  packagescope: { probe: 'scripts/probe/package-scope.js', fixture: true, fixtureSub: 'pkgs', delay: 9000, budget: 180000, cost: 0 },
-  fs: { probe: 'scripts/probe/fs.js', delay: 9000, cost: 0 },
-  motion: { probe: 'scripts/probe/motion.js', delay: 9000, cost: 0 },
-  authEnv: {
-    probe: 'scripts/probe/auth-env.js',
-    delay: 9000,
-    cost: 0,
-    env: { OPENAI_API_KEY: 'sk-probe-dummy-not-a-real-key' }
-  },
-  auth: { probe: 'scripts/probe/auth.js', delay: 9000, cost: 0 },
-  atPath: { probe: 'scripts/probe/at-path.js', delay: 9000, cost: 0 },
-  titlebar: { probe: 'scripts/probe/titlebar.js', delay: 9000, cost: 0 },
-  browser: { probe: 'scripts/probe/browser.js', delay: 9000, cost: 0 },
-  externalchrome: {
-    probe: 'scripts/probe/external-chrome.js',
-    delay: 9000,
-    cost: 0,
-    env: { YAN_CHROME_HEADLESS: '1', YAN_CHROME_SYNC: '0' }
-  },
-  browserboundary: {
-    probe: 'scripts/probe/browser-boundary.js',
-    delay: 9000,
-    cost: 0,
-    budget: 180000,
-    usesBoundaryServer: true,
-    boundaryCookieCheck: true,
-    afterExit: 'browserBoundaryDownloads',
-    env: { YAN_CHROME_HEADLESS: '1', YAN_CHROME_SYNC: '0' }
-  },
-  browserframeboundary: {
-    probe: 'scripts/probe/browser-boundary.js',
-    probePrefix: 'window.__yanBrowserFrameNetworkOnly = true;\n',
-    delay: 9000,
-    cost: 0,
-    usesBoundaryServer: true,
-    budget: 90000
   },
   browserframes: {
     probe: 'scripts/probe/browser-frames.js',
@@ -353,34 +136,9 @@ const CASES = {
   },
   searchopen: { probe: 'scripts/probe/search-open.js', delay: 12000, cost: 0, budget: 180000 },
   browserreal: { probe: 'scripts/probe/browser-real-sites.js', delay: 9000, cost: 0, budget: 240000 },
-  light: { probe: 'scripts/probe/light.js', delay: 9000, cost: 0 },
   composersize: { probe: 'scripts/probe/composer-size.js', delay: 9000, cost: 0, wins: ['1440x900', '1100x700', '940x640', '900x520'] },
   questionshot: { probe: 'scripts/probe/question-shot.js', delay: 9000, cost: 0 },
-  modelscroll: { probe: 'scripts/probe/modelscroll.js', delay: 9000, cost: 0 },
-  gitinstall: { probe: 'scripts/probe/gitinstall.js', delay: 9000, cost: 0, freshDesktop: true, needsDownload: true, budget: 300000 },
   restartempty: { probe: 'scripts/probe/restart-empty.js', delay: 9000, cost: 0 },
-  nogit: { probe: 'scripts/probe/nogit.js', delay: 9000, cost: 0, freshDesktop: true },
-  newuser: { probe: 'scripts/probe/newuser.js', delay: 9000, cost: 0, freshDesktop: true },
-  onboarding: {
-    probe: 'scripts/probe/onboarding.js',
-    delay: 9000,
-    cost: 0,
-    wins: ['1440x900', '940x640']
-  },
-  wizard: {
-    probe: 'scripts/probe/wizard.js',
-    delay: 9000,
-    cost: 0,
-    freshDesktop: true,
-    wins: ['1440x900', '940x640']
-  },
-  features: { probe: 'scripts/probe/features.js', delay: 9000, cost: 0 },
-  outline: { probe: 'scripts/probe/outline.js', delay: 9000, cost: 0 },
-  iconstate: { probe: 'scripts/probe/iconstate.js', delay: 9000, cost: 0 },
-  controlstates: { probe: 'scripts/probe/controlstates.js', delay: 9000, cost: 0, fixture: true },
-  iconsurface: { probe: 'scripts/probe/iconsurface.js', delay: 9000, cost: 0, fixture: true },
-  layout: { probe: 'scripts/probe/layout.js', delay: 9000, cost: 0 },
-  tokens: { probe: 'scripts/probe/tokens.js', delay: 9000, cost: 1 },
   title: {
     probe: 'scripts/probe/title.js',
     delay: 12000,
@@ -396,56 +154,17 @@ const CASES = {
     model: 'commandcode/deepseek/deepseek-v4.1-flash',
     env: { YAN_LANG_EXT_LOG: join(tmpdir(), 'lang-ext.log') }
   },
-  settings: { probe: 'scripts/probe/settings.js', delay: 9000, cost: 0 },
   sound: { probe: 'scripts/probe/sound.js', delay: 9000, cost: 0 },
-  toolgroup: { probe: 'scripts/probe/toolgroup.js', delay: 9000, cost: 0 },
-  terminal: { probe: 'scripts/probe/terminal.js', delay: 9000, cost: 0 },
-  terminalsurface: { probe: 'scripts/probe/terminal-surface.js', delay: 11000, cost: 0, budget: 120000 },
-  streamwidth: { probe: 'scripts/probe/streamwidth.js', delay: 9000, cost: 0 },
   working: { probe: 'scripts/probe/working.js', delay: 9000, cost: 0 },
   conn: { probe: 'scripts/probe/conn.js', delay: 9000, cost: 1 },
-  todos: {
-    probe: 'scripts/probe/todos.js',
-    delay: 9000,
-    cost: 0,
-    afterExit: 'taskFixtureReadonly',
-    readonlySession: 'yan-todo-fixture'
-  },
-  taskext: {
-    probe: 'scripts/probe/taskext.js',
-    delay: 12000,
-    cost: 0,
-    afterExit: 'taskFixtureReadonly',
-    readonlySession: 'yan-todo-fixture'
-  },
-  virtual: { probe: 'scripts/probe/virtual.js', delay: 9000, cost: 0, visible: true },
-  splitreal: { probe: 'scripts/probe/split-real.js', delay: 12000, cost: 0, visible: true },
-  splitdrop: { probe: 'scripts/probe/split-drop.js', delay: 9000, cost: 0, visible: true },
-  splitdeferred: { probe: 'scripts/probe/split-deferred.js', delay: 12000, cost: 0, visible: true },
-  splitfive: { probe: 'scripts/probe/split-five.js', delay: 9000, cost: 0, visible: true },
-  splitvirtual: { probe: 'scripts/probe/split-virtual.js', delay: 9000, cost: 0, visible: true },
-  sessions: { probe: 'scripts/probe/sessions.js', delay: 9000, cost: 0 },
-  historyswitch: { probe: 'scripts/probe/history-switch.js', delay: 9000, cost: 0 },
   sessionlayout: { probe: 'scripts/probe/sessionlayout.js', delay: 9000, cost: 0 },
   tray: { probe: 'scripts/probe/tray.js', delay: 9000, cost: 0, visible: true, env: { YAN_EXIT_CHOICE: 'cancel' } },
   exitsave: { probe: 'scripts/probe/exit-save.js', delay: 9000, cost: 0, afterExit: 'exitSnapshot', env: { YAN_EXIT_CHOICE: 'save' } },
   exitinterrupt: { probe: 'scripts/probe/exit-interrupt.js', delay: 9000, cost: 0, afterExit: 'exitSnapshot', env: { YAN_EXIT_CHOICE: 'interrupt' } },
-  sessionrunners: { probe: 'scripts/probe/sessionrunners.js', delay: 9000, cost: 0 },
   runnerselect: { probe: 'scripts/probe/runnerselect.js', delay: 12000, cost: 0 },
   latds: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   latluna: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'openai-codex/gpt-6-luna' },
   lathaiku: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'claude-bridge/haiku' },
-  e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1, budget: 200000 },
-  capability: { probe: 'scripts/probe/capability.js', delay: 12000, cost: 1, budget: 180000 },
-  skillcleanup: { probe: 'scripts/probe/skill-cleanup.js', delay: 12000, cost: 1, budget: 300000 },
-  repeatguardlive: { probe: 'scripts/probe/repeat-guard-live.js', delay: 12000, cost: 1, budget: 360000 },
-  subagentmodel: {
-    probe: 'scripts/probe/subagent-model.js',
-    delay: 12000,
-    cost: 1,
-    budget: 260000,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash'
-  },
   knowledgecli: {
     probe: 'scripts/probe/knowledge-cli.js',
     fixture: true,
@@ -457,44 +176,9 @@ const CASES = {
     knowledgeSeed: true,
     afterExit: 'knowledgeCli'
   },
-  taskcli: {
-    probe: 'scripts/probe/taskcli.js',
-    fixture: true,
-    delay: 12000,
-    cost: 1,
-    budget: 300000,
-    afterExit: 'taskCliLog'
-  },
-  taskplan: {
-    probe: 'scripts/probe/taskplan.js',
-    fixture: true,
-    delay: 12000,
-    cost: 1,
-    budget: 420000,
-    afterExit: 'taskPlanMultiStep'
-  },
-  ask: {
-    probe: 'scripts/probe/ask.js',
-    delay: 9000,
-    cost: 1,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    questionExtLog: true,
-    afterExit: 'questionModeLog'
-  },
-  questioncli: { probe: 'scripts/probe/question-cli.js', delay: 9000, cost: 0, budget: 180000 },
-  skillapprove: { probe: 'scripts/probe/skill-approve.js', delay: 9000, cost: 0, budget: 320000 },
   imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
-  image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1, model: TEST_VISION_MODEL },
   queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1 },
   queuebusy: { probe: 'scripts/probe/queue-busy.js', delay: 9000, cost: 1 },
-  queueretract: { probe: 'scripts/probe/queue-retract.js', delay: 9000, cost: 0 },
-  browsercli: {
-    probe: 'scripts/probe/browser-cli.js',
-    delay: 10000,
-    cost: 0,
-    fixture: true,
-    budget: 240000
-  },
   browserclimodel: {
     probe: 'scripts/probe/browser-cli-model.js',
     delay: 10000,
@@ -532,80 +216,21 @@ const CASES = {
 
   mcpcli: { probe: 'scripts/probe/mcp-cli.js', delay: 9000, cost: 0 },
 
-  sourcecap: { probe: 'scripts/probe/source-capability.js', delay: 9000, cost: 0 },
 
   mcpregister: { probe: 'scripts/probe/mcp-register.js', delay: 9000, cost: 0, usesMcpRegisterFixture: true },
 
-  turnfooter: { probe: 'scripts/probe/turn-footer.js', delay: 10000, cost: 0 },
-
-  turnfooterlive: {
-    probe: 'scripts/probe/turn-footer-live.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 12000,
-    budget: 240000,
-    cost: 1,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash'
-  },
-
-  overlayblockers: { probe: 'scripts/probe/overlayblockers.js', delay: 10000, cost: 0 },
 
 
-  settingstabs: { probe: 'scripts/probe/settingstabs.js', delay: 10000, cost: 0 },
-  remoteaccess: { probe: 'scripts/probe/remote-access.js', delay: 10000, cost: 0 },
 
-  tilerestart: {
-    probe: 'scripts/probe/tile-restart.js',
-    restart: { probe: 'scripts/probe/tile-restart-restart.js', delay: 10000, cost: 0 },
-    delay: 10000,
-    cost: 0
-  },
 
-  contextmenu: { probe: 'scripts/probe/contextmenu.js', delay: 10000, cost: 0 },
 
-  sessionmenuclick: { probe: 'scripts/probe/sessionmenuclick.js', delay: 9000, cost: 0 },
 
-  sessionmenudupe: { probe: 'scripts/probe/sessionmenudupe.js', delay: 9000, cost: 0 },
 
-  filelink: {
-    probe: 'scripts/probe/filelink.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 10000,
-    cost: 0
-  },
-  filestale: {
-    probe: 'scripts/probe/file-stale.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 10000,
-    budget: 60000,
-    cost: 0,
-    driver: driveFilePreviewMutation
-  },
 
-  compactionview: {
-    probe: 'scripts/probe/compaction-view.js',
-    delay: 10000,
-    cost: 0
-  },
 
-  usageagg: {
-    probe: 'scripts/probe/usage-agg.js',
-    delay: 10000,
-    cost: 0
-  },
 
-  turnrestore: {
-    probe: 'scripts/probe/turn-timing-store-live.js',
-    delay: 12000,
-    budget: 300000,
-    cost: 1,
-    fixture: true,
-    fixtureSub: 'repo',
-    contextExtLog: true,
-    afterExit: 'turnTimingPersisted'
-  },
+
+
   turntimingisolation: {
     probe: 'scripts/probe/turn-timing-isolation.js',
     delay: 12000,
@@ -626,17 +251,6 @@ const CASES = {
     restart: { probe: 'scripts/probe/turn-timing-hardkill-restart.js', delay: 12000, budget: 120000 },
     afterExit: 'turnTimingHardKill',
     afterExitOnFailure: true
-  },
-  turninterrupted: {
-    probe: 'scripts/probe/turn-timing-store-live.js',
-    delay: 12000,
-    budget: 300000,
-    cost: 1,
-    fixture: true,
-    fixtureSub: 'repo',
-    restart: { probe: 'scripts/probe/turn-timing-interrupted.js', delay: 12000, budget: 120000 },
-    seedBeforeRestart: 'interruptedSnapshot',
-    afterExit: 'turnTimingInterrupted'
   },
 }
 

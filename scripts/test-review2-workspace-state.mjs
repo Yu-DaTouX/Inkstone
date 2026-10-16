@@ -8,7 +8,6 @@ async function compile(entry) {
 
 for (const file of [
   'src/renderer/src/state/store.ts',
-  'src/renderer/src/state/daily-sources.ts',
   'src/renderer/src/state/refresh-models.ts',
   'src/renderer/src/main.tsx',
   'src/renderer/src/lib/interaction-state.tsx'

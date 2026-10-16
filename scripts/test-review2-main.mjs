@@ -93,7 +93,7 @@ try {
   const release = latch.reserveWorkspaceMutation(child)
   ok(!!release && latch.workspaceMutationInProgress(child) && latch.reserveWorkspaceMutation(child) === null, '项目回退门闩拒绝第二个同时写入者')
   release(); release(); ok(!latch.workspaceMutationInProgress(child), '回退结束幂等释放门闩')
-  const attachment = await load('src/renderer/src/components/chat/attachment-files.ts', 'attachment')
+  const attachment = await load('src/renderer/src/features/composer/attachment-files.ts', 'attachment')
   let accepted = [], skipped = []
   await attachment.readFiles([{ name: 'large.png', size: 13 * 1024 * 1024 }, { name: 'broken.png', size: 1, arrayBuffer: async () => { throw new Error('fixture') } }, { name: 'small.png', size: 1, arrayBuffer: async () => new Uint8Array([65]).buffer }], value => { accepted = value }, names => { skipped = names })
   ok(accepted.length === 1 && skipped.join(',') === 'large.png,broken.png', '附件读取保留正常文件且逐名反馈跳过项')

@@ -2979,8 +2979,7 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname_, '../preload/index.cjs'),
       additionalArguments: [
-        ...(process.env.YAN_PROBE && !app.isPackaged ? ['--yan-isolated-probe'] : []),
-        ...(process.env.YAN_UI === 'v2' || process.env.YAN_UI === 'v3' ? [`--yan-ui=${process.env.YAN_UI}`] : [])
+        ...(process.env.YAN_PROBE && !app.isPackaged ? ['--yan-isolated-probe'] : [])
       ],
       sandbox: true,
       nodeIntegration: false,

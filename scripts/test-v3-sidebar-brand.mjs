@@ -8,7 +8,7 @@ const read = (rel) => readFileSync(abs(rel), 'utf8')
 
 const SIDEBAR_TSX = 'src/renderer/src/features/sidebar/Sidebar.tsx'
 const SIDEBAR_CSS = 'src/renderer/src/features/sidebar/Sidebar.css'
-const BRAND_MARK = 'src/renderer/src/components/shell/BrandMark.tsx'
+const BRAND_MARK = 'src/renderer/src/features/sidebar/BrandMark.tsx'
 const DESIGN_ENTRY = 'src/renderer/src/design/index.css'
 const V3_STYLE_DIRS = [
   'src/renderer/src/design',
@@ -19,8 +19,8 @@ const V3_STYLE_DIRS = [
 
 const sidebarTsx = read(SIDEBAR_TSX)
 assert.ok(
-  /import\s*\{[^}]*\bBrandMark\b[^}]*\}\s*from\s*'\.\.\/\.\.\/components\/shell\/BrandMark'/.test(sidebarTsx),
-  `${SIDEBAR_TSX} 应从 components/shell/BrandMark 导入 BrandMark`
+  /import\s*\{[^}]*\bBrandMark\b[^}]*\}\s*from\s*'\.\/BrandMark'/.test(sidebarTsx),
+  `${SIDEBAR_TSX} 应从 ./BrandMark 导入 BrandMark`
 )
 
 const brandEntry = sidebarTsx.match(/<span className="v3-side-brand">[\s\S]*?<\/span>/)
@@ -88,9 +88,5 @@ for (const rule of v3BrandMarkCss) {
     `v3 样式 ${rule.file} 的 ${rule.selector} 不应定义品牌标志外观（只允许版面属性）`
   )
 }
-
-const v2ShellCss = 'src/renderer/src/styles/shell.css'
-assert.ok(existsSync(abs(v2ShellCss)), '应保留 v2 的 styles/shell.css（只属 v2 外壳）')
-assert.ok(/\.brand-mark\b/.test(read(v2ShellCss)), 'styles/shell.css 仍是 v2 的 .brand-mark 定义处')
 
 console.log('v3 侧栏品牌入口检查通过：BrandMark 复用统一几何、无 .v3-side-mark 方块、v3 无旧 CSS 依赖。')

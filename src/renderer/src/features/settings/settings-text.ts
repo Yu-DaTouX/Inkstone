@@ -70,12 +70,6 @@ export interface SettingsText {
   contextWindowLabel: string
   contextUnknown: string
 
-  uiVersion: string
-  uiVersionV3: string
-  uiVersionEnv: string
-  uiVersionNote: string
-  uiVersionBack: string
-  uiVersionFailed: string
 
   missingTitle: string
   missingBody: string
@@ -83,7 +77,6 @@ export interface SettingsText {
   unmigratedBody: string
   unknownTitle: string
   unknownBody: string
-  openLegacy: string
   backToAppearance: string
   backToChat: string
 
@@ -208,20 +201,13 @@ const ZH: SettingsText = {
   contextWindowLabel: '窗口',
   contextUnknown: '未知',
 
-  uiVersion: '界面版本',
-  uiVersionV3: '当前：v3（预览）',
-  uiVersionEnv: '本次由环境变量固定为 v3，设置里的切换不生效。',
-  uiVersionNote: '切换后会保存设置并重新载入窗口；会话、运行与设置都不受影响。',
-  uiVersionBack: '切回 v2 界面',
-  uiVersionFailed: '切换失败，设置未保存，请稍后重试。',
 
   missingTitle: '这一页暂不可用',
-  missingBody: '这一页在当前版本里暂不可用。同样的配置可以先在旧界面完成。',
-  unmigratedTitle: '这一页还在旧界面',
-  unmigratedBody: '“{view}”暂时只在旧界面提供，可切回旧界面查看。',
+  missingBody: '这一页在当前版本里暂不可用。',
+  unmigratedTitle: '这一页暂未提供',
+  unmigratedBody: '“{view}”暂未在当前界面提供。',
   unknownTitle: '没有这个设置页',
-  unknownBody: '“{view}”不是已知的设置页。可切回旧界面，或返回外观。',
-  openLegacy: '切回旧界面查看',
+  unknownBody: '“{view}”不是已知的设置页，可以返回外观。',
   backToAppearance: '返回外观',
   backToChat: '返回对话',
 
@@ -346,20 +332,13 @@ const EN: SettingsText = {
   contextWindowLabel: 'Window',
   contextUnknown: 'unknown',
 
-  uiVersion: 'Interface version',
-  uiVersionV3: 'Current: v3 (preview)',
-  uiVersionEnv: 'Pinned to v3 by an environment variable in this session, so the setting will not apply.',
-  uiVersionNote: 'Switching saves the setting and reloads the window; sessions, runs and settings are unaffected.',
-  uiVersionBack: 'Switch back to v2',
-  uiVersionFailed: 'Could not switch; the setting was not saved. Please try again.',
 
   missingTitle: 'This page is not available yet',
-  missingBody: 'This page is not available in the current version. The same settings can be changed in the old UI for now.',
-  unmigratedTitle: 'This page is still in the old UI',
-  unmigratedBody: '“{view}” is only available in the old UI for now. You can switch back to view it.',
+  missingBody: 'This page is not available in the current version.',
+  unmigratedTitle: 'This page is not available yet',
+  unmigratedBody: '“{view}” is not available in the current interface yet.',
   unknownTitle: 'No such settings page',
-  unknownBody: '“{view}” is not a known settings page. You can switch back to the old UI or return to Appearance.',
-  openLegacy: 'Open in the old UI',
+  unknownBody: '“{view}” is not a known settings page. You can return to Appearance.',
   backToAppearance: 'Back to Appearance',
   backToChat: 'Back to chat',
 

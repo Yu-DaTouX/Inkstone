@@ -1,4 +1,4 @@
-import { useMoney } from '../../components/chat/UsageOverview'
+import { useMoney } from '../usage/UsageOverview'
 import { useMemo, type ReactElement } from 'react'
 import type { RunsHistoryRecord } from '../../../../shared/ipc'
 import { isTerminalPhase, type RunSnapshot } from '../../../../shared/runs'

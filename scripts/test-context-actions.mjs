@@ -5,7 +5,6 @@ import { join } from 'node:path'
 export async function runContextActionTests(ok) {
   const shared = await import('../out/test/context-actions.mjs')
   const host = await import('../out/test/context-actions-host.mjs')
-  const view = await import('../out/test/context-actions-view.mjs')
 
   const lines = [
     JSON.stringify({ at: 100, kind: 'tool-sweep', status: 'applied', reclaimed: 3, savedTokens: 1200 }),
@@ -77,27 +76,4 @@ export async function runContextActionTests(ok) {
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
-
-  const t = (key, vars) =>
-    vars ? `${key}(${Object.entries(vars).map(([k, v]) => `${k}=${v}`).join(',')})` : key
-
-  const rows = view.contextActionRows(t, summary, null)
-  ok(rows.length === 3, '三类整理在界面上占三行（不合并成一句）')
-  ok(
-    rows[0].kind === 'tool-sweep' && rows[1].kind === 'episode-fold' && rows[2].kind === 'compaction',
-    '行的顺序固定：清扫 / 状态刷新 / 整轮压缩'
-  )
-  ok(rows[0].fromLedger === true && rows[2].fromLedger === false, '两类来自账本、压缩来自 pi 事件，来源标在行上')
-  ok(rows[0].countText.includes('n=2'), '清扫次数来自账本（不是从压缩次数推的）')
-  ok(rows[0].detail.includes('n=3'), '回收条数出现在细节里')
-  ok(rows[0].detail.includes('tokens=1.2k'), '估算省下的 token 用粗粒度显示（不假装精确）')
-  ok(rows[1].countText.includes('n=1'), '状态刷新单独计数')
-  ok(rows[2].countText === null, '没有 pi 压缩记录时压缩行不编造次数')
-
-  const blank = view.contextActionRows(t, null, null)
-  ok(
-    blank.every((row) => row.countText === null),
-    '账本为空时三行都没有次数（界面写“未发生”，不是空白）'
-  )
-  ok(blank.length === 3, '未发生时三行仍然都在 —— 否则看不出“哪一类没跑”')
 }

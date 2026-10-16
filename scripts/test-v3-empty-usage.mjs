@@ -57,7 +57,7 @@ async function buildBundle(outdir) {
     "import * as React from 'react'",
     "import { renderToStaticMarkup } from 'react-dom/server'",
     `import { V3EmptyState } from '${p('src/renderer/src/features/session/V3EmptyState.tsx')}'`,
-    `import * as View from '${p('src/renderer/src/components/chat/UsageOverviewView.tsx')}'`,
+    `import * as View from '${p('src/renderer/src/features/usage/UsageOverviewView.tsx')}'`,
     `import * as Pattern from '${p('src/renderer/src/patterns/UsagePattern.tsx')}'`,
     `import * as i18n from '${p('src/renderer/src/i18n/index.tsx')}'`,
     `import * as shared from '${p('src/shared/usage-stats.ts')}'`,
@@ -194,11 +194,11 @@ async function main() {
 
   const pattern = patternSrc
   ok(pattern.includes("import { Tab, TabList, Tabs } from '../ui'"), 'UsagePattern 控件只来自 v3 ui/ primitives')
-  ok(pattern.includes("import { UsageOverview } from '../components/chat/UsageOverview'"), 'UsagePattern 复用正式 UsageOverview 取数容器')
+  ok(pattern.includes("import { UsageOverview } from '../features/usage/UsageOverview'"), 'UsagePattern 复用正式 UsageOverview 取数容器')
   ok(pattern.includes('renderToggle={renderUsageToggle}'), 'UsagePattern 把生产控件槽传进共享展示链')
   ok(pattern.includes("import './usage-pattern.css'"), 'UsagePattern 载入 patterns 领域 CSS')
 
-  const viewSrc = await readFile(join(process.cwd(), 'src/renderer/src/components/chat/UsageOverviewView.tsx'), 'utf8')
+  const viewSrc = await readFile(join(process.cwd(), 'src/renderer/src/features/usage/UsageOverviewView.tsx'), 'utf8')
   ok(viewSrc.includes('renderToggle?: UsageToggleRenderer'), '共享展示件接受可选的 renderToggle 槽')
   ok(viewSrc.includes('className="start-toggle"'), '共享展示件缺省仍保留 v2 的 .start-toggle（默认不被 v3 覆盖）')
 

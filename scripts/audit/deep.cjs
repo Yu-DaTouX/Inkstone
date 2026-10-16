@@ -124,18 +124,6 @@ const report = {}
 }
 
 {
-  const css = walk('src/renderer/src/styles').filter((f) => f.endsWith('.css'))
-  const mainTsx = rd('src/renderer/src/main.tsx')
-  const appTsx = rd('src/renderer/src/App.tsx')
-  const html = rd('src/renderer/index.html')
-  const blob = mainTsx + appTsx + html
-  report.css = {
-    files: css.length,
-    notImported: css.filter((f) => !blob.includes(path.basename(f)))
-  }
-}
-
-{
   const pkg = JSON.parse(rd('package.json'))
   const scripts = new Set(Object.keys(pkg.scripts))
   const used = new Map()

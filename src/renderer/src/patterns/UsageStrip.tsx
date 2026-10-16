@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { compactNumber, useUsageStats } from '../components/chat/UsageOverview'
+import { compactNumber, useUsageStats } from '../features/usage/UsageOverview'
 import './usage-pattern.css'
 import { useUiV3 } from '../state/ui-v3'
 

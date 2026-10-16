@@ -127,9 +127,6 @@ export interface GeneralText {
   aboutCredentials: string
   aboutCredentialsDesc: string
   aboutCredentialsAction: string
-  aboutEnv: string
-  aboutEnvV3: string
-  aboutEnvPinned: string
   aboutPhaseIdle: string
   aboutPhaseChecking: string
   aboutPhaseCurrent: string
@@ -268,9 +265,6 @@ const ZH: GeneralText = {
   aboutCredentials: '模型凭证',
   aboutCredentialsDesc: '登录与 API Key 只在「模型与服务」分区配置，这里不重复。',
   aboutCredentialsAction: '去「模型与服务」',
-  aboutEnv: '界面版本',
-  aboutEnvV3: '当前：v3（预览）',
-  aboutEnvPinned: '本次由环境变量固定为 v3。',
   aboutPhaseIdle: '未检查',
   aboutPhaseChecking: '检查中…',
   aboutPhaseCurrent: '已是最新',
@@ -409,9 +403,6 @@ const EN: GeneralText = {
   aboutCredentials: 'Model credentials',
   aboutCredentialsDesc: 'Sign-in and API keys are configured under Models & services only; not duplicated here.',
   aboutCredentialsAction: 'Open Models & services',
-  aboutEnv: 'Interface version',
-  aboutEnvV3: 'Current: v3 (preview)',
-  aboutEnvPinned: 'Pinned to v3 by an environment variable in this session.',
   aboutPhaseIdle: 'Not checked',
   aboutPhaseChecking: 'Checking…',
   aboutPhaseCurrent: 'Up to date',

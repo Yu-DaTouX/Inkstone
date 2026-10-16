@@ -2,7 +2,6 @@ import { mkdtemp, writeFile, mkdir, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { runVisualMatrixTests } from './test-visual-matrix.mjs'
 import { runHtmlArtifactPreviewTests } from './test-html-artifact-preview.mjs'
 import { runRunStateTests } from './test-run-state.mjs'
 import { runAgentServiceTests } from './test-agent-service.mjs'
@@ -25,7 +24,6 @@ import { runExecutionAdmissionTests } from './test-execution-admission.mjs'
 import { runEpochSnapshotTests } from './test-epoch-snapshot.mjs'
 import { runAccountQuotaPaneTests } from './test-account-quota-pane.mjs'
 
-await runVisualMatrixTests()
 await import('./test-live-synthetic-isolation.mjs')
 await import('./test-ui-survey-regressions.mjs')
 await import('./test-light-client.mjs')
@@ -38,21 +36,20 @@ await runAgentServiceTests()
 await runServiceCliTests()
 await runCapabilityNegotiationTests()
 await import('./test-security-performance-fixes.mjs')
-await import('./test-outline-navigation.mjs')
 await import('./test-browser-frame-origin.mjs')
 for (const script of [
-  'test-attachment-prune-race', 'test-browser-tab-buttons', 'test-files-root-boundary',
+  'test-attachment-prune-race', 'test-files-root-boundary',
   'test-inbox-ipc-bounds', 'test-mobile-model-url', 'test-open-path-boundary',
-  'test-package-sources-fixture', 'test-package-timeout-fallback', 'test-preview-markdown-bound',
+  'test-package-sources-fixture', 'test-package-timeout-fallback',
   'test-service-receipt-hub-null', 'test-session-restore-rollback', 'test-subagent-stop-intent',
   'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory'
 ]) await import(`./${script}.mjs`)
 
 for (const script of [
   'test-mcp-annotations-guard', 'test-terminal-status', 'test-taskbar-status',
-  'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills', 'test-tip',
-  'test-mcp-native-import-flow', 'test-readonly-model-registration', 'test-terminal-tab-status', 'test-confirm-queue',
-  'test-motion-presence', 'test-stream-loop-detector', 'test-stream-loop-settings', 'test-stream-loop-setting-ui',
+  'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills',
+  'test-readonly-model-registration',
+  'test-stream-loop-detector', 'test-stream-loop-settings',
   'test-native-session-export-alias', 'test-schedule-safety', 'test-subagent-terminal-races',
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
   'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
@@ -189,19 +186,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
-    entryPoints: ['src/renderer/src/lib/latest-only.ts'],
-    outfile: 'out/test/latest-only.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-const { runLatestOnlyTests } = await import('./test-latest-only.mjs')
-await runLatestOnlyTests()
-
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
     entryPoints: ['src/renderer/src/state/keep-images.ts'],
     outfile: 'out/test/keep-images.mjs',
     bundle: true,
@@ -327,14 +311,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       bundle: true,
       format: 'esm',
       platform: 'node',
-      logLevel: 'silent'
-    }),
-    build({
-      entryPoints: ['src/renderer/src/state/context-actions-view.ts'],
-      outfile: 'out/test/context-actions-view.mjs',
-      bundle: true,
-      format: 'esm',
-      platform: 'neutral',
       logLevel: 'silent'
     })
   ])
@@ -997,7 +973,7 @@ const networkBoundary = await import('../node_modules/esbuild/lib/main.js').then
 
 const atQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
-    entryPoints: ['src/renderer/src/components/chat/at-query.ts'],
+    entryPoints: ['src/renderer/src/features/composer/at-query.ts'],
     outfile: 'out/test/at-query.mjs',
     bundle: true,
     format: 'esm',
@@ -1033,7 +1009,7 @@ const { runFileListingTests } = await import('./test-files.mjs')
 
 const slashQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
-    entryPoints: ['src/renderer/src/components/chat/slash-query.ts'],
+    entryPoints: ['src/renderer/src/features/composer/slash-query.ts'],
     outfile: 'out/test/slash-query.mjs',
     bundle: true,
     format: 'esm',
@@ -2537,11 +2513,6 @@ await runGitRepoTests(ok)
     'S5 fixture：无关扩展不写任何 custom entry（否则它就不是「无关」了）'
   )
 
-  const live = readFileSync('scripts/test-live.mjs', 'utf8')
-  ok(/probe: 'scripts\/probe\/taskplan\.js'/.test(live), 'S5 场景：taskplan 探针已接线')
-  ok(/taskPlanMultiStep/.test(live), 'S5 场景：taskplan 有退出后核对（三处一致的磁盘那一半）')
-  ok(existsSync('scripts/probe/taskplan.js'), 'S5 场景：taskplan 探针文件存在')
-
   const builder = readFileSync('electron-builder.yml', 'utf8')
   ok(/from: resources\/yan-cli/.test(builder), '打包：yan-cli 在 extraResources 里')
   ok(/to: yan-cli/.test(builder), '打包：yan-cli 落到安装目录的 yan-cli/')
@@ -2892,19 +2863,6 @@ const conversationTurns = await import('../node_modules/esbuild/lib/main.js').th
 )
 const { runConversationTurnsTests } = await import('./test-conversation-turns.mjs')
 await runConversationTurnsTests(ok, conversationTurns)
-
-const turnCache = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/renderer/src/state/turn-cache.ts'],
-    outfile: 'out/test/turn-cache.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/turn-cache.mjs'))
-)
-const { runTurnCacheTests } = await import('./test-turn-cache.mjs')
-await runTurnCacheTests(ok, turnCache)
 
 const outlineTurns = await import('esbuild').then(({ build }) =>
   build({ entryPoints: ['src/shared/outline-turns.ts'], outfile: 'out/test/outline-turns.mjs',

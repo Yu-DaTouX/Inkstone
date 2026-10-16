@@ -65,12 +65,12 @@
     const footerReady = await (async () => {
       const deadline = Date.now() + 15000
       while (Date.now() < deadline) {
-        if (document.querySelector('[data-testid="turn-footer"]')) return true
+        if (document.querySelector('[data-testid="v3-turn-meta"]')) return true
         await sleep(200)
       }
       return false
     })()
-    const footers = [...document.querySelectorAll('[data-testid="turn-footer"]')]
+    const footers = [...document.querySelectorAll('[data-testid="v3-turn-meta"]')]
     const footer = (footers[footers.length - 1]?.textContent ?? '').replace(/\s+/g, ' ').trim()
     ok(footerReady && footers.length > 0, '历史回合页脚已渲染')
     ok(/中断/.test(footer), `页脚显示真实中断状态：「${footer}」`)

@@ -9,7 +9,7 @@ import type {
 import { CUSTOM_API_CHOICES, type CustomProviderModel } from '../../../../../shared/custom-provider'
 import { useT } from '../../../i18n'
 import { refreshModelsAfterRestart } from '../../../state/refresh-models'
-import { mergeDiscoveredModels } from '../../../components/settings/review2-settings-guards'
+import { mergeDiscoveredModels } from './review2-settings-guards'
 import {
   Badge,
   Button,

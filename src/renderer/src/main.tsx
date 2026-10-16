@@ -1,4 +1,4 @@
-import { StrictMode, type ComponentType } from 'react'
+import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { I18nProvider } from './i18n'
 import { useStore } from './state/store'
@@ -7,7 +7,6 @@ import { useRunsV3 } from './state/runs-v3'
 import { installAudioUnlock } from './lib/sound'
 import { installMotionPreferenceReporter } from './lib/motionPreference'
 import { installDeepLinkNavigation } from './features/deeplink/navigation'
-import { resolveUiVersion } from '../../shared/ui-version'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('找不到 #root')
@@ -32,36 +31,9 @@ installMotionPreferenceReporter()
 
 installDeepLinkNavigation()
 
-const UI_VERSION_KEY = 'yan.uiVersion'
-
-async function pickShell(): Promise<'v2' | 'v3'> {
-  if (window.yan.uiVersionEnv) return window.yan.uiVersionEnv
-  try {
-    const settings = await window.yan.getSettings()
-    const version = resolveUiVersion(null, settings.uiVersion)
-    try { localStorage.setItem(UI_VERSION_KEY, version) } catch { }
-    return version
-  } catch {
-    try { return resolveUiVersion(null, localStorage.getItem(UI_VERSION_KEY)) } catch { return 'v2' }
-  }
-}
-
 async function mount(): Promise<void> {
-  const shell = await pickShell()
-  document.documentElement.dataset.ui = shell
-  let Shell: ComponentType
-  if (shell === 'v3') {
-    Shell = (await import('./app/ShellV3')).default
-  } else {
-    const [{ default: App }, { ErrorBoundary }] = await Promise.all([import('./App'), import('./components/ErrorBoundary')])
-    Shell = function V2Shell() {
-      return (
-        <ErrorBoundary>
-          <App />
-        </ErrorBoundary>
-      )
-    }
-  }
+  document.documentElement.dataset.ui = 'v3'
+  const { default: Shell } = await import('./app/ShellV3')
   createRoot(root!).render(
     <StrictMode>
       <I18nProvider>
@@ -79,24 +51,6 @@ void mount().catch((error: unknown) => {
   const detail = document.createElement('pre')
   detail.textContent = error instanceof Error ? error.message : String(error)
   const hint = document.createElement('p')
-  hint.textContent = window.yan.uiVersionEnv
-    ? '当前版本由 YAN_UI 环境变量指定。可在下次启动时使用 YAN_UI=v2 回退；此窗口不会自动重启。'
-    : '可以切回旧界面；不会删除会话或修改模型凭证。'
+  hint.textContent = '会话与设置不受影响。请重新启动砚；如果仍然失败，请把上面的错误信息反馈给开发者。'
   root!.replaceChildren(title, detail, hint)
-  if (!window.yan.uiVersionEnv) {
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.textContent = '切回旧界面并重新载入'
-    button.onclick = async () => {
-      button.disabled = true
-      try {
-        await window.yan.patchSettings({ uiVersion: 'v2' })
-        window.location.reload()
-      } catch (failure) {
-        detail.textContent = failure instanceof Error ? failure.message : String(failure)
-        button.disabled = false
-      }
-    }
-    root!.append(button)
-  }
 })

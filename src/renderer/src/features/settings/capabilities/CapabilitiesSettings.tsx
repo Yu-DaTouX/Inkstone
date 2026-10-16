@@ -10,10 +10,11 @@ import { MarketSection } from './MarketSection'
 import { PromptsSection } from './PromptsSection'
 import { VoiceSection } from './VoiceSection'
 import { ComputerUseSection } from './ComputerUseSection'
+import { SearchSection } from './SearchSection'
 import { getSettingsRequest, subscribeSettingsRequest } from '../root/deep-link'
 import './capabilities.css'
 
-export type CapabilitiesTabId = 'connections' | 'skills' | 'extensions' | 'market' | 'prompts' | 'voice'
+export type CapabilitiesTabId = 'connections' | 'search' | 'skills' | 'extensions' | 'market' | 'prompts' | 'voice'
 
 const LEGACY_TAB: Record<string, CapabilitiesTabId> = { voice: 'voice', market: 'market' }
 
@@ -41,6 +42,9 @@ export function CapabilitiesSettings(): ReactElement {
             <Tab id="connections" data-testid="caps-tab-connections">
               {t('set.connections')}
             </Tab>
+            <Tab id="search" data-testid="caps-tab-search">
+              {t('set.searchTools')}
+            </Tab>
             <Tab id="skills" data-testid="caps-tab-skills">
               {t('cap.skillsTitle')}
             </Tab>
@@ -61,6 +65,9 @@ export function CapabilitiesSettings(): ReactElement {
           <TabPanel id="connections" className="caps-tabpanel">
             <McpSection />
             <ComputerUseSection />
+          </TabPanel>
+          <TabPanel id="search" className="caps-tabpanel">
+            <SearchSection />
           </TabPanel>
           <TabPanel id="skills" className="caps-tabpanel">
             <SkillsSection />

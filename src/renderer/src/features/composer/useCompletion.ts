@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'
-import { findAtQuery, replaceAtQuery } from '../../components/chat/at-query'
-import { findSlashQuery, replaceSlashQuery } from '../../components/chat/slash-query'
+import { findAtQuery, replaceAtQuery } from './at-query'
+import { findSlashQuery, replaceSlashQuery } from './slash-query'
 
 export interface CompletionState {
   slashQuery: string | null

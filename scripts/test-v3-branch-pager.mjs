@@ -461,8 +461,7 @@ async function main() {
         'src/renderer/src/features/session/Icon.tsx': ICON_STUB,
         'src/renderer/src/i18n/index.tsx': I18N_STUB,
         'src/renderer/src/ui/index.ts': UI_STUB,
-        'src/renderer/src/components/chat/run-status.ts': 'export function useRunProgress(){ return null }\nexport function runPhaseText(){ return "" }',
-        'src/renderer/src/components/chat/turn-model-display.ts': 'export function resolveTurnModelDisplay(){ return null }',
+        'src/renderer/src/features/session/run-status.ts': 'export function useRunProgress(){ return null }\nexport function runPhaseText(){ return "" }',
         'src/renderer/src/lib/fork.ts': 'export async function forkFromText(){ globalThis.__V3_FORK_CALLED = (globalThis.__V3_FORK_CALLED ?? 0) + 1 }',
         'src/renderer/src/state/store.ts': `export function useStore(selector){ return selector(globalThis.__TURN_STORE ?? {}) }\nuseStore.getState = () => globalThis.__TURN_STORE ?? {}`
       }

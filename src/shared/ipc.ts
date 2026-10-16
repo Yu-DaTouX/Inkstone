@@ -694,7 +694,6 @@ export interface ProjectGroup {
 export type CapabilityStrategy = 'existing-only' | 'search-and-recommend' | 'auto-connect'
 
 export interface AppSettings {
-  uiVersion?: 'v2' | 'v3'
   lastMainModel?: import('./model-selection').ModelChoice
   lastSubagentModel?: import('./model-selection').ModelChoice | 'follow'
   modelFavorites?: import('./model-selection').ModelChoice[]
@@ -718,7 +717,7 @@ export interface AppSettings {
   backgroundCustomLight?: string
   fontUi?: 'sans' | 'serif' | 'maple' | 'custom'
   fontUiCustom?: string
-  fontCode?: 'mono' | 'custom'
+  fontCode?: 'maple' | 'custom'
   fontCodeCustom?: string
   fontSizeBody?: number
   fontSizeUi?: number
@@ -2129,7 +2128,6 @@ export interface YanBridge {
   }
 
   readonly isProbe: boolean
-  readonly uiVersionEnv: 'v2' | 'v3' | null
 
   win: {
     minimize(): void

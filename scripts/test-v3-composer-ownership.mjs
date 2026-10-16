@@ -203,8 +203,7 @@ function makeStubMap() {
     Object.entries({
       'src/renderer/src/ui/index.ts': STUBS.ui,
       'src/renderer/src/i18n/index.tsx': STUBS.i18n,
-      'src/renderer/src/components/chat/attachment-files.ts': STUBS.attachmentFiles,
-      'src/renderer/src/patterns/ModelPicker.tsx': 'export function ModelPicker(){ return null }',
+      'src/renderer/src/features/composer/attachment-files.ts': STUBS.attachmentFiles,
       'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
       'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',
       'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }',
@@ -216,7 +215,6 @@ function makeStubMap() {
       'src/renderer/src/features/composer/VoiceButton.tsx': 'export function VoiceButton(){ return null }',
       'src/renderer/src/features/composer/PermissionToggle.tsx': 'export function PermissionToggle(){ return null }',
       'src/renderer/src/features/composer/PlusMenu.tsx': 'export function PlusMenu(){ return null }',
-      'src/renderer/src/features/composer/QueueStack.tsx': 'export function QueueStack(){ return null }',
       'src/renderer/src/features/composer/QueueEditor.tsx': 'export function QueueEditor(){ return null }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
