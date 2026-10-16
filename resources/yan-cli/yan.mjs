@@ -8,7 +8,7 @@ const API_VERSION = 1
 const EXIT = { ok: 0, failed: 1, usage: 2, unavailable: 3 }
 
 const RETIRED_GROUPS = {
-  hub: '多 Agent 工作台命令（hub.*）已退役，不再从普通会话提供：请改用 yan subagent start|list|get|stop 派子代理；历史 Hub 记录仍可在界面查看。'
+  hub: '多 Agent 工作台命令（hub.*）已退役：请改用 yan subagent start|list|get|stop 派子代理。'
 }
 
 const USAGE = `yan — 砚宿主能力 CLI

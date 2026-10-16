@@ -45,9 +45,9 @@ export function registerRemoteIpc(ipc: IpcRegistrar, deps: RemoteIpcDeps): void 
     return status()
   })
 
-  handle('yan:remote:relayPair', async (kind: unknown) => {
+  handle('yan:remote:relayPair', async () => {
     if (!deps.access()) await deps.ensureStarted()
-    await deps.access()?.relayPair(kind === 'agent' ? 'agent' : 'phone')
+    await deps.access()?.relayPair('phone')
     return status()
   })
 

@@ -93,12 +93,8 @@ async function connect(relay, link, { pair = true, name = '测试手机', key } 
 
 const dataDir = await mkdtemp(join(tmpdir(), 'inkstone-relay-data-'))
 const devices = new M.RemoteDeviceStore(dataDir)
-let hubCalls = []
 const handlers = {
-  async snapshot() { return { sessions: [] } }, async history() { return { ok: true } }, async command() { return { ok: true } },
-  async hubSnapshot() { return { tasks: [], approvals: [], resources: [], projects: [{ id: 'p1' }], adapters: [] } },
-  hubAttention() { return [] },
-  async hubCommand(command, actor) { hubCalls.push({ command, actor }); return { ok: true, data: { action: command.action } } }
+  async snapshot() { return { sessions: [] } }, async history() { return { ok: true } }, async command() { return { ok: true } }
 }
 const relayToken = 'test-relay-token-1234567890'
 const server = new M.RemoteServer({ host: '127.0.0.1', port: 0, devices, handlers, relayToken })
@@ -119,7 +115,7 @@ const check = async (name, fn) => {
 try {
   assert.match(relay.host.url, /^wss:\/\/relay\.example\.test\/v1\/host\?key=/)
 
-  await check('手机：配对链接格式、两层配对、隧道请求与 Hub 访问', async () => {
+  await check('手机：配对链接格式、两层配对与隧道请求', async () => {
     const { link } = await bridge.pairLink('phone')
     assert.match(link, /^yan:\/\/relay#p=/)
     const phone = await connect(relay, link)
@@ -134,32 +130,36 @@ try {
     assert.equal(device.kind, 'phone')
     const auth = { authorization: `Bearer ${token}` }
     assert.equal((await phone.request('GET', '/remote/v1/sessions', { headers: auth })).status, 200)
-    assert.equal((await phone.request('GET', '/remote/v1/hub', { headers: auth })).status, 200, '经隧道（本机回环）的手机身份可以用 Hub')
+    assert.notEqual((await phone.request('GET', '/remote/v1/hub', { headers: auth })).status, 200, 'Hub 路由已移除')
     assert.equal((await bridge.status()).clients.filter((c) => c.kind === 'phone').length, 1)
   })
 
-  await check('礁石：配对成 agent，只能用 Hub 查看 / 派活 / 答复 / 停止', async () => {
+  await check('礁石：Agent Hub 已退役，中继配对被拒绝，隧道只放行 info', async () => {
     const { link } = await bridge.pairLink('agent')
     const reef = await connect(relay, link, { name: '礁石' })
     assert.equal(reef.welcome.kind, 'agent')
     const paired = await reef.request('POST', '/remote/v1/pair', { body: { code: reef.payload.y, deviceName: '礁石', kind: 'phone' } })
-    assert.equal(paired.status, 200)
-    const { token, device } = paired.json()
-    assert.equal(device.kind, 'agent', '中继配对用途决定类型，客户端改不了')
-    const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-    assert.equal((await reef.request('GET', '/remote/v1/hub', { headers })).status, 200)
-    assert.equal((await reef.request('GET', '/remote/v1/hub/attention', { headers })).status, 200)
-    assert.equal((await reef.request('GET', '/remote/v1/sessions', { headers })).status, 403, '隧道层拦住会话接口')
-    hubCalls = []
-    const hub = (action, key) => reef.request('POST', '/remote/v1/hub', { headers: { ...headers, 'idempotency-key': key }, body: { action, taskId: 't1' } })
-    assert.equal((await hub('cancel', 'reef-cancel-0001')).status, 200)
-    assert.equal((await hub('accept', 'reef-accept-0001')).status, 403, '验收不开放给礁石')
-    assert.equal((await hub('input', 'reef-input-0001')).status, 403, '终端输入不开放给礁石')
-    assert.deepEqual(hubCalls.map((c) => c.command.action), ['cancel'])
-    assert.match(hubCalls[0].actor, /^phone:device-/)
+    assert.equal(paired.status, 403)
+    assert.equal(paired.json().code, 'agent_retired')
+    assert.equal((await reef.request('GET', '/remote/v1/sessions')).status, 403, '隧道层拦住会话接口')
+    assert.equal((await reef.request('GET', '/remote/v1/hub')).status, 403, '隧道层不再放行 Hub 路径')
   })
 
-  await check('直连请求不能配对出 agent；伪造中继标记无效', async () => {
+  await check('旧礁石令牌除 /info 外一律 403，且不再获得任何能力', async () => {
+    devices.startPairing()
+    const legacy = await devices.pair(devices.currentPairing().code, '旧礁石', 'agent')
+    assert.equal(legacy.ok, true)
+    assert.equal(legacy.device.kind, 'agent')
+    const call = (method, path, body) => fetch(`http://127.0.0.1:${server.info.port}${path}`, { method, headers: { authorization: `Bearer ${legacy.token}`, 'content-type': 'application/json', 'idempotency-key': 'legacy-reef-0001' }, body: body ? JSON.stringify(body) : undefined })
+    const info = await call('GET', '/remote/v1/info')
+    assert.equal(info.status, 200)
+    assert.deepEqual((await info.json()).capabilities, [])
+    for (const [method, path, body] of [['GET', '/remote/v1/hub'], ['POST', '/remote/v1/hub', { action: 'answer', approvalId: 'a1', decision: 'accept' }], ['GET', '/remote/v1/hub/attention'], ['GET', '/remote/v1/sessions'], ['GET', '/remote/v1/status']]) {
+      assert.equal((await call(method, path, body)).status, 403, `${method} ${path}`)
+    }
+  })
+
+  await check('直连请求不能配对出 agent，带不带中继标记都一样', async () => {
     devices.startPairing()
     const code = devices.currentPairing().code
     const direct = (headers) => fetch(`http://127.0.0.1:${server.info.port}/remote/v1/pair`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ code, deviceName: 'x', kind: 'agent' }) })

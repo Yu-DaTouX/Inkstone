@@ -52,9 +52,7 @@ const M = await import(pathToFileURL(join(root, 'mobile.mjs')))
 const dataDir = await mkdtemp(join(tmpdir(), 'inkstone-relay-mobile-data-'))
 const devices = new D.RemoteDeviceStore(dataDir)
 const handlers = {
-  async snapshot() { return { sessions: [{ id: 's1', name: '会话一' }] } }, async history() { return { ok: true } }, async command() { return { ok: true } },
-  async hubSnapshot() { return { tasks: [], approvals: [], resources: [], projects: [], adapters: [] } }, hubAttention() { return [] },
-  async hubCommand(command) { return { ok: true, data: { action: command.action } } }
+  async snapshot() { return { sessions: [{ id: 's1', name: '会话一' }] } }, async history() { return { ok: true } }, async command() { return { ok: true } }
 }
 const relayToken = 'mobile-test-token-0123456789'
 const server = new D.RemoteServer({ host: '127.0.0.1', port: 0, devices, handlers, relayToken })
@@ -95,12 +93,11 @@ try {
     assert.equal((await bridge.status()).clients.filter((c) => c.online).length, 1)
   })
 
-  await check('配对后的请求、写操作与 Hub 都经隧道', async () => {
+  await check('配对后的能力协商经隧道，不再宣告 Agent Hub', async () => {
     const client = new M.RemoteClient(connection)
     const info = await client.info()
-    assert.ok(info.capabilities.includes('agent-hub'))
-    assert.deepEqual((await client.hubSnapshot()).tasks, [])
-    assert.equal((await client.hubCommand({ action: 'cancel', taskId: 't1' })).action, 'cancel')
+    assert.ok(info.capabilities.includes('sessions'))
+    assert.ok(!info.capabilities.includes('agent-hub'))
   })
 
   await check('事件流经隧道到达，中文不乱码', async () => {

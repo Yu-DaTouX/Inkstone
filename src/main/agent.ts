@@ -369,7 +369,6 @@ export class AgentController extends EventEmitter {
   private getBrowserHost?: () => BrowserCommandHost | null
   private subagentHost?: SubagentCommandHost
   private scheduleHost?: ScheduleService
-  private hubHost?: SubagentCommandHost
   private goalHost?: GoalCommandHost
   private researchHost?: GoalCommandHost
   private confirmCapabilityAuthorization?: (
@@ -554,7 +553,6 @@ export class AgentController extends EventEmitter {
     browserHost?: () => BrowserCommandHost | null
     subagentHost?: SubagentCommandHost
     scheduleHost?: ScheduleService
-    hubHost?: SubagentCommandHost
     goalHost?: GoalCommandHost
   researchHost?: GoalCommandHost
     confirmCapabilityAuthorization?: (
@@ -617,7 +615,6 @@ export class AgentController extends EventEmitter {
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
     this.scheduleHost = opts.scheduleHost
-    this.hubHost = opts.hubHost
     this.goalHost = opts.goalHost
     this.researchHost = opts.researchHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
@@ -1013,10 +1010,6 @@ export class AgentController extends EventEmitter {
   ): Promise<CapabilityCommandResult> {
     if (command.startsWith('browser.')) {
       return this.browserCommands.runBrowserCommand(command.slice('browser.'.length), params)
-    }
-    if (command.startsWith('hub.')) {
-      if (!this.hubHost) throw new CapabilityCommandError('hub_unavailable', '多 Agent 宿主当前不可用')
-      return this.hubHost.run(command, params, { cwd: this.cwd, parentSessionId: this.state?.sessionId ?? this.capabilityOpts?.sessionId, parentRunId: this.capabilityOpts?.sessionId, projectId: this.capabilityOpts?.projectId })
     }
     if (command.startsWith('schedule.')) {
       if (!this.scheduleHost) throw new CapabilityCommandError('schedule_unavailable', '定时任务当前不可用')

@@ -17,7 +17,7 @@ const { code } = await transform(functions, { loader: 'ts', format: 'cjs' })
 let checks = 0
 const check = (condition, message) => { assert.ok(condition, message); checks += 1 }
 const progress = [], overlays = [], notices = []
-let focused = false, mainBusy = false, hubBusy = false, children = 0, waiting = false
+let focused = false, mainBusy = false, children = 0, waiting = false
 let settings = { sound: { notifications: true } }
 let deferred
 const fakeWindow = (id) => ({
@@ -34,7 +34,7 @@ class FakeNotification {
 }
 const context = vm.createContext({
   process: { platform: 'win32' }, win: fakeWindow(1),
-  runners: { hasBusy: () => mainBusy }, agentHub: { hasLiveWork: () => hubBusy },
+  runners: { hasBusy: () => mainBusy },
   subagentService: { current: () => ({ runningCount: children }) },
   approvals: { list: () => waiting ? [{}] : [] }, hasBlockedTerminal: () => false, hasWorkingTerminal: () => false,
   taskbarProjection: undefined, blockedTerminalNotices: new Map(),
@@ -58,10 +58,6 @@ mainBusy = true
 refresh()
 check(progress.length === initialProgress + 1, '忙碌来源变更但外观不变时不重复调用')
 mainBusy = false
-hubBusy = true
-refresh()
-check(progress.length === initialProgress + 1, '旧 Hub 活工作沿同一投影处理')
-hubBusy = false
 refresh()
 check(progress.at(-1)[0] === -1, '所有来源空闲时清除忙碌')
 waiting = true

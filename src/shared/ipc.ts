@@ -1253,7 +1253,6 @@ export type MainPushBody =
   | { ch: 'subagent'; payload: SubagentRun }
   | { ch: 'subagent-patch'; payload: { id: string; run: SubagentRun; transcriptFrom: number } }
   | { ch: 'subagent-remove'; payload: string }
-  | { ch: 'hub-open'; payload: string }
   | { ch: 'state'; payload: SessionState }
   | { ch: 'stats'; payload: SessionStats }
   | { ch: 'queue'; payload: QueueState }
@@ -2289,7 +2288,7 @@ export interface YanBridge {
     cancelPairing(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     revoke(deviceId: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     forget(deviceId: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
-    relayPair(kind: 'phone' | 'agent'): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    relayPair(kind: 'phone'): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayCancel(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayRevoke(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayForget(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
@@ -2303,11 +2302,6 @@ export interface YanBridge {
     resize(id: string, cols: number, rows: number): Promise<boolean>
     kill(id: string): Promise<boolean>
     attach(id: string): Promise<TerminalSnapshot | null>
-  }
-  hub: {
-    snapshot(): Promise<import('./agent-hub').HubSnapshot>
-    command(command: import('./agent-hub').HubCommand): Promise<unknown>
-    detect(): Promise<import('./agent-hub').HubSnapshot>
   }
 }
 

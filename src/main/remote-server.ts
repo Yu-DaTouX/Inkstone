@@ -20,7 +20,6 @@ import type { RemoteImageInput } from '../shared/remote-protocol'
 import type { RemoteDeviceStore } from './remote-devices'
 import { PEER_CONNECTION_HEADER, PEER_OPERATIONS, type PeerOperation, type PeerProjectRef } from '../shared/peer-protocol'
 import type { PeerGrantRegistry } from './peer-grants'
-import type { HubAttentionItem, HubCommand, HubSnapshot } from '../shared/agent-hub'
 
 export const REMOTE_API_VERSION = REMOTE_PROTOCOL_VERSION
 
@@ -49,9 +48,6 @@ export interface RemoteArtifactFile {
 }
 
 export interface RemoteServerHandlers {
-  hubSnapshot?(): Promise<HubSnapshot>
-  hubAttention?(): HubAttentionItem[]
-  hubCommand?(command: HubCommand, actor: string): Promise<RemoteOperationResult>
   snapshot(): Promise<unknown>
   history(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult>
   models?(sessionId: string): Promise<RemoteOperationResult>
@@ -84,7 +80,6 @@ export interface RemoteServerOptions {
   relayToken?: string
 }
 
-export const AGENT_HUB_ACTIONS: ReadonlySet<string> = new Set(['create', 'cancel', 'answer', 'inspect'])
 
 export interface RemoteServerInfo {
   host: string
@@ -468,10 +463,9 @@ export class RemoteServer {
       return
     }
 
-    if (caller.device?.kind === 'agent') {
-      const allowed = (req.method === 'GET' && (url.pathname === '/remote/v1/info' || url.pathname === '/remote/v1/hub' || url.pathname === '/remote/v1/hub/attention'))
-        || (req.method === 'POST' && url.pathname === '/remote/v1/hub')
-      if (!allowed) return writeError(res, 403, '礁石只能使用 Agent Hub 的查看、派活、答复与停止', 'agent_scope')
+    const isAgent = caller.device?.kind === 'agent'
+    if (isAgent && !(req.method === 'GET' && url.pathname === '/remote/v1/info')) {
+      return writeError(res, 403, 'Agent Hub 已退役，礁石令牌不能再操作这台电脑', 'agent_scope')
     }
 
     const isPeer = caller.device?.kind === 'peer'
@@ -493,11 +487,10 @@ export class RemoteServer {
         ...(this.options.handlers.humanApproval && caller.device && (caller.device.kind ?? 'phone') === 'phone' ? ['human-approval'] : []),
         ...(this.options.handlers.artifact ? ['artifacts'] : []),
         ...(this.options.devices ? ['device-name', 'device-revoke'] : []),
-        ...(this.options.handlers.models ? ['models', 'thinking', 'send-images'] : []),
-        ...(this.options.handlers.hubSnapshot && this.options.handlers.hubCommand ? ['agent-hub'] : [])
+        ...(this.options.handlers.models ? ['models', 'thinking', 'send-images'] : [])
       ]
-      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'agent-hub'])]
-      const allowed = isPeer ? [] : caller.device?.kind === 'agent' ? ['agent-hub'] : configured
+      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images'])]
+      const allowed = isPeer || isAgent ? [] : configured
       const negotiation = negotiateCapabilities(implemented, configured, allowed)
       writeJson(res, 200, {
         ok: true,
@@ -514,32 +507,6 @@ export class RemoteServer {
     if (req.method === 'GET' && url.pathname === '/remote/v1/status') {
       writeJson(res, 200, { ok: true, data: await this.options.handlers.snapshot() })
       return
-    }
-
-    if (url.pathname === '/remote/v1/hub' || url.pathname === '/remote/v1/hub/attention') {
-      if (!caller.device || caller.device.kind === 'peer') return writeError(res, 403, 'Agent Hub 需要配对的手机身份')
-      const address = (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '')
-      const octets = address.split('.').map(Number)
-      const tailscale = octets.length === 4 && octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127
-      const encrypted = Boolean((req.socket as { encrypted?: boolean }).encrypted)
-      if (!encrypted && !tailscale && address !== '127.0.0.1' && address !== '::1') return writeError(res, 403, '完整控制需要 Tailscale 加密连接或 HTTPS')
-      if (url.pathname === '/remote/v1/hub/attention') {
-        if (req.method !== 'GET' || !this.options.handlers.hubAttention) return writeError(res, 404, '这台电脑未启用 Agent Hub 提醒')
-        writeJson(res, 200, { ok: true, data: { items: this.options.handlers.hubAttention() } }); return
-      }
-      if (req.method === 'GET' && this.options.handlers.hubSnapshot) {
-        writeJson(res, 200, { ok: true, data: await this.options.handlers.hubSnapshot() }); return
-      }
-      if (req.method === 'POST' && this.options.handlers.hubCommand) {
-        const body = await this.readJson(req)
-        const actions = ['create', 'cancel', 'accept', 'answer', 'claim-input', 'input', 'resize', 'resume', 'inspect', 'save-template', 'delete-template', 'send-packet']
-        if (!actions.includes(String(body.action))) return writeError(res, 400, 'Agent Hub 操作无效')
-        if (caller.device?.kind === 'agent' && !AGENT_HUB_ACTIONS.has(String(body.action))) return writeError(res, 403, '礁石不能执行这个 Agent Hub 操作（验收、终端输入等请在电脑或手机上处理）', 'agent_scope')
-        const command = body as unknown as HubCommand
-        const handler = this.options.handlers.hubCommand
-        await this.idempotent(req, res, caller, true, () => handler(command, `phone:${caller.device!.id}`)); return
-      }
-      return writeError(res, 404, '这台电脑未启用 Agent Hub')
     }
 
     if (req.method === 'GET' && url.pathname === '/remote/v1/sessions') {
@@ -867,12 +834,8 @@ export class RemoteServer {
     this.pairAttemptsBySource.set(source, [...recent, now])
     const body = await this.readJson(req)
     if (body.kind === 'agent') {
-      const relayed = !!this.options.relayToken && typeof req.headers['x-yan-relay'] === 'string' &&
-        constantTimeEqual(this.options.relayToken, req.headers['x-yan-relay']) && req.headers['x-yan-relay-kind'] === 'agent'
-      if (!relayed) {
-        writeError(res, 403, '礁石只能经中继配对', 'agent_relay_only')
-        return
-      }
+      writeError(res, 403, 'Agent Hub 已退役，不再接受礁石配对', 'agent_retired')
+      return
     }
     const result = await this.options.devices.pair(body.code, body.deviceName, body.kind)
     if (!result.ok) {

@@ -7,7 +7,6 @@ import type { PhotoDraft } from './device'
 import { parsePairingLink, type PairingPrefill } from './pairLink'
 import { restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
 import { ArtifactScreen } from './screens/ArtifactScreen'
-import { AgentHubScreen } from './screens/AgentHubScreen'
 import { AssistantScreen, type AssistantConversation } from './screens/AssistantScreen'
 import { AssistantSettingsScreen } from './screens/AssistantSettingsScreen'
 import { HomeScreen } from './screens/HomeScreen'
@@ -27,7 +26,6 @@ type Route =
   | { name: 'assistant' }
   | { name: 'assistant-settings' }
   | { name: 'settings' }
-  | { name: 'hub' }
   | { name: 'session'; sessionId: string; title: string }
   | { name: 'artifact'; sessionId: string; title: string; artifact: { id: string; filename: string; mediaType: string; kind: string } }
 
@@ -105,8 +103,7 @@ export default function App() {
   useEffect(() => {
     const receive = (url: string | null) => {
       if (!url) return
-      if (url === 'inkstone://inbox') { setRoute({ name: 'home' }); return }
-      if (url === 'inkstone://hub') { setRoute({ name: 'hub' }); return }
+      if (url === 'inkstone://inbox' || url === 'inkstone://hub') { setRoute({ name: 'home' }); return }
       const parsed = parsePairingLink(url)
       if (parsed) setPairingPrefill(parsed)
     }
@@ -174,7 +171,7 @@ export default function App() {
         setRoute({ name: 'session', sessionId: route.sessionId, title: route.title })
         return true
       }
-      if (route.name === 'session' || route.name === 'settings' || route.name === 'hub') {
+      if (route.name === 'session' || route.name === 'settings') {
         setRoute({ name: 'home' })
         return true
       }
@@ -223,7 +220,6 @@ export default function App() {
                   <HomeScreen
                     onOpen={(sessionId, title) => setRoute({ name: 'session', sessionId, title })}
                     onSettings={() => setRoute({ name: 'settings' })}
-                    onHub={() => setRoute({ name: 'hub' })}
                     onOpenAssistant={() => setRoute({ name: 'assistant' })}
                     alertsEnabled={alertsEnabled}
                     onEnableAlerts={() => void enableAlerts()}
@@ -236,7 +232,7 @@ export default function App() {
               {sidebarVisible && verticalInside ? <View style={{ width: verticalInside.gap }} /> : null}
               {(expanded || route.name !== 'home') ? (
                 <ContentEnter key={route.name === 'session' ? route.sessionId : route.name}>
-                  {route.name === 'hub' ? <AgentHubScreen onBack={() => setRoute({ name: 'home' })} /> : route.name === 'settings' ? (
+                  {route.name === 'settings' ? (
                     <SettingsScreen
                       connection={connection}
                       alertsEnabled={alertsEnabled}

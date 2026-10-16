@@ -3,7 +3,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { type ClientCapabilities } from '@modelcontextprotocol/sdk/types.js'
 import type { McpServerConfig, McpServerStatus, McpToolDescriptor } from '../../shared/mcp'
-import { sharedResources, INTERACTIVE_RESOURCE } from '../agent-hub/resources'
+import { sharedResources, INTERACTIVE_RESOURCE } from '../interactive-resources'
 
 interface Connection {
   config: McpServerConfig
