@@ -14,7 +14,8 @@ import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
-import { readAuthEntry, resolveProviderSecret } from './credentials'
+import { readAuthEntry } from './credentials'
+import { resolveQuotaProviderSecret } from './quota-credentials'
 import { fetchCodexUsage, providerQuota } from './quota'
 import { codexAccountTargets, switchCodexAccount, type CodexAccountTarget } from './codex-accounts'
 import { failoverOrder, pickFailover, type CodexFailoverResult, type FailoverCandidate } from '../shared/quota-failover'
@@ -156,7 +157,7 @@ async function yanClaudeCard(): Promise<AccountQuotaCard | null> {
 }
 
 async function yanKeyCard(provider: { id: string; name: string }): Promise<AccountQuotaCard | null> {
-  if (!(await resolveProviderSecret(provider.id))) return null
+  if (!(await resolveQuotaProviderSecret(provider.id))) return null
   return settle({ key: `yan:${provider.id}`, source: 'yan', provider: provider.id, name: provider.name }, async () => {
     const q = await providerQuota(provider.id)
     const windows = q.windows ?? []

@@ -13,7 +13,8 @@ import { GoalStore, writeGoalResumeSnapshot } from './goal-service'
 import { isActiveGoalPhase } from '../shared/goal'
 import type { BudgetUsage } from '../shared/goal'
 import { YAN_DIR } from './paths'
-import { normalizeSessionFileKey, pendingWorkModeKey } from './work-mode-service'
+import { adoptPendingWorkMode, normalizeSessionFileKey, pendingWorkModeKey, readWorkModeSnapshot, sameWorkModeIdentity, writeWorkModeSnapshot } from './work-mode-service'
+import type { WorkModeIdentity } from './work-mode-service'
 import { pendingAgentProfileKey } from './agent-profile-store'
 import { DEFAULT_AGENT_PROFILE } from '../shared/agent-profile'
 import type { AgentProfileState } from '../shared/agent-profile'
@@ -113,11 +114,68 @@ export async function resolveWorkMode(_id: string): Promise<WorkModeState> {
   return { mode: 'standard', revision: 0 }
 }
 
-/** 向兼容消费者推送固定模式；保留运行身份，不再生成模型侧状态文件。 */
+/** 向兼容消费者推送固定模式；同时把会话频率偏好写进模型侧快照。
+ *
+ * 模式固定为兼容层的 `standard`（`resolveWorkMode` 的轻量精简契约）：
+ * 频率改动**不**从旧快照复活已退休的 `clarify` / `autonomous`，也不改变
+ * 模式语义。`revision` 必须取 store 的**权威值** —— 界面用推送里的 revision
+ * 做提交 CAS，若这里回 0 而 store 已经 > 0，切走再回来后的每次提交都会
+ * `version-mismatch`。频率每次从 store 取：`inherit` 让扩展下一轮重读全局，
+ * 显式值由 store 持久。
+ *
+ * 待审标记**只**从上一份逐轮快照保留，不读已退休的目标存储：这条是频率 /
+ * 模式推送的轻量热路径，不加载 `goals.json`，也不生成档案快照。
+ */
 export async function pushWorkMode(id: string): Promise<WorkModeState> {
   const state = await resolveWorkMode(id)
-  host.pushFrom(id, { ch: 'work-mode', payload: state })
-  return state
+  await host.workModes.load()
+  const session = host.runners()?.agentOf(id)?.getState()
+  const identity: WorkModeIdentity = {
+    id,
+    generation: host.runners()?.runtimeOf?.(id)?.generation,
+    sessionId: session?.sessionId,
+    sessionFile: session?.sessionFile
+  }
+  const key = workModeKeyFor(id)
+  /* 会话刚拿到稳定文件：同实例 pending 覆盖按归属安全迁移（不可证就不搬） */
+  await adoptPendingWorkMode(host.workModes, id, identity.sessionId, key)
+  const stored = host.workModes.state(key)
+  const existing = await readWorkModeSnapshot(id).catch(() => null)
+  const payload: WorkModeState = {
+    mode: state.mode,
+    revision: stored.revision,
+    questionFrequency: stored.questionFrequency
+  }
+  /* 身份 + 预期键双校验：实例被复用到别的会话就不落 B 的快照、不推 B */
+  const guard = () => {
+    const now = host.runners()?.agentOf(id)?.getState()
+    return (
+      sameWorkModeIdentity(identity, {
+        id,
+        generation: host.runners()?.runtimeOf?.(id)?.generation,
+        sessionId: now?.sessionId,
+        sessionFile: now?.sessionFile
+      }) && workModeKeyFor(id) === key
+    )
+  }
+  const sessionFile = normalizeSessionFileKey(identity.sessionFile) ?? undefined
+  const committed = await writeWorkModeSnapshot(
+    id,
+    {
+      ...payload,
+      ...(existing?.planApprovalPending ? { planApprovalPending: true } : {})
+    },
+    undefined,
+    {
+      guard,
+      owner: {
+        ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
+        ...(sessionFile ? { sessionFile } : {})
+      }
+    }
+  ).catch(() => false)
+  if (committed && guard()) host.pushFrom(id, { ch: 'work-mode', payload })
+  return payload
 }
 
 /** 新会话的默认活动档案：仍然是代码助手，已有行为不变。 */

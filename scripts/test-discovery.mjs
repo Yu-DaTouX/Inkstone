@@ -206,43 +206,124 @@ export async function runDiscoveryTests(ok, modules) {
 
   {
     const boom = () => Promise.reject(new Error('offline'))
+    /*
+     * 生产源清单：github-skills / npm-registry / mcp-registry 恒在；skill-directory
+     * 仅在显式配置 `YAN_SKILL_DIRECTORY_URL` 时加入。下面按这份清单逐源 mock、逐源断言，
+     * 新增源或默认源变化时这里会直接失败，逼着把每个源都补齐，而不是靠旧的「两个源」猜。
+     */
+    const expectedSourceIds = [
+      'github-skills',
+      'npm-registry',
+      'mcp-registry',
+      ...(discover.SKILL_DIRECTORY_URL ? ['skill-directory'] : [])
+    ]
+    const originOf = (value) => {
+      try { return new URL(String(value)).origin } catch { return '' }
+    }
+    const githubApiOrigin = originOf(process.env.YAN_GITHUB_API_URL?.trim() || 'https://api.github.com')
+    const githubRawOrigin = originOf(process.env.YAN_GITHUB_RAW_URL?.trim() || 'https://raw.githubusercontent.com')
+    /* 请求出没出、出给了哪个源，按 origin 判定，mock 不按单一 URL 片段放宽。 */
+    const sourceIdOfUrl = (url) => {
+      const origin = originOf(url)
+      if (!origin) return null
+      if (origin === originOf(discover.NPM_SEARCH_URL)) return 'npm-registry'
+      if (origin === originOf(discover.MCP_REGISTRY_URL)) return 'mcp-registry'
+      if (discover.SKILL_DIRECTORY_URL && origin === originOf(discover.SKILL_DIRECTORY_URL)) return 'skill-directory'
+      if (origin === githubApiOrigin || origin === githubRawOrigin) return 'github-skills'
+      return null
+    }
+    const sameIdSet = (left, right) => [...left].sort().join('\n') === [...right].sort().join('\n')
+    /* 未登记的来源直接让整组失败，避免测试因「没发请求」而误判通过。 */
+    const unknownSource = (url) => Promise.reject(new Error(`未登记的请求来源：${url}`))
+
+    /* ---- 全源挂：每个源都必须真的被查过、被单独记为失败 ---- */
+    const allDownRequested = []
     const allDown = await discover.discoverCapabilities({
       queryText: 'read excel files',
-      fetchImpl: boom,
+      fetchImpl: (url) => {
+        const sourceId = sourceIdOfUrl(url)
+        if (!sourceId) return unknownSource(url)
+        allDownRequested.push(sourceId)
+        return Promise.reject(new Error(`${sourceId} offline`))
+      },
       now: () => new Date('2026-09-19T00:00:00.000Z')
     })
     ok(allDown.candidates.length === 0, '源全挂：候选为空（不编造包名）')
     ok(/暂时无法搜索/.test(allDown.reason ?? ''), '源全挂：给出「暂时无法搜索」这个可读原因', String(allDown.reason))
-    ok(allDown.sources.length === 2 && allDown.sources.every((s) => !s.ok), '源全挂：每个源都如实记为失败')
+    ok(
+      allDown.sources.length === expectedSourceIds.length,
+      `源全挂：源数量等于生产源清单（${expectedSourceIds.length}）`,
+      allDown.sources.map((s) => s.sourceId).join(',')
+    )
+    ok(
+      sameIdSet(allDown.sources.map((s) => s.sourceId), expectedSourceIds),
+      '源全挂：每个生产源都有独立状态（没有源缺席也没有编造源）',
+      allDown.sources.map((s) => s.sourceId).join(',')
+    )
+    ok(allDown.sources.every((s) => !s.ok), '源全挂：每个源都如实记为失败')
+    ok(
+      expectedSourceIds.every((id) => allDownRequested.includes(id)),
+      '源全挂：每个源都真的发过请求（不是没查就判失败）',
+      allDownRequested.join(',')
+    )
     ok(
       allDown.sources.every((s) => typeof s.error === 'string' && s.error.length > 0),
       '源全挂：失败带具体错误（不是笼统「不可用」）'
     )
+    ok(
+      allDown.sources.every((s) => s.error.includes(s.sourceId)),
+      '源全挂：每个失败都指回它自己的源',
+      allDown.sources.map((s) => `${s.sourceId}=${s.error}`).join('；')
+    )
 
-    /* 一个源通、一个源挂：仍要给出结果（§7.2：密钥缺失时仍能做目录检索）。 */
+    /* 只有 mcp-registry 通、其余每源各自挂：仍要给出结果（§7.2：密钥缺失时仍能做目录检索）。 */
+    const halfDownRequested = []
     const halfDown = await discover.discoverCapabilities({
       queryText: 'filesystem',
       now: () => new Date('2026-09-19T00:00:00.000Z'),
       fetchImpl: (url) => {
-        if (String(url).includes('registry.npmjs.org')) return Promise.reject(new Error('npm down'))
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              servers: [
-                { server: { name: 'com.example/fs', description: '文件系统', version: '2.0.0', remotes: [{ type: 'streamable-http', url: 'https://fs.example' }] } }
-              ],
-              metadata: { count: 1 }
-            }),
-            { status: 200, headers: { 'content-type': 'application/json' } }
+        const sourceId = sourceIdOfUrl(url)
+        if (!sourceId) return unknownSource(url)
+        halfDownRequested.push(sourceId)
+        if (sourceId === 'mcp-registry') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                servers: [
+                  { server: { name: 'com.example/fs', description: '文件系统', version: '2.0.0', remotes: [{ type: 'streamable-http', url: 'https://fs.example' }] } }
+                ],
+                metadata: { count: 1 }
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } }
+            )
           )
-        )
+        }
+        return Promise.reject(new Error(`${sourceId} down`))
       }
     })
+    const halfDownOkIds = halfDown.sources.filter((s) => s.ok).map((s) => s.sourceId)
+    const halfDownDownIds = halfDown.sources.filter((s) => !s.ok).map((s) => s.sourceId)
     ok(halfDown.candidates.length === 1, '单源可用：仍返回候选', String(halfDown.candidates.length))
     ok(halfDown.reason === null, '单源可用：不给「无法搜索」的假原因')
     ok(
-      halfDown.sources.filter((s) => s.ok).length === 1 && halfDown.sources.filter((s) => !s.ok).length === 1,
-      '单源可用：两个源的状态分开记录'
+      sameIdSet(halfDownOkIds, ['mcp-registry']),
+      '单源可用：只有真正可用的源记为成功',
+      halfDownOkIds.join(',')
+    )
+    ok(
+      sameIdSet(halfDownDownIds, expectedSourceIds.filter((id) => id !== 'mcp-registry')),
+      '单源可用：各源状态分开记录（其余每个源单独记为失败）',
+      halfDownDownIds.join(',')
+    )
+    ok(
+      halfDown.sources.every((s) => s.ok || s.error.includes(s.sourceId)),
+      '单源可用：每个失败源带自己的错误',
+      halfDown.sources.map((s) => `${s.sourceId}=${s.ok ? 'ok' : s.error}`).join('；')
+    )
+    ok(
+      halfDownRequested.includes('mcp-registry'),
+      '单源可用：可用源确实被请求过',
+      halfDownRequested.join(',')
     )
 
     const badQuery = await discover.discoverCapabilities({ queryText: 'C:\\Users\\x\\secret.xlsx', fetchImpl: boom })

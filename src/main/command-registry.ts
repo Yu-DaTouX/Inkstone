@@ -62,27 +62,37 @@ const LOCAL_COMMANDS: readonly CommandDescriptor[] = [
     executable: true,
     usage: '/thinking [档位]'
   },
-  { name: 'export', description: '导出当前会话为 HTML', source: 'yan', executable: true, usage: '/export' },
+  {
+    name: 'export',
+    description: '导出当前会话（.jsonl 路由 JSONL，其余为 HTML）',
+    source: 'yan',
+    executable: true,
+    usage: '/export [路径]'
+  },
+  /*
+   * pi 终端的内置会话命令。桌面端由主会话的原生会话接口承接，
+   * 因此登记为可执行的 yan 命令，而不再作为「只有终端可用」的兼容项。
+   */
+  { name: 'tree', description: '浏览并切换当前会话的分支树', source: 'yan', executable: true, usage: '/tree' },
+  { name: 'import', description: '导入并继续一个 JSONL 会话', source: 'yan', executable: true, usage: '/import <路径>' },
+  { name: 'reload', description: '重新加载键位、扩展、技能、模板、主题与上下文文件', source: 'yan', executable: true, usage: '/reload' },
+  { name: 'scoped-models', description: '配置交互式切换所用的模型范围', source: 'yan', executable: true, usage: '/scoped-models' },
+  { name: 'trust', description: '保存当前项目的信任决定', source: 'yan', executable: true, usage: '/trust' },
+  { name: 'share', description: '上传当前会话并取得查看链接', source: 'yan', executable: true, usage: '/share' },
   { name: 'copy', description: '复制最近一条回复', source: 'yan', executable: true, usage: '/copy' },
   { name: 'name', description: '重命名当前会话', source: 'yan', executable: true, usage: '/name <名称>' },
   { name: 'session', description: '查看当前会话信息', source: 'yan', executable: true, usage: '/session' },
   { name: 'clone', description: '复制当前会话到新会话', source: 'yan', executable: true, usage: '/clone' },
   /*
    * pi 终端内置、桌面端换了入口的命令。pi RPC 的 get_commands 不报内置命令，
-   * 不登记的话手打 `/tree` 会被当成消息发给模型。保留为 compatibility 并隐藏在补全外：
+   * 不登记的话手打 `/resume` 会被当成消息发给模型。保留为 compatibility 并隐藏在补全外：
    * 手打时给出桌面端对应的入口，输入与附件原样保留。
    */
   ...(
     [
-      ['tree', '桌面端没有会话树视图；在消息上点「分叉」回到某一轮。'],
       ['fork', '在要分叉的那条消息上点「分叉」。'],
       ['resume', '在左栏选择要继续的会话。'],
-      ['import', '桌面端没有导入 JSONL 会话的入口。'],
-      ['share', '桌面端不提供 gist 分享；可用 /export 导出后自行分享。'],
-      ['scoped-models', '桌面端没有模型范围设置；Ctrl+P 在已发现的模型间切换。'],
       ['logout', '在设置的登录页管理各模型服务的登录状态。'],
-      ['trust', '项目信任记录在 pi 的 trust.json 里；桌面端不提供命令入口，未信任的项目不加载项目级 .pi 资源。'],
-      ['reload', '技能与扩展在新会话启动时重新加载；/ 菜单会自动刷新。'],
       ['hotkeys', '桌面端没有快捷键总表；按钮悬停提示里标有快捷键。'],
       ['changelog', '桌面端没有更新日志入口；版本信息在设置的关于页。'],
       ['bug', '请到设置的关于页打开项目主页反馈问题。'],
@@ -155,7 +165,7 @@ function classifySource(raw: RuntimeCommand, name: string): CommandDescriptor['s
 
 function normalizeRuntimeCommand(raw: RuntimeCommand): CommandDescriptor | null {
   const name = commandName(raw.name)
-  if (!name) return null
+  if (!name || name.startsWith('__inkstone_native')) return null
   const source = classifySource(raw, name)
   const location = text(raw.location)
   const module = text(raw.module) ?? location

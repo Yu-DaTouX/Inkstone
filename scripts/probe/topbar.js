@@ -86,7 +86,8 @@
     const pane = document.querySelector('[data-workspace-pane="files"]:not([hidden])')
     if (pane) ok('文件磁贴已打开')
     else bad('工具菜单没有打开文件磁贴')
-    document.querySelector('[data-pane-tab="files"]')?.closest('.tile-heading')?.querySelector('[aria-label="收起面板，保留运行"]')?.click()
+    /* 关闭入口 = 磁贴页签上的 `.ui-tab-close`（文件页签 closeLabel 是「关闭标签页」）。 */
+    document.querySelector('[data-pane-tab="files"]')?.querySelector('.ui-tab-close')?.click()
     await sleep(500)
     if (!document.querySelector('[data-workspace-pane="files"]:not([hidden])')) ok('隐藏磁贴让出工作区空间')
     else bad('文件磁贴未隐藏')
@@ -103,7 +104,9 @@
     }
     store.getState().applyPush({ ch: 'sync', payload: fake })
     await sleep(900)
+    const innerEl = document.querySelector('.stream-inner')
     const inner = rect('.stream-inner')
+    const innerContentLeft = innerEl ? innerEl.getBoundingClientRect().left + (parseFloat(getComputedStyle(innerEl).paddingLeft) || 0) : 0
     // 量**看得见的那条刻度**的右缘（不是命中区/容器的左缘）
     const tick = rect('.outline-hit .outline-bar')
     const center = rect('.center')
@@ -112,11 +115,15 @@
       /*
        * V-2b 后轨道贴的是**会话可用区左边缘**（两栏收起 = 整窗），正文仍居中。
        * 所以旧的「轨道贴正文左缘」公式不再成立；正确的不变量是：
-       * ① 轨道在会话区左边缘附近；② 刻度命中区不压到正文内容。
+       * ① 轨道在会话区左边缘附近；② 刻度不压到**正文内容**。
+       *
+       * ⚠️ 正文避让做在 `.stream-inner` 的 padding-left 上（--outline-avoid），
+       *    量 `.stream-inner` 的 border-box 左缘会把这段 padding 当成正文起点，
+       *    得出「重叠 17px」的假象；要加回 padding-left 才是真正的内容左缘。
        */
       const atEdge = tick.x - center.x <= 16
-      const overlap = (tick.x + tick.w) - inner.x
-      out.push(`  轨道距会话区左缘 ${(tick.x - center.x).toFixed(0)}px；与正文重叠 ${overlap.toFixed(0)}px`)
+      const overlap = (tick.x + tick.w) - innerContentLeft
+      out.push(`  轨道距会话区左缘 ${(tick.x - center.x).toFixed(0)}px；与正文内容重叠 ${overlap.toFixed(0)}px`)
       if (atEdge && overlap <= 0) ok('导航轨贴会话区左缘且不压正文')
       else bad(`导航轨位置不对：距左缘 ${(tick.x - center.x).toFixed(0)}px / 重叠 ${overlap.toFixed(0)}px`)
     }

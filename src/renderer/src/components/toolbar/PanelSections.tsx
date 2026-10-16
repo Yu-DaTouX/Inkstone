@@ -107,16 +107,16 @@ function ModeRow({
   )
 }
 
-/* 扩展 —— setStatus / setWidget 的真实内容 */
+/* 扩展 —— setStatus 的状态文字。
+   setWidget 的文本组件已按 pi 的原生位置移到输入区（Composer 的扩展区域），
+   这里不再重复一份。 */
 
 export function ExtSection() {
   const t = useT()
   const statuses = useStore((s) => s.statuses)
-  const widgets = useStore((s) => s.widgets)
 
   const statusEntries = Object.entries(statuses)
-  const widgetEntries = Object.entries(widgets)
-  if (statusEntries.length === 0 && widgetEntries.length === 0) return null
+  if (statusEntries.length === 0) return null
 
   return (
     <Section titleKey="rp.ext" testId="rp-ext">
@@ -125,16 +125,6 @@ export function ExtSection() {
           <span className="rp-k">{k}</span>
           <span className="spacer" />
           <span className="rp-v">{v}</span>
-        </div>
-      ))}
-      {widgetEntries.map(([k, lines]) => (
-        <div key={k} className="rp-widget">
-          <div className="rp-widget-key">{k}</div>
-          {lines.map((l, i) => (
-            <div key={i} className="rp-widget-line">
-              {l}
-            </div>
-          ))}
         </div>
       ))}
       <div className="rp-dim">{t('rp.extHint')}</div>

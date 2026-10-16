@@ -121,7 +121,10 @@ export function TurnMeta({ turn }: { turn: AssistantTurn }) {
   const reply = replyText(turn)
   const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatDuration(turn.elapsedMs) : null
   const models = useStore((s) => s.models)
-  const modelDisplay = turn.model ? resolveTurnModelDisplay(turn.model, models) : null
+  const favorites = useStore((s) => s.settings?.modelFavorites)
+  const currentModel = useStore((s) => s.session?.model)
+  const fallbackModels = [...(favorites ?? []), ...(currentModel ? [currentModel] : [])]
+  const modelDisplay = turn.model ? resolveTurnModelDisplay(turn.model, models, fallbackModels) : null
   if (!reply && !turn.timestamp && !elapsed && !turn.model) return null
   return (
     <div className="tact tact-foot" data-testid="turn-footer">

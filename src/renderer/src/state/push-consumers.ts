@@ -23,16 +23,21 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
   const { set } = ctx
   switch (m.ch) {
     case 'session-moved': {
-      /* 会话换了工作目录：刷新列表；正看着它就按新目录重新打开（旧运行实例宿主已停掉） */
+      /* 宿主负责恢复及单次续接；界面仅刷新正在查看的原会话，不代发“继续”。 */
       const p = m.payload
       if (!p.ok) {
         set({ notices: ctx.pushNotice(s.notices, 'error', `会话没有移动：${p.error ?? '未知原因'}`) })
         break
       }
       const view = ctx.get()
-      const showing = view.peekedPath === p.sessionFile || view.session?.sessionFile === p.sessionFile || view.session?.sessionId === p.sessionId
-      set({ notices: ctx.pushNotice(view.notices, 'info', `会话已移到 ${p.cwd}`) })
-      void view.refreshSessions().then(() => { if (showing) void ctx.get().switchSession(p.sessionFile) })
+      const showing = (state: Store) => state.peekedPath === p.sessionFile || state.session?.sessionFile === p.sessionFile || state.session?.sessionId === p.sessionId
+      const wasShowing = showing(view)
+      const note = p.continued ? '，正在继续原任务' : p.continuationError ? `；${p.continuationError}` : ''
+      set({ notices: ctx.pushNotice(view.notices, 'info', `会话已移到 ${p.cwd}${note}`) })
+      void view.refreshSessions().then(() => {
+        // 刷新等待期间用户可能已切走，不能用过期 showing 抢回前台。
+        if (wasShowing && showing(ctx.get())) void ctx.get().switchSession(p.sessionFile)
+      })
       break
     }
     case 'win-state':

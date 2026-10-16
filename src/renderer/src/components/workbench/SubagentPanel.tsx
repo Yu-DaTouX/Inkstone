@@ -6,9 +6,10 @@ import { ModelCatalog } from '../ModelCatalog'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { resolveSubagentModelDisplay } from '../chat/turn-model-display'
 import { AgentMessageStream } from '../chat/AgentMessageStream'
 import { SubagentPlan } from './SubagentPlan'
-import { selectSubagentRuns } from '../../state/subagent-view'
+import { selectSubagentRuns, subagentOwnerForView, subagentScopeForView } from '../../state/subagent-view'
 import { Button, EmptyState, Field, Select, Textarea } from '../ui'
 import type { SubagentRun } from '../../../../shared/ipc'
 
@@ -19,8 +20,10 @@ export function SubagentPanel({ initialRun, onOpenRun, onTitleChange }: {
   const t = useT()
   const session = useStore(s => s.session)
   const settings = useStore(s => s.settings)
-  const runner = useStore(s => s.activeRunnerId)
+  const peekedSessionId = useStore(s => s.peekedSessionId)
+  const peekedPath = useStore(s => s.peekedPath)
   const runs = useStore(s => s.subagents)
+  const runners = useStore(s => s.runners)
   const models = useStore(s => s.models)
   const load = useStore(s => s.loadSubagents)
   const [task, setTask] = useState('')
@@ -40,14 +43,14 @@ export function SubagentPanel({ initialRun, onOpenRun, onTitleChange }: {
   const modelChoice = model === 'follow' ? session?.model : model ?? session?.model
   const resolvedModel = modelChoice ? `${modelChoice.provider}/${modelChoice.id}` : undefined
   const selectedModel = models.find(item => `${item.provider}/${item.id}` === resolvedModel)
-  const modelLabel = selectedModel?.name || resolvedModel || t('delegate.noModel')
+  const modelLabel = resolvedModel ? resolveSubagentModelDisplay(resolvedModel, models).label : t('delegate.noModel')
   const cwd = session?.cwd || settings?.cwd || ''
   const readOnlyError = subagentModelError(resolvedModel, true)
   const validationError = isolation === 'controlled-cwd' && readOnlyError ? t('delegate.ccReadOnly')
     : !resolvedModel ? t('delegate.noModel') : !selectedModel ? t('models.unavailable') : ''
-  /* 只显示本会话派出的：以明确的 parentSessionId 为准；只有没记会话归属的旧记录才退回运行实例判断。 */
-  const sessionIds = [session?.sessionId, session?.conversationId].filter((v): v is string => !!v)
-  const owned = [...selectSubagentRuns(runs, { sessionIds }).all, ...(runner ? runs.filter(run => !run.parentSessionId && run.parentRunId === runner) : [])]
+  /* 只列出屏幕正在看的那条会话派出的：peek 优先，与常驻区共用同一归属推导；
+     旧记录按该视图的运行实例（而不是 activeRunnerId）兜底，只保留去重后的一份。 */
+  const owned = selectSubagentRuns(runs, subagentScopeForView({ peekedSessionId, peekedPath, session, runners })).all
   const selected = owned.find(run => `subagent:${run.id}` === initialRun)
   useEffect(() => { void load() }, [load])
   useEffect(() => {
@@ -77,9 +80,13 @@ export function SubagentPanel({ initialRun, onOpenRun, onTitleChange }: {
   const start = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!task.trim() || busy || validationError) return
+    /* 派活归属取屏幕正在看的会话（peek 优先）：后台查看 B 时钉住 B 的实例，
+       不落到 active A；视图有稳定身份却没有实例则明确不派，绝不猜当前会话。 */
+    const ownership = subagentOwnerForView({ peekedSessionId, peekedPath, session, runners })
+    if (ownership.needsRunner) { setError(t('delegate.failed')); return }
     setBusy(true); setError('')
     try {
-      const result = await window.yan.subagents.start(task.trim(), resolvedModel, isolation)
+      const result = await window.yan.subagents.start(task.trim(), resolvedModel, isolation, ownership.expectedRuntime)
       if (!result.ok || !result.run) { setError(result.error ?? t('delegate.failed')); return }
       await load(); setTask(''); onOpenRun?.(`subagent:${result.run.id}`)
     } catch (error) { setError(String(error)) } finally { setBusy(false) }

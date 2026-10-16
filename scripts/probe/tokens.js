@@ -111,9 +111,9 @@
   log('  命中率显示: ' + JSON.stringify(hitShown))
   const u = last.usage
   const expect =
-    u.cacheRead + u.input > 0
+    u.cacheRead + u.input + u.cacheWrite > 0
       ? (() => {
-          const pct = (u.cacheRead / (u.cacheRead + u.input)) * 100
+          const pct = (u.cacheRead / (u.cacheRead + u.input + u.cacheWrite)) * 100
           // 与 shared/turns.ts 的 formatHitRate 同一规则：
           // 只有原始比例就是 100% 才显示 100%，否则**截断**到两位小数（不四舍五入）。
           if (pct >= 100) return '100%'

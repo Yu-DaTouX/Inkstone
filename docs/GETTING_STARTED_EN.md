@@ -30,6 +30,16 @@ Choose a project or start a conversation. Describe what you want to accomplish a
 
 Reference files with `@`, explore commands with `/`, or enter a Shell command with `!`. Expand tool details to inspect the work, or open files, change review, the browser, and the terminal from the workspace panels.
 
+## Clarification frequency
+
+The development build offers **Settings → Conversations → General → Clarification frequency**: fewer questions, balanced (default), or more questions. The model menu can override this for the displayed conversation or inherit the global preference. A historical preview without a matching running instance cannot be changed. Changes apply from the next turn, guide the model rather than guarantee a question count, and do not change permission approval. New, forked, and cloned conversations inherit the global preference.
+
+Running subagents and those needing attention appear as a single-line count above the input. View opens the existing task details or subagent panel, without expanding a second set of cards above the input. Historical cards stay under their original messages; normally completed tasks leave the persistent area.
+
+Text and attachment drafts are cached per conversation. Failed submissions return to the originating conversation rather than the conversation selected later. Path-only and pending-identity drafts migrate to a stable conversation ID only when their ownership can be proven, without overwriting an existing destination draft. This cache is not a disk backup.
+
+Concurrent tasks in the same directory can edit the same files. Instance creation uses Git worktree isolation when available, and rejects work when isolation fails, its target is occupied, or the send-time check finds another busy task in that directory. Worktrees do not automatically include uncommitted files. These checks are not a complete file lock and do not guarantee conflict-free execution in every concurrent timing.
+
 ## HTML artifacts in messages
 
 The desktop app displays managed `.html` / `.htm` artifacts as web pages inside their message cards, including interactive diagrams and single-file reports. Use **Page / Source** to switch views. Reload or expand the preview, inspect the source in the side panel, reveal the file location, or copy its path. The original file remains on your computer.
@@ -46,7 +56,7 @@ The model menu supports provider filters, search, shared favorites and continuou
 
 ## Context and compaction
 
-Under **Settings → Conversations → Context & memory**, configure native pi auto-compaction and omission of older tool output. Inkstone's early compaction threshold defaults to 250k tokens after a turn settles, capped at 90% of a smaller model window. Older tool-output omission uses an 80k soft threshold, reduced for smaller windows and applied in batches according to cache timing. It does not alter chat history or source files, and does not guarantee lower cost on every request. Both can be disabled; see the [architecture boundary](ARCHITECTURE.md#职责).
+Under **Settings → Conversations → Context & memory**, configure native pi auto-compaction and omission of older tool output. Inkstone's early compaction threshold defaults to 400k tokens after a turn settles, capped at 90% of a smaller model window. Older tool-output omission uses an 80k soft threshold, reduced for smaller windows and applied in batches according to cache timing. It does not alter chat history or source files, and does not guarantee lower cost on every request. Both can be disabled; see the [architecture boundary](ARCHITECTURE.md#职责).
 
 The session-statistics entry below the input opens turn and model-request counts, model/tool time, average time to first token (TTFT), and output speed. The adjacent token-usage entry shows cumulative input, output, and cache usage for this conversation; both can be disabled in settings. Cumulative request tokens are not context occupancy, which remains a separate context ring. Missing values show `—`; known lower bounds show `≥`. Unrecorded historical timing is not invented. Status-bar cost details use the same conversation-wide scope, and a provider-reported zero does not prove that usage was free.
 
@@ -66,7 +76,7 @@ The development build is conversation-first. Coding/daily and standard/plan/auto
 
 Open **Subagents** from the tools menu, select a model, enter a task, and choose execution. The panel remembers its own last selected model, initially using the current conversation. An explicit follow option resolves to the current conversation model; the form shows the actual model and working folder. Results return to the parent conversation. Current-folder execution changes files directly; read-only limits tools; optional Git worktree isolation requires Git. CC subscription models do not support read-only subtasks; unsupported combinations are explained before submission.
 
-Up to 10 subagents can run across the app at once. Each model decides how many tool calls its task needs. After 10 minutes without model output or tool events, Inkstone asks the subagent to wrap up and stops it if it has not finished within 75 seconds. There is no default total deadline while progress continues; a model can still specify a total deadline through the task request.
+Up to 24 subagents can run across the app at once. Each model decides how many tool calls its task needs. With no tool running, Inkstone asks the subagent to wrap up after 10 minutes without model output or tool events; while a tool is running, the stall threshold extends to about 60 minutes. It stops the subagent if it has not finished within 75 seconds of that request. There is no default total deadline while progress continues; a model can still specify a total deadline through the task request.
 
 Recent subagent tool activity and final replies are saved locally and remain attached to their original conversation after restart. Click the task title to view its process; the full assignment remains in the card's Details rather than a separate original-task button in the process window. Older records recover activity from their retained native child-session files when available; missing content is not invented. Restoring history does not restart execution or resend completion notifications.
 

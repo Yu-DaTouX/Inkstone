@@ -384,15 +384,23 @@
 
     /* 超过 900 字素的突发块按现有防积压规则立即追齐；这里测逐字路径。 */
     const typewriterText = THINK.slice(0, 600)
-    await injectThinking(typewriterText)
+    /*
+     * 组件**挂载时已有的文本会直接显示**（"早先流出来的"，不从头重播），
+     * 所以不能一次性把 600 字推进去再断言「还在逐字」——那量到的必然是全量。
+     * 要先用一个短前缀让它带文本挂载，再把消息补到全文，走的才是已挂载
+     * 组件接收增量文本的逐字路径。
+     */
+    await injectThinking(typewriterText.slice(0, 2))
     setTurnStreaming(true)
     /* 推理块在过程里，先保证它进了 DOM 再开始量逐字进度 */
     await openProcess()
     await sleep(50)
     if (!inner()) click('[data-testid="reasoning-toggle"]')
+    await sleep(80)
+    patch('r-a1', { thinking: typewriterText })
     await sleep(150)
     const partial = (inner()?.textContent ?? '').length
-    ok(partial < typewriterText.length, `挂载后仍逐字（200ms 时 ${partial}/${typewriterText.length}）`)
+    ok(partial < typewriterText.length, `补足全文后仍逐字（约 230ms 时 ${partial}/${typewriterText.length}）`)
     setReduce(true)
     await sleep(120)
     const full = (inner()?.textContent ?? '').length

@@ -15,6 +15,8 @@
  *    （见 `migrateLegacyAutonomous`），新字段优先。
  */
 
+import type { SessionQuestionFrequency } from './question-frequency'
+
 /** 合法模式集合。顺序就是界面与 Tab 快切的顺序。 */
 export const WORK_MODES = ['standard', 'clarify', 'autonomous'] as const
 
@@ -38,6 +40,14 @@ export interface WorkModeState {
    * 界面上显示「下一轮生效」而不是假装它已经生效。
    */
   pendingMode?: WorkMode
+  /**
+   * 会话级提问频率偏好（`inherit` = 跟随全局）。
+   *
+   * 与 `mode` 共用同一条会话记录和 `revision`，但是**两件正交的事**：
+   * 模式管「做事的节奏」，频率只调「何时问」。旧记录缺这个字段时按
+   * `inherit` 处理；store 的读写总是带上它。
+   */
+  questionFrequency?: SessionQuestionFrequency
 }
 
 export function isWorkMode(value: unknown): value is WorkMode {

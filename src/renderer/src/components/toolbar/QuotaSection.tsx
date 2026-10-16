@@ -5,6 +5,7 @@ import { useStore } from '../../state/store'
 import { quotaTone } from '../../../../shared/quota-tone'
 import { money, quotaCompactWindows, windowPct } from '../../../../shared/quota-mini'
 import { claimDueQuotaWindows, decideQuotaRefresh } from '../../../../shared/quota-refresh'
+import { quotaSnapshotMatchesProvider, shouldRenderQuotaSection } from '../../../../shared/quota-display'
 import { type QuotaWindow } from '../../../../shared/ipc'
 import { Button, IconButton, Input, MiniMeter, Switch } from '../ui'
 import { DetailTrigger } from '../shell/DetailPopover'
@@ -26,16 +27,32 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
   const [budgetEditing, setBudgetEditing] = useState(false)
   const [budgetDraft, setBudgetDraft] = useState('')
   const [budgetError, setBudgetError] = useState('')
-  const [quota, setQuota] = useState<Awaited<ReturnType<typeof window.yan.providerQuota>> | null>(null)
+  const [quotaState, setQuota] = useState<Awaited<ReturnType<typeof window.yan.providerQuota>> | null>(null)
   const [loading, setLoading] = useState(false)
+  /** 后端确认该 provider 支不支持额度接口（supported === true/false）；null = 还没查过 */
+  const [supported, setSupported] = useState<boolean | null>(null)
+  /** 只认属于当前 provider 的已加载快照：切供应商时不能让上一个的旧数字留在屏幕上 */
+  const quota = quotaSnapshotMatchesProvider(quotaState?.provider, provider) ? quotaState : null
   /** 查询失败时的错误；**不**清掉 quota —— 保留上一次成功的快照（方案 7.2） */
   const [error, setError] = useState('')
   /** 当前请求属于哪个 provider：切账户后旧请求的返回不能覆盖新视图 */
   const providerRef = useRef(provider)
+  /* 渲染当帧就认领当前 provider，不等重置 effect —— 切 provider 的过渡帧里旧结果也要作废。 */
+  providerRef.current = provider
   /** 倒计时刷新用（重置时间要以“现在”为基准） */
   const [, setTick] = useState(0)
   /** 正在飞的那笔查询属于哪个 provider（同 provider 不重叠；切了就允许新请求） */
   const inFlightRef = useRef<string | null>(null)
+  /**
+   * 并发请求代次：每笔查询自增，只有代次仍是最新的一笔才能落地。
+   * 不能只看 provider 字符串 —— A→B→A 时旧 A 请求和新 A 请求的 provider 相同，
+   * 旧结果会把新结果覆盖、还会把新请求的 loading 清掉。
+   */
+  const requestGenRef = useRef(0)
+  /** 同一 provider 已有请求在飞时记下「还欠一次刷新」，等它回来立刻补，不丢最后一次。 */
+  const pendingRefreshRef = useRef<string | null>(null)
+  /** 指向最新的 refresh：补齐欠下的刷新时用新闭包（新 budget），不用旧闭包。 */
+  const refreshRef = useRef<() => Promise<void>>(async () => {})
   /** 上次成功快照的时间戳：窗口重新获得焦点时用它判断是否该补查 */
   const checkedAtRef = useRef<number | null>(null)
   /** 该 provider 是否支持额度接口；false 时不做任何自动查询（自定义 API） */
@@ -58,14 +75,19 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
 
   const refresh = useCallback(async () => {
     if (!provider) return
-    if (inFlightRef.current === provider) return
+    /* 同一 provider 已有请求在飞：不并发，但记住还要再刷一次，别把最后一次请求丢掉。 */
+    if (inFlightRef.current === provider) {
+      pendingRefreshRef.current = provider
+      return
+    }
+    const gen = ++requestGenRef.current
     inFlightRef.current = provider
     providerRef.current = provider
     setLoading(true)
     try {
       const next = await window.yan.providerQuota(provider, budget)
-      /* 用户已经切到别的供应商了 —— 这个结果作废 */
-      if (providerRef.current !== provider) return
+      /* 已经有更新的一笔请求，或用户已经切到别的 provider：这笔整个作废。 */
+      if (gen !== requestGenRef.current || providerRef.current !== provider) return
       const hasData =
         !!next.windows?.length || next.remaining !== undefined || next.used !== undefined
       if (next.error && !hasData) {
@@ -77,13 +99,28 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
         checkedAtRef.current = Date.now()
       }
       supportedRef.current = next.supported ?? true
+      setSupported(next.supported ?? true)
     } catch (e) {
-      if (providerRef.current === provider) setError(e instanceof Error ? e.message : String(e))
+      /* Promise 直接 reject 时 supported 还没回来；错误仍要落地并被渲染看见。 */
+      if (gen === requestGenRef.current && providerRef.current === provider) {
+        setError(e instanceof Error ? e.message : String(e))
+      }
     } finally {
-      if (inFlightRef.current === provider) inFlightRef.current = null
-      if (providerRef.current === provider) setLoading(false)
+      /* 只有「仍是自己这一笔」才清 in-flight 与 loading，旧请求不得清掉新请求的 loading。 */
+      if (inFlightRef.current === provider && gen === requestGenRef.current && providerRef.current === provider) {
+        inFlightRef.current = null
+        setLoading(false)
+      }
+      const pending = pendingRefreshRef.current
+      pendingRefreshRef.current = null
+      /* 完成的是当前 provider 且没有更新的一笔在飞：立刻补跑欠下的那次刷新。 */
+      if (pending === provider && pending === providerRef.current && gen === requestGenRef.current) {
+        void refreshRef.current()
+      }
     }
   }, [provider, budget])
+  /* 每次渲染都指向最新的 refresh，供 finally 里的补跑使用（不放进 deps，避免额外触发）。 */
+  refreshRef.current = refresh
 
   /* 切 provider 时清空旧账户的数字（不能把上一个账户的额度留在屏幕上） */
   useEffect(() => {
@@ -91,6 +128,7 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
     resetAttemptsRef.current.clear()
     checkedAtRef.current = null
     supportedRef.current = null
+    setSupported(null)
     setQuota(null)
     setError('')
     void refresh()
@@ -144,7 +182,7 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
   }, [provider, refresh])
   useEffect(() => {
     const wins = quota?.windows ?? []
-    if (!wins.length || quota?.provider !== provider) return
+    if (!wins.length) return
     const now = Date.now()
     const decision = decideQuotaRefresh({
       trigger: 'reset', now, lastCheckedAt: checkedAtRef.current,
@@ -214,8 +252,20 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
   ) : <Button size="sm" className="rp-btn" onClick={() => { setBudgetDraft(budget ? String(budget) : ''); setBudgetEditing(true) }}>{t('quota.setBudget')}</Button> : null
   /* 摘要条跟最紧的那个窗口；任一窗口已超限时条也标红 */
   const ringTone = ringPct === null ? '' : quotaTone(ringPct, anyExceeded)
-  /* 空入口不渲染：没有供应商，或查不到任何可显示的数（不支持 / 未登录 / 出错）时整块不占位 */
-  if (!provider || (!loading && !mainText && compactWindows.length === 0 && !budget && provider !== 'claude-bridge')) return null
+  /*
+   * 空入口不渲染；但「已知支持额度接口的 provider 查询失败 / 未返回窗口」必须
+   * 留下——否则整段消失，用户分不清是没额度还是查询出错（见 shared/quota-display.ts）。
+   * 明确不支持的 provider（supported === false，例如自定义 API）仍不占位。
+   */
+  if (!shouldRenderQuotaSection({
+    provider,
+    loading,
+    supported,
+    hasError: !!error || !!quota?.error,
+    hasMainText: !!mainText,
+    windowCount: compactWindows.length,
+    hasBudget: !!budget
+  })) return null
 
   const summary = (
       <span className="rp-header-usage">
@@ -405,8 +455,10 @@ export function QuotaSection({ variant = 'section' }: { variant?: 'section' | 's
       ) : null}
     </div>
   )
+  /* 状态栏只有一句摘要：没拿到数据时把失败原因挂在悬停提示上，别让「—」无从解释 */
+  const statusTitle = error && !quota ? t('acct.failed', { msg: error }) : provider || undefined
   if (variant === 'status') return (
-    <DetailTrigger className="sb-seg sb-quota" testId="sb-quota" label={t('rp.quota')} title={provider || undefined} panel={popover}>
+    <DetailTrigger className="sb-seg sb-quota" testId="sb-quota" label={t('rp.quota')} title={statusTitle} panel={popover}>
       {summary}
     </DetailTrigger>
   )

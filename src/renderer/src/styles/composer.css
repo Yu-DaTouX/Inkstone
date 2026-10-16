@@ -26,6 +26,33 @@
   --dock-pad: calc(var(--sp-4) + var(--sp-1));
 }
 
+/*
+ * 输入框上方常驻的「运行中 / 需处理」子代理区：与输入框、排队栈同一栏同宽居中。
+ * 只做版式；卡片皮肤仍在 chat.css 的 .sg-* 里，这里不重画。
+ */
+.asg {
+  max-width: var(--w-stream);
+  margin: 0 auto var(--sp-1);
+}
+.asg-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.asg-label {
+  flex: none;
+}
+.asg-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .composer {
   position: relative;
   max-width: var(--w-stream);

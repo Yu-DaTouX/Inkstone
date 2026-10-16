@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ProviderQuota, QuotaWindow } from '../shared/ipc'
-import { readAuthEntry, resolveCodexAccountId, resolveProviderSecret } from './credentials'
+import { readAuthEntry, resolveCodexAccountId } from './credentials'
+import { resolveQuotaProviderSecret } from './quota-credentials'
 import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode'
 import { hostImageCredentials } from './image-credentials'
 import { chatGptIdentity, claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
@@ -71,7 +72,7 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
   const isCodex = provider === 'openai-codex'
   const openai = provider === 'openai'
   const codexCredential = isCodex ? await hostImageCredentials.codex() : null
-  const key = isCodex ? codexCredential?.access : openai ? (process.env.OPENAI_ADMIN_KEY || await resolveProviderSecret(provider)) : await resolveProviderSecret(provider)
+  const key = isCodex ? codexCredential?.access : openai ? (process.env.OPENAI_ADMIN_KEY || await resolveQuotaProviderSecret(provider)) : await resolveQuotaProviderSecret(provider)
   const known = provider === 'openrouter' || provider === 'deepseek' || provider === 'commandcode' || isCodex || openai
   if (!key) return { provider, supported: known, error: openai ? '请设置 OPENAI_ADMIN_KEY 以查询组织费用' : '未找到该供应商的 API Key', checkedAt }
   try {

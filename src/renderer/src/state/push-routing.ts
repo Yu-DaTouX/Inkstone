@@ -15,6 +15,8 @@ export interface PushRoutingView {
   activeRunnerId: string | null
   sessionRuntimes: SessionRuntimeMap
   peekedSessionId: string | null
+  /** 正在按路径打开、身份还没落定的会话（peek 返回前的窗口）。 */
+  peekedPath?: string | null
   session: SessionState | null
   visibleSessionIds?: string[]
 }
@@ -72,8 +74,20 @@ export function routePush(s: PushRoutingView, m: MainPush): PushRoute {
      * 顶层投影不能让旧会话迟到的帧覆盖新会话。
      */
     const viewing = viewingSessionId(s)
+    /*
+     * 只按路径打开、身份还没落定的窗口（peekSession 还没回来）：不知道哪条帧
+     * 属于当前视图，先一律只缓存，等身份确认后再投影；否则上一条会话的帧会漏进来。
+     */
+    if (s.peekedPath && !viewing) return { patch, project: false }
     const belongsToView = !viewing || !m.runtime.sessionId || m.runtime.sessionId === viewing
-    return { patch, project: active && belongsToView }
+    /*
+     * 视图里的会话即使不是「当前运行实例」也要投影它的实时帧。多实例下点开一条
+     * 后台正在跑的会话时，只读预览不会把它设成 active，`active` 会一直为假 ——
+     * 用户切回去后界面就停在打开那一刻，不再跟随生成、完成或新消息。
+     * `belongsToView` 保证帧属于正在看的那条会话；后台会话仍然只进缓存。
+     */
+    const viewingFrame = !!viewing && m.runtime.sessionId === viewing
+    return { patch, project: belongsToView && (active || viewingFrame) }
   } else if (m.sessionKey) {
     if (!s.activeRunnerId) return { patch: { activeRunnerId: m.sessionKey }, project: true }
     if (s.activeRunnerId !== m.sessionKey) return { patch: null, project: false }

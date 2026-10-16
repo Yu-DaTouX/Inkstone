@@ -285,6 +285,7 @@ export function SessionSwitcher({
         openBrowser: s.openBrowser,
         setModel: s.setModel,
         exportHtml: s.exportHtml,
+        nativeSession: s.nativeSession,
         copyLastReply: s.copyLastReply,
         clone: s.clone,
         setManualTitle: s.setManualTitle,

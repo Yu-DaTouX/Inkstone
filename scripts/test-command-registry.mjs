@@ -58,11 +58,58 @@ export function runCommandRegistryTests(ok, registry) {
     const command = local.find((item) => item.name === name)
     ok(command?.source === 'yan' && command.executable === true, `/${name} 在桌面端可执行`)
   }
-  for (const name of ['tree', 'fork', 'resume', 'import', 'share', 'scoped-models', 'logout', 'trust', 'reload', 'hotkeys', 'changelog', 'bug', 'quit']) {
+  /*
+   * pi 原生会话命令（`native-session-host.ts` 的动作）已从「仅兼容显示」升级为
+   * **正式可执行的 yan 命令**：由主进程绑定当前会话后调用 pi 原生能力，不再
+   * 只是给一句说明。这里按各自实际入口精确断言（含参数），不允许
+   * 「native / compatibility 任意一条都行」的宽泛放行。
+   *
+   * 保留的安全边界：
+   *   · 六条都先命中桌面端原生会话宿主（`nativeSession`），由宿主把请求绑定到
+   *     当前会话并校验空闲/归属；
+   *   · `/tree` 只做分支导航（桥侧 `navigateTree` 固定 `summarize:false`，不偷偷
+   *     发起模型摘要）；`/import` 必须带路径参数；`/share` 上传前需人工确认；
+   *   · `/scoped-models` `/trust` 只写 pi 官方格式文件；`/reload` 以完成后回执为准。
+   * 每条都不得同时保留一条 compatibility 同名项，否则手打可能命中只给说明的那条。
+   */
+  const nativeEntries = [
+    ['tree', '/tree'],
+    ['import', '/import <路径>'],
+    ['reload', '/reload'],
+    ['scoped-models', '/scoped-models'],
+    ['trust', '/trust'],
+    ['share', '/share']
+  ]
+  for (const [name, usage] of nativeEntries) {
+    const command = local.find((item) => item.name === name)
+    ok(command?.source === 'yan' && command.executable === true, `/${name} 是可执行的 yan 原生命令`)
+    ok(command?.usage === usage, `/${name} 用法精确为 ${usage}`)
+    ok(!!command?.description, `/${name} 有说明`)
+    ok(
+      !local.some((item) => item.name === name && item.source === 'compatibility'),
+      `/${name} 不存在同名兼容项`
+    )
+  }
+
+  /* 桌面端没有对应界面的终端命令仍是兼容项，必须说明真实入口。 */
+  for (const name of ['fork', 'resume', 'logout', 'hotkeys', 'changelog', 'bug', 'quit']) {
     const command = local.find((item) => item.name === name)
     ok(
       command?.source === 'compatibility' && command.executable === false && !!command.availability,
       `/${name} 登记为兼容项并说明桌面端入口`
     )
   }
+
+  /*
+   * 宿主桥内部命令不能出现在用户命令表里：它不是给用户执行的入口，
+   * runtime 侧报上来也要被过滤（宿主归属保护）。否则手打会绕过
+   * `agent.ts` 对 `/__inkstone_native` 的发送拦截。
+   */
+  const withInternal = registry.mergeCommandDescriptors([
+    { name: '__inkstone_native', source: 'extension', module: 'native-session-bridge', executable: true }
+  ])
+  ok(
+    !withInternal.some((command) => command.name === '__inkstone_native'),
+    '宿主桥内部命令被注册表过滤（不暴露给用户）'
+  )
 }

@@ -35,10 +35,13 @@ import { createTurnProjector } from '../../shared/turns'
 import { mergeQuestionLog } from '../../shared/question-log'
 import { isModalOpen } from './lib/modalLayer'
 import { Composer } from './components/chat/Composer'
+import { NativeSessionSurface } from './components/chat/NativeSessionSurface'
 import { SubagentNote } from './components/chat/SubagentNote'
 import { SchedulePage } from './components/schedule/SchedulePage'
 import { Settings, type SettingsTab } from './components/settings/Settings'
-import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
+import { Onboarding } from './components/settings/Onboarding'
+import { OnboardingWizard } from './components/settings/OnboardingWizard'
+import { markOnboarded, shouldAutoWizard } from './components/settings/onboarding-state'
 import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
 import { StatusBar } from './components/shell/StatusBar'
 import { dismissBootSplash } from './lib/boot-splash'
@@ -144,7 +147,9 @@ export default function App() {
   const themeOrigin = useRef<{ x: number; y: number } | null>(null)
   /** 主题过渡是否在跑（同一时间只允许一次 —— 并发会被 Chromium 跳过） */
   const themeTransitionRunning = useRef(false)
-  /** 首次使用引导（默认关；启动后按条件自动开） */
+  /** 首次使用向导（默认关；首次启动自动开）。每步当场落盘，关掉只标记看过 */
+  const [wizard, setWizard] = useState(false)
+  /** 开始前自检清单：不再自动弹，只从「关于」页打开 */
   const [onboarding, setOnboarding] = useState(false)
   /* Ctrl+K 会话切换器 */
   const [switcherOpen, setSwitcherOpen] = useState(false)
@@ -279,8 +284,6 @@ export default function App() {
   const maximized = useStore((s) => s.maximized)
   const registerScrollToTurn = useStore((s) => s.registerScrollToTurn)
   const applyPush = useStore((s) => s.applyPush)
-  const piInfo = useStore((s) => s.piInfo)
-  const models = useStore((s) => s.models)
   const streamRef = useRef<HTMLDivElement>(null)
   const vlistRef = useRef<VListHandle>(null)
   /*
@@ -399,16 +402,15 @@ export default function App() {
       return
     }
     /*
-     * 会弹引导时**不再推**工具链通知：卡片里的「命令行工具」行写的就是同一件事，
-     * 首启同时冒出卡片和右下通知是重复的（用户反馈）。引导关掉后这次启动不补推，
-     * 下次启动（此时已标记看过引导）才会以通知形式提醒。
+     * 首次启动弹的是**配置向导**（外观 / 提醒 / 接入 / 上下文），
+     * 不再看「环境有没有问题」：环境正常的用户同样要把这几项配一遍。
+     * 自检清单（pi / 凭证 / 命令行工具）改为从「关于」页按需打开。
+     *
+     * 工具链通知照旧推：向导里没有命令行工具那一行，缺 bash / git 要让用户知道。
      */
-    if (shouldAutoOnboard({ conn, piInfo, models })) {
-      setOnboarding(true)
-      return
-    }
+    if (shouldAutoWizard()) setWizard(true)
     checkToolchainNotice()
-  }, [settings, conn, piInfo, models, checkToolchainNotice])
+  }, [settings, checkToolchainNotice])
 
   /* ---- 设置只在首次到达时对齐 UI（之后以 UI 为准） ---- */
   useEffect(() => {
@@ -1182,15 +1184,18 @@ export default function App() {
         <StatusBar />
       </div>
 
-      {onboarding ? (
-        <Onboarding
+      {wizard ? (
+        <OnboardingWizard
           onClose={() => {
             markOnboarded()
-            setOnboarding(false)
+            setWizard(false)
           }}
         />
       ) : null}
 
+      {onboarding ? <Onboarding onClose={() => setOnboarding(false)} /> : null}
+
+      <NativeSessionSurface />
       <UiDialog />
       <Notices />
       <SchedulePage open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
@@ -1209,6 +1214,11 @@ export default function App() {
         onShowOnboarding={() => {
           closeSettings()
           setOnboarding(true)
+        }}
+        /* 配置向导：同上，先收设置再开向导 */
+        onShowWizard={() => {
+          closeSettings()
+          setWizard(true)
         }}
       />
     </>

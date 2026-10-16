@@ -160,11 +160,16 @@
     ok(rootInB, '文件树根名变成 B 的项目名（不是还停在 A）')
 
     /*
-     * 附件是绝对路径：切项目后既不该消失，也不该被 B 的 cwd 重新解释。
+     * 附件按会话隔离：A 的附件不能串进 B 的输入区（也不该被 B 的 cwd 重新解释），
+     * 切回 A 时再由 A 的运行实例取回。
      */
     const attachInB = store.getState().attachments
     if (attachA.length === 1) {
-      ok(attachInB.length === 1 && attachInB[0].path === attachA[0].path, '切项目后附件仍在，且路径未被改写')
+      ok(
+        attachInB.every((a) => a.path !== attachA[0].path),
+        '切项目后 A 的附件不进入 B（按会话隔离）',
+        JSON.stringify(attachInB.map((a) => a.path))
+      )
     }
 
     /* ---------------------------------------------------------- */
@@ -192,6 +197,15 @@
     const draftBack = await until(() => composer()?.value === draftA, 6000)
     out.push('  输入框 = ' + JSON.stringify(composer()?.value ?? ''))
     ok(draftBack, 'A 的草稿原样恢复（按运行实例隔离，不与 B 串）')
+    /* 附件与草稿同一份按会话的运行实例数据：切回来必须一起取回，且路径未被改写。 */
+    if (attachA.length === 1) {
+      const attachBack = await until(
+        () => store.getState().attachments.some((a) => a.path === attachA[0].path),
+        4000
+      )
+      out.push('  切回 A 附件 = ' + JSON.stringify(store.getState().attachments.map((a) => a.path)))
+      ok(attachBack, '切回 A 后附件取回（路径未被改写）')
+    }
     await window.__yanOpenWorkspaceTool('文件', 'files')
     const rootInA = await until(() => /fixture-project/i.test(q('[data-testid="fs-row-root"]')?.textContent ?? ''), 10000)
     ok(rootInA, '文件树根名回到 A')

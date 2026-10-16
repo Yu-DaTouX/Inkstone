@@ -14,6 +14,11 @@
  *   · 会话累计仍按真实请求累计，不重复也不丢失；
  *   · JSONL 计时恢复按**各自真实用户 / 通知边界**锚定，不串段、不覆写。
  *
+ * 后段另钉宿主投递侧的**按兄弟运行情况自适应合并**（`subagent-notify.ts`）：无兄弟走 20 秒
+ * 短窗口；有兄弟进等待批（0.5 × 首条运行时长，夹在 2 / 10 分钟）；等待期并入且截止不延后；
+ * 出错立即带出等待批；兄弟全部结束（含被取消）提前收尾；跨父会话不混、开关关闭不投。
+ * 用可注入时钟与假定时器覆盖，不真等分钟级窗口。
+ *
  * 现场 esbuild 编译 + 临时数据目录，用 `node scripts/test-subagent-notice-timing.mjs` 单跑。
  */
 import assert from 'node:assert/strict'
@@ -50,9 +55,10 @@ try {
         export { groupIntoTurns, createTurnProjector, waitSpansMs, toolWaitSpans } from './src/shared/turns'
         export { createOutlineProjector } from './src/shared/outline-turns'
         export { projectSessionMetrics } from './src/shared/session-metrics'
-        export { buildSubagentNotice, isSubagentNotice } from './src/shared/subagent-notice'
+        export { buildSubagentNotice, isSubagentNotice, parseSubagentNotice } from './src/shared/subagent-notice'
         export * as store from './src/main/turn-timing-store'
         export { TurnTimingTracker } from './src/main/turn-timing-tracker'
+        export { createSubagentNotifier, NOTICE_COALESCE_WINDOW_MS, NOTICE_BATCH_MIN_WAIT_MS, NOTICE_BATCH_MAX_WAIT_MS, NOTICE_SIBLINGS_POLL_MS } from './src/main/subagent-notify'
       `,
       resolveDir: process.cwd(),
       loader: 'ts'
@@ -72,8 +78,14 @@ try {
     projectSessionMetrics,
     buildSubagentNotice,
     isSubagentNotice,
+    parseSubagentNotice,
     store,
-    TurnTimingTracker
+    TurnTimingTracker,
+    createSubagentNotifier,
+    NOTICE_COALESCE_WINDOW_MS,
+    NOTICE_BATCH_MIN_WAIT_MS,
+    NOTICE_BATCH_MAX_WAIT_MS,
+    NOTICE_SIBLINGS_POLL_MS
   } = mod
 
   const notice = (id, status = 'done', task = '检查登录流程') =>
@@ -386,6 +398,272 @@ try {
       check(oldAssistants.length === 1, '修复前：通知前后被并成一个助手段（复现）', `实际 ${oldAssistants.length}`)
       check(oldAssistants[0].elapsedMs === 300, '修复前：已结束段被后续 run 刷成 300（复现用户报的现象）', String(oldAssistants[0].elapsedMs))
       check(oldAssistants[0].usage?.totalTokens === 25, '修复前：新旧用量被错误相加成 25（复现）', JSON.stringify(oldAssistants[0].usage))
+    }
+  }
+
+  /* ------------------------------------------------ 10. 宿主完成通知按自适应窗口合并 */
+  console.log('\n--- 10. 子代理完成通知按兄弟运行情况自适应合并 ---')
+  {
+    const realSetTimeout = globalThis.setTimeout
+    const realClearTimeout = globalThis.clearTimeout
+    /* 可注入时钟 / 假定时器：不真等分钟级窗口，测试里推进虚拟时间。 */
+    let clock = null
+    globalThis.setTimeout = (fn, ms) => clock.setTimeout(fn, ms)
+    globalThis.clearTimeout = (timer) => clock.clearTimeout(timer)
+
+    const settle = async () => {
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+    }
+    const makeClock = () => {
+      let now = 0
+      let seq = 0
+      const timers = []
+      return {
+        get now() { return now },
+        timers,
+        setTimeout(fn, ms) {
+          const timer = { id: ++seq, fn, ms, at: now + ms, cleared: false, fired: false, unref() {} }
+          timers.push(timer)
+          return timer
+        },
+        clearTimeout(timer) { if (timer) timer.cleared = true },
+        /* 推进虚拟时间，按到期顺序触发；允许回调再挂新定时器。 */
+        async advance(ms) {
+          const target = now + ms
+          for (;;) {
+            const due = timers
+              .filter((t) => !t.cleared && !t.fired && t.at <= target)
+              .sort((a, b) => a.at - b.at || a.id - b.id)[0]
+            if (!due) break
+            due.fired = true
+            now = due.at
+            due.fn()
+            await settle()
+          }
+          now = target
+          await settle()
+        },
+        pending() { return timers.filter((t) => !t.cleared && !t.fired) }
+      }
+    }
+    const finish = (id, parent, extra = {}) => ({
+      id,
+      task: `任务 ${id}`,
+      cwd: '/tmp',
+      isolation: 'controlled-cwd',
+      model: 'gpt-x',
+      status: 'done',
+      startedAt: 0,
+      endedAt: 1000,
+      parentSessionId: parent,
+      result: { summary: `摘要 ${id}` },
+      review: 'none',
+      transcript: [],
+      ...extra
+    })
+
+    /* 每个场景一个干净时钟、一份 sent 与可变的兄弟计数。 */
+    const scenario = (opts = {}) => {
+      const clk = makeClock()
+      clock = clk
+      const sent = []
+      const state = { siblings: opts.siblings ?? {} }
+      const notify = createSubagentNotifier({
+        enabled: opts.enabled ?? (() => true),
+        now: () => clk.now,
+        runningSiblings: opts.runningSiblings ?? ((run) => state.siblings[run.parentSessionId] ?? 0),
+        find: opts.find ?? ((run) => ({
+          send: async (text, images, mode) => { sent.push({ text, id: run.id, images, mode }); return { ok: true } }
+        }))
+      })
+      return { notify, sent, state }
+    }
+    /* 等待批的截止定时器（轮询定时器更短，这里按 ms 过滤）。 */
+    const deadlines = () => clock.pending().filter((t) => t.ms >= NOTICE_BATCH_MIN_WAIT_MS)
+
+    try {
+      /* 规则 1：无兄弟 → 20 秒短窗口；单条文本逐字不变 */
+      {
+        const { notify, sent } = scenario({ siblings: { 'sess-a': 0 } })
+        const run = finish('sub-one', 'sess-a')
+        notify(run)
+        await settle()
+        const armed = clock.pending()
+        check(armed.length === 1 && armed[0].ms === NOTICE_COALESCE_WINDOW_MS, '无兄弟：入队后挂一个 20 秒短窗口', JSON.stringify(armed.map((t) => t.ms)))
+        check(sent.length === 0, '无兄弟：窗口未到时先不投（等合并）')
+        await clock.advance(NOTICE_COALESCE_WINDOW_MS - 1)
+        check(sent.length === 0, '无兄弟：差 1ms 仍不投')
+        await clock.advance(1)
+        check(sent.length === 1, '无兄弟：窗口结束只投一条', String(sent.length))
+        check(sent[0].text === buildSubagentNotice(run), '无兄弟：文本保持现有格式（逐字一致）')
+        check(sent[0].mode === 'followUp' && sent[0].images === undefined, '无兄弟：沿用 followUp 排队语义投递')
+      }
+
+      /* 规则 2：有兄弟 → 等待批 = clamp(0.5 × 首条运行时长, 2 / 10 分钟) */
+      {
+        const half = scenario({ siblings: { 'sess-half': 1 } })
+        half.notify(finish('sub-half', 'sess-half', { startedAt: 0, endedAt: 600_000 }))
+        await settle()
+        check(deadlines().length === 1 && deadlines()[0].ms === 300_000, '有兄弟：等待 0.5 × 时长 = 5 分钟', JSON.stringify(clock.pending().map((t) => t.ms)))
+
+        const low = scenario({ siblings: { 'sess-low': 1 } })
+        low.notify(finish('sub-low', 'sess-low', { startedAt: 0, endedAt: 100_000 }))
+        await settle()
+        check(deadlines().length === 1 && deadlines()[0].ms === NOTICE_BATCH_MIN_WAIT_MS, '有兄弟：短任务抬到 2 分钟下限', JSON.stringify(clock.pending().map((t) => t.ms)))
+
+        const high = scenario({ siblings: { 'sess-high': 1 } })
+        high.notify(finish('sub-high', 'sess-high', { startedAt: 0, endedAt: 2_000_000 }))
+        await settle()
+        check(deadlines().length === 1 && deadlines()[0].ms === NOTICE_BATCH_MAX_WAIT_MS, '有兄弟：长任务压到 10 分钟上限', JSON.stringify(clock.pending().map((t) => t.ms)))
+      }
+
+      /* 规则 3：等待期并入同批，截止不延后 */
+      {
+        const { notify, sent } = scenario({ siblings: { 'sess-join': 1 } })
+        notify(finish('sub-j1', 'sess-join', { startedAt: 0, endedAt: 600_000 }))
+        await settle()
+        const deadline = deadlines()[0]
+        check(deadline && deadline.at === 300_000, '等待批：截止 = 300000')
+        await clock.advance(50_000)
+        notify(finish('sub-j2', 'sess-join'))
+        await settle()
+        const after = deadlines()
+        check(after.length === 1 && after[0] === deadline && after[0].at === 300_000, '等待期并入：截止不延后', JSON.stringify(after.map((t) => t.at)))
+        check(sent.length === 0, '等待期并入：尚未投递')
+        await clock.advance(250_000)
+        check(sent.length === 1, '等待期并入：到截止只投一条', String(sent.length))
+        check(sent[0].text.includes('sub-j1') && sent[0].text.includes('sub-j2'), '等待期并入：两条合并进同一条消息')
+      }
+
+      /* 规则 4：出错不等待，按短窗口带出已有等待批 */
+      {
+        const { notify, sent } = scenario({ siblings: { 'sess-err': 1 } })
+        notify(finish('sub-e1', 'sess-err', { startedAt: 0, endedAt: 600_000 }))
+        await settle()
+        check(deadlines().some((t) => t.at === 300_000), '出错前：等待批截止 300000')
+        await clock.advance(10_000)
+        notify(finish('sub-e2', 'sess-err', { status: 'error', error: '模型报错' }))
+        await settle()
+        const armed = clock.pending().filter((t) => t.ms >= NOTICE_COALESCE_WINDOW_MS)
+        check(armed.length === 1 && armed[0].at === 30_000, '出错：改为 10s 后的短窗口（t=30000）', JSON.stringify(clock.pending().map((t) => t.at)))
+        await clock.advance(20_000)
+        check(sent.length === 1 && sent[0].text.includes('sub-e1') && sent[0].text.includes('sub-e2'), '出错：等待批被一起带出且合并为一条', String(sent.length))
+        check(sent[0].text.includes('status="error"'), '出错：合并条目标记为 error')
+      }
+
+      /* 规则 5：兄弟全部结束 → 提前改用短窗口收尾 */
+      {
+        const { notify, sent, state } = scenario({ siblings: { 'sess-five': 1 } })
+        notify(finish('sub-f1', 'sess-five', { startedAt: 0, endedAt: 600_000 }))
+        await settle()
+        await clock.advance(20_000)
+        state.siblings['sess-five'] = 0
+        notify(finish('sub-f2', 'sess-five'))
+        await settle()
+        const armed = clock.pending().filter((t) => t.ms >= NOTICE_COALESCE_WINDOW_MS)
+        check(armed.length === 1 && armed[0].at === 40_000, '兄弟清空：改为短窗口，t=40000 投递', JSON.stringify(clock.pending().map((t) => t.at)))
+        await clock.advance(20_000)
+        check(sent.length === 1 && sent[0].text.includes('sub-f1') && sent[0].text.includes('sub-f2'), '兄弟清空：两条合并投递，不等到 300000')
+      }
+
+      /* 规则 5 + 取消：取消不通知，但它的结束触发提前收尾 */
+      {
+        const { notify, sent, state } = scenario({ siblings: { 'sess-cancel': 1 } })
+        notify(finish('sub-c1', 'sess-cancel', { startedAt: 0, endedAt: 600_000 }))
+        await settle()
+        await clock.advance(20_000)
+        state.siblings['sess-cancel'] = 0
+        notify(finish('sub-c2', 'sess-cancel', { status: 'cancelled' }))
+        await settle()
+        const armed = clock.pending().filter((t) => t.ms >= NOTICE_COALESCE_WINDOW_MS)
+        check(armed.length === 1 && armed[0].at === 40_000, '取消兄弟：触发短窗口收尾，t=40000')
+        await clock.advance(20_000)
+        check(sent.length === 1 && sent[0].text.includes('sub-c1'), '取消兄弟：只投等待批里已完成的那条')
+        check(!sent[0].text.includes('sub-c2'), '取消兄弟：自身不通知')
+      }
+
+      /* 规则 5 兜底：没有事件时靠轮询发现兄弟已结束 */
+      {
+        const { notify, sent, state } = scenario({ siblings: { 'sess-poll': 1 } })
+        notify(finish('sub-p1', 'sess-poll', { startedAt: 0, endedAt: 600_000 }))
+        await settle()
+        await clock.advance(10_000)
+        state.siblings['sess-poll'] = 0
+        await clock.advance(NOTICE_SIBLINGS_POLL_MS)
+        const armed = clock.pending().filter((t) => t.ms >= NOTICE_COALESCE_WINDOW_MS)
+        check(armed.length === 1 && armed[0].at === 35_000, '轮询兜底：t=15000 发现兄弟结束，改为 t=35000 投递', JSON.stringify(clock.pending().map((t) => t.at)))
+        await clock.advance(20_000)
+        check(sent.length === 1 && sent[0].text.includes('sub-p1'), '轮询兜底：到短窗口后投递')
+      }
+
+      /* 多条无兄弟：短窗口内合并成一条，逐个列出原内容，但仍可识别为通知 */
+      {
+        const { notify, sent } = scenario({ siblings: { 'sess-merge': 0 } })
+        notify(finish('sub-a', 'sess-merge'))
+        await settle()
+        notify(finish('sub-b', 'sess-merge', { status: 'error', error: '模型报错' }))
+        await settle()
+        notify(finish('sub-c', 'sess-merge'))
+        await settle()
+        check(clock.pending().length === 1, '多条：窗口内只保留首条挂的那个定时器', String(clock.pending().length))
+        await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+        check(sent.length === 1, '多条：三条合并成一次投递，不逐条唤醒父会话', String(sent.length))
+        check(
+          ['sub-a', 'sub-b', 'sub-c'].every((id) => sent[0].text.includes(`id="${id}`) || sent[0].text.includes(`yan subagent get ${id}`)),
+          '多条：合并文本逐个列出每个运行的原有内容'
+        )
+        check(sent[0].text.includes('任务 sub-a') && sent[0].text.includes('任务 sub-c'), '多条：每个任务的标题都在同一条消息里')
+        check(isSubagentNotice(sent[0].text), '多条：合并文本仍按通知识别（不显示为用户消息）')
+        check(parseSubagentNotice(sent[0].text) !== null, '多条：合并文本仍可解析出标题行')
+
+        /* 窗口结束后再到的一条另起一批，不丢也不重复 */
+        notify(finish('sub-d', 'sess-merge'))
+        await settle()
+        check(clock.pending().length === 1, '多条：窗口关闭后新到的通知另起一批')
+        await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+        check(sent.length === 2 && sent[1].text.includes('sub-d') && !sent[1].text.includes('sub-a'), '多条：新批次独立投递，不重复上一批')
+      }
+
+      /* 跨父会话：各自的批次互不混合，只投给原父会话 */
+      {
+        const clk = makeClock()
+        clock = clk
+        const sent = []
+        const siblings = { 'sess-A': 1, 'sess-B': 1 }
+        const targets = {
+          A: { send: async (text) => { sent.push({ to: 'A', text }); return { ok: true } } },
+          B: { send: async (text) => { sent.push({ to: 'B', text }); return { ok: true } } }
+        }
+        const notify = createSubagentNotifier({
+          enabled: () => true,
+          now: () => clk.now,
+          runningSiblings: (run) => siblings[run.parentSessionId] ?? 0,
+          find: (run) => (run.parentSessionId === 'sess-A' ? targets.A : run.parentSessionId === 'sess-B' ? targets.B : null)
+        })
+        notify(finish('sub-A1', 'sess-A'))
+        notify(finish('sub-B1', 'sess-B'))
+        await settle()
+        check(deadlines().length === 2, '跨父会话：两个父会话各挂一个等待批', String(clock.pending().length))
+        await clock.advance(NOTICE_BATCH_MIN_WAIT_MS)
+        check(sent.length === 2, '跨父会话：各投各的一条', String(sent.length))
+        const toA = sent.find((s) => s.to === 'A')
+        const toB = sent.find((s) => s.to === 'B')
+        check(toA?.text.includes('sub-A1') && !toA?.text.includes('sub-B1'), '跨父会话：A 的消息不含 B 的运行')
+        check(toB?.text.includes('sub-B1') && !toB?.text.includes('sub-A1'), '跨父会话：B 的消息不含 A 的运行')
+      }
+
+      /* 关闭开关：不入队、不挂定时器、不投递 */
+      {
+        const { notify, sent } = scenario({ enabled: () => false })
+        notify(finish('sub-off', 'sess-off'))
+        await settle()
+        check(clock.pending().length === 0, '关闭开关：不入队，不挂窗口定时器')
+        await clock.advance(NOTICE_BATCH_MIN_WAIT_MS)
+        check(sent.length === 0, '关闭开关：不投递')
+      }
+    } finally {
+      globalThis.setTimeout = realSetTimeout
+      globalThis.clearTimeout = realClearTimeout
     }
   }
 

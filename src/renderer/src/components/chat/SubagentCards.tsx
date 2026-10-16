@@ -1,22 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import type { SubagentRun, UIMessage } from '../../../../shared/ipc'
 import { formatDuration } from '../../../../shared/duration'
-import { subagentOutcome, type SubagentOutcome } from '../../../../shared/subagent-outcome'
+import { isDismissed, subagentOutcome, type SubagentOutcome } from '../../../../shared/subagent-outcome'
 import { useStore } from '../../state/store'
 import { Button } from '../ui'
 import { useConfirm } from '../ui/confirm'
+import { resolveSubagentModelDisplay } from './turn-model-display'
 
 /** 详情里最多列多少条工具调用 */
 const DETAIL_LIMIT = 6
 
 export const isLive = (run: SubagentRun): boolean => run.status === 'starting' || run.status === 'running'
-
-/** `provider/id` → `id`：提供商名太长且不影响辨认模型，完整写法留在详情里 */
-function shortModel(model: string): string {
-  const i = model.indexOf('/')
-  return i >= 0 ? model.slice(i + 1) : model
-}
 
 function compactTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n)
@@ -96,14 +91,23 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
   const stopSubagent = useStore((s) => s.stopSubagent)
   const mergeSubagent = useStore((s) => s.mergeSubagent)
   const discardSubagent = useStore((s) => s.discardSubagent)
+  const models = useStore((s) => s.models)
+  const favorites = useStore((s) => s.settings?.modelFavorites)
+  const modelDisplay = run.model ? resolveSubagentModelDisplay(run.model, models, favorites ?? []) : null
   const confirm = useConfirm()
   const [expanded, setExpanded] = useState(false)
+  /* 「不再处理」只改宿主持久标记，不在本地乐观隐藏；在途时用 ref 同步防重。 */
+  const [dismissBusy, setDismissBusy] = useState(false)
+  const [dismissFailed, setDismissFailed] = useState(false)
+  const dismissInFlight = useRef(false)
   const { live, attention, tone } = outcome
   const readOnly = run.isolation === 'controlled-cwd'
   const elapsed = formatDuration((run.endedAt ?? now) - run.startedAt, { minSeconds: 1 })
   const calls = run.toolCalls ?? run.transcript.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0)
   const changed = run.diff && run.diff.files > 0 ? run.diff : null
   const reviewing = !live && (run.review === 'pending' || run.review === 'conflict')
+  /* 失败且没有待审阅改动才允许退出；已标记过的不再显示入口。 */
+  const canDismiss = run.status === 'error' && !isDismissed(run) && !reviewing
 
   /* 默认只给原因；产出正文留在详情中。 */
   const reason =
@@ -130,7 +134,7 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
       key: 'model',
       node: (
         <span className="sg-model" data-testid={`subagent-note-model-${run.id}`} title={run.model ?? ''}>
-          {run.model ? shortModel(run.model) : '—'}
+          {modelDisplay?.label ?? '—'}
         </span>
       )
     },
@@ -154,6 +158,24 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
     if (result.ok) { void useStore.getState().loadSubagents(); window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: `subagent:${result.run?.id}` })) }
   }
 
+  /* 不再处理：宿主只落一个标记，成功后重读快照；失败就地提示，卡片仍留在需处理区。不碰 stop/retry/clearAll。 */
+  const dismiss = async () => {
+    if (dismissInFlight.current) return
+    dismissInFlight.current = true
+    setDismissBusy(true)
+    setDismissFailed(false)
+    try {
+      const result = await window.yan.subagents.dismiss(run.id)
+      if (!result.ok) { setDismissFailed(true); return }
+      await useStore.getState().loadSubagents()
+    } catch {
+      setDismissFailed(true)
+    } finally {
+      dismissInFlight.current = false
+      setDismissBusy(false)
+    }
+  }
+
   return (
     <div className={`sg-card tone-${tone}${attention ? ' is-attn' : ''}${live ? ' is-live' : ''}${expanded ? ' is-open' : ''}`} data-testid={`subagent-note-${run.id}`} data-outcome={outcome.key}>
       <div className="sg-main">
@@ -172,8 +194,9 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
         <span className="sg-state" data-testid={`subagent-note-state-${run.id}`}>
           {t(`sa.state.${outcome.key}` as MessageKey)}
         </span>
-        <Button size="sm" variant="ghost" className="sg-detail-btn" active={expanded} aria-expanded={expanded} trailingIcon="chevron-right" data-testid={`subagent-note-details-${run.id}`} onClick={() => setExpanded(v => !v)}>{t(expanded ? 'sa.noteHide' : 'sa.noteDetails')}</Button>
+        <Button size="sm" variant="ghost" className="ui-disclosure-trigger" active={expanded} aria-expanded={expanded} trailingIcon="chevron-right" data-testid={`subagent-note-details-${run.id}`} onClick={() => setExpanded(v => !v)}>{t(expanded ? 'sa.noteHide' : 'sa.noteDetails')}</Button>
         {run.status === 'error' ? <Button size="sm" onClick={() => void retry()} data-testid={`subagent-note-retry-${run.id}`}>{t('sa.retry')}</Button> : null}
+        {canDismiss ? <Button size="sm" variant="ghost" disabled={dismissBusy} title={t('sa.dismissHint')} onClick={() => void dismiss()} data-testid={`subagent-note-dismiss-${run.id}`}>{t('sa.dismiss')}</Button> : null}
         {live ?<Button variant="danger" size="sm" onClick={() => void stopSubagent(run.id)} data-testid={`subagent-note-stop-${run.id}`}>{t('sa.stop')}</Button> : null}
       </div>
       {!isQuiet(outcome) || expanded ? (
@@ -193,6 +216,11 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
       {!live && reason ? (
         <div className={`sg-line sg-reason${expanded ? '' : ' sg-activity'}`} title={reason} data-testid={`subagent-note-reason-${run.id}`}>
           {reason}
+        </div>
+      ) : null}
+      {dismissFailed ? (
+        <div className="sg-line sg-reason" role="alert" data-testid={`subagent-note-dismiss-failed-${run.id}`}>
+          {t('sa.dismissFailed')}
         </div>
       ) : null}
       {reviewing ? (

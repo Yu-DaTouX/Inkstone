@@ -11,6 +11,7 @@
  *   所以要在这里组装出完整的 UIMessage[]，再以补丁形式推给渲染端。
  */
 import { EventEmitter } from 'node:events'
+import { getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -18,7 +19,12 @@ import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from 'no
 import { saveUserSkill, userSkillsDir } from './user-skills'
 import { acquiredUserSkillNames, listSessionSkills, promoteSessionSkill, removeSessionSkill } from './capabilities/acquired-skills'
 import { PiRpc, resolvePi } from './protocol'
+import { assistantModelIdentity } from '../shared/assistant-model'
+import { NativeSessionRuntime, type NavigateTreeResult, type ScopedModelsSnapshot, type ProjectTrustSnapshot } from './native-session-runtime'
+import { nativeActiveBranch } from './native-session-history'
+import { allowTrust, revokeTrust } from './project-trust'
 import { workspaceMutationInProgress } from './workspace-mutation'
+import type { ExecuteAdmissionPort } from './session-send-guard'
 import { modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { isQuotaWaitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
@@ -70,6 +76,7 @@ import { questionLog } from './question-log'
 import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, summarizeAnswers, type QuestionField } from '../shared/question-form'
 
 import { requestedTimeout } from '../shared/ui-timeout'
+import { createStreamLoopDetector, type LoopHit, type StreamLoopDetector } from '../shared/stream-loop-detector'
 import { buildCatalog } from './capabilities/catalog'
 import { webSearchAvailability, type WebSearchAvailability } from '../shared/web-search'
 import { readSkillById, skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
@@ -126,7 +133,7 @@ import type {
   Usage
 } from '../shared/ipc'
 import type { CapabilityStrategy, WorkMode } from '../shared/ipc'
-import type { SessionMoveAnswer, SessionMovePrompt } from './session-move'
+import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import type { ScheduleService } from './schedule-service'
 import { runScheduleCommand, ScheduleCommandError } from './schedule-commands'
 
@@ -349,6 +356,8 @@ export interface CapabilityRunOptions {
   devResourcesDir?: string
   getWorkMode?: () => Promise<WorkMode>
   getCapabilityStrategy?: () => Promise<CapabilityStrategy>
+  /** 同步执行入场（同 cwd claim/token）；宿主未注入时（纯测试 / 旧调用）不发 claim。 */
+  execution?: ExecuteAdmissionPort
   /** 直执行 bash 收尾后给受管能力调度器一个安全边界机会。 */
   onBashSettled?: () => void
   /** 移到系统回收站（宿主注入 Electron `shell.trashItem`）。 */
@@ -376,8 +385,18 @@ async function projectPiPackageArgs(cwd: string): Promise<string[]> {
   return projectPackageDirs(cwd, PI_AGENT_DIR).flatMap((dir) => ['--extension', dir])
 }
 
+/**
+ * ack 早于 `agent_start` 时，执行入场 claim 的宽限窗口。
+ * 回合真的启动后由 `setAgentRunning(false)` / `stop()` 释放；一直没启动则到期释放，
+ * 不会因为一次异常发送永久锁住同 cwd。
+ */
+const EXECUTION_ADMISSION_GRACE_MS = 10_000
+
 export class AgentController extends EventEmitter {
   private rpc: PiRpc | null = null
+  private nativeRuntime: NativeSessionRuntime | null = null
+  private nativeBranchView = false
+  private nativeSessionExtension?: string
   private push: Push
   private cwd: string
   private piBin?: string
@@ -463,6 +482,9 @@ export class AgentController extends EventEmitter {
   private capabilityServer?: CapabilityServer
   /** 能力服务参数（由 RunnerRegistry 工厂传入）。 */
   private capabilityOpts?: CapabilityRunOptions
+  /** 同步执行入场 token；成功后持有到回合结束，失败 / 取消立即归还。 */
+  private executionAdmissionToken?: number
+  private executionAdmissionTimer?: ReturnType<typeof setTimeout>
 
   /** 模型/思考能力变更串行化，避免快速点击时旧响应覆盖新状态。 */
   private capabilityChangeTail: Promise<void> = Promise.resolve()
@@ -564,11 +586,32 @@ export class AgentController extends EventEmitter {
     pushedText: number
     /** 同上，思考文本的游标 */
     pushedThinking: number
+    /** 工具参数块是否尚未闭合；未闭合时不触发流式重复熔断。 */
+    toolOpen?: boolean
   } | null = null
   /** 回合级「正在干活」（含工具执行），见 setAgentRunning */
   private agentRunning = false
   /** 本回合是否已调用过写文件 / shell 类工具；同目录并发只在写过文件时才算冲突。 */
   private wroteThisRun = false
+  /** 当前 assistant 消息的流式重复检测器；message_start 重建、message_end 清掉。 */
+  private streamLoopDetector: StreamLoopDetector | null = null
+  /** 本 run 是否已因流式重复触发过熔断（同一 run 至多一次）。 */
+  private loopGuardTripped = false
+  /** 流式防护的 rpc abort 是否已发出；发出后到权威 settled 前阻止新的 send/steer/followUp。 */
+  private loopGuardAbortSent = false
+  /** 从命中起锁住队列编辑；失败时释放，成功则由权威事件收尾。 */
+  private loopGuardStopping = false
+  private loopGuardStopTask?: Promise<void>
+  private loopGuardAbortedMessage = false
+  /** 次数只在显式新输入重置，agent_start 不重置。 */
+  private loopGuardAutoContinueCount = 0
+  private loopGuardContinuationVersion = 0
+  /** Failed/aborted messages permanently invalidate a pending approved move's continuation. */
+  private sessionMoveFailureVersion = 0
+  private loopGuardResumeVersion = -1
+  private loopGuardContinueTask?: Promise<void>
+  /** 熔断命中信息（只记规则与量，不存思考原文），用于权威收尾展示与结构化日志。 */
+  private loopGuardHit?: { rule: LoopHit['rule']; stream: 'thinking' | 'text' }
 
   /** 当前回合的计时与元数据（见 turn-timing-tracker.ts） */
   private readonly turn = new TurnTimingTracker()
@@ -622,10 +665,15 @@ export class AgentController extends EventEmitter {
   private readonly entriesLite = new SessionEntriesLite()
 
   /**
-   * 任务清单这类读者要的条目：优先读会话文件（只读新增部分、不带消息内容），
+   * 宿主内部读者要的条目：优先读会话文件（只读新增部分、不带消息内容），
    * 文件还不存在（新会话尚未落盘）时退回 pi 的 `get_entries`。
+   *
+   * ⚠️ 与下面公开的 `sessionEntries(since?)` 不是一回事：那个是 IPC/探针面，
+   * 带游标与 `leafId`、失败返回 `{ ok:false, error }`；这里只给任务清单与
+   * 轮次统计用，形状是裸数组、失败返回 null。公开面要占用 `sessionEntries`
+   * 这个名字，所以内部这份改名为 `sessionEntriesLite`。
    */
-  private async sessionEntries(): Promise<Record<string, unknown>[] | null> {
+  private async sessionEntriesLite(): Promise<Record<string, unknown>[] | null> {
     const lite = await this.entriesLite.entries(this.state?.sessionFile).catch(() => null)
     if (lite) return lite
     const res = await this.rpc?.command<{ entries?: Record<string, unknown>[] }>('get_entries')
@@ -706,6 +754,8 @@ export class AgentController extends EventEmitter {
     contextInspectExtension?: string
     /** 旧工具输出裁剪与自动压缩上限。 */
     contextTrimExtension?: string
+    /** Thin bridge for desktop-initiated native tree navigation and resource reload. */
+    nativeSessionExtension?: string
     /** Legacy caller option accepted but ignored; context belongs to pi. */
     contextExtension?: string
     /** Legacy caller option accepted but ignored; no automatic knowledge injection. */
@@ -793,6 +843,7 @@ export class AgentController extends EventEmitter {
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.contextInspectExtension = opts.contextInspectExtension
     this.contextTrimExtension = opts.contextTrimExtension
+    this.nativeSessionExtension = opts.nativeSessionExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
     this.bundledSkills = opts.bundledSkills ?? []
     this.userSkills = opts.userSkills
@@ -957,6 +1008,14 @@ export class AgentController extends EventEmitter {
 
     this.stopping = false
     this.resetQueue()
+    this.streamLoopDetector = null
+    this.loopGuardTripped = false
+    this.loopGuardAbortSent = false
+    this.loopGuardStopping = false
+    this.loopGuardAbortedMessage = false
+    this.loopGuardAutoContinueCount = 0
+    this.loopGuardContinuationVersion += 1
+    this.loopGuardHit = undefined
     this.setConn('starting')
 
     /* 先起能力服务：pi 的环境变量里要有它的地址与令牌。 */
@@ -978,6 +1037,7 @@ export class AgentController extends EventEmitter {
       args: agentOwnedPiArgs([
         /* Trusted UI/authorization extensions are explicit; pi discovers its native skills. */
         '--no-extensions',
+        ...(this.nativeSessionExtension ? ['--extension', this.nativeSessionExtension] : []),
         ...(nativeTools && this.codemodeExtension ? ['--extension', this.codemodeExtension] : []),
          // 工作模式的提问指引薄层（真正入口是宿主 yan question ask）
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
@@ -1053,6 +1113,7 @@ export class AgentController extends EventEmitter {
         YAN_DATA_DIR: YAN_DIR,
         // 便携版必须让 pi 也使用 EXE 同级的私有目录；否则它会回退到 ~/.pi。
         PI_CODING_AGENT_DIR: PI_AGENT_DIR,
+        ...(this.nativeSessionExtension ? { YAN_NATIVE_BRIDGE: '1' } : {}),
         ...(shellFallback ? { YAN_SHELL: 'powershell' } : {}),
         /*
          * 实例身份：薄层扩展靠它找到**自己那份**文件（工作模式快照、
@@ -1091,6 +1152,7 @@ export class AgentController extends EventEmitter {
       }
     })
     this.rpc = rpc
+    this.nativeRuntime = new NativeSessionRuntime({ command: (type, payload, options) => rpc.command(type, payload, options) })
 
     rpc.on('stderr', (line) => {
       this.push({ ch: 'proc', payload: { state: 'stderr', detail: line } })
@@ -1104,6 +1166,7 @@ export class AgentController extends EventEmitter {
       this.streaming = null
       this.bash = null
       this.agentRunning = false
+      this.releaseExecutionAdmission()
       this.compactionState = EMPTY_COMPACTION_STATE
       this.ui.rejectPendingHostUi('pi 已退出，问题请求已取消')
       this.ui.pending.clear()
@@ -1114,7 +1177,10 @@ export class AgentController extends EventEmitter {
       this.setConn('exited', `pi 已退出（code=${code ?? 'null'}）`)
     })
 
-    rpc.on('ui', (req) => this.ui.handleUi(req))
+    rpc.on('ui', (req) => {
+      if (this.nativeRuntime?.handleUi(req)) return
+      this.ui.handleUi(req)
+    })
     rpc.on('event', (evt) => this.handleEvent(evt))
 
     rpc.spawn()
@@ -1176,7 +1242,16 @@ export class AgentController extends EventEmitter {
      * 再被权威快照压短（用户报的「切换会话历史丢失」）。
      */
     const fromFile = sessionFile ? await this.readHistoryOf(sessionFile) : null
-    if (fromFile?.messages.length) {
+    if (this.nativeBranchView) {
+      const snapshot = await this.sessionEntries()
+      if (!snapshot.ok) throw new Error(snapshot.error ?? '无法读取当前原生分支')
+      const path = nativeActiveBranch(snapshot.entries ?? [], snapshot.leafId ?? null)
+      const messageEntries = path.filter(entry => entry.type === 'message' && entry.message)
+      const previousSegments = fromFile?.messages.filter(message => message.id.startsWith('history:')) ?? []
+      this.messages = [...previousSegments, ...normalizeHistory(messageEntries.map(entry => entry.message),
+        (mimeType, data) => localizeImage(join(YAN_DIR, 'attachments'), mimeType, data),
+        messageEntries.map(entry => typeof entry.id === 'string' ? entry.id : undefined))]
+    } else if (fromFile?.messages.length) {
       this.messages = fromFile.messages
     } else {
       const msgs = await this.requireRpc().command('get_messages').catch(() => null)
@@ -1241,7 +1316,7 @@ export class AgentController extends EventEmitter {
 
   async getCustomEntries(): Promise<CustomEntry[]> {
     try {
-      const entries = await this.sessionEntries()
+      const entries = await this.sessionEntriesLite()
       if (!entries) return []
       return entries
         .filter((e) => e.type === 'custom')
@@ -1270,7 +1345,7 @@ export class AgentController extends EventEmitter {
    */
   async refreshTodos(): Promise<SessionTodo[]> {
     try {
-      const entries = await this.sessionEntries()
+      const entries = await this.sessionEntriesLite()
       if (!entries) return []
       const hostEntries = await this.taskPlanEntries()
       const snaps = todoSnapshotsFromEntries([...entries, ...hostEntries])
@@ -2247,7 +2322,7 @@ export class AgentController extends EventEmitter {
    */
   private async currentUserRound(): Promise<number> {
     try {
-      const entries = await this.sessionEntries()
+      const entries = await this.sessionEntriesLite()
       if (!entries) return 1
       let userMsgs = 0
       for (const e of entries) {
@@ -2554,6 +2629,8 @@ export class AgentController extends EventEmitter {
             pushedText: 0,
             pushedThinking: 0
           }
+          /* 每条 assistant 消息独立检测；上一次 abort 尚未收尾时不重置去重标记。 */
+          this.streamLoopDetector = createStreamLoopDetector()
           this.push({
             ch: 'msg-add',
             payload: { id, role: 'assistant', text: '', responseDetail: this.turn.responseDetail, timestamp: Date.now() }
@@ -2597,7 +2674,10 @@ export class AgentController extends EventEmitter {
           this.streaming.thinkingStartedAt = Date.now()
           this.streaming.thinkingLive = true
         } else if (kind === 'thinking_delta') {
-          this.streaming.thinking += String(ev.delta ?? '')
+          const delta = String(ev.delta ?? '')
+          this.streaming.thinking += delta
+          /* 只观察增量文本；命中后由 stopForLoopGuard 决定是否中止。 */
+          this.checkStreamLoop('thinking', delta)
           this.markDirty()
         } else if (kind === 'thinking_end') {
           const started = this.streaming.thinkingStartedAt
@@ -2605,9 +2685,12 @@ export class AgentController extends EventEmitter {
           this.streaming.thinkingLive = false
           this.markDirty()
         } else if (kind === 'text_delta') {
-          this.streaming.text += String(ev.delta ?? '')
+          const delta = String(ev.delta ?? '')
+          this.streaming.text += delta
+          this.checkStreamLoop('text', delta)
           this.markDirty()
         } else if (kind === 'toolcall_start') {
+          this.streaming.toolOpen = true
           const call: UIToolCall = {
             id: String(ev.id ?? `call-${this.streaming.tools.length}`),
             name: String(ev.toolName ?? 'tool'),
@@ -2632,6 +2715,7 @@ export class AgentController extends EventEmitter {
             }
           }
         } else if (kind === 'toolcall_end') {
+          this.streaming.toolOpen = false
           const tc = ev.toolCall as PiContentBlock | undefined
           const last = this.streaming.tools[this.streaming.tools.length - 1]
           if (last && tc) {
@@ -2655,6 +2739,8 @@ export class AgentController extends EventEmitter {
         /* 这次模型请求的终点：取事件处理开始的单调时刻，不被后面的推送开销拖长。 */
         const endedMono = performance.now()
         this.streaming = null
+        /* 消息结束：本条的检测器作废，迟到的命中不再作用于下一条消息。 */
+        this.streamLoopDetector = null
         // 这一条消息的工具从此属于历史消息 —— 索引要落到 id 上（渲染端也会收到全量快照）
         for (const c of s.tools) this.registerCall(c, id)
 
@@ -2681,7 +2767,7 @@ export class AgentController extends EventEmitter {
           elapsedMs: sp.elapsedMs,
           ...(genTiming ? { generationTiming: genTiming } : {}),
           responseDetail: s.responseDetail,
-          model: m.model,
+          model: assistantModelIdentity(m),
           timestamp: m.timestamp ?? Date.now(),
           error: assistantError(m)
         }
@@ -2706,6 +2792,7 @@ export class AgentController extends EventEmitter {
           ch: 'msg-update',
           payload: { id, patch: msg }
         })
+        if (m.stopReason === 'error' || m.stopReason === 'aborted') this.sessionMoveFailureVersion += 1
         if (m.stopReason === 'error') {
           /*
            * 模型侧错误（实施-05 S5c）：宿主据此决定要不要自动继续。
@@ -2717,6 +2804,22 @@ export class AgentController extends EventEmitter {
           })
           /* 失败也是终止原因：不能落盘成「正常完成」（H-6）。 */
           this.turn.terminal = 'failed'
+        } else if (m.stopReason === 'aborted' && this.turn.terminal === 'interrupted') {
+          this.loopGuardAbortedMessage = this.loopGuardAbortSent
+          /*
+           * 权威收尾：只有真的收到 aborted 才提示「已终止」——
+           * RPC command success 不等于 settled。
+           */
+          this.push({
+            ch: 'notify',
+            payload: {
+              id: `loop-guard-${Date.now()}`,
+              method: 'notify',
+              notifyType: 'warning',
+              message: `已按流式防护终止本次生成（${this.loopGuardHit?.rule ?? 'stream-loop'}）。会话可继续，本次任务尚未完成。`
+            }
+          })
+          this.logStreamLoopGuard('settled', { rule: this.loopGuardHit?.rule, stream: this.loopGuardHit?.stream, outcome: 'aborted-stream' })
         } else if (m.stopReason === 'aborted' && this.turn.terminal !== 'stopped') {
           /*
            * 请求被中止但不是用户点的停止（abort() 会先把 terminal 标成 stopped）：
@@ -2846,7 +2949,19 @@ export class AgentController extends EventEmitter {
         this.setAgentRunning(true)
         break
 
-      case 'agent_settled':
+      case 'agent_settled': {
+        // aborted 消息与 settled 都到达才有资格继续。
+        const continuation = this.loopGuardAbortSent && this.loopGuardAbortedMessage && this.rpc && this.state?.sessionId
+          ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
+            runId: this.turn.runId, version: this.loopGuardResumeVersion }
+          : null
+        if (this.loopGuardHit) this.logStreamLoopGuard('settled', { rule: this.loopGuardHit.rule, stream: this.loopGuardHit.stream, outcome: 'agent-settled' })
+        this.streamLoopDetector = null
+        this.loopGuardTripped = false
+        this.loopGuardAbortSent = false
+        this.loopGuardStopping = false
+        this.loopGuardAbortedMessage = false
+        this.loopGuardHit = undefined
         this.markStreaming(false)
         this.setAgentRunning(false)
         this.turn.startedAt = undefined
@@ -2862,7 +2977,15 @@ export class AgentController extends EventEmitter {
         // 用户每说一句都重算标题（用户要求每次都是新生成的）；
         // 自动续跑、重试这类没有新用户消息的回合不重算 —— 标题样本没变，只会白花一次调用
         void this.maybeGenerateTitle({ force: true, onlyIfSamplesChanged: true })
+        if (continuation) {
+          const task = this.continueAfterLoopGuard(continuation)
+          this.loopGuardContinueTask = task
+          void task.finally(() => {
+            if (this.loopGuardContinueTask === task) this.loopGuardContinueTask = undefined
+          }).catch(() => undefined)
+        }
         break
+      }
 
       case 'turn_end':
         /*
@@ -2881,7 +3004,11 @@ export class AgentController extends EventEmitter {
          * agent_start + turn_start，所以这里清起点是安全的）。
          */
         this.pendingRequestMono = undefined
-        if (evt.willRetry !== true) void this.persistTurnTiming()
+        if (evt.willRetry !== true) {
+          this.streamLoopDetector = null
+          // abort 的确认标记保留到 agent_settled，不能在较早的 agent_end 解锁新消息。
+          void this.persistTurnTiming()
+        }
         void this.refreshStats()
         break
 
@@ -2949,6 +3076,20 @@ export class AgentController extends EventEmitter {
         break
 
       case 'auto_retry_start': {
+        /* 流式防护已中止的 run 不允许被自动重试复活成同一次重复流。 */
+        if (this.loopGuardAbortSent) {
+          this.push({
+            ch: 'notify',
+            payload: {
+              id: `retry-loop-guard-${Date.now()}`,
+              method: 'notify',
+              notifyType: 'warning',
+              message: '已按流式防护停止本次生成，不再自动重试。'
+            }
+          })
+          void this.abortRetry()
+          break
+        }
         /*
          * 套餐 / 窗口用量用尽再等一下也不会好：pi 把
          * “You have hit your ChatGPT usage limit (plus plan). Try again in ~31 min.”
@@ -3329,6 +3470,68 @@ export class AgentController extends EventEmitter {
     if (!this.state) return
     this.state = { ...this.state, isAgentRunning: v }
     this.push({ ch: 'state', payload: this.state })
+    /*
+     * 回合真正结束才归还执行入场 claim；队列里还有下一棒时继续持有，
+     * 避免两拍之间放第二个同 cwd runner 进场写同一工作树。
+     */
+    if (!v && this.state.isStreaming !== true && this.state.isCompacting !== true &&
+      !this.queueState.steering.length && !this.queueState.followUp.length) {
+      this.releaseExecutionAdmission()
+    }
+  }
+
+  /* ------------------------------------------------------ 执行入场 claim */
+
+  /** 本实例是否还有正在执行的工作（回合 / 流 / 压缩 / 直执行 bash）。 */
+  private executionActive(): boolean {
+    return this.agentRunning || this.state?.isStreaming === true || this.state?.isCompacting === true || this.bash != null
+  }
+
+  /**
+   * 同步取执行入场 claim；同实例重入直接复用已有 token（自己的插话 / 排队不被自己拦）。
+   * 没有注入口（纯测试 / 旧调用）时视为放行。
+   */
+  private claimExecutionAdmission(): { ok: true } | { ok: false; error: string } {
+    const port = this.capabilityOpts?.execution
+    if (!port) return { ok: true }
+    if (this.executionAdmissionToken !== undefined) return { ok: true }
+    const claim = port.claim()
+    if (!claim.ok) return claim
+    this.executionAdmissionToken = claim.token
+    return { ok: true }
+  }
+
+  /** 真正入队前再核一次：claim 已换代 / 被别的实例占用就拒绝。 */
+  private confirmExecutionAdmission(): boolean {
+    const port = this.capabilityOpts?.execution
+    const token = this.executionAdmissionToken
+    if (!port || token === undefined) return true
+    return port.confirm(token)
+  }
+
+  private releaseExecutionAdmission(): void {
+    const token = this.executionAdmissionToken
+    this.executionAdmissionToken = undefined
+    if (this.executionAdmissionTimer) {
+      clearTimeout(this.executionAdmissionTimer)
+      this.executionAdmissionTimer = undefined
+    }
+    if (token !== undefined) this.capabilityOpts?.execution?.release(token)
+  }
+
+  /**
+   * 一次执行调用收尾时处理 claim：还在跑就保留（等 setAgentRunning(false)），
+   * 已空闲则给一小段宽限，确认没有晚到的 `agent_start` 再释放。
+   */
+  private settleExecutionAdmission(): void {
+    if (this.executionAdmissionToken === undefined) return
+    if (this.executionActive()) return
+    if (this.executionAdmissionTimer) clearTimeout(this.executionAdmissionTimer)
+    this.executionAdmissionTimer = setTimeout(() => {
+      this.executionAdmissionTimer = undefined
+      if (!this.executionActive()) this.releaseExecutionAdmission()
+    }, EXECUTION_ADMISSION_GRACE_MS)
+    this.executionAdmissionTimer.unref?.()
   }
 
   private markStreaming(v: boolean): void {
@@ -3346,6 +3549,188 @@ export class AgentController extends EventEmitter {
     if (!this.state) return
     this.state = { ...this.state, compaction: next.running ?? undefined, lastCompaction: next.last ?? undefined }
     this.push({ ch: 'state', payload: this.state })
+  }
+
+  /* ------------------------------------------------------ 流式重复防护 */
+
+  /** 首版默认开启；`YAN_STREAM_LOOP_GUARD=0` 关闭，出现误报时可直接回退。 */
+  private streamLoopGuardEnabled(): boolean {
+    return process.env.YAN_STREAM_LOOP_GUARD !== '0'
+  }
+
+  /**
+   * 只观察 thinking/text 增量；命中后交由 `stopForLoopGuard` 处理。
+   * 工具参数流不参与统计，且工具块未闭合时即使命中也不熔断。
+   */
+  private checkStreamLoop(kind: 'thinking' | 'text', delta: string): void {
+    const detector = this.streamLoopDetector
+    if (!detector || !delta) return
+    if (this.loopGuardTripped || this.loopGuardAbortSent) return
+    if (!this.streamLoopGuardEnabled()) return
+    const hit = kind === 'thinking' ? detector.onThinking(delta) : detector.onText(delta)
+    if (!hit) return
+    if (this.streaming?.toolOpen) {
+      /* 参数还在生成：宁可漏报，也不在半截工具参数上切断。 */
+      this.logStreamLoopGuard('break-suppressed', {
+        rule: hit.rule, stream: kind, emittedChars: hit.emittedChars, repeatedChars: hit.repeatedChars,
+        reason: 'tool-block-open', outcome: 'suppressed'
+      })
+      return
+    }
+    this.loopGuardStopTask = this.stopForLoopGuard(hit, kind)
+  }
+
+  /**
+   * 流式重复熔断：与人工 `abort()` 分开的专用底层流程。
+   *
+   * 边界：
+   *   · 不调用人工停止入口，不提前把 streaming / agentRunning 置 false、不伪造 completed；
+   *   · 经 `queueRun` 串行 `clear_queue`，把原文、顺序与身份经
+   *     `queue-reclaimed` 推回渲染端；含图片或 clear 失败则不自动 abort，仅告警保留；
+   *   · terminal 记 `interrupted`，由 pi 的权威 `message_end` / `agent_settled` 收尾；
+   *   · 同一 run 至多触发一次，事件重复到达只写一条日志。
+   */
+  private async stopForLoopGuard(hit: LoopHit, stream: 'thinking' | 'text'): Promise<void> {
+    const target = this.streaming
+    const rpc = this.rpc
+    const sessionId = this.state?.sessionId
+    const generation = this.capabilityOpts?.runnerGeneration
+    const runId = this.turn.runId
+    const messageId = target?.id
+    if (!target || !rpc || !sessionId || this.loopGuardTripped || this.loopGuardAbortSent) return
+    const record = (event: string, fields: Record<string, unknown>) =>
+      this.logStreamLoopGuard(event, { sessionId, generation, runId, ...fields })
+    this.loopGuardTripped = true
+    this.loopGuardResumeVersion = this.loopGuardContinuationVersion
+    this.loopGuardAbortedMessage = false
+    this.loopGuardHit = { rule: hit.rule, stream }
+    record('break-requested', {
+      rule: hit.rule, stream, emittedChars: hit.emittedChars, repeatedChars: hit.repeatedChars,
+      messageId, action: 'clear-queue-then-abort', outcome: 'pending'
+    })
+
+    const ownsRun = () => this.rpc === rpc && this.state?.sessionId === sessionId &&
+      this.capabilityOpts?.runnerGeneration === generation && this.turn.runId === runId
+    const canStop = () => ownsRun() && this.streaming === target && this.turn.terminal !== 'stopped'
+    this.loopGuardStopping = true
+    try {
+      // 即使当前镜像为空，也须排在所有已发起的入队/编辑操作之后。
+      await this.queueRun(async () => {
+        if (!canStop()) return
+        const original = this.queueState
+        // 后台草稿缓存不保存图片。不能为自动熔断丢附件，首版有图片时仅告警。
+        if ([...original.steering, ...original.followUp].some(item => item.images?.length)) {
+          throw new Error('排队内容含图片，自动回填不能保证后台附件完整，请手动停止并收回')
+        }
+        const result = await rpc.command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
+        if (!result.success || !result.data || !Array.isArray(result.data.steering) || !Array.isArray(result.data.followUp)) {
+          throw new Error(result.error || 'clear_queue 未返回可确认的队列快照')
+        }
+        const reclaimed = snapshotQueue({
+          steering: this.queueItems(result.data.steering, original.steering),
+          followUp: this.queueItems(result.data.followUp, original.followUp)
+        })
+        if (ownsRun()) this.resetQueue(true)
+        // clear 已生效，即使消息自然结束也必须归还；显式归属避免迟到事件投到新会话。
+        if (reclaimed.steering.length || reclaimed.followUp.length) {
+          this.push({ ch: 'queue-reclaimed', payload: { ...reclaimed, sessionId } })
+          record('queue-reclaimed', { rule: hit.rule, stream, messageId, outcome: 'reclaimed' })
+        }
+        if (!canStop()) {
+          record('stale-before-abort', { rule: hit.rule, stream, messageId, outcome: 'stale' })
+          return
+        }
+        this.loopGuardAbortSent = true
+        this.turn.terminal = 'interrupted'
+        this.push({ ch: 'notify', payload: {
+          id: `loop-guard-${Date.now()}`, method: 'notify', notifyType: 'warning',
+          message: `检测到模型输出重复（${hit.rule}），正在终止本次生成；会话可继续，本次任务尚未完成。`
+        } })
+        const response = await rpc.command('abort')
+        if (!response.success) throw new Error(response.error || 'abort 失败')
+        record('abort-acknowledged', { rule: hit.rule, stream, messageId, outcome: this.agentRunning ? 'pending-settle' : 'settled-before-ack' })
+      }, true)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      record('stop-failed', { rule: hit.rule, stream, messageId, detail, outcome: 'unconfirmed' })
+      if (ownsRun()) {
+        this.push({ ch: 'notify', payload: {
+          id: `loop-guard-${Date.now()}`, method: 'notify', notifyType: 'error',
+          message: `检测到模型输出重复（${hit.rule}），但未能确认终止（${detail}）。请手动决定，不会自动续跑。`
+        } })
+        // 失败不能永久锁住人工处置；检测仍在本 run 去重，不再次自动尝试。
+        this.loopGuardAbortSent = false
+        this.loopGuardContinuationVersion += 1
+        if (this.turn.terminal === 'interrupted') this.turn.terminal = 'failed'
+      }
+    } finally {
+      if (ownsRun()) this.loopGuardStopping = false
+    }
+  }
+
+  /** 桌面开关不改 pi 原生 settings/context。 */
+  private async readStreamLoopAutoContinue(): Promise<boolean> {
+    return (await getSettings()).streamLoopAutoContinue !== false
+  }
+
+  private canContinueAfterLoopGuard(scope: {
+    rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number
+  }): boolean {
+    return !this.stopping && this.rpc === scope.rpc && this.state?.sessionId === scope.sessionId &&
+      this.capabilityOpts?.runnerGeneration === scope.generation && this.turn.runId === scope.runId &&
+      this.loopGuardContinuationVersion === scope.version && !this.agentRunning && !this.streaming &&
+      !this.state?.isCompacting && !this.loopGuardStopping && !this.loopGuardAbortSent &&
+      !this.queueState.steering.length && !this.queueState.followUp.length
+  }
+
+  /** 原记录不删改，通过原生 prompt 追加可见的一次恢复指令。 */
+  private async continueAfterLoopGuard(scope: {
+    rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number
+  }): Promise<void> {
+    try {
+      await this.loopGuardStopTask
+      if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return
+      if (!this.canContinueAfterLoopGuard(scope)) return
+      if (this.loopGuardAutoContinueCount >= 1) {
+        this.logStreamLoopGuard('auto-continue-limit', { sessionId: scope.sessionId, runId: scope.runId, outcome: 'not-resumed' })
+        this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'warning',
+          message: '自动继续后再次检测到循环，已停止；同一任务最多自动续一次，请手动决定。' } })
+        return
+      }
+      const prompt = '[循环恢复 · 自动继续 1/1]\n上一轮因输出重复被安全中止。请核对已完成的工具结果，在当前会话继续尚未完成的原任务；不要复述循环内容或空转宣称调用工具。回收的排队消息不在本次续跑范围内。若原任务已完成、需要用户决定或无法安全继续，请简短说明并结束。'
+      const result = await this.send(prompt, undefined, undefined, scope)
+      if (!result.ok && this.loopGuardContinuationVersion === scope.version) {
+        this.logStreamLoopGuard('auto-continue-failed', { sessionId: scope.sessionId, runId: scope.runId, detail: result.error, outcome: 'not-resumed' })
+        this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
+          message: `未能自动继续（${result.error ?? '发送失败'}），请手动决定。` } })
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      this.logStreamLoopGuard('auto-continue-failed', { sessionId: scope.sessionId, runId: scope.runId, detail, outcome: 'not-resumed' })
+      if (this.canContinueAfterLoopGuard(scope)) {
+        this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
+          message: `未能自动继续（${detail}），请手动决定。` } })
+      }
+    }
+  }
+
+  /** 结构化防护日志：只记规则与量，不写思考 / 正文原文，也不含凭证。 */
+  private logStreamLoopGuard(event: string, fields: Record<string, unknown>): void {
+    const failed = event === 'stop-failed' || event === 'auto-continue-failed'
+    this.push({
+      ch: 'log',
+      payload: {
+        level: failed ? 'error' : 'info',
+        text: JSON.stringify({
+          type: 'stream-loop-guard',
+          event,
+          sessionId: this.state?.sessionId,
+          generation: this.capabilityOpts?.runnerGeneration,
+          runId: this.turn.runId,
+          ...fields
+        })
+      }
+    })
   }
 
   /* -------------------------------------------------------------- 扩展 UI */
@@ -3478,11 +3863,14 @@ export class AgentController extends EventEmitter {
   }
 
   /** 发送与基于 clear_queue 的编辑共用闸门，最终投影采用同会话的末帧事件。 */
-  private queueRun<T>(work: () => Promise<T>): Promise<T> {
+  private queueRun<T>(work: () => Promise<T>, allowLoopStop = false): Promise<T> {
     const owner = { rpc: this.rpc, sessionId: this.state?.sessionId, generation: this.capabilityOpts?.runnerGeneration }
     /* 等待闸门期间切了会话，旧操作不能落到新会话上。 */
     const guarded = async (): Promise<T> => {
+      if (!allowLoopStop && (this.loopGuardStopping || this.loopGuardAbortSent)) throw new Error('正在按流式防护终止生成，暂不接受队列修改')
       if (owner.rpc !== this.rpc || owner.sessionId !== this.state?.sessionId || owner.generation !== this.capabilityOpts?.runnerGeneration) throw new Error('会话已切换，队列操作已停止')
+      /* 真正入队前的第二道同步复核：claim 换代 / 被别的同 cwd 实例占用就不执行。 */
+      if (!this.confirmExecutionAdmission()) throw new Error('同一工作目录的执行入场已失效，本次操作未开始')
       this.queueBusy = true
       const sessionId = this.state?.sessionId
       const generation = this.capabilityOpts?.runnerGeneration
@@ -3564,6 +3952,26 @@ export class AgentController extends EventEmitter {
   async send(
     text: string,
     images?: { data: string; mimeType: string }[],
+    mode?: 'steer' | 'followUp',
+    autoContinue?: { rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number }
+  ): Promise<{ ok: boolean; error?: string }> {
+    const admission = this.claimExecutionAdmission()
+    if (!admission.ok) return { ok: false, error: admission.error }
+    let started = false
+    try {
+      const result = await this.sendAdmitted(text, images, mode, autoContinue)
+      started = result.ok
+      return result
+    } finally {
+      // 失败 / 直接被拒：立即归还；成功则保留到回合结束（或宽限后确认没启动）。
+      if (started) this.settleExecutionAdmission()
+      else this.releaseExecutionAdmission()
+    }
+  }
+
+  private async sendAdmitted(
+    text: string,
+    images?: { data: string; mimeType: string }[],
     /**
      * 生成中投递时的行为：`steer` = 插话（当前这轮就看到）、
      * `followUp` = 排队（等这轮跑完再投）。
@@ -3572,8 +3980,15 @@ export class AgentController extends EventEmitter {
      * 输入框上方待定）。这也防止别的调用路径漏传时 pi 直接报
      * 「Specify streamingBehavior」。
      */
-    mode?: 'steer' | 'followUp'
+    mode?: 'steer' | 'followUp',
+    autoContinue?: { rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number }
   ): Promise<{ ok: boolean; error?: string }> {
+    if (!autoContinue) {
+      this.loopGuardContinuationVersion += 1
+      this.loopGuardAutoContinueCount = 0
+    }
+    if (text.trimStart().startsWith('/__inkstone_native')) return { ok: false, error: '原生内部命令只能通过桌面操作面板调用' }
+    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: '正在按流式防护终止本次生成，请稍候再发送' }
     const payload: Record<string, unknown> = { message: text }
     if (images?.length) {
       payload.images = images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))
@@ -3601,12 +4016,21 @@ export class AgentController extends EventEmitter {
     }
 
     return this.queueRun(async () => {
+      if (autoContinue && (!(await this.readStreamLoopAutoContinue()) || !this.canContinueAfterLoopGuard(autoContinue) || this.loopGuardAutoContinueCount >= 1)) {
+        return { ok: false, error: '自动继续已取消或运行归属改变' }
+      }
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在回退代码，请稍后发送' }
       payload.streamingBehavior = mode ?? 'followUp'
       const rpc = this.rpc
       const sessionId = this.state?.sessionId
       const generation = this.capabilityOpts?.runnerGeneration
       if (!rpc) return { ok: false, error: 'pi 尚未就绪' }
+      if (autoContinue) {
+        this.loopGuardAutoContinueCount += 1
+        this.logStreamLoopGuard('auto-continue-requested', { sessionId: autoContinue.sessionId, runId: autoContinue.runId, count: 1, limit: 1, outcome: 'sending' })
+        this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
+          message: '已安全中止循环，正在同一会话自动继续（1/1）；不会执行收回的排队草稿。' } })
+      }
       const res = await this.submitQueueCommand('prompt', text, images, mode === 'steer' ? 'steering' : 'followUp', payload)
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: '会话已切换，发送结果未应用到当前会话' }
@@ -3616,6 +4040,23 @@ export class AgentController extends EventEmitter {
   }
 
   async steer(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
+    const admission = this.claimExecutionAdmission()
+    if (!admission.ok) return { ok: false, error: admission.error }
+    let started = false
+    try {
+      const result = await this.steerAdmitted(text, images)
+      started = result.ok
+      return result
+    } finally {
+      if (started) this.settleExecutionAdmission()
+      else this.releaseExecutionAdmission()
+    }
+  }
+
+  private async steerAdmitted(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
+    this.loopGuardContinuationVersion += 1
+    this.loopGuardAutoContinueCount = 0
+    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: '正在按流式防护终止本次生成，请稍候再插话' }
     return this.queueRun(async () => {
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在回退代码，请稍后插话' }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
@@ -3629,6 +4070,23 @@ export class AgentController extends EventEmitter {
   }
 
   async followUp(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
+    const admission = this.claimExecutionAdmission()
+    if (!admission.ok) return { ok: false, error: admission.error }
+    let started = false
+    try {
+      const result = await this.followUpAdmitted(text, images)
+      started = result.ok
+      return result
+    } finally {
+      if (started) this.settleExecutionAdmission()
+      else this.releaseExecutionAdmission()
+    }
+  }
+
+  private async followUpAdmitted(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
+    this.loopGuardContinuationVersion += 1
+    this.loopGuardAutoContinueCount = 0
+    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: '正在按流式防护终止本次生成，请稍候再排队' }
     return this.queueRun(async () => {
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在回退代码，请稍后排队' }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
@@ -3738,6 +4196,12 @@ export class AgentController extends EventEmitter {
   }
 
   async abort(): Promise<QueueSnapshot> {
+    // 人工停止优先，连等待回执中的待续跑也取消。
+    this.loopGuardContinuationVersion += 1
+    if (this.loopGuardStopping || this.loopGuardAbortSent) {
+      await this.loopGuardStopTask
+      if (this.loopGuardAbortSent || !this.agentRunning) return { steering: [], followUp: [] }
+    }
     this.cancelImages()
     /* 用户主动停止：用时冻结在当下，并标明这不是正常完成（H-6）。 */
     this.turn.terminal = 'stopped'
@@ -3815,7 +4279,8 @@ export class AgentController extends EventEmitter {
 
     this.markStreaming(false)
     this.setAgentRunning(false)
-    await this.rpc?.command('abort').catch(() => null)
+    /* 流式防护已发出过 abort 时不再发第二个：并发停止只归属一个终止动作。 */
+    if (!this.loopGuardAbortSent) await this.rpc?.command('abort').catch(() => null)
     void this.refreshState()
 
     return cleared
@@ -3827,8 +4292,25 @@ export class AgentController extends EventEmitter {
    * 跑一个 shell 命令，不走 LLM。
    * pi 会把它当成 BashExecutionMessage 存进会话，**下一次 prompt 时会进上下文**。
    * 所以这是「我先看一眼，再让它基于这个结果干活」的逃生口。
+   *
+   * `options.excludeFromContext`：命令输出照旧存进会话，但下一次 prompt 时不进模型上下文。
+   * 缺省（既有的无参调用）与 pi 默认一致 —— 进上下文。
    */
-  async runBash(command: string): Promise<{ ok: boolean; error?: string }> {
+  async runBash(command: string, options?: { excludeFromContext?: boolean }): Promise<{ ok: boolean; error?: string }> {
+    const admission = this.claimExecutionAdmission()
+    if (!admission.ok) return { ok: false, error: admission.error }
+    let started = false
+    try {
+      const result = await this.runBashAdmitted(command, options)
+      started = result.ok
+      return result
+    } finally {
+      if (started) this.settleExecutionAdmission()
+      else this.releaseExecutionAdmission()
+    }
+  }
+
+  private async runBashAdmitted(command: string, options?: { excludeFromContext?: boolean }): Promise<{ ok: boolean; error?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
     const cmd = command.trim()
     if (!cmd) return { ok: false, error: '命令为空' }
@@ -3857,13 +4339,15 @@ export class AgentController extends EventEmitter {
 
     try {
       // bash 可能跑很久（编译/测试），给足超时
+      const payload: Record<string, unknown> = { command: cmd }
+      if (options?.excludeFromContext !== undefined) payload.excludeFromContext = options.excludeFromContext
       const res = await this.requireRpc().command<{
         output?: string
         exitCode?: number
         cancelled?: boolean
         truncated?: boolean
         fullOutputPath?: string
-      }>('bash', { command: cmd }, { id: reqId, timeoutMs: 0 + 30 * 60_000 })
+      }>('bash', payload, { id: reqId, timeoutMs: 0 + 30 * 60_000 })
 
       const b = this.bash?.reqId === reqId ? this.bash : undefined
       if (b) this.bash = null
@@ -3980,6 +4464,8 @@ export class AgentController extends EventEmitter {
 
   /** 清理只属于上一会话的易变状态；调用方须先开启推送抑制。 */
   private resetSessionScope(): void {
+    this.loopGuardContinuationVersion += 1
+    this.loopGuardAutoContinueCount = 0
     if (this.bash) endTreeSnapshot(this.bash.msgId)
     this.bash = null
     this.streaming = null
@@ -3987,13 +4473,16 @@ export class AgentController extends EventEmitter {
     this.setAgentRunning(false)
     this.resetQueue()
     this.compactionState = EMPTY_COMPACTION_STATE
+    this.nativeBranchView = false
   }
 
-  async newSession(): Promise<{ ok: boolean; error?: string }> {
+  async newSession(parentSession?: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    /* parentSession 是「新会话记住来自哪条会话」的追踪字段，缺省（既有调用）不带。 */
+    const payload: Record<string, unknown> = typeof parentSession === 'string' && parentSession ? { parentSession } : {}
     this.suppressPush = true
     try {
-      const res = await this.requireRpc().command('new_session')
+      const res = await this.requireRpc().command('new_session', payload)
       if (!res.success) return { ok: false, error: res.error }
       if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
         return { ok: false, error: '会话切换被扩展取消' }
@@ -4003,6 +4492,9 @@ export class AgentController extends EventEmitter {
       this.resetSessionScope()
       await this.hydrate()
       return { ok: true }
+    } catch (err) {
+      /* 超时/进程退出：与 compact 同样的「不抛」契约，交给调用方看返回值。 */
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
     } finally {
       this.suppressPush = false
     }
@@ -4107,27 +4599,146 @@ export class AgentController extends EventEmitter {
     return res.success ? (res.data?.messages ?? []) : []
   }
 
-  async exportHtml(): Promise<{ ok: boolean; path?: string; error?: string }> {
+  /**
+   * 会话条目的正式读取（pi `get_entries` 的薄透传）。
+   *
+   * `since` 是持久游标：传上次见到的条目 id，pi 只回它之后的新条目，跨重启可用；
+   * 传了不存在的 id 时 pi 返回 `success:false`，这里原样翻成 `{ ok:false, error }`。
+   * `leafId` 是当前分支末端，客户端据此判断活跃分支有没有动。
+   *
+   * 注意：与内部 `sessionEntriesLite()` 区分 —— 那个读者优先读会话文件、返回裸数组。
+   */
+  async sessionEntries(since?: string): Promise<{
+    ok: boolean
+    entries?: Record<string, unknown>[]
+    leafId?: string | null
+    error?: string
+  }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-    const res = await this.rpc.command<{ path?: string }>('export_html')
-    if (!res.success) return { ok: false, error: res.error }
-    return { ok: true, path: res.data?.path }
+    const payload: Record<string, unknown> = typeof since === 'string' && since ? { since } : {}
+    try {
+      const res = await this.requireRpc().command<{
+        entries?: Record<string, unknown>[]
+        leafId?: string | null
+      }>('get_entries', payload)
+      if (!res.success) return { ok: false, error: res.error }
+      return { ok: true, entries: res.data?.entries ?? [], leafId: res.data?.leafId ?? null }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   }
 
-  async compact(): Promise<{ ok: boolean; error?: string }> {
+  /**
+   * 会话树（pi `get_tree` 的薄透传）：含被压缩的历史与已放弃分支。
+   * 节点形如 `{ entry, children }`（带标签的节点另有 label / labelTimestamp）。
+   * 失败（超时、进程退出、会话切换）同样翻成 `{ ok:false, error }`，不抛。
+   */
+  async sessionTree(): Promise<{
+    ok: boolean
+    tree?: Record<string, unknown>[]
+    leafId?: string | null
+    error?: string
+  }> {
+    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    try {
+      const res = await this.requireRpc().command<{
+        tree?: Record<string, unknown>[]
+        leafId?: string | null
+      }>('get_tree')
+      if (!res.success) return { ok: false, error: res.error }
+      return { ok: true, tree: res.data?.tree ?? [], leafId: res.data?.leafId ?? null }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  /**
+   * 导出当前会话为 HTML。
+   *
+   * `outputPath` 缺省时由 pi 自己选位置；给出时透传给 pi（覆盖同名文件）。
+   * 超时/进程退出也归成 `{ ok:false, error }` —— 调用方（IPC）本就把返回值
+   * 当结果对象用，不该再额外处理一次异常。
+   */
+  async exportHtml(outputPath?: string): Promise<{ ok: boolean; path?: string; error?: string }> {
+    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    const payload: Record<string, unknown> = typeof outputPath === 'string' && outputPath ? { outputPath } : {}
+    try {
+      const res = await this.rpc.command<{ path?: string }>('export_html', payload)
+      if (!res.success) return { ok: false, error: res.error }
+      return { ok: true, path: res.data?.path }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  async compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }> {
+    this.loopGuardContinuationVersion += 1
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
     /*
      * 契约是「不抛」：调用方有两类 —— 用户点的 `/compact`（会把它当提示弹出来）
      * 和策略触发的自动压缩（在 `void` 出去的异步链上）。后者没人接异常，
      * 一抛就是一条 `unhandledRejection` 控制台报错，所以超时/进程没了都归成 `{ ok: false }`。
      */
+    const trimmed = typeof customInstructions === 'string' ? customInstructions.trim() : ''
+    const payload: Record<string, unknown> = trimmed ? { customInstructions: trimmed } : {}
     let res: Awaited<ReturnType<PiRpc['command']>>
     try {
-      res = await this.requireRpc().command('compact', {}, { timeoutMs: COMPACT_REQUEST_TIMEOUT_MS })
+      res = await this.requireRpc().command('compact', payload, { timeoutMs: COMPACT_REQUEST_TIMEOUT_MS })
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
     return res.success ? { ok: true } : { ok: false, error: res.error }
+  }
+
+  async confirmNativeOperation(prompt: { title: string; message: string; acceptLabel: string }): Promise<boolean> {
+    const response = await this.ui.requestHostUi({
+      method: 'select', purpose: 'approval', sensitive: true, title: prompt.title, message: prompt.message,
+      options: [prompt.acceptLabel, '取消'], timeout: 180_000
+    })
+    return !response.cancelled && response.value === prompt.acceptLabel
+  }
+
+  async nativeNavigate(entryId: string): Promise<NavigateTreeResult> {
+    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error('当前会话尚未空闲')
+    const result = await this.nativeRuntime.navigateTree(entryId)
+    if (!result.cancelled) {
+      this.nativeBranchView = true
+      this.resetQueue()
+      this.ui.seen.clear()
+      this.ui.pending.clear()
+      await this.hydrate()
+    }
+    return result
+  }
+
+  async nativeReload(): Promise<void> {
+    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error('当前会话尚未空闲')
+    await this.nativeRuntime.reload()
+    await this.refreshState()
+    await this.refreshStats()
+  }
+
+  async nativeScopedModels(): Promise<ScopedModelsSnapshot> {
+    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    return this.nativeRuntime.getScopedModels()
+  }
+
+  async nativeSetScopedModels(modelIds: string[]): Promise<void> {
+    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    await this.nativeRuntime.saveScopedModels(modelIds)
+  }
+
+  async nativeProjectTrust(): Promise<ProjectTrustSnapshot> {
+    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    return this.nativeRuntime.getProjectTrust()
+  }
+
+  async nativeSetProjectTrust(trusted: boolean): Promise<void> {
+    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    const result = trusted ? await allowTrust(this.cwd) : await revokeTrust(this.cwd)
+    if (!result.ok) throw new Error(result.error ?? '项目信任保存失败')
   }
 
   /* ---------------------------------------------------------- 模型 / 开关 */
@@ -4172,6 +4783,7 @@ export class AgentController extends EventEmitter {
   }
 
   async setModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }> {
+    this.loopGuardContinuationVersion += 1
     return this.enqueueCapabilityChange(() => this.applyModel(provider, modelId))
   }
 
@@ -4278,7 +4890,14 @@ export class AgentController extends EventEmitter {
   }
 
   private async cycleModelNow(dir: 1 | -1): Promise<{ ok: boolean; error?: string; to?: string }> {
-    const models = await this.listModels()
+    let models = await this.listModels()
+    if (this.nativeRuntime) {
+      const scoped = await this.nativeRuntime.getScopedModels()
+      if (scoped.scopedModels.length) {
+        const keys = new Set(scoped.scopedModels.map(item => item.key))
+        models = models.filter(model => keys.has(`${model.provider}/${model.id}`))
+      }
+    }
     if (models.length < 2) return { ok: false, error: '只有一个可用模型' }
 
     const cur = this.state?.model
@@ -4381,10 +5000,14 @@ export class AgentController extends EventEmitter {
     return this.state
   }
 
-  async refreshStats(_opts: { allowPolicyTrigger?: boolean } = {}): Promise<SessionStats | null> {
+  async refreshStats(_opts: { allowPolicyTrigger?: boolean; expectGeneration?: number } = {}): Promise<SessionStats | null> {
     try {
+      const generation = this.capabilityOpts?.runnerGeneration
       const res = await this.rpc?.command<SessionStats>('get_session_stats')
       if (res?.success && res.data) {
+        /* 采集期间换会话 / 换代次：这不属于旧请求，不能贴上当前封套推送。 */
+        if (_opts.expectGeneration !== undefined && generation !== _opts.expectGeneration) return null
+        if (_opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== _opts.expectGeneration) return null
         const stats = this.statsForCurrentModel(res.data)
         this.push({ ch: 'stats', payload: stats })
         return stats
@@ -4483,9 +5106,26 @@ export class AgentController extends EventEmitter {
     return this.state
   }
 
+  /** One approved cwd move may resume after a normal idle boundary, never after manual stop or new input. */
+  captureSessionMoveContinuation(): (afterHostStop?: boolean) => boolean {
+    return captureMoveContinuation(() => ({
+      sessionId: this.state?.sessionId,
+      sessionFile: this.state?.sessionFile,
+      generation: this.capabilityOpts?.runnerGeneration,
+      version: this.loopGuardContinuationVersion,
+      failureVersion: this.sessionMoveFailureVersion,
+      rpc: this.rpc,
+      ready: this.conn === 'ready' && this.rpc?.running === true,
+      stopped: this.stopping,
+      idle: !this.agentRunning && !this.streaming && !this.bash && !this.state?.isCompacting &&
+        this.ui.pending.size === 0 && this.queueState.steering.length === 0 && this.queueState.followUp.length === 0
+    }))
+  }
+
   /** RunnerRegistry increments this when an in-process runner changes sessions. */
   setRunnerGeneration(generation: number): void {
     if (this.capabilityOpts && Number.isSafeInteger(generation) && generation > 0) {
+      if (this.capabilityOpts.runnerGeneration !== generation) this.releaseExecutionAdmission()
       this.capabilityOpts.runnerGeneration = generation
     }
   }
@@ -4528,7 +5168,11 @@ export class AgentController extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    this.loopGuardContinuationVersion += 1
     this.stopping = true
+    this.releaseExecutionAdmission()
+    this.nativeRuntime?.dispose()
+    this.nativeRuntime = null
     this.titleLifecycle += 1
     this.cancelImages()
     /* 端点随实例一起停：token 作废，旧 CLI 环境变量从此无效。 */

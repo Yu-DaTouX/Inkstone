@@ -10,7 +10,7 @@ import { HANDOFF_COMMIT_ENABLED, HANDOFF_THRESHOLD_EFFECTIVE, handoffPending, ha
 import { eventsForSession } from '../../shared/handoff-diagnostics'
 import { normalizeChainKey } from '../../shared/session-chain'
 import { keepsGoalResumeOnModeChange, normalizePursuedBrief } from '../../shared/goal'
-import { writeWorkModeSnapshot } from '../work-mode-service'
+import { normalizeSessionFileKey, sameWorkModeIdentity, writeWorkModeSnapshot } from '../work-mode-service'
 import { normalizeWorkMode } from '../../shared/work-mode'
 import type { WorkMode, WorkModeState } from '../../shared/work-mode'
 import type { RunnerRegistry } from '../runners'
@@ -113,6 +113,22 @@ export function registerGoalIpc(ipc: IpcRegistrar, deps: GoalIpcDeps): void {
     }
     if (currentGoal.revision !== expectedGoalRevision) {
       return { ok: false as const, error: 'stale_goal' as const, goal: currentGoal }
+    }
+    /*
+     * 复核期间用户可能已切走：批准只能落在原 runner 上。
+     */
+    if (registry()?.activeRunner()?.id !== id) {
+      return { ok: false as const, error: 'stale_runner' as const, goal: currentGoal }
+    }
+    /*
+     * 与桌面发送同一道只读复核：同 cwd 另有忙碌实例时**先拒绝，不进入转移**。
+     * 必须放在模式 CAS / `approveReadyReview` 之前：一旦后者消费掉 `pendingReady`，
+     * 审阅就无法重试、目标也就此被当成已执行。先拒绝则计划原样保留，用户等它跑完
+     * 或停止原任务后可再次批准。
+     */
+    const executeGuard = registry()?.guardExecute(id)
+    if (executeGuard && !executeGuard.ok) {
+      return { ok: false as const, error: executeGuard.error, goal: currentGoal }
     }
 
     /* 先用模式 revision CAS，目标提交失败时再尝试恢复原模式。 */
@@ -325,8 +341,26 @@ export function registerGoalIpc(ipc: IpcRegistrar, deps: GoalIpcDeps): void {
     if (!id) {
       return { ok: false, state: { mode: normalizeWorkMode(mode), revision: 0 }, error: 'pi 未运行' }
     }
+    /*
+     * 提交身份在写盘前捕获一次：runner id 只说明进程，同一个实例会被复用到
+     * 别的会话（generation / sessionId / sessionFile 变），迟到的旧提交不能把
+     * A 的档位写成 B 的快照、也不能推到 B。快照写入的锁内与 rename 前各复校一次。
+     */
+    const captureIdentity = () => {
+      const session = registry()?.agentOf(id)?.getState()
+      const runtime = registry()?.runtimeOf(id)
+      return {
+        id,
+        generation: runtime?.generation,
+        sessionId: session?.sessionId,
+        sessionFile: session?.sessionFile
+      }
+    }
     await workModes.load()
-    const res = await workModes.set(workModeKeyFor(id), mode, expectedRevision)
+    const identity = captureIdentity()
+    const key = workModeKeyFor(id)
+    const guard = () => sameWorkModeIdentity(identity, captureIdentity()) && workModeKeyFor(id) === key
+    const res = await workModes.set(key, mode, expectedRevision)
     /*
      * 档位是用户对这条会话的明确意图（实施-14 A3）：
      *   · 新档仍然会「接着干」→ 保留未消费的续行（自主档，或 pursue 目标 —— 与档位正交）；
@@ -334,10 +368,10 @@ export function registerGoalIpc(ipc: IpcRegistrar, deps: GoalIpcDeps): void {
      * 旧实现只在 `mode !== 'standard'` 时清，于是**切回标准档**时自主档留下的
      * 续行仍然有效，下一轮它自己又跑起来。
      * ⚠️ 就绪转移不走这里（宿主内部直接调 `workModes.set`），所以不会误伤自己。
+     * 下面的读写都用捕获的 `key`：实例被复用到别的会话时，A 的档位只落 A 的键。
      */
     if (res.ok) {
       await goals.load()
-      const key = workModeKeyFor(id)
       let goal = goals.state(key)
       if (mode !== 'clarify' && goal.pendingReady) {
         await goals.cancelReadyReview(key)
@@ -361,10 +395,23 @@ export function registerGoalIpc(ipc: IpcRegistrar, deps: GoalIpcDeps): void {
     }
     /* 失败也要写 + 推：界面要拿当前值恢复，扩展也不能继续读旧值 */
     await goals.load()
-    const planApprovalPending = goals.state(workModeKeyFor(id)).pendingReady !== null
-    await writeWorkModeSnapshot(id, { ...res.state, planApprovalPending }).catch(() => {})
-    pushFrom(id, { ch: 'work-mode', payload: res.state })
-    if (res.ok && mode !== 'clarify') await pushGoal(id)
+    const planApprovalPending = goals.state(key).pendingReady !== null
+    const sessionFile = normalizeSessionFileKey(identity.sessionFile) ?? undefined
+    await writeWorkModeSnapshot(
+      id,
+      { ...res.state, planApprovalPending },
+      undefined,
+      {
+        guard,
+        owner: {
+          ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
+          ...(sessionFile ? { sessionFile } : {})
+        }
+      }
+    ).catch(() => false)
+    /* 身份已换就不推给新会话；写失败但仍是本会话时照推，界面据此恢复显示 */
+    if (guard()) pushFrom(id, { ch: 'work-mode', payload: res.state })
+    if (res.ok && mode !== 'clarify' && guard()) await pushGoal(id)
     return res
   })
 }

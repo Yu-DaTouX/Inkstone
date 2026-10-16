@@ -46,7 +46,7 @@
 | 环境与文件内容 | 环境菜单中的分支、工作树和托管网页操作，来源菜单与办公文件文字预览；独立审查面板和提交区已移除 | `review/EnvironmentMenu`、`SourceMenu`、`OfficeContent`、`useGitReview`、`CommitBar`（仅失败提示） |
 | 内嵌表面 | 浏览器、终端 | `browser/BrowserSurface`、`terminal/TerminalSurface`、`chat/Terminal` |
 | 设置 | 模型、外观、输入与提醒、工作区、上下文与记忆、能力与插件、语音输入、设备连接、关于；自定义模型表单、授权同意、活动模型 | `settings/*` |
-| 引导与对话框 | 首次引导、砚互联批准对话框、通用对话框 | `settings/Onboarding`、`shell/PeerApprovalDialog`、`styles/dialog.css` |
+| 引导与对话框 | 首次使用向导、开始前自检清单、砚互联批准对话框、通用对话框 | `settings/OnboardingWizard`、`settings/Onboarding`、`shell/PeerApprovalDialog`、`styles/dialog.css` |
 | 兜底 | 错误边界 | `ErrorBoundary` |
 | 主进程页面 | 模型登录回调页 | `src/main/oauth.ts` |
 | 安装与品牌 | 安装器侧栏与页眉位图、应用图标 | `scripts/build-installer-sidebar.mjs`、`build/` |

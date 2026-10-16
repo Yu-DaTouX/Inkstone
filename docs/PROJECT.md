@@ -27,6 +27,8 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/main/capabilities/acquisition-commands.ts` / `browser-commands.ts` / `lookup-commands.ts` | `yan` 宿主工具：能力接入、浏览器、搜索与长期记忆；旧上下文预算命令已退役 |
 | `src/shared/agent-context.ts` / `src/main/agent.ts` | Agent 原生上下文边界与 pi 版本适配；过滤宿主上下文改写扩展，加载原生 MCP / codemode / 工具搜索，投影 `parentToolCallId` 与历史 `nestedCalls`，树状工具显示由 `src/shared/tool-call-tree.ts` 支持 |
 | `src/main/ui-requests.ts` / `turn-timing-tracker.ts` | 界面请求（扩展对话框与宿主提问）；回合计时与落盘 |
+| `shared/question-frequency.ts` / `main/ipc/question-frequency-ipc.ts` / `resources/pi-extensions/question.js` | 全局三档澄清频率与会话继承/覆盖；复用工作模式记录及逐轮快照，按身份与版本保存，不改变权限审批 |
+| `main/session-send-guard.ts` / `state/composer-recovery.ts` / `chat/ActiveSubagents.tsx` | 同目录发送复核、按会话缓存并恢复草稿/附件、输入框上方当前会话子代理概览；不是完整文件锁 |
 | `src/main/mcp/native-import.ts` / `native-verify.ts` / `src/shared/mcp-native-import.ts` | 旧通用 MCP 的预览令牌、内容指纹、单条隔离 pi CLI 校验与分步停用；设置通过 `McpNativeImport.tsx` 与同目录纯流程调用 IPC，不搬 authRef 凭证 |
 | `src/main/terminal-status.ts` / `terminal.ts` / `components/toolbar/RightPanel.tsx` | OSC 7501 与 9;4 后备状态扫描、低频标签推送；Windows 任务栏仅投影已有运行/等待事实 |
 | `components/ui/confirm.tsx` / `confirm-queue.ts` / `Tip.tsx` | 应用内串行确认及取消优先焦点；统一非模态提示气泡，复用浮层阻挡与退场基座 |
@@ -35,6 +37,7 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/main/app-update.ts` + `src/shared/app-update.ts` | 应用更新：GitHub Release 检查；安装版经 electron-updater 下载、确认后重启安装，有任务运行时拒绝；便携版与开发版只给发布页入口 |
 | `src/main/computer-use.ts` | 电脑操作：检测 / 安装 uv，开关时改宿主 `mcp-servers.json` 里的 `windows-mcp` 条目，只开放界面操作工具；Python 与 windows-mcp 由用户的 uv 下载，不随包 |
 | `src/main/oauth-providers.ts` | Claude / Copilot / xAI / OpenRouter 的订阅登录：驱动随包 pi 的登录模块，把提问与授权事件转发给界面 |
+| `src/main/native-session-runtime.ts` / `native-session-io.ts` / `ipc/native-session-ipc.ts` | 原生会话树、导航/重载薄桥、模型循环范围、导入/导出与确认后 gist 分享；`NativeSessionPanel.tsx` / `NativeSessionSurface.tsx` 只投影 pi 条目与设置，不恢复旧会话地图。JSONL 按实时叶子导出，HTML 按原生全树格式；`native-session-history.ts` 保持当前聊天分支 |
 | `src/main/session-entries-lite.ts` | 会话文件里任务与自定义条目的增量读取，不经 pi 的 `get_entries` 搬运整份会话 |
 | `src/preload/index.ts` | 渲染端可用的宿主接口 |
 | `src/shared/ipc.ts` | IPC 契约与类型 |

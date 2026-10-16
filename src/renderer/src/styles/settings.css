@@ -867,6 +867,111 @@ html[data-theme='light'] .ob-scrim {
   font-size: var(--fs-xs);
 }
 
+/* ── 使用向导：结构与「开始之前」卡片同源，只是更宽、多一条可点的步骤条 ── */
+.ob-card.wiz {
+  width: min(760px, 100%);
+}
+.wiz-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  padding: 0 var(--sp-5) var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+.wiz-step {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.wiz-step:hover {
+  background: var(--bg-2);
+  color: var(--fg-dim);
+}
+.wiz-step.on {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.wiz-dot {
+  display: grid;
+  place-items: center;
+  width: var(--sp-4);
+  height: var(--sp-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+}
+.wiz-step.on .wiz-dot {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.wiz-step.past .wiz-dot {
+  border-color: var(--ok-soft);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.wiz-lead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.wiz-lead-title {
+  margin: 0;
+  color: var(--fg);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-strong);
+}
+.wiz-lead-desc {
+  margin: 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+}
+.wiz-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  list-style: none;
+}
+.wiz-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+.wiz-list .ico {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fg-mute);
+}
+.wiz-warn {
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--warn-soft);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+/* 接入与提醒整块复用设置里的分区：向导里只补一层纵向间距 */
+.wiz-auth,
+.wiz-sound {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
 /* ── 手机接入 ─────────────────────────────────────────────── */
 .remote-address-input {
   width: 160px;

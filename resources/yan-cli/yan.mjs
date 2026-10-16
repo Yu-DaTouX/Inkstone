@@ -47,6 +47,18 @@ const API_VERSION = 1
 /** 退出码：区分「用法错」与「宿主/业务拒绝」，脚本才好据以分支。 */
 const EXIT = { ok: 0, failed: 1, usage: 2, unavailable: 3 }
 
+/**
+ * 已退役的分组：不再出现在帮助与解析表里，也不发任何请求。
+ *
+ * 为什么要单独拦一道而不是留给宿主：这些命令的“用户可见宣告”就在本文件的
+ * 帮助与解析表里。旧会话、脚本里仍会有 `yan hub …`，直接在本地给出明确
+ * 退役提示并指向 subagent，既不占上下文，也不会白跑一次 HTTP / 拉起进程。
+ * 历史 Hub 数据与只读界面后端不动，只是不再从普通会话提供入口。
+ */
+const RETIRED_GROUPS = {
+  hub: '多 Agent 工作台命令（hub.*）已退役，不再从普通会话提供：请改用 yan subagent start|list|get|stop 派子代理；历史 Hub 记录仍可在界面查看。'
+}
+
 const USAGE = `yan — 砚宿主能力 CLI
 
 用法：
@@ -82,12 +94,6 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan subagent list
   yan subagent get --id <子代理ID>
   yan subagent stop --id <子代理ID>
-  yan hub start --request-file task.json
-  yan hub list
-  yan hub get --id <任务ID>
-  yan hub send --request-file packet.json
-  yan hub reply --request-file reply.json
-  yan hub stop --id <任务ID>
   yan browser <动作> [选项]     内置浏览器（yan browser --help 看全部动作）
   yan search query --query-text "关键词"  联网搜索（需要 OpenCLI）
   yan search fetch --url <网址>           读网页正文；yan search docs --library <库名> --query-text "问题" 查开发文档
@@ -421,7 +427,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
     readOnly=true 只开放 read/grep/find/ls；需要代码隔离时显式传 --isolation worktree（要求 Git）；
   · 任务要窄（一个文件或一个问题，结论几行说完）；
   · 任务输入里的 goal 决定它做什么，deliverables / sources / boundary 决定它交回什么与不碰什么；
-    工具调用次数由执行模型自主决定，旧 maxToolCalls 参数不再生效；全应用最多同时10个子代理。
+    工具调用次数由执行模型自主决定，旧 maxToolCalls 参数不再生效；全应用最多同时24个子代理。
     默认连续10分钟没有模型输出或工具事件才超时；timeoutMinutes（1–60）可选限总时长，不设置则没有总期限，写在 task 正文中不会设置宿主限额。
     超时先让它收尾交结论，75秒宽限内仍不结束才停止；
   · 派出后不要 sleep 轮询：结束时宿主会通知你（用户关掉通知时才需要自己 list / get）；
@@ -519,7 +525,6 @@ function fail(code, message, extra) {
  * `src/main/agent.ts` 的 `runBrowserCommand` 一一对应。
  */
 const GROUP_SPECS = {
-  hub: { actions: ['start', 'list', 'get', 'stop', 'send', 'reply'], required: { get: ['id'], stop: ['id'], send: ['toTaskId', 'summary', 'requestId'], reply: ['summary', 'requestId'] } },
   capabilities: {
     actions: ['search', 'discover', 'prepare', 'acquire'],
     required: { prepare: ['candidate'] }
@@ -683,6 +688,16 @@ function readJsonFile(path, label) {
 
 const { flags, positional } = parseArgs(process.argv.slice(2))
 if (flags.overwrite) fail(EXIT.usage, '--output 不支持覆盖已有文件；请选择新路径')
+
+/*
+ * 退役分组：在任何帮助、身份检查与请求之前拦下，保证 `yan hub …` 无论带不带
+ * --help / 身份环境变量，都只回一段替代提示，不发请求、不启动任何进程。
+ */
+if (positional[0] && RETIRED_GROUPS[positional[0]]) {
+  fail(EXIT.usage, RETIRED_GROUPS[positional[0]], {
+    detail: '普通会话请改用 yan subagent start|list|get|stop；用 yan --help 看当前可用命令'
+  })
+}
 
 if (flags.help || positional.length === 0) {
   /* `yan <组> [动作] --help`：给出所属分组的用法，动作级帮助不依赖宿主连接。 */

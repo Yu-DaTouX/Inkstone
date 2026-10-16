@@ -93,9 +93,14 @@ export class SubagentHistory {
     const next = previous.catch(() => {}).then(async () => {
       await mkdir(this.dir, { recursive: true })
       const temp = join(this.dir, `${run.id}.${randomBytes(6).toString('hex')}.tmp`)
-      await writeFile(temp, JSON.stringify({ ...extra, ...snapshot, rootCwd, schemaVersion: 1, hidden: this.hidden.has(run.id) }, null, 2), 'utf8')
+      // 已确认的失败标记保持单调，排在后面的旧快照不能擦掉它。
+      const dismissedAt = this.records.get(run.id)?.run.dismissedAt
+      const saved = snapshot.status === 'error' && typeof dismissedAt === 'number' && Number.isFinite(dismissedAt)
+        ? { ...snapshot, dismissedAt }
+        : snapshot
+      await writeFile(temp, JSON.stringify({ ...extra, ...saved, rootCwd, schemaVersion: 1, hidden: this.hidden.has(run.id) }, null, 2), 'utf8')
       await rename(temp, join(this.dir, `${run.id}.json`))
-      this.records.set(run.id, { run: snapshot, rootCwd })
+      this.records.set(run.id, { run: saved, rootCwd })
     })
     this.writes.set(run.id, next)
     try { await next } finally { if (this.writes.get(run.id) === next) this.writes.delete(run.id) }

@@ -8,7 +8,14 @@ export const CONTEXT_TRIM_STEPS = [50_000, 80_000, 120_000] as const
 /** 自动压缩上限的滑块挡位（用户 2026-10-10 指定）。 */
 export const AUTO_COMPACT_STEPS = [100_000, 250_000, 300_000, 400_000, 600_000, 800_000] as const
 export const DEFAULT_CONTEXT_TRIM_TOKENS = 80_000
-export const DEFAULT_AUTO_COMPACT_TOKENS = 250_000
+/**
+ * 自动压缩上限的缺省值：400k（用户 2026-10-15 指定）。
+ *
+ * 比 250k 晚压缩一次：长会话里少一次压缩就少一次重读上下文，
+ * 换来的是更连贯的回答；再往上（600k / 800k）对多数模型已超出窗口，
+ * 会被 AUTO_COMPACT_WINDOW_RATIO 提前压回，等于没有效果。
+ */
+export const DEFAULT_AUTO_COMPACT_TOKENS = 400_000
 
 /**
  * 窗口较小的模型按比例提前：裁剪线不超过窗口的 30%，压缩线不超过窗口的 90%。

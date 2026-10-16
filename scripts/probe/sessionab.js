@@ -197,7 +197,16 @@
     )
     ok(deferred, '给出「同目录会话先只读打开，发送前安全切换」提示')
     out.push('  冲突提示 = ' + JSON.stringify(conflictNotices().map((n) => n.text)))
-    ok(store.getState().session?.sessionFile === stillB, 'C 没有接管 B 的运行实例（运行订阅仍留在 B）')
+    /*
+     * 同 cwd 的 C 是「只读打开」：视图切成 C、记下 pendingActivation，但
+     * **不能**把活动运行订阅从 B 抢过来。`session.sessionFile` 在只读 peek
+     * 时会先置空，所以不能拿它当判据；按稳定 sessionFile 身份查活动运行实例。
+     */
+    const activeRunner = runnersNow().find((r) => r.id === store.getState().activeRunnerId)
+    ok(
+      !!store.getState().pendingActivation && activeRunner?.sessionFile === stillB,
+      'C 只读打开（记下待激活），活动运行订阅仍留在 B'
+    )
     ok(!!q('.notices .notice.info'), '提示渲染到了界面上（不只是进了 store）')
     ok(await runningOf(A.path), '被拒之后 A 还在跑')
 

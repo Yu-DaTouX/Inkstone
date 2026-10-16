@@ -38,7 +38,7 @@ try {
     outfile, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent',
     plugins: [{ name: 'unused-electron', setup(b) {
       b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' }))
-      b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export class BrowserWindow { constructor() { throw new Error("Native browser is not part of this test") } }; export const session = {};' }))
+      b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: `export const app = { isPackaged: false, getPath: () => ${JSON.stringify(root)}, getLocale: () => 'zh-CN', getVersion: () => 'fixture' }; export class BrowserWindow { constructor() { throw new Error("Native browser is not part of this test") } }; export const session = {};` }))
     } }]
   })
   const mod = await import(pathToFileURL(outfile))

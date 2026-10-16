@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
+import { useStore } from '../../state/store'
 import { quotaTone } from '../../../../shared/quota-tone'
 import { money, windowPct } from '../../../../shared/quota-mini'
 import {
   ACCOUNT_LABEL_MAX,
   ACCOUNT_QUOTA_CLI_SOURCES,
   accountCardTitle,
+  orderAccountCardsForProvider,
   type AccountQuotaCard,
   type AccountQuotaCliSource,
   type AccountQuotaReport,
@@ -32,6 +34,8 @@ const cap = (s?: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) 
 export function AccountQuotaPane() {
   const t = useT()
   const confirm = useConfirm()
+  /* 当前视图的 provider：用来把对应账号卡排到最前（主进程不知道当前会话用哪个）。 */
+  const provider = useStore((s) => s.session?.model?.provider ?? '')
   const [report, setReport] = useState<AccountQuotaReport | null>(null)
   const [loading, setLoading] = useState(false)
   /** 查询失败时保留上一次的数字，只加一行说明 */
@@ -121,7 +125,7 @@ export function AccountQuotaPane() {
     await load()
   }
 
-  const cards = report?.cards ?? []
+  const cards = orderAccountCardsForProvider(report?.cards ?? [], provider)
   const time = report ? new Date(report.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : ''
 
   return (
@@ -285,6 +289,12 @@ function AccountCard({
           <div key={w.id} className="quota-block" data-testid={`acct-win-${w.id}`}>
             <div className="quota-block-top">
               <span className="quota-block-label">{w.label}</span>
+              {/* 推算值必须与额度浮层一样标明来源，不能伪装成官方额度 */}
+              {w.estimated ? (
+                <span className="ui-badge" title={t('quota.estimatedTip')} data-testid={`acct-win-${w.id}-estimated`}>
+                  {t('quota.estimated')}
+                </span>
+              ) : null}
               <span className={`quota-block-value ${tone.replace('ok', '')}`}>{pct.toFixed(1)}<small>%</small></span>
             </div>
             <div className={`ui-quota-track ${tone}`}><i style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></div>

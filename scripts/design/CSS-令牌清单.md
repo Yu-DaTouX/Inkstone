@@ -5,7 +5,7 @@
 > **只有每个变量的“最终值”生效** —— 它可能不在 `tokens.css` 里。
 > 定义链从左到右，最右者胜（同特异性、后加载）。
 
-## `:root`　109 个变量（其中 1 个被重复定义）
+## `:root`　110 个变量（其中 1 个被重复定义）
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -49,6 +49,7 @@
 | `--dur-400` | `400ms` | **tokens**: 400ms |
 | `--dur-420` | `420ms` | **tokens**: 420ms |
 | `--dur-45` | `45ms` | **tokens**: 45ms |
+| `--dur-60` | `60ms` | **motion**: 60ms |
 | `--dur-600` | `600ms` | **tokens**: 600ms |
 | `--dur-760` | `760ms` | **tokens**: 760ms |
 | `--dur-8` | `8ms` | **tokens**: 8ms |
@@ -61,11 +62,11 @@
 | `--focus-ring-offset` | `1px` | **tokens**: 1px |
 | `--focus-ring-w` | `1px` | **tokens**: 1px |
 | `--focus-ring-w-strong` | `2px` | **tokens**: 2px |
-| `--font-body` | `var(--font-mono)` | **tokens**: var(--font-mono) |
+| `--font-body` | `var(--font-sans)` | **tokens**: var(--font-sans) |
 | `--font-code` | `var(--font-mono)` | **tokens**: var(--font-mono) |
 | `--font-mono` | `'Maple Mono CN', ui-monospace, Consolas, monospace` | **tokens**: 'Maple Mono CN', ui-monospace, Consolas, monospace |
-| `--font-sans` | `var(--font-mono)` | **tokens**: var(--font-mono) |
-| `--font-ui` | `var(--font-mono)` | **tokens**: var(--font-mono) |
+| `--font-sans` | `'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', system-ui, sans-serif` | **tokens**: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', system-ui, sans-serif |
+| `--font-ui` | `var(--font-sans)` | **tokens**: var(--font-sans) |
 | `--fs-base` | `13px` | **tokens**: 13px |
 | `--fs-body` | `15px` | **tokens**: 15px |
 | `--fs-code` | `12.5px` | **tokens**: 12.5px |
@@ -75,9 +76,9 @@
 | `--fs-sm` | `12px` | **tokens**: 12px |
 | `--fs-stat` | `22px` | **tokens**: 22px |
 | `--fs-xs` | `11px` | **tokens**: 11px |
-| `--fw-medium` | `400` | **tokens**: 400 |
+| `--fw-medium` | `600` | **tokens**: 600 |
 | `--fw-regular` | `400` | **tokens**: 400 |
-| `--fw-strong` | `400` | **tokens**: 400 |
+| `--fw-strong` | `700` | **tokens**: 700 |
 | `--gap-proc-side` | `32px` | **tokens**: 32px |
 | `--h-titlebar` | `40px` | **tokens**: 40px |
 | `--lh-base` | `1.55` | **tokens**: 1.55 |
@@ -93,10 +94,10 @@
 | `--mo-slow` | `240ms` | **motion**: 240ms |
 | `--mo-spring` | `cubic-bezier(0.34, 1.4, 0.64, 1)` | **motion**: cubic-bezier(0.34, 1.4, 0.64, 1) |
 | `--r-full` | `999px` | **tokens**: 999px |
-| `--r-lg` | `8px` | **tokens**: 8px |
-| `--r-md` | `6px` | **tokens**: 6px |
-| `--r-sm` | `4px` | **tokens**: 4px |
-| `--r-xl` | `8px` | **tokens**: 8px |
+| `--r-lg` | `10px` | **tokens**: 10px |
+| `--r-md` | `8px` | **tokens**: 8px |
+| `--r-sm` | `6px` | **tokens**: 6px |
+| `--r-xl` | `14px` | **tokens**: 14px |
 | `--r-xs` | `3px` | **tokens**: 3px |
 | `--sp-1` | `4px` | **tokens**: 4px |
 | `--sp-2` | `8px` | **tokens**: 8px |
@@ -119,7 +120,7 @@
 | `--w-right` ⚠️ | `var(--w-panel-user, 336px)` | tokens: var(--w-panel-user, 264px) → **layout**: var(--w-panel-user, 336px) |
 | `--w-stream` | `clamp(calc(var(--w-body) + 2 * var(--sp-5)), calc(100vw - 680px), 920px)` | **tokens**: clamp(calc(var(--w-body) + 2 * var(--sp-5)), calc(100vw - 680px), 920px) |
 
-## `html[data-theme='dark']`　30 个变量
+## `html[data-theme='dark']`　31 个变量
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -150,11 +151,12 @@
 | `--ok-soft` | `rgba(130, 199, 160, 0.14)` | **tokens**: rgba(130, 199, 160, 0.14) |
 | `--on-accent` | `#17191d` | **tokens**: #17191d |
 | `--shadow-pop` | `0 14px 36px -14px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.2)` | **tokens**: 0 14px 36px -14px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.2) |
+| `--shadow-soft` | `0 1px 2px rgba(0, 0, 0, 0.28)` | **tokens**: 0 1px 2px rgba(0, 0, 0, 0.28) |
 | `--split-dim` | `rgba(23, 25, 29, 0.38)` | **tokens**: rgba(23, 25, 29, 0.38) |
 | `--warn` | `#e8b17b` | **tokens**: #e8b17b |
 | `--warn-soft` | `rgba(232, 177, 123, 0.14)` | **tokens**: rgba(232, 177, 123, 0.14) |
 
-## `html[data-theme='light']`　37 个变量
+## `html[data-theme='light']`　38 个变量
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -185,6 +187,7 @@
 | `--ok-soft` | `rgba(33, 106, 75, 0.1)` | **tokens**: rgba(33, 106, 75, 0.1) |
 | `--on-accent` | `#ffffff` | **tokens**: #ffffff |
 | `--shadow-pop` | `0 14px 36px -14px rgba(20, 30, 50, 0.28), 0 0 0 1px rgba(20, 30, 50, 0.05)` | **tokens**: 0 14px 36px -14px rgba(20, 30, 50, 0.28), 0 0 0 1px rgba(20, 30, 50, 0.05) |
+| `--shadow-soft` | `0 1px 2px rgba(20, 30, 50, 0.06)` | **tokens**: 0 1px 2px rgba(20, 30, 50, 0.06) |
 | `--split-dim` | `rgba(246, 247, 249, 0.5)` | **tokens**: rgba(246, 247, 249, 0.5) |
 | `--think-high` | `#5a4cc7` | **motion**: #5a4cc7 |
 | `--think-low` | `#137a85` | **motion**: #137a85 |
@@ -220,7 +223,7 @@
 
 ## 小结
 
-- 变量总数（含各主题）：**188**
+- 变量总数（含各主题）：**191**
 - 同一选择器内被重复定义（真冗余）：**1**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。

@@ -101,6 +101,7 @@ import type { KnowledgeKind } from './project-memory'
 /* 工作模式（实施-05）：类型与纯逻辑在 `./work-mode`（主进程 / 单测 / CLI 共用），
    这里转发给渲染端，界面不必知道存储层。 */
 import type { WorkMode, WorkModeState } from './work-mode'
+import type { QuestionFrequency, SessionQuestionFrequency } from './question-frequency'
 import type { ApprovalChoice, ApprovalRequest, PermissionMode } from './approval'
 import type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
@@ -124,6 +125,39 @@ import type { AccountQuotaCliSource, AccountQuotaPrefs, AccountQuotaReport, Code
 import type { CodexFailoverResult } from './quota-failover'
 export type { AgentActivity, AgentProfile, AgentProfileKind, AgentProfilePatch, AgentProfileState } from './agent-profile'
 export type { WorkMode, WorkModeState } from './work-mode'
+export type { QuestionFrequency, SessionQuestionFrequency } from './question-frequency'
+
+/** 会话级提问频率的视图：偏好、本轮实际档与全局档。 */
+export interface SessionQuestionFrequencyView {
+  runnerId: string
+  sessionId?: string
+  sessionFile?: string
+  key: string
+  revision: number
+  preference: SessionQuestionFrequency
+  effective: QuestionFrequency
+  global: QuestionFrequency
+}
+
+/** 会话级提问频率的提交入参：显式身份 + 乐观锁 + 四态偏好。 */
+export interface SessionQuestionFrequencyInput {
+  runnerId?: string
+  sessionId?: string
+  sessionFile?: string
+  expectedRevision?: number
+  questionFrequency: SessionQuestionFrequency
+}
+
+export type SessionQuestionFrequencyResult =
+  | ({ ok: true } & SessionQuestionFrequencyView)
+  | {
+      ok: false
+      error: string
+      revision?: number
+      preference?: SessionQuestionFrequency
+      effective?: QuestionFrequency
+      global?: QuestionFrequency
+    }
 export type { GoalState, GoalPhase, GoalLink, GoalLinkKind, PursuedBrief, ReadyApprovalMode } from './goal'
 export type { HandoffView, HandoffPackage, HandoffTally } from './handoff'
 export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, KnowledgeReviewView } from './project-knowledge-view'
@@ -514,6 +548,20 @@ export interface RuntimeEnvelope {
   runId: string
   projectId?: string
   generation: number
+}
+
+/**
+ * 渲染端提交 send / runBash 时钉住的归属。
+ *
+ * 与 `RuntimeEnvelope` 的差别：启动最早期运行实例可能还没拿到稳定 sessionId，
+ * 此时只带 `runId` + `generation`，宿主按能核对的部分定位目标实例，
+ * 而不是退回「猜当前 active」。老调用方不传时宿主仍走原有入口同步钉住。
+ */
+export type ExpectedRuntimeOwner = {
+  sessionId?: string
+  runId: string
+  projectId?: string
+  generation?: number
 }
 
 /**
@@ -1099,7 +1147,7 @@ export interface AppSettings {
   contextTrimTokens?: number
   /**
    * 自动压缩上限（token）：一轮结束后上下文超过它就调用 pi 原生压缩；跟随 pi 的自动压缩开关，砚不另设开关。
-   * 缺省 250000，只收 AUTO_COMPACT_STEPS 里的挡位，窗口较小的模型按窗口的 90% 截断。
+   * 缺省 400000，只收 AUTO_COMPACT_STEPS 里的挡位，窗口较小的模型按窗口的 90% 截断。
    */
   autoCompactTokens?: number
   /** 执行过程放在正文之后（inline，缺省）还是右侧并列一栏（side）；宽度不够时界面自动回到 inline，值不变。 */
@@ -1267,6 +1315,13 @@ export interface AppSettings {
    * 其余 → `standard`（幂等）。
    */
   defaultWorkMode: WorkMode
+  /**
+   * 歧义澄清提问频率（全局偏好，三档见 `shared/question-frequency.ts`）。
+   *
+   * 只调节模型每轮收到的提问指引，不是精确次数保证；下一轮生效，
+   * 不修改历史与当前运行轮。缺省 `balanced`，脏值安全归一。
+   */
+  questionFrequency?: QuestionFrequency
   /** 默认在已授权来源与权限范围内自动接入。 */
   capabilityStrategy: CapabilityStrategy
   /**
@@ -1289,6 +1344,8 @@ export interface AppSettings {
    * `undefined` = 没改过 = **开**；只有明确关掉才是 `false`。
    */
   subagentNotify?: boolean
+  /** 主会话循环安全中止后最多自动续一次；缺省开启，false 关闭。 */
+  streamLoopAutoContinue?: boolean
   /** 输入框下方显示本轮速度与缓存命中率。`undefined` = 没改过 = 开；只有明确关掉才是 `false`。 */
   usageUnderInput?: boolean
   /**
@@ -2200,6 +2257,11 @@ export interface SubagentRun {
   /** 启动时的父会话 / 运行实例；查看对象切换不改变这两个归属。 */
   parentSessionId?: string
   parentRunId?: string
+  /**
+   * 启动时父运行实例的代次；用来证明「同代 pending → 真实 SID」迁移。
+   * 可选：0 也是有效值（旧记录 / 模型入口没有这一栏就不猜）。
+   */
+  parentGeneration?: number
   /** 模型在某条助手消息中委派时，用它把子代理卡片挂回原回合。 */
   parentMessageId?: string
   projectId?: string
@@ -2226,6 +2288,8 @@ export interface SubagentRun {
   error?: string
   /** 结束原因；运行中为空 */
   endReason?: SubagentEndReason
+  /** 用户确认不再处理该失败；保留 status/error 与原调用历史。 */
+  dismissedAt?: number
   /** 已发起的工具调用次数 */
   toolCalls?: number
   /** 到点后正在收尾：已要求它立刻交出目前的结论，超过宽限仍不结束才会被停掉 */
@@ -2264,9 +2328,16 @@ export interface SubagentBridge {
   start(
     task: string,
     model?: string,
-    isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd'
+    isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd',
+    /**
+     * 界面在后台查看某条会话时，钉住该视图的运行实例作为父归属。
+     * 老调用不传时宿主仍在入口同步钉住当前父会话（CLI / 正常派活兼容）。
+     */
+    expectedRuntime?: ExpectedRuntimeOwner
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }>
   stop(id: string): Promise<{ ok: boolean; error?: string }>
+  /** 单条失败确认；不删除历史，也不能绕过 worktree 审阅。 */
+  dismiss(id: string): Promise<{ ok: boolean; error?: string }>
   stopAll(): Promise<void>
   /** 清掉**已结束**的记录（运行中的不会被清） */
   clearFinished(): Promise<void>
@@ -2314,6 +2385,15 @@ export type MainPushBody =
   | { ch: 'state'; payload: SessionState }
   | { ch: 'stats'; payload: SessionStats }
   | { ch: 'queue'; payload: QueueState }
+  /**
+   * 流式重复防护收回了排队内容（原文、顺序、图片与身份）。
+   *
+   * 为什么单开一条而不是复用 `queue`：`queue` 是 pi 的文本快照，回收还带着
+   * 图片与稳定 id，需要渲染端用 `applyQueueRecovery` 落回对应会话草稿。
+   * 归属由 `runtime` 封套给出：后台会话的回收也只进它的草稿缓存，
+   * 不覆盖当前会话草稿。
+   */
+  | { ch: 'queue-reclaimed'; payload: QueueSnapshot & { sessionId: string } }
   /** 会话里的任务清单变了（扩展通过 panel_todos 维护） */
   | { ch: 'todos'; payload: SessionTodo[] }
   /**
@@ -2391,10 +2471,10 @@ export type MainPushBody =
   /**
    * 扩展的 setWidget。
    *
-   * TUI 里它是「输入框上方的一小块文本」，桌面端把它收进右栏「扩展」分区 ——
-   * 扩展写的东西（MCP/LSP 状态之类）对用户是有意义的，直接丢掉等于骗扩展。
+   * 文本组件按原生位置显示在输入区上方或下方；未指定位置时默认上方。
+   * 不支持 TUI 组件工厂，只接收纯文本行。
    */
-  | { ch: 'widget'; payload: { key: string; lines?: string[] } }
+  | { ch: 'widget'; payload: { key: string; lines?: string[]; placement?: 'aboveEditor' | 'belowEditor' } }
   /** pi 版本 / 入口（启动时探测一次） */
   | { ch: 'pi-info'; payload: PiInfo }
   /** pi 进程状态 / stderr / 错误 */
@@ -2435,7 +2515,7 @@ export type MainPushBody =
   | { ch: 'peer-request'; payload: import('./peer-protocol').PeerApprovalRequest }
   | { ch: 'peer-request-closed'; payload: { requestId: string } }
   /** `yan session move` 批准后的结果：会话文件头已改到新目录（界面刷新列表，正在看就在新目录重新打开） */
-  | { ch: 'session-moved'; payload: { sessionId: string; sessionFile: string; cwd: string; ok: boolean; error?: string } }
+  | { ch: 'session-moved'; payload: { sessionId: string; sessionFile: string; cwd: string; ok: boolean; error?: string; continued?: boolean; continuationError?: string } }
   /** 托盘菜单要求切到指定运行实例；没有 sessionFile 时用稳定 sessionId。 */
   | {
       ch: 'tray-select-session'
@@ -3174,7 +3254,14 @@ export interface YanBridge {
   /** 停掉**某一个**运行实例（只影响它，不涉及别的会话） */
   stopRunner(id: string): Promise<boolean>
   start(cwd?: string): Promise<{ ok: boolean; error?: string; state?: SessionState }>
-  send(text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp'): Promise<{ ok: boolean; error?: string }>
+  /**
+   * 发一条用户消息。
+   *
+   * `expectedRuntime` 是渲染端提交时钉住的归属（run + generation）：宿主据此
+   * 核对消息该投给哪个运行实例，不依赖「此刻 active 是谁」。老调用方不传时
+   * 宿主退回原有语义。
+   */
+  send(text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   steer(text: string): Promise<{ ok: boolean; error?: string }>
   followUp(text: string): Promise<{ ok: boolean; error?: string }>
   /** 把一条排队的消息插队（提升为 steering，在当前这轮就听） */
@@ -3245,7 +3332,9 @@ export interface YanBridge {
     sessionId: string,
     spaceId: string | null
   ): Promise<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>
-  compact(): Promise<{ ok: boolean; error?: string }>
+  /** Native operations require an exact foreground session identity; never exposed through remote capability commands. */
+  nativeSession(request: import('./native-session-host').NativeSessionHostRequest): Promise<import('./native-session-host').NativeSessionHostResult>
+  compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }>
   /**
    * 给会话起名（写进 JSONL，TUI 的 /resume 也看得到）。
    *
@@ -3260,7 +3349,7 @@ export interface YanBridge {
   clone(): Promise<{ ok: boolean; error?: string }>
   forkPoints(): Promise<ForkPoint[]>
   /** 导出当前会话为 HTML */
-  exportHtml(): Promise<{ ok: boolean; path?: string; error?: string }>
+  exportHtml(outputPath?: string): Promise<{ ok: boolean; path?: string; error?: string }>
   /**
    * 将一份会话移到砚的回收站。返回的 token 只在本次应用运行期间可用于撤销。
    * UI 必须先完成自己的明确确认，主进程仍会拒绝当前会话。
@@ -3269,8 +3358,8 @@ export interface YanBridge {
   /** 撤销本次运行内刚刚执行的会话删除。 */
   restoreSession(undoToken: string): Promise<{ ok: boolean; error?: string }>
 
-  /* 直执行 bash（不进 LLM 的工具调用） */
-  runBash(command: string): Promise<{ ok: boolean; error?: string }>
+  /* 直执行 bash（不进 LLM 的工具调用）。`expectedRuntime` 与 send 同一归属口径。 */
+  runBash(command: string, options?: { excludeFromContext?: boolean }, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   abortBash(): Promise<void>
 
   /* 模型 / 思考 */
@@ -3294,6 +3383,20 @@ export interface YanBridge {
     state: WorkModeState
     error?: string
   }>
+
+  /*
+   * 会话级提问频率覆盖（四态 inherit / sparse / balanced / eager）。
+   *
+   * 与工作模式共用会话记录（同一条稳定会话键、同一个 revision），但只管
+   * 「何时问」：`inherit` 跟随全局设置，显式值不被全局变更覆盖。请求带
+   * 预期身份（runnerId + sessionId / sessionFile）与 revision，宿主在持久化
+   * 前后都核对归属，避免迟到的 A 请求写到刚切过去的 B。
+   */
+  getSessionQuestionFrequency(runnerId?: string): Promise<
+    | ({ ok: true } & SessionQuestionFrequencyView)
+    | { ok: false; error: string }
+  >
+  setSessionQuestionFrequency(input: SessionQuestionFrequencyInput): Promise<SessionQuestionFrequencyResult>
 
   /*
    * 活动档案（实施-25 P01）：同样按**当前会话**读写。

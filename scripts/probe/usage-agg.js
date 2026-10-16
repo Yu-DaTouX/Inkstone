@@ -62,8 +62,16 @@
     localStorage.setItem('yan.onboarded', '1')
     await sleep(300)
 
+    /*
+     * 状态栏「本会话用量」是会话累计：只要真实会话的 stats 在场，它就会盖过
+     * 注入的消息（显示的是会话值，不是注入的两条之和）。这里把 stats / peekNote
+     * 清成「统计还没加载」的真实状态，让消息求和成为展示来源，才能验「多条相加」。
+     */
+    const isolate = () => ({ stats: null, peekNote: null })
+
     /* ---- 1. 多轮工具调用：整轮用量相加 ---- */
     store.setState({
+      ...isolate(),
       session: { ...store.getState().session, isStreaming: false },
       messages: [
         { id: 'm0', role: 'user', text: '干活' },
@@ -96,6 +104,7 @@
 
     /* ---- 2. 有请求没报用量 → 标成下限并说明 ---- */
     store.setState({
+      ...isolate(),
       messages: [
         { id: 'm0', role: 'user', text: '干活' },
         {
@@ -113,6 +122,7 @@
 
     /* ---- 3. 一条都没报 → 未知，不标下限 ---- */
     store.setState({
+      ...isolate(),
       messages: [
         { id: 'm0', role: 'user', text: '干活' },
         { id: 'a1', role: 'assistant', text: '答完了' }
@@ -124,6 +134,7 @@
 
     /* ---- 4. 回合页脚：用时的 tooltip 给出工具等待 ---- */
     store.setState({
+      ...isolate(),
       session: { ...store.getState().session, isStreaming: false },
       messages: [
         { id: 'm0', role: 'user', text: '干活' },

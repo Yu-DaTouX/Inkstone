@@ -715,14 +715,16 @@ export function turnUsage(turn: AssistantTurn): Usage | undefined {
 }
 
 /**
- * 缓存命中率：缓存读 /（输入 + 缓存读）。
+ * 缓存命中率：缓存读 /（输入 + 缓存读 + 缓存写）。
  *
- * 为什么分母要加上 cacheRead：pi 报的 `input` 是**未命中缓存**的那部分，
- * 真正的提示词总量 = input + cacheRead。只用 input 当分母会算出 >100%。
+ * 为什么分母要加上 cacheRead 与 cacheWrite：pi 报的 `input` 是**未命中缓存**的
+ * 那部分，真正进入本次请求的提示词总量 = input + cacheRead + cacheWrite。
+ * 只用 input 当分母会算出 >100%；漏掉 cacheWrite 则会把新写入缓存的那部分
+ * 排除在分母外，让长会话长期虚高到 ≈100%。
  */
 export function cacheHitRate(u?: Usage): number | null {
   if (!u) return null
-  const promptTotal = u.input + u.cacheRead
+  const promptTotal = u.input + u.cacheRead + u.cacheWrite
   if (promptTotal <= 0) return null
   return (u.cacheRead / promptTotal) * 100
 }

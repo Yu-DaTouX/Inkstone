@@ -84,15 +84,61 @@ function workModeFile() {
 
 const WORK_MODES = ['standard', 'clarify', 'autonomous']
 
-function currentWorkMode() {
+/**
+ * 快照归属：宿主写快照时记下 `sessionId` / `sessionFile`，这里与真实 ctx 核对。
+ *
+ * 与 question.js 同一套规则，但**更严**：模式决定工具门禁，错归属的快照若被
+ * 接受，会把 A 的计划档 / 待审标记带到 B。所以：
+ *   · 快照带归属而 ctx 身份不可得 → 不盲接受（回落安全标准档）；
+ *   · 归属不符 → 回落安全标准档；
+ *   · 旧快照没有归属字段 → 维持旧行为（无法核对就当本会话的）。
+ */
+function normalizeOwnerPath(value) {
+  return typeof value === 'string' ? value.trim().replace(/[\\/]+/g, '/').replace(/\/+$/, '') : undefined
+}
+
+function ownerPathEquals(a, b) {
+  const left = normalizeOwnerPath(a)
+  const right = normalizeOwnerPath(b)
+  if (!left || !right) return false
+  return left === right || left.toLowerCase() === right.toLowerCase()
+}
+
+/** 返回 `{ snapshot }`；归属不符 / 无法核对时带 `mismatch`，调用方据此回落安全档。 */
+function readOwnedSnapshot(ctx) {
   try {
-    const snapshot = JSON.parse(readFileSync(workModeFile(), 'utf8'))
-    if (WORK_MODES.includes(snapshot?.mode)) {
-      return { mode: snapshot.mode, planApprovalPending: snapshot.planApprovalPending === true }
+    const record = JSON.parse(readFileSync(workModeFile(), 'utf8'))
+    if (!record || typeof record !== 'object') return { snapshot: null }
+    const snapId = typeof record.sessionId === 'string' && record.sessionId.trim() ? record.sessionId.trim() : undefined
+    const snapFile = typeof record.sessionFile === 'string' && record.sessionFile.trim() ? record.sessionFile : undefined
+    /* 旧快照无归属：维持旧行为，不在这一层清理 */
+    if (!snapId && !snapFile) return { snapshot: record }
+    let manager
+    try {
+      manager = ctx?.sessionManager
+    } catch {
+      manager = undefined
     }
+    const ctxId = typeof manager?.getSessionId === 'function' ? manager.getSessionId() : undefined
+    const ctxFile = typeof manager?.getSessionFile === 'function' ? manager.getSessionFile() : undefined
+    /* 有归属但拿不到任何 ctx 身份：不能盲接受（否则 A 的档位会跟着落到 B） */
+    if (!ctxId && !ctxFile) return { snapshot: null, mismatch: true }
+    if (snapId && ctxId && snapId === ctxId) return { snapshot: record }
+    if (snapFile && ownerPathEquals(snapFile, ctxFile)) return { snapshot: record }
+    return { snapshot: null, mismatch: true }
   } catch {
-    /* 宿主还没写（刚启动）—— 走回退链 */
+    return { snapshot: null }
   }
+}
+
+/** 当前会话的工作模式；错归属 / 脏值 / 缺失都回落。 */
+export function currentWorkMode(ctx) {
+  const read = readOwnedSnapshot(ctx)
+  if (read.snapshot && WORK_MODES.includes(read.snapshot.mode)) {
+    return { mode: read.snapshot.mode, planApprovalPending: read.snapshot.planApprovalPending === true }
+  }
+  /* 快照在但有归属且核不上：不采用也不回退全局偏好，直接安全标准档 */
+  if (read.mismatch) return { mode: 'standard', planApprovalPending: false }
   try {
     const settings = JSON.parse(readFileSync(join(dataDir(), 'desktop.json'), 'utf8'))
     if (WORK_MODES.includes(settings?.defaultWorkMode)) {
@@ -164,8 +210,8 @@ export default function workModePolicy(pi) {
     }
   }
 
-  pi.on('before_agent_start', () => {
-    const policy = currentWorkMode()
+  pi.on('before_agent_start', (event, ctx) => {
+    const policy = currentWorkMode(ctx)
     mode = policy.mode
     planApprovalPending = policy.planApprovalPending
     if (mode === 'clarify') {
@@ -199,9 +245,9 @@ export default function workModePolicy(pi) {
    *    「Tool execution was blocked」+ isError），所以这里不要费劲写文案 ——
    *    要让模型理解原因，只能靠提示词，或者干脆把工具从表里拿掉。
    */
-  pi.on('tool_call', (event) => {
+  pi.on('tool_call', (event, ctx) => {
     /* 待审计划可在本轮由宿主更新；每次调用重读快照，立即收紧 goal 命令。 */
-    const policy = currentWorkMode()
+    const policy = currentWorkMode(ctx)
     mode = policy.mode
     planApprovalPending = policy.planApprovalPending
     const name = String(event?.toolName ?? '')

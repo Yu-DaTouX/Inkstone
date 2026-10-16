@@ -28,6 +28,13 @@ const CLI_REL = join('dist', 'bundle', 'cli.js')
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
+/** 单行 stderr 尚未遇到换行时的缓冲上限：无换行的巨量输出不能一直堆在内存里。 */
+const MAX_STDERR_BUF_CHARS = 16 * 1024
+/** 超长 stderr 物理行的固定提示：整行省略，不保留任何头尾内容。 */
+const STDERR_LINE_TOO_LONG = `[yan] stderr 单行过长，已截断（整行省略，丢弃到下一个换行）`
+/** 真实 `exit` 之后等待最后一段 stderr / `close` 的有限宽限（ms）。 */
+const EXIT_DRAIN_MS = 300
+
 /**
  * 随应用分发的内置 pi 运行时（由 `npm run vendor:pi` 生成，见 scripts/vendor-pi.mjs）。
  *
@@ -307,10 +314,12 @@ export interface PiRpcEvents {
   event: (evt: Record<string, unknown>) => void
   /** 扩展要求弹窗（select/confirm/input/editor）或不需应答的通知 */
   ui: (req: Record<string, unknown>) => void
-  /** 进程退出 */
+  /** 进程退出（在 stdio 收完后收口一次） */
   exit: (code: number | null, signal: string | null) => void
   /** stderr 一行 */
   stderr: (line: string) => void
+  /** 进程启动失败（ENOENT 等）；随后仍会发一次 exit，订阅方按状态只收口一次 */
+  'spawn-error': (err: Error) => void
 }
 
 const REQUEST_TIMEOUT = 30_000
@@ -327,6 +336,18 @@ export class PiRpc extends EventEmitter {
   private pending = new Map<string, Pending>()
   private seq = 0
   private closed = false
+  /** 尚未遇到换行的 stderr 片段；进程收口时要把没有末尾换行的最后一行也交出去 */
+  private errBuf = ''
+  /** 当前 stderr 物理行已超限、正在丢弃到下一个真实 LF；期间不再输出任何内容 */
+  private errDropping = false
+  /** 启动失败原因；与 exit 一起只收口一次 */
+  private spawnError: Error | null = null
+  /** 进程/启动失败是否已经收口，防止 error 与 close 重复触发 */
+  private finished = false
+  /** 真实 `exit` 已到；此后不再等可能被后代拖住的 `close`，只在有限宽限内等尾行 */
+  private sawExit = false
+  /** 真实 `exit` 后的有限排空计时器；与 `close` 竞争，只收口一次 */
+  private exitDrainTimer: NodeJS.Timeout | null = null
 
   readonly probe: PiProbe
 
@@ -376,36 +397,117 @@ export class PiRpc extends EventEmitter {
 
     // ---- stderr：逐行转出去，不当协议内容 ----
     child.stderr.setEncoding('utf8')
-    let errBuf = ''
-    child.stderr.on('data', (chunk: string) => {
-      errBuf += chunk
-      let i: number
-      while ((i = errBuf.indexOf('\n')) >= 0) {
-        const line = errBuf.slice(0, i).replace(/\r$/, '')
-        errBuf = errBuf.slice(i + 1)
-        if (line.trim()) this.emit('stderr', line)
-      }
-    })
+    child.stderr.on('data', (chunk: string) => this.feedStderr(chunk))
+    // 流结束时把最后一段没有换行的文本补发出去（否则关键一句会丢）。
+    child.stderr.on('end', () => this.flushStderr())
     child.stderr.on('error', () => {})
 
-    child.on('error', (err: Error) => {
-      this.failAll(new Error(`无法启动 pi：${err.message}`))
-      this.emit('exit', null, null)
+    /*
+     * `exit` 是进程真实结束的事实，`close` 才是 stdio 全部关闭。后者可能被
+     * 继承了 pipe 的后代进程拖住：进程已死但 `close` 迟迟不到，运行状态就会
+     * 一直停在进行中。这里用 `exit` 立即失活并让在途请求失败，再用有限宽限
+     * 等最后一段没有换行的 stderr；到点或 `close` 先到都只收口一次。
+     */
+    child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+      if (this.finished) return
+      this.sawExit = true
+      this.closed = true
+      this.failAll(new Error(`pi 进程已退出（code=${code ?? 'null'}）`))
+      this.exitDrainTimer = setTimeout(() => this.finishExit(code, signal), EXIT_DRAIN_MS)
+      this.exitDrainTimer.unref?.()
     })
 
-    child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
-      this.closed = true
-      this.child = null
-      this.failAll(new Error(`pi 进程已退出（code=${code ?? 'null'}）`))
-      this.emit('exit', code, signal)
+    /*
+     * 启动失败（ENOENT 等）没有 `exit`：先记下原因，再由紧随其后的
+     * `close` 走同一收口路径（`finished` 保证只发一次）。
+     */
+    child.on('error', (err: Error) => {
+      this.spawnError = err
+      this.failAll(new Error(`无法启动 pi：${err.message}`))
     })
+
+    child.on('close', (code: number | null, signal: NodeJS.Signals | null) => this.finishExit(code, signal))
 
     // stdin 出错不要让整个进程崩
     child.stdin.on('error', () => {})
   }
 
+  /**
+   * 累积 stderr 并按 LF 切行；不完整的最后一段留在 `errBuf` 等收口。
+   *
+   * 单条物理行有 16KB 上限：无论 LF 落在同一块还是后续任意块，只要该行越过
+   * 上限就整行省略、只发一次固定提示，并持续丢弃到下一个真实 LF 才恢复。
+   * 不保留头尾，避免把 JSON / 凭据等上下文从中间裁断后混进诊断。
+   *
+   * 实例收口（`finished`）后拒收新数据：继承了 pipe 的后代进程可能在收口后
+   * 继续写入，迟到的片段不得再进入行状态机 —— 否则会绕过既定的丢弃状态、
+   * 甚至把长行残段当新行发出。收口本身要补发的短尾走 `flushStderr`，不经这里。
+   */
+  private feedStderr(chunk: string): void {
+    if (this.finished) return
+    let rest = chunk
+    while (rest.length > 0) {
+      if (this.errDropping) {
+        const drop = rest.indexOf('\n')
+        if (drop < 0) return // 仍在被省略的长行里，整块丢弃
+        rest = rest.slice(drop + 1)
+        this.errDropping = false
+        continue
+      }
+      const nl = rest.indexOf('\n')
+      if (nl < 0) {
+        this.errBuf += rest
+        if (this.errBuf.length > MAX_STDERR_BUF_CHARS) {
+          this.errBuf = ''
+          this.errDropping = true
+          this.emit('stderr', STDERR_LINE_TOO_LONG)
+        }
+        return
+      }
+      const line = this.errBuf + rest.slice(0, nl)
+      rest = rest.slice(nl + 1)
+      this.errBuf = ''
+      if (line.length > MAX_STDERR_BUF_CHARS) {
+        this.emit('stderr', STDERR_LINE_TOO_LONG)
+        continue
+      }
+      const cleaned = line.replace(/\r$/, '')
+      if (cleaned.trim()) this.emit('stderr', cleaned)
+    }
+  }
+
+  /** 把没有末尾换行的最后一行也交出去；已被省略的长行不再补发。 */
+  private flushStderr(): void {
+    if (this.errDropping) {
+      this.errDropping = false
+      return
+    }
+    if (!this.errBuf) return
+    const line = this.errBuf.replace(/\r$/, '')
+    this.errBuf = ''
+    if (line.trim()) this.emit('stderr', line)
+  }
+
+  /** 进程结束（含启动失败）的单一收口：清空 pending、补 stderr、只发一次事件。 */
+  private finishExit(code: number | null, signal: NodeJS.Signals | null): void {
+    if (this.finished) return
+    this.finished = true
+    if (this.exitDrainTimer) {
+      clearTimeout(this.exitDrainTimer)
+      this.exitDrainTimer = null
+    }
+    this.closed = true
+    this.child = null
+    this.flushStderr()
+    this.failAll(new Error(`pi 进程已退出（code=${code ?? 'null'}）`))
+    if (this.spawnError) this.emit('spawn-error', this.spawnError)
+    this.emit('exit', code, signal)
+  }
+
   /** 累积 stdout 并按 LF 切记录 */
   private feed(chunk: string): void {
+    // 与 feedStderr 同一守卫：收口后的迟到 stdout 不再分帧、不再发事件。
+    if (this.finished) return
     let start = 0
     let nl: number
     // 只扫描这一块里的新内容；换行之前的旧片段不再重扫
@@ -534,6 +636,12 @@ export class PiRpc extends EventEmitter {
 
     this.closed = true
     this.child = null
+
+    /*
+     * 进程已经真实退出（`exit` 已到、只是 `close` 被后代拖住）时无需再等：
+     * 尾行由 `exit` 的有限排空负责，这里直接返回，避免停止流程多等 1.5s。
+     */
+    if (this.sawExit) return Promise.resolve()
 
     return new Promise((resolve) => {
       let done = false

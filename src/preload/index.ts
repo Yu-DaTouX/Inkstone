@@ -100,6 +100,9 @@ import type {
   PursuedBrief,
   HandoffView,
   WorkModeState,
+  SessionQuestionFrequencyInput,
+  SessionQuestionFrequencyResult,
+  SessionQuestionFrequencyView,
   ApprovalRequest,
   AgentProfileState,
   YanBridge,
@@ -169,7 +172,7 @@ const api: YanBridge = {
   /* ---- 会话 ---- */
   start: () =>
     invoke<{ ok: boolean; error?: string; state?: SessionState; settings?: AppSettings }>('yan:start'),
-  send: (text, images, mode) => invoke<Ok>('yan:send', text, images, mode),
+  send: (text, images, mode, expectedRuntime) => invoke<Ok>('yan:send', text, images, mode, expectedRuntime),
   steer: (text) => invoke<Ok>('yan:steer', text),
   followUp: (text) => invoke<Ok>('yan:followUp', text),
   steerQueued: (queueId) => invoke<Ok>('yan:steerQueued', queueId),
@@ -223,17 +226,18 @@ const api: YanBridge = {
   setVisibleRunnerSessions: (sessions) => invoke<boolean>('yan:setVisibleRunnerSessions', sessions),
   runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
   stopRunner: (id) => invoke<boolean>('yan:stopRunner', id),
-  compact: () => invoke<Ok>('yan:compact'),
+  nativeSession: (request) => invoke('yan:nativeSession', request),
+  compact: (customInstructions) => invoke<Ok>('yan:compact', customInstructions),
   renameSession: (name) => invoke<Ok>('yan:renameSession', name),
   fork: (entryId) => invoke<{ ok: boolean; error?: string; text?: string }>('yan:fork', entryId),
   clone: () => invoke<Ok>('yan:clone'),
   forkPoints: () => invoke<ForkPoint[]>('yan:forkPoints'),
-  exportHtml: () => invoke<{ ok: boolean; path?: string; error?: string }>('yan:exportHtml'),
+  exportHtml: (outputPath) => invoke<{ ok: boolean; path?: string; error?: string }>('yan:exportHtml', outputPath),
   deleteSession: (path) => invoke<{ ok: boolean; undoToken?: string; error?: string }>('yan:deleteSession', path),
   restoreSession: (undoToken) => invoke<Ok>('yan:restoreSession', undoToken),
 
   /* ---- 直执行 bash ---- */
-  runBash: (command) => invoke<Ok>('yan:runBash', command),
+  runBash: (command, options, expectedRuntime) => invoke<Ok>('yan:runBash', command, options, expectedRuntime),
   abortBash: () => invoke<void>('yan:abortBash'),
 
   /* ---- 模型 / 思考 / 命令 ---- */
@@ -290,6 +294,13 @@ const api: YanBridge = {
   confirmHandoff: (handoffId) => invoke<Ok>('yan:confirmHandoff', handoffId),
   setWorkMode: (mode, expectedRevision) =>
     invoke<{ ok: boolean; state: WorkModeState; error?: string }>('yan:setWorkMode', mode, expectedRevision),
+  getSessionQuestionFrequency: (runnerId?: string) =>
+    invoke<({ ok: true } & SessionQuestionFrequencyView) | { ok: false; error: string }>(
+      'yan:getSessionQuestionFrequency',
+      runnerId
+    ),
+  setSessionQuestionFrequency: (input: SessionQuestionFrequencyInput) =>
+    invoke<SessionQuestionFrequencyResult>('yan:setSessionQuestionFrequency', input),
 
   /* ---- 队列模式 / 轮换（pi 自带能力） ---- */
   setSteeringMode: (mode) => invoke<Ok>('yan:setSteeringMode', mode),
@@ -404,9 +415,10 @@ const api: YanBridge = {
   /* ---- 子代理（方案第 8 节） ---- */
   subagents: {
     list: () => invoke<SubagentRun[]>('yan:subagents:list'),
-    start: (task, model, isolation) =>
-      invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:start', task, model, isolation),
+    start: (task, model, isolation, expectedRuntime) =>
+      invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:start', task, model, isolation, expectedRuntime),
     stop: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:stop', id),
+    dismiss: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:dismiss', id),
     stopAll: () => invoke<void>('yan:subagents:stopAll'),
     clearFinished: () => invoke<void>('yan:subagents:clear'),
     merge: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:merge', id),

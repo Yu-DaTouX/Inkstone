@@ -102,7 +102,9 @@ try {
     eq(m.partial, false, '每个可见请求都报过 → 不是下限')
     eq(m.cost, 0.5, '花费取 stats')
     eq(m.costZero, false, '花费非 0 时不提示')
-    eq(m.hitRate, 900 / 1900 * 100, '命中率 = 缓存读 /（未缓存输入 + 缓存读）')
+    eq(m.hitRate, 900 / 1900 * 100, '命中率 = 缓存读 /（未缓存输入 + 缓存读 + 缓存写）')
+    const withWrite = projectSessionMetrics(messages, { ...s, tokens: { ...s.tokens, cacheWrite: 50, total: 2050 } })
+    eq(withWrite.hitRate, 900 / (1000 + 900 + 50) * 100, '缓存写入计入命中率分母')
   }
 
   /* ── C. 长历史截断：归属受保护的 stats 就是完整会话值，不再靠请求数拒绝 ── */

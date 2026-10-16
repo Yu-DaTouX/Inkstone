@@ -73,6 +73,8 @@ export class UiRequests {
     placeholder?: string
     /** `approval` = 接入批准（同一面板，徽标显示「授权」，只能在电脑上批准） */
     purpose?: 'approval'
+    /** Sensitive host requests must be answered in the desktop modal, not behind another panel. */
+    sensitive?: boolean
     timeout: number
   }): Promise<HostUiResponse> {
     const id = `yan-question-${randomUUID()}`
@@ -105,7 +107,8 @@ export class UiRequests {
         ...(request.options ? { options: request.options } : {}),
         ...(request.form ? { form: request.form } : {}),
         ...(request.placeholder ? { placeholder: request.placeholder } : {}),
-        ...(request.purpose ? { purpose: request.purpose } : {})
+        ...(request.purpose ? { purpose: request.purpose } : {}),
+        ...(request.sensitive ? { sensitive: true } : {})
       } as unknown as ExtensionUiRequest
       this.payloads.set(id, payload)
       this.host.push({ ch: 'ui-request', payload })
@@ -202,10 +205,13 @@ export class UiRequests {
       return
     }
     if (method === 'setWidget') {
-      // TUI 里它显示在输入框上方。桌面端把它收进右栏「扩展」分区 ——
-      // 扩展写的东西（MCP/LSP 状态之类）对用户有意义，直接丢等于骗扩展。
+      // 扩展文本组件按 pi 的原生位置显示在输入区上方 / 下方（设计规范 §4.4）。
+      // 只带纯文本行，不执行扩展脚本；缺省 aboveEditor。清空（lines 省略）同样带
+      // placement，渲染端据此同步移除，不会把上一条的位置留在别的 key 上。
       const lines = Array.isArray(req.widgetLines) ? req.widgetLines.map((x) => String(x)) : undefined
-      this.host.push({ ch: 'widget', payload: { key: String(req.widgetKey ?? 'ext'), lines } })
+      const placement: 'aboveEditor' | 'belowEditor' = req.widgetPlacement === 'belowEditor' ? 'belowEditor' : 'aboveEditor'
+      const payload = { key: String(req.widgetKey ?? 'ext'), lines, placement }
+      this.host.push({ ch: 'widget', payload })
       return
     }
 

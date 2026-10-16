@@ -88,8 +88,21 @@
     check(child.transcript.some(m => m.role === 'assistant' && m.text.includes('YAN-BUNDLE-CHILD-OK')), '子模型转录有真实回复标记')
     check(child.contextUsage?.contextWindow > 0, '子模型结束后读取原生上下文窗口')
     out.push('  子进程=' + JSON.stringify({id: child.id, model: child.model, isolation: child.isolation, contextUsage: child.contextUsage, usage: child.usage}))
-    const modelText = [...document.querySelectorAll('[data-testid="turn-model"]')].map(el => el.textContent).join(' ')
-    check(modelText.includes(MODEL_ID), '真实回复尾部展示持久实际模型')
+    /*
+     * 两层身份分开验：
+     *   ① 持久化数据里保留 **provider + 原始 id**（不是显示名，也不能被截断）；
+     *   ② 页脚展示的是**模型菜单里的显示名**（用户看到的那一项），不是恰好含 raw id。
+     * title/aria-label 里同时给出身份，便于悬停核对。
+     */
+    const persistedModel = [...s().messages].reverse().find(m => m.role === 'assistant' && m.model)?.model
+    check(persistedModel === MODEL, `持久化的回合模型保留 provider + 原始 id（${persistedModel ?? '缺'}）`)
+    const displayName = match.name || MODEL_ID
+    const turnModel = [...document.querySelectorAll('[data-testid="turn-model"]')].find(el => el.title?.includes(MODEL))
+    check(!!turnModel, '回合页脚展示当前回合模型（title 含 provider/raw id 身份）')
+    check(
+      (turnModel?.textContent ?? '').trim() === displayName,
+      `回合页脚显示模型菜单名（${displayName}）而不是裸 id`
+    )
     const stats = await window.yan.getStats()
     check(stats?.contextUsage?.contextWindow > 0, '主回合结束有原生上下文窗口')
     out.push('  主原生上下文=' + JSON.stringify(stats.contextUsage))

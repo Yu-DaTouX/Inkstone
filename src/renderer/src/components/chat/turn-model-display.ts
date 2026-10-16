@@ -1,4 +1,4 @@
-/** Resolve a persisted provider/model key against the current model catalog. */
+/** Resolve recorded identities against the same live entries and saved names used by the menu. */
 export interface TurnModelCatalogEntry {
   provider: string
   id: string
@@ -12,12 +12,36 @@ export interface TurnModelDisplay {
 
 export function resolveTurnModelDisplay(
   identity: string,
-  catalog: readonly TurnModelCatalogEntry[]
+  catalog: readonly TurnModelCatalogEntry[],
+  fallbackCatalog: readonly TurnModelCatalogEntry[] = []
 ): TurnModelDisplay {
   const separator = identity.indexOf('/')
-  if (separator <= 0) return { label: identity, identity }
-  const provider = identity.slice(0, separator)
-  const id = identity.slice(separator + 1)
-  const model = catalog.find((item) => item.provider === provider && item.id === id)
-  return { label: model?.name || id, identity }
+  const provider = separator > 0 ? identity.slice(0, separator) : undefined
+  const id = provider ? identity.slice(separator + 1) : identity
+  const exact = (entry: TurnModelCatalogEntry) => entry.provider === provider && entry.id === id
+  const model = provider ? catalog.find(exact) ?? fallbackCatalog.find(exact) : undefined
+  if (model) return { label: model.name || model.id, identity }
+
+  // Older UI snapshots omitted provider. A shared label is safe; selecting a provider is not.
+  const entries = new Map<string, TurnModelCatalogEntry>()
+  for (const entry of [...catalog, ...fallbackCatalog]) {
+    const key = JSON.stringify([entry.provider, entry.id])
+    if (!entries.has(key)) entries.set(key, entry)
+  }
+  const names = new Set([...entries.values()].filter(entry => entry.id === identity).map(entry => entry.name || entry.id))
+  return { label: names.size === 1 ? [...names][0] : id, identity }
+}
+
+/** A requested child model is a full provider/id key: show its source without opening details. */
+export function resolveSubagentModelDisplay(
+  identity: string,
+  catalog: readonly TurnModelCatalogEntry[],
+  fallbackCatalog: readonly TurnModelCatalogEntry[] = []
+): TurnModelDisplay {
+  const display = resolveTurnModelDisplay(identity, catalog, fallbackCatalog)
+  const separator = identity.indexOf('/')
+  return {
+    ...display,
+    label: separator > 0 ? `${display.label} · ${identity.slice(0, separator)}` : display.label
+  }
 }

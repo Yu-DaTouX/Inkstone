@@ -17,6 +17,22 @@ import { runRunStateTests } from './test-run-state.mjs'
 import { runAgentServiceTests } from './test-agent-service.mjs'
 import { runServiceCliTests } from './test-agent-service-cli.mjs'
 import { runCapabilityNegotiationTests } from './test-capability-negotiation.mjs'
+import { runSessionConcurrencyConflictTests } from './test-session-concurrency-conflict.mjs'
+import { runSessionConcurrencyFrontendTests } from './test-session-concurrency-frontend.mjs'
+import { runSessionStatsIsolationTests } from './test-session-stats-isolation.mjs'
+import { runSessionConcurrencySendGuardTests } from './test-session-concurrency-send-guard.mjs'
+import { runSessionConcurrencyFinalEdgesTests } from './test-session-concurrency-final-edges.mjs'
+import { runCommandCodeQuotaDisplayTests } from './test-commandcode-quota-display.mjs'
+import { runQuestionFrequencyTests } from './test-question-frequency.mjs'
+import { runQuestionFrequencySessionTests } from './test-question-frequency-session.mjs'
+import { runSubagentActiveVisibilityTests } from './test-subagent-active-visibility.mjs'
+import { runSubagentParentOwnershipTests } from './test-subagent-parent-ownership.mjs'
+import { runSessionSyncRaceTests } from './test-session-sync-race.mjs'
+import { runHostOwnershipTests } from './test-host-ownership.mjs'
+import { runSnapshotIdentityTests } from './test-snapshot-identity.mjs'
+import { runExecutionAdmissionTests } from './test-execution-admission.mjs'
+import { runEpochSnapshotTests } from './test-epoch-snapshot.mjs'
+import { runAccountQuotaPaneTests } from './test-account-quota-pane.mjs'
 
 await runVisualMatrixTests()
 await import('./test-live-synthetic-isolation.mjs')
@@ -47,7 +63,10 @@ for (const script of [
   'test-mcp-annotations-guard', 'test-terminal-status', 'test-taskbar-status',
   'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills', 'test-tip',
   'test-mcp-native-import-flow', 'test-readonly-model-registration', 'test-terminal-tab-status', 'test-confirm-queue',
-  'test-motion-presence'
+  'test-motion-presence', 'test-stream-loop-detector', 'test-stream-loop-settings', 'test-stream-loop-setting-ui',
+  'test-native-session-export-alias', 'test-schedule-safety', 'test-subagent-terminal-races',
+  'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
+  'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)
@@ -191,6 +210,19 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       builder.onLoad({ filter: /.*/, namespace: 'unit-electron' }, () => ({ contents: `
         export class BrowserWindow { constructor() { throw new Error('Native browser requires an Electron integration test') } }
         export const session = { fromPartition() { throw new Error('Native session requires an Electron integration test') } }
+        /*
+         * settings.ts（agent.ts → getSettings 的传递依赖）只用到
+         * app.getLocale() 与 app.getPath('documents')。
+         * 路径固定落在隔离目录（YAN_TEST_APP_DIR → YAN_DATA_DIR → 系统临时目录），
+         * 绝不返回用户真实 AppData / Documents；这里不导入真实 Electron。
+         */
+        export const app = {
+          getLocale: () => 'zh-CN',
+          getPath: (name) => {
+            const root = process.env.YAN_TEST_APP_DIR || process.env.YAN_DATA_DIR || (process.env.TEMP || process.env.TMPDIR || '/tmp') + '/inkstone-unit-app'
+            return root + '/' + (name || 'documents')
+          }
+        }
       ` }))
     } }],
     logLevel: 'silent'
@@ -1393,6 +1425,36 @@ const ok = (cond, label, extra = '') => {
 console.log(`临时会话目录: ${dir}`)
 console.log(`模块用的目录: ${SESSIONS_DIR}`)
 ok(SESSIONS_DIR === dir, 'YAN_SESSIONS_DIR 生效（测试不会碰真实会话）')
+
+/*
+ * 会话并发定向回归：同 cwd 冲突保护（主进程类）+ 渲染端身份 / 实时投影 / peek 竞态
+ * + 切会话 stats 隔离。都只编译需要的模块，不启动 Electron / pi / 真实模型。
+ * 三者是同一批修复，放在一起接线以免某条口径回退。
+ */
+await runSessionConcurrencyConflictTests(ok)
+await runSessionConcurrencyFrontendTests(ok)
+await runSessionStatsIsolationTests(ok)
+
+/*
+ * 本轮统一接线：并发发送守卫 / Command Code 额度展示 / 提问频率 / 常驻子代理区。
+ * 四个脚本都已导出 run*(ok)，只现场编译或读临时 fixture，不启动 Electron / pi / 真实模型；
+ * 导入不执行、不退出、不改 global。
+ */
+await runSessionConcurrencySendGuardTests(ok)
+await runSessionConcurrencyFinalEdgesTests(ok)
+await runCommandCodeQuotaDisplayTests(ok)
+await runQuestionFrequencyTests(ok)
+await runQuestionFrequencySessionTests(ok)
+await runSubagentActiveVisibilityTests(ok)
+await runSubagentParentOwnershipTests(ok)
+
+/* 快照正文/归属、执行入场、代次恢复与账号额度的隔离回归，不调用模型。 */
+await runSessionSyncRaceTests(ok)
+await runHostOwnershipTests(ok)
+await runSnapshotIdentityTests(ok)
+await runExecutionAdmissionTests(ok)
+await runEpochSnapshotTests(ok)
+await runAccountQuotaPaneTests(ok)
 
 const PROJECT = join(dir, '--C--Users-Test--')
 await mkdir(PROJECT, { recursive: true })
@@ -2904,7 +2966,24 @@ await runGitRepoTests(ok)
   const subagentHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'subagent', '--help'], { encoding: 'utf8' })
   ok(subagentHelp.status === 0 && /start/.test(subagentHelp.stdout ?? ''), 'yan CLI：子代理分组帮助可按需读取')
   const capabilityHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'capabilities', '--help'], { encoding: 'utf8' })
-  ok(capabilityHelp.status === 0 && /--retry/.test(capabilityHelp.stdout ?? '') && /受管 staging/.test(capabilityHelp.stdout ?? ''), 'yan CLI：能力接入帮助说明固定 SRI staging 与显式重试')
+  /*
+   * 能力接入的安全语义随技能接入改版落到「内容审查 + 限时批准面板」：旧 help 里的
+   * staging / --retry 文案已退役，但**安全语义仍要能被模型读到**（审查、只能用户批准、
+   * 可疑注入 fail-closed）。参数级 SRI / staging / retry 断言在 scripts/test-acquisition.mjs，
+   * 这里只钉住模型-facing 的帮助契约。
+   */
+  ok(
+    capabilityHelp.status === 0 &&
+      /内容审查/.test(capabilityHelp.stdout ?? '') &&
+      /批准面板/.test(capabilityHelp.stdout ?? '') &&
+      /state=blocked/.test(capabilityHelp.stdout ?? ''),
+    'yan CLI：能力接入帮助说明内容审查与限时批准面板（可疑注入由 state=blocked fail-closed 表达）'
+  )
+  ok(
+    /你不能替用户批准/.test(capabilityHelp.stdout ?? '') &&
+      /逐文件核对 Git 哈希/.test(capabilityHelp.stdout ?? ''),
+    'yan CLI：能力接入帮助写明模型不能替用户批准，GitHub 技能固定到提交并逐文件核对哈希'
+  )
   const skillHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'skill', '--help'], { encoding: 'utf8' })
   ok(skillHelp.status === 0 && /save/.test(skillHelp.stdout ?? '') && /replace/.test(skillHelp.stdout ?? ''), 'yan CLI：技能帮助说明 save 与覆盖规则')
   const researchHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'research', '--help'], { encoding: 'utf8' })
