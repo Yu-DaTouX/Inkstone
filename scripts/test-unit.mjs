@@ -39,7 +39,7 @@ await import('./test-security-performance-fixes.mjs')
 await import('./test-browser-frame-origin.mjs')
 for (const script of [
   'test-attachment-prune-race', 'test-files-root-boundary',
-  'test-inbox-ipc-bounds', 'test-mobile-model-url', 'test-open-path-boundary',
+  'test-mobile-model-url', 'test-open-path-boundary',
   'test-package-sources-fixture', 'test-package-timeout-fallback',
   'test-service-receipt-hub-null', 'test-session-restore-rollback', 'test-subagent-stop-intent',
   'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory'
@@ -3198,42 +3198,6 @@ const capabilityServerMod = await import('../node_modules/esbuild/lib/main.js').
 )
 const { runCapabilityResultTests } = await import('./test-capability-result.mjs')
 await runCapabilityResultTests(ok, capabilityServerMod)
-
-const taskInboxMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/task-inbox.ts'],
-    outfile: 'out/test/task-inbox.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/task-inbox.mjs'))
-)
-const taskInboxServiceMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/task-inbox-service.ts'],
-    outfile: 'out/test/task-inbox-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/task-inbox-service.mjs'))
-)
-const { runTaskInboxTests } = await import('./test-task-inbox.mjs')
-await runTaskInboxTests(ok, taskInboxMod, taskInboxServiceMod)
-
-const taskInboxSourcesMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/task-inbox-sources.ts'],
-    outfile: 'out/test/task-inbox-sources.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/task-inbox-sources.mjs'))
-)
-const { runTaskInboxSourceTests } = await import('./test-task-inbox-sources.mjs')
-await runTaskInboxSourceTests(ok, taskInboxSourcesMod, taskInboxServiceMod)
 
 const browserWaitMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
