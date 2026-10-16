@@ -16,12 +16,6 @@ export interface V3Text {
   themeLight: string
   themeDark: string
   language: string
-  uiVersion: string
-  uiVersionV3: string
-  uiVersionBack: string
-  uiVersionEnv: string
-  uiVersionNote: string
-  uiVersionFailed: string
   back: string
   more: string
   sidebarLabel: string
@@ -71,12 +65,6 @@ const ZH: V3Text = {
   themeLight: '浅色',
   themeDark: '深色',
   language: '语言',
-  uiVersion: '界面版本',
-  uiVersionV3: '当前：v3（预览）',
-  uiVersionBack: '切回 v2 界面',
-  uiVersionEnv: '本次由环境变量固定为 v3，设置里的切换不生效。',
-  uiVersionNote: '切换后会重新载入窗口；会话、运行与设置都不受影响。',
-  uiVersionFailed: '切换失败，请稍后重试。',
   back: '返回',
   more: '更多',
   sidebarLabel: '侧栏',
@@ -126,12 +114,6 @@ const EN: V3Text = {
   themeLight: 'Light',
   themeDark: 'Dark',
   language: 'Language',
-  uiVersion: 'Interface version',
-  uiVersionV3: 'Current: v3 (preview)',
-  uiVersionBack: 'Switch back to v2',
-  uiVersionEnv: 'Pinned to v3 by an environment variable in this session, so the setting will not apply.',
-  uiVersionNote: 'The window reloads after switching; sessions, runs and settings are unaffected.',
-  uiVersionFailed: 'Could not switch. Please try again.',
   back: 'Back',
   more: 'More',
   sidebarLabel: 'Sidebar',

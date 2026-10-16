@@ -16,7 +16,7 @@ import {
 } from './usage-model'
 import { UsageStatsGrid } from './UsageStatsGrid'
 import { UsageCurrency } from './UsageCurrency'
-import { useMoney } from '../../../components/chat/UsageOverview'
+import { useMoney } from '../../usage/UsageOverview'
 
 type Status = 'loading' | 'ready' | 'error'
 type UsageView = 'chart' | 'table'

@@ -1,0 +1,36 @@
+@layer features {
+  .peer-approval {
+    width: min(520px, 100%);
+  }
+
+  .peer-approval-timer {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .peer-approval-lead {
+    margin: 0;
+    color: var(--fg2);
+    overflow-wrap: anywhere;
+  }
+
+  .peer-approval-dim {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .peer-approval-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-8);
+    margin-top: var(--s-4);
+  }
+
+  .peer-approval-spacer {
+    flex: 1 1 auto;
+  }
+}

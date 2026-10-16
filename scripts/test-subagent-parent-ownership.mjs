@@ -2,107 +2,10 @@ import fs from 'node:fs/promises'
 import vm from 'node:vm'
 import ts from 'typescript'
 import { build } from 'esbuild'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createElement } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
-
-async function loadPanelHarness(panelDir) {
-  const base = resolve('.tmp/subagent-parent-ownership')
-  await fs.mkdir(base, { recursive: true })
-  const shimPath = join(panelDir, 'react-shim.js')
-  await writeFile(shimPath, `
-import { createRequire } from 'node:module'
-const require = createRequire(import.meta.url)
-const React = require('react')
-let seeded = false
-export function useState(initial) {
-  const pair = React.useState(initial)
-  if (!seeded) { seeded = true; return ['do B', pair[1]] }
-  return pair
-}
-export const useEffect = React.useEffect
-export const useLayoutEffect = React.useLayoutEffect
-export const useRef = React.useRef
-export default React
-`)
-
-  const stubs = {
-    'subagent-pi-launch': `export const subagentModelError = () => '';`,
-    'model-selection': `export const modelKey = (m) => m.provider + '/' + m.id;`,
-    'turn-model-display': `export const resolveSubagentModelDisplay = () => ({ label: 'M' });`,
-    ModelCatalog: `export const ModelCatalog = () => null;`,
-    modalLayer: `export const useFocusTrap = () => {}; export const useModalLayer = () => ({ isTop: true });`,
-    i18n: `export const useT = () => (key) => 'T:' + key;`,
-    store: `export const useStore = (selector) => selector(globalThis.__panelStore);\nuseStore.getState = () => globalThis.__panelStore;`,
-    AgentMessageStream: `const h = (...a) => globalThis.React.createElement(...a);\nexport const AgentMessageStream = ({ run }) => h('div', { 'data-run': run.id });`,
-    SubagentPlan: `const h = (...a) => globalThis.React.createElement(...a);\nexport const SubagentPlan = ({ runs }) => h('div', { 'data-runs': runs.map((r) => r.id).join(',') });`,
-    ui: `const h = (...a) => globalThis.React.createElement(...a);
-export const Button = ({ children, ...rest }) => h('button', rest, children);
-export const EmptyState = ({ title, children, ...rest }) => h('div', { ...rest, 'data-empty': title }, children);
-export const Field = ({ children, ...rest }) => h('div', rest, children);
-export const Select = ({ children, ...rest }) => h('select', rest, children);
-export const Textarea = ({ children, ...rest }) => h('textarea', rest, children);`
-  }
-  const out = join(panelDir, 'panel.mjs')
-  await build({
-    entryPoints: [fileURLToPath(new URL('../src/renderer/src/components/workbench/SubagentPanel.tsx', import.meta.url))],
-    outfile: out,
-    bundle: true,
-    platform: 'node',
-    format: 'esm',
-    packages: 'external',
-    logLevel: 'silent',
-    plugins: [{
-      name: 'subagent-parent-ownership-fixtures',
-      setup(b) {
-        b.onResolve({ filter: /^react$/ }, () => ({ path: shimPath }))
-        const fixtures = [
-          [/shared\/subagent-pi-launch$/, 'subagent-pi-launch'],
-          [/shared\/model-selection$/, 'model-selection'],
-          [/chat\/turn-model-display$/, 'turn-model-display'],
-          [/(^|\/)ModelCatalog$/, 'ModelCatalog'],
-          [/lib\/modalLayer$/, 'modalLayer'],
-          [/(^|\/)i18n$/, 'i18n'],
-          [/state\/store$/, 'store'],
-          [/chat\/AgentMessageStream$/, 'AgentMessageStream'],
-          [/(^|\/)SubagentPlan$/, 'SubagentPlan'],
-          [/(^|\/)ui$/, 'ui']
-        ]
-        for (const [filter, name] of fixtures) b.onResolve({ filter }, () => ({ path: name, namespace: 'fixture' }))
-        b.onLoad({ filter: /.*/, namespace: 'fixture' }, (args) => ({ contents: stubs[args.path], loader: 'js' }))
-      }
-    }]
-  })
-  return out
-}
-
-async function panelDispatch(panelOut, caseId, store) {
-  globalThis.__panelStore = {
-    subagents: [], models: [], settings: { cwd: '/tmp' },
-    loadSubagents: () => {}, patchSettings: async () => {},
-    ...store
-  }
-  let submit
-  const realCreate = createElement
-  globalThis.React = {
-    Fragment: undefined,
-    createElement: (type, props, ...children) => {
-      if (type === 'form' && props?.onSubmit) submit = props.onSubmit
-      return realCreate(type, props, ...children)
-    }
-  }
-  const calls = []
-  globalThis.window = { yan: { subagents: { start: (...args) => { calls.push(args); return Promise.resolve({ ok: true, run: { id: 'sub-x' } }) } } } }
-  const { SubagentPanel } = await import(`${pathToFileURL(panelOut).href}?case=${caseId}`)
-  const realError = console.error
-  console.error = (...args) => { if (typeof args[0] === 'string' && args[0].includes('useLayoutEffect')) return; realError(...args) }
-  try { renderToStaticMarkup(createElement(SubagentPanel, {})) } finally { console.error = realError }
-  if (typeof submit === 'function') await submit({ preventDefault() {} })
-  return calls
-}
 
 async function loadBundle(entry, dir, name) {
   const outfile = join(dir, `${name}.mjs`)
@@ -142,42 +45,7 @@ const setSession = (registry, id, sessionId) => {
 export async function runSubagentParentOwnershipTests(ok) {
   const check = typeof ok === 'function' ? ok : (condition, label) => { if (!condition) throw new Error(`✗ ${label}`) }
   const dir = await mkdtemp(join(tmpdir(), 'yan-subagent-parent-'))
-  await fs.mkdir(resolve('.tmp/subagent-parent-ownership'), { recursive: true })
-  const panelDir = await mkdtemp(resolve('.tmp/subagent-parent-ownership/run-'))
-  const realReact = Object.getOwnPropertyDescriptor(globalThis, 'React')
-  const realWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
-  const realPanelStore = Object.getOwnPropertyDescriptor(globalThis, '__panelStore')
   try {
-    {
-      const panelOut = await loadPanelHarness(panelDir)
-      const runnerB = { id: 'rB', runId: 'rB', sessionId: 'B', sessionFile: 'C:/other/b.jsonl', projectId: 'pB', generation: 7, cwd: 'C:/other', running: false }
-      const runnerA = { id: 'rA', runId: 'rA', sessionId: 'A', sessionFile: 'C:/proj/a.jsonl', projectId: 'pA', generation: 2, cwd: 'C:/proj', running: false }
-
-      const bCalls = await panelDispatch(panelOut, 'b', {
-        peekedSessionId: 'B', peekedPath: null,
-        session: { sessionId: 'A', conversationId: 'A-conv', cwd: 'C:/proj', model: { provider: 'p', id: 'm', name: 'M' } },
-        runners: [runnerA, runnerB],
-        models: [{ provider: 'p', id: 'm', name: 'M' }]
-      })
-      check(bCalls.length === 1, 'B 视图派活调用宿主一次')
-      check(bCalls[0]?.[3]?.runId === 'rB' && bCalls[0]?.[3]?.sessionId === 'B' && bCalls[0]?.[3]?.generation === 7, '面板把 B 的 expectedRuntime（runId/sid/代次）传给宿主')
-
-      const blockedCalls = await panelDispatch(panelOut, 'blocked', {
-        peekedSessionId: 'B', peekedPath: null,
-        session: { sessionId: 'A', conversationId: 'A-conv', cwd: 'C:/proj', model: { provider: 'p', id: 'm', name: 'M' } },
-        runners: [runnerA],
-        models: [{ provider: 'p', id: 'm', name: 'M' }]
-      })
-      check(blockedCalls.length === 0, 'B 有稳定 SID 但无实例 → 面板不派活（不落到 active A）')
-
-      const startupCalls = await panelDispatch(panelOut, 'startup', {
-        peekedSessionId: null, peekedPath: null,
-        session: { sessionId: '', cwd: 'C:/proj', model: { provider: 'p', id: 'm', name: 'M' } },
-        runners: [],
-        models: [{ provider: 'p', id: 'm', name: 'M' }]
-      })
-      check(startupCalls.length === 1 && startupCalls[0]?.[3] === undefined, '启动早期面板不带 owner（宿主按当前父处理）')
-    }
     {
       const { subagentOwnerForView, subagentScopeForView } = await loadBundle(
         fileURLToPath(new URL('../src/renderer/src/state/subagent-view.ts', import.meta.url)),
@@ -570,11 +438,7 @@ export async function runSubagentParentOwnershipTests(ok) {
       }
     }
   } finally {
-    if (realReact) Object.defineProperty(globalThis, 'React', realReact); else delete globalThis.React
-    if (realWindow) Object.defineProperty(globalThis, 'window', realWindow); else delete globalThis.window
-    if (realPanelStore) Object.defineProperty(globalThis, '__panelStore', realPanelStore); else delete globalThis.__panelStore
     await rm(dir, { recursive: true, force: true })
-    await rm(panelDir, { recursive: true, force: true })
   }
 }
 

@@ -542,7 +542,7 @@ if (argv.includes('--verify')) {
     : [
         'package.json', 'README.md', 'AGENTS.md', 'tsconfig.web.json', 'tsconfig.node.json',
         'electron.vite.config.ts', 'scripts/launch.mjs', 'scripts/test-unit.mjs',
-        'scripts/test-live.mjs', 'scripts/visual-matrix.mjs', 'src/main/index.ts', 'src/main/agent.ts',
+        'scripts/test-live.mjs', 'src/main/index.ts', 'src/main/agent.ts',
         'src/shared/ipc.ts', 'src/preload/index.ts', 'src/renderer/src/state/store.ts'
       ]
   const count = () => evaluate('Object.keys(window.__yanStore.getState().filePreviews).length')

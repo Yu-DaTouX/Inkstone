@@ -28,8 +28,8 @@ export function sanitizeFontUiPreset(value: unknown): Exclude<FontUiPreset, 'san
   return value === 'maple' || value === 'serif' || value === 'custom' ? value : undefined
 }
 
-export function sanitizeFontCodePreset(value: unknown): Exclude<FontCodePreset, 'maple'> | undefined {
-  return value === 'mono' || value === 'custom' ? value : undefined
+export function sanitizeFontCodePreset(value: unknown): Exclude<FontCodePreset, 'mono'> | undefined {
+  return value === 'maple' || value === 'custom' ? value : undefined
 }
 
 export function sanitizeFontSize(value: unknown, min: number, max: number, fallback: number): number | undefined {
@@ -37,23 +37,4 @@ export function sanitizeFontSize(value: unknown, min: number, max: number, fallb
   if (!Number.isFinite(n) || n <= 0) return undefined
   const v = Math.round(Math.min(max, Math.max(min, n)))
   return v === fallback ? undefined : v
-}
-
-export function fontUiStack(preset: string | undefined, custom: string | undefined): string {
-  if (preset === 'maple') return MAPLE
-  if (preset === 'serif') return SERIF
-  if (preset === 'custom') {
-    const name = sanitizeFontName(custom)
-    return name ? `"${name}", ${SANS}` : SANS
-  }
-  return SANS
-}
-
-export function fontCodeStack(preset: string | undefined, custom: string | undefined): string {
-  if (preset === 'mono') return MONO
-  if (preset === 'custom') {
-    const name = sanitizeFontName(custom)
-    return name ? `"${name}", ${MAPLE}` : MAPLE
-  }
-  return MAPLE
 }

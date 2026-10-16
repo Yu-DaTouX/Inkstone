@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useI18n, useT } from '../../i18n'
-import { compactNumber, useMoney, useUsageStats } from '../../components/chat/UsageOverview'
+import { compactNumber, useMoney, useUsageStats } from './UsageOverview'
 import { heatLevels, tokenBreakdownOf, type UsageRange } from '../../../../shared/usage-stats'
 import { renderUsageToggle } from '../../patterns/UsagePattern'
 import { useStore } from '../../state/store'

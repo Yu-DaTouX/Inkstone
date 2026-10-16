@@ -6,7 +6,7 @@ import '@xterm/xterm/css/xterm.css'
 import { Badge, Button, IconButton, type BadgeTone } from '../../ui'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { resourceOwner, claimResource, releaseResource } from '../../state/resource-owners'
-import { installImeFallback, installTerminalRenderer, terminalFontReady } from '../../components/terminal/terminal-appearance'
+import { installImeFallback, installTerminalRenderer, terminalFontReady } from './terminal-appearance'
 import { observeTerminalEnvironment, readTerminalTheme, terminalFontFamily } from './terminal-theme'
 import { terminalText } from './terminal-text'
 import {

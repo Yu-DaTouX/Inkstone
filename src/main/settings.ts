@@ -336,7 +336,6 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
     settings.responseDetail === 'brief' || settings.responseDetail === 'detailed'
       ? settings.responseDetail
       : 'standard'
-  if (settings.uiVersion !== 'v3' && settings.uiVersion !== 'v2') delete settings.uiVersion
   settings.density =
     settings.density === 'compact' || settings.density === 'comfortable'
       ? settings.density
@@ -467,11 +466,10 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['uiVersion','lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','showSpaces','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','questionFrequency','capabilityStrategy','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','activityModels','workModeShortcutEnabled','workModeShortcut','subagentNotify','streamLoopAutoContinue','usageUnderInput','usageCurrency','contextPolicy','contextPolicyByModel','temperatureByModel','contextDeep','contextFold','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput','shortcutOverrides'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','showSpaces','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','questionFrequency','capabilityStrategy','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','activityModels','workModeShortcutEnabled','workModeShortcut','subagentNotify','streamLoopAutoContinue','usageUnderInput','usageCurrency','contextPolicy','contextPolicyByModel','temperatureByModel','contextDeep','contextFold','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput','shortcutOverrides'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
-  if ('uiVersion' in value && value.uiVersion !== 'v2' && value.uiVersion !== 'v3') throw new Error('界面版本必须为 v2 或 v3')
   return value as Partial<AppSettings>
 }
 

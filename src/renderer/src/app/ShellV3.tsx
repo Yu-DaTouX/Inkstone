@@ -20,6 +20,7 @@ import { CommandPalette } from '../features/commands/CommandPalette'
 import { ShortcutSheet } from '../features/commands/ShortcutSheet'
 import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
 import { NoticeBridge } from './NoticeBridge'
+import { PeerApprovalDialog } from './PeerApprovalDialog'
 import { RunsPage } from '../features/runs/RunsPage'
 import { ReviewPage } from '../features/review'
 import { ScheduleTasksPage } from '../features/schedule'
@@ -548,6 +549,7 @@ export default function ShellV3(): ReactElement {
       <NativeSessionSurfaces />
       <SplitDropLayer />
       <NoticeBridge />
+      <PeerApprovalDialog />
     </V3ErrorBoundary>
   )
 }

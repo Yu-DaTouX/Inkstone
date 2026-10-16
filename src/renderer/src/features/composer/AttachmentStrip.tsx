@@ -1,7 +1,7 @@
 import { FileText, X } from 'lucide-react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { fmtSize } from '../../components/chat/attachment-files'
+import { fmtSize } from './attachment-files'
 
 export function AttachmentStrip() {
   const t = useT()

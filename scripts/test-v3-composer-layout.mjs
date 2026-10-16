@@ -94,7 +94,7 @@ const STUBS = {
   'src/renderer/src/i18n/index.tsx': 'export function useT(){ return (k) => k }\nexport function useI18n(){ return { lang: "zh-CN" } }\nexport function translate(_l, k){ return String(k) }',
   'src/renderer/src/lib/composer-submit.ts': 'export async function submitComposerInput(){ return undefined }',
   'src/renderer/src/lib/v3-submit-ownership.ts': 'export function attachmentsAfterSubmit(a){ return a }\nexport async function runLocalCommandGuarded(){ return "ran" }',
-  'src/renderer/src/components/chat/attachment-files.ts': 'export async function readFiles(){ return [] }',
+  'src/renderer/src/features/composer/attachment-files.ts': 'export async function readFiles(){ return [] }',
   'src/renderer/src/ui/index.ts': 'export function Button(){ return null }\nexport function cx(){ return "" }',
   'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
   'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',

@@ -1,7 +1,7 @@
 import type { JSX, ReactNode } from 'react'
 import { Tab, TabList, Tabs } from '../ui'
-import { UsageOverview } from '../components/chat/UsageOverview'
-import type { UsageToggleProps, UsageToggleRenderer } from '../components/chat/UsageOverviewView'
+import { UsageOverview } from '../features/usage/UsageOverview'
+import type { UsageToggleProps, UsageToggleRenderer } from '../features/usage/UsageOverviewView'
 import './usage-pattern.css'
 import { useUiV3 } from '../state/ui-v3'
 

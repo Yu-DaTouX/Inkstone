@@ -8,7 +8,6 @@ async function load(entry, out) {
 
 export async function runSplitViewTests(ok) {
   const split = await load('src/renderer/src/state/split-view.ts', 'out/test/split-view.mjs')
-  const layout = await load('src/renderer/src/state/workspace-layout.ts', 'out/test/workspace-layout-split.mjs')
   const { reconcileSplit, sameSplitSession, displayedSessionOf, useSplitView, placeInSplit, removeSplitTile, neighborOf, MAX_SPLIT_TILES } = split
 
   const mk = (id) => ({ sessionId: id, path: `C:/s/${id}.jsonl` })
@@ -76,30 +75,6 @@ export async function runSplitViewTests(ok) {
   ok(ids(store.getState().split) === 'bc' && store.getState().split?.live === 1, 'store：去掉一块')
   store.getState().close()
   ok(store.getState().split === null, '关闭回到单会话')
-
-  const { PEER_PANE, CHAT_PANE, conversationPaneId, isConversationPane, defaultWorkspaceLayout, openDockPane, hideDockPane, moveDockPane, dockGroups } = layout
-  let l = openDockPane(defaultWorkspaceLayout(), 'files')
-  l = openDockPane(l, PEER_PANE)
-  const groups = dockGroups(l.root)
-  const chatGroup = groups.find((g) => g.panes.includes(CHAT_PANE))
-  const peerGroup = groups.find((g) => g.panes.includes(PEER_PANE))
-  ok(!!peerGroup && peerGroup !== chatGroup && peerGroup.panes.length === 1, '第二个会话单独成组，不进工具的标签组')
-  const parentOf = (node, id) => node.type === 'split' ? ((node.first.type === 'group' && node.first.id === id) || (node.second.type === 'group' && node.second.id === id) ? node : parentOf(node.first, id) ?? parentOf(node.second, id)) : null
-  const pair = parentOf(l.root, peerGroup.id)
-  ok(pair?.ratio === 0.5 && pair.first.id === chatGroup.id && pair.second.id === peerGroup.id, '开在主会话右侧，各占一半；工具位置不变')
-  ok(hideDockPane(l, PEER_PANE) === l, '会话磁贴不能被隐藏（关闭走分屏本身）')
-  const filesGroup = groups.find((g) => g.panes.includes('files'))
-  ok(moveDockPane(l, PEER_PANE, filesGroup.id, 'center') === l && moveDockPane(l, 'files', peerGroup.id, 'center') === l, '会话磁贴不与工具合成标签组')
-  ok(conversationPaneId(0) === 'chat' && conversationPaneId(1) === 'chat-peer' && conversationPaneId(3) === 'chat-peer-3', '磁贴编号 → 窗格 id')
-  ok(isConversationPane('chat-peer-4') && !isConversationPane('chat-peer-x') && !isConversationPane('files'), '会话窗格识别')
-  let m = openDockPane(defaultWorkspaceLayout(), 'files')
-  for (let k = 1; k <= 4; k++) m = openDockPane(m, conversationPaneId(k))
-  const all = dockGroups(m.root)
-  ok(all.length === 6 && all.filter((g) => g.panes.every(isConversationPane)).length === 5, '五块会话 + 一组工具')
-  const measured = layout.measureDockLayout(m, new Set([...Array(5).keys()].map(conversationPaneId).concat('files')), 2000, 800)
-  const widths = measured.groups.filter((g) => g.group.panes.every(isConversationPane)).map((g) => Math.round(g.w))
-  ok(widths.length === 5 && Math.max(...widths) - Math.min(...widths) <= 2, `五块会话等宽（${widths.join('/')}）`)
-  ok(hideDockPane(m, 'chat-peer-3') === m, '任何一块会话都不能被隐藏')
 
   const snaps = await load('src/renderer/src/state/split-snapshots.ts', 'out/test/split-snapshots.mjs')
   const msg = (id, ts) => ({ id, role: 'assistant', text: id, ...(ts ? { timestamp: ts } : {}) })

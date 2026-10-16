@@ -87,10 +87,10 @@ assert.equal(peakHourText(null), null)
 assert.equal(peakHourText(24), null)
 
 const appearance = readFileSync(here('../src/renderer/src/features/settings/appearance/AppearanceSettings.tsx'), 'utf8')
-for (const id of ['v3-theme-light', 'v3-theme-dark', 'v3-switch-v2']) {
+for (const id of ['v3-theme-light', 'v3-theme-dark']) {
   assert.ok(appearance.includes(id), `外观页保留测试 id ${id}`)
 }
-assert.ok(appearance.includes('uiVersionEnv'), '外观页保留环境变量固定 v3 的提示逻辑')
+assert.ok(!appearance.includes('uiVersion') && !appearance.includes('v3-switch-v2'), '外观页不再有界面版本切换')
 assert.ok(appearance.includes("patchSettings({ theme:"), '主题改动来自用户点击')
 assert.ok(!appearance.includes('components/settings'), '外观页不引入 v2 旧设置组件')
 

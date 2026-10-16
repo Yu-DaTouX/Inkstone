@@ -186,12 +186,6 @@ async function main() {
   ok(overview.includes("import { TodoTileRows, todoTileText } from '../todos/TodoTileView'") && overview.includes('useStore((s) => s.todos)'), '概览的待办磁贴复用 TodoTileRows，数据来自 store.todos')
   ok(!panel.includes('v3-todo-overlay') && !panel.includes('createPortal') && !overview.includes('createPortal'), '不另开浮层')
 
-  const container = await readFile(join(ROOT, 'src/renderer/src/features/todos/TodoTile.tsx'), 'utf8')
-  ok(container.includes('useStore((s) => s.todos)'), '容器只消费 store.todos')
-  ok(!/components\/toolbar|TodoSection|subagents|subagent/i.test(container), '容器不引 v2 任务组件，也不掺子代理')
-  ok(container.includes('s.peekedSessionId ?? s.session?.sessionId'), '折叠键优先用已铺上的会话身份')
-  ok(container.includes('useState<TodoTileFolds>({})') && !container.includes('localStorage') && !container.includes('patchSettings'), '折叠状态只在内存，不写设置')
-
   const view = await readFile(join(ROOT, 'src/renderer/src/features/todos/TodoTileView.tsx'), 'utf8')
   ok(view.includes("import { Spinner } from '../../ui'"), '进行中标记来自 ui/ 原语')
   ok(view.includes("from 'lucide-react'"), '勾 / 受阻图标来自 lucide（并非自绘控件外观）')

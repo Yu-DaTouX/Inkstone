@@ -8,12 +8,11 @@ import {
   sanitizeFontName
 } from '../../../../../shared/appearance'
 import { useStore } from '../../../state/store'
-import { Button, Switch } from '../../../ui'
+import { Switch } from '../../../ui'
 import { prefersReducedMotion } from '../../../lib/usePresence'
 import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/ascii-field-model'
 import { settingsText } from '../settings-text'
 import { Segmented, SettingsRow } from '../root/controls'
-import { useSwitchToV2 } from '../root/use-switch-to-v2'
 import { codeFontChoice } from '../../../lib/appearance-v3'
 
 type Density = 'compact' | 'standard' | 'comfortable'
@@ -212,32 +211,6 @@ function DynamicBackgroundRow(): ReactElement {
   )
 }
 
-function UiVersionRow(): ReactElement {
-  const { lang } = useI18n()
-  const text = settingsText(lang)
-  const { env, busy, error, switchToV2 } = useSwitchToV2(lang)
-
-  return (
-    <SettingsRow block label={text.uiVersion} description={text.uiVersionNote}>
-      <p className="settings-value">{env ? text.uiVersionEnv : text.uiVersionV3}</p>
-      <Button
-        variant="secondary"
-        size="sm"
-        isDisabled={busy || env}
-        onPress={() => void switchToV2()}
-        data-testid="v3-switch-v2"
-      >
-        {text.uiVersionBack}
-      </Button>
-      {error ? (
-        <p className="settings-row__desc settings-row__desc--error" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </SettingsRow>
-  )
-}
-
 export function AppearanceSettings(): ReactElement {
   const { lang, setLang } = useI18n()
   const text = settingsText(lang)
@@ -303,7 +276,6 @@ export function AppearanceSettings(): ReactElement {
         <span className="settings-value">{prefersReducedMotion() ? text.motionReduced : text.motionFull}</span>
       </SettingsRow>
 
-      <UiVersionRow />
     </section>
   )
 }

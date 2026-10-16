@@ -74,7 +74,7 @@ npm install -g @earendil-works/pi-coding-agent
 npm run launch
 ```
 
-启动器会检查依赖、准备缺失的内置运行时并按需构建。已有工作区可双击 `启动-砚.cmd`；开发模式使用 `开发-砚.cmd` 或 `npm run launch:dev`。用 `YAN_UI=v3` 启动可试用 v3 界面。AI 协作约定见 [AGENTS.md](AGENTS.md)。
+启动器会检查依赖、准备缺失的内置运行时并按需构建。已有工作区可双击 `启动-砚.cmd`；开发模式使用 `开发-砚.cmd` 或 `npm run launch:dev`。AI 协作约定见 [AGENTS.md](AGENTS.md)。
 
 </details>
 

@@ -1,5 +1,4 @@
 export const SYNC_SETTINGS_WHITELIST = [
-  'uiVersion',
   'theme',
   'lang',
   'lastMainModel',

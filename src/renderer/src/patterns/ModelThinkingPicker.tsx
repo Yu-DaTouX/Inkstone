@@ -14,7 +14,7 @@ import {
 } from 'react-aria-components'
 import { Check, ChevronDown, Search, Star } from 'lucide-react'
 import { Button, Slider, Select, ListBoxItem as ProviderItem } from '../ui'
-import { PulseField, resolveColor } from '../components/ui/pulse-field'
+import { PulseField, resolveColor } from './pulse-field'
 import { APPEARANCE_EVENT } from '../lib/appearance'
 import { useT, type MessageKey, type TFunc } from '../i18n'
 import { useStore } from '../state/store'

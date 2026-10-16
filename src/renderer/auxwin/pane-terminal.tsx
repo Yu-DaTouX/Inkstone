@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { RefreshCw, Terminal as TerminalIcon, X } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
-import { installImeFallback, installTerminalRenderer, terminalFontReady } from '../src/components/terminal/terminal-appearance'
+import { installImeFallback, installTerminalRenderer, terminalFontReady } from '../src/features/terminal/terminal-appearance'
 import { observeTerminalEnvironment, readTerminalTheme, terminalFontFamily } from '../src/features/terminal/terminal-theme'
 import {
   PaneTerminalStream,

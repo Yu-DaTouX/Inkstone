@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { uiVersionArgument } from '../shared/ui-version'
 import { MCP_APP_VIEW_CHANNELS } from '../shared/mcp-app-view'
 import type { HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
 import type {
@@ -194,7 +193,6 @@ const api: YanBridge = {
     install: () => invoke('yan:update:install')
   },
   isProbe: !!process.env.YAN_PROBE,
-  uiVersionEnv: uiVersionArgument(process.argv),
 
   start: () =>
     invoke<{ ok: boolean; error?: string; state?: SessionState; settings?: AppSettings }>('yan:start'),

@@ -234,8 +234,7 @@ export { textFingerprint } from '${posix(abs('src/shared/checkpoints.ts'))}'
       'src/renderer/src/features/session/Icon.tsx': `export function Icon(){ return null }`,
       'src/renderer/src/i18n/index.tsx': I18N_STUB,
       'src/renderer/src/ui/index.ts': `export function IconButton(){ return null }\nexport function Button(){ return null }\nexport function Badge(){ return null }`,
-      'src/renderer/src/components/chat/run-status.ts': `export function useRunProgress(){ return null }\nexport function runPhaseText(){ return '' }`,
-      'src/renderer/src/components/chat/turn-model-display.ts': `export function resolveTurnModelDisplay(){ return null }`,
+      'src/renderer/src/features/session/run-status.ts': `export function useRunProgress(){ return null }\nexport function runPhaseText(){ return '' }`,
       'src/renderer/src/lib/fork.ts': `export async function forkFromText(){ globalThis.__V3_FORK_CALLED = (globalThis.__V3_FORK_CALLED ?? 0) + 1 }`
     },
     shims

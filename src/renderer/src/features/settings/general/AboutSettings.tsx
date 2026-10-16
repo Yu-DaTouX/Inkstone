@@ -112,7 +112,7 @@ export function AboutSettings({ onOpenModels, onShowOnboarding }: AboutSettingsP
             BUILD_INFO.buildHash ? ` · ${BUILD_INFO.buildHash}` : ''
           }`}
         >
-          <span className="settings-value">{text.aboutEnvV3}</span>
+          {null}
         </SettingsRow>
 
         <SettingsRow
@@ -203,13 +203,6 @@ export function AboutSettings({ onOpenModels, onShowOnboarding }: AboutSettingsP
           ) : (
             <span className="settings-value">—</span>
           )}
-        </SettingsRow>
-
-        <SettingsRow
-          label={text.aboutEnv}
-          description={window.yan.uiVersionEnv ? text.aboutEnvPinned : text.aboutNote}
-        >
-          <span className="settings-value">{text.aboutEnvV3}</span>
         </SettingsRow>
 
         {onShowOnboarding ? (

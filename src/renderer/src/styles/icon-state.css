@@ -1,9 +1,0 @@
-.ico {
-  transition: color var(--dur) var(--ease);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ico {
-    transition-duration: var(--dur-1);
-  }
-}

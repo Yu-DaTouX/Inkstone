@@ -20,7 +20,7 @@ export async function runUsageUiTests() {
   const entry = [
     "import * as React from 'react'",
     "import { renderToStaticMarkup } from 'react-dom/server'",
-    `import * as UsageOverviewView from '${p('src/renderer/src/components/chat/UsageOverviewView.tsx')}'`,
+    `import * as UsageOverviewView from '${p('src/renderer/src/features/usage/UsageOverviewView.tsx')}'`,
     `import * as UsageStatsGrid from '${p('src/renderer/src/features/settings/usage/UsageStatsGrid.tsx')}'`,
     `import * as i18n from '${p('src/renderer/src/i18n/index.tsx')}'`,
     `import * as settingsText from '${p('src/renderer/src/features/settings/settings-text.ts')}'`,

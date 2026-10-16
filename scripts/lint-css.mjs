@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 const TARGETS = [
-  join(root, 'src/renderer/src/styles'),
+  ...['app', 'design', 'features', 'patterns', 'ui'].map((dir) => join(root, 'src/renderer/src', dir)),
   join(root, 'scripts/design/prototype.html')
 ]
 
