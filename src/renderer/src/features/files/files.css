@@ -1,0 +1,177 @@
+/*
+ * v3 文件面板版面（P3 · R1）。
+ *
+ * 层归属（design/index.css 的层序 reset,tokens,base,primitives,patterns,features,utilities）：
+ *   · 行 / 状态文字 / 标题的**外观**（颜色、悬停与选中底色、圆角、图标色）写 `@layer patterns`；
+ *     与 features/commands/command-palette.css 同一口径，合并时可原样挪去 `patterns/`。
+ *   · 容器与行**版面**（flex、高度、缩进、滚动、截断）写 `@layer features`。
+ * 颜色 / 字形 / 尺寸都取 design/tokens.css 的变量，不私造令牌。
+ */
+
+@layer patterns {
+  .v3-files {
+    background: var(--bg);
+    color: var(--fg);
+  }
+
+  .v3-files-title {
+    color: var(--fg2);
+    font-weight: var(--t-title-w);
+  }
+
+  .v3-files-row {
+    border-radius: var(--r-sm);
+    color: var(--fg);
+    text-align: left;
+  }
+
+  .v3-files-row:hover {
+    background: var(--hover);
+  }
+
+  .v3-files-row:focus-visible {
+    outline: none;
+    background: var(--sel);
+  }
+
+  .v3-files-ico,
+  .v3-files-chev {
+    color: var(--fg3);
+  }
+
+  .v3-files-add {
+    border-radius: var(--r-xs);
+    color: var(--fg3);
+  }
+
+  .v3-files-add:hover,
+  .v3-files-add:focus-visible {
+    background: var(--hover);
+    color: var(--fg);
+  }
+
+  .v3-files-state {
+    color: var(--fg3);
+  }
+}
+
+@layer features {
+  .v3-files {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .v3-files-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    height: var(--size-head);
+    padding: 0 var(--s-8) 0 var(--s-12);
+  }
+
+  .v3-files-title {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .v3-files-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+  }
+
+  .v3-files-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0 var(--s-8) var(--s-8);
+  }
+
+  .v3-files-pad {
+    flex: none;
+  }
+
+  .v3-files-rowwrap {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+  }
+
+  /*
+   * 缩进走 CSS 变量：像素由行内 `--files-depth` 算出，窄栏下由容器的横向
+   * overflow hidden 兜住，不在样式里写死某一层。
+   */
+  .v3-files-row {
+    flex: 1;
+    min-width: 0;
+    height: var(--d-row);
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    padding-inline: calc(var(--s-4) + (var(--files-depth, 0) * 14px)) var(--s-6);
+  }
+
+  .v3-files-chev {
+    flex: none;
+    width: 14px;
+    display: grid;
+    place-items: center;
+  }
+
+  .v3-files-chev .is-open {
+    transform: rotate(90deg);
+    transition: transform var(--dur-hover) var(--ease);
+  }
+
+  .v3-files-ico {
+    flex: none;
+    display: grid;
+    place-items: center;
+  }
+
+  .v3-files-name {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .v3-files-add {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+  }
+
+  .v3-files-state {
+    height: var(--d-row);
+    display: flex;
+    align-items: center;
+    padding-inline: calc(var(--s-4) + 14px + var(--s-6) + (var(--files-depth, 0) * 14px)) var(--s-6);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .v3-files-state-block {
+    height: auto;
+    padding: var(--s-12);
+    white-space: normal;
+  }
+}

@@ -1,0 +1,126 @@
+/**
+ * v3 侧栏品牌入口一致性小测。
+ *
+ * 纯 Node 静态检查：不启动浏览器 / Electron、不构建、不联网。核对：
+ *   1. `features/sidebar/Sidebar.tsx` 的侧栏品牌入口复用现有 `BrandMark`，
+ *      不再自己画纯色方块。
+ *   2. `features/sidebar/Sidebar.css` 没有残留 `.v3-side-mark` 方块规则，
+ *      品牌标志只保留版面约束、颜色由侧栏正文色继承。
+ *   3. `components/shell/BrandMark.tsx` 消费 `src/shared/brand-geometry.ts`
+ *      的常量，不手写几何路径。
+ *   4. `src/shared/brand-geometry.ts` 与唯一真源 `resources/brand/inkstone-design.json`
+ *      逐字一致（复用 build-icon 的生成逻辑，不另写一份）。
+ *   5. 定义 `.brand-mark` 外观的 `styles/*.css` 不被 v3 样式入口加载，
+ *      即 BrandMark 在 v3 下没有旧 CSS 依赖。
+ *
+ * 可独立执行：node scripts/test-v3-sidebar-brand.mjs
+ */
+import assert from 'node:assert/strict'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { DESIGN_PATH, GEOMETRY_OUT, readDesign, renderGeometryModule } from './lib/brand.mjs'
+
+const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+const abs = (rel) => `${root}${rel}`
+const read = (rel) => readFileSync(abs(rel), 'utf8')
+
+const SIDEBAR_TSX = 'src/renderer/src/features/sidebar/Sidebar.tsx'
+const SIDEBAR_CSS = 'src/renderer/src/features/sidebar/Sidebar.css'
+const BRAND_MARK = 'src/renderer/src/components/shell/BrandMark.tsx'
+const DESIGN_ENTRY = 'src/renderer/src/design/index.css'
+/** v3 会加载的样式目录（层序见 design/index.css）；styles/ 只属于 v2。 */
+const V3_STYLE_DIRS = [
+  'src/renderer/src/design',
+  'src/renderer/src/ui',
+  'src/renderer/src/patterns',
+  'src/renderer/src/features'
+]
+
+/* ───────────────── 1. 侧栏品牌入口复用 BrandMark ───────────────── */
+
+const sidebarTsx = read(SIDEBAR_TSX)
+assert.ok(
+  /import\s*\{[^}]*\bBrandMark\b[^}]*\}\s*from\s*'\.\.\/\.\.\/components\/shell\/BrandMark'/.test(sidebarTsx),
+  `${SIDEBAR_TSX} 应从 components/shell/BrandMark 导入 BrandMark`
+)
+
+const brandEntry = sidebarTsx.match(/<span className="v3-side-brand">[\s\S]*?<\/span>/)
+assert.ok(brandEntry, `${SIDEBAR_TSX} 应有 .v3-side-brand 品牌入口`)
+assert.ok(/<BrandMark\b[^>]*\bsize=\{16\}/.test(brandEntry[0]), '品牌入口应渲染 <BrandMark size={16}>')
+assert.ok(/<BrandMark\b[^>]*\bdecorative\b/.test(brandEntry[0]), '品牌入口的 BrandMark 应为装饰性（旁边「砚」字给名称）')
+assert.ok(/v3-side-name[^>]*>砚</.test(brandEntry[0]), '品牌入口应保留「砚」字标')
+assert.ok(!/v3-side-mark/.test(brandEntry[0]), '品牌入口不应再使用 .v3-side-mark 方块')
+
+/* ───────────────── 2. 方块规则已删除 ───────────────── */
+
+const sidebarCss = read(SIDEBAR_CSS)
+assert.ok(!/\.v3-side-mark\b/.test(sidebarCss), `${SIDEBAR_CSS} 不应残留 .v3-side-mark`)
+assert.ok(!/\.v3-side-mark\b/.test(sidebarTsx), `${SIDEBAR_TSX} 不应残留 .v3-side-mark`)
+assert.ok(
+  /\.v3-side-brand\s+\.brand-mark\s*\{[^}]*flex:\s*none/.test(sidebarCss),
+  `${SIDEBAR_CSS} 应为品牌标志保留不参与挤压的版面约束`
+)
+
+/* ───────────────── 3. BrandMark 消费统一几何常量 ───────────────── */
+
+const brandMark = read(BRAND_MARK)
+assert.ok(
+  /from\s*'\.\.\/\.\.\/\.\.\/\.\.\/shared\/brand-geometry'/.test(brandMark),
+  `${BRAND_MARK} 应从 shared/brand-geometry 导入几何`
+)
+for (const name of ['BRAND_VIEW_BOX', 'BRAND_FRAME', 'BRAND_PROMPT']) {
+  assert.ok(brandMark.includes(name), `${BRAND_MARK} 应使用 ${name}`)
+}
+assert.ok(!/d="M[\d.]/.test(brandMark), `${BRAND_MARK} 不应再手写几何路径`)
+
+/* ───────────────── 4. 几何模块与真源一致 ───────────────── */
+
+const { design, hash } = readDesign(abs(DESIGN_PATH))
+assert.equal(
+  read(GEOMETRY_OUT),
+  renderGeometryModule(design, hash),
+  `${GEOMETRY_OUT} 与真源 ${DESIGN_PATH} 不一致`
+)
+
+/* ───────────────── 5. v3 不加载定义 .brand-mark 外观的旧 CSS ───────────────── */
+
+const designEntry = read(DESIGN_ENTRY)
+const v2Import = designEntry
+  .split('\n')
+  .filter((line) => /^\s*@import\b/.test(line))
+  .find((line) => /styles\//.test(line))
+assert.equal(v2Import, undefined, `${DESIGN_ENTRY} 的 @import 不应引用 v2 的 styles/`)
+
+function walk(dir, out = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`
+    if (entry.isDirectory()) walk(path, out)
+    else if (entry.name.endsWith('.css')) out.push(path)
+  }
+  return out
+}
+
+/** 取选择器含 `.brand-mark` 的规则块，检查它们只写版面、不写外观。 */
+const APPEARANCE_PROP =
+  /(?:^|[;{\s])(background(?:-color)?|border(?:-\w+)?|border-radius|color|width|height|stroke|fill|opacity|filter|box-shadow|display)\s*:/
+const v3BrandMarkCss = V3_STYLE_DIRS.flatMap((dir) => (existsSync(abs(dir)) ? walk(abs(dir)) : []))
+  .flatMap((file) => {
+    const css = readFileSync(file, 'utf8')
+    return [...css.matchAll(/([^{}]*\.brand-mark[^{}]*)\{([^}]*)\}/g)].map((match) => ({
+      file,
+      selector: match[1].trim(),
+      body: match[2]
+    }))
+  })
+for (const rule of v3BrandMarkCss) {
+  assert.ok(
+    !APPEARANCE_PROP.test(rule.body),
+    `v3 样式 ${rule.file} 的 ${rule.selector} 不应定义品牌标志外观（只允许版面属性）`
+  )
+}
+
+/* 定义 .brand-mark 外观的 styles/shell.css 属于 v2，v3 入口不引用它 */
+const v2ShellCss = 'src/renderer/src/styles/shell.css'
+assert.ok(existsSync(abs(v2ShellCss)), '应保留 v2 的 styles/shell.css（只属 v2 外壳）')
+assert.ok(/\.brand-mark\b/.test(read(v2ShellCss)), 'styles/shell.css 仍是 v2 的 .brand-mark 定义处')
+
+console.log('v3 侧栏品牌入口检查通过：BrandMark 复用统一几何、无 .v3-side-mark 方块、v3 无旧 CSS 依赖。')

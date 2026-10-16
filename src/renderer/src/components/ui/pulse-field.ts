@@ -35,6 +35,7 @@ export class PulseField {
   private last = 0
   private active = true
   private written = ''
+  private glow = new Float32Array(0)
   private reduced = false
   private colors: PulseFieldColors = { levels: [[128, 128, 128]], off: [128, 128, 128], dark: false }
   private readonly resizeObserver: ResizeObserver
@@ -98,7 +99,7 @@ export class PulseField {
 
   private resize(): void {
     const rect = this.canvas.getBoundingClientRect()
-    this.dpr = window.devicePixelRatio || 1
+    this.dpr = Math.min(2, window.devicePixelRatio || 1)
     this.w = rect.width
     this.h = rect.height
     this.canvas.width = Math.max(1, Math.round(rect.width * this.dpr))
@@ -177,7 +178,9 @@ export class PulseField {
     const tail = 7 + Math.round(k * 9)
 
     /* 每个点的亮度：所有脉冲头部最亮、拖尾线性衰减，取最大值 */
-    const glow = new Float32Array(cols * ROWS)
+    if (this.glow.length !== cols * ROWS) this.glow = new Float32Array(cols * ROWS)
+    const glow = this.glow
+    glow.fill(0)
     for (const p of this.pulses) {
       const head = Math.round(p.x / PITCH)
       const len = p.burst ? 4 : tail

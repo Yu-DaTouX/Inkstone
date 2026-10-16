@@ -1,0 +1,426 @@
+#!/usr/bin/env node
+/**
+ * v3 输入框版面（A2 对照表 1–16）的小检查。
+ *
+ * 两份验证：
+ *   · 纯模型 `features/composer/composer-layout.ts`：左右控件顺序、模式徽标与
+ *     提示符、发送/停止四种情形、发送键提示。
+ *   · 真实 `Composer.tsx` 浅渲染：把子组件打桩后按元素顺序核对 JSX 真身 ——
+ *     队列在框外上方、附件在框内、提示符在文本框前、底栏左侧权限/＋、右侧
+ *     语音/上下文/模型+思考/运行位/发送，统计行在框下方。
+ *
+ * 不启动 Electron、不连 pi、不读用户数据、不调真实模型、不截图。
+ * 用法：node scripts/test-v3-composer-layout.mjs
+ */
+import assert from 'node:assert/strict'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve, normalize } from 'node:path'
+import { pathToFileURL, fileURLToPath } from 'node:url'
+import { build } from 'esbuild'
+
+const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
+const posix = (p) => p.replace(/\\/g, '/')
+let checks = 0
+const ok = (cond, label) => {
+  assert.ok(cond, label)
+  checks++
+  console.log(`✓ ${label}`)
+}
+
+function installGlobals() {
+  const storage = new Map()
+  globalThis.localStorage = {
+    getItem: (k) => (storage.has(String(k)) ? storage.get(String(k)) : null),
+    setItem: (k, v) => storage.set(String(k), String(v)),
+    removeItem: (k) => storage.delete(String(k)),
+    clear: () => storage.clear(),
+    key: () => null,
+    length: 0
+  }
+  globalThis.requestAnimationFrame = (fn) => {
+    try {
+      fn(0)
+    } catch {
+      /* 浅渲染没有真实帧 */
+    }
+    return 0
+  }
+  globalThis.document = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    visibilityState: 'visible',
+    activeElement: null
+  }
+  globalThis.window = {
+    yan: new Proxy({}, { get: () => async () => undefined }),
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    location: { href: 'http://localhost/' }
+  }
+}
+
+/* --------------------------------------------------------------- 浅渲染替身 */
+
+const REACT_SHIM = `const rt = () => globalThis.__V3_HOOKS
+export const Fragment = Symbol.for('v3.fragment')
+export function useState(init) { return rt().useState(init) }
+export function useEffect(fn, deps) { return rt().useEffect(fn, deps) }
+export function useLayoutEffect(fn, deps) { return rt().useEffect(fn, deps) }
+export function useInsertionEffect() {}
+export function useRef(init) { return rt().useRef(init) }
+export function useMemo(fn) { return fn() }
+export function useCallback(fn) { return fn }
+export function useSyncExternalStore(_s, get) { return get() }
+export function useDebugValue() {}
+export function useId() { return rt().useId() }
+export function useContext(ctx) { return ctx && '__value' in ctx ? ctx.__value : null }
+export function createContext(value) { return { __isContext: true, __value: value, Provider: (p) => (p ? p.children : null) } }
+export function createElement(type, props, ...children) { const out = props ? { ...props } : {}; if (children.length) out.children = children.length === 1 ? children[0] : children; return { type, props: out, key: out.key === undefined ? null : out.key } }
+export function forwardRef(fn) { return fn }
+export function memo(fn) { return fn }
+export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, forwardRef, memo }
+`
+const JSX_SHIM = `import { createElement, Fragment } from './react-shim.mjs'
+export { Fragment }
+export function jsx(type, props, key) { const el = createElement(type, props); if (key !== undefined) el.key = key; return el }
+export const jsxs = jsx
+export const jsxDEV = jsx
+`
+
+const STORE_STUB = `const state = {
+  runners: [], activeRunnerId: null, session: null, settings: { sendKey: 'auto' },
+  attachments: [], messages: [], stats: null, models: [], commands: [], thinkingLevels: [],
+  peekedSessionId: null, peekNote: null, sessionRuntimes: {}, authProviders: [],
+  queue: { steering: [], followUp: [] }, pendingSends: [], notices: [], pendingSourceLinks: [],
+  editorInject: null, composerInsert: null, queueRestore: null, composerFocus: { tick: 0 },
+  send: async () => true, abort: async () => {}, runBash: async () => {}, notify: () => {}, holdSend: async () => {},
+  clearAttachments: () => {}, addAttachments: () => {}, addFileRefs: async () => {}, addFileRefPaths: async () => {},
+  setSessionDraft: () => {}, consumeEditorInject: () => {}, clearComposerInsert: () => {}, consumeQueueRestore: () => {}
+}
+export function useStore(sel){ return sel ? sel(state) : state }
+useStore.getState = () => state
+useStore.setState = (patch) => { Object.assign(state, typeof patch === 'function' ? patch(state) : patch) }
+useStore.subscribe = () => () => {}
+export const __state = state
+`
+
+const STUBS = {
+  'src/renderer/src/state/store.ts': STORE_STUB,
+  'src/renderer/src/i18n/index.tsx': 'export function useT(){ return (k) => k }\nexport function useI18n(){ return { lang: "zh-CN" } }\nexport function translate(_l, k){ return String(k) }',
+  'src/renderer/src/lib/composer-submit.ts': 'export async function submitComposerInput(){ return undefined }',
+  'src/renderer/src/lib/v3-submit-ownership.ts': 'export function attachmentsAfterSubmit(a){ return a }\nexport async function runLocalCommandGuarded(){ return "ran" }',
+  'src/renderer/src/components/chat/attachment-files.ts': 'export async function readFiles(){ return [] }',
+  'src/renderer/src/ui/index.ts': 'export function Button(){ return null }\nexport function cx(){ return "" }',
+  'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
+  'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',
+  'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }',
+  'src/renderer/src/features/composer/CompletionMenu.tsx': 'export function CompletionMenu(){ return null }',
+  'src/renderer/src/features/composer/useCompletion.ts': 'export function useCompletion(){ return { open: false, index: 0, slashMatches: [], atMatches: [], handleKey(){ return false } } }',
+  'src/renderer/src/features/composer/ComposerBorder.tsx': 'export function ComposerBorder(){ return null }',
+  'src/renderer/src/features/composer/ComposerUsage.tsx': 'export function ComposerUsage(){ return null }',
+  'src/renderer/src/features/composer/PermissionToggle.tsx': 'export function PermissionToggle(){ return null }',
+  'src/renderer/src/features/composer/PlusMenu.tsx': 'export function PlusMenu(){ return null }',
+  'src/renderer/src/features/composer/QueueEditor.tsx': 'export function QueueEditor(){ return null }',
+  'src/renderer/src/features/composer/VoiceButton.tsx': 'export function VoiceButton(){ return null }'
+}
+
+async function buildComposer(outdir) {
+  const reactShim = join(outdir, 'react-shim.mjs')
+  const jsxShim = join(outdir, 'jsx-shim.mjs')
+  await writeFile(reactShim, REACT_SHIM)
+  await writeFile(jsxShim, JSX_SHIM)
+  const entry = join(outdir, 'entry.ts')
+  await writeFile(
+    entry,
+    `export { Composer } from '${posix(resolve(ROOT, 'src/renderer/src/features/composer/Composer'))}'\n` +
+      `export { __state } from '${posix(resolve(ROOT, 'src/renderer/src/state/store'))}'\n` +
+      `export * as layout from '${posix(resolve(ROOT, 'src/renderer/src/features/composer/composer-layout'))}'\n`
+  )
+  const stubMap = new Map(Object.entries(STUBS).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src]))
+  const outfile = join(outdir, 'composer-layout.mjs')
+  await build({
+    entryPoints: [entry],
+    outfile,
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent',
+    jsx: 'automatic',
+    resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
+    loader: { '.css': 'empty' },
+    define: { 'import.meta.env.DEV': 'false', 'import.meta.env.PROD': 'true', 'process.env.NODE_ENV': '"production"' },
+    plugins: [
+      {
+        name: 'a2-layout-stubs',
+        setup(b) {
+          b.onResolve({ filter: /.*/ }, (args) => {
+            if (args.path === 'react') return { path: reactShim }
+            if (args.path === 'react/jsx-runtime' || args.path === 'react/jsx-dev-runtime') return { path: jsxShim }
+            if (args.path === 'lucide-react') return { path: 'a2:lucide', namespace: 'a2' }
+            if (!args.importer || !args.resolveDir) return undefined
+            const base = resolve(args.resolveDir, args.path)
+            for (const e of ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js']) {
+              const key = normalize(base + e)
+              if (stubMap.has(key)) return { path: `a2:${key}`, namespace: 'a2' }
+            }
+            return undefined
+          })
+          b.onLoad({ filter: /.*/, namespace: 'a2' }, (args) => {
+            if (args.path === 'a2:lucide') {
+              return { contents: 'export function ArrowUp(){return null}\nexport function Square(){return null}', loader: 'js' }
+            }
+            return { contents: stubMap.get(args.path.slice('a2:'.length)) ?? 'export {}', loader: 'js' }
+          })
+        }
+      }
+    ]
+  })
+  return outfile
+}
+
+/* ------------------------------------------------------------- hook 运行时 */
+
+function hookRuntime() {
+  const rt = {
+    cells: [],
+    idx: 0,
+    effects: [],
+    dirty: false,
+    seq: 0,
+    slot(kind) {
+      const i = rt.idx++
+      let c = rt.cells[i]
+      if (!c || c.kind !== kind) c = rt.cells[i] = { kind, has: false, value: undefined, deps: undefined }
+      return c
+    },
+    useState(init) {
+      const c = rt.slot('state')
+      if (!c.has) {
+        c.value = typeof init === 'function' ? init() : init
+        c.has = true
+      }
+      const set = (v) => {
+        const next = typeof v === 'function' ? v(c.value) : v
+        if (!Object.is(next, c.value)) {
+          c.value = next
+          rt.dirty = true
+        }
+      }
+      return [c.value, set]
+    },
+    useRef(init) {
+      const c = rt.slot('ref')
+      if (!c.has) {
+        c.value = { current: init }
+        c.has = true
+      }
+      return c.value
+    },
+    useEffect(fn, deps) {
+      const c = rt.slot('effect')
+      const prev = c.deps
+      const changed = !c.has || deps === undefined || deps.length !== prev.length || deps.some((d, i) => !Object.is(d, prev[i]))
+      if (changed) {
+        c.deps = deps ? [...deps] : undefined
+        c.has = true
+        rt.effects.push(fn)
+      }
+    },
+    useId() {
+      return `v3id-${rt.seq++}`
+    },
+    render(Component, props) {
+      let tree
+      let guard = 0
+      do {
+        rt.dirty = false
+        rt.idx = 0
+        rt.effects = []
+        tree = Component(props || {})
+        for (const fn of rt.effects) fn()
+      } while (rt.dirty && ++guard < 100)
+      if (guard >= 100) throw new Error('浅渲染未收敛')
+      return tree
+    }
+  }
+  return rt
+}
+
+/* ------------------------------------------------------------- 树工具 */
+
+const children = (node) => {
+  const c = node && node.props ? node.props.children : undefined
+  if (c === undefined || c === null || c === false) return []
+  return Array.isArray(c) ? c.filter((x) => x !== null && x !== undefined && x !== false) : [c]
+}
+const nameOf = (node) => (node && typeof node.type === 'function' ? node.type.name : node && typeof node.type === 'string' ? node.type : '')
+
+function byClass(node, cls, out = null) {
+  if (out) return out
+  if (!node || typeof node !== 'object') return null
+  const cn = node.props?.className
+  if (typeof cn === 'string' && cn.split(/\s+/).includes(cls)) return node
+  for (const child of children(node)) {
+    const hit = byClass(child, cls)
+    if (hit) return hit
+  }
+  return null
+}
+
+function byTestId(node, id) {
+  if (!node || typeof node !== 'object') return null
+  if (node.props?.['data-testid'] === id) return node
+  for (const child of children(node)) {
+    const hit = byTestId(child, id)
+    if (hit) return hit
+  }
+  return null
+}
+
+/** 取容器里「属于底栏控件」的直接子元素的语义名（跳过纯文本与 null）。 */
+function controlNames(node) {
+  return children(node)
+    .filter((child) => typeof child === 'object' && child)
+    .map((child) => {
+      const testid = child.props?.['data-testid']
+      return testid ? `#${testid}` : nameOf(child)
+    })
+}
+
+/* ------------------------------------------------------------------ 主流程 */
+
+async function main() {
+  installGlobals()
+  const outdir = await mkdtemp(join(tmpdir(), 'inkstone-v3-layout-'))
+  try {
+    const bundle = await import(pathToFileURL(await buildComposer(outdir)).href)
+    const { Composer, __state, layout } = bundle
+
+    /* ---- 纯模型 ---- */
+    ok(layout.COMPOSER_LEFT_ORDER.join('>') === 'mode>permission>plus>sendkey', '底栏左侧顺序：模式徽标→权限→＋→发送键提示')
+    ok(layout.COMPOSER_RIGHT_ORDER.join('>') === 'voice>context>model-thinking>run>send', '底栏右侧顺序：语音→上下文环→模型+思考→运行位→发送')
+    ok(layout.composerMode('!ls') === 'bash' && layout.composerMode('/model') === 'cmd' && layout.composerMode('你好') === null, '模式徽标判据与 v3 现有 bash/ slash 一致')
+    ok(layout.composerPrompt('!ls') === '$' && layout.composerPrompt('普通') === '›', '提示符：直执行 $、普通 ›')
+    ok(layout.composerSubmitAction({ running: true, hasText: false, hasAttachments: false }) === 'stop', '运行中 + 空 + 无附件 → 停止')
+    ok(layout.composerSubmitAction({ running: true, hasText: true, hasAttachments: false }) === 'send', '运行中 + 有字 → 发送（插话）')
+    ok(layout.composerSubmitAction({ running: true, hasText: false, hasAttachments: true }) === 'send', '运行中 + 有附件 → 发送')
+    ok(layout.composerSubmitAction({ running: false, hasText: false, hasAttachments: false }) === 'send', '空闲 → 发送')
+    ok(layout.composerSendKeyHint('auto', false) === null, '默认发送键、非长文 → 不显示提示')
+    ok(layout.composerSendKeyHint('auto', true) === 'enter', '长文模式 → 显示 Enter 规则')
+    ok(layout.composerSendKeyHint('ctrlEnter', false) === 'ctrl', '发送键非默认 → 显示实际规则')
+
+    /* ---- 真实 Composer 浅渲染 ---- */
+    const rt = hookRuntime()
+    globalThis.__V3_HOOKS = rt
+    Object.assign(__state, {
+      runners: [],
+      activeRunnerId: null,
+      session: null,
+      settings: { sendKey: 'auto' },
+      attachments: [],
+      queue: { steering: [], followUp: [] },
+      pendingSends: [],
+      editorInject: null,
+      composerInsert: null,
+      queueRestore: null,
+      composerFocus: { tick: 0 },
+      sessionRuntimes: {}
+    })
+    let tree = rt.render(Composer, {})
+    const wrap = tree
+    ok(typeof wrap.props.className === 'string' && wrap.props.className.includes('composer-wrap'), '根是框外的 composer-wrap')
+    const wrapChildren = children(wrap)
+    ok(nameOf(wrapChildren[0]) === 'QueueEditor', '队列紧挨根、在输入框卡片外上方')
+    ok(byClass(wrap, 'composer') === wrapChildren[1], '输入框卡片是根的第二个子元素')
+    ok(nameOf(children(wrap)[children(wrap).length - 1]) === 'ComposerUsage', '会话统计行在卡片下方（根末尾）')
+
+    const card = byClass(wrap, 'composer')
+    ok(nameOf(children(card)[0]) === 'ComposerBorder', '卡片首行是输入框顶边')
+    ok(nameOf(children(card)[1]) === 'AttachmentStrip', '附件条在卡片内、输入行之前')
+
+    const line = byClass(card, 'composer-line')
+    const lineChildren = children(line)
+    ok(nameOf(lineChildren[0]) === 'span' && lineChildren[0].props['aria-hidden'] === true, '提示符在最左且 aria-hidden')
+    ok(nameOf(lineChildren[1]) === 'textarea' && lineChildren[1].props['data-testid'] === 'composer-input', '提示符之后是文本框，testid 保留')
+
+    const tools = byClass(card, 'composer-tools')
+    ok(controlNames(tools).join('>') === 'PermissionToggle>PlusMenu', '左侧控件：权限在最左、＋次之；无模式/提示时不显示')
+    const bar = byClass(card, 'composer-bar')
+    const barControls = controlNames(bar)
+    ok(
+      barControls.join('>') === 'div>VoiceButton>ContextRing>ModelThinkingPicker>#composer-send',
+      '底栏右侧顺序：语音→上下文→模型+思考→发送（运行中只换成停止键，不另显标注）',
+      barControls
+    )
+    ok(byTestId(card, 'composer-send') !== null && byTestId(card, 'composer-stop') === null, '空闲时发送键在发送位')
+
+    /* 有字：仍是发送；运行中且有字：发送（插话）而非停止 */
+    const ta = byTestId(card, 'composer-input')
+    ta.props.onChange({ target: { value: '你好', selectionStart: 2 } })
+    tree = rt.render(Composer, {})
+    ok(byTestId(tree, 'composer-send') !== null && byTestId(tree, 'composer-stop') === null, '空闲 + 有字 → 发送')
+
+    /* 运行中 + 有字 → 发送（插话）；先切到运行态再输入，避免草稿按会话重置 */
+    __state.runners = [{ runId: 'r1', running: true }]
+    __state.activeRunnerId = 'r1'
+    tree = rt.render(Composer, {})
+    ok(byTestId(tree, 'composer-stop') !== null, '运行中 + 空 + 无附件 → 停止')
+    const ta2 = byTestId(tree, 'composer-input')
+    ta2.props.onChange({ target: { value: '插一句', selectionStart: 3 } })
+    tree = rt.render(Composer, {})
+    ok(byTestId(tree, 'composer-send') !== null && byTestId(tree, 'composer-stop') === null, '运行中 + 有字 → 发送（插话）')
+
+    /* 运行中 + 有附件 + 空 → 发送 */
+    const ta3 = byTestId(tree, 'composer-input')
+    ta3.props.onChange({ target: { value: '', selectionStart: 0 } })
+    __state.attachments = [{ id: 'a1', name: 'x.png', mimeType: 'image/png', size: 1, data: '', preview: '', kind: 'image' }]
+    tree = rt.render(Composer, {})
+    ok(byTestId(tree, 'composer-send') !== null && byTestId(tree, 'composer-stop') === null, '运行中 + 有附件 → 发送')
+    __state.attachments = []
+
+    /* 模式徽标与提示符 */
+    const ta4 = byTestId(tree, 'composer-input')
+    ta4.props.onChange({ target: { value: '!npm test', selectionStart: 9 } })
+    tree = rt.render(Composer, {})
+    const tools2 = byClass(tree, 'composer-tools')
+    ok(controlNames(tools2)[0] === '#composer-mode', '输入 `!` 时模式徽标排在最左')
+    ok(byClass(tree, 'composer-prompt').props.children === '$', '直执行模式提示符为 $')
+
+    /* 发送键提示 */
+    __state.settings = { sendKey: 'ctrlEnter' }
+    tree = rt.render(Composer, {})
+    ok(byTestId(tree, 'composer-keyhint') !== null, '发送键非默认时显示发送键提示')
+
+    /* 源文件不引用 v2 样式（静态核对；运行证据由 style-isolation 检查补） */
+    const composerCssText = await readFile(join(ROOT, 'src/renderer/src/features/composer/composer.css'), 'utf8')
+    ok(/\n\s*\.composer\s*\{[^}]*position:\s*relative/.test(composerCssText), '卡片为绝对定位的顶边提供定位上下文')
+    ok(/\n\s*\.cborder\s*\{[^}]*position:\s*absolute/.test(composerCssText), '顶边绝对定位，不占用卡片高度')
+    ok(/\n\s*\.cborder\s*\{[^}]*opacity:\s*0/.test(composerCssText), '空闲时顶边完全不可见')
+    ok(/\n\s*\.cborder\[data-state='working'\]\s*\{\s*opacity:\s*1/.test(composerCssText), '只有运行中才亮起顶边')
+    ok(/\n\s*\.cborder\s*\{[^}]*border-radius:\s*inherit/.test(composerCssText), '顶边继承卡片圆角，不在圆角外露直角')
+    ok(/\.cborder\[data-level='max'\]\s*\{\s*border-top-color:/.test(composerCssText), '顶边只染上边且颜色取档位')
+    for (const rel of [
+      'src/renderer/src/features/composer/Composer.tsx',
+      'src/renderer/src/features/composer/composer.css',
+      'src/renderer/src/features/composer/VoiceButton.tsx',
+      'src/renderer/src/features/composer/ComposerUsage.tsx',
+      'src/renderer/src/features/composer/ComposerBorder.tsx',
+      'src/renderer/src/patterns/ModelThinkingPicker.tsx',
+      'src/renderer/src/patterns/model-thinking-picker.css'
+    ]) {
+      const text = await readFile(join(ROOT, rel), 'utf8')
+      const v2Entry = /\bfrom\s+['"][^'"]*components\/ui['"]/.test(text)
+      ok(!/styles\//.test(text) && !v2Entry, `${rel} 不 import v2 样式/旧控件入口（只允许复用 pulse-field 纯模块）`)
+    }
+
+    console.log(`\n结果：${checks} 项通过`)
+  } finally {
+    await rm(outdir, { recursive: true, force: true })
+  }
+}
+
+main().catch((err) => {
+  process.stderr.write(`\n[运行失败] ${err && err.stack ? err.stack : err}\n`)
+  process.exitCode = 1
+})

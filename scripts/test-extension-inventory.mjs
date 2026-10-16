@@ -132,6 +132,7 @@ export async function runExtensionInventoryTests(ok) {
    *     内部通道：只有宿主用 `--extension` 显式加载并注入 `YAN_NATIVE_BRIDGE=1`
    *     时才注册；`agent.ts` 拒绝用户直接发送 `/__inkstone_native`，
    *     `command-registry.ts` 也会把它从命令表里过滤掉。
+   *   · mcp-app-proxy.js：从宿主下发的只读快照注册 `mcp__` 代理工具。
    *
    * 为防「白名单变成无保护空放行」，扫描写成纯函数，并用合成源码做负对照：
    * 任意 registerTool、非宿主文件的 registerCommand、宿主文件里多注册 / 改名 /
@@ -151,7 +152,9 @@ export async function runExtensionInventoryTests(ok) {
           toolCalls === 1 &&
           /const template = core\.createBashToolDefinition\(/.test(source) &&
           /\.registerTool\(\{\s*\.\.\.template,\s*execute:/.test(source)
-        if (toolCalls && !bashOverride) offenders.push(`${file}:registerTool`)
+        const mcpAppProxy =
+          file === 'mcp-app-proxy.js' && toolCalls === 1 && /\.registerTool\(definition\)/.test(source)
+        if (toolCalls && !bashOverride && !mcpAppProxy) offenders.push(`${file}:registerTool`)
 
         const commandCalls = source.match(/\.registerCommand\s*\(/g)?.length ?? 0
         if (commandCalls === 0) continue
@@ -191,7 +194,7 @@ export async function runExtensionInventoryTests(ok) {
     const offenders = scanThinLayerSources(sources)
     ok(
       offenders.length === 0,
-      `薄层不注册模型工具，pi 命令只放行宿主专用那一个（扫了 ${files.length} 个文件）`,
+      `薄层只注册经批准的模型工具（shell-fallback / mcp-app-proxy），pi 命令只放行宿主专用那一个（扫了 ${files.length} 个文件）`,
       offenders.join('、')
     )
 

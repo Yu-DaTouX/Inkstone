@@ -1,0 +1,195 @@
+/*
+ * v3 全局样式 · base 层。
+ *
+ * 元素级基础：底色、正文排版、选区、焦点可见、滚动条与启动画面兜底。
+ * 这里**不出现**任何按钮 / 输入框 / 菜单的外观 —— 那是 `ui/`（primitives 层）
+ * 与 `patterns/`、`features/` 的职责（见 CONTRACT.md）。
+ */
+@layer base {
+  html {
+    background: var(--bg);
+  }
+
+  body {
+    /* 桌面外壳：滚动属于各面板内部，页面本身不滚动 */
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+    font-variant-numeric: normal;
+    text-autospace: normal;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: var(--sel);
+  }
+
+  /*
+   * 焦点可见：键盘走到哪里都看得见。`:focus-visible` 之外的焦点不画描边，
+   * 避免鼠标点击后残留一圈框（与 v2 的口径一致）。
+   */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+  }
+
+  kbd {
+    font-family: var(--font-ui);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 只给需要它的容器：阅读区不做两端对齐，长度不齐的 JSON/路径保持左对齐 */
+  .v3-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--line2);
+    background-clip: padding-box;
+    border: 3px solid transparent;
+    border-radius: var(--r-full);
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+
+  /*
+   * 启动画面兜底。
+   *
+   * 画面本体写在 `index.html`，原样式在 v2 的 shell.css / motion.css 里；
+   * v3 **不加载任何 v2 样式**，所以这里给出最小的一份，避免外壳切换后
+   * 首帧出现一个没有定位的裸 SVG。数据就绪后由 lib/boot-splash.ts 移除。
+   */
+  .boot {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+    /* 描线总时长：lib/boot-splash.ts 按上次实测就绪时间写进行内样式覆盖这里；
+       缺省对齐 v2 的 --mo-slow × 2（v3 里 --mo-slow 对应展开档 --dur-expand）。 */
+    --boot-ms: calc(var(--dur-expand) * 2);
+  }
+
+  .boot-mark {
+    width: 56px;
+    height: 56px;
+    overflow: visible;
+  }
+
+  /*
+   * 线宽与端点/连接来自真源投影（index.html 的 SVG 表现属性），这里只负责配色与描画：
+   * 石框整条路径（pathLength=1）从看不见描到 dashoffset 0；提示符在描到 75% 时淡入；
+   * 光标随后淡入，再无限呼吸，直到数据就绪后整体淡出。
+   */
+  .boot-frame {
+    stroke: var(--fg);
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: v3-boot-draw var(--boot-ms) var(--ease) forwards;
+  }
+
+  .boot-prompt,
+  .boot-cursor {
+    stroke: var(--accent);
+    opacity: 0;
+  }
+
+  .boot-prompt {
+    animation: v3-boot-show var(--dur-pop) var(--ease) calc(var(--boot-ms) * 0.75) forwards;
+  }
+
+  .boot-cursor {
+    animation:
+      v3-boot-show var(--dur-pop) var(--ease) var(--boot-ms) forwards,
+      v3-boot-breathe calc(var(--dur-breathe) / 2) var(--ease) calc(var(--boot-ms) + var(--dur-pop)) infinite;
+  }
+
+  .boot.out {
+    pointer-events: none;
+    animation: v3-boot-out 240ms var(--ease) forwards;
+  }
+
+  @keyframes v3-boot-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes v3-boot-show {
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes v3-boot-breathe {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  @keyframes v3-boot-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  /*
+   * 减少动效：全局压缩规则会把时长压到 0.001ms，但光标呼吸是第二段无限动画，
+   * 压缩后可能停在不可见底值。这里显式落终态并停掉动画，直接显示完整标志。
+   */
+  @media (prefers-reduced-motion: reduce) {
+    .boot-frame {
+      stroke-dashoffset: 0;
+      animation: none;
+    }
+
+    .boot-prompt,
+    .boot-cursor {
+      opacity: 1;
+      animation: none;
+    }
+  }
+}

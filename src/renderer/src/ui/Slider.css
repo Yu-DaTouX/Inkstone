@@ -1,0 +1,98 @@
+/*
+ * 滑杆原语外观（WP-05）。
+ *
+ * 只写控件外观：轨道、填充、手柄、焦点环、值文字。颜色、圆角、时长、字体
+ * 全部取 `design/tokens.css` 的变量；版面归调用方。本文件按 `ui/ui.css` 首行
+ * 声明的层级顺序落到 `primitives`，可经总样式 `@import` 或组件自带入。
+ */
+@layer primitives {
+  .ui-slider {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* 轨道与值同一行；横向滑杆高度由手柄撑开，不让 6px 轨道裁掉手柄。 */
+  .ui-slider__row {
+    display: flex;
+    align-items: center;
+    gap: var(--s-10);
+    min-height: 24px;
+  }
+
+  .ui-slider__track {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: var(--s-6);
+    border-radius: var(--r-full);
+    background: var(--sunken);
+  }
+  /* 视觉轨道只有 6px，指针命中区向上下各扩 8px；手柄在伪元素之后绘制，仍在最上层。 */
+  .ui-slider__track::before {
+    content: '';
+    position: absolute;
+    inset: -8px 0;
+  }
+
+  .ui-slider__fill {
+    border-radius: inherit;
+    background: var(--ink);
+  }
+
+  .ui-slider__thumb {
+    width: var(--size-icon);
+    height: var(--size-icon);
+    border-radius: var(--r-full);
+    background: var(--ink);
+    box-shadow: var(--shadow-comp);
+    transition:
+      background-color var(--dur-hover) var(--ease),
+      box-shadow var(--dur-hover) var(--ease);
+  }
+  .ui-slider__thumb[data-focus-visible] {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  @media (hover: hover) {
+    .ui-slider__thumb[data-hovered] {
+      background: var(--ink-hover);
+    }
+  }
+  .ui-slider__thumb[data-dragging] {
+    background: var(--ink-hover);
+  }
+
+  .ui-slider__value {
+    flex: none;
+    min-width: 2.5em;
+    text-align: end;
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fg2);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 无效态：填充与手柄换成失败色，错误文案本身在 `.ui-field__error`。 */
+  .ui-slider--invalid .ui-slider__fill,
+  .ui-slider--invalid .ui-slider__thumb {
+    background: var(--fail);
+  }
+
+  /* 竖向滑杆：轨道变窄变高，值转到下方。 */
+  .ui-slider[data-orientation='vertical'] .ui-slider__row {
+    flex-direction: column;
+    align-items: center;
+    min-height: 160px;
+  }
+  .ui-slider[data-orientation='vertical'] .ui-slider__track {
+    width: var(--s-6);
+    height: 100%;
+    min-height: 140px;
+  }
+  .ui-slider[data-orientation='vertical'] .ui-slider__track::before {
+    inset: 0 -8px;
+  }
+  .ui-slider[data-orientation='vertical'] .ui-slider__value {
+    min-width: 0;
+    text-align: center;
+  }
+}

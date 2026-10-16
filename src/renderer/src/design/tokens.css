@@ -1,0 +1,136 @@
+/* 由 scripts/design/build-tokens.mjs 从 design/tokens.json 生成，不要手改。 */
+@layer tokens {
+  :root {
+    color-scheme: light dark;
+    --bg: light-dark(#FAFAF8, #1E1E1C);
+    --side: light-dark(#F2F2EF, #191918);
+    --surface: light-dark(#FFFFFF, #272725);
+    --hover: light-dark(#E8E8E4, #2C2C2A);
+    --hover-main: light-dark(#F0F0EC, #262624);
+    --bubble: light-dark(#EFEFEB, #30302E);
+    --sunken: light-dark(#F4F4F1, #171716);
+    --fg: light-dark(#1D1D1B, #ECECE9);
+    --fg2: light-dark(#5E5D59, #B5B4AF);
+    --fg3: light-dark(#67665F, #9B9A94);
+    --line: light-dark(rgba(29,29,27,.08), rgba(255,255,255,.08));
+    --line2: light-dark(rgba(29,29,27,.14), rgba(255,255,255,.14));
+    --ink: light-dark(#1D1D1B, #ECECE9);
+    --ink-hover: light-dark(#3A3A37, #FFFFFF);
+    --on-ink: light-dark(#FFFFFF, #1E1E1C);
+    --accent: light-dark(#4057D6, #8EA1F5);
+    --sel: light-dark(rgba(64,87,214,.10), rgba(142,161,245,.14));
+    --run: light-dark(#4057D6, #8EA1F5);
+    --run-t: light-dark(#4057D6, #8EA1F5);
+    --ask: light-dark(#D99A1E, #E6B450);
+    --ask-t: light-dark(#8F5B00, #E6B450);
+    --ask-bg: light-dark(#FBF3E2, rgba(230,180,80,.12));
+    --stall: light-dark(#E0702E, #F08C5A);
+    --stall-t: light-dark(#B04A12, #F08C5A);
+    --stall-bg: light-dark(#FCEDE3, rgba(240,140,90,.12));
+    --fail: light-dark(#D64545, #F07070);
+    --fail-t: light-dark(#B42B2B, #F28383);
+    --fail-bg: light-dark(#FBEBEB, rgba(240,112,112,.12));
+    --add: light-dark(#157A43, #4CC38A);
+    --del: light-dark(#B42B2B, #F28383);
+    --add-bg: light-dark(#E9F5EE, rgba(76,195,138,.12));
+    --del-bg: light-dark(#FBEBEB, rgba(240,112,112,.12));
+    --win-close: #C42B2B;
+    --scrim: light-dark(rgba(29,29,27,.28), rgba(0,0,0,.5));
+    --data-1: light-dark(#3E6FF2, #7A9BFF);
+    --data-2: light-dark(#0F9D9A, #3FC9C4);
+    --data-3: light-dark(#8257E5, #AE90FF);
+    --data-4: light-dark(#D14D8B, #F07AB0);
+    --data-5: light-dark(#6F8F1F, #A6C94A);
+    --data-6: light-dark(#2B8BD0, #5FB4F0);
+    --data-7: light-dark(#B5651D, #E39A57);
+    --data-8: light-dark(#5B6577, #98A2B3);
+    --shadow-comp: 0 1px 2px rgba(0,0,0,.04), 0 8px 28px -10px rgba(0,0,0,.12);
+    --shadow-pop: 0 0 0 1px rgba(0,0,0,.06), 0 16px 40px -10px rgba(0,0,0,.22);
+    --shadow-card: 0 0 0 1px rgba(29,29,27,.14), 0 10px 28px -14px rgba(0,0,0,.18);
+    --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    --font-mono: "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas, "Microsoft YaHei UI", monospace;
+    --font-read: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", serif;
+    --t-meta: 12px;
+    --t-meta-lh: 16px;
+    --t-ui: 13.5px;
+    --t-ui-lh: 20px;
+    --t-body: 14px;
+    --t-body-lh: 22px;
+    --t-prose: 15px;
+    --t-prose-lh: 26px;
+    --t-title: 14px;
+    --t-title-lh: 20px;
+    --t-title-w: 600;
+    --t-h2: 20px;
+    --t-h2-lh: 28px;
+    --t-h2-w: 600;
+    --t-h1: 24px;
+    --t-h1-lh: 32px;
+    --t-h1-w: 600;
+    --s-2: 2px;
+    --s-4: 4px;
+    --s-6: 6px;
+    --s-8: 8px;
+    --s-10: 10px;
+    --s-12: 12px;
+    --s-16: 16px;
+    --s-20: 20px;
+    --s-24: 24px;
+    --s-32: 32px;
+    --s-48: 48px;
+    --r-xs: 6px;
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 14px;
+    --r-bubble: 18px;
+    --r-xl: 20px;
+    --r-full: 999px;
+    --size-side: 264px;
+    --size-head: 48px;
+    --size-btn: 32px;
+    --size-send: 34px;
+    --size-col: 720px;
+    --size-comp: 760px;
+    --size-panel: 420px;
+    --size-icon: 16px;
+    --size-dot: 8px;
+    --size-dot-unread: 6px;
+    --dur-hover: 90ms;
+    --dur-pop: 160ms;
+    --dur-expand: 200ms;
+    --dur-panel: 180ms;
+    --dur-breathe: 2.4s;
+    --ease: cubic-bezier(.2,0,0,1);
+    --ease-in: cubic-bezier(0,0,0,1);
+    --d-row: 32px;
+    --d-prose: 15px;
+    --d-prose-lh: 26px;
+    --d-gap: 18px;
+  }
+  :root[data-theme='light'] { color-scheme: light; }
+  :root[data-theme='dark'] { color-scheme: dark; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --shadow-comp: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -10px rgba(0,0,0,.55);
+      --shadow-pop: 0 0 0 1px rgba(255,255,255,.08), 0 18px 44px -10px rgba(0,0,0,.65);
+      --shadow-card: 0 0 0 1px rgba(255,255,255,.14), 0 10px 28px -14px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme='dark'] {
+    --shadow-comp: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -10px rgba(0,0,0,.55);
+    --shadow-pop: 0 0 0 1px rgba(255,255,255,.08), 0 18px 44px -10px rgba(0,0,0,.65);
+    --shadow-card: 0 0 0 1px rgba(255,255,255,.14), 0 10px 28px -14px rgba(0,0,0,.5);
+  }
+  :root[data-density='compact'] {
+    --d-row: 28px;
+    --d-prose: 14px;
+    --d-prose-lh: 24px;
+    --d-gap: 14px;
+  }
+  :root[data-density='comfortable'] {
+    --d-row: 36px;
+    --d-prose: 16px;
+    --d-prose-lh: 28px;
+    --d-gap: 22px;
+  }
+}

@@ -1,0 +1,221 @@
+@layer features {
+  /*
+   * 设置 → 同步的版面。
+   * 只写 flex / 间距 / 截断 / 滚动；颜色、圆角、字号一律取既有 token，
+   * 控件外观来自 `ui/ui.css`。本页挂在设置页的 `.settings-main` 内，
+   * 不再自己加页面内边距或滚动。
+   */
+
+  .sync-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-16);
+    min-width: 0;
+  }
+
+  .sync-note {
+    margin: 0;
+    max-width: var(--size-col);
+    color: var(--fg2);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+  }
+
+  .sync-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+    max-width: var(--size-col);
+  }
+
+  .sync-card__title {
+    margin: 0;
+    font-size: var(--t-title);
+    line-height: var(--t-title-lh);
+  }
+
+  .sync-path {
+    margin: 0;
+    padding: var(--s-8) var(--s-10);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sync-hint {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .sync-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-8);
+  }
+
+  /* ---------------- 上次同步 ---------------- */
+
+  .sync-last {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .sync-last__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s-8);
+    margin: 0;
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+  }
+
+  .sync-last__line > span:nth-child(odd) {
+    color: var(--fg2);
+  }
+
+  .sync-last__line > span[data-ok='1'] {
+    color: var(--run-t);
+  }
+
+  .sync-last__line > span[data-ok='0'] {
+    color: var(--fail-t);
+  }
+
+  .sync-last__counts {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .sync-errors {
+    margin: 0;
+    padding-left: var(--s-16);
+    color: var(--fail-t);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    overflow-wrap: anywhere;
+  }
+
+  /* ---------------- 冲突 ---------------- */
+
+  .sync-conflicts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .sync-conflict {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+    padding: var(--s-12);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  .sync-conflict__head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .sync-conflict__key {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    color: var(--fg);
+  }
+
+  /* 两份并排；窄屏换行。用 minmax(0, 1fr) 防长内容撑破列。 */
+  .sync-conflict__sides {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-12);
+    min-width: 0;
+  }
+
+  .sync-conflict__side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .sync-conflict__side-title {
+    color: var(--fg);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .sync-conflict__meta {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .sync-conflict__preview {
+    margin: 0;
+    max-height: 6em;
+    overflow: auto;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .sync-conflict__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-8);
+  }
+
+  .sync-msg {
+    margin: 0;
+    padding: var(--s-8) var(--s-10);
+    border-radius: var(--r-sm);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .sync-msg[data-tone='info'] {
+    background: var(--sel);
+    color: var(--fg);
+  }
+
+  .sync-msg[data-tone='error'] {
+    background: var(--fail-bg);
+    color: var(--fail-t);
+  }
+
+  @media (max-width: 720px) {
+    .sync-conflict__sides {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

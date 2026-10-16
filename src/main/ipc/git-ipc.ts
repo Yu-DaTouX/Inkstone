@@ -9,6 +9,8 @@ import { readExpected, readRepoState, listRefs, resolveRepo } from '../git-servi
 import { listRemotes, remoteWeb, runGitAction } from '../git-actions'
 import { prStatus } from '../hosting'
 import { createWorktree, listUntracked, listWorktrees, removeWorktree } from '../git-worktree'
+import { readChanges, readFileDiff } from '../git-inspect'
+import type { AuthorizeReadCwd } from '../git-inspect'
 import type { WorktreeLinkStore } from '../worktree-links'
 
 export interface GitIpcDeps {
@@ -16,11 +18,16 @@ export interface GitIpcDeps {
   isCwdBusy(dir: string): boolean
   /** 「会话 ↔ 工作树」来源关系 */
   worktreeOrigins: WorktreeLinkStore
+  /**
+   * 只读读取的目录授权（主进程注入 `resolveFileContext`）：成功才给规范 cwd。
+   * 逐文件改动与单文件补丁都先过这一关，且仓库根会再授权一次。
+   */
+  authorizeReadCwd: AuthorizeReadCwd
 }
 
 export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
   const { handle } = ipc
-  const { isCwdBusy, worktreeOrigins } = deps
+  const { isCwdBusy, worktreeOrigins, authorizeReadCwd } = deps
   /*
    * ---- Git 状态（只读）----
    *
@@ -55,6 +62,53 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
         ok: false,
         refs: [],
         busyBranches: [],
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+
+  /*
+   * ---- 逐文件改动与单文件补丁（只读，P3）----
+   *
+   * 渲染端只能传 cwd 与**授权范围内的相对路径**；命令形状、pathspec 校验、
+   * 只读开关都在 git-inspect.ts。授权经注入了 resolveFileContext 的
+   * `authorizeReadCwd`，缺授权一律 fail closed。
+   */
+  handle('yan:git:changes', async (cwd: string) => {
+    try {
+      return await readChanges(String(cwd ?? ''), authorizeReadCwd)
+    } catch (error) {
+      return {
+        ok: false,
+        root: null,
+        scope: '.',
+        branch: null,
+        detached: false,
+        unborn: false,
+        head: null,
+        files: [],
+        truncated: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+  handle('yan:git:diff', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    const cwd = String(raw.cwd ?? '')
+    const path = String(raw.path ?? '')
+    try {
+      return await readFileDiff(cwd, path, authorizeReadCwd)
+    } catch (error) {
+      return {
+        ok: false,
+        path,
+        patch: '',
+        truncated: false,
+        binary: false,
+        staged: false,
+        unstaged: false,
+        untracked: false,
+        bytes: 0,
         error: error instanceof Error ? error.message : String(error)
       }
     }

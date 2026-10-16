@@ -1,0 +1,137 @@
+/*
+ * MCP App 沙箱框与步骤审计的版面（A6-frame-ui）。
+ * 只写 layout / 层级与状态底色；按钮、图标按钮外观来自 `ui/`，
+ * 框身复用 `artifacts.css` 的 `.v3-artifact-frame*` 类，这里只补 MCP 专属部分。
+ */
+
+.v3-mcp-app-frame {
+  margin: var(--s-8) 0;
+}
+
+.v3-mcp-app-frame .v3-artifact-frame-view {
+  background: var(--bg);
+}
+
+/* 初始化 / 等待确认：始终在 iframe 之外，明确「确认在宿主卡片」。 */
+.v3-mcp-app-status {
+  display: flex;
+  align-items: center;
+  gap: var(--s-6);
+  padding: var(--s-4) var(--s-8);
+  border-top: 1px solid var(--line);
+  color: var(--ask-t);
+  background: var(--ask-bg);
+  font-size: var(--t-meta);
+}
+
+/* 地址不受控：安全拒绝，不给任何继续加载入口。 */
+.v3-mcp-app-invalid {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-8);
+  margin: var(--s-8) 0;
+  padding: var(--s-12);
+  border: 1px solid var(--fail);
+  border-radius: var(--r-md);
+  color: var(--fail-t);
+  background: var(--fail-bg);
+  font-size: var(--t-meta);
+}
+
+.v3-mcp-app-invalid p {
+  margin: var(--s-2) 0 0;
+  color: var(--fg2);
+}
+
+/* 文本回退：与工具已有文本同宽，不假装是 App。 */
+.v3-mcp-app-fallback {
+  margin: var(--s-6) 0;
+  padding: var(--s-8);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  color: var(--fg2);
+  font-size: var(--t-meta);
+  white-space: pre-wrap;
+}
+
+.v3-mcp-app-fallback.failed {
+  border-color: var(--fail);
+  color: var(--fail-t);
+  background: var(--fail-bg);
+}
+
+/* 步骤审计：行式列表，与 `v3-step-detail` 的排版一致。 */
+.v3-mcp-app-audit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--s-6);
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--line);
+}
+
+.v3-mcp-app-audit-title {
+  color: var(--fg3);
+  font-size: var(--t-meta);
+}
+
+.v3-mcp-app-audit-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 120px) auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--s-6);
+  font-size: var(--t-meta);
+}
+
+.v3-mcp-app-audit-phase {
+  padding: 0 var(--s-4);
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  color: var(--fg2);
+}
+
+.v3-mcp-app-audit-phase.ask {
+  background: var(--ask-bg);
+  color: var(--ask-t);
+}
+
+.v3-mcp-app-audit-phase.ok {
+  background: var(--add-bg);
+  color: var(--run-t, var(--run));
+}
+
+.v3-mcp-app-audit-phase.err {
+  background: var(--fail-bg);
+  color: var(--fail-t);
+}
+
+.v3-mcp-app-audit-tool {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+
+.v3-mcp-app-audit-mode,
+.v3-mcp-app-audit-time {
+  color: var(--fg3);
+}
+
+.v3-mcp-app-audit-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg2);
+}
+
+@media (max-width: 640px) {
+  .v3-mcp-app-audit-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .v3-mcp-app-audit-summary {
+    grid-column: 1 / -1;
+  }
+}

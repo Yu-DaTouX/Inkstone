@@ -1,0 +1,85 @@
+/*
+ * 分隔条原语外观（ui/Splitter.tsx）。
+ *
+ * 只画「一条可抓取的线」：视觉宽/高 2px，两侧各外扩 4px 做命中区（不占版面），
+ * 悬停 / 拖动 / 键盘聚焦时换成强调色。相邻面板与位置由调用方决定。
+ * 颜色只取 design/tokens.css 的变量；声明进 primitives 层，不碰 v2 全局样式。
+ */
+@layer primitives {
+  .ui-splitter {
+    position: relative;
+    flex: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    touch-action: none;
+    user-select: none;
+    outline: none;
+  }
+
+  .ui-splitter[aria-orientation='vertical'] {
+    width: 2px;
+    height: auto;
+    align-self: stretch;
+    cursor: col-resize;
+  }
+
+  .ui-splitter[aria-orientation='horizontal'] {
+    width: auto;
+    height: 2px;
+    align-self: stretch;
+    cursor: row-resize;
+  }
+
+  /* 可见的线：平时是分隔线，悬停 / 拖动 / 聚焦时换成强调色。 */
+  .ui-splitter::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--r-full);
+    background: var(--line2);
+    transition: background var(--dur-hover) var(--ease);
+  }
+
+  /* 命中区：在线的两侧各外扩 4px，好抓，但不改变版面尺寸。 */
+  .ui-splitter::before {
+    content: '';
+    position: absolute;
+  }
+
+  .ui-splitter[aria-orientation='vertical']::before {
+    inset: 0 calc(-1 * var(--s-4));
+  }
+
+  .ui-splitter[aria-orientation='horizontal']::before {
+    inset: calc(-1 * var(--s-4)) 0;
+  }
+
+  .ui-splitter:hover::after,
+  .ui-splitter[data-dragging]::after,
+  .ui-splitter:focus-visible::after {
+    background: var(--accent);
+  }
+
+  .ui-splitter:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* 禁用：保持分隔线可见，但不给「可抓取」的悬停反馈。 */
+  .ui-splitter[aria-disabled='true'] {
+    cursor: default;
+  }
+
+  .ui-splitter[aria-disabled='true']::after {
+    background: var(--line2);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-splitter::after {
+      transition: none;
+    }
+  }
+}

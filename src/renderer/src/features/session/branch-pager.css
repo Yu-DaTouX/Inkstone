@@ -1,0 +1,38 @@
+/*
+ * 用户消息旁「2/3 ‹ ›」分支切换的版面（v3 · 设计 §8.8）。
+ *
+ * 只写布局与文字层级：按钮的外观 / 禁用 / 焦点 / 悬停来自 `ui/IconButton`
+ * （`@layer primitives`），这里不重画私有控件；颜色与尺寸只用令牌变量。
+ */
+@layer features {
+  .branch-pager {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .branch-pager__count {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .branch-pager__state {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .branch-pager__error {
+    min-width: 0;
+    max-width: 32ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fail);
+  }
+}

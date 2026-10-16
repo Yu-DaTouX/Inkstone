@@ -5,17 +5,30 @@
  *   · 每个文件记住已读到的字节位置，之后只读新追加的部分；文件变短或换了就从头读。
  *   · 只解码每行开头（类型、角色、时间）和结尾（模型、用量），不解析中间的正文与工具输出。
  *   · 结果缓存到数据目录，重启后不必全量重扫。
+ *
+ * 来源有两类：主会话（session-search 的枚举，范围不变）与子代理原生 session
+ * （`<archiveDir>/sessions/<sub-id>/*.jsonl`，见 usage-sources.ts）。文件按真实路径
+ * 去重后各记一份，聚合时只把子代理的 Token / 模型 / 热力图并进来。
  */
 import { createReadStream } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import { userInfo } from 'node:os'
-import { YAN_DIR } from './paths'
-import { listSessionFiles } from './session-search'
-import { aggregateUsage, localDay, type FileUsage, type UsageRange, type UsageStatsView } from '../shared/usage-stats'
+import { aggregateUsageSources, localDay, type FileUsage, type UsageRange, type UsageStatsView } from '../shared/usage-stats'
+import {
+  canonicalUsagePath,
+  defaultUsageSources,
+  type UsageFileRef,
+  type UsageSourceKind,
+  type UsageSources
+} from './usage-sources'
 
-const CACHE_FILE = join(YAN_DIR, 'usage-stats.json')
-const CACHE_VERSION = 1
+/**
+ * 缓存格式版本。
+ * v1 只有主会话、没有来源标记；v2 区分 main / subagent。版本不符时整体重建，
+ * 不把新的子代理来源塞进旧缓存造成重复或漏算。
+ */
+const CACHE_VERSION = 2
 const HEAD_BYTES = 240
 const TAIL_BYTES = 2048
 
@@ -24,29 +37,13 @@ interface FileEntry {
   /** 已处理到的字节位置（总在换行之后） */
   offset: number
   usage: FileUsage
+  /** 这份文件属于哪一类来源（决定聚合时是否计入“次数类”指标） */
+  sourceKind: UsageSourceKind
 }
 
-let cache: Map<string, FileEntry> | null = null
-let building: Promise<void> | null = null
-
-async function loadCache(): Promise<Map<string, FileEntry>> {
-  if (cache) return cache
-  try {
-    const raw = JSON.parse(await readFile(CACHE_FILE, 'utf8')) as { version?: number; files?: Record<string, FileEntry> }
-    cache = new Map(raw.version === CACHE_VERSION && raw.files ? Object.entries(raw.files) : [])
-  } catch {
-    cache = new Map()
-  }
-  return cache
-}
-
-async function saveCache(map: Map<string, FileEntry>): Promise<void> {
-  try {
-    await mkdir(dirname(CACHE_FILE), { recursive: true })
-    await writeFile(CACHE_FILE, JSON.stringify({ version: CACHE_VERSION, files: Object.fromEntries(map) }))
-  } catch {
-    /* 缓存写不了只影响下次启动速度 */
-  }
+/** 用量读取函数；一个实例持有自己的增量缓存。 */
+export interface UsageReader {
+  (range: UsageRange): Promise<UsageStatsView & { userName: string }>
 }
 
 const ROLE = /"type":"message".*?"message":\{"role":"(user|assistant)"/
@@ -107,43 +104,108 @@ function scan(path: string, offset: number, usage: FileUsage): Promise<number> {
   })
 }
 
-async function refresh(): Promise<void> {
-  const map = await loadCache()
-  const files = await listSessionFiles()
-  const alive = new Set(files.map((f) => f.path))
-  let changed = false
-  for (const path of map.keys()) {
-    if (!alive.has(path)) {
-      map.delete(path)
-      changed = true
-    }
-  }
-  for (const file of files) {
-    const hit = map.get(file.path)
-    if (hit && hit.size === file.size) continue
-    /* 只追加：变长就接着读；变短（被改写）就从头重算 */
-    const entry: FileEntry = hit && file.size > hit.offset && file.size > hit.size ? hit : { size: 0, offset: 0, usage: {} }
+/**
+ * 建一个用量读取器。默认读真实数据目录；测试传临时目录来源，避免扫到用户数据。
+ */
+export function createUsageReader(sources: UsageSources = defaultUsageSources()): UsageReader {
+  const cacheFile = sources.cacheFile
+  let cache: Map<string, FileEntry> | null = null
+  let building: Promise<void> | null = null
+
+  async function loadCache(): Promise<Map<string, FileEntry>> {
+    if (cache) return cache
     try {
-      entry.offset = await scan(file.path, entry.offset, entry.usage)
-      entry.size = file.size
-      map.set(file.path, entry)
-      changed = true
+      const raw = JSON.parse(await readFile(cacheFile, 'utf8')) as { version?: number; files?: Record<string, FileEntry> }
+      cache = new Map(raw.version === CACHE_VERSION && raw.files ? Object.entries(raw.files) : [])
     } catch {
-      /* 读不了的文件跳过，下次再试 */
+      cache = new Map()
+    }
+    return cache
+  }
+
+  async function saveCache(map: Map<string, FileEntry>): Promise<void> {
+    try {
+      await mkdir(dirname(cacheFile), { recursive: true })
+      await writeFile(cacheFile, JSON.stringify({ version: CACHE_VERSION, files: Object.fromEntries(map) }))
+    } catch {
+      /* 缓存写不了只影响下次启动速度 */
     }
   }
-  if (changed) await saveCache(map)
+
+  /** 把两类来源按真实路径去重后合并为同一张待扫描清单 */
+  async function collectRefs(): Promise<Array<{ ref: UsageFileRef; sourceKind: UsageSourceKind }>> {
+    const [main, subagents] = await Promise.all([sources.listMain(), sources.listSubagents()])
+    const tagged: Array<{ ref: UsageFileRef; sourceKind: UsageSourceKind }> = []
+    const seen = new Set<string>()
+    for (const [sourceKind, list] of [['main', main], ['subagent', subagents]] as const) {
+      for (const ref of list) {
+        const canonical = await canonicalUsagePath(ref.path)
+        if (!canonical || seen.has(canonical)) continue
+        seen.add(canonical)
+        tagged.push({ ref: { path: canonical, size: ref.size }, sourceKind })
+      }
+    }
+    return tagged
+  }
+
+  async function refresh(): Promise<void> {
+    const map = await loadCache()
+    const tagged = await collectRefs()
+    const alive = new Set(tagged.map((item) => item.ref.path))
+    let changed = false
+    for (const path of map.keys()) {
+      if (!alive.has(path)) {
+        map.delete(path)
+        changed = true
+      }
+    }
+    for (const { ref, sourceKind } of tagged) {
+      const hit = map.get(ref.path)
+      if (hit && hit.size === ref.size && hit.sourceKind === sourceKind) continue
+      /* 同一物理文件换了来源：沿用已读的 usage，只换标记，不重复累计 */
+      if (hit && hit.size === ref.size) {
+        hit.sourceKind = sourceKind
+        changed = true
+        continue
+      }
+      /* 只追加：变长就接着读；变短（被改写）就从头重算 */
+      const entry: FileEntry = hit && ref.size > hit.offset && ref.size > hit.size ? hit : { size: 0, offset: 0, usage: {}, sourceKind }
+      entry.sourceKind = sourceKind
+      try {
+        entry.offset = await scan(ref.path, entry.offset, entry.usage)
+        entry.size = ref.size
+        map.set(ref.path, entry)
+        changed = true
+      } catch {
+        /* 读不了的文件跳过，下次再试 */
+      }
+    }
+    if (changed) await saveCache(map)
+  }
+
+  return async function readUsageStats(range: UsageRange): Promise<UsageStatsView & { userName: string }> {
+    if (!building) building = refresh().finally(() => { building = null })
+    await building
+    const main: FileUsage[] = []
+    const subagents: FileUsage[] = []
+    for (const entry of cache?.values() ?? []) {
+      if (entry.sourceKind === 'subagent') subagents.push(entry.usage)
+      else main.push(entry.usage)
+    }
+    let userName = ''
+    try {
+      userName = userInfo().username
+    } catch {
+      /* 取不到用户名就不称呼 */
+    }
+    return { ...aggregateUsageSources({ main, subagents }, range), userName }
+  }
 }
 
-export async function readUsageStats(range: UsageRange): Promise<UsageStatsView & { userName: string }> {
-  if (!building) building = refresh().finally(() => { building = null })
-  await building
-  const files = [...(cache?.values() ?? [])].map((e) => e.usage)
-  let userName = ''
-  try {
-    userName = userInfo().username
-  } catch {
-    /* 取不到用户名就不称呼 */
-  }
-  return { ...aggregateUsage(files, range === '30d' || range === '7d' ? range : 'all'), userName }
+let defaultReader: UsageReader | null = null
+
+/** 生产入口：读真实 `YAN_DIR` 下的主会话与子代理原生 JSONL。 */
+export function readUsageStats(range: UsageRange): Promise<UsageStatsView & { userName: string }> {
+  defaultReader ??= createUsageReader()
+  return defaultReader(range)
 }

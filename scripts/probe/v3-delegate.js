@@ -1,0 +1,107 @@
+/*
+ * v3 手动派发子 Agent 表单隔离探针。
+ *
+ * 只验证表单本身，不提交：入口在输入区「＋」菜单；注入两个模型后验证默认「跟随」、
+ * 空任务时按钮禁用、选只读且模型不支持只读（CC 订阅模型）时给提示并退回当前文件夹、
+ * 取消关闭；peek 别的会话时入口禁用。真实提交会启动子 Agent 调用模型，这里不做，
+ * 启动链 `window.yan.subagents.start` 与重派共用，成功 / 失败路径未在本探针验证。
+ */
+;(async () => {
+  const out = []
+  const check = (condition, label) => {
+    out.push(`  ${condition ? '✓' : '✗'} ${label}`)
+    return !!condition
+  }
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  const until = async (predicate, timeout = 4000) => {
+    const end = Date.now() + timeout
+    while (Date.now() < end) {
+      try {
+        if (predicate()) return true
+      } catch {
+        /* 还没就绪 */
+      }
+      await wait(50)
+    }
+    return false
+  }
+  const q = (testId) => document.querySelector(`[data-testid="${testId}"]`)
+  const store = window.__yanStore
+  const setNativeValue = (el, text) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+    setter.call(el, text)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  const openDialog = async () => {
+    q('composer-plus')?.click()
+    await until(() => !!q('composer-plus-menu'), 3000)
+    q('composer-plus-delegate')?.click()
+    return until(() => !!q('v3-delegate-dialog'), 3000)
+  }
+
+  try {
+    out.push('=== v3 手动派发子 Agent（隔离探针，不提交）===')
+    check(await until(() => document.documentElement.dataset.ui === 'v3' && q('v3-sidebar'), 8000), 'v3 外壳已挂载')
+    if (!store || !q('v3-sidebar')) throw new Error('v3 外壳或隔离探针 store 不可用')
+    try {
+      localStorage.setItem('yan.onboarded', '1')
+    } catch {
+      /* 忽略 */
+    }
+    const onboarding = document.querySelector('.v3-ob-overlay')
+    if (onboarding) {
+      onboarding.querySelector('.ui-dialog__close')?.click()
+      await until(() => !document.querySelector('.v3-ob-overlay'), 3000)
+    }
+
+    const realModels = store.getState().models
+    const realSession = store.getState().session
+    const models = [
+      { id: 'probe-pi-model', name: 'Probe Pi Model', provider: 'probe-provider', reasoning: true, contextWindow: 200000 },
+      { id: 'cc-model', name: 'CC Model', provider: 'claude-bridge', reasoning: false, contextWindow: 200000 }
+    ]
+    store.setState({ models, session: { ...(realSession ?? {}), model: models[0], cwd: realSession?.cwd ?? 'E:\\probe' } })
+
+    out.push('')
+    out.push('--- 1. 入口与默认值 ---')
+    check(await openDialog(), '「＋」菜单里有派发子 Agent 入口并能打开表单')
+    check(!!q('v3-delegate-task') && !!q('v3-delegate-model') && !!q('v3-delegate-scope'), '表单有任务 / 模型 / 执行位置三项')
+    check(q('v3-delegate-target')?.textContent?.includes('Probe Pi Model') === true, `目标行显示当前模型（${JSON.stringify(q('v3-delegate-target')?.textContent)}）`)
+    check(q('v3-delegate-start')?.disabled === true || q('v3-delegate-start')?.getAttribute('data-disabled') === 'true', '任务为空时「开始」禁用')
+
+    out.push('')
+    out.push('--- 2. 填写任务后可提交 ---')
+    const textarea = q('v3-delegate-task')?.querySelector('textarea')
+    setNativeValue(textarea, '核对这个仓库的 README 是否过期')
+    await wait(150)
+    check(!(q('v3-delegate-start')?.disabled || q('v3-delegate-start')?.getAttribute('data-disabled') === 'true'), '有任务且模型可用时「开始」可点')
+
+    out.push('')
+    out.push('--- 3. 只读不支持时的提示 ---')
+    store.setState({ session: { ...store.getState().session, model: models[1] } })
+    await wait(250)
+    check(!!q('v3-delegate-readonly-hint'), 'CC 订阅模型显示只读不可用提示')
+    check(!!q('v3-delegate-dialog'), '表单仍在')
+
+    out.push('')
+    out.push('--- 4. 取消 ---')
+    ;[...document.querySelectorAll('[data-testid="v3-delegate-dialog"] button')].find((b) => b.textContent?.trim() === '取消' || b.textContent?.trim() === 'Cancel')?.click()
+    check(await until(() => !q('v3-delegate-dialog'), 3000), '取消后表单关闭')
+
+    out.push('')
+    out.push('--- 5. peek 别的会话时入口禁用 ---')
+    store.setState({ peekedSessionId: 'probe-other-session' })
+    q('composer-plus')?.click()
+    await until(() => !!q('composer-plus-menu'), 3000)
+    const item = q('composer-plus-delegate')
+    check(item?.getAttribute('aria-disabled') === 'true' || item?.hasAttribute('data-disabled'), '入口被禁用')
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    store.setState({ peekedSessionId: null })
+
+    store.setState({ models: realModels, session: realSession })
+    out.push('证据范围：v3 派发表单的 DOM 行为；未提交、未启动子 Agent、未调模型。')
+  } catch (error) {
+    out.push(`  ✗ 场景异常：${error?.stack ?? error}`)
+  }
+  return out.join('\n')
+})()

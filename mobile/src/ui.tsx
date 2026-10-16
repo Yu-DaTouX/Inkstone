@@ -23,8 +23,8 @@ export const STATUS_TEXT = {
 
 export function IconButton({ name, label, onPress, disabled, busy, primary = false, back = false }: { name: IconName; label: string; onPress: () => void; disabled?: boolean; busy?: boolean; primary?: boolean; back?: boolean }) {
   const p = usePalette()
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled || !!busy, busy: !!busy }} onPress={onPress} disabled={disabled || busy} style={({ pressed }) => ({ minWidth: touch.min, minHeight: touch.min, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: primary ? p.accent : 'transparent', opacity: disabled ? 0.4 : pressed ? 0.65 : 1 })}>
-    {busy ? <RunDot color={primary ? p.onAccent : undefined} /> : <View style={back ? { transform: [{ rotate: '180deg' }] } : undefined}><Icon name={name} size={icon.md} color={primary ? p.onAccent : p.fgDim} /></View>}
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled || !!busy, busy: !!busy }} onPress={onPress} disabled={disabled || busy} style={({ pressed }) => ({ minWidth: touch.min, minHeight: touch.min, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: primary ? (p.ink ?? p.accent) : 'transparent', opacity: disabled ? 0.4 : pressed ? 0.65 : 1 })}>
+    {busy ? <RunDot color={primary ? (p.onInk ?? p.onAccent) : undefined} /> : <View style={back ? { transform: [{ rotate: '180deg' }] } : undefined}><Icon name={name} size={icon.md} color={primary ? (p.onInk ?? p.onAccent) : p.fgDim} /></View>}
   </Pressable>
 }
 
@@ -55,7 +55,7 @@ export function Button({
   const p = usePalette()
   const colors = {
     secondary: { bg: p.bg2, border: p.border, fg: p.fg },
-    primary: { bg: p.accent, border: p.accent, fg: p.onAccent },
+    primary: { bg: p.ink ?? p.accent, border: p.ink ?? p.accent, fg: p.onInk ?? p.onAccent },
     ghost: { bg: 'transparent', border: 'transparent', fg: p.fgDim },
     danger: { bg: p.bg2, border: p.border, fg: p.err }
   }[variant]

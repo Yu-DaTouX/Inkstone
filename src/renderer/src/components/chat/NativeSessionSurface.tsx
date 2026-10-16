@@ -15,7 +15,7 @@ export function NativeSessionSurface() {
   }, [panel, sessionId, close])
 
   const load = useCallback(async (): Promise<NativeSessionLoadResult> => {
-    if (!panel) return { ok: false, mode: 'tree', error: t('native.loadFailed') }
+    if (!panel || panel.mode === 'entries') return { ok: false, mode: 'tree', error: t('native.loadFailed') }
     const result = await window.yan.nativeSession({ action: panel.mode, expectedSessionId: panel.sessionId })
     if (!result.ok) return { ok: false, mode: panel.mode, error: result.error ?? t('native.loadFailed') }
     if (panel.mode === 'tree') return { ok: true, mode: 'tree', ...parseTreePayload(result) }
@@ -46,6 +46,6 @@ export function NativeSessionSurface() {
     return result.cancelled ? { ok: false, error: t('native.cancelled') } : result
   }, [panel, t])
 
-  if (!panel || panel.sessionId !== sessionId) return null
+  if (!panel || panel.mode === 'entries' || panel.sessionId !== sessionId) return null
   return <NativeSessionPanel mode={panel.mode} resetKey={panel.sessionId} onClose={close} load={load} onAction={onAction} />
 }

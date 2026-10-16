@@ -33,6 +33,8 @@
  */
 import type { AgentController } from './agent'
 import type { RunnerStatus, RuntimeEnvelope, SessionScope } from '../shared/ipc'
+import type { McpNativeBootWitness } from './mcp/app-native-witness'
+import type { McpServerStatus } from '../shared/mcp'
 import { executionBusy, runEnvelope, runStatus } from '../core/run-state'
 import { canReclaimIdle, IDLE_RECLAIM_ENABLED, IDLE_RECLAIM_SCAN_MS } from './runner-reclaim'
 import {
@@ -76,6 +78,46 @@ function canonicalCwd(value: string): string {
   return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 
+/**
+ * 读 AgentController 内部启动见证。
+ *
+ * 用可选方法探测而不是强类型：A7 的 `nativeBootWitness()` 由热点补丁加进
+ * AgentController；未接线时这里必须返回 `null`（= 未证实 = 可能持有），
+ * 不能因为拿不到就当作「没有加载过」。
+ */
+function readNativeWitness(agent: AgentController): McpNativeBootWitness | null {
+  const maybe = (agent as AgentController & { nativeBootWitness?: () => McpNativeBootWitness | null }).nativeBootWitness
+  if (typeof maybe !== 'function') return null
+  try {
+    return maybe.call(agent) ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 读 AgentController 侧 legacy MCP 连接事实（与 pi RPC 进程独立）。
+ *
+ * 用可选方法探测：旧实现 / 测试 fake 没有该 getter 时返回 **null**
+ * （= 未知 = 可能持有一切），绝不返回空数组冒充「无人持有」。
+ */
+function readLegacyMcpServices(agent: AgentController): Array<{ serverId: string; status: McpServerStatus }> | null {
+  const maybe = (agent as AgentController & {
+    getLegacyMcpHolderSnapshot?: () => { services?: unknown }
+  }).getLegacyMcpHolderSnapshot
+  if (typeof maybe !== 'function') return null
+  try {
+    const snapshot = maybe.call(agent)
+    if (!snapshot || !Array.isArray(snapshot.services)) return null
+    return snapshot.services.filter(
+      (entry): entry is { serverId: string; status: McpServerStatus } =>
+        Boolean(entry && typeof (entry as { serverId?: unknown }).serverId === 'string')
+    )
+  } catch {
+    return null
+  }
+}
+
 interface Runner {
   id: string
   agent: AgentController
@@ -86,6 +128,45 @@ interface Runner {
   createdAt: number
   lastActiveAt: number
   hidden?: boolean
+}
+
+/**
+ * 运行时守卫的**窄只读快照**（主进程内部用，不进 `statuses()` 推送）。
+ *
+ * 与 `statuses()` 的关键区别：**不过滤 hidden**，也包含非活跃 / 后台交接实例。
+ * 只带守卫判定「谁可能仍持有某个 MCP 服务」必需的身份与连接事实，不带会话文件、
+ * 消息、模型或 UI 状态，避免把后台交接实例泄漏到渲染端。
+ */
+export interface McpHolderSnapshot {
+  runnerId: string
+  generation: number
+  /** 已绑定项目身份；`null` = 未绑定，持有判定按「可能持有」保守处理。 */
+  projectId: string | null
+  cwd: string
+  /** AgentController 报告的 pi RPC 进程是否真的在跑（宿主事实，不是 busy 猜测）。 */
+  processRunning: boolean
+  /** 连接状态；只有 `exited` 且进程未跑才算「确定无存活 pi 进程」。 */
+  conn: 'starting' | 'ready' | 'exited' | 'error'
+  /** 回合 / 工具是否在忙（只供展示，不参与持有判定）。 */
+  busy: boolean
+  /**
+   * 宿主启动事实引用：该 runner 进程 spawn 前采到、ready 后签发的原生配置启动见证。
+   * `null` = 没有可信见证（未采集 / 已撤销 / 旧 AgentController 未接）→ 按可能持有。
+   * 见证内容只含 serverId 集合与文本 hash，见 `mcp/app-native-witness.ts`。
+   */
+  nativeWitness: McpNativeBootWitness | null
+  /**
+   * AgentController 侧 legacy MCP 连接事实（与 pi RPC 进程独立）。
+   * 非空即「可能仍持有」；旧 pi 退出不代表 legacy client 已断。
+   * `null` = 没法读取（旧实现 / 读失败）→ 一律按可能持有。
+   */
+  legacyMcpServices: Array<{ serverId: string; status: McpServerStatus }> | null
+}
+
+/** runner 选择携带的运行来源；只放稳定身份，不进 UI、不进持久状态。 */
+export interface RunnerRunOrigin {
+  kind: 'scheduled'
+  scopeId: string
 }
 
 export interface SelectTarget {
@@ -108,6 +189,11 @@ export interface SelectTarget {
   preview?: boolean
   /** 未提交的交接片段不复用其它会话，也不暴露到侧栏。 */
   hidden?: boolean
+  /**
+   * 这次选择的运行来源（v3 WP-51）。定时任务在 `select()` 时就带上任务 id，
+   * 让宿主在第一个运行事件之前把 T 编号来源绑好；普通选择不传。
+   */
+  origin?: RunnerRunOrigin
   cwd: string
 }
 
@@ -235,6 +321,17 @@ export class RunnerRegistry {
       prepareNewSession?: (agent: AgentController) => Promise<{ ok: boolean; error?: string }>
       /** 实例集合或状态变化时通知主进程（推给渲染端） */
       onChanged?: () => void
+      /**
+       * runner 的会话刚建立 / 被复用时，把这次选择的来源交给宿主。
+       * 会话身份一就绪就**立刻**调用（早于 `prepareNewSession` 可能触发的早期
+       * 标题 / 状态信号），`origin` 缺省表示该会话不再是定时来源（宿主据此清除绑定）。
+       */
+      onRunnerOrigin?: (info: {
+        runnerId: string
+        generation: number
+        sessionId?: string
+        origin?: RunnerRunOrigin
+      }) => void
       /**
        * 同一 cwd 冲突时的**自动隔离**（宿主注入）。
        *
@@ -461,6 +558,29 @@ export class RunnerRegistry {
   }
 
   /**
+   * 会话建立 / 复用后把来源交给宿主。会话身份一就绪就调用，早于
+   * `prepareNewSession`（它可能触发早期标题 / 状态信号），避免定时会话先分 S。
+   * 绑定失败不能打断会话选择。
+   */
+  private notifyRunnerOrigin(
+    runner: Runner,
+    origin: RunnerRunOrigin | undefined,
+    facts: { sessionId?: string; generation?: number } = {}
+  ): void {
+    const sessionId = facts.sessionId ?? runner.agent.getState()?.sessionId
+    try {
+      this.opts.onRunnerOrigin?.({
+        runnerId: runner.id,
+        generation: facts.generation ?? runner.generation,
+        ...(sessionId ? { sessionId } : {}),
+        origin
+      })
+    } catch {
+      /* 来源只是运行编号归属，失败不改变本次选择结果。 */
+    }
+  }
+
+  /**
    * 选到某个会话并切换视图。
    *
    * 顺序：已有实例命中 → 复用空闲实例 → 新建（受预算限制）。
@@ -478,6 +598,7 @@ export class RunnerRegistry {
         hit.lastActiveAt = this.now()
         if (target.activate !== false) this.activateRunner(hit.id)
         this.opts.onChanged?.()
+        this.notifyRunnerOrigin(hit, target.origin)
         return this.result(hit, 'hit')
       }
     }
@@ -567,10 +688,20 @@ export class RunnerRegistry {
             let prepared = target.sessionFile
               ? await replacement.switchSession(target.sessionFile)
               : await replacement.newSession()
+            if (prepared.ok) {
+              /* 会话身份已就绪：先交接来源，再跑可能触发早期信号的 prepareNewSession。 */
+              this.notifyRunnerOrigin(idle, target.origin, {
+                sessionId: replacement.getState()?.sessionId,
+                generation
+              })
+            }
             if (prepared.ok && !target.sessionFile && this.opts.prepareNewSession) {
               prepared = await this.opts.prepareNewSession(replacement)
             }
-            if (!prepared.ok) failure = prepared.error ?? '替代运行实例准备会话失败'
+            if (!prepared.ok) {
+              this.notifyRunnerOrigin(idle, undefined, { sessionId: replacement.getState()?.sessionId, generation })
+              failure = prepared.error ?? '替代运行实例准备会话失败'
+            }
           }
         } catch (error) {
           failure = error instanceof Error ? error.message : String(error)
@@ -596,6 +727,7 @@ export class RunnerRegistry {
           /* 已提交就绪的新实例，不切回可能已经半停的旧进程。 */
         }
         this.opts.onChanged?.()
+        this.notifyRunnerOrigin(idle, target.origin)
         return this.result(idle, 'reuse')
       }
 
@@ -610,8 +742,13 @@ export class RunnerRegistry {
       let res = target.sessionFile
         ? await idle.agent.switchSession(target.sessionFile)
         : await idle.agent.newSession()
+      if (res.ok) {
+        /* 会话身份已就绪：先交接来源，再跑可能触发早期信号的 prepareNewSession。 */
+        this.notifyRunnerOrigin(idle, target.origin, { sessionId: idle.agent.getState()?.sessionId })
+      }
       if (res.ok && !target.sessionFile && this.opts.prepareNewSession) res = await this.opts.prepareNewSession(idle.agent)
       if (!res.ok) {
+        this.notifyRunnerOrigin(idle, undefined, { sessionId: idle.agent.getState()?.sessionId })
         // A failed remembered default must not replace the conversation being reused.
         // 只有真的被切走才切回旧文件；失败即保留在旧会话时不要多切一次（那会清掉队列）。
         const currentFile = idle.agent.getState()?.sessionFile
@@ -635,6 +772,7 @@ export class RunnerRegistry {
       idle.lastActiveAt = this.now()
       if (target.activate !== false) this.activateRunner(idle.id)
       this.opts.onChanged?.()
+      this.notifyRunnerOrigin(idle, target.origin)
       return this.result(idle, 'reuse')
     }
 
@@ -674,7 +812,10 @@ export class RunnerRegistry {
       } else if (target.sessionFile) {
         const sw = await agent.switchSession(target.sessionFile)
         if (!sw.ok) failure = sw.error ?? '切换会话失败'
+        else this.notifyRunnerOrigin(runner, target.origin, { sessionId: agent.getState()?.sessionId })
       } else {
+        /* `start()` 已建立当前会话：先交接来源，再跑可能触发早期信号的 prepareNewSession。 */
+        this.notifyRunnerOrigin(runner, target.origin, { sessionId: agent.getState()?.sessionId })
         if (this.opts.prepareNewSession) {
           const prepared = await this.opts.prepareNewSession(agent)
           if (!prepared.ok) failure = prepared.error ?? '新会话模型初始化失败'
@@ -688,6 +829,7 @@ export class RunnerRegistry {
       return { ok: false, error: failure }
     }
     this.opts.onChanged?.()
+    this.notifyRunnerOrigin(runner, target.origin)
     return this.result(runner, 'new')
   }
 
@@ -696,6 +838,8 @@ export class RunnerRegistry {
    * stop 失败只说明进程本来就没了，不能让它盖掉真正的失败原因（R02）。
    */
   private async discardNewRunner(id: string, runner: Runner, previousActive: string | null): Promise<void> {
+    /* 启动 / 准备失败的会话不留下来源绑定，避免之后误把普通事件当成定时。 */
+    this.notifyRunnerOrigin(runner, undefined, { sessionId: runner.agent.getState()?.sessionId })
     this.runners.delete(id)
     this.activeId = previousActive
     try {
@@ -960,6 +1104,43 @@ export class RunnerRegistry {
         isolation
       })
     })
+  }
+
+  /**
+   * 内部运行时守卫快照：**所有**已登记实例（含 hidden / 后台交接 / 非活跃）。
+   * 不经过 `statuses()` 的 hidden 过滤，也不向渲染端广播；调用方只拿守卫必需字段。
+   */
+  mcpHolderSnapshots(): McpHolderSnapshot[] {
+    return [...this.runners.values()].map((runner) => ({
+      runnerId: runner.id,
+      generation: runner.generation,
+      projectId: runner.agent.capabilityProjectId ?? runner.projectId ?? null,
+      cwd: runner.cwd,
+      processRunning: runner.agent.running === true,
+      conn: runner.agent.getConn().state,
+      busy: this.busy(runner),
+      /* AgentController 未接见证时（旧实现 / 测试 fake）返回 null → 按可能持有。 */
+      nativeWitness: readNativeWitness(runner.agent),
+      /* legacy 连接事实：读不到（null）也按可能持有，不能冒充空数组。 */
+      legacyMcpServices: readLegacyMcpServices(runner.agent)
+    }))
+  }
+
+  /**
+   * 运行时 epoch：实例集合 / 身份 / 连接事实的只读指纹。
+   *
+   * `commit` 在关键写入前复核它；变了说明检查之后有新实例进入或进程状态改变，
+   * 必须拒绝，不能拿检查时的结论继续写。
+   */
+  mcpRuntimeEpoch(): string {
+    return this.mcpHolderSnapshots()
+      .map(
+        (snapshot) =>
+          `${snapshot.runnerId}#${snapshot.generation}#${snapshot.projectId ?? '-'}#${snapshot.conn}#${
+            snapshot.processRunning ? 1 : 0
+          }`
+      )
+      .join('|')
   }
 
   get size(): number {

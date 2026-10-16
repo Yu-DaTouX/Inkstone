@@ -1,0 +1,161 @@
+/*
+ * R 真实模型 v3 场景：Agent 实时待办磁贴（scripts/probe/v3-real-todos.js）。
+ *
+ * 与 v3-todos（注入清单）的分工：这条**真的调模型**，让 Agent 用任务工具
+ *（`yan tasks apply`，宿主唯一入口）建 3 项计划并逐项完成，验整条真链路：
+ *   · 运行中侧栏 `v3-todo` 磁贴实时出现；
+ *   · 计数 x/y 随 Agent 逐项完成递增（记录 store.todos 变化序列）；
+ *   · 回合结束后 3/3、三行全为 done（全勾）。
+ *
+ * 只发 1 条短消息；模型固定 commandcode/deepseek/deepseek-v4.1-flash。
+ * 不注入 store、不伪造清单；探针只读。
+ */
+;(async () => {
+  const out = []
+  const check = (condition, label) => {
+    out.push(`  ${condition ? '✓' : '✗'} ${label}`)
+    return !!condition
+  }
+  const note = (label) => out.push(`  · ${label}`)
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  const until = async (predicate, timeout = 5000) => {
+    const end = Date.now() + timeout
+    while (Date.now() < end) {
+      try {
+        if (predicate()) return true
+      } catch {
+        /* 还没就绪，继续轮询 */
+      }
+      await wait(50)
+    }
+    return false
+  }
+  const q = (testId) => document.querySelector(`[data-testid="${testId}"]`)
+  const qa = (testId) => [...document.querySelectorAll(`[data-testid="${testId}"]`)]
+  const store = window.__yanStore
+
+  const setValue = (el, text) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+    setter.call(el, text)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  const runningNow = (s) => s.session?.isAgentRunning === true || s.session?.isStreaming === true
+  const countOf = (s) => {
+    const todos = s.todos ?? []
+    return { total: todos.length, done: todos.filter((t) => t.done).length, label: `${todos.filter((t) => t.done).length}/${todos.length}` }
+  }
+
+  const seq = []
+  const domLog = []
+  let recording = false
+  let pollTimer = null
+
+  try {
+    out.push('=== v3 Agent 实时待办磁贴（真实模型）===')
+    check(
+      await until(() => document.documentElement.dataset.ui === 'v3' && q('v3-sidebar'), 10000),
+      'v3 外壳已挂载'
+    )
+    if (!store || !q('v3-sidebar')) throw new Error('v3 外壳或隔离探针 store 不可用')
+
+    try {
+      localStorage.setItem('yan.onboarded', '1')
+    } catch {
+      /* 存储不可用不影响断言 */
+    }
+    const onboarding = document.querySelector('.v3-ob-overlay')
+    if (onboarding) {
+      onboarding.querySelector('.ui-dialog__close')?.click()
+      await until(() => !document.querySelector('.v3-ob-overlay'), 3000)
+    }
+    check(await until(() => !!q('composer-input'), 8000), '正式输入框已挂载')
+    check(await until(() => store.getState().conn === 'ready', 120000), `pi 已就绪（conn=${store.getState().conn}）`)
+
+    store.subscribe((s) => {
+      if (!recording) return
+      const c = countOf(s)
+      if (!seq.length || seq[seq.length - 1].label !== c.label) {
+        seq.push({ t: Date.now(), label: c.label, total: c.total, done: c.done })
+      }
+    })
+
+    const planSet = JSON.stringify({
+      action: 'set',
+      items: [
+        { text: '读取现状', done: false },
+        { text: '修改代码', done: false },
+        { text: '运行验证', done: false }
+      ]
+    })
+    const steps = [
+      '请只做任务清单维护，不要做其它事、不要调用别的工具：',
+      `1. 用 write 工具在当前工作目录创建 task-1.json，内容为 ${planSet}`,
+      '2. 用 bash 运行 `yan tasks apply --request-file task-1.json`',
+      '3. 用 write 创建 task-2.json，内容为 {"action":"complete","index":1}，再用 bash 运行 `yan tasks apply --request-file task-2.json`',
+      '4. 对 index 2 与 index 3 各重复一次第 3 步（分别写 task-3.json / task-4.json，并各运行一次 yan tasks apply）',
+      '5. 三项都完成后只回复「三项待办已完成」'
+    ].join('\n')
+
+    const statsBefore = store.getState().stats?.tokens?.total ?? 0
+    seq.length = 0
+    recording = true
+    const ta = q('composer-input')
+    setValue(ta, steps)
+    const ready = await until(() => {
+      const b = q('composer-send')
+      return !!b && b.disabled !== true && b.getAttribute('aria-disabled') !== 'true'
+    }, 6000)
+    check(ready, '消息已提交（1 条）')
+    q('composer-send')?.click()
+
+    pollTimer = setInterval(() => {
+      if (!recording) return
+      domLog.push({ t: Date.now(), tile: !!q('v3-todo'), running: runningNow(store.getState()) })
+    }, 100)
+
+    check(await until(() => runningNow(store.getState()), 45000), '回合进入运行中')
+    const tileWhileRunning = await until(() => !!q('v3-todo') && runningNow(store.getState()), 240000)
+    check(tileWhileRunning, '运行中侧栏待办磁贴实时出现')
+
+    const finished = await until(() => !runningNow(store.getState()), 300000)
+    recording = false
+    if (pollTimer) clearInterval(pollTimer)
+    check(finished, '回合自然结束')
+
+    out.push('')
+    out.push('--- 计数序列 ---')
+    note(`store.todos 计数序列：${seq.map((s) => s.label).join(' → ') || '(无变化)'}`)
+    const domTile = domLog.some((x) => x.tile && x.running)
+    check(domTile || tileWhileRunning, '至少有一次「运行中且磁贴可见」的采样')
+
+    /* 结束时读最终状态（含迟到推送：等它稳定）。 */
+    await until(() => countOf(store.getState()).label === '3/3', 15000)
+    const final = countOf(store.getState())
+    check(final.total === 3, `清单共 3 项（实际 ${final.total}）`)
+    check(final.done === 3, `结束全部完成（${final.label}）`)
+
+    const labels = seq.map((s) => s.label)
+    const distinct = [...new Set(labels)]
+    check(distinct.length >= 2, `计数 x/y 递增（观察到 ${distinct.length} 个不同值：${distinct.join(' / ')}）`)
+    const monotonic = seq.every((s, i) => i === 0 || s.done >= seq[i - 1].done)
+    check(monotonic, '完成数单调不减（没有回退）')
+
+    /* 结束后的磁贴 DOM：3 行全勾。 */
+    check(await until(() => (q('v3-todo-count')?.textContent ?? '').trim() === '3/3', 10000), '磁贴计数显示 3/3')
+    const rows = qa('v3-todo-row')
+    check(rows.length === 3, `磁贴渲染 3 行（实际 ${rows.length}）`)
+    check(rows.length > 0 && rows.every((r) => r.getAttribute('data-kind') === 'done'), '三行状态都是 done（全勾）')
+    check(rows.length > 0 && rows.every((r) => !!r.querySelector('.v3-todo-mark svg')), '每行状态槽都有勾图标')
+
+    const statsAfter = store.getState().stats?.tokens?.total ?? 0
+    note(`会话统计 token：${statsBefore} → ${statsAfter}`)
+    const cost = store.getState().stats?.cost
+    if (typeof cost === 'number') note(`会话累计费用（pi 口径）≈ $${cost.toFixed(6)}`)
+    out.push('证据范围：真实模型驱动的任务工具写入 → 宿主推送 → v3 磁贴；模型固定 commandcode/deepseek/deepseek-v4.1-flash。')
+  } catch (error) {
+    out.push(`  ✗ 场景异常：${error?.stack ?? error}`)
+  } finally {
+    if (pollTimer) clearInterval(pollTimer)
+  }
+  return out.join('\n')
+})()
