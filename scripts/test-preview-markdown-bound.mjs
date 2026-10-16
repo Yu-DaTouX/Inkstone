@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { runInNewContext } from 'node:vm'
+import { sliceDeclaration } from './lib/source-slice.mjs'
 const source = await readFile('src/renderer/src/components/toolbar/FilePreview.tsx', 'utf8')
-const start = source.indexOf('  const markdownText = useMemo(')
-const snippet = source.slice(start, source.indexOf('\n  /*', start))
+const snippet = sliceDeclaration(source, '  const markdownText = useMemo(', 'FilePreview.tsx')
 for (const text of ['x'.repeat(2000000), 'x'.repeat(65535) + '😀']) {
  const context = { lines: [text], MAX_MARKDOWN_CHARS: 65536, useMemo: fn => fn() }
  runInNewContext(snippet + '\nglobalThis.value=markdownText', context)

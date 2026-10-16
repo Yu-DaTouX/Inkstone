@@ -1,9 +1,3 @@
-/**
- * 助手设置：模型服务商与密钥。
- *
- * 密钥存系统钥匙串（见 `assistant/store.ts`），这里只显示尾 4 位。
- * 「测试连接」拉一次 /models，比发对话便宜，也不会消耗额度。
- */
 import { useCallback, useEffect, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Icon } from '../icons'
@@ -13,7 +7,6 @@ import { Button, EmptyState, Header, IconButton, Input, Meta, SectionTitle } fro
 import { listModels } from '../assistant/model'
 import { clearSettings, loadSettings, maskKey, saveSettings, type AssistantProvider, type AssistantSettings } from '../assistant/store'
 
-/** 新服务商的默认值：只预填地址形状，密钥与模型名必须用户自己填。 */
 function blankProvider(): AssistantProvider {
   return { id: `p-${Date.now()}`, label: '新服务商', baseUrl: 'https://api.example.com/v1', model: '', apiKey: '', temperature: 0.7 }
 }

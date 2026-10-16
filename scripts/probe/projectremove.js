@@ -1,12 +1,3 @@
-/**
- * 项目「移除项目」：菜单入口 → 确认框 → 归档落盘 → 归档视图里恢复。
- *
- * 「移除」就是归档：项目从列表消失，它的会话跟着项目记录进「已归档项目」，
- * 磁盘目录一个字节都不动。这里验证这条口径在界面上和磁盘上
- *（`yan.getSettings()` 读的是隔离目录里的 desktop.json）都成立，且可逆。
- *
- * 项目与分组都用合成数据造（隔离目录），不碰真实会话文件。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -28,7 +19,6 @@
   }
   const settle = () => sleep(420)
 
-  /** 按持久化 id 找项目行（`data-drag-id` 只在有记录的行走上） */
   const rowOf = (id) => qa('[data-testid="rail-project-row"]').find((el) => el.dataset.dragId === id)
   const openMenu = (id) => {
     const trigger = rowOf(id)?.querySelector('.proj-rename')
@@ -44,16 +34,13 @@
     store.getState().setRailPinned(true)
     await sleep(300)
 
-    /* ---- 造一个项目 ---- */
     const stamp = Date.now()
-    /* 场景带夹具项目：用里面预建的真实子目录（主进程对新项目 cwd 走 validateCwd）。 */
     const cwd = `${String(store.getState().settings.cwd).replace(/[\\/]+$/, '')}/probe-projects/p1`
     await store.getState().patchSettings({
       projects: [{ id: 'probe-rm', cwd, name: '探针待移除', archived: false, createdAt: stamp, updatedAt: stamp }],
       projectGroups: [],
       recentCwds: [cwd]
     })
-    /* 左栏只显示**有会话的项目**：不注入会话就看不到项目行。 */
     store.setState({
       sessions: [{
         id: 'pr-s0',
@@ -68,8 +55,6 @@
       }]
     })
     await until(() => !!rowOf('probe-rm') || !!q('[data-testid="rail-more-projects"]'), 6000)
-    /* The sidebar previews only five projects; expand the list when this fixture
-       lands below that limit instead of mistaking an off-screen row for a failure. */
     if (!rowOf('probe-rm') && q('[data-testid="rail-more-projects"]')) {
       click(q('[data-testid="rail-more-projects"]'))
     }
@@ -85,7 +70,6 @@
       return out.join('\n')
     }
 
-    /* ---- 菜单里有「移除项目」 ---- */
     openMenu('probe-rm')
     await until(() => !!q('[data-testid="rail-project-remove"]'))
     const item = q('[data-testid="rail-project-remove"]')
@@ -93,7 +77,6 @@
     out.push(`  菜单项文案 = ${(item?.textContent ?? '').trim()}`)
     ok(!!item && item.textContent.includes('移除项目'), '菜单项文案是「移除项目」')
 
-    /* ---- 点开确认框：文案要点名会话去哪、磁盘不动 ---- */
     if (item) click(item)
     await until(() => !!q('.rail-delete-dialog'))
     const dialog = q('.rail-delete-dialog')
@@ -102,7 +85,6 @@
     ok(message.includes('已归档项目'), '确认框说明会话进「已归档项目」')
     ok(/磁盘(上的)?目录(不会被改动|不受影响)/.test(message), '确认框说明磁盘目录不动')
 
-    /* ---- 取消：什么都不该发生 ---- */
     const cancel = dialog?.querySelector('.modal-foot .btn')
     if (cancel) click(cancel)
     await sleep(300)
@@ -111,7 +93,6 @@
     const cancelled = (await window.yan.getSettings()).projects.find((p) => p.id === 'probe-rm')
     ok(cancelled?.archived === false, '取消后落盘 archived 仍是 false')
 
-    /* ---- 确认移除 ---- */
     openMenu('probe-rm')
     await until(() => !!q('[data-testid="rail-project-remove"]'))
     const item2 = q('[data-testid="rail-project-remove"]')
@@ -126,7 +107,6 @@
     ok(persisted?.archived === true, '移除后落盘 archived = true（会话跟着进归档）')
     ok(!!persisted, '项目记录没有被删掉（只是归档，可恢复）')
 
-    /* ---- 归档视图：能看到，且同一位置变成「恢复项目」 ---- */
     const toggle = q('.rail-archive-toggle')
     ok(!!toggle, '有「已归档项目」入口')
     if (toggle) click(toggle)
@@ -142,7 +122,6 @@
     const restored = (await window.yan.getSettings()).projects.find((p) => p.id === 'probe-rm')
     ok(restored?.archived === false, '恢复后落盘 archived = false（可逆）')
 
-    /* ---- 收尾：把探针造的数据清掉 ---- */
     await store.getState().patchSettings({ projects: [], projectGroups: [], recentCwds: [] })
     await sleep(200)
   } catch (error) {

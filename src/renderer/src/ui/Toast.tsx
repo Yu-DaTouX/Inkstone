@@ -17,16 +17,13 @@ export interface ToastContent {
   tone?: ToastTone
 }
 
-/** 全局唯一的提示队列。只承载「视野外发生的结果」，原位确认不要用它。 */
 export const toastQueue = new UNSTABLE_ToastQueue<ToastContent>({ maxVisibleToasts: 3 })
 
 export interface ShowToastOptions extends Omit<ToastContent, 'title'> {
-  /** 自动关闭时间（毫秒），默认 5 秒。 */
   timeout?: number
   onClose?: () => void
 }
 
-/** 推一条提示。返回队列 key，可用 `toastQueue.close(key)` 手动收起。 */
 export function showToast(title: string, options: ShowToastOptions = {}): string {
   const { timeout = 5000, onClose, ...content } = options
   return toastQueue.add({ title, ...content }, { timeout, onClose })
@@ -45,10 +42,6 @@ function toneIcon(tone: ToastTone | undefined) {
   }
 }
 
-/**
- * 提示区域。挂在应用根部一次即可（建议在 Shell 最外层），
- * 用 `showToast(...)` 推入。悬停/聚焦会暂停自动关闭（RAC 行为）。
- */
 export function ToastRegion({ className }: { className?: string } = {}) {
   return (
     <RACToastRegion

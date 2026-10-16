@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * 用户消息旁「2/3 ‹ ›」原生兄弟分支切换的小检查（v3 · 设计 §8.8 / BR3）。
- *
- * 目标：把**真实生产模块**现场 esbuild 出来跑，不用源码字符串当唯一证据：
- *   · `features/session/branch-pager-model.ts` —— 分叉点投影、目标叶子选择、请求封装；
- *   · `features/session/BranchPager.tsx` —— 呈现 / 禁用 / 键盘 / 错误；
- *   · `features/session/TurnView.tsx` —— 只在用户消息带稳定 `entryId` 且查到模型时才画；
- *   · `features/session/SessionView.tsx` —— 低频读树、忙 / owner 切换守卫、点击再核、
- *     pending 防连点、成功后刷新宿主同步。
- *
- * 另有一组用真实 `ui/IconButton` + `react-dom/server` 核对可访问名称落在 DOM。
- *
- * 用法：node scripts/test-v3-branch-pager.mjs
- * 不启动 Electron / 浏览器，不读用户数据，不连 pi，不调用真实模型，不发真实 IPC。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -25,8 +10,6 @@ import { build } from 'esbuild'
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
 const abs = (rel) => normalize(resolve(ROOT, rel))
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 function group(name) {
@@ -41,13 +24,6 @@ function ok(cond, label, detail) {
   return pass
 }
 
-/* ------------------------------------------------------- React 浅渲染替身 */
-
-/**
- * 浅渲染 hook 运行时。与同目录其它 v3 检查不同的一点：**支持 effect 清理**，
- * 这样 `window.setTimeout` 的去抖取消才能在测试里真正生效（否则旧 timer 会累积，
- * 「低频」就测不准）。
- */
 function makeHookRuntime() {
   const rt = {
     cells: [],
@@ -225,8 +201,6 @@ async function flush(rt, Component, props, rounds = 8) {
   return tree
 }
 
-/* ----------------------------------------------------------- 元素树工具 */
-
 function childrenArray(kids) {
   if (kids === undefined || kids === null || kids === false || kids === true) return []
   if (Array.isArray(kids)) return kids.flatMap(childrenArray)
@@ -254,18 +228,13 @@ function classIncludes(el, name) {
   return typeof el?.props?.className === 'string' && el.props.className.split(/\s+/).includes(name)
 }
 
-/* ----------------------------------------------------------- 会话树 fixture */
-
 const user = (id, parentId, kids = []) => ({ entry: { id, parentId, type: 'message', message: { role: 'user', content: id } }, children: kids })
 const assistant = (id, parentId, kids = []) => ({ entry: { id, parentId, type: 'message', message: { role: 'assistant', content: id } }, children: kids })
 const metaNode = (id, parentId, type = 'label', kids = []) => ({ entry: { id, parentId, type, ...(type === 'label' ? { label: id } : {}) }, children: kids })
 
-/** u1 → a1 → [u2 → a2, u3 → a3]：在 a1 处分叉，两个用户分支。 */
 function forkTree() {
   return [user('u1', null, [assistant('a1', 'u1', [user('u2', 'a1', [assistant('a2', 'u2')]), user('u3', 'a1', [assistant('a3', 'u3')])])])]
 }
-
-/* --------------------------------------------------------------- 主流程 */
 
 async function main() {
   const outdir = await mkdtemp(join(tmpdir(), 'yan-v3-branch-pager-'))
@@ -326,7 +295,6 @@ async function main() {
     process.exit(1)
   }
 
-  /* ============================================== 组 1：纯投影：2/3 与目标叶子 */
   group('branch-pager-model：同分叉点计数 / 目标叶子 / 无 id / 保护')
   {
     const tree = forkTree()
@@ -349,7 +317,6 @@ async function main() {
     ok(model.buildBranchPagerMap(single, 's3').size === 0, '单分支即使有 entryId 也不画 pager')
     ok(model.treeHasEntryId(tree, 'a3') === true && model.treeHasEntryId(tree, 'ghost') === false, 'treeHasEntryId 只认真实条目')
 
-    /* 书签 / 元信息子节点不冒充兄弟分支 */
     const withMeta = [user('m1', null, [assistant('m2', 'm1', [metaNode('lab', 'm2'), user('m3', 'm2', [assistant('m4', 'm3')])])])]
     ok(model.buildBranchPagerMap(withMeta, 'm4').size === 0, '只有书签 + 一个用户分支：不算分叉')
     const withMetaFork = [user('m1', null, [assistant('m2', 'm1', [
@@ -361,7 +328,6 @@ async function main() {
     ok(metaMap.get('m3')?.index === 1 && metaMap.get('m3')?.count === 2, '书签被过滤后仍正确计 1/2', metaMap.get('m3'))
     ok(metaMap.get('m5')?.index === 2 && metaMap.get('m5')?.count === 2, '书签不把 m5 挤成 3/3')
 
-    /* 嵌套分叉：目标取该兄弟分支最新创建的末端（每个岔口取末位分支子节点） */
     const nested = [user('n1', null, [assistant('n2', 'n1', [
       user('n3', 'n2', [assistant('n4', 'n3')]),
       user('n5', 'n2', [assistant('n6', 'n5', [user('n7', 'n6', [assistant('n8', 'n7')]), user('n9', 'n6', [assistant('n10', 'n9')])])])
@@ -371,7 +337,6 @@ async function main() {
     ok(nestedMap.get('n7')?.index === 1 && nestedMap.get('n9')?.index === 2, '嵌套分叉各自成组')
     ok(nestedMap.get('n5')?.index === 2 && nestedMap.get('n5')?.count === 2, '外层兄弟计数不受内层分叉影响')
 
-    /* 重复 id / 环：不抛、不死循环 */
     const cyclic = [user('c1', null, [assistant('c2', 'c1', [user('c3', 'c2'), user('c3', 'c2')])])]
     let cyclicMap
     try {
@@ -381,7 +346,6 @@ async function main() {
       ok(false, '重复 id 不应抛错', error?.message)
     }
 
-    /* 深树：超过共享上限也不挂、不抛 */
     let deepRoot = user('d0', null, [assistant('d1', 'd0')])
     let cursor = deepRoot.children[0]
     for (let i = 2; i < 260; i += 1) {
@@ -399,7 +363,6 @@ async function main() {
     ok(typeof model.treeHasEntryId([deepRoot], 'd259') === 'boolean', '深树上目标校验有界返回')
   }
 
-  /* ============================================== 组 2：请求绑定与固定不摘要 */
   group('请求封装：只发 tree / navigate，绑定 expectedSessionId，不带 summarize')
   {
     const calls = []
@@ -429,7 +392,6 @@ async function main() {
     ok(thrown.ok === false && thrown.error === 'boom', '抛错也收成明确失败')
   }
 
-  /* ============================================== 组 3：pager 组件呈现 */
   group('BranchPager：序号 / 前后切换 / 禁用 / 错误 / 行内方向键')
   {
     const rt = makeHookRuntime()
@@ -475,7 +437,6 @@ async function main() {
     ok(err && err.props.role === 'alert' && String(err.props.children).includes('会话已切换'), '失败原因可见', err?.props?.children)
   }
 
-  /* ============================================== 组 4：TurnView 的 entryId 门闩 */
   group('TurnView：只有用户消息带稳定 entryId 且命中模型才画 pager（真实 SSR）')
   {
     const outdirTurn = await mkdtemp(join(tmpdir(), 'yan-v3-branch-pager-turn-'))
@@ -579,7 +540,6 @@ async function main() {
     }
   }
 
-  /* ============================================== 组 5：SessionView 低频读与守卫 */
   group('SessionView：去抖低读树 / 忙态 / owner 切换迟到 / 点击再核 / pending')
   {
     const installTimers = () => {
@@ -602,7 +562,7 @@ async function main() {
         location: { href: 'http://localhost/' }
       }
       globalThis.requestAnimationFrame = (fn) => {
-        try { fn(0) } catch { /* 浅渲染没有真实帧 */ }
+        try { fn(0) } catch { }
         return 0
       }
       globalThis.cancelAnimationFrame = () => {}
@@ -669,7 +629,6 @@ async function main() {
     globalThis.__V3_HOOKS = rt
     const SessionView = sessionMod.SessionView
 
-    /* (a) 空闲：去抖后只读一次树，签名不变不重复读 */
     const t = controlled()
     globalThis.window.yan.nativeSession = t.fn
     globalThis.__STORE = storeState()
@@ -685,7 +644,6 @@ async function main() {
     runTimers()
     ok(t.calls.filter((c) => c.action === 'tree').length === 1, '稳定 entryId 签名下不重复读树')
 
-    /* (b) 忙态不读；结束忙态再读 */
     const tBusy = controlled()
     globalThis.window.yan.nativeSession = tBusy.fn
     const busyState = storeState({ session: { sessionId: 'sess-a', sessionFile: 'A', isStreaming: true } })
@@ -700,7 +658,6 @@ async function main() {
     runTimers()
     ok(tBusy.calls.length === 1, '结束忙态后按去抖补读一次')
 
-    /* (c) owner 切换：旧响应迟到不得覆盖新会话 */
     const tOwner = controlled()
     globalThis.window.yan.nativeSession = tOwner.fn
     const ownerState = storeState()
@@ -724,7 +681,6 @@ async function main() {
     const ownerPager = findByStub(ownerTree, 'turnview')[0].props.branchPager
     ok(ownerPager.models.has('by') && !ownerPager.models.has('u2'), '迟到的 A 树没有覆盖 B')
 
-    /* (d) 点击导航：请求绑定 + 成功后刷新宿主同步 + pending 防连点 */
     const tNav = controlled()
     globalThis.window.yan.nativeSession = tNav.fn
     const navState = storeState()
@@ -757,7 +713,6 @@ async function main() {
     runTimers()
     ok(tNav.calls.filter((c) => c.action === 'tree').length >= 2, '成功后就地重读树')
 
-    /* (e) 失败显示原因 */
     const tFail = controlled()
     globalThis.window.yan.nativeSession = tFail.fn
     const failState = storeState()
@@ -776,7 +731,6 @@ async function main() {
     failBinding = findByStub(failTree, 'turnview')[0].props.branchPager
     ok(failBinding.error === '会话已切换' && failState.refreshCount === 0, '失败时显示宿主原因且不假装同步成功', failBinding.error)
 
-    /* (f) 点击时再核：目标已失效 / 会话已切走 */
     const tRecheck = controlled()
     globalThis.window.yan.nativeSession = tRecheck.fn
     const recheckState = storeState()
@@ -798,7 +752,6 @@ async function main() {
     recheckBinding.onNavigate('a3')
     ok(tRecheck.calls.filter((c) => c.action === 'navigate').length === 0, '会话已切走：本次点击作废')
 
-    /* (g) 无宿主桥：不伪造树 */
     const rtNoBridge = makeHookRuntime()
     globalThis.__V3_HOOKS = rtNoBridge
     globalThis.window.yan = {}
@@ -810,7 +763,6 @@ async function main() {
     ok(noBridgePager.models.size === 0, '无宿主桥时不伪造分叉模型')
   }
 
-  /* ============================================== 组 6：静态边界 */
   group('静态边界：模型层无 React/DOM，CSS 不自画控件外观')
   {
     const modelSrc = await readFile(abs('src/renderer/src/features/session/branch-pager-model.ts'), 'utf8')
@@ -828,7 +780,6 @@ async function main() {
     ok(!/models\.get\(msg\.id\)|models\.get\(m\.id\)/.test(turnSrc), '不拿合成 id 当 entryId')
   }
 
-  /* ============================================== 组 7：真实原语 SSR 可访问名称 */
   group('真实 ui/IconButton SSR：分组 / 名称 / 序号落在真实 DOM')
   {
     const outdirSsr = await mkdtemp(join(tmpdir(), 'yan-v3-branch-pager-ssr-'))

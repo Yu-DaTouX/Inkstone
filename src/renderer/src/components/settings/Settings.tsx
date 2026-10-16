@@ -13,8 +13,8 @@ import { Button, Disclosure, SettingRow, Spinner, Switch } from '../ui'
 import { AppUpdateSection } from './AppUpdateSection'
 import { StorageSection } from './StorageSection'
 import { SettingsSections } from './SettingsSections'
+import { UsageCurrencyRow } from './UsageCurrencyRow'
 
-// Keep the modal shell eager so focus, Escape and native browser occlusion work while loading.
 const AuthTab = lazy(() => import('./AuthTab').then(m => ({ default: m.AuthTab })))
 const WorkspaceTab = lazy(() => import('./WorkspaceTab').then(m => ({ default: m.WorkspaceTab })))
 const ContextTab = lazy(() => import('./ContextTab').then(m => ({ default: m.ContextTab })))
@@ -24,13 +24,6 @@ const PeerTab = lazy(() => import('./PeerTab').then(m => ({ default: m.PeerTab }
 const PluginMarketTab = lazy(() => import('./PluginMarketTab').then(m => ({ default: m.PluginMarketTab })))
 const CapabilitiesTab = lazy(() => import('./CapabilitiesTab').then(m => ({ default: m.CapabilitiesTab })))
 
-/**
- * 设置页的 id。
- *
- * 导航含独立插件市场（SETTINGS_PAGES）；旧 id（input / sound / context / knowledge / voice /
- * status / packages / remote / peer）仍可传给 openSettings，由 PAGE_OF 落到合并后的那一页，
- * 这样散落在输入区、引导与菜单里的深链接不用逐个改。
- */
 export type SettingsTab =
   | 'auth'
   | 'appearance'
@@ -70,7 +63,6 @@ const PAGE_OF: Record<SettingsTab, SettingsPage> = {
   status: 'about'
 }
 
-/** 导航顺序：先是每天会碰的（模型、外观与输入），再是工作方式与能力，最后是设备与关于 */
 const SETTINGS_PAGES: { id: SettingsPage; key: Parameters<TFunc>[0]; icon: string }[] = [
   { id: 'auth', key: 'set.auth', icon: 'key' },
   { id: 'appearance', key: 'set.pageAppearance', icon: 'moon' },
@@ -81,10 +73,6 @@ const SETTINGS_PAGES: { id: SettingsPage; key: Parameters<TFunc>[0]; icon: strin
   { id: 'about', key: 'set.about', icon: 'shield-check' }
 ]
 
-/**
- * 设置面板：左侧导航，右侧当前页。
- * 每页先放最常改的几项，诊断与高级数值收进页尾的「高级」。
- */
 export function Settings({
   open,
   tab,
@@ -98,30 +86,20 @@ export function Settings({
   tab: SettingsTab
   onClose: () => void
   onTabChange: (t: SettingsTab) => void
-  /** 「重新查看首次引导」：自检清单不自动出现，这里给一个找得到的入口 */
   onShowOnboarding: () => void
-  /** 「配置向导」：重新走一遍外观 / 提醒 / 接入 / 上下文 */
   onShowWizard: () => void
-  /** 「快捷键」：打开只读快捷键表（Ctrl+/）；调用方先收起设置 */
   onShowShortcuts: () => void
 }) {
   const t = useT()
   const { lang, setLang } = useI18n()
   const scrim = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
-  /** 导航项引用：方向键切换后把焦点跟过去（roving focus） */
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   const presence = usePresence(open, prefersReducedMotion() ? 1 : 110)
   const page = PAGE_OF[tab] ?? 'appearance'
 
-  /* 模态层：Esc 只关最上层；焦点圈定只在最上层生效（两层模态叠加时不互抢） */
   const { isTop } = useModalLayer(open, onClose)
-  /* 传 presence.mounted 而不是 open：open 变 true 的那一帧面板还没挂载 */
   useFocusTrap(panel, presence.mounted, isTop)
-  /*
-   * 打开时焦点落在当前页的导航项上。排在 useFocusTrap 之后：陷阱先记下
-   * 「打开它的元素」（关闭时还焦点），这里再移动焦点。
-   */
   useEffect(() => {
     if (!presence.mounted || !open) return
     const id = window.setTimeout(() => {
@@ -131,10 +109,6 @@ export function Settings({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presence.mounted, open])
 
-  /*
-   * 页面被外部切换（深链接、引导里的「去设置」）时，若焦点还停在导航里，
-   * 跟到新的选中项上；否则旧页签会留着键盘焦点环，看起来像同时选中了两项。
-   */
   useEffect(() => {
     const active = document.activeElement
     if (!active || !tabRefs.current.includes(active as HTMLButtonElement)) return
@@ -163,9 +137,6 @@ export function Settings({
       >
         <nav className="settings-nav">
           <div className="settings-nav-title">{t('set.title')}</div>
-          {/*
-           * tablist 使用单一 Tab 入口，方向键从当前焦点切页。
-           */}
           <div className="ui-tabs vertical settings-tabs" role="tablist" aria-orientation="vertical" aria-label={t('set.title')}>
             {SETTINGS_PAGES.map((x, i) => (
               <button
@@ -197,7 +168,6 @@ export function Settings({
                   e.preventDefault()
                   const next = (to + SETTINGS_PAGES.length) % SETTINGS_PAGES.length
                   onTabChange(SETTINGS_PAGES[next].id)
-                  /* setTimeout 而不是 rAF：隐藏窗口里 rAF 会被节流 */
                   window.setTimeout(() => tabRefs.current[next]?.focus(), 0)
                 }}
               >
@@ -213,7 +183,6 @@ export function Settings({
           </button>
         </nav>
 
-        {/* key 跟着页走：切页时新节点重演一次淡入 */}
         <div
           className="settings-body"
           key={page}
@@ -258,12 +227,6 @@ export function Settings({
   )
 }
 
-/* ------------------------------------------------------------- 外观 */
-
-/**
- * 界面缩放档位。0 = 自动（按屏幕缩放算，见 main/zoom.ts）。
- * 固定档位而不是滑块：档位可逆、可记住、能用快捷键走到底。
- */
 const SCALE_OPTS = [
   { v: 0, key: 'set.uiScaleAuto' },
   { v: 0.9, key: 'set.uiScaleTight' },
@@ -272,17 +235,12 @@ const SCALE_OPTS = [
   { v: 1.5, key: 'set.uiScaleHuge' }
 ] as const
 
-/**
- * 发送键档位。`auto` 是默认值（短输入框 Enter 发送，长文模式 Enter 换行），
- * 不改成别的默认 —— 那会静悄悄改变所有人的按键习惯。
- */
 const SEND_KEY_OPTS = [
   { v: 'auto', key: 'set.sendKeyAuto' },
   { v: 'enter', key: 'set.sendKeyEnter' },
   { v: 'ctrlEnter', key: 'set.sendKeyCtrl' }
 ] as const
 
-/** 界面密度：三档只改间距与行高，不改字号（字号缩放会让中文发虚） */
 const DENSITY_OPTS = [
   { v: 'compact', key: 'set.densityCompact' },
   { v: 'standard', key: 'set.densityStandard' },
@@ -302,16 +260,10 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const setUiScale = useStore((s) => s.setUiScale)
   const density = useStore((s) => s.settings?.density) ?? 'standard'
   const zoom = useStore((s) => s.zoom)
-  /** 对话内容列宽度（0 = 用设计默认值） */
   const streamWidth = useStore((s) => s.settings?.streamWidth) ?? 0
   const processLayout = useStore((s) => s.settings?.processLayout)
   const liveThinking = useStore((s) => s.settings?.liveThinking === true)
-  /**
-   * 滑块拖动中的本地值：range 是受控输入，拖动时若一直绑在 settings 上，
-   * React 会把滑块拉回旧值。拖动期间用 draft，落盘后清掉。
-   */
   const [draft, setDraft] = useState<number | null>(null)
-  /* 未手动设置时的实际宽度：与 tokens.css 的 --w-stream clamp 同一公式 */
   const shownWidth = draft ?? (streamWidth || Math.round(Math.min(920, Math.max(768, window.innerWidth - 680))))
   useEffect(() => setDraft(null), [streamWidth])
 
@@ -392,7 +344,6 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
         ctlClassName="stream-width-ctl"
         ctlProps={{ 'data-testid': 'set-stream-width' }}
       >
-        {/* 拖动时实时改 CSS 变量（不走 IPC），松手才落盘 —— 与面板拖拽同一套 */}
         <input
           className="range"
           type="range"
@@ -434,14 +385,12 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
         ))}
       </SettingRow>
 
-      {/* 与标题栏的图钉是同一个状态（store.alwaysOnTop），显示以主进程推的真实值为准 */}
       <SettingRow name={t('set.alwaysOnTop')}>
         <Switch checked={onTop} onChange={() => void toggleAlwaysOnTop()} label={t('set.alwaysOnTop')} testId="set-always-on-top" />
       </SettingRow>
       <SettingRow name={t('set.keepAwake')} desc={t('set.keepAwakeDesc')}>
         <Switch checked={keepAwake} onChange={(on) => void patchSettings({ keepAwakeWhileWorking: on })} label={t('set.keepAwake')} testId="set-keep-awake" />
       </SettingRow>
-      {/* 电池选项只在开启防睡眠后才有意义 */}
       {keepAwake ? (
         <SettingRow name={t('set.keepAwakeBattery')} desc={t('set.keepAwakeBatteryDesc')}>
           <Switch checked={keepAwakeBattery} onChange={(on) => void patchSettings({ keepAwakeOnBattery: on })} label={t('set.keepAwakeBattery')} testId="set-keep-awake-battery" />
@@ -451,13 +400,10 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   )
 }
 
-/* ------------------------------------------------------------- 输入 */
-
 function InputTab({ onShowShortcuts }: { onShowShortcuts: () => void }) {
   const t = useT()
   const patchSettings = useStore((s) => s.patchSettings)
   const sendKey = useStore((s) => s.settings?.sendKey) ?? 'auto'
-  /** 运行中的工具调用是否自动展开详情（默认关） */
   const toolDetail = useStore((s) => s.settings?.toolDetail === true)
   const subagentNotify = useStore((s) => s.settings?.subagentNotify !== false)
   const usageUnderInput = useStore((s) => s.settings?.usageUnderInput !== false)
@@ -477,7 +423,6 @@ function InputTab({ onShowShortcuts }: { onShowShortcuts: () => void }) {
         ))}
       </SettingRow>
 
-      {/* 子代理结束后自动叫醒发起它的会话；关掉后模型只能自己去查 */}
       <SettingRow name={t('set.subagentNotify')} desc={t('set.subagentNotifyDesc')}>
         <Switch
           checked={subagentNotify}
@@ -496,7 +441,8 @@ function InputTab({ onShowShortcuts }: { onShowShortcuts: () => void }) {
         />
       </SettingRow>
 
-      {/* 查看历史详情不受影响；这里只决定「正在运行」的那条要不要自动展开 */}
+      <UsageCurrencyRow />
+
       <SettingRow name={t('set.toolDetail')} desc={t('set.toolDetailDesc')}>
         <Switch
           checked={toolDetail}
@@ -506,7 +452,6 @@ function InputTab({ onShowShortcuts }: { onShowShortcuts: () => void }) {
         />
       </SettingRow>
 
-      {/* 只读快捷键表（Ctrl+/），与命令面板的动作表同源 */}
       <SettingRow name={t('set.shortcuts')} desc={t('set.shortcutsDesc')}>
         <Button size="sm" icon="key" onClick={onShowShortcuts} data-testid="set-shortcuts">
           {t('set.shortcutsOpen')}
@@ -516,22 +461,17 @@ function InputTab({ onShowShortcuts }: { onShowShortcuts: () => void }) {
   )
 }
 
-/** 主题存在 App 的 state + 主进程设置里；这里通过事件让 App 处理 */
 export function useThemeSetter(): (t: 'dark' | 'light', origin?: { x: number; y: number }) => void {
   return (next, origin) => {
     try {
       localStorage.setItem('yan.theme', next)
     } catch {
-      /* 忽略 */
     }
-    /* 走 store 的 patchSettings：选中态读的是 settings.theme，store 写回后按钮才跟着换 */
     void useStore.getState().patchSettings({ theme: next })
-    /* 捎上按钮中心：主题扩散 / 收拢的圆心就在用户点的那一下 */
     window.dispatchEvent(new CustomEvent('yan:theme', { detail: { theme: next, origin } }))
   }
 }
 
-/** 元素中心（视口坐标）—— 主题切换动画的圆心；量不到就不给，CSS 回退到屏幕中心 */
 function centerOf(el: Element | null | undefined): { x: number; y: number } | undefined {
   if (!el) return undefined
   const rect = el.getBoundingClientRect()
@@ -539,9 +479,6 @@ function centerOf(el: Element | null | undefined): { x: number; y: number } | un
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
 }
 
-/* ------------------------------------------------------------- 提醒 */
-
-/** 设置还没读完时的兜底（与主进程 DEFAULTS 保持一致） */
 const DEFAULT_SOUND: SoundSettings = {
   enabled: false,
   volume: 0.4,
@@ -549,15 +486,10 @@ const DEFAULT_SOUND: SoundSettings = {
   events: { done: true, question: true, error: true }
 }
 
-/**
- * 提醒：回合完成 / 需要回答 / 出错时发声或发系统通知。
- * 每个事件都能单独关、都能试听 —— 不用真跑一轮就能确认音色。
- */
 export function SoundTab() {
   const t = useT()
   const sound = useStore((s) => s.settings?.sound) ?? DEFAULT_SOUND
   const patchSettings = useStore((s) => s.patchSettings)
-  /** 音量拖动中的本地值（受控 range 否则会被 settings 拉回去） */
   const [volDraft, setVolDraft] = useState<number | null>(null)
   useEffect(() => setVolDraft(null), [sound.volume])
   const shownVol = volDraft ?? sound.volume
@@ -576,7 +508,6 @@ export function SoundTab() {
   return (
     <div className="ui-rows" data-testid="set-sound">
       <SettingRow name={t('set.soundNotify')} desc={t('set.soundNotifyDesc')}>
-        {/* 测试：不受「窗口失焦」限制，直接让主进程弹一条 */}
         <Button
           size="sm"
           variant="ghost"
@@ -652,9 +583,6 @@ export function SoundTab() {
   )
 }
 
-/* ------------------------------------------------------------- 关于 */
-
-/** 目录名的最后一段（快切按钮只显示它，全路径放 title） */
 function folderName(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, '')
   const parts = trimmed.split(/[\\/]/)
@@ -687,7 +615,6 @@ function AboutTab({ onShowOnboarding, onShowWizard }: { onShowOnboarding: () => 
       if (alive.current) setActionError(error instanceof Error ? error.message : String(error))
     }
   }
-  /* 最近用过的目录（主进程维护，最多 8 个） */
   const recentCwds = (settings?.recentCwds ?? []).filter((p) => p !== settings?.cwd)
 
   const redetect = async (): Promise<void> => {
@@ -702,10 +629,6 @@ function AboutTab({ onShowOnboarding, onShowWizard }: { onShowOnboarding: () => 
     }
   }
 
-  /*
-   * 「缺件修复」提示只在这几种情况下出现：没版本且内置运行时缺失 / 没版本且
-   * 其它来源也没命中 / 退回 shell 兜底（提醒特殊字符风险）。
-   */
   const hint = !piInfo?.version
     ? piInfo && piInfo.bundledAvailable === false
       ? t('set.piBundledMissing')
@@ -720,7 +643,6 @@ function AboutTab({ onShowOnboarding, onShowWizard }: { onShowOnboarding: () => 
   return (
     <div className="ui-rows">
       {actionError ? <div className="set-warn" role="alert">{actionError}</div> : null}
-      {/* 版本放最上面：它回答「我现在跑的是哪一份代码」 */}
       <SettingRow
         data-testid="about-release"
         name={`${t('set.releaseVersion')} ${BUILD_INFO.version || '—'}`}
@@ -731,7 +653,6 @@ function AboutTab({ onShowOnboarding, onShowWizard }: { onShowOnboarding: () => 
           </span>
         }
       >
-        {/* 项目主页走内部浏览器，所以先关掉设置这层遮罩，否则网页开在遮罩下面 */}
         {BUILD_INFO.repositoryUrl ? (
           <Button
             size="sm"
@@ -800,7 +721,6 @@ function AboutTab({ onShowOnboarding, onShowWizard }: { onShowOnboarding: () => 
 
       <StorageSection />
 
-      {/* 诊断：路径、会话 id、本会话用量与日志。排查问题时才看，默认收起 */}
       <Disclosure title={t('set.diagnostics')} testId="set-status-diagnostics">
         <div className="set-diag">
           <DiagLine k={t('set.piHome')} v={piInfo?.home} />
@@ -828,7 +748,6 @@ function DiagLine({ k, v }: { k: string; v?: string }) {
   )
 }
 
-/** pi 来源的中文/英文标签 */
 function sourceLabel(t: TFunc, src?: string): string {
   switch (src) {
     case 'bundled':

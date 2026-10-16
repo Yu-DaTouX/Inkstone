@@ -1,4 +1,3 @@
-/** 隔离的真实 Electron / preload / IPC / 成果卡片链路；不复制凭证、不调用模型。 */
 import './lib/stdio-guard.mjs'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -19,7 +18,6 @@ const probeSource = await readFile(join(root, 'scripts/probe/html-artifact.js'),
 
 try {
   await mkdir(dirname(screenshots), { recursive: true })
-  // 每次用新目录，保留既有截图与证据，不覆盖上次运行。
   await mkdir(screenshots)
   for (const [name, theme, size] of [['dark', 'dark', '1440x900'], ['light', 'light', '1440x900'], ['narrow', 'dark', '940x900']]) {
     const base = join(temp, name)
@@ -50,7 +48,6 @@ try {
       const archifyPath = join(artifacts, 'archify-report.html')
       const original = await readFile(resolve(process.env.YAN_HTML_PREVIEW_FILE), 'utf8')
       fixture.archifyInteraction = original.includes('id="btn-theme"') && original.includes('Archify')
-      // 只在隔离复制件追加观察脚本；真实产物保持只读，不给生产预览加入消息桥接。
       const observe = fixture.archifyInteraction ? `<script>(()=>{const button=document.getElementById('btn-theme');const before=document.documentElement.getAttribute('data-theme');button.click();const themeChanged=document.documentElement.getAttribute('data-theme')!==before;if(document.documentElement.getAttribute('data-theme')!=='${theme}')button.click();parent.postMessage({htmlArtifactProbe:true,kind:'archify-interaction',themeChanged,svgReady:!!document.querySelector('svg'),theme:document.documentElement.getAttribute('data-theme')},'*')})()</script>` : ''
       await writeFile(archifyPath, original + observe)
       fixture.archify = { ...fixture.artifact, id: 'archify-test', filename: 'archify-report.html', path: archifyPath, bytes: (await stat(archifyPath)).size, description: '实际 Archify 产物：消息内网页渲染' }

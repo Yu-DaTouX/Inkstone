@@ -62,7 +62,7 @@ export function registerAgentServiceIpc(ipc: IpcRegistrar, deps: { currentAgent(
         const raw = JSON.parse(await readFile(join(PI_AGENT_DIR, 'models.json'), 'utf8')) as { providers?: Record<string, { apiKey?: string }> }
         const key = raw.providers?.[model.provider]?.apiKey
         if (key && !key.startsWith('!')) apiKey = process.env[key] ?? key
-      } catch { /* existing configuration remains untouched */ }
+      } catch { }
     }
     if (!apiKey) throw new Error('当前模型没有可复用的凭证，请先在设置中登录或配置 API Key')
     const cost = model.cost as ServiceModelConfig['model']['cost']

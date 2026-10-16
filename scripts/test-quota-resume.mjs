@@ -1,4 +1,3 @@
-/** Quota auto-resume decisions: which errors wait, when quota counts as recovered, when to poll next. */
 export async function runQuotaResumeTests(report) {
   const ok = (label, cond) => report(!!cond, label)
   const m = await import('../out/test/quota-resume.mjs')

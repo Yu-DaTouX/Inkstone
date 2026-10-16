@@ -1,4 +1,3 @@
-/** Actual model-label components with adjacent UI/store fixtures; no Electron/model/network. */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
@@ -13,7 +12,6 @@ let checks = 0
 const check = (condition, label) => { assert.ok(condition,label); checks++ }
 try {
   const outfile = join(dir,'components.mjs')
-  /* React stays outside the fixture namespace so these stubs need no package resolution. */
   const modules = {
     state: `export let state={};export const setState=value=>{state=value};export const useStore=selector=>selector(state);useStore.getState=()=>state;`,
     i18n: `export const useT=()=>((key,vars)=>key);`,
@@ -28,7 +26,6 @@ try {
     markdown: `const h=globalThis.__inkstoneLabelRender;export const Markdown=({text,children})=>h('span',null,text ?? children);`
   }
   globalThis.__inkstoneLabelRender = createElement
-  /* The renderer tsconfig compiles JSX to React.createElement, so the bundle needs the global. */
   globalThis.React = { createElement, Fragment }
   await build({stdin:{contents:`export {SubagentGroup} from './src/renderer/src/components/chat/SubagentCards';export {TurnMeta} from './src/renderer/src/components/chat/TurnProcess';export {AgentMessageStream} from './src/renderer/src/components/chat/AgentMessageStream';export {SubagentPlan} from './src/renderer/src/components/workbench/SubagentPlan';export {groupIntoTurns} from './src/shared/turns';export {normalizeMessage} from './src/main/normalize';export {setState} from 'inkstone-test-state';`,resolveDir:process.cwd(),loader:'ts'},outfile,bundle:true,platform:'node',format:'esm',packages:'external',logLevel:'silent',plugins:[{name:'label-adjacencies',setup(b){
     const fixtures = [ [/^(inkstone-test-state)$|state\/store$/,'state'], [/(^|\/)i18n$/,'i18n'], [/ui\/confirm$/,'confirm'], [/ui$/,'ui'], [/Reasoning$/,'reasoning'], [/ToolRow$/,'tool'], [/scrollAnchor$/,'scrollAnchor'], [/icons\/Icon$/,'icon'], [/run-status$/,'progress'], [/TurnView$/,'turn'], [/MessageParts$/,'markdown'] ]

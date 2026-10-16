@@ -1,4 +1,3 @@
-/** 真实随包pi的回收/恢复与进程采样；无外部模型，注入时钟推进10分钟。 */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
@@ -42,7 +41,6 @@ try {
       push: () => registry?.noteActivity(id), capability: undefined })
     agent.setRunnerGeneration(generation)
     agent.maybeGenerateTitle = async () => null
-    // 只在夹具建3个进程期间阻止已有空闲实例被复用；不发模型任务或改变原生会话。
     const pendingCount = agent.getPendingUiCount.bind(agent)
     agent.getPendingUiCount = () => pendingCount() + (setupPending.has(id) ? 1 : 0)
     agents.push(agent)

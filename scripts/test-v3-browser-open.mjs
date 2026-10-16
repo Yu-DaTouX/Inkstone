@@ -1,18 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 内置浏览器「明确打开 + 异步归属守卫」回归。
- *
- * 用纯逻辑 + 内存桥（deferred 的 mock 正式桥）验证：
- *   · 用户点一次「打开浏览器」只调用一次宿主打开，成功后写状态并 reveal；
- *   · 打开失败保留可重试：释放本次认领，再点一次能成功；
- *   · A 打开途中切到 B 时，B 明确安全失败，不会并发导航同一个浏览器；
- *   · 旧回包不盖新的打开意图（同会话连点也算新意图）；
- *   · A 打开途中切走后，旧回包只记录全局状态，不把旧 view 重新 show 出来；
- *   · 资源已归 A 时，B 不能控制（复用既有 browserControlAllowed）。
- *
- * 不启动 Electron、不创建 WebContentsView、不访问网络、不读用户凭证。
- * 用法：node scripts/test-v3-browser-open.mjs
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
@@ -43,8 +29,6 @@ const mod = await import(
 )
 const { BrowserOpener, browserControlAllowed, browserText } = mod
 
-/* ------------------------------------------------------------------ 断言 */
-
 let pass = 0
 let fail = 0
 function ok(cond, label, detail) {
@@ -60,7 +44,6 @@ function group(name) {
   process.stdout.write(`\n▌${name}\n`)
 }
 
-/** 一个未决的宿主打开调用，模拟跨 IPC 的异步回包。 */
 function deferred() {
   let resolve
   let reject
@@ -81,10 +64,6 @@ const browserState = (over = {}) => ({
   ...over
 })
 
-/**
- * 内存桥：语义对齐 `resource-owners`（已有主人不覆盖）与正式 `window.yan.browser`。
- * `open` 返回未决 Promise，由测试自己决定何时 resolve / reject。
- */
 function makeHarness() {
   const state = { resourceOwner: undefined, browserOpen: false, currentKey: 'A', browserState: null }
   const calls = { open: [], setBrowserState: [], reveal: 0, blocked: [], failed: [], released: 0 }
@@ -120,8 +99,6 @@ function makeHarness() {
   }
   return { state, calls, inflight, opener: new BrowserOpener(ports) }
 }
-
-/* ------------------------------------------------------ 明确打开 + 代次 */
 
 group('用户点击：点一次只调用一次宿主打开，成功后写状态并 reveal')
 {
@@ -242,8 +219,6 @@ group('文案：打开入口在两种语言都有')
   ok(typeof en.open === 'string' && en.open.length > 0, '英文有「打开」按钮文案')
   ok(en.open !== zh.open, '两种语言文案不同')
 }
-
-/* ---------------------------------------------------------------- 收尾 */
 
 process.stdout.write(`\n${fail === 0 ? '✓' : '✗'} ${pass} 项通过，${fail} 项失败\n`)
 assert.equal(fail, 0, '存在失败断言')

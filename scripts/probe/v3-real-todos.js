@@ -1,15 +1,3 @@
-/*
- * R 真实模型 v3 场景：Agent 实时待办磁贴（scripts/probe/v3-real-todos.js）。
- *
- * 与 v3-todos（注入清单）的分工：这条**真的调模型**，让 Agent 用任务工具
- *（`yan tasks apply`，宿主唯一入口）建 3 项计划并逐项完成，验整条真链路：
- *   · 运行中侧栏 `v3-todo` 磁贴实时出现；
- *   · 计数 x/y 随 Agent 逐项完成递增（记录 store.todos 变化序列）；
- *   · 回合结束后 3/3、三行全为 done（全勾）。
- *
- * 只发 1 条短消息；模型固定 commandcode/deepseek/deepseek-v4.1-flash。
- * 不注入 store、不伪造清单；探针只读。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => {
@@ -24,7 +12,6 @@
       try {
         if (predicate()) return true
       } catch {
-        /* 还没就绪，继续轮询 */
       }
       await wait(50)
     }
@@ -61,7 +48,6 @@
     try {
       localStorage.setItem('yan.onboarded', '1')
     } catch {
-      /* 存储不可用不影响断言 */
     }
     const onboarding = document.querySelector('.v3-ob-overlay')
     if (onboarding) {
@@ -128,7 +114,6 @@
     const domTile = domLog.some((x) => x.tile && x.running)
     check(domTile || tileWhileRunning, '至少有一次「运行中且磁贴可见」的采样')
 
-    /* 结束时读最终状态（含迟到推送：等它稳定）。 */
     await until(() => countOf(store.getState()).label === '3/3', 15000)
     const final = countOf(store.getState())
     check(final.total === 3, `清单共 3 项（实际 ${final.total}）`)
@@ -140,7 +125,6 @@
     const monotonic = seq.every((s, i) => i === 0 || s.done >= seq[i - 1].done)
     check(monotonic, '完成数单调不减（没有回退）')
 
-    /* 结束后的磁贴 DOM：3 行全勾。 */
     check(await until(() => (q('v3-todo-count')?.textContent ?? '').trim() === '3/3', 10000), '磁贴计数显示 3/3')
     const rows = qa('v3-todo-row')
     check(rows.length === 3, `磁贴渲染 3 行（实际 ${rows.length}）`)

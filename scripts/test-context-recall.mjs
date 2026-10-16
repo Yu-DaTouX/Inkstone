@@ -1,25 +1,3 @@
-/**
- * 宿主侧归档回读（`yan context recall` → `src/main/context-recall.ts`）的确定性覆盖。
- *
- * ══════════════════════════════════════════════════════════════════
- * 这组断言从哪来
- * ══════════════════════════════════════════════════════════════════
- * 归档回读以前是薄层里的一个模型工具（`context_recall`），它的确定性覆盖写在同一份
- * `test-context-transform.mjs` 里（直接调工具的 `execute`）。实施-01 S5 收口时把回读
- * 入口迁到宿主 CLI，薄层不再注册任何模型工具 —— **能力边界不变，执行者变了**：
- *   · 原文仍来自当前会话的原始 JSONL（不是归档副本）；
- *   · 单次 / 累计预算仍然拒绝并解释，不静默截断；
- *   · 召回量与回合号仍记进同一份账本，成功 / 拒绝仍写审计；
- *   · 包装头仍是 `[Recalled context] turn=<n> ref=<ref>` —— 薄层的 TTL 钩子按它清理。
- * 所以这里覆盖的正是「迁到宿主后这几条还在不在」，而不是复述实现。
- *
- * ══════════════════════════════════════════════════════════════════
- * 刻意不 mock 的东西
- * ══════════════════════════════════════════════════════════════════
- * 会话文件、归档元数据、账本、审计都是真文件（隔离在 mkdtemp 目录里）——这条链路的
- * 价值就在于「跨进程读盘的身份与边界」，全换成内存假对象就什么都没验到。
- * 唯一的替身是 `request.stateDir`（生产态是 `YAN_DATA_DIR/context-state`）。
- */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -89,7 +67,6 @@ export async function runContextRecallTests(ok, { recall, store }) {
     await writeSession()
     await writeArchive([archiveEntry('ctx://tool/m2')])
 
-    /* ---------------- A. 正常召回：原文来自会话本身 ---------------- */
     const first = await call({ reason: '需要那段输出的细节' })
     ok(first.resultText.startsWith(`${RECALL_HEAD}1 ref=ctx://tool/m2`), '召回包装头是薄层 TTL 认得的形状', JSON.stringify(first.resultText.slice(0, 60)))
     ok(first.resultText.includes(BIG.slice(0, 40)), '返回的是会话里的原文（不是归档副本）')
@@ -106,7 +83,6 @@ export async function runContextRecallTests(ok, { recall, store }) {
     )
     ok(audits[0].reason === '需要那段输出的细节', '审计保留调用方给的理由（可追溯到为什么读）')
 
-    /* ---------------- B. 非法 ref / 缺条目 / 三态 / 过期 ---------------- */
     ok((await failure(() => call({ ref: 'not-a-ref' })))?.code === 'context_recall_invalid_ref', '非法 ref 被拒')
     ok((await failure(() => call({ ref: 'ctx://tool/nope' })))?.code === 'context_recall_missing', '归档里没有的 ref 被拒')
 
@@ -116,7 +92,6 @@ export async function runContextRecallTests(ok, { recall, store }) {
     await writeArchive([archiveEntry('ctx://tool/m2', { expiresAt: Date.now() - 1000 })])
     ok((await failure(call))?.code === 'context_recall_expired', '过期的归档不可召回')
 
-    /* ---------------- C. 预算：拒绝而不是截断 ---------------- */
     await writeArchive([archiveEntry('ctx://tool/m2')])
     await rm(ledgerFile, { force: true })
     await rm(auditFile, { force: true })
@@ -138,7 +113,6 @@ export async function runContextRecallTests(ok, { recall, store }) {
     ok((await failure(call))?.code === 'context_recall_rejected', '累计超限 → 拒绝')
     delete process.env.YAN_CONTEXT_POLICY
 
-    /* ---------------- D. 账本累加与并发串行 ---------------- */
     await rm(ledgerFile, { force: true })
     const [a, b] = await Promise.all([call(), call()])
     const after = JSON.parse(await readFile(ledgerFile, 'utf8'))
@@ -149,7 +123,6 @@ export async function runContextRecallTests(ok, { recall, store }) {
       JSON.stringify(after)
     )
 
-    /* ---------------- E. 身份与原文入口都不能由调用方指定 ---------------- */
     ok((await failure(() => call({ sessionFile: join(root, 'nope.jsonl') })))?.code === 'context_session_unreadable', '原始记录不可读 → 拒绝')
     await writeSession('another-session')
     ok((await failure(call))?.code === 'context_session_mismatch', '会话文件身份与请求会话不一致 → 拒绝')
@@ -158,7 +131,6 @@ export async function runContextRecallTests(ok, { recall, store }) {
     await writeArchive([archiveEntry('ctx://tool/zzz')])
     ok((await failure(() => call({ ref: 'ctx://tool/zzz' })))?.code === 'context_entry_missing', '归档有元数据但原始记录里找不到 → 不返回半份正文')
 
-    /* ---------------- F. 归档元数据缺失 / 损坏 ---------------- */
     await rm(join(stateDir, `${sessionId}.archive.json`), { force: true })
     ok((await failure(call))?.code === 'context_archive_missing', '没有归档元数据 → 拒绝（不猜）')
   } finally {

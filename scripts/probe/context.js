@@ -1,4 +1,3 @@
-/* Native context presentation: unknown usage, model identity, breakdown and busy controls. */
 ;(async () => {
   const out = [], store = window.__yanStore
   const ok = (v, label) => out.push(`  ${v ? '✓' : '✗'} ${label}`)

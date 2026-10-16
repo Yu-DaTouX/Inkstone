@@ -14,7 +14,6 @@ type Item =
 
 const DELIVERY: Record<HubMessage['delivery'], [MessageKey, string]> = { queued: ['hub.delivery.queued', 'warn'], injected: ['hub.delivery.injected', 'ok'], typed: ['hub.delivery.typed', 'ok'], failed: ['hub.delivery.failed', 'err'] }
 
-/** Who a message came from, read from the host's request key (actor prefix) and source task. */
 function messageSource(t: TFunc, message: HubMessage, tasks: HubTask[]): { role: 'report' | 'self' | 'other'; label: string } {
   const key = message.requestKey ?? ''
   if (message.parentSessionId && message.kind === 'note') return { role: 'report', label: t('hub.from.reportToMain') }
@@ -26,7 +25,6 @@ function messageSource(t: TFunc, message: HubMessage, tasks: HubTask[]): { role:
 }
 const ORIGIN: Record<string, MessageKey> = { session: 'hub.from.main', desktop: 'hub.from.you', phone: 'hub.from.youPhone', run: 'hub.from.parentRun' }
 
-/** Paths inside the run's worktree read as project-relative paths. */
 function relative(text: string, workspace?: string): string {
   if (!workspace || !text) return text
   const variants = [workspace, workspace.replace(/\\/g, '/')].map(v => v.replace(/[\\/]+$/, ''))
@@ -66,10 +64,6 @@ function ActivityView({ item, task }: { item: HubActivity; task: HubTask }) {
   return <div className="agent-chat-note">{item.title ? <b>{item.title} · </b> : null}{text}</div>
 }
 
-/**
- * A managed run as a conversation: the instruction, the agent's narration, tool calls, patches,
- * approvals and handoff packets in time order. The host's events are the only source.
- */
 export function AgentRunChat({ task, tasks, messages, approvals, busy, act, onDetails }: {
   task: HubTask
   tasks: HubTask[]

@@ -1,9 +1,3 @@
-/**
- * 命令面板自己的短文案（中英）。
- *
- * 为什么不在两份 i18n JSON 里加键：那两份是共享热点，v3 尚未定稿，现在加键会给
- * v2 留下无用条目（与 `app/v3-text.ts` 同一口径）。面板定稿后再统一并入 i18n。
- */
 import type { Lang } from '../../i18n'
 import type { CommandPrefix } from './command-items'
 

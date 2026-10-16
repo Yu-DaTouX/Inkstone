@@ -1,18 +1,3 @@
-/**
- * 子代理控制器（src/main/subagents.ts）的策略测试。
- *
- * 这里不 spawn 真 pi、不花额度：`createRpc` 注入假客户端，
- * `prepare` 注入可控工作区。真 git 只用在「退出时清理 worktree」那条，
- * 因为它验证的正是文件系统上的真实结果。
- *
- * 覆盖的是 2026-09-15 审计登记的四条缺陷：
- *   D1 并发槽位必须在准备隔离区**之前**预占
- *   D2 已结束的任务在退出时仍要被归档清理（finalize 的 promise 缓存不能挡住）
- *   D3 准备期间切父会话不能让 cwd 与 parentSessionId 分属两代
- *   D4 「只读」要落到 pi 的 `--tools` 白名单，而不只是换个 cwd
- *   D15 toolResult 要回填到原工具调用（否则同一个调用显示成两条，真实结果看不出来）
- *   D16 任务结束后要关掉 pi 子进程（否则泄漏进程，且 worktree 在 Windows 上删不掉）
- */
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile, readFile, mkdir } from 'node:fs/promises'
@@ -22,7 +7,6 @@ import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 
-/** 假 pi 客户端：记录参数，允许测试手动投递事件 */
 function makeRpcFactory() {
   const created = []
   const createRpc = ({ cwd, args }) => {
@@ -60,7 +44,6 @@ function makeRpcFactory() {
   return { created, createRpc }
 }
 
-/** 不碰文件系统的假工作区（只读模式走这条，collectDiff 直接返回空摘要） */
 const fakePrepare = async (rootCwd, id, isolation) => ({ isolation, rootCwd, cwd: rootCwd })
 
 async function waitFor(predicate, timeoutMs = 5000) {
@@ -73,7 +56,6 @@ async function waitFor(predicate, timeoutMs = 5000) {
 }
 
 export async function runSubagentControllerTests(ok, SubagentController) {
-  /* 流式推送按运行合并，主动读取/工具边界/停止仍立即反映权威转录。 */
   {
     const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-coalesce-'))
     const factory = makeRpcFactory(), pushed = []
@@ -119,7 +101,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     }
   }
 
-  /* 真实磁盘快照 + 新控制器模拟重启：调用结果、归属和原生上下文不能丢。 */
   {
     const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-history-'))
     try {
@@ -171,7 +152,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       await cleared.loadHistory()
       ok(cleared.list().length === 0, '显式清除的已完成任务重启后不会重新出现')
 
-      // 兼容旧摘要，调用来自指定子任务的原生会话，不读其他用户目录。
       const legacy = { id: 'sub-legacy', task: '旧版任务', rootCwd: 'C:/legacy', parentSessionId: 'legacy-parent',
         isolation: 'controlled-cwd', status: 'done', startedAt: 100, endedAt: 200, review: 'none' }
       await writeFile(join(archive, 'sub-legacy.json'), JSON.stringify(legacy))
@@ -202,7 +182,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       ok(interrupted.runningCount === 0 && restoredRpc === 0 && restoredNotifications === 0, '旧记录和中断记录均不重新执行或通知')
     } finally { await rm(archive, { recursive: true, force: true }) }
   }
-  /* 保存起始快照是新的 await 边界：停止后不得再次 spawn 或发送 prompt。 */
   {
     const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-start-save-'))
     try {
@@ -238,7 +217,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     } finally { await rm(archive, { recursive: true, force: true }) }
   }
 
-  /* ---- D1：并发槽位在 prepare 之前预占 ---- */
   {
     let release
     const gate = new Promise((resolve) => {
@@ -294,7 +272,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     }
   }
 
-  /* ---- D3：准备期间切父会话，不能发生代次漂移 ---- */
   {
     let release
     const gate = new Promise((resolve) => {
@@ -313,7 +290,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       }
     })
     const started = ctrl.start('准备期间切会话')
-    /* 用户在这一刻切到别的项目 / 会话 */
     ctrl.setContext({ cwd: 'C:/proj-b', parentSessionId: 'sess-b', parentRunId: 'r2' })
     release()
     const res = await started
@@ -325,7 +301,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* ---- D4：只读子代理必须带 pi 侧工具白名单 ---- */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -347,7 +322,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* ---- D15：toolResult 回填到原调用，不新增消息 ---- */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -394,7 +368,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* ---- D17：usage 按消息 id 去重累计（流式→final 不翻倍，多条相加） ---- */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -433,7 +406,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* 原生上下文与累计调用用量独立，迟到响应不能覆盖新快照。 */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({ cwd: 'C:/proj-a', createRpc: factory.createRpc, onChange: () => {}, prepare: fakePrepare })
@@ -467,7 +439,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* ---- D16：任务结束后子代理进程必须收掉 ---- */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -485,13 +456,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /*
-   * L03 尾巴：模型自己失败不能被 settled 当成「已完成」。
-   *
-   * pi 的失败回合也会走到 `agent_settled`，错误只体现在 assistant 消息的
-   * `stopReason` 上；不看它的后果是子代理面板显示「已完成」、`error=null`
-   *（2026-09-19 在真实窗口用坏模型名实测到的就是这两个值）。
-   */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -514,7 +478,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* 对照：`stopReason: 'stop'`（或压根没这个字段）仍算正常结束 —— 空回复不是失败 */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -536,7 +499,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* ---- L03：pi 起不来时必须报错并回收，不留僵尸任务 ---- */
   {
     const created = []
     const createRpc = ({ cwd, args }) => {
@@ -552,7 +514,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
           handlers.set(event, list)
           return rpc
         },
-        /* spawn 什么也不做：模拟「进程起不来」（真实链路的坏 pi 入口） */
         spawn() {},
         async command() {
           return { success: true }
@@ -576,17 +537,12 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     const res = await ctrl.start('pi 起不来', undefined, 'controlled-cwd')
     ok(res.ok === false, '起不来时 start 返回失败而不是假装启动成功', JSON.stringify(res.error))
     ok(/启动超时/.test(res.error ?? ''), '错误说的是启动超时', JSON.stringify(res.error))
-    /* start 失败时不回 run（回它反而像“启动了”），所以从列表里按任务找 */
     const run = ctrl.list().find((r) => r.task === 'pi 起不来')
     ok(run?.status === 'error', 'run 停在 error（不留在「运行中」）', String(run?.status))
     ok(created[0]?.closed === true, '起不来的进程也被 close 掉')
     await ctrl.stopAll()
   }
 
-  /*
-   * L03：运行超时要真的能触发。
-   * 用 `YAN_SUBAGENT_TIMEOUT_MS` 压到 200ms，检查到点后转 error + 进程被收。
-   */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -617,10 +573,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /*
-   * 到点先收尾、不直接杀：宿主给它发一条 steer，宽限内它交出结论就按「完成」落，
-   * 结束原因仍记 timeout，摘要取它收尾时的那段话（干了大半的活不丢）。
-   */
   {
     const factory = makeRpcFactory()
     const steers = []
@@ -661,7 +613,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* 进展续期停滞时钟；到限收尾，迟到事件不重置收尾宽限。 */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -756,7 +707,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     } finally { await ctrl.stopAll() }
   }
 
-  /* 旧预算参数不再限制调用次数；模型自主完成任务。 */
   {
     const factory = makeRpcFactory()
     const steers = []
@@ -785,14 +735,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /*
-   * 流式事件序列：id 不能漂移。
-   *
-   * 子代理的转录 id 是按序号生成的（`m{序号}`），所以“序号 = 下一条新消息”
-   * 这个假设必须成立。D15 把 toolResult 改成**回填而不 push**之后，用
-   * `transcript.length` 当序号就会错位：同一条流式回复会被拆成多条，
-   * 最终回复的文本也可能被盖掉（实测 subagent 场景的“转录里有模型回复”失败）。
-   */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({
@@ -833,7 +775,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
-  /* ---- D2：已结束的未审阅 worktree，退出时仍要被归档清理 ---- */
   {
     const root = await mkdtemp(join(tmpdir(), 'yan-subagent-ctrl-'))
     const archive = join(root, 'archives')
@@ -868,7 +809,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       ok(pending, '普通结束先把 worktree 留给用户审阅', ctrl.get(run.id)?.review)
       ok(existsSync(run.cwd), '审阅期间 worktree 还在磁盘上')
 
-      /* 用户直接退出：已结束的任务也必须被归档清理（D2）。 */
       await ctrl.stopAll()
       const after = ctrl.get(run.id)
       ok(after?.review === 'archived', '退出时把未审阅的 worktree 归档', after?.review)
@@ -876,7 +816,6 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       ok(!!after?.resultPath && existsSync(after.resultPath), '退出后保留可追溯的补丁', after?.resultPath)
       ok(!existsSync(run.cwd), '退出后临时 worktree 已删除')
 
-      /* 重复退出不能报错，也不该重复删一次已经没了的东西。 */
       await ctrl.stopAll()
       ok(ctrl.get(run.id)?.review === 'archived', '重复退出保持归档状态')
       const history = new SubagentController({ cwd: 'C:/unrelated-current-project', archiveDir: archive, onChange: () => {} })

@@ -1,13 +1,3 @@
-/**
- * v3 首次引导模块的局部检查。
- *
- * 不启动 Electron / 不读用户设置 / 不调模型 / 不读任何凭证：
- *   1. 用 esbuild 编译纯逻辑（步骤模型、看过标记、双语文案）并断言；
- *   2. 静态检查向导仍用 v3 原语、现有 `patchSettings` 与正式 `openSettings`，
- *      没引入 v2 旧组件 / 旧样式，也没新增 IPC 或读凭据。
- *
- * 可独立执行：node scripts/test-v3-onboarding.mjs
- */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -27,7 +17,6 @@ async function loadTs(rel) {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 }
 
-/* ── 1. 步骤模型（纯逻辑） ─────────────────────────────────── */
 const model = await loadTs('../src/renderer/src/features/onboarding/onboarding-model.ts')
 const {
   ONBOARDING_STEP_IDS,
@@ -71,7 +60,6 @@ assert.equal(isLastStep(ONBOARDING_STEP_COUNT - 1), true)
 assert.deepEqual(stepProgress(0), { n: 1, total: 6 }, '进度从 1 起')
 assert.deepEqual(stepProgress(5), { n: 6, total: 6 }, '最后一步进度')
 
-/* ── 2. 看过标记（纯逻辑 + 桩 localStorage） ──────────────── */
 const memo = new Map()
 globalThis.localStorage = {
   getItem: (key) => (memo.has(key) ? memo.get(key) : null),
@@ -86,17 +74,14 @@ state.markOnboarded()
 assert.equal(memo.get('yan.onboarded'), '1', '标记写的是同一个键值')
 assert.equal(state.hasSeenOnboarding(), true)
 assert.equal(state.shouldAutoWizard(), false, '看过之后不再自动打开')
-// 主区旧探针直接写同一个键，也要认
 memo.set('yan.onboarded', '1')
 assert.equal(state.shouldAutoWizard(), false, '旧探针的 setItem 也能压住弹窗')
 state.resetOnboarded()
 assert.equal(state.shouldAutoWizard(), true, '清掉标记后可重新打开')
-// 没有 localStorage 时不抛错，按「没看过」处理
 delete globalThis.localStorage
 assert.equal(state.hasSeenOnboarding(), false, '没有存储时按没看过处理')
 assert.doesNotThrow(() => state.markOnboarded(), '无存储时标记不抛错')
 
-/* ── 3. 双语文案齐全、占位符一致 ──────────────────────────── */
 const textMod = await loadTs('../src/renderer/src/features/onboarding/onboarding-text.ts')
 const zh = textMod.onboardingText('zh-CN')
 const en = textMod.onboardingText('en-US')
@@ -113,7 +98,6 @@ for (const key of ['stepOf', 'contextNow', 'contextClamped']) {
 assert.ok(zh.authDesc.includes('不会读取'), '模型接入说明写明不读取已保存登录')
 assert.ok(/credential/i.test(en.authDesc) || /does not read/i.test(en.authDesc), '英文同样说明不读凭证')
 
-/* ── 4. 向导源码契约（静态） ───────────────────────────────── */
 const wizard = readFileSync(here('../src/renderer/src/features/onboarding/OnboardingWizard.tsx'), 'utf8')
 const css = readFileSync(here('../src/renderer/src/features/onboarding/onboarding.css'), 'utf8')
 const barrel = readFileSync(here('../src/renderer/src/features/onboarding/index.ts'), 'utf8')
@@ -134,7 +118,6 @@ assert.ok(!wizard.includes('checked='), '不混用 v2 的 checked 属性')
 assert.ok(!wizard.includes('authProviders') && !wizard.includes('window.yan'), '不读真实凭证、不新增 IPC')
 assert.ok(!/fetch\(/.test(wizard), '不发网络请求')
 
-/* ── 4b. 声音滑杆用正式 ui Slider，按 SoundSettings.volume 精确换算 ── */
 assert.ok(wizard.includes("from '../../ui/Slider'"), '音量用 v3 Slider 原语（ui 汇总导出后改走 barrel）')
 assert.ok(wizard.includes("import '../../ui/Slider.css'"), '原语样式随组件引入，不自建滑杆外观')
 for (const token of ['minValue={0}', 'maxValue={1}', 'step={0.05}']) {
@@ -172,12 +155,10 @@ for (const id of [
   assert.ok(wizard.includes(id) || css.includes(id), `保留稳定测试 id ${id}`)
 }
 
-/* ── 5. 样式只落在 features 层，不自建控件外观 ────────────── */
 assert.ok(css.startsWith('@layer features {'), '样式落在 features 层')
 assert.ok(!/\.v3-ob-[\w-]*(?:-btn|-tab|-chip)\b/.test(css), '不为步骤条/页脚新建控件类')
 assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(css), 'CSS 不写死色值，全部引用 token')
 
-/* ── 6. 模块入口导出 ──────────────────────────────────────── */
 for (const name of [
   'OnboardingWizard',
   'shouldAutoWizard',

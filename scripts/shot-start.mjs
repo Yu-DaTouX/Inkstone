@@ -1,11 +1,3 @@
-/**
- * 右栏「开始」页截图（实施-11 H-3b）：深浅各一张 + 窄窗一张。
- *
- * 与 shot-controls 同一套做法：主进程真窗口 + capturePage，主题不重载只改
- * `data-theme`，避免 GPU 进程崩溃。新会话默认停在开始页，正好截它。
- *
- * 用法： YAN_SHOT_DIR=docs/design/preview electron scripts/shot-start.mjs
- */
 import { muteMissingHandlerNoise } from './lib/stdio-guard.mjs'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
@@ -57,8 +49,6 @@ async function main() {
   if (injected !== 'ok') throw new Error('fixture 注入失败: ' + injected)
   await wait(900)
 
-  /* 真实 userData 里可能保存了旧的 workbench 布局（活动页不是开始页）。
-     截图前显式切到「开始」固定标签，确保截的就是这一片。 */
   await win.webContents.executeJavaScript(`
     (() => {
       const s = window.__yanStore
@@ -89,7 +79,6 @@ async function main() {
     await wait(400)
   }
 
-  /* 确认开始页真的渲染出来（不是工具页），否则截图没有意义 */
   const startInfo = await win.webContents.executeJavaScript(`
     (() => ({
       start: !!document.querySelector('[data-testid="right-start-page"]'),

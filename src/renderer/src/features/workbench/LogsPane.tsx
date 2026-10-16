@@ -1,13 +1,3 @@
-/**
- * 工作区「日志」页签（v3）。
- *
- * 只投影现成的 store 事实：扩展 `setStatus` 的状态行，以及 pi 的 stderr / 扩展通知
- * 日志尾部（主进程已按归属推到 `logs`）。不新建资源、不需要激活、不解析日志内容；
- * 过滤只在渲染端对已有行做子串匹配，复制取当前过滤后的可见行。
- *
- * 为什么只显示最后 200 行：pi 在启动期可能一下刷出很多（扩展自检、警告），
- * 全量渲染会变成几千行的列表，而人要看的是尾部。
- */
 import { useMemo, useState, type ReactElement } from 'react'
 import { Copy } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'

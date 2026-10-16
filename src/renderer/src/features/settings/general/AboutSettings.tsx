@@ -1,11 +1,3 @@
-/**
- * 设置 → 关于与更新（v3）。
- *
- * 显示真实构建信息（`shared/build-info`，构建时注入）与 pi 来源（store 的 `piInfo` +
- * `redetectPi`）。应用更新复用 `window.yan.appUpdate`。开源入口走既有 `openBrowser`。
- * 模型凭证不在这里二次实现：有导航回调时给一个真正会跳转到「模型与服务」的按钮，
- * 没有时只说明位置，不摆一个点不动的假按钮。
- */
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { BUILD_INFO, formatBuildTime } from '../../../../../shared/build-info'
@@ -29,9 +21,7 @@ const PHASE_TEXT: Record<AppUpdateStatus['phase'], keyof GeneralText> = {
 }
 
 export interface AboutSettingsProps {
-  /** 「模型与服务」导航；由根页注入时凭证行是可点的真按钮，否则只说明位置。 */
   onOpenModels?: () => void
-  /** 「重新查看首次引导」；由外壳注入时才显示该行。 */
   onShowOnboarding?: () => void
 }
 

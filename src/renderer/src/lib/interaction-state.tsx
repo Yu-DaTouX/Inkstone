@@ -9,13 +9,6 @@ const snapshots = new Map<string, Snapshot>()
 const listeners = new Set<() => void>()
 const pending = new Set<string>()
 const active = new Map<string, number>()
-/**
- * 内存里的互动状态快照按会话封顶。
- *
- * 每条快照是 `Record<string, string>`，主进程侧单会话上限 4MB、单值 64KB，
- * 而以前只写不删（无 `.delete`/`.clear`）：打开过的会话越多，这张表越大。
- * 淘汰最久未访问的；正在显示的会话会在“使用”里被移到末尾，不会被选中。
- */
 const MAX_SNAPSHOTS = 24
 const touch = (id: string): void => {
   const value = snapshots.get(id)

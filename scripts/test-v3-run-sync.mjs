@@ -1,15 +1,3 @@
-/**
- * v3 运行状态同步纯逻辑单测（WP-11–14）。
- *
- * 现场编译 `src/renderer/src/state/runs-v3.ts`（reducer / 合并 / 排序 / 文案 +
- * zustand 存储 + `startRunSync`），不启动 Electron、不碰 pi、不写用户目录。
- *
- *   node scripts/test-v3-run-sync.mjs
- *
- * 覆盖：增量合并与旧修订丢弃、快照竞态（旧 running 不覆盖新 done）、
- * 快照失败可见错误、提醒条筛选 / 去重 / 上限、状态色与文案，以及
- * `startRunSync` 的订阅先于快照、引用计数幂等、清理。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -34,7 +22,6 @@ function snapshot(runId, phase, extra = {}) {
   }
 }
 
-/** 只给本测试用的假 `window`：记录订阅/快照调用顺序，可注入失败。 */
 function installFakeWindow({ snapshotImpl, markSeenImpl } = {}) {
   const events = []
   let pushCallback = null
@@ -116,7 +103,6 @@ async function main() {
     startRunSync
   } = mod
 
-  /* ── 1. 合并：新增 / 覆盖 / 移除，并保持 compareRuns 顺序 ── */
   {
     const a = snapshot('a', { kind: 'running', since: 1, activity: 'thinking' }, { startedAt: 5 })
     const b = snapshot('b', { kind: 'needs-you', since: 2, request: { id: 'q1', type: 'confirm', summary: 'sure?' } })
@@ -135,7 +121,6 @@ async function main() {
     assert.deepEqual(removed.map((r) => r.runId), ['a'])
   }
 
-  /* ── 2. 旧修订被丢弃 ── */
   {
     const run = snapshot('a', { kind: 'done', at: 50, seen: false })
     const base = { ...initialRunsV3State, revision: 5, runs: [run] }
@@ -147,7 +132,6 @@ async function main() {
     assert.equal(older.runs[0].phase.kind, 'done', '更旧的增量不能把完成翻回运行中')
   }
 
-  /* ── 3. 快照竞态：快照期间的增量在落地后回放，且只回放更新的修订 ── */
   {
     let state = initialRunsV3State
     state = runsV3Reducer(state, {
@@ -157,7 +141,6 @@ async function main() {
     state = runsV3Reducer(state, { type: 'snapshot-start' })
     assert.equal(state.syncing, true)
 
-    /* 快照请求在途：新完成事件先缓冲，不直接改列表 */
     state = runsV3Reducer(state, {
       type: 'push',
       push: { revision: 2, upsert: [snapshot('a', { kind: 'done', at: 30, seen: false })], remove: [] }
@@ -165,7 +148,6 @@ async function main() {
     assert.equal(state.buffer.length, 1)
     assert.equal(state.runs[0].phase.kind, 'running', '缓冲期间列表保持原样')
 
-    /* 慢快照回来，带的是旧的 running（revision 1）；回放 rev2 的 done 获胜 */
     state = runsV3Reducer(state, {
       type: 'snapshot',
       revision: 1,
@@ -177,7 +159,6 @@ async function main() {
     assert.equal(state.runs[0].phase.kind, 'done', '新 done 不被快照里的旧 running 覆盖')
   }
 
-  /* ── 3b. 快照修订比缓冲更新时不回放旧增量 ── */
   {
     let state = runsV3Reducer(initialRunsV3State, { type: 'snapshot-start' })
     state = runsV3Reducer(state, {
@@ -193,7 +174,6 @@ async function main() {
     assert.equal(state.runs[0].phase.kind, 'running', '快照更新则忽略缓冲里的旧 done')
   }
 
-  /* ── 4. 快照失败：保留已有数据 + 可见错误，不变回伪空闲 ── */
   {
     let state = runsV3Reducer(initialRunsV3State, {
       type: 'push',
@@ -206,7 +186,6 @@ async function main() {
     assert.equal(state.runs.length, 1, '失败不清空已有列表')
     assert.equal(state.runs[0].phase.kind, 'stalled')
 
-    /* 之后的增量仍能应用，且 revision 继续前进 */
     state = runsV3Reducer(state, {
       type: 'push',
       push: { revision: 5, upsert: [snapshot('a', { kind: 'running', since: 6, activity: 'tool', tool: { name: 'bash', label: 'bash', callId: 'c1' } })], remove: [] }
@@ -214,7 +193,6 @@ async function main() {
     assert.equal(state.runs[0].phase.kind, 'running')
   }
 
-  /* ── 5. 已读翻转 ── */
   {
     const done = snapshot('a', { kind: 'done', at: 30, seen: false })
     const failed = snapshot('b', { kind: 'failed', at: 30, cause: 'host', message: 'x', seen: false })
@@ -227,7 +205,6 @@ async function main() {
     assert.equal(markSeenInRuns(arr, 'c'), arr, '运行中已读不产生新引用')
   }
 
-  /* ── 6. 提醒条筛选：过滤可见会话、同会话一条、上限 2、待审批不可关 ── */
   {
     const runs = [
       snapshot('n1', { kind: 'needs-you', since: 5, request: { id: 'q1', type: 'confirm', summary: 'a' } }, { sessionId: 's1' }),
@@ -243,7 +220,6 @@ async function main() {
     assert.deepEqual(pills.map((r) => r.runId), ['n2', 'st1'], '过滤可见会话、最多两条、按优先级')
     assert.equal(isStickyRun(pills[0]), true, '等你确认不可关闭')
 
-    /* 同一会话最多一条 */
     const duplicated = [
       snapshot('x1', { kind: 'needs-you', since: 9, request: { id: 'q', type: 'confirm', summary: 'x' } }, { sessionId: 'dup' }),
       snapshot('x2', { kind: 'stalled', since: 8, cause: 'no-output' }, { sessionId: 'dup' })
@@ -251,7 +227,6 @@ async function main() {
     assert.deepEqual(attentionPills(duplicated, {}, 2).map((r) => r.runId), ['x1'])
   }
 
-  /* ── 7. 语义色与真实字段文案 ── */
   {
     assert.equal(runTone({ kind: 'running', since: 1, activity: 'thinking' }), 'run')
     assert.equal(runTone({ kind: 'queued', since: 1, reason: 'followup' }), 'run')
@@ -280,7 +255,6 @@ async function main() {
     assert.equal(runTimeText('zh-CN', snapshot('c', { kind: 'done', at: 1000, seen: true }), 61000), '1 分钟前')
   }
 
-  /* ── 8. startRunSync：订阅先于快照、引用计数幂等、清理 ── */
   {
     const fake = installFakeWindow({
       snapshotImpl: () => ({ revision: 7, runs: [snapshot('a', { kind: 'running', since: 1, activity: 'thinking' })] })
@@ -296,15 +270,12 @@ async function main() {
       assert.equal(useRunsV3.getState().runs.length, 1)
       assert.equal(useRunsV3.getState().error, null)
 
-      /* 第二次 startRunSync 不新增订阅 */
       assert.equal(fake.events.filter((e) => e === 'subscribe').length, 1)
 
-      /* 通过订阅回调注入一条增量：修订更大 → 应用 */
       fake.getPushCallback()({ ch: 'runs', payload: { revision: 8, upsert: [snapshot('a', { kind: 'done', at: 40, seen: false })], remove: [] } })
       assert.equal(useRunsV3.getState().revision, 8)
       assert.equal(useRunsV3.getState().runs[0].phase.kind, 'done')
 
-      /* 无关频道被忽略 */
       fake.getPushCallback()({ ch: 'msg-add', payload: {} })
       assert.equal(useRunsV3.getState().revision, 8)
 
@@ -319,7 +290,6 @@ async function main() {
     }
   }
 
-  /* ── 9. startRunSync 失败：可见错误，不显示伪空闲 ── */
   {
     const fake = installFakeWindow({ snapshotImpl: () => Promise.reject(new Error('bridge down')) })
     try {
@@ -335,7 +305,6 @@ async function main() {
     }
   }
 
-  /* 重试也必须缓冲增量：失败后收到的新完成不能被慢重试的旧快照覆盖。 */
   {
     let attempts = 0
     let retry
@@ -370,7 +339,6 @@ async function main() {
     }
   }
 
-  /* ── 10. 通道缺失：也暴露可见错误 ── */
   {
     const previous = globalThis.window
     globalThis.window = { yan: {}, setTimeout: (...a) => setTimeout(...a), clearTimeout: (...a) => clearTimeout(...a) }

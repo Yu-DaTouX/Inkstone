@@ -1,4 +1,3 @@
-/** N02 模型能力三态与模型身份归一化。 */
 export function runModelCapabilitiesTests(ok, api) {
   const model = api.normalizeModelInfo({
     id: 'vision-model',
@@ -33,11 +32,6 @@ export function runModelCapabilitiesTests(ok, api) {
   ok(snapshot?.thinkingLevels.status === 'unsupported', '能力快照保留思考档位状态')
   ok(snapshot?.input.status === 'known' && snapshot.input.modalities.includes('image'), '能力快照保留输入模态')
 
-  /*
-   * D11 回归网：pi 的 get_state **不返回档位**，所以 state 快照不能把已知档位清掉。
-   * 早期实现直接从快照读 availableThinkingLevels，字段永远不存在 → 每条推送都
-   * 把档位重置为 unknown，界面一直说“上游未提供思考档位信息”。
-   */
   const known = { levels: ['off', 'low', 'high'], status: 'known', modelKey: 'deepseek/deepseek-flash' }
 
   const kept = api.resolveThinkingLevels({ model: {} }, known, 'deepseek/deepseek-flash')

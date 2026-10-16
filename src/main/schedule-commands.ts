@@ -1,9 +1,3 @@
-/**
- * `yan schedule …`：模型创建与管理定时任务。
- *
- * 模型创建的任务先停着（待确认），用户在「定时任务」页确认启用后才会按时运行，
- * 因此模型不能让一段指令在无人值守时自行运行。暂停与删除不需要确认。
- */
 import type { ScheduleService } from './schedule-service'
 import { describeTrigger, type ScheduledTask, type ScheduleTrigger } from '../shared/schedule'
 
@@ -11,7 +5,6 @@ export class ScheduleCommandError extends Error {
   constructor(readonly code: string, message: string) { super(message) }
 }
 
-/** 简写：--daily 09:00 / --weekdays 09:00 / --every 60（分钟）/ --at "2026-10-15 09:00"；也可直接给完整 trigger 对象。 */
 function triggerFrom(params: Record<string, unknown>): unknown {
   if (params.trigger && typeof params.trigger === 'object') return params.trigger
   if (typeof params.daily === 'string') return { kind: 'daily', time: params.daily }

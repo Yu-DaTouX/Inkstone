@@ -1,5 +1,4 @@
 @layer patterns {
-  /* 模型与思考档选择器：输入框底部一行的第 2 个控件（WP-24）。 */
 
   .mp-wrap {
     display: inline-flex;
@@ -185,7 +184,6 @@
     font-size: var(--t-meta);
   }
 
-  /* 收藏标记：跟价格 / 能力标签同排，不用额外行高。 */
   .mp-fav {
     flex: none;
     color: var(--accent);

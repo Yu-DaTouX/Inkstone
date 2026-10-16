@@ -1,10 +1,3 @@
-/**
- * 侧栏一条会话：点击打开、Ctrl/⌘ 点击在旁边分屏打开、拖到对话区左右落点分屏、
- * 右键或行尾「…」打开操作菜单、菜单里改名时就地变成输入框。
- *
- * 拖拽用指针事件（与 v2 同思路，不用 HTML5 draggable）：移动超过阈值才算拖，
- * 否则仍是点击；Esc、窗口失焦或 pointercancel 取消；松手只在命中落点时打开分屏。
- */
 import { useEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from 'react'
 import { MoreHorizontal } from 'lucide-react'
 import { useI18n } from '../../i18n'
@@ -39,7 +32,6 @@ export function SidebarRow({ item, title, isCurrent, phase, unread, code, word, 
   const [draft, setDraft] = useState(title)
   const dragging = useSessionDrag((s) => s.item?.path === item.path)
 
-  /* 打开或切到这个会话时，把它的行滚入侧栏视野（已在视野内则不动） */
   useEffect(() => {
     if (isCurrent) rowRef.current?.scrollIntoView({ block: 'nearest' })
   }, [isCurrent])

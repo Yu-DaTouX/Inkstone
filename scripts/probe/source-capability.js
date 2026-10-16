@@ -1,20 +1,3 @@
-/**
- * 来源搜索入口（实施-07 S4）：**有则出现**。
- *
- * ── 这一片在测什么 ──
- * 方案对网页搜索的硬条件是「**只在已发现兼容搜索能力时启用**」，且明写
- * 「不要自造私有搜索后端」。所以宿主这边的产物不是搜索本身，而是
- * **发现 + 如实暴露**：命中一条兼容搜索能力 → 来源菜单里出现入口；
- * 没命中 → 整块不渲染（不是「点了才知道不行」）。
- *
- * ── 这条场景真的在连一个搜索工具吗 ──
- * 是。场景给了一份真实 MCP 配置（官方 SDK 的 stdio fixture，工具表里有
- * `web_search`），宿主会真的连它、把工具接进能力目录 —— 判定读的就是那份目录。
- * fixture 不联网，所以整条场景 cost 0。
- *
- * 反向验证怎么做（不要写进断言）：把 fixture 里 `web_search` 那个工具改名成
- * 不带 search 语义的名字，入口就该整块消失 —— 那时本探针会红在第一节。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -99,7 +82,6 @@
 
     const draft = q('[data-testid="composer"]')?.value ?? ''
     out.push('  草稿 = ' + JSON.stringify(draft.slice(0, 200)))
-    /* 诊断：读不到草稿时要知道是「没写进去」还是「写到了另一个 key」 */
     out.push('  composer 元素 = ' + String(!!q('[data-testid="composer"]')))
     out.push(
       '  activeRunnerId=' +
@@ -114,7 +96,6 @@
     ok(draft.includes('electron streaming grapheme'), '草稿里有刚输入的关键词')
     ok(draft.includes(String(availability?.title ?? '')), '草稿里点了名要靠哪条能力')
     ok(draft.includes(String(availability?.location ?? '')), '草稿里带上可执行的调用形状')
-    /* 只是写草稿：**没有**替用户发出消息 */
     const sent = (store.getState().messages ?? []).some((m) => m.role === 'user' && String(m.text ?? '').includes('electron streaming grapheme'))
     ok(!sent, '没有自动发送（只是把草稿放进输入框，等用户确认）')
     ok(!q('[data-testid="env-menu"]'), '写完草稿后菜单自己关掉（回到输入框）')

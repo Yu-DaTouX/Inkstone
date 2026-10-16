@@ -1,10 +1,3 @@
-/**
- * 快捷键表（Ctrl+/）：只读对话框，分「全局 / 输入框 / 审批 / 终端」列出实际生效的键位。
- *
- * 数据同源：全局组来自 `lib/host-actions.ts` 的 `KEY_BINDINGS`（命令面板的动作表用的是
- * 同一份绑定），其余三组是该文件里的说明数据 —— 两处不会各维护一份。这里只渲染，
- * 不做自定义键位。
- */
 import { useRef } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { KEY_BINDINGS, SHORTCUT_NOTE_GROUPS, shortcutNoteGroupKey, type ShortcutBindingId } from '../../lib/host-actions'

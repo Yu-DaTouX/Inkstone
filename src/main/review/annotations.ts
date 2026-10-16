@@ -1,23 +1,3 @@
-/**
- * 评审批注存储（§10.2 / WP-50）。
- *
- * ── 职责 ──
- * 每个**变更集**一份文档：`<root>/review/annotations/<changeSetId>.json`。
- * 批注是用户对代码的旁注，与 pi 会话文件、运行历史都分开存，谁也不覆盖谁。
- *
- * ── 四条硬边界（对应任务要求）──
- *   1. **原子串行**：同一变更集的读改写走一条 Promise 队列，落盘用
- *      `writeFileDurable`（`wx` + fsync）+ rename；写盘成功后才提交内存，
- *      失败时内存不会先出现一条「其实没持久化」的批注。
- *   2. **scope / 目录校验**：文档一旦建立就记住 `scopeKey`；后续写入带不同
- *      scopeKey 一律拒绝。目录由调用方注入固定 root，文件名只由 changeSetId
- *      派生（再过滤字符集），渲染端传不了路径。
- *   3. **迟到写防错归属**：scopeKey 是归属凭证 —— 会话 / 基准换了而异步写入
- *      才回来时，旧 scopeKey 会被拒；调用方据此把结果只更新到发起时的那份
- *      变更集上。
- *   4. **体积 / 行号上限**：正文、批注条数、文档字节数都在写入前校验
- *      （见 `shared/review.ts`），任何一条超限都 fail closed。
- */
 import { mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { parsePersistedDocument } from '../persisted-document'
@@ -35,12 +15,9 @@ import {
 } from '../../shared/review'
 
 export interface ReviewAnnotationStoreOptions {
-  /** 数据根目录；缺省 `YAN_DIR`。批注落在 `<root>/review/annotations/`。 */
   root?: string
   now?: () => number
-  /** 注入 id 生成（测试用）；缺省时间 + 序号 */
   newId?: () => string
-  /** 注入落盘实现（测试用）；缺省临时文件 + fsync + rename */
   write?: (path: string, text: string) => Promise<void>
 }
 
@@ -50,7 +27,6 @@ const ID_SAFE = /^[A-Za-z0-9._-]+$/
 
 let idSeq = 0
 
-/** 变更集 id → 安全文件名；非法字符一律拒绝，不猜用户意图。 */
 export function annotationFileName(changeSetId: string): string | null {
   const id = String(changeSetId ?? '').trim()
   if (!id || id.length > 200 || !ID_SAFE.test(id)) return null
@@ -87,7 +63,6 @@ function sanitizeAnnotation(raw: unknown, changeSetId: string): ReviewAnnotation
   }
 }
 
-/** 读盘容错：坏条目丢掉，不因一份坏文档丢掉整份批注。 */
 export function sanitizeAnnotationDocument(raw: unknown, changeSetId: string): ReviewAnnotationDocument {
   const source = raw && typeof raw === 'object' ? (raw as Partial<ReviewAnnotationDocument>) : {}
   const seen = new Set<string>()
@@ -116,9 +91,7 @@ export class ReviewAnnotationStore {
   private readonly now: () => number
   private readonly newId: () => string
   private readonly write?: (path: string, text: string) => Promise<void>
-  /** changeSetId → 已提交内存的文档 */
   private readonly docs = new Map<string, ReviewAnnotationDocument>()
-  /** changeSetId → 串行队列尾 */
   private readonly tails = new Map<string, Promise<unknown>>()
 
   constructor(options: ReviewAnnotationStoreOptions = {}) {
@@ -138,7 +111,6 @@ export class ReviewAnnotationStore {
     return name ? join(annotationsDir(this.root), name) : null
   }
 
-  /** 读一份文档（先看内存，再看盘）。读盘失败时抛错，调用方据此 fail closed。 */
   private async load(changeSetId: string): Promise<ReviewAnnotationDocument> {
     const cached = this.docs.get(changeSetId)
     if (cached) return cached
@@ -195,12 +167,6 @@ export class ReviewAnnotationStore {
     }
   }
 
-  /**
-   * 校验 scopeKey 是否与文档一致。
-   *
-   * 文档为空（还没写过）时以调用方给的 scopeKey 为准；文档已有 scopeKey
-   * 且不同则拒绝 —— 这正是「迟到写防错归属」的落点。
-   */
   private checkScope(doc: ReviewAnnotationDocument, scopeKey: string): string | null {
     if (!doc.scopeKey) return null
     if (doc.scopeKey !== scopeKey) return '变更集归属已变化，这次写入被丢弃'
@@ -222,7 +188,6 @@ export class ReviewAnnotationStore {
     }
   }
 
-  /** 各文件已存在的批注数；供变更集列表合并。读失败时返回空表，不抛。 */
   async countsByPath(changeSetId: string, scopeKey: string): Promise<Map<string, number>> {
     const result = await this.list(changeSetId, scopeKey)
     const counts = new Map<string, number>()
@@ -346,7 +311,6 @@ export class ReviewAnnotationStore {
     })
   }
 
-  /** 等待所有已排队的写入落盘（测试 / 退出收尾）。 */
   async whenIdle(): Promise<void> {
     await Promise.allSettled([...this.tails.values()])
   }

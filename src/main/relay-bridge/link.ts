@@ -1,8 +1,3 @@
-/**
- * 砚到中继的出站连接：以房主身份连上中继，把中继转来的每个客户端变成一条虚拟连接（Pipe）。
- * 中继协议与礁石一致：主机连 /v1/host?key=…；中继发 {t:"open"|"msg"|"close", c, d}，主机回 {t:"msg"|"kick", c, d}；
- * 文本 "ping"/"pong" 保活。断线指数退避重连（2 秒起，最长 60 秒），75 秒收不到 pong 视为断开。
- */
 import type { Pipe } from './tunnel'
 
 const PING_MS = 25_000
@@ -16,7 +11,6 @@ export interface WsLike {
 }
 export type WsCtor = new (url: string) => WsLike
 
-/** https → wss，去掉结尾斜杠。 */
 export function relayWsBase(url: string): string {
   return url.trim().replace(/\/+$/, '').replace(/^http(s?):\/\//, 'ws$1://')
 }
@@ -87,7 +81,6 @@ export class RelayLink {
     try {
       if (this.ws && this.ws.readyState === 1) this.ws.send(text)
     } catch {
-      /* 发送失败由 close 事件处理重连 */
     }
   }
 
@@ -128,7 +121,6 @@ export class RelayLink {
       if (ev.code !== 4001) this.schedule()
     })
     ws.addEventListener('error', () => {
-      /* 随后会有 close 事件 */
     })
   }
 
@@ -153,7 +145,6 @@ export class RelayLink {
     try {
       ws?.close()
     } catch {
-      /* 已关闭 */
     }
     for (const p of this.pipes.values()) p.ended()
     this.pipes.clear()

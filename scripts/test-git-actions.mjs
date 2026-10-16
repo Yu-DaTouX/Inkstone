@@ -1,20 +1,3 @@
-/**
- * Git **写操作**的纯逻辑单测（不建仓库、不启动 Electron、不花 token）。
- *
- * 这批测试盯的是三件「错了会很贵」的事：
- *   1. **失败分类**：用户点提交失败后看到的那句话是他唯一的线索。
- *      身份未配置、hook 拒绝、lock、非快进、认证失败 —— 每一种要找的东西
- *      都不同，混成「操作失败」等于把排查成本全推给用户。
- *      这里喂的是**真 git 的原文**（在 `test-git-repo.mjs` 里会再核对关键几条）。
- *   2. **版本摘要**：`digestOf` 用长度前缀拼接，不是分隔符 —— 用 `\n` 拼的话
- *      「一个叫 `a\nb` 的文件」与「两个文件 a、b」会算出同一个摘要，
- *      于是「内容变了但摘要没变」，乐观并发的检查直接失效。
- *   3. **命令构造**：`--` 终止符、unborn 仓库要绕开 `HEAD`、创建分支的
- *      两种走法。这些参数错了 git 要么报错要么**做错事**。
- *
- * 用法：npm run test:unit（由 test-unit.mjs 调起）
- */
-
 export async function runGitActionTests(ok) {
   const {
     classifyGitFailure,
@@ -41,11 +24,8 @@ export async function runGitActionTests(ok) {
 
   const j = (...parts) => JSON.stringify(parts)
 
-  /* ══════════════════════════ 1. 失败分类 ══════════════════════════ */
-
   console.log('\n--- 1. git 失败原因的分类（真 git 原文）---')
 
-  /* 这一组是**真实输出**，逐条对照过（见 test-git-repo.mjs 的对应用例） */
   const cases = [
     [
       'identity',
@@ -97,20 +77,16 @@ export async function runGitActionTests(ok) {
     ok(typeof f.message === 'string' && f.message.length > 0, `${code} 有一句人话说明`)
   }
 
-  /* 未识别的一律 unknown，且**不许**编造原因 */
   const weird = classifyGitFailure('fatal: something nobody has seen before')
   ok(weird.code === 'unknown', '没见过的报错归为 unknown（不猜原因）', j(weird.code))
   ok(weird.retrySafe === false, 'unknown 不允许自动重试', j(weird.retrySafe))
   ok(weird.detail === 'fatal: something nobody has seen before', 'unknown 原样保留输出', j(weird.detail))
 
-  /* 重试安全性：明确没做任何事的安全，可能已经做了的不安全 */
   ok(classifyGitFailure(cases[0][1]).retrySafe === true, '身份未配置：配好就能重试（安全）')
   ok(timeoutFailure('killed').retrySafe === false, '超时 → 不能无条件重试（提交可能已完成）')
   ok(timeoutFailure().code === 'timeout', 'timeoutFailure 的码')
   ok(staleFailure(['HEAD']).code === 'stale', 'staleFailure 的码')
   ok(staleFailure(['HEAD', '暂存区']).detail === 'HEAD、暂存区', 'stale 说清是哪个分量变了')
-
-  /* ══════════════════════════ 2. 输入校验 ══════════════════════════ */
 
   console.log('\n--- 2. 提交说明与分支名 ---')
 
@@ -140,8 +116,6 @@ export async function runGitActionTests(ok) {
   ok(validateBranchName('a\u0001b') !== null, '含控制字符被拦')
   ok(validateBranchName('a'.repeat(201)) !== null, '超长被拦')
 
-  /* ══════════════════════════ 3. 版本摘要 ══════════════════════════ */
-
   console.log('\n--- 3. 版本摘要（乐观并发的判据）---')
 
   ok(digestOf(['ab', 'c']) !== digestOf(['a', 'bc']), '长度前缀：拼接边界不可伪造', j(digestOf(['ab', 'c']), digestOf(['a', 'bc'])))
@@ -165,8 +139,6 @@ export async function runGitActionTests(ok) {
     expectedMismatch(expected, { ...expected, head: 'b'.repeat(40), indexDigest: 'i2', statusDigest: 's2' })?.length === 3,
     '三个分量都变了 → 都列出来'
   )
-
-  /* ══════════════════════════ 4. 命令构造 ══════════════════════════ */
 
   console.log('\n--- 4. 命令参数 ---')
 
@@ -199,8 +171,6 @@ export async function runGitActionTests(ok) {
   eq(buildSetUpstreamAfterCreateArgs('feat', 'origin/main', true), ['branch', '--set-upstream-to=origin/main', 'feat'], '从远程跟踪分支新建 → 顺手设上游')
   eq(buildSetUpstreamAfterCreateArgs('feat', 'main', false), [], '从本地分支新建 → **不**乱设上游')
   eq(buildSetUpstreamAfterCreateArgs('feat', null, true), [], '无起点 → 不设上游')
-
-  /* ══════════════════════════ 5. 结果文案 ══════════════════════════ */
 
   console.log('\n--- 5. 结果行 ---')
 

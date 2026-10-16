@@ -1,14 +1,7 @@
-/**
- * 旧工具输出裁剪与自动压缩上限（resources/pi-extensions/context-trim.js）的单测。
- *
- * 钉住三件事：没到软线时一条消息都不改；到线后一次裁到位且之后前缀稳定；
- * 近期长轮仅在硬线压力下放宽，保留最近工具组和技能。另对照 shared/context-limits.ts。
- * 可直接运行 node scripts/test-context-trim.mjs，不依赖产品构建或真实模型。
- */
 export async function runContextTrimTests(ok, mod, limits) {
   const { trimMessages, trimAt, compactAt, DEFAULT_TRIM_TOKENS, DEFAULT_COMPACT_TOKENS, default: extension } = mod
 
-  const big = 'x'.repeat(40_000) // 约 10K token
+  const big = 'x'.repeat(40_000)
   const turn = (i, text = big, name = 'bash', args = { command: `cat file${i}.txt` }) => [
     { role: 'user', content: [{ type: 'text', text: `第 ${i} 轮` }] },
     { role: 'assistant', content: [{ type: 'toolCall', id: `c${i}`, name, arguments: args }] },
@@ -37,7 +30,6 @@ export async function runContextTrimTests(ok, mod, limits) {
     ok(/bash `cat file1\.txt`/.test(stub) && /read/.test(stub), '裁剪：存根写明是哪次调用、怎么找回', stub)
     ok(msgs.find((m) => m.toolCallId === 'c1').content[0].text === big, '裁剪：不改原消息对象（会话记录不受影响）')
 
-    /* 再来一轮：发送量已降到线下，已裁的保持、不再新裁 → 前缀稳定 */
     const more = [...msgs, ...turn(11)]
     const out2 = trimMessages(more, { trimmed, projectedTokens: 110_000, threshold: 80_000 })
     ok(JSON.stringify(stubbed(out2)) === JSON.stringify(ids), '裁剪：降到线下后已裁集合不变，请求前缀稳定')
@@ -94,7 +86,6 @@ export async function runContextTrimTests(ok, mod, limits) {
     protectedMessages.find(m => m.toolCallId === 'c2').isError = true
     const protectedIds = stubbed(trimMessages(protectedMessages, { trimmed: new Map(), projectedTokens: 900_000, threshold: 80_000, contextWindow: 1_000_000 }) ?? [])
     ok(!protectedIds.includes('c1') && !protectedIds.includes('c2'), '长单轮：技能与错误结果不裁')
-    // 每轮独立保留最近3组，不把全局最后3组当作所有轮的保护。
     const multi = [user, ...history(6).filter(m => m.role !== 'user'), user, ...history(6).map(m => {
       const copy = structuredClone(m)
       if (copy.toolCallId) copy.toolCallId = `n${copy.toolCallId}`
@@ -106,7 +97,6 @@ export async function runContextTrimTests(ok, mod, limits) {
   }
 
   {
-    // 单轮长会话：超过预算时在近期轮内裁，且同输入多次调用、追加消息后裁剪边界都稳定。
     const user = { role: 'user', content: [{ type: 'text', text: '一个用户轮里跑很多步' }] }
     const msgs = [user, ...history(16).filter(m => m.role !== 'user')]
     const ids = (out) => stubbed(out ?? msgs)
@@ -132,7 +122,6 @@ export async function runContextTrimTests(ok, mod, limits) {
   }
 
   {
-    // 图片按每张约 2.8k token 估算：单张图片在最近窗口之外即可构成一批可提交的节省。
     const user = { role: 'user', content: [{ type: 'text', text: '看图' }] }
     const step = (i, content, name = 'bash', args = { command: `cat f${i}` }) => [
       { role: 'assistant', content: [{ type: 'toolCall', id: `c${i}`, name, arguments: args }] },
@@ -192,7 +181,6 @@ export async function runContextTrimTests(ok, mod, limits) {
   }
   ok(DEFAULT_TRIM_TOKENS === limits.DEFAULT_CONTEXT_TRIM_TOKENS && DEFAULT_COMPACT_TOKENS === limits.DEFAULT_AUTO_COMPACT_TOKENS, '阈值：扩展与 shared 的默认值一致')
 
-  /* pi 的设置目录指到临时目录：不读真实 ~/.pi/agent，并能切换 pi 的自动压缩开关 */
   const { mkdtempSync, writeFileSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
@@ -323,7 +311,6 @@ export async function runContextTrimTests(ok, mod, limits) {
   }
 }
 
-// 只运行这一组，无构建、个人设置或真实模型依赖。
 if (process.argv[1] && (await import('node:url')).pathToFileURL(process.argv[1]).href === import.meta.url) {
   const { readFile } = await import('node:fs/promises')
   const { transform } = await import('esbuild')

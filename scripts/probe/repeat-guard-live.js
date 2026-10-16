@@ -1,10 +1,3 @@
-/*
- * 重复动作兜底的真实接线：pi 启动参数里真的带上了 repeat-guard.js。
- *
- * 让模型用完全相同的参数连续调用同一条 bash 命令 6 次：生产阈值是第 3 次提醒、
- * 第 5 次拦下，所以第 5 次起应当看到「Blocked by the repeat guard」。
- * 顺带确认已下线的 `yan follow` 被宿主拒绝。
- */
 ;(async () => {
   const out = []
   const ok = (cond, s, detail) => {
@@ -45,7 +38,6 @@
     const reply = qa('.msg.assistant .md').map((e) => e.textContent).join('\n')
     out.push('  模型回复：' + reply.replace(/\s+/g, ' ').slice(-200))
 
-    /* 过程默认折叠：展开回合过程，再展开每个工具行，读真实工具结果 */
     for (const btn of qa('[data-testid="turn-process-toggle"]')) if (btn.getAttribute('aria-expanded') !== 'true') btn.click()
     await sleep(400)
     for (const head of qa('.trow-head')) if (head.getAttribute('aria-expanded') === 'false') head.click()
@@ -58,7 +50,6 @@
 
     const blocked = Number(reply.match(/BLOCKED=(\d+)/)?.[1] ?? NaN)
     const follow = reply.match(/FOLLOW=([^\s]+)/)?.[1] ?? ''
-    /* 连续相同的调用在过程区折叠成一组，行数不等于调用次数；以真实工具结果里的拦截文案为准 */
     ok(blockedInPage >= 1, '第 5 次起被重复动作兜底拦下（过程区里有拦截文案）', `页面 ${blockedInPage} / 模型 ${blocked}`)
     ok(follow !== 'OK' && follow !== '', '已下线的 yan follow 被拒绝', follow)
   } catch (error) {

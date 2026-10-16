@@ -1,4 +1,3 @@
-/* 真实 Electron 探针：浏览器磁贴、原生视图与 renderer 状态闭环。 */
 (async () => {
   const store = window.__yanStore
   if (!store) throw new Error('测试 store 未就绪')
@@ -31,7 +30,6 @@
   const withSecondTab = await window.yan.browser.newTab('https://example.com')
   if (!firstTab || (withSecondTab.tabs || []).length < 2) throw new Error(`标签页未创建: ${JSON.stringify(withSecondTab)}`)
   await window.yan.browser.switchTab(firstTab)
-  /* 新标签不能把用户正在看的页面夺走：切回去必须是原标签 */
   const backState = await window.yan.browser.getState()
   if (backState.activeTabId !== firstTab) {
     throw new Error(`切回原标签失败（阅读页被新标签夺走）：${backState.activeTabId} != ${firstTab}`)
@@ -39,11 +37,6 @@
   const secondTab = (withSecondTab.tabs || []).find((tab) => tab.id !== firstTab)
   if (secondTab) await window.yan.browser.closeTab(secondTab.id)
 
-  /*
-   * 加载/错误提示必须落在工具栏里（原生 WebContentsView 之上）。
-   * 之前它们被定位到网页区域，而网页是主进程的原生视图、永远盖住渲染层，
-   * 用户根本看不到导航失败。用一次必然失败的连接来触发那条提示。
-   */
   const form = document.querySelector('[data-testid="browser-surface"] .browser-address')
   const input = form && form.querySelector('input')
   const errorViewport = document.querySelector('[data-testid="browser-surface"] .browser-viewport')
@@ -62,10 +55,6 @@
       throw new Error(`错误提示落在网页区域内，会被原生视图遮住：${errorRect.bottom} > ${viewportRect.top}`)
     }
 
-    /*
-     * H-9 第二阶段：失败要给出“为什么 + 怎么办”，并保留原地址。
-     * 只显示一句错误码等于让用户去猜。
-     */
     const loadError = document.querySelector('[data-testid="browser-load-error"]')
     if (!loadError) throw new Error('主框架加载失败后没有出现可操作的失败行')
     if (!/打不开该页面/.test(loadError.textContent || '')) {
@@ -77,18 +66,12 @@
     const external = document.querySelector('[data-testid="browser-error-external"]')
     if (!retry || !external) throw new Error('失败行缺少「重试」或「在外部浏览器打开」')
 
-    /* 重试真的重新发起导航（不是把错误清掉了事）：仍连不上 → 仍在失败态 */
     retry.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await new Promise((resolve) => setTimeout(resolve, 2500))
     if (!document.querySelector('[data-testid="browser-load-error"]')) {
       throw new Error('重试后失败态消失，像是假装成功了')
     }
 
-    /*
-     * 草稿与已提交地址分离：用户正在输入时，后台导航不得冲掉输入。
-     * 这里从 push 通道送一个新地址进去（与主进程发 state 的路径相同），
-     * 断言输入框仍是草稿。
-     */
     const draftValue = 'draft-kept-by-user'
     setValue.call(input, draftValue)
     input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -102,10 +85,6 @@
       throw new Error(`后台导航冲掉了正在输入的草稿：${input.value}`)
     }
 
-    /*
-     * 多标签归属（H-9 第二阶段）：错误与地址都属于**活动标签**。
-     * 切到正常页面不能把上一个标签的错误带过去，切回来也不能丢。
-     */
     const failedTab = (await window.yan.browser.getState()).activeTabId
     const withOther = await window.yan.browser.newTab('https://example.com')
     await new Promise((resolve) => setTimeout(resolve, 2200))
@@ -124,7 +103,6 @@
     if (!(afterClose.tabs || []).some((tab) => tab.id === failedTab)) {
       throw new Error('关闭另一个标签把原标签也关了')
     }
-    /* 收尾：把失败态抹掉，不给后面的断言留一个不可用页面 */
     await window.yan.browser.navigate('https://example.com')
     await new Promise((resolve) => setTimeout(resolve, 1500))
   }
@@ -136,7 +114,6 @@
     throw new Error(`浏览器区域宽度被内容撑变形：${rect.width} -> ${finalRect.width}`)
   }
 
-  /* 逐站权限：默认拒绝的基础上，允许用户临时授予并随后撤销。 */
   const permissionOrigin = /^https?:/i.test(state.url) ? new URL(state.url).origin : 'https://example.com'
   const permissionName = 'notifications'
   const allowed = await window.yan.browser.setPermission(permissionName, permissionOrigin, true)
@@ -158,19 +135,8 @@
     throw new Error(`逐站权限未记录为 blocked：${JSON.stringify(revokedState.permissions)}`)
   }
 
-  /*
-   * H-3b：收起整个工作栏 = 连原生网页一起不可见（不再沿用「只藏工具栏、
-   * 网页仍满列」的旧语义）。这里按住新回归点：收起后右栏不在布局里，
-   * 原生网页也不可见；展开后资源与页面都恢复。
-   */
   const surfaceBox = () => document.querySelector('[data-testid="browser-surface"]')?.getBoundingClientRect()
   const browserTab = document.querySelector('[data-pane-tab="browser"]')
-  /*
-   * 关闭入口已迁到工作区磁贴页签上的关闭键：`.ui-tab-close`（它渲染成
-   * `span[role=button]`，不是 `<button>`，所以旧的 `button[aria-label=…]`
-   * 找不到；浏览器页签没覆盖 closeLabel，用的是「收起面板，保留运行」）。
-   * 按当前真实数据标识定位，再验证隐藏真的发生、资源仍在。
-   */
   const hide = browserTab?.querySelector('.ui-tab-close')
   if (!hide) throw new Error('浏览器磁贴缺少隐藏入口')
   {

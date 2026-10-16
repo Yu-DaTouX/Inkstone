@@ -1,22 +1,10 @@
-/**
- * v3 浏览器面板自己的短文案。
- *
- * 与 `app/v3-text.ts` 同一约定：不往共享 i18n JSON 里加键（那两份文件是
- * 共享热点，v3 尚未定稿）。已经存在的通用键（地址、后退、前进、刷新、加载、
- * 出错、标签页）继续用 `useT()`，这里只放 v3 新增的归属提示。
- */
 import type { Lang } from '../../i18n'
 
 export interface BrowserText {
-  /** active=false：先切到这条会话才能用浏览器 */
   inactive: string
-  /** 浏览器被另一条会话占着 */
   foreignOwner: string
-  /** 主进程里还没有打开的原生网页 */
   notOpen: string
-  /** 明确的用户入口：点它才调用宿主打开，不自动开 */
   open: string
-  /** 打开进行中：按钮禁用，避免连点并发导航同一个浏览器 */
   opening: string
   tabLabel: string
   viewportLabel: string

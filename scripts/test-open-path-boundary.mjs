@@ -1,4 +1,3 @@
-/** 直接执行当前 openPath IPC 回调，注入只记录调用的文件系统/系统壳，不启动 Electron。 */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'

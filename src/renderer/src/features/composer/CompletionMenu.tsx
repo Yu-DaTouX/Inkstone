@@ -5,7 +5,6 @@ import { useT, type TFunc } from '../../i18n'
 import type { SlashCommand } from '../../../../shared/ipc'
 import { firstClause, toAbsoluteFilePath, type CompletionState } from './useCompletion'
 
-/** 命令来源只影响分组标题，不改变命令身份。 */
 function sourceLabel(t: TFunc, source: SlashCommand['source']): string {
   return t(({
     yan: 'composer.src.yan',
@@ -17,10 +16,6 @@ function sourceLabel(t: TFunc, source: SlashCommand['source']): string {
   } as const)[source])
 }
 
-/**
- * `/` 命令与 `@` 路径候选。两个菜单不会同时出现（`@` 只在没有命令候选时渲染）。
- * 选项用 `aria-activedescendant` 配合输入框读出，焦点始终留在输入框里。
- */
 export function CompletionMenu({ completion }: { completion: CompletionState }) {
   const t = useT()
   const { open, index, slashMatches, atQuery } = completion

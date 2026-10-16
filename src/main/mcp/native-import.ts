@@ -1,14 +1,3 @@
-/**
- * 旧宿主 MCP 导入 pi 原生的落地实现。
- *
- * prepare 只读预览并发放绑定调用者身份的短效令牌；commit 在串行锁内核对令牌/
- * 身份/宿主后写原生、校验，再停用旧条目。每一步失败都如实回报（含 nativeWritten:true
- * 的部分结果），不自动回滚、不重启 runner、不主动连接真实服务。
- *
- * 安全边界：旧配置与目标文件都当作可被外部改动的输入，写入前后用 SHA256 指纹核对；
- * 校验只针对本次已确认写入的那一条内容。校验由宿主注入；缺省时不会停用旧条目，
- * 结果标注 `verification: 'unavailable'`，不假装通过。
- */
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -38,10 +27,6 @@ export class NativeMcpImportError extends Error {
   }
 }
 
-/**
- * 提交前后的运行实例身份。`prepare` 时冻结，`commit` 前重新取一份比对：
- * runner、generation、项目目录或项目身份任一变化都视为换了实例，令牌作废。
- */
 export interface NativeMcpImportRuntimeIdentity {
   runnerId: string
   generation: number
@@ -61,37 +46,23 @@ export function sameNativeMcpImportRuntime(
   )
 }
 
-/** 同时待确认的导入上限：防止反复 preview 只生成令牌而不确认。 */
 const MAX_PENDING_IMPORTS = 32
 
-/** 受信项目登记：`projectId → cwd` 只由宿主提供，不按目录反推，也不接受模型指定目录。 */
 export interface NativeMcpImportProject {
   id: string
   cwd: string
 }
 
-/** 调用者身份：主会话从受信 runner / 宿主上下文传入，模型不能自报。 */
 export interface NativeMcpImportOwner {
   id: string
   label?: string
 }
 
 export interface NativeMcpImportHost {
-  /** pi 的 agent 目录（`PI_AGENT_DIR`）：全局 `mcp.json` 落在这里。 */
   agentDir: string
-  /** 旧砚 MCP 配置路径；缺省用 `YAN_MCP_SERVERS_FILE` / `YAN_DIR/mcp-servers.json`。 */
   hostConfigFile?: string
-  /** 受信项目登记。 */
   projects: readonly NativeMcpImportProject[]
-  /**
-   * 写入原生配置后的校验回调（主会话接真实 `pi mcp list --json`，见 native-verify.ts）。
-   * 缺省表示尚未接线：本次不会停用旧条目，结果里如实标注 `verification: 'unavailable'`。
-   */
   verify?: (input: NativeMcpImportVerifyInput) => Promise<NativeMcpImportVerifyResult>
-  /**
-   * 落盘实现（默认排他临时文件 + fsync + rename 前指纹核对）；测试可注入故障或记录。
-   * `expectedFingerprint` 是写入前目标文件的指纹，调用方实现相符核对可收窄外部竞争窗口。
-   */
   writeText?: (path: string, text: string, expectedFingerprint?: string) => Promise<void>
   now?: () => number
   generateToken?: () => string
@@ -127,7 +98,6 @@ function hostConfigPathOf(host: NativeMcpImportHost): string {
   return host.hostConfigFile ?? mcpServersFile()
 }
 
-/** 目标文本的不可变指纹（null 表示文件不存在）；commit 与 verifier 共用同一算法。 */
 export function nativeMcpTextFingerprint(text: string | null): string {
   return createHash('sha256').update(text === null ? '\u0000absent' : text).digest('hex')
 }
@@ -141,14 +111,6 @@ async function readTextOrNull(path: string): Promise<string | null> {
   }
 }
 
-/**
- * 排他临时文件 + fsync + rename：中途失败不会留下半份 JSON。
- *
- * 失败时**连自己的临时文件一起清掉**（write / fsync / close / rename 任一步失败都算）。
- * 传入 `expectedFingerprint` 时，rename 前再读一次目标并核对：这只收窄「预检后、替换前
- * 被外部改掉」的窗口，**不是跨进程 CAS** —— 核对与 rename 之间仍有极短的竞争窗口，
- * 真正的串行保护来自上层写链与调用方预检。
- */
 export async function atomicWrite(path: string, text: string, expectedFingerprint?: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const temp = `${path}.${randomBytes(8).toString('hex')}.tmp`
@@ -206,7 +168,6 @@ function targetHasNativeName(text: string | null, name: string): boolean {
   return Object.prototype.hasOwnProperty.call(servers, name)
 }
 
-/** 预览：读源与目标，生成令牌与将写内容；不落盘、不停用、不连接。 */
 export async function prepareNativeMcpImport(input: {
   host: NativeMcpImportHost
   serverId: string
@@ -230,10 +191,6 @@ export async function prepareNativeMcpImport(input: {
     throw new NativeMcpImportError('host_config_missing', `砚的 MCP 配置不存在：${hostConfigFile}`)
   }
   const parsed = parseMcpServersDocument(sourceText, hostConfigFile)
-  /*
-   * 旧配置有任何解析问题就整份拒绝：从「部分有效条目」继续导入会把用户没看到的
-   * 损坏当作正常状态，还可能导入一条与坏条目同名或冲突的服务。
-   */
   if (parsed.error) {
     throw new NativeMcpImportError(
       'host_config_invalid',
@@ -339,7 +296,6 @@ export async function prepareNativeMcpImport(input: {
   }
 }
 
-/** 提交：锁内核对令牌/身份/项目后写原生，再按校验结果决定是否停用旧条目。 */
 export async function commitNativeMcpImport(input: {
   host: NativeMcpImportHost
   token: string
@@ -349,10 +305,6 @@ export async function commitNativeMcpImport(input: {
 
   return serializedWrite(async (): Promise<NativeMcpImportCommitResult> => {
     const nowMs = (host.now ?? Date.now)()
-    /*
-     * 令牌必须在锁内核对并「领取一次」：两个并发提交不能同时读到同一条 pending。
-     * 领取放在身份核对之后 —— 换身份的失败调用不能消耗掉合法调用者的令牌。
-     */
     const pending = pendingImports.get(token)
     if (!pending) throw new NativeMcpImportError('token_invalid', '导入令牌无效或已被使用，请重新预览')
     if (pending.expiresAt <= nowMs) {
@@ -365,7 +317,6 @@ export async function commitNativeMcpImport(input: {
     if (pending.agentDir !== host.agentDir || pending.hostConfigFile !== hostConfigPathOf(host)) {
       throw new NativeMcpImportError('host_mismatch', '导入令牌不是为当前宿主 / 数据目录生成的')
     }
-    /* 领取：自此同一令牌不能再用；写入失败也要重新 preview。 */
     pendingImports.delete(token)
 
     const writeText = host.writeText ?? atomicWrite
@@ -377,7 +328,6 @@ export async function commitNativeMcpImport(input: {
     }
 
     const precheck = async (): Promise<void> => {
-      /* 项目登记可能被移除或目录改变：重新确认真实宿主项目 cwd，而不是只比 agentDir。 */
       if (pending.projectId) {
         const project = host.projects.find((entry) => entry.id === pending.projectId)
         if (!project || typeof project.cwd !== 'string' || !project.cwd.trim() || project.cwd !== pending.projectCwd) {
@@ -465,11 +415,6 @@ export async function commitNativeMcpImport(input: {
       }
     }
 
-    /*
-     * 校验期间目标文件可能被外部改写：先核对刚写入的内容仍在。
-     * 之后读取/解析旧配置若失败，也是在写盘后如实回报 nativeWritten:true 的部分结果，
-     * 不能裸抛异常让用户以为什么都没发生。
-     */
     let targetBeforeDisable: string | null
     try {
       targetBeforeDisable = await readTextOrNull(pending.targetPath)

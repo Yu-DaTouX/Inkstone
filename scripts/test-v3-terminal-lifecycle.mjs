@@ -1,20 +1,3 @@
-/**
- * v3 终端隐藏 / 迟到 PTY / 残留 view 回归（P3 · R2 窄修）。
- *
- * 直接驱动**生产控制器** `features/terminal/terminal-session.ts`（esbuild 编译后
- * import），注入一个**可控 deferred bridge**：不启动 Electron、不碰 node-pty、
- * 不跑默认 shell / 用户 profile、不调用真实模型。所有断言都落在控制器行为与
- * bridge 调用记录上，不做源码字符串匹配。
- *
- * 覆盖父与 T5 确认的三个缺陷：
- *   · 隐藏态（visible=false）与未激活态绝不新建 / 附加 / 写 PTY；显示时才 ensure；
- *   · `start` 途中切 owner / 隐藏 / 卸载迟到时，只清理由本次 start 新建且无人占有的 id，
- *     不误 kill 其他 owner 的已有终端，也不把迟到回包写进 view；
- *   · `kill` 后 view 的 terminalId/title/cwd/exitCode/status 一并清空，空态可显式
- *     新建而不自动重开；inactive / 失败态不残留旧 owner 的终端字段。
- *
- *   node scripts/test-v3-terminal-lifecycle.mjs
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
@@ -35,7 +18,6 @@ const mod = await import(
 )
 const { TerminalSession } = mod
 
-/** 反复让出微任务直到条件成立，避免依赖固定轮数。 */
 const until = async (cond, rounds = 800) => {
   for (let i = 0; i < rounds; i += 1) {
     if (cond()) return
@@ -67,12 +49,6 @@ function owner(over = {}) {
   return { key: 'key-A', sessionId: 's1', cwd: '/w/A', active: true, ...over }
 }
 
-/**
- * 隔离、可控的 deferred bridge：
- *   · `start` / `attach` 都先挂起，由测试显式 resolve，精确覆盖「在途」时序；
- *   · `owners` 复刻 `resource-owners` 的 claim（已有主人不动）/ release 语义；
- *   · `live` 复刻宿主终端表，kill 会真的移除。
- */
 function harness(options = {}) {
   const calls = {
     available: 0,
@@ -151,12 +127,10 @@ function harness(options = {}) {
     owners,
     live,
     writes,
-    /** 预先登记一条属于某 owner 的存活终端（模拟宿主已有后台 PTY）。 */
     seed: (id, key, over) => {
       live.set(id, snapshot(id, over))
       owners.set('terminal:' + id, key)
     },
-    /** 完成第 index 次 start；snap 传 null 表示壳 / cwd 启动失败。 */
     resolveStart: (index, snap) => {
       const gate = startGates[index]
       assert.ok(gate, `start[${index}] 尚未发起`)
@@ -174,7 +148,6 @@ function harness(options = {}) {
   }
 }
 
-/* ── 1. 隐藏 setOwner：零 available / list / start / attach ────────── */
 {
   const h = harness()
   h.controller.setOwner(owner(), false)
@@ -186,9 +159,7 @@ function harness(options = {}) {
   console.log('  lifecycle：隐藏 setOwner 零 start ✓')
 }
 
-/* ── 2. 显示时 attach / 新建各仅一次，同 owner 重渲染不重复 ───────── */
 {
-  /* 2a. 已有归属终端：显示时 attach 一次。 */
   const h = harness()
   h.seed('owned-A', 'key-A')
   h.controller.setOwner(owner(), false)
@@ -205,7 +176,6 @@ function harness(options = {}) {
   assert.equal(h.calls.attach.length, 1, '同 owner 重渲染不重复 attach')
   assert.equal(h.calls.start.length, 0)
 
-  /* 2b. 没有归属终端：显示时新建一次。 */
   const n = harness()
   n.controller.setOwner(owner(), false)
   await flush()
@@ -222,7 +192,6 @@ function harness(options = {}) {
   console.log('  lifecycle：显示 attach / 新建仅一次 ✓')
 }
 
-/* ── 3. 隐藏切 B：不 start，也不 attach；显示 B 才接回 ─────────────── */
 {
   const h = harness()
   h.seed('owned-A', 'key-A')
@@ -247,7 +216,6 @@ function harness(options = {}) {
   console.log('  lifecycle：隐藏切 B 不 start ✓')
 }
 
-/* ── 4. 未激活（即使 visible=true）也不 start / attach ─────────────── */
 {
   const h = harness()
   h.controller.setOwner(owner({ active: false }), true)
@@ -259,9 +227,7 @@ function harness(options = {}) {
   console.log('  lifecycle：未激活 visible 也不 start ✓')
 }
 
-/* ── 5. 未激活 / 失败态清掉旧 owner 的 view 残留 ──────────────────── */
 {
-  /* 5a. 从 ready 转未激活。 */
   const h = harness()
   h.seed('owned-A', 'key-A')
   h.controller.setOwner(owner(), true)
@@ -279,7 +245,6 @@ function harness(options = {}) {
   assert.equal(inactive.exitCode, null, '未激活清 exitCode')
   assert.equal(inactive.status, undefined, '未激活清 status')
 
-  /* 5b. 切到 B 时原生能力不可用：失败态也不残留 A 的终端字段。 */
   const f = harness()
   f.seed('owned-A', 'key-A')
   f.controller.setOwner(owner(), true)
@@ -297,7 +262,6 @@ function harness(options = {}) {
   console.log('  lifecycle：未激活 / 失败态清 view 残留字段 ✓')
 }
 
-/* ── 6. 显式新建失败：清掉旧终端 view 字段，进入可重试错误 ────────── */
 {
   const h = harness()
   h.seed('owned-A', 'key-A')
@@ -319,7 +283,6 @@ function harness(options = {}) {
   console.log('  lifecycle：启动失败清 view 残留字段 ✓')
 }
 
-/* ── 7. kill 清 id，空态可显式新建且不自动重开 ───────────────────── */
 {
   const h = harness()
   h.seed('owned-A', 'key-A')
@@ -358,7 +321,6 @@ function harness(options = {}) {
   console.log('  lifecycle：kill 清 id + 显式新建不自动重开 ✓')
 }
 
-/* ── 8. start 途中切 owner：仅清本次新 id，不误 kill 他人 ─────────── */
 {
   const h = harness()
   h.seed('owned-B', 'key-B')
@@ -382,7 +344,6 @@ function harness(options = {}) {
   console.log('  lifecycle：start 途中切 owner 只清本次新 id ✓')
 }
 
-/* ── 9. dispose 途中迟到 start：清理新 id，不写 view ──────────────── */
 {
   const h = harness()
   h.controller.setOwner(owner(), true)
@@ -396,7 +357,6 @@ function harness(options = {}) {
   console.log('  lifecycle：dispose 途中迟到新 id 被清理 ✓')
 }
 
-/* ── 10. start 途中隐藏：不留 PTY，显示后重建一次 ────────────────── */
 {
   const h = harness()
   h.controller.setOwner(owner(), true)
@@ -419,7 +379,6 @@ function harness(options = {}) {
   console.log('  lifecycle：visible=false 不留 PTY，显示后重建 ✓')
 }
 
-/* ── 11. 隐藏 / 未激活的输入与 resize 阻断 ───────────────────────── */
 {
   const h = harness()
   h.seed('owned-A', 'key-A')

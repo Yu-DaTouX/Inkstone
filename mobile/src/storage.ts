@@ -1,7 +1,3 @@
-/**
- * 配对结果的保存：设备令牌放进系统钥匙串（Android Keystore），不写普通存储。
- * 只保存一台电脑的连接（首版：一部手机对一台砚）。
- */
 import * as Keychain from 'react-native-keychain'
 import type { Connection } from './api/client'
 

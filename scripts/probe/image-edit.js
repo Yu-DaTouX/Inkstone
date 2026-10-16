@@ -1,9 +1,3 @@
-/*
- * 图生图真实端到端（花 token，且会消耗生图通道额度）：
- *   DeepSeek → bash → yan image generate（mode=edit, sourcePaths）→ 宿主出图 → 回报结果。
- * 源图 imgsrc.png 由 fixture 预置在项目根；本探针只看模型是否照用法跑通并给出结果，
- * 具体通道与报错原文写进输出，便于判断是链路问题还是通道/额度问题。
- */
 ;(async () => {
   const out = []
   const ok = (condition, text) => {
@@ -42,7 +36,6 @@
 
     await sleep(3000)
     const deadline = Date.now() + 330_000
-    // 工具调用之间会短暂不在流式，需连续静止 12s 才算结束
     let idleSince = 0
     while (Date.now() < deadline) {
       const busy = store.getState().session?.isStreaming || !!q('.cursor')

@@ -1,4 +1,3 @@
-/** Exact-model opt-in test: a real Haiku parent invokes a real Haiku child through yan. */
 import assert from 'node:assert/strict'
 import { mkdtemp,mkdir,writeFile,readFile } from 'node:fs/promises'
 import { tmpdir,homedir } from 'node:os'

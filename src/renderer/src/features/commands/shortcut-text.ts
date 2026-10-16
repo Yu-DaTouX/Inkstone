@@ -1,10 +1,3 @@
-/**
- * 快捷键表自己的短文案（中英）。
- *
- * 「全局」组的每行作用按 `app/shortcuts.ts` 的 `purposeKey`（即 ShortcutId）取用；
- * 输入框 / 审批 / 终端三组仍用共享 i18n 的 `sheet.*` 键，避免把 v2 已有的文案再抄一份。
- * 与 `command-text.ts` 同样不并进两份 i18n JSON：v3 定稿后再统一迁移。
- */
 import type { Lang } from '../../i18n'
 import type { ShortcutId } from '../../app/shortcuts'
 
@@ -19,7 +12,6 @@ export interface ShortcutText {
     terminal: string
   }
   purposes: Record<ShortcutId, string>
-  /** 确认卡仅有的两个键盘答复（不在全局注册表里，由卡片自己处理）。 */
   approval: {
     allow: string
     deny: string

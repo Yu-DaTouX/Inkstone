@@ -3,10 +3,6 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button } from '../ui'
 
-/**
- * 额度用尽错误行上的续跑操作：等当前账号恢复，或（ChatGPT 订阅且保存了多个账号时）换号继续。
- * 只在当前会话最后一个回合上出现；登记后同一位置换成等待状态，可随时取消。
- */
 export function QuotaResumeAction() {
   const t = useT()
   const wait = useStore((s) => s.quotaResume)
@@ -28,7 +24,6 @@ export function QuotaResumeAction() {
   }, [provider])
 
   if (wait && wait.sessionId === sessionId) {
-    /* 自动换号时另一个账号可能更早恢复，显示先到的那个 */
     const times = [wait.resetAt, wait.failoverAt].filter((x): x is number => x !== undefined)
     const at = times.length ? Math.min(...times) : undefined
     const when = at

@@ -1,22 +1,3 @@
-/**
- * 运行注册表（v3 WP-10）。
- *
- * 全应用唯一的运行状态来源。它**旁路订阅**同一条 pi 事件管道，不改消息投影、
- * 不改 pi 循环、不做任何执行控制 —— 只把事实归约成 `RunSnapshot` 并发布。
- *
- * ── 谁调用它 ──
- *   · 主进程在收到 pi 事件 / 扩展 UI 请求 / 进程退出时调用 `observePi`、`observe`；
- *   · 定时任务、评审、子 Agent 用 `open()` 登记外部运行；
- *   · `tick()` 由 `StallMonitor` 每秒调用，只标记停滞；
- *   · `subscribe()` 给推送层（250ms 合并）用。
- *
- * ── 身份与防旧事件 ──
- *   · 每轮一个 `runId`；会话级 `code` 来自注入的 `SessionCodeStore`。
- *   · 终态（done/stopped/failed）后的事件一律丢弃，除非是显式的新一轮开启信号。
- *   · 显式 `runId` 的事件只更新那一个运行；`generation` 更旧的运行实例事件被丢弃
- *     （会话被换过 pi 进程时，旧进程的迟到事件不能覆盖新实例）。
- *   · 会话编号无法分配时不登记运行，经 `onError` 如实报告，绝不发布假编号。
- */
 import {
   compareRuns,
   createRunState,
@@ -41,7 +22,6 @@ import { DurableRunHistory, type RunHistoryRecord, type RunHistorySegment, type 
 import { runSignalFromDangerConfirmation, runSignalFromPiExit, runSignalFromUiRequest, runSignalFromUiResolved, signalsFromPiEvent } from './pi-events'
 import type { SessionCodeStore } from './session-codes'
 
-/** 运行的上游身份；除 sessionId 外都是可选事实。 */
 export interface RunContext {
   sessionId: string
   sessionPath?: string
@@ -49,23 +29,16 @@ export interface RunContext {
   title?: string
   model?: RunModel
   kind?: RunKind
-  /** 由上层解析好的显示编号（优先级最高） */
   code?: string
-  /** 显式运行实例；缺省由注册表按会话分配 */
   runId?: string
   parentRunId?: string
-  /** 子 Agent 的父会话；父运行已结束时仍可用它的会话编号定位 `S{n}·{k}` */
   parentSessionId?: string
-  /** 编号作用域（定时任务用任务 id）；缺省用 sessionId */
   scopeId?: string
-  /** 运行实例代次（来自 runner envelope）；用于丢弃旧实例的迟到事件 */
   generation?: number
 }
 
-/** 一次变更：upsert 快照，或显式移除（当前不使用，保留给归档）。 */
 export interface RunChange {
   runs: RunSnapshot[]
-  /** true = 状态类变化（等你确认 / 失败 / 完成 / 停止），推送层应立即发 */
   immediate: boolean
 }
 
@@ -82,7 +55,6 @@ export interface RunRegistryOptions {
   codes?: SessionCodeStore
   history?: RunHistoryWriter
   thresholds?: () => Partial<StallThresholds>
-  /** 「长时间任务」命令前缀，命中则豁免工具无输出停滞判定 */
   exemptTools?: () => string[]
   onChange?: (change: RunChange) => void
   onError?: (error: RunError) => void
@@ -91,7 +63,6 @@ export interface RunRegistryOptions {
 interface RunEntry {
   state: RunState
   generation?: number
-  /** 当前阶段段的起点 */
   phaseFrom: number
   segments: RunHistorySegment[]
   historyWritten: boolean
@@ -114,7 +85,6 @@ function phaseChanged(before: RunPhase, after: RunPhase): boolean {
 
 export class RunRegistry {
   private readonly runs = new Map<string, RunEntry>()
-  /** sessionId → 当前非终态运行 */
   private readonly active = new Map<string, string>()
   private readonly childCounts = new Map<string, number>()
   private readonly listeners = new Set<(change: RunChange) => void>()
@@ -143,10 +113,6 @@ export class RunRegistry {
   private resolveCode(ctx: RunContext): string | undefined {
     if (ctx.code) return ctx.code
     if (ctx.kind === 'subagent') {
-      /*
-       * 子 Agent 的归属稳定在**父会话**上：父运行实例只用于取当前会话编号，
-       * 计数作用域落在父会话，父实例结束后新起的子运行接着 ·{k}，不回落到 ·1。
-       */
       const parent = ctx.parentRunId ? this.runs.get(ctx.parentRunId) : undefined
       const scope = parent?.state.sessionId ?? ctx.parentSessionId ?? ctx.parentRunId
       if (!scope) return undefined
@@ -205,7 +171,6 @@ export class RunRegistry {
     return this.createEntry(ctx, phase, now)
   }
 
-  /** 显式登记外部运行（定时任务 / 评审 / 子 Agent / 启动时补登记）。 */
   open(ctx: RunContext, phase?: RunPhase): RunSnapshot | null {
     if (this.disposed) return null
     const now = this.now()
@@ -224,7 +189,6 @@ export class RunRegistry {
       }
       return snapshotOf(sameRun.state)
     }
-    /* 换运行实例：把同一会话上还挂着的旧运行按宿主回收处理，避免两个「运行中」。 */
     const activeId = this.active.get(ctx.sessionId)
     if (activeId && activeId !== runId) {
       const active = this.runs.get(activeId)
@@ -237,7 +201,6 @@ export class RunRegistry {
     return snapshot
   }
 
-  /** 直接投递一条规范化信号（宿主事件、队列更新、危险确认等）。 */
   observe(ctx: RunContext, signal: RunSignal): RunSnapshot | null {
     if (this.disposed) return null
     const now = this.now()
@@ -246,7 +209,6 @@ export class RunRegistry {
     if (ctx.runId) {
       entry = this.runs.get(ctx.runId)
       if (!entry) return null
-      /* 终态是终点：旧事件不得把它翻回去。 */
       if (isTerminalPhase(entry.state.phase)) return null
       if (!this.generationAcceptable(entry, ctx)) return null
     } else {
@@ -278,7 +240,6 @@ export class RunRegistry {
     return null
   }
 
-  /** pi 原始事件 → 信号 → 归约。返回本轮实际变化的快照。 */
   observePi(ctx: RunContext, evt: Record<string, unknown>): RunSnapshot[] {
     const out: RunSnapshot[] = []
     for (const signal of signalsFromPiEvent(evt, this.now())) {
@@ -305,7 +266,6 @@ export class RunRegistry {
     return this.observe(ctx, runSignalFromPiExit(code, signal))
   }
 
-  /** 流式循环防护：宿主在 `abort()` **之前**调用，随后的 aborted 才不会被当成用户停止。 */
   markLoopAbort(ctx: RunContext, detail?: string): RunSnapshot | null {
     return this.observe(ctx, { type: 'loop-abort', ...(detail ? { detail } : {}) })
   }
@@ -320,7 +280,6 @@ export class RunRegistry {
     return this.apply(entry, { type: 'seen' }, this.now())
   }
 
-  /** 停滞监测：只把「无输出」的 run 标记成 stalled，返回本次新标记的 runId。 */
   tick(now: number = this.now()): string[] {
     if (this.disposed) return []
     const thresholds = this.thresholds()
@@ -367,7 +326,6 @@ export class RunRegistry {
     }
   }
 
-  /** 等待运行历史写盘结束（进程退出 / 测试收尾）。 */
   async whenIdle(): Promise<void> {
     const history = this.options.history
     if (history instanceof DurableRunHistory) await history.whenIdle()
@@ -380,11 +338,9 @@ export class RunRegistry {
 
   private generationAcceptable(entry: RunEntry, ctx: RunContext): boolean {
     if (ctx.generation === undefined || entry.generation === undefined) return true
-    /* 更旧的运行实例事件丢弃；更新的代次视为同一实例的继续。 */
     return ctx.generation >= entry.generation
   }
 
-  /** 会话标题 / 模型是可变事实，允许在运行中更新。返回是否有变化（不在此处发布）。 */
   private applyMeta(entry: RunEntry, ctx: RunContext, now: number): boolean {
     let changed = false
     if (ctx.title && ctx.title !== entry.state.title) {
@@ -468,7 +424,6 @@ export class RunRegistry {
   }
 }
 
-/** 元数据更新直接改 entry.state，不触发 segment / 终态逻辑。 */
 function applySignalToEntry(entry: RunEntry, signal: RunSignal, now: number): void {
   const next = reduceRun(entry.state, signal, now)
   if (next !== entry.state) entry.state = next

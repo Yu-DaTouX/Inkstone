@@ -1,12 +1,3 @@
-/**
- * 交接事务状态机与事务日志（实施-05 S5b-3a）。
- *
- * 这一片全是「顺序与恢复」：能不能跳步、重复推进会不会出事、
- * 崩在中间之后该重发还是该放弃。它们没有一个是「跑一次看看」能验的 ——
- * 必须在单测里把每个阶段的每个岔路都走一遍。
- *
- * 用法：npm run test:unit
- */
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,8 +10,6 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
     { sourceSession: 'C:/s/a.jsonl', sourceHead: 'm-1', mode: 'autonomous', model: 'x', now: 5 }
   )
   ok(!!pkg, '夹具：交接包可构造')
-
-  /* --------------------------------------------------- 阶段顺序 */
 
   ok(tx.handoffStages().join(',') === 'pending,snapshot,validated,destination-created,committed,resumed', '阶段顺序固定')
   ok(tx.isTerminalStage('resumed') && tx.isTerminalStage('failed'), 'resumed / failed 是终态')
@@ -39,8 +28,6 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
   ok(can({ ...base, stage: 'snapshot' }, 'pending').reason === 'backwards', '不许倒退')
   ok(can({ ...base, stage: 'resumed' }, 'committed').reason === 'terminal:resumed', '终态不再前进')
   ok(can({ ...base, stage: 'snapshot' }, 'validated').reason === 'no-package', '没有包 → 不能 validated')
-
-  /* --------------------------------------------------- 推进与幂等 */
 
   const s1 = tx.advance(base, 'snapshot', { at: 1100 })
   ok(s1.advanced && s1.tx.stage === 'snapshot' && s1.tx.steps.length === 1, 'advance 前进一格并留日志')
@@ -71,8 +58,6 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
   ok(r1.advanced && r1.tx.stage === 'resumed', 'resumed 走通（只能由磁盘证据驱动，见接线）')
   ok(tx.advance(r1.tx, 'committed').reason === 'terminal:resumed', 'resumed 之后不能再改阶段')
 
-  /* --------------------------------------------------- 崩溃恢复 */
-
   const rec = (stage, hasEvidence) =>
     tx.recoveryAction({ ...base, stage, destinationSession: 'C:/s/b.jsonl', package: pkg }, { destinationHasResume: hasEvidence })
   ok(rec('resumed', false).action === 'none', 'resumed → 什么都不做')
@@ -85,8 +70,6 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
   ok(rec('validated', false).action === 'abandon', 'validated → 回源')
   ok(tx.recoveryAction(null, { destinationHasResume: false }).action === 'none', '没有事务 → 什么都不做')
   ok(/committed/.test(tx.transactionSummary(c1.tx)), '摘要里带阶段（排障要看）')
-
-  /* --------------------------------------------------- 事务日志（真目录） */
 
   const root = await mkdtemp(join(tmpdir(), 'yan-handoff-tx-'))
   try {
@@ -113,7 +96,6 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
     await store.step('h-9', 'destination-created')
     await store.step('h-9', 'committed')
 
-    /* 落盘 + 重启读回 */
     const onDisk = JSON.parse(await readFile(service.handoffTransactionDocumentPath(root), 'utf8'))
     ok(onDisk.transactions['h-9']?.stage === 'committed', '每步都落盘（磁盘上是 committed）')
     ok(onDisk.transactions['h-9']?.package?.goal === '把导入做快', '交接包也留在事务日志里（崩溃恢复不必再调模型）')
@@ -124,12 +106,10 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
     ok(reopened.activeForSession('C:/s/a.jsonl')?.handoffId === 'h-9', '按源会话也能查到')
     ok(reopened.openTransactions().length === 1, '未终结事务列表有它')
 
-    /* 终态：不再算「未终结」，也不参与恢复 */
     await reopened.step('h-9', 'resumed')
     ok(reopened.activeForSession('C:/s/a.jsonl') === null, '已 resumed → 不再出现在 activeForSession')
     ok(reopened.openTransactions().length === 0, '已 resumed → 不在未终结列表里')
 
-    /* 脏文档：缺身份字段的事务整条丢掉（留着只会让恢复乱猜） */
     await writeFile(
       service.handoffTransactionDocumentPath(root),
       JSON.stringify({
@@ -148,13 +128,11 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
     ok(!cleaned.get('bad1') && !cleaned.get('bad2'), '缺身份字段的事务被丢掉')
     ok(cleaned.get('g').stage === 'pending', '脏 stage 降级成 pending')
 
-    /* 坏 JSON → 空文档（不让一次坏写把应用卡住） */
     await writeFile(service.handoffTransactionDocumentPath(root), '{坏', 'utf8')
     const empty = new service.HandoffTransactionStore({ root })
     await empty.load()
     ok(Object.keys(empty.snapshot().transactions).length === 0, '坏 JSON → 空文档')
 
-    /* 落盘失败必须抛（不假装记住了） */
     const badRoot = await mkdtemp(join(tmpdir(), 'yan-handoff-tx-bad-'))
     try {
       const failing = new service.HandoffTransactionStore({ root: badRoot })
@@ -171,14 +149,8 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
       await rm(badRoot, { recursive: true, force: true })
     }
 
-    /* ------------------------------------------------ A-3 续接回执（三边界） */
     {
-      /* ① 已投递但未运行：标记行在，还没有扩展启动回执 */
       const resumeId = 'r-receipt'
-      /*
-       * 现场编译一份：本测试在 test-unit 里的调用点比 handoff-resume 的编译步骤早，
-       * 直接用 `out/test/handoff-resume.mjs` 会拿到上一次运行的旧产物。
-       */
       await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
         build({
           entryPoints: ['src/shared/handoff-resume.ts'],
@@ -198,7 +170,6 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
         '只有标记行时不算“已启动”（投递不等于 provider 请求启动）'
       )
 
-      /* 助手输出可能是之后的普通回合，不能替这次交接补启动回执。 */
       const withAssistant =
         persistedOnly + `{"role":"assistant","content":[{"type":"text","text":"继续"}]}\n`
       ok(
@@ -227,7 +198,6 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
       )
       ok(!hresume.hasExplicitHandoffStartReceipt('', resumeId), '空文本不报“已启动”')
 
-      /* ③ 回执落盘与幂等：同一 kind 只记第一次；脏值丢掉 */
       const receiptRoot = await mkdtemp(join(tmpdir(), 'yan-handoff-receipt-'))
       try {
         const store = new service.HandoffTransactionStore({ root: receiptRoot, now: () => 1000 })
@@ -245,19 +215,12 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
         )
         ok(tx.stage === 'pending', '回执不推进阶段（不是状态转移）')
 
-        /* 重启读回：回执必须真的写进文件 */
         const reread = new service.HandoffTransactionStore({ root: receiptRoot, now: () => 2000 })
         await reread.load()
         const back = reread.snapshot().transactions['h-r']
         ok(back.receipts.startedAt === 1000, '重启后回执读得回来')
 
-        /*
-         * 人工确认（A-3）：先推到 committed、且确认「已发出」之后，才能靠用户确认了结。
-         * 这条路径走的是与自动证据同一条 step（只换 source），
-         * 所以不需要第二套状态机。
-         */
         await store.step('h-r', 'snapshot', 'test')
-        /* 硬前提：没包就不能 validated，没目的会话就不能 destination-created / committed */
         await store.setPackage(
           'h-r',
           handoffShared.sanitizeHandoffPackage(

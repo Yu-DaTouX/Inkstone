@@ -1,15 +1,3 @@
-/**
- * 运行注册表的子 Agent 归约与旧会话补号单测（v3 WP-10）。
- *
- * 现场用 esbuild 编译 `src/main/runs-host.ts` 与 `src/main/runs/index.ts`，在
- * 隔离临时目录里跑，不启动 Electron、不碰 pi、不写用户数据目录。可独立执行：
- *
- *   node scripts/test-v3-runs-subagent.mjs
- *
- * 覆盖：子 Agent 固定归到父会话编号下 `S{n}·{k}`、同一子代理重复事件不换运行 /
- * 不换编号、`agent_end` 不终态而 `agent_settled` 才终态、缺父会话不登记，
- * 以及旧会话补号的确定性去重、不与现有编号冲突、重复启动稳定。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -41,7 +29,6 @@ async function run() {
     const hostMod = await compile('src/main/runs-host.ts', join(dir, 'host.mjs'))
     const runsMod = await compile('src/main/runs/index.ts', join(dir, 'runs.mjs'))
 
-    /* ── A. 子 Agent 归到父会话编号下，终态以 agent_settled 为准 ── */
     {
       const pushes = []
       let seq = 0
@@ -59,7 +46,6 @@ async function run() {
       const parent = host.snapshot().runs.find((r) => r.kind === 'session')
       assert.equal(parent.code, 'S1')
 
-      /* 第一条子代理事件不是 agent_start：也要登记，并挂到父运行 */
       host.observeSubagentEvent(
         { id: 'sub-a', parentSessionId: 's1', task: '子任务 A', model: 'p/m', thinkingLevel: 'high' },
         messageEvent('thinking_delta')
@@ -74,7 +60,6 @@ async function run() {
       assert.notEqual(child.sessionId, parent.sessionId, '子运行不共用父会话作用域')
       const childRunId = child.runId
 
-      /* 同一子代理的后续事件不换运行、不换编号 */
       now = 1_500
       host.observeSubagentEvent(
         { id: 'sub-a', parentSessionId: 's1' },
@@ -84,11 +69,9 @@ async function run() {
       assert.equal(host.snapshot().runs.find((r) => r.kind === 'subagent').runId, childRunId)
       assert.equal(host.snapshot().runs.find((r) => r.kind === 'subagent').code, 'S1·1')
 
-      /* agent_end 不终态：注册表与子代理的终态语义都只认 agent_settled */
       host.observeSubagentEvent({ id: 'sub-a', parentSessionId: 's1' }, { type: 'agent_end', willRetry: false })
       assert.equal(host.snapshot().runs.find((r) => r.runId === childRunId).phase.kind, 'running', 'agent_end 不是终态')
 
-      /* 第二个子代理拿 ·2，顺序稳定 */
       host.observeSubagentEvent({ id: 'sub-b', parentSessionId: 's1', task: '子任务 B' }, messageEvent('text_delta'))
       await waitFor(() => host.snapshot().runs.filter((r) => r.kind === 'subagent').length === 2)
       assert.deepEqual(
@@ -96,27 +79,23 @@ async function run() {
         ['S1·1', 'S1·2']
       )
 
-      /* 只有 agent_settled 收终态 */
       now = 2_000
       host.observeSubagentEvent({ id: 'sub-a', parentSessionId: 's1' }, { type: 'agent_settled', aborted: false })
       assert.equal(host.snapshot().runs.find((r) => r.runId === childRunId).phase.kind, 'done')
       assert.equal(host.snapshot().runs.find((r) => r.code === 'S1·2').phase.kind, 'running', '另一个子代理不受影响')
 
-      /* 终态后的迟到事件不得把子运行翻回运行中，也不得新建运行 */
       const beforeTotal = host.snapshot().runs.length
       host.observeSubagentEvent({ id: 'sub-a', parentSessionId: 's1' }, messageEvent('text_delta'))
       assert.equal(host.snapshot().runs.length, beforeTotal, '终态子代理的迟到事件不新建运行')
       assert.equal(host.snapshot().runs.find((r) => r.runId === childRunId).phase.kind, 'done')
       assert.equal(host.snapshot().runs.filter((r) => r.kind === 'subagent').length, 2)
 
-      /* 没有父会话：不登记，不发假编号（也不抛） */
       host.observeSubagentEvent({ id: 'sub-orphan' }, { type: 'agent_start' })
       assert.equal(host.snapshot().runs.length, beforeTotal)
 
       await host.dispose()
     }
 
-    /* ── B. 子 Agent 的父会话编号已补号时也能归到 S{n} ── */
     {
       const host = await hostMod.createRunsHost({ root: join(dir, 'backfilled-parent'), push: () => {}, now: () => 1_000 })
       const backfilled = await host.backfillSessionCodes([{ scopeId: 's-old', createdAt: 100 }])
@@ -129,7 +108,6 @@ async function run() {
       await host.dispose()
     }
 
-    /* ── C. 旧会话补号：去重、按创建时间、不与现有编号冲突、重复调用稳定 ── */
     {
       const { SessionCodeStore } = runsMod
 
@@ -148,11 +126,9 @@ async function run() {
       assert.equal(store.codeFor('new'), 'S3')
       assert.equal(store.entries().filter((e) => e.scopeId === 'old').length, 1, '不因重复输入白耗号段')
 
-      /* 重复启动（再跑一遍同样的补号）结果稳定：什么都不改 */
       assert.equal(await store.backfill(items), 0)
       assert.equal(store.codeFor('new'), 'S3')
 
-      /* 同一 createdAt 用 scopeId 作为稳定并列键，与输入顺序无关 */
       const tied = new SessionCodeStore({ root: join(dir, 'codes-b') })
       await tied.load()
       await tied.backfill([
@@ -162,7 +138,6 @@ async function run() {
       assert.equal(tied.codeFor('a'), 'S1')
       assert.equal(tied.codeFor('b'), 'S2')
 
-      /* 不与已有编号冲突：已有 S1 时补号从 S2 起 */
       const existing = new SessionCodeStore({ root: join(dir, 'codes-c') })
       await existing.load()
       assert.equal(await existing.assign('existing', 'session'), 'S1')
@@ -170,7 +145,6 @@ async function run() {
       assert.equal(existing.codeFor('existing'), 'S1')
       assert.equal(existing.codeFor('x'), 'S2')
 
-      /* 定时 / 评审各自独立号段，不混用 */
       const kinds = new SessionCodeStore({ root: join(dir, 'codes-d') })
       await kinds.load()
       await kinds.backfill([
@@ -183,7 +157,6 @@ async function run() {
       assert.equal(kinds.codeFor('review'), 'R01')
     }
 
-    /* ── D. host 的补号入口也去重且稳定 ── */
     {
       const host = await hostMod.createRunsHost({ root: join(dir, 'host-backfill'), push: () => {}, now: () => 1_000 })
       const first = await host.backfillSessionCodes([

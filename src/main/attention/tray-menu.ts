@@ -1,17 +1,6 @@
-/**
- * 托盘菜单模型（v3 WP-12）。
- *
- * Electron 的 Tray 菜单不是 DOM，主进程在这里只构造一个与 Electron 无关的
- * 纯数据模型；`src/main/index.ts` 负责把它翻成 `Menu.buildFromTemplate`。
- * 这样菜单内容（尤其是「等你处理」一行）可以在不启动 Electron 的单测里直接断言。
- *
- * 菜单结构沿用迁移前的行为：显示砚 / 新建会话 / 运行中的会话 / 退出砚；
- * 额外在运行子菜单顶部加一行注册表派生的「等你处理 N 项」，仅当有注意项时出现。
- */
 import { basename } from 'node:path'
 import type { AttentionSummary } from './summary'
 
-/** 运行实例在托盘菜单里需要的最小字段（结构兼容 `RunnerStatus`）。 */
 export interface TraySessionStatus {
   id: string
   sessionFile?: string
@@ -50,7 +39,6 @@ export interface AttentionMenuInput {
   callbacks: AttentionMenuCallbacks
 }
 
-/** 运行中的会话行；状态词与迁移前逐字一致。 */
 function liveItems(zh: boolean, statuses: TraySessionStatus[], callbacks: AttentionMenuCallbacks): AttentionMenuNode[] {
   const live = statuses.filter((status) => status.running || status.waiting || status.conn === 'starting')
   if (live.length === 0) {

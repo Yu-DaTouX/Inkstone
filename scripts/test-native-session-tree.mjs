@@ -1,11 +1,3 @@
-/**
- * pi 原生会话操作纯逻辑的定向检查（不启动 Electron、不连 pi、不花 token）。
- *
- * 编译 `src/shared/native-session.ts` 后直接调用纯函数，覆盖会话树的投影与保护
- * （稳定 id、折叠、环、深树限量、行上限、leaf 与活动分支），以及模型范围键。
- *
- * 用法： node scripts/test-native-session-tree.mjs
- */
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from '../node_modules/esbuild/lib/main.js'
@@ -26,12 +18,10 @@ const ok = (cond, name, extra = '') => {
   console.log(`${cond ? '✓' : '✗'} ${name}${extra ? `  ${extra}` : ''}`)
 }
 
-/** 造一个条目节点；childIds 由调用方在 children 里传入。 */
 const entry = (id, parentId, type = 'message', extra = {}) => ({ id, parentId, type, timestamp: '2026-10-14T00:00:00.000Z', ...extra })
 const node = (id, parentId, children = [], extra = {}) => ({ entry: entry(id, parentId, extra.type ?? 'message', extra.entry ?? {}), children, ...(extra.label ? { label: extra.label } : {}) })
 const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { message: { role: 'user', content: text } } })
 
-/* ── parseTreePayload ── */
 {
   const parsed = native.parseTreePayload({ tree: [{ entry: { id: 'a' }, children: [] }], leafId: 'a' })
   ok(parsed.tree.length === 1 && parsed.leafId === 'a', 'parse：取出 tree 与 leafId')
@@ -39,7 +29,6 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   ok(native.parseTreePayload({ tree: 'nope', leafId: 42 }).leafId === null, 'parse：非法 leafId 不当成字符串')
 }
 
-/* ── describeEntry ── */
 {
   ok(native.describeEntry({ type: 'message', message: { role: 'user', content: '  你好\n世界 ' } }).kind === 'user', 'describe：用户消息')
   ok(native.describeEntry({ type: 'message', message: { role: 'user', content: '  你好\n世界 ' } }).text === '你好 世界', 'describe：压成一行')
@@ -56,7 +45,6 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   ok(native.nativeOneLine('x'.repeat(50), 10).endsWith('…'), 'oneLine：超长截断')
 }
 
-/* ── buildTreeView：线性树 ── */
 {
   const tree = [node('a', null, [node('b', 'a', [userMsg('c', 'b', '第三句')], { entry: { message: { role: 'user', content: '第二句' } } })], { entry: { message: { role: 'user', content: '第一句' } } })]
   const view = native.buildTreeView(tree, 'c')
@@ -68,14 +56,12 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   ok(view.rows[0].parentId === null && view.rows[1].parentId === 'a', 'line：parentId 保留')
 }
 
-/* ── 多根与孤儿（get_tree 可能返回多个根） ── */
 {
   const view = native.buildTreeView([userMsg('r1', null, '一'), userMsg('r2', null, '二')], null)
   ok(view.rows.length === 2, 'roots：多个根都显示')
   ok(view.rows.every((r) => r.leaf === false), 'roots：没有 leaf 时不误标')
 }
 
-/* ── 折叠与 initialCollapsedForLeaf ── */
 {
   const tree = [node('root', null, [node('a', 'root', [userMsg('b', 'a', '岔路终点')]), node('c', 'root', [userMsg('d', 'c', '另一岔')])])]
   const collapsed = native.initialCollapsedForLeaf(tree, 'b')
@@ -92,12 +78,11 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   ok(expanded.rows.length === 5, 'fold：展开后显示全部条目')
 }
 
-/* ── 环与重复 id ── */
 {
   const a = node('a', null, [])
   const b = node('b', 'a', [])
   a.children.push(b)
-  b.children.push(a) // 环：b 的子节点指回 a
+  b.children.push(a)
   const view = native.buildTreeView([a], 'a')
   ok(view.rows.length === 2, 'cycle：重访节点只处理一次')
   ok(view.stats.cycles >= 1, 'cycle：计入保护统计')
@@ -107,7 +92,6 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   ok(dupView.rows.length === 3 && dupView.stats.cycles === 1, 'cycle：跨根重复 id 跳过后一棵子树')
 }
 
-/* ── 深树限量 ── */
 {
   const chain = []
   let parent = null
@@ -116,7 +100,6 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
     chain.push(n)
     parent = `n${i}`
   }
-  // chain 是扁平的，转成父子链
   const root = chain[0]
   let cursor = root
   for (let i = 1; i < chain.length; i += 1) {
@@ -129,7 +112,6 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   ok(view.stats.depthTruncated >= 1, 'depth：计入保护统计')
 }
 
-/* ── 行上限 ── */
 {
   const root = node('root', null, ['a', 'b', 'c', 'd', 'e'].map((id) => userMsg(id, 'root', id)))
   const view = native.buildTreeView([root], null, new Set(), { maxRows: 3 })
@@ -137,7 +119,6 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   ok(view.stats.rowTruncated === 3, 'rows：未渲染行如实计数')
 }
 
-/* ── 选择移动与路径 ── */
 {
   const rows = ['r', 'a', 'b'].map((id) => ({ entryId: id }))
   ok(native.moveTreeSelection(rows, 'a', 1) === 'b', 'move：向下')
@@ -154,7 +135,6 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   ok(native.pathToEntry(tree, null).length === 0, 'path：没有 leaf 返回空')
 }
 
-/* ── 模型范围 ── */
 {
   const models = [
     { provider: 'anthropic', id: 'sonnet', name: 'Sonnet', inScope: true, current: true },

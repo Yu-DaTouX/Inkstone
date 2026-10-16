@@ -1,10 +1,3 @@
-/**
- * 评审服务（§10.2 / WP-50）：把变更集读取、批注存储、评审 Agent 契约与
- * Git 写适配拼成**一个**类型化入口，供 IPC 与后续 UI 使用。
- *
- * 依赖以窄接口注入（`authorize` / 存储 / git 适配 / Agent 协调器），所以
- * 用临时目录 + fake exec 就能直接单测，不依赖 Electron、不碰真实仓库。
- */
 import type { AuthorizeReadCwd } from '../git-inspect'
 import type { GitDiffResult } from '../../shared/git'
 import { applyAnnotationCounts, readReviewChangeSet, readReviewFileDiff, type ReviewChangesDeps, type VerifyReviewSession } from './changes'
@@ -30,18 +23,11 @@ import type {
 } from '../../shared/review'
 
 export interface ReviewServiceDeps {
-  /** 只读目录授权（主进程注入 `resolveFileContext`） */
   authorize: AuthorizeReadCwd
   annotations?: ReviewAnnotationStore
   changes?: ReviewChangesDeps
-  /**
-   * 可信的会话归属验证（主进程注册时注入）。`session` 来源必须经过它；
-   * 缺失时会话来源返回 `unavailable`，不静默当未提交改动。
-   */
   verifySession?: VerifyReviewSession
-  /** Git 写适配（含窄目标确认钩子）；缺省时写方法返回未接线 */
   git?: ReviewGitAdapter
-  /** 评审 Agent 协调器；缺省时 startReview 返回未接线 */
   agent?: ReviewAgentCoordinator
 }
 
@@ -51,7 +37,6 @@ export interface ReviewDiffQuery {
   path: string
   base?: string
   branch?: string
-  /** session 来源：已验证的会话 id */
   sessionId?: string
 }
 
@@ -62,9 +47,7 @@ export class ReviewService {
   private readonly verifySession?: VerifyReviewSession
   private readonly git?: ReviewGitAdapter
   private readonly agent?: ReviewAgentCoordinator
-  /** changeSetId → 最近一次读到的内容 revision；用于拒绝锚到过期版本的批注写入 */
   private readonly revisions = new Map<string, string>()
-  /** 缓存上限，防止长时间运行后无限增长 */
   private readonly maxRevisionEntries = 400
 
   constructor(deps: ReviewServiceDeps) {
@@ -76,7 +59,6 @@ export class ReviewService {
     this.agent = deps.agent
   }
 
-  /** 变更集读取的全部依赖（合并注入的会话验证注入口）。 */
   private changeDeps(): ReviewChangesDeps | undefined {
     if (!this.changes && !this.verifySession) return undefined
     return {
@@ -85,7 +67,6 @@ export class ReviewService {
     }
   }
 
-  /** 读变更集并把已有批注数合并到文件条目上。 */
   async changeSet(query: ReviewChangeSetQuery): Promise<ReviewChangeSet> {
     const changeSet = await readReviewChangeSet(query, this.authorize, this.changeDeps())
     if (!changeSet.ok) return changeSet
@@ -124,12 +105,6 @@ export class ReviewService {
     return this.annotations.list(changeSetId, scopeKey)
   }
 
-  /**
-   * 新增批注。
-   *
-   * 若带了 `anchorRevision` 且与主进程最近一次读到的内容 revision 不一致，
-   * 拒绝写入并标 `stale` —— 代码已经变过，不允许把批注继续锚在旧版本上。
-   */
   addAnnotation(input: ReviewAnnotationInput): Promise<ReviewAnnotationResult> {
     const anchored = String(input.anchorRevision ?? '').trim()
     const current = this.revisions.get(String(input.changeSetId ?? ''))
@@ -155,21 +130,12 @@ export class ReviewService {
     return this.annotations.clear(changeSetId, scopeKey)
   }
 
-  /** 把某变更集的全部批注整理成一条结构化消息（不发送）。 */
   async annotationTask(changeSet: ReviewChangeSet): Promise<ReviewAnnotationTask> {
     const listed = await this.annotations.list(changeSet.id, changeSet.scopeKey)
     if (!listed.ok) return { ok: false, error: listed.error ?? '读批注失败', count: 0 }
     return buildAnnotationTask(changeSet, listed.annotations)
   }
 
-  /**
-   * 取本次评审要嵌入任务文本的有界补丁。
-   *
-   * 逐个文件走与变更集同一 revision 来源的只读 diff 通道（`diff`），并发上限
-   * 6；单文件按 `REVIEW_MAX_PATCH_BYTES` 截断，累计到
-   * `REVIEW_MAX_TOTAL_PATCH_BYTES` 后其余文件标 `omitted`。二进制只列名；
-   * 读取失败标 `error`，**不中断评审**（提示里会写明未取得补丁）。
-   */
   async reviewPatches(changeSet: ReviewChangeSet): Promise<ReviewPromptPatch[]> {
     const files = changeSet.files
     const out: ReviewPromptPatch[] = new Array(files.length)
@@ -226,7 +192,6 @@ export class ReviewService {
     return out
   }
 
-  /** 启动只读评审运行；R 编号由正式编号存储发出，执行交宿主 port。 */
   async startReview(
     changeSet: ReviewChangeSet,
     options: { model?: string; sessionId?: string; sessionPath?: string; projectId?: string } = {}
@@ -264,7 +229,6 @@ export class ReviewService {
     return this.git.createPullRequest(input)
   }
 
-  /** 测试 / 退出收尾。 */
   whenIdle(): Promise<void> {
     return this.annotations.whenIdle()
   }

@@ -1,11 +1,3 @@
-/**
- * 辅助小窗控制器（v3 WP-25d 快速提问 + WP-12 迷你小窗）。
- *
- * 把两个窗口、全局快捷键与窗口级状态编排在一起；对 `src/main/index.ts` 只暴露
- * 一个入口 `createAuxWindows(host)`，宿主负责提供主窗口边界、会话/项目、注意力
- * 汇总与真正的发送动作（见补丁说明）。本模块不直接读设置、不直接读运行注册表，
- * 所有宿主事实经 `AuxHost` 注入。
- */
 import { BrowserWindow, globalShortcut } from 'electron'
 import type { AttentionSummary } from '../attention/summary'
 import { attentionItems } from './attention-items'
@@ -33,51 +25,38 @@ import type {
 } from './aux-types'
 
 export interface AuxHost {
-  /** aux 窗口共用的 preload（`src/preload/index.ts` 已暴露 `auxBridge`）。 */
   preloadPath(): string
-  /** 在窗口上加载渲染端入口（dev URL 或打包后的 html）。 */
   loadEntry(win: BrowserWindow, entry: 'quick-ask' | 'mini'): void
   locale(): AuxLocale
-  /** 主窗口边界；没有主窗口 / 已销毁时返回 undefined。 */
   anchorBounds(): Rect | undefined
-  /** 给定边界落在哪个显示器的工作区。 */
   workArea(bounds: Rect): Rect
-  /** 跟随主窗口的界面缩放。 */
   zoomFactor(): number
   listProjects(): Promise<AuxProjectOption[]>
   listModels(): Promise<AuxModelOption[]>
   currentSession(): Promise<AuxSessionRef | null>
   attentionSummary(): AttentionSummary
   submitQuickAsk(payload: QuickAskSubmit): Promise<QuickAskResult>
-  /** 在主窗口打开对应会话（只导航，不执行动作）。 */
   openSession(target: AuxSessionRef): void
   showMainWindow(): void
-  /** 全局快捷键；null 表示未配置（不注册）。 */
   shortcut(): string | null
-  /** 迷你小窗是否启用（设置项，默认关闭）。 */
   miniEnabled(): boolean
 }
 
 export interface AuxWindows {
-  /* 快速提问 */
   showQuickAsk(): void
   toggleQuickAsk(): void
   hideQuickAsk(): void
   isQuickAskVisible(): boolean
   quickAskState(): Promise<QuickAskStateView>
   submitQuickAsk(payload: QuickAskSubmit): Promise<QuickAskResult>
-  /* 迷你小窗 */
   showMini(): void
   hideMini(): void
   setMiniEnabled(enabled: boolean): void
   miniState(): MiniStateView
   openMiniItem(item: MiniItem): void
-  /* 宿主回调 */
   notifyRuns(): void
   registerShortcut(): boolean
-  /** 快捷键注册是否成功过（注册失败时宿主可提示）。 */
   hasShortcut(): boolean
-  /** 该 webContents 是否属于某个辅助小窗。 */
   owns(contents: Electron.WebContents): boolean
   dispose(): void
 }
@@ -270,7 +249,6 @@ export function createAuxWindows(host: AuxHost): AuxWindows {
           const accelerator = host.shortcut()
           if (accelerator) globalShortcut.unregister(accelerator)
         } catch {
-          /* 退出阶段注册表可能已不可用，忽略。 */
         }
         shortcutRegistered = false
       }

@@ -1,7 +1,3 @@
-/**
- * 渲染端后台会话缓存的纯策略测试。
- * 不启动 Electron、不连接 pi，只验证身份封套、增量归并与代次闸门。
- */
 export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime, rebindSessionRuntime) {
   const runtimeA = { sessionId: 'session-a', runId: 'r1', projectId: 'project-a', generation: 1 }
   const runtimeB = { sessionId: 'session-b', runId: 'r2', projectId: 'project-b', generation: 1 }
@@ -83,7 +79,6 @@ export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeK
   })
   ok(map['session-a'] === beforeRunReplacement, '不同 runId 的低代次事件同样被稳定 sessionId 闸门丢弃')
 
-  /* 子代理列表是跨会话的全局运行资源，不能随会话快照投影或被切换清空。 */
   map = reduceSessionRuntime(map, runtimeA, {
     ch: 'subagent',
     payload: {
@@ -99,11 +94,6 @@ export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeK
   })
   ok(!Object.prototype.hasOwnProperty.call(map['session-a'], 'subagents'), '全局子代理事件不进入会话缓存')
 
-  /*
-   * 已回答的 UI 请求必须能**从缓存里**也被清掉（真实缺陷：`ask` 场景第 6 节）。
-   * 只清顶层的话，下一次 `runners` 推送会把缓存投影回顶层 —— 面板复活。
-   */
-  /* 用**独立会话键**：前面几节已经把 session-a 的代次推高，复用它会被闸门丢掉 */
   const runtimeUi = { sessionId: 'session-ui', runId: 'r-ui', generation: 1 }
   map = reduceSessionRuntime(map, runtimeUi, {
     ch: 'ui-request',
@@ -113,10 +103,6 @@ export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeK
   map = updateSessionRuntime(map, runtimeUi, { uiRequests: [] })
   ok(map['session-ui'].uiRequests.length === 0, 'uiRequests 可以由缓存补丁清空（防止投影时复活）')
 
-  /*
-   * 手机答复走的是主进程推来的 `ui-resolved`（不经过 updateSessionRuntime）。
-   * 它同样必须从实例缓存里移除，否则电脑端在下一次 `runners` 投影时把问题复活。
-   */
   map = reduceSessionRuntime(map, runtimeUi, {
     ch: 'ui-request',
     payload: { id: 'ui-remote', method: 'select', title: '手机来答', options: ['a', 'b'], createdAt: 2 }
@@ -125,7 +111,6 @@ export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeK
   map = reduceSessionRuntime(map, runtimeUi, { ch: 'ui-resolved', payload: { id: 'ui-remote', by: 'remote' } })
   ok(map['session-ui'].uiRequests.length === 0, 'ui-resolved（手机答复）从会话缓存移除，不会随投影复活')
 
-  /* 清空后再来一条 `runners` 式的投影源：缓存里没有旧请求，就不会复活 */
   map = reduceSessionRuntime(map, runtimeUi, { ch: 'todos', payload: [] })
   ok(map['session-ui'].uiRequests.length === 0, '后续事件不会把已清的请求带回来')
   map = updateSessionRuntime(map, runtimeUi, { draft: '未发送的草稿' })

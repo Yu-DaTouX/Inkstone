@@ -1,14 +1,3 @@
-/**
- * 宿主提问记录的两段逻辑：
- *   · `src/shared/question-log.ts` —— 把记录合并成对话流里的用户消息（纯函数）
- *   · `src/main/question-log.ts` —— 按会话分组落盘（可注入文件路径）
- *
- * 为什么要有：这两段决定「用户在界面上看到的问答是什么」。合并算错会把问答
- * 插到别的轮次里；落盘错了会把别的会话的问答贴到当前对话上 —— 两者都不会
- * 抛错，只会静静地显示错内容。
- *
- * 用法：npm run test:unit
- */
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,8 +8,6 @@ export async function runQuestionLogTests(ok) {
 
   const msg = (id, role, timestamp, text) => ({ id, role, timestamp, text })
   const entry = (id, at, question, answer) => ({ id, question, options: [], answer, cancelled: answer == null, at })
-
-  /* ── 合并：位置与顺序 ─────────────────────────────── */
 
   const base = [
     msg('u1', 'user', 1000, '第一个问题'),
@@ -37,22 +24,17 @@ export async function runQuestionLogTests(ok) {
 
   ok(mergeQuestionLog(base, []).length === 3, '没有记录时原样返回')
 
-  /* 时间戳晚于全部消息 → 追加到末尾（刚答完、模型还没回复） */
   const appended = mergeQuestionLog(base, [entry('q2', 9000, '还要问吗？', null)])
   ok(appended[3].id === 'qlog:q2', '比所有消息都晚的记录排在末尾', appended.map((m) => m.id).join(','))
   ok(appended[3].text === '还要问吗？', '取消 / 超时的记录只显示问题，不编造答案')
 
-  /* 同一位置的连续问答合并成一条 */
   const grouped = mergeQuestionLog(base, [entry('q1', 3000, '一？', '1'), entry('q2', 3500, '二？', '2')])
   ok(grouped.filter((m) => m.question).length === 1, '同一轮里连续两条问答合成一条消息', String(grouped.length))
   ok(grouped[2].text === '一？\n\n1\n\n二？\n\n2', '合并后的正文按顺序列出两组问答', JSON.stringify(grouped[2].text))
 
-  /* 消息缺 timestamp 时不能把问答插到最前面（宁可放最后） */
   const noStamp = [msg('u1', 'user', undefined, '没有时间戳')]
   const tailed = mergeQuestionLog(noStamp, [entry('q1', 3000, '问？', '答')])
   ok(tailed[1]?.id === 'qlog:q1', '缺时间戳的历史不参与比较，问答落在末尾', tailed.map((m) => m.id).join(','))
-
-  /* ── 落盘：按会话分组 ────────────────────────────── */
 
   const dir = mkdtempSync(join(tmpdir(), 'yan-qlog-'))
   const file = join(dir, 'question-log.json')
@@ -72,7 +54,6 @@ export async function runQuestionLogTests(ok) {
   const fresh = new QuestionLogStore(() => file)
   ok(fresh.list('session-a').length === 1, '新实例从磁盘读回同一份记录（重启后仍在）')
 
-  /* 裁剪：只留最近 50 条 */
   for (let i = 0; i < 60; i += 1) {
     store.append('session-c', { question: `q${i}`, options: [], answer: 'a', cancelled: false, at: 100 + i })
   }
@@ -80,7 +61,6 @@ export async function runQuestionLogTests(ok) {
   ok(capped.length === 50, '每个会话最多留 50 条', String(capped.length))
   ok(capped[capped.length - 1].question === 'q59' && capped[0].question === 'q10', '裁剪保留最近的那一批', `${capped[0].question}..${capped[capped.length - 1].question}`)
 
-  /* 坏文件必须明确报错并保留，不能当空表覆盖。 */
   writeFileSync(file, '{ not json', 'utf8')
   let rejectedCorrupt = false
   try { store.list('session-a') } catch { rejectedCorrupt = true }

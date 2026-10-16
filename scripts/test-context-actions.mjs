@@ -1,12 +1,3 @@
-/**
- * 三类整理动作账本（实施-11 C-2b）的测试。
- *
- * 分两层：
- *   ① `shared/context-actions.ts` —— 解析容错与**分开**累计（这是本片的核心诉求）；
- *   ② `main/context-actions.ts` —— 真文件读写 + 路径穿越判据（读不到返回空统计）。
- *
- * 真实链路（扩展写账本 → 宿主读 → 界面分行）由 `test:live -- contextactions` 覆盖。
- */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,8 +6,6 @@ export async function runContextActionTests(ok) {
   const shared = await import('../out/test/context-actions.mjs')
   const host = await import('../out/test/context-actions-host.mjs')
   const view = await import('../out/test/context-actions-view.mjs')
-
-  /* ------------------------------------------------ 解析：坏行不毁整份统计 */
 
   const lines = [
     JSON.stringify({ at: 100, kind: 'tool-sweep', status: 'applied', reclaimed: 3, savedTokens: 1200 }),
@@ -38,8 +27,6 @@ export async function runContextActionTests(ok) {
   const limited = shared.parseActionLines(many, 3)
   ok(limited.length === 3, '超过上限只留最后几条（账本不是无限历史）')
   ok(limited[2].at === 10, '留下的是**最后**几条，不是头几条')
-
-  /* ------------------------------------------------ 累计：三类必须分开 */
 
   const summary = shared.summarizeActions(
     shared.parseActionLines(lines)
@@ -70,8 +57,6 @@ export async function runContextActionTests(ok) {
   ok(summary.lastAt === 400, '最近时间取所有记录的最大值')
   ok(shared.summarizeActions([]).kinds.every((item) => item.count === 0), '空账本不报错')
 
-  /* ------------------------------------------------ 宿主读数：文件 + 判据 */
-
   const dir = mkdtempSync(join(tmpdir(), 'yan-ctx-actions-'))
   try {
     mkdirSync(join(dir, 'context-actions'), { recursive: true })
@@ -93,9 +78,6 @@ export async function runContextActionTests(ok) {
     rmSync(dir, { recursive: true, force: true })
   }
 
-  /* ------------------------------------------------ 界面三行：必须分开、不编造 */
-
-  /* 只用 key 与变量的假 t：文案本身由 i18n 文件管，这里只钉结构 */
   const t = (key, vars) =>
     vars ? `${key}(${Object.entries(vars).map(([k, v]) => `${k}=${v}`).join(',')})` : key
 

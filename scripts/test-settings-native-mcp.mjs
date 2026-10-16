@@ -30,7 +30,6 @@ const component = await readFile('src/renderer/src/components/settings/Capabilit
 check(!component.includes('closeSettings'), '原生 MCP 查询不关闭设置页')
 check(component.indexOf('nativeMcpStatus: query') < component.indexOf("await send('/mcp')"), '先登记查询再发送，接住快速响应')
 check(component.includes('30_000') && component.includes('cap.nativeMcpTimeout'), '等待有超时反馈')
-// 收尾 B4：成功提示不得复用警告样式与 alert 角色
 check(!/role="alert">\{notice\}/.test(component), '成功提示不再直接把 notice 塞进警告块')
 check(component.includes("notice?.type === 'success' ? <div className=\"ui-row-desc\" role=\"status\">"), '成功提示以中性提示与 role=status 渲染')
 check(component.includes("notice?.type === 'error' ? <div className=\"pkg-detail-warn\" role=\"alert\">"), '错误提示保留警告样式与 role=alert')

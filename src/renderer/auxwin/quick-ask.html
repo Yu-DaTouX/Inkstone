@@ -3,11 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!--
-      CSP 与主窗口一致：渲染进程不给 Node 权限，只连本地 dev server。
-      主题在 apply-theme.ts 里从 localStorage 读，不用外部经典脚本，
-      避免打包后 aux 子目录的相对路径问题。
-    -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self';

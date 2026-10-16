@@ -1,13 +1,3 @@
-/*
- * 交互终端（实施-11 H-11）。
- *
- * 只负责“表面”与 xterm 容器的尺寸约束；配色来自 tokens.css 的两套主题，
- * xterm 自身的主题色在组件里按 data-theme 同步（它读不到 CSS 变量）。
- *
- * 关键约束：`.term-host` 必须**有确定的宽高**再交给 FitAddon.fit()，
- * 否则 xterm 会把 cols/rows 算成 0（实测表现为“终端一片空白，敲键盘没反应”）。
- */
-
 .term-surface {
   display: flex;
   flex-direction: column;
@@ -22,7 +12,6 @@
   gap: var(--sp-2);
   flex: 0 0 auto;
   padding: var(--sp-1) var(--sp-2);
-  /* 显式底色：没有它的时候标题行会直接压在 xterm 自己的画布上，浅色主题下读不出来 */
   background: var(--bg-1);
   border-bottom: 1px solid var(--border-soft);
   font-size: var(--fs-sm);

@@ -1,10 +1,3 @@
-/**
- * 定时发送安全依赖的纯本地检查：同 cwd busy 防线、epoch（pending→real）复核、
- * 目标 generation / session 固定与同步 claim/token。
- *
- * 只编译并加载真实源码模块，用假 registry / 假 agent 驱动；不发指令、不启动 pi、
- * 不执行用户进程、不访问网络。结果不代表 Electron / 真实模型验收。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -24,7 +17,6 @@ const bundle = async (file, name) => {
   return import(pathToFileURL(output).href)
 }
 
-/** 假 agent：只暴露 RunnerRegistry 会读的宿主事实，状态由测试直接改写。 */
 const makeRegistry = () => {
   const agents = []
   const registry = new RunnerRegistry({
@@ -83,7 +75,6 @@ const guard = await bundle('src/main/session-send-guard.ts', 'guard')
 const { sameRuntimeEnvelope } = await bundle('src/core/run-state.ts', 'run-state')
 
 try {
-  // ── epoch 复核：同代 pending→real 属同一实例，换代 / 换会话必须不一致 ──
   verify(
     sameRuntimeEnvelope(
       { runId: 'r1', generation: 3, sessionId: 'pending:r1' },
@@ -105,7 +96,6 @@ try {
   )
   verify(sameRuntimeEnvelope(null, { runId: 'r1', generation: 1 }) === false, '缺封套不回退为同实例')
 
-  // ── 只读 busy 复核：同 cwd 另有忙碌实例拒绝，发起者自己忙放行 ──
   const lookupTrue = () => true
   verify(guard.guardSameCwdExecute({ runnerId: 'r2', cwd: '/w', selfBusy: false }, lookupTrue).ok === false, '同 cwd 另有忙碌实例拒绝')
   verify(guard.guardSameCwdExecute({ runnerId: 'r1', cwd: '/w', selfBusy: true }, lookupTrue).ok === true, '发起者自己忙放行插话 / 排队')
@@ -115,13 +105,12 @@ try {
   verify(guard.admissionClaimedBy({ token: 1, runId: 'r2', generation: 5, cwd: '/w' }, 'r2', 6) === false, '换代后旧 claim 失效')
   verify(guard.admissionClaimedBy({ token: 1, runId: 'r2', generation: 5, cwd: '/w' }, 'r1', 5) === false, '别的实例不能认领 claim')
 
-  // ── 注册表：同 cwd 两个实例 ──
   const { registry, agents } = makeRegistry()
   const cwd = join(work, 'fixture-cwd')
   const first = await registry.select({ cwd })
   verify(first.ok && first.id && first.runId === first.id, '首个实例建成并带身份')
   const r1 = first.id
-  agents[0].state.isAgentRunning = true // r1 后台忙
+  agents[0].state.isAgentRunning = true
   const second = await registry.select({ cwd, sessionFile: 'second-session' })
   verify(second.ok && second.id && second.id !== r1, '同 cwd 另建一个空闲实例')
   const r2 = second.id
@@ -130,7 +119,6 @@ try {
   verify(registry.guardExecute(r1).ok === true, '同 cwd busy：对忙碌实例自己的插话放行')
   verify(registry.guardExecute('missing').ok === true, '目标不存在交后续检查')
 
-  // r1 / r2 均空闲后，同步入场只允许先到者
   agents[0].state.isAgentRunning = false
   const claim1 = registry.admitExecute(r1)
   verify(claim1.ok === true, '空闲 cwd 第一个实例取得 claim')
@@ -140,14 +128,12 @@ try {
   verify(claim2.ok === false && claim2.error === guard.SAME_CWD_ADMISSION_ERROR, '同 cwd 第二个实例 claim 被明确拒绝')
   verify(registry.confirmExecute(r1, claim1.token) === true, '持有者入队前 confirm 通过')
 
-  // ── claim 释放：归还后别的实例方能 claim ──
   registry.releaseExecute(r1, claim1.token)
   verify(registry.confirmExecute(r1, claim1.token) === false, '释放后旧 token 不再 confirm')
   const claim3 = registry.admitExecute(r2)
   verify(claim3.ok === true, '释放后同 cwd 另一个实例可取得 claim')
   verify(registry.confirmExecute(r2, claim3.token) === true, '新持有者 confirm 通过')
 
-  // ── 换代：旧 token 失效，claim 由新代次重新取得 ──
   const r2runner = registry.runners.get(r2)
   r2runner.generation += 10
   const claim4 = registry.admitExecute(r2)

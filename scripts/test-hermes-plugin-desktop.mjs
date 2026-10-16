@@ -1,4 +1,3 @@
-/** Python plugin against isolated real Electron + pi. Never sends a model prompt. */
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { randomUUID, createHash } from 'node:crypto'
@@ -60,8 +59,6 @@ export default function(pi) {
     }, 500);
   });
 }`)
-  // Production disables automatic extension discovery. Inject only the harmless
-  // synthetic extension path into a disposable copy of the compiled entrypoint.
   const main = await readFile(join(root, 'out/main/index.js'), 'utf8')
   const marker = 'return yanThinResourcePath("danger-guard.js");'
   if (main.split(marker).length !== 2) throw Error('Fixture extension injection marker changed')

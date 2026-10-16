@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 设置深链接回归（重复请求被吞）。
- *
- * 目的：不用源码字符串断言，而是把**真实渲染端 store** + **真实生产
- * `deep-link.ts` 订阅**现场 esbuild 出来，用真实 `openSettings` 动作驱动，
- * 钉住「同一页重复打开也能导航」这一族缺陷：
- *
- *   · auth 打开 → 返回聊天 → 同页 auth 再次能打开；
- *   · 设置内手动选外观后，同一 auth 请求仍重选模型页；
- *   · 同一毫秒两次请求都通知（靠 revision 区分）；
- *   · 无关 store / 流事件不触发、不重置当前页；
- *   · closeSettings 不导航；
- *   · 动作 revision 单调递增，且保留 v2 其余状态。
- *
- * 用法：node scripts/test-v3-settings-link.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型。
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -24,8 +7,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 let groupName = ''
@@ -45,8 +26,6 @@ function ok(cond, label, detail) {
   return pass
 }
 
-/* -------------------------------------------------------------- 全局桩 */
-
 function installGlobals() {
   const storage = new Map()
   globalThis.localStorage = {
@@ -61,7 +40,6 @@ function installGlobals() {
     try {
       fn(0)
     } catch {
-      /* 无真实帧 */
     }
     return 0
   }
@@ -79,14 +57,10 @@ function installGlobals() {
     removeEventListener: () => {},
     location: { hash: '', href: 'http://localhost/' },
     history: { replaceState: () => {} },
-    /* openSettings 会经 applyBrowserVisibility 调它；测试里只是空实现 */
     yan: { browser: { setVisible: () => {} } }
   }
 }
 
-/* ------------------------------------------------------------ bundle 入口 */
-
-/** zustand 5 只用到 `useSyncExternalStore`；ui-v3 用到 `useEffect`。 */
 const REACT_SHIM = `export function useState(init) { return [typeof init === 'function' ? init() : init, () => {}] }
 export function useEffect() {}
 export function useLayoutEffect() {}
@@ -132,8 +106,6 @@ export { resolveLegacyView } from '${posix(resolve(ROOT, 'src/renderer/src/featu
   return out
 }
 
-/* ------------------------------------------------------------------ 主流程 */
-
 async function main() {
   installGlobals()
 
@@ -149,7 +121,6 @@ async function main() {
 
   const { useStore, useUiV3, installSettingsDeepLink, resetSettingsDeepLinkForTest, subscribeSettingsRequest, getSettingsRequest, resolveLegacyView } = bundle
 
-  /* 基线 v2 状态，用来验证「无关推送不触发」和「保留其余状态」。 */
   const baseline = () => ({
     settings: { cwd: 'C:/proj', projects: [] },
     settingsOpen: false,
@@ -178,7 +149,6 @@ async function main() {
   const closeSettings = () => useStore.getState().closeSettings()
   const route = () => useUiV3.getState().route.name
 
-  /* ============================================================ 组 1 */
   group('auth 打开 → 返聊天 → 同页 auth 再次打开')
   {
     reset()
@@ -199,7 +169,6 @@ async function main() {
     ok(route() === 'settings', '第二次请求把路由重新切回设置')
   }
 
-  /* ============================================================ 组 2 */
   group('设置内手动选外观后，同一 auth 请求重选模型页')
   {
     reset()
@@ -207,7 +176,6 @@ async function main() {
     openSettings('appearance')
     openSettings('auth')
     ok(seen[1].view === 'auth', 'auth 请求映射到模型页', seen[1])
-    /* 用户在设置内手动点「外观」：只改面板本地状态，不动 store.settingsTab */
     ok(useStore.getState().settingsTab === 'auth', '手动选外观不改 store.settingsTab', useStore.getState().settingsTab)
 
     openSettings('auth')
@@ -224,13 +192,11 @@ async function main() {
     )
   }
 
-  /* ============================================================ 组 3 */
   group('同一毫秒的两次请求都通知，靠 revision 区分')
   {
     reset()
     const { seen } = collect()
     const at = Date.now
-    /* 固定时钟：两次记录拿到同一个毫秒，只有 revision 能把它们区分开 */
     Date.now = () => at.call(Date)
     try {
       openSettings('auth')
@@ -244,7 +210,6 @@ async function main() {
     ok(seen[0] !== seen[1], '快照对象不同，useSyncExternalStore 能感知变化')
   }
 
-  /* ============================================================ 组 4 */
   group('无关 store / 流事件不触发、不重置当前页')
   {
     reset()
@@ -261,12 +226,10 @@ async function main() {
     ok(getSettingsRequest() === recorded, '当前请求对象未被无关推送重置')
     ok(route() === 'settings', '当前页仍是设置，没有被弹回聊天')
 
-    /* 冗余写同一个 revision（模拟同步重入 / 幂等 set）：不重复记录 */
     useStore.setState({ settingsRequestRevision: useStore.getState().settingsRequestRevision })
     ok(seen.length === 1, '重复写同一 revision 不重复记录（订阅重入去重）', seen.length)
   }
 
-  /* ============================================================ 组 5 */
   group('closeSettings 不导航；直接写字段的旧调用兼容')
   {
     reset()
@@ -278,20 +241,16 @@ async function main() {
     ok(route() === 'chat', '关闭设置不把路由拉回设置', route())
     ok(seen.length === 1, '关闭本身不产生新请求', seen.length)
 
-    /* 历史直接写 settingsOpen / settingsTab（不经过 openSettings）也响应 */
     useStore.setState({ settingsOpen: true, settingsTab: 'capabilities' })
     ok(seen.length === 2 && seen[1].view === 'capabilities', '直接写字段打开时按当前页名补记', seen)
     ok(route() === 'settings', '兼容路径同样导航到设置')
-    /* 已开且字段没变的无关 set：不重复记录 */
     useStore.setState({ settingsOpen: true, settingsTab: 'capabilities' })
     ok(seen.length === 2, '字段没变的直接 set 不重复记录', seen.length)
-    /* 直接关闭：不导航 */
     useUiV3.getState().navigate({ name: 'chat' })
     closeSettings()
     ok(route() === 'chat' && seen.length === 2, '直接写字段的关闭同样不导航不记录', { route: route(), seen: seen.length })
   }
 
-  /* ============================================================ 组 6 */
   group('openSettings 动作 revision 递增且保留 v2 其余状态')
   {
     reset()

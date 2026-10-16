@@ -1,4 +1,3 @@
-/* 小屏下输入区占窗口高度的比例（量几何，不断言）。 */
 ;(async () => {
   const out = []
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

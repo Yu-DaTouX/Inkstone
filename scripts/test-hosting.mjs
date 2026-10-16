@@ -1,16 +1,6 @@
-/**
- * PR 状态（方案 §7 的 G3）单测。
- *
- * 分两层：
- *   · **纯解析**（远端地址 → owner/repo、GitHub 的 JSON → 状态、HTTP → 分类）——
- *     这些是「状态显示错了」的全部来源，用合成数据钉住最划算。
- *   · **一次真实 API 往返** —— 匿名能不能读、404 怎么分类，只有真打一次才知道。
- *     网络不可用时**跳过并说清楚**（不假装通过）。
- */
 export async function runHostingTests(ok) {
   const { splitRepo, mapPull, mapChecks, classifyHttp, prStatus } = await import('../out/test/hosting.mjs')
 
-  /* ── 1. 远端地址 → owner/repo ────────────────────────── */
   {
     const a = splitRepo('https://github.com/o/r')
     ok(a?.owner === 'o' && a?.repo === 'r' && a?.host === 'github.com', '正常地址解析出 host/owner/repo', JSON.stringify(a))
@@ -21,7 +11,6 @@ export async function runHostingTests(ok) {
     ok(splitRepo('https://github.com/onlyowner') === null, '只有 owner 没有 repo → null', String(splitRepo('https://github.com/onlyowner')))
   }
 
-  /* ── 2. GitHub 的 PR JSON → 我们的状态 ───────────────── */
   {
     ok(mapPull(null).state === 'none', '没有 PR → none')
     ok(mapPull({ state: 'open' }).state === 'open', 'open → open')
@@ -32,7 +21,6 @@ export async function runHostingTests(ok) {
     ok(full.title === 't' && full.number === 7 && full.url === 'u' && full.base === 'main' && full.headSha === 'abc', '标题/编号/链接/base/headSha 都带出来')
   }
 
-  /* ── 3. check-runs → 三态 ───────────────────────────── */
   {
     ok(mapChecks([]) === 'none', '没有检查 → none')
     ok(mapChecks(null) === 'none', 'null → none（不抛）')
@@ -51,7 +39,6 @@ export async function runHostingTests(ok) {
     )
   }
 
-  /* ── 4. HTTP → 分类 ────────────────────────────────── */
   {
     ok(classifyHttp(401, false) === 'auth', '401 → 认证')
     ok(classifyHttp(403, false) === 'auth', '403（非限流）→ 认证')
@@ -61,7 +48,6 @@ export async function runHostingTests(ok) {
     ok(classifyHttp(0, false) === 'unknown', '0（连不上）→ unknown')
   }
 
-  /* ── 5. 本地仓库：没有远端 → 如实说不支持（这一条**不发网络请求**）── */
   {
     const { mkdtempSync, mkdirSync, rmSync } = await import('node:fs')
     const { tmpdir } = await import('node:os')
@@ -83,7 +69,6 @@ export async function runHostingTests(ok) {
     ok(noRemote.ok === false && noRemote.error === 'unsupported', '没有远端 → unsupported（如实说，不发请求）', String(noRemote.error))
     ok(typeof noRemote.message === 'string' && noRemote.message.length > 0, '并带上一句人能看懂的原因', String(noRemote.message))
 
-    /* 加一个本地 bare 远端（认不出托管站）*/
     const bare = join(root, 'bare.git')
     execFileSync('git', ['init', '-q', '--bare', bare], { stdio: 'ignore' })
     g(['remote', 'add', 'origin', bare])
@@ -94,7 +79,6 @@ export async function runHostingTests(ok) {
     rmSync(root, { recursive: true, force: true })
   }
 
-  /* ── 6. 真实 API 往返（网络不可用时跳过，不假装通过）── */
   {
     try {
       const res = await fetch('https://api.github.com/repos/octocat/Hello-World', {
@@ -108,7 +92,6 @@ export async function runHostingTests(ok) {
       })
       ok(classifyHttp(missing.status, false) === 'not-found', '不存在的仓库 → not-found 分类', `HTTP ${missing.status}`)
     } catch (error) {
-      /* 离线环境：如实跳过。写进输出是为了让「为什么这组没跑」有据可查。 */
       console.log('  ⓘ 跳过真实 API 往返（网络不可用）：' + (error instanceof Error ? error.message : String(error)))
       ok(true, '真实 API：网络不可用，已跳过（不是通过，是没测）')
     }

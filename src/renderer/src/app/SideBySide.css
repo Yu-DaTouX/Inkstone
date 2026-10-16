@@ -1,7 +1,3 @@
-/*
- * 并排视图版面（WP-20b）。层 features，只写列的排布与分隔，
- * 列内对话流、输入框的版面仍由 `features/session`、`features/composer` 负责。
- */
 @layer features {
   .v3-split {
     flex: 1;
@@ -18,7 +14,6 @@
     min-height: 0;
   }
 
-  /* 焦点列的输入框描边加深（方案 02 §7.7）；外观只覆盖边框色，不重造控件 */
   .v3-split-col[data-live='1'] .composer {
     border-color: var(--line2);
   }
@@ -59,7 +54,6 @@
     color: var(--fg3);
   }
 
-  /* 非焦点会话：只读投影铺满列，输入框外观贴在列底 */
   .v3-split-peer {
     position: relative;
     display: flex;
@@ -84,7 +78,6 @@
     color: var(--ask-t);
   }
 
-  /* 分隔条占位：真正的 2px 线与命中区、悬停 / 聚焦 / 拖动外观都来自 ui/Splitter */
   .v3-split-resizer {
     display: contents;
   }

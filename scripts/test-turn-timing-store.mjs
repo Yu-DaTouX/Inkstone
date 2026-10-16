@@ -1,16 +1,3 @@
-/**
- * 回合计时元数据存储的纯逻辑测试（实施-11 H-6）。
- *
- * 被测对象：`src/main/turn-timing-store.ts`。它解决的是「pi 的会话 JSONL 不存
- * `elapsedMs`，所以切会话 / 重载后整轮用时丢失」——把宿主算出来的整轮结果留一份，
- * 读历史时挂回对应消息。
- *
- * 为什么必须单测：
- *   · 挂点错了不会报错，只会让**别的回合**显示这一轮的用时（比不显示更坏）；
- *   · 会话 id 直接进文件名，白名单是安全边界，不能靠运气；
- *   · 日志是只追加的，一条脏行不能把整个会话的用时全弄没。
- */
-
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -32,7 +19,6 @@ export async function runTurnTimingStoreTests(ok) {
   const dir = await mkdtemp(join(tmpdir(), 'yan-turntiming-'))
   const sessionId = 'sess-abc.123'
 
-  /* ---- 1. 会话 id 进文件名前的白名单 ---- */
   ok(sanitizeSessionId('a/b\\c') === 'a_b_c', '路径分隔符被换成下划线（不给出目录的口子）', sanitizeSessionId('a/b\\c'))
   ok(sanitizeSessionId('..') === '..', '纯点号保留（不是路径片段）', sanitizeSessionId('..'))
   ok(sanitizeSessionId('a..b/c') === 'a..b_c', '含点的正常 id 保持可读', sanitizeSessionId('a..b/c'))
@@ -42,7 +28,6 @@ export async function runTurnTimingStoreTests(ok) {
     '恶意 id 不会让文件写到目录外'
   )
 
-  /* ---- 2. 往返 ---- */
   const record = {
     v: TURN_TIMING_VERSION,
     logicalTurnId: 'm-1',
@@ -59,20 +44,17 @@ export async function runTurnTimingStoreTests(ok) {
   ok(back[0]?.elapsedMs === 50000, '用时原样读回', `实际 ${back[0]?.elapsedMs}`)
   ok(back[0]?.sourceIds.join(',') === 'm-1,m-2,m-3', '归属消息 id 顺序保留', back[0]?.sourceIds.join(','))
 
-  /* ---- 3. 同一 logicalTurnId 写两次：后者胜（终止原因会变） ---- */
   await appendTurnTiming(dir, sessionId, { ...record, terminalReason: 'stopped', elapsedMs: 12000 })
   const dedup = await readTurnTimings(dir, sessionId)
   ok(dedup.length === 1, '同一回合重写不会变成两个回合', `实际 ${dedup.length}`)
   ok(dedup[0]?.terminalReason === 'stopped', '以后写入的终止原因为准', dedup[0]?.terminalReason)
   ok(dedup[0]?.elapsedMs === 12000, '用时也取后写入的值', `实际 ${dedup[0]?.elapsedMs}`)
 
-  /* ---- 4. 每个会话各读自己那份 ---- */
   await appendTurnTiming(dir, 'other-sess', { ...record, logicalTurnId: 'o-1', elapsedMs: 7000 })
   const other = await readTurnTimings(dir, 'other-sess')
   ok(other.length === 1 && other[0].elapsedMs === 7000, '另一个会话的记录不会串线', `${other.length}/${other[0]?.elapsedMs}`)
   ok((await readTurnTimings(dir, 'nobody')).length === 0, '没有记录的会话返回空数组（不是报错）')
 
-  /* ---- 5. 坏行 / 未知版本跳过 ---- */
   const badFile = join(dir, 'turn-timing', `${sanitizeSessionId('bad')}.jsonl`)
   await mkdir(join(dir, 'turn-timing'), { recursive: true })
   await writeFile(
@@ -90,7 +72,6 @@ export async function runTurnTimingStoreTests(ok) {
   const survived = await readTurnTimings(dir, 'bad')
   ok(survived.length === 1 && survived[0].logicalTurnId === 'ok-1', '脏行 / 未知版本 / 非法字段被跳过，正常行仍读得到', `实际 ${survived.length}`)
 
-  /* ---- 6. 挂点：锚定的用户消息之后、这一轮的最后一条助手消息 ---- */
   const messages = [
     { id: 'm0', role: 'user', text: '问' },
     { id: 'a-tmp-1', role: 'assistant', text: 'a' },
@@ -103,7 +84,6 @@ export async function runTurnTimingStoreTests(ok) {
   ok(applied[1]?.turnTiming === undefined && applied[4]?.turnTiming === undefined, '别的回合不被污染')
   ok(messages[2].turnTiming === undefined, '原数组对象不被修改（返回新数组）')
 
-  /* ---- 7. 锚丢失时回退；全丢就不挂 ---- */
   const fallback = applyTurnTimings(
     [
       { id: 'm-1', role: 'assistant' },
@@ -117,7 +97,6 @@ export async function runTurnTimingStoreTests(ok) {
   ])
   ok(orphan[0]?.turnTiming === undefined, '一条都对不上时不挂（宁可不显示，也不挂错回合）')
 
-  /* ---- 7.5 H-6b：飞行中被拿掉的那一轮 = 中断 ---- */
   {
     ok(
       effectiveTerminalReason({ ...record, final: false }) === 'interrupted',
@@ -132,7 +111,6 @@ export async function runTurnTimingStoreTests(ok) {
       '旧记录没有 final 字段 → 不误报中断（宁可把中断写成完成）'
     )
 
-    /* 真写一遍：中途快照 + 正常收尾写在同一回合上，后者胜 */
     const crashSession = 'crash-sess'
     await appendTurnTiming(dir, crashSession, {
       ...record,
@@ -172,7 +150,6 @@ export async function runTurnTimingStoreTests(ok) {
     )
   }
 
-  /* ---- H-6b：runId 决定「覆盖」还是「累加」 ---- */
   {
     const s = 'sess-runs'
     const base = {
@@ -185,7 +162,6 @@ export async function runTurnTimingStoreTests(ok) {
       sourceIds: ['a1'],
       waitSpans: [{ id: 't1', name: 'bash', startedAt: 1200, endedAt: 2200 }]
     }
-    /* 同一 run：中途快照 + 收尾 → 后者胜，**不累加** */
     await appendTurnTiming(dir, s, { ...base, logicalTurnId: 'm0', runId: 'run-1', final: false })
     await appendTurnTiming(dir, s, {
       ...base,
@@ -200,7 +176,6 @@ export async function runTurnTimingStoreTests(ok) {
     ok(same[0].elapsedMs === 3200, '同一 run 的收尾覆盖中途快照（不累加）', String(same[0].elapsedMs))
     ok(same[0].final === true, '快照的 final 取收尾那条')
 
-    /* 不同 run（自动继续）：同一 anchor → 归一个逻辑回合、用时相加 */
     await appendTurnTiming(dir, s, {
       ...base,
       logicalTurnId: 'm0',
@@ -219,7 +194,6 @@ export async function runTurnTimingStoreTests(ok) {
     ok(merged[0].startedAt === 1000 && merged[0].endedAt === 11000, 'startedAt 取最早、endedAt 取最晚')
     ok((merged[0].waitSpans ?? []).length === 2, 'waitSpans 合并（两段工作各一条）')
 
-    /* 旧记录（没有 runId）保持「后者胜」，不把历史翻倍 */
     const legacy = 'sess-legacy'
     await appendTurnTiming(dir, legacy, { ...base, logicalTurnId: 'a-old', elapsedMs: 1000 })
     await appendTurnTiming(dir, legacy, { ...base, logicalTurnId: 'a-old', elapsedMs: 2000 })
@@ -231,7 +205,6 @@ export async function runTurnTimingStoreTests(ok) {
     )
   }
 
-  /* ---- 8. output token 落盘与跨 run 聚合（实施-15 A-2） ---- */
   {
     const ttDir = await mkdtemp(join(tmpdir(), 'yan-tt-tokens-'))
     const base = {
@@ -254,18 +227,15 @@ export async function runTurnTimingStoreTests(ok) {
       String(back2[0]?.outputTokens)
     )
 
-    /* 同一 run 的两次快照：累积值，后者胜（不相加） */
     ok(await appendTurnTiming(ttDir, 'dup', { ...base, runId: 'r1', outputTokens: 50 }), '中途快照写入')
     ok(await appendTurnTiming(ttDir, 'dup', { ...base, runId: 'r1', outputTokens: 150 }), '终止快照写入')
     const dup = await readTurnTimings(ttDir, 'dup')
     ok(dup.length === 1 && dup[0].outputTokens === 150, '同一 run 只算最后一次（累积值不相加）', String(dup[0]?.outputTokens))
 
-    /* 一条都没报 → undefined（未知），不是 0 */
     ok(await appendTurnTiming(ttDir, 'none', { ...base, runId: 'r1' }), '无 token 记录写入')
     const none = await readTurnTimings(ttDir, 'none')
     ok(none[0]?.outputTokens === undefined, '一条都没报时是 undefined（界面显示未知，不当 0）')
 
-    /* 脏值丢掉：负数 / 字符串 / NaN 都不收 */
     ok(await appendTurnTiming(ttDir, 'dirty', { ...base, runId: 'r1', outputTokens: -5 }), '脏值写入（负）')
     const dirty = await readTurnTimings(ttDir, 'dirty')
     ok(dirty[0]?.outputTokens === undefined, '负 token 被丢掉')

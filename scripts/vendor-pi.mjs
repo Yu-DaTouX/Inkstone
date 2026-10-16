@@ -1,28 +1,4 @@
 #!/usr/bin/env node
-/**
- * 把已安装的 pi 抽成一个**可独立运行**的运行时 → resources/pi-runtime/
- *
- * 为什么这么做（HANDOFF §10 问题 1「pi 怎么分发」）
- * ---------------------------------------------------------------
- * 不要自己做 esbuild 单文件。pi **自己就是 esbuild 打的**（dist/bundle/），
- * 而它打成这样是有原因的 —— 以下四类东西打包器内联不了：
- *   ① 顶层 external 包（chord / typebox / undici）→ ESM 顶层 import 只能留 external
- *   ② .wasm（@silvia-odwyer/photon-node）→ esbuild 不内联 wasm
- *   ③ worker_threads 的独立文件（image-resize-worker.js）
- *   ④ 运行时 readFileSync 的资产（主题 json / export-html 模板 / png）
- * 官方自己的 bundle 撞了这四堵墙，我们照着它的边界「原样搬运 + 补最小依赖」，
- * 而不是重新发明一个必然更脆的打包。
- *
- * 实测体积 ≈ 21MB（依赖捆绑方案 424MB，差距 20 倍）。
- *
- * 用法：
- *   node scripts/vendor-pi.mjs            # 新建并验证运行时，再切换入口
- *   node scripts/vendor-pi.mjs --check    # 只校验现有 runtime 是否可用，不重建
- *   YAN_PI_SRC=<pi包目录> node scripts/vendor-pi.mjs
- *
- * 脚本末尾会**真跑一次** `cli.js --version` + 一次 `get_state` RPC 握手，
- * 失败就非零退出 —— 不做「拷贝成功即通过」这种假验证。
- */
 import {
   existsSync,
   mkdirSync,
@@ -50,33 +26,19 @@ const runtimeRoot = join(root, 'resources', 'pi-runtime')
 let DEST = selectedPiRuntime(runtimeRoot)
 const PKG = '@earendil-works/pi-coding-agent'
 
-/**
- * 需要随 bundle 一起带的运行时依赖。
- *
- * source: 'bundle' = 从 bundle 的裸 import 自动扫出来的（脚本会校验，
- *         扫出来却没覆盖到就报错，避免 pi 升级后漏包）
- *         'runtime' = bundle 里扫不到、只有运行到某个分支才会 require 的
- */
 const MUST_HAVE = [
-  // bundle 里 import 出来的（@earendil-works/chord 只在 1.2.0 之前的 pi 需要，见下方按依赖声明补入）
   'typebox',
   'undici',
   '@silvia-odwyer/photon-node',
-  // 加载 .ts 扩展（用户自己的 left-info-panel.ts 之类）用的编译器。
-  // ⚠️ bundle 里静态扫不到它 —— 是扩展加载器在运行时 require 的（HANDOFF §8 第 11 版坑）
   'jiti'
 ]
 
-/** 已知「可以缺失」的：可选依赖，pi 自己也没装，缺失时功能降级而非崩溃 */
-// The Pi 0.87.1 bundle can reach this through proxy-agent-negotiate, where
-// kerberos is an optional peer for Negotiate/SPNEGO proxy authentication.
 const OPTIONAL = ['@aws-sdk/signature-v4-crt', '@aws-sdk/signature-v4a', 'kerberos']
 
 const log = (s) => console.log(s)
 const ok = (s) => console.log(`  ✓ ${s}`)
 const bad = (s) => console.error(`  ✗ ${s}`)
 
-/* 1. 找到已安装的 pi */
 function findPiRoot() {
   const tried = []
   const push = (p) => {
@@ -96,7 +58,6 @@ function findPiRoot() {
   roots.push(join(homedir(), '.npm-global', 'lib', 'node_modules'))
   roots.push('/usr/local/lib/node_modules')
   roots.push('/usr/lib/node_modules')
-  // 当前项目自己的 node_modules（万一以后 pi 变成 npm 依赖）
   roots.push(join(root, 'node_modules'))
 
   for (const r of roots) {
@@ -104,7 +65,6 @@ function findPiRoot() {
     if (hit) return { root: hit, tried }
   }
 
-  // 从 PATH 上的 pi shim 反推
   for (const dir of (process.env.PATH || '').split(delimiter).filter(Boolean)) {
     for (const rel of [
       join('node_modules', PKG),
@@ -122,7 +82,6 @@ function findPiRoot() {
   )
 }
 
-/* 2. 依赖闭包（递归读 package.json 的 dependencies） */
 function depClosure(piRoot, seeds) {
   const have = new Set()
   const missing = []
@@ -149,13 +108,11 @@ function depClosure(piRoot, seeds) {
       const pj = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
       for (const dep of Object.keys(pj.dependencies || {})) queue.push(dep)
     } catch {
-      /* package.json 坏了也不致命，pi 运行时自然会报 */
     }
   }
   return { have, missing, locate }
 }
 
-/* 3. 扫 bundle 的裸 import —— 用来校验 MUST_HAVE 没漏 */
 function scanExternals(bundleDir) {
   const builtin = new Set(builtinModules)
   const found = new Set()
@@ -184,7 +141,6 @@ function scanExternals(bundleDir) {
   return found
 }
 
-/* 4. 拷贝 dist（保留资产，丢掉源码与类型声明） */
 function copyDist(piRoot) {
   const src = join(piRoot, 'dist')
   const dst = join(DEST, 'dist')
@@ -192,10 +148,10 @@ function copyDist(piRoot) {
   let files = 0
 
   const keep = (rel) => {
-    if (rel.includes(`${'bundle'}`)) return true // bundle 里的 .js 全要
+    if (rel.includes(`${'bundle'}`)) return true
     if (rel.endsWith('.map')) return false
     if (rel.endsWith('.d.ts') || rel.endsWith('.ts')) return false
-    if (rel.endsWith('.js')) return false // 未打包的 TS 产物，bundle 已自包含
+    if (rel.endsWith('.js')) return false
     return true
   }
 
@@ -233,7 +189,6 @@ function dirSize(dir) {
 
 const mb = (b) => (b / 1024 / 1024).toFixed(1) + ' MB'
 
-/* 5. 自检：真跑一次 RPC 握手 */
 function verify(label) {
   const cli = join(DEST, 'dist', 'bundle', 'cli.js')
   const testDir = mkdtempSync(join(tmpdir(), 'inkstone-runtime-check-'))
@@ -253,7 +208,6 @@ function verify(label) {
     return false
   }
 
-  // WASM is resolved only when codemode runs, rather than during the RPC handshake.
   if (comparePiVersions(version, '0.99.0') >= 0 && !existsSync(join(DEST, 'node_modules', 'quickjs-wasi', 'quickjs.wasm'))) {
     bad(`${label} codemode WASM 缺失：quickjs-wasi/quickjs.wasm`)
     return false
@@ -263,7 +217,6 @@ function verify(label) {
     return false
   }
 
-  // 真握手一次：确认启动分支可用；按需加载的工具还需要单独调用验证。
   try {
     const out = execFileSync(process.execPath, [cli, '--mode', 'rpc', '--no-session', '--no-extensions', '--no-skills', '--no-prompt-templates'], {
       input: '{"id":1,"type":"get_state"}\n',
@@ -286,13 +239,10 @@ function verify(label) {
   return true
 }
 
-/* main */
 const checkOnly = process.argv.includes('--check')
 
 if (checkOnly) {
   if (!existsSync(DEST)) {
-    // --if-present：新克隆里 resources/pi-runtime 还没生成（它是 gitignore 的）。
-    // 总检查在缺件时跳过，而不是失败 —— 但在有内置运行时且它坏掉时必须报错。
     if (process.argv.includes('--if-present')) {
       log('⚠ 跳过内置运行时校验：resources/pi-runtime 不存在（需要时跑 node scripts/vendor-pi.mjs）')
       process.exit(0)
@@ -321,18 +271,15 @@ try { requirePiUpgrade(installedVersion, piVersion, process.argv.includes('--all
   bad(error.message)
   process.exit(1)
 }
-// Codemode resolves its WASM asset at runtime, so bundle imports cannot find it.
 if (piPackage.dependencies?.['quickjs-wasi']) {
   MUST_HAVE.push('quickjs-wasi')
 }
-// pi 1.2.0 去掉了 chord；旧版仍从 bundle 里 import 它
 if (piPackage.dependencies?.['@earendil-works/chord']) {
   MUST_HAVE.push('@earendil-works/chord')
 }
 ok(`源：${piRoot}`)
 ok(`版本：pi ${piVersion}`)
 
-// 校验：bundle 扫出来的 external 必须都被 MUST_HAVE 覆盖
 const externals = scanExternals(join(piRoot, 'dist', 'bundle'))
 const uncovered = [...externals].filter(
   (e) => !MUST_HAVE.includes(e) && !OPTIONAL.includes(e) && !e.startsWith('@earendil-works/pi-')
@@ -365,7 +312,6 @@ for (const name of [...have].sort()) {
 }
 ok(`node_modules 子集：${have.size} 个包`)
 
-// 最小 package.json：bundle 会读它取版本号
 writeFileSync(
   join(DEST, 'package.json'),
   JSON.stringify(

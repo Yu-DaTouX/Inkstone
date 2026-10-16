@@ -1,22 +1,3 @@
-/**
- * 定时发送安全接线回归（v3 WP-51）。
- *
- * 采用主区 `scripts/test-schedule-safety.mjs` 的发送身份场景，但只保留与本任务
- * 直接相关的部分：从 `src/main/index.ts` 现文提取 `scheduleService.run()` 与
- * `pinSendTarget` / `pinnedTargetMatches`，接到真实 `RunnerRegistry` 上，验证：
- *
- *   · 正常定时下发前先调 `openScheduled` 登记 T，成功后才 `send`；
- *   · `rememberRunnerSession` / `setModel` 的 await 期间会话被复用 → 明确失败，
- *     不把指令投到别的会话；
- *   · 同 cwd 忙碌（guardExecute）/ 模型不可用 → 原任务失败并经同一 handle 收口；
- *   · 失败 / 拒绝路径不会调用 `send`。
- *
- * 另外做**结构守卫**：确认 `agent.ts` 的 send / steer / followUp / runBash 都经过
- * 同步 claim、真正入队 confirm、取消 / 失败 / 回合结束 release，且 `index.ts` 把
- * `executionPort(id)` 注入了实际 runner。结构守卫不是运行验收，仅防接线回退。
- *
- * 纯本地：不发指令、不启动 pi / Electron、不跑真实模型、不联网。
- */
 import assert from 'node:assert/strict'
 import { readFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -64,7 +45,6 @@ try {
   const { sameRuntimeEnvelope } = await bundle('src/core/run-state.ts', 'run-state', work)
   const dispatchCode = await extractDispatch()
 
-  /** 记录生产链调用顺序的假 runs-host（不启动真注册表 / 不写盘）。 */
   const makeRunsHost = () => {
     let openSeq = 0
     const calls = []
@@ -128,7 +108,6 @@ try {
     return { context, registry, sent, runsHost, dispatch: (overrides = {}) => context.dispatch({ ...task, ...overrides }) }
   }
 
-  /* ── 正常路径：先 open 登记 T，再 send ── */
   let fixture = makeDispatch()
   await fixture.dispatch({})
   verify(fixture.sent.length === 1, '正常定时下发成功')
@@ -137,42 +116,35 @@ try {
   verify(fixture.runsHost.calls.some((call) => call[0] === 'bind'), '选择期同步绑定了定时来源')
   verify(!fixture.runsHost.calls.some((call) => call[0] === 'fail'), '成功路径不调用 failScheduled')
 
-  /* ── remember await 期间会话被换：明确失败且不投别的会话 ── */
   const reuse = async (_, registry) => registry.select({ cwd: work, sessionFile: 'unrelated-session' })
   fixture = makeDispatch({ remember: reuse })
   await assert.rejects(() => fixture.dispatch({}), /目标会话已变化/); checks++
   verify(fixture.sent.length === 0, 'remember await 换会话时不发送')
   verify(!fixture.runsHost.calls.some((call) => call[0] === 'open'), '目标已变时不登记 T、不投别的会话')
 
-  /* ── setModel await 期间会话被换：同一 handle 收口，不发送 ── */
   fixture = makeDispatch({ model: reuse })
   await assert.rejects(() => fixture.dispatch({ model: 'fixture/model' }), /目标会话已变化/); checks++
   verify(fixture.sent.length === 0, 'model await 换会话时不发送')
   verify(fixture.runsHost.calls.some((call) => call[0] === 'fail'), '目标变化后以同一 handle 收成失败')
 
-  /* ── select 返回身份在捕获前复核 ── */
   fixture = makeDispatch({ selection: async (context, registry) => { registry.select = RunnerRegistry.prototype.select.bind(registry); await reuse(context, registry) } })
   await assert.rejects(() => fixture.dispatch({}), /目标会话已变化/); checks++
   verify(fixture.sent.length === 0, 'select 响应身份不符时不发送')
 
-  /* ── registry 被替换：失败关闭 ── */
   fixture = makeDispatch({ remember: (context) => { context.runners = null } })
   await assert.rejects(() => fixture.dispatch({}), /目标会话已变化/); checks++
   verify(fixture.sent.length === 0, 'registry 替换后失败关闭')
 
-  /* ── 同 cwd guard 拦截：原任务失败，不发送 ── */
   fixture = makeDispatch({ guard: true })
   await assert.rejects(() => fixture.dispatch({}), /busy cwd/); checks++
   verify(fixture.sent.length === 0, '同 cwd 冲突时不发送')
   verify(fixture.runsHost.calls.some((call) => call[0] === 'fail'), 'guard 拒绝后以同一 handle 收成失败')
 
-  /* ── 模型不可用：原任务失败，不发送 ── */
   fixture = makeDispatch({ rejectModel: true })
   await assert.rejects(() => fixture.dispatch({ model: 'fixture/model' }), /model failure/); checks++
   verify(fixture.sent.length === 0, '模型不可用时不发送')
   verify(fixture.runsHost.calls.some((call) => call[0] === 'fail'), '模型不可用后以同一 handle 收成失败')
 
-  /* ── 结构守卫：执行入场接线与注入 ── */
   const agent = await readFile('src/main/agent.ts', 'utf8')
   verify(agent.includes("import type { ExecuteAdmissionPort } from './session-send-guard'"), 'agent.ts 引入了 ExecuteAdmissionPort')
   verify((agent.match(/const admission = this\.claimExecutionAdmission\(\)/g) ?? []).length === 4, 'send / steer / followUp / runBash 四处同步 claim')

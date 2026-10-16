@@ -1,10 +1,3 @@
-/**
- * v3 主页窄屏的一行本机用量：Token 合计 · 会话数 · 活跃天数 · 近 14 天迷你柱。
- *
- * 与右栏完整用量同一取数钩子 `useUsageStats('all')`（同一份本次运行内缓存），
- * 不另做统计；取数中数字显示「—」，没有记录时显示 0。只在对话列窄于 760px 时
- * 由 `v3-empty-state.css` 的容器查询显示，宽屏时右栏完整展示、本条隐藏。
- */
 import type { JSX } from 'react'
 import { compactNumber, useUsageStats } from '../components/chat/UsageOverview'
 import './usage-pattern.css'

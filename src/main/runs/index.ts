@@ -1,27 +1,3 @@
-/**
- * 运行注册表装配入口（v3 WP-10）。
- *
- * 把「纯 reducer（shared/runs.ts） + 注册表 + 编号 + 历史 + 250ms 合并推送 +
- * 停滞监测」拼成一套可直接被主进程旁路接入的东西：
- *
- * ```ts
- * const pipeline = await createRunPipeline({
- *   root: YAN_DIR,
- *   publish: (payload) => pushFrom({ ch: 'runs', payload }),
- *   onError: (error) => console.warn('[runs]', error.code, error.message)
- * })
- * // pi 事件（只读旁路，不改 pi 循环）：
- * pipeline.registry.observePi(ctx, evt)
- * // 扩展 UI 请求 / 答复：
- * pipeline.registry.observeUiRequest(ctx, req); pipeline.registry.observeUiResolved(ctx, id)
- * // 流式循环防护：abort 之前标记
- * pipeline.registry.markLoopAbort(ctx, '重复输出')
- * // 进程退出：
- * pipeline.registry.observePiExit(ctx, code, signal)
- * ```
- *
- * 返回值里的 `publisher` / `monitor` 可注入定时器，测试不碰真实计时。
- */
 import { DurableRunHistory, type RunHistoryWriter } from './history'
 import { RunPublisher, type RunUpdatePayload } from './publisher'
 import { RunRegistry, type RunContext, type RunError, type RunRegistryOptions } from './registry'
@@ -33,18 +9,14 @@ export interface RunPipelineOptions {
   root?: string
   codes?: SessionCodeStore
   history?: RunHistoryWriter
-  /** 接收合并后的增量；通常接 `MainPush` 的 `runs` 通道 */
   publish?: (payload: RunUpdatePayload) => void
   onError?: (error: RunError) => void
   now?: () => number
   newRunId?: () => string
   thresholds?: () => Partial<StallThresholds>
   exemptTools?: () => string[]
-  /** 普通变化合并窗口，默认 250ms */
   batchMs?: number
-  /** 停滞检查间隔，默认 1000ms */
   stallIntervalMs?: number
-  /** false = 不自动启动停滞监测（由上层控制） */
   autoStartMonitor?: boolean
   setTimeout?: (fn: () => void, ms: number) => unknown
   clearTimeout?: (handle: unknown) => void
@@ -116,7 +88,6 @@ export async function createRunPipeline(options: RunPipelineOptions = {}): Promi
   }
 }
 
-/** 从 runner 身份封套构造运行上下文；**不**把 runner 的 runId 当作每轮运行 ID。 */
 export function runContextFromEnvelope(
   envelope: { sessionId: string; projectId?: string; generation?: number },
   extra: Partial<Omit<RunContext, 'sessionId'>> = {}

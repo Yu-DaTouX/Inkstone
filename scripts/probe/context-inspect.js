@@ -1,4 +1,3 @@
-/* 真实一轮对话后，上下文浮层应出现「固定部分明细」：系统提示分段 + 工具定义（context-inspect 薄层上报）。 */
 ;(async () => {
   const out = []
   const ok = (v, label) => out.push(`  ${v ? '✓' : '✗'} ${label}`)
@@ -35,7 +34,6 @@
       const tools = qa('[data-testid="ctx-inspect-tools"] li')
       ok(sections.length >= 2, `系统提示被拆成多段（${sections.length}）`)
       ok(tools.length >= 1, `列出了工具定义（${tools.length}）`)
-      /* 汇总行只显示「固定部分」合计，系统提示与工具定义的拆分在悬停提示里 */
       const summary = box.querySelector('summary')
       ok(/系统提示 [\d.]+k? · 工具定义 [\d.]+k?/.test(summary?.getAttribute('title') ?? ''), '汇总行的提示含系统提示与工具定义 token')
       out.push('  摘要：' + (summary?.textContent ?? '') + ' / ' + (summary?.getAttribute('title') ?? ''))

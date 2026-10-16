@@ -1,4 +1,3 @@
-/** Small paid-model acceptance: current host, native RPC, tools, streaming and explicit read-only child. */
 ;(async () => {
   const MODEL = 'commandcode/deepseek/deepseek-v4.1-flash'
   const MODEL_ID = 'deepseek/deepseek-v4.1-flash'
@@ -66,7 +65,6 @@
       const child = s().subagents.find(run => run.task === CHILD_TASK)
       if (child) childId = child.id
       if (sawRunning && !s().session?.isAgentRunning && body.includes('YAN-BUNDLE-MAIN-OK') && child && ['done', 'error', 'cancelled'].includes(child.status)) {
-        // A child completion notification can immediately start another real response.
         settledSince ||= Date.now()
         if (Date.now() - settledSince >= 2000) break
       } else settledSince = 0
@@ -88,12 +86,6 @@
     check(child.transcript.some(m => m.role === 'assistant' && m.text.includes('YAN-BUNDLE-CHILD-OK')), '子模型转录有真实回复标记')
     check(child.contextUsage?.contextWindow > 0, '子模型结束后读取原生上下文窗口')
     out.push('  子进程=' + JSON.stringify({id: child.id, model: child.model, isolation: child.isolation, contextUsage: child.contextUsage, usage: child.usage}))
-    /*
-     * 两层身份分开验：
-     *   ① 持久化数据里保留 **provider + 原始 id**（不是显示名，也不能被截断）；
-     *   ② 页脚展示的是**模型菜单里的显示名**（用户看到的那一项），不是恰好含 raw id。
-     * title/aria-label 里同时给出身份，便于悬停核对。
-     */
     const persistedModel = [...s().messages].reverse().find(m => m.role === 'assistant' && m.model)?.model
     check(persistedModel === MODEL, `持久化的回合模型保留 provider + 原始 id（${persistedModel ?? '缺'}）`)
     const displayName = match.name || MODEL_ID

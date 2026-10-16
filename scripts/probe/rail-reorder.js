@@ -1,19 +1,3 @@
-/**
- * 项目 / 分组拖拽排序（N01）。
- *
- * 用户反馈的「分组不全面」第二条：分组和项目的**顺序**定不下来 ——
- * 之前项目按最近活动自动排、分组按创建顺序，用户没法把常用的挪到前面。
- *
- * 这里用**合成的 PointerEvent** 走真实渲染路径：
- *   pointerdown（行上）→ pointermove（越过阈值）→ pointermove（落点）→ pointerup
- * 实现里没有用 HTML5 的 draggable，所以这条路径与应用里用户手拖的那条是**同一条**；
- * 断言看三处：
- *   1. 界面上行的先后（DOM 顺序）
- *   2. store 里的设置（projectOrder / projectGroups）
- *   3. `window.yan.getSettings()` 读回的值 —— 证明真的过了 IPC 写盘
- *
- * 另外验三条边界：折叠态下能拖、搜索态下不能拖、拖完紧跟的 click 被吞掉。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -35,7 +19,6 @@
   }
   const settle = () => sleep(420)
 
-  /** 合成一次指针事件（React 的 onPointerDown 走合成冒泡，window 监听直接收到） */
   const pointerAt = (target, type, x, y) => {
     target.dispatchEvent(new PointerEvent(type, {
       bubbles: true,
@@ -51,13 +34,6 @@
     }))
   }
 
-  /**
-   * 把 `fromEl` 这一行拖到 `toEl` 的上半（after=false）或下半（after=true）。
-   *
-   * 中间那次「越过阈值」的移动不能省：实现里按下时只是**记录候选**，
-   * 没超过 4px 一律当点击 —— 否则项目行的单击就没法用了。
-   * 返回落点提示线的数量（拖拽中应恰好有 1 条）。
-   */
   const dragTo = async (fromEl, toEl, after) => {
     const a = fromEl.getBoundingClientRect()
     const b = toEl.getBoundingClientRect()
@@ -75,7 +51,6 @@
     const dragging = qa('.is-dragging').length
     pointerAt(window, 'pointerup', tx, ty)
     await sleep(60)
-    /* 浏览器在 pointerup 之后一定会补一个 click；实现必须吞掉它，否则会顺带切项目 */
     let reachedWindow = false
     const mark = () => { reachedWindow = true }
     window.addEventListener('click', mark)
@@ -98,13 +73,10 @@
       await sleep(250)
     }
     localStorage.setItem('yan.onboarded', '1')
-    /* 展开完整侧栏（mini 态下没有项目行） */
     store.getState().setRailPinned(true)
     await sleep(300)
 
-    /* ---- 造 2 个分组 + 7 个项目（超过「前五项」预览上限，用来验折叠态的拖拽）---- */
     const stamp = Date.now()
-    /* 场景带夹具项目：用里面预建的真实子目录（主进程对新项目 cwd 走 validateCwd）。 */
     const base = String(store.getState().settings.cwd ?? '').replace(/[\\/]+$/, '')
     const cwdOf = (n) => `${base}/probe-projects/p${n}`
     const groups = [
@@ -127,7 +99,6 @@
       recentCwds: projects.map((p) => p.cwd),
       projectOrder: []
     })
-    /* 左栏只显示**有会话的项目**：每个项目至少配一条会话，否则一个项目行都不出现。 */
     store.setState({
       sessions: projects.map((p, i) => ({
         id: `pr-s${i}`,
@@ -143,7 +114,6 @@
     })
     await settle()
 
-    /* 默认只展开前五项 —— 先点开「更多项目」，让七个行都在 */
     const moreBtn = q('[data-testid="rail-more-projects"]')
     ok(!!moreBtn, '项目数超过预览上限时有「更多项目」入口')
     if (moreBtn) click(moreBtn)
@@ -153,7 +123,6 @@
     const initialProjects = projectOrder()
     const initialGroups = groupOrder()
     const probeIds = projects.map((p) => p.id)
-    /** 探针造的 7 个项目一个不少（环境里可能还有别的项目记录，不按绝对数量断言） */
     const allProbeRows = (list) => probeIds.every((id) => list.includes(id))
     out.push('  初始项目行 = ' + JSON.stringify(initialProjects))
     out.push('  初始分组标题 = ' + JSON.stringify(initialGroups))
@@ -161,7 +130,6 @@
     ok(allProbeRows(initialProjects), `探针的 7 个项目行都渲染出来了（共 ${initialProjects.length} 行）`)
     ok(initialProjects.slice(0, 2).join(',') === 'pra1,pra2', '甲组内先按活动序', initialProjects.slice(0, 2).join(','))
 
-    /* ---- 1. 同组内拖项目：把「甲二」拖到「甲一」之前 ---- */
     const one = rowOf('pra1')
     const two = rowOf('pra2')
     ok(!!one && !!two, '找得到甲组的两个项目行')
@@ -188,7 +156,6 @@
       `实际 ${saved1.projectOrder.length} 条`
     )
 
-    /* ---- 2. 跨组落点必须被拒绝（同组才允许换序）---- */
     const beforeCross = projectOrder().join(',')
     const orderBeforeCross = store.getState().settings.projectOrder.join(',')
     const a1 = rowOf('pra1')
@@ -203,7 +170,6 @@
       `${saved2.projectOrder.join(',')} vs ${orderBeforeCross}`
     )
 
-    /* ---- 3. 拖分组：把「乙组」拖到「甲组」之前 ---- */
     const headB = headOf('probe-reorder-b')
     const headA = headOf('probe-reorder-a')
     ok(!!headB && !!headA, '找得到两个分组标题')
@@ -220,13 +186,11 @@
       '分组顺序已经过 IPC 落盘',
       JSON.stringify(saved3.projectGroups.map((g) => g.id))
     )
-    /* 分组换了位置，但组内项目归属不能被顺带改掉 */
     ok(
       saved3.projects.filter((p) => p.groupId === 'probe-reorder-a').length === 2 &&
         saved3.projects.filter((p) => p.groupId === 'probe-reorder-b').length === 2,
       '拖分组不动项目归属'
     )
-    /* 组内项目的先后也要保住（分组换位只换标题的顺序） */
     ok(
       saved3.projectOrder.indexOf('pra2') < saved3.projectOrder.indexOf('pra1') &&
         saved3.projectOrder.indexOf('prb1') < saved3.projectOrder.indexOf('prb2'),
@@ -234,7 +198,6 @@
       JSON.stringify(saved3.projectOrder)
     )
 
-    /* ---- 4. 折叠态（默认只展开前 5 个）下开始拖 → 自动展开 ---- */
     const more = q('[data-testid="rail-more-projects"]')
     ok(!!more, '「更多项目」入口仍在（用来折叠回前五项）')
     if (more) {
@@ -253,10 +216,6 @@
       const expandedNow = q('[data-testid="rail-more-projects"]')?.dataset.expanded
       const rowsNow = qa('[data-testid="rail-project-row"]').length
       ok(expandedNow === '1' && rowsNow > 5, '一开始拖就自动展开到全部项目（否则拖不到隐藏的行）', `expanded=${expandedNow} rows=${rowsNow}`)
-      /*
-       * 落点选**第二行**（与第一行同组）—— 分组之间不接受落点，
-       * 选第 3 行就可能跨组、进而什么都验不到。
-       */
       const second = qa('[data-testid="rail-project-row"]')[1].getBoundingClientRect()
       pointerAt(window, 'pointermove', second.left + 40, second.top + second.height * 0.75)
       await sleep(80)
@@ -267,7 +226,6 @@
       ok(allProbeRows(afterFold), '展开后的顺序里探针项目一个不少', `实际 ${afterFold.length} 行`)
     }
 
-    /* ---- 5. 搜索态下不允许拖 ---- */
     await until(() => !!q('[data-testid="rail-search"]'))
     const input = q('[data-testid="rail-search"]')
     if (input) {
@@ -294,12 +252,10 @@
       ok(false, '搜索框应当打开')
     }
 
-    /* ---- 6. 收尾：视觉态不能残留 ---- */
     ok(qa('.is-dragging').length === 0, '拖完之后没有残留的 is-dragging', `实际 ${qa('.is-dragging').length}`)
     ok(qa('.drop-before, .drop-after').length === 0, '拖完之后没有残留的插入线', `实际 ${qa('.drop-before, .drop-after').length}`)
     ok(!document.body.classList.contains('rail-dragging'), 'body 上没有残留的 rail-dragging 类')
 
-    /* ---- 7. 设置里的陈旧项目 id 要被清掉（读盘与写盘两处清洗）---- */
     await store.getState().patchSettings({
       projectOrder: ['ghost-not-a-project', ...store.getState().settings.projectOrder]
     })
@@ -312,7 +268,6 @@
     )
     ok(savedGhost.projectOrder.length > 0, '沏掉幽灵 id 的同时不误伤真实项目', `剩 ${savedGhost.projectOrder.length} 条`)
 
-    /* 把探针造的数据清掉（隔离目录，但仍然不给下一场景留脏数据） */
     await store.getState().patchSettings({ projectGroups: [], projects: [], recentCwds: [], projectOrder: [] })
     await sleep(200)
     const saved4 = await window.yan.getSettings()

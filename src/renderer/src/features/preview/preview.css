@@ -1,7 +1,3 @@
-/*
- * 预览面板（WP-32）的版面。颜色与字号取 v3 令牌，控件外壳来自 `ui/`。
- */
-
 .v3-preview {
   display: flex;
   flex-direction: column;

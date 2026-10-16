@@ -1,16 +1,3 @@
-/**
- * 能力目录与技能服务（`src/shared/capabilities.ts`、
- * `src/main/capabilities/skill-service.ts`、`src/main/capabilities/catalog.ts`，实施-04 S2）的测试。
- *
- * 这一片的核心不是「搜得准」，而是**目录可信**：
- *   · 来源由宿主赋予，不因为描述自称就变化；
- *   · 不同项目的私有能力互相看不见，且不泄漏对方绝对路径；
- *   · 没有描述的能力不进候选（读到了也不知道怎么用）；
- *   · 技能正文读取只认 pi 报告的路径，`..` 逃逸被拒。
- *
- * 纯逻辑部分直接构造输入，不依赖 RPC；技能读取用隔离临时目录里的真文件。
- * 不碰真实用户数据（`~/.pi` 一行不写）。
- */
 export async function runCapabilityCatalogTests(ok, modules) {
   const caps = modules.capabilities
   const skill = modules.skill
@@ -32,8 +19,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
     effect: 'read',
     ...extra
   })
-
-  /* ---------------------------------------------------- 1. 词法与打分 */
 
   {
     const tokens = caps.tokenizeCapabilityQuery('压缩上下文 compaction')
@@ -69,7 +54,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
   }
 
   {
-    /* 空 query = 列出全部，且顺序稳定（同一份目录两次查询必须一致）。 */
     const list = [cap('skill:z'), cap('skill:a'), cap('skill:m')]
     const first = caps.searchCapabilities(list, { queryText: '' })
     const second = caps.searchCapabilities([...list].reverse(), { queryText: '' })
@@ -79,8 +63,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
       'search：空 query 的顺序与输入顺序无关（稳定排序）'
     )
   }
-
-  /* ------------------------------------------------ 2. 目录隔离与质量门 */
 
   {
     const result = caps.searchCapabilities(
@@ -114,12 +96,9 @@ export async function runCapabilityCatalogTests(ok, modules) {
   }
 
   {
-    /* 有描述但不可用的能力仍应出现（模型需要看到「需要认证」而不是「不存在」）。 */
     const result = caps.searchCapabilities([cap('skill:auth', { availability: 'needs-auth' })], { queryText: '' })
     ok(result.hits.length === 1, 'quality：needs-auth 的能力仍然可见（不可用 ≠ 不存在）')
   }
-
-  /* ----------------------------------------------------- 3. 去重与冲突 */
 
   {
     const a = cap('skill:dup', { source: { owner: 'user', location: 'C:\\u\\dup.md' } })
@@ -131,12 +110,9 @@ export async function runCapabilityCatalogTests(ok, modules) {
   }
 
   {
-    /* 同一份来源的重复项不算冲突（刷新时不该出现假警报）。 */
     const { conflicts } = caps.dedupeCapabilities([cap('skill:same'), cap('skill:same')])
     ok(conflicts.length === 0, 'dedupe：同一来源的重复不算冲突')
   }
-
-  /* ------------------------------------------------ 4. 从 pi 命令投影技能 */
 
   {
     const commands = [
@@ -145,11 +121,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
       { name: 'skill:no-path', source: 'skill', description: '没有路径', executable: false },
       { name: 'skill:not-md', source: 'skill', location: 'C:\\agent\\skills\\x\\README.md', description: '不是 SKILL.md', executable: false },
       { name: 'skill:relative', source: 'skill', location: 'skills\\rel\\SKILL.md', description: '相对路径', executable: false },
-      /*
-       * 真缺陷回归（04-S2 实测踩过）：pi 把 SKILL.md 路径放在 `sourceInfo.path`，
-       * 顶层**没有** `location`。早期只看顶层 location 的版本把全部技能丢掉了，
-       * 目录里只剩内置能力（`considered` 恒等于内置条数）。
-       */
       {
         name: 'skill:sqlite',
         source: 'skill',
@@ -176,8 +147,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
     )
   }
 
-  /* ------------------------------------------------- 5. frontmatter 与路径 */
-
   {
     const body = skill.stripSkillFrontmatter('---\nname: x\ndescription: y\n---\n\n# 标题\n正文\n')
     ok(body === '# 标题\n正文', 'frontmatter：被剥掉，正文保留')
@@ -192,8 +161,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
     ok(skill.skillLocationAllowed('C:\\agent\\skills\\demo\\SKILL.md', base), 'path：技能目录内的路径允许')
     ok(!skill.skillLocationAllowed('C:\\agent\\skills\\other\\SKILL.md', base), 'path：目录外的路径拒绝')
   }
-
-  /* ------------------------------------------------ 6. 真实文件读取（含 hash） */
 
   {
     const agentsDir = join(root, 'agent')
@@ -210,7 +177,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
     const again = await skill.readSkillById(commands, 'skill:demo-skill')
     ok(again.contentHash === read.contentHash, 'read：同一内容 hash 稳定')
 
-    /* 正文变化 → hash 变化（§6「正文变化后当前任务再使用须重新读取」的依据）。 */
     await writeFile(file, '---\nname: demo-skill\ndescription: 单测用技能\n---\n\n# demo-skill v2\n', 'utf8')
     const changed = await skill.readSkillById(commands, 'skill:demo-skill')
     ok(changed.contentHash !== read.contentHash, 'read：正文变化后 hash 变化')
@@ -223,8 +189,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
     }
     ok(notFound instanceof Error, 'read：找不到技能时抛错（不静默返回空）')
   }
-
-  /* ------------------------------------------------------- 7. 目录组装 */
 
   {
     const built = catalog.buildCatalog([
@@ -239,14 +203,7 @@ export async function runCapabilityCatalogTests(ok, modules) {
     ok(built.conflicts.length === 0, 'catalog：无冲突时 conflicts 为空')
   }
 
-  /* ------------------------------------------------- 8. MCP 工具进目录（S4） */
-
   {
-    /*
-     * §13.1「两个同名工具」：两个服务各有一个 `search`，
-     * **不能**因为 toolName 相同就合并成一条 —— 合并的后果是模型以为
-     * 只有一个服务能用。
-     */
     const mcpEntries = [
       { serverId: 'alpha', toolName: 'search', description: '在 alpha 里搜', schemaRevision: 'rev-a' },
       { serverId: 'beta', toolName: 'search', description: '在 beta 里搜', schemaRevision: 'rev-b' },
@@ -262,7 +219,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
     ok(alpha?.title === 'alpha · search', 'MCP：标题带服务名', String(alpha?.title))
     ok(/在 alpha 里搜（MCP 服务 alpha 的工具 search）/.test(alpha?.description ?? ''), 'MCP：描述拼上归属，不丢来源')
     ok(alpha?.schemaRevision === 'rev-a', 'MCP：schemaRevision 进目录（供 describe 对齐版本）')
-    /* 服务自报 readOnlyHint 不是权限（§4）：目录一律 unknown，除非受信配置声明。 */
     ok(built.capabilities.filter((c) => c.kind === 'mcp-tool').every((c) => c.effect === 'unknown'), 'MCP：默认 effect 为 unknown（不自报权限）')
     ok(
       alpha?.source.location === 'yan mcp describe --server alpha --tool search',
@@ -270,7 +226,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
       String(alpha?.source.location)
     )
 
-    /* 服务未给描述时也不能变成「不可发现」（isUsableCapability 会按描述长度挡掉）。 */
     const silent = built.capabilities.find((c) => c.id === 'mcp:alpha/silent')
     ok((silent?.description.length ?? 0) >= 4, 'MCP：缺描述时补齐归属，不变成不可发现')
     ok(silent?.schemaRevision === undefined, 'MCP：没有 inputSchema 时不给假的 schemaRevision')
@@ -278,7 +233,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
     const usables = built.capabilities.filter((c) => c.kind === 'mcp-tool').length
     ok(usables === 3, 'MCP：三条都通过可用性过滤（真的能被搜到）')
 
-    /* 模型能按目标搜到 MCP 工具：这就是 S4 的出口。 */
     const search = caps.searchCapabilities(built.capabilities, { queryText: 'alpha 里搜索' })
     ok(search.hits.some((h) => h.capability.id === 'mcp:alpha/search'), 'MCP：按目标能搜到工具', search.hits.map((h) => h.capability.id).join(','))
   }

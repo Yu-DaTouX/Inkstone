@@ -1,15 +1,3 @@
-/*
- * 中途被拿掉的回合读回后报「已中断」（实施-11 H-6b-2，重启后的第二个探针）。
- *
- * 这条路要两段才能拼出来：
- *   ① 第一次启动跑一个真实回合，写下计时记录；
- *   ② 重启前由测试进程**往同一个 `logicalTurnId` 追加一条 `final: false`** 的
- *      中途快照 —— 这正是「应用在飞行中被拿掉、只剩最后那次快照」在盘上的样子。
- * 这个探针做第 ③ 段：切进那条会话，看界面写的是不是「已中断」。
- *
- * 为什么不直接强杀进程：SIGKILL 之后连“最后一条快照有没有落盘”都不确定，
- * 测出来的是调度运气而不是代码行为；追加快照验的是同一段读侧逻辑。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -31,12 +19,10 @@
     ok(Array.isArray(list) && list.length >= 1, `重启后仍能看到上次的会话（${list?.length ?? 0} 条）`)
     if (!list?.length) return out.join('\n')
 
-    /* 取最近的一条（上一次运行写的那个真实会话） */
     const target = list[0]
     out.push(`  turn-timing.interrupted.session=${target?.path ?? ''}`)
 
     const peek = await window.yan.peekSession(target.path)
-    /* 诊断：把历史消息 id / 角色 / 是否挂上计时打出来（匹配失败时看这个） */
     out.push(
       '  turn-timing.interrupted.messages=' +
         JSON.stringify(
@@ -56,7 +42,6 @@
     out.push(`  turn-timing.interrupted.reason=${record?.terminalReason ?? ''}`)
     out.push(`  turn-timing.interrupted.ms=${record?.elapsedMs ?? 0}`)
 
-    /* 真实界面：切进那条会话，页脚必须写出来 —— 数据层对了但没接进 UI 不算完 */
     await store.getState().switchSession(target.path)
     for (let i = 0; i < 60; i++) {
       if (document.querySelector('[data-testid="turn-footer"]')) break

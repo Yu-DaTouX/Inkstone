@@ -1,15 +1,3 @@
-/**
- * 启动页用量概览的数据源：扫描 pi 会话文件，按本地日期记消息数、token 与模型。
- *
- * 会话文件是只追加的 JSONL，可能有几百 MB：
- *   · 每个文件记住已读到的字节位置，之后只读新追加的部分；文件变短或换了就从头读。
- *   · 只解码每行开头（类型、角色、时间）和结尾（模型、用量），不解析中间的正文与工具输出。
- *   · 结果缓存到数据目录，重启后不必全量重扫。
- *
- * 来源有两类：主会话（session-search 的枚举，范围不变）与子代理原生 session
- * （`<archiveDir>/sessions/<sub-id>/*.jsonl`，见 usage-sources.ts）。文件按真实路径
- * 去重后各记一份，聚合时只把子代理的 Token / 模型 / 热力图并进来。
- */
 import { createReadStream } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
@@ -23,25 +11,17 @@ import {
   type UsageSources
 } from './usage-sources'
 
-/**
- * 缓存格式版本。
- * v1 只有主会话、没有来源标记；v2 区分 main / subagent。版本不符时整体重建，
- * 不把新的子代理来源塞进旧缓存造成重复或漏算。
- */
-const CACHE_VERSION = 2
+const CACHE_VERSION = 3
 const HEAD_BYTES = 240
 const TAIL_BYTES = 2048
 
 interface FileEntry {
   size: number
-  /** 已处理到的字节位置（总在换行之后） */
   offset: number
   usage: FileUsage
-  /** 这份文件属于哪一类来源（决定聚合时是否计入“次数类”指标） */
   sourceKind: UsageSourceKind
 }
 
-/** 用量读取函数；一个实例持有自己的增量缓存。 */
 export interface UsageReader {
   (range: UsageRange): Promise<UsageStatsView & { userName: string }>
 }
@@ -51,8 +31,8 @@ const STAMP = /"timestamp":"([^"]+)"/
 const MODEL = /"provider":"([^"]{1,80})","model":"([^"]{1,160})"/g
 const TOTAL = /"totalTokens":(\d+)/
 const PART = /"(input|output|cacheRead|cacheWrite)":(\d+)/g
+const COST = /"cost":\{[^{}]*?"total":(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)/
 
-/** 一行 → 计入 usage；只看开头与结尾两段 */
 export function countLine(line: Buffer, usage: FileUsage): void {
   const head = line.subarray(0, HEAD_BYTES).toString('utf8')
   const role = ROLE.exec(head)?.[1]
@@ -77,13 +57,15 @@ export function countLine(line: Buffer, usage: FileUsage): void {
   }
   if (tokens <= 0) return
   u.t += tokens
-  /* 模型字段在用量之前；取用量前最后一次出现的 provider/model */
+  const cost = Number(COST.exec(tail.slice(at))?.[1] ?? NaN)
+  const spent = Number.isFinite(cost) && cost > 0 ? cost : 0
+  if (spent) u.c = (u.c ?? 0) + spent
   let key = ''
   for (const m of tail.slice(0, at).matchAll(MODEL)) key = `${m[1]}/${m[2]}`
   if (key) u.models[key] = (u.models[key] ?? 0) + tokens
+  if (key && spent) (u.modelCost ??= {})[key] = (u.modelCost[key] ?? 0) + spent
 }
 
-/** 从 offset 读到文件末尾最后一个换行，返回新的 offset */
 function scan(path: string, offset: number, usage: FileUsage): Promise<number> {
   return new Promise((resolve, reject) => {
     let pos = offset
@@ -104,9 +86,6 @@ function scan(path: string, offset: number, usage: FileUsage): Promise<number> {
   })
 }
 
-/**
- * 建一个用量读取器。默认读真实数据目录；测试传临时目录来源，避免扫到用户数据。
- */
 export function createUsageReader(sources: UsageSources = defaultUsageSources()): UsageReader {
   const cacheFile = sources.cacheFile
   let cache: Map<string, FileEntry> | null = null
@@ -128,11 +107,9 @@ export function createUsageReader(sources: UsageSources = defaultUsageSources())
       await mkdir(dirname(cacheFile), { recursive: true })
       await writeFile(cacheFile, JSON.stringify({ version: CACHE_VERSION, files: Object.fromEntries(map) }))
     } catch {
-      /* 缓存写不了只影响下次启动速度 */
     }
   }
 
-  /** 把两类来源按真实路径去重后合并为同一张待扫描清单 */
   async function collectRefs(): Promise<Array<{ ref: UsageFileRef; sourceKind: UsageSourceKind }>> {
     const [main, subagents] = await Promise.all([sources.listMain(), sources.listSubagents()])
     const tagged: Array<{ ref: UsageFileRef; sourceKind: UsageSourceKind }> = []
@@ -162,13 +139,11 @@ export function createUsageReader(sources: UsageSources = defaultUsageSources())
     for (const { ref, sourceKind } of tagged) {
       const hit = map.get(ref.path)
       if (hit && hit.size === ref.size && hit.sourceKind === sourceKind) continue
-      /* 同一物理文件换了来源：沿用已读的 usage，只换标记，不重复累计 */
       if (hit && hit.size === ref.size) {
         hit.sourceKind = sourceKind
         changed = true
         continue
       }
-      /* 只追加：变长就接着读；变短（被改写）就从头重算 */
       const entry: FileEntry = hit && ref.size > hit.offset && ref.size > hit.size ? hit : { size: 0, offset: 0, usage: {}, sourceKind }
       entry.sourceKind = sourceKind
       try {
@@ -177,7 +152,6 @@ export function createUsageReader(sources: UsageSources = defaultUsageSources())
         map.set(ref.path, entry)
         changed = true
       } catch {
-        /* 读不了的文件跳过，下次再试 */
       }
     }
     if (changed) await saveCache(map)
@@ -196,7 +170,6 @@ export function createUsageReader(sources: UsageSources = defaultUsageSources())
     try {
       userName = userInfo().username
     } catch {
-      /* 取不到用户名就不称呼 */
     }
     return { ...aggregateUsageSources({ main, subagents }, range), userName }
   }
@@ -204,7 +177,6 @@ export function createUsageReader(sources: UsageSources = defaultUsageSources())
 
 let defaultReader: UsageReader | null = null
 
-/** 生产入口：读真实 `YAN_DIR` 下的主会话与子代理原生 JSONL。 */
 export function readUsageStats(range: UsageRange): Promise<UsageStatsView & { userName: string }> {
   defaultReader ??= createUsageReader()
   return defaultReader(range)

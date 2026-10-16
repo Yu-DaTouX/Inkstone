@@ -25,7 +25,6 @@ function argumentPath(raw: string | undefined, cwd: string): string | undefined 
   return isAbsolute(unquoted) ? unquoted : resolve(cwd, unquoted)
 }
 
-/** Desktop-only operations; no corresponding remote/model capability endpoint. */
 export function registerNativeSessionIpc(ipc: IpcRegistrar, host: SessionHost, ports: NativeSessionPorts): void {
   const operations = new WeakSet<AgentController>()
   ipc.handle('yan:nativeSession', async (input: unknown): Promise<NativeSessionHostResult> => {
@@ -81,7 +80,6 @@ export function registerNativeSessionIpc(ipc: IpcRegistrar, host: SessionHost, p
         if (stale) return stale
         const snapshot = await agent.sessionEntries()
         if (!snapshot.ok) return snapshot
-        // The live native leaf is authoritative after navigating an existing tree.
         const result = exportSessionJsonl({ sourcePath: sourceFile, outputPath: path, overwrite: true, leafId: snapshot.leafId })
         return result.ok ? { ok: true, path: result.outputPath } : result
       }
@@ -97,7 +95,6 @@ export function registerNativeSessionIpc(ipc: IpcRegistrar, host: SessionHost, p
         if (stale) return stale
         const dir = await mkdtemp(join(tmpdir(), 'inkstone-share-'))
         try {
-          // Native HTML contains every persisted entry plus the live leaf; the confirmation discloses all branches.
           const exported = await agent.exportHtml(join(dir, 'session.html'))
           if (!exported.ok || !exported.path) return { ok: false, error: exported.error ?? '无法准备分享文件' }
           const changed = fresh()

@@ -163,7 +163,6 @@ export async function runRunnerReclaimTests(ok) {
   {
     const f = await setup()
     f.agents[1].state.isAgentRunning = true
-    // 模拟同一目录的另一实例，沿用重载安全边界。
     f.reg.runners.get('r2').cwd = 'c:/P0/'
     f.at(T)
     ok(await f.reg.reclaimIdle() === null, '同一cwd有另一忙碌实例不回收')

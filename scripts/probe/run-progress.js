@@ -1,10 +1,3 @@
-/*
- * 运行阶段显示（实施-21 P1/P2）的 cost 0 覆盖。
- *
- * 不真跑模型：直接注入 store 快照（running / streaming / 正在跑的 toolCall /
- * 可见思考流 thinkingLive），断言输入框顶边框真的写出对应阶段，
- * 且没有可见 thinking 时**不**出现「正在推理」。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -89,7 +82,6 @@
 
     out.push('')
     out.push('=== 6b. 压缩上下文：独立于回合，运行条要写「压缩中」 ===')
-    /* 真实事件序：compaction_start 会把 isStreaming 也置真，不能被显示成「生成回复」 */
     setTurn(
       {
         isAgentRunning: false,

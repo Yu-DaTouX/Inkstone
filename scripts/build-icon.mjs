@@ -1,27 +1,5 @@
 #!/usr/bin/env npx electron
-/**
- * 品牌素材唯一生成入口（设计规范 §3.4.1）：
- *   build/prompt-stone.svg      几何真源的 currentColor 投影（安装器 / 手机端按分组换色）
- *   build/icon.ico              砖形应用图标，16/20/24/32/40/48/64/128/256
- *   build/icon.png              512 砖形（窗口图标、文档与其它平台）
- *   build/tray/*.png            托盘单色字形：on-light / on-dark 各 16/@1.5x/@2x，
- *                               含 idle / running / waiting 静态与去重动画帧
- *   build/tray/manifest.json    帧文件名 + 真实原生时长（runtime 只读它，不再手写常量）
- *   src/shared/brand-geometry.ts 渲染端品牌组件 import 的几何常量
- *
- * 用法：
- *   npm run icon            重新生成上述产物
- *   npm run check:brand     只校验产物与真源一致（--check），**不写任何文件**
- *
- * 几何、像素 mask、配色、透明度与缓动、各状态四段时长**只在**
- * `resources/brand/inkstone-design.json` 定义；本脚本只做「真源 → 像素」的渲染。
- * 16 与 32（以及托盘 1x/2x）用 16 格像素网格画，24 用 24 格，都是同一几何按 75%
- * 落到整像素上的结果，线条不抗锯齿，任务栏与列表里不会发糊；20 与其余是矢量放大。
- *
- * 为什么用 Electron：项目里已有 Electron，离屏 canvas 能直接渲染 SVG，不必再引图形库。
- * 运行时用独立临时 userData、show:false，绝不碰用户正在使用的砚窗口。
- */
-import './lib/stdio-guard.mjs' /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
+import './lib/stdio-guard.mjs'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -53,10 +31,7 @@ const { design, hash } = readDesign(join(root, DESIGN_PATH))
 validateDesign(design)
 const colors = design.colors
 
-/* 启动画面是静态 HTML 里的内联 SVG，必须随图标生成入口一起写入/校验（见 sync-boot-brand.mjs）。 */
 const boot = syncBootBrand({ root, design, checkOnly })
-
-/* ───────────────────────── 渲染作业（纯数据） ───────────────────────── */
 
 const maskGrids = {}
 for (const [key, mask] of Object.entries(design.masks)) {
@@ -79,7 +54,6 @@ function gridForPx(px) {
   return String(px) === '24' ? 24 : 16
 }
 
-/** 托盘（无砖、单色）单元作业：theme 决定字形色，alpha 决定符号透明度。 */
 function trayJob(sizePx, theme, symbolLayer, alpha01) {
   const grid = gridForPx(sizePx)
   const symbol = theme === 'on-dark' ? colors.trayOnDark : colors.trayOnLight
@@ -93,7 +67,6 @@ function trayJob(sizePx, theme, symbolLayer, alpha01) {
   }
 }
 
-/** 砖形像素作业（小尺寸 icon.ico 档）：底砖 + 框 + 强调色提示符。 */
 function pixelTileJob(sizePx, grid) {
   return {
     kind: 'pixel-tile',
@@ -114,7 +87,6 @@ async function main() {
   try {
     await win.loadURL('data:text/html,<html><body></body></html>')
 
-    /* 尺寸档：ico 16/32 用 16 格、24 用 24 格；其余矢量。 */
     const icoSizes = design.outputs.icoSizes
     const gridOf = (size) => (size === 16 || size === 32 ? 16 : size === 24 ? 24 : 0)
 
@@ -131,7 +103,6 @@ async function main() {
     }
     addJob({ kind: 'tile', size: design.outputs.iconPng }, { type: 'iconPng' })
 
-    /* 静态托盘：idle / running（=idle，>_ 亮态）/ waiting（? 亮态）。 */
     const traySizes = design.outputs.traySizes
     for (const theme of design.outputs.trayThemes) {
       for (const { px } of traySizes) {
@@ -140,7 +111,6 @@ async function main() {
       }
     }
 
-    /* 动画帧：每个状态按去重后的真实时长出一批帧；帧内符号 alpha 来自真源。 */
     for (const state of ['running', 'waiting']) {
       const spec = design.animation.states[state]
       dedupedFrames(design, state).forEach((frame, index) => {
@@ -180,7 +150,6 @@ async function main() {
     try {
       rmSync(userData, { recursive: true, force: true })
     } catch {
-      /* Electron 子进程释放句柄前偶发 EPERM；目录在系统临时区，留给 OS 回收。 */
     }
     app.exit(0)
   }
@@ -217,7 +186,6 @@ async function report(outputs, boot) {
   }
 }
 
-/** ICO 容器打包多张 PNG（Vista 起 ICO 允许内嵌 PNG 数据） */
 function icoFromPngs(entries) {
   const count = entries.length
   const header = Buffer.alloc(6)
@@ -241,10 +209,6 @@ function icoFromPngs(entries) {
   return Buffer.concat([header, dir, ...entries.map((e) => e.data)])
 }
 
-/*
- * 离屏页面里的渲染器：job 见 trayJob / pixelTileJob 的构造。
- * 只用 canvas 2D，逐格 fillRect，不做抗锯齿；符号透明度由 job.alpha 提供。
- */
 const RENDER = `(async (jobs, svgUrl, B) => {
   const img = new Image()
   img.src = svgUrl

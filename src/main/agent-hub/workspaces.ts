@@ -19,7 +19,6 @@ export async function createHubWorkspace(root: string, dir: string, baseline?: s
   return { cwd: dir, baseline: base }
 }
 
-/** 临时 index 收集已提交、未提交和未跟踪文件，不改变 agent 的 index 或工作区。 */
 export async function freezeHubWorkspace(cwd: string, baseline: string, dir: string, report: string) {
   await mkdir(dir, { recursive: true })
   const index = join(dir, `index-${randomUUID()}`)
@@ -45,7 +44,6 @@ export async function applyHubArtifact(cwd: string, artifact: { patchPath: strin
   if (tree !== artifact.tree) throw new Error('审查工作区与交付版本不一致')
 }
 
-/** Main-tree state shown before a run starts; not a git repository means the run cannot use a worktree. */
 export async function hubWorkingTreeStatus(cwd: string): Promise<{ git: boolean; head?: string; changed: number }> {
   try {
     if ((await hubGit(cwd, ['rev-parse', '--is-inside-work-tree'])).trim() !== 'true') return { git: false, changed: 0 }
@@ -55,25 +53,17 @@ export async function hubWorkingTreeStatus(cwd: string): Promise<{ git: boolean;
   return { git: true, head, changed: status.split('\n').filter(Boolean).length }
 }
 
-/**
- * Ignored dependency directories are linked into the worktree so tests and builds can run there.
- * Junctions need no elevation on Windows; installs inside the worktree write through to the project.
- */
 export async function linkHubDependencies(root: string, worktree: string): Promise<string[]> {
   const linked: string[] = []
   for (const name of ['node_modules', '.venv', 'venv']) {
     const source = join(root, name), target = join(worktree, name)
     if (!existsSync(source) || existsSync(target)) continue
     try { await hubGit(root, ['check-ignore', '-q', name]) } catch { continue }
-    try { await symlink(source, target, 'junction'); linked.push(name) } catch { /* linking is a convenience */ }
+    try { await symlink(source, target, 'junction'); linked.push(name) } catch { }
   }
   return linked
 }
 
-/**
- * Removes a worktree without touching the project's own files. Linked dependency junctions are
- * removed as links first (rmdir never follows a junction); if one cannot be removed, nothing else is deleted.
- */
 export async function removeHubWorkspace(root: string, dir: string): Promise<void> {
   for (const name of ['node_modules', '.venv', 'venv']) {
     const target = join(dir, name)

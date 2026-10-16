@@ -1,7 +1,3 @@
-/*
- * Cross-frame browser regression: same-origin and cross-origin iframe controls,
- * ref attribution, frame-local interaction coordinates, and the redacted network ledger.
- */
 ;(async () => {
   const out = []
   const ok = (condition, label, detail = '') => {
@@ -87,7 +83,6 @@
     ok(typed.run.receipt?.ok === true, 'type works through the cross-origin iframe session', JSON.stringify(typed.run.receipt ?? null))
     ok(await until(async () => (await observe()).text.includes('YAN_TYPED:YAN_CROSS_FRAME_TYPED')), 'cross-origin input event reaches its parent through postMessage')
 
-    /* Polling observe refreshes generation-scoped refs; reacquire after the wait. */
     observation = await observe()
     const choice = observation.elements.find((element) => /cross[- ]choice/i.test(element.name))
     const selected = choice ? await action(`yan browser select --ref ${choice.ref} --value b`) : { run: {}, data: null }
@@ -98,10 +93,6 @@
     ok(clicked.run.receipt?.ok === true, 'click maps child-frame coordinates into the top-level viewport', JSON.stringify(clicked.run.receipt ?? null))
     ok(await until(async () => (await observe()).text.includes('frame submitted')), 'cross-origin frame action reaches the parent page')
 
-    /*
-     * 账本里的 URL 被有意抹成 origin（路径常带一次性链接/凭证），所以不能按路径找；
-     * 按方法 + 状态 + 资源类型找，并轮询等响应回填（请求发出到响应有一段间隔）。
-     */
     const polled = await until(async () => {
       const snapshot = await window.yan.browser.network()
       const hit = snapshot.entries.some(

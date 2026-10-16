@@ -1,13 +1,3 @@
-/**
- * 队列边界独立检查（攻击面：同文本身份/图片、缩短快照后的消费、
- * 闸门跨会话/代次、clear_queue/refill 失败恢复、快照往返）。
- *
- * 与 scripts/test-queue-rpc-live.mjs 同样的做法：现场把 src/main/agent.ts
- * 用 esbuild 编到临时 outfile，本机 loopback HTTP 夹具假装模型服务，
- * AgentController 直连；不访问外网、不使用真实凭证。
- *
- * 只读产品代码，本文件是独立的验证脚本，不修改任何产品实现。
- */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
@@ -28,7 +18,6 @@ let agent
 let requests = []
 let holdNext = false
 let heldResponse
-/** 渲染端 push 快照；live 段用它观察队列投影。 */
 let queue = { steering: [], followUp: [] }
 
 const check = (condition, label) => {
@@ -62,7 +51,6 @@ const red = img('edge-red')
 const blue = img('edge-blue')
 const green = img('edge-green')
 const sameImages = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
-/** 去掉 id 后的可比较形状（id 由宿主每次新建，不能跨实例比较）。 */
 const shape = (snapshot) => ({
   steering: snapshot.steering,
   followUp: snapshot.followUp,
@@ -149,8 +137,6 @@ try {
   const { AgentController } = await import(pathToFileURL(outfile).href)
   const newHost = (push = () => {}) => new AgentController({ cwd: root, push })
 
-  /* ============================================================ 方向 1 */
-  /* 同文本多条消息（混有图/无图/纯图片）的身份与图片不会错配。 */
   console.log('1) 同文本队列身份与图片匹配（宿主侧，离线）')
 
   {
@@ -163,7 +149,6 @@ try {
         { id: 'same-blue', text: 'same', images: [blue] }
       ]
     }
-    // 乱序消费：先来带 blue 的那条，绝不能误摘前面的 red / 无图项。
     host.consumeQueued('same', [blue])
     equal(host.queueState.followUp.map((item) => item.id), ['same-red', 'same-plain'],
       '先消费带 blue 的重复文本项，只摘蓝图那条')
@@ -175,7 +160,6 @@ try {
   }
 
   {
-    // 原生缩短快照：pi 从同文本队首 splice，宿主必须保留后面身份。
     const host = newHost()
     host.queueState = {
       steering: [],
@@ -190,7 +174,6 @@ try {
       '缩短快照摘掉队首 red，保留中间无图与队尾 blue 身份')
     equal(host.queueState.followUp.map((item) => item.images ?? null), [null, [blue]],
       '缩短快照保留队尾图片，无图项仍无图')
-    // 被缩短掉的那条随后到达 user 消息：不能再去摘后面的同文本项。
     host.consumeQueued('same', [red])
     equal(host.queueState.followUp.map((item) => item.id), ['h-plain', 'h-blue'],
       '队首已被缩短时到达的 red 消息不会误摘后面的同文本项')
@@ -201,7 +184,6 @@ try {
   }
 
   {
-    // 两条完全相同的“同文本 + 同图片”：按 FIFO 各消费一次。
     const host = newHost()
     host.queueState = {
       steering: [],
@@ -218,12 +200,9 @@ try {
     equal(host.queueState.followUp, [], '第二条同样的消息再消费第二条')
   }
 
-  /* ============================================================ 方向 2 */
-  /* 缩短快照 + user 消息超出闸门；纯图片消费不复活幽灵文本项。 */
   console.log('2) 缩短快照/消费竞态与纯图片幽灵（宿主侧，离线）')
 
   {
-    // 闸门内：pi 先推缩短帧（仍带被消费项），再推 user 消息。
     const host = newHost()
     host.state = { sessionId: 's2a' }
     host.queueState = {
@@ -236,9 +215,8 @@ try {
     let release
     const gate = host.queueRun(() => new Promise((done) => { release = done }))
     await waitTick(() => typeof release === 'function', 'gate owner acquired')
-    // 第一帧是消费前的旧镜像，仍含两条 dup。
     host.pendingQueueUpdate = { steering: [], followUp: ['dup', 'dup'], sessionId: 's2a', generation: undefined }
-    host.consumeQueued('dup', []) // user 消息到达
+    host.consumeQueued('dup', [])
     equal(host.queueState.followUp.map((item) => item.id), ['gate-2'],
       '闸门内 user 消息摘掉队首 dup')
     release()
@@ -250,7 +228,6 @@ try {
   }
 
   {
-    // 闸门内：pi 已推缩短帧（只剩第二条），随后 user 消息才到。
     const host = newHost()
     host.state = { sessionId: 's2b' }
     host.queueState = {
@@ -274,18 +251,16 @@ try {
   }
 
   {
-    // 纯图片消费后，pi 的旧空文本镜像加上新空文本项：只应留下新的那一项。
     const host = newHost()
-    host.consumedEmptyQueue = { steering: 0, followUp: 1 } // 已消费 1 条纯图片
+    host.consumedEmptyQueue = { steering: 0, followUp: 1 }
     host.queueState = { steering: [], followUp: [{ id: 'fresh-empty', text: '', images: [blue] }] }
-    host.publishQueue([], ['', '']) // pi 的镜像 = 1 条旧空 + 1 条新空
+    host.publishQueue([], ['', ''])
     equal(host.queueState.followUp.map((item) => item.id), ['fresh-empty'],
       '旧空文本镜像被跳过，新纯图片项既不被复活也不被吞掉')
     equal(host.queueState.followUp.map((item) => item.images), [[blue]], '新的纯图片项保留自身图片')
   }
 
   {
-    // 闸门内消费纯图片，收尾的 pending 旧镜像不得复活它。
     const host = newHost()
     host.state = { sessionId: 's2c' }
     host.queueState = { steering: [], followUp: [{ id: 'gate-empty', text: '', images: [red] }] }
@@ -299,8 +274,6 @@ try {
     equal(host.queueState.followUp, [], '闸门内消费纯图片后旧空镜像不复活幽灵项')
   }
 
-  /* ============================================================ 方向 3 */
-  /* 闸门 owner 检查：跨会话 / 跨运行实例代次不把旧队列写进新会话。 */
   console.log('3) 闸门跨会话/代次（宿主侧，离线）')
 
   {
@@ -312,7 +285,7 @@ try {
     await waitTick(() => typeof unblock === 'function', 'first gate owner acquired')
     let lateRan = false
     const late = host.queueRun(async () => { lateRan = true }).catch((error) => error.message)
-    host.capabilityOpts = { runnerGeneration: 2 } // 运行实例代次变化
+    host.capabilityOpts = { runnerGeneration: 2 }
     unblock()
     await first
     check((await late).includes('会话已切换') && !lateRan,
@@ -327,7 +300,7 @@ try {
     const gate = host.queueRun(() => new Promise((done) => { release = done }))
     await waitTick(() => typeof release === 'function', 'gate owner acquired')
     host.pendingQueueUpdate = { steering: [], followUp: ['old-queued'], sessionId: 'old-session', generation: 1 }
-    host.state = { sessionId: 'new-session' } // 闸门未关就切了会话
+    host.state = { sessionId: 'new-session' }
     release()
     await gate
     equal(host.queueState, { steering: [], followUp: [] },
@@ -335,7 +308,6 @@ try {
   }
 
   {
-    // 会话在 RPC 期间切换：requireRpc 抛错，且不向新会话推送旧队列。
     const pushes = []
     const host = newHost((event) => pushes.push(event))
     let releaseCommand
@@ -358,8 +330,6 @@ try {
       '旧插话没有作为队列帧推给新会话')
   }
 
-  /* ============================================================ 方向 4 */
-  /* clear_queue 失败 / refill 中途失败时原队列（含图片）完整恢复。 */
   console.log('4) clear_queue / refill 失败恢复（宿主侧，假 RPC，离线）')
 
   {
@@ -397,7 +367,7 @@ try {
     host.capabilityOpts = { runnerGeneration: 1 }
     const calls = []
     let refillCount = 0
-    const failAt = 2 // 第 2 条重建命令（followUp 第一条）失败
+    const failAt = 2
     host.rpc = {
       running: true,
       command: async (command, payload) => {
@@ -436,8 +406,6 @@ try {
       '恢复时按原文顺序重排全部剩余 followUp（含纯图片的空文本）')
   }
 
-  /* ============================================================ 方向 5 */
-  /* queueSnapshot / restoreQueueSnapshot 往返保持图片与顺序。 */
   console.log('5) 快照往返（宿主侧，假 RPC，离线）')
 
   {
@@ -480,7 +448,6 @@ try {
   }
 
   {
-    // 已有不同队列时拒绝覆盖，避免吞掉或重复。
     const host = newHost()
     host.state = { sessionId: 'snap-guard' }
     host.capabilityOpts = { runnerGeneration: 1 }
@@ -493,8 +460,6 @@ try {
     equal(host.queueState.followUp.map((item) => item.text), ['other'], '拒绝覆盖时原队列保持不变')
   }
 
-  /* ============================================================ live 段 */
-  /* 真实 pi + loopback 夹具：验证事件顺序下的身份/图片/幽灵。 */
   console.log('live) 真实 pi + loopback 夹具')
   agent = new AgentController({
     cwd: root,
@@ -526,7 +491,6 @@ try {
       `${label} 队列消费完`)
   }
 
-  // ---- live 1：同文本混有图/无图/纯图片，任意顺序撤回与插队 ----
   await hold('EDGE-HOLD-MIX')
   check((await agent.send('DUP', [red])).ok, '排队 DUP+red')
   check((await agent.send('DUP')).ok, '排队 DUP 无图')
@@ -580,7 +544,6 @@ try {
   equal(mixUserImages.length, 2,
     '被撤回的纯图片 red 与无图 DUP 从未到模型')
 
-  // ---- live 2：纯图片消费，旧空文本镜像不产生幽灵、也不吞掉新项 ----
   await hold('EDGE-HOLD-EMPTY')
   check((await agent.send('', [green])).ok, '排队纯图片 green')
   check((await agent.send('', [blue])).ok, '排队纯图片 blue')
@@ -602,7 +565,6 @@ try {
   check(rawQueueFrames.some((frame) => frame.followUp.length === 0),
     '观察到 pi 的缩短/清空队列帧（事件顺序可达）')
 
-  // ---- live 3：同文本同图/异图的自然消费不重复不遗漏 ----
   await hold('EDGE-HOLD-DUP')
   check((await agent.send('X', [red])).ok, '排队 X+red')
   check((await agent.send('X')).ok, '排队 X 无图')

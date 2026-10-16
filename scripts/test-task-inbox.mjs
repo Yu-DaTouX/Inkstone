@@ -1,14 +1,3 @@
-/**
- * 任务收件箱的单元测试（实施-28 T1）—— 纯投影 + 替身事实源。
- *
- * 重点：
- *   ① 七态映射与优先级（同一会话只出一张卡）；
- *   ② 排序：待审阅 / 等待用户 / 失败排在前面，同档按最近活动；
- *   ③ 缺源降级：某个来源抛错只丢那一项，不丢整张卡、不影响别的会话；
- *   ④ 跨会话隔离：每张卡只带自己的 sessionId；
- *   ⑤ `needs_review` 是**近似**，卡片上必须标出来（不假装精确）。
- */
-
 export async function runTaskInboxTests(ok, mod, serviceMod) {
   const {
     TASK_STATUS_SOURCE,
@@ -23,14 +12,12 @@ export async function runTaskInboxTests(ok, mod, serviceMod) {
 
   const base = { sessionId: 's1', title: '会话一', updatedAt: 1000 }
 
-  /* ---- 契约：七态都有来源说明 ---- */
   {
     const required = ['pending', 'running', 'waiting_user', 'failed', 'needs_review', 'done', 'dismissed']
     ok(required.every((s) => typeof TASK_STATUS_SOURCE[s] === 'string' && TASK_STATUS_SOURCE[s].length > 0), '七态都有事实来源说明')
     ok(/没有精确来源/.test(TASK_STATUS_SOURCE.needs_review), 'needs_review 如实写明没有说话的事实源')
   }
 
-  /* ---- 七态映射 ---- */
   {
     ok(projectTaskCard(base) === null, '什么都没发生 → 不出一张空卡')
     ok(projectTaskCard({ ...base, dismissed: true }).status === 'dismissed', '忽略过就是 dismissed')
@@ -66,7 +53,6 @@ export async function runTaskInboxTests(ok, mod, serviceMod) {
     ok(projectTaskCard({ ...base, plan: { total: 3, done: 1, current: '改 schema' } }).status === 'pending', '有安排但没跑 = pending')
   }
 
-  /* ---- 进度只用有依据的计数 ---- */
   {
     const c = projectTaskCard({ ...base, plan: { total: 4, done: 2, current: '写测试' } })
     ok(c.progress === '第 3 / 4 步：写测试', '进度给「第几步 / 共几步」，不给百分比')
@@ -79,7 +65,6 @@ export async function runTaskInboxTests(ok, mod, serviceMod) {
     ok(/子代理：2 个在跑 · 1 个失败/.test(s2.evidence), '子代理证据单独成句（不合成完成度）')
   }
 
-  /* ---- 排序与筛选 ---- */
   {
     const cards = [
       projectTaskCard({ ...base, sessionId: 'a', updatedAt: 10, plan: { total: 2, done: 1 } }),
@@ -107,7 +92,6 @@ export async function runTaskInboxTests(ok, mod, serviceMod) {
     ok(actionableCards(cards).length === 3, '需要人处理的有三类')
   }
 
-  /* ---- 服务：缺源降级 / 跨会话隔离 / 分页 / 缓存 ---- */
   {
     const sessions = [
       { id: 's1', title: '一', updatedAt: 100 },
@@ -128,7 +112,6 @@ export async function runTaskInboxTests(ok, mod, serviceMod) {
       readQuestion: async () => {
         throw new Error('来源坏了')
       },
-      /* s1 的 goal 源是好的：证明“一个源坏了不影响其余源” */
       readGoal: async (id) => (id === 's1' ? { phase: 'blocked', title: '迁移', blockedReason: '缺凭据' } : undefined)
     })
 

@@ -1,10 +1,3 @@
-/**
- * 「技能」分页（S2）。
- *
- * 只读快照 + 会话技能的两种操作（保留到「我的技能」/ 从会话移除）。
- * 快照里的技能是**当前运行实例已加载**的，因此新装 / 改动的技能要等 pi
- * 下次加载才出现在这里 —— 界面用一句明确的说明交代，不把「已安装」当「已加载」。
- */
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
@@ -62,11 +55,6 @@ export function SkillsSection(): ReactElement {
         await refresh()
         return
       }
-      /*
-       * 移除是破坏性的（主进程递归删除本次会话的技能目录，无撤销）：必须先确认。
-       * 确认期间切换会话时，目标会话已变，旧确认不得落到新会话的同名技能上，
-       * 所以确认前后各取一次 sessionId 比对；不一致就不调 IPC。
-       */
       const outcome = await runConfirmedOperation({
         captureScope: () => useStore.getState().session?.sessionId ?? '',
         isMounted: () => mounted.current,

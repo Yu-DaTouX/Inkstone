@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 
-/** 在 app.ready 前加载真实预览协议；只替换数据根，不放宽 CSP。 */
 export function createHtmlPreviewFixture(root) {
   const directory = mkdtempSync(join(tmpdir(), 'yan-matrix-html-'))
   const entry = join(root, 'src/main/html-artifact-preview.ts')

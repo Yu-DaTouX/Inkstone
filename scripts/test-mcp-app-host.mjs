@@ -1,14 +1,3 @@
-/**
- * MCP Apps 宿主连接层的合成验收。
- *
- * 现场用 esbuild 编译 `src/main/mcp/{app-spec,app-host,config}.ts`，在**隔离临时目录**
- * 里用 `scripts/fixtures/mcp-app-server.mjs` 真连（stdio 与 http 各一次），不启动
- * Electron、不联网、不碰用户配置、不调用真实模型。
- *
- * 覆盖：`_meta.ui.resourceUri` 保真、visibility 缺省最严、`structuredContent`、
- * 资源读取与体积上限、MIME 拒绝、每调用取消释放、未托管/缺托管声明拒绝连接、
- * `initialize` 的 ui 能力声明、配置 appHost/ownedBy 解析与未知字段保留、单例。
- */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
@@ -44,7 +33,6 @@ const delay = (ms) => new Promise((done) => setTimeout(done, ms))
 
 const fixture = resolve('scripts/fixtures/mcp-app-server.mjs')
 
-/* 规范常量单独编译一份给合成服务器用：合成服务器从 app-spec.ts 取值，不另写一遍。 */
 const specOutfile = join(root, 'app-spec.mjs')
 await build({
   entryPoints: [resolve('src/main/mcp/app-spec.ts')],
@@ -69,13 +57,10 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
-  /* SDK 保持 external：它的 stdio transport 依赖 cross-spawn 的动态 require，打进 ESM 会炸。 */
   external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
   logLevel: 'silent'
 })
 const host = await import(pathToFileURL(hostOutfile).href)
-
-/* -------------------------------------------------- 1. 规范形状与最严缺省 */
 
 {
   ok(host.isMcpAppMimeType(host.MCP_APP_MIME_TYPE), '规范：标准 App MIME 被接受')
@@ -107,8 +92,6 @@ const host = await import(pathToFileURL(hostOutfile).href)
   )
 }
 
-/* ---------------------------------------------------------- 2. 起 HTTP fixture */
-
 const net = await import('node:net')
 const port = 39400 + Math.floor(Math.random() * 500)
 const httpChild = spawn(process.execPath, [fixture, '--http'], {
@@ -128,8 +111,6 @@ const httpChild = spawn(process.execPath, [fixture, '--http'], {
   }
   ok(up, 'HTTP：合成服务器真监听上了')
 }
-
-/* ------------------------------------------------------------ 3. 配置文件 */
 
 const hostEntry = { command: 'original-node', args: ['orig.js'], custom: { keep: 'entry' } }
 const configFile = join(root, 'yan', 'mcp-servers.json')
@@ -168,7 +149,6 @@ await writeFile(
   'utf8'
 )
 
-/* FIX3：主进程事实必须显式注入；这里 stub 成「pi 侧无条目、无旧 runner」。 */
 const ownership = new host.McpAppOwnershipGuard({
   agentDir: join(root, 'pi-agent'),
   projects: [],
@@ -179,7 +159,6 @@ const env = { YAN_MCP_SERVERS_FILE: configFile }
 const appHost = new host.McpAppHost({ env, timeoutMs: 20_000, ownership })
 
 try {
-  /* ------------------------------------------------ 4. 配置解析与未知字段保留 */
 
   {
     const loaded = host.loadMcpServers(env)
@@ -194,8 +173,6 @@ try {
     ok(host.isInkstoneManaged(stdio) && !host.isInkstoneManaged(missing), '配置：托管资格与解析一致')
     ok(appHost.listManagedServers().map((server) => server.id).join(',') === 'app-stdio,app-http', '连接前重读配置：只列托管服务')
   }
-
-  /* -------------------------------------------------- 5. stdio 真连 */
 
   {
     const tools = await appHost.listToolsWithMeta('app-stdio')
@@ -238,13 +215,11 @@ try {
       await smallHost.close()
     }
 
-    /* 未托管 / 缺托管声明 / 不存在：都在连接前拒绝，绝不出现第二条连接。 */
     await fails(() => appHost.callToolWithMeta('native-stdio', 'read_only_note', {}), 'not-managed', '拒绝连接：ownedBy pi 的服务')
     await fails(() => appHost.listToolsWithMeta('missing-mark'), 'not-managed', '拒绝连接：ownedBy inkstone 但缺 appHost 声明')
     await fails(() => appHost.listToolsWithMeta('nope'), 'not-managed', '拒绝连接：配置里没有的服务')
     ok(appHost.statusOf('native-stdio').status === 'disconnected', '拒绝连接后不留连接状态')
 
-    /* 每调用取消：只中止当前请求，不拆共享连接，同连接上的其他调用不受影响。 */
     const controller = new AbortController()
     const pending = appHost.callToolWithMeta('app-stdio', 'slow', {}, { signal: controller.signal })
     await delay(150)
@@ -258,8 +233,6 @@ try {
     const after = await appHost.callToolWithMeta('app-stdio', 'no_visibility_note', {})
     ok(after.text === 'plain', '取消：之后同一连接继续可用')
   }
-
-  /* --------------------------------------------------- 6. HTTP 真连 */
 
   {
     const tools = await appHost.listToolsWithMeta('app-http')
@@ -281,8 +254,6 @@ try {
       await smallHttp.close()
     }
   }
-
-  /* --------------------------------------------------------- 7. 单例 */
 
   {
     const first = host.mcpAppHost()

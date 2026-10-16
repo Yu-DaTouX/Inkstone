@@ -1,5 +1,4 @@
 @layer patterns {
-  /* 上下文环：输入框底部一行里的第 4 个控件（WP-24）。外观归 patterns。 */
   .ctx-ring-wrap {
     display: inline-flex;
     align-items: center;
@@ -57,7 +56,6 @@
     text-align: right;
   }
 
-  /* 浮层由 RAC Popover 定位；这里只管外观。 */
   .ctx-pop {
     z-index: 40;
     max-width: min(360px, calc(100vw - 16px));

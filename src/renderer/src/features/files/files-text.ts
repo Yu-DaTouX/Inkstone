@@ -1,9 +1,3 @@
-/**
- * 文件树自己的短文案（中英）。
- *
- * 与 `app/v3-text.ts`、`features/commands/command-text.ts` 同一口径：两份 i18n JSON
- * 是共享热点，v3 未定稿前不在那里加键；文件树定稿后再统一并入 i18n。
- */
 import type { Lang } from '../../i18n'
 
 export interface FilesText {

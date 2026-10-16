@@ -1,11 +1,3 @@
-/**
- * 设置 → 权限与安全（v3）。
- *
- * 复用现有两档权限语义（`shared/approval`）：`danger`（自动批准，危险时问）与
- * `all`（不受限制）。切到 `all` 必须先确认，确认后才写 `settings.permissionMode`。
- * 项目外写入保护接 `guardOutsideWrites`，已记住的允许目录接 `guardAllowRoots`
- * （只允许移除，加入仍走确认卡的「允许并记住」）。
- */
 import { useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '../../../../../shared/approval'
@@ -22,7 +14,6 @@ export interface AllowRootsListProps {
   onRemove: (path: string) => void
 }
 
-/** 已记住的允许目录（纯展示件，便于 SSR 断言）。 */
 export function AllowRootsList({ roots, emptyText, removeText, onRemove }: AllowRootsListProps): ReactElement {
   if (roots.length === 0) {
     return (

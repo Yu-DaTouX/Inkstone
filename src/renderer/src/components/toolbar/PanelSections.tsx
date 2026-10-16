@@ -6,7 +6,6 @@ import { Button, Switch } from '../ui'
 import { useStore } from '../../state/store'
 import { type QueueMode } from '../../../../shared/ipc'
 
-/** 日志行数 */
 export function LogCount() {
   const n = useStore((s) => s.logs.length)
   return (
@@ -16,15 +15,12 @@ export function LogCount() {
   )
 }
 
-/* 队列 —— pi 的投递模式 + 待投递内容 */
-
 export function QueueSection() {
   const t = useT()
   const queue = useStore((s) => s.queue)
   const session = useStore((s) => s.session)
   const setSteeringMode = useStore((s) => s.setSteeringMode)
   const setFollowUpMode = useStore((s) => s.setFollowUpMode)
-  /* 投递方式是低频设置：队列为空时收起，点「方式」才展开 */
   const [modesOpen, setModesOpen] = useState(false)
 
   const steering = session?.steeringMode ?? 'one-at-a-time'
@@ -107,10 +103,6 @@ function ModeRow({
   )
 }
 
-/* 扩展 —— setStatus 的状态文字。
-   setWidget 的文本组件已按 pi 的原生位置移到输入区（Composer 的扩展区域），
-   这里不再重复一份。 */
-
 export function ExtSection() {
   const t = useT()
   const statuses = useStore((s) => s.statuses)
@@ -132,17 +124,10 @@ export function ExtSection() {
   )
 }
 
-/* 日志 —— pi 的 stderr + 扩展通知
-   原来挤在中栏底部（.statusbar + .logdrawer），用户嫌它不美观。
-   搬到右栏的理由：「状态」类信息本来就属于右栏（见文件头注释）。
-   顺带把中栏底部整条去掉 —— 那个条只用干两件事：显示压缩中
-   与当日志按钮，两件都搬走了就不需要它了。 */
-
 export function LogSection() {
   const t = useT()
   const logs = useStore((s) => s.logs)
 
-  // 日志为空时不占位（与 ExtSection 同一个约定）
   if (logs.length === 0) return null
 
   return (
@@ -156,11 +141,6 @@ export function LogSection() {
         </span>
       }
     >
-      {/*
-       * 只渲染最后 200 行。
-       * pi 的 stderr 在启动期可能一下刷很多（扩展自检、警告），
-       * 全量渲染会把右栏变成一个几千行的列表 —— 而用户真正要看的是尾部。
-       */}
       <pre className="rp-log" data-testid="log-body">
         {logs.slice(-200).join('\n')}
       </pre>
@@ -168,8 +148,6 @@ export function LogSection() {
     </Section>
   )
 }
-
-/* 操作 —— pi 自带能力的入口 */
 
 export function ActionsSection() {
   const t = useT()

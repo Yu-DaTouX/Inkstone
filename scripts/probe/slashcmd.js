@@ -1,15 +1,3 @@
-/**
- * `/` 斜杠命令：自动管理 + 填充。
- *
- * 用户原话：「还要 / 命令功能的自动管理和填充功能」。拆成两件可验证的事：
- *   · 自动管理：列表过期（命令来自运行时加载的扩展/技能，启动那一刻可能
- *     还没就绪）→ 打开菜单时自动重拉；以及用过的命令排前面
- *   · 填充：Enter / Tab 都能填入，且带一个尾空格（方便接着打参数）
- * 另外验了菜单底部的按键说明可见 —— 这些快捷键一直支持，但界面上没写，
- * 用户只会用鼠标点。
- *
- * Yan 内置命令不依赖 pi；若 pi 也已就绪，则同时验证运行时命令的合并。
- */
 ;(async () => {
   const out = []
   const ok = (m) => out.push('  ✓ ' + m)
@@ -29,7 +17,6 @@
     localStorage.setItem('yan.onboarded', '1')
     for (let i = 0; i < 25; i++) { const c = document.querySelector('.ob-card'); if (!c) break
       const b = [...c.querySelectorAll('button')].find((x) => /开始使用|完成/.test(x.textContent)); if (b) { click(b); await sleep(300) } else await sleep(150) }
-    // 注册表先返回 Yan 本地命令；pi 若随后就绪，刷新会把运行时命令合并进来。
     await store.getState().reloadCommands()
     await until(() => store.getState().commands.some((c) => c.name === 'new' && c.source === 'yan'), 6000)
     await sleep(300)
@@ -38,19 +25,12 @@
     out.push('  共 ' + cmds.length + ' 条: ' + JSON.stringify(cmds.slice(0, 6).map((c) => c.name)))
     if (cmds.length > 0) ok('拿到了命令列表')
     else {
-      /*
-       * pi 没就绪（隔离环境里它起不来）→ 整个场景没有可测的对象。
-       * 明确标注跳过，而不是报 ✗ —— 否则环境问题会被读成代码回归。
-       * 另外：以前这里会因为 listCommands 直接抛异常而让**整个探针崩掉**，
-       * 连这条说明都看不到（store 的拉取类动作已加保护）。
-       */
       out.push('  ⤺ 跳过：pi 未就绪（conn=' + store.getState().conn + '），命令列表为空')
       out.push('    本场景要靠 pi 提供的命令列表才能验证填充与排序。')
       return out.join('\n')
     }
 
     out.push('\n=== 1. 自动管理：列表过期时会自动重拉 ===')
-    // 手工把时间戳改旧 → 打开菜单应触发重拉
     store.setState({ commandsAt: 0, commands: [] })
     await sleep(200)
     setVal(ta(), '/')
@@ -61,7 +41,6 @@
 
     out.push('\n=== 2. 常用优先：用过的排前面 ===')
     const names = store.getState().commands.map((c) => c.name)
-    // 挑一个**不是**字母序第一的命令
     const target = names.find((n) => n !== [...names].sort()[0]) ?? names[0]
     out.push('  常用之前，前 3 条: ' + JSON.stringify(store.getState().commands.slice(0, 3).map((c) => c.name)))
     store.getState().markCommandUsed(target)
@@ -88,11 +67,6 @@
     const compat = [...document.querySelectorAll('.slash-item')].find((x) => /\/footer/.test(x.textContent || ''))
     if (compat && compat.disabled && compat.getAttribute('aria-disabled') === 'true') ok('终端兼容命令可见但不可执行')
     else bad('兼容命令没有正确禁用')
-    /*
-     * 实施-02 S4：`/panel` 从补全里隐藏（任务改由砚内置任务计划维护），
-     * 但它**必须还在注册表里**（source=compatibility）——
-     * 直接删掉它的话，pi 侧同名命令会变成那条可执行的，手打就发给模型了。
-     */
     const panelInMenu = [...document.querySelectorAll('.slash-item')].some((x) => /\/panel\b/.test(x.textContent || ''))
     if (!panelInMenu) ok('/panel 不出现在补全候选里（S4）')
     else bad('/panel 仍在补全里（S4 要求隐藏）')
@@ -131,12 +105,6 @@
     else bad('/model 没有走 Yan 本地路由')
     store.getState().closeSettings()
 
-    /*
-     * ---- 下面几条补 N18 矩阵里没覆盖的边界 ----
-     * 注入一份**合成命令列表**：屏幕上的命令是 pi/技能提供的，内容不可控；
-     * 要验的是菜单本身的行为（筛选/滚动/光标/IME/同名不同来源/未连接），
-     * 所以直接给一份确定的数据。
-     */
     const synth = []
     for (let i = 1; i <= 20; i += 1) {
       synth.push({
@@ -151,7 +119,6 @@
     synth.push({ name: 'auth', description: '未连接时仍可用的本地命令', source: 'yan', executable: true })
 
     out.push('\n=== 8. 筛选：按命令名与说明都能命中 ===')
-    /* 先存真实列表：后面的 `/login` 路由要靠它 */
     const realCommands = store.getState().commands
     store.setState({ commands: synth, commandsAt: Date.now() })
     setVal(ta(), '/probe-cmd-1')
@@ -182,7 +149,6 @@
     else bad('菜单顶部越界：top=' + Math.round(menuRect?.top ?? -999))
     const hintText = document.querySelector('[data-testid="slash-hint"]')?.textContent ?? ''
     out.push('  底部提示: ' + JSON.stringify(hintText.slice(0, 60)))
-    /* 现在用「N 项」计数告诉用户列表有多长（菜单本身可滚动） */
     if (/\d+\s*项/.test(hintText)) ok('底部提示给出了条目总数（列表可滚动）')
     else bad('底部提示没有条目总数')
 
@@ -192,7 +158,6 @@
     out.push('  "/help "（光标在末尾）菜单=' + (document.querySelector('.slash-menu') ? '有' : '无'))
     if (!document.querySelector('.slash-menu')) ok('光标进入参数区后菜单关闭（不把参数当命令名）')
     else bad('光标已到参数区，菜单还开着')
-    /* 光标回到命令名中间 → 菜单应该重新出现（只按光标之前的内容判） */
     ta().selectionStart = 3
     ta().selectionEnd = 3
     ta().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
@@ -206,7 +171,6 @@
     setVal(ta(), '/help')
     await sleep(500)
     const helpItems = [...document.querySelectorAll('.slash-item')].filter((x) => /\/help\b/.test(x.querySelector('.slash-name')?.textContent ?? ''))
-    /* 来源由分组标题表达（.slash-group[data-source]），模块名只是补充 */
     const groupOf = (x) => { let p = x.previousElementSibling; while (p && !p.classList.contains('slash-group')) p = p.previousElementSibling; return p?.getAttribute('data-source') ?? '' }
     const helpSrcs = helpItems.map((x) => groupOf(x) + ' ' + (x.querySelector('.slash-src')?.textContent ?? ''))
     out.push('  /help 条目=' + helpItems.length + ' 来源=' + JSON.stringify(helpSrcs))
@@ -259,7 +223,6 @@
     else bad('Esc 把输入内容也改了：' + JSON.stringify(ta().value))
     setVal(ta(), '')
 
-    /* 把真实命令列表换回来，不然 /login 会被当成普通消息发给模型 */
     store.setState({ commands: realCommands, commandsAt: Date.now() })
     await sleep(300)
 
@@ -276,16 +239,6 @@
     else bad('消息里多了一条（说明真的发给模型了）')
     store.getState().closeSettings()
 
-    /*
-     * ---- N18 尾巴：逐命令的**真实执行反馈** ----
-     * `/model` 与 `/login` 上面已经验过「路由到正确的窗口 + 不发给模型」。
-     * 这里补另外三条，判据是「本地动作真的被执行了」，而不是「输入框里的字消失」：
-     *   · `/new`      → 真的换了会话身份（sessionId / 运行实例变化）
-     *   · `/browser`  → 真的开了原生浏览器视图；带参数时 URL 原样透传
-     *   · `/compact`  → 真的走本地 compact()
-     * `/compact` 的**成功**路径要真调模型（花钱），归 cost 1 的 `contexttakeover`；
-     * 这一节只钉路由与参数，不在这里伪造压缩成功。
-     */
     const slashAsMessage = () =>
       store.getState().messages.some(
         (m) => typeof m.text === 'string' && /^\/(new|browser|compact)\b/.test(m.text)
@@ -319,10 +272,6 @@
       if (!/新建失败/.test(err)) ok('主进程没有回「新建失败」')
       else bad('新建失败了：' + err)
     }
-    /*
-     * 作用域是命令语义的一部分：`/new` 建的是**全局**新会话，不是“在当前项目里
-     * 新建”。上面验的是副作用，这里钉住传下去的参数（真实副作用无法区分两者）。
-     */
     const newCalls = []
     const realNewSession = store.getState().newSession
     store.setState({ newSession: async (target) => { newCalls.push(target) } })
@@ -338,11 +287,6 @@
 
     out.push('\n=== 17. `/browser` 打开原生视图并把 URL 原样透传 ===')
     const beforeBrowserMsgs = store.getState().messages.length
-    /*
-     * 真实执行用 `about:blank`：这个场景要验的是「命令 → 本地路由 → 主进程真的
-     * 开了原生视图」这条链，不是网页加载本身（那由 `browserboundary` 覆盖）。
-     * 用外网首页会让这节依赖网络可达性，红绿就会被网络而不是代码决定。
-     */
     setVal(ta(), '/browser about:blank')
     await sleep(300)
     click(document.querySelector('[data-testid="send"]'))
@@ -356,10 +300,6 @@
     await store.getState().closeBrowser()
     await sleep(300)
 
-    /*
-     * 参数透传：把本地路由临时换成记录器，验「无参 / 带 URL」两种形状。
-     * 这里**不**真去导航外网站点 —— 位置在这条链的参数边界，不是网络。
-     */
     const openCalls = []
     const realOpenBrowser = store.getState().openBrowser
     store.setState({ openBrowser: async (url) => { openCalls.push(url) } })
@@ -381,11 +321,6 @@
     if (!slashAsMessage()) ok('参数形态下也没有把 /browser 发给模型')
     else bad('参数形态下 /browser 被发出去了')
 
-    /*
-     * 失败路径：不要只验“命令成功时是什么样”。非 http(s) 地址会被主进程
-     * 拒掉（`safeUrl` 只放行 http/https），用户必须看到**可读的原因** ——
-     * 静默失败会让人觉得命令坏了。这条不调模型，所以能在这里真跑。
-     */
     store.setState({ notices: [] })
     setVal(ta(), '/browser file:///etc/passwd')
     await sleep(250)
@@ -397,18 +332,10 @@
     else bad('/browser 对非法地址没有给出失败反馈：' + JSON.stringify(failText))
     if (store.getState().browserState.url !== 'file:///etc/passwd') ok('被拒的地址没有真的导航过去')
     else bad('非法地址居然导航成功了')
-    /*
-     * 提示是要给人看的：`Error invoking remote method '…': Error: …` 这层壳是
-     * Electron 的传输细节，不该出现在提示条上（`piCall` 早就剥了，这条链路漏了）。
-     */
     if (!/Error invoking remote method/.test(failText)) ok('失败提示没有带 IPC 包装前缀')
     else bad('提示里还带着 IPC 传输细节：' + JSON.stringify(failText))
 
     out.push('\n=== 18. `/compact` 走本地路由 ===')
-    /*
-     * 成功压缩要真调模型，属于 cost 1 的 `contexttakeover` / `contexttakeoverstate`。
-     * 这里钉的是「`/compact` 不会变成一句自然语言」：本地 compact() 必须被调到。
-     */
     const realCompact = store.getState().compact
     let compactCalls = 0
     store.setState({ compact: async () => { compactCalls += 1 } })
@@ -429,11 +356,6 @@
     const bySource = {}
     for (const c of store.getState().commands) bySource[c.source] = (bySource[c.source] ?? 0) + 1
     out.push('  ' + JSON.stringify(bySource))
-    /*
-     * 技能命令必须**真的被发现**才算取证：`test-live.mjs` 给这个场景单独
-     * 准备了一份 piDir，里面放着 `skills/probe-skill/SKILL.md`。
-     * 如果这里数不到，就是发现链路（pi skills 目录 → get_commands → 注册表）断了。
-     */
     const skillCmds = store.getState().commands.filter((c) => c.source === 'skill')
     out.push('  技能命令: ' + JSON.stringify(skillCmds.map((c) => c.name)))
     if (skillCmds.length) ok('pi 真的把技能报告成了命令（source=skill）')
@@ -443,13 +365,6 @@
     else out.push('  ℹ 本环境没有扩展来源命令')
 
     out.push('\n=== 20. 手打 /panel：给明确反馈，不动草稿与附件（S4） ===')
-    /*
-     * 兼容命令在桌面端没有可执行动作。旧行为是「静默清空输入框 + 附件」——
-     * 用户会以为命令执行完了，而草稿和附件是真的丢了。
-     *
-     * 附件用合成对象直接进 store（真附件要过文件对话框）——
-     * 这里验的是「兼容分支会不会清掉它」，不是附件本身的校验。
-     */
     const probeFile = {
       id: 'probe-panel-attachment',
       name: 'probe-panel.txt',

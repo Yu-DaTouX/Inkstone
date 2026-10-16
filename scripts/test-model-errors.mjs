@@ -1,4 +1,3 @@
-/** Model errors retain their cause, redact credentials and preserve history semantics. */
 export async function runModelErrorTests(ok) {
   const shared = await import('../out/test/model-errors.mjs')
   const cases = [
@@ -48,7 +47,6 @@ export async function runModelErrorTests(ok) {
   ok(/安全审核/.test(refusedNotice) && /换个模型/.test(refusedNotice), `安全审核拦截说清原因与出路（${refusedNotice}）`)
   ok(/连接或响应流意外中断/.test(shared.modelErrorNotice('WebSocket error')), '连接错误说明中断原因')
   ok(/未返回具体原因/.test(shared.modelErrorNotice(undefined)), '没有原文时明确未知，不编造原因')
-  // Claude 的 5 小时窗口额度用尽：原文同时含 rate limit，必须说成额度用尽而不是降低并发。
   const windowLimit = "Claude rate limit (five_hour) — resets 10:30:00 pm: You've hit your session limit · resets 10:30pm (Australia/Sydney)"
   const windowNotice = shared.modelErrorNotice(windowLimit)
   ok(shared.classifyModelError(windowLimit).kind === 'quota', '会话窗口额度用尽归入额度类')

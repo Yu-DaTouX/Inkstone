@@ -1,27 +1,9 @@
-/**
- * check-motion.mjs —— 动效规范的强制检查（npm run check:motion）。
- *
- * 拦四类问题：
- *   1. 模块 CSS 里又长出 @keyframes（关键帧唯一真源 = motion.css）
- *   2. animation / transition 里写裸时长（必须走 --dur / --dur-<ms> token）
- *   3. 裸写 cubic-bezier（必须走 --ease / --ease-smooth / --mo-ease*）
- *   4. animation 引用了不存在（或没定义在 motion.css）的关键帧
- * 另外报告「定义了没人用」的关键帧，防死代码堆积。
- *
- * 为什么严：动效散成 41 个关键帧 / 57 处裸时长之后，改一个节奏要翻 8 个文件，
- * 而且 reduced-motion 兜底很容易被漏掉。收口之后改 token 一处生效。
- *
- * 用法：
- *   node scripts/check-motion.mjs            # 检查
- *   node scripts/check-motion.mjs --selftest # 先证明这些规则真的能拦住违例
- */
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const STYLES = join(HERE, '..', 'src/renderer/src/styles')
-/** 关键帧唯一真源 */
 const KEYFRAME_FILE = 'motion.css'
 const TIME = /(?<![\w.-])(\.?\d+(?:\.\d+)?)(ms|s)\b/g
 const ANIM_KEYWORDS = new Set([
@@ -31,7 +13,6 @@ const ANIM_KEYWORDS = new Set([
   'unset', 'revert', 'revert-layer', 'steps', 'cubic-bezier'
 ])
 
-/** 注释配平（状态机，忽略注释正文里写的 `/*`） */
 function commentBalance(raw) {
   let inComment = false
   let opened = 0
@@ -49,7 +30,6 @@ function commentBalance(raw) {
         inComment = false
         closed++
       } else {
-        /* 不在注释里就遇到关闭符号：游离的，同样会吞掉后面的规则 */
         stray++
       }
       i++
@@ -58,24 +38,19 @@ function commentBalance(raw) {
   return { opened, closed, stray, unclosed: inComment }
 }
 
-/** 抹掉注释但保留换行（行号才对得上） */
 const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
 
-/** 全仓 CSS 里定义过的自定义属性（含局部作用域 —— 这里不区分层叠，只求不误报） */
 const DEFINED_TOKENS = new Set()
 const usedTokens = (css) =>
   [...css.matchAll(/var\(\s*(--[\w-]+)\s*([,)])/g)]
-    /* 只有**没有 fallback** 的才算问题：`var(--i, 0)` 是常见的“有默认值”写法 */
     .filter((m) => m[2] === ')')
     .map((m) => ({ token: m[1], index: m.index }))
-/** 警告前缀：不阻断退出码，只在最后汇总 */
 const WARN = 'WARN '
 for (const f of readdirSync(STYLES).filter((x) => x.endsWith('.css'))) {
   const text = stripComments(readFileSync(join(STYLES, f), 'utf8'))
   for (const m of text.matchAll(/(--[\w-]+)\s*:/g)) DEFINED_TOKENS.add(m[1])
 }
 
-/** 抽出动画/过渡声明（可跨行） */
 function motionDecls(css) {
   const re = /(animation|transition)(?:-(?:duration|delay|timing-function))?\s*:([^;{}]+)/g
   const out = []
@@ -85,21 +60,14 @@ function motionDecls(css) {
   return out
 }
 
-/** 关键帧定义名 */
 const keyframeNames = (css) => [...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1])
 
-/**
- * 去掉值里的函数调用（含容器名与嵌套括号）。
- * 只按正则剥 `var(...)` 不够：`calc(var(--i, 0) * var(--dur-180))` 剥掉内层后
- * 还剩 `calc( * …`，会被 split 成 `calc(` / `*`，误当成关键帧名。
- */
 function stripFunctions(value) {
   let out = ''
   let ident = ''
   for (let i = 0; i < value.length; i++) {
     const ch = value[i]
     if (ch === '(') {
-      /* 丢掉紧邻左括号的函数名（calc / var / cubic-bezier / steps …） */
       out = out.slice(0, out.length - ident.length)
       ident = ''
       let depth = 1
@@ -117,7 +85,6 @@ function stripFunctions(value) {
   return out
 }
 
-/** 动画名引用 */
 function referencedNames(decl) {
   if (decl.prop !== 'animation') return []
   return stripFunctions(decl.value.replace(/!important/g, ' '))
@@ -125,22 +92,10 @@ function referencedNames(decl) {
     .filter((t) => t && !ANIM_KEYWORDS.has(t) && !/^[-+]?[\d.]/.test(t))
 }
 
-/** 对单个文件跑规则，known = motion.css 里定义的关键帧 */
 function lint(name, raw, known) {
   const css = stripComments(raw)
   const problems = []
 
-  /*
-   * 0. 注释必须配平。
-   *
-   * 为什么先查这个：CSS 不嵌套注释，一个多出来的 `*​/`（或缺失的 `*​/`）
-   * 会把后面那段规则**静默吞掉** —— 所有“属性一致性 / 引用是否存在”的检查
-   * 都看不见它（2026-09-27 实测：motion.css 里两处游离注释分别吞掉了
-   * `.cborder-status` 与整个 `@keyframes pop-up`）。
-   *
-   * 用状态机而不是正则计数：注释正文里写 `/*` 是很常见的（如本文件的说明），
-   * 正则会把它们算进去 → 误报。
-   */
   const balance = commentBalance(raw)
   if (balance.unclosed || balance.stray > 0) {
     problems.push(
@@ -156,10 +111,6 @@ function lint(name, raw, known) {
     }
   }
 
-  /* 引用到的令牌必须真的定义过。这里是**警告**不是错误：
-     存量 CSS 里有上百处历史遗留的未定义令牌（`--fg-1` / `--line-1` / `--danger` …），
-     它们在本轮之前就在了；修正需要逐处确认设计意图（对应哪个色阶），
-     不适合在“规范收口”的提交里改掉。带 fallback 的 `var(--x, 默认值)` 是有意为之，不报。 */
   for (const t of usedTokens(css)) {
     if (DEFINED_TOKENS.has(t.token)) continue
     const line = css.slice(0, t.index).split('\n').length
@@ -174,7 +125,6 @@ function lint(name, raw, known) {
     void lineStart
   }
 
-  // 裸 cubic-bezier：自定义属性（--x:）的声明里允许 —— 那是 token 的定义处
   for (const m of css.matchAll(/cubic-bezier\(/g)) {
     const start = css.lastIndexOf('\n', m.index) + 1
     const before = css.slice(start, m.index)
@@ -196,11 +146,8 @@ function lint(name, raw, known) {
   return problems
 }
 
-/* ---------- selftest：先证明规则拦得住 ---------- */
-
 function selftest() {
   const known = new Set(['mo-in-up'])
-  /** [文件, CSS, 说明, 是否应该报错] */
   const cases = [
     ['a.css', '@keyframes rogue { to { opacity: 0 } }', '模块里定义 @keyframes', true],
     ['a.css', '.x { animation: mo-in-up 200ms var(--ease); }', 'animation 裸时长', true],
@@ -240,8 +187,6 @@ if (process.argv.includes('--selftest')) {
   process.exit(0)
 }
 
-/* ---------- 检查 ---------- */
-
 const files = readdirSync(STYLES).filter((f) => f.endsWith('.css'))
 const known = new Set(keyframeNames(stripComments(readFileSync(join(STYLES, KEYFRAME_FILE), 'utf8'))))
 
@@ -263,7 +208,6 @@ if (errors.length) {
   process.exit(1)
 }
 if (warnings.length) {
-  /* 汇总只给类别与数量：上百条逐行打印会把真正要紧的信息冲掉 */
   const byToken = new Map()
   for (const w of warnings) {
     const token = w.match(/令牌 (--[\w-]+)/)?.[1] ?? '?'

@@ -15,7 +15,6 @@ import {
 import { Search } from 'lucide-react'
 import { cx } from './cx'
 
-/** 字段错误文案：字符串，或按 `ValidationResult` 生成。 */
 export type FieldErrorContent = ReactNode | ((validation: ValidationResult) => ReactNode)
 
 function FieldHead({ label }: { label?: ReactNode }) {
@@ -39,16 +38,10 @@ export interface TextFieldProps extends RACTextFieldProps {
   label?: ReactNode
   description?: ReactNode
   errorMessage?: FieldErrorContent
-  /** 输入框占位文字（RAC 的类型把它省略了，这里补上并转发）。 */
   placeholder?: string
-  /** 加到内部 `<input>` 上（版面类，不是控件外观）。 */
   inputClassName?: string
 }
 
-/**
- * 单行文本字段。`label` / `description` / `errorMessage` 是常用组合；
- * 需要自定义结构时传 `children`，可直接使用 re-export 的 `Label` / `Input` / `Text`。
- */
 export const TextField = forwardRef<HTMLDivElement, TextFieldProps>(function TextField(
   { label, description, errorMessage, placeholder, className, inputClassName, children, ...props },
   ref
@@ -72,13 +65,9 @@ export interface TextAreaProps extends RACTextFieldProps {
   errorMessage?: FieldErrorContent
   placeholder?: string
   textAreaClassName?: string
-  /** 行数提示；跟随内容用 CSS `field-sizing: content`。 */
   rows?: number
 }
 
-/**
- * 多行文本。默认跟随内容增高（`field-sizing: content`），可用 `rows` 给一个下限。
- */
 export const TextArea = forwardRef<HTMLDivElement, TextAreaProps>(function TextArea(
   { label, description, errorMessage, placeholder, className, textAreaClassName, children, rows = 3, ...props },
   ref
@@ -104,7 +93,6 @@ export interface SearchFieldProps extends RACSearchFieldProps {
   inputClassName?: string
 }
 
-/** 搜索字段：前置放大镜图标，值变化由 RAC 处理（IME 组字安全）。 */
 export const SearchField = forwardRef<HTMLDivElement, SearchFieldProps>(function SearchField(
   { label, description, errorMessage, placeholder, className, inputClassName, ...props },
   ref

@@ -1,18 +1,3 @@
-/**
- * 搜索后端在 **Electron 运行时**下的探针（实施-27 回归，cost 0）。
- *
- * 为什么必须单独一个：`scripts/probe/search.mjs` 跑在普通 node 下
- * （`process.versions.electron` 不存在），而砚的主进程是 Electron —— 那正是
- * 「commander 按 electron 语义切参数 → 子命令全部错位 → doctor 假绿」的那条路。
- * 这个探针用 `ELECTRON_RUN_AS_NODE=1 <electron> <driver>` 跑同一份
- * `src/main/search/opencli.ts`，钉住两件事：
- *   ① `searchDoctor()` 在 Electron 下也报 available；
- *   ② 至少一个来源真的返回了结果（不是「可用但查不到」）。
- *
- * 需要本机装了 OpenCLI 与 node（与 `probe/search.mjs` 同样的前提）。
- * 用法：node scripts/probe/search-electron.mjs
- * 退出码：0 = 两件都成立；1 = 不成立（如实失败，不假装成功）。
- */
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -31,7 +16,6 @@ await build({
   logLevel: 'silent'
 })
 
-/* 一次性 driver：在 Electron 运行时里读回真实探针结果，只把 JSON 交回本进程 */
 const driver = join(OUT, 'search-electron-drive.mjs')
 writeFileSync(
   driver,

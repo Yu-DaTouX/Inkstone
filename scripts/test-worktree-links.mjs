@@ -1,17 +1,3 @@
-/**
- * 「会话 ↔ 工作树」来源关系的单测（实施-07 S2）。
- *
- * ── 这一批测什么 ──
- * 这张表的全部意义是「这个会话从哪来」—— 所以断言不看返回值，
- * 而是**真的去读那个文件**：
- *   · 文件真的在临时数据目录里，内容与登记的一致；
- *   · 同一个新会话重复登记是**就地更新**（不是堆第二条）；
- *   · 缺会话 id / 工作树目录的记录在清洗时被丢掉（不猜、不补默认值）；
- *   · 超过上限丢最旧；
- *   · 坏文件当空表（少一行追溯不该让应用起不来）。
- *
- * 全部在临时目录里跑（`root` 注入）—— 单测绝不碰用户真实数据目录。
- */
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,7 +11,6 @@ export async function runWorktreeLinkTests(ok) {
   const file = worktreeLinkDocumentPath(root)
   const store = new WorktreeLinkStore({ root, now: () => 1_700_000_000_000 })
 
-  /* ── 1. 登记真的落盘 ─────────────────────────────────── */
   {
     const res = await store.link({
       sessionId: 'sess-new',
@@ -53,11 +38,9 @@ export async function runWorktreeLinkTests(ok) {
     ok(store.forSession('nope') === null, '没登记过的会话返回 null')
   }
 
-  /* ── 2. 幂等：同一个新会话重复登记是就地更新 ────────── */
   {
     const again = await store.link({
       sessionId: 'sess-new',
-      /* pi 写完文件之后才拿得到 sessionFile —— 那是信息补齐，不是第二条关系 */
       sessionFile: 'C:/yan/sessions/new-real.jsonl',
       worktree: 'C:/repo-worktrees/feat-x',
       branch: 'feat/x',
@@ -70,7 +53,6 @@ export async function runWorktreeLinkTests(ok) {
     ok(list[0].sessionFile === 'C:/yan/sessions/new-real.jsonl', 'sessionFile 就地补上了', list[0].sessionFile)
   }
 
-  /* ── 3. 必填缺失与上限 ───────────────────────────────── */
   {
     const bad = await store.link({ sessionId: '', worktree: 'C:/x' })
     ok(bad.ok === false && typeof bad.error === 'string', '缺会话 id → 明确报错（不写一条空记录）', JSON.stringify(bad))
@@ -96,7 +78,6 @@ export async function runWorktreeLinkTests(ok) {
     ok(many.links[0].sessionId === 's100', '丢的是最旧的', many.links[0].sessionId)
   }
 
-  /* ── 4. 坏文件容错 + 重启读回 ───────────────────────── */
   {
     writeFileSync(file, '{ 这不是 JSON')
     const fresh = new WorktreeLinkStore({ root })
@@ -104,11 +85,9 @@ export async function runWorktreeLinkTests(ok) {
     try { await fresh.load() } catch { rejectedCorrupt = true }
     ok(rejectedCorrupt, '坏关系文件明确报错，不能当空表覆盖')
     ok(readFileSync(file, 'utf8') === '{ 这不是 JSON', '坏文件原文保留')
-    // 在隔离夹具中显式恢复正常文档，验证重新加载。
     writeFileSync(file, JSON.stringify({ version: 1, links: [] }))
     await fresh.load()
 
-    /* 真实落盘的内容能被**另一个实例**读回（这才是「重启后还在」） */
     await fresh.link({ sessionId: 'persist', worktree: 'C:/w2', branch: 'main' })
     const reloaded = new WorktreeLinkStore({ root })
     await reloaded.load()

@@ -46,31 +46,11 @@ import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
 import { StatusBar } from './components/shell/StatusBar'
 import { dismissBootSplash } from './lib/boot-splash'
 import { streamingMessageId, useStore } from './state/store'
-/* 全部样式经级联层入口加载：覆盖关系由层决定，见 styles/index.css */
 import './styles/index.css'
 
-/**
- * 超过这么多条消息才开启虚拟化。
- *
- * 为什么不一直开：虚拟化会改变 DOM 结构（外层变成绝对定位的项），
- * 而消息高度是**动态**的（流式文本在长、工具卡在展开/折叠），
- * 短会话里收益为零、风险却真实。长会话（上千条）才是会卡死的场景。
- *
- * ⚠️ 阈值必须按**消息/DOM 规模**判，不能只看回合数。
- *    历史上只比 `turns.length >= VIRTUALIZE_AT`（回合数），而回合是把
- *    「一次 API 往返 = 一条 assistant 消息」合并后的结果：
- *    实测一个真实会话有 1948 条消息、967 次工具调用，合并后却只有 **58 个回合**
- *    —— 于是虚拟化根本没开，1948 条消息全量进 DOM，每帧还要重渲染一遍。
- *    工具调用密集的会话（就是用户报卡顿的那种）恰好是「回合少、消息多」。
- */
 const VIRTUALIZE_AT = 80
-/** 消息条数达到这个量级就虚拟化（回合数之外的第二道闸） */
 const VIRTUALIZE_MSGS_AT = 200
 
-/**
- * 虚拟列表「看上去是空的」：容器有高度，却一行都没有，或有行但没有一行落在视口里。
- * 只看几何，不依赖列表内部状态 —— 它自己的状态正是出问题的那一块。
- */
 function listLooksBlank(list: HTMLElement | null | undefined): boolean {
   if (!list) return false
   const box = list.getBoundingClientRect()
@@ -90,33 +70,17 @@ function readTheme(parent: Theme | undefined): Theme {
     const v = localStorage.getItem('yan.theme')
     if (v === 'light' || v === 'dark') return v
   } catch {
-    /* file:// 下 localStorage 会抛，忽略 */
   }
   return 'dark'
 }
 
-/** 设置面板里那两颗主题按钮 */
 const THEME_BUTTON_SELECTOR = '[data-testid^="theme-"]'
 
-/**
- * 主题切换动画的圆心：优先用**刚被点的那颗按钮**。
- *
- * 为什么不能只信事件载荷：设置面板带了按钮中心，但一旦有任何一条路径
-dispatch 了不带位置的主题事件（或载荷在中间被吃掉），动画就会默默回退
- * 到屏幕中心 —— 而那看起来就是「按钮定位不对」。所以这里再从 DOM 找一次：
- * 先看焦点（鼠标点过的按钮就是 activeElement），再退到面板里的主题按钮。
- * 面板没开时两者都找不到 → 返回 null，让 CSS 回退屏幕中心。
- */
 function themeButtonOrigin(): { x: number; y: number } | null {
   const center = (el: Element | null | undefined): { x: number; y: number } | null => {
     if (!el) return null
     const rect = el.getBoundingClientRect()
     if (!rect.width && !rect.height) return null
-    /*
-     * 必须在**真的看得见**才行：设置面板关掉后还会留在 DOM 里一小段时间
-     * （退场动画 / `usePresence`），它的 rect 仍然算得出来 —— 拿它当圆心
-     * 会让下一次切换从一个看不见的位置开始。
-     */
     const style = getComputedStyle(el)
     if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) < 0.05) return null
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
@@ -126,7 +90,6 @@ function themeButtonOrigin(): { x: number; y: number } | null {
   return center(byFocus) ?? center(document.querySelector(THEME_BUTTON_SELECTOR))
 }
 
-/** 会话切换时把未决确认按「未确认」结算，不给新会话留下旧操作的确认。 */
 function ConfirmSessionGuard(): null {
   const cancel = useCancelConfirms()
   const conversation = useStore((s) => conversationKeyOf(s.session))
@@ -143,21 +106,13 @@ export default function App() {
   const t = useT()
   const [theme, setTheme] = useState<Theme>(() => readTheme(undefined))
   const themeMounted = useRef(false)
-  /** 最近一次主题切换的动画圆心（设置面板传的按钮中心）；没有就回退屏幕中心 */
   const themeOrigin = useRef<{ x: number; y: number } | null>(null)
-  /** 主题过渡是否在跑（同一时间只允许一次 —— 并发会被 Chromium 跳过） */
   const themeTransitionRunning = useRef(false)
-  /** 首次使用向导（默认关；首次启动自动开）。每步当场落盘，关掉只标记看过 */
   const [wizard, setWizard] = useState(false)
-  /** 开始前自检清单：不再自动弹，只从「关于」页打开 */
   const [onboarding, setOnboarding] = useState(false)
-  /* Ctrl+K 会话切换器 */
   const [switcherOpen, setSwitcherOpen] = useState(false)
-  /* Ctrl+/ 快捷键表（只读） */
   const [sheetOpen, setSheetOpen] = useState(false)
-  /* 检查点：换会话、来新消息后刷新（用户消息上的「回退代码」据此出现） */
   const refreshCheckpoints = useStore((s) => s.refreshCheckpoints)
-  /** 缺 bash / git 的启动通知（在判定不弹引导之后才推，见下面的 effect） */
   const checkToolchainNotice = useStore((s) => s.checkToolchainNotice)
   const checkpointKey = useStore((s) => s.session?.conversationId ?? s.session?.sessionId ?? '')
   const checkpointMessages = useStore((s) => s.messages.length)
@@ -165,14 +120,11 @@ export default function App() {
     const timer = window.setTimeout(() => void refreshCheckpoints(), 400)
     return () => window.clearTimeout(timer)
   }, [refreshCheckpoints, checkpointKey, checkpointMessages])
-  /** 只在第一次判定时决定是否自动弹，之后用户关了就不管了 */
   const onboardDecided = useRef(false)
-  /** 左栏由标题栏开关显式控制，首次收起，后续恢复保存的展开状态。 */
   const railPinned = useStore((s) => s.railPinned)
   const railPinnedRef = useRef(railPinned)
   railPinnedRef.current = railPinned
   const setRailPinned = useStore((s) => s.setRailPinned)
-  /* 浏览器开关与工具栏独立：入口在标题栏，收起工具栏不影响浏览器 */
   const browserOpen = useStore((s) => s.browserState.open)
   const openBrowser = useStore((s) => s.openBrowser)
   const closeBrowser = useStore((s) => s.closeBrowser)
@@ -182,12 +134,7 @@ export default function App() {
   const cycleModelBack = useStore((s) => s.cycleModelBack)
   const cycleThinking = useStore((s) => s.cycleThinking)
 
-  /* 左栏是否可见：只取决于那个开关 */
   const railOpen = railPinned
-  /*
-   * 左栏收起时，指针停在标题栏开关上 → 左栏以浮层预览（不推挤布局），
-   * 指针离开开关与浮层后收回；点击开关仍是固定展开。
-   */
   const [railPeek, setRailPeek] = useState(false)
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoverRail = (inside: boolean): void => {
@@ -196,7 +143,6 @@ export default function App() {
   }
   useEffect(() => { if (railPinned) setRailPeek(false) }, [railPinned])
   useEffect(() => () => { if (peekTimer.current) clearTimeout(peekTimer.current) }, [])
-  // 设置面板状态放 store（ContextBar 等深层组件要能直接打开）
   const settingsOpen = useStore((s) => s.settingsOpen)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   useEffect(() => {
@@ -208,24 +154,13 @@ export default function App() {
   const openSettings = useStore((s) => s.openSettings)
   const closeSettings = useStore((s) => s.closeSettings)
   const setSettingsTab = useStore((s) => s.setSettingsTab)
-  /** 用户的显式选择优先于主进程存的设置，避免来回打架 */
   const userTouched = useRef({ theme: false, lang: false })
 
   const conn = useStore((s) => s.conn)
   const messages = useStore((s) => s.messages)
-  /*
-   * 宿主提问的回放（只显示，不进模型上下文）。
-   *
-   * 会话对不上时按空处理：记录是异步推过来的，切会话的那一瞬间
-   * 手里可能还拿着上一个会话的列表（与 `uiRequests` 的「复活」缺陷同源）。
-   */
   const questionLog = useStore((s) => s.questionLog)
   const questionLogSession = useStore((s) => s.questionLogSession)
   const session = useStore((s) => s.session)
-  /*
-   * 分屏（设计规范 §4）：两侧各绑一条会话，焦点那一侧就是活动会话，渲染完整对话与输入框；
-   * 另一侧只读、输入框收起。焦点按「正在显示哪条会话」推导，变化写回分屏状态。
-   */
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
   const storedSplit = useSplitView((s) => s.split)
@@ -238,13 +173,7 @@ export default function App() {
   useRunnerVisibility(split?.tiles ?? (displayedSession ? [displayedSession] : []))
   rememberConversationKey(session)
   useLayoutEffect(() => { useSplitView.getState().sync(displayedSession) }, [displayedSession, storedSplit])
-  /*
-   * 记下每条会话在屏幕上的最后样子：分屏里焦点离开这一块时它接着显示这份（SplitPeerPane），
-   * 之后再拉进分屏也从这份起步，不闪空白、不少只推给活动会话的内容。
-   */
-  /* 会话身份先于消息更新时，那一帧的消息还是上一条会话的：换身份后第一次出现的消息引用不记 */
   const shownGuard = useRef<{ key: string; last: unknown }>({ key: '', last: null })
-  /* 换身份后消息引用没变，说明还是上一条会话的 */
   useEffect(() => {
     if (!displayedSession) return
     const key = displayedSession.path ?? displayedSession.sessionId ?? ''
@@ -252,12 +181,8 @@ export default function App() {
     shownGuard.current = { key, last: messages }
     if (!stale) rememberShown(displayedSession, messages)
   }, [displayedSession, messages])
-  /*
-   * 记滚动位置：合到每帧一次；换会话后的头一小会儿不记（那时的滚动事件来自上一条会话的旧内容）。
-   */
   const scrollNote = useRef<{ raf: number; top: number; atBottom: boolean; anchor?: ScrollAnchor; settleAt: number; identity: string; target: SplitSessionRef | null }>({ raf: 0, top: 0, atBottom: true, settleAt: 0, identity: '', target: null })
   const scrollIdentity = displayedSession?.path ?? displayedSession?.sessionId ?? ''
-  /* 在渲染时就arm：不等 effect，同一帧里的旧滚动事件也进不来 */
   if (scrollNote.current.identity !== scrollIdentity) {
     scrollNote.current.identity = scrollIdentity
     scrollNote.current.settleAt = performance.now() + 150
@@ -265,12 +190,10 @@ export default function App() {
   const noteScroll = (top: number, atBottom: boolean, container?: HTMLElement | null): void => {
     const note = scrollNote.current
     if (!displayedSession || performance.now() < note.settleAt) return
-    /* 目标在事件发生时就定下，帧回调里换了会话也不会记到新会话名下 */
     if (note.target && note.target !== displayedSession && note.raf) { cancelAnimationFrame(note.raf); note.raf = 0 }
     note.target = displayedSession
     note.top = top
     note.atBottom = atBottom
-    /* 锚点在事件发生时就取（帧回调时 DOM 可能已换成别的会话） */
     note.anchor = atBottom ? undefined : scrollAnchorOf(container)
     if (note.raf) return
     note.raf = requestAnimationFrame(() => {
@@ -286,28 +209,9 @@ export default function App() {
   const applyPush = useStore((s) => s.applyPush)
   const streamRef = useRef<HTMLDivElement>(null)
   const vlistRef = useRef<VListHandle>(null)
-  /*
-   * 「跟随底部」开关。
-   *
-   * ⚠️ 为什么 state 之外还要一个 ref：
-   *   state 的更新是**异步**的（React 批处理），而消息推送随时可能到达。
-   *   实测踩到的 bug：点导航轨往上跳 → setStick(false) 还没生效 →
-   *   同一帧来了一条 msg-update → 贴底 effect 读到旧的 stick=true
-   *   → 把用户**拽回底部**。表现就是「点了跳转但没跳过去」（探针实测
-   *   时而 scrollTop=24 ✓，时而 1158 = 到底 ✗）。
-   *   ref 是同步写的，effect 读它就不会被批处理坑到。
-   */
   const [stick, setStick] = useState(true)
   const stickRef = useRef(true)
-  /**
-   * 导航轨跳转期间，忽略尚未送达的旧 scroll 事件。
-   *
-   * 直接给 `.stream.scrollTop` 赋值会异步派发 scroll 事件；如果用户刚在
-   * 底部点击导航轨，那个事件可能在点击回调之后才到达，并把 stick 又算回
-   * true。随后的贴底 effect 就会把刚定位好的回合重新拉到底部。
-   */
   const suppressStickScrollRef = useRef(false)
-  // 延迟恢复只属于发起时的阅读意图；导航或滚动后，旧帧不能再接管位置。
   const scrollIntentRef = useRef(0)
   const setStickNow = (v: boolean): void => {
     scrollIntentRef.current += 1
@@ -315,27 +219,9 @@ export default function App() {
     setStick(v)
   }
 
-  /**
-   * 正在流式的那条消息（给回合视图标记「还在写」）。
-   *
-   * 注意取的是**最后一条**消息的 id，而不是「最后一条 assistant」——
-   * 流式刚开始时最后一条还是用户消息，那时不该有任何回合在闪光标。
-   *
-   * ⚠️ 用 `isStreaming || isAgentRunning`：
-   * `isStreaming` 是「此刻有一条 assistant 消息在流」，工具执行期间为 false；
-   * `isAgentRunning` 是「整个回合在跑」（agent_start → agent_settled）。
-   * 只用一个的话，「思考 → 调工具」时回合会被当成已结束 → 推理窗口提前折叠
-   * （用户报的 bug）。
-   */
   const runTail = useStore((s) => s.runTail)
   const streamingId = streamingMessageId({ session, messages, runTail })
 
-  /**
-   * 回合分组 —— 把扁平的 messages 折成「一轮一块」。
-   *
-   * 为什么要记 memoize：每次 msg-update 推送（流式时几十次/秒）都会重算，
-   * 而分组要遍历整个消息数组。依赖只有 messages 与 streamingId。
-   */
   const projectTurns = useMemo(() => createTurnProjector(), [])
   const turns = useMemo(
     () =>
@@ -346,7 +232,6 @@ export default function App() {
     [messages, questionLog, questionLogSession, session?.sessionId, streamingId, projectTurns]
   )
 
-  /* 已发送、模型尚无输出：流末尾补一行等待状态（只用于渲染，不参与回合索引） */
   const awaitingReply = turns.length > 0 && turns[turns.length - 1].kind !== 'assistant' && !!(session?.isAgentRunning || session?.isStreaming)
   const renderTurns = useMemo(
     () => awaitingReply ? [...turns, { kind: 'pending' as const, id: '__pending__' }] : turns,
@@ -355,20 +240,13 @@ export default function App() {
 
   const virtual = turns.length >= VIRTUALIZE_AT || messages.length >= VIRTUALIZE_MSGS_AT
 
-  /* ---- 主进程推送 → store；并做一次全量 bootstrap ---- */
   useEffect(() => {
     const off = window.yan.onPush(applyPush)
     void bootstrap()
-    // 连接状态自愈：push 可能丢（见 store 里的说明），不 ready 就主动拉
     startConnWatch()
     return off
   }, [applyPush, bootstrap, startConnWatch])
 
-  /*
-   * ---- 启动画面：设置、会话与 pi 连接都有结论后才撤（设计规范 §3.4.1）----
-   * 只等 bootstrap 会露出「空壳 → 恢复上次会话」的跳变；pi 起不来时连接状态
-   * 会变成 exited / error，那时也撤，让界面自己说明原因。等两帧让最终布局先画好。
-   */
   const bootConn = useStore((s) => s.conn)
   const bootSession = useStore((s) => s.session)
   useEffect(() => { performance.mark('yan:conn-' + bootConn) }, [bootConn])
@@ -381,38 +259,18 @@ export default function App() {
     return () => cancelAnimationFrame(id)
   }, [settings, bootConn, bootSession])
 
-  /* ---- 首次引导：数据到位后判定一次 ---- */
   useEffect(() => {
     if (onboardDecided.current) return
-    if (!settings) return // 等 bootstrap 有结果
+    if (!settings) return
     onboardDecided.current = true
-    /*
-     * 验收探针里**不自动弹**。
-     *
-     * 隔离的测试环境没有凭证，所以这里会无条件弹出；而引导层是一层模态，
-     * 按（正确的）设计会让出 Shift+Tab / Ctrl+P —— hotkeys 那类场景
-     * 的按键就全被吃掉了。手动从「关于」页打开不受影响。
-     */
     if (window.yan.isProbe) {
-      /*
-       * 探针里不弹引导，但缺 Git 的通知照旧推：`gitinstall` 验收脚本靠它
-       * 确认「一键安装」按钮在（见 scripts/probe/gitinstall.js）。
-       */
       checkToolchainNotice()
       return
     }
-    /*
-     * 首次启动弹的是**配置向导**（外观 / 提醒 / 接入 / 上下文），
-     * 不再看「环境有没有问题」：环境正常的用户同样要把这几项配一遍。
-     * 自检清单（pi / 凭证 / 命令行工具）改为从「关于」页按需打开。
-     *
-     * 工具链通知照旧推：向导里没有命令行工具那一行，缺 bash / git 要让用户知道。
-     */
     if (shouldAutoWizard()) setWizard(true)
     checkToolchainNotice()
   }, [settings, checkToolchainNotice])
 
-  /* ---- 设置只在首次到达时对齐 UI（之后以 UI 为准） ---- */
   useEffect(() => {
     if (!settings) return
     if (!userTouched.current.theme && settings.theme !== theme) setTheme(settings.theme)
@@ -420,7 +278,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings])
 
-  /* ---- 设置面板里改主题时同步 App 的 state ---- */
   useEffect(() => {
     const onTheme = (e: Event): void => {
       const detail = (e as CustomEvent).detail as
@@ -428,7 +285,6 @@ export default function App() {
         | 'light'
         | { theme?: 'dark' | 'light'; origin?: { x: number; y: number } }
         | undefined
-      /* 两种载荷都收：字符串（老调用点 / 探针）与 `{ theme, origin }`（设置面板带按钮位置） */
       const next = typeof detail === 'string' ? detail : detail?.theme
       const origin = typeof detail === 'object' && detail ? detail.origin : undefined
       if (origin && Number.isFinite(origin.x) && Number.isFinite(origin.y)) {
@@ -443,17 +299,8 @@ export default function App() {
     return () => window.removeEventListener('yan:theme', onTheme)
   }, [])
 
-  /* ---- 主题令牌挂在 <html data-theme>（DESIGN §2.6） ---- */
   useEffect(() => {
     const root = document.documentElement
-    /*
-     * 换肤的全部动作都放这里，因为 View Transition 是**先拍旧快照、再执行 update**：
-     * 背景色（模板 / 自定义）是挂在根元素上的行内令牌，会盖过主题里的默认值。
-     * 先前它在另一个 effect 里更新，比旧快照晚一点、比新快照早一点 ——
-     * 结果是旧快照带着新主题的底色（用户看到的「切换时闪过一块浅色」），
-     * 只有用了非默认背景色模板时才会出现。所以两者必须同一刻落。
-     * 事件在这里发：真正改了颜色的是这一处，下面的外观 effect 会因同值跳过。
-     */
     const apply = (): void => {
       root.dataset.theme = theme
       const colors = applyBackground(
@@ -464,32 +311,10 @@ export default function App() {
       )
       if (colors) window.dispatchEvent(new Event(APPEARANCE_EVENT))
     }
-    /*
-     * 切换方向（DESIGN §5）：切到深色是「从中心向外晕开」，
-     * 切到浅色是「从外缘向中心收拢」。
-     *
-     * 属性必须在 startViewTransition **之前**写：过渡伪元素的样式在动画开始时
-     * 才匹配，提前写能保证首帧就是正确方向，不会先闪一下反方向。
-     */
     root.dataset.themeDir = theme === 'dark' ? 'out' : 'in'
-    /*
-     * 动画圆心（DESIGN §5）：默认屏幕中心；从设置面板切主题时，圆心就是**那个按钮**
-     *（“我点的那一下让主题从这儿铺开 / 收拢”）。载荷里没带位置时再从 DOM 找一次
-     *（`themeButtonOrigin`）—— 两条路都拿不到才真的回退屏幕中心。
-     * 同样必须在 startViewTransition 之前落到行内样式上，否则首帧会从屏幕中心闪一下。
-     */
     const origin = themeOrigin.current ?? themeButtonOrigin()
     themeOrigin.current = null
     if (origin) {
-      /*
-       * 圆心写成**相对视口的百分比**，不是 px。
-       *
-       * `circle(at X Y)` 的长度基准是过渡伪元素自己的 border box。正常时那个
-       * 盒子就是视口，px 与百分比等价；但 Chromium 会在快照尺寸变化时给这层加
-       * 缩放/平移，px 就落到屏幕上的另一个地方了（用户现场：在设置里点深色，
-       * 圆却从别处展开）。百分比跟着盒子缩放走，不会跑偏 —— 这是「圆心一定在
-       * 按钮上」的其中一道保险，另一道在 shell.css（把 root 组的盒子钉回视口）。
-       */
       const vw = window.innerWidth || 1
       const vh = window.innerHeight || 1
       root.style.setProperty('--theme-origin-x', `${((origin.x / vw) * 100).toFixed(3)}%`)
@@ -499,19 +324,6 @@ export default function App() {
       root.style.removeProperty('--theme-origin-y')
     }
 
-    /*
-     * Chromium 的 View Transition 把新主题放在旧主题之上，配合 clip-path
-     * 从中心向外展开，颜色切换不会像整页硬切。老版本 Electron 或减少动效
-     * 环境直接改 data-theme，主题功能本身不依赖动画。
-     *
-     * ⚠️ 两条防坑（都是实测踩出来的）：
-     *   ① **同一时间只跑一次过渡**。上一次还没结束就再起一次，Chromium 会把新的跳过 ——
-     *      被跳过的那次 `updateCallback` 不执行，`data-theme` 就停在旧值上
-     *      （用户看到的是「点了没反应」，而且下一次动画的圆心还是上一次的）。
-     *      所以过渡进行中就直接改令牌、不上动画。
-     *   ② **被跳过也要把主题落上**：`updateCallbackDone` 反了（skip / 回调抛错）就再 apply 一次，
-     *      宁可少一次动画，不能少一次换肤。
-     */
     const transitionDocument = document as Document & {
       startViewTransition?: (update: () => void) => { finished?: Promise<void>; updateCallbackDone?: Promise<void> } | undefined
     }
@@ -529,11 +341,6 @@ export default function App() {
       const transition = transitionDocument.startViewTransition(apply)
       if (transition?.updateCallbackDone) transition.updateCallbackDone.then(undefined, apply)
       if (transition?.finished) {
-        /*
-         * 兜底定时器用**动画时长**而不是一个拍脑袋的 2 秒：
-         * `finished` 在窗口不可见（后台标签 / 探针隐藏窗口）时会被节流到很晚，
-         * 光等它会让接下来的一两次切换都退化成瞬时换肤。
-         */
         const timer = window.setTimeout(done, 900)
         transition.finished.then(
           () => {
@@ -554,7 +361,6 @@ export default function App() {
     try {
       localStorage.setItem('yan.theme', theme)
     } catch {
-      /* 忽略 */
     }
     if (settings && settings.theme !== theme) void window.yan.patchSettings({ theme })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -565,26 +371,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang])
 
-  /*
-   * 密度（方案 A1）：挂在 <html data-density>，由 tokens.css 覆盖三个 --d-* 变量。
-   * 只走 CSS 变量 —— 不给所有尺寸统一乘倍数（那会破坏中文像素对齐）。
-   */
   const density = settings?.density ?? 'standard'
   useEffect(() => {
     document.documentElement.dataset.density = density
   }, [density])
 
-  /*
-   * 对话内容列宽度 —— 把设置里的 streamWidth 写到 CSS 变量 --w-stream。
-   *
-   * 为什么用 CSS 变量而不是给每个元素传宽度：
-   *   正文列 / 输入框 / 用量条 / 导航轨的定位**全都**从 --w-stream 取值，
-   *   改一个变量就整体对齐，不会出现「正文宽了但输入框还窄」的错位。
-   * 0 = 删掉变量，回落到 tokens.css 的设计默认值（正文 80ch + 两侧内边距）。
-   *
-   * 改完发一个 `yan:stream-width` 事件：导航轨的横向位置是 JS 实测的，
-   * 它需要重新量一次（尤其虚拟化长会话里没有 .stream-inner 可观察）。
-   */
   useEffect(() => {
     const root = document.documentElement
     const w = settings?.streamWidth ?? 0
@@ -593,13 +384,6 @@ export default function App() {
     window.dispatchEvent(new Event('yan:stream-width'))
   }, [settings?.streamWidth])
 
-  /*
-   * 背景色模板 / 自定义：只在**设置本身**变化时落盘。
-   *
-   * 依赖里故意不放 theme：换主题时根元素上的行内背景令牌由主题 effect 的 apply
-   * 统一改写（那里和 data-theme 同一刻落），否则它会抢在 View Transition 的
-   * 旧快照之前把底色换成新主题的，动画里就会闪过一块不对的背景色。
-   */
   useEffect(() => {
     const root = document.documentElement
     const colors = applyBackground(root, settings?.backgroundPreset, customForTheme(settings?.backgroundCustom, settings?.backgroundCustomLight, theme), theme)
@@ -607,7 +391,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings?.backgroundPreset, settings?.backgroundCustom, settings?.backgroundCustomLight])
 
-  /* 字体与字号：覆盖根元素令牌；有变化才广播给终端等读计算值的组件 */
   useEffect(() => {
     const root = document.documentElement
     const type = applyTypography(root, settings ?? {})
@@ -619,28 +402,19 @@ export default function App() {
     settings?.fontUi, settings?.fontUiCustom, settings?.fontCode, settings?.fontCodeCustom, settings?.fontSizeBody, settings?.fontSizeUi
   ])
 
-  /* 过程布局写到根元素：宽度够时由 chat.css 的容器查询把过程放到右侧一栏 */
   useEffect(() => {
     document.documentElement.dataset.procLayout = settings?.processLayout === 'side' || settings?.processLayout === 'left' ? settings.processLayout : 'inline'
   }, [settings?.processLayout])
 
-  /* ---- 贴底滚动：用户往上翻了就不打扰 ---- */
   useEffect(() => {
     if (!stickRef.current || suppressStickScrollRef.current) return
     if (virtual) {
-      // 虚拟列表：滚到最后一项的末尾
       vlistRef.current?.scrollToIndex(renderTurns.length - 1, { align: 'end' })
       return
     }
     const el = streamRef.current
     if (el) el.scrollTop = el.scrollHeight
-    // 依赖 turns 而不是 messages：回合合并后一块里也可能长高（新段落）
-    // split?.live：分屏焦点换边时对话列在另一个磁贴里重新挂载，新的滚动容器从头开始，要重新贴底
   }, [renderTurns, stick, virtual, split?.live])
-  /*
-   * 回合数没变而内容自己长高（成果卡片预览、图片后加载）或列宽变了：停在底部的仍贴住底部。
-   * 跟着对话区节点走（分屏换块时整列在新磁贴里重新挂载，节点会换），所以挂在 ref 回调上。
-   */
   const stickObserver = useRef<ResizeObserver | null>(null)
   const setStreamNode = useCallback((node: HTMLDivElement | null): void => {
     streamRef.current = node
@@ -654,28 +428,18 @@ export default function App() {
     stickObserver.current = observer
   }, [])
 
-  /*
-   * 长会话的虚拟列表在「刚挂载 / 换了磁贴」时可能一格都没画出来：列表按挂载那一刻量到的
-   * 视口算要画哪几行，磁贴还在重排时量到的是 0，之后高度变大它也不重算 ——
-   * 滚动条、导航轨都在，正文却是一片空白（分屏拖入、焦点换边时用户碰到过）。
-   * 挂载后的前几帧里检查：容器有高度、应当有行、实际一行都没有 → 换 key 重挂一次，
-   * 重挂时视口已经稳定；没出问题就只是顺手贴底。
-   */
   const centerRef = useRef<HTMLElement>(null)
   useStreamHeight(centerRef)
   const [vlistKey, setVlistKey] = useState(0)
   const vlistRemounts = useRef(0)
-  /** 对话列刚搬到新磁贴、还在稳定：新列表从顶部起步发出的 scroll 事件不算用户往上翻 */
   const vlistSettlingRef = useRef(false)
   const lastTurnIndexRef = useRef(0)
   lastTurnIndexRef.current = Math.max(0, turns.length - 1)
-  /* 恢复滚动的帧回调里读最新的回合列表（按锚点找下标） */
   const turnsRef = useRef(turns)
   turnsRef.current = turns
   useEffect(() => {
     if (!virtual) return undefined
     if (vlistKey === 0) vlistRemounts.current = 0
-    /* 搬家前用户停在底部就搬完仍停在底部；往上翻着的不去动它 */
     const wasStick = stickRef.current
     const intent = scrollIntentRef.current
     vlistSettlingRef.current = true
@@ -692,7 +456,6 @@ export default function App() {
       if (wasStick && intent === scrollIntentRef.current && stickRef.current && !suppressStickScrollRef.current) {
         vlistRef.current?.scrollToIndex(lastTurnIndexRef.current, { align: 'end' })
       }
-      // 首次有效布局后，真实滚动即可表达阅读意图；后续检查帧不再屏蔽它。
       vlistSettlingRef.current = false
       if (++frames < 24) {
         raf = requestAnimationFrame(tick)
@@ -708,11 +471,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [split?.live, !!split, virtual, vlistKey, scrollIdentity])
 
-  /*
-   * 普通切换 / 分屏换块：从这条会话刚才在屏幕上的位置接着显示（失焦时在只读投影里滚到哪就是哪），
-   * 没记录过就贴底。不沿用上一条会话的「是否贴底」—— 那是另一条会话的状态，沿用会让新焦点跳回顶部。
-   * 它是 layout effect，比上面「虚拟列表搬家」的普通 effect 先跑，那边读到的 stickRef 已是这条会话的。
-   */
   const splitOn = !!split
   const sessionIdentity = displayedSession?.path ?? displayedSession?.sessionId ?? ''
   useLayoutEffect(() => {
@@ -721,7 +479,6 @@ export default function App() {
     const bottom = !snap || snap.atBottom
     stickRef.current = bottom
     setStick(bottom)
-    // 初始布局的 scroll 事件不代表用户阅读意图，也不能覆盖目标会话的快照。
     vlistSettlingRef.current = true
     const intent = scrollIntentRef.current
     const raf = requestAnimationFrame(() => {
@@ -729,7 +486,6 @@ export default function App() {
         vlistSettlingRef.current = false
         return
       }
-      /* 按回合锚点恢复（两块的渲染方式不同，像素位置不通用），找不到锚点回合才用像素 */
       if (virtual) {
         const at = snap?.anchor ? turnsRef.current.findIndex((tt) => tt.id === snap.anchor!.turnId) : -1
         if (bottom) vlistRef.current?.scrollToIndex(lastTurnIndexRef.current, { align: 'end' })
@@ -745,7 +501,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [split?.live, sessionIdentity, splitOn, virtual, vlistKey])
 
-  /* 分屏期间磁贴随时可能重排：每半秒再看一眼，空白了就重挂并贴回底部（最多 3 次，换会话后清零） */
   useEffect(() => {
     vlistRemounts.current = 0
   }, [sessionIdentity, split?.live])
@@ -770,29 +525,8 @@ export default function App() {
     noteScroll(el.scrollTop, atBottom, el)
   }
 
-  /**
-   * 跳到第 N 轮。把它注册到 store 给导航轨用。
-   *
-   * 两种渲染路径要分开处理：
-   *   · 虚拟化（长会话）→ VList 的 scrollToIndex
-   *   · 普通 → 找到对应的 DOM 节点 scrollIntoView
-   * 不能统一用 scrollIntoView —— 虚拟化时目标节点可能还没渲染。
-   */
   useEffect(() => {
     registerScrollToTurn((turnIndex: number) => {
-      /*
-       * 先**同步**关掉「跟随底部」。
-       *
-       * 跳转是用户明确表达「我要看前面」。而在平滑滚动开始到第一个
-       * scroll 事件之间有一段时间，其间若来一条消息推送，
-       * 贴底 effect 会把用户拉回底部。同步写 ref 就把这个窗口封死了。
-       */
-      /*
-       * 导航轨的「第 N 轮」= 第 N 个**用户回合**。
-       *
-       * 合并后一块助手回合里可能含 34 条原始消息，所以不能再用
-       * messages 的下标去定位 —— 要用**回合数组的下标**。
-       */
       const userTurns: number[] = []
       turns.forEach((tt, i) => {
         if (tt.kind === 'user') userTurns.push(i)
@@ -814,36 +548,7 @@ export default function App() {
 
       const turn = turns[target]
 
-      /*
-       * ⚠️ 必须等**这一帧的提交**结束再滚。
-       *
-       * 上面 `setStickNow(false)` 会让 React 重渲染（`!stick` 时会挂出
-       * 「回到底部」按钮），而重渲染会让浏览器**取消正在进行的平滑滚动**。
-       * 推到下一帧（提交后）再滚，就不会被取消。
-       */
       requestAnimationFrame(() => {
-        /*
-         * **一律瞬移，不用平滑滚动。**
-         *
-         * 本会话实测（这是第二次在这个点上耽误时间了）：
-         *   scrollIntoView({behavior:'smooth'}) 单独调用  → 能滑到位
-         *   同一行代码放进这里（重渲染之后）            → **永远不动**
-         * 原因是平滑滚动会被任何一次重渲染取消，而这条路径上
-         * 总有重渲染（setStickNow / setHover / 流式推送）。
-         *
-         * 曾经写过「跳得远就瞬移、跳得近就平滑」来缓解 —— 那只是拆中一半：
-         * 距离阈值是 `box.height * 1.5`，而实测的跳动距离（594px）
-         * 恰好小于阈值（954px）→ 又走回平滑 → 又不动。
-         *
-         * 现在直接不用平滑：「跳到第 N 轮」本来就是**定位**，不是看动画。
-         * 代价只是少一个滚动动效，换来的是它真的能用。
-         */
-        /*
-         * 直接写滚动容器，而不是调用 scrollIntoView：Electron/Chromium 在
-         * `.stream` 内还有一层内容列时，后者可能把外层页面当成目标，表现为
-         * 点击导航格后 scrollTop 仍停在底部。用相对几何坐标只影响这一个容器，
-         * 且不依赖 DOM 的 offsetParent 结构。
-         */
           const applyTargetScroll = (): void => {
             const box = streamRef.current
             const el = box?.querySelector<HTMLElement>(`[data-turn-id="${turn.id}"]`)
@@ -852,11 +557,6 @@ export default function App() {
             box.scrollTop = Math.max(0, targetTop)
           }
           applyTargetScroll()
-        /*
-         * 这里可能同时经历 setStickNow(false) 触发的提交、列表重排和滚动
-         * 事件。下一帧再确认一次，避免旧提交的贴底 effect 把刚完成的定位
-         * 覆盖掉；第二次使用当前 ref，兼容滚动节点在这一帧被替换的情况。
-         */
         requestAnimationFrame(() => {
           applyTargetScroll()
           suppressStickScrollRef.current = false
@@ -866,7 +566,6 @@ export default function App() {
     })
   }, [turns, virtual, registerScrollToTurn])
 
-  /** 虚拟列表的滚动回调：用 handle 的尺寸算「是否贴底」 */
   const onVirtualScroll = () => {
     const h = vlistRef.current
     if (!h || suppressStickScrollRef.current || vlistSettlingRef.current) return
@@ -885,19 +584,6 @@ export default function App() {
     if (el) el.scrollTop = el.scrollHeight
   }
 
-  /**
-   * 全局快捷键 —— 对齐 pi TUI 的默认绑定。
-   *
-   *   Ctrl+P       下一模型   （pi: app.model.cycleForward）
-   *   Ctrl+Shift+P 上一模型   （pi TUI: app.model.cycleBackward；RPC 无反向命令，本地算）
-   *   Shift+Tab    下一强度   （pi: app.thinking.cycle）
-   *
-   * ⚠️ 主路径在**主进程**（before-input-event），它先在渲染端之前拦下来，
-   *   再把动作名发过来；这里只负责执行 + 给反馈。
-   *   为什么不在渲染端直接监听 window keydown：实测会漏 ——
-   *   输入法组合态、焦点不在 webContents、菜单 accelerator 先吃，
-   *   三种情况都真实存在。主进程那条路是可靠的。
-   */
   useEffect(() => {
     const off = window.yan.onHotkey((action) => {
       if (action === 'cycleModel') void cycleModel()
@@ -905,15 +591,6 @@ export default function App() {
       else if (action === 'cycleThinking') void cycleThinking()
     })
 
-    /**
-     * 兑底：窗口失焦后的第一下按键 / 旧版 preload（没有 onHotkey）时，
-     * 渲染端的监听仍能接住。两条路都会跑，但重复触发是有害的
-     * （快速按两下 Ctrl+P 会跳两个模型而不是一个），所以用时间锁去重。
-     *
-     * ⚠️ 有模态层时必须**完全放行**：主进程那条路已经用 setHotkeyGuard
-     *    暂停了，这里再拦就会把设置面板里的 Shift+Tab 反向导航吃掉
-     *    （两条路只暂停一条 = 没暂停）。
-     */
     let lastAt = 0
     const guard = (action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking'): void => {
       const now = Date.now()
@@ -925,11 +602,6 @@ export default function App() {
     }
 
     const onKey = (e: KeyboardEvent): void => {
-      /*
-       * 全局按键判定集中在 `resolveShortcut`（纯函数，单测覆盖）：
-       * 输入法组合态 / AltGraph / 长按重复不触发；模态打开时让位；
-       * 终端聚焦时 Ctrl+K / Ctrl+L / Ctrl+B / Ctrl+Shift+C 让给 xterm。
-       */
       const shortcut = resolveShortcut({
         key: e.key,
         ctrl: e.ctrlKey,
@@ -1001,10 +673,6 @@ export default function App() {
     .filter(Boolean)
     .join(' ')
 
-  /*
-   * 活动会话的对话列。分屏时它跟着焦点放进那一块磁贴，其余是只读投影（SplitPeerPane，外观同尺寸）；
-   * 焦点换块时这一列在新位置重新挂载，遮罩从这一块淡出（`split-live`）。
-   */
   const sessionHeader = <Continuity />
   const chatColumn = (
           <InteractionSession.Provider value={displayedSession?.sessionId ?? ''}>
@@ -1049,19 +717,11 @@ export default function App() {
               </div>
             )}
 
-            {/*
-             * 「⠋ 正在处理…」已搬到**输入框的顶边框**上
-             * （pi 的做法，见 ComposerBorder.tsx）。
-             * 这里不再占一行，也不再有独立的像素 spinner。
-             */}
-
-            {/* 与输入框同一行、高度为 0 的锚点：按钮贴着输入框上沿，不受输入框高度变化影响 */}
             {!stick ? (
               <div className="jump-anchor">
                 <button
                   className="jump-bottom"
                   onClick={jumpToBottom}
-                  /* 纯图标按钮：辅助技术需要名称，悬停也需要提示 */
                   aria-label={t('chat.jumpToBottom')}
                   title={t('chat.jumpToBottom')}
                 >
@@ -1070,8 +730,6 @@ export default function App() {
               </div>
             ) : null}
 
-            {/* 交接 / 上下文整理的一行非阻塞状态（实施-14 F5）：没事就不占地方 */}
-            {/* 实施-20 U4：子代理运行状态与必须由人处理的合并/停止，走普通会话流 */}
             <SubagentNote />
             <Composer />
           </section>
@@ -1083,7 +741,6 @@ export default function App() {
     <>
       <ConfirmSessionGuard />
       <IconSprite />
-      {/* 另一台砚申请本次连接时的所有者审批（全局，不依赖设置页是否打开） */}
       <PeerApprovalDialog />
       {switcherOpen ? <SessionSwitcher onClose={() => setSwitcherOpen(false)} onOpenShortcutSheet={() => setSheetOpen(true)} /> : null}
       {sheetOpen ? <ShortcutSheet onClose={() => setSheetOpen(false)} /> : null}
@@ -1099,50 +756,20 @@ export default function App() {
           onToggleAlwaysOnTop={() => void toggleAlwaysOnTop()}
           maximized={maximized}
           onSettings={() => (settingsOpen ? closeSettings() : openSettings())}
-          /* 分屏时会话头移到各自磁贴上方（参考 Claude Code），标题栏不再放当前会话 */
           center={split ? null : sessionHeader}
         />
 
         <div className="workspace workspace-tiled">
-          {/* ⚠️ 这里曾经有一个 .rail-hotzone —— 
-              它是 .workspace 的第一个 grid item，会白占掉第一列，
-              导致 .rail-slot 被挤到第二列、.center 落到 0px 宽的第三列。
-              而「鼠标靠近左边缘」是用 window mousemove 的 clientX 判断的，
-              根本不需要 DOM 元素。 */}
-        {/*
-         * 展开把手**已删除**（曾经用 .rail-stub）。
-         *
-         * 为什么删：它和左栏头部的开关是**两个不同的元素、两套几何**，
-         * 所以展开前/后按钮的位置与大小对不上（用户报的第二个问题）。
-         * 而且收起时左栏虽然透明却仍然盖在把手上（过时的
-         * `.app.rail-off .rail{pointer-events:auto}`），导致把手根本点不到 ——
-         * 实测 elementFromPoint 命中的是 rail-brand-btn。
-         *
-         * 现在改成：**同一个按钮**（左栏头部的 .rail-brand-btn）在收起时
-         * 仍然可见可点 —— 收起宽度 50px 刚好容纳它，几何完全一致。
-         */}
         <div className="rail-slot" onPointerEnter={() => { if (!railOpen) hoverRail(true) }} onPointerLeave={() => { if (!railOpen) hoverRail(false) }}>
-          {/*
-            左栏开关在标题栏最左上（用户要求，参考 Codex）——
-            所以收起就是真的 0 宽，这里不再需要留槽/悬停按钮。
-            收起后仍能展开：标题栏那个按钮的位置从不变。
-          */}
           <Rail />
-          {/* 宽度把手：贴在左栏右缘（放进 slot 内部，不占 grid 列） */}
           <Resizer side="rail" />
         </div>
 
           {split ? (
-            /*
-             * 分屏（设计规范 §4）：每块是一条会话自己的工作区 —— 会话加它旁边的工具，排布按这条会话保存，
-             * 与单会话时看到的同一份。工具只在自己那一列里挪动。焦点那一列是活动会话；
-             * 其余列的工具照常显示（终端实时刷新），点一下先把焦点切过来，这一下照常交给工具本身。
-             */
             <div className="split-row" data-testid="split-row">
               {split.tiles.map((tile, i) => {
                 const live = split.live === i
                 const tileKey = splitTileKey(tile) || `tile-${i}`
-                /* 与单会话同一把键（workspace-key）：焦点怎么换，这一列的排布和资源都不变 */
                 const columnKey = workspaceKeyFor(tile)
                 return (
                   <Fragment key={tileKey}>
@@ -1152,12 +779,10 @@ export default function App() {
                     data-split-column={i}
                     style={{ flexGrow: splitWeights[tileKey] ?? 1 }}
                     onPointerDownCapture={live ? undefined : (e) => {
-                      /* 会话本身由 SplitPeerPane 处理（切焦点并把光标放进输入框） */
                       if ((e.target as HTMLElement).closest('[data-testid="split-peer"]')) return
                       focusSplitSession(tile, false)
                     }}
                   >
-                    {/* 窗口两侧照常留边；列与列之间两边各留一半，和分隔条一起像一道缝 */}
                     <Workspace sessionKey={columnKey} active={live} fit edges={{ left: i === 0 ? DOCK_GAP : DOCK_GAP / 2, right: i === split.tiles.length - 1 ? 2 : DOCK_GAP / 2 }}>
                       <WorkspacePane id={CHAT_PANE} title={t('split.paneTitle')} icon="chat-round" actions={[{ label: t('split.closeSide'), icon: 'close', run: () => closeSplitTile(i) }]}>
                         {live ? chatColumn : <SplitPeerPane index={i} target={tile} />}
@@ -1177,7 +802,6 @@ export default function App() {
               <RightPanel />
             </Workspace>
           )}
-          {/* 浮动工具磁贴（实施-12 U-4/U-5）：应用内容区上的独立层，不随右栏收起而消失 */}
           <FloatingTiles />
           <SplitDropZone />
         </div>
@@ -1205,17 +829,14 @@ export default function App() {
         tab={settingsTab}
         onClose={closeSettings}
         onTabChange={setSettingsTab}
-        /* 快捷键表：先收起设置，避免两层模态叠在一起 */
         onShowShortcuts={() => {
           closeSettings()
           setSheetOpen(true)
         }}
-        /* 重新查看引导：先把设置收起来，否则两层模态叠在一起（引导是下层会被挡住） */
         onShowOnboarding={() => {
           closeSettings()
           setOnboarding(true)
         }}
-        /* 配置向导：同上，先收设置再开向导 */
         onShowWizard={() => {
           closeSettings()
           setWizard(true)

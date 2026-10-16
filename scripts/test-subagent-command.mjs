@@ -1,4 +1,3 @@
-/** `/subagent` 参数路由的纯测试，不启动 Electron、不启动 pi。 */
 export function runSubagentCommandTests(ok, parseSubagentCommand) {
   const current = parseSubagentCommand('/subagent 检查项目')
   ok(current?.task === '检查项目' && current.isolation === 'shared-cwd', '普通子代理任务默认在当前文件夹执行')

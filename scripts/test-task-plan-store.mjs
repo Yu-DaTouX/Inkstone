@@ -1,13 +1,3 @@
-/**
- * 宿主任务服务（`src/main/task-plan-store.ts`，实施-02 S3）的测试。
- *
- * 这一层是**唯一真的写数据的地方**，所以每条断言都要对着**磁盘上的文件**验，
- * 不能只看返回值：返回值说成功而文件没变（或反过来）正是最坏的失败模式。
- *
- * 覆盖 S3 出口的四条性质：只追加 / 同会话串行 / CAS 与幂等靠磁盘 /
- * 落盘失败不得报成功。全部用隔离临时目录，不碰真实用户数据。
- */
-
 export async function runTaskPlanStoreTests(ok) {
   const store = await import('../out/test/task-plan-store.mjs')
   const {
@@ -26,7 +16,6 @@ export async function runTaskPlanStoreTests(ok) {
   const root = await mkdtemp(join(tmpdir(), 'yan-task-plan-'))
   const dir = join(root, 'task-plans')
   const at = { dir }
-  /** 提交一次；失败就抛（正常路径用） */
   const commit = async (sessionId, action, extra = {}, round = 1) => {
     const res = await applyTaskPlanOperation({
       sessionId,
@@ -40,7 +29,6 @@ export async function runTaskPlanStoreTests(ok) {
   let seq = 0
 
   try {
-    /* ============ 1. 空会话 ============ */
     {
       const cur = await currentTaskPlan('empty-session', at)
       ok(cur.state.todos.length === 0 && cur.state.revision === 0, '没写过 → 空计划（revision 0）')
@@ -48,7 +36,6 @@ export async function runTaskPlanStoreTests(ok) {
       ok((await readTaskPlanLog('empty-session', at)).length === 0, '文件不存在 → 空日志（不是错误）')
     }
 
-    /* ============ 2. 首次提交真的落盘 ============ */
     {
       const res = await commit('s1', 'set', { items: [{ text: '甲' }, { text: '乙', done: true }] }, 3)
       ok(res.replayed === false, '首次提交不是重放')
@@ -64,7 +51,6 @@ export async function runTaskPlanStoreTests(ok) {
       ok(row.id === res.state.operationId, '行的 id 就是这次操作的 operationId')
     }
 
-    /* ============ 3. 幂等：同一 operationId 重放 ============ */
     {
       const first = await commit('s2', 'add', { items: [{ text: '唯一' }] })
       const replay = await applyTaskPlanOperation({
@@ -82,7 +68,6 @@ export async function runTaskPlanStoreTests(ok) {
       ok(todos.length === 1, `重放没有重复 add（清单仍是 1 项，实际 ${todos.length}）`)
     }
 
-    /* ============ 4. 同一会话串行（两次快速 add 不互相覆盖） ============ */
     {
       const [a, b] = await Promise.all([
         applyTaskPlanOperation({
@@ -109,7 +94,6 @@ export async function runTaskPlanStoreTests(ok) {
       ok(lines.length === 2, '两次提交写了两行')
     }
 
-    /* ============ 5. 失败即不动（越界不得改状态） ============ */
     {
       const before = await readFile(taskPlanLogPath('s3', dir), 'utf8')
       const bad = await applyTaskPlanOperation({
@@ -123,7 +107,6 @@ export async function runTaskPlanStoreTests(ok) {
       ok((await currentTaskPlan('s3', at)).state.revision === 2, '失败不涨 revision')
     }
 
-    /* ============ 6. 只追加：新提交不重写已有行 ============ */
     {
       const before = await readFile(taskPlanLogPath('s3', dir), 'utf8')
       await commit('s3', 'complete', { index: 1 })
@@ -132,7 +115,6 @@ export async function runTaskPlanStoreTests(ok) {
       ok(after.length > before.length, '文件确实变长了')
     }
 
-    /* ============ 7. 坏行宽容：一行坏数据不该让整份历史消失 ============ */
     {
       const path = taskPlanLogPath('s4', dir)
       await commit('s4', 'add', { items: [{ text: '好行' }] })
@@ -150,7 +132,6 @@ export async function runTaskPlanStoreTests(ok) {
       ok(next.state.revision === 2, `坏行不影响 revision 递增（实际 ${next.state.revision}）`)
     }
 
-    /* ============ 8. 会话隔离 ============ */
     {
       await commit('s5-a', 'add', { items: [{ text: 'A 的' }] })
       await commit('s5-b', 'add', { items: [{ text: 'B 的' }] })
@@ -164,7 +145,6 @@ export async function runTaskPlanStoreTests(ok) {
       )
     }
 
-    /* ============ 9. 落盘失败不得报成功 ============ */
     {
       const path = taskPlanLogPath('s6', dir)
       await commit('s6', 'add', { items: [{ text: '先写成功' }] })
@@ -183,7 +163,6 @@ export async function runTaskPlanStoreTests(ok) {
       ok((await readFile(path, 'utf8')) === before, '失败后文件内容没变')
       await chmod(path, 0o666)
 
-      /* 回读也失败（把日志路径换成目录）→ 必须报错，不能当成「空清单」 */
       await mkdir(join(dir, 's7.jsonl'), { recursive: true })
       let readCaught = null
       try {
@@ -197,7 +176,6 @@ export async function runTaskPlanStoreTests(ok) {
       )
     }
 
-    /* ============ 10. 非法会话 id 不进文件名 ============ */
     {
       let caught = null
       try {

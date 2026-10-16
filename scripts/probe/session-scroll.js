@@ -1,4 +1,3 @@
-/** Isolated stored histories, real session switching; no model calls. */
 ;(async () => {
   const lines = []
   const check = (value, label) => { lines.push(`${value ? '✓' : '✗'} ${label}`); if (!value) throw Error(label) }

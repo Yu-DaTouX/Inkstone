@@ -1,9 +1,3 @@
-/**
- * 侧栏的「已归档」视图：已归档的项目（可恢复）与单独归档的会话（可取消归档、打开）。
- *
- * 数据来自 `buildArchivedView`；恢复项目写 `ProjectRecord.archived=false`，
- * 取消归档走 store 的 `setSessionArchived`，失败提示由 store / 这里的 notice 给出。
- */
 import type { JSX } from 'react'
 import { ArchiveRestore, Undo2 } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'

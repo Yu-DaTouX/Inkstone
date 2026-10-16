@@ -1,55 +1,10 @@
-/*
- * 工作模式的**工具策略执行**（实施-05 S3）。
- *
- * ══════════════════════════════════════════════════════════════════
- * 为什么这件事留在薄层里（而不是宿主）
- * ══════════════════════════════════════════════════════════════════
- * 计划档的验收口径是「工具集**真的**受限」，而限制工具集只有两条路：
- *   · `--tools`（启动参数，运行中改不了）；
- *   · `setActiveTools`（**扩展 API**）。
- * pi 的 RPC 面**没有**工具命令 —— 实测 `get_tools` / `set_active_tools`
- * 都回 `Unknown command`（证据-04-S1 §3.2）。所以按 01 的边界划分，
- * 这条属于「宿主无法通过 CLI / RPC 表达的策略执行」，正是允许留在薄层的那一类。
- *
- * 宿主仍然是策略的真源：它把「这个实例当前是什么模式」写进
- * `YAN_DATA_DIR/work-mode/<YAN_SESSION_ID>.json`，这里只负责执行。
- *
- * ── 门禁顺序（证据-05-S1 实验 1 定的）──
- *   ① 工具表（主）：计划档把非只读工具**从表里拿掉** —— 模型看不到它，
- *      连「试图调用再被拒」都不会发生；
- *   ② `tool_call` 兜底：万一工具表没刷新成功（或第三方工具不在白名单里），
- *      直接 block。实测这是真门禁（同一条命令在对照组真写了文件）；
- *   ③ 提示词（说明）：在 `question.js` 里，只负责让模型知道为什么。
- *
- * ⚠️ 白名单必须**显式列全**：`grep` / `find` / `ls` 默认不在激活集里（01-S1 实测）。
- *    提问不再是模型工具；计划档通过下面的受限 `yan question ask` bash 形状完成。
- */
-
 import { appendFileSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { applyCodemodePreference } from './codemode-policy.js'
 
-/**
- * 计划档允许的工具：只读查询 + **受限的 bash**。
- *
- * 为什么**不**放 `write` / `edit`：那是真正的写入口，直接拿掉。
- * 为什么要放 `bash`（但这不等于放行 bash）：
- *   计划档的「就绪提交」通道是宿主 CLI（`yan goal ready`，实施-05 §4 定的），
- *   而敲 CLI 要用 bash 工具 —— 把 bash 拿掉，计划档就永远提交不了、也就永远好不了。
- *   所以 bash 留着，但**命令形状**由下面的白名单卡死（见 `isAllowedBashCommand`）：
- *   只接受 `yan goal status|ready|report`、`yan question ask` 或严格形状的
- *   `yan context recall --ref ctx://…` / `yan context find [--query …]`，且整条命令里**不得出现
- *   任何 shell 元字符**（`;` `&&` `|` `>` 反引号 `$` 换行……）。
- *   这不是「对任意 shell 命令做脆弱的只读判断」（§4 禁止的那种），
- *   而是「只允许这一条经审查的命令」—— 白名单，不是启发式。
- *
- * 归档回读也走宿主 CLI；提问与回读都不向计划档恢复业务模型工具。
- */
-/* `powershell`：没有 Git Bash 时 shell-fallback.js 用它顶替 bash，同样只放行下面那几种宿主 CLI 形状 */
 const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'bash', 'powershell']
 
-/** 计划档允许的宿主 bash 形状：目标状态 / 提问 / 只读归档回读。 */
 const HOST_YAN = '(?:(?:"(?:[A-Za-z]:[\\\\/]|/)[^"]*[\\\\/]yan(?:\\.(?:cmd|exe|mjs))?")|(?:(?:[A-Za-z]:[\\\\/]|/)[^\\s;&|<>`$(){}\\[\\]]*[\\\\/]yan(?:\\.(?:cmd|exe|mjs))?)|yan(?:\\.(?:cmd|exe|mjs))?)'
 const GOAL_COMMAND = new RegExp(`^\\s*${HOST_YAN}\\s+goal\\s+(?:status|ready|report)(?:\\s|$)`)
 const GOAL_STATUS_COMMAND = new RegExp(`^\\s*${HOST_YAN}\\s+goal\\s+status(?:\\s|$)`)
@@ -58,24 +13,16 @@ const CONTEXT_REF = 'ctx:\\/\\/(?:tool|file|diff|episode)\\/[A-Za-z0-9._~%:-]{1,
 const CONTEXT_RECALL_COMMAND = new RegExp(
   `^\\s*${HOST_YAN}\\s+context\\s+recall\\s+--ref\\s+(?:${CONTEXT_REF}|"${CONTEXT_REF}")\\s*$`
 )
-/* 只读的归档引用查询：可选一个关键词参数（引号内或单个词）与两位数以内的条数 */
 const CONTEXT_FIND_COMMAND = new RegExp(
   `^\\s*${HOST_YAN}\\s+context\\s+find(?:\\s+--query\\s+(?:"[^"]{1,200}"|[^\\s"]{1,200}))?(?:\\s+--limit\\s+\\d{1,2})?\\s*$`
 )
 
-/**
- * 元字符一律拒。
- *
- * 没有这一条，`yan goal status; rm -rf …` 这类拼接会绕过上面那条白名单：
- * 命令**以** `yan goal status` 开头，但它干的不只这件事。
- */
 const SHELL_METACHARS = /[;&|<>`$(){}[\]\n\r]/
 
 function dataDir() {
   return process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
 }
 
-/** 宿主写给这个运行实例的模式快照（与 question.js 同一个文件）。 */
 function workModeFile() {
   const key = process.env.YAN_SESSION_ID?.trim() || 'session'
   const safe = key.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'session'
@@ -84,15 +31,6 @@ function workModeFile() {
 
 const WORK_MODES = ['standard', 'clarify', 'autonomous']
 
-/**
- * 快照归属：宿主写快照时记下 `sessionId` / `sessionFile`，这里与真实 ctx 核对。
- *
- * 与 question.js 同一套规则，但**更严**：模式决定工具门禁，错归属的快照若被
- * 接受，会把 A 的计划档 / 待审标记带到 B。所以：
- *   · 快照带归属而 ctx 身份不可得 → 不盲接受（回落安全标准档）；
- *   · 归属不符 → 回落安全标准档；
- *   · 旧快照没有归属字段 → 维持旧行为（无法核对就当本会话的）。
- */
 function normalizeOwnerPath(value) {
   return typeof value === 'string' ? value.trim().replace(/[\\/]+/g, '/').replace(/\/+$/, '') : undefined
 }
@@ -104,14 +42,12 @@ function ownerPathEquals(a, b) {
   return left === right || left.toLowerCase() === right.toLowerCase()
 }
 
-/** 返回 `{ snapshot }`；归属不符 / 无法核对时带 `mismatch`，调用方据此回落安全档。 */
 function readOwnedSnapshot(ctx) {
   try {
     const record = JSON.parse(readFileSync(workModeFile(), 'utf8'))
     if (!record || typeof record !== 'object') return { snapshot: null }
     const snapId = typeof record.sessionId === 'string' && record.sessionId.trim() ? record.sessionId.trim() : undefined
     const snapFile = typeof record.sessionFile === 'string' && record.sessionFile.trim() ? record.sessionFile : undefined
-    /* 旧快照无归属：维持旧行为，不在这一层清理 */
     if (!snapId && !snapFile) return { snapshot: record }
     let manager
     try {
@@ -121,7 +57,6 @@ function readOwnedSnapshot(ctx) {
     }
     const ctxId = typeof manager?.getSessionId === 'function' ? manager.getSessionId() : undefined
     const ctxFile = typeof manager?.getSessionFile === 'function' ? manager.getSessionFile() : undefined
-    /* 有归属但拿不到任何 ctx 身份：不能盲接受（否则 A 的档位会跟着落到 B） */
     if (!ctxId && !ctxFile) return { snapshot: null, mismatch: true }
     if (snapId && ctxId && snapId === ctxId) return { snapshot: record }
     if (snapFile && ownerPathEquals(snapFile, ctxFile)) return { snapshot: record }
@@ -131,13 +66,11 @@ function readOwnedSnapshot(ctx) {
   }
 }
 
-/** 当前会话的工作模式；错归属 / 脏值 / 缺失都回落。 */
 export function currentWorkMode(ctx) {
   const read = readOwnedSnapshot(ctx)
   if (read.snapshot && WORK_MODES.includes(read.snapshot.mode)) {
     return { mode: read.snapshot.mode, planApprovalPending: read.snapshot.planApprovalPending === true }
   }
-  /* 快照在但有归属且核不上：不采用也不回退全局偏好，直接安全标准档 */
   if (read.mismatch) return { mode: 'standard', planApprovalPending: false }
   try {
     const settings = JSON.parse(readFileSync(join(dataDir(), 'desktop.json'), 'utf8'))
@@ -150,13 +83,6 @@ export function currentWorkMode(ctx) {
   }
 }
 
-/**
- * 诊断（只在 `YAN_WORK_MODE_EXT_LOG` 存在时写）。
- *
- * 「工具集真的收紧了没有」在界面上看不出来 —— 模型没写文件可能是被门禁挡住，
- * 也可能是它本来就只需要读。落一行「模式 / 基线 / 实际生效集合 / 拦下了谁」
- * 才能把两种情形分开（与 question.js / language.js 同一做法）。
- */
 function note(hook, payload) {
   const log = process.env.YAN_WORK_MODE_EXT_LOG
   if (!log) return
@@ -172,11 +98,9 @@ function note(hook, payload) {
       'utf8'
     )
   } catch {
-    /* 诊断失败不影响策略 */
   }
 }
 
-/** 这条 bash 命令是不是允许的宿主 CLI 形状？ */
 export function isAllowedBashCommand(command, planApprovalPending = false) {
   if (!command) return false
   if (SHELL_METACHARS.test(command)) return false
@@ -185,7 +109,6 @@ export function isAllowedBashCommand(command, planApprovalPending = false) {
     CONTEXT_RECALL_COMMAND.test(command) || CONTEXT_FIND_COMMAND.test(command)
 }
 
-/** 工具名归一：pi 0.87.1 的 `getActiveTools()` 返回字符串数组，这里兼容对象形态。 */
 function toolName(entry) {
   if (typeof entry === 'string') return entry
   if (entry && typeof entry === 'object' && typeof entry.name === 'string') return entry.name
@@ -193,11 +116,8 @@ function toolName(entry) {
 }
 
 export default function workModePolicy(pi) {
-  /** 宿主给的原始激活集（`--tools` 决定）。**只在第一次收紧前记录**，之后它是恢复用的基线。 */
   let baseTools = null
-  /** 当前是否处于「已被本扩展收紧」的状态（决定退出计划档时要不要恢复）。 */
   let restricted = false
-  /** 最近一次读到的模式（`tool_call` 兜底要用）。 */
   let mode = 'standard'
   let planApprovalPending = false
 
@@ -215,7 +135,6 @@ export default function workModePolicy(pi) {
     mode = policy.mode
     planApprovalPending = policy.planApprovalPending
     if (mode === 'clarify') {
-      /* 记录基线要在收紧**之前**：收紧后就看不到宿主给的原始集了 */
       if (!baseTools) baseTools = (pi.getActiveTools?.() ?? []).map(toolName).filter(Boolean)
       const target = baseTools.filter((name) => READ_ONLY_TOOLS.includes(name))
       const err = applyTools(target)
@@ -223,13 +142,6 @@ export default function workModePolicy(pi) {
       note('before_agent_start', { mode, base: baseTools, applied: target, err })
       return
     }
-    /*
-     * 非计划档**一律不动工具表**（除了从计划档退回来的那一次）。
-     *
-     * 为什么：这个扩展在所有会话里都加载。若每轮都无条件 `setActiveTools`，
-     * 就等于拿一个「启动时的快照」去覆盖工具表 —— 其他薄层
-     * 或后续注册的工具会被沏掉，而且症状与本次改动毫无关系，很难查。
-     */
     if (restricted) {
       const restoredTools = applyCodemodePreference(pi, baseTools ?? [])
       const err = applyTools(restoredTools)
@@ -238,15 +150,7 @@ export default function workModePolicy(pi) {
     }
   })
 
-  /*
-   * 兜底：计划档下除了「只读集 + 允许形状的宿主 CLI」一律拒绝。
-   *
-   * ⚠️ 返回值的 `content` / `isError` 会被 pi 忽略（实测固定成
-   *    「Tool execution was blocked」+ isError），所以这里不要费劲写文案 ——
-   *    要让模型理解原因，只能靠提示词，或者干脆把工具从表里拿掉。
-   */
   pi.on('tool_call', (event, ctx) => {
-    /* 待审计划可在本轮由宿主更新；每次调用重读快照，立即收紧 goal 命令。 */
     const policy = currentWorkMode(ctx)
     mode = policy.mode
     planApprovalPending = policy.planApprovalPending

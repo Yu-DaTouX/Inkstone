@@ -1,9 +1,3 @@
-/*
- * v3 侧栏版面（层 features）：264px、底色比对话区深一级、无描边。
- *
- * 列表行、分组标题、入口都是本模块的版面；搜索框、图标按钮的外观来自 `ui/`。
- * 窄窗时侧栏改成浮层（`data-narrow='1'`），由外壳的 scrim 负责点击收起。
- */
 @layer features {
   .v3-side {
     width: min(var(--sidebar-width, var(--size-side)), calc(100vw - 48px));
@@ -15,7 +9,6 @@
     color: var(--fg);
   }
 
-  /* 收起 / 展开：宽度与透明度过渡，内容保持原宽（不随宽度重排）；收起后延迟隐藏，不留可聚焦残影 */
   .v3-side {
     overflow: hidden;
     transition: width var(--dur-panel) var(--ease), opacity var(--dur-panel) var(--ease), transform var(--dur-panel) var(--ease), visibility 0s;
@@ -28,7 +21,6 @@
     pointer-events: none;
     transition: width var(--dur-panel) var(--ease), opacity var(--dur-panel) var(--ease), transform var(--dur-panel) var(--ease), visibility 0s linear var(--dur-panel);
   }
-  /* 窄窗：侧栏是浮层，收起时整块滑出而不是缩宽 */
   .v3-root[data-narrow='1'][data-side='closed'] .v3-side {
     width: min(var(--sidebar-width, var(--size-side)), calc(100vw - 48px));
     transform: translateX(-100%);
@@ -38,7 +30,6 @@
     .v3-side, .v3-root[data-side='closed'] .v3-side { transition: none; }
     .v3-root[data-sidebar-preview='1'] .v3-side { animation: none; }
   }
-  /* 浮层侧栏盖在会话头的拖动区上：整块显式 no-drag，否则顶部按钮被系统当成拖动区，点不动也没有悬停 */
   .v3-root[data-sidebar-preview='1'] .v3-side,
   .v3-root[data-narrow='1'] .v3-side,
   .v3-root[data-sidebar-preview='1'] .v3-side *,
@@ -70,7 +61,6 @@
     min-width: 0;
   }
 
-  /* 品牌标志复用统一几何的 BrandMark；这里只约束版面，颜色由侧栏正文色继承。 */
   .v3-side-brand .brand-mark {
     flex: none;
   }
@@ -119,7 +109,6 @@
     background: var(--hover);
   }
 
-  /* 「更多」是 ui 按钮：内容包在 label 里，撑满后与上面几行左对齐 */
   .v3-entry-more {
     justify-content: flex-start;
   }
@@ -177,7 +166,6 @@
     text-overflow: ellipsis;
   }
 
-  /* 组头名称：整块可点，点一下折叠 / 展开该组；「›」随折叠状态转向 */
   .v3-grp-toggle {
     flex: 1;
     min-width: 0;
@@ -208,7 +196,6 @@
     transform: rotate(90deg);
   }
 
-  /* 「＋」平时隐藏，悬停 / 聚焦组头时出现在行尾 */
   .v3-grp-add {
     flex: none;
     width: 22px;
@@ -248,7 +235,6 @@
     background: var(--hover);
   }
 
-  /* 当前会话：整行圆角浅色高亮，颜色只来自 --sel 令牌 */
   .v3-row[aria-current='true'],
   .v3-entry[aria-current='true'] {
     background: var(--sel);
@@ -272,7 +258,6 @@
     background: var(--hover);
   }
 
-  /* 会话行外框：行尾「…」叠在行上，悬停 / 键盘聚焦 / 菜单打开时才出现 */
   .v3-srow {
     position: relative;
     display: flex;
@@ -295,7 +280,6 @@
     opacity: 1;
   }
 
-  /* 「…」出现时给它让位：标题收短、等待词隐去 */
   .v3-srow:hover > .v3-row,
   .v3-srow:focus-within > .v3-row,
   .v3-srow[data-menu='1'] > .v3-row {
@@ -311,7 +295,6 @@
     background: var(--hover);
   }
 
-  /* 被拖起的那一行留一个淡影，提示它正在被拖 */
   .v3-srow[data-dragging='1'] > .v3-row {
     opacity: 0.45;
   }
@@ -418,7 +401,6 @@
     background: var(--fail);
   }
 
-  /* 项目标题行：「…」平时隐藏，悬停 / 聚焦 / 菜单打开时出现；改名时输入框占满 */
   .v3-grp-more {
     flex: none;
     opacity: 0;
@@ -461,7 +443,6 @@
     align-items: center;
   }
 
-  /* 已归档入口：贴在会话列表下方，和上面的入口行同一视觉层级 */
   .v3-archive-toggle {
     display: flex;
     align-items: center;
@@ -481,7 +462,6 @@
     color: var(--fg);
   }
 
-  /* 归档视图的一行：左边标题（项目另带会话数），右边恢复按钮 */
   .v3-arow {
     display: flex;
     align-items: center;

@@ -34,8 +34,25 @@ export async function runPluginMarketTests(ok) {
     ok((await readFile(join(target, 'approvals.py'), 'utf8')) === 'fixture:approvals.py', '导出包含用户批准模块与实际文件')
     let rejected = false
     try { await exportHermesPlugin(source, destination) } catch { rejected = true }
-    ok(rejected && (await readFile(join(target, 'README.md'), 'utf8')) === 'fixture:README.md', '已有插件目录拒绝覆盖且保留文件')
+    ok(rejected && (await readFile(join(target, 'plugin.yaml'), 'utf8')) === 'fixture:plugin.yaml', '已有插件目录拒绝覆盖且保留文件')
   } finally { await rm(temp, { recursive: true, force: true }) }
+  const { addCodegraphMcp } = await import(pathToFileURL('out/test/plugin-market.mjs').href)
+  const agentDir = await mkdtemp(join(tmpdir(), 'inkstone-codegraph-'))
+  try {
+    const present = async () => true
+    const missing = await addCodegraphMcp(agentDir, async () => false)
+    ok(!missing.ok && /npm i -g @colbymchenry\/codegraph/.test(missing.error) && !(await readFile(join(agentDir, 'mcp.json'), 'utf8').catch(() => null)), '未装 CLI 时给出安装命令且不写配置')
+    await writeFile(join(agentDir, 'mcp.json'), JSON.stringify({ autoEnableCodemode: true, mcpServers: { other: { command: 'x' } } }))
+    const added = await addCodegraphMcp(agentDir, present)
+    const doc = JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8'))
+    ok(added.ok && !added.existed && doc.mcpServers.codegraph.command === 'codegraph' && doc.mcpServers.codegraph.args.join(' ') === 'serve --mcp', '写入 pi 原生 mcp.json 的 codegraph serve --mcp')
+    ok(doc.mcpServers.other.command === 'x' && doc.autoEnableCodemode === true, '保留已有服务与其他字段')
+    const again = await addCodegraphMcp(agentDir, present)
+    ok(again.ok && again.existed, '已有同名服务时不覆盖')
+    await writeFile(join(agentDir, 'mcp.json'), '{bad')
+    const bad = await addCodegraphMcp(agentDir, present)
+    ok(!bad.ok && (await readFile(join(agentDir, 'mcp.json'), 'utf8')) === '{bad', '坏 JSON 拒绝改写')
+  } finally { await rm(agentDir, { recursive: true, force: true }) }
   if (process.argv.includes('--live')) {
     const live = await searchPiPackages('browser')
     ok(live.ok && live.entries.length > 0, '真实 npm pi-package 目录可用：' + live.entries.length)

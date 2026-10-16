@@ -1,11 +1,3 @@
-/**
- * 宿主动作的运行时（把纯动作表接到 store / 宿主事件上）。
- *
- * 命令面板与全局按键分发共用这一个 hook：
- *   · 动作执行只调用各入口的正式动作（store action、`yan:theme`、工作区启动事件），
- *     不新建 IPC 或状态副本；
- *   · 可用性从当前 store 快照推导，面板据此把不可用动作整行禁用。
- */
 import { useMemo } from 'react'
 import { useStore } from '../state/store'
 import type { HostActionAvailability, HostActionRuntime } from './host-actions'
@@ -16,7 +8,6 @@ export interface HostActions {
   availability: HostActionAvailability
 }
 
-/** 当前会话所属项目：运行实例优先，其次按 cwd 找项目记录（与输入区 @ 补全同一口径）。 */
 function currentProject(): { cwd: string; projectId?: string } {
   const s = useStore.getState()
   const runner = s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
@@ -83,10 +74,8 @@ export function useHostActionRuntime(openShortcutSheet: () => void): HostActions
         try {
           localStorage.setItem('yan.theme', next)
         } catch {
-          /* 存不了就只在本次会话生效 */
         }
         await useStore.getState().patchSettings({ theme: next })
-        /* 与设置页同一入口：App 监听它并跑主题过渡 */
         window.dispatchEvent(new CustomEvent('yan:theme', { detail: { theme: next } }))
       },
       toggleRail: () => useStore.getState().setRailPinned(!useStore.getState().railPinned),
@@ -106,7 +95,6 @@ export function useHostActionRuntime(openShortcutSheet: () => void): HostActions
   return { runtime, availability }
 }
 
-/** 输入框的正式焦点入口（Ctrl+L）：分屏只渲染焦点那一列，选择器唯一。 */
 export function focusComposerInput(): void {
   const el = document.querySelector<HTMLTextAreaElement>('[data-testid="composer"]')
   el?.focus()

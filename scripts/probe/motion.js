@@ -1,18 +1,3 @@
-/**
- * 动效：入场 / **退场** / 减少动效。
- *
- * ── 为什么要专门测这个 ──
- * 退场是最容易悄悄坏掉的一环：React 在 `open=false` 的瞬间就卸载节点，
- * 所以纯 CSS 的 `animation` 只能演入场。表现是「淡入放大」打开、
- * 「啪」一下消失 —— 两边不对称，看着像卡了一下。
- *
- * 修法是 `usePresence()` 延迟卸载，但那个延迟是**靠定时器**的，
- * 很容易被后续改动弄坏（比如有人把 `closing` 类名改了、
- * 或者把 mounted 条件写成 open）。所以这里把它钉住。
- *
- * 另一个必须钉的：`prefers-reduced-motion` 下不能出现「CSS 不动但 JS 还在等」
- * 造成的空窗 —— 时长要压到 1ms。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -31,7 +16,6 @@
   store.getState().closeSettings()
   await sleep(400)
 
-  /* ================= 1. 动效令牌存在 ================= */
   out.push('=== 1. 动效令牌 ===')
   const cs = getComputedStyle(document.documentElement)
   const tokens = ['--mo-fast', '--mo-base', '--mo-slow', '--mo-shift', '--mo-ease', '--mo-ease-out']
@@ -40,11 +24,9 @@
     out.push(`  ${tk} = ${v || '(空)'}`)
     ok(!!v, `${tk} 有值`)
   }
-  // 曲线必须是「快进慢停」那一类，不能是 linear
   const ease = cs.getPropertyValue('--mo-ease').trim()
   ok(/cubic-bezier/.test(ease) && !/^linear/.test(ease), `--mo-ease 是非线性曲线（${ease}）`)
 
-  /* ================= 2. 设置面板：入场 → 退场 ================= */
   out.push('')
   out.push('=== 2. 设置面板的入场与退场 ===')
   ok(!q('.settings-scrim'), '初始没有设置面板')
@@ -62,10 +44,10 @@
   out.push('  面板入场动画: ' + panelIn)
   ok(panelIn && panelIn !== 'none', '面板有入场动画')
 
-  await sleep(400) // 等入场演完
+  await sleep(400)
 
   store.getState().closeSettings()
-  await sleep(50) // 退场应该正在进行中
+  await sleep(50)
   const scrimOut = q('.settings-scrim')
   const panelOut = q('.settings')
   ok(!!scrimOut && !!panelOut, '关闭后节点**没有立刻消失**（正在演退场）')
@@ -79,11 +61,9 @@
   ok(/out/.test(outAnim), `退场用的是 out 关键帧（${outAnim}）`)
   ok(outAnim !== panelIn, '入场与退场用的是不同关键帧（否则没有对称感）')
 
-  // 延迟卸载：等够时长后必须真的消失（否则会永久挡住界面）
   await sleep(500)
   ok(!q('.settings-scrim') && !q('.settings'), '退场结束后节点被卸载（不会永久挡着）')
 
-  /* ================= 3. 中断退场 ================= */
   out.push('')
   out.push('=== 3. 退场中重新打开 ===')
   store.getState().openSettings('status')
@@ -91,7 +71,7 @@
   store.getState().closeSettings()
   await sleep(30)
   ok(!!q('.settings'), '关闭后还在演退场')
-  store.getState().openSettings('status') // 中途重新打开
+  store.getState().openSettings('status')
   await sleep(80)
   const reopened = q('.settings')
   ok(!!reopened, '重新打开后面板还在')
@@ -101,14 +81,8 @@
   store.getState().closeSettings()
   await sleep(400)
 
-  /* ================= 4. 通知条 ================= */
   out.push('')
   out.push('=== 4. 通知条 ===')
-  /*
-   * ⚠️ 启动期的 info 通知会被**降级为日志**（这是刻意设计：
-   *   扩展启动时会发「我加载好了」这类通知，弹出来只会让人困惑）。
-   *   所以要先把 startupPhase 关掉 —— 否则断言会因为「设计如此」而失败。
-   */
   window.__yanStore.setState({ startupPhase: false })
   store.getState().applyPush({
     ch: 'notify',
@@ -121,11 +95,9 @@
     const an = getComputedStyle(notice).animationName
     out.push('  通知入场动画: ' + an)
     ok(an && an !== 'none', '通知有入场动画')
-    // 错开：第一条 --i 应为 0
     out.push('  --i = ' + getComputedStyle(notice).getPropertyValue('--i').trim())
   }
 
-  // 关掉它，验证退场
   const id = store.getState().notices[0]?.id
   if (id) {
     store.getState().dismissNotice(id)
@@ -138,13 +110,8 @@
     out.push('  ⚠️ 没拿到通知 id，跳过退场断言')
   }
 
-  /* ================= 5. 减少动效 ================= */
   out.push('')
   out.push('=== 5. prefers-reduced-motion 的处理 ===')
-  // 找 reduced-motion 规则，确认时长被压到 1ms 而不是 animation:none
-  // ⚠️ 不能只留「最后一个」匹配值：motion.css 里有**多个** reduced-motion 块，
-  //    后面的块用 `animation: none !important`（不写 duration），会把结果读成 auto
-  //    —— 本场景因此曾假失败。要收集全部取值，确认**存在** 1ms 的那条规则。
   const flatRules = (rules) => { const out = []; for (const r of rules) { if (r.selectorText !== undefined || !r.cssRules) out.push(r); else if (r.conditionText !== undefined) out.push(r); if (r.cssRules) out.push(...flatRules(r.cssRules)) } return out }
   const durations = new Set()
   for (const sheet of document.styleSheets) {
@@ -158,27 +125,17 @@
         }
       }
     } catch {
-      /* 跨域表读不到 */
     }
   }
   const durationList = [...durations]
   out.push('  reduced-motion 里出现的 animation-duration = ' + JSON.stringify(durationList))
-  /*
-   * B2 把时长 token 化之后，这里读到的是 `var(--dur-1)` 而不是字面量 `1ms`
-   * （CSSOM 给的是声明值，不会替我们解析变量）。两种写法都算。
-   *
-   * ⚠ 别用正则写这个判断：`/var(--dur-1)/` 里的括号会被当成分组，
-   *   实际匹配的是 `var--dur-1` —— 永远为 false（这里踩过一次）。
-   */
   ok(
     durationList.includes('1ms') || durationList.includes('var(--dur-1)'),
     '减少动效时存在把时长压到 1ms 的规则（不是 animation:none —— 那会造成空窗）'
   )
 
-  /* ================= 6. 回合段落有自己的动画 ================= */
   out.push('')
   out.push('=== 6. 段落淡入 ===')
-  // 切到一个有内容的会话
   for (const s of store.getState().sessions.filter((x) => (x.messageCount ?? 0) > 2).slice(0, 5)) {
     await store.getState().switchSession(s.path)
     await sleep(1600)
@@ -194,17 +151,9 @@
     out.push('  ⚠️ 这份 fixture 没有段落，跳过')
   }
 
-  /* ================= 7. 合并后块数远小于原始消息数 ================= */
   out.push('')
   out.push('=== 7. 消息合并 ===')
 
-  /*
-   * 找一个**真有连续 assistant** 的会话。
-   *
-   * ⚠️ fixture 里的合成会话是 user/assistant 交替的（writePlainSession），
-   *   那种会话合并前合并后都是 1:1 —— 用它断言「合并生效」是错的。
-   *   必须是带工具调用的真实会话（一个回合会有多次 API 往返）。
-   */
   let best = null
   let bestRun = 0
   for (const s of store.getState().sessions.filter((x) => (x.messageCount ?? 0) > 2).slice(0, 8)) {
@@ -243,33 +192,22 @@
       assistants < rawAssistants,
       `连续 assistant 被合并了（${rawAssistants} → ${assistants}，最长连续 ${bestRun}）`
     )
-    // 段落拆分：合并后的块里应该能看到多段
     const paras = qa('.turn-para').length
     out.push(`  .turn-para 段数 = ${paras}`)
     ok(paras >= assistants, '合并块里拆出了多个段落（不是一坨）')
-    // 「N 步」标记：证明这一块由多次往返合成
     const steps = qa('.msg-turn-count')
     out.push(`  「N 步」标记数 = ${steps.length}`)
   } else {
     out.push('  ⚠️ 这份 fixture 没有连续 assistant，跳过合并断言')
   }
 
-  /* ================= 8. 回合内的渲染顺序 ================= */
   out.push('')
   out.push('=== 8. 回合内顺序：模型说话 → 执行栏 → 回复 ===')
-  /*
-   * 用户报的顺序问题：之前是「执行栏 → 说话 → 回复」，
-   * 先看到一堆工作量（「执行了 30 次工具」）却还没看到模型说过一句话。
-   *
-   * 用 DOM 顺序验证，再叠一层几何顺序 —— 光看 DOM 会被 CSS 的
-   * margin / 负边距 / flex order 骗到。
-   */
   {
     const SEL_COM = '[data-testid="turn-commentary"]'
     const SEL_ACT = '[data-testid="turn-activity"]'
     const SEL_RES = '[data-testid="turn-response"]'
 
-    // 优先找三样齐全的回合；退而求其次找「解说 + 执行栏」
     const assistants = qa('.msg.assistant')
     const host =
       assistants.find((el) => el.querySelector(SEL_COM) && el.querySelector(SEL_ACT) && el.querySelector(SEL_RES)) ??
@@ -302,7 +240,6 @@
         ok(ra.top < rr.top, '视觉上执行栏在回复上方')
       }
 
-      // 执行栏要看得出来是个「条」——有背景或边框，不只是灰字
       const act = host.querySelector(SEL_ACT)
       if (act) {
         const cs2 = getComputedStyle(act)
@@ -314,11 +251,6 @@
       out.push('  ⚠️ 没有同时含解说与执行栏的回合')
       const single = qa('.msg.assistant').length
       out.push(`  助手回合数 = ${single}`)
-      /*
-       * H-1 移除了助手正文顶部的品牌 / 步数标签；回合仍保留左侧砚图标（sparkles）。
-       * 但会话很长时走虚拟列表，视口外/未挂载的行本来就不在 DOM 里 —— 那时不能用
-       * 节点数判定「图标缺失」（实测：消息 400 条、渲染块 0）。
-       */
       if (!single) {
         out.push('  ~ 跳过：当前没有渲染出的助手回合（长会话走虚拟列表），图标判据不适用')
       } else {
@@ -328,16 +260,8 @@
     }
   }
 
-  /* ================= 9. 输入区运行条 ================= */
   out.push('')
   out.push('=== 9. 输入区运行条：只在运行时出现 ===')
-  /*
-   * 输入区顶边的运行条（设计规范「界面重构」）：现在只是**无文字的钩子**——
-   * 运行时用 data-state / data-phase 表达状态，阶段文字与计时已并入回合活动行，
-   * 所以这里不再有行容器与方点阵；空闲时高度仍为 0，思考档位色仍落在边框上。
-   *
-   * 验证三件事：结构已收敛（不再有行容器）、空闲时不占高度、档位色彩。
-   */
   {
     const cb = q('[data-testid="composer-border"]')
     ok(!!cb, '输入框有运行条')
@@ -347,14 +271,8 @@
         ok(cb.getBoundingClientRect().height < 2, '空闲时运行条不占高度（' + cb.getBoundingClientRect().height.toFixed(1) + 'px）')
       }
 
-      // 档位 → 颜色（pi 的 getThinkingBorderColor）
       const level = cb.dataset.level ?? 'off'
       out.push('  data-level = ' + level)
-      /*
-       * ⚠️ `.cborder` 上有 `transition: color 260ms` —— 改完属性**立刻**读
-       *   computed color 拿到的是过渡起点，不是目标色（本探针真的这么错过）。
-       *   要么等过渡走完，要么临时关掉 transition。这里用后者（快、不引入等待）。
-       */
       const prevTransition = cb.style.transition
       cb.style.transition = 'none'
       const col = (lv) => {
@@ -370,7 +288,6 @@
       ok(cOff !== cMax, '不同思考强度有不同边框色（off ≠ max）')
       ok(cOff !== cMed && cMed !== cMax, '三档三色（不是只有两档不同）')
 
-      // 与 token 对得上（防止 CSS 里写错变量名）
       const root = getComputedStyle(document.documentElement)
       const hexToRgb = (h) => {
         const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(h.trim())
@@ -384,14 +301,6 @@
       out.push('  data-state = ' + st)
       ok(st === 'idle' || st === 'working' || st === 'compacting', 'state 是三种之一（' + st + '）')
 
-      /*
-       * 横线必须是「1px 的线」而不是色块。
-       *
-       * ⚠️ 不能直接量 lead：**空闲时它被 display:none**（那是刻意的设计 ——
-       *   空闲要保持一条完整连续的线，不该在左端留一个断开的口）。
-       *   所以量 tail（两种状态下都可见）。
-       */
-      /* 旧版输入框边框线（lead / tail）已被运行条取代；没有就跳过 */
       const lead = q('.cbar-lead'), tail = q('.cbar-tail')
       if (tail) {
         const cs3 = getComputedStyle(tail)
@@ -399,14 +308,12 @@
         out.push('  横线高度 = ' + h + 'px（' + cs3.backgroundColor + '）')
         ok(h <= 2, '横线是 1px 细线（不是色块）')
       }
-      // 空闲时左端不能有断开的口
       if (cb.dataset.state === 'idle') {
         const leadHidden = lead ? getComputedStyle(lead).display === 'none' : true
         out.push('  空闲时 lead 隐藏 = ' + leadHidden)
         ok(leadHidden, '空闲时前缀横线隐藏（保证线是完整连续的）')
       }
 
-      // 旧的独立 Working 行已搬到边框上
       ok(!q('.working'), '消息流里不再有独立的「正在处理」行')
     }
   }

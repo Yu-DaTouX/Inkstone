@@ -1,4 +1,3 @@
-/** 两档权限退休了旧日常删除重定向；危险判断由 danger-guard 单独验证。 */
 import assert from 'node:assert/strict'
 import { hasDelete, trashVerdict } from '../resources/pi-extensions/permission-guard.js'
 assert.equal(hasDelete('rm a.txt'), true)

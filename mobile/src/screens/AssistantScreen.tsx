@@ -1,4 +1,3 @@
-/** A phone conversation with an explicitly configured provider. */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native'
 import { Icon } from '../icons'
@@ -10,7 +9,6 @@ import { EmptyState, Header, IconButton, Input, Meta } from '../ui'
 import { chat, type ChatMessage } from '../assistant/model'
 import { activeProvider, loadSettings, type AssistantSettings } from '../assistant/store'
 
-/** 助手的基本分寸；记忆与事项的规则在 P3 之后由 core 统一提供，这里先给最小版本。 */
 const SYSTEM_PROMPT = '你是用户的生活助手，用中文简短直接地回答。不确定的事就说不知道。你没有提醒、长期记忆或设备操作工具，不得声称已保存信息或已设置提醒。'
 
 type LifeMessage = {
@@ -19,7 +17,6 @@ type LifeMessage = {
   role: 'user' | 'assistant'
   text: string
   at: number
-  /** 助手消息仍在输出 */
   pending?: boolean
   error?: string
 }
@@ -31,7 +28,6 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
   onConversationChange?: (value: AssistantConversation) => void
   onBack: () => void
   onOpenSettings?: () => void
-  /** 点「去配置模型」时跳设置；没有设置页时退化为提示 */
   onConfigure?: () => void
 }) {
   const p = useLifePalette()
@@ -114,7 +110,6 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
   }, [messages, runReply, sending])
 
 
-  /** 编辑用户消息：把那一条之后的对话去掉，内容放回输入框。 */
   const editUser = useCallback((message: LifeMessage) => {
     const index = messages.findIndex((m) => m.id === message.id)
     if (index < 0) return
@@ -123,7 +118,6 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
     setSending(false)
   }, [messages])
 
-  /** 重新生成：删掉这条回复，用它上面的那条用户消息重跑。 */
   const regenerate = useCallback((message: LifeMessage) => {
     if (sending) return
     const index = messages.findIndex((m) => m.id === message.id)

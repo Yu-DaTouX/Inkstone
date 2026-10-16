@@ -1,18 +1,3 @@
-/**
- * F05/F06/F07 终态竞争回归（纯 Node、隔离；不启动 Electron、不 spawn 真 pi、不花额度）。
- *
- * 现场用 esbuild 编译 `src/main/subagents.ts`，不依赖 `out/` 里的陈旧产物；
- * 注入假 RPC 与可控 prepare，只用临时目录里的真 Git 验证未审阅 worktree 的审阅入口。
- *
- * 覆盖：
- *   F05 清除已结束 × 差异结算：clearFinished 必须等 settling/finalizing 后再核 review，
- *       不隐藏即将 pending 的 worktree，不产生迟到 upsert，stopAll 仍能归档清理。
- *   F06 迟到的超时 steer 失败不能把 done / cancelled 翻成 error，终态单调。
- *   F07 stopAll 必须作废在途 prepare/createRpc 并等待安全收口，之后不得再 spawn；
- *       同时确认 stopAll 不是永久关闭控制器（既有调用契约）。
- *
- * 用法：node scripts/test-subagent-terminal-races.mjs
- */
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -43,7 +28,6 @@ function ok(condition, message) {
   console.log(`  ✓ ${message}`)
 }
 
-/** 假 pi 客户端：记录创建 / 关闭 / spawn，允许测试手动投递事件。 */
 function makeRpcFactory() {
   const created = []
   const createRpc = ({ cwd, args }) => {
@@ -83,7 +67,6 @@ function makeRpcFactory() {
   return { created, createRpc }
 }
 
-/** 不碰文件系统的假工作区（controlled-cwd 走这条）。 */
 const fakePrepare = async (rootCwd, id, isolation) => ({ isolation, rootCwd, cwd: rootCwd })
 
 async function compileController() {
@@ -145,7 +128,6 @@ async function testF05(SubagentController) {
     const rpc = factory.created[0]
     await writeFile(join(run.cwd, 'new.txt'), 'created\n', 'utf8')
 
-    /* 终态已到、差异还没结算：把收口停在 rpc.close 之前。 */
     closeGate = new Promise((resolve) => { releaseClose = resolve })
     rpc.emit('event', { type: 'agent_settled' })
     ok(ctrl.get(run.id)?.status === 'done', '收到 settled 后终态先落到 done')
@@ -172,7 +154,6 @@ async function testF05(SubagentController) {
     ok(existsSync(run.cwd) === false, 'stopAll 清掉了 worktree')
     ok(typeof ctrl.get(run.id)?.resultPath === 'string' && existsSync(ctrl.get(run.id).resultPath), '归档补丁仍可追溯')
 
-    /* 已清除的无改动运行不再产生迟到 upsert。 */
     const factory2 = makeRpcFactory()
     const pushes2 = []
     const removed2 = []
@@ -230,7 +211,6 @@ async function testF06(SubagentController) {
     return { factory, ctrl, releaseSteer: () => releaseSteer() }
   }
   try {
-    /* 收尾期间模型自己完成：迟到失败不得把 done 翻成 error。 */
     {
       const { factory, ctrl, releaseSteer } = steerBlocked()
       try {
@@ -252,7 +232,6 @@ async function testF06(SubagentController) {
       }
     }
 
-    /* 收尾期间用户停止：迟到失败不得把 stopped/cancelled 翻成 error。 */
     {
       const { factory, ctrl, releaseSteer } = steerBlocked()
       try {
@@ -270,7 +249,6 @@ async function testF06(SubagentController) {
         await ctrl.stopAll()
       }
     }
-    // fail 已开始等 close，但权威 settled 先到：close 返回后也不能翻回 error。
     {
       const factory = makeRpcFactory()
       const ctrl = new SubagentController({ cwd: 'C:/f06-close', prepare: fakePrepare, createRpc: factory.createRpc, onChange: () => {} })
@@ -302,7 +280,6 @@ async function testF06(SubagentController) {
 
 async function testF07(SubagentController) {
   console.log('F07 stopAll × 在途 prepare/createRpc')
-  /* prepare 屏障：prepare 返回后不得登记或 spawn。 */
   {
     const factory = makeRpcFactory()
     let releasePrepare
@@ -342,7 +319,6 @@ async function testF07(SubagentController) {
     }
   }
 
-  /* createRpc 屏障：返回后关掉客户端并清工作区，绝不 spawn。 */
   {
     const factory = makeRpcFactory()
     let releaseRpc
@@ -381,7 +357,6 @@ async function testF07(SubagentController) {
     }
   }
 
-  /* stopAll 不是永久关闭：既有调用方（doStartAgent / 用户“全部停止”）仍复用同一实例。 */
   {
     const factory = makeRpcFactory()
     const ctrl = new SubagentController({ cwd: 'C:/f07c', prepare: fakePrepare, createRpc: factory.createRpc, onChange: () => {} })

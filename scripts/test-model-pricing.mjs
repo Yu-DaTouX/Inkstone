@@ -1,11 +1,6 @@
-/**
- * 会话花费的兜底估算（src/shared/model-pricing.ts + main/normalize.ts 的 toUsage）。
- * 单独运行：node scripts/test-model-pricing.mjs
- */
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
 
-/* 两个模块打进同一个包：估算目录是模块级状态，分开打会各有一份 */
 async function load(out) {
   await build({
     stdin: { contents: "export * from './src/shared/model-pricing'; export { toUsage } from './src/main/normalize'", resolveDir: process.cwd(), loader: 'ts' },

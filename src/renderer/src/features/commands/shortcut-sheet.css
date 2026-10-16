@@ -1,12 +1,3 @@
-/*
- * 快捷键表样式（WP-25b）。
- *
- * 层归属同 command-palette.css：
- *   · `@layer patterns`：容器与行的**外观**（底色、描边、圆角、阴影、次要文字颜色）。
- *   · `@layer features`：模块**版面**（flex/grid、间距、高度、滚动、字号）。
- * 只使用 design/tokens.css 的变量。
- */
-
 @layer patterns {
   .sheet-overlay {
     align-items: center;

@@ -1,5 +1,3 @@
-/* ── 环境菜单 ───────────────────────────────────────────── */
-
 .env-wrap {
   position: relative;
   flex: none;
@@ -29,11 +27,6 @@
   top: calc(100% + 6px);
   right: 0;
   z-index: 60;
-  /*
-   * 宽度：要能一行放下「Pull Request 状态 · 无法获取 Pull Request 状态」。
-   * 280px 时后半句被截成省略号（实测截图），而它恰好是“不伪造状态”
-   * 那句话的全部信息量；给到 320–420 并配合 title 兼底。
-   */
   width: 360px;
   max-width: min(420px, calc(100vw - 24px));
   padding: var(--sp-1);
@@ -41,14 +34,9 @@
   background: var(--bg-1);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-lg);
-  /* 与其它浮层一致：靠阴影与柔边分层，不画 1px 硬边 */
   box-shadow: var(--shadow-pop);
 }
 
-/*
- * 顶部项目卡：图标块 + 项目名 + 完整路径（等宽、一行省略，悬停看全），右侧两个动作。
- * 它取代了原来的「环境信息」小标题和「本地」一行 —— 菜单先说清楚「在哪个目录」。
- */
 .env-project {
   display: flex;
   align-items: center;
@@ -99,7 +87,6 @@
   gap: var(--sp-1);
 }
 
-/* 分组：状态（变更、分支）｜同步（拉取、推送）｜协作（工作树、PR、网页比较）｜来源，组间一道细线 */
 .env-group {
   display: flex;
   flex-direction: column;
@@ -158,12 +145,6 @@ button.env-item:hover {
   opacity: 0.9;
 }
 
-/*
- * 信息行里的两个小动作（打开目录 / 复制路径）。
- * 用**文字**而不是图标：reicon 集里没有“复制”这类图标，
- * 而拿 tag / folder 之类勉强顶上会让一个图标承担两层含义
- *（DESIGN §2.7 明令禁止）。
- */
 .env-mini {
   flex: none;
   height: 24px;
@@ -193,7 +174,6 @@ button.env-item:hover {
   align-items: center;
 }
 
-/* 改动量方点：10 格，已跟踪改动亮警示色，未跟踪为半亮，其余是暗点 */
 .env-dots {
   display: inline-flex;
   gap: 2px;
@@ -231,7 +211,6 @@ button.env-item:hover {
   font-family: var(--font-code);
 }
 
-/* 分支名是要拿去终端里敲的标识符，用等宽；其余行标题走界面无衬线 */
 .env-mono {
   font-family: var(--font-code);
 }
@@ -242,8 +221,6 @@ button.env-item:hover {
   font-size: var(--fs-xs);
   overflow-wrap: anywhere;
 }
-
-/* ── 失败与成功提示 ─────────────────────────────────────── */
 
 .gwrite-fail {
   display: flex;
@@ -284,11 +261,6 @@ button.env-item:hover {
   cursor: pointer;
 }
 
-/*
- * 原始输出：等宽 + 可横向滚动。
- * 用 pre 而不是 div —— git 的对齐（`! [rejected]        main -> main`）本身
- * 就是信息，折叠空白会让它更难读。
- */
 .gwrite-fail-raw {
   margin: 2px 0 0;
   padding: var(--sp-1) 7px;
@@ -310,8 +282,6 @@ button.env-item:hover {
   font-size: 11.5px;
   color: var(--ok);
 }
-
-/* ── 环境菜单里的分支与远程 ─────────────────────────────── */
 
 .env-caret.open {
   transform: rotate(90deg);
@@ -409,17 +379,6 @@ button.env-item:hover {
   margin-top: var(--sp-1);
 }
 
-/* ── 工作树区（W1，方案 §6.2）────────────────────────────── */
-
-/*
- * 一行一个工作树：分支名 + 标记 + 「移除」。
- * 分支名用等宽（它是可以被复制去终端用的标识符），标记与按钮用界面字体。
- */
-/*
- * 一行一个工作树。允许换行是**必须**的：分支名 + 「砚创建」标记 + 两个按钮
- * 挤在一行时，分支名会被压成 `feat/git-re...` —— 而分支名是这个区里最需要
- * 看全的东西（要拿它去终端里敲）。所以给名字一个保底宽度，按钮不够地方就换行。
- */
 .env-worktree {
   display: flex;
   flex-wrap: wrap;
@@ -455,20 +414,17 @@ button.env-item:hover {
   margin: 0;
 }
 
-/* 目标目录输入框占满一行（它比分支名长得多） */
 .env-wt-path {
   width: calc(100% - 12px);
   margin: var(--sp-1) 6px 0;
 }
 
-/* 携带未提交改动（W2a）：三项分开勾 + 未跟踪文件清单 */
 .env-carry {
   margin: 6px 6px 0;
   padding: 6px 0 2px;
   border-top: 1px solid var(--border-soft);
 }
 
-/* 未跟踪清单自己滚，别把菜单撑长 —— 菜单的高度不该由文件数决定 */
 .env-carry-list {
   max-height: 132px;
   overflow-y: auto;
@@ -482,7 +438,6 @@ button.env-item:hover {
   padding-left: 14px;
 }
 
-/* 长路径省略中间会看不出是哪个文件，所以省略**结尾**并靠 title 看全 */
 .env-carry-file span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -498,12 +453,6 @@ button.env-item:hover {
   color: var(--fg-mute);
 }
 
-/*
- * 工作树派生的「会带 / 不带」两行（实施-07 S2b-1）。
- *
- * 一段笼统的免责声明不够：用户要能一眼看到**差在哪**，所以分两行、
- * 「会带」比「不带」亮一档（它是这条路径唯一的正向价值：来源关系可追溯）。
- */
 .env-fork-note {
   display: flex;
   flex-direction: column;
@@ -522,10 +471,6 @@ button.env-item:hover {
   color: var(--fg-mute);
 }
 
-/*
- * 「源会话 N 个文件引用 · M 个能对上」（实施-07 S2b-3）。
- * 一行小字，明细在 title 里 —— 不展开新的层级。
- */
 .env-fork-refs {
   margin-top: 2px;
   font-size: var(--fs-xs);
@@ -534,7 +479,6 @@ button.env-item:hover {
   cursor: help;
 }
 
-/* 关联外部任务链接（方案 §6.4）：一行一条 + 两个输入 + 一句边界说明 */
 .env-links {
   margin-top: var(--sp-1);
   padding: var(--sp-2) var(--sp-2) var(--sp-1);
@@ -550,7 +494,6 @@ button.env-item:hover {
   font-size: var(--fs-xs);
 }
 
-/* 图片副本目录：一行省略，悬停看全 */
 .src-dir {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -570,7 +513,6 @@ button.env-item:hover {
   padding: 2px 0;
 }
 
-/* 标题占满剩余宽度并省略结尾 —— 长标题不该把「移除」挤出可视区 */
 .env-link-open {
   flex: 1;
   min-width: 0;
@@ -612,14 +554,6 @@ button.env-item:hover {
   flex: 2 1 0;
 }
 
-/* ── 来源菜单（方案 §8 的 S1）────────────────────────────── */
-
-/*
- * 三类来源在一个列表里，所以每一行必须是**同一套骨架**：
- * [缩略图 36×36] [标题 + 状态标签] [操作按钮]
- * 缺一个都会让行高参差 —— 第一版忘了写这一整块，截图里就是标题和「已关联」
- * 粘在一起、缩略图占不到位置。
- */
 .src-item {
   display: flex;
   align-items: center;
@@ -638,7 +572,6 @@ button.env-item:hover {
   background: var(--bg-2);
 }
 
-/* 缩略图还没读出来 / 读失败：留**同样大小**的占位，行高才不会跳 */
 .src-thumb-empty {
   display: flex;
   align-items: center;
@@ -690,7 +623,6 @@ button.env-item:hover {
   white-space: nowrap;
 }
 
-/* 「文件不在了」是**异常状态**：要能一眼看到，但别吵 */
 .src-tag-bad {
   color: var(--warn);
   border-color: var(--warn);
@@ -698,7 +630,6 @@ button.env-item:hover {
   text-overflow: ellipsis;
 }
 
-/* 筛选：三类 + 全部。用同一套胶囊，选中的用 accent */
 .src-filters {
   display: flex;
   flex-wrap: wrap;
@@ -732,7 +663,6 @@ button.env-item:hover {
   cursor: default;
 }
 
-/* 列表自己滚：来源数量不该决定菜单高度 */
 .src-list {
   max-height: 190px;
   overflow-y: auto;

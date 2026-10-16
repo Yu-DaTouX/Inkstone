@@ -1,9 +1,4 @@
 @layer features {
-  /*
-   * DiffView 的版面与层级。控件外观（按钮）仍归 ui/，这里只画 diff 自己的行、
-   * 行号槽、折条与降级提示。颜色只取 design/tokens.css 的令牌，不新造颜色。
-   * 机声字体：diff 按设计规范用 --font-mono。
-   */
 
   .diff-view {
     display: flex;
@@ -73,7 +68,6 @@
     color: var(--fg2);
   }
 
-  /* ── 文件头 ── */
   .diff-view__file {
     display: flex;
     align-items: baseline;
@@ -108,7 +102,6 @@
     color: var(--del);
   }
 
-  /* ── hunk 头 ── */
   .diff-view__hunk {
     display: flex;
     align-items: baseline;
@@ -132,7 +125,6 @@
     text-overflow: ellipsis;
   }
 
-  /* ── 统一视图行 ── */
   .diff-view__line {
     display: flex;
     align-items: baseline;
@@ -182,7 +174,6 @@
     font-style: italic;
   }
 
-  /* ── 并排视图 ── */
   .diff-view__split {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -193,7 +184,6 @@
     display: flex;
     align-items: baseline;
     min-width: 0;
-    /* 并排时窄，长行折行显示；要看完整不折行请切统一视图 */
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
@@ -226,7 +216,6 @@
     background: color-mix(in srgb, var(--add) 26%, transparent);
   }
 
-  /* ── 折叠未改动段 ── */
   .diff-view__gap-row {
     display: flex;
     justify-content: center;

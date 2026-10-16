@@ -1,11 +1,3 @@
-/**
- * 设置的落盘语义（O06 回归）。
- *
- * 隔离目录（`YAN_PI_DIR` 指向临时目录）+ electron 桩，不碰真实 desktop.json。
- *
- * 回归本体：写盘失败时不能「更新缓存 + 返回新设置」假装成功 —— 否则界面显示
- * 已保存、重启后变回旧值，调用方没有任何办法发现。
- */
 const ELECTRON_STUB = `
 export const app = {
   getLocale: () => 'zh-CN',
@@ -45,17 +37,14 @@ export async function runSettingsStoreTests(ok) {
   })
   const { getSettings, patchSettings, validateRendererSettingsPatch, updateSettings } = await import(pathToFileURL(outfile).href)
 
-  /* 桌面设置落在 YAN_DIR（由 YAN_DATA_DIR 覆盖），不是 pi 目录 */
   const FILE = join(temp, 'data', 'desktop.json')
 
-  /* ---- 正常写入：返回值与磁盘一致 ---- */
   const first = await patchSettings({ theme: 'light' })
   ok(first.theme === 'light', '正常写入返回新值')
   const onDisk = JSON.parse(await readFile(FILE, 'utf8'))
   ok(onDisk.theme === 'light', '磁盘上真的落了新值')
   ok((await getSettings()).theme === 'light', '后续读取拿到新值')
 
-  /* ---- 写盘失败：如实抛错，且不把那次改动留在内存/磁盘 ---- */
   await rename(FILE, `${FILE}.backup`)
   await mkdir(FILE, { recursive: true })
   let failed = false
@@ -77,10 +66,8 @@ export async function runSettingsStoreTests(ok) {
     ok(rejected, `渲染补丁拒绝 ${key}`)
   }
 
-  /* ---- 恢复文件：磁盘上仍是旧值，队列也没被毒化 ---- */
   await rm(FILE, { recursive: true, force: true })
   await rename(`${FILE}.backup`, FILE)
-  /* 直接核对旧文件：读取故障与写入故障都不能更改它。 */
   const broken = JSON.parse(await readFile(FILE, 'utf8'))
   ok(broken.theme === 'light', '磁盘上的旧值没被半截写入破坏', broken.theme)
   const again = await patchSettings({ theme: 'dark' })

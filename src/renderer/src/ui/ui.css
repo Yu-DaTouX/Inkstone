@@ -1,25 +1,9 @@
-/*
- * v3 基础原语外观（WP-04 / WP-05）。
- *
- * 只放控件外观：位置、颜色、状态、动效。版面归 features/patterns 的模块 CSS。
- * 颜色一律取 `design/tokens.css` 的变量（由 tokens.json 生成），不在这里写死色值。
- *
- * 首行声明全局层级顺序，保证即使本文件先于 `design/index.css` 加载，
- * `primitives` 也排在 `base` 之后。该声明幂等，重复无副作用。
- */
 @layer reset, tokens, base, primitives, patterns, features, utilities;
 
-/*
- * WP-05 原语外观的聚合挂载点：Slider 与 Tree 的 CSS 自身已包在 primitives 层，
- * 顶层朴素 @import 只会把导入内容落到同一层，不新增层序声明。Table 与 Splitter
- * 由各自组件自 import（`Table.tsx` / `Splitter.tsx`），这里不要再重复挂载，
- * 避免同一份规则被引入两次。
- */
 @import './Slider.css';
 @import './Tree.css';
 
 @layer primitives {
-  /* ── 通用：焦点环、动效降级 ───────────────────────────────── */
   .ui-btn[data-focus-visible],
   .ui-icon-btn[data-focus-visible],
   .ui-input[data-focus-visible],
@@ -37,7 +21,6 @@
     outline-offset: 2px;
   }
 
-  /* ── Button ──────────────────────────────────────────────── */
   .ui-btn {
     display: inline-flex;
     align-items: center;
@@ -58,7 +41,6 @@
       border-color var(--dur-hover) var(--ease),
       color var(--dur-hover) var(--ease);
   }
-  /* 标签包装层也保持行内弹性布局，避免 reset 中的块级 SVG 把图标和文字拆成多行。 */
   .ui-btn__label {
     display: inline-flex;
     align-items: center;
@@ -80,7 +62,6 @@
   .ui-btn__icon {
     display: inline-flex;
     align-items: center;
-    /* 行内图标基线对齐，避免图标略高于文字 */
     margin-block: -0.125em;
   }
   .ui-btn--secondary {
@@ -165,7 +146,6 @@
     }
   }
 
-  /* ── 字段、输入框、文本域、搜索 ──────────────────────────── */
   .ui-field {
     display: flex;
     flex-direction: column;
@@ -244,7 +224,6 @@
     padding-left: 32px;
   }
 
-  /* ── Checkbox / Radio / Switch ───────────────────────────── */
   .ui-checkbox,
   .ui-radio,
   .ui-switch {
@@ -257,8 +236,6 @@
     cursor: default;
     user-select: none;
   }
-  /* 原生 input 由 RAC 的 VisuallyHidden 包装并内联隐藏（1px + clip），
-     不占布局，因此这里不需要再写隐藏规则。交互点击仍由 label 原生生效。 */
   .ui-checkbox__box,
   .ui-radio__dot {
     display: grid;
@@ -347,7 +324,6 @@
     background: var(--on-ink);
   }
 
-  /* ── Select / ComboBox ───────────────────────────────────── */
   .ui-select__trigger {
     display: flex;
     align-items: center;
@@ -410,7 +386,6 @@
     }
   }
 
-  /* ── Popover / Menu / ListBox ────────────────────────────── */
   .ui-popover {
     min-width: 180px;
     padding: var(--s-4);
@@ -477,7 +452,6 @@
     }
   }
 
-  /* ── Dialog / Modal ──────────────────────────────────────── */
   .ui-modal-overlay {
     position: fixed;
     inset: 0;
@@ -544,7 +518,6 @@
     color: var(--fg);
   }
 
-  /* ── Tabs ────────────────────────────────────────────────── */
   .ui-tabs {
     display: flex;
     flex-direction: column;
@@ -624,7 +597,6 @@
     outline: none;
   }
 
-  /* ── Tooltip ─────────────────────────────────────────────── */
   .ui-tooltip {
     max-width: 280px;
     padding: var(--s-4) var(--s-8);
@@ -642,7 +614,6 @@
     animation: ui-pop-out var(--dur-pop) var(--ease);
   }
 
-  /* ── Toast ───────────────────────────────────────────────── */
   .ui-toast-region {
     position: fixed;
     right: var(--s-16);
@@ -704,7 +675,6 @@
     overflow-wrap: anywhere;
   }
 
-  /* ── Badge / Kbd ─────────────────────────────────────────── */
   .ui-badge {
     display: inline-flex;
     align-items: center;
@@ -750,7 +720,6 @@
     text-align: center;
   }
 
-  /* ── Progress / Meter / Spinner / Skeleton / Separator ───── */
   .ui-progress {
     display: flex;
     flex-direction: column;
@@ -831,7 +800,6 @@
     margin: 0 var(--s-4);
   }
 
-  /* ── 关键帧 ──────────────────────────────────────────────── */
   @keyframes ui-spin {
     to {
       transform: rotate(360deg);
@@ -920,7 +888,6 @@
     }
   }
 
-  /* 尊重「减少动态效果」：关掉所有原语动画（圆点、转圈、骨架屏都静止）。 */
   @media (prefers-reduced-motion: reduce) {
     [class*='ui-'] {
       animation-duration: 0.01ms !important;

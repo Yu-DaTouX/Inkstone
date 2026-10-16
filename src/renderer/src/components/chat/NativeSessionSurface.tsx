@@ -4,7 +4,6 @@ import { useStore } from '../../state/store'
 import { NativeSessionPanel } from './NativeSessionPanel'
 import { parseTreePayload, type NativeSessionAction, type NativeSessionLoadResult } from '../../../../shared/native-session'
 
-/** A transient desktop panel bound to the session that opened it. */
 export function NativeSessionSurface() {
   const panel = useStore(state => state.nativeSessionPanel)
   const sessionId = useStore(state => state.session?.sessionId)

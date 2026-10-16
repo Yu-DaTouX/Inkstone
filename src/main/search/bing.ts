@@ -1,15 +1,8 @@
-/**
- * Bing 网页搜索来源。
- *
- * 中文查询走 zh-CN 市场并固定 `cc=CN`，否则匿名窗口里会拿到「无结果」页；
- * 英文不加地区参数（加 `cc=US` 反而会出空页）。
- */
 import type { SourceRun } from './aggregate'
 import { runWebEngine, type WebEngine } from './web-engine'
 
 export type SearchLocale = 'zh' | 'en'
 
-/** 含汉字（或日韩文）就按中文市场查 */
 export function detectLocale(query: string): SearchLocale {
   return /[぀-ヿ㐀-鿿가-힯]/.test(query) ? 'zh' : 'en'
 }
@@ -20,7 +13,6 @@ interface Raw {
   snippet: string
 }
 
-/** Bing 的跳转链接 `/ck/a?...&u=a1<base64url>` 还原成真实地址；还原不了就原样返回 */
 export function decodeBingRedirect(href: string): string {
   try {
     const url = new URL(href, 'https://www.bing.com')

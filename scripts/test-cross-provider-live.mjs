@@ -1,4 +1,3 @@
-/** Loopback parent delegates to real Haiku 5.5 low through formal yan/SubagentService. */
 import { createServer } from 'node:http'
 import assert from 'node:assert/strict'
 import { mkdtemp,mkdir,writeFile,readFile } from 'node:fs/promises'

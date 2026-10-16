@@ -1,14 +1,3 @@
-/**
- * 文件树（工具栏「文件」分区）。
- *
- * 覆盖的是「懒加载 + 单击预览 + 独立加入上下文 + 内部拖放」这条链。为什么值得单独一个场景：
- *   · 它是**主进程读文件系统**的路径，安全边界（不能跳出 cwd）必须有人守
- *   · 「点文件 = 预览、加入上下文 = 独立动作」这条边界很容易被后人改错
- *   · 长文件名/深路径在 264px 宽的工具栏里很容易横向溢出（本项目的老坑）
- *
- * ⚠️ 需要 cwd 有内容才有意义。test-live 会把 YAN_DATA_DIR 指到临时目录，
- *    所以这里**显式把 cwd 设成项目目录**，否则树是空的（断言会假通过）。
- */
 ;(async () => {
   const out = []
   const ok = (m) => out.push('  ✓ ' + m)
@@ -42,7 +31,6 @@
   }
 
   try {
-    // 关引导层（轮询等它出现再关，不要假设它已经没了）
     localStorage.setItem('yan.onboarded', '1')
     for (let i = 0; i < 25; i++) {
       const card = document.querySelector('.ob-card')
@@ -53,7 +41,7 @@
 
     await openFilesTile()
 
-    /* ---- 0. 把 cwd 设成项目目录（否则树是空的，断言会假通过）---- */    const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
+    const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
     out.push('=== 0. 工作目录 ===')
     out.push('  cwd = ' + cwd)
     if (!/pi-desktop/i.test(cwd)) {
@@ -64,7 +52,6 @@
     }
     ok('cwd 指向项目目录')
 
-    /* ---- 1. 分区存在 + 根层加载 ---- */
     out.push('\n=== 1. 工具栏「文件」分区 ===')
     const sec = filesPane()
     if (!sec) { bad('没有文件分区'); }
@@ -82,7 +69,6 @@
     if (loaded) ok('根层懒加载回来了')
     else bad('根层是空的')
 
-    /* ---- 2. 排序：目录在前 ---- */
     out.push('\n=== 2. 排序：目录优先 ===')
     const flags = rows.slice(1).map((r) => r.dataset.dir)
     const firstFile = flags.indexOf('0')
@@ -91,7 +77,6 @@
     if (firstFile === -1 || lastDir === -1 || lastDir < firstFile) ok('所有目录都排在文件前面')
     else bad('目录/文件混排（目录应在最前）')
 
-    /* ---- 3. 展开：缩进递增 + 子项加载 ---- */
     out.push('\n=== 3. 展开 src → src/main ===')
     for (const p of ['src', 'src/main']) {
       const row = qa('.rp-fs-row').find((r) => r.dataset.path === p)
@@ -121,7 +106,6 @@
     if (a > 0 && b > a && c > b) ok('层级缩进递增')
     else bad('缩进没递增')
 
-    /* ---- 3b. 键盘树导航：方向键不改输入；Enter/Alt+Enter 保持动作分离 ---- */
     out.push('\n=== 3b. 文件树键盘导航 ===')
     const tree = document.querySelector('[data-testid="fs-tree"]')
     if (tree?.getAttribute('role') === 'tree') ok('文件树声明为 tree')
@@ -164,13 +148,6 @@
       if (activePath() === '') ok('Home 回到树根')
       else bad('Home 没有回到树根：' + JSON.stringify(activePath()))
     } else bad('键盘探针无法执行 Home')
-    /*
-     * 诊断：把「焦点在哪 / DOM 里几行 / 最后一行是谁」一次打全 ——
-     * 这条遗留缺陷（End 掉焦点）曾经先后猜过四种原因（顺序依赖、detached 节点、
-     * 截断分页、cwd 重置）全不对，最后是靠这几行 + 一次逐帧观测定的案：
-     * visiblePaths（严格 DFS）与预算截断（父层先扣完）用了两套顺序，
-     * 键盘能走到没渲染出来的行。**猜四次不如打印一次。**
-     */
     const descEl = (el) => {
       if (!el) return 'null'
       if (el === document.body) return 'body'
@@ -179,9 +156,6 @@
     }
     if (await key('', 'End')) {
       const endPath = activePath()
-      /* 诊断：把「焦点在哪 / DOM 里几行 / 最后一行是谁 / 展开态」一次打全 ——
-         这个失败我先后猜了四种原因（顺序依赖、detached 节点、截断分页、cwd 重置）
-         全不对，最后是靠这行诊断定的案。**猜四次不如打印一次。** */
       const domPaths = qa('.rp-fs-row').map((r) => r.dataset.path)
       out.push(
         '  End 之后：active=' + JSON.stringify(endPath) +
@@ -189,7 +163,6 @@
         ' 最后一行=' + JSON.stringify(domPaths[domPaths.length - 1]) +
         ' 含src/main=' + domPaths.includes('src/main')
       )
-      /* 断言要区分「焦点在根行」与「焦点掉到 body」—— 两者 activePath() 都是 '' */
       const activeDesc = descEl(document.activeElement)
       if (document.activeElement === document.body) bad('End 之后焦点掉到 body')
       else if (endPath && document.querySelector(`[data-tree-path="${CSS.escape(endPath)}"]`)) ok('End 移到最后一个可见节点')
@@ -198,14 +171,7 @@
     store.getState().clearAttachments()
     store.getState().closePreview()
 
-    /* ---- 3c. 键盘与焦点恢复（N22-4）---- */
     out.push('\n=== 3c. 键盘与焦点恢复 ===')
-    /*
-     * 这一节守的是「焦点不许掉到 body」。树里有三种**卸载**导致的焦点转移：
-     * 收起目录把焦点行卸掉、关掉搜索把输入框卸掉、显示更多把按钮卸掉。
-     * 三种在界面上都看不出来，但键盘用户的下一次 Tab 会从窗口顶部重新开始。
-     * 所以断言必须去问 activeElement 是谁，而不是只看 DOM 里有没有那一行。
-     */
     const tabbableRows = () => qa('.rp-fs-row').filter((r) => r.tabIndex === 0)
     const focusedDesc = () => {
       const el = document.activeElement
@@ -217,7 +183,6 @@
     if (tabbableRows().length === 1) ok('任意时刻恰好一行可 Tab 进入（roving tabindex）')
     else bad('roving tabindex 坏了：' + tabbableRows().length + ' 行 tabIndex=0')
 
-    /* 收起一个已展开的目录：焦点留在这一行，不跳走 */
     if (await key('src', 'ArrowLeft')) {
       const collapsed = await until(() => !qa('.rp-fs-row').some((r) => r.dataset.path === 'src/main'), 4000)
       if (!collapsed) bad('ArrowLeft 没有收起 src')
@@ -227,17 +192,9 @@
       else bad('ArrowRight 无法重新展开已收起的目录')
     } else bad('键盘探针找不到 src 目录（3c）')
 
-    /* 收起「装着当前预览文件的目录」：不能留下看不见的当前行，展开后要回来 */
     const previewRow = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main/agent.ts')
     if (!previewRow) bad('3c 找不到 src/main/agent.ts')
     else {
-      /*
-       * ⚠️ 用「先 focus 再 click」模拟真实鼠标，而不是裸 dispatchEvent('click')。
-       * 合成的 MouseEvent **不**触发浏览器的默认聚焦行为（真实鼠标 pointerdown 会），
-       * 所以裸合成点击后 activeElement 还停在上一次键盘操作的那一行 —— 后面那条
-       * 「收起后焦点落在被点的目录行」测到的是一个真实用户碰不到的状态
-       * （2026-09-18 排查 fs 遗留缺陷时定案）。
-       */
       const mouseClick = (el) => {
         el.focus()
         el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -250,7 +207,7 @@
       if (!parent) bad('3c 找不到 src/main 目录行')
       else {
         await window.__yanOpenWorkspaceTool('文件', 'files')
-        mouseClick(parent) // 鼠标收起父目录（会把 current 那一行卸掉）
+        mouseClick(parent)
         const gone = await until(() => !qa('.rp-fs-row').some((r) => r.dataset.path === 'src/main/agent.ts'), 4000)
         if (gone) ok('收起父目录后那一行不再渲染')
         else bad('收起父目录后那一行还在')
@@ -259,11 +216,10 @@
         else bad('折叠后仍有 ' + left + ' 行声称自己是 current')
         if (document.querySelector('[data-testid="file-preview"]')) ok('预览本身不受折叠影响（仍然开着）')
         else bad('折叠把预览也关掉了（预览不该依赖树是否渲染）')
-        /* 焦点恢复要等 React 重渲染 + focusTreePath 的 rAF 落地，不能看完立即断言 */
         const landed = await until(() => activePath() === 'src/main', 4000)
         if (landed) ok('鼠标收起后焦点落在被点的目录行（不是 body）')
         else bad('鼠标收起后焦点在 ' + focusedDesc())
-        mouseClick(parent) // 再展开
+        mouseClick(parent)
         const back = await until(() => qa('.rp-fs-row[aria-current="true"]').length === 1, 4000)
         const backPath = qa('.rp-fs-row[aria-current="true"]')[0]?.dataset.path
         if (back && backPath === 'src/main/agent.ts') ok('重新展开后 current 回到那一行')
@@ -272,7 +228,6 @@
       store.getState().closePreview()
     }
 
-    /* 搜索态：树整体下线（项目头与「显示更多」都不该再出现），Esc 关掉后回来且焦点不丢 */
     const treeSearchToggle = document.querySelector('[data-testid="fs-search-toggle"]')
     if (!treeSearchToggle) bad('3c 找不到搜索按钮')
     else {
@@ -311,7 +266,6 @@
       }
     }
 
-    /* ---- 4. 点文件 → 右侧只读预览；加入上下文是独立动作 ---- */
     out.push('\n=== 4. 点文件 → 只读预览；独立加入上下文 ===')
     const fileRow = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main/agent.ts')
     if (!fileRow) bad('找不到 src/main/agent.ts')
@@ -340,7 +294,6 @@
         bad('文件行没有独立的加入上下文动作')
       }
 
-      /* 内部 MIME 拖放：复用文件行真实 dragstart，再投递到 Composer。 */
       store.getState().clearAttachments()
       const wrap = document.querySelector('.composer-wrap')
       if (wrap && typeof DataTransfer !== 'undefined' && typeof DragEvent !== 'undefined') {
@@ -358,7 +311,6 @@
       store.getState().closePreview()
     }
 
-    /* ---- 5. 全项目文件名搜索：有界、可取消、动作仍然分离 ---- */
     out.push('\n=== 5. 全项目文件名搜索 ===')
     const searchToggle = document.querySelector('[data-testid="fs-search-toggle"]')
     if (!searchToggle) {
@@ -407,19 +359,12 @@
       await until(() => !document.querySelector('[data-testid="fs-search"]'), 2000)
     }
 
-    /*
-     * ---- 5b. H-4：一个文件一个标签（身份 = 项目 + 工作树 + realpath） ----
-     *
-     * 断言的是「两个不同文件不共用一个标签」以及切 / 关时不丢另一个。
-     * 同名不同工作树的分离由单测（test-file-resource）盯，这里跑真窗口链路。
-     */
     out.push('\n=== 5b. 文件资源身份与多标签 ===')
     if (!document.querySelector('.rp-fs-row')) {
       bad('文件树不可见，多标签断言跳过（不改判为通过）')
     } else {
       const panes=()=>[...document.querySelectorAll('[data-workspace-pane^="file:"]')]
       const findPane=name=>panes().find(p=>(p.querySelector('[data-file-name]')?.dataset.fileName??'').includes(name))
-      /* 关闭文件走磁贴标签自带的 ×（关闭资源）；磁贴头右侧的 × 只是收起 */
       const closeTab=pane=>document.querySelector('[data-pane-tab="'+pane?.dataset.workspacePane+'"] .ui-tab-close')?.click()
       const open=async rel=>{
         const row=qa('.rp-fs-row').find(r=>r.dataset.path===rel)
@@ -446,10 +391,8 @@
       await until(()=>!findPane('artifacts.ts'),4000)
     }
 
-    /* ---- 5c. H-4：文件变化提示（只 stat，不自动重载） ---- */
     out.push('\n=== 5c. 文件变化提示 ===')
     {
-      /* 把轮询放快；产品默认 5s（探针不想等） */
       window.__YAN_PREVIEW_POLL_MS = 200
       const row = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main/agent.ts')
       if (!row) bad('找不到 src/main/agent.ts 行，变化提示断言跳过')
@@ -460,11 +403,6 @@
         if (!document.querySelector('[data-testid="file-preview-updated"]')) ok('mtime 未变时不误报「内容已更新」')
         else bad('还没改文件就报了「内容已更新」')
 
-        /*
-         * 模拟「读进来的是旧版本」：把读入时的 mtime 改成 1，
-         * 自动轮询会走真实 IPC stat 拿到磁盘上的新 mtime ——
-         * 检测链（stat → 比对 → 提示）全程是真的，没有直接写 stale 标志。
-         */
         const cur = store.getState().filePreview
         const stale = { ...cur, data: { ...cur.data, mtimeMs: 1 } }
         store.setState({ filePreview: stale, filePreviews: { ...store.getState().filePreviews, [cur.key]: stale } })
@@ -495,7 +433,6 @@
       await sleep(200)
     }
 
-    /* ---- 5d. H-4：从链接打开文件 → 文件树展开到它并选中 ---- */
     out.push('\n=== 5d. 文件树联动定位 ===')
     {
       const q = (s) => document.querySelector(s)
@@ -503,11 +440,6 @@
       if (!srcRow) {
         bad('文件树不可见，联动定位断言跳过（不改判为通过）')
       } else {
-        /*
-         * 真实入口：按**绝对路径**打开（聊天链接 / 搜索就是这条链路）。
-         * 打开后右栏会切到文件页，工具页连树一起卸载；
-         * 切回工具页时树重挂并应当自动展开到那个文件 —— 所以这里先切回来再断言。
-         */
         const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
         await store.getState().previewFile(`${cwd}\\src\\main\\agent.ts`, undefined, cwd)
         await until(() => !!q('[data-testid="file-preview"]'), 6000)
@@ -523,7 +455,6 @@
         if (row?.getAttribute('aria-current') === 'true') ok('被打开的文件行标为当前（选中）')
         else bad('文件行没有标为当前：' + JSON.stringify(row?.getAttribute('aria-current')))
 
-        /* 工作树外的文件不能把树拉到不存在的分支上 */
         const outside = q('[data-testid="fs-row-.."]')
         if (!outside) ok('工作树外的文件不会在树里造出越界节点')
         else bad('树里出现了越界节点')
@@ -532,31 +463,19 @@
       await sleep(200)
     }
 
-    /* ---- 6. 隐藏项：文案是「已隐藏」+ 有开关能显示出来 ---- */
     out.push('\n=== 6. 隐藏项与开关 ===')
     const skipped = document.querySelector('[data-testid="fs-skipped"]')
     out.push('  提示文案 = ' + (skipped?.textContent.replace(/\s+/g, ' ').trim() ?? '（无）'))
-    /*
-     * 用户要求：把「已跳过」改成「已隐藏」。
-     * 理由：「跳过」听起来像程序漏掉了内容，「隐藏」才是事实 ——
-     * 上面的开关一开它们就出来（下面就地验证）。
-     */
     if (skipped && /已隐藏/.test(skipped.textContent)) ok('文案是「已隐藏」（不是「已跳过」）')
     else bad('文案不对：应含「已隐藏」，实际 ' + JSON.stringify(skipped?.textContent))
     if (skipped && /\.git|node_modules/.test(skipped.textContent)) ok('列出了被隐藏的名字（不假装列全了）')
     else bad('没列出隐藏的名字')
 
-    /* 开关：打开后隐藏项真的会出现，关回去又恢复 */
     const toggle = document.querySelector('[data-testid="fs-hidden-toggle"]')
     if (!toggle) bad('没有「显示隐藏项」开关')
     else {
       const rowsBefore = qa('[data-testid="rp-files"] .rp-fs-row').length
       click(toggle)
-      /*
-       * ⚠️ 不能断言「行数变了」—— 切开关会清缓存重拉，
-       *    行数变化可能只是「展开的子目录被收起来了」。
-       *    要断言的真正性质是：**被隐藏的那些条目现在在列表里**。
-       */
       const appeared = await until(
         () =>
           qa('[data-testid="rp-files"] .rp-fs-row').some((r) => {
@@ -571,7 +490,6 @@
       else bad('开关没起作用：列表里没有隐藏项（' + JSON.stringify(names.slice(0, 10)) + '）')
       if (!document.querySelector('[data-testid="fs-skipped"]')) ok('全部显示后不再有「已隐藏」提示')
       else out.push('  仍有提示: ' + document.querySelector('[data-testid="fs-skipped"]').textContent.replace(/\s+/g, ' '))
-      // 关回去，别影响后面的断言
       click(toggle)
       const gone = await until(
         () => !qa('[data-testid="rp-files"] .rp-fs-row').some((r) => r.dataset.path === '.gitignore'),
@@ -582,7 +500,6 @@
       void rowsBefore
     }
 
-    /* ---- 7. 无横向溢出（工具栏只有 264px 宽，长名字很容易撑破）---- */
     out.push('\n=== 7. 溢出体检 ===')
     const over = qa('.rp-fs-row').filter((r) => r.scrollWidth > r.clientWidth + 1)
     out.push('  横向溢出的行：' + (over.length ? over.map((r) => r.dataset.path).join(', ') : '无'))

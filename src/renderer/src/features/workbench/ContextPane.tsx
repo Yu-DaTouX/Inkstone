@@ -1,14 +1,3 @@
-/**
- * 工作区「上下文」页签。
- *
- * 只读展示当前会话的上下文用量、构成与压缩记录，并提供裁剪 / 压缩设置入口。
- * 数据全部来自现有 store 字段（`session` / `stats` / `messages`）与
- * `state/context-breakdown.ts`、`state/compaction-view.ts` 的既有投影，
- * 不新增 IPC、不新建资源、不需要会话激活。
- *
- * 权威边界与上下文环一致：总量只认 Agent 回报的 `stats.contextUsage`；分类与
- * 文件 / 工具结果明细是估算，界面在文案里写明口径，不把估算说成供应商数据。
- */
 import { useMemo, type ReactElement } from 'react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -25,7 +14,6 @@ import { contextPaneText } from './context-pane-text'
 import type { ContextPaneProps } from './types'
 import './workbench.css'
 
-/** 分类名用共享 i18n 里已有的 `ctx.cat.*`；文案不在这页重复维护。 */
 const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
   system: 'ctx.cat.system',
   user: 'ctx.cat.user',

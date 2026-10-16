@@ -1,12 +1,3 @@
-/**
- * 所有报错都要进日志模块（用户要求）。
- *
- * 做法（见 store.ts 的 set 包装）：只要 set 里新增了 type='error' 的通知，
- * 就同时往 logs 里追加一行 `[错误] ...`。
- * 这里用一个**必然失败**的操作触发错误通知，然后断言日志抽屉里有它。
- *
- * 不花 token。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -45,7 +36,6 @@
 
   out.push('')
   out.push('=== 日志模块可见 ===')
-  /* H-3b：日志分区在「工具」固定页；切会话后回到默认页，需重新点工具页。 */
   if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
   await sleep(300)
   q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -53,7 +43,6 @@
   const logSec = q('[data-testid="rp-log"]')
   const logCount = q('[data-testid="log-count"]')
   ok(!!logSec || !!logCount, '存在日志分区（rp-log）')
-  // 展开日志分区后应能在正文里看到那条错误
   if (logSec) {
     const head = logSec.querySelector('.rp-sec-head')
     if (head && head.getAttribute('aria-expanded') === 'false') {

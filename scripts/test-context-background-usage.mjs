@@ -1,4 +1,3 @@
-/** Historical usage parsing and current host title accounting. */
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,8 +5,6 @@ import { join } from 'node:path'
 export async function runContextBackgroundUsageTests(ok) {
   const shared = await import('../out/test/context-background-usage.mjs')
   const host = await import('../out/test/context-background-usage-host.mjs')
-
-  /* ------------------------------------------------ 解析：坏行不毁整份统计 */
 
   const lines = [
     JSON.stringify({ at: 100, kind: 'summary', ok: true, input: 1000, output: 200, cacheRead: 9000, cacheWrite: 0, totalTokens: 10200, cost: 0.12 }),
@@ -30,8 +27,6 @@ export async function runContextBackgroundUsageTests(ok) {
   ok(limited.length === 3, '超过上限只留最后几条（账本不是无限历史）')
   ok(limited[2].at === 10, '留下的是**最后**几条，不是头几条')
 
-  /* ------------------------------------------------ 累计：每类分开、命中率口径 */
-
   const summary = shared.summarizeBackgroundUsage(parsed)
   ok(summary.kinds.length === 5, '五类（摘要 / 深度 / 状态 / 交接 / 标题）都占一行，缺的显示 0')
   const summaryKind = summary.kinds.find((item) => item.kind === 'summary')
@@ -43,8 +38,6 @@ export async function runContextBackgroundUsageTests(ok) {
     '命中率分母是 未缓存输入 + 缓存读取 + 缓存写入（与 turns.ts 同一口径）'
   )
   ok(shared.emptyBackgroundUsage().cacheHitRate === null, '没有读数时命中率是 null，不是 0%')
-
-  /* ------------------------------------------------ 缺报用量：不是“没花钱” */
 
   const missing = shared.summarizeBackgroundUsage(
     shared.parseBackgroundUsageLines(
@@ -61,13 +54,10 @@ export async function runContextBackgroundUsageTests(ok) {
     '每类的缺报次数也分开记'
   )
 
-  /* ------------------------------------------------ 跨端格式：扩展写 → 宿主读 */
-
   const dir = mkdtempSync(join(tmpdir(), 'yan-background-usage-'))
   const previousDataDir = process.env.YAN_DATA_DIR
   process.env.YAN_DATA_DIR = dir
   try {
-    // Read independently authored legacy rows after the producer has retired.
     mkdirSync(join(dir, 'context-background-usage'))
     writeFileSync(join(dir, 'context-background-usage', 'session-a.jsonl'), [
       JSON.stringify({ at: 1, kind: 'summary', ok: true, input: 500, output: 100, cacheRead: 4500, cacheWrite: 20, totalTokens: 5120, cost: 0.3, usageReported: true, estimatedInput: 520 }),
@@ -85,7 +75,6 @@ export async function runContextBackgroundUsageTests(ok) {
     ok(read.missingUsage === 1, '被挡下的那次没有 usage，记成缺报而不是 0')
     ok(read.estimatedInput === 520, '估算输入与真实输入一起留着，供对照')
 
-    /* 宿主自己写（标题生成走这条）—— 与扩展同文件、同格式 */
     host.appendContextBackgroundUsage('session-a', {
       kind: 'title',
       ok: true,
@@ -96,7 +85,6 @@ export async function runContextBackgroundUsageTests(ok) {
     ok(afterTitle.calls === 3, '主进程写的标题调用与扩展写的在同一份账本里')
     ok(afterTitle.kinds.find((item) => item.kind === 'title').calls === 1, '标题单独一类')
 
-    /* 读不到 / 非法身份：空统计，不抛错 */
     const missingSession = await host.readContextBackgroundUsage('session-none', { dataDir: dir })
     ok(missingSession.calls === 0 && missingSession.cacheHitRate === null, '没有账本的会话返回空统计')
     const unsafe = await host.readContextBackgroundUsage('..', { dataDir: dir })

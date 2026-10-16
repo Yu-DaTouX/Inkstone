@@ -1,4 +1,3 @@
-/** Resolve recorded identities against the same live entries and saved names used by the menu. */
 export interface TurnModelCatalogEntry {
   provider: string
   id: string
@@ -22,7 +21,6 @@ export function resolveTurnModelDisplay(
   const model = provider ? catalog.find(exact) ?? fallbackCatalog.find(exact) : undefined
   if (model) return { label: model.name || model.id, identity }
 
-  // Older UI snapshots omitted provider. A shared label is safe; selecting a provider is not.
   const entries = new Map<string, TurnModelCatalogEntry>()
   for (const entry of [...catalog, ...fallbackCatalog]) {
     const key = JSON.stringify([entry.provider, entry.id])
@@ -32,7 +30,6 @@ export function resolveTurnModelDisplay(
   return { label: names.size === 1 ? [...names][0] : id, identity }
 }
 
-/** A requested child model is a full provider/id key: show its source without opening details. */
 export function resolveSubagentModelDisplay(
   identity: string,
   catalog: readonly TurnModelCatalogEntry[],

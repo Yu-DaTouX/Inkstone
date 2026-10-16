@@ -1,6 +1,5 @@
 import type { ModelChoice } from '../shared/model-selection'
 
-/** Apply an explicit desktop choice only to a new conversation, without a model fallback. */
 export async function applyRememberedModel(agent: {
   listModels(): Promise<Array<Pick<ModelChoice, 'provider' | 'id'>>>
   setModel(provider: string, id: string): Promise<{ ok: boolean; error?: string }>

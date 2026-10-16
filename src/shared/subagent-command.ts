@@ -1,4 +1,3 @@
-/** 本地委派命令；只解析正文前的连续选项，任务中的示例参数必须保留。 */
 export type SubagentCommandIsolation = 'worktree' | 'controlled-cwd' | 'shared-cwd'
 export interface ParsedSubagentCommand { task: string; model?: string; isolation: SubagentCommandIsolation }
 const COMMAND = /^\/subagent(?:\s|$)/i

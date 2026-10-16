@@ -1,9 +1,3 @@
-/*
- * 分屏最多 5 块（`npm run test:live -- splitfive`，合成会话，需要可见窗口）。
- *
- * 验：依次加到 5 块，每块都是一块会话磁贴且宽度大致相等；只有焦点那一块有输入框；
- * 第 6 条进来挤掉一块没有焦点的（仍是 5 块）；关到只剩一块就退出分屏；关焦点块时焦点去邻块。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => { out.push((c ? '  ✓ ' : '  ✗ ') + s); return !!c }
@@ -45,7 +39,6 @@
   ok(tiles() === 5 && split.getState().split.tiles.some((t) => t.sessionId === 'sf-f'), '第 6 条进来：仍是 5 块，新的在里面')
   ok(split.getState().split.tiles[split.getState().split.live].sessionId === current.sessionId, '焦点会话没被挤掉')
 
-  /* 关掉非焦点的块直到只剩一块 */
   for (let n = tiles(); n > 1; n--) {
     const sp = split.getState().split
     const idx = sp.tiles.findIndex((_, i) => i !== sp.live)

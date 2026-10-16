@@ -13,14 +13,6 @@ type Phase =
   | { kind: 'transcribing' }
   | { kind: 'error'; message: string }
 
-/**
- * 输入框底栏的语音输入：录音 → 本地转写 → 插入光标处，由用户编辑后再发送。
- *
- * 只做转文字，不自动发送。转写走与 v2 同一个 `window.yan.voice` 接口
- * （`status` / `prepare` / `transcribe`），这里不导出第二套语音服务；外观
- * 用 v3 `ui/IconButton` 与 `app/IconTip`，不 import 任何 v2 样式。
- * 程序或模型没准备好时，点按钮直接去「设置 → 语音输入」，不在输入区里弹下载。
- */
 export function VoiceButton({ onText, disabled }: { onText: (text: string) => void; disabled?: boolean }) {
   const t = useT()
   const openSettings = useStore((s) => s.openSettings)
@@ -29,11 +21,9 @@ export function VoiceButton({ onText, disabled }: { onText: (text: string) => vo
   const recorder = useRef<{ stop: () => void } | null>(null)
   const generation = useRef(0)
   const cancelled = useRef(false)
-  /* 转写结束时用最新的插入函数：录音期间用户可能还在打字 */
   const onTextRef = useRef(onText)
   onTextRef.current = onText
 
-  /* 录音计时；到上限自动停止并转写 */
   useEffect(() => {
     if (phase.kind !== 'recording') return undefined
     const id = window.setInterval(() => {
@@ -44,14 +34,12 @@ export function VoiceButton({ onText, disabled }: { onText: (text: string) => vo
     return () => window.clearInterval(id)
   }, [phase])
 
-  /* 失败提示停留几秒后收起 */
   useEffect(() => {
     if (phase.kind !== 'error') return undefined
     const id = window.setTimeout(() => setPhase({ kind: 'idle' }), 6000)
     return () => window.clearTimeout(id)
   }, [phase])
 
-  /* 组件卸载（切会话等）时释放麦克风，不留后台录音 */
   useEffect(
     () => () => {
       cancelled.current = true

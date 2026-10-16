@@ -1,11 +1,3 @@
-/**
- * 扩展来源诊断（`src/main/extensions-inventory.ts`）的测试。
- *
- * 为什么是真实临时目录而不是桩：这段逻辑只有两件事 —— 读目录、生成文案。
- * 桩掉 fs 之后剩下的就只是「文案里有没有某个词」，证明不了「读的是不是
- * 用户扩展目录」。用真目录也顺便验证了它**不会**碰用户真实的 `~/.pi`。
- */
-
 export async function runExtensionInventoryTests(ok) {
   const { readUserExtensions, extensionDiagnostics, builtinCapabilities } = await import('../out/test/extensions-inventory.mjs')
   const { mkdtemp, mkdir, writeFile, rm, readFile, readdir } = await import('node:fs/promises')
@@ -24,7 +16,6 @@ export async function runExtensionInventoryTests(ok) {
   await writeFile(join(extDir, '.hidden.ts'), 'export default () => {}\n', 'utf8')
 
   try {
-    // 1. 只列扩展（文件按后缀、目录保留），不列无关文件与隐藏项
     const names = readUserExtensions(piDir)
     ok(names.length === 3, `列出 3 项（实际 ${names.length}：${names.join('、')}）`)
     ok(names.includes('left-info-panel.ts'), '.ts 扩展被列出')
@@ -34,10 +25,8 @@ export async function runExtensionInventoryTests(ok) {
     ok(!names.includes('.hidden.ts'), '隐藏文件被跳过')
     ok(names.join('|') === [...names].sort((a, b) => a.localeCompare(b)).join('|'), '顺序稳定（诊断可 diff）')
 
-    // 2. 目录不存在 / 读不到 → 空清单，不是异常
     ok(readUserExtensions(join(root, 'nope')).length === 0, '目录不存在时返回空清单（不抛）')
 
-    // 3. 诊断文案：有用户扩展时必须说清「谁写的、谁是只读的」
     const withUser = extensionDiagnostics({ piDir, yanThinPaths: ['/x/resources/pi-extensions/language.js'], nativeDiscovery: false })
     ok(withUser.length === 3, `有用户扩展时 3 行（实际 ${withUser.length}）`)
     ok(withUser[0].includes('用户扩展 3 项'), '第一行列出来源与数量')
@@ -69,22 +58,15 @@ export async function runExtensionInventoryTests(ok) {
     ok(native[0].includes('目录清单不代表已加载') && !native[0].includes('--no-extensions'), '原生诊断不误报扩展被禁用或已加载')
     ok(native[2].includes('只读') && native[2].includes('不会覆盖或回写'), '原生发现保留旧任务记录只读边界')
 
-    // 4. 没有用户扩展也说明历史任务只读边界，且明确说「未检测到」。
     await rm(extDir, { recursive: true, force: true })
     const clean = extensionDiagnostics({ piDir, yanThinPaths: ['/x/resources/pi-extensions/language.js'], nativeDiscovery: true })
     ok(clean.length === 3, `干净环境 3 行（实际 ${clean.length}）`)
     ok(clean[0].includes('未检测到用户扩展'), '第一行如实说没有')
     ok(clean.some((l) => l.includes('left-panel-tasks') && l.includes('只读')), '没有用户扩展也保留历史任务只读边界说明')
 
-    // 5. 薄层一个都没有也不能崩（打包异常时仍要能启动并说清楚）
     const noThin = extensionDiagnostics({ piDir: join(root, 'missing'), yanThinPaths: [], nativeDiscovery: true })
     ok(noThin[1].includes('（无）'), '没有薄层时显示「（无）」而不是空字符串拼接')
 
-    /*
-     * 6. 受信内置能力清单（实施-02 S4）。
-     * 它必须从**实际加载路径**派生 —— 否则设置页显示的清单会
-     * 与 pi 真正加载的扩展漂移（那正是「不要把内置冒充成用户装的包」的反面）。
-     */
     const caps = builtinCapabilities([
       '/x/resources/pi-extensions/capability-guide.js',
       '/x/resources/pi-extensions/language.js'
@@ -115,34 +97,10 @@ export async function runExtensionInventoryTests(ok) {
     await rm(root, { recursive: true, force: true })
   }
 
-  /*
-   * 5. 架构检查（静态版）：砚薄层**只**承载宿主没有 CLI / RPC 等价物的
-   * 生命周期钩子 —— 不得注册模型工具；pi 命令只允许一个宿主专用例外。
-   *
-   * 扫描全部随包适配，防止未进入专项测试的文件重新注册退役入口。
-   *
-   * 允许的例外有两个，都是**精确到文件、命令名、注册次数与环境闸门**的放行，
-   * 而不是放行整个文件：
-   *   · shell-fallback.js：用 pi 的 createBashToolDefinition 同名覆盖内置 bash
-   *     （不新增工具，只换 Windows 上的执行方式）；参数一致性由 test-bash-transport 实测。
-   *   · native-session-bridge.js：注册**唯一**宿主专用命令 `__inkstone_native`。
-   *     pi 1.2.0 的 `ctx.navigateTree()` / `ctx.reload()` 只挂在命令上下文上，
-   *     RPC 没有对应入口，宿主必须经这个扩展命令才能触达（见该文件头注释、
-   *     `src/main/native-session-runtime.ts` 与 `docs/ARCHITECTURE.md`）。它是宿主
-   *     内部通道：只有宿主用 `--extension` 显式加载并注入 `YAN_NATIVE_BRIDGE=1`
-   *     时才注册；`agent.ts` 拒绝用户直接发送 `/__inkstone_native`，
-   *     `command-registry.ts` 也会把它从命令表里过滤掉。
-   *   · mcp-app-proxy.js：从宿主下发的只读快照注册 `mcp__` 代理工具。
-   *
-   * 为防「白名单变成无保护空放行」，扫描写成纯函数，并用合成源码做负对照：
-   * 任意 registerTool、非宿主文件的 registerCommand、宿主文件里多注册 / 改名 /
-   * 不用导出的常量 / 缺环境闸门都必须被判为缺陷。
-   */
   {
     const HOST_ONLY_COMMAND_FILE = 'native-session-bridge.js'
     const HOST_ONLY_COMMAND_NAME = '__inkstone_native'
 
-    /** 纯扫描：`sources` 是 [文件名, 源码] 的可迭代。返回缺陷描述数组。 */
     function scanThinLayerSources(sources) {
       const offenders = []
       for (const [file, source] of sources) {
@@ -162,7 +120,6 @@ export async function runExtensionInventoryTests(ok) {
           offenders.push(`${file}:registerCommand`)
           continue
         }
-        /* 唯一命令：恰好一次，且名字必须等于导出的 NATIVE_COMMAND 常量。 */
         if (commandCalls !== 1) {
           offenders.push(`${file}:registerCommand×${commandCalls}`)
           continue
@@ -176,7 +133,6 @@ export async function runExtensionInventoryTests(ok) {
           offenders.push(`${file}:registerCommand-arg`)
           continue
         }
-        /* host-only：必须在注册前拒绝非宿主环境；仅出现比较表达式不算闸门。 */
         const hostGate = /if\s*\(\s*process\.env\.YAN_NATIVE_BRIDGE\s*!==\s*'1'\s*\)\s*return\b/.exec(source)
         if (!hostGate || hostGate.index > source.indexOf('.registerCommand')) {
           offenders.push(`${file}:registerCommand-ungated`)
@@ -190,7 +146,6 @@ export async function runExtensionInventoryTests(ok) {
     const sources = []
     for (const file of files) sources.push([file, await readFile(join(dir, file), 'utf8')])
 
-    /* 真实随包薄层：只允许 native-session-bridge.js 的那一个宿主命令。 */
     const offenders = scanThinLayerSources(sources)
     ok(
       offenders.length === 0,
@@ -198,14 +153,12 @@ export async function runExtensionInventoryTests(ok) {
       offenders.join('、')
     )
 
-    /* 确认真实宿主命令名 / 注册次数 / host-only 闸门，而不是「没报错就算」。 */
     const bridgeSource = sources.find(([file]) => file === HOST_ONLY_COMMAND_FILE)?.[1] ?? ''
     ok(bridgeSource.includes(`export const NATIVE_COMMAND = '${HOST_ONLY_COMMAND_NAME}'`), '宿主命令名精确为 __inkstone_native')
     ok((bridgeSource.match(/\.registerCommand\s*\(/g)?.length ?? 0) === 1, '宿主桥只注册一个命令')
     ok(!/\.registerTool\s*\(/.test(bridgeSource), '宿主桥不注册任何模型工具')
     ok(/YAN_NATIVE_BRIDGE\s*!==\s*'1'/.test(bridgeSource), '宿主桥由 YAN_NATIVE_BRIDGE 环境闸门限制')
 
-    /* 负对照：任何偏离都必须被扫描抓住。 */
     const negative = [
       ['任意文件 registerCommand', [['evil.js', "pi.registerCommand('help', { handler: () => {} })"]]],
       ['任意文件 registerTool', [['evil.js', "pi.registerTool({ name: 'bash', execute: () => {} })"]]],

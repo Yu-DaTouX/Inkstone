@@ -1,42 +1,9 @@
-/**
- * 高危操作确认 —— 薄层侧：判定 + 向宿主要一次确认。
- *
- * ══════════════════════════════════════════════════════════════════
- * 范围（有意收得很窄）
- * ══════════════════════════════════════════════════════════════════
- * 只拦「做错了很难挽回」的那几类：大范围递归删除、丢弃未提交改动 / 强推的 Git 操作、
- * 删库、格式化磁盘、把网络内容直接交给 shell 执行、关机重启、发布包，以及写系统或
- * 凭证目录。普通的写文件、跑测试、装依赖都不问。
- * 另外，MCP 工具不看命令文本，改看服务自报的注解（见下面「MCP 工具注解」段）。
- *
- * ⚠️ 这是**提醒式的护栏，不是沙箱**：靠命令文本识别，绕得开（拼接、编码、脚本里再调用）。
- *    它的作用是让「模型顺手敲出一条毁灭性命令」在执行前多一次人眼确认，不承诺挡住恶意。
- *
- * ── 为什么在薄层 ──
- * `tool_call` 钩子是唯一能在工具执行前看到参数并拦下它的地方（与 work-mode.js 同理）。
- * 确认框在宿主：这里用宿主注入的 `YAN_CLI_URL` 发一条 `danger.confirm`，宿主弹框，
- * 答复回来后才决定放行还是 `{ block: true }`。
- *
- * ── 权限档位（桌面设置 `permissionMode`）──
- * `danger`（缺省，危险批准）：命中高危就问；`all`（全部允许）：砚不额外审批或拦截，保留原生工具行为（2026-10-08）。
- *
- * ── 失败方向 ──
- * 命中高危却连不上宿主 / 没有窗口 / 超时 → **拦下**（宁可让模型换路，也不在没人看着时放行）。
- * 没命中的调用不产生任何网络请求，对正常工作零开销。
- *
- * `YAN_DANGER_GUARD=0` 只给自动化测试用，关闭整个护栏。
- */
-
 import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 
-/** 确认框等用户的最长时间；超过就当作拒绝 */
 const CONFIRM_TIMEOUT_MS = 4 * 60 * 1000
 
-/* ------------------------------------------------------------------ 判定 */
-
-/** 目标路径是不是「大范围」：根、家目录、上级目录、通配、浅层绝对路径 */
 export function isBroadTarget(raw) {
   let target = String(raw ?? '').trim().replace(/^["']+|["']+$/g, '')
   if (!target) return false
@@ -44,7 +11,6 @@ export function isBroadTarget(raw) {
   if (['/', '/*', '~', '~/', '~/*', '.', './', './*', '*', '*.*', '..', '../', '../*'].includes(target)) return true
   if (/^(\$home|\$\{home\}|%userprofile%|%homepath%|\$env:userprofile)\/?$/.test(target)) return true
   if (target.split('/').includes('..')) return true
-  /* 绝对路径：盘符或以 / 开头，且不超过两层（/home/x、c:/users、/usr/local） */
   if (/^([a-z]:)?\//.test(target)) {
     const segments = target.replace(/^[a-z]:/, '').split('/').filter(Boolean)
     return segments.length <= 2
@@ -58,7 +24,6 @@ function tokens(segment) {
   return segment.trim().match(/"[^"]*"|'[^']*'|\S+/g) ?? []
 }
 
-/** 命令段的可执行名与参数：跳过 sudo / 环境变量前缀，去掉目录和 .exe */
 function commandOf(segment) {
   const parts = tokens(segment)
   let start = 0
@@ -67,7 +32,6 @@ function commandOf(segment) {
   return { head, args: parts.slice(start + 1) }
 }
 
-/** 一条命令段里的递归删除：返回被命中的大范围目标，没有则 null */
 function recursiveDeleteTarget({ head, args }) {
   let recursive = false
   if (head === 'rm') {
@@ -84,13 +48,10 @@ function recursiveDeleteTarget({ head, args }) {
   return targets.find(isBroadTarget) ?? null
 }
 
-/** 只在命令位（而不是任意参数里）出现才算：`grep reboot log` 不是重启 */
 const POWER_COMMANDS = new Set(['shutdown', 'reboot', 'halt', 'poweroff', 'stop-computer', 'restart-computer'])
 
-/** `bash -c "…"` / `powershell -Command "…"` / `cmd /c …`：取出脚本部分再判一次 */
 const SHELL_WRAPPER = /^\s*(?:sudo\s+)?(?:\S*[\\/])?(?:bash|sh|zsh|dash|powershell|pwsh|cmd)(?:\.exe)?\s+(?:-\S+\s+)*?(?:-c|-command|\/c)\s+([\s\S]+)$/i
 
-/** 命令文本里的高危模式（整条匹配，不分段） */
 const COMMAND_RULES = [
   { re: /\bgit\s+(?:-\S+\s+)*push\b[^;&|\n]*\s(?:--force(?!-with-lease)\b|-f\b|--mirror\b)/i, label: 'Git 强制推送，会覆盖远端历史' },
   { re: /\bgit\s+reset\b[^;&|\n]*--hard\b/i, label: 'git reset --hard，会丢弃未提交的改动' },
@@ -105,15 +66,9 @@ const COMMAND_RULES = [
   { re: /\bnpm\s+publish\b/i, label: '发布 npm 包（对外发布）' }
 ]
 
-/** 写入这些位置视为高危（写在项目外时才算） */
 const SENSITIVE_PATH =
   /\/(?:\.ssh|\.aws|\.gnupg|\.kube)(?:\/|$)|^\/(?:etc|usr|bin|sbin|boot|lib)(?:\/|$)|^[a-z]:\/windows(?:\/|$)|^[a-z]:\/program files|\/\.(?:bashrc|zshrc|profile|gitconfig|npmrc)$|\/start menu\/programs\/startup/i
 
-/**
- * 统一成小写、正斜杠，并**归一化 `..` 与 `.`**：
- * 不做这一步，`项目/../../Windows/…` 会因为前缀仍是项目根而被当成「在项目里」。
- * 盘符单独拆出来，否则 `..` 会把 `c:` 当成一层目录弹掉。
- */
 function normalizePath(p) {
   const text = String(p ?? '').replace(/\\/g, '/').toLowerCase()
   const match = /^([a-z]:)?(.*)$/.exec(text)
@@ -122,12 +77,10 @@ function normalizePath(p) {
   return drive + (rest ? posix.normalize(rest) : '')
 }
 
-/** 是不是绝对路径（POSIX 根或带盘符），不依赖当前系统的路径规则 */
 function isAbsolutePath(p) {
   return /^(?:[a-z]:)?[\\/]/i.test(p) || /^[a-z]:/i.test(p)
 }
 
-/** 分段扫描一段 shell 文本；`bash -c "…"` 之类的包装最多再往里看两层 */
 function scanCommand(command, reasons, depth = 0) {
   for (const segment of command.split(SEGMENT_SPLIT)) {
     const cmd = commandOf(segment)
@@ -142,10 +95,6 @@ function scanCommand(command, reasons, depth = 0) {
   for (const rule of COMMAND_RULES) if (rule.re.test(command)) reasons.push(rule.label)
 }
 
-/**
- * 判定一次工具调用是否高危。返回原因数组（空 = 不需要确认）。
- * `cwd` 用来判断写入是否落在项目外。
- */
 export function detectDanger(toolName, input, cwd) {
   const reasons = []
   const name = String(toolName ?? '')
@@ -162,7 +111,6 @@ export function detectDanger(toolName, input, cwd) {
       const root = normalizePath(base).replace(/\/$/, '')
       const inside = normalized === root || normalized.startsWith(`${root}/`)
       const home = normalizePath(homedir()).replace(/\/$/, '')
-      /* 家目录下的凭证 / 配置：统一成 ~/ 再比 */
       const shown = normalized.startsWith(`${home}/`) ? `~${normalized.slice(home.length)}` : normalized
       if (!inside && (SENSITIVE_PATH.test(normalized) || SENSITIVE_PATH.test(shown.replace(/^~/, '')))) {
         reasons.push(`修改项目之外的系统或凭证文件：${abs}`)
@@ -172,9 +120,6 @@ export function detectDanger(toolName, input, cwd) {
   return [...new Set(reasons)]
 }
 
-/* ------------------------------------------------------------------ MCP 工具注解 */
-
-/** 服务自报注解只决定是否询问；缺注解默认询问，显式破坏优先于只读。 */
 export function mcpApprovalNeeded(annotations) {
   const hints = annotations && typeof annotations === 'object' ? annotations : {}
   if (hints.destructiveHint === true) return true
@@ -184,13 +129,11 @@ export function mcpApprovalNeeded(annotations) {
   return mayDestroy || mayReachOutside
 }
 
-/** `mcp__<服务>__<工具>` → 展示用的服务与工具名 */
 export function mcpTarget(toolName) {
   const match = /^mcp__(.+?)__(.+)$/.exec(String(toolName ?? ''))
   return { server: match?.[1] ?? '', tool: match?.[2] ?? String(toolName ?? '') }
 }
 
-/** 这次调用要不要问；返回原因数组（空 = 不问）。非 `mcp__` 工具一律不问。 */
 export function mcpCallDanger(toolName, annotations) {
   const name = String(toolName ?? '')
   if (!name.startsWith('mcp__')) return []
@@ -200,7 +143,6 @@ export function mcpCallDanger(toolName, annotations) {
   return [`MCP 工具可能修改数据或对外操作：${target}`]
 }
 
-/** 从 `pi.getAllTools()` 取该工具的注解；取不到返回 undefined（调用方按「要问」处理） */
 function toolAnnotations(pi, toolName) {
   try {
     const tools = pi?.getAllTools?.()
@@ -212,21 +154,10 @@ function toolAnnotations(pi, toolName) {
   }
 }
 
-/* ------------------------------------------------------------------ 项目之外的写入 */
-
-/**
- * 写入项目之外的路径（可选，设置里「写入项目之外要确认」，默认关；只在「危险批准」档生效）。
- *
- * 与上面的 `SENSITIVE_PATH` 不同：这里不看路径「是不是系统或凭证目录」，只看
- * 「是不是在项目、临时目录、pi 数据目录、用户允许的目录之内」。
- * 同样是提醒式护栏：只认文件写入工具，以及 shell 命令里写得出来的重定向与常见写入命令，
- * 拼接、编码、脚本里再调用都绕得开。
- */
 const WRITE_COMMANDS_ALL_ARGS = new Set([
   'rm', 'rmdir', 'del', 'erase', 'rd', 'mkdir', 'md', 'touch', 'chmod', 'chown', 'mv', 'move', 'ren', 'rename',
   'remove-item', 'ri', 'new-item', 'ni', 'move-item', 'mi', 'rename-item', 'rni', 'set-content', 'sc', 'add-content', 'ac', 'out-file', 'clear-content'
 ])
-/* 复制类：只有最后一个参数是被写入的一端，来源只是被读 */
 const WRITE_COMMANDS_LAST_ARG = new Set(['cp', 'copy', 'xcopy', 'robocopy', 'ln', 'install', 'copy-item', 'ci', 'cpi'])
 const PS_PATH_FLAGS = new Set(['-path', '-literalpath', '-filepath', '-destination', '-name'])
 
@@ -235,7 +166,6 @@ function expandHome(text) {
     .replace(/^(~|\$home|\$\{home\}|%userprofile%|%homepath%|\$env:userprofile)(?=[\\/]|$)/i, homedir())
 }
 
-/** `$env:TEMP`、`%LOCALAPPDATA%`、`$TMPDIR` 这类开头的环境变量换成实际值（认不出的原样保留） */
 function expandEnv(text) {
   const lookup = (name) => {
     const key = Object.keys(process.env).find((k) => k.toLowerCase() === name.toLowerCase())
@@ -247,11 +177,9 @@ function expandEnv(text) {
     .replace(/^\$\{?(TMPDIR|TEMP|TMP)\}?(?=[\\/]|$)/, (all, name) => lookup(name) ?? all)
 }
 
-/** 目标路径解析成归一化的绝对路径；`..`、`.` 一并折叠 */
 function resolveTarget(raw, cwd) {
   const cleaned = expandHome(expandEnv(String(raw ?? '').trim().replace(/^["']+|["']+$/g, '')))
   if (!cleaned) return ''
-  /* 通配符：取通配之前的部分，等价于「这一层目录下的东西」 */
   const fixed = cleaned.replace(/[*?].*$/, '')
   const base = String(cwd || process.cwd()).replace(/[\\/]+$/, '')
   return normalizePath(isAbsolutePath(fixed) ? fixed : `${base}/${fixed}`)
@@ -266,7 +194,6 @@ function isInside(target, roots) {
   return roots.some((root) => root && (target === root || target.startsWith(`${root}/`)))
 }
 
-/** 一段 shell 命令里会被写入或删除的路径（原样文本，未解析） */
 function shellWriteTargets(command) {
   const out = []
   const redirect = /(?:^|[\s;&|])\d?>{1,2}\s*("[^"]+"|'[^']+'|[^\s;&|<>]+)/g
@@ -293,10 +220,6 @@ function shellWriteTargets(command) {
   return out
 }
 
-/**
- * 这次调用会写到项目之外的哪些路径（已归一化的绝对路径）。
- * `prefs.outsideWrites` 为假时一律返回空。
- */
 export function outsideWrites(toolName, input, cwd, prefs = {}) {
   if (!prefs.outsideWrites) return []
   const name = String(toolName ?? '')
@@ -319,12 +242,8 @@ export function outsideWrites(toolName, input, cwd, prefs = {}) {
   return [...new Set(hits)].slice(0, 6)
 }
 
-/* ------------------------------------------------------------------ 删除改走回收站 */
-
-/** 删除文件的命令名（只认命令位，`grep rm x` 不算） */
 export const DELETE_HEADS = new Set(['rm', 'rmdir', 'rd', 'del', 'erase', 'unlink', 'remove-item', 'ri', 'shred', 'trash'])
 
-/** 命令里是否含删除（逐段看命令名） */
 export function hasDelete(command) {
   for (const segment of String(command ?? '').split(SEGMENT_SPLIT)) {
     if (DELETE_HEADS.has(commandOf(segment).head)) return true
@@ -332,7 +251,6 @@ export function hasDelete(command) {
   return false
 }
 
-/** 删除命令要删的路径（已解析、归一化）。管道喂进来的目标看不到，返回空数组 */
 export function shellDeleteTargets(command, cwd) {
   const out = []
   for (const segment of String(command ?? '').split(SEGMENT_SPLIT)) {
@@ -349,7 +267,6 @@ export function shellDeleteTargets(command, cwd) {
   return [...new Set(out)]
 }
 
-/** 是不是系统临时目录里的路径：这些删除照常执行，否则清理临时文件腾不出空间 */
 export function isTempPath(target) {
   const roots = [tmpdir(), process.env.TEMP, process.env.TMP, '/tmp', '/var/tmp']
     .filter((p) => typeof p === 'string' && p.trim())
@@ -358,7 +275,6 @@ export function isTempPath(target) {
   return roots.some((root) => normalized !== root && normalized.startsWith(`${root}/`))
 }
 
-/** 拦下删除时给模型的说明 */
 export function trashHint(targets = []) {
   const list = targets.length ? `要删除的是：${targets.slice(0, 6).join('、')}。` : ''
   return '砚的权限设置不对这次删除做确认，删除要移到回收站，方便用户找回。' + list +
@@ -366,11 +282,6 @@ export function trashHint(targets = []) {
     '系统临时目录里的文件可以直接删除。'
 }
 
-/**
- * 桌面设置里与护栏相关的几项。
- * 旧档位（ask / full，或没有这个字段）迁到「危险批准」，并关掉项目外写入确认——与主进程
- * `settings.ts` 的迁移同一口径（设置文件可能还没被重新保存）。读不到就取默认。
- */
 function guardPrefs() {
   try {
     const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
@@ -386,9 +297,6 @@ function guardPrefs() {
   }
 }
 
-/* ------------------------------------------------------------------ 向宿主确认 */
-
-/** Bridge 的原生工具在 pi 钩子之外执行，批准的是整次委派，不能承诺逐条命令审批。 */
 export function claudeDelegationDanger(toolName, input, cwd) {
   if (['read', 'write', 'edit', 'bash', 'powershell', 'grep', 'find', 'ls', 'multi_edit', 'apply_patch'].includes(toolName)) return []
   const readConfig = (path) => {
@@ -410,11 +318,9 @@ async function askHost(toolName, input, reasons, outsideDirs = []) {
   const detail =
     toolName === 'bash' || toolName === 'powershell'
       ? String(input?.command ?? '')
-      /* MCP 工具参数名不固定，整份 JSON 展示；子 Agent 委派同理 */
       : fullDetail || String(toolName ?? '').startsWith('mcp__')
         ? JSON.stringify(input ?? {})
         : String(input?.path ?? input?.file_path ?? input?.filePath ?? '') ||
-          /* 没有路径的工具（如 codemode）至少让用户看到要执行的内容，而不是空白 */
           (typeof input?.code === 'string' ? input.code : JSON.stringify(input ?? {}))
   try {
     const response = await fetch(url, {
@@ -446,7 +352,6 @@ export default function dangerGuardExtension(pi) {
     if (prefs.mode === 'all') return undefined
     const delegation = claudeDelegationDanger(name, event?.input ?? {}, ctx?.cwd)
     if (delegation.length && JSON.stringify(event?.input ?? {}).length > 20000) return { block: true, reason: 'Claude Code 委派任务过长，无法完整展示审批内容。请缩短任务，或使用砚子 Agent。' }
-    /* 只有 MCP 工具才查注解，内置工具的调用路径不额外遍历工具表 */
     const mcpReasons = name.startsWith('mcp__') ? mcpCallDanger(name, toolAnnotations(pi, name)) : []
     const reasons = [...detectDanger(name, event?.input ?? {}, ctx?.cwd), ...delegation, ...mcpReasons]
     if (reasons.length === 0) return undefined

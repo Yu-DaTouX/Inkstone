@@ -1,4 +1,3 @@
-/* 实施-04 S7：能力设置页（cost 0）的真实 Electron / IPC / MCP 接线验收。 */
 ;(async () => {
   const out = []
   const ok = (condition, label, extra = '') => {

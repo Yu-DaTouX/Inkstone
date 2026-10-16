@@ -1,13 +1,3 @@
-/**
- * 可视化回答的真实模型验收（显式 --real 才会请求模型）。
- *
- *   node scripts/test-visual-answer-live.mjs --real --model haiku     # claude-bridge/claude-haiku-5-5 · low（本机已装 pi-claude-bridge）
- *   node scripts/test-visual-answer-live.mjs --real --model luna      # openai-codex/gpt-6-luna · low（只复制这一项 OAuth）
- *   node scripts/test-visual-answer-live.mjs --real --model deepseek  # commandcode/deepseek-v4.1-flash（只复制这一项 key）
- *   node scripts/test-visual-answer-live.mjs --real --model sol       # openai-codex/gpt-6.1-sol · low（只复制这一项 OAuth）
- *
- * 隔离数据目录启动完整 Electron；探针确认模型与档位后才发送；截图与日志存新的本地证据目录。
- */
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
@@ -34,7 +24,6 @@ const data = join(temp, 'data'), pi = join(temp, 'pi'), user = join(temp, 'elect
 await Promise.all([data, pi, user, cwd].map((p) => mkdir(p, { recursive: true })))
 await writeFile(join(data, 'desktop.json'), JSON.stringify({ cwd, theme: 'dark', lang: 'zh-CN', locale: 'zh-CN', onboardingDone: true, appUpdate: { enabled: false }, remoteAccess: { enabled: false } }))
 
-/* 只复制所需的那一项凭证；Claude 订阅走本机 Claude Code 登录，不复制任何凭证 */
 const auth = {}
 if (target.auth) {
   const source = JSON.parse(await readFile(join(homedir(), '.pi/agent/auth.json'), 'utf8'))

@@ -1,13 +1,3 @@
-/**
- * 消息内小部件（```yan-widget）的 v3 版（WP-32 §11.6）。
- *
- * 走现有 `inkstone-html` 隔离协议：无网络、无同源、无宿主对象，CSP 由主进程下发；
- * 宿主注入令牌变量与基础样式。桥是 `yan-widget` 的**安全子集**：
- *   · `ui/initialize` / `ui/notifications/size-changed` / `ui/open-link` / `ui/message` / `ui/update-model-context`；
- *   · 砚扩展 `x-inkstone/state-save` / `x-inkstone/state-restore`；
- *   · 不支持 `tools/call` / `resources/read` / 网络；**不是** MCP Apps 宿主。
- * 追问只填入输入框，绝不自动发送。
- */
 import { useId, useMemo, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -18,7 +8,6 @@ import { ArtifactFrame } from './ArtifactFrame'
 import { deriveWidgetIdentityKey, useNearViewport, usePreviewSnapshot, useWidgetIdentity } from './widget-lifecycle'
 import type { ArtifactForm } from './model'
 
-/** 小部件可用的主题变量（名字对模型稳定，值取自 v3 令牌）。 */
 const THEME_VARS: ReadonlyArray<readonly [string, string]> = [
   ['--bg', '--bg'],
   ['--surface', '--surface'],
@@ -51,10 +40,6 @@ button{font:inherit;color:inherit;background:var(--surface-2);border:1px solid v
 button:hover{border-color:var(--accent)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:1ms!important;transition-duration:1ms!important}}`
 
-/**
- * 页面桥：只 postMessage 结构化消息，不接触宿主对象。
- * 每条消息带 `yanGeneration`，宿主据此拒绝旧实例或伪造来源。
- */
 function bridgeScript(generation: number): string {
   return `(function(){var p=parent,last=0;window.__inkGen=${generation};
 function post(m){m.yanGeneration=window.__inkGen;p.postMessage(m,'*')}
@@ -84,9 +69,7 @@ function buildDocument(html: string, generation: number): string {
 <script>${bridgeScript(generation)}</script></head><body>${html}</body></html>`
 }
 
-/** 内存态保存：页面申请保存时记下文本；重开同一位置时下发。 */
 const savedWidgetState = new Map<string, string>()
-/** 每个实例的文档代号：StrictMode 双调用下也只用提交的那一份。 */
 let widgetGeneration = 0
 
 export interface WidgetBlockProps {
@@ -106,18 +89,12 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
   const markdownIdentity = useWidgetIdentity()
   const tooLarge = html.length > VISUAL_WIDGET_MAX_CHARS
 
-  /* 文档与代号一次生成：prepare 与桥码里的代号一致，旧实例消息自然被拒。 */
   const build = useMemo(() => {
     if (tooLarge) return null
     const generation = ++widgetGeneration
     return { doc: buildDocument(html, generation), generation }
   }, [html, tooLarge])
 
-  /*
-   * 身份：优先用 Markdown 传下的真实 session/message；缺真实身份时退到
-   * `useId`（Markdown 实例 + Widget 实例），绝不用全局 `'widget'` 或裸 offset。
-   * 同一份缓存正文被两条消息复用时也各自独立。
-   */
   const key = deriveWidgetIdentityKey({
     sessionId: markdownIdentity?.sessionId ?? null,
     messageId: markdownIdentity?.messageId ?? null,
@@ -126,7 +103,6 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
     widgetId
   })
 
-  /* 快照按 near 懒申请、受全局 budget 约束；离屏/卸载释放，迟到的 prepare 也会归还。 */
   const [near, nearRef] = useNearViewport<HTMLElement>()
   const snapshot = usePreviewSnapshot({
     identityKey: key,

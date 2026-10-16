@@ -1,4 +1,3 @@
-/** Formal subagent concurrency benchmark. Real CC is opt-in, exact Haiku 5.5 low. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdtemp,mkdir,writeFile,readFile,rm } from 'node:fs/promises'

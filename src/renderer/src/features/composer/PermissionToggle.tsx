@@ -6,13 +6,6 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '../../../../shared/approval'
 
-/**
- * 输入框底部一行的权限入口（WP-24，方案 §8.7）。
- *
- * 两档全局设置直接落 `settings.permissionMode`，不恢复旧工作模式。
- * 「自动批准」（danger）是缺省；切到「不受限制」（all）会让砚不再审批也不拦截，
- * 所以必须先弹一次确认，确认后才写设置。
- */
 export function PermissionToggle() {
   const t = useT()
   const permission = normalizePermissionMode(useStore((s) => s.settings?.permissionMode))

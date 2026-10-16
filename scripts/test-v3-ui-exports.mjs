@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 原语正式出口 / 样式挂载 / 可导入小检查（本地静态 + SSR）。
- *
- * 只做三件能在没有 Storybook、没有构建、没有浏览器时可靠完成的事：
- *   1. 静态核对 `ui/index.ts` 已正式导出 Slider、Tree 家族、Table 家族与 Splitter，
- *      且 `sortRows` 作为表格排序纯函数也经同一出口转出；
- *   2. 静态核对样式挂载：Slider / Tree 由 `ui.css` 顶层 `@import` 聚合挂载一次，
- *      Table / Splitter 由各自组件自带 `import './*.css'`，两边都不重复挂载，
- *      也不把 features 规则混进原语；
- *   3. 用 esbuild 转译真实生产模块 `ui/index.ts`，经 `react-dom/server` 渲染四个
- *      原语，证明「从正式出口可以导入真实组件」。
- *
- * 它**不**做交互、a11y、视觉、性能或 Storybook 验证；通过这里只代表出口与样式
- * 装配正确，外观仍要以真实运行结果为准。
- *
- * 可独立执行：`node scripts/test-v3-ui-exports.mjs`。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -45,7 +28,6 @@ function installGlobals() {
     removeItem: (k) => storage.delete(String(k)),
     clear: () => storage.clear()
   }
-  /* RAC 组件在 import 期会读这些全局对象；SSR 下给最小 shim 即可。 */
   function ElementShim() {}
   ElementShim.prototype = { focus() {}, blur() {}, addEventListener() {}, removeEventListener() {} }
   globalThis.HTMLElement = ElementShim
@@ -95,7 +77,6 @@ async function buildBundle(outdir) {
 }
 
 async function main() {
-  /* ---------- 1. 正式出口 ---------- */
 
   const indexSource = await read('src/renderer/src/ui/index.ts')
   for (const module of ['./Slider', './Tree', './Table', './table-model', './Splitter']) {
@@ -126,8 +107,6 @@ async function main() {
     ok(new RegExp(`\\b${name}\\b`).test(indexSource), `ui/index.ts 导出 ${name}`)
   }
 
-  /* ---------- 2. 样式挂载 ---------- */
-
   const uiCss = await read('src/renderer/src/ui/ui.css')
   ok(count(uiCss, "@import './Slider.css';") === 1, 'ui.css 只挂载一次 Slider.css')
   ok(count(uiCss, "@import './Tree.css';") === 1, 'ui.css 只挂载一次 Tree.css')
@@ -153,8 +132,6 @@ async function main() {
     ok(css.includes('@layer primitives'), `${file} 规则落在 primitives 层`)
     ok(!/features\//.test(css), `${file} 不引用 features 样式`)
   }
-
-  /* ---------- 3. 从正式出口导入并 SSR ---------- */
 
   installGlobals()
   const outdir = await mkdtemp(join(tmpdir(), 'inkstone-v3-ui-exports-'))

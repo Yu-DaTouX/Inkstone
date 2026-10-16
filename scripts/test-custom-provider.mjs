@@ -1,12 +1,3 @@
-/*
- * 自定义 API 服务单测（src/shared/custom-provider.ts，实施-23 M1）。
- *
- * 重点不是"能不能存"，而是：
- *   · 砚只动 `yan-` 前缀的条目，用户手工写的 provider 与未知字段必须原样保留；
- *   · 密钥永远不回明文，`!command` 一律拒绝；
- *   · 坏输入（空模型、重复 id、非法 URL）要有可读的拒绝理由。
- */
-
 export async function runCustomProviderTests(ok, mod) {
   const {
     validateCustomProvider,
@@ -20,7 +11,6 @@ export async function runCustomProviderTests(ok, mod) {
     PI_API_IDS
   } = mod
 
-  /* ── api 选择表 ── */
   ok(
     CUSTOM_API_CHOICES.every((choice) => PI_API_IDS.includes(choice.id)),
     '通用表单里的协议都在 pi 的 api ID 集合内'
@@ -30,7 +20,6 @@ export async function runCustomProviderTests(ok, mod) {
     '需要项目/区域/凭证的协议不出现在通用表单里'
   )
 
-  /* ── id 与危险前缀 ── */
   ok(isYanProviderId('yan-my-api') === true, 'yan- 前缀的 id 合法')
   ok(isYanProviderId('openai') === false, '非 yan- 前缀不属于砚（不碰用户的 provider）')
   ok(isYanProviderId('yan-') === false, '空前缀不合法')
@@ -38,7 +27,6 @@ export async function runCustomProviderTests(ok, mod) {
   ok(hasExecutablePrefix('!curl secret') === true, '! 开头的可执行字符串被识别')
   ok(hasExecutablePrefix('sk-abc') === false, '普通 key 不算可执行字符串')
 
-  /* ── Base URL ── */
   ok(validateBaseUrl('https://api.example.com/v1') === null, 'https 合法')
   ok(validateBaseUrl('http://127.0.0.1:8080/v1') === null, '本地 http 合法')
   ok(typeof validateBaseUrl('ftp://x') === 'string', '非 http(s) 协议被拒')
@@ -46,7 +34,6 @@ export async function runCustomProviderTests(ok, mod) {
   ok(typeof validateBaseUrl('!curl evil') === 'string', '! 开头的 URL 被拒')
   ok(typeof validateBaseUrl('') === 'string', '空 URL 被拒')
 
-  /* ── 表单校验 ── */
   const good = validateCustomProvider({
     id: 'yan-demo',
     api: 'openai-completions',
@@ -100,7 +87,6 @@ export async function runCustomProviderTests(ok, mod) {
   })
   ok(execModel.ok === false, '! 开头的模型 ID 被拒')
 
-  /* ── 读回：不回密钥明文 ── */
   const disk = {
     providers: {
       'yan-demo': {
@@ -120,7 +106,6 @@ export async function runCustomProviderTests(ok, mod) {
   ok(!JSON.stringify(views).includes('sk-super-secret'), '读回结果里没有密钥明文')
   ok(views[0].models[0].name === 'Demo', '模型字段被读出')
 
-  /* ── 合并：保留其它 provider 与未知字段 ── */
   const merged = mergeCustomProviders(
     disk,
     [{ id: 'yan-demo', api: 'openai-responses', baseUrl: 'https://new.example.com/v1', models: [{ id: 'demo-2' }] }],
@@ -139,35 +124,27 @@ export async function runCustomProviderTests(ok, mod) {
   ])
   ok((withNewKey.next.providers)['yan-demo'].apiKey === 'sk-new', '填了新密钥就覆盖')
 
-  /* ── 删除只删自己的 ── */
   const removed = mergeCustomProviders(disk, [], ['yan-demo'])
   ok(!(removed.next.providers)['yan-demo'], '删除移除砚的条目')
   ok(!!(removed.next.providers).openai, '删除不动用户的 provider')
   const removedForeign = mergeCustomProviders(disk, [], ['openai'])
   ok(!!(removedForeign.next.providers).openai, '传入非 yan- 前缀的删除请求会被忽略')
 
-  /* ── 坏磁盘数据 ── */
   ok(readCustomProviders(null).length === 0, '没有 models.json 时返回空列表')
   ok(readCustomProviders({ providers: 'bad' }).length === 0, 'providers 不是对象时返回空列表')
   ok(readCustomProviders({ providers: { 'yan-x': null } }).length === 1, '条目是 null 也能读（不抛）')
   const untouched = mergeCustomProviders(null, [], [])
   ok(untouched.changed === false, '没有任何改动时不写盘')
 
-  /* ── 遮罩 ── */
   const masked = maskCustomProvider({ id: 'yan-a', api: 'openai-completions', baseUrl: 'https://x', models: [], hasApiKey: true })
   ok(masked.apiKeyLabel === '••••••' && !JSON.stringify(masked).includes('sk-'), '遮罩只显示存在状态')
 
   await runCapabilityTests(ok, mod)
 }
 
-/*
- * 接入时补齐模型能力：中转站的 /models 往往只给 id，能否思考、单模型协议要从端点附带字段
- * 与 pi 自带模型目录里找。用户反馈「有些模型没思考档位」就是因为这一步缺失。
- */
 async function runCapabilityTests(ok, mod) {
   const { parseModelEntries, parseModelList, describeDiscoveredModels, catalogKey, validateCustomProvider, readCustomProviders } = mod
 
-  /* ── 端点附带的能力字段 ── */
   const commandcode = {
     object: 'list',
     data: [
@@ -184,11 +161,9 @@ async function runCapabilityTests(ok, mod) {
   const openrouter = parseModelEntries({ data: [{ id: 'a/b', supported_parameters: ['tools', 'reasoning'], architecture: { input_modalities: ['text', 'image'] } }] })
   ok(openrouter[0].reasoning === true && openrouter[0].image === true, 'OpenRouter 式 supported_parameters / input_modalities 被识别')
 
-  /* ── 归一化键 ── */
   ok(catalogKey('Qwen/Qwen3.8-Max') === 'qwen3-8-max' && catalogKey('x:free') === 'x', '键去掉厂商前缀、:free 与点号差异')
   ok(catalogKey(' deepseek/deepseek-v4-pro ') === catalogKey('deepseek-v4-pro'), '带不带厂商前缀查到同一个键')
 
-  /* ── 随包扩展用的生成物与 TS 源一致（扩展与设置页共用这一套判断） ── */
   const { spawnSync } = await import('node:child_process')
   const fresh = spawnSync(process.execPath, ['scripts/build-model-capabilities.mjs', '--check'], { encoding: 'utf8' })
   ok(fresh.status === 0, 'resources/pi-extensions/generated/model-capabilities.mjs 与 TS 源一致', (fresh.stderr || fresh.stdout).trim())
@@ -217,7 +192,6 @@ async function runCapabilityTests(ok, mod) {
   )
   ok(anthropicProvider[0].api === 'openai-completions' && anthropicProvider[0].baseUrl === 'https://relay.example.com/v1', 'Anthropic 服务里只开放 Chat Completions 的模型补上 /v1')
 
-  /* ── 校验与读回保留单模型字段 ── */
   const valid = validateCustomProvider({ id: 'yan-relay', api: 'openai-completions', baseUrl: 'https://api.example.com/v1', models: described })
   ok(valid.ok, '带单模型协议的条目能通过校验')
   const kept = valid.value?.models[0]
@@ -231,7 +205,6 @@ async function runCapabilityTests(ok, mod) {
   const views = readCustomProviders({ providers: { 'yan-relay': { api: 'openai-completions', baseUrl: 'https://a.example/v1', models: [{ id: 'c', api: 'anthropic-messages', baseUrl: 'https://a.example', reasoning: true, thinkingLevelMap: { max: 'max', bogus: 'x' } }] } } })
   ok(views[0].models[0].api === 'anthropic-messages' && views[0].models[0].thinkingLevelMap?.bogus === undefined, '读回保留单模型协议，丢弃未知档位键')
 
-  /* ── 随包能力表：生成过、覆盖常见原厂模型 ── */
   const { readFileSync } = await import('node:fs')
   const table = JSON.parse(readFileSync('resources/pi-extensions/generated/pi-model-catalog.json', 'utf8'))
   const models = table.models ?? {}
@@ -239,16 +212,11 @@ async function runCapabilityTests(ok, mod) {
   ok(models['claude-sonnet-4-6']?.reasoning === true && models['claude-sonnet-4-6']?.api === 'anthropic-messages', '能力表里 Claude 取原厂条目且支持思考')
   await runCommandcodeExtensionTests(ok, table.models)
 
-  /* 升级 pi 后忘了重新生成能力表，新模型就又没有思考档位 */
   let runtime
   try { runtime = JSON.parse(readFileSync('resources/pi-runtime/current.json', 'utf8')).version } catch { runtime = undefined }
   ok(!runtime || runtime === table.piVersion, `能力表对应随包 pi 版本（表 ${table.piVersion} / 运行时 ${runtime ?? '无'}；不一致就跑 node scripts/gen-pi-model-catalog.mjs）`)
 }
 
-/*
- * 内置 Command Code 扩展（resources/pi-extensions/commandcode.js）：凭证页填了密钥的新用户
- * 不手写 models.json 也要有模型，且能思考的模型要有档位。
- */
 async function runCommandcodeExtensionTests(ok, catalog) {
   const { mkdtempSync, writeFileSync, rmSync, existsSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
@@ -288,14 +256,12 @@ async function runCommandcodeExtensionTests(ok, catalog) {
     const failing = await ext.fetchModels(catalog, async () => ({ ok: false, status: 503 })).then(() => 'resolved', () => 'rejected')
     ok(failing === 'rejected', '端点出错时抛出，由调用方沿用缓存')
 
-    /* 扩展入口：凭证在、未手写 → 注册；手写 → 不注册 */
     const registered = []
     const pi = { registerProvider: (id, config) => registered.push({ id, config }) }
     rmSync(join(dir, 'models.json'))
     writeFileSync(join(dir, 'yan-commandcode-models.json'), JSON.stringify({ models: entries }))
     const prev = process.env.PI_CODING_AGENT_DIR
     const realFetch = globalThis.fetch
-    /* 后台刷新不能真的联网：单测离线 */
     globalThis.fetch = async () => ({ ok: true, json: async () => body })
     process.env.PI_CODING_AGENT_DIR = dir
     try {

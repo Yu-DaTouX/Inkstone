@@ -1,16 +1,3 @@
-/**
- * R4 `features/diff` 纯逻辑单测（P3 工单）。
- *
- * 只编译 `src/renderer/src/features/diff/pure.ts`（纯函数：无 React / DOM /
- * Electron / IO），用 esbuild 打包后在 Node 里直接跑。合成补丁写在
- * `os.tmpdir()` 的临时目录里，**不对用户仓库跑任何 git 命令**，不启动应用、
- * 不碰用户数据、不拉模型。
- *
- *   node scripts/test-v3-diff.mjs
- *
- * 覆盖：统一补丁解析（多文件 / 行号 / 增删统计 / 新删改名 / 二进制 / 引号
- * 路径 / 无 hunk 头 / CRLF）、并排对齐、词级差异、折叠未改动段、大输入降级。
- */
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -31,7 +18,6 @@ const mod = await import(`data:text/javascript;base64,${Buffer.from(result.outpu
 
 const { alignHunk, byteLength, DIFF_LIMITS, foldLines, formatBytes, isBinaryPatch, patchExceedsLimit, parsePatch, tokenizeLine, unquotePath, wordDiff } = mod
 
-/* ── 在系统临时目录造合成补丁（不碰用户仓库） ───────────────── */
 const workdir = mkdtempSync(join(tmpdir(), 'yan-v3-diff-'))
 const patchPath = join(workdir, 'synthetic.patch')
 const patchText = [
@@ -51,7 +37,6 @@ writeFileSync(patchPath, patchText, 'utf8')
 const readBack = readFileSync(patchPath, 'utf8')
 rmSync(workdir, { recursive: true, force: true })
 
-/* ── 解析：单文件、行号、增删统计、section ───────────────────── */
 {
   const parsed = parsePatch(readBack)
   assert.equal(parsed.files.length, 1, '一个文件')
@@ -82,7 +67,6 @@ rmSync(workdir, { recursive: true, force: true })
   assert.equal(hunk.lines[1].raw, '-const b = 2', 'raw 保留完整前缀')
 }
 
-/* ── 解析：多文件、新 / 删 / 改名、二进制 ──────────────────── */
 {
   const multi = [
     'diff --git a/old/name.ts b/new/name.ts',
@@ -128,7 +112,6 @@ rmSync(workdir, { recursive: true, force: true })
   assert.equal(binary.path, 'img.png', '二进制也要有文件名')
 }
 
-/* ── 解析：引号化中文路径、CRLF、无 hunk 头 ─────────────────── */
 {
   assert.equal(unquotePath('"\\344\\270\\255.txt"'), '中.txt', '八进制转义还原 UTF-8 中文')
   const quoted = ['diff --git "a/\\346\\226\\207.txt" "b/\\346\\226\\207.txt"', '--- "a/\\346\\226\\207.txt"', '+++ "b/\\346\\226\\207.txt"', '@@ -1 +1 @@', '-a', '+b'].join('\n')
@@ -144,7 +127,6 @@ rmSync(workdir, { recursive: true, force: true })
   assert.equal(parsedImplicit.files[0].hunks[0].lines[0].oldLine, null, '隐式 hunk 不捏造行号')
 }
 
-/* ── 解析：`--- 内容` 是删除行而不是文件标记 ─────────────────── */
 {
   const tricky = ['diff --git a/x b/x', '--- a/x', '+++ b/x', '@@ -1,2 +1,2 @@', '--- became minus minus', '+++ plus plus'].join('\n')
   const hunk = parsePatch(tricky).files[0].hunks[0]
@@ -153,7 +135,6 @@ rmSync(workdir, { recursive: true, force: true })
   assert.equal(hunk.lines[1].kind, 'add', 'hunk 内 +++ 视为新增行')
 }
 
-/* ── 解析：不编造增删统计 ──────────────────────────────────── */
 {
   const patch = ['--- a/x', '+++ b/x', '@@ -1,5 +1,5 @@', ' ctx', ' ctx', ' ctx'].join('\n')
   const file = parsePatch(patch).files[0]
@@ -161,7 +142,6 @@ rmSync(workdir, { recursive: true, force: true })
   assert.equal(file.deletions, 0)
 }
 
-/* ── 并排对齐 ─────────────────────────────────────────────── */
 {
   const patch = ['--- a/x', '+++ b/x', '@@ -1,4 +1,5 @@', ' keep', '-a1', '-a2', '+b1', '+b2', '+b3', ' tail'].join('\n')
   const hunk = parsePatch(patch).files[0].hunks[0]
@@ -173,7 +153,6 @@ rmSync(workdir, { recursive: true, force: true })
   )
 }
 
-/* ── 词级差异 ─────────────────────────────────────────────── */
 {
   const same = wordDiff('const a = 1', 'const a = 1')
   assert.equal(same.changed, false, '完全一致不标红')
@@ -198,7 +177,6 @@ rmSync(workdir, { recursive: true, force: true })
   assert.equal(fallback.left[0].changed, true)
 }
 
-/* ── 折叠未改动段 ─────────────────────────────────────────── */
 {
   const lines = [
     ...Array.from({ length: 10 }, (_, i) => ({ kind: 'context', text: `ctx${i}`, raw: ` ctx${i}`, oldLine: i + 1, newLine: i + 1 })),
@@ -224,7 +202,6 @@ rmSync(workdir, { recursive: true, force: true })
   assert.deepEqual(foldLines([], 3), [], '空输入')
 }
 
-/* ── 大输入 / 二进制降级 ──────────────────────────────────── */
 {
   assert.equal(byteLength('中'), 3, 'UTF-8 字节数')
   assert.equal(formatBytes(2048), '2.0 KB')

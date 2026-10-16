@@ -1,20 +1,3 @@
-/**
- * P3 只读 Git 改动读取的**隔离**验证。
- *
- * 验的是真 git + 真 handler，不是纯 parser：把 `src/main/ipc/git-ipc.ts` 与
- * `src/main/git-inspect.ts` 用 esbuild 打到临时目录，注册进一个只收处理器的
- * 假 registrar，然后用 `os.tmpdir()` 里的**临时仓库**逐个调用。
- *
- *   node scripts/test-v3-git-inspect.mjs
- *
- * 不启动 Electron、不拉模型、不碰用户仓库、不碰用户数据。临时仓库会造
- * index fixture（`git add` 只在测试自己建的目录里），并断言读取前后
- * index / HEAD **逐字节不变**。
- *
- * 覆盖：中文 / 空格 / rename / 新增 / 删除 / 已暂存+未暂存 / 未跟踪 / 无 HEAD
- * 的 cached diff / 二进制 / 超大截断 / 越界·绝对·魔法·NUL·目录路径拒绝 /
- * 软链接逃逸拒绝 / external diff 与 textconv 不执行 / 授权根·子目录拒绝。
- */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -24,7 +7,6 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
-/* ── 打包主进程模块（不启动 Electron） ─────────────────────── */
 const ipcBundle = join(tmpdir(), `yan-v3-git-inspect-ipc-${process.pid}.mjs`)
 const inspectBundle = join(tmpdir(), `yan-v3-git-inspect-lib-${process.pid}.mjs`)
 await build({
@@ -46,7 +28,6 @@ await build({
 const { registerGitIpc } = await import(pathToFileURL(ipcBundle).href)
 const { normalizeRelPath } = await import(pathToFileURL(inspectBundle).href)
 
-/* ── 真 git（隔离 config，不读用户全局设置） ───────────────── */
 const GIT_ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: 'yan-test',
@@ -66,12 +47,6 @@ function git(cwd, args, extraEnv) {
   })
 }
 
-/*
- * 隔离 **production** 调用的环境：handler 里的 `gitRun` 继承 `process.env`，
- * 上面 GIT_ENV 只包住 setup 用的 `git()`，管不到它。这里把测试进程自己的
- * GIT_CONFIG_GLOBAL/SYSTEM 指到空设备、清掉 GIT_CONFIG_PARAMETERS/COUNT，
- * 让 handler 也不会读用户全局配置或命令行注入的 config；不碰任何真实配置文件。
- */
 const PROCESS_ENV_PREV = {}
 for (const key of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_TERMINAL_PROMPT']) {
   PROCESS_ENV_PREV[key] = process.env[key]
@@ -88,7 +63,6 @@ function restoreProcessEnv() {
   }
 }
 
-/* ── 假 registrar：只收集处理器，让测试直接调用 ───────────── */
 function makeRegistrar() {
   const handlers = new Map()
   return {
@@ -114,10 +88,6 @@ function pathKey(value) {
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized
 }
 
-/**
- * 假 `authorizeReadCwd`：模仿 `resolveFileContext` 的语义 —— 只有 cwd 的
- * realpath 精确等于某个已授权目录才放行。记录每次调用，供断言「handler 真的调用了」。
- */
 function makeAuthorize(allowedAbs) {
   const allowed = new Set(allowedAbs.map((path) => pathKey(realpathSync(path))))
   const calls = []
@@ -159,7 +129,6 @@ function check(name, fn) {
   }
 }
 
-/* ── 造一个带各种状态的仓库 ───────────────────────────────── */
 const repo = join(workdir, 'repo')
 mkdirSync(repo, { recursive: true })
 git(repo, ['init', '-q', '-b', 'main'])
@@ -178,7 +147,6 @@ mkdirSync(join(repo, 'assets'), { recursive: true })
 git(repo, ['add', '-A'])
 git(repo, ['commit', '-q', '-m', 'init'])
 
-/* 工作区状态：未暂存 / 已暂存+未暂存 / 中文空格 / 改名 / 新增 / 删除 / 未跟踪 */
 writeFileSync(join(repo, 'tracked.txt'), 'one\nTWO\nthree\nfour\n')
 writeFileSync(join(repo, 'both.txt'), 'staged line\n')
 git(repo, ['add', 'both.txt'])
@@ -193,7 +161,6 @@ writeFileSync(join(repo, 'untracked.txt'), 'u1\nu2\nu3\n')
 writeFileSync(join(repo, 'assets', 'blob.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x00]))
 writeFileSync(join(repo, 'subdir', 'inner.txt'), 'inner changed\n')
 
-/* 软链接逃逸（Windows 无权限时跳过） */
 let symlinkOk = false
 const outsideFile = join(workdir, 'outside-secret.txt')
 writeFileSync(outsideFile, 'TOP SECRET\n')
@@ -204,7 +171,6 @@ try {
   symlinkOk = false
 }
 
-/* ── index / HEAD 基线（读取前后必须逐字节一致） ───────────── */
 const indexPath = join(repo, '.git', 'index')
 const indexBefore = readFileSync(indexPath)
 const headBefore = git(repo, ['rev-parse', 'HEAD']).trim()
@@ -212,7 +178,6 @@ const headBefore = git(repo, ['rev-parse', 'HEAD']).trim()
 const authorize = makeAuthorize([repo])
 const reg = register(authorize)
 
-/* ── 1. changes：逐文件条目 ───────────────────────────────── */
 let changes
 {
   const before = authorize.calls.length
@@ -275,7 +240,6 @@ check('子目录改动也在范围里', () => {
   assert.ok(byPath.has('subdir/inner.txt'), '缺少 subdir/inner.txt')
 })
 
-/* ── 2. diff：单文件真实补丁 ──────────────────────────────── */
 {
   const diff = await reg.invoke('yan:git:diff', { cwd: repo, path: 'both.txt' })
   check('both.txt：ok / staged / unstaged / 两个片段', () => {
@@ -311,7 +275,6 @@ check('子目录改动也在范围里', () => {
   })
 }
 
-/* ── 3. 未跟踪文件的新文件补丁（自己读内容，不 git add） ────── */
 {
   const diff = await reg.invoke('yan:git:diff', { cwd: repo, path: 'untracked.txt' })
   check('未跟踪文件：安全新文件补丁', () => {
@@ -333,7 +296,6 @@ check('子目录改动也在范围里', () => {
   })
 }
 
-/* ── 4. 超大未跟踪文件：明确截断 ──────────────────────────── */
 {
   const lines = []
   for (let i = 0; i < 150_000; i++) lines.push(`line-${i}-0123456789`)
@@ -348,7 +310,6 @@ check('子目录改动也在范围里', () => {
   })
 }
 
-/* ── 5. 路径拒绝（越界 / 绝对 / 魔法 / NUL / 目录） ────────── */
 {
   const bad = [
     ['绝对路径', join(repo, 'tracked.txt')],
@@ -371,20 +332,17 @@ check('子目录改动也在范围里', () => {
   }
 }
 
-/* ── 6. 软链接逃逸 ───────────────────────────────────────── */
 if (symlinkOk) {
   const diff = await reg.invoke('yan:git:diff', { cwd: repo, path: 'link-out.txt' })
   check('软链接逃逸被拒绝', () => {
     assert.equal(diff.ok, false, '软链接不应被跟随读取')
     assert.equal(diff.patch, '')
-    /* 指向范围外时 realpath 校验先拦下，消息可能是两者之一；都安全 */
     assert.match(String(diff.error), /符号链接|超出授权范围/)
   })
 } else {
   console.log('  skip 软链接逃逸（本机无创建符号链接权限）')
 }
 
-/* ── 7. 授权拒绝（fail closed） ───────────────────────────── */
 {
   const denyAuthorize = makeAuthorize([])
   const regDeny = register(denyAuthorize)
@@ -403,7 +361,6 @@ if (symlinkOk) {
   })
 }
 
-/* ── 8. 只授权子目录：不借 Git 读未授权祖先根 ─────────────── */
 {
   const sub = join(repo, 'subdir')
   const subAuthorize = makeAuthorize([sub])
@@ -440,7 +397,6 @@ if (symlinkOk) {
   })
 }
 
-/* ── 9. 无 HEAD 的 cached diff ────────────────────────────── */
 {
   const unborn = join(workdir, 'unborn')
   mkdirSync(unborn, { recursive: true })
@@ -465,7 +421,6 @@ if (symlinkOk) {
   })
 }
 
-/* ── 10. 读取前后 index / HEAD 逐字节不变 ─────────────────── */
 {
   const indexAfter = readFileSync(indexPath)
   const headAfter = git(repo, ['rev-parse', 'HEAD']).trim()
@@ -477,7 +432,6 @@ if (symlinkOk) {
   })
 }
 
-/* ── 11. external diff / textconv 不能被执行 ───────────────── */
 {
   const sentinelExt = join(workdir, 'sentinel-ext.txt')
   const sentinelConv = join(workdir, 'sentinel-conv.txt')
@@ -488,12 +442,10 @@ if (symlinkOk) {
   process.env.YAN_EXT_SENTINEL = sentinelExt
   process.env.YAN_CONV_SENTINEL = sentinelConv
 
-  /* 先用**未加保护**的 git 证明夹具真的会执行外部程序，否则否定断言是空的 */
   git(repo, ['config', 'diff.external', `node ${JSON.stringify(extScript)}`])
   try {
     git(repo, ['--no-pager', 'diff', '--ext-diff', '--', 'tracked.txt'], { YAN_EXT_SENTINEL: sentinelExt })
   } catch {
-    /* 外部 diff 的退出码不关心 */
   }
   const fixtureRan = existsSync(sentinelExt)
   rmSync(sentinelExt, { force: true })
@@ -507,7 +459,6 @@ if (symlinkOk) {
     assert.equal(existsSync(sentinelExt), false, 'diff.external 被执行了')
   })
 
-  /* 再给 textconv 一个驱动：同样先证明会执行，再证明我们的通道不执行 */
   git(repo, ['config', '--unset', 'diff.external'])
   writeFileSync(join(repo, '.gitattributes'), '*.txt diff=yanconv\n')
   git(repo, ['config', 'diff.yanconv.textconv', `node ${JSON.stringify(convScript)}`])
@@ -532,7 +483,6 @@ if (symlinkOk) {
   delete process.env.YAN_CONV_SENTINEL
 }
 
-/* ── 12. 纯函数 normalizeRelPath ──────────────────────────── */
 check('normalizeRelPath', () => {
   assert.equal(normalizeRelPath('a/b.txt'), 'a/b.txt')
   assert.equal(normalizeRelPath('中文 及空格.txt'), '中文 及空格.txt')
@@ -546,14 +496,12 @@ check('normalizeRelPath', () => {
   assert.equal(normalizeRelPath(''), null)
 })
 
-/* ── 清理 ─────────────────────────────────────────────────── */
 rmSync(workdir, { recursive: true, force: true })
 restoreProcessEnv()
 try {
   rmSync(ipcBundle, { force: true })
   rmSync(inspectBundle, { force: true })
 } catch {
-  /* Windows 上已加载的 ESM 可能暂时删不掉；临时目录会自行回收 */
 }
 
 if (failures > 0) {

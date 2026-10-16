@@ -1,17 +1,3 @@
-/*
- * R 真实模型 v3 场景：只读评审 R 运行（scripts/probe/v3-real-review.js）。
- *
- * 场景 cwd 是 test-live fixture 里那个**故意做脏**的 `review/` 临时 Git 仓库
- *（fixtureSub: 'review'）：有未暂存修改 / 已暂存新增 / 删除 / 重命名 / 未跟踪文件。
- * 探针经正式桥 `window.yan.review` 发起评审，验：
- *   · 运行注册表出现 `kind:'review'` 且 `code` 以 R 开头；
- *   · 只读：评审前后变更集 revision 与目标文件 stat 都不变；
- *   · 结束收口一次（运行历史里该 R 号只有一条终态记录）；
- *   · 评审子运行返回意见文本（JSON findings）。
- *
- * 只调模型 1 次（评审子运行）；不 push、不提交、不联网（模型调用除外）。
- * 模型固定 commandcode/deepseek/deepseek-v4.1-flash。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => {
@@ -26,7 +12,6 @@
       try {
         if (await predicate()) return true
       } catch {
-        /* 还没就绪，继续轮询 */
       }
       await wait(100)
     }
@@ -67,7 +52,6 @@
     try {
       localStorage.setItem('yan.onboarded', '1')
     } catch {
-      /* 存储不可用不影响断言 */
     }
     const onboarding = document.querySelector('.v3-ob-overlay')
     if (onboarding) {
@@ -78,7 +62,6 @@
     const cwd = store.getState().settings?.cwd || store.getState().session?.cwd || ''
     check(!!cwd, `场景 cwd 可用（${cwd}）`)
 
-    /* ---- 0a. 造一个明显缺陷：让评审有可引用的补丁内容 ---- */
     const piReady = await until(() => store.getState().conn === 'ready', 120000)
     check(piReady, `pi 已就绪（conn=${store.getState().conn}）`)
     const defectSource = [
@@ -105,7 +88,6 @@
     }
     if (!defectPath) note('未写入缺陷文件，只用现有脏改动做评审')
 
-    /* ---- 0. 评审前：变更集与只读基线 ---- */
     const csBefore = await window.yan.review.changeSet({ source: 'uncommitted', cwd })
     check(csBefore?.ok === true && (csBefore.files?.length ?? 0) > 0, `未提交变更集可读（${csBefore?.files?.length ?? 0} 个文件）`)
     const target = (csBefore.files ?? []).find((f) => !f.binary && f.status !== 'deleted' && !f.untracked && f.status !== 'renamed')
@@ -118,7 +100,6 @@
     }
     note(`只读基线文件：${target ? target.path : '(无文本文件)'}${statBefore ? ` mtime=${statBefore.mtimeMs} size=${statBefore.size}` : ''}`)
 
-    /* ---- 1. 发起评审 ---- */
     const session = store.getState().session
     const started = await window.yan.review.start({
       query: { source: 'uncommitted', cwd },
@@ -131,7 +112,6 @@
     const runId = started?.runId
     check(!!runId, `返回子运行 runId（${runId}）`)
 
-    /* ---- 2. 运行注册表：kind:'review' + 结束收口 ---- */
     out.push('')
     out.push('--- 运行注册表 ---')
     let snapshot = await window.yan.runs.snapshot()
@@ -163,7 +143,6 @@
     check(!!terminalSnap, `评审运行进入终态（${terminalSnap?.phase?.kind}）`)
     const terminalKind = terminalSnap?.phase?.kind
 
-    /* 终态后 5 秒内不得再回到 running（收口一次）。 */
     let reopened = false
     const settleEnd = Date.now() + 5000
     while (Date.now() < settleEnd) {
@@ -174,7 +153,6 @@
     }
     check(!reopened, '终态后没有再次回到运行中（收口一次）')
 
-    /* 运行历史：该 R 号只有一条终态记录。 */
     let historyRecord = null
     const historyEnd = Date.now() + 30000
     while (Date.now() < historyEnd) {
@@ -186,7 +164,6 @@
           break
         }
       } catch {
-        /* 历史写入可能稍晚 */
       }
       await wait(500)
     }
@@ -196,7 +173,6 @@
       if (typeof historyRecord[0].costUsd === 'number') note(`历史记录费用 ≈ $${historyRecord[0].costUsd.toFixed(6)}`)
     }
 
-    /* ---- 3. 只读：文件未被改 ---- */
     out.push('')
     out.push('--- 只读 ---')
     const csAfter = await window.yan.review.changeSet({ source: 'uncommitted', cwd })
@@ -208,7 +184,6 @@
       check(st?.ok === true && st.mtimeMs === statBefore.mtimeMs && st.size === statBefore.size, `目标文件 stat 未变（${statBefore.path}）`)
     }
 
-    /* ---- 4. 意见返回 ---- */
     out.push('')
     out.push('--- 评审意见返回 ---')
     let sub = null

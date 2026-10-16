@@ -1,22 +1,4 @@
 #!/usr/bin/env node
-/**
- * 退役 Hub 能力的定向回归（F10）。
- *
- * ── 要固定住的行为 ──
- *   1. 普通 CLI 的帮助 / 解析表里不再宣告 `hub.*`；
- *   2. 任何 `yan hub …` 调用都在本地被拦下，给出「已退役、改用 subagent」的提示，
- *      **不发请求、不启动任何进程**（用本地假宿主记录是否收到请求来验证）；
- *   3. 宿主默认白名单不再包含 `hub.*`，老调用回可分支的退役码并指向 subagent，
- *      handler（也就是实际拉起工作台的地方）根本不会被调用；
- *   4. `subagent.*` 与普通未知命令的原有行为不变。
- *
- * ── 为什么是独立脚本、现场编译 ──
- *   不 import 任何 `out/` 产物：忘记构建时会读到旧行为，回归就失去意义。
- *   这里用 esbuild 把 `src/main/capability-server.ts` 现编到临时目录再 import，
- *   锚定的就是当前源码。整个脚本不连真实模型、不使用真实凭证。
- *
- * 运行：node scripts/test-retired-hub-cli.mjs
- */
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -40,7 +22,6 @@ function ok(cond, label, detail) {
   }
 }
 
-/** 用 esbuild 把能力服务现编成 ESM，避免读到陈旧的 out/。 */
 async function compileCapabilityServer(tmpDir) {
   const { build } = await import(
     pathToFileURL(join(repoRoot, 'node_modules', 'esbuild', 'lib', 'main.js')).href
@@ -57,7 +38,6 @@ async function compileCapabilityServer(tmpDir) {
   return import(pathToFileURL(outfile).href)
 }
 
-/** 本地假宿主：记录收到的每个请求，并回一个 ok 回执。 */
 function startTrap() {
   const seen = []
   const server = createServer((req, res) => {
@@ -102,7 +82,6 @@ function runCli(args, env) {
   })
 }
 
-/** 把宿主身份换成假值，且 URL 指向本地 trap；模型凭证无关。 */
 function fakeEnv(url) {
   return {
     ...process.env,
@@ -147,7 +126,6 @@ async function main() {
       ok(text.includes('\u5df2\u9000\u5f79') && text.includes('subagent'), `${label} 提示退役并指向 subagent`, text.slice(0, 200))
       ok(trap.seen.length === before, `${label} 不发请求`)
       if (args.includes('--request-file')) {
-        /* 退役拦截发生在读请求文件之前：缺文件也应给退役提示，而不是「读不到」。 */
         ok(!text.includes('\u8bfb\u4e0d\u5230'), `${label} 在读取请求文件之前就返回`)
       }
     }
@@ -206,7 +184,6 @@ async function main() {
         })
         return await res.json()
       } catch (error) {
-        /* 端口/连接失败不能把整个夹具崩掉，交给断言报出来并带上现场。 */
         return { ok: false, error: `能力端点请求失败：${error instanceof Error ? error.message : String(error)}（url=${url}）` }
       }
     }

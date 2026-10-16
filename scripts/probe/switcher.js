@@ -1,7 +1,3 @@
-/**
- * 会话切换器（Ctrl+K）：能打开、能输入、能用键盘选、Esc 关闭；
- * 结果里的会话与左栏同源（store.sessions）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {

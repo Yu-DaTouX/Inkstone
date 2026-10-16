@@ -1,11 +1,3 @@
-/**
- * Skill 内容安全审查单测（实施-04 S6b-2）。
- *
- * 规则是共享纯逻辑：这里覆盖安全候选的可解释提醒、高危内容拒绝、凭证
- * 摘要脱敏与二进制 UTF-8 输入。真实外部 Skill 的网络 / staging / runner
- * 链路由 test-live 的 skilldirnet 场景另行验收。
- */
-
 export async function runSkillSecurityTests(ok, security) {
   const { formatSkillSecurityReview, reviewSkillFiles } = security
 

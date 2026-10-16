@@ -7,14 +7,9 @@ import {
 import { cx } from './cx'
 
 export interface SwitchProps extends RACSwitchProps {
-  /** 开关旁边的文字。 */
   children?: ReactNode
 }
 
-/**
- * 开关：用于「立即生效」的布尔设置。选项组内请用 `Radio`。
- * 轨道与滑块是纯展示，交互与 ARIA 由 RAC 处理。
- */
 export const Switch = forwardRef<HTMLLabelElement, SwitchProps>(function Switch(
   { className, children, ...props },
   ref

@@ -1,16 +1,3 @@
-/**
- * 浅色主题：对比度 / 代码高亮 / 工具行。
- *
- * 用户报「白色背景下渲染有问题」。查出来的两个真 bug：
- *   ① highlight.css 的选择器被一次全局替换搞坏了
- *      （`.hljs` → `.md pre code`，于是成了 `pre code.md pre code-keyword`
- *       这种无意义选择器）—— 语法高亮**一条规则都没匹配上**，
- *       `code.hljs` 里的 `span[class^="hljs"]` 数量恒为 0。
- *   ② 主题里写死了 `background:#0d1117`（深色）—— 浅色主题下就变成
- *      「白页面上一个黑框」，框里还是浅色字。
- *
- * 这个场景把这两条钉住。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -21,15 +8,6 @@
   const store = window.__yanStore
   const q = (s) => document.querySelector(s)
 
-  /*
-   * 颜色解析。
-   *
-   * `color-mix()` / `oklab()` 这类颜色在 computed style 里会序列化成
-   * `color(srgb r g b)`（0–1 的小数，且第一个词就是字面的 `srgb`）。
-   * 用 `match(/\d+/g)` 去抽数字会把 `srgb` 里的 0 当成红色通道，
-   * 于是浅色面板被读成纯黑（2026-09-23 实际误报过 `.goal-panel`）。
-   * 所以两种写法都显式支持。
-   */
   const parseColor = (value) => {
     const str = String(value || '').trim()
     const srgb = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)$/.exec(str)
@@ -58,19 +36,13 @@
     await sleep(500)
   }
 
-  /* ---- 切到浅色 ---- */
   document.documentElement.dataset.theme = 'light'
   try {
     localStorage.setItem('yan.theme', 'light')
   } catch {
-    /* ignore */
   }
   await sleep(500)
 
-  /* ---- 找一条既带**可高亮代码块**、又带工具调用的消息 ----
-     注意：不是每个 ``` 代码块都会被 highlight.js 识别出语言。
-     `detect: true` 下无语言的块会保持纯文本（0 个 hljs span）——
-     那种块不能用来断言「高亮生效」。 */
   const cats = store.getState().sessions.filter((s) => (s.messageCount ?? 0) > 2).slice(0, 12)
   let picked = false
   for (const s of cats) {
@@ -83,7 +55,6 @@
     }
   }
   if (!picked) {
-    // 退而求其次：至少找一条有代码块的（后续断言会自己降级）
     for (const s of cats) {
       await store.getState().switchSession(s.path)
       await sleep(1200)
@@ -113,7 +84,6 @@
     } else {
       ok(true, 'code.hljs 里有语法 span（旧实现恒为 0 —— 高亮完全没生效）')
 
-      // 至少有一个 span 的颜色与容器不同 —— 否则「有 span 但没上色」
       const base = getComputedStyle(hl).color
       const colored = [...spans].filter((s) => getComputedStyle(s).color !== base)
       out.push(`  与底色不同的 span: ${colored.length}/${spans.length}`)
@@ -135,16 +105,9 @@
     out.push('  （无行内代码，跳过）')
   }
 
-  /*
-   * ⚠️ 选择器是 `.trow-head`（ToolRow 重构后的名字）。
-   *    这里原来写的是已废弃的 `.tool-head` / `.tool-sum` —— 选择器永远
-   *    匹配不到，断言于是**静默走了「跳过」分支**，工具行的对比度其实
-   *    一直没人看着（与 sessions 探针的悬停断言同一类失效方式）。
-   */
   const head = q('.trow-head')
   out.push('  工具行: ' + (head ? '有' : '无'))
   if (head) {
-    // 浅色下的可读性标准：颜色不能是“黑的不彻底、浅的不明显”
     const col = getComputedStyle(head).color
     const lum = luma(parseColor(col), 1)
     out.push(`  .trow-head color=${col}（亮度 ${lum.toFixed(2)}）`)
@@ -166,21 +129,7 @@
 
   out.push('')
   out.push('=== 5. 终端窗口：内部的深色覆盖必须真的生效 ===')
-  /*
-   * 设计上终端「无论浅色/深色都是深底」（见 chat.css 里 .term 的注释），
-   * 内部把 `--bg-*` / `--border` 这些主题令牌都覆盖成深底上的颜色。
-   *
-   * 但那组覆盖规则曾经**全线失效**：`.term .tool-pre` 与 `.tool-pre.args`
-   * 同为 (0,2,0)，而它写在前面 —— 后写者赢。于是浅色主题下终端里的参数块
-   * 成了白底（--bg-0）+ 浅色下边框（--border）+ 中灰字，基本看不清。
-   * 深色主题下 --bg-0 与 #0c0c0c 接近，所以只有浅色能暴露它。
-   */
   if (!q('.term')) {
-    /*
-     * 已结束的工具默认收起，而且 `detailOn` 关着时**连展开入口都没有**
-     * （`canExpand = detailOn || running || failed`，见 ToolRow）。
-     * fixture 里的工具都是成功结束的，所以先把设置打开再点行头。
-     */
     await store.getState().patchSettings({ toolDetail: true })
     await sleep(400)
     q('.trow-head')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -190,15 +139,7 @@
   if (!term) {
     out.push('  ⚠️ 这份 fixture 里没渲染出终端窗口，跳过')
   } else {
-    /*
-     * 把颜色**合成到终端深底上**再算亮度。
-     *
-     * 为什么不直接看声明值：终端里很多颜色是半透明的，而且是刻意如此 ——
-     * `.term-prompt` 的 `rgba(255,255,255,0.08)` 分隔线、`.term .diff` 的
-     * 提亮底色。它们在深底上叠出来仍然很暗，不构成「亮底」。
-     * 直接看声明值就得写 alpha 特判，而合成之后这些情况自然就落到暗端。
-     */
-    const TERM_LUMA = 12 / 255 // .term 的 #0c0c0c
+    const TERM_LUMA = 12 / 255
     const lumOn = (el, prop) => {
       const rgba = parseColor(getComputedStyle(el)[prop])
       if (!rgba) return null
@@ -233,22 +174,6 @@
 
   out.push('')
   out.push('=== 6. 浅色主题下不该出现「深色块」（终端除外）===')
-  /*
-   * 这一节是那类 bug 的**泛化**：主题令牌被写死成深色时，浅色主题下就是
-   * 「白页面上一个黑框」（本文件头那两个 bug 都是这么来的；后来终端里
-   * 那个白底是同一族的反向情况）。
-   *
-   * 终端是**刻意**深色的（chat.css 里写明了「无论浅色/深色都是深底」），
-   * 所以排除 `.term` 子树；代码块走 `--code-bg`，浅色主题下本来就是浅的。
-   *
-   * 只查**不透明**的背景（alpha ≥ 0.9）：半透明的压暗层/阴影要与祖先
-   * 合起来才有意义（如 modal 的 scrim）。
-   *
-   * 小面积也跳过：按钮/指示条用深色填充是常见设计 —— 发送键就是
-   * `--fg` 实心 + 白图标（30×30），导航轨的视口条在浅色下也是 `--fg`。
-   * 这里要抓的是**成片**的深色背景，那才是「白页面上的黑框」。
-   */
-  /** 小于这个面积（px²）的深色块当设计，不算「黑框」（≈ 70×70） */
   const DARK_BOX_MIN_AREA = 5000
   const darkBoxesIn = (root, label) => {
     if (!root) {
@@ -288,16 +213,7 @@
 
   ok(dark.length + darkSettings.length === 0, '浅色主题下没有意外的深色块')
 
-  /* ---- 主题切换的方向与时长（DESIGN §5）----
-     必须走**真实入口**（设置面板改主题 dispatch 的就是 `yan:theme`）：
-     方向标记是 App 的 effect 写的，直接改 `dataset.theme` 验不到它。 */
   {
-    /*
-     * 读**过渡伪元素**的动画名。
-     * `document.getAnimations()` 看不到 View Transition 的伪元素树（实测总数为 0 条 theme-*），
-     * 而 `getComputedStyle(el, '::view-transition-new(root)')` 在过渡进行中是可读的 ——
-     * 它验的也正是“我们定义的那条动画真的应用上了”。
-     */
     const pseudoAnim = (sel) => {
       try {
         return String(getComputedStyle(document.documentElement, sel).animationName || '')
@@ -309,13 +225,6 @@
       [pseudoAnim('::view-transition-new(root)'), pseudoAnim('::view-transition-old(root)')].filter(
         (n) => n && n !== 'none'
       )
-    /*
-     * 切下一次之前先等干净。
-     *
-     * 过渡 760ms；而宿主**有意**把「上一次还没跑完就再切」降级成瞬时换肤
-     *（并发会被 Chromium 跳过，得不偿失）—— 探针里撞上这个窗口就会读到
-     *「没动画」。所以这里固定等满一秒，再确认伪元素已消失。
-     */
     const settle = async () => {
       await sleep(1000)
       for (let i = 0; i < 40 && liveNames().length; i++) await sleep(50)
@@ -342,11 +251,6 @@
         `reduced-motion=${window.matchMedia('(prefers-reduced-motion: reduce)').matches}`
     )
 
-    /*
-     * 四次（dark → light → dark → light）：本文件前面是**直接改 dataset**
-     * 验证浅色渲染的，App 的 theme state 未必与之一致 —— 万一某次 dispatch
-     * 的值就是当前 state，那一次不会产生过渡。四次能保证两个方向都真的跑到。
-     */
     const expectOf = (t) => (t === 'dark' ? 'theme-spread' : 'theme-collapse')
     const runs = []
     for (const next of ['dark', 'light', 'dark', 'light']) runs.push(await kick(next, expectOf(next)))
@@ -388,12 +292,6 @@
       '向心收拢挂在**旧层**上（新层不动，否则两层一起动会糊）'
     )
 
-    /*
-     * 背景色（模板 / 自定义）是挂在根元素上的**行内**令牌，会盖过主题里的默认值，
-     * 所以它必须和 `data-theme` 同一刻落（都在过渡的更新回调里）。早一步落的话，
-     * View Transition 的**旧快照**会带着新主题的底色 —— 现场表现就是切换瞬间
-     * 出现一块不对的浅色（只有非默认背景模板才会，默认模板根本没有行内覆盖）。
-     */
     {
       const root = document.documentElement
       const bg = () => root.style.getPropertyValue('--bg-0') || '∅'
@@ -412,7 +310,6 @@
         if (!armed) return orig(cb)
         armed = false
         seen.atCall = { theme: root.dataset.theme, bg: bg() }
-        /* 同一轮任务里（各个 effect 跑完之后）再采一次：这时不该已经变成新主题的底色 */
         queueMicrotask(() => {
           seen.early = bg()
         })
@@ -441,14 +338,6 @@
       await settle()
     }
 
-    /*
-     * 动画圆心 = **触发它的那个按钮**（DESIGN §5）。
-     *
-     * 走真实入口：打开设置面板、点真的主题按钮（`element.click()` 会带
-     * `currentTarget`，与用户按下去同一条路径），再读过渡伪元素的 computed
-     * `clip-path` —— 里面就写着圆心坐标。从屏幕中心改成按钮位置如果没生效，
-     * 这里会看到 `at 50% 50%`。
-     */
     const clipAt = (selector) => {
       try {
         return String(getComputedStyle(document.documentElement, selector).clipPath || '')
@@ -457,12 +346,6 @@
       }
     }
 
-    /*
-     * 过渡伪元素树的真实几何。
-     *
-     * clip-path 里的 px 到底相对哪个盒子，是「圆心看着不对」这类问题的第一现场 ——
-     * 所以把每层的尺寸、位置、transform 都量出来，而不是只看 clip 字符串。
-     */
     const boxOf = (selector) => {
       try {
         const cs = getComputedStyle(document.documentElement, selector)
@@ -480,20 +363,12 @@
       `  ${boxOf('::view-transition-new(root)')}`,
       `  ${boxOf('::view-transition-old(root)')}`
     ]
-    /** 两个层哪一层在动就读哪一层（方向决定是新层还是旧层） */
     const clipAny = () => {
       const fresh = clipAt('::view-transition-new(root)')
       if (fresh.includes('circle(')) return fresh
       const old = clipAt('::view-transition-old(root)')
       return old.includes('circle(') ? old : ''
     }
-    /**
-     * 等一次真实过渡的动画读出来（方向决定看新层还是旧层）。
-     *
-     * 轮询窗口给得很宽（~12s）：窗口**隐藏**时 Chromium 会把合成/帧节流，
-     * 下一次过渡的“起播”可能要等上一两次秒 —— 实测过动画完全正确、
-     * 只是比点击晚了一大截才出现。判据仍然是 clip 里的圆心坐标。
-     */
     const readClip = async (pseudo) => {
       for (let i = 0; i < 240; i++) {
         const now = pseudo ? clipAt(pseudo) : clipAny()
@@ -503,13 +378,6 @@
       return ''
     }
 
-    /**
-     * 把主题切到目标值，并确认它**真的落到了** `data-theme`。
-     *
-     * 为什么要确认：连续切得太快时宿主会有意把后一次降级成瞬时换肤
-     *（并发过渡会被 Chromium 跳过，得不偿失）—— 探针要的是真实动画，
-     * 所以先归位、再动手。
-     */
     const reachTheme = async (value) => {
       for (let i = 0; i < 4 && document.documentElement.dataset.theme !== value; i++) {
         window.dispatchEvent(new CustomEvent('yan:theme', { detail: value }))
@@ -519,25 +387,17 @@
       return document.documentElement.dataset.theme === value
     }
 
-    /*
-     * 把 clip 里的圆心解出来，统一换成 CSS px。
-     *
-     * 圆心可能是 px 也可能是百分比（宿主写的是相对视口的百分比，见 App 注释）——
-     * 百分比按视口尺寸还原，这样断言读的是「圆真的落在哪个点」，与写法无关。
-     */
     const originOf = (clip) => {
       const m = /at\s+([\d.]+)(px|%)\s+([\d.]+)(px|%)/.exec(clip || '')
       if (!m) return null
       const axis = (v, unit, total) => (unit === '%' ? (Number(v) / 100) * total : Number(v))
       return { x: axis(m[1], m[2], window.innerWidth), y: axis(m[3], m[4], window.innerHeight) }
     }
-    /** 圆心与按钮中心是否重合（亚像素容差） */
     const onPoint = (clip, ...points) => {
       const o = originOf(clip)
       if (!o) return false
       return points.some((p) => Math.abs(o.x - p.x) < 1 && Math.abs(o.y - p.y) < 1)
     }
-    /** 元素中心（视口坐标） */
     const centerOf = (el) => {
       const r = el.getBoundingClientRect()
       return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
@@ -548,13 +408,11 @@
       const button = document.querySelector(`[data-testid="theme-${which}"]`)
       const pseudo = which === 'light' ? '::view-transition-old(root)' : '::view-transition-new(root)'
       if (!button) return { clicked: false, want: '', clip: '', rect: null, vars: '' }
-      /* 先等上一次过渡跑完：它会把面板重排，早量的矩形与点击那一刻不一致 */
       await settle()
       const rect = button.getBoundingClientRect()
       const want = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
       button.click()
       const clip = await readClip(pseudo)
-      /* 读不到时把两侧样本打出来（只在失败路径噪音） */
       if (!clip) {
         out.push('  [几何]', ...geometry())
         const samples = []
@@ -578,7 +436,6 @@
 
     store.getState().openSettings('appearance')
     await sleep(700)
-    /* 起点先归位：每次点击都要与当前主题不同，才会产生真实过渡 */
     ok(await reachTheme('light'), '先把主题切到浅色，作为起点')
     const toDark = await clickTheme('dark')
     ok(toDark.clicked, '设置面板里有主题按钮（data-testid=theme-dark）')
@@ -593,12 +450,6 @@
         `按钮 ${JSON.stringify(toLight.rect)}，变量 ${toLight.vars}）`
     )
 
-    /*
-     * 事件**没带位置**时，从 DOM 再找一次主题按钮。
-     *
-     * 为什么要有这一层：只靠事件载荷，任何一条不带位置的主题事件都会让动画
-     * 默默回退到屏幕中心 —— 用户看到的就是「按钮定位不对」。
-     */
     const themeBtnCenters = ['theme-dark', 'theme-light']
       .map((id) => document.querySelector(`[data-testid="${id}"]`))
       .filter(Boolean)
@@ -610,7 +461,6 @@
       `事件载荷没带位置时，从 DOM 找回主题按钮（要 ${themeBtnCenters.map(show).join(' 或 ')}，实际 ${show(originOf(fromDom))}）`
     )
 
-    /* 面板关了 → 真的没有按钮可依，回退屏幕中心 */
     store.getState().closeSettings()
     for (let i = 0; i < 40 && document.querySelector('[data-testid^="theme-"]'); i++) await sleep(50)
     await settle()
@@ -622,13 +472,6 @@
     )
     await settle()
 
-    /*
-     * 非 100% 缩放下还准不准。
-     *
-     * 用户的「自动」缩放会把字号对齐到整数设备像素（125% 屏上约 1.15），
-     * 也就是说真实窗口里 zoomFactor 往往不是 1 —— 而边界坐标有两套坐标系
-     *（网页 CSS px 与快照），这里量的是**用户实际会看到的那个值**。
-     */
     const before = store.getState().settings?.uiScale ?? 0
     await window.yan.setUiScale(1.25)
     await sleep(1500)
@@ -646,12 +489,10 @@
     await sleep(1200)
   }
 
-  /* ---- 恢复深色，别把用户设置改了（隔离目录里其实无所谓，但保持一致）---- */
   document.documentElement.dataset.theme = 'dark'
   try {
     localStorage.setItem('yan.theme', 'dark')
   } catch {
-    /* ignore */
   }
 
   return out.join('\n')

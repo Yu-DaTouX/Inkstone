@@ -1,4 +1,3 @@
-/** 构建信息（正式版本 / 构建版本）的纯逻辑部分。 */
 export function runBuildInfoTests(ok, api) {
   ok(typeof api.BUILD_INFO === 'object', 'BUILD_INFO 在非注入环境也有兜底对象')
   ok(
@@ -7,10 +6,6 @@ export function runBuildInfoTests(ok, api) {
   )
   ok(api.BUILD_INFO.repositoryUrl === '', '未注入时仓库地址为空串（不编造链接）')
 
-  /*
-   * 仓库地址归一化：package.json 里写的是 `git+https://…/Inkstone.git`，
-   * 而界面上要的是能点的网页地址 —— 差一个字符就是一个打不开的链接。
-   */
   ok(
     api.normalizeRepositoryUrl('git+https://github.com/Yu-DaTouX/Inkstone.git') ===
       'https://github.com/Yu-DaTouX/Inkstone',

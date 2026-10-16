@@ -1,19 +1,3 @@
-/**
- * 导航轨与**会话可用区**的关系（2026-09-23 V-2b 新契约）。
- *
- * 旧契约（已废止）：刻度要贴在「正文左侧的空隙」里 —— 判据是收起/展开左栏时
- * 「刻度右缘到正文左缘」的距离稳定（实测 4.8px）。那条契约的前提是轨道跟着
- * 正文列走；窄窗时正文占满，`Math.max(0, …)` 把整列夹到会话区左缘，
- * 44px 的命中区就压在正文上（用户报的遮挡）—— 而且正文一居中轨道位置就漂。
- *
- * 新契约：轨道固定在会话可用区域左边缘的独立槽内（视觉边距 4–8px），
- * 正文反过来让出避让槽。判据换成几何事实：
- *   ① 槽贴会话区左缘，边距在 4–8px；
- *   ② 命中区矩形与正文内容**不相交**（左右栏两种开合状态都要成立）；
- *   ③ 轨道只覆盖对话区，不伸进输入区；
- *   ④ 长轨（几十轮）末项键盘可达；
- *   ⑤ 预览卡不出会话可用区。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => { out.push((c ? '  ✓ ' : '  ✗ ') + s); return !!c }
@@ -38,7 +22,6 @@
     store.getState().setRailPinned(true)
     await sleep(600)
 
-    /* 40 轮：既让导航轨渲染，也把轨道撑到需要滚动（末项可达那条要用） */
     const fake = []
     for (let i = 1; i <= 40; i++) {
       fake.push({ id: 'u' + i, role: 'user', text: '第 ' + i + ' 个问题' })
@@ -63,7 +46,6 @@
       out.push(`  诊断：stream ${sb.top.toFixed(1)}~${sb.bottom.toFixed(1)}；center ${cb2.top.toFixed(1)}~${cb2.bottom.toFixed(1)}`)
     }
 
-    /** 正文内容真正占用的横向范围（容器 rect 缩掉左右内边距） */
     const contentBox = () => {
       const inner = q('.stream-inner, .stream-row')
       if (!inner) return null
@@ -108,7 +90,6 @@
     store.getState().setRailPinned(true)
     await sleep(700)
 
-    /* 窄窗：正文会伸到会话区边界附近，避让槽必须真的生效（V-2b 出口之一） */
     {
       const bw = window.innerWidth
       const bh = window.innerHeight
@@ -126,7 +107,6 @@
       await sleep(900)
     }
 
-    /* 命中区与正文**可交互元素**也不相交 —— 这些才是真会被挡住、点不到的东西 */
     {
       const hits = [...document.querySelectorAll('[data-testid="outline-tick"]')].map(rect)
       const targets = [
@@ -138,7 +118,6 @@
       ok(targets.length > 0 && bad === 0, '命中区与正文块、链接、按钮都不相交')
     }
 
-    /* 长轨末项可达：聚焦最后一格，轨道要把它滚进可视区 */
     {
       const track = q('.outline-track')
       const hits = [...document.querySelectorAll('[data-testid="outline-tick"]')]
@@ -164,11 +143,6 @@
         out.push('  （本次窗口够高，轨道没溢出；末项本来就在可视区）')
       }
       ok(lb.top >= tb.top - 2 && lb.bottom <= tb.bottom + 2, '长轨末项可达（落在可视区内）')
-      /*
-       * 键盘预览：窗口没被系统激活时 `el.focus()` 只改 activeElement、
-       * **不派发 focus/focusin**（Chromium 行为，实测 activeElement 已是按钮
-       * 但预览没出来）。所以这一条直接派 focusin 验 React 绑定。
-       */
       last.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
       await sleep(300)
       ok(!!q('[data-testid="outline-preview"]'), '键盘焦点与鼠标同等弹出预览')
@@ -176,7 +150,6 @@
       await sleep(200)
     }
 
-    /* 预览卡水平夹取：不出会话可用区 */
     {
       const hits = [...document.querySelectorAll('[data-testid="outline-tick"]')]
       hits[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))

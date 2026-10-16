@@ -1,8 +1,3 @@
-/**
- * 能力与插件设置的共用版面片段（features 层）。
- *
- * 只做版面组合，不定义控件外观；颜色 / 间距 / 圆角一律取现有 tokens。
- */
 import type { ReactElement, ReactNode } from 'react'
 import { Badge, Skeleton, type BadgeTone } from '../../../ui'
 import { cx } from '../../../ui/cx'
@@ -88,7 +83,6 @@ export function StatusBadge({ tone, children }: { tone: BadgeTone; children: Rea
   return <Badge tone={tone}>{children}</Badge>
 }
 
-/** 列表加载中的骨架：形状贴近真实条目的两行，避免高度跳动。 */
 export function ListSkeleton({ rows = 3 }: { rows?: number }): ReactElement {
   return (
     <div className="caps-list" aria-hidden="true">

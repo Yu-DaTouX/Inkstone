@@ -1,12 +1,3 @@
-/**
- * `yan browser select` 的页面侧赋值函数与错误文案（实施-27 S5）。
- *
- * 为什么能测：`SELECT_VALUE_FN` 是一段**字符串**（要发给 CDP 的 functionDeclaration），
- * 所以可以在 Node 里用 `new Function` 把它变回函数，再喂一个假 `<select>` 对象。
- * 真正需要浏览器的只有 `DOM.resolveNode` / `Runtime.callFunctionOn` 两跳 ——
- * 那两跳不值得为了测试起一个窗口，而这段函数里的匹配规则与事件派发才是会出错的地方。
- */
-
 export async function runBrowserSelectTests(ok, mod, errors) {
   const { SELECT_VALUE_FN } = mod
   const { NotSelectElementError, SelectOptionNotFoundError } = errors
@@ -25,7 +16,6 @@ export async function runBrowserSelectTests(ok, mod, errors) {
   try { registry.resolve(ref) } catch (error) { oldGenerationDenied = error.code === 'STALE_ELEMENT' }
   ok(oldGenerationDenied, '重新观察后旧引用失效')
 
-  /* 页面侧函数：把字符串还原成函数（这一步本身就是"它必须是合法的函数声明"的断言） */
   let pageFn
   try {
     pageFn = new Function(`return (${SELECT_VALUE_FN})`)()
@@ -35,7 +25,6 @@ export async function runBrowserSelectTests(ok, mod, errors) {
   }
   ok(typeof pageFn === 'function', 'SELECT_VALUE_FN 能还原成函数')
 
-  /* 一个够像 <select> 的假元素：记录派发过的事件 */
   const makeSelect = (options, { value = '', tag = 'SELECT' } = {}) => {
     const el = {
       tagName: tag,
@@ -50,7 +39,6 @@ export async function runBrowserSelectTests(ok, mod, errors) {
     return el
   }
 
-  /* Node 里没有 DOM 的 Event；页面侧函数只用 type 与 bubbles */
   const originalEvent = globalThis.Event
   globalThis.Event = class {
     constructor(type, init = {}) {
@@ -60,7 +48,6 @@ export async function runBrowserSelectTests(ok, mod, errors) {
   }
 
   try {
-    /* ---- ① 按 value 匹配 ---- */
     {
       const el = makeSelect([['cn', '中国'], ['us', '美国']])
       const out = pageFn.call(el, 'us')
@@ -70,14 +57,12 @@ export async function runBrowserSelectTests(ok, mod, errors) {
       ok(el.events.includes('input') && el.events.includes('change'), '派发 input + change（受控组件不看 value 只看事件）')
     }
 
-    /* ---- ② 退而按可见文案匹配 ---- */
     {
       const el = makeSelect([['cn', '中国'], ['us', '美国']])
       const out = pageFn.call(el, '美国')
       ok(out?.ok === true && out.value === 'us', '找不到 value 时按可见文案匹配（模型常直接给"美国"）')
     }
 
-    /* ---- ③ 找不到：把可选值带回去 ---- */
     {
       const el = makeSelect([['cn', '中国'], ['us', '美国']])
       const out = pageFn.call(el, 'jp')
@@ -87,7 +72,6 @@ export async function runBrowserSelectTests(ok, mod, errors) {
       ok(el.events.length === 0, '失败时不派发事件（不触发半截提交）')
     }
 
-    /* ---- ④ 不是下拉框 ---- */
     {
       const el = makeSelect([], { tag: 'INPUT' })
       const out = pageFn.call(el, 'x')
@@ -95,7 +79,6 @@ export async function runBrowserSelectTests(ok, mod, errors) {
       ok(out?.tag === 'input', 'not_select 时带上标签名；页面侧统一转小写（<input> 而不是 <INPUT>）')
     }
 
-    /* ---- ⑤ 空串是一个合法的值（"选空白项"） ---- */
     {
       const el = makeSelect([['', '请选择'], ['cn', '中国']])
       const out = pageFn.call(el, '')
@@ -105,7 +88,6 @@ export async function runBrowserSelectTests(ok, mod, errors) {
     globalThis.Event = originalEvent
   }
 
-  /* ---- ⑥ 两类业务错误的文案 ---- */
   {
     const notSelect = new NotSelectElementError('e3', 'INPUT')
     ok(notSelect.code === 'NOT_SELECT', 'NOT_SELECT 是可读的业务 code')

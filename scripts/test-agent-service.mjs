@@ -36,7 +36,6 @@ export async function runAgentServiceTests({ realPi = false } = {}) {
     assert.equal(await readFile(source, 'utf8'), 'DELIVERED')
     assert.deepEqual(await service.apply(task.id, plan.approval.id, 'apply-original-001'), applied)
     await assert.rejects(service.once(task.id, 'apply-original-001', 'different', {}, async () => 1), /不同请求/)
-    // A changed original is compared against the import version, even if planning is later.
     const second = await service.create({ title: 'Original changed', files: [source] })
     await writeFile(join(second.workspace, 'outputs/new.txt'), 'NEW')
     await writeFile(source, 'OTHER-WRITER')
@@ -44,7 +43,6 @@ export async function runAgentServiceTests({ realPi = false } = {}) {
     await service.approve(plan.approval.id, second.generation, true)
     const conflict = await service.apply(second.id, plan.approval.id, 'apply-conflict-001')
     assert.deepEqual(conflict.conflicts, [source]); assert.equal(await readFile(source, 'utf8'), 'OTHER-WRITER')
-    // Concurrent deduplication checks payload equality before returning a pending result.
     let release
     const first = service.once('service', 'pending-operation-1', 'test', { a: 1 }, () => new Promise(resolveDone => { release = resolveDone }))
     await new Promise(resolveTick => setTimeout(resolveTick, 20))

@@ -14,7 +14,6 @@ function Inline({ value }: { value: string }) {
   })}</Text>
 }
 
-/** 桌面历史里 markdown 的轻量投影：正文用系统无衬线，代码与行内代码用等宽 */
 export const MessageBody = memo(function MessageBody({ text }: { text: string }) {
   const p = usePalette()
   const [expanded, setExpanded] = useState(false)

@@ -1,11 +1,3 @@
-/**
- * 电脑操作（Windows-MCP）：一行说明 + 开关（v3）。
- *
- * 需要 uv：没有时给「安装 uv」（winget）或官方说明链接；有了才能打开开关。打开时主进程
- * 先让 uv 下载 Python 与 windows-mcp（首次一两分钟），再登记为 MCP 服务，只开放看屏幕与
- * 操作界面的工具。状态、安装与开关都走既有 `window.yan.computerUse.*`；这里不推断“框架
- * 支持 = 可用”：当前平台不支持时整块不显示，检测失败时显示失败而不是默认可用。
- */
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import type { ComputerUseStatusView } from '../../../../../shared/ipc'

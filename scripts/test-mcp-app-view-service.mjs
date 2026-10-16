@@ -1,23 +1,3 @@
-/**
- * A6 宿主视图桥（`McpAppViewService`）+ 持久审计的离线合成验收。
- *
- * 覆盖（全部用 fake host / fake proxy / 真实临时 JSONL，不启 Electron、不联网）：
- *   1. 同 owner 的 prepare / initialize / tools-call / audit 真实落盘、可读为步骤；
- *   2. 资源 fetch 用 owner.projectId（宿主事实），不从 server.projectScope 猜；
- *   3. 只读无 grant 要问（allow / deny / null 三路）；破坏 / 未知逐次问由审批层保证；
- *   4. visibility 拒绝也落审计；all 档不拦截但真实写审计；
- *   5. schema 不符 / 未知工具拒绝；跨 owner / 跨 server / 重放 id 拒绝；
- *   6. 切会话时等待审批 → 作废；调用迟到 → 丢弃且不落“完成”；
- *   7. release 一个实例不伤另一个会话的实例；close 取消全部只清自己的 store；
- *   8. 审计写入失败 → 不执行工具（fail-closed，all 档同样）；
- *   9. 没有本机结果（历史恢复）→ 只文本回退，绝不重跑 tools/call；
- *  10. structuredContent / `_meta` 只回给 iframe，审计与模型侧都不含原文。
- *
- * ⚠️ 这是**离线 PoC**：不验证真实 Electron 协议、真实 iframe sandbox、真实第三方 App，
- * 也不代表 MCP Apps 规范字段已与稳定版核对（字段仍集中在 app-spec，标注待核对）。
- *
- * 运行：node scripts/test-mcp-app-view-service.mjs
- */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
@@ -86,8 +66,6 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-/* ------------------------------------------------------------------ 固定夹具 */
-
 const HTML = '<!doctype html><html><body>app</body></html>'
 const SERVER = 'srv'
 const SERVER_CONFIG = {
@@ -133,9 +111,6 @@ function makeRecord(overrides = {}) {
   }
 }
 
-/**
- * 组装一个可观测的 service。所有依赖都可覆盖；返回 service 与观测器。
- */
 function makeHarness(options = {}) {
   const state = {
     activeSessions: new Set(options.activeSessions ?? ['s1', 's2']),
@@ -241,8 +216,6 @@ async function init(service, instanceId, id = 1) {
   return service.dispatch(instanceId, rpc('ui/initialize', {}, id))
 }
 
-/* ------------------------------------------------------------------ 1. prepare / init / call / audit 真实落盘 */
-
 await (async () => {
   const { service, state } = makeHarness({ name: 'happy' })
   const prepared = await service.prepare('call-1')
@@ -282,8 +255,6 @@ await (async () => {
   ok(files[0] === expectedName, '审计文件按 sessionFile 哈希分离')
 })()
 
-/* ------------------------------------------------------------------ 2. deny / null / 无本机结果 */
-
 await (async () => {
   const deny = makeHarness({ name: 'deny', ask: () => Promise.resolve('deny') })
   const prepared = await deny.service.prepare('call-1')
@@ -300,7 +271,6 @@ await (async () => {
   const result2 = await nullAsk.service.dispatch(prepared2.instanceId, rpc('tools/call', { name: 'read', arguments: {} }, 4))
   ok(Boolean(result2?.error) && nullAsk.state.callLog.length === 0, 'ask 无答复（null）：拒绝且不执行')
 
-  /* 历史恢复：没有本机结果 → 文本回退，绝不重跑工具。 */
   const history = makeHarness({ name: 'history', records: new Map() })
   const fallback = await history.service.prepare('call-1')
   ok(fallback.kind === 'text', '没有本机结果是文本回退', fallback.kind)
@@ -309,8 +279,6 @@ await (async () => {
   const unknown = await noHost.service.prepare('call-1')
   ok(unknown.kind === 'error', '解析不到运行实例是 error', unknown.kind)
 })()
-
-/* ------------------------------------------------------------------ 3. visibility 拒绝也记档；all 档写审计 */
 
 await (async () => {
   const modelOnly = makeHarness({ name: 'visibility', tools: [appTool({ meta: { ui: { visibility: ['model'] } }, visibility: ['model'], appVisible: false })] })
@@ -331,8 +299,6 @@ await (async () => {
   const entries2 = await allMode.service.audit('call-1')
   ok(entries2.length >= 3 && entries2.every((entry) => entry.permissionMode === 'all'), 'all 档仍真实写审计')
 })()
-
-/* ------------------------------------------------------------------ 4. schema / 未知工具 / 跨 server / 重放 */
 
 await (async () => {
   const { service, state } = makeHarness({ name: 'schema', tools: [appTool(), writeTool()] })
@@ -365,8 +331,6 @@ await (async () => {
   ok(bad.kind === 'error', '记录 owner 与当前会话不符：拒绝', bad.kind)
 })()
 
-/* ------------------------------------------------------------------ 4b. 破坏性即使有 grant 也逐次问；trusted 只读直接放行 */
-
 await (async () => {
   let destructiveAsks = 0
   const destructive = makeHarness({
@@ -397,8 +361,6 @@ await (async () => {
   ok(result2?.result !== undefined, 'trusted 只读直接放行')
   ok(trusted.state.askLog.length === 0 && trusted.state.callLog.length === 1, 'trusted 只读不弹卡且执行一次')
 })()
-
-/* ------------------------------------------------------------------ 5. 切会话等待审批 / 调用迟到作废 */
 
 await (async () => {
   const gate = deferred()
@@ -440,8 +402,6 @@ await (async () => {
   ok(lateEntries.some((entry) => entry.phase === 'error'), '迟到结果落 error 审计')
   ok(!lateEntries.some((entry) => entry.phase === 'completed'), '迟到结果不落 completed')
 })()
-
-/* ------------------------------------------------------------------ 6. release 隔离 / close */
 
 await (async () => {
   const callFacts = new Map([
@@ -487,8 +447,6 @@ await (async () => {
   ok(afterClose?.error?.code === -32600, 'close 取消全部实例')
 })()
 
-/* ------------------------------------------------------------------ 7. 审计写入失败 → 不执行 */
-
 await (async () => {
   const failingAudit = {
     async record() {
@@ -520,8 +478,6 @@ await (async () => {
   ok(Boolean(result2?.error) && allFail.state.callLog.length === 0, 'all 档审计失败同样不执行')
 })()
 
-/* ------------------------------------------------------------------ 8. 未审方法明确 unsupported；snapshot/refresh */
-
 await (async () => {
   const { service, state } = makeHarness({ name: 'unsupported' })
   const prepared = await service.prepare('call-1')
@@ -540,8 +496,6 @@ await (async () => {
   ok(state.refreshLog.length === 1 && state.refreshLog[0].callerProjectId === 'p1', 'refresh 把可信 caller 项目传给代理')
 })
 
-/* ------------------------------------------------------------------ 9. 跨会话审计：前台 B 不得读后台 A */
-
 await (async () => {
   const s1Facts = factsFor('s1', 'r1', 3)
   const s2Facts = factsFor('s2', 'r2', 1)
@@ -558,18 +512,14 @@ await (async () => {
   const inA = await service.audit('call-1')
   ok(inA.length >= 3 && inA.some((entry) => entry.phase === 'completed'), '同会话可读本机审计')
 
-  /* 前台切到 B：即使 callId 曾被 A prepare 过，也不得拿 A 的 sessionFile 直读。 */
   foreground = s2Facts
   const inB = await service.audit('call-1')
   ok(inB.length === 0, '前台 B 读后台 A 的审计返回空（不跨会话）')
 
-  /* 恢复回同一 sessionFile（历史恢复）：允许读本机该会话审计，且不重跑工具。 */
   foreground = s1Facts
   const restored = await service.audit('call-1')
   ok(restored.length >= 3, '回到同 session 可读本机历史审计（绝不重跑 tool）')
 })()
-
-/* ------------------------------------------------------------------ 10. snapshot/refresh 只计当前项目可见目标 */
 
 await (async () => {
   const tools = [
@@ -596,8 +546,6 @@ await (async () => {
   const snapThrown = await snapFail.service.snapshot()
   ok(snapThrown.needsRefresh === true && snapThrown.toolCount === 0, '快照状态读取失败：按待刷新/0 工具处理')
 })()
-
-/* ------------------------------------------------------------------ 收尾 */
 
 await rm(root, { recursive: true, force: true })
 

@@ -1,4 +1,3 @@
-/** 只检查外壳选择纯函数；不启动应用、不读写用户设置、不调用模型。 */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'

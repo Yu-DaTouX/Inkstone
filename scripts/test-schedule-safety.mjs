@@ -1,4 +1,3 @@
-/** Transactional schedule persistence and actual desktop dispatch identity; no pi or model. */
 import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -80,7 +79,6 @@ try {
   const fire = make(join(work, 'fire.json'), { run: () => running.promise })
   const runTask = await fire.create(input, 'user')
   const firing = fire.runNow(runTask.task.id)
-  // Let runNow finish its serialized lookup and enter the injected runner.
   await new Promise(resolve => setImmediate(resolve))
   await fire.setEnabled(runTask.task.id, false)
   running.resolve({ sessionId: 'finished' })

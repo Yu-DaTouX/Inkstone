@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 内置浏览器边界回归（R3）。
- *
- * 只用纯函数 + 一个内存桥，验证三件事：
- *   · owner：`active=false` / 资源归别人 / 未打开时 **不能**驱动原生浏览器；
- *   · visibility：叠加既有 `shouldShowBrowser` 后，overlay 遮挡时不可见，遮挡解除后归还；
- *   · rect：占位区裁剪、半像素量化、签名去重、归属切换后重发。
- *
- * 不启动 Electron、不打开真实网页、不读用户 profile、不调用模型。
- * 用法：node scripts/test-v3-browser.mjs
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
@@ -17,7 +6,6 @@ import { resolve } from 'node:path'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 
-/* 把被测的纯模块合成一个虚拟入口，经 esbuild 转成可 import 的 ESM。 */
 const entry = [
   "export * from './src/renderer/src/features/browser/ownership.ts'",
   "export * from './src/renderer/src/features/browser/bounds.ts'",
@@ -53,8 +41,6 @@ const {
   OverlayBlockers
 } = mod
 
-/* ------------------------------------------------------------------ 断言 */
-
 let pass = 0
 let fail = 0
 function ok(cond, label, detail) {
@@ -73,8 +59,6 @@ function group(name) {
 const rect = { left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100 }
 const owner = (over = {}) => ({ key: 'k1', sessionId: 's1', cwd: '/work', active: true, ...over })
 
-/* ------------------------------------------------------------ owner 门禁 */
-
 group('owner 门禁：只有活动且资源归属一致才能控制')
 {
   const base = { owner: owner(), visible: true, browserOpen: true, browserOwnerKey: 'k1' }
@@ -86,8 +70,6 @@ group('owner 门禁：只有活动且资源归属一致才能控制')
   ok(browserControlAllowed({ ...base, browserOpen: false }) === false, '浏览器未打开时不控制')
   ok(browserControlAllowed({ ...base, visible: false }) === false, '面板隐藏时不控制')
 }
-
-/* -------------------------------------------------------- 可见性 / 遮挡 */
 
 group('可见性：叠加既有 shouldShowBrowser，overlay 遮挡时隐藏、解除后归还')
 {
@@ -117,8 +99,6 @@ group('可见性：叠加既有 shouldShowBrowser，overlay 遮挡时隐藏、�
   ok(blockers.has('browser-overlay') === false, '释放后遮挡解除')
 }
 
-/* ------------------------------------------------- 分屏多列：surface 认领 */
-
 group('分屏多列：非活动列挂载时不能覆盖活动列的原生表面')
 {
   const claim = new BrowserSurfaceClaim()
@@ -131,15 +111,11 @@ group('分屏多列：非活动列挂载时不能覆盖活动列的原生表面'
   ok(claim.claim('k2') === true, '活动列退出后新列可以认领')
 }
 
-/* ------------------------------------------------------------ overlay 检测 */
-
 group('overlay 检测：只认注入 query 的结果，不碰焦点')
 {
   ok(hasBlockingOverlay(() => false) === false, '没有浮层节点 → 不领取 blocker')
   ok(hasBlockingOverlay((selector) => selector.includes('dialog')) === true, '有 dialog 选择器 → 领取 blocker')
 }
-
-/* -------------------------------------------------------------- 坐标 rect */
 
 group('坐标：裁剪、半像素量化与签名')
 {
@@ -165,8 +141,6 @@ group('坐标：裁剪、半像素量化与签名')
   ok(boundsSignature(frac) === '10,20.5,200,100', '签名稳定，供去重使用')
 }
 
-/* --------------------------------------------------- 内存桥：同步 / 去重 */
-
 group('内存桥：几何不变不重复发坐标，reset 后重发')
 {
   const calls = []
@@ -182,8 +156,6 @@ group('内存桥：几何不变不重复发坐标，reset 后重发')
   ok(calls.length === 3, '归属/显隐切换后 reset 强制重发')
   ok(sync.sync(null, null) === null, '量不到占位区时返回 null')
 }
-
-/* -------------------------------------------- 边界流程：inactive 不动原生层 */
 
 group('边界流程：active=false 不驱动原生层，active 时才发坐标')
 {

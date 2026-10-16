@@ -1,73 +1,25 @@
-/**
- * 砚「宿主能力服务」：给随包 CLI（`yan`）用的本机端点。
- *
- * ══════════════════════════════════════════════════════════════════
- * 为什么需要它
- * ══════════════════════════════════════════════════════════════════
- * 架构修订（docs/archive/2026-09-18-架构修订-默认pi与砚原生能力层.md）定下的路线是：
- * 模型只看到 pi 的基础工具（read / bash / …），砚的能力通过**随包 CLI** 触达。
- * CLI 是**进程外**的东西，它必须先证明自己属于哪个会话，宿主才给它数据 ——
- * 否则模型（或本机任何进程）都能伪造一个 projectId 去读别的项目的内容。
- *
- * 所以这一个文件负责的是**身份与结果管道**，不是具体能力：
- *   · 只监听 127.0.0.1，端口随机；
- *   · 每个实例一份**一次性 token**，只经 pi 子进程的环境变量传递（不落盘、不进日志）；
- *   · token 与 (sessionId, projectId) **绑定** —— CLI 传来的身份对不上直接 403；
- *   · 大结果**落文件**，响应里只回受限摘要（类型 / 路径 / 大小 / 条数 / 错误 / 操作 ID）。
- *
- * ── 与 pi 扩展的分工（见 docs/plan/实施-01-默认pi架构迁移.md §1）──
- *   这里**不注册模型工具、不注册 pi 命令、不 import pi 内部模块**。
- *   模型看到的是提示里的一小段「yan 用法」，不是一大组工具 schema。
- *
- * ── 为什么不用「CLI 直接读文件」──
- *   直接读文件没有身份概念：模型只要知道路径就能读任意项目。
- *   走端点才能把「你是谁、你能看什么」钉在宿主侧。
- */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** 协议版本：CLI 与宿主必须一致，避免旧 CLI 打到新宿主上做错事。 */
 export const CAPABILITY_API_VERSION = 1
 
-/**
- * 单个结果文件的落盘上限。
- *
- * JSON 结果沿用历史行为：超过上限时截断并在摘要路径里保留结果文件；
- * 原始文本结果（例如 context recall）则必须完整可读，超过上限一律拒绝，
- * 不能把半份历史伪装成一次成功的召回。
- */
 export const CAPABILITY_RESULT_MAX_BYTES = 4 * 1024 * 1024
 
-/**
- * 注入给 pi 子进程的 CLI 环境（配合 [YanCliEnv] 使用）。
- *
- * 这几个值只会出现在 pi 子进程的环境里，**不落盘、不进日志、不进渲染端**。
- */
 export interface YanCliEnv {
   url: string
   token: string
   sessionId: string
   projectId: string
-  /** 启动器目录，会被前置到 pi 子进程的 PATH。 */
   binDir: string
 }
 
 export interface CapabilityContext {
-  /** 当前会话的稳定 id（宿主生成，不由模型自报）。 */
   sessionId: string
-  /** 当前项目的稳定 id。 */
   projectId: string
 }
 
-/**
- * 一条宿主能力命令的受管结果。
- *
- * `data` 是普通结构化 JSON；`resultText` 是必须逐字保留的受管文本文件。
- * 两者互斥：前者可在大小上限内按既有策略截断，后者用于会被下游协议识别
- * 的文本（例如 `[Recalled context]`），不能 JSON 转义、更不能截半。
- */
 export interface CapabilityCommandResult {
   data?: unknown
   resultText?: string
@@ -75,41 +27,18 @@ export interface CapabilityCommandResult {
 }
 
 export interface CapabilityHandlers {
-  /**
-   * 执行一条命令。返回 `data` 会被写进结果文件，`summary` 回给 stdout。
-   *
-   * 抛出的错误会被转成 `{ok:false, error}`，**不**把堆栈回给模型。
-   *
-   * ── 业务失败怎么表达（S3 补）──
-   * 有些失败不是「端点坏了」而是「这次操作不合法」（`index` 越界、超上限、
-   * 落盘失败……）。它必须让模型**既能读到可读原因，又能按错误码分支**，
-   * 所以抛出 `CapabilityCommandError`：`code` 进响应，`data` 落结果文件
-   * （例如「当前清单长什么样」——模型据此自己改正重试）。
-   */
   run(
     command: string,
     params: Record<string, unknown>,
     ctx: CapabilityContext,
-    /**
-     * 客户端断开 / 取消时触发。目前只有托管 MCP 代理要用它把取消透传给
-     * 后端 `AbortSignal`；其它命令可忽略。缺省 undefined 表示无取消信号。
-     */
     signal?: AbortSignal
   ): Promise<CapabilityCommandResult>
 }
 
-/**
- * 业务失败（不是协议/鉴权错误）。
- *
- * 为什么要单独一个类：`unknown_command` / `identity_mismatch` 是端点级错误，
- * 而「任务 `index` 越界」是命令级错误 —— 前者是接线问题，后者是模型自己要改参数。
- * 用同一个 `error` 字符串把两者混在一起，模型只能读中文去猜。
- */
 export class CapabilityCommandError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    /** 可选的结构化结果（如当前清单 / 候选项），会被落进结果文件。 */
     readonly data?: unknown
   ) {
     super(message)
@@ -118,43 +47,21 @@ export class CapabilityCommandError extends Error {
 }
 
 export interface CapabilityServerOptions {
-  /**
-   * 命令实现。省略时除 `operations.status` 外全部回 `not_implemented` ——
-   * S2 阶段只要求「管道通」，后续补实现时不用改协议层。
-   */
   handlers?: CapabilityHandlers
-  /** 结果文件目录（`YAN_DIR` 下），默认由调用方给出绝对路径。 */
   opsDir: string
-  /** 额外允许的 command 前缀（默认只允许已登记的动词）。 */
   allowCommands?: string[]
-  /** 外部受管运行使用精确白名单；不继承原生 pi 的全部宿主能力。 */
   onlyCommands?: string[]
 }
 
-/** 骨架默认实现：明确告知「命令已接通，但还没实现」，而不是静默成功。 */
 const NOT_IMPLEMENTED: CapabilityHandlers = {
   async run(command: string) {
     throw new Error(`not_implemented: ${command}`)
   }
 }
 
-/**
- * 已登记命令。
- *
- * S2 阶段只要求「管道通」：`operations.status` 是真实实现，
- * 其余返回 `not_implemented` —— 但**身份校验、结果落盘、摘要返回**全部照走，
- * 这样后续补实现时不用再动协议层。
- *
- * `browser.*`（01-S4b）：内置浏览器不再注册成模型工具，模型的浏览器能力
- * 全部走这一族命令（实现在 agent.ts 的 runBrowserCommand，直接调
- * src/main/browser.ts 的服务方法，不再绕 HTTP bridge）。
- * 这里必须与 agent.ts 的实现、yan.mjs 的用法表**成对登记**：漏一处就是
- * 「命令已接通但会报 unknown_command」。
- */
 const KNOWN_COMMANDS = new Set([
   'operations.status',
   'capabilities.search',
-  /* 按需获取能力（实施-25 P17）：只说「缺什么、怎么接」，不代装。 */
   'capabilities.discover',
   'capabilities.prepare',
   'capabilities.acquire',
@@ -162,37 +69,27 @@ const KNOWN_COMMANDS = new Set([
   'skill.save',
   'mcp.describe',
   'mcp.call',
-  /* 托管 MCP 工具的模型代理通道（设计 A2）：只回模型可见文本，原始 Meta 留宿主。 */
   'mcp.app.call',
   'tasks.apply',
   'artifact.attach',
   'image.generate',
-  /* 本机 ComfyUI：查看状态、按需启动、关掉砚自己拉起的进程 */
   'image.local.status',
   'image.local.start',
   'image.local.stop',
   'question.ask',
   'context.recall',
   'context.find',
-  /* 上下文构成：只由 context-inspect 薄层上报系统提示分段与工具定义。 */
   'context.inspect',
-  /* 办公文件：只读提取 docx / xlsx / pptx / pdf 的文字正文。 */
   'office.read',
-  /* 删除改为移到回收站：权限档位不确认删除时，薄层把删除命令引到这里。 */
   'file.trash',
-  /* 普通工具使用前的同意判断（按真实答复记录自动放行或询问）。 */
   'consent.request',
-  /* 高危操作确认：只由 danger-guard 薄层调用，宿主弹框后回答放行 / 拒绝。 */
   'danger.confirm',
-  /* 任务属于另一个文件夹时请求移动会话：批准卡片问用户，本轮结束后切换工作目录。 */
   'session.move',
   'context.budget.status',
   'context.budget.adjust',
-  /* 目标状态（实施-05 S3）：计划档就绪转移与自主档推进报告。 */
   'goal.ready',
   'goal.report',
   'goal.status',
-  /* 资料引用：按版本读片段。 */
   'research.read',
   'knowledge.search',
   'knowledge.read',
@@ -227,20 +124,11 @@ const KNOWN_COMMANDS = new Set([
   'browser.request-user-control',
   'browser.connect-chrome',
   'browser.disconnect-chrome',
-  /* 联网搜索（实施-27 S3）：只查询与诊断，不代用户打开页面。 */
   'search.query',
   'search.fetch',
   'search.doctor'
 ])
 
-/**
- * 已退役的能力族：不再登记进默认白名单，调用时给出替代入口。
- *
- * 为什么保留一个「退役」分支而不是直接回 `unknown_command`：
- * 旧会话、脚本和提示词里仍留着 `yan hub …`。直接当未知命令会让模型以为
- * 自己拼错了、反复重试；这里明确说退役与替代方向，老调用一次就能改道。
- * 历史 Hub 数据与只读界面后端不动，只是不再从普通会话宣告或执行。
- */
 const RETIRED_COMMAND_HINTS: ReadonlyArray<{ prefix: string; message: string }> = [
   {
     prefix: 'hub.',
@@ -249,7 +137,6 @@ const RETIRED_COMMAND_HINTS: ReadonlyArray<{ prefix: string; message: string }> 
   }
 ]
 
-/** 命中退役族时回替代提示；否则回 null（普通未知命令走原路径）。 */
 function retiredCommandMessage(command: string): string | null {
   for (const hint of RETIRED_COMMAND_HINTS) {
     if (command.startsWith(hint.prefix)) return hint.message
@@ -257,11 +144,6 @@ function retiredCommandMessage(command: string): string | null {
   return null
 }
 
-/**
- * 大结果被截断时给的「形状轮廓」：只描述结构，不复制内容。
- *
- * 键数与深度都夹住，所以输出有界 —— 保证改写后的 JSON 一定放得下上限。
- */
 function shapeOf(value: unknown, depth = 0): unknown {
   if (Array.isArray(value)) {
     return {
@@ -286,7 +168,6 @@ export class CapabilityServer {
   private token = ''
   private port = 0
   private ctx: CapabilityContext | null = null
-  /** 最近若干次调用，供 `operations.status` 回读（内存态，不持久化）。 */
   private ops: Array<{ id: string; command: string; at: number; ok: boolean; error?: string }> = []
   private readonly opsDir: string
   private readonly handlers: CapabilityHandlers
@@ -298,17 +179,10 @@ export class CapabilityServer {
     this.allowCommands = new Set(opts.onlyCommands ?? [...KNOWN_COMMANDS, ...(opts.allowCommands ?? [])])
   }
 
-  /** 端点是否可用（CLI 侧据此决定要不要报「宿主不可用」而不是「命令不存在」）。 */
   get ready(): boolean {
     return this.server !== null
   }
 
-  /**
-   * 启动并绑定身份。
-   *
-   * `ctx` 一旦绑定就不再改变：**同一实例只服务一个会话**。
-   * 会话切换时上层会重建 agent 实例，端点随之重建 —— 这比让端点动态换身份安全得多。
-   */
   async start(ctx: CapabilityContext): Promise<{ url: string; token: string }> {
     if (this.server) return { url: this.url, token: this.token }
 
@@ -322,7 +196,6 @@ export class CapabilityServer {
 
     await new Promise<void>((resolve, reject) => {
       this.server?.once('error', reject)
-      // 只绑回环地址：不要让它出现在局域网里。
       this.server?.listen(0, '127.0.0.1', () => resolve())
     })
 
@@ -340,12 +213,9 @@ export class CapabilityServer {
     this.server?.close()
     this.server = null
     this.ctx = null
-    // token 作废：即使有人从旧进程环境里捡到它也用不了了。
     this.token = ''
     this.ops = []
   }
-
-  /* ------------------------------------------------------------ 请求处理 */
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const reply = (status: number, body: unknown): void => {
@@ -361,20 +231,11 @@ export class CapabilityServer {
       reply(404, { ok: false, error: 'not_found' })
       return
     }
-    /*
-     * 认证先于一切解析：拿不到正确 token 的请求连 body 都不读，
-     * 免得畸形 body 在鉴权前就触发解析路径。
-     */
     if (!this.checkToken(req.headers.authorization)) {
       reply(401, { ok: false, error: 'unauthorized' })
       return
     }
 
-    /*
-     * 取消透传：客户端（托管 MCP 代理）用 `AbortSignal` 中止 fetch 时，HTTP 连接
-     * 断开。这里把它转成一个 AbortController，交给命令实现（当前是代理调用）
-     * 透传到 MCP SDK 的 `notifications/cancelled`；其余命令拿到也不受影响。
-     */
     const cancel = new AbortController()
     req.on('aborted', () => cancel.abort())
     res.on('close', () => {
@@ -415,10 +276,6 @@ export class CapabilityServer {
       return
     }
 
-    /*
-     * 身份校验：**不信 CLI 自报的身份**，要和绑定值逐一比对。
-     * 这是 S2 出口里「伪造 projectId 被拒」那条的实现点。
-     */
     const bound = this.ctx
     if (!bound) {
       reply(503, { ok: false, error: 'server_not_bound' })
@@ -435,10 +292,6 @@ export class CapabilityServer {
 
     const command = typeof body.command === 'string' ? body.command : ''
     if (!this.allowCommands.has(command)) {
-      /*
-       * 退役命令不在白名单里，但给的是**替代方向**而不是「未知命令」：
-       * 这样旧调用能一次改道，也不会被误判成模型拼错后反复重试。
-       */
       const retirement = retiredCommandMessage(command)
       if (retirement) {
         reply(400, { ok: false, error: retirement, code: 'retired_command', detail: command })
@@ -455,10 +308,6 @@ export class CapabilityServer {
 
     const opId = randomUUID()
     try {
-      /*
-       * `operations.status` 由服务自己答：它只知道自己的 ops 表，
-       * 交给外部 handlers 会形成环（handlers 要回头问 server）。
-       */
       const out =
         command === 'operations.status'
           ? this.describeOps(params)
@@ -474,11 +323,6 @@ export class CapabilityServer {
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      /*
-       * 业务失败：把错误码与（可选的）结构化数据一并带回去。
-       * 结果仍落文件 —— 模型要能拿到「当前清单」这类上下文才能自我纠正，
-       * 而不是只看到一个中文句子。
-       */
       const code = err instanceof CapabilityCommandError ? err.code : undefined
       const data = err instanceof CapabilityCommandError ? err.data : undefined
       const file = data === undefined ? null : this.writeResult(opId, { data })
@@ -498,17 +342,10 @@ export class CapabilityServer {
     if (!this.token || !header?.startsWith(prefix)) return false
     const got = Buffer.from(header.slice(prefix.length))
     const want = Buffer.from(this.token)
-    // 长度不同时 timingSafeEqual 会抛异常，先挡掉。
     if (got.length !== want.length) return false
     return timingSafeEqual(got, want)
   }
 
-  /**
-   * 大结果落文件，stdout 只回摘要。
-   *
-   * 为什么必须落文件：CLI 的 stdout 会**原样进入模型上下文**。
-   * 让模型读一个文件、只挑需要的片段，比把几 MB JSON 直接喷进上下文便宜得多。
-   */
   private writeResult(opId: string, out: Pick<CapabilityCommandResult, 'data' | 'resultText'>): { path: string; bytes: number } | null {
     if (out.data !== undefined && out.resultText !== undefined) {
       throw new CapabilityCommandError('result_shape_invalid', '宿主命令不能同时返回 JSON 数据与原始文本结果')
@@ -521,14 +358,6 @@ export class CapabilityServer {
     } catch {
       text = JSON.stringify({ error: 'result_not_serializable' })
     }
-    /*
-     * 超限时**改写成合法 JSON**，不能 `slice` —— 半截 JSON 会让模型 `JSON.parse`
-     * 直接失败，而且看不出是被截的。
-     *
-     * 给什么：原大小 + **数据的形状轮廓** + 一小段开头。前 4MB 的原始文本基本是
-     * 同一条数据的重复（缩进 + 长字符串），对读的人没什么用；轮廓才回答「这份结果
-     * 长什么样」。轮廓有界，所以写完一定放得下。
-     */
     if (Buffer.byteLength(text) > CAPABILITY_RESULT_MAX_BYTES) {
       const bytes = Buffer.byteLength(text)
       text = JSON.stringify({ truncated: true, bytes, shape: shapeOf(out.data), head: text.slice(0, 2000) })
@@ -542,13 +371,6 @@ export class CapabilityServer {
     return { path, bytes: Buffer.byteLength(text) }
   }
 
-  /**
-   * 写一份必须逐字保留的文本结果。
-   *
-   * 不能复用 JSON 结果的“超限截断”路径：调用方把这个文本交给 native `read`
-   * 后，扩展还会按固定前缀识别它的生命周期。截断既会误导模型，也可能绕过
-   * TTL 清理，所以大小和写盘错误都 fail closed。
-   */
   private writeRawTextResult(opId: string, text: string): { path: string; bytes: number } {
     const bytes = Buffer.byteLength(text)
     if (bytes > CAPABILITY_RESULT_MAX_BYTES) {
@@ -571,12 +393,10 @@ export class CapabilityServer {
     if (this.ops.length > 50) this.ops.splice(0, this.ops.length - 50)
   }
 
-  /** 供 `operations.status` 使用。 */
   recentOps(limit: number): Array<{ id: string; command: string; at: number; ok: boolean; error?: string }> {
     return this.ops.slice(-Math.max(1, Math.min(limit, 50)))
   }
 
-  /** `operations.status` 的实现：回读本实例最近的操作。 */
   private describeOps(params: Record<string, unknown>): {
     data: unknown
     summary: Record<string, unknown>

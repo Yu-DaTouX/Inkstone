@@ -2,18 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import { useStore } from '../../state/store'
 
-/**
- * A compact trigger with a details panel that opens upward from it (composer and status bar
- * sit at the bottom). While open it holds an overlay token so the native browser cannot cover it.
- */
 export function DetailTrigger({ label, className, testId, title, children, panel }: {
   label: string
   className?: string
   testId?: string
   title?: string
-  /** The always-visible summary inside the trigger. */
   children: ReactNode
-  /** Panel content, rendered only while open. */
   panel: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -25,7 +19,6 @@ export function DetailTrigger({ label, className, testId, title, children, panel
     if (!open || !trigger.current) return
     const r = trigger.current.getBoundingClientRect()
     const bottom = window.innerHeight - r.top + 6
-    /* Keep the panel inside the window: align to whichever side of the trigger has room. */
     setAt(r.left + 320 > window.innerWidth ? { bottom, right: Math.max(8, window.innerWidth - r.right) } : { bottom, left: Math.max(8, r.left) })
   }, [open])
   useEffect(() => {

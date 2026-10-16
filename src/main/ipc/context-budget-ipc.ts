@@ -7,7 +7,6 @@ import { readContextBackgroundUsage } from '../context-background-usage'
 
 export interface ContextBudgetIpcDeps { currentAgent(): AgentController | undefined }
 
-/** Old IPC names remain readable, but cannot re-enable host context management. */
 export function registerContextBudgetIpc(ipc: IpcRegistrar, deps: ContextBudgetIpcDeps): void {
   ipc.rawHandle('yan:contextBudget', () => null)
   ipc.rawHandle('yan:contextBudgetV1', () => null)

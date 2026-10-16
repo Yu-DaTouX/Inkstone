@@ -1,14 +1,3 @@
-/**
- * Native virtual-model fixture for `scripts/test-virtual-model-native.mjs`.
- *
- * The test copies this file to `<PI_CODING_AGENT_DIR>/extensions/virtual-model-extension.js`
- * because bundled pi 1.2.0 native discovery only accepts `.ts` / `.js` (its
- * `isExtensionFile()`), while the source-of-truth fixture here is `.mjs`.
- *
- * It registers one virtual model under the loopback physical provider declared in the
- * isolated `models.json` written by the test. No network, credentials, or user data.
- */
-
 export const VIRTUAL_PROVIDER = 'vmfix'
 export const VIRTUAL_ID = 'vmfix-router'
 export const PHYSICAL_ID = 'vmfix-physical'

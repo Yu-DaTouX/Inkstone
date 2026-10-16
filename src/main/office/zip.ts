@@ -1,15 +1,8 @@
-/**
- * 最小 zip 读取器：只为 docx / xlsx / pptx 取出内部的 XML。
- *
- * Office Open XML 就是 zip 包；这里只实现「读中央目录 → 按名取条目 → stored / deflate 解压」，
- * 不写 zip、不支持加密与 zip64（Office 文件远到不了 4GB）。为此引一个依赖不值得。
- */
 import { inflateRawSync } from 'node:zlib'
 
 const EOCD_SIGNATURE = 0x06054b50
 const CENTRAL_SIGNATURE = 0x02014b50
 const LOCAL_SIGNATURE = 0x04034b50
-/** 单个条目解压后的上限：防止「zip 炸弹」把内存撑爆 */
 const MAX_ENTRY_BYTES = 64 * 1024 * 1024
 
 export interface ZipEntry {

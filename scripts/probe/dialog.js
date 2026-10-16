@@ -1,16 +1,3 @@
-/**
- * 弹窗的就地行为：快捷键让位 / 焦点圈定 / Esc / 焦点恢复 / 图标按钮名称。
- *
- * ── 为什么这个场景必须带真按键 ──
- * Shift+Tab 是**主进程**用 `before-input-event` 拦的。渲染端 dispatchevent
- * 造出来的 KeyboardEvent 根本走不到那个钩子，所以「面板打开时它会被让出来」
- * 这件事只能靠 test-live 的 YAN_PROBE_KEYS（sendInputEvent）来验。
- *
- * 时序（主进程固定间隔 1.6s，第一个在探针开始后 1.8s）：
- *   #1 面板**开着**（t≈1.8）→ 应被守卫拦下，不产生 cycleThinking
- *   #2 面板**关了**（t≈3.4）→ 应恢复正常
- * 断言不绑定绝对时刻，而是记录「面板开着的区间」，再看动作落在区间哪一侧。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -23,15 +10,9 @@
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   const key = (k) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
 
-  /* 主进程发来的动作，带时间戳 —— 用来判断落在「面板打开区间」的哪一侧 */
   const seen = []
   window.yan.onHotkey?.((a) => seen.push({ a, t: Date.now() }))
 
-  /*
-   * 隔离环境里没有凭证 → 首次引导会自动弹出，它**也是一层模态**，
-   * 会把守卫一直摁住，干扰本场景。出现就立刻关掉（不阻塞主流程）。
-   * 真实用户路径不受影响 —— 这里只是让场景可控。
-   */
   const obs = new MutationObserver(() => {
     const x = document.querySelector('[data-testid="ob-close"]')
     if (x) x.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -39,7 +20,6 @@
   obs.observe(document.body, { childList: true, subtree: true })
 
   out.push('=== 1. 打开设置面板 ===')
-  /* 左栏收起时它不可聚焦（刻意）；先展开，让设置按钮成为可用的「面板之外的界面」 */
   if (q('.app')?.classList.contains('rail-off')) {
     q('[data-testid="rail-toggle"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await new Promise((r) => setTimeout(r, 500))
@@ -59,10 +39,6 @@
 
   out.push('')
   out.push('=== 2. 初始焦点进面板 ===')
-  /*
-   * 初始焦点是在 requestAnimationFrame 里做的 —— 固定 sleep 在 16 个场景
-   * 连着跑时会漏（实测抖动过一次）。改成轮询等它落位。
-   */
   let focused = false
   for (let i = 0; i < 15; i++) {
     if (panel && document.activeElement && panel.contains(document.activeElement)) {
@@ -75,11 +51,6 @@
 
   out.push('')
   out.push('=== 3. Tab 圈定（合成事件；焦点移动是我们显式做的）===')
-  /*
-   * 与产品的焦点陷阱同口径：排除 tabIndex=-1。设置页签是 WAI-ARIA 的 roving
-   * tabindex（当前项 0、其余 -1，用方向键切页）—— 不排除它们就会拿一个“本来
-   * 就不该被 Tab 进入”的页签去和陷阱的第一个可聚焦元素比较，必然不等。
-   */
   const focusables = panel
     ? [...panel.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')].filter(
         (el) => !el.disabled && el.getClientRects().length > 0 && el.tabIndex !== -1
@@ -99,13 +70,6 @@
 
   out.push('')
   out.push('=== 4. 模态守卫：面板打开时 Shift+Tab 不被抢（真按键）===')
-  /*
-   * ⚠️ 这里靠**真按键的固定时序**（主进程每隔 1.6s 发一个，第一个在 1.8s）。
-   *    场景连跑时机器负载高，固定 sleep 会漂 —— 实测报过一次
-   *    「关闭后没恢复」（其实是第二个键还没到）。
-   *    所以：让它盖住**前两个**按键（t≈1.8 / 3.4），后面留一个做对照，
-   *    并且对照那侧用**轮询**等。
-   */
   await sleep(3300)
   const closeAt = Date.now()
   const inWindow = seen.filter((x) => x.t >= openAt && x.t <= closeAt)
@@ -142,13 +106,6 @@
   out.push('  关闭后动作: ' + JSON.stringify(after.map((x) => x.a)))
   out.push('  诊断: 设置面板还在=' + !!q('.settings') + ' isProbe=' + window.yan.isProbe)
   if (!after.some((x) => x.a === 'cycleThinking')) {
-    /*
-     * 对照实验（**只输出，不断言**）：
-     * 手动告诉主进程「没有模态了」，再看下一个按键。
-     *   · 收到 → 说明渲染端没把 guard 复位（真问题，关闭设置后快捷键会一直失效）
-     *   · 没收到 → 多数是按键时序没跑到（本场景靠固定间隔的真按键，负载高时会漂）
-     * 不用 ok() 把它变成“通过” —— 那会把上面那个失败掩盖掉。
-     */
     out.push('  对照：手动把守卫复位，等下一个按键…')
     window.yan.setHotkeyGuard?.(false)
     const t0 = Date.now()
@@ -171,11 +128,6 @@
 
   out.push('')
   out.push('=== 7. 纯图标按钮有可访问名称 ===')
-  /*
-   * 「回到底部」只在用户往上翻（!stick）时渲染。
-   * 隔离 fixture 只有几条消息，内容高度不够粘顶 —— 这里把内容临时撑高，
-   * 让它真的出现（测试用完不恢复，探针跑完进程就退）。
-   */
   const stream = q('.stream')
   const inner = q('.stream-inner')
   if (inner) inner.style.minHeight = '3000px'
@@ -193,7 +145,6 @@
     ok(false, '没能让「回到底部」渲染出来（测试前提不成立）')
   }
 
-  /* 全局扫描：当前渲染的按钮里有没有「无文字又无名称」的 */
   const nameless = [...document.querySelectorAll('button')].filter((b) => {
     const text = (b.textContent || '').trim()
     const named = b.getAttribute('aria-label') || b.getAttribute('title')
@@ -215,14 +166,6 @@
   ok(!q('.modal-scrim'), '普通问题不再有遮罩（非模态）')
   ok(!qp || !qp.contains(document.activeElement), '问题到达不抢焦点')
 
-  /*
-   * 方案第 6 节的关键断语：「能切换焦点阅读历史」。
-   * 旧模态框会抢走焦点并圈定，这条在旧实现下必然失败。
-   *
-   * ⚠️ 不能用输入框做靶子：pi 未就绪时 textarea 是 disabled 的
-   *    （隔离环境常见），focus 不会生效。用左栏的设置按钮 —— 它在任何
-   *    连接状态下都可聚焦，而且同样是「面板之外的界面」。
-   */
   const outside = q('[data-testid="rail-settings"]') ?? q('[data-testid="composer"]')
   outside?.focus()
   ok(document.activeElement === outside, '面板打开时仍能把焦点移到界面其它部分（能继续操作与阅读）')
@@ -263,16 +206,9 @@
   const panel2 = q('.settings')
   ok(!!panel2, '设置面板能再次打开')
   if (panel2) {
-    /*
-     * 真正要验证的是「不需要鼠标」：控件必须是原生 button / input，
-     * 而不是 div + onClick —— 后者天生不可 Tab、不能用 Enter/Space 触发。
-     * 真实按键序列留给人工与 hotkeys 场景（合成键盘事件不产生 click，
-     * 用它测“能用键盘操作”会得到一个假结论）。
-     */
     const controls = [
       ...panel2.querySelectorAll('[role="tab"], .seg-btn, .ui-row-ctl button, .ui-row-ctl input, .ui-row-ctl select')
     ]
-    /* 页签靠方向键切换（roving tabindex），不在「必须能被 Tab 聚焦」的范围内。 */
     const notFocusable = controls.filter((el) => el.tabIndex < 0 && el.getAttribute('role') !== 'tab')
     const notNative = controls.filter(
       (el) => !['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A'].includes(el.tagName)

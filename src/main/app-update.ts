@@ -6,8 +6,6 @@ import type { AppUpdateStatus } from '../shared/app-update'
 import type { IpcRegistrar } from './ipc/registrar'
 
 const RELEASES = 'https://github.com/Yu-DaTouX/Inkstone/releases'
-/** Installed NSIS builds consume GitHub's generated updater metadata. Development and
- * portable builds still expose release checks without pretending they can replace themselves. */
 export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean): void {
   const state: AppUpdateStatus = { phase: 'idle', current: app.getVersion(), automatic: true, packaged: app.isPackaged, releaseUrl: RELEASES }
   const preferences = join(app.getPath('userData'), 'update-preferences.json')
@@ -40,7 +38,6 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean): void 
     })().finally(() => { checking = null })
     return checking
   }
-  /* 偏好文件读完之前，status 不能返回默认的 automatic: true */
   let prefsLoaded: Promise<void> = Promise.resolve()
   ipc.handle('yan:update:status', async () => { await prefsLoaded; return { ...state } })
   ipc.handle('yan:update:check', check)

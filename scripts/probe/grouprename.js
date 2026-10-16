@@ -1,13 +1,3 @@
-/**
- * 分组管理补齐（N01）：重命名 / 校验 / 解散，且**不动项目归属**。
- *
- * 用户反馈的「分组不全面」：原来只能新建分组、把项目塞进去、移出来，
- * 分组名一旦建好就改不了，也没有解散入口。
- *
- * 这里不碰磁盘上的会话文件：项目列表用 `recentCwds` + `projects` 记录
- * 造出来（隔离目录里 `patchSettings` 写的是临时 desktop.json）。
- * 断言重点：改名只改名字，`groupId` 和项目归属一个都不变。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -31,11 +21,6 @@
     Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  /**
-   * 提交行内重命名：优先回车（产品里 Enter 就是提交），
-   * 再不行才派发 focusout（React 的 onBlur 走 focusout 委托）。
-   * 探针窗口不一定有文档焦点，靠 `blur()` 在这里不总是可靠。
-   */
   const commitInput = async (el, value) => {
     setValue(el, value)
     await sleep(80)
@@ -58,9 +43,7 @@
     store.getState().setRailPinned(true)
     await sleep(300)
 
-    /* ---- 造两个分组 + 四个项目（两个在 A、一个在 B、一个未分组）---- */
     const stamp = Date.now()
-    /* 场景带夹具项目：用里面预建的真实子目录（主进程对新项目 cwd 走 validateCwd，假目录会被拒）。 */
     const probeRoot = String(store.getState().settings.cwd).replace(/[\\/]+$/, '')
     const cwdOf = (n) => `${probeRoot}/probe-projects/p${n}`
     const groups = [
@@ -75,10 +58,6 @@
     ]
     const cwds = projects.map((p) => p.cwd)
     await store.getState().patchSettings({ projectGroups: groups, projects, recentCwds: cwds })
-    /*
-     * 左栏现在只显示**有会话的项目**：只造项目不造会话，分组标题根本不会渲染
-     * （实测 0 个）。给每个项目配一条合成会话。
-     */
     const sessions = projects.map((p, i) => ({
       id: `gr-s${i}`,
       path: `${p.cwd}/session-${i}.jsonl`,
@@ -101,7 +80,6 @@
     ok(before.length === 2, `渲染出两个分组标题（实际 ${before.length}）`)
     ok(before.includes('探针甲组') && before.includes('探针乙组'), '标题里是分组名（图标/按钮不带文字）')
 
-    /* ---- 打开分组菜单 ---- */
     const menuBtn = q('[data-testid="rail-group-menu-probe-group-a"]')
     ok(!!menuBtn, '分组标题上有操作菜单入口')
     if (menuBtn) click(menuBtn)
@@ -110,7 +88,6 @@
     ok(!!renameAction, '菜单里有「重命名分组」')
     ok(!!q('[data-testid="rail-group-dissolve"]'), '菜单里有「解散分组」')
 
-    /* ---- 重命名：空白名 ---- */
     if (renameAction) click(renameAction)
     ok(await until(() => !!q('[data-testid="rail-group-rename"]')), '点重命名后出现行内输入框')
     const input = q('[data-testid="rail-group-rename"]')
@@ -122,14 +99,12 @@
     ok(!!q('[data-testid="rail-group-rename"]'), '空白名时保留输入框（不静默关闭）')
     out.push('  空白名提示 = ' + JSON.stringify(q('[data-testid="rail-group-error"]')?.textContent))
 
-    /* ---- 重命名：与另一个分组重名 ---- */
     await commitInput(q('[data-testid="rail-group-rename"]'), '探针乙组')
     await sleep(400)
     ok(!!q('[data-testid="rail-group-error"]'), '重复名被拒绝并给出提示')
     ok(!!q('[data-testid="rail-group-rename"]'), '重复名时保留输入框')
     out.push('  重名提示 = ' + JSON.stringify(q('[data-testid="rail-group-error"]')?.textContent))
 
-    /* ---- 重命名：合法名 ---- */
     await commitInput(q('[data-testid="rail-group-rename"]'), '探针甲组·改')
     await until(() => !q('[data-testid="rail-group-rename"]'))
     await settle()
@@ -151,7 +126,6 @@
     )
     ok(st.projectGroups.length === 2, '分组数量不变（没有新建/删除）')
 
-    /* ---- 解散分组：项目必须保留 ---- */
     const rowCountBefore = qa('.proj').length
     const dissolve = q('[data-testid="rail-group-menu-probe-group-a"]')
     if (dissolve) click(dissolve)
@@ -172,7 +146,6 @@
     ok(!titles().includes('探针甲组·改'), '界面上不再显示已解散的分组标题')
     ok(titles().includes('探针乙组'), '其它分组照旧')
 
-    /* ---- 收尾：把探针造的数据清掉 ---- */
     await store.getState().patchSettings({ projectGroups: [], projects: [], recentCwds: [] })
     await sleep(200)
   } catch (error) {

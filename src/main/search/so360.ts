@@ -1,7 +1,3 @@
-/**
- * 360 搜索来源：中文互联网内容（博客、社区、问答），匿名访问不会像百度、搜狗那样弹验证。
- * 结果链接是 `so.com/link?m=…` 的跳转；链接节点的 `data-mdurl` 带真实地址，优先用它。
- */
 import type { SourceRun } from './aggregate'
 import { runWebEngine, type WebEngine } from './web-engine'
 

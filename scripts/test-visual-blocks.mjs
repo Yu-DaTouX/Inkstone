@@ -1,4 +1,3 @@
-/** 结构化回答块的解析与校验（shared/visual-blocks.ts）：纯函数，不启动 Electron。 */
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
 

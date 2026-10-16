@@ -1,60 +1,12 @@
 #!/usr/bin/env node
-/**
- * `yan` — 砚宿主能力 CLI（随包分发）。
- *
- * ══════════════════════════════════════════════════════════════════
- * 它在架构里的位置
- * ══════════════════════════════════════════════════════════════════
- * 模型只有 pi 的基础工具（read / bash / …）。砚的能力**不注册成模型工具**，
- * 而是通过这个 CLI 触达：模型在 bash 里调 `yan <组> <动作>`，
- * 宿主（Electron 主进程）执行后把结果落成文件，stdout 只回一段**受限摘要**。
- *
- * ```
- *   模型 ──bash──▶ yan capabilities search --query-file q.json
- *                        │
- *                        ├─ POST http://127.0.0.1:<随机端口>/rpc
- *                        │    Authorization: Bearer <一次性 token>
- *                        │    { apiVersion, command, params, sessionId, projectId }
- *                        │
- *                        ▼
- *                   宿主能力服务（身份校验 → 执行 → 结果落文件）
- *                        │
- *                        ▼
- *                 { ok, operationId, summary, resultFile }  ← 只有这段进上下文
- * ```
- *
- * ── 为什么身份从环境变量来、而不是命令行参数 ──
- *   命令行参数会出现在进程列表里，也会被模型/用户看见；
- *   环境变量由宿主注入 pi 子进程，模型看不到，也无法伪造别的会话。
- *   宿主侧仍会拿它和绑定的 (sessionId, projectId) 逐一比对 —— 环境变量只是传递，
- *   **信任在宿主**（见 src/main/capability-server.ts）。
- *
- * ── 为什么参数用文件 ──
- *   `--query-file` / `--request-file` 收 UTF-8 JSON 文件路径。
- *   这样模型不用在 shell 里拼 JSON（转义 / 注入 / 引号地狱），
- *   大参数也不会撞命令行长度限制。
- *
- * ── 边界 ──
- *   本文件**不 import pi 的任何模块**、不注册工具、不写 pi 的设置。
- *   它只做三件事：读环境里的身份、发一个 HTTP 请求、把摘要打到 stdout。
- */
 
 import { readFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 
 const API_VERSION = 1
 
-/** 退出码：区分「用法错」与「宿主/业务拒绝」，脚本才好据以分支。 */
 const EXIT = { ok: 0, failed: 1, usage: 2, unavailable: 3 }
 
-/**
- * 已退役的分组：不再出现在帮助与解析表里，也不发任何请求。
- *
- * 为什么要单独拦一道而不是留给宿主：这些命令的“用户可见宣告”就在本文件的
- * 帮助与解析表里。旧会话、脚本里仍会有 `yan hub …`，直接在本地给出明确
- * 退役提示并指向 subagent，既不占上下文，也不会白跑一次 HTTP / 拉起进程。
- * 历史 Hub 数据与只读界面后端不动，只是不再从普通会话提供入口。
- */
 const RETIRED_GROUPS = {
   hub: '多 Agent 工作台命令（hub.*）已退役，不再从普通会话提供：请改用 yan subagent start|list|get|stop 派子代理；历史 Hub 记录仍可在界面查看。'
 }
@@ -112,14 +64,6 @@ const USAGE = `yan — 砚宿主能力 CLI
   （同一个 operationId 只会生效一次，不会重复添加）。
 `
 
-/**
- * 分组的详细用法（`yan <组> --help`）。
- *
- * 为什么单独一份而不是把全部动作堆在主用法里：主用法是模型**每轮都可能看到**的
- * 一段文字，浏览器的 19 个动作列进去就不叫「摘要」了；按需读才不占上下文。
- * 这份表与 `src/main/capability-server.ts` 的 `KNOWN_COMMANDS`、
- * `src/main/agent.ts` 的 `runBrowserCommand` 三处必须一致。
- */
 const GROUP_USAGE = {
   capabilities: `yan capabilities <动作> [选项]
 
@@ -509,21 +453,6 @@ function fail(code, message, extra) {
   process.exit(code)
 }
 
-/* -------------------------------------------------------------- 参数解析 */
-
-/**
- * 每个分组的已知动作与必填参数。
- *
- * ── 为什么要在这里再列一份 ──
- *   这里不是权限表（能不能跑由宿主的 `KNOWN_COMMANDS` 决定），目的只有一个：
- *   把**打错的子命令 / 漏掉的参数**变成人（和模型）一眼能改的提示，
- *   而不是一次往返后收到 `unknown_command` 这类接线语。
- *   `--request-file` 可以绕开这层（参数在文件里），所以宿主侧**仍然**要自己校验 ——
- *   两道都要有，不能只留一道。
- *
- * 表中的动作必须与 `src/main/capability-server.ts` 的登记、
- * `src/main/agent.ts` 的 `runBrowserCommand` 一一对应。
- */
 const GROUP_SPECS = {
   capabilities: {
     actions: ['search', 'discover', 'prepare', 'acquire'],
@@ -540,14 +469,12 @@ const GROUP_SPECS = {
   mcp: {
     actions: ['describe', 'call'],
     required: {
-      /* describe 常用内联写法；call 走 --request-file（参数在文件里，由宿主校验）。 */
       describe: ['server', 'tool']
     }
   },
 
   goal: {
     actions: ['ready', 'report', 'status'],
-    /* 都走 --request-file；缺文件里字段由宿主报可读错误（它才看得懂当前状态） */
     required: {}
   },
 
@@ -597,7 +524,6 @@ const GROUP_SPECS = {
     actions: ['read'],
     required: { read: ['path'] }
   },
-  /* --path 或请求文件里的 paths 二选一，由宿主校验 */
   file: {
     actions: ['trash'],
     required: {}
@@ -608,7 +534,6 @@ const GROUP_SPECS = {
   },
   search: {
     actions: ['query', 'fetch', 'docs', 'doctor'],
-    /* doctor 无必需参数；query 至少要一个查询词；fetch 要一个网址；docs 要问题（库名或库 ID 由宿主校验） */
     required: { query: ['query-text'], fetch: ['url'], docs: ['query-text'] }
   },
   browser: {
@@ -636,7 +561,6 @@ const GROUP_SPECS = {
       'connect-chrome',
       'disconnect-chrome'
     ],
-    /* 这里只列「缺了完全无法解释意图」的参数；其余交给宿主报业务错误 */
     required: {
       navigate: ['url'],
       open: ['url'],
@@ -684,15 +608,9 @@ function readJsonFile(path, label) {
   }
 }
 
-/* ------------------------------------------------------------ 主流程 */
-
 const { flags, positional } = parseArgs(process.argv.slice(2))
 if (flags.overwrite) fail(EXIT.usage, '--output 不支持覆盖已有文件；请选择新路径')
 
-/*
- * 退役分组：在任何帮助、身份检查与请求之前拦下，保证 `yan hub …` 无论带不带
- * --help / 身份环境变量，都只回一段替代提示，不发请求、不启动任何进程。
- */
 if (positional[0] && RETIRED_GROUPS[positional[0]]) {
   fail(EXIT.usage, RETIRED_GROUPS[positional[0]], {
     detail: '普通会话请改用 yan subagent start|list|get|stop；用 yan --help 看当前可用命令'
@@ -700,7 +618,6 @@ if (positional[0] && RETIRED_GROUPS[positional[0]]) {
 }
 
 if (flags.help || positional.length === 0) {
-  /* `yan <组> [动作] --help`：给出所属分组的用法，动作级帮助不依赖宿主连接。 */
   if (flags.help && positional.length >= 1 && GROUP_USAGE[positional[0]]) {
     process.stdout.write(GROUP_USAGE[positional[0]])
     process.exit(EXIT.ok)
@@ -713,10 +630,6 @@ if (positional.length < 2) {
   fail(EXIT.usage, '命令要写成「组 动作」两段，例如 capabilities search。用 --help 看全部。')
 }
 
-/*
- * 子命令名先在本校一遍（不等宿主）：写错了要马上能看出该怎么改，
- * 而且这一步在身份检查**之前** —— 帮助与「拼错了」不应该要求你在会话里。
- */
 const groupSpec = GROUP_SPECS[positional[0]]
 if (groupSpec && !groupSpec.actions.includes(positional[1])) {
   fail(EXIT.usage, `未知的 ${positional[0]} 子命令：${positional[1]}`, {
@@ -741,7 +654,6 @@ if (positional[0] === 'context' && positional[1] === 'budget') {
   command = `${positional[0]}.${positional[1]}`
 }
 
-/* 参数：优先用参数文件，其余 flag 原样带上（如 --scope available）。 */
 const flagParams = {}
 for (const [k, v] of Object.entries(flags)) {
   if (['output', 'help', 'query-file', 'request-file'].includes(k)) continue
@@ -751,16 +663,10 @@ let params = { ...flagParams }
 if (typeof flags['query-file'] === 'string') params = { ...params, ...readJsonFile(flags['query-file'], '参数文件') }
 else if (typeof flags['request-file'] === 'string') params = { ...params, ...readJsonFile(flags['request-file'], '请求文件') }
 
-/* CLI 的连字符选项与请求文件里的 camelCase 保持兼容。 */
 if (params.readOnly === undefined && params['read-only'] !== undefined) {
   params.readOnly = params['read-only']
 }
 
-/*
- * 必填参数检查放在**参数成型之后**：`--query-file` / `--request-file`
- * 把参数放在文件里，只看 flag 会误报「缺参数」。
- * 宿主侧仍会自己校验一次（它不能假定请求来自本 CLI）。
- */
 if (groupSpec?.required?.[positional[1]]) {
   const missing = groupSpec.required[positional[1]].filter((key) => {
     const value = params[key]
@@ -775,12 +681,6 @@ if (groupSpec?.required?.[positional[1]]) {
   }
 }
 
-/*
- * 身份检查放在**本地校验之后**：
- * 「拼错了子命令」「漏了参数」跟你在不在会话里无关，必须先给出该改哪里；
- * 只有命令本身成立、参数也齐了，缺身份才意味着「宿主不可用」。
- */
-/** 身份只来自宿主注入的环境变量。 */
 const url = process.env.YAN_CLI_URL
 const token = process.env.YAN_CLI_TOKEN
 const sessionId = process.env.YAN_SESSION_ID
@@ -794,11 +694,6 @@ if (!url || !token || !sessionId || !projectId) {
   })
 }
 
-/*
- * 用 node:http 而不是 fetch：fetch 收不到响应头 5 分钟就断开，而 `question ask`
- * 要一直等到用户回答（后台会话的提问在用户看到时才开始计时，宿主兜底 10 分钟
- * 起、可加时）。等多久由宿主决定，CLI 不另设超时。宿主地址固定是本机 http。
- */
 function post(target, headers, body) {
   return new Promise((resolve, reject) => {
     const req = httpRequest(target, { method: 'POST', headers: { ...headers, 'content-length': Buffer.byteLength(body) } }, (res) => {
@@ -833,10 +728,6 @@ try {
   })
 }
 
-/*
- * --output：宿主已经把完整结果落盘，这里只是**另存一份到模型指定的位置**。
- * 读写都在 CLI 进程里完成，宿主不参与路径决策。
- */
 if (payload?.ok && typeof flags.output === 'string' && typeof payload.resultFile === 'string') {
   try {
     const { copyFileSync, constants } = await import('node:fs')
@@ -847,6 +738,5 @@ if (payload?.ok && typeof flags.output === 'string' && typeof payload.resultFile
   }
 }
 
-/* stdout 只回受限摘要：完整内容在 resultFile 里，让模型按需去读片段。 */
 process.stdout.write(JSON.stringify(payload) + '\n')
 process.exit(payload?.ok ? EXIT.ok : EXIT.failed)

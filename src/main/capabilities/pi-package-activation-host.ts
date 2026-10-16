@@ -62,7 +62,6 @@ function installedPackage(
     : { ok: true, installed: false, problems: [`项目包清单未确认 ${target.packageName}@${target.packageVersion}`] }
 }
 
-/** Build the production adapters while keeping scheduling policy independently testable. */
 export function createPiPackageActivationHostPorts(deps: PiPackageActivationHostDeps): PiPackageSchedulerPorts {
   const runner = async (target: PiPackageActivationTarget) => deps.runners.activationSnapshot(target)
 

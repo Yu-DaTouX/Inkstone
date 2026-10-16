@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-/**
- * R5 预览面板归属回归（选择 + 已加载视图都绑 owner）。
- *
- * 目的：不用源码字符串断言，而是把**真实** `PreviewPane.tsx` 与**真实**
- * `preview-selection.ts` 现场 esbuild 出来，用一个会展开子组件的浅渲染替身和
- * 可控 deferred 的 `window.yan` 桩驱动，钉住：
- *   · A 在 manifest 里点选 → 切 B（外部 path 也是 undefined）不读 A 的文件、不显示 A 的内容；
- *   · 迟到的 A 回包不覆盖 B；
- *   · B 点自己的成果走 B 的 cwd；
- *   · 同一个 owner 内外部 path 变了的优先级；
- *   · 失败后重试能恢复；
- *   · 切回 A 时 A 自己的点选仍在（规则明确）。
- *
- * 用法：node scripts/test-v3-preview-owner.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型。
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
@@ -23,8 +7,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 
@@ -40,8 +22,6 @@ function ok(cond, label, detail) {
   return pass
 }
 
-/* -------------------------------------------------------- 定时/全局桩 */
-
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 async function flush() {
   await sleep(0)
@@ -54,7 +34,6 @@ function installGlobals() {
     try {
       fn(0)
     } catch {
-      /* 浅渲染里没有真实帧，忽略 */
     }
     return 0
   }
@@ -88,7 +67,6 @@ const okPreview = (p) => ({
   text: `content:${p}`
 })
 
-/** 可控的 `window.yan`：只实现预览面板会用到的能力。 */
 function makeYan() {
   const calls = { readPreview: [], office: [], reveal: [], open: [] }
   const deferreds = new Map()
@@ -136,8 +114,6 @@ function installWindow(yan) {
   }
 }
 
-/* ------------------------------------------------------------ bundle 构建 */
-
 const REACT_SHIM = `/* v3 预览归属回归的 React 浅渲染替身：状态放在 globalThis.__V3_HOOKS。 */
 const rt = () => globalThis.__V3_HOOKS
 export const Fragment = Symbol.for('v3.fragment')
@@ -167,7 +143,6 @@ export const jsxs = jsx
 export const jsxDEV = jsx
 `
 
-/* 只打桩界面/文案/图标；预览归属逻辑（PreviewPane + model + preview-selection）保持真实。 */
 const LUCIDE_STUB = `function icon(){ return null }
 export const Copy = icon
 export const FileText = icon
@@ -267,8 +242,6 @@ export * as sel from '${posix(resolve(ROOT, 'src/renderer/src/features/preview/p
   return out
 }
 
-/* ------------------------------------------------------- 浅渲染 hook 运行时 */
-
 function makeHookRuntime() {
   const rt = {
     cells: [],
@@ -335,7 +308,6 @@ function makeHookRuntime() {
   return rt
 }
 
-/** 展开函数子组件（不重跑根组件），让浅渲染树里能看到 body。 */
 function expand(node) {
   if (Array.isArray(node)) return node.map(expand)
   if (!node || typeof node !== 'object') return node
@@ -360,8 +332,6 @@ function collect(node, pred, out = []) {
 const treeText = (tree) => JSON.stringify(tree)
 const firstButton = (tree) => collect(tree, (n) => n.type === 'button' && typeof n.props.onClick === 'function')[0]
 const retryButton = (tree) => collect(tree, (n) => n.props && n.props['data-testid'] === 'icon:重试')[0]
-
-/* ------------------------------------------------------------------ 主流程 */
 
 const ARTIFACT_A = {
   id: 'art-a',
@@ -407,14 +377,12 @@ async function main() {
   }
   const { PreviewPane, sel } = mod
 
-  /* 每个场景一份新的 hook cell，避免上一个场景选择/视图残留。 */
   let rt = null
   const newRuntime = () => {
     rt = makeHookRuntime()
     globalThis.__V3_HOOKS = rt
   }
   const render = (props) => expand(rt.render(PreviewPane, props))
-  /* 点选/外部 path 变化后：渲染触发 effect → flush 让异步读取落地 → 再渲染显示结果。 */
   const settle = async (props) => {
     render(props)
     await flush()
@@ -425,7 +393,6 @@ async function main() {
     return settle(props)
   }
 
-  /* ============================================================ 组 0 */
   group('纯函数：作用域 / 点选 / 外部接管优先级')
   {
     const scopeA = sel.previewScopeKey({ key: 'A', cwd: 'C:/a' })
@@ -457,7 +424,6 @@ async function main() {
     ok(sel.previewBaseName('C:\\proj\\a\\a.md') === 'a.md', '文件名解析跨平台')
   }
 
-  /* ============================================================ 组 1 */
   group('A 选 manifest → 切 B（path 同为 undefined）：不读 A、不显示 A')
   {
     newRuntime()
@@ -478,7 +444,6 @@ async function main() {
     ok(treeText(tree).includes('b.md'), 'B 显示自己的 manifest')
   }
 
-  /* ============================================================ 组 2 */
   group('迟到的 A 回包不覆盖 B')
   {
     newRuntime()
@@ -501,7 +466,6 @@ async function main() {
     ok(treeText(tree).includes('没有打开的预览'), 'B 保持空视图')
   }
 
-  /* ============================================================ 组 3 */
   group('B 点自己的成果：走 B 的路径与 cwd')
   {
     newRuntime()
@@ -516,7 +480,6 @@ async function main() {
     ok(!treeText(tree).includes('content:C:/proj/a/a.md'), 'B 不显示 A 的内容')
   }
 
-  /* ============================================================ 组 4 */
   group('同一个 owner 内外部 path 变了：外部接管，优先级清晰')
   {
     newRuntime()
@@ -534,7 +497,6 @@ async function main() {
     )
     ok(treeText(tree).includes('content:C:/proj/a/two.md'), '显示新路径内容')
 
-    /* 面板内先点选，再让外部 path 换值：外部必须接管，旧点选不能盖回去 */
     newRuntime()
     setStore({ sessionId: 'sess-a', messages: [{ id: 'm-a', artifacts: [ARTIFACT_A] }] })
     calls.readPreview.length = 0
@@ -551,7 +513,6 @@ async function main() {
     ok(!treeText(tree).includes('content:C:/proj/a/a.md'), '旧点选内容不再显示')
   }
 
-  /* ============================================================ 组 5 */
   group('读取失败后重试能恢复')
   {
     newRuntime()
@@ -569,7 +530,6 @@ async function main() {
     ok(!treeText(tree).includes('v3-preview-error'), '重试后错误消失')
   }
 
-  /* ============================================================ 组 6 */
   group('切回 A：A 自己的点选恢复，B 内容不残留')
   {
     newRuntime()
@@ -595,7 +555,6 @@ async function main() {
     ok(!treeText(tree).includes('content:C:/proj/b/b.md'), '不残留 B 的内容')
   }
 
-  /* ============================================================ 组 7 */
   group('图片 abs 与 office 结果也按 owner 隔离')
   {
     newRuntime()

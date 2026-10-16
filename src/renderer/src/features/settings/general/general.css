@@ -1,10 +1,4 @@
 @layer features {
-  /*
-   * v3 设置「通用分区」的版面。
-   *
-   * 只写版面：控件外观来自 `ui/`，设置行来自 `settings.css` 的既有类。
-   * 这里只补目录列表、设备列表、数据路径这些小组合的排版。
-   */
 
   .settings-roots,
   .settings-devices {

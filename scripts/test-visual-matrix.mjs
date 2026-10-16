@@ -87,7 +87,6 @@ export async function runVisualMatrixTests() {
   assert.equal(hasRequestedStates(MODEL_MENU_GROUPS, ['bad-state']), false)
   assert.equal(hasRequestedStates(MODEL_MENU_GROUPS, ['modelmenufull']), true)
 
-  // 执行真实场景字符串；这里只模拟菜单开关和 store，DOM/截图另跑 Electron 验证。
   const source = readFileSync(new URL('./visual-matrix.mjs', import.meta.url), 'utf8')
   checkRetiredRegistrations(source)
   await checkModelMenuState(source)

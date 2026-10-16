@@ -1,15 +1,3 @@
-/**
- * 语义图标状态与浅色适配（实施-11 H-8a/b，cost 0，不调模型）。
- *
- * 只验能直接量的事实：
- *   ① 主题文本色与底色的对比度（正文 / 次要文字 / 图标注色），深浅两态；
- *   ② `.ico` 的颜色过渡存在，且 reduced-motion 分支把时长压到 1ms；
- *   ③ 进行态动画只挂在真实 running 类上，类名移走就停。
- *
- * artifact / imageProgress / 子代理内联卡的浅色外观由视觉矩阵的
- * `artifact` / `imageprogress` / `subagentinline` 浅色截图看图验收 ——
- * 这里只保证它们引用的变量都已定义（`var(--text)` 那类回退已清零）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => { out.push((c ? '  ✓ ' : '  ✗ ') + s); return !!c }
@@ -17,7 +5,6 @@
   const q = (s) => document.querySelector(s)
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
-  /** 相对亮度（WCAG） */
   const lum = (rgb) => {
     const m = String(rgb).match(/[\d.]+/g)
     if (!m || m.length < 3) return 0
@@ -34,7 +21,6 @@
     const lo = Math.min(l1, l2)
     return (hi + 0.05) / (lo + 0.05)
   }
-  /** 把两个 token 分别当 color / background 应用，读浏览器规范化后的值 */
   const pair = (fgVar, bgVar) => {
     const el = document.createElement('span')
     el.style.cssText =
@@ -48,7 +34,6 @@
     return r
   }
 
-  /** 遍历样式表（含媒体查询内部），找满足条件的规则 */
   const walkRules = (fn) => {
     const visit = (rules) => {
       for (const rule of rules) {
@@ -60,7 +45,6 @@
       try {
         visit(sheet.cssRules)
       } catch {
-        /* 跨域样式表读不到 */
       }
     }
   }
@@ -76,7 +60,6 @@
     }
     await sleep(800)
 
-    /* ---- ① 对比度：深浅两态 ---- */
     for (const theme of ['dark', 'light']) {
       document.documentElement.dataset.theme = theme
       await sleep(350)
@@ -98,7 +81,6 @@
     document.documentElement.dataset.theme = 'dark'
     await sleep(250)
 
-    /* ---- ② .ico 的颜色过渡 + reduced-motion 分支 ---- */
     {
       const ico = q('.ico')
       ok(!!ico, '页面上存在真实图标（.ico）')
@@ -125,7 +107,6 @@
       ok(mediaFound && icoInMedia, 'reduced-motion 下 .ico 的过渡被显式压低')
     }
 
-    /* ---- ③ 进行态动画：running 类移走就停 ---- */
     {
       const wrap = document.createElement('div')
       wrap.className = 'image-progress running'

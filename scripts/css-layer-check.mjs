@@ -1,63 +1,7 @@
-/**
- * 层叠等价校验：迁移 CSS 规则后，最终生效的声明必须一字不变。
- *
- * ══════════════════════════════════════════════════════════════════
- * 为什么不能只做文本 diff
- * ══════════════════════════════════════════════════════════════════
- * 迁移的意义就是「同一批声明换个文件放」。文本必然不同，但**计算后的结果**
- * 必须相同：对每个 (媒体查询, 选择器)，把所有文件按加载顺序叠一遍，
- * 属性取最后一次生效的赋值 —— 这个结果前后要完全一致。
- *
- * ══════════════════════════════════════════════════════════════════
- * 逐选择器
- * ══════════════════════════════════════════════════════════════════
- * `.a, .b { … }` 会拆成 `.a{}` 与 `.b{}` 两条独立记录再比。否则一条多选择器
- * 规则在比对里是「一个整体」，它与单独出现的 `.b{}` 之间的覆盖关系就看不见了。
- * 拆分是按**括号/引号深度**做的 —— 直接 `split(',')` 会把
- * `:is(.a, .b)` 或 `[data-x="a,b"]` 拆坏。
- *
- * ══════════════════════════════════════════════════════════════════
- * `!important`（这是本工具曾经会「说谎」的地方）
- * ══════════════════════════════════════════════════════════════════
- * 旧版把 `!important` 当成**值的一部分**（`"1px !important"`）直接比较。后果：
- *
- *   · 误报：早期带 important、后期不带，值字符串不同 → 报「值变化」，
- *     而实际早期那条赢、结果没变 —— 于是本该允许的迁移被拦下；
- *   · **假通过**（更危险）：同值时 important 被后写覆盖掉，
- *     `{p:1px!important}{p:1px}{p:2px}` 与 `{p:1px}{p:2px}` 被判成等价，
- *     但前者实际是 `1px`、后者是 `2px`。
- *
- * 现在 important 是独立维度，覆盖规则按 CSS 规范：带 important 的声明赢过
- * 不带的；两者同为 important（或同为普通）时后写覆盖前写。
- *
- * ══════════════════════════════════════════════════════════════════
- * 边界（刻意的保守）
- * ══════════════════════════════════════════════════════════════════
- *   · **跨 @media 不判胜负**：`@media` 内外的同类声明谁生效取决于视口，
- *     静态判不了。所以媒体查询进 key，等于「各比各的」。宁可漏合并。
- *   · **不建模选择器之间的特异性**：`.a` 与 `.c.a` 谁赢不在这里算。本工具
- *     只保证「同一选择器自己的声明集不变」，够用来验证「换文件放」，
- *     不足以单独证明「改变规则之间的相对顺序」是等价的。
- *     所以合并规则时，除了本工具，还要保证**同属性同选择器的相对顺序**不变。
- *
- * 用法：
- *   node scripts/css-layer-check.mjs <迁移前的 styles 目录> [迁移后目录]
- *   node scripts/css-layer-check.mjs --selftest         # 自检（含上面的假通过用例）
- *
- * 典型流程（迁移前先拍快照）：
- *   cp -r src/renderer/src/styles /tmp/styles-before
- *   node scripts/css-migrate.mjs --from redesign.css --to tools.css --match ".rp-"
- *   node scripts/css-layer-check.mjs /tmp/styles-before src/renderer/src/styles
- */
 import { readFileSync, readdirSync, existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join, resolve, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 
-/*
- * 加载顺序与层：优先读目录里的 `index.css`（`@import './x.css' layer(y)`，
- * 与 scripts/lib/css-order.mjs 同一种写法）。没有 index.css 的旧快照按下面的
- * 历史顺序、全部视为未分层处理。两个目录各按各的入口算，比较的是最终结果。
- */
 const LEGACY_ORDER = [
   'tokens.css',
   'ui.css',
@@ -82,7 +26,6 @@ const LEGACY_ORDER = [
   'icon-state.css'
 ]
 
-/** → [{ name, layerIndex }]，未分层记为 Infinity（压过所有层） */
 function entriesOf(dir) {
   const index = join(dir, 'index.css')
   if (!existsSync(index)) {
@@ -108,7 +51,6 @@ function entriesOf(dir) {
   return out
 }
 
-/** 按顶层逗号拆选择器（尊重括号与引号） */
 function splitTopLevel(s, sep) {
   const parts = []
   let depth = 0
@@ -118,7 +60,6 @@ function splitTopLevel(s, sep) {
     const ch = s[i]
     if (quote) {
       buf += ch
-      /* 反斜杠转义：`"a\"b"` 里的引号不算结束 */
       if (ch === quote && s[i - 1] !== '\\') quote = ''
       continue
     }
@@ -140,11 +81,6 @@ function splitTopLevel(s, sep) {
   return parts
 }
 
-/**
- * 一条声明 → `{ prop, value, important }`。
- *
- * `!important` 前可有空格、大小写任意（`!IMPORTANT` 也合法）。
- */
 function parseDecl(decl) {
   const norm = decl.replace(/\s+/g, ' ').trim()
   if (!norm) return null
@@ -164,12 +100,6 @@ function parseDecl(decl) {
 
 const fmt = (d) => `${d.value}${d.important ? ' !important' : ''}`
 
-/*
- * 简写展开成长写再比。`.x { padding-top: 0 }` 之后再出现 `.x { padding: 12px }`，
- * 胜负发生在 padding-top 上 —— 只按属性名比，这种覆盖完全看不见（实测漏过：
- * 迁移后输入框顶部多出 12px 内边距与 1px 边框）。展开后长写的值记成
- * 「简写名(原值)」，不做精确拆分：只要最终来源变了，文本就不同。
- */
 const SIDES = ['top', 'right', 'bottom', 'left']
 const CORNERS = ['top-left', 'top-right', 'bottom-right', 'bottom-left']
 const SHORTHANDS = {
@@ -204,25 +134,18 @@ const SHORTHANDS = {
   'place-content': ['align-content', 'justify-content']
 }
 
-/** 一条声明 → 长写声明列表（非简写原样返回） */
 function expand(d) {
   const longs = SHORTHANDS[d.prop]
   if (!longs) return [d]
   return longs.map((prop) => ({ ...d, prop, value: `${d.prop}(${d.value})` }))
 }
 
-/** 解析成 Map<"媒体查询|选择器", Map<属性, {value, important}>>，同 key 按层叠规则合并 */
 function layer(dir) {
   const result = new Map()
   for (const { name, layerIndex } of entriesOf(dir)) {
     const p = join(dir, name)
     if (!existsSync(p)) continue
     const css = readFileSync(p, 'utf8')
-      /*
-       * ⚠️ 必须先抹掉注释：否则注释尾巴会与后面的属性名粘成
-       *    「… padding」这样一个假属性名，覆盖判定**静默失效**
-       *    （实测造成过 8 处层叠不一致）。
-       */
       .replace(/\/\*[\s\S]*?\*\//g, '')
     let i = 0
     let depth = 0
@@ -240,11 +163,6 @@ function layer(dir) {
           for (const d of expand(parsed)) {
             d.layerIndex = layerIndex
             const prev = m.get(d.prop)
-            /*
-             * 层叠：important 赢过非 important（prev 是 important 而新声明不是 → 保留 prev，
-             * 这正是旧版丢掉的那一步）。同为普通声明：层高者胜，同层后写赢；
-             * 同为 important：层低者胜，同层后写赢。
-             */
             let wins
             if (!prev) wins = true
             else if (prev.important !== d.important) wins = d.important
@@ -268,7 +186,6 @@ function layer(dir) {
           headStart = i
           continue
         }
-        /* 找配对 */
         let d = 1
         let j = i + 1
         let body = ''
@@ -300,16 +217,6 @@ function layer(dir) {
   return result
 }
 
-/**
- * 比较两份层叠结果，返回问题列表（空 = 等价）。
- *
- * 抽成函数是为了 `--selftest` 能直接调用，不用起子进程。
- */
-/**
- * 把 `var(--x)` 换成 `:root` 上的常量值再比较：把裸值换成同值令牌（`8px` → `var(--sp-2)`）
- * 不改变结果，不该报「值变化」。只解析 `:root` 里的定义（主题块里的颜色两边各自一致，
- * 不参与）；带回退值或未定义的 var() 原样保留。
- */
 function resolver(map) {
   const root = map.get(':root') ?? new Map()
   const resolve = (value, depth = 0) =>
@@ -349,12 +256,6 @@ function compare(A, B) {
   return issues
 }
 
-/* ------------------------------------------------------------ 自检 */
-
-/**
- * 内置用例。校验器本身错了，会连带把「不等价」判成等价 —— 这是最难发现的一类
- * 错误（工具的假通过）。所以把关键语义固化成用例，改完跑一次。
- */
 function selftest() {
   const cases = [
     {
@@ -395,7 +296,6 @@ function selftest() {
     },
     {
       name: ':is(.a, .b) 里的逗号不算顶层分隔（不能被拆坏）',
-      /* 直接测拆分器：两个目录都拆坏的话比对结果一样，测不出来 */
       run: () =>
         splitTopLevel(':is(.a, .b), [data-x="p,q"]', ',').length === 2 && splitTopLevel('.a, .b', ',').length === 2
     },
@@ -463,8 +363,6 @@ function selftest() {
   console.log(failed === 0 ? `✓ 自检通过（${cases.length} 个用例）` : `✗ 自检失败 ${failed}/${cases.length}`)
   process.exit(failed ? 1 : 0)
 }
-
-/* ------------------------------------------------------------ CLI */
 
 const argv = process.argv.slice(2)
 if (argv.includes('--selftest')) {

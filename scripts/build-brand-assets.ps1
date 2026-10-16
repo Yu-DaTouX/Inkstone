@@ -7,7 +7,7 @@ param(
 # and keep theme colors in these two parameters. Requires Windows fonts.
 Add-Type -AssemblyName System.Drawing
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$assetDir = Join-Path $repoRoot 'docs\assets\inkstone'
+$assetDir = Join-Path $repoRoot 'assets\inkstone'
 New-Item -ItemType Directory -Force -Path $assetDir | Out-Null
 [xml]$icon = Get-Content -LiteralPath (Join-Path $repoRoot 'build\prompt-stone.svg') -Raw
 $iconGroups = ($icon.DocumentElement.ChildNodes | Where-Object LocalName -eq 'g' | ForEach-Object OuterXml) -join ''
@@ -59,4 +59,4 @@ foreach ($theme in @('light','dark')) {
 }
 $outline.Dispose()
 $family.Dispose()
-Write-Output 'Generated docs/assets/inkstone/wordmark-{light,dark}.svg'
+Write-Output 'Generated assets/inkstone/wordmark-{light,dark}.svg'

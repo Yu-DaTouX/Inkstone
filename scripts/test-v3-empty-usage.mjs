@@ -1,26 +1,3 @@
-/**
- * v3 真实空态（`features/session/V3EmptyState`）的用量接入回归。
- *
- * 用 `react-dom/server` 直接渲染**生产版面组件** `V3EmptyState`，把已取数的
- * **生产展示件** `UsageOverviewView` 经 `usage` 槽位注入，并带上**生产 pattern**
- * `patterns/UsagePattern` 导出的 `renderUsageToggle`（真实 `ui/` Tabs 原语），验证：
- *   · 新两栏版面实际包含用量面板，且问候 / 说明仍在、用量在右栏；
- *   · 总量与「主会话 X · 子代理 Y」拆分沿用同一 API（数据由 production
- *     `aggregateUsageSources` 生成）；
- *   · 只有子代理（主会话 0）时仍显示，主会话数如实 0；
- *   · 英文长文案不会因文本长度错误隐藏用量（隐藏只看容器宽度）；
- *   · v3 控件是真实的 `Tabs` 原语结构（`role="tablist"` / `role="tab"` /
- *     `aria-selected`），共享展示件缺省仍回退 v2 文字按钮。
- *
- * 另做 **静态接线检查**（不是视觉结论）：
- *   · `SessionView` 真实渲染 `V3EmptyState`，旧局部 `EmptyState` 已移除；
- *   · `V3EmptyState` 默认渲染 `UsagePattern`，`UsagePattern` 复用 `UsageOverview`
- *     取数容器并经 `renderToggle` 注入 `ui/` 控件；
- *   · `v3-empty-state.css`（features 版面）与 `usage-pattern.css`（patterns 领域
- *     排版）都实际可达，且 v3 用量样式不依赖任何 `styles/*` 旧样式或旧控件。
- *
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型、不联网、不 build。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -35,7 +12,6 @@ const ok = (condition, label) => {
   console.log(`✓ ${label}`)
 }
 
-/** 同一批空态数据来源：production 聚合，不手写计数。 */
 function statsOf(shared, { main, subagents }, range, now) {
   return shared.aggregateUsageSources({ main: main ?? [], subagents: subagents ?? [] }, range, now)
 }
@@ -48,11 +24,6 @@ function installGlobals() {
     removeItem: (k) => storage.delete(String(k)),
     clear: () => storage.clear()
   }
-  /*
-   * 生产控件来自 v3 `ui/` 的 React Aria 原语。它们只在 import 期读取
-   * `window.HTMLElement.prototype.focus` 并挂全局焦点监听；SSR 渲染本身不依赖
-   * 真实 DOM。这里给一个最小的原型桩，避免把测试退回成假控件。
-   */
   function ElementShim() {}
   ElementShim.prototype = { focus() {}, blur() {}, addEventListener() {}, removeEventListener() {} }
   globalThis.HTMLElement = ElementShim
@@ -71,7 +42,6 @@ function installGlobals() {
     location: { href: 'http://localhost/' }
   }
   globalThis.document = {
-    /* React Aria 只在 `readyState !== 'loading'` 时挂真实全局事件；SSR 里保持 loading。 */
     readyState: 'loading',
     addEventListener: () => {},
     removeEventListener: () => {},
@@ -124,7 +94,6 @@ async function main() {
   const childOnly = statsOf(shared, { subagents: [day(recent, 3, 80000, 9, { 'p/b': 80000 })] }, 'all', now)
   const empty = statsOf(shared, {}, 'all', now)
 
-  /** 生产展示件 + 可选控件槽（v3 传生产 `renderUsageToggle`，缺省则回退 v2 文字按钮） */
   const usageView = (stats, lang = 'zh-CN', renderToggle) =>
     createElement(View.UsageOverviewView, {
       stats,
@@ -144,7 +113,6 @@ async function main() {
 
   const html = renderEmpty(usageView(mainSub, 'zh-CN', Pattern.renderUsageToggle))
 
-  /* 1. 生产版面结构：问候 / 说明仍在，用量在右栏 */
   ok(html.includes('class="v3-empty v3-empty-page"') && html.includes('v3-empty-cols'), '空态根部使用生产版面类 v3-empty-page / v3-empty-cols')
   ok(html.includes('class="v3-empty-main"'), '左栏 primary 容器 v3-empty-main 存在')
   ok(html.includes('v3-empty-greet') && html.includes('HELLO WORLD'), '问候改为终端 HELLO WORLD')
@@ -153,11 +121,9 @@ async function main() {
   const iUsage = html.indexOf('data-testid="usage-overview"')
   ok(iMain >= 0 && iUsage > iMain, '用量面板在问候之后（右栏），不是替代左栏')
 
-  /* 2. 同一用量 API：合计 + 主子拆分 */
   ok(html.includes('data-testid="usage-tokens"') && html.includes('100K'), '空态右栏渲染 Token 合计 100K')
   ok(!html.includes('usage-token-breakdown') && !html.includes('主会话 20K'), '空态右栏只显示总数，不拆主会话 / 子代理')
 
-  /* 3. v3 控件是真实 Tabs 原语结构，且没有旧文字按钮 */
   ok((html.match(/role="tablist"/g) ?? []).length === 2, 'v3 控件渲染出两个 role="tablist"（Tabs 原语）')
   ok(html.includes('aria-label="本机用量"') && html.includes('aria-label="统计范围"'), '两个 tablist 都有可读名称（键盘与读屏可用结构）')
   ok((html.match(/role="tab"/g) ?? []).length >= 5, '概览 / 模型 / 全部 / 30 天 / 7 天都渲染为 role="tab"', (html.match(/role="tab"/g) ?? []).length)
@@ -166,22 +132,18 @@ async function main() {
   ok(html.includes('>概览<') && html.includes('>模型<') && html.includes('>全部<') && html.includes('>30 天<') && html.includes('>7 天<'), '范围与页签文案都来自同一 API 的选项')
   ok(!html.includes('class="start-toggle"'), 'v3 路径不渲染旧的 .start-toggle 文字按钮')
 
-  /* 4. 共享展示件缺省仍回退 v2 文字按钮，不被 v3 控件污染 */
   const legacyHtml = renderEmpty(usageView(mainSub))
   ok(legacyHtml.includes('class="start-toggle"') && legacyHtml.includes('aria-pressed="true"'), '缺省槽位仍走 v2 文字按钮（共享展示件默认不变）')
 
-  /* 5. 只有子代理、主会话 0：仍显示，计数如实为 0 */
   const childHtml = renderEmpty(usageView(childOnly, 'zh-CN', Pattern.renderUsageToggle))
   ok(childHtml.includes('data-testid="usage-overview"') && childHtml.includes('80K'), '只有子代理时空态仍渲染用量面板')
   ok(!childHtml.includes('主会话 0'), '只有子代理时也不出现拆分行')
   ok(childHtml.includes('>0</dd>'), '主会话相关计数如实渲染 0，不虚增')
 
-  /* 6. 无任何用量：面板不渲染，问候 / 说明仍在 */
   const emptyHtml = renderEmpty(usageView(empty, 'zh-CN', Pattern.renderUsageToggle))
   ok(!emptyHtml.includes('data-testid="usage-overview"'), '无历史时空态不渲染用量面板')
   ok(emptyHtml.includes('v3-empty-greet') && emptyHtml.includes('v3-empty-cols'), '无历史时问候与两栏版面仍在')
 
-  /* 6b. v3 常驻：keepWhenEmpty 时无记录显示 0 与说明，取数中显示「—」占位 */
   const keepView = (stats) => createElement(View.UsageOverviewView, {
     stats, range: 'all', tab: 'overview', models: [], t: tOf('zh-CN'), onTabChange: () => {}, onRangeChange: () => {},
     renderToggle: Pattern.renderUsageToggle, keepWhenEmpty: true, emptyNote: '还没有用量记录'
@@ -195,12 +157,10 @@ async function main() {
   ok(!keepPending.includes('usage-empty-note'), '取数中不误报「无记录」')
   ok(html.includes('data-testid="usage-strip"'), '左栏同时渲染一行用量条（由容器查询决定窄屏显示）')
 
-  /* 7. 英文长文案：不因文本长度隐藏用量（隐藏只看容器宽度） */
   const enHtml = renderEmpty(usageView(mainSub, 'en-US', Pattern.renderUsageToggle), 'en-US')
   ok(enHtml.includes('HELLO WORLD') && !enHtml.includes('class="v3-empty-hint"'), '英文空态同样使用终端问候，无旧标语')
   ok(enHtml.includes('data-testid="usage-overview"') && !enHtml.includes('Subagents 80K'), '英文长文案下用量面板仍渲染，不被内容长度错误隐藏')
 
-  /* 8. CSS 实际可达：features 版面 + patterns 领域排版，各自不含旧样式依赖 */
   const css = await readFile(join(process.cwd(), 'src/renderer/src/features/session/v3-empty-state.css'), 'utf8')
   ok(css.includes("container-type: inline-size"), 'CSS：v3-empty-page 建立 inline-size 容器（按真实对话列宽度判定）')
   ok(css.includes('grid-template-columns: minmax(0, 1fr) minmax(0, 23rem)'), 'CSS：两栏为 minmax(0,1fr) + 23rem')
@@ -212,14 +172,12 @@ async function main() {
   ok(css.includes('.v3-empty-cols:not(:has(> .start-usage))'), 'CSS：无用量面板时收成单列（修正 U2R 对固定轨道的解释，不让空轨道留白）')
 
   const patternCss = await readFile(join(process.cwd(), 'src/renderer/src/patterns/usage-pattern.css'), 'utf8')
-  /* 只看生效的 CSS，不算注释里的文档引用 */
   const patternCode = patternCss.replace(/\/\*[\s\S]*?\*\//g, '')
-  ok(patternCss.startsWith('/*') && patternCode.includes('@layer patterns'), 'CSS：用量领域排版在 @layer patterns（只随 v3 入口加载）')
+  ok(patternCode.includes('@layer patterns'), 'CSS：用量领域排版在 @layer patterns（只随 v3 入口加载）')
   ok(!patternCode.includes('@import'), 'CSS：patterns 用量样式不 @import 任何文件')
   ok(!/styles\/|chat\.css/.test(patternCode), 'CSS：patterns 用量样式不依赖 v2 styles/chat.css')
   ok(!/\.ui-tab|\.ui-btn|\.start-toggle/.test(patternCode), 'CSS：patterns 只做领域排版 / 图形，不重写 Tabs 原语按钮皮肤')
 
-  /* 9. 生产接线：SessionView → V3EmptyState → UsagePattern → UsageOverview → UsageOverviewView */
   const sessionView = await readFile(join(process.cwd(), 'src/renderer/src/features/session/SessionView.tsx'), 'utf8')
   ok(sessionView.includes("import { V3EmptyState } from './V3EmptyState'"), 'SessionView 引入 V3EmptyState（入口补丁已应用）')
   ok(/turns\.length === 0 \? <V3EmptyState( key=\{[^}]+\})? \/>/.test(sessionView), 'SessionView 空态分支渲染 V3EmptyState')
@@ -250,7 +208,6 @@ async function main() {
   const sideBySide = await readFile(join(process.cwd(), 'src/renderer/src/app/SideBySide.tsx'), 'utf8')
   ok(sideBySide.includes('import { SessionView }') && sideBySide.includes('<SessionView />'), '真实入口 SideBySide 渲染 SessionView（与 ShellV3 同一链）')
 
-  /* 10. ASCII 层与既有分支未被本任务改动 */
   ok(sessionView.includes("import { AsciiField } from '../ambient/AsciiField'") && sessionView.includes('active={turns.length === 0}'), 'ASCII 层与空态判定未被本任务改动')
   ok(sessionView.includes('StalledCard') && sessionView.includes('className="v3-asks"') && sessionView.includes('onScroll={onScroll}'), '滚动 / 审批 / 提问 / 停滞卡等既有分支仍保留')
   ok(sessionView.includes('VList') && sessionView.includes('renderTurns'), '虚拟列表与回合投影仍保留')

@@ -1,20 +1,3 @@
-/*
- * 内置浏览器控制器。
- *
- * 架构：页面是主进程持有的原生 WebContentsView（不是 iframe），renderer 只画
- * 工具栏并把可见区域坐标同步过来；模型侧入口是 `yan browser …`（01-S4b），
- * 由 `AgentController.runBrowserCommand` 直接调本类方法。
- *
- *   renderer(BrowserSurface) ──IPC──► BrowserController ──CDP──► 网页
- *   pi ──bash──► `yan browser …` ──能力服务──► 同一个 BrowserController
- *
- * 01-S5d（2026-09-23）删掉了 `browser.js` 空壳扩展与只服务于它的 loopback
- * HTTP bridge：宿主自己在同一进程里，不需要网络层与 token。
- *
- * 底层算法拆在 ./browser/：CDPBridge / Observer / ElementRegistry /
- * InputController / BrowserPolicy / geometry。可读性从上往下读本文件即可，
- * 细节再进子目录。
- */
 import type { ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { app, shell, BrowserWindow, WebContentsView } from 'electron'
@@ -65,7 +48,6 @@ import { decideRequestBoundary } from './browser/network-boundary'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
-/** 新开浏览器 / 新标签默认空白，不替用户选站点 */
 const INITIAL_URL = 'about:blank'
 
 function safeUrl(raw: unknown): string | null {
@@ -80,16 +62,6 @@ function safeUrl(raw: unknown): string | null {
   }
 }
 
-/*
- * 网络边界判定（`isPrivateHost` / `isLoopbackOrigin` / `decideRequestBoundary`）
- * 住在 `browser/network-boundary.ts` —— 纯函数，有单测；这里只负责把判定结果
- * 落成「放行 / 拦下并记账 / 再解析一次」。
- */
-
-/**
- * 权限只按 origin 判断，不把页面路径/查询参数当成权限范围。
- * `about:blank`、file 和自定义协议没有可授予的远程站点 origin。
- */
 function normalizePermissionOrigin(value: unknown): string | null {
   if (typeof value !== 'string' || !value.trim()) return null
   try {
@@ -113,37 +85,13 @@ interface BrowserTab {
   observer: Observer
   input: InputController
   network: NetworkTracker
-  /** 界面用的状态（`url` 会在导航发起时乐观写入，见 `open()`） */
   state: BrowserTabState
-  /**
-   * **已提交**的文档地址（`did-navigate` 才更新）。
-   *
-   * 为什么要跟 `state.url` 分开：网络边界判定要看“谁在发这个请求”，
-   * 而 `state.url` 是导航一开始就写进去的**期望值** —— 拿它判发起方，
-   * 目标地址会被当成发起方自己，判定直接失效（2026-09-16 实测：
-   * 远程页面 → 127.0.0.1 的顶层导航因此没被拦住）。
-   */
   committedUrl: string
-  /** Only a host-requested exact top-level URL gets the local-preview exception. */
   pendingMainFrameUrl: string | null
   openerUrl: string
-  /**
-   * 该页签的原生视图当前借给了独立窗口（值 = 借用方 owner key）。
-   *
-   * 借出期间视图挂在弹出窗的 contentView 上，主窗口自己的坐标同步与显隐
-   * 协调（`setBounds` / `setViewVisible`）必须完全跳过它 —— 否则旧路径会把
-   * 已经改挂出去的网页拉回主窗口或藏掉。
-   */
   borrowedBy?: string
 }
 
-/**
- * 外部（本机）Chrome 的当前页面目标。
- *
- * 没有 WebContentsView —— 页面是 Chrome 自己的窗口；这里只持有 CDP 连接
- * 与复用同一套观察/输入算法。`registry`/`observer`/`input` 在切换目标
- * （新建标签页）时会整体重建，因为 ref 绑定在具体 CDP 会话上。
- */
 interface ExternalTarget {
   cdp: RawCdp
   registry: ElementRegistry
@@ -153,21 +101,16 @@ interface ExternalTarget {
   chrome: ChildProcess | null
   port: number
   profileDir: string
-  /** 当前连接的 Chrome 页面目标 id（`/json/list` 里的 id） */
   targetId: string
   url: string
   title: string
   loading: boolean
-  /** 页面历史状态（同步给工具栏的前进/后退按钮） */
   canGoBack: boolean
   canGoForward: boolean
-  /** Chrome 当前所有可切换的页面标签（供工具栏渲染） */
   chromeTabs: BrowserTabState[]
-  /** 本次接入时从真实 Chrome 同步数据的结果（供界面如实展示哪几项没同步） */
   syncReport?: ChromeSyncReport
 }
 
-/** 两种渲染模式共用的「可观察目标」抽象 */
 interface TargetParts {
   cdp: CdpChannel
   registry: ElementRegistry
@@ -176,31 +119,16 @@ interface TargetParts {
   network: NetworkTracker
 }
 
-/**
- * 私网目标 DNS 缓存的上限。
- *
- * TTL 只有 2 秒，过期项必须真删：之前只判断 `expiresAt` 是否过期、从不删键，
- * 跨站浏览一多就是一张只增不减的主机名表（同文件里权限与拦截记录都有条数上限）。
- */
 const PRIVATE_DNS_CACHE_LIMIT = 200
 
-/**
- * 借出给独立窗口的页签句柄（host-transfer）。
- *
- * 视图对象与 webContents 身份不变：适配器只是把它从主窗口 contentView 摘下来、
- * 挂到弹出窗 contentView 上；不新建视图、不 loadURL、不换浏览会话。
- */
 export interface BrowserHostTransfer {
   readonly tabId: string
   readonly ownerKey: string
   readonly generation: number
   readonly webContentsId: number
   readonly view: BrowserTransferView
-  /** 原有主窗口；主窗口已销毁时为 null。 */
   readonly sourceWindow: BrowserTransferWindow | null
-  /** 只导航这一页签，不要求它是当前活动页签。 */
   navigate(url: string): Promise<BrowserActionResult>
-  /** 只关闭这一页签，走既有回收路径。 */
   closeTab(): Promise<void>
 }
 
@@ -208,7 +136,6 @@ export interface BrowserHostTransferRequest {
   tabId: string
   ownerKey: string
   generation: number
-  /** 宿主回收借出（页签关闭 / 控制器销毁）时回调，适配器据此幂等失效本地租约。 */
   onRevoke(reason: BrowserTransferRevokeReason): void
 }
 
@@ -219,10 +146,8 @@ export interface BrowserHostTransferResult {
   transfer?: BrowserHostTransfer
 }
 
-/** 浏览器运行时（**宿主独占**）。模型侧入口是 `yan browser …`，不再提供 HTTP bridge。 */
 export class BrowserController {
   private readonly tabs = new Map<string, BrowserTab>()
-  /** 借出给独立窗口的页签：tabId → 租约元数据（归属、代次、宿主句柄）。 */
   private readonly hostTransfers = new Map<
     string,
     {
@@ -241,29 +166,11 @@ export class BrowserController {
   getOwnedDownload(owner: string): BrowserState['lastDownload'] { return this.ownedDownloads.get(owner) }
   private nativeBounds: BrowserBounds | undefined
   private downloadSessionAttached = false
-  /** 权限管理器是否已挂（session 是共享的，只能挂一次） */
   private permissionHandlerAttached = false
-  /**
-   * 被拒绝的权限请求（方案 9.2）。
-   * 为什么要记：默认拒绝是安全默认，但用户得**能看到**自己网站要过什么、
-   * 被拒了什么，否则遇到“摄像头点了没反应”只能猜。
-   */
   private permissionLog: BrowserPermissionRecord[] = []
-  /**
-   * 被网络边界拦下的请求（本地预览 / DNS 重绑定）。
-   *
-   * 拦截是静默发生的（请求直接 cancel），所以不给记录的话，用户只会看到
-   * “这个页面就是打不开”。只留主机名与原因，不带路径/查询参数/页面内容。
-   */
   private blockedRequests: BrowserBlockedRequest[] = []
-  /** 逐站权限是临时的：进程退出即清空，不写入设置或浏览器 profile。 */
   private readonly permissionGrants = new Set<string>()
-  /**
-   * DNS 只短暂缓存，避免每个图片/字体请求都重复解析而留下长窗口。
-   * 过期项与溢出由 `resolvesToPrivateTarget` 负责清理（见 `PRIVATE_DNS_CACHE_LIMIT`）。
-   */
   private readonly privateDnsCache = new Map<string, { private: boolean; expiresAt: number }>()
-  /** 外部 Chrome 目标；可与内嵌标签同时存在 */
   private external: ExternalTarget | null = null
   private externalOpening: Promise<BrowserActionResult> | null = null
   private activeMode: 'embedded' | 'external' = 'embedded'
@@ -275,8 +182,6 @@ export class BrowserController {
   private externalTargetId(tabId: string): string | null {
     return tabId.startsWith('chrome:') ? tabId.slice('chrome:'.length) : null
   }
-  /** 外部 Chrome 下载：guid → 文件名（downloadWillBegin 先到，进度事件用 guid 关联） */
-  /** 外部 Chrome 下载：guid → 建议文件名 + 源 URL（来源要能显示给用户） */
   private readonly externalDownloads = new Map<string, { filename: string; url: string }>()
   private state: BrowserState = {
     open: false,
@@ -311,7 +216,6 @@ export class BrowserController {
       activeTabId: activeIsExternal ? this.externalTabId(ext!.targetId) : this.activeTabId ?? undefined,
       userControl: this.userControl,
       lastDownload: this.lastDownload,
-      /* 外部 Chrome 的失败不在这里表达（它有自己的同步报告） */
       loadError: activeIsExternal ? undefined : active?.state.loadError,
       permissions: this.permissionLog,
       blockedRequests: this.blockedRequests,
@@ -340,10 +244,6 @@ export class BrowserController {
     this.publish()
   }
 
-  /**
-   * 取当前可观察目标：外部 Chrome 优先，否则是内嵌活动标签页。
-   * 两种目标都提供 cdp / registry / observer / input，调用方不用分叉。
-   */
   private parts(): TargetParts | null {
     if (this.external && this.activeMode === 'external') return this.external
     const tab = this.activeTab()
@@ -381,7 +281,6 @@ export class BrowserController {
     void tab.network.start()
     view.webContents.on('did-start-loading', () => {
       tab.state.loading = true
-      /* 新一次导航开始：上一次的失败提示到此为止 */
       tab.state.loadError = undefined
       this.updateState()
     })
@@ -392,7 +291,6 @@ export class BrowserController {
       tab.registry.clear()
       this.updateState()
     })
-    /* 窄右栏中的网页保留横向滚动能力，但不让系统滚动柄盖住页面底部。 */
     view.webContents.on('did-finish-load', () => {
       void view.webContents.insertCSS('@media (max-width: 300px) { ::-webkit-scrollbar:horizontal { height: 0 !important; } }').catch(() => {})
     })
@@ -424,13 +322,6 @@ export class BrowserController {
       tab.registry.clear()
       this.updateState()
     })
-    /*
-     * 导航失败（含被网络边界拦住）也要把在途标记清掉，别让它留到下一次导航。
-     *
-     * H-9 第二阶段：主框架失败要把原因**推给界面** —— 否则用户看到的就是
-     * “点了没反应”，只能自己猜。子框架失败（广告 iframe）不打扰用户，
-     * 被取消的导航（ERR_ABORTED）也不算失败。
-     */
     view.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       tab.pendingMainFrameUrl = null
       tab.state.loading = false
@@ -451,18 +342,6 @@ export class BrowserController {
       if (!safeUrl(url)) event.preventDefault()
     })
     view.webContents.debugger.on('message', (_event, method) => {
-      /*
-       * 只在**整篇文档被替换**时作废旧引用。
-       *
-       * 不能监听 DOM.childNodeInserted / childNodeRemoved：观察时用了
-       * `DOM.getDocument({depth:-1})`，整棵树都被推送给客户端，之后页面上
-       * **任何**节点增删都会触发这两个事件 —— 一个时钟、一条广告、一次
-       * React 重渲染，甚至改一次 document.title，就会把整张注册表清空，
-       * 让刚刚 observe 出来的 ref 立刻变成 STALE_ELEMENT。
-       *
-       * 被移除的节点由 DOM 自己报「Node is detached」，我们在 actionError
-       * 里翻译成 STALE_ELEMENT，精度比「一刀切清空」高得多。
-       */
       if (method === 'Page.frameNavigated' || method === 'DOM.documentUpdated') {
         tab.registry.clear()
       }
@@ -479,14 +358,6 @@ export class BrowserController {
     }
     if (!this.permissionHandlerAttached) {
       this.permissionHandlerAttached = true
-      /*
-       * 远程网页的权限一律**默认拒绝**（方案 9.1/9.2）。
-       *
-       * 摄像头 / 麦克风 / 定位 / 通知 / 剪贴板这些在 agent 场景里基本没有
-       * 正当用途，而一旦放行，网页就拿到了真实设备能力。
-       * 这里不用关键词猜“这个站点看起来可不可信”—— 一律拒绝，并把
-       * 请求记下来给用户看；要放开时应该由用户显式授权（后续能力）。
-       */
       const ses = view.webContents.session
       ses.setPermissionRequestHandler((wc, permission, callback, details) => {
         const name = String(permission)
@@ -502,31 +373,6 @@ export class BrowserController {
         return Boolean(origin && this.permissionGrants.has(permissionKey(String(permission), origin)))
       })
 
-      /*
-       * 本地预览边界（方案 9.2 第 4 点）。
-       *
-       * 编码场景需要 localhost 预览（dev server），但**远程页面**没理由
-       * 去访问用户机器上的本地服务（那是一个常见的探测/攻击路径）。
-       *
-       * 三条策略（2026-09-16 改成显式判定，见 `pendingMainFrameUrl`）：
-       *
-       *   ① 地址本身就是内网（127/8、RFC1918、::1 …）
-       *      · 由**用户/agent 明确要求**的顶层导航 → 放行（这就是本地预览）；
-       *      · 其余（页面自己发起的导航、子资源、XHR）→ 拦。
-       *   ② 地址看着像公网域名、解析后却落在内网（DNS 重绑定）→ **一律拦**，
-       *      连我们自己发起的导航也不放行 —— 那时用户以为自己在开一个外部地址，
-       *      而 agent 可能只是被页面上的一句话诱导，真放行等于给它一个
-       *       “读本机服务”的原语。
-       *
-       * 为什么不用 `state.url` 判发起方：它是导航发起时就写进去的**期望值**，
-       * 判定会变成拿目标地址跟自己比，于是远程页面 → 127.0.0.1 的顶层导航
-       * 反而被放过（现已由 `committedUrl` + `pendingMainFrameUrl` 取代）。
-       *
-       * ⚠️ 已知局限（如实写在代码里，不假装完备）：
-       *   · 网页新标签继承 opener 来源；未知来源也不能自动获得内网权限。
-       *   · 判定用 Node 的解析器，而真正发请求的是 Chromium。正常配置下两者
-       *     看到同一份 DNS，但它不是网络栈级别的隔离（彻底封住需要单独代理）。
-       */
       ses.webRequest.onBeforeRequest((details, callback) => {
         let target: URL
         try {
@@ -538,9 +384,6 @@ export class BrowserController {
         const owner = [...this.tabs.values()].find(
           (t) => t.view.webContents.id === details.webContentsId
         )
-        /* 发起方优先取已提交文档；新窗口首导航继承 opener，未知来源保持受限。 */
-        // subFrame 的 frame 是正在导航的目标，初次请求时常为 about:blank。
-        // 来源应取其父文档；不能把目标 URL 当来源，否则远程页可冒充本地预览。
         const requestFrame = details.frame
         const frameUrl = details.resourceType === 'subFrame' ? requestFrame?.parent?.url : requestFrame?.url
         const initiator = frameUrl || (details.resourceType === 'mainFrame' ? owner?.committedUrl || owner?.openerUrl : '') || ''
@@ -560,14 +403,6 @@ export class BrowserController {
           callback({ cancel: true })
           return
         }
-        /*
-         * URL 仍然是公网域名时也不能直接放过：域名可能在解析后切到
-         * 127/8、RFC1918、IPv6 ULA 或 link-local。每个短缓存周期重新查，
-         * 把 DNS rebinding 的目标挡在 Chromium 请求真正发出之前。
-         *
-         * 这一支**不看 `requestedByUs`**：地址看着是外部、实际落到内网，
-         * 放行等于给 agent 一个「读本机服务」的原语（详见函数注释）。
-         */
         void this.resolvesToPrivateTarget(target.hostname)
           .then((privateTarget) => {
             if (privateTarget) this.recordBlockedRequest(target.hostname, 'dns-rebind', initiator)
@@ -577,11 +412,6 @@ export class BrowserController {
       })
     }
     void cdp.attach().catch((error) => {
-      /*
-       * 「目标已关闭」是**良性**的：标签在 attach 过程中被关/被替换
-       * （例如紧接着切到外部 Chrome、重复 open），Page.enable 这类命令
-       * 撞上已销毁的目标就会报它。这不该弹错误条。
-       */
       const message = error instanceof Error ? error.message : String(error)
       if (tab.view.webContents.isDestroyed() || /target closed|closed|destroyed/i.test(message)) return
       this.pushError(`浏览器 CDP 启动失败：${message}`)
@@ -600,15 +430,8 @@ export class BrowserController {
     return this.activeTabId ? this.tabs.get(this.activeTabId) ?? null : null
   }
 
-  /**
-   * HMR / 旧版本热重载后，BrowserWindow 可能还挂着上一代 BrowserView。
-   * 它不在当前 tabs Map 里，却仍会作为原生层绘制在 renderer 上方，表现为
-   * 页面被画到旧位置、右侧出现白色空洞。只移除属于本窗口且不属于当前
-   * controller 的 web-content view，保留 BrowserWindow 自己的 renderer view。
-   */
   private removeForeignBrowserViews(win: BrowserWindow): void {
     const owned = new Set([...this.tabs.values()].map((tab) => tab.view))
-    // 迭代副本：removeChildView 会改变 children，边删边遍历会漏掉后面的视图。
     for (const child of [...win.contentView.children]) {
       if (owned.has(child as WebContentsView)) continue
       const contents = (child as WebContentsView).webContents
@@ -620,7 +443,6 @@ export class BrowserController {
   async open(url = INITIAL_URL): Promise<BrowserState> {
     const next = safeUrl(url)
     if (!next) throw new Error('只允许打开 http(s) 网页')
-    // 统一标签栏：切回内嵌标签，不断开外部 Chrome
     this.activeMode = 'embedded'
     let tab = this.activeTab()
     if (!tab) {
@@ -636,7 +458,6 @@ export class BrowserController {
       tab.state.url = next
       tab.state.title = ''
       tab.state.loading = true
-      /* 明确记下“这次导航是我们发起的”，供网络边界判定区分用户/页面发起 */
       tab.pendingMainFrameUrl = next
       this.updateState()
         await tab.view.webContents.loadURL(next).catch(() => undefined)
@@ -647,13 +468,6 @@ export class BrowserController {
     return this.getState()
   }
 
-  /**
-   * 网页自己开的窗口（`window.open` / `target=_blank`）。
-   *
-   * H-9 第二阶段：新标签要真建出来（内容不丢），但**不能夺走**用户
-   * 正在阅读的那一页 —— 广告或授权弹窗把页面切走，用户会以为“点坏了”。
-   * 与 `newTab()` 的区别只有一条：不改 `activeTabId`、新视图不设为可见。
-   */
   private async openBackgroundTab(rawUrl: string, openerUrl: string): Promise<void> {
     const url = safeUrl(rawUrl)
     if (!url) return
@@ -671,7 +485,6 @@ export class BrowserController {
     try {
       await tab.view.webContents.loadURL(url)
     } catch {
-      /* 后台页加载失败只留在它自己的标签里（loadError），不打断当前阅读 */
     }
     if (tab.view.webContents.isDestroyed() || this.tabs.get(tab.id) !== tab) return
     this.syncTabNavigation(tab)
@@ -681,7 +494,6 @@ export class BrowserController {
   async newTab(rawUrl = INITIAL_URL): Promise<BrowserState> {
     const url = safeUrl(rawUrl)
     if (!url) throw new Error('只允许打开 http(s) 网页')
-    // 外部 Chrome：新建一个真实标签页，并把 CDP 连接切过去
     if (this.external && this.activeMode === 'external') {
       const created = await createCdpTab(this.external.port, url)
       if (created?.webSocketDebuggerUrl) await this.attachExternalTarget(created)
@@ -698,7 +510,6 @@ export class BrowserController {
     this.showOnlyOwnedView(tab.id)
     tab.state.url = url
     tab.state.loading = true
-    /* 同 `open()`：这是**我们**（用户/agent）发起的顶层导航 */
     tab.pendingMainFrameUrl = url
     this.updateState()
     await tab.view.webContents.loadURL(url).catch(() => undefined)
@@ -731,14 +542,12 @@ export class BrowserController {
   }
 
   async closeTab(id = this.activeTabId ?? ''): Promise<BrowserState> {
-    // 外部 Chrome：关掉那个真实标签页
     const externalTargetId = this.externalTargetId(id)
     if (externalTargetId && this.external) {
       const ext = this.external
       const targetId = externalTargetId
       await closeCdpTarget(ext.port, targetId)
       if (targetId === ext.targetId) {
-        // 当前目标被关掉：切到剩下的第一个页面，没有就整体断开
         let remaining: CdpTarget | undefined
         try {
           remaining = (await listTargets(ext.port)).find((t) => t.type === 'page' && !!t.webSocketDebuggerUrl)
@@ -755,7 +564,6 @@ export class BrowserController {
     }
     const tab = this.tabs.get(id)
     if (!tab) return this.getState()
-    /* 借出中的页签先让适配器失效租约，再走既有销毁路径。 */
     const transfer = this.hostTransfers.get(id)
     if (transfer) {
       this.hostTransfers.delete(id)
@@ -763,7 +571,6 @@ export class BrowserController {
       try {
         transfer.revoke('tab-closed')
       } catch {
-        /* 适配器失效失败不应阻断关闭 */
       }
     }
     this.detachViewFromAllWindows(tab.view)
@@ -792,16 +599,6 @@ export class BrowserController {
     return this.getState()
   }
 
-  /**
-   * 把一个页签的原生视图借给独立窗口（host-transfer 的宿主侧增量 API）。
-   *
-   * 只做三件事：登记借出、把视图从主窗口隐藏、返回只暴露这一个视图的句柄。
-   * 真正的 contentView 改挂由 `windows/pane-browser-transfer.ts` 的适配器执行 ——
-   * 本文件不复制一套窗口管理，也不让渲染端/弹出窗碰到通用浏览器通道。
-   *
-   * 已有借出且归属不同时拒绝（不抢别的归属正在看的页签）；同归属重复借出按最新
-   * 代次更新并复用视图。
-   */
   beginHostTransfer(request: BrowserHostTransferRequest): BrowserHostTransferResult {
     const tab = this.tabs.get(request.tabId)
     if (!tab) return { ok: false, code: 'not-found', message: '找不到浏览器标签页' }
@@ -833,10 +630,6 @@ export class BrowserController {
     return { ok: true, code: 'ok', transfer }
   }
 
-  /**
-   * 归还借出的页签：清借出标记并把视图停回主窗口（隐藏）。
-   * 只有当前借出归属能归还；宿主已经回收过时返回 false。幂等。
-   */
   endHostTransfer(tabId: string, ownerKey: string): boolean {
     const record = this.hostTransfers.get(tabId)
     if (!record || record.ownerKey !== ownerKey) return false
@@ -849,7 +642,6 @@ export class BrowserController {
     return true
   }
 
-  /** 借出期间只导航空档位的这一页签；租约已被替换/归还则拒绝。 */
   private async navigateTransferredTab(
     tabId: string,
     ownerKey: string,
@@ -868,7 +660,6 @@ export class BrowserController {
       tab.state.url = url
       tab.state.title = ''
       tab.state.loading = true
-      /* 与 open() 一致：这是宿主/租约发起的顶层导航，供网络边界判定区分来源。 */
       tab.pendingMainFrameUrl = url
       this.updateState()
       await tab.view.webContents.loadURL(url).catch(() => undefined)
@@ -879,7 +670,6 @@ export class BrowserController {
     return { ok: true }
   }
 
-  /** 只显示 activeId 指向且未借出的原生视图；借出的归独立窗口管。 */
   private showOnlyOwnedView(activeId: string | null): void {
     for (const tab of this.tabs.values()) {
       if (tab.borrowedBy) continue
@@ -887,7 +677,6 @@ export class BrowserController {
     }
   }
 
-  /** 隐藏所有未借出的原生视图。 */
   private hideOwnedViews(): void {
     for (const tab of this.tabs.values()) {
       if (tab.borrowedBy) continue
@@ -895,7 +684,6 @@ export class BrowserController {
     }
   }
 
-  /** 从所有窗口的 contentView 摘除该视图（独立窗口可能已销毁或换过宿主）。 */
   private detachViewFromAllWindows(view: WebContentsView): void {
     for (const candidate of BrowserWindow.getAllWindows()) {
       if (candidate.isDestroyed()) continue
@@ -903,7 +691,6 @@ export class BrowserController {
     }
   }
 
-  /** 把借出的视图停回主窗口并隐藏，交还主窗口的常规协调。 */
   private parkTransferredView(tab: BrowserTab): void {
     if (tab.view.webContents.isDestroyed()) return
     this.detachViewFromAllWindows(tab.view)
@@ -961,11 +748,6 @@ export class BrowserController {
     return { ok: true }
   }
 
-  /**
-   * 用系统默认浏览器打开给定地址（不传则用当前标签页）。
-   * 给 renderer 的「在外部浏览器打开」按钮用：内置视图受限于登录态，
-   * 用户想拿自己的 Chrome（带 cookie / 账号）继续看时走这里。
-   */
   openExternal(raw?: string): BrowserActionResult {
     const tab = this.activeTab()
     const value = raw && raw.trim() ? raw.trim() : tab?.state.url ?? ''
@@ -975,17 +757,6 @@ export class BrowserController {
     return { ok: true }
   }
 
-  /* 外部 Chrome（本机已安装的浏览器） */
-
-  /**
-   * 接入本机 Chrome。
-   *
-   * 为什么用独立 profile：Chrome 136 起，**默认配置目录**会被拒绝开
-   * `--remote-debugging-port`（安全策略）。独立 profile 需要用户
-   * **登录一次**目标站点；之后这个 profile 会一直保留登录态。
-   *
-   * `YAN_CHROME_HEADLESS=1` 时用无头模式（自动化测试用，不弹窗口）。
-   */
   async openExternalChrome(rawUrl?: string): Promise<BrowserActionResult> {
     if (this.externalOpening) return this.externalOpening
     const opening = this.openExternalChromeImpl(rawUrl)
@@ -998,7 +769,6 @@ export class BrowserController {
   }
 
   private async openExternalChromeImpl(rawUrl?: string): Promise<BrowserActionResult> {
-    /* 未指定地址时沿用当前内置页，接入前后停在同一个网页；没有就空白 */
     const url = safeUrl(rawUrl ?? this.activeTab()?.state.url ?? INITIAL_URL)
     if (!url) return { ok: false, error: '只允许打开 http(s) 网页' }
     if (this.external) {
@@ -1012,12 +782,6 @@ export class BrowserController {
     let chrome: ChildProcess | null = null
     try {
       await mkdir(profileDir, { recursive: true })
-      /*
-       * 先把真实 Chrome 的登录态与历史导入托管 profile ——
-       * 否则这个 profile 是空白的，用户会看到「cookie 和历史没有共享」。
-       * 逐项容错：cookie 在 Chrome 开着时拿不到，但历史/书签照样能同步；
-       * 具体结果存进 syncReport 交给界面如实展示，不在这里决定成败。
-       */
       const syncReport = existsSync(join(profileDir, 'Local State'))
         ? undefined
         : await syncLocalChromeData(profileDir)
@@ -1035,11 +799,6 @@ export class BrowserController {
       await cdp.attach()
       const registry = new ElementRegistry()
       await this.setupExternalDownloads(cdp)
-      /*
-       * 连接成功后再关内嵌标签页。
-       * 之前是「先关内嵌再启动」，一旦 Chrome 启动失败，用户已打开的内嵌页
-       * 被清空而外部又没接上 —— 看起来就像界面卡死。
-       */
       this.external = {
         cdp,
         registry,
@@ -1061,7 +820,6 @@ export class BrowserController {
       void this.external.network.start()
       this.activeMode = 'external'
       this.hideOwnedViews()
-      // 用户自己关掉 Chrome 时同步清状态
       chrome.once('exit', () => {
         if (this.external?.chrome === chrome) void this.closeExternalChrome()
       })
@@ -1078,12 +836,6 @@ export class BrowserController {
     }
   }
 
-  /**
-   * 外部 Chrome 的下载：CDP 允许下载到系统下载目录，并监听完成事件。
-   *
-   * ⚠️ 浏览器级 setDownloadBehavior 只在**当前连接**上生效；切目标后
-   * 重连（attachExternalTarget）要重新调一次，否则下载会被 Chrome 默认阻止。
-   */
   private async setupExternalDownloads(cdp: RawCdp): Promise<void> {
     const directory = app.getPath('downloads')
     try {
@@ -1095,7 +847,6 @@ export class BrowserController {
           eventsEnabled: true
         })
       } catch {
-        // 旧版本不接受 eventsEnabled，退回基础参数（至少不阻断下载）
         await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: directory })
       }
     } catch (error) {
@@ -1105,11 +856,6 @@ export class BrowserController {
     cdp.on('Browser.downloadWillBegin', (params) => {
       const guid = String(params.guid ?? '')
       const name = String(params.suggestedFilename ?? '')
-      /*
-       * `url` 是发起下载的地址 —— 存下来才能在界面上显示来源。
-       * 以前只记文件名，于是外部 Chrome 的下载在界面上是个“无来源文件”，
-       * 用户无从判断它来自哪个网站（内置浏览器的下载则是带来源的）。
-       */
       const url = String(params.url ?? '')
       if (guid && name) this.externalDownloads.set(guid, { filename: name, url })
     })
@@ -1130,16 +876,7 @@ export class BrowserController {
     })
   }
 
-  /**
-   * 手动重新同步本机 Chrome 数据。
-   *
-   * 已连接时通过 Chromium API 在当前 Chrome 与内置浏览器之间复制 Cookie，
-   * 不向运行中的 profile 写数据库，也不为同步而重启浏览器。
-   * 未连接时才执行本机 profile 的受限文件同步；它不代表登录态已经验证。
-   */
   async syncLocalProfile(): Promise<ChromeSyncReport> {
-    // A connected managed Chrome is a live session, never a file-copy target.
-    // Copy from the active browser to the other browser using Chromium's API.
     if (this.external) {
       const embedded = this.activeTab()
       if (!embedded) throw new Error('请先打开内置浏览器页面，再复制 Cookie')
@@ -1182,7 +919,6 @@ export class BrowserController {
     return report
   }
 
-  /** 断开外部 Chrome，并关掉我们拉起的那个进程 */
   async closeExternalChrome(): Promise<BrowserState> {
     const ext = this.external
     if (!ext) return this.getState()
@@ -1199,7 +935,6 @@ export class BrowserController {
     return this.getState()
   }
 
-  /** 把一个 Chrome 页面目标接成当前目标（重建 registry/observer/input） */
   private async attachExternalTarget(target: CdpTarget): Promise<void> {
     if (!this.external || !target.webSocketDebuggerUrl) return
     const ext = this.external
@@ -1225,7 +960,6 @@ export class BrowserController {
     this.updateState()
   }
 
-  /** 同步外部 Chrome 的前进/后退可用状态（页面自身跳转后也要刷） */
   private async syncExternalHistory(): Promise<void> {
     const ext = this.external
     if (!ext) return
@@ -1236,11 +970,9 @@ export class BrowserController {
       ext.canGoBack = history.currentIndex > 0
       ext.canGoForward = history.currentIndex < history.entries.length - 1
     } catch {
-      /* 目标可能已关闭，保持旧值 */
     }
   }
 
-  /** 同步外部 Chrome 的页面标签列表（供工具栏渲染可切换标签） */
   private async syncExternalTabs(): Promise<void> {
     const ext = this.external
     if (!ext) return
@@ -1256,7 +988,6 @@ export class BrowserController {
           canGoForward: false
         }))
     } catch {
-      /* 浏览器可能已退出 */
     }
   }
 
@@ -1297,39 +1028,20 @@ export class BrowserController {
     }
   }
 
-  /**
-   * 临时隐藏 / 恢复原生网页视图。
-   *
-   * 为什么需要：`WebContentsView` 是**原生视图**，永远盖在 DOM 之上。
-   * 文件预览/其它详情要占用同一块区域时，只用 CSS 是藏不住的（方案 5.2）；
-   * 必须显式 setVisible(false)，关掉预览时再按当前模式恢复。
-   */
   setViewVisible(visible: boolean): void {
     if (!visible) {
       this.hideOwnedViews()
       return
     }
-    /* 外部 Chrome 是独立窗口，没有内嵌视图要恢复 */
     if (this.activeMode !== 'embedded') return
     this.showOnlyOwnedView(this.activeTabId)
   }
 
   setBounds(bounds: BrowserBounds): void {
-    // 外部 Chrome 是独立窗口，没有原生视图要摆位置
     if (this.external && this.activeMode === 'external') return
     const tab = this.activeTab()
     if (!tab || !this.state.open) return
-    /* 已借给独立窗口的页签由租约端口摆位，主窗口的旧坐标同步不得再动它。 */
     if (tab.borrowedBy) return
-    /*
-     * 渲染端给的是**主窗口渲染进程的 CSS 像素**，而 `WebContentsView.setBounds`
-     * 收的是窗口内容区的 **DIP**。两者只在界面缩放 = 100% 时相等：
-     * 1 CSS px = zoom DIP（zoom 来自 applyZoom 设到主 webContents 上的倍率）。
-     *
-     * 不换算的后果：原生页面整体偏左上、而且比面板窄一圈 ——
-     * 偏多少正好等于 (zoom - 1) × 面板坐标，自动缩放 125% 下就有一百多 px，
-     * 看起来像“浏览器跑到中栏去了”。缩放越大偏得越狠。
-     */
     const win = this.getWindow()
     const zoom = win && !win.isDestroyed() ? win.webContents.getZoomFactor() || 1 : 1
     if (![bounds.x, bounds.y, bounds.width, bounds.height].every((value) => typeof value === 'number' && Number.isFinite(value))) return
@@ -1341,16 +1053,6 @@ export class BrowserController {
     }
     this.nativeBounds = clean
     tab.view.setBounds(clean)
-    /*
-     * ⚠️ 这里**不** push 状态。
-     *
-     * 渲染端 BrowserSurface 有一个常驻的逐帧「测量视口 → setBounds」循环
-     * （几何一变就发 IPC）。如果 setBounds 每次都 updateState→push，那么
-     * 面板宽度过渡 / 缩放动画期间（几何每帧都在变）就会变成
-     * 「每帧 push → React 每帧重渲染」的推送风暴，界面直接卡死。
-     * nativeBounds 只是诊断字段，渲染端不响应它 —— 不需要推送；
-     * getState() 会返回它，探针也依旧能读到。
-     */
   }
 
   async dispose(): Promise<void> {
@@ -1370,7 +1072,6 @@ export class BrowserController {
     await p.cdp.attach()
     if (external) {
       const observation = await p.observer.capture(external.url, external.title)
-      // 页面自己跳转（或标题变化）时同步状态与可切换标签
       if (this.external?.observer === p.observer) {
         external.url = observation.url
         external.title = observation.title
@@ -1383,7 +1084,6 @@ export class BrowserController {
     return p.observer.capture(tab!.state.url, tab!.state.title)
   }
 
-  /** 最近一段只读网络活动；不会返回请求头、请求体或 Cookie。 */
   async network(): Promise<BrowserNetworkSnapshot> {
     const p = this.parts()
     if (!p) throw new Error('浏览器尚未打开')
@@ -1391,16 +1091,6 @@ export class BrowserController {
     return p.network.snapshot()
   }
 
-  /*
-   * 下面四个动作（click / type / press / scroll）与 requestUserControl、
-   * screenshot 从 private 改为 public（01-S4b）。
-   *
-   * 原因：模型工具 `browser_*` 已移除，宿主能力服务（agent.ts 的
-   * `runBrowserCommand`）要**直接调这些服务方法** —— 它们以前只服务于
-   * loopback bridge 的内部 HTTP 路由，所以是 private。
-   * 注意权限 / 网络边界**一点没动**：BrowserPolicy、resolve()、userControl
-   * 门禁、safeUrl、网络边界判定全部原样生效，改的只是方法可见性。
-   */
   async click(ref: string): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
     const p = this.parts()
     if (!p) return { ok: false, error: '浏览器尚未打开' }
@@ -1448,15 +1138,6 @@ export class BrowserController {
     }
   }
 
-  /**
-   * 下拉框选值（`yan browser select --ref <ref> --value <值>`）。
-   *
-   * 为什么单独一个动作而不是用 `click` 展开再点选项：
-   *   原生 `<select>` 展开的选项列表在很多站点上根本不是 DOM 元素
-   *  （系统/合成菜单），`observe` 看不到、`click` 也点不到。直接赋值是唯一稳的路。
-   *
-   * 选完照样等一会儿再 observe：`change` 可能触发异步提交（过滤器、分页、级联下拉）。
-   */
   async select(ref: string, value: string): Promise<BrowserActionResult & { observation?: BrowserObservation; chosen?: SelectOutcome }> {
     const p = this.parts()
     if (!p) return { ok: false, error: '浏览器尚未打开' }
@@ -1485,27 +1166,12 @@ export class BrowserController {
     }
   }
 
-  /**
-   * 把页面交给用户（密码 / 验证码 / 支付等敏感步骤）。
-   *
-   * 只翻转 `userControl` 门禁并广播状态：后续 click / type / press / scroll
-   * 一律被拒（code `USER_CONTROL_ACTIVE`），直到用户或界面恢复。
-   * `reason` **不在这里记**：旧路径（HTTP bridge）也从未把它落盘或展示，
-   * 本次迁移不为它新增用户可见功能（01-S4b 的边界）。
-   */
   requestUserControl(): BrowserState {
     this.userControl = true
     this.updateState()
     return this.getState()
   }
 
-  /**
-   * 当前页面截图（PNG 原始字节）。
-   *
-   * 以前只有 bridge 路由用得到，所以 base64 编码写在路由里；现在宿主能力服务
-   * 自己调用，就直接返回 Buffer，由调用方决定怎么落盘 ——
-   * 这里**不写文件**，路径决策不归控制器。
-   */
   async screenshot(): Promise<{ mimeType: string; data: Buffer }> {
     const p = this.parts()
     if (!p) throw new Error('浏览器尚未打开')
@@ -1518,10 +1184,6 @@ export class BrowserController {
     return this.getState()
   }
 
-  /**
-   * 临时允许/撤销某站点的一项权限。撤销会立即影响后续 check/request；
-   * 页面若已经拿到设备流，仍须由网页自身停止，不能假装这里能回收系统资源。
-   */
   setPermission(permission: string, origin: string, allowed: boolean): BrowserActionResult {
     const name = typeof permission === 'string' ? permission.trim() : ''
     const normalizedOrigin = normalizePermissionOrigin(origin)
@@ -1544,13 +1206,6 @@ export class BrowserController {
     if (this.permissionLog.length > 40) this.permissionLog.splice(0, this.permissionLog.length - 40)
   }
 
-  /**
-   * 记下一次被网络边界拦下的请求。
-   *
-   * 去重规则：同一「目标主机 + 原因」只留一条，`count` 累加、`from` 更新为
-   * 最近一次发起方 —— 一个页面往往会在同一 host 上撞好几次
-   *（导航 + favicon + 子资源），逐条堆叠只会把列表冲成一堵墙。
-   */
   private recordBlockedRequest(
     rawHost: string,
     reason: BrowserBlockedRequest['reason'],
@@ -1583,11 +1238,6 @@ export class BrowserController {
     if (cached && cached.expiresAt > Date.now()) return cached.private
     const privateTarget = await resolvesToPrivateAddress(key)
     const now = Date.now()
-    /*
-     * 过期项要真删：TTL 只有 2 秒，命中过期又重查时旧键会一直留着，
-     * 跨站浏览一多就是一张永不回收的主机名表（同文件里权限/拦截记录都有上限，只有这张没有）。
-     * 超上限时才扫一遍，不给每次解析加开销。
-     */
     if (this.privateDnsCache.size >= PRIVATE_DNS_CACHE_LIMIT) {
       for (const [host, entry] of this.privateDnsCache) if (entry.expiresAt <= now) this.privateDnsCache.delete(host)
       for (const host of this.privateDnsCache.keys()) {
@@ -1619,16 +1269,11 @@ export class BrowserController {
     const directory = app.getPath('downloads')
     const filename = item.getFilename().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') || `download-${Date.now()}`
     const path = join(directory, `${randomUUID()}-${filename}`)
-    /*
-     * 下载**不自动执行**（方案 9.2）：只落盘到系统下载目录并告知来源，
-     * 是否打开由用户自己决定。
-     */
     const origin = item.getURL()
     mkdirSync(directory, { recursive: true })
     item.setSavePath(path)
     item.once('done', (_event, state) => {
       if (state !== 'completed') return
-      /* 带上来源：用户要能看出「这个文件是从哪来的」（方案 9.2） */
       this.lastDownload = { path, filename, size: item.getReceivedBytes(), source: origin }
       if (owner) {
         this.ownedDownloads.delete(owner)

@@ -6,12 +6,7 @@ interface ProtocolCookie {
   sameSite?: string; partitionKey?: unknown; partitionKeyOpaque?: boolean;
 }
 
-/** Explicit one-way copy. Never log values or replace a live profile database.
- * Host-only scope and session lifetime must survive the transfer unchanged. */
 export async function transferCookies(source: CdpChannel, target: CdpChannel): Promise<{ copied: number; failed: number }> {
-  // Network.* operates on the page target used by both Electron debugger and
-  // Chrome's remote debugging endpoint. Storage.* is browser-context scoped
-  // and can return/set nothing when the endpoint is attached to a page.
   const { cookies } = await source.send<{ cookies: ProtocolCookie[] }>('Network.getAllCookies')
   let copied = 0
   let failed = 0

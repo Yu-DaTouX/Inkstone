@@ -1,9 +1,3 @@
-/*
- * 分屏 + 长会话（虚拟列表）探针（`npm run test:live -- splitvirtual`，需要可见窗口，合成数据）。
- *
- * 复现：当前会话很长（回合数超过虚拟化阈值）时，分屏把焦点换到另一侧，
- * 对话列在新磁贴里重新挂载，虚拟列表必须仍然画得出最后几轮，不能留一片空白。
- */
 (async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const store = window.__yanStore
@@ -35,25 +29,20 @@
     },
     messages: []
   })
-  /* 长会话走真实的同步通道（与 probe/virtual.js 一致），而不是直接改 store.messages */
   store.getState().applyPush({ ch: 'sync', payload: long })
   await sleep(1200)
-  /* 先滚到底（贴底状态），这是用户在长会话里最常见的位置 */
   const first = document.querySelector('.stream')
   if (first) first.scrollTop = first.scrollHeight
   await sleep(800)
   const singleText = document.querySelector('.stream')?.textContent ?? ''
   if (!singleText.includes('第 100 个回答')) throw new Error(`splitvirtual: 没分屏时长会话就没画出内容（len=${singleText.length} msgs=${store.getState().messages.length} turns=${document.querySelectorAll('.stream-row').length}）`)
-  /* 先让当前会话在主会话位（左），再把焦点换到旁边那一侧：长会话的对话列要整个搬到右边重新挂载 */
   split.getState().close()
   split.getState().open(peerRef, liveRef)
   await sleep(600)
   const rowsIn = (col) => document.querySelectorAll(`[data-split-column="${col}"] .stream-row`).length
   await sleep(800)
-  /* 分屏时每条会话一列：第 0 列在左 */
   const textIn = (col) => document.querySelector('[data-split-column="' + col + '"] .stream')?.textContent ?? ''
   if (!textIn(0).includes('第 100 个回答')) throw new Error('splitvirtual: 分屏后左侧长会话没有画出最后一轮（虚拟列表空白）')
-  /* 逐帧记录换块过程中两列的内容（排查闪烁）：任何一帧变空或换了顶部那一轮都记下来 */
   const frames = []
   let lastSig = '', recording = true
   const frameT0 = performance.now()

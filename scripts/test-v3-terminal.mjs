@@ -1,18 +1,3 @@
-/**
- * v3 终端会话控制器单测（P3 / R2）。
- *
- * 用 esbuild 把纯逻辑 `features/terminal/terminal-session.ts` 编译到内存，
- * 再注入一个**隔离 mock bridge** 驱动：不启动 Electron、不碰 node-pty、
- * 不发送任何真实 shell 命令、不写用户数据目录。覆盖：
- *   · 归属筛选：只认 `resource-owners` 里记到本 owner 的终端，不抢未登记的工具 PTY；
- *   · active=false 不 create/attach/data/write/resize；
- *   · 快速切会话：迟到的 attach 回包与旧 id 的 data/exit 不串新终端；
- *   · attach 期间实时块排队 + 按 seq 去重；
- *   · 启动失败给出可重试错误（不永久禁用），重试可恢复；
- *   · visible=false 不发 resize；卸载只 detach 不 kill；只有显式「结束」才 kill。
- *
- *   node scripts/test-v3-terminal.mjs
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
@@ -26,7 +11,6 @@ const flush = async (rounds = 12) => {
   for (let i = 0; i < rounds; i += 1) await Promise.resolve()
 }
 
-/** 反复让出微任务直到条件成立（异步链长度不定），避免测试依赖固定轮数。 */
 const until = async (cond, rounds = 400) => {
   for (let i = 0; i < rounds; i += 1) {
     if (cond()) return
@@ -51,7 +35,6 @@ function snapshot(over = {}) {
   }
 }
 
-/** 隔离 mock：记录调用、可注入行为、手动触发推送。 */
 function harness(overrides = {}) {
   const calls = { available: 0, list: 0, start: [], write: [], resize: [], kill: [], attach: [], claim: [], release: [] }
   const owners = new Map()
@@ -134,7 +117,6 @@ function owner(over = {}) {
   return { key: 'key-A', sessionId: 's1', cwd: '/work/proj', active: true, ...over }
 }
 
-/* ── 1. 纯归属筛选 ───────────────────────────────────────────────── */
 {
   const list = [snapshot({ id: 'tool', alive: true }), snapshot({ id: 'mine', alive: true })]
   const owners = new Map([['terminal:mine', 'key-A']])
@@ -146,7 +128,6 @@ function owner(over = {}) {
   assert.equal(pickOwnedTerminal([snapshot({ id: 'a', alive: false }), snapshot({ id: 'b', alive: true })]).id, 'b', '优先存活')
 }
 
-/* ── 2. 未激活：不 create / attach / write / resize ──────────────── */
 {
   const h = harness()
   h.controller.setOwner(owner({ active: false }))
@@ -164,7 +145,6 @@ function owner(over = {}) {
   assert.equal(h.calls.start.length, 0, 'active=false 的 create() 被拒绝')
   assert.equal(h.controller.getState().phase, 'inactive', '未激活显示 inactive')
   await flush()
-  /* 回到激活：只有这时才建立终端。 */
   const h2 = harness({ bridge: { list: async () => [snapshot({ id: 'owned' })], attach: async (id) => snapshot({ id }) } })
   h2.owners.set('terminal:owned', 'key-A')
   h2.controller.setOwner(owner({ active: false }))
@@ -176,7 +156,6 @@ function owner(over = {}) {
   console.log('  终端：未激活不触碰 PTY ✓')
 }
 
-/* ── 3. 附加已有归属终端 + 推送 + 重连去重 ───────────────────────── */
 {
   const deferred = { resolve: null }
   const h = harness({
@@ -190,7 +169,6 @@ function owner(over = {}) {
   h.owners.set('terminal:owned', 'key-A')
   h.controller.setOwner(owner())
   await until(() => h.calls.attach.length === 1)
-  /* attach 在途时到达的实时块：先入队。 */
   h.push({ id: 'owned', kind: 'data', data: 'live4', seq: 4 })
   h.push({ id: 'owned', kind: 'data', data: 'dup2', seq: 2 })
   h.push({ id: 'owned', kind: 'data', data: 'other', seq: 9 })
@@ -206,7 +184,6 @@ function owner(over = {}) {
   assert.equal(h.calls.attach[0], 'owned', '未登记的 tool-pty 不被 adopt')
   assert.ok(h.calls.resize.some((r) => r[0] === 'owned'), 'attach 后同步一次尺寸')
 
-  /* exit 只改当前终端状态。 */
   h.push({ id: 'owned', kind: 'exit', exitCode: 0 })
   await flush()
   assert.equal(h.controller.getState().phase, 'exited')
@@ -214,7 +191,6 @@ function owner(over = {}) {
   console.log('  终端：附加归属终端与回放去重 ✓')
 }
 
-/* ── 4. 新建：cwd 只来自 owner，登记归属 ─────────────────────────── */
 {
   const h = harness()
   h.controller.setOwner(owner({ cwd: '/work/proj' }))
@@ -228,7 +204,6 @@ function owner(over = {}) {
   console.log('  终端：新建仅用 owner.cwd 并登记归属 ✓')
 }
 
-/* ── 5. 启动失败：可重试，不永久禁用 ─────────────────────────────── */
 {
   let fail = true
   const h = harness({
@@ -251,7 +226,6 @@ function owner(over = {}) {
   console.log('  终端：启动失败可重试且不永久禁用 ✓')
 }
 
-/* ── 5b. 原生能力不可用同样是可重试，不永久禁用 ─────────────────── */
 {
   let ok = false
   const h = harness({
@@ -273,7 +247,6 @@ function owner(over = {}) {
   console.log('  终端：能力不可用可重试且不永久禁用 ✓')
 }
 
-/* ── 6. 快速切会话：迟到回包与旧 id 推送不串新终端 ───────────────── */
 {
   const pending = new Map()
   const h = harness({
@@ -290,19 +263,16 @@ function owner(over = {}) {
   await until(() => pending.has('B'))
   assert.ok(pending.has('A') && pending.has('B'), '两次 attach 都在途（旧请求不会取消，但会被 epoch 判定过期）')
 
-  /* A 的迟到回包：不得写进 B 的 xterm。 */
   pending.get('A')(snapshot({ id: 'A', buffer: 'STALE-A', seq: 5 }))
   await flush()
   assert.ok(!h.writes.includes('STALE-A'), '迟到的旧 attach 回包被丢弃')
 
-  /* 旧 id 的 data / exit：不得影响新终端。 */
   h.push({ id: 'A', kind: 'data', data: 'ghost', seq: 6 })
   h.push({ id: 'A', kind: 'exit', exitCode: 7 })
   await flush()
   assert.ok(!h.writes.includes('ghost'), '旧终端数据不串新终端')
   assert.notEqual(h.controller.getState().phase, 'exited', '旧终端 exit 不把新终端标成退出')
 
-  /* B 正常回包与后续数据。 */
   pending.get('B')(snapshot({ id: 'B', buffer: 'B0', seq: 1 }))
   await flush()
   assert.equal(h.controller.getState().phase, 'ready')
@@ -313,7 +283,6 @@ function owner(over = {}) {
   console.log('  终端：切换会话后迟到 data/exit/attach 不串流 ✓')
 }
 
-/* ── 7. resize 的可见性与销毁语义 ───────────────────────────────── */
 {
   const h = harness({
     bridge: { list: async () => [snapshot({ id: 'owned' })], attach: async (id) => snapshot({ id }) }
@@ -341,7 +310,6 @@ function owner(over = {}) {
   console.log('  终端：resize 可见性门控与卸载不 kill ✓')
 }
 
-/* ── 8. 只有显式「结束」才 kill，并释放归属 ──────────────────────── */
 {
   const h = harness({
     bridge: { list: async () => [snapshot({ id: 'owned' })], attach: async (id) => snapshot({ id }) }
@@ -355,7 +323,6 @@ function owner(over = {}) {
   assert.deepEqual(h.calls.release, ['terminal:owned'], '结束时释放归属')
   assert.equal(h.owners.has('terminal:owned'), false)
   assert.equal(h.controller.getState().phase, 'idle')
-  /* 结束后同 owner 重渲染不应自动重开。 */
   h.controller.setOwner(owner())
   await flush()
   assert.equal(h.calls.start.length, 0, '用户结束后不自动新建')

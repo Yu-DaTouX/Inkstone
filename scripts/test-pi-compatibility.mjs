@@ -116,7 +116,6 @@ async function runUpgradeCatalogTests() {
     await writeFile(join(source, 'package.json'), JSON.stringify({ version: '1.0.1' }))
     await writeFile(join(source, 'dist', 'bundle', 'cli.js'), '// never executed')
 
-    // Run the real control flow in a temporary copy; all subprocesses and runtime lookup are fake.
     let upgrade = await readFile(resolve('scripts/upgrade-pi.mjs'), 'utf8')
     for (const [original, replacement] of [
       ["import { spawnSync } from 'node:child_process'", "import { spawnSync } from './upgrade-fixture.mjs'"],

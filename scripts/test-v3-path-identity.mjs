@@ -1,25 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 path-only 视图身份回归：peek 身份成对取值 / 旧 sync 不覆盖新视图。
- *
- * 现场编译**真实生产模块**，不用源码字符串断言：
- *   · 纯逻辑 bundle：`state/view-identity.ts` + `features/workbench/ownership.ts`
- *     + `features/browser/ownership.ts` + `state/workspace-key.ts`；
- *   · 真实 store bundle：`state/store.ts`（带可控 `window.yan` 桥）+ 提交归属 helper。
- *
- * 钉住的缺陷（V4 只读审确认正式可达）：
- *   1. `switchSession` 列表外会话 `sum` 缺失、旧读取器只给 messages 不给 sessionId 时，
- *      会写成 peekedPath=B / peekedSessionId=null / session 仍 A；旧身份取值把 null id
- *      补成 A，`sessionIsView` 自比 A → 归属成「A id + B path」、cwd/active 借 A。
- *   2. 同步归属只认 peeked id，A 迟到的 sync 会覆盖刚铺上的 B。
- *
- * 期望：peek 任一身份存在时 id / 文件成对只取 peek；未知 path-only 按 B path、
- * active=false、cwd 只可 B 的待激活 / 摘要 / 运行实例或空；A 的 sync 不得覆盖 B；
- * 正式 B 激活成功后能接住它自己的消息并退出 peek；提交归属不借 A。
- *
- * 用法：node scripts/test-v3-path-identity.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型、不建 PTY / 浏览器。
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
@@ -28,8 +7,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 let currentGroup = null
@@ -47,8 +24,6 @@ function ok(cond, label, detail) {
   process.stdout.write(`${pass ? '  ✓' : '  ✗'} ${label}${extra}\n`)
   return pass
 }
-
-/* -------------------------------------------------------- 全局/定时桩 */
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 async function flush() {
@@ -70,7 +45,6 @@ function installGlobals() {
     try {
       fn(0)
     } catch {
-      /* 无真实帧 */
     }
     return 0
   }
@@ -93,8 +67,6 @@ function defer() {
   })
   return { promise, resolve: resolveFn }
 }
-
-/* ------------------------------------------------------------ bundle */
 
 const A = 'C:/data/a.jsonl'
 const B = 'C:/data/b.jsonl'
@@ -121,7 +93,6 @@ export { workspaceKeyFor } from '${posix(resolve(ROOT, 'src/renderer/src/state/w
   return out
 }
 
-/** 可控 `window.yan`：明确的返回值 / 延迟，其余返回空实现。 */
 function makeYan({ peek } = {}) {
   const calls = { selectSession: [], peekSession: [], send: [] }
   const pending = { select: null, peek: null }
@@ -191,8 +162,6 @@ export { viewingSubmitSessionId } from '${posix(resolve(ROOT, 'src/renderer/src/
   return out
 }
 
-/* ------------------------------------------------- 把 store 状态喂给推导 */
-
 const SESSION_A = { sessionId: 'sess-a', sessionFile: A, conversationId: 'conv-a', conversationFile: A, cwd: 'C:/proj/a' }
 
 function ownerInput(state, over = {}) {
@@ -243,8 +212,6 @@ function resetStore(useStore, overrides = {}) {
   })
 }
 
-/* ------------------------------------------------------------------ 主流程 */
-
 async function main() {
   installGlobals()
   const outdir = await mkdtemp(join(tmpdir(), 'yan-v3-path-identity-'))
@@ -266,7 +233,6 @@ async function main() {
   const keyB = workspaceKeyFor({ path: B })
   const keyBWithId = workspaceKeyFor({ sessionId: 'sess-b', path: B })
 
-  /* ================================================= 组 1：生产 helper */
   group('view-identity 纯逻辑：peek 任一身份存在时 id / 文件成对只取 peek')
   {
     const pathOnly = viewIdentityOf({ peekedSessionId: null, peekedPath: B, session: SESSION_A })
@@ -297,7 +263,6 @@ async function main() {
     ok(pushBelongsToView({ peekedSessionId: null, peekedPath: null, session: SESSION_A }, undefined) === true, '没有 runtime 身份时不误杀')
   }
 
-  /* ============================================ 组 2：工作区归属推导 */
   group('deriveWorkspaceOwner：path-only B 不再借 A 的 cwd / active')
   {
     const runnersA = [{ id: 'run-a', runId: 'run-a', sessionId: 'sess-a', sessionFile: A, cwd: 'C:/proj/a', generation: 0, isActive: true }]
@@ -349,7 +314,6 @@ async function main() {
     ok(JSON.stringify(viewIdentity(base)) === JSON.stringify({ sessionId: null, sessionFile: B }), 'ownership.viewIdentity 与实际身份成对一致')
   }
 
-  /* ======================================== 组 3：真实 store 的同步归属 */
   group('真实 store：path-only B 铺上后，旧 A sync 不覆盖；B 激活后能接住自己的消息')
   {
     const { yan, calls, pending } = makeYan({
@@ -362,7 +326,6 @@ async function main() {
     pending.select = defer()
     const switching = useStore.getState().switchSession(B)
     await flush()
-    /* 宿主只读预览：没有反悔出正式 sessionId（path-only） */
     pending.select.resolve({ ok: true, deferred: true })
     await switching
     await flush()
@@ -379,7 +342,6 @@ async function main() {
     ok(ownerBefore.sessionId === null && ownerBefore.active === false, '归属仍未激活、不冒充 A', ownerBefore)
     ok(ownerBefore.key === keyB, '归属键仍是 B', ownerBefore.key)
 
-    /* A 迟到的权威 sync：routePush 会放行（viewing 仍回落到 A），store 守卫必须挡下 */
     useStore.getState().applyPush({
       ch: 'sync',
       runtime: { sessionId: 'sess-a', runId: 'run-a', generation: 0 },
@@ -389,7 +351,6 @@ async function main() {
     ok(state.messages[0]?.text === 'B history', 'A 迟到的 sync 没有覆盖 B', state.messages.map((m) => m.text))
     ok(state.peekedPath === B && state.peekedSessionId === null, '视图仍停在 B（peek 未被清）', { p: state.peekedPath, id: state.peekedSessionId })
 
-    /* 正式激活 B：宿主给出正式 id → 视图身份成对补上，可继续接收 B 的消息 */
     pending.select = defer()
     const activating = useStore.getState().ensureActivated()
     await flush()
@@ -413,7 +374,6 @@ async function main() {
     ok(state.peekedPath === null && state.peekedSessionId === null, '收到 B 的权威 sync 后正常退出 peek', { p: state.peekedPath, id: state.peekedSessionId })
   }
 
-  /* ======================================= 组 4：常规路径不回退 */
   group('真实 store：无 peek / 有 id 的 peek 常规行为不变')
   {
     const { yan } = makeYan()

@@ -1,13 +1,3 @@
-/**
- * FIX2：MCP 按调用取消 / 超时的连接隔离验收。
- *
- * 直接实例化 `McpConnectionManager`，用本目录 fixture（`--stdio` / `--http` / `--raw`）
- * 真连，不启动 Electron、不联网、不碰用户配置、不调用真实模型。现场用 esbuild 把
- * `src/main/mcp/connection-manager.ts` 编译成临时 bundle，SDK 保持 external。
- *
- * 要证明的核心事实：同一服务、同一条共享连接上的两个并发请求，A 被用户取消 /
- * 单次超时 / 服务端返回 JSON-RPC 错误时，B 仍能成功；只有 transport 真死才释放连接。
- */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -47,7 +37,6 @@ const delay = (ms) => new Promise((done) => setTimeout(done, ms))
 const logText = () => (existsSync(logPath) ? readFileSync(logPath, 'utf8') : '')
 const rejectOf = (promise) => promise.then(() => undefined, (error) => error)
 
-/* 取消/超时错误带 code=request-cancelled；连接级错误没有这个 code。 */
 const isRequestCancelled = (error) => error?.code === 'request-cancelled'
 
 const unhandled = []
@@ -69,7 +58,6 @@ const newManager = (configs, timeoutMs = 5000) => {
 const assertConnected = (manager, id, label) =>
   ok(manager.statusOf(id).status === 'ready', label, manager.statusOf(id).status)
 
-/* 起 HTTP fixture 并等端口。 */
 const netPort = async (port) => {
   const net = await import('node:net')
   for (let i = 0; i < 80; i++) {
@@ -86,7 +74,6 @@ const netPort = async (port) => {
 
 let httpChild
 try {
-  /* ------------------------------------------- 1. SSD：A 用户取消 / B 成功 */
 
   {
     const manager = newManager([stdioConfig('iso')])
@@ -105,14 +92,12 @@ try {
     controller.abort()
     await a
     ok(aState === 'rejected', 'stdio 取消：A 以失败结束（不会迟到成功）')
-    await delay(150) // 等 notifications/cancelled 真正到达服务端并处理
+    await delay(150)
     ok(logText().includes('cancelled'), 'stdio 取消：服务端确实收到并处理了取消')
     assertConnected(manager, 'iso', 'stdio 取消：连接仍是 ready（没被 A 拆掉）')
     const after = await manager.callTool('iso', 'echo', { text: 'after' })
     ok(after?.structuredContent?.echo === 'after', 'stdio 取消：之后同一连接继续可用')
   }
-
-  /* ------------------------------------------- 2. SSD：A 单次超时 / B 成功 */
 
   {
     const manager = newManager([stdioConfig('iso-t')])
@@ -127,8 +112,6 @@ try {
     ok(after?.structuredContent?.echo === 'after', 'stdio 超时：之后同一连接继续可用')
   }
 
-  /* --------------------------------------- 3. SSD：A 服务端错误 / B 成功 */
-
   {
     const manager = newManager([stdioConfig('iso-e')])
     await manager.callTool('iso-e', 'echo', { text: 'warm' })
@@ -141,8 +124,6 @@ try {
     const after = await manager.callTool('iso-e', 'echo', { text: 'after' })
     ok(after?.structuredContent?.echo === 'after', 'stdio 错误：之后同一连接继续可用')
   }
-
-  /* ------------------------------- 4. SSD：transport 真死 → 全失败 + 重连 */
 
   {
     const manager = newManager([stdioConfig('iso-die')], 5000)
@@ -160,8 +141,6 @@ try {
     ok(revived?.structuredContent?.echo === 'revived', 'transport 死亡：之后按需重连成功')
     assertConnected(manager, 'iso-die', 'transport 死亡：重连后连接 ready')
   }
-
-  /* --------- 4b. SSD：空闲 transport 关闭 → onclose 及时回收，单次调用即重连 */
 
   {
     const manager = newManager([stdioConfig('iso-idle')])
@@ -183,14 +162,10 @@ try {
     ok(afterDisconnect?.structuredContent?.echo === 'after-disconnect', '显式 disconnect：之后可重新握手')
   }
 
-  /* ------------------------------------------------- 5. SSD：分页取消 */
-
   {
     const manager = newManager([stdioConfig('iso-page', { YAN_CANCEL_FIXTURE_PAGE2_DELAY_MS: '350' })])
-    // 先完整走一遍分页，确认能拿到全部 4 个工具。
     const warm = await manager.listTools('iso-page')
     ok(warm.map((tool) => tool.name).join(',') === 'echo,slow,fail,die', '分页：完整分页拿到全部工具')
-    // 再在第二页挂起时取消：整个 listTools 失败，但连接保持 ready。
     const controller = new AbortController()
     const pending = manager.listTools('iso-page', { signal: controller.signal })
     await delay(120)
@@ -202,8 +177,6 @@ try {
     ok(again.length === 4, '分页取消：之后同连接能重新完整分页')
   }
 
-  /* ------------------------------------------- 6. 发请求前已取消：不建连接 */
-
   {
     const manager = newManager([stdioConfig('iso-pre')])
     const controller = new AbortController()
@@ -212,8 +185,6 @@ try {
     ok(isRequestCancelled(err), 'abort 前已取消：调用被拒', err?.message)
     ok(manager.statusOf('iso-pre').status === 'disconnected', 'abort 前已取消：没有为取消的调用建立连接')
   }
-
-  /* --------------------- 7. RAW：服务端无视取消，迟到结果被调用级忽略 */
 
   {
     const manager = newManager([
@@ -232,7 +203,7 @@ try {
     controller.abort()
     await a
     ok(aState === 'rejected', 'raw：A 以取消结束')
-    await delay(450) // 等服务端把迟到的成功结果发回来
+    await delay(450)
     ok(aState === 'rejected', 'raw：迟到成功结果不会把已取消的调用变回成功')
     ok(logText().includes('cancelled-ignored') && logText().includes('late-result-sent'), 'raw：确实发生了「无视取消 + 迟到结果」')
     assertConnected(manager, 'raw', 'raw：迟到结果没有拆掉连接')
@@ -240,14 +211,11 @@ try {
     ok(after?.structuredContent?.raw === true, 'raw：之后同一连接继续可用')
   }
 
-  /* ---- 7b. RAW：服务端应用错误 -32000 不代表断线，不拆并发 B / 后续 C */
-
   {
     const manager = newManager([
       { id: 'raw-app', transport: 'stdio', command: process.execPath, args: [fixture, '--raw'], env: { YAN_CANCEL_FIXTURE_LOG: logPath, YAN_CANCEL_FIXTURE_RAW_DELAY_MS: '250' } }
     ])
     const warm = await manager.callTool('raw-app', 'echo', { text: 'warm' })
-    /* B 先发出并挂起，随后 A 以 -32000 应用错误返回：旧实现会仅凭码值拆掉共享 client，把 B 也弄失败。 */
     const bPromise = manager.callTool('raw-app', 'slow', {}).then(
       (value) => ({ resolved: true, value }),
       (error) => ({ resolved: false, error })
@@ -273,8 +241,6 @@ try {
       `warmPid=${warm?.structuredContent?.pid} cPid=${c?.structuredContent?.pid}`
     )
   }
-
-  /* ------------------------------------------------- 8. HTTP：A 取消 / B 成功 */
 
   {
     const port = 39800 + Math.floor(Math.random() * 500)
@@ -303,8 +269,6 @@ try {
     httpChild.kill('SIGTERM')
     httpChild = undefined
   }
-
-  /* ---------------------------------------------- 9. 没有未处理的 rejection */
 
   await delay(700)
   ok(unhandled.length === 0, '全程没有未处理的 Promise rejection', unhandled.map((e) => String(e?.message ?? e)).join(' | '))

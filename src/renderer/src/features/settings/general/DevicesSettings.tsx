@@ -1,10 +1,3 @@
-/**
- * 设置 → 设备与同步（v3）。
- *
- * 只搬现有能力：手机接入的启用、配对码 / 链接、已配对设备的撤销与移除，
- * 以及砚对砚（peer）当前授权的断开。全部复用 `window.yan.remote` / `window.yan.peer`
- * 的既有方法。跨设备同步在「同步」分区，这里不重复。
- */
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import {
@@ -29,7 +22,6 @@ export interface DeviceListProps {
   onForget: (id: string) => void
 }
 
-/** 已配对设备列表（纯展示件，便于 SSR 断言）。 */
 export function DeviceList({ devices, busy, text, lang, onRevoke, onForget }: DeviceListProps): ReactElement {
   const active = devices.filter((device) => device.revokedAt === null)
   const revoked = devices.filter((device) => device.revokedAt !== null)
@@ -107,7 +99,6 @@ export function DevicesSettings(): ReactElement {
       if (!alive.current) return
       setPeer(peers)
     } catch {
-      /* 下一轮再试；单个来源失败不让整页空白 */
     }
   }, [])
 

@@ -1,17 +1,3 @@
-/*
- * 样式入口：级联层决定覆盖关系，不再依赖 import 顺序。
- *
- *   tokens     设计令牌与字体（只定义变量与 @font-face）
- *   base       元素级基础样式与第三方样式（xterm）
- *   ui         统一控件的唯一外观（ui.css）
- *   layout     窗口骨架与分栏
- *   modules    各功能模块的版面；层内仍按下列顺序，同特异性时后者胜
- *   overrides  必须压过任何模块规则的少数例外（目前为空；放进来之前先确认
- *              它不会盖掉模块里更具体的规则）
- *
- * 后面的层整体压过前面的层（与选择器特异性无关）；`!important` 则相反，前层优先。
- * 新增样式文件时在这里登记，并放进它所属的层。规则见 docs/DESIGN_SYSTEM.md 第 10 节。
- */
 @layer tokens, base, ui, layout, modules, overrides;
 
 @import './tokens.css' layer(tokens);
@@ -37,5 +23,4 @@
 @import './workbench.css' layer(modules);
 @import './workspace.css' layer(modules);
 @import './icon-state.css' layer(modules);
-/* 界面方案 E：全界面统一的一层，排在模块最后 */
 @import './scheme.css' layer(modules);

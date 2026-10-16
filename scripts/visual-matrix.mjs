@@ -1,27 +1,4 @@
-/**
- * 视觉验收矩阵：窗口尺寸 × 缩放 × 主题。
- *
- * 为什么要单独一个脚本（而不是 `npm run test:live` 加场景）：
- *   · 这里要的是**可归档的截图**（N02/N04/N07/N13/N14/N15/N17/N20 的视觉项），
- *     而 `test:live` 的探针只回文本断言，截图是它拉不到的；
- *   · 组合是「几尺寸 × 几缩放 × 两主题」，逐组合起真正的 Electron 窗口，
- *     每个状态截一张，比把它塞进探针的等待窗口更直接。
- *
- * 数据一律来自 `scripts/shot-fixture.js`（合成数据）：
- * 截图会进仓库，**绝不能**把用户真实会话内容截进去。
- *
- * 尺寸/缩放的对应关系（照 `docs/dev/HANDOFF.md` 的验收口径）：
- *   1440x900 → 正常；940x620 → 窄；900x520 → 矮
- *   缩放用应用自己的 `settings.uiScale`（和 Ctrl+= 走同一条路），
- *   不是 Electron 的 `setZoomFactor` —— 后者只影响网页，验不到布局。
- *
- * ⚠️ 两个来自 `scripts/shots.mjs` 的坑（别改回去）：
- *   ① 不能在顶层 `await app.whenReady()`：Electron 的 ESM 加载器要等整个
- *      模块图求值完才发 ready，而 ready 又要等这个 await，直接死锁。
- *   ② 窗口必须 `show: true`：隐藏窗口只合成一次，之后的切主题/开设置
- *      都不再出帧，`capturePage()` 会一直拿到旧画面。
- */
-import { missingHandlerSummary, muteMissingHandlerNoise } from './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
+import { missingHandlerSummary, muteMissingHandlerNoise } from './lib/stdio-guard.mjs'
 import { app, BrowserWindow, ipcMain, WebContentsView } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { mkdtempSync, readFileSync } from 'node:fs'
@@ -38,18 +15,6 @@ const htmlPreviewFixture = createHtmlPreviewFixture(root)
 const outDir = process.env.YAN_SHOT_DIR
   ? resolve(process.env.YAN_SHOT_DIR)
   : join(root, 'docs/design/preview')
-/*
- * 截图的日期戳。
- *
- * 新批次用新名，旧图**原样保留**（AGENTS.md：`docs/design/preview/` 里的截图是用户
- * 视觉证据，不删不覆盖；要更新就另存新名）。`YAN_MATRIX_STAMP` 可以覆盖它
- *（调样式时反复重跑用）。
- *
- * ⚠️ 默认值曾经是写死的 \`2026-09-18\` —— 结果是不带环境变量跑一次整组，
- * 就把那一天的 **28 张旧图全部覆盖了**（它们本来都是“另存新名”的批次），
- * 与上面那条规则直接冲突。现在默认带上**时分秒和毫秒**，重复运行会生成新名。
- * 要拍一个固定名批次，请显式给 \`YAN_MATRIX_STAMP\`。
- */
 function defaultStamp(d = new Date()) {
   const p = (n) => String(n).padStart(2, '0')
   const ms = String(d.getMilliseconds()).padStart(3, '0')
@@ -59,14 +24,6 @@ const STAMP = process.env.YAN_MATRIX_STAMP || defaultStamp()
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/*
- * 逐元素计算样式（只在 `YAN_STYLE_DUMP` 时注入，见 shot()）。
- *
- * 路径用「标签 + 同级序号」，不用 class：结构重构不改 DOM，路径前后一致；
- * 若某处 class 变了，路径不变、差异会落到样式上，正是要看的。
- * 全部计算值只存哈希，常用属性存原值；`YAN_STYLE_DUMP=full` 时存全部原值（排查用，体积大）。
- * 动画中的 opacity / transform 不稳定，由比较脚本按需忽略。
- */
 const STYLE_DUMP_JS = `(() => {
   const FULL = ${process.env.YAN_STYLE_DUMP === 'full'};
   const out = {};
@@ -113,31 +70,12 @@ const STYLE_DUMP_JS = `(() => {
   return out;
 })()`
 
-/*
- * 自己去一个临时 userData 目录，并且**每次运行都是新的**。
- *
- * 为什么：用默认 userData 时，上一次运行留下的 GPUCache / 锁会让下一次运行
- * 的 GPU 与 network service 起来就崩（终端里是 `GPU process exited unexpectedly`
- * 和 `Network service crashed`），而脚本表现为“停在第一张图前不动”。
- * 截图不需要持久化任何东西，沙箱目录同时也让截图可重现。
- */
 const sandbox = mkdtempSync(join(tmpdir(), 'yan-visual-matrix-'))
 app.setPath('userData', join(sandbox, 'userData'))
 app.setPath('sessionData', join(sandbox, 'sessionData'))
-/* 截图不需要 GPU 加速；关掉后 GPU 进程不会成为失败点 */
 app.disableHardwareAcceleration()
 const MATRIX_ARTIFACT_SVG_PATH = join(sandbox, 'yan-artifact.svg')
 
-/**
- * 只影响「截图好看程度」的两个 IPC 桩（与 `scripts/shots.mjs` 同源）。
- *
- * 截图不跑主进程：文件区/连接状态拿不到数据会显示「读取目录失败」，
- * 在真实应用里是对的，但截图看起来像 bug。这里只补这两块，
- * 其余（会话/模型/提示词）由 `shot-fixture.js` 写进 store。
- */
-/* ── Git 审查的合成数据（只用于截图，与任何真实仓库无关） ── */
-
-/** 一个合法的小 PNG（图片对照的截图里必须真的能解码，否则截到的是破图） */
 function matrixPng(size, rgb) {
   const table = []
   for (let n = 0; n < 256; n += 1) {
@@ -168,7 +106,6 @@ function matrixPng(size, rgb) {
   for (let y = 0; y < size; y += 1) {
     const off = y * stride
     for (let x = 0; x < size; x += 1) {
-      /* 画一个简单的斜向渐变，截图里能看出是两张**不同**的图 */
       raw[off + 1 + x * 3] = (rgb[0] + x * 6) & 0xff
       raw[off + 2 + x * 3] = (rgb[1] + y * 6) & 0xff
       raw[off + 3 + x * 3] = rgb[2]
@@ -206,36 +143,12 @@ function gitStubRepo() {
   }
 }
 
-/**
- * 非 Git 目录的合成状态（实施-07 S1 的取证）。
- *
- * 真实链路里 `yan:git:state` 对非仓库目录返回 `repo: null` —— 那是**正常结果**，
- * 不是错误。截图要证的正是界面据此走
- * 「未使用 Git」分支：环境菜单不给写操作入口、审查面板说清没有改动可审查。
- */
 const NON_GIT_STUB_CWD = 'C:/work/notes-notgit'
-/**
- * 主进程侧的切换开关（不是“按 cwd 判断”）。
- *
- * 起初写的是“cwd 落在合成目录就返回 repo: null”，但那样必须同时改
- * `session.cwd` —— 实测会让渲染端卡住（cwd 一变，一批依赖它的组件开始
- * 重新拉数据，矩阵的 `executeJavaScript` 再不返回）。截图需要的只是
- *「数据源变成非 Git」，不需要真的换目录，所以改成主循环按状态切换开关。
- */
 let stubNonGit = false
-/** 需要“非 Git 数据源”的两个状态；主循环据此切换 `stubNonGit` */
 const NON_GIT_STATES = new Set(['envnotgit', ])
 function gitStubNonGitState() {
   return { repo: null, expected: undefined }
 }
-/**
- * 交互终端的矩阵桩（H-11 视觉验收）。
- *
- * 矩阵 harness 里其它 IPC 都是伪造的；终端的桩用**真的 node-pty**，
- * 因为这张图要证的就是“真 PTY + 真 xterm”的观感 —— 拿一段固定文本画上去
- * 等于什么都没验。产品侧的 IPC 接线由 `test:live -- terminalsurface`
- * 与 `test:packaged`（asarUnpack 后的原生依赖）覆盖。
- */
 function registerTerminalStub() {
   const require_ = createRequire(import.meta.url)
   const pty = require_('node-pty')
@@ -267,13 +180,6 @@ function registerTerminalStub() {
       cols,
       rows,
       cwd,
-      /*
-       * 矩阵 harness 里显式关掉 ConPTY：Electron 主进程不一定挂着控制台，
-       * node-pty 的 `conpty_console_list_agent` 会 `AttachConsole failed` 并拖垬整个
-       * harness。winpty 分支不依赖附到控制台，截图要的只是 surface 的真实渲染。
-       * 产品进程里走的是默认（ConPTY），那条路已由 `test:live -- terminalsurface`
-       * 与 `test:packaged` 在真实应用上验证。
-       */
       useConpty: false,
       env: { ...process.env, TERM: 'xterm-256color' }
     })
@@ -284,7 +190,6 @@ function registerTerminalStub() {
       try {
         event.sender.send('yan:push', { ch: 'terminal', payload: { id: entry.id, kind: 'data', data, seq: entry.seq } })
       } catch {
-        /* 窗口已关 */
       }
     })
     entry.pty.onExit(({ exitCode }) => {
@@ -293,7 +198,6 @@ function registerTerminalStub() {
       try {
         event.sender.send('yan:push', { ch: 'terminal', payload: { id: entry.id, kind: 'exit', exitCode: entry.exitCode } })
       } catch {
-        /* 窗口已关 */
       }
     })
     sessions.set(entry.id, entry)
@@ -319,7 +223,6 @@ function registerTerminalStub() {
     try {
       entry.pty.kill()
     } catch {
-      /* 已退出 */
     }
     sessions.delete(String(id))
     return true
@@ -331,26 +234,19 @@ function registerTerminalStub() {
       try {
         event.sender.send('yan:push', { ch: 'terminal', payload: { id: entry.id, kind: 'data', data: entry.buffer, seq: entry.seq } })
       } catch {
-        /* 窗口已关 */
       }
     }
     return snapshotOf(entry)
   })
 }
 
-/** 矩阵用到的 shared 纯逻辑模块缓存（同步编译一次再 require，矩阵脚本没有顶层 await）。 */
 let sharedRuleCache = new Map()
 
-/**
- * 同步编译一个 shared 纯逻辑模块并缓存require结果。
- * 矩阵是**自己的主进程**，没有真实 handler —— 但规则不能手写夹具（会与真实实现分家）。
- */
 function sharedRules(entry) {
   const cached = sharedRuleCache.get(entry)
   if (cached) return cached
   const require = createRequire(import.meta.url)
   const { buildSync } = require('esbuild')
-  /* 前缀 shared- ：不与 test:unit 的同名产物（ESM）撞车 */
   const outfile = join(root, 'out', 'test', 'shared-' + entry.replace(/[/]/g, '-') + '.cjs')
   buildSync({ entryPoints: [join(root, 'src', 'shared', entry + '.ts')], outfile, bundle: true, format: 'cjs', platform: 'node', logLevel: 'silent' })
   const mod = require(outfile)
@@ -358,7 +254,6 @@ function sharedRules(entry) {
   return mod
 }
 
-/** 按活动配置模型（P18）：同一份 shared 规则。 */
 function activityModelRules() {
   return sharedRules('activity-model')
 }
@@ -370,7 +265,6 @@ function registerStubHandlers() {
     tasks: [{ id: 'visual-task-one', title: '检查设置页的键盘交互', agent: 'codex', mode: 'terminal', terminalId: 'visual-terminal-one', inputOwner: 'desktop', inputEpoch: 1, projectId: 'visual-project', status: 'running' }, { id: 'visual-task-two', title: '整理 API 适配的变更', agent: 'pi', mode: 'terminal', terminalId: 'visual-terminal-two', inputOwner: 'desktop', inputEpoch: 1, projectId: 'visual-project', status: 'running' }],
     approvals: [], resources: [], messages: [], runs: [], templates: []
   }
-  /* Optional managed-run fixture for the Agent chat view (YAN_MATRIX_HUB_CHAT=1); other states keep the two terminals. */
   if (process.env.YAN_MATRIX_HUB_CHAT === '1') {
     const t0 = Date.now() - 600_000, ws = 'C:\\Users\\fixture\\.pi\\agent\\yan\\agent-hub\\workspaces\\visual-review'
     hubSnapshot.tasks.unshift({ id: 'visual-review', title: '审阅设置页焦点修复', agent: 'codex', mode: 'managed', projectId: 'visual-project', status: 'waiting_input', createdBy: 'session', parentSessionId: 'visual-session', runId: 'visual-run', createdAt: t0, updatedAt: Date.now(), workspace: ws, baseline: 'c378e7e36c0a842b7350ce7d28fb88190bedcf82', includeWorkingChanges: true, startArtifact: { patchPath: '', reportPath: '', sha256: '', tree: '', files: 3 }, timeoutMinutes: 30, toolCoverage: 'managed-entrypoints',
@@ -389,7 +283,6 @@ function registerStubHandlers() {
     hubSnapshot.approvals.push({ id: 'ap1', taskId: 'visual-review', runId: 'visual-run', kind: 'command', title: '运行完整测试', detail: 'npm run test:unit', expiresAt: Date.now() + 100_000, status: 'pending' })
   }
   ipcMain.handle('yan:hub:snapshot', () => hubSnapshot)
-  /* 启动页用量概览：合成数据（不读真实会话） */
   ipcMain.handle('yan:usageStats', (_e, range) => {
     const heat = []
     const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -426,12 +319,6 @@ function registerStubHandlers() {
     const counts = { pending: 0, running: 1, waiting_user: 1, failed: 1, needs_review: 1, done: 0, dismissed: 0 }
     return { cards: filtered.slice(offset, offset + limit), total: filtered.length, counts, degraded: 0 }
   })
-  /*
-   * 会话地图（实施-18）不再走 peekSession 这类 IPC：地图只读 store 的会话
-   * 元数据，所以矩阵里的假会话写在 store 上就够。listSessions 仍留一份夹具，
-   * 因为启动时它会写进 store（地图、左栏都读 store）。
-   * 这里回一份固定夹具，让 sessionmap / workbenchhome 状态能截到有会话的图。
-   */
   const nowMs = Date.now()
   const matrixSessionFixture = [
     {
@@ -469,12 +356,6 @@ function registerStubHandlers() {
       messageCount: 8
     }
   ]
-  /*
-   * 轮次层（实施-26 R3）的夹具：按 path 区分父子。
-   *
-   * 子会话带着父会话那一轮（真实分叉文件就是这样），
-   * `branchOrigin` 才能对得上、对齐才有可能发生。
-   */
   const matrixTurnsPeek = (path, child) => ({
     sessionId: path.replace(/^.*\//, '').replace(/\.jsonl$/, ''),
     total: 6,
@@ -524,8 +405,6 @@ function registerStubHandlers() {
             timestamp: nowMs - 7_000_000,
             toolCalls: [{ id: 't1', name: 'read', args: { path: 'src/App.tsx' }, status: 'ok', output: 'ok' }]
           },
-          /* 第二轮：上一轮卡片因此不再是「最后一张」，会拿到分支/折叠按钮
-             （上游只给最后一张卡片 canContinue，官方图里卡片右侧的 ± 就是这两个）。 */
           { id: 'p3', role: 'user', text: '再补一遍窄窗口下的检查', timestamp: nowMs - 5_400_000 },
           {
             id: 'p4',
@@ -536,22 +415,15 @@ function registerStubHandlers() {
           }
         ]
       })
-  /* 矩阵别处已经注册过一份空列表（第 595 行），先摘掉再换成夹具 */
   ipcMain.removeHandler('yan:listSessions')
   ipcMain.removeHandler('yan:peekSession')
   ipcMain.handle('yan:listSessions', () => matrixSessionFixture)
   ipcMain.handle('yan:peekSession', (_event, path) => matrixPeek(path))
-  /* 地图预览里的分叉点：矩阵不真的分叉，只验证入口画得出来 */
   ipcMain.removeHandler('yan:forkPoints')
   ipcMain.handle('yan:forkPoints', () => [
     { entryId: 'matrix-f1', text: '先把地图换成参考实现' },
     { entryId: 'matrix-f2', text: '再补一遍窄窗口下的检查' }
   ])
-  /*
-   * 实施-23 设置页里的自定义 API 服务：矩阵**完全离线**地假装这一套。
-   * 没有这几个 stub 时，渲染端调用会一直挂着（矩阵只给用到的能力注册 stub），
-   * 表现成“矩阵跑到 customapi 就不动了”。也正因为有它，矩阵绝不碰真实 models.json。
-   */
   const matrixCustomProviders = []
   const matrixProviderView = (input) => ({
     id: input.id,
@@ -560,12 +432,10 @@ function registerStubHandlers() {
     models: input.models ?? [],
     hasApiKey: Boolean(input.apiKey)
   })
-  /* 小部件沿用正式隔离协议，夹具只替换数据根，不绕过主窗口 CSP。 */
   ipcMain.removeHandler('yan:prepareHtmlWidget')
   ipcMain.handle('yan:prepareHtmlWidget', (_event, html) => htmlPreviewFixture.htmlArtifactPreviews.prepareInline(html))
   ipcMain.removeHandler('yan:releaseHtmlArtifact')
   ipcMain.handle('yan:releaseHtmlArtifact', (_event, url) => htmlPreviewFixture.htmlArtifactPreviews.release(url))
-  /* 插件市场目录：固定假数据，不访问 npm */
   ipcMain.removeHandler('yan:packages:search')
   ipcMain.handle('yan:packages:search', () => ({ ok: true, total: 60, entries: Array.from({ length: 12 }, (_, i) => ({
     name: i % 3 ? `pi-fixture-tool-${i}` : `@fixture/pi-very-long-package-name-for-layout-${i}`, version: `1.${i}.0`, publisher: 'fixture',
@@ -585,14 +455,12 @@ function registerStubHandlers() {
     if (at >= 0) matrixCustomProviders.splice(at, 1)
     return { ok: true, providers: [...matrixCustomProviders] }
   })
-  /* 连接测试：免费段回一个成功结果，计费段**不发请求**（矩阵不该花钱） */
   ipcMain.handle('yan:testCustomProvider', (_event, _id, mode) =>
     mode === 'endpoint'
       ? { ok: true, mode, ms: 42, message: '地址可达，凭证可用（HTTP 200）' }
       : { ok: true, mode, ms: 0, message: '矩阵不发真实请求', text: '收到' }
   )
   ipcMain.handle('yan:getHandoff', async (event) => {
-    /* Keep a handoff fixture stable when HandoffNote's four-second poll fires. */
     const fixture = await event.sender.executeJavaScript('window.__yanStore?.getState()?.handoff ?? null')
     if (fixture?.sessionKey === 'matrix-session') return fixture
     return {
@@ -608,7 +476,6 @@ function registerStubHandlers() {
       autoCommit: true
     }
   })
-  /* rightwindows is a composite screenshot; its browser must also close cleanly after capture. */
   ipcMain.handle('yan:browser:close', () => ({
     open: false,
     url: '',
@@ -619,16 +486,6 @@ function registerStubHandlers() {
     mode: 'embedded',
     tabs: []
   }))
-  /*
-   * 额度区：没有它界面上会写“查询失败（Error invoking remote method 'yan:pro…'）”，
-   * 截进验收图会被当成真 bug。数据与 shots.mjs 一致。
-   *
-   * `commandcode` 这个 provider 在视觉矩阵里**只有** `quotatone` 状态会用（fixture 会话
-   * 是 openai-codex），所以这里可以按 provider 名分支返回三档数据，而不是另造一个名字
-   * —— 图上显示的就是真实供应商名。真实额度永远落不到 70 / 95 这两个分界上，
-   * 所以这组截图得自己造数据；但走的仍是真实渲染路径（状态脚本改 store 里的
-   * provider → 额度区自己来查）。
-   */
   ipcMain.handle('yan:providerQuota', (_e, provider) => {
     if (provider === 'commandcode') {
       return {
@@ -660,16 +517,9 @@ function registerStubHandlers() {
       checkedAt: Date.now()
     }
   })
-  /* 其余启动期拉取：给空值，让界面停在“没有更多数据”而不是报 IPC 错
-     （`yan:listSessions` 已在上面的会话夹具里注册，这里不再覆盖） */
   ipcMain.handle('yan:listCommands', () => [])
   ipcMain.handle('yan:listThinkingLevels', () => [])
   ipcMain.handle('yan:compactionInfo', () => ({
-    /*
-     * 与真实场景一致的一组值：全局设置了 reserveTokens，项目里的
-     * `.pi/settings.json` 因为未信任而**不会被 pi 读** —— 这就是
-     * `compaction` 截图里要看到的那句警告（D21）。
-     */
     enabled: true,
     reserveTokens: 16384,
     keepRecentTokens: 20000,
@@ -679,16 +529,6 @@ function registerStubHandlers() {
     scope: 'global',
     projectIgnored: true
   }))
-  /*
-   * 回收站通知（N08/N13/N14/N15/N17 的视觉缺口）：截图要拍到「已删除 · 撤销」那条
-   * 非模态通知，所以删除必须成功 —— 给一个桩，撤销也给一个（截图不点它，
-   * 但按钮的存在依赖 token 非空）。
-   */
-  /*
-   * 文件引用登记（N19 截图要真的走一遍「加入上下文」）：真实主进程会 realpath 校验
-   * 并登记路径；截图环境里没有那些文件，所以按请求原样回一个成功的描述 ——
-   * 形状与 `grantFiles()` 完全一致（ok / input / path / name / size / mimeType / kind）。
-   */
   ipcMain.handle('yan:describeFiles', (_e, paths) =>
     (Array.isArray(paths) ? paths : []).map((p) => {
       const input = String(p)
@@ -722,15 +562,6 @@ function registerStubHandlers() {
   ipcMain.handle('yan:deleteSession', () => ({ ok: true, undoToken: 'shot-token' }))
   ipcMain.handle('yan:restoreSession', () => ({ ok: true }))
   ipcMain.handle('yan:authProviders', () => [])
-  /*
-   * ⚠️ 拉取型 IPC **故意不注册**（getSettings / getState / getStats / listModels …）。
-   *
-   * 曾经给它们返回空值想“让日志干净一点”，结果是 bootstrap 把空值写回 store，
-   * 盖掉 `shot-fixture.js` 刚注入的数据（`settings` 变成 null 时 React 直接
-   * 卸载整棵树），表现为后面几张图“缺 .settings / 缺 rail-toggle”。
-   * 让它们报 IPC 错反而是对的：store 保留注入值，日志噪音在跑脚本时过滤即可。
-   */
-  // 写设置只合并当前合成夹具，不持久化，也不以空值覆盖注入的完整设置。
   ipcMain.handle('yan:patchSettings', async (event, patch) => {
     const current = await event.sender.executeJavaScript('window.__yanStore?.getState().settings ?? {}')
     return { ...current, ...patch }
@@ -740,10 +571,6 @@ function registerStubHandlers() {
   ipcMain.handle('yan:runnerStatuses', () => [])
   ipcMain.handle('yan:listDir', (_e, rel) => {
     const path = rel || ''
-    /*
-     * 无权限目录（L02）：截图里要看到「没有读取权限」这一行，
-     * 而不是一个空目录 —— 这两种状态在界面上必须是可区分的。
-     */
     if (path === 'noperm') {
       return {
         path,
@@ -755,10 +582,6 @@ function registerStubHandlers() {
         error: 'permission'
       }
     }
-    /*
-     * 目录内容按路径区分：以前每一层都返回同一批名字（src 下面还是 src），
-     * 拍"深层文件"的截图时看起来像树坏了。这里给两层真实感的内容。
-     */
     const tree = {
       src: [
         { name: 'main', dir: true },
@@ -781,10 +604,6 @@ function registerStubHandlers() {
         { name: 'docs', dir: true },
         { name: 'scripts', dir: true },
         { name: 'noperm', dir: true },
-        /*
-         * 超长名（窄右栏的省略 + `title` 全文）：长度要明显超过 `PANEL_MIN=220`
-         * 下名字的可用宽度，否则截图里看不出省略行为。
-         */
         {
           name: '一个非常长的文件名用来验证窄栏下的省略显示-0123456789-abcdefghij-中文结尾.md',
           dir: false,
@@ -799,15 +618,6 @@ function registerStubHandlers() {
     }
   })
 
-  /*
-   * Git 审查的桩（方案 G1 的视觉验收）。
-   *
-   * 为什么必须给桩：视觉矩阵**故意不连真实主进程**，而审查面板的每一块
-   * 内容都来自 `yan:git:*`。没有桩就只会截到「正在读取…」，
-   * 那就不是在验收布局与配色。数据是合成的，**绝不进用户真实仓库**。
-   */
-  /* `stubNonGit` 由主循环按状态切换：截图需要的是“数据源变成非 Git”
-     （cwd 不变 —— 见模块顶部 NON_GIT_STUB_CWD 的注释） */
   ipcMain.handle('yan:git:state', () =>
     stubNonGit
       ? gitStubNonGitState()
@@ -816,7 +626,6 @@ function registerStubHandlers() {
           expected: { head: 'a'.repeat(40), indexDigest: 'stub-idx', statusDigest: 'stub-status' }
         }
   )
-  /* 写操作：矩阵只看界面，返回一个「成功且状态更新」的结果即可 */
   ipcMain.handle('yan:git:action', (_e, req) => ({
     ok: true,
     summary: (req && req.kind === 'commit' ? '已提交' : '已暂存') || '完成',
@@ -827,17 +636,8 @@ function registerStubHandlers() {
     state: gitStubRepo()
   }))
   ipcMain.handle('yan:git:remotes', () => ['origin'])
-  /*
-   * 会话来源（§8 的 S1）。视觉矩阵不跑 registerIpc，所有通道都要有桩 ——
-   * 这里给一张"已经关联过东西"的样子：一张图（缩略图用一个 1×1 的 PNG）、
-   * 一个文件、两条网页。
-   */
   const png1x1 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-  /*
-   * 来源搜索入口（实施-07 S4）：界面的可见性就是这条 IPC 回什么 ——
-   * 桩返回一条“已发现的搜索能力”，张图才能看到那枚入口（真链路证据在 live 的 sourcecap）。
-   */
   ipcMain.handle('yan:sources:webSearch', () => ({
     available: true,
     capabilityId: 'mcp:fixture/web_search',
@@ -862,10 +662,6 @@ function registerStubHandlers() {
         size: 20_480
       }
     ],
-    /*
-     * 来源 ↔ 消息的关联（实施-07 S3）：有它菜单里才会出现「定位消息」入口。
-     * 视觉矩阵里只要求按钮画得出来，跳转本身由 `sourcelink` 探针断言。
-     */
     links: [
       {
         sourceId: 'image:aaaa1111bbbb2222cccc3333dddd4444',
@@ -902,12 +698,6 @@ function registerStubHandlers() {
   ipcMain.handle('yan:sources:readImage', () => ({ ok: true, base64: png1x1, mime: 'image/png' }))
   ipcMain.handle('yan:sources:addImage', () => null)
   ipcMain.handle('yan:sources:removeImage', () => ({ ok: true }))
-  /*
-   * pi 包管理（§9 的 P2）。视觉矩阵**不跑 registerIpc**，所有通道都靠桩 ——
-   * 少一个就会在界面上渲染成 "No handler registered for ..."（第一次跑就是
-   * 这么发现漏了桩的）。这里给两条：一条装的、一条「登记着但磁盘上没有」
-   *（后者是要在界面上看得出来的异常状态）。
-   */
   ipcMain.handle('yan:packages:list', () => ({
     ok: true,
     agentDir: 'C:/Users/me/.pi/agent',
@@ -950,12 +740,6 @@ function registerStubHandlers() {
     ]
   }))
   ipcMain.handle('yan:packages:action', () => ({ ok: true, output: 'Installed npm:pi-zh-cn' }))
-  /*
-   * 受信内置能力（实施-02 S4）：设置页「插件」里的内置能力区。
-   * 桩数据与主进程 `builtinCapabilities()` 同形：前两条是宿主服务 / CLI 能力
-   *（task-plan、browser，没有 file），其余按**实际加载的扩展文件名**派生 id。
-   * 漏了这个桩，那张截图里就会缺掉整块（渲染端拉不到就为空）。
-   */
   ipcMain.handle('yan:capabilities:builtin', () => [
     { id: 'task-plan' },
     { id: 'browser' },
@@ -969,10 +753,6 @@ function registerStubHandlers() {
     { id: 'context', file: 'context.js' },
     { id: 'project-knowledge', file: 'project-knowledge.js' }
   ])
-  /*
-   * 按活动配置模型（实施-25 P18）：与主进程**同一份** shared 规则。
-   * 注入一份有内容的配置，截图才能同时看到三种解释（活动指定 / 默认 / 跟随）。
-   */
   ipcMain.handle('yan:activity:modelRows', (_event, input) => {
     const rules = activityModelRules()
     return rules.activityModelRows({
@@ -1027,13 +807,6 @@ function registerStubHandlers() {
   ipcMain.handle('yan:capabilities:verify', () => ({ ok: false, error: '视觉矩阵不执行连接' }))
   ipcMain.handle('yan:capabilities:verification', () => null)
   ipcMain.handle('yan:capabilities:cancelVerification', () => ({ ok: false, error: '视觉矩阵不执行连接' }))
-  /*
-   * 项目知识页（实施-03 S5）的桩数据。
-   *
-   * 三条各自代表一个视觉分支：已确认但**需复核**（分支漂移 + 来源被删）、
-   * 待确认（候选，多了「确认」按钮）、已被替代（无操作按钮）。
-   * `confidenceLabel` 只给一个中性说法（§6：不显示可信度百分比）。
-   */
   ipcMain.handle('yan:knowledge:list', () => ({
     ok: true,
     projectId: 'proj-fixture',
@@ -1088,13 +861,9 @@ function registerStubHandlers() {
       }
     ]
   }))
-  /* 导出只回一段文本，保存走真对话框 —— 视觉矩阵里只截「复制」那条路 */
   ipcMain.handle('yan:knowledge:export', () => ({ ok: true, markdown: '# 项目知识 · proj-fixture\n' }))
-  /* 来源跳转在矩阵里不发实际切换（点了也只影响一次截图） */
   ipcMain.handle('yan:knowledge:sourceSession', () => ({ ok: false, error: '来源会话已被删除，无法回读' }))
-  /* remote 的托管网页地址（G3）：给一个 GitHub 地址，图上才能看到「在网上比较」 */
   ipcMain.handle('yan:git:remoteWeb', () => ({ ok: true, web: 'https://github.com/o/pi-desktop', remote: 'origin' }))
-  /* PR 状态（§7）：给一个"已合并 + 检查通过 + 本地有未推送提交"的样子 */
   ipcMain.handle('yan:git:prStatus', () => ({
     ok: true,
     state: 'merged',
@@ -1108,7 +877,6 @@ function registerStubHandlers() {
     owner: 'o',
     repo: 'pi-desktop'
   }))
-  /* 工作树（W1）：两条，一条主、一条「砚创建」 */
   ipcMain.handle('yan:git:worktrees', () => ({
     ok: true,
     repoRoot: 'C:/work/pi-desktop',
@@ -1135,10 +903,6 @@ function registerStubHandlers() {
       }
     ]
   }))
-  /*
-   * 「会话 ↔ 工作树」的来源关系（实施-07 S2）。视觉矩阵不跑 registerIpc，
-   * 所以这里给一条真的（sessionId 与 `envworktrees` 状态脚本里那个会话 id 对齐）。
-   */
   ipcMain.handle('yan:git:worktreeLinks', () => [
     {
       sessionId: 'sess-1',
@@ -1153,11 +917,6 @@ function registerStubHandlers() {
   ])
   ipcMain.handle('yan:git:worktreeCreate', () => ({ ok: true, path: 'C:/work/x', branch: 'x', notes: [] }))
   ipcMain.handle('yan:git:worktreeRemove', () => ({ ok: true, summary: '已移除工作树' }))
-  /*
-   * 工作树 Fork 的文件引用重绑定（实施-07 S2b-3）。
-   * 桩成「3 条引用、2 个能对上、1 个没有」—— 截图要展示的就是那行小字
-   * （有引用才出现；空数组时它必须消失，这是同一口径的“有则出现、无则隐藏”）。
-   */
   ipcMain.handle('yan:fork:fileRefs', () => ({
     worktree: 'C:/work/pi-desktop-worktrees/git-review',
     root: 'C:/work/pi-desktop-worktrees/git-review',
@@ -1191,135 +950,69 @@ function registerStubHandlers() {
   }))
 }
 
-/**
- * 组合表。`states` 里每一项都要在下面 STATES 里能找到脚本。
- * 深浅两套不必每个状态都截：深色多截几个（细节对比更明显），
- * 浅色只截最容易被主题漏掉的那几个（主界面/推理/设置/迷你栏）。
- */
 const GROUPS = [
   {
     w: 1440,
     h: 900,
     scale: 1,
     theme: 'dark',
-    /*
-     * ⚠️ `railsessions` / `pendingcards` 放在**最后**：它们会改 `sessions`（造八条假会话）
-     *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
-     *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
-     */
     states: ['main', 'procopen', 'procside', 'segmented', 'righttoolmenu', 'artifact', 'imageprogress', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'ctxsettings', 'railmini', 'compaction', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'turntime', 'turnstatus', 'filelink', 'plusmenu', 'usageagg', 'usagepartial']
   },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'procopen', 'procside', 'segmented', 'righttoolmenu', 'reasoning', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'nativecontextsettings', 'nativecontext', 'ctxsettings', 'railmini', 'compaction', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'envnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'turntime', 'turnstatus', 'filelink', 'plusmenu', 'usageagg', 'usagepartial'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'procside', 'modelmenu', 'railmini', 'nativecontextsettings', 'nativecontext'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings'] },
-  /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
   { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini'] },
   { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'toolgroup', 'taskcard', 'envlinks', 'envnotgit'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] },
-  /*
-   * 单开一组：额度三档配色（绿 / 黄 / 红 + 「已用完」）。
-   * 为什么单独一组而不塞进组 0：那个状态会把会话的 provider 换成受控桩名，
-   * 同一组里后面的状态接着截图就会带着这个假 provider（会话已经被改了）。
-   * 新组只含这一个状态，不影响任何旧图。
-   */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['quotatone'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['quotatone'] },
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['segmented', 'handoffnote', 'handofftally'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['segmented', 'handoffnote', 'handofftally'] },
-  /*
-   * 单开两组：C-6 低回收提示 + H-11 交互终端（各深浅一张）。
-   * 终端会起一个真实 PTY，所以放在单独一组里，不干扰其它状态的 fixture；
-   * 截完由 `terminal` 的清理把它 kill 掉。
-   */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['ctxincompressible', 'terminal'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['ctxincompressible', 'terminal'] },
-  /*
-   * 实施-12 / 实施-13 已交付切片的剩余覆盖：侧栏工具磁贴与资源窗口、上下文设置。
-   * 为什么补：旧矩阵的宽窄 / 缩放组只含 main、settings、knowledgetab 这几个状态，
-   * 而这些切片（工具磁贴、右栏资源、上下文档位）恰恰是**最先在窄窗口上崩裂**的那类
-   * 密集控件，之前只有 1440x900 的证据。这里纯新增，不覆盖任何旧图。
-   */
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['righttoolmenu', ] },
   { w: 900, h: 520, scale: 1, theme: 'light', states: ['ctxsettings'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'light', states: ['main', 'righttoolmenu'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'light', states: ['reasoning', ] },
-  /*
-   * 实施-12 U-2 残余：会话行菜单 / 分组菜单改走 Portal 后的真实窗口证据（深浅各一张）。
-   * 单开一组：状态脚本会造 8 条合成会话，不影响任何旧图。
-   */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['sessionmenu'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['sessionmenu'] },
-  /* 实施-12 U-1：真窗口展示收起左栏后，更多会话恢复为五条预览（深浅各一张）。 */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['railreset'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['railreset'] },
-  /* 2026-09-27 新增：左栏「最近」区与项目「移除项目」确认框（深浅各一）。 */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['railrecent', 'projectremove'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['railrecent', 'projectremove'] },
-  /*
-   * 实施-12 U-2：项目菜单四角夹取（深/浅分开），以及 150% 缩放下的边角形态。
-   */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['projectmenutl'] },
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['projectmenutr'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['projectmenubl'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['projectmenubr'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['projectmenubr'] },
-  /* 实施-16 G-4：待审计划的深色 / 浅色真窗口截图，使用合成目标状态。 */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: [] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: [] },
-  /*
-   * 实施-11 H-4 剩余视觉矩阵：文件相关 5 个状态在小窗 / 矮窗 / 125% / 150% 下的形态。
-   * 为什么补齐：旧批次只在 1440x900 / 100% 看过这 5 个状态，而文件树 + 预览 +
-   * 变更卡正是窄 / 矮窗口和缩放档最容易崩裂的密集布局。纯新增组，不覆盖旧图。
-   */
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['fsnarrow', 'fileincontext', 'wschanges', 'wsunknown', 'filelink'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['fsnarrow', 'fileincontext', 'wschanges', 'wsunknown', 'filelink'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['fsnarrow', 'fileincontext', 'wschanges', 'wsunknown', 'filelink'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['fsnarrow', 'fileincontext', 'wschanges', 'wsunknown', 'filelink'] },
-  /* 浅色只在缩放 / 小窗各补关键两态，避免无谓地把每组都跑一遍。 */
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['fileincontext', 'filelink'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'light', states: ['fileincontext', 'filelink'] },
-  /*
-   * F7 主题切换圆心：切到深色（向外晕开）与切到浅色（向心收拢）各一张，
-   * 截在真实 760ms 过渡的中点（截图时把动画暂停，不改生产时长）。
-   * 两个方向各自一组，让组主题就是动画起点，避免额外的起点过渡干扰。
-   */
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['themetransitionspread'] },
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['themetransitioncollapse'] },
-  /* H-10 子代理「过程」页长转录：深色 / 浅色各一张 */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['subagentnote'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['subagentnote'] },
-  /*
-   * 实施-18：日常模式工作台首页与会话地图（深浅各一）。
-   * 单开一组：状态会切 workspaceMode 并注入合成会话，不干扰其它组的 fixture。
-   */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['mapturns', 'sessionpreview'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['mapturns', 'sessionpreview'] },
-  /* 窄窗口：中栏只剩约 630px，泳道 + 连线 + 预览抽屉要经得起这个宽度 */
   { w: 1180, h: 780, scale: 1, theme: 'light', states: ['mapturns', 'sessionpreview'] },
-/*
- * 轮次层的缩放与宽度覆盖（实施-26 R3 的出口要求：1280 宽 + 125% / 150% 缩放）。
- * 卡宽是固定的，缩放后最容易出问题的是「卡与卡之间的重叠」和泳道高度。
- */
 { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['mapturns'] },
 { w: 1440, h: 900, scale: 1.25, theme: 'light', states: ['mapturns'] },
 { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['mapturns'] }
 ]
 
-/** 向导态单独跑（要先把 onboarded 标记拿掉）；清单不再自动弹，走「关于」页打开 */
 const ONBOARDING_GROUPS = [
   { w: 1440, h: 900, scale: 1, theme: 'dark' },
   { w: 940, h: 620, scale: 1, theme: 'dark' },
   { w: 900, h: 520, scale: 1, theme: 'light' }
 ]
 
-/*
- * 状态脚本：都在渲染端求值。
- *
- * 约定：每个脚本先把界面复位到「主界面」，再摆出自己那个状态 ——
- * 否则上一个状态留下的菜单/面板会串进下一张图（截出来的是两态叠加）。
- */
 const projectMenuCornerState = (corner) => `
   (async () => {
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1405,11 +1098,6 @@ const STATES = {
     '  return note && note.dataset.tone === \"failed\" && retry && stop ? \"ok\" : \"bad-handoff-note\";',
     '})()'
   ].join('\n'),
-  /*
-   * 整理完成态 + 两个计数（实施-14 F7 / H5）。
-   * 为什么要单独一个状态：失败态那张图只证明「原因 + 重试/停止」能显示，
-   * 证明不了「本片段 2/2」与「整条会话 3 段」这两个数真的分开。
-   */
   handofftally: [
     '(async () => {',
     '  const st = window.__yanStore.getState();',
@@ -1432,7 +1120,6 @@ const STATES = {
     '  return okTone && okTally ? \"ok\" : \"bad-handoff-tally:\" + (note ? note.dataset.tone : \"no-note\") + \":\" + (tallyEl ? JSON.stringify(tallyEl.dataset) : \"no-tally\");',
     '})()'
   ].join('\n'),
-  /* 主界面：右栏打开、左栏展开、没有浮层 */
   main: `
     (() => {
       const st = window.__yanStore.getState();
@@ -1443,7 +1130,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /* Codex 风格的右栏工具启动器：紧凑列出审查 / 终端 / 浏览器 / 文件。 */
   righttoolmenu: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1460,7 +1146,6 @@ const STATES = {
       return document.querySelector('[data-testid="right-tool-menu-popover"]') ? 'ok' : 'no-popover';
     })()
   `,
-  /* 右栏窗口标签：同一条标签栏同时承载工具栏、审查、浏览器和文件预览。 */
   artifact: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1497,7 +1182,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /* 生图中：验证进度条目存在、会显示阶段和实时用时，而不是静默等待。 */
   imageprogress: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1598,7 +1282,6 @@ const STATES = {
       return 'ok(count=' + document.querySelectorAll('.tgroup.is-expanded .trow').length + ')';
     })()
   `,
-  /* 界面方案 E：阅读优先下展开最后一轮的过程（调用树 + 推理入口） */
   procopen: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1616,7 +1299,6 @@ const STATES = {
       return toggles.length ? 'ok(proc=' + toggles.length + ')' : 'no-process';
     })()
   `,
-  /* 界面方案 E：过程并列（右侧一栏 sticky，宽度不够时回到正文之后） */
   procside: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1636,7 +1318,6 @@ const STATES = {
         : 'layout-not-applied';
     })()
   `,
-  /* 工具详情：命令行展开后的终端窗口（N03；只有命令类工具会渲染 .term） */
   toolterm: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1656,9 +1337,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /* 模型菜单（N02/N08）：真实点开 picker，让菜单自己算位置。
-     picker 在“忙”的时候是 disabled（`busy = session.isStreaming || isCompacting`），
-     而 fixture 故意把会话摆成“正在流式”——不先把它放空，点击就完全没反应。 */
   modelmenu: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -1673,7 +1351,6 @@ const STATES = {
       return 'ok(items=' + document.querySelectorAll('.mt-item').length + ')';
     })()
   `,
-  /* 推理块（N04）：展开最后一段，并把对话滚到它 */
   reasoning: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1696,7 +1373,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /* 设置面板（N07） */
   settings: `
     (() => {
       const st = window.__yanStore.getState();
@@ -1706,12 +1382,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /*
-   * 2026-09-27 新增：左栏「最近」区。
-   *
-   * 会话跨两个合成项目，`lastOpenedAt` 从新到旧 —— 图里应该看到跨项目的
-   * 打开时间倒序，而不是按项目分组。
-   */
   railrecent: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1749,12 +1419,6 @@ const STATES = {
       return 'ok(rows=' + zone.querySelectorAll('.srow-wrap').length + ')';
     })().catch((e) => 'err:' + String(e && e.message))
   `,
-  /*
-   * 2026-09-27 新增：项目右键菜单里的「移除项目」与确认框。
-   *
-   * 先断言菜单里有这一项（以前只有「归档项目」），再点开确认框并把它留在画面里。
-   * 确认框的文案要能说清“会话进归档、磁盘目录不动”。
-   */
   projectremove: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1783,9 +1447,6 @@ const STATES = {
       return 'ok';
     })().catch((e) => 'err:' + String(e && e.message))
   `,
-  /*
-   * 实施-23 M2：自定义 API 服务表单（协议下拉 + Base URL + 模型行 + 密钥输入）。
-   */
   customapi: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1837,7 +1498,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /* 能力设置页（实施-04 S7）：安全快照 + 三档策略 + MCP 状态卡。 */
   capabilities: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1876,11 +1536,6 @@ const STATES = {
       return document.querySelector('[data-testid="cap-mcp-server"]') ? 'ok' : 'no-mcp-server';
     })()
   `,
-  /*
-   * 上下文设置（N21-7）：工作集阀值可配 + 生效来源。
-   * 单独一个状态而不是只拍 appearance —— 新 tab 的排版（数值输入、
-   * 预设分段控件、来源行）只能在真图里看是否折行 / 溢出。
-   */
   nativecontextsettings: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -1948,25 +1603,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /*
-   * 大窗口模型级试行档（实施-11 C-1）。
-   *
-   * 当前模型必须**明确登记**到 ~1M 窗口，按钮才会启用 —— 这一张验的是：
-   * 两档入口存在、说明写明“只写入当前精确模型”、窗口不足时是禁用态而不是
-   * 静默写一个裸上限。状态脚本同时返回 disabled / ok，避免用一张“按钮在”
-   * 的图冒充“按钮可用”。
-   */
-  /*
-   * C-5 尾：右栏在「大窗口试行档」下要说清自己在哪一档。
-   *
-   * 数字必须自洽：均衡档的 cap 600k 在 400k 窗口上被 min() 压到 280k，
-   * 所以工作集与三条刻度都按 280k 算 —— 否则截图上「档位 均衡 600K」
-   * 配着 240k 工作集，正是 D21 那类「同一个面板里的数自相矛盾」。
-   */
-  /*
-   * `+` 菜单（2026-09-22）：codex 式「添加」入口。
-   * 能力分组走**空态**（截图环境没装技能 / MCP）—— 空态也是要给人看的形态之一。
-   */
   plusmenu: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -1977,19 +1613,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /* 悬着的消息（用户 2026-09-19）：生成中发出去的先悬在输入框上方 */
-  /*
-   * 后台会话「等待输入」的状态槽（实施-09 S2 第二批）。
-   *
-   * 单独一个状态、不复用 `railsessions`：那个状态的会话列表会被后面几个状态
-   * 用到的 fixture，而这里只需要「一行在跑 / 一行挂着问题等回答」。
-   * 注入的是 `runners` 里的 `waiting: true` —— 这正是 `Rail` 渲染 `?` 的**真实判据**
-   *（`RunnerStatus.waiting = agent.getPendingUiCount() > 0`，真实链路见场景 `askbackground`）。
-   * 第四批（N12 失败态）又加了第三条：`failed: true` 的那一行画 `alert-circle`
-   *（真源 `conn === 'error' || conn === 'exited'`，真实故障见场景 `runnerfailed`）。
-   * 放在组内会话类状态的末段，并用 AFTER_STATE 把假实例撤走；运行到这张图之前
-   * 等过 Rail 的 800ms 会话刷新，避免 chainjoin 的延迟刷新覆盖本状态会话夹具。
-   */
   railwaiting: `
     (() => {
       const st = window.__yanStore.getState();
@@ -2064,7 +1687,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /* 项目下的会话折叠（用户 2026-09-19：默认只显示前五个） */
   railsessions: `
     (() => {
       const st = window.__yanStore.getState();
@@ -2096,15 +1718,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /*
-   * 交接之后的「一条会话」（实施-05 S5b-4）。
-   *
-   * 这一张要证明的是**渲染层的形态**：侧栏只出现一条（链上的旧段不显示），
-   * 而历史里两段的内容排在**同一条时间线**上（fixture 的旧消息 + 新段那条交接消息）。
-   *
-   * ⚠️ 过滤逻辑本身归主进程（`test:live -- handoffcommit` 用真 IPC 验
-   *    “列表里只有代表段”），这里不伪造「前端自己会过滤」的假象。
-   */
   chainjoin: `
     (() => {
       const st = window.__yanStore.getState();
@@ -2145,7 +1758,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /* 迷你项目栏（N14） */
   railmini: `
     (() => {
       const st = window.__yanStore.getState();
@@ -2155,20 +1767,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /*
-   * 窄右栏文件树（L02）：收到 `PANEL_MIN=220`，一张图里看三件事 ——
-   *   · 超长文件名省略显示（`title` 里能给全文）
-   *   · 深层的浅缩进在窄栏下收敛，不再把图标顶出右边界
-   *   · 无权限目录给的是「没有读取权限」，而不是「空目录」
-   */
-  /*
-   * 浏览器边界（L04）：一张图看三件事 ——
-   *   · 被拦下的请求在「⋯」里**可追溯**（目标主机 + 原因 + 是谁想访问）
-   *   · 下载条写明「未自动打开」并带**来源**
-   *   · 权限记录（默认拒绝）与拦截记录并列
-   * 原生网页视图在这个脚本里不存在（它只在真窗口里存在），所以这一张
-   * 拍的是工具栏 + 状态行 —— 也就是**渲染层能负责的那部分**。
-   */
   browserboundary: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -2210,11 +1808,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /*
-   * 同一组数据的**另一面**：⋯ 收起时，状态行上是「已拦截 N 个请求」+ 带来源的
-   * 下载条 —— 这两个恰好是用户不打开菜单也能看到的（也是“页面打不开”的解释）。
-   * 为什么要两张：菜单与状态行在 JSX 里是互斥分支，一张图拍不全。
-   */
   browserblocked: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -2278,11 +1871,6 @@ const STATES = {
       return 'ok(noperm=' + (np ? 'clicked' : 'missing') + ')';
     })()
   `,
-  /*
-   * shell 的目录级改动（L05）：展开那条带 `workspaceChanges` 的命令行。
-   * 展开后卡片才渲染，所以先 click 再等一帧，最后把卡片滚到视口中间 ——
-   * 否则截到的是对话底部，卡片在画面之外。
-   */
   wschanges: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -2317,11 +1905,6 @@ const STATES = {
       return cards.length ? 'ok' : 'no-card';
     })()
   `,
-  /*
-   * C-6 低回收提示：上一次压缩后仍停在软线 80% 以上、且新增还没到门槛，
-   * 界面要直说“当前主要为不可压缩的基础开销” —— 而不是停在“已达工作集”不动手。
-   * 数据全部注入（与主进程推来的同构），不重算公式。
-   */
   ctxincompressible: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -2375,11 +1958,6 @@ const STATES = {
       return document.querySelector('[data-testid="ctx-incompressible"]') ? 'ok' : 'no-row';
     })()
   `,
-  /*
-   * 交互终端（实施-11 H-11）：真实 PTY + 真实 xterm。
-   * 图里要能同时看到终端标题栏 / 命令回显与执行结果 / 工作窗口的终端标签。
-   * 输出是宿主真的 PTY 打的，不是渲染端伪造的文本。
-   */
   terminal: `
     (async () => {
       try {
@@ -2410,14 +1988,6 @@ const STATES = {
       }
     })()
   `,
-  /*
-   * 压缩可观测（N21-2）：一张图里看四件事 ——
-   *   · 进行中那一行带**原因**（「压缩中 · 已达阈值」）
-   *   · 「最近一次」在压缩进行中仍显示上一轮的结果（两条互不覆盖）
-   *   · 失败时把 pi 的原文摆出来（不静默）+ 压缩前后 token
-   *   · 项目级设置被 pi 忽略时说出来（D21）
-   * 截的是详情展开态：这些行都在「详情」里。
-   */
   compaction: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -2456,30 +2026,6 @@ const STATES = {
       return row ? 'ok' : 'no-popover';
     })()
   `,
-  /*
-   * C-2：压缩到底回收了多少 + 压完到现在又新增多少。
-   * 与 `compaction` 状态的分工：那张图看的是「失败时必须有话说」，
-   * 这张看的是「成功那次的两个派生量」。
-   */
-  /*
-   * 工作集视角（N21-3）：一张图里看四件事 ——
-   *   · 主值是**工作集**（240k）而不是物理窗口（400k），带 data-mode
-   *   · 三条阶段刻度：压缩实线（真的会触发）、清理/折叠虚线（阶段 4 才接管）
-   *   · 「下一步：压缩上下文（约 240k 时）」
-   *   · 详情里的 工作集 / 预留 / 安全余量 / 物理兜底
-   * 预算值直接注入 store（与主进程推来的同构），这里不重算公式。
-   */
-  /*
-   * 本轮用时（用户要求）：回合结束后，底部用量条上要能看到「用时 Ns」。
-   * fixture 默认把会话摆成「流式中」（那时显示的是「生成中」状态），
-   * 所以这里显式置为已结束，并确认真的渲染出了耗时项。
-   */
-  /*
-   * 回合页脚（实施-11 H-1）：助手顶部不再有「砚 / N 步 / 标准」，
-   * 整轮用时 / 步数 / 完成时刻只在回合**底部**出现一次。
-   * 两张信息：多工具回合（显示「2 步」）与单工具回合（不显示步数）。
-   * 零费用：完全在渲染端注入，不调模型。
-   */
   turnfooter: `
     (async () => {
       try {
@@ -2511,12 +2057,6 @@ const STATES = {
       }
     })()
   `,
-  /*
-   * 右栏资源并存（实施-11 H-2）：浏览器 / 审查 / 文件预览三个资源同时打开，
-   * 活动窗口切到「文件」。原生 WebContentsView 会盖住 DOM，所以必须先切到文件
-   *（switchWindow('file') 会 setVisible(false)）—— 这张图才能直接看到
-   *「三个标签同时存在、活动的是文件」，而不是「切页把别的资源关掉了」。
-   */
   turntime: `
     (async () => {
       try {
@@ -2550,13 +2090,6 @@ const STATES = {
       }
     })()
   `,
-  /*
-   * 正文里的文件引用（实施-11 H-4 的解析 / 呈现切片）。
-   *
-   * 三种形态同屏：带行号、不带行号、范围链接。这张图看的是「蓝色短路径 +
-   * 悬停给出路径与行号」的阅读形态；点击行为由 live 场景 `filelink` 取证
-   *（截图脚本不注册数据型 IPC，点开会拿到空值，反而会覆盖注入的 store）。
-   */
   filelink: `
     (async () => {
       try {
@@ -2582,13 +2115,6 @@ const STATES = {
       }
     })()
   `,
-  /*
-   * 回合终止原因与「未记录」的呈现（实施-11 H-6）。
-   *
-   * 四神回合各一种：正常完成 / 被停止 / 失败 / 旧历史（无计时记录）。
-   * 前三神来自宿主元数据日志（`turnTiming`），第四种什么都没有 —— 界面必须
-   * 如实说「用时未记录」，而不是省掉那一段让人以为没花时间。
-   */
   turnstatus: `
     (async () => {
       try {
@@ -2647,15 +2173,6 @@ const STATES = {
       return 'ok';
     })()
   `,
-  /*
-   * 新一轮刚开始（R03）：上一轮有非零 usage 与速度，现在追加一条用户消息并回到
-   * 流式。
-   *
-   * 本状态的契约是**上下文构成**（现行入口是输入框右下角的圆环浮层），不是
-   * 本会话累计用量（那是 `usageagg`）：回来的是一个正在跑的新回合，圆环/浮层
-   * 必须给出当前的上下文窗口构成，而不是把上一轮的 turn 数字当成新值。
-   * 零费用：完全在渲染端注入状态，不调模型。
-   */
   usageturn: `
     (async () => {
       try {
@@ -2694,12 +2211,6 @@ const STATES = {
       }
     })()
   `,
-  /*
-   * 实施-11 H-6b：整轮用量聚合。
-   *
-   * 注入一个多轮工具调用的回合（两条助手消息各报一次用量）—— 用量条应该
-   * 显示**合计**（3.60k / 120），而不是只显示最后一次请求（这是本片修的错）。
-   */
   usageagg: `
     (async () => {
       try {
@@ -2757,17 +2268,6 @@ const STATES = {
       }
     })()
   `,
-  /*
-   * 实施-11 H-6b：回合内有请求没报用量 → 合计是**下限**。
-   *
-   * 数字前应带 `≥`，悬停说明原因（不能假装这是完整账单）。
-   */
-  /*
-   * 实施-14 F6：有序工作段 —— 推理跟随聊天正式回复的位置。
-   *
-   * 一个逻辑回合里有两次「推理 → 工具 → 正文」：第 2 段的推理必须显示在
-   * 正文 A **之后**，而不是被整轮聚合顶回最前面（用户 2026-09-23 的要求）。
-   */
   segmented: `
     (async () => {
       try {
@@ -2811,10 +2311,6 @@ const STATES = {
       }
     })()
   `,
-  /*
-   * 清单成果（实施-25 P06b）：勾选列表本身就是正文的呈现方式；
-   * 勾选是一次用户编辑（开新版本、进保护集），语义在单测与 live 探针里，这里只截界面。
-   */
   usagepartial: `
     (async () => {
       try {
@@ -2861,11 +2357,6 @@ const STATES = {
       }
     })()
   `,
-  /*
-   * 最窄右栏（PANEL_MIN = 220px）+ 工作集视角：用户截图里的组合。
-   * 要拍的就是「自动压缩」那一行 —— 压缩按钮必须**一行高**、与标题同一条中线，
-   * 文字不能被折成「压缩上/下文」；阶段刻度和「下一步」在窄栏下也要能读。
-   */
   ctxnarrow: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -2916,15 +2407,6 @@ const STATES = {
       return row ? 'ok' : 'no-popover';
     })()
   `,
-  /*
-   * 删除后的**非模态**通知条（回收站）。几何与文案由 `trash` 探针断言，
-   * 这里补的是静态截图（浅色/深色各一张）—— 它是左栏唯一一条"操作已完成、
-   * 还能撤销"的横条，颜色与按钮宽度最容易在改主题时坏掉。
-   *
-   * 注意：删除成功后 store 会 `refreshSessions()`，而截图环境故意不注册
-   * 拉取型 IPC（返回空会盖掉 fixture 注入的数据）—— 这里先把会话列表存一份，
-   * 等通知出现后再放回去，否则截图里左栏会空掉（那不是这个状态要拍的东西）。
-   */
   extdiag: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -2970,16 +2452,6 @@ const STATES = {
       return 'ok(h=' + Math.round(r.height) + ' lines=' + text.split('\\n').length + ')';
     })()
   `,
-  /*
-   * 宿主任务清单（实施-02 S3）。
-   *
-   * 这一片**不改任务面板 UI**（那是产品边界），改的是清单的来源：
-   * 现在由宿主任务日志（`YAN_DIR/task-plans/<sessionId>.jsonl`）提供，
-   * 与会话里的旧条目走同一套归并。所以这张图要看的是：
-   *   · 清单主体（含完成 / 未完成状态）照旧正确；
-   *   · 多轮历史快照折叠展开后每份清单的样式没变。
-   * 数据是摆的（视觉矩阵没有主进程），形态与 `yan tasks apply` 写出来的一致。
-   */
   taskhost: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3032,16 +2504,6 @@ const STATES = {
       return 'ok(items=' + document.querySelectorAll('.rp-todo').length + ')';
     })()
   `,
-  /*
-   * 任务计划工具卡（实施-02 S4）。
-   *
-   * 模型维护任务清单的方式是用**原生 bash** 敲 `yan tasks apply` ——
-   * 对模型这是 bash，对用户应该是“砚内置的任务计划”。这张图要看的是：
-   *   · 卡片上有「任务计划 · 砚内置」来源徐标；
-   *   · 命令原文仍在（用户靠它判断在干什么）；
-   *   · 展开后仍是原始 bash 调用与输出（不伪造独立工具事件）。
-   * 数据是摆的（视觉矩阵没有主进程），形态与 `taskcli` 真实跑出来的一致。
-   */
   taskcard: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3094,11 +2556,6 @@ const STATES = {
       return 'ok(' + (badge.textContent || '') + ')';
     })()
   `,
-  /*
-   * 实施-12 U-2 残余：会话行菜单统一走 `ContextMenuSurface`（Portal）后的真实窗口形态。
-   * 特意先展开到全部 8 条再滚到列表底部：以前最后几行的菜单会被 `.rail-body`
-   * 的 overflow 裁掉，这张图就是那个位置的现场。
-   */
   sessionmenu: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3154,10 +2611,6 @@ const STATES = {
       return 'ok(rows=' + rows.length + ' menu=' + Math.round(r.top) + '-' + Math.round(r.bottom) + ' vh=' + window.innerHeight + ' inside=' + inside + ')';
     })()
   `,
-  /*
-   * 实施-12 U-1：把收起复位结果留在最终画面，直观看见五条会话预览与三条折叠出口。
-   * 与 railmini（验证左栏完全消失）分开，避免截图把两种不同收起语义混在一起。
-   */
   railreset: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3326,7 +2779,6 @@ const STATES = {
       return 'ok(tagged=' + (tagged ? 1 : 0) + ',dot=' + (dot ? 1 : 0) + ')';
     })()
   `,
-  /* 同一个组件的第二个变体：归属存疑（并发）时的写法 */
   wsunknown: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -3354,13 +2806,6 @@ const STATES = {
       return warn ? 'ok' : 'no-unknown';
     })()
   `,
-  /*
-   * 项目 / 分组拖拽排序（N01）：停在**拖拽进行中**。
-   *
-   * 为什么不截拖完的结果：拖完的列表与普通列表在视觉上完全一样，
-   * 而这次交互唯一的视觉语言就是「被拖的行半透明 + 目标位置一条 2px 插入线」，
-   * 它必须在真图里能被人眼检查（尤其是浅色主题下的对比度）。
-   */
   railreorder: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -3452,12 +2897,6 @@ const STATES = {
       return 'ok(rows=' + rows.length + ',drag=' + document.querySelectorAll('.is-dragging').length + ',hint=' + document.querySelectorAll('.drop-before,.drop-after').length + ')';
     })()
   `,
-  /*
-   * 环境菜单（G1 §3.1）：项目胶囊点开后的样子。
-   *
-   * 这张图要能看清五件事：变更数、工作目录、当前分支（带 ↑1）、
-   * 「无法获取 Pull Request 状态」、比较分支。最后一条就是“不伪造状态”。
-   */
   envmenu: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3480,26 +2919,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return document.querySelector('[data-testid="env-menu"]') ? 'ok' : 'no-menu';
     })()
   `,
-  /*
-   * 审查面板（G1 §3.2）：范围选择 + 统计 + 逐文件 diff（含「N 行未修改」折叠）
-   * + 变更文件树 + 已查看进度 + 图片前后对照。
-   *
-   * 数据是合成的（见上面的 gitStub*）—— 截图绝不接真实仓库。
-   */
-  /*
-   * 写操作界面（G2 §5.2 / §5.3）：每个文件行的「暂存 / 取消暂存」、
-   * 头部的批量按钮、面板底部的提交区（说明 + 提交 / 提交并推送）。
-   *
-   * 这些控件的位置与可用性是截图才能验收的东西：它们挤在文件行右侧、
-   * 行内还有「已查看」，谁在谁左边、忙的时候什么样，只有图说得清。
-   */
-  /*
-   * 非 Git 目录 · 环境菜单（实施-07 S1）。
-   *
-   * 不能复用 `envmenu` 的截图：那张图里全是 Git 才有的区块。
-   * 这里把会话 cwd 换成合成目录，`yan:git:state` 就返回 `repo: null`，
-   * 菜单落进 `env-notgit` 分支（不给变更数、不给写操作入口）。
-   */
   envnotgit: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3528,7 +2947,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       });
     })()
   `,
-  /* 非 Git 目录 · 审查面板：说清「没有改动可审查」，而不是给一个空的 diff */
   envbranches: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3552,18 +2970,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return document.querySelector('[data-testid="env-branches"]') ? 'ok' : 'no-branches';
     })()
   `,
-  /*
-   * 工作树区（W1 §6.2）：列出主工作树与「砚创建」的那条，附新建输入与
-   * 目标目录。这张图要能看出**主工作树没有「移除」按钮**（它删不得）。
-   */
-  /*
-   * 「关联外部任务」与「在网上比较」（方案 §6.4 / §7）：都在菜单**最下面**，
-   * 所以这张图要把菜单滚到底 —— 否则看到的是同一屏的前半段。
-   */
-  /*
-   * 设置 → 插件（方案 §9 的 P2）：目录入口 + 安装区 + 已装列表 + 生效时机。
-   * 列表读的是真实 pi 目录（只读），所以这张图反映的是这台机器上真正装了什么。
-   */
   settingspkg: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3646,13 +3052,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return ok ? 'ok' : 'no-links';
     })()
   `,
-  /*
-   * 派生到工作树之后的「接手上下文」草稿（实施-07 S2b-4）。
-   *
-   * 输入框里应该已经有一段标了来源、并写清「环境状态是在这个工作树**重算**的」的草稿 ——
-   * 用户可以直接发、补一句、或删掉。这张图证的是它“长得不像一句模板”且与正常
-   * 输入框共存正常；内容正确性（分支来自目标工作树、没有自动发送）由 `gitwrite` 断言管。
-   */
   forkdraft: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3833,11 +3232,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return document.querySelector('.sg-card') ? 'ok' : 'no-cards';
     })()
   `,
-  /*
-   * 额度三档配色（官方窗口 + estimated 推算窗口 + 已用完）：`commandcode` 在视觉矩阵里
-   * 只在这个状态使用，fixture 的 `providerQuota` 按 provider 名返回三档数据。
-   * 现行入口是**状态栏的额度段**（`sb-quota` 的详情浮层），不是旧的 `rp-quota` 停靠分区。
-   */
   quotatone: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3867,12 +3261,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return 'ok';
     })()
   `,
-  /*
-   * 画布轮次层（实施-26 R3 / R4）：展开成轮次链 + 子会话首轮与父会话对齐。
-   *
-   * 父会话三轮（第二轮带工具、第三轮被停），子会话两轮（含继承的那一轮）——
-   * 对齐靠 `branchOrigin` 去父会话里找同一句问题。
-   */
   mapturns: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3930,10 +3318,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return 'ok(cards=' + cards + ':aligned=' + aligned + ':stopped=' + stopped + ':trunc=' + trunc + ':align=' + alignStates + ')';
     })()
   `,
-  /*
-   * 地图里的会话预览（含分叉入口）。
-   * 把当前会话指到 wb1，这样预览会被当成「当前会话」，分叉点列表才会渲染。
-   */
   sessionpreview: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3978,7 +3362,6 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return 'ok(rows=' + rows + ' forks=' + forks + ')';
     })()
   `,
-  /* 临时替换的会话内容在截图后恢复，避免后续画面依赖它们的残留。 */
   restoreMessages: `
     (() => {
       const base = window.__yanMatrixBaseline;
@@ -4008,16 +3391,9 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
   `
 }
 
-/**
- * 采集几何：横向溢出是最常见的窄/矮窗口缺陷，直接当断言。
- * 同时统计关键元素是否真的在视口里（截图一片空白时能立刻看出来）。
- */
 const MUST_HAVE = {
-  /* 2026-09-27 新增：左栏「最近」区 / 项目「移除」确认框。 */
   railrecent: ['[data-testid="rail-recent"]'],
   projectremove: ['[data-testid="rail-remove-project-confirm"]'],
-  /* 主界面（注意：fixture 里会话是「流式中」，所以这里不会出现「用时」——
-     用时的视觉证据在 usageelapsed 状态里） */
   main: ['.rail', '.stream', '.composer, [data-testid="composer"]'],
   artifact: ['.stream', '[data-testid="turn-artifacts"]', '[data-artifact-id="matrix-artifact-svg"]', '.artifact-image', '.artifact-actions'],
   imageprogress: ['.stream', '[data-testid="image-progress-list"]', '.image-progress[data-stage="generating"]', '.image-progress-track'],
@@ -4056,7 +3432,6 @@ const MUST_HAVE = {
     '[data-testid="quota-win-monthly-estimated"]'
   ],
   railsessions: ['[data-testid="rail-more-sessions"]', '[data-testid="rail-session"]'],
-  /* 实施-09 S2：后台会话在等输入的 `?` 槽、以及与失败槽（第四批） */
   railwaiting: ['[data-testid="rail-session"]', '[data-testid="rail-waiting"]', '[data-testid="rail-failed"]'],
   pendingcards: ['[data-testid="queue-pending"]', '[data-testid="pending-steer"]', '[data-testid="pending-follow"]'],
   envmenu: ['[data-testid="env-menu"]', '[data-testid="env-changes"]', '[data-testid="env-pr"]', '[data-testid="env-compare-web"]'],
@@ -4074,7 +3449,6 @@ const MUST_HAVE = {
     '[data-testid="src-websearch"]',
     '[data-testid="src-search-query"]',
     '[data-testid="src-search-run"]',
-    /* 入口与手工添加网址同时在场：这就是「有搜索能力时长什么样」 */
     '[data-testid="src-url"]'
   ],
   settingspkg: [
@@ -4090,7 +3464,6 @@ const MUST_HAVE = {
     '[data-testid="src-list"]',
     '[data-testid="src-url"]',
     '[data-testid="env-compare-web"]',
-    /* 实施-07 S3：有落盘关联的来源必须带「定位消息」入口。缺了这张图就没意义 */
     '[data-testid="src-locate"]'
   ],
   extdiag: ['[data-testid="rp-log"]', '[data-testid="log-body"]'],
@@ -4100,7 +3473,6 @@ const MUST_HAVE = {
     '[data-testid="todo-history"]',
     '[data-testid="todo-history-toggle"]'
   ],
-  /* 内置来源的工具卡（S4）：徐标 + 原始命令都在 */
   taskcard: ['[data-testid="tool-src"]', '.trow.open .term'],
   envworktrees: [
     '[data-testid="env-menu"]',
@@ -4109,7 +3481,6 @@ const MUST_HAVE = {
     '[data-testid="env-worktree-branch"]',
     '[data-testid="env-worktree-create"]',
     '[data-testid="env-worktree-path"]',
-    /* 实施-07 S2：「这个会话从哪来」必须画得出来，缺了这张图就没意义 */
     '[data-testid="env-worktree-origin"]'
   ],
   envnotgit: ['[data-testid="env-menu"]', '[data-testid="env-notgit"]', '.env-sub'],
@@ -4146,7 +3517,6 @@ const MUST_HAVE = {
     '.turn-time',
     '[data-testid="composer"]'
   ],
-  /* 新一轮上下文构成（输入框圆环浮层）；本会话累计用量在 usageagg。 */
   usageturn: [
     '.sb-mode[data-mode="run"]',
     '[data-testid="composer-context"]',
@@ -4154,43 +3524,35 @@ const MUST_HAVE = {
     '[data-testid="ctx-tokens"]',
     '[data-testid="composer"]'
   ],
-  /* 实施-11 H-6b：整轮用量聚合 / 下限标记要真的渲染出来（状态栏花费详情浮层） */
   usageagg: [
     '[data-testid="sb-cost"]',
     '.sb-kv',
     '[data-testid="turn-footer"]'
   ],
   usagepartial: ['[data-testid="sb-cost"]', '.sb-kv'],
-  /* C-5 尾：右栏「档位」行（大窗口试行档）—— 这一行不存在这张图就没意义 */
-  /* C-6 低回收提示：这一行 + 工作集视角两件套都要在图里（下一步那行被有意抑制） */
   ctxincompressible: [
     '[data-testid="ctx-incompressible"]',
     '[data-testid="ctx-working-set-line"]',
     '[data-testid="ctx-stages"]'
   ],
-  /* 工作区终端隐藏独立标题栏：核对当前磁贴宿主、页签与真实 xterm。 */
   terminal: [
     '[data-workspace-pane^="terminal"] [data-testid="terminal-surface"]',
     '[data-testid="terminal-host"] .xterm',
     '[data-pane-tab^="terminal"]'
   ],
-  /* `+` 菜单：菜单本体与入口按钮都要在图里 */
   plusmenu: ['[data-testid="plus-menu"]', '[data-testid="composer-attach"]'],
-  /* 子代理卡片：出错与有冲突各一张，冲突那张要带合并 / 放弃两个操作 */
   subagentfailed: [
     '[data-testid="rp-subagents"]',
     '.sg-card.tone-err.is-attn',
     '[data-testid="subagent-note-state-sub-note-error"]',
     '[data-testid="subagent-note-merge-sub-note-conflict"]'
   ],
-  /* 拖拽中的视觉：被拖行 + 目标行上的插入线必须都在，否则这张图没意义 */
   railreorder: [
     '.rail',
     '[data-testid="rail-project-row"]',
     '.is-dragging',
     '.drop-before, .drop-after'
   ],
-  /* 主题过渡：只要主题按钮在（设置面板已打开），其余靠整窗图像判断 */
   themetransitionspread: ['[data-testid="theme-dark"]'],
   themetransitioncollapse: ['[data-testid="theme-light"]'],
   subagentnote: ['[data-testid="rp-subagents"]', '.sg-card', '.sg-mark', '[data-testid="subagent-note-reason-sub-note-timeout"]'],
@@ -4233,10 +3595,6 @@ const AFTER_STATE = {
       return 'ok';
     })()
   `,
-  /*
-   * 把 `railwaiting` 注入的假实例撤走：同一组后面的状态（以及下一次跑整组）
-   * 不该看到一个并不存在的会话在等输入。
-   */
   railwaiting: `
     (() => {
       window.__yanStore.setState({ runners: [] });
@@ -4251,10 +3609,6 @@ const AFTER_STATE = {
       return 'ok';
     })()
   `,
-  /*
-   * 非 Git 的两张图都要把 cwd 还原：`session.cwd` 是同一组共用窗口上的全局状态，
-   * 不复位会让后面每张图都跟着显示成非 Git。菜单 / 审查面板也顺手关掉。
-   */
   envnotgit: `
     (() => {
       const btn = document.querySelector('[data-testid="session-project"]');
@@ -4262,10 +3616,6 @@ const AFTER_STATE = {
       return 'ok';
     })()
   `,
-  /*
-   * 压缩态把 isCompacting 置 true，而「忙」时模型 picker 是 disabled ——
-   * 不复位的话，同一组里**排在后面**的状态会点不开菜单（实测踩过同类问题）。
-   */
   compaction: `
     (() => {
       const st = window.__yanStore.getState();
@@ -4278,23 +3628,12 @@ const AFTER_STATE = {
       return 'ok';
     })()
   `,
-  /*
-   * 拖拽截完必须**取消**而不是松手：松手会把这次拖拽真的提交，
-   * 后续状态的左栏顺序就跟着变（截图之间互相干扰）。
-   * Esc 是产品里真有的取消出口，顺便把它也走一遍。
-   * 造出来的分组/项目不清 —— railreorder 在组内排最后，不会串到别的图。
-   */
   railreorder: `
     (() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       return 'ok';
     })()
   `,
-  /*
-   * 终端图截完把 PTY 收掉：截图之后才跑清理，所以不影响那张图；
-   * 不收的话同一组里后面若还有别的状态会带着一个活的子进程，
-   * 且整组退出时也可能留下孤儿子壳。
-   */
   terminal: `
     (async () => {
       const id = window.__yanStore.getState().activeTerminalId;
@@ -4303,7 +3642,6 @@ const AFTER_STATE = {
       return 'ok';
     })()
   `,
-  /* 临时替换的会话内容在截图后恢复，避免后续画面依赖它们的残留。 */
   restoreMessages: `
     (() => {
       const base = window.__yanMatrixBaseline;
@@ -4331,11 +3669,9 @@ const AFTER_STATE = {
       return 'ok';
     })()
   `,
-  /* 花费详情浮层截图后关掉，避免遮挡后续状态的画面 */
   usageturn: `(() => { const ring = document.querySelector('[data-testid="composer-context"]'); if (ring?.getAttribute('aria-expanded') === 'true') ring.click(); return 'ok'; })()`,
   usageagg: `(() => { if (window.__yanUsageaggStats !== undefined) { window.__yanStore.setState({ stats: window.__yanUsageaggStats }); delete window.__yanUsageaggStats; } const d = document.querySelector('[data-testid="status-details"]'); if (d) document.querySelector('[data-testid="sb-cost"]')?.click(); return 'ok'; })()`,
   usagepartial: `(() => { const d = document.querySelector('[data-testid="status-details"]'); if (d) document.querySelector('[data-testid="sb-cost"]')?.click(); return 'ok'; })()`,
-  /* 工具启动器菜单截图后关掉：菜单背景层是全屏 fixed 的，留着会遮住后续状态的截图与命中测试 */
   righttoolmenu: `
     (() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -4344,10 +3680,8 @@ const AFTER_STATE = {
       return 'ok';
     })()
   `,
-  /* 子代理卡截图后清掉，别把常驻区概览留到后面的链/轨画面。 */
   subagentnote: `(() => { window.__yanStore.setState({ subagents: [], subagentPreviewId: null }); return 'ok'; })()`,
   subagentfailed: `(() => { window.__yanStore.setState({ subagents: [], subagentPreviewId: null }); return 'ok'; })()`,
-  /* 预览把当前会话指到了合成会话，截图后恢复基线 */
   sessionpreview: `
     (() => {
       const base = window.__yanMatrixBaseline;
@@ -4367,10 +3701,6 @@ const AFTER_STATE = {
   customapi: `(() => { return 'ok'; })()`,
 }
 
-/**
- * 采集几何：横向溢出是最常见的窄/矮窗口缺陷，直接当断言。
- * 同时统计关键元素是否真的在视口里（截图一片空白时能立刻看出来）。
- */
 const probeGeometry = (selectors) => `
   (() => {
     const d = document.documentElement;
@@ -4391,14 +3721,12 @@ const probeGeometry = (selectors) => `
   })()
 `
 
-/** 只跑某些状态（调脚本时用）：`YAN_MATRIX_ONLY=modelmenu` */
 const ONLY = (process.env.YAN_MATRIX_ONLY ?? '').split(',').filter(Boolean)
 if (ONLY.includes('uifinish')) {
   STATES.uifinish = readFileSync(join(root, 'scripts/probe/ui-finish.js'), 'utf8')
   MUST_HAVE.uifinish = ['[data-testid="tile-workspace"]', '[data-testid="turn-copy"]', '[data-testid="fs-tree"]', '.ui-step-slider']
   for (const group of GROUPS) group.states.push('uifinish')
 }
-/* 分屏：`YAN_MATRIX_ONLY=splitview,splitfocus`，焦点在主会话位 / 旁边一侧各一张，场景见 scripts/probe/split-view.js */
 if (ONLY.includes('splitview') || ONLY.includes('splitfocus')) {
   const probe = readFileSync(join(root, 'scripts/probe/split-view.js'), 'utf8')
   STATES.splitview = probe.replaceAll('__FOCUS__', 'chat')
@@ -4407,7 +3735,6 @@ if (ONLY.includes('splitview') || ONLY.includes('splitfocus')) {
   MUST_HAVE.splitfocus = ['[data-split-column="0"] [data-testid="split-peer"]', '[data-split-column="1"] [data-testid="split-live"] .composer-wrap']
   for (const group of GROUPS.slice(0, 3)) group.states.push('splitview', 'splitfocus')
 }
-/* 分屏五块：`YAN_MATRIX_ONLY=splitfive`，在 splitview 场景上再加三块合成会话（共 5 块），宽屏组才放得下 */
 if (ONLY.includes('splitfive')) {
   const source = readFileSync(join(root, 'scripts/probe/split-view.js'), 'utf8').replaceAll('__FOCUS__', 'chat')
   const scene = source.slice(source.indexOf('(async'))
@@ -4433,7 +3760,6 @@ if (ONLY.includes('splitfive')) {
   for (const group of GROUPS) group.states.push('splitfive')
   GROUPS.push({ w: 2560, h: 1380, scale: 1, theme: 'dark', states: ['splitfive'] })
 }
-/* 左栏视图：`YAN_MATRIX_ONLY=railviewmenu,railviewstate,railviewdate`，菜单 / 按状态 / 按日期各一张，场景见 scripts/probe/rail-view.js */
 if (ONLY.some((name) => name.startsWith('railview'))) {
   const probe = readFileSync(join(root, 'scripts/probe/rail-view.js'), 'utf8')
   for (const mode of ['menu', 'state', 'date', 'archive']) STATES['railview' + mode] = probe.replaceAll('__MODE__', mode)
@@ -4449,18 +3775,15 @@ if (ONLY.includes('workspace')) {
   for (const group of GROUPS) group.states.push('workspace')
   GROUPS.push({ w: 2560, h: 1380, scale: 1, theme: 'dark', states: ['workspace'] })
 }
-/* 磁贴拖拽尺寸：`YAN_MATRIX_ONLY=tiledrag`，场景见 scripts/probe/tile-drag-width.js */
 if (ONLY.includes('tiledrag')) {
   STATES.tiledrag = readFileSync(join(root, 'scripts/probe/tile-drag-width.js'), 'utf8')
   MUST_HAVE.tiledrag = ['[data-testid="tile-workspace"]', '.tile-heading']
   for (const group of GROUPS) group.states.push('tiledrag')
 }
-/* 设置页截图：`YAN_MATRIX_ONLY=settingspageauth,settingspageappearance,…`（auth/appearance/workspace/capabilities/market/devices/about），每页一张 */
 if (ONLY.some((name) => name.startsWith('settingspage'))) {
   for (const page of ['auth', 'appearance', 'workspace', 'capabilities', 'market', 'devices', 'remote', 'about']) {
     const name = 'settingspage' + page
     if (!ONLY.includes(name)) continue
-    /* 整页组（settingstall）：把设置面板撑到内容高度，一张图看完整页 */
     const tall = `const p = document.querySelector('.settings'); if (p && innerHeight > 1200) { p.style.height = 'auto'; p.style.maxHeight = 'none'; const b = p.querySelector('.settings-body'); if (b) b.style.overflow = 'visible'; p.parentElement.style.alignItems = 'flex-start'; p.parentElement.style.paddingTop = '24px' }`
     STATES[name] = `(async () => { const s = window.__yanStore.getState(); s.openSettings('${page}'); await new Promise((r) => setTimeout(r, 700)); ${tall}; await new Promise((r) => setTimeout(r, 200)); return 'ok' })()`
     MUST_HAVE[name] = ['.settings']
@@ -4468,36 +3791,30 @@ if (ONLY.some((name) => name.startsWith('settingspage'))) {
   }
   GROUPS.push({ name: 'settingstall', w: 1280, h: 2400, scale: 1, theme: 'dark', states: ONLY.filter((name) => name.startsWith('settingspage')) })
 }
-/* 外观个性化：`YAN_MATRIX_ONLY=appearancecustom`，紧凑密度 + 系统无衬线 + 正文 17 / 界面 14 + 自定义底色，对话页与外观页各一张 */
 if (ONLY.some((name) => name.startsWith('appearance'))) {
   const patch = JSON.stringify({ density: 'compact', fontUi: 'sans', fontSizeBody: 17, fontSizeUi: 14, backgroundPreset: 'custom', backgroundCustom: '#1a2433', backgroundCustomLight: '#eef3ea' })
   STATES.appearancecustom = `(async () => { const s = window.__yanStore.getState(); window.__yanStore.setState({ settings: { ...s.settings, ...${patch} } }); s.closeSettings(); await new Promise((r) => setTimeout(r, 900)); const cs = getComputedStyle(document.documentElement); return 'ok(' + ['--fs-body', '--fs-base', '--bg-0'].map((k) => k + '=' + cs.getPropertyValue(k).trim()).join(' ') + ')' })()`
   STATES.appearancecustom2 = `(async () => { window.__yanStore.getState().openSettings('appearance'); await new Promise((r) => setTimeout(r, 800)); return 'ok' })()`
-  /* 三档密度实测：左栏行高、按钮高、正文行高、回合间距 */
   STATES.appearancedensity = `(async () => { const st = window.__yanStore; st.getState().closeSettings(); st.getState().setRailPinned(true); const out = []; for (const d of ['compact', 'standard', 'comfortable']) { st.setState({ settings: { ...st.getState().settings, density: d } }); await new Promise((r) => setTimeout(r, 400)); const h = (sel) => { const el = document.querySelector(sel); return el ? Math.round(el.getBoundingClientRect().height) : '-' }; const p = document.querySelector('.msg.assistant p'); const m = document.querySelector('.msg.assistant'); out.push(d + ':row=' + h('.srow-row') + ',btn=' + h('.ui-btn') + ',lh=' + (p ? getComputedStyle(p).lineHeight : '-') + ',gap=' + (m ? getComputedStyle(m).marginBottom : '-')) } return 'ok(' + out.join(' | ') + ')' })()`
   MUST_HAVE.appearancecustom = ['.stream']
   for (const group of GROUPS.slice(0, 3)) group.states.push('appearancecustom', 'appearancecustom2', 'appearancedensity')
 }
-/* 并列过程里展开终端：`YAN_MATRIX_ONLY=procsideterm`，报告过程栏宽度、封顶高度与对话区高度 */
 if (ONLY.includes('procsideterm')) {
   STATES.procsideterm = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const st = window.__yanStore.getState(); st.closeSettings(); st.setRailPinned(false); window.__yanStore.setState({ rightPanelOpen: false, settings: { ...st.settings, processLayout: 'side' } }); await sleep(400); const row = document.querySelector('.tproc .trow[data-tool="bash"] .trow-head') || document.querySelector('.tproc .trow-head'); row?.click(); await sleep(500); const box = document.querySelector('.stream'); const proc = row?.closest('.tproc'); proc?.scrollIntoView({ block: 'start' }); await sleep(300); const term = proc?.querySelector('.term, .term-win'); if (term && proc) proc.scrollTop = term.offsetTop - 40; await sleep(200); return 'ok(stream-h=' + (box?.clientHeight ?? 0) + ',proc=' + Math.round(proc?.getBoundingClientRect().width ?? 0) + 'x' + Math.round(proc?.getBoundingClientRect().height ?? 0) + ',max=' + (proc ? getComputedStyle(proc).maxHeight : '-') + ',term=' + (term ? Math.round(term.getBoundingClientRect().width) + 'x' + Math.round(term.getBoundingClientRect().height) : 'none') + ')' })()`
   MUST_HAVE.procsideterm = ['.tproc']
   GROUPS.push({ name: 'procsidewide', w: 1920, h: 1000, scale: 1, theme: 'light', states: ['procsideterm'] })
   for (const group of GROUPS.slice(0, 1)) group.states.push('procsideterm')
 }
-/* 往上翻后「回到最新消息」按钮：`YAN_MATRIX_ONLY=jumpbottom`，把内容撑高并滚到顶，输入框应仍在原位、按钮在输入框上方 */
 if (ONLY.includes('jumpbottom')) {
   STATES.jumpbottom = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); window.__yanStore.getState().closeSettings(); const inner = document.querySelector('.stream-inner'); const stream = document.querySelector('.stream'); if (inner) inner.style.minHeight = '3000px'; if (stream) { stream.scrollTop = 0; stream.dispatchEvent(new Event('scroll')) } await sleep(300); const b = document.querySelector('.jump-bottom')?.getBoundingClientRect(); const c = document.querySelector('.composer')?.getBoundingClientRect(); const w = document.querySelector('.center')?.getBoundingClientRect(); return b && c && w ? 'ok(btn-bottom=' + Math.round(b.bottom) + ',composer-top=' + Math.round(c.top) + ',composer-left=' + Math.round(c.left - w.left) + ',composer-w=' + Math.round(c.width) + ',center-w=' + Math.round(w.width) + ')' : 'no-jump' })()`
   MUST_HAVE.jumpbottom = ['.jump-bottom']
   for (const group of GROUPS.slice(0, 1)) group.states.push('jumpbottom')
 }
-/* 会话柄悬停不推挤：`YAN_MATRIX_ONLY=outlinehover`，依次悬停每一格，量其余刻度的最大位移（应为 0） */
 if (ONLY.includes('outlinehover')) {
   STATES.outlinehover = `(async () => { try { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const st = window.__yanStore.getState(); st.closeSettings(); const base = st.messages.filter((m) => m.role === 'user'); const extra = []; for (let i = 0; i < 8; i++) { const ts = Date.now() - (8 - i) * 60000; extra.push({ id: 'oh-u' + i, role: 'user', text: '第 ' + (i + 1) + ' 个问题', ts }, { id: 'oh-a' + i, role: 'assistant', text: '回答 ' + (i + 1), ts: ts + 1000 }) } if (base.length < 4) window.__yanStore.setState({ messages: [...st.messages, ...extra] }); await sleep(600); const ticks = () => [...document.querySelectorAll('[data-testid="outline-tick"]')]; const tops = () => ticks().map((el) => el.getBoundingClientRect().top); const t0 = tops(); if (t0.length < 4) return 'no-ticks(' + t0.length + ')'; let worst = 0; const log = []; const trk = document.querySelector('.outline-track'); for (const [k, el] of ticks().entries()) { const before = tops(); el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await sleep(180); const now = tops(); let d = 0; for (let i = 0; i < now.length; i++) d = Math.max(d, Math.abs(now[i] - before[i])); worst = Math.max(worst, d); if (d > 0.5) log.push(k + ':' + d.toFixed(1) + '/st' + trk.scrollTop + '/box' + Math.round(trk.getBoundingClientRect().top)); el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })) } if (log.length) return 'shift(' + log.slice(0, 6).join(' ') + ' n=' + t0.length + ' trackH=' + Math.round(trk.clientHeight) + ' scrollH=' + trk.scrollHeight + ')'; const mid = ticks()[Math.floor(t0.length / 2)]; mid.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await sleep(300); return worst < 0.5 ? 'ok(ticks=' + t0.length + ',maxShift=' + worst.toFixed(2) + ')' : 'shift(' + worst.toFixed(2) + 'px)' } catch (e) { return 'err:' + e.message } })()`
   MUST_HAVE.outlinehover = ['[data-testid="outline"]']
   for (const group of GROUPS.slice(0, 2)) group.states.push('outlinehover')
 }
-/* 启动页：`YAN_MATRIX_ONLY=startpage`，空会话 + 用量概览（合成数据），再切到模型页 */
 if (ONLY.some((name) => name.startsWith('startpage'))) {
   STATES.startpage = `(async () => { const st = window.__yanStore; st.getState().closeSettings(); document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); st.setState({ messages: [] }); await new Promise((r) => setTimeout(r, 900)); return document.querySelector('[data-testid="usage-overview"]') ? 'ok' : 'no-card' })()`
   STATES.startpage2 = `(async () => { const b = [...document.querySelectorAll('[data-testid="usage-overview"] .start-toggle button')].find((x) => x.textContent.trim() === '模型'); b?.click(); await new Promise((r) => setTimeout(r, 400)); return b ? 'ok' : 'no-tab' })()`
@@ -4505,7 +3822,6 @@ if (ONLY.some((name) => name.startsWith('startpage'))) {
   for (const group of GROUPS.slice(0, 3)) group.states.push('startpage', 'startpage2')
   GROUPS.push({ name: 'startnarrow', w: 820, h: 640, scale: 1, theme: 'light', states: ['main', 'startpage'] }, { name: 'starttiny', w: 600, h: 600, scale: 1, theme: 'dark', states: ['main', 'startpage'] })
 }
-/* 结构化回答块：`YAN_MATRIX_ONLY=visualblocks`，三种块（卡片 / 柱状与折线图 / 流程卡）的合成回答 */
 if (ONLY.includes('visualblocks')) {
   const VB_TEXT = "有，Windows 上有几款好用的 Markdown 编辑器，我比较推荐下面这几款。\n\n```yan-cards\n{\n  \"title\": \"推荐的 Markdown 编辑器\",\n  \"items\": [\n    {\n      \"title\": \"Typora\",\n      \"badge\": \"所见即所得\",\n      \"description\": \"界面简洁，输入 Markdown 后直接显示排版效果，支持表格、代码块、数学公式和图片。\",\n      \"meta\": \"付费：一次性买断，15 天试用\",\n      \"links\": [\n        {\n          \"label\": \"官方网站\",\n          \"url\": \"https://typora.io\"\n        }\n      ]\n    },\n    {\n      \"title\": \"Obsidian\",\n      \"badge\": \"管理大量文档\",\n      \"description\": \"管理整个 Markdown 文件夹，支持双向链接、插件和知识图谱。\",\n      \"meta\": \"免费使用，同步服务另收费\",\n      \"links\": [\n        {\n          \"label\": \"官方网站\",\n          \"url\": \"https://obsidian.md\"\n        }\n      ]\n    },\n    {\n      \"title\": \"MarkText\",\n      \"description\": \"开源、所见即所得，支持实时渲染、表格、公式和导出 PDF。\",\n      \"meta\": \"完全免费、开源\",\n      \"links\": [\n        {\n          \"label\": \"GitHub 下载\",\n          \"url\": \"https://github.com/marktext/marktext\"\n        }\n      ]\n    }\n  ]\n}\n```\n\n## 最重要的实验对照\n\n```yan-chart\n{\n  \"type\": \"bar\",\n  \"title\": \"TDFlow：人工测试 vs AI 自行生成测试\",\n  \"subtitle\": \"同一 TDFlow 工作流，SWE-bench Verified 数据集\",\n  \"unit\": \"%\",\n  \"labels\": [\n    \"AI 生成测试\",\n    \"人工提供测试\"\n  ],\n  \"series\": [\n    {\n      \"name\": \"成功率\",\n      \"values\": [\n        68,\n        94.3\n      ]\n    }\n  ],\n  \"stats\": [\n    {\n      \"label\": \"AI 自行生成测试\",\n      \"value\": \"68.0%\",\n      \"detail\": \"平均 $4.12 / 任务\"\n    },\n    {\n      \"label\": \"提供人工编写的测试\",\n      \"value\": \"94.3%\",\n      \"detail\": \"平均 $1.01 / 任务\"\n    }\n  ],\n  \"source\": \"论文表 2（示例数据）\",\n  \"note\": \"人工测试组拿到了通常隐藏的测试，不等于生产环境中的普通 Agent。\",\n  \"sources\": [\n    {\n      \"label\": \"ACL Anthology\",\n      \"url\": \"https://aclanthology.org/\"\n    }\n  ]\n}\n```\n\n例如：\n\n```yan-flow\n{\n  \"join\": \"plus\",\n  \"steps\": [\n    {\n      \"icon\": \"agent\",\n      \"title\": \"Agent 编写测试\",\n      \"detail\": \"TestLoadKeyFromEnv\"\n    },\n    {\n      \"icon\": \"checklist\",\n      \"title\": \"评分器隐藏测试\",\n      \"detail\": \"TestLoadKeyFromEnv\"\n    }\n  ],\n  \"result\": {\n    \"tone\": \"err\",\n    \"text\": \"测试函数重复定义 → 编译失败 → 判定任务失败\"\n  },\n  \"note\": \"这是独立审查发现的真实错误类型，不代表一定出现在该实验中。\"\n}\n```\n\n```yan-chart\n{\n  \"type\": \"line\",\n  \"title\": \"每周构建耗时\",\n  \"unit\": \"s\",\n  \"labels\": [\n    \"W1\",\n    \"W2\",\n    \"W3\",\n    \"W4\",\n    \"W5\",\n    \"W6\"\n  ],\n  \"series\": [\n    {\n      \"name\": \"桌面\",\n      \"values\": [\n        42,\n        39,\n        35,\n        36,\n        31,\n        28\n      ]\n    },\n    {\n      \"name\": \"手机\",\n      \"values\": [\n        65,\n        61,\n        58,\n        50,\n        47,\n        45\n      ]\n    }\n  ],\n  \"source\": \"示例数据\"\n}\n```"
   STATES.visualblocks = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const st = window.__yanStore.getState(); st.closeSettings(); st.setRailPinned(true); window.__yanStore.setState({ rightPanelOpen: false }); const messages = window.__yanStore.getState().messages; const host = messages.find((m) => m.role === 'assistant'); if (!host) return 'no-assistant'; window.__yanStore.setState({ messages: messages.map((m) => m.id === host.id ? { ...m, text: ${JSON.stringify(VB_TEXT)} } : m) }); await sleep(900); const first = document.querySelector('[data-testid="vb-cards"]'); if (!first) return 'no-block'; first.scrollIntoView({ block: 'start' }); await sleep(1200); return 'ok' })()`
@@ -4514,7 +3830,6 @@ if (ONLY.includes('visualblocks')) {
   MUST_HAVE.visualblocks = ['[data-testid="vb-cards"]', '[data-testid="vb-chart"]', '[data-testid="vb-flow"]']
   for (const group of GROUPS.slice(0, 3)) group.states.push('visualblocks', 'visualblocks2', 'visualblocks3')
 }
-/* 结构化回答块（第二批）：`YAN_MATRIX_ONLY=visualmore`，指标/横向/堆叠/哑铃/偏离/面积图、卡片网格、记录卡、分步、mermaid、小部件；按块逐屏截图 */
 if (ONLY.includes('composerfocus')) {
   STATES.composerfocus = `(async () => {
     const store = window.__yanStore;
@@ -4561,57 +3876,43 @@ if (ONLY.includes('visualmore')) {
   MUST_HAVE.visualmore = ['[data-testid="vb-stats"]', '[data-testid="vb-record"]', '[data-testid="vb-steps"]', '[data-testid="vb-mermaid"]', '[data-testid="vb-widget"]']
   for (const group of GROUPS.slice(0, 3)) group.states.push('visualmore', ...steps)
 }
-/* 提问表单：`YAN_MATRIX_ONLY=questionform` */
 if (ONLY.includes('questionform')) {
   STATES.questionform = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); window.__yanStore.setState({ uiRequests: [{ id: 'yan-question-matrix', method: 'input', title: '需要你填写', message: '开始审查前确认几件事', timeout: 180000, form: [{"name":"side","label":"这份合同你是哪一方？","kind":"choice","options":[{"label":"甲方","description":"委托方，付款","icon":"file"},{"label":"乙方","description":"承接方，交付","icon":"package"}]},{"name":"focus","label":"重点看哪些条款？","kind":"multi","options":["付款","违约责任","知识产权","保密"]},{"name":"deadline","label":"什么时候需要？","kind":"date"},{"name":"depth","label":"审查深度","kind":"range","min":1,"max":5,"step":1},{"name":"notes","label":"还有要特别注意的吗？","kind":"text","optional":true,"placeholder":"例如：对方是长期合作方"}] }], uiCollapsed: false }); await sleep(900); return document.querySelector('[data-testid="question-form"]') ? 'ok' : 'no-form' })()`
   MUST_HAVE.questionform = ['[data-testid="question-form"]']
   for (const group of GROUPS.slice(0, 3)) group.states.push('questionform')
 }
-/* 插件市场 pi 页：`YAN_MATRIX_ONLY=marketpi`，看搜索结果、原链接与下方安装区是否被遮挡 */
 if (ONLY.includes('marketpi')) {
   STATES.marketpi = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); window.__yanStore.getState().openSettings('market'); await sleep(700); document.querySelector('[data-testid="market-pi-tab"]')?.click(); await sleep(2500); return 'ok' })()`
   MUST_HAVE.marketpi = ['[data-testid="market-pi"]']
   for (const group of GROUPS.slice(0, 1)) group.states.push('marketpi')
   GROUPS.push({ name: 'marketnarrow', w: 900, h: 640, scale: 1, theme: 'light', states: ['marketpi'] })
 }
-/* 思考档位拖动中：`YAN_MATRIX_ONLY=modelmenufull,thinkingdrag`，在模型菜单里按住手柄拖到约 30% 处不松手，看头部档位是否实时跟随 */
 if (ONLY.includes('thinkingdrag')) {
   STATES.thinkingdrag = `(async () => { const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const st = window.__yanStore.getState(); window.__yanStore.setState({ session: { ...st.session, isStreaming: false, isAgentRunning: false, isCompacting: false }, thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] }); await sleep(100); if (!document.querySelector('[data-testid="model-menu"]')) { document.querySelector('[data-testid="model-picker"]')?.click(); await sleep(500) } const track = document.querySelector('[data-testid="model-menu"] .ui-step-track'); if (!track) return 'no-track'; const r = track.getBoundingClientRect(); const y = r.top + r.height / 2; const opts = (x) => ({ bubbles: true, button: 0, pointerId: 1, clientX: x, clientY: y }); track.dispatchEvent(new PointerEvent('pointerdown', opts(r.left + r.width * 0.9))); await sleep(120); track.dispatchEvent(new PointerEvent('pointermove', opts(r.left + r.width * 0.3))); await sleep(400); const head = document.querySelector('[data-testid="thinking-current"]'); return 'ok(' + (head && head.textContent) + ')' })()`
   MUST_HAVE.thinkingdrag = ['[data-testid="thinking-current"]']
   for (const group of MODEL_MENU_GROUPS.slice(0, 1)) group.states.push('thinkingdrag')
 }
-/* 最窄会话磁贴的输入框：`YAN_MATRIX_ONLY=composernarrow`，把输入区压到 330px 看工具条是否重叠/换行 */
 if (ONLY.includes('composernarrow')) {
   STATES.composernarrow = `(async () => { const s = window.__yanStore.getState(); s.closeSettings(); const w = document.querySelector('.composer-wrap'); if (!w) return 'no-composer'; w.style.maxWidth = '330px'; w.style.width = '330px'; w.style.marginInline = 'auto'; await new Promise((r) => setTimeout(r, 300)); return 'ok' })()`
   MUST_HAVE.composernarrow = ['.composer-bar']
   for (const group of GROUPS.slice(0, 2)) group.states.push('composernarrow')
 }
-/* 权限菜单截图：`YAN_MATRIX_ONLY=permissionmenu`，点开输入框左侧的两档权限入口 */
 if (ONLY.includes('permissionmenu')) {
   STATES.permissionmenu = `(async () => { const s = window.__yanStore.getState(); s.closeSettings(); const b = document.querySelector('[data-testid="permission-picker"]'); if (!b) return 'no-picker'; b.click(); await new Promise((r) => setTimeout(r, 400)); return 'ok' })()`
   MUST_HAVE.permissionmenu = ['.ui-choice-menu']
   for (const group of GROUPS.slice(0, 2)) group.states.push('permissionmenu')
 }
-/* README 主页截图：`YAN_MATRIX_ONLY=showcase`，场景见 scripts/probe/readme-showcase.js */
 if (ONLY.includes('showcase')) {
   STATES.showcase = readFileSync(join(root, 'scripts/probe/readme-showcase.js'), 'utf8')
   MUST_HAVE.showcase = ['[data-testid="tile-workspace"]', '[data-workspace-pane="chat"] .composer-wrap', '.tile-heading']
   for (const group of GROUPS) group.states.push('showcase')
 }
-/* 会话切换器（Ctrl+K）截图：`YAN_MATRIX_ONLY=switcher`，在 README 展示场景上打开 */
 if (ONLY.includes('switcher')) {
-  /* 场景脚本以 `;(async () => …)()` 开头，嵌进表达式前去掉前导注释与分号 */
   const scene = readFileSync(join(root, 'scripts/probe/readme-showcase.js'), 'utf8').replace(/^[\s\S]*?;\(/, '(')
   STATES.switcher = `(async () => { await (${scene}); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true })); await new Promise((r) => setTimeout(r, 700)); return 'ok' })()`
   MUST_HAVE.switcher = ['[data-testid="tile-workspace"]']
   for (const group of GROUPS) group.states.push('switcher')
 }
-/*
- * 模型很多时的模型菜单：`YAN_MATRIX_ONLY=modelmenufull npm run visual:matrix`。
- * 单组可指定 modelmenufull-dark / modelmenufull-light / modelmenufull-narrow。
- * 真实接入一个中转服务就有几十个模型，菜单会长到上限；fixture 只有一个模型看不出来。
- * 尺寸覆盖 1080p 笔记本 150% 缩放（约 1280×680 CSS 像素）与窗口最小尺寸。
- */
 if (ONLY.includes('modelmenufull') || MODEL_MENU_GROUPS.some((group) =>
   (process.env.YAN_MATRIX_GROUP ?? '').split(',').includes(group.name)
 )) {
@@ -4649,11 +3950,6 @@ if (ONLY.includes('codemodepreference')) {
   for (const group of GROUPS.slice(0, 3)) group.states.push('codemodepreference');
 }
 
-/*
- * 这些状态需要先回到同一个初始表面：关设置 / 关预览、打开右栏，
- * 具体工具磁贴（文件 / 日志 / 任务 / 子代理）由各状态自己用
- * `inkstone-workspace-launch` 打开。
- */
 const TOOL_PANEL_STATES = new Set([
   'nativecontext',
   'compaction', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'wschanges', 'wsunknown',
@@ -4664,24 +3960,14 @@ const RESET_MESSAGE_STATES = new Set([
   'codemode',
   'segmented', 'artifact', 'imageprogress', 'toolgroup', 'toolterm', 'taskcard', 'turnfooter',
   'turntime', 'filelink', 'turnstatus', 'usageturn', 'usageagg', 'usagepartial',
-  /* 子代理卡需要回合锚点，注入的合成回合截图后要恢复，避免影响后面的链/轨画面。 */
   'subagentnote', 'subagentfailed'
 ])
 const RESET_SESSION_STATES = new Set(['forkdraft', 'railmini', 'railsessions'])
 
-/*
- * 只跑某几组（下标，逗号分隔）：`YAN_MATRIX_GROUP=0,2`。
- *
- * 为什么要能拆：这台机器上跑满 7 组时，后半程会出现
- * `Network service crashed` / `GPU process exited unexpectedly`，
- * 脚本停住不动。拆成一组一个进程既不会长时间持有合成器，
- * 也方便失败后只重跑那一组。
- */
 const GROUP_ONLY = (process.env.YAN_MATRIX_GROUP ?? '')
   .split(',')
   .filter(Boolean)
 if (GROUP_ONLY.includes('workspacewide')) GROUP_ONLY.push(String(GROUPS.findIndex(g => g.w === 2560 && g.states.includes('workspace'))))
-/* 引导组也算一组（用名字）：`YAN_MATRIX_GROUP=onboarding` */
 const WANT_ONBOARDING = GROUP_ONLY.length === 0 || GROUP_ONLY.includes('onboarding')
 
 async function main() {
@@ -4689,12 +3975,6 @@ async function main() {
   if (!hasRequestedStates(selectedGroups, ONLY) && !(WANT_ONBOARDING && ONLY.length === 0)) {
     throw new Error(`未执行任何目标场景：groups=${GROUP_ONLY.join(',') || 'all'}，ONLY=${ONLY.join(',') || 'all'}`)
   }
-  /*
-   * 截图/测量脚本只注册必要的只读桩：HandoffNote 需要基线状态，失败提示夹具
-   * 则在 store 中保持稳定。其余拉取型 IPC 故意留空；Electron 会把每次失败调用
-   * 刷成一整段堆栈，既是 EPIPE 事故里被淹没的“原始错误”，也会把真错误顶出屏幕。
-   * 这里显式静音并计数（结尾汇总），其余 console.error 原样透传。
-   */
   muteMissingHandlerNoise()
   registerStubHandlers()
   await app.whenReady()
@@ -4712,18 +3992,10 @@ async function main() {
     frame: false,
     backgroundColor: '#0b0b0d',
     webPreferences: {
-      /* 产物是 .cjs：sandboxed preload 不支持 ESM（见 electron.vite.config.ts） */
       preload: join(root, 'out/preload/index.cjs'),
       additionalArguments: ['--yan-isolated-probe'],
       sandbox: false,
       contextIsolation: true,
-      /*
-       * 关掉后台节流。
-       *
-       * 默认情况下窗口被遮住/不在前台时，渲染进程不再出帧 ——
-       * `capturePage()` 于是会一直等一张永远不来的画面，
-       * 表现成“脚本停在那里、什么也不打印”（实测踩过）。
-       */
       backgroundThrottling: false
     }
   })
@@ -4731,7 +4003,6 @@ async function main() {
     win.on(event, () => console.log(`  [window] ${event} (visible=${win.isVisible()} minimized=${win.isMinimized()})`))
   }
 
-  /* 渲染端报错要看得见：状态脚本抛错时 Electron 只肯说“Script failed to execute” */
   win.webContents.on('console-message', (event) => {
     const level = Number(event?.level ?? 0)
     const message = String(event?.message ?? '')
@@ -4759,13 +4030,6 @@ async function main() {
   `)
   await win.webContents.reload()
 
-  /* 等字体栅格就绪（Maple），否则汉字会回退成别的字体：截图证据就不可比了。
-     用 `document.fonts.load(...)` **主动触发「国」的分片加载**再测，不能用 `document.fonts.ready`：
-     后者在“此刻没有 pending 字体请求”时立刻就 resolve，而本脚本用的是每次全新的
-     临时 userData（字体缓存是冷的），于是测量跑在分片落地之前 —— 汉字回退成 1em，
-     报出假的“字体未生效”（实测在未改动的旧组上同样复现，是工具竞态而非产品缺陷）。
-     带超时兜底：字体加载失败时这条 promise 可能永不 resolve，
-     而这里卡住的表现是“什么也不打印”，极难当场看出原因（实测踩过一次）。 */
   let cnWidth = await win.webContents.executeJavaScript(`
     Promise.race([
       document.fonts.load('12.5px "Maple Mono CN"', '国').then(() => {
@@ -4809,7 +4073,6 @@ async function main() {
       win.showInactive()
       await wait(220)
     }
-    /* 再等两帧 + 一点时间：确保这次变更已经画出来（否则截到上一态） */
     const framesReady = await Promise.race([
       win.webContents.executeJavaScript(
         'new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))'
@@ -4817,17 +4080,10 @@ async function main() {
       new Promise((r) => setTimeout(() => r(false), 1200))
     ])
     if (!framesReady) failures.push(`${name}（绘制帧等待超时）`)
-    /*
-     * 再显式要一次重绘。为什么需要：trashtoast 那张图实测**DOM 里有通知条、
-     * elementFromPoint 也命中它，但截图里没有** —— 窗口不在前台时合成器可能停在
-     * 上一帧（等 rAF 只保证脚本侧排过队，不保证真的出帧）。
-     * invalidate() 只影响画面、不改布局，对所有状态都安全。
-     */
     win.webContents.invalidate()
     await wait(220)
     const outPath = join(outDir, name)
     await mkdir(dirname(outPath), { recursive: true })
-    /* capturePage 也可能挂住（窗口被遮、合成器不给帧）—— 给个上限，别卡死整个矩阵 */
     let png
     try {
       const img = await Promise.race([
@@ -4850,11 +4106,6 @@ async function main() {
       return geometry
     }
     await writeFile(outPath, png)
-    /*
-     * 结构重构的等价证据：`YAN_STYLE_DUMP=1` 时，在截图旁写一份逐元素的计算样式。
-     * 前后两批用 `scripts/css-computed-diff.mjs` 比较 —— 截图只能看到像素，
-     * 这份能指出是哪个元素的哪个属性变了（含 ::before / ::after）。
-     */
     if (process.env.YAN_STYLE_DUMP) {
       const dump = await win.webContents.executeJavaScript(STYLE_DUMP_JS).catch((e) => ({ error: String(e) }))
       await writeFile(outPath.replace(/\.png$/, '.styles.json'), JSON.stringify(dump))
@@ -4898,12 +4149,6 @@ async function main() {
     console.log(`\n▶ ${size} @ ${pct}% ${g.theme}`)
     win.setSize(g.w, g.h)
     await wait(260)
-    /*
-     * 主题要同时写进 store 与 <html data-theme>：只改 DOM 时，任何一次
-     * settings 更新（applyScale / 状态脚本）都会让 App 的 theme effect 把
-     * dataset 写回 store 里的旧值 —— 实测 light 组会静默地截出深色图
-     * （文件名还写着 light）。两处一起写才能真的换肤。
-     */
     await win.webContents.executeJavaScript(`
       (() => {
         const st = window.__yanStore.getState();
@@ -4931,7 +4176,6 @@ async function main() {
 
     for (const state of g.states) {
       if (ONLY.length && !ONLY.includes(state)) continue
-      /* 非 Git 状态切换主进程的 Git 桩（见 NON_GIT_STUB_CWD 的注释） */
       stubNonGit = NON_GIT_STATES.has(state)
       console.log(`  · ${state}`)
       if (TOOL_PANEL_STATES.has(state)) {
@@ -4955,11 +4199,6 @@ async function main() {
         `)
         await wait(220)
       }
-      /*
-       * 模型菜单需要先把“忙”放开（picker 在忙时 disabled）。
-       * 必须**分两次** executeJavaScript：setState 到 DOM 反映要等 React 重渲染，
-       * 在同一次调用里紧接着读 `btn.disabled` 拿到的还是旧值（实测踩过）。
-       */
       if (state === 'modelmenu') {
         await win.webContents.executeJavaScript(`
           (() => {
@@ -4971,18 +4210,11 @@ async function main() {
         await wait(350)
       }
       if (state === 'railwaiting') {
-        /* `chainjoin` changes message count; let Rail's delayed refreshSessions settle before replacing sessions. */
         await wait(1100)
       }
       if (state === 'railreorder') {
-        /* 前一个改过消息数的状态会让 Rail 在 800ms 后 refreshSessions（夹具会盖掉本状态的合成项目）；
-           先等它落地，再由本状态写入要拖的会话/项目，避免拖拽中途列表被换掉。 */
         await wait(1000)
       }
-      /*
-       * 窗口被遮挡 / 隐藏时 Chromium 会跳过 View Transition 并暂停动画帧；
-       * 主题动画和滑块亮波检查必须在可见窗口里跑。
-       */
       if ((state.startsWith('themetransition') || state === 'uifinish' || state === 'workspace') && !win.isVisible()) {
         win.showInactive()
         await wait(220)
@@ -5011,26 +4243,14 @@ async function main() {
     }
   }
 
-  /* ---- 首次使用向导：单独一轮（拆组调试时只有显式要它才跑） ---- */
   if (!WANT_ONBOARDING) {
     console.log('\n（指定了 YAN_MATRIX_GROUP，且不含 onboarding：跳过向导组）')
   } else {
-  /*
-   * 首启弹的是配置向导（自检清单改为从「关于」页打开）。
-   * 自动弹的入口在 App 里：`if (window.yan.isProbe) return`（探针模式不弹），
-   * 所以这里走「关于页 → 配置向导」这条**真实存在**的入口，
-   * 渲染出来的是与首次启动同一个组件、同一个初始步。
-   */
   await win.webContents.executeJavaScript(`try { localStorage.removeItem('yan.onboarded') } catch {}`)
   await win.webContents.reload()
   await wait(600)
   await win.webContents.executeJavaScript(fixture)
   await wait(700)
-  /*
-   * 先看首启有没有自己弹出来 —— 这才是真实用户碰到的路径。
-   * 隔离环境里 bootstrap 拿不到设置，弹不弹有时序成分；没弹则退回
-   * 「关于页 → 配置向导」这条真实入口（同一个组件、同一个初始步）。
-   */
   const autoOpened = await win.webContents.executeJavaScript(
     `!!document.querySelector('[data-testid="wizard"]')`
   )
@@ -5064,7 +4284,6 @@ async function main() {
     await wait(260)
     await win.webContents.executeJavaScript(`document.documentElement.dataset.theme = '${g.theme}'`)
     await wait(500)
-    /* 每组首图都回欢迎页，尺寸之间才是同一屏的比较 */
     await win.webContents.executeJavaScript(
       `(() => { document.querySelector('[data-testid="wiz-step-welcome"]')?.click(); return 'ok' })()`
     )
@@ -5082,7 +4301,6 @@ async function main() {
     `)
     await shot(`matrix-wizard-${size}-100-${g.theme}-${STAMP}.png`, geometry)
 
-    /* 大尺寸那组多截各步：外观 / 提醒 / 接入 / 上下文 / 功能入口 */
     if (g.w === 1440) {
       for (const step of ['theme', 'sound', 'auth', 'context', 'done']) {
         await win.webContents.executeJavaScript(
@@ -5119,11 +4337,6 @@ async function main() {
     console.log('✓ 视觉矩阵通过（溢出与关键元素都正常）')
   }
   console.log(`截图目录：${outDir}`)
-  /*
-   * 结尾把静音掉的那类日志汇总一行。
-   * 为什么不干脆丢掉：那些 handler 缺失是**故意**的（见 muteMissingHandlerNoise 注释），
-   * 但它也能解释“某块界面没数据”—— 得留个可查的痕迹。
-   */
   const noise = missingHandlerSummary()
   if (noise) {
     console.log(
@@ -5138,10 +4351,6 @@ async function main() {
   app.exit(failures.length === 0 && Math.abs(cnWidth - 15) < 0.01 ? 0 : 1)
 }
 
-/*
- * 看门狗：这个脚本会真的开窗口，如果卡在某个 executeJavaScript 上，
- * 外层只能看到“什么也不输出”——加一个自己的超时，把阶段信息带回终端。
- */
 const watchdog = setTimeout(() => {
   console.error('✗ 视觉矩阵超时（10 分钟）——最后完成的阶段见上面的输出')
   app.exit(2)

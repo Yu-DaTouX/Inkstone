@@ -1,39 +1,21 @@
-/** Shared model error extraction, redaction and display; no execution or retry policy. */
-
 export type ModelErrorKind =
-  /** 值得再试一次：网络 / 上游瞬态 / 认不出的错误 */
   | 'retryable'
-  /** 额度 / 限流：重试只会立刻再失败 */
   | 'quota'
-  /** 认证 / 权限：不换凭证永远不行 */
   | 'auth'
-  /** 上下文超限：由原生 Agent 处理压缩与恢复 */
   | 'context'
-  /** 用户取消：不重试 */
   | 'aborted'
-  /** 服务商安全审核拦截：同一段上下文重发多半照样被拦 */
   | 'refused'
-  /** 模型或请求参数不受支持，需调整配置后再试。 */
   | 'request'
 
-/**
- * 额度类错误的细分：窗口/套餐用量用尽与短时频率限流出路不同，不能混成一句。
- * · usage：这条会话/窗口的额度已用完（例如 Claude 的 5 小时窗口），等恢复才是正解；
- * · rate：短时间内发得太密，稍等或降并发即可，额度本身还在。
- */
 export type ModelErrorQuotaScope = 'usage' | 'rate'
 
 export interface ModelErrorInfo {
   kind: ModelErrorKind
-  /** 归一化后的原始文本（可能为空） */
   text: string
-  /** 给界面/日志看的中文短句 */
   label: string
-  /** 仅 kind=quota 时有值 */
   quotaScope?: ModelErrorQuotaScope
 }
 
-/** 关键词表（中英都认；大小写不敏感）。顺序即优先级：越具体的越靠前。 */
 const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   {
     kind: 'aborted',
@@ -43,23 +25,11 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   {
     kind: 'refused',
     label: '服务商安全审核拦截',
-    /*
-     * 各家措辞：OpenAI / Codex「flagged … cybersecurity risk」「usage policy」，
-     * Azure「content management policy」/ content_filter，Gemini「blocked … SAFETY」，
-     * DeepSeek「Content Exists Risk」，Moonshot「considered high risk」，
-     * 通义「inappropriate content」/ data_inspection_failed，智谱「不安全或敏感内容」。
-     * 排在额度 / 认证之前：这类拒绝有时带 400 / 403，但换凭证没用，要换模型或换说法。
-     */
     re: /\bflagged\b|content[ _-]?(policy|filter|management)|usage polic(y|ies)|(blocked|filtered).{0,40}\bsafety\b|\bsafety (filter|system|polic)|prohibited[ _]content|content exists risk|considered (a )?high risk|inappropriate content|data_inspection_failed|内容安全|(不安全|敏感)(或敏感)?内容|违反.{0,8}(政策|规定|策略|规范)/i
   },
   {
     kind: 'quota',
     label: '额度或限流',
-    /*
-     * 为什么还要认 `used all` / `free requests` / `requests for today`：
-     * 供应商的原文常常不带 429，而是 “You've used all 100 free requests for today”
-     * （实测踩过：只写 429/quota 会让这类错误被当成可重试，白烧 3 次额度）。
-     */
     re: /\b(?:402|429)\b|rate[ _-]?limit|too many requests|quota|resource_exhausted|insufficient[ _](?:balance|funds|credit)|balance|credit|usage limit|used all|free requests?|requests for today|额度|配额|余额|限流/i
   },
   {
@@ -79,31 +49,17 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   }
 ]
 
-/**
- * 额度细分用的两条关键词表，「用量用尽」优先。
- *
- * 为什么先判用量：供应商把窗口额度用尽也写成 rate limit ——
- * 实测原文 “Claude rate limit (five_hour) — resets 10:30:00 pm: You've hit your session limit”，
- * 只按 rate limit 判会提示「降低并发」，但实际上并发再低也得等窗口恢复。
- */
 const QUOTA_USAGE_RE = /usage limit|session limit|used all|free requests?|requests for today|weekly limit|hourly limit|5[ _-]?hour|five[ _-]?hour|resets?\s+(?:at|in)\b|额度|配额|余额|balance|credit|funds|套餐|用量上限/i
 const QUOTA_RATE_RE = /rate[ _-]?limit|too many requests|resource_exhausted|requests?\s+per\s+(?:minute|second|hour)|concurren|限流|频率|并发/i
-/** 余额不足与窗口用尽都是「不充值/不等待就不行」，但话不一样。 */
 const QUOTA_BALANCE_RE = /insufficient[ _](?:balance|funds|credit)|balance|credit|funds|余额|充值/i
 
 function quotaScopeOf(text: string): ModelErrorQuotaScope {
   if (QUOTA_USAGE_RE.test(text)) return 'usage'
   if (QUOTA_RATE_RE.test(text)) return 'rate'
-  /* 只认到 402/quota 这类笼统措辞时按额度用尽说，比说「降低并发」更接近事实。 */
   return 'usage'
 }
 
-/**
- * 供应商常把恢复时间写在同一句里。抓不到就不写，不猜时间。
- * 例：`resets 10:30pm (Australia/Sydney)`、`Try again in ~76 min`。
- */
 function quotaResetHint(text: string): string {
-  /* 同一句里可能出现多个 resets（带时区的那个更有用），优先取带括号时区的。 */
   const hits = [...text.matchAll(/resets?\s+(?:at\s+)?([\d:.]+\s*[ap]\.?m\.?(?:\s*\([^)]+\))?)/gi)].map((m) => m[1].trim())
   const best = hits.find((h) => h.includes('(')) ?? hits[0]
   if (best) return `恢复时间：${best}`
@@ -112,7 +68,6 @@ function quotaResetHint(text: string): string {
   return ''
 }
 
-/** 只提取错误字段，避免把请求正文、密钥或完整响应对象投到界面。 */
 export function modelErrorText(value: unknown, depth = 0): string {
   if (depth > 4) return ''
   if (typeof value === 'string') {
@@ -122,7 +77,7 @@ export function modelErrorText(value: unknown, depth = 0): string {
         const parsed = JSON.parse(raw)
         const extracted = modelErrorText(parsed, depth + 1)
         if (extracted) return extracted
-      } catch { /* 非 JSON 错误保留原文。 */ }
+      } catch { }
     }
     return raw
       .replace(/\bBearer\s+[^\s"',;]+/gi, 'Bearer [已隐藏]')
@@ -139,7 +94,6 @@ export function modelErrorText(value: unknown, depth = 0): string {
   return [...new Set(parts)].join('；').slice(0, 900)
 }
 
-/** 分类只用于错误展示；未知错误保留原文，不触发宿主自动重试。 */
 export function classifyModelError(text: unknown): ModelErrorInfo {
   const raw = modelErrorText(text)
   for (const item of PATTERNS) {
@@ -152,11 +106,6 @@ export function classifyModelError(text: unknown): ModelErrorInfo {
   return { kind: 'retryable', text: raw, label: raw ? '模型侧错误' : '模型侧错误（没有错误文本）' }
 }
 
-/**
- * 消息流里错误行的文案（实时与历史共用）。
- *
- * 说明已知原因和下一步，保留脱敏原文；未知原因不推断成额度或鉴权失败。
- */
 export function modelErrorNotice(errorText: unknown): string {
   const info = classifyModelError(errorText)
   if (!info.text) return '模型请求失败：服务商未返回具体原因，无法判断是网络、额度还是请求问题。请查看运行日志，或稍后重试。'

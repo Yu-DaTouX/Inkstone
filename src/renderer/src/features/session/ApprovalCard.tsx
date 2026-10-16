@@ -1,14 +1,3 @@
-/**
- * 批准卡片（危险操作确认）。
- *
- * 与 v2 `chat/ApprovalCard.tsx` 的**安全语义逐条对齐**（CONTRACT 要求）：
- *   · `Enter` / `Space` 的默认激活在卡片容器的捕获阶段就被拦掉，按钮聚焦也不会误放行；
- *     允许 / 拒绝只能由明确点击（或 `Alt+Y` / `Alt+N`）触发，不能只靠「不注册回调」保证；
- *   · 没有「全部允许」；
- *   · 归属按请求自带的 `sessionId` / `runId` 匹配并显示来源，不拿当前焦点会话去猜；
- *   · 一次只显示最早的一条，其余在角上计数；关不掉，避免误当答复；
- *   · 「允许并记住此目录」只在 `canRemember` 且为项目外写入时出现。
- */
 import { useCallback, useEffect, useRef, type JSX, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -40,14 +29,9 @@ export function ApprovalCard(): JSX.Element | null {
   const switchSession = useStore((s) => s.switchSession)
   const current = approvals[0]
   const cardRef = useRef<HTMLDivElement>(null)
-  /* 在途闸门：同一条请求答复期间不能再次答复（连按 / 键重复） */
   const gateRef = useRef<ApprovalGate | null>(null)
   if (!gateRef.current) gateRef.current = createApprovalGate()
 
-  /*
-   * 唯一答复入口：先用 store 里的当前请求核对归属（只认最早那条，相邻卡片不跳号），
-   * 再过在途闸门去重。答复失败只释放闸门，不自动允许也不撤销。
-   */
   const answer = useCallback(
     (choice: ApprovalChoice): void => {
       const id = current?.id
@@ -67,7 +51,6 @@ export function ApprovalCard(): JSX.Element | null {
     [current, answerApproval]
   )
 
-  /* Esc 只在焦点位于卡片内时等于「拒绝」；输入框焦点时 Esc 留给中止运行 */
   useEffect(() => {
     if (!current) return undefined
     const onKey = (event: KeyboardEvent): void => {
@@ -80,12 +63,10 @@ export function ApprovalCard(): JSX.Element | null {
     return () => window.removeEventListener('keydown', onKey)
   }, [current, answer])
 
-  /* Alt+Y / Alt+N：全局可用；模态 / 弹窗打开时不响应；**不**注册任何 Enter / 单键 Y/N */
   useEffect(() => {
     if (!current) return undefined
     const onKey = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || !event.altKey || !['y', 'n'].includes(event.key.toLowerCase())) return
-      // 非模态的运行浮层/菜单同样不能让快捷键穿透到背后的批准卡。
       const overlayOpen = isModalOpen() || [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="menu"], [role="listbox"]')]
         .some((element) => element.getClientRects().length > 0 && !cardRef.current?.contains(element))
       const chosen = classifyApprovalShortcut(event, overlayOpen)
@@ -97,11 +78,6 @@ export function ApprovalCard(): JSX.Element | null {
     return () => window.removeEventListener('keydown', onKey)
   }, [current, answer])
 
-  /*
-   * Enter / Space 的默认激活在捕获阶段直接拦掉：preventDefault 挡浏览器原生 click，
-   * stopPropagation 让按钮自己的键盘 press 也不触发。这样即使「允许」按钮已聚焦、
-   * 或 press 的 pointerType 判不出来，也不会用键盘误放行；键盘路径只剩 Alt+Y / Alt+N。
-   */
   const onKeyDownCapture = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     const native = event.nativeEvent
     if (!isActivationKey({ key: event.key, isComposing: native.isComposing, keyCode: native.keyCode })) return
@@ -131,11 +107,6 @@ export function ApprovalCard(): JSX.Element | null {
   const icon: SessionIconName = risky ? 'alert' : isShell ? 'terminal' : 'shield'
   const rememberLabel = current.kind === 'outside' ? t('approval.rememberDirs') : ''
   const waited = current.createdAt ? formatCountdown(Math.max(0, Date.now() - current.createdAt)) : ''
-  /*
-   * 只接受**明确点击**：键盘触发的 press（`pointerType === 'keyboard'`）一律忽略。
-   * 读屏 / `element.click()` 的 `virtual` 仍算明确点击。键盘路径只有 `Alt+Y` / `Alt+N`；
-   * `Enter` / `Space` 另有捕获阶段拦截兜底。
-   */
   const clickOnly = (action: () => void) => (event: { pointerType?: string | null }): void => {
     if (!allowsPointerPress(event.pointerType)) return
     action()

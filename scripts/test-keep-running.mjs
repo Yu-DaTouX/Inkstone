@@ -1,4 +1,3 @@
-/** Keep-running decisions: when to send "continue" and when to stop on its own. */
 export async function runKeepRunningTests(report) {
   const ok = (label, cond) => report(!!cond, label)
   const m = await import('../out/test/keep-running.mjs')

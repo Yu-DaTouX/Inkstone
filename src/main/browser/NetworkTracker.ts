@@ -4,10 +4,6 @@ import type { CdpChannel } from './CdpChannel'
 const LIMIT = 80
 const MAX_URL_LENGTH = 2_048
 
-/**
- * A bounded, read-only network ledger. It deliberately drops query strings,
- * fragments, credentials, request/response headers, bodies, and cookie data.
- */
 export class NetworkTracker {
   private readonly entries = new Map<string, BrowserNetworkEntry>()
   private started = false
@@ -72,7 +68,6 @@ function safeNetworkUrl(value: unknown): string {
     url.password = ''
     url.search = ''
     url.hash = ''
-    // Paths commonly carry one-time links or credentials; snapshots need only origin.
     url.pathname = '/'
     const safe = url.toString()
     return safe.length <= MAX_URL_LENGTH ? safe : `${safe.slice(0, MAX_URL_LENGTH - 1)}…`

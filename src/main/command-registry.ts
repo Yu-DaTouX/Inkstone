@@ -1,10 +1,3 @@
-/**
- * Yan 命令注册表（N18）。
- *
- * pi 的 get_commands 只描述它自己发现的命令；桌面端还需要把本地路由、
- * 扩展/技能来源和“仅兼容显示”的终端命令统一成一个可审阅列表。
- * 这里不执行命令，只负责清洗和合并描述，真正的本地路由仍在 Composer。
- */
 import type { CommandDescriptor } from '../shared/ipc'
 
 type RuntimeCommand = {
@@ -69,10 +62,6 @@ const LOCAL_COMMANDS: readonly CommandDescriptor[] = [
     executable: true,
     usage: '/export [路径]'
   },
-  /*
-   * pi 终端的内置会话命令。桌面端由主会话的原生会话接口承接，
-   * 因此登记为可执行的 yan 命令，而不再作为「只有终端可用」的兼容项。
-   */
   { name: 'tree', description: '浏览并切换当前会话的分支树', source: 'yan', executable: true, usage: '/tree' },
   { name: 'import', description: '导入并继续一个 JSONL 会话', source: 'yan', executable: true, usage: '/import <路径>' },
   { name: 'reload', description: '重新加载键位、扩展、技能、模板、主题与上下文文件', source: 'yan', executable: true, usage: '/reload' },
@@ -83,11 +72,6 @@ const LOCAL_COMMANDS: readonly CommandDescriptor[] = [
   { name: 'name', description: '重命名当前会话', source: 'yan', executable: true, usage: '/name <名称>' },
   { name: 'session', description: '查看当前会话信息', source: 'yan', executable: true, usage: '/session' },
   { name: 'clone', description: '复制当前会话到新会话', source: 'yan', executable: true, usage: '/clone' },
-  /*
-   * pi 终端内置、桌面端换了入口的命令。pi RPC 的 get_commands 不报内置命令，
-   * 不登记的话手打 `/resume` 会被当成消息发给模型。保留为 compatibility 并隐藏在补全外：
-   * 手打时给出桌面端对应的入口，输入与附件原样保留。
-   */
   ...(
     [
       ['fork', '在要分叉的那条消息上点「分叉」。'],
@@ -124,13 +108,6 @@ const LOCAL_COMMANDS: readonly CommandDescriptor[] = [
     source: 'compatibility',
     executable: false,
     usage: '/panel',
-    /*
-     * 实施-02 S4：从 `/` 补全里隐藏，但**不删这一项**。
-     * 任务清单现在由砚内置任务计划维护（`yan tasks apply` + 宿主服务），
-     * 终端面板命令在桌面端没有对应界面。保留在这里的目的是占住
-     * source=compatibility 这个来源 —— 手打时命中它就会给明确反馈，
-     * 而不是掉到「未知命令当消息发给模型」那条路上。
-     */
     hiddenInMenu: true,
     availability: '仅终端界面有效；任务由砚内置任务计划维护，桌面端不会伪造无效果按钮'
   },
@@ -184,16 +161,10 @@ function normalizeRuntimeCommand(raw: RuntimeCommand): CommandDescriptor | null 
   }
 }
 
-/** 始终可见的 Yan 内置命令；不依赖 pi 的 get_commands。 */
 export function localCommandDescriptors(): CommandDescriptor[] {
   return LOCAL_COMMANDS.map((command) => ({ ...command }))
 }
 
-/**
- * 合并 pi/扩展发现结果与本地注册项。
- * 同名命令不被静默覆盖：source/module 会让用户分辨它们来自哪里；
- * 完全相同的重复项才去重，避免刷新时菜单出现双份同一条。
- */
 export function mergeCommandDescriptors(runtime: unknown[] | undefined): CommandDescriptor[] {
   const result = localCommandDescriptors()
   const seen = new Set(result.map((command) => `${command.name}\0${command.source}\0${command.module ?? ''}`))

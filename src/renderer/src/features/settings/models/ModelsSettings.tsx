@@ -1,19 +1,3 @@
-/**
- * 设置 → 模型与服务（S1，v3）。
- *
- * 把 v2「接入」页（`components/settings/AuthTab.tsx` + `ModelCatalog.tsx`）里
- * 两类需求重做成 v3 页面：**服务凭证**与**模型目录**。全部外观来自 `ui/`，
- * 版面只在同目录 `models-settings.css` 的 features 层；不用任何 v2 样式或组件。
- *
- * 权威边界（不猜）：
- *   · 服务是否可用只看主进程 `authProviders`（读 auth.json + 环境变量）；
- *     `lastMainModel` / `modelFavorites` 只是偏好，绝不当作「已登录」。
- *   · 模型能力来自 pi 的模型目录；思考档位来自当前会话的
- *     `get_available_thinking_levels`（store 的 `thinkingLevels` +
- *     `session.thinkingLevelsStatus`），不按模型名硬编码「支持思考」。
- *   · 所有写操作（登录 / 保存 key / 移除凭证）只在用户点击后调用既有正式入口，
- *     代理不实际执行；密钥输入不回填、不显示、不写日志，错误文案经脱敏。
- */
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { Star } from 'lucide-react'
 import type { AuthProviderInfo, CapabilityStatus, OAuthLoginEvent } from '../../../../../shared/ipc'
@@ -118,7 +102,6 @@ export function ModelsSettings(): ReactElement {
   const [favoriteOnly, setFavoriteOnly] = useState(false)
   const [pendingModel, setPendingModel] = useState<string | null>(null)
 
-  /* 打开本页读一次本机凭证状态（本地读取，不联网、不登录）；失败就当不知道。 */
   useEffect(() => {
     if (useStore.getState().authProviders.length === 0) void loadAuthProviders()
     void window.yan
@@ -127,7 +110,6 @@ export function ModelsSettings(): ReactElement {
       .catch(() => undefined)
   }, [loadAuthProviders])
 
-  /* 订阅登录过程中主进程推来的事件（验证码 / 授权地址 / 提问）。 */
   useEffect(
     () =>
       window.yan.onOAuthEvent((ev) =>
@@ -149,7 +131,6 @@ export function ModelsSettings(): ReactElement {
     await refreshFileInfo()
   }
 
-  /** 深查：以 pi 自己的判断为准（用户点击才执行，不自动探测）。 */
   const recheck = async (): Promise<void> => {
     setChecking(true)
     setMsg(null)
@@ -253,12 +234,6 @@ export function ModelsSettings(): ReactElement {
     }
   }
 
-  /**
-   * 切换当前会话模型（= 默认模型，store 会一并写 lastMainModel）。
-   *
-   * 前后核对运行实例与会话 id：等待期间若视图已切走，就不把结果标到今天这条
-   * 会话上，也不谎称切换成功。写操作只走正式 `store.setModel`。
-   */
   const applyModel = async (model: CatalogModel): Promise<void> => {
     if (pendingModel) return
     const before = useStore.getState()
@@ -302,7 +277,6 @@ export function ModelsSettings(): ReactElement {
   )
 
   const currentKey = session?.model ? `${session.model.provider}/${session.model.id}` : ''
-  /** 会话正在生成 / 压缩时不切模型，避免打断已有会话；收藏仍可操作。 */
   const sessionBusy = !!session?.isStreaming || !!session?.isCompacting || !!session?.isAgentRunning
   const needsAuth = (provider: string): boolean => {
     if (authProviders.length === 0) return false
@@ -330,7 +304,6 @@ export function ModelsSettings(): ReactElement {
   const loginInProgress = (p: AuthProviderInfo): boolean =>
     p.id === 'openai-codex' ? codexLogging : oauth?.provider === p.id
 
-  /** 一行服务：状态、说明与「用户点击才触发」的动作。 */
   const serviceRow = (p: AuthProviderInfo): ReactElement => {
     const state = entryState(p)
     const isKey = p.kind !== 'subscription'
@@ -697,7 +670,6 @@ export function ModelsSettings(): ReactElement {
   )
 }
 
-/** 订阅登录进行中：只显示最新一条进度与需要用户做的事，不显示任何 token。 */
 function OAuthPanel({
   provider,
   events,
@@ -797,10 +769,6 @@ function OAuthPanel({
   )
 }
 
-/**
- * 思考能力：只展示当前会话权威查询到的档位。
- * 不根据模型名或本地标签推断「支持思考」。
- */
 function ThinkingPanel({
   modelName,
   level,

@@ -11,7 +11,6 @@ export async function runRunStateTests() {
   async function load(entry, name) {
     const outfile = join(dir, `${name}.mjs`)
     const result = await build({ entryPoints: [entry], outfile, bundle: true, platform: 'neutral', format: 'esm', metafile: true, logLevel: 'silent' })
-    // A neutral bundle with no externals proves this path needs no Electron/Node API.
     if (name === 'core') assert.deepEqual(Object.keys(result.metafile.inputs), ['src/core/run-state.ts'])
     return import(pathToFileURL(outfile).href)
   }
@@ -22,7 +21,6 @@ export async function runRunStateTests() {
   assert.equal(ready.runId, 'r1')
   assert.equal(ready.generation, 9)
   assert.equal(ready.sessionId, 'saved-session')
-  // Compaction / streaming / direct shell / waiting all block reuse independently.
   for (const field of ['isAgentRunning', 'isCompacting', 'isStreaming']) {
     assert.equal(executionBusy({ [field]: true }, () => { throw new Error('unexpected shell read') }, () => 0), true)
   }

@@ -1,8 +1,6 @@
-/* Geometry only; tile surfaces, grips, splitters and drop states belong to ui.css. */
 .workspace.workspace-tiled { grid-template-columns: var(--w-rail) minmax(0, 1fr); }
 .tile-workspace { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .tile-workspace-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; position: relative; }
-/* 快速调整窗口时布局的最小宽度会瞬间超出，滚动条一闪而过很突兀；仍可用滚轮 / Shift+滚轮横向滚动 */
 .tile-workspace-scroll::-webkit-scrollbar:horizontal,
 .split-row::-webkit-scrollbar:horizontal { display: none; }
 .tile-workspace-pad { width: max-content; min-width: 100%; box-sizing: border-box; }
@@ -35,10 +33,8 @@
 .tile-file-tree .rp-sec-body.open, .tile-file-tree .rp-sec-body-inner { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .tile-file-tree .rp-fs { flex: 1; min-height: 0; max-height: none; }
 .tile-file-tree .rp-fs-search-results { flex: 1; min-height: 0; max-height: none; }
-/* Task and log tiles: their sections stack and scroll inside the tile. */
 .tile-sections { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: var(--sp-1) var(--sp-2) var(--sp-2); }
 .tile-sections > .ui-empty { margin: auto; }
-/* Accounts tile: one block per account, separated by space instead of borders. */
 .acct-pane { gap: var(--sp-4); padding: var(--sp-2) var(--sp-3) var(--sp-3); }
 .acct-head, .acct-add { display: flex; align-items: center; gap: var(--sp-2); color: var(--fg-mute); font-size: var(--fs-xs); }
 .acct-head { justify-content: space-between; }
@@ -65,16 +61,11 @@
 .agent-message-stream pre { max-width: 100%; overflow: auto; }
 .agent-message-stream .stream-inner { max-width: 900px; margin-inline: auto; }
 .agent-message-caption { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-1) var(--sp-3); }
-/* 过程窗口顶部的任务原文：与后面的回合留出间距（外观沿用 ui.css 的折叠样式）。 */
 .agent-prompt { margin-bottom: var(--sp-3); }
-/* 终端占满窗格：状态条浮在右上角，不再占掉终端上方一整行 */
 .tile-pane > .agent-workspace { position: relative; }
 .agent-message-caption.overlay { position: absolute; top: var(--sp-1); right: var(--sp-2); z-index: 2; padding: 0; }
 .tile-grip-restore { position: absolute; right: var(--sp-1); top: 1px; }
-/* Live drag: the grabbed tile follows the pointer above the others, which glide into
-   the arrangement the drop would produce; after release it glides into its slot. */
 .tile-workspace.dragging { cursor: grabbing; user-select: none; }
-/* The lifted tile moves freely; whatever hangs past the canvas is clipped instead of growing the scroll area, whose scrollbar would narrow every other tile mid-drag. */
 .tile-workspace.dragging .tile-workspace-canvas { overflow: clip; }
 .tile-workspace.dragging .tile-pane,
 .tile-workspace.dragging .tile-frame,
@@ -86,21 +77,14 @@
 .tile-float { position: absolute; pointer-events: none; }
 .tile-float-head { position: absolute; top: 0; left: 0; right: 0; height: 28px; display: flex; align-items: center; padding-inline: var(--sp-1); }
 .tile-float-grip { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); z-index: 1; }
-/* The main conversation has no card to clip; its menus (model, work mode) may extend past it. */
 .tile-pane[data-workspace-pane='chat'] { overflow: visible; z-index: 3; }
 
-/* 分屏：每条会话一列（会话 + 它自己的工具），并排等宽；窗口放不下（每列至少 340px）时横向滚动。
-   列与列之间一道清楚的竖线。 */
 .split-row { display: flex; min-width: 0; min-height: 0; overflow: auto hidden; }
-/* 各列等分；每列至少是自己工作区需要的宽度（会话 + 工具，Workspace fit 给出），放不下时整排横向滚动 */
 .split-column { position: relative; display: flex; flex: 1 1 0; min-width: min-content; min-height: 0; }
-/* 工作区的画布按自己的框量出来：不让内容反过来撑大这一列（否则各列越撑越宽、宽度不等），只保留 fit 给的最小宽度 */
 .split-column > .tile-workspace { flex: 1; contain: inline-size; }
-/* 列之间的分隔条：平时一道 2px 竖线，悬停 / 拖动 / 键盘焦点时由 .ui-splitter 换成强调色；两侧各外扩 4px 好抓 */
 .split-resizer { position: relative; flex: none; width: 2px; background: var(--border-str); cursor: col-resize; z-index: 5; }
 .split-resizer::before { content: ''; position: absolute; inset: 0 -4px; }
 body.split-resizing { cursor: col-resize; user-select: none; }
-/* 非焦点列的工具也盖同一层淡遮罩（会话本身的遮罩在 SplitPeerPane 里）；不拦指针 */
 .split-column:not(.live) .tile-pane:not([data-workspace-pane='chat'])::after {
   content: '';
   position: absolute;

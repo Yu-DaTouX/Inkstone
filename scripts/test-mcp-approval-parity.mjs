@@ -1,16 +1,3 @@
-/**
- * MCP 审批同口径（A4）的合成验收。
- *
- * 三个部分，全部纯合成、不联网、不碰用户数据、不调用模型：
- *   · 注解表逐条比对 `resources/pi-extensions/danger-guard.js`（只读）与
- *     `src/shared/mcp-approval.ts` 两个同名纯函数的输出完全一致；
- *   · 权限档 `danger` / `all` 下，现场加载扩展的 `tool_call` 处理器（假 pi + 假宿主），
- *     用固定注解表逐条比对「实际是否询问」与共享 `mcpCallReasons` 的预期；
- *   · `src/main/mcp/app-view-approval.ts` 的视图调用判定：visibility 门槛、注入 ask 的
- *     允许 / 拒绝 / 异常 / 真 `ApprovalBroker` 超时（无答复）都判拒绝。
- *
- * 用法：node scripts/test-mcp-approval-parity.mjs
- */
 import { createServer } from 'node:http'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,8 +16,6 @@ const ok = (condition, message, detail) => {
     console.log(`✓ ${message}`)
   }
 }
-
-/* ---------------------------------------------------------------- 加载两处实现 */
 
 const bundled = await build({
   stdin: {
@@ -52,8 +37,6 @@ const shared = await import(`data:text/javascript;base64,${Buffer.from(bundled.o
 const ext = await import(pathToFileURL(resolve('resources/pi-extensions/danger-guard.js')).href)
 ok(typeof shared.mcpApprovalNeeded === 'function', '加载共享 mcpApprovalNeeded')
 ok(typeof ext.mcpApprovalNeeded === 'function', '加载扩展 mcpApprovalNeeded')
-
-/* ---------------------------------------------------------------- 固定注解表 */
 
 const CASES = [
   { key: 'none', annotations: undefined },
@@ -78,7 +61,6 @@ const CASES = [
 
 const toolNameOf = (key) => `mcp__srv__${key.replace(/[^a-zA-Z0-9]+/g, '_')}`
 
-/* 纯函数逐条比对：approval 判定、理由数组（含展示文案）、目标解析。 */
 for (const { key, annotations } of CASES) {
   const name = toolNameOf(key)
   ok(
@@ -97,10 +79,7 @@ for (const { key, annotations } of CASES) {
   )
 }
 
-/* 非 mcp__ 前缀：两处都不产生 MCP 理由。 */
 ok(shared.mcpCallDanger('bash', { destructiveHint: true }).length === 0, '非 mcp__ 工具不产生 MCP 理由')
-
-/* ---------------------------------------------------------------- 扩展处理器：权限档 */
 
 const requests = []
 const server = createServer((req, res) => {
@@ -164,14 +143,11 @@ for (const mode of ['danger', 'all']) {
 
 await writePrefs('danger')
 
-/* ---------------------------------------------------------------- 视图调用判定 */
-
 const baseCall = { server: 'srv', tool: 't', visibility: ['app'], cwd: 'C:/proj' }
 const allowAsk = () => Promise.resolve('once')
 const denyAsk = () => Promise.resolve('deny')
 
 {
-  /* FIX1-app-trust：没有宿主服务器授权时，只读也必须询问；服务自报注解不构成授权。 */
   const tracker = { calls: 0 }
   const result = await shared.approveAppViewCall(
     { ...baseCall, annotations: { readOnlyHint: true } },
@@ -179,7 +155,6 @@ const denyAsk = () => Promise.resolve('deny')
   )
   ok(result.allowed && result.asked && tracker.calls === 1 && result.recorded, '无宿主授权时只读调用先询问（不静默放行）')
 
-  /* 命中宿主注入 grant 的只读仍可直接放行：信任来自宿主，不是服务注解。 */
   const trustedTracker = { calls: 0 }
   const now = Date.now()
   const trusted = await shared.approveAppViewCall(
@@ -219,7 +194,6 @@ const denyAsk = () => Promise.resolve('deny')
   ok(!result.allowed && /没有得到用户确认|拒绝/.test(result.reason ?? ''), 'ask 返回 null 判拒绝')
 }
 
-/* visibility 门槛：不含 app 直接拒绝且不询问；缺失按最严处理。 */
 {
   let asked = false
   const result = await shared.approveAppViewCall({ ...baseCall, visibility: ['model'], annotations: { destructiveHint: true } }, () => { asked = true; return Promise.resolve('once') })
@@ -242,25 +216,20 @@ const denyAsk = () => Promise.resolve('deny')
   ok(result.allowed, 'visibility 含 app 且获允许时放行')
 }
 
-/* 权限档 all：不额外拦截但仍记录风险。 */
 {
   let asked = false
   const result = await shared.approveAppViewCall({ ...baseCall, permissionMode: 'all', annotations: { destructiveHint: true } }, () => { asked = true; return Promise.resolve('deny') })
   ok(result.allowed && !asked && result.recorded && result.reasons.length > 0, 'all 档不拦截但仍记录风险')
 }
 
-/* 缺注解：按要问处理，拒绝则不放行。 */
 {
   const result = await shared.approveAppViewCall({ ...baseCall, annotations: undefined }, denyAsk)
   ok(!result.allowed && result.asked, '缺注解按要问处理')
 }
 
-/* ---------------------------------------------------------------- ApprovalBroker 真实超时 */
-
 {
   const broker = new shared.ApprovalBroker({ canAsk: () => true, open: () => {}, close: () => {} })
   const realSetTimeout = globalThis.setTimeout
-  /* 把 4 分钟超时压成立即触发，验证 broker 超时确实回 null；两次 ask 都在压缩窗口内完成。 */
   globalThis.setTimeout = (fn, _ms, ...rest) => realSetTimeout(fn, 0, ...rest)
   try {
     const choice = await broker.ask({ kind: 'danger', tool: 'mcp__srv__t', title: 't', detail: '{}', reasons: ['r'], cwd: '', canRemember: false })
@@ -277,14 +246,11 @@ const denyAsk = () => Promise.resolve('deny')
   }
 }
 
-/* broker「无窗口」同样回 null，视图侧也判拒绝。 */
 {
   const broker = new shared.ApprovalBroker({ canAsk: () => false, open: () => {}, close: () => {} })
   const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, (request) => broker.ask(request))
   ok(!result.allowed && result.asked, '无可用窗口时视图调用判拒绝')
 }
-
-/* ---------------------------------------------------------------- 收尾 */
 
 await new Promise((ready) => server.close(ready))
 await rm(dataDir, { recursive: true, force: true })

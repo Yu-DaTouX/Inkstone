@@ -1,4 +1,3 @@
-/** N18 `/` 命令补全的光标范围与参数保留规则。 */
 export function runSlashQueryTests(ok, slashQuery) {
   const { findSlashQuery, replaceSlashQuery } = slashQuery
 

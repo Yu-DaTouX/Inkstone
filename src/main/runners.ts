@@ -1,36 +1,3 @@
-/**
- * 会话运行实例注册表（N12）。
- *
- * ══════════════════════════════════════════════════════════════════
- * 为什么要它
- * ══════════════════════════════════════════════════════════════════
- * 之前主进程只有**一个** `AgentController`：
- *   · 切换会话 = 让这一个 pi 子进程 `switch_session`；
- *   · 换工作目录 = 把子进程停掉重起。
- * 于是「A 会话正在跑，点一下 B 会话」会直接掐断 A —— 因为 A 的进程
- * 就是 B 的进程。用户报的就是这个：切走之后后台任务没了。
- *
- * 现在：一个**运行中**的会话 = 一个 pi 子进程（`AgentController` 实例）。
- * 注册表负责：
- *   · 按会话文件找到已有实例（命中就直接切视图，不发停止命令）；
- *   · 复用**空闲**实例（pi 进程不便宜：空闲的会话不该常驻占内存）；
- *   · 预算上限（默认 3 个进程）。满了就给明确提示，**不通过停掉旧会话腾位置**；
- *   · 给每个实例一个稳定 `runnerId`：IPC 事件用它标身份，
- *     前端才能把「后台会话的输出」与「当前正在看的会话」分开。
- *
- * 不在这里做的事：消息缓存（那是渲染端的事）、pi 协议细节（在 agent.ts）。
- *
- * ── 身份在渲染端的落点（改这里要一起看）──
- * `runtimeOf()` 产生的封套带 `sessionId` / `runId` / `generation`；前端 `store.applyPush`
- * 拿它做闸门：只有 `activeRunnerId === runtime.runId` 的补丁才写当前投影，
- * 其余的进 `state/session-runtime.ts` 的按会话缓存。
- *
- * ⚠️ 实测：`runId` 恒等于实例自己的 `id`（`runners[0] = { id:"r1", runId:"r1" }`），
- *   而 `sessionId` 在启动期是 `pending:<runId>`、pi 就绪后才换成真实 uuid
- *   （实测 `Object.keys(sessionRuntimes)` = `["pending:r1", "<真实 uuid>"]` —— 同一个实例
- *   先后以两个键存在）。所以**判断响应是否过期只能用 runId**：拿 sessionId 做等值比较
- *   会把这条正常过渡当成过期响应丢掉。判定在 `renderer/src/state/capability-request.ts`，有单测。
- */
 import type { AgentController } from './agent'
 import type { RunnerStatus, RuntimeEnvelope, SessionScope } from '../shared/ipc'
 import type { McpNativeBootWitness } from './mcp/app-native-witness'
@@ -47,44 +14,18 @@ import {
   type ExecuteGuardResult
 } from './session-send-guard'
 
-/**
- * 同时运行的会话实例上限（含当前正在查看的那个）。
- *
- * 为什么是 3：每个实例是一个完整的 pi 子进程 + 它的 token 统计与工具进程，
- * 再多对普通机器不友好。到上限时的行为是**明确拒绝并提示**，
- * 而不是悄悄停掉某个旧会话 —— 那正是用户报的 bug。
- */
 export const RUNNER_LIMIT = 3
 
-/**
- * 代次在整个主进程内单调递增，跨注册表重建也不回落。
- *
- * 渲染端按会话缓存后台状态，并丢弃代次更旧的事件。保存凭证、安装 Git 等会
- * `restartAgent` → 新建注册表，runner id 会从 r1 重新编号；代次若也回到 1，
- * 新实例的事件会被当成旧代次挡在缓存外，切走再切回时只剩重建前的内容。
- */
 let lastGeneration = 0
 function nextGeneration(): number {
   lastGeneration += 1
   return lastGeneration
 }
 
-/**
- * 工作目录是并发写入边界：Windows 的斜杠、大小写和末尾分隔符不能让
- * 同一个目录绕过冲突检查。这里不做 realpath，因为 runner 的 cwd 还
- * 可能是一个合法的符号链接；是否允许该路径由主进程目录校验决定。
- */
 function canonicalCwd(value: string): string {
   return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 
-/**
- * 读 AgentController 内部启动见证。
- *
- * 用可选方法探测而不是强类型：A7 的 `nativeBootWitness()` 由热点补丁加进
- * AgentController；未接线时这里必须返回 `null`（= 未证实 = 可能持有），
- * 不能因为拿不到就当作「没有加载过」。
- */
 function readNativeWitness(agent: AgentController): McpNativeBootWitness | null {
   const maybe = (agent as AgentController & { nativeBootWitness?: () => McpNativeBootWitness | null }).nativeBootWitness
   if (typeof maybe !== 'function') return null
@@ -95,12 +36,6 @@ function readNativeWitness(agent: AgentController): McpNativeBootWitness | null 
   }
 }
 
-/**
- * 读 AgentController 侧 legacy MCP 连接事实（与 pi RPC 进程独立）。
- *
- * 用可选方法探测：旧实现 / 测试 fake 没有该 getter 时返回 **null**
- * （= 未知 = 可能持有一切），绝不返回空数组冒充「无人持有」。
- */
 function readLegacyMcpServices(agent: AgentController): Array<{ serverId: string; status: McpServerStatus }> | null {
   const maybe = (agent as AgentController & {
     getLegacyMcpHolderSnapshot?: () => { services?: unknown }
@@ -123,91 +58,48 @@ interface Runner {
   agent: AgentController
   cwd: string
   projectId?: string
-  /** 每次换会话/新建会话都会递增；迟到事件不能覆盖新代次。 */
   generation: number
   createdAt: number
   lastActiveAt: number
   hidden?: boolean
 }
 
-/**
- * 运行时守卫的**窄只读快照**（主进程内部用，不进 `statuses()` 推送）。
- *
- * 与 `statuses()` 的关键区别：**不过滤 hidden**，也包含非活跃 / 后台交接实例。
- * 只带守卫判定「谁可能仍持有某个 MCP 服务」必需的身份与连接事实，不带会话文件、
- * 消息、模型或 UI 状态，避免把后台交接实例泄漏到渲染端。
- */
 export interface McpHolderSnapshot {
   runnerId: string
   generation: number
-  /** 已绑定项目身份；`null` = 未绑定，持有判定按「可能持有」保守处理。 */
   projectId: string | null
   cwd: string
-  /** AgentController 报告的 pi RPC 进程是否真的在跑（宿主事实，不是 busy 猜测）。 */
   processRunning: boolean
-  /** 连接状态；只有 `exited` 且进程未跑才算「确定无存活 pi 进程」。 */
   conn: 'starting' | 'ready' | 'exited' | 'error'
-  /** 回合 / 工具是否在忙（只供展示，不参与持有判定）。 */
   busy: boolean
-  /**
-   * 宿主启动事实引用：该 runner 进程 spawn 前采到、ready 后签发的原生配置启动见证。
-   * `null` = 没有可信见证（未采集 / 已撤销 / 旧 AgentController 未接）→ 按可能持有。
-   * 见证内容只含 serverId 集合与文本 hash，见 `mcp/app-native-witness.ts`。
-   */
   nativeWitness: McpNativeBootWitness | null
-  /**
-   * AgentController 侧 legacy MCP 连接事实（与 pi RPC 进程独立）。
-   * 非空即「可能仍持有」；旧 pi 退出不代表 legacy client 已断。
-   * `null` = 没法读取（旧实现 / 读失败）→ 一律按可能持有。
-   */
   legacyMcpServices: Array<{ serverId: string; status: McpServerStatus }> | null
 }
 
-/** runner 选择携带的运行来源；只放稳定身份，不进 UI、不进持久状态。 */
 export interface RunnerRunOrigin {
   kind: 'scheduled'
   scopeId: string
 }
 
 export interface SelectTarget {
-  /** 目标会话文件；缺省 = 新会话（未落盘） */
   sessionFile?: string
-  /** 稳定会话 id；优先于文件名匹配，避免标题/路径变化破坏身份。 */
   sessionId?: string
-  /** 产品语义归属，不等同于 cwd。 */
   projectId?: string
-  /** 新建/选择时的产品范围；runner 本身不负责持久化，只透传给上层。 */
   scope?: SessionScope
-  /** false 时只准备后台运行实例，不改变桌面当前选中的 runner。 */
   activate?: boolean
-  /**
-   * 只是「看一眼」这条会话：不建实例、更不建隔离工作树。
-   *
-   * 命中已有实例仍然会正常切视图；需要新建/复用实例时直接返回 `deferred`，
-   * 等用户真的发消息（不带 preview 的 select）时再说。
-   */
   preview?: boolean
-  /** 未提交的交接片段不复用其它会话，也不暴露到侧栏。 */
   hidden?: boolean
-  /**
-   * 这次选择的运行来源（v3 WP-51）。定时任务在 `select()` 时就带上任务 id，
-   * 让宿主在第一个运行事件之前把 T 编号来源绑好；普通选择不传。
-   */
   origin?: RunnerRunOrigin
   cwd: string
 }
 
 export interface SelectResult {
   ok: boolean
-  /** 命中 / 复用 / 新建出来的实例 id */
   id?: string
-  /** `id` 的明确命名；新调用方按这个字段传递运行实例身份。 */
   runId?: string
   sessionId?: string
   generation?: number
-  /** 复用了哪个实例（'hit' 命中已有、'reuse' 复用空闲、'new' 新建） */
   via?: 'hit' | 'reuse' | 'new'
-  /** `preview` 时没动实例：调用方必须保持「未激活」状态，别当成切换成功 */
   deferred?: boolean
   error?: string
 }
@@ -216,18 +108,14 @@ export class RunnerRegistry {
   private runners = new Map<string, Runner>()
   private activeId: string | null = null
   private seq = 0
-  /** 防止两个快速点击的会话切换交叉执行。 */
   private selectTail: Promise<void> = Promise.resolve()
-  /** 同一 runner 的资源激活请求合并，避免同时启动两个替代 pi 进程。 */
   private restartOperations = new Map<string, Promise<SelectResult>>()
   private reclaimOperation?: Promise<string | null>
   private reclaimTimer?: ReturnType<typeof setInterval>
   private disposed = false
-  /** 同步执行入场的单调 token 与当前占用（按物理 cwd 归一后键控）。 */
   private admissionCounter = 0
   private admissions = new Map<string, ExecuteAdmissionClaim>()
 
-  /** 回收已不存在 / 换代 / 换 cwd 的登记，旧 token 不能清掉后来者的新 claim。 */
   private pruneAdmissions(): void {
     for (const [key, claim] of this.admissions) {
       const runner = this.runners.get(claim.runId)
@@ -237,13 +125,6 @@ export class RunnerRegistry {
     }
   }
 
-  /**
-   * 同一物理 cwd 的同步执行入场：先到者拿到 token，后到者明确拒绝。
-   *
-   * 这是对 `guardExecute`（状态查询）之外的那段 await 窗口的补齐：两个空闲实例
-   * 都能通过查询，但同步 claim 只有一个成功。同实例重入返回同一 token —— 它自己
-   * 的插话 / 排队不能被自己拦下。
-   */
   admitExecute(id: string): { ok: true; token: number } | { ok: false; error: string } {
     const runner = this.runners.get(id)
     if (!runner) return { ok: false, error: '运行实例不存在' }
@@ -260,17 +141,14 @@ export class RunnerRegistry {
     return { ok: true, token }
   }
 
-  /** 真正入队前再核一次：claim 仍归本实例、同代次、token 未变。 */
   confirmExecute(id: string, token: number): boolean {
     const runner = this.runners.get(id)
     if (!runner) return false
     const claim = this.admissions.get(canonicalCwd(runner.cwd))
     if (claim && claim.token === token && admissionClaimedBy(claim, id, runner.generation)) return true
-    // claim 已被观测为运行态（running）时由既有 busy 复核兜底；不能因此放行别的写者。
     return this.busy(runner) && this.hasBusyCwd(runner.cwd, id) === false
   }
 
-  /** 失败 / 取消 / 回合结束时归还 claim；只有持有它的 token 能清掉它。 */
   releaseExecute(id: string, token: number): void {
     for (const [key, claim] of this.admissions) {
       if (claim.token === token && claim.runId === id) {
@@ -280,7 +158,6 @@ export class RunnerRegistry {
     }
   }
 
-  /** 注入给 Agent 的执行入场口；实例不存在时保持失败关闭。 */
   executionPort(id: string): ExecuteAdmissionPort {
     return {
       claim: () => this.admitExecute(id),
@@ -289,10 +166,6 @@ export class RunnerRegistry {
     }
   }
 
-  /**
-   * 按渲染端钉住的 runtime 精确定位运行实例（F02）。
-   * runId 优先；只有 sessionId 时按真实 id 匹配，`pending:<runId>` 退回 runId。
-   */
   resolveExpectedRunner(expected: { sessionId?: string; runId?: string; generation?: number } | null | undefined): string | null {
     if (!expected) return null
     let runner = expected.runId ? this.runners.get(expected.runId) : undefined
@@ -312,41 +185,18 @@ export class RunnerRegistry {
       limit?: number
       now?: () => number
       isSessionVisible?: (state: ReturnType<AgentController['getState']>) => boolean
-      /** 首版保守保护所有有子代理归属的会话，包括结束通知尚未投递的窗口。 */
       isParentProtected?: (sessionId: string | undefined, runId: string) => boolean
       onReclaimed?: (entry: { id: string; sessionId?: string; idleMs: number; remaining: number }) => void
-      /** 造一个新的 pi 会话实例。id 用于给 IPC 事件标身份 */
       createAgent: (id: string, cwd: string, generation?: number) => AgentController
-      /** Apply desktop defaults only to a new conversation, never to restored history. */
       prepareNewSession?: (agent: AgentController) => Promise<{ ok: boolean; error?: string }>
-      /** 实例集合或状态变化时通知主进程（推给渲染端） */
       onChanged?: () => void
-      /**
-       * runner 的会话刚建立 / 被复用时，把这次选择的来源交给宿主。
-       * 会话身份一就绪就**立刻**调用（早于 `prepareNewSession` 可能触发的早期
-       * 标题 / 状态信号），`origin` 缺省表示该会话不再是定时来源（宿主据此清除绑定）。
-       */
       onRunnerOrigin?: (info: {
         runnerId: string
         generation: number
         sessionId?: string
         origin?: RunnerRunOrigin
       }) => void
-      /**
-       * 同一 cwd 冲突时的**自动隔离**（宿主注入）。
-       *
-       * 返回 `{ cwd }`：换一个不冲突的物理目录继续（宿主负责建库与告知用户）；
-       * 返回 `{ reason }`：隔离没成，把原因并进原来的冲突报错；
-       * 返回 `null`：宿主不处理，按原来的报错走。
-       */
       resolveCwdConflict?: (target: SelectTarget) => Promise<{ cwd: string } | { reason: string } | null>
-      /**
-       * 隔离状态的同步查询（主进程维护的那张小表）：按 runner 的 cwd 问
-       * 「这棵隔离工作树现在什么状态」。
-       *
-       * 为什么必须同步：`statuses()` 是快照构造，整条推送链上没有 await 的位置；
-       * 查询本身也只是一次 Map 命中。
-       */
       isolationOf?: (cwd: string) => { state: 'waiting' | 'blocked'; branch: string } | undefined
     }
   ) {}
@@ -355,13 +205,11 @@ export class RunnerRegistry {
     return this.opts.now?.() ?? Date.now()
   }
 
-  /** 运行事件也算活动；回合结束、bash/提问/队列收尾均重新起算空闲时间。 */
   noteActivity(id: string): void {
     const runner = this.runners.get(id)
     if (runner) runner.lastActiveAt = this.now()
   }
 
-  /** 显示集合更新前触碰旧集合，关掉分屏列之后从此刻重新起算。 */
   noteVisibleActivity(): void {
     for (const runner of this.runners.values()) {
       if (this.opts.isSessionVisible?.(runner.agent.getState()) ?? true) this.noteActivity(runner.id)
@@ -381,7 +229,6 @@ export class RunnerRegistry {
     this.reclaimTimer.unref?.()
   }
 
-  /** 与选择和重载共用串行链；并行扫描合并，不积压多个回收请求。 */
   reclaimIdle(): Promise<string | null> {
     if (this.reclaimOperation) return this.reclaimOperation
     const operation = this.serialize(async () => {
@@ -408,7 +255,6 @@ export class RunnerRegistry {
         }
         if (!canReclaimIdle(facts, now)) continue
         const idleMs = now - runner.lastActiveAt
-        // 判定到摘登记之间没有 await；后到的 select 只能在关闭完成后载回。
         if (await this.stopOne(runner.id)) {
           this.opts.onReclaimed?.({ id: runner.id, sessionId: state?.sessionId, idleMs, remaining: this.size })
           return runner.id
@@ -448,13 +294,6 @@ export class RunnerRegistry {
     return r ? { id: r.id, cwd: r.cwd } : null
   }
 
-  /**
-   * 延长某个待回答问题的等待（宿主提问专用）。
-   *
-   * 在**所有**实例里找持有该 id 的那个 —— 提问与回答都带实例身份，但延长是
-   * 「用户对着屏幕上的面板点的」，渲染端只知道 request id。逐个问一遍的代价
-   * 最大也就是三个实例的 Map 命中。
-   */
   extendHostUi(id: string, extraMs?: unknown): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
     for (const runner of this.runners.values()) {
       const result = runner.agent.extendHostUi(id, extraMs)
@@ -463,12 +302,6 @@ export class RunnerRegistry {
     return { ok: false, error: 'question_not_pending' }
   }
 
-  /**
-   * 回答一个待答问题：交给**持有该 id 的实例**。
-   *
-   * 后台会话也会弹问题，用户答的时候可能正看着别的会话；按「当前实例」投递会把答复
-   * 发给错的 pi 进程。没有实例持有该 id（已超时 / 已答）时退回当前实例，行为同旧路径。
-   */
   respondUi(res: Parameters<AgentController['respondUi']>[0]): void {
     for (const runner of this.runners.values()) {
       if (runner.agent.pendingUiRequests().some((item) => item.id === res.id)) {
@@ -479,11 +312,6 @@ export class RunnerRegistry {
     this.active()?.respondUi(res)
   }
 
-  /**
-   * 「用户看到这一条了」→ 让持有它的实例开始计时。
-   *
-   * 与 `extendHostUi` 同一套查找：渲染端只知道 request id，不知道它属于哪个实例。
-   */
   startHostUiTimer(id: string): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
     for (const runner of this.runners.values()) {
       const result = runner.agent.startHostUiTimer(id)
@@ -492,37 +320,28 @@ export class RunnerRegistry {
     return { ok: false, error: 'question_not_pending' }
   }
 
-  /** 取指定运行实例；主进程推送快照时不能重新读取“当前实例”。 */
   agentOf(id: string): AgentController | null {
     return this.runners.get(id)?.agent ?? null
   }
 
-  /**
-   * 让**所有**实例重推一帧上下文策略（N21-7 设置改动后）。
-   * 后台会话的右栏也能看到同一个工作集，不能只刷新当前那条。
-   */
   refreshPolicyViews(): void {
     for (const runner of this.runners.values()) runner.agent.refreshPolicyView()
   }
 
-  /** MCP 配置变了：所有实例丢掉旧连接，下次调用按新配置连 */
   async reloadMcpServers(): Promise<void> {
     await Promise.all([...this.runners.values()].map((runner) => runner.agent.reloadMcpServers()))
   }
 
-  /** 按稳定 sessionId 取运行实例；重生成标题等只读动作不应切换视图。 */
   agentForSession(sessionId: string): AgentController | null {
     return this.findBySessionId(sessionId)?.agent ?? null
   }
 
-  /** 给主进程为每条事件附上统一身份封套。 */
   runtimeOf(id: string): RuntimeEnvelope | null {
     const runner = this.runners.get(id)
     if (!runner) return null
     return runEnvelope(runner, runner.agent.getState())
   }
 
-  /** 某个实例此刻「忙着」吗：回合在跑，或有请求在等用户回答 */
   private busy(runner: Runner): boolean {
     return executionBusy(
       runner.agent.getState(),
@@ -531,7 +350,6 @@ export class RunnerRegistry {
     )
   }
 
-  /** 按会话文件找实例 */
   private findBySessionFile(sessionFile: string): Runner | undefined {
     for (const r of this.runners.values()) {
       if (r.agent.getState()?.sessionFile === sessionFile) return r
@@ -557,11 +375,6 @@ export class RunnerRegistry {
     }
   }
 
-  /**
-   * 会话建立 / 复用后把来源交给宿主。会话身份一就绪就调用，早于
-   * `prepareNewSession`（它可能触发早期标题 / 状态信号），避免定时会话先分 S。
-   * 绑定失败不能打断会话选择。
-   */
   private notifyRunnerOrigin(
     runner: Runner,
     origin: RunnerRunOrigin | undefined,
@@ -576,16 +389,9 @@ export class RunnerRegistry {
         origin
       })
     } catch {
-      /* 来源只是运行编号归属，失败不改变本次选择结果。 */
     }
   }
 
-  /**
-   * 选到某个会话并切换视图。
-   *
-   * 顺序：已有实例命中 → 复用空闲实例 → 新建（受预算限制）。
-   * **任何一条路径都不会停止别的实例。**
-   */
   async select(target: SelectTarget): Promise<SelectResult> {
     return this.serialize(() => this.selectNow(target))
   }
@@ -603,44 +409,14 @@ export class RunnerRegistry {
       }
     }
 
-    /*
-     * 两个忙碌实例不能共用一个物理 cwd：即使它们是不同会话文件，
-     * 工具调用仍可能同时修改同一工作树。命中已有实例必须在上面优先
-     * 返回；这里只有“要创建/载入另一个运行实例”时才拒绝。
-     *
-     * 判据只有「同 cwd + 忙」，不再看 `hasWrittenThisRun()`：正跑着的回合随时
-     * 可能在**之后**的工具调用里写文件，“此刻还没写过”不等于“不会写”。只读 /
-     * 聊天的会话目前没有可靠的模型层判据（模型身份、提示词都不保证工具面），
-     * 所以不能拿它当放行理由 —— 那正是「先放进来、随后两边同时写」的竞态。
-     * 宁可保守拦一下，下面给出「等 / 停原任务」的明确提示。
-     */
     const conflict = [...this.runners.values()].find(
       (runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) && this.busy(runner)
     )
     if (conflict) {
-      /*
-       * 只是「看一下」这条会话（`preview`）：冲突时不建隔离工作树、也不动实例 ——
-       * 等用户真的发消息时再说（届时再发一次不带 preview 的 select）。
-       * 建树是「要在两处同时干活」的代价，「翻一眼历史」不该付这个代价。
-       *
-       * ⚠️ 只在这个分支里生效：**没有冲突时照常建/复用实例**。否则重启后
-       * （一个实例都没有）点开会话会一直停在「未激活」，右栏那些依赖活跃实例的
-       * 显示（上下文策略、模型入口等）就全空着 —— 用户报的「重启后不显示上下文」。
-       */
       if (target.preview) return { ok: true, deferred: true, sessionId: target.sessionId }
-      /*
-       * 先问宿主能不能自动隔离（Git 仓库里换一个不冲突的工作树继续）。
-       * 隔离结果必须**真的换了目录**才继续：返回同一个 cwd 等于没解决问题。
-       */
       const escalated = await this.opts.resolveCwdConflict?.(target)
       if (escalated && 'cwd' in escalated && canonicalCwd(escalated.cwd) !== canonicalCwd(target.cwd)) {
         target = { ...target, cwd: escalated.cwd }
-        /*
-         * 隔离目标目录自己也可能已经有忙碌实例（典型是 `autoIsolations.bySession()`
-         * 复用了某条已存在的隔离工作树，而该树里另有会话在跑）。这里只按与上面相同的
-         * 判据再复核**一次**，不再触发第二轮隔离：目标目录也忙就明确拒绝，既不会在忙
-         * 目录上再起一个写入者，也不会递归建树。
-         */
         if (this.hasBusyCwd(target.cwd)) {
           return {
             ok: false,
@@ -650,12 +426,6 @@ export class RunnerRegistry {
           }
         }
       } else {
-        /*
-         * 隔离不了（非 Git 仓库、宿主不处理、或返回了同一个目录）一律**失败关闭**：
-         * 明确拒绝这次激活，让用户等原任务跑完 / 停止它，而不是静默放行、让两个
-         * 可能写文件的实例共用同一个物理 cwd。这里只加一道判断，不引入文件锁或
-         * 新的状态机。
-         */
         const reason = escalated && 'reason' in escalated && escalated.reason ? `（${escalated.reason}）` : ''
         return {
           ok: false,
@@ -666,13 +436,11 @@ export class RunnerRegistry {
       }
     }
 
-    /* 复用空闲实例：不忙的那个可以被切到别的会话（旧会话已落盘，随时能载回） */
     const idle = [...this.runners.values()]
       .filter((runner) => !target.hidden && !runner.hidden && !this.busy(runner) && (target.activate !== false || runner.id !== this.activeId))
       .sort((a, b) => a.lastActiveAt - b.lastActiveAt)[0]
 
     if (idle) {
-      /* 跨 cwd 先在未登记的替代进程上准备；成功前旧实例及其身份始终不变。 */
       if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd)) {
         const previous = idle.agent
         const generation = nextGeneration()
@@ -689,7 +457,6 @@ export class RunnerRegistry {
               ? await replacement.switchSession(target.sessionFile)
               : await replacement.newSession()
             if (prepared.ok) {
-              /* 会话身份已就绪：先交接来源，再跑可能触发早期信号的 prepareNewSession。 */
               this.notifyRunnerOrigin(idle, target.origin, {
                 sessionId: replacement.getState()?.sessionId,
                 generation
@@ -710,7 +477,6 @@ export class RunnerRegistry {
           try {
             await replacement?.stop()
           } catch {
-            /* 尽力回收半启动的替代进程，不覆盖原始失败原因。 */
           }
           return { ok: false, error: failure }
         }
@@ -724,7 +490,6 @@ export class RunnerRegistry {
         try {
           await previous.stop()
         } catch {
-          /* 已提交就绪的新实例，不切回可能已经半停的旧进程。 */
         }
         this.opts.onChanged?.()
         this.notifyRunnerOrigin(idle, target.origin)
@@ -743,26 +508,17 @@ export class RunnerRegistry {
         ? await idle.agent.switchSession(target.sessionFile)
         : await idle.agent.newSession()
       if (res.ok) {
-        /* 会话身份已就绪：先交接来源，再跑可能触发早期信号的 prepareNewSession。 */
         this.notifyRunnerOrigin(idle, target.origin, { sessionId: idle.agent.getState()?.sessionId })
       }
       if (res.ok && !target.sessionFile && this.opts.prepareNewSession) res = await this.opts.prepareNewSession(idle.agent)
       if (!res.ok) {
         this.notifyRunnerOrigin(idle, undefined, { sessionId: idle.agent.getState()?.sessionId })
-        // A failed remembered default must not replace the conversation being reused.
-        // 只有真的被切走才切回旧文件；失败即保留在旧会话时不要多切一次（那会清掉队列）。
         const currentFile = idle.agent.getState()?.sessionFile
         if (!target.sessionFile && oldSessionFile && currentFile !== oldSessionFile) {
-          try { await idle.agent.switchSession(oldSessionFile) } catch { /* Keep the original setup error. */ }
+          try { await idle.agent.switchSession(oldSessionFile) } catch { }
         }
-        /*
-         * 代次只前进：这次复用已经用新代次淘汰了旧请求，把 generation 写回小旧数
-         * 会让「中间高代次事实」把恢复后的权威快照挡在缓存外（F07）。恢复到同一
-         * 旧会话即可，代次保持新值；上层 onChanged 用新代次重发完整快照。
-         */
-        // 失败路径清掉的未投递队列要尽力恢复，不能因为不回滚代次就漏掉旧任务。
         if ((oldQueue.steering.length || oldQueue.followUp.length) && typeof idle.agent.restoreQueueSnapshot === 'function') {
-          try { await idle.agent.restoreQueueSnapshot(oldQueue) } catch { /* 恢复失败不覆盖原始错误 */ }
+          try { await idle.agent.restoreQueueSnapshot(oldQueue) } catch { }
         }
         idle.projectId = oldProjectId
         this.opts.onChanged?.()
@@ -802,8 +558,6 @@ export class RunnerRegistry {
     this.runners.set(id, runner)
     if (target.activate !== false) this.activateRunner(id)
 
-    // 新实例一旦失败就不能只摘登记：`stopAll` 只遍历仍登记的对象，
-    // 漏登记等于漏回收（R02）。start / switch 的失败返回和抛异常都走同一条回收路径。
     let failure: string | undefined
     try {
       const started = await agent.start()
@@ -814,7 +568,6 @@ export class RunnerRegistry {
         if (!sw.ok) failure = sw.error ?? '切换会话失败'
         else this.notifyRunnerOrigin(runner, target.origin, { sessionId: agent.getState()?.sessionId })
       } else {
-        /* `start()` 已建立当前会话：先交接来源，再跑可能触发早期信号的 prepareNewSession。 */
         this.notifyRunnerOrigin(runner, target.origin, { sessionId: agent.getState()?.sessionId })
         if (this.opts.prepareNewSession) {
           const prepared = await this.opts.prepareNewSession(agent)
@@ -833,24 +586,17 @@ export class RunnerRegistry {
     return this.result(runner, 'new')
   }
 
-  /**
-   * 新实例创建失败时的统一回收：先摘登记并还原 activeId，再尽力停掉已经起来的进程。
-   * stop 失败只说明进程本来就没了，不能让它盖掉真正的失败原因（R02）。
-   */
   private async discardNewRunner(id: string, runner: Runner, previousActive: string | null): Promise<void> {
-    /* 启动 / 准备失败的会话不留下来源绑定，避免之后误把普通事件当成定时。 */
     this.notifyRunnerOrigin(runner, undefined, { sessionId: runner.agent.getState()?.sessionId })
     this.runners.delete(id)
     this.activeId = previousActive
     try {
       await runner.agent.stop()
     } catch {
-      /* 进程可能从未启动或已经退出 */
     }
     this.opts.onChanged?.()
   }
 
-  /** 启动时创建「主实例」（当前查看的会话就跑在它上面） */
   async startPrimary(cwd: string, sessionFile?: string, projectId?: string): Promise<SelectResult> {
     const existing = this.active()
     if (existing) {
@@ -861,14 +607,6 @@ export class RunnerRegistry {
     return this.select({ cwd, sessionFile, projectId, scope: 'project' })
   }
 
-  /**
-   * 只重建指定的空闲 runner，并载回原会话及未投递队列。
-   *
-   * pi 扩展在进程启动时加载；安装包后切会话不会刷新它们。该路径专供受管能力
-   * 激活：不停止其它 runner；先让替代进程启动并载入原会话，失败则保留旧进程；
-   * 只有新进程和队列都恢复成功后才关闭旧进程。整个目标 cwd 必须空闲，避免
-   * 同一工作树的其它会话在资源切换窗口继续写入。
-   */
   restartOne(id: string): Promise<SelectResult> {
     const current = this.restartOperations.get(id)
     if (current) return current
@@ -921,7 +659,6 @@ export class RunnerRegistry {
       try {
         await replacement.stop()
       } catch {
-        /* 保留的 previous 才是可继续使用的实例；尽力回收半启动的新进程。 */
       }
       this.opts.onChanged?.()
       return { ok: false, error: failure }
@@ -930,23 +667,17 @@ export class RunnerRegistry {
     try {
       await previous.stop()
     } catch {
-      /* 替代实例已就绪；旧实例停止失败不应切回一个可能已半停的进程。 */
     }
     runner.lastActiveAt = this.now()
     this.opts.onChanged?.()
     return this.result(runner, 'reuse')
   }
 
-  /** 当前实例的 id（渲染端回报事件身份时用得上） */
   idOf(agent: AgentController): string | null {
     for (const r of this.runners.values()) if (r.agent === agent) return r.id
     return null
   }
 
-  /**
-   * 停止并移除一个实例。作用域**只到这一个会话**
-   * （用户单独停 B 不该影响 A）。
-   */
   async stopOne(id: string, preserveSelection = false): Promise<boolean> {
     const r = this.runners.get(id)
     if (!r) return false
@@ -956,23 +687,17 @@ export class RunnerRegistry {
     try {
       await r.agent.stop()
     } catch {
-      /* 已经死了 */
     }
     this.opts.onChanged?.()
     return true
   }
 
-  /** 按会话文件停（删除会话、归档项目时用） */
   async stopBySessionFile(sessionFile: string): Promise<boolean> {
     const hit = this.findBySessionFile(sessionFile)
     if (!hit) return false
     return this.stopOne(hit.id)
   }
 
-  /**
-   * 停掉某个工作目录下的所有实例（N05：换项目时的作用域界定）。
-   * 只影响该目录，不动别的项目里正在跑的会话。
-   */
   async stopByCwd(cwd: string): Promise<number> {
     const normalized = canonicalCwd(cwd)
     const ids = [...this.runners.values()]
@@ -982,7 +707,6 @@ export class RunnerRegistry {
     return ids.length
   }
 
-  /** 顶掉所有实例（退出、语言/凭证变更需要重建进程时用） */
   async stopAll(): Promise<void> {
     this.disposed = true
     if (this.reclaimTimer) clearInterval(this.reclaimTimer)
@@ -995,18 +719,15 @@ export class RunnerRegistry {
       try {
         await r.agent.stop()
       } catch {
-        /* 已经死了 */
       }
     }
     this.opts.onChanged?.()
   }
 
-  /** 有实例正在干活（重启前要等它们） */
   hasBusy(): boolean {
     return [...this.runners.values()].some((r) => this.busy(r))
   }
 
-  /** 指定工作目录是否有会被包变更 / 重载打扰的运行实例。 */
   hasBusyCwd(cwd: string, exceptRunId?: string): boolean {
     const key = canonicalCwd(cwd)
     return [...this.runners.values()].some(
@@ -1014,13 +735,6 @@ export class RunnerRegistry {
     )
   }
 
-  /**
-   * 发送 / 直执行等「实际开始执行」的入口在命中已有实例后复核同 cwd 冲突。
-   *
-   * select 的冲突扫描不覆盖 hit 路径，这里用同一判据补一次，且**只读**：不停别的
-   * 会话、不改任何实例状态，只决定这次开始执行要不要拒绝。发起者自己已经在跑的
-   * 实例放行 —— 那是对同一条会话的插话 / 排队，不是第二个写者。
-   */
   guardExecute(id: string): ExecuteGuardResult {
     const runner = this.runners.get(id)
     if (!runner) return { ok: true }
@@ -1030,11 +744,6 @@ export class RunnerRegistry {
     )
   }
 
-  /**
-   * Recover the process-local runner for a durable capability target.
-   * Runner ids/generations can reset after an app restart; the session file,
-   * cwd and AgentController's bound project identity are the stable match.
-   */
   activationSnapshot(target: {
     runnerId: string
     cwd: string
@@ -1072,7 +781,6 @@ export class RunnerRegistry {
     }
   }
 
-  /** 只在用户仍选中源时原地接续；用户中途切走则保留其选择。 */
   publishReplacement(sourceId: string, destinationId: string): boolean {
     const runner = this.runners.get(destinationId)
     if (!runner) return false
@@ -1083,12 +791,10 @@ export class RunnerRegistry {
     return activate
   }
 
-  /** 当前视图对应的状态（渲染端拉取 / 推送都用它） */
   statuses(): RunnerStatus[] {
     return [...this.runners.values()].filter((r) => !r.hidden).map((r) => {
       const st = r.agent.getState()
       const conn = r.agent.getConn().state
-      /* 隔离状态按注册表的 cwd 查（spawn 时就定了），不看 state.cwd —— 后者在过渡期会漂 */
       const isolation = this.opts.isolationOf?.(r.cwd)
       return runStatus({
         id: r.id,
@@ -1106,10 +812,6 @@ export class RunnerRegistry {
     })
   }
 
-  /**
-   * 内部运行时守卫快照：**所有**已登记实例（含 hidden / 后台交接 / 非活跃）。
-   * 不经过 `statuses()` 的 hidden 过滤，也不向渲染端广播；调用方只拿守卫必需字段。
-   */
   mcpHolderSnapshots(): McpHolderSnapshot[] {
     return [...this.runners.values()].map((runner) => ({
       runnerId: runner.id,
@@ -1119,19 +821,11 @@ export class RunnerRegistry {
       processRunning: runner.agent.running === true,
       conn: runner.agent.getConn().state,
       busy: this.busy(runner),
-      /* AgentController 未接见证时（旧实现 / 测试 fake）返回 null → 按可能持有。 */
       nativeWitness: readNativeWitness(runner.agent),
-      /* legacy 连接事实：读不到（null）也按可能持有，不能冒充空数组。 */
       legacyMcpServices: readLegacyMcpServices(runner.agent)
     }))
   }
 
-  /**
-   * 运行时 epoch：实例集合 / 身份 / 连接事实的只读指纹。
-   *
-   * `commit` 在关键写入前复核它；变了说明检查之后有新实例进入或进程状态改变，
-   * 必须拒绝，不能拿检查时的结论继续写。
-   */
   mcpRuntimeEpoch(): string {
     return this.mcpHolderSnapshots()
       .map(

@@ -2,12 +2,6 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { mkdir, writeFile, lstat } from 'node:fs/promises'
 
-/**
- * 本机控制桥使用的单实例参数。
- *
- * 不开 Electron remote-debugging-port：控制请求由第二个 Electron 启动请求
- * 带进已有实例的 `second-instance` 事件，避免给主窗口暴露一个调试端口。
- */
 export const CONTROL_ARG_PREFIX = '--yan-control='
 
 export type ControlAction = 'status' | 'focus' | 'click' | 'type' | 'key' | 'send'
@@ -32,23 +26,15 @@ const CONTROL_ACTIONS: readonly ControlAction[] = ['status', 'focus', 'click', '
 const REQUEST_ID = /^[0-9a-f-]{16,80}$/i
 const MAX_TEXT = 20_000
 
-/** 响应只落在临时目录，不能由请求参数指定任意写入路径。 */
 export function controlResponsePath(requestId: string): string {
   if (!REQUEST_ID.test(requestId)) throw new Error('Invalid control request identity')
   return join(tmpdir(), 'yan-control', `response-${requestId}.json`)
 }
 
-/** 把控制请求编码进第二实例的 argv；值本身不含可解释的 shell 语法。 */
 export function encodeControlCommand(command: ControlCommand): string {
   return `${CONTROL_ARG_PREFIX}${Buffer.from(JSON.stringify(command), 'utf8').toString('base64url')}`
 }
 
-/**
- * 只接受本模块定义的字段和范围。
- *
- * 这是进程边界的第一层过滤；真正的输入动作还会在 index.ts 再做窗口/按键
- * 校验。解析失败时返回 null，让普通的第二次启动仍按原来的“显示并聚焦”处理。
- */
 export function decodeControlCommand(argv: readonly string[]): ControlCommand | null {
   const arg = argv.find((value) => value.startsWith(CONTROL_ARG_PREFIX))
   if (!arg) return null

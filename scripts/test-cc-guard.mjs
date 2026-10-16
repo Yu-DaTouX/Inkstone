@@ -1,4 +1,3 @@
-/** Actual extension hook, local approval HTTP server; no model or user settings. */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

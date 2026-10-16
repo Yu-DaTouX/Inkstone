@@ -1,6 +1,5 @@
 import type { HistoryMessage, HistoryPage } from './api/client'
 
-/** Memory only, owned by one paired client. Never writes chat content to phone storage. */
 export class HistoryCache {
   private entries = new Map<string, { page: HistoryPage; size: number }>()
   private size = 0
@@ -34,7 +33,6 @@ export class HistoryCache {
   }
 }
 
-/** Replace the fresh suffix, including deletions inside it; retain only a known older prefix. */
 export function mergeRecentHistory(previous: HistoryMessage[], recent: HistoryMessage[]) {
   const first = recent[0]?.id
   const at = first ? previous.findIndex((message) => message.id === first) : -1

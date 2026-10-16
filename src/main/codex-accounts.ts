@@ -1,17 +1,3 @@
-/**
- * 砚里的多个 ChatGPT（Codex）账号。
- *
- * pi 只认 auth.json 里的一条 `openai-codex` 凭证，所以多账号由宿主保存其余账号的凭证副本，
- * 切换时把目标账号写回那一条。每个账号都在砚里单独 OAuth 登录（`oauth.ts`），令牌家族独立；
- * 不导入 Codex CLI 的登录 —— 共用 refresh token 会让一边刷新后另一边掉线。
- *
- * 不变量：
- *   · 当前账号的真源永远是 auth.json（pi 会刷新它）；这里的副本只是上次看到的版本。
- *   · 会覆盖 auth.json 的操作（切换、添加账号）之前，先把当前凭证收回副本，不能弄丢。
- *   · 改 auth.json 持 `auth.json.lock`（与 pi 同一把锁）。
- *   · 非当前账号的令牌只有砚在用，过期时由这里刷新并立刻保存轮换后的 refresh token。
- *   · 凭证不出主进程；渲染端只拿到 `CodexAccountView`。
- */
 import { readFile, writeFile, mkdir, rename, copyFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
@@ -21,7 +7,6 @@ import { chatGptIdentity, type CodexAccountView } from '../shared/account-quota'
 
 const STORE_FILE = join(YAN_DIR, 'codex-accounts.json')
 const PROVIDER = 'openai-codex'
-/** 离过期不到这么久就当已过期（请求路上过期一样会 401）。 */
 const EXPIRY_MARGIN_MS = 60_000
 
 interface StoredAccount {
@@ -42,9 +27,7 @@ export interface CodexAccountTarget {
   email?: string
   plan?: string
   active: boolean
-  /** 可直接用于请求的凭证；当前账号已过期时为 undefined（等 pi 刷新）。 */
   credential?: CodexOAuthCredential
-  /** 拿不到可用凭证的原因 */
   problem?: 'expired' | string
 }
 
@@ -60,7 +43,6 @@ function identityOf(credential: CodexOAuthCredential): { key?: string; email?: s
 
 const isExpired = (c: CodexOAuthCredential): boolean => !(Number(c.expires) > Date.now() + EXPIRY_MARGIN_MS)
 
-/* 同一进程里的读改写串行，免得切换与额度刷新同时改副本文件。 */
 let chain: Promise<unknown> = Promise.resolve()
 function serial<T>(fn: () => Promise<T>): Promise<T> {
   const next = chain.then(fn, fn)
@@ -91,7 +73,6 @@ async function readStore(): Promise<Store> {
   return { version: 1, accounts }
 }
 
-/** 先写临时文件再改名：写到一半崩溃也不会留下半个 JSON（里面是登录凭证）。 */
 async function writeStore(store: Store): Promise<void> {
   await mkdir(YAN_DIR, { recursive: true })
   const tmp = `${STORE_FILE}.${process.pid}.tmp`
@@ -99,7 +80,6 @@ async function writeStore(store: Store): Promise<void> {
   await rename(tmp, STORE_FILE)
 }
 
-/** 把一份凭证并进副本：同一账号只留一条，凭证取更晚过期的那份。返回账号 key。 */
 function upsert(store: Store, credential: CodexOAuthCredential): string | undefined {
   const id = identityOf(credential)
   if (!id.key) return undefined
@@ -117,10 +97,6 @@ async function activeCredential(): Promise<CodexOAuthCredential | undefined> {
   return isCodexCredential(entry) ? entry : undefined
 }
 
-/**
- * 把 auth.json 里的当前账号收进副本，返回它的 key。
- * 在登录新账号（会覆盖 auth.json）之前、之后各调一次。
- */
 export function captureActiveCodexAccount(): Promise<string | undefined> {
   return serial(async () => {
     const current = await activeCredential()
@@ -139,10 +115,6 @@ export async function listCodexAccounts(labels: Record<string, string> = {}): Pr
   return store.accounts.map((a) => ({ key: a.key, email: a.email, plan: a.plan, label: labels[a.key], active: a.key === activeKey }))
 }
 
-/**
- * 切到另一个保存的账号：持锁读出当前凭证收回副本，再把目标凭证写进 auth.json。
- * 调用方随后重启 pi（等当前回合结束），新回合就用新账号。
- */
 export function switchCodexAccount(key: string): Promise<{ ok: boolean; error?: string }> {
   return serial(async () => {
     const store = await readStore()
@@ -150,7 +122,6 @@ export function switchCodexAccount(key: string): Promise<{ ok: boolean; error?: 
     try {
       await updateAuthFile(async (auth) => {
         const current = auth[PROVIDER]
-        /* 先把当前凭证（可能刚被 pi 刷新过）落进副本，再覆盖 auth.json：中途失败也不丢账号 */
         if (isCodexCredential(current)) {
           upsert(store, current)
           await writeStore(store)
@@ -166,7 +137,6 @@ export function switchCodexAccount(key: string): Promise<{ ok: boolean; error?: 
   })
 }
 
-/** 移除一个保存的账号；它是当前账号时同时从 auth.json 退出登录。 */
 export function removeCodexAccount(key: string): Promise<{ ok: boolean; wasActive: boolean; error?: string }> {
   return serial(async () => {
     const store = await readStore()
@@ -187,10 +157,6 @@ export function removeCodexAccount(key: string): Promise<{ ok: boolean; wasActiv
   })
 }
 
-/**
- * 查额度用：每个保存的账号配一份能用的凭证。
- * 当前账号用 auth.json 里的（过期就等 pi 刷新，宿主不抢着刷）；其余账号过期时在这里刷新并保存。
- */
 export function codexAccountTargets(): Promise<CodexAccountTarget[]> {
   return serial(async () => {
     const current = await activeCredential()
@@ -212,7 +178,6 @@ export function codexAccountTargets(): Promise<CodexAccountTarget[]> {
       try {
         account.credential = await refreshCodexCredential(account.credential.refresh, account.credential.accountId)
         account.savedAt = Date.now()
-        /* refresh token 已轮换：立刻落盘，不等循环结束 */
         await writeStore(store)
         targets.push({ ...base, credential: account.credential })
       } catch (e) {

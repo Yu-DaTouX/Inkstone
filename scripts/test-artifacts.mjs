@@ -19,7 +19,6 @@ function credentials(secrets = {}, codex = null) {
   }
 }
 
-/** 换掉 fetch 跑一段，记录每个请求；routes 按 URL 片段返回响应 */
 async function withFetch(routes, fn) {
   const calls = []
   const original = globalThis.fetch
@@ -47,11 +46,9 @@ async function expectCode(fn, code, message) {
   throw new Error(`artifact test failed: ${message} (no error)`)
 }
 
-/** 各家生图通道的请求形状与结果落盘（fetch 全部换桩，不联网、不计费） */
 async function runImageAdapterTests({ generateImage, root, project, sessionFile }) {
   const ctx = (extra) => ({ sessionFile, messageId: 'assistant-adapter', artifactDir: root, cwd: project, ...extra })
 
-  /* Google Gemini：按模型列表挑最新的正式 flash-image；generateContent + 画面比例；返回 JPEG 时按文件头落成 .jpeg */
   const googleModels = ['gemini-2.5-flash-image', 'gemini-3.1-flash-image', 'gemini-3.1-flash-lite-image', 'gemini-3-pro-image', 'gemini-4-flash-image-preview']
   const google = await withFetch([
     ['/models?pageSize', async () => Response.json({ models: googleModels.map((name) => ({ name: `models/${name}`, supportedGenerationMethods: ['generateContent'] })) })],
@@ -68,7 +65,6 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
   assert(googleCall.body.generationConfig.imageConfig.aspectRatio === '3:2', 'Google should map size to an aspect ratio')
   assert(google.result.artifact.filename.endsWith('.jpeg') && google.result.provider === 'google', 'Google JPEG output should be saved as .jpeg')
 
-  /* 火山方舟（豆包 Seedream）：跳过下线中的型号取最新；b64_json、无水印、尺寸抬到下限 */
   const doubao = await withFetch([
     ['/api/v3/models', async () => Response.json({ data: [
       { id: 'doubao-seedream-4-5-251128', status: 'Retiring', task_type: ['TextToImage', 'ImageToImage'] },
@@ -90,7 +86,6 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
   assert(doubaoBody.response_format === 'b64_json' && doubaoBody.watermark === false && doubaoBody.size === '1920x1920' && !('sequential_image_generation' in doubaoBody), 'Doubao request should ask for base64 output without watermark')
   assert(doubao.result.artifact.filename.endsWith('.png'), 'Doubao PNG output should be saved as .png')
 
-  /* ChatGPT（Codex）：砚内登录、gpt-image-* 不当对话模型、带 instructions、读 SSE 结果 */
   const sse = (events) => new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
   const codexAuth = { access: 'yan-token', accountId: 'acc-1', source: 'yan' }
   const codex = await withFetch([['/codex/responses', async () => sse([
@@ -107,7 +102,6 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
   assert(codexCall.body.tools[0].model === 'gpt-image-2.5-sunburst', 'Codex should pin the requested image model on the tool')
   assert(codex.result.revisedPrompt === 'revised' && codex.result.model === 'gpt-image-2.5-sunburst', 'Codex result should keep the revised prompt and image model label')
 
-  /* 订阅不开放所指模型（400 且提到 model）时去掉 model 重试，标成后端默认 */
   let codexTries = 0
   const codexFallback = await withFetch([['/codex/responses', async () => (++codexTries === 1
     ? new Response('{"error":{"message":"Unsupported model for image_generation"}}', { status: 400 })
@@ -119,7 +113,6 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
   assert(codexFallback.calls.length === 2 && !('model' in codexFallback.calls[1].body.tools[0]), 'Codex should retry without a pinned image model')
   assert(codexFallback.result.model === 'chatgpt-default', 'fallback images should not claim a specific image model')
 
-  /* 订阅里没有中转模型（报错点名它）时换回 gpt-5.5，生图模型保持指定 */
   let relayTries = 0
   const relayFallback = await withFetch([['/codex/responses', async () => (++relayTries === 1
     ? new Response('{"detail":"The \'gpt-6-luna\' model is not supported when using Codex with a ChatGPT account."}', { status: 400 })
@@ -141,7 +134,6 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
     'Codex 401 should map to codex_auth_rejected'
   ))
 
-  /* 编辑：参考图只能来自项目或产物目录；项目内的图会作为 inlineData 发出 */
   const outside = await withFetch([], () => expectCode(
     () => generateImage(
       { prompt: 'x', provider: 'google', mode: 'edit', sourcePaths: ['../outside.png'] },
@@ -160,7 +152,6 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
   ))
   assert(edit.calls[0].body.contents[0].parts[1].inlineData.data === PNG.toString('base64'), 'edit sources should be sent as inline images')
 
-  /* 本机 SD WebUI：txt2img + 检查点覆盖 */
   const sd = await withFetch([['/sdapi/v1/txt2img', async () => Response.json({ images: [PNG.toString('base64')] })]], () => generateImage(
     { prompt: '竹', provider: 'local', size: '512x768' },
     ctx({ credentials: credentials(), availability: { ...NO_PROVIDERS, local: SD_SERVER } })
@@ -168,7 +159,6 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
   assert(sd.calls[0].body.override_settings.sd_model_checkpoint === 'sdxl-base' && sd.calls[0].body.width === 512, 'SD WebUI should receive checkpoint and size')
   assert(sd.result.provider === 'local' && sd.result.model === 'sdxl-base', 'local result should record the checkpoint')
 
-  /* 本机 ComfyUI：套用已保存的界面格式工作流 → 换提示词/种子/尺寸/前缀 → 提交 → 查 history → 取 view */
   const comfyServer = { kind: 'comfyui', purpose: 'image', name: 'ComfyUI', baseUrl: 'http://127.0.0.1:8188', models: ['01_t2i.json'], running: true }
   const t2iWorkflow = {
     nodes: [
@@ -235,7 +225,6 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
     'edit mode without an image-to-image workflow should say so'
   ))
 
-  /* ComfyUI 子图（新格式 proxyWidgets，值存在内部节点）+ 跳过用到云端 API 节点的候选 */
   const subId = '1135e349-dce8-45e8-8905-aaa86675429b'
   const subWorkflow = {
     nodes: [
@@ -362,10 +351,6 @@ export async function runArtifactTests(modules = {}) {
     assert(rejected, 'artifact attach should reject paths outside the project')
     await rm(external, { force: true })
 
-    /*
-     * 挂载已有文件要记下源路径：预览读受控副本，但「在文件夹中显示」与
-     * 「复制路径」必须能给回用户自己的那份文件（否则只会打开 artifacts 副本）。
-     */
     const inside = join(project, 'notes.md')
     await writeFile(inside, '# 笔记\n')
     const attached = await store.attach({ sessionFile, messageId: 'assistant-attach', cwd: project, sourcePath: 'notes.md' })
@@ -374,11 +359,6 @@ export async function runArtifactTests(modules = {}) {
     const generated = await store.save({ sessionFile, messageId: 'assistant-generated', filename: 'shot.png', bytes: PNG })
     assert(generated.sourcePath === undefined, 'generated artifacts have no source file to open')
 
-    /*
-     * 并发保存：每一条都必须留在 manifest 里（O01 回归）。
-     * 旧实现的 list → push → writeFile 没有串行化：8 个并发保存都成功，
-     * 但最终 manifest 只剩最后写入的那一条（文件都在，清单丢了）。
-     */
     const bulk = await Promise.all(
       Array.from({ length: 8 }, (_, i) =>
         store.save({
@@ -424,7 +404,6 @@ export async function runArtifactTests(modules = {}) {
     process.env.YAN_IMAGE_API_KEY = 'test-only-key'
     delete process.env.OPENAI_API_KEY
     globalThis.fetch = async (url) => {
-      /* 本机生图服务探测会访问回环地址；这里只关心被拒绝的兼容端点 */
       if (String(url).startsWith('http://127.0.0.1:9/')) networkCalled = true
       throw new Error('network should not be called after denial')
     }
@@ -441,7 +420,6 @@ export async function runArtifactTests(modules = {}) {
           artifactDir: root
         }
       })
-      // 宿主先核对产物归属；审批测试必须提供已保存会话。
       agent['state'] = { sessionFile }
       let denied = false
       try {

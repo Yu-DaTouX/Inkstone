@@ -1,13 +1,3 @@
-/**
- * 工具调用行：成功默认摘要、**失败保留可展开的入口**（方案 P1 4.2）。
- *
- * 背景：`canExpand` 曾写成 `detailOn || running` —— 没开「工具详情」设置的用户
- * 遇到失败的工具调用时**连点都点不开**，只能看到一行红字。
- * 设计要的是「错误结果保留明显入口」。
- *
- * 两条命令属于短组，按设计规范（七步及以上才折叠较早步骤）直接可见，
- * 本探针断言的是「行本身可点开」，不是组的那层折叠。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -20,11 +10,6 @@
   const store = window.__yanStore
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
-  /*
-   * 过程入口默认折叠（阅读优先）。折叠态下工具行**不在 DOM 里**
-   * （`TurnProcess` 只在 open 时渲染它们），所以任何工具行断言之前都必须
-   * 先把它铺开 —— 漏了这一步，看到的就是「一个工具行都没有」的假象。
-   */
   const openProcess = async () => {
     for (let i = 0; i < 25; i++) {
       const toggle = q('[data-testid="turn-process-toggle"]')
@@ -41,26 +26,15 @@
   }
 
   try {
-    /*
-     * 先等应用**真的挂载好**再注入。
-     * 太早注入会被紧随其后的 bootstrap / pi 的 `sync` 整个冲掉 ——
-     * 表现为「store 里有 2 条，但一个工具行都没渲染」。
-     */
     for (let i = 0; i < 60; i++) {
       if (q('.stream') && store.getState().settings) break
       await sleep(250)
     }
     await sleep(1200)
 
-    /* 确保「工具详情」这个设置是**关**的 —— 那才是这条断言的场景 */
     await store.getState().patchSettings({ toolDetail: false, toolDetailExplicit: true })
     await sleep(300)
 
-    /*
-     * 注入后要**反复重试**：应用自己也会收 pi 的 `sync`（它才是权威的），
-     * 会把刚注入的内容覆盖掉 —— 尤其探针跑在 bootstrap 阶段时。
-     * （virtual 探针里也踩过同一个坑，那边是每 4s 重注一次。）
-     */
     const payload = [
       { id: 'te-user', role: 'user', text: '跑两个命令' },
       {
@@ -87,21 +61,15 @@
     for (let i = 0; i < 40; i++) {
       if (qa('.trow').length >= 1) break
       await sleep(250)
-      /* 每 1.5s 重注入一次，避免被后续 sync 覆盖 */
       if (i % 6 === 5) {
         inject()
         await openProcess()
       }
     }
-    /* 诊断：为什么没渲染 */
     out.push('  诊断 toolCalls=' + JSON.stringify((store.getState().messages[1]?.toolCalls ?? []).map(c => c.name + ':' + c.status)))
     out.push('  诊断 conn=' + store.getState().conn + ' messages=' + store.getState().messages.length + ' turns 相关 DOM=' + qa('.stream .msg, .stream-row').length)
     out.push('  诊断 .stream 存在=' + !!q('.stream') + ' innerHTML=' + JSON.stringify((q('.stream')?.innerHTML ?? '').replace(/s+/g, ' ').slice(0, 240)))
 
-    /*
-     * 短组（两条）直接逐行可见：设计规范是「七步及以上折叠较早步骤」，
-     * 内容本来就不多时再叠一层「前面 N 步」只会让人多点一次。
-     */
     ok(!q('[data-testid="tool-group-toggle"]'), '短组不再要求额外展开')
     const rows = qa('.trow')
     out.push(`  渲染出 ${rows.length} 个工具行（含 ToolGroup 里的）`)
@@ -150,10 +118,6 @@
       out.push(`  成功行 open=${okRow.classList.contains('open')}（终态下应收起，只留一行摘要）`)
       ok(true, '（信息）成功行保持摘要，不因同组有失败而全部展开')
 
-      /*
-       * 核心修复（方案 4.2）：查看权限与自动展开偏好分开。
-       * 探针特意把 toolDetail 设成 false（见上面），旧实现下成功行连点都点不开。
-       */
       const head = okRow.querySelector('.trow-head') ?? okRow.firstElementChild
       ok(head?.getAttribute('aria-expanded') === 'false', '成功行是可展开控件（有 aria-expanded）')
       if (head) {

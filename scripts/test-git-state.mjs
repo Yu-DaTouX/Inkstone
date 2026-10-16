@@ -1,9 +1,7 @@
-/* Repository status parser and hosted URL regression checks. */
 export async function runGitStateTests(ok) {
   const { parseStatusV2, remoteWebUrl, compareWebUrl } = await import('../out/test/git.mjs')
   const NUL = '\0'
   const j = (...parts) => JSON.stringify(parts)
-  /* ══════════════════════ 2. porcelain=v2 -z 解析 ══════════════════════ */
 
   console.log('\n--- 2. git status --porcelain=v2 -z ---')
 
@@ -40,7 +38,6 @@ export async function runGitStateTests(ok) {
     const c = p.entries[2]
     ok(c.x === 'M' && c.y === 'M', '同一个文件同时有暂存与未暂存改动', j(c))
 
-    /* rename：新路径在行内、旧路径在**下一段** */
     const r = p.entries[3]
     ok(r.path === 'src/new name.ts', 'rename 的新路径（含空格）解析正确', r.path)
     ok(r.origPath === 'src/old name.ts', 'rename 的旧路径来自下一段', String(r.origPath))
@@ -56,7 +53,6 @@ export async function runGitStateTests(ok) {
   }
 
   {
-    /* 无首提交：branch.oid 是 (initial)；detached 另测 */
     const p = parseStatusV2(['# branch.oid (initial)', '# branch.head main'].join(NUL))
     ok(p.unborn === true, 'branch.oid 为 (initial) → 尚无提交')
     ok(p.head === null, '尚无提交时没有 HEAD sha')
@@ -69,19 +65,13 @@ export async function runGitStateTests(ok) {
   }
 
   {
-    /* 冲突：u 条目有 10 个固定字段，路径里可以有空格 */
     const p = parseStatusV2(['u UU N... 100644 100644 100644 100644 aaa bbb ccc src/冲突 文件.ts'].join(NUL))
     const u = p.entries[0]
     ok(u.unmerged === true, 'u 条目标记为未合并')
     ok(u.path === 'src/冲突 文件.ts', '冲突条目的路径（含空格）正确', u.path)
   }
 
-  /* ── remote 地址 → 托管网页（G3 / H1 的纯解析）── */
   {
-    /*
-     * 这里的原则是**宁可不给链接，也不要给一个打不开的**：
-     * 认不出的托管站一律 null（自建服务的网页路径各不相同，猜一个等于 404）。
-     */
     ok(remoteWebUrl('https://github.com/o/r.git') === 'https://github.com/o/r', 'https + .git 去掉后缀')
     ok(remoteWebUrl('git@github.com:o/r.git') === 'https://github.com/o/r', 'scp 写法（ssh 最常见）')
     ok(remoteWebUrl('ssh://git@github.com/o/r.git') === 'https://github.com/o/r', 'ssh:// 写法')

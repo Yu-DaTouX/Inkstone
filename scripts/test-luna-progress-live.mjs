@@ -1,4 +1,3 @@
-/** Bounded real Codex Luna experiment using only synthetic files and copied OAuth. */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -74,7 +73,6 @@ try {
 } finally {
   child.stdin.end(); child.kill()
   await exited
-  // Only the isolated OAuth copy is removed; retain synthetic event evidence.
   await writeFile(join(pi, 'auth.json'), '{}')
   await writeFile(join(root, 'events.json'), JSON.stringify(events))
   await writeFile(join(root, 'stderr.log'), stderr)

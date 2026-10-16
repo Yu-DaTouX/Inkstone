@@ -1,11 +1,3 @@
-/**
- * 独立 Skill 目录的真实发现证据（实施-04 S6b-2，cost 0）。
- *
- * 这条场景只做 discover：目录响应来自配置的真实外部 API，SkillMD 风格的
- * `items` 条目还会被主进程逐条读取 raw_url 并计算 SHA-256。它不 prepare、
- * 不 acquire，也不执行外部 Skill；因此可以验证「外部目录 → 固定文件清单」
- * 的边界，而不会把未授权的第三方内容装进测试环境。
- */
 ;(async () => {
   const out = []
   const ok = (cond, label, extra = '') => {
@@ -44,7 +36,7 @@
   const lastJson = (text) => {
     const lines = String(text).split(/\r?\n/).filter((line) => line.trim().startsWith('{'))
     for (let i = lines.length - 1; i >= 0; i--) {
-      try { return JSON.parse(lines[i]) } catch { /* 继续找回执 */ }
+      try { return JSON.parse(lines[i]) } catch { }
     }
     return null
   }
@@ -68,7 +60,6 @@
   while (Date.now() < readyDeadline && store.getState().conn !== 'ready') await sleep(250)
   if (!ok(store.getState().conn === 'ready', '宿主已就绪（conn=ready）')) return out.join('\n')
 
-  /* 用目录里当前可固定的真实条目做窄查询，避免 npm 的同名高热度包挤掉 Skill 候选。 */
   const discovered = await runCli('yan capabilities discover --query-text "futurediffusion filesystem"')
   const receipt = await readReceipt(discovered.output)
   if (!ok(Boolean(receipt), 'discover 返回回执', discovered.error ?? discovered.output.slice(0, 500))) return out.join('\n')

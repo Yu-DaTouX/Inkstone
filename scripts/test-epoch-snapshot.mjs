@@ -1,13 +1,3 @@
-/**
- * 代次前进后的兜底完整快照（F07 host 侧）—— 专题回归。
- *
- * 从 `src/main/index.ts` 抽取**当前**的 `scheduleEpochSnapshots` 与其状态声明，验证：
- *   · 首次观察只登记、不重复推；
- *   · 某实例代次前进时补一帧完整快照（`pushRunnerSnapshot`），同代次不重复；
- *   · 实例移除后清掉登记，不残留、不误推。
- *
- * 函数文本是真实的；`runners.statuses()` 与 `pushRunnerSnapshot` 是受控桩。
- */
 import fs from 'node:fs/promises'
 import vm from 'node:vm'
 import ts from 'typescript'
@@ -43,33 +33,28 @@ export async function runEpochSnapshotTests(ok) {
   vm.runInContext(code, context)
   const tick = () => new Promise((resolve) => queueMicrotask(resolve))
 
-  /* ① 首次观察只登记，不推 */
   statuses.push({ id: 'r1', generation: 1 }, { id: 'r2', generation: 5 })
   context.testScheduleEpochSnapshots()
   await tick()
   await tick()
   ok(pushed.length === 0, '首次观察只登记代次，不重复推快照', JSON.stringify(pushed))
 
-  /* ② 同代次重复触发不推 */
   context.testScheduleEpochSnapshots()
   await tick()
   await tick()
   ok(pushed.length === 0, '同代次重复通知不推快照')
 
-  /* ③ r1 代次前进：补一帧 */
   statuses[0].generation = 2
   context.testScheduleEpochSnapshots()
   await tick()
   await tick()
   ok(pushed.length === 1 && pushed[0] === 'r1', '代次前进的实例补一帧完整快照', JSON.stringify(pushed))
 
-  /* ④ 再触发同代次：不重复 */
   context.testScheduleEpochSnapshots()
   await tick()
   await tick()
   ok(pushed.length === 1, '代次未再前进时不重复推', JSON.stringify(pushed))
 
-  /* ⑤ 实例移除：登记被清掉；新实例首次只登记 */
   statuses.length = 0
   statuses.push({ id: 'r3', generation: 1 })
   context.testScheduleEpochSnapshots()
@@ -77,7 +62,6 @@ export async function runEpochSnapshotTests(ok) {
   await tick()
   ok(pushed.length === 1, '被移除实例的登记被清理，新实例首次不误推', JSON.stringify(pushed))
 
-  /* ⑥ 防重入：并发调度只执行一次 */
   statuses[0].generation = 2
   context.testScheduleEpochSnapshots()
   context.testScheduleEpochSnapshots()

@@ -1,11 +1,3 @@
-/*
- * 工作台（实施-18）：日常模式的中栏视图 —— 会话地图（S2）与首页（S3）。
- *
- * 只管中栏；左栏 / 右栏的既有样式不动。颜色全部取 tokens，
- * 深浅主题跟着现有变量走，不在这里写死色值。
- */
-
-/* 地图 / 首页 / 收件箱占用「对话区」那一行（与 .stream 同一行，见 app.css 的行定义） */
 .center > .wb-map,
 .center > .wb-home,
 .center > .wb-inbox,
@@ -13,8 +5,6 @@
   grid-row: 3;
   min-height: 0;
 }
-
-/* ---------------------------------------------------------------- 会话地图 */
 
 .wb-map {
   display: flex;
@@ -38,7 +28,6 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  /* 不被挤：窄窗口下标题一旦能收缩就会被压成一字一行 */
   flex: none;
   white-space: nowrap;
   font-size: var(--fs-sm);
@@ -49,7 +38,6 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  /* 头部里唯一可伸缩的东西：窄了就窄一点，不要别的元素被挤走 */
   flex: 0 1 190px;
   min-width: 88px;
   padding: 2px var(--sp-2);
@@ -82,7 +70,6 @@
   color: var(--fg-mute);
 }
 
-/* 头部的一行提醒（当前只有「展开碰上限」）：不挤头部，窄屏下让位给统计 */
 .wb-map-note {
   flex: 0 1 auto;
   min-width: 0;
@@ -93,11 +80,6 @@
   font-size: var(--fs-xs);
 }
 
-/*
- * 画布工具条：浮在画布左下角（footer 之上），不占头部布局。
- * 定位：.wb-map 是 relative；body 在它里面，所以这里的 absolute 不会被
- * body 的 overflow 裁掉。
- */
 .wb-map-tools {
   position: absolute;
   left: 12px;
@@ -151,10 +133,6 @@
   text-align: center;
 }
 
-/*
- * 画布视口：没有滚动条 —— 内容靠相机（translate + scale）移动，
- * 拖动空白处平移，Ctrl/⌘ + 滚轮缩放。
- */
 .wb-map-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -259,7 +237,6 @@
   cursor: grabbing;
 }
 
-/* 折叠按钮：贴在节点右端内侧。pointerdown 不透传，不然拖不动展开按钮 */
 .wb-node-fold {
   flex: none;
   height: 18px;
@@ -284,7 +261,6 @@
   outline-offset: 1px;
 }
 
-/* 展开 / 收起轮次层（实施-26 R3）：与折叠按钮同size，展开时点亮 */
 .wb-node-turns {
   flex: none;
   width: 18px;
@@ -315,13 +291,6 @@
   outline-offset: 1px;
 }
 
-/*
- * 轮次卡（实施-26 R3 / R4）：挂在会话节点正下方的「一轮问答」。
- *
- * 宽度卡在半途：它**比节点窄**（属于那个会话，不是平级会话），
- * 但比标题长（要容下问题与答案的一截）。高度固定，超过就往回收 ——
- * 否则一轮长回答就能把整张地图撑到看不见全局。
- */
 .wb-turn {
   position: absolute;
   display: flex;
@@ -351,13 +320,11 @@
   opacity: 0.4;
 }
 
-/* 没有正常收尾的轮（被停 / 被打断 / 出错）：左边强调条 + 底色提醒 */
 .wb-turn.incomplete {
   border-left-color: var(--warn);
   background: var(--warn-soft);
 }
 
-/* 与父会话那一轮对齐的卡：右侧一条线，让「分叉自这里」看得出来 */
 .wb-turn.aligned {
   border-right: 2px solid var(--accent);
 }
@@ -371,10 +338,6 @@
   text-align: right;
 }
 
-/*
- * 「从这一轮分叉」：平时隐起来（卡面很小，每个字符都是抢来的），
- * hover / 键盘聚焦时出现 —— 不用鼠标也拿得到。
- */
 .wb-turn-fork {
   position: absolute;
   right: 3px;
@@ -471,10 +434,6 @@
   line-height: 14px;
 }
 
-/*
- * 「对齐父轮」不参与行内竞争：卡很窄，放在 meta 行里会被截成一个字。
- * 它本质上是「这卡与另一张卡的关系」，所以钉在卡的右上角。
- */
 .wb-turn-aligned {
   position: absolute;
   top: 3px;
@@ -487,7 +446,6 @@
   line-height: 14px;
 }
 
-/* 轮次层的非卡状态：加载中 / 读不出来 / 这个会话还没有轮次 */
 .wb-turn-state {
   position: absolute;
   padding: var(--sp-1) 7px;
@@ -606,10 +564,6 @@
   color: var(--fg-mute);
 }
 
-/*
- * 会话预览：地图内的右侧抽屉。画布仍在后面（不卸载），
- * 所以它只覆盖右侧一条，宽度给窄窗口留出画布。
- */
 .wb-preview {
   position: absolute;
   top: 0;
@@ -756,8 +710,6 @@
   color: var(--accent);
 }
 
-/* ------------------------------------------------------------ 工作台首页 */
-
 .wb-home {
   display: flex;
   flex-direction: column;
@@ -781,7 +733,6 @@
   color: var(--accent);
 }
 
-/* 主行动（实施-27 B3）：一整块只回答「接着上次继续」 */
 .wb-hero {
   display: flex;
   align-items: center;
@@ -866,7 +817,6 @@
 .wb-card-title .ico {
   color: var(--fg-mute);
 }
-/* 卡片的操作按钮统一落在卡片底部：同一行卡片的按钮对齐在同一条线上 */
 .wb-card > .btn:last-child {
   align-self: flex-start;
   margin-top: auto;
@@ -958,12 +908,6 @@
   align-self: flex-start;
 }
 
-/* ------------------------------------------------ 空间工作台（实施-25 P04） */
-
-/*
- * 中栏第三态：概览 / 资料 / 成果。
- * 布局与「会话地图」同构（占满中栏、自己滚），这样切换视图时中栏不跳高度。
- */
 .wb-space {
   display: flex;
   flex-direction: column;
@@ -1007,7 +951,6 @@
   font-weight: var(--fw-regular);
 }
 
-/* 视图切换是 ui.css 的分段控件（.seg.sm）；这里只把它推到标题行右侧 */
 .wb-space-tabs {
   margin-left: auto;
 }
@@ -1034,8 +977,6 @@
   text-align: center;
 }
 
-/* ---- 概览 ---- */
-
 .wb-ov {
   display: flex;
   flex-direction: column;
@@ -1051,13 +992,10 @@
 
 .wb-ov-grid {
   display: grid;
-  /* min(240px, 100%) + 1fr：列宽自适应且卡片里的长标题不撑破列宽 */
   grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
   gap: var(--sp-3);
   align-content: start;
 }
-
-/* ---- 资料 ---- */
 
 .wb-lib {
   display: grid;
@@ -1179,14 +1117,11 @@
 }
 
 @media (max-width: 900px) {
-  /* 窄屏：资料列表与预览上下排 —— 两栏并排会把两边都挤到不可读 */
   .wb-lib {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) minmax(0, 1.4fr);
   }
 }
-
-/* ---- 成果（可编辑文档）---- */
 
 .wb-art {
   display: grid;
@@ -1285,7 +1220,6 @@
   min-width: 0;
 }
 
-/* 动作变多后（P06b-4 的「用于学习」），标题要保住可读宽度：不够就换行。 */
 .wb-art-title {
   flex: 1 1 180px;
   min-width: 0;
@@ -1307,7 +1241,6 @@
   color: var(--warn);
 }
 
-/* 持续关注（P16）：状态 / 上次结果 / 启用 / 只填不发，全部在一列里说完。 */
 .wb-follow {
   display: flex;
   flex-direction: column;
@@ -1367,7 +1300,6 @@
   color: var(--fg-mute);
 }
 
-/* 到点 / 还没启用 / 提议都要能一眼看出来，不能和普通状态同色 */
 .wb-follow-due,
 .wb-follow-warn {
   margin: 0;
@@ -1488,7 +1420,6 @@
   border-top: 1px solid var(--border-soft);
 }
 
-/* 新建时的类型选择（文档 / 清单）——与标题输入同一高度，不抢视线 */
 .wb-art-new select {
   height: 26px;
   padding: 0 6px;
@@ -1507,7 +1438,6 @@
   color: var(--ok, var(--accent));
 }
 
-/* 结构化清单：勾选列表本身可点（勾选就是一次用户编辑，会开新版本） */
 .wb-art-checklist {
   display: flex;
   flex-direction: column;
@@ -1540,7 +1470,6 @@
   accent-color: var(--accent);
 }
 
-/* 来源与「回原文」预览 */
 .wb-art-sources {
   display: flex;
   flex-direction: column;
@@ -1635,14 +1564,12 @@
 }
 
 @media (max-width: 900px) {
-  /* 窄屏：列表与编辑器上下排（同资料视图的理由） */
   .wb-art {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.6fr);
   }
 }
 
-/* 空间里的表单输入（持续关注等） */
 .wb-ex-input {
   width: 100%;
   padding: var(--sp-1) 6px;
@@ -1654,12 +1581,6 @@
   resize: vertical;
 }
 
-/* ══════════════════════════════════════════════════════════════════
- * 任务收件箱（实施-28 T2）
- *
- * 它是**跨会话**视图，所以视觉上刻意不给卡片加阴影 / 抬升：
- * 那会让它看起来像一组可以拖动的便签。这里只要「一行一条、读得清」。
- * ══════════════════════════════════════════════════════════════════ */
 .wb-inbox {
   min-height: 0;
   min-width: 0;
@@ -1812,7 +1733,6 @@
 .wb-inbox-more {
   align-self: center;
 }
-/* Agent Hub 只定义版面，控件外观来自 ui.css。 */
 .hub-panel, .hub-form, .hub-detail, .hub-task-list, .hub-approval, .hub-messages { display: flex; flex-direction: column; gap: calc(var(--sp-1) * 2.5); min-width: 0; }
 .hub-messages { gap: calc(var(--sp-1) * 1.5); }
 .hub-message { border-left: 2px solid var(--border-str); padding-left: var(--sp-2); min-width: 0; }
@@ -1891,7 +1811,6 @@
 .hub-act-tool summary { cursor: pointer; font-family: var(--font-code); font-size: var(--fs-code); color: var(--fg-mute); }
 .hub-act-tool pre { white-space: pre-wrap; word-break: break-word; font-family: var(--font-code); font-size: var(--fs-code); color: var(--fg-dim); }
 
-/* Agent 协作总览：新建卡片 + 分组运行列表（外观见 ui.css 的 ui-card / ui-choice / ui-status） */
 .agent-home { display: flex; flex-direction: column; gap: var(--sp-3); height: 100%; min-height: 0; overflow: auto; padding: var(--sp-3); }
 .agent-new { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); flex-shrink: 0; }
 .agent-new > .seg { align-self: flex-start; max-width: 100%; }
@@ -1908,7 +1827,6 @@
 .agent-run-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 .agent-run-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-mute); font-size: var(--fs-xs); }
 .agent-home > .ui-empty { margin: var(--sp-4) auto; max-width: 280px; text-align: center; }
-/* 单个运行磁贴：顶部状态条与协作区 */
 .agent-message-caption .spacer { flex: 1; }
 .agent-strip-agent { color: var(--fg-mute); font-size: var(--fs-xs); }
 .agent-collaboration { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -1919,18 +1837,15 @@
 .agent-message-meta { display: flex; align-items: center; gap: var(--sp-2); color: var(--fg-mute); font-size: var(--fs-xs); }
 .agent-message { margin-top: 0; }
 .agent-collab-note { margin: 0; color: var(--fg-mute); font-size: var(--fs-xs); }
-/* 运行已结束的提示：说明原因，给出了结待核实的操作 */
 .agent-ended { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-2); padding: var(--sp-3); flex-shrink: 0; }
 .agent-ended-text { margin: 0; color: var(--fg-mute); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .agent-ended-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .agent-terminal-gone { margin: 0; padding: var(--sp-3); color: var(--fg-mute); font-size: var(--fs-xs); }
-/* 命令行 Agent 列表：一行一个 CLI，已安装直接打开终端，未安装就地安装 */
 .agent-home-head { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; }
 .agent-home-head > .ui-input { flex: 1; width: auto; min-width: 0; max-width: none; }
 .agent-cli { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-2) var(--sp-3) var(--sp-2); flex-shrink: 0; }
 .agent-cli-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .agent-mark { flex: none; vertical-align: middle; }
-/* 记录表：进行中与需要处理合成一张，已结束折叠成一行 */
 .agent-list { display: flex; flex-direction: column; gap: 2px; }
 .agent-ended-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-top: var(--sp-2); padding: var(--sp-1) var(--sp-2); border: 0; background: none; color: var(--fg-mute); font: inherit; font-size: var(--fs-xs); cursor: pointer; border-radius: var(--r-sm); }
 .agent-ended-toggle:hover { background: var(--bg-2); color: var(--fg); }
@@ -1938,13 +1853,11 @@
 .agent-cli { gap: var(--sp-1); }
 .agent-cli > .btn.ghost { align-self: flex-start; }
 .agent-group-close { margin-left: auto; }
-/* 记录行：主体撑满，关闭按钮贴右 */
 .agent-run-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-1); }
 .agent-cli-head { display: flex; align-items: center; gap: var(--sp-2); padding-bottom: var(--sp-1); }
 .agent-cli-head > .agent-new-hint { flex: 1; }
 .agent-cli-row { display: flex; align-items: center; gap: var(--sp-2); min-height: 40px; }
 .agent-cli-row > .btn { flex: none; }
-/* Agent 对话视图版面（外观见 ui.css） */
 .agent-chat { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .agent-chat-stream { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) var(--sp-3) var(--sp-4); }
 .agent-chat-stream > * { min-width: 0; }
@@ -1975,16 +1888,13 @@
 .agent-last-screen { flex: 1; min-height: 0; margin: 0; padding: var(--sp-3); overflow: auto; background: var(--bg-1); color: var(--fg-mute); font: var(--fs-xs) / 1.5 var(--font-code); white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-chip-body { display: inline-flex; align-items: center; gap: var(--sp-1); }
 .agent-launching { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--fg-mute); font-size: var(--fs-sm); }
-/* 磁贴里的 Agent 窗格与终端同底色，终端边缘和窗格融为一体 */
 .tile-pane > .agent-workspace { background: var(--bg-0); }
 
-/* 轻量委派面板：控件样式由公共 ui 提供，此处只管理排布。 */
 .agent-workspace:has(> .sa-form) .sa-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 .delegate-form { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); flex-shrink: 0; }
 .delegate-form .ui-input { width: 100%; }
 .delegate-target { overflow-wrap: anywhere; }
 
-/* ── 子代理平面图：版面与层级；按钮、输入框外观仍来自 ui.css ── */
 .sa-form { gap: var(--sp-2); padding: var(--sp-3); border-bottom: 1px solid var(--border); }
 .sa-form-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-2); }
 .sa-form-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-2); }
@@ -2000,7 +1910,6 @@
 .sa-core[data-live='1'] .sa-core-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft, transparent); }
 .sa-core-name { font-weight: 600; }
 .sa-core-model, .sa-core-count { color: var(--fg-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-/* 走廊：从中心节点向下的一条细线，每个区挂在它上面 */
 .sa-zone { position: relative; display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding-left: var(--sp-4); }
 .sa-zone::before { content: ''; position: absolute; left: 6px; top: calc(-1 * var(--sp-3)); bottom: 0; width: 1px; background: var(--border); }
 .sa-zone::after { content: ''; position: absolute; left: 6px; top: 10px; width: var(--sp-3); height: 1px; background: var(--border); }
@@ -2034,7 +1943,6 @@
 .sa-empty { padding-left: var(--sp-2); }
 @media (prefers-reduced-motion: reduce) { .sa-room.is-live .sa-room-mark::before { animation: none; } }
 
-/* ── 定时任务页：版面与层级；控件外观来自 ui.css ── */
 .sched { display: flex; flex-direction: column; width: min(720px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 48px)); border: 1px solid var(--border-soft); border-radius: var(--r-lg, var(--r-md)); background: var(--bg-1); box-shadow: var(--shadow-pop); overflow: hidden; }
 .sched-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
 .sched-title { flex: 1; margin: 0; font-size: var(--fs-lg, 16px); font-weight: 600; }

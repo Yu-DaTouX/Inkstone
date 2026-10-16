@@ -1,13 +1,3 @@
-/**
- * MCP App 视图桥的 IPC 适配（`yan:mcpAppView:*`）。
- *
- * 渲染端只经 preload 白名单调用这里；主进程把调用原样交给 `McpAppViewService`，
- * 不做任何身份 / 授权判定（那些在 service 里，且只从实际 runnner 事实派生）。
- * service 由宿主惰性注入：主进程初始化晚于 registerIpc 时，未就绪的调用一律
- * 返回明确「未就绪」，绝不静默成功。
- *
- * 本文件不 import Electron，只依赖注入的 registrar 与 service 读取器，便于单测。
- */
 import type { IpcRegistrar } from './registrar'
 import { MCP_APP_VIEW_CHANNELS } from '../../shared/mcp-app-view'
 import type {
@@ -18,7 +8,6 @@ import type {
 } from '../../shared/mcp-app-view'
 
 export interface McpAppViewIpcDeps {
-  /** 当前可用的视图桥；未初始化时返回 null（调用方如实报未就绪）。 */
   service(): McpAppViewApi | null
 }
 
@@ -76,10 +65,6 @@ export function registerMcpAppViewIpc(ipc: IpcRegistrar, deps: McpAppViewIpcDeps
     return api.refresh()
   })
 
-  /*
-   * 已打开实例的可信宿主上下文（与 `ui/initialize` 同源）。渲染端只传 instanceId；
-   * 实例归属 / 运行代次由 service 守卫。拿不到就返回 null，渲染端不会因此推通知。
-   */
   handle(MCP_APP_VIEW_CHANNELS.hostContext, async (instanceId: unknown): Promise<unknown | null> => {
     const api = service()
     if (!api) return null

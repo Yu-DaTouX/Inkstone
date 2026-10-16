@@ -8,7 +8,6 @@ const BYTES = 15 * 1024 * 1024
 
 export interface PendingAttachment { key: string; name: string; image: boolean; preview?: string; input: HubAttachmentInput }
 
-/** Pending files for an Agent message: picked, pasted or dropped; read as base64 for the host to store. */
 export function useAttachments() {
   const t = useT()
   const [items, setItems] = useState<PendingAttachment[]>([])
@@ -48,13 +47,11 @@ export function useAttachments() {
   }, [t])
   const remove = useCallback((key: string) => { currentItems.current = currentItems.current.filter(i => i.key !== key); setItems(currentItems.current) }, [])
   const clear = useCallback(() => { generation.current++; pendingSlots.current = 0; currentItems.current = []; setItems([]); setError('') }, [])
-  /* Paste and drop handlers for the input area that owns this tray. */
   const onPaste = useCallback((e: ClipboardEvent) => { const files = [...e.clipboardData.files]; if (files.length) { e.preventDefault(); void add(files) } }, [add])
   const onDrop = useCallback((e: DragEvent) => { if (e.dataTransfer.files.length) { e.preventDefault(); void add(e.dataTransfer.files) } }, [add])
   return { items, error, add, remove, clear, onPaste, onDrop, inputs: () => items.map(i => i.input) }
 }
 
-/** The "+" button plus the tray of pending files. */
 export function AttachmentPicker({ state, disabled }: { state: ReturnType<typeof useAttachments>; disabled?: boolean }) {
   const t = useT()
   const file = useRef<HTMLInputElement>(null)
@@ -77,7 +74,6 @@ export function AttachmentTray({ state }: { state: ReturnType<typeof useAttachme
   </div>
 }
 
-/** Attachments already sent; the page cannot load local files, so each shows as a chip with its name. */
 export function SentAttachments({ list }: { list?: HubAttachment[] }) {
   const t = useT()
   if (!list?.length) return null

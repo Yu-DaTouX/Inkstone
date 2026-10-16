@@ -1,9 +1,3 @@
-/**
- * 工作时保持电脑不睡眠：有会话在跑就申请「阻止应用挂起」，停下 30 秒后释放。
- *
- * 只阻止空闲睡眠，不阻止合盖睡眠，也不点亮屏幕。申请与释放都在这里，
- * 判定规则在 `shared/keep-awake.ts`。
- */
 import { powerMonitor, powerSaveBlocker } from 'electron'
 import { KEEP_AWAKE_RELEASE_MS, shouldKeepAwake } from '../shared/keep-awake'
 
@@ -19,7 +13,7 @@ function acquire(): void {
 function release(): void {
   if (releaseTimer) { clearTimeout(releaseTimer); releaseTimer = null }
   if (blockerId !== null) {
-    try { powerSaveBlocker.stop(blockerId) } catch { /* 已经释放 */ }
+    try { powerSaveBlocker.stop(blockerId) } catch { }
     blockerId = null
   }
 }
@@ -28,7 +22,6 @@ function onBattery(): boolean {
   try { return powerMonitor.isOnBatteryPower() } catch { return false }
 }
 
-/** 运行实例状态或相关设置变化后调用；重复调用是安全的。 */
 export function updateKeepAwake(next: { working: boolean; whileWorking?: boolean; onBatteryAllowed?: boolean }): void {
   last = { working: next.working, whileWorking: next.whileWorking, onBatteryAllowed: next.onBatteryAllowed }
   const keep = shouldKeepAwake({ ...last, onBattery: onBattery() })
@@ -37,13 +30,11 @@ export function updateKeepAwake(next: { working: boolean; whileWorking?: boolean
     acquire()
     return
   }
-  /* 关闭设置或进入禁止的电源状态，即使释放计时器已存在也立即释放。 */
   if (next.whileWorking === false || onBattery() && next.onBatteryAllowed === false) { release(); return }
   if (blockerId === null || releaseTimer) return
   releaseTimer = setTimeout(release, KEEP_AWAKE_RELEASE_MS)
 }
 
-/** 插拔电源时按最近一次的输入重算。 */
 export function watchPowerSource(): void {
   const again = (): void => updateKeepAwake(last)
   powerMonitor.on('on-battery', again)

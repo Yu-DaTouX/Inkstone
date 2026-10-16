@@ -1,40 +1,3 @@
-/**
- * pi 原生会话 IO：JSONL 导入 / 导出、分享准备与执行。
- *
- * ── 上游依据（随包 pi 1.2.0，`resources/pi-runtime/current.json`）──
- *
- * 1. `docs/session-format.md`
- *    —— 会话是 JSONL，第一行是 `{type:"session",version,id,timestamp,cwd}`，
- *       其余条目按 `id`/`parentId` 组成树；条目都有 `type` 字段。
- *
- * 2. `dist/core/session-export.js` `serializeSessionBranch()`
- *    —— `/export <x.jsonl>` 的 JSONL 只序列化**活动分支**（从当前叶子回溯到根），
- *       头部重写为 `version:3` + 新时间戳，条目 `parentId` 被重新串成一条链。
- *
- * 3. `dist/core/agent-session-runtime.js` `importFromJsonl()`
- *    —— `/import <x.jsonl>` 把源文件**复制**进当前会话目录：
- *       目标名 = `basename(source)`，已存在时追加 `-1`、`-2`…；
- *       复制用 `COPYFILE_EXCL`，**绝不覆盖**已有会话；源文件原样保留。
- *       落点由当前 SessionManager 的 `getSessionDir()` 决定。
- *
- * 4. `dist/modes/interactive/session-share.js` `shareSession()`
- *    —— `/share` 的顺序是：先导出带 `pi.share` 尾条目的 JSONL 走 Radius 上传；
- *       Radius 不可用时回退 `gh`：`gh auth status` → `pi --export` 生成 HTML
- *       → `gh gist create --public=false <html>`；
- *       查看链接 = `getShareViewerUrl(gistId)`（`PI_SHARE_VIEWER_URL` ||
- *       `https://pi.dev/session/`）。
- *
- * 5. `dist/main.js` `--export <input> [output]`
- *    —— 官方 HTML 导出的无头 CLI（`exportFromFile()`），主机用它生成 gist 用的 HTML。
- *
- * ── 本模块的边界 ──
- *
- * - 只做文件与外部命令，`child_process.execFile` 的**参数数组**调用，不经过 shell。
- * - 不碰 IPC / preload / Electron 窗口 / pi 进程内状态；不猜任何 API key。
- * - Radius 上传不在主机实现（它需要 pi 进程内的 provider 凭证），
- *   这里显式报告 unavailable，只实现官方回退的 `gh gist` 路径。
- * - 主会话负责文件对话框、覆盖确认，并把结果接到 UI。
- */
 import { execFile, spawn } from 'node:child_process'
 import {
   constants as fsConstants,
@@ -57,19 +20,14 @@ import { basename, dirname, join, parse, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { PI_AGENT_DIR } from './paths'
 
-/** pi 当前会话格式版本（`dist/core/session-manager.js` `CURRENT_SESSION_VERSION`）。 */
 export const CURRENT_SESSION_VERSION = 3
 
-/** pi `/share` 的默认查看器基址（`dist/config.js`）。 */
 export const DEFAULT_SHARE_VIEWER_URL = 'https://pi.dev/session/'
 
-/** 导入时的默认大小上限。大会话几 MB 到几十 MB；超过一律拒绝，先让用户自查。 */
 export const DEFAULT_MAX_IMPORT_BYTES = 64 * 1024 * 1024
 
-/** `gh` 探测与 gist 创建的默认超时。 */
 export const DEFAULT_GH_TIMEOUT_MS = 20_000
 
-/** `pi --export` 生成 HTML 的默认超时。 */
 export const DEFAULT_PI_EXPORT_TIMEOUT_MS = 120_000
 
 export type SessionIoErrorCode =
@@ -94,7 +52,6 @@ export interface SessionIoFailure {
   error: string
 }
 
-/** 会话条目：pi 不校验条目内字段，这里只要求 `type` 是字符串。 */
 export interface LiteSessionEntry {
   type: string
   id?: string
@@ -103,7 +60,6 @@ export interface LiteSessionEntry {
   [key: string]: unknown
 }
 
-/** 会话头（`docs/session-format.md`）。 */
 export interface LiteSessionHeader {
   type: 'session'
   version?: number
@@ -116,22 +72,17 @@ export interface LiteSessionHeader {
 
 export interface ParsedSessionFile {
   header: LiteSessionHeader
-  /** 头之后的全部条目，按文件追加顺序（与 pi 的 `getEntries()` 一致）。 */
   entries: LiteSessionEntry[]
-  /** 按 pi 的加载规则，叶子就是最后一个有 `id` 的条目。 */
   leafId: string | null
 }
 
 export interface CommandResult {
-  /** 进程退出码；起不来时为 null。 */
   code: number | null
   stdout: string
   stderr: string
   timedOut: boolean
   aborted: boolean
-  /** Node 侧错误信息（如 spawn 失败）。 */
   error?: string
-  /** `ENOENT` 等 Node 错误码，用于区分「没装 gh」与「gh 报错退出」。 */
   errorCode?: string
 }
 
@@ -148,10 +99,8 @@ export type CommandRunner = (
   options: CommandRunOptions
 ) => Promise<CommandResult>
 
-/** 注入点：主会话在 `index.ts` 里配置 pi 入口与 agent 目录；测试注入假 runner。 */
 export interface NativeSessionIoContext {
   agentDir?: () => string
-  /** pi 的启动方式（`resolvePi()` 的 `{cmd,args}`）；分享要跑官方 `--export`。 */
   piCommand?: () => { command: string; args: string[] } | null
   runCommand?: CommandRunner
   now?: () => Date
@@ -164,7 +113,6 @@ export function configureNativeSessionIo(next: NativeSessionIoContext): void {
   ctx = next
 }
 
-/** 测试用：清掉注入，回到默认实现。 */
 export function resetNativeSessionIo(): void {
   ctx = {}
 }
@@ -185,8 +133,6 @@ function fail(code: SessionIoErrorCode, error: string): SessionIoFailure {
   return { ok: false, code, error }
 }
 
-/* ────────────────────────── 命令执行 ────────────────────────── */
-
 function killTree(child: ReturnType<typeof execFile>): void {
   if (!child || child.killed || child.pid === undefined) return
   if (process.platform === 'win32') {
@@ -201,10 +147,6 @@ function killTree(child: ReturnType<typeof execFile>): void {
   }
 }
 
-/**
- * 默认 runner：`execFile` + 参数数组（不过 shell），带超时与 AbortSignal。
- * Windows 上超时/取消时结束整棵进程树，避免 gh/pi 的子进程残留。
- */
 function defaultRunCommand(
   command: string,
   args: string[],
@@ -276,8 +218,6 @@ function run(
   return (ctx.runCommand ?? defaultRunCommand)(command, args, options)
 }
 
-/* ────────────────────────── JSONL 解析与校验 ────────────────────────── */
-
 function asEntry(value: unknown): LiteSessionEntry | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const record = value as Record<string, unknown>
@@ -285,12 +225,6 @@ function asEntry(value: unknown): LiteSessionEntry | null {
   return record as LiteSessionEntry
 }
 
-/**
- * 逐行校验 JSONL 文本。
- *
- * 与 pi 的 `parseSessionEntries()`（跳过坏行）不同：导入是**写用户会话目录**的
- * 操作，这里选择更严格——坏行直接拒绝，避免把半个会话复制进去。空行忽略。
- */
 export function parseSessionJsonl(
   text: string
 ): { ok: true; value: ParsedSessionFile } | SessionIoFailure {
@@ -327,7 +261,6 @@ export function parseSessionJsonl(
   return { ok: true, value: { header, entries, leafId } }
 }
 
-/** 读文件 + 大小上限 + 解析。只读，不改动源文件。 */
 export function readSessionFile(
   path: string,
   maxBytes: number = DEFAULT_MAX_IMPORT_BYTES
@@ -355,7 +288,6 @@ export function readSessionFile(
   return { ok: true, value: parsed.value, sizeBytes: stats.size }
 }
 
-/** 只做校验，不写盘：主会话可在挑文件后先给用户看诊断。 */
 export function inspectSessionJsonl(
   path: string,
   maxBytes?: number
@@ -386,14 +318,6 @@ export function inspectSessionJsonl(
   }
 }
 
-/* ────────────────────────── 分支与序列化 ────────────────────────── */
-
-/**
- * 活动分支：从叶子沿 `parentId` 回溯到根。
- *
- * 与 pi 的 `buildSessionPath()` 一致：叶子是最后一个有 `id` 的条目；
- * 父链断裂即停止（pi 对孤儿条目也是走到找不到父亲为止）。
- */
 export function buildActiveBranch(
   entries: LiteSessionEntry[],
   leafId?: string | null
@@ -417,19 +341,12 @@ export function buildActiveBranch(
   return path.reverse()
 }
 
-/** 分享用的工具声明（对应 pi 的 `session.state.tools` 投影）。 */
 export interface ShareTool {
   name: string
   description: string
   parameters: unknown
 }
 
-/**
- * `pi.share` 尾条目 —— 与 `session-share.js` `createShareTrailingEntries()` 同形。
- *
- * 它只为 Radius 上传的 JSONL 服务（HTML 导出不含它）。主机不实现 Radius，
- * 这里保留完整格式，方便主会话需要时复用。
- */
 export function buildShareTrailingEntry(
   data: { systemPrompt: string; tools: ShareTool[] },
   parentId: string | null,
@@ -445,12 +362,6 @@ export function buildShareTrailingEntry(
   }
 }
 
-/**
- * 序列化活动分支为 JSONL —— 与 `serializeSessionBranch()` 同语义。
- *
- * 头重写为 `version:3` + 新时间戳；条目 `parentId` 重串成线性链；
- * `forShare` 时在末尾追加 `pi.share` 条目（同时也把它的 `parentId` 接上）。
- */
 export function serializeSessionBranch(input: {
   sessionId: string
   cwd: string
@@ -488,23 +399,14 @@ export function serializeSessionBranch(input: {
   return `${lines.map((entry) => JSON.stringify(entry)).join('\n')}\n`
 }
 
-/* ────────────────────────── 导出 ────────────────────────── */
-
 export type ExportScope = 'branch' | 'full'
 
 export interface ExportJsonlRequest {
   sourcePath: string
   outputPath: string
-  /**
-   * `branch`（默认）= pi `/export *.jsonl` 的原生语义：只导出活动分支。
-   * `full` = 主机便利项：把整个文件原样复制（含被放弃的分支），**不是** pi 命令。
-   */
   scope?: ExportScope
-  /** Live native leaf overrides the file tail after in-memory tree navigation. Null means an empty branch. */
   leafId?: string | null
-  /** 默认 false：不覆盖已有输出；pi 原生会直接覆盖，这里让主会话显式确认。 */
   overwrite?: boolean
-  /** 仅 `branch` 生效：追加 `pi.share` 尾条目。 */
   forShare?: boolean
   systemPrompt?: string
   tools?: ShareTool[]
@@ -531,7 +433,6 @@ function sameSessionFile(sourcePath: string, outputPath: string): boolean {
   }
 }
 
-/** Open without truncation so a file alias is rejected before its contents can change. */
 function writeSessionExport(sourcePath: string, outputPath: string, text: string, overwrite: boolean): void {
   if (sameSessionFile(sourcePath, outputPath)) throw new Error('导出目标不能是源会话文件本身或它的别名')
   const source = statSync(sourcePath, { bigint: true })
@@ -594,21 +495,12 @@ export function exportSessionJsonl(
   return { ok: true, outputPath, scope, entryCount }
 }
 
-/* ────────────────────────── 导入 ────────────────────────── */
-
-/** 会话目录编码：与 pi `getDefaultSessionDirPath()` 的 `--<cwd>--` 规则一致。 */
 export function encodeSessionDirName(cwd: string): string {
   const resolvedCwd = resolve(String(cwd ?? ''))
   const safePath = `--${resolvedCwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
   return safePath
 }
 
-/**
- * 目标会话目录。
- *
- * - 主机显式接管（`YAN_SESSIONS_DIR`）时 pi 用 `--session-dir` 平铺写入，这里也平铺。
- * - 否则复刻 pi 的默认目录：`<agentDir>/sessions/--<encoded-cwd>--`。
- */
 export function defaultSessionDirFor(cwd: string, agentDirOverride?: string): string {
   const override = process.env.YAN_SESSIONS_DIR?.trim()
   if (override) return override
@@ -617,11 +509,8 @@ export function defaultSessionDirFor(cwd: string, agentDirOverride?: string): st
 
 export interface ImportSessionRequest {
   sourcePath: string
-  /** 目标会话所属的项目目录；用于推导默认会话目录。 */
   cwd?: string
-  /** 显式指定会话目录（覆盖推导）。 */
   sessionDir?: string
-  /** Desktop indices key sessions by id; an imported copy can explicitly receive a fresh identity. */
   freshSessionId?: boolean
   maxBytes?: number
 }
@@ -631,19 +520,11 @@ export interface ImportSessionSuccess {
   sourcePath: string
   destinationPath: string
   sessionDir: string
-  /** 源文件已在目标位置（未复制）。 */
   alreadyStored: boolean
   sessionId: string
   entryCount: number
 }
 
-/**
- * 导入 JSONL 到目标 pi 会话目录，**绝不覆盖**已有会话。
- *
- * 复刻 `importFromJsonl()`：同名冲突时追加 `-1`、`-2`…；
- * 复制用 `COPYFILE_EXCL`；源文件保留（只读）。
- * 校验用更严格的逐行检查（见 `parseSessionJsonl()`）。
- */
 export function importSessionJsonl(
   request: ImportSessionRequest
 ): ImportSessionSuccess | SessionIoFailure {
@@ -697,15 +578,12 @@ export function importSessionJsonl(
   }
 }
 
-/* ────────────────────────── 分享 ────────────────────────── */
-
 export interface GhStatus {
   installed: boolean
   authenticated: boolean
   detail: string
 }
 
-/** `gh auth status` —— 与 `/share` 里的探测一致，只判断能否用，不解析凭证。 */
 export async function checkGhStatus(options: CommandRunOptions = {}): Promise<GhStatus> {
   const result = await run('gh', ['auth', 'status'], {
     timeoutMs: options.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS,
@@ -726,16 +604,10 @@ export async function checkGhStatus(options: CommandRunOptions = {}): Promise<Gh
 export interface ShareAvailability {
   gh: GhStatus
   radius: { available: false; reason: string }
-  /** gh 可用且已登录时才为 true。 */
   canShareViaGist: boolean
-  /** pi 入口是否解析出来（HTML 导出要用）。 */
   piAvailable: boolean
 }
 
-/**
- * 分享前探测。Radius 路径需要 pi 进程内的 provider 凭证，
- * 主机不实现、也不猜凭证，因此恒为 unavailable。
- */
 export async function shareAvailability(options: CommandRunOptions = {}): Promise<ShareAvailability> {
   const gh = await checkGhStatus(options)
   const piAvailable = !!ctx.piCommand?.()
@@ -758,7 +630,6 @@ export interface ExportHtmlRequest {
   signal?: AbortSignal
 }
 
-/** 官方 HTML 导出：`pi --export <session.jsonl> <output.html>`（`dist/main.js`）。 */
 export async function exportSessionHtml(
   request: ExportHtmlRequest
 ): Promise<{ ok: true; outputPath: string } | SessionIoFailure> {
@@ -793,7 +664,6 @@ export async function exportSessionHtml(
 
 export interface PrepareShareRequest {
   sessionFile: string
-  /** 省略时在系统临时目录建 `pi-share-*`，由调用方 `disposeShareArtifacts()` 清理。 */
   outputDir?: string
   timeoutMs?: number
   signal?: AbortSignal
@@ -802,17 +672,10 @@ export interface PrepareShareRequest {
 export interface PrepareShareSuccess {
   ok: true
   htmlPath: string
-  /** 本次为准备而创建的临时目录；调用方负责清理。 */
   tempDir?: string
   availability: ShareAvailability
 }
 
-/**
- * 准备要分享的 HTML（官方 `pi --export`），并报告 gh/Radius 可用性。
- *
- * 与 `/share` 的区别：pi 主路径先试 Radius；主机只实现 gh gist 回退，
- * 所以这里不因 Radius 不可用而失败，availability 里如实标注。
- */
 export async function prepareShare(
   request: PrepareShareRequest
 ): Promise<PrepareShareSuccess | SessionIoFailure> {
@@ -838,7 +701,6 @@ export async function prepareShare(
       try {
         rmSync(tempDir, { recursive: true, force: true })
       } catch {
-        /* 清理失败不影响返回 */
       }
     }
     return exported
@@ -849,7 +711,6 @@ export async function prepareShare(
   return { ok: true, htmlPath, ...(tempDir ? { tempDir } : {}), availability }
 }
 
-/** 查看链接 —— 与 pi `getShareViewerUrl()` 一致（`PI_SHARE_VIEWER_URL` 可覆盖）。 */
 export function shareViewerUrl(gistId: string): string {
   const baseUrl = process.env.PI_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL
   return `${baseUrl}#${gistId}`
@@ -857,7 +718,6 @@ export function shareViewerUrl(gistId: string): string {
 
 export interface ShareViaGistRequest {
   htmlPath: string
-  /** Re-check foreground ownership after gh auth but before irreversible upload. */
   beforeUpload?: () => boolean
   timeoutMs?: number
   signal?: AbortSignal
@@ -870,12 +730,6 @@ export interface ShareViaGistSuccess {
   viewerUrl: string
 }
 
-/**
- * 官方回退的分享执行：`gh gist create --public=false <html>`。
- *
- * 参数是数组、不过 shell；支持取消与超时；只解析 gh 输出的 URL。
- * 不做真实上传的自动化测试——由测试注入假 runner 校验参数与解析。
- */
 export async function shareViaGist(
   request: ShareViaGistRequest
 ): Promise<ShareViaGistSuccess | SessionIoFailure> {
@@ -908,7 +762,6 @@ export async function shareViaGist(
   return { ok: true, gistUrl, gistId, viewerUrl: shareViewerUrl(gistId) }
 }
 
-/** 一步完成：准备 HTML + gh gist 分享 + 清理临时目录。 */
 export async function shareSession(
   request: PrepareShareRequest
 ): Promise<ShareViaGistSuccess | SessionIoFailure> {
@@ -926,19 +779,16 @@ export async function shareSession(
       try {
         rmSync(prepared.tempDir, { recursive: true, force: true })
       } catch {
-        /* 清理失败不影响结果 */
       }
     }
   }
 }
 
-/** 清理 `prepareShare()` 建的临时目录（含 HTML）。 */
 export function disposeShareArtifacts(dir: string): void {
   if (!String(dir ?? '').trim()) return
   const target = resolve(String(dir))
   try {
     rmSync(target, { recursive: true, force: true })
   } catch {
-    /* 幂等：清理失败不抛 */
   }
 }

@@ -1,13 +1,3 @@
-/*
- * 砚内置「采样温度」扩展 —— 把模型菜单里为当前模型设的温度写进请求。
- *
- * 只在用户给这个模型设过温度时才动请求；没设过就原样返回，供应商用自己的默认值。
- * 读文件而不是环境变量：温度可以在会话中途调整，下一次请求就生效（与 response-detail.js 同一套做法）。
- *
- * 开了思考 / 推理的请求直接放过：Anthropic 开思考时只接受默认温度，
- * OpenAI 推理模型会拒绝 temperature 参数，硬塞只会让整轮请求失败。
- */
-
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -30,7 +20,6 @@ function temperatureFor(model) {
 
 const OFF_WORDS = new Set(['none', 'off', 'disabled'])
 
-/** pi 在「思考关」时也会写一个关闭值（如 reasoning_effort: "none"），这些不算开了推理。 */
 function effortOn(value) {
   if (!value) return false
   if (typeof value === 'string') return !OFF_WORDS.has(value.toLowerCase())

@@ -8,7 +8,6 @@ export async function runNetworkPolicyTests(ok, policy) {
   ok(isPrivateAddress('fd00::1234'), '网络边界识别 IPv6 unique-local')
   ok(isPrivateAddress('fe80::1'), '网络边界识别 IPv6 link-local')
   ok(isPrivateAddress('::ffff:127.0.0.1'), '网络边界识别 IPv4-mapped IPv6 loopback')
-  // 完整八组写法（无 `::`）必须与压缩写法给出同样的分类结果。
   ok(isPrivateAddress('fc00:0:0:0:0:0:0:1'), '网络边界识别完整写法 IPv6 unique-local')
   ok(isPrivateAddress('fe80:0:0:0:0:0:0:1'), '网络边界识别完整写法 IPv6 link-local')
   ok(isPrivateAddress('0:0:0:0:0:0:0:1'), '网络边界识别完整写法 IPv6 loopback')

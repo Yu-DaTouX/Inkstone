@@ -1,7 +1,3 @@
-/**
- * 砚对砚：连接者一侧的 IPC 适配（`yan:peer:*`）。
- * 对方地址只来自用户输入并在 PeerClient 里规范化；本机项目只按 id 从设置里取，渲染端不能传路径。
- */
 import { shell } from 'electron'
 import { PEER_OPERATIONS } from '../../shared/peer-protocol'
 import type { ProjectRecord } from '../../shared/ipc'

@@ -1,15 +1,3 @@
-/**
- * v3 定时任务正式页（WP-51 界面部分）。
- *
- * 独立可挂载页面，走既有 `yan:schedule:*` IPC 做正式增删改启停；不复制服务里的
- * 触发 / 补跑 / 待确认逻辑，也不新增任务状态机。页面只做三件事：
- *   · 列出已配置任务、当前有效状态（待确认 / 已启用 / 已暂停）与上次运行错误；
- *   · 新建 / 编辑任务，触发方式沿用 `shared/schedule` 的四种（每天 / 每周 / 间隔 /
- *     一次），提交前用同一份规则校验；
- *   · 启用 / 暂停、立即运行、删除；不会替用户自动运行任何任务。
- *
- * 结构分页头、任务列表与编辑对话框；控件外观全部来自 v3 `ui/`，本目录 CSS 只放版面。
- */
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { CalendarClock, Plus } from 'lucide-react'
 import { describeTrigger, type ScheduledTask } from '../../../../shared/schedule'
@@ -52,13 +40,11 @@ import {
 } from './schedule-client'
 import './schedule-tasks.css'
 
-/** 毫秒 → 本地「M/D HH:MM」；空值给破折号，不猜时间。 */
 export function formatWhen(ms: number | undefined): string {
   if (!ms) return '—'
   return new Date(ms).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-/** `provider/id` 只显示模型名部分；列表里给完整值留 title。 */
 function shortModel(model: string): string {
   const at = model.indexOf('/')
   return at >= 0 ? model.slice(at + 1) : model
@@ -84,10 +70,6 @@ export interface ScheduleTaskCardProps {
   onDelete(): void
 }
 
-/**
- * 单个任务的只读投影 + 行操作。状态标签只由服务已有的字段推导
- *（`pendingApproval` / `enabled` / `lastError`），不新增状态。
- */
 export function ScheduleTaskCard({ task, busy, t, onToggle, onRunNow, onEdit, onDelete }: ScheduleTaskCardProps): ReactElement {
   return (
     <li
@@ -152,7 +134,6 @@ interface EditorProps {
   onSubmit(): void
 }
 
-/** 任务编辑器表单。触发方式的字段按 kind 显隐，不预建未用到的控件。 */
 function ScheduleEditor({ draft, editingId, busy, error, models, t, onChange, onCancel, onSubmit }: EditorProps): ReactElement {
   return (
     <form
@@ -272,11 +253,9 @@ function ScheduleEditor({ draft, editingId, busy, error, models, t, onChange, on
 }
 
 export interface ScheduleTasksPageProps {
-  /** 测试注入；生产缺省读 preload 的 `window.yan.schedule`。 */
   client?: ScheduleBridge
 }
 
-/** 定时任务页：配置与查看任务，不在这里触发定时器、不代替用户运行。 */
 export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): ReactElement {
   const t = useT()
   const models = useStore((s) => s.models)
@@ -304,7 +283,6 @@ export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): Reac
 
   useEffect(() => {
     void refresh()
-    /* 服务只在砚运行时按 30s 节拍触发；列表用同一节拍跟随，不额外造推送通道。 */
     const timer = setInterval(() => void refresh(), 30_000)
     return () => clearInterval(timer)
   }, [refresh])

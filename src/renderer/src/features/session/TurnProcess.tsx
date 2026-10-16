@@ -1,10 +1,3 @@
-/**
- * 一轮回复的「过程行」：把回复之前的旁白、工具组（与推理）收成一行。
- *
- * 外观复用 ToolSteps 的摘要行（同字号、同 chevron）；默认折叠，用户展开后在本次
- * 挂载内保持。运行中只显示一行：当前正在运行的工具，否则最新一句旁白。
- * 展开后按原顺序铺开旁白（弱化）与各工具组（沿用 ToolSteps 的渲染）。
- */
 import { useState, type JSX, type ReactNode } from 'react'
 import { useI18n, useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
@@ -17,11 +10,8 @@ import { narrationLine, processNotes, processSummaryLabel, processTools, running
 
 export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
   process: TurnSegment[]
-  /** 整轮墙钟用时；运行中不显示（运行行自己有计时） */
   elapsedMs?: number
-  /** 运行中：标签取当前工具或最新旁白，不逐段铺开 */
   live: boolean
-  /** 推理块：只在完成后放进过程行内部 */
   thinking?: ReactNode
   sessionId: string | null
 }): JSX.Element {

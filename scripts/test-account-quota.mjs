@@ -1,13 +1,3 @@
-/*
- * 「账号额度」与砚内 ChatGPT 多账号切换的单测（不启动 Electron、不联网、不碰真实凭证）。
- *
- *   · 共享层（src/shared/account-quota.ts）：身份解析、三家用量响应、去重、偏好规范化。
- *   · 账号副本（src/main/codex-accounts.ts）：在临时 YAN_PI_DIR / YAN_DATA_DIR 里跑真实的
- *     读改写，钉住「覆盖 auth.json 之前先收回当前凭证」「持 pi 的 auth.json.lock」
- *     「只刷新非当前账号并保存轮换后的 refresh token」三条不变量。
- *
- * 用法：npm run build 之后 node scripts/test-account-quota.mjs（也可由其它脚本调用 runAccountQuotaTests）。
- */
 import { mkdtemp, mkdir, readFile, rm, rmdir, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,7 +6,6 @@ import { pathToFileURL } from 'node:url'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const jwt = (payload) => `${b64({ alg: 'none' })}.${b64(payload)}.sig`
 
-/** 造一份 pi 形状的 ChatGPT 凭证；`tag` 区分同一账号的新旧令牌。 */
 function credential({ account, user, email, plan = 'plus', expires = Date.now() + 86_400_000, tag = '1' }) {
   const access = jwt({
     exp: Math.floor(expires / 1000),
@@ -30,7 +19,6 @@ function credential({ account, user, email, plan = 'plus', expires = Date.now() 
 export async function runAccountQuotaTests(ok) {
   const { build } = await import('esbuild')
 
-  /* ── 共享层纯函数 ── */
   await build({ entryPoints: ['src/shared/account-quota.ts'], outfile: 'out/test/account-quota.mjs', bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
   const s = await import(pathToFileURL(join(process.cwd(), 'out/test/account-quota.mjs')).href)
 
@@ -90,7 +78,6 @@ export async function runAccountQuotaTests(ok) {
   ok(s.accountCardTitle({ label: '主号', email: 'a@x', name: 'ChatGPT' }) === '主号' && s.accountCardTitle({ email: 'a@x', name: 'ChatGPT' }) === 'a@x' && s.accountCardTitle({ name: 'ChatGPT' }) === 'ChatGPT', '标题：备注 > 邮箱 > 默认名')
   ok(s.cardPeakPercent({ windows: [{ used: 38, total: 100 }, { used: 6, total: 100 }] }) === 38 && s.cardPeakPercent({ windows: [] }) === null, '摘要：取最紧窗口')
 
-  /* ── 账号副本与切换（临时目录） ── */
   const root = await mkdtemp(join(tmpdir(), 'yan-accounts-'))
   const piDir = join(root, 'pi'), dataDir = join(root, 'yan')
   process.env.YAN_PI_DIR = piDir
@@ -117,13 +104,11 @@ export async function runAccountQuotaTests(ok) {
     let list = await m.listCodexAccounts({ 'chatgpt:acct-a:user-a': '主号' })
     ok(list.length === 1 && list[0].active && list[0].email === 'a@example.com' && list[0].label === '主号', '副本：当前账号被收进列表并带上备注')
 
-    /* 模拟「添加账号」：登录流程把 auth.json 换成 B（ipc 层在这之前已收回 A） */
     const B1 = credential({ account: 'acct-b', user: 'user-b', email: 'b@example.com' })
     await writeAuth({ 'openai-codex': B1, deepseek: { type: 'api_key', key: 'sk-test' } })
     list = await m.listCodexAccounts()
     ok(list.length === 2 && list.find((x) => x.email === 'b@example.com').active && !list.find((x) => x.email === 'a@example.com').active, '副本：登录第二个账号后两个都在，当前是新账号')
 
-    /* pi 在此期间刷新了 B：切走时必须把新令牌收回，而不是留旧的 */
     const B2 = credential({ account: 'acct-b', user: 'user-b', email: 'b@example.com', tag: '2', expires: Date.now() + 2 * 86_400_000 })
     await writeAuth({ 'openai-codex': B2, deepseek: { type: 'api_key', key: 'sk-test' } })
     let r = await m.switchCodexAccount('chatgpt:acct-a:user-a')
@@ -134,7 +119,6 @@ export async function runAccountQuotaTests(ok) {
     ok(store.accounts.find((x) => x.key === 'chatgpt:acct-b:user-b').credential.refresh === B2.refresh, '切换：切走前收回了 pi 刚刷新的令牌（轮换后的 refresh token 没丢）')
     ok(!(await m.switchCodexAccount('chatgpt:nobody:x')).ok, '切换：不存在的账号拒绝')
 
-    /* pi 正持锁：切换要等它放开 */
     await mkdir(lockDir)
     const started = Date.now()
     setTimeout(() => void rmdir(lockDir), 250)
@@ -142,14 +126,12 @@ export async function runAccountQuotaTests(ok) {
     ok(r.ok && Date.now() - started >= 200, '锁：auth.json.lock 被占用时等待，不与 pi 的刷新交叉写')
     ok((await readAuth())['openai-codex'].refresh === B2.refresh, '锁：放开后照常切换')
 
-    /* 残留的锁（进程崩溃留下、超过 10 秒没更新）不能把切换永远卡住 */
     await mkdir(lockDir)
     const old = new Date(Date.now() - 60_000)
     await utimes(lockDir, old, old)
     r = await m.switchCodexAccount('chatgpt:acct-a:user-a')
     ok(r.ok && (await readAuth())['openai-codex'].access === A1.access, '锁：超时残留的锁会被清掉')
 
-    /* 额度查询：当前账号过期 → 等 pi 刷新；非当前账号过期 → 砚刷新并立即保存轮换后的 token */
     const Aexpired = { ...A1, expires: Date.now() - 1000 }
     await writeAuth({ 'openai-codex': Aexpired, deepseek: { type: 'api_key', key: 'sk-test' } })
     store = JSON.parse(await readFile(storeFile, 'utf8'))
@@ -169,7 +151,6 @@ export async function runAccountQuotaTests(ok) {
     ok(store.accounts.find((x) => x.key === 'chatgpt:acct-b:user-b').credential.refresh === B3.refresh, '额度：轮换后的 refresh token 已落盘')
     ok((await readAuth())['openai-codex'].access === Aexpired.access, '额度：查额度不改 auth.json')
 
-    /* 移除当前账号 = 退出登录；其它凭证不受影响 */
     r = await m.removeCodexAccount('chatgpt:acct-a:user-a')
     auth = await readAuth()
     ok(r.ok && r.wasActive && !('openai-codex' in auth) && auth.deepseek?.key === 'sk-test', '移除：当前账号从 auth.json 退出，其它服务保留')

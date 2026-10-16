@@ -1,4 +1,3 @@
-/** 在真实 Electron 中检查旧设置兼容、精简入口和模型委派界面；不执行模型。 */
 ;(async () => {
   const out = []
   const ok = (value, label) => out.push(`  ${value ? '✓' : '✗'} ${label}`)
@@ -64,7 +63,6 @@
     const panel = q('[data-testid="subagent-panel"]').getBoundingClientRect()
     ok(controls.every(rect => rect.width > 150 && rect.left >= panel.left && rect.right <= panel.right), '表单控件完整位于面板内')
     ok(controls[1].top > controls[0].bottom && controls[2].top > controls[1].bottom, '模型、任务、执行位置纵向排列且不重叠')
-    // Leave the screenshot on the real delegation UI; no task or install button is pressed.
     await sleep(2600)
   } catch (error) { out.push('  ✗ light client probe: ' + String(error)) }
   return out.join('\n')

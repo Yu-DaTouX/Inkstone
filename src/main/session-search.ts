@@ -1,15 +1,3 @@
-/**
- * 会话正文检索（会话切换器用）。
- *
- * 会话本体是 pi 的 JSONL 文件。这里只读它们、在内存里建一份「可见对话文字」的索引：
- *   · 只收用户与助手的文字；工具调用、工具结果、思考、图片都不进索引；
- *   · 每个会话最多保留约 400KB 文字（开头 100KB + 结尾 300KB），长会话不会撑爆内存；
- *   · 以文件的 mtime + 大小判断是否过期，未变化的文件不会重读；
- *   · 索引只在内存里，不落盘、不外传。
- *
- * 搜索是「所有词都要出现」的子串匹配（不区分大小写），按命中次数与新近程度排序，
- * 并给出命中处前后的一小段文字作片段。
- */
 import { readdir, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { setImmediate as yieldToIo } from 'node:timers/promises'
@@ -19,17 +7,13 @@ import { createSearchTextCollector, matchText, queryTokens } from '../shared/ses
 
 export interface SessionSearchHit {
   path: string
-  /** 命中处前后的一小段文字（已压成单行） */
   snippet: string
-  /** 所有词的命中次数合计（封顶） */
   matches: number
-  /** 文件修改时间，用来排序与显示 */
   updatedAt: number
 }
 
 export interface SessionSearchResult {
   hits: SessionSearchHit[]
-  /** 已建好索引的会话数 / 会话文件总数；建索引期间前者小于后者 */
   indexed: number
   total: number
 }
@@ -37,7 +21,6 @@ export interface SessionSearchResult {
 const MAX_INDEX_BYTES = 16 * 1024 * 1024
 const MAX_LINE_CHARS = 8 * 1024 * 1024
 
-/** Stream JSONL; oversized binary rows are skipped without retaining the rest of the row. */
 export async function readSessionSearchText(path: string): Promise<string> {
   const collector = createSearchTextCollector()
   let pending = ''
@@ -94,7 +77,6 @@ export async function listSessionFiles(): Promise<Array<{ path: string; mtimeMs:
         const st = await stat(path)
         if (st.isFile()) files.push({ path, mtimeMs: st.mtimeMs, size: st.size })
       } catch {
-        /* 文件在列目录与 stat 之间被删了：跳过 */
       }
     }
   }
@@ -107,7 +89,6 @@ async function refreshIndex(): Promise<void> {
   for (const path of index.keys()) if (!live.has(path)) index.delete(path)
 }
 
-/** 保证索引是新的；同时只会有一次在建，其他调用等同一个结果 */
 function ensureIndex(): Promise<void> {
   if (!building) {
     building = refreshIndex().finally(() => {
@@ -117,12 +98,10 @@ function ensureIndex(): Promise<void> {
   return building
 }
 
-/** 应用空闲时预热索引，第一次打开切换器就不用等 */
 let warmed = false
 export function warmSessionSearch(): void {
   if (warmed) return
   warmed = true
-  /* 稍等片刻：启动时先把界面与 pi 让出来，索引在空闲时建 */
   setTimeout(() => void ensureIndex().catch(() => undefined), 4000).unref?.()
 }
 

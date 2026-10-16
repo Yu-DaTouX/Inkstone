@@ -1,36 +1,16 @@
-/**
- * 可移动工具磁贴的布局契约（实施-12 U-0）。
- *
- * 这是磁贴位置的**唯一真源**：一个版本化的 ToolLayout，取代旧的
- * `toolOrder` + `toolHidden` 两个平行字段（旧字段只读迁移，迁移后只写新真源）。
- * 布局是应用级偏好；**内容**始终绑定当前会话，不写进这里。
- *
- * 纯函数，不依赖 Electron / React，便于单测。`ids` 是当前已知的工具分区，
- * 由调用方从 `TOOL_SECTIONS` 传入，避免 shared 层反向依赖 ipc。
- */
-
 export type ToolPlacement = 'docked' | 'floating' | 'library'
 
-/** 浮动磁贴初始宽度与最小宽度；用户调整尺寸可扩到整个工作区。 */
 export const TILE_DEFAULT_W = 300
 export const TILE_MIN_W = 240
 export const TILE_MAX_W = 420
-/** 磁贴头高度：拖动把手与折叠开关都在这一条里，内容区从它下面开始。 */
 export const TILE_HEAD_H = 32
 
-/** 用户可将任意工具磁贴从右栏拖入工作区，再拖回停靠区。 */
 export const NON_FLOATING_TILE_IDS: readonly string[] = []
 
 export function isTileFloatable(id: string): boolean {
   return !NON_FLOATING_TILE_IDS.includes(id)
 }
 
-/**
- * 新建浮动磁贴的默认位置（初始宽 300）。
- *
- * 坐标是相对内容区的归一化值（U-0 契约：x/y/w/h 均 0–1），所以宽度用
- * 「目标像素 ÷ 可用宽度」换算。`floatingCount` 用来逐个错开，避免叠加。
- */
 export function defaultFloatRect(floatingCount: number, areaW: number, areaH: number): ToolRect {
   const target = Math.min(TILE_MAX_W, Math.max(TILE_MIN_W, TILE_DEFAULT_W))
   const w = Math.min(0.95, target / Math.max(areaW, target))
@@ -46,7 +26,6 @@ export function defaultFloatRect(floatingCount: number, areaW: number, areaH: nu
 }
 
 export interface ToolRect {
-  /** 相对内容区的归一化坐标与尺寸（0–1），恢复时再乘回可用区 */
   x: number
   y: number
   w: number
@@ -56,7 +35,6 @@ export interface ToolRect {
 export interface ToolTile {
   id: string
   placement: ToolPlacement
-  /** 停靠顺序（升序）；浮动/入库也保留一个序，便于放回时定位 */
   order: number
   rect?: ToolRect
   collapsed?: boolean
@@ -65,7 +43,6 @@ export interface ToolTile {
 export interface ToolLayout {
   version: 2
   tiles: ToolTile[]
-  /** 单调递增：慢请求的迟到写入不能覆盖更新的拖动结果 */
   revision: number
 }
 
@@ -79,7 +56,6 @@ export function defaultToolLayout(ids: readonly string[]): ToolLayout {
   return { version: 2, revision: 0, tiles: ids.map((id, index) => ({ id, placement: 'docked', order: index })) }
 }
 
-/** 旧字段迁移：顺序里的停靠，隐藏的进库；未知 id 丢弃，重复只留一份 */
 export function migrateToolLayout(
   order: readonly string[] | undefined,
   hidden: readonly string[] | undefined,
@@ -95,7 +71,6 @@ export function migrateToolLayout(
     seen.add(id)
     tiles.push({ id, placement: 'docked', order: tiles.length })
   }
-  /* 旧顺序没列到的已安装分区补在后面（停靠），保持“新增工具默认可见” */
   for (const id of ids) {
     if (seen.has(id) || hiddenSet.has(id)) continue
     seen.add(id)
@@ -104,7 +79,6 @@ export function migrateToolLayout(
   for (const id of ids) {
     if (!hiddenSet.has(id) || seen.has(id)) continue
     seen.add(id)
-    /* 实施-20 U5：工具库 UI 已撤下，原先“收进库”的分区改为停在工具页（不丢内容） */
     tiles.push({ id, placement: 'docked', order: tiles.length })
   }
   return { version: 2, revision: 0, tiles }
@@ -122,7 +96,6 @@ function sanitizeRect(value: unknown): ToolRect | undefined {
   const w = clamp01(r.w)
   const h = clamp01(r.h)
   if (x === null || y === null || w === null || h === null || w <= 0 || h <= 0) return undefined
-  /* 尺寸归一化后不能越出可用区（无效坐标恢复可见，而不是丢到屏外） */
   return { x: Math.min(x, 1 - w), y: Math.min(y, 1 - h), w, h }
 }
 
@@ -130,7 +103,6 @@ function sanitizeOrder(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.round(value)) : fallback
 }
 
-/** 归一化任意输入：版本显式分支、未知 id 过滤、重复归一、rect 夹取 */
 export function normalizeToolLayout(value: unknown, ids: readonly string[]): ToolLayout {
   const known = new Set(ids)
   if (!value || typeof value !== 'object') return defaultToolLayout(ids)
@@ -146,12 +118,7 @@ export function normalizeToolLayout(value: unknown, ids: readonly string[]): Too
     if (typeof item.id !== 'string' || !known.has(item.id) || seen.has(item.id)) continue
     seen.add(item.id)
     const rawPlacement: ToolPlacement = isPlacement(item.placement) ? item.placement : 'docked'
-    /*
-     * 实施-20 U5：工具库弹层已撤下。旧数据里的 `library` 在位读到时就迁到停靠区 ——
-     * 保留字面量仅为兼容旧文件，界面上不再产生新库位，也不让任何分区就此消失。
-     */
     const migrated: ToolPlacement = rawPlacement === 'library' ? 'docked' : rawPlacement
-    /* 若以后引入禁止浮动的磁贴，读盘时把它恢复到停靠位。 */
     const placement: ToolPlacement = migrated === 'floating' && !isTileFloatable(item.id) ? 'docked' : migrated
     const rect = placement === 'floating' ? sanitizeRect(item.rect) : undefined
     tiles.push({
@@ -162,7 +129,6 @@ export function normalizeToolLayout(value: unknown, ids: readonly string[]): Too
       ...(item.collapsed === true ? { collapsed: true } : {})
     })
   }
-  /* 新安装的分区按默认策略补成停靠 */
   for (const id of ids) {
     if (seen.has(id)) continue
     seen.add(id)
@@ -174,14 +140,12 @@ export function normalizeToolLayout(value: unknown, ids: readonly string[]): Too
   return { version: 2, tiles, revision }
 }
 
-/** 位置/折叠/尺寸变化；revision 自增 */
 export function setTilePlacement(
   layout: ToolLayout,
   id: string,
   placement: ToolPlacement,
   rect?: ToolRect
 ): ToolLayout {
-  /* 放置命令与读盘使用同一份可浮动规则。 */
   const want: ToolPlacement = placement === 'floating' && !isTileFloatable(id) ? 'docked' : placement
   const tiles = layout.tiles.map((tile) => {
     if (tile.id !== id) return tile
@@ -194,7 +158,6 @@ export function setTilePlacement(
   return { ...layout, tiles, revision: layout.revision + 1 }
 }
 
-/** 折叠 / 展开浮动磁贴（折叠偏好进布局，菜单开关等临时状态不进） */
 export function setTileCollapsed(layout: ToolLayout, id: string, collapsed: boolean): ToolLayout {
   const tiles = layout.tiles.map((tile) => {
     if (tile.id !== id) return tile
@@ -206,10 +169,6 @@ export function setTileCollapsed(layout: ToolLayout, id: string, collapsed: bool
   return { ...layout, tiles, revision: layout.revision + 1 }
 }
 
-/**
- * 按**停靠位次**放置（工具库的上移/下移、拖放插入线都用它）。
- * 只影响停靠项之间的相对顺序：从 0..n-1 重新编号，非停靠项保持原 order。
- */
 export function moveTileToIndex(layout: ToolLayout, id: string, index: number): ToolLayout {
   const docked = layout.tiles.filter((tile) => tile.placement === 'docked').sort((a, b) => a.order - b.order)
   const from = docked.findIndex((tile) => tile.id === id)
@@ -217,18 +176,15 @@ export function moveTileToIndex(layout: ToolLayout, id: string, index: number): 
   const [picked] = docked.splice(from, 1)
   const at = Math.min(Math.max(0, Math.round(index)), docked.length)
   docked.splice(at, 0, picked)
-  /* 重建 order：停靠项按新位次，其它项接在后面（浮动的叠放序也稳定） */
   const rest = layout.tiles.filter((tile) => tile.placement !== 'docked').sort((a, b) => a.order - b.order)
   const tiles = [...docked, ...rest].map((tile, i) => ({ ...tile, order: i }))
   return { ...layout, tiles, revision: layout.revision + 1 }
 }
 
-/** 只保留停靠项（工具库面板按它列目录） */
 export function dockedTileIds(layout: ToolLayout): string[] {
   return layout.tiles.filter((tile) => tile.placement === 'docked').sort((a, b) => a.order - b.order).map((t) => t.id)
 }
 
-/** 停靠顺序：把 id 移到 targetId 前/后 */
 export function moveTile(layout: ToolLayout, id: string, targetId: string, after: boolean): ToolLayout {
   if (id === targetId) return layout
   const ordered = layout.tiles.map((tile) => ({ ...tile })).sort((a, b) => a.order - b.order)
@@ -242,7 +198,6 @@ export function moveTile(layout: ToolLayout, id: string, targetId: string, after
   return { ...layout, tiles: ordered, revision: layout.revision + 1 }
 }
 
-/** 把归一化 rect 夹回当前可用区（缩窗后浮动磁贴不丢到屏外） */
 export function clampRectToBounds(rect: ToolRect): ToolRect {
   const w = Math.min(rect.w, 1)
   const h = Math.min(rect.h, 1)
@@ -251,17 +206,10 @@ export function clampRectToBounds(rect: ToolRect): ToolRect {
   return { x, y, w, h }
 }
 
-/** 晚到的写入是否过时（不能覆盖更新的布局） */
 export function isStaleLayoutWrite(incomingRevision: number, currentRevision: number): boolean {
   return incomingRevision < currentRevision
 }
 
-/**
- * 写入仲裁：只有 revision **更大**的布局才落地。
- *
- * 「连续拖动的晚返回不覆盖新位置」的实现点：晚回来的那次写带旧
- * revision，于是被丢弃；等 revision 的重复写也丢弃（幂等，避免无意义的重渲染）。
- */
 export function commitTileLayout(
   current: ToolLayout,
   incoming: ToolLayout
@@ -269,13 +217,6 @@ export function commitTileLayout(
   if (incoming.revision > current.revision) return { layout: incoming, applied: true }
   return { layout: current, applied: false }
 }
-
-/* ── 像素级几何（U-5）：吸附、夹取与障碍避让 ──────────────────────────
- *
- * 上面的 rect 是 0–1 归一化（U-0 冻结契约）；拖动/放置发生在真实像素里，
- * 所以这里单独给一组像素函数 —— 输入输出都是 px，便于纯函数单测。
- * 归一化 ↔ 像素的换算只在渲染层做一次（见 FloatingTiles）。
- */
 
 export interface FloatArea {
   left: number
@@ -291,7 +232,6 @@ export interface FloatPxRect {
   height: number
 }
 
-/** 把像素矩形完整夹进可用区（缩窗/缩放后磁贴不丢到屏外） */
 export function clampFloatPixels(rect: FloatPxRect, area: FloatArea): FloatPxRect {
   const width = Math.min(rect.width, Math.max(0, area.width))
   const height = Math.min(rect.height, Math.max(0, area.height))
@@ -304,13 +244,6 @@ function intersects(a: FloatPxRect, b: FloatArea): boolean {
   return a.left < b.left + b.width && a.left + a.width > b.left && a.top < b.top + b.height && a.top + a.height > b.top
 }
 
-/**
- * 与障碍（原生网页矩形）相交时，把磁贴吸附到最近的、能完整容纳它的空位。
- *
- * 策略：优先水平让开（网页通常占右栏，往左让最自然），再竖直让开；
- * 都不行时返回 `null` —— 调用方据此退回工具页并说明原因（设计 §5.4），
- * 而不是把磁贴永久压在网页上。
- */
 export function avoidFloatObstacle(
   rect: FloatPxRect,
   area: FloatArea,
@@ -319,26 +252,21 @@ export function avoidFloatObstacle(
   if (!obstacle) return clampFloatPixels(rect, area)
   const base = clampFloatPixels(rect, area)
   if (!intersects(base, obstacle)) return base
-  /* ① 让到障碍左侧（右对齐到障碍左缘） */
   const leftSide: FloatPxRect = { ...base, left: obstacle.left - base.width }
   const leftFit = clampFloatPixels(leftSide, area)
   if (!intersects(leftFit, obstacle) && leftFit.left + leftFit.width <= obstacle.left) return leftFit
-  /* ② 让到障碍右侧 */
   const rightSide: FloatPxRect = { ...base, left: obstacle.left + obstacle.width }
   const rightFit = clampFloatPixels(rightSide, area)
   if (!intersects(rightFit, obstacle) && rightFit.left >= obstacle.left + obstacle.width) return rightFit
-  /* ③ 让到障碍上方 */
   const upSide: FloatPxRect = { ...base, top: obstacle.top - base.height }
   const upFit = clampFloatPixels(upSide, area)
   if (!intersects(upFit, obstacle) && upFit.top + upFit.height <= obstacle.top) return upFit
-  /* ④ 让到障碍下方 */
   const downSide: FloatPxRect = { ...base, top: obstacle.top + obstacle.height }
   const downFit = clampFloatPixels(downSide, area)
   if (!intersects(downFit, obstacle) && downFit.top >= obstacle.top + obstacle.height) return downFit
   return null
 }
 
-/** 像素矩形 → 归一化 rect（保存用；尺寸一并归一化，窗口变化后可复原） */
 export function pxRectToNormalized(rect: FloatPxRect, area: FloatArea): ToolRect {
   const aw = Math.max(1, area.width)
   const ah = Math.max(1, area.height)
@@ -349,22 +277,11 @@ export function pxRectToNormalized(rect: FloatPxRect, area: FloatArea): ToolRect
   return { x: Math.min(x, 1 - w), y: Math.min(y, 1 - h), w, h }
 }
 
-/* ------------------------------------------------------------------ 吸附 */
-
-/**
- * 吸附阈值（px）。
- *
- * 4px 是「想对齐时够得着、不想对齐时不抢手」的常用取值。它是**像素**而非
- * 归一化值 —— 要跟鼠标/手指的精度走，不该跟窗口大小走。
- */
 export const SNAP_THRESHOLD = 4
 
-/** 一条吸附参考线，拖动时画出来 —— 「吸到哪」必须看得见，否则像在抢控制权 */
 export interface SnapGuide {
   axis: 'x' | 'y'
-  /** 参考线的绝对坐标（画线用） */
   at: number
-  /** 吸上的是哪类目标 */
   kind: 'area' | 'center' | 'tile'
 }
 
@@ -373,14 +290,12 @@ export interface SnapResult {
   guides: SnapGuide[]
 }
 
-/** x/y 各自的一条候选：目标线坐标 + 该用矩形哪条边去贴 */
 interface SnapCandidate {
   at: number
   offset: number
   kind: SnapGuide['kind']
 }
 
-/** 在一组候选里挑**最近且不超出阈值**的那条；都没有就返回 null */
 function nearestCandidate(
   candidates: readonly SnapCandidate[],
   pos: number,
@@ -396,22 +311,6 @@ function nearestCandidate(
   return best ? { want: best.want, at: best.at, kind: best.kind } : null
 }
 
-/**
- * 把浮动磁贴吸到「容器边 / 容器中线 / 其他磁贴的边」。
- *
- * 用户要求：「工具拖入到消息窗口后 也应该有吸附对齐功能 这样好整理
- * 并且对于后续开发可以预留标准」。所以这里是**通用的一层**：三类目标
- * 集中在这个函数里，以后加网格、加基线条线都只改这里，调用方不动。
- *
- * 两条设计决定：
- *   · x 与 y **各自独立**选最近的一条（不在斜向上做联合判断）—— 吸附是
- *     「这件事对齐了」而不是「整个位置被拽走」。
- *   · **只吸一次**，不做吸完又触发另一条的连锁；否则拖到角落时会跳。
- *
- * ⚠️ 只改 `left/top`，不动尺寸 —— 吸附是移动，不是缩放。
- * ⚠️ 调用方要在吸附**之后**再 `clampFloatPixels`：吸到右/下边时矩形可能
- *    被推出可用区（`others` 也应排除磁贴自己，不要传全部）。
- */
 export function snapFloatRect(
   rect: FloatPxRect,
   area: FloatArea,
@@ -431,11 +330,6 @@ export function snapFloatRect(
     { at: area.top + area.height / 2, offset: rect.height / 2, kind: 'center' }
   ]
   for (const o of others) {
-    /*
-     * 其他磁贴的**四条边 × 自己两条边**都是目标，不是只对左对右：
-     * 「左对左」「右对右」是笔直对齐，「我的左贴它的右」「我的右贴它的左」
-     * 是相接摆放 —— 后者才是「把两块拼在一起」时最常用的那个。
-     */
     xs.push({ at: o.left, offset: 0, kind: 'tile' })
     xs.push({ at: o.left + o.width, offset: 0, kind: 'tile' })
     xs.push({ at: o.left, offset: rect.width, kind: 'tile' })

@@ -24,12 +24,6 @@ export class StaleElementError extends Error {
   }
 }
 
-/**
- * `select` 遇到的目标不是下拉框。
- *
- * 单独一个错误类（而不是一句笼统失败文案）：模型据此知道「这个 ref 得改用 type/click」，
- * 而不用去猜自己是不是 ref 写错了。
- */
 export class NotSelectElementError extends Error {
   readonly code = 'NOT_SELECT'
 
@@ -39,7 +33,6 @@ export class NotSelectElementError extends Error {
   }
 }
 
-/** 下拉框里没有这个值；把可选值一并给出，省一次 observe */
 export class SelectOptionNotFoundError extends Error {
   readonly code = 'OPTION_NOT_FOUND'
 
@@ -52,16 +45,6 @@ export class SelectOptionNotFoundError extends Error {
   }
 }
 
-/**
- * 一次 observe 产生的元素引用表。
- *
- * ref 包含目标实例标识与观察代次，generation 每次 refresh/clear 递增：
- * 新一次观察后旧 ref 自动不可解析，不需要调用方自己清缓存。
- * 坐标与角色等来自 Observer，这里只负责「代际 + 查找 + 失效应答」。
- *
- * 注意：不要在任意 DOM 变动时 clear（见 browser.ts 里 debugger 监听的注释）——
- * 动态页面会因此让刚拿到的 ref 立刻失效；节点真被删了由 CDP 报 detached。
- */
 export class ElementRegistry {
   private readonly targetId = globalThis.crypto.randomUUID()
   private generation = 0

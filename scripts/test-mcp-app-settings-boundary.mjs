@@ -1,23 +1,3 @@
-/**
- * HI2R · MCP 归属设置的跨层契约与单一连接路径验收。
- *
- * 现场用 esbuild 编译**生产模块**（不另写 green 实现）：
- *   · `src/main/ipc/mcp-app-ipc.ts` → 跑真实 ownership handler 输出；
- *   · `src/main/mcp/settings-safe-access.ts` → 设置页检查 / 状态 / 断开 / probe；
- *   · `src/renderer/.../mcp-app-ownership.ts` → 渲染端响应解析 helper；
- * 再静态核对 `agent.ts` / `registration-service.ts` / `preload` / shared 的接线。
- *
- * 覆盖：
- *   · ownership 对象契约：主进程 `{servers,error?}` → 解析 helper → 视图数组；
- *     后端 error 显示、畸形 payload 拒绝、`servers:[]` 是正常空状态；
- *   · 托管 check/status/disconnect/probe 不走 legacy fake manager；
- *   · 配置从 pi 转 inkstone 后不经旧 client 再连；
- *   · 断 A 不关 B；只读 status 不连接；无项目身份 / 跨项目不伪造 caller；
- *   · 登记 probe 只走宿主单例。
- *
- * 命令：node scripts/test-mcp-app-settings-boundary.mjs
- * 不启动 Electron、不连真实 MCP、不联网、不碰用户数据。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -31,7 +11,6 @@ import {
   piConfig
 } from './fixtures/mcp-app-settings-boundary-fixture.mjs'
 
-/* 产物放项目内 `.tmp/`（已忽略）：node 需要就近解析 node_modules，但不写 out。 */
 const root = await mkdtemp(join(process.cwd(), '.tmp', 'mcp-settings-boundary-'))
 const configFile = join(root, 'mcp-servers.json')
 process.env.YAN_MCP_SERVERS_FILE = configFile
@@ -67,7 +46,6 @@ const rejectsCode = async (work, code, message) => {
   ok(Boolean(thrown) && thrown.code === code, message, thrown ? `${thrown.code}: ${thrown.message}` : '没有抛错')
 }
 
-/* ── 编译生产模块到隔离临时目录（不写 out） ─────────────────── */
 async function bundle(contents, name) {
   const outfile = join(root, name)
   await build({
@@ -106,7 +84,6 @@ const {
 } = helper
 const { parseMcpAppOwnershipResponse } = renderer
 
-/* ── 1. 真实主进程 ownership handler → 解析 helper ───────────── */
 function captureIpc() {
   const handlers = new Map()
   return {
@@ -143,14 +120,12 @@ const parsedReal = parseMcpAppOwnershipResponse(handlerOutput)
 ok(parsedReal.ok === true, '真实 handler 输出经解析 helper 解包成功')
 eq(parsedReal.views.map((view) => view.serverId), ['svc-a'], '解析得到视图数组（serverId）')
 
-/* 配置损坏：主进程返回 error + 空 servers，必须显示 error 而非“空列表成功”。 */
 await writeFile(configFile, '{ not json')
 const brokenOutput = await registerWithDeps()()
 ok(typeof brokenOutput.error === 'string' && brokenOutput.error.length > 0, '配置损坏时 handler 返回可展示的 error')
 const parsedBroken = parseMcpAppOwnershipResponse(brokenOutput)
 ok(parsedBroken.ok === false && parsedBroken.code === 'backend_error', '后端 error 被解析为失败（backend_error）')
 
-/* 畸形 payload：不得静默当空数组。 */
 for (const [label, payload] of [
   ['null', null],
   ['数组', [managedConfig('a')]],
@@ -165,7 +140,6 @@ for (const [label, payload] of [
 const parsedEmpty = parseMcpAppOwnershipResponse({ servers: [] })
 ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 error 是正常空状态')
 
-/* ── 2. 托管 check / status / disconnect / probe 单连接路径 ───── */
 {
   const log = []
   const legacy = createFakeLegacyManager(['A'], log)
@@ -180,7 +154,6 @@ ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 er
 }
 
 {
-  /* 配置从 pi 转 inkstone：旧 client 里仍有 A，检查不得经旧 client 再连。 */
   const log = []
   const legacy = createFakeLegacyManager(['A'], log)
   const host = createFakeAppHost(log)
@@ -200,7 +173,6 @@ ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 er
 }
 
 {
-  /* 读状态绝不允许触发连接：host 的连接方法直接抛错。 */
   const log = []
   const host = createFakeAppHost(log, {
     reconcile: async () => {
@@ -219,7 +191,6 @@ ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 er
 }
 
 {
-  /* 断 A 不关 B（不 close 整个池，也不动 legacy B）。 */
   const log = []
   const legacy = createFakeLegacyManager(['A', 'B'], log)
   const host = createFakeAppHost(log)
@@ -231,7 +202,6 @@ ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 er
   ok(!log.includes('legacy.disconnect:B'), '断 A 不误断 legacy B')
 }
 
-/* 非托管：保持原语义，不触碰宿主。 */
 {
   const log = []
   const legacy = createFakeLegacyManager(['A'], log)
@@ -244,7 +214,6 @@ ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 er
   await rejectsCode(() => probeManagedServer(access, 'A', 'proj-1'), 'not-managed', '非托管 probe 不走托管路径')
 }
 
-/* 无项目身份：明确拒绝；跨项目：caller 身份原样传给宿主，不拿 projectScope 冒充。 */
 {
   const log = []
   const host = createFakeAppHost(log)
@@ -262,7 +231,6 @@ ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 er
   )
 }
 
-/* 登记 probe 只走宿主单例：旧 client 有残留时先断开，再经 host。 */
 {
   const log = []
   const legacy = createFakeLegacyManager(['A'], log)
@@ -273,7 +241,6 @@ ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 er
   ok(log.includes('legacy.disconnect:A') && !log.some((line) => line.startsWith('legacy.listToolsCached')), '登记 probe 不经旧 client 连接')
 }
 
-/* ── 3. 正式接线确实用 helper（静态核对） ───────────────────── */
 const read = (path) => readFile(resolve(path), 'utf8')
 const agentSrc = await read('src/main/agent.ts')
 ok(agentSrc.includes("from './mcp/settings-safe-access'"), 'agent.ts 导入 settings-safe-access helper')

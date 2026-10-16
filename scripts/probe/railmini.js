@@ -1,20 +1,3 @@
-/**
- * 左栏的折叠与收放。
- *
- * 用户 2026-09-19 的两条要求：
- *   ① 「左边栏变为完全折叠 不要留下一个边框」——
- *      收起态从 48px 的紧凑图标轨（砚 / 搜索 / 新建 / 项目文件夹 / 设置）
- *      改成**完全折叠**：0 宽、不渲染任何内容。那条轨在深色主题下就是
- *      消息区左边一条颜色不同的竖条，用户看到的「边框」就是它。
- *   ② 「项目文件夹应该默认显示前五个会话 其余进行折叠」。
- *
- * ⚠️ N14 的 mini 轨（`.rail-compact`）连同它的样式一起删掉了，所以这个
- *    场景不再测「mini 栏里有几个项目图标」；它现在的职责是
- *    「收起态真的什么都不剩」+「项目下的会话折叠」。
- *
- * ⚠️ 当前会话**不能**被藏起来：它落在折叠段里时要自动多展开到它那一行，
- *    否则用户会看不到自己正待着的会话（第 1 节最后三条断言）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -25,7 +8,6 @@
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  /* 受控输入必须走原生 setter + input 事件（直接改 value React 看不到） */
   const setVal = (el, v) => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
     setter.call(el, v)
@@ -46,13 +28,7 @@
       await sleep(250)
     }
 
-    /* ---- 造一个项目 + 8 条会话（排序按最近活动，第一条最新） ---- */
     const stamp = Date.now()
-    /*
-     * 项目 cwd 必须真实存在：主进程对新项目走 `validateCwd`，写一个不存在的路径
-     * 会让 patchSettings 直接拒绝（以前拼 `<base>/yan-probe-railfold` 就是这么挂的，
-     * 整个场景在第一条断言前就异常退出）。直接用当前会话的 cwd。
-     */
     const cwd = String(store.getState().settings.cwd)
     const sessions = Array.from({ length: 8 }, (_, i) => ({
       id: `rf-${i}`,
@@ -69,7 +45,6 @@
       runners: [],
       activeRunnerId: null,
       sessions,
-      /* 当前会话放在第 1 条：先验「默认只显示前五」 */
       session: { ...(store.getState().session ?? {}), cwd, sessionFile: sessions[0].path }
     })
     await store.getState().patchSettings({
@@ -104,7 +79,6 @@
     await sleep(400)
     ok(rows().length === 5, '收回去又是五行')
 
-    /* ---- 当前会话在折叠段里：必须自动展开到它 ---- */
     store.setState({
       session: { ...(store.getState().session ?? {}), cwd, sessionFile: sessions[6].path }
     })
@@ -117,21 +91,14 @@
 
     out.push('')
     out.push('=== 1b. 收起左栏 → 「更多会话」复位（实施-12 U-1） ===')
-    /*
-     * 先把当前会话放回第 1 条：上一节故意把它放在第 7 位来验「不会被藏起来」，
-     * 而那种情况下会**自动多展开到它那一行**（5 + 2 = 7）—— 那是正确的旧行为，
-     * 会干扰本节要测的「收起复位」。
-     */
     store.setState({
       session: { ...(store.getState().session ?? {}), cwd, sessionFile: sessions[0].path }
     })
     await sleep(500)
     ok(rows().length === 5, '当前会话回到第 1 条（本节前置）')
-    /* 前置：先展开到全部 */
     click(more())
     await sleep(400)
     ok(rows().length === 8, '先展开到全部（前置）')
-    /* 顺手把一个会话行菜单打开：收起时它不能留在已折叠的栏里 */
     const rowMenuBtn = qa('.srow-menu-btn')[0]
     if (rowMenuBtn) {
       click(rowMenuBtn)
@@ -148,7 +115,6 @@
     ok(more()?.dataset.count === '3', '其余三条重新折叠')
     ok(!q('[data-testid="rail-menu-time"]'), '临时菜单不留在已收起的左栏里')
 
-    /* 搜索中收起：搜索结果仍完整；清搜索后才按预览折叠 */
     const search = q('[data-testid="rail-search"]')
     if (search) {
       setVal(q('[data-testid="rail-search"]'), '会话')

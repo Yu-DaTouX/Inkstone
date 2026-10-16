@@ -1,28 +1,3 @@
-/**
- * MCP Apps 合成服务器。
- *
- * 同一份实现支持 `--stdio` 与 `--http`，被 `scripts/test-mcp-app-host.mjs`
- * 真连一次，验的是真实协议（握手、tools/list、tools/call、resources/read），
- * 而不是我们编的假接口。它**不联网**：声明的 CSP 域名都是 `.invalid`。
- *
- * 暴露的内容刻意选过：
- *   · `read_only_note`      —— 只读工具，带 `_meta.ui.resourceUri` 与 `csp`；
- *   · `app_only_refresh`    —— `visibility:['app']` 的工具（模型不应注册/调用）；
- *   · `no_visibility_note`  —— 不声明 visibility：宿主必须按最严「只给模型」；
- *   · `client_capabilities` —— 回显客户端 initialize 声明的能力（验 ui 能力声明）；
- *   · `slow`                —— 挂起直到被取消（验每调用取消）；
- *   · `ui://mcp-app/dashboard.html` —— 带 csp 的 App 页面；
- *   · `ui://mcp-app/huge.html`      —— 超过体积上限；
- *   · `ui://mcp-app/plain.txt`      —— MIME 不对，宿主必须拒。
- *
- * 规范字段（MIME、扩展标识、`_meta` 键）不在这里另写一遍：从 `src/main/mcp/app-spec.ts`
- * 取值。默认现场用 esbuild 编译该模块；测试脚本可用 `YAN_MCP_APP_SPEC_MODULE`
- * 指向已编译好的同一模块，避免重复编译。
- *
- * 用法：
- *   node scripts/fixtures/mcp-app-server.mjs --stdio
- *   node scripts/fixtures/mcp-app-server.mjs --http   # 端口见 YAN_MCP_APP_HTTP_PORT
- */
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -35,7 +10,6 @@ import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSche
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, '..', '..')
 
-/** 规范常量来自 `src/main/mcp/app-spec.ts`（唯一来源）。 */
 async function loadSpec() {
   const override = process.env.YAN_MCP_APP_SPEC_MODULE
   if (override) return import(pathToFileURL(resolve(override)).href)
@@ -59,7 +33,6 @@ const UI_META = spec.MCP_APP_META_UI
 const UI_RESOURCE_URI = 'ui://mcp-app/dashboard.html'
 const HUGE_RESOURCE_URI = 'ui://mcp-app/huge.html'
 const PLAIN_RESOURCE_URI = 'ui://mcp-app/plain.txt'
-/** 只声明 https 域名；宿主推导 CSP 时应剔除 frame/priv 等。 */
 const UI_CSP = {
   connectDomains: ['https://api.example.invalid'],
   resourceDomains: ['https://cdn.example.invalid'],
@@ -155,7 +128,6 @@ function createInstance() {
       }
     }
     if (name === 'slow') {
-      /* 尊重取消：连接被丢弃 / 请求被取消时立刻结束，不留挂起的定时器。 */
       await new Promise((resolvePromise, rejectPromise) => {
         const timer = setTimeout(resolvePromise, 30_000)
         if (extra.signal.aborted) {

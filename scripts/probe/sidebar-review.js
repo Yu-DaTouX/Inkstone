@@ -20,7 +20,6 @@
     { id: 'review-a', role: 'assistant', text: '**左右栏结构已整理。**\n\n项目下显示主会话，展开后查看分支。长标题保持单行，完整内容可以悬停查看。\n\n- 左栏宽度可以拖动调整，收起后保留常用入口。\n- 右侧浏览器随窗口尺寸变化，工具分区保持可滚动。\n- 正文采用更紧凑的字距，代码保留等宽显示。\n\n```ts\nconst sidebar = { width: 260, collapsed: false }\n```\n\n这是一组独立的界面验证数据。' }
   ]
   store.setState({ sessions: list, messages, session: { ...store.getState().session, sessionId: root.id, sessionFile: root.path, cwd, isAgentRunning: false, isStreaming: false }, notices: [] })
-  // Keep the renderer-only fixture independent of pi's disk session refresh.
   store.setState({ refreshSessions: async () => {} })
   store.getState().setRailPinned(true)
   await store.getState().patchSettings({ railWidth: 0, panelWidth: 264, rightPanelOpen: true, browserHeight: 900, projectGroups: [group], projects: [{ id: 'review-project', cwd, name: 'pi-desktop', groupId: group.id, archived: false, createdAt: stamp, updatedAt: stamp }] })
@@ -42,7 +41,6 @@
   store.getState().setRailPinned(false)
   await sleep(100)
   assert(Math.abs(document.querySelector('.rail-slot').getBoundingClientRect().width - 48) < 1, 'Collapsed rail must be 48 CSS px')
-  /* N14 之后紧凑栏多了项目文件夹入口；这里钉「四个基础入口」仍在 */
   const compactBase = [...document.querySelectorAll('.rail-compact > button')].filter((b) => !b.classList.contains('rail-compact-proj'))
   assert(compactBase.length === 4, 'Collapsed rail needs four base entries (projects are extra)')
   store.getState().setRailPinned(true)
@@ -66,6 +64,6 @@
   assert(view.width > 50 && view.right <= aside.right + 1, 'Browser viewport must stay inside right panel')
   await document.fonts.ready
   console.error(`SIDEBAR_REVIEW_READY ${JSON.stringify({ widths, sizes, toggleFrameMs: Math.round(elapsed), viewport: { width: view.width, height: view.height } })}`)
-  await sleep(12000) // Allow the host to capture the complete native test window.
+  await sleep(12000)
   return 'Sidebar review: hierarchy, persistence, collapsed rail, virtualization and viewport bounds passed.'
 })()

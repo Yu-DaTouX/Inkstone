@@ -9,18 +9,6 @@ import { APPEARANCE_EVENT } from '../../lib/appearance'
 import { HTML_ARTIFACT_SANDBOX } from '../../../../shared/html-artifact-preview'
 import { safeHttpUrl, VISUAL_WIDGET_MAX_CHARS } from '../../../../shared/visual-blocks'
 
-/**
- * 消息内小部件（```yan-widget）：模型写的 HTML/SVG 片段，用于图解、原理示意、交互讲解与插画。
- *
- * - 放进与 HTML 成果同一个隔离协议：无网络、无同源、无宿主对象，CSP 由主进程下发；
- * - 宿主注入主题变量与基础样式；换主题只经消息通道发新变量，不重建页面，页面内的操作不丢；
- * - 离视口很远时卸载页面、只留同高占位，回来重新载入（与 HTML 成果预览同一组边界），
- *   标题行写明当前是「活跃」还是「已暂停」；
- * - 页面经 postMessage 回报高度、链接、追问；状态仅响应用户发起的保存请求。
- *   追问不会自动发送：先在小部件下方显示文字，用户点「填入输入框」后照常由用户发送。
- */
-
-/** 小部件可用的主题变量（名字对模型稳定，值取自砚的令牌） */
 const THEME_VARS: Array<[string, string]> = [
   ['--bg', '--bg-0'], ['--surface', '--bg-1'], ['--surface-2', '--bg-2'], ['--surface-3', '--bg-3'],
   ['--text', '--fg'], ['--text-dim', '--fg-dim'], ['--text-mute', '--fg-mute'],
@@ -32,15 +20,11 @@ const THEME_VARS: Array<[string, string]> = [
   ['--c1', '--accent'], ['--c2', '--think-low'], ['--c3', '--warn'], ['--c4', '--think-xhigh'], ['--c5', '--think-high'], ['--c6', '--ok']
 ]
 
-/** 消息内的高度上限：再高就在框内滚动，不让一个小部件占满整屏 */
 const WIDGET_MAX_H = 560
-/** 进入近处才载入；离得很远才卸载（与 HtmlArtifactPreview 同一组边界） */
 const LOAD_MARGIN = '240px'
 const KEEP_MARGIN = '1200px'
-/* 已量过的高度：重新挂载（切换分屏会话）时先按它占位，页面载入后不再跳动 */
 const heightCache = new Map<string, number>()
 
-/* 桥接：回报高度 / 打开链接 / 追问；只接受父窗口发来的主题变量（逐个 setProperty，不执行任何内容） */
 const BRIDGE = `(function(){var p=parent,last=0;function post(m){m.yanWidget=1;p.postMessage(m,'*')}
 function h(){var v=Math.ceil(Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0));if(v!==last){last=v;post({type:'height',h:v})}}
 addEventListener('load',h);new ResizeObserver(h).observe(document.documentElement);setTimeout(h,0);
@@ -102,7 +86,6 @@ export function WidgetBlock({ html, fallback, blockId }: { html: string; fallbac
   const [height, setHeight] = useState(() => heightCache.get(html) ?? 160)
   const [ask, setAsk] = useState<string | null>(null)
   const tooLarge = html.length > VISUAL_WIDGET_MAX_CHARS
-  /* 文档只随内容变化；主题由下面的消息通道更新 */
   const doc = useMemo(() => (tooLarge ? '' : buildDocument(html)), [html, tooLarge])
 
   useEffect(() => {
@@ -135,7 +118,6 @@ export function WidgetBlock({ html, fallback, blockId }: { html: string; fallbac
     return () => window.clearTimeout(timer)
   }, [capture, t])
 
-  /* 换主题：把新变量发进页面（页面状态保留）；页面重新载入时也补发一次 */
   const sendTheme = (): void => {
     frame.current?.contentWindow?.postMessage({ yanTheme: 1, ...themeVars() }, '*')
   }
@@ -164,7 +146,6 @@ export function WidgetBlock({ html, fallback, blockId }: { html: string; fallbac
     }
   }, [doc, near, reload])
 
-  /* 只接受当前 iframe 的消息；保存响应必须匹配用户请求。 */
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (!frame.current || event.source !== frame.current.contentWindow) return
@@ -193,7 +174,6 @@ export function WidgetBlock({ html, fallback, blockId }: { html: string; fallbac
   const live = !!url
   return (
     <figure ref={root} className="vb vb-widget" data-testid="vb-widget" onClick={(e) => e.stopPropagation()}>
-      {/* 标题行与图表标题同级：名称 · 隔离说明 ······ 生命周期 · 重新载入 */}
       <figcaption className="vb-widget-head">
         <span className="vb-widget-name" title={t('vb.widgetNote')}>{t('vb.widgetTitle')}</span>
         <span className="vb-widget-sp" />

@@ -1,5 +1,3 @@
-// 构建手机端 APK 并整理到 release/apk-<版本>-<提交>/（附 SHA-256）。
-// 直接调用 Gradle 而不是经 npm 脚本里的 `gradlew.bat`：后者依赖 npm 使用 cmd，换成 Git Bash 时找不到。
 import { spawnSync, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
@@ -14,7 +12,6 @@ const run = (command, args, options = {}) => {
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} 失败（${result.status}）`)
 }
 
-/* Android SDK 位置：环境变量优先，其次 android/local.properties 的 sdk.dir。 */
 function sdkDir() {
   if (process.env.ANDROID_HOME) return process.env.ANDROID_HOME
   const file = join(mobile, 'android', 'local.properties')

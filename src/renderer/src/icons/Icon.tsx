@@ -4,14 +4,6 @@ import { ICON_SPRITE, type IconName } from './sprite'
 export type { IconName }
 export { ICON_NAMES } from './sprite'
 
-/**
- * 图标：自绘「砚线」描边图标（16 网格、恒定 1.25px 描边、方头斜接），
- * 由 `npm run icons` 从编目与 scripts/design/icons/inkline.json 生成。
- *
- * 语义 → 图标的对应关系写在 scripts/design/icons/catalog.json，
- * 这里渲染的是「引用」（<use href="#i-x">），
- * 真正定义 symbol 的 sprite 由 <IconSprite /> 在应用根部挂一次。
- */
 export function Icon({
   name,
   size = 14,
@@ -33,7 +25,6 @@ export function Icon({
   )
 }
 
-/** 挂在 App 根部一次即可；display:none，不占布局 */
 export function IconSprite() {
   return (
     <svg

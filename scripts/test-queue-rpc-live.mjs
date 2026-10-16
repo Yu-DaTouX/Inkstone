@@ -1,4 +1,3 @@
-/** Real bundled pi and AgentController queue operations, with a loopback-only model fixture. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'

@@ -1,4 +1,3 @@
-/* Real UI split controls: sidebar persistence and workspace geometry, including keyboard operation. */
 ;(async () => {
   const out = [], store = window.__yanStore
   const ok = (v, label) => out.push(`  ${v ? '✓' : '✗'} ${label}`)

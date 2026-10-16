@@ -1,14 +1,3 @@
-/**
- * 设置 → 上下文（v3，WP-42）。
- *
- * 迁移 v2 设置里的 NativeContextTab 能力，只换 v3 控件：
- *   · 自动压缩开关与上限（开关与「立即压缩」直接调 pi 原生能力）；
- *   · 省略较早大段工具输出的开关与起点（执行在随包扩展 context-trim.js）；
- *   · 当前会话的上下文占用展示。
- *
- * 复用现有 store 字段与动作（`settings` / `session` / `stats` / `patchSettings` /
- * `setAutoCompaction` / `compact`）与 `shared/context-limits.ts` 的档位，不新增 IPC 或设置字段。
- */
 import type { ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'

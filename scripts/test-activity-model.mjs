@@ -1,13 +1,3 @@
-/**
- * 按活动配置模型（实施-25 P18）—— 清洗 / 解析优先级 / 回退 / 边界文案。
- *
- * 四条最值得钉住的：
- *   · 优先级固定：**活动指定 → 默认 → 跟随会话**；
- *   · **回退要如实说**：配置的模型不可用时回退并标 `fellBack`；
- *   · 连回退目标都没有时**不指定模型**（不替用户随便挑一个）；
- *   · **不改变任务身份与学习状态**：这句话是固定文案（`ACTIVITY_MODEL_SCOPE_NOTE`）。
- */
-
 export function runActivityModelTests(ok, mod) {
   const {
     emptyActivityModelConfig,
@@ -21,7 +11,6 @@ export function runActivityModelTests(ok, mod) {
     ACTIVITY_MODEL_SCOPE_NOTE
   } = mod
 
-  /* ---- 清洗 ---- */
   {
     ok(isActivityModelConfigEmpty(emptyActivityModelConfig()), '空配置就是空')
     ok(isActivityModelConfigEmpty(undefined), '没配过也算空')
@@ -47,7 +36,6 @@ export function runActivityModelTests(ok, mod) {
     ok(setActivityModel(one, 'research', '  ')?.byActivity.research === null, '空白模型名当没填')
   }
 
-  /* ---- 解析优先级 ---- */
   {
     const config = { defaultModel: 'default/m', byActivity: { research: 'deep/thinker' } }
     const research = resolveActivityModel({ config, activity: 'research', current: 'session/m' })
@@ -63,7 +51,6 @@ export function runActivityModelTests(ok, mod) {
     const nothing = resolveActivityModel({ config: undefined, activity: 'organize' })
     ok(nothing.model === null && nothing.source === 'none' && !nothing.fellBack, '没配也没有会话模型：不指定')
 
-    /* 显式写成 null 的项 = 跟默认，而不是「用名叫 null 的模型」 */
     const explicitNull = resolveActivityModel({
       config: { defaultModel: 'default/m', byActivity: { learn: null } },
       activity: 'learn'
@@ -71,7 +58,6 @@ export function runActivityModelTests(ok, mod) {
     ok(explicitNull.model === 'default/m' && explicitNull.source === 'default', '显式 null 落到默认那一档')
   }
 
-  /* ---- 回退（T18-2） ---- */
   {
     const config = { defaultModel: 'gone/m' }
     const fell = resolveActivityModel({
@@ -103,7 +89,6 @@ export function runActivityModelTests(ok, mod) {
     )
   }
 
-  /* ---- 边界文案（T18-3） ---- */
   {
     ok(/不会新建会话/.test(ACTIVITY_MODEL_SCOPE_NOTE), '边界文案写明「不会新建会话」')
     ok(/不会动课程与学习进度/.test(ACTIVITY_MODEL_SCOPE_NOTE), '边界文案写明「不动课程与学习进度」')
@@ -113,7 +98,6 @@ export function runActivityModelTests(ok, mod) {
     ok(/a\/b/.test(text) && /不会新建会话/.test(text), '一句话说明同时带上模型与边界')
   }
 
-  /* ---- 五个活动的视图 ---- */
   {
     const config = { defaultModel: 'default/m', byActivity: { learn: 'learn/m' } }
     const rows = activityModelRows({ config, current: 'session/m' })

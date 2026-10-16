@@ -1,14 +1,3 @@
-/*
- * 截图用的假数据（在渲染端执行）。
- *
- * 为什么不启 pi 进程：截图只需要「界面长什么样」，真起 pi 会让截图依赖
- * 模型额度、网络和会话目录，且每次内容都不一样（README 的图会漂）。
- * 这里直接往 `window.__yanStore` 注入一份贴近真实编码会话的数据，
- * 数据通路本身由 `npm run test:live` 覆盖。
- *
- * `shots.mjs` 会把本文件读成字符串交给 `executeJavaScript`，
- * 所以这里必须是一个**自求值的 async IIFE**，且不能用反引号/`${}`。
- */
 ;(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -32,8 +21,6 @@
     lang: 'zh-CN',
     recentCwds: ['C:/work/pi-desktop'],
     projectNames: {},
-    /* 必须给：Composer / FileTree / store 都用 `settings.projects.find(...)`（没有 `?.` 兜底），
-       缺这个字段会在注入后抛 TypeError 并让 React 卸载整棵树 —— 截图会变成整片空白。 */
     projects: [],
     projectGroups: [],
     providerBudgets: {},
@@ -49,7 +36,6 @@
     toolDetail: false,
     streamWidth: 940,
     autonomous: false,
-    /* 工作模式（实施-05）：新会话默认值；界面在未收到推送时按它渲染 */
     defaultWorkMode: 'standard',
     sound: { enabled: false, volume: 0.4, notifications: true, events: { done: true, question: true, error: true } }
   }
@@ -183,11 +169,6 @@
             '> yan-desktop@0.1.0 check\n> tsc --noEmit -p tsconfig.node.json\n> tsc --noEmit -p tsconfig.web.json\n> node scripts/lint-css.mjs\n\n✓ 全部合规（检查了 10 个文件）\n> node scripts/test-unit.mjs\n181/181 通过',
           startedAt: now - 4000
         },
-        /*
-         * shell 的目录级改动（L05）：
-         * 三种状态各有代表 —— created（有行数与 patch）/ modified（有 patch）/
-         * unknown（同大小、没读内容，只说“可能改了”）。
-         */
         {
           id: 't4',
           name: 'bash',
@@ -236,7 +217,6 @@
           startedAt: now - 150000,
           endedAt: now - 141000
         },
-        /* 第二个变体：同目录并发 → 明说“不能归属” */
         {
           id: 't5',
           name: 'bash',

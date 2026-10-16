@@ -1,23 +1,4 @@
-/**
- * 量设计稿（prototype.html）的布局溢出。
- *
- * 为什么需要它：截图里「12m 被遮住」「新对话按钮边框不见」看着像两个 bug，
- * 但更可能是同一个根因 —— 容器内容比容器宽，溢出的部分被右邻的
- * 不透明列盖住了。肉眼只能看到「被遮挡」，量一下就知道宽了多少。
- *
- * 用法： npx electron scripts/design/measure-design.mjs
- */
-/**
- * 量设计稿（prototype.html）的布局溢出。
- *
- * 为什么需要它：截图里「12m 被遮住」「新对话按钮边框不见」看着像两个 bug，
- * 但更可能是同一个根因 —— 容器内容比容器宽，溢出的部分被右邻的
- * 不透明列盖住了。肉眼只能看到「被遮挡」，量一下就知道宽了多少。
- *
- * 用法： npm run measure:design
- *       （或 npx electron scripts/design/measure-design.mjs）
- */
-import { muteMissingHandlerNoise } from '../../scripts/lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
+import { muteMissingHandlerNoise } from '../../scripts/lib/stdio-guard.mjs'
 import { app, BrowserWindow } from 'electron'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,12 +7,6 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const FILE = resolve(HERE, 'prototype.html')
 
 async function main() {
-  /*
-   * 截图/测量脚本**故意**不注册拉取型 IPC（返回空值会覆盖 fixture 注入的 store）：
-   * Electron 会把每次失败调用刷成一整段堆栈，既是这次 EPIPE 事故里被淹没的
-   * “原始错误”，也会把真错误顶出屏幕。这里显式静音并计数（结尾汇总），
-   * 其余 console.error 原样透传。
-   */
   muteMissingHandlerNoise()
   await app.whenReady()
 
@@ -133,12 +108,10 @@ async function main() {
   console.log('设计稿: ' + FILE)
   console.log(report)
 
-  // 断言：需要退出码，才能进 check 流水线
   const fails = []
   const overCount = /=== 2\. 有没有元素比它的容器宽 ===\n\s*数量: (\d+)/.exec(report)
   if (overCount && Number(overCount[1]) > 0) fails.push(`${overCount[1]} 个元素比容器宽`)
 
-  // 逐行抓 「超出 Npx」里 N > 0 的
   for (const line of report.split('\n')) {
     const m = /超出 (\d+)px/.exec(line)
     if (m && Number(m[1]) > 0) fails.push(line.trim())

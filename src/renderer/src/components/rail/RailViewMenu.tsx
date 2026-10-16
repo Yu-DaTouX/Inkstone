@@ -8,12 +8,6 @@ const GROUP_OPTIONS: readonly RailGroupBy[] = ['project', 'state', 'date', 'none
 const SORT_OPTIONS: readonly RailSortBy[] = ['recent', 'name', 'created']
 const SHOW_OPTIONS: readonly RailShow[] = ['active', 'archived']
 
-/**
- * 左栏的「视图」菜单：分组方式与排序。
- *
- * 只改整理方式，不改会话本身；选择由调用方持久化。非默认视图时按钮点亮，
- * 提醒用户列表不是默认的「按项目 · 最近活动」。
- */
 export function RailViewMenu({ view, onChange }: { view: RailView; onChange: (next: RailView) => void }) {
   const t = useT()
   const [anchor, setAnchor] = useState<ContextMenuAnchor | null>(null)

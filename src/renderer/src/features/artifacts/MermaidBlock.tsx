@@ -1,14 +1,3 @@
-/**
- * v3 Mermaid 图块（WP-32 · 02 §11.5）。
- *
- * 复用既有离线渲染方式，但外观不再取 v2 令牌：
- *   · 主题由 `mermaid-theme.ts` 从 v3 令牌生成，深浅随 `<html data-theme>`；
- *   · `securityLevel: 'strict'`，图里的 HTML 标签转义、点击事件禁用，输出经 mermaid 净化；
- *   · mermaid 全局状态不能并发初始化，渲染串行；结果按「主题 + 源码」缓存；
- *   · 语法错误或源码过长退回代码块，不静默丢弃。
- *
- * `mermaid` 体积大，按需动态加载，不进首包。
- */
 import { useEffect, useState, type JSX, type ReactNode } from 'react'
 import { useT } from '../../i18n'
 import { VISUAL_MERMAID_MAX_CHARS } from '../../../../shared/visual-blocks'
@@ -25,7 +14,6 @@ function loadMermaid(): Promise<MermaidApi> {
 
 let queue: Promise<unknown> = Promise.resolve()
 let seq = 0
-/* 渲染好的 SVG：虚拟列表回收或主题切换回来时直接复用，不再重画。 */
 const svgCache = new Map<string, string>()
 const SVG_CACHE_LIMIT = 40
 
@@ -61,7 +49,6 @@ async function renderMermaid(source: string): Promise<string> {
       securityLevel: 'strict',
       theme: 'base',
       fontFamily: tokens.font || 'sans-serif',
-      /* SVG 文字标签：严格模式下 HTML 标签不可用，统一用 SVG 文本测量，避免节点里的字被截。 */
       htmlLabels: false,
       flowchart: { htmlLabels: false, useMaxWidth: true },
       themeVariables: mermaidThemeVariables(tokens)
@@ -74,7 +61,6 @@ async function renderMermaid(source: string): Promise<string> {
   return job
 }
 
-/** mermaid 输出 width="100%"：按 viewBox 自然宽度显示，只在放不下时由 CSS 缩小。 */
 function naturalWidth(svg: string): string {
   const box = /viewBox="[-\d.]+ [-\d.]+ ([\d.]+) [\d.]+"/.exec(svg)
   if (!box) return svg
@@ -85,7 +71,6 @@ function naturalWidth(svg: string): string {
 
 export interface MermaidBlockProps {
   source: string
-  /** 语法错误时的代码块回退（由 Markdown 层提供，保持与其它代码块一致）。 */
   fallback: ReactNode
 }
 
@@ -146,7 +131,6 @@ export function MermaidBlock({ source, fallback }: MermaidBlockProps): JSX.Eleme
   }
   return (
     <figure className="v3-visual v3-visual-mermaid" data-testid="v3-visual-mermaid">
-      {/* mermaid 严格模式的输出已净化，且这里不执行任何脚本 */}
       <div className="v3-mermaid-svg" dangerouslySetInnerHTML={{ __html: state.svg }} />
     </figure>
   )

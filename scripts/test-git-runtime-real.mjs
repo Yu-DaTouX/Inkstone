@@ -1,13 +1,3 @@
-/**
- * 受管 Git 的真实安装验证（下载约 57MB 的 PortableGit 并运行它的自解压包）。
- *
- * 默认不跑：必须显式 `YAN_REAL_GIT_DOWNLOAD=1`。在系统临时目录里装两次，验：
- *   A. 路径带空格 + 中文：下载校验、自解压、目录结构、`git --version`、`bash -c` 都能成立
- *      （这里抓到过「自解压程序在空格路径下挂起」）；
- *      但中文路径下 pi 用 `where` 找 bash 会乱码，所以对齐 PATH 后 bash 不算可用、git 可用；
- *   B. 路径只带空格（纯 ASCII）：对齐 PATH 后 `where bash.exe`（pi 的查找方式）首个命中就是受管那份。
- * 结束后整个目录删除。不碰数据目录与系统里已有的 Git。
- */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
@@ -60,7 +50,6 @@ async function install(label, prefix) {
   return { work, root, paths }
 }
 
-/** 摘掉系统里的 git / bash 后对齐 PATH，返回对齐结果与 pi 式查找（where，按 UTF-8 解码）的首个命中 */
 async function alignWithoutSystemGit(root, work) {
   const saved = { path: process.env.PATH, pf: process.env.ProgramFiles, pf86: process.env['ProgramFiles(x86)'] }
   process.env.PATH = (saved.path ?? '')
@@ -95,7 +84,6 @@ async function alignWithoutSystemGit(root, work) {
 
 const cleanup = []
 try {
-  /* A. 空格 + 中文 */
   const a = await install('A 空格+中文', 'yan git 测试 ')
   cleanup.push(a.work)
   const alignedA = await alignWithoutSystemGit(a.root, a.work)
@@ -106,7 +94,6 @@ try {
   console.log('  ✓ A：中文路径下 git 可用；bash 如实判为不可用（pi 会退到 PowerShell）')
   rmSync(a.work, { recursive: true, force: true })
 
-  /* B. 纯 ASCII + 空格 */
   const b = await install('B 空格', 'yan git test ')
   cleanup.push(b.work)
   const alignedB = await alignWithoutSystemGit(b.root, b.work)

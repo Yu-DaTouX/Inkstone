@@ -1,5 +1,5 @@
 /* 由 src/shared/custom-provider.ts 生成，勿手改；重新生成：node scripts/build-model-capabilities.mjs
- * source-sha256: 5c5e1abfa5834f6cac6b4c23c3d113c9be34a3ad78cb0f550fa7ecc0c6cb0f44
+ * source-sha256: 342c1f23233cf3e8156ca8343fa8a5fc5c313157eba2ed52ce0c95bf5cb52d32
  */
 // src/shared/custom-provider.ts
 var PI_API_IDS = [
@@ -158,7 +158,6 @@ function readCustomProviders(modelsJson) {
         if (cost) model.cost = cost;
         return model;
       }).filter((m) => m.id),
-      /* 只报告有没有，不回明文 */
       hasApiKey: typeof entry.apiKey === "string" && entry.apiKey.length > 0
     });
   }

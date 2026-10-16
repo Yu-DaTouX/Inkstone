@@ -1,13 +1,3 @@
-/*
- * v3 输入框 `/` 命令与 `@` 路径候选隔离探针。
- *
- * 命令候选：向 store 注入三条命令（可执行 yan / 可执行 pi / 不可执行 compatibility），
- * 验证出菜单、方向键移动、Enter 补全并关菜单、Esc 关闭且不被异步重开、
- * 中文输入法组合态 Enter 让路、不可执行项不能被点选补全。
- * 路径候选：真实走 `window.yan.completePath`（只读一层目录），只断言菜单状态机
- * （出现 → 有结果/空/错误之一 → Esc 关闭），不依赖具体目录内容。
- * 全程 `store.send` 不会被触发；不出网、不调模型。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => {
@@ -22,7 +12,6 @@
       try {
         if (predicate()) return true
       } catch {
-        /* 还没就绪 */
       }
       await wait(50)
     }
@@ -56,7 +45,6 @@
     try {
       localStorage.setItem('yan.onboarded', '1')
     } catch {
-      /* 忽略 */
     }
     const onboarding = document.querySelector('.v3-ob-overlay')
     if (onboarding) {
@@ -69,7 +57,6 @@
     const realSend = store.getState().send
     store.setState({ send: async (...args) => { sends.push(args); return true } })
 
-    /* 新鲜的 commandsAt：避免菜单一打开就触发真实重拉把注入的命令冲掉 */
     const realCommands = store.getState().commands
     store.setState({
       commands: [
@@ -141,7 +128,6 @@
     const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
     const probeResult = await window.yan.completePath('', cwd, { cwd, generation: 0 }).catch((error) => ({ error: String(error), paths: [], status: 'error' }))
     note(`cwd=${JSON.stringify(cwd)} 主进程返回 ${probeResult.paths?.length ?? 0} 项，状态 ${probeResult.status}`)
-    /* 菜单只在「加载中 / 有结果 / 出错」时存在；没有结果时会自行收起，所以用观察器记下出现过 */
     let seen = false
     const watcher = new MutationObserver(() => { if (q('at-menu')) seen = true })
     watcher.observe(document.body, { childList: true, subtree: true })
@@ -172,7 +158,6 @@
     await wait(300)
     check(!q('slash-menu'), '光标在参数区时不再显示命令菜单')
 
-    /* ---- 收尾 ---- */
     setValue(ta, '')
     store.setState({ send: realSend, commands: realCommands })
     out.push('证据范围：v3 候选菜单状态机与键盘 / 鼠标路径；命令为注入的假数据，路径走真实只读 IPC，未发消息、未调模型。')

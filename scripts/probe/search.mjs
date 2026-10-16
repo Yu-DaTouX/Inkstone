@@ -1,21 +1,3 @@
-/**
- * 搜索后端探针（实施-27 S0/S6）。
- *
- * 做什么：直接调 `src/main/search/opencli.ts`（esbuild 现场编译），
- *   ① `searchDoctor()` —— 后端在不在、版本、各来源依赖；
- *   ② 一次真实查询（默认三个 HTTP 直连来源）—— 逐来源状态与结果条数。
- *
- * 为什么单独一个探针：`yan search` 只能在砚的会话里跑（需要宿主注入的身份），
- * 而这个探针不需要宿主、不需要模型额度（cost 0），所以能进 CI / 本地反复跑。
- *
- * 用法：
- *   node scripts/probe/search.mjs                     # doctor + 默认查询
- *   node scripts/probe/search.mjs --query "关键词"
- *   node scripts/probe/search.mjs --sources arxiv     # 只查一个来源
- *   node scripts/probe/search.mjs --doctor-only
- *
- * 退出码：0 = 后端可用且有来源返回了结果；1 = 后端不可用（如实失败，不假装成功）。
- */
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { build } from '../../node_modules/esbuild/lib/main.js'
@@ -63,10 +45,6 @@ if (!doctorOnly) {
   const reached = outcome.sources.some((s) => s.status === 'ok' && s.count > 0)
   if (!reached) worst = 1
 
-  /*
-   * 被丢掉的来源名必须被点名：静默丢掉等于把「没查」写成「查了没结果」。
-   * 只跑一个来源，省时间。
-   */
   const ignoredProbe = await mod.runSearch(
     { text: query, sources: ['wikipedia', 'definitely-not-a-source'] },
     { runner: mod.createOpencliRunner(), now: () => Date.now() }

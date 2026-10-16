@@ -1,4 +1,3 @@
-/** 命令块表：短组逐行可见，七步及以上默认只留失败步骤，点开查看完整历史。 */
 ;(async () => {
   const out = []
   const ok = (condition, label) => { out.push((condition ? '  ✓ ' : '  ✗ ') + label); return !!condition }
@@ -7,7 +6,6 @@
   const qa = (selector) => [...document.querySelectorAll(selector)]
   const click = (element) => element?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   const store = window.__yanStore
-  /* 过程入口默认折叠时工具行**不在 DOM 里**，断言之前先铺开（见 toolrow.js 里的说明）。 */
   const openProcess = async () => {
     for (let i = 0; i < 25; i++) {
       const toggle = q('[data-testid="turn-process-toggle"]')

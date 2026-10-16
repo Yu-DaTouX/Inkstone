@@ -17,16 +17,8 @@ import { Icon, type IconName } from '../../icons/Icon'
 import { APPEARANCE_EVENT } from '../../lib/appearance'
 import { Tip } from './Tip'
 
-// 统一提示气泡（components/ui/Tip）：替代原生 title。
 export { Tip } from './Tip'
 export { WheelPicker } from './WheelPicker'
-
-/**
- * 统一控件（v0.4）。外观唯一来源是 `styles/ui.css`；这里只把常用组合收成组件，
- * 让调用点写意图（主要 / 次要 / 无框 / 危险、尺寸、图标），不再各自拼类名。
- *
- * 组件不吞掉调用方的 className：模块可以继续加自己的版面类或探针钩子。
- */
 
 type ButtonVariant = 'secondary' | 'primary' | 'ghost' | 'danger'
 type ButtonSize = 'sm' | 'md' | 'lg'
@@ -39,10 +31,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
   size?: ButtonSize
   icon?: IconName
-  /** 图标放在文字之后（例如「打开 ›」） */
   trailingIcon?: IconName
   block?: boolean
-  /** 切换按钮的「已开启」：.on + aria-pressed */
   active?: boolean
 }
 
@@ -74,12 +64,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon: IconName
-  /** 必填：图标按钮没有可见文字，名称同时用作无障碍名称与提示气泡文字 */
   label: string
   size?: ButtonSize
-  /** 图标尺寸默认随按钮：sm 12 · md 14 · lg 16 */
   iconSize?: 12 | 14 | 16
-  /** 图标自身的类（如会旋转的 chevron） */
   iconClassName?: string
   active?: boolean
 }
@@ -88,7 +75,6 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   { icon, label, size = 'md', iconSize, iconClassName, active, className, type, title, ...rest },
   ref
 ) {
-  /* 提示气泡替代原生 title：`label` 是无障碍名称，调用方若给了更完整的 `title` 说明就用它当气泡内容。 */
   const tip = typeof title === 'string' && title.trim() ? title : label
   return (
     <Tip label={tip}>
@@ -115,10 +101,6 @@ export interface SegmentedOption<T extends string> {
   title?: string
 }
 
-/**
- * 互斥选项：主题、语言、视图切换。选中项用抬高一级的底色表达，
- * 切换时底块沿横向滑到新位置（motion.css 的 .seg.sliding，设计规范 §3.2）。
- */
 export function Segmented<T extends string>({
   options,
   value,
@@ -132,13 +114,11 @@ export function Segmented<T extends string>({
   value: T
   onChange: (value: T) => void
   size?: 'sm' | 'md'
-  /** 分组的无障碍名称 */
   label?: string
   className?: string
   testId?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  /* 量选中项的位置写进 CSS 变量；底块本身由 ::before 画，不占 DOM */
   useLayoutEffect(() => {
     const root = ref.current
     const sel = root?.querySelector<HTMLElement>('.seg-btn.sel')
@@ -173,7 +153,6 @@ export function Segmented<T extends string>({
   )
 }
 
-/** 布尔开关：外观为 ui.css 的 .switch-pill，语义是 role="switch" */
 export function Switch({
   checked,
   onChange,
@@ -183,7 +162,6 @@ export function Switch({
 }: {
   checked: boolean
   onChange: (next: boolean) => void
-  /** 无障碍名称（开关旁边通常已有可见标题，这里给读屏用） */
   label: string
   disabled?: boolean
   testId?: string
@@ -226,7 +204,6 @@ export function Badge({
   )
 }
 
-/** 文字链接：显示去掉协议的网址（可带前缀标签），完整地址放在 title；打开方式由调用方决定。 */
 export function LinkButton({ url, label, onOpen }: { url: string; label?: string; onOpen: (url: string) => void }) {
   const shown = url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')
   return (
@@ -237,7 +214,6 @@ export function LinkButton({ url, label, onOpen }: { url: string; label?: string
   )
 }
 
-/** 空状态：一句事实 + 可选的下一步。不画插图，不写「暂无数据」式的空话。 */
 export function EmptyState({
   icon,
   title,
@@ -282,10 +258,6 @@ export function SectionTitle({
   )
 }
 
-/**
- * 进行中：方点阵（motion.css 的 .ui-spin）。只挂在真实运行的状态上，
- * 旁边要有文字或无障碍名称说明在做什么 —— 动画不能是唯一的状态信息。
- */
 export function Spinner({ mute, className, label }: { mute?: boolean; className?: string; label?: string }) {
   return (
     <span
@@ -295,10 +267,6 @@ export function Spinner({ mute, className, label }: { mute?: boolean; className?
   )
 }
 
-/**
- * 进行中的静态标记：强调色方点。同一时刻界面上只有一个方点阵（当前会话运行时
- * 在输入区运行条）；工具行、任务、左栏、推理头等次要位置用它，避免多处同时在转。
- */
 export function RunDot({ className, label }: { className?: string; label?: string }) {
   return (
     <span
@@ -308,15 +276,10 @@ export function RunDot({ className, label }: { className?: string; label?: strin
   )
 }
 
-/** 流式输出的光标：输出中常亮，停下后闪烁 */
 export function Caret({ idle, className }: { idle?: boolean; className?: string }) {
   return <span className={cx('ui-caret', idle && 'idle', className)} aria-hidden />
 }
 
-/**
- * 展开 / 收起：0fr ↔ 1fr 的网格行过渡，内容被连续推开。
- * `enter` 用于新插入的块（首帧就长出来）；收合用 `open`。
- */
 export function Grow({
   open = true,
   enter,
@@ -337,14 +300,10 @@ export function Grow({
   )
 }
 
-/* ------------------------------------------------------------------ 表单 */
-
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
-  /** 数值：96px、等宽数字、右对齐 */
   numeric?: boolean
 }
 
-/** 单行输入。外观来自 ui.css 的 .ui-input；宽度由所在版面决定时模块再写 width / flex */
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({ numeric, className, ...rest }, ref) {
   return <input ref={ref} className={cx('ui-input', numeric && 'num', className)} {...rest} />
 })
@@ -366,7 +325,6 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   )
 })
 
-/** 表单一项：标签 + 控件 + 说明。用 <label> 包住，点标签即聚焦控件 */
 export function Field({
   label,
   hint,
@@ -387,10 +345,6 @@ export function Field({
   )
 }
 
-/**
- * 设置分组：页内的一组设置，带一行淡色小标题（设计规范 §5）。
- * 内容通常是一个 `.ui-rows`；合并后的设置页用它区分原来的几页。
- */
 export function SettingGroup({
   title,
   className,
@@ -405,9 +359,6 @@ export function SettingGroup({
   )
 }
 
-/**
- * 折叠披露：低频的高级选项与诊断默认收起，点标题展开（原生 details，键盘可用）。
- */
 export function Disclosure({
   title,
   defaultOpen,
@@ -430,10 +381,6 @@ export function Disclosure({
   )
 }
 
-/**
- * 设置行：「名称 + 说明｜控件」。行本身不可点，也不响应悬停。
- * `col` 用于进度条、列表这类要占满宽的内容（上下排布）。
- */
 export function SettingRow({
   name,
   desc,
@@ -448,7 +395,6 @@ export function SettingRow({
   desc?: ReactNode
   col?: boolean
   ctlClassName?: string
-  /** 控件格上的属性（data-testid、aria-label 等） */
   ctlProps?: HTMLAttributes<HTMLDivElement> & Record<`data-${string}`, string | undefined>
   children?: ReactNode
 } & HTMLAttributes<HTMLDivElement>) {
@@ -469,23 +415,16 @@ export function SettingRow({
   )
 }
 
-/* ------------------------------------------------------------------ 页签 */
-
 export interface TabItem<T extends string> {
   value: T
   label: ReactNode
   icon?: IconName
   testId?: string
   title?: string
-  /** 有它就是可关闭的文档页签 */
   onClose?: () => void
   closeLabel?: string
 }
 
-/**
- * 页签：role=tablist，方向键在页签间移动焦点（竖排用上下，横排用左右）。
- * 选中项 --bg-3 底 + 强调色图标，与分段控件同一语言。
- */
 export function Tabs<T extends string>({
   items,
   value,
@@ -540,7 +479,6 @@ export function Tabs<T extends string>({
   )
 }
 
-/** 可关闭页签的关闭按钮：有名称时用提示气泡，否则保持裸按钮（调用方本就该给 closeLabel）。 */
 function CloseButton({ closeLabel, onClose }: { closeLabel?: string; onClose: () => void }) {
   const span = (
     <span
@@ -559,7 +497,6 @@ function CloseButton({ closeLabel, onClose }: { closeLabel?: string; onClose: ()
   return closeLabel ? <Tip label={closeLabel}>{span}</Tip> : span
 }
 
-/** 单个页签；列表需要自定义内容（拖动、计数）时直接用它，外面自己包 role=tablist */
 export function Tab({
   selected,
   icon,
@@ -603,9 +540,6 @@ export function Tab({
   )
 }
 
-/* ------------------------------------------------------------------ 菜单 */
-
-/** 菜单容器（定位由调用方负责：右键菜单 fixed、下拉贴触发器） */
 export const Menu = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement> & { label?: string }>(function Menu(
   { label, className, children, ...rest },
   ref
@@ -644,12 +578,6 @@ export function MenuSeparator() {
   return <div className="ui-menu-sep" role="separator" />
 }
 
-/* ------------------------------------------------------------------ 检查器与列表 */
-
-/**
- * 检查器摘要里的迷你用量条：固定宽度，数字写在它左边，条本身不写字。
- * percent 为 null 表示用量未知（画成空槽，不画成 0%）；超过 100 只夹取宽度。
- */
 export function MiniMeter({
   percent,
   tone,
@@ -673,7 +601,6 @@ export function MiniMeter({
   )
 }
 
-/** 检查器分区：标题 + 右侧摘要 + 内容。分区之间只有一条细线 */
 export function InspectorSection({
   title,
   icon,
@@ -699,7 +626,6 @@ export function InspectorSection({
   )
 }
 
-/** 可点的一行：左侧图标或状态点、主文字截断、右侧元数据 */
 export const ListRow = forwardRef<
   HTMLButtonElement,
   ButtonHTMLAttributes<HTMLButtonElement> & { icon?: IconName; lead?: ReactNode; meta?: ReactNode; current?: boolean }
@@ -719,10 +645,6 @@ export const ListRow = forwardRef<
   )
 })
 
-/**
- * 小圆环：输入框里的上下文占用。percent 为 null 画空环；tone 只在黄 / 红档染色。
- * 数字写在环右侧，环本身不写字。
- */
 export function MiniRing({ percent, tone, size = 14 }: { percent: number | null; tone?: 'ok' | 'warn' | 'err' | ''; size?: number }) {
   const value = percent === null || !Number.isFinite(percent) ? 0 : Math.max(0, Math.min(100, percent))
   const r = (size - 3) / 2, c = 2 * Math.PI * r
@@ -734,10 +656,6 @@ export function MiniRing({ percent, tone, size = 14 }: { percent: number | null;
   )
 }
 
-/**
- * 分档滑块：轨道按档位等分，填充与手柄跟随当前档；拖动时逐档吸附，松手才提交。
- * 不用原生 range：它的外观在 Electron 里不可控，档位名也没法对齐刻度。
- */
 export function StepSlider<T extends string>({
   values,
   value,
@@ -755,17 +673,14 @@ export function StepSlider<T extends string>({
   onChange: (value: T) => void
   label: string
   format: (value: T) => string
-  /** 当前档的颜色（CSS 值），填充、手柄与当前档名共用 */
   colorOf?: (value: T) => string
   disabled?: boolean
   testId?: string
   stopTestId?: (value: T) => string
-  /** 拖动中实时报告手柄所在的档位（松手或取消时为 null），供外部同步显示 */
   onPreview?: (value: T | null) => void
 }) {
   const track = useRef<HTMLDivElement>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
-  /** Read by the pointer handlers directly: down and up can arrive before a re-render. */
   const dragging = useRef(false)
   const n = values.length
   const index = Math.max(0, values.indexOf(value))
@@ -780,12 +695,10 @@ export function StepSlider<T extends string>({
     const next = values[Math.max(0, Math.min(n - 1, i))]
     if (next !== undefined && next !== value) onChange(next)
   }
-  /* 外部值变化（别处切档）时放弃未提交的拖动 */
   useEffect(() => setDragIndex(null), [value])
   const preview = useRef(onPreview)
   preview.current = onPreview
   useEffect(() => { preview.current?.(dragIndex === null ? null : values[dragIndex] ?? null) }, [dragIndex, values])
-  /* 点阵画布：脉冲引擎跟控件同生命周期（菜单关闭即卸载、停帧） */
   const root = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const probe = useRef<HTMLSpanElement>(null)
@@ -805,7 +718,6 @@ export function StepSlider<T extends string>({
       })
     }
     paint()
-    /* 换主题或背景色时档位色跟着变，重新解析（不观察根元素 style：拖动列宽时它每帧都变） */
     const themes = new MutationObserver(paint)
     themes.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] })
     window.addEventListener(APPEARANCE_EVENT, paint)
@@ -825,7 +737,7 @@ export function StepSlider<T extends string>({
         onPointerDown={(e) => {
           if (disabled || e.button !== 0) return
           e.preventDefault()
-          try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic or already released pointer */ }
+          try { e.currentTarget.setPointerCapture(e.pointerId) } catch { }
           dragging.current = true
           ;(e.currentTarget.querySelector('.ui-step-thumb') as HTMLElement | null)?.focus()
           setDragIndex(pick(e.clientX))

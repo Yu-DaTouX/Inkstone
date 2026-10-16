@@ -1,20 +1,3 @@
-/**
- * 评审变更集真实来源与内容 revision 专项（WP-50 / V4）。
- *
- * 用 esbuild 现场编译 `src/main/review/changes.ts`，注入 fake 授权 / fake git
- * 读 / 假检查点基线，**不启动 Electron、不碰真实仓库、不跑 git 提交或快照**。
- * 可独立执行：
- *
- *   node scripts/test-v3-review-provenance.mjs
- *
- * 覆盖：
- *   · working revision 随同一文件内容变化（HEAD / 文件名 / 状态不变也变）；
- *   · 同增删数、不同内容 → revision 不同；
- *   · branch 两端绑定解析后的提交 OID，ref 移动 → revision 改变 / 拒绝过期；
- *   · session 来源缺验证注入口 / 验证失败 / 错 cwd → fail-closed，无基线不伪装；
- *   · session 基线的清单 / 补丁 / 单文件正文同源同 sha；基线变了，迟到读取解析新基线；
- *   · 二进制 / 超限截断 / 截断标记。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -73,7 +56,6 @@ try {
 
   const verifyOk = async ({ sessionId, cwd }) => ({ ok: true, ownership: { sessionId, sessionKey: 'sk-1', cwd: repoDir } })
 
-  // 1. working revision 随同一文件内容变化（状态 / HEAD 不变）
   {
     let patch = '+same\n'
     const readWorkingDiff = async (cwd, path) => makeDiff(patch)
@@ -89,7 +71,6 @@ try {
     ok('working revision 随同文件内容变化（HEAD / 文件名 / 状态不变）')
   }
 
-  // 2. 同增删数、不同内容 → revision 不同
   {
     let patch = '+one\n-gone\n'
     const readWorkingDiff = async (cwd, path) => makeDiff(patch)
@@ -105,7 +86,6 @@ try {
     ok('同增删数不同内容 → revision 不同')
   }
 
-  // 3. branch 绑定解析后的 OID；ref 移动 → revision 改变
   {
     let headOid = OID_HEAD
     const exec = {
@@ -136,7 +116,6 @@ try {
     ok('branch 两端绑定提交 OID；ref 移动 → head / revision 改变')
   }
 
-  // 4. branch 单文件正文也用解析后的 OID
   {
     const exec = {
       calls: [],
@@ -156,7 +135,6 @@ try {
     ok('branch 单文件正文与变更集同一 OID 版本')
   }
 
-  // 5. session 缺验证注入口 / 验证失败 / 错 cwd → fail-closed
   {
     const missing = await readReviewChangeSet({ source: 'session', cwd: repoDir, sessionId: 's1' }, authorize, {})
     assert.equal(missing.ok, false)
@@ -185,7 +163,6 @@ try {
     ok('session 缺验证 / 验证失败 / 错 cwd / 缺 id：fail-closed')
   }
 
-  // 6. 无基线不伪装：明确 unavailable，不读主仓 / 未提交
   {
     let readTreeCalled = false
     const deps = {
@@ -209,7 +186,6 @@ try {
     ok('无会话基线：明确 unavailable，不伪装成未提交改动')
   }
 
-  // 7. session 基线：清单 / 补丁 / 单文件正文同源同 sha；内容变化 revision 变
   {
     let patch = 'patch-A'
     const seenTreeShas = []
@@ -241,7 +217,6 @@ try {
     ok('session 基线清单 / 补丁 / 单文件正文同 sha；内容变化 revision 变')
   }
 
-  // 8. 迟到结果：基线已经换了，后续读取解析新基线而不是缓存的旧 sha
   {
     let baselineSha = OID_BASE
     const deps = {
@@ -261,7 +236,6 @@ try {
     ok('迟到的 session 补丁读取解析当前基线，不缓存旧 sha')
   }
 
-  // 9. session 缺已验证 sessionId 的补丁请求被拒
   {
     const diff = await readReviewFileDiff(repoDir, 'src/a.ts', 'session', {}, authorize, { verifySession: verifyOk })
     assert.equal(diff.ok, false)
@@ -269,7 +243,6 @@ try {
     ok('session 补丁请求缺 sessionId：拒绝，不读主仓')
   }
 
-  // 10. 超限截断：补丁截断 / 文件数超限都标记，不假装完整
   {
     const truncated = await readReviewChangeSet(
       { source: 'session', cwd: repoDir, sessionId: 's1' },

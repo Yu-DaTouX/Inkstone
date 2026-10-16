@@ -1,15 +1,3 @@
-/**
- * 接入的技能落在哪：两档范围。
- *
- *   · **本次会话**（模型选择的）：`YAN_DIR/capabilities/session-skills/<pi 会话 id>/<名称>/`，
- *     同目录 `index.json` 登记。不经 `--skill` 传给 pi —— 同一个 pi 进程会切换会话，启动参数
- *     管不到「只给这个会话」。由 capability-guide 薄层每轮按当前会话 id 读 index，把清单
- *     追加到系统提示；接入那一轮模型直接 read 返回的 SKILL.md。
- *   · **我的技能**（用户安装的）：`YAN_DIR/skills/<名称>/`，与用户自己保存的技能同一目录，
- *     下次启动会话时由 `userSkillPaths()` 以 `--skill` 传入。
- *
- * 两档都在技能目录里写 `.inkstone-skill.json` 记录来源；会话技能可以「保留到我的技能」。
- */
 import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
@@ -45,7 +33,6 @@ export class AcquiredSkillError extends Error {
   }
 }
 
-/** SKILL.md 的 frontmatter（只取 name / description；支持 `>` / `|` 折行写法）。 */
 export function parseSkillFrontmatter(text: string): { name?: string; description?: string } {
   const match = /^﻿?---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(text)
   if (!match) return {}
@@ -70,7 +57,6 @@ export function parseSkillFrontmatter(text: string): { name?: string; descriptio
   return out
 }
 
-/** 技能目录名：优先 frontmatter 的 name，不合规时退回候选给的目录名；都不行就拒绝。 */
 export function acquiredSkillName(...choices: Array<string | undefined>): string {
   for (const choice of choices) {
     const name = String(choice ?? '').trim().toLowerCase()
@@ -79,7 +65,6 @@ export function acquiredSkillName(...choices: Array<string | undefined>): string
   throw new AcquiredSkillError('bad-name', '技能名只能用小写字母、数字和连字符')
 }
 
-/** 技能内的相对路径：不许绝对路径、`..`、Windows 保留字符与流名。 */
 export function safeSkillRelativePath(path: string): string {
   const value = String(path).replaceAll('\\', '/')
   const parts = value.split('/')
@@ -92,12 +77,6 @@ export function safeSkillRelativePath(path: string): string {
   return parts.join('/')
 }
 
-/**
- * 内容审查：只扫给模型读的说明文字（脚本是代码，数量在批准面板里如实列出）。
- *
- * 提示注入直接拒绝；其余高风险命中（读凭证、破坏性操作等）在官方技能里也常见误报
- * ——例如 PDF 技能的「加密码」、API 技能的 `max_tokens`——所以作为提醒交给用户在批准时判断。
- */
 export function reviewAcquiredSkill(files: readonly AcquiredSkillFile[]): {
   review: SkillSecurityReview
   blocked: SkillSecurityFinding[]
@@ -135,12 +114,10 @@ async function readIndex(root: string, sessionId: string): Promise<SessionSkillI
     const parsed = JSON.parse(await readFile(join(sessionSkillsDir(root, sessionId), 'index.json'), 'utf8')) as SessionSkillIndex
     if (parsed?.version === 1 && parsed.sessionId === sessionId && Array.isArray(parsed.skills)) return parsed
   } catch {
-    /* 没有或损坏：当成空表 */
   }
   return { version: 1, sessionId, skills: [] }
 }
 
-/** 先写到同级临时目录再换上去：中途失败不会留下半个技能。 */
 async function writeSkillDir(target: string, files: readonly AcquiredSkillFile[], meta: Record<string, unknown>): Promise<void> {
   const tmp = `${target}.tmp-${randomBytes(4).toString('hex')}`
   await mkdir(tmp, { recursive: true })
@@ -176,7 +153,6 @@ export async function installAcquiredSkill(input: {
   description: string
   files: readonly AcquiredSkillFile[]
   source: AcquiredSkillSource
-  /** 随包技能的名字：「我的技能」不能与之重名 */
   reservedNames?: readonly string[]
 }): Promise<{ scope: AcquiredSkillScope; dir: string; skillFile: string; replaced: boolean }> {
   const name = acquiredSkillName(input.name)
@@ -221,7 +197,6 @@ export async function installAcquiredSkill(input: {
   return { scope: 'session', dir, skillFile: entry.skillFile, replaced }
 }
 
-/** 当前会话的技能（只返回目录仍在、路径没逃出会话目录的条目）。 */
 export async function listSessionSkills(root: string, sessionId: string): Promise<SessionSkillEntry[]> {
   let base: string
   try {
@@ -251,7 +226,6 @@ export async function removeSessionSkill(root: string, sessionId: string, name: 
   return true
 }
 
-/** 把会话技能保留到「我的技能」：复制整个目录，再从会话里移除。 */
 export async function promoteSessionSkill(
   root: string,
   sessionId: string,
@@ -280,7 +254,6 @@ export async function promoteSessionSkill(
   return { dir: target }
 }
 
-/** 「我的技能」里哪些是接入来的（有来源记录），设置页据此标注来源。 */
 export async function acquiredUserSkillNames(root: string): Promise<Set<string>> {
   const names = new Set<string>()
   try {
@@ -288,7 +261,6 @@ export async function acquiredUserSkillNames(root: string): Promise<Set<string>>
       if (entry.isDirectory() && existsSync(join(userSkillsDir(root), entry.name, SOURCE_META_FILE))) names.add(entry.name)
     }
   } catch {
-    /* 目录不存在 */
   }
   return names
 }

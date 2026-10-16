@@ -1,4 +1,3 @@
-/** 项目目录更改：现场编译当前源码，隔离设置/会话/文件；不启动 Electron 或模型。 */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

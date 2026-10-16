@@ -1,16 +1,3 @@
-/**
- * 声音提示（对齐 opencode 的 attention）。
- *
- * 无头环境下真实播放是听不到的，所以这里**替换 window.AudioContext**，
- * 只数「到底有没有按设置发出对应事件的声音」：
- *   · 总开关关 → 一声不出
- *   · 回合完成 / 需要回答 / 出错 → 各出各的（音符数不同）
- *   · 单事件关掉 → 只有它不出声
- *   · 切会话导致 isAgentRunning 变 false → 不该被当成「完成」乱响
- *
- * 为什么能替换：sound.ts 在**播放时**才读 window.AudioContext（懒创建），
- * 探针在应用启动 9s 后才跑，那时还没有过任何一次播放。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -21,7 +8,6 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const store = window.__yanStore
 
-  /* ---- 用假 AudioContext 数音符 ---- */
   let starts = 0
   const param = () => ({
     value: 0,
@@ -61,14 +47,6 @@
     await store.getState().patchSettings({ sound: { ...cur, ...patch, events: { ...cur.events, ...(patch.events ?? {}) } } })
   }
 
-  /*
-   * 等一个条件成立（而不是固定 sleep）。
-   *
-   * ⚠️ 为什么必须这样：音频是**异步**的（AudioContext 调度 + 节流窗口），
-   *    固定 80ms 在批量跑、机器负载高时会漏 —— 实测出现过「第一次批量跑失败、
-   *    单独跑必过」的 flaky（方案 B4）。轮询把「等多久」变成「等到为止」，
-   *    只在真的没发生时失败。
-   */
   const waitFor = async (fn, ms = 1500) => {
     const t0 = Date.now()
     while (Date.now() - t0 < ms) {
@@ -78,7 +56,6 @@
     return fn()
   }
 
-  /* ---- 造一次「回合结束」的 state 推送 ---- */
   const statePush = (sessionId, isAgentRunning) => ({
     ch: 'state',
     payload: {
@@ -123,14 +100,13 @@
   const doneN = starts - d0
   ok(doneN > 0, `回合完成出声（${doneN} 个音符）`)
 
-  // 切会话：sessionId 变了，不是「完成」，不能响
   store.getState().applyPush(statePush('probe-b', true))
   const s0 = starts
   store.getState().applyPush(statePush('probe-c', false))
   await sleep(250)
   ok(starts === s0, `切会话导致的 isAgentRunning=false 不响（+${starts - s0}）`)
 
-  await sleep(300) // 越过 done 的节流窗口
+  await sleep(300)
   const q0 = starts
   store.getState().applyPush({
     ch: 'ui-request',
@@ -155,7 +131,7 @@
   log('=== 3. 单事件关掉就不出那一类声 ===')
   await setSound({ events: { done: true, question: false, error: true } })
   await sleep(50)
-  await sleep(500) // 越过上一次 question 的节流
+  await sleep(500)
   const q1 = starts
   store.getState().applyPush({
     ch: 'ui-request',
@@ -180,7 +156,6 @@
 
   log('')
   log('=== 5. 系统通知：失焦才发、开关可关 ===')
-  // 探针窗口是 showInactive（本来就失焦），再显式钉死一次避免环境差异
   document.hasFocus = () => false
   await setSound({ enabled: true, notifications: true, events: { done: true, question: true, error: true } })
   await sleep(450)
@@ -208,7 +183,6 @@
     '通知关掉后不再发'
   )
 
-  // 收尾：关回声，避免影响后续场景
   await setSound({ enabled: false })
 
   return out.join('\n')

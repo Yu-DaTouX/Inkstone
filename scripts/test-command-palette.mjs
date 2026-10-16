@@ -1,13 +1,3 @@
-/**
- * 命令面板与快捷键（合集 09）的纯函数检查。
- *
- * 不启动 Electron、不开窗口、不调用模型。直接编译并调用真实模块：
- *   · `src/renderer/src/lib/host-actions.ts` —— 宿主动作表、可用性、按键判定；
- *   · `src/renderer/src/lib/composer-submit.ts` —— 输入框提交分发（斜杠命令的「原生路径」）。
- *
- * 断言的是行为而不是源码正则：动作表真的调用运行时、按键真的解析成动作 ID、
- * 斜杠命令真的走同一段分发逻辑（含兼容命令、pi 命令落到发送、运行中排队）。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -57,7 +47,6 @@ const keyState = (over = {}) => ({
   ...over
 })
 
-/** 记录型宿主动作运行时 */
 function recordingRuntime() {
   const calls = []
   return {
@@ -77,7 +66,6 @@ function recordingRuntime() {
   }
 }
 
-/** 记录型输入框提交端口 */
 function recordingPort(over = {}) {
   const calls = []
   const port = {
@@ -129,7 +117,6 @@ async function main() {
     const H = host.module
     const S = submit.module
 
-    /* ── 动作表是同源唯一一份，绑定都能解析 ── */
     ok(H.HOST_ACTIONS.length >= 20, '宿主动作表非空')
     const ids = new Set(H.HOST_ACTIONS.map((a) => a.id))
     eq(ids.size, H.HOST_ACTIONS.length, '动作 ID 不重复')
@@ -141,7 +128,6 @@ async function main() {
     ok(H.QUICK_ACTION_IDS.length === 3, '空输入正好给三条常用动作')
     for (const id of H.QUICK_ACTION_IDS) ok(ids.has(id), `常用动作 ${id} 在动作表内`)
 
-    /* ── 可用性：不可用动作有明确原因 ── */
     const avail = {
       running: false,
       hasLastReply: false,
@@ -162,14 +148,12 @@ async function main() {
       ok(!H.isHostActionDisabled(byId(id), avail2), `${id} 在对应状态下可用`)
     }
 
-    /* ── 搜索沿用 token 过滤 ── */
     eq(H.tokensOf('  模型  设置 模型 '), ['模型', '设置'], 'token 去重且去空白')
     const label = (a) => a.labelKey
     ok(H.filterHostActions('', label).length === H.HOST_ACTIONS.length, '空查询返回全部动作')
     const filtered = H.filterHostActions('settingsAbout', label)
     eq(filtered.map((a) => a.id), ['settingsAbout'], 'token 全部命中才保留')
 
-    /* ── runHostAction 真的调用运行时 ── */
     const rec = recordingRuntime()
     await H.runHostAction('settingsMarket', rec.runtime)
     eq(rec.calls.at(-1), ['openSettings', 'market'], '设置页动作走 openSettings(tab)')
@@ -188,7 +172,6 @@ async function main() {
     const bad = await H.runHostAction('nope', rec.runtime)
     ok(!bad.ok && bad.error === 'unknown-action', '未知动作不静默成功')
 
-    /* ── 按键判定（纯函数） ── */
     const resolve = (over) => H.resolveShortcut(keyState(over))
     eq(resolve({ key: 'k', ctrl: true }), 'openSessionSwitcher', 'Ctrl+K 打开切换器')
     eq(resolve({ key: 'k', ctrl: true, inTerminal: true }), null, '终端里 Ctrl+K 让给 shell')
@@ -211,7 +194,6 @@ async function main() {
     eq(resolve({ key: 'Escape' }), null, '本轮不新增全局 Esc 停止')
     eq(resolve({ key: 'k', ctrl: true, alt: true }), null, 'Ctrl+Alt+K 不误发')
 
-    /* ── 斜杠命令：与输入框提交同一路径 ── */
     const commands = [
       YAN('compact'),
       YAN('new'),
@@ -226,19 +208,16 @@ async function main() {
       { name: 'help', source: 'pi', executable: true }
     ]
 
-    // /compact
     let r = recordingPort({ text: '/compact', attachments: [], commands })
     eq(await S.submitComposerInput(r.port), 'handled', '/compact 被分发消费')
     ok(r.calls.some((c) => c[0] === 'compact'), '/compact 调用 compact')
     ok(r.calls.some((c) => c[0] === 'clearAll'), '/compact 清空草稿与附件')
     ok(!r.calls.some((c) => c[0] === 'send'), '/compact 不发给模型')
 
-    // /login
     r = recordingPort({ text: '/login', attachments: [], commands })
     await S.submitComposerInput(r.port)
     eq(r.calls.at(-1), ['openSettings', 'auth'], '/login 路由到模型设置')
 
-    // 兼容命令：保留草稿、给说明、不发送
     r = recordingPort({ text: '/panel', attachments: [], commands })
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'notify' && c[1] === 'info'), '兼容命令给说明')
@@ -246,23 +225,19 @@ async function main() {
     ok(r.calls.some((c) => c[0] === 'focusComposer'), '兼容命令把焦点还给输入框')
     ok(!r.calls.some((c) => c[0] === 'send'), '兼容命令不发模型')
 
-    // /model 无参数：打开状态页，不清草稿
     r = recordingPort({ text: '/model', attachments: [], commands, models: [] })
     await S.submitComposerInput(r.port)
     eq(r.calls.at(-1), ['openSettings', 'status'], '/model 无参数打开状态页')
     ok(!r.calls.some((c) => c[0] === 'clearAll'), '/model 无参不清草稿')
 
-    // /model provider/id
     r = recordingPort({ text: '/model openai/gpt-5', attachments: [], commands, models: [{ provider: 'openai', id: 'gpt-5', name: 'GPT-5' }] })
     await S.submitComposerInput(r.port)
     eq(r.calls.at(-1), ['setModel', 'openai', 'gpt-5'], '/model 命中后切换模型')
 
-    // /browser 带 URL
     r = recordingPort({ text: '/browser https://example.com', attachments: [], commands })
     await S.submitComposerInput(r.port)
     eq(r.calls.at(-1), ['openBrowser', 'https://example.com'], '/browser 带 URL')
 
-    // /thinking 无参 / 有参
     r = recordingPort({ text: '/thinking', attachments: [], commands, thinkingLevels: ['low', 'high'], session: { thinkingLevel: 'low' } })
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'notify' && c[1] === 'info'), '/thinking 无参只报告当前档位')
@@ -270,7 +245,6 @@ async function main() {
     await S.submitComposerInput(r.port)
     eq(r.calls.at(-1), ['setThinking', 'high'], '/thinking 有参切换档位')
 
-    // /name /session
     r = recordingPort({ text: '/name 我的会话', attachments: [], commands })
     await S.submitComposerInput(r.port)
     eq(r.calls.at(-1), ['setManualTitle', '', '我的会话'], '/name 设置手动标题')
@@ -278,18 +252,15 @@ async function main() {
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'notify'), '/session 报告会话信息')
 
-    // pi 命令：落回普通发送（同一段逻辑的兜底）
     r = recordingPort({ text: '/help', attachments: [], commands })
     eq(await S.submitComposerInput(r.port), 'sent', 'pi 命令落回发送')
     ok(r.calls.some((c) => c[0] === 'send' && c[1] === '/help'), 'pi 命令作为普通输入发出')
     ok(r.calls.some((c) => c[0] === 'clearAll'), '发送前清空草稿')
 
-    // 普通文本
     r = recordingPort({ text: '你好', attachments: [], commands })
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'send' && c[1] === '你好'), '普通文本发送')
 
-    // 只有图片：必须能发
     r = recordingPort({
       text: '',
       attachments: [{ id: 'i1', kind: 'image', data: 'abc', mimeType: 'image/png' }],
@@ -299,17 +270,14 @@ async function main() {
     const sent = r.calls.find((c) => c[0] === 'send')
     ok(!!sent && sent[2]?.length === 1, '只带图片也能发送')
 
-    // 运行中：排队
     r = recordingPort({ text: '/help', attachments: [], commands, roundRunning: true })
     eq(await S.submitComposerInput(r.port), 'queued', '运行中发送走排队')
     ok(r.calls.some((c) => c[0] === 'send' && c[3] === 'followUp'), '运行中发送带 followUp 模式')
 
-    // 运行中 + 压缩：先悬着
     r = recordingPort({ text: '继续', attachments: [], commands, roundRunning: true, isCompacting: true })
     eq(await S.submitComposerInput(r.port), 'queued', '压缩期间消息先悬着')
     ok(r.calls.some((c) => c[0] === 'holdSend'), '压缩期间走 holdSend')
 
-    // 发送失败：恢复草稿与附件
     r = recordingPort({
       text: '会失败的',
       attachments: [{ id: 'i2', kind: 'image', data: 'x', mimeType: 'image/png' }],
@@ -324,19 +292,16 @@ async function main() {
     ok(r.calls.some((c) => c[0] === 'restoreText' && c[1] === '会失败的'), '发送失败恢复草稿')
     ok(r.calls.some((c) => c[0] === 'restoreAttachments'), '发送失败恢复附件')
 
-    // bash 直执行
     r = recordingPort({ text: '!echo hi', attachments: [], commands })
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'runBash' && c[1] === 'echo hi'), '! 前缀走直执行')
     ok(!r.calls.some((c) => c[0] === 'send'), '! 前缀不发给模型')
 
-    // 前导空格不能让 ! 变成直执行（与旧行为一致）
     r = recordingPort({ text: '  !echo hi', attachments: [], commands })
     await S.submitComposerInput(r.port)
     ok(!r.calls.some((c) => c[0] === 'runBash'), '前导空格不触发直执行')
     ok(r.calls.some((c) => c[0] === 'send'), '带前导空格的 ! 按普通文本发送')
 
-    // 空输入：不动作
     r = recordingPort({ text: '   ', attachments: [], commands })
     eq(await S.submitComposerInput(r.port), 'empty', '空输入直接返回')
 

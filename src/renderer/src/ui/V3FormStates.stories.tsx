@@ -17,18 +17,6 @@ import {
   TextField
 } from './index'
 
-/**
- * v3 表单原语逐状态矩阵（组件工作台）。
- *
- * 覆盖 `ui/index.ts` 现有的字段类正式导出：默认 / 悬停 / 键盘焦点 / 禁用 /
- * 错误（invalid）/ 必填 / 只读 / 选中 / 半选 / 空值。外观全部来自
- * `tokens.css` 与 `ui.css`，本文件只写版面。
- *
- * 诚实边界：hover / focus 只通过 `parameters.stateMatrix.declared` 声明，
- * 没有被指针或键盘实测；不调用宿主 API，选项与文案全部是固定本地样例。
- * `scripts/test-v3-story-coverage.mjs` 只核对「能解析 + 覆盖清单一致」，
- * 不代替交互、a11y 或视觉验收。
- */
 const meta = {
   title: 'v3/表单状态',
   parameters: { layout: 'padded' }
@@ -38,8 +26,6 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const STATES = (...names: string[]) => names
-
-/* ---------- 单行文本 ---------- */
 
 export const TextFieldStates: Story = {
   name: 'TextField · 默认 / 禁用 / 必填 / 只读 / 错误',
@@ -60,8 +46,6 @@ export const TextFieldStates: Story = {
   )
 }
 
-/* ---------- 多行文本 ---------- */
-
 export const TextAreaStates: Story = {
   name: 'TextArea · 默认 / 禁用 / 只读 / 错误',
   parameters: {
@@ -81,8 +65,6 @@ export const TextAreaStates: Story = {
   )
 }
 
-/* ---------- 搜索 ---------- */
-
 export const SearchFieldStates: Story = {
   name: 'SearchField · 默认 / 空值 / 禁用 / 错误',
   parameters: {
@@ -101,8 +83,6 @@ export const SearchFieldStates: Story = {
     </div>
   )
 }
-
-/* ---------- 复选框 ---------- */
 
 export const CheckboxStates: Story = {
   name: 'Checkbox / CheckboxGroup · 选中 / 半选 / 错误',
@@ -136,8 +116,6 @@ export const CheckboxStates: Story = {
   )
 }
 
-/* ---------- 开关 ---------- */
-
 export const SwitchStates: Story = {
   name: 'Switch · 开 / 关 / 禁用',
   parameters: {
@@ -158,8 +136,6 @@ export const SwitchStates: Story = {
     </div>
   )
 }
-
-/* ---------- 单选 ---------- */
 
 export const RadioStates: Story = {
   name: 'Radio / RadioGroup · 选中 / 错误 / 禁用',
@@ -190,8 +166,6 @@ export const RadioStates: Story = {
     </div>
   )
 }
-
-/* ---------- 下拉选择 ---------- */
 
 export const SelectStates: Story = {
   name: 'Select · 默认 / 占位 / 禁用 / 必填 / 错误',
@@ -224,8 +198,6 @@ export const SelectStates: Story = {
   )
 }
 
-/* ---------- 可输入下拉 ---------- */
-
 export const ComboBoxStates: Story = {
   name: 'ComboBox · 默认 / 过滤 / 禁用 / 错误',
   parameters: {
@@ -250,8 +222,6 @@ export const ComboBoxStates: Story = {
     </div>
   )
 }
-
-/* ---------- 自定义组合：覆盖 RAC 构建块 ---------- */
 
 export const CustomFieldComposition: Story = {
   name: '自定义组合 · Label / Input / Text / FieldError',

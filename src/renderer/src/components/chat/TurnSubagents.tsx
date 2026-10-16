@@ -3,10 +3,6 @@ import { selectSubagentRuns } from '../../state/subagent-view'
 import type { AssistantTurn } from '../../../../shared/turns'
 import { SubagentGroup } from './SubagentCards'
 
-/**
- * 挂在一个回合下面的子代理：`parentMessageId` 落在这个回合合并的任意一条助手消息上。
- * 同一回合并行启动的多个子代理排成一组，每个一行。
- */
 export function TurnSubagents({ turn }: { turn: AssistantTurn }) {
   const runs = useStore((s) => s.subagents)
   const session = useStore((s) => s.session)

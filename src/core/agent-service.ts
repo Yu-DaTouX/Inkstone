@@ -21,7 +21,6 @@ export interface AgentServiceOptions {
   dataRoot: string
   runtime?: { executable: string; cli: string; kind: 'node' | 'electron' }
   guardExtension: string
-  /** Explicit host configuration; never read global credentials automatically. */
   modelConfig?: ServiceModelConfig
   onChange?: (snapshot: ServiceSnapshot) => void
 }
@@ -35,7 +34,6 @@ async function jsonBody(req: IncomingMessage, limit = 1024 * 1024): Promise<Buff
 }
 function respond(res: ServerResponse, code: number, data: unknown): void { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(data)) }
 
-/** Local runtime. Native pi owns messages/context; this service owns task facts. */
 export class AgentService {
   readonly store: RuntimeStore
   private release?: () => Promise<void>
@@ -116,7 +114,6 @@ export class AgentService {
       this.store.document.tasks.push(task); await this.store.save(); this.changed(); return structuredClone(task)
     })
   }
-  /** Host-authorized child dispatch; never callable from an unrestricted shell. */
   async authorizeChildren(taskId: string, allowed: boolean): Promise<void> {
     await this.mutate(async () => { const task = this.task(taskId); if (task.parentId && allowed && !this.task(task.parentId).authority.subagents) throw new Error('不能扩大父任务授权'); task.authority.subagents = allowed; await this.store.save() })
   }
@@ -128,7 +125,6 @@ export class AgentService {
       const task = this.task(id)
       if (this.live.has(id)) throw new Error('任务仍在执行，请先停止或等待完成')
       const plan = await planApply(join(task.workspace, 'outputs'), items)
-      // Input originals must match the version captured before execution, not just the planning moment.
       for (const item of plan) {
         const input = task.inputs.find(file => resolve(file.source).toLowerCase() === resolve(item.destination).toLowerCase())
         if (input) item.expectedSha256 = input.sha256
@@ -146,7 +142,6 @@ export class AgentService {
       this.uiReplies.get(id)?.(approved); this.uiReplies.delete(id); this.changed()
     })
   }
-  /** Durable request keys bind payloads. Unknown results are returned for reconciliation, never replayed. */
   async once<T>(taskId: string, requestId: string, operation: string, payload: unknown, execute: () => Promise<T>, validate: () => void = () => {}): Promise<T> {
     if (!/^[a-zA-Z0-9._:-]{8,128}$/.test(requestId)) throw new Error('请求必须带 8–128 字符的幂等键')
     const key = `${taskId}:${requestId}`, expected = digest({ operation, payload })
@@ -186,7 +181,6 @@ export class AgentService {
       const plan = this.store.document.applyPlans[approvalId]
       if (!plan) throw new Error('应用计划不存在')
       task.applyResult = await applyOutputs(join(task.workspace, 'outputs'), plan)
-      // One approval authorizes one application attempt, including partial completion.
       approval.status = 'expired'; await this.store.save(); this.changed(); return structuredClone(task.applyResult)
     }), validate)
   }
@@ -252,7 +246,7 @@ export class AgentService {
   private async finishNow(id: string, live: LiveExecution, status: ServiceTask['status'], error?: string): Promise<void> {
     clearTimeout(live.timer); for (const controller of live.network) controller.abort()
     let sessionFile: string | undefined
-    try { const response = await live.executor.rpc.command<{ sessionFile?: string }>('get_state', {}, { timeoutMs: 2000 }); sessionFile = response.data?.sessionFile } catch { /* the durable session directory remains readable */ }
+    try { const response = await live.executor.rpc.command<{ sessionFile?: string }>('get_state', {}, { timeoutMs: 2000 }); sessionFile = response.data?.sessionFile } catch { }
     await live.executor.rpc.close()
     await this.mutate(async () => {
       if (this.live.get(id) !== live) return

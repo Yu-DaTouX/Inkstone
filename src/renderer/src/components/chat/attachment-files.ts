@@ -1,6 +1,5 @@
 import type { Attachment } from '../../../../shared/ipc'
 
-/** 把 File 读成 base64 附件 */
 export async function readFiles(files: File[], add: (a: Attachment[]) => void, skipped?: (names: string[]) => void): Promise<void> {
   const rejected: string[] = []
   const out: Attachment[] = []
@@ -26,7 +25,6 @@ export async function readFiles(files: File[], add: (a: Attachment[]) => void, s
   if (rejected.length) skipped?.(rejected)
 }
 
-/** 不用 FileReader：它返回 data: 前缀，而 pi 要的是裸 base64 */
 function bytesToBase64(bytes: Uint8Array): string {
   let bin = ''
   const chunk = 0x8000

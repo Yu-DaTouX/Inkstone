@@ -1,11 +1,3 @@
-/**
- * 会话地图纯逻辑（`src/shared/session-map.ts`，实施-18 S1）的单测。
- *
- * 为什么值得单测：地图的规模护栏、孤儿 / 环防御、跨项目泳道与折叠
- * 都直接在数据层决定「画得出画不出」。渲染层没法替它兜底 ——
- * 一个死循环或丢节点在界面上看不出来，只会表现成「地图打不开」。
- */
-
 export function runSessionMapTests(ok, mod) {
   const { buildSessionMap, buildBranchIndex, SESSION_MAP_MAX_NODES } = mod
 
@@ -21,7 +13,6 @@ export function runSessionMapTests(ok, mod) {
     ...over
   })
 
-  /* ---- 0 个会话 ---- */
   {
     const r = buildSessionMap({ sessions: [] })
     ok(
@@ -30,7 +21,6 @@ export function runSessionMapTests(ok, mod) {
     )
   }
 
-  /* ---- 单根 ---- */
   {
     const r = buildSessionMap({ sessions: [mk({ path: 'a' })] })
     ok(
@@ -39,7 +29,6 @@ export function runSessionMapTests(ok, mod) {
     )
   }
 
-  /* ---- 一父两子：深度、边、分支编号、子计数 ---- */
   {
     const sessions = [
       mk({ path: 'root', createdAt: 1 }),
@@ -56,7 +45,6 @@ export function runSessionMapTests(ok, mod) {
     ok(r.edges.length === 2 && r.edges.every((e) => e.from === 'root'), '边只连接可见父子', String(r.edges.length))
   }
 
-  /* ---- 跨项目泳道 + 当前项目优先 ---- */
   {
     const sessions = [
       mk({ path: 'a', projectId: 'A', lastActivityAt: 5 }),
@@ -72,14 +60,12 @@ export function runSessionMapTests(ok, mod) {
     ok(r2.lanes[0].key === 'project:B', '换当前项目后排序随之改变', r2.lanes.map((l) => l.key).join(','))
   }
 
-  /* ---- 缺父：提升为根并标记 orphan ---- */
   {
     const r = buildSessionMap({ sessions: [mk({ path: 'x', parentSession: 'missing' })] })
     const x = r.nodes[0]
     ok(x.orphan === true && x.depth === 0 && x.parentPath === undefined, '父会话缺失时提升为根并标记 orphan')
   }
 
-  /* ---- 环 / 自引用：不递归死循环 ---- */
   {
     const r = buildSessionMap({
       sessions: [
@@ -94,7 +80,6 @@ export function runSessionMapTests(ok, mod) {
     ok(self.nodes.length === 1 && self.nodes[0].truncated === true, '自引用按截断防御，不死循环')
   }
 
-  /* ---- 超阈值折叠 + 每泳道至少保留一个 ---- */
   {
     const sessions = Array.from({ length: 10 }, (_, i) =>
       mk({ path: `n${i}`, projectId: i % 2 === 0 ? 'A' : 'B', lastActivityAt: i * 100 })
@@ -110,7 +95,6 @@ export function runSessionMapTests(ok, mod) {
     ok(r.stats.total === 10, 'total 始终是输入总量', String(r.stats.total))
   }
 
-  /* ---- 折叠后子节点提升：可见父没了也不能丢 ---- */
   {
     const r = buildSessionMap({
       sessions: [
@@ -124,7 +108,6 @@ export function runSessionMapTests(ok, mod) {
     ok(r.edges.length === 0, '两端不都可见时不留悬空边')
   }
 
-  /* ---- 时间缺失回退到 createdAt ---- */
   {
     const r = buildSessionMap({
       sessions: [mk({ path: 'old', createdAt: 100 }), mk({ path: 'new', createdAt: 900 })]
@@ -132,7 +115,6 @@ export function runSessionMapTests(ok, mod) {
     ok(r.lanes[0].nodes[0].path === 'new', '没有 lastActivityAt 时按 createdAt 排序', r.lanes[0].nodes.map((n) => n.path).join(','))
   }
 
-  /* ---- 分支编号下沉函数 ---- */
   {
     const idx = buildBranchIndex([
       mk({ path: 'root', createdAt: 1 }),
@@ -144,6 +126,5 @@ export function runSessionMapTests(ok, mod) {
     ok(idx.branchesOf.get('root').length === 2, 'buildBranchIndex 保留子列表')
   }
 
-  /* ---- 阈值常量本身 ---- */
   ok(SESSION_MAP_MAX_NODES === 300, '规模护栏常量是 300', String(SESSION_MAP_MAX_NODES))
 }

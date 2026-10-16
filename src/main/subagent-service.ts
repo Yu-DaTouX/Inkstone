@@ -1,10 +1,3 @@
-/**
- * 子代理服务：主进程级的生命周期服务，界面（`yan:subagents:*`）与模型（`yan subagent …`）
- * 共用同一个 SubagentController —— 模型启动的任务也会经 `onChange` 推到界面列表，
- * 而不是变成后台黑盒。
- *
- * 控制器第一次用到时才建（要读设置里的 cwd 与 piBin）。
- */
 import { SubagentController, type SubagentApprovalOrigin } from './subagents'
 import { getSettings } from './settings'
 import { CapabilityCommandError } from './capability-server'
@@ -12,11 +5,6 @@ import type { SubagentCommandHost } from './agent'
 import type { SubagentRun } from '../shared/ipc'
 import type { AgentProfileState } from '../shared/agent-profile'
 
-/**
- * 子代理的系统提示（方案 8.3）。
- * 子代理不该反过来问用户问题 —— 它拿不到桌面端的提问通道，
- * 而且它的职责就是把一件事做完并汇报。
- */
 const SUBAGENT_SYSTEM_PROMPT = [
   'You are a subagent working on one focused task inside a larger project.',
   'Search only the supplied source paths and workspace. Avoid filesystem-root searches; set a finite timeout on shell commands that may take a long time.',
@@ -28,21 +16,16 @@ const SUBAGENT_SYSTEM_PROMPT = [
 
 export interface SubagentServiceDeps {
   codemodeExtension?(): string | undefined
-  /** 内置服务扩展（Command Code）：子代理选到这些服务的模型时也要能找到 */
   providerExtensions?(): string[]
   guardExtension?(): string | undefined
   shellExtension?(): string | undefined
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean>
   onChange(run: SubagentRun): void
-  /** 流式增量推送；不传时整条推送（见 SubagentOptions.onPatch） */
   onPatch?(payload: { id: string; run: SubagentRun; transcriptFrom: number }): void
   onRemove(id: string): void
-  /** 运行收口后（终态、差异已定）回调一次 */
   onFinished?(run: SubagentRun): void
-  /** 只读原始事件旁路（评审运行的 R 号投影用）；不影响子代理控制与面板。 */
   onEvent?(runId: string, evt: Record<string, unknown>): void
-  /** 父会话的活动档案（按活动配置模型时用） */
   resolveAgentProfile(id: string): Promise<AgentProfileState>
 }
 
@@ -52,7 +35,6 @@ export class SubagentService {
 
   constructor(private readonly deps: SubagentServiceDeps) {}
 
-  /** 已经建好的控制器（退出时停掉子代理用；没建过就是 null） */
   current(): SubagentController | null {
     return this.controller
   }
@@ -69,7 +51,6 @@ export class SubagentService {
     this.controller = new SubagentController({
       cwd: s.cwd,
       piBin: s.piBin,
-      /* shell 先于 guard：会被改坏的 PowerShell 写法先拦下，不先请用户审批 */
       extensions: [this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
       confirmDanger: (params, cwd, origin) => this.deps.confirmDanger?.(params, cwd, origin) ?? Promise.resolve(false),
@@ -84,11 +65,6 @@ export class SubagentService {
     return this.controller
   }
 
-  /*
-   * 模型调用与 UI 调用必须共用同一个控制器：这样模型启动的任务也会
-   * 通过 `onChange` 推到输入区上方的列表和右侧详情，而不是变成“后台黑盒”。
-   * 这里不暴露 merge/discard —— worktree 结果仍由用户在详情面板审阅。
-   */
   readonly capabilityHost: SubagentCommandHost = {
     run: (command, params, context) => this.run(command, params, context)
   }
@@ -113,11 +89,6 @@ export class SubagentService {
       }
       const model = typeof params.model === 'string' && params.model.length <= 200 ? params.model : undefined
       const readOnly = params.readOnly === true || params['read-only'] === true
-      // 未指定子模型时跟随父会话模型，不再按旧活动配置偷偷换模型。
-      /*
-       * 任务输入（实施-25 P15 T15-1）：目标 / 交付物 / 来源 / 边界。
-       * 读不通就在**占用并发槽之前**失败（服务里同一个顺序）。
-       */
       const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : params.isolation === 'worktree' ? 'worktree' : 'shared-cwd', params.brief)
       if (!result.ok || !result.run) {
         throw new CapabilityCommandError(

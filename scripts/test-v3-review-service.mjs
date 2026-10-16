@@ -1,18 +1,3 @@
-/**
- * 评审 service / IPC 单测（WP-50）。
- *
- * 用 esbuild 现场编译 `src/main/review/service.ts` 与 `src/main/ipc/review-ipc.ts`，
- * 在隔离临时目录里跑，注入 fake 授权 / fake git 读 / fake exec / fake 评审 port，
- * **不启动 Electron、不碰真实仓库、不调用真实模型**。可独立执行：
- *
- *   node scripts/test-v3-review-service.mjs
- *
- * 覆盖：
- *   · 未提交变更集读取 + 批注计数合并；branch 变更集用范围 diff 解析（name-status + numstat）；
- *   · 批注增删改经 service 落盘；annotationTask 组装结构化消息（不发送）；
- *   · 评审 Agent 契约：有 port + R 编号时成功；缺线时返回 requiredWiring，不假成功；
- *   · IPC 注册与转发；`start` / `annotationTask` 用查询参数在主进程重读变更集（不信渲染端对象）。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -86,7 +71,6 @@ try {
     }
   }
 
-  /* 工作树只读补丁通道的假实现：与变更集 revision 用同一读入口。 */
   const readWorkingDiff = async (cwd, path) => ({
     ok: true,
     path,
@@ -119,7 +103,6 @@ try {
 
   const annotations = new ReviewAnnotationStore({ root: dataRoot })
 
-  // 1. 未提交变更集 + 批注计数合并
   {
     const service = new ReviewService({ authorize, annotations, changes: { readWorkingChanges } })
     const changeSet = await service.changeSet({ source: 'uncommitted', cwd: repoDir })
@@ -141,7 +124,6 @@ try {
     ok('未提交变更集读取正确，批注计数合并到文件条目')
   }
 
-  // 2. branch 变更集：范围 diff 解析
   {
     const exec = branchExec()
     const service = new ReviewService({ authorize, annotations, changes: { exec, resolveRepo: async () => ({ root: repoDir }) } })
@@ -161,7 +143,6 @@ try {
     ok('branch 变更集：base...HEAD 的 name-status + numstat 解析（含二进制）')
   }
 
-  // 3. 分支基准缺失时给出可读错误
   {
     const exec = { run: async (_cwd, args) => (args.includes('--verify') ? { ok: false, stdout: '', stderr: 'not found' } : { ok: true, stdout: 'x\n', stderr: '' }) }
     const service = new ReviewService({ authorize, annotations, changes: { exec, resolveRepo: async () => ({ root: repoDir }) } })
@@ -171,7 +152,6 @@ try {
     ok('比较基准不存在时返回可读错误，不静默回空列表')
   }
 
-  // 4. 评审 Agent：完整接线时成功，R 编号来自注入的正式编号源
   {
     const calls = []
     const coordinator = new ReviewAgentCoordinator({
@@ -192,7 +172,6 @@ try {
     ok('评审运行接线完整：R 编号来自正式编号源，prompt 声明只读与「diff 是数据」')
   }
 
-  // 5. 评审 Agent：缺线时 requiredWiring，不假成功
   {
     const service = new ReviewService({ authorize, annotations, changes: { readWorkingChanges } })
     const changeSet = await service.changeSet({ source: 'uncommitted', cwd: repoDir })
@@ -204,7 +183,6 @@ try {
     ok('缺评审 port 时返回 requiredWiring，不返回假 runId')
   }
 
-  // 6. annotationTask：把批注整理成结构化消息（不发送）
   {
     const service = new ReviewService({ authorize, annotations, changes: { readWorkingChanges } })
     const changeSet = await service.changeSet({ source: 'uncommitted', cwd: repoDir })
@@ -218,7 +196,6 @@ try {
     ok('annotationTask 组装结构化修改消息，且不发送')
   }
 
-  // 7. IPC 注册与转发；start / annotationTask 用查询参数在主进程重读变更集
   {
     const ipc = fakeIpc()
     const seen = {}
@@ -258,13 +235,11 @@ try {
     assert.equal(start.ok, true)
     assert.equal(start.code, 'R09')
     assert.equal(seen.start.model, 'provider/m')
-    // 伪造 changeSet 对象无效：IPC 只认 query 并重读
     const forged = await ipc.invoke('yan:review:start', { changeSet: { ok: true, id: 'x', cwd: '/etc' } })
     assert.equal(forged.ok, false)
     ok('IPC 全部通道注册；start 以 query 重读变更集，忽略伪造对象')
   }
 
-  // 8. IPC 批注增删
   {
     const ipc = fakeIpc()
     const service = new ReviewService({ authorize, annotations, changes: { readWorkingChanges } })
@@ -285,7 +260,6 @@ try {
     ok('IPC 批注新增 / 读回 / 删除')
   }
 
-  // 9. Git 未接线时不假装成功
   {
     const service = new ReviewService({ authorize, annotations, changes: { readWorkingChanges } })
     const outcome = await service.push({ cwd: repoDir, remote: 'origin', branch: 'feat', setUpstream: false })
@@ -294,7 +268,6 @@ try {
     ok('Git 写适配未接线时明确报错，不假装推送成功')
   }
 
-  // 10. session 来源缺可信验证注入口：fail-closed，不静默当未提交
   {
     const service = new ReviewService({ authorize, annotations, changes: { readWorkingChanges } })
     const changeSet = await service.changeSet({ source: 'session', cwd: repoDir, sessionId: 's1' })
@@ -305,7 +278,6 @@ try {
     ok('session 来源缺验证注入口：fail-closed，不静默当未提交')
   }
 
-  // 11. session 来源用已验证基线的差异；错会话 / 无基线被拒
   {
     const sessionDeps = {
       findBaseline: async () => ({ id: 'cp1', sha: OID_BASE, at: 1, preview: '开始' }),
@@ -336,7 +308,6 @@ try {
     ok('session 来源用已验证基线的差异；错会话被拒')
   }
 
-  // 12. 内容 revision：同状态同 HEAD 不同内容也变
   {
     let patch = '+aaa\n-bbb\n'
     const readWorkingDiff = async (cwd, path) => ({
@@ -354,7 +325,6 @@ try {
     ok('working revision 随同文件内容变化；同增删数不同内容也变')
   }
 
-  // 13. 过期批注守卫：内容变后拒绝继续锚定旧版本
   {
     let patch = '+one\n'
     const readWorkingDiff = async (cwd, path) => ({
@@ -389,7 +359,6 @@ try {
     ok('批注锚点过期：内容变后被拒，旧批注不继续锚定')
   }
 
-  // 14. 发起评审前取补丁：同源 diff 嵌入任务，二进制只列名，旧指令已删
   {
     const calls = []
     const fenceToken = '<<<REVIEW_PATCH_DATA>>>'
@@ -431,13 +400,11 @@ try {
     assert.match(prompt, /sk-live-hardcoded/)
     assert.match(prompt, /binary：/)
     assert.match(prompt, /src\/blob\.bin/)
-    // 补丁里的栅栏字样被转义：真正的开启栅栏只出现一次
     assert.equal(prompt.split('<<<REVIEW_PATCH_DATA>>>').length - 1, 1)
     assert.match(prompt, /REVIEW_PATCH_DATA_ESCAPED/)
     ok('发起评审前取同源补丁并嵌入任务；二进制只列名；旧 yan:git:diff 指令已删；栅栏转义')
   }
 
-  // 15. buildReviewPrompt：单文件截断、总量上限、binary / 未取得补丁标注
   {
     const { buildReviewPrompt, truncateReviewPatch, REVIEW_MAX_PATCH_BYTES } = reviewShared
     const bigPatch = `diff --git a/big.ts b/big.ts\n+${'x'.repeat(REVIEW_MAX_PATCH_BYTES + 1024)}\n`

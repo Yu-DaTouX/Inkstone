@@ -8,7 +8,6 @@ import { Button } from '../ui'
 import { useConfirm } from '../ui/confirm'
 import { resolveSubagentModelDisplay } from './turn-model-display'
 
-/** 详情里最多列多少条工具调用 */
 const DETAIL_LIMIT = 6
 
 export const isLive = (run: SubagentRun): boolean => run.status === 'starting' || run.status === 'running'
@@ -17,10 +16,8 @@ function compactTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n)
 }
 
-/** 状态图标：一个字符足以在灰底上分出「在跑 / 好了 / 要看 / 出错 / 已停」 */
 const MARK: Record<SubagentOutcome['tone'], string> = { live: '', ok: '✓', warn: '!', err: '✕', mute: '■' }
 
-/** 秒表：只在有运行中的子代理时每秒走一次 */
 function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -31,15 +28,8 @@ function useNow(active: boolean): number {
   return now
 }
 
-/** 结束且无需处理（完成 / 已停止）：可以收起，不再占版面 */
 const isQuiet = (outcome: SubagentOutcome): boolean => !outcome.live && !outcome.attention
 
-/**
- * 一组子代理（同一条助手消息触发的，或没有可挂靠消息的）。
- *
- * 按启动顺序保持位置稳定；运行与需要处理的状态由图标和文字表达。
- * 两个及以上时组首一行汇总并行数量，已结束且无需处理的默认收进汇总行。
- */
 export function SubagentGroup({ runs }: { runs: SubagentRun[] }) {
   const t = useT()
   const now = useNow(runs.some(isLive))
@@ -79,13 +69,6 @@ export function SubagentGroup({ runs }: { runs: SubagentRun[] }) {
   )
 }
 
-/**
- * 一张子代理卡片，信息分三层：
- *   ① 状态图标 + 任务（主）+ 状态词与耗时（右）
- *   ② 灰色小字一行：范围 · 模型简称 · 思考强度 · 原生上下文用量 · 耗时
- *   ③ 至多一行当前动作或原因；完整任务、最近工具和产出按需展开。
- * 待审阅的改动保留操作入口，默认不把过程正文铺进聊天。
- */
 function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: SubagentOutcome; now: number }) {
   const t = useT()
   const stopSubagent = useStore((s) => s.stopSubagent)
@@ -96,7 +79,6 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
   const modelDisplay = run.model ? resolveSubagentModelDisplay(run.model, models, favorites ?? []) : null
   const confirm = useConfirm()
   const [expanded, setExpanded] = useState(false)
-  /* 「不再处理」只改宿主持久标记，不在本地乐观隐藏；在途时用 ref 同步防重。 */
   const [dismissBusy, setDismissBusy] = useState(false)
   const [dismissFailed, setDismissFailed] = useState(false)
   const dismissInFlight = useRef(false)
@@ -106,10 +88,8 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
   const calls = run.toolCalls ?? run.transcript.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0)
   const changed = run.diff && run.diff.files > 0 ? run.diff : null
   const reviewing = !live && (run.review === 'pending' || run.review === 'conflict')
-  /* 失败且没有待审阅改动才允许退出；已标记过的不再显示入口。 */
   const canDismiss = run.status === 'error' && !isDismissed(run) && !reviewing
 
-  /* 默认只给原因；产出正文留在详情中。 */
   const reason =
     outcome.partial && run.status === 'done'
       ? t(run.endReason === 'budget' ? 'sa.partialBudget' : 'sa.partialTimeout')
@@ -152,13 +132,11 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
     }
   ]
   const openRun = () => window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: `subagent:${run.id}` }))
-  /* 砚不替子代理自动重来；pi 自带的重试用尽后由用户决定，用同一任务、模型与范围再派一个。 */
   const retry = async () => {
     const result = await window.yan.subagents.start(run.task, run.model, run.isolation)
     if (result.ok) { void useStore.getState().loadSubagents(); window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: `subagent:${result.run?.id}` })) }
   }
 
-  /* 不再处理：宿主只落一个标记，成功后重读快照；失败就地提示，卡片仍留在需处理区。不碰 stop/retry/clearAll。 */
   const dismiss = async () => {
     if (dismissInFlight.current) return
     dismissInFlight.current = true
@@ -245,10 +223,6 @@ function SubagentCard({ run, outcome, now }: { run: SubagentRun; outcome: Subage
   )
 }
 
-/**
- * 详情：最近几步工具调用 + 最终回复。
- * 完整任务和模型用量由明确的详情入口展示；这里补充最近工具与回复。
- */
 function SubagentDetail({ run }: { run: SubagentRun }) {
   const t = useT()
   const calls = run.transcript.flatMap((m: UIMessage) => m.toolCalls ?? [])

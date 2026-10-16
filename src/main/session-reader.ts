@@ -1,4 +1,3 @@
-/** Bounded JSONL history parsing with versioned in-flight sharing. */
 import { open, realpath, stat } from 'node:fs/promises'
 import type { BigIntStats } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
@@ -7,33 +6,19 @@ import type { UIMessage } from '../shared/ipc'
 
 const MAX_LINE_BYTES = 48 * 1024 * 1024
 
-/** tool result 的文本保留上限（超出截断并标记） —— 64KB ≈ 一个屏都看不完 */
 const MAX_TEXT = 64 * 1024
 
 export interface ReadResult {
   messages: UIMessage[]
-  /** 文件里一共多少条 message entry（可能大于 messages.length，因为有跳过的） */
   total: number
-  /** 被截断的超长内容条数 —— 界面可以据此提示「有内容被省略」 */
   truncated: number
-  /** 文件字节数（诊断用） */
   bytes: number
-  /** 会话 id（文件头 `type:"session"` 那条；旧文件读不到就不给） */
   sessionId?: string
-  /** 会话文件头记录的工作目录；历史消息的相对文件链接按此解析。 */
   sourceCwd?: string
-  /**
-   * 这段历史由几个会话文件拼成（实施-05 S5b-4）。
-   *
-   * `>1` 说明这条会话是**交接过的链**（后台两份 JSONL、前端一条时间线），
-   * 界面靠它知道「现在看到的不是单个文件」。
-   */
   segments?: number
-  /** 链上读不到的段数（文件被删 / 移走）。**不静默丢段**，如实计数 */
   missing?: number
 }
 
-/** 递归截断超长字符串字段（parse 之后） */
 function truncateDeep(v: unknown, depth = 0): { value: unknown; cut: number } {
   if (depth > 8) return { value: v, cut: 0 }
 
@@ -59,22 +44,6 @@ function truncateDeep(v: unknown, depth = 0): { value: unknown; cut: number } {
   }
 
   if (v && typeof v === 'object') {
-    /*
-     * 图片块**整体放过**，不递归、不截断。
-     *
-     * 它的 `data` 是 base64 **数据**，不是给人读的文本 —— 按 `MAX_TEXT`
-     * 截断会直接毁掉图片本身（实测本机：546 张图里 **474 张**超过 64KB，
-     * 合计 143MB）。`normalize.ts` 的 `imagesOf` 读的就是这个 `data`，
-     * 它把截断后的半截 base64 交给 `localizeImage` 落盘 → 写出一个坏 PNG
-     * → 前端 `<img>` 加载失败，用户看到的就是「压缩后图片预览没了」。
-     * 压缩 / 切会话 / 重启都走 hydrate，而它必经这里，所以只在
-     * 压缩后才暴露。
-     *
-     * 体积控制**不靠这里**：`imagesOf` 会把 base64 换成文件地址，消息里
-     * 最终不留 base64（那才是该管的地方）。
-     *
-     * 判据与 `normalize.ts` 的 `imagesOf` 保持一致，两处必须同口径。
-     */
     if ((v as { type?: unknown }).type === 'image') return { value: v, cut: 0 }
 
     let cut = 0
@@ -110,7 +79,6 @@ function freezeSnapshot<T>(value: T): T {
   return value
 }
 
-/** Shared snapshots are read-only; mutation/hydration requires an isolated copy. */
 export async function readSessionMessages(path: string, opts?: ReadOptions): Promise<ReadResult | null> {
   try {
     const canonical = await realpath(path)
@@ -131,7 +99,6 @@ export async function readSessionMessages(path: string, opts?: ReadOptions): Pro
   } catch { return null }
 }
 
-/** Read a bounded prefix; replacement/truncation gets one fresh attempt. */
 async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
     let fh
@@ -162,7 +129,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
               const head = JSON.parse(rawLine) as { id?: unknown; cwd?: unknown }
               if (!sessionId && typeof head.id === 'string' && head.id) sessionId = head.id
               if (!sourceCwd && typeof head.cwd === 'string' && head.cwd.trim()) sourceCwd = head.cwd
-            } catch { /* A malformed head does not hide valid messages. */ }
+            } catch { }
           }
           if (hasMessage) {
             let value: unknown, entryId: string | undefined, parsed = false
@@ -174,7 +141,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
                 entryId = typeof entry.id === 'string' && entry.id ? entry.id : undefined
                 parsed = true
               }
-            } catch { /* Ignore malformed JSONL records. */ }
+            } catch { }
             if (parsed) builder.append(value, entryId)
           }
         }
@@ -203,8 +170,6 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
           after.size < before.size || current.size < before.size ||
           (after.size === before.size && !sameVersion(before, after)) ||
           (current.size === before.size && !sameVersion(before, current))) continue
-      // A growing file contributes only newline-terminated records in the initial prefix.
-      // A stable closed file retains the historical valid-no-final-newline behavior.
       if (after.size === before.size && current.size === before.size) flush()
       return { messages: builder.finish(), total, truncated, bytes: size,
         ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}) }

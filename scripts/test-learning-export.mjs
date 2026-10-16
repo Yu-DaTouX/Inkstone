@@ -1,7 +1,3 @@
-/**
- * 学习数据导出：从四个原始 JSON 生成可读 Markdown 与完整副本。
- * 重点是「读法宽松、坏数据不拖垮整份导出」与「原始文件不动」。
- */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'

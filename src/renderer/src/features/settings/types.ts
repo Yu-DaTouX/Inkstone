@@ -1,11 +1,3 @@
-/**
- * v3 设置的分区与「旧深链接 → v3 页」映射（纯逻辑，无 React / store / DOM 依赖）。
- *
- * 为什么单独一份：v3 设置只保留实际做出来的分区（外观 / 上下文 / 模型与服务 / 能力 / 用量 / 快捷键），
- * 而 `useStore.openSettings(tab)` 里还散落着 v2 的旧页名（auth / voice / packages / devices…）。
- * 映射必须是可单测的纯函数，界面层才能在拿不到对应 v3 页时如实提示旧界面，而不是静默吞掉导航。
- */
-
 import { GENERAL_LEGACY_MAP } from './general/general-model'
 
 export type SettingsSectionId =
@@ -25,7 +17,6 @@ export type SettingsSectionId =
 
 export interface SettingsSectionDef {
   readonly id: SettingsSectionId
-  /** 外观图标由界面层从 lucide-react 解析，这里只给稳定 id */
   readonly icon:
     | 'moon'
     | 'clock'
@@ -42,7 +33,6 @@ export interface SettingsSectionDef {
     | 'refresh'
 }
 
-/** 导航顺序按 02 §10.6：外观、会话、通知、上下文、模型、能力、权限、设备、数据、用量、快捷键、关于，同步追加在最后。 */
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'appearance', icon: 'moon' },
   { id: 'session', icon: 'clock' },
@@ -79,12 +69,6 @@ export function isSettingsSectionId(value: unknown): value is SettingsSectionId 
   )
 }
 
-/**
- * 旧 v2 SettingsTab → v3 分区。
- *
- * 只映射已经有 v3 页的旧名；通用分区（会话 / 设备 / 关于）的映射单一来源在
- * `general/general-model.ts` 的 `GENERAL_LEGACY_MAP`。`voice` / `knowledge` 仍归能力。
- */
 const LEGACY_VIEW_TO_SECTION: Record<string, SettingsSectionId> = {
   appearance: 'appearance',
   input: 'appearance',
@@ -101,7 +85,6 @@ const LEGACY_VIEW_TO_SECTION: Record<string, SettingsSectionId> = {
   ...GENERAL_LEGACY_MAP
 }
 
-/** v2 `SettingsTab` 的完整旧页名（含未迁移的），用来区分「旧页但没搬」和「完全不认识」。 */
 const KNOWN_V2_VIEWS: readonly string[] = [
   'auth',
   'appearance',
@@ -126,7 +109,6 @@ export type LegacyViewResolution =
   | { kind: 'unmigrated'; view: string }
   | { kind: 'unknown'; view: string }
 
-/** 解析一个旧页名：能落到 v3 分区就落，落不到就如实说明。 */
 export function resolveLegacyView(view: string | null | undefined): LegacyViewResolution {
   const name = typeof view === 'string' ? view.trim() : ''
   if (isSettingsSectionId(name)) return { kind: 'section', view: name, section: name }

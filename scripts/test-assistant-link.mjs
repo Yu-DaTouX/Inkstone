@@ -1,6 +1,5 @@
 import http from 'node:http'
 
-/** 等一个条件成立；测试用短轮询，避免依赖具体时序。 */
 async function waitFor(condition, timeout = 3000) {
   const deadline = Date.now() + timeout
   while (!condition()) {
@@ -13,10 +12,6 @@ function emit(res, id, event, payload) {
   res.write(`id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(payload)}\n\n`)
 }
 
-/**
- * 主进程助手客户端（src/main/assistant-link.ts）的离线测试。
- * 起一个本地 stub 助手服务，不连真实助手、不启动 Electron、不花 token。
- */
 export async function runAssistantLinkTests(ok) {
   const { build } = await import('esbuild')
   await build({

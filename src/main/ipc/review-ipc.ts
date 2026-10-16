@@ -1,15 +1,3 @@
-/**
- * 评审 IPC 适配（`yan:review:*`，§10.2 / WP-50）。
- *
- * 与 `src/main/review/**` 的分工：service 负责数据与安全边界，本文件只做
- * 「渲染端来的不可信输入 → 逐字段取值 → 调 service」的转换，并把结果原样
- * 交回。**不信任渲染端送来的变更集对象**：`annotationTask` 与 `startReview`
- * 都带查询参数，由主进程重新读一遍变更集，避免伪造 cwd / scopeKey 让评审
- * 运行跑到别的目录。
- *
- * 依赖以窄接口注入；本文件不 import Electron，也不 import 主进程入口，
- * 可用临时目录 fixture 直接单测（见 scripts/test-v3-review-service.mjs）。
- */
 import type { IpcRegistrar } from './registrar'
 import type { ReviewService } from '../review'
 import type {
@@ -111,7 +99,6 @@ export function registerReviewIpc(ipc: IpcRegistrar, deps: ReviewIpcDeps): void 
     return service.clearAnnotations(str(o.changeSetId), str(o.scopeKey))
   })
 
-  /* 两个「按查询重读变更集」的入口：不能信渲染端送来的 changeSet 对象。 */
   handle('yan:review:annotationTask', async (raw: unknown) => {
     const o = asRecord(raw)
     const changeSet = await service.changeSet(parseChangeSetQuery(o.query))

@@ -1,4 +1,3 @@
-/** 更改项目默认目录；不迁移文件、会话记录或运行实例，也不授予项目信任。 */
 import { access, realpath, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { isAbsolute, normalize, resolve } from 'node:path'
@@ -23,7 +22,6 @@ function checkRequest(value: unknown): ProjectDirectoryChange {
   return { projectId: request.projectId, cwd: request.cwd!.trim(), expectedCwd: request.expectedCwd! }
 }
 
-/** 在设置的串行写入队列内重读实体，避免覆盖同时发生的改名、归档或目录修改。 */
 export function projectDirectoryPatch(current: AppSettings, request: ProjectDirectoryChange): Partial<AppSettings> {
   const project = current.projects.find((item) => item.id === request.projectId)
   if (!project) throw new Error('项目不存在，请刷新项目列表')
@@ -33,7 +31,6 @@ export function projectDirectoryPatch(current: AppSettings, request: ProjectDire
   if (current.projects.some((item) => item.id !== project.id && sameNew(item.cwd))) {
     throw new Error('此文件夹已被其他项目使用，请选择未被占用的文件夹；不会自动合并项目')
   }
-  // 旧名称映射不能在清洗设置时重新生成已迁走的项目。
   const othersAtOld = current.projects.some((item) => item.id !== project.id && sameOld(item.cwd))
   const projectNames = Object.fromEntries(Object.entries(current.projectNames).filter(([path]) =>
     !sameOld(path) || othersAtOld
@@ -42,7 +39,6 @@ export function projectDirectoryPatch(current: AppSettings, request: ProjectDire
     projects: current.projects.map((item) => item.id === project.id ? { ...item, name: item.name || current.projectNames[item.cwd], cwd: request.cwd, updatedAt: Date.now() } : item),
     projectNames,
     recentCwds: [request.cwd, ...current.recentCwds.filter((path) => !sameNew(path) && (othersAtOld || !sameOld(path)))].slice(0, 8),
-    // 只更新下次新建的默认值；已打开会话的 cwd 由其 runner 持有。
     ...(sameOld(current.cwd) && !othersAtOld ? { cwd: request.cwd } : {})
   }
 }
@@ -58,7 +54,6 @@ export async function changeProjectDirectory(value: unknown): Promise<ProjectDir
     const before = await getSettings()
     projectDirectoryPatch(before, checked)
     if (directoryKey(request.expectedCwd) === directoryKey(cwd)) return { ok: true, settings: before }
-    // 目录联接和符号链接也按实际目录判占用；失效的旧目录仍可作为迁移来源。
     const projectRoots = new Map(await Promise.all(before.projects.map(async (project) => {
       const actual = await realpath(project.cwd).catch(() => project.cwd)
       if (project.id !== request.projectId && directoryKey(actual) === directoryKey(canonical)) {
@@ -66,7 +61,6 @@ export async function changeProjectDirectory(value: unknown): Promise<ProjectDir
       }
       return [project.id, project.cwd] as const
     })))
-    // 按常规列表范围补齐旧会话归属，不全量扫描挤掉有上限的布局索引。
     await listSessions(500, before.projects)
     const settings = await updateSettings((current) => {
       const patch = projectDirectoryPatch(current, checked)

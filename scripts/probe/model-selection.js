@@ -1,4 +1,3 @@
-/** Isolated UI contracts; synthetic models and runtime calls, real desktop preference writes. */
 ;(async () => {
   const out=[],store=window.__yanStore,sleep=ms=>new Promise(r=>setTimeout(r,ms)),q=s=>document.querySelector(s),qa=s=>[...document.querySelectorAll(s)]
   const ok=(v,label)=>out.push(`  ${v?'✓':'✗'} ${label}`)

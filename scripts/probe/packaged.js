@@ -1,14 +1,3 @@
-/*
- * 打包产物验收（`npm run test:packaged`）。
- *
- * 为什么单独一个探针：前面 30 个场景全跑在**开发态**（`npx electron .`），
- * 而打包后 pi 运行时的定位从 `resources/pi-runtime`（仓库）变成
- * `process.resourcesPath/pi-runtime`（安装目录，extraResources）——
- * 路径错了应用**能启动但连不上 pi**，界面只显示「未连接」，
- * 开发态的测试全绿也照样复现不了。
- *
- * 所以这里断言的是「用的是打包里的那份运行时」而不是「随便找到了一份 pi」。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -18,7 +7,6 @@
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
-  // 发行版不暴露调试 store；只通过正式 IPC 和界面控件验收。
   const runtimeLogs = []
   const offLogs = window.yan.onPush((msg) => {
     if (msg.ch === 'log') runtimeLogs.push(String(msg.payload.text ?? ''))
@@ -48,7 +36,6 @@
   log('=== 打包产物：内置 pi ===')
   log('')
 
-  // 1. 连接就绪 —— 打包后 pi 入口走 process.resourcesPath，找不到就会一直 starting
   let st = (await window.yan.agentStatus()).state
   for (let i = 0; i < 60 && st !== 'ready'; i++) {
     await sleep(500)
@@ -56,7 +43,6 @@
   }
   ok(st === 'ready', `conn = ${st}（应为 ready —— 打包里的 pi 真的起来了）`)
 
-  // 2. 关键：pi 入口必须落在**打包出来的** resources/pi-runtime 里
   const info = await window.yan.piInfo()
   log('  piInfo = ' + JSON.stringify(info))
   const bin = String(info?.bin ?? '')
@@ -64,29 +50,19 @@
   ok(!/AppData[\\/]Roaming[\\/]npm/i.test(bin), '没有退回到全局安装的 pi')
   ok(!!info?.version, `报到版本号：${info?.version || '(空)'}`)
 
-  // 3. RPC 真的活着（不是只把状态置成了 ready）
   const cmds = await window.yan.listCommands()
   ok(Array.isArray(cmds), `get_commands 有返回（${cmds?.length ?? 0} 条）`)
 
-  // 4. 没显示连接失败条；输入框可用
   ok(!q('.connbar'), '没有连接失败条')
   const ta = q('[data-testid="composer"]')
   ok(ta && !ta.disabled, '输入框可用')
 
-  // 5. 扩展加载不报错（用户自己的扩展如 left-info-panel 仍然会加载）
   const logs = runtimeLogs
   const extErr = logs.filter((l) => /extension_error/i.test(String(l)))
   log(`  日志里与扩展相关的报错行：${extErr.length}`)
   if (extErr.length) log('  ' + extErr.join('\n  '))
   ok(extErr.length === 0, '扩展加载没有报错')
 
-  /*
-   * 6. 项目知识可读（实施-03 S6）：证明**解包实例**也能走通
-   * 「按当前会话推导身份 → 读 YAN_DIR 下的知识」这条路。
-   *
-   * 读写到底落在哪里由 Node 侧核验（探针读不到 YAN_DIR）；
-   * 这里只看「要得回来」与「拿的是自己的项目」。
-   */
   log('')
   log('=== 项目知识（解包态）===')
   let kn = null
@@ -98,7 +74,6 @@
         break
       }
     } catch {
-      /* 主进程还没就绪 */
     }
     await sleep(500)
   }
@@ -108,12 +83,6 @@
 
   log('')
   log('=== Git 审查与写操作（解包态，实施-07 包验收）===')
-  /*
-   * 何时要真做一次写操作：开发态的 `gitwrite` 场景验的是「仓库能写」，
-   * 而包里可能踩的是另一类坑（git 子进程找不着、路径校验过不去、写到了别处）。
-   * 仓库是 Node 侧建的临时仓库，在项目列表里注册；写完之后由 Node 侧
-   * 跑 `git status --porcelain` 核对 —— 渲染端伪造不了那一层。
-   */
   const settingsForGit = await window.yan.getSettings().catch(() => null)
   const repoPath = (settingsForGit?.projects ?? []).find((p) => p.name === 'pkg-git-repo')?.cwd ?? null
   if (!repoPath) {
@@ -163,7 +132,6 @@
 
   log('')
   log('=== 历史交接读取（解包态）===')
-  // Historical records and their read API remain available after retiring the host extension.
   let handoff = null
   for (let i = 0; i < 20; i += 1) {
     try {
@@ -173,7 +141,6 @@
         break
       }
     } catch {
-      /* 主进程还没就绪 */
     }
     await sleep(500)
   }
@@ -264,7 +231,6 @@
       await window.yan.terminal.write(snap.id, `echo ${token}\r\n`)
       for (let i = 0; i < 48 && seen.split(token).length - 1 < 2; i += 1) await sleep(250)
       off()
-      /* 出现两次：一次是输入回显，一次是命令真的执行后的输出 */
       const hits = seen.split(token).length - 1
       ok(hits >= 2, `真实 PTY 输入 / 输出往返成功（${token} 出现 ${hits} 次）`)
       ok((await window.yan.terminal.resize(snap.id, 100, 30)) === true, 'resize 成功（原生 PTY 接受新尺寸）')

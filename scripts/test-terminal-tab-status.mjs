@@ -1,4 +1,3 @@
-/** 真实标签投影/推送消费模块的低频状态测试；不启动 PTY 或 Electron。 */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

@@ -1,8 +1,6 @@
-/** 能力列表响应的过期判定（用户报的「看不到模型选择」的根因之一）。 */
 export function runCapabilityRequestTests(ok, mod) {
   const { isCapabilityResponseStale } = mod
 
-  /* ---- 核心回归：sessionId 从 pending 过渡到稳定 uuid 不该判过期 ---- */
   ok(
     !isCapabilityResponseStale(
       { runnerId: 'r1', sessionId: 'pending:r1' },
@@ -18,7 +16,6 @@ export function runCapabilityRequestTests(ok, mod) {
     'runId 与 sessionId 都不变 → 不过期'
   )
 
-  /* ---- 真正要防的：换了运行实例 ---- */
   ok(
     isCapabilityResponseStale({ runnerId: 'r1' }, { runnerId: 'r2' }),
     '切到别的运行实例 → 过期（旧响应不许覆盖新会话）'
@@ -28,7 +25,6 @@ export function runCapabilityRequestTests(ok, mod) {
     '实例身份消失 → 过期'
   )
 
-  /* ---- 没有 runId 的旧路径：退回 sessionId 比较 ---- */
   ok(
     isCapabilityResponseStale({ runnerId: null, sessionId: 'a' }, { runnerId: null, sessionId: 'b' }),
     '没有 runId 时，sessionId 变了仍然判过期'
@@ -49,7 +45,6 @@ export function runCapabilityRequestTests(ok, mod) {
     '没有 runId 时 pending→稳定 仍按 sessionId 判（旧路径保持原语义）'
   )
 
-  /* ---- runnerId 出现后就不再受 sessionId 影响 ---- */
   ok(
     !isCapabilityResponseStale(
       { runnerId: 'r1', sessionId: undefined },

@@ -1,11 +1,3 @@
-/**
- * 轮次缓存纯逻辑（`src/renderer/src/state/turn-cache.ts`，实施-26 R2）的单测。
- *
- * 为什么值得单测：这一层决定「展开哪几个会话」「会话变了旧内容还能不能显示」
- * 「读失败会不会变成一张空卡」。这些在界面上都表现为「看起来正常」，
- * 只有把状态机钉住才能确定不是碰巧。
- */
-
 const peek = (over = {}) => ({
   messages: over.messages ?? [],
   total: over.total ?? (over.messages?.length ?? 0),
@@ -30,7 +22,6 @@ export async function runTurnCacheTests(ok, mod) {
 
   const snap = (version, turns = []) => ({ version, turns, total: turns.length, truncated: 0, bytes: 10 })
 
-  /* ---- 首次请求 ---- */
   {
     const r = turnCacheBegin(initialTurnCache(), 'a.jsonl', 1)
     ok(r.shouldLoad === true, '首次展开：需要真的去读')
@@ -38,7 +29,6 @@ export async function runTurnCacheTests(ok, mod) {
     ok(turnCacheSelect(r.state, 'a.jsonl')?.status === 'loading', 'loading 态可以从 state 查到')
   }
 
-  /* ---- 缓存命中：同版本已就绪不重读 ---- */
   {
     let state = turnCacheBegin(initialTurnCache(), 'a.jsonl', 1).state
     state = turnCacheSettle(state, 'a.jsonl', 1, { ok: true, snapshot: snap(1, [{ id: 't' }]) })
@@ -50,14 +40,12 @@ export async function runTurnCacheTests(ok, mod) {
     )
   }
 
-  /* ---- 同版本正在读：不重复发请求 ---- */
   {
     const first = turnCacheBegin(initialTurnCache(), 'a.jsonl', 1)
     const second = turnCacheBegin(first.state, 'a.jsonl', 1)
     ok(second.shouldLoad === false, '同一版本已在读：不并发重复读同一个文件')
   }
 
-  /* ---- 版本变化：旧轮次立刻不可见 ---- */
   {
     let state = turnCacheBegin(initialTurnCache(), 'a.jsonl', 1).state
     state = turnCacheSettle(state, 'a.jsonl', 1, { ok: true, snapshot: snap(1, [{ id: 'old' }]) })
@@ -69,7 +57,6 @@ export async function runTurnCacheTests(ok, mod) {
     )
   }
 
-  /* ---- 空轮次是正常态，不是错误 ---- */
   {
     let state = turnCacheBegin(initialTurnCache(), 'a.jsonl', 1).state
     state = turnCacheSettle(state, 'a.jsonl', 1, { ok: true, snapshot: snap(1, []) })
@@ -78,7 +65,6 @@ export async function runTurnCacheTests(ok, mod) {
     ok(entry?.status === 'ready' && entry.snapshot.turns.length === 0, '空轮次快照可以正常取出')
   }
 
-  /* ---- 读不出来：明确的 error，而不是空卡 ---- */
   {
     let state = turnCacheBegin(initialTurnCache(), 'a.jsonl', 1).state
     state = turnCacheSettle(state, 'a.jsonl', 1, { ok: false, error: '内容不可读' })
@@ -87,12 +73,9 @@ export async function runTurnCacheTests(ok, mod) {
     ok(entry?.status === 'error' && entry.error === '内容不可读', 'error 文案可读、可展示')
   }
 
-  /* ---- 竞态：慢结果不许覆盖新状态 ---- */
   {
     let state = turnCacheBegin(initialTurnCache(), 'a.jsonl', 1).state
-    // 读还没回来，版本先变了
     state = turnCacheBegin(state, 'a.jsonl', 2).state
-    // 旧请求（version 1）这时才回来
     const stale = turnCacheSettle(state, 'a.jsonl', 1, { ok: true, snapshot: snap(1, [{ id: 'stale' }]) })
     ok(stale === state, '迟到的旧版本结果被整份丢弃（state 引用不变）')
     ok(turnCacheSelect(stale, 'a.jsonl')?.status === 'loading', '丢弃后仍停在 loading，等新结果')
@@ -104,7 +87,6 @@ export async function runTurnCacheTests(ok, mod) {
     )
   }
 
-  /* ---- LRU 上限：只留最近展开的 TURN_CACHE_MAX 个 ---- */
   {
     let state = initialTurnCache()
     for (const p of ['a', 'b', 'c', 'd']) {
@@ -117,16 +99,14 @@ export async function runTurnCacheTests(ok, mod) {
     ok(alive.includes('d'), '最近使用的保留')
   }
 
-  /* ---- 正在读的条目不能被 LRU 淘汰（否则永远停在 loading） ---- */
   {
     let state = initialTurnCache()
-    // 先把 a / b / c 读好，再让 a 重新进入 loading（版本变化）
     for (const p of ['a', 'b', 'c']) {
       state = turnCacheBegin(state, p, 1).state
       state = turnCacheSettle(state, p, 1, { ok: true, snapshot: snap(1) })
     }
-    state = turnCacheBegin(state, 'a', 2).state // a 重新 loading
-    state = turnCacheBegin(state, 'd', 1).state // 展开第 4 个
+    state = turnCacheBegin(state, 'a', 2).state
+    state = turnCacheBegin(state, 'd', 1).state
     state = turnCacheSettle(state, 'd', 1, { ok: true, snapshot: snap(1) })
     ok(
       turnCacheSelect(state, 'a')?.status === 'loading',
@@ -139,7 +119,6 @@ export async function runTurnCacheTests(ok, mod) {
     )
   }
 
-  /* ---- peekSession 结果 → 轮次快照 ---- */
   {
     const snapshot = snapshotFromPeek(7, {
       messages: [userMsg('m0', '问题', 'e1'), asstMsg('m1', '答案')],
@@ -154,7 +133,6 @@ export async function runTurnCacheTests(ok, mod) {
     ok(snapshot.truncated === 3 && snapshot.bytes === 999, '截断数与字节数随快照带出（供卡片标注）')
   }
 
-  /* ---- 读取器：正常 / 读不出来 / 抛异常 ---- */
   {
     const okOut = await loadTurnSnapshot('a.jsonl', 1, async () => peek({ messages: [userMsg('m0', 'Q', 'e')] }))
     ok(okOut.ok === true && okOut.snapshot.turns.length === 1, '读取器：正常把 peek 结果切成轮次')

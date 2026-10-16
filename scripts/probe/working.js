@@ -1,6 +1,3 @@
-/**
- * 回合提示必须覆盖模型流与工具等待两个阶段，文案由实际运行事件推导。
- */
 ;(async () => {
   const out = []
   const ok = (condition, label, detail = '') => {

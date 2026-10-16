@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 故事状态矩阵的本地静态核对（`npm run test:stories`）。
- *
- * 它只做三件能在没有 Storybook、没有构建、没有浏览器时可靠完成的事：
- *   1. 用仓库自带的 TypeScript 解析 `ui/index.ts` 与全部状态矩阵故事文件，确认语法可解析；
- *   2. 从故事里声明的 `parameters.stateMatrix`（可按故事，也可放到 `meta` 做文件级声明）
- *      汇总「组件 → 已声明状态」；
- *   3. 把这份清单和 `ui/index.ts` 的正式导出、设计要求的状态清单逐项对齐。
- *
- * 它**不**运行故事、**不**做交互测试、**不**跑 a11y 扫描、**不**截图，
- * 因此通过这里不等于视觉或无障碍已验收；hover / focus / open 这类状态只在故事里
- * 以 `declared` 标注为「仅声明」。要真正验证外观请跑 `npm run storybook`。
- *
- * 故事一律从 `./index` 消费正式导出；原语自带的 CSS（`./Tree.css`）允许作为
- * 故事的自足样式入口，不影响对生产出口的核对。
- */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,7 +16,6 @@ const STORY_FILES = [
   join(UI_DIR, 'Splitter.stories.tsx')
 ]
 
-/** 设计系统要求的交互状态词表（02 §15.1）。故事只能声明这里面的状态。 */
 const ALLOWED_STATES = new Set([
   'default',
   'hover',
@@ -73,10 +56,6 @@ const ALLOWED_STATES = new Set([
   'density-comfortable'
 ])
 
-/**
- * 覆盖清单：每个现有正式导出在状态矩阵里至少要出现这些状态。
- * 「适用时」的取舍写在值里——不能交互的展示件不列 hover / press。
- */
 const REQUIRED = {
   Button: ['default', 'hover', 'press', 'focus', 'disabled', 'loading'],
   IconButton: ['default', 'hover', 'focus', 'disabled', 'loading'],
@@ -129,10 +108,6 @@ const REQUIRED = {
   Skeleton: ['default', 'shape-text', 'shape-rect', 'shape-circle'],
   Separator: ['default', 'orientation-horizontal', 'orientation-vertical'],
   Slider: ['default', 'disabled', 'invalid', 'orientation-vertical'],
-  /*
-   * Tree / Table 家族的公开构建块（含 Column / Row / Cell / TableFooter 等真实
-   * 导出）与 Splitter 都必须有明确覆盖，不再按前缀当作「在途」排除。
-   */
   Tree: ['default', 'selected', 'disabled', 'empty'],
   TreeItem: ['default', 'selected', 'disabled'],
   TreeItemContent: ['default'],
@@ -159,10 +134,6 @@ const REQUIRED = {
   Text: ['default']
 }
 
-/**
- * 允许不进入状态矩阵的正式导出：按真实语义识别，只排除确实没有可视状态的
- * 工具函数与内部纯模型，不再按原语家族整体前缀排除。
- */
 const EXCLUSIONS = [
   { test: (name) => name === 'cx', reason: '工具函数，不是可视控件，没有状态矩阵' },
   {
@@ -171,24 +142,17 @@ const EXCLUSIONS = [
   }
 ]
 
-/**
- * 状态矩阵故事只允许从这些模块导入：原语入口、React 类型、Storybook 类型。
- * 任何指向 features / app / state / lib / preload 的导入都会失败——故事不调用宿主 API。
- */
 const ALLOWED_IMPORTS = new Set([
   './index',
   'react',
   'react-aria-components',
   '@storybook/react-vite',
-  /* 原语自带 CSS：Storybook 需要自足加载，不影响对 `./index` 生产出口的核对。 */
   './Tree.css'
 ])
 
 const problems = []
 const notes = []
 const fail = (message) => problems.push(message)
-
-/* ---------- 解析 ---------- */
 
 function readSource(file) {
   return readFileSync(file, 'utf8')
@@ -219,7 +183,6 @@ function parse(file) {
   return sourceFile
 }
 
-/** 收集 `export { … } from '…'` 里的运行时导出名（跳过 `type` 项）。 */
 function collectRuntimeExports(sourceFile) {
   const names = new Set()
   for (const statement of sourceFile.statements) {
@@ -234,7 +197,6 @@ function collectRuntimeExports(sourceFile) {
   return names
 }
 
-/** 收集一个故事文件里所有 import 的模块路径。 */
 function collectImportSpecifiers(sourceFile) {
   const specifiers = []
   for (const statement of sourceFile.statements) {
@@ -245,7 +207,6 @@ function collectImportSpecifiers(sourceFile) {
   return specifiers
 }
 
-/** 收集从 `./index` 具名导入的本地名（含别名指向的原名）。 */
 function collectIndexImports(sourceFile) {
   const names = new Set()
   for (const statement of sourceFile.statements) {
@@ -288,7 +249,6 @@ function readStringList(node, where) {
     }
     return items
   }
-  // 故事里用 `STATES('a', 'b')` 标记意图，这里按同样语义展开。
   if (ts.isCallExpression(value) && ts.isIdentifier(value.expression) && value.expression.text === 'STATES') {
     const items = []
     for (const argument of value.arguments) {
@@ -315,7 +275,6 @@ function readObjectProperty(object, name) {
   return null
 }
 
-/** 读取并校验一份 stateMatrix 声明（组件 / 状态 / 仅声明）。 */
 function readMatrix(matrixNode, where) {
   const components = readStringList(readObjectProperty(matrixNode, 'components'), `${where}.components`) ?? []
   const states = readStringList(readObjectProperty(matrixNode, 'states'), `${where}.states`) ?? []
@@ -332,11 +291,6 @@ function readMatrix(matrixNode, where) {
   return { components, states, declared }
 }
 
-/**
- * 文件级声明：`const meta = { parameters: { stateMatrix: … } }` + `export default meta`。
- * 适用于一个故事文件整体覆盖一组组件的情况（P1–P4 的原语故事）。单个故事自己的
- * `parameters.stateMatrix` 优先于文件级声明。
- */
 function collectMetaMatrix(sourceFile) {
   let defaultName = null
   for (const statement of sourceFile.statements) {
@@ -361,10 +315,6 @@ function collectMetaMatrix(sourceFile) {
   return null
 }
 
-/**
- * 提取每个 `export const X: Story = { … }` 的状态矩阵声明。故事自身没写时，
- * 回退到文件级 `meta` 声明；两者都没有才算缺口。
- */
 function collectStoryDeclarations(sourceFile, fileMatrix) {
   const stories = []
   for (const statement of sourceFile.statements) {
@@ -393,8 +343,6 @@ function collectStoryDeclarations(sourceFile, fileMatrix) {
   }
   return stories
 }
-
-/* ---------- 断言 ---------- */
 
 const indexSource = parse(INDEX_FILE)
 if (!indexSource) {
@@ -428,7 +376,6 @@ for (const file of STORY_FILES) {
   }
 }
 
-// 覆盖清单与 index.ts 的一致性。
 for (const [component, states] of Object.entries(REQUIRED)) {
   if (!runtimeExports.has(component)) fail(`覆盖清单里的 '${component}' 不在 ui/index.ts 的正式导出中。`)
   const have = coverage.get(component)
@@ -440,7 +387,6 @@ for (const [component, states] of Object.entries(REQUIRED)) {
   if (missing.length > 0) fail(`'${component}' 缺少状态：${missing.join(', ')}。`)
 }
 
-// 只声明、未实测的状态必须真的出现在状态列表里，且不能超出。
 for (const [component, declared] of declaredOnly) {
   const have = coverage.get(component) ?? new Set()
   for (const state of declared) {
@@ -448,7 +394,6 @@ for (const [component, declared] of declaredOnly) {
   }
 }
 
-// 反向：每个正式导出都要么被覆盖，要么有明确排除理由。
 const excludedNames = new Set()
 for (const name of runtimeExports) {
   if (coverage.has(name)) continue
@@ -463,8 +408,6 @@ for (const name of excludedNames) {
   const exclusion = EXCLUSIONS.find((entry) => entry.test(name))
   notes.push(`排除 '${name}'：${exclusion.reason}`)
 }
-
-/* ---------- 输出 ---------- */
 
 const declaredTotal = [...declaredOnly.values()].reduce((sum, set) => sum + set.size, 0)
 

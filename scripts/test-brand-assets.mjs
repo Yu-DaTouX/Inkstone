@@ -1,21 +1,3 @@
-/**
- * 品牌生成一致性小测（v3 L12）。
- *
- * 纯 Node，不启动 Electron、不联网。核对：
- *   1. 真源结构合法，且 16/24 的 frame / prompt / question mask 与 L9/L11 定稿逐格一致
- *      （问号 mask 不得被改）。
- *   2. 时间线：运行 750ms（四段 300/125/200/125）、等待 1500ms（600/250/400/250），
- *      去重帧数与真实原生时长。
- *   3. 真源 → `build/prompt-stone.svg` 与 `src/shared/brand-geometry.ts` 一致。
- *   4. 若 `build/tray/manifest.json` 存在（需先 `npm run icon`）：
- *      · manifest 的 sourceHash 等于真源哈希、帧列表与时间线一一对应；
- *      · 16/24/32 × on-light/on-dark 全部落盘；
- *      · 每个 PNG 尺寸正确；同一状态各帧的石框像素 RGBA 完全不变；
- *      · 符号像素与石框像素零相交。
- *      （缺生成物时打印跳过说明，不误报通过。）
- *
- * 可独立执行：node scripts/test-brand-assets.mjs
- */
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
@@ -36,8 +18,6 @@ import {
 
 const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 const abs = (rel) => `${root}${rel}`
-
-/* ───────────────────────── 期望 mask（证据定稿，独立重写） ───────────────────────── */
 
 const EXPECTED = {
   '16': {
@@ -226,8 +206,6 @@ function checkGeneratedText(design, hash) {
   }
 }
 
-/* ───────────────────────── 最小 PNG 解码（8bit RGB/RGBA） ───────────────────────── */
-
 function decodePng(buffer) {
   assert.equal(buffer.readUInt32BE(0), 0x89504e47, 'PNG 魔数')
   let offset = 8
@@ -290,8 +268,6 @@ function pixel(png, x, y) {
   return [png.data[i], png.data[i + 1], png.data[i + 2], png.channels === 4 ? png.data[i + 3] : 255]
 }
 
-/* ───────────────────────── 生成物像素检查 ───────────────────────── */
-
 function checkGeneratedAssets(design) {
   const manifestPath = abs(`build/tray/${MANIFEST_NAME}`)
   if (!existsSync(manifestPath)) {
@@ -308,7 +284,6 @@ function checkGeneratedAssets(design) {
 
   for (const theme of design.outputs.trayThemes) {
     for (const { px } of sizes) {
-      /* 静态帧：idle / running / waiting 三个尺寸档齐全且尺寸正确。 */
       for (const kind of ['static-idle', 'static-running', 'static-waiting']) {
         const rel = `build/tray/${trayFilePath(design, theme, px, 'idle', 0, kind)}`
         assert.ok(existsSync(abs(rel)), `缺静态托盘 ${rel}`)
@@ -344,20 +319,16 @@ function checkGeneratedAssets(design) {
           for (let y = box.y0; y < box.y1; y += 1) for (let x = box.x0; x < box.x1; x += 1) colors.push(pixel(png, x, y).join(','))
           return colors
         }
-        /* 同一状态各帧：石框像素 RGBA 完全不变。 */
         for (const cell of frameCells) {
           const first = sample(pngs[0].png, cell).join('|')
           for (const { rel, png } of pngs.slice(1)) assert.equal(sample(png, cell).join('|'), first, `${rel} 的石框像素与首帧不同`)
         }
-        /* 符号与石框零相交（逐像素：不存在同时被两层覆盖的格）。 */
         assert.equal(symbolCells.filter((cell) => frameCells.includes(cell)).length, 0, `${theme}/${px}/${state} 符号与石框相交`)
       }
     }
   }
   console.log('品牌生成物：SVG / 各 DPI 静态托盘 / 去重动画帧 / manifest 一致，石框逐帧不变、符号与框零相交。')
 }
-
-/* ───────────────────────── 主流程 ───────────────────────── */
 
 export function runBrandAssetTests() {
   const { design, hash } = readDesign(abs(DESIGN_PATH))

@@ -1,25 +1,3 @@
-/**
- * HI4 · MCP App **生产装配**跨层小测（正式 service + 正式 channel + 正式 runtime 包装）。
- *
- * ── 它证明什么 ──
- *   1. `createMcpAppViewRuntime` 装上「真实前台事实源」后的行为：current 有效 → prepare
- *      成功；切到 B 后旧 A 的 instance / audit / dispatch 全部失效；晚到结果被丢弃。
- *   2. owner / project / generation 任一不符都拒绝（full-match），不因「旧 runner 还活着」放行。
- *   3. ownerGuard 缺省不成立：错误 initialize 不放行 tools/call（service 与 channel 两层）。
- *   4. renderer 异常 / 主 frame 重载走 `close()`：实例与在途调用立即作废。
- *   5. legacy 连接事实缺失 / pi 已退出但 legacy ready **不被当作无持有**（HA3 行为不回退）。
- *   6. 沙箱 / CSP / 协议来源：`allow-scripts` 且无 same-origin；跨 owner 读被拒。
- *   7. 运动偏好：默认 static；用户 reduce 后停；播放器不重建菜单 / 不每 tick 读盘。
- *
- * ── 哪些边界是假的 ──
- *   · 浏览器 iframe / window / MessagePort = fake（fixtures/mcp-app-cross-contract-boundary）；
- *   · MCP host / proxy / ask = 内存假件；批准固定返回 once；
- *   · 不启 Electron、不建真实 iframe、不连真实 MCP 服务、不调真实模型。
- *   `protocol.handle` / webRequest / 系统托盘 / DPI / 真实第三方 App 兼容仍未验 ——
- *   本测只说「模块与静态装配通过」。
- *
- * 运行：node scripts/test-mcp-app-final-wiring.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -85,8 +63,6 @@ const {
 } = main
 const { McpAppChannel, MCP_APP_FRAME_SANDBOX, MCP_APP_FRAME_ALLOW, MCP_APP_FRAME_REFERRER_POLICY } = renderer
 
-/* ------------------------------------------------------------------ 固定夹具 */
-
 const HTML = '<!doctype html><html><body>app</body></html>'
 const SERVER = 'srv'
 const SERVER_CONFIG = { id: SERVER, transport: 'stdio', command: 'node', args: ['x.mjs'], enabled: true, ownedBy: 'inkstone' }
@@ -142,12 +118,6 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-/**
- * 装配「正式 runtime 包装 + 正式 service + 前台事实源」，逐字对应 index.ts 的接线：
- *   · current / currentProject / isActive 都读**同一个**前台事实；
- *   · isActive 全字段对照（runner / session / sessionFile / project / generation）。
- * `syncForeground` 复刻 index.ts 的 `syncAppViewForeground`（前台变化即 invalidate）。
- */
 function makeAssembly({ name = 'default', foreground = FACTS_A, records, hostTools, deferredOutcome } = {}) {
   const state = { foreground, last: foreground ?? null, refreshes: [], askLog: [], afterCalls: [] }
   const callRecords = records ?? new Map([['call-1', makeRecord()]])
@@ -223,8 +193,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   params
 })
 
-/* ══════════════════════════════════ 1 · 装配与前台事实 ══════════════════════════════════ */
-
 {
   const { service } = makeAssembly({ name: 'valid' })
   const prepared = await service.prepare('call-1')
@@ -247,8 +215,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   ok(refreshed.ok === true && refreshed.toolCount === 1, 'refresh 走正式代理刷新入口', JSON.stringify(refreshed))
 }
 
-/* ══════════════════════════════════ 2 · 切 B 旧 A 失效 ══════════════════════════════════ */
-
 {
   const { service, syncForeground } = makeAssembly({ name: 'switch' })
   const prepared = await service.prepare('call-1')
@@ -260,7 +226,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   const oldAudit = await service.audit('call-1')
   eq(oldAudit.length, 0, '切到 B 后读不到 A 会话的审计（不跨会话）')
 
-  /* 仅改前台事实、不主动 invalidate：ownerGuard 也必须拒绝（防漏接）。 */
   const { service: bare } = makeAssembly({ name: 'switch-gate' })
   const barePrepared = await bare.prepare('call-1')
   ok(barePrepared.kind === 'ready', '未主动失效时 A 实例先建立')
@@ -271,8 +236,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   ok(gated && gated.error && gated.error.code === -32001, '前台切走后 ownerGuard 拒绝 tools/call（不靠 runtimeOf 旧 runner）', JSON.stringify(gated))
   void bare
 }
-
-/* ══════════════════════════════════ 3 · 晚到结果丢弃 ══════════════════════════════════ */
 
 {
   const late = deferred()
@@ -288,8 +251,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   eq(audit.length, 0, '晚到结果不会写进 B 的会话审计')
 }
 
-/* ══════════════════════════════════ 4 · owner/project/generation 不符 ══════════════════════════════════ */
-
 {
   const cases = [
     ['调用记录会话不符', { owner: { sessionId: 'sX', projectId: 'p1', runnerId: 'r1', epoch: 3 } }],
@@ -303,7 +264,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
     ok(prepared.kind === 'error', `${label}：prepare 明确拒绝`, prepared.kind)
   }
 
-  /* project 变更（同 runner/session/generation）→ isActive 全字段核对也必须拒绝 */
   const { service, state } = makeAssembly({ name: 'project-gate' })
   const prepared = await service.prepare('call-1')
   await service.dispatch(prepared.instanceId, call(prepared.instanceId, 'ui/initialize', {}, 40))
@@ -317,16 +277,12 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   await service.refresh()
 }
 
-/* ══════════════════════════════════ 5 · 错误 initialize 不 ready ══════════════════════════════════ */
-
 {
-  /* service 层：未 initialize 直接 tools/call → -32002 */
   const { service } = makeAssembly({ name: 'init-service' })
   const prepared = await service.prepare('call-1')
   const early = await service.dispatch(prepared.instanceId, call(prepared.instanceId, 'tools/call', { name: 'read', arguments: {} }, 51))
   ok(early && early.error && early.error.code === -32002, 'service：未初始化先 tools/call 被拒（-32002）', JSON.stringify(early))
 
-  /* channel 层：host 返回 error 的 initialize → 通道不 ready，tools/call 本地拒绝 */
   const win = fakeWindow()
   const frame = fakeFrame()
   const dispatched = []
@@ -354,8 +310,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   channel.dispose()
 }
 
-/* ══════════════════════════════════ 6 · renderer 异常失效 ══════════════════════════════════ */
-
 {
   const { service } = makeAssembly({ name: 'renderer-gone' })
   const prepared = await service.prepare('call-1')
@@ -370,8 +324,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   const afterReclaim = await svc2.dispatch(p2.instanceId, call(p2.instanceId, 'tools/call', { name: 'read', arguments: {} }, 72))
   ok(afterReclaim && afterReclaim.error, '回收 runner 后绑定它的实例立即失效')
 }
-
-/* ══════════════════════════════════ 7 · legacy 事实不回退 ══════════════════════════════════ */
 
 {
   const server = { serverId: SERVER, scope: 'global' }
@@ -398,8 +350,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   )
 }
 
-/* ══════════════════════════════════ 8 · 沙箱 / CSP / 跨 owner ══════════════════════════════════ */
-
 {
   eq(MCP_APP_FRAME_SANDBOX, 'allow-scripts', 'iframe sandbox 固定 allow-scripts')
   ok(!String(MCP_APP_FRAME_SANDBOX).includes('allow-same-origin'), 'sandbox 不含 allow-same-origin')
@@ -415,7 +365,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   ok(headers['X-Content-Type-Options'] === 'nosniff' && headers['Referrer-Policy'] === 'no-referrer', '响应带 nosniff / no-referrer')
   ok(String(mcpAppErrorHeaders()['Permissions-Policy']).includes('camera=()'), '错误页也带关闭的 Permissions-Policy')
 
-  /* 跨 owner 读：store 只认自己登记的实例 */
   let fetchCount = 0
   const store = new McpAppResourceStore({
     ownerGuard: { isActive: () => true },
@@ -435,8 +384,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   ok(denied.ok === false && denied.error === 'revoked', 'store：owner 不活跃时 fail-closed，不抓取', denied.error)
   void fetchCount
 }
-
-/* ══════════════════════════════════ 9 · 运动偏好 ══════════════════════════════════ */
 
 {
   let now = 0
@@ -472,7 +419,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   eq(player.animating(), false, '等待态但 motion 关闭时仍 static')
   player.dispose()
 
-  /* 播放器不重建菜单 / 不读盘：帧集每 tick 都从注入端口取内存缓存，apply 只在帧变化时发生。 */
   let assetReads = 0
   const p2 = createTrayAnimationPlayer({
     assets: () => {
@@ -490,8 +436,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   eq(assetReads, readsAfterStart, '同一状态重复 setState 不重新取素材')
   p2.dispose()
 }
-
-/* ══════════════════════════════════ 10 · 静态装配断言（index/preload/shared/协议合并） ══════════════════════════════════ */
 
 {
   const index = await readFile('src/main/index.ts', 'utf8')
@@ -525,8 +469,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   ok(!protocol.includes('onBeforeRequest'), 'MCP App 协议不注册自己的 webRequest 监听（不与离线成果争单监听）')
   ok(protocol.includes('store.read(request.url, { method: request.method })') && protocol.includes('mcpAppResponseHeaders(result.csp)'), '协议 handler 只读 store，经共享头沿用严格离线 CSP')
 }
-
-/* ------------------------------------------------------------------ 汇总 */
 
 await rm(root, { recursive: true, force: true }).catch(() => undefined)
 console.log(``)

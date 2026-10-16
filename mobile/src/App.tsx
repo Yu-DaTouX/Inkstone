@@ -31,11 +31,6 @@ type Route =
   | { name: 'session'; sessionId: string; title: string }
   | { name: 'artifact'; sessionId: string; title: string; artifact: { id: string; filename: string; mediaType: string; kind: string } }
 
-/**
- * 砚手机端：配对一台电脑 → 首页（等你回答的问题 + 会话）→ 会话（历史 / 回复 / 中止）→ 成果。
- * 路由与会话草稿由应用层保存，窗口和列表宽度变化不重置正在阅读的会话。
- */
-/** 已配对时：会话列表首次返回、流连上或出错（任一有结论）即可撤启动画面 */
 function RemoteReady({ onReady }: { onReady: () => void }) {
   const { sessions, stream, error } = useRemote()
   const settled = sessions.length > 0 || stream === 'open' || !!error
@@ -50,10 +45,6 @@ export default function App() {
   const fold = useFoldLayout()
   const frameRef = useRef<View>(null)
   const [frame, setFrame] = useState({ x: 0, y: 0, width: 0, height: 0 })
-  /*
-   * Android 15+ 强制全屏边到边，adjustResize 不再收缩窗口，输入法会盖住输入框。
-   * 这里按输入法顶边与内容区底边的重叠量给内容区加底部内边距；iOS 仍由 KAV 处理。
-   */
   const [keyboardTop, setKeyboardTop] = useState<number | null>(null)
   useEffect(() => {
     if (Platform.OS !== 'android') return
@@ -61,16 +52,11 @@ export default function App() {
     const remeasure = (): void => { frameRef.current?.measureInWindow((x, y, measuredWidth, height) => setFrame({ x, y, width: measuredWidth, height })) }
     const show = Keyboard.addListener('keyboardDidShow', (event) => {
       setKeyboardTop(event.endCoordinates.screenY)
-      /* 输入法出现时系统导航栏内边距会变，等布局稳定后重新量一次内容区 */
       for (const delay of [120, 400]) timers.push(setTimeout(remeasure, delay))
     })
     const hide = Keyboard.addListener('keyboardDidHide', () => { setKeyboardTop(null); timers.push(setTimeout(remeasure, 120)) })
     return () => { timers.forEach(clearTimeout); show.remove(); hide.remove() }
   }, [])
-  /*
-   * 输入法顶边是屏幕坐标，measureInWindow 在边到边窗口里不含状态栏高度（真机 y 为 0、底边差一个状态栏），
-   * 所以内容区的屏幕底边要补上状态栏；若某机型已含状态栏（y 已不小于它）则不再补。
-   */
   const statusOffset = frame.y < (StatusBar.currentHeight ?? 0) / 2 ? StatusBar.currentHeight ?? 0 : 0
   const keyboardOverlap = keyboardTop === null ? 0 : Math.max(0, Math.round(frame.y + statusOffset + frame.height - keyboardTop))
   const extraGap = fold.orientation === 'vertical' ? Math.max(0, 12 - ((fold.right ?? 0) - (fold.left ?? 0))) : Math.max(0, 12 - ((fold.bottom ?? 0) - (fold.top ?? 0)))
@@ -88,10 +74,8 @@ export default function App() {
   const expanded = !horizontalInside && (verticalInside ? twoPanes : width >= 600)
   const [connection, setConnection] = useState<Connection | null | undefined>(undefined)
   const [route, setRoute] = useState<Route>({ name: 'home' })
-  /** 未配对时也能用生活助手：welcome = 配对页，assistant = 本机助手 */
   const [assistantConversation, setAssistantConversation] = useState<AssistantConversation>({ messages: [], draft: '' })
   const [localRoute, setLocalRoute] = useState<'welcome' | 'assistant' | 'assistant-settings'>('welcome')
-  /** 助手设置的返回目标：从设置页进来就回设置，从对话页进来就回对话 */
   const assistantSettingsFrom = useRef<'assistant' | 'settings'>('assistant')
   const [pairingPrefill, setPairingPrefill] = useState<PairingPrefill | null>(null)
   const [alertsEnabled, setAlertsEnabled] = useState(false)
@@ -99,13 +83,11 @@ export default function App() {
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft[]>>({})
   const [project, setProject] = useState<{ id: string; name: string } | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  /* 启动画面：读完配对信息；已配对再等首批会话（设计规范 §3.4.1） */
   const [booting, setBooting] = useState(true)
   const [remoteReady, setRemoteReady] = useState(false)
   const markRemoteReady = useCallback(() => setRemoteReady(true), [])
   const endBoot = useCallback(() => setBooting(false), [])
   const sidebarVisible = expanded && (!sidebarCollapsed || route.name === 'home')
-  // Short windows use one unobstructed region. Tabletop chat reserves both regions.
   const tabletop = route.name === 'session' && horizontalInside && horizontalInside.top >= 140 && frame.height - horizontalInside.top - horizontalInside.gap >= 220 ? horizontalInside : null
   const pairing = connection === null || !!pairingPrefill
   const safeRegion = horizontalInside && !tabletop
@@ -206,10 +188,6 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar barStyle={scheme === 'light' ? 'dark-content' : 'light-content'} backgroundColor={p.bg1} />
       <SafeAreaView style={{ flex: 1, backgroundColor: p.bg1 }}>
-        {/*
-          * Android 不包 KAV：AndroidManifest 已设 windowSoftInputMode="adjustResize"，系统自己收缩窗口。
-          * height 模式会把高度锁在首次测量值上，旋转或折叠展开后不重新收缩，底部输入框被推到屏幕外。
-          */}
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={frame.y} style={{ flex: 1 }}>
         <View ref={frameRef} collapsable={false} onLayout={() => frameRef.current?.measureInWindow((x, y, measuredWidth, height) => setFrame({ x, y, width: measuredWidth, height }))} style={{ flex: 1, paddingBottom: keyboardOverlap }}>
         {connection === undefined ? null : connection === null || pairingPrefill ? (
@@ -237,7 +215,6 @@ export default function App() {
           </View>
           )
         ) : (
-          /* 令牌被撤销（401）时回到配对页 */
           <RemoteProvider connection={connection} onUnauthorized={unpair}>
             {booting ? <RemoteReady onReady={markRemoteReady} /> : null}
             <View style={[safeRegion, { flexDirection: expanded ? 'row' : 'column' }]}>

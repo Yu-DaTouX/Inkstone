@@ -1,18 +1,3 @@
-/**
- * ComfyUI 已保存工作流 → 可提交的 API prompt。
- *
- * 新一代模型（Qwen-Image、Flux、Wan 等）由 UNETLoader / CLIPLoader / VAELoader 分开加载、常带自定义节点，
- * 宿主拼不出通用的工作流；所以直接用用户在 ComfyUI 里保存的工作流（user/default/workflows 下的 JSON），
- * 只替换正向提示词、种子、尺寸、参考图与保存前缀。
- *
- * 支持两种文件：
- * - 界面格式（默认保存的格式）：控件值是按顺序存的数组，用 `/object_info` 的输入顺序还原成名字
- *   （查不到时退回节点自身 inputs 里的控件顺序），跳过种子后前端自带的 randomize/fixed 值；
- *   展开 Reroute、PrimitiveNode、静音（mode 2）与旁路（mode 4）节点，以及子图（含嵌套，
- *   内部节点 id 记为「实例id:内部id」，与 ComfyUI 前端提交时一致）。组节点（workflow>…）不支持。
- * - API 格式（菜单「导出（API）」）：原样使用。
- */
-
 type UiLink = unknown[] | { id: number; origin_id: number; origin_slot: number; target_id: number; target_slot: number; type?: string }
 
 interface UiNode {
@@ -41,7 +26,6 @@ export interface UiWorkflow {
   definitions?: { subgraphs?: UiSubgraph[] }
 }
 
-/** `/object_info` 里一个节点类的形状（只用到输入定义与是否云端 API 节点） */
 export interface ObjectInfoEntry {
   input?: { required?: Record<string, unknown[]>; optional?: Record<string, unknown[]> }
   output_node?: boolean
@@ -68,7 +52,6 @@ export class WorkflowError extends Error {
   }
 }
 
-/** 菜单「导出（API）」得到的文件：`{ "3": { class_type, inputs } }` */
 export function isApiPrompt(value: unknown): value is ApiPrompt {
   if (!value || typeof value !== 'object' || Array.isArray(value) || 'nodes' in value) return false
   const entries = Object.values(value as Record<string, unknown>)
@@ -88,7 +71,6 @@ function collectSubgraphs(workflow: UiWorkflow): Map<string, UiSubgraph> {
   return out
 }
 
-/** 实际会执行的节点类型（展开用到的子图，跳过静音/旁路与纯前端节点） */
 function activeTypes(workflow: UiWorkflow | ApiPrompt): string[] {
   if (isApiPrompt(workflow)) return Object.values(workflow).map((node) => node.class_type)
   const subgraphs = collectSubgraphs(workflow)
@@ -108,12 +90,10 @@ function activeTypes(workflow: UiWorkflow | ApiPrompt): string[] {
   return out
 }
 
-/** 只按节点类型判断用途：单张文生图、单张图生图；视频、音频、3D、批量与组节点不收 */
 export function classifyWorkflow(workflow: UiWorkflow | ApiPrompt): WorkflowKind | null {
   const types = activeTypes(workflow)
   if (!types.some((type) => SAVES_IMAGE.test(type)) || types.some((type) => SAVES_OTHER.test(type))) return null
   if (!types.some((type) => SAMPLES.test(type))) return null
-  /* 深度/法线估计、抠图、放大这类工作流没有文本编码，不能按提示词生图 */
   if (!types.some((type) => ENCODES_TEXT.test(type))) return null
   if (types.some((type) => type.startsWith('workflow>') || type.startsWith('workflow/'))) return null
   const loads = types.filter((type) => LOADS_MEDIA.test(type))
@@ -121,7 +101,6 @@ export function classifyWorkflow(workflow: UiWorkflow | ApiPrompt): WorkflowKind
   return loads.every((type) => LOADS_SINGLE_IMAGE.test(type)) ? 'image-to-image' : null
 }
 
-/** 工作流里用到的节点类（向 /object_info 逐个查询用） */
 export function workflowNodeTypes(workflow: UiWorkflow | ApiPrompt): string[] {
   return [...new Set(activeTypes(workflow))]
 }
@@ -148,10 +127,6 @@ function isWidgetSpec(spec: unknown[] | undefined): boolean {
   return Array.isArray(type) || (typeof type === 'string' && WIDGET_TYPES.has(type))
 }
 
-/**
- * 控件名的顺序：先看 object_info（权威），没有该节点类时退回节点自身 inputs 里带 widget 的条目
- * （新版前端每个控件都有对应的输入槽，顺序与控件一致）。带「生成后控制」的整数后面多一个前端值。
- */
 function widgetOrder(info: ObjectInfoEntry | undefined, node: UiNode): Array<{ name: string; control: boolean }> {
   if (info?.input) {
     const entries = [...Object.entries(info.input.required ?? {}), ...Object.entries(info.input.optional ?? {})]
@@ -185,19 +160,16 @@ function widgetValues(node: UiNode, info: ObjectInfoEntry | undefined): Record<s
   return inputs
 }
 
-/** 一层图（顶层或某个子图实例内部）的上下文 */
 interface Scope {
   prefix: string
   nodes: Map<number, UiNode>
   links: Map<number, LinkInfo>
   sub?: UiSubgraph
-  /** 子图实例所在的上层与实例节点 */
   parent?: { scope: Scope; instance: UiNode }
 }
 
 type Source = { ref: [string, number] } | { value: unknown } | null
 
-/** 界面格式 → API prompt。object_info 只需包含工作流用到的节点类 */
 export function toApiPrompt(workflow: UiWorkflow | ApiPrompt, objectInfo: Record<string, ObjectInfoEntry>): ApiPrompt {
   if (isApiPrompt(workflow)) return JSON.parse(JSON.stringify(workflow)) as ApiPrompt
   const subgraphs = collectSubgraphs(workflow)
@@ -215,11 +187,6 @@ export function toApiPrompt(workflow: UiWorkflow | ApiPrompt, objectInfo: Record
     return sub ? scopeOf(sub.nodes, sub.links, `${scope.prefix}${instance.id}:`, sub, { scope, instance }) : null
   }
 
-  /**
-   * 子图输入槽 → 实例在上层的连线（按名字对应；实例的 inputs 只列出部分槽位，不能按序号对）。
-   * 没连线时：旧格式把提升控件的值按「子图控件类输入」的顺序存在实例的 widgets_values 里；
-   * 新格式（properties.proxyWidgets）的值就存在内部节点上，保留内部控件值即可。
-   */
   const fromSubgraphInput = (scope: Scope, slot: number, depth: number): Source => {
     if (!scope.parent || !scope.sub) return null
     const slotDef = scope.sub.inputs?.[slot]
@@ -250,14 +217,12 @@ export function toApiPrompt(workflow: UiWorkflow | ApiPrompt, objectInfo: Record
       return { value: Array.isArray(values) ? values[0] : undefined }
     }
     if (source.mode === 4) {
-      /* 旁路：输出直接接到同类型的第一个输入上 */
       const type = source.outputs?.[slot]?.type
       const pass = source.inputs?.find((input) => input.link != null && (!type || input.type === type))
       return pass?.link == null ? null : resolveLink(scope, pass.link, depth + 1)
     }
     const child = childScope(scope, source)
     if (child) {
-      /* 子图实例的输出槽 → 子图内部接到输出端（-20）的那条线的来源 */
       const linkIds = child.sub?.outputs?.[slot]?.linkIds ?? []
       const inner = linkIds.map((id) => child.links.get(id)).find(Boolean) ??
         [...child.links.values()].find((link) => link.to === -20 && link.toSlot === slot)
@@ -301,12 +266,10 @@ export function toApiPrompt(workflow: UiWorkflow | ApiPrompt, objectInfo: Record
   return prompt
 }
 
-/** 用到了云端 API 节点（要 ComfyUI 账号与额度，不算本机生图） */
 export function usesApiNodes(prompt: ApiPrompt, objectInfo: Record<string, ObjectInfoEntry>): boolean {
   return Object.values(prompt).some((node) => objectInfo[node.class_type]?.api_node === true)
 }
 
-/** 文本类节点上可能承载正向提示词的输入名（Flux 的 clip_l/t5xxl、SDXL 的 text_g/text_l 都要一起换） */
 const PROMPT_KEYS = ['prompt', 'text', 'text_g', 'text_l', 'clip_l', 't5xxl', 'positive', 'positive_prompt', 'text_positive', 'global_prompt']
 const NEGATIVE_INPUT = /negative|^neg|uncond|cond2/i
 
@@ -316,15 +279,10 @@ function isRef(value: unknown): value is [string, number] {
 
 function promptKeys(node: { class_type: string; inputs: Record<string, unknown> }): string[] {
   const keys = PROMPT_KEYS.filter((key) => typeof node.inputs[key] === 'string')
-  /* PrimitiveString / PrimitiveStringMultiline 这类把文本接给编码节点的值节点 */
   if (!keys.length && /String|Text|Prompt/i.test(node.class_type) && typeof node.inputs.value === 'string') return ['value']
   return keys
 }
 
-/**
- * 从采样器 / Guider 的正向条件往上游找最近的文本：经过 FluxGuidance、ConditioningCombine 等
- * 条件节点，也经过把文本接进编码节点的值节点；不走名字像反向的输入。
- */
 function findPromptNodes(prompt: ApiPrompt): Array<{ id: string; keys: string[] }> {
   const starts: string[] = []
   for (const node of Object.values(prompt)) {
@@ -358,10 +316,6 @@ function findPromptNodes(prompt: ApiPrompt): Array<{ id: string; keys: string[] 
   return []
 }
 
-/**
- * 把请求写进 API prompt：正向提示词、随机种子、尺寸（空白 Latent 节点的 width/height，覆盖连线）、
- * 参考图（LoadImage）、保存前缀。
- */
 export function applyRequest(
   prompt: ApiPrompt,
   request: { prompt: string; width?: number; height?: number; images?: string[]; filenamePrefix?: string }
@@ -369,7 +323,6 @@ export function applyRequest(
   const next: ApiPrompt = JSON.parse(JSON.stringify(prompt))
   let targets = findPromptNodes(next)
   if (!targets.length) {
-    /* 找不到采样器连线时：只有一个文本节点才敢替换，否则可能改到反向提示词 */
     const candidates = Object.entries(next).map(([id, node]) => ({ id, keys: promptKeys(node) })).filter((item) => item.keys.length)
     if (candidates.length === 1) targets = candidates
   }

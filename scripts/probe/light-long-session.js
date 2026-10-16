@@ -10,8 +10,6 @@
 
   log('=== 长会话虚拟化（注入 240 条消息）===')
 
-  /* 注入一个长消息列表：直接走 store 的 sync 补丁，
-     这样测的就是「列表很长时组件怎么做」，不依赖恰好有一条超长会话。 */
   const N = 240
   const fake = []
   for (let i = 0; i < N; i++) {
@@ -48,13 +46,6 @@
   const loaded = store.getState().messages.length
   ok(loaded === N, `store 里有 ${loaded} 条`)
 
-  /*
-   * ⚠️ 轮询等**首帧真正提交**再量，不用固定 sleep。
-   *    原来这里是 `await sleep(50)`：单跑时够（实测 62ms 就画完了），
-   *    但在全量后半段（机器被前十几个场景拖过）时首帧可能还没提交 ——
-   *    量到 0 条，后面所有断言跟着挂（实测全量第 4 轮） 。
-   *    渲染路径会从普通切到虚拟化，所以两种节点都要等。
-   */
   const t0 = performance.now()
   let waited = 0
   let injected = 1
@@ -63,14 +54,6 @@
     if (painted()) break
     await sleep(50)
     waited += 50
-    /*
-     * 每 4s 重新注入一次。
-     *
-     * 为什么需要（实测）：前面的场景会切会话，而切会话会让 pi 推一条
-     * `sync`（它才是权威的），把刚注入的 240 条**覆盖掉** ——
-     * 于是页面上什么都没有，断言一个个全挂，而且只在全量跑时出现。
-     * 重注入把这个竞态抹平：只要最终渲染出来了，测的就是渲染逻辑。
-     */
     if (waited > 0 && waited % 4000 === 0) {
       store.getState().applyPush({ ch: 'sync', payload: fake })
       injected++
@@ -89,46 +72,32 @@
   ok(domMsgs > 0, `DOM 里确实渲染了消息（${domMsgs} 条）`)
   ok(domMsgs < N, `只渲染了 ${domMsgs}/${N} 条（窗口化生效，省了 ${N - domMsgs} 条）`)
 
-  /* 滚动：滚到底应能加载后面的项 */
   const sc = q('.stream')
   ok(!!sc, '.stream 是滚动容器')
   const firstIds = qa('.stream-row .msg').map((e) => e.closest('.stream-row')?.getAttribute('data-index') ?? '')
   log('  初始可见文本前 40 字: ' + JSON.stringify(qa('.stream .msg')[0]?.textContent?.slice(0, 40)))
 
   sc.scrollTop = sc.scrollHeight
-  // 同样轮询等滚动后的重渲染（虚拟化要按新的滚动位置重算窗口）
   for (let i = 0; i < 60 && qa('.stream .msg').length === 0; i++) await sleep(50)
   const afterScroll = qa('.stream .msg').length
   log('  滚到底后 DOM 里 %d 条'.replace('%d', afterScroll))
   ok(afterScroll > 0, '滚到底后仍有内容渲染')
-  /* 虚拟化的行高是估算的，量到真实高度后底部还会往下延；像用户一样继续滚到不再变化 */
   for (let i = 0; i < 8; i++) {
     const before = sc.scrollHeight
     sc.scrollTop = sc.scrollHeight
     await sleep(150)
     if (sc.scrollHeight === before && (qa('.stream .msg').slice(-1)[0]?.textContent ?? '').includes('239')) break
   }
-  // 底部应该是最后几条
   const lastText = qa('.stream .msg').slice(-1)[0]?.textContent ?? ''
   log('  最后一条: ' + JSON.stringify(lastText.slice(0, 40)))
-  /* 第 239 项只有一条已完成的工具调用，默认折叠成「已完成 N 步」并入第 238 条回合，输出文字不在 DOM 里 */
   ok(lastText.includes('line-239') || lastText.includes('239') || lastText.includes('第 238 条'), '滚到底能看到最后一个回合（含折叠的第 239 项）')
 
-  /* 中间滚动也不该出错 */
   sc.scrollTop = sc.scrollHeight / 2
   for (let i = 0; i < 60 && qa('.stream .msg').length === 0; i++) await sleep(50)
   ok(qa('.stream .msg').length > 0, '滚到中间仍有内容')
 
-  /*
-   * 向上阅读时，新的内容**不该把用户拽回底部**
-   * （验收清单：「流式输出时向上阅读，不被自动拉回底部」）。
-   *
-   * App.tsx 里靠 `onScroll` 算「距底 < 40px 才算贴底」+ 贴底 effect 实现。
-   * 这里滚到 40% 处（离底很远）→ 记下 scrollTop → 推一条新消息（回合数变 →
-   * 贴底 effect 会跑）→ 断言位置基本没动。
-   */
   sc.scrollTop = Math.round(sc.scrollHeight * 0.4)
-  await sleep(300) // 等 onScroll 把「不贴底」写进 state/ref
+  await sleep(300)
   const beforeTop = sc.scrollTop
   const beforeH = sc.scrollHeight
   store.getState().applyPush({
@@ -147,13 +116,10 @@
     '确实不在底部（否则上面那条断言没有意义）'
   )
 
-  /* 长列表下横向溢出仍然为 0 */
   const over = sc.scrollWidth - sc.clientWidth
   ok(over <= 0, `.stream 无横向溢出（差 ${over}）`)
 
-  /* 恢复：切回真实会话 */
   log('--- 恢复真实数据 ---')
-  // 隔离目录没有用户历史：从真实宿主 RPC 回读本次空会话，而非依赖用户会话列表。
   const authoritative = await window.yan.getMessages()
   store.getState().applyPush({ ch: 'sync', payload: authoritative })
   await sleep(500)
@@ -163,7 +129,6 @@
   ok(fakeGone, `注入的假数据已被替换（现在 ${restored} 条）`)
   ok(restored !== N || !fakeGone, '恢复的是真实会话数据')
 
-  // 虚拟化是否开启应与真实条数一致（>=80 就该开）
   const shouldVirtual = restored >= 80
   const isVirtual = qa('.stream-row').length > 0
   ok(

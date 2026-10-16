@@ -1,23 +1,3 @@
-/**
- * F09 定向回归：远程 / peer 会话链代表段归一化。
- *
- * 缺陷（remote 列表未归一化旧会话链）：
- *   · 远程与 peer 列表直接返回原始 JSONL 列表，桌面却调用 `filterChainRepresentatives()`；
- *   · 旧段 id 的选择 / 发送 / 改模型直接按旧段 path 选择运行实例 —— 手机上「发送成功」
- *     却把新消息写进不再代表当前对话的旧段。
- *
- * 本脚本现场用 esbuild 打包 **真实的** `src/main/remote-host.ts`，把 Electron、设置、
- * 会话列表、会话链存储与链式 history 换成隔离假件（不读用户会话、不启动 Electron、
- * 不调模型），然后按公开导出验证：
- *   ① 远程列表只列链代表段，并回填链首标题；
- *   ② peer 列表只列已授权项目的代表段；
- *   ③ 旧段 id 的选择 / 发送 / 改模型 / 改思考档全部归一到代表段，消息不写旧段；
- *   ④ 跨项目链的归一化被明确拒绝，且不选实例、不发送；
- *   ⑤ 读历史仍按完整链拼接（旧段 + 代表段）；
- *   ⑥ peer 授权按请求段项目判定，不因归一化跨项目放行。
- *
- * 用法：node scripts/test-remote-chain-target.mjs
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -37,10 +17,6 @@ function ok(condition, label) {
   console.error(`  ✗ ${label}`)
 }
 
-/*
- * 模块边界：只有这些 import 换成假件，其余（shared/* 与 node:*）用真实实现，
- * 从而测到 remote-host 自己的归一化与授权逻辑，而不是复制一份。
- */
 const stubModules = {
   electron: 'export const nativeImage = { createFromBuffer: () => ({ isEmpty: () => false }) }',
   './remote-approval': 'export const approvalDigest = () => \'d\'; export const applyHumanApproval = async () => ({ ok: false, status: 403, error: \'stub\' }); export const remoteApprovalQuestion = (request) => request',
@@ -70,8 +46,6 @@ const stubPlugin = {
 
 const norm = (file) => String(file).trim().replace(/\\/g, '/').replace(/\/+$/, '')
 
-/* ---------------------------------------------------------------- 隔离夹具 */
-
 const now = Date.now()
 const P = 'C:/fixture/sessions'
 const summary = (id, file, projectId, extra = {}) => ({
@@ -88,11 +62,9 @@ const summary = (id, file, projectId, extra = {}) => ({
   ...extra
 })
 
-/* 同项目链：旧段 s-old → 代表段 s-new；另有一个孤立会话。 */
 const oldP1 = summary('s-old', 'old.jsonl', 'p1', { title: '第一条' })
 const repP1 = summary('s-new', 'new.jsonl', 'p1', { title: '' })
 const lonely = summary('s-lonely', 'lonely.jsonl', 'p1', { title: '独立会话' })
-/* 跨项目链：旧段在 p1、代表段在 p2（用于验证归一化不跨项目放行）。 */
 const oldCross = summary('s-cross-old', 'cross-old.jsonl', 'p1', { title: '跨项目链' })
 const repCross = summary('s-cross-new', 'cross-new.jsonl', 'p2', { title: '跨项目代表' })
 const allSessions = [oldP1, repP1, lonely, oldCross, repCross]
@@ -196,10 +168,6 @@ const runners = {
   }]
 }
 
-/*
- * 假 SessionHost：链式 history 按 `planHistoryRead` 语义顺序拼接整条链，
- * 用来证明 remote-host 把「旧段 id」交给链感知读取时仍拿到完整历史。
- */
 const readHistoryWithArtifacts = async (file) => {
   historyCalls.push(file)
   const chain = chainOf(file)
@@ -234,8 +202,6 @@ globalThis.__rh = {
   }
 }
 
-/* ------------------------------------------------------------ 现场编译并导入 */
-
 const outDir = await mkdtemp(join(tmpdir(), 'yan-remote-chain-'))
 let mod
 try {
@@ -256,7 +222,6 @@ try {
 
   console.log('--- F09 远程 / peer 会话链代表段归一化 ---')
 
-  /* ① 远程列表只列代表段，并回填链首标题 */
   const snapshot = await mod.remoteSnapshot()
   const snapshotIds = snapshot.sessions.map((session) => session.id)
   ok(snapshotIds.includes('s-new'), '远程列表包含链代表段')
@@ -264,7 +229,6 @@ try {
   ok(!snapshotIds.includes('s-old'), '远程列表隐藏链旧段')
   ok(snapshot.sessions.find((session) => session.id === 's-new')?.title === '第一条', '代表段空标题回填链首标题')
 
-  /* ② peer 列表只列已授权项目的代表段 */
   const peerSessions = await mod.peerHostHandlers.sessions(['p1'])
   const peerIds = peerSessions.map((session) => session.id)
   ok(peerIds.includes('s-new') && peerIds.includes('s-lonely'), 'peer 列表含已授权项目的代表段与孤立会话')
@@ -272,7 +236,6 @@ try {
   ok(!peerIds.includes('s-cross-new'), 'peer 列表不返回未授权项目 p2 的代表段')
   ok(await mod.peerHostHandlers.projectOfSession('s-cross-old') === 'p1', 'peer 授权按请求段项目判定，不跨项目归一')
 
-  /* ③ 旧段 id 的控制路径归一到代表段 */
   selectCalls.length = 0
   const selected = await mod.remoteSelectSession('s-old')
   ok(selected.ok, '选择旧段成功')
@@ -304,7 +267,6 @@ try {
   const models = await mod.remoteModels('s-old')
   ok(models.ok && models.data.current?.id === 'm1', '模型列表归一后仍返回代表段当前模型')
 
-  /* ④ 跨项目链归一化被明确拒绝，且不选实例、不发送 */
   selectCalls.length = 0
   sendCalls.length = 0
   const crossSend = await mod.executeRemoteCommand({ action: 'send', sessionId: 's-cross-old', text: 'x' })
@@ -316,7 +278,6 @@ try {
   ok(!crossSelect.ok && crossSelect.status === 409, '跨项目链选择明确拒绝')
   ok(selectCalls.length === 0, '跨项目拒绝时不动运行实例')
 
-  /* ⑤ 读历史保留完整链语义 */
   historyCalls.length = 0
   const history = await mod.remoteHistory('s-old', 50)
   const historyTexts = history.ok ? history.data.messages.map((message) => message.text) : []

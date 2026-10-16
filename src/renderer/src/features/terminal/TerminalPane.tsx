@@ -1,15 +1,3 @@
-/**
- * v3 终端面板（P3 / R2）。
- *
- * 一个 `TerminalPane` = 一条会话（owner）旁边的一个终端磁贴正文：
- *   · xterm + WebGL（不可用时回落 DOM），主题从 tokens 读；
- *   · ResizeObserver / 缩放 / DPR 变化 → fit 并把 cols/rows 同步给宿主 PTY；
- *   · 复制、粘贴与键盘交给 xterm；Ctrl+Shift+C/V、Ctrl/Shift+Insert 显式接管；
- *   · 面板被隐藏（`visible=false`）只停尺寸同步，**不 kill**；
- *   · 卸载只 detach，后台终端（含工具 PTY）留着，下次 attach 接回。
- *
- * 真正的会话/归属逻辑在 `terminal-session.ts`（纯逻辑，可脱离浏览器测试）。
- */
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -31,7 +19,6 @@ import type { TerminalPaneProps } from '../workbench/types'
 import type { TerminalProgramStatus } from '../../../../shared/ipc'
 import './terminal.css'
 
-/** 状态胶囊：只展示程序上报的事实，存活但没报告时不伪装忙碌。 */
 function statusOf(state: TerminalViewState): { key: MessageKey; tone: BadgeTone; progress?: number } | null {
   const status: TerminalProgramStatus | undefined = state.status
   if (!status || status.state === 'clear') return null
@@ -75,7 +62,6 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const fitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [state, setState] = useState<TerminalViewState | null>(null)
 
-  /* owner / 可见性每次渲染可能换对象；用 ref 保存，异步建好控制器后立即应用一次。 */
   const ownerRef = useRef(owner)
   ownerRef.current = owner
   const visibleRef = useRef(visible)
@@ -92,13 +78,11 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
       try {
         fit.fit()
       } catch {
-        /* 面板过小 / 正在卸载：忽略 */
       }
       sessionRef.current?.resize(term.cols, term.rows)
     }, 90)
   }, [])
 
-  /* 建 xterm + 控制器（一次）。 */
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
@@ -144,11 +128,9 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
       sessionRef.current = controller
       const unsubscribe = controller.subscribe((next) => setState(next))
       term.onData((data) => controller.input(data))
-      /* xterm 是异步建好的：一次性接上当前 owner / 可见性，隐藏帧绝不触发新建。 */
       controller.setOwner(ownerRef.current, visibleRef.current)
       if (visibleRef.current) scheduleFit()
 
-      /* 复制 / 粘贴：xterm 自带普通 Ctrl+C/V 的选区与粘贴事件，这里补 Ctrl+Shift+C/V 与 Insert 组合。 */
       const readClipboard = (): void => {
         void navigator.clipboard.readText().then((value) => {
           if (value) term.paste(value)
@@ -178,11 +160,9 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         return true
       })
 
-      /* 面板尺寸 / 拖动分隔线：稳定后一次 fit，不在每一帧给 PTY 改尺寸。 */
       const observer = new ResizeObserver(() => scheduleFit())
       observer.observe(host)
 
-      /* 主题、代码字体、系统缩放 / DPR：xterm 不读 CSS 变量，需手动同步。 */
       const releaseEnv = observeTerminalEnvironment(() => {
         term.options.theme = readTerminalTheme()
         term.options.fontFamily = terminalFontFamily()
@@ -210,7 +190,6 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /* owner / 可见性变化：一次性交给控制器，按 key/generation 决定是否重挂终端。 */
   useEffect(() => {
     const controller = sessionRef.current
     if (!controller) return
@@ -229,7 +208,6 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const title = state?.title || ''
   const cwd = state?.cwd || owner.cwd
   const badge = state ? statusOf(state) : null
-  /* 只有确实有终端（或正在建立）时才放出 xterm 宿主；空/结束态用居中空状态。 */
   const showHost = !inactive && !unavailable && !failed && !!state && state.phase !== 'idle'
 
   return (

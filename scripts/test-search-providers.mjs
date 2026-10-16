@@ -1,12 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-/**
- * 增强搜索服务（Tavily / Firecrawl / Context7）与 key 配置的单测。
- * 全部用替身 fetch，不联网、不花额度；数据目录由调用方指向临时目录。
- */
-
-/** 一个只记录请求、按脚本回复的 fetch 替身 */
 function fakeFetch(replies) {
   const calls = []
   const impl = async (url, init = {}) => {
@@ -23,7 +17,6 @@ const json = (status, value) => ({ status, body: JSON.stringify(value) })
 export async function runSearchProviderTests(ok, mod, dataDir) {
   const { config, tavily, firecrawl, context7, shared } = mod
 
-  /* ---- key 配置：按服务存取，环境变量兜底，提醒只看通用搜索 ---- */
   {
     for (const name of ['TAVILY_API_KEY', 'BRAVE_API_KEY', 'FIRECRAWL_API_KEY', 'CONTEXT7_API_KEY']) delete process.env[name]
     let view = await config.searchApiConfig()
@@ -50,7 +43,6 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
     ok((await config.resolveSearchKey('brave')) === 'file-brave', '文件里的 key 优先于环境变量')
     delete process.env.BRAVE_API_KEY
 
-    /* 旧版配置文件只有 braveKey / hintDismissed，必须继续可读 */
     writeFileSync(join(dataDir, 'search-config.json'), JSON.stringify({ braveKey: 'legacy', hintDismissed: true }))
     view = await config.searchApiConfig()
     ok(view.providers.brave.configured && view.hintDismissed, '旧格式配置文件仍然有效')
@@ -62,7 +54,6 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
     await config.clearSearchKey('context7')
   }
 
-  /* ---- Tavily ---- */
   {
     const noKey = await tavily.runTavilySearch('q', { limit: 5, timeoutMs: 1000 }, async () => { throw new Error('不该发请求') })
     ok(noKey.unavailable && noKey.error?.code === 'api_key_missing', '没配 key → unavailable，不发请求')
@@ -91,7 +82,6 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
     await config.clearSearchKey('tavily')
   }
 
-  /* ---- Firecrawl 读网页 ---- */
   {
     const never = async () => { throw new Error('不该发请求') }
     let err = null
@@ -124,7 +114,6 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
     await config.clearSearchKey('firecrawl')
   }
 
-  /* ---- Context7 开发文档 ---- */
   {
     const libs = json(200, { results: [
       { id: '/reactjs/react.dev', title: 'React', description: '官方文档', totalSnippets: 4305 },

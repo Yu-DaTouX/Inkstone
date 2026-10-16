@@ -1,16 +1,3 @@
-/**
- * 辅助小窗单测（v3 WP-25d 快速提问 + WP-12 迷你小窗）。
- *
- * 现场用 esbuild 编译纯逻辑模块，在 node 里跑，**不启动 Electron、不起 pi、
- * 不写用户数据**。窗口工厂（BrowserWindow）与 IPC 不在覆盖范围，只断言：
- *
- *   · geometry：快速提问贴主窗口上方居中、迷你小窗贴右上角，多显示器 / 边缘裁回工作区。
- *   · aux-state：快速提问窗口状态 reducer、发送前校验、迷你小窗启用/显示与高度。
- *   · attention-items：AttentionService 汇总折成小窗条目的归类与排序。
- *   · quick-ask-submit：新会话 / 当前会话的发送顺序与错误码。
- *
- * 可独立执行：node scripts/test-v3-aux-windows.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

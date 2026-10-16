@@ -1,16 +1,3 @@
-/**
- * 会话「链」的契约与存储单测（实施-05 S5b）。
- *
- * 用户口径：**后台两份 JSONL，前端一条会话**。所以这份关系的正确性直接决定
- * 用户看到几条会话、历史拼得对不对：
- *   · `shared/session-chain.ts` —— 键归一化 / 追加幂等 / 代表段 / 拼接顺序 / 脏值清洗；
- *   · `main/session-chain-service.ts` —— 真文件、`link` 的四种情形、重启后关系还在。
- *
- * 其中**键归一化与 `main/work-mode-service.ts` 的同名函数交叉校验**：
- * 两边不一致的后果是「侧栏按 A 判断、历史按 B 查找」——同一个段看起来像两条会话。
- *
- * 用法：npm run test:unit
- */
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,8 +8,6 @@ export async function runSessionChainTests(ok, workModeService) {
   const { normalizeSessionFileKey } = workModeService
 
   console.log('\n--- 实施-05 S5b 会话链（前端一条会话） ---')
-
-  /* --------------------------------------------------- 键归一化（含交叉校验） */
 
   const files = [
     'C:\\Users\\x\\sessions\\a.jsonl',
@@ -44,8 +29,6 @@ export async function runSessionChainTests(ok, workModeService) {
   ok(shared.normalizeChainKey('x'.repeat(401)) === null, '超长不可用')
   ok(shared.normalizeChainKey(null) === null, '非字符串不可用')
   ok(shared.normalizeChainKey('C:/A/b.jsonl') !== shared.normalizeChainKey('C:/a/b.jsonl'), '不做大小写折叠（Linux 上大小写是两回事）')
-
-  /* --------------------------------------------------- 建模与代表段 */
 
   const seg = (file, at = 1, handoffId = null) => ({ sessionFile: file, startedAt: at, handoffId })
   const A = 'C:/s/a.jsonl'
@@ -75,8 +58,6 @@ export async function runSessionChainTests(ok, workModeService) {
   ok(shared.isRepresentative(chains, 'C:/s/other.jsonl') === true, '不在任何链上的会话 → 自己就是一条（显示）')
   ok(shared.isRepresentative([], A) === true, '没有链记录时全部显示')
 
-  /* --------------------------------------------------- 脏值清洗 */
-
   ok(shared.sanitizeSessionChain(null) === null, '非对象 → 丢掉')
   ok(shared.sanitizeSessionChain({ segments: [] }) === null, '没有段 → 丢掉')
   const dirty = shared.sanitizeSessionChain({
@@ -98,8 +79,6 @@ export async function runSessionChainTests(ok, workModeService) {
   )
   ok(shared.sanitizeSessionChains('nonsense').length === 0, '整体脏 → 空列表')
 
-  /* --------------------------------------------------- 存储层 */
-
   const root = await mkdtemp(join(tmpdir(), 'yan-chain-'))
   try {
     const store = new service.SessionChainStore({ root, now: () => 7000 })
@@ -120,7 +99,6 @@ export async function runSessionChainTests(ok, workModeService) {
     ok(!!third && third.segments.map((s) => s.sessionFile).join(',') === `${A},${B},${C}`, '第二次交接接在链尾')
     ok(store.isRepresentative(C) === true && store.isRepresentative(B) === false, '代表跟着走到最新段')
 
-    /* to 已属于另一条链 → 拒绝 */
     const D = 'C:/s/d.jsonl'
     await store.link('C:/s/other.jsonl', D, 'h-x')
     const rejected = await store.link(A, D, 'h-y')
@@ -130,7 +108,6 @@ export async function runSessionChainTests(ok, workModeService) {
     ok((await store.link('', B, null)) === null, '空键 → 不落盘、返回 null')
     ok((await store.link(A, A, null)) === null, '自己接自己 → 拒绝')
 
-    /* 落盘 + 重启后关系还在 */
     const file = join(root, service.SESSION_CHAIN_FILE_NAME)
     const onDisk = JSON.parse(await readFile(file, 'utf8'))
     ok(Array.isArray(onDisk.chains) && onDisk.chains.length >= 2, '关系真的落盘了')
@@ -139,7 +116,6 @@ export async function runSessionChainTests(ok, workModeService) {
     ok(reopened.isRepresentative(C) === true && reopened.isRepresentative(A) === false, '重启后关系还在（A 依然不显示）')
     ok(reopened.chainOf(B)?.segments.length === 3, '重启后链上段数正确')
 
-    /* 脏 JSON → 空；旧文件（没有 chains 字段）兼容 */
     await writeFile(file, '{ 坏 JSON', 'utf8')
     const bad = new service.SessionChainStore({ root })
     await bad.load()
@@ -150,7 +126,6 @@ export async function runSessionChainTests(ok, workModeService) {
     await old.load()
     ok(old.chains().length === 0, '旧形状（没有 chains）→ 空，不抛')
 
-    /* 落盘失败必须抛 */
     const rootBad = await mkdtemp(join(tmpdir(), 'yan-chain-bad-'))
     try {
       const badStore = new service.SessionChainStore({ root: rootBad })

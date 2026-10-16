@@ -1,7 +1,3 @@
-/**
- * 各 Agent 的品牌标识：路径取自 Simple Icons（CC0），单色，随文字色；Claude 与 Gemini 带品牌色。
- * pi 与未知 Agent 退回首字母。
- */
 import antigravityMark from '../../assets/antigravity-mark.png'
 
 const MARKS: Record<string, { d: string; color?: string }> = {
@@ -12,7 +8,6 @@ const MARKS: Record<string, { d: string; color?: string }> = {
 }
 
 export function AgentMark({ agent, size = 16 }: { agent: string; size?: number }) {
-  /* Antigravity 的标志是渐变位图（用户提供，96px），没有单色矢量版本。 */
   if (agent === 'antigravity') return <img className="agent-mark" src={antigravityMark} width={size} height={size} alt="" aria-hidden draggable={false} />
   const mark = MARKS[agent]
   if (!mark) return <span className="ui-letter-mark" aria-hidden>{agent === 'pi' ? 'π' : agent.slice(0, 1).toUpperCase()}</span>

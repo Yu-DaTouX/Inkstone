@@ -1,11 +1,3 @@
-/**
- * bash 双引号里交给 PowerShell 的脚本会被 bash 改写的写法（resources/pi-extensions/windows-powershell.js）。
- *
- * 拦截用例取自真实会话里出过错的命令形状；放行用例覆盖单引号、转义、bash 命令替换与
- * 不涉及 PowerShell 的命令，避免误拦。
- *
- * 用法：node scripts/test-windows-powershell.mjs
- */
 import assert from 'node:assert/strict'
 import { findLegacyPowerShell, findPowerShellInBash, findPowerShellQuotingConflict as find, powerShellConflictReason, powerShellInBashReason } from '../resources/pi-extensions/windows-powershell.js'
 
@@ -35,7 +27,6 @@ const allowed = [
 for (const command of allowed) assert.equal(find(command), null, command)
 assert.equal(find(undefined), null)
 
-/* bash 工具里直接写 PowerShell 命令：只拦引号外命令位置的 Verb-Noun */
 const inBash = [
   ['rg -n "会话" docs/CODE_MAP.md; (Get-Content .local-docs/DECISIONS.md | Measure-Object -Line).Lines', 'Get-Content'],
   ['Get-ChildItem -Recurse src', 'Get-ChildItem'],
@@ -65,7 +56,6 @@ for (const command of notInBash) assert.equal(findPowerShellInBash(command), nul
 assert.equal(findPowerShellInBash(undefined), null)
 assert.match(powerShellInBashReason('Get-Content'), /Get-Content.*bash/)
 
-/* 系统自带 5.1：命令位置的 powershell 才算，pwsh、引号与 heredoc 里的字样放行 */
 for (const command of ['powershell -NoProfile -File a.ps1', 'cd x && powershell.exe -File a.ps1', 'ls | powershell -Command -', '/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File a.ps1']) assert.equal(findLegacyPowerShell(command), true, command)
 for (const command of ['pwsh -File a.ps1', 'echo "powershell"', "git commit -m 'powershell.exe'", 'cat <<EOF\npowershell -File a\nEOF', 'ls powershell-notes', undefined]) assert.equal(findLegacyPowerShell(command), false, String(command))
 

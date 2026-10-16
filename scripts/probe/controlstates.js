@@ -1,17 +1,3 @@
-/*
- * 控件状态（实施-13 V-1，cost 0，不调模型）。
- *
- * V-1 把「禁用」与「键盘焦点」收敛成单一来源（`--ctl-disabled-opacity` /
- * `--focus-ring-*`）。这一条验四件事：
- *   ① 页面上所有 `:disabled` 控件的不透明度**只有一个值**；
- *   ② 样式表里带 `:focus-visible` 的规则，焦点环**只从 `--focus-ring-*` 来**
- *      （`outline: none` 允许 —— 结构性把手用自身高亮表达焦点）；
- *   ③ 主要操作控件的命中区不小于 24×24 CSS px；
- *   ④ 密度三档开关仍然有效（`--d-message-gap` 三档不同）。
- *
- * 为什么用「造一个带产品类名的 disabled 按钮」而不是只找现成的：页面上此刻
- * 未必有禁用按钮，但**规则**必须在。造出来的元素只借用类名，不引入新样式。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -33,12 +19,10 @@
     }
     await sleep(800)
 
-    /* ---------- ① 禁用态：不透明度只有一个值 ---------- */
     const host = document.createElement('div')
     host.style.cssText = 'position:fixed;left:-9999px;top:0;width:200px'
     const PROBE_CLASSES = [
       'btn icon primary send',
-      /* v0.4：这几类按钮的外观（含禁用态）来自统一控件 .btn，按真实类名组合来造 */
       'btn sm rp-btn',
       'btn sm rp-act',
       'btn icon sm review-act',
@@ -58,10 +42,6 @@
     await sleep(150)
 
     const realDisabled = qa('[disabled]').filter(visible)
-    /*
-     * 已登记的例外：空输入时发送键「中性底、不靠透明度」（composer.css 的
-     * `.send:disabled`），所以它不进「单一值」样本，而是单独按「取令牌或 1」验。
-     */
     const isExempt = (el) => el.classList.contains('send')
     const allSamples = [...realDisabled, ...host.children]
     const rows = allSamples.filter((el) => !isExempt(el)).map((el) => [clsOf(el), getComputedStyle(el).opacity])
@@ -84,7 +64,6 @@
     }
     host.remove()
 
-    /* ---------- ② 焦点环只有一个来源 ---------- */
     const focusRules = []
     const walk = (rules) => {
       for (const rule of rules) {
@@ -106,19 +85,17 @@
       try {
         walk(sheet.cssRules)
       } catch {
-        /* 跨源样式表读不到，跳过 */
       }
     }
     const bad = focusRules.filter((r) => {
-      if (r.outline === 'none' || r.width === 'none') return false // 有意例外（把手 / 输入框）
+      if (r.outline === 'none' || r.width === 'none') return false
       const text = [r.outline, r.width, r.color, r.offset].join(' ')
-      if (!text.replace(/\s+/g, ' ').trim()) return false // 只写了别的属性
+      if (!text.replace(/\s+/g, ' ').trim()) return false
       return !/var\(--focus-ring/.test(text)
     })
     out.push(`  含 :focus-visible 的规则 ${focusRules.length} 条：${focusRules.map((r) => r.sel).join(' | ')}`)
     ok(bad.length === 0, '焦点环的值全部来自 --focus-ring-*', bad.length ? JSON.stringify(bad.slice(0, 3)) : '')
 
-    /* 主题切换时颜色跟着令牌走 */
     const ringColor = () =>
       window.getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
     const before = ringColor()
@@ -131,8 +108,6 @@
     out.push(`  --accent：${before} → 另一个主题 ${after}`)
     ok(before !== after || !!before, '焦点环颜色来自会随主题变化的令牌（不是写死值）')
 
-    /* ---------- ③ 命中区与文字对比度 ---------- */
-    /** 相对亮度（WCAG） */
     const lum = (rgb) => {
       const m = String(rgb).match(/[\d.]+/g)
       if (!m || m.length < 3) return 0
@@ -147,7 +122,6 @@
       const l2 = lum(b)
       return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)
     }
-    /** 向上找第一个不透明背景（控件常常自己不带底色） */
     const effectiveBg = (el) => {
       let node = el
       while (node && node !== document.documentElement) {
@@ -160,7 +134,6 @@
     }
 
     const MIN = 24
-    /* 允许 0.5px 舍入：缩放（如 zoom 1.25）下 24px 会算成 23.999 */
     const TOL = 0.5
     const targetSelectors = ['.tb-icon', '.wbtn', '.rail-icon', '.send', '.rp-btn', '.srow-menu-btn']
     const tooSmall = []
@@ -176,7 +149,6 @@
     out.push(`  主要控件命中区：${measured.join('，') || '(页面上没有样本)'}`)
     ok(measured.length > 0 && tooSmall.length === 0, `主要控件命中区 ≥ ${MIN}×${MIN}（容差 ${TOL}px）`, tooSmall.join('，'))
 
-    /* 控件文字对比度：正文 4.5、大字/图标 3（WCAG AA） */
     const contrastRows = []
     const lowContrast = []
     for (const sel of ['.tb-icon', '.wbtn', '.rail-icon', '.send', '.rp-btn', '.srow-menu-btn']) {
@@ -184,14 +156,12 @@
       if (!el) continue
       const cs = getComputedStyle(el)
       const ratio = contrast(cs.color, effectiveBg(el))
-      /* 界面里都是 UI 字与小图标：按 WCAG 的「组件/大字」3:1 判 */
       contrastRows.push(`${sel} ${ratio.toFixed(2)}:1`)
       if (ratio < 3) lowContrast.push(`${sel} ${ratio.toFixed(2)}:1`)
     }
     out.push(`  控件文字对比度（阈值 3:1 图形/组件）：${contrastRows.join('，') || '(无样本)'}`)
     ok(contrastRows.length > 0 && lowContrast.length === 0, '控件文字/图标对比度达标', lowContrast.join('，'))
 
-    /* ---------- ④ 密度三档仍有效 ---------- */
     const readGap = () =>
       getComputedStyle(document.documentElement).getPropertyValue('--d-message-gap').trim()
     const html = document.documentElement
@@ -216,7 +186,6 @@
       '密度三档开关仍然有效（三档取值互不相同）'
     )
 
-    /* 切档时真实消息的间距要跟着变（有消息才测） */
     const msg = q('.msg')
     if (msg) {
       html.setAttribute('data-density', 'compact')

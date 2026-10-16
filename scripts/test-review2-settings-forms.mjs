@@ -35,7 +35,6 @@ for (const relative of files) {
   await transform(await readFile(file, 'utf8'), { loader: 'tsx', sourcefile: file.pathname })
 }
 
-// Exercise generation-gated async commits with actual deferred responses, not source-text matching.
 let generation = 0
 let committed = null
 const issue = () => ++generation

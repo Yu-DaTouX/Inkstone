@@ -1,9 +1,3 @@
-/**
- * 分屏（src/renderer/src/state/split-view.ts）的焦点推导，与工作区布局里第二个会话磁贴的规则
- *（src/renderer/src/state/workspace-layout.ts）。纯函数，不起界面。
- *
- * 单独运行：node scripts/test-split-view.mjs
- */
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
 
@@ -44,7 +38,6 @@ export async function runSplitViewTests(ok) {
   ok(displayedSessionOf({ peekedSessionId: null, peekedPath: null, session: { sessionId: 'a', sessionFile: a.path } }).path === a.path, '没有预览时取运行实例的会话')
   ok(displayedSessionOf({ peekedSessionId: null, peekedPath: null, session: null }) === null, '没有会话时为空')
 
-  /* 放进分屏（纯函数） */
   ok(placeInSplit(null, a, a) === null, '在旁边打开当前会话：不分屏')
   let sp = placeInSplit(null, b, a)
   ok(ids(sp) === 'ab' && sp.live === 0, '打开分屏：当前会话在左、焦点不动，新的追加到右')
@@ -67,7 +60,6 @@ export async function runSplitViewTests(ok) {
   sp = placeInSplit(five, f, c, 0)
   ok(ids(sp) === 'fbcde', '已满插到最左：挤掉最左的非焦点块 a')
 
-  /* 去掉一块 */
   ok(ids(removeSplitTile({ tiles: [a, b, c], live: 2 }, 0)) === 'bc' && removeSplitTile({ tiles: [a, b, c], live: 2 }, 0).live === 1, '去掉焦点左边的块：焦点下标跟着前移')
   ok(removeSplitTile({ tiles: [a, b, c], live: 0 }, 2).live === 0, '去掉焦点右边的块：焦点不动')
   ok(removeSplitTile({ tiles: [a, b], live: 0 }, 1) === null, '只剩一块：退出分屏')
@@ -98,20 +90,17 @@ export async function runSplitViewTests(ok) {
   ok(hideDockPane(l, PEER_PANE) === l, '会话磁贴不能被隐藏（关闭走分屏本身）')
   const filesGroup = groups.find((g) => g.panes.includes('files'))
   ok(moveDockPane(l, PEER_PANE, filesGroup.id, 'center') === l && moveDockPane(l, 'files', peerGroup.id, 'center') === l, '会话磁贴不与工具合成标签组')
-  /* 多块会话磁贴：第 3~5 块依次排在会话那一行里，等宽，工具位置不变 */
   ok(conversationPaneId(0) === 'chat' && conversationPaneId(1) === 'chat-peer' && conversationPaneId(3) === 'chat-peer-3', '磁贴编号 → 窗格 id')
   ok(isConversationPane('chat-peer-4') && !isConversationPane('chat-peer-x') && !isConversationPane('files'), '会话窗格识别')
   let m = openDockPane(defaultWorkspaceLayout(), 'files')
   for (let k = 1; k <= 4; k++) m = openDockPane(m, conversationPaneId(k))
   const all = dockGroups(m.root)
   ok(all.length === 6 && all.filter((g) => g.panes.every(isConversationPane)).length === 5, '五块会话 + 一组工具')
-  /* 每块宽度 = 会话区的 1/5：量一下 */
   const measured = layout.measureDockLayout(m, new Set([...Array(5).keys()].map(conversationPaneId).concat('files')), 2000, 800)
   const widths = measured.groups.filter((g) => g.group.panes.every(isConversationPane)).map((g) => Math.round(g.w))
   ok(widths.length === 5 && Math.max(...widths) - Math.min(...widths) <= 2, `五块会话等宽（${widths.join('/')}）`)
   ok(hideDockPane(m, 'chat-peer-3') === m, '任何一块会话都不能被隐藏')
 
-  /* 非焦点块显示哪一份：比最后一条消息的时间，不比条数 */
   const snaps = await load('src/renderer/src/state/split-snapshots.ts', 'out/test/split-snapshots.mjs')
   const msg = (id, ts) => ({ id, role: 'assistant', text: id, ...(ts ? { timestamp: ts } : {}) })
   const shownNew = [msg('u1', 100), msg('a1', 200), msg('u2', 300), msg('a2', 400)]
@@ -122,7 +111,6 @@ export async function runSplitViewTests(ok) {
   const tied = [msg('u1', 100), msg('a2', 400)]
   ok(snaps.newestMessages(shownNew, tied) === shownNew, '一样新：取靠前的（屏幕上那份，含只推给活动会话的卡片）')
   ok(snaps.newestMessages(undefined, [], tied) === tied, '空的跳过')
-  /* 宽度份额只留还在分屏里的块；资源归属可认领、可释放 */
   const sv = useSplitView.getState()
   sv.close()
   sv.open(b, a)
@@ -132,7 +120,6 @@ export async function runSplitViewTests(ok) {
   useSplitView.getState().remove(2)
   const kept = useSplitView.getState().weights
   ok(kept[ka] === 2 && kept[kb] === 3 && !(kc in kept), '关掉一块：它的宽度份额一并清掉')
-  /* 列的固定编号：会话补上 id、或焦点那一块换了会话，列的身份都不变 */
   const pathOnly = { path: 'C:/s/p.jsonl' }
   const withUidSplit = placeInSplit(null, pathOnly, a)
   const uid0 = withUidSplit.tiles[1].uid
@@ -142,7 +129,6 @@ export async function runSplitViewTests(ok) {
   ok(movedSplit.tiles[0].uid === uid0 && movedSplit.tiles.length === 2, '拖已在分屏里的会话挪位置：列的编号不变')
   const swapped = reconcileSplit(withUidSplit, c)
   ok(swapped.tiles[0].uid === withUidSplit.tiles[0].uid && swapped.tiles[0].sessionId === 'c', '焦点那一块换了会话：列的编号沿用')
-  /* 工作区键：见过的会话取对话键（接力后沿用原对话），没见过的按路径与 id */
   const wk = await load('src/renderer/src/state/workspace-key.ts', 'out/test/workspace-key.mjs')
   ok(wk.workspaceKeyFor({ sessionId: 'z', path: 'C:/s/z.jsonl' }) === 'C:/s/z.jsonl', '没见过的会话：按路径取键')
   wk.rememberConversationKey({ sessionId: 'z', sessionFile: 'C:/s/z.jsonl', conversationId: 'orig', conversationFile: 'C:/s/orig.jsonl' })

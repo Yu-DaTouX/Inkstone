@@ -1,10 +1,3 @@
-/*
- * 工具磁贴跨重启（实施-12 U-6，第一次启动，cost 0）。
- *
- * 第一次启动只做一件事：把 context 移出为浮动，并把「放到了哪」写进
- * localStorage 交给第二次启动的探针核对。真正的断言在
- * `tile-restart-restart.js` 里（新进程里才是「重启恢复」）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -58,7 +51,6 @@
       'yan.tile-restart-probe',
       JSON.stringify({ rect: saved?.rect, revision: store.getState().settings?.toolLayout?.revision })
     )
-    /* 顺手记一下坐标，重启后要逐项比对（归一化值不受窗口大小影响） */
     out.push('  交接给重启：' + localStorage.getItem('yan.tile-restart-probe'))
     return out.join('\n')
   } catch (error) {

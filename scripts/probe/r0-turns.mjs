@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * 实施-26 · R0 可行性探测（只读，不改产品代码、不写产品数据）。
- *
- * 回答三个问题，结论决定 R2–R5 的形态：
- *   ① `UIMessage.id` ↔ fork 用的 `entryId` 能否对上（决定轮次卡能否直接分叉）
- *   ② 连续读 N 个会话的真实成本（决定「渐进披露 + 缓存」是否够用）
- *   ③ 压缩历史后轮次切分是否仍成立（决定压缩点会不会把轮次接错）
- *
- * 用法：
- *   node scripts/probe/r0-turns.mjs            # 全部三节
- *   node scripts/probe/r0-turns.mjs --json     # 只输出报告 JSON
- *
- * 原则：
- *   · 只读真实会话目录；需要 pi 打开会话时复制到临时 `PI_CODING_AGENT_DIR`，
- *     真实文件不被写。
- *   · 报告只含 entry id / role / 计数 / 耗时，不含消息正文与图片数据。
- */
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
@@ -35,8 +18,6 @@ const log = (...a) => {
   if (!JSON_ONLY) console.log(...a)
 }
 
-/* ── 公用：会话文件收集 ─────────────────────────────────────────── */
-
 async function walkSessions(dir) {
   const out = []
   for (const e of await readdir(dir, { withFileTypes: true })) {
@@ -47,7 +28,6 @@ async function walkSessions(dir) {
   return out
 }
 
-/** 轻量扫描：只拿 entry 的 type / id / parentId / message.role，不归一化。 */
 function scanEntries(text) {
   const entries = []
   for (const line of text.split('\n')) {
@@ -70,8 +50,6 @@ function scanEntries(text) {
   return entries
 }
 
-/* ── 公用：真实 readSessionMessages（走 esbuild 构建的同一份源码） ── */
-
 async function loadReader() {
   if (!existsSync(READER_BUNDLE)) {
     const require = createRequire(import.meta.url)
@@ -87,10 +65,7 @@ async function loadReader() {
   return import(`file://${READER_BUNDLE.replace(/\\/g, '/')}`)
 }
 
-/** 与产品一致的图片落盘替身：不写盘，但把 base64 从消息里去掉（避免虚高内存）。 */
 const fakeLocalize = () => 'yan-media://r0-probe'
-
-/* ── ① entryId 比对：起一个隔离的 pi 读 fork 点 ────────────────── */
 
 class Rpc {
   constructor(child) {
@@ -151,7 +126,6 @@ async function probeEntryIds(files) {
   await mkdir(join(tmpPi, 'sessions'), { recursive: true })
   await mkdir(tmpCwd, { recursive: true })
 
-  // 复制待比对会话到临时 pi 目录（真实文件只读）
   const copies = []
   for (const f of files) {
     const dst = join(tmpPi, 'sessions', basename(f))
@@ -168,7 +142,6 @@ async function probeEntryIds(files) {
 
   const result = []
   try {
-    // 等待 pi 起来（首次启动需要几秒；用 get_state 探活）
     for (let i = 0; i < 60; i++) {
       try {
         const st = await rpc.send('get_state', {}, 5_000)
@@ -198,7 +171,6 @@ async function probeEntryIds(files) {
       const missingInJsonl = forkIds.filter((id) => !jsonlSet.has(id))
       const missingInFork = jsonlUsers.filter((id) => !forkSet.has(id))
 
-      // 归一化后的 UIMessage.id（现状是合成的 m{seq}）
       const reader = await loadReader()
       const read = await reader.readSessionMessages(src, { localizeImage: fakeLocalize })
       const uiUsers = (read?.messages ?? []).filter((m) => m.role === 'user').map((m) => m.id)
@@ -214,7 +186,6 @@ async function probeEntryIds(files) {
         missingInFork: missingInFork.slice(0, 5),
         uiUserIds: uiUsers.slice(0, 6),
         uiUserIdIsEntryId: uiUsers.length > 0 && jsonlSet.has(uiUsers[0]),
-        // 现状映射：第 k 个 user 消息（UIMessage 顺序）↔ forkPoints[k]
         orderAligned:
           uiUsers.length > 0 &&
           uiUsers.length === forkIds.length &&
@@ -225,20 +196,16 @@ async function probeEntryIds(files) {
     try {
       child.stdin.end()
     } catch {
-      /* ignore */
     }
     setTimeout(() => {
       try {
         child.kill()
       } catch {
-        /* ignore */
       }
     }, 300)
   }
   return result
 }
-
-/* ── ② 读取成本：连续读 N 个会话 ───────────────────────────────── */
 
 async function probeReadCost(files) {
   const reader = await loadReader()
@@ -274,8 +241,6 @@ async function probeReadCost(files) {
   return { largest: sized.slice(0, 5).map((x) => +(x.size / 1048576).toFixed(2)), rows }
 }
 
-/* ── ③ 压缩历史：压缩点与轮次切分 ──────────────────────────────── */
-
 async function probeCompaction(files, limit = 12) {
   const reader = await loadReader()
   const withCompaction = []
@@ -305,8 +270,6 @@ async function probeCompaction(files, limit = 12) {
     const read = await reader.readSessionMessages(f, { localizeImage: fakeLocalize })
     const uiUsers = (read?.messages ?? []).filter((m) => m.role === 'user').length
     const jsonlUsers = entries.filter((e) => e.type === 'message' && e.role === 'user').length
-    // compaction entry 不进 messages（readSessionMessages 只认 type:message），
-    // 所以轮次层默认看不到压缩边界；这里量化「丢掉多少条压缩记录」。
     const hasAnyCompactionMarker = (read?.messages ?? []).some(
       (m) => typeof m.text === 'string' && m.text.includes('已压缩')
     )
@@ -325,13 +288,10 @@ async function probeCompaction(files, limit = 12) {
   return rows
 }
 
-/* ── 主流程 ───────────────────────────────────────────────────── */
-
 async function main() {
   const all = await walkSessions(SESSIONS_ROOT)
   const report = { generatedAt: new Date().toISOString(), sessionsRoot: SESSIONS_ROOT, files: all.length }
 
-  // ① 选 3 个 user 消息足够多、体积中等的会话
   const candidates = []
   for (const f of all) {
     const { size } = await stat(f)

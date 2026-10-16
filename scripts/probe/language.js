@@ -1,30 +1,3 @@
-/**
- * N16 语言提示：界面语言 → 模型输出语言（真实模型对照）。
- *
- * ── 这一版测什么（与上一版的区别）──
- * 语言要求以前是**启动参数**（`--append-system-prompt`），所以只能靠
- * 「切语言 → 重建 pi 实例 → 新建会话」生效；现在改成**内置扩展每轮注入**
- * （`resources/pi-extensions/language.js`：在最后一条用户消息前插一条独立
- * 消息 + 系统提示末尾保底），于是：
- *   ① 切语言**不重建**实例、不打断任何会话；
- *   ② **同一个会话**的下一轮就用新语言（不必新建会话）；
- *   ③ 注入**有没有发生**可以取证：跑本场景时 `YAN_LANG_EXT_LOG=<文件>`
- *      会让扩展每轮写一行 `{hook,lang,injected}`（见 test-live 的 language case）。
- *
- * ── 判据为什么是「多次尝试里出现过符合期望的一次」──
- * 语言是**软约束**：注入了不代表每次模型都照办（实测同一个模型在
- * 「界面英文 + 中文提问」时偶尔仍用中文；中文方向更稳）。所以这里：
- *   · 每个方向最多试 3 次，出现符合期望的就提前结束；
- *   · 把每一次的 CJK 占比与片段都打出来 —— 能看出是「稳定符合」还是「偶尔符合」；
- *   · 断言两个方向「最符合的那一次」方向相反（对照成立），而不是断言单次。
- * 机制本身的确定性由 `scripts/test-language-extension.mjs` 单测 + 上面的注入
- * 日志取证钉住。
- *
- * ⚠️ **推理（thinking）语言**单独报告、不作硬断言：模型可能「用英文想、用中文答」
- *    （实测这个模型就会），那是模型内部行为，不是注入没生效。
- *
- * 成本：约 4–8 次真实调用。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -48,17 +21,11 @@
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  /** CJK 占比：判断"这段文字是中文还是英文"的粗口径（够用且不依赖分词） */
   const cjkRatio = (s) => {
     const chars = [...(s ?? '')].filter((c) => !/\s/.test(c))
     if (!chars.length) return 0
     return chars.filter((c) => /[\u3400-\u9fff]/.test(c)).length / chars.length
   }
-  /*
-   * 实例身份用 `createdAt` 而不是 `runId`：`runId` 是注册表里的序号
-   * （`r1`/`r2`…），stopAll 之后重新 start 会**从 r1 重新数** —— 实测
-   * 重建前后都是 `r1`，拿它当身份会得出"没有重建"的错误结论。
-   */
   const primary = () => {
     const rs = store.getState().runners ?? []
     return rs.find((r) => r.active) ?? rs[0]
@@ -80,7 +47,6 @@
     await sleep(600)
     return done
   }
-  /** 问一轮，返回这一轮的回复/推理与 CJK 占比 */
   const ask = async (prompt) => {
     const before = assistants().length
     await send(prompt)
@@ -95,10 +61,6 @@
       thinkingCjk: m?.thinking ? cjkRatio(m.thinking) : null
     }
   }
-  /**
-   * 反复问同一个问题，直到某一次「符合期望」或有次数用尽。
-   * `want` = 'zh' 希望中文（CJK > 0.5）｜'en' 希望英文（CJK < 0.2）
-   */
   const askUntil = async (prompt, want, attempts = 3) => {
     const tried = []
     for (let i = 0; i < attempts; i++) {
@@ -128,7 +90,6 @@
   const zhQuestion = '用一句话说明什么是 RAII。不要调用任何工具。'
   const enQuestion = 'In one sentence, what is RAII? Do not call any tools.'
 
-  /* ---------------- 1. 中文界面：英文提问 → 中文回复 ---------------- */
   log('=== 1. 中文界面：英文提问应当回中文 ===')
   if (langBefore !== 'zh-CN') {
     await store.getState().patchSettings({ lang: 'zh-CN' })
@@ -141,7 +102,6 @@
   ok(zh.tried.length > 0, '中文界面拿到了回复', `${zh.tried.length} 次尝试`)
   ok(zh.best > 0.5, '中文界面：英文提问也回中文', `最好的一次 CJK=${zh.best.toFixed(2)}`)
 
-  /* ---------------- 2. 切英文：不重建、同一会话下一轮生效 ---------------- */
   log('\n=== 2. 切英文界面：不重建实例、同一会话下一轮生效 ===')
   const instBefore = primary()
   const msgsBefore = store.getState().messages.length
@@ -161,7 +121,6 @@
   ok(en.best < 0.2, '英文界面：中文提问也回英文', `最好的一次 CJK=${en.best.toFixed(2)}`)
   ok(en.best < zh.best, '两个方向的最符合期望的一次方向相反（对照成立）', `${zh.best.toFixed(2)} vs ${en.best.toFixed(2)}`)
 
-  /* ---------------- 3. 推理语言：只报告，不硬断言 ---------------- */
   log('\n=== 3. 推理（思考过程）语言（只报告）===')
   const zhThink = zh.tried.map((t) => t.thinkingCjk).filter((v) => v !== null)
   const enThink = en.tried.map((t) => t.thinkingCjk).filter((v) => v !== null)
@@ -173,7 +132,6 @@
     info('模型可能「用英文想、按界面语言答」—— 这是模型内部行为，不作硬断言')
   }
 
-  /* ---------------- 4. 流式期间切语言：不打断，且下一轮立刻生效 ---------------- */
   log('\n=== 4. 流式中切语言：不打断这一轮，下一轮立刻生效 ===')
   const instStream = primary()
   const beforeCount = assistants().length
@@ -199,7 +157,6 @@
   log(`  流式后实例 ${instanceKey(primary())}`)
   ok(afterStream.best > 0.5, '切回中文后**下一轮**就用中文（不用等实例重建）', `最好的一次 CJK=${afterStream.best.toFixed(2)}`)
 
-  /* 收尾：语言恢复（后面的场景别被留在英文） */
   if (store.getState().settings?.lang !== langBefore) {
     await store.getState().patchSettings({ lang: langBefore })
     await until(() => store.getState().settings?.lang === langBefore, 15000)

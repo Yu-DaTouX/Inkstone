@@ -1,15 +1,3 @@
-/**
- * 宿主提问入口的模型发现端到端（会真的调模型，成本约 $0.001）。
- *
- * 流程：
- *   1. 先在隔离临时目录准备 request JSON，再要求模型用 bash 调 `yan question ask`
- *   2. 等宿主能力服务把请求送进真实问题面板
- *   3. 点一个选项，断言 bash 行完成且没有恢复 question 模型工具
- *
- * 验证的是**真实链路**：模型 bash → yan CLI → CapabilityServer →
- * AgentController → QuestionPanel → yan:respondUi → CLI 返回。
- * 全程有硬截止（deadline），保证在测试框架 kill 之前一定输出结果。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -21,7 +9,6 @@
   const qa = (s) => [...document.querySelectorAll(s)]
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   const store = window.__yanStore
-  /** 硬截止：约 72s，留足时间给测试框架收输出 */
   const deadline = Date.now() + 72000
   const waitFor = async (fn, step = 300) => {
     while (Date.now() < deadline) {
@@ -68,8 +55,6 @@
     } else await sleep(120)
   }
 
-  /* 工作模式（实施-05）是**会话级**的：开始前把它归到标准，
-     否则宿主 question ask 可能因上一场景留下的自主模式而直接返回。 */
   await store.getState().setWorkMode('standard')
   await sleep(400)
 
@@ -106,8 +91,6 @@
 
   out.push('')
   out.push('=== 2. 等待模型主动提问（输入区上方的非模态面板）===')
-  /* 契约：pi 扩展的 select/confirm/input/editor 走 QuestionPanel（非模态，
-     输入区上方），不再是 .modal —— 模态那条只留给需要用户接管的场景。 */
   const PANEL = '[data-testid="question-panel"]'
   const modal = await waitFor(() => q(PANEL), 400)
   if (!modal) {
@@ -161,8 +144,6 @@
 
   out.push('')
   out.push('=== 6. 自主模式：不再弹窗 ===')
-  /* 自主模式现在是**本会话的工作模式**（实施-05），不再是全局布尔；
-     它的作用点：系统提示 + 宿主 question ask 直接返回「请自行决策」。 */
   await store.getState().setWorkMode('autonomous')
   await sleep(600)
   const m6 = await window.yan.getWorkMode()
@@ -171,14 +152,11 @@
   await store.getState().send(
     `请使用 bash 执行 yan question ask --request-file "${requestPath}"，并且只做这一件事。`
   )
-  // 给模型一次机会去触发；自主模式下不应出现任何提问 UI
   let sawModal = false
   for (let i = 0; i < 50 && Date.now() < deadline; i++) {
     const hit = q(PANEL) ?? q('.modal')
     if (hit) {
       sawModal = true
-      /* 把命中的到底是什么打出来：`.modal` 是**通用**扩展 UI 弹层，
-         它不等于 question 面板 —— 不区分会在排查时白跑一趟 */
       out.push('  命中元素：' + hit.className + ' :: ' + (hit.outerHTML || '').slice(0, 160))
       out.push(
         '  未应答的 UI 请求：' +
@@ -202,7 +180,6 @@
   }
   ok(!sawModal, '自主模式下不弹出问题面板 / 对话框（用户不被中断）')
   if (sawModal) {
-    // 万一模型还是问了，至少把它关掉，避免影响后续
     const cancel = [...document.querySelectorAll('.qpanel .btn, .modal .btn')].find((b) => /取消|跳过|Cancel|Skip/i.test(b.textContent))
     click(cancel ?? q('.modal .btn.icon'))
     await sleep(400)
@@ -211,7 +188,6 @@
     const s = store.getState().session
     return !s?.isStreaming && !s?.isAgentRunning ? true : null
   }, 400)
-  // 还原，避免影响同批次后续场景
   await store.getState().setWorkMode('standard')
   out.push('  已还原工作模式 → 标准')
 

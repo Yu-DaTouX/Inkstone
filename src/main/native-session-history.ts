@@ -1,4 +1,3 @@
-/** Follow the native live leaf, not the append-only file tail. Includes pre-compaction entries. */
 export function nativeActiveBranch(entries: Record<string, unknown>[], leafId: string | null): Record<string, unknown>[] {
   if (leafId === null) return []
   const byId = new Map(entries.filter(e => typeof e.id === 'string').map(e => [e.id as string, e]))

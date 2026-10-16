@@ -11,7 +11,6 @@ import { AgentRunChat } from './AgentRunChat'
 import { Badge, Button, EmptyState, IconButton, ListRow, Select, Tab, Textarea } from '../ui'
 import { useConfirm } from '../ui/confirm'
 
-/** 磁贴标题只留 Agent 名；任务标题有信息量时再补一小段（默认的「xx 终端」不重复）。 */
 function tileTitle(agent:string,title:string):string{
   const name=agentName(agent)
   const text=title.trim()
@@ -23,7 +22,6 @@ function rememberedTabs(): {active:string;opened:string[]} {
   try { const saved=JSON.parse(sessionStorage.getItem('inkstone-agent-tabs')??'{}');return {active:typeof saved.active==='string'?saved.active:'',opened:Array.isArray(saved.opened)?saved.opened.filter((id:unknown)=>typeof id==='string'):[]} } catch {return {active:'',opened:[]}}
 }
 
-/** 子任务与外部 CLI 共用界面，后端仍是唯一事实源。 */
 export function AgentWorkspacePanel({ onBack, initialRun, onExpand, expanded, onlyRun = false, managerOnly = false, onOpenRun, onTitleChange }: { onBack():void; initialRun?:string; onExpand?():void; expanded?:boolean; onlyRun?:boolean; managerOnly?:boolean; onOpenRun?(key:string):void; onTitleChange?(title:string):void }) {
   const t=useT()
   const confirm=useConfirm()

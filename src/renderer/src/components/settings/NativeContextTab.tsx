@@ -13,10 +13,6 @@ const kTokens = (n: number): string => `${Math.round(n / 1000)}k`
 const COMPACT_VALUES = AUTO_COMPACT_STEPS.map(String)
 const TRIM_VALUES = CONTEXT_TRIM_STEPS.map(String)
 
-/**
- * 上下文：压缩本身是 pi 原生的（开关与立即压缩直接调 pi）；
- * 砚只补两样——自动压缩上限（跟随 pi 的开关）与省略旧工具输出，执行在随包扩展 context-trim.js。
- */
 export function NativeContextTab() {
   const t = useT()
   const session = useStore(s => s.session)

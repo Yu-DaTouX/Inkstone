@@ -1,4 +1,3 @@
-/** 准备中/释放中的宿主快照也占预算；不访问真实浏览器或凭证。 */
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -51,7 +50,6 @@ manager.unwant('new')
 for (const task of tasks.splice(0)) task()
 await flush()
 assert.equal(manager.occupancy(), 0, '最后清理不留资源')
-/* ── 同 key 换代 A→B：旧 prepare 未回，预算不被复用 ───────────── */
 {
   const tasksA = []
   const manager = new PreviewSnapshotLifecycle(1, Date.now, (task) => tasksA.push(task))
@@ -86,7 +84,6 @@ assert.equal(manager.occupancy(), 0, '最后清理不留资源')
   assert.equal(manager.occupancy(), 0)
 }
 
-/* ── resume 抢占准备中的旧位：settle+release 确认前都不让位 ──── */
 {
   const tasksB = []
   const manager = new PreviewSnapshotLifecycle(1, Date.now, (task) => tasksB.push(task))
@@ -113,7 +110,6 @@ assert.equal(manager.occupancy(), 0, '最后清理不留资源')
   assert.equal(manager.occupancy(), 1)
 }
 
-/* ── 迟到失败归还 reservation 并 promote 等待者 ──────────────── */
 {
   const tasksC = []
   const manager = new PreviewSnapshotLifecycle(1, Date.now, (task) => tasksC.push(task))
@@ -130,7 +126,6 @@ assert.equal(manager.occupancy(), 0, '最后清理不留资源')
   assert.equal(manager.occupancy(), 1)
 }
 
-/* ── 多轮快速 want/unwant：并发 prepare + 未确认 release 一直接不超预算 ─ */
 {
   const tasksD = []
   const manager = new PreviewSnapshotLifecycle(3, Date.now, (task) => tasksD.push(task))
@@ -164,7 +159,6 @@ assert.equal(manager.occupancy(), 0, '最后清理不留资源')
   assert.equal(manager.occupancy(), 0, '清理后不残留未归还位')
 }
 
-/* ── 正常释放与迟到成功都恰好 cleanup 一次 ─────────────────── */
 {
   const tasksE = []
   const manager = new PreviewSnapshotLifecycle(2, Date.now, (task) => tasksE.push(task))
@@ -190,7 +184,6 @@ assert.equal(manager.occupancy(), 0, '最后清理不留资源')
   assert.equal(manager.occupancy(), 0)
 }
 
-/* ── 同步 prepare 抛错：不锁死预算，后续块能上来 ─────────────── */
 {
   const manager = new PreviewSnapshotLifecycle(1)
   manager.want('boom', { revision: 'boom', prepare: () => { throw new Error('sync boom') }, release: () => {} })
@@ -203,7 +196,6 @@ assert.equal(manager.occupancy(), 0, '最后清理不留资源')
   assert.equal(manager.occupancy(), 1)
 }
 
-/* ── release 拒绝/同步抛错：不 unhandled，保守占位不假定已释放 ── */
 {
   const tasksF = []
   const errors = []

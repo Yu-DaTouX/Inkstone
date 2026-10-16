@@ -1,13 +1,4 @@
-/*
- * 会话构件的**外观**（颜色 / 边框 / 字体 / 阴影）。
- *
- * CONTRACT：外观本应抽到 `patterns/`；但 `patterns/` 由并发代理负责，这里不占用
- * 别人的文件，先按约定暂放在本模块自己的 `ui/` 子目录并归入 `primitives` 层。
- * `patterns/` 就位后，把这些规则按构件搬运过去即可，类名保持不变。
- * 全部取值来自 design/tokens.json 生成的变量，不私造变量。
- */
 @layer primitives {
-  /* ---- 正文 ---- */
   .v3-prose {
     color: var(--fg);
     font-size: var(--t-prose);
@@ -34,7 +25,6 @@
   .v3-md-table-wrap table { border-collapse: collapse; font-size: var(--t-ui); }
   .v3-md-table-wrap th, .v3-md-table-wrap td { border: 1px solid var(--line); padding: var(--s-4) var(--s-8); text-align: left; }
 
-  /* ---- 代码块 ---- */
   .v3-code {
     margin: var(--s-10) 0;
     border-radius: var(--r-md);
@@ -52,7 +42,6 @@
   .v3-code pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-code code { color: var(--fg); background: none; }
 
-  /* ---- 回退提示 ---- */
   .v3-fallback-note, .v3-steps-note {
     display: flex; align-items: center; gap: var(--s-6);
     padding: var(--s-6) var(--s-10);
@@ -66,7 +55,6 @@
   .v3-steps-note.err { color: var(--fail-t); border-color: var(--fail); background: var(--fail-bg); }
   .v3-visual-fallback { border-radius: var(--r-md); }
 
-  /* ---- 用户消息 ---- */
   .v3-bubble { display: inline-flex; gap: var(--s-6); max-width: 100%; padding: var(--s-8) var(--s-12); border-radius: var(--r-bubble); background: var(--bubble); color: var(--fg); font-size: var(--t-body); line-height: var(--t-body-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-bubble-prompt { color: var(--fg3); }
   .v3-tag { display: inline-flex; align-items: center; gap: var(--s-4); padding: 0 var(--s-6); border: 1px solid var(--line2); border-radius: var(--r-full); color: var(--fg3); font-size: var(--t-meta); }
@@ -83,7 +71,6 @@
   .v3-img-thumb { max-height: 220px; max-width: 100%; border-radius: var(--r-sm); border: 1px solid var(--line); }
   .v3-img-missing { display: inline-flex; align-items: center; gap: var(--s-4); padding: var(--s-4) var(--s-8); border: 1px dashed var(--line2); border-radius: var(--r-sm); color: var(--fg3); font-size: var(--t-meta); }
 
-  /* ---- 活动行 / 思考 ---- */
   .v3-act { display: flex; align-items: center; gap: var(--s-6); color: var(--fg2); font-size: var(--t-ui); }
   .v3-act[data-kind='run'] { color: var(--run-t); }
   .v3-act[data-kind='err'] { color: var(--fail-t); }
@@ -94,7 +81,6 @@
   .v3-spin { animation: v3-spin var(--dur-breathe) linear infinite; }
   @keyframes v3-spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .v3-spin { animation: none; } }
-  /* 工作中指示：三点依次起伏；呼吸用于已有图标的「正在进行」 */
   .v3-busy { display: inline-flex; align-items: center; gap: 3px; height: 14px; flex: none; }
   .v3-busy i { width: 4px; height: 4px; border-radius: var(--r-full); background: currentColor; animation: v3-busy 1.2s ease-in-out infinite; }
   .v3-busy i:nth-child(2) { animation-delay: 0.15s; }
@@ -114,7 +100,6 @@
   .v3-step-target { flex: 1 1 auto; }
   .v3-think[data-live] .v3-think-label { color: var(--run-t); }
   .v3-think-peek { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg3); text-align: left; }
-  /* 有界窗口：短内容按内容高度，长内容最高 25vh 内部滚动，滚动不外溢到对话流 */
   .v3-think-body {
     max-height: 25vh;
     overflow: hidden auto;
@@ -132,8 +117,6 @@
   .v3-think[data-live] .v3-think-body { border-left-color: var(--run); }
   .v3-chev { color: var(--fg3); flex: none; }
 
-  /* ---- 步骤 ---- */
-  /* 对话里的工具摘要是一行安静的灰字，不画卡片；点开才出步骤列表 */
   .v3-steps { border: 0; border-radius: var(--r-md); background: none; margin: var(--s-4) 0; }
   .v3-seg { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
   .v3-steps-sum { display: flex; align-items: center; gap: var(--s-6); width: 100%; padding: var(--s-6) var(--s-10); border: 0; background: none; color: var(--fg2); font-size: var(--t-ui); cursor: pointer; text-align: left; }
@@ -142,7 +125,6 @@
   .v3-steps-label { color: inherit; flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .v3-steps-stats { display: inline-flex; gap: var(--s-6); margin-left: auto; padding: 0 var(--s-6); border-radius: var(--r-sm); background: var(--hover); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
   .v3-steps-stats.err { color: var(--fail-t); }
-  /* 过程行里的旁白：比正文小一档、弱化颜色，与工具组的摘要行区分 */
   .v3-process-note { color: var(--fg3); font-size: var(--t-meta); }
   .v3-steps-list, .v3-steps-live { border-left: 2px solid var(--line); margin-left: var(--s-4); padding: var(--s-2) 0 var(--s-2) var(--s-8); }
   .v3-step-head { display: flex; align-items: center; gap: var(--s-6); width: 100%; padding: var(--s-4) var(--s-6); border: 0; border-radius: var(--r-xs); background: none; color: var(--fg); font-size: var(--t-ui); cursor: pointer; text-align: left; }
@@ -176,7 +158,6 @@
   .v3-diff-line[data-kind='del'] { color: var(--del); background: var(--del-bg); }
   .v3-step-images { display: flex; flex-wrap: wrap; gap: var(--s-6); margin-top: var(--s-6); }
 
-  /* ---- 确认卡 ---- */
   .v3-approval {
     border: 1px solid var(--line2);
     border-radius: var(--r-lg);
@@ -199,7 +180,6 @@
   .v3-approval-cwd { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg3); font-family: var(--font-mono); font-size: var(--t-meta); }
   .v3-approval-keys { color: var(--fg3); font-size: var(--t-meta); }
 
-  /* ---- 提问卡 ---- */
   .v3-qcard { border: 1px solid var(--line2); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-card); overflow: hidden; }
   .v3-qcard[data-sensitive] { border-color: var(--ask); }
   .v3-qhead { display: flex; align-items: center; gap: var(--s-6); padding: var(--s-8) var(--s-10); border-bottom: 1px solid var(--line); }
@@ -241,17 +221,14 @@
   .v3-qerror { display: block; margin-top: var(--s-4); color: var(--fail-t); font-size: var(--t-meta); }
   .v3-qform { display: block; }
 
-  /* ---- 空会话 ---- */
   .v3-empty { display: flex; flex-direction: column; gap: var(--s-8); padding: var(--s-48) var(--s-20); }
   .v3-empty-greet { color: var(--fg); font-size: var(--t-h2); line-height: var(--t-h2-lh); }
   .v3-empty-prompt { margin-right: var(--s-6); color: var(--fg3); }
   .v3-empty-hint { margin: 0; color: var(--fg3); font-size: var(--t-ui); }
 
-  /* ---- 回到底部 ---- */
   .v3-jump { display: inline-flex; align-items: center; justify-content: center; width: var(--size-send); height: var(--size-send); border: 1px solid var(--line2); border-radius: var(--r-full); background: var(--surface); color: var(--fg2); box-shadow: var(--shadow-comp); cursor: pointer; }
   .v3-jump:hover { color: var(--fg); background: var(--hover); }
 
-  /* ---- 子 Agent 行（一行摘要）与侧边详情 ---- */
   .v3-subagents-sum { color: var(--fg3); font-size: var(--t-meta); }
   .v3-subagent {
     border: 1px solid var(--line);
@@ -265,7 +242,6 @@
   .v3-subagent-toggle { border: 0; background: none; color: var(--fg); font: inherit; font-size: var(--t-ui); text-align: left; cursor: pointer; }
   .v3-subagent-toggle:hover { background: var(--hover); }
   .v3-subagent[data-selected='1'] .v3-subagent-toggle:hover { background: transparent; }
-  /* 卡片：左侧图标块（运行中是三点），右侧上标题下元信息 */
   .v3-subagent-glyph { position: relative; flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-md); background: var(--hover); color: var(--fg2); }
   .v3-subagent-glyph[data-tone='run'] { color: var(--run-t); }
   .v3-subagent-glyph .v3-dot { position: absolute; right: -2px; bottom: -2px; box-shadow: 0 0 0 2px var(--surface); }
@@ -283,7 +259,6 @@
   .v3-subagent-summary { border-top: 1px solid var(--line); background: var(--sunken); }
   .v3-subagent-text { margin: 0; color: var(--fg2); font-size: var(--t-meta); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-subagent-text.dim { color: var(--fg3); }
-  /* 结论的 Markdown 正文：与面板其余说明同一字号与颜色，段落与表格仍按正文结构排版 */
   .v3-sap .v3-sap-md .v3-prose { color: var(--fg2); font-size: var(--t-meta); line-height: 1.6; }
   .v3-sap .v3-sap-md .v3-md-table-wrap { max-width: 100%; }
   .v3-subagent-stat, .v3-subagent-review, .v3-subagent-latest, .v3-subagent-list { color: var(--fg3); font-size: var(--t-meta); }
@@ -309,7 +284,6 @@
   .v3-sap-meta { color: var(--fg3); font-size: var(--t-meta); }
   .v3-sap-meta > dd { color: var(--fg2); }
   .v3-sap-actions { border-top: 1px solid var(--line); }
-  /* 详情面板：头部状态胶囊 + 卡片分组 + 底部芯片，层级靠卡片而不是分隔线 */
   .v3-sap .v3-sap-head { gap: var(--s-10); padding: var(--s-10) var(--s-8) var(--s-10) var(--s-12); border-bottom: 0; }
   .v3-sap .v3-sap-glyph { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-md); background: var(--hover); color: var(--fg2); }
   .v3-sap .v3-sap-glyph[data-tone='run'] { color: var(--run-t); }
@@ -330,7 +304,6 @@
   .v3-sap .v3-sap-chip > dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-sap .v3-sap-actions { border-top: 0; justify-content: flex-end; }
 
-  /* ---- WP-21c 错误卡 / 压缩标记 / 分支摘要 ---- */
   .v3-errorcard {
     padding: var(--s-8) var(--s-10);
     border: 1px solid var(--fail);

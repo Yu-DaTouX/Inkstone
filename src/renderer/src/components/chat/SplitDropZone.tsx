@@ -1,10 +1,6 @@
 import { useT } from '../../i18n'
 import { splitDropZones, useSplitDrop } from '../../state/split-drop'
 
-/**
- * 拖左栏会话时盖在每块会话磁贴上的落点（左半 / 右半）：松手把会话插到指针所在的位置。
- * 样式见 chat.css 末尾分屏段。
- */
 export function SplitDropZone() {
   const t = useT()
   const dragging = useSplitDrop((s) => s.dragging)

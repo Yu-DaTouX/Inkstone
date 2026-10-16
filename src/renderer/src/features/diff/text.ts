@@ -1,9 +1,3 @@
-/**
- * DiffView 的界面文案。R4 不改 i18n 资源，所以文案随组件走。
- *
- * `lang` 接受 `useI18n()` 的 `Lang`（`zh-CN` / `en-US`）；只判断前缀，
- * 免得组件层依赖 i18n 的完整类型。
- */
 export interface DiffViewText {
   unified: string
   split: string

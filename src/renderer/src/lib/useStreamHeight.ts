@@ -1,13 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
 
-/**
- * 把对话滚动区（.stream）的可见高度写到 `--stream-h`：并列过程栏 sticky 时用它封顶，
- * 不会比可见区高（否则栏底部的终端被截掉，滚不到）。
- *
- * ref 可以是 .stream 本身，也可以是包着它的列；列里的 .stream 会在普通列表与虚拟列表之间
- * 换节点，所以只观察列的直接子节点变化，不观察整棵树。分屏换焦点时列会重新挂载，
- * 每次渲染后比对一次 ref 指向的节点，变了才重新绑定。
- */
 export function useStreamHeight(ref: RefObject<HTMLElement | null>): void {
   const bound = useRef<{ host: HTMLElement; stop: () => void } | null>(null)
   useEffect(() => {

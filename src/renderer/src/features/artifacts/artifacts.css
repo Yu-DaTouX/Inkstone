@@ -1,11 +1,3 @@
-/*
- * 成果视图（WP-32）的版面。只写 layout / 层级，外观颜色全部取 v3 令牌；
- * 控件外壳来自 `ui/`，这里不重复定义按钮与徽标外观。
- */
-
-/* ── 框架 ─────────────────────────────────────────────────────── */
-
-/* 非内联形态把原内联高度留成占位，关闭后滚动位置基本不变。 */
 .v3-artifact-frame-anchor {
   display: block;
   width: 100%;
@@ -26,7 +18,6 @@
   width: 100%;
 }
 
-/* 全屏贴对话区（消息流）：侧栏与输入框仍在，坐标由 ArtifactFrame 测量写入。 */
 .v3-artifact-frame--fullscreen {
   position: fixed;
   inset: 0;
@@ -45,7 +36,6 @@
   border-radius: 0;
 }
 
-/* 画中画：窗口坐标由组件按拖动/缩放结果写成行内 top/left/width/height。 */
 .v3-artifact-frame--pip {
   position: fixed;
   z-index: 50;
@@ -53,7 +43,6 @@
   box-shadow: var(--shadow-pop);
 }
 
-/* 内联右上角悬停工具条；全屏/画中画用各自头部。 */
 .v3-artifact-frame-tools {
   position: absolute;
   top: var(--s-4);
@@ -73,7 +62,6 @@
   opacity: 1;
 }
 
-/* 内联溢出：底部渐隐 + 「展开全屏」。 */
 .v3-artifact-frame-fade {
   position: absolute;
   left: 0;
@@ -174,8 +162,6 @@
   font-size: var(--t-meta);
 }
 
-/* ── 结构化图块 ───────────────────────────────────────────────── */
-
 .v3-visual {
   margin: var(--s-12) 0;
   padding: var(--s-12);
@@ -264,8 +250,6 @@
   font-size: var(--t-meta);
 }
 
-/* ── Mermaid ──────────────────────────────────────────────────── */
-
 .v3-visual-mermaid {
   overflow-x: auto;
 }
@@ -281,8 +265,6 @@
   max-width: 100%;
   height: auto;
 }
-
-/* ── 图表 ─────────────────────────────────────────────────────── */
 
 .v3-visual-plot {
   display: flex;
@@ -403,8 +385,6 @@
   font-size: var(--t-meta);
 }
 
-/* 横向图 */
-
 .v3-visual-hplot {
   display: flex;
   flex-direction: column;
@@ -485,8 +465,6 @@
   text-align: left;
   font-family: var(--font-ui);
 }
-
-/* ── 指标 / 卡片 / 记录 / 流程 / 分步 ─────────────────────────── */
 
 .v3-visual-tiles {
   display: grid;
@@ -786,8 +764,6 @@
   font-size: var(--t-meta);
 }
 
-/* ── 小部件 ───────────────────────────────────────────────────── */
-
 .v3-visual-widget-head {
   display: flex;
   align-items: center;
@@ -819,8 +795,6 @@
   flex: 1 1 200px;
   min-width: 0;
 }
-
-/* ── 消息里的成果列表（session/MessageParts 使用） ─────────────── */
 
 .v3-artifact-list {
   display: flex;

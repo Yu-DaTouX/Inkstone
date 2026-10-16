@@ -1,4 +1,3 @@
-/** 真实桌面成果卡片；数据由隔离测试驱动提供，不调用模型。 */
 ;(async () => {
   const out = []
   const ok = (value, label) => out.push(`  ${value ? '✓' : '✗'} ${label}`)
@@ -30,7 +29,6 @@
   }
   try {
     ok(await wait(() => !!store?.getState().settings), '桌面 store 已就绪')
-    // 首次启动提示不是测试对象；只修改此隔离实例的展示状态。
     store.setState({ settings: { ...store.getState().settings, workspaceMode: 'coding', onboardingDone: true } })
     show(fixture.artifact)
     ok(await wait(() => document.querySelector('[data-testid="artifact-html-frame"]')), 'HTML 默认在消息内显示 iframe，而非源码')
@@ -71,7 +69,6 @@
     document.querySelector('.artifact-card')?.scrollIntoView({ block: 'start' })
     await sleep(1200)
     out.push('截图保留当前网页预览状态。')
-    // 留出时间让真实窗口 capturePage 完成，不截切换中的源码态。
     await sleep(6000)
   } catch (error) {
     out.push('  ✗ HTML 预览探针异常：' + String(error))

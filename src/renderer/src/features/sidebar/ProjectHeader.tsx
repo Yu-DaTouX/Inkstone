@@ -1,11 +1,3 @@
-/**
- * 侧栏一个项目分区的标题行：名称（可就地改名）、「新建对话」与项目操作菜单。
- *
- * 菜单、改名、改目录、归档都复用现有项目数据与 IPC —— 项目名写
- * `projectNames` 与记录名、目录走 `changeProjectDirectory`、移除 = 归档
- * （`ProjectRecord.archived`），不造第二份项目存储。没有项目记录的按目录分区
- * 只显示名称，不给菜单。
- */
 import { useRef, useState, type JSX } from 'react'
 import { Archive, ChevronRight, FolderOpen, Link, MoreHorizontal, Pencil, Plus, Replace } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
@@ -18,7 +10,6 @@ import { sidebarText } from './sidebar-text'
 
 type MenuKey = 'new' | 'rename' | 'directory' | 'reveal' | 'copy' | 'archive'
 
-/** 写项目归档标记：从 store 现读列表，不用打开菜单时那份快照整体写回。 */
 export async function setProjectArchived(projectId: string, archived: boolean): Promise<boolean> {
   const store = useStore.getState()
   const projects = (store.settings?.projects ?? []).map((item) =>
@@ -35,16 +26,11 @@ export async function setProjectArchived(projectId: string, archived: boolean): 
 export interface ProjectHeaderProps {
   group: SidebarGroup
   record?: ProjectRecord
-  /** 分区是否折叠（折叠状态由侧栏持有，只在内存里） */
   collapsed: boolean
   onToggle: () => void
   onNew: () => void
 }
 
-/**
- * 分组标题是一行弱化小字「项目名 ›」：点名称折叠 / 展开该组（`aria-expanded`）；
- * 「＋」与「…」只在悬停或键盘聚焦时出现在行尾。
- */
 export function ProjectHeader({ group, record, collapsed, onToggle, onNew }: ProjectHeaderProps): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
@@ -250,10 +236,6 @@ function ArchiveConfirm({ name, onCancel, onConfirm }: { name: string; onCancel:
   )
 }
 
-/**
- * 更改项目默认目录：只编辑项目实体，不调用 setCwd、不切会话、不搬文件；
- * 失败留在框内可重试，宿主在串行写入时核对 `expectedCwd`。
- */
 function ProjectDirectoryDialog({ project, onClose }: { project: ProjectRecord; onClose: () => void }): JSX.Element {
   const t = useT()
   const { lang } = useI18n()

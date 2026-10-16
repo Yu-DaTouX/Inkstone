@@ -89,7 +89,6 @@ export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPac
   }
 
   try {
-    /* End-to-end orchestration with a deterministic installer/smoke adapter. */
     {
       const service = new AcquisitionService({ root: join(root, 'success') })
       const tx = await makeTransaction(service)
@@ -104,7 +103,6 @@ export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPac
       ok((await service.get(tx.operationId))?.receipt?.verification === 'smoke-passed', '调度闭环：receipt 记录真实 smoke 级别')
     }
 
-    /* A busy cwd, missing grant, or stale snapshot must have no write side effects. */
     for (const [name, override, expected] of [
       ['runner 忙碌', { cwdBusy: () => true }, '等待目标项目全部 runner 空闲'],
       ['授权缺失', { authorization: async () => null }, '精确候选 / 指纹 / 项目授权已撤销或不可读'],
@@ -121,7 +119,6 @@ export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPac
       ok(!fake.calls.some((call) => call === 'smoke' || call.startsWith('install:') || call === 'restart'), `前置门禁：${name} 时没有运行包代码 / 安装 / 重启`)
     }
 
-    /* Smoke failure is terminal for this attempt and never reaches install. */
     {
       const service = new AcquisitionService({ root: join(root, 'smoke-fail') })
       const tx = await makeTransaction(service, 'smoke-fail')
@@ -132,7 +129,6 @@ export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPac
       ok(!fake.calls.some((call) => call.startsWith('install:') || call === 'restart'), 'smoke 失败：没有安装或重启')
     }
 
-    /* Restart crash recovery: a matching newer runner and consumed continueId are proof, not a reason to restart again. */
     {
       const service = new AcquisitionService({ root: join(root, 'recover') })
       const tx = await makeTransaction(service, 'recover')
@@ -164,7 +160,6 @@ export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPac
       ok(!fake.calls.includes('restart'), '崩溃恢复：不重复重启 runner')
     }
 
-    /* A process restart can recreate the same session with a new runner id and a reset generation. */
     {
       const service = new AcquisitionService({ root: join(root, 'cold-recover') })
       const tx = await makeTransaction(service, 'cold-recover', 4)
@@ -195,7 +190,6 @@ export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPac
       ok(fake.calls.filter((call) => call === 'restart').length === 1, '冷启动恢复：为让新实例消费续接而只重载一次')
     }
 
-    /* Same-operation concurrent wakeups are single-flight. */
     {
       const service = new AcquisitionService({ root: join(root, 'single-flight') })
       const tx = await makeTransaction(service, 'single-flight')

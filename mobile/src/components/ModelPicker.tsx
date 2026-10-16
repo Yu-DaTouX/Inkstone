@@ -8,10 +8,8 @@ import { IconButton, Input, Meta } from '../ui'
 import { RunDot } from '../motion'
 import { font, icon, mono, radius, space, touch, usePalette } from '../theme'
 
-/** 与桌面模型菜单同名：关 / 最低 / 低 / 中 / 高 / 极高 / Max */
 const THINK_LABEL: Record<string, string> = { off: '关', minimal: '最低', low: '低', medium: '中', high: '高', xhigh: '极高', max: 'Max' }
 
-/** 文字切换项：淡色字，选中为正文色 + 1px 强调色下划线（桌面启动页同款） */
 function Choice({ label, selected, disabled, onPress }: { label: string; selected: boolean; disabled?: boolean; onPress: () => void }) {
   const p = usePalette()
   return <Pressable accessibilityRole="button" accessibilityState={{ selected, disabled }} disabled={disabled} onPress={onPress} style={{ minHeight: touch.min, paddingHorizontal: space[3], justifyContent: 'center', opacity: disabled ? 0.5 : 1 }}>

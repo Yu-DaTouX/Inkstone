@@ -1,19 +1,9 @@
-/**
- * 远程 MCP 登记（`src/shared/mcp-registration.ts` + `src/main/capabilities/registration-service.ts`，实施-04 S6b-1）。
- *
- * 这一片能验的是三件事：
- *   ① **判断**（端点是不是安全、ID 会不会撞、授权覆盖了没有）—— 纯逻辑，直接构造候选；
- *   ② **真文件**（核验失败时配置一个字节都不写、登记后受管记录与授权落盘、原始条目不被改写）；
- *   ③ **真协议**（起一个真的 Streamable HTTP MCP fixture，让默认 probe 走一次官方 SDK 握手 + tools/list）。
- * 下载器 / `pi install` 是 S6b 后续片，这里一行都不碰。
- */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-/** 与 `mcp-http-fixture.mjs` 的默认端口区分开：单测和 live 可能同时跑。 */
 const FIXTURE_PORT = 39331
 
 function baseCandidate(overrides = {}) {
@@ -74,8 +64,6 @@ export async function runMcpRegistrationTests(ok, modules) {
   const { shared, service } = modules
   const { McpRegistrationService } = service
 
-  /* ------------------------------------------------- 1. 端点选取（纯逻辑） */
-
   {
     const candidate = baseCandidate()
     ok(
@@ -95,8 +83,6 @@ export async function runMcpRegistrationTests(ok, modules) {
     )
   }
 
-  /* ------------------------------------------------------ 2. 服务 ID（纯逻辑） */
-
   {
     const a = shared.mcpServerIdOf('mcp-registry:acme/weather@1.2.3', 'https://mcp.acme.test/mcp')
     const b = shared.mcpServerIdOf('mcp-registry:acme/weather@1.2.3', 'https://mcp.acme.test/mcp')
@@ -107,8 +93,6 @@ export async function runMcpRegistrationTests(ok, modules) {
     const evil = shared.mcpServerIdOf('mcp-registry:../../etc/passwd@1', 'https://x.test/mcp')
     ok(!/[\\/]/.test(evil) && !evil.includes('..'), '服务 ID：路径分隔与 `..` 被清洗掉', evil)
   }
-
-  /* ------------------------------------------------ 3. 配置草案边界（纯逻辑） */
 
   {
     const https = shared.draftRemoteMcpRegistration(baseCandidate())
@@ -159,8 +143,6 @@ export async function runMcpRegistrationTests(ok, modules) {
     ok(!localPkg.ok && localPkg.code === 'not-remote', '草案：本地包不走远程登记分支', localPkg.code)
   }
 
-  /* ---------------------------------------------------- 4. 授权匹配（纯逻辑） */
-
   {
     const auth = { host: 'mcp.acme.test', at: '2026-09-20T10:00:00.000Z', via: 'test' }
     ok(shared.authorizationCovers([auth], 'https://mcp.acme.test/mcp'), '授权：同 host 命中')
@@ -176,8 +158,6 @@ export async function runMcpRegistrationTests(ok, modules) {
     ok(shared.authorizationHostOf('not a url') === null, '授权：非法 URL 返回 null 而不是抛')
   }
 
-  /* ------------------------------------------- 5. 真文件：登记 / 核验 / 复核 */
-
   {
     const root = await mkdtemp(join(tmpdir(), 'yan-mcpreg-'))
     const configFile = join(root, 'mcp-servers.json')
@@ -185,7 +165,6 @@ export async function runMcpRegistrationTests(ok, modules) {
     const draft = shared.draftRemoteMcpRegistration(baseCandidate({ sourceUrls: ['https://registry.modelcontextprotocol.io/x', 'https://mcp.acme.test/mcp'] }))
     ok(draft.ok, '真文件：准备一份 https 草案')
 
-    /* 5.1 核验失败 → 一个字节都不写 */
     {
       const failing = new McpRegistrationService({
         root,
@@ -206,7 +185,6 @@ export async function runMcpRegistrationTests(ok, modules) {
       ok(!existsSync(configFile), '真文件：核验失败时配置文件没有被创建（登记不是「写了再说」）')
     }
 
-    /* 5.2 成功路径：核验 → 写配置 → 写受管记录 */
     {
       const svc = new McpRegistrationService({
         root,
@@ -233,7 +211,6 @@ export async function runMcpRegistrationTests(ok, modules) {
       ok(managed[0].operationId === 'op-1', '真文件：受管记录带着 operationId（卸载只删本次）')
       ok(managed[0].tools.join(',') === 'weather.now,weather.forecast', '真文件：受管记录留下登记时的工具表')
 
-      /* 5.3 授权存储：写读一致 + 幂等 */
       await svc.authorize({ url: 'https://mcp.acme.test/mcp', via: 'test', projectId: 'p1', at: '2026-09-20T10:00:00.000Z' })
       await svc.authorize({ url: 'https://mcp.acme.test/mcp', via: 'test', projectId: 'p1', at: '2026-09-20T11:00:00.000Z' })
       const auths = await svc.listAuthorizations()
@@ -241,7 +218,6 @@ export async function runMcpRegistrationTests(ok, modules) {
       ok(await svc.isAuthorized('https://mcp.acme.test/mcp', 'p1'), '真文件：授权写盘后能读回命中')
       ok(!(await svc.isAuthorized('https://mcp.acme.test/mcp', 'p2')), '真文件：授权按项目隔离')
 
-      /* 5.4 复核：端点被换 / 工具变少都要能被发现 */
       ok((await svc.reverify(managed[0])).ok, '真文件：复核通过（端点一致 + 工具仍在）')
       const fewer = new McpRegistrationService({ root, env, probe: async () => ({ tools: ['weather.now'] }) })
       const fewerCheck = await fewer.reverify(managed[0])
@@ -255,7 +231,6 @@ export async function runMcpRegistrationTests(ok, modules) {
       ok(!swapped.ok && swapped.reasons.join('；').includes('端点已被改'), '真文件：端点在配置里被换掉时复核不放行', swapped.reasons.join('；'))
     }
 
-    /* 5.5 手写条目与 { servers: [...] } 形态都不能被改写 */
     {
       const root2 = await mkdtemp(join(tmpdir(), 'yan-mcpreg2-'))
       const configFile2 = join(root2, 'mcp-servers.json')
@@ -281,7 +256,6 @@ export async function runMcpRegistrationTests(ok, modules) {
       ok(after.servers[1].id === draft2.draft.serverId, '真文件：新条目追加在后面')
     }
 
-    /* 5.6 同名不同端点：拒绝覆盖 */
     {
       const root3 = await mkdtemp(join(tmpdir(), 'yan-mcpreg3-'))
       const configFile3 = join(root3, 'mcp-servers.json')
@@ -308,8 +282,6 @@ export async function runMcpRegistrationTests(ok, modules) {
     await rm(join(tmpdir(), 'yan-mcpreg2-'), { recursive: true, force: true })
     await rm(join(tmpdir(), 'yan-mcpreg3-'), { recursive: true, force: true })
   }
-
-  /* -------------------------------- 6. 本地 stdio：项目范围登记 / 复核 / 冲突 */
 
   {
     const root = await mkdtemp(join(tmpdir(), 'yan-mcpreg-stdio-'))
@@ -364,8 +336,6 @@ export async function runMcpRegistrationTests(ok, modules) {
     ok(conflict === 'server-id-conflict', 'stdio：同名不同命令拒绝覆盖', conflict)
     await rm(root, { recursive: true, force: true })
   }
-
-  /* ------------------------------- 7. 真协议：默认 probe 真的握手 + tools/list */
 
   {
     let fixture

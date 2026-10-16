@@ -1,5 +1,3 @@
-// Deterministic local OpenAI-compatible provider for the PB2 native-exe adapter tests.
-// Loopback only, no real credentials, no network egress. Scripted tool calls then a fixed stream.
 import http from 'node:http'
 
 const defaults = {

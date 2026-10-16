@@ -1,10 +1,3 @@
-/**
- * 快速提问窗口渲染入口（v3 WP-25d）。
- *
- * 无边框 560×160 的浮动输入框：选目标（新会话 / 当前会话）、项目、模型；
- * Enter 发送，Ctrl/Cmd+Enter 发送并在主窗口展开，Esc 关闭，失焦由主进程隐藏。
- * 控件只用 v3 `ui/` 原语，外观在 auxwin.css（仅版面 + 令牌）。
- */
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import './apply-theme'
@@ -68,7 +61,6 @@ function QuickAskApp(): ReactElement {
   const locale = view?.locale ?? 'zh-CN'
   const dict = useMemo(() => auxDict(locale), [locale])
 
-  // RAC 弹层可能吞掉 Escape；窗口级兜底保证随时能关。
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') bridge?.quickAsk.close()

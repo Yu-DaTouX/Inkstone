@@ -1,24 +1,11 @@
-/**
- * 冲突解决时的「两份都留」副本构造（纯函数）。
- *
- * 语义：本机版本继续作为主记录，他端版本落成一个**带来源后缀的新记录**，
- * 让两份都能在本地使用：
- *   · prompt / skill / bookmark / schedule 可以复制成另一个 key；
- *   · settings 是单例（一个 `desktop.json`），无法复制成两份，返回 null，
- *     由调用方改成把远端快照另存到数据目录（见 service.ts 的 resolveConflict）。
- *
- * 只构造数据，不碰文件系统：便于单测，也避免把各存储的路径知识搬到这里。
- */
 import { canonicalJson, shortHash } from './canonical'
 import type { ConflictRecord, SyncRecord, SyncRecordKind } from './types'
 
-/** 人类可读的来源后缀；与冲突记录里展示的 suffix 同源。 */
 function deviceTag(name: string): string {
   const clean = name.replace(/[^\w\u4e00-\u9fa5.-]+/g, ' ').trim()
   return clean || '未知设备'
 }
 
-/** 可作 key / 文件名的 ASCII 后缀；中文设备名退化为短哈希，保证 skill / schedule id 合法。 */
 function asciiTag(name: string, id: string): string {
   const clean = name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '')
   return clean || `device-${shortHash(id, 6)}`
@@ -30,10 +17,6 @@ function keyTail(key: string, prefix: string): string | undefined {
   return name
 }
 
-/**
- * 为他端版本构造一条可落地的本机记录；无法复制（settings / 形状损坏）时返回 null。
- * 永不修改原冲突记录，也不覆盖原 key。
- */
 export function buildConflictCopy(conflict: ConflictRecord): SyncRecord | null {
   const tag = deviceTag(conflict.remoteDeviceName)
   switch (conflict.kind) {
@@ -96,7 +79,6 @@ export function buildConflictCopy(conflict: ConflictRecord): SyncRecord | null {
       }
     }
     case 'settings':
-      /* 单例设置不能复制成第二份本地记录：由调用方另存快照。 */
       return null
     default: {
       const never: never = conflict.kind
@@ -106,7 +88,6 @@ export function buildConflictCopy(conflict: ConflictRecord): SyncRecord | null {
   }
 }
 
-/** 供测试与调用方判断某类别是否支持「复制成两份」。 */
 export function supportsConflictCopy(kind: SyncRecordKind): boolean {
   return kind !== 'settings'
 }

@@ -1,10 +1,3 @@
-/**
- * 设置 → 通知与提醒（v3）。
- *
- * 真实接入现有 `settings.sound`：系统通知、提示音总开关、按事件（完成 / 需要回答 /
- * 出错）开关、音量与试听。系统通知试发走既有 `window.yan.notifyAttention`。
- * 尚无后端开关的项（勿扰、手机推送、迷你小窗）不渲染占位行。
- */
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import type { SoundEvent, SoundSettings } from '../../../../../shared/ipc'

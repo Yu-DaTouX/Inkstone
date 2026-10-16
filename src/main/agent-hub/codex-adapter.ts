@@ -8,7 +8,6 @@ export interface CodexEvents {
   exit(error?: string): void
 }
 
-/** JSONL 双向协议；只认正式 turn 状态，不从静默或子进程退出猜任务成功。 */
 export class CodexAdapter {
   private child: ChildProcessWithoutNullStreams | null = null
   private sequence = 0
@@ -41,7 +40,6 @@ export class CodexAdapter {
     })
     await this.call('initialize', { clientInfo: { name: 'inkstone', title: 'Inkstone', version: '0.5.1' } })
     this.send({ method: 'initialized', params: {} })
-    // 每次 thread/start/resume 传会话级配置；不改用户的 CODEX_HOME 与登录。
     this.config = config
   }
   private config: Record<string, unknown> = {}
@@ -55,7 +53,6 @@ export class CodexAdapter {
     const result = await this.call('model/list', { includeHidden: true })
     return result.data
   }
-  /** Images go as local-image input; if this Codex build rejects that, the turn is retried with text only (paths are already in the text). */
   async turn(threadId: string, text: string, effort?: 'low' | 'medium' | 'high', images: string[] = []): Promise<string> {
     const start = (input: unknown[]) => this.call('turn/start', { threadId, input, ...(effort ? { effort } : {}) })
     const textInput = { type: 'text', text }

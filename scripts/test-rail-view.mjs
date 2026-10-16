@@ -1,8 +1,3 @@
-/**
- * 左栏视图（src/shared/rail-view.ts）的分区与排序。纯函数，不起界面。
- *
- * 单独运行：node scripts/test-rail-view.mjs
- */
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
 
@@ -10,7 +5,6 @@ export async function runRailViewTests(ok) {
   await build({ entryPoints: ['src/shared/rail-view.ts'], outfile: 'out/test/rail-view.mjs', bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
   const { normalizeRailView, buildRailSections, compareBy, dateSectionOf, DEFAULT_RAIL_VIEW } = await import(pathToFileURL('out/test/rail-view.mjs').href)
 
-  // 固定「现在」为本地 2026-10-08 10:00，日期分区不依赖测试运行的时刻。
   const at = (d, h = 12) => new Date(2026, 9, d, h, 0, 0).getTime()
   const now = at(8, 10)
   const mk = (path, title, activity, created = activity) => ({ path, title, createdAt: created, updatedAt: activity, lastActivityAt: activity })

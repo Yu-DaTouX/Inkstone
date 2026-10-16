@@ -1,7 +1,3 @@
-/**
- * 回退代码确认框：能打开、对不存在的检查点明确报错、Esc 关闭。
- * 真实回退逻辑在 test-checkpoints.mjs（真 git、临时目录）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {

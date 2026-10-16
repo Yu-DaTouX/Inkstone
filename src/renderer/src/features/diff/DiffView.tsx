@@ -1,19 +1,3 @@
-/**
- * DiffView：把一段统一 diff 文本渲染成统一 / 并排两种视图。**纯 UI**，不做 IO。
- *
- * 数据从哪来不归它管 —— 调用方把补丁字符串给它即可（`git diff` 的输出、
- * 工具结果里的 patch、宿主以后接上的 diff 通道都一样）。因此它可以脱离
- * Electron 单独用合成补丁测。
- *
- * 设计约束（来自 DESIGN_SYSTEM「工具详情」与 R4 合同）：
- * · 逐行红删绿加，保留原始符号；
- * · 行号只取补丁里真实写着的，缺 hunk 头时留空，不编造；增删统计只数实际行；
- * · 并排视图用词级差异高亮真正变化的词元；
- * · 成片的未改动行折叠，可展开；
- * · hunk 上下跳转；
- * · 长补丁用 virtua 虚拟列表；
- * · 二进制 / 超大内容明确降级，不硬塞乱码。
- */
 import { useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { VList, type VListHandle } from 'virtua'
 import { ChevronDown, ChevronUp, Columns2, Rows3 } from 'lucide-react'
@@ -34,27 +18,16 @@ import { wordDiff } from './word-diff'
 import './diff-view.css'
 
 export interface DiffViewProps {
-  /** 统一 diff 文本（可含多个文件）。 */
   patch: string
-  /** 单文件补丁的标题；缺省不显示额外标题栏。 */
   title?: string
-  /** 受控视图模式；给了它就必须同时处理 `onModeChange`。 */
   mode?: DiffViewMode
   defaultMode?: DiffViewMode
   onModeChange?: (mode: DiffViewMode) => void
-  /** 折叠未改动段时保留的上下文行数，默认 3。 */
   context?: number
-  /** 是否显示文件头（多文件补丁建议保留）。 */
   showFileHeader?: boolean
-  /** `useI18n()` 的语言；缺省中文。 */
   lang?: string
   className?: string
-  /** 正文渲染的软上限（字节），默认 `DIFF_LIMITS.maxBytes`。 */
   maxBytes?: number
-  /**
-   * 给真实行挂附加内容（评审批注标记等）。`side` 是行所属的一侧；补丁里没有
-   * 行号的行走不到这里。返回节点渲染在该行文本之后，不改行号也不占列宽。
-   */
   lineSlot?: (line: DiffLine, side: 'new' | 'old') => ReactNode
 }
 
@@ -85,7 +58,6 @@ export function DiffView({
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [hunkCursor, setHunkCursor] = useState(-1)
   const [forceLarge, setForceLarge] = useState(false)
-  /* 补丁换了就重置展开 / 导航游标；渲染期派生状态重置是 React 认可的写法 */
   const [seenPatch, setSeenPatch] = useState(patch)
   if (seenPatch !== patch) {
     setSeenPatch(patch)

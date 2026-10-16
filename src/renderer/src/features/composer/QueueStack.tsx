@@ -2,15 +2,6 @@ import { History, CornerUpRight, Send, Undo2, X } from 'lucide-react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 
-/**
- * 输入框上方的消息栈（WP-24）：悬着的（还没投给 pi）+ pi 队列里的。
- *
- * 两层语义不能混：
- *   · `pendingSends` —— 渲染端内存里的待投递项，用户点「插话 / 排队」才投；
- *   · `queue.steering` / `queue.followUp` —— pi 已经收下的（插话中 / 排队中）。
- *     每行的「撤回」只操作**仍在队列快照里**的条目；目标一被 pi 取走
- *     就从快照消失，不会给出虚假的撤回成功。
- */
 export function QueueStack() {
   const t = useT()
   const queue = useStore((s) => s.queue)

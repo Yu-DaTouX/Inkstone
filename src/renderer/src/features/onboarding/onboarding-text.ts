@@ -1,10 +1,3 @@
-/**
- * v3 首次引导自己的短文案（中 / 英）。
- *
- * 为什么不写进两份共享 i18n JSON：那是并行批次共用的热点，v3 尚未定稿；
- * 键面只属于本模块，等引导界面定稿后再统一并入 i18n。取用方式与
- * `settings-text.ts` / `v3-text.ts` 一致：按当前语言返回同一形状的对象。
- */
 import type { Lang } from '../../i18n'
 
 export interface OnboardingText {

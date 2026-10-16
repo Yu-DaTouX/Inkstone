@@ -1,11 +1,3 @@
-/**
- * 布局宽度扫描：不同窗口尺寸下，三栏各占多少、对话区还剩多少。
- *
- * 用于给 P0-2「窄屏规则」取基线数据（方案 3.2 要求断点由实机测量确定，
- * 不拍脑袋写死）。只做测量 + 一条最小可用宽度断言，不改任何东西。
- *
- * 由 test-live 的 wins 跑多档，每档一个独立进程。
- */
 ;(async () => {
   const out = []
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -56,23 +48,19 @@
       if (rail?.w > 60 && railInner?.hidden) out.push('    ✗ 左栏占位但内容被 display:none 隐藏（白白吃掉宽度）')
     }
 
-    /* ① 左栏展开 + 右栏开 */
     store.getState().setRailPinned(true)
     if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
     await sleep(700)
     report('① 左栏展开 / 右栏开')
 
-    /* ② 左栏收起（紧凑轨） */
     store.getState().setRailPinned(false)
     await sleep(500)
     report('② 左栏收起 / 右栏开')
 
-    /* ③ 右栏也收起（最窄可用态） */
     await store.getState().toggleRightPanel()
     await sleep(500)
     report('③ 左栏收起 / 右栏关')
 
-    /* ④ 恢复左栏展开、右栏关 —— 用户回到宽屏时的常见组合 */
     store.getState().setRailPinned(true)
     await sleep(500)
     report('④ 左栏展开 / 右栏关')

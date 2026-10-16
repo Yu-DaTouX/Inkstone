@@ -12,12 +12,10 @@ export interface PiExecutorOptions {
   authorityToken: string
 }
 
-/** Uses the existing JSONL client and official pi model/session loop. */
 export class PiExecutor {
   readonly rpc: PiRpc
   constructor(task: ServiceTask, options: PiExecutorOptions) {
     const env: NodeJS.ProcessEnv = {}
-    // Preserve only OS runtime necessities; provider tokens never inherit implicitly.
     for (const key of ['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA']) {
       if (process.env[key]) env[key] = process.env[key]
     }

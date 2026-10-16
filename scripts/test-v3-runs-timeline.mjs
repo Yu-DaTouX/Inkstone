@@ -1,20 +1,7 @@
-/**
- * v3 运行时间线布局单测（WP-54）。
- *
- * 现场用 esbuild 编译纯逻辑 `src/renderer/src/features/runs/runs-timeline-model.ts`，
- * 不启动 Electron、不读运行历史文件：
- *   · 当天时间窗口与刻度标签；
- *   · 一天 200 个运行的合成数据：泳道数、排序、色段位置范围、跨零点夹取、
- *     缺 `segments` 的回退，以及布局耗时上限；
- *   · 虚拟化窗口的区间与上下占位高度。
- *
- * 可独立执行：node scripts/test-v3-runs-timeline.mjs
- */
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
-/** 200 条合成记录：结束时间散布在当天，每条 3 段，覆盖全部状态色。 */
 function syntheticRecords(day, count = 200) {
   const { from } = dayWindow(day)
   const phases = ['running', 'needs-you', 'stalled', 'done', 'failed']
@@ -64,7 +51,6 @@ async function loadModel() {
 
 const { dayWindow, tickLabel, layoutDayTimeline, visibleLaneRange, DAY_TICKS } = await loadModel()
 
-/* ── 1. 当天窗口与刻度 ─────────────────────────────────────── */
 const day = '2026-01-02'
 const window2026 = dayWindow(day)
 assert.equal(window2026.from, new Date(2026, 0, 2).getTime(), '起点是当天本地 00:00')
@@ -75,7 +61,6 @@ assert.equal(tickLabel(0), '00:00')
 assert.equal(tickLabel(6), '06:00')
 assert.equal(tickLabel(24), '24:00')
 
-/* ── 2. 200 条合成数据的布局正确性与耗时 ─────────────────── */
 const records = syntheticRecords(day)
 const started = performance.now()
 const layout = layoutDayTimeline(records, day)
@@ -100,7 +85,6 @@ for (const lane of layout.lanes) {
   }
 }
 
-/* ── 3. 跨零点与当天外记录 ──────────────────────────────── */
 const dayFrom = window2026.from
 const crossing = {
   runId: 'cross',
@@ -122,7 +106,6 @@ assert.equal(lane.segments[0].left, 0)
 assert.ok(Math.abs(lane.segments[0].width - 1 / 24) < 1e-9, '跨零点色段宽度是 1/24 天')
 assert.equal(lane.durationMs, 7_200_000, '泳道总时长仍显示真实值')
 
-/* ── 4. 缺 segments 的回退与完全在当天之外的记录 ─────────── */
 const fallback = {
   runId: 'fb',
   code: 'S8',
@@ -146,7 +129,6 @@ assert.ok(Number.isFinite(taken[0].segments[0].left), '边界回退不产生 NaN
 
 assert.deepEqual(layoutDayTimeline([], day).lanes, [], '空输入返回空泳道')
 
-/* ── 5. 虚拟化窗口 ───────────────────────────────────────── */
 const top = visibleLaneRange(0, 320, 24, 200, 4)
 assert.equal(top.start, 0)
 assert.equal(top.end, Math.ceil(320 / 24) + 8 + 1)

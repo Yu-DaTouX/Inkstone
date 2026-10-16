@@ -1,13 +1,3 @@
-/**
- * 内部 agent 分工（实施-25 P15）—— 任务输入 / 并行适合度 / 结果汇总。
- *
- * 四条最值得钉住的：
- *   · **输入不猜**：不知道的字段就是没有，不替调用方编；
- *   · **并行适合度清单只有一个出口**（避免三份「适合并行」定义）；
- *   · **摘要如实标来源**：它取的是「最后那段话」，不是子代理自报的结论；
- *   · **未决问题恒为空**：判断哪句是未决问题属于理解，宿主不替主 agent 下结论。
- */
-
 export function runSubagentBriefTests(ok, mod) {
   const {
     parseSubagentBrief,
@@ -19,7 +9,6 @@ export function runSubagentBriefTests(ok, mod) {
     SUBAGENT_SUMMARY_MAX
   } = mod
 
-  /* ---- 任务输入 ---- */
   {
     const minimal = parseSubagentBrief(undefined, '查一下这两个模块')
     ok(minimal.ok && minimal.brief.goal === '查一下这两个模块', '只给任务描述时，目标就用它')
@@ -67,7 +56,6 @@ export function runSubagentBriefTests(ok, mod) {
     ok(explicitDeadline.ok && explicitDeadline.brief.timeoutMinutes === 10, '显式总期限仍可选择')
   }
 
-  /* ---- 结果汇总 ---- */
   {
     const transcript = [
       { role: 'user', text: '开始吧' },
@@ -109,7 +97,6 @@ export function runSubagentBriefTests(ok, mod) {
     ok(long.summaryTruncated && [...long.summary].length === SUBAGENT_SUMMARY_MAX + 1, '超长摘要截断并带省略号')
     ok(long.summary.endsWith('…'), '截断用省略号标明')
 
-    /* 只读子任务的转录里没有 diff，成果为空但来源仍在 */
     const readOnly = summarizeSubagentRun(
       {
         transcript: [

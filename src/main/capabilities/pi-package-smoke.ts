@@ -133,7 +133,6 @@ async function collectSkillFiles(packageRoot: string, entries: readonly string[]
   return files
 }
 
-/** Review every file that a pi package declares through `pi.skills` before Pi can load it. */
 export async function reviewPiPackageSkills(packageRoot: string, manifest: unknown): Promise<SkillSecurityReview> {
   const pkg = object(manifest)
   const pi = object(pkg?.pi)
@@ -192,7 +191,6 @@ async function extensionFiles(packageRoot: string, entry: string): Promise<strin
   return found
 }
 
-/** Expand the package's in-root Pi resource paths/globs before running the offline smoke. */
 export async function resolvePiPackageSmokeResources(
   packageRoot: string,
   manifest: unknown
@@ -280,10 +278,6 @@ async function waitForMarker(marker: string, errors: string[], timeoutMs: number
   return false
 }
 
-/**
- * Start exact staged resources with a credential-clean, offline, no-session Pi.
- * This is process isolation only; candidate code still runs with the desktop user's OS permissions.
- */
 export async function smokeStagedPiPackage(input: {
   root: string
   operationId: string
@@ -327,7 +321,6 @@ export async function smokeStagedPiPackage(input: {
       if (event.type === 'extension_error') failures.push('Pi 报告扩展加载错误')
     })
     rpc.on('stderr', () => {
-      /* Candidate stderr may contain arbitrary content; do not copy it into user-facing diagnostics. */
     })
     rpc.spawn()
     const commands = await rpc.command<{ commands?: unknown[] }>('get_commands', {}, { timeoutMs: input.timeoutMs ?? 20_000 })
@@ -350,7 +343,6 @@ export async function smokeStagedPiPackage(input: {
   }
 }
 
-/** Adapter for the scheduler, kept free of any candidate-specific test behavior. */
 export function stagedPiPackageSmokePort(input: {
   root: string
   piBin?: string

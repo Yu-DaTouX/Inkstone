@@ -50,7 +50,6 @@ body{margin:0}
 <span style="font-size: 12px; color: var(--accent);">v0.5 草案</span>
 </div>
 
-<!-- 令牌条 -->
 <div style="display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; font-size: 11px;">
 <div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-right: 1px solid var(--border-soft);"><span style="color: var(--fg-mute);">--mo-fast</span><span style="font-size: 15px; color: var(--fg);">110ms</span><span style="color: var(--fg-mute);">退场 · 按压 · 悬停</span></div>
 <div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-right: 1px solid var(--border-soft);"><span style="color: var(--fg-mute);">--mo-base</span><span style="font-size: 15px; color: var(--fg);">170ms</span><span style="color: var(--fg-mute);">淡入 · 图标切换</span></div>
@@ -64,7 +63,6 @@ body{margin:0}
 
 <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 16px; flex-grow: 1; min-height: 0;">
 
-<!-- 1 曲线 -->
 <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
 <h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">01 </span>同一条曲线</h2>
 <svg width="100%" height="88" viewBox="0 0 240 88" fill="none" aria-label="缓动曲线">
@@ -81,7 +79,6 @@ body{margin:0}
 <span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">快进慢停；三档只差时长</span>
 </section>
 
-<!-- 2 展开 -->
 <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
 <h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">02 </span>新块从高度 0 展开</h2>
 <div style="border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; font-size: 12px; background: var(--bg-0);">
@@ -95,7 +92,6 @@ body{margin:0}
 <span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">高度 + 透明度同步，旧内容被连续推开，不跳</span>
 </section>
 
-<!-- 3 打字 -->
 <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
 <h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">03 </span>逐字输出 · 光标</h2>
 <div style="padding: 12px; border-radius: 6px; background: var(--code-bg); border: 1px solid var(--border-soft); font-size: 13px; display: flex; flex-direction: column; gap: 6px;">
@@ -109,7 +105,6 @@ body{margin:0}
 <span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">按字符步进，不做渐隐；块光标 = 终端身份</span>
 </section>
 
-<!-- 4 运行态 -->
 <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
 <h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">04 </span>运行中才循环</h2>
 <div class="orbit" style="position: relative; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 12px; border: 1px solid var(--accent-soft); border-radius: 8px; background: var(--bg-0); font-size: 12px; color: var(--fg-dim);"><span class="spin"></span><span style="flex-grow: 1;">执行 npm run typecheck</span><span style="font-size: 11px; color: var(--fg-mute);">00:07</span></div>
@@ -121,7 +116,6 @@ body{margin:0}
 <span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">结束即停；循环从不作为唯一的状态信息</span>
 </section>
 
-<!-- 5 状态切换 -->
 <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
 <h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">05 </span>状态交叉淡变</h2>
 <div style="display: flex; align-items: stretch; height: 24px; background: var(--bg-0); border: 1px solid var(--border-soft); border-radius: 6px; overflow: hidden; font-size: 11px; color: var(--fg-mute);">
@@ -138,7 +132,6 @@ body{margin:0}
 <span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">颜色 240ms 过渡；文字叠放交叉淡变，宽度固定不抖</span>
 </section>
 
-<!-- 6 滑块 -->
 <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
 <h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">06 </span>分段滑块</h2>
 <div role="group" aria-label="视图演示" style="position: relative; display: flex; align-self: flex-start; padding: 2px; border-radius: 6px; background: var(--bg-0); border: 1px solid var(--border-soft); font-size: 12px;">
@@ -150,7 +143,6 @@ body{margin:0}
 <span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">选中底块滑过去，而不是闪到新位置</span>
 </section>
 
-<!-- 7 面板 -->
 <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1); grid-column: span 2;">
 <h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">07 </span>浮层开合 · 入场慢、退场快</h2>
 <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start;">

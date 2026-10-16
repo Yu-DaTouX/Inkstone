@@ -23,36 +23,11 @@ import {
   type NativeTrustLoad
 } from '../../../../shared/native-session'
 
-/**
- * pi 原生操作面板：会话树 / 模型循环范围 / 项目信任（同一组件按 `mode` 分）。
- *
- * ── 边界 ──
- * · 只做投影与交互，**不碰 pi**：数据由父层 `load()` 取，动作交给 `onAction()`。
- *   主会话负责把 `load` 接到 `get_tree` / 模型列表 / `trust.json`，把 `onAction`
- *   接到对应的原生写入。为什么这样做：三块的原生入口各不相同（RPC、设置文件、
- *   扩展上下文），面板不该替它们选路径。
- * · 复用既有浮层基座（`useModalLayer` + `useFocusTrap` + `acquireOverlayBlocker`），
- *   不新造遮罩与焦点逻辑；外观复用 `.modal` / `.btn` / `.ui-list-row` / `.ui-badge`。
- * · 树只投影 pi 持久条目与当前 leaf，**不改写会话文件**；导航只发稳定 `entryId`。
- * · 不恢复退役的会话地图。
- *
- * ── 可靠性 ──
- * · 迟到响应：每次加载/刷新带自增 run 号，组件卸载或 `resetKey` 变化后到达的
- *   一律丢弃 —— 会话切换时旧树不会覆盖新会话。
- * · 深树与环：由 `shared/native-session.ts` 的纯函数限量，面板只显示保护统计。
- * · 破坏性与不可逆动作不在这里做：信任只授予不撤销，导航由原生自己维护历史。
- */
-
 export interface NativeSessionPanelProps {
   mode: NativeSessionMode
   onClose: () => void
-  /** 取当前 mode 的数据；返回带 mode 标签的联合类型，面板会核对是否匹配。 */
   load: () => Promise<NativeSessionLoadResult>
   onAction: NativeSessionAction
-  /**
-   * 会话身份变化的信号（父层可直接传 `sessionId`）。变化即重新加载，
-   * 并让此前在途的响应失效。
-   */
   resetKey?: string
 }
 
@@ -97,14 +72,12 @@ const KIND_LABEL: Record<NativeEntryKind, string> = {
 
 export function NativeSessionPanel({ mode, onClose, load, onAction, resetKey }: NativeSessionPanelProps) {
   const t = useT()
-  /* 本轮新增的键由主会话加入两份 i18n；键还没落地时先收窄，避免本文件被 i18n 阻塞。 */
   const tx = useCallback((key: string, vars?: TVars): string => t(key as MessageKey, vars), [t])
 
   const titleId = useId()
   const panel = useRef<HTMLDivElement>(null)
   const { isTop } = useModalLayer(true, onClose)
   useFocusTrap(panel, true, isTop)
-  /* 原生网页视图要让位（与其它对话框同一协议）。 */
   useEffect(() => useStore.getState().acquireOverlayBlocker('native-session'), [])
 
   const [state, setState] = useState<LoadState>({ phase: 'loading' })
@@ -116,7 +89,6 @@ export function NativeSessionPanel({ mode, onClose, load, onAction, resetKey }: 
   useEffect(() => {
     aliveRef.current = true
     return () => {
-      /* 卸载即作废在途响应，避免关面板后旧数据回写。 */
       aliveRef.current = false
       runRef.current += 1
     }
@@ -146,7 +118,6 @@ export function NativeSessionPanel({ mode, onClose, load, onAction, resetKey }: 
     setState({ phase: 'ready', data: result })
   }, [mode, read, tx])
 
-  /** 就地刷新（导航后同步 leaf），不闪 loading、不丢树上的折叠状态。 */
   const refreshTree = useCallback(async (): Promise<NativeTreeLoad | null> => {
     const run = ++runRef.current
     const result = await read()
@@ -221,8 +192,6 @@ export function NativeSessionPanel({ mode, onClose, load, onAction, resetKey }: 
 
 type Tx = (key: string, vars?: TVars) => string
 
-/* ------------------------------------------------------------------ 会话树 */
-
 function TreeMode({
   data,
   onAction,
@@ -240,7 +209,6 @@ function TreeMode({
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
-  /* 首次挂载就把焦点落到选中行，键盘用户不必先 Tab 一圈。 */
   const wantFocus = useRef(true)
 
   const view = useMemo(() => buildTreeView(data.tree, data.leafId, collapsed), [data, collapsed])
@@ -480,8 +448,6 @@ function TreeRow({
   )
 }
 
-/* ------------------------------------------------------------ 模型循环范围 */
-
 function ScopeMode({
   data,
   onAction,
@@ -597,8 +563,6 @@ function ScopeMode({
     </>
   )
 }
-
-/* ------------------------------------------------------------------ 项目信任 */
 
 function TrustMode({ data, onAction, tx }: { data: NativeTrustLoad; onAction: NativeSessionAction; tx: Tx }) {
   const [busy, setBusy] = useState(false)

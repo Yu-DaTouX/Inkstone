@@ -1,5 +1,4 @@
 @layer features {
-  /* 运行总览页（WP-14）的版面；控件外观归 ui/patterns。 */
 
   .runs-page {
     flex: 1;
@@ -54,7 +53,6 @@
     font-size: var(--t-body);
   }
 
-  /* 工具栏：筛选 / 搜索在左，批选与批量停止在右；控件外观在 ui/，这里只管版面。 */
   .runs-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -97,7 +95,6 @@
     line-height: 1.5;
   }
 
-  /* 一行 = 复选框 + 运行行；行本体仍是可点按钮。 */
   .runs-item {
     display: flex;
     align-items: center;
@@ -109,7 +106,6 @@
     min-width: 0;
   }
 
-  /* ── 运行历史：日期切换 + 时间线 ── */
   .runs-history-head {
     display: flex;
     flex-wrap: wrap;
@@ -152,7 +148,6 @@
     text-align: center;
   }
 
-  /* ── 运行时间线：横向 24 小时轴 + 每天泳道 ── */
   .runs-tl {
     border: 1px solid var(--line);
     border-radius: var(--r-md);
@@ -281,7 +276,6 @@
     background: var(--line2);
   }
 
-  /* ── 用量区：当日历史汇总 + 实时子 Agent 并发 ── */
   .runs-usage {
     display: flex;
     flex-wrap: wrap;
@@ -362,7 +356,6 @@
     background: var(--line2);
   }
 
-  /* ── 批量停止确认 ── */
   .runs-confirm-body {
     margin: 0;
     color: var(--fg2);

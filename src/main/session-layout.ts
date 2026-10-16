@@ -1,10 +1,3 @@
-/**
- * 会话与项目的产品语义映射。
- *
- * pi 继续拥有 JSONL 会话文件及其目录结构；Yan 只在自己的数据目录维护
- * sessionId -> projectId / scope / 最近访问时间。这样“项目内会话”不等同于
- * 把隐藏文件写进仓库，也不会破坏 pi 或后续同步层读取会话。
- */
 import { parsePersistedDocument } from './persisted-document'
 import { readFile, mkdir, writeFile, rename, copyFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -18,7 +11,6 @@ import type {
   SessionSummary
 } from '../shared/ipc'
 import { YAN_DIR } from './paths'
-/* 路径身份归一化只有一份（渲染端左栏也用同一份，见文件头注释） */
 import { normalizeLayoutPath } from '../shared/session-path'
 
 export { normalizeLayoutPath }
@@ -33,12 +25,9 @@ export interface RememberSessionInput {
   cwd: string
   projectId?: string
   scope?: SessionScope
-  /** 主题空间归属（`null` = 移出空间；不传 = 保留原值）。 */
   spaceId?: string | null
   opened?: boolean
-  /** true = 归档、false = 取消归档；不传保留原值。 */
   archived?: boolean
-  /** 同上，置顶。 */
   pinned?: boolean
 }
 
@@ -55,7 +44,6 @@ function now(): number {
   return Date.now()
 }
 
-/** Windows 路径比较只用于身份匹配，不改变展示和落盘的原始路径。 */
 function scopeFor(projectId: string | undefined, scope: SessionScope | undefined): SessionScope {
   if (scope === 'pending') return 'pending'
   if (scope === 'project' && projectId) return 'project'
@@ -86,7 +74,6 @@ function sanitizeEntry(item: unknown): SessionLayoutEntry | null {
     .map((x) => x.slice(0, 80))
     .slice(0, 20)
   const projectId = typeof o.projectId === 'string' && o.projectId.trim() ? o.projectId.slice(0, 80) : undefined
-  /* 空间归属与项目归属是两个独立维度：一个没有不代表另一个也要没。 */
   const spaceId = typeof o.spaceId === 'string' && o.spaceId.trim() ? o.spaceId.slice(0, 80) : undefined
   const scope: SessionScope = o.scope === 'project' || o.scope === 'pending' ? o.scope : 'global'
   const createdAt = Number.isFinite(o.createdAt) ? Number(o.createdAt) : now()
@@ -203,10 +190,6 @@ function migratedEntry(summary: SessionSummary, projects: ProjectRecord[], at: n
   }
 }
 
-/**
- * 把旧会话迁移到 layout 索引并把归属投影回列表。
- * 精确 cwd 只有一个项目时可确定迁移；多个候选会保留 pending，不静默选项目。
- */
 export async function decorateSessions(
   summaries: SessionSummary[],
   projects: ProjectRecord[]
@@ -249,7 +232,6 @@ export async function decorateSessions(
   return projected
 }
 
-/** 记录新建/打开会话；只更新 Yan 索引，不移动 pi 的 JSONL 文件。 */
 export async function rememberSession(input: RememberSessionInput): Promise<SessionLayoutEntry> {
   if (!input.sessionId.trim()) throw new Error('缺少 sessionId')
   const result = await update((document) => {
@@ -276,7 +258,6 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
       cwd: input.cwd || previous?.cwd || '',
       scope: nextScope,
       ...(input.projectId ? { projectId: input.projectId } : {}),
-      /* 空间归属独立于 scope：不传保留原值，传 null 才是移出 */
       ...(input.spaceId === undefined
         ? previous?.spaceId
           ? { spaceId: previous.spaceId }
@@ -290,7 +271,6 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
       createdAt: previous?.createdAt ?? at,
       updatedAt: at,
       ...(input.opened === false ? { lastOpenedAt: previous?.lastOpenedAt } : { lastOpenedAt: at }),
-      /* 归档与置顶只在显式传入时变；其余写入（打开、移动、归属空间）原样带过 */
       ...(archivedAt ? { archivedAt } : {}),
       ...(pinned ? { pinned: true } : {}),
       moveHistory: history.slice(-MAX_HISTORY)
@@ -304,7 +284,6 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
   return entry
 }
 
-/** 移动会话只改产品归属，不停止 runner，也不移动物理会话文件。 */
 export async function moveSessionLayout(input: MoveSessionInput, projectId: string | null): Promise<SessionLayoutEntry> {
   return rememberSession({
     sessionId: input.sessionId,
@@ -315,14 +294,6 @@ export async function moveSessionLayout(input: MoveSessionInput, projectId: stri
   })
 }
 
-/**
- * 设置会话的主题空间归属（实施-25 P02）。
- *
- * 与 `moveSessionLayout` 同一个边界：只改 Yan 的产品归属，不移动 pi 的 JSONL。
- *
- * ⚠️ 先把现有条目读出来带回 `projectId` / `scope` —— `rememberSession` 会用
- * 传入值重算 scope，只传 spaceId 会把项目归属冲成 `global`（那是另一个维度）。
- */
 export async function setSessionSpace(input: MoveSessionInput, spaceId: string | null): Promise<SessionLayoutEntry> {
   const doc = await getSessionLayout()
   const index = findEntryIndex(doc.entries, input.sessionId, input.sessionFile)
@@ -339,12 +310,6 @@ export async function setSessionSpace(input: MoveSessionInput, spaceId: string |
   })
 }
 
-/**
- * 设置会话的归档 / 置顶标记。
- *
- * 与 `setSessionSpace` 同一个边界：先读出现有条目带回项目归属，否则 `rememberSession`
- * 会按传入值重算 scope，把项目归属冲成 global。
- */
 export async function setSessionFlags(
   input: MoveSessionInput,
   flags: { archived?: boolean; pinned?: boolean }
@@ -362,7 +327,6 @@ export async function setSessionFlags(
   })
 }
 
-/** 一次写入多条会话的归档标记（自动归档用），避免逐条重写整份索引。 */
 export async function archiveSessionsBatch(sessionIds: readonly string[]): Promise<number> {
   const ids = new Set(sessionIds)
   if (!ids.size) return 0

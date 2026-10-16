@@ -1,17 +1,3 @@
-/**
- * pi 包管理的单测（方案 §9 的 P2）。
- *
- * ── 为什么必须**真实**跑一次 pi 的 CLI ──
- * 「登记在 settings.json 的 packages 里」和「磁盘上真的有这个包」是两件事：
- * 前者只是 pi 的一个字符串数组，后者取决于 pi 自己怎么装（实测本地路径源
- * **不复制**，存的是一条相对 agent 目录的路径）。合成一个 settings.json
- * 去测，永远发现不了 `..\my-ext` 这种形态。
- *
- * ── 隔离 ──
- * 全程用临时 agent 目录（通过 `configurePackageContext({ agentDir })` 注入）。
- * 测试**绝不碰**真实用户的 `~/.pi/agent` —— 那里有用户自己装的包。
- * 用本地路径包，不联网。
- */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -32,7 +18,6 @@ export async function runPackagesTests(ok) {
     configurePackageContext
   } = await import('../out/test/packages.mjs')
 
-  /* ── 1. 纯逻辑：source 的形状 ─────────────────────────── */
   {
     ok(packageNameOf('npm:pi-zh-cn') === 'pi-zh-cn', 'npm: 前缀去掉', packageNameOf('npm:pi-zh-cn'))
     ok(packageNameOf('npm:@scope/pkg') === '@scope/pkg', '@scope 要保住 scope（否则装到错目录）', packageNameOf('npm:@scope/pkg'))
@@ -64,7 +49,6 @@ export async function runPackagesTests(ok) {
     ok(validatePackageSource('foo') !== null, '没有来源前缀的裸名字拒绝（避免猜是 npm 还是 git）', String(validatePackageSource('foo')))
   }
 
-  /* ── 2. settings.json 的 packages 字段 ─────────────────── */
   {
     const root = mkdtempSync(join(tmpdir(), 'yan-pkg-src-'))
     const f = join(root, 'settings.json')
@@ -79,7 +63,6 @@ export async function runPackagesTests(ok) {
     rmSync(root, { recursive: true, force: true })
   }
 
-  /* ── 3. packageDirOf：三种 source 形态 ─────────────────── */
   {
     const agent = 'C:\\agent'
     ok(packageDirOf(agent, 'npm:foo') === join(agent, 'npm', 'node_modules', 'foo'), 'npm 源 → npm/node_modules/<name>')
@@ -93,10 +76,8 @@ export async function runPackagesTests(ok) {
     ok(packageDirOf(agent, '') === null, '空 source 给 null', String(packageDirOf(agent, '')))
   }
 
-  /* ── 3b. 项目级本地包：相对路径按「所在 settings 文件」解析，不是 agentDir ── */
   {
     const root = mkdtempSync(join(tmpdir(), 'yan-pkg-projrel-'))
-    /* agentDir 与项目 .pi 深度刻意不同：旧的「一律按 agentDir 解析」会在这里算错。 */
     const agent = join(root, 'agent', 'nested')
     const pkg = join(root, 'pkgs', 'target')
     mkdirSync(agent, { recursive: true })
@@ -105,7 +86,6 @@ export async function runPackagesTests(ok) {
       join(pkg, 'package.json'),
       JSON.stringify({ name: '@scope/proj-ext', version: '9.9.9', description: '项目级本地包' })
     )
-    /* pi 会把本地源登记成「相对所在 settings 文件目录」的路径。 */
     const fromSettings = relative(join(root, '.pi'), pkg)
     mkdirSync(join(root, '.pi'), { recursive: true })
     writePackageSourcesForTest(join(root, '.pi', 'settings.json'), [fromSettings])
@@ -124,7 +104,6 @@ export async function runPackagesTests(ok) {
     rmSync(root, { recursive: true, force: true })
   }
 
-  /* ── 4. 真实：装 / 列 / 卸（隔离的 agent 目录，本地路径源，不联网）── */
   {
     const root = mkdtempSync(join(tmpdir(), 'yan-pkg-real-'))
     const agent = join(root, 'agent')
@@ -172,13 +151,11 @@ export async function runPackagesTests(ok) {
     ok(removed.ok === true, '真实卸载成功', removed.detail ?? removed.error ?? '')
     ok(listPackages(root).entries.length === 0, '卸载后列表空了', String(listPackages(root).entries.length))
 
-    /* 装一个不存在的 npm 包：失败要如实回来，且带上 pi 的原始输出 */
     const failed = await runPackageAction({ kind: 'install', source: 'npm:this-package-does-not-exist-yan-test-xyz', cwd: root })
     ok(failed.ok === false, '不存在的包 → 失败', String(failed.ok))
     ok((failed.detail ?? '').length > 0, '失败时带回原始输出（排查第一现场）', (failed.detail ?? '').slice(0, 60))
     ok(listPackages(root).entries.length === 0, '失败没有留下半条登记', String(listPackages(root).entries.length))
 
-    /* 受管下载包只能从 staging 安装，且默认阻止生命周期脚本。 */
     const stagedRoot = join(root, 'managed-staging')
     const stagedPackage = join(stagedRoot, 'op-1', 'payload')
     const lifecycleMarker = join(stagedPackage, 'lifecycle-ran.txt')
@@ -243,7 +220,6 @@ export async function runPackagesTests(ok) {
     const managedSource = managedInstalled.listing?.entries.find((e) => e.name === 'yan-managed-ext')?.source
     ok(!!managedSource, '受管包：pi 清单核实了候选名与精确版本')
     if (managedSource) {
-      /* 项目扩展回归探针只覆盖 package 命令；删除后续 remove 用到的配置负担。 */
       writeFileSync(join(root, '.pi', 'settings.json'), JSON.stringify({ packages: [managedSource] }, null, 2))
       const removedManaged = await runPackageAction({ kind: 'remove', source: managedSource, local: true, cwd: root })
       ok(removedManaged.ok, '受管包 fixture 可按项目作用域移除', removedManaged.error ?? '')
@@ -264,11 +240,9 @@ export async function runPackagesTests(ok) {
       }
     }
 
-    /* 参数注入：以 - 开头的 source 在**发起前**就被挡下 */
     const inject = await runPackageAction({ kind: 'install', source: '--no-approve', cwd: root })
     ok(inject.ok === false && !inject.detail, '带选项形状的 source 在发起前被拒（不落到命令行）', String(inject.error))
 
-    /* 有任务在跑 → 拒绝（方案 §9 的「任务的生效时机」）*/
     configurePackageContext({
       agentDir: () => agent,
       bin: () => cli,
@@ -279,15 +253,11 @@ export async function runPackagesTests(ok) {
     ok(/任务/.test(busy.error ?? ''), '说明理由（有任务在运行）', String(busy.error).slice(0, 40))
     ok(listPackages(root).entries.length === 0, '被拒时一个字节都没写', String(listPackages(root).entries.length))
 
-    /* 复位，避免影响别的测试 */
     configurePackageContext({ agentDir: () => agent, bin: () => cli, hasRunningTask: () => false })
 
     rmSync(root, { recursive: true, force: true })
   }
 
-  /* ── 4b. 受管包：agentDir 与项目 .pi 深度不同时，装完仍能在清单里确认 ──
-     生产里 agentDir=`~/.pi/agent`、项目 `.pi` 在项目根，两者深度不同；旧实现
-     一律按 agentDir 解析本地源，于是「pi install 已 Installed 但清单查不到」。 */
   {
     const cli = join(process.cwd(), 'resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')
     const root = mkdtempSync(join(tmpdir(), 'yan-pkg-deep-'))
@@ -319,7 +289,6 @@ export async function runPackagesTests(ok) {
     rmSync(root, { recursive: true, force: true })
   }
 
-  /* ── 5. 「登记着但磁盘上没有」要如实标出来 ─────────────── */
   {
     const root = mkdtempSync(join(tmpdir(), 'yan-pkg-ghost-'))
     const agent = join(root, 'agent')
@@ -332,7 +301,6 @@ export async function runPackagesTests(ok) {
     rmSync(root, { recursive: true, force: true })
   }
 
-  /* ── 6. 管理列表：同一 source 的两级声明均可独立操作 ───── */
   {
     const root = mkdtempSync(join(tmpdir(), 'yan-pkg-scope-'))
     const agent = join(root, 'agent')
@@ -346,28 +314,23 @@ export async function runPackagesTests(ok) {
     rmSync(root, { recursive: true, force: true })
   }
 
-  /* ── 7. 项目级 pi 包目录：runner 显式 `--extension` 的输入 ── */
   {
     const root = mkdtempSync(join(tmpdir(), 'yan-pkg-projectdirs-'))
     const agent = join(root, 'agent')
     mkdirSync(agent, { recursive: true })
     mkdirSync(join(root, '.pi'), { recursive: true })
-    /* 一个真正的 pi 包（带 `pi` 资源字段）+ 一个普通依赖包（无 `pi` 字段）。 */
     const piPkg = join(root, 'pkgs', 'rewind-like')
     const plainPkg = join(root, 'pkgs', 'plain-dep')
     mkdirSync(piPkg, { recursive: true })
     mkdirSync(plainPkg, { recursive: true })
     writeFileSync(join(piPkg, 'package.json'), JSON.stringify({ name: 'rewind-like', version: '1.0.0', pi: { extensions: ['./index.js'] } }))
     writeFileSync(join(plainPkg, 'package.json'), JSON.stringify({ name: 'plain-dep', version: '1.0.0' }))
-    /* 用户级也登记了普通包：用户级不是砚的加载范围。 */
     writePackageSourcesForTest(join(agent, 'settings.json'), [relative(agent, plainPkg)])
-    /* 项目级存相对项目 .pi 的路径（pi 的解析约定）。 */
     const rel = (target) => relative(join(root, '.pi'), target)
     writePackageSourcesForTest(join(root, '.pi', 'settings.json'), [rel(piPkg), rel(plainPkg)])
     const dirs = projectPackageDirs(root, agent)
     ok(dirs.length === 1, '只列项目级且带 pi 字段的包目录（用户级 / 普通包都不算）', JSON.stringify(dirs))
     ok(dirs[0] === resolve(piPkg), '返回解析后的绝对路径（相对源按项目 .pi 解析）', dirs[0])
-    /* 登记着但磁盘上没有 → 不加载（留给诊断页显示）。 */
     writePackageSourcesForTest(join(root, '.pi', 'settings.json'), [rel(join(root, 'missing-pkg'))])
     ok(projectPackageDirs(root, agent).length === 0, '磁盘上不存在的登记项不加载', JSON.stringify(projectPackageDirs(root, agent)))
     rmSync(root, { recursive: true, force: true })

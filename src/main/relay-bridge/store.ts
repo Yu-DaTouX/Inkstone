@@ -1,8 +1,3 @@
-/**
- * 中继桥的持久状态：主机长期密钥、房间密钥、已登记的客户端公钥；一次性中继配对码只在内存里（存哈希）。
- *
- * 文件 `relay-bridge.json` 在砚数据目录，权限 0600。损坏或读取失败时拒绝创建新身份，保留原文件与备份供恢复。
- */
 import { createHash, randomUUID } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, unlink, writeFile, copyFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -15,7 +10,6 @@ export type RelayClientKind = 'phone' | 'agent'
 
 export interface RelayClient {
   id: string
-  /** 客户端长期公钥（base64url） */
   key: string
   name: string
   kind: RelayClientKind
@@ -33,7 +27,6 @@ interface StoredState {
 
 const hash = (code: string) => createHash('sha256').update(code).digest('hex')
 
-/** 房间号：b64u(SHA-256("reef-room:" + secret)) 前 22 位（与礁石中继一致）。 */
 export async function roomIdFor(secret: string): Promise<string> {
   return toB64u(await sha256(new TextEncoder().encode(`reef-room:${secret}`))).slice(0, 22)
 }
@@ -43,7 +36,6 @@ export class RelayBridgeStore {
   private state: StoredState | null = null
   private key: KeyPair | null = null
   private writing: Promise<void> = Promise.resolve()
-  /** code hash → 配对用途 */
   private readonly codes = new Map<string, { kind: RelayClientKind; expiresAt: number }>()
 
   constructor(dir: string, private readonly now: () => number = Date.now) {
@@ -113,7 +105,6 @@ export class RelayBridgeStore {
     return (await this.load()).secret
   }
 
-  /** 生成一次性中继配对码（16 字节随机，10 分钟），绑定这次配对的客户端类型。 */
   startPairing(kind: RelayClientKind): { code: string; expiresAt: number } {
     const code = randomB64u(16)
     const expiresAt = this.now() + RELAY_PAIR_TTL_MS
@@ -122,10 +113,6 @@ export class RelayBridgeStore {
     return { code, expiresAt }
   }
 
-  /**
-   * 握手后的认证：已登记且未撤销的公钥直接通过；否则必须带有效的一次性配对码，通过后登记。
-   * 返回客户端记录；失败返回原因。
-   */
   async authenticate(clientKey: string, name: string, code: string | undefined): Promise<{ ok: true; client: RelayClient } | { ok: false; reason: string }> {
     const state = await this.load()
     const known = state.clients.find((c) => c.key === clientKey)
@@ -136,7 +123,6 @@ export class RelayBridgeStore {
     }
     if (known && known.revokedAt !== null && !code) return { ok: false, reason: '这台设备已被撤销，请重新配对' }
     if (!code) return { ok: false, reason: '需要配对：请在电脑上生成中继配对二维码' }
-    // 配对码是 128 位随机数，只按哈希查表；猜中的概率可以忽略。
     const h = hash(code)
     const entry = this.codes.get(h)
     if (!entry || entry.expiresAt <= this.now()) return { ok: false, reason: '配对码无效或已过期，请在电脑上重新生成' }

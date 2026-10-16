@@ -1,12 +1,3 @@
-/**
- * 受管 Git 的下载 / 校验 / 安装流程（src/main/git-runtime.ts）。
- * 用本机 HTTP 服务代替 GitHub，用桩函数代替 7z 自解压：验的是
- *   · 哈希不符绝不解压、不留下载残留；
- *   · 第一个来源失败会换下一个；
- *   · 进度阶段齐全、安装记录写入；
- *   · 同时只允许一次安装，且能取消。
- * 真正的 PortableGit 自解压要联网下载 60MB，不放进这里。
- */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
@@ -48,7 +39,6 @@ const stubExtract = async (_file, stage) => {
 }
 
 try {
-  /* 1. 第一个来源失败，换第二个；阶段齐全；安装记录写入 */
   {
     const root = join(work, 'a', 'git')
     const phases = []
@@ -60,7 +50,6 @@ try {
     assert.equal(readdirSync(join(root, '..')).filter((name) => name.endsWith('.download.exe')).length, 0, '没有下载残留')
   }
 
-  /* 2. 哈希不符：所有来源都被拒，绝不解压，也不留残留 */
   {
     const root = join(work, 'b', 'git')
     let extracted = false
@@ -72,7 +61,6 @@ try {
     assert.equal(readdirSync(join(root, '..')).filter((name) => name.endsWith('.download.exe')).length, 0)
   }
 
-  /* 3. 同时只允许一次；取消会终止 */
   {
     const root = join(work, 'c', 'git')
     let release
@@ -90,12 +78,10 @@ try {
     release()
   }
 
-  /* 4. 对齐 PATH 不抛错（开发机上系统已有 git 时不改 PATH） */
   const before = process.env.PATH
   await runtime.refreshManagedGit(join(work, 'nonexistent'))
   assert.equal(process.env.PATH, before, '没装受管 Git 时不改 PATH')
 
-  /* 5. 安装位置必须是纯 ASCII：中文用户名下改装到 ProgramData（pi 用 where 找 bash，中文路径会乱码） */
   assert.equal(runtime.hasNonAscii('C:/Users/zhang/x'), false)
   assert.equal(runtime.hasNonAscii('C:/Users/张三/x'), true)
   const slashes = (value) => value.split(String.fromCharCode(92)).join('/')

@@ -1,15 +1,3 @@
-/**
- * 成果框架「宿主形态」的 host-free 回归（WP-32 剩余 · 02 §11/§12.6）。
- *
- * 现场编译真实纯逻辑，在 Node 里直接跑；不启动 Electron、不开 iframe、不读凭证：
- *   src/renderer/src/features/artifacts/model.ts         内联上限/溢出、画中画几何、身份
- *   src/renderer/src/features/artifacts/mermaid-theme.ts 主题变量是否全部来自令牌
- *
- * 另加一条静态守卫：确认 `ArtifactFrame` 的 iframe key 只含身份与主动重载，
- * 形态切换不会把 `form` 带进 key，从而不会重建 iframe（运行时行为仍以窗口为准）。
- *
- *   node scripts/test-v3-artifact-forms.mjs
- */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -31,7 +19,6 @@ async function loadTs(relativePath) {
 const model = await loadTs('../src/renderer/src/features/artifacts/model.ts')
 const mermaid = await loadTs('../src/renderer/src/features/artifacts/mermaid-theme.ts')
 
-/* ── 内联上限与溢出（02 §11.2） ───────────────────────────────── */
 {
   assert.equal(model.inlineMaxHeight(1000), 700, 'min(70vh, 720)')
   assert.equal(model.inlineMaxHeight(2000), 720, 'vh 超过 720 时封顶 720')
@@ -45,7 +32,6 @@ const mermaid = await loadTs('../src/renderer/src/features/artifacts/mermaid-the
   assert.equal(model.inlineOverflows(Number.NaN, 1000), false, '未回报自然高度不假装溢出')
 }
 
-/* ── 画中画几何：拖动 / 缩放 / 夹进视口（02 §11.2） ───────────── */
 {
   const viewport = { width: 1280, height: 800 }
 
@@ -73,13 +59,11 @@ const mermaid = await loadTs('../src/renderer/src/features/artifacts/mermaid-the
     '缩放不低于 PIP_SIZE 下限'
   )
 
-  /* 视口比最大尺寸还小：仍保证左上角至少留边距，不把整块拖没了。 */
   const tiny = model.clampFramePosition({ x: 100, y: 100, width: 720, height: 640 }, { width: 500, height: 400 })
   assert.equal(tiny.x, model.PIP_VIEWPORT_MARGIN)
   assert.equal(tiny.y, model.PIP_VIEWPORT_MARGIN)
 }
 
-/* ── 形态与身份：form 不参与内容身份（02 §11.3） ──────────────── */
 {
   assert.deepEqual([...model.ARTIFACT_FORMS], ['inline', 'panel', 'fullscreen', 'pip'])
   for (const form of model.ARTIFACT_FORMS) assert.equal(model.isArtifactForm(form), true)
@@ -89,7 +73,6 @@ const mermaid = await loadTs('../src/renderer/src/features/artifacts/mermaid-the
   assert.equal(model.identityKey(identity), model.identityKey({ ...identity }), '身份在形态无关处稳定')
 }
 
-/* ── Mermaid 主题：全部取自令牌（02 §11.5） ──────────────────── */
 {
   assert.deepEqual(mermaid.MERMAID_THEME_TOKEN_NAMES, {
     bg: '--bg',
@@ -149,7 +132,6 @@ const mermaid = await loadTs('../src/renderer/src/features/artifacts/mermaid-the
   }
 }
 
-/* ── 静态守卫：iframe key 不含 form ───────────────────────────── */
 {
   const source = readFileSync(
     fileURLToPath(new URL('../src/renderer/src/features/artifacts/ArtifactFrame.tsx', import.meta.url)),

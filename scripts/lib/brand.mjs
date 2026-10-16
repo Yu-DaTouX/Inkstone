@@ -1,14 +1,3 @@
-/**
- * 品牌设计真源的**纯逻辑**（不依赖 Electron / Node fs 之外的任何东西）。
- *
- * `resources/brand/inkstone-design.json` 是唯一真源：几何 SVG、像素 mask、配色、
- * 透明度与缓动、各状态四段时长。这个模块负责把它解析成生成脚本与测试共用的
- * 结构：mask → 单元格、时间线 → 去重帧时长、命名 → manifest、几何 → SVG 字符串。
- *
- * 之所以独立成一个模块：`scripts/build-icon.mjs` 需要 Electron 离屏渲染，而一致性
- * 小测（`scripts/test-brand-assets.mjs`）要在纯 Node 下核对真源与产物，两者共用这里的
- * 计算就不可能出现“脚本一套、测试另一套”的漂移。
- */
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
@@ -25,8 +14,6 @@ export function readDesign(path) {
 export function sourceHash(design) {
   return createHash('sha256').update(JSON.stringify(design)).digest('hex')
 }
-
-/* ───────────────────────── 结构校验 ───────────────────────── */
 
 function fail(message) {
   throw new Error(`品牌真源无效：${message}`)
@@ -125,9 +112,6 @@ export function validateDesign(design) {
   return design
 }
 
-/* ───────────────────────── 像素 mask ───────────────────────── */
-
-/** 解析某一网格的某一层为 `x,y` 集合。 */
 export function maskCells(design, gridKey, layer) {
   const mask = design.masks[String(gridKey)]
   if (!mask) fail(`没有 ${gridKey} 网格`)
@@ -140,8 +124,6 @@ export function maskCells(design, gridKey, layer) {
   return cells
 }
 
-/* ───────────────────────── 时间线 ───────────────────────── */
-
 const SEGMENT_ORDER = ['brightHold', 'fadeDown', 'darkHold', 'fadeUp']
 
 function smoothstep(p) {
@@ -149,7 +131,6 @@ function smoothstep(p) {
   return t * t * (3 - 2 * t)
 }
 
-/** 第 i 帧中心的 alpha（0..1）。 */
 export function frameAlpha(design, state, index) {
   const anim = design.animation
   const spec = anim.states[state]
@@ -166,15 +147,10 @@ export function frameAlpha(design, state, index) {
   return dark + (bright - dark) * smoothstep((t - b3) / seg.fadeUp)
 }
 
-/** alpha 的 0..255 整数表示；去重比较与生成都用它。 */
 export function frameAlpha255(design, state, index) {
   return Math.round(frameAlpha(design, state, index) * 255)
 }
 
-/**
- * 把 `samples` 帧按连续相同 alpha 合并成去重帧。
- * 返回 `[{ index, alpha255, durationMs, samples }]`，所有 durationMs 之和等于 periodMs。
- */
 export function dedupedFrames(design, state) {
   const anim = design.animation
   const spec = anim.states[state]
@@ -195,8 +171,6 @@ export function dedupedFrames(design, state) {
   return out
 }
 
-/* ───────────────────────── 命名与 manifest ───────────────────────── */
-
 function pad2(n) {
   return String(n).padStart(2, '0')
 }
@@ -207,7 +181,6 @@ function suffixFor(design, px) {
   return size.suffix
 }
 
-/** 生成脚本与 manifest 共用的托盘文件名（相对 build/tray/，base 名供 nativeImage 自动挑 @1.5x/@2x）。 */
 export function trayNames(design) {
   const names = {}
   for (const theme of design.outputs.trayThemes) {
@@ -229,7 +202,6 @@ export function trayNames(design) {
   return names
 }
 
-/** 每个 (theme,size,state,index) 的实际落盘文件名。 */
 export function trayFilePath(design, theme, px, state, index, kind = 'frame') {
   const suffix = suffixFor(design, px)
   if (kind === 'frame') return `tray-${theme}-${state}-${pad2(index)}${suffix}.png`
@@ -276,14 +248,6 @@ export function buildManifest(design, hash) {
   return manifest
 }
 
-/* ───────────────────────── SVG 渲染 ───────────────────────── */
-
-/**
- * 几何真源 → SVG 字符串。
- *
- * 分组标签上带 `stroke`，且 id 固定为 `stone-frame` / `prompt`：安装器侧栏与手机端
- * 生成脚本按这两个 id + `stroke="currentColor"` 换色，格式不能改。
- */
 export function renderSvg(design, { frame = 'currentColor', accent = 'currentColor' } = {}) {
   const { viewBox, frame: frameGeom, prompt } = design.geometry
   const frameLine =
@@ -310,7 +274,6 @@ export function renderSvg(design, { frame = 'currentColor', accent = 'currentCol
   )
 }
 
-/** 生成渲染端可直接 import 的几何常量模块（由 build-icon 写入）。 */
 export function renderGeometryModule(design, hash) {
   const { viewBox, frame, prompt } = design.geometry
   const lines = [

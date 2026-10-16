@@ -1,8 +1,3 @@
-/**
- * 中继桥：砚主动连上中继（默认礁石的 Cloudflare 中继，可换成自己部署的），
- * 让手机端与礁石不用 Tailscale、不开端口也能连到这台电脑。每个客户端一条加密隧道，转发到本机远程服务。
- * 方案见礁石仓库 docs/specs/hub-relay.md。默认关闭。
- */
 import { hostname } from 'node:os'
 import { toB64u } from './crypto'
 import { RelayLink, relayWsBase, type WsCtor } from './link'
@@ -11,7 +6,6 @@ import { TunnelSession, type TunnelTarget } from './tunnel'
 
 export interface RelayBridgeSettings {
   enabled: boolean
-  /** 中继地址，如 https://reef-relay.example.workers.dev */
   url: string
 }
 
@@ -26,9 +20,7 @@ export interface RelayBridgeStatus {
 }
 
 export interface RelayBridgeOptions {
-  /** 本机远程服务（中继专用实例）的地址；没有运行时返回 null。 */
   target(): TunnelTarget | null
-  /** 同时生成砚的 6 位配对码，写进二维码，让手机 / 礁石一次完成两层配对。 */
   startYanPairing(): { code: string; expiresAt: number }
   log?(text: string, level?: 'info' | 'error'): void
   WebSocket?: WsCtor
@@ -105,10 +97,6 @@ export class RelayBridge {
     }
   }
 
-  /**
-   * 生成中继配对链接（同时带砚 6 位配对码）。kind 决定对方成为手机还是礁石（agent）。
-   * 链接格式与礁石 App 一致，多了 k:"yan"、y（6 位码）、m（类型）。
-   */
   async pairLink(kind: RelayClientKind): Promise<{ link: string; expiresAt: number }> {
     if (!this.settings.enabled || !this.settings.url) throw new Error('先开启中继接入并填写中继地址')
     const hostKey = await this.store.hostKey()

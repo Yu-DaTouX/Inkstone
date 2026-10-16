@@ -1,13 +1,3 @@
-/**
- * 电脑本地语音输入（需求稿 3.5）：硬件检测、模型推荐、征得同意后的下载、whisper.cpp 转写。
- *
- * ── 边界 ──
- *  · 下载分两步：`plan` 只向服务器核实大小并给出保存位置；用户在界面上确认后，
- *    才用这份 planId 调 `download`。没有 plan 的下载请求一律拒绝。
- *  · 下载走 Electron 的 net.fetch（Chromium 网络栈，跟随系统代理）。先写 `.part`，完整后再改名。
- *  · 程序只取官方发布的 CPU 版 zip 里的 exe / dll，放进砚自己的目录，不改系统 PATH。
- *  · 转写：录音以临时 WAV 写进系统临时目录，whisper-cli 读完即删；不保留录音。
- */
 import { app, net } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
@@ -44,10 +34,8 @@ const VOICE_DIR = join(YAN_DIR, 'voice')
 const MODELS_DIR = join(VOICE_DIR, 'models')
 const BIN_DIR = join(VOICE_DIR, 'bin')
 const BINARY_NAMES = ['whisper-cli.exe', 'whisper-cli']
-/** 程序 zip 的上限：官方 CPU 版只有几 MB，远超这个数说明拿错了东西 */
 const MAX_BINARY_ZIP_BYTES = 100 * 1024 * 1024
 const MAX_BINARY_ENTRY_BYTES = 64 * 1024 * 1024
-/** plan 的有效期：确认框开太久就重新核实一次大小 */
 const PLAN_TTL_MS = 30 * 60_000
 
 interface PendingPlan {
@@ -67,7 +55,6 @@ export class VoiceService {
     app.on('before-quit', () => { this.worker?.process.kill(); this.worker?.proxy.close(); this.worker = null; this.abort?.abort() })
   }
 
-  /** Keep the selected model resident between dictations; only localhost receives audio. */
   private async server(binary: string, model: string, language: string): Promise<string | null> {
     const executable = join(dirname(binary), process.platform === 'win32' ? 'whisper-server.exe' : 'whisper-server')
     if (!(await isFile(executable))) return null
@@ -110,7 +97,7 @@ export class VoiceService {
             const url = `http://127.0.0.1:${proxyPort}`
             this.worker = { process: child, key, url, token, proxy }
             return url
-          } } catch { /* Model is still loading. */ }
+          } } catch { }
           await new Promise((resolve) => setTimeout(resolve, 150))
         }
         throw new Error('转写模型加载超时')
@@ -173,7 +160,6 @@ export class VoiceService {
     if (chosen?.kind === 'file') {
       return (await isFile(chosen.path)) ? { label: basename(chosen.path), path: chosen.path, catalogId: null } : null
     }
-    /* 没选过时，用已下载里质量最高的一份 —— 已有可用模型就不催用户再下 */
     const id = chosen?.kind === 'catalog' && installed.has(chosen.id) ? chosen.id : [...VOICE_MODELS].reverse().find((spec) => installed.has(spec.id))?.id
     const spec = id ? voiceModelSpec(id) : undefined
     return spec ? { label: spec.id, path: join(MODELS_DIR, spec.file), catalogId: spec.id } : null
@@ -207,7 +193,6 @@ export class VoiceService {
     } catch (error) { return { ok: false, error: String(error) } }
   }
 
-  /** 第一步：核实大小与保存位置，不下载任何内容 */
   async plan(target: VoiceDownloadPlan['target']): Promise<{ ok: true; plan: VoiceDownloadPlan } | { ok: false; error: string }> {
     try {
       let plan: VoiceDownloadPlan
@@ -262,7 +247,6 @@ export class VoiceService {
     }
   }
 
-  /** 第二步：用户已确认的 plan 才会真正下载；进度由 status() 读取 */
   async download(planId: string): Promise<{ ok: boolean; error?: string }> {
     const pending = this.plans.get(planId)
     if (!pending || Date.now() - pending.createdAt > PLAN_TTL_MS) return { ok: false, error: '下载确认已失效，请重新查看大小后再确认' }
@@ -365,7 +349,6 @@ export class VoiceService {
           {
             windowsHide: true,
             maxBuffer: 8 * 1024 * 1024,
-            /* 整段转写：给录音时长的 10 倍再加一分钟，慢机器也够用 */
             timeout: Math.round(seconds * 10_000) + 60_000,
             encoding: 'utf8'
           },
@@ -401,7 +384,6 @@ async function headSize(url: string): Promise<number | null> {
   }
 }
 
-/** 200ms 内的整体 CPU 占用；Windows 上 loadavg 恒为 0，只能自己采样 */
 async function sampleCpuLoad(): Promise<number | null> {
   const snap = (): { idle: number; total: number } =>
     cpus().reduce(
@@ -420,7 +402,6 @@ async function sampleCpuLoad(): Promise<number | null> {
   return total > 0 ? Math.max(0, Math.min(1, 1 - (b.idle - a.idle) / total)) : null
 }
 
-/** 从官方 zip 里取出 exe / dll，拍平到 bin 目录（先解到临时目录，齐了再替换） */
 async function installBinaryZip(zipPath: string): Promise<void> {
   const packed = await readFile(zipPath)
   if (packed.length > MAX_BINARY_ZIP_BYTES) throw new Error('程序包超过 100 MiB 上限，已停止')

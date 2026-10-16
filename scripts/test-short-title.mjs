@@ -1,4 +1,3 @@
-/** 短标题（U-3a/H-10a 复用）的纯函数测试。 */
 export async function runShortTitleTests(ok) {
   const { shortTitle } = await import('../out/test/short-title.mjs')
 

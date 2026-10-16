@@ -1,14 +1,3 @@
-/**
- * 兼容 MCP 服务逐条的「导入到 pi 原生」控件（方案合集 06）。
- *
- * 这里只负责界面：预览确认、分步结果与已迁移标记的展示。真正的预览、令牌与
- * 写盘校验在主进程；顺序与范围核对规则在 `mcp-native-import-flow.ts`（可独立测试）。
- *
- * 三条必须如实展示的事实：
- *   1. 写原生配置、pi 校验、停用旧条目是**三步独立结果**；
- *   2. `nativeWritten:true` 但校验未通过时，原生文件已写、旧条目仍启用，不说成「没写」；
- *   3. 任何未停用旧条目的结果都明确提示旧条目保留、凭证不自动搬运。
- */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MessageKey } from '../../i18n'
 import { useT } from '../../i18n'
@@ -30,11 +19,9 @@ type T = (key: MessageKey, vars?: Record<string, string | number>) => string
 
 interface McpNativeImportProps {
   server: CapabilityMcpServerSettingView
-  /** 提交后刷新快照，让「已迁移」标记与停用状态反映到界面。 */
   onChanged: () => Promise<void> | void
 }
 
-/** 分步状态 → i18n 键。未知状态退回「未执行」，不把它当成成功。 */
 const STEP_STATE_KEY: Record<string, MessageKey> = {
   written: 'cap.importState.written',
   failed: 'cap.importState.failed',
@@ -45,7 +32,6 @@ const STEP_STATE_KEY: Record<string, MessageKey> = {
   'skipped-external-change': 'cap.importState.skippedExternalChange'
 }
 
-/** 需要用户手动处理的错误码（凭证搬运不在砚这边）。 */
 const MANUAL_CODES = new Set(['needs_reauth', 'needs_auth', 'needs-auth', 'unsupported', 'not_trusted', 'unavailable'])
 
 function entryJson(entry: Record<string, unknown>): string {
@@ -60,7 +46,6 @@ function scopeLabel(t: T, scope: 'global' | 'project'): string {
   return scope === 'project' ? t('cap.importScope.project') : t('cap.importScope.global')
 }
 
-/** 预览确认框的细节块：目标范围/路径 + 本条原生条目 + 提醒（默认不含完整文件）。 */
 function buildImportDetail(t: T, preview: NativeMcpImportPreview, sourceTitle: string): string {
   const lines = [
     `${t('cap.importSourceTitle')}: ${sourceTitle}`,
@@ -101,7 +86,6 @@ export function McpNativeImport({ server, onChanged }: McpNativeImportProps): Re
       mounted: mountedRef.current,
       activeRunnerId: state.activeRunnerId,
       sessionId: state.session?.sessionId ?? '',
-      /* 项目身份优先取当前运行实例的 projectId；拿不到再退到会话 cwd。 */
       projectKey: runner?.projectId ?? state.session?.cwd ?? state.settings?.cwd ?? ''
     }
   }, [])
@@ -141,16 +125,13 @@ export function McpNativeImport({ server, onChanged }: McpNativeImportProps): Re
     setOutcome(result)
     setPending(false)
     if (result.phase === 'committed') {
-      /* 提交无论整体是否成功都可能已写原生 / 停用旧条目，刷新快照。 */
       try {
         await onChanged()
       } catch {
-        /* 刷新失败不改写已发生的写盘事实；结果块保留。 */
       }
     }
   }, [flow, onChanged, pending, server.id])
 
-  /* 已迁移：不再提供重复导入，只展示迁移事实与上次提交的分步结果。 */
   if (server.migratedToNative) {
     const mark = server.migratedToNative
     const scope = migratedTargetScope(mark.targetPath)
@@ -170,7 +151,6 @@ export function McpNativeImport({ server, onChanged }: McpNativeImportProps): Re
     )
   }
 
-  /* windows-mcp 保留在砚的连接里；已停用条目由父行标出。 */
   if (server.id === WINDOWS_MCP_SERVER_ID || !server.enabled) return null
 
   const busy = pending || flow.busy

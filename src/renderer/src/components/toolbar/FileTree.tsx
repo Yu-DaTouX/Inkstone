@@ -15,17 +15,10 @@ import { Spinner } from '../ui'
 import { samePath } from '../../../../shared/session-path'
 import { indexVisiblePaths } from './workspace-control-guards'
 
-/** 绝对路径归一化：比较“已加入上下文”时忽略大小写与分隔符差异 */
 function normPath(p: string): string {
   return p.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 
-/**
- * 绝对路径 → 相对 cwd 的 posix 路径（H-4 联动定位用）。
- *
- * 不在 cwd 里就返回 null：工作树外的文件本来就不在树里，
- * 不能因为“展开到它”就把树拉到一个不存在的分支上。
- */
 function relativeToCwd(cwd: string, abs: string): string | null {
   const root = cwd.replace(/[\\/]+$/, '').replace(/[\\/]/g, '/')
   const target = abs.replace(/[\\/]/g, '/')
@@ -34,15 +27,8 @@ function relativeToCwd(cwd: string, abs: string): string | null {
   return target.slice(root.length + 1)
 }
 
-/** 「显示更多」每次追加的可见行数（UI 展示批次，不是文件系统加载批次） */
 const FS_PAGE = 50
 
-/**
- * 树的缩进统一走 CSS 变量 `--fs-indent`：像素值由这里按层级算，
- * **窄栏下的上限由 CSS 兜**（见 `tools.css` 的 `.rp-fs-row` / `.rp-fs-state`）。
- * 不能在这里写死 `paddingLeft`：窄右栏（PANEL_MIN=220）下深层目录的缩进
- * 会把 chevron 与图标顶到右边界外（实测 6 级开始）。
- */
 const indentStyle = (px: number): CSSProperties => ({ '--fs-indent': `${px}px` }) as CSSProperties
 
 type FileSearchStatus = FileSearchResult['status']
@@ -59,23 +45,6 @@ function fileStatusText(t: TFunc, status: FileListingStatus | FileSearchStatus):
   }
 }
 
-/**
- * 文件树（右栏分区）。
- *
- * ── 设计约束 ──
- * ① **懒加载，一层一次**。不做递归预扫：cwd 可能是整个仓库，
- *    递归会把主进程卡住（`node_modules` 一个目录就能有几万条）。
- * ② 单击文件 = 打开右侧只读预览；加入上下文与拖入 Composer 是独立动作。
- *    不能把「我想看这个文件」和「我想让 agent 读取这个文件」混成一次点击。
- * ③ 目录默认折叠。展开状态与已加载的内容都缓存在本组件内 ——
- *    折叠再展开不重新拉（目录内容在一次会话里基本不变）。
- * ④ 换 cwd 必须清空缓存（否则会拿旧项目的目录树当新的）。
- *
- * ── 与 completePath（@ 补全）的关系 ──
- * 两者共用同一个安全边界（见 main/files.ts）：都只能看 cwd 以内的路径。
- * 但用途不同 —— 补全是「我记得名字，帮我补全」，
- * 文件树是「我不知道有什么，让我看看」。
- */
 export function FileTree() {
   const t = useT()
   const cwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd)
@@ -100,44 +69,22 @@ export function FileTree() {
     [cwd, generation, projectId]
   )
 
-  /**
-   * 已加入上下文的文件（`kind === 'file'` 的附件）。
-   *
-   * 它是独立于「当前预览」的另一种状态：current 表示“我正在看”，
-   * in-context 表示“已经给模型引用了”。两者可以同时成立，所以视觉上分开表达
-   * （左侧竖条 vs 名称后小点）。
-   */
   const inContextPaths = useMemo(() => {
     const set = new Set<string>()
     for (const a of attachments) if (a.kind === 'file' && a.path) set.add(normPath(a.path))
     return set
   }, [attachments])
 
-  /** 路径（'' = 根）→ 该层内容。null = 加载失败 */
   const [cache, setCache] = useState<Record<string, DirListing | null>>({})
   const [open, setOpen] = useState<Set<string>>(new Set(['']))
   const [loading, setLoading] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [focusPath, setFocusPath] = useState('')
-  /**
-   * 「显示更多」的渲染额度（默认 50，每次 +50）。
-   *
-   * 它是 **UI 展示批次，不是文件系统加载批次**：只决定渲染多少行已加载内容，
-   * 不递归展开目录、不预读未展开的目录 —— 否则会破坏“一层懒加载”的设计。
-   */
   const [visibleLimit, setVisibleLimit] = useState(FS_PAGE)
   const requestGeneration = useRef(0)
-  /**
-   * 是否列出隐藏项（.gitignore / .vscode / node_modules / .git 这类）。
-   *
-   * 用户要求：「已跳过改为已隐藏，加一个开关」。
-   * 定位：它是**临时看一眼**的动作（找一个被点掉的文件、确认 .git 在不在），
-   * 不值得落盘变成永久偏好 —— 所以只存在这个组件的 state 里，重启回默认。
-   */
   const [showHidden, setShowHidden] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  /** 搜索关闭后要把焦点交回这个按钮（输入框会随面板一起卸载） */
   const searchToggleRef = useRef<HTMLButtonElement>(null)
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchResult, setSearchResult] = useState<FileSearchResult | null>(null)
@@ -145,7 +92,6 @@ export function FileTree() {
   const searchSequence = useRef(0)
   const searchRequestId = useRef<string | null>(null)
 
-  /* 换 cwd → 整个树作废 */
   useEffect(() => {
     requestGeneration.current += 1
     setCache({})
@@ -159,15 +105,6 @@ export function FileTree() {
     setVisibleLimit(FS_PAGE)
   }, [cwd, generation, projectId, showHidden])
 
-  /*
-   * 工作目录 / 项目 / 运行代次变了 → 旧预览已经不属于当前项目，关掉它。
-   *
-   * ⚠️ 必须排除「首次挂载」：这个分区会随右栏标签切换反复挂载，而挂载时
-   *    `cwd` 永远有值 —— 无条件 `closePreview()` 会在用户切到工具标签时
-   *    把他刚打开的文件预览关掉，与「切页只隐藏、不销毁资源」直接矛盾
-   *    （实施-11 H-2 实测到：切到浏览器标签再回来，文件预览没了）。
-   *    所以只有身份**真的变了**才清，首帧不算变化。
-   */
   const previewScope = `${cwd ?? ''}\u0000${projectId ?? ''}\u0000${generation ?? 0}`
   const lastPreviewScopeRef = useRef(previewScope)
   useEffect(() => {
@@ -206,13 +143,6 @@ export function FileTree() {
         }))
         setError(null)
       } finally {
-        /*
-         * 这里**不能**再按代次早退：被丢弃的旧请求如果不把 loading 标记清掉，
-         * 根层的守卫（`cache[''] === undefined && !loading.has('')`）就永远挡住重试 ——
-         * 表现是文件树永久停在「正在读取目录…」。切项目 / 切会话时偶发，
-         * 已用 `test:live -- tools projectswitch` 稳定复现。
-         * 清掉旧标记最多让新请求的转圈提前消失一下，随后 effect 会自愈重试。
-         */
         setLoading((s) => {
           const n = new Set(s)
           n.delete(path)
@@ -223,20 +153,12 @@ export function FileTree() {
     [fileContext, showHidden]
   )
 
-  /*
-   * 根层一定要有内容（展开状态里 '' 默认就在）。
-   *
-   * `loading` 必须进依赖：被丢弃的旧请求会清掉 loading 标记（见 `load` 的 finally），
-   * 只有在这里重新看一眼，才能把「根层空着且没人加载」的状态自愈掉。
-   * 缺了它，切项目/切会话时偶发地会永久停在「正在读取目录…」。
-   */
   useEffect(() => {
     if (!cwd) return
     if (cache[''] === undefined && !loading.has('')) void load('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd, cache[''], load, loading])
 
-  /* 全项目搜索：防抖、可取消，并把响应绑定回当前项目/实例。 */
   useEffect(() => {
     const query = searchQuery.trim()
     const sequence = ++searchSequence.current
@@ -295,12 +217,6 @@ export function FileTree() {
     [cache, load, open]
   )
 
-  /**
-   * H-4 联动定位：当前预览文件在 cwd 内时，算出它在树里的相对路径。
-   *
-   * 用 `data.abs`（realpath）而不是 `path`：链接里写的可能是相对路径、
-   * 绝对路径或带 `..` 的写法，只有 realpath 能稳定地对上树里的节点。
-   */
   const previewRelPath = useMemo(() => {
     const abs = filePreview?.data?.abs
     if (!abs || !cwd) return undefined
@@ -308,11 +224,6 @@ export function FileTree() {
     return rel ? rel : undefined
   }, [filePreview?.data?.abs, cwd])
 
-  /*
-   * 从聊天链接/搜索等入口打开文件后，把树展开到它并选中它 ——
-   * 否则用户切到工具页时看到的是“树停在上一个位置”，还得自己一层层点。
-   * 已定位过的路径不重跑（避免 cache 变化时反复抢焦点）。
-   */
   const locatedPathRef = useRef('')
   useEffect(() => {
     const rel = previewRelPath
@@ -340,19 +251,11 @@ export function FileTree() {
   }, [previewRelPath, cache, loading, load])
 
   const refresh = useCallback(() => {
-    // 只刷新**已展开**的层，不把没看过的目录也拉一遍
     for (const p of open) void load(p)
   }, [open, load])
 
   const rootName = cache['']?.rootName ?? t('rp.fsRoot')
 
-  /*
-   * 可见顺序：只根据已加载且展开的节点生成，不递归触发任何 IO。
-   *
-   * `allVisiblePaths` 是“当前树里一共有多少行”，`visiblePaths` 再按
-   * `visibleLimit` 截断 —— 键盘游走与渲染必须用同一份顺序，
-   * 否则方向键会走到没渲染出来的行。
-   */
   const allVisiblePaths = useMemo(() => {
     const paths: string[] = ['']
     const visit = (parent: string) => {
@@ -374,17 +277,6 @@ export function FileTree() {
     [allVisiblePaths, visibleLimit]
   )
 
-  /*
-   * 渲染用的可见集合 —— 必须与 visiblePaths 是**同一份**顺序。
-   *
-   * ⚠️ 这里曾经用 `budget={{ left: visibleLimit - 1 }}` 逐行扣格子来截断渲染。
-   * 它与 visiblePaths 的顺序并不相同：visiblePaths 走严格 DFS（push 一个就递归子层），
-   * 而 budget 是按 React 的渲染顺序消耗 —— 父层 TreeLevel 先把自己那一层的兄弟行
-   * 全扣完，子层稍后才扣。于是超限时被切掉的位置不同，键盘能“走”到没渲染出来的行：
-   * focus() 静默失败（找不到节点）、焦点留在原地，而 focusPath 被设成幽灵路径后
-   * 所有行 tabIndex 都是 -1（End 那条失败即此路径，2026-09-18 逐帧观测定案）。
-   * 现在渲染直接按这个集合判断，顺序天然只有一份。
-   */
   const visibleSet = useMemo(() => new Set(visiblePaths), [visiblePaths])
   const visibleIndex = useMemo(() => indexVisiblePaths(visiblePaths), [visiblePaths])
 
@@ -419,7 +311,6 @@ export function FileTree() {
       }
       return next
     })
-    /* 逐层补齐缓存，仍然保持一层懒加载而不是递归预扫。 */
     let parent = ''
     for (const piece of pieces) {
       const child = parent ? `${parent}/${piece}` : piece
@@ -435,11 +326,6 @@ export function FileTree() {
       testId="rp-files"
       extra={
         <>
-          {/*
-            * 分区头部不再显示计数（用户决定：完全不显示）。
-            * 懒加载下不存在可信口径 —— 已加载项数随展开变化，
-            * 真正的总数又必须额外递归扫描；项目头也只承担身份与折叠。
-            */}
           <button
             className={`rp-mini ${showHidden ? 'on' : ''}`}
             data-testid="fs-hidden-toggle"
@@ -491,11 +377,6 @@ export function FileTree() {
               e.preventDefault()
               setSearchQuery('')
               setSearchOpen(false)
-              /*
-               * 输入框随 `searchOpen=false` 一起下线，焦点会掉到 body。
-               * 交回搜索按钮：键盘用户的下一次 Tab 才接着从这里走
-               * （与「显示更多」消失时交给新露出的第一行同一条道理，N22-4）。
-               */
               searchToggleRef.current?.focus()
             }}
             placeholder={t('rp.fsSearchPlaceholder')}
@@ -524,11 +405,6 @@ export function FileTree() {
           role="tree"
           aria-label={rootName}
         >
-          {/*
-           * 项目头：root row 的另一种呈现（variant="head"），**不新增层级** ——
-           * 它仍是 role=tree 的第一个 treeitem，键盘语义不变。
-           * 不显示计数：懒加载下没有可信口径（用户已确认）。
-           */}
           <TreeRow
             path=""
             name={rootName}
@@ -564,10 +440,6 @@ export function FileTree() {
               previewPath={previewRelPath}
             />
           ) : null}
-          {/*
-            * 「显示更多」：每次只把可见额度 +50（UI 展示批次）。
-            * 不递归展开目录、不预读未展开目录 —— 数据仍是“一层懒加载”。
-            */}
           {allVisiblePaths.length > visibleLimit ? (
             <button
               className="rp-fs-more"
@@ -575,11 +447,6 @@ export function FileTree() {
               onClick={() => {
                 const next = visibleLimit + FS_PAGE
                 setVisibleLimit(next)
-                /*
-                 * 这一批之后如果所有行都露出来了，按钮自己会消失 —— 焦点必须交给
-                 * 新露出的第一行。否则它会掉到 body：键盘用户按 Enter 展开列表，
-                 * 下一次 Tab 就从窗口顶部重新开始，位置丢了（N22-4 的焦点恢复断言）。
-                 */
                 const firstNew = allVisiblePaths[visibleLimit]
                 if (allVisiblePaths.length <= next && firstNew !== undefined) focusTreePath(firstNew)
               }}
@@ -593,11 +460,6 @@ export function FileTree() {
       {error ? <div className="rp-dim rp-fs-err">{error}</div> : null}
       {cache['']?.skipped.length ? (
         <div className="rp-dim" data-testid="fs-skipped">
-          {/*
-            * 用户要求把「已跳过」改成「已隐藏」——
-            * 「跳过」听起来像程序跳过了它们（可能漏内容），
-            * 「隐藏」才是事实：它们还在，点上面的开关就显示。
-            */}
           {t('rp.fsHidden', { names: cache[''].skipped.join('、') })}
         </div>
       ) : null}
@@ -678,7 +540,6 @@ function FileSearchResults({
   )
 }
 
-/** 一层的内容（根下面的所有条目） */
 function TreeLevel({
   listing,
   depth,
@@ -710,7 +571,6 @@ function TreeLevel({
   visiblePaths: string[]
   visibleIndex: Map<string, number>
   onFocusPath: (path: string) => void
-  /** 可见集合（由 visiblePaths 派生）：渲染与键盘游走用同一份顺序 */
   visibleSet: Set<string>
   inContextPaths?: Set<string>
   previewPath?: string
@@ -742,15 +602,6 @@ function TreeLevel({
     )
   }
 
-  /*
-   * 用 for 而不是 map：遇到不在可见集合里的行要立刻停止（含递归子层），
-   * map 做不到中途 break。
-   *
-   * 判据是 `visibleSet`（由 visiblePaths 派生），不是自己数格子 ——
-   * 必须是同一份顺序，否则键盘会走到没渲染出来的行（见 FileTree 里 visibleSet 的注释）。
-   * 用 `break` 而不是 `continue` 是安全的：visiblePaths 是 DFS 前缀，超限之后的项
-   * 全部不在集合里。
-   */
   const nodes: ReactNode[] = []
   for (const e of listing.entries) {
     const childPath = listing.path ? `${listing.path}/${e.name}` : e.name
@@ -846,11 +697,8 @@ function TreeRow({
   open: boolean
   loading?: boolean
   focused: boolean
-  /** 当前正在右侧预览的文件（previewed/current，与 selected 不是一回事） */
   current?: boolean
-  /** 已加入上下文（store.attachments 里的文件引用） */
   inContext?: boolean
-  /** root 行渲染为项目头：只是另一种视觉呈现，不新增层级 */
   variant?: 'head'
   visiblePaths: string[]
   visibleIndex: Map<string, number>
@@ -864,10 +712,6 @@ function TreeRow({
   const [hot, setHot] = useState(false)
   const ref = useRef<HTMLButtonElement>(null)
 
-  /*
-   * 点击后的短暂高亮：「已插入 @路径」必须看得见 ——
-   * 否则用户不知道点这一下发生了什么（输入框可能在视野下方）。
-   */
   useEffect(() => {
     if (!hot) return
     const id = setTimeout(() => setHot(false), 700)
@@ -895,7 +739,6 @@ function TreeRow({
         onKeyDown={(e) => {
           const index = visibleIndex.get(path) ?? -1
           const move = (next: string | undefined) => {
-            /* 根节点的路径是空字符串，不能把它当成“没有目标”。 */
             if (next === undefined) return
             e.preventDefault()
             onFocusPath(next)
@@ -942,7 +785,6 @@ function TreeRow({
             }
             return
           }
-          /* Alt+Enter / “a” 是键盘可发现的独立加入上下文动作。 */
           if (!dir && onAdd && ((e.key === 'Enter' && e.altKey) || e.key.toLowerCase() === 'a')) {
             e.preventDefault()
             setHot(true)
@@ -971,11 +813,9 @@ function TreeRow({
           <svg className="fs-file-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M5 3h9l5 5v13H5z M14 3v6h5 M8 13h8 M8 17h8" /></svg>
         )}
         <span className="rp-fs-name">{name}</span>
-        {/* 已加入上下文：独立于 current 的小点（两者可以同时成立） */}
         {inContext ? <span className="rp-fs-inctx" data-testid={`fs-inctx-${path}`} aria-hidden /> : null}
         {dir && loading ? <Spinner mute className="rp-fs-spin" /> : null}
       </button>
-      {/* 文件大小保留在行的 title 提示中，列表只给文件名和操作按钮留空间。 */}
       {!dir && onAdd ? (
         <span className="rp-fs-trailing">
           <button
@@ -998,7 +838,6 @@ function TreeRow({
   )
 }
 
-/** 文件树只给 Composer 传当前 cwd 内的已列出文件，统一转换成绝对路径。 */
 function toAbsolutePath(cwd: string, rel: string): string {
   const root = cwd.replace(/[\\/]+$/, '')
   return rel ? `${root}\\${rel.replace(/\//g, '\\')}` : root
@@ -1013,7 +852,6 @@ function sameFileContext(a: FileRequestContext | undefined, b: FileRequestContex
   )
 }
 
-/** 1023 B → 1023B，1.4 KB，2.1 MB（文件树里只需量级，不要精度） */
 function fmtSize(n: number): string {
   if (n < 1024) return `${n}B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(n / 1024 < 10 ? 1 : 0)}K`

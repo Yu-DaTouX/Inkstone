@@ -8,18 +8,11 @@ import { useStore } from '../../state/store'
 
 type ChoiceOption = { value: string; label: string; description?: string; reorderable?: boolean }
 
-/**
- * Inkstone choice menu, shared by permission and provider filters.
- * With `onReorder`, options marked `reorderable` can be dragged (or moved with Alt+↑/↓) into a new order.
- */
 export function ChoiceSelect({ value, options, onChange, label, testId, className, disabled = false, menuWidth = 300, align = 'right', icon, onReorder, reorderHint }: {
   value: string; options: ChoiceOption[]
   onChange(value: string): void; label: string; testId?: string; className?: string; disabled?: boolean
-  /** 选项带两行说明时加宽，避免说明折成孤字 */
   menuWidth?: number
-  /** 菜单对齐触发器的哪一侧；触发器在输入框左侧时用 left */
   align?: 'left' | 'right'
-  /** 前置图标；窄容器里样式可以只留图标（文字在 .ui-choice-text 里） */
   icon?: IconName
   onReorder?(values: string[]): void
   reorderHint?: string

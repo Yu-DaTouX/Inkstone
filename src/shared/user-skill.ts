@@ -1,20 +1,8 @@
-/**
- * 用户技能：用户自己的做法（例如以前的「办事模板」）保存成 `SKILL.md`。
- *
- * 宿主只负责三件事：校验名称与大小、生成标准的 frontmatter、把旧的
- * `playbooks.json` 条目转成技能正文。怎么把一次任务整理成技能、执行时
- * 怎么确认范围，写在随包的 `playbook` 技能里。
- *
- * 它不碰 electron / 文件系统，主进程与单测共用同一份规则。
- */
-
-/** 技能名：小写字母、数字与连字符，与目录名一致（Agent Skills 通行写法）。 */
 export const USER_SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 export const USER_SKILL_LIMITS = {
   maxName: 64,
   maxDescription: 1024,
-  /** 正文上限（按字符数）。技能正文会按需进入上下文，过长就该拆分。 */
   maxBody: 20_000
 } as const
 
@@ -54,19 +42,9 @@ export function validateUserSkill(
   return { ok: true, value: { name, description, body } }
 }
 
-/**
- * 生成 `SKILL.md` 全文。
- *
- * description 用 JSON 字符串写入：它同时是合法的 YAML 双引号字符串，
- * 冒号、引号之类的字符不会破坏 frontmatter。
- */
 export function userSkillMarkdown(input: UserSkillInput): string {
   return ['---', `name: ${input.name}`, `description: ${JSON.stringify(input.description)}`, '---', '', input.body, ''].join('\n')
 }
-
-/* ------------------------------------------------------------------ *
- * 旧「办事模板」→ 技能
- * ------------------------------------------------------------------ */
 
 const EFFECT_LABELS: Record<string, string> = {
   read: '只读',
@@ -82,7 +60,6 @@ function listOf(value: unknown): string[] {
   return Array.isArray(value) ? value.map(textOf).filter(Boolean) : []
 }
 
-/** 旧模板 id → 技能名（`pb_1a2b` → `playbook-pb-1a2b`）。 */
 export function legacyPlaybookSkillName(id: string): string {
   const slug = String(id ?? '')
     .toLowerCase()
@@ -93,12 +70,6 @@ export function legacyPlaybookSkillName(id: string): string {
   return `playbook-${slug || 'untitled'}`
 }
 
-/**
- * 把 `playbooks.json` 里的一条旧模板转成技能。
- *
- * 读法刻意宽松：旧数据里缺范围的写步骤也保留下来，并在正文里写明
- * 「执行前先问用户范围」—— 迁移的目标是不丢用户的东西，确认规则由正文约束。
- */
 export function legacyPlaybookToSkill(raw: unknown): (UserSkillInput & { id: string; title: string }) | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const p = raw as Record<string, unknown>

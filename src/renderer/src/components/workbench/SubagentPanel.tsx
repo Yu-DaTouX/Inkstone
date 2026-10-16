@@ -13,7 +13,6 @@ import { selectSubagentRuns, subagentOwnerForView, subagentScopeForView } from '
 import { Button, EmptyState, Field, Select, Textarea } from '../ui'
 import type { SubagentRun } from '../../../../shared/ipc'
 
-/** 当前会话的轻量委派；不查询 Hub、不轮询任务收件箱。 */
 export function SubagentPanel({ initialRun, onOpenRun, onTitleChange }: {
   initialRun?: string; onOpenRun?(key: string): void; onTitleChange?(title: string): void
 }) {
@@ -48,8 +47,6 @@ export function SubagentPanel({ initialRun, onOpenRun, onTitleChange }: {
   const readOnlyError = subagentModelError(resolvedModel, true)
   const validationError = isolation === 'controlled-cwd' && readOnlyError ? t('delegate.ccReadOnly')
     : !resolvedModel ? t('delegate.noModel') : !selectedModel ? t('models.unavailable') : ''
-  /* 只列出屏幕正在看的那条会话派出的：peek 优先，与常驻区共用同一归属推导；
-     旧记录按该视图的运行实例（而不是 activeRunnerId）兜底，只保留去重后的一份。 */
   const owned = selectSubagentRuns(runs, subagentScopeForView({ peekedSessionId, peekedPath, session, runners })).all
   const selected = owned.find(run => `subagent:${run.id}` === initialRun)
   useEffect(() => { void load() }, [load])
@@ -80,8 +77,6 @@ export function SubagentPanel({ initialRun, onOpenRun, onTitleChange }: {
   const start = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!task.trim() || busy || validationError) return
-    /* 派活归属取屏幕正在看的会话（peek 优先）：后台查看 B 时钉住 B 的实例，
-       不落到 active A；视图有稳定身份却没有实例则明确不派，绝不猜当前会话。 */
     const ownership = subagentOwnerForView({ peekedSessionId, peekedPath, session, runners })
     if (ownership.needsRunner) { setError(t('delegate.failed')); return }
     setBusy(true); setError('')

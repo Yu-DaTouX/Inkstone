@@ -1,11 +1,3 @@
-/*
- * v3 手动派发子 Agent 表单隔离探针。
- *
- * 只验证表单本身，不提交：入口在输入区「＋」菜单；注入两个模型后验证默认「跟随」、
- * 空任务时按钮禁用、选只读且模型不支持只读（CC 订阅模型）时给提示并退回当前文件夹、
- * 取消关闭；peek 别的会话时入口禁用。真实提交会启动子 Agent 调用模型，这里不做，
- * 启动链 `window.yan.subagents.start` 与重派共用，成功 / 失败路径未在本探针验证。
- */
 ;(async () => {
   const out = []
   const check = (condition, label) => {
@@ -19,7 +11,6 @@
       try {
         if (predicate()) return true
       } catch {
-        /* 还没就绪 */
       }
       await wait(50)
     }
@@ -46,7 +37,6 @@
     try {
       localStorage.setItem('yan.onboarded', '1')
     } catch {
-      /* 忽略 */
     }
     const onboarding = document.querySelector('.v3-ob-overlay')
     if (onboarding) {

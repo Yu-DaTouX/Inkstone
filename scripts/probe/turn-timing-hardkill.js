@@ -1,4 +1,3 @@
-/* H-6b 真强杀写侧：测试进程会在完整的 final:false 落盘后强制终止 Electron。 */
 ;(async () => {
   const out = []
   const ok = (condition, label) => {
@@ -45,7 +44,6 @@
     ok(!!started, '主进程 runner 已开始处理测试消息')
     if (!started) return out.join('\n')
 
-    /* 父进程须等 provider 收到第二次请求且 final:false 已落盘，再强制结束应用。 */
     await sleep(80000)
     out.push('  ✗ 测试父进程未在预期窗口内强制结束隔离 Electron')
   } catch (error) {

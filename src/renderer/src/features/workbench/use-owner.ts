@@ -1,8 +1,3 @@
-/**
- * 把 store 里的正式状态喂给纯推导 `deriveWorkspaceOwner`，供外壳与面板共用。
- *
- * 只读，不写 store；不改会话归属，也不触发激活。
- */
 import { useMemo } from 'react'
 import { useStore } from '../../state/store'
 import { deriveWorkspaceOwner, type OwnerViewRunner } from './ownership'

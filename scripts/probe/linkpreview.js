@@ -1,13 +1,3 @@
-/**
- * 链接路由 + 只读文件预览（方案 5.2）。
- *
- * 覆盖：
- *   · Markdown 链接被贴上 data-link-kind（url / file / invalid）
- *   · 点文件链接 → 右侧真的出现只读预览（不是跳走、也不是没反应）
- *   · 危险协议点不动（样式上也不是可点链接）
- *
- * 不覆盖（留给真实窗口验收）：内部浏览器与原生网页视图的遮挡关系。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -27,7 +17,6 @@
     }
     await sleep(800)
 
-    /* 找一个项目内的文本文件当预览目标 */
     const listing = await window.yan.listDir('')
     const file = listing.entries.find((e) => !e.dir && /\.(ts|tsx|js|mjs|json|md|txt|jsonl)$/i.test(e.name))
     out.push(`  项目内可选文件：${file?.name ?? '(没找到)'}`)
@@ -65,7 +54,6 @@
       ok(badLink.classList.contains('blocked'), '危险链接有 blocked 样式提示（不是看起来能点）')
     }
 
-    /* 点危险链接：什么都不该发生 */
     const before = q('[data-testid="file-preview"]')
     if (badLink) {
       click(badLink)
@@ -73,7 +61,6 @@
       ok(q('[data-testid="file-preview"]') === before, '点危险链接不会打开预览')
     }
 
-    /* 点文件链接：右侧出现只读预览 */
     if (fileLink) {
       click(fileLink)
       for (let i = 0; i < 40; i++) {
@@ -93,7 +80,6 @@
         ok(state?.data?.ok === true, `预览成功读到内容（error=${state?.data?.error ?? '无'}）`)
       }
 
-      /* 关闭按钮：收起来 */
       const close = q('[data-testid="file-preview"]') && document.querySelector('[data-pane-tab^="file:"] .ui-tab-close')
       ok(!!close, '预览面板有关闭按钮')
       if (close) {

@@ -14,11 +14,6 @@ import {
   TableLoadingState
 } from './index'
 
-/**
- * Table 原语状态故事：排序、空态、加载、长表虚拟化与窄宽度。
- *
- * 只演示控件层行为，不含业务数据源；长表用 1000 行确认虚拟化只渲染可见行。
- */
 const meta = {
   title: 'v3/Table',
   parameters: {

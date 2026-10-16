@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 工作区面板：惰性挂载与 owner 归属回归（P3 修复）。
- *
- * 目标：不用源码字符串断言，而是把**真实 WorkbenchPanel 组件**、**真实 ui-v3 store**
- * 和两个**真实生产 helper**（mount-state / preview-state）现场 esbuild 出来，
- * 用浅渲染替身驱动，钉住三族缺陷的正负对照：
- *
- *   1. 默认关闭零挂载；首次 open 才挂当前页签；关闭不清 visited（终端保活）；
- *   2. 切页签不重挂已开的终端（挂载集合只增不减、key/顺序稳定、双门 visible）；
- *   3. 预览路径按 owner.key 绑定：A 预览 → 切 B 的任何一帧都不得给 B 传 A 的 path，
- *      回 A 后规则明确地恢复。
- *
- * 用法：node scripts/test-v3-workbench-state.mjs
- * 不启动 Electron、不连 pi、不读用户数据、不调用真实模型、不跑真实 PTY。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -23,8 +8,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 let currentGroup = null
@@ -42,8 +25,6 @@ function ok(cond, label, detail) {
   process.stdout.write(`${pass ? '  ✓' : '  ✗'} ${label}${extra}\n`)
   return pass
 }
-
-/* ------------------------------------------------------- 浅渲染 React 替身 */
 
 const REACT_SHIM = `/* v3 工作区回归的 React 浅渲染替身：hook 状态放在 globalThis.__V3_HOOKS。 */
 const rt = () => globalThis.__V3_HOOKS
@@ -74,7 +55,6 @@ export const jsxs = jsx
 export const jsxDEV = jsx
 `
 
-/** 只打桩界面原语与文案：WorkbenchPanel / store / 两个 helper 保持真实。 */
 const STUBS = {
   ui: `export function Tabs(){ return null }
 export function TabList(){ return null }
@@ -105,7 +85,6 @@ function makeStubMap() {
     Object.entries({
       'src/renderer/src/ui/index.ts': STUBS.ui,
       'src/renderer/src/i18n/index.tsx': STUBS.i18n,
-      // 概览磁贴有自己的数据源；这里只验面板的挂载与归属
       'src/renderer/src/features/workbench/OverviewPane.tsx': STUBS.overview
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
@@ -173,8 +152,6 @@ export { bindPreviewPath, previewPathFor, MAX_PREVIEW_BINDINGS } from '${posix(r
   return outfile
 }
 
-/* ------------------------------------------------------- 浅渲染 hook 运行时 */
-
 function makeHookRuntime() {
   const rt = {
     cells: [],
@@ -225,7 +202,6 @@ function makeHookRuntime() {
     useId() {
       return `v3id-${rt.seq++}`
     },
-    /** 渲染到收敛；每次 pass 的树都记进 frames，用于「任何一帧」不变量。 */
     render(Component, props) {
       let tree
       let guard = 0
@@ -272,7 +248,6 @@ function findByTestId(node, id) {
   return hit
 }
 
-/** 收集所有带某个 class 的节点（拆分时会有两块 `wb-panes`）。 */
 function allClass(node, className) {
   const hits = []
   walk(node, (el) => {
@@ -281,12 +256,10 @@ function allClass(node, className) {
   return hits
 }
 
-/** 只渲染到 PaneSlot：wb-panes 的直接子元素里，带 containerVisible 的那个。 */
 function paneSlots(tree) {
   return slotsIn(tree, 0)
 }
 
-/** 第 index 块 `wb-panes` 里的 PaneSlot（0 = 主格，1 = 下半格）。 */
 function slotsIn(tree, index) {
   const wrap = allClass(tree, 'wb-panes')[index]
   if (!wrap) return []
@@ -299,7 +272,6 @@ function slotFor(tree, tab) {
   return paneSlots(tree).find((s) => s.props.tab === tab) ?? null
 }
 
-/** PaneSlot 无 hook，可安全直接调用，拿到它真正渲染给叶子的宿主树。 */
 function renderSlot(slot, stubs) {
   const host = slot.type(slot.props)
   const leaf = childrenArray(host.props.children).find((el) => el && typeof el === 'object' && stubs.has(el.type))
@@ -314,8 +286,6 @@ const stubPane = (name) => {
   return C
 }
 
-/* ------------------------------------------------------------------ 主流程 */
-
 const ownerA = { key: 'sess-a', sessionId: 'sess-a', sessionFile: 'C:/data/a.jsonl', cwd: 'C:/proj/a', runId: 'run-a', generation: 1, active: true }
 const ownerB = { key: 'sess-b', sessionId: 'sess-b', sessionFile: 'C:/data/b.jsonl', cwd: 'C:/proj/b', runId: 'run-b', generation: 1, active: true }
 const idleA = { ...ownerA, runId: undefined, generation: undefined, active: false }
@@ -325,10 +295,6 @@ async function main() {
   let mod
   try {
     const outfile = await buildBundle(outdir)
-    /*
-     * 真实 store 的初始页签读取 localStorage；这里在 import 之前注入一份
-     * 持久化偏好，验证终端 / 浏览器页签不会被隐式恢复（回归隐性起 PTY）。
-     */
     const persisted = new Map([['inkstone.v3.prefs', JSON.stringify({ version: 1, workbenchTab: 'terminal' })]])
     globalThis.localStorage = {
       getItem: (key) => (persisted.has(key) ? persisted.get(key) : null),
@@ -371,7 +337,6 @@ async function main() {
     ...over
   })
 
-  /* ======================================================= 组 1：纯 helper */
   group('mount-state / preview-state 纯函数规则')
   {
     const empty = emptyMountState()
@@ -402,7 +367,6 @@ async function main() {
     ok(previewPathFor(rebound, 'sess-a') === 'C:/p/a2.md' && rebound.size === MAX_PREVIEW_BINDINGS, '重复 owner 移到末尾并封顶不涨')
   }
 
-  /* ================== 组 1b：恢复页签不隐式起资源（P3 修复） */
   group('恢复页签：终端 / 浏览器页签不在启动时隐式恢复')
   {
     ok(restorableWorkbenchTab('terminal') === 'overview', '恢复阶段把终端页签降级到概览，不隐式起 PTY')
@@ -418,7 +382,6 @@ async function main() {
     )
   }
 
-  /* ============================================ 组 2：真实组件的惰性挂载 */
   group('WorkbenchPanel：默认关闭零挂载 / open 才挂 / close 保活')
   {
     useUiV3.setState({ workspaceTab: 'changes', workspaceOpen: false })
@@ -451,21 +414,18 @@ async function main() {
       { terminalBefore, terminalAfter }
     )
 
-    /* 关闭：不销毁已访问页签，只把容器设为 hidden */
     tree = rt.render(WorkbenchPanel, panelProps({ open: false }))
     tabs = paneSlots(tree).map((s) => s.props.tab)
     ok(tabs.includes('terminal') && tabs.includes('files'), '关闭面板清不掉 visited：终端/文件实例保留', tabs)
     const closedTerminal = slotFor(tree, 'terminal')
     ok(closedTerminal.props.containerVisible === false, '关闭后容器 visible=false（隐藏而非卸载）')
 
-    /* 再打开：仍是同一批，不重新引入 */
     tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
     tabs = paneSlots(tree).map((s) => s.props.tab)
     ok(tabs.includes('terminal') && tabs.includes('files') && !tabs.includes('browser'), '重新打开沿用已访问集合，未访问页签仍不挂', tabs)
     ok(!tabs.includes('context'), '未点开的上下文页签不挂载（只读但不预建）', tabs)
   }
 
-  /* ========================================= 组 3：owner 归属与双门 visible */
   group('WorkbenchPanel：owner 切换先隐藏旧 owner；active/visible 双门')
   {
     useUiV3.setState({ workspaceTab: 'terminal' })
@@ -487,7 +447,6 @@ async function main() {
     ok(!findByTestId(slot.type(slot.props), 'wb-pane-activate'), '已激活不再显示提示')
   }
 
-  /* ================================== 组 4：预览路径按 owner.key 绑定 */
   group('WorkbenchPanel：A 预览 → 切 B 不给 A path → 回 A 规则明确')
   {
     useUiV3.setState({ workspaceTab: 'files' })
@@ -504,7 +463,6 @@ async function main() {
     const framesA = rt.frames.map((f) => slotFor(f, 'files')).filter(Boolean)
     ok(framesA.some((s) => s.props.owner.key === 'sess-a' && s.props.previewPath === A_PATH), '存在「owner=A 且 path=A」的帧')
 
-    /* 切到 B：任何一帧都不得出现 owner=B 同时 path=A */
     tree = rt.render(WorkbenchPanel, panelProps({ owner: ownerB, open: true }))
     const badFrame = rt.frames
       .map((f) => slotFor(f, 'files'))
@@ -517,13 +475,11 @@ async function main() {
     ok(leaf?.props?.path === undefined, '传给 B 叶子的 path 确实是 undefined（不是靠 effect 稍后清）')
     ok(leaf?.props?.owner?.cwd === 'C:/proj/b', 'B 的叶子只拿到 B 自己的 cwd')
 
-    /* 切回 A：规则明确地恢复 A 自己绑定的路径 */
     tree = rt.render(WorkbenchPanel, panelProps({ owner: ownerA, open: true }))
     filesSlot = slotFor(tree, 'files')
     ok(filesSlot.props.owner.key === 'sess-a' && filesSlot.props.previewPath === A_PATH, '回 A 后恢复 A 的路径（每条 owner 各自绑定）')
   }
 
-  /* ============== 组 5：拆分 / 专注版面与弹出占位 ============== */
   group('WorkbenchPanel：拆分两格 / 专注单格 / 弹出为禁用占位')
   {
     useUiV3.setState({ workspaceTab: 'changes', workspaceSplit: false, workspaceFocus: false, workspaceSplitTab: 'context' })

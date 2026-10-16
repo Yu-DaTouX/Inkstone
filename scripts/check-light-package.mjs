@@ -1,4 +1,3 @@
-/** Verify the review package matches the tested build and selected pi generation. */
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { readFile, stat, readdir } from 'node:fs/promises'
@@ -18,7 +17,7 @@ for (const asset of await readdir('out/renderer/assets')) {
 }
 for (const [source, target, files] of [
   ['resources/pi-extensions', 'resources/yan-thin', ['danger-guard.js']],
-  ['integrations/hermes-inkstone', 'resources/integrations/hermes-inkstone', ['plugin.yaml','__init__.py','client.py','approvals.py','connect.py','README.md']]
+  ['integrations/hermes-inkstone', 'resources/integrations/hermes-inkstone', ['plugin.yaml','__init__.py','client.py','approvals.py','connect.py']]
 ]) {
   for (const file of files) assert.equal(hash(await readFile(join(root,target,file))), hash(await readFile(join(source,file))), `Packaged resource drift: ${file}`)
 }

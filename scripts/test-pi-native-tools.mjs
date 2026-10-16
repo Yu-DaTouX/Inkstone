@@ -7,7 +7,6 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
 
-// Only a loopback fixture receives requests. No credentials or user history are copied.
 const root = await mkdtemp(join(tmpdir(), 'inkstone-native-context-'))
 const piDir = join(root, 'pi')
 await mkdir(piDir)
@@ -20,7 +19,6 @@ const controllerMode = process.argv.includes('--controller')
 const pushes = []
 let sequence = 0
 let stderr = ''
-// Controller probes run sequentially because they compile the same test module.
 const nativeSearch = process.argv.includes('--native-search')
 const nativeTools = !process.argv.includes('--compact')
 const guardProbe = process.argv.includes('--guard')
@@ -117,14 +115,12 @@ try {
     process.env.YAN_SESSIONS_DIR = join(root, 'sessions')
     process.env.YAN_SESSION_ID = 'native-fixture'
     const { build } = await import('esbuild')
-    // Browser-backed search is outside this Node/loopback fixture. Fail if invoked.
     await build({ entryPoints: ['src/main/agent.ts'], outfile: 'out/test/native-context-controller.mjs', bundle: true, packages: 'external', platform: 'node', format: 'esm', logLevel: 'silent', plugins: [{ name: 'unused-electron-search', setup(build) {
       build.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'fixture' }))
       build.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export class BrowserWindow { constructor() { throw new Error("Browser search is outside this fixture"); } } export const session = { fromPartition() { throw new Error("Browser search is outside this fixture"); } };', loader: 'js' }))
     } }] })
     const { AgentController } = await import(pathToFileURL(resolve('out/test/native-context-controller.mjs')))
     controller = new AgentController({ cwd: root, piBin: cli, push: event => pushes.push(structuredClone(event)), ...(desktopCodemode ? { codemodeExtension: resolve('resources/pi-extensions/codemode-policy.js'), workModeExtension: resolve('resources/pi-extensions/work-mode.js') } : {}), ...(guardProbe ? { dangerGuardExtension: resolve('resources/pi-extensions/danger-guard.js') } : {}), ...(profileProbe ? { agentProfileExtension: resolve('resources/pi-extensions/profile.js') } : {}), contextExtension: resolve('resources/pi-extensions/context.js'), contextBudgetObserverExtension: resolve('resources/pi-extensions/context-budget-observer.js'), contextBudgetMaintenanceExtension: resolve('resources/pi-extensions/context-budget-maintenance.js'), projectKnowledgeExtension: resolve('resources/pi-extensions/project-knowledge.js'), goalResumeExtension: resolve('resources/pi-extensions/goal-resume.js'), handoffsExtension: resolve('resources/pi-extensions/handoffs.js') })
-    // Title generation is a separate UI feature, excluded from this context fixture.
     controller.maybeGenerateTitle = async () => null
     assert.equal((await controller.start()).ok, true)
     controller.rpc.on('event', event => frames.push(event))
@@ -177,7 +173,6 @@ try {
       if (localTools) assert(entries.some(entry => entry.customType === 'codemode-store'))
     }
     if (imageProbe) {
-      // Codemode image() output is a top-level image block on the codemode result, in live events and in history.
       const end = frames.find(frame => frame.type === 'tool_execution_end' && frame.toolCallId === 'native-code')
       assert(end?.result?.content?.some(block => block.type === 'image' && block.mimeType === 'image/png' && block.data === PNG_1PX), 'live codemode result carries the image block')
       const stored = entries.find(entry => entry.message?.role === 'toolResult' && entry.message.toolCallId === 'native-code')?.message

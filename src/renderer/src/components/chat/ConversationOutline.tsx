@@ -6,39 +6,8 @@ import { createOutlineProjector, type OutlineTurn } from '../../../../shared/out
 import { formatDuration } from '../../../../shared/duration'
 import type { UIMessage } from '../../../../shared/ipc'
 
-/**
- * 对话导航轨 —— 消息流左侧那一条。
- *
- * 每一格对应一轮**用户发起的对话**：
- *   · 一眼看出这个会话有多长（不用滚到底）
- *   · 看得出当前读到哪（高亮那一格）
- *   · 悬停展开这一轮的详情 + 点击跳转
- *
- * ── 为什么重写了（用户报的问题）──
- * 「现在的范围太小且过于密集导致选择起来很困难」—— 旧实现是
- * 3px 高的横线、间距 9px，一格的可点区域就是那条线本身（14×3px）。
- * 20 轮以上时，鼠标要精准落在 3px 的横线上才能选中，这是折磨。
- *
- * 改法：
- *   ① **命中区与视觉分离** —— 每格是一个 padding 撑起来的按钮
- *      （约 40×15px 的点按区），里面的 `.outline-bar` 才是那条细线。
- *      视觉上还是「一条条线」，但手不用那么准。
- *   ② **悬停就展开那一格** —— 鼠标停在哪一格，哪一格的线**在轨道内**
- *      长高变宽（不是一个和被指的那格错位的预览卡）。
- *   ③ 预览卡**锚在被指的那一格旁边**（旧的实现固定在轨道垂直中心，
- *      指第 1 轮却在屏幕中间弹框，指的是哪一格全靠猜）。
- *   ④ 间距 9 → 6，但每格命中区 15px 高 —— 总占用差不多，
- *      可点性高了一倍以上。
- *
- * 位置用 flex 均分而不是按像素排：消息高度差异极大（一句话 vs 一段代码），
- * 按高度排会让刻度全挤在一起。
- */
 const noopScroll = (): void => {}
 
-/**
- * 对话左侧的导航轨。默认画活动会话；分屏里非焦点的那块传入自己的 `messages`（只读投影），
- * 两块的轨道与正文避让完全一致，焦点换块时正文不横移。只读时点一格不跳转（点击先用来切焦点）。
- */
 export function ConversationOutline({ messages: projected, streamingId: projectedStreaming }: { messages?: UIMessage[]; streamingId?: string } = {}) {
   const t = useT()
   const storeMessages = useStore((s) => projected ?? s.messages)
@@ -59,7 +28,6 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
     catch (e) { setMarkError(String(e)) }
     finally { setSavingMark(false) }
   }
-  /* 离开刻度后稍等再收起预览：指针可以移进卡片里点书签 */
   const hideTimer = useRef(0)
   const setHover = (next: number | null | ((h: number | null) => number | null)): void => {
     window.clearTimeout(hideTimer.current)
@@ -72,68 +40,29 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
   const keepHover = (): void => window.clearTimeout(hideTimer.current)
   useEffect(() => () => window.clearTimeout(hideTimer.current), [])
 
-  /**
-   * 每一轮：用**和滚动跳转同一个分组函数**（groupIntoTurns）算出来。
-   *
-   * ⚠️ 这里以前是自己从 messages 里数 `role === 'user'` 得到的数组。
-   *    两者目前数量一致，但那是**巧合**（都等于用户消息数）——
-   *    只要分组逻辑一变（例如把连续用户消息合并成一轮、或把 bash 算进去），
-   *    导航轨的下标就会与 scrollToTurn 的下标错位，表现为
-   *    「点第 N 格跳到第 N-1 轮」。两套口径必须只有一个真源。
-   */
   const projectOutline = useMemo(() => createOutlineProjector(), [])
   const turns = useMemo(() => projectOutline(messages, streamingId), [messages, streamingId, projectOutline])
   const turnIndex = useMemo(() => new Map(turns.map((turn, index) => [turn.msgId, index])), [turns])
-  // 滚动监听只依赖消息身份；最新查找表走 ref，不因流式摘要更新重复绑定。
   const turnIndexRef = useRef(turnIndex)
   turnIndexRef.current = turnIndex
 
-  /**
-   * 当前高亮哪一格。
-   *
-   * ⚠️ 以前是 `round(scrollProgress * (n-1))` —— 用滚动百分比**线性**估算轮次。
-   *    但每轮高度差异很大（一句话 vs 一段代码），线性估算必然偏，
-   *    用户看到的就是「我点第 5 格，标记却跑到第 4 格」（定位不准）。
-   *    现在按**真实几何**算：找到顶边在视口内/之上的最接近的那一轮。
-   *    （那个 store 字段连同它在每次滚动时的写入已经删掉了，
-   *      见 store.ts 里 `scrollProgress` 处的说明。）
-   */
   const conversationId = useStore((s) => s.session?.conversationId ?? '')
   const [active, setActive] = useState(0)
-  /** 点击后钉住的下标（因为最后几格滚不动，靠钉住才能给出正确反馈） */
   const pinned = useRef<number | null>(null)
-  /** 我们自己发起的滚动在多久内不算「用户自己滚」 */
   const programmaticAt = useRef(0)
 
   const activeFromGeometry = (): number => {
-    /* 只看自己所在的这一列（分屏时窗口里有多个 `.stream` / 回合） */
     const scope: ParentNode = (root.current?.offsetParent as HTMLElement | null) ?? document
     const box = scope.querySelector('.stream')
     if (!box) return 0
     const boxTop = box.getBoundingClientRect().top
 
-    /*
-     * 已滚到底优先：这时“当前读到哪”就是最后一轮。
-     *
-     * ⚠️ 这一条必须在几何判定**之前**（用户报的 bug：他明明在最新消息，
-     * 柄却停在第一格）。原实现只在“顶边已越过视口顶部”的回合里挑，
-     * 若一个都没有（短会话内容不满一屏，或者滚到底后最后几轮全在视口里），
-     * `best` 就停在初始值 0 —— 高亮第一格。
-     * 阈值给 32px 容差：虚拟列表的高度是估算的，不能用严格相等。
-     */
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight <= 32
     if (atBottom && turns.length > 0) return turns.length - 1
-    /* 顶部同样是明确边界：不要让首条消息的 padding / 布局时序把高亮留在旧位置。 */
     if (box.scrollTop <= 1 && turns.length > 0) return 0
 
-    /*
-     * 拿 DOM 里真实存在的回合（虚拟化时只有可见的那几个）。
-     * 用 data-turn-id 匹配到「第几个用户回合」：
-     *   回合 id 就是用户消息 id，而导航轨的每一格也存了 msgId。
-     */
     let best = -1
     let bestTop = -Infinity
-    /** 视口里最靠上的一轮（内容不满一屏时的兜底） */
     let topmost = -1
     let topmostTop = Infinity
     for (const el of box.querySelectorAll<HTMLElement>('[data-turn-id]')) {
@@ -141,7 +70,6 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
       const idx = id ? turnIndexRef.current.get(id) : undefined
       if (idx === undefined) continue
       const top = el.getBoundingClientRect().top - boxTop
-      // 顶边已经越过视口顶部的那一轮里，最靠下的那个 = 当前在读的
       if (top <= 8 && top > bestTop) {
         bestTop = top
         best = idx
@@ -152,20 +80,12 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
       }
     }
     if (best >= 0) return best
-    // 没有越顶的：取视口里最靠上的一轮，而不是默认回第一格
     if (topmost >= 0) return topmost
     return 0
   }
 
-  /* 滚动时按几何重算（rAF 节流）。自己发起的滚动在 300ms 内不解除钉住 */
   useEffect(() => {
     let raf = 0
-    /*
-     * `.stream` 在普通列表 / 虚拟列表之间切换时会被替换。
-     * 如果只给 effect 执行当时的那个节点绑监听，替换后滚动仍然发生，
-     * 但导航轨永远读不到，于是高亮会卡在旧回合。对稳定的 document 做
-     * 捕获监听，只筛选真正的滚动容器，就不依赖某一次渲染得到的节点身份。
-     */
     const onScroll = (event: Event): void => {
       const target = event.target
       if (!(target instanceof HTMLElement) || !target.classList.contains('stream')) return
@@ -187,7 +107,6 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turns.length, turns.map((x) => x.msgId).join(',')])
 
-  /** 切会话时旧会话的点击钉住位置不再适用。 */
   useEffect(() => {
     pinned.current = null
     setActive(activeFromGeometry())
@@ -195,59 +114,30 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
   }, [conversationId, turns.length])
 
   const track = useRef<HTMLDivElement>(null)
-  /** 被指的那一格在轨道内的相对位置（0~1），预览卡按它定位 */
   const [hoverRatio, setHoverRatio] = useState(0)
 
-  /**
-   * 导航轨的**避让槽**（2026-09-23 V-2b）。
-   *
-   * 轨道自己固定贴在会话区左边缘（CSS 里的 `--outline-slot-*`），
-   * 不再跟着正文列跑。但正文列是 `max-width + margin:auto` 居中的：
-   * 宽窗时它离边界很远，轨道落在留白里；窄窗时它伸到边界，就会被轨道压住。
-   * 所以这里算出「正文内容左缘距边界」的差额，写成 `--outline-avoid`，
-   * 由 CSS 加在正文列的左内边距上。
-   *
-   * 为什么还得用 JS：这个量取决于内容列当前的实际位置，
-   * 而「有留白就不动、没留白就让位」这种分支纯 CSS 写不出来。
-   */
   const root = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const el = root.current
     const host = el?.offsetParent as HTMLElement | null
     if (!el || !host) return
 
-    /* 槽参数只有一份真源：CSS 变量（见 chat.css 的 .outline） */
     const cs = getComputedStyle(el)
     const inset = parseFloat(cs.getPropertyValue('--outline-slot-inset')) || 0
     const slotW = parseFloat(cs.getPropertyValue('--outline-slot-w')) || 0
     const gap = parseFloat(cs.getPropertyValue('--outline-slot-gap')) || 0
     const need0 = inset + slotW + gap
 
-    /*
-     * ⚠️ 不能只找 `.stream-inner`：虚拟化的长会话走 `.stream-row`，
-     *    根本没有 `.stream-inner`（旧实现此时直接 return，导航轨就钉死在
-     *    CSS 的 left:0）。两者的内边距与 max-width 完全一致，量哪个都行。
-     */
     const innerOf = (): HTMLElement | null =>
       host.querySelector<HTMLElement>('.stream-inner, .stream-row')
 
-    /* 只在自己所在的这一列里找：分屏时窗口里有好几个 `.stream`，全局取第一个会量到别的磁贴 */
     const streamOf = (): HTMLElement | null => host.querySelector<HTMLElement>('.stream')
 
     const measure = (): void => {
-      /*
-       * ① 纵向：轨道只覆盖对话区，不伸进输入区。
-       *    `.center` 是 grid 容器，absolute 子项理论上能用 grid-row 把
-       *    containing block 钉到 `.stream` 那一行；实测当前 Chromium 仍按
-       *    padding box 解析（grid-row 量到了 3，bottom 却等于会话区底边，
-       *    轨道会压住输入区），所以这里直接跟随 `.stream` 的矩形。
-       */
       const stream = streamOf()
       if (stream) {
         const hb0 = host.getBoundingClientRect()
         const sb = stream.getBoundingClientRect()
-        /* 只在值真变时写：每次无脑写样式会让布局失效、再触发 ResizeObserver，
-           浏览器会报「loop completed with undelivered notifications」。 */
         const top = `${Math.round(sb.top - hb0.top)}px`
         const height = `${Math.round(sb.height)}px`
         if (el.style.top !== top) el.style.top = top
@@ -255,14 +145,12 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
         if (el.style.bottom !== 'auto') el.style.bottom = 'auto'
       }
 
-      /* ② 横向：正文避让槽 */
       const inner = innerOf()
       if (!inner) return
       const applied = parseFloat(host.style.getPropertyValue('--outline-avoid')) || 0
       const hb = host.getBoundingClientRect()
       const ib = inner.getBoundingClientRect()
       const padLeft = parseFloat(getComputedStyle(inner).paddingLeft) || 0
-      /* 减掉**已应用**的避让量：否则每次测量都把上一次的位移再算一遍，会震荡 */
       const base = ib.left + padLeft - hb.left - applied
       const need = Math.max(0, need0 - base)
       const next = `${Math.round(need)}px`
@@ -271,11 +159,6 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
       }
     }
     measure()
-    /*
-     * RO 回调只**调度**，不直接写样式：回调里读几何 + 写样式会让布局失效，
-     * 同一帧内再触发通知，浏览器就报「loop completed with undelivered
-     * notifications」。合并到下一帧就稳定了。
-     */
     let raf = 0
     const schedule = (): void => {
       if (raf) return
@@ -286,17 +169,13 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
     }
     const ro = new ResizeObserver(schedule)
     ro.observe(host)
-    /* 内容列本身也要看：改对话宽度 / 收放面板时它都会变 */
     const inner0 = innerOf()
     if (inner0) ro.observe(inner0)
-    /* 对话区自己的尺寸（含虚拟化切换后新建的节点）也要跟踪 */
     const stream0 = streamOf()
     if (stream0) ro.observe(stream0)
-    /* 输入区高度一变，对话区高度也跟着变 */
     const composer0 = host.querySelector<HTMLElement>('.composer-wrap')
     if (composer0) ro.observe(composer0)
     window.addEventListener('resize', measure)
-    /* 设置里改对话宽度后，App 会派这个事件 */
     window.addEventListener('yan:stream-width', measure)
     return () => {
       if (raf) cancelAnimationFrame(raf)
@@ -310,12 +189,6 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
     }
   }, [turns.length])
 
-  /**
-   * 悬停时记下这一格在轨道里的相对位置。
-   *
-   * 用 `useLayoutEffect`：渲染后、绘制前量一次。悬停加高只用 transform，
-   * 不改命中区高度，所以这里量到的位置就是最终位置，刻度之间不会互相推开。
-   */
   useLayoutEffect(() => {
     if (hover === null) return
     const el = track.current?.querySelectorAll<HTMLElement>('[data-testid="outline-tick"]')[hover]
@@ -327,7 +200,6 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
     setHoverRatio(Math.min(1, Math.max(0, (a.top + a.height / 2 - b.top) / b.height)))
   }, [hover, turns.length])
 
-  // 轮数太少时不显示（2-3 格既没用又占地方）
   if (turns.length < 3) return null
 
   return (
@@ -343,22 +215,11 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
           <button
             key={turn.msgId}
             className={`outline-hit ${i === active ? 'on' : ''} ${i === hover ? 'hover' : ''} ${turn.failed ? 'err' : ''} ${marks.has(turn.msgId) ? 'mark' : ''}`}
-            /* 用 mouseover/mouseout 而不是 mouseenter/mouseleave：
-               React 的 enter/leave 是从 mouseover/mouseout 合成的，
-               直接派发 enter 不触发；over/out 是原生冒泡事件，行为可预测。 */
             onMouseOver={() => setHover(i)}
             onMouseOut={() => setHover((h) => (h === i ? null : h))}
             onFocus={() => setHover(i)}
             onBlur={() => setHover((h) => (h === i ? null : h))}
             onClick={() => {
-              /*
-               * 点击时**钉住**高亮。
-               * 为什么需要：最后几格的目标回合已经很靠底，滚动被夹在
-               * 最大 scrollTop 上（内容不够了）—— 滚动几乎不动，
-               * 几何重算会把高亮留在原来那格，用户看到的就是
-               * 「点了第 10 格，标记还在第 9 格」（他报的「跳到上一个」）。
-               * 钉住之后标记跟着点击走，用户至少知道自己的操作生效了。
-               */
               pinned.current = i
               programmaticAt.current = Date.now()
               setActive(i)
@@ -390,22 +251,6 @@ export function ConversationOutline({ messages: projected, streamingId: projecte
   )
 }
 
-/**
- * 悬停预览：一轮的**摘要** —— 一行标题 + 三行回答。
- *
- * ── 为什么改（用户反馈）──
- * 上一版把用户的**整段原话**铺在卡片里（clamp 5 行）+ 回答开头（clamp 5 行）。
- * 问题：用户的提问常常是一整段带路径、带报错、带换行的话，铺出来是一块杂讯，
- * 卡片的目的是「让我认出这是哪一轮」，不是「让我重读一遍原话」。
- *
- * 现在：
- *   · 标题 = 从用户原话里提炼的一行短句（第一个句子，≤ 22 字）
- *   · 正文 = AI 回答压成**三行**（`-webkit-line-clamp: 3`）
- *   标题用强调色 + 稍大字号，回答用灰色、行高紧 —— 一眼分清哪个是「问」哪个是「答」。
- *
- * `ratio` 是被指那一格在轨道内的垂直位置（0~1）。
- * 卡片按它对齐，而不是固定居中 —— 否则指第 1 轮却在屏幕中间弹框。
- */
 function OutlinePreview({
   turn,
   n,
@@ -432,24 +277,12 @@ function OutlinePreview({
   const t = useT()
   const card = useRef<HTMLDivElement>(null)
 
-  /**
-   * 挂载后量一次：把卡片对齐到被指的那一格。
-   *
-   * ⚠️ `top` 是相对 `.outline` 容器的，不是相对视口 ——
-   *   卡片是 absolute，它的包含块是 .outline（也是 absolute）。
-   *   上一版直接用视口坐标赋值，于是卡片被推到下面一屏（探针实测偏 288px）。
-   */
   useLayoutEffect(() => {
     const el = card.current
     const host = el?.offsetParent as HTMLElement | null
     const anchor = el?.parentElement?.querySelector<HTMLElement>('.outline-track')
     if (!el || !host || !anchor) return
 
-    /*
-     * 先量水平：卡片挂在槽的右侧，宽度不够就压缩，
-     * 保证右缘不越出会话可用区（V-2b：不能盖住正文/右栏控件）。
-     * 必须在量高度**之前**改宽度 —— 否则 top 是旧高度算的。
-     */
     const area = host.offsetParent as HTMLElement | null
     if (area) {
       const ab = area.getBoundingClientRect()
@@ -465,11 +298,9 @@ function OutlinePreview({
     const hb = host.getBoundingClientRect()
     const h = el.offsetHeight
 
-    // 视口里的目标中点 → 换成宿主坐标系里的 top
     const targetMid = a.top + ratio * a.height
     let top = targetMid - hb.top - h / 2
 
-    // 夹进宿主盒子里（不要跑到标题栏上面或窗口外面）
     const min = 4
     const max = Math.max(min, hb.height - h - 4)
     if (top < min) top = min
@@ -477,10 +308,6 @@ function OutlinePreview({
     el.style.top = `${Math.round(top)}px`
   }, [ratio, n])
 
-  /*
-   * 卡片高度在内容与字体就绪后才稳定；首次量高时偏矮会让贴近底部的卡片被宿主裁掉下沿。
-   * 下一帧按最终高度把它再夹回宿主盒内。
-   */
   useEffect(() => {
     const el = card.current
     const host = el?.offsetParent as HTMLElement | null
@@ -494,7 +321,6 @@ function OutlinePreview({
 
   return (
     <div className="outline-preview" ref={card} data-testid="outline-preview" onMouseEnter={onEnter} onMouseLeave={onLeave}>
-      {/* 序号/总数 · 标题 · 书签 */}
       {markError ? <div role="alert" className="set-warn">{markError}</div> : null}
       <div className="op-head">
         <span className="op-n">
@@ -517,7 +343,6 @@ function OutlinePreview({
         </button>
       </div>
 
-      {/* 正文：AI 回答的三行摘要，关键句（模型加粗的那句）高亮 */}
       {turn.assistant ? (
         <div className="op-answer" data-testid="outline-preview-answer">
           {summaryParts(turn.assistant).map((part, i) => part.hl ? <b key={i}>{part.text}</b> : <span key={i}>{part.text}</span>)}
@@ -526,7 +351,6 @@ function OutlinePreview({
         <div className="op-empty">{t('outline.noAnswer')}</div>
       )}
 
-      {/* 元数据：时间 · 状态 · 步数 · 用时；失败轮标红 */}
       <div className={`op-meta ${turn.failed ? 'err' : ''}`}>
         <span>{[
           turn.timestamp ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(turn.timestamp)) : null,
@@ -541,40 +365,27 @@ function OutlinePreview({
   )
 }
 
-/**
- * 把用户原话提炼成一个标题。
- *
- * 为什么要提炼而不是截断：用户的话常常以路径 / 报错 / 图片名开头：
- *   `C:\Users\...\1.png白色背景下 渲染有问题 右边栏的任务没有...`
- *   截断只会得到一串路径。这里改成先**去掉开头的路径/文件名**，
- *   再取**第一个句子**，最后才截到 22 字。
- */
 function makeTitle(s: string): string {
   let t = s
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/[<>{}[\]|]/g, ' ')
-    // 去掉统一前缀的路径（Windows 盘符 / POSIX / UNC）
     .replace(/[A-Za-z]:[\\/][^\s]*/g, ' ')
     .replace(/(?:^|\s)[~/][\w./-]{4,}/g, ' ')
-    // 去掉纯文件名（带扩展名的那种）
     .replace(/\S+\.(png|jpe?g|gif|webp|svg|ts|tsx|js|json|md|css|html|txt|log|py|rs|go)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
   if (!t) t = s.replace(/\s+/g, ' ').trim()
 
-  // 取第一个句子：中文句号/问号/叹号，或英文标点，或换行
   const m = /^[^。！？!?\n]{1,60}/.exec(t)
   if (m) t = m[0].trim()
 
-  // 去掉结尾的标点与连接词
   t = t.replace(/[，,、；;：:。.]+$/, '').trim()
 
   return t.length > 22 ? `${t.slice(0, 22)}…` : t
 }
 
-/** 摘要分段：模型用 ** 标出的第一句作为关键句高亮，其余按纯文本显示 */
 function summaryParts(s: string): { text: string; hl: boolean }[] {
   const marked = /(\*\*|__)(.+?)\1/.exec(s)
   if (!marked) return [{ text: clean(s, 600), hl: false }]
@@ -587,15 +398,12 @@ function summaryParts(s: string): { text: string; hl: boolean }[] {
   ]
 }
 
-/** 预览里不需要 markdown 语法噪音，压成纯文本并截断 */
 function clean(s: string, max = 220): string {
   const plain = s
     .replace(/```[\s\S]*?```/g, ' […] ')
     .replace(/`([^`]*)`/g, '$1')
-    // 行内强调与链接只留文字，别把 ** 和 [..](..) 原样露在预览里
     .replace(/(\*\*|__)(.+?)\1/g, '$2')
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    // 保留换行 —— 三行回答是按行 clamp 的，压成一长行就变成「一整段的开头」
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{2,}/g, '\n')
     .replace(/^[*_#>|]+\s*/gm, '')

@@ -13,7 +13,6 @@
 
   log('=== 用量条（输入 / 输出 / 缓存命中 / 输出速度）===')
 
-  // 等 pi 连上
   for (let i = 0; i < 60; i++) {
     if (store.getState().conn === 'ready') break
     await sleep(500)
@@ -25,18 +24,15 @@
 
   const ta = q('[data-testid="composer"]')
 
-  /* ---- 1. 还没跑过对话时不占位 ---- */
   log('\n--- 1. 空会话不占位 ---')
   const beforeHas = !!q('[data-testid="usagebar"]')
   log('  跑对话前 tokbar 存在: ' + beforeHas)
 
-  /* ---- 2. 发一条真消息 ---- */
   log('\n--- 2. 真发一条，观察数字 ---')
   setVal(ta, '用一句话说明什么是 RAII。不要用工具。')
   await sleep(250)
   q('[data-testid="send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
-  // 流式期间采样一次
   let liveSample = null
   for (let i = 0; i < 60; i++) {
     await sleep(400)
@@ -49,7 +45,6 @@
   }
   log('  流式期间: ' + JSON.stringify(liveSample))
 
-  // 等结束
   for (let i = 0; i < 200; i++) {
     await sleep(500)
     const busy = store.getState().session?.isStreaming || !!q('.cursor')
@@ -58,7 +53,6 @@
   }
   await sleep(1200)
 
-  /* ---- 3. 断言：DOM 里有条，字段齐全 ---- */
   const bar = q('[data-testid="usagebar"]')
   ok(!!bar, 'tokbar 出现了')
   if (!bar) return out.join('\n')
@@ -73,20 +67,12 @@
     ok(labels.includes(need), `有「${need}」`)
   }
 
-  /* ---- 4. 数字真实性：与 store 里的 usage 对齐 ---- */
   const last = [...store.getState().messages].reverse().find((m) => m.role === 'assistant' && m.usage)
   log('\n--- 4. 与真实 usage 对比 ---')
   log('  usage: ' + JSON.stringify(last?.usage))
   log('  speed: ' + (last?.speed ? last.speed.toFixed(2) + ' tok/s' : '（无）'))
   log('  elapsedMs: ' + last?.elapsedMs)
 
-  /*
-   * 本轮用时的位置（实施-11 H-1 之后的**当前口径**）。
-   *
-   * 用时只在**回合页脚**显示（`turn-footer`），用量条不再重复占一格 ——
-   * 所以这里反过来断言：条上没有「用时」项。值本身仍来自 pi 的 `elapsedMs`
-   * （回合页脚那一条由 `turnfooter` / `usageelapsed` 覆盖）。
-   */
   const elapsedItem = toks.find((x) => x.querySelector('.ub-label')?.textContent === '用时')
   ok(!elapsedItem, '用量条不再显示「用时」（H-1 起只在回合页脚）')
 
@@ -98,15 +84,12 @@
     `速度在合理范围（${last?.speed?.toFixed(1)}，5~3000 tok/s）`
   )
 
-  // 输出字段应该显示的就是 output
   const outTok = toks.find((x) => x.querySelector('.ub-label')?.textContent === '输出')
   const outShown = outTok?.querySelector('.ub-value')?.textContent ?? ''
   log('  输出显示: ' + JSON.stringify(outShown))
   ok(outShown.length > 0 && outShown !== '—', '输出有数字而不是 —')
 
-  // 缓存命中率
   const cacheTok = toks.find((x) => x.querySelector('.ub-label')?.textContent === '缓存')
-  /* 命中率就是缓存项的值（.ub-value）；不再有单独的 .ub-extra */
   const hitShown = cacheTok?.querySelector('.ub-value')?.textContent ?? ''
   log('  命中率显示: ' + JSON.stringify(hitShown))
   const u = last.usage
@@ -114,8 +97,6 @@
     u.cacheRead + u.input + u.cacheWrite > 0
       ? (() => {
           const pct = (u.cacheRead / (u.cacheRead + u.input + u.cacheWrite)) * 100
-          // 与 shared/turns.ts 的 formatHitRate 同一规则：
-          // 只有原始比例就是 100% 才显示 100%，否则**截断**到两位小数（不四舍五入）。
           if (pct >= 100) return '100%'
           return (Math.floor(pct * 100) / 100).toFixed(2) + '%'
         })()
@@ -126,15 +107,12 @@
     ok(true, '（本轮无提示词用量，跳过命中率断言）')
   }
 
-  // tooltip 信息
   ok(!!cacheTok?.getAttribute('title'), '缓存项有 tooltip 说明算法')
 
-  /* ---- 5. 大数缩写 ---- */
   log('\n--- 5. 格式化 ---')
   log('  输入显示: ' + JSON.stringify(toks.find((x) => x.querySelector('.ub-label')?.textContent === '输入')?.querySelector('.ub-value')?.textContent))
   ok(!/\d{6,}/.test(bar.textContent), '没有裸露的六位以上数字（应该缩写）')
 
-  /* ---- 6. 新会话：条在，但没有用量数字 ---- */
   log('\n--- 6. 新会话：条在但没有用量数字 ---')
   await store.getState().newSession()
   await sleep(3000)
@@ -143,12 +121,10 @@
     const outItem = qa('.usagebar .ub-item').find((x) => x.querySelector('.ub-label')?.textContent === '输出')
     const v = outItem?.querySelector('.ub-value')?.textContent ?? ''
     ok(v.startsWith('—') || v === '', `新会话「输出」没有数字（实际 ${JSON.stringify(v)}）`)
-    /* 新会话没有本轮用时 —— 不能把上一轮的耗时留在界面上 */
     const elapsed = qa('.usagebar .ub-item').find((x) => x.querySelector('.ub-label')?.textContent === '用时')
     ok(!elapsed, `新会话不显示「用时」（实际 ${elapsed ? JSON.stringify(elapsed.textContent) : '无'}）`)
   }
 
-  /* ---- 7. 溢出 ---- */
   const over = bar.scrollWidth - bar.clientWidth
   ok(over <= 0, `用量条无横向溢出（差 ${over}）`)
 

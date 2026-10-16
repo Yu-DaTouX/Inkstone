@@ -1,13 +1,3 @@
-/**
- * 「生活」风格令牌：A · 纸墨留白。
- *
- * 来源是 Claude 留下的设计概念（`.local-docs/archive/2026-09-28-ui-concepts/`：
- * 暖白 #F7F5EF、炭黑字、森林绿点缀、8px 圆角），用于生活助手入口与对话。
- * 「砚」风格仍在 theme.ts；两套共用同一组尺寸与控件，只换调色板。
- *
- * 注意：`npm run check:mobile-tokens` 只校验 theme.ts 与 tokens.css 同名同值，
- * 这套令牌不参与该校验，改动它不会影响桌面设计规范。
- */
 import { useColorScheme } from 'react-native'
 import type { Palette } from './theme'
 
@@ -55,7 +45,6 @@ const dark: Palette = {
   errSoft: 'rgba(240,138,132,0.16)'
 }
 
-/** 生活风格的调色板；浅色即 A · 纸墨留白。 */
 export function useLifePalette(): Palette {
   return useColorScheme() === 'light' ? light : dark
 }

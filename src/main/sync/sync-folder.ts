@@ -1,19 +1,3 @@
-/**
- * 同步目录的读写。
- *
- * 布局（设备无关，放在用户指定文件夹下的固定子目录里，避免和用户其它文件混在一起）：
- *
- *   <同步文件夹>/inkstone-sync/
- *     records/<kind>/<sha256(key) 前 32 位>.json   每条记录一个文件
- *     conflicts/index.json                          冲突索引（供界面提示）
- *     conflicts/<时间>-<设备名>-<keyHash>-<版本哈希>.json   冲突副本（两份内容都在里面）
- *
- * 每条记录文件形如：
- *   { "v":1, "key":"prompt:review", "kind":"prompt", "deviceId":"…", "deviceName":"…",
- *     "modifiedAt":1690000000000, "hash":"<payload 的 sha256>", "payload":"…" }
- *
- * 读端对半写入 / 损坏文件一律跳过并报告，从不删除；写端用临时文件 + rename。
- */
 import { existsSync } from 'node:fs'
 import { access, mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -42,10 +26,6 @@ export class SyncFolder {
     this.conflictsDir = join(this.dir, 'conflicts')
   }
 
-  /**
-   * 检查同步目录可用：缺失或不可写都返回错误文字，不抛异常、不删除。
-   * 只有确认可用才会去建 `inkstone-sync` 子目录。
-   */
   async check(): Promise<{ ok: true } | { ok: false; error: string }> {
     if (!existsSync(this.root)) return { ok: false, error: `同步文件夹不存在：${this.root}` }
     try {
@@ -104,23 +84,17 @@ export class SyncFolder {
         const raw = JSON.parse(await readFile(join(this.conflictsDir, entry.name), 'utf8')) as ConflictRecord
         if (raw && typeof raw.id === 'string' && typeof raw.key === 'string' && typeof raw.remoteHash === 'string') out.push(raw)
       } catch {
-        /* 损坏的冲突副本跳过，不删。 */
       }
     }
     out.sort((a, b) => b.detectedAt - a.detectedAt)
     return out
   }
 
-  /** 按 id 找一条冲突副本；找不到返回 undefined。 */
   async findConflict(id: string): Promise<ConflictRecord | undefined> {
     if (!id) return undefined
     return (await this.readConflicts()).find((item) => item.id === id)
   }
 
-  /**
-   * 用户处理后删除冲突副本并重写索引。幂等：文件已经不在时也算成功。
-   * 只删 `conflicts/` 下 id 匹配的那一份，不动 `records/` 里的记录。
-   */
   async removeConflict(id: string): Promise<void> {
     if (!id) return
     let names: string[]
@@ -136,14 +110,12 @@ export class SyncFolder {
         const raw = JSON.parse(await readFile(file, 'utf8')) as { id?: unknown }
         if (raw?.id === id) await rm(file, { force: true })
       } catch {
-        /* 损坏副本跳过，不因一个坏文件挡住已处理的冲突清理。 */
       }
     }
     const remaining = (await this.readConflicts()).filter((item) => item.id !== id)
     await atomicWriteFile(join(this.conflictsDir, 'index.json'), JSON.stringify({ v: 1, conflicts: remaining }, null, 2))
   }
 
-  /** 写入冲突副本；同一 (key, 双方哈希) 只留一份，重复同步不会堆副本。 */
   async writeConflict(conflict: ConflictRecord): Promise<void> {
     await mkdir(this.conflictsDir, { recursive: true })
     const existing = await this.readConflicts()
@@ -193,8 +165,6 @@ async function readRecordFile(file: string, expectedKind: SyncRecordKind, skippe
   }
   return { key, kind, deviceId, deviceName, modifiedAt, payload, hash }
 }
-
-/** 冲突副本里的旧 index 在极端情况下可能损坏；这里不依赖它，直接按文件扫描。 */
 
 function safeName(name: string): string {
   const cleaned = name.replace(/[^\w\u4e00-\u9fa5.-]+/g, '_').slice(0, 40)

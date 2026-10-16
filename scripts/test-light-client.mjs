@@ -1,4 +1,3 @@
-/** 非 Git 委派、模型传递、两档权限与子运行审批的回归；不连接模型服务。 */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'

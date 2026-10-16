@@ -1,33 +1,3 @@
-/**
- * 上下文状态的落盘层（N21-4 / S1）。
- *
- * 位置：`YAN_DATA_DIR/context-state/<sessionId>.json`（方案 §13.5 第 3 点定的位置）。
- *
- * ══════════════════════════════════════════════════════════════════
- * 三条必须守住的性质
- * ══════════════════════════════════════════════════════════════════
- * **① 派生物，丢了不心疼。**
- *   这里的东西全部可以从原始 session 重建（`src/shared/context-state.ts`
- *   的硬约束 ①）。所以「损坏 / 版本不认识 / 水位对不上」的正确处置是
- *   **安全丢弃**：删掉文件、返回原因、退回 pi 原生行为 ——
- *   而不是尽力解析半份状态喂给模型，也不是让读失败把主链路拖挂。
- *
- * **② 写入要么整份生效，要么一份都别动。**
- *   原子写：临时文件 → 回读校验 → `rename`。校验不通过时**绝不 rename**，
- *   上一份好的状态（last-known-good）原样保留。理由很实际：
- *   状态是给模型看的，半份/错误状态比没有状态危险得多（§12.0 的降级路径）。
- *
- * **③ 只有原始 session 是 source of truth。**
- *   这里不复制消息正文、不存历史；`ArchiveEntry.contentStored` 在 S1 恒为
- *   false（只有元数据）。删除会话时清掉派生状态，原始 JSONL 不受影响。
- *
- * ══════════════════════════════════════════════════════════════════
- * 本切片不做的事
- * ══════════════════════════════════════════════════════════════════
- * 不生成状态（谁生成由后续切片定：主进程或扩展提案都可以调这里的写入）、
- * 不读状态去改发给模型的消息、不调用模型。
- * `dir` 参数是为了让测试与 live 场景把文件写到隔离目录 —— 生产调用不传。
- */
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
@@ -41,11 +11,6 @@ import {
 } from '../shared/context-state'
 import { YAN_DIR } from './paths'
 
-/**
- * 主进程侧调用者需要的 schema 构造器与版本号：从 store 再导出一次，
- * 免得调用方/脚本为了一个 `emptyTaskState` 去知道 shared 层的文件布局。
- * 校验与类型仍以 `shared/context-state.ts` 为唯一真源。
- */
 export {
   CONTEXT_STATE_SCHEMA_VERSION,
   CONTEXT_ARCHIVE_SCHEMA_VERSION,
@@ -54,25 +19,16 @@ export {
 
 export const CONTEXT_STATE_DIRNAME = 'context-state'
 
-/** 派生状态目录（`dir` 覆盖只给测试 / 隔离场景用） */
 export function contextStateDir(dir?: string): string {
   return dir ?? join(YAN_DIR, CONTEXT_STATE_DIRNAME)
 }
 
-/**
- * 会话 id 直接进文件名，所以必须先挡住路径穿越。
- *
- * 真实 pi 会话 id 是 `randomUUID().slice(0,8)`（8 位十六进制），
- * 这里放宽到 `[A-Za-z0-9._-]` 以免以后上游换 id 形状时误伤，
- * 但仍然排除分隔符与 `.` / `..`。
- */
 const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,200}$/
 
 async function quarantineInvalid(path: string): Promise<void> {
   try {
     await rename(path, `${path}.invalid-${Date.now()}-${randomUUID()}`)
   } catch {
-    // 保留无法隔离的原文件；本次调用仍按校验失败处理。
   }
 }
 
@@ -96,7 +52,6 @@ function assertSafeSessionId(sessionId: unknown): asserts sessionId is string {
   }
 }
 
-/** 状态层错误的统一形状：带上校验明细，调用方不必猜为什么失败 */
 export class ContextStateError extends Error {
   readonly issues: ValidationIssue[]
   constructor(message: string, issues: ValidationIssue[] = []) {
@@ -106,20 +61,8 @@ export class ContextStateError extends Error {
   }
 }
 
-/* ---------------------------------------------------------------- 原子写 */
-
-/** 临时文件序号：同一进程内多次写同一目标也不会撞名 */
 let tempSeq = 0
 
-/**
- * 原子写 JSON：临时文件 → 回读 + 校验 → rename。
- *
- * 为什么回读而不是「写完就当对」：写盘可能被截断（磁盘满、进程被杀、
- * 杀毒软件锁文件），而状态文件一旦半份就会污染推理。回读一次的成本
- * 与「让模型带着半份状态跑一轮」比可以忽略。
- * 为什么不用 fsync：这是派生物，断电丢一份可以重建；不值得为它付
- * 每次写入的 fsync 代价（Windows 上尤其明显）。
- */
 async function writeJsonAtomic(
   target: string,
   value: unknown,
@@ -147,7 +90,6 @@ async function writeJsonAtomic(
   }
 }
 
-/* Per-file serialization ensures a stale load cannot quarantine a concurrent replacement. */
 const fileOperations = new Map<string, Promise<unknown>>()
 function withFileLock<T>(file: string, work: () => Promise<T>): Promise<T> {
   const previous = fileOperations.get(file) ?? Promise.resolve()
@@ -159,30 +101,17 @@ function lockKey(sessionId: string, opts: StoreOptions, suffix: string): string 
   return `${contextStateDir(opts.dir)}\\0${sessionId}${suffix}`
 }
 
-/* ---------------------------------------------------------------- 状态读写 */
-
 export type ContextStateLoad =
   | { status: 'ok'; state: ContextStateFile; path: string }
   | { status: 'missing'; path: string }
-  /** 内容非法或版本不认识 —— 文件已被丢弃，调用方按「没有状态」处理 */
   | { status: 'discarded'; reason: 'invalid' | 'incompatible'; issues: ValidationIssue[]; path: string }
-  /** 读不了（权限 / IO）—— 不丢弃，也不假装没有 */
   | { status: 'unreadable'; error: string; path: string }
 
 export interface StoreOptions {
-  /** 隔离目录（测试 / live 场景用）；生产不传 = `YAN_DATA_DIR/context-state` */
   dir?: string
-  /** 原始条目索引；给了就能把「指向不存在/已裁剪条目」的状态判为非法 */
   raw?: RawIndex
 }
 
-/**
- * 读一份状态。
- *
- * `status: 'discarded'` 表示文件**已经被删掉**（损坏 / 版本不认识 /
- * 引用不存在的原始条目）。这是有意的破坏性修复：与其让下一轮再读到
- * 同一份坏状态，不如当场清掉，下一轮由生成侧重建。
- */
 async function loadContextStateUnlocked(sessionId: string, opts: StoreOptions = {}): Promise<ContextStateLoad> {
   const path = contextStatePath(sessionId, opts.dir)
   let text: string
@@ -208,7 +137,6 @@ async function loadContextStateUnlocked(sessionId: string, opts: StoreOptions = 
 
   const inspected = inspectContextStateFile(parsed, opts.raw ?? {})
   if (inspected.status === 'ok') {
-    /* 文件里的 sessionId 必须就是我们要读的那一个 —— 防止文件名与内容对不上 */
     if (inspected.state.sessionId !== sessionId) {
       await quarantineInvalid(path)
       return {
@@ -236,12 +164,6 @@ async function loadContextStateUnlocked(sessionId: string, opts: StoreOptions = 
   }
 }
 
-/**
- * 保存一份状态。校验不通过时抛 `ContextStateError`，**不动**已有文件。
- *
- * 调用方应当传入 `raw`（原始条目索引）—— 没有它就只能做形状校验，
- * 无法发现「状态指向的 entry 已经不在原始会话里」。
- */
 async function saveContextStateUnlocked(state: ContextStateFile, opts: StoreOptions = {}): Promise<void> {
   assertSafeSessionId(state?.sessionId)
   const inspected = inspectContextStateFile(state, opts.raw ?? {})
@@ -260,8 +182,6 @@ export function loadContextState(sessionId: string, opts: StoreOptions = {}): Pr
 export function saveContextState(state: ContextStateFile, opts: StoreOptions = {}): Promise<void> {
   return withFileLock(lockKey(state.sessionId, opts, ''), () => saveContextStateUnlocked(state, opts))
 }
-
-/* ---------------------------------------------------------------- 归档读写 */
 
 export type ArchiveLoad =
   | { status: 'ok'; archive: ArchiveFile; path: string }
@@ -335,15 +255,6 @@ export function saveArchive(archive: ArchiveFile, opts: StoreOptions = {}): Prom
   return withFileLock(lockKey(archive.sessionId, opts, ''), () => saveArchiveUnlocked(archive, opts))
 }
 
-/* ---------------------------------------------------------------- 清理 */
-
-/**
- * 删除一个会话的派生状态（状态 + 归档 + 可能残留的临时文件）。
- *
- * 用途：会话被删除时清理（`main/sessions.ts` 的 `deleteSession`）。
- * 删错了也不致命 —— 这些都是可重建的派生物，原始 JSONL 才是历史。
- * 返回是否真的删掉了东西。
- */
 async function deleteContextStatesUnlocked(sessionIds: readonly string[], opts: StoreOptions = {}): Promise<number> {
   const dir = contextStateDir(opts.dir)
   let removed = 0
@@ -352,14 +263,12 @@ async function deleteContextStatesUnlocked(sessionIds: readonly string[], opts: 
     const targets = [
       join(dir, `${sessionId}.json`),
       join(dir, `${sessionId}.archive.json`),
-      /* N21-4 / S5 的召回账本与审计（扩展写的，同样按 sessionId 命名） */
       join(dir, `${sessionId}.recall.json`),
       join(dir, `${sessionId}.recall.jsonl`)
     ]
     for (const target of targets) {
       if (await unlink(target).then(() => true).catch(() => false)) removed++
     }
-    /* 崩溃留下的临时文件也一并收掉，避免用户数据目录里攒垃圾 */
     for (const name of await readdir(dir).catch(() => [] as string[])) {
       if (
         !name.startsWith(`${sessionId}.json.`) &&
@@ -375,7 +284,6 @@ async function deleteContextStatesUnlocked(sessionIds: readonly string[], opts: 
   return removed
 }
 
-/** 目录里有哪些会话带了派生状态（诊断 / 测试用；顺序不保证） */
 export async function listContextStateSessionIds(opts: StoreOptions = {}): Promise<string[]> {
   const dir = contextStateDir(opts.dir)
   const names = await readdir(dir).catch(() => [] as string[])
@@ -400,8 +308,6 @@ export async function deleteContextStates(sessionIds: readonly string[], opts: S
   }
   return removed
 }
-
-/* ---------------------------------------------------------------- 小工具 */
 
 function isEnoent(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'ENOENT'

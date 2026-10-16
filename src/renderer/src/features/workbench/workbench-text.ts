@@ -1,11 +1,6 @@
-/**
- * 工作区面板自己的短文案（v3 未定稿，不写进两份共享 i18n JSON）。
- * 与 `app/v3-text.ts` 同样的理由：外壳定稿后再统一并入 i18n。
- */
 import type { Lang } from '../../i18n'
 import type { WorkbenchTabId } from './types'
 
-/** 概览磁贴与头部的文案。 */
 export interface OverviewText {
   title: string
   back: string

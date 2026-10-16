@@ -1,4 +1,3 @@
-/** 定时任务面板的 IPC 适配（`yan:schedule:*`），与模型的 `yan schedule …` 共用同一个服务。 */
 import type { IpcRegistrar } from './registrar'
 import type { ScheduleService } from '../schedule-service'
 

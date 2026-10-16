@@ -1,12 +1,3 @@
-/**
- * v3 设置页（WP-43 / S0）的局部检查。
- *
- * 只做两件不启动 Electron / 不读用户设置 / 不调模型的事：
- *   1. 用 esbuild 编译纯逻辑（旧深链接映射、用量展示数值），在 Node 里断言；
- *   2. 静态检查 S0 源码仍保留约定的测试 id 与子模块入口、没引入 v2 旧设置组件。
- *
- * 可独立执行：node scripts/test-v3-settings.mjs
- */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -26,7 +17,6 @@ async function loadTs(rel) {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 }
 
-/* ── 1. 旧深链接 → v3 分区（纯逻辑） ───────────────────────── */
 const types = await loadTs('../src/renderer/src/features/settings/types.ts')
 const { SETTINGS_SECTIONS, DEFAULT_SETTINGS_SECTION, isSettingsSectionId, resolveLegacyView } = types
 
@@ -64,7 +54,6 @@ const mappedCases = [
 for (const [view, section] of mappedCases) {
   assert.deepEqual(resolveLegacyView(view), { kind: 'section', view, section }, `${view} → ${section}`)
 }
-/* G1 落盘六个通用分区后，已知 v2 旧页都能落到 v3 分区，不再有 unmigrated。 */
 for (const view of []) {
   assert.equal(resolveLegacyView(view).kind, 'unmigrated', `${view} 已知旧页但 v3 未迁移`)
   assert.equal(resolveLegacyView(view).view, view)
@@ -77,7 +66,6 @@ assert.equal(resolveLegacyView(null).kind, 'unknown')
 assert.equal(isSettingsSectionId('usage'), true)
 assert.equal(isSettingsSectionId('auth'), false)
 
-/* ── 2. 用量展示数值（纯逻辑） ─────────────────────────────── */
 const usage = await loadTs('../src/renderer/src/features/settings/usage/usage-model.ts')
 const { compactNumber, modelShare, shareText, peakHourText, USAGE_RANGES } = usage
 assert.deepEqual([...USAGE_RANGES], ['all', '30d', '7d'], '范围取值与后端一致')
@@ -98,7 +86,6 @@ assert.equal(peakHourText(0), '00:00')
 assert.equal(peakHourText(null), null)
 assert.equal(peakHourText(24), null)
 
-/* ── 3. S0 源码契约（静态） ────────────────────────────────── */
 const appearance = readFileSync(here('../src/renderer/src/features/settings/appearance/AppearanceSettings.tsx'), 'utf8')
 for (const id of ['v3-theme-light', 'v3-theme-dark', 'v3-switch-v2']) {
   assert.ok(appearance.includes(id), `外观页保留测试 id ${id}`)

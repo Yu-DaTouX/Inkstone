@@ -1,10 +1,3 @@
-/**
- * 回复详细程度：模型菜单里的三档 + 落盘（方案 3.1）。
- *
- * 为什么不测「模型真的更简洁了」：那要花 token 且不稳定。
- * 这里钉住的是**界面与设置**这条链路；提示注入由 test-unit
- * 的 test-response-detail 用假 pi API 覆盖。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -56,7 +49,6 @@
       '选中态跟着更新'
     )
 
-    /* 还原：别把探针改的设置留给后面的场景 */
     q('[data-testid="detail-standard"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await sleep(400)
     ok(

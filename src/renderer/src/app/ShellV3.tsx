@@ -1,7 +1,3 @@
-/*
- * ⚠️ 样式入口必须最先求值：`design/index.css` 里的 `@layer reset, tokens, base, …`
- * 先声明层顺序，后面 ui/features 的模块 CSS 才会落到正确的层上。
- */
 import '../design/index.css'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
 import { Splitter } from '../ui'
@@ -47,15 +43,8 @@ import type { ContextSlice } from '../state/context-breakdown'
 import type { PaneContextSegment } from '../../../shared/pane-popout'
 import './ShellV3.css'
 
-/**
- * `bootstrap()` 不是幂等的（第二次会把设置、会话、标题整批重拉一遍），
- * 而 React StrictMode 在开发态会把 effect 跑两次。订阅与心跳本身可以重复挂
- *（`onPush` 返回退订函数、`startConnWatch` 有单例标志），所以这里只把
- * `bootstrap()` 钉成模块级一次性。
- */
 let bootstrapStarted = false
 
-/** 上下文分类在弹出窗里的标签；复用共享 i18n 的 `ctx.cat.*`，不另造文案。 */
 const CONTEXT_SEGMENT_LABELS: Record<ContextSlice['id'], MessageKey> = {
   system: 'ctx.cat.system',
   user: 'ctx.cat.user',
@@ -64,10 +53,6 @@ const CONTEXT_SEGMENT_LABELS: Record<ContextSlice['id'], MessageKey> = {
   tools: 'ctx.cat.tools'
 }
 
-/**
- * 把当前会话的上下文折算成弹出窗契约的受限分段（只读，与 ContextPane 同源）。
- * 弹出窗渲染端只显示 `label`，所以在宿主侧翻译好再推过去。
- */
 function contextSegments(
   slices: readonly ContextSlice[],
   usage: { tokens: number; windowSize: number },
@@ -81,10 +66,6 @@ function contextSegments(
   return segments
 }
 
-/**
- * 解析当前归属下正在显示的既有 PTY id：只认登记到本 owner 的终端，取仍存活的一个。
- * 只读列出，不 start / attach / kill；拿不到就不弹，不消费别人的进程。
- */
 async function ownedTerminalId(ownerKey: string): Promise<string | null> {
   if (typeof window === 'undefined' || !window.yan?.terminal) return null
   try {
@@ -95,19 +76,13 @@ async function ownedTerminalId(ownerKey: string): Promise<string | null> {
   }
 }
 
-/**
- * v3 外壳：侧栏 + 主区（会话头 + 对话流 + 输入框）。
- *
- * 与 v2 共用同一个 store、IPC 与主进程服务，只换界面与样式。会话头亦作窗口
- * 拖动区；两栏之外的一切（右侧面板、运行总览页、设置页）按需进入，不常驻。
- */
 export default function ShellV3(): ReactElement {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try { const value = Number(localStorage.getItem('inkstone.v3.sidebarWidth')); return value >= 220 && value <= 420 ? value : 264 } catch { return 264 }
   })
   const [sidebarPreview, setSidebarPreview] = useState(false)
   useEffect(() => {
-    const timer = setTimeout(() => { try { localStorage.setItem('inkstone.v3.sidebarWidth', String(sidebarWidth)) } catch { /* 偏好不可写时仍可调整 */ } }, 150)
+    const timer = setTimeout(() => { try { localStorage.setItem('inkstone.v3.sidebarWidth', String(sidebarWidth)) } catch { } }, 150)
     return () => clearTimeout(timer)
   }, [sidebarWidth])
   const [workspaceWidth, setWorkspaceWidth] = useState(420)
@@ -134,7 +109,6 @@ export default function ShellV3(): ReactElement {
   const applyPush = useStore((s) => s.applyPush)
   const bootstrap = useStore((s) => s.bootstrap)
   const startConnWatch = useStore((s) => s.startConnWatch)
-  /* 原生命令请求的面板：`tree` 映射到底部分支页签，其余模式由各自对话框消费。 */
   const nativeSessionPanel = useStore((s) => s.nativeSessionPanel)
 
   const route = useUiV3((s) => s.route)
@@ -145,28 +119,15 @@ export default function ShellV3(): ReactElement {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutSheetOpen, setShortcutSheetOpen] = useState(false)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
-  /** 首次引导只在设置就绪时判定一次，避免后续 patchSettings 反复重开 */
   const onboardDecided = useRef(false)
   const [narrow, setNarrow] = useState<boolean>(() => window.matchMedia('(max-width: 899px)').matches)
-  /** 工作区面板形态：>=1180 固定右列；900–1179 浮层；<900 全宽 */
   const [panelMode, setPanelMode] = useState<'docked' | 'overlay' | 'full'>(() =>
     window.innerWidth < 900 ? 'full' : window.innerWidth < 1180 ? 'overlay' : 'docked'
   )
-  /** 首次打开后一直保留挂载：关面板不销毁终端 / 浏览器叶子，只隐藏 */
   const [panelMounted, setPanelMounted] = useState(false)
 
-  /* 工作区归属：由正式当前视图 + 运行实例 / 会话摘要推导（见 features/workbench） */
   const owner = useWorkspaceOwner()
 
-  /*
-   * 页签弹出客户端：桥由 preload 注入，弹出窗不读 store。DOM-only 页签的受限投影由
-   * 本窗口计算（snapshot），动作经 ownerKey + epoch 校验后回投（onAction）。原生页签不走
-   * 投影：browser 带 viewId 交原生视图改挂，terminal 交同 PTY 桥。
-   *
-   * 投影边界：只有「上下文」有同步数据源（现有 store 的会话 / 统计 / 消息投影）；文件 /
-   * 改动 / 分支都是异步 hook，Shell 拿不到同步快照，因此不向它们开放弹出（见 WorkbenchPanel
-   * 的页签判定），不推空投影去开一个空窗口。
-   */
   const [paneClient] = useState(() => {
     const bridge = panePopoutBridge()
     if (!bridge) return null
@@ -200,7 +161,6 @@ export default function ShellV3(): ReactElement {
   const paneClientRef = useRef(paneClient)
   paneClientRef.current = paneClient
 
-  /* 语言 / owner / 上下文数据变化：重推受限投影，让弹出窗拿到当前视图（不重开窗口）。 */
   useEffect(() => {
     paneClient?.refresh()
   }, [paneClient, lang, owner.key])
@@ -213,29 +173,20 @@ export default function ShellV3(): ReactElement {
     [paneClient]
   )
 
-  /* 卸载时释放全部弹窗 / 租约；终端只解绑，不 kill PTY。 */
   useEffect(() => () => paneClient?.dispose(), [paneClient])
 
-  /* ---- 主进程推送 → store；并做一次全量 bootstrap（StrictMode 下只一次） ---- */
   useEffect(() => {
     const off = window.yan.onPush(applyPush)
     if (!bootstrapStarted) {
       bootstrapStarted = true
       void bootstrap()
     }
-    // 连接状态自愈：push 可能丢，不 ready 就主动拉（单例心跳）
     startConnWatch()
     return off
   }, [applyPush, bootstrap, startConnWatch])
 
-  /*
-   * 运行注册表同步：先订阅推送再拉快照，快照在途时缓冲增量，只回放更新的修订。
-   * `startRunSync` 自己按引用计数复用订阅，StrictMode 的「挂载→清理→再挂载」
-   * 不会叠加两条 onPush，卸载时严格清理。
-   */
   useEffect(() => startRunSync(), [])
 
-  /* ---- 主题令牌挂在 <html data-theme>，跟随设置；同时更新首帧缓存 ---- */
   useEffect(() => {
     if (!settings) return
     const theme = settings.theme === 'light' ? 'light' : 'dark'
@@ -243,19 +194,14 @@ export default function ShellV3(): ReactElement {
     try {
       localStorage.setItem('yan.theme', theme)
     } catch {
-      /* 存不了就只在本次会话生效 */
     }
   }, [settings])
 
-  /* ---- 界面语言跟随设置（设置面板改了 lang 与设置一致时这里自然跳过） ---- */
   useEffect(() => {
     if (!settings) return
     if (settings.lang !== lang) setLang(settings.lang)
   }, [settings, lang, setLang])
 
-  /* ---- 首次启动：未看过引导时打开配置向导（与主区同一 localStorage 标记） ----
-   * 设置第一次就绪时判定一次，之后不再自动重开；探针环境与主区一致地不自动弹。
-   * 「已看过」标记仍是主区同键 `yan.onboarded`，切外壳不会重复弹。 */
   useEffect(() => {
     if (onboardDecided.current) return
     if (!settings) return
@@ -264,7 +210,6 @@ export default function ShellV3(): ReactElement {
     if (shouldAutoWizard()) setOnboardingOpen(true)
   }, [settings])
 
-  /* ---- 响应式：<900 默认收起，展开时浮层；跨过断点时回到该宽度下的默认 ---- */
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 899px)')
     const apply = (): void => {
@@ -277,7 +222,6 @@ export default function ShellV3(): ReactElement {
     return () => mq.removeEventListener('change', apply)
   }, [])
 
-  /* ---- 工作区面板形态跟随窗口宽度 ---- */
   useEffect(() => {
     const apply = (): void => {
       const w = window.innerWidth
@@ -288,7 +232,6 @@ export default function ShellV3(): ReactElement {
     return () => window.removeEventListener('resize', apply)
   }, [])
 
-  /* ---- 告诉主进程哪些会话正在被看：并排时每一列都算，窄屏只算焦点那列 ---- */
   const displayed = useMemo<SplitSessionRef | null>(
     () =>
       displayedSessionOf({
@@ -300,7 +243,6 @@ export default function ShellV3(): ReactElement {
   )
   const storedSplit = useSplitView((s) => s.split)
   const split = useMemo(() => (storedSplit ? reconcileSplit(storedSplit, displayed) : null), [storedSplit, displayed])
-  /* 按正在显示的会话校正分屏（点别的会话时替换焦点那一列），与 v2 同一套规则 */
   useLayoutEffect(() => {
     useSplitView.getState().sync(displayed)
   }, [displayed, storedSplit])
@@ -310,7 +252,6 @@ export default function ShellV3(): ReactElement {
   }, [split, narrow, displayed])
   useRunnerVisibility(visibleSessions)
 
-  /* ---- 启动画面：设置、会话与连接都有结论后撤（与 v2 同一时点） ---- */
   useEffect(() => {
     if (!settings) return
     const settled = conn === 'exited' || conn === 'error' || (conn === 'ready' && !!session)
@@ -321,22 +262,16 @@ export default function ShellV3(): ReactElement {
     return () => cancelAnimationFrame(id)
   }, [settings, conn, session])
 
-  /* 命令面板可请求搜索侧栏；先展开，侧栏在下一帧接管搜索焦点。 */
   useEffect(() => {
     const openSearch = (): void => useUiV3.getState().setSidebarOpen(true)
     window.addEventListener('yan-v3-focus-search', openSearch)
     return () => window.removeEventListener('yan-v3-focus-search', openSearch)
   }, [])
 
-  /* 离开会话页（设置 / 运行总览）时收起工作区；面板保持挂载，后台资源不销毁 */
   useEffect(() => {
     if (route.name !== 'chat' && useUiV3.getState().workspaceOpen) useUiV3.getState().setWorkspaceOpen(false)
   }, [route.name])
 
-  /*
-   * 打开工作区。若记住的页签需要激活（终端 / 浏览器），先在 `ensureActivated`
-   * 前后钉住目标；失败保留关闭（notice 已由激活流程给出），不静默挂到别的会话。
-   */
   const toggleWorkspace = (): void => {
     const ui = useUiV3.getState()
     if (ui.workspaceOpen) {
@@ -354,15 +289,8 @@ export default function ShellV3(): ReactElement {
     })
   }
 
-  /* 面板内点需要激活的页签：交给同一个激活流程，失败时面板停留并显示提示 */
   const requestActivation = (_tab: WorkbenchTabId): Promise<boolean> => activateWorkspaceOwner(captureActivationTarget())
 
-  /*
-   * `/tree` 只负责请求面板：`store.nativeSession('tree')` 写入 `nativeSessionPanel`，
-   * 这里把请求映射成打开底部分支页签，然后消费掉请求。树本身由 `BranchPane` 直接经
-   * `window.yan.nativeSession` 拉取（带 owner.sessionId 归属），不在 Shell 复制数据。
-   * 其它模式（模型范围 / 信任）留给各自的正式对话框，Shell 不抢路由。
-   */
   useEffect(() => {
     if (nativeSessionPanel?.mode !== 'tree') return
     setPanelMounted(true)
@@ -371,10 +299,6 @@ export default function ShellV3(): ReactElement {
     useStore.getState().closeNativeSessionPanel()
   }, [nativeSessionPanel])
 
-  /*
-   * 打开（或切到）一个工作区页签：先回对话路由，需要激活的页签（终端 / 浏览器）先走
-   * `activateWorkspaceOwner`；失败保留关闭并沿用激活流程的提示，不静默挂到别的会话。
-   */
   const openWorkspaceTab = (tab: WorkbenchTabId): Promise<boolean> => {
     useUiV3.getState().navigate({ name: 'chat' })
     setPanelMounted(true)
@@ -389,11 +313,6 @@ export default function ShellV3(): ReactElement {
     })
   }
 
-  /*
-   * 主进程 `before-input-event` 拦下的模型 / 思考循环（Ctrl+P / Ctrl+Shift+P / Shift+Tab）：
-   * 外壳只执行 store 的正式动作，不在这里二次注册按键。模态层由 `lib/modalLayer`
-   * 上报 `setHotkeyGuard`，主进程会在弹窗打开时暂停拦截，Shift+Tab 留给表单反向导航。
-   */
   useEffect(() => {
     const off = window.yan.onHotkey((action) => {
       const store = useStore.getState()
@@ -404,7 +323,6 @@ export default function ShellV3(): ReactElement {
     return off
   }, [])
 
-  /* ---- 全局快捷键：从 `app/shortcuts.ts` 的注册表绑定；模态与输入法组字期间不响应 ---- */
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.isComposing || paletteOpen || isModalOpen()) return
@@ -419,7 +337,6 @@ export default function ShellV3(): ReactElement {
         composing: event.isComposing,
         repeat: event.repeat,
         altGraph: typeof event.getModifierState === 'function' ? event.getModifierState('AltGraph') : false,
-        /* 终端聚焦时 Ctrl+K/B/J/L 与 Ctrl+Shift+C 让给 xterm（见注册表的 terminalsYield） */
         inTerminal: !!target?.closest?.('.xterm'),
         editing: typing
       }, shortcutOverridesFromSettings(useStore.getState().settings))
@@ -461,7 +378,6 @@ export default function ShellV3(): ReactElement {
             return
           case 'focusComposer':
             event.preventDefault()
-            /* 空 target = 当前挂载的输入框；分屏只渲染焦点那一列，选择器唯一。 */
             useStore.getState().requestComposerFocus({})
             return
           case 'copyLastReply':
@@ -469,7 +385,6 @@ export default function ShellV3(): ReactElement {
             void useStore.getState().copyLastReply()
             return
           case 'stopRun': {
-            /* 只在当前视图就是运行实例时停止；peek 别的会话不误停后台运行。 */
             const s = useStore.getState()
             const view = sessionViewIdentity({ peekedSessionId: s.peekedSessionId, peekedPath: s.peekedPath, session: s.session })
             const running = viewMatchesProjectedSession(view, s.session) && (!!s.session?.isAgentRunning || !!s.session?.isStreaming)
@@ -505,13 +420,11 @@ export default function ShellV3(): ReactElement {
     return () => window.removeEventListener('keydown', onKey)
   }, [narrow, paletteOpen, panelMode, toggleWorkspace, openWorkspaceTab])
 
-  /* 运行总览点一行：先回对话路由，再走正式 store.switchSession（标记已读在 RunsPage 内完成） */
   const openSessionFromRuns = (path: string): void => {
     useUiV3.getState().navigate({ name: 'chat' })
     void useStore.getState().switchSession(path)
   }
 
-  /* 提醒条点一条：同一会话的最新失败/完成不能被旧的盖住；拿不到路径就不跳 */
   const openRunFromPill = (run: RunSnapshot): void => {
     const path = run.sessionPath ?? useStore.getState().sessions.find((s) => s.id === run.sessionId)?.path
     if (!path) return
@@ -568,7 +481,6 @@ export default function ShellV3(): ReactElement {
               <UsagePage />
             ) : (
               <div className="v3-chat">
-                {/* 提醒条在会话区顶部，占位不压正文；空时 RunPill 自己返回 null */}
                 <RunPill
                   className="v3-pillbar"
                   onOpen={openRunFromPill}
@@ -588,14 +500,12 @@ export default function ShellV3(): ReactElement {
                 onPopout={(tab) => {
                   if (!paneClient || !owner) return
                   if (tab === 'terminal') {
-                    /* 终端：只把既有 PTY 的 terminalId 交同 PTY 桥，不 start / kill。 */
                     void ownedTerminalId(owner.key).then((terminalId) => {
                       if (terminalId) void paneClient.openTerminal(owner, terminalId)
                     })
                     return
                   }
                   if (tab === 'browser') {
-                    /* 原生浏览器：交当前页签 id 让同一 WebContentsView 改挂到弹窗。 */
                     const viewId = useStore.getState().browserState.activeTabId
                     if (viewId) void paneClient.open('browser', owner, { viewId })
                     return

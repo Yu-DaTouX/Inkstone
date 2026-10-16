@@ -1,4 +1,3 @@
-/** 外观个性化（shared/appearance.ts、lib/background.ts）：纯函数，不启动 Electron。 */
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
 
@@ -28,7 +27,6 @@ export async function runAppearanceTests(ok) {
   ok(bg.resolveBackground('default', undefined, 'dark') === null && bg.resolveBackground('midnight', undefined, 'light') === '#eef2f8', '模板与缺省')
   ok(bg.resolveBackground('ink', undefined, 'dark') === '#18191b' && bg.resolveBackground('ink', undefined, 'light') === '#f7f6f3', '墨灰模板：深浅底值')
 
-  /* 同值跳过：第二次应用不改样式 */
   const style = new Map()
   const root = { style: { setProperty: (k, v) => style.set(k, v), removeProperty: (k) => style.delete(k) } }
   ok(bg.applyBackground(root, 'midnight', undefined, 'dark') === true && style.get('--bg-0') === '#0f1623', '应用模板写入层级令牌')

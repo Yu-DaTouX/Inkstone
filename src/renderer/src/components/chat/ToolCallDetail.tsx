@@ -11,7 +11,6 @@ import { FileChangeDetail, ToolResultDetail, WorkspaceChangesDetail, detailKind,
 
 type Props = { call: UIToolCall; target: string; secs: number | null }
 
-/** 两种布局与宽幅阅读共享同一条调用，不重新执行或读取磁盘。 */
 export function ToolCallDetail(props: Props) {
   const [wide, setWide] = useState(false)
   return <>
@@ -29,12 +28,6 @@ function DetailView({ call, target, secs, onExpand }: Props & { onExpand?: () =>
   const changes = readWorkspaceChanges(call.details)
   const args = call.args as Record<string, unknown> | undefined
   const fullTarget = [args?.path, args?.file_path, args?.filePath, args?.command].find(value => typeof value === 'string') as string | undefined
-  /*
-   * 顶部路径行什么时候出现：
-   *   · 命令类不在详情里重复路径（终端 prompt 行已有）；
-   *   · 文件改动在**行内**视图隐藏自带标题行，用这里补完整路径；
-   *   · 宽幅视图（没有 onExpand）有标题行与增删统计，不再重复一次。
-   */
   const showTargetLine = kind !== 'command' && !!fullTarget && !(kind === 'change' && !onExpand)
   const copy = async () => {
     try {

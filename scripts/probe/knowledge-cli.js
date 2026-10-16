@@ -1,15 +1,3 @@
-/*
- * `yan knowledge …` 的真实闭环（实施-03 S4，cost 1）。
- *
- * 命题：模型自己发现并调用随包 CLI —— 检索本项目已确认的知识（`search`）、
- * 并**提议**一条新知识（`propose`）。两个动作都必须真的经过宿主：
- * 身份由宿主绑定（模型给不出 projectId），新条目落 `candidate`（模型不能自证确认）。
- *
- * 断言分工：
- *   · 探针里：工具调用真的出现了，且两条命令各自的回执不是报错；
- *   · afterExit（Node 侧，沙箱退出后）：磁盘上真的多了一条 `candidate` 条目 ——
- *     「工具执行了」不等于「写进去了」（实施-03 §6），所以两边都要看。
- */
 ;(async () => {
   const out = []
   const ok = (condition, text, extra = '') => {
@@ -60,7 +48,6 @@
     if (!send || send.disabled) return '✗ 发送键不可用'
     send.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
-    /* 等回合真的跑起来再等它结束 */
     let started = false
     const t0 = Date.now()
     while (Date.now() - t0 < 180000) {
@@ -72,7 +59,6 @@
     ok(started, '真实回合跑起来了')
     await sleep(1500)
 
-    /* 回读会话里的工具调用：两条命令必须都出现过 */
     const texts = []
     for (const message of S().messages ?? []) {
       for (const call of message.toolCalls ?? []) {

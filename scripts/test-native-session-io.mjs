@@ -1,15 +1,3 @@
-/**
- * pi 原生会话 IO（src/main/native-session-io.ts）的纯 Node 测试。
- *
- * 不启 Electron、不联网、不调用真实 gh / pi、不上传任何会话：
- * `runCommand` 与 `piCommand` 都注入假实现，只校验参数数组、解析与文件结果。
- *
- * 覆盖：JSONL 逐行校验与大小限制、导入不覆盖（`-N` 后缀 + 源文件保留）、
- * 活动分支 / 完整导出、`pi.share` 尾条目、gh 探测与 unavailable、
- * gist 参数与查看链接、超时 / 取消。
- *
- * 用法： node scripts/test-native-session-io.mjs
- */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -58,7 +46,6 @@ const sessionText = [header, userA, assistantB, userC, assistantD].map((e) => JS
 const sessionPath = join(work, 'session-source.jsonl')
 writeFileSync(sessionPath, sessionText, 'utf8')
 
-/* ── 假 runner：按顺序消费 handler，记录全部调用 ── */
 const calls = []
 let queue = []
 const runner = async (command, args, options) => {
@@ -238,7 +225,6 @@ console.log('\n--- gh / 分享探测与执行 ---')
   ok(availability.canShareViaGist === true && availability.piAvailable === true, 'gh 可用 + pi 入口可用 → 可分享')
   ok(availability.radius.available === false && !!availability.radius.reason, 'Radius 明确 unavailable')
 
-  // gist 创建：参数、URL 解析、查看链接
   process.env.PI_SHARE_VIEWER_URL = 'https://example.test/s/'
   const htmlPath = join(work, 'share.html')
   writeFileSync(htmlPath, '<html></html>', 'utf8')
@@ -259,7 +245,6 @@ console.log('\n--- gh / 分享探测与执行 ---')
   ok(!cancelledUpload.ok && cancelledUpload.code === 'aborted', 'ownership change cancels upload after auth')
   ok(calls.length === beforeCancelledUpload + 1, 'ownership change never invokes gist upload')
 
-  // gh 不可用 → 明确 unavailable，且不会执行 gist
   queue = []
   pushResult({ code: null, stdout: '', stderr: '', timedOut: false, aborted: false, error: 'spawn gh ENOENT', errorCode: 'ENOENT' })
   const before = calls.length
@@ -267,7 +252,6 @@ console.log('\n--- gh / 分享探测与执行 ---')
   ok(!blocked.ok && blocked.code === 'unavailable', 'gh 缺失时分享返回 unavailable')
   ok(calls.length === before + 1, 'gh 缺失时不再尝试 gist 命令')
 
-  // 超时 / 取消
   queue = []
   pushResult({ code: 0, stdout: 'ok', stderr: '', timedOut: false, aborted: false })
   pushResult({ code: null, stdout: '', stderr: '', timedOut: true, aborted: false })
@@ -290,7 +274,6 @@ console.log('\n--- 分享准备（pi --export，不真实上传）---')
   io.disposeShareArtifacts(prepared.tempDir)
   ok(!existsSync(prepared.tempDir), 'disposeShareArtifacts 清理临时目录')
 
-  // 一步分享：准备 + gist + 自动清理临时目录
   queue = [fakePi]
   pushResult({ code: 0, stdout: 'ok', stderr: '', timedOut: false, aborted: false })
   pushResult({ code: 0, stdout: 'ok', stderr: '', timedOut: false, aborted: false })
@@ -300,7 +283,7 @@ console.log('\n--- 分享准备（pi --export，不真实上传）---')
   const oneShotHtml = piOuts[piOuts.length - 1]
   ok(!existsSync(dirname(oneShotHtml)), 'shareSession 结束后清理临时目录')
 
-  io.disposeShareArtifacts('') // 空串必须是 no-op，绝不能删到 cwd
+  io.disposeShareArtifacts('')
   ok(true, 'disposeShareArtifacts 对空路径安全返回')
 }
 

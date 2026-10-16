@@ -1,12 +1,3 @@
-/**
- * 发送键设置：规则可选、可见、生效。
- *
- * 背景（方案 4.3）：输入框**展开后 Enter 的语义会变** —— 这是隐式规则，
- * 按下去之前无法确定会发生什么。现在规则既可配置，也常显在输入区。
- *
- * ⚠️ 这个探针**不真的发消息**：只验证「不该发送时不发送」这一侧。
- *    「该发送」那侧要靠真实发送，会烧 token，而且和 e2e 场景重复。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -17,7 +8,6 @@
   const q = (s) => document.querySelector(s)
   const store = window.__yanStore
 
-  /** 用 React 认的方式写进受控输入框 */
   const setValue = (el, text) => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
     setter.call(el, text)
@@ -38,12 +28,6 @@
     out.push('  默认提示文案: ' + JSON.stringify(hint))
     ok(hint.length === 0, '默认输入框不显示发送规则（输入区不添噪声）')
 
-    /*
-     * 但“不显示”不能变成“改了就看不见”：长文模式下 Enter 的语义变了，
-     * 那正是用户不写出来就只能靠试的时刻。
-     * 直接派发 click（不先 pointerdown）—— `finishResizeClick` 只在
-     * `resizeMoved` 为假时切换展开态，所以这就是“点一下拖拽柄”。
-     */
     const resize = q('[data-testid="composer-resize"]')
     ok(!!resize, '找到拖拽柄（点击 = 切长文模式）')
     resize?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -53,11 +37,6 @@
     ok(tallHint.length > 0, '长文模式下提示出现（Enter 语义变了，必须写出来）')
     ok(/Enter/.test(tallHint), '提示里写明了 Enter 的分工')
 
-    /*
-     * 收起时的高度过渡（用户报「用拖拽柄关闭长文模式时动画消失」）。
-     * 过渡不是常开的 —— 打字与拖动时高度必须跟手 —— 所以判据是
-     * 「切换那一瞬间挂了 `.animating`，而且它真的带上了 height 过渡」。
-     */
     const composer = q('.composer')
     const textarea = q('[data-testid="composer"]')
     resize?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -89,7 +68,6 @@
       setValue(ta, 'YAN-SENDKEY-PROBE')
       await sleep(120)
       const typed = ta.value
-      /* 只按 Enter —— 在这个模式下应该只是换行/无动作，绝不能发送 */
       ta.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
       )
@@ -99,7 +77,6 @@
         ta.value.includes('YAN-SENDKEY-PROBE'),
         'Enter 没有触发发送（内容还在，说明规则真的生效了）'
       )
-      /* 清掉测试文本，别把垃圾留给后续场景 */
       setValue(ta, '')
       await sleep(80)
     }
@@ -129,25 +106,11 @@
 
     out.push('')
     out.push('=== 7. 中文输入法组合态：Enter 是「选词」，不能当成发送 ===')
-    /*
-     * 组合态（拼音还没上屏）时按 Enter 是**输入法选词**。Composer 靠
-     * `!e.nativeEvent.isComposing` 挡住它（验收清单里那一条）。
-     *
-     * 这里直接断言 handler 的**决策**（preventDefault=True 就是“拦下来去发送”）：
-     *   · 非组合态 → 拦；
-     *   · 组合态   → 不拦（放行给输入法）。
-     *
-     * ⚠️ 别拿「输入框被清空」当判据：隔离环境里 pi 没起，submit 可能提前
-     *    返回，两条路径都不会清空 —— 那就测不出区别了。决策本身才是要钉的东西。
-     * ⚠️ 必须在 auto 模式下测（上面刚恢复）：ctrlEnter 模式下 Enter 本来就
-     *    不发送，测出来的“没拦”是模式的效果，不是 IME 防护的效果。
-     */
     if (ta) {
       setValue(ta, 'YAN-IME-PROBE')
       await sleep(200)
       const press = (isComposing) => {
         const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
-        /* isComposing 是原型上的只读 getter，得在实例上盖一层 */
         Object.defineProperty(ev, 'isComposing', { value: isComposing })
         ta.dispatchEvent(ev)
         return ev.defaultPrevented

@@ -40,14 +40,9 @@ import {
 } from './runs-filter-model'
 import './runs-page.css'
 
-/* 运行是否可停：终态不重复发停止。定义在纯过滤模型，这里继续对外导出。 */
 export { isStoppableRun }
 
 export interface RunsPageProps {
-  /**
-   * 回到某个会话。缺省走正式路径 `useStore.switchSession(path)`；
-   * 传入回调可让父会话顺带处理路由（本页不自己改 app 路由）。
-   */
   onOpenSession?: (path: string) => void
 }
 
@@ -195,7 +190,6 @@ function pageText(lang: RunLang): PageText {
   }
 }
 
-/** 历史记录的工具计数摘要（与当前运行列表同一口径，直接读记录里的真实计数）。 */
 function historyToolSummary(record: RunsHistoryRecord, lang: RunLang): string {
   const { tools, edits, errors } = record.counts
   if (lang === 'en-US') {
@@ -210,7 +204,6 @@ function historyToolSummary(record: RunsHistoryRecord, lang: RunLang): string {
   return parts.join(' · ')
 }
 
-/** 运行时间线的一条泳道：按状态时间段画出色段。 */
 function HistoryTimeline({ record, lang }: { record: RunsHistoryRecord; lang: RunLang }): ReactElement {
   const total = Math.max(1, record.endedAt - record.startedAt)
   const segments = record.segments.length
@@ -234,20 +227,6 @@ function HistoryTimeline({ record, lang }: { record: RunsHistoryRecord; lang: Ru
   )
 }
 
-/**
- * 运行总览（WP-14 / WP-54）。
- *
- * 上半是**当前运行**（直接读渲染端镜像 `useRunsV3`，由主进程注册表推送），
- * 项目 / 状态 / 模型 / 类型四个筛选与搜索（编号 / 标题 / 模型）同时作用于当前运行
- * 与当天历史，并支持多选批量停止（停止经 `yan:runs:stop`，与界面停止按钮同一条
- * `AgentController.abort()` 路径，二次确认后逐个调用并如实显示结果）。批选只覆盖
- * 当前筛选可见的可停运行，隐藏项不会被意外停止。
- * 下半是**运行历史**（`yan:runs:history` 按日期读索引），可用前一天 / 后一天切换。
- * 过滤规则与缺字段降级在 `runs-filter-model.ts`（纯函数，单测覆盖）。
- *
- * 排序与提醒条、详情浮层共用 `sortRuns`（→ `compareRuns`）。每行只展示快照里
- * 真实存在的值，没有的显示「—」；不展示虚构额度。点一行回原会话处理。
- */
 export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
   const { lang } = useI18n()
   const text = runUiText(lang)
@@ -260,7 +239,6 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
   const settingsProjects = useStore((s) => s.settings?.projects)
   const switchSession = useStore((s) => s.switchSession)
   const abort = useStore((s) => s.abort)
-  /* 「目标就是当前视图会话」的判据：运行快照的 sessionId 与当前会话一致。 */
   const currentSessionId = useStore((s) => s.session?.sessionId)
   const [now, setNow] = useState(() => Date.now())
   const [filter, setFilter] = useState<RunsFilter>(() => clearRunsFilter())
@@ -268,7 +246,6 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [stopSummary, setStopSummary] = useState<string | null>(null)
-  /* 非当前视图会话的运行，其 clear_queue 排队文本在结果对话框里逐条可见。 */
   const [recoveredGroups, setRecoveredGroups] = useState<{ code: string; texts: string[] }[]>([])
   const [recoveredOpen, setRecoveredOpen] = useState(false)
   const [historyDay, setHistoryDay] = useState(todayString)
@@ -277,7 +254,6 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
 
-  /* 只要列表里还有进行中的运行，每 30 秒刷新一次「已持续」。 */
   useEffect(() => {
     const hasActive = runs.some((run) => isStoppableRun(run))
     if (!hasActive) return
@@ -285,7 +261,6 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
     return () => window.clearInterval(timer)
   }, [runs])
 
-  /* 历史：日期变了就读一次当天分片；失败可见，不拿空列表冒充「没有」。 */
   useEffect(() => {
     let cancelled = false
     setHistoryLoading(true)
@@ -319,7 +294,6 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
   const list = useMemo(() => sortRuns(filterLiveRuns(runs, filter)), [runs, filter])
   const historyRows = useMemo(() => filterHistoryRecords(history?.records ?? [], filter), [history, filter])
   const selectable = useMemo(() => list.filter(isStoppableRun), [list])
-  /* 筛选选项只来自真实数据：没有带项目的运行就不画项目控件，模型同理。 */
   const projectOptions = useMemo(
     () => collectProjectOptions(runs, history?.records ?? [], settingsProjects ?? []),
     [runs, history, settingsProjects]
@@ -368,15 +342,8 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
     }
     let ok = 0
     const failures: string[] = []
-    /* 不在当前视图的会话运行：排队文本只能逐条展示，交给用户自己复制。 */
     const loose: { code: string; texts: string[] }[] = []
-    /* 逐个调用：主进程按 runId 各自找实例，一个失败不影响其余。 */
     for (const run of selectedActive) {
-      /*
-       * 目标就是当前视图会话时，走 Composer 停止按钮的同一个 store 入口：
-       * `abort()` 会把 clear_queue 回收的排队文字直接放回输入框，不必再靠
-       * 主进程交回文本，也避免同一次运行被停两遍。
-       */
       if (run.kind === 'session' && currentSessionId && run.sessionId === currentSessionId) {
         try {
           await abort()
@@ -420,11 +387,6 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
     else void switchSession(path)
   }
 
-  /**
-   * 时间线点一条泳道：会话 / 定时 / 评审回到会话；子 Agent 先尽力打开它的预览
-   * （历史里没有子代理 id，只能从 `sessionId` 的 `subagent:` 前缀取），再沿父运行
-   * 反查父会话（同一天的父记录或实时快照）并回到那里。
-   */
   const openLane = (lane: DayTimelineLane): void => {
     if (lane.kind === 'subagent' && lane.sessionId.startsWith('subagent:')) {
       useStore.getState().openSubagent(lane.sessionId.slice('subagent:'.length))
@@ -583,8 +545,6 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
             const status = phaseWord(lang, run.phase)
             const detail = phaseDetail(lang, run.phase)
             const subParts = [modelLabel(run) ?? text.none, openKind(run.kind)]
-            /* 运行中的会话等子 Agent 时，活动词也叫「子 Agent」；换成「等待子 Agent」，
-               否则同一行把会话运行误读成子代理运行。 */
             const detailText =
               run.phase.kind === 'running' && run.phase.activity === 'subagent' ? page.waitingSubagent : detail
             if (detailText) subParts.push(detailText)
@@ -696,7 +656,6 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
         </ul>
       )}
 
-      {/* 用量区：只汇总历史记录里真实存在的成本 / 计数，缺成本显示「—」，不编额度。 */}
       {history && !historyError ? <RunsUsage records={history.records} liveRuns={runs} lang={lang} /> : null}
 
       <ModalOverlay className="runs-overlay" isOpen={confirmOpen} isDismissable onOpenChange={setConfirmOpen}>
@@ -718,7 +677,6 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
         </Modal>
       </ModalOverlay>
 
-      {/* 排队消息已取回但未发送（目标不是当前视图会话）：逐条可见 + 可复制，不丢。 */}
       <ModalOverlay className="runs-overlay" isOpen={recoveredOpen} isDismissable onOpenChange={setRecoveredOpen}>
         <Modal className="runs-modal">
           <Dialog title={page.recoveredTitle} closeLabel={page.recoveredClose}>

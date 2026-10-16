@@ -1,15 +1,3 @@
-/**
- * 回退代码的对话框（v3）：先列出会改哪些文件，确认后才动；做完可以一键撤销。
- *
- * 语义边界：**只恢复项目文件**，会话本身不回滚，也不自动分叉——要连对话一起
- * 回到那里用「分支」。文案复用既有 `rewind.*` / `chat.rewindHere`。
- *
- * 归属与并发：
- *   · `ownerKey` 是打开这条记录时所在的会话视图键；会话切换或视图失活（peek 别人、
- *     并排非焦点）后，预览 / 恢复针对的已是另一个活动会话——立即关闭并丢弃在途响应，
- *     绝不把旧记录应用到新会话；
- *   · 预览 / 恢复 / 撤销都用自增代次守卫迟到响应，切换后回来的结果不再改状态。
- */
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { CheckpointPreview } from '../../../../shared/checkpoints'
 import { useT } from '../../i18n'
@@ -29,12 +17,9 @@ export function RewindDialogV3({ ownerKey, active }: { ownerKey: string; active:
   const [message, setMessage] = useState('')
   const recordId = rewind?.recordId
 
-  /** 打开这条记录时它归属的视图键；归属变了就作废。 */
   const openedFor = useRef<string | null>(null)
-  /** 记录 / 归属每次变化都自增，用来丢弃在途的预览、恢复、撤销结果。 */
   const generation = useRef(0)
 
-  /* 会话切换归属守卫：视图键变了或视图已失活，立即关闭，不操作全局当前会话。 */
   useEffect(() => {
     if (!rewind) {
       openedFor.current = null
@@ -49,7 +34,6 @@ export function RewindDialogV3({ ownerKey, active }: { ownerKey: string; active:
     if (!active) close()
   }, [rewind, ownerKey, active, close])
 
-  /* 预览：换记录就重来；卸载 / 换记录后丢弃迟到的响应。 */
   useEffect(() => {
     const gen = ++generation.current
     if (!recordId) return undefined

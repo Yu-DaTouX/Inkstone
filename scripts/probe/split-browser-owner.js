@@ -1,4 +1,3 @@
-/** Real Electron + pi session switches + native browser. No inference or external pages. */
 ;(async () => {
   const lines = []
   const check = (value, label) => { lines.push(`${value ? '✓' : '✗'} ${label}`); if (!value) throw Error(label) }

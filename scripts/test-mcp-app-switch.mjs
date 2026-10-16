@@ -1,16 +1,3 @@
-/**
- * MCP 服务归属双向切换（MA3 / 设计 A3）的合成验收。
- *
- * 现场用 esbuild 编译 `src/main/mcp/{host-switch,config,native-import}.ts` 与
- * `src/shared/mcp-app-switch.ts`，在**隔离临时目录**里跑真实事务：
- *   · 双向迁移（pi → 砚托管 / 砚托管 → pi）；
- *   · 原条目值保真、未知字段保留；
- *   · 源 / 目标指纹变更拒绝、令牌过期、跨 owner；
- *   · 写一半失败 → 按原值恢复；恢复也失败 → remediation-failed；
- *   · 同名冲突、存活 runner 拒绝、windows-mcp 拒绝；
- *   · 每次收尾断言「恰有一个 owner」。
- * 不启动 Electron、不连真实服务、不调用真实 pi CLI、不碰用户配置。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -108,7 +95,6 @@ async function reset() {
 let nowMs = 1_700_000_000_000
 let tokenSeq = 0
 function makeHost(overrides = {}) {
-  /* 记录 `to-pi` 断开的 serverId：签名按 server 断开后必须传目标服务。 */
   const disconnectCalls = []
   return {
     agentDir,
@@ -116,7 +102,6 @@ function makeHost(overrides = {}) {
     projects: [{ id: 'p1', cwd: projectCwd }],
     now: () => nowMs,
     generateToken: () => `tok-${++tokenSeq}`,
-    /* 默认注入运行时守卫（空持有者）与断开回调：缺任何一项都必须拒绝（见第 12/13 组）。 */
     holders: { holdersFor: async () => [], runtimeEpoch: () => 'epoch-0' },
     disconnectHost: async (serverId) => {
       disconnectCalls.push(serverId)
@@ -126,7 +111,6 @@ function makeHost(overrides = {}) {
   }
 }
 
-/** 恰有一个 owner：砚托管（ownedBy inkstone + appHost）或 pi 原生条目，二者计数必须为 1。 */
 async function assertSingleOwner(name, expected) {
   const host = await readJson(hostConfigFile)
   const server = host.servers.find((entry) => entry.id === 'weather')
@@ -144,7 +128,6 @@ async function assertSingleOwner(name, expected) {
 }
 
 try {
-  /* ───────────────────────── 1. pi → 砚托管：保真与未知字段 ───────────────────────── */
   await reset()
   const host1 = makeHost({
     verify: async (input) => {
@@ -174,7 +157,6 @@ try {
   eq(weather1.appHost.natives[0].path, nativeGlobal, '保存了原生路径')
   await assertSingleOwner('to-inkstone 后', 'inkstone')
 
-  /* ───────────────────────── 2. 砚托管 → pi：写回与保留 ───────────────────────── */
   const host2 = makeHost({
     verify: async (input) => {
       ok(input.expect === 'present', 'to-pi 复核期望 present')
@@ -196,7 +178,6 @@ try {
   eq(hostAfter2.unknownTop, { keep: true }, '写回后砚未知字段仍在')
   await assertSingleOwner('to-pi 后', 'pi')
 
-  /* ───────────────────────── 3. 目标指纹变更 → 拒绝 ───────────────────────── */
   await reset()
   const host3 = makeHost()
   const preview3 = await m.prepareMcpAppSwitch({ host: host3, serverId: 'weather', owner: { id: 'owner-A' } })
@@ -207,7 +188,6 @@ try {
   const hostAfter3 = await readJson(hostConfigFile)
   ok(!hostAfter3.servers[0].ownedBy, '目标变更后砚配置未动')
 
-  /* ───────────────────────── 4. 砚配置指纹变更 → 拒绝 ───────────────────────── */
   await reset()
   const host4 = makeHost()
   const preview4 = await m.prepareMcpAppSwitch({ host: host4, serverId: 'weather', owner: { id: 'owner-A' } })
@@ -217,7 +197,6 @@ try {
   const nativeAfter4 = await readJson(nativeGlobal)
   ok('weather' in nativeAfter4.mcpServers, '砚配置变更后 pi 条目未动')
 
-  /* ───────────────────────── 5. 令牌过期 / 跨 owner ───────────────────────── */
   await reset()
   const host5 = makeHost()
   const preview5 = await m.prepareMcpAppSwitch({ host: host5, serverId: 'weather', owner: { id: 'owner-A' } })
@@ -238,7 +217,6 @@ try {
     '跨 owner 令牌被拒绝'
   )
 
-  /* ───────────────────────── 6. 同名冲突（项目位置）───────────────────────── */
   await reset()
   await writeJson(nativeProject, { mcpServers: { weather: { command: 'node' } } })
   const host6 = makeHost()
@@ -248,7 +226,6 @@ try {
     '项目位置同名冲突被拒绝'
   )
 
-  /* ───────────────────────── 7. 存活 runner 拒绝 ───────────────────────── */
   await reset()
   const holder = { runnerId: 'r1', generation: 3, busy: true }
   const host7 = makeHost({ holders: { holdersFor: async () => [holder] } })
@@ -260,7 +237,6 @@ try {
   ok(committed7.notice.includes('运行实例'), '拒绝原因说明是运行实例')
   await assertSingleOwner('存活 runner 拒绝后', 'pi')
 
-  /* ───────────────────────── 8. windows-mcp 拒绝 ───────────────────────── */
   await reset()
   await writeJson(hostConfigFile, {
     servers: [
@@ -275,7 +251,6 @@ try {
     'windows-mcp 拒绝托管'
   )
 
-  /* ───────────────────────── 9. 写一半失败 → 恢复原值 ───────────────────────── */
   await reset()
   const originalNativeText = await readFile(nativeGlobal, 'utf8')
   const host9 = makeHost({
@@ -294,7 +269,6 @@ try {
   ok(!hostAfter9.servers[0].ownedBy, '砚配置保持原状')
   await assertSingleOwner('写一半失败恢复后', 'pi')
 
-  /* ───────────────────────── 10. 恢复也失败 → remediation-failed ───────────────────────── */
   await reset()
   let hostWriteAttempted = false
   const host10 = makeHost({
@@ -313,9 +287,7 @@ try {
   eq(committed10.remediation, 'remediation-failed', '恢复失败明确标注 remediation-failed')
   ok(committed10.notice.includes('恢复失败') || committed10.notice.includes('手动修复'), '恢复失败给出修复入口')
 
-  /* ───────────────────────── 11. to-pi 断连失败 → 不写盘 ───────────────────────── */
   await reset()
-  /* 先建立砚托管状态 */
   const setupHost = makeHost()
   const setupPreview = await m.prepareMcpAppSwitch({ host: setupHost, serverId: 'weather', owner: { id: 'owner-A' } })
   await m.commitMcpAppSwitch({ host: setupHost, token: setupPreview.token, owner: { id: 'owner-A' } })
@@ -333,7 +305,6 @@ try {
   eq(await readFile(hostConfigFile, 'utf8'), hostSnapshot, '断连失败时砚配置未动')
   await assertSingleOwner('断连失败后', 'inkstone')
 
-  /* ───────────────────────── 12. 显式运行时依赖缺失 → 拒绝且不写盘 ───────────────────────── */
   await reset()
   const before12 = await readFile(hostConfigFile, 'utf8')
   const nativeBefore12 = await readFile(nativeGlobal, 'utf8')
@@ -369,7 +340,6 @@ try {
   eq(await readFile(hostConfigFile, 'utf8'), before12, 'commit 缺运行时守卫时砚配置未动')
   eq(await readFile(nativeGlobal, 'utf8'), nativeBefore12, 'commit 缺运行时守卫时 pi 配置未动')
 
-  /* to-pi 缺 disconnectHost → 直接拒绝且不写盘 */
   await reset()
   const setup12 = makeHost()
   const p12 = await m.prepareMcpAppSwitch({ host: setup12, serverId: 'weather', owner: { id: 'owner-A' } })
@@ -387,7 +357,6 @@ try {
   eq(await readFile(nativeGlobal, 'utf8'), nativeSnapshot12, '缺断开回调时 pi 配置未动')
   await assertSingleOwner('缺断开回调拒绝后', 'inkstone')
 
-  /* ───────────────────────── 13. 预览后运行时 epoch 变化 → 写前拒绝 ───────────────────────── */
   await reset()
   let epoch13 = 'epoch-a'
   const host13 = makeHost({ holders: { holdersFor: async () => [], runtimeEpoch: () => epoch13 } })

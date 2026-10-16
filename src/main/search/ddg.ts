@@ -1,7 +1,3 @@
-/**
- * DuckDuckGo 网页搜索来源（HTML 版）：英文与技术类查询的首选免 key 来源。
- * 在中国大陆网络下通常连不上，此时按来源报错，由中文来源（Bing / 360）承担。
- */
 import type { SourceRun } from './aggregate'
 import { runWebEngine, type WebEngine } from './web-engine'
 
@@ -11,7 +7,6 @@ interface Raw {
   snippet: string
 }
 
-/** 结果链接是 `duckduckgo.com/l/?uddg=<编码后的真实地址>`，还原它 */
 export function decodeDdgRedirect(href: string): string {
   try {
     const url = new URL(href, 'https://duckduckgo.com')

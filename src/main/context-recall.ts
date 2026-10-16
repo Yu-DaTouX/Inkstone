@@ -1,12 +1,3 @@
-/**
- * 归档上下文的宿主侧回读（实施-01 / 06 收口）。
- *
- * 读取旧宿主上下文整理留下的归档引用，或按原始会话回读。
- * 上下文整理与自动注入已退役；本模块保留主动召回与历史数据兼容。
- *
- * 这层刻意不 import pi 扩展：原始会话、归档元数据、预算账本和结果文件都在
- * 宿主侧，因此没有理由让主进程依赖扩展的运行时私有实现。
- */
 import { createReadStream } from 'node:fs'
 import { appendFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -33,20 +24,15 @@ const DEFAULT_RECALL_POLICY: RecallPolicy = {
 } as const
 
 export interface ContextRecallRequest {
-  /** 宿主从当前 pi state 取得，绝不采纳模型传来的会话身份。 */
   sessionId: string
-  /** 同上：当前会话的真实 JSONL 路径。 */
   sessionFile: string
-  /** CLI 参数（只允许一个受 schema 约束的 ctx:// 引用）。 */
   ref: unknown
   reason?: unknown
-  /** 测试隔离入口；生产态省略并使用 YAN_DATA_DIR/context-state。 */
   stateDir?: string
   now?: number
 }
 
 export interface ContextRecallResult {
-  /** 逐字落到受管 .txt 文件，随后由 native read 按需读出。 */
   resultText: string
   summary: {
     kind: 'context'
@@ -57,7 +43,6 @@ export interface ContextRecallResult {
   }
 }
 
-/** 业务错误码由 agent 映射为 CapabilityCommandError；永远不携带原文。 */
 export class ContextRecallError extends Error {
   constructor(readonly code: string, message: string) {
     super(message)
@@ -69,11 +54,6 @@ type RecallLedger = { turn: number; activeTokens: number }
 
 const queues = new Map<string, Promise<void>>()
 
-/**
- * 同一会话的读-预算判断-账本写入必须串行。否则两个并发 CLI 调用都能看见旧
- * activeTokens，从而一起越过累计额度。进程内能力端点由一个 AgentController
- * 持有，这个轻量队列足够覆盖实际竞争面。
- */
 async function serialized<T>(key: string, run: () => Promise<T>): Promise<T> {
   const previous = queues.get(key) ?? Promise.resolve()
   let release: () => void = () => undefined
@@ -94,7 +74,6 @@ function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 
-/** 与 context-transform.js 完全同口径：宽字符保守地按一个 token 计。 */
 export function estimateContextRecallTokens(text: string): number {
   if (!text) return 0
   let wide = 0
@@ -172,7 +151,6 @@ async function loadLedger(sessionId: string, stateDir: string): Promise<{ ledger
       return { ledger: { turn: Math.floor(turn), activeTokens: Math.floor(activeTokens) }, exists: true }
     }
   } catch {
-    /* 账本是派生物；坏了按空账本重算，不能把原始历史读路径拖死。 */
   }
   return { ledger: { turn: 0, activeTokens: 0 }, exists: false }
 }
@@ -206,7 +184,6 @@ async function audit(
     await mkdir(stateDir, { recursive: true })
     await appendFile(auditPath(sessionId, stateDir), `${JSON.stringify(recordValue)}\n`, 'utf8')
   } catch {
-    /* 与旧扩展一致：审计失败可观测但不阻断已经安全保留账本的召回。 */
   }
 }
 
@@ -231,10 +208,6 @@ function entryText(entry: Record<string, unknown>): string | null {
   return null
 }
 
-/**
- * 从当前 JSONL 流式找回目标 entry；不使用 session-reader，因为它会为 UI 正常化/
- * 截断消息，不能作为“逐字回读原文”的事实源。
- */
 async function readRawEntry(sessionFile: string, sessionId: string, entryId: string): Promise<{ raw: string; userTurns: number }> {
   let stream: ReturnType<typeof createReadStream>
   try {
@@ -255,7 +228,7 @@ async function readRawEntry(sessionFile: string, sessionId: string, entryId: str
     for await (const line of rl) {
       const trimmed = line.trim()
       if (!trimmed) continue
-      if (!trimmed.endsWith('}')) continue // 进程中断留下的半行，和水位读取层一样不采纳。
+      if (!trimmed.endsWith('}')) continue
       let entry: Record<string, unknown> | null
       try {
         entry = record(JSON.parse(trimmed))
@@ -293,10 +266,6 @@ function limitedReason(value: unknown): string | null {
   return text ? text.slice(0, 1000) : null
 }
 
-/**
- * 只接受当前 AgentController 已绑定的会话与文件；模型可选择 ref，但不能选择
- * session、路径、归档目录或结果落点。
- */
 export async function recallArchivedContext(request: ContextRecallRequest): Promise<ContextRecallResult> {
   const ref = typeof request.ref === 'string' ? request.ref.trim() : ''
   if (!REF_RE.test(ref)) {
@@ -335,7 +304,6 @@ export async function recallArchivedContext(request: ContextRecallRequest): Prom
     const source = await readRawEntry(request.sessionFile, request.sessionId, entryId)
     const tokens = estimateContextRecallTokens(source.raw)
     const resultTextPrefix = `${RECALL_PREFIX} turn=`
-    /* 先检查正文 + 包装会不会超过能力文件上限，再碰账本；不能预扣却写不出。 */
     const ledgerState = await loadLedger(request.sessionId, stateDir)
     const turn = ledgerState.exists ? ledgerState.ledger.turn : source.userTurns
     const resultText = `${resultTextPrefix}${turn} ref=${ref}\n${source.raw}`
@@ -389,7 +357,6 @@ export async function recallArchivedContext(request: ContextRecallRequest): Prom
 
 export interface ContextFindRequest {
   sessionId: string
-  /** 关键词（空格分隔，全部命中才算匹配）；省略时按时间倒序列出最近归档的条目 */
   query?: unknown
   limit?: unknown
   stateDir?: string
@@ -405,13 +372,6 @@ export interface ContextFindMatch {
 const FIND_DEFAULT_LIMIT = 20
 const FIND_MAX_LIMIT = 50
 
-/**
- * `yan context find`：在当前会话的归档索引里按摘录查引用。
- *
- * 上下文整理后，摘要正文不再逐条列出 `ctx://tool/<id>`（那会随整理次数线性增长），
- * 模型改用这里按关键词找到引用，再用 `recall` 读原文。只返回元数据与摘录，
- * 不读原始会话、不占召回预算；已过期或不允许模型回读的条目不出现在结果里。
- */
 export async function findArchivedContext(request: ContextFindRequest): Promise<{
   data: { matches: ContextFindMatch[]; total: number; archived: number }
   summary: Record<string, unknown>
@@ -456,7 +416,6 @@ export async function findArchivedContext(request: ContextFindRequest): Promise<
       count: matches.length,
       total: hits.length,
       archived: usable.length,
-      /* 摘要里直接带上结果：多数情况下不必再读结果文件 */
       matches: matches.map((match) => `${match.ref} · ~${match.tokens} tok · ${match.label}`)
     }
   }

@@ -6,7 +6,6 @@ import { randomUUID } from 'node:crypto'
 
 const exec = promisify(execFile)
 
-/** Uses the installed phone runtime with an isolated profile, never a gateway. */
 export async function runHermesPhoneProbe({ root, temp, port, config, id }) {
   const serial = process.env.YAN_ADB_SERIAL || (await exec('adb', ['get-serialno'], { windowsHide: true, timeout: 10000 })).stdout.trim()
   if (!/^[a-zA-Z0-9_-]+$/.test(serial)) throw Error('Invalid adb serial')
@@ -23,7 +22,7 @@ export async function runHermesPhoneProbe({ root, temp, port, config, id }) {
   let reversed = false
   try {
     await adb('shell', `su -M -c 'mkdir -p ${hostPhone}/plugins/inkstone; chmod 700 ${hostPhone}'`)
-    for (const file of ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py', 'README.md']) {
+    for (const file of ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py']) {
       await adb('push', join(root, 'integrations/hermes-inkstone', file), `${hostPhone}/plugins/inkstone/${file}`)
     }
     await adb('push', config, `${hostPhone}/connection.json`)
@@ -36,7 +35,6 @@ export async function runHermesPhoneProbe({ root, temp, port, config, id }) {
     reversed = true
     await adb('shell', `su -M -c 'sh /data/local/hermes/run-hermes.sh /bin/sh ${phone}/run.sh'`)
   } finally {
-    // Preserve non-secret diagnostics, remove only this run's credential file.
     await adb('shell', `su -M -c 'rm -f ${hostPhone}/connection.json'`).catch(() => {})
     if (reversed) await adb('reverse', '--remove', `tcp:${port}`).catch(() => {})
   }

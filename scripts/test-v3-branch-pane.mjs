@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 分支树 / 「分支」页签小检查（WP-26 / WP-30 / BR2）。
- *
- * 目标：不用源码字符串断言当唯一证据，把**真实生产模块**现场 esbuild 出来跑：
- *   · `src/shared/native-session.ts` —— 树投影 / 折叠 / 选择移动 / 载荷解析；
- *   · `features/session/BranchTree.tsx` —— 请求绑定、迟到响应作废、忙禁用、错误重试、
- *     以及把 `buildTreeView` 扁平行还原为受限嵌套结构；
- *   · `features/workbench/BranchPane.tsx` —— 归属与宿主桥接线（无桥时明确失败）。
- *
- * 另有一组用**真实 `ui/Tree.tsx`（React Aria） + react-dom/server** 渲染真实嵌套，
- * 核对 RAC 的 treegrid 语义确实落在 DOM（`role="treegrid"`、`aria-level`、展开、
- * 选中、`TreeItemLabel`），不拿旧 `role="tree"` 字符串刷绿。行为组里的 `ui/Tree`
- * 用浅替身，只验证接线；RAC 语义由这一组负责。
- *
- * 用法：node scripts/test-v3-branch-pane.mjs
- * 不启动 Electron / 浏览器，不读用户数据，不调用真实模型，不发真实 IPC。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -26,8 +9,6 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
-
-/* ------------------------------------------------------------------ 断言 */
 
 const report = { pass: 0, fail: 0 }
 function group(name) {
@@ -41,8 +22,6 @@ function ok(cond, label, detail) {
   process.stdout.write(`${pass ? '  ✓' : '  ✗'} ${label}${extra}\n`)
   return pass
 }
-
-/* ------------------------------------------------------- 浅渲染 React 替身 */
 
 const REACT_SHIM = `const rt = () => globalThis.__V3_HOOKS
 export const Fragment = Symbol.for('v3.fragment')
@@ -67,13 +46,11 @@ export function jsx(type, props, key) { const el = createElement(type, props); i
 export const jsxs = jsx
 `
 
-/* ui / i18n / lucide 的浅替身：替身只为让组件树能构建，断言看元素 props。 */
 const UI_STUB = `export function Button() { return null }
 export function IconButton() { return null }
 export function Spinner() { return null }
 export function Badge() { return null }`
 
-/* ui/Tree 的浅替身：条目的真实嵌套与 props 仍可在元素树上检查；RAC 语义另组验证。 */
 const TREE_STUB = `export function Tree() { return null }
 export function TreeItem() { return null }
 export function TreeItemContent() { return null }
@@ -103,10 +80,6 @@ function makeStubMap() {
   )
 }
 
-/**
- * 行为组插件：`react` 换成浅 hook 运行时，`ui/Tree` 换成浅替身，
- * 其余本地模块（native-session / BranchTree）保持真实源码。
- */
 function stubPlugin(stubMap, reactShimPath, jsxShimPath) {
   return {
     name: 'v3-branch-stubs',
@@ -163,7 +136,6 @@ export { Badge, Button, IconButton, Spinner } from '${posix(UI_INDEX_PATH)}'
   return outfile
 }
 
-/** RAC 语义组：真实 `ui/Tree.tsx`、真实 react/react-dom/server；只替身 ui/index、i18n、lucide。 */
 async function buildRacBundle(outdir) {
   const entry = [
     "import * as React from 'react'",
@@ -209,8 +181,6 @@ async function buildRacBundle(outdir) {
   })
   return outfile
 }
-
-/* ------------------------------------------------------- 浅渲染 hook 运行时 */
 
 function makeHookRuntime() {
   const rt = {
@@ -342,12 +312,9 @@ function rowIds(node, TreeItem) {
     .filter((id) => typeof id === 'string')
 }
 
-/* ------------------------------------------------------------------ 主流程 */
-
 const ownerA = { key: 'sess-a', sessionId: 'sess-a', sessionFile: 'C:/data/a.jsonl', cwd: 'C:/proj/a', active: true }
 const ownerB = { key: 'sess-b', sessionId: 'sess-b', sessionFile: 'C:/data/b.jsonl', cwd: 'C:/proj/b', active: true }
 
-/** 可控 transport：把每次请求挂起，测试自己决定何时、以何值 resolve。 */
 function controlledTransport() {
   const pending = []
   return {
@@ -445,7 +412,6 @@ async function main() {
     TreeItem
   } = mod
 
-  /* ================================================== 组 1：共享树投影 + 受限嵌套 */
   group('shared/native-session 纯投影与 nestBranchRows 受限嵌套')
   {
     const { tree, leafId } = treeFixture()
@@ -474,7 +440,6 @@ async function main() {
     ok(parsed.tree.length === 2 && parsed.leafId === 'a2', 'parseTreePayload 取树与 leaf')
     ok(parseTreePayload(null).tree.length === 0 && parseTreePayload(null).leafId === null, '缺字段退回空树')
 
-    /* 扁平行 → 嵌套：只按 depth 还原，折叠行不产生子节点。 */
     const nested = nestBranchRows(view.rows)
     assert.deepEqual(nested.map((n) => n.row.entryId), ['u1', 'u2'], '嵌套根 = 可见顶层行')
     const nById = new Map(nested.map((n) => [n.row.entryId, n]))
@@ -494,7 +459,6 @@ async function main() {
     assert.deepEqual(nestBranchRows([]), [], '空行还原为空嵌套')
   }
 
-  /* ================================================== 组 2：请求绑定与不摘要 */
   group('请求绑定 expectedSessionId；navigate 只发 entryId，不带 summarize')
   {
     const t = controlledTransport()
@@ -524,7 +488,6 @@ async function main() {
     ok((await missing).error === '读取失败', '宿主错误为空时用兜底文案')
   }
 
-  /* ================================================== 组 3：真实组件行为 */
   group('BranchTree：加载、RAC 树接线、切换、忙禁用、错误重试')
   {
     const rt = makeHookRuntime()
@@ -548,13 +511,11 @@ async function main() {
     ok(treeEl.props.expandedKeys.has('u1') && treeEl.props.expandedKeys.has('a1'), '展开集合包含活动路径父行')
     ok(!treeEl.props.expandedKeys.has('u2'), '折叠的非活动行不在展开集合')
 
-    /* 真实父子嵌套：RAC 依此算 aria-level，而不是扁平同级后手改。 */
     assert.deepEqual(itemChildIds(tree, TreeItem, 'u1'), ['a1'], 'u1 行内嵌 a1')
     assert.deepEqual(itemChildIds(tree, TreeItem, 'a1').slice().sort(), ['a2', 't1'], 'a1 行内嵌 t1 / a2')
     assert.deepEqual(itemChildIds(tree, TreeItem, 'u2'), [], 'u2 没有内嵌子行')
     ok(findAllByType(tree, TreeItem).find((el) => el.props.id === 'a2')?.props.className.includes('branch-node--leaf'), '当前叶子行带语义标记类')
 
-    /* 折叠桥：RAC 的展开集合变化回写到 collapsed，再由 buildTreeView 收口。 */
     treeEl.props.onExpandedChange(new Set(['u1', 'a1', 'u2']))
     tree = await flush(rt, BranchTree, props)
     ok(rowIds(tree, TreeItem).includes('b1'), '展开 u2 后出现其子行 b1')
@@ -570,7 +531,6 @@ async function main() {
     const navButton = findByTestId(tree, 'branch-navigate')
     ok(navButton && navButton.props.isDisabled === true, '当前叶子就是选中行时禁用切换（不是假按钮）')
 
-    /* 选中非 leaf：走 RAC 的 onSelectionChange 回调。 */
     treeEl.props.onSelectionChange(new Set(['a1']))
     tree = await flush(rt, BranchTree, props)
     const navButton2 = findByTestId(tree, 'branch-navigate')
@@ -586,7 +546,6 @@ async function main() {
     ok(navigated === 1, '切换成功后回调宿主 sync（refreshSessions）')
     ok(t.calls.filter((c) => c.action === 'tree').length >= 2, '切换后就地重取树')
 
-    /* 忙：禁用切换，且不发请求 */
     const before = t.calls.filter((c) => c.action === 'navigate').length
     const rtBusy = makeHookRuntime()
     globalThis.__V3_HOOKS = rtBusy
@@ -603,7 +562,6 @@ async function main() {
     ok(tBusy.calls.filter((c) => c.action === 'navigate').length === 0, 'busy 时不发 navigate 请求')
     ok(before === 1, '忙情形的对照计数未被污染')
 
-    /* 错误 + 重试 */
     const rtErr = makeHookRuntime()
     globalThis.__V3_HOOKS = rtErr
     const tErr = controlledTransport()
@@ -620,7 +578,6 @@ async function main() {
     ok(findByType(errTree, Tree), '重试成功后回到树')
   }
 
-  /* ================================================== 组 4：owner 切换迟到响应 */
   group('BranchTree：owner 切换使在途响应失效，旧树不覆盖新会话')
   {
     const rt = makeHookRuntime()
@@ -641,13 +598,11 @@ async function main() {
     ok(rowIds(tree, TreeItem).includes('b-root'), 'B 的树渲染出来')
     ok(!rowIds(tree, TreeItem).includes('a2'), '此时还没有 A 的行')
 
-    /* A 的响应迟到：必须被丢弃 */
     t.pending[0].resolve({ ok: true, ...treeFixture() })
     tree = await flush(rt, BranchTree, { owner: ownerB, transport: t })
     ok(rowIds(tree, TreeItem).includes('b-root'), '迟到 A 响应后仍显示 B 的树')
     ok(!rowIds(tree, TreeItem).includes('a2') && !rowIds(tree, TreeItem).includes('u1'), '旧 A 的树未覆盖新会话')
 
-    /* 迟到的 navigate：owner 已切走，不得回调 sync、不得回写 */
     const rt2 = makeHookRuntime()
     globalThis.__V3_HOOKS = rt2
     const t2 = controlledTransport()
@@ -672,7 +627,6 @@ async function main() {
     ok(t2.calls.filter((c) => c.action === 'navigate').length === 1, '切走后未再发 navigate')
   }
 
-  /* ================================================== 组 5：BranchPane 接线 */
   group('BranchPane：归属透传、忙状态、无桥明确失败、导航后 refreshSessions')
   {
     const rt = makeHookRuntime()
@@ -753,23 +707,19 @@ async function main() {
     const noBridge = await treeEl.props.transport.request({ action: 'tree', expectedSessionId: 'sess-a' })
     ok(noBridge.ok === false && /native|\u6865/i.test(noBridge.error), '无宿主桥时明确失败而非伪造空树')
 
-    /* 忙：store 报运行中 */
     storeState.session.isStreaming = true
     paneTree = rt.render(paneMod.BranchPane, { owner: ownerA })
     ok(findByType(paneTree, paneMod.BranchTree).props.busy === true, '会话流式中 busy=true')
 
-    /* 别的会话在跑不计入当前 owner */
     paneTree = rt.render(paneMod.BranchPane, { owner: ownerB })
     ok(findByType(paneTree, paneMod.BranchTree).props.busy === false, 'owner 与运行会话不一致时不误判忙')
 
-    /* 导航回调触发 refreshSessions */
     findByType(paneTree, paneMod.BranchTree).props.onNavigated()
     ok(refreshed === 1, '导航成功后调用 refreshSessions')
 
     await rm(outdir2, { recursive: true, force: true })
   }
 
-  /* ================================================== 组 6：静态边界（不是视觉结论） */
   group('静态边界：BranchTree 只接原语，branch-tree.css 不自画控件外观')
   {
     const src = await readFile(join(ROOT, 'src/renderer/src/features/session/BranchTree.tsx'), 'utf8')
@@ -791,7 +741,6 @@ async function main() {
     ok(!css.includes('@import'), '模块 CSS 不 @import')
   }
 
-  /* ================================================== 组 7：真实 RAC Tree SSR 语义 */
   group('正式 Tree 原语：treegrid / aria-level / 展开 / 选中落在真实 DOM（SSR）')
   {
     installSsrGlobals()

@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * WP-27b 子 Agent worktree 结果处置的 host-free 回归。
- *
- * 现场 esbuild 出真实源码，在 Node 里跑，**不启动 Electron、不连 pi、不读用户数据、
- * 不调用真实模型、不执行任何真实 merge / discard、不开窗口**：
- *   · 纯逻辑 `subagent-review.ts`：处置闸门（只认隔离 worktree + 终态 + 待审阅）、
- *     归档补丁的真实只读读取（成功 / 登记失败 / 读取失败 / 截断）；
- *   · 浅渲染真实 `SubagentReview`：controlled-cwd / shared-cwd / 运行中 / 已归档
- *     不画任何处置按钮；pending/conflict 才出现「查看差异 / 采纳 / 放弃」；
- *     采纳与放弃都要先明确确认；动作进行中禁用重复点击；失败保留对话框并提示；
- *     补丁读取失败就地说明、不装空 DiffView；
- *   · 归属：动作与补丁路径都取自传入的 `run`，不读前台会话、不按会话重指向。
- *
- * 用法：node scripts/test-v3-subagent-review.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -39,8 +24,6 @@ function ok(cond, label, detail) {
 function group(name) {
   process.stdout.write(`\n▌${name}\n`)
 }
-
-/* ------------------------------------------------------------ React 替身 */
 
 const REACT_SHIM = `const rt = () => globalThis.__V3_HOOKS
 export const Fragment = Symbol.for('v3.fragment')
@@ -74,7 +57,7 @@ function installGlobals() {
     setTimeout: () => 0,
     clearTimeout: () => {}
   }
-  globalThis.requestAnimationFrame = (fn) => { try { fn(0) } catch { /* 浅渲染无真实帧 */ } return 0 }
+  globalThis.requestAnimationFrame = (fn) => { try { fn(0) } catch { } return 0 }
   globalThis.cancelAnimationFrame = () => {}
 }
 
@@ -142,8 +125,6 @@ const flattenText = (node) => {
 }
 const textOf = (el) => (typeof el?.props?.children === 'string' ? el.props.children : '')
 
-/* ------------------------------------------------------------------ 构建 */
-
 const DEFINE = {
   'import.meta.env.DEV': 'false',
   'import.meta.env.PROD': 'true',
@@ -152,10 +133,6 @@ const DEFINE = {
   cancelAnimationFrame: 'globalThis.cancelAnimationFrame'
 }
 
-/*
- * 精简替身：只保留本组件真正用到的导出，节点形状与 react-shim 一致，
- * 便于测试直接按 data-testid 找到控件并调用它的 onPress。
- */
 const UI_STUB = `const h = (type, props) => ({ type, props: props || {} })
 export function Button(props) { return h('button', { 'data-testid': props['data-testid'], 'data-disabled': props.isDisabled ? '1' : undefined, 'data-pending': props.isPending ? '1' : undefined, onClick: props.onPress, children: props.children }) }
 export function IconButton() { return null }
@@ -227,11 +204,8 @@ async function buildBundle(outdir) {
   return out
 }
 
-/* ------------------------------------------------------------------ fixture */
-
 const PATCH = '/data/subagents/sub-42.patch'
 
-/** 只造处置用得上的字段；其余运行字段本组件不读。 */
 const run = (over = {}) => ({
   id: 'sub-42',
   task: '补齐 PKCE 单元测试',
@@ -264,8 +238,6 @@ async function main() {
   lib = bundle
   rt = makeHookRuntime()
   globalThis.__V3_HOOKS = rt
-
-  /* ============================================================ 处置闸门 */
 
   group('处置闸门：只认隔离 worktree 的终态待审阅结果')
   {
@@ -300,8 +272,6 @@ async function main() {
     ok(!empty.canPatch && empty.canDiscard && empty.blocked === 'no-patch', '零文件：可放弃、不可采纳', empty)
   }
 
-  /* ==================================================== 归档补丁读取 */
-
   group('归档补丁读取：先登记再读，失败抛出明确原因')
   {
     const calls = []
@@ -334,10 +304,7 @@ async function main() {
     ok(pass > 0, '（登记 / 读取失败都有明确原因，不静默当空补丁）')
   }
 
-  /* ==================================================== 浅渲染：闸门 */
-
   const render = (props) => rt.render(lib.SubagentReview, props)
-  /* 每组是独立的组件实例；重置 hook 槽位，避免上一组的开关状态泄漏。 */
   const resetHooks = () => { rt = makeHookRuntime(); globalThis.__V3_HOOKS = rt }
   const callbacks = () => ({ onMerge: async () => {}, onDiscard: async () => {} })
 
@@ -364,7 +331,6 @@ async function main() {
     const conflictTree = render({ run: run({ review: 'conflict' }), ...callbacks() })
     ok(textOf(byTestId(conflictTree, 'v3-subagent-review-state')[0]) === 'sa.reviewConflict', 'conflict 显示冲突说明', textOf(byTestId(conflictTree, 'v3-subagent-review-state')[0]))
 
-    /* 无补丁：不画查看 / 采纳，但仍可放弃，并说明原因。 */
     const noPatch = render({ run: run({ diff: undefined }), ...callbacks() })
     ok(byTestId(noPatch, 'v3-subagent-review-view').length === 0 && byTestId(noPatch, 'v3-subagent-review-merge').length === 0, '无补丁不画查看 / 采纳', noPatch)
     ok(byTestId(noPatch, 'v3-subagent-review-discard').length === 1, '无补丁仍可放弃', noPatch)
@@ -475,8 +441,6 @@ async function main() {
     ok(confirm.props.isDisabled !== true, '失败后释放 busy，可重试', confirm.props)
   }
 
-  /* ==================================================== 窄结果适配器 */
-
   group('窄结果适配器：{ ok:false } 转成明确失败，成功 / 传输拒绝不改变语义')
   {
     const mergeCalls = []
@@ -486,7 +450,6 @@ async function main() {
     })
     ok(mergeCalls.length === 1 && mergeCalls[0] === 'sub-42', '{ ok:true } 成功 resolve，只动这条 run', mergeCalls)
 
-    /* 宿主业务失败是 resolve 的 { ok:false }，不是 reject —— 适配器必须转成抛出。 */
     await assert.rejects(
       lib.mergeSubagentResult('sub-42', { merge: async () => ({ ok: false, error: '合并冲突或补丁已失效' }), discard: async () => ({ ok: true }) }),
       /合并冲突或补丁已失效/,
@@ -510,8 +473,6 @@ async function main() {
       '放弃同样把 { ok:false } 转成明确失败'
     )
   }
-
-  /* ==================================================== 闭环：resolved 业务失败 */
 
   group('SubagentReview：适配器 resolved { ok:false } 正确回显、不关闭确认框')
   {

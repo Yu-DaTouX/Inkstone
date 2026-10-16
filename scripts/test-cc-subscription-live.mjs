@@ -1,4 +1,3 @@
-/** Opt-in, small Claude subscription test. Never selects a fallback model. */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { mkdtemp,mkdir,writeFile,readFile } from 'node:fs/promises'
@@ -47,7 +46,6 @@ try {
   await writeFile(join(root,'receipt.json'),JSON.stringify(receipt,null,2))
   console.log('PASS real subscription file task: '+JSON.stringify({model:receipt.model,thinking:receipt.thinking,tools,receipt:join(root,'receipt.json')}))
   if(process.argv.includes('--recovery')) {
-   // Kill only this isolated RPC after its persisted turn; do not replay any prior tool.
    const exited = new Promise(done=>child.once('exit',done));child.kill();await exited
    buffer='';child=launch(current.data.sessionFile);listen()
    const restored=await command('get_state');assert.equal(restored.data.sessionId,current.data.sessionId)

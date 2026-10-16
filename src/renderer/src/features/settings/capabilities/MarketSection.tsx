@@ -1,11 +1,3 @@
-/**
- * 「市场」分页（S2）：砚插件与 pi 社区插件。
- *
- * 两条如实边界：
- *   · 打开本页**不自动联网**。pi 目录只有点「搜索」才请求，翻页也只在已搜索后发生。
- *   · 砚页只列真实维护的插件（当前只有 Hermes）；「下载」是 `packages.exportPlugin`
- *     的保存对话框，不是安装。安装 pi 包走下面的正式 `packages.action`。
- */
 import { useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { INKSTONE_PLUGINS } from '../../../../../shared/inkstone-plugins'
@@ -30,7 +22,6 @@ export function MarketSection(): ReactElement {
   const [note, setNote] = useState('')
   const generation = useRef(0)
 
-  /** 唯一拉取入口：只有用户点搜索 / 翻页才调用，挂载时不请求。 */
   const runSearch = (nextQuery: string, nextOffset: number): void => {
     const current = ++generation.current
     setLoading(true)
@@ -64,12 +55,13 @@ export function MarketSection(): ReactElement {
     runSearch(applied, nextOffset)
   }
 
-  const download = async (id: string): Promise<void> => {
+  const download = async (id: string, action: 'export' | 'mcp'): Promise<void> => {
     setExporting(id)
     setNote('')
     try {
-      const result = await window.yan.packages.exportPlugin(id)
-      if (!result.cancelled) setNote(result.ok ? t('market.exported', { path: result.path ?? '' }) : (result.error ?? t('pkg.failed')))
+      const result = action === 'mcp' ? await window.yan.packages.addMcp(id) : await window.yan.packages.exportPlugin(id)
+      const done = action === 'mcp' ? (result.existed ? 'market.mcpExisted' : 'market.mcpAdded') : 'market.exported'
+      if (!result.cancelled) setNote(result.ok ? t(done, { path: result.path ?? '' }) : (result.error ?? t('pkg.failed')))
     } catch (cause) {
       setNote(cause instanceof Error ? cause.message : t('pkg.failed'))
     } finally {
@@ -109,10 +101,10 @@ export function MarketSection(): ReactElement {
                     size="sm"
                     variant="secondary"
                     isDisabled={exporting === plugin.id}
-                    onPress={() => void download(plugin.id)}
-                    data-testid="caps-market-download"
+                    onPress={() => void download(plugin.id, plugin.action)}
+                    data-testid={plugin.action === 'mcp' ? `caps-market-${plugin.id}-mcp` : 'caps-market-download'}
                   >
-                    {exporting === plugin.id ? t('pkg.working') : t('market.download')}
+                    {exporting === plugin.id ? t('pkg.working') : t(plugin.action === 'mcp' ? 'market.addMcp' : 'market.download')}
                   </Button>
                   <Button
                     size="sm"
@@ -126,7 +118,7 @@ export function MarketSection(): ReactElement {
               </ItemHead>
               <Meta>{t(plugin.descriptionKey)}</Meta>
               <Meta>{t(plugin.targetKey)}</Meta>
-              <Meta>{t('market.installHint')}</Meta>
+              <Meta>{t(plugin.hintKey)}</Meta>
             </Item>
           ))}
         </div>

@@ -1,4 +1,3 @@
-/** 执行现场restoreSession，模拟第二条搬移失败及第一条回滚失败，随后重试。 */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'

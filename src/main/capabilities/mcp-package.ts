@@ -1,11 +1,3 @@
-/**
- * 受管 npm MCP 包（实施-04 S6b-2）。
- *
- * MCP 包不需要安装成 pi 扩展：固定 npm 制品先进入 operation 专属 staging，
- * 只接受 package.json 的普通 bin 入口，用可信 Node 可执行文件启动，再由宿主
- * 通过同一套 MCP SDK 做 `tools/list` 冒烟。通过后登记项目范围的 stdio 配置；
- * 未随 tarball 提供的依赖、入口不明确或包含链接的包一律 fail-closed。
- */
 import { lstat, readFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { mcpServerIdOf } from '../../shared/mcp-registration'
@@ -65,7 +57,6 @@ export type ResolvedMcpPackage = {
   entryPath: string
 }
 
-/** 从已核验 staging 的 package.json 解析唯一、可复核的 Node stdio 入口。 */
 export async function resolveMcpPackage(input: {
   packageRoot: string
   candidateId: string
@@ -102,7 +93,6 @@ export async function resolveMcpPackage(input: {
   }
 }
 
-/** 只执行无副作用的握手与工具枚举，不调用任何业务工具。 */
 export async function smokeMcpPackage(input: {
   config: McpServerConfig
   timeoutMs?: number

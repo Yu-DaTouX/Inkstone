@@ -1,4 +1,3 @@
-/** 现场附件清理IPC回调：目录扫描期间消失的文件不得产生裸stat异常或误删。 */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'

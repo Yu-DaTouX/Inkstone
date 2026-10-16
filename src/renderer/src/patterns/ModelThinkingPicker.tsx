@@ -38,27 +38,6 @@ import type { ModelChoice } from '../../../shared/model-selection'
 import type { ModelInfo } from '../../../shared/ipc'
 import './model-thinking-picker.css'
 
-/**
- * 输入框底栏的模型与思考档选择器（v2 `ModelThinkingPicker` 的 v3 复刻）。
- *
- * 一个按钮承载两件事：当前模型（图标 + 名字）与思考强度（短标签加档位色点）；
- * 点开同一个浮层里换模型、拖滑杆调强度 —— 它们是同一个决定。
- *
- * 思考强度三处反馈：
- *   · 触发器上的档位色点与档位徽标按 `data-level` 染色；
- *   · 弹层里档位值以 `key={headLevel}` 重挂，触发 `v3-step-value-in` 切换动画；
- *     拖动滑杆时头部实时预览，松手/确认才真正写设置；
- *   · 输入框顶边（ComposerBorder）在运行时随档位换色，过渡用 v3 动效令牌。
- *
- * 档位滑杆按 v2 `StepSlider` 复原：轨道是 `components/ui/pulse-field` 的点阵画布
- * （按档位色点亮到当前档，脉冲密度随档位上升），光标是档位色块带发光与启动闪烁，
- * 档位名可点击切档。语义、键盘与拖拽仍由正式 `ui/Slider` 提供，不在这里另写指针状态机。
- *
- * 权威边界与旧 ModelPicker 一致：模型列表 / 当前模型 / 可用档位全部来自 store，
- * 不在组件里猜；收藏读设置，最近使用只写 v3 本地键。档位滑杆用正式 `ui/Slider`，
- * 离散档位映射为 step，并在渲染后把 `aria-valuetext` 补成档位名。
- */
-
 const LEVEL_LABEL: Record<string, MessageKey> = {
   off: 'think.off',
   minimal: 'think.minimal',
@@ -69,23 +48,19 @@ const LEVEL_LABEL: Record<string, MessageKey> = {
   max: 'think.max'
 }
 
-/** 档位名：与 pi 的 7 档一一对应，不合并、不改写。 */
 export function levelLabel(t: TFunc, level: string): string {
   const key = LEVEL_LABEL[level]
   return key ? t(key) : level
 }
 
-/** 档位色：composer.css 用现有 v3 令牌派生的 `--think-*`，这里带兜底引用。 */
 export function thinkColor(level: string): string {
   return `var(--think-${level}, var(--fg3))`
 }
 
-/** 两色线性插值：画布要的是实色，不透明度由引擎自己给。 */
 function mixRgb(a: [number, number, number], b: [number, number, number], t: number): [number, number, number] {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 }
 
-/** v3 主题令牌挂在 `<html data-theme>`；没设时才跟随系统色偏好。 */
 function isDarkTheme(): boolean {
   const theme = document.documentElement.dataset.theme
   if (theme) return theme === 'dark'
@@ -96,13 +71,6 @@ const keyOf = (m: Pick<ModelInfo, 'provider' | 'id'>): string => `${m.provider}/
 
 const EMPTY: never[] = []
 
-/**
- * 思考档位区（可独立 SSR 的纯展示）。
- *
- * 状态只有「预览」一项：`onChange` 只更新它，`onChangeEnd` 才回调 `onCommit`。
- * 这样拖动过程的档位不会落盘，测试也能直接对 `thinkingDragAction` /
- * `thinkingCommitAction` 断言这条边界。
- */
 export function ThinkingSection({
   levels,
   level,
@@ -118,37 +86,26 @@ export function ThinkingSection({
 }) {
   const t = useT()
   const hasLevels = levels.length > 1
-  /* 拖动手柄时头部实时显示手柄所在档位（松手才真正切档） */
   const [preview, setPreview] = useState<string | null>(null)
   const headLevel = preview ?? level
   const headIndex = thinkingLevelIndex(levels, headLevel)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  /* 点阵画布、弹簧前沿宿主（轨道）与档位色探针 */
   const trackRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const probeRef = useRef<HTMLSpanElement>(null)
   const fieldRef = useRef<PulseField | null>(null)
-  /* 档位表拼成字符串当依赖：避免上层每次传新数组时重建引擎 */
   const palette = levels.join('|')
 
-  /* 设置落盘后清掉预览，头部交回权威值；不会出现「预览停在旧档」 */
   useEffect(() => {
     if (preview && preview === level) setPreview(null)
   }, [preview, level])
 
-  /* RAC 1.22 的隐藏 input 固定用数字格式化值当 aria-valuetext，不接受自定义
-     档位名，所以在渲染后用同一个 input 覆盖成档位名。 */
   useEffect(() => {
     if (!hasLevels) return
     inputRef.current?.setAttribute('aria-valuetext', levelLabel(t, headLevel))
   }, [hasLevels, headLevel, t])
 
-  /*
-   * 点阵画布跟菜单同生命周期：挂载建引擎、关闭 dispose 停帧。
-   * 档位色取 composer.css 派生的 `--think-*`；未点亮的暗点由 v3 令牌混出一档
-   * 低对比灰（深浅主题都看得见）。主题属性或外观事件变化时重解析颜色。
-   */
   useEffect(() => {
     if (!hasLevels) return
     const canvas = canvasRef.current
@@ -178,13 +135,11 @@ export function ThinkingSection({
     }
   }, [hasLevels, palette])
 
-  /* 引擎跟当前档位（含拖动预览）：脉冲密度与前沿位置随之更新 */
   useEffect(() => {
     if (!hasLevels) return
     fieldRef.current?.setLevel(headIndex, levels.length, !!busy)
   }, [hasLevels, palette, headIndex, levels.length, busy])
 
-  /** 档位下标 → 百分比位置（轨道两端是首尾档） */
   const at = (index: number): number => (levels.length > 1 ? (index / (levels.length - 1)) * 100 : 0)
 
   return (
@@ -290,7 +245,6 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [provider, setProvider] = useState('')
-  /* 「最近使用」是 v3 本地浏览偏好，坏了不影响选择。 */
   const [recent, setRecent] = useState<ModelChoice[]>(() => {
     if (typeof localStorage === 'undefined') return []
     try {
@@ -301,7 +255,6 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   })
   const triggerRef = useRef<HTMLSpanElement>(null)
 
-  /* pi 没拿到模型时会报一个名为 unknown 的占位：界面上不直接露出这个词。 */
   const cur =
     session?.model && session.model.id !== 'unknown' && session.model.name !== 'unknown' ? session.model : undefined
   const level = session?.thinkingLevel ?? 'off'
@@ -312,12 +265,10 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const customProvider = !!cur?.provider && /^yan-/.test(cur.provider)
   const showThinkingSection = hasLevels || thinkingStatus !== 'known' || notDeclared
 
-  /* 打开时才拉凭证状态：它要读 auth.json 并探测环境变量。 */
   useEffect(() => {
     if (open) void loadAuthProviders()
   }, [open, loadAuthProviders])
 
-  /* 关闭时清空搜索，下次打开是干净列表。 */
   useEffect(() => {
     if (!open) setQuery('')
   }, [open])
@@ -325,7 +276,6 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const needsAuth = (provider: string): boolean => {
     if (authProviders.length === 0) return false
     const info = authProviders.find((p) => p.id === provider || p.authKey === provider)
-    /* 目录里没有这个供应商 → 不判断，不当成未配置（宁可少标一个徽标）。 */
     return !!info && info.status !== 'ready'
   }
 
@@ -338,7 +288,6 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
 
   const selectedKey = cur ? keyOf(cur) : undefined
 
-  /** 收藏置顶 / 最近使用的分组标题；服务分组直接用 provider id。 */
   const sectionTitle = (section: PickerSection): string => {
     if (section.kind === 'favorites') return t('models.favorites')
     if (section.kind === 'recent') return text('pickerRecent')
@@ -351,7 +300,6 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
       try {
         localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(next))
       } catch {
-        /* 存储不可用只影响下次打开，不影响本次选择 */
       }
       return next
     })
@@ -395,7 +343,6 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
           data-testid="model-picker"
           onPress={() => setOpen((v) => !v)}
         >
-          {/* 档位色的小点：与输入框顶边同一套 --think-* 颜色，一眼看出当前强度 */}
           <span className="mtp-dot" data-level={hasLevels ? level : 'off'} aria-hidden />
           <span className="mtp-model" data-testid="model-picker-name">
             {cur ? cur.name : t('picker.notReady')}

@@ -1,12 +1,3 @@
-/**
- * 迷你小窗（v3 WP-12）。
- *
- * 置顶的状态小窗（设计规范 §13.4，宽 320）：只列 AttentionService 汇总出来的
- * 注意项，点击回到主窗口对应会话。默认关闭，是否启用由设置决定；窗口本身不做
- * 失焦隐藏（它就是要一直挂着看进度），Esc 关闭键由渲染端发送 close。
- *
- * 高度随条目数增长，超过上限后在窗口内滚动；位置贴主窗口右上角。
- */
 import { BrowserWindow } from 'electron'
 import { MINI_SIZE, computeMiniBounds, type Rect } from './geometry'
 import { miniWindowHeight } from './aux-state'
@@ -23,7 +14,6 @@ export interface MiniWindow {
   show(): void
   hide(): void
   isVisible(): boolean
-  /** 条目数变化时重算高度与位置。 */
   resize(itemCount: number): void
   browserWindow(): BrowserWindow | null
   webContents(): Electron.WebContents | null

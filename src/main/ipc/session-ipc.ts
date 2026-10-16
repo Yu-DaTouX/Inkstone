@@ -1,8 +1,3 @@
-/**
- * 会话管理的 IPC 适配：派生 / 克隆、删除与撤销、移动、新建、切换、运行实例、标题与会话列表。
- *
- * 发送、中止与排队等「运行控制」仍在入口（与 pi 生命周期绑在一起）。
- */
 import type { IpcRegistrar } from './registrar'
 import type { SessionHost } from '../session-host'
 import { shell } from 'electron'
@@ -26,7 +21,6 @@ export interface SelectedSessionTarget {
   preview?: boolean
 }
 
-/** Shared desktop selection semantics, also used after a user imports a native session. */
 export async function selectSessionWithHost(host: SessionHost, target: SelectedSessionTarget) {
   const cwdResult = await host.validateCwd(target.cwd)
   if (!cwdResult.ok) return cwdResult
@@ -35,7 +29,6 @@ export async function selectSessionWithHost(host: SessionHost, target: SelectedS
     if (!r.ok) return r
   }
   const settings = await getSettings()
-  /* global 是显式产品归属，不能因为物理 cwd 恰好落在项目里就被重新吸回。 */
   const projectId = target.scope === 'global'
     ? undefined
     : (target.projectId ?? (target.scope === 'pending' ? undefined : host.projectIdForCwd(settings, cwdResult.cwd)))
@@ -44,10 +37,6 @@ export async function selectSessionWithHost(host: SessionHost, target: SelectedS
     cwd: cwdResult.cwd,
     projectId
   })
-  /*
-   * `deferred`：只是查看，实例没动 —— 不能把它记成「这条会话跑在哪个实例上」，
-   * 否则后续按实例找会话会指向一个根本没载入这条会话的进程。
-   */
   if (!res.deferred) {
     await host.rememberRunnerSession(res, {
       ...target,
@@ -63,9 +52,7 @@ export async function selectSessionWithHost(host: SessionHost, target: SelectedS
 
 export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   const { handle } = ipc
-  /* ---- 启动页用量概览（只读会话文件，增量缓存） ---- */
   handle('yan:usageStats', async (range: 'all' | '30d' | '7d') => readUsageStats(range))
-  /* ---- 会话管理 ---- */
   handle('yan:fork', async (entryId: string) => host.ac()?.fork(entryId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:clone', async () => host.ac()?.clone() ?? { ok: false, error: 'pi 未运行' })
   handle('yan:forkPoints', async () => host.ac()?.forkPoints() ?? [])
@@ -89,23 +76,15 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     try {
       await host.sessionChains.load()
       const chain = host.sessionChains.chainOf(path)
-      /*
-       * 删除按**链**整体处理（实施-05 S5b-4）：交接过的会话在磁盘上是两份 JSONL，
-       * 只删其中一份会让历史拼接断成两截（看上去像内容丢了）。
-       * 顺序仍是「先停实例、再删文件」，与单段删除同一条路。
-       */
       const targets = chain && chain.segments.length > 1 ? planHistoryRead(chain) : [path]
       const current = host.ac()?.getState()?.sessionFile
-      /* 当前正在用的会话在链上任何一段都算“在用”（防止把正在看的会话删掉） */
       for (const target of targets) await host.runners()?.stopBySessionFile(target)
       const tokens: string[] = []
       for (const target of targets) {
         tokens.push(await deleteSession(target, current))
       }
-      /* 段都进回收站了，链记录再留着就会指向不存在的文件（侧栏会把另一段也藏起来） */
       await host.sessionChains.forget(path).catch(() => false)
       host.pushRunners()
-      /* 多个 token 用 `|` 拼成一个（IPC 形状不变）：撤销时要整链一起恢复 */
       return { ok: true, undoToken: tokens.join('|') }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -113,7 +92,6 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   })
   handle('yan:restoreSession', async (undoToken: string) => {
     try {
-      /* 链删除返回的是多个 token（`|` 分隔）：整链一起恢复，否则历史又会断 */
       const tokens = String(undoToken ?? '')
         .split('|')
         .map((item) => item.trim())
@@ -126,10 +104,6 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     }
   })
 
-  /**
-   * 移动项目语义归属：只写 session-layout.json，不移动 JSONL，也不停止 runner。
-   * null 表示 Yan 默认全局位置；目标项目必须是设置里的稳定 projectId。
-   */
   handle('yan:moveSession', async (sessionId: string, projectId: string | null) => {
     const settings = await getSettings()
     if (projectId !== null && !settings.projects.some((project) => project.id === projectId)) {
@@ -180,25 +154,16 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
       : { ok: false, error: res.error }
   })
 
-  /**
-   * 切到某个会话（N12）。
-   *
-   * 命中已有实例 → 只改视图（后台会话继续跑）；
-   * 空闲实例 → 复用；到并发上限 → 明确报错。
-   */
   handle('yan:selectSession', async (target: SelectedSessionTarget) => selectSessionWithHost(host, target))
 
-  /** 所有运行实例的状态（左栏状态槽；也用于补上错过的 runners 推送） */
   handle('yan:runnerStatuses', async () => host.runners()?.statuses() ?? [])
 
-  /** 停掉某一个运行实例 —— 作用域只到它（单独停 B 不影响 A） */
   handle('yan:stopRunner', async (id: string) => {
     const done = (await host.runners()?.stopOne(id)) ?? false
     host.pushRunners()
     return done
   })
 
-  /* 兼容旧调用：与 selectSession 同一套逻辑（cwd 取当前项目） */
   handle('yan:switchSession', async (path: string) => {
     const registry = host.runners()
     if (!registry) return { ok: false, error: 'pi 未运行' }
@@ -222,12 +187,6 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   })
 
   handle('yan:cachedTitles', async () => cachedTitles())
-  /*
-   * 手动重命名。比“自动标题”更松一点：写一个独立的粘性名。
-   * 两条通路：
-   *   · 当前会话也调一次 pi 的 set_session_name（TUI / 其它客户端能看到）
-   *   · 无论哪个会话都写 manual-titles.json（桌面端左栏立刻生效、且不被重生标题盖掉）
-   */
   handle('yan:renameSession', async (name: string) => host.ac()?.renameSession(name) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:manualTitles', async () => manualTitles())
   handle('yan:setManualTitle', async (sessionId: string, name: string) =>
@@ -237,11 +196,6 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     const sid = String(sessionId ?? '').trim()
     if (!sid) return { ok: false, error: '缺少目标会话' }
 
-    /*
-     * 运行中的目标交给它自己的 AgentController：不能切当前视图，也不能把
-     * 标题请求塞进主对话。非运行会话则只读 JSONL 的首尾用户消息，起一个
-     * --no-session 的独立归纳进程；两条路径都按稳定 sessionId 归属结果。
-     */
     const live = host.runners()?.agentForSession(sid)
     if (live) return live.regenerateTitle()
 
@@ -273,21 +227,12 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   handle('yan:listSessions', async () => {
     warmSessionSearch()
     const settings = await getSettings()
-    /*
-     * 生产端保持 200 条的桌面快照边界。隔离 live 回归会在一个批次里
-     * 生成大量临时会话；它们只是测试夹具，不应把批次开始时种下的
-     * 目标会话挤出列表，所以允许测试进程显式提高这一次 IPC 快照上限。
-     */
     const requested = Number(process.env.YAN_TEST_SESSION_LIST_LIMIT)
     const limit = Number.isInteger(requested) && requested > 200 && requested <= 1000 ? requested : 200
     const list = await filterChainRepresentatives(await listSessions(limit, settings.projects))
     return sweepAutoArchive(list, settings.autoArchiveDays)
   })
 
-  /**
-   * 自动归档：闲置够久且没置顶、没有运行实例的会话打上归档标记。
-   * 失败只跳过这一轮，不影响列表本身。
-   */
   async function sweepAutoArchive<T extends Parameters<typeof selectAutoArchive>[0][number]>(list: T[], days: unknown): Promise<T[]> {
     const busyFiles = (host.runners()?.statuses() ?? []).map((r) => r.sessionFile)
     const ids = selectAutoArchive(list, { days: Number(days), now: Date.now(), busyFiles })
@@ -302,7 +247,6 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     return list.map((s) => (done.has(s.id) ? { ...s, archivedAt: at } : s))
   }
 
-  /** 归档 / 置顶共用：找到会话再写 session-layout 标记。 */
   async function setFlags(sessionId: string, flags: { archived?: boolean; pinned?: boolean }): Promise<{ ok: boolean; error?: string }> {
     const settings = await getSettings()
     const summaries = await listSessions(500, settings.projects)
@@ -318,21 +262,8 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   handle('yan:setSessionArchived', async (sessionId: string, archived: boolean) => setFlags(String(sessionId), { archived: archived === true }))
   handle('yan:setSessionPinned', async (sessionId: string, pinned: boolean) => setFlags(String(sessionId), { pinned: pinned === true }))
 
-  /**
-   * 快速预览一个会话的消息 —— **直接读文件，不问 pi**。
-   *
-   * 为什么需要（实测）：打开一个 17MB 的会话，
-   *   pi 的 switch_session + get_messages = **2780ms**
-   *   直接解析 JSONL               = **59ms**
-   * 而且 pi 的 get_messages 不含压缩前历史（docs/rpc.md 写了），
-   * 所以大会话在界面上只剩当前窗口 —— 用户感觉是「又卡又少内容」。
-   *
-   * 调用方应该：先拿这个把内容锦上（瞬间），再让 pi 在后台切过去。
-   * 返回 null 表示读不出来（格式不认 / 文件不在）—— 调用方回退到等 pi。
-   */
   handle('yan:peekSession', async (path: string) => {
     if (typeof path !== 'string' || !path) return null
-    /* 链感知：切到交接过的会话时，锦上的历史也必须是完整的一条时间线 */
     return host.readHistoryWithArtifacts(path)
   })
 }

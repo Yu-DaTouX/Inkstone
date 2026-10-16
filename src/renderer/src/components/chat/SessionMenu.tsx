@@ -5,7 +5,6 @@ import { useStore } from '../../state/store'
 import { IconButton, Menu, MenuItem, MenuSeparator } from '../ui'
 import { menuAnchor, type MenuAnchor } from '../workbench/Workspace'
 
-/** Session-level actions in the header overflow menu (formerly the inspector's actions section). */
 export function SessionMenu() {
   const t = useT()
   const [at, setAt] = useState<MenuAnchor | null>(null)

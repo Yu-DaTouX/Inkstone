@@ -1,17 +1,3 @@
-/*
- * F08 回归：自定义服务的「免费连接测试」必须和「获取模型」用同一套协议感知构造。
- *
- * 用现场 esbuild 编译 `src/main/custom-providers.ts`，注入假 `globalThis.fetch`
- * 与隔离的 `models.json`（`YAN_PI_DIR` 指向临时目录）。全程不联网、不读真实凭证，
- * 只检查：
- *   · 连接测试对 Anthropic / Google / OpenAI 发出的 URL 与鉴权头一致；
- *   · Anthropic 的 `/v1` 404 回退确实发生，其它协议不回退；
- *   · 401/403、404、其他非 2xx、Abort、网络错误的分类与文案；
- *   · 编辑服务 Base URL 变化时仍拒绝沿用旧密钥（密钥隔离未被破坏）；
- *   · 结果消息与请求记录里不出现密钥明文。
- *
- * 运行：node scripts/test-provider-probe-protocol.mjs
- */
 import { build } from 'esbuild'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { rmSync } from 'node:fs'
@@ -62,7 +48,6 @@ await build({
 })
 const providers = await import(pathToFileURL(outfile).href)
 
-/* ── 假 fetch：记录每次请求，按 handler 返回 ─────────────────────── */
 const calls = []
 let handler = () => jsonResponse({ data: [{ id: 'model-a' }] })
 
@@ -91,7 +76,6 @@ const assertNoKey = (text, ...keys) => {
   for (const key of keys) assert.equal(String(text).includes(key), false, `结果消息泄漏了密钥：${text}`)
 }
 
-/* ── 1. 免费连接测试的 URL 与协议鉴权头 ──────────────────────────── */
 reset(() => jsonResponse({ data: [{ id: 'model-a' }] }))
 
 const openai = await providers.testCustomProviderEndpoint('yan-openai')
@@ -125,7 +109,6 @@ assert.equal(calls[0].headers.get('authorization'), null)
 assertNoKey(google.message, KEY.google)
 check('Google 免费测试：x-goog-api-key，不带 Bearer')
 
-/* ── 2. Anthropic 的 /v1 回退；其它协议不回退 ────────────────────── */
 reset((record) =>
   record.url.endsWith('/v1/models') ? jsonResponse({ data: [{ id: 'claude-bare' }] }) : new Response('missing', { status: 404 })
 )
@@ -150,7 +133,6 @@ assert.match(openai404.message, /地址可达，但端点没有模型列表/)
 assertNoKey(openai404.message, KEY.openai)
 check('OpenAI 404 不回退，按「地址可达但无模型列表」分类')
 
-/* ── 3. 状态分类与密钥不回显 ─────────────────────────────────────── */
 for (const status of [401, 403]) {
   reset(() => jsonResponse({ error: { message: `bad key ${KEY.google}` } }, status))
   const denied = await providers.testCustomProviderEndpoint('yan-google')
@@ -188,7 +170,6 @@ assert.equal(unreachable.ok, false)
 assert.match(unreachable.message, /连不上：fetch failed（ENOTFOUND）/)
 check('网络错误带 cause code 说明')
 
-/* ── 4. 获取模型与连接测试共用协议构造 ───────────────────────────── */
 reset(() => jsonResponse({ data: [{ id: 'claude-x', name: 'Claude X' }] }))
 const discovered = await providers.discoverCustomProviderModels({
   api: 'anthropic-messages',
@@ -202,7 +183,6 @@ assert.equal(calls[0].headers.get('anthropic-version'), '2023-06-01')
 assert.equal(calls[0].headers.get('authorization'), null)
 check('获取模型对 Anthropic 使用同一套鉴权头与端点')
 
-/* ── 5. 编辑服务时 Base URL 变化仍隔离旧密钥 ─────────────────────── */
 reset(() => jsonResponse({ data: [{ id: 'model-a' }] }))
 const changed = await providers.discoverCustomProviderModels({
   id: 'yan-openai',

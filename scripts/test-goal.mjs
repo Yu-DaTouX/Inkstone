@@ -1,16 +1,3 @@
-/**
- * 目标与计划就绪（实施-05 S3）的纯逻辑与存储测试。
- *
- * 分两层：
- *   · `src/shared/goal.ts`   契约与纯函数（就绪校验 / 报告校验 / 推进 / 清洗）；
- *   · `src/main/goal-service.ts` 真文件、真幂等、真「先落盘再返回」。
- *
- * 为什么存储层必须单独测：它的失败模式都在磁盘边上 ——
- * 幂等记录没拦住重放（转移发生两次）、`modeRevision` 过期判断让重试看起来像失败、
- * 脏 JSON 让整份文档作废、多会话互相串。只看返回值一样验不出来。
- *
- * 用法：npm run test:unit
- */
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,16 +6,12 @@ export async function runGoalTests(ok) {
   const shared = await import('../out/test/goal.mjs')
   const service = await import('../out/test/goal-service.mjs')
 
-  /* --------------------------------------------------------- 契约常量 */
-
   ok(
     shared.GOAL_PHASES.join(',') === 'planning,executing,verifying,completed,blocked,stopped',
     '阶段集合固定（planning → executing → verifying → completed，另有 blocked / stopped）'
   )
   ok(shared.READY_CONFIDENCE_THRESHOLD === 0.95, '就绪门槛是 0.95（§4）')
   ok(shared.FAILURE_BLOCK_THRESHOLD === 2, '同一失败连续两次判 blocked（§5）')
-
-  /* --------------------------------------------------------- 就绪校验 */
 
   const ready = (patch = {}) => ({
     transitionId: 'tr-1',
@@ -81,8 +64,6 @@ export async function runGoalTests(ok) {
     shared.checkReadySubmission(ready({ goalRevision: 1 }), current).code === 'stale_goal',
     '目标 revision 过期被拒'
   )
-
-  /* --------------------------------------------------------- 报告校验 */
 
   const goal0 = shared.emptyGoal(1000)
   ok(goal0.phase === 'planning' && goal0.revision === 0, '空目标是 planning / rev0')
@@ -140,8 +121,6 @@ export async function runGoalTests(ok) {
     '已完成的目标不能回退到进行中'
   )
 
-  /* ------------------------------------------- 连续同因失败 → 强制 blocked */
-
   const first = shared.applyGoalReport(goal0, shared.checkGoalReport(report({ failureSignature: '测试挂了' }), goal0), 1200)
   ok(first.phase === 'executing' && first.failure?.count === 1, '第一次同因失败只记数，不判 blocked')
   const second = shared.applyGoalReport(
@@ -163,14 +142,10 @@ export async function runGoalTests(ok) {
   )
   ok(switched.failure?.count === 1, '换了新失败签名 → 计数归零（有新证据/新路径才继续）')
 
-  /* --------------------------------------------------------- 脏值清洗 */
-
   const dirty = shared.normalizeGoalState({ phase: 'nonsense', revision: -3, steps: [{ title: '' }, { title: 'a', status: 'x' }] })
   ok(dirty.phase === 'planning' && dirty.revision === 0, '脏阶段 / 负 revision 回落')
   ok(dirty.steps.length === 1 && dirty.steps[0].status === 'pending', '步骤清洗：空标题丢掉、坏状态回落 pending')
   ok(shared.normalizeGoalState(null).phase === 'planning', '非对象 → 空目标')
-
-  /* ------------------------------------------- 自主档连续续接契约（S3c） */
 
   ok(
     shared.AUTONOMOUS_CONTINUE_LIMIT > 0 && shared.AUTONOMOUS_CONTINUE_LIMIT <= 20,
@@ -216,8 +191,6 @@ export async function runGoalTests(ok) {
   ok(/不要问我/.test(continueText), '续接正文明确「不要问用户」')
   ok(continueText.includes('npm run test:unit 全绿'), '续接正文带回已有证据')
 
-  /* --------------------------------------------------------- 存储层 */
-
   const root = await mkdtemp(join(tmpdir(), 'yan-goal-'))
   try {
     const store = new service.GoalStore({ root, now: () => 5000 })
@@ -238,10 +211,6 @@ export async function runGoalTests(ok) {
     ok(persistedKeys.length === 1, '磁盘上只有这一条会话记录')
     ok(onDisk.entries[persistedKeys[0]].goal.phase === 'executing', '磁盘上的阶段也是 executing')
 
-    /*
-     * 幂等：这正是最容易写错的地方 —— 重放时模式 revision 已经因为**这次转移**
-     * 变了，如果先校验后查幂等，模型重试会收到「模式已过期」，看起来像失败。
-     */
     const replay = await store.commitReady(keyA, ready(), { modeRevision: 9, goalRevision: 1 }, 'goal-A')
     ok(replay.ok === true && replay.replayed === true, '同一 transitionId 重放 → 返回已提交结果（不报过期）')
     ok(replay.goal.revision === 1, '重放不推进 revision（转移只发生一次）')
@@ -336,13 +305,11 @@ export async function runGoalTests(ok) {
       )
     }
 
-    /* 多会话隔离：A 的提交不能动 B */
     ok(store.state(keyB).revision === 0, 'B 会话不受 A 影响')
     const commitB = await store.commitReady(keyB, ready({ transitionId: 'tr-b' }), current, 'goal-B')
     ok(commitB.ok === true && commitB.goal.goalId === 'goal-B', 'B 会话独立提交')
     ok(store.state(keyA).revision === 1, 'B 的提交没推进 A')
 
-    /* 报告：完成要证据、blocked 要说原因 */
     const needEvidence = await store.report(keyA, {
       reportId: 'rp-x',
       phase: 'completed',
@@ -365,14 +332,12 @@ export async function runGoalTests(ok) {
     })
     ok(doneReplay.ok === true && doneReplay.replayed === true, '同一 reportId 重放不推进')
 
-    /* 停止：用户动作（在仍在执行的会话上），完成后不允许被停止覆盖 */
     const stopped = await store.stop(keyB, null)
     ok(stopped?.phase === 'stopped', '用户停止落 stopped')
     ok(store.state(keyA).phase === 'completed', '已完成的目标不因停止回退（完成是终态）')
     const afterStop = await store.report(keyB, { reportId: 'rp-after-stop', phase: 'executing', goalRevision: 1 })
     ok(afterStop.ok === false && afterStop.code === 'stale_goal', '停止后旧 revision 的报告被拒（不假装还在跑）')
 
-    /* 脏 JSON 必须拒绝读取与覆盖，保留原文件。 */
     await writeFile(file, '{ 这不是 JSON', 'utf8')
     const store2 = new service.GoalStore({ root })
     let rejectedCorrupt = false
@@ -380,12 +345,10 @@ export async function runGoalTests(ok) {
     ok(rejectedCorrupt, '坏 JSON 明确报错，不回落空目标')
     ok(await readFile(file, 'utf8') === '{ 这不是 JSON', '坏 JSON 原文件保留，不被空状态覆盖')
 
-    /* 落盘失败必须抛（不能报成功）：用一个占位目录顶掉文件名 */
     const rootBad = await mkdtemp(join(tmpdir(), 'yan-goal-bad-'))
     try {
       const badStore = new service.GoalStore({ root: rootBad })
       await badStore.load()
-      /* 先把 goals.json 变成一个目录 → rename 一定失败 */
       const { mkdir } = await import('node:fs/promises')
       await mkdir(service.goalDocumentPath(rootBad), { recursive: true })
       let threw = false
@@ -402,8 +365,6 @@ export async function runGoalTests(ok) {
 
     const stats = await stat(file)
     ok(stats.isFile(), 'goals.json 是文件（原子替换写入）')
-
-    /* --------------------------------------------------- 续行（S3b） */
 
     const rootResume = await mkdtemp(join(tmpdir(), 'yan-goal-resume-'))
     try {
@@ -438,7 +399,6 @@ export async function runGoalTests(ok) {
         'shouldResume：正文为空 → 不发（发出去毫无意义）'
       )
 
-      /* 用户停止 / 用户改档 → 抦销未发续行 */
       await rs.clearResume(keyR)
       ok(rs.resumeOf(keyR) === null, 'clearResume 后内存里没有待发续行')
       const afterClear = JSON.parse(await readFile(join(rootResume, service.GOAL_FILE_NAME), 'utf8'))
@@ -461,7 +421,6 @@ export async function runGoalTests(ok) {
       await rm(rootResume, { recursive: true, force: true })
     }
 
-    /* 给薄层看的快照：用 runnerId 命名，扩展只认这个 */
     const rootSnap = await mkdtemp(join(tmpdir(), 'yan-goal-snap-'))
     try {
       const snapPath = service.goalResumeSnapshotPath('r1', rootSnap)
@@ -528,8 +487,6 @@ export async function runGoalTests(ok) {
       await rm(rootSnap, { recursive: true, force: true })
     }
 
-    /* ------------------------------------------- 自主档连续续接（S3c） */
-
     const rootAuto = await mkdtemp(join(tmpdir(), 'yan-goal-auto-'))
     try {
       const auto = new service.GoalStore({ root: rootAuto, now: () => 7000 })
@@ -568,10 +525,6 @@ export async function runGoalTests(ok) {
       ok(resumeC?.kind === 'continue', 'arm 出来的是「接着干」续行（不是就绪续行）')
       ok(String(resumeC?.summary ?? '').includes('第 1 次'), '续行正文带本轮序号')
 
-      /* 用户没插话：连续 arm 到上限。
-       *
-       * ⚠️ 必须显式模拟「上一条已经被薄层消费」：`armContinue` 现在对同一待发操作幂等
-       * （实施-14 A6），不传 `consumed` 就会被当成「还没发出去」而拒掉。 */
       const armAsConsumed = () => auto.armContinue(keyC, { consumed: async () => true })
       let armedTimes = 1
       let lastArm = first
@@ -585,12 +538,10 @@ export async function runGoalTests(ok) {
       )
       ok(lastArm.armed === false && lastArm.reason === 'limit', '到上限后不再 arm（宿主据此让模型停下来交代）')
 
-      /* 用户说话了 → 计数归零，重新给满额度 */
       await auto.resetAutoContinues(keyC)
       const again = await armAsConsumed()
       ok(again.armed === true && again.round === 1, '用户介入后重新计数（有人看管时不必限轮）')
 
-      /* 目标完成：未发的续行必须清掉 */
       const doneC = await auto.report(keyC, {
         reportId: 'rp-c2',
         phase: 'completed',
@@ -601,7 +552,6 @@ export async function runGoalTests(ok) {
       ok(auto.resumeOf(keyC) === null, '完成后清掉未发续行（不许在目标完成后再把模型叫起来）')
       ok((await auto.armContinue(keyC)).reason === 'not_active', '完成后的目标不再 arm')
 
-      /* 用户停止同样是终态 */
       const keyD = 'C:/tmp/sessions/d.jsonl'
       await auto.report(keyD, { reportId: 'rp-d1', phase: 'executing', goalRevision: 0 })
       await auto.armContinue(keyD)
@@ -613,13 +563,6 @@ export async function runGoalTests(ok) {
       await rm(rootAuto, { recursive: true, force: true })
     }
 
-    /*
-     * ------------------------------------------- 实施-14 F1：暂停 / 幂等 / 消费游标
-     *
-     * 这三条都是上一轮代码审查拿到的真缺陷（A2 / A4 / A6），而且都是
-     * 「本地单测全绿、真实链路才复现」的那一类：暂停状态没被持久化、
-     * 重复 arm 把轮数空转到上限、旧 blocks 被算到新目标头上。
-     */
     const rootF1 = await mkdtemp(join(tmpdir(), 'yan-goal-f1-'))
     try {
       const store = new service.GoalStore({ root: rootF1, now: () => 9000 })
@@ -627,7 +570,6 @@ export async function runGoalTests(ok) {
       const key = 'C:/tmp/sessions/f1.jsonl'
       await store.report(key, { reportId: 'rp-f1', phase: 'executing', goalRevision: 0 })
 
-      /* A2：暂停 ≠ 放弃 */
       await store.setPaused(key, true)
       ok(store.isPaused(key) === true, 'A2：暂停意图落盘（不是只在内存里）')
       const pausedArm = await store.armContinue(key)
@@ -637,7 +579,6 @@ export async function runGoalTests(ok) {
       const resumedArm = await store.armContinue(key)
       ok(resumedArm.armed === true && resumedArm.round === 1, 'A2：用户明确恢复后重新可以安排')
 
-      /* A6：同一条待发操作幂等 */
       const pendingOp = store.resumeOf(key)?.operationId
       const roundBefore = store.autoContinueCount(key)
       const duplicate = await store.armContinue(key, { consumed: async () => false })
@@ -647,9 +588,7 @@ export async function runGoalTests(ok) {
       const afterConsumed = await store.armContinue(key, { consumed: async () => true })
       ok(afterConsumed.armed === true && afterConsumed.round === roundBefore + 1, 'A6：真实消费之后才安排下一轮')
 
-      /* A4：重复拦下的消费游标独立于目标失败记录 */
       const keyR = 'C:/tmp/sessions/f1-repeat.jsonl'
-      /* 目录名 / 键清洗从真源取（不在这里硬编码，否则改名时两边会静默错开） */
       const repeatGuard = await import('../out/test/repeat-guard.mjs')
       const guardDir = join(rootF1, repeatGuard.REPEAT_GUARD_DIR)
       const guardFile = join(guardDir, `${repeatGuard.repeatGuardKey('runner-f1')}.json`)
@@ -674,7 +613,6 @@ export async function runGoalTests(ok) {
       await store.consumeRepeatBlocks('runner-f1', keyR)
       ok(store.state(keyR).failure?.count === 1, 'A4：同一水位重复消费不重复记账')
 
-      /* 报进展（failure 被清）→ 旧 blocks 不能再计一遍（旧实现就是在这里把人打成 blocked） */
       await store.report(keyR, {
         reportId: 'rp-r2',
         phase: 'executing',
@@ -684,14 +622,12 @@ export async function runGoalTests(ok) {
       await store.consumeRepeatBlocks('runner-f1', keyR)
       ok(store.state(keyR).phase !== 'blocked', 'A4：报进展清掉 failure 后旧 blocks 不再计一遍')
 
-      /* 换目标：游标按目标身份重建，新目标不承担旧痕迹 */
       const oldGoalId = store.state(keyR).goalId
       await store.startPursued(keyR, { goal: '换一件事', outcome: '做完了' })
       ok(store.state(keyR).goalId !== oldGoalId, 'A4：换目标（用例前置）')
       await store.consumeRepeatBlocks('runner-f1', keyR)
       ok(store.state(keyR).failure === null, 'A4：新目标不承担上一个目标欠下的拦下次数')
 
-      /* A2 的另一半：放弃目标会把暂停一并收掉（目标已终态，暂停没有意义） */
       const keyStop = 'C:/tmp/sessions/f1-stop.jsonl'
       await store.report(keyStop, { reportId: 'rp-s1', phase: 'executing', goalRevision: 0 })
       await store.setPaused(keyStop, true)
@@ -700,7 +636,6 @@ export async function runGoalTests(ok) {
       ok(store.isPaused(keyStop) === false, 'A2：放弃目标时暂停标志一并收掉')
       ok((await store.armContinue(keyStop)).reason === 'not_active', 'A2：已放弃的目标不再 arm')
 
-      /* A3：改档后未消费的续行该不该留 —— 纯判据（handler 只负责调它） */
       ok(shared.keepsGoalResumeOnModeChange('autonomous', false) === true, 'A3：切到自主档保留续行')
       ok(shared.keepsGoalResumeOnModeChange('standard', true) === true, 'A3：pursue 目标与档位正交（标准档也留）')
       ok(shared.keepsGoalResumeOnModeChange('standard', false) === false, 'A3：自主切回标准档且非 pursue → 作废续行')
@@ -709,7 +644,6 @@ export async function runGoalTests(ok) {
       await rm(rootF1, { recursive: true, force: true })
     }
 
-    /* ------------------- 实施-14 F3：宿主级目标事实跨片段继承 ------------------- */
     const rootInherit = await mkdtemp(join(tmpdir(), 'yan-goal-inherit-'))
     try {
       const store = new service.GoalStore({ root: rootInherit, now: () => 11000 })
@@ -745,7 +679,6 @@ export async function runGoalTests(ok) {
       await store.inheritTo(src, dst)
       ok(store.state(dst).goalId === sourceGoal.goalId && store.resumeOf(dst) === null, 'F3：重复继承幂等')
 
-      /* 目的段已有另一个目标：不覆盖（宁可不继承，也不丢真实进展） */
       const other = 'C:/tmp/sessions/inherit-other.jsonl'
       await store.startPursued(other, { goal: '另一件事', outcome: '另一件事做完' })
       const blocked = await store.inheritTo(src, other)
@@ -758,7 +691,6 @@ export async function runGoalTests(ok) {
       await rm(rootInherit, { recursive: true, force: true })
     }
 
-    /* F4：续行种类多了 handoff（旧记录仍归 ready） */
     ok(
       shared.resumeKindOf({ operationId: 'h-1', at: 1, summary: '交接', kind: 'handoff' }) === 'handoff',
       'F4：handoff 续行种类被识别'
@@ -768,7 +700,6 @@ export async function runGoalTests(ok) {
       'F4：没有 kind 的旧记录仍然当就绪续行'
     )
 
-    /* 旧文件兼容：S3c 之前的 goals.json 没有 kind / autoContinues */
     const rootOld = await mkdtemp(join(tmpdir(), 'yan-goal-old-'))
     try {
       const keyOld = 'C:/tmp/sessions/old.jsonl'
@@ -809,7 +740,6 @@ export async function runGoalTests(ok) {
     await rm(root, { recursive: true, force: true })
   }
 
-  /* ------------------- 持续目标（`+` 菜单 → 目标，与档位正交） ------------------- */
   {
     const root = await mkdtemp(join(tmpdir(), 'yan-goal-pursue-'))
     try {
@@ -826,31 +756,26 @@ export async function runGoalTests(ok) {
       )
       ok(goal.phase === 'planning' && goal.revision === 1, '从 planning / rev1 起步')
 
-      /* 续行正文必须复述判据：模型自己总结的目标容易越做越小 */
       const summary = shared.goalContinueSummary(goal, 1)
       ok(summary.includes(brief.outcome), '续行正文带上达成判据（不许模型自己改写验收标准）')
 
-      /* 重新设一个目标是**换事**：旧步骤清掉、续接计数归零 */
       await store.armContinue(key)
       const again = await store.startPursued(key, { goal: '换一件事', outcome: '换一件事做完' })
       ok(again.revision === 2, '重设目标推进 revision')
       ok(again.steps.length === 0, '重设目标清掉旧步骤（留着只会让续行正文列一堆无关步骤）')
       ok(store.autoContinueCount(key) === 0, '重设目标把连续续接计数归零')
 
-      /* 磁盘往返：pursue / brief 必须真的落盘 */
       const reread = new service.GoalStore({ root })
       await reread.load()
       const back = reread.state(key)
       ok(back.pursue === true && back.brief?.outcome === '换一件事做完', 'pursue 与 brief 真的写进了 goals.json')
 
-      /* 脏值不造身份：旧记录与脏值读进来必须是 false */
       ok(
         shared.normalizeGoalState({ goalId: 'g', phase: 'executing' }).pursue === false,
         '旧记录（没有 pursue 字段）读进来是 false'
       )
       ok(shared.normalizeGoalState({ pursue: 'yes' }).pursue === false, '脏值不凭空造一个持续目标')
 
-      /* ------------------------------------------ G-1 持续目标补充字段（实施-16） */
       const richBrief = shared.normalizePursuedBrief({
         goal: '  完成所有待办  ',
         outcome: '测试全绿 + 打包成功',
@@ -876,7 +801,6 @@ export async function runGoalTests(ok) {
         'G-1：旧目标（只有两栏）照常读，不迁移不报错'
       )
 
-      /* 补充字段：进状态 → 落盘往返 → 续行正文复述 */
       const richGoal = await store.startPursued(key, {
         goal: '把补充字段做出来',
         outcome: '表单能填、落盘能读',
@@ -896,7 +820,6 @@ export async function runGoalTests(ok) {
         'G-1：补充字段真的写进 goals.json'
       )
 
-      /* ------------------------------------------------ U-3b 结构化链接 */
       {
         const linksOk = [
           { kind: 'file', target: 'src/main/goal-service.ts', label: '宿主校验' },
@@ -907,16 +830,15 @@ export async function runGoalTests(ok) {
         ok(cleaned.length === 3, '三种 kind 都收（file / url / artifact）')
         ok(cleaned.every((l) => l.addedAt === 1000), '缺 addedAt 时由宿主回填')
 
-        /* 坏链接一律丢掉，不报错（目标还得推进） */
         const dirty = shared.sanitizeGoalLinks(
           [
-            { kind: 'exe', target: 'calc.exe' }, // kind 不在白名单
-            { kind: 'url', target: 'javascript:alert(1)' }, // scheme 不支持
-            { kind: 'url', target: 'file:///C:/Windows' }, // url 必须是 http/https
-            { kind: 'file', target: 'C:/ok.txt' }, // Windows 绝对路径要收
-            { kind: 'file', target: 'https://example.com' }, // file 塞了个 url
-            { kind: 'file', target: '   ' }, // 空白
-            { kind: 'file', target: 'A/B.txt' }, // 重复（大小写不同）
+            { kind: 'exe', target: 'calc.exe' },
+            { kind: 'url', target: 'javascript:alert(1)' },
+            { kind: 'url', target: 'file:///C:/Windows' },
+            { kind: 'file', target: 'C:/ok.txt' },
+            { kind: 'file', target: 'https://example.com' },
+            { kind: 'file', target: '   ' },
+            { kind: 'file', target: 'A/B.txt' },
             { kind: 'file', target: 'a/b.TXT' }
           ],
           2000
@@ -931,11 +853,9 @@ export async function runGoalTests(ok) {
           '被丢掉的是非法项（kind 白名单 / scheme / 空白 / 重复）'
         )
 
-        /* 上限：单目标最多 GOAL_LINK_LIMIT 条 */
         const many = Array.from({ length: 40 }, (_, i) => ({ kind: 'file', target: `f${i}.txt` }))
         ok(shared.sanitizeGoalLinks(many, 1).length === shared.GOAL_LINK_LIMIT, '超上限截断')
 
-        /* 合并：同 kind+target 只算一次，并按上限封顶 */
         const merged = shared.mergeGoalLinks(
           [{ kind: 'file', target: 'a.ts', addedAt: 1 }],
           [
@@ -945,7 +865,6 @@ export async function runGoalTests(ok) {
         )
         ok(merged.length === 2 && merged[0].addedAt === 1, '合并去重且保留先登记的那条')
 
-        /* 存储层：报告带 links → 落盘 → 重读；归属被宿主覆盖成当前会话 */
         const linkRoot = await mkdtemp(join(tmpdir(), 'yan-goal-links-'))
         try {
           const svc = new service.GoalStore({ root: linkRoot })
@@ -967,7 +886,6 @@ export async function runGoalTests(ok) {
           ok(gA.links[0].source?.messageId === 'm1', 'messageId 保留')
           ok(svc.state(keyB).links.length === 0, 'A 的链接不会出现在 B（目标隔离）')
 
-          /* ---- A-1：宿主只读核验（存在性，不执行、不联网） ---- */
           const checkRoot = await mkdtemp(join(tmpdir(), 'yan-goal-check-'))
           try {
             const svc2 = new service.GoalStore({ root: checkRoot })
@@ -1002,7 +920,6 @@ export async function runGoalTests(ok) {
             )
             ok(g2.links.every((l) => l.check?.method === 'exists'), '核验方式只能是 exists（不执行命令）')
 
-            /* 过期证据：文件没了 → 下一次报告重新核验就变 false */
             await rm(realFile, { force: true })
             await svc2.report('C:/sessions/c.jsonl', {
               reportId: 'rc2',
@@ -1017,14 +934,12 @@ export async function runGoalTests(ok) {
             )
             ok(after.links.length === 3, '重新核验不会多出链接')
 
-            /* 旧文档没有 check 字段：读回来就是 undefined，不报错 */
             ok(
               shared.normalizeGoalState({ links: [{ kind: 'file', target: 'a.ts' }] }).links[0].check ===
                 undefined,
               '旧文档里的链接没有核验结果也不报错'
             )
 
-            /* ─────────── G-2 目标级完成核验（实施-16） ─────────── */
             ok(
               g2.verification?.status === 'failed',
               `G-2：报告里有不存在的本地产物 → verification=failed（实际 ${g2.verification?.status}）`
@@ -1046,7 +961,6 @@ export async function runGoalTests(ok) {
               'G-2：相对路径不存在也计失败（不因模型报了完成就当通过）'
             )
 
-            /* 判定规则（纯函数）：四种状态各有明确入口 */
             const V = shared.summarizeVerification
             ok(V([], 7).status === 'not_checked', 'G-2：没有任何声明产物 → not_checked')
             ok(V([], 7).checks.length === 0 && V([], 7).at === 7, 'G-2：not_checked 不带检查项，时间由宿主填')
@@ -1075,7 +989,6 @@ export async function runGoalTests(ok) {
               'G-2：本地产物缺失 → failed'
             )
 
-            /* 完成回执只触发核验：旧结论必须先失效，不能自证通过 */
             const completed = shared.applyGoalReport(
               {
                 ...shared.emptyGoal(1),
@@ -1102,7 +1015,6 @@ export async function runGoalTests(ok) {
               'G-2：清核验不改相位与 revision 语义'
             )
 
-            /* 兼容与脏值：旧文档无字段 → null；脏状态不当成通过 */
             ok(
               shared.normalizeGoalState({ phase: 'completed' }).verification === null,
               'G-2：旧文档（无 verification 字段）读回 null，不报错'
@@ -1141,7 +1053,6 @@ export async function runGoalTests(ok) {
             await rm(checkRoot, { recursive: true, force: true })
           }
 
-          /* 重放同一 reportId 不会把链接加两遍 */
           await svc.report(keyA, {
             reportId: 'r1',
             phase: 'executing',
@@ -1150,7 +1061,6 @@ export async function runGoalTests(ok) {
           })
           ok(svc.state(keyA).links.length === 1, '幂等重放不会重复登记链接')
 
-          /* G-2：核验按会话隔离；没有声明产物就是 not_checked（不是 passed） */
           const beforeIsolation = svc.state(keyA).verification?.status
           await svc.report(keyB, { reportId: 'rb1', phase: 'executing', goalRevision: 0, links: [] })
           ok(
@@ -1162,7 +1072,6 @@ export async function runGoalTests(ok) {
             'G-2：目标没有任何声明产物 → not_checked（不冒充通过）'
           )
 
-          /* 旧文档（完全没有 links 字段）读回来是空数组 */
           const reread = new service.GoalStore({ root: linkRoot })
           await reread.load()
           ok(reread.state(keyA).links.length === 1, '重启后 links 真的从磁盘读回来了')
@@ -1176,7 +1085,6 @@ export async function runGoalTests(ok) {
         }
       }
 
-      /* ------------------------------------------------ A-2 目标级预算 */
       {
         const noBudget = shared.checkGoalBudget(null, { tokens: 999999, elapsedMs: 1e9 })
         ok(noBudget.stopped === false, '没设预算就不管（不替用户做成本承诺）')
@@ -1191,7 +1099,6 @@ export async function runGoalTests(ok) {
         const byTime = shared.checkGoalBudget(budget, { tokens: 10, elapsedMs: 60_000 })
         ok(byTime.stopped === true && byTime.reason === 'time', '时间到上限 → 停')
 
-        /* 未知用量：不编数字，也不当作“够用” */
         const unknown = shared.checkGoalBudget(budget, { tokens: null, elapsedMs: 10 })
         ok(unknown.stopped === false, 'token 用量未知时不因预算停（无法判断）')
         ok((unknown.note ?? '').includes('未知'), '但要说明未知（界面可以显示未知）')
@@ -1200,7 +1107,6 @@ export async function runGoalTests(ok) {
         ok(shared.sanitizeGoalBudget({ tokens: 100, ms: 'x' })?.tokens === 100, '只收合法的那部分')
         ok(shared.normalizeGoalState({ budget: 5 }).budget === null, '旧文档/脏值 → budget 为 null')
 
-        /* 存储层：预算耗尽只停“安排新轮”，不改 phase、能恢复 */
         const budgetRoot = await mkdtemp(join(tmpdir(), 'yan-goal-budget-'))
         try {
           const svcB = new service.GoalStore({ root: budgetRoot })
@@ -1219,7 +1125,6 @@ export async function runGoalTests(ok) {
           ok((over.detail ?? '').includes('150'), '停止原因带实际用量')
           ok(svcB.state(keyC).phase === 'executing', '只停新轮，**不改 phase**（不是失败）')
 
-          /* 重启读回：停止记录要落盘（用户得看到“为什么没继续”） */
           const rereadB = new service.GoalStore({ root: budgetRoot })
           await rereadB.load()
           ok(rereadB.snapshot().entries[keyC]?.goal.budgetStop?.reason === 'tokens', '预算停止记录真的落盘了')
@@ -1227,27 +1132,20 @@ export async function runGoalTests(ok) {
           const within = await svcB.armContinue(keyC, { usage: { tokens: 10, elapsedMs: 1000 } })
           ok(within.armed === true, '没超时仍然能继续（不是一停就死）')
 
-          /* 用户明确放宽预算 → 清掉停止记录 */
           await svcB.setBudget(keyC, null)
           ok(svcB.snapshot().entries[keyC]?.goal.budgetStop === null, '清 / 改预算会清掉旧的停止记录（恢复出口）')
 
-          /* 用量快照：不管超没超预算都要落下来（界面要显示“已用多少”） */
           await svcB.armContinue(keyC, { usage: { tokens: 42, elapsedMs: 1000 } })
           ok(svcB.state(keyC).budgetUsage?.tokens === 42, '用量快照写进目标状态（有值时）')
           await svcB.armContinue(keyC, { usage: { tokens: null, elapsedMs: 2000 } })
           ok(svcB.state(keyC).budgetUsage?.tokens === null, '拿不到用量时如实记 null（不当 0）')
 
-          /* token 预算真的能停：有真实用量时超上限就停 */
           await svcB.setBudget(keyC, { tokens: 10 })
           const overTokens = await svcB.armContinue(keyC, { usage: { tokens: 42, elapsedMs: 1000 } })
           ok(
             overTokens.armed === false && overTokens.reason === 'budget',
             'token 超上限 → 不安排新轮（不再因为拿不到用量而失效）'
           )
-          /*
-           * G-5：预算是「不安排新轮」而不是失败 —— 它不能改写完成判据。
-           * 没有声明产物的目标停在 `not_checked`，不允许被任何旁路写成 `passed`。
-           */
           ok(
             svcB.state(keyC).verification?.status !== 'passed',
             `G-5：预算耗尽不会把核验写成通过（实际 ${svcB.state(keyC).verification?.status ?? 'null'}）`

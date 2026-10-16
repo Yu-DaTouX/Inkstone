@@ -1,24 +1,3 @@
-/**
- * 评审的 Git 写动作适配（§10.2 / WP-50）：提交、推送、`gh` 建 PR。
- *
- * ── 为什么单独一份而不是直接用 `git-actions.ts` ──
- * `git-actions.ts` 是环境菜单的写入口（切分支 / 新建分支 / 拉取等），
- * 它没有 `gh` PR，也没有评审页需要的「窄目标确认钩子」。这里**复用**它们的
- * **纯逻辑**（`shared/git-actions` 的 `buildCommitArgs` / `buildPushArgs` /
- * `validateCommitMessage` / `validateBranchName` / 失败分类），命令数组与
- * 参数校验不另写一份；执行层用可注入的 fake 便于单测。
- *
- * ── 三条硬边界 ──
- *   1. **参数数组，绝不 shell**：`exec(command, argv)` 只收数组，文件名 / 标题 /
- *      正文永远是一个 `argv` 元素，绝不参与命令字符串拼接。
- *   2. **推送与 PR 必须先确认**：`ReviewConfirmPort` 拿到的是这次动作真正的
- *      窄目标（cwd / remote / branch / base / title / draft）；用户没确认就
- *      返回 `not-confirmed`，一个字节都不发。
- *   3. **缺 gh / 未登录是明确可恢复错误**：返回 `gh-missing` /
- *      `gh-not-authenticated` + 安装 / 登录指引，**绝不**假成功。
- *
- * 执行者只用 mock exec 测试；本模块自身不含任何真实网络或提交逻辑。
- */
 import { execFile } from 'node:child_process'
 import { buildCommitArgs, buildPushArgs, classifyGitFailure, validateBranchName, validateCommitMessage } from '../../shared/git-actions'
 import type { GitFailure } from '../../shared/git-actions'
@@ -32,7 +11,6 @@ import {
 } from '../../shared/review'
 import { createGitRunExec, type ReviewGitExec } from './changes'
 
-/** gh 的执行结果多一个 `notFound`（本机没装 gh，与「gh 报错」分开）。 */
 export interface ReviewGhRunResult {
   ok: boolean
   stdout: string
@@ -46,7 +24,6 @@ export interface ReviewGhExec {
   run(cwd: string, args: string[], opts?: { timeoutMs?: number }): Promise<ReviewGhRunResult>
 }
 
-/** 生产用的 gh 执行：`execFile('gh', argv)`，不经 shell。 */
 export function createNodeGhExec(): ReviewGhExec {
   return {
     run(cwd, args, opts) {
@@ -76,7 +53,6 @@ export function createNodeGhExec(): ReviewGhExec {
   }
 }
 
-/** 窄目标确认钩子。宿主接既有批准通道；返回 false = 用户没确认，动作不执行。 */
 export interface ReviewConfirmPort {
   confirm(request: ReviewConfirmRequest): Promise<boolean>
 }
@@ -90,7 +66,6 @@ export interface ReviewGitAdapterOptions {
 export interface ReviewGhStatus {
   installed: boolean
   authenticated: boolean
-  /** 版本行（装了才有） */
   version?: string
   message?: string
   hint?: string
@@ -121,7 +96,6 @@ export class ReviewGitAdapter {
     this.confirm = options.confirm
   }
 
-  /** 检测 gh 是否安装 / 已登录；缺任何一个都可恢复（给安装 / 登录指引）。 */
   async ghStatus(cwd: string): Promise<ReviewGhStatus> {
     const version = await this.ghExec.run(cwd, ['--version'], { timeoutMs: 8_000 })
     if (version.notFound) {
@@ -148,7 +122,6 @@ export class ReviewGitAdapter {
     return { installed: true, authenticated: true, version: version.stdout.trim().split('\n')[0] ?? '' }
   }
 
-  /** 提交。只做参数校验 + 固定 argv；不跳过 hook。 */
   async commit(input: { cwd: string; message: string }): Promise<ReviewGitOutcome> {
     const invalid = validateCommitMessage(input.message)
     if (invalid) return { ok: false, code: 'invalid-input', message: invalid.message, recoverable: true }
@@ -158,7 +131,6 @@ export class ReviewGitAdapter {
     return { ok: true, ...(sha ? { commit: sha } : {}), message: '已提交' }
   }
 
-  /** 推送。先经窄目标确认，再发固定 argv。 */
   async push(input: ReviewPushInput): Promise<ReviewGitOutcome> {
     const branch = input.branch ? String(input.branch).trim() : null
     if (branch) {
@@ -185,10 +157,6 @@ export class ReviewGitAdapter {
     return { ok: true, message: upToDate ? '远端已经是最新' : '已推送' }
   }
 
-  /**
-   * 用 `gh pr create` 建 PR。缺 gh / 未登录都返回可恢复错误，不假成功。
-   * 真正建 PR 前同样必须过窄目标确认。
-   */
   async createPullRequest(input: ReviewPullRequestInput): Promise<ReviewGitOutcome> {
     const invalid = validatePullRequestInput(input)
     if (!invalid.ok) return { ok: false, code: 'invalid-input', message: invalid.error, recoverable: true }

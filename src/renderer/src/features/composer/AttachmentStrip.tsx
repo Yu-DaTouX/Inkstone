@@ -3,10 +3,6 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { fmtSize } from '../../components/chat/attachment-files'
 
-/**
- * 输入框上方的附件条（WP-24）。图片给缩略图，文件引用只给名字与大小
- * （文件引用不携带内容，模型按需 read）。
- */
 export function AttachmentStrip() {
   const t = useT()
   const attachments = useStore((s) => s.attachments)

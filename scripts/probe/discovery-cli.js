@@ -1,18 +1,3 @@
-/**
- * `yan capabilities discover / prepare / acquire` 的**宿主链路 + 真实目录检索**（实施-04 S5，cost 0）。
- *
- * ── 这一条为什么必须真连网 ──
- *   §12 S5 的出口原文是「**真实目录检索证据**（不能只用 fixture 断言排名）」。
- *   单测能把排名 / 截断 / 失败处理钉死，但它永远证明不了「今天这两个目录真的能查到东西」——
- *   而那正是本片交付的核心。所以这里真的发请求，并断言回执的**来源与可信度标注**。
- *
- * ── 离线怎么办 ──
- *   两个源都失败时**不算通过也不算失败**：明确打印「离线，跳过」。
- *   理由与 `probe:chrome`（无 Chrome 时跳过）一致：网络不是本仓库的可控前提，
- *   但「编造一次成功」更糟。在线时则按强断言验。
- *
- * 依赖：宿主已就绪（YAN_CLI_* 注入 pi 子进程），见 capability-cli.js 的同一套做法。
- */
 ;(async () => {
   const out = []
   const ok = (cond, label, extra = '') => {
@@ -60,13 +45,11 @@
       try {
         return JSON.parse(lines[i])
       } catch {
-        /* 继续往前找 */
       }
     }
     return null
   }
 
-  /** 渲染端拿不到任意文件读，直执行 shell 可以。 */
   const readJsonFile = async (path) => {
     const res = await runCli(`node -e "process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))" "${path}"`)
     try {
@@ -76,10 +59,6 @@
     }
   }
 
-  /*
-   * 回执可能**落盘**：stdout 只给摘要（`{ok, summary, resultFile}`），
-   * 完整 data 在 `resultFile` 里。候选多的时候必定走这条（大结果不灌进上下文）。
-   */
   const readReceipt = async (output) => {
     const summary = lastJson(output)
     if (!summary) return null
@@ -103,11 +82,6 @@
 
   log('--- 1. 真实目录检索（联网） ---')
 
-  /*
-   * 检索词选一个**通用单词**：`filesystem` 在两边都有真实结果（2026-09-19 实测）。
-   * 一开始用 `filesystem storage tools` 时 MCP Registry 返回 0 条 —— 它的 search
-   * 是偏精确的匹配，长句会搜不到东西。所以这里用一个词，才能真正证明**两条路径**都通。
-   */
   const discovered = await runCli('yan capabilities discover --query-text "filesystem"')
   const receipt = await readReceipt(discovered.output)
 
@@ -129,7 +103,6 @@
   log(`  候选 ID：${JSON.stringify(candidates.slice(0, 6).map((c) => c.candidateId))}`)
 
   if (!online) {
-    /* 离线：如实跳过，不假装验过（与 probe:chrome 同一口径）。 */
     log('  ⤺ 跳过：目录源都不可用（离线环境）；失败原因已如实记录')
     ok(sources.length >= 3, '离线时仍记录了每个源的状态（GitHub 技能 / npm / MCP Registry）', JSON.stringify(sources.map((s) => s.sourceId)))
     ok(candidates.length === 0, '离线时不编造候选（返回空）')
@@ -192,12 +165,6 @@
 
   log('--- 3. acquire 已接通：策略判定 + 受管事务（实施-04 S6a）---')
 
-  /*
-   * 这一节原来验的是「S6 之前，acquire 必须回 not_implemented」。
-   * S6a 落地后它变成**假要求**（功能做出来了却被判失败）。
-   * 换成同一意图（**不许静默成功**、错误要可分支、不能假装装好了）的当前事实：
-   * 形状合法但不存在的计划 → 非零退出 + 可读原因；缺 --plan → 参数层直接拒。
-   */
   const acquire = await runCli('yan capabilities acquire --plan 000000000000000000000000')
   log(`  acquire(未知计划) → 退出码 ${acquire.exitCode}`)
   ok(acquire.exitCode !== 0, 'acquire 未知计划不报成功', String(acquire.exitCode))
@@ -212,6 +179,6 @@
   ok(acquireNoPlan.exitCode !== 0, 'acquire 缺 --plan 不报成功', String(acquireNoPlan.exitCode))
   ok(/--plan|计划/.test(acquireNoPlan.output), 'acquire 缺 --plan 明确说要计划 ID')
 
-  void q /* 保留 DOM 入口备用，避免未使用告警 */
+  void q
   return out.join('\n')
 })()

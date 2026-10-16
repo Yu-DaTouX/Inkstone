@@ -1,17 +1,3 @@
-/**
- * 原生视图与浮层遮挡的**真实窗口**截图（实施-11 H-9a / 实施-12 U-6 残余）。
- *
- * 为什么不能用矩阵的 `capturePage()`：内置浏览器是主进程的 `WebContentsView`，
- * 它不进渲染进程的截图 —— 矩阵图里那一块是空的，看不出“谁盖住谁”。
- * 这里走 OS 级窗口捕获（`capture-review-window.ps1`，PrintWindow + 全内容），
- * 产出的图里网页与浮层都在，才能真的看图判断遮挡关系。
- *
- * 两个 phase：
- *   · browser  —— 浏览器是活动页、没有浮层：原生网页应当可见（正向对照）
- *   · settings —— 打开设置浮层：原生网页应当让位，面板完整可见（遮挡结论）
- *
- * 用法：node scripts/capture-native-overlay.mjs
- */
 import './lib/stdio-guard.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -26,7 +12,6 @@ const PORT = 38418
 const SIZE = '1440x900'
 const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')
 
-/* 页面配色刻意与砚的主题撞色差很大：一眼就能看出“网页到底可见不可见” */
 const server = createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.end(
@@ -81,7 +66,6 @@ try {
     const text = data.toString()
     output += text
     for (const phase of Object.keys(shots)) {
-      /* 每个 phase 只认第一次出现（探针里每个 phase 只发一次） */
       if (shots[phase] === 0 && output.includes(`NATIVE_OVERLAY_READY phase=${phase}`)) capture(phase)
     }
   }
@@ -103,6 +87,5 @@ try {
   try {
     rmSync(sandbox, { recursive: true, force: true })
   } catch {
-    /* 尽力而为 */
   }
 }

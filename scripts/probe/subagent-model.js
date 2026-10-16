@@ -1,11 +1,3 @@
-/*
- * 模型可调用子代理的真实端到端场景：
- *   父模型 → bash → yan subagent start → 主进程 SubagentController → UI 实时列表/详情。
- *
- * 这条场景与 subagent.js 的区别是：启动动作不能由 store/UI 直接发起，
- * 必须由父模型自己执行 `yan`，用来验证 capability-guide + PATH/身份接线。
- * 花 token，不进入默认的零成本 live 门槛。
- */
 ;(async () => {
   const out = []
   const ok = (condition, text) => {

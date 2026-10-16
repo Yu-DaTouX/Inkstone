@@ -1,4 +1,3 @@
-/** 后台标题与停止/替换并发的隔离行为回归，不启动 pi 或模型。 */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -13,7 +12,6 @@ function deferred() {
   return { promise, resolve }
 }
 try {
-  // 在仓库内解析 external 依赖，产物置独立临时目录。
   const outfile = join(root, 'agent.mjs')
   await build({
     entryPoints: ['src/main/agent.ts'], outfile, bundle: true, platform: 'node', format: 'esm',
@@ -26,7 +24,6 @@ try {
       api.onLoad({ filter: /^paths$/, namespace: 'fixture' }, () => ({ contents: `export const YAN_DIR=${JSON.stringify(root)}; export const PI_AGENT_DIR=${JSON.stringify(root)}; export const PROJECT_KNOWLEDGE_ROOT=${JSON.stringify(join(root, 'knowledge'))}; export const projectKnowledgeDir=id=>PROJECT_KNOWLEDGE_ROOT+'/'+id;`, loader: 'js' }))
       api.onResolve({ filter: /^[^./]|^@/ }, args => {
         if (args.namespace === 'fixture' || args.path.startsWith('node:')) return
-        // 原生模块与包在测试进程中只加载，不执行其宿主能力。
         return { path: import.meta.resolve(args.path), external: true }
       })
     } }]

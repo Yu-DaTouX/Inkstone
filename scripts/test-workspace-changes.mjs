@@ -1,17 +1,7 @@
-/**
- * shell / 第三方工具的**目录级改动归属**（L05，`src/main/snapshots.ts`）。
- *
- * 为什么要单测：真实窗口里很难制造“同一目录两个任务同时改文件”“同大小不同
- * 内容”“目录太大被截断”这些组合，而它们决定界面到底显示“改了”还是
- * “无法可靠归属”。纯逻辑里一次钉死，live 只补真实工具链那一段。
- *
- * 全部在系统临时目录里造数据，不碰用户目录。
- */
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, unlinkSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-/** 造一个临时工作目录；返回 root 与清理函数 */
 function tempRoot(label) {
   const root = mkdtempSync(join(tmpdir(), `yan-ws-${label}-`))
   return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) }
@@ -26,7 +16,6 @@ function writeFile(root, rel, text) {
 export function runWorkspaceChangesTests(ok, mod) {
   const { captureTree, diffTrees, beginTreeSnapshot, endTreeSnapshot } = mod
 
-  /* ---------------------------------------------------------- 纯差分 */
   const snap = (files) => ({
     root: '/x',
     truncated: false,
@@ -50,7 +39,6 @@ export function runWorkspaceChangesTests(ok, mod) {
   const sizeChanged = diffTrees(snap({ 'a.txt': entry(10) }), snap({ 'a.txt': entry(12) }))
   ok(sizeChanged.length === 1 && sizeChanged[0].status === 'modified', '大小变了 → modified', JSON.stringify(sizeChanged))
 
-  /* 等长内容的替换：只有哈希能看出来，这是“别拿 size 冒充结论”的关键用例 */
   const sameSize = diffTrees(
     snap({ 'a.txt': entry(10, { hash: 'aaaaaaaaaaaaaaaa' }) }),
     snap({ 'a.txt': entry(10, { hash: 'bbbbbbbbbbbbbbbb' }) })
@@ -77,7 +65,6 @@ export function runWorkspaceChangesTests(ok, mod) {
     sorted.map((c) => c.path).join(',')
   )
 
-  /* ------------------------------------------------- 真实目录：扫描 + 差分 */
   const { root, cleanup } = tempRoot('tree')
   try {
     writeFile(root, 'src/a.ts', 'const a = 1\n')
@@ -89,7 +76,6 @@ export function runWorkspaceChangesTests(ok, mod) {
     ok(!before.files.has('node_modules/dep/index.js'), 'node_modules 里的文件不扫（依赖目录跳过）')
     ok(before.files.get('src/a.ts').content === 'const a = 1\n', '小文件连内容一起留下（为了逐行 patch）')
 
-    /* 改一个、加一个、删一个 */
     writeFile(root, 'src/a.ts', 'const a = 111\n')
     writeFile(root, 'src/c.ts', 'const c = 3\n')
     unlinkSync(join(root, 'README.md'))
@@ -115,18 +101,8 @@ export function runWorkspaceChangesTests(ok, mod) {
     ok(quiet && quiet.total === 0 && !quiet.unknown, '什么都没改 → total=0 且不标 unknown（“扫过且没变”是结论）')
     ok(quiet && quiet.scanned > 0, 'scanned 有值 —— 界面能说清“扫了多少”', String(quiet?.scanned))
 
-    /* 大文件：只记元信息，不读内容 → 行数写 -1，不编造 */
     writeFile(root, 'big.bin', 'x'.repeat(300 * 1024) + '\n')
     const beforeBig = captureTree(root)
-    /*
-     * 等长内容改写：大文件没读过内容 → 只能给 unknown（如实，不猜）。
-     *
-     * ⚠️ 必须显式把 mtime 拨到不同值：连续两次写入在 Windows 上可能落在
-     * **同一个 mtime 刻度**里（实测约 1% 的运行会撞上），那时 size 相同、
-     * mtime 也相同 —— 快照的结论是“没变过”，而不是 unknown，
-     * 于是这条断言偶发假失败（2026-09-16 实测到一次，全量门槛因此变红）。
-     * 判定逻辑是对的，含糊的是测试造的数据。
-     */
     writeFile(root, 'big.bin', 'y'.repeat(300 * 1024) + '\n')
     const bumped = (Date.now() + 2000) / 1000
     utimesSync(join(root, 'big.bin'), bumped, bumped)
@@ -136,7 +112,6 @@ export function runWorkspaceChangesTests(ok, mod) {
       '大文件等长改写 → unknown（没读内容就不能说“内容变了”）',
       JSON.stringify(bigChanges)
     )
-    /* 长度变了就是硬证据，哪怕是大文件 */
     writeFile(root, 'big.bin', 'y'.repeat(300 * 1024 + 10) + '\n')
     const bigGrew = diffTrees(beforeBig, captureTree(root))
     ok(
@@ -154,7 +129,6 @@ export function runWorkspaceChangesTests(ok, mod) {
     const bigFile = bigResult?.files.find((f) => f.path === 'big2.bin')
     ok(bigFile && bigFile.added === -1 && bigFile.patch === '', '大文件不给行数与 patch（如实退化，不编造）', JSON.stringify(bigFile))
 
-    /* -------------------------------------------------- 并发：谁都不认领 */
     beginTreeSnapshot('call-A', root, 's1')
     beginTreeSnapshot('call-B', root, 's2')
     writeFile(root, 'src/shared.ts', 'export const x = 1\n')
@@ -167,7 +141,6 @@ export function runWorkspaceChangesTests(ok, mod) {
       '并发时仍然列出差异（信息给到，但明确说不能归属）'
     )
 
-    /* 不同目录（隔离 worktree）不算并发 */
     const other = tempRoot('other')
     try {
       beginTreeSnapshot('call-C', root, 's1')
@@ -194,7 +167,6 @@ export function runWorkspaceChangesTests(ok, mod) {
   }
 }
 
-/** 拍一次“调用期间做点什么”的快照，返回结果（省掉每个用例重复 begin/end 样板） */
 function endTreeSnapshotFor(mod, root, mutate) {
   const { beginTreeSnapshot, endTreeSnapshot } = mod
   const id = 'call-' + Math.random().toString(36).slice(2)

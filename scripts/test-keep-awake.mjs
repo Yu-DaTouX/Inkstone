@@ -1,4 +1,3 @@
-/** 工作时保持唤醒的判定（src/shared/keep-awake.ts）。纯函数。 */
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
 

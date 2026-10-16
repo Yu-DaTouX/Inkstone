@@ -1,6 +1,3 @@
-/* 设置面板（记忆从常驻右栏搬进来） */
-
-/* 遮罩：压暗层，不是投影（DESIGN §4 不冲突） */
 .settings-scrim {
   position: fixed;
   inset: 0;
@@ -20,7 +17,6 @@ html[data-theme='light'] .settings-scrim {
   grid-template-columns: 184px minmax(0, 1fr);
   width: min(960px, calc(100vw - 64px));
   height: min(700px, calc(100vh - 64px));
-  /* 内容区用窗口底色，导航用抬高一级的面板色：深浅两套主题里层级方向一致 */
   background: var(--bg-0);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-xl);
@@ -28,7 +24,6 @@ html[data-theme='light'] .settings-scrim {
   overflow: hidden;
 }
 
-/* ---- 左：导航 ---- */
 .settings-nav {
   display: flex;
   flex-direction: column;
@@ -43,7 +38,6 @@ html[data-theme='light'] .settings-scrim {
   font-size: var(--fs-lg);
   font-weight: var(--fw-strong);
 }
-/* 页签外观来自 ui.css 的 .ui-tabs.vertical / .ui-tab；这里只管导航列里的伸缩 */
 .settings-tabs {
   flex: none;
   min-height: 0;
@@ -55,18 +49,15 @@ html[data-theme='light'] .settings-scrim {
   transform: rotate(180deg);
 }
 
-/* ---- 右：内容 ---- */
 .settings-body {
   overflow-y: auto;
   scrollbar-gutter: stable;
   padding: var(--sp-5) var(--sp-6) var(--sp-6);
   min-width: 0;
 }
-/* 内容列不随窗口无限拉宽：设置行「名称 + 说明｜控件」在 720px 内最好读 */
 .settings-body > * {
   max-width: 720px;
 }
-/* 设备页分区定位条：吸在内容区顶端，外观来自 .ui-tabs / .ui-tab */
 .settings-jump {
   position: sticky;
   top: calc(-1 * var(--sp-5));
@@ -85,10 +76,6 @@ html[data-theme='light'] .settings-scrim {
 }
 
 
-/*
- * 最近目录快切（设置 → 关于）：目录名长短不一，允许换行；
- * 只显示目录名，全路径在 `title` 里。
- */
 .set-chips {
   display: flex;
   flex-wrap: wrap;
@@ -101,7 +88,6 @@ html[data-theme='light'] .settings-scrim {
   min-width: 0;
 }
 
-/* 目录名很长时只把**文字**截断，按钮本身不撑破右边界 */
 .set-chip-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -109,24 +95,17 @@ html[data-theme='light'] .settings-scrim {
   min-width: 0;
 }
 
-/* 当前目录：列出来但不可点（再点一次没有意义） */
 .set-chips .btn:disabled {
   border-color: var(--border);
   color: var(--fg-mute);
   cursor: default;
 }
-/* 数值类说明（屏幕 125% · 自动 1.15× · 当前 1.15×）—— 等宽对数字更易读 */
 .set-num {
   color: var(--fg-dim);
   font-size: var(--fs-code);
   font-variant-numeric: tabular-nums;
   margin-top: 3px;
 }
-/*
- * 5 档的分段控件（界面缩放）。
- * 窗口窄时必须能换行 —— `.seg` 是 inline-flex 且不换行，
- * 5 个按钮加起来比参数列宽的时候会直接溢出去（这个坑本项目犯过多次）。
- */
 .seg-scale {
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -148,7 +127,6 @@ html[data-theme='light'] .settings-scrim {
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
 }
-/* 覆盖列表里行内的“移除”入口 */
 .ctx-link {
   margin-left: var(--sp-2);
   padding: 0;
@@ -162,10 +140,6 @@ html[data-theme='light'] .settings-scrim {
   text-decoration: underline;
 }
 
-/* 对话宽度：滑块 + 恢复默认
-   宽度是连续量，用 range 表达“可调到任意值”最直观。
-   轨道用 tokens 里的中性色，thumb 用强调色 —— 与整个设置的层级一致。
-   参数列宽约 260px，滑块固定 200px 以免把整行撑破。 */
 .stream-width-ctl {
   gap: 6px;
 }
@@ -197,7 +171,6 @@ html[data-theme='light'] .settings-scrim {
   outline: var(--focus-ring-w-strong) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
 }
-/* 恢复默认按钮：与 seg-btn 同款，但在这行里不要撑得那么宽 */
 .stream-width-ctl .seg-btn {
   padding: 0 7px;
 }
@@ -205,7 +178,6 @@ html[data-theme='light'] .settings-scrim {
   opacity: 0.35;
   cursor: default;
 }
-/* 自动压缩上限：分档滑块按容器宽度等分档位，上下排布时要撑满这一格（col 行默认按内容宽度） */
 .ctx-compact-ctl {
   justify-self: stretch;
 }
@@ -238,7 +210,6 @@ html[data-theme='light'] .settings-scrim {
   user-select: text;
 }
 
-/* 设置里的下拉更宽一点 */
 .settings .pick {
   height: 26px;
   min-width: 200px;
@@ -246,13 +217,6 @@ html[data-theme='light'] .settings-scrim {
   font-size: var(--fs-sm);
 }
 
-/* ── pi 插件（方案 §9 的 P2）────────────────────────────── */
-
-/*
- * ⚠️ 必须显式改 display：`.ui-row` 是 **grid**（两列：标签 + 控件）。
- * 只写 flex-direction 是没有用的 —— 它会被留在第二列，表现成「内容整块
- * 跑到右半边」（视觉矩阵的截图抓到的就是这个）。
- */
 .set-row-col {
   display: flex;
   flex-direction: column;
@@ -260,11 +224,6 @@ html[data-theme='light'] .settings-scrim {
   gap: 6px;
 }
 
-/*
- * ⚠️ 这一条不能省：.ui-row 原本是横向的（标签左、控件右），标签没有宽度约束。
- * 改成纵向之后，标签会按内容收缩到一个字宽 —— 文字会**竖着排**成一列
- *（视觉矩阵的截图抓到的就是这个）。
- */
 .set-row-col > .ui-row-label {
   width: 100%;
 }
@@ -278,12 +237,10 @@ html[data-theme='light'] .settings-scrim {
 .pkg-install-row .ui-input {
   flex: 1;
   min-width: 0;
-  /* 需求描述是左对齐的一句话，不是行内数字 */
   width: auto;
   text-align: left;
 }
 
-/* 按活动分配模型：一句说明 + 默认 + 五行（活动名｜模型 key 输入框） */
 .am-desc {
   padding: var(--sp-2) 0;
 }
@@ -296,7 +253,6 @@ html[data-theme='light'] .settings-scrim {
   width: 260px;
   text-align: left;
 }
-/* 回退是「配置的模型不可用」—— 要能一眼看出来 */
 .am-note.fell-back {
   color: var(--warn);
 }
@@ -311,7 +267,6 @@ html[data-theme='light'] .settings-scrim {
   white-space: nowrap;
 }
 
-/* 列表自己滚：插件的数量不该决定设置面板的高度 */
 .pkg-list {
   display: flex;
   flex-direction: column;
@@ -322,7 +277,6 @@ html[data-theme='light'] .settings-scrim {
   overflow-y: auto;
 }
 
-/* 技能按来源分组（本次会话 / 我的技能 / 随包 / 其他）：组内与列表同间距，组间留一行空 */
 .pkg-group {
   display: flex;
   flex-direction: column;
@@ -332,15 +286,10 @@ html[data-theme='light'] .settings-scrim {
   margin-top: var(--sp-3);
 }
 
-/*
- * 名字必须靠左。`.ui-row` 的横向布局带了右对齐（标签左、控件右），
- * 列表项继承下来会整行被推到右边 —— 视觉矩阵的截图里看得一清二楚。
- */
 .pkg-item-main {
   justify-content: flex-start;
 }
 
-/* 列表项：一行名称 + 最多两行说明，项之间一条细线（与设置行同一语言） */
 .pkg-item {
   display: flex;
   flex-direction: column;
@@ -395,7 +344,6 @@ html[data-theme='light'] .settings-scrim {
   border-color: var(--accent);
 }
 
-/* 「登记着但磁盘上没有」是异常状态，要显眼但别吵 */
 .pkg-missing {
   font-size: 10.5px;
   color: var(--warn);
@@ -425,7 +373,6 @@ html[data-theme='light'] .settings-scrim {
   color: var(--fg-mute);
 }
 
-/* 边界声明：插件能执行代码，我们不做沙箱也不做审查 */
 .pkg-detail-warn {
   margin-top: 3px;
   font-size: 11.5px;
@@ -433,7 +380,6 @@ html[data-theme='light'] .settings-scrim {
   color: var(--fg-mute);
 }
 
-/* 兼容 MCP 每条服务的「导入到 pi」块：动作行与分步结果按行排列；只做版面，控件外观来自 ui.css */
 .mcp-import-block,
 .mcp-import-outcome {
   display: flex;
@@ -472,18 +418,11 @@ html[data-theme='light'] .settings-scrim {
   word-break: break-all;
 }
 
-/* ---------------------------------------------------------- 项目知识（实施-03 S5） */
-
-/*
- * 三个筛选按钮 + 计数。窗口窄时必须能换行 —— `.seg` 是 inline-flex 且不换行，
- * 三个中文标签加计数比右侧参数列宽时会直接溢出（与 `.seg-scale` 同一个坑）。
- */
 .kn-filter {
   flex-wrap: wrap;
   justify-content: flex-end;
   max-width: 100%;
 }
-/* 条目卡：按钮多，标题行顶对齐，别把标题压成一条 */
 .kn-item .set-ctrow {
   align-items: flex-start;
 }
@@ -503,7 +442,6 @@ html[data-theme='light'] .settings-scrim {
   font-size: var(--fs-xs);
   line-height: 1.5;
 }
-/* 状态用颜色区分，但不是「可信度比分」——只是「这一条处在哪一步」 */
 .kn-badge.st-active {
   border-color: var(--ok);
   color: var(--ok);
@@ -574,7 +512,6 @@ html[data-theme='light'] .settings-scrim {
   font-family: var(--font-code);
   font-size: var(--fs-code);
 }
-/* 「来源跳转」是个链接样式的按钮：它真的会切会话，不是装饰 */
 .kn-link {
   color: var(--accent);
   font-size: var(--fs-sm);
@@ -619,12 +556,6 @@ html[data-theme='light'] .settings-scrim {
   margin-bottom: 2px;
 }
 
-/*
- * 实施-23 M2：自定义 API 服务表单。
- *
- * `.ui-row` 是「标签 + 控件」的两列 grid；这里的服务行是「说明 + 按钮组」，
- * 直接套会被挤成竖排 —— 所以这几类行用 flex 覆写。
- */
 .custom-api-row {
   display: flex;
   flex-wrap: nowrap;
@@ -680,7 +611,6 @@ html[data-theme='light'] .settings-scrim {
   white-space: nowrap;
 }
 
-/* 实施-23 M2：连接测试面板（两段分开，结果就地显示） */
 .custom-api-test {
   display: flex;
   flex-direction: column;
@@ -690,10 +620,6 @@ html[data-theme='light'] .settings-scrim {
   border-radius: var(--r-sm);
 }
 
-/* ── 首次使用引导（Onboarding）──────────────────────────────────
-   四条可当场验证的检查项：pi 在不在、凭证有没有、连没连上、有没有模型。
-   形态是清单而不是向导 —— 分步要多点几次「下一步」，却不多给信息。
-   入场动画引用 motion.css 的关键帧；这里只管版面与外观。 */
 .ob-scrim {
   position: fixed;
   inset: 0;
@@ -756,7 +682,6 @@ html[data-theme='light'] .ob-scrim {
 .ob-x {
   align-self: flex-start;
 }
-/* 每项说明是一句话：用无衬线（设计规范 §2.2） */
 .ob-row-desc {
   font-family: var(--font-body);
 }
@@ -768,7 +693,6 @@ html[data-theme='light'] .ob-scrim {
   overflow: auto;
 }
 
-/* 检查项：状态标记 / 标题 + 说明 / 操作 */
 .ob-row {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) auto;
@@ -792,7 +716,6 @@ html[data-theme='light'] .ob-scrim {
   background: var(--ok-soft);
   color: var(--ok);
 }
-/* 待办：空心圆环（CSS 画，不用文字符号） */
 .ob-row.ob-todo .ob-check::before {
   content: '';
   width: 10px;
@@ -828,7 +751,6 @@ html[data-theme='light'] .ob-scrim {
   max-width: 220px;
 }
 
-/* 三条「知道就好」 */
 .ob-tips {
   display: flex;
   flex-direction: column;
@@ -867,7 +789,6 @@ html[data-theme='light'] .ob-scrim {
   font-size: var(--fs-xs);
 }
 
-/* ── 使用向导：结构与「开始之前」卡片同源，只是更宽、多一条可点的步骤条 ── */
 .ob-card.wiz {
   width: min(760px, 100%);
 }
@@ -964,7 +885,6 @@ html[data-theme='light'] .ob-scrim {
   color: var(--fg-dim);
   font-size: var(--fs-sm);
 }
-/* 接入与提醒整块复用设置里的分区：向导里只补一层纵向间距 */
 .wiz-auth,
 .wiz-sound {
   display: flex;
@@ -972,7 +892,6 @@ html[data-theme='light'] .ob-scrim {
   gap: var(--sp-3);
 }
 
-/* ── 手机接入 ─────────────────────────────────────────────── */
 .remote-address-input {
   width: 160px;
   text-align: left;
@@ -1004,7 +923,6 @@ html[data-theme='light'] .ob-scrim {
 @media (max-width: 560px) {
   .remote-pairing-layout { grid-template-columns: minmax(0, 1fr); }
 }
-/* 配对码要能隔着屏幕念给手机：等宽、大字、字间距拉开 */
 .remote-pairing-code {
   color: var(--fg);
   font-family: var(--font-code);
@@ -1049,7 +967,6 @@ html[data-theme='light'] .ob-scrim {
   text-decoration: line-through;
 }
 
-/* 设置 · 语音输入：三档模型并排，窄窗口自动换行 */
 .voice-models {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
@@ -1080,7 +997,6 @@ html[data-theme='light'] .ob-scrim {
   width: 100%;
 }
 
-/* 设置 · 能力 · 自动调用依据：每类操作一块 */
 .consent-entry {
   display: flex;
   flex-direction: column;
@@ -1097,7 +1013,6 @@ html[data-theme='light'] .ob-scrim {
   gap: var(--sp-2);
 }
 
-/* 设置 · 砚互联：每台对方砚 / 每个授权一张卡片 */
 .peer-card {
   display: flex;
   flex-direction: column;
@@ -1169,13 +1084,11 @@ html[data-theme='light'] .ob-scrim {
   overflow-wrap: anywhere;
 }
 
-/* 页标题与引导标题用无衬线（设计规范 §2.2） */
 .settings-page-title,
 .ob-title {
   font-family: var(--font-body);
 }
 
-/* 关于 · 诊断信息：键值两列，值可选中复制 */
 .set-diag {
   display: grid;
   gap: var(--sp-1);
@@ -1199,7 +1112,6 @@ html[data-theme='light'] .ob-scrim {
   margin-top: var(--sp-2);
 }
 
-/* 上下文预算：档位分段 + 「自动时最多用到」一行 */
 .set-ctx-budget {
   display: flex;
   flex-direction: column;
@@ -1215,7 +1127,6 @@ html[data-theme='light'] .ob-scrim {
   margin-top: var(--sp-2);
   white-space: pre-wrap;
 }
-/* 说明里的附加一行（状态、临时抬线、出口提示） */
 .set-line {
   display: block;
   margin-top: 2px;
@@ -1238,7 +1149,6 @@ html[data-theme='light'] .ob-scrim {
   justify-content: flex-start;
 }
 
-/* 搜索后端的安装渠道：按钮一行，窄窗口换行 */
 .set-install-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1254,7 +1164,6 @@ html[data-theme='light'] .ob-scrim {
 .set-install-log.err {
   color: var(--err);
 }
-/* 电脑操作：标题说明与开关同一行，开关贴右 */
 .set-cu-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1262,7 +1171,6 @@ html[data-theme='light'] .ob-scrim {
   gap: var(--sp-3);
 }
 
-/* Plugin cards keep description, actions, and installation steps readable in narrow windows. */
 .market-plugin-body {
   flex-direction: column;
   align-items: flex-start;
@@ -1273,7 +1181,6 @@ html[data-theme='light'] .ob-scrim {
 [data-testid='plugin-market'] .pkg-install-row .ui-input {
   flex-basis: 180px;
 }
-/* Results flow with the page: no nested scroll box that cuts entries off above the pager. */
 .market-results {
   display: flex;
   flex-direction: column;
@@ -1324,12 +1231,10 @@ html[data-theme='light'] .ob-scrim {
   justify-content: space-between;
 }
 
-/* 手机接入：运行状态写在开关行的说明下 */
 .remote-status-line {
   margin-top: var(--sp-1);
 }
 
-/* 背景色：模板一行；自定义单独一块（取色器 + 颜色值 + 五级色阶 + 说明） */
 .bg-ctl {
   display: flex;
   flex-direction: column;
@@ -1387,7 +1292,6 @@ html[data-theme='light'] .ob-scrim {
   color: var(--fg);
   font-size: var(--fs-base);
 }
-/* 原生取色器只负责弹出选色面板：透明铺满预览块 */
 .bg-picker {
   position: absolute;
   inset: 0;
@@ -1428,7 +1332,6 @@ html[data-theme='light'] .ob-scrim {
   border-radius: var(--r-xs);
 }
 
-/* 字体：预设分段 + 自定义字体名 + 一行样字 */
 .font-ctl {
   display: flex;
   flex-direction: column;

@@ -1,16 +1,3 @@
-/*
- * 连接就绪后，模型 / 思考档位列表必须能补上。
- * 这是用户报的「看不到模型选择」的端到端验收。
- *
- * 为什么这条断言能证明修复有效：
- *   启动时 `initLoad()` 里那次 `reloadModels()` 是**不等 pi 就绪**就发的
- *   （pi 要加载扩展，几秒才起来），所以那次必然拿到空数组并被 catch 吞掉。
- *   修复前**没有任何代码会重拉** —— 这个探针会一直等到超时、看到 0 条。
- *   修复后 `startConnWatch` 在 conn 转 ready 时会补拉一次。
- *
- * 依赖：隔离环境需要有 pi 凭证（test-live 会把真实 auth.json 只读复制到
- * sandbox）。没有凭证时 pi 只会起一个 unknown 模型，本场景会明确失败而不是静默跳过。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -24,7 +11,6 @@
 
   log('=== 能力列表：连接就绪后必须补上 ===')
 
-  /* ---- 1. 等 pi 真的起来 ---- */
   let ready = false
   for (let i = 0; i < 120; i++) {
     if (store.getState().conn === 'ready') {
@@ -41,23 +27,17 @@
     return out.join('\n')
   }
 
-  /* ---- 2. 模型列表非空：本次修复的核心断言 ---- */
   let n = store.getState().models.length
   for (let i = 0; i < 40 && n === 0; i++) {
     await sleep(500)
     n = store.getState().models.length
   }
   if (n === 0) {
-    /*
-     * 纯合成模式（空凭证、不读个人模型目录）下模型目录本来就是空的：
-     * 那是环境属性而不是回归（非合成隔离运行本来有几十个模型）。
-     */
     out.push('  ~ 跳过：模型列表为空（合成模式无凭证/模型目录），模型相关断言不适用')
     return out.join('\n')
   }
   ok(n > 0, `模型列表非空（${n} 条）—— 修复前这里会一直是 0`)
 
-  /* ---- 3. 思考档位同理（同一个重拉点） ---- */
   let levels = store.getState().thinkingLevels
   for (let i = 0; i < 20 && levels.length === 0; i++) {
     await sleep(500)
@@ -66,7 +46,6 @@
   log(`  思考档位 = ${JSON.stringify(levels)}`)
   ok(levels.length > 0, '思考档位也补上了（不再是「上游未提供思考档位信息」）')
 
-  /* ---- 4. 菜单里真的有可选项，而不是空态 ---- */
   const trigger = q('[data-testid="model-picker"]')
   ok(!!trigger, '模型选择器在 DOM 里')
   if (trigger) {
@@ -81,7 +60,6 @@
     ok(items.length > 0 && !!q('[data-testid="models-count"]'), '模型分页计数与可选列表均已加载')
   }
 
-  /* ---- 5. 斜杠命令也依赖同一个重拉点（只记录，本地命令本来就非空） ---- */
   log(`  命令列表 = ${store.getState().commands.length} 条`)
 
   return out.join('\n')

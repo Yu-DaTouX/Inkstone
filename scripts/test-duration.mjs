@@ -1,14 +1,3 @@
-/**
- * 人读时长的纯逻辑测试（实施-11 H-7）。
- *
- * 被测对象：`src/shared/duration.ts` 的 `formatDuration()` —— 回合页脚、
- * 图片生成进度与子代理列表共用它。抽出来的理由就是别再出现
- * 「消息里 `1m 30s`、子代理行里 `1m30s`」这种同值不同写。
- *
- * 为什么必须单测：写法差异在界面上不会报错，只会让人以为是两种度量；
- * 边界（59 / 60 / 61 秒、负数、NaN）也只有在这里才能一次钉全。
- */
-
 export async function runDurationTests(ok) {
   const { formatDuration } = await import('../out/test/duration.mjs')
 

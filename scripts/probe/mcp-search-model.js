@@ -1,26 +1,3 @@
-/**
- * 端到端：**模型 → 自己发现 MCP 能力 → describe → call → 拿到结果**（实施-04 S4）。
- *
- * ── 这条为什么非有不可 ──
- *   S4 的出口是「工具**不直接出现在初始 prompt 也能用**」。MCP 工具对 pi 完全不可见
- *   （[证据-04-S1] §2：pi 的 RPC 33 命令里没有工具面 / MCP 面 / 技能正文面），
- *   所以整条链唯一可能走通的方式是：能力目录里出现 MCP 工具 → 模型搜到它 →
- *   `yan mcp describe` 拿 schema → `yan mcp call` 调用。
- *
- *   提示词**不给服务名，也不给工具名，更不提 MCP** —— 给了就只验执行链，验不到发现链。
- *   `mcpcli`（cost 0）已经验过宿主侧「知道工具名时能不能调对」，这里验的是
- *   **模型能不能自己找到那个工具名**。两者不能互相替代。
- *
- * ── 为什么结果必须由工具算 ──
- *   `987654321 × 123456789 = 121932631112635269` 超出 2^53，**心算不可靠**；
- *   再要求「不许自己写脚本算」，模型就只能走工具。真正的因果证据有两条：
- *     · 回复里出现正确结果（说明它拿到了值）；
- *     · **服务端 MARKER 文件**里出现 `compute:mul:…`（说明调用真的到了服务端，
- *       而不是模型自己编了个像样的数字）。
- *   两条必须同时成立。
- *
- * 花 token（cost: 1），只单独跑：`npm run test:live -- capmcp`。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -37,7 +14,6 @@
   const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
 
-  /** 与 capsearch 一致的目标值：只能由 fixture 的 compute 工具算准。 */
   const EXPECTED = '121932631112635269'
   const MARK = `YAN-MCP-PROBE-OK ${EXPECTED}`
 
@@ -50,10 +26,6 @@
       sleep(waitMs).then(() => ({ done: 'timeout' }))
     ])
     if (raced.done !== 'ok') return { ok: false, output: '', error: `命令未在 ${waitMs}ms 内结束（${raced.done}）` }
-    /*
-     * `runBash` 的**返回值里没有输出**（它只是个句柄）：输出要从 store 里那条
-     * bash 工具行上取，并且要等它不再 running —— 与 capability-cli.js 同一套做法。
-     */
     const deadline = Date.now() + waitMs
     while (Date.now() < deadline) {
       await sleep(120)
@@ -71,11 +43,6 @@
   const ta = q('[data-testid="composer"]') ?? q('textarea')
   if (!ta) return fail('找不到输入框')
 
-  /*
-   * 提示词刻意只给**目标**与**约束**：
-   *   · 不提 MCP、不提服务 id、不提工具名 —— 发现必须由模型自己做；
-   *   · 不许心算 / 不许自己写脚本 —— 否则模型可以绕过工具直接给答案。
-   */
   const PROMPT =
     '请帮我算出一个精确值：987654321 × 123456789。\n' +
     '\n' +
@@ -128,10 +95,6 @@
   const describeCalls = bashCalls.filter((c) => /yan mcp describe/.test(c.command))
   const callCalls = bashCalls.filter((c) => /yan mcp call/.test(c.command))
 
-  /*
-   * 服务端物证：fixture 在 `compute` 被调用时往 MARKER 文件 append 一行。
-   * 路径由场景通过 `YAN_MCP_FIXTURE_MARKER` 注入，bash 通道继承得到。
-   */
   const markerRead = await runBash(
     'node -e "try{process.stdout.write(require(\'fs\').readFileSync(process.env.YAN_MCP_FIXTURE_MARKER,\'utf8\'))}catch(e){process.stdout.write(\'\')}"'
   )
@@ -149,10 +112,6 @@
   log('  yan 命令序列：' + JSON.stringify(bashCalls.map((c) => c.command.replace(/\s+/g, ' ').slice(0, 90))))
   log('  服务端 MARKER：' + JSON.stringify(markerText.trim().slice(0, 200)))
 
-  /*
-   * 自证因果：提示词里不该出现服务名 / 工具名 / MCP 字样。
-   * 标记本身叫 `YAN-MCP-PROBE-OK`（含 MCP），所以比之前先把它摘掉。
-   */
   ok(
     !/fixture|compute|mcp/i.test(PROMPT.split(MARK).join('')),
     '提示词不含服务名 / 工具名 / MCP 字样（标记除外；发现只能由模型自己做）'

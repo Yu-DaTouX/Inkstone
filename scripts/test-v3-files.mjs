@@ -1,16 +1,3 @@
-/**
- * v3 文件面板的纯逻辑单测（P3 · R1）。
- *
- * 只编译 `src/renderer/src/features/files/files-model.ts`（纯函数，无 React / 无
- * `window.yan` / 无 DOM），在 Node 里直接跑；不启动 Electron、不读个人文件、不写用户
- * 数据、不拉模型。目录响应全部是临时夹具。
- *
- *   node scripts/test-v3-files.mjs
- *
- * 覆盖：目录响应 reducer 的代次丢弃（旧 A 不覆盖 B）、reset/隐藏开关清缓存、懒加载
- * 展示的 loading/空/失败/截断行、键盘树导航与焦点、虚拟化窗口（含焦点行保留）、
- * 相对路径 → 绝对路径、以及「owner 不是当前会话就不加入上下文」的归属守卫。
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
@@ -45,7 +32,6 @@ const {
 
 const OWNER = { key: 'k', sessionId: 's1', cwd: '/proj', active: true }
 
-/** 合成一层目录响应，不碰真实文件系统。 */
 function listing(path, entries, over = {}) {
   return {
     path,
@@ -63,7 +49,6 @@ function listing(path, entries, over = {}) {
 const dir = (name, size) => (size === undefined ? { name, dir: true } : { name, dir: true, size })
 const file = (name, size = 10) => ({ name, dir: false, size })
 
-/* ── 目录响应 reducer：旧代次一律丢弃（旧 A 不覆盖 B） ─────────────── */
 let state = freshTreeState('A', '/a', 1, false)
 state = filesTreeReducer(state, { type: 'loadStart', path: '', generation: 1 })
 assert.equal(state.loading[''], true, '新代次请求进入 loading')
@@ -74,14 +59,12 @@ state = filesTreeReducer(state, { type: 'loadOk', path: '', generation: 1, listi
 assert.equal(state.listings[''].entries.length, 1, '同代次回包写入')
 assert.equal(state.loading[''], undefined, '写入后清 loading')
 
-/* 失败回包也认代次 */
 state = filesTreeReducer(state, { type: 'loadStart', path: 'x', generation: 1 })
 state = filesTreeReducer(state, { type: 'loadError', path: 'x', generation: 9 })
 assert.equal(state.listings['x'], undefined, '旧代次错误被丢弃')
 state = filesTreeReducer(state, { type: 'loadError', path: 'x', generation: 1 })
 assert.equal(state.listings['x'], null, '同代次错误记为 null')
 
-/* ── owner / cwd / 隐藏开关变化：整树作废 ─────────────────────────── */
 let reset = filesTreeReducer(state, { type: 'reset', ownerKey: 'B', cwd: '/b', generation: 3 })
 assert.equal(reset.ownerKey, 'B')
 assert.equal(reset.cwd, '/b')
@@ -93,14 +76,12 @@ reset = filesTreeReducer({ ...reset, showHidden: false }, { type: 'toggleHidden'
 assert.equal(reset.showHidden, true, '隐藏开关翻转')
 assert.deepEqual(reset.listings, {}, '隐藏开关变化也清缓存')
 
-/* 焦点在子树里，收起目录时退回该目录 */
 let focusState = freshTreeState('A', '/a', 1, false)
 focusState = { ...focusState, open: { '': true, src: true }, focusPath: 'src/a.ts' }
 focusState = filesTreeReducer(focusState, { type: 'toggle', path: 'src' })
 assert.equal(focusState.open.src, undefined, '收起 src')
 assert.equal(focusState.focusPath, 'src', '焦点退回被收起的目录')
 
-/* ── 展平行：loading / 空 / 失败 / 截断 ────────────────────────── */
 const expanded = { '': true, src: true }
 
 let view = freshTreeState('A', '/a', 1, false)
@@ -133,7 +114,6 @@ view = { ...view, listings: { ...view.listings, '': listing('', [file('a'), file
 rows = flattenRows(view)
 assert.equal(rows[rows.length - 1].state, 'partial', '截断给「只列出一部分」提示')
 
-/* ── 键盘模型 ─────────────────────────────────────────────────── */
 const treeRows = flattenRows({
   ...freshTreeState('A', '/a', 1, false),
   listings: {
@@ -214,7 +194,6 @@ assert.deepEqual(
 )
 assert.deepEqual(key({ path: 'README.md', key: 'Delete' }), { type: 'none' }, '首版没有删除动作')
 
-/* ── 虚拟化窗口 ───────────────────────────────────────────────── */
 const big = computeWindow({ count: 1000, scrollTop: 0, viewportHeight: 200, rowHeight: 20, overscan: 1 })
 assert.deepEqual(big, { start: 0, end: 11, padTop: 0, padBottom: (1000 - 11) * 20 }, '顶部窗口含 overscan')
 
@@ -235,7 +214,6 @@ assert.deepEqual(
   '空列表窗口为空'
 )
 
-/* ── 相对路径 → 正式绝对路径 ─────────────────────────────────── */
 assert.equal(toAbsolutePath('C:\\work\\app', 'src/a.ts'), 'C:\\work\\app\\src\\a.ts')
 assert.equal(toAbsolutePath('C:\\work\\app\\', 'a.ts'), 'C:\\work\\app\\a.ts')
 assert.equal(toAbsolutePath('/home/u/app', 'src/a.ts'), '/home/u/app/src/a.ts')
@@ -243,7 +221,6 @@ assert.equal(toAbsolutePath('/home/u/app/', ''), '/home/u/app')
 assert.equal(rootLabel('C:\\work\\app'), 'app')
 assert.equal(rootLabel('/home/u/app', 'my-project'), 'my-project')
 
-/* ── 归属守卫：owner 不是当前会话就不加入上下文 ───────────────── */
 assert.equal(canAttachToContext(OWNER, 's1'), true, '当前会话匹配才可加')
 assert.equal(canAttachToContext(OWNER, 's2'), false, '会话不匹配不可加')
 assert.equal(canAttachToContext({ ...OWNER, active: false }, 's1'), false, '非活动会话不可加')

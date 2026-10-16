@@ -1,4 +1,3 @@
-/* 单场景：隔离渲染数据，不发模型请求；记录实际 Chromium 帧间隔与 DOM 交互。 */
 ;(async () => {
   const results = []
   const check = (ok, name) => results.push(`  ${ok ? '✓' : '✗'} ${name}`)

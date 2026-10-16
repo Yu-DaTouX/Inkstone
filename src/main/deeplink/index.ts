@@ -1,8 +1,3 @@
-/**
- * DeepLink（WP-20c）对外入口：解析、注册与转发。
- *
- * 主进程入口从这里 import；渲染端只经 preload 的 `onDeepLink` 拿已校验意图。
- */
 export {
   DEEPLINK_PREFIX,
   DEEPLINK_SCHEME,

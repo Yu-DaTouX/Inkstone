@@ -1,4 +1,3 @@
-/* README 主页截图场景：在隔离的视觉矩阵渲染端执行。会话、文件与子 Agent 全部为合成数据，不启动模型。 */
 ;(async () => {
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
   const assert = (condition, message) => { if (!condition) throw new Error(message) }
@@ -90,7 +89,6 @@
   await move(childId, fileId, '下方')
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await wait(120)
-  /* 其余工具（文件树、检查器等）收起，只留主会话、文件与子 Agent 三块。 */
   const keep = new Set([groupFor(fileId), groupFor(childId)])
   for (let i = 0; i < 10; i++) {
     const extra = [...document.querySelectorAll('.tile-heading.ui-tile-head')].find(h => !keep.has(h))
@@ -99,7 +97,6 @@
   }
   store.getState().setRailPinned?.(true)
   await wait(300)
-  /* 打开左栏会从矩阵桩重新拉会话列表；换回演示会话。 */
   store.setState({ sessions, titles: {}, manualTitles: {} })
   await wait(400)
   assert(byId(fileId) && !byId(fileId).hidden && byId(childId) && !byId(childId).hidden, 'Showcase panes visible')

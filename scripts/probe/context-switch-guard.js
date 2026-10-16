@@ -1,18 +1,3 @@
-/**
- * 工作集策略的**触发时机**（N21-3）：只看一眼旧会话不该被动刀（cost 0）。
- *
- * ── 这条探针来自一个真实回归 ──
- * 最初把判定挂在「每次刷新用量」上。切到一个很大的旧会话也会刷新用量 ——
- * 实测那个会话已经 276k tokens（超过 262k 的窗口），于是切过去的瞬间就发起
- * 压缩、运行实例变「忙」，紧接着「新对话」被拒：
- * `同一工作目录已有运行中的会话`。用户只是想看一眼那个会话，不该被压一次。
- * 现在的规则：只有**回合结束**（`agent_settled`）那条路允许按工作集动手。
- *
- * ── 怎么让这条判定不空洞 ──
- * 用 `YAN_CONTEXT_POLICY` 把工作集压到很小（见 test-live 的 env），
- * 这样切过去之后**用量必然在线上**（否则“没触发压缩”什么也证明不了），
- * 然后断言：压缩没有开始、上次压缩记录没变、并且「新对话」仍然能正常完成。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -56,7 +41,6 @@
   ok(rows.length >= 2, `左栏有可切换的会话（${rows.length} 行）`)
   if (rows.length < 2) return out.join('\n')
 
-  /* 挑一条不是当前选中、且名字不是路径的会话 */
   const pathOf = (el) => el?.closest('.srow-wrap')?.getAttribute('data-session-path') ?? ''
   const cur = S().session?.sessionFile ?? ''
   const candidates = rows.map(pathOf).filter((x) => x && x !== cur).slice(0, 8)
@@ -64,20 +48,12 @@
 
   log('')
   log('=== 1. 切到一个“超线”的旧会话 ===')
-  /*
-   * 这条探针的前提是"切过去的那个会话用量在两条线之上"。会话是按左栏顺序挑的，
-   * 而 fixture 里既有几十万 token 的真实会话，也有几乎空的合成会话 ——
-   * 挑到小的那 条时前提不成立，探针会假失败（2026-09-17 全量门槛实测到一次：
-   * 切到一条只有 4 token 的会话）。所以**按顺序找第一条真的超线的**，
-   * 找不到才算这条探针不成立（并且要说清是哪种情况）。
-   */
   let targetPath = ''
   let tokens = null
   for (const cand of candidates) {
     const row = rows.find((r) => pathOf(r) === cand)
     if (!row) continue
     click(row)
-    /* 等它真的铺上消息（peekSession 读文件，不等 pi） */
     for (let i = 0; i < 30; i++) {
       await sleep(400)
       if (S().session?.sessionFile === cand || S().messages.length > 0) break

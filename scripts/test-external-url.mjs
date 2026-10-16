@@ -1,7 +1,3 @@
-/**
- * 外部地址白名单（`src/main/external-url.ts`）：不启动 Electron、不联网。
- * 用法： node scripts/test-external-url.mjs
- */
 import { build } from '../node_modules/esbuild/lib/main.js'
 
 await build({

@@ -1,22 +1,3 @@
-/**
- * 设计令牌漂移扫描（实施-13 V-0）。
- *
- * V-0 的出口之一是「列出现有字体/色板/密度真源，以及 token 与散落值的差异」。
- * 手翻 14800 行 CSS 不现实，所以把它做成可重复的扫描：
- *
- *   ① **散落值**：声明里直接写死的颜色 / px / 时长。能反查到同名 token 的
- *      记为「可映射」（迁移候选），反查不到的记为「无对应 token」（语义缺口，
- *      需要设计决策，不是自动替换能解决的）；
- *   ② **未被引用的 token**：定义了但没有任何 `var(--x)` 用到的；
- *   ③ 白名单：`highlight.css` 是语法高亮色板（与 UI 语义无关）、
- *      `@keyframes` 里的百分比、`0`/`1px` 发丝线不算漂移。
- *
- * ⚠️ 这是**分类输入**，不是自动改值清单：把 `#ff6b6b` 换成 `var(--err)`
- * 之前要确认语义真的是「错误色」，不是恰好同色的别的含义。
- *
- * 用法： node scripts/css-drift.mjs [--md]
- *   --md  写入 scripts/design/CSS-散落值清单.md
- */
 import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,15 +7,12 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dir = stylesDir(root)
 const ORDER = readStyleOrder(root)
 
-/** 语法高亮色板：它是「代码着色」，不参与 UI 语义令牌 */
 const EXEMPT = new Set(['highlight.css'])
-/** 与令牌无关的值：零值、发丝线、百分比 */
 const IGNORED_LENGTHS = new Set(['0', '0px', '0%', '1px', '50%', '100%', '100vh', '100vw'])
 
 const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '')
 const norm = (value) => value.trim().toLowerCase().replace(/\s+/g, ' ')
 
-/** `#fff` → `#ffffff`，避免同一个颜色算成两个值 */
 function normHex(hex) {
   const h = hex.toLowerCase()
   if (h.length === 4) return '#' + [1, 2, 3].map((i) => h[i] + h[i]).join('')
@@ -42,11 +20,6 @@ function normHex(hex) {
   return h
 }
 
-/**
- * 颜色与时长的归一化 —— 不归一化就反查不到。
- * `#151515` 与 `rgb(21, 21, 21)` 是同一个颜色，`0.12s` 与 `120ms`
- * 是同一个时长；不折算的话「可映射」会被低估成噪声。
- */
 function normColor(value) {
   const s = value.trim().toLowerCase()
   const hex = s.startsWith('#') ? normHex(s) : null
@@ -71,7 +44,6 @@ function normTime(value) {
   return `ms:${m[2] === 's' ? parseFloat(m[1]) * 1000 : parseFloat(m[1])}`
 }
 
-/** 把一个 CSS 值按类型归一化（其它类型原样去空白） */
 function normValue(value, kind) {
   if (kind === 'color') return normColor(value)
   if (kind === 'time') return normTime(value)
@@ -88,20 +60,17 @@ function collectValue(source, re) {
   return out
 }
 
-/** 读所有样式文件（含注释剥离） */
 function readStyles() {
   return ORDER.map((name) => {
     let css = ''
     try {
       css = stripComments(readFileSync(join(dir, name), 'utf8'))
     } catch {
-      /* 文件缺失：清单里记 0，不中断 */
     }
     return { name, css }
   })
 }
 
-/** token 定义：--name: value（含主题块；同名多值全收集） */
 function collectTokens(styles) {
   const tokens = new Map()
   const VAR_DEF = /(--[\w-]+)\s*:\s*([^;{}]+)/g
@@ -113,16 +82,13 @@ function collectTokens(styles) {
       tokens.get(key).values.add(value)
       tokens.get(key).files.add(name)
     }
-    // @media 里的定义也在同一次扫描中命中（正则不区分嵌套）
   }
   return tokens
 }
 
-/** var(--x) 的引用点：样式 + 组件内联 style；另外包含 JS 里 getPropertyValue('--x') 的读法 */
 function collectVarRefs(styles) {
   const refs = new Map()
   const VAR_USE = /var\(\s*(--[\w-]+)/g
-  /* 亮点：`--outline-slot-*` 是 JS 读的（量轨道几何）—— 只扫 var() 会把它误报成未使用 */
   const JS_READ = /getPropertyValue\(\s*['"](--[\w-]+)['"]/g
   const add = (name) => refs.set(name, (refs.get(name) ?? 0) + 1)
   for (const { css } of styles) {
@@ -149,7 +115,6 @@ function analyse() {
   const tokens = collectTokens(styles)
   const refs = collectVarRefs(styles)
 
-  /* 值 → 令牌名 反查表（令牌自己的值也常是 var()，那种不算“同值可映射”） */
   const valueToTokens = new Map()
   const guessKind = (value) =>
     /^#[0-9a-f]{3,8}$|^rgba?\s*\(|^hsla?\s*\(/.test(value) ? 'color' : /^\d*\.?\d+m?s$/.test(value) ? 'time' : 'length'
@@ -163,7 +128,7 @@ function analyse() {
   }
 
   const perFile = new Map()
-  const unmapped = new Map() // 值 → {count, files:Set, kind}
+  const unmapped = new Map()
   const DECL = /([-\w]+)\s*:\s*([^;{}]+)(?=[;}])/g
 
   for (const { name, css } of styles) {
@@ -282,7 +247,6 @@ function renderMarkdown(report) {
 
 const report = analyse()
 if (process.argv.includes('--check')) {
-  /* 门禁：散落值清单必须与当前样式一致（V-0 D1 的同类漂移） */
   const file = join(root, 'scripts/design/CSS-散落值清单.md')
   const content = renderMarkdown(report).replace(/\n+$/, '') + '\n'
   const existing = existsSync(file) ? readFileSync(file, 'utf8') : ''

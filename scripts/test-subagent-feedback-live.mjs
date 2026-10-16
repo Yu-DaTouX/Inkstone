@@ -1,4 +1,3 @@
-/** 真实 Electron 窗口中的合成呈现检查；独立数据目录，无凭证与模型请求。 */
 import './lib/stdio-guard.mjs'
 import { spawn } from 'node:child_process'
 import { mkdtemp, mkdir, writeFile, readFile, readdir, copyFile, rm } from 'node:fs/promises'
@@ -13,7 +12,6 @@ const electron = process.env.YAN_LIGHT_EXE || createRequire(import.meta.url)('el
 await mkdir(evidence, { recursive: true })
 try {
   for (const [name, theme, size] of [['dark', 'dark', '1440x900'], ['dark-restart', 'dark', '1440x900'], ['light', 'light', '1440x900'], ['narrow', 'dark', '940x900']]) {
-    // 第二次深色启动复用首个进程的数据，不重新播种历史。
     const base = join(temp, name === 'dark-restart' ? 'dark' : name), data = join(base, 'data'), pi = join(base, 'pi'), user = join(base, 'electron')
     await Promise.all([data, pi, user].map(path => mkdir(path, { recursive: true })))
     if (name !== 'dark-restart') {
@@ -60,6 +58,5 @@ try {
   }
   console.log(`Evidence: ${evidence}`)
 } finally {
-  // temp 是本脚本 mkdtemp 返回的唯一目录，不触及工作区与真实用户目录。
   await rm(temp, { recursive: true, force: true })
 }

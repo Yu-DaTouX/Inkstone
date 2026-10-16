@@ -1,24 +1,4 @@
 #!/usr/bin/env node
-/**
- * v3 设计令牌生成器（WP-01）。
- *
- * 唯一来源：src/renderer/src/design/tokens.json（颜色为 [浅色, 深色]）。
- * 生成：
- *   · src/renderer/src/design/tokens.css        CSS 变量（颜色 light-dark() + 三档密度 + 主题阴影）
- *   · src/shared/mcp-app-theme.generated.ts          MCP Apps 标准主题变量（主进程宿主按明确主题解析后消费）
- *   · src/renderer/src/design/app-theme.generated.ts 上面 shared 生成物的渲染端投影
- *   · mobile/src/theme.v3.generated.ts          Android 端同一套色板（WP-60 接入）
- *
- * 两条硬约束（方案 02 §5.10）：
- *   1. 颜色用 `light-dark(浅, 深)`，由 `color-scheme` 决定取哪一侧：系统默认走
- *      `prefers-color-scheme`，`<html data-theme>` 显式覆盖。
- *   2. `light-dark()` 只接受 <color>，不能包整条 `box-shadow`。阴影不是颜色，因此
- *      单独生成：`:root` 放浅色值，`@media (prefers-color-scheme: dark)` 与
- *      `:root[data-theme='dark']` 放深色值。
- *
- * 用法：node scripts/design/build-tokens.mjs          写入生成物
- *       node scripts/design/build-tokens.mjs --check  只核对生成物与来源一致（不一致退出码 1）
- */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,7 +10,6 @@ const HEADER = '由 scripts/design/build-tokens.mjs 从 design/tokens.json 生�
 
 const pair = ([light, dark]) => (light === dark ? light : `light-dark(${light}, ${dark})`)
 
-/** 深色主题的阴影变量行；放在 @media 与 [data-theme='dark'] 两处共用。 */
 function darkShadowLines(indent = '    ') {
   return Object.entries(tokens.shadow).map(([name, value]) => `${indent}--shadow-${name}: ${value[1]};`)
 }
@@ -43,7 +22,6 @@ function buildCss() {
   lines.push('    color-scheme: light dark;')
   for (const [name, value] of Object.entries(tokens.color)) lines.push(`    --${name}: ${pair(value)};`)
   tokens.data.forEach((value, i) => lines.push(`    --data-${i + 1}: ${pair(value)};`))
-  // 阴影：light-dark() 不能包阴影，浅色值作默认，深色值在下面的媒体查询与 data-theme 覆盖。
   for (const [name, value] of Object.entries(tokens.shadow)) lines.push(`    --shadow-${name}: ${value[0]};`)
   for (const [name, value] of Object.entries(tokens.font)) lines.push(`    --font-${name}: ${value};`)
   for (const [name, [size, lh, weight]] of Object.entries(tokens.type)) {
@@ -60,7 +38,6 @@ function buildCss() {
   lines.push('  }')
   lines.push("  :root[data-theme='light'] { color-scheme: light; }")
   lines.push("  :root[data-theme='dark'] { color-scheme: dark; }")
-  // 系统深色：显式选了浅色就不再覆盖。
   lines.push('  @media (prefers-color-scheme: dark) {')
   lines.push("    :root:not([data-theme='light']) {")
   lines.push(...darkShadowLines('      '))
@@ -79,13 +56,6 @@ function buildCss() {
   return lines.join('\n') + '\n'
 }
 
-/**
- * MCP Apps 标准主题变量（02 §5.11），值用 light-dark()，由 App 内的 color-scheme 决定取哪一侧。
- *
- * 真源生成物写在 src/shared/，主进程宿主与渲染端共用；主进程在 `ui/initialize` 的
- * hostContext.styles.variables 里按当前明确主题解析成具体值后下发。
- * 阴影不是颜色，无法包进 light-dark()，单独按主题拆到 APP_THEME_SHADOW_VARIABLES。
- */
 function buildAppThemeShared() {
   const c = tokens.color
   const px = (v) => `${v}px`
@@ -135,7 +105,6 @@ function buildAppThemeShared() {
     '--border-radius-xl': px(tokens.radius.xl),
     '--border-radius-full': '9999px',
     '--border-width-regular': '1px',
-    // 细线本身就是一圈颜色，可以在 box-shadow 的颜色位置用 light-dark()。
     '--shadow-hairline': `0 0 0 1px ${pair(c.line)}`,
     '--shadow-sm': `0 0 0 1px ${pair(c.line)}`
   }
@@ -165,7 +134,6 @@ function buildAppThemeShared() {
   )
 }
 
-/** 渲染端投影：真源生成物在 shared，渲染端路径只 re-export，不复制第二份数据。 */
 function buildAppThemeRenderer() {
   return (
     `/* ${HEADER} */\n` +

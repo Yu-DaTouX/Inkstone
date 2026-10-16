@@ -7,7 +7,6 @@ import { useStore } from '../../state/store'
 import { locateQueueItem, planQueueEdit, planQueueMove, planQueueRemove } from './queue-plan'
 import './queue-editor.css'
 
-/** store 的队列重建动作；热点未接线时读不到，界面给出明确提示而不是静默失败。 */
 type ApplyQueueOrder = (next: QueueState) => Promise<void>
 
 function applyQueueOrderAction(): ApplyQueueOrder | undefined {
@@ -15,19 +14,6 @@ function applyQueueOrderAction(): ApplyQueueOrder | undefined {
   return typeof state.applyQueueOrder === 'function' ? state.applyQueueOrder : undefined
 }
 
-/**
- * 输入框上方的队列面板（WP-24b，方案 §8.7）。
- *
- * 在 QueueStack 的「撤回 / 插队」之上补齐**编辑文本**与**上下重排**：
- *   · 编辑 / 重排 / 删除都走 `store.applyQueueOrder(目标顺序)` —— 主进程
- *     clear_queue 取回后按新顺序重建；失败且无法恢复时内容回填输入框。
- *   · 「插队」仍是 store.steerQueued（提升为 steering，当前这轮就听）。
- *   · 「撤回」仍是 store.removeQueued（连同图片放回草稿）。
- *
- * 两层语义不混：`pendingSends` 是渲染端还没投的，`queue` 是 pi 已经收下的。
- * 每次操作都以当前视图的队列快照为基准；渲染端算出的目标顺序会带稳定 id，
- * 主进程按 id 重建，重复文本也不会错位。
- */
 export function QueueEditor() {
   const t = useT()
   const queue = useStore((s) => s.queue)
@@ -42,7 +28,6 @@ export function QueueEditor() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
 
-  /* pi 把正在编辑的那条取走后，编辑面板自动收起，不留在空气里。 */
   useEffect(() => {
     if (editingId && !locateQueueItem(queue, editingId)) {
       setEditingId(null)
@@ -85,7 +70,6 @@ export function QueueEditor() {
     void runOrder(planQueueRemove(queue, id))
   }
 
-  /** 编辑态的输入框：Enter 保存，Esc 取消，Shift+Enter 换行，组字期间不提交。 */
   const renderEditor = (id: string) => (
     <div className="cq-edit" data-testid="queue-edit-panel">
       <textarea
@@ -125,7 +109,6 @@ export function QueueEditor() {
     </div>
   )
 
-  /** 编辑 / 重排 / 删除三条共用；`steer` 只有 followUp 行需要。 */
   const renderActions = (id: string, text: string, index: number, total: number, canSteer: boolean) => (
     <span className="cq-actions">
       {canSteer ? (

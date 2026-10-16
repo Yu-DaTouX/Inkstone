@@ -1,10 +1,3 @@
-/**
- * 设置 → 同步（WP-53 设置界面）。
- *
- * 只做三件事：展示同步状态与上次结果、逐条处理冲突、会话导出 / 导入。
- * 控件外观全部来自 `ui/`，本页 CSS 只写版面；不直接 import pi / 主进程模块，
- * 调用统一经 `window.yan.sync`（preload 未接线时如实提示）。
- */
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { Badge, Button, Separator } from '../../../ui'

@@ -26,7 +26,6 @@ export function canReclaimIdle(facts: IdleReclaimFacts, now: number, afterMs = I
 
 const pathKey = (value: string): string => value.replaceAll('\\', '/').toLowerCase()
 
-/** 尚未收到界面快照（含重载/崩溃期间）时保守保护全部实例。 */
 export class RunnerVisibility {
   private sessions: VisibleRunnerSession[] | null = null
 

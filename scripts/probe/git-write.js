@@ -1,4 +1,3 @@
-/** Git state/action IPC and environment-menu regression in an isolated fixture repository. */
 ;(async () => {
   const out = []
   const ok = (c, s, extra = '') => {
@@ -21,15 +20,9 @@
     const end = Date.now() + ms
     while (Date.now() < end) {
       try {
-        /*
-         * ⚠️ 必须 await：谓词经常是 async（要等一次 IPC 回读真实状态）。
-         * 少了这个 await，Promise 本身是 truthy —— 第一次迭代就「成功」返回，
-         * 而调用方 await 到的其实是 null。表现是一堆看起来像产品坏了的误报。
-         */
         const v = await fn()
         if (v) return v
       } catch {
-        /* 还没出现 */
       }
       await sleep(step)
     }
@@ -43,12 +36,6 @@
     return true
   }
 
-  /*
-   * React 受控组件必须走**原生 setter + input 事件**：
-   * 直接改 `el.value` 再派发 input 时，React 的内部值跟踪会被绕过，
-   * onChange 不触发 —— 表现为「输入框里看得见字，但状态是空的」，
-   * 而提交按钮一直是 disabled。
-   */
   const typeInto = async (el, value) => {
     if (!el) return false
     const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
@@ -58,26 +45,18 @@
     return true
   }
 
-  /** 确保环境菜单是打开的（它可能是开着的 —— 盲点一次反而会关掉它） */
   const openEnvMenu = async () => {
     if (testid('env-menu')) return true
     await click(testid('session-project'))
     return !!(await waitFor(() => testid('env-menu'), 5000))
   }
 
-  /**
-   * 按**分支名元素**找条目。
-   * button 的 textContent 含 JSX 留下的换行空白（"\n  main\n  "），
-   * 于是 `/^main/` 这种前缀匹配永远不中 —— 而 `/feature/` 没锚定所以能中，
-   * 结果是「切到 feature」通过、「切回 main」静默失败，一路掩盖到 afterExit。
-   */
   const branchItem = (name) => {
     const list = [...document.querySelectorAll('[data-testid="env-branch-item"]')]
     return (
       list.find((el) => (el.querySelector('.env-branch-name')?.textContent ?? '').trim() === name) ?? null
     )
   }
-  /** 确保分支列表是展开的（它可能是开着的 —— 盲点一次会把它收起来） */
   const openBranchList = async () => {
     if (testid('env-branches')) return true
     await openEnvMenu()
@@ -105,10 +84,8 @@
     out.push('  会话工作目录 = ' + cwd)
     ok(/write[\\/]?$/.test(cwd), '会话 cwd 指向写操作 fixture', cwd)
 
-    /* 真实状态的回读口子（断言一律用它，不看界面自报） */
     const stateFull = async () => await window.yan.git.state(cwd)
     const state = async () => (await stateFull()).repo
-    /* 诊断：state 读不到时要能看见原因（error 字段），而不是只看到「超时」 */
     const stateDiag = async () => {
       try {
         const res = await stateFull()
@@ -127,7 +104,6 @@
     ok(s0.upstream === 'origin/main', '已有上游（推送不用先设）', String(s0.upstream))
     ok(s0.unpushedCount === 0, '起始没有待推送提交', String(s0.unpushedCount))
 
-    // The retired review/commit UI is gone. Prepare only this isolated fixture through the supported Git action IPC.
     const action = async input => {
       const current = await stateFull()
       return window.yan.git.action({ ...input, cwd, requestId: crypto.randomUUID(), expected: current.expected })
@@ -138,8 +114,6 @@
     ok((await action({ kind: 'commit', message: COMMIT_MSG })).ok, '夹具提交成功')
     ok((await state()).head !== headBefore, '提交后 HEAD 前进')
     await openEnvMenu()
-
-    /* ── 5. 推送：bare remote 真的收到 ──────────────────── */
 
     const pushBtn = await waitFor(() => {
       const btn = testid('env-push')
@@ -157,8 +131,6 @@
       ok(!!s5, '推送后待推送数归 0（主进程读到）', s5 ? '0' : '超时')
     }
 
-    /* ── 6. 拉取 ────────────────────────────────────────── */
-
     const fetchBtn = await waitFor(() => testid('env-fetch'), 6000)
     ok(!!fetchBtn, '环境菜单里有「拉取」一项')
     if (fetchBtn) {
@@ -167,8 +139,6 @@
       ok(!!notice, '拉取给出了结果行', textOf(notice))
     }
 
-    /* ── 7. 切换分支：分支名与文件内容真的变了 ──────────── */
-
     await openEnvMenu()
     const branchBtn = await waitFor(() => testid('env-branch'), 6000)
     ok(!!branchBtn, '环境菜单里有分支项', branchBtn ? '' : '菜单文本=' + JSON.stringify(textOf(testid('env-menu')).slice(0, 120)) + ' state=' + (await stateDiag()))
@@ -176,7 +146,6 @@
     const branchList = await waitFor(() => testid('env-branches'), 8000)
     ok(!!branchList, '点分支项展开了分支列表')
     const item = await waitFor(() => {
-      /* 等它可用：列表先渲染、状态后到，disabled 期间点了没有任何反应 */
       const b = branchItem('feature')
       return b && !b.disabled ? b : null
     }, 12000)
@@ -190,7 +159,6 @@
       ok(!!s6, '切换后当前分支真的是 feature（主进程读到）', s6 ? s6.branch : '超时')
     }
 
-    /* 切回 main：让 afterExit 的断言有一个确定的分支 */
     await openBranchList()
     const back = await waitFor(() => {
       const b = branchItem('main')
@@ -205,8 +173,6 @@
       }, 20000)
       ok(!!s7, '切回 main 成功', s7 ? '' : JSON.stringify(await stateDiag()))
     }
-
-    /* ── 8. 新建分支 ────────────────────────────────────── */
 
     await openBranchList()
     const nameInput = await waitFor(() => testid('env-new-branch-name'), 6000)
@@ -239,7 +205,6 @@
       ok(!!s8, '新建分支并切过去了（主进程读到分支名）', s8 ? s8.branch : '超时')
     }
 
-    /* 切回 main 收尾 */
     await openBranchList()
     const back2 = await waitFor(() => {
       const b = branchItem("main")
@@ -255,17 +220,10 @@
       ok(!!s9, '收尾时真的回到了 main', s9 ? '' : JSON.stringify(await stateDiag()))
     }
 
-    /* ── 9. 失败路径：非法分支名要有可读的拒绝 ──────────── */
-
     await openBranchList()
     const badInput = await waitFor(() => testid('env-new-branch-name'), 6000)
     if (badInput) {
       await typeInto(badInput, 'bad..name')
-      /*
-       * ⚠️ **等按钮可用**再点。disabled 的按钮不派发 click —— 上一步刚结束、
-       * `write.busy` 还没清空时点下去，事件被浏览器直接吞掉，表现成
-       * 「点了没反应」而所有断言都看不出为什么（这次就是这么查了两轮）。
-       */
       const badBtn = await waitFor(() => {
         const b = testid('env-create-branch')
         return b && !b.disabled ? b : null
@@ -283,14 +241,6 @@
       }
     }
 
-    /* ── 10. 工作树（W1，方案 §6.2）──────────────────────── */
-
-    /*
-     * 用户工作树的两条边界都在这节里验：
-     *   ① 建出来的是**仓库旁边**的长期目录（不是子代理那种临时容器）
-     *   ② 移除前检查（这里造一个「没有上游」的分支 → 必须被拒，并给出原因）
-     * 断言一律用 window.yan.git.worktrees() 回读主进程，不看界面自报。
-     */
     await openEnvMenu()
     const wtItem = await waitFor(() => testid('env-worktrees'), 8000)
     ok(!!wtItem, '环境菜单里有「工作树」一项')
@@ -326,7 +276,6 @@
             created ? created.path : ''
           )
 
-          /* 登记为项目（方案 §6.2 的「创建成功后登记为可独立打开的项目」） */
           const reg = await waitFor(async () => {
             const st = await window.yan.getSettings()
             const norm = (v) => String(v).replace(/\\/g, '/').toLowerCase()
@@ -334,11 +283,6 @@
           }, 15000)
           ok(!!reg, '新建的工作树已登记为项目（可独立打开）')
           if (!reg) {
-            /*
-             * 失败时把实情打出来：这两条断言在 2026-09-19 被观察到**偶发**失败
-             * （同一版本重跑一次就变），而「只说不对」的断言要再花一轮才知道是什么。
-             * 打的是主进程回的 projects 列表（前几条路径足够看出“根本没登记”还是“时序”）。
-             */
             const dbg = await window.yan.getSettings()
             out.push(
               '  诊断：projects=' +
@@ -357,7 +301,6 @@
             '同一个路径只登记一条（不重复写）'
           )
 
-          /* 移除：这条分支没有上游 → 必须被拒，并把原因列出来 */
           const removeBtn = await waitFor(
             () => {
               const list = [...document.querySelectorAll('[data-testid="env-worktree-remove"]')]
@@ -377,20 +320,7 @@
       }
     }
 
-    /* ── 11. 携带未提交改动（W2a）────────────────────────── */
-
-    /*
-     * 走界面上的真实路径：勾「未暂存的改动」+「未跟踪的文件」→ 创建。
-     * 断言**全部靠回读**：目标工作树里得有那些改动，源仓库里得一个字节没动。
-     * fixture 专门留了 dirty.txt（未暂存）与 notes.txt（未跟踪）给这一节 ——
-     * G2 那部分的暂存/提交只碰 a.txt 与 new.txt，不会把它们消费掉。
-     */
     await openEnvMenu()
-    /*
-     * ⚠️ 这一格是**开关**，不是「打开」：第 10 节已经把它展开了，再点一次
-     * 就变成收起（第一版就是这么让整节静默跳过的 —— 断言数没涨才发现）。
-     * 所以先看列表在不在，不在才点。
-     */
     if (!testid('env-worktree-list')) {
       await click(await waitFor(() => testid('env-worktrees'), 8000))
     }
@@ -405,20 +335,13 @@
         await click(pick)
         const list = await waitFor(() => testid('env-carry-list'), 10000)
         ok(!!list, '勾上之后列出了可选的未跟踪文件')
-        /*
-         * ⚠️ 等的是**内容**而不是容器：清单容器是跟着勾选立刻渲染的，
-         * 文件列表要等主进程的 snapshot 回来 —— 只等容器就会数到 0 个复选框
-         * （第一版就是这么误报的）。
-         */
         const boxes = await waitFor(() => {
-          /* data-testid 就在 input 自己身上（不是包着它的 label），别再往里面找 */
           const b = [...document.querySelectorAll('input[data-testid=\"env-carry-file\"]')]
           return b.length ? b : null
         }, 12000)
         ok(!!boxes && boxes.length > 0, '清单里至少有一个未跟踪文件（fixture 的 notes.txt）', String(boxes ? boxes.length : 0))
         if (!boxes) return early('  ⤺ 未跟踪清单没出来，后面的断言无从谈起')
 
-        /* 勾上**每一个**列出来的文件，避免依赖列表顺序 */
         for (const b of boxes) await click(b)
 
         const createBtn = await waitFor(() => {
@@ -436,13 +359,11 @@
           const made = list2?.find((w) => w.branch === 'live-carry')
 
           if (made) {
-            /* ① 目标工作树里真的有那份未暂存改动 */
             const snap = await window.yan.git.state(made.path)
             const got = await window.yan.git.untracked(made.path)
             ok(snap.repo?.unstagedCount > 0, '目标工作树里看到了带过来的未暂存改动（dirty.txt）', JSON.stringify(got.slice(0, 6)))
             ok(got.includes('notes.txt'), '未跟踪文件也带过来了（notes.txt）')
 
-            /* ② 源仓库一点没变：dirty.txt 仍然是未暂存改动 */
             const src = await window.yan.git.state(cwd)
             const srcPaths = await window.yan.git.untracked(cwd)
             ok(src.repo?.unstagedCount > 0, '源工作区的改动原样保留（没有被搬走）')
@@ -452,23 +373,8 @@
       }
     }
 
-    /* ── 12. 在新工作树开始新会话（W2b，方案 §6.3 的降级路径）──── */
-
-    /*
-     * 方案要求：完整的「带会话继续」做不到正确的重绑定（权限 / 相对路径 /
-     * 附件授权 / 上下文派生）时，**只开放「在新工作树开始新会话」**，
-     * 不显示「无缝继续」。所以这里验两件事：按钮真的换了会话目录，
-     * 以及界面上**明说**了不带走什么。
-     */
     const openNote = await waitFor(() => testid('env-worktree-open-note'), 8000)
     ok(!!openNote, '工作树区里明说「派生新会话」的取舍', textOf(openNote).slice(0, 80))
-    /*
-     * 实施-07 S2b-1：形态定为 **Fork**（新会话 + 来源关系）后，界面不再只写一句免责声明，
-     * 而是**分两行如实列出「会带什么 / 不带什么」**。这两行分开验：
-     *   · 「会带」必须写的是**来源关系**（那是这条路径唯一的正向价值）；
-     *   · 「不带」必须逐项覆盖历史 / 权限 / 附件（少写一项 = 夸大能力）。
-     * 只断言“元素在”不够 —— 文案是给人看的，断言要看到关键词。
-     */
     const carryLine = await waitFor(() => testid('env-worktree-fork-carry'), 8000)
     const skipLine = await waitFor(() => testid('env-worktree-fork-skip'), 8000)
     ok(!!carryLine && !!skipLine, '「会带 / 不带」分两行列出（不是一句笼统话）')
@@ -482,10 +388,6 @@
       return list.length ? list[list.length - 1] : null
     }, 8000)
     ok(!!openBtn, '每条非主工作树都有「开新会话」')
-    /*
-     * 来源关系要在**点之前**取：点完之后 `session` 已经换成新会话了 ——
-     * 拿错的话下面「来源会话是哪个」就成了拿新会话与自己比，永远绿。
-     */
     const fromSession = store.getState().session?.sessionId ?? ''
     if (openBtn) {
       await click(openBtn)
@@ -494,10 +396,6 @@
         return now.replace(/\\/g, '/').toLowerCase().includes('live-carry') ? now : null
       }, 20000)
       ok(!!switched, '点击后真的在新工作树目录里开了会话', String(switched ?? '超时'))
-      /*
-       * 来源关系（实施-07 S2）：主进程那边应该在切会话之后多出一条。
-       * 这是新数据 —— UI 改一个 cwd 不会产生它，所以必须拿主进程回读来证。
-       */
       const link = await waitFor(async () => {
         const list = await window.yan.git.worktreeLinks()
         return (list ?? []).find((x) => String(x.worktree ?? '').replace(/\\/g, '/').toLowerCase().includes('live-carry')) ?? null
@@ -509,26 +407,14 @@
         out.push(`  worktreelink.sessionId=${link.sessionId}`)
         out.push(`  worktreelink.worktree=${link.worktree}`)
       }
-      /* 等菜单**消失**（谓词返回 true 才算成立），不是「等它出现」 */
       const gone = await waitFor(() => (testid('env-menu') ? null : true), 8000)
       ok(!!gone, '开完新会话后环境菜单自动收起（不再挡着对话）')
-      /*
-       * 界面：重新打开菜单并展开工作树，必须看到「这个会话从哪来」。
-       * 只断言按钮存在不算 —— 方案 §6.3 的硬要求是**用户能看到**这件事。
-       */
       await openEnvMenu()
       await click(testid('env-worktrees'))
       const origin = await waitFor(() => testid('env-worktree-origin'), 8000)
       ok(!!origin, '环境菜单里显示了这个会话的来源工作树', textOf(origin).slice(0, 60))
       if (origin) ok(textOf(origin).includes('live-carry'), '显示的是真实分支/目录（不是一句模板文案）', textOf(origin).slice(0, 60))
 
-      /*
-       * 实施-07 S2b-4：派生到工作树之后，新会话的输入框里应该已经放好一段接手上下文
-       *（草稿，**不自动发送**）。这里除“有没有”之外还要验三件事：
-       *   ① 环境派生状态是**目标工作树重算**的（分支名对得上工作树，不是主仓库的）；
-       *   ② 如实说明源会话历史没带过来（不说的话模型会假装记得）；
-       *   ③ **确实没有发出去** —— 消息列表里不该出现它（否则就花了额度、替用户说了话）。
-       */
       const composerEl = testid('composer')
       const draft = composerEl ? String(composerEl.value ?? '') : ''
       ok(/\[yan-fork-context:[^\]]+\]/.test(draft), '输入框里有一段 Fork 上下文草稿（带标记行）', draft.slice(0, 70))
@@ -551,11 +437,6 @@
       )
       ok(typeof ctxDiag?.changedCount === 'number', '诊断：变更数是个数字（真的读过工作区）', String(ctxDiag?.changedCount))
       ok(ctxDiag?.hasPackage === false, '沙箱里没有交接包 → 正文里如实说没有', String(ctxDiag?.hasPackage))
-      /*
-       * 附件（实施-07 S2b-5）：沙箱里的源会话没有图片附件 → 正文里**不该**出现附件段落；
-       * 显式给一个数量时（模拟“源会话里带了图”）则必须如实报出来，
-       * 并且**只能**说“没有带过来”。
-       */
       ok(ctxDiag?.attachments === 0, '沙箱源会话里没有图片附件 → 计数为 0', String(ctxDiag?.attachments))
       ok(!String(ctxDiag?.text ?? '').includes('附件'), '没有附件时正文里不出现附件段落')
       const withAttach = await window.yan.git.forkContext({
@@ -568,12 +449,6 @@
       ok(/没有带过来/.test(String(withAttach?.text ?? '')), '附件一律说“没有带过来”（不假装能带）')
     }
 
-    /* ── 12b. 项目信任（实施-07 S2b-2）─────────────────────────
-     *
-     * 这一节验的是「pi 的信任是**按目录**的」这件事实：先把**主仓库**显式信任，
-     * 再确认**工作树目录没有跟着被信任**（形态决策里明禁的“自动继承”）。
-     * 然后走界面上的入口把工作树也显式信任 —— 写入由 Node 侧读盘核对。
-     */
     const wtAll = await window.yan.git.worktrees(store.getState().session?.cwd ?? '')
     const mainTree = (wtAll?.worktrees ?? []).find((w) => w.main)
     const nonMainTree = (wtAll?.worktrees ?? []).find((w) => !w.main)
@@ -584,10 +459,8 @@
       ok(allowed?.ok === true, '显式信任主仓库成功', JSON.stringify(allowed ?? null))
       const afterMain = await window.yan.trust.status(mainTree.path)
       ok(afterMain.trusted === true, '主仓库现在是受信任的', JSON.stringify(afterMain))
-      /* 关键一行：不继承 */
       const wtBefore = await window.yan.trust.status(nonMainTree.path)
       ok(wtBefore.trusted === false, '工作树目录**没有**跟着被信任（不自动继承）', JSON.stringify(wtBefore))
-      /* 走界面：工作树行上的「信任这个目录」→ 变「已受信任」 */
       const trustBtn = await waitFor(() => testid('env-worktree-trust'), 8000)
       ok(!!trustBtn, '工作树行上有「信任这个目录」入口（不用去终端跑 pi）')
       if (trustBtn) {
@@ -601,14 +474,6 @@
       ok(false, '没拿到主 / 非主工作树清单（夹具仓库没建工作树？）')
     }
 
-    /* ── 12c. 文件引用重绑定（实施-07 S2b-3）─────────────────
-     *
-     * 这里验三件事：① 仓库相对引用在**目标工作树**里解析并对得上 / 对不上；
-     * ② `..` 与仓库外绝对路径报 `outside`（不迁移）；
-     * ③ **没做**绝对路径前缀替换 —— 把源仓库里**真实存在**的绝对路径传进去，
-     *    它必须仍是 `outside`（因为它在源仓库根下、不在工作树根下）。
-     *    如果实现里写了一句 `replace(源根, 目标根)`，这一条就会当场变红。
-     */
     const wtAll2 = await window.yan.git.worktrees(store.getState().session?.cwd ?? '')
     const targetTree = (wtAll2?.worktrees ?? []).find((w) => !w.main)
     const repoTree = (wtAll2?.worktrees ?? []).find((w) => w.main)
@@ -625,7 +490,6 @@
       const byRef = Object.fromEntries((rep?.refs ?? []).map((r) => [r.ref, r.state]))
       ok(byRef['no-such-file.ts'] === 'missing', '目标里没有的文件报 missing', String(byRef['no-such-file.ts']))
       ok(byRef['../escape.txt'] === 'outside', '`..` 报 outside（不迁移）', String(byRef['../escape.txt']))
-      /* 反模式反向验证：源仓库的绝对路径不许被“前缀替换”成目标里的路径 */
       const absState = (rep?.refs ?? []).find((r) => String(r.ref).toLowerCase().endsWith('/a.txt') && r.ref.includes(':'))?.state
       ok(absState === 'outside', '源仓库的绝对路径仍是 outside（证明没做前缀替换）', String(absState))
       ok(
@@ -633,7 +497,6 @@
         '相对引用 `a.txt` 被当成仓库内路径解析（resolved 或 missing，但绝不是 outside）',
         String(byRef['a.txt'])
       )
-      /* 走真实提取：当前会话里 `@` 过的文件（没有引用时就是个空数组，不虚构） */
       const live = window.yan.git.forkFileRefs({
         worktree: targetTree.path,
         sourceFile: store.getState().session?.sessionFile,
@@ -645,14 +508,6 @@
       ok(false, '没拿到目标 / 主工作树（后面几条信任与引用断言都依赖它）')
     }
 
-    /* ── 13. 关联外部任务链接 + 托管网页比较（H1 / G3）──────── */
-
-    /*
-     * 方案 §6.4 的硬要求是**文案**：「明确只是关联，不宣称上传代码、同步会话
-     * 或远程执行」。所以除了增删，这里还要把这句话读出来断言一遍。
-     * 另外用本地 remote（bare 路径）验证「认不出托管站就不显示网页比较」——
-     * 给一个打不开的链接比不给更糟。
-     */
     await openEnvMenu()
     const links = await waitFor(() => testid('env-source-menu'), 8000)
     ok(!!links, '环境菜单里有「关联外部任务」区')
@@ -662,7 +517,6 @@
       const addBtn = testid('src-add-web')
       ok(!!urlBox && !!titleBox && !!addBtn, '有地址 / 标题两个输入与「关联」按钮')
 
-      /* 不合法地址：要拦下来（javascript: 之类不能被当成可打开的链接） */
       await typeInto(urlBox, 'javascript:alert(1)')
       await click(addBtn)
       ok((await waitFor(() => $('.env-error'), 4000)) !== null, '非 http/https 的地址被拒绝')
@@ -675,12 +529,9 @@
       const rowText = textOf(row)
       ok(rowText.includes('探针任务'), '用的是输入框里的标题（.src-title 里）', rowText.slice(0, 30))
       ok(rowText.includes('已关联'), '状态标成「已关联」（能证明的那一态）')
-      /* 打开按钮的 title 带着原始地址，用于复制/核对 */
       const openBtn = $('[data-testid="src-open"]')
       ok(openBtn?.getAttribute('title') === 'https://example.com/task-1', '打开按钮带着原始地址', String(openBtn?.getAttribute('title')))
-      /* 「不上传代码」的免责声明已在界面重构收尾（7c10942）里去掉，不再断言这句文案 */
 
-      /* 移除：只移除会话引用 */
       const rm = await waitFor(() => testid('src-remove'), 4000)
       if (rm) {
         await click(rm)
@@ -689,22 +540,9 @@
       }
     }
 
-    /*
-     * 来源菜单（§8 的 S1）。
-     *
-     * ── 顺序很重要 ──
-     * 筛选区在有内容之后才渲染（没内容时它只是一行噪声），所以「加一条网页」
-     * 必须排在「有 4 个筛选」之前 —— 反过来的话，断言等的是一个正确行为下
-     * 永远不会出现的东西（第一次跑就是这么误报的）。
-     *
-     * 只加网页这一类：图片与文件要走附件流（粘贴/拖入），在这个场景里没有
-     * 可控的输入，硬造会把断言变成"测试自己写文件"。图片那一类的持久化在
-     * 单测里真跑过（test-sources.mjs：落盘、幂等、读回逐字节一致）。
-     */
     const menu = testid('env-source-menu')
     ok(!!menu, '环境菜单里有「来源」分区')
     if (menu) {
-      /* 边界文案是**静态**的，不依赖有没有内容 —— 先断言它 */
       ok(/原文件不受影响/.test(textOf(menu)), '写明「移除只解除引用，原文件不受影响」')
 
       const urlBox = testid('src-url')
@@ -712,12 +550,10 @@
       const addBtn = testid('src-add-web')
       ok(!!urlBox && !!titleBox && !!addBtn, '有地址 / 标题两个输入与「关联」按钮')
 
-      /* 不合法地址要拦下（javascript: 之类不能被当成可打开的链接） */
       await typeInto(urlBox, 'javascript:alert(1)')
       await click(addBtn)
       ok((await waitFor(() => $('.env-error'), 4000)) !== null, '非 http/https 的地址被拒绝')
 
-      /* 加一条真实的网页来源 */
       await typeInto(urlBox, 'https://example.com/task-1')
       await typeInto(titleBox, '探针任务')
       await click(addBtn)
@@ -732,14 +568,12 @@
         ok(openBtn?.getAttribute('title') === 'https://example.com/task-1', '打开按钮带着原始地址', String(openBtn?.getAttribute('title')))
       }
 
-      /* 有内容之后筛选区才出现：三类 + 全部 */
       const hasFilter = await waitFor(() => testid('src-filter-all'), 6000)
       ok(!!hasFilter, '有「全部」筛选')
       for (const f of ['image', 'file', 'web']) {
         ok(!!testid(`src-filter-${f}`), `有「${f}` + `」筛选`)
       }
 
-      /* 移除：只解除会话引用 */
       const rm = await waitFor(() => testid('src-remove'), 4000)
       if (rm) {
         await click(rm)
@@ -748,20 +582,8 @@
       }
     }
 
-    /*
-     * fixture 的 remote 是本地 bare 路径 —— 不是托管站，所以**不该**出现
-     * 「在网上比较」。这条断言同时守住两件事：不猜路径、不显示死链接。
-     */
     ok(!testid('env-compare-web'), '本地路径的 remote 不显示「在网上比较」')
 
-    /* ── 14. PR 状态（G3）──────────────────────────────── */
-
-    /*
-     * fixture 的 remote 是**本地 bare 路径** —— 不是托管站，所以这里正确的行为是
-     * 「如实说不支持」，而且**一次外发请求都不发**。这一条同时守住两件事：
-     * 「没有任何远端信息时不猜托管站」和「不为了显示一个状态去打网络」。
-     * （真实 GitHub API 的往返在单测里跑了一次：匿名可读、404 分类。）
-     */
     const prState = await waitFor(() => testid('env-pr-state'), 8000)
     ok(!!prState, '环境菜单里有 PR 状态')
     if (prState) {
@@ -770,7 +592,6 @@
       ok(/不支持/.test(text), '本地远端 → 如实说「这个远端不支持」（不猜、不编状态）', text.slice(0, 30))
     }
 
-    /* 收尾：把环境菜单关掉，别让它盖在最后的断言上 */
     if (testid('env-menu')) await click(testid('session-project'))
 
   } catch (error) {

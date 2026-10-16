@@ -2,7 +2,6 @@ import { mkdir, open, readFile, realpath, rm, unlink, writeFile } from 'node:fs/
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
-/** One cooperating writer per canonical data root. Unknown owners fail closed. */
 export async function lockDataRoot(root: string): Promise<() => Promise<void>> {
   await mkdir(resolve(root), { recursive: true })
   const canonical = await realpath(resolve(root))
@@ -31,7 +30,6 @@ export async function lockDataRoot(root: string): Promise<() => Promise<void>> {
         if ((probeError as NodeJS.ErrnoException).code !== 'ESRCH') throw probeError
       }
       if (attempt !== 0) throw new Error('数据目录锁竞争，请稍后重试')
-      // Verify the dead owner again before reclaiming its directory.
       const current = JSON.parse(await readFile(join(lock, 'owner.json'), 'utf8')) as typeof owner
       if (current.nonce !== owner.nonce) throw new Error('数据目录锁已变化')
       await rm(lock, { recursive: true })

@@ -1,18 +1,3 @@
-/**
- * 会话行菜单的「真实点击」路径（用真实指针序列点菜单项）。
- *
- * 为什么单独有这一条：`contextmenu` / `rename` / `contextstate` 都用
- * `dispatchEvent(new MouseEvent('click'))` —— 合成 click 被**直接送到元素**，
- * 绕过了真实鼠标必经的三步：
- *   ① 命中测试：菜单项上面是不是压着别的层（透明遮罩 / 高 z-index 浮层）
- *   ② mousedown / pointerdown：关菜单的外点监听、拖拽起步
- *   ③ 焦点：菜单关闭「把焦点还给触发元素」与重命名输入框的聚焦互相抢
- * 这三步任一坏掉，合成 click 仍然「通过」，而用户手点是没反应的。
- *
- * 本探针在菜单项中心坐标上依次派发 pointerdown → mousedown → pointerup →
- * mouseup → click，并用 `elementFromPoint` 报出最上层元素是谁；分别覆盖
- * 「⋯ 打开」和「右键打开」两条路径（右键的 trigger 是行主体，与 ⋯ 不同）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -36,7 +21,6 @@
     const r = el.getBoundingClientRect()
     return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
   }
-  /** 命中测试拿到最上层元素，再依次派发完整指针序列（尽量贴近真实鼠标） */
   const realClickAt = (x, y) => {
     const hit = document.elementFromPoint(x, y)
     const base = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }
@@ -62,7 +46,6 @@
     if (st().conn === 'ready' && st().settings) break
     await sleep(500)
   }
-  /* 左栏展开：收起状态下会话行 display:none，行内输入框既不可见也不能聚焦 */
   store.getState().setRailPinned(true)
   await sleep(500)
 
@@ -79,15 +62,9 @@
   }
   const rowOf = (path) => q(`.srow-wrap[data-session-path="${path}"]`)
 
-  /* ── 1. 重命名：⋯ 打开 / 右键打开，都走真实指针序列 ───────── */
   const renameTrace = async (via) => {
     seed()
     await sleep(500)
-    /*
-     * 上一次 trace 可能让这行停在重命名状态：组件 key 不变、`renaming`
-     * 还是 true，重设 sessions 不会让它重新挂载 → 输入框是残留的，
-     * 点「重命名」也不会重新聚焦。先退干净，保证每次都是 false→true 的真实挂载。
-     */
     const stale = q('[data-testid="rail-rename-input"]')
     if (stale) {
       stale.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -129,7 +106,6 @@
   out.push('')
   await renameTrace('右键')
 
-  /* ── 2. 删除：真实指针序列（用非当前会话，删除可点）─────────── */
   out.push('')
   out.push('=== 2. 删除（真实指针序列）===')
   {

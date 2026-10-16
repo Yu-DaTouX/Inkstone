@@ -1,10 +1,3 @@
-/**
- * 中继里一个客户端（手机或礁石）的会话：先完成与礁石 App 相同的握手和设备认证，
- * 之后把加密的「HTTP 请求帧」转给砚本机的远程服务（专用的 127.0.0.1 实例），响应与 SSE 分帧传回。
- *
- * 边界：只转发 `/remote/v1/` 路径与白名单请求头；礁石（agent）只能用 Hub 相关路径；
- * 配对请求里的设备类型由中继配对时的用途决定，客户端不能自己改。帧格式见礁石仓库 docs/specs/hub-relay.md。
- */
 import { request as httpRequest, type ClientRequest } from 'node:http'
 import { fromB64u, generateKeyPair, RELAY_PROTOCOL_VERSION, serverSession, toB64u, type KeyPair, type SecureChannel } from './crypto'
 import type { RelayClient } from './store'
@@ -20,7 +13,6 @@ export interface Pipe {
 export interface TunnelTarget {
   host: string
   port: number
-  /** 只有隧道知道的标记：本机服务据此确认请求来自中继隧道（用于 agent 配对）。 */
   relayToken: string
 }
 
@@ -34,7 +26,7 @@ export interface TunnelHooks {
 }
 
 const HANDSHAKE_TIMEOUT_MS = 10_000
-const MAX_BODY_B64 = 1_200_000 // ≈ 900 KB
+const MAX_BODY_B64 = 1_200_000
 const INLINE_RESPONSE = 600 * 1024
 const CHUNK = 512 * 1024
 const MAX_REQUESTS = 16
@@ -42,7 +34,6 @@ const MAX_STREAMS = 4
 const COALESCE_MS = 50
 const REQUEST_TIMEOUT_MS = 120_000
 const FORWARD_HEADERS = ['authorization', 'content-type', 'x-yan-remote-token', REMOTE_IDEMPOTENCY_HEADER, 'last-event-id', 'accept']
-/** 礁石（agent）只能碰这些路径；其余由本机服务按设备类型再拦一次。 */
 const AGENT_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair', '/remote/v1/hub', '/remote/v1/hub/attention'])
 
 type Pending = { req: ClientRequest; stream: boolean }
@@ -180,7 +171,6 @@ export class TunnelSession {
       const value = given[name] ?? given[name.toLowerCase()]
       if (typeof value === 'string' && value.length <= 4096 && !/[\r\n]/.test(value)) headers[name] = value
     }
-    // 配对的设备类型由中继配对用途决定：礁石只能成为 agent，手机只能成为 phone。
     if (url.pathname === '/remote/v1/pair' && method === 'POST') {
       let parsed: Record<string, unknown>
       try {
@@ -242,7 +232,6 @@ export class TunnelSession {
           this.post({ t: 'res', id, status, headers: resHeaders, ...(all.length ? { body: all.toString('base64') } : {}) })
           return
         }
-        // 大响应（如成果文件）分块传回。
         this.post({ t: 'res', id, status, headers: resHeaders, stream: true })
         for (let off = 0; off < all.length; off += CHUNK) this.post({ t: 'chunk', id, data: all.subarray(off, off + CHUNK).toString('base64') })
         this.post({ t: 'end', id })

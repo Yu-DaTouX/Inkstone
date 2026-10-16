@@ -1,4 +1,3 @@
-/** 设置导航、独立插件市场、键盘焦点和高级披露。 */
 ;(async () => {
   const out = []
   const ok = (condition, label) => { out.push((condition ? '  ✓ ' : '  ✗ ') + label); return !!condition }
@@ -54,14 +53,12 @@
     }
 
     out.push('\n=== 合并页和低频选项 ===')
-    /* 设置页内的分区按需挂载：断言前先点开对应分区的导航项。 */
     const openSection = async (id, expect) => {
       const nav = q(`[data-testid="settings-section-${id}"]`)
       if (nav) {
         click(nav)
         await sleep(150)
       }
-      /* 内容区可能懒加载：等目标元素真的出现，而不是只等固定时长。 */
       if (expect) for (let i = 0; i < 60 && !q(`[data-testid="${expect}"]`); i++) await sleep(100)
     }
     click(q('#settings-tab-workspace'))
@@ -73,7 +70,6 @@
     await sleep(250)
     await openSection('external', 'cap-external')
     ok(!!q('[data-testid="set-capabilities"]') && !!q('#settings-tab-market'), '能力保留原页，插件市场独立入口')
-    /* 搜索 API 的 key 输入收在「增强搜索」里的折叠面板里，先展开。 */
     const disclosure = [...document.querySelectorAll('[data-testid="cap-external"] .ui-disclosure')]
       .find((element) => /搜索 API|Search API/i.test(element.querySelector('summary')?.textContent ?? ''))
     if (disclosure && !disclosure.open) {
@@ -83,7 +79,6 @@
     const searchRow = q('[data-testid="cap-search-api"]')
     ok(!!searchRow, '能力页有「增强搜索」')
     for (const id of ['tavily', 'brave', 'firecrawl', 'context7']) {
-      /* 环境变量已配置时界面故意不再给输入框（key 来源是环境变量），状态行会写明 */
       const viaEnv = /环境变量|environment variable/.test(q(`[data-testid="cap-search-api-status-${id}"]`)?.textContent ?? '')
       ok(!!q(`[data-testid="cap-search-api-${id}"]`) && (!!q(`[data-testid="cap-search-api-key-${id}"]`) || viaEnv), `增强搜索：${id} 有独立的 key 输入（或已由环境变量配置）`)
     }

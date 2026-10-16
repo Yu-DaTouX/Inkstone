@@ -1,14 +1,3 @@
-/**
- * 按需启动、关闭本机 ComfyUI。
- *
- * 生图走本机通道而 ComfyUI 已安装、没在运行时，用安装目录自带的 Python 拉起 `main.py`
- * （venv / .venv / Pinokio 的 env、便携包的 python_embeded；`YAN_COMFYUI_PYTHON` 可指定），
- * 只监听本机回环，等 `/system_stats` 就绪后再出图。空闲一段时间（默认 10 分钟，
- * `YAN_COMFYUI_IDLE_MINUTES`，0 表示不自动关）后关掉以释放显存，砚退出时也一并关掉。
- *
- * 只管砚自己拉起的进程：用户自己开着的 ComfyUI 不会被关。桌面版 ComfyUI 的数据目录里没有
- * main.py，由它自己的应用启动，这里不代劳。
- */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -28,7 +17,6 @@ export interface ComfyLaunch {
   cwd: string
 }
 
-/** 安装目录自带的 Python 与启动参数；找不到可用的 Python（或是桌面版数据目录）时返回 null */
 export function comfyLaunchCommand(installDir: string): ComfyLaunch | null {
   if (!existsSync(join(installDir, 'main.py'))) return null
   const exe = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python']
@@ -43,7 +31,6 @@ export function comfyLaunchCommand(installDir: string): ComfyLaunch | null {
   return { python, args: [...(python === portable ? ['-s'] : []), 'main.py', ...extra], cwd: installDir }
 }
 
-/** 第一个能用砚拉起的 ComfyUI 安装目录 */
 export async function findLaunchableComfy(): Promise<string | null> {
   for (const dir of await comfyInstallCandidates()) {
     if (isComfyInstall(dir) && comfyLaunchCommand(dir)) return dir
@@ -164,7 +151,6 @@ async function launch(installDir: string, report?: (detail: string) => void): Pr
   throw new ComfyLaunchError('local_launch_timeout', state.log.slice(-3).join(' | ').slice(0, 300))
 }
 
-/** 已在运行的（自己开的或砚拉起的）直接用；否则找安装目录启动。并发调用共用同一次启动 */
 export async function ensureComfyRunning(report?: (detail: string) => void): Promise<LocalModelServer> {
   if (managed && !managed.exited) {
     const server = await serverAt(managed.baseUrl)
@@ -184,7 +170,6 @@ export async function ensureComfyRunning(report?: (detail: string) => void): Pro
   return starting
 }
 
-/** 生图期间不被空闲计时关掉；返回结束时调用的函数 */
 export function holdManagedComfy(baseUrl: string): () => void {
   const state = managed
   if (!state || state.baseUrl !== baseUrl) return () => {}
@@ -197,7 +182,6 @@ export function holdManagedComfy(baseUrl: string): () => void {
   }
 }
 
-/** 关掉砚拉起的 ComfyUI；用户自己开的不动。返回是否真的关了 */
 export function stopManagedComfy(): boolean {
   const state = managed
   if (!state || state.exited) return false
@@ -209,15 +193,12 @@ export function stopManagedComfy(): boolean {
 }
 
 export interface ComfyStatus {
-  /** 本机有 ComfyUI 在运行（不论是谁开的） */
   running: boolean
   baseUrl?: string
-  /** 正在运行的是砚拉起的 */
   managed: boolean
   installDir?: string
   startedAt?: number
   idleStopAt?: number
-  /** 没在运行时，能否由砚启动 */
   launchable: boolean
   workflows: string[]
 }

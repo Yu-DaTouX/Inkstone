@@ -1,14 +1,3 @@
-/**
- * 扩展文本组件位置（pi 原生 `setWidget` 的 `widgetPlacement`）独立检查。
- *
- * 覆盖两处纯逻辑：
- *   ① `src/main/ui-requests.ts`：把 setWidget 请求转成 push 载荷时保留 placement，
- *      缺省 / 未知值都归一为 `aboveEditor`，清空时仍带上位置供渲染端同步。
- *   ② `src/renderer/src/state/store.ts`：`widgetsByPlacement` 按位置分组，
- *      缺省或未知位置归上方。
- *
- * 现场用 esbuild 编译，不启动 Electron、不连接 pi、不访问网络、不读写真实数据。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -30,7 +19,6 @@ const eq = (actual, expected, label) => {
 
 const dir = await mkdtemp(join(tmpdir(), 'inkstone-ext-widget-'))
 try {
-  /* ① 主进程：setWidget → push 载荷 */
   const uiFile = join(dir, 'ui-requests.mjs')
   await build({
     entryPoints: ['src/main/ui-requests.ts'],
@@ -91,7 +79,6 @@ try {
     'lines 逐项转成字符串'
   )
 
-  /* ② 渲染端：widgetsByPlacement 分组 */
   const storeFile = join(dir, 'store.mjs')
   await build({
     entryPoints: ['src/renderer/src/state/store.ts'],
@@ -128,7 +115,6 @@ try {
     [],
     '位置绑定在 key 上：归下方后不出现在上方'
   )
-  // 清空语义：widgets 里已删除的 key 不再出现在任何一组
   eq(
     widgetsByPlacement({ b: ['B'] }, { a: 'belowEditor' }).belowEditor.map(([key]) => key),
     [],

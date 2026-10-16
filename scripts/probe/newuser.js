@@ -1,14 +1,3 @@
-/**
- * 新用户首次使用：没有任何凭证的全新数据目录下，第一屏到第一次配置的路径。
- *
- * 验的是新装设备会碰到的事，不烧 token：
- *   ① 默认工作文件夹是「文档\砚」而不是整个用户主目录；
- *   ② 命令行工具（bash / git）检测接口可用，引导里有这一行，且不再让用户去终端 `pi → /login`；
- *   ③ 日常模式首页默认不出空间 / 资料卡；
- *   ④ 输入区的权限选择器只有两档，切换会落盘并更新按钮文字；
- *   ⑤ 批准卡片：权限类带「记住」，删除类没有，拒绝能把卡片收起；
- *   ⑥ 自定义服务（「接入」的第三个分区）：模型可不填，「获取模型列表」对连不上的地址给出可读错误而不是崩。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -35,20 +24,17 @@
     }
     await sleep(800)
 
-    /* ① 默认工作文件夹 */
     const settings = await window.yan.getSettings()
     ok(/[\\/]砚$/.test(settings.cwd || ''), `默认工作文件夹是「…\\砚」（实际 ${settings.cwd}）`)
     ok(settings.permissionMode === undefined || settings.permissionMode === 'danger', '权限默认是危险批准')
     ok(settings.guardOutsideWrites !== true, '写入项目之外的确认默认关')
     ok(settings.showSpaces !== true, '空间与资料库默认收起')
 
-    /* ② 命令行工具检测 */
     const tools = await window.yan.toolchainStatus()
     ok(!!tools && typeof tools.bash?.ok === 'boolean' && typeof tools.git?.ok === 'boolean', 'toolchainStatus 返回 bash / git 状态')
     ok(tools.bash.ok || !!tools.bash.hint, '缺 bash 时带安装说明')
     ok(tools.git.ok || !!tools.git.hint, '缺 git 时带安装说明')
 
-    /* 引导：自动弹出或从「关于」重新打开 */
     if (!q('.ob-card')) {
       store.getState().openSettings('about')
       if (await until(() => q('[data-testid="ob-reopen"]'))) click(q('[data-testid="ob-reopen"]'))
@@ -65,10 +51,8 @@
     ok(!q('.ob-card'), '引导能关闭')
     if (store.getState().settingsOpen) store.getState().closeSettings()
 
-    /* ③ 日常首页 */
     ok(!q('[data-testid="wb-card-space"]') && !q('[data-testid="wb-card-sources"]'), '日常首页没有空间 / 资料卡')
 
-    /* ④ 权限选择器：输入区的两档下拉，按钮文字即当前档位 */
     const picker = q('[data-testid="permission-picker"]')
     const option = (value) => q(`.ui-choice-menu [role="menuitemradio"][data-value="${value}"]`)
     ok(!!picker, '输入区有权限选择器')
@@ -83,13 +67,11 @@
       ok(await until(() => (q('[data-testid="permission-picker"] .ui-choice-text')?.textContent ?? '') !== dangerLabel), '按钮文字切到新档位')
       const saved = await window.yan.getSettings()
       ok(saved.permissionMode === 'all', '设置已落盘')
-      /* 还原，别影响别的场景 */
       click(q('[data-testid="permission-picker"]'))
       if (await until(() => option('danger'))) click(option('danger'))
       ok(await until(() => store.getState().settings?.permissionMode === 'danger' && q('[data-testid="permission-picker"] .ui-choice-text')?.textContent === dangerLabel), '切回自动批准后按钮文字复原')
     }
 
-    /* ⑤ 批准卡片（直接往 store 放请求：验渲染与按钮，不依赖模型去触发） */
     const base = { tool: 'bash', title: '测试', detail: 'rm old.xlsx', reasons: ['原因'], cwd: 'C:/x', createdAt: Date.now() }
     store.setState({ approvals: [{ ...base, id: 'o1', kind: 'outside', canRemember: true, rememberDirs: ['D:/other'] }] })
     ok(await until(() => q('[data-testid="approval-card"]')), '批准卡片渲染在输入框上方')
@@ -102,9 +84,7 @@
     click(q('[data-testid="approval-deny"]'))
     ok(await until(() => !q('[data-testid="approval-card"]')), '点拒绝后卡片收起')
 
-    /* ⑥ 自定义服务：模型可不填；获取失败给可读错误 */
     store.getState().openSettings('auth')
-    /* 「接入」分为订阅 / API Key / 自定义服务三个分区，未访问的分区不挂载 */
     if (await until(() => q('[data-testid="settings-section-custom-api"]'), 8000)) click(q('[data-testid="settings-section-custom-api"]'))
     if (await until(() => q('[data-testid="custom-api-add"]'), 8000)) {
       click(q('[data-testid="custom-api-add"]'))
@@ -122,7 +102,6 @@
       ok(false, '设置 → 接入 里找不到自定义服务入口')
     }
 
-    /* ⑦ 缺 Git 的一键安装：通知里有按钮；点开始后显示进度与取消；出错能重试（不真下载：直接摆状态） */
     store.setState({
       gitInstall: { phase: 'idle' },
       notices: [{ id: 'git-install', type: 'warning', text: '这台设备没有找到 git（测试）', at: Date.now(), action: 'git-install' }]

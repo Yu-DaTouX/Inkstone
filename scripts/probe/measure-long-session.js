@@ -1,11 +1,10 @@
-/** Synthetic render/scroll benchmark, called only inside isolated benchmark windows. */
 async function measureLongSession() {
   const store=window.__yanStore, messages=Array.from({length:2000},(_,i)=>({id:`perf-long-${i}`,role:i%2?'assistant':'user',text:`PERF-LONG-${i}\n`+'长会话测量内容。'.repeat(35)}))
   const sleep=ms=>new Promise(r=>setTimeout(r,ms))
   const tasks=[]
   const observer=new PerformanceObserver(list=>tasks.push(...list.getEntries().map(e=>e.duration)))
   observer.observe({entryTypes:['longtask']})
-  await sleep(300) // Let initial RPC hydration finish before replacing only the isolated projection.
+  await sleep(300)
   const started=performance.now()
   store.getState().applyPush({ch:'sync',payload:messages})
   while(!document.querySelector('.stream-row .msg')?.textContent?.includes('PERF-LONG-')) {

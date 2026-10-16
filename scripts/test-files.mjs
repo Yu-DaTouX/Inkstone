@@ -1,4 +1,3 @@
-/** L02 文件树与 N19 项目文件名搜索的 Node 级边界测试。 */
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

@@ -1,5 +1,4 @@
 @layer features {
-  /* 终端面板（P3 / R2）版面；颜色、字体、尺寸全部来自 design/tokens.css，不私造变量。 */
 
   .term-pane {
     display: flex;
@@ -10,7 +9,6 @@
     background: var(--sunken);
   }
 
-  /* 隐藏的标签不销毁 PTY，只把面板移出布局；重新可见时 ResizeObserver 会触发 fit。 */
   .term-pane[data-visible='0'] {
     display: none;
   }

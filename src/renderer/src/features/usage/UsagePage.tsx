@@ -1,18 +1,18 @@
 import { useMemo, useState } from 'react'
 import { useI18n, useT } from '../../i18n'
-import { compactNumber, useUsageStats } from '../../components/chat/UsageOverview'
+import { compactNumber, useMoney, useUsageStats } from '../../components/chat/UsageOverview'
 import { heatLevels, tokenBreakdownOf, type UsageRange } from '../../../../shared/usage-stats'
 import { renderUsageToggle } from '../../patterns/UsagePattern'
 import { useStore } from '../../state/store'
 import './usage-page.css'
 
-/** 本机会话用量的完整投影；复用首页统计，不读取额外的账户或会话范围。 */
 export function UsagePage() {
   const { lang } = useI18n()
   const t = useT()
   const models = useStore((s) => s.models)
   const [range, setRange] = useState<UsageRange>('all')
   const stats = useUsageStats(range)
+  const money = useMoney()
   const levels = useMemo(() => heatLevels(stats?.heat.map((day) => day.tokens) ?? []), [stats])
   const split = stats ? tokenBreakdownOf(stats) : null
   return (
@@ -23,7 +23,7 @@ export function UsagePage() {
         <p>{t('usage.title')}</p>
       </header>
       <dl className="usage-page-stats">
-        {[[t('usage.tokens'), stats ? compactNumber(stats.tokens) : '—'], [t('usage.sessions'), stats?.sessions.toLocaleString() ?? '—'], [t('usage.messages'), stats ? compactNumber(stats.messages) : '—'], [t('usage.activeDays'), stats?.activeDays.toString() ?? '—']].map(([label, value]) => <div key={label}><dd>{value}</dd><dt>{label}</dt></div>)}
+        {[[t('usage.tokens'), stats ? compactNumber(stats.tokens) : '—'], [t('usage.cost'), stats ? money(stats.cost) : '—'], [t('usage.sessions'), stats?.sessions.toLocaleString() ?? '—'], [t('usage.messages'), stats ? compactNumber(stats.messages) : '—'], [t('usage.activeDays'), stats?.activeDays.toString() ?? '—']].map(([label, value]) => <div key={label}><dd>{value}</dd><dt>{label}</dt></div>)}
       </dl>
       <section className="usage-page-activity">
         <div className="usage-page-controls">
@@ -42,7 +42,7 @@ export function UsagePage() {
         <ul className="start-models">{stats?.models.map((item) => {
           const model = models.find((model) => `${model.provider}/${model.id}` === item.key)
           const share = stats.tokens > 0 ? item.tokens / stats.tokens : 0
-          return <li key={item.key} className="start-model"><span className="start-model-name">{model?.name || item.key}</span><span className="start-model-num">{compactNumber(item.tokens)}</span><span className="start-model-num">{Math.round(share * 100)}%</span><span className="start-model-bar"><span style={{ width: `${share * 100}%` }} /></span></li>
+          return <li key={item.key} className="start-model"><span className="start-model-name" title={item.cost > 0 ? money(item.cost) : undefined}>{model?.name || item.key}</span><span className="start-model-num">{compactNumber(item.tokens)}</span><span className="start-model-num">{Math.round(share * 100)}%</span><span className="start-model-bar"><span style={{ width: `${share * 100}%` }} /></span></li>
         })}</ul>
       </section>
     </main>

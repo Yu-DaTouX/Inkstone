@@ -1,23 +1,3 @@
-/**
- * 按调用取消隔离的合成服务器（FIX2 专用，不动 A1 既有 fixture）。
- *
- * 同一份实现支持三种模式：
- *   · `--stdio`（默认）—— 用官方 SDK `Server`，`slow` 尊重 `notifications/cancelled`
- *     （`extra.signal` 中止时结束），用于验证 A 取消/超时不影响同一连接上的 B；
- *   · `--http` —— 同样的 SDK 实现走 Streamable HTTP，用于验证 HTTP 传输；
- *   · `--raw` —— 手写的最小 JSON-RPC stdio 服务，**故意无视** `notifications/cancelled`，
- *     在客户端中止后仍发送迟到成功结果，用来验证「服务无视取消时，客户端在本调用级
- *     忽略迟到结果、不拆其他请求」；其中 `app-error` 返回 code=-32000 的**应用错误**
- *     （不关 transport），用来证明不能仅凭码值判定断线。
- *
- * 不联网：HTTP 只监听 127.0.0.1 的随机端口；不碰用户配置；不调用真实模型。
- *
- * 环境变量：
- *   YAN_CANCEL_FIXTURE_LOG            取消通知/迟到计数的追加日志路径（可空）
- *   YAN_CANCEL_FIXTURE_HTTP_PORT      `--http` 监听端口
- *   YAN_CANCEL_FIXTURE_PAGE2_DELAY_MS `tools/list` 第二页的延迟（分页取消用，默认 0）
- *   YAN_CANCEL_FIXTURE_RAW_DELAY_MS   `--raw` 的 `slow` 无视取消后的回复延迟（默认 400）
- */
 import { appendFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
@@ -31,7 +11,6 @@ function log(line) {
   try {
     appendFileSync(LOG, `${line}\n`)
   } catch {
-    /* 日志失败不影响协议行为 */
   }
 }
 
@@ -47,14 +26,12 @@ const TOOLS = [
 ]
 const PAGE_SIZE = 2
 
-/* ---------------------------------------------------------------- SDK 模式 */
-
 function createSdkInstance() {
   const server = new Server({ name: 'yan-cancel-fixture', version: '1.0.0' }, { capabilities: { tools: {} } })
 
   server.setRequestHandler(ListToolsRequestSchema, async (request) => {
     const start = request.params?.cursor ? Number(request.params.cursor) : 0
-    if (start > 0) await delay(PAGE2_DELAY_MS) // 第二页故意慢，供分页取消使用
+    if (start > 0) await delay(PAGE2_DELAY_MS)
     const slice = TOOLS.slice(start, start + PAGE_SIZE)
     const next = start + PAGE_SIZE < TOOLS.length ? String(start + PAGE_SIZE) : undefined
     return { tools: slice, ...(next ? { nextCursor: next } : {}) }
@@ -87,10 +64,9 @@ function createSdkInstance() {
     if (name === 'fail') throw new Error('fixture failure')
     if (name === 'die') {
       setTimeout(() => process.exit(7), 15)
-      await new Promise(() => {}) // 永不回复；进程退出会让 transport 关闭
+      await new Promise(() => {})
     }
     if (name === 'exit') {
-      /* 先成功回复，稍后进程自行退出：模拟服务空闲退出，客户端应通过 onclose 及时回收。 */
       setTimeout(() => process.exit(9), 60)
       return { content: [{ type: 'text', text: 'exit-scheduled' }] }
     }
@@ -99,8 +75,6 @@ function createSdkInstance() {
 
   return server
 }
-
-/* ------------------------------------------------------- 手写 JSON-RPC 模式 */
 
 async function runRaw() {
   const { createInterface } = await import('node:readline')
@@ -129,7 +103,7 @@ async function runRaw() {
     }
     if (message.method === 'notifications/initialized') return
     if (message.method === 'notifications/cancelled') {
-      log('cancelled-ignored') // 故意无视取消
+      log('cancelled-ignored')
       return
     }
     if (message.method === 'tools/list') {
@@ -159,8 +133,6 @@ async function runRaw() {
         return
       }
       if (name === 'app-error') {
-        /* 服务端正常返回的 JSON-RPC 应用错误，码故意用 -32000：它并不表示 transport 已死。
-           旧实现只看码值会误把健康连接（含并发 B）一并拆掉。message 明确标注是应用错误。 */
         send({
           jsonrpc: '2.0',
           id: message.id,
@@ -169,7 +141,6 @@ async function runRaw() {
         return
       }
       if (name === 'slow') {
-        /* 无视取消：延迟后照样发成功结果，验证客户端在调用级丢弃迟到。 */
         setTimeout(() => {
           log('late-result-sent')
           send({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: 'raw-late-done' }] } })
@@ -182,8 +153,6 @@ async function runRaw() {
     }
   })
 }
-
-/* -------------------------------------------------------------------- 入口 */
 
 if (process.argv.includes('--raw')) {
   await runRaw()

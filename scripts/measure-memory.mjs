@@ -1,19 +1,3 @@
-/**
- * 内存实测（只测量，不改产品代码）。
- *
- * 做什么：起一个**隔离的**砚实例（独立 userData / 会话 / 数据 / pi 目录），
- * 开远程调试端口，用 CDP 在渲染端逐档注入消息，读真实指标：
- *   · Runtime.getHeapUsage  —— V8 堆（不需要 --enable-precise-memory-info）
- *   · Memory.getDOMCounters —— DOM 节点数 / 事件监听器数
- *   · HeapProfiler.collectGarbage 后复读 —— 排除「还没回收」的假增长
- *   · sampleProcessTree      —— 各进程工作集
- *
- * 用法：node scripts/measure-memory.mjs [--scales 0,200,1000,3000]
- * 产出：.local-docs/memory-audit-<日期>/memory-baseline-<时间戳>.json（stdout 打印路径）
- *
- * 为什么要 CDP：渲染端读不到进程工作集，Node 侧读不到 V8 堆；
- * 两边都要有，才能把「JS 对象泄漏」和「Blink/DOM 占用」分开看。
- */
 import { spawn, spawnSync, execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync, rmSync, statSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
@@ -50,7 +34,6 @@ for (const f of (process.env.YAN_TEST_SYNTHETIC_ONLY === '1' ? [] : ['auth.json'
 }
 writeFileSync(join(data, 'desktop.json'), JSON.stringify({ cwd: root, lang: 'zh-CN' }, null, 2), 'utf8')
 
-/* 探针：只做「把界面准备到可测状态」这件事，测量本身由 CDP 驱动 */
 const probe = join(sandbox, 'probe-ready.js')
 writeFileSync(
   probe,
@@ -78,7 +61,6 @@ const freePort = () =>
   })
 const port = await freePort()
 
-/* 主进程 inspector 端口（只在 --main-heap 时开） */
 const inspectPort = argv.includes('--main-heap') ? await freePort() : 0
 
 const env = process.env.YAN_TEST_SYNTHETIC_ONLY === '1' ? syntheticEnvironment(process.env) : { ...process.env }
@@ -90,9 +72,6 @@ Object.assign(env, {
   YAN_PI_DIR: piAgent,
   YAN_DOWNLOADS_DIR: join(sandbox, 'downloads'),
   YAN_PROBE: probe,
-  /* 探针跑完主进程会 app.exit(0)（src/main/index.ts 探针分支末尾），
-     所以这里把延迟拉到远大于测量时长：只需要 YAN_PROBE 存在来开启调试端口，
-     不希望那份一次性探针真的执行。 */
   YAN_PROBE_DELAY: flag('probe-delay', '600000'),
   YAN_PROBE_HIDDEN: '1',
   YAN_PROBE_DEBUG_PORT: String(port)
@@ -110,7 +89,6 @@ const killTree = () => {
   try {
     spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
   } catch {
-    /* 尽力而为 */
   }
 }
 
@@ -132,7 +110,6 @@ const httpJson = (path) =>
     req.on('error', fail)
   })
 
-/* CDP 客户端：Node 24 自带 WebSocket */
 class Cdp {
   constructor(ws) {
     this.ws = ws
@@ -229,7 +206,6 @@ const evaluate = async (expression) => {
   return res.result?.value
 }
 
-/* 等 store 就绪（探针也在等，双保险） */
 let ready = false
 for (let i = 0; i < 120; i++) {
   ready = await evaluate('Boolean(window.__yanStore && window.__yanStore.getState().messages)').catch(() => false)
@@ -279,7 +255,6 @@ const snapshot = async (label, extra = {}) => {
   return row
 }
 
-/* 构造与真实会话同形的消息（与 scripts/probe/perf.js 的合成规模一致） */
 const buildFake = (from, to) => {
   const fake = []
   for (let i = from; i < to; i++) {
@@ -371,13 +346,6 @@ const evalInject = async (from, to) => {
   return evaluate(expr)
 }
 
-/**
- * 把进程树拆成「谁占了多少」：Electron 用 `--type=` 区分 main / renderer / gpu / utility，
- * pi 子进程靠命令行里的 `--mode rpc` 认。
- *
- * 为什么需要：`sampleProcessTree` 只给一个总和，看不出常用情况下内存到底在浏览器磁贴、
- * 渲染进程还是 pi 子进程身上，就没法定优化优先级。
- */
 const processBreakdown = (rootPid) => {
   const tree = sampleProcessTree(rootPid)
   const ids = tree.processSamples.map((p) => p.pid)
@@ -432,7 +400,6 @@ const processBreakdown = (rootPid) => {
 }
 
 if (argv.includes('--browser')) {
-  /* 内嵌浏览器是独立的 WebContentsView（自成一个渲染进程）——量出它的真实代价 */
   const report = (title, b) => {
     console.error(`=== ${title} ===`)
     for (const [kind, v] of Object.entries(b.byKind).sort((a, c) => c[1].workingSetMiB - a[1].workingSetMiB)) {
@@ -462,7 +429,6 @@ if (argv.includes('--browser')) {
 }
 
 if (argv.includes('--main-heap')) {
-  /* 主进程 172 MiB 工作集里，多少是 JS 对象（可优化的）、多少是 Node/Electron 固有开销？ */
   const inspectJson = async (path) => {
     const res = await new Promise((done, fail) => {
       const req = httpGet({ host: '127.0.0.1', port: inspectPort, path, timeout: 3000 }, (r) => {
@@ -483,7 +449,6 @@ if (argv.includes('--main-heap')) {
       const list = await inspectJson('/json/list')
       nodeTarget = list.find((t) => t.webSocketDebuggerUrl)
     } catch {
-      /* inspector 还没起来 */
     }
   }
   if (!nodeTarget) {
@@ -511,11 +476,9 @@ if (argv.includes('--main-heap')) {
   console.error('=== 主进程内存 ===')
   console.error(`  rss ${mib(usage.rss)} MiB | heapUsed ${mib(usage.heapUsed)} | heapTotal ${mib(usage.heapTotal)}`)
   console.error(`  external ${mib(usage.external)} | arrayBuffers ${mib(usage.arrayBuffers ?? 0)}`)
-  // Electron's camel-case heap statistics use KiB; V8's snake-case fields use bytes.
   const heapLimit = heapStats.heap_size_limit ?? heapStats.heapSizeLimit * 1024
   const heapUsed = heapStats.used_heap_size ?? heapStats.usedHeapSize * 1024
   console.error(`  堆上限 ${mib(heapLimit)} MiB，已用 ${((heapUsed / heapLimit) * 100).toFixed(1)}%`)
-  /* 进程树与分类（工作集含共享页，和 rss 不可直接相减） */
   const breakdown = processBreakdown(child.pid)
   mkdirSync(outDir, { recursive: true })
   const report = join(outDir, `memory-main-${Date.now()}.json`)
@@ -556,11 +519,6 @@ if (argv.includes('--procs')) {
 }
 
 if (argv.includes('--verify')) {
-  /*
-   * 渲染端上限是否真的生效。
-   * `--files N` 改用仓库里真实跟踪的前 N 个文本文件（模拟长时间点开文件库），
-   * 量出打开前后渲染端的堆与进程树工作集增量。
-   */
   const want = Number(flag('files', '15'))
   const trackedFiles = (limit) => {
     const listed = spawnSync('git', ['ls-files'], { encoding: 'utf8', cwd: root }).stdout ?? ''
@@ -583,9 +541,9 @@ if (argv.includes('--verify')) {
     ? trackedFiles(want)
     : [
         'package.json', 'README.md', 'AGENTS.md', 'tsconfig.web.json', 'tsconfig.node.json',
-        'electron.vite.config.ts', 'docs/README.md', 'docs/PROJECT.md', 'docs/CODE_MAP.md',
-        'docs/CONTRIBUTING.md', 'docs/DESIGN_SYSTEM.md', 'scripts/launch.mjs', 'scripts/test-unit.mjs',
-        'scripts/test-live.mjs', 'src/main/index.ts'
+        'electron.vite.config.ts', 'scripts/launch.mjs', 'scripts/test-unit.mjs',
+        'scripts/test-live.mjs', 'scripts/visual-matrix.mjs', 'src/main/index.ts', 'src/main/agent.ts',
+        'src/shared/ipc.ts', 'src/preload/index.ts', 'src/renderer/src/state/store.ts'
       ]
   const count = () => evaluate('Object.keys(window.__yanStore.getState().filePreviews).length')
   const before = await snapshot('before-open')
@@ -603,7 +561,6 @@ if (argv.includes('--verify')) {
     `树工作集 ${(after.treeWorkingSetMiB - before.treeWorkingSetMiB).toFixed(1)} MiB`
   )
   console.error(afterCount <= Math.max(12, opened) ? '✓ 上限生效' : '✗ 上限未生效')
-  /* 子代理增量推送的消费路径：渲染端按 transcriptFrom 拼接是否正确 */
   const runId = 'probe-subagent-delta'
   const fullRun = {
     id: runId, task: 'probe', model: 'probe/model', status: 'running', startedAt: 1,
@@ -641,7 +598,6 @@ try {
   rows.push(await snapshot('startup'))
   for (const n of scales) {
     if (n === 0) continue
-    /* 整份 sync/ setState 推送（真实路径）：每次给 0..n 的全量，模拟「会话长到 n 条」 */
     console.error(`  注入消息 0..${n}`)
     const okCount = await evalInject(0, n)
     console.error(`    当前消息数 ${okCount}`)

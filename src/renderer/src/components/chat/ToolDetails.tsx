@@ -4,19 +4,6 @@ import { useT } from '../../i18n'
 import { ToolDetail } from './MessageParts'
 import type { FileDiff, UIToolCall, WorkspaceChangeFile, WorkspaceChanges } from '../../../../shared/ipc'
 
-/**
- * 工具详情的**分型渲染**（方案 4.1）。
- *
- * 为什么要分：以前所有工具展开后都套同一个「终端窗口」外壳 ——
- * 搜索、读文件、看网页这些**本来就不是命令**，套上 `$` prompt 行
- * 只会让人以为它们在 shell 里跑过。现在：
- *
- *   · `command`  → 紧凑终端窗口（Terminal.tsx，1 行命令 + 2 行输出）
- *   · `change`   → 文件改动卡片（路径 + 状态 + 前后片段 / 写入内容）
- *   · `result`   → 直接给结果（路径/参数 + 输出），没有外壳
- */
-
-/** 工具 → 详情类型。未知工具按「结果」处理（显示通用图标与真实名称） */
 export function detailKind(name: string): 'command' | 'change' | 'result' {
   if (name === 'bash' || name === 'powershell' || name === 'shell' || name === 'run' || name === 'exec') return 'command'
   if (
@@ -39,7 +26,6 @@ function callPath(call: UIToolCall): string {
   return ''
 }
 
-/** 从 call.details 里取出执行前后快照算出的真实差异（没有就是 null） */
 function readFileDiff(details: unknown): FileDiff | null {
   if (!details || typeof details !== 'object') return null
   const d = (details as { fileDiff?: unknown }).fileDiff
@@ -49,7 +35,6 @@ function readFileDiff(details: unknown): FileDiff | null {
   return diff as FileDiff
 }
 
-/** 行头与详情共用执行后快照统计，未知值不冒充零。 */
 export function FileChangeStats({ call }: { call: UIToolCall }) {
   const diff = readFileDiff(call.details)
   if (!diff || call.status === 'running' || call.status === 'pending') return null
@@ -59,7 +44,6 @@ export function FileChangeStats({ call }: { call: UIToolCall }) {
   </>
 }
 
-/** 从 call.details 里取出 shell / 第三方工具的目录级改动（L05，没有就是 null） */
 export function readWorkspaceChanges(details: unknown): WorkspaceChanges | null {
   if (!details || typeof details !== 'object') return null
   const raw = (details as { workspaceChanges?: unknown }).workspaceChanges
@@ -69,16 +53,6 @@ export function readWorkspaceChanges(details: unknown): WorkspaceChanges | null 
   return wc as WorkspaceChanges
 }
 
-/**
- * 文件改动详情。
- *
- * 两层信息（方案 5.3）：
- *   ① **可靠差异**：执行前后快照算出的逐行 patch + 增删行数（有就用它）；
- *   ② **可查看**：没有快照（旧会话 / 第三方工具）时退回展示工具参数里的
- *      前后片段或写入内容，并如实说明“替换片段”。
- *
- * 失败调用一律标明「未成功应用」，不能让用户以为改上了。
- */
 export function FileChangeDetail({ call, showHeader = true }: { call: UIToolCall; showHeader?: boolean }) {
   const t = useT()
   const path = callPath(call)
@@ -135,16 +109,6 @@ export function FileChangeDetail({ call, showHeader = true }: { call: UIToolCall
   )
 }
 
-/**
- * shell / 第三方工具的**目录级改动**卡片（L05）。
- *
- * 与 `FileChangeDetail` 的区别：那边是**单文件**的可靠差异（写入类工具，
- * 执行前后各读一次文件内容）；这边是**目录级**结果 —— 只知道这段时间里
- * 哪些文件变了，常常给不出行数（没读过内容）。所以这里：
- *   · 有行数就显示 +N/-N，没有就**明说**“未读取内容，只有状态与大小”；
- *   · 归属不明（同目录并发 / 快照不完整 / 读不到）时把原因写在卡片里，
- *     不把这段差异算在这条命令头上。
- */
 export function WorkspaceChangesDetail({ changes }: { changes: WorkspaceChanges }) {
   const t = useT()
   const [openPath, setOpenPath] = useState<string | null>(null)
@@ -195,7 +159,6 @@ export function WorkspaceChangesDetail({ changes }: { changes: WorkspaceChanges 
         ))}
       </ul>
       {hidden > 0 ? <div className="wsc-note">{t('tool.wsMore', { n: hidden })}</div> : null}
-      {/* 一条行数都给不出时说明原因：不是“没改”，而是没读内容 */}
       {changes.files.length > 0 && !withLineCount ? <div className="wsc-note">{t('tool.wsNoLine')}</div> : null}
       {openFile?.patch ? (
         <pre className="fd-patch" data-testid="ws-patch">
@@ -206,7 +169,6 @@ export function WorkspaceChangesDetail({ changes }: { changes: WorkspaceChanges 
   )
 }
 
-/** 状态 → i18n 键（显式映射，避免拼字符串拼出不存在的键） */
 function wsStatusText(t: ReturnType<typeof useT>, status: WorkspaceChangeFile['status']): string {
   switch (status) {
     case 'created':
@@ -220,18 +182,12 @@ function wsStatusText(t: ReturnType<typeof useT>, status: WorkspaceChangeFile['s
   }
 }
 
-/** 无法可靠归属的原因 → i18n 键 */
 const WS_UNKNOWN_KEY = {
   concurrent: 'tool.wsConcurrent',
   truncated: 'tool.wsTruncated',
   unreadable: 'tool.wsUnreadable'
 } as const
 
-/**
- * 普通工具结果：**不套外壳**（方案 4.1）。
- * 搜索 / 读取 / 浏览器操作本来就该直接看结果，
- * 包一层「终端标题栏」只会制造「它跑了命令」的错觉。
- */
 export function ToolResultDetail({ call }: { call: UIToolCall }) {
   return (
     <div className="trd" data-testid="tool-result-detail">

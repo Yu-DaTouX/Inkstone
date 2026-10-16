@@ -1,10 +1,3 @@
-/**
- * 「语音输入」分页（v3）。
- *
- * 转写全部在这台电脑上完成（whisper.cpp）。这一页负责：按硬件推荐模型、下载前先给出
- * 核实过的大小与保存位置并等用户确认、或指定已有的程序与模型文件、选择识别语言。
- * 状态与动作全部走既有 `window.yan.voice.*` 与 `voiceInput` 设置，不新建下载通道。
- */
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
@@ -59,7 +52,6 @@ export function VoiceSection(): ReactElement {
     void refresh()
   }, [refresh])
 
-  /* 下载进行中每秒刷新一次进度 */
   const downloading = status?.download?.state === 'running'
   useEffect(() => {
     if (!downloading) return undefined

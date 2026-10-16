@@ -1,12 +1,3 @@
-/**
- * 砚 AI 文件产物仓。
- *
- * 模型可以提出路径，但不能把路径直接交给渲染端。这里负责：
- *   1. 只接收当前项目内的真实普通文件，或宿主刚生成的 bytes；
- *   2. 复制到按会话隔离的受控目录；
- *   3. 写入轻量 manifest，使会话重启后仍能把产物挂回原消息；
- *   4. 对 SVG 做最小安全清理；HTML 仅经独立隔离预览执行，Markdown 不作为网页。
- */
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, realpath, rename, stat, writeFile, copyFile, unlink } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
@@ -15,7 +6,6 @@ import type { AssistantArtifact } from '../shared/ipc'
 const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024
 const MAX_MANIFEST_ITEMS = 200
 
-/** 同进程内跨 store 实例共享；队列空闲后释放，不长期缓存会话。 */
 const manifestTails = new Map<string, Promise<void>>()
 
 type ArtifactManifestItem = { messageId: string; artifact: AssistantArtifact }
@@ -94,7 +84,6 @@ export interface ArtifactSaveInput {
   messageId: string
   filename: string
   bytes: Buffer
-  /** 挂载已有文件时记下来源路径，供界面打开/定位原文件（预览仍读受控副本）。 */
   sourcePath?: string
   provider?: string
   model?: string
@@ -188,7 +177,6 @@ export class ArtifactStore {
   }
 
   async append(sessionFile: string, messageId: string, artifact: AssistantArtifact): Promise<void> {
-    // 用真实目录作键：不同实例与目录联接别名也必须排同一条队列。
     const dir = this.sessionDir(sessionFile)
     await mkdir(dir, { recursive: true })
     const canonical = await realpath(dir)
@@ -211,7 +199,6 @@ export class ArtifactStore {
     items.push({ messageId, artifact })
     await mkdir(this.sessionDir(sessionFile), { recursive: true })
     const target = this.manifestPath(sessionFile)
-    /* 原子替换：写到临时文件再 rename，不会留下写到一半的清单 */
     const temp = `${target}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
     try {
       await writeFile(temp, JSON.stringify(items.slice(-MAX_MANIFEST_ITEMS), null, 2), { encoding: 'utf8', flag: 'wx' })
@@ -239,7 +226,6 @@ export class ArtifactStore {
           available = false
         }
       }
-      /* manifest 是历史证据：即使文件后来被清理，也要让用户看到原来有过产物。 */
       const artifact = available
         ? item.artifact
         : {

@@ -9,7 +9,7 @@ import { Icon, BrandMark } from '../icons'
 import { deviceInfo } from '../device'
 
 const TAILSCALE_URL = 'https://tailscale.com/download/android'
-const GUIDE_URL = 'https://github.com/Yu-DaTouX/Inkstone/blob/main/docs/MOBILE_ACCESS.md'
+const GUIDE_URL = 'https://github.com/Yu-DaTouX/Inkstone'
 const scanner = NativeModules.InkstonePairScanner as {
   scan(): Promise<string | null>
   readClipboard(): Promise<string | null>
@@ -26,7 +26,6 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  /** 扫到的是「中继接入」二维码：不用填地址，经中继连接 */
   const [relay, setRelay] = useState<RelayPairing | null>(null)
   useEffect(() => { void deviceInfo().then((device) => setName((current) => current || device.name)).catch(() => undefined) }, [])
 

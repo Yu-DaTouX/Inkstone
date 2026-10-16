@@ -1,4 +1,3 @@
-/** 执行入口中的任务栏/通知投影函数，以假窗口和运行事实检查；不启动 Electron。 */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'

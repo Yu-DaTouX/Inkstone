@@ -1,22 +1,3 @@
-/**
- * pi 原生 RPC 参数的定向检查（仅 `src/main/agent.ts` 的接线层）。
- *
- * 被测对象：AgentController 的「薄透传」方法在加入可选参数后，
- * 仍然保持既有无参调用的兼容，并且：
- *   · `compact(customInstructions?)` → 只在有内容时带 `customInstructions`
- *   · `exportHtml(outputPath?)`      → 只在有值时带 `outputPath`
- *   · `runBash(command, options?)`   → `excludeFromContext` 透传
- *   · `newSession(parentSession?)`   → `parentSession` 透传，取消/超时归成 `{ok:false}`
- *   · `sessionEntries(since?)`       → `since` 游标 + `leafId`，失败返回 `{ok:false,error}`
- *   · `sessionTree()`                → `get_tree` + `leafId`，失败返回 `{ok:false,error}`
- *   · 取消 / 超时 / pi 未就绪 / 正在运行 四种状态下都不抛
- *
- * 为什么这样测：这些方法本质是「把参数原样交给 pi 命令，再把响应翻译成结果对象」，
- * 真正的 pi 端行为由 RPC 文档与运行中的 pi 决定。这里用假 RPC 钉住**请求形状**
- * 与**结果翻译**，不需要模型、网络或 Electron。真实 pi/模型路径另由主会话验收。
- *
- * 用法：node scripts/test-pi-native-rpc-options.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -37,7 +18,6 @@ const deepEqual = (actual, expected, message) => {
 }
 
 const temp = await mkdtemp(join(tmpdir(), 'inkstone-pi-rpc-options-'))
-/* paths.ts 在导入时就把 YAN_DIR / PI_AGENT_DIR 定死，必须先设环境变量。 */
 process.env.YAN_DATA_DIR = join(temp, 'data')
 process.env.YAN_PI_DIR = join(temp, 'pi')
 await mkdir(join(temp, 'cwd'), { recursive: true })
@@ -89,10 +69,6 @@ try {
 
   const { AgentController } = await import(pathToFileURL(outfile).href)
 
-  /**
-   * 假 RPC：记录每次 command 的 (type, payload, opts)，按 `fail` / `reject`
-   * 注入逻辑失败与超时，其余给最小可用的成功响应。
-   */
   const fakeRpc = (script = {}) => {
     const calls = []
     const fail = script.fail ?? {}
@@ -242,7 +218,6 @@ try {
   }
   {
     const { agent } = fresh({ data: { get_state: { sessionId: 's-1' } } })
-    /* 直接改 fake 的 new_session 响应以模拟扩展取消。 */
     agent.rpc.command = ((original) => (type, payload, opts) =>
       type === 'new_session'
         ? Promise.resolve({ success: true, data: { cancelled: true } })

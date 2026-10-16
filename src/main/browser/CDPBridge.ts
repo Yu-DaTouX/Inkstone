@@ -1,12 +1,6 @@
 import type { WebContents } from 'electron'
 import { CDP_DOMAINS, type CdpChannel } from './CdpChannel'
 
-/**
- * Electron 每个 WebContents 自带 CDP 调试器；这里封一层带类型的收口：
- * 按需 attach、首次打开常用域、暴露 send/screenshot/detach。
- * 不直接对 `contents.debugger` 裸调，方便以后换成别的通道
- * （外部 Chrome 用 RawCdp，两者实现同一个 CdpChannel）。
- */
 export class CDPBridge implements CdpChannel {
   private attached = false
   private readonly listeners = new Map<string, Set<(params: Record<string, unknown>, sessionId?: string) => void>>()

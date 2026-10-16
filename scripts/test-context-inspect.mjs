@@ -1,7 +1,3 @@
-/**
- * 上下文构成观测扩展（resources/pi-extensions/context-inspect.js）与快照解析。
- * 只测纯函数与形状收敛；与宿主的 HTTP 上报在 live 场景里验证。
- */
 import assert from 'node:assert/strict'
 
 const { buildSnapshot, splitPrompt, estimateTokens } = await import('../resources/pi-extensions/context-inspect.js')

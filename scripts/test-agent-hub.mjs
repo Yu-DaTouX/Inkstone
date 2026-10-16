@@ -16,7 +16,6 @@ for (const agent of ['codex', 'claude', 'pi', 'gemini', 'grok']) {
 }
 assert.deepEqual(hubTerminalArgs([], { agent: 'codex', prompt: '', externalSessionId: 'native-session', model: 'chosen-model' }), ['resume', 'native-session', '--model', 'chosen-model'])
 {
-  /* 终端接入砚的 MCP 入口：Codex 用 -c 内联表且令牌只经 env_vars 转交；Claude 的 --mcp-config 排在初始指令之后。 */
   const bridge = { execPath: 'C:\\Program Files\\Inkstone\\Inkstone.exe', script: 'C:\\app\\yan-cli\\hub-mcp.mjs', claudeConfigPath: 'C:\\data\\mcp.json' }
   const codex = hubTerminalArgs(['launcher'], { agent: 'codex', prompt: 'do it', externalSessionId: 'sid' }, bridge)
   assert.deepEqual(codex.slice(0, 2), ['launcher', '-c'])
@@ -28,7 +27,6 @@ assert.deepEqual(hubTerminalArgs([], { agent: 'codex', prompt: '', externalSessi
   assert.deepEqual(hubTerminalArgs([], { agent: 'gemini', prompt: '' }, bridge), [], 'other CLIs are untouched')
 }
 {
-  /* 会话接续：能预设会话 ID 的 CLI 首次用 --session-id，再次启动按各自方式恢复，且不重发初始指令。 */
   const uuid = '11111111-2222-3333-4444-555555555555'
   const fresh = (agent) => hubTerminalArgs([], { agent, prompt: 'go' }, undefined, { id: uuid, resume: false, uniqueCwd: true })
   const again = (agent, uniqueCwd = true) => hubTerminalArgs([], { agent, prompt: 'go' }, undefined, { id: uuid, resume: true, uniqueCwd })
@@ -78,7 +76,6 @@ afterCrash.resolveUncertain('windows-interaction')
 const checked = await afterCrash.acquire('windows-interaction', 'checked'); checked()
 const afterRelease = new ResourceCoordinator(); afterRelease.attachJournal(journal)
 assert.equal(afterRelease.snapshot()[0].uncertain, false)
-// 单独的实例模拟崩溃；旧实例不会再执行其释放回调。
 void inFlight
 await writeFile(journal, '{broken')
 const corrupted = new ResourceCoordinator(); corrupted.attachJournal(journal)

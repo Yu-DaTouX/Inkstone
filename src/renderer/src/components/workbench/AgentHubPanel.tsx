@@ -196,10 +196,8 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
   const tr = useT()
   const element = useRef<HTMLDivElement>(null)
   const current = useRef(task); current.current = task
-  /* 宿主重启或终端被关闭后，宿主已没有这个终端的画面：明说，而不是留一块空白。 */
   const [gone, setGone] = useState(false)
   const [saved, setSaved] = useState('')
-  /* 终端没了：取砚上次保存的屏幕文本，只读展示。 */
   useEffect(() => {
     if (!gone) return
     let alive = true
@@ -234,7 +232,6 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
         } catch (error) { if (alive) onError(String(error)) }
         finally { reading = false }
       }
-      /* 有输出时 150ms 跟随；安静后逐步放慢，隐藏窗口时更慢，避免空闲终端持续占用主进程。 */
       let timer: ReturnType<typeof setTimeout> | undefined
       const schedule = (ms: number) => { clearTimeout(timer); if (alive) timer = setTimeout(() => void loop(), ms) }
       const loop = async () => {
@@ -245,7 +242,6 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
       void loop()
       let pending = Promise.resolve()
       const send = (command: HubCommand) => { pending = pending.then(async () => { if (alive) await window.yan.hub.command(command) }).catch((error) => onError(String(error))) }
-      /* 输入（含滚轮产生的鼠标序列）合并后再发：逐条串行往返会让滚动排起长队。 */
       let inputBuf = ''
       let inputTimer: ReturnType<typeof setTimeout> | undefined
       const flushInput = () => {
@@ -260,7 +256,6 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
         if (inputBuf.length > 8000) { clearTimeout(inputTimer); flushInput() } else if (!inputTimer) inputTimer = setTimeout(flushInput, 8)
       }
       const sub = term.onData(queueInput)
-      /* 全屏应用（备用屏幕）没有开启鼠标上报时，滚轮改成上下方向键，和常见终端一致。 */
       term.attachCustomWheelEventHandler((e) => {
         if (term.buffer.active.type !== 'alternate' || term.modes.mouseTrackingMode !== 'none') return true
         const lines = Math.max(1, Math.min(5, Math.round(Math.abs(e.deltaY) / 40)))
@@ -269,7 +264,6 @@ export function HubTerminal({ task, onError, onRefresh }: { task: HubTask; onErr
       })
       const observer = new ResizeObserver(() => { if (!element.current || element.current.clientWidth < 16 || element.current.clientHeight < 16) return; fit.fit(); const t = current.current; if (t.inputOwner === 'desktop') send({ action: 'resize', taskId: t.id, epoch: t.inputEpoch ?? 0, cols: term.cols, rows: term.rows }) })
       observer.observe(element.current)
-      /* 只跟主题切换与外观事件：观察根元素 style 会在拖动列宽等每一帧都重读计算样式 */
       const syncAppearance = () => {
         const next = terminalAppearance()
         term.options.theme = next.theme

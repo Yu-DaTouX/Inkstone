@@ -1,7 +1,3 @@
-/**
- * 渲染端推送的身份与归属判定（src/renderer/src/state/push-routing.ts）。
- * 纯函数：只看推送带的运行实例身份与当前视图，决定写缓存、改当前实例或投影到视图。
- */
 export function runPushRoutingTests(ok, { routePush, viewingSessionId }) {
   const runtimeA = { sessionId: 'session-a', runId: 'r1', projectId: 'p', generation: 2 }
   const base = {

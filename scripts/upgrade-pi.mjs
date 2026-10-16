@@ -1,22 +1,4 @@
 #!/usr/bin/env node
-/**
- * 升级 / 刷新内置 pi 运行时。
- *
- * 为什么单独一个脚本：`vendor-pi.mjs` 只负责「把某个 pi 抽出来」，
- * 但它不回答升级时最关心的两个问题 —— 现在内置的是哪个版本、源上的
- * 又是哪个版本、要不要动。这个脚本补齐这一层：
- *
- *   1. 对比内置版本 vs 源版本
- *   2. 需要时才调 vendor-pi.mjs（真正的提取 + 自检）
- *   3. 自检失败时给出可执行的修复清单，而不是只丢一句「失败」
- *
- * 用法：
- *   npm run upgrade:pi              # 版本不同才提取
- *   npm run upgrade:pi -- --force   # 同版本也重跑提取（怀疑内置运行时损坏时用）
- *   npm run upgrade:pi -- --check   # 只报告版本，不动任何文件
- *   npm run upgrade:pi -- --allow-downgrade # 明确回退到较旧的源版本
- *   YAN_PI_SRC=<pi包目录> npm run upgrade:pi
- */
 import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
@@ -38,7 +20,6 @@ const allowDowngrade = args.includes('--allow-downgrade')
 const log = (s) => console.log(s)
 const bad = (s) => console.error(`  ✗ ${s}`)
 
-/** 读一个 package.json 的 version，坏了返回 undefined */
 function readVersion(pkgJsonPath) {
   try {
     return JSON.parse(readFileSync(pkgJsonPath, 'utf8')).version
@@ -47,19 +28,11 @@ function readVersion(pkgJsonPath) {
   }
 }
 
-/** 内置运行时的版本（读它自己的 package.json） */
 function bundledVersion() {
   const v = readVersion(join(DEST, 'package.json'))
   return existsSync(join(DEST, 'dist', 'bundle', 'cli.js')) ? v : undefined
 }
 
-/**
- * 找「升级来源」的 pi 包根目录。
- *
- * 与 vendor-pi.mjs 的 findPiRoot 保持同一套候选顺序：
- * YAN_PI_SRC → 各全局安装位置 → PATH shim 反推。
- * 这里只用于读版本 / 提示，真正的定位仍以 vendor-pi.mjs 为准。
- */
 function findSourceRoot() {
   const candidates = []
   if (process.env.YAN_PI_SRC) candidates.push(process.env.YAN_PI_SRC)
@@ -78,7 +51,6 @@ function findSourceRoot() {
   return null
 }
 
-/** 自检失败时告诉用户到底该做什么 */
 function repairHints() {
   log('')
   log('修复清单（按顺序试）：')
@@ -134,7 +106,6 @@ if (res.status !== 0) {
   process.exit(res.status ?? 1)
 }
 
-/* 自定义服务接入时靠这张表补「能否思考」，新版 pi 的目录可能多了模型 */
 log('\n重新生成模型能力表 …')
 const catalog = spawnSync(process.execPath, [join(root, 'scripts', 'gen-pi-model-catalog.mjs')], { stdio: 'inherit', env: process.env })
 if (catalog.error || catalog.status !== 0) {

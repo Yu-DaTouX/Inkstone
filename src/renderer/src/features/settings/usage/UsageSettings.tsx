@@ -1,10 +1,3 @@
-/**
- * 设置 → 用量（v3，WP-42）。
- *
- * 数据只来自现有聚合 `window.yan.usageStats(range)`（本机会话文件增量统计）。
- * 图表用 design/tokens 的 `--data-*` 数据色令牌画真实条形，表格与图表同源；
- * 空 / 失败都有明确状态；不估算成本。「按项目」在现有接口里没有数据，如实说明。
- */
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import type { UsageStatsResult } from '../../../../../shared/ipc'
@@ -22,12 +15,13 @@ import {
   type UsageDimension
 } from './usage-model'
 import { UsageStatsGrid } from './UsageStatsGrid'
+import { UsageCurrency } from './UsageCurrency'
+import { useMoney } from '../../../components/chat/UsageOverview'
 
 type Status = 'loading' | 'ready' | 'error'
 type UsageView = 'chart' | 'table'
 
 export interface UsageSettingsProps {
-  /** 「运行总览」入口；缺省由父级（S0 根）接正式 v3 路由。 */
   onOpenRuns?: () => void
 }
 
@@ -40,6 +34,7 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
   const [stats, setStats] = useState<UsageStatsResult | null>(null)
   const [status, setStatus] = useState<Status>('loading')
   const [nonce, setNonce] = useState(0)
+  const money = useMoney()
 
   useEffect(() => {
     let alive = true
@@ -80,7 +75,6 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
 
   const empty = status === 'ready' && (stats?.sessions ?? 0) === 0 && (stats?.tokens ?? 0) === 0
 
-  /* 三个维度都从真实聚合导出；「按项目」没有数据源，返回 null 走明确提示。 */
   const bars: UsageBar[] | null =
     status !== 'ready' || !stats
       ? null
@@ -98,6 +92,8 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
       <p className="settings-note" role="note">
         {text.usageNote}
       </p>
+
+      <UsageCurrency text={text} />
 
       <div className="settings-usage-bar">
         <Segmented
@@ -129,7 +125,7 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
 
       {status === 'ready' && stats && !empty ? (
         <>
-          <UsageStatsGrid stats={stats} text={text} />
+          <UsageStatsGrid stats={stats} text={text} money={money} />
 
           <Separator />
 
@@ -193,6 +189,7 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
                         </th>
                         <th scope="col">{text.usageTokensColumn}</th>
                         <th scope="col">{text.usageShareColumn}</th>
+                        {dimension === 'model' ? <th scope="col">{text.usageCostColumn}</th> : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -201,6 +198,7 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
                           <td title={bar.key}>{bar.label}</td>
                           <td className="settings-table__num">{compactNumber(bar.value)}</td>
                           <td className="settings-table__num">{shareText(bar.share)}</td>
+                          {dimension === 'model' ? <td className="settings-table__num">{money(stats?.models.find((model) => model.key === bar.key)?.cost ?? 0)}</td> : null}
                         </tr>
                       ))}
                     </tbody>

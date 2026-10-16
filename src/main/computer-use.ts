@@ -1,19 +1,3 @@
-/**
- * 电脑操作（Computer use）：让模型通过 Windows 的界面自动化接口看窗口、点按钮、打字。
- *
- * ── 为什么不内置 ──
- * 实现用开源的 Windows-MCP（MIT，https://github.com/cursortouch/windows-mcp），它是 Python 包。
- * 砚只带 Node，不为它打包一套 Python：用户在设置页点「安装 uv」后，由 uv 按需下载
- * Python 3.13 与 windows-mcp（`uvx`），装在用户自己的 uv 缓存里，砚不分发这些文件。
- *
- * ── 只开放界面操作 ──
- * Windows-MCP 还带 PowerShell、注册表、文件、进程等工具，和 pi 自带的命令行/文件工具重复，
- * 且会绕开砚的确认流程。这里用它自带的 `--tools` 白名单只开放看屏幕与操作界面的工具。
- *
- * ── 登记方式 ──
- * 写进宿主的 MCP 配置（`mcp-servers.json`，模型不能改），命令用 uvx 的绝对路径，
- * 这样刚装完 uv、本进程 PATH 还没刷新时也能启动。关闭 = 删掉这一条。
- */
 import { spawn } from 'node:child_process'
 import { StringDecoder } from 'node:string_decoder'
 import { existsSync } from 'node:fs'
@@ -24,7 +8,6 @@ import { mcpServersFile } from './mcp/config'
 
 export const COMPUTER_USE_SERVER_ID = 'windows-mcp'
 
-/** 只开放「看」与「操作界面」的工具（大小写与 Windows-MCP 一致） */
 export const COMPUTER_USE_TOOLS = [
   'Snapshot',
   'Screenshot',
@@ -42,21 +25,16 @@ export const COMPUTER_USE_TOOLS = [
 ] as const
 
 export interface ComputerUseStatus {
-  /** 只有 Windows 能用 */
   supported: boolean
-  /** uvx 的位置；null = 还没装 uv */
   uvx: string | null
   enabled: boolean
-  /** 能用 winget 一键安装 uv */
   canInstallUv: boolean
 }
 
 export interface ComputerUseResult {
   ok: boolean
   error?: string
-  /** 失败时命令输出的尾部 */
   log?: string
-  /** 没有 winget：界面给出 uv 官方安装说明的链接 */
   needsManual?: boolean
 }
 
@@ -72,7 +50,6 @@ function findOnPath(name: string, extraDirs: string[] = []): string | null {
   return null
 }
 
-/** uv 的常见安装位置：刚装完时本进程的 PATH 还是旧的，所以显式补上 */
 function uvDirs(): string[] {
   const local = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local')
   return [join(local, 'Microsoft', 'WinGet', 'Links'), join(homedir(), '.local', 'bin'), join(homedir(), '.cargo', 'bin')]
@@ -117,7 +94,6 @@ export async function computerUseStatus(): Promise<ComputerUseStatus> {
   try {
     enabled = (await readRawServers()).list.some((item) => isOurs(item) && (item as { enabled?: unknown }).enabled !== false)
   } catch {
-    /* 配置坏了由能力页的配置警告来说，这里当作未启用 */
   }
   return { supported, uvx: supported ? findUvx() : null, enabled, canInstallUv: supported && !!findOnPath('winget') }
 }
@@ -162,7 +138,6 @@ function run(command: string, args: string[], timeoutMs: number): Promise<{ code
 
 const tail = (log: string): string => log.trim().split('\n').slice(-12).join('\n')
 
-/** 用户点了「安装 uv」：走 winget（系统自带的包管理器），不下载执行远程脚本 */
 export async function installUv(): Promise<ComputerUseResult> {
   const winget = findOnPath('winget')
   if (!winget) return { ok: false, needsManual: true, error: '没有找到 winget，请按 uv 官方说明安装后回来刷新' }
@@ -183,10 +158,6 @@ function serverEntry(uvx: string): Record<string, unknown> {
   }
 }
 
-/**
- * 开启：先让 uvx 把 Python 与 windows-mcp 下载好（首次可能要一两分钟，
- * 放在这里做，免得模型第一次调用时撞上 MCP 的 20 秒握手超时），再登记配置。
- */
 export async function enableComputerUse(): Promise<ComputerUseResult> {
   if (process.platform !== 'win32') return { ok: false, error: '电脑操作目前只支持 Windows' }
   const uvx = findUvx()

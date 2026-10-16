@@ -2,8 +2,6 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import ts from 'typescript'
 
-// Execute the production host functions with controlled IO; importing index.ts would launch Electron.
-// 交接协调在 handoff-coordinator.ts；宿主能力经 `host` 注入，这里用假 host 驱动。
 export async function runHandoffHostRegressionTests(ok) {
   const source = await readFile(new URL('../src/main/index.ts', import.meta.url), 'utf8')
   const ast = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true)

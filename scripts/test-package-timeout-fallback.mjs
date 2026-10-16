@@ -1,12 +1,11 @@
-/** 当前runPi超时分支：taskkill启动失败有处理，不启动真实进程。 */
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { readFile } from 'node:fs/promises'
 import { runInNewContext } from 'node:vm'
 import { transform } from 'esbuild'
+import { sliceDeclaration } from './lib/source-slice.mjs'
 const source = await readFile('src/main/packages.ts', 'utf8')
-const start = source.indexOf('function runPi(')
-const snippet = source.slice(start, source.indexOf('\n/**', start))
+const snippet = sliceDeclaration(source, 'function runPi(')
 const { code } = await transform(snippet + '\nglobalThis.runPi=runPi', { loader: 'ts' })
 let timer, finish, killed = false
 const killer = new EventEmitter()

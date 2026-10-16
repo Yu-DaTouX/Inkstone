@@ -1,17 +1,3 @@
-/**
- * 跨设备同步核心服务（WP-53 A 阶段）。
- *
- * 设计口径（决定 D1：同步文件夹，不建账号）：
- *   · 用户指定一个普通文件夹（OneDrive / 坚果云 / Syncthing 等负责传输），
- *     同步核心只按文件读写，不关心底层用哪种云盘。
- *   · 每台设备有稳定 deviceId / deviceName；每条记录带修改时间与来源设备。
- *   · 变更判定 = 与上次同步基线比对哈希，而不是比对时钟，避免两端时钟不一致。
- *   · 冲突（两端自上次同步后都改过同一条且内容不同）：本地版本不动、他端版本写成
- *     带设备名与时间后缀的副本，并生成冲突记录；**绝不静默覆盖**。
- *   · 同步目录缺失 / 不可写 / 文件损坏 / 半写入：跳过并报告，不崩溃、不删除。
- *
- * 这里是纯 Node 实现，不依赖 Electron；接线层负责传入真实目录并调用 `sync()`。
- */
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -26,17 +12,11 @@ import type { SyncResolution } from '../../shared/sync'
 import type { BaselineFile, ConflictRecord, RemoteRecord, SyncPaths, SyncRecord, SyncReport } from './types'
 
 export interface SyncServiceOptions {
-  /** 本机数据目录（真实接线为 `YAN_DIR`）。 */
   dataDir: string
-  /** 用户指定的同步文件夹。 */
   syncRoot: string
-  /** pi 私有目录；提示词模板在其 `prompts/` 下。缺省与 dataDir 同根。 */
   piAgentDir?: string
-  /** 逐项覆盖各存储位置（主要给测试与将来迁移用）。 */
   paths?: Partial<SyncPaths>
-  /** 固定 deviceId（测试用）；缺省从 dataDir 持久化。 */
   deviceId?: string
-  /** 设备显示名（测试用）；缺省优先读持久化，其次系统 hostname。 */
   deviceName?: string
   now?: () => number
 }
@@ -72,7 +52,6 @@ export class SyncService {
   private optionsDeviceName?: string
   private optionsDeviceId?: string
 
-  /** 稳定设备身份；首次使用时在数据目录落盘。 */
   device(): Promise<{ deviceId: string; deviceName: string }> {
     return (this.devicePromise ??= this.loadDevice())
   }
@@ -81,10 +60,6 @@ export class SyncService {
     return this.paths[name]
   }
 
-  /**
-   * 立即同步一次。串行执行，重复调用不会互相穿插。
-   * 任何单项失败都记进报告，不抛异常（除非 dataDir / syncRoot 参数本身非法）。
-   */
   sync(): Promise<SyncReport> {
     const run = this.chain.then(
       () => this.runSync(),
@@ -98,19 +73,10 @@ export class SyncService {
     return this.folder.readConflicts()
   }
 
-  /** 当前生效的同步文件夹（接线层与设置界面读它做展示）。 */
   get syncRoot(): string {
     return this.folder.root
   }
 
-  /**
-   * 处理一条冲突。三种方式都不丢内容：
-   *   · local  —— 本机版本为准：写回同步目录并把基线固定到本机哈希；
-   *   · remote —— 他端版本为准：合并进本机再把基线固定到他端哈希；
-   *   · both   —— 本机仍为主记录，他端另存一份（可复制类别生成本地副本；
-   *              单例 settings 把远端设置存成数据目录下的时间戳快照）。
-   * 成功后删除该冲突副本。失败返回可读原因，不改动基线；绝不静默覆盖。
-   */
   async resolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: string }> {
     const conflict = await this.folder.findConflict(id)
     if (!conflict) return { ok: false, error: '冲突不存在或已经处理' }
@@ -129,14 +95,12 @@ export class SyncService {
       }
 
       if (resolution === 'both') {
-        /* 他端版本先留下来（副本或快照），再让本机版本继续做主。 */
         const copy = buildConflictCopy(conflict)
         if (copy) await this.store.apply(copy)
         else await this.preserveSettingsSnapshot(conflict)
       }
 
       if (conflict.localPayload !== undefined && localHash) {
-        /* local / both：本机版本写回同步目录，基线两端都指向本机哈希。 */
         await this.folder.writeRecord({
           key: conflict.key,
           kind: conflict.kind,
@@ -148,11 +112,9 @@ export class SyncService {
         })
         await this.updateBaseline(conflict.key, { localHash, remoteHash: localHash, syncedAt: now })
       } else if (resolution === 'both') {
-        /* both 但本机已无版本：退回采用他端，至少内容不丢。 */
         await this.store.apply(this.remoteRecordOf(conflict))
         await this.updateBaseline(conflict.key, { localHash: remoteHash, remoteHash, syncedAt: now })
       } else {
-        /* local 但本机没有版本：不能假装本机赢，基线保留他端。 */
         await this.updateBaseline(conflict.key, { remoteHash, syncedAt: now })
       }
       await this.folder.removeConflict(id)
@@ -171,7 +133,6 @@ export class SyncService {
     }
   }
 
-  /** 单例设置无法复制成本地第二份，把他端内容原样留成数据目录下的时间戳快照。 */
   private async preserveSettingsSnapshot(conflict: ConflictRecord): Promise<void> {
     const stamp = formatTime(conflict.remoteModifiedAt || this.now()).replace(/\D/g, '')
     const target = join(this.dataDir, `desktop.remote-${stamp}-${shortHash(conflict.id, 6)}.json`)
@@ -244,7 +205,6 @@ export class SyncService {
         })
       } catch (error) {
         report.errors.push(`${key}：${describe(error)}`)
-        // 失败时保留原基线，下次再试；不写半成品。
         if (base) next.records[key] = base
       }
     }
@@ -324,7 +284,6 @@ export class SyncService {
         suffix: `来自 ${remoteRecord.deviceName} · ${formatTime(now)}`
       }
       await this.folder.writeConflict(entry)
-      // 冻结：两端各保留自己的版本，不再互相覆盖，直到用户处理。
       next.records[key] = { localHash, remoteHash, syncedAt: now }
       report.conflicts.push(entry)
     }
@@ -343,7 +302,6 @@ export class SyncService {
       } else if (base) {
         next.records[key] = base
       } else {
-        // 双方都有内容、都没有基线（例如都一样但基线丢了）：以本地为准推一次。
         if (localHash === remoteHash) next.records[key] = { localHash, remoteHash: localHash, syncedAt: now }
         else await push()
       }
@@ -351,19 +309,16 @@ export class SyncService {
     }
 
     if (localRecord && !remoteRecord) {
-      // 本机独有 / 他端删除：A 阶段不做删除同步，以本机为准写回，保证两端一致。
       await push()
       return
     }
 
     if (!localRecord && remoteRecord) {
-      // 远端独有：拉取；若本机曾同步过又删除了本机副本，且远端未变，则尊重本机删除。
       if (remoteChanged || !base) await pull()
       else next.records[key] = base
       return
     }
 
-    // 两边都没有：丢掉基线（本机 / 远端均已不存在）。
   }
 
   private async readBaseline(deviceId: string, report: SyncReport): Promise<BaselineFile> {
@@ -386,10 +341,6 @@ export class SyncService {
       }
       return { v: 1, deviceId, records }
     } catch (error) {
-      /*
-       * 基线损坏不阻塞同步：隔离原文件后从空基线开始。空基线只会让下一次同步
-       * 更保守（可能多报一次冲突），绝不会静默丢掉任何一端的内容。
-       */
       const backup = `${this.stateFile}.corrupt-${randomUUID()}`
       await rename(this.stateFile, backup).catch(() => undefined)
       report.skipped.push(`${this.stateFile}：基线损坏（${describe(error)}），已隔离到 ${backup}`)

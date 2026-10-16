@@ -1,21 +1,3 @@
-/**
- * 两个并发写入子代理的真实矩阵（L03）。
- *
- * ⚠️ 这是**真跑**：会起两个（有时更多）`pi --mode rpc` 子进程，并且要求
- *    模型真的调用 write/edit 把文件写进各自 worktree —— 所以成本标记是
- *    `cost: 1`。断言只针对**运行模型**，不针对模型说了什么。
- *
- * 这里覆盖的是一条完整链路，而不是单点：
- *   ① 并发槽位：两个同时在跑，第三个被明确拒绝（D1）
- *   ② 写入隔离：主工作树在合并前看不到任何子代理产物
- *   ③ 差异归属：每个任务的 diff 只含自己写的文件
- *   ④ 合并 / 放弃：主树结果可解释，放弃也留补丁
- *   ⑤ 冲突：两个 worktree 改同一行，先合并者赢，后者判冲突且不半截写入
- *   ⑥ 只读封堵：`controlled-cwd` + `--tools` 白名单让写入真的不成立（D4）
- *   ⑦ 后台存活：切查看对象不关闭运行中的子代理
- *   ⑧ 退出归档：留一个未审阅的任务给退出，断言在 Node 侧（app 退出后）
- *      由 test-live 的 `afterExit` 检查（`YAN_DIR/subagents` + 主树 + 临时目录）
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -39,13 +21,6 @@
     return runOf(id)
   }
 
-  /**
-   * 等差异读完。
-   *
-   * 状态变 done 不等于差异已经算完：`finalize` 是**异步**的（要跑几条
-   * git 命令才拿到 numstat/patch）。实测踩到：并发结束的两个任务在同一
-   * 瞬间变 done，紧接着读 diff 全是 null，看起来像“模型根本没写文件”。
-   */
   const waitDiff = async (id, timeoutMs = 30_000) => {
     const t0 = Date.now()
     while (Date.now() - t0 < timeoutMs) {
@@ -57,13 +32,11 @@
     return runOf(id)
   }
 
-  /** 等一个任务真的结束并算完差异：状态到终态 + `diff` 已就绪 */
   const settle = async (id, timeoutMs = 75_000) => {
     await waitRun(id, ['done', 'error', 'cancelled'], timeoutMs)
     return waitDiff(id)
   }
 
-  /** 主工作树根层文件名（走真实 IPC，不是猜测） */
   const rootEntries = async () => {
     const res = await window.yan.listDir('')
     return (res?.entries ?? []).map((e) => e.name)
@@ -79,7 +52,6 @@
     `${mark} 请用 write 工具把当前工作目录下 README.md 的**整个文件内容**改成只有一行：LINE-${value}（覆盖写入）。` +
     '必须真的写文件，完成后只回复“完成”。'
 
-  /** 诊断用：把一条 run 用过的工具列出来（模型不听话时才看得出原因） */
   const dumpTools = (run) =>
     JSON.stringify(
       (run?.transcript ?? []).flatMap((m) => (m.toolCalls ?? []).map((t) => [t.name, t.status, (t.output ?? '').slice(0, 60)]))
@@ -223,7 +195,6 @@
     if (ro.run) {
       out.push(`  第一次：终态 ${ro.run.status}，review=${ro.run.review}，写类工具调用 ${ro.calls.length} 次`)
       if (ro.calls.length === 0) {
-        /* 模型行为不稳（有时只 read/ls 就下结论），再给一次机会 */
         out.push('  这次没尝试写，再跑一次')
         ro = await runReadonly('YAN-READONLY-RETRY')
         out.push(`  第二次：终态 ${ro.run?.status}，review=${ro.run?.review}，写类工具调用 ${ro.calls.length} 次`)
@@ -244,10 +215,6 @@
           'pi 明确报告工具不可用（Tool write not found）'
         )
       } else {
-        /*
-         * 模型也可能“一看没有 write 工具就直接说不写”。这同样是白名单生效的
-         * 证据，但要把它说的话打出来（不同模型行为不同，不能默默放过）。
-         */
         const said = (fro.transcript ?? []).map((m) => m.text ?? '').join(' ').trim()
         out.push(`  模型没有调用写类工具，它说：${said.slice(0, 240)}`)
         ok(said.length > 0, '转录里有模型的回复文本')
@@ -269,7 +236,6 @@
       const beforeL = runOf(idL)
       const cwdBefore = beforeL?.cwd
       ok(!!beforeL, '长任务在列表里')
-      /* 切到另一个会话/项目查看（不改运行实例本身） */
       const sessionBefore = st().session
       const parent = mainCwd().replace(/[\\/][^\\/]+$/, '')
       store.setState({ session: { ...(sessionBefore ?? {}), sessionId: 'probe-other-session', cwd: parent } })
@@ -278,10 +244,6 @@
       ok(!!afterL, '切换查看对象后，后台子代理仍在 store 里')
       ok(afterL?.cwd === cwdBefore, '后台子代理的 cwd 没有被查看对象切换改掉')
       ok(!!afterL?.parentSessionId, '归属仍记在启动它的父会话上')
-      /*
-       * 实施-20 U4：会话流只列**当前会话**的子代理。切到别的会话看不到它，
-       * 切回来又能看到 —— 这就是归属过滤的实际行为。
-       */
       ok(!q('[data-testid="subagent-group"]'), '切到别的会话后不显示属于原会话的子代理')
       store.setState({ session: sessionBefore })
       await sleep(900)

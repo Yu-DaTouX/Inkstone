@@ -8,7 +8,6 @@ import { DetailTrigger } from '../shell/DetailPopover'
 import type { ContextInspectSnapshot } from '../../../../shared/context-inspect'
 import { compactionRunningText, compactionSummary } from '../../state/compaction-view'
 
-/** The agent's reported pressure; the UI does not choose a budget or compact automatically. */
 function useContextUsage() {
   const session = useStore(s => s.session)
   const stats = useStore(s => s.stats)
@@ -29,7 +28,6 @@ const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
   system: 'ctx.cat.system', user: 'ctx.cat.user', assistant: 'ctx.cat.assistant', thinking: 'ctx.cat.thinking', tools: 'ctx.cat.tools', free: 'ctx.cat.free'
 }
 
-/** 383.8k / 1M style figures for the window header and legend. */
 function shortTokens(n: number): string {
   if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}M`
   if (n >= 1000) return `${+(n / 1000).toFixed(1)}k`
@@ -41,7 +39,6 @@ const SECTION_LABEL: Record<string, MessageKey> = {
   'project-context': 'ctx.sec.projectContext', cwd: 'ctx.sec.cwd', appended: 'ctx.sec.appended', additions: 'ctx.sec.additions', between: 'ctx.sec.between'
 }
 
-/** Fixed parts pi already assembled: system prompt sections and tool definitions (estimated, read-only). */
 function ContextInspect({ tokens }: { tokens: number }) {
   const t = useT()
   const [snap, setSnap] = useState<ContextInspectSnapshot | null>(null)
@@ -70,7 +67,6 @@ function ContextInspect({ tokens }: { tokens: number }) {
   </details>
 }
 
-/** Details shared by the inspector section and the composer popover. */
 function ContextDetails() {
   const t = useT()
   const compact = useStore(s => s.compact)
@@ -128,7 +124,6 @@ export function NativeContextSection() {
   )
 }
 
-/** Composer entry, placed left of the model chip: a ring with the percentage; the details open above it. */
 export function ContextRing() {
   const t = useT()
   const { session, known, percent, tone } = useContextUsage()

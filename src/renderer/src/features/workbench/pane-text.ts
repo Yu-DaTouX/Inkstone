@@ -1,4 +1,3 @@
-/** 日志与额度页签自己的界面文案；其余沿用既有 `rp.*` / `tile.*` / `quota.*` / `acct.*` 键。 */
 export interface WorkbenchPaneText {
   logFilter: string
   logNoMatch: string

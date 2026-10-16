@@ -1,13 +1,3 @@
-/**
- * 「账号额度」磁贴的数据：把砚登录的各个账号、以及用户选择显示的本机 CLI 账号的额度汇成一张表。
- *
- * 来源与边界：
- *   · 砚的 ChatGPT 账号：每个保存的账号各查一次（`codex-accounts.ts` 负责凭证）。
- *   · 砚的其它服务（Claude 订阅、Command Code、DeepSeek、OpenRouter）：沿用右栏额度的查询。
- *   · 本机 CLI（Codex CLI、Claude Code、Gemini CLI）：默认关闭，用户在磁贴里打开。
- *     只读它们的登录文件、从不刷新或改写 —— 刷新会让那个 CLI 自己的登录失效。
- * 令牌只在主进程里用来发请求，返回给渲染端的只有身份、窗口百分比和余额。
- */
 import { net } from 'electron'
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -37,14 +27,11 @@ const PREFS_FILE = join(YAN_DIR, 'account-quota.json')
 const TIMEOUT_MS = 12_000
 const http = net.fetch.bind(net)
 
-/** 有自助额度 / 余额接口、且用 API key 的服务（与右栏额度同一份查询）。 */
 const KEY_PROVIDERS: Array<{ id: string; name: string }> = [
   { id: 'commandcode', name: 'Command Code' },
   { id: 'deepseek', name: 'DeepSeek' },
   { id: 'openrouter', name: 'OpenRouter' }
 ]
-
-/* ------------------------------------------------------------ 偏好：来源开关与备注 */
 
 let prefsChain: Promise<unknown> = Promise.resolve()
 
@@ -81,7 +68,6 @@ export function setAccountQuotaSource(source: AccountQuotaCliSource, enabled: bo
   })
 }
 
-/** 空备注 = 恢复默认名。 */
 export function setAccountLabel(key: string, label: string): Promise<AccountQuotaPrefs> {
   return updatePrefs((prefs) => {
     const value = normalizeAccountLabel(label)
@@ -90,8 +76,6 @@ export function setAccountLabel(key: string, label: string): Promise<AccountQuot
     else delete prefs.labels[key]
   })
 }
-
-/* ------------------------------------------------------------ 小工具 */
 
 async function readJson(file: string): Promise<Record<string, unknown> | null> {
   try {
@@ -117,7 +101,6 @@ function friendly(e: unknown): string {
 
 type CardBase = Omit<AccountQuotaCard, 'status' | 'windows' | 'checkedAt'>
 
-/** 把一张卡的查询包起来：任何失败都只影响这一张。 */
 async function settle(base: CardBase, run: () => Promise<Partial<AccountQuotaCard>>): Promise<AccountQuotaCard> {
   const card: AccountQuotaCard = { ...base, status: 'ok', windows: [], checkedAt: Date.now() }
   try {
@@ -128,8 +111,6 @@ async function settle(base: CardBase, run: () => Promise<Partial<AccountQuotaCar
 }
 
 const limitedIf = (windows: AccountQuotaCard['windows']): 'limited' | 'ok' => (windows.some((w) => !w.informational && w.total > 0 && w.used >= w.total) ? 'limited' : 'ok')
-
-/* ------------------------------------------------------------ 砚的账号 */
 
 function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
   const base: CardBase = { key: t.key, source: 'yan', provider: 'openai-codex', name: 'ChatGPT', email: t.email, plan: t.plan, active: t.active, switchable: true }
@@ -144,7 +125,6 @@ function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
   })
 }
 
-/** 砚里登录的 Claude 订阅（pi 的 `anthropic` OAuth 条目）；过期时等 pi 刷新。 */
 async function yanClaudeCard(): Promise<AccountQuotaCard | null> {
   const entry = (await readAuthEntry('anthropic')) as { type?: string; access?: unknown; expires?: unknown } | undefined
   if (entry?.type !== 'oauth' || typeof entry.access !== 'string') return null
@@ -167,8 +147,6 @@ async function yanKeyCard(provider: { id: string; name: string }): Promise<Accou
     return { windows, balance, status: limitedIf(windows) }
   })
 }
-
-/* ------------------------------------------------------------ 本机 CLI（只读） */
 
 function claudeUsage(accessToken: string): Promise<unknown> {
   return getJson('https://api.anthropic.com/api/oauth/usage', {
@@ -246,14 +224,8 @@ const CLI_CARDS: Record<AccountQuotaCliSource, () => Promise<AccountQuotaCard | 
   'gemini-cli': geminiCliCard
 }
 
-/* ------------------------------------------------------------ 汇总 */
-
 let inflight: Promise<AccountQuotaReport> | null = null
 
-/**
- * 当前账号额度用尽时换到下一个还有额度的 ChatGPT 账号（同一个 openai-codex 服务，模型不变）。
- * 顺序、跳过与可用判定见 shared/quota-failover.ts；这里逐个查额度，选中后复用普通的账号切换。
- */
 export async function failoverCodexAccount(skip: string[]): Promise<CodexFailoverResult> {
   const targets = await codexAccountTargets()
   const activeKey = targets.find((t) => t.active)?.key
@@ -281,7 +253,6 @@ export async function failoverCodexAccount(skip: string[]): Promise<CodexFailove
   return { ok: true, key: pick.key, fromKey: activeKey, email: target?.email, label: prefs.labels[pick.key] }
 }
 
-/** 同时只跑一次：磁贴打开、切换后刷新、定时刷新撞在一起时共用同一份结果。 */
 export function accountQuotaReport(): Promise<AccountQuotaReport> {
   inflight ??= buildReport().finally(() => {
     inflight = null
@@ -292,7 +263,6 @@ export function accountQuotaReport(): Promise<AccountQuotaReport> {
 async function buildReport(): Promise<AccountQuotaReport> {
   const prefs = await readAccountQuotaPrefs()
   const targets = await codexAccountTargets().catch(() => [] as CodexAccountTarget[])
-  /* 当前账号排最前，其余按保存顺序 */
   targets.sort((a, b) => Number(b.active) - Number(a.active))
   const jobs: Array<Promise<AccountQuotaCard | null>> = [
     ...targets.map(yanCodexCard),

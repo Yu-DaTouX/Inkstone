@@ -1,10 +1,3 @@
-/**
- * `yan capabilities search / discover / prepare / acquire` 的实现：能力目录（含已配置 MCP 服务的工具）、
- * 联网发现候选、生成接入计划、按计划接入（技能包 / 插件包 / 本地与远程 MCP）。
- *
- * 候选与计划只由宿主持有：模型只能回传 ID，内容从这里的缓存取（10 分钟过期）——
- * 主进程负责结构校验与来源一致性。控制器的状态经 `CapabilityAcquisitionHost` 读取。
- */
 import type { CapabilityAuthorizationChoice, CapabilityAuthorizationPrompt, CapabilityRunOptions, GoalCommandHost } from '../agent'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
@@ -61,14 +54,9 @@ export interface CapabilityAcquisitionHost {
   getState(): SessionState | null
   confirmCapabilityAuthorization(): ((request: CapabilityAuthorizationPrompt) => Promise<CapabilityAuthorizationChoice>) | undefined
   bundledSkills(): string[]
-  /**
-   * 接入批准：与提问同一个面板与计时（用户看到才开始倒数，可加时）。
-   * 到点没答复以 `question_timeout` 拒绝，调用方按「跳过」处理。
-   */
   requestApproval(request: { title: string; message: string; options: string[]; placeholder: string; timeout: number }): Promise<{ value?: string; cancelled?: boolean }>
 }
 
-/** 批准面板的两个选项（用户点的就是这段文字，按原文比对）。 */
 const SKILL_SCOPE_OPTIONS: Record<AcquiredSkillScope, string> = {
   session: '仅本次会话使用',
   user: '安装到我的技能（所有会话可用）'
@@ -82,27 +70,6 @@ function formatSize(bytes: number): string {
 export class CapabilityAcquisition {
   constructor(private readonly host: CapabilityAcquisitionHost) {}
 
-  /**
-   * `yan capabilities search`：把「这个会话现在能用什么」变成模型可读的候选列表。
-   *
-   * 只覆盖**已装 / 已加载**范围（S2）；联网发现是 S5 的 `capabilities.discover`。
-   * 目录里出现**不代表授权**：调用仍走各自命令的身份与边界校验（实施-04 §6）。
-   */
-  /**
-   * 把已配置 MCP 服务的工具接进能力目录（实施-04 S4）。
-   *
-   * 为什么必须连一次服务：MCP 工具名对 pi **完全不可见**（S1 预检四条证据），
-   * 模型唯一能“自己发现”它们的入口就是这份目录 —— 所以 `capabilities search`
-   * 必须能列出工具，而不是只列内置命令与技能。这正是 S4 的出口：
-   * 「工具不直接出现在初始 prompt 也能用」。
-   *
-   * 两个刻意的取舍：
-   * 1. **连不上的服务不冒充可用**：单列一条 `mcpServers` 状态，
-   *    带 `disconnected` / `needs-auth` 与真实原因，模型据此知道“有这个服务但连不上”，
-   *    而不是去猜自己命令写错了。
-   * 2. **总超时有界**：不能因为一个服务挂着就把整次 search 拖死；
-   *    超时的服务与连不上同样处理。
-   */
   async collectMcpCatalog(): Promise<{
     tools: McpCatalogEntry[]
     servers: Array<Record<string, unknown>>
@@ -129,7 +96,6 @@ export class CapabilityAcquisition {
               toolName: tool.name,
               ...(tool.description ? { description: tool.description } : {}),
               schemaRevision: schemaRevisionOf(tool.inputSchema),
-              /* 服务自报 readOnlyHint 不当权限（§4）：目录里一律标 unknown。 */
               effect: 'unknown',
               ...(projectScopeById.get(serverId) ? { projectScope: projectScopeById.get(serverId) } : {})
             })
@@ -159,7 +125,6 @@ export class CapabilityAcquisition {
     return { tools, servers }
   }
 
-  /** 目录收集的硬超时：比单次调用短得多，因为它在**每次 search** 都要跑。 */
   async withCatalogTimeout<T>(work: Promise<T>, serverId: string): Promise<T> {
     let timer: NodeJS.Timeout | undefined
     const timeout = new Promise<never>((_, reject) => {
@@ -172,28 +137,13 @@ export class CapabilityAcquisition {
     }
   }
 
-  /**
-   * 本轮发现到的候选（仅宿主持有）。
-   *
-   * 为什么不让模型把候选原样传回 `prepare`：那等于让模型自己决定「要装什么」，
-   * 而 §8 明确要求**主进程负责结构校验与来源一致性**。模型只能回传 ID，
-   * 候选内容从这条缓存里取 —— 缓存过期（10 分钟）就要求重新检索。
-   */
   readonly discoveryCandidates = new Map<string, { candidate: CapabilityCandidate; at: number }>()
 
-  /**
-   * 最近生成过的接入计划（仅宿主持有）。
-   *
-   * `prepare` 只把 `planId` 交给模型，`acquire` 拿回同一个 ID 时要从这里取回
-   * 完整计划与候选 —— 否则模型可以把任意字符串当计划传回来（§8：主进程负责
-   * 结构校验与来源一致性）。TTL 与候选一致（10 分钟）。
-   */
   readonly acquisitionPlans = new Map<
     string,
     { plan: AcquisitionPlan; candidate: CapabilityCandidate; digest: string; at: number }
   >()
 
-  /** `yan capabilities discover`：联网检索缺失能力（实施-04 §7）。 */
   async runCapabilitiesDiscover(params: Record<string, unknown>) {
     const strategy = await this.host.capabilityOpts()?.getCapabilityStrategy?.()
     if (strategy === 'existing-only') {
@@ -205,7 +155,6 @@ export class CapabilityAcquisition {
     const queryText = paramString(params, ['queryText', 'query-text', 'query', 'text']) ?? ''
     const goalText = paramString(params, ['goal', 'goalText', 'goal-text'])
     const timeoutMs = paramNumber(params, 'timeoutMs')
-    /* 用户点名的 GitHub 技能仓库：`--repo owner/name`（也接受 github.com 链接），逗号分隔可多个 */
     const repoParam = paramString(params, ['repo', 'repos'])
     const skillRepos = repoParam
       ? repoParam.split(',').map((item) => parseSkillRepo(item)).filter((item) => item !== null).map(({ owner, repo }) => `${owner}/${repo}`)
@@ -234,7 +183,6 @@ export class CapabilityAcquisition {
         reason: outcome.reason,
         sources: outcome.sources,
         candidates: outcome.candidates.map(({ candidate, score, reasons }) => {
-          /* 逐文件哈希只给宿主核对用，模型看到文件数即可 */
           const { githubSkill, ...rest } = candidate
           return {
             ...rest,
@@ -243,10 +191,6 @@ export class CapabilityAcquisition {
             scoreReasons: reasons
           }
         }),
-        /*
-         * 说清这一层能做到什么：目录元数据**只证明发布来源存在**，
-         * 不等于已审计、也不等于能在这台机器上跑（§8）。
-         */
         notice:
           '候选来自公开目录：只证明发布来源存在，不等于内容已审计或已验证可用；github: 开头的技能固定到提交，接入时逐文件核对。' +
           '技能用 yan capabilities acquire --candidate <候选ID> 接入：砚会弹出限时批准面板，由用户选择「仅本次会话」或「安装到我的技能」，不需要先在对话里征求同意。'
@@ -264,7 +208,6 @@ export class CapabilityAcquisition {
     }
   }
 
-  /** `yan capabilities prepare`：把已检索到的候选变成接入计划（**不执行**）。 */
   async runCapabilitiesPrepare(params: Record<string, unknown>) {
     const candidateId = paramString(params, ['candidateId', 'candidate', 'candidate-id', 'id'])
     if (!candidateId) {
@@ -289,7 +232,6 @@ export class CapabilityAcquisition {
           ...(candidate.integrity ? { expectedIntegrity: candidate.integrity } : {})
         })
         candidate = { ...candidate, integrity: metadata.integrity }
-        /* prepare 之后候选指纹含精确 tarball SRI；后续不能被同版本 registry 漂移替换。 */
         this.discoveryCandidates.set(candidateId, { candidate, at: entry.at })
       } catch (error) {
         throw new CapabilityCommandError(
@@ -331,18 +273,8 @@ export class CapabilityAcquisition {
     }
   }
 
-  /**
-   * `yan capabilities acquire`：执行接入计划（实施-04 §10）。
-   *
-   * 分三档如实处理，**不把「建了事务」当「装好了」**：
-   *   · `needs-auth` / `unsupported` —— 候选自身缺条件，直接停住（`--authorize` 也绕不过去）；
-   *   · `remote` MCP —— **真的登记**：核验端点 → 写受管配置 → 复核 → `resumed`（S6b-1）；
-   *   · npm `pi-package` —— 获精确项目级代码授权后下载 / 校验并落受管 staging，安装仍等安全边界；
-   *   · 其它本地 installKind —— 未获精确授权时停住；相应下载 / 安装器未接通时保持 `pending-boundary`。
-   */
   async runCapabilitiesAcquire(params: Record<string, unknown>) {
     let planId = paramString(params, ['plan', 'planId', 'plan-id', 'id'])
-    /* 直接给候选 ID 时先代为 prepare：计划仍由宿主生成并缓存，模型少走一步。 */
     const shortcutCandidate = planId ? undefined : paramString(params, ['candidateId', 'candidate', 'candidate-id'])
     if (shortcutCandidate) {
       const prepared = await this.runCapabilitiesPrepare({ candidateId: shortcutCandidate })
@@ -397,10 +329,6 @@ export class CapabilityAcquisition {
     const operationId = operationIdOf({ planId: plan.planId, planRevision: plan.revision })
     const explicitAuthorize = params.authorize === true || params.authorize === 'true'
 
-    /*
-     * 通用 MCP 获取（远程登记与本地 mcp-package）已收口：不再写入砚的宿主 MCP 配置。
-     * 服务改由 pi 原生 mcp.json 承担；技能包与 pi-package 分支不受影响。
-     */
     if (['remote', 'mcp-package'].includes(candidate.installKind)) {
       return {
         data: {
@@ -442,10 +370,8 @@ export class CapabilityAcquisition {
       }
     }
 
-    /* 技能：限时批准面板 → 本次会话或「我的技能」；不走包授权、staging 与 runner 重启。 */
     if (candidate.installKind === 'skill-files') return this.acquireSkill({ plan, candidate })
 
-    /* §10：远程 MCP 不下载 —— 直接「核验端点 → 登记配置 → 连接 → 枚举工具」。 */
     if (candidate.installKind === 'remote') {
       return this.acquireRemoteMcp({ plan, candidate, digest, operationId, explicitAuthorize })
     }
@@ -496,7 +422,6 @@ export class CapabilityAcquisition {
     }
 
     const service = new AcquisitionService({ root: YAN_DIR })
-    /* begin 是幂等的：同一个计划第二次进来拿回同一条事务，不会又装一遍（§10）。 */
     const created = await service.begin({
       planId: plan.planId,
       planRevision: plan.revision,
@@ -551,7 +476,6 @@ export class CapabilityAcquisition {
         }
       }
     } else if (tx.state === 'verifying') {
-      /* 崩溃若发生在 stage 落盘后、pending-boundary 写入前，重放时补齐边界状态。 */
       const verified = await service.verifyStaged(tx.operationId)
       if (verified.ok) {
         tx = await service.markBoundary(tx.operationId, '受管 npm staging 已复核；等待项目 runner 空闲后再安装')
@@ -572,12 +496,6 @@ export class CapabilityAcquisition {
       else npmFailure = `受管 MCP staging 复核失败：${checked.problems.join('；')}`
     }
 
-    /*
-     * MCP npm 包由砚直接管理，不经过 pi install，也不要求重建当前 runner：
-     * 受管 stdio 配置登记后，当前 AgentController 下一次调用会懒加载新服务。
-     * 这里仍然保留 acquiring → verifying → activated → resumed 的证据链，
-     * 以免「包在 staging」被误报成「服务可用」。
-     */
     if (candidate.installKind === 'mcp-package') {
       return this.finishMcpPackageAcquire({
         service,
@@ -662,7 +580,6 @@ export class CapabilityAcquisition {
     }
   }
 
-  /** 候选 → 技能目录内的文件（路径相对技能目录）。目录源 / 本地声明只有单个 SKILL.md。 */
   private async skillFilesOf(candidate: CapabilityCandidate): Promise<{ files: AcquiredSkillFile[]; dirName?: string }> {
     if (candidate.githubSkill) {
       const files = await fetchGithubSkillFiles(candidate.githubSkill)
@@ -687,7 +604,6 @@ export class CapabilityAcquisition {
     }
   }
 
-  /** 批准面板正文：要装什么、从哪来、包含什么、审查结果。 */
   private skillApprovalMessage(input: {
     name: string
     description: string
@@ -719,12 +635,6 @@ export class CapabilityAcquisition {
     ].join('\n')
   }
 
-  /**
-   * 技能接入：取文件 → 内容审查 → 批准面板（限时）→ 写入本次会话或「我的技能」。
-   *
-   * 模型不能替用户批准：面板选项只由宿主生成，答复走 UI 请求通道。不批准、写了别的话
-   * 或超时都不装任何东西，并明确告诉模型不要重复请求。
-   */
   private async acquireSkill(input: { plan: AcquisitionPlan; candidate: CapabilityCandidate }) {
     const { plan, candidate } = input
     const summary = (state: string, extra: Record<string, unknown> = {}) => ({
@@ -771,7 +681,6 @@ export class CapabilityAcquisition {
       }
     }
 
-    /* 「我的技能」不能与随包技能重名，也不覆盖用户自己写的同名技能。 */
     const reserved = this.host.bundledSkills().map((path) => basename(dirname(path)))
     const userDir = join(userSkillsDir(), name)
     const userBlocked = reserved.includes(name)
@@ -912,7 +821,6 @@ export class CapabilityAcquisition {
     }
 
     const registration = new McpRegistrationService({ root: YAN_DIR })
-    /* 幂等重放：已登记的本地 MCP 只重新核验，不重新写配置或启动多余副本。 */
     if (tx.state === 'activated' || tx.state === 'resumed') {
       const managed = (await registration.listManaged()).find((record) => record.serverId === resolved.config.id)
       const check = managed
@@ -1004,8 +912,6 @@ export class CapabilityAcquisition {
         config: resolved.config,
         projectId: plan.projectId,
         operationId,
-        /* smoke 已经用同一份 command + args 真连并列出工具；把这份
-         * receipt 交给登记层，避免在写配置前无意义地再启动一次第三方进程。 */
         probe: async (config) => {
           if (
             config.command !== resolved.config.command ||
@@ -1080,13 +986,6 @@ export class CapabilityAcquisition {
     }
   }
 
-  /**
-   * 远程 MCP 的**自动登记**（实施-04 S6b-1）。
-   *
-   * 授权是这一片的关键分界（§9）：目录元数据（`metadata-only`）不足以自动接入，
-   * `--authorize` 只请求 Electron 确认对话框；用户点允许后，同一 host + project
-   * 才成为持久策略 —— 不每次都问一遍，也不把目录内容或模型参数当用户授权。
-   */
   async acquireRemoteMcp(input: {
     plan: AcquisitionPlan
     candidate: CapabilityCandidate
@@ -1175,7 +1074,6 @@ export class CapabilityAcquisition {
       digest,
       projectId: plan.projectId
     })
-    /* 幂等重放：已经登记过的计划不重复写配置，只复核一次（§10「不能装两次」）。 */
     if (created.state === 'activated' || created.state === 'resumed') {
       const managed = (await registration.listManaged()).find((record) => record.serverId === draft.serverId)
       const check = managed ? await registration.reverify(managed) : { ok: false, reasons: ['受管记录里没有这个服务'] }
@@ -1234,13 +1132,10 @@ export class CapabilityAcquisition {
         scope: 'project-managed',
         projectId: plan.projectId,
         installedPaths: [outcome.configPath],
-        /* 真的连上并枚举过工具 —— 不是「文件在」那种弱验证（§10 第 5 条）。 */
         verification: 'protocol-reachable'
       },
-      /* 核验已由 registerRemote 的真实 probe 完成；这里不重复连一次。 */
       verify: async () => ({ ok: true, problems: [] })
     })
-    /* `resumed` 必须由**真正的连接证据**置位（§10.2）：这里再复核一次。 */
     const managed = (await registration.listManaged()).find((record) => record.serverId === outcome.serverId)
     const check = managed
       ? await service.resumeCheck({
@@ -1256,7 +1151,6 @@ export class CapabilityAcquisition {
       ? await service.markResumed(operationId, '登记 + 连接复核通过，可继续原目标')
       : await service.fail(operationId, `激活后复核没通过：${check.reasons.join('；')}`)
 
-    /* 让下一次能力目录 / mcp 调用重新读配置：新服务**当场可见**，不需要重启（§10.1）。 */
     this.host.resetMcpManager()
 
     return {
@@ -1315,7 +1209,6 @@ export class CapabilityAcquisition {
         considered: result.considered,
         reason: result.reason,
         conflicts: catalog.conflicts,
-        /* 已登记的 MCP 服务状态：连不上时也要让模型看到原因（不是沉默地少列几条）。 */
         mcpServers: mcp.servers,
         hits: result.hits.map((hit) => ({
           id: hit.capability.id,

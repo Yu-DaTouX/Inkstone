@@ -1,11 +1,3 @@
-/**
- * 模型调用：只走 OpenAI 兼容的 `/chat/completions`。
- *
- * React Native 的 fetch 拿不到分块响应，所以这里一次性取回整段回答，
- * 由界面按字渐显——观感接近流式，但它确实不是流式；真正的流式留给后续原生模块。
- * 错误一律翻成用户看得懂的一句话（密钥、额度、模型名、网络）。
- */
-
 export type ChatRole = 'system' | 'user' | 'assistant'
 export type ChatMessage = { role: ChatRole; content: string }
 
@@ -24,7 +16,6 @@ export type ChatResult = {
   usage?: { promptTokens?: number; completionTokens?: number }
 }
 
-/** 把 HTTP 状态与响应体翻成一句中文，不把原始 JSON 丢给用户。 */
 function readableError(status: number, body: string): string {
   if (status === 401 || status === 403) return '密钥无效或没有权限（401/403）'
   if (status === 402) return '额度不足（402）'
@@ -83,7 +74,6 @@ export async function chat(request: ChatRequest): Promise<ChatResult> {
   }
 }
 
-/** 「测试连接」：拉一次模型列表，比发一条对话便宜，也不会消耗额度。 */
 export async function listModels(baseUrl: string, apiKey: string, timeoutMs = 15_000): Promise<string[]> {
   const url = `${safeModelBaseUrl(baseUrl)}/models`
   const controller = new AbortController()

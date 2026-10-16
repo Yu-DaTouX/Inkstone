@@ -1,17 +1,3 @@
-/**
- * v3 设置「模型与服务」纯逻辑单测（S1）。
- *
- * 只编译 `src/renderer/src/features/settings/models/models-model.ts`（纯函数，无 React /
- * store / DOM / 网络依赖），在 Node 里直接跑；不启动 Electron、不碰 pi、不读用户
- * 凭证、不拉模型、不发任何请求。可独立执行：
- *
- *   node scripts/test-v3-model-settings.mjs
- *
- * 覆盖：服务状态三档（ready / loginable / missing / unknown，含 authKey 匹配与
- * 环境变量凭证）、凭证移除门禁、服务分组统计、模型目录过滤 / 供应商顺序 / 版本
- * 排序 / 收藏（含已不可用收藏）、收藏增删、思考档位展示三态，以及「本地收藏不等于
- * 已登录」这一边界（目录行只看权威模型列表判断可用性）。
- */
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
@@ -49,8 +35,6 @@ const {
   toggleFavorite
 } = mod
 
-/* ── 工具 ───────────────────────────────────────────────────── */
-
 const provider = (over = {}) => ({
   id: over.id ?? 'p',
   name: over.name ?? 'P',
@@ -74,8 +58,6 @@ const model = (over = {}) => ({
   ...over
 })
 
-/* ── 服务状态 ───────────────────────────────────────────────── */
-
 assert.equal(serviceState('acme', [provider({ id: 'acme', status: 'ready' })]), 'ready', '已配置')
 assert.equal(entryState(provider({ status: 'ready' })), 'ready', '条目自身的已配置状态')
 assert.equal(entryState(provider({ status: 'missing', kind: 'subscription', inAppLogin: true })), 'loginable')
@@ -98,8 +80,6 @@ assert.equal(needsInAppLogin(provider({ kind: 'subscription', inAppLogin: true }
 assert.equal(needsInAppLogin(provider({ kind: 'subscription' })), false, '没有应用内登录模块的订阅不算 loginable')
 assert.equal(needsInAppLogin(provider({ kind: 'api_key', inAppLogin: true })), false, 'API key 永远不显示应用内登录')
 
-/* ── 凭证移除门禁 ───────────────────────────────────────────── */
-
 assert.equal(
   canRemoveCredential(provider({ status: 'ready', source: 'auth.json' })),
   true,
@@ -114,8 +94,6 @@ assert.equal(credentialFromEnv(provider({ status: 'ready', source: 'env' })), tr
 assert.equal(credentialFromEnv(provider({ status: 'ready', source: 'auth.json' })), false)
 assert.equal(canRemoveCredential(provider({ status: 'missing' })), false)
 
-/* ── 服务分组与统计 ─────────────────────────────────────────── */
-
 const services = [
   provider({ id: 'sub', kind: 'subscription', status: 'missing' }),
   provider({ id: 'key-ready', kind: 'api_key', status: 'ready' }),
@@ -126,8 +104,6 @@ assert.deepEqual(split.subscriptions.map((p) => p.id), ['sub'])
 assert.deepEqual(split.readyKeys.map((p) => p.id), ['key-ready'], '已配置 key 常显')
 assert.deepEqual(split.otherKeys.map((p) => p.id), ['key-missing'], '未配置 key 折叠')
 assert.deepEqual(serviceSummary(services), { ready: 1, total: 3 })
-
-/* ── 目录过滤与排序 ─────────────────────────────────────────── */
 
 const models = [
   model({ id: 'deepseek-v3', name: 'DeepSeek V3', provider: 'deepseek', reasoningStatus: 'known', reasoning: true }),
@@ -185,7 +161,6 @@ assert.deepEqual(
   '用户排过的供应商在前，版本号降序'
 )
 
-/* 收藏但已不在本机模型列表：仍显示，标为不可用，且不因收藏就当成已就绪 */
 const staleFav = [{ provider: 'gone', id: 'old-model', name: 'Old' }]
 const withFav = buildCatalogRows({
   models,
@@ -210,8 +185,6 @@ const favoriteOnly = buildCatalogRows({
 })
 assert.deepEqual(favoriteOnly.map((r) => `${r.provider}/${r.id}`), ['gone/old-model'], '只看收藏时忽略供应商筛选')
 
-/* ── 供应商顺序 ─────────────────────────────────────────────── */
-
 assert.equal(providerRank('a', []), 0)
 assert.equal(providerRank('a', ['b', 'a']), 1)
 assert.deepEqual(catalogProviders({ models, favorites: staleFav, providerOrder: ['commandcode'] }), [
@@ -219,8 +192,6 @@ assert.deepEqual(catalogProviders({ models, favorites: staleFav, providerOrder: 
   'deepseek',
   'gone'
 ])
-
-/* ── 收藏增删 ───────────────────────────────────────────────── */
 
 assert.equal(isFavorite([], { provider: 'a', id: '1' }), false)
 assert.equal(isFavorite([{ provider: 'a', id: '1' }], { provider: 'a', id: '1' }), true)
@@ -233,8 +204,6 @@ assert.deepEqual(
   ['1', '2'],
   '不同模型各自收藏，不去重错误'
 )
-
-/* ── 思考档位展示 ───────────────────────────────────────────── */
 
 assert.deepEqual(thinkingView([], undefined), { kind: 'unknown' })
 assert.deepEqual(thinkingView(['off'], 'unknown'), { kind: 'unknown' })
@@ -250,8 +219,6 @@ assert.notEqual(
   JSON.stringify(thinkingView(['off', 'low'], 'unknown')),
   'known 与 unknown 必须区分'
 )
-
-/* ── 版本排序稳定性 ─────────────────────────────────────────── */
 
 assert.ok(
   newestFirst({ provider: 'a', id: 'x-10', name: '' }, { provider: 'a', id: 'x-2', name: '' }) < 0,

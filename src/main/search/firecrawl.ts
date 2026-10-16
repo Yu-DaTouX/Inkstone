@@ -1,10 +1,3 @@
-/**
- * Firecrawl 读网页：`yan search fetch` 在本地隐藏窗口读不出来（超时、正文几乎为空）时的兜底，
- * 也可以用 `--via firecrawl` 指定。返回与 `readPage` 同一形状，模型不用区分是谁读的。
- *
- * 边界：网址会发给 Firecrawl 云端，所以仍先过 `normalizeReadUrl`——本机和内网地址
- * 一律不发出去；key 由用户自己配置，没配就不会走到这里。
- */
 import { callApi, parseJson } from './api-call'
 import { resolveSearchKey } from './config'
 import { normalizeReadUrl, READ_PAGE_MAX_CHARS_DEFAULT, READ_PAGE_MAX_CHARS_MAX, ReadPageError, type ReadPageResult } from './read-page'
@@ -35,7 +28,6 @@ export async function firecrawlReadPage(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      /* 服务端超时比本地等待短一点，免得我们先放弃、它还在计费 */
       body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true, timeout: Math.max(1_000, timeoutMs - 2_000) })
     },
     timeoutMs,

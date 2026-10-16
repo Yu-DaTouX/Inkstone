@@ -9,13 +9,6 @@ interface State {
   error: Error | null
 }
 
-/**
- * v3 自己的错误边界。
- *
- * 不用 v2 的 `components/ErrorBoundary`：那个会导入 v2 的 ui 与样式，
- * 违背「v3 不加载任何 v2 样式」。这里只兜住 v3 外壳子树的渲染异常，
- * 给一句说明和一个「重新载入」出口；细节留在 console。
- */
 export class V3ErrorBoundary extends Component<Props, State> {
   state: State = { error: null }
 

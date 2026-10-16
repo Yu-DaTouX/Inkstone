@@ -1,19 +1,3 @@
-/**
- * 设计令牌清单（P0-1「统一令牌」的依据）。
- *
- * ══════════════════════════════════════════════════════════════════
- * 解决什么问题
- * ══════════════════════════════════════════════════════════════════
- * 「想改间距 / 圆角 / 颜色，该改哪个文件？」—— 由于层层覆盖，
- * 同一个变量可能在 2~3 个文件里被定义，**只有最后一个生效**。
- * 靠肉眼翻 8000 行找不出来。
- *
- * 这个脚本按 (主题选择器, 变量名) 收集完整的定义链，算出最终值，
- * 并标出「同一选择器内重复定义」的那种真正的冗余。
- *
- * 用法： node scripts/css-tokens.mjs [--md]
- *   --md  写入 scripts/design/CSS-令牌清单.md
- */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { readStyleOrder } from './lib/css-order.mjs'
 import { dirname, join, resolve } from 'node:path'
@@ -22,16 +6,8 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dir = join(root, 'src/renderer/src/styles')
 
-/* 顺序不再手写：读样式入口 styles/index.css（见 scripts/lib/css-order.mjs 的头注释） */
 const ORDER = readStyleOrder(root)
 
-/**
- * 栈式扫描顶层规则（含 @media 内的）。
- *
- * ⚠️ 不能拿 `/([^{}]+)\{([^}]*)\}/g` 一把梭：`@media (...) { :root { .. } }`
- *    里 `[^}]*` 是允许 `{` 的，于是 `@media (...)` 被当成选择器、
- *    里面的 `:root` 被整个吞掉 —— 结果是「响应式里的令牌定义全部漏统计」。
- */
 function scan(cssRaw) {
   const css = cssRaw.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
   const blocks = []
@@ -94,7 +70,6 @@ function scan(cssRaw) {
   return blocks
 }
 
-/** 收集：Map<"媒体查询|选择器", Map<变量, [{file, value}]>> */
 const bySel = new Map()
 for (const f of ORDER) {
   let css
@@ -104,7 +79,6 @@ for (const f of ORDER) {
     continue
   }
   for (const b of scan(css)) {
-    /* 只关心「主题/根」这类承载令牌的选择器 */
     if (!/^(:root|html|\[data-theme)/.test(b.sel)) continue
     const key = b.media ? `${b.media} ${b.sel}` : b.sel
     const vars = bySel.get(key) ?? new Map()
@@ -125,7 +99,6 @@ for (const f of ORDER) {
 
 const selOrder = [...bySel.keys()]
   .filter((s) => {
-    /* 只保留真正带变量的分组；主题排名用于排序 */
     return (bySel.get(s)?.size ?? 0) > 0
   })
   .sort((a, b) => {
@@ -149,7 +122,6 @@ L()
 for (const sel of selOrder) {
   const vars = bySel.get(sel)
   const list = [...vars.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-  /* 高亮规则（如 html[data-theme='light'] .md pre code .hljs-*）没有变量，跳过 */
   if (list.length === 0) continue
   const dup = list.filter(([, a]) => a.length > 1)
   totalVars += list.length
@@ -178,10 +150,8 @@ L('  它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并
 L()
 
 const out = md.join('\n')
-/* 末尾只留一个换行：md 数组最后常是空行，直接 +'\n' 会多出一个空行（diff-check 会报） */
 const content = out.replace(/\n+$/, '') + '\n'
 if (process.argv.includes('--check')) {
-  /* 门禁：清单必须与当前样式一致，防止加载顺序/令牌又被改而文档没跟上（V-0 D1） */
   const target = join(root, 'scripts/design/CSS-令牌清单.md')
   const existing = existsSync(target) ? readFileSync(target, 'utf8') : ''
   if (existing !== content) {

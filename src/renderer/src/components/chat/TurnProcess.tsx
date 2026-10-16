@@ -10,24 +10,12 @@ import { ToolGroup } from './ToolRow'
 import { runPhaseText, useRunProgress } from './run-status'
 import { resolveTurnModelDisplay } from './turn-model-display'
 
-/**
- * 回合的活动行与执行过程（设计规范「界面重构」）。
- *
- * 活动行：每轮助手回复顶部固定一行，原地更新——字符状态 + 状态文字 + 计数 + 用时。
- * 运行中的旋转字符是整个窗口唯一的主要运行信号。
- *
- * 过程：推理入口与工具调用树。默认折叠为一行摘要，展开是 `├─ └─` 调用树。
- * 「阅读优先」放在正文之后；「过程并列」由样式把同一个元素放到右侧一栏
- * （chat.css 的 `.tproc`），不复制组件与展开状态。
- */
-
 const FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 
 function reducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-/** 盲文旋转字符；减少动效时是静态的 `●` */
 function Spin() {
   const [i, setI] = useState(0)
   const still = reducedMotion()
@@ -43,20 +31,16 @@ function failedCount(turn: AssistantTurn): number {
   return turn.tools.filter((c) => c.status === 'error' && !c.cancelled).length
 }
 
-/** 回复正文，用于复制 */
 function replyText(turn: AssistantTurn): string {
   return (turn.segments.length
     ? turn.segments.flatMap((segment) => segment.response ? [segment.response.text] : [])
     : [turn.response?.text ?? '']).join('\n\n').trim()
 }
 
-/* ------------------------------------------------------------ 活动行 */
-
 export function TurnActivityLine({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }) {
   return streaming ? <LiveActivity /> : <SettledActivity turn={turn} />
 }
 
-/** 消息已发出、模型还没有任何输出（没有助手回合）时的等待行：否则这段时间流里什么都没有 */
 export function PendingActivity() {
   return (
     <div className="stream-pending">
@@ -65,7 +49,6 @@ export function PendingActivity() {
   )
 }
 
-/** 运行中的那一轮：阶段文字与计时来自 run-status，和输入框的「停止 + 计时」同拍 */
 function LiveActivity() {
   const t = useT()
   const progress = useRunProgress()
@@ -79,14 +62,12 @@ function LiveActivity() {
     <div className="tact" data-kind={waiting ? 'wait' : 'run'} data-testid="turn-footer">
       <span className="tact-glyph" aria-hidden>{waiting ? '◆' : <Spin />}</span>
       <span className="tact-k" data-testid="working" role="status" aria-live="polite">{waiting ? t('act.wait') : text}</span>
-      {/* 步数与失败数在紧邻的「过程」摘要里，这里不重复 */}
       <span className="tact-sp" />
       {progress ? <span className="tact-time">{formatDuration(progress.elapsedMs)}</span> : null}
     </div>
   )
 }
 
-/** 已结束的一轮：完成 / 部分完成 / 失败 / 停止与步数；时间、用时、复制在回合下方（TurnMeta） */
 function SettledActivity({ turn }: { turn: AssistantTurn }) {
   const t = useT()
   const failed = failedCount(turn)
@@ -109,7 +90,6 @@ function SettledActivity({ turn }: { turn: AssistantTurn }) {
   )
 }
 
-/** 回合下方的一行：复制、完成时刻、用时。运行中不显示（运行时间在顶部活动行）。 */
 export function TurnMeta({ turn }: { turn: AssistantTurn }) {
   const t = useT()
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -146,7 +126,6 @@ export function TurnMeta({ turn }: { turn: AssistantTurn }) {
   )
 }
 
-/** 完成时刻：悬停、聚焦都能读到完整时间（键盘可达，屏幕阅读器读 aria-label） */
 export function TurnClock({ timestamp }: { timestamp: number }) {
   const date = new Date(timestamp)
   if (!Number.isFinite(date.getTime())) return null
@@ -161,13 +140,9 @@ export function TurnClock({ timestamp }: { timestamp: number }) {
   )
 }
 
-/* ------------------------------------------------------------ 过程 */
-
-/** `hideReasoning`：推理已经放在回合顶部（实时显示思考链），过程里只留工具 */
 export function TurnProcess({ turn, streaming, hideReasoning = false }: { turn: AssistantTurn; streaming?: boolean; hideReasoning?: boolean }) {
   const t = useT()
   const side = useStore((s) => s.settings?.processLayout === 'side' || s.settings?.processLayout === 'left')
-  /* 手动开合优先；没动过时并列在回合进行中展开、回复完成后自动折叠，阅读优先始终折叠 */
   const [manual, setManual] = useState<boolean | null>(null)
   const tools = turn.tools
   const thinking = hideReasoning ? '' : turn.thinking

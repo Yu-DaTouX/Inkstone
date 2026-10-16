@@ -1,41 +1,12 @@
-/* 设计令牌 —— 规则与用途见 docs/DESIGN_SYSTEM.md 第 2 节
-   改令牌先改规范，再改这里。 */
-
-/* 0. 内嵌字体
-   Maple Mono CN：拉丁列宽 0.600em / 汉字 1.200em，严格 1:2
-   必须内嵌，不能靠系统回退（凑不出 2.000 的整数比，见 DESIGN §2.1）
-   ── 为什么改成 npm 依赖（原来是本地 18.5MB 的 TTF）──
-   原来：字体全量 TTF 不入库（.gitignore），新克隆者必须先跑 `npm run font`,
-   而那个命令只是从 docs/design/font-test/ 拷贝 —— 那个源文件同样不入库，
-   所以**新克隆的仓库根本跑不起来**（@font-face 静默回退，
-   汉字格宽不再是 15.00px，整个等宽栅格塔掉且不报错）。
-   现在：`@mogeko/maple-mono-cn` 是 Maple Mono CN 的 cn-font-split 重新打包，
-   239 个 woff2 分片 + unicode-range，总计 9.7MB，
-   而**实际只会加载当前用到的几个分片**（比 18.5MB 全量小一个量级）。
-   `npm install` 就位，不需要额外步骤。
-   授权：字体 SIL OFL 1.1（可随软件分发）；打包 MIT。
-   风格名与我们用的一致（"Maple Mono CN"、weight 400），所以下方 @font-face
-   里的引用不用改。 */
 @import '@mogeko/maple-mono-cn/dist/font/result.css';
 
-/* 全界面按「人声 / 机声」分工（设计规范 §2.2，方向 F）：人声用系统比例字体（缺省），
-   机声（代码 / 终端 / 路径 / 数字 / 提示符）用内嵌 Maple Mono CN（--font-mono）。
-   只有 Regular：不让浏览器合成伪粗体（见下方 body 的 font-synthesis）。 */
-
-/* 过程栏宽度注册为长度：容器查询里用 cqw 写的值在声明处就算成像素，后代继承定值 */
 @property --w-proc-side {
   syntax: '<length>';
   inherits: true;
   initial-value: 240px;
 }
 
-/* 1. 令牌 */
 :root {
-  /*
-   * 字体分工（设计规范 §2.2，方向 F「双声部」）：
-   *   --font-ui / --font-body / --font-sans  人声：正文、标签、按钮、菜单（缺省系统比例字体）
-   *   --font-mono / --font-code              机声：代码、终端、路径、数字、提示符、diff
-   */
   --font-mono: 'Maple Mono CN', ui-monospace, Consolas, monospace;
   --font-sans: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', system-ui, sans-serif;
   --font-code: var(--font-mono);
@@ -54,12 +25,9 @@
   --lh-tight: 1.45;
   --lh-base: 1.55;
   --lh-body: 1.75;
-  /* 界面行（列表行、工具行、活动行、文字按钮）：密度给基准（标准 24），界面字号调大时随之加高 */
   --d-row-h: 24px;
   --lh-row: calc(var(--d-row-h) + max(0px, var(--fs-base) - 13px) * 2);
-  /* 正文列：80ch × 15px Maple（拉丁 0.6em）= 720，约 40 个汉字；正文字号可调时由根元素覆盖 */
   --w-body: 720px;
-  /* 过程并列时右侧那一栏与它和正文之间的间距 */
   --w-proc-side: 240px;
   --gap-proc-side: 32px;
 
@@ -70,76 +38,39 @@
   --sp-5: 24px;
   --sp-6: 32px;
 
-  /*
-   * 密度语义变量（方案 A1）。
-   *
-   * 策略是「只调间距、不动字号」：中文字体在 12.5px 上是像素对齐的，
-   * 整体乘倍数会把字描绘弄糊。
-   * standard 档的值就是**改动前实际生效的值**，所以默认观感不变。
-   */
-  --d-row-gap: 3px;      /* 列表行（任务行 / 子代理行）之间 */
-  --d-section-gap: 3px;  /* 右栏分区之间 */
-  --d-message-gap: 32px; /* 消息回合之间（= 原来的 --sp-6） */
+  --d-row-gap: 3px;
+  --d-section-gap: 3px;
+  --d-message-gap: 32px;
 
-  /* 4 / 6 / 8 / 10 / 14px 分级；方向 F 放大一档（控件 6、按钮与输入 8、分组块与磁贴 10、输入框与浮层 14） */
   --r-xs: 3px;
   --r-sm: 6px;
   --r-md: 8px;
   --r-lg: 10px;
   --r-xl: 14px;
-  /* 圆形组件（头像状、开关、滚动条）用 */
   --r-full: 999px;
 
   --h-titlebar: 40px;
-  /* 窗口底部状态栏（设计规范 §4） */
   --statusbar-h: 24px;
-  /*
-   * 左栏宽度不在 tokens 里定 —— 它是**布局变量**，由 layout.css 统一管
-   * （依赖 --w-rail-user 用户值，并且要按窗口宽度分档夹取）。
-   * 这里曾经写死 300px，先后被两层布局规则覆盖，
-   * 改它完全看不到效果。
-   */
-  /* 中栏内容最大宽度。
-     曾经是 760px —— 那是有 328px 右栏时定的。右栏搬进设置后中间栏
-     多出 328px，760 的上限会让内容像「挤在左边」。放宽到 900。
-     （上限仍必要：1920px 下不加限制会行长得读不了） */
-  /* 窗口越宽正文列越宽（左栏与正文之间不留大片空白），上限 920px */
   --w-stream: clamp(calc(var(--w-body) + 2 * var(--sp-5)), calc(100vw - 680px), 920px);
 
-  /* ── 控件状态（V-1，2026-09-23）──
-     「禁用」与「键盘焦点」原来在各模块各写一份：禁用不透明度实测有 9 个值、
-     焦点环 4 种组合。这里给出唯一来源：
-       · 控件禁用 = --ctl-disabled-opacity；更低的 0.25~0.4 属于「半失效 /
-         过期」语义（.ub-item.dim / .tl-dot.off 那类），不套默认值。
-       · 键盘焦点默认 --focus-ring-*；只有小目标 / 浮层里空间紧张时才用
-         --focus-ring-w-strong（2px），不要另写颜色。 */
   --ctl-disabled-opacity: 0.5;
   --focus-ring-color: var(--accent);
   --focus-ring-w: 1px;
   --focus-ring-offset: 1px;
   --focus-ring-w-strong: 2px;
 
-  /* ── 控件尺寸与字重（v0.4 统一控件层，见 styles/ui.css）──
-     按钮、分段、输入框只用这三档高度；字重只用常规 / 中等 / 强调三档。 */
-  /* 密度按 --d-ctl 整体加减（标准 0） */
   --d-ctl: 0px;
   --ctl-h-sm: calc(24px + var(--d-ctl));
   --ctl-h: calc(28px + var(--d-ctl));
   --ctl-h-lg: calc(32px + var(--d-ctl));
   --fw-regular: 400;
-  /* 标题字重（方向 F）；选「终端风格」（Maple）时 applyTypography 把这两档回到 400 */
   --fw-medium: 600;
   --fw-strong: 700;
 
-  /* 动效时长（B2 归口）——
-     语义别名 --dur 是默认过渡；其余按毫秒值命名，值等于收口前的实际值，未做视觉调整。
-     新增动效请复用已有档位，不要写裸 ms/s 或裸 cubic-bezier —— npm run check:motion 会拦。 */
   --dur: 120ms;
   --ease: cubic-bezier(0.2, 0, 0.2, 1);
-  /* 主题切换用的平滑曲线（比默认更柔，落位更稳） */
   --ease-smooth: cubic-bezier(0.25, 0.7, 0.25, 1);
 
-  /* 微反馈 / 几乎即时 */
   --dur-0: 0ms;
   --dur-1: 1ms;
   --dur-8: 8ms;
@@ -150,7 +81,6 @@
   --dur-45: 45ms;
   --dur-80: 80ms;
 
-  /* 常规过渡 */
   --dur-120: 120ms;
   --dur-130: 130ms;
   --dur-140: 140ms;
@@ -160,14 +90,12 @@
   --dur-260: 260ms;
   --dur-320: 320ms;
 
-  /* 面板 / 模态 */
   --dur-400: 400ms;
   --dur-420: 420ms;
   --dur-600: 600ms;
   --dur-760: 760ms;
   --dur-800: 800ms;
 
-  /* 循环装饰 */
   --dur-900: 900ms;
   --dur-1000: 1000ms;
   --dur-1100: 1100ms;
@@ -178,7 +106,6 @@
   --dur-1500: 1500ms;
   --dur-1600: 1600ms;
   --dur-1800: 1800ms;
-  /* v0.5 基础件：光标闪烁、环绕流光一圈、流光出现前的等待 */
   --dur-1060: 1060ms;
   --dur-2400: 2400ms;
   --dur-3000: 3000ms;
@@ -186,19 +113,16 @@
 }
 
 html[data-theme='dark'] {
-  /* 冷中性三层背景 + 终端蓝（界面重构，深色单独校准） */
   --bg-0: #17191d;
   --bg-1: #1f2228;
   --bg-2: #282c34;
   --bg-3: #2d3340;
   --bg-4: #3a414e;
 
-  /* 描边用半透明白：在任何底色上都带出正确的关系 */
   --border-soft: rgba(255, 255, 255, 0.07);
   --border: rgba(255, 255, 255, 0.11);
   --border-str: rgba(255, 255, 255, 0.18);
   --edge: rgba(255, 255, 255, 0.07);
-  /* 分屏非焦点会话的淡遮罩：朝页面底色退一层 */
   --split-dim: rgba(23, 25, 29, 0.38);
 
   --fg: #e5e7eb;
@@ -217,17 +141,13 @@ html[data-theme='dark'] {
   --magenta: #c4a5f5;
   --cyan: var(--accent);
 
-  /* 代码块：比页面底再深半级 */
   --code-bg: #1c1f24;
   --code-fg: #c9d1d9;
-  /* 行内代码：靠等宽 + 淡底区分，不用彩色 */
   --code-inline-bg: rgba(255, 255, 255, 0.07);
   --code-inline-fg: #cfd5de;
 
-  /* 强调色实底上的文字；弹出层（菜单 / 对话框）唯一允许的投影 */
   --on-accent: #17191d;
   --shadow-pop: 0 14px 36px -14px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.2);
-  /* 输入框的下投影：很淡的一层，方向 F */
   --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
@@ -242,7 +162,6 @@ html[data-theme='light'] {
   --border-str: rgba(20, 30, 50, 0.2);
   --edge: rgba(20, 30, 50, 0.04);
   --split-dim: rgba(246, 247, 249, 0.5);
-  /* 浅色下 dim / mute 在 bg-1 / bg-3 上也要 ≥4.5:1 */
   --fg: #242830;
   --fg-dim: #505966;
   --fg-mute: #5e6876;
@@ -258,7 +177,6 @@ html[data-theme='light'] {
   --magenta: #7e3fc4;
   --cyan: var(--accent);
 
-  /* 代码块：浅冷灰底 + 深字，语法色在 highlight.css */
   --code-bg: #ebedf1;
   --code-fg: #24292f;
   --code-inline-bg: rgba(20, 30, 50, 0.06);
@@ -266,16 +184,13 @@ html[data-theme='light'] {
 
   --on-accent: #ffffff;
   --shadow-pop: 0 14px 36px -14px rgba(20, 30, 50, 0.28), 0 0 0 1px rgba(20, 30, 50, 0.05);
-  /* 输入框的下投影：很淡的一层，方向 F */
   --shadow-soft: 0 1px 2px rgba(20, 30, 50, 0.06);
 }
 
-/* 2. 基础 */
 *,
 *::before,
 *::after {
   box-sizing: border-box;
-  /* 模块里写死的 600 / 700 也不合成伪粗体（font 简写不会把它带回来） */
   font-synthesis: none;
   margin: 0;
   padding: 0;
@@ -288,7 +203,6 @@ body {
   background: var(--bg-0);
   color: var(--fg);
   font: var(--fs-base) / var(--lh-base) var(--font-ui);
-  /* 只有 Regular：不让浏览器造假粗体，层级靠字号与留白 */
   font-synthesis: none;
   font-variant-ligatures: none;
   -webkit-font-smoothing: antialiased;
@@ -300,7 +214,6 @@ button {
   background: none;
   border: none;
   cursor: pointer;
-  /* UI 文字关掉连字，代码/diff 再开（DESIGN §2.1） */
   font-variant-ligatures: none;
 }
 input,
@@ -333,12 +246,6 @@ textarea {
   outline-offset: var(--focus-ring-offset);
   border-radius: var(--r-sm);
 }
-/*
- * 减少动画：时长压到 1ms、只播一次，保留终态（设计规范 §6）。
- * 不用 animation: none —— 那会删掉入场关键帧的终态，延迟卸载的浮层会出现空窗，
- * 方点阵也会连「这里在运行」的静态点都不画。错峰的 delay 一并归零。
- * 这条在最早的 tokens 层且带 !important，压过所有模块，模块里不必再各写一遍。
- */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -351,7 +258,6 @@ textarea {
   }
 }
 
-/* ---- 图标 ---- */
 .ico {
   width: 14px;
   height: 14px;
@@ -375,7 +281,6 @@ textarea {
   transition: transform var(--dur) var(--ease);
 }
 .chev.on {
-  /* 一个 chevron 转向表达「展开 / 下拉」：朝右是收起，朝下（.on）是展开或下拉，朝上是已弹出 */
   transform: rotate(90deg);
 }
 .chev.flip-up {
@@ -387,11 +292,6 @@ textarea {
 .spin {
   animation: rot var(--dur-1100) linear infinite;
 }
-/*
- * 密度档位：界面行高、正文行距、控件高度、回合与列表间距一起变，不改字号。
- *   紧凑 = 同屏放下更多行；舒适 = 行与行之间喘口气。
- * 只覆盖语义变量；依赖它们的 --lh-row / --ctl-h-* 在 :root 里按 calc 推出。
- */
 html[data-density='compact'] {
   --d-row-h: 20px;
   --d-ctl: -2px;
@@ -410,11 +310,7 @@ html[data-density='comfortable'] {
   --d-message-gap: 48px;
 }
 
-/* （工具卡的圆角/内边距两条已删：整条工具卡路径换成了 chat/ToolRow 的 .trow/§61） */
-/* 8. 滚动条更细更淡，别抢视线 */
 ::-webkit-scrollbar {
-  /* 11 → 14：用户报「滚轮太小了不好点」。下面 thumb 的 border 是透明的，
-     真正可见的宽度 = width - 2×border（trasparent 部分也算命中区）。 */
   width: 14px;
   height: 14px;
 }
@@ -431,36 +327,11 @@ html[data-density='comfortable'] {
   background-clip: content-box;
 }
 
-/* 31. 对齐收尾
-   —— 学了 Agents-Anywhere 代码里的两点：
-   ① 展开状态用 CSS 的 [data-state] / [aria-expanded] 驱动图标，
-   不在 React 里为「箭头转不转」多留一份 state
-   ② 层级靠背景色 + 缩进，不靠边框 */
-/* ① 所有折叠箭头统一由 aria-expanded 驱动 —— 少一份 state，也不会不同步 */
 [aria-expanded='true'] > .chev {
   transform: rotate(90deg);
 }
 
 
-/* 37. 终端风格强化
-   目标：更像终端，不像「一堆卡片」。
-   手段（按重要性排）：
-   ① 圆角收小 —— 卡片感主要来自圆角
-   ② 助手消息加左侧 1px 竖线 —— 终端里输出是缩进的，不装箱
-   ③ 工具卡用左侧状态色条 + 方角，不用整圈边框
-   ④ 层级只用背景色差，不用边框（边框是"卡片"的信号）
-   ⑤ 分隔线更细更淡 */
-/* ① 圆角收小 */
-/*
- * 这里原本还有 --w-rail / --w-rail-collapsed / --r-xs..xl 五个圆角令牌。
- * 它们都是「同一个变量在本文件里把前面的值盖掉」的典型：
- *   · 圆角令牌已归并到 tokens.css（只留最终值）；
- *   · --w-rail / --w-rail-collapsed 归并到 layout.css（布局变量统一归口，
- *     那里还要按窗口宽度分档夹取）。
- * 改那些值请去上面两个文件 —— 在这里写是看不到效果的。
- * 清单与覆盖链：docs/design/CSS-令牌清单.md
- */
 :root {
-  /* 工具栏。同样：用户拖过就用他的值 */
   --w-right: var(--w-panel-user, 264px);
 }

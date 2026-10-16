@@ -1,7 +1,3 @@
-/**
- * 会话正文检索（主进程侧）：真文件、临时目录。验证遍历、缓存失效与排序。
- * 用法： node scripts/test-session-search-files.mjs
- */
 import { mkdtemp, mkdir, rm, writeFile, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'

@@ -1,16 +1,3 @@
-/**
- * 模型接入（凭证）页。
- *
- * 被测的设计意图：
- *   ① 两条路**分得开** —— 订阅制给命令提示（不做输入框，因为 pi 的
- *      OAuth 登录只能在交互式 TUI 里发起），API key 给输入框
- *   ② **已配置但不在目录里**的 provider 也要显示（本会话踩过：用户已有
- *      `commandcode` 凭证、对话正常，界面却显示「0/N 已就绪」）
- *   ③ 写入是**合并**的（配第二个不会弄丢第一个）
- *   ④ 凭证路径可见（用户得知道文件在哪）
- *   ⑤ ChatGPT 订阅可以**在应用内登录**（src/main/oauth.ts，参数抄自 pi），
- *      其余订阅制仍然只能跑 `pi → /login` —— 两者在界面上要分得出来
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -28,7 +15,6 @@
     await sleep(500)
   }
 
-  /* ================= 1. IPC：列表与路径 ================= */
   log('=== 1. authProviders / authFileInfo ===')
   const t0 = performance.now()
   const list = await window.yan.authProviders(false)
@@ -42,17 +28,12 @@
     list.some((x) => x.kind === 'api_key'),
     '有 API key 条目'
   )
-  // 浅查要快（不能每项都起 pi 进程）
   ok(performance.now() - t0 < 3000, '浅查很快（不逐个问 pi）')
 
   const info = await window.yan.authFileInfo()
   log('  凭证文件 = ' + info.path + '  exists=' + info.exists + '  count=' + info.count)
   ok(info.path.includes('auth.json'), '凭证路径指向 auth.json')
 
-  /*
-   * 关键：已配置的 provider 必须出现在列表里 —— 哪怕它不在我们的目录中。
-   * 否则用户会以为「什么都没配上」。
-   */
   if (info.count > 0) {
     ok(
       list.some((x) => x.status === 'ready'),
@@ -62,11 +43,8 @@
     log('  （auth.json 是空的，跳过「已配置项被列出」断言）')
   }
 
-  /* ================= 2. 写入是合并的 ================= */
   log('')
   log('=== 2. 写入合并（不弄丢已有凭证）===')
-  // 只写一个测试用的 provider，之后立刻清掉
-  /* provider id 必须字母/数字开头（credentials.ts 的 validProviderId）：下划线开头的会被拒。 */
   const TEST_ID = 'yan-probe-key'
   const before = info.count
   const w = await window.yan.setApiKey(TEST_ID, 'probe-key-1234567890')
@@ -81,29 +59,16 @@
     '新写入的 provider 出现在列表里且标记已就绪'
   )
 
-  /* 清理 */
   const c = await window.yan.clearAuth(TEST_ID)
   ok(c.ok, '移除测试凭证成功')
   const cleaned = await window.yan.authFileInfo()
   ok(cleaned.count === before, '移除后条目数还原（' + cleaned.count + '）')
 
-  /* ================= 3. 界面 ================= */
   log('')
   log('=== 3. 设置 · 接入页 ===')
-  /*
-   * key 行只在「有凭证或正在编辑」时才渲染（空 auth.json 下整块不显示），而面板的列表
-   * 是挂载时拉一次的本地 state。所以在**打开设置之前**写入测试凭证：首次加载就带上它，
-   * 不必等「重新检测」的 deep 检查（那个很慢，未必赶得上）。
-   */
   const seeded = await window.yan.setApiKey(TEST_ID, 'probe-key-1234567890')
   ok(seeded.ok, '为按钮断言临时写入一条测试凭证' + (seeded.error ? '（' + seeded.error + '）' : ''))
   store.getState().openSettings('auth')
-  /*
-   * ⚠️ 轮询等面板渲染，不用固定 sleep。
-   *    设置面板要渲染 19 行接入方式，在全量跑的最后（机器被前二十几个
-   *    场景拖过）可能超过 900ms —— 固定等待会量到 tabs=[]，
-   *    后面所有断言跟着挂（实测第 1 轮挂了）。
-   */
   for (let i = 0; i < 40 && !q('.settings-tab'); i++) await sleep(100)
   const tabs = qa('.settings-tab').map((x) => x.textContent)
   log('  tabs = ' + JSON.stringify(tabs))
@@ -112,10 +77,6 @@
     '有「接入」tab'
   )
 
-  /*
-   * 行也是异步渲染的：面板先挂载，再用本地 state 拉一次（「重新检测」是 deep
-   * 检查，几十个 provider 逐个探环境变量，比浅检查慢得多），所以这里等久一点。
-   */
   for (let i = 0; i < 30 && !q('.auth-row'); i++) await sleep(100)
   for (let i = 0; i < 150 && !q('[data-testid^="auth-login-"]'); i++) await sleep(100)
   const rows = qa('.auth-row')
@@ -124,21 +85,14 @@
 
   const cmds = qa('.auth-cmd')
   log('  订阅制的命令提示 = ' + cmds.length)
-  /* 订阅制都能在应用内登录；命令提示只留给没有应用内登录的服务 */
   ok(qa('[data-testid^="auth-login-"]').length > 0, '订阅制给的是「登录」按钮（不是输入框）')
 
-  /*
-   * 数据层先断言：目录外但已配置的 provider 也要能被深层列表带出来（设计意图 ②）。
-   * 界面上的 key 行只在列表把它们带出来时才渲染，而 deep 检查要逐个探几十个
-   * provider 的环境变量、很慢，所以界面那条断言等不到就如实跳过。
-   */
   const deepList = await window.yan.authProviders(true)
   ok(
     deepList.some((x) => x.id === TEST_ID && x.status === 'ready'),
     '深层列表里有刚写入的凭证且标记就绪'
   )
   for (let i = 0; i < 200 && !q('[data-testid^="auth-set-"]'); i++) await sleep(100)
-  /* 就绪的 key 常显；万一落进折叠区，展开一次再查。 */
   if (!q('[data-testid^="auth-set-"]')) {
     const more = q('[data-testid="auth-more-keys"]')
     const summary = more?.querySelector('summary')
@@ -154,29 +108,14 @@
     out.push('  ~ 跳过：列表还没带出 API key 行（deep 检查未在等待窗口内完成），按钮断言不适用')
   }
 
-  /* 凭证文件路径行已从这一页移除（数据位置见「关于」页的数据位置） */
   ok(!!q('[data-testid="auth-recheck"]'), '有「重新检测」按钮')
 
-  /*
-   * 应用内登录：只有 ChatGPT 订阅有按钮，其余订阅制仍然只能给命令提示。
-   *
-   * 隔离环境里 YAN_PI_DIR 是空的，所以这一行必为 missing —— 按钮应该出来。
-   * （openai-codex 的 envVar 是空串，不会被环境变量意外弄成 ready。）
-   */
   log('=== 3. 应用内登录（ChatGPT 订阅）===')
   ok(!!q('[data-testid="auth-row-openai-codex"]'), '有 ChatGPT 订阅这一行')
   ok(
     typeof window.yan.codexLogin === 'function' && typeof window.yan.codexLoginCancel === 'function',
     'IPC 暴露了 codexLogin / codexLoginCancel'
   )
-  /*
-   * test:live 的沙盒里 YAN_PI_DIR 是空的 → 这一行必为 missing → 按钮应该出来。
-   * （openai-codex 的 envVar 是空串，不会被宿主的环境变量意外弄成 ready。）
-   */
-  /*
-   * 这一行只在**未登录**时给按钮；本机若已有 ~/.codex 凭证（codex 只读后备），
-   * 它会判为 ready 而不给按钮 —— 那是环境属性，不是回归，所以按状态跳过。
-   */
   const codexReady = /已就绪|ready/i.test(q('[data-testid="auth-row-openai-codex"]')?.textContent ?? '')
   if (codexReady) {
     out.push('  ~ 跳过：openai-codex 在这台机器上已就绪（登录按钮不适用）')
@@ -188,7 +127,6 @@
     '其余订阅制（Claude）也有应用内登录按钮'
   )
 
-  /* 展开一个输入框，确认是 password 类型（不明文显示 key） */
   const first = setBtns[0]
   if (first) {
     first.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -201,7 +139,6 @@
     }
   }
 
-  /* 第 3 步为了验按钮写入的那条凭证要清掉，别留给后面的场景。 */
   const cleanup = await window.yan.clearAuth(TEST_ID)
   ok(cleanup.ok, '收尾移除临时凭证' + (cleanup.error ? '（' + cleanup.error + '）' : ''))
   const finalCount = await window.yan.authFileInfo()

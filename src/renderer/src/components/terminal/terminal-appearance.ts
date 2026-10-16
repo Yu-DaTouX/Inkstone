@@ -1,7 +1,6 @@
 import type { ITerminalOptions, Terminal } from '@xterm/xterm'
 import { WebglAddon } from '@xterm/addon-webgl'
 
-/** Canvas font measurement needs a resolved family, rather than a CSS var(). */
 export function terminalAppearance(): ITerminalOptions {
   const styles = getComputedStyle(document.documentElement)
   return {
@@ -30,23 +29,14 @@ export function installTerminalRenderer(term: Terminal, host: HTMLElement): void
     term.loadAddon(addon)
     host.dataset.terminalRenderer = 'webgl'
   } catch {
-    // GPU capability is optional; keep the terminal usable through the default renderer.
-    try { addon.dispose() } catch { /* An addon may fail before activation. */ }
+    try { addon.dispose() } catch { }
   }
 }
 
 export async function terminalFontReady(options: ITerminalOptions): Promise<void> {
-  // Measure the Latin cell only after the bundled font is available; CJK occupies two cells.
   await document.fonts.load(`${options.fontSize}px ${options.fontFamily}`, 'W').catch(() => undefined)
 }
 
-/**
- * With screenReaderMode on (kept for the accessible text tree), xterm ignores `insertText` input
- * events. Text that arrives after a keydown is still sent by xterm (the key itself, or its textarea
- * diff after an IME `Process` key), and composition commits go through its composition helper.
- * Some Windows IMEs commit candidates as a bare `insertText` with no keydown at all; xterm would
- * drop that, so forward exactly those commits.
- */
 export function installImeFallback(term: Terminal): () => void {
   const textarea = term.textarea
   if (!textarea) return () => {}

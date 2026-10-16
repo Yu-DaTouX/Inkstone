@@ -1,16 +1,5 @@
-/**
- * 联网发现的纯逻辑与适配器映射（`src/shared/discovery.ts`、
- * `src/main/capabilities/discovery/discover.ts`，实施-04 S5）。
- *
- * 这一片能离线验的是**判断**：脱敏该去掉什么、排名该看什么、候选该截到几条、
- * 源挂了会不会编造包名、指纹变了没有。真实目录检索证据在本片另附
- * （`docs/plan/证据-04-S5-联网发现.md` + live 场景 `discnet`）——
- * 固定的 fixture 断言不了「源今天真的返回了这些东西」。
- */
 export async function runDiscoveryTests(ok, modules) {
   const { discover, shared } = modules
-
-  /* ------------------------------------------------ 1. 检索词脱敏（§7.1） */
 
   {
     const dirty =
@@ -29,8 +18,6 @@ export async function runDiscoveryTests(ok, modules) {
     ok(shared.discoveryQueryUsable('read excel files'), '脱敏：通用描述可用')
     ok(shared.sanitizeDiscoveryQuery('x'.repeat(500)).length <= 120, '脱敏：检索词有长度上限')
   }
-
-  /* ------------------------------------------------------------ 2. 排名 */
 
   {
     const base = {
@@ -82,14 +69,11 @@ export async function runDiscoveryTests(ok, modules) {
       '排名：给出可读理由（模型要能解释为什么选它）',
       ranked[0].reasons.join(' / ')
     )
-    /* §8：下载量不是可信证明 —— 评分理由里不该出现下载量这类信号。 */
     ok(
       !ranked.some((r) => r.reasons.some((x) => /下载|download/i.test(x))),
       '排名：评分因子不含下载量'
     )
   }
-
-  /* ------------------------------------------------ 3. 候选截断（§7.2） */
 
   {
     const many = Array.from({ length: 20 }, (_, i) => ({
@@ -109,11 +93,8 @@ export async function runDiscoveryTests(ok, modules) {
     ok(shared.MAX_QUERY_REWRITES === 2, '上限：每轮最多两次查询改写')
   }
 
-  /* -------------------------------------------- 4. 适配器映射（真响应形状） */
-
   {
     const now = '2026-09-19T00:00:00.000Z'
-    /* 这两段是真实响应的**结构**（2026-09-19 实测），字段照抄，值取自公开目录。 */
     const npm = discover.npmCandidateOf(
       {
         package: {
@@ -202,15 +183,8 @@ export async function runDiscoveryTests(ok, modules) {
     ok(discover.planForCandidate({ candidate: unsupportedMcp, goalId: 'g', projectId: 'p' }).plan.policyResult === 'unsupported', 'MCP Registry：未实现的 PyPI/uvx 明确 unsupported，不擅自装运行时')
   }
 
-  /* ------------------------------- 5. 源失败 / 部分失败都不编造（§7.2） */
-
   {
     const boom = () => Promise.reject(new Error('offline'))
-    /*
-     * 生产源清单：github-skills / npm-registry / mcp-registry 恒在；skill-directory
-     * 仅在显式配置 `YAN_SKILL_DIRECTORY_URL` 时加入。下面按这份清单逐源 mock、逐源断言，
-     * 新增源或默认源变化时这里会直接失败，逼着把每个源都补齐，而不是靠旧的「两个源」猜。
-     */
     const expectedSourceIds = [
       'github-skills',
       'npm-registry',
@@ -222,7 +196,6 @@ export async function runDiscoveryTests(ok, modules) {
     }
     const githubApiOrigin = originOf(process.env.YAN_GITHUB_API_URL?.trim() || 'https://api.github.com')
     const githubRawOrigin = originOf(process.env.YAN_GITHUB_RAW_URL?.trim() || 'https://raw.githubusercontent.com')
-    /* 请求出没出、出给了哪个源，按 origin 判定，mock 不按单一 URL 片段放宽。 */
     const sourceIdOfUrl = (url) => {
       const origin = originOf(url)
       if (!origin) return null
@@ -233,10 +206,8 @@ export async function runDiscoveryTests(ok, modules) {
       return null
     }
     const sameIdSet = (left, right) => [...left].sort().join('\n') === [...right].sort().join('\n')
-    /* 未登记的来源直接让整组失败，避免测试因「没发请求」而误判通过。 */
     const unknownSource = (url) => Promise.reject(new Error(`未登记的请求来源：${url}`))
 
-    /* ---- 全源挂：每个源都必须真的被查过、被单独记为失败 ---- */
     const allDownRequested = []
     const allDown = await discover.discoverCapabilities({
       queryText: 'read excel files',
@@ -276,7 +247,6 @@ export async function runDiscoveryTests(ok, modules) {
       allDown.sources.map((s) => `${s.sourceId}=${s.error}`).join('；')
     )
 
-    /* 只有 mcp-registry 通、其余每源各自挂：仍要给出结果（§7.2：密钥缺失时仍能做目录检索）。 */
     const halfDownRequested = []
     const halfDown = await discover.discoverCapabilities({
       queryText: 'filesystem',
@@ -329,8 +299,6 @@ export async function runDiscoveryTests(ok, modules) {
     const badQuery = await discover.discoverCapabilities({ queryText: 'C:\\Users\\x\\secret.xlsx', fetchImpl: boom })
     ok(badQuery.sources.length === 0 && /脱敏后为空/.test(badQuery.reason ?? ''), '脱敏后为空：不发请求，直接说明原因')
   }
-
-  /* -------------------------------------------------- 6. 指纹与计划（§8） */
 
   {
     const mk = (extra = {}) => ({

@@ -1,4 +1,3 @@
-/** Settled observations must never create host continuation prompts. */
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 function fakeDeps(overrides = {}) {
   const log = []

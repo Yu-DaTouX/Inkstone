@@ -1,20 +1,3 @@
-/**
- * A7：MCP Apps 宿主**真实运行时归属事实 + pi 启动见证**的专用小测。
- *
- * 用真实 `RunnerRegistry` + 轻量 fake AgentController + 真实临时 pi 原生配置，
- * 证明：
- *   · 只有「该 runner 启动时确实没加载目标服务 + 文件未变 + 身份一致 + 进程 ready」
- *     才不把它当旧持有者；其余一律阻断（含 hidden 实例、别名、坏文件、读失败、
- *     cwd/generation/boot 不符、假时间戳）；
- *   · 托管后**新会话**不会被永久拒绝（FIX3 guard + 真实 facts 工厂可放行连接）；
- *   · 一个服务被阻断不会关掉另一个服务的健康连接；重启/归属变化后迟到结果不发布；
- *   · 事实源缺失 / 抛错时明确拒绝，绝不偷偷用空数组。
- *
- * 不启动 Electron / pi / 真实模型 / 真实 MCP 服务；夹具是 fake manager 与 fake agent，
- * 只证明归属与连接池逻辑，不代表真实 MCP 服务或稳定版规范兼容。
- *
- * 命令：node scripts/test-mcp-app-runtime-ownership.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -63,7 +46,6 @@ const writeJson = async (path, value) => {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
-/* ───────────────────────── 编译真实模块 ───────────────────────── */
 const bundleDir = join(process.cwd(), 'out', 'test', `mcp-runtime-ownership-${process.pid}`)
 await mkdir(bundleDir, { recursive: true })
 const outfile = join(bundleDir, 'bundle.mjs')
@@ -160,7 +142,6 @@ function newAppHost(overrides = {}) {
   }
 }
 
-/* ═══════════════════════ A. 纯判定 ═══════════════════════ */
 {
   const exited = { processRunning: false, conn: 'exited' }
   ok(!m.mayHoldMcpApp(exited, { serverId: 'x', scope: 'global' }), 'A1 进程未跑且 conn=exited：确定不持有')
@@ -239,7 +220,6 @@ function newAppHost(overrides = {}) {
   )
 }
 
-/* ═══════════════════════ B. 采集 / 复核 ═══════════════════════ */
 {
   await resetNative({ globalServers: { globalSrv: { command: 'x' } }, runnerServers: { localSrv: { command: 'y' } } })
   const captured = await m.captureNativeStartupWitness({
@@ -286,7 +266,6 @@ function newAppHost(overrides = {}) {
   eq((await m.verifyNativeStartupWitness(absent.witness)).ok, false, 'B10 启动后新增文件：复核失败')
 }
 
-/* ═════════════════ A7-1. 新 pi 明确无目标：可连接（不再永远拒绝） ═════════════ */
 try {
   await resetHost([{ id: 'alpha', transport: 'stdio', command: 'node', ownedBy: 'inkstone', appHost: APP_HOST_MARK('alpha', piGlobalFile) }])
   await resetNative()
@@ -306,7 +285,6 @@ try {
   state.registry = null
 }
 
-/* ═════════════════ A7-2. hidden 旧 pi 启动时已加载：阻断 ═════════════ */
 try {
   await resetHost([{ id: 'alpha', transport: 'stdio', command: 'node', ownedBy: 'inkstone', appHost: APP_HOST_MARK('alpha', piGlobalFile) }])
   await resetNative({ runnerServers: { alpha: { command: 'native' } } })
@@ -326,7 +304,6 @@ try {
   state.registry = null
 }
 
-/* ═════════════════ A7-3. 假时间戳不构成证据 ═════════════════ */
 try {
   await resetHost([{
     id: 'alpha',
@@ -338,7 +315,6 @@ try {
   await resetNative()
   const { registry, agents } = newRegistry()
   state.registry = registry
-  /* 这個 runner 没有见证（模拟旧 AgentController / 热重载未知）：即使 appHost.at 极新也不能放行。 */
   await addRunner(registry, agents, { cwd: runnerCwd, projectId: null })
 
   const facts = makeFacts()
@@ -351,7 +327,6 @@ try {
   state.registry = null
 }
 
-/* ═════════════════ A7-4. 文件变化 / 坏 JSON / 读失败：阻断 ═════════════ */
 try {
   await resetHost([{ id: 'alpha', transport: 'stdio', command: 'node', ownedBy: 'inkstone', appHost: APP_HOST_MARK('alpha', piGlobalFile) }])
   await resetNative()
@@ -360,19 +335,16 @@ try {
   const runner = await addRunner(registry, agents, { cwd: runnerCwd, projectId: null })
   await captureWitness(runner.agent, { cwd: runnerCwd, generation: runner.generation })
 
-  /* 启动后文件变化 → 见证失效 → 按持有者阻断。 */
   await writeJson(runnerPiFile, { mcpServers: { unrelated: { command: 'z' } } })
   const afterChange = newAppHost()
   await rejects(() => afterChange.host.listToolsWithMeta('alpha'), 'runtime-holders-active', 'A7-4a 启动后文件变化：阻断')
   await resetNative()
 
-  /* 坏 JSON → 复核失败。 */
   await writeFile(runnerPiFile, '{ bad json', 'utf8')
   const afterBad = newAppHost()
   await rejects(() => afterBad.host.listToolsWithMeta('alpha'), 'runtime-holders-active', 'A7-4b 原生配置坏 JSON：阻断')
   await resetNative()
 
-  /* 读失败（只对 runner 项目文件注入失败；guard 侧的原生核对仍可正常读）。 */
   const poisoned = async (path) => {
     if (path === runnerPiFile) throw new Error('injected read failure')
     return m.defaultNativeConfigReader(path)
@@ -384,7 +356,6 @@ try {
   state.registry = null
 }
 
-/* ═════════════════ A7-5. 项目范围与其它项目 ═════════════════ */
 try {
   await resetHost([{
     id: 'gamma',
@@ -397,13 +368,11 @@ try {
   await resetNative()
   const { registry, agents } = newRegistry()
   state.registry = registry
-  /* 同 cwd 但未绑定 project：同目录也无法证明加载过 → 阻断。 */
   const unbound = await addRunner(registry, agents, { cwd: runnerCwd, projectId: null })
   await captureWitness(unbound.agent, { cwd: runnerCwd, generation: unbound.generation, projectId: null })
   const u = newAppHost()
   await rejects(() => u.host.listToolsWithMeta('gamma', { projectId: 'trusted' }), 'runtime-holders-active', 'A7-5a 同 cwd 未绑定 project：阻断')
 
-  /* 绑定到项目且见证目录就是项目目录、启动时无该 server：放行。 */
   await registry.stopAll()
   const { registry: r2, agents: a2 } = newRegistry()
   state.registry = r2
@@ -417,7 +386,6 @@ try {
   state.registry = null
 }
 
-/* ═════════════════ A7-6. 一服务阻断不关闭另一健康连接 + 迟到结果不发布 ═════════════ */
 try {
   await resetHost([
     { id: 'alpha', transport: 'stdio', command: 'node', ownedBy: 'inkstone', appHost: APP_HOST_MARK('alpha', piGlobalFile) },
@@ -439,14 +407,12 @@ try {
   eq(alphaRecord.closes, closesBefore, 'A7-6b 阻断 beta 没有关闭 alpha 的健康连接')
   eq(host.statusOf('alpha').status, 'ready', 'A7-6c alpha 连接仍然 ready')
 
-  /* 迟到结果：调用返回前归属变化 → 丢弃并关掉该池。 */
   let release
   alphaRecord.gate = new Promise((resolve) => {
     release = resolve
   })
   const connectsBefore = alphaRecord.connects
   const pending = host.callToolWithMeta('alpha', 'tool', {})
-  /* 等底层 manager 真的开始这次调用（说明 acquire 时的归属检查已通过）再撤销见证。 */
   const deadline = Date.now() + 2_000
   while (alphaRecord.connects === connectsBefore && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 1))
@@ -461,23 +427,19 @@ try {
   state.registry = null
 }
 
-/* ═════════════════ A7-7. 事实源缺失 / 抛错：明确 fail-closed ═════════════ */
 {
   await resetHost([{ id: 'alpha', transport: 'stdio', command: 'node', ownedBy: 'inkstone', appHost: APP_HOST_MARK('alpha', piGlobalFile) }])
   await resetNative()
 
-  /* 注册表缺失。 */
   state.registry = null
   const noRegistry = newAppHost()
   await rejects(() => noRegistry.host.listToolsWithMeta('alpha'), 'runtime-unknown', 'A7-7a 注册表缺失：runtime-unknown')
 
-  /* 项目登记读取异常。 */
   const { registry } = newRegistry()
   state.registry = registry
   const badProjects = newAppHost({ facts: makeFacts({ projects: async () => { throw new Error('settings down') } }) })
   await rejects(() => badProjects.host.listToolsWithMeta('alpha'), 'runtime-unknown', 'A7-7b 设置 / 项目登记异常：runtime-unknown')
 
-  /* 快照异常：holdersFor 直接抛错，不是空数组。 */
   const brokenRegistry = { mcpHolderSnapshots() { throw new Error('snapshot boom') } }
   state.registry = brokenRegistry
   const brokenFacts = makeFacts()

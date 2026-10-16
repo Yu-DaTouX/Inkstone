@@ -1,14 +1,3 @@
-/**
- * 资料库（实施-25 P03）的单测：契约纯逻辑 + 存储。
- *
- * 为什么这几条最值得钉死：
- *   · **版本推进规则**：内容变了必须新建版本、旧版本一字不改 ——
- *     「更新文件后旧报告的第 N 页仍打开旧版本」全靠它；
- *   · **判定优先级**：同一状态在界面/上下文/成果里必须得到同一个结论，
- *     否则会出现「列表说已移除、打开却报错」这类自相矛盾；
- *   · **孤儿引用保留**：读盘时把指向不存在版本的引用丢掉，等于把数据问题藏起来。
- */
-
 export function runLibraryTests(ok, mod) {
   const {
     normalizeWebUrl,
@@ -29,7 +18,6 @@ export function runLibraryTests(ok, mod) {
     EMPTY_LIBRARY
   } = mod
 
-  /* ---- URL / identity 规范化 ---- */
   {
     ok(normalizeWebUrl('HTTPS://Example.COM/a/b/#frag') === 'https://example.com/a/b', 'URL：host 小写、去 fragment、去末尾斜杠', normalizeWebUrl('HTTPS://Example.COM/a/b/#frag'))
     ok(normalizeWebUrl('https://example.com/a/?q=1&x=2') === 'https://example.com/a?q=1&x=2', 'URL：query 是内容的一部分要保留')
@@ -48,7 +36,6 @@ export function runLibraryTests(ok, mod) {
     ok(contentIdentity('text', 'sha256:abc') === 'text:sha256:abc', '文本 identity 直接带内容指纹')
   }
 
-  /* ---- 引用 ---- */
   {
     const a = { sourceId: 'lib_1', version: 1 }
     ok(sameRef(a, { sourceId: 'lib_1', version: 1 }), '同 id 同版本是同一引用')
@@ -56,7 +43,6 @@ export function runLibraryTests(ok, mod) {
     ok(refKey(a) === 'lib_1@1', '引用键含版本')
   }
 
-  /* ---- 导入决策 ---- */
   {
     const empty = { ...EMPTY_LIBRARY, sources: [], versions: [], refs: [], legacy: [] }
     const input = { kind: 'file', identity: 'file:c:/a.pdf', fingerprint: 'fp1', title: 'A', ref: 'C:/a.pdf' }
@@ -76,7 +62,6 @@ export function runLibraryTests(ok, mod) {
     ok(validateImport({ ...input, kind: 'exe' }).ok === false, '未知类型被拒')
   }
 
-  /* ---- 查询与判定优先级 ---- */
   {
     const doc = {
       version: 1,
@@ -133,19 +118,16 @@ export async function runLibraryStoreTests(ok, mod, helpers) {
     ok(created.ok === true && created.decision === 'new-source' && created.version === 1, '新资料建第 1 版')
     const sourceId = created.sourceId ?? ''
 
-    /* ---- 幂等 ---- */
     const again = await store.importSource(paper)
     ok(again.decision === 'unchanged' && again.sourceId === sourceId, '同内容同指纹重复导入是幂等的')
     ok(store.document().versions.length === 1, '幂等导入不产生第二个版本', String(store.document().versions.length))
 
-    /* ---- 内容变化 → 新版本，旧版本一字不改 ---- */
     const v1Before = JSON.stringify(store.document().versions.find((v) => v.version === 1))
     const updated = await store.importSource({ ...paper, fingerprint: 'fp2', size: 4321 })
     ok(updated.decision === 'new-version' && updated.version === 2, '内容变了推进到第 2 版')
     const v1After = JSON.stringify(store.document().versions.find((v) => v.version === 1))
     ok(v1Before === v1After, '**旧版本的内容事实一字未改**（identity / ref / 指纹）')
 
-    /* ---- 落盘 + 读回 ---- */
     {
       const raw = JSON.parse(await readFile(join(root, 'library.json'), 'utf8'))
       ok(raw.version === 1 && raw.versions.length === 2, '文档结构落盘')
@@ -156,12 +138,10 @@ export async function runLibraryStoreTests(ok, mod, helpers) {
       ok(doc.versions.find((v) => v.version === 1)?.fingerprint === 'fp1', '重启后旧版本指纹仍是旧的')
     }
 
-    /* ---- 解析状态：可变状态写入，不碰内容事实 ---- */
     ok(await store.setParse(sourceId, 2, { status: 'ok', textPath: 'library/text/x.txt', chars: 100, note: '', at: 2000 }), '写解析状态')
     ok(store.document().versions.find((v) => v.version === 2)?.parse.status === 'ok', '解析状态落库')
     ok(store.document().versions.find((v) => v.version === 2)?.identity === 'file:c:/docs/paper.pdf', 'setParse 不改内容事实')
 
-    /* ---- 引用：同一份资料被两个会话 + 一门课引用 ---- */
     await store.addRef({ kind: 'session', id: 'sess-a' }, { sourceId, version: 1 })
     await store.addRef({ kind: 'session', id: 'sess-b' }, { sourceId, version: 1 })
     await store.addRef({ kind: 'course', id: 'course-1' }, { sourceId, version: 1 })
@@ -170,7 +150,6 @@ export async function runLibraryStoreTests(ok, mod, helpers) {
     ok(await store.removeRef({ kind: 'session', id: 'sess-b' }, { sourceId, version: 1 }), '撤引用')
     ok(store.document().refs.length === 2, '撤引用只删那一条', String(store.document().refs.length))
 
-    /* ---- 验收核心：更新文件后，旧引用仍取到旧版本 ---- */
     {
       const doc = store.document()
       const oldVersion = doc.versions.find((v) => v.sourceId === sourceId && v.version === 1)
@@ -179,7 +158,6 @@ export async function runLibraryStoreTests(ok, mod, helpers) {
       ok(newVersion?.fingerprint === 'fp2', '最新版本是更新后的内容（fp2）')
     }
 
-    /* ---- 软移除：只打标记，版本与引用都留 ---- */
     await store.removeSource(sourceId)
     ok(store.document().sources.find((s) => s.id === sourceId)?.removedAt === 1000, '软移除只打标记')
     ok(store.document().versions.length === 2, '软移除不删版本')
@@ -187,31 +165,26 @@ export async function runLibraryStoreTests(ok, mod, helpers) {
     await store.importSource({ ...paper, fingerprint: 'fp2', size: 4321 })
     ok(store.document().sources.find((s) => s.id === sourceId)?.removedAt === undefined, '再次导入同一份 → 视为重新加入')
 
-    /* ---- 原件可用性：如实标记，也能恢复 ---- */
     ok((await store.setAvailability([{ sourceId, version: 2, available: false }], 5000)) > 0, '写可用性探测结果')
     ok(store.document().versions.find((v) => v.version === 2)?.available === false, '版本标为不可用')
     ok(store.document().sources.find((s) => s.id === sourceId)?.unavailableAt === 5000, '资料级也记不可用时间')
     await store.setAvailability([{ sourceId, version: 2, available: true }], 6000)
     ok(store.document().sources.find((s) => s.id === sourceId)?.unavailableAt === undefined, '原件回来后清掉不可用标记')
 
-    /* ---- 改名不回写历史标题 ---- */
     const renamed = await store.renameSource(sourceId, '论文（改名）')
     ok(renamed.ok === true && renamed.source?.title === '论文（改名）', '改展示标题')
     ok(store.document().versions.every((v) => v.title === '论文'), '**版本里的历史标题不被改名影响**')
     ok((await store.renameSource(sourceId, '   ')).ok === false, '空标题被拒')
     ok((await store.renameSource('nope', 'x')).ok === false, '改不存在的资料被拒')
 
-    /* ---- 旧引用映射（T03-3） ---- */
     const legacy = await store.mapLegacy({ legacyId: 'src-1', sessionId: 'sess-a', sourceId, version: 1 })
     ok(legacy?.sourceId === sourceId, '旧引用首次被接管时建映射')
     const legacyAgain = await store.mapLegacy({ legacyId: 'src-1', sessionId: 'sess-a', sourceId, version: 1 })
     ok(legacyAgain?.at === legacy?.at, '映射重复建立返回已有那条')
     ok((await store.mapLegacy({ legacyId: 'src-x', sessionId: 'sess-a', sourceId: 'ghost', version: 1 })) === null, '给不存在的资料建映射返回 null')
 
-    /* ---- 归档到空间 ---- */
     ok(await store.attachToSpace(sourceId, 'sp_1'), '资料可归档到空间')
     ok(store.document().sources.find((s) => s.id === sourceId)?.spaceId === 'sp_1', '空间归属落库')
-  /* ---- 读盘容错 ---- */
   {
     const doc = sanitizeLibraryDocument({
       version: 1,

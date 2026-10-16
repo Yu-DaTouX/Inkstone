@@ -1,15 +1,3 @@
-/**
- * 会话移动后续接的真实链路验证：**当前随包 pi 进程 + 回环模型 + Node 宿主**。
- *
- * 与 `test-session-move-continuation.mjs`（假 Agent/假 RPC 断言宿主判定）互补：
- * 这里用真实 `AgentController` + 真实 `RunnerRegistry`，验证「停原实例 → 原子改写
- * 会话文件头 cwd → 在新目录用真实 pi 重新打开同一会话 → 宿主续接一次」在真实进程上
- * 确实可行，并且人工停止/新输入时不续。
- *
- * 不启动 Electron、不访问外部模型或凭证：模型是本机回环 SSE，凭证/数据目录都是临时目录。
- *
- * 用法：node scripts/test-session-move-continuation-live.mjs
- */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -34,7 +22,6 @@ const waitFor = async (condition, label, timeoutMs = 30000) => {
 }
 const warnings = []
 
-/* ── 回环模型：每条请求回一小段文本，记录收到的提示词 ── */
 const prompts = []
 const model = createServer((req, res) => {
   let body = ''
@@ -49,7 +36,6 @@ const model = createServer((req, res) => {
   })
 })
 
-/* ── 提取 src/main/index.ts 的宿主函数，注入真实依赖 ── */
 const functionsOf = (source, names) => {
   const ast = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const found = []
@@ -168,7 +154,6 @@ try {
     return { id: selected.id, agent, sessionFile: state?.sessionFile, sessionId: state?.sessionId }
   }
 
-  /* ── A. 正常收尾 → 在新目录续接一次 ── */
   {
     const { registry, context, created } = makeRegistry()
     const started = await openSession(registry, srcDir, '第一轮：先看一下这个项目')
@@ -188,7 +173,6 @@ try {
     const lastText = typeof lastUser?.content === 'string' ? lastUser.content : JSON.stringify(lastUser?.content ?? '')
     ok(JSON.stringify(continuation).includes('砚宿主通知'), '续接内容来自宿主通知')
     ok(lastText.includes('砚宿主通知'), '最后一条用户消息就是宿主通知')
-    /* pi 每次请求都会带上完整历史，所以“没有重放”看的是最后一条用户输入而不是整份请求体。 */
     ok(!lastText.includes('第一轮：先看一下这个项目'), '宿主通知不是原请求的拷贝')
     const restored = registry.statuses().find(s => s.sessionId === started.sessionId)
     ok(!!restored && restored.cwd === targetDir, '实例在新目录持有同一会话')
@@ -199,7 +183,6 @@ try {
     ok(true, 'A 段收尾：实例全部关闭')
   }
 
-  /* ── B. 人工停止 / 新输入 → 只移动不续接 ── */
   {
     const { registry, context, created } = makeRegistry({ approval: ctx => { const live = ctx.runners.statuses()[0]; const agent = live && ctx.runners.agentOf(live.runId); if (agent) agent.loopGuardContinuationVersion += 1 } })
     const started = await openSession(registry, srcDir, '第二轮：先说个计划')

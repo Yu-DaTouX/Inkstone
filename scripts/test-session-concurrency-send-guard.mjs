@@ -1,22 +1,3 @@
-/**
- * 同项目多会话冲突保护 —— 发送 / 直执行前的同 cwd 复核（专题回归，不需要真实 pi / 模型）。
- *
- * 背景：`RunnerRegistry.select()` 的同 cwd 冲突扫描只在「要创建 / 载入另一个实例」时执行；
- * 命中已有实例（hit）直接切视图返回。于是「同一物理 cwd 上已有一个后台忙碌实例，前台那个
- * 实例空闲」时，对前台实例 `yan:send` / `yan:runBash` 会绕过 select 的防线，可能在两个实例
- * 上同时写同一工作树。
- *
- * 本脚本用真实 `RunnerRegistry` + 假 Agent 驱动刚加的 `guardExecute`（薄 helper
- * `src/main/session-send-guard.ts` 的编译产物）：
- *   · 自己不忙、同 cwd 另有忙碌实例 → 拒绝（不开第二个写者、不停别人）；
- *   · 自己已经在跑的同一实例 → 放行（自己的插话 / 排队不能被自己拦下）；
- *   · 没有别的忙碌实例 / 不同 cwd → 不误报；
- *   · cwd 大小写 / 斜杠 / 末尾分隔符差异不能绕过。
- * 另直接编译纯 helper，覆盖 null / 空 cwd / selfBusy 的判定。
- *
- * ⚠️ 单次复核覆盖不了「双方 state 都还没推 running」的双发送竞态；本脚本不宣称
- * 「同 cwd 冲突已彻底解决」，只验证这道只读复核本身。
- */
 import { build } from 'esbuild'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -104,8 +85,6 @@ export async function runSessionConcurrencySendGuardTests(ok) {
     return { reg, agents, created }
   }
 
-  /* 在同一 cwd 造出「一个空闲前台 + 一个空闲后台」两个已登记实例。
-   * 第二个用 activate:false：此时第一个还不忙，select 不会建隔离，直接新建。 */
   const twoIdleSameCwd = async (reg, a = 'C:/proj', b = 'C:/proj') => {
     const first = await reg.select({ cwd: a, sessionFile: 'C:/proj/a.jsonl' })
     const second = await reg.select({ cwd: b, sessionFile: 'C:/proj/b.jsonl', activate: false })
@@ -116,9 +95,6 @@ export async function runSessionConcurrencySendGuardTests(ok) {
     agent.state = { ...agent.state, isAgentRunning: flag }
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ① 自己空闲 + 同 cwd 另一个忙碌：拒绝
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg, created } = make()
     const { first, second, firstId, secondId } = await twoIdleSameCwd(reg)
@@ -135,9 +111,6 @@ export async function runSessionConcurrencySendGuardTests(ok) {
     ok(reg.activeRunnerId === firstId, '拒绝不改动当前视图')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ② 发起者自己已经在跑：放行（自己的插话 / 排队不被自己拦下）
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const { first, second, firstId, secondId } = await twoIdleSameCwd(reg)
@@ -149,9 +122,6 @@ export async function runSessionConcurrencySendGuardTests(ok) {
     ok(second.calls.stop === 0, '放行不动别的实例')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ③ 没有别的忙碌实例：不误报
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const first = await reg.select({ cwd: 'C:/free', sessionFile: 'C:/free/a.jsonl' })
@@ -164,9 +134,6 @@ export async function runSessionConcurrencySendGuardTests(ok) {
     ok(reg2.guardExecute(idleB.id).ok === true, '不同 cwd 上的忙碌实例不影响：放行')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ④ 目标不存在 / cwd 为空：放行，交由后续既有检查
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     ok(reg.guardExecute('missing').ok === true, '目标实例不存在：放行')
@@ -181,12 +148,8 @@ export async function runSessionConcurrencySendGuardTests(ok) {
     ok(seenLookup === false, 'helper：放行前不查忙碌集合')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ⑤ cwd 规范化：大小写 / 斜杠 / 末尾分隔符差异不能绕过
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
-    /* 两个实例用不同写法的同一物理目录（此时都还不忙，可以共存） */
     const { firstId, secondId, first } = await twoIdleSameCwd(reg, 'C:/Proj/', 'c:\\proj')
     busy(first)
     const g = reg.guardExecute(secondId)
@@ -194,9 +157,6 @@ export async function runSessionConcurrencySendGuardTests(ok) {
     ok(reg.guardExecute(firstId).ok === true, '规范化下发起者自己仍放行')
   }
 
-  /* ──────────────────────────────────────────────────────────────
-   * ⑥ 只读复核：拒绝不改变任何实例状态、不停实例
-   * ────────────────────────────────────────────────────────────── */
   {
     const { reg } = make()
     const { first, secondId } = await twoIdleSameCwd(reg)
@@ -209,7 +169,6 @@ export async function runSessionConcurrencySendGuardTests(ok) {
   }
 }
 
-// 专项入口：只在内存中编译 runners / helper 及其纯状态依赖，不构建应用、不启动 pi。
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   let passed = 0
   let failed = 0

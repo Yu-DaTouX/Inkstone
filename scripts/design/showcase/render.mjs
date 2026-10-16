@@ -10,7 +10,6 @@ mkdirSync(out,{recursive:true});
 app.setPath('userData',join(out,'renderer-profile'));
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 const duration=48,fps=30;
-// An original, quiet A-minor score: soft sine harmonics and a slow pulse.
 function score(){const sr=48000,n=sr*duration,b=Buffer.alloc(44+n*4);b.write('RIFF');b.writeUInt32LE(36+n*4,4);b.write('WAVEfmt ',8);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(2,22);b.writeUInt32LE(sr,24);b.writeUInt32LE(sr*4,28);b.writeUInt16LE(4,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(n*4,40);const notes=[220,261.6256,329.6276,391.9954,293.6648,261.6256,329.6276,246.9417];for(let i=0;i<n;i++){const t=i/sr,beat=Math.floor(t/.75),u=t% .75,f=notes[beat%notes.length],env=(1-Math.exp(-u*35))*Math.exp(-u*4.8),fade=Math.min(1,t/2,(duration-t)/3);for(let ch=0;ch<2;ch++){const det=ch?1.001:1;const pluck=(Math.sin(2*Math.PI*f*t*det)+.17*Math.sin(2*Math.PI*f*2*t))*env*.12;const pad=(Math.sin(2*Math.PI*110*t)+Math.sin(2*Math.PI*164.8138*t+ch*.3))*.025*(.8+.2*Math.sin(t*.4));b.writeInt16LE(Math.round((pluck+pad)*fade*32767),44+i*4+ch*2)}}writeFileSync(join(out,'score.wav'),b)}
 app.whenReady().then(async()=>{
 let win,encoder;

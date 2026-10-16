@@ -1,23 +1,3 @@
-/**
- * 会话级提问频率覆盖（四态 inherit / sparse / balanced / eager）的定向单测。
- *
- * 钉住五件事：
- *   ① 真实 `WorkModeStore` 的持久化：显式值落盘并在重载后保留，`inherit` 对新会话
- *      不落盘；`setMode` 不抹频率、`setQuestionFrequency` 不抹模式，并发提交不互相覆盖；
- *      旧记录缺字段 / 脏值归 `inherit`；`pending` → 稳定键迁移整条搬走；revision CAS。
- *   ② 逐轮快照：`writeWorkModeSnapshot` 写频率，`inherit` 也写（擦掉上一轮显式残留）。
- *   ③ 内置扩展 `question.js`：显式会话偏好覆盖全局、`inherit` 每轮回落全局、
- *      快照缺失回落全局、工作模式（自主）优先、轮间热更新。
- *   ④ 真实 IPC 适配 `question-frequency-ipc.ts`：身份（runner + sessionId）+ revision
- *      校验；持久化前后核对归属，切会话期间的迟到请求不写 B。
- *   ⑤ 扩展与 shared 的四态列表 / 归一化一致。
- *
- * 用隔离的 `YAN_DATA_DIR` 临时 fixture，不碰真实数据目录，不需要构建、Electron 或真实模型。
- * 可直接运行 `node scripts/test-question-frequency-session.mjs`，也导出
- * `runQuestionFrequencySessionTests(ok)` 供后续接线；import 本模块不产生副作用。
- */
-/* ------------------------------------------------------------------ 最小 React hook harness */
-
 function qfDepsEqual(a, b) {
   if (a === b) return true
   if (!a || !b || a.length !== b.length) return false
@@ -25,7 +5,6 @@ function qfDepsEqual(a, b) {
   return true
 }
 
-/** 只实现 picker 用到的那几个 hook，按调用顺序存 slot；无 jsdom、无 Electron。 */
 function createQfHarness(component, initialStore) {
   const slots = []
   let cursor = 0
@@ -37,7 +16,6 @@ function createQfHarness(component, initialStore) {
     scheduled = true
     queueMicrotask(() => {
       scheduled = false
-      /* 测试换掉 harness 后，迟到的重渲染不能再读已删除的全局 store */
       if (globalThis.__qfPickerHarness !== runtime) return
       renderNow()
     })
@@ -50,7 +28,7 @@ function createQfHarness(component, initialStore) {
       if (!slot || slot.kind !== 'effect' || !slot.pending) continue
       slot.pending = false
       if (typeof slot.cleanup === 'function') {
-        try { slot.cleanup() } catch { /* ignore */ }
+        try { slot.cleanup() } catch { }
       }
       const cleanup = slot.effect()
       slot.cleanup = typeof cleanup === 'function' ? cleanup : undefined
@@ -104,7 +82,6 @@ function createQfHarness(component, initialStore) {
     createElement(type, props, key) {
       const merged = { ...(props || {}) }
       if (key !== undefined) merged.key = key
-      /* JSX 自动运行时传的是组件函数；存下名字便于断言按 type 查找 */
       const name = typeof type === 'function' ? (type.displayName ?? type.name ?? 'Anonymous') : type
       return { __el: true, type: name, props: merged }
     }
@@ -112,7 +89,6 @@ function createQfHarness(component, initialStore) {
   return runtime
 }
 
-/** 展开 hook harness 产出的最小元素树。 */
 function qfElements(node, out = []) {
   if (node == null || typeof node === 'boolean') return out
   if (Array.isArray(node)) { for (const n of node) qfElements(n, out); return out }
@@ -145,7 +121,6 @@ export const jsxDEV = jsx
   ui: `export const Segmented = (props) => ({ __el: true, type: 'Segmented', props: props || {} })`
 }
 
-/** 真跑 `SessionQuestionFrequencyPicker`：把 React / store / i18n / ui 替身塞进组件 bundle。 */
 async function loadQuestionFrequencyComponent(build, buildDir, pathToFileURL, join) {
   const outfile = join(buildDir, 'session-question-frequency-picker.mjs')
   await build({
@@ -202,7 +177,6 @@ export async function runQuestionFrequencySessionTests(ok) {
   }
 
   try {
-    /* ---- 与 shared 的四态纯逻辑对照（同一份列表与归一化） ---- */
     const sharedSource = await readFile(new URL('../src/shared/question-frequency.ts', import.meta.url), 'utf8')
     const transformed = await transform(sharedSource, { loader: 'ts', format: 'esm' })
     const shared = await import(`data:text/javascript;base64,${Buffer.from(transformed.code).toString('base64')}`)
@@ -244,7 +218,6 @@ export async function runQuestionFrequencySessionTests(ok) {
       )
     }
 
-    /* ---- 打包真实 store + IPC 适配 + goal-coordinator producer（同一条 import 图） ---- */
     const entry = join(buildDir, 'entry.ts')
     const storePath = fileURLToPath(new URL('../src/main/work-mode-service.ts', import.meta.url)).replace(/\\/g, '/')
     const ipcPath = fileURLToPath(new URL('../src/main/ipc/question-frequency-ipc.ts', import.meta.url)).replace(/\\/g, '/')
@@ -262,12 +235,6 @@ export async function runQuestionFrequencySessionTests(ok) {
       format: 'esm',
       platform: 'node',
       logLevel: 'silent',
-      /*
-       * 给 `work-mode-service` 的模块绑定包一层钩子：生产 writer（question-frequency-ipc、
-       * goal-ipc、goal-coordinator、handoff-coordinator）都从这里取快照读写，测试无法从
-       * 外部替换；这层包裹只在 await 前后调用可选钩子，用来模拟「读取期间 / 写入关键段 /
-       * 保存后实例被复用」。`resolveDir` 指向 `src/main`，stub 自己的 import 跳过钩子。
-       */
       plugins: [{
         name: 'qf-snapshot-hooks',
         setup(b) {
@@ -299,7 +266,6 @@ import * as real from './work-mode-service'
           }))
         }
       }, {
-        /* handoff-coordinator 经 settings.ts 静态 import 'electron'；测试里给一个最小 app 桩。 */
         name: 'electron-stub',
         setup(b) {
           b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'qf-electron' }))
@@ -330,7 +296,6 @@ import * as real from './work-mode-service'
     ok(typeof registerGoalIpc === 'function' && typeof inheritForHandoff === 'function', '打包：goal-ipc 与 handoff 目的段 writer 可用')
     ok(typeof sessionQuestionFrequencyTarget === 'function', '打包：会话频率目标选择器可用')
 
-    /* 真实 store + IPC 的隔离夹具（快照走 YAN_DIR，store 走独立临时目录）。 */
     const makeIpcFixture = async (runnerId = 'runner-A') => {
       const ipcRoot = mkdtempSync(join(tmpdir(), 'yan-qf-ipc-'))
       const store = new WorkModeStore({ root: ipcRoot })
@@ -372,10 +337,6 @@ import * as real from './work-mode-service'
       }
     }
 
-    /*
-     * 生产路径同图：同一个 store + registry 同时接 IPC 与 goal-coordinator producer。
-     * 用来验证「pending → 稳定文件」的迁移是真的接了生产，而不是只测 store.adopt。
-     */
     const makeProducerFixture = async (runnerId, initialSession, globalFrequency = 'balanced') => {
       const prodRoot = mkdtempSync(join(tmpdir(), 'yan-qf-prod-'))
       const store = new WorkModeStore({ root: prodRoot })
@@ -416,7 +377,6 @@ import * as real from './work-mode-service'
       }
     }
 
-    /* ================================ ① store 持久化 ================================ */
     {
       const keyA = 'C:/sessions/A.jsonl'
       const store = new WorkModeStore({ root })
@@ -469,7 +429,6 @@ import * as real from './work-mode-service'
         JSON.stringify(persisted)
       )
 
-      /* 并发提交（都不带 revision）不能互相覆盖字段 */
       const keyB = 'C:/sessions/B.jsonl'
       await store.set(keyB, 'standard')
       await Promise.all([store.set(keyB, 'autonomous'), store.setQuestionFrequency(keyB, 'eager')])
@@ -480,7 +439,6 @@ import * as real from './work-mode-service'
         JSON.stringify(both)
       )
 
-      /* 非法偏好归一为 inherit（并清掉旧显式档） */
       const bad = await store.setQuestionFrequency(keyB, 'loud')
       ok(
         bad.ok && bad.state.questionFrequency === 'inherit' && bad.state.mode === 'autonomous',
@@ -489,7 +447,6 @@ import * as real from './work-mode-service'
       )
     }
 
-    /* 旧记录兼容：缺字段 / 脏字段 → inherit */
     {
       const legacyRoot = mkdtempSync(join(tmpdir(), 'yan-qf-legacy-'))
       writeFileSync(
@@ -511,7 +468,6 @@ import * as real from './work-mode-service'
       rmSync(legacyRoot, { recursive: true, force: true })
     }
 
-    /* pending → 稳定键迁移整条搬走（频率跟着走） */
     {
       const adoptRoot = mkdtempSync(join(tmpdir(), 'yan-qf-adopt-'))
       const adoptStore = new WorkModeStore({ root: adoptRoot })
@@ -528,9 +484,7 @@ import * as real from './work-mode-service'
       rmSync(adoptRoot, { recursive: true, force: true })
     }
 
-    /* ==================== ①c F06：生产路径 pending → 稳定文件的安全迁移 ==================== */
     {
-      /* 同实例 pending 阶段设显式档，文件出现后由 producer 迁移到稳定键 */
       const h = await makeProducerFixture('runner-P', { sessionId: 'sid-P' })
       let res = await h.set({ runnerId: 'runner-P', sessionId: 'sid-P', expectedRevision: 0, questionFrequency: 'eager' })
       ok(res.ok && res.preference === 'eager', 'F06：pending 阶段可设显式频率', JSON.stringify(res))
@@ -556,7 +510,6 @@ import * as real from './work-mode-service'
       h.rm()
     }
     {
-      /* 归属不符（runner 被复用给别的会话）：不迁移，新会话安全 inherit */
       const h = await makeProducerFixture('runner-Q', { sessionId: 'sid-NEW' })
       await h.store.setQuestionFrequency('pending:runner-Q', 'eager', undefined, 'sid-OLD')
       h.session.sessionFile = 'C:/sessions/Q.jsonl'
@@ -574,7 +527,6 @@ import * as real from './work-mode-service'
       h.rm()
     }
     {
-      /* 旧记录没有 owner：未知归属 → 安全 inherit，不盲搬 */
       const h = await makeProducerFixture('runner-R', { sessionId: 'sid-R' })
       await h.store.setQuestionFrequency('pending:runner-R', 'sparse')
       h.session.sessionFile = 'C:/sessions/R.jsonl'
@@ -586,7 +538,6 @@ import * as real from './work-mode-service'
       h.rm()
     }
     {
-      /* 迁移 / set 都不丢字段：mode 与频率正交 */
       const h = await makeProducerFixture('runner-S', { sessionId: 'sid-S' })
       await h.set({ runnerId: 'runner-S', sessionId: 'sid-S', expectedRevision: 0, questionFrequency: 'sparse' })
       await h.store.set('pending:runner-S', 'autonomous', undefined, 'sid-S')
@@ -601,7 +552,6 @@ import * as real from './work-mode-service'
       h.rm()
     }
 
-    /* ================================ ② 逐轮快照 ================================ */
     {
       const snapRoot = mkdtempSync(join(tmpdir(), 'yan-qf-snap-'))
       await writeWorkModeSnapshot('r1', { mode: 'standard', revision: 2, questionFrequency: 'eager' }, snapRoot)
@@ -615,7 +565,6 @@ import * as real from './work-mode-service'
       rmSync(snapRoot, { recursive: true, force: true })
     }
 
-    /* ================================ ③ 扩展逐轮读取 ================================ */
     {
       const desktop = join(root, 'desktop.json')
       const handlers = {}
@@ -653,14 +602,12 @@ import * as real from './work-mode-service'
       t = turn()
       ok(t.prompt.includes('Question frequency: BALANCED'), '扩展：全局脏值归适中')
 
-      /* 自主模式优先：不叠加频率 */
       await writeWorkModeSnapshot('qf-runner-A', { mode: 'autonomous', revision: 9, questionFrequency: 'eager' }, root)
       setGlobal('eager')
       t = turn()
       ok(t.prompt.includes('Do NOT ask the user questions'), '扩展：自主模式仍然不问')
       ok(!t.prompt.includes('Question frequency:'), '扩展：自主模式不叠加频率指引')
 
-      /* 归属校验：快照属于 A，ctx 是 B（runner 被复用给别的会话）→ 忽略，不落旧 A 偏好 */
       const turnCtx = (ctx) => {
         const event = { systemPrompt: 'BASE', systemPromptOptions: { sections: {} } }
         const out = handlers.before_agent_start(event, ctx)
@@ -683,7 +630,6 @@ import * as real from './work-mode-service'
       )
     }
 
-    /* ================================ ④ IPC 适配 ================================ */
     {
       const ipcRoot = mkdtempSync(join(tmpdir(), 'yan-qf-ipc-'))
       const store = new WorkModeStore({ root: ipcRoot })
@@ -711,11 +657,9 @@ import * as real from './work-mode-service'
       const set = handlers['yan:setSessionQuestionFrequency']
       ok(typeof get === 'function' && typeof set === 'function', 'IPC：注册了 get / set')
 
-      /* 新会话默认 inherit，effective 跟随全局 */
       let view = await get()
       ok(view.ok && view.preference === 'inherit' && view.effective === 'balanced' && view.revision === 0, 'IPC：新会话 inherit / effective=全局', JSON.stringify(view))
 
-      /* 显式设置：落盘 + 写快照 + 推送 */
       globalFrequency = 'sparse'
       let res = await set({ runnerId: 'runner-A', sessionId: 'sid-A', sessionFile: 'C:/sessions/A.jsonl', expectedRevision: 0, questionFrequency: 'eager' })
       ok(res.ok && res.preference === 'eager' && res.effective === 'eager' && res.global === 'sparse', 'IPC：显式设置生效且不被全局覆盖', JSON.stringify(res))
@@ -724,16 +668,13 @@ import * as real from './work-mode-service'
       ok(snapshot && snapshot.questionFrequency === 'eager', 'IPC：设置写入模型侧快照', JSON.stringify(snapshot))
       ok(pushes.some((p) => p.ch === 'work-mode' && p.payload.questionFrequency === 'eager'), 'IPC：设置后推送 work-mode')
 
-      /* revision 冲突：不写并回传当前值 */
       res = await set({ runnerId: 'runner-A', sessionId: 'sid-A', expectedRevision: 99, questionFrequency: 'balanced' })
       ok(!res.ok && res.error === 'version-mismatch' && res.preference === 'eager', 'IPC：revision 冲突不写并回传当前值', JSON.stringify(res))
 
-      /* 身份过期：显式 sessionId 与宿主当前不符 → 拒绝 */
       res = await set({ runnerId: 'runner-A', sessionId: 'sid-B', expectedRevision: 1, questionFrequency: 'sparse' })
       ok(!res.ok && res.error === 'stale_session', 'IPC：sessionId 不符拒绝', JSON.stringify(res))
       ok(store.state('C:/sessions/A.jsonl').questionFrequency === 'eager', 'IPC：拒绝后 store 未改')
 
-      /* A 的迟到请求：持久化期间 runner 切到 B → 只保留 A，不写 B */
       const realSet = store.setQuestionFrequency.bind(store)
       let switchOnWrite = false
       store.setQuestionFrequency = async (key, pref, expected) => {
@@ -750,11 +691,9 @@ import * as real from './work-mode-service'
       const aSnapshot = await readWorkModeSnapshot('runner-A')
       ok(aSnapshot?.questionFrequency === 'eager', 'IPC：迟到请求不刷新快照（保留上一次成功值）', JSON.stringify(aSnapshot))
 
-      /* 显式 runnerId 指向非 active 会话时也按其身份处理（不盲取 active） */
       res = await set({ runnerId: 'runner-A', sessionId: 'sid-B', expectedRevision: undefined, questionFrequency: 'balanced' })
       ok(!res.ok && res.error === 'stale_session', 'IPC：切走后显式 sessionId 不符仍拒绝')
 
-      /* inherit 回落全局 */
       runnerState.sessionFile = 'C:/sessions/A.jsonl'
       const before = store.state('C:/sessions/A.jsonl').revision
       globalFrequency = 'eager'
@@ -764,7 +703,6 @@ import * as real from './work-mode-service'
       rmSync(ipcRoot, { recursive: true, force: true })
     }
 
-    /* ==================== ④b 严格身份：缺必要身份不得写 ==================== */
     {
       const h = await makeIpcFixture()
       let res = await h.set({})
@@ -790,7 +728,6 @@ import * as real from './work-mode-service'
       h.rm()
     }
 
-    /* ==================== ①b 真实 producer：pushWorkMode 携带权威 revision ==================== */
     {
       const producerStore = new WorkModeStore({ root })
       await producerStore.load()
@@ -807,7 +744,7 @@ import * as real from './work-mode-service'
         workModes: producerStore,
         pushFrom: (id, msg) => producerPushes.push({ id, ...msg })
       })
-      await producerStore.setQuestionFrequency('C:/sessions/producer.jsonl', 'eager') // revision 1
+      await producerStore.setQuestionFrequency('C:/sessions/producer.jsonl', 'eager')
 
       const payload = await pushWorkMode('runner-A')
       ok(
@@ -818,7 +755,6 @@ import * as real from './work-mode-service'
       const wmPushes = producerPushes.filter((p) => p.ch === 'work-mode')
       ok(wmPushes.length >= 1 && wmPushes.at(-1).payload.revision === 1, 'producer：推送的 revision 也是权威值（不再是 0）')
 
-      /* 旧快照里的退休模式不得被频率改动复活 */
       await writeWorkModeSnapshot('runner-A', { mode: 'autonomous', revision: 9, questionFrequency: 'eager' })
       const again = await pushWorkMode('runner-A')
       const snap = await readWorkModeSnapshot('runner-A')
@@ -826,9 +762,7 @@ import * as real from './work-mode-service'
       rmSync(join(root, 'work-mode'), { recursive: true, force: true })
     }
 
-    /* ==================== ⑤ publish 每个 await 后核对归属 ==================== */
     {
-      /* 读取期间实例被复用：不写快照、不推送 */
       const h = await makeIpcFixture('runner-R1')
       await h.store.setQuestionFrequency('C:/sessions/A.jsonl', 'eager')
       globalThis.__qfHooks = {
@@ -851,7 +785,6 @@ import * as real from './work-mode-service'
       h.rm()
     }
     {
-      /* 保存后实例被复用：快照仍是它自己的 A，但不推送 */
       const h = await makeIpcFixture('runner-R2')
       await h.store.setQuestionFrequency('C:/sessions/A.jsonl', 'eager')
       globalThis.__qfHooks = {
@@ -875,7 +808,6 @@ import * as real from './work-mode-service'
       h.rm()
     }
     {
-      /* 保留待审标记；模式固定 standard，不从旧快照复活 autonomous */
       const h = await makeIpcFixture('runner-R3')
       await writeWorkModeSnapshot('runner-R3', { mode: 'autonomous', revision: 1, questionFrequency: 'inherit', planApprovalPending: true })
       await h.store.setQuestionFrequency('C:/sessions/A.jsonl', 'eager')
@@ -889,7 +821,6 @@ import * as real from './work-mode-service'
       h.rm()
     }
     {
-      /* describe 的 global await 后重新解析身份，不返回新 key + 旧 session 混合体 */
       const h = await makeIpcFixture('runner-R4')
       let flip = false
       h.setGlobal(async () => {
@@ -911,7 +842,6 @@ import * as real from './work-mode-service'
       rmSync(join(root, 'work-mode'), { recursive: true, force: true })
     }
 
-    /* ==================== ⑤b F04：快照提交关键段不得被旧会话 rename 覆盖 ==================== */
     {
       const bSnapshot = (runnerId, rev) =>
         writeWorkModeSnapshot(
@@ -921,7 +851,6 @@ import * as real from './work-mode-service'
           { owner: { sessionId: 'sid-B', sessionFile: 'C:/sessions/B.jsonl' } }
         )
 
-      /* 读取期间复用：B 的有效快照不被旧 A 覆盖 */
       {
         const h = await makeIpcFixture('runner-X1')
         await bSnapshot('runner-X1', 7)
@@ -950,7 +879,6 @@ import * as real from './work-mode-service'
         h.rm()
       }
 
-      /* 写入关键段复用：guard 分别在写入起点 / rename 前复校，都不覆盖 B */
       for (const flipAt of [2, 4]) {
         const runnerId = `runner-X${flipAt}`
         const h = await makeIpcFixture(runnerId)
@@ -1002,7 +930,6 @@ import * as real from './work-mode-service'
         h.rm()
       }
 
-      /* 代次变化（runner 复用、sessionFile 还没刷新）：identity 仍能识别 */
       {
         const runnerId = 'runner-XG'
         const h = await makeIpcFixture(runnerId)
@@ -1048,7 +975,6 @@ import * as real from './work-mode-service'
         h.rm()
       }
 
-      /* 写后复用：A 的迟到快照留在磁盘，但带 A 自己的归属，扩展核对归属不会带给 B */
       {
         const h = await makeIpcFixture('runner-X9')
         await h.store.setQuestionFrequency('C:/sessions/A.jsonl', 'sparse')
@@ -1077,7 +1003,6 @@ import * as real from './work-mode-service'
       }
     }
 
-    /* ==================== ⑥b 纯选择器：displayedSessionOf 语义与 runner 匹配 ==================== */
     {
       const runners = () => [
         { id: 'runner-A', runId: 'runner-A', sessionId: 'sid-A', sessionFile: 'C:/sessions/A.jsonl' },
@@ -1097,7 +1022,6 @@ import * as real from './work-mode-service'
       })
       ok(t.enabled && t.runnerId === 'runner-B', '选择器：deferred 预览命中后台实例，不误改 active', JSON.stringify(t))
 
-      /* pi 对同一文件切回后可能给新 sessionId：路径也要能命中 */
       t = sessionQuestionFrequencyTarget({
         peekedSessionId: null, peekedPath: null,
         session: { sessionId: 'sid-A2', sessionFile: 'C:/sessions/A.jsonl' },
@@ -1120,7 +1044,6 @@ import * as real from './work-mode-service'
       ok(!t.enabled && t.reason === 'no-session', '选择器：没有视图会话 → 禁用', JSON.stringify(t))
     }
 
-    /* ==================== ⑥ 组件：目标身份 + 真实 producer→picker→IPC 序列 ==================== */
     {
       const { SessionQuestionFrequencyPicker } = await loadQuestionFrequencyComponent(build, buildDir, pathToFileURL, join)
       const realWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
@@ -1170,7 +1093,6 @@ import * as real from './work-mode-service'
       const runnerA = { id: 'runner-A', runId: 'runner-A', sessionId: 'sid-A', sessionFile: 'C:/sessions/A.jsonl' }
 
       try {
-        /* ⑥-1 deferred 预览显示 B、active 是 A、后台有 B → 定向 runner-B，不误改 A */
         {
           const runnerB = { id: 'runner-B', runId: 'runner-B', sessionId: 'sid-B', sessionFile: 'C:/sessions/B.jsonl' }
           getCalls = []
@@ -1199,7 +1121,6 @@ import * as real from './work-mode-service'
           )
         }
 
-        /* ⑥-2 deferred 预览显示 B、没有 B 的 runner → 禁用，不动 active A */
         {
           getCalls = []
           setCalls = []
@@ -1219,10 +1140,9 @@ import * as real from './work-mode-service'
           ok(setCalls.length === 0, '组件：禁用时不提交，绝不误改 active 会话')
         }
 
-        /* ⑥-3 真实 producer + IPC：pushWorkMode → picker → IPC set（revision 不猜 0） */
         {
           const ipc = await makeIpcFixture('pick-runner')
-          await ipc.store.setQuestionFrequency('C:/sessions/A.jsonl', 'eager') // revision 1
+          await ipc.store.setQuestionFrequency('C:/sessions/A.jsonl', 'eager')
           configureGoalCoordinator({
             runners: () => ipc.registry,
             workModes: ipc.store,
@@ -1264,7 +1184,6 @@ import * as real from './work-mode-service'
       }
     }
 
-    /* ==================== ⑤c 其余生产 writer 归属封口 ==================== */
     {
       const bSnapshot = (runnerId, rev = 7) =>
         writeWorkModeSnapshot(
@@ -1301,7 +1220,6 @@ import * as real from './work-mode-service'
             scheduleSessionWork: async () => {}
           }
         )
-        /* goal-ipc 的 workModeKeyFor / goals 经 goal-coordinator 的宿主解析，必须同图接上。 */
         configureGoalCoordinator({
           runners: () => registry,
           workModes: store,
@@ -1319,7 +1237,6 @@ import * as real from './work-mode-service'
         }
       }
 
-      /* ① goal-ipc setWorkMode：写入关键段被复用 → 不覆盖 B 的有效快照 */
       {
         const h = makeGoalIpcFixture('runner-G1')
         await bSnapshot('runner-G1')
@@ -1342,10 +1259,9 @@ import * as real from './work-mode-service'
         h.rm()
       }
 
-      /* ② goal-ipc setWorkMode：正常合法写入保留 mode / 频率 / revision 字段 */
       {
         const h = makeGoalIpcFixture('runner-G2')
-        await h.store.setQuestionFrequency('C:/sessions/A.jsonl', 'eager') // revision 1
+        await h.store.setQuestionFrequency('C:/sessions/A.jsonl', 'eager')
         const res = await h.set('autonomous', 1)
         const snap = await readWorkModeSnapshot('runner-G2')
         const raw = JSON.parse(readFileSync(join(root, 'work-mode', 'runner-G2.json'), 'utf8'))
@@ -1358,7 +1274,6 @@ import * as real from './work-mode-service'
         h.rm()
       }
 
-      /* ③ handoff 目的段：迟到 / 复用 → 不覆盖 B，也不复制源的错误频率偏好 */
       const makeHandoffFixture = (runnerId) => {
         const handoffRoot = mkdtempSync(join(tmpdir(), 'yan-qf-handoff-'))
         const store = new WorkModeStore({ root: handoffRoot })
@@ -1449,7 +1364,6 @@ import * as real from './work-mode-service'
       }
     }
 
-    /* ==================== ⑦ work-mode.js 读归属：错归属回落安全标准档 ==================== */
     {
       const prevData = process.env.YAN_DATA_DIR
       const prevSid = process.env.YAN_SESSION_ID
@@ -1499,7 +1413,6 @@ import * as real from './work-mode-service'
       }
     }
 
-    /* ---- 扩展能读到 IPC 写出的快照（端到端） ---- */
     {
       const e2eRoot = mkdtempSync(join(tmpdir(), 'yan-qf-e2e-'))
       await writeWorkModeSnapshot('qf-runner-A', { mode: 'standard', revision: 1, questionFrequency: 'sparse' }, e2eRoot)
@@ -1515,7 +1428,6 @@ import * as real from './work-mode-service'
   }
 }
 
-// 只运行这一组，不依赖产品构建、个人设置或真实模型。
 if (process.argv[1] && (await import('node:url')).pathToFileURL(process.argv[1]).href === import.meta.url) {
   let passed = 0
   let failed = 0

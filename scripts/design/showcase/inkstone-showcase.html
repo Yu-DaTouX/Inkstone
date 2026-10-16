@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Inkstone 砚 · 展示片</title>
 <style>
-/* 令牌与 docs/DESIGN_SYSTEM.md §2 同名同值；本页所有画面由时间函数逐帧算出，可暂停、可拖动。 */
 [data-theme="dark"]{
   --bg-0:#151515;--bg-1:#1b1b1a;--bg-2:#222221;--bg-3:#2b2b29;--bg-4:#393936;
   --border-soft:rgba(255,255,255,.06);--border:rgba(255,255,255,.1);--border-str:rgba(255,255,255,.18);
@@ -40,7 +39,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
 .lede{font-size:22px;color:var(--fg-dim);margin-top:14px;line-height:1.6}
 [data-a]{opacity:0}
 
-/* 1 启动 */
 #s1{display:flex;flex-direction:column;align-items:center;justify-content:center}
 .mark{width:200px;height:200px;fill:none;stroke-width:6}
 .mark .fr{stroke:var(--fg);stroke-linejoin:round}
@@ -51,7 +49,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
 .rule{width:64px;height:1px;background:var(--border-str);margin:26px 0 20px}
 .slogan{font-size:20px;color:var(--fg-dim);letter-spacing:.3em}
 
-/* 2 设计意图 */
 .prin{list-style:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 56px;margin-top:56px}
 .prin li{display:grid;grid-template-columns:44px minmax(0,1fr);gap:8px;padding:24px 0;border-top:1px solid var(--border)}
 .prin b{font:500 14px var(--font-ui);color:var(--accent);padding-top:6px}
@@ -59,7 +56,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
 .prin p{font-size:15px;color:var(--fg-dim);line-height:1.7;margin-top:6px}
 .sq{display:inline-block;width:10px;height:10px;background:var(--accent);margin-right:10px}
 
-/* 通用控件（与 ui.css 同一语言） */
 .btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--bg-2);color:var(--fg);font:500 12px var(--font-ui)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .btn.ghost{background:transparent;border-color:transparent;color:var(--fg-dim)}
@@ -88,7 +84,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
   background:conic-gradient(from var(--ang,0deg),transparent 0deg,var(--accent) 70deg,transparent 140deg,transparent 360deg);
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0)}
 
-/* 3 工作区窗口 */
 .win{position:absolute;left:80px;top:46px;width:1120px;height:628px;background:var(--bg-0);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;
   display:grid;grid-template-rows:36px minmax(0,1fr) 24px;box-shadow:0 24px 70px rgba(0,0,0,.35)}
 .tb{display:flex;align-items:center;justify-content:space-between;padding:0 14px;background:var(--bg-1);border-bottom:1px solid var(--border-soft);font:12px var(--font-ui);color:var(--fg-mute)}
@@ -136,7 +131,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
 .mode{position:relative;width:44px;height:16px;border-radius:var(--r-xs);display:block}
 .mode span{position:absolute;inset:0;display:grid;place-items:center;font:600 10px var(--font-ui);letter-spacing:.06em}
 
-/* 4 令牌 */
 .tokl{position:absolute;inset:0;background:var(--bg-0);color:var(--fg);padding:88px 120px}
 .tokl h2{font-size:46px;font-weight:600;margin-top:16px}
 .sw{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:10px;margin-top:40px}
@@ -148,7 +142,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
 .samples .seg span.on{background:var(--bg-3);border-radius:var(--r-xs)}
 .note{position:absolute;left:120px;bottom:150px;font:13px var(--font-ui);color:var(--fg-mute)}
 
-/* 5 动效 */
 .mgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-top:44px}
 .mc{height:190px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--bg-1);padding:18px 20px;display:flex;flex-direction:column}
 .mc h4{font:600 12px var(--font-ui);color:var(--fg-dim);display:flex;justify-content:space-between}
@@ -157,7 +150,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
 .gline{height:22px;line-height:22px;padding:0 10px;font:12px var(--font-ui);color:var(--fg-dim);border-left:2px solid var(--accent-line);overflow:hidden}
 .obox{position:relative;width:170px;height:52px;border-radius:var(--r-lg);background:var(--bg-0);border:1px solid var(--border);display:flex;align-items:center;padding:0 16px;font:12px var(--font-ui);color:var(--fg-dim)}
 
-/* 6 砚线 */
 .icl{display:grid;grid-template-columns:352px minmax(0,1fr);gap:64px;margin-top:40px;align-items:center}
 .big{width:352px;height:352px;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--r-lg)}
 .igrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
@@ -168,7 +160,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
 .smallrow{display:flex;align-items:center;gap:18px;margin-top:22px;font:11px var(--font-ui);color:var(--fg-mute)}
 .smallrow svg path{vector-effect:non-scaling-stroke;stroke-width:1.25}
 
-/* 7 手机 */
 .mob{display:grid;grid-template-columns:330px minmax(0,1fr);gap:96px;align-items:center;height:100%;padding:0 150px}
 .phone{width:310px;height:610px;border-radius:38px;background:#050505;border:1px solid #2c2c29;padding:9px;position:relative}
 .scr{width:100%;height:100%;border-radius:30px;background:var(--bg-0);overflow:hidden;display:flex;flex-direction:column;position:relative}
@@ -187,12 +178,10 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
 .pts li{display:flex;gap:14px;align-items:baseline}
 .pts li b{color:var(--accent);font-weight:500}
 
-/* 8 结尾 */
 #s8{display:flex;flex-direction:column;align-items:center;justify-content:center}
 .en{font-size:18px;color:var(--fg-mute);letter-spacing:.14em;margin-top:8px}
 .tag{font:12px var(--font-ui);color:var(--fg-mute);margin-top:44px;letter-spacing:.06em}
 
-/* 控制条 */
 #bar{display:flex;align-items:center;gap:14px;padding:0 18px;background:#101010;border-top:1px solid #222;font:12px var(--font-ui);color:#92928a;user-select:none}
 #bar button{height:28px;padding:0 12px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:#222221;color:#ecece8;font:500 12px var(--font-ui);cursor:pointer}
 #bar button:hover{border-color:rgba(255,255,255,.18)}
@@ -208,7 +197,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
 <div id="wrap">
 <div id="stage" data-theme="dark">
 
-<!-- 1 · 启动 -->
 <section class="scene" id="s1">
   <svg class="mark" viewBox="0 0 100 100" aria-label="砚 · 提示砚">
     <path class="fr" id="m-frame" pathLength="1" d="M70 22H25Q22 22 22 25V75Q22 78 25 78H75Q78 78 78 75V53"/>
@@ -220,7 +208,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
   <div class="slogan" data-a="3600" data-d="700">让想法成形</div>
 </section>
 
-<!-- 2 · 设计意图 -->
 <section class="scene pad" id="s2">
   <div class="kicker mono" data-a="200"><span class="pr">›</span> 设计意图</div>
   <h1 data-a="500" data-d="700">墨色工作空间</h1>
@@ -233,7 +220,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
   </ol>
 </section>
 
-<!-- 3 · 工作区 -->
 <section class="scene" id="s3">
  <div class="win" data-a="0" data-d="700" data-shift="14">
   <div class="tb"><span><b>砚</b>&nbsp; Inkstone</span><span>固定 · 浏览器</span></div>
@@ -296,10 +282,8 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
  </div>
 </section>
 
-<!-- 4 · 令牌 -->
 <section class="scene" id="s4"><div id="tokWrap"></div></section>
 
-<!-- 5 · 动效 -->
 <section class="scene pad" id="s5">
   <div class="kicker mono" data-a="200"><span class="pr">›</span> motion.css</div>
   <h1 data-a="400" data-d="700" style="font-size:42px">一条曲线 · 三档时长 · 一个节拍</h1>
@@ -314,7 +298,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
   <div class="note" data-a="2400" style="bottom:56px;left:120px">110 · 170 · 240 ms&nbsp;&nbsp;cubic-bezier(.22, 1, .36, 1)&nbsp;&nbsp;位移 ≤ 4px</div>
 </section>
 
-<!-- 6 · 砚线 -->
 <section class="scene pad" id="s6">
   <div class="kicker mono" data-a="200"><span class="pr">›</span> 图标「砚线」</div>
   <h1 data-a="400" data-d="700" style="font-size:42px">开口石框，方头斜接</h1>
@@ -328,7 +311,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
   </div>
 </section>
 
-<!-- 7 · 手机 -->
 <section class="scene" id="s7">
  <div class="mob">
   <div class="phone" data-a="200" data-d="700" data-shift="12"><div class="scr">
@@ -359,7 +341,6 @@ h1{font-size:52px;font-weight:600;letter-spacing:.01em;line-height:1.2;margin-to
  </div>
 </section>
 
-<!-- 8 · 结尾 -->
 <section class="scene" id="s8">
   <svg class="mark" viewBox="0 0 100 100" style="width:150px;height:150px" data-a="0" data-d="600">
     <path class="fr" d="M70 22H25Q22 22 22 25V75Q22 78 25 78H75Q78 78 78 75V53"/>
@@ -391,7 +372,6 @@ const stage=$('stage');
 const DARK={bg0:'#151515',bg1:'#1b1b1a',bg2:'#222221',bg3:'#2b2b29',bg4:'#393936',fg:'#ecece8',dim:'#b4b4ac',mute:'#92928a',accent:'#93a4f4'};
 const LIGHT={bg0:'#fcfcfa',bg1:'#f3f3f0',bg2:'#ffffff',bg3:'#eaeae6',bg4:'#deded9',fg:'#252522',dim:'#66665f',mute:'#73736b',accent:'#5264c8'};
 
-/* ---------- 图标 ---------- */
 const ICONS={
   terminal:['M11 3H4Q3 3 3 4V12Q3 13 4 13H12Q13 13 13 12V8','M6 6.5L8 8.5L6 10.5','M9.5 10.5H11.5'],
   file:['M9 2H4V14H12V7','M9 2V7H12'],
@@ -405,7 +385,6 @@ const ICONS={
 const NAMES={terminal:'终端',file:'文件',folder:'目录',settings:'设置',star:'*',agent:'>>',alert:'提醒',check:'完成'};
 const svgPaths=(k,extra='')=>ICONS[k].map((d,i)=>`<path pathLength="1" d="${d}" ${k==='terminal'&&i>0?'stroke="var(--accent)"':''} ${extra}/>`).join('');
 
-/* ---------- 令牌页 ---------- */
 function tokPanel(theme,pal){
   const sw=[['bg-0',pal.bg0],['bg-1',pal.bg1],['bg-2',pal.bg2],['bg-3',pal.bg3],['bg-4',pal.bg4],['fg',pal.fg],['fg-dim',pal.dim],['fg-mute',pal.mute],['accent',pal.accent]]
    .map(([n,h],i)=>{const light=['bg-0','bg-1','bg-2','bg-3','bg-4','fg-dim','fg-mute','fg','accent'].includes(n);
@@ -427,7 +406,6 @@ function tokPanel(theme,pal){
 }
 $('tokWrap').innerHTML=tokPanel('dark',DARK)+'<div id="lightLayer" style="position:absolute;inset:0">'+tokPanel('light',LIGHT)+'</div>';
 
-/* ---------- 砚线页 ---------- */
 (function(){
   let g='';let i=0;
   for(const k of ['terminal','file','folder','settings','star','agent','alert','check']){
@@ -440,7 +418,6 @@ $('tokWrap').innerHTML=tokPanel('dark',DARK)+'<div id="lightLayer" style="positi
   $('smallRow').innerHTML='<span>实际尺寸</span>'+s+'<span style="margin-left:8px">12 / 14 / 16</span>';
 })();
 
-/* ---------- 逐帧工具 ---------- */
 function generic(root,t){
   for(const el of root.querySelectorAll('[data-a]')){
     const a=+el.dataset.a,d=+(el.dataset.d||450),k=ease(P(t,a,d));
@@ -472,7 +449,6 @@ const mix=(k,a,b)=>`color-mix(in srgb, ${a} ${(k*100).toFixed(1)}%, ${b})`;
 const fmt=ms=>{const s=Math.floor(ms/1000);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')};
 function segThumb(seg,idx,w){seg.querySelector('.th').style.transform=`translateX(${idx*w}px)`}
 
-/* ---------- 各幕 ---------- */
 const scenes=[
  {el:$('s1'),dur:5200,render(t){
    const f=ease(P(t,200,1500)),c=ease(P(t,1600,500));
@@ -507,16 +483,13 @@ const scenes=[
    $('lightLayer').style.clipPath=`circle(${r}px at 640px 585px)`;
    const idx=ease(P(t,3300,300));
    for(const s of stage.querySelectorAll('.tseg'))segThumb(s,idx,76);
-   // 浅色层的 on 状态
    for(const s of $('lightLayer').querySelectorAll('.tseg span')){}
  }},
  {el:$('s5'),dur:8600,render(t){
    const L=Math.max(0,t-900);
-   // 展开
    const cyc=L%3600,rows=$('growBox').children;
    for(let i=0;i<3;i++){const k=ease(P(cyc,i*500,240))*(cyc>2800?1-ease(P(cyc,2800,170)):1);rows[i].style.height=(22*k)+'px';rows[i].style.opacity=k}
    spin(stage.querySelector('#s5 .spin'),t);
-   // 光标
    const txt='npm run build',c4=L%4600,n=Math.floor(clamp(c4/1000*33,0,txt.length));
    $('curTxt').textContent=txt.slice(0,n);
    $('curCaret').style.opacity=(n<txt.length||c4<txt.length*30+50)?1:(Math.floor((c4-txt.length*30)/530)%2?0:1);
@@ -542,7 +515,6 @@ const scenes=[
 const TOTAL=scenes.reduce((a,s)=>a+s.dur,0);
 const starts=[];{let a=0;for(const s of scenes){starts.push(a);a+=s.dur}}
 
-/* ---------- 播放器 ---------- */
 let idx=0,t=0,playing=true,last=performance.now(),theme='dark';
 function setScene(i,tt=0){idx=clamp(i,0,scenes.length-1);t=tt}
 function draw(){
@@ -583,7 +555,6 @@ addEventListener('keydown',e=>{
   else if(e.key==='f'||e.key==='F')$('bFs').click();
   else if(e.key==='r'||e.key==='R')setScene(0,0);
 });
-// 调试：#s=3&t=6000 直接定格到某一幕的某一刻
 const h=new URLSearchParams(location.hash.slice(1));
 if(h.has('s')){setScene(+h.get('s')-1,+(h.get('t')||0));playing=false}
 if(h.get('theme')==='light'){theme='light';stage.dataset.theme='light'}

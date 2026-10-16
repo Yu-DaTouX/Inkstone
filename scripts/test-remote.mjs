@@ -1,9 +1,3 @@
-/**
- * 远程管理 HTTP/SSE 协议测试。
- *
- * 只启动一个绑定 127.0.0.1 的临时 Node HTTP 服务；handler 全部是假的，
- * 不启动 Electron、不连接 pi、不读取真实会话，也不消耗模型额度。
- */
 export async function runRemoteServerTests(ok, { RemoteServer }) {
   const calls = []
   const server = new RemoteServer({

@@ -1,9 +1,3 @@
-/**
- * 普通工具同意记录的落盘（需求稿 4.3）。规则在 `shared/tool-consent.ts`，这里只管读写。
- *
- * 单文件 `YAN_DIR/tool-consent.json`，写入排队 + 临时文件改名，避免并发请求互相覆盖。
- * 不依赖 electron：AgentController 会被纯 Node 单测加载。
- */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -24,7 +18,6 @@ const LEDGER_PATH = join(YAN_DIR, 'tool-consent.json')
 
 let queue: Promise<unknown> = Promise.resolve()
 
-/** 本机设备标识：能力记录绑定设备，换一台电脑不沿用 */
 export function localDeviceId(): string {
   return `host:${hostname().toLowerCase()}`
 }
@@ -40,7 +33,6 @@ export async function readConsentLedger(path = LEDGER_PATH): Promise<ConsentLedg
   return parseConsentLedger(JSON.parse(text))
 }
 
-/** 串行地读—改—写 */
 export function updateConsentLedger(mutate: (ledger: ConsentLedger) => ConsentLedger, path = LEDGER_PATH): Promise<ConsentLedger> {
   const task = queue.then(async () => {
     const next = mutate(await readConsentLedger(path))
@@ -85,7 +77,6 @@ export async function listConsentViews(): Promise<ConsentEntryView[]> {
     .sort((a, b) => (b.lastAnswerAt ?? 0) - (a.lastAnswerAt ?? 0))
 }
 
-/** 用户在设置页：设为始终询问 / 恢复按记录判断 / 清空这一类的记录 */
 export function changeConsentEntry(key: string, action: 'always-ask' | 'allow-auto' | 'forget'): Promise<ConsentLedger> {
   return updateConsentLedger((ledger) => ({
     ...ledger,

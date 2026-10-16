@@ -1,21 +1,3 @@
-/**
- * MCP App 宿主主题接线（02 §5.11）的离线合成验收。
- *
- * 覆盖（纯本地 mock，不启 Electron、不联网、不构建）：
- *   1. `resolveMcpAppThemeValue` 按明确主题解析 `light-dark(...)`，嵌套 rgba 与
- *      嵌在 box-shadow 里的 light-dark 都要取对侧；
- *   2. `resolveMcpAppThemeVariables` 生成 light / dark 两套具体值，且不含任何
- *      `light-dark(`（阴影不当有效 CSS 下发）；
- *   3. `buildMcpAppHostContext` 保留 provider 的 platform / displayMode 等字段，
- *      合并 provider 的 styles.variables 后再覆盖标准主题变量，过滤坏变量与
- *      styles.css，不再透传任意样式；
- *   4. `McpAppViewService` 的 `ui/initialize` 真正带上 hostContext.styles.variables，
- *      首次初始化即按明确主题给出具体值，且 provider 不能顶掉宿主主题。
- *
- * ⚠️ 这是**离线合成**：不验证真实 iframe、真实第三方 App 或稳定版规范字段。
- *
- * 运行：node scripts/test-v3-mcp-app-theme.mjs
- */
 import { build } from 'esbuild'
 
 let checks = 0
@@ -63,8 +45,6 @@ ok(typeof McpAppViewService === 'function', '加载 McpAppViewService')
 ok(typeof resolveMcpAppThemeValue === 'function', '加载 resolveMcpAppThemeValue')
 ok(typeof buildMcpAppHostContext === 'function', '加载 buildMcpAppHostContext')
 
-/* ------------------------------------------------------------------ 1. light-dark 解析 */
-
 ok(resolveMcpAppThemeValue('light-dark(#FFFFFF, #272725)', 'light') === '#FFFFFF', '浅色取 light-dark 左侧')
 ok(resolveMcpAppThemeValue('light-dark(#FFFFFF, #272725)', 'dark') === '#272725', '深色取 light-dark 右侧')
 ok(
@@ -93,8 +73,6 @@ ok(
   '形状不合法时原样返回，不猜测'
 )
 
-/* ------------------------------------------------------------------ 2. 主题变量解析 */
-
 const lightVars = resolveMcpAppThemeVariables('light')
 const darkVars = resolveMcpAppThemeVariables('dark')
 ok(lightVars['--color-background-primary'] === '#FFFFFF', '浅色主背景是具体值')
@@ -121,8 +99,6 @@ ok(
   '两套变量键集合一致且数量合理',
   String(Object.keys(lightVars).length)
 )
-
-/* ------------------------------------------------------------------ 3. hostContext 合成 */
 
 const providerWithExtra = {
   platform: 'desktop',
@@ -173,8 +149,6 @@ ok(
     !('--number' in sanitized.styles.variables),
   '坏键 / 带分号 / 带换行 / 非字符串变量被过滤'
 )
-
-/* ------------------------------------------------------------------ 4. service ui/initialize 真实带上主题 */
 
 const SERVER = 'srv'
 const SERVER_CONFIG = {
@@ -252,7 +226,6 @@ async function initializeContext(service) {
 }
 
 await (async () => {
-  /* 缺省 theme：回退深色，但首次 initialize 已带完整主题变量。 */
   const context = await initializeContext(makeService())
   ok(context?.theme === MCP_APP_DEFAULT_THEME, '缺省主题回退到宿主默认（非浅色）', String(context?.theme))
   ok(context?.platform === 'desktop' && context?.displayMode === 'inline', '缺省仍有 platform / displayMode')
@@ -266,12 +239,10 @@ await (async () => {
     'initialize 响应里没有 light-dark'
   )
 
-  /* 显式 theme provider：浅色。 */
   const lightContext = await initializeContext(makeService({ theme: async () => 'light' }))
   ok(lightContext?.theme === 'light', 'theme provider 生效')
   ok(lightContext?.styles?.variables?.['--color-background-primary'] === '#FFFFFF', '浅色 provider 给出浅色值')
 
-  /* provider hostContext：保留 platform / displayMode / locale，并合并变量。 */
   const providerContext = await initializeContext(
     makeService({
       hostContext: () => ({
@@ -292,7 +263,6 @@ await (async () => {
   )
   ok(!('css' in (providerContext?.styles ?? {})), 'provider 的 styles.css 不透传')
 
-  /* provider 抛错 / theme 抛错：不阻断初始化，回退默认。 */
   const throwing = await initializeContext(
     makeService({
       hostContext: () => {
@@ -306,12 +276,9 @@ await (async () => {
   ok(throwing?.platform === 'desktop' && throwing?.theme === MCP_APP_DEFAULT_THEME, 'provider / theme 抛错时仍返回可用宿主上下文')
   ok(typeof throwing?.styles?.variables?.['--color-text-primary'] === 'string', '抛错回退也带主题变量')
 
-  /* provider 里的 theme 字段不能顶掉身份主题：无显式 theme 时以 provider 为线索。 */
   const providerTheme = await initializeContext(makeService({ hostContext: () => ({ theme: 'light' }) }))
   ok(providerTheme?.theme === 'light', '无显式 provider 时 theme 字段可作为主题线索')
 })()
-
-/* ------------------------------------------------------------------ 收尾 */
 
 console.log(`\n${checks} 项，${failures.length} 项失败`)
 if (failures.length > 0) {

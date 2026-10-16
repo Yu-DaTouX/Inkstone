@@ -1,5 +1,4 @@
 @layer features {
-  /* 定时任务页（WP-51 界面部分）的版面；控件外观归 ui/，本文件不重画控件皮肤。 */
 
   .sched-page {
     flex: 1;
@@ -168,7 +167,6 @@
     gap: var(--s-6);
   }
 
-  /* 表单：编辑对话框内的版面；控件皮肤仍在 ui/。 */
   .sched-form {
     display: flex;
     flex-direction: column;

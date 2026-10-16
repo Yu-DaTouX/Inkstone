@@ -1,24 +1,3 @@
-/*
- * 自定义 API 服务（实施-23 M1）。
- *
- * ── 单一真源 ──
- * 真源就是 pi 自己的 `models.json`（`{ providers: { [id]: {...} } }`）。
- * 砚只拥有其中**以 `yan-` 开头的条目**，其它 provider（包括用户手工写的）
- * 一律原样保留 —— 合并是逐键的，不整文件覆盖。
- *
- * ── 密钥 ──
- * pi 的 provider 定义支持 `apiKey` 字面量。这里**只允许字面量**：
- * `!command`（可执行字符串）是拒绝的，不允许从一个普通 UI 表单落盘。
- * 读回给渲染端时只给 `hasApiKey`，永远不回明文。
- *
- * M0 实测（隔离 `PI_CODING_AGENT_DIR` + `pi --list-models`）：
- *   · 文件路径 = `<agent dir>/models.json`；
- *   · provider 必填 `baseUrl`（小写 u）与 `models[]`；
- *   · 模型字段 `id` / `name` / `contextWindow` / `maxTokens` / `reasoning` / `input`；
- *   · pi 的内置目录用到的 api ID 见 `PI_API_IDS`。
- */
-
-/** pi 0.87.1 内置模型目录里出现过的全部 api ID（从 bundle 提取） */
 export const PI_API_IDS = [
   'openai-completions',
   'openai-responses',
@@ -33,13 +12,6 @@ export const PI_API_IDS = [
   'pi-messages'
 ] as const
 
-/**
- * 通用「自定义服务」表单允许选择的协议。
- *
- * 其余（vertex / azure / bedrock / codex / openrouter-images）不是"填一个
- * Base URL 就能用"的：它们各自需要项目、区域、deployment 或 OAuth 凭证，
- * 因此不在首版表单里 —— 不能因为底层有适配器就显示成可用选项。
- */
 export const CUSTOM_API_CHOICES = [
   { id: 'openai-completions', label: 'OpenAI Chat Completions' },
   { id: 'openai-responses', label: 'OpenAI Responses' },
@@ -57,19 +29,12 @@ export interface CustomProviderModel {
   maxTokens?: number
   reasoning?: boolean
   input?: Array<'text' | 'image'>
-  /**
-   * 只有这个模型的协议与服务默认值不同时才写，例如中转站里 Claude 只开放 Anthropic 接口、
-   * 其余模型走 Chat Completions。pi 的 models.json 支持逐模型覆盖 api 与 baseUrl。
-   */
   api?: CustomApiId
   baseUrl?: string
-  /** pi 的思考档位映射（取自 pi 自带模型目录）；值为 null 表示该档不可用 */
   thinkingLevelMap?: Record<string, string | null>
-  /** 每百万 token 的报价（美元）；会话花费按它估算，没有就记 0 */
   cost?: ModelCost
 }
 
-/** 每百万 token 的报价（美元），与 pi 的 models.json `cost` 同形 */
 export interface ModelCost {
   input: number
   output: number
@@ -77,7 +42,6 @@ export interface ModelCost {
   cacheWrite: number
 }
 
-/** 只认有限的非负数，且至少有输入或输出价；其余当作没报价 */
 export function cleanModelCost(value: unknown): ModelCost | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   const raw = value as Record<string, unknown>
@@ -86,7 +50,6 @@ export function cleanModelCost(value: unknown): ModelCost | undefined {
   return cost.input > 0 || cost.output > 0 ? cost : undefined
 }
 
-/** pi 的思考档位名（models.json 里 thinkingLevelMap 的键） */
 const THINKING_LEVEL_KEYS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
 function cleanThinkingLevelMap(value: unknown): Record<string, string | null> | undefined {
@@ -103,7 +66,6 @@ function isCustomApiId(value: unknown): value is CustomApiId {
   return CUSTOM_API_CHOICES.some((choice) => choice.id === value)
 }
 
-/** 读回渲染端的形状：**不含** apiKey 明文 */
 export interface CustomProviderView {
   id: string
   api: string
@@ -112,7 +74,6 @@ export interface CustomProviderView {
   hasApiKey: boolean
 }
 
-/** 写盘时的形状（apiKey 可选：编辑时不重新输入就沿用旧值） */
 export interface CustomProviderInput {
   id: string
   api: string
@@ -123,17 +84,14 @@ export interface CustomProviderInput {
 
 export const CUSTOM_PROVIDER_PREFIX = 'yan-'
 
-/** 砚拥有的条目：`yan-` 前缀 + 合法字符 */
 export function isYanProviderId(value: unknown): value is string {
   return typeof value === 'string' && /^yan-[a-z0-9][a-z0-9-]*$/.test(value)
 }
 
-/** `!command` 这类可执行字符串：不允许作为普通表单输入落盘 */
 export function hasExecutablePrefix(value: string): boolean {
   return value.trimStart().startsWith('!')
 }
 
-/** Base URL 校验：只接受 http/https 的绝对地址 */
 export function validateBaseUrl(value: unknown): string | null {
   if (typeof value !== 'string' || !value.trim()) return 'Base URL 不能为空'
   const raw = value.trim()
@@ -154,7 +112,6 @@ export interface ValidateResult {
   value?: CustomProviderInput
 }
 
-/** 表单 → 可写盘的定义；任何一条不合格都不返回 value */
 export function validateCustomProvider(input: Partial<CustomProviderInput>): ValidateResult {
   const errors: string[] = []
   const id = typeof input.id === 'string' ? input.id.trim() : ''
@@ -221,14 +178,12 @@ export function validateCustomProvider(input: Partial<CustomProviderInput>): Val
 
   if (errors.length) return { ok: false, errors }
   const value: CustomProviderInput = { id, api, baseUrl: String(input.baseUrl).trim(), models: cleaned }
-  /* key 只在用户真的填了的时候带上；没填 = 沿用旧值（由合并逻辑决定） */
   if (typeof input.apiKey === 'string' && input.apiKey.trim()) value.apiKey = input.apiKey.trim()
   return { ok: true, errors: [], value }
 }
 
 type Json = Record<string, unknown>
 
-/** 从 models.json 里读出砚拥有的自定义服务（不含密钥明文） */
 export function readCustomProviders(modelsJson: unknown): CustomProviderView[] {
   const providers = (modelsJson as Json | undefined)?.providers
   if (!providers || typeof providers !== 'object') return []
@@ -261,19 +216,12 @@ export function readCustomProviders(modelsJson: unknown): CustomProviderView[] {
           return model
         })
         .filter((m) => m.id),
-      /* 只报告有没有，不回明文 */
       hasApiKey: typeof entry.apiKey === 'string' && entry.apiKey.length > 0
     })
   }
   return out.sort((a, b) => a.id.localeCompare(b.id))
 }
 
-/**
- * 把砚的自定义服务合并进 models.json：
- *   · 只动 `yan-` 前缀的条目；
- *   · 其它 provider 与顶层未知字段**原样保留**；
- *   · 没带 apiKey 的更新沿用磁盘上的旧 key（用户不必每次重输）。
- */
 export function mergeCustomProviders(
   modelsJson: unknown,
   updates: CustomProviderInput[],
@@ -307,17 +255,10 @@ export function mergeCustomProviders(
   return { next: base, changed: true }
 }
 
-/** 渲染端展示用：把 key 换成存在状态（任何日志 / 快照都走它） */
 export function maskCustomProvider(view: CustomProviderView): CustomProviderView & { apiKeyLabel: string } {
   return { ...view, apiKeyLabel: view.hasApiKey ? '••••••' : '' }
 }
 
-/**
- * 连接测试结果（实施-23 M2）。
- *
- * 两段刻意分成同一个类型的不同 mode：界面要分别显示「免费检查」与「计费请求」，
- * 结果里也带着毫秒数，用户能看出是慢在网络上还是慢在模型上。
- */
 export type CustomProviderTestMode = 'endpoint' | 'billable'
 
 export interface CustomProviderTestResult {
@@ -325,39 +266,28 @@ export interface CustomProviderTestResult {
   mode: CustomProviderTestMode
   ms: number
   message: string
-  /** 计费段才有：模型回复的正文 */
   text?: string
 }
 
-/**
- * 解析各家 `GET <baseUrl>/models` 的响应，取出模型 ID。
- * OpenAI / Anthropic / Mistral 兼容端点是 `{ data: [{ id }] }`；
- * Google 是 `{ models: [{ name: "models/xxx" }] }`；也有端点直接返回数组。
- */
 export function parseModelList(json: unknown): string[] {
   return parseModelEntries(json).map((model) => model.id)
 }
 
-/** 端点在模型列表里顺带给出的能力信息；多数端点只给 id，其余字段都可能缺 */
 export interface DiscoveredModel {
   id: string
   name?: string
   contextWindow?: number
-  /** 这个模型开放的接口路径，如 `/chat/completions`、`/messages`（部分中转站提供） */
   endpoints?: string[]
-  /** 端点明说支持思考（OpenRouter 式的 `supported_parameters`） */
   reasoning?: boolean
   image?: boolean
 }
 
-/** 同 parseModelList，但保留端点给出的上下文长度、开放接口与能力字段 */
 export function parseModelEntries(json: unknown): DiscoveredModel[] {
   const root = json as { data?: unknown; models?: unknown } | unknown[] | null
   const list = Array.isArray(root) ? root : Array.isArray(root?.data) ? root.data : Array.isArray(root?.models) ? root.models : []
   const out: DiscoveredModel[] = []
   for (const item of list) {
     const entry = item as Record<string, unknown> | string
-    /* Google 会把 embedding / aqa 等不能对话的模型也列出来 */
     if (typeof entry === 'object' && entry && Array.isArray(entry.supportedGenerationMethods) && !entry.supportedGenerationMethods.includes('generateContent')) continue
     const raw = typeof entry === 'string' ? entry : typeof entry?.id === 'string' ? entry.id : typeof entry?.name === 'string' ? entry.name : ''
     const id = raw.replace(/^models\//, '').trim()
@@ -382,16 +312,10 @@ export function parseModelEntries(json: unknown): DiscoveredModel[] {
   return out
 }
 
-/**
- * pi 自带模型目录里查找能力用的键：同一个模型在不同服务里写法不同
- * （`deepseek/deepseek-v4-pro`、`Qwen/Qwen3.8-Max`、`xxx:free`、`gpt-5.4` 与 `gpt-5-4`），归一成一个键。
- * 与 scripts/lib/pi-model-catalog-key.mjs 必须一致（能力表由那边生成）。
- */
 export function catalogKey(id: string): string {
   return id.trim().toLowerCase().replace(/:free$/, '').replace(/^.*\//, '').replace(/\./g, '-')
 }
 
-/** 能力表里的一项（scripts/gen-pi-model-catalog.mjs 从随包 pi 的模型目录生成） */
 export interface PiCatalogEntry {
   provider: string
   api: string
@@ -400,23 +324,17 @@ export interface PiCatalogEntry {
   contextWindow?: number
   maxTokens?: number
   thinkingLevelMap?: Record<string, string | null>
-  /** 每百万 token 的报价（美元）；目录里没有标价的模型没有这一项 */
   cost?: ModelCost
 }
 
 export type PiModelCatalog = Record<string, PiCatalogEntry>
 
-/** 端点路径 → pi 协议；端点同时开放多种时按这个顺序挑 */
 const ENDPOINT_APIS: Array<[string, CustomApiId]> = [
   ['/chat/completions', 'openai-completions'],
   ['/responses', 'openai-responses'],
   ['/messages', 'anthropic-messages']
 ]
 
-/**
- * 换协议时的 Base URL：OpenAI 系 SDK 在 baseUrl 后接 `/chat/completions`（baseUrl 自带 `/v1`），
- * Anthropic SDK 自己拼 `/v1/messages`（baseUrl 不带 `/v1`）。
- */
 function baseUrlForApi(baseUrl: string, from: string, to: CustomApiId): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '')
   const anthropic = (api: string) => api === 'anthropic-messages'
@@ -425,14 +343,6 @@ function baseUrlForApi(baseUrl: string, from: string, to: CustomApiId): string {
   return trimmed
 }
 
-/**
- * 把端点列出的模型变成 models.json 的条目：
- *   · 端点说明了某模型只开放别的接口（如 Claude 只开放 `/messages`）→ 这一条单独改协议与地址；
- *   · 能否思考、图片输入、上下文与输出上限先看端点自己给的，没有再查 pi 自带目录；
- *   · 档位映射只在协议与目录条目一致、且不是 Chat Completions 时照搬 ——
- *     Chat Completions 的思考参数各家方言不同，映射搬过去反而可能发出对方不认的值，
- *     不带映射时 pi 只发标准的 low / medium / high。
- */
 export function describeDiscoveredModels(
   found: DiscoveredModel[],
   provider: { api: string; baseUrl: string },
@@ -468,31 +378,20 @@ export function describeDiscoveredModels(
   })
 }
 
-/**
- * 本机探测到的模型服务。对话服务（Ollama / LM Studio）走 OpenAI 兼容接口，可一键填进自定义服务表单；
- * 生图服务（SD WebUI / ComfyUI）只作为 `yan image generate` 的本地通道，不写入 models.json。
- */
 export interface LocalModelServer {
-  /** openai = 其他 OpenAI 兼容的本机对话服务（llama.cpp、vLLM、Jan、KoboldCpp 等）；sdwebui 含 Forge / SD.Next 等兼容 /sdapi 的服务 */
   kind: 'ollama' | 'lmstudio' | 'openai' | 'sdwebui' | 'comfyui'
   purpose: 'chat' | 'image'
   name: string
-  /** 对话服务是 OpenAI 兼容的 Base URL（带 /v1）；生图服务是服务根地址 */
   baseUrl: string
-  /** 对话服务是模型 ID；SD WebUI 是检查点；ComfyUI 是可用的已保存工作流（文生图在前） */
   models: string[]
-  /** 对话服务建议使用的 provider id（yan- 前缀） */
   suggestedId?: string
-  /** false = 找到了安装目录但服务没在运行（启动后才能用） */
   running: boolean
   installDir?: string
 }
 
 export interface CustomProviderDiscoverResult {
   ok: boolean
-  /** 模型 ID（兼容旧调用方） */
   models: string[]
-  /** 带能力信息的完整条目，表单直接用它填行 */
   entries?: CustomProviderModel[]
   message: string
 }

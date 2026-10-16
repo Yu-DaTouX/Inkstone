@@ -1,12 +1,3 @@
-/**
- * 任务收件箱探针（实施-28 T0）。
- *
- * 三个问题里能量化的是第 2 个：**跨会话聚合的数据形态与成本**。
- * 这里只读，不写任何东西；输出会话目录的规模与一次列取的耗时，
- * 作为 T1「懒加载 + 分页」的依据。
- *
- * 用法： node scripts/probe/task-inbox.mjs
- */
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -30,7 +21,6 @@ function walk(p, acc = { files: 0, bytes: 0, newest: 0 }) {
         acc.bytes += st.size
         if (st.mtimeMs > acc.newest) acc.newest = st.mtimeMs
       } catch {
-        /* 读不到就跳过（只读探测，不隐藏也不放大） */
       }
     }
   }

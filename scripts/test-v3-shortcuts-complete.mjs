@@ -1,15 +1,3 @@
-/**
- * v3 快捷键注册表「补齐」专项（K1）。
- *
- * 只编译纯逻辑并读源码，不启动 Electron、不注册任何全局键、不碰 store / 用户数据：
- *   · `app/shortcuts.ts`：完整注册表、`registeredBy` 契约、冲突、精确匹配、覆盖清洗、
- *     编辑/IME/模态/终端抑制、宿主键不重复分发、未实现键确实没有注册；
- *   · `features/commands/shortcut-text.ts`：中英作用文案覆盖全部 `ShortcutId`；
- *   · `features/commands/ShortcutSheet.tsx`：帮助表从注册表取生效键位、带确认卡 Alt+Y/N 行；
- *   · `features/commands/command-items.ts`：新快捷键对应的动作 ID 确实在命令面板里存在。
- *
- * 可独立执行：node scripts/test-v3-shortcuts-complete.mjs
- */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -59,7 +47,6 @@ const key = (over = {}) => ({
 })
 const pressed = (over) => resolveV3Shortcut(key(over))
 
-/* ── 1. 注册表规模与顺序 ─────────────────────────────────────── */
 const RENDERER_IDS = [
   'commandPalette',
   'newSession',
@@ -93,7 +80,6 @@ for (const def of SHORTCUTS) {
   assert.ok(def.keys.length >= 2, `${def.id} 至少一个修饰键 + 触发键`)
 }
 
-/* ── 2. 可改 / 终端让键 / 同理不重复 ─────────────────────────── */
 assert.deepEqual(
   SHORTCUTS.filter((def) => def.rebindable).map((def) => def.id),
   ['newSession', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
@@ -108,13 +94,11 @@ assert.deepEqual(
 assert.ok(SHORTCUTS.filter((def) => def.terminalsYield).every((def) => !def.rebindable), '终端让键保持固定')
 assert.ok(HOST_SHORTCUTS.every((def) => !def.rebindable), '宿主已注册的键不参与改绑')
 
-/* 同一按键不会既由外壳绑定又由宿主注册 */
 const rendererSignatures = new Set(RENDERER_SHORTCUTS.map(shortcutSignature))
 for (const def of HOST_SHORTCUTS) {
   assert.ok(!rendererSignatures.has(shortcutSignature(def)), `${def.id} 未在外壳重复注册`)
 }
 
-/* ── 3. 冲突检测 ────────────────────────────────────────────── */
 assert.deepEqual(findShortcutConflicts(), [], '注册表内没有重复键位')
 const dupe = [
   { id: 'stopRun', keys: ['Ctrl', 'Shift', 'C'], purposeKey: 'stopRun', rebindable: false, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
@@ -122,7 +106,6 @@ const dupe = [
 ]
 assert.equal(findShortcutConflicts(dupe).length, 1, '修饰键顺序不同但键位相同也要算冲突')
 
-/* ── 4. 精确匹配：新增项 ───────────────────────────────────── */
 assert.equal(pressed({ key: '.', ctrl: true }), 'stopRun', 'Ctrl+. 停止当前运行')
 assert.equal(pressed({ key: 'l', ctrl: true }), 'focusComposer', 'Ctrl+L 聚焦输入框')
 assert.equal(pressed({ key: 'L', meta: true }), 'focusComposer', 'Cmd+L 聚焦输入框（macOS 用 Cmd）')
@@ -136,7 +119,6 @@ assert.deepEqual(
 assert.equal(pressed({ key: 'k', ctrl: true }), 'commandPalette', '既有 Ctrl+K 保持')
 assert.equal(pressed({ key: 'b', ctrl: true, alt: true }), 'toggleWorkspace', '既有 Ctrl+Alt+B 保持')
 
-/* 修饰键必须完全一致，多按 / 少按都不命中 */
 assert.equal(pressed({ key: '.', ctrl: true, shift: true }), null, 'Ctrl+Shift+. 没有绑定')
 assert.equal(pressed({ key: '.', ctrl: true, alt: true }), null, 'Ctrl+Alt+. 没有绑定')
 assert.equal(pressed({ key: 'l', ctrl: true, shift: true }), null, 'Ctrl+Shift+L 没有绑定')
@@ -145,7 +127,6 @@ assert.equal(pressed({ key: '1' }), null, '裸 1 不切页签')
 assert.equal(pressed({ key: '1', ctrl: true, alt: true }), null, 'Ctrl+Alt+1 没有绑定')
 assert.equal(pressed({ key: '`', ctrl: true, shift: true }), null, 'Ctrl+Shift+` 没有绑定')
 
-/* ── 5. 未实现能力不注册假动作 ──────────────────────────────── */
 assert.equal(pressed({ key: 'j', ctrl: true, shift: true }), null, 'Ctrl+Shift+J（运行总览浮层）没有实现，不注册')
 assert.equal(pressed({ key: '[', ctrl: true }), null, 'Ctrl+[（上一个运行中的会话）没有实现，不注册')
 assert.equal(pressed({ key: ']', ctrl: true }), null, 'Ctrl+]（下一个运行中的会话）没有实现，不注册')
@@ -154,7 +135,6 @@ assert.equal(pressed({ key: 'ArrowUp', ctrl: true }), null, 'Ctrl+↑（上一�
 assert.equal(pressed({ key: 'ArrowDown', ctrl: true }), null, 'Ctrl+↓（下一条用户消息）没有实现，不注册')
 assert.equal(pressed({ key: 't', ctrl: true }), null, 'Ctrl+T 思考档与现有 Shift+Tab 冲突，选已有语义，不注册')
 
-/* ── 6. 宿主键不由外壳分发 ─────────────────────────────────── */
 assert.equal(pressed({ key: 'p', ctrl: true }), null, 'Ctrl+P 由主进程注册，外壳不重复分发')
 assert.equal(pressed({ key: 'P', ctrl: true, shift: true }), null, 'Ctrl+Shift+P 由主进程注册')
 assert.equal(pressed({ key: 'Tab', shift: true }), null, 'Shift+Tab 由主进程注册')
@@ -162,7 +142,6 @@ assert.equal(pressed({ key: ' ', alt: true, shift: true }), null, 'Alt+Shift+Spa
 assert.equal(resolveV3Shortcut(key({ key: 'p', ctrl: true }), { cycleModel: ['Ctrl', 'Alt', 'P'] }), null,
   '宿主项的覆盖也不会被外壳命中')
 
-/* ── 7. 焦点：输入控件里不抢编辑键 ─────────────────────────── */
 assert.equal(pressed({ key: 'ArrowLeft', alt: true }), 'goBack', '不在输入控件时 Alt+← 返回')
 assert.equal(pressed({ key: 'ArrowLeft', alt: true, editing: true }), null, '输入控件里 Alt+← 让给编辑器')
 assert.equal(pressed({ key: 'ArrowUp', editing: true }), null, '输入控件里裸方向键不抢')
@@ -172,7 +151,6 @@ assert.equal(pressed({ key: 'l', ctrl: true, editing: true }), 'focusComposer', 
 assert.equal(pressed({ key: '1', alt: true, editing: true }), 'workspaceTab1', '输入控件里 Alt+1 仍切页签')
 assert.equal(pressed({ key: 'c', ctrl: true, shift: true, editing: true }), 'copyLastReply', '输入控件里 Ctrl+Shift+C 可用')
 
-/* ── 8. IME / 长按 / AltGr / 模态一律让位 ───────────────────── */
 for (const [label, state] of [
   ['IME 组字', { composing: true }],
   ['长按重复', { repeat: true }],
@@ -186,7 +164,6 @@ for (const [label, state] of [
   assert.equal(pressed({ key: '`', ctrl: true, ...state }), null, `${label} 时 Ctrl+\` 不触发`)
 }
 
-/* 确认卡：Enter / Space / Alt+Y / Alt+N 永不落在注册表 */
 for (const def of RENDERER_SHORTCUTS) {
   assert.ok(!['enter', 'space', ' ', 'escape'].includes(shortcutKeyToken(def.keys)), `${def.id} 不占用确认键`)
 }
@@ -194,7 +171,6 @@ assert.equal(pressed({ key: 'y', alt: true }), null, 'Alt+Y 留给确认卡')
 assert.equal(pressed({ key: 'n', alt: true }), null, 'Alt+N 留给确认卡')
 assert.equal(pressed({ key: 'Enter' }), null, '裸 Enter 不是全局快捷键')
 
-/* ── 9. 终端让键：只让 terminalsYield 的项 ─────────────────── */
 assert.equal(pressed({ key: 'k', ctrl: true, inTerminal: true }), null, '终端里 Ctrl+K 让位')
 assert.equal(pressed({ key: 'b', ctrl: true, inTerminal: true }), null, '终端里 Ctrl+B 让位')
 assert.equal(pressed({ key: 'j', ctrl: true, inTerminal: true }), null, '终端里 Ctrl+J 让位')
@@ -205,7 +181,6 @@ assert.equal(pressed({ key: '.', ctrl: true, inTerminal: true }), 'stopRun', '�
 assert.equal(pressed({ key: '1', alt: true, inTerminal: true }), 'workspaceTab1', '终端里 Alt+1 仍切页签')
 assert.equal(pressed({ key: '/', ctrl: true, inTerminal: true }), 'shortcutSheet', '终端里 Ctrl+/ 仍开快捷键表')
 
-/* ── 10. 覆盖：只作用于可改项，宿主与固定项不受影响 ─────────── */
 const overrides = { stopRun: ['Ctrl', 'Alt', '.'], workspaceTab1: ['Ctrl', 'Alt', '1'], cycleModel: ['Ctrl', 'Alt', 'P'] }
 assert.equal(resolveV3Shortcut(key({ key: '.', ctrl: true, alt: true }), { stopRun: ['Ctrl', 'Alt', '.'] }), 'stopRun', '覆盖后 Ctrl+Alt+. 生效')
 assert.equal(resolveV3Shortcut(key({ key: '.', ctrl: true }), { stopRun: ['Ctrl', 'Alt', '.'] }), null, '旧键位被覆盖后不再触发')
@@ -226,7 +201,6 @@ assert.deepEqual(
   '无覆盖时原样返回注册表'
 )
 
-/* ── 11. 文案：中英覆盖全部 id，确认卡两行都在 ─────────────── */
 const zh = shortcutText('zh-CN')
 const en = shortcutText('en-US')
 const allIds = SHORTCUTS.map((def) => def.id).sort()
@@ -234,12 +208,10 @@ assert.deepEqual(Object.keys(zh.purposes).sort(), allIds, '中文作用文案覆
 assert.deepEqual(Object.keys(en.purposes).sort(), allIds, '英文作用文案覆盖全部 ShortcutId')
 assert.ok(zh.approval.allow && zh.approval.deny && en.approval.allow && en.approval.deny, '确认卡 Alt+Y/N 文案中英都有')
 
-/* ── 12. 命令面板来源一致：新快捷键对应真实面板动作 ─────────── */
 for (const id of ['stopSession', 'workspaceTerminal', 'workspaceChanges', 'workspaceFiles', 'workspaceBrowser', 'workspacePreview']) {
   assert.ok(Object.values(COMMAND_ACTION_IDS).includes(id), `命令面板存在动作 ${id}`)
 }
 
-/* ── 13. 帮助表源码契约（静态） ─────────────────────────────── */
 const sheet = readFileSync(here('../src/renderer/src/features/commands/ShortcutSheet.tsx'), 'utf8')
 assert.ok(sheet.includes('applyShortcutOverrides') && sheet.includes('shortcutOverridesFromSettings'),
   '帮助表按用户改绑后的生效键位显示')

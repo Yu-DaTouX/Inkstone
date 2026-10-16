@@ -1,19 +1,11 @@
-/**
- * v3 设置「通用分区」自己的短文案。
- *
- * 与 `settings-text.ts` 同一约定：键面只属于本模块，不写进两份共享 i18n JSON；
- * 等 v3 定稿后统一并入。分区导航的标题由根页的文案模块提供（整合补丁负责）。
- */
 import type { Lang } from '../../../i18n'
 
 export interface GeneralText {
-  /* 公共 */
   loading: string
   cancel: string
   confirm: string
   enabled: string
 
-  /* 会话 */
   sessionNote: string
   sessionAutoArchive: string
   sessionAutoArchiveDesc: string
@@ -30,7 +22,6 @@ export interface GeneralText {
   sessionLoopAutoContinue: string
   sessionLoopAutoContinueDesc: string
 
-  /* 通知与提醒 */
   notifNote: string
   notifSystem: string
   notifSystemDesc: string
@@ -43,7 +34,6 @@ export interface GeneralText {
   notifEventError: string
   notifPreview: string
 
-  /* 权限与安全 */
   securityMode: string
   securityModeDanger: string
   securityModeDangerDesc: string
@@ -62,7 +52,6 @@ export interface GeneralText {
   securityDangerConfirm: string
   securityDangerConfirmDesc: string
 
-  /* 设备与同步 */
   devicesEnable: string
   devicesEnableDesc: string
   devicesRunning: string
@@ -91,7 +80,6 @@ export interface GeneralText {
   devicesPeerRevoke: string
   devicesSyncConfigured: string
 
-  /* 数据 */
   dataNote: string
   dataLocation: string
   dataLocationDesc: string
@@ -118,7 +106,6 @@ export interface GeneralText {
   dataDangerNote: string
   dataUnavailable: string
 
-  /* 关于 */
   aboutNote: string
   aboutVersion: string
   aboutBuild: string

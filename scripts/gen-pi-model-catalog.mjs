@@ -1,34 +1,14 @@
-/**
- * 从随包 pi 的内置模型目录生成「模型能力表」：resources/pi-extensions/generated/pi-model-catalog.json。
- *
- * 用途：用户接入自定义服务（中转站、聚合网关）时，端点的 /models 往往只给 ID，
- * 不说哪个模型能思考、输出上限多少。pi 自带的目录里有这些数据，按模型 ID 对照即可补上，
- * 砚不另维护一份模型表。
- *
- * 做法：在隔离的 PI_CODING_AGENT_DIR 里以 RPC 模式启动 pi，挂一个临时扩展，
- * 在 session_start 时读 `ctx.modelRegistry.getAll()` 写出来。不登录、不发模型请求。
- *
- * 同一个模型在多家服务里各有一条（anthropic / openrouter / bedrock …），这里按归一化 ID
- * 合并，取最接近原厂的那条作为代表（见 PROVIDER_RANK）。
- *
- * 用法：
- *   node scripts/gen-pi-model-catalog.mjs          # 重新生成
- *   node scripts/gen-pi-model-catalog.mjs --check  # 与当前 pi 运行时比对，不一致则失败
- * 升级 pi（npm run upgrade:pi）后要重新生成。
- */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-/* 与查找时同一个归一化函数（生成自 src/shared/custom-provider.ts） */
 import { catalogKey } from '../resources/pi-extensions/generated/model-capabilities.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = join(root, 'resources/pi-extensions/generated/pi-model-catalog.json')
 const check = process.argv.includes('--check')
 
-/** 越靠前越接近原厂；不在表里的排在后面，聚合网关最后 */
 const PROVIDER_RANK = [
   'anthropic', 'openai', 'google', 'deepseek', 'moonshotai', 'zai', 'xai', 'mistral', 'minimax',
   'xiaomi', 'meta', 'qwen-token-plan', 'nvidia', 'groq', 'fireworks', 'together', 'baseten',
@@ -94,8 +74,6 @@ function compact(models) {
     if (typeof best.contextWindow === 'number') entry.contextWindow = best.contextWindow
     if (typeof best.maxTokens === 'number') entry.maxTokens = best.maxTokens
     if (best.reasoning && best.thinkingLevelMap && typeof best.thinkingLevelMap === 'object') entry.thinkingLevelMap = best.thinkingLevelMap
-    /* 报价（美元 / 百万 token）：会话花费按它估算，订阅制服务也能看到「折合 API 价」 */
-    /* 代表那条可能是套餐里标 0 的（如 qwen-token-plan）：报价取排名最靠前的、真有标价的那条 */
     const c = ranked.find((m) => m.cost && (m.cost.input > 0 || m.cost.output > 0))?.cost
     if (c && (c.input > 0 || c.output > 0)) {
       entry.cost = { input: c.input ?? 0, output: c.output ?? 0, cacheRead: c.cacheRead ?? 0, cacheWrite: c.cacheWrite ?? 0 }
@@ -107,7 +85,6 @@ function compact(models) {
 
 const { cli, version } = piRuntime()
 const models = compact(await dumpRegistry(cli))
-/* 每个模型一行：体积小，升级 pi 后的 diff 也看得清 */
 const lines = Object.entries(models).map(([key, entry]) => `  ${JSON.stringify(key)}: ${JSON.stringify(entry)}`)
 const text = `{\n "piVersion": ${JSON.stringify(version)},\n "models": {\n${lines.join(',\n')}\n }\n}\n`
 if (check) {

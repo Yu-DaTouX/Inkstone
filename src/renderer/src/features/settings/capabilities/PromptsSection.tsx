@@ -1,13 +1,3 @@
-/**
- * 「提示词」分页（S2）。
- *
- * 提示词没有独立的设置 / 安装接口，只能读当前 pi 会话的命令注册表
- *（`yan:listCommands`，store 的 `commands`）。这里如实只读展示：
- *   · 未连接会话 → 明说需要会话，而不是「没有提示词」；
- *   · 已连接但注册表里没有 prompt 来源 → 空态说明；
- *   · `hiddenInMenu` 的条目照常列出（它们是注册表的一部分，只是不出现在补全菜单，
- *     不是停用）。
- */
 import type { ReactElement } from 'react'
 import { useStore } from '../../../state/store'
 import { Button } from '../../../ui'

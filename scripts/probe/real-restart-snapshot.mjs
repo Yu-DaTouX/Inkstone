@@ -1,28 +1,4 @@
 #!/usr/bin/env node
-/**
- * 真实实例「重启复核」取证工具（**只读**）。
- *
- * ── 为什么需要它 ──
- * 重启复核必须由人点退出/重启：助手自己就跑在要重启的那个实例里，进程一退就没了，
- * 没法在「重启后」继续观察。所以这里把「重启前」和「重启后」的关键落盘状态抽成
- * 一份可比对的快照 —— 重启前跑一次、重启后再跑一次，diff 两份 JSON 就能客观回答
- * 「退出时保存下来的东西，重启后还在不在、有没有被改写」。
- *
- * ── 它读什么（全部只读，绝不写用户数据）──
- *   PI_AGENT_DIR (~/.pi/agent)        pi 的会话 JSONL、凭证/设置是否存在
- *   YAN_DIR      (~/.pi/agent/yan)    桌面端派生状态：goals / 布局 / 回合计时 / …
- *   Electron userData (%APPDATA%/yan-desktop)
- *
- * ── 两类量要分开看（对比时很重要）──
- *   稳定项：界面布局与面板、目标集合与阶段、**历史**会话集合 —— 复核前后应当一致。
- *   增长项：会话消息数、ops 条数、回合计时条数 —— 复核期间的对话本身就会让它们变，
- *           只要求「不减少」，不要求相等。
- *
- * 用法：
- *   node scripts/probe/real-restart-snapshot.mjs                # 打印摘要
- *   node scripts/probe/real-restart-snapshot.mjs --out a.json    # 另存快照
- *   node scripts/probe/real-restart-snapshot.mjs --diff a.json b.json
- */
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
@@ -80,7 +56,6 @@ function countLines(p) {
   }
 }
 
-/* ── 会话：只统计不读正文，避免把用户内容带进快照 ── */
 const sessionFiles = walk(join(PI_DIR, 'sessions'), (n) => n.endsWith('.jsonl'))
 const sessionDirs = new Set(sessionFiles.map((f) => join(f, '..')))
 const sessions = sessionFiles
@@ -89,15 +64,12 @@ const sessions = sessionFiles
     try {
       st = statSync(f)
     } catch {
-      /* 读不到就留空 */
     }
     return { file: basename(f), dir: basename(join(f, '..')), size: st.size, mtimeMs: Math.round(st.mtimeMs), lines: countLines(f) }
   })
   .sort((a, b) => b.mtimeMs - a.mtimeMs)
 
-/* ── 目标：只看结构与阶段，不搬全文 ── */
 const goalsDoc = readJson(join(YAN_DIR, 'goals.json'))
-/* 形状：`entries[sessionFile] = { goal: { phase, revision, steps } }`（按会话文件索引） */
 const goalList = (() => {
   const e = goalsDoc?.entries
   if (!e) return []
@@ -118,7 +90,6 @@ const goalList = (() => {
     .sort((a, b) => a.session.localeCompare(b.session))
 })()
 
-/* ── 回合计时：条数 + 终态分布 ── */
 const timingFiles = walk(join(YAN_DIR, 'turn-timing'), (n) => n.endsWith('.jsonl'))
 const timing = { files: timingFiles.length, entries: 0, byTerminal: {}, byFile: {} }
 for (const f of timingFiles) {
@@ -137,7 +108,6 @@ for (const f of timingFiles) {
   }
 }
 
-/* ── 界面/布局：稳定项 ── */
 const desktop = readJson(join(YAN_DIR, 'desktop.json')) ?? {}
 const layout = {
   theme: desktop.theme ?? null,
@@ -158,7 +128,6 @@ const chains = readJson(join(YAN_DIR, 'session-chains.json'))
 const titles = readJson(join(YAN_DIR, 'titles.json')) ?? {}
 const manualTitles = readJson(join(YAN_DIR, 'manual-titles.json')) ?? {}
 
-/* ── 上下文状态与任务侧状态 ── */
 const ctxFiles = listDir(join(YAN_DIR, 'context-state'))
 const ctxBySuffix = {}
 for (const n of ctxFiles) {
@@ -208,10 +177,8 @@ const snapshot = {
     : null
 }
 
-/* ── 稳定项指纹：单值，用来一眼看出「退出状态有没有变」 ── */
 snapshot.stableFingerprint = hash([snapshot.layout, snapshot.goals.hash, snapshot.credentials])
 
-/* ── diff 模式 ── */
 if (flag('--diff')) {
   const [a, b] = args.slice(args.indexOf('--diff') + 1, args.indexOf('--diff') + 3)
   const A = readJson(a)
@@ -231,11 +198,6 @@ if (flag('--diff')) {
   const fa = flat(A)
   const fb = flat(B)
   const keys = [...new Set([...Object.keys(fa), ...Object.keys(fb)])]
-  /*
-   * 稳定项：复核前后应当**完全一致**。
-   * 不含 `sessionLayout.entries` / `turnTiming.*` / `ops` / 会话行数 —— 那些按会话、
-   * 回合或操作增长，复核期间的对话本身就会写它们，只要求「不减少」。
-   */
   const stable = new Set([
     'layout.theme', 'layout.cwd', 'layout.rightPanelOpen', 'layout.alwaysOnTop', 'layout.uiScale',
     'layout.railWidth', 'layout.panelWidth', 'layout.browserHeight', 'layout.hash',

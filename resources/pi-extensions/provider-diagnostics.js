@@ -1,10 +1,3 @@
-/** Preserve safe provider failure identifiers without changing requests, retry policy or context. */
-/*
- * `response` 保存的是**最近一次** HTTP 响应头信息（状态、request-id、cf-ray）。
- * 同一进程里请求是串行的，所以这份关联通常就是出错那一次；但如果将来出现并发
- * 请求，requestId 只能当作「附近的」线索 —— 真正的本次 id 取 provider_stream_event
- * 自带的 response.id（见下面的 responseId）。
- */
 const identifier = value => typeof value === 'string' && value.length <= 160 &&
   /^[a-zA-Z0-9_.:/-]+$/.test(value) && !/^(sk-|bearer|eyJ)/i.test(value) ? value : undefined
 const statusCode = value => typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599 ? value : undefined
@@ -24,12 +17,11 @@ export default function providerDiagnostics(pi) {
       model: identifier(event?.model ?? ctx?.model?.id),
       ...fields
     }
-    // Undefined fields are omitted; only explicitly selected identifiers reach disk or stderr.
     const json = JSON.stringify(detail)
     if (json === last) return
     last = json
-    try { pi.appendEntry('inkstone-provider-error', JSON.parse(json)) } catch { /* diagnostics must not break the original request */ }
-    try { console.error(`[Inkstone/provider-error] ${json}`) } catch { /* closed stderr */ }
+    try { pi.appendEntry('inkstone-provider-error', JSON.parse(json)) } catch { }
+    try { console.error(`[Inkstone/provider-error] ${json}`) } catch { }
   }
   pi.on('before_provider_request', () => { response = {}; last = '' })
   pi.on('after_provider_response', (event, ctx) => {
@@ -41,7 +33,7 @@ export default function providerDiagnostics(pi) {
       }
       last = ''
       if (response.status >= 400) record(event, ctx, { event: 'http_error', ...response })
-    } catch { /* unknown upstream shape */ }
+    } catch { }
   })
   pi.on('provider_stream_event', (event, ctx) => {
     try {
@@ -62,6 +54,6 @@ export default function providerDiagnostics(pi) {
         ...(statusCode(data.status ?? error?.status) ? { status: statusCode(data.status ?? error?.status) } : {}),
         ...(responseId ? { responseId } : {})
       })
-    } catch { /* never replace provider errors with a diagnostics error */ }
+    } catch { }
   })
 }

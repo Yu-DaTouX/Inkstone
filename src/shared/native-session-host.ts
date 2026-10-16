@@ -1,4 +1,3 @@
-/** Desktop-only native session operations. Every request is bound to the session the user sees. */
 export type NativeSessionHostAction =
   | 'tree' | 'entries' | 'navigate' | 'reload'
   | 'scoped-models' | 'set-scoped-models'

@@ -1,28 +1,3 @@
-/**
- * MCP App 宿主视图桥（A6）。
- *
- * ── 它解决什么 ──
- *   模型工具调用返回 `_meta.ui.resourceUri` 后，砚要把该 App 页面渲染到对应步骤下方，
- *   并允许 App 通过 JSON-RPC 子集请求宿主执行同一服务器的工具。本模块把这条链路
- *   收在一处，且所有安全判定都在宿主侧：
- *     · `prepare(callId)`：只按**当前前台 owner 已有的模型调用记录**准备实例；
- *       `resourceUri` 从记录 / 服务工具 Meta 取，渲染端不能自报 url / serverId；
- *     · `dispatch(instanceId, message)`：只收校验过的 JSON-RPC2 小包，同 iframe 所属
- *       server，初始化后才放 `tools/call`；每次重读当前工具表，`visibility` 只认服务
- *       原始 `_meta` 归一化结果；
- *     · `release` / `invalidate*`：按实例取消，不伤其它实例 / 其它会话；
- *     · `audit`：读取真实落盘的 App 调用摘要。
- *
- * ── 身份来自哪里 ──
- *   渲染端只传 callId / instanceId / JSON-RPC 消息。前台 runner、sessionFile、generation、
- *   projectId、权限档、服务器授权全部由注入的**可信运行时解析器**与宿主持久层提供。
- *   解析器缺失 / 抛错 / 返回未知一律拒绝（fail-closed），不用恒 true 或空 holders 兜底。
- *
- * ── 不做的事 ──
- *   不创建 Agent / runner / 模型循环，不把 `structuredContent` / `_meta` 送模型，
- *   不为历史重放重跑 `tools/call`。规范字段名以 `app-spec.ts` 为唯一来源（仍待核对
- *   稳定版规范）；本实现是离线 PoC，不构成真实第三方 App 兼容声明。
- */
 import { createHash } from 'node:crypto'
 import type { PermissionMode } from '../../shared/approval'
 import type {
@@ -50,10 +25,8 @@ import {
 } from './app-resource-store'
 import type { McpAppCallOutcome, McpAppResource, McpAppToolDescriptor } from './app-host'
 
-/** 一次调用的结构化记录：A6 只读这里需要的字段，结构上兼容 `McpAppProxyService`。 */
 export interface McpAppViewCallRecordLike {
   callId: string
-  /** 记录时的宿主 runner 身份；`runnerId` / `epoch` 可能缺失。 */
   owner: { sessionId: string; projectId: string; runnerId?: string; epoch?: number }
   serverId: string
   toolName: string
@@ -61,17 +34,10 @@ export interface McpAppViewCallRecordLike {
   resourceUri: string | null
 }
 
-/** 代理服务里 A6 需要的窄接口（生产接单例，测试可注入 fake）。 */
 export interface McpAppViewProxyLike {
   getCallResult(callId: string, owner: { sessionId: string; projectId: string; runnerId?: string; epoch?: number }): McpAppViewCallRecordLike | null
   snapshotStatus(): { present: boolean; stale: boolean; needsRefresh: boolean }
-  /** 快照里的工具条目；`projectScope` 是**目标属性**，用来判断当前项目是否可见。 */
   registrableTools(): Array<{ serverId?: string; projectScope?: string }>
-  /**
-   * 显式刷新托管工具快照。`callerProjectId` 是**可信调用者项目身份**：
-   * 只用来筛「全局 + 本项目」目标并透传给宿主，绝不用 `server.projectScope` 自证；
-   * `serverIds` 为显式数组时是**目标白名单**，空数组 = 0 目标（不是「未指定」）。
-   */
   refresh(options?: {
     serverIds?: string[]
     callerProjectId?: string
@@ -79,7 +45,6 @@ export interface McpAppViewProxyLike {
   }): Promise<{ ok: boolean; toolCount: number; error?: string }>
 }
 
-/** 宿主连接层里 A6 需要的窄接口（生产接 `McpAppHost`）。 */
 export interface McpAppViewHostLike {
   listToolsWithMeta(
     serverId: string,
@@ -98,7 +63,6 @@ export interface McpAppViewHostLike {
   ): Promise<McpAppResource>
 }
 
-/** 前台运行实例事实；只由主进程从实际 runner / session 派生。 */
 export interface McpAppViewRunnerFacts {
   sessionId: string
   sessionFile: string
@@ -109,32 +73,17 @@ export interface McpAppViewRunnerFacts {
   title?: string
 }
 
-/** 可信运行时解析器：`prepare` / `dispatch` 的身份都从它取。 */
 export interface McpAppViewRuntimeResolver {
-  /** 返回 null = 当前没有可用前台实例 / 调用不属于当前会话；抛错同样按拒绝。 */
   resolve(input: { callId: string }): Promise<McpAppViewRunnerFacts | null>
-  /**
-   * 当前前台项目身份；`snapshot` 可见计数 / `refresh` 的 caller。
-   * 缺失 / 空 / 抛错一律视为拿不到可信 caller：项目目标与刷新 fail-closed。
-   */
   currentProject?(): Promise<string | null>
 }
 
-/**
- * 主进程把 RunnerRegistry 事实接进来的窄接口（供 `createMcpAppViewRuntime`）。
- * `current` 返回当前前台实例事实，`isActive` 核对某个已登记 owner 是否仍活跃。
- */
 export interface McpAppViewFactsSource {
   current(callId: string): McpAppViewRunnerFacts | null | Promise<McpAppViewRunnerFacts | null>
   isActive(owner: McpAppOwner): boolean
-  /** 当前前台项目；`refresh` / `snapshot` 的 caller。缺失即无法确认 caller。 */
   currentProject?(): string | null | Promise<string | null>
 }
 
-/**
- * 把运行实例事实包成 service 需要的 runtime + ownerGuard。
- * 任何缺失 / 抛错 / 未知都折算成拒绝（fail-closed），不会默认放行。
- */
 export function createMcpAppViewRuntime(source: McpAppViewFactsSource): {
   runtime: McpAppViewRuntimeResolver
   ownerGuard: McpAppOwnerGuard
@@ -177,33 +126,20 @@ export function createMcpAppViewRuntime(source: McpAppViewFactsSource): {
 export interface McpAppViewServiceOptions {
   proxy: McpAppViewProxyLike
   host: McpAppViewHostLike
-  /** 真实 owner 守卫（构造必填）；缺省 / 坏类型 / 抛异常一律拒绝，禁止恒 true。 */
   ownerGuard: McpAppOwnerGuard
   runtime: McpAppViewRuntimeResolver
-  /** 复用 ApprovalBroker.bind 当前 runner 的卡片；超时 / 无窗口 / 异常都判拒绝。 */
   ask: AppViewAsk
   audit: McpAppViewAuditStore
-  /** 宿主已加载配置；`null` = 该服务当前不可信（指纹缺失即 fail-closed）。 */
   serverConfigOf(serverId: string): unknown | null
-  /** 全局权限档；缺省 `danger`。 */
   permissionMode?(): PermissionMode | Promise<PermissionMode>
-  /** 宿主持久层读出的服务器授权；缺省空数组（则只读也要逐次询问）。 */
   grantsOf?(
     facts: McpAppViewRunnerFacts,
     serverId: string
   ): Promise<readonly HostTrustGrant[]> | readonly HostTrustGrant[]
-  /** 资源 fetch（生产传 `createMcpAppResourceLoader(mcpAppHost())`）；与 `store` 二选一。 */
   fetchResource?: McpAppResourceFetch
-  /** 覆盖 store（测试）；缺省用 ownerGuard + fetch 组装。 */
   store?: McpAppResourceStore
-  /** `ui/initialize` 回给 App 的宿主上下文；缺省空 provider，由主题合成器补桌面默认值。 */
   hostContext?(): Record<string, unknown> | Promise<Record<string, unknown>>
-  /** 当前主题来源；缺省回到 `MCP_APP_DEFAULT_THEME`（深色），不默认浅色。 */
   theme?(): McpAppTheme | string | null | undefined | Promise<McpAppTheme | string | null | undefined>
-  /**
-   * 系统当前是否深色；只有 `theme()` 返回 `'system'` 时才会用到。
-   * 主进程入口用 `nativeTheme.shouldUseDarkColors` 注入；缺省按默认深色。
-   */
   systemPrefersDark?(): boolean
   now?(): number
   maxMessageBytes?: number
@@ -244,7 +180,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>
 }
 
-/** 稳定序列化：键排序，保证同一参数集合的哈希可对账。 */
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
   if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`
@@ -254,7 +189,6 @@ function stableStringify(value: unknown): string {
   return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`).join(',')}}`
 }
 
-/** 参数哈希：只对账，不保存原文。 */
 export function hashMcpAppViewArgs(args: unknown): string {
   return createHash('sha256').update(stableStringify(args ?? {})).digest('hex')
 }
@@ -280,7 +214,6 @@ function matchesJsonType(type: string, value: unknown): boolean {
   }
 }
 
-/** 最小 schema 校验：只查必填键与已声明属性的基础类型；不做完整 JSON Schema。 */
 function validateToolArgs(schema: unknown, args: Record<string, unknown>): string | null {
   const shape = asRecord(schema)
   if (!shape) return null
@@ -312,11 +245,6 @@ function isFacts(value: unknown): value is McpAppViewRunnerFacts {
   return typeof facts.generation === 'number' && Number.isFinite(facts.generation) && facts.generation >= 0
 }
 
-/**
- * 某个目标（快照条目 / 服务配置）是否对调用者项目可见。
- * 全局（无 `projectScope`）始终可见；项目目标只有 caller 就是该项目才可见。
- * caller 缺失时项目目标一律不可见（不从目标 scope 反推 caller）。
- */
 function isVisibleToProject(projectScope: string | undefined | null, callerProjectId: string | null): boolean {
   if (!projectScope) return true
   return callerProjectId !== null && projectScope === callerProjectId
@@ -392,16 +320,10 @@ export class McpAppViewService implements McpAppViewApi {
     this.maxCallSessions = options.maxCallSessions ?? DEFAULT_MAX_CALL_SESSIONS
   }
 
-  /** 协议层注册用：宿主 `inkstone-app:` handler 读的就是这个 store。 */
   resourceStore(): McpAppResourceStore {
     return this.store
   }
 
-  /**
-   * 已打开实例的可信宿主上下文读取口：只认宿主已登记的实例，并复用同一 owner /
-   * 运行代次守卫；实例不存在、归属失效或解析失败都返回 null。它不执行工具、不改状态，
-   * 渲染端也不能用本地主题自证身份。
-   */
   async hostContext(instanceId: string): Promise<unknown | null> {
     const binding = this.instances.get(String(instanceId ?? ''))
     if (!binding) return null
@@ -431,7 +353,6 @@ export class McpAppViewService implements McpAppViewApi {
       record = null
     }
     if (!record) {
-      /* 历史恢复 / 别的进程产生的结果：只给文本回退，绝不重跑 tools/call。 */
       return { kind: 'text', text: '', reason: '没有本机的工具调用结果；App 视图不恢复，也不会重跑工具' }
     }
     if (record.owner.sessionId !== facts.sessionId || record.owner.projectId !== facts.projectId) {
@@ -509,7 +430,6 @@ export class McpAppViewService implements McpAppViewApi {
     if (!parsed.ok) return this.rpcError(parsed.id, -32600, parsed.error)
     const { id, method, params } = parsed
 
-    /* 同一条实例内 id 去重：重放同一个 id 一律拒绝，不重复执行。 */
     if (id !== undefined && !this.rememberId(binding, id)) {
       return this.rpcError(id, -32600, '重复的请求 ID，拒绝重放')
     }
@@ -522,13 +442,11 @@ export class McpAppViewService implements McpAppViewApi {
         binding.initialized = true
         return this.rpcResult(id, { hostContext: await this.resolveHostContext() })
       case MCP_APP_METHODS.initialized:
-        /* 只有成功 `ui/initialize` 之后才接受 initialized；否则不应放行 tools/call。 */
         if (!binding.initialized) {
           return this.rpcError(id, -32002, 'App 尚未成功初始化，拒绝 initialized 通知')
         }
         return null
       case MCP_APP_METHODS.sizeChanged:
-        /* 安全子集：只确认收到尺寸通知，不据此改 OS 窗口。 */
         return null
       case MCP_APP_METHODS.requestDisplayMode: {
         const requested = typeof params.mode === 'string' ? params.mode : ''
@@ -543,7 +461,6 @@ export class McpAppViewService implements McpAppViewApi {
         if (id === undefined) return this.rpcError(null, -32600, 'resources/read 必须是带 id 的请求')
         return this.handleResourcesRead(binding, id, params)
       default:
-        /* 外链 / 写模型上下文 / ui.message 等完整语义未审：明确 unsupported，不静默执行。 */
         return this.rpcError(
           id,
           -32601,
@@ -564,7 +481,6 @@ export class McpAppViewService implements McpAppViewApi {
   async audit(callId: string): Promise<McpAppViewAuditEntry[]> {
     const id = typeof callId === 'string' ? callId.trim() : ''
     if (!id) return []
-    /* 每次都要当前前台事实；不能用 callId 全局缓存绕过 owner，否则前台 B 能读后台 A 的审计摘要。 */
     const facts = await this.resolveFacts(id)
     if (!facts) return []
     const known = this.callSessions.get(id)
@@ -579,19 +495,16 @@ export class McpAppViewService implements McpAppViewApi {
       const callerProjectId = await this.currentProjectId()
       const status = this.proxy.snapshotStatus()
       needsRefresh = status.needsRefresh
-      /* 只数当前项目可见条目，不把其它项目的工具数 / schema 泄露给界面。 */
       toolCount = this.proxy
         .registrableTools()
         .filter((tool) => isVisibleToProject(tool.projectScope, callerProjectId)).length
     } catch {
-      /* 读状态 / 取 caller 失败按「待刷新、0 工具」处理，不谎报可用。 */
     }
     return { needsRefresh, toolCount }
   }
 
   async refresh(): Promise<McpAppViewRefreshResult> {
     try {
-      /* 真实 caller 项目：由 runtime 事实提供，绝不用目标 `projectScope` 自证。 */
       const callerProjectId = await this.currentProjectId()
       const result = await this.proxy.refresh(callerProjectId ? { callerProjectId } : {})
       return { ok: result.ok, toolCount: result.toolCount, ...(result.error ? { error: result.error } : {}) }
@@ -599,8 +512,6 @@ export class McpAppViewService implements McpAppViewApi {
       return { ok: false, toolCount: 0, error: messageOf(error) }
     }
   }
-
-  /* ---------------- 生命周期：切会话 / runner 重启 / 退出 ---------------- */
 
   invalidateSession(sessionId: string): number {
     const id = String(sessionId ?? '')
@@ -615,7 +526,6 @@ export class McpAppViewService implements McpAppViewApi {
     try {
       this.store.invalidateSession(id)
     } catch {
-      /* store 失效失败不影响已注销的映射；下次读取仍会被守卫拦住。 */
     }
     return removed
   }
@@ -632,7 +542,6 @@ export class McpAppViewService implements McpAppViewApi {
     try {
       this.store.invalidateRunner(String(serverId ?? ''), String(runnerId ?? ''))
     } catch {
-      /* 同上。 */
     }
     return removed
   }
@@ -653,7 +562,6 @@ export class McpAppViewService implements McpAppViewApi {
       try {
         this.store.invalidateRunner(serverId, id)
       } catch {
-        /* 同上。 */
       }
     }
     return removed
@@ -671,20 +579,16 @@ export class McpAppViewService implements McpAppViewApi {
     try {
       this.store.invalidateOwner(owner)
     } catch {
-      /* 同上。 */
     }
     return removed
   }
 
-  /** 应用退出 / 协议层收尾：取消全部实例并清 store（含缓存）。 */
   close(): void {
     for (const binding of this.instances.values()) this.abortBinding(binding)
     this.instances.clear()
     this.callSessions.clear()
     this.store.clear()
   }
-
-  /* ---------------- tools/call ---------------- */
 
   private async handleToolsCall(
     binding: InstanceBinding,
@@ -701,7 +605,6 @@ export class McpAppViewService implements McpAppViewApi {
     }
     binding.inFlight++
     try {
-      /* 每次重读当前工具表：不信任 iframe，也不知道过期 schema。 */
       let tools: McpAppToolDescriptor[]
       try {
         tools = await this.host.listToolsWithMeta(binding.serverId, {
@@ -717,7 +620,6 @@ export class McpAppViewService implements McpAppViewApi {
         return this.rpcError(id, -32601, `当前服务没有工具 ${toolName}`)
       }
 
-      /* visibility 只取服务原始 `_meta` 的宿主归一化结果，绝不读 iframe 自报字段。 */
       const visibility: McpAppVisibility[] = mcpAppVisibilityOf(tool.meta)
       if (!visibility.includes('app')) {
         await this.tryWriteAudit(binding, 'denied', toolName, mode, `visibility 拒绝：${toolName}`, { reason: '工具未向 App 视图开放' })
@@ -736,7 +638,6 @@ export class McpAppViewService implements McpAppViewApi {
         return this.rpcError(id, -32000, '无法确认服务器身份，拒绝调用')
       }
 
-      /* 审计先落盘：requested 写不进去就不执行工具（all 档同样）。 */
       const argsHash = hashMcpAppViewArgs(args)
       try {
         await this.writeAudit(binding, 'requested', toolName, mode, `App 请求调用 ${toolName}`, { argsHash })
@@ -777,14 +678,12 @@ export class McpAppViewService implements McpAppViewApi {
         return this.rpcError(id, -32000, decision.reason ?? '未获授权')
       }
 
-      /* approved 审计也必须落盘；失败就不执行。 */
       try {
         await this.writeAudit(binding, 'approved', toolName, mode, `允许调用 ${toolName}`, { argsHash })
       } catch (error) {
         return this.rpcError(id, -32000, `App 审计写入失败，已拒绝执行：${messageOf(error)}`)
       }
 
-      /* 调用前后都核对归属与服务器指纹，切换 / 重配期间迟到结果一律丢弃。 */
       if (!this.isOwnerActive(binding.owner) || this.serverFingerprint(binding.serverId) !== fingerprint) {
         await this.tryWriteAudit(binding, 'error', toolName, mode, `归属或服务身份已变化：${toolName}`, { reason: '调用前复核失败' })
         return this.rpcError(id, -32000, 'App 实例归属或服务身份已变化，拒绝调用')
@@ -807,7 +706,6 @@ export class McpAppViewService implements McpAppViewApi {
       }
 
       await this.tryWriteAudit(binding, 'completed', toolName, mode, `调用完成：${toolName}`, { argsHash })
-      /* structuredContent / _meta 只发给所属 iframe，不进模型上下文。 */
       const result = outcome.result ?? {
         content: [],
         ...(outcome.structuredContent ? { structuredContent: outcome.structuredContent } : {}),
@@ -819,8 +717,6 @@ export class McpAppViewService implements McpAppViewApi {
     }
   }
 
-  /* ---------------- resources/read ---------------- */
-
   private async handleResourcesRead(
     binding: InstanceBinding,
     id: string | number,
@@ -828,7 +724,6 @@ export class McpAppViewService implements McpAppViewApi {
   ): Promise<unknown> {
     const uri = typeof params.uri === 'string' ? params.uri.trim() : ''
     if (!uri) return this.rpcError(id, -32602, 'resources/read 缺少资源 URI')
-    /* 只允许本实例声明的资源：不能变成跨 server / 任意资源读取。 */
     if (uri !== binding.resourceUri) {
       return this.rpcError(id, -32601, '只允许读取本实例已声明的 App 资源')
     }
@@ -851,13 +746,6 @@ export class McpAppViewService implements McpAppViewApi {
     }
   }
 
-  /* ---------------- 内部工具 ---------------- */
-
-  /**
-   * `ui/initialize` 的宿主上下文：先取宿主 provider 的原始字段（platform / displayMode
-   * 等以它为准），再按当前明确主题合成 styles.variables。provider 抛错按空对象处理，
-   * 不阻断初始化；主题取不到时回到默认深色，不默认浅色。
-   */
   private async resolveHostContext(): Promise<Record<string, unknown>> {
     let provider: Record<string, unknown> = {}
     try {
@@ -868,10 +756,6 @@ export class McpAppViewService implements McpAppViewApi {
     return buildMcpAppHostContext({ theme: await this.resolveTheme(provider.theme), provider })
   }
 
-  /**
-   * 解析当前明确主题：显式 `theme()` 优先；`'system'` 用宿主注入的系统当前明暗；
-   * 都没有时用 provider 的 `theme` 线索；仍未知才回退默认深色。任何一步抛错都不阻断。
-   */
   private async resolveTheme(providerTheme: unknown): Promise<McpAppTheme> {
     let preference: unknown
     if (this.theme) {
@@ -902,7 +786,6 @@ export class McpAppViewService implements McpAppViewApi {
     }
   }
 
-  /** 当前前台项目身份；拿不到（缺 provider / 空 / 抛错）一律 null。 */
   private async currentProjectId(): Promise<string | null> {
     try {
       const fn = this.runtime.currentProject
@@ -950,7 +833,6 @@ export class McpAppViewService implements McpAppViewApi {
     facts: McpAppViewRunnerFacts
   ): Promise<string | null> {
     if (record.resourceUri) return record.resourceUri
-    /* 回退到服务工具 Meta 的 `_meta.ui.resourceUri`；仍不接受渲染端自报。 */
     try {
       const tools = await this.host.listToolsWithMeta(record.serverId, { projectId: facts.projectId })
       return tools.find((tool) => tool.name === record.toolName)?.resourceUri ?? null
@@ -963,7 +845,6 @@ export class McpAppViewService implements McpAppViewApi {
     try {
       binding.abort.abort(new Error('mcp-app-view-released'))
     } catch {
-      /* 已中止不影响注销。 */
     }
   }
 
@@ -1008,10 +889,6 @@ export class McpAppViewService implements McpAppViewApi {
     })
   }
 
-  /**
-   * 尽力写审计：拒绝 / 错误路径的审计写失败不会“放行”，所以这里吞掉异常并如实
-   * 让调用方返回错误；执行前的 `writeAudit` 则必须成功。
-   */
   private async tryWriteAudit(
     binding: InstanceBinding,
     phase: McpAppViewAuditEntry['phase'],
@@ -1023,7 +900,6 @@ export class McpAppViewService implements McpAppViewApi {
     try {
       await this.writeAudit(binding, phase, toolName, mode, summary, opts)
     } catch {
-      /* 不覆盖主错误。 */
     }
   }
 

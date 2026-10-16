@@ -4,17 +4,6 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { PERMISSION_MODES, normalizePermissionMode } from '../../../../shared/approval'
 
-/**
- * 输入框上方的消息栈：**悬着的（待投递）** + pi 队列里（已投递）的。
- *
- * 两层语义要分清：
- *   · `pendingSends` —— 还没投给 pi，用户点「插话 / 排队」之后才投递。
- *     用户 2026-09-19：「发送的消息默认悬浮在输入框上方，让用户自己选择
- *     是插话还是排队」。它只存在于渲染端（`store.pendingSends`）。
- *   · `queue.steering` / `queue.followUp` —— pi **已经收下**的（插话中 /
- *     排队中）。每行右侧的「撤回」只操作仍在队列快照中的条目：目标一旦被
- *     pi 取走就会从快照消失，不会给用户一个虚假的撤回成功。
- */
 export function QueueStack() {
   const t = useT()
   const queue = useStore((s) => s.queue)
@@ -23,15 +12,6 @@ export function QueueStack() {
   const pendingSends = useStore((s) => s.pendingSends)
   const releaseSend = useStore((s) => s.releaseSend)
   const restoreSend = useStore((s) => s.restoreSend)
-  /*
-   * 回合跑着才需要「插话 / 排队」二选一；停了就只剩「发送」一个动作。
-   *
-   * ⚠️ 这里**故意不算 `isCompacting`**（与上面 `Composer` 里那个同名判据不同）：
-   *    压缩期间模型没有在生成，“插话”没有意义 —— 卡片上只给一个
-   *    「发送」（内部走 `followUp`：等压缩完再投）才是对的。
-   *    `Composer` 那个判据加上压缩，是为了让这个时候按 Enter 先进待定区、
-   *    不要拿着裸 prompt 去撞 pi。两处职责不同，不是写漏了。
-   */
   const roundRunning = useStore(
     (s) => !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running
   )
@@ -129,7 +109,6 @@ export function QueueStack() {
   )
 }
 
-/** 两档权限直接使用全局设置，不恢复旧工作模式。 */
 export function PermissionPicker() {
   const t = useT()
   const permission = normalizePermissionMode(useStore(s => s.settings?.permissionMode))

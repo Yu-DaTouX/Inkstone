@@ -1,7 +1,3 @@
-/**
- * 窗口生命周期：关闭按钮隐藏到托盘；取消退出后仍可重复请求退出。
- * YAN_EXIT_CHOICE=cancel 让这条探针不关闭测试应用，最后由 test-live 清理。
- */
 ;(async () => {
   const out = []
   const ok = (condition, text) => {

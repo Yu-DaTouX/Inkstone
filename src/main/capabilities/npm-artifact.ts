@@ -1,10 +1,3 @@
-/**
- * 固定 npm 制品的下载与受限解包（实施-04 §8 / §10 S6b-2）。
- *
- * 这层只准备材料：它不会执行 install scripts、调用 `pi install`、改项目配置，
- * 或把目录元数据当授权。只有 registry manifest 与 tarball 的 SHA-512 一致，
- * 且包名 / 精确版本 / 归档结构都通过校验后，才会把内容放进 operationId 专属目录。
- */
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -138,7 +131,6 @@ async function readBoundedBody(response: Response, limit: number): Promise<Buffe
   return bytes
 }
 
-/** 校验 tar entry 的原始路径与类型；symlink / hardlink / 特殊文件一律拒绝。 */
 export function validateNpmTarEntry(input: { path: string; type: string; size: number }): string | null {
   const raw = input.path
   if (!raw || raw.includes('\0') || raw.includes('\\') || raw.length > NPM_ARTIFACT_LIMITS.pathLength) {
@@ -172,10 +164,8 @@ function within(parent: string, child: string): boolean {
 
 export type NpmPackageMetadata = { name: string; version: string; integrity: string; tarballUrl: string }
 
-/* Same-process retries share one operation directory; serialize them to avoid partial writes racing. */
 const artifactOperations = new Map<string, Promise<void>>()
 
-/** prepare 阶段先固定官方 exact-version manifest 的 SRI；这里只读元数据，不取代码。 */
 export async function fetchNpmPackageMetadata(input: {
   name: string
   version: string
@@ -220,10 +210,6 @@ export async function fetchNpmPackageMetadata(input: {
   return { name: input.name, version: input.version, integrity, tarballUrl: tarballUrl.href }
 }
 
-/**
- * 下载并安全解开精确 npm 版本。该函数仅可由宿主按 operationId 调用；
- * 来源是固定的官方 registry，重定向也必须留在同一 HTTPS 主机。
- */
 export async function fetchNpmArtifact(input: {
   root: string
   operationId: string
@@ -378,7 +364,7 @@ async function fetchNpmArtifactForOperation(input: {
       entryCount++
       if (entryCount > limits.entries) throw new NpmArtifactError('too-many-files', `归档条目超过 ${limits.entries}`)
       const relativePath = normalizeEntryPath(path)
-      if (!relativePath) return true // package/ 根目录
+      if (!relativePath) return true
       const key = relativePath.toLowerCase()
       if (seen.has(key)) throw new NpmArtifactError('duplicate-path', `归档包含重名路径：${relativePath}`)
       seen.add(key)
@@ -422,7 +408,6 @@ async function fetchNpmArtifactForOperation(input: {
       }
     })
 
-    /* 重新读取抽出内容计算 hash；manifest/receipt 不采用 tar header 的声明值。 */
     const completedFiles: NpmArtifactFile[] = []
     for (const file of files) {
       const path = join(packageDir, ...file.path.split('/'))

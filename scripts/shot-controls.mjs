@@ -1,18 +1,3 @@
-/**
- * 控件状态截图（实施-13 V-1）：深浅 × 键盘焦点 × 125%/150% 缩放。
- *
- * 为什么不用 `npm run shots`：`:focus-visible` 是浏览器的**启发式状态**，
- * 脚本 `el.focus()` 不会让它匹配（Chromium 要求最近一次交互来自键盘）。
- * 要给键盘用户看真实焦点环，只能从主进程发真实按键（`sendInputEvent`），
- * 所以这里是独立的主进程脚本。顺带把每个聚焦元素的计算 `outline-*` 打出来 ——
- * 这些值必须全部来自 `--focus-ring-*`（V-1 的「焦点态只有一个来源」）。
- *
- * 两个从 shots.mjs 学来的坑：主题**不重载**直接改 `data-theme`（reload + show
- * 会让 GPU 进程崩掉，实测卡死）；未注册的数据型 IPC 必须打桩，否则每个调用
- * 都刷一段堆栈。
- *
- * 用法： YAN_SHOT_DIR=docs/design/preview electron scripts/shot-controls.mjs
- */
 import { muteMissingHandlerNoise } from './lib/stdio-guard.mjs'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
@@ -39,7 +24,7 @@ async function main() {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    show: true, // 隐藏窗口只在首帧出帧，之后切主题/缩放都截到旧画面
+    show: true,
     frame: false,
     backgroundColor: '#0b0b0d',
     webPreferences: {
@@ -99,7 +84,6 @@ async function main() {
     }
   }
 
-  /** 主题不重载：App 监听 data-theme（reload 会带上 GPU 崩溃） */
   const setTheme = async (theme) => {
     await win.webContents.executeJavaScript(`document.documentElement.dataset.theme = ${JSON.stringify(theme)}`)
     await wait(400)
@@ -111,7 +95,6 @@ async function main() {
     await setTheme(theme)
     await save(`controls-v1-${theme}-base-1280x800-${STAMP}.png`)
 
-    /* 每个主题都从 body 重新开始 Tab —— 否则第二条链从上一轮停下的位置继续，两条没法比 */
     await win.webContents.executeJavaScript(
       `(() => { const a = document.activeElement; if (a && a.blur) a.blur(); return true })()`
     )
@@ -129,7 +112,6 @@ async function main() {
     await save(`controls-v1-${theme}-focus-1280x800-${STAMP}.png`)
   }
 
-  /* 125% / 150%：CSS 像素随缩放变小，控件是否仍可点要看真图 */
   await setTheme('dark')
   for (const zoom of [1.25, 1.5]) {
     win.webContents.setZoomFactor(zoom)

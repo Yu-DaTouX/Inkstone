@@ -5,13 +5,6 @@
     out.push('✗ ' + s)
     return out.join('\n')
   }
-  /**
-   * 显式跳过（环境不满足，**不是**失败）。
-   *
-   * 为什么要区分：测试器只认 `✗`，所以把「环境不具备」写成 `✗`
-   * 会让隔离环境的每次回归都亮红灯 —— 久了就没人看，真的回归也就淹了。
-   * （当初那个白屏 bug 就是被「环境问题」糊弄过去的。）
-   */
   const skip = (s) => {
     out.push('  ⤺ 跳过：' + s)
     return out.join('\n')
@@ -36,14 +29,6 @@
   try {
 
   const store = window.__yanStore
-  /**
-   * 轮询等条件成立。
-   *
-   * ⚠️ 为什么不用固定 sleep：左栏展开是「320ms 延迟 + CSS 过渡」，
-   *   负载高（比如连着跑多个场景）时 900ms 可能不够 ——
-   *   实测在 check 全量跑时偶发失败，单独跑必过。
-   *   这是**探针的定时假设太紧**，不是功能问题（真实用户不会在 900ms 内强制判定）。
-   */
   const until = async (fn, ms = 4000) => {
     const t0 = Date.now()
     while (Date.now() - t0 < ms) {
@@ -53,8 +38,6 @@
     return fn()
   }
 
-  // 任何面板的模态遮罩都会挡住点击 —— 每段测试前都确保它是关的。
-  // （记忆/状态搬进设置后，测试会开面板，之后忘了关就会让后续点击全部失效）
   const ensureClosed = async () => {
     if (window.__yanStore.getState().settingsOpen) {
       window.__yanStore.getState().closeSettings()
@@ -62,10 +45,6 @@
     }
   }
 
-  /* ---- 前置：等 pi 连上 ----
-     conn 不是 ready 时输入框是 disabled 的，发送键点不动。
-     之前没等，所以 !bash 那段会「角标对了但发不出去」——
-     看着像功能坏了，其实是测试抢跑。 */
   for (let i = 0; i < 60; i++) {
     if (store.getState().conn === 'ready') break
     await sleep(500)
@@ -73,14 +52,9 @@
   const connNow = store.getState().conn
   log('pi 连接: ' + connNow)
   if (connNow !== 'ready') {
-    /*
-     * 这个场景要发**真实消息**（发、中断、工具、错误态）—— 没有 pi 就无从测起。
-     * 显式跳过，不报 ✗（约定见文件头与交接文档第 5 节）。
-     */
     return skip(`pi 未就绪（conn=${connNow}），本场景要发真实消息`)
   }
 
-  /* ================= 1. 斜杠命令菜单 ================= */
   log('\n--- 1. 斜杠命令 ---')
   const ta = q('[data-testid="composer"]')
   if (!ta) return fail('找不到输入框')
@@ -96,11 +70,9 @@
     const items = qa('.slash-item')
     log('  菜单项: ' + items.map((i) => i.querySelector('.slash-name')?.textContent).join(', '))
     ok(items.length > 0, `菜单有 ${items.length} 项`)
-    // 方向键移动
     keydown(ta, 'ArrowDown')
     await sleep(80)
     ok(q('.slash-item.sel') === qa('.slash-item')[1] || qa('.slash-item').length === 1, '方向键切换选中项')
-    // Enter 补全
     keydown(ta, 'Enter')
     await sleep(150)
     ok(ta.value.startsWith('/') && ta.value.length > 1, `Enter 补全为 ${JSON.stringify(ta.value)}`)
@@ -109,7 +81,6 @@
   setVal(ta, '')
   await sleep(100)
 
-  /* ================= 2. bash 直执行 ================= */
   log('\n--- 2. ! 直执行 bash（不进模型）---')
   await ensureClosed()
   const nBefore = qa('.msg').length
@@ -121,12 +92,9 @@
 
   click(bashSendBtn)
 
-  // 等命令跑完
   let bashDone = false
   for (let i = 0; i < 60; i++) {
     await sleep(400)
-    // ⚠️ 选择器跟着 DOM 改（Codex 风格：.tool 卡片 → .trow 一行）
-    /* 已完成的步骤默认折叠成「已完成 N 步」一行（见 toolgroup 探针），展开后再看 .trow */
     const fold = q('.msg.bash [data-testid="tool-group-toggle"]')
     if (fold && fold.getAttribute('aria-expanded') === 'false') click(fold)
     const t = q('.msg.bash .trow')
@@ -142,16 +110,9 @@
   if (!bashDone) log('  bash DOM: ' + (q('.msg.bash')?.innerHTML || '').slice(0, 900))
   ok(bashDone, '命令执行完毕（状态不再是 running）')
   if (bashMsg) {
-    /*
-     * ⚠️ DOM 按设计改过（用户要求「工具调用模拟 codex」）：
-     *   旧：.tool 卡片 + .tool-pre.out + .tool-status
-     *   新：.trow 一行 + 展开后的终端窗口 .term（详情在 .term-body 里）
-     * 断言跟着改成新结构 —— 检查的是同一件事（能看到输出、状态是成功）。
-     */
     const row = bashMsg.querySelector('.trow')
     ok(!!row, '是新的一行式工具行（.trow）')
     if (row) {
-      // 用户主动执行的命令：点开就能看到结果（一行式默认收起，但输出必须在）
       const head = row.querySelector('.trow-head')
       if (!row.classList.contains('open') && head) head.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
       await sleep(300)
@@ -164,27 +125,17 @@
   ok(qa('.msg').length > nBefore, '消息数增加')
   ok(store.getState().session?.isStreaming !== true, '没有进入「模型流式」状态（确实绕过了模型）')
 
-  // 失败的命令也应该展开且标记失败
   setVal(ta, '!exit 3')
   await sleep(150)
   click(q('[data-testid="send"]'))
-  /*
-   * 轮询到这两行落到终态。窗口给宽一点（~30s）：这条命令要经送到 pi 子进程再回包，
-   * 并行跑多个场景、机器被压着的时候 12s 实测不够（会读到 running 而误判失败）。
-   */
   for (let i = 0; i < 100; i++) {
     await sleep(300)
-    // 选择器跟着 Codex 风格的行改（.tool → .trow）
     const t = qa('.msg.bash .trow').pop()
     if (t && t.dataset.state !== 'running' && t.dataset.state !== 'pending') break
   }
   await sleep(400)
   const lastBash = qa('.msg.bash').pop()
   if (lastBash) {
-    /*
-     * 失败的命令**不自动展开**（刻意的：失败输出经常几十行）。
-     * 所以断言要看行本身的 data-state（.trow），而不是展开后才有的内容。
-     */
     const card = lastBash.querySelector('.trow')
     if (card) {
       ok(card.dataset.state === 'error', `非零退出码标记为失败（data-state=${card.dataset.state}）`)
@@ -193,10 +144,8 @@
     }
   }
 
-  /* ================= 3. 图片附件（粘贴） ================= */
   log('\n--- 3. 图片附件 ---')
   await ensureClosed()
-  // 1x1 PNG
   const b64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
   const bin = atob(b64)
@@ -223,7 +172,6 @@
   }
   ok(store.getState().attachments.length === 1, '附件进了 store')
 
-  // 移除
   if (attach.length) {
     click(attach[0].querySelector('.attach-del'))
     await sleep(300)
@@ -231,7 +179,6 @@
     ok(!q('.attach'), '缩略图已消失')
   }
 
-  // 去重：同名同大小只加一次
   store.getState().addAttachments([
     { id: 'a1', name: 'dup.png', mimeType: 'image/png', size: 10, data: b64, preview: b64 },
     { id: 'a2', name: 'dup.png', mimeType: 'image/png', size: 10, data: b64, preview: b64 }
@@ -241,50 +188,28 @@
   store.getState().clearAttachments()
   await sleep(100)
 
-  /* ================= 4. 模型 / 思考选择器 ================= */
   log('\n--- 4. 模型 / 思考选择器 ---')
   await ensureClosed()
-  // 模型 / 思考档统一在输入栏的模型菜单，不再复制一套设置页下拉。
   const picker = q('[data-testid="model-picker"]')
   ok(!!picker, '输入栏有统一模型菜单入口')
   if (picker) {
     click(picker)
     await until(() => !!q('[data-testid="model-menu"]'), 3000)
-    /*
-     * 供应商现在是一个 ChoiceSelect（按钮 + 菜单），不再是原生 select：
-     * 点开它再选「全部」（value=""）。
-     */
     click(q('[data-testid="models-provider"]'))
     if (await until(() => !!q('.ui-choice-menu [data-value=""]'), 2000)) {
       click(q('.ui-choice-menu [data-value=""]'))
       await sleep(200)
     }
-    /*
-     * 模型目录是 pi 报回来的，并行跑多个场景、机器被压着时会慢很多
-     * （实测同一条单跑会读到 0 个而误判）。等它真的列出模型或出空态为止。
-     */
     await until(() => qa('[data-testid="model-option"]').length > 1 || !!q('[data-testid="models-empty"]'), 25000)
     const items = qa('[data-testid="model-option"]')
     const current = q('[data-testid="model-option"][data-current="1"]')
     const empty = q('[data-testid="models-empty"]')
     if (items.length === 0 && empty) {
-      /*
-       * 纯合成模式（空凭证、不读个人模型目录）下模型目录本来就是空的 ——
-       * 那是环境属性而不是回归，如实跳过，并把空态文案打出来供核对。
-       */
       out.push(`  ~ 跳过：模型菜单为空（合成模式无凭证/模型目录），空态文案 = ${JSON.stringify((empty.textContent ?? '').trim())}`)
     } else {
       ok(items.length > 1, `模型菜单有 ${items.length} 个模型`)
       ok(!!current, '模型菜单标记当前模型')
     }
-    /*
-     * 思考档位是**按能力渲染**的（能力探测引入后的契约）：
-     *   levels.length > 1        → 出档位按钮（thinking-dot-*）
-     *   levels.length <= 1 且状态 known → 整块不渲染
-     *   状态 unknown / unsupported     → 出能力说明（thinking-capability-status）
-     * sandbox 里的默认模型常常只有 "off" 一档，所以这里大多数时候走第二条。
-     * 不能无条件断言「有档位按钮」：那会在单档模型上假失败。
-     */
     const thinkButtons = qa('[data-testid^="thinking-dot-"]')
     const capNote = q('[data-testid="thinking-capability-status"]')
     const thinkSection = q('[data-testid="thinking-current"]')
@@ -311,36 +236,15 @@
 
     if (!q('[data-testid="model-menu"]')) { click(picker); await sleep(200) }
     const thinkingDetails = q('[data-testid="model-thinking-settings"]')
-    /*
-     * 这块现在是普通 `div`（内容由 `showThinkingSection` 决定是否渲染），
-     * 不再用 `<details>` —— 原来无条件点 `summary` 会撞到 null，
-     * 整个探针从里断掉。只在真的是 details 时才展开。
-     */
     if (thinkingDetails instanceof HTMLDetailsElement && !thinkingDetails.open) {
       thinkingDetails.querySelector('summary')?.click()
     }
     const originalThinking = store.getState().session?.thinkingLevel ?? 'off'
-    /*
-     * 必须**重新查询**档位按钮：上面切过一次模型，菜单已重渲染，原来那份
-     * `thinkButtons` 已经变成 detached 节点 —— 点它不会触发 React 的 onClick。
-     * 实测（deepseek/deepseek-v4.1-flash）：点 off 后 store 5s 不动，
-     * 而直接调 `window.yan.setThinking('off')` 立刻返回 {ok:true} 且 store 变 "off" ——
-     * 所以这不是产品缺陷，是探针拿着旧引用在点空气。（单档模型不会走到这个分支，
-     * 所以这个 bug 一直没被发现。）
-     */
     const thinkButtonsNow = qa('[data-testid^="thinking-dot-"]')
     const otherThink = thinkButtonsNow.find((el) => el.getAttribute('data-on') !== '1')
     if (otherThink) {
       const level = otherThink.getAttribute('data-level') ?? ''
       click(otherThink)
-      /*
-       * 条件轮询，不是固定 sleep：能力变更走主进程的串行队列（`enqueueCapabilityChange`），
-       * 执行完还要 `refreshState()` 再把状态 push 回渲染端 —— 1s 不一定够。
-       * 实测（deepseek/deepseek-v4.1-flash，5 档模型）：点一下 1s 后 store 还是旧值 "high"，
-       * 而**直接调主进程 `setThinking('off')` 立刻返回 {ok:true} 且 store 变 "off"** ——
-       * 所以这不是产品缺陷，是这条断言等得太短（单档模型根本走不到这个分支，
-       * 所以它从来没被真正执行过）。
-       */
       let applied = false
       for (let i = 0; i < 25; i++) {
         if (store.getState().session?.thinkingLevel === level) {
@@ -373,8 +277,6 @@
     await sleep(250)
   }
 
-  /* ================= 5. 自动压缩 / 重试开关 ================= */
-  // 自动压缩位于输入框上下文详情；自动重试位于会话操作菜单。
   log('\n--- 5. 开关 ---')
   const contextTrigger = q('[data-testid="composer-context"]')
   ok(!!contextTrigger, '输入框提供上下文详情入口')
@@ -419,7 +321,6 @@
     const toggled = await until(() => store.getState().autoRetryEnabled === !before, 5000)
     ok(toggled, '自动重试开关状态同步')
 
-    // 菜单项执行后会关闭菜单；恢复原值前必须重新打开并重新查询节点。
     const reopenForRestore = await openSessionMenu()
     ok(reopenForRestore, '恢复自动重试前重新打开会话菜单')
     const retryRestore = q('[data-testid="session-menu-popover"] [data-testid="act-auto-retry"]')
@@ -435,9 +336,6 @@
     ok(restored, '自动重试还原成功')
   }
 
-  /* ================= 6. 会话重命名 ================= */
-  // 左栏默认收起（自动隐藏模式）→ 断言前先把它展开，
-  // 否则元素虽然在 DOM 里，但宽度是 0，可见性相关的判断会失效。
   if (q('.app').classList.contains('rail-off')) click(q('[data-testid="rail-toggle"]'))
   const railOpen = await until(() => !q('.app').classList.contains('rail-off'))
   ok(railOpen, '左栏已展开（后续断言依赖它可见）')
@@ -451,7 +349,6 @@
   await sleep(1500)
   ok(store.getState().session?.sessionName === NAME, `会话名 = ${NAME}`)
 
-  // 左栏应能立即看到（当前会话可能还没落盘 → 靠合成条目显示）
   await store.getState().refreshSessions()
   await sleep(600)
   const railNames = qa('.rail .srow-name').map((e) => e.textContent)
@@ -461,8 +358,6 @@
     JSON.stringify(railNames.slice(0, 3))
   )
 
-  // 还原原名。注意：pi 不接受空名字（set_session_name 对空串返回 success:false），
-  // 所以「原名是空」时清不掉 —— 这时改成一个无害的名字而不是硬要清空。
   const restore = origName || '未命名'
   await store.getState().renameSession(restore)
   await sleep(1500)
@@ -471,7 +366,6 @@
     `还原名字（现在 = ${JSON.stringify(store.getState().session?.sessionName)}）`
   )
 
-  // 空名字应该被拦住并给出理由，而不是静默失败
   const emptyRes = await window.yan.renameSession('   ')
   ok(emptyRes.ok === false, '空名字被拒绝')
   ok(
@@ -479,7 +373,6 @@
     '空名字被拒时给出理由：' + JSON.stringify(emptyRes.error)
   )
 
-  /* ================= 7. 分叉点 ================= */
   log('\n--- 7. 分叉点查询 ---')
   const points = await window.yan.forkPoints()
   log('  当前会话可分叉点: ' + points.length)
@@ -489,7 +382,6 @@
     ok(typeof points[0].text === 'string', '分叉点带 text')
   }
 
-  /* ================= 7.5 新建会话后左栏有反应 ================= */
   log('\n--- 7.5 新建会话的可见性 ---')
   await store.getState().newSession()
   await sleep(2500)
@@ -500,8 +392,6 @@
   log('  sessionName=' + JSON.stringify(s?.sessionName))
   log('  sessionFile=' + JSON.stringify(s?.sessionFile))
 
-  // pi 的会话文件是**懒创建**的：空会话不落盘，所以 sessions 列表里没有它。
-  // 左栏必须为当前会话补一条合成条目，否则点「新对话」用户看不到任何反馈。
   const onDisk = store.getState().sessions.some((x) => x.path === s?.sessionFile)
   log('  文件已落盘: ' + onDisk)
 
@@ -517,14 +407,12 @@
     )
   }
 
-  // 给它起个名字，左栏应立刻跟上
   const NEWNAME = 'yan-visibility-' + Date.now().toString(36)
   await store.getState().renameSession(NEWNAME)
   await sleep(1200)
   const namedRail = qa('.rail .srow-name').map((e) => e.textContent)
   ok(namedRail.includes(NEWNAME), `改名后左栏出现 ${JSON.stringify(NEWNAME)}`)
 
-  /* ================= 8. 溢出回归 ================= */
   log('\n--- 8. 溢出回归 ---')
   store.getState().closeSettings()
   await sleep(300)
@@ -536,7 +424,6 @@
   }
 
   } catch (error) {
-    /* 抛异常时也要把已有输出交回去，否则只能看到「没抓到 PROBE 输出」。 */
     out.push('  ✗ 探针异常：' + (error?.message ?? String(error)))
   }
   return out.join('\n')

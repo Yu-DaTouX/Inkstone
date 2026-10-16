@@ -1,9 +1,3 @@
-/**
- * 砚对砚「本次连接」授权测试（需求稿第 6 节）。
- *
- * 只启动绑定 127.0.0.1 的临时 HTTP 服务；设备表写在临时目录，项目与会话数据全是假的，
- * 不启动 Electron、不连接 pi、不消耗模型额度。所有者的审批由测试直接调用 decide 模拟。
- */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,7 +5,6 @@ import { join } from 'node:path'
 export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGrantRegistry }) {
   const dir = await mkdtemp(join(tmpdir(), 'yan-peer-test-'))
   const devices = new RemoteDeviceStore(dir)
-  /* 所有者的决定：测试里预先设定，ask 触发时立即作答 */
   let nextDecision = null
   const revokedStreams = []
   let server = null
@@ -100,7 +93,6 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
     const { code } = devices.startPairing()
     return (await call('/remote/v1/pair', { method: 'POST', body: { code, deviceName: kind, kind } })).body.token
   }
-  /* 打开事件流并保持；返回关闭函数 */
   const openStream = async (token, connection) => {
     const controller = new AbortController()
     const response = await fetch(`${base}/remote/v1/peer/events`, {
@@ -118,18 +110,15 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
     const peer = await pairAs('peer')
     ok(typeof phone === 'string' && typeof peer === 'string', '砚对砚：手机与另一台砚都能用配对码配对')
 
-    /* 身份与权限分开：peer 令牌本身访问不到手机路由，手机令牌也进不了 peer 路由 */
     ok((await call('/remote/v1/sessions', { token: peer })).status === 403, '砚对砚：peer 令牌不能访问手机路由')
     ok((await call('/remote/v1/events', { token: peer })).status === 403, '砚对砚：peer 令牌不能订阅桌面事件流')
     ok((await call('/remote/v1/peer/sessions', { token: phone })).status === 403, '砚对砚：手机令牌不能冒充 peer')
     ok((await call('/remote/v1/peer/sessions', { token: peer })).status === 401, '砚对砚：未申请连接时什么也读不到')
 
-    /* 所有者拒绝 */
     nextDecision = () => ({ approve: false, projectIds: [], operations: [] })
     const denied = await call('/remote/v1/peer/connect', { token: peer, method: 'POST', body: { operations: ['read'] } })
     ok(denied.status === 403 && denied.body.code === 'peer_denied', '砚对砚：所有者拒绝时连接失败')
 
-    /* 所有者批准：只开放项目 A、只允许查看（对方申请了查看和复制） */
     nextDecision = () => ({ approve: true, projectIds: ['p-a', 'p-not-offered'], operations: ['read', 'send'] })
     const approved = await call('/remote/v1/peer/connect', { token: peer, method: 'POST', body: { operations: ['read', 'transfer'], note: '看一下' } })
     const grant = approved.body.data?.grant
@@ -165,14 +154,12 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
     ok(startDenied.status === 403 && started.length === 0, '砚对砚：没有发消息授权时不能新开任务')
     ok((await call('/remote/v1/peer/projects/p-a/knowledge', { token: peer, connection: grant.connectionId })).status === 403, '砚对砚：没有复制授权时读不到项目记忆')
 
-    /* 断开即失效：同一个连接 id 不能再用，也不能重新激活 */
     stream.close()
     await wait(80)
     ok(revokedStreams.includes(grant.connectionId), '砚对砚：事件流断开后授权被作废')
     ok((await call('/remote/v1/peer/sessions', { token: peer, connection: grant.connectionId })).status === 401, '砚对砚：断开后旧连接 id 立即失效')
     ok((await openStream(peer, grant.connectionId)).status === 401, '砚对砚：旧连接 id 不能重新激活（重连必须重新批准）')
 
-    /* 重新申请：这次给复制与发消息，并测所有者撤销 */
     nextDecision = () => ({ approve: true, projectIds: ['p-a'], operations: ['read', 'transfer', 'send'] })
     const second = (await call('/remote/v1/peer/connect', { token: peer, method: 'POST', body: { operations: ['read', 'transfer', 'send'] } })).body.data.grant
     const stream2 = await openStream(peer, second.connectionId)
@@ -234,7 +221,6 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
     ok((await call('/remote/v1/peer/sessions', { token: peer, connection: second.connectionId })).status === 401, '砚对砚：所有者撤销后立即失效')
     stream2.close()
 
-    /* 撤销设备：连接一并作废，令牌失效 */
     await devices.revoke((await devices.list()).find((item) => item.kind === 'peer').id)
     ok((await call('/remote/v1/peer/sessions', { token: peer })).status === 401, '砚对砚：撤销设备后令牌失效')
   } finally {

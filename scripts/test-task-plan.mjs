@@ -1,14 +1,3 @@
-/**
- * 任务计划的纯逻辑（`src/shared/task-plan.ts`，实施-02 S2）测试。
- *
- * 这一层是「不可信输入 → 确定状态」的唯一入口：`yan tasks apply` 的参数、
- * 模型的六种操作、历史载荷的读取都经过它。所以断言要同时覆盖
- * **正常路径**与**失败路径下的「状态一个字节都不能动」**。
- *
- * 末节真的落盘（临时文件）—— 写入方在 S3，但「写出去的东西读不回来」
- * 是最难查的那类错，先把文件往返钉在纯逻辑层。
- */
-
 export async function runTaskPlanTests(ok) {
   const TP = await import('../out/test/task-plan.mjs')
   const {
@@ -29,7 +18,6 @@ export async function runTaskPlanTests(ok) {
 
   const T = (text, done = false) => ({ text, done })
   const state = (todos, revision = 0, operationId = null) => ({ todos, revision, operationId })
-  /** 应用一次请求，失败就直接抛（正常路径用） */
   const apply = (prev, req) => {
     const res = applyTaskRequest(prev, { operationId: `op${++seq}`, ...req })
     if (!res.ok) throw new Error(`意外失败：${res.code} ${res.message}`)
@@ -37,7 +25,6 @@ export async function runTaskPlanTests(ok) {
   }
   let seq = 0
 
-  /* ============ 1. 六个操作 ============ */
   {
     const set = apply(emptyTaskPlan(), { action: 'set', items: [T('甲'), T('乙', true)] })
     ok(set.state.todos.length === 2, 'set：写入两项')
@@ -69,7 +56,6 @@ export async function runTaskPlanTests(ok) {
     ok(cleared.state.revision === removed.state.revision + 1, 'clear：也是新提交（revision 涨）')
   }
 
-  /* ============ 2. 空数组与空列表 ============ */
   {
     const prev = apply(emptyTaskPlan(), { action: 'set', items: [T('甲')] }).state
     const cleared = apply(prev, { action: 'set', items: [] })
@@ -89,7 +75,6 @@ export async function runTaskPlanTests(ok) {
     ok(!rmEmpty.ok && rmEmpty.code === 'index_out_of_range', '空列表上 remove：越界错误')
   }
 
-  /* ============ 3. 非法输入：一律不修改状态 ============ */
   {
     const prev = apply(emptyTaskPlan(), { action: 'set', items: [T('甲'), T('乙')] }).state
     const snapshot = JSON.stringify(prev)
@@ -128,7 +113,6 @@ export async function runTaskPlanTests(ok) {
     ok(!noId2.ok && noId2.code === 'missing_operation_id', '完全没传 operationId 同样被拒')
   }
 
-  /* ============ 4. 上限（不静默截断） ============ */
   {
     const max = TASK_PLAN_LIMITS.maxItems
     const many = Array.from({ length: max }, (_, i) => T(`任务 ${i + 1}`))
@@ -147,7 +131,6 @@ export async function runTaskPlanTests(ok) {
     ok(!addOver.ok && addOver.code === 'too_many_items', 'add 撑破上限：拒绝（不是截断）')
     ok(atLimit.state.todos.length === max, '被拒的 add 没有改动清单')
 
-    /* 恰好 2000 字符（按 code point 数），以及 emoji 不能被当成两个字符 */
     const exact = '好'.repeat(TASK_PLAN_LIMITS.maxTextLength)
     const exactOk = applyTaskRequest(emptyTaskPlan(), {
       action: 'set',
@@ -170,7 +153,6 @@ export async function runTaskPlanTests(ok) {
     ok(!emojiOver.ok && emojiOver.code === 'text_too_long', '2001 个 emoji：拒绝')
   }
 
-  /* ============ 5. revision 与幂等 ============ */
   {
     let st = emptyTaskPlan()
     ok(st.revision === 0 && st.operationId === null, '初始状态：revision 0 / 没有 operationId')
@@ -192,7 +174,6 @@ export async function runTaskPlanTests(ok) {
     ok(afterFail.ok && afterFail.state.revision === 3, '失败不涨 revision（3 = 2 + 1）')
   }
 
-  /* ============ 6. 不变性：不修改入参 ============ */
   {
     const prev = Object.freeze({
       todos: Object.freeze([Object.freeze(T('甲')), Object.freeze(T('乙'))]),
@@ -213,7 +194,6 @@ export async function runTaskPlanTests(ok) {
     ok(parsed.ok && parsed.items[0].text === '甲', '校验结果不复用请求里的对象（调用方改写不会反向污染）')
   }
 
-  /* ============ 7. 校验与 reducer 的口径一致 ============ */
   {
     const st = state([T('甲')], 3, 'prev-op')
     ok(validateTaskRequest({ action: 'clear', operationId: 'x' }, st).ok, 'validate：clear 合法')
@@ -227,7 +207,6 @@ export async function runTaskPlanTests(ok) {
     ok(!range.ok && range.code === 'too_many_items', 'validate 也检查 add 后的总数')
   }
 
-  /* ============ 8. 历史解析（旧载荷 / 宿主载荷） ============ */
   {
     const legacy = readTaskPlanEntry({
       todos: [
@@ -261,7 +240,6 @@ export async function runTaskPlanTests(ok) {
     const weird = readTaskPlanEntry({ revision: -5, operationId: '  ', todos: [{ text: '甲' }] })
     ok(!!weird && weird.revision === 0 && weird.operationId === null, 'revision 非法 / operationId 是空白：退回默认值')
 
-    /* 往返：写出去的东西必须读得回来（S3 的写入方靠这个） */
     const round = toTaskPlanEntryData(state([T('甲', true)], 4, 'op-round'))
     const back = readTaskPlanEntry(round)
     ok(!!back && back.revision === 4 && back.operationId === 'op-round', 'toTaskPlanEntryData → read 往返一致')
@@ -269,7 +247,6 @@ export async function runTaskPlanTests(ok) {
     ok(round.schemaVersion === TASK_PLAN_SCHEMA_VERSION, '写出去的载荷带版本号（漏了会让读回来读歪）')
   }
 
-  /* ============ 9. 规范化工具（历史宽容路径） ============ */
   {
     ok(normalizeTaskStatus('IN-PROGRESS') === 'running', "normalizeTaskStatus：'IN-PROGRESS'")
     ok(normalizeTaskStatus(' Doing ') === 'running', "normalizeTaskStatus：' Doing '")
@@ -290,13 +267,6 @@ export async function runTaskPlanTests(ok) {
     ok(normalizeTaskItems('nope').length === 0, 'normalizeTaskItems：非数组回空')
   }
 
-  /* ============ 10. 真实文件往返（会话 JSONL 的形状） ============ */
-  /*
-   * 前九节都在内存里。这一节真的落盘：把一个「旧扩展写的会话」读到状态、
-   * 应用一次操作、把新载荷写进**另一个文件**再读回来。
-   * 为什么值得：S3 的写入方就沿这条路径（写出去的东西读不回来是最难查的那类错），
-   * 顺带把单写者原则钉在文件层 —— 旧文件一个字节都不许动。
-   */
   {
     const { mkdtemp, writeFile, readFile, rm } = await import('node:fs/promises')
     const { join } = await import('node:path')
@@ -353,13 +323,6 @@ export async function runTaskPlanTests(ok) {
     }
   }
 
-  /*
-   * 11. 宿主任务日志行（S3 写入侧的形状）。
-   *
-   * 这一段钉的是「宿主日志与旧条目走同一套归并」的前提：
-   * 行能往返、能变成条目形状；坏行/对不上版本的行**单独丢掉**，
-   * 而不是让它把整份历史带崩。
-   */
   {
     const { parseTaskPlanLogLine, serializeTaskPlanLogRecord, taskPlanLogEntry } = TP
     const applied = apply(emptyTaskPlan(), { action: 'set', items: [T('甲'), T('乙')] })

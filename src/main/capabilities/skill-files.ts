@@ -1,9 +1,3 @@
-/**
- * Skill 文件路径规则，以及旧版「项目级 active」技能的读取。
- *
- * 新的技能接入走 `acquired-skills.ts`（本次会话 / 我的技能）；这里的 active 记录只为
- * 兼容旧版本已接入的数据，启动时仍按项目以 `--skill` 传入。staging 与写入函数只剩测试夹具使用。
- */
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'

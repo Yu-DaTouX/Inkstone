@@ -1,173 +1,63 @@
-/**
- * 回合分组 —— 把扁平的 UIMessage[] 折成「一轮一块」。
- *
- * ══════════════════════════════════════════════════════════════════
- * 为什么需要这个（实测数据）
- * ══════════════════════════════════════════════════════════════════
- * pi 的协议是「每次 API 往返 = 一条 assistant 消息」。一个带工具的回合
- * 会产生**很多条** assistant 消息：
- *
- *   user: 帮我把标题改成模型生成
- *   assistant: "我先看看现在的实现" + tool(read)      ← 第 1 条
- *   [工具结果]
- *   assistant: "找到了，改成独立进程" + tool(edit)     ← 第 2 条
- *   [工具结果]
- *   assistant: "改好了，说明：……"                    ← 第 3 条
- *
- * 界面上就是**3 个独立的「砚」块**，各带一个左侧符号槽。实测一个真实会话里
- * 最长连续 34 条 assistant 消息 —— 屏幕上 34 个「砚」，读起来全是碎片，
- * 而它们其实是**同一轮回答**。
- *
- * 参考实现：craft-agents-oss 的 `packages/ui/src/components/chat/turn-utils.ts`
- * 里的 `groupMessagesByTurn()`。核心结论抄过来了：
- *   · 用户消息 = 新回合的开始
- *   · 一轮里的工具调用 + 中间解说都归**当前回合**
- *   · 最后一个「有文字且没有工具调用」的 assistant 消息 = 最终回答
- *   · 前面那些有文字的 = 中间解说（commentary）
- *
- * 差异（我们没法照抄的地方）：
- *   他们依赖 SDK 给的 `isIntermediate` 标记来区分「中间」与「最终」。
- *   pi 的 RPC 协议**没有**这个字段（查过 docs/rpc.md 的
- *   assistantMessageEvent：只有 text_start/delta/end、thinking_*、toolcall_*）。
- *   所以这里改用结构推断：「最后一条有文字的」就是最终回答。
- *   末尾停在工具调用上（没有最终文字）时，把最后一条解说**提升**为回答 ——
- *   这与 craft-agents 的 fallback 行为一致，避免整轮在界面上没有正文。
- * ══════════════════════════════════════════════════════════════════
- */
 import type { ImageGenerationProgress, ResponseDetail, TurnTerminalReason, TurnTimingMeta, UIMessage, UIToolCall, Usage } from './ipc'
 import { isSubagentNotice } from './subagent-notice'
 
-/** 一段文字（解说或回答） */
-/**
- * 一个**工作段**（实施-14 F6 / R1）。
- *
- * 为什么不能只要「整轮推理字符串 + 整轮回复字符串」：自动继续会把一个逻辑回合
- * 拆成多次「推理 → 工具 → 正文」。保留每段的原始归属，才能回看真实发生顺序，
- * 并让多段正式回复保持各自来源。
- *
- * 一段的定义是「两次正文输出之间」：正文一输出，后面的推理与工具属于下一段。
- * 聊天区可把非正式输出汇总显示；分段数据仍保留原始归属与顺序。
- */
 export interface TurnSegment {
-  /** 稳定 id（DOM key；同一条消息拆出的段不会重排） */
   id: string
-  /** 这一段从哪条原始消息开始（排障 / 将来接 runId） */
   sourceMessageId: string
-  /** 生成这一段的 run（目前宿主没有把它挂到消息上，先留 null） */
   runId: string | null
-  /** 这一段的推理（可能多次，用双换行拼） */
   thinking: string
   thinkingMs?: number
   thinkingLive: boolean
-  /** 这一段的工具调用（按时间序） */
   tools: NonNullable<UIMessage['toolCalls']>
-  /** 这一段里的正文（按原消息顺序） */
   texts: TurnText[]
-  /** 正式回复（无工具调用的文字） */
   response: TurnText | null
-  /** 回复各段分别保留来源，避免跨消息合并后丢失工作目录。 */
   responseParts?: TurnText[]
-  /** 解说（带工具调用的文字，即那批工具的前言） */
   commentary: TurnText[]
 }
 
 export interface TurnText {
   id: string
   text: string
-  /** 原消息的工作目录；同一时间线可包含不同会话段 / 工作树。 */
   sourceCwd?: string
-  /**
-   * 这段文字所在的原始消息**是否带工具调用**。
-   *
-   * 用途：把解说与回复分开（带工具 = 那批工具的前言 = 解说）。
-   * 注意它不是「段」的属性，是「这条消息」的属性 ——
-   * 同一条消息拆出的多段共享同一个值。
-   */
   hasTools: boolean
 }
 
-/** 一轮助手回答 */
 export interface AssistantTurn {
   kind: 'assistant'
-  /** 稳定 key：用这一轮第一条消息的 id */
   id: string
-  /** 合并后的思考（多段拼起来） */
   thinking: string
-  /** 思考耗时合计 */
   thinkingMs?: number
-  /** 是否**正在**流式思考（推理胶囊据此展开/折叠） */
   thinkingLive: boolean
-  /** 中间解说，按时间顺序；每条是一段 */
   commentary: TurnText[]
-  /**
-   * 有序工作段：推理 / 工具 / 正文按**真实发生顺序**归段。
-   *
-   * 聚合字段供整轮摘要使用；分段字段供正式回复和原始顺序回看使用。
-   */
   segments: TurnSegment[]
-  /** 整个回合的工具调用（合并后按时间排） */
   tools: NonNullable<UIMessage['toolCalls']>
-  /**
-   * 工具等待分段（实施-11 H-6b）：每次工具调用真实占用的区间。
-   *
-   * 为什么需要它：整轮 `elapsedMs` 是墙钟，回答的是「用户等了多久」；
-   * 而「其中多少时间在等工具」需要区间数据。并行分支**不重复计**，
-   * 所以求和要走 `waitSpansMs()` 的区间并集，不是逐段相加。
-   */
   waitSpans?: WaitSpan[]
-  /** 工具等待的**墙钟区间并集**（ms）；没有工具调用时为 undefined。 */
   waitMs?: number
-  /** 该回合生成或接管的文件产物 */
   artifacts: NonNullable<UIMessage['artifacts']>
-  /** 该回合宿主生图的实时状态；不落盘，重载历史后自然消失。 */
   imageProgress: ImageGenerationProgress[]
-  /** 最终回答；末尾停在工具上时会把最后一条解说提升上来 */
   response: TurnText | null
-  /** 回复各段分别保留来源，避免合并后丢失历史工作目录。 */
   responseParts?: TurnText[]
   streaming: boolean
-  /**
-   * 整轮用量（实施-11 H-6b）：回合内各次请求的 usage **相加**。
-   *
-   * 为什么是相加：pi 的 JSONL 里每条助手消息的 usage 是**该次请求的独立用量**
-   * （实测 input 1387 → 12404 → 13255 不是累计，是上下文增长），所以取最后一条
-   * 只反映最后一次请求。按消息 id 去重后相加才是这一轮真实账单。
-   */
   usage?: Usage
-  /** 聚合不完整（回合内有请求没报用量）—— 界面可标「≥」。 */
   usagePartial?: boolean
   speed?: number
   elapsedMs?: number
-  /** 最后一条助手消息的时间戳；缺失时不伪造时刻。 */
   timestamp?: number
-  /**
-   * 回合终止原因（实施-11 H-6）：停止 / 失败不能假装成正常完成。
-   * 旧历史没有元数据时为 undefined —— 界面说「未记录」，不猜。
-   */
   terminalReason?: TurnTerminalReason
-  /** 是否从宿主元数据日志恢复出了整轮计时（旧历史为 false）。 */
   timingRecorded?: boolean
   model?: string
   responseDetail?: ResponseDetail
   error?: string
   errorMsgId?: string
-  /** 构成这一轮的原始消息 id（调试 / 分叉用） */
   sourceIds: string[]
 }
 
-/** 一条用户消息（自己一轮） */
 export interface UserTurn {
   kind: 'user'
   id: string
   msg: UIMessage
 }
 
-/**
- * 用户主动执行的 `!` 命令的结果。
- *
- * 为什么不并进助手回合：它是**用户发起的动作**，不是模型的回答。
- * 符号槽用 `$` 而不是 `✦`，混在一起会分不清「谁干的」。
- */
 export interface BashTurn {
   kind: 'bash'
   id: string
@@ -176,7 +66,6 @@ export interface BashTurn {
 
 export type Turn = AssistantTurn | UserTurn | BashTurn
 
-/** 文本是否有实质内容（只有空格的 delta 不算） */
 function hasText(s: string | undefined): boolean {
   return !!s && s.trim().length > 0
 }
@@ -190,19 +79,6 @@ function haveSameSourceCwd(parts: readonly TurnText[]): boolean {
   return parts.length < 2 || parts.every((part) => part.sourceCwd === parts[0].sourceCwd)
 }
 
-/**
- * 把一条 UIMessage 的文字按「段」拆开。
- *
- * 为什么要拆：用户要求「每次发送的信息要根据段落来显示」。
- * 模型经常一次吐好几段（一段解释 + 一段清单 + 一段结论），
- * 合成一个死长的 <p> 读起来是一坨；拆成段落后有段落间距、能各自淡入。
- *
- * 规则：
- *   · 空行（≥2 个换行）分段 —— 这是 Markdown 的段落定义
- *   · **代码围栏内的空行不分段** —— 否则一个 ``` 块会被切成两半，
- *     前半段会丢掉语言标记，高亮就废了
- *   · 单换行不分段（Markdown 里那是同一段内的 soft break）
- */
 export function splitParagraphs(text: string): string[] {
   const out: string[] = []
   let buf: string[] = []
@@ -215,7 +91,6 @@ export function splitParagraphs(text: string): string[] {
       else if (marker[1][0] === fence.char && marker[1].length >= fence.length && !marker[2].trim()) fence = null
     }
 
-    // 只在围栏外、且遇到空行时切段
     if (!fence && line.trim() === '') {
       if (buf.length) {
         out.push(buf.join('\n'))
@@ -230,27 +105,6 @@ export function splitParagraphs(text: string): string[] {
   return out.map((s) => s.trim()).filter(Boolean)
 }
 
-/**
- * 把扁平消息折成回合。
- *
- * 纯函数、无副作用、不依赖 React —— 所以能用 node 单测钉住
- * （见 scripts/test-unit.mjs 的「回合分组」一节）。
- *
- * ── 回合内的结构（实测的一条真实回合） ──
- * ```
- *   msg 0      文字22字 + tools[bash,recall]   ← 领起句：「我先看看环境」
- *   msg 1..15  无文字  + tools[bash,bash]×15   ← 干活
- *   msg 16     文字1615字 + tools[]            ← 结论
- * ```
- * 所以分类规则是**按位置**，不是按「哪条是最后一条」：
- *   · 带工具调用的消息里的文字 → 中间解说（它是那批工具的前言）
- *   · 最后一次工具调用**之后**的无工具消息里的文字 → 最终回复（可能跨多条）
- *
- * ⚠️ 为什么不能只用「最后一条文字」：实测有一个回合的答案是拆在
- *   两条无工具消息里的（结论 + 「说一声就走。」），
- *   只取最后一条就把 1600 字的正文全归到解说里去了。
- */
-/** 累积中的工作段（内部形态；交付给界面时换成 `TurnSegment`）。 */
 interface SegmentAccumulator {
   id: string
   sourceMessageId: string
@@ -259,11 +113,9 @@ interface SegmentAccumulator {
   thinkingLive: boolean
   tools: NonNullable<UIMessage['toolCalls']>
   texts: TurnText[]
-  /** 正文一输出就封段：后面的推理与工具属于下一段 */
   closed: boolean
 }
 
-/** Per-view projection cache; immutable message references keep completed history stable. */
 export function createTurnProjector(): typeof groupIntoTurns {
   const cache = new WeakMap<UIMessage, { messages: UIMessage[]; streamingId?: string; turns: Turn[] }>()
   return (messages, streamingId) => {
@@ -285,12 +137,6 @@ export function createTurnProjector(): typeof groupIntoTurns {
       group = []
     }
     for (const message of messages) {
-      /*
-       * 宿主子代理结果通知是**后续助手运行段**的计时分界，但不画成用户消息。
-       * 必须先封住正在累积的助手段再跳过：否则通知之后的助手消息会被并进
-       * 同一段，用新的 elapsedMs / usage 覆盖已结束那一段（用户报的「子代理
-       * 返回时刷新本条运行时间」）。这里同样不产出用户轮。
-       */
       if (message.role === 'user' && isSubagentNotice(message.text)) {
         flush()
         continue
@@ -308,30 +154,24 @@ export function createTurnProjector(): typeof groupIntoTurns {
 
 export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Turn[] {
   const turns: Turn[] = []
-  /** 正在累积的助手回合 */
   let cur: {
     firstId: string
     sourceIds: string[]
     thinking: string[]
     thinkingMs: number
     thinkingLive: boolean
-    /** 按时间顺序缓存的「有文字」的段，带位置标记 */
     texts: TurnText[]
-    /** 工作段（实施-14 F6）：推理 / 工具 / 正文按真实顺序归段 */
     segments: SegmentAccumulator[]
     tools: NonNullable<UIMessage['toolCalls']>
     artifacts: NonNullable<UIMessage['artifacts']>
     imageProgress: ImageGenerationProgress[]
     responseDetail: ResponseDetail
     usage?: Usage
-    /** 回合内是否有请求没报用量（H-6b） */
     usagePartial: boolean
     last: UIMessage | undefined
     model?: string
     timestamp?: number
-    /** 从宿主元数据日志恢复出来的整轮计时（H-6） */
     timing?: TurnTimingMeta
-    /** 是否还在流式（由调用方传入的 streamingId 决定） */
     streaming: boolean
   } | null = null
 
@@ -340,17 +180,6 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
 
     const texts = cur.texts
 
-    /*
-     * 分类：最后一次工具调用**之后**的文字算回复，其余算解说。
-     *
-     * 边界：如果整个回合都没有工具调用（纯回答），那就是回复 ——
-     * 这也是「重试一次、只说一句话」那种回合的正确形态。
-     */
-    /*
-     * 用一个更直接的实现：记录每一段文字对应的**消息是否带工具**。
-     * 这样不用去反查 sourceIds 的下标。
-     */
-    /* 工具等待分段（H-6b）：并行分支不重复计 → 用区间并集。 */
     const waitSpans = toolWaitSpans(cur.tools)
 
     const responseParts: TurnText[] = []
@@ -359,33 +188,18 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     const beforeWork = texts.filter((x) => x.hasTools)
 
     if (!cur.tools.length) {
-      // 纯回答回合：全部是回复
       responseParts.push(...afterWork, ...beforeWork)
     } else if (afterWork.length) {
-      // 有工作，且工作之后还有无工具的文字 → 那些就是回复
       responseParts.push(...afterWork)
       commentary.push(...beforeWork)
     } else {
-      /*
-       * 末尾停在工具上（没有最终文字）→ 把最后一条解说**提升**为回复。
-       * 与 craft-agents 的 fallback 行为一致：
-       * 否则整轮在界面上没有正文，用户只看到一堆工作量。
-       */
       responseParts.push(...beforeWork.slice(-1))
       commentary.push(...beforeWork.slice(0, -1))
     }
 
-    /*
-     * 工作段（实施-14 F6）：逐段算好「回复 / 解说」—— 规则与整轮一致，
-     * 只是作用域换成段内。单段时它与顶层聚合等价（旧渲染路径不会变）。
-     */
     const segments: TurnSegment[] = cur.segments
       .filter((raw) => raw.thinking.length || raw.tools.length || raw.texts.length)
       .map((raw) => {
-        /*
-         * 段内分类与整轮同一口径：**无工具的文字 = 正式回复，带工具的文字 = 解说**。
-         * 不做「提升最后一条」的兼底 —— 那个兼底只属于整轮（界面走旧渲染时才用）。
-         */
         const afterWork = raw.texts.filter((x) => !x.hasTools)
         const beforeWork = raw.texts.filter((x) => x.hasTools)
         const responseSourceCwd = sharedSourceCwd(afterWork)
@@ -425,13 +239,10 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       ...(waitSpans.length ? { waitSpans, waitMs: waitSpansMs(waitSpans) } : {}),
       artifacts: cur.artifacts,
       imageProgress: cur.imageProgress,
-      // 多段回复用双换行拼成一段（渲染时 Markdown 自己会分段）
       response: responseParts.length
         ? {
             id: responseParts[0].id,
             text: responseParts.map((x) => x.text).join('\n\n'),
-            // 拼出来的这一段是「回复」，按定义它来自无工具的消息；
-            // 若走的是「提升最后一条解说」那条分支，则继承原值。
             hasTools: responseParts.some((x) => x.hasTools),
             ...(responseSourceCwd ? { sourceCwd: responseSourceCwd } : {})
           }
@@ -441,7 +252,6 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       usage: cur.usage,
       ...(cur.usagePartial && cur.usage ? { usagePartial: true } : {}),
       speed: cur.last?.speed,
-      /* 推送来的 elapsedMs 优先（那是本轮真值）；没有就回退到宿主元数据日志。 */
       elapsedMs: cur.last?.elapsedMs ?? cur.timing?.elapsedMs,
       timestamp: cur.timestamp,
       ...(cur.timing
@@ -457,11 +267,6 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
   }
 
   for (const m of messages) {
-    /*
-     * 子代理结果通知：宿主后台输入，不是用户的新问题 —— 不画用户轮，
-     * 也不计入轮数；但它是**后续助手运行段**的计时分界。先 flush 已结束的
-     * 助手段，后续 assistant 才会独立计时，不复用旧 usage / elapsedMs。
-     */
     if (m.role === 'user' && isSubagentNotice(m.text)) {
       flush()
       continue
@@ -478,7 +283,6 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       continue
     }
 
-    // ---- assistant：累积进当前回合 ----
     if (!cur) {
       cur = {
         firstId: m.id,
@@ -501,11 +305,6 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     cur.sourceIds.push(m.id)
     if (m.id === streamingId) cur.streaming = true
 
-    /*
-     * 工作段：段内按真实顺序放推理 / 工具 / 正文，
-     * 正文一进就把段封上，后面的推理与工具归下一段。
-     * 展示顺序可以调整，但来源与发生顺序仍在这里保留。
-     */
     const seg = (): SegmentAccumulator => {
       const last = cur!.segments[cur!.segments.length - 1]
       if (last && !last.closed) return last
@@ -530,7 +329,6 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       target.thinking.push(m.thinking!.trim())
       target.thinkingMs += m.thinkingMs ?? 0
     }
-    // 取最新一条的「正在思考」信号（同一回合可能想好几次）
     if (m.thinkingLive !== undefined) {
       cur.thinkingLive = m.thinkingLive
       seg().thinkingLive = m.thinkingLive
@@ -549,13 +347,10 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       }
     }
 
-    /* 时间戳属于回合的装饰元数据，始终取这一回合最后一条助手消息的值。 */
     if (m.timestamp !== undefined) cur.timestamp = m.timestamp
-    /* 宿主落盘的计时记录挂在哪条消息上，就从那里恢复整轮用时与终止原因。 */
     if (m.turnTiming) cur.timing = m.turnTiming
 
     if (hasText(m.text)) {
-      // 一条消息里可能有好几段 —— 拆开，好让界面按段落排
       const hasTools = (m.toolCalls?.length ?? 0) > 0
       const target = seg()
       for (const p of splitParagraphs(m.text)) {
@@ -568,19 +363,9 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
         cur.texts.push(item)
         target.texts.push(item)
       }
-      /* 正文已输出：这一段到此为止（后面的推理属于下一段） */
       target.closed = true
     }
 
-    /*
-     * 取哪条消息的元数据（usage / speed / elapsedMs / model / error）：
-     *   · usage：**按消息 id 去重后相加**（H-6b）—— 每条助手消息的 usage 是
-     *     该次请求的独立用量（input 1387 → 12404 → 13255 不是累计），
-     *     取末条只反映最后一次请求；累积在 `cur.usage` 上。
-     *   · speed / elapsedMs / model：取最后一条相关的 —— speed 是最近一次
-     *     生成段的速率，**不跨请求累加**（那会被工具等待摊薄）。
-     *   · error 一旦出现就要留下 —— 不能因为后面来了条正常消息就看不见了
-     */
     if (hasUsageNumbers(m.usage)) cur.usage = addUsage(cur.usage, m.usage)
     else cur.usagePartial = true
     if (m.model) cur.model = m.model
@@ -593,20 +378,6 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
   return turns
 }
 
-/**
- * 当前回合的消息切片。
- *
- * 分界与 `groupIntoTurns` 一致：user / bash 消息开启新回合，所以
- * 「最后一个分界消息之后」就是此刻正在发生（或刚结束）的那一轮。
- *
- * 用法：用量条这类**只关心本轮**的 UI 必须先圈定范围，再在范围内取
- * usage / speed / elapsedMs。若直接在整个历史里倒着找「最近一次非零 usage」，
- * 新一轮流式刚开始（还没报 usage）时会把上一轮的数字标成本轮实时值 —— 用户
- * 报的「上一轮速度被标成新一轮实时速度」就是这么来的。
- *
- * 兜底：一条分界消息都没找到（例如从会话文件恢复出的片段）时返回全部消息，
- * 宁可多显示也不要把信息整条藏掉。
- */
 export function currentTurnMessages(messages: UIMessage[]): UIMessage[] {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     if (messages[i].role === 'user' && isSubagentNotice(messages[i].text)) continue
@@ -616,22 +387,13 @@ export function currentTurnMessages(messages: UIMessage[]): UIMessage[] {
   return messages
 }
 
-/**
- * 一段工具等待（实施-11 H-6b）。
- *
- * 只包含**有真实起止时间**的调用：`startedAt` / `endedAt` 都是宿主在
- * `tool_execution_start` / `end` 时记的墙钟（同一进程、同一时钟源）。
- * 还在跑（没有 endedAt）的调用不进分段 —— 那一截由「整轮仍在进行」表达。
- */
 export interface WaitSpan {
-  /** 工具调用 id（与 `UIToolCall.id` 同源，便于与工具行对上）。 */
   id: string
   name: string
   startedAt: number
   endedAt: number
 }
 
-/** 从工具调用表派生等待分段（丢掉没有完整起止的）。 */
 export function toolWaitSpans(tools: readonly UIToolCall[]): WaitSpan[] {
   const spans: WaitSpan[] = []
   for (const c of tools) {
@@ -642,13 +404,6 @@ export function toolWaitSpans(tools: readonly UIToolCall[]): WaitSpan[] {
   return spans
 }
 
-/**
- * 等待分段的总时长 = **区间并集**长度。
- *
- * 为什么不是逐段相加：并行工具（或并行子代理）的时间窗会重叠，
- * 相加会把同一段墙钟重复计入 —— 方案 §4.2 明确要求「算真实经过时间，
- * 不把各分支时长相加」。
- */
 export function waitSpansMs(spans: readonly WaitSpan[]): number {
   if (!spans.length) return 0
   const sorted = [...spans].sort((a, b) => a.startedAt - b.startedAt)
@@ -668,12 +423,10 @@ export function waitSpansMs(spans: readonly WaitSpan[]): number {
   return Math.max(0, total + (end - start))
 }
 
-/** 有意义的用量（全 0 不算：流式途中 provider 可能先报一个全 0）。 */
 export function hasUsageNumbers(u?: Usage): boolean {
   return !!u && (u.input > 0 || u.output > 0 || u.cacheRead > 0 || u.cacheWrite > 0)
 }
 
-/** 逐字段相加；缺一端时原样返回另一端（不把 undefined 当 0）。 */
 export function addUsage(a: Usage | undefined, b: Usage | undefined): Usage | undefined {
   if (!a) return b
   if (!b) return a
@@ -687,16 +440,6 @@ export function addUsage(a: Usage | undefined, b: Usage | undefined): Usage | un
   }
 }
 
-/**
- * 一段消息（通常是一个回合）的聚合用量。
- *
- * ⚠️ 语义已核实（实施-11 H-6b）：pi 的 JSONL 里每条助手消息的 usage 是
- *   **该次请求独立上报的用量**，不是流式累计 —— 所以要**相加**而不是取末条。
- *   流式期间同一消息会被多次更新，但它在消息数组里仍是同一条，
- *   「按消息 id 去重」天然成立（不会重复计数 delta）。
- *
- * `partial`：回合内有请求没报用量时，聚合值只是下限，界面应说明而不是假装准确。
- */
 export function turnUsageOf(messages: readonly UIMessage[]): { usage?: Usage; partial: boolean } {
   let usage: Usage | undefined
   let missing = false
@@ -705,23 +448,13 @@ export function turnUsageOf(messages: readonly UIMessage[]): { usage?: Usage; pa
     if (hasUsageNumbers(m.usage)) usage = addUsage(usage, m.usage)
     else missing = true
   }
-  /* 一条都没报 → 是「未知」而不是「部分」；界面显示 —，不标 ≥。 */
   return { usage, partial: missing && usage !== undefined }
 }
 
-/** 一轮的聚合用量（`groupIntoTurns` 已经算好，这里只是统一取值口径）。 */
 export function turnUsage(turn: AssistantTurn): Usage | undefined {
   return turn.usage
 }
 
-/**
- * 缓存命中率：缓存读 /（输入 + 缓存读 + 缓存写）。
- *
- * 为什么分母要加上 cacheRead 与 cacheWrite：pi 报的 `input` 是**未命中缓存**的
- * 那部分，真正进入本次请求的提示词总量 = input + cacheRead + cacheWrite。
- * 只用 input 当分母会算出 >100%；漏掉 cacheWrite 则会把新写入缓存的那部分
- * 排除在分母外，让长会话长期虚高到 ≈100%。
- */
 export function cacheHitRate(u?: Usage): number | null {
   if (!u) return null
   const promptTotal = u.input + u.cacheRead + u.cacheWrite
@@ -729,17 +462,6 @@ export function cacheHitRate(u?: Usage): number | null {
   return (u.cacheRead / promptTotal) * 100
 }
 
-/**
- * 命中率的显示串。
- *
- * 规则（用户要求「不要显示约等于」）：
- *   有数据     保留**两位小数**
- *   真满命中   只有原始比例就是 100% 才显示「100%」
- *   null       返回 null（调用方决定显示「—」还是「待结算」）
- *
- * ⚠️ 必须**截断**而不是四舍五入：99.999% 用 `toFixed(2)` 会变成 100.00%，
- *    又回到「看着像算错了」的老问题。
- */
 export function formatHitRate(pct: number | null): string | null {
   if (pct === null || !Number.isFinite(pct)) return null
   if (pct >= 100) return '100%'

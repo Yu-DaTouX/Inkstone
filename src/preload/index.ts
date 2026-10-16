@@ -163,19 +163,6 @@ import type {
   PaneTerminalOpenResult,
   PaneTerminalPushEvent
 } from '../shared/pane-terminal'
-/**
- * 白名单桥 —— renderer 全程 nodeIntegration:false + contextIsolation:true。
- * 这里的方法就是渲染端能碰到的**全部**能力（HANDOFF §9 原则 3）。
- *
- * api 显式标注成 YanBridge：形态对不上就编译报错。
- * 这层是安全边界，值得多写点类型。
- *
- * ── 新增一个 IPC 要同步四处（少一处就静默不通）──
- *   ① `../shared/ipc.ts`   类型 + `YanBridge` 上的签名
- *   ② 本文件               挂上实现
- *   ③ `../main/index.ts`   `ipcMain.handle('yan:xxx', …)`
- *   ④ `../renderer/src/state/store.ts`   界面侧的消费点
- */
 const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
   ipcRenderer.invoke(ch, ...args) as Promise<T>
 
@@ -206,11 +193,9 @@ const api: YanBridge = {
     download: () => invoke('yan:update:download'),
     install: () => invoke('yan:update:install')
   },
-  /* 探针标记（YAN_PROBE）——渲染端唯一能知道自己在被验收的方式 */
   isProbe: !!process.env.YAN_PROBE,
   uiVersionEnv: uiVersionArgument(process.argv),
 
-  /* ---- 会话 ---- */
   start: () =>
     invoke<{ ok: boolean; error?: string; state?: SessionState; settings?: AppSettings }>('yan:start'),
   send: (text, images, mode, expectedRuntime) => invoke<Ok>('yan:send', text, images, mode, expectedRuntime),
@@ -223,7 +208,6 @@ const api: YanBridge = {
   newSession: (target) =>
     invoke<Ok & { id?: string; runId?: string; sessionId?: string; generation?: number }>('yan:newSession', target),
   switchSession: (path) => invoke<Ok>('yan:switchSession', path),
-  /* N12：切换视图（不停止其它运行中的会话）、实例状态、单独停止 */
   selectSession: (target) =>
     invoke<{
       ok: boolean
@@ -239,7 +223,6 @@ const api: YanBridge = {
     ),
   moveSession: (sessionId, projectId) =>
     invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:moveSession', sessionId, projectId),
-  /* 主题空间（实施-25 P02）：与 moveSession 同一个四处清单（ipc → main → preload → store） */
   getSpaces: () => invoke<{ spaces: Space[]; links: SpaceProjectLink[] }>('yan:getSpaces'),
   createSpace: (input) =>
     invoke<{
@@ -266,18 +249,15 @@ const api: YanBridge = {
   setSessionSpace: (sessionId, spaceId) =>
     invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:setSessionSpace', sessionId, spaceId),
   setVisibleRunnerSessions: (sessions) => invoke<boolean>('yan:setVisibleRunnerSessions', sessions),
-  /** Native operations require an exact foreground session identity; never exposed through remote capability commands. */
   nativeSession: (request) => invoke<Awaited<ReturnType<YanBridge['nativeSession']>>>('yan:nativeSession', request),
   runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
   stopRunner: (id) => invoke<boolean>('yan:stopRunner', id),
-  /* 运行注册表（v3 WP-10）：全量快照 + 未读标记 + 运行历史 / 停止；增量走 onPush 的 'runs' 通道。 */
   runs: {
     snapshot: () => invoke<{ revision: number; runs: RunSnapshot[] }>('yan:runs:snapshot'),
     markSeen: (runId) => invoke<{ ok: boolean }>('yan:runs:markSeen', runId),
     history: (query) => invoke<Awaited<ReturnType<YanBridge['runs']['history']>>>('yan:runs:history', query),
     stop: (runId) => invoke<Awaited<ReturnType<YanBridge['runs']['stop']>>>('yan:runs:stop', runId)
   },
-  /* 代码评审（v3 WP-50，§10.2）：变更集 / 批注 / 提交 / 推送 / PR。 */
   review: {
     changeSet: (query) => invoke<Awaited<ReturnType<YanBridge['review']['changeSet']>>>('yan:review:changes', query),
     diff: (query) => invoke<Awaited<ReturnType<YanBridge['review']['diff']>>>('yan:review:diff', query),
@@ -294,7 +274,6 @@ const api: YanBridge = {
     push: (req) => invoke<Awaited<ReturnType<YanBridge['review']['push']>>>('yan:review:push', req),
     pullRequest: (req) => invoke<Awaited<ReturnType<YanBridge['review']['pullRequest']>>>('yan:review:pr', req)
   },
-  /* 跨设备同步（v3 WP-53）：配置、立即同步、冲突、会话导出 / 导入。 */
   sync: {
     status: () => invoke<Awaited<ReturnType<YanBridge['sync']['status']>>>('yan:sync:status'),
     configure: (root) => invoke<Awaited<ReturnType<YanBridge['sync']['configure']>>>('yan:sync:configure', root),
@@ -315,22 +294,18 @@ const api: YanBridge = {
   deleteSession: (path) => invoke<{ ok: boolean; undoToken?: string; error?: string }>('yan:deleteSession', path),
   restoreSession: (undoToken) => invoke<Ok>('yan:restoreSession', undoToken),
 
-  /* ---- 直执行 bash ---- */
   runBash: (command, options, expectedRuntime) => invoke<Ok>('yan:runBash', command, options, expectedRuntime),
   abortBash: () => invoke<void>('yan:abortBash'),
 
-  /* ---- 模型 / 思考 / 命令 ---- */
   listModels: () => invoke<ModelInfo[]>('yan:listModels'),
   setModel: (provider, modelId) => invoke<Ok>('yan:setModel', provider, modelId),
   setThinking: (level) => invoke<Ok>('yan:setThinking', level),
   listThinkingLevels: () => invoke<string[]>('yan:listThinkingLevels'),
   listCommands: () => invoke<SlashCommand[]>('yan:listCommands'),
 
-  /* ---- 开关 ---- */
   setAutoCompaction: (enabled) => invoke<Ok>('yan:setAutoCompaction', enabled),
   setAutoRetry: (enabled) => invoke<Ok>('yan:setAutoRetry', enabled),
 
-  /* ---- 工作模式（实施-05，按当前会话） ---- */
   getWorkMode: () => invoke<WorkModeState>('yan:getWorkMode'),
   answerApproval: (id, choice) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice),
   pendingApprovals: () => invoke<ApprovalRequest[]>('yan:approvalPending'),
@@ -342,7 +317,6 @@ const api: YanBridge = {
       expectedRevision
     ),
   getGoal: () => invoke<{ goal: GoalState; mode: WorkModeState }>('yan:getGoal'),
-  /* 设定持续目标（`+` 菜单 → 目标）：两栏都必填，拒收只回可读原因 */
   setGoal: (brief: PursuedBrief) =>
     invoke<{ ok: true; goal: GoalState } | { ok: false; error: 'no_session' | 'incomplete' }>(
       'yan:setGoal',
@@ -364,11 +338,8 @@ const api: YanBridge = {
       'yan:modifyGoalReady',
       input
     ),
-  /* 放弃目标（实施-14 A2）：与按停止（暂停）分开的终态出口 */
   stopGoal: () => invoke<{ ok: boolean; goal?: GoalState | null; error?: string }>('yan:stopGoal'),
-  /* 交接状态（实施-05 S5b-2）：只读快照，探针与（后续）界面共用 */
   getHandoff: () => invoke<HandoffView>('yan:getHandoff'),
-  /* 交接状态的「重试」（实施-14 F5）：只重跑一次调度判定，不强行换段 */
   retryHandoff: () => invoke<Ok>('yan:retryHandoff'),
   confirmHandoff: (handoffId) => invoke<Ok>('yan:confirmHandoff', handoffId),
   setWorkMode: (mode, expectedRevision) =>
@@ -381,7 +352,6 @@ const api: YanBridge = {
   setSessionQuestionFrequency: (input: SessionQuestionFrequencyInput) =>
     invoke<SessionQuestionFrequencyResult>('yan:setSessionQuestionFrequency', input),
 
-  /* ---- 队列模式 / 轮换（pi 自带能力） ---- */
   setSteeringMode: (mode) => invoke<Ok>('yan:setSteeringMode', mode),
   setFollowUpMode: (mode) => invoke<Ok>('yan:setFollowUpMode', mode),
   abortRetry: () => invoke<Ok>('yan:abortRetry'),
@@ -392,7 +362,6 @@ const api: YanBridge = {
   piInfo: () => invoke<PiInfo>('yan:piInfo'),
   redetectPi: () => invoke<PiInfo>('yan:redetectPi'),
 
-  /* ---- 状态 ---- */
   getState: () => invoke<SessionState | null>('yan:getState'),
   agentStatus: () =>
     invoke<{ state: 'starting' | 'ready' | 'exited' | 'error'; detail: string }>('yan:agentStatus'),
@@ -415,7 +384,6 @@ const api: YanBridge = {
   usageStats: (range) => invoke<UsageStatsResult>('yan:usageStats', range),
   peekSession: (path) => invoke<PeekResult | null>('yan:peekSession', path),
 
-  /* ---- 模型接入（凭证） ---- */
   authProviders: (deep) => invoke<AuthProviderInfo[]>('yan:authProviders', deep),
   codexLogin: () => invoke<CodexLoginResult>('yan:codexLogin'),
   codexLoginCancel: () => invoke<void>('yan:codexLoginCancel'),
@@ -457,16 +425,9 @@ const api: YanBridge = {
   cancelFileSearch: (requestId) => invoke<void>('yan:cancelFileSearch', requestId),
   searchFiles: (request: FileSearchRequest) => invoke<FileSearchResult>('yan:searchFiles', request),
 
-  /* ---- 附件 ---- */
   pickImages: () => invoke<Attachment[]>('yan:pickImages'),
-  /* 只回路径：校验与登记由 `describeFiles` 那条既有链路做，不在这里读文件 */
   pickFilePaths: () => invoke<string[]>('yan:pickFiles'),
 
-  /* ---- 文件引用（拖入 / 加入上下文的普通文件） ---- */  /*
-   * `webUtils.getPathForFile` 必须在渲染进程的 File 对象上调用，
-   * 而且只能通过 contextBridge 暴露（File 会被结构化克隆，
-   * 直接当 IPC 参数传过去会变成空对象）。这也是 Electron 官方推荐的写法。
-   */
   pathForFile: (file) => webUtils.getPathForFile(file),
   describeFiles: (paths) => invoke<FileRefInfo[]>('yan:describeFiles', paths),
   readFileText: (p) => invoke<FileTextResult>('yan:readFileText', p),
@@ -481,7 +442,6 @@ const api: YanBridge = {
       cwd
     ),
 
-  /* ---- 定时任务 ---- */
   schedule: {
     list: () => invoke('yan:schedule:list'),
     create: (input) => invoke('yan:schedule:create', input),
@@ -491,7 +451,6 @@ const api: YanBridge = {
     runNow: (id) => invoke('yan:schedule:run', id)
   },
 
-  /* ---- 子代理（方案第 8 节） ---- */
   subagents: {
     list: () => invoke<SubagentRun[]>('yan:subagents:list'),
     start: (task, model, isolation, expectedRuntime) =>
@@ -504,16 +463,6 @@ const api: YanBridge = {
     discard: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:discard', id)
   },
 
-  /* ---- Git 仓库状态与环境操作---- */
-  /*
-   * pi 插件包管理（§9 的 P2）。
-   * list 只读；action 会改用户磁盘上的包 —— 主进程那边会做形状校验并在有任务
-   * 运行时拒绝，渲染端不需要（也不该）自己拼 pi 的命令行。
-   */
-  /*
-   * 会话来源（§8 的 S1）。只有 addImage/removeImage 会写磁盘，
-   * 而且只写数据目录下属于**这个会话**的那份副本。
-   */
   sources: {
     list: (sessionId) => invoke<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>('yan:sources:list', sessionId),
     addImage: (req) => invoke<SourceRefView | null>('yan:sources:addImage', req),
@@ -521,10 +470,8 @@ const api: YanBridge = {
     link: (req) => invoke('yan:sources:link', req),
     removeImage: (req) => invoke('yan:sources:removeImage', req),
     readImage: (req) => invoke('yan:sources:readImage', req),
-    /* 来源搜索入口的可用性（实施-07 S4）：只读查询，没命中就隐藏入口 */
     webSearch: () => invoke<WebSearchAvailability>('yan:sources:webSearch')
   },
-  /* 资料库（实施-25 P03）：与 sources 并存；打开只收 { sourceId, version } */
   library: {
     list: (req) =>
       invoke<{
@@ -547,7 +494,6 @@ const api: YanBridge = {
       invoke<{ ok: boolean; error?: string; checked: number; unavailable: number }>('yan:library:verify', refs),
     addRef: (owner, ref) => invoke<{ ok: boolean; error?: string; added: boolean }>('yan:library:addRef', owner, ref),
     promoteLegacy: (req) => invoke<LibraryImportViewResult & { mapped?: boolean }>('yan:library:promoteLegacy', req),
-    /* 本轮上下文装配结果（实施-25 P05）：只读，供界面 / 探针核对来源引用 */
     current: () => invoke<{ ok: boolean; error?: string; assembly?: ContextAssembly }>('yan:context:current')
   },
   activity: {
@@ -558,13 +504,10 @@ const api: YanBridge = {
   packages: {
     search: (query, offset) => invoke('yan:packages:search', query, offset),
     exportPlugin: (id) => invoke('yan:packages:exportPlugin', id),
+    addMcp: (id) => invoke('yan:packages:addMcp', id),
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
     action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)
   },
-  /*
-   * 项目知识（实施-03 S5）。四个方法都只汇当前会话绑定的项目 ——
-   * 渲染端**不能**指定 projectId（身份由宿主按会话推导，与 `yan knowledge` 同一条边界）。
-   */
   knowledge: {
     list: (scope) => invoke<KnowledgeListView>('yan:knowledge:list', scope),
     action: (req: KnowledgeActionRequest) => invoke<KnowledgeActionResult>('yan:knowledge:action', req),
@@ -572,15 +515,10 @@ const api: YanBridge = {
     sourceSession: (sessionId: string) =>
       invoke<{ ok: boolean; path?: string; title?: string; error?: string }>('yan:knowledge:sourceSession', sessionId)
   },
-  /*
-   * 砚自带的受信能力（实施-02 S4）。只读 —— 内置能力没有安装/卸载，
-   * 所以这里**不应该**长出一个 action。
-   */
   builtinCapabilities: {
     list: () => invoke<BuiltinCapabilityView[]>('yan:capabilities:builtin')
   },
   search: {
-    /** 搜索后端诊断（实施-27 S3/D4）：未安装也返回可读结果 */
     doctor: () => invoke<SearchBackendStatus>('yan:search:doctor'),
     installBackend: () => invoke<{ ok: boolean; needsNode?: boolean; error?: string; log?: string }>('yan:search:install'),
     apiConfig: () => invoke<SearchApiConfigView>('yan:search:apiConfig'),
@@ -594,10 +532,6 @@ const api: YanBridge = {
     set: (enabled: boolean) => invoke<ComputerUseActionResult>('yan:computerUse:set', enabled)
   },
   taskInbox: {
-    /*
-     * 任务收件箱（实施-28 T2）：只读投影 + 本地忽略名单。
-     * `dismiss` / `restore` 只改 `YAN_DIR/task-inbox.json`，不动会话数据。
-     */
     page: (query) => invoke<TaskInboxPage>('yan:taskinbox:page', query),
     dismiss: (sessionId) => invoke<{ ok: boolean; dismissed: string[] }>('yan:taskinbox:dismiss', sessionId),
     restore: (sessionId) => invoke<{ ok: boolean; dismissed: string[] }>('yan:taskinbox:restore', sessionId),
@@ -613,23 +547,17 @@ const api: YanBridge = {
       invoke<CapabilityVerificationStatus | null>('yan:capabilities:verification', operationId),
     cancelVerification: (operationId: string) =>
       invoke<{ ok: boolean; error?: string }>('yan:capabilities:cancelVerification', operationId),
-    /* 旧宿主 MCP 导入 pi 原生（方案合集 06）：预览不落盘，提交只在用户确认后调用。 */
     prepareNativeImport: (serverId: string) =>
       invoke<NativeMcpImportPrepareResponse>('yan:capabilities:prepareNativeImport', serverId),
     commitNativeImport: (token: string) =>
       invoke<NativeMcpImportCommitResponse>('yan:capabilities:commitNativeImport', token)
   },
-  /* MCP 服务归属双向切换（设计 A3）：预览只读，确认后提交；token 只由主进程生成。 */
   mcpApp: {
     ownership: () => invoke<McpAppOwnershipResponse>('yan:mcpApp:ownership'),
     prepareSwitch: (serverId: string) =>
       invoke<McpAppSwitchPrepareResponse>('yan:mcpApp:prepareSwitch', serverId),
     commitSwitch: (token: string) => invoke<McpAppSwitchCommitResponse>('yan:mcpApp:commitSwitch', token)
   },
-  /*
-   * MCP App 视图桥（A6）：渲染端只传 callId / instanceId / JSON-RPC 消息；
-   * owner / 授权 / 权限档不进渲染端，一律由主进程从实际前台 runner 派生。
-   */
   mcpApps: {
     prepare: (callId: string) => invoke<McpAppViewDescriptor>(MCP_APP_VIEW_CHANNELS.prepare, callId),
     dispatch: (instanceId: string, message: unknown) =>
@@ -648,10 +576,8 @@ const api: YanBridge = {
     action: (req) => invoke<GitActionResult>('yan:git:action', req),
     remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd),
     remoteWeb: (cwd) => invoke('yan:git:remoteWeb', cwd),
-    /* PR 状态（§7）：只读，未认证时只能读公开仓库 */
     prStatus: (cwd) => invoke('yan:git:prStatus', cwd),
     untracked: (cwd) => invoke<string[]>('yan:git:untracked', cwd),
-    /* P3 只读改动：逐文件明细 + 单文件真实补丁（命令形状固定在主进程） */
     changes: (cwd) => invoke<GitChangesResult>('yan:git:changes', cwd),
     diff: (req) => invoke<GitDiffResult>('yan:git:diff', req),
     worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd),
@@ -659,14 +585,12 @@ const api: YanBridge = {
     worktreeRemove: (req) => invoke<WorktreeRemoveResult>('yan:git:worktreeRemove', req),
     worktreeLink: (req) => invoke('yan:git:worktreeLink', req),
     worktreeLinks: () => invoke<WorktreeLinkView[]>('yan:git:worktreeLinks'),
-    /* 工作树 Fork 的文件引用重绑定（实施-07 S2b-3）：仓库相对路径 + 存在性验证 */
     forkFileRefs: (input: {
       worktree: string
       sourceFile?: string
       sourceCwd?: string
       explicitRefs?: string[]
     }) => invoke<ForkRefsReportView>('yan:fork:fileRefs', input),
-    /* Fork 的语义注入正文（实施-07 S2b-4）：拿回来当输入框草稿，不自动发送 */
     forkContext: (input: {
       worktree: string
       sourceFile?: string
@@ -676,25 +600,19 @@ const api: YanBridge = {
     }) => invoke<ForkContextResultView>('yan:fork:context', input)
   },
 
-  /* ---- 设置 ---- */
   getSettings: () => invoke<AppSettings>('yan:getSettings'),
   patchSettings: (patch) => invoke<AppSettings>('yan:patchSettings', patch),
   changeProjectDirectory: (request) => invoke<import('../shared/ipc').ProjectDirectoryResult>('yan:project:changeDirectory', request),
   pickCwd: () => invoke<string | null>('yan:pickCwd'),
   setCwd: (cwd) => invoke<Ok>('yan:setCwd', cwd),
 
-  /* ---- 扩展 UI 应答（单向） ---- */
   respondUi: (res) => ipcRenderer.send('yan:respondUi', res),
-  /* 延长等待：超时计时器在主进程，必须往返一次才能真的延长 */
   extendUi: (id, extraMs) => invoke('yan:extendUi', id, extraMs),
-  /* 「这一条已经显示给用户了」→ 主进程才开始计时（多条问题分页显示时每条各算各的） */
   startUiTimer: (id) => invoke('yan:startUiTimer', id),
 
-  /* ---- 系统通知（声音提示的通知开关用） ---- */
   notifyAttention: (n: AttentionNotify) =>
     invoke<{ shown: boolean; simulated?: boolean; error?: string }>('yan:notifyAttention', n),
 
-  /* ---- 诊断 ---- */
   probePi: () => invoke<PiProbe>('yan:probePi'),
   openPath: (p) => invoke<{ ok: boolean; error?: string }>('yan:openPath', p),
   interactions: {
@@ -711,14 +629,11 @@ const api: YanBridge = {
   openFileDefault: (p, cwd) => invoke<{ ok: boolean; revealed?: boolean; error?: string }>('yan:openFileDefault', p, cwd),
   revealPath: (p) => invoke<{ ok: boolean }>('yan:revealPath', p),
 
-  /* ---- 界面缩放（0 = 自动） ---- */
   getZoom: () => invoke<ZoomState>('yan:getZoom'),
   setUiScale: (v) => invoke<ZoomState>('yan:setUiScale', v),
 
-  /* ---- 文件树 ---- */
   listDir: (rel, showHidden, context?: FileRequestContext) => invoke<DirListing>('yan:listDir', rel, showHidden === true, context),
   compactionInfo: (win) => invoke<CompactionInfo>('yan:compactionInfo', win),
-  /* 显式授予或撤销目录信任；不自动继承到其他目录。 */
   trust: {
     status: (cwd?: string) => invoke<TrustStatusView>('yan:trust:status', cwd),
     allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd),
@@ -737,7 +652,6 @@ const api: YanBridge = {
   contextBudgetMaintenanceStatusV1: () => invoke<ContextMaintenanceOperationV1 | null>('yan:contextBudgetMaintenanceStatusV1'),
   setContextBudgetV1: (update) => invoke<ContextBudgetSelectionUpdateResultV1>('yan:setContextBudgetV1', update),
   setContextBudgetMaterialPinV1: (update) => invoke<ContextBudgetSelectionUpdateResultV1>('yan:setContextBudgetMaterialPinV1', update),
-  /** 整理失败后的一键出口：临时抬软线 / 降档（同时作废那笔停住的整理） */
   contextBudgetMaintenanceExitV1: (request: { action: 'raise-line' | 'lower-tier'; expectedRevision: string }) =>
     invoke<{
       ok: boolean
@@ -747,21 +661,16 @@ const api: YanBridge = {
       expiresAt?: number | null
       error?: string
     }>('yan:contextBudgetMaintenanceExitV1', request),
-  /** 三类整理动作账本（实施-11 C-2b）：`tool-sweep` / `episode-fold` 的真实发生次数 */
   contextActions: () => invoke<ContextActionSummary>('yan:contextActions'),
-  /** 后台调用用量账（供应商口径）：未缓存输入 / 缓存命中率 / 各类调用次数 */
   contextBackgroundUsage: () => invoke<ContextBackgroundUsageSummary>('yan:contextBackgroundUsage'),
-  /** 当前会话最近一次上报的系统提示分段与工具定义（估算）；还没有对话时为 null */
   contextInspect: () => invoke<ContextInspectSnapshot | null>('yan:contextInspect'),
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
 
-  /* ---- 图片附件：占用与手动清理（不做自动 GC）---- */
   attachments: {
     usage: () => invoke<AttachmentUsage>('yan:attachments:usage'),
     prune: () => invoke<AttachmentPruneResult>('yan:attachments:prune')
   },
 
-  /* ---- 内置浏览器 ---- */
   browser: {
     getState: () => invoke<BrowserState>('yan:browser:getState'),
     open: (url) => invoke<BrowserState>('yan:browser:open', url),
@@ -784,16 +693,13 @@ const api: YanBridge = {
       invoke<{ ok: boolean; error?: string }>('yan:browser:setPermission', permission, origin, allowed),
     setUserControl: (value) => invoke<BrowserState>('yan:browser:setUserControl', value),
     setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds),
-    /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时） */
     setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible)
   },
 
-  /* ---- 办公文件 ---- */
   office: {
     preview: (path, cwd) => invoke<OfficeDocumentView>('yan:office:preview', path, cwd)
   },
 
-  /* ---- 砚对砚 ---- */
   peer: {
     hostPending: () => invoke('yan:peer-host:pending'),
     hostDecide: (decision) => invoke('yan:peer-host:decide', decision),
@@ -814,13 +720,11 @@ const api: YanBridge = {
     revealImport: (importId) => invoke('yan:peer:revealImport', importId)
   } as YanBridge['peer'],
 
-  /* ---- 普通工具的自动调用依据 ---- */
   consent: {
     list: () => invoke<ConsentEntryView[]>('yan:consent:list'),
     change: (key, action) => invoke<ConsentEntryView[]>('yan:consent:change', key, action)
   },
 
-  /* ---- 语音输入（本地转写） ---- */
   voice: {
     prepare: () => invoke('yan:voice:prepare'),
     status: () => invoke<VoiceInputStatus>('yan:voice:status'),
@@ -831,7 +735,6 @@ const api: YanBridge = {
     transcribe: (wav, language) => invoke<VoiceTranscribeResult>('yan:voice:transcribe', wav, language)
   },
 
-  /* ---- 手机接入 ---- */
   remote: {
     status: () => invoke<RemoteAccessStatus | null>('yan:remote:status'),
     configure: (settings) => invoke<RemoteAccessStatus | null>('yan:remote:configure', settings),
@@ -845,7 +748,6 @@ const api: YanBridge = {
     relayForget: (id) => invoke<RemoteAccessStatus | null>('yan:remote:relayForget', id)
   },
 
-  /* ---- 交互终端（实施-11 H-11） ---- */
   terminal: {
     available: () => invoke<TerminalAvailability>('yan:terminal:available'),
     list: () => invoke<TerminalSnapshot[]>('yan:terminal:list'),
@@ -861,7 +763,6 @@ const api: YanBridge = {
     detect: () => invoke('yan:hub:detect')
   },
 
-  /* ---- 窗口 ---- */
   win: {
     minimize: () => ipcRenderer.send('win:minimize'),
     maximize: () => ipcRenderer.send('win:maximize'),
@@ -871,17 +772,10 @@ const api: YanBridge = {
     lifecycle: () => invoke<{ tray: boolean; visible: boolean; quitting: boolean }>('win:lifecycle')
   },
 
-  /** 订阅主进程推送，返回退订函数 */
   onPush: (cb: (msg: MainPush) => void): (() => void) => {
     const listener = (_e: Electron.IpcRendererEvent, msg: MainPush): void => cb(msg)
     ipcRenderer.on('yan:push', listener)
 
-    // 握手：告诉主进程「我准备好了，把当前状态重发一遍」。
-    //
-    // 为什么需要：主进程启动 pi 只要几秒，可能在 webContents 还没
-    // 有能力接收时就把 `proc: ready` 发出去 —— 那条消息就永久丢了，
-    // 界面停在「正在启动 pi」而功能其实是好的。
-    // 单向 push 不可靠，必须有一次「拉」。
     ipcRenderer.send('yan:renderer-ready')
 
     return () => {
@@ -889,13 +783,6 @@ const api: YanBridge = {
     }
   },
 
-  /**
-   * 订阅主进程拦下来的全局快捷键。
-   *
-   * 主进程用 before-input-event 先拦（输入法组合态、焦点不在 webContents
-   * 的时候也拦得住），再把**动作名**发过来；具体怎么算下一档由渲染端决定 ——
-   * 协议知识不进主进程（HANDOFF §9 原则 1）。
-   */
   onHotkey: (cb: (action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking') => void): (() => void) => {
     const listener = (
       _e: Electron.IpcRendererEvent,
@@ -909,12 +796,6 @@ const api: YanBridge = {
     }
   },
 
-  /**
-   * 订阅主进程的 `inkstone://` 深链接导航意图。
-   *
-   * 解析与校验在主进程（`src/main/deeplink`）；这里只把已收敛的白名单意图
-   * 交给渲染端，渲染端只导航、不执行任何消息或授权动作。
-   */
   onDeepLink: (cb: (intent: DeepLinkIntent) => void): (() => void) => {
     const listener = (_e: Electron.IpcRendererEvent, intent: DeepLinkIntent): void => {
       cb(intent)
@@ -925,27 +806,15 @@ const api: YanBridge = {
     }
   },
 
-  /**
-   * 模态层守卫：有弹窗/对话框打开时，暂停主进程对 cycleModel / cycleThinking
-   * 的全局拦截（见 shared/ipc.ts 的说明）。单向 send —— 不需要回执。
-   */
   setHotkeyGuard: (paused: boolean): void => {
     ipcRenderer.send('yan:hotkey-guard', Boolean(paused))
   },
 
-  /** 减少动态效果上报（L12）：单向 send，不需要回执。 */
   setMotionPreference: (reduced: boolean): void => {
     ipcRenderer.send('yan:motion-preference', Boolean(reduced))
   }
 }
 
-/**
- * 辅助小窗桥（v3 WP-25d / WP-12）。
- *
- * 两个小窗是独立入口（src/renderer/auxwin/**），但共用这份 preload。只暴露
- * 取状态 / 提交 / 关闭 / 导航四个动作；推送走 `yan:aux:push`，来源校验在主进程
- * windows/aux-ipc.ts。与主窗口 `yan` 分开暴露，避免把辅助能力混进主桥契约。
- */
 const auxApi = {
   quickAsk: {
     state: (): Promise<unknown> => invoke('yan:aux:quick-ask:state'),
@@ -968,14 +837,6 @@ const auxApi = {
 }
 contextBridge.exposeInMainWorld('auxBridge', auxApi)
 
-/**
- * 页签弹出窗桥（WP-30 弹出）。
- *
- * 与 `auxApi` 同构：弹出页与主窗口共用这份 preload，来源校验在主进程
- * windows/pane-popout-ipc.ts。主窗口只用到 open / update / close / onAction，
- * 弹出页只用到 state / action / closeSelf / onPush；弹出窗因而拿不到主窗口
- * 的通用 `yan` 信任（主窗口注册表本就拒绝非主窗口）。
- */
 const paneApi = {
   open: (request: PanePopoutOpenRequest): Promise<PanePopoutOpenResult> =>
     invoke(PANE_POPOUT_CHANNELS.open, request),
@@ -1001,12 +862,6 @@ const paneApi = {
 }
 contextBridge.exposeInMainWorld('paneBridge', paneApi)
 
-/**
- * 浏览器原生弹出窗桥（WP-30 弹出 · browser）。
- *
- * 只暴露这一个视图的状态、坐标、导航与关闭；来源校验在主进程
- * windows/pane-browser-ipc.ts。弹出窗拿不到通用 `yan:browser:*`。
- */
 const paneBrowserApi = {
   state: (): Promise<PaneBrowserStateView | null> => invoke(PANE_BROWSER_CHANNELS.state),
   setBounds: (bounds: { x: number; y: number; width: number; height: number }): Promise<BrowserLeaseResult> =>
@@ -1020,13 +875,6 @@ const paneBrowserApi = {
 }
 contextBridge.exposeInMainWorld('paneBrowserBridge', paneBrowserApi)
 
-/**
- * 终端弹出桥（WP-30 终端 transfer）。
- *
- * 只暴露白名单方法：主窗口用 open，弹窗用 state / input / resize / detach /
- * closeSelf / onPush；参数里**没有 terminalId**，只有主进程下发的 leaseId，
- * 来源校验在 main/windows/pane-terminal-transfer.ts。
- */
 const paneTerminalApi: PaneTerminalBridge = {
   open: (request: PaneTerminalOpenRequest): Promise<PaneTerminalOpenResult> =>
     invoke(PANE_TERMINAL_CHANNELS.open, request),

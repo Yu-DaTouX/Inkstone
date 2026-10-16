@@ -1,16 +1,3 @@
-/*
- * 运行进展的阶段投影（实施-21 P1）。
- *
- * 为什么是纯投影而不是给 agent.ts 加状态机：阶段只能由**真实事件**推进 ——
- * 收到可见思考流才算 `thinking`，拿到工具执行才算 `tool`，正文在流才算
- * `responding`。把这些判据写成一个纯函数后，多轮工具循环、取消、失败、
- * 乱序与切会话都能用假时钟逐条断言，不需要真跑模型。
- *
- * 明确不做的事：
- *   · 不用线性百分比冒充完成度（一个回合里工具 → 模型可以往返多次）
- *   · 没有可见 thinking 时不显示「正在推理」
- *   · 不声称已经编辑 / 验证 / 完成，除非对应终态真的到了
- */
 import type { TurnTerminalReason } from './ipc'
 
 export type RunPhase =
@@ -25,36 +12,23 @@ export type RunPhase =
   | 'cancelled'
 
 export interface RunProgressInput {
-  /** `agent_start` → 终态之间为 true（覆盖工具执行与中途再思考） */
   running: boolean
-  /** 有正文流在输出 */
   streaming: boolean
-  /** pi 正在压缩上下文（手动 /compact 或自动压缩；不一定伴随 agent_start） */
   compacting?: boolean
-  /** 正在执行的工具（取最后一个 status==='running' 的 toolCall） */
   tool: { name: string; startedAt?: number } | null
-  /** 本回合已经出现可见思考流 */
   thinking: boolean
-  /** 本回合已经向模型发出过请求（有助手消息或正在流式） */
   requested: boolean
-  /** 回合的终止原因；未结束为 null */
   terminal: TurnTerminalReason | null
-  /** 本回合开始的时刻 */
   startedAt: number | null
   now: number
-  /** 超过这个时长就只说「仍在运行」（默认 30s） */
   longMs?: number
 }
 
 export interface RunProgress {
   phase: RunPhase
-  /** 该阶段的起始时刻（用于显示时长）；取不到就是 start */
   since: number | null
-  /** 工具名等附注 */
   detail?: string
-  /** 是否已经进入长耗时区间 */
   long: boolean
-  /** 本回合已耗时（毫秒） */
   elapsedMs: number
 }
 
@@ -63,7 +37,6 @@ export interface RunClock {
   startedAt: number
 }
 
-/** 回合与会话身份改变时绝不沿用旧计时；没有服务端起点时从进入运行起算。 */
 export function resolveRunClock(previous: RunClock | null, input: {
   identity: string; running: boolean; startedAt?: number; now: number
 }): RunClock | null {
@@ -77,7 +50,6 @@ export function resolveRunClock(previous: RunClock | null, input: {
 
 const DEFAULT_LONG_MS = 30_000
 
-/** 还在推进中的阶段（这些才会被标记成“长耗时”） */
 const ACTIVE_PHASES: ReadonlySet<RunPhase> = new Set<RunPhase>([
   'preparing',
   'requesting',
@@ -117,13 +89,11 @@ export function deriveRunProgress(input: RunProgressInput): RunProgress {
     phase,
     since: startedAt,
     ...(phase === 'tool' && input.tool ? { detail: input.tool.name } : {}),
-    /* 压缩本来就慢，长耗时也要继续说「压缩中」，不能被「仍在运行」顶掉 */
     long: long && phase !== 'compacting' && ACTIVE_PHASES.has(phase),
     elapsedMs
   }
 }
 
-/** 阶段是否可以点击展开明细（只有真的在跑才给展开） */
 export function runPhaseIsActive(phase: RunPhase): boolean {
   return ACTIVE_PHASES.has(phase)
 }

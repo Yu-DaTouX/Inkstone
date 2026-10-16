@@ -8,35 +8,12 @@ import { CustomProviderForm } from './CustomProviderForm'
 import { Button, Disclosure, Input, SettingGroup, SettingRow, Spinner } from '../ui'
 import { SettingsSections } from './SettingsSections'
 
-/**
- * 「接入」设置页 —— 模型凭证管理。
- *
- * ══════════════════════════════════════════════════════════════════
- * 两条路（pi 的实际机制，读 docs/providers.md + 验证过）
- * ══════════════════════════════════════════════════════════════════
- * **① API key**：填在下面，写进 `~/.pi/agent/auth.json`。
- *    解析顺序是 `auth.json` 优先于环境变量。
- *
- * **② 订阅制**（ChatGPT Plus/Pro、Claude Pro/Max、GitHub Copilot、
- *    xAI、OpenRouter、Radius）：走 OAuth，token 也落在 auth.json。
- *    pi 的 RPC 里没有 login 命令，所以登录在宿主里跑：
- *    ChatGPT 走 src/main/oauth.ts；Claude Pro/Max、Copilot、xAI、OpenRouter
- *    由 src/main/oauth-providers.ts 加载随包 pi 自己的登录模块。
- *    过程中要用户做的事（浏览器授权、输入验证码、粘贴回调地址、填企业域名）
- *    显示在该行下面的登录面板里。登录模块缺失（换了外部 pi）时才退回 `pi → /login`。
- *    这一步只做一次，之后 token 自动续期。
- */
 export function AuthTab() {
   const t = useT()
   const providerName = (p: AuthProviderInfo): string => {
     const names: Record<string, MessageKey> = { anthropic: 'auth.anthropicMetered', xai: 'auth.name.xai', 'zai-coding-cn': 'auth.name.zai', 'minimax-cn': 'auth.name.minimax', 'qwen-token-plan-cn': 'auth.name.qwen', 'xai-api': 'auth.name.xaiApi', 'openrouter-key': 'auth.name.openrouterApi', 'volcengine-ark': 'auth.name.ark' }
     return names[p.id] ? t(names[p.id]) : p.name
   }
-  /*
-   * 接入说明（「为什么选它 / 有什么坑」）。
-   * 文案只在这里（i18n）；主进程只回传 id 与环境变量这些数据，
-   * 以前它还会回传中文句子，英文界面下就会冒出中文。
-   */
   const providerHint = (p: AuthProviderInfo): string => {
     const hints: Record<string, MessageKey> = { 'openai-codex': 'auth.hint.codex', anthropic: 'auth.hint.anthropic', 'github-copilot': 'auth.hint.copilot', openrouter: 'auth.hint.openrouter', commandcode: 'auth.hint.commandcode', 'xai-api': 'auth.hint.xaiApi' }
     return hints[p.id] ? t(hints[p.id]) : ''
@@ -47,12 +24,9 @@ export function AuthTab() {
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
-  /** 应用内 OAuth 进行中（要等用户在浏览器里点完，可能几十秒）。 */
   const [loggingIn, setLoggingIn] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
-  /** 其余订阅的应用内登录：哪一家在登、过程中收到的提示 */
   const [oauth, setOauth] = useState<{ provider: string; events: OAuthLoginEvent[] } | null>(null)
-  /** 砚保存的 ChatGPT 账号数；多于一个时提示去「账号额度」切换 */
   const [codexCount, setCodexCount] = useState(0)
   const alive = useRef(true)
   const loadGeneration = useRef(0)
@@ -145,16 +119,6 @@ export function AuthTab() {
     } finally { setBusy(false) }
   }
 
-  /**
-   * 应用内登录 ChatGPT 订阅（Codex）。
-   *
-   * 为什么能这么做：这一家的 OAuth 参数（client_id / 端点 / 回调节点）可以从
-   * 内置 pi 的实现里逐字对齐抄出来，所以桌面端自己就能把流程跑完 ——
-   * 不再要求用户去终端跑 `pi → /login`。
-   *
-   * 这个 await 会**一直等到用户在浏览器里点完**（可能几十秒），所以期间要把
-   * 状态显示出来，并给一个取消按钮。
-   */
   const loginCodex = async (): Promise<void> => {
     if (!alive.current) return
     setLoggingIn(true)
@@ -165,7 +129,6 @@ export function AuthTab() {
       if (r.ok) {
         setMsg({ kind: 'ok', text: t('auth.loginOk') })
         await load(false)
-        /* 深查一次：让状态以 pi 自己的判断为准（它会顺手刷新 token） */
         await load(true)
       } else {
         setMsg({ kind: 'err', text: r.error ?? t('auth.loginFail') })
@@ -180,7 +143,6 @@ export function AuthTab() {
   const subs = (list ?? []).filter((x) => x.kind === 'subscription')
   const keys = (list ?? []).filter((x) => x.kind === 'api_key')
   const readyCount = (list ?? []).filter((x) => x.status === 'ready').length
-  /* 已配置的 Key 常显；其余服务商折叠 —— 二十个空行会把真正用到的那几个淹掉 */
   const keysReady = keys.filter((x) => x.status === 'ready' || editing === x.id)
   const keysOther = keys.filter((x) => x.status !== 'ready' && editing !== x.id)
 
@@ -245,7 +207,6 @@ export function AuthTab() {
   return (
     <>
       <div className="ui-rows auth-page">
-        {/* 顶部：就绪数 + 重新检测（深查一次，以 pi 自己的判断为准） */}
         <SettingRow name={t('auth.summary', { ready: readyCount, total: (list ?? []).length })} desc={t('auth.safety')}>
           <Button size="sm" onClick={() => void load(true)} disabled={checking} data-testid="auth-recheck">
             {checking ? <Spinner mute /> : null}
@@ -289,7 +250,6 @@ export function AuthTab() {
                     </>
                   ) : (
                     <>
-                      {/* 再登录一个账号：主进程先把当前账号收进列表，之后在「账号额度」里切换 */}
                       <Button size="sm" data-testid="auth-add-account" disabled={busy || !!oauth} onClick={() => void loginCodex()}>
                         {t('auth.addAccount')}
                       </Button>
@@ -380,7 +340,6 @@ export function AuthTab() {
         { id: 'custom-api', label: t('customApi.title'), content: <CustomProviderForm /> }
       ]} />
 
-      {/* 按活动分配模型：低频配置，收在页尾 */}
       <SettingGroup>
         {info ? (
           <Disclosure title={t('auth.fileHint')}>
@@ -401,13 +360,6 @@ export function AuthTab() {
   )
 }
 
-/**
- * 订阅登录进行中：把登录模块要用户做的事摆出来。
- *   · 验证码（Copilot / xAI）：大号显示 + 复制 + 打开验证页
- *   · 授权地址（Claude / OpenRouter）：已自动用浏览器打开；打不开时可再次打开或复制
- *   · 提问：粘贴回调地址、企业域名（文本），或在几个选项里选一个
- * 只显示最新的一条进度；已回答或被登录模块撤回的提问不再显示。
- */
 function SubscriptionLoginPanel({ provider, events }: { provider: string; events: OAuthLoginEvent[] }) {
   const t = useT()
   const [answer, setAnswer] = useState('')

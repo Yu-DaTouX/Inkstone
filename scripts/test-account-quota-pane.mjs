@@ -1,28 +1,3 @@
-/**
- * 「账号额度」磁贴（额度第二入口）的定向检查。
- *
- * 背景（U02）：状态栏额度入口一直可用，但「第二入口和状态栏是否一致」此前
- * 从未验证——探针找的是旧右栏停靠分区 `rp-quota`，而现行入口是工作区里的
- * 「账号额度」磁贴（RightPanel 的 accounts 工具 → AccountQuotaPane）。旧停靠
- * 分区在磁贴工作区里早已不是额度入口，于是「右栏不存在」被误当成额度缺失。
- *
- * 本脚本只做三件事，全部脱敏、不联网、不读真实凭证、不调真实模型：
- *   ① 纯选择器：`orderAccountCardsForProvider` 把与当前视图 provider 一致的卡
- *      排到最前；未知 / 不支持的 provider 不新建卡、不补 0。
- *   ② 正式 `main/account-quota.ts` 的汇总逻辑（stub 掉 electron 网络与凭证读取）：
- *      Command Code 有 key → 官方 5h / 周窗口 + 推算月窗口；查询 reject → 卡片
- *      以错误态留下（不消失）；没有 key → 不产卡；多 provider → 各自归属。
- *   ③ 组件级脱敏 fixture：真跑 `AccountQuotaPane`（mock `window.yan.accountQuota`），
- *      覆盖缺 key / reject / stale 保留 / 当前 provider 快切时卡片归属；并与真跑
- *      的 `QuotaSection`（状态栏 variant）对照同一批窗口的 raw 值 / estimated 标记。
- *
- * 另附「可达现代入口」检查：宿主动作表里 `launchAccounts.tool === 'accounts'`，
- * 磁贴正文渲染 `accounts-pane`。launch 事件本身由 RightPanel 监听（宿主注入），
- * 这里不启动 Electron，只钉住动作表与磁贴入口存在。
- *
- * 导出的 `runAccountQuotaPaneTests(ok)` 供 test:unit 调用；直接运行本文件也会执行
- * 并在失败时置退出码。import 本模块不执行测试、不改 global。
- */
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -31,11 +6,8 @@ import { build } from 'esbuild'
 
 const OUT = resolve('.tmp/fix-validation-20261015/account-quota-pane')
 
-/* ---------------------------------------------------------- 脱敏窗口 fixtures */
-
 const resetAt = Date.now() + 3_600_000
 
-/** 与线上快照同形、数值已改写：官方 5h / 周窗口，月窗口分母由 weekly.cap × 2 反推（estimated）。 */
 const CMD_WINDOWS = [
   { id: 'fiveHour', label: '5 小时', used: 0.7, total: 14, resetAt, exceeded: false },
   { id: 'weekly', label: '每周', used: 1.6, total: 35, resetAt, exceeded: false },
@@ -72,8 +44,6 @@ const report = (cards, over = {}) => ({
   ...over
 })
 
-/* ------------------------------------------------ 最小 React hook harness（无 jsdom） */
-
 function depsEqual(a, b) {
   if (a === b) return true
   if (!a || !b || a.length !== b.length) return false
@@ -101,7 +71,7 @@ function createHarness(component, initialStore, variant = 'section') {
     for (const slot of ctx.slots) {
       if (!slot || slot.kind !== 'effect' || !slot.pending) continue
       slot.pending = false
-      if (typeof slot.cleanup === 'function') { try { slot.cleanup() } catch { /* ignore */ } }
+      if (typeof slot.cleanup === 'function') { try { slot.cleanup() } catch { } }
       const cleanup = slot.effect()
       slot.cleanup = typeof cleanup === 'function' ? cleanup : undefined
     }
@@ -113,7 +83,6 @@ function createHarness(component, initialStore, variant = 'section') {
     current = root
     tree = component({ variant })
     runEffects(root)
-    /* 子组件（如 AccountCard）自己的 hooks 单独记账；本脚本里它们没有 effect，但保留能力。 */
     for (const child of childContexts) runEffects(child)
   }
 
@@ -164,7 +133,6 @@ function createHarness(component, initialStore, variant = 'section') {
     createElement(type, props, key) {
       const merged = { ...(props || {}) }
       if (key !== undefined) merged.key = key
-      /* 函数组件要真正调用一次，内部 JSX 才会展开（并有自己的 hook 记账槽）。 */
       if (typeof type === 'function') {
         const child = { slots: [], cursor: 0 }
         childContexts.push(child)
@@ -201,8 +169,6 @@ const deferred = () => {
   return { promise, resolve: resolveFn, reject: rejectFn }
 }
 
-/* ------------------------------------------------------------- 组件 bundle 替身 */
-
 const REACT_FIXTURE = `
 const rt = () => globalThis.__acctHarness
 export const useState = (...a) => rt().useState(...a)
@@ -224,7 +190,6 @@ const CONFIRM_FIXTURE = `export const useConfirm = () => async () => true`
 const MARK_FIXTURE = `export const AgentMark = (props) => ({ __el: true, type: 'AgentMark', props: props || {} })`
 const QUOTA_RESET_FIXTURE = `export const resetText = () => ({ text: '', tip: '' })`
 
-/** `../ui` 的替身：都渲染 children，够 collect 拿到 testid 与文案。 */
 const UI_FIXTURE = `
 const el = (type) => (props) => ({ __el: true, type, props: props || {} })
 export const Button = el('Button')
@@ -287,8 +252,6 @@ async function loadComponent(entry, outName) {
   return import(pathToFileURL(outfile).href)
 }
 
-/* ------------------------------------------- 正式 main/account-quota 汇总逻辑 */
-
 const MAIN_STUBS = {
   electron: `export const net = { fetch: async () => { throw new Error('test: no network') } }`,
   credentials: `
@@ -327,14 +290,11 @@ async function loadAccountQuotaMain() {
   return import(pathToFileURL(outfile).href)
 }
 
-/* ------------------------------------------------------------------ 场景执行 */
-
 async function runMainReportScenarios(check, main, piDir) {
   const setScenario = (scenario) => { globalThis.__acctScenario = scenario }
   const modelsFile = join(piDir, 'models.json')
   await mkdir(piDir, { recursive: true })
   try {
-    // ① 有 Command Code key（auth.json 来源）：官方 5h / 周 + 推算月窗口（estimated）。
     setScenario({
       authEntry: { commandcode: { type: 'api_key', key: 'user_test_key' } },
       quota: async (p) => (p === 'commandcode' ? ccProviderQuota() : { provider: p, supported: false, error: 'unsupported' })
@@ -347,12 +307,10 @@ async function runMainReportScenarios(check, main, piDir) {
     check(cc?.windows.find((w) => w.id === 'monthly')?.estimated === true, '月窗口标 estimated（推算，不是官方字段）')
     check(cc?.windows.filter((w) => w.id !== 'monthly').every((w) => !w.estimated), '官方 5h / 周窗口不标 estimated')
 
-    // ② 没有 key：不产卡（不伪造 Command Code 卡或 0）。
     setScenario({ authEntry: {}, quota: async () => { throw new Error('should not be called') } })
     r = await main.accountQuotaReport()
     check(!r.cards.some((c) => c.provider === 'commandcode'), '没有 key → 不生成 Command Code 卡')
 
-    // ③ 查询 reject：卡片以错误态留下，不消失，也不编 0 窗口。
     setScenario({ authEntry: { commandcode: { type: 'api_key', key: 'user_test_key' } }, quota: async () => { throw new Error('HTTP 429') } })
     r = await main.accountQuotaReport()
     cc = r.cards.find((c) => c.provider === 'commandcode')
@@ -360,7 +318,6 @@ async function runMainReportScenarios(check, main, piDir) {
     check(cc?.status === 'error' && cc?.error === 'HTTP 429', '查询 reject → 卡片带错误原因')
     check(cc?.windows.length === 0, '查询 reject → 不补 0 窗口')
 
-    // ④ 多个 key provider：各自归属，不串数据。
     setScenario({
       authEntry: {
         commandcode: { type: 'api_key', key: 'user_test_key' },
@@ -377,7 +334,6 @@ async function runMainReportScenarios(check, main, piDir) {
     check(byProvider.get('commandcode')?.windows.length === 3 && !byProvider.get('commandcode')?.balance, 'commandcode 卡只带自己的窗口')
     check(byProvider.get('deepseek')?.balance?.amount === 12.5 && byProvider.get('deepseek')?.windows.length === 0, 'deepseek 卡只带自己的余额，不串 commandcode 窗口')
 
-    // ⑤ models.json-only 官方 key（auth/env 都没有）：与状态栏同源，卡要出现。
     await writeFile(modelsFile, JSON.stringify({
       providers: { commandcode: { baseUrl: 'https://api.commandcode.ai/provider/v1', apiKey: 'user_models_only' } }
     }))
@@ -387,7 +343,6 @@ async function runMainReportScenarios(check, main, piDir) {
     check(!!cc, 'models.json-only 官方 key → Command Code 卡出现（此前会整张消失）')
     check(cc?.status === 'ok' && cc?.windows.length === 3, 'models.json-only 官方 key → 拿到三窗口')
 
-    // ⑥ models.json 指向代理 / 相似官方域：不取这把 key，也不产卡（不把自定义 key 发去官方）。
     for (const [label, entry] of [
       ['代理域', { baseUrl: 'https://api.commandcode.ai.evil.test/v1', apiKey: 'user_proxy_key' }],
       ['非 https', { baseUrl: 'http://api.commandcode.ai/provider/v1', apiKey: 'user_http_key' }],
@@ -401,7 +356,6 @@ async function runMainReportScenarios(check, main, piDir) {
       check(!r.cards.some((c) => c.provider === 'commandcode'), `models.json ${label} → 不产 Command Code 卡，也不取 key`)
     }
 
-    // ⑥b 代理条目 + auth.json 与 env 都有 key：端点不可证明 → 不产卡、不取任何来源。
     await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: { baseUrl: 'https://api.commandcode.ai.evil.test/v1', apiKey: 'user_proxy_key' } } }))
     const priorKey = process.env.COMMANDCODE_API_KEY
     process.env.COMMANDCODE_API_KEY = 'user_env_sentinel'
@@ -483,7 +437,6 @@ async function runPaneComponentScenarios(check, AccountQuotaPane, QuotaSection) 
   }
 
   try {
-    // ① 磁贴入口：Command Code 卡渲染三窗口，月窗口带 estimated 标记，官方窗口不带。
     {
       accountCalls = []
       currentQuota = async () => { accountCalls.push(1); return report([ccCard()]) }
@@ -496,7 +449,6 @@ async function runPaneComponentScenarios(check, AccountQuotaPane, QuotaSection) 
       check(!h.hasTestId('acct-win-fiveHour-estimated') && !h.hasTestId('acct-win-weekly-estimated'), '官方窗口不带 estimated 标记')
     }
 
-    // ② 缺 key（报告里没有 commandcode 卡）：不伪造卡片。
     {
       currentQuota = async () => report([{ key: 'yan:deepseek', source: 'yan', provider: 'deepseek', name: 'DeepSeek', status: 'ok', windows: [], checkedAt: 1, balance: { label: '余额', amount: 5, currency: 'CNY' } }])
       const h = makePane()
@@ -505,7 +457,6 @@ async function runPaneComponentScenarios(check, AccountQuotaPane, QuotaSection) 
       check(h.hasTestId('acct-card-yan-deepseek'), '其它账号照常显示，不受影响')
     }
 
-    // ③ 查询 reject（没有上次成功）：显示失败原因，不留空块。
     {
       currentQuota = async () => { throw new Error('网络错误') }
       const h = makePane()
@@ -514,7 +465,6 @@ async function runPaneComponentScenarios(check, AccountQuotaPane, QuotaSection) 
       check(!h.hasTestId('acct-card-yan-commandcode'), 'reject 且无旧数据 → 不伪造卡片')
     }
 
-    // ④ stale 保留：先成功一次，过期后再查失败 → 旧数字留下并注明是上次成功的数据。
     {
       let n = 0
       currentQuota = async () => {
@@ -533,7 +483,6 @@ async function runPaneComponentScenarios(check, AccountQuotaPane, QuotaSection) 
       check(h.hasTestId('acct-win-monthly-estimated'), 'stale 保留的月窗口仍带 estimated 标记')
     }
 
-    // ⑤ 当前 provider 快切 → 卡片归属跟着走（稳定排到首位，不新建卡）。
     {
       currentQuota = async () => report([
         { key: 'yan:deepseek', source: 'yan', provider: 'deepseek', name: 'DeepSeek', status: 'ok', windows: [], checkedAt: 1 },
@@ -547,7 +496,6 @@ async function runPaneComponentScenarios(check, AccountQuotaPane, QuotaSection) 
       check(h.cardOrder().length === 2, '快切只重排已有卡，不增减卡片')
     }
 
-    // ⑥ 状态栏与磁贴：同一批窗口 raw 值 / estimated 标记一致（文本格式可不同）。
     {
       currentQuota = () => ccProviderQuota()
       const status = makeStatus()
@@ -575,8 +523,6 @@ async function runPaneComponentScenarios(check, AccountQuotaPane, QuotaSection) 
   }
 }
 
-/* ------------------------------------------------------------------------ 入口 */
-
 export async function runAccountQuotaPaneTests(ok) {
   const check = typeof ok === 'function'
     ? ok
@@ -584,7 +530,6 @@ export async function runAccountQuotaPaneTests(ok) {
 
   await mkdir(OUT, { recursive: true })
 
-  /* main/account-quota 会读 YAN_DIR/account-quota.json：用临时目录，绝不碰真实砚数据。 */
   const iso = await mkdtemp(join(tmpdir(), 'yan-acct-pane-'))
   const priorData = process.env.YAN_DATA_DIR
   const priorPi = process.env.YAN_PI_DIR
@@ -592,7 +537,6 @@ export async function runAccountQuotaPaneTests(ok) {
   process.env.YAN_PI_DIR = join(iso, 'pi')
 
   try {
-    // ① 纯选择器：只重排已有卡，稳定、不伪造。
     await build({ entryPoints: ['src/shared/account-quota.ts'], outfile: join(OUT, 'account-quota-shared.mjs'), bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
     const shared = await import(pathToFileURL(join(OUT, 'account-quota-shared.mjs')).href)
     {
@@ -607,18 +551,15 @@ export async function runAccountQuotaPaneTests(ok) {
     check(!shared.orderAccountCardsForProvider([d], 'unsupported').some((c) => c.provider === 'unsupported'), '选择器：未知 / 不支持的 provider 不伪造卡')
   }
 
-  // ② 正式 main/account-quota 汇总逻辑（stub 网络与凭证读取）。
   const main = await loadAccountQuotaMain()
   await runMainReportScenarios(check, main, join(iso, 'pi'))
 
-  // ③ 组件级：真跑 AccountQuotaPane 与 QuotaSection。
   const dir = await mkdtemp(join(OUT, 'component-'))
   try {
     const { AccountQuotaPane } = await loadComponent('src/renderer/src/components/toolbar/AccountQuotaPane.tsx', 'account-quota-pane.mjs')
     const { QuotaSection } = await loadComponent('src/renderer/src/components/toolbar/QuotaSection.tsx', 'quota-section-test.mjs')
     await runPaneComponentScenarios(check, AccountQuotaPane, QuotaSection)
 
-    // ④ 可达现代入口：宿主动作表把 launchAccounts 指向 accounts 工具。
     const hostActions = await (async () => {
       await build({ entryPoints: ['src/renderer/src/lib/host-actions.ts'], outfile: join(OUT, 'host-actions.mjs'), bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
       return import(pathToFileURL(join(OUT, 'host-actions.mjs')).href)
@@ -636,8 +577,6 @@ export async function runAccountQuotaPaneTests(ok) {
   }
 }
 
-/* -------------------------------------------------------------- 直接运行入口 */
-
 const invokedDirectly = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url
 if (invokedDirectly) {
   let failed = 0
@@ -645,7 +584,6 @@ if (invokedDirectly) {
     if (cond) console.log(`  ✓ ${label}${extra ? '  ' + extra : ''}`)
     else { failed++; console.log(`  ✗ ${label}${extra ? '  ' + extra : ''}`) }
   }
-  // 隔离 main/account-quota 的偏好文件：不碰真实砚数据目录。
   try {
     await runAccountQuotaPaneTests(ok)
     console.log(failed ? `\n✗ 账号额度磁贴：失败 ${failed} 项` : '\n✓ 账号额度磁贴：全部通过')

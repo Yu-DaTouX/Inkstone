@@ -1,8 +1,3 @@
-/**
- * 子任务的目录与差异处理，不启动 pi。
- * shared-cwd / controlled-cwd 使用当前目录；只有 worktree 模式创建独立 Git 工作树，
- * 并在结束后生成审阅补丁。清理当前目录任务不会删除用户文件。
- */
 import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
@@ -29,7 +24,6 @@ export interface SubagentDiffSummary {
   deletions: number
   paths: string[]
   truncated: boolean
-  /** 仅保存到用户数据目录；不把补丁正文放进 IPC 快照。 */
   patchPath?: string
 }
 
@@ -76,7 +70,6 @@ async function runGit(cwd: string, args: string[], timeout = 30_000, input?: str
   }
 }
 
-/* Windows 无法检出 CON/NUL 等设备名；逐条列出有效路径，避免整棵树被 Git 拒绝。 */
 function isWindowsInvalidPath(path: string): boolean {
   return path.split('/').some((segment) => {
     const trimmed = segment.replace(/[ .]+$/g, '')
@@ -97,12 +90,10 @@ async function checkoutWindowsSafeTree(worktreePath: string): Promise<void> {
     if (!mode || !sha || !path || isWindowsInvalidPath(path)) continue
     indexLines.push(`${mode} ${sha}\t${path}\n`)
   }
-  /* --no-checkout 留下空 index；先恢复可检出的条目，再由 checkout-index 写文件。 */
   await runGit(worktreePath, ['update-index', '--index-info'], 30_000, indexLines.join(''))
   await git(worktreePath, ['checkout-index', '-a'])
 }
 
-/** 返回 cwd 所属的 Git 根目录；非 Git 项目返回 null。 */
 export async function findGitRoot(cwd: string): Promise<string | null> {
   try {
     const result = await git(resolve(cwd), ['rev-parse', '--show-toplevel'], 10_000)
@@ -113,14 +104,6 @@ export async function findGitRoot(cwd: string): Promise<string | null> {
   }
 }
 
-/**
- * 创建一个以当前 HEAD 为基线的隔离工作区。
- *
- * 只读模式故意不创建 worktree：它仍然只拿到受控 cwd，写入能力由
- * `subagents.ts` 传给 pi 的 `--tools` 白名单（read/grep/find/ls）真正封死 ——
- * 只换 cwd 不构成只读。写入模式在非 Git 项目中直接失败，避免退回到会污染
- * 主目录的"临时复制但无法安全合并"伪隔离。
- */
 export async function prepareWorkspace(
   rootCwd: string,
   id: string,
@@ -136,15 +119,12 @@ export async function prepareWorkspace(
     throw new Error('写入型子代理需要 Git 项目；请改用只读模式，或先初始化 Git')
   }
 
-  /* 先创建容器，再让 git 创建 worktree 目录；避免目标目录已存在导致 Git 拒绝。 */
   const containerPath = await mkdtemp(join(tmpdir(), `yan-subagent-${id}-`))
   const worktreePath = join(containerPath, 'worktree')
   try {
     try {
       await git(repoRoot, ['worktree', 'add', '--detach', worktreePath, 'HEAD'], 60_000)
     } catch (error) {
-      /* 用户仓库若含已跟踪的 Windows 保留设备名，普通 checkout 会整段失败；
-       * 保留 Git worktree / index 语义，只跳过无法落地的那几个路径。 */
       if (!/invalid path/i.test(String(error))) throw error
       await git(repoRoot, ['worktree', 'add', '--detach', '--no-checkout', worktreePath, 'HEAD'], 60_000)
       await checkoutWindowsSafeTree(worktreePath)
@@ -164,7 +144,6 @@ function parseNameStatus(text: string): string[] {
     if (tab < 0) continue
     const status = line.slice(0, tab)
     const raw = line.slice(tab + 1)
-    /* rename/copy 的最后一列是新路径；普通项只有一列。 */
     const parts = raw.split('\t')
     const path = (status.startsWith('R') || status.startsWith('C') ? parts.at(-1) : parts[0])?.trim()
     if (path) paths.push(path)
@@ -186,7 +165,6 @@ function parseNumstat(text: string): { additions: number; deletions: number } {
   return { additions, deletions }
 }
 
-/** 只根据 Git 输出生成摘要，供单元测试和 controller 共用。 */
 export function summarizeGitDiff(nameStatus: string, numstat: string): SubagentDiffSummary {
   const paths = parseNameStatus(nameStatus)
   const counts = parseNumstat(numstat)
@@ -200,10 +178,6 @@ export function summarizeGitDiff(nameStatus: string, numstat: string): SubagentD
   }
 }
 
-/**
- * 将 worktree 的变更固化成审阅补丁。`git add` 只发生在隔离 worktree 的
- * 独立 index 中，不会改变主工作树或主 index。
- */
 export async function collectDiff(workspace: PreparedWorkspace, archiveDir: string, id: string): Promise<CollectedDiff> {
   if (workspace.isolation !== 'worktree' || !workspace.repoRoot) {
     return { summary: { files: 0, additions: 0, deletions: 0, paths: [], truncated: false } }
@@ -225,10 +199,6 @@ export async function collectDiff(workspace: PreparedWorkspace, archiveDir: stri
   return { summary: { ...summary, patchPath }, patchPath }
 }
 
-/**
- * 无副作用地检查补丁能否应用到主工作树，再执行真正应用。
- * 主工作树已有重叠修改时返回冲突，不写入半截结果。
- */
 export async function applyPatch(rootCwd: string, patchPath: string): Promise<{ ok: boolean; error?: string }> {
   const root = await findGitRoot(rootCwd)
   if (!root) return { ok: false, error: '主工作目录不是 Git 项目，无法安全合并' }
@@ -245,7 +215,6 @@ export async function applyPatch(rootCwd: string, patchPath: string): Promise<{ 
   }
 }
 
-/** 删除 worktree 和临时容器；主工作树不会被触碰。 */
 export async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<void> {
   if (workspace.worktreePath && workspace.repoRoot) {
     await git(workspace.repoRoot, ['worktree', 'remove', '--force', workspace.worktreePath], 30_000).catch(() => {})

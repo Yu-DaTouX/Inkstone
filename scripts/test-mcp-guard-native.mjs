@@ -1,34 +1,3 @@
-/**
- * 合集 05：真实原生 MCP 注解审批核对。
- *
- * 目的：现有 `scripts/test-mcp-annotations-guard.mjs` 用**假** `getAllTools()` 数组，
- * 只能说明 danger-guard 的分支逻辑。本脚本用**随包 pi 1.2.0 的真实 RPC/扩展运行时**，
- * 让一个本机假模型先把 `codemode` 叫起来，再从 codemode 内部 `tools.mcp__...` 触发
- * 真实嵌套工具调用，从而核对：
- *
- *   1. pi 1.2.0 源码里 MCP 工具名模板确为 `mcp__${server}__${tool}`，
- *      `getAllTools()` 的 MCP 工具项保留 `readOnlyHint` / `destructiveHint` /
- *      `openWorldHint` 注解（源核对 + 运行期观测）；
- *   2. 五个夹具工具的注解：只读不问、缺注解问、破坏问、只读+破坏问、
- *      非破坏且非开放世界不问；
- *   3. 拒绝后 server 侧**确实没有执行**（夹具只回字符串并写调用计数物证）；
- *   4. 至少一个工具真的走原生 codemode 内部 `tools.mcp__...`，
- *      `parentToolCallId` 是 pi 分配的真实 id，不是本脚本伪造的。
- *
- * 参照 `scripts/test-virtual-model-native.mjs` 的隔离方式：
- *   · 临时 `PI_CODING_AGENT_DIR` / `YAN_PI_DIR` / `YAN_DATA_DIR` / cwd / sessions；
- *   · 本机 HTTP 假 provider（成本 0，不访问真实模型服务）；
- *   · `mcp.json` 只登记一条本机 stdio 夹具服务；
- *   · 临时 `desktop.json.permissionMode = "danger"`；
- *   · 现场加载正式 `resources/pi-extensions/danger-guard.js`（不重新实现其逻辑）；
- *   · 本机 HTTP 假宿主处理 `danger.confirm`；
- *   · 入参环境清洗掉真实凭证，`PI_OFFLINE=1`。
- *
- * 边界：provider 是本机 mock，MCP 是本机 stdio fixture；不使用真实用户数据 / 凭证 /
- * 服务 / 模型。只 kill 本脚本 spawn 的 pi 与 MCP 子进程，只清自己的 mkdtemp 产物。
- *
- * 运行：node scripts/test-mcp-guard-native.mjs
- */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
@@ -49,7 +18,6 @@ const check = (condition, label) => {
   results.checks += 1
 }
 
-/** 期望的护栏行为；注解断言从夹具定义推导，避免测试自说自话。 */
 const EXPECTED = [
   { tool: 'read_ok', expectAsk: false, decision: null, expectExecuted: true },
   { tool: 'no_annotations', expectAsk: true, decision: 'allow', expectExecuted: true },
@@ -70,13 +38,11 @@ const runtimeDir = selectedPiRuntime(resolve('resources/pi-runtime'))
 const CLI = join(runtimeDir, 'dist/bundle/cli.js')
 
 const delay = (ms) => new Promise((done) => setTimeout(done, ms))
-/** 稳定序列化：只比较键值集合，不受对象字面量顺序影响。 */
 const canonical = (value) => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${JSON.stringify(value[key])}`).join(',')}}`
 }
 
-/** 子进程不得继承父 shell 里的真实模型凭证。 */
 const CREDENTIAL = /(API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|_TOKEN$|^ANTHROPIC_|^OPENAI_|^GEMINI_|^GOOGLE_|^XAI_|^GROK_|^DEEPSEEK_|^OPENROUTER_|^AWS_|^AZURE_|^MISTRAL_|^COHERE_)/i
 function isolatedEnv(extra = {}) {
   const env = {
@@ -92,15 +58,12 @@ function isolatedEnv(extra = {}) {
   }
   for (const key of Object.keys(env)) if (CREDENTIAL.test(key)) delete env[key]
   delete env.YAN_DANGER_GUARD
-  /* 凭证清洗会删掉以 _TOKEN 结尾的键；夹具令牌在做完清洗后再写入。 */
   env.YAN_CLI_URL = hostUrl
   env.YAN_CLI_TOKEN = 'fixture-token'
   env.YAN_SESSION_ID = 'fixture-session'
   env.YAN_PROJECT_ID = 'fixture-project'
   return env
 }
-
-/* -------- 本机假宿主：只处理 danger.confirm，记录每次审批请求 -------- */
 
 const hostRequests = []
 const DENY_NAMES = new Set(['destructive_op', 'read_destructive'])
@@ -109,7 +72,7 @@ const hostServer = createServer((req, res) => {
   req.on('data', (chunk) => { body += chunk })
   req.on('end', () => {
     let payload = {}
-    try { payload = JSON.parse(body) } catch { /* 仍应答，避免护栏挂住 */ }
+    try { payload = JSON.parse(body) } catch { }
     hostRequests.push(payload)
     const tool = String(payload?.params?.tool ?? '')
     const deny = [...DENY_NAMES].some((name) => tool.endsWith(`__${name}`))
@@ -121,8 +84,6 @@ const hostServer = createServer((req, res) => {
 })
 await new Promise((ready) => hostServer.listen(0, '127.0.0.1', ready))
 const hostUrl = `http://127.0.0.1:${hostServer.address().port}`
-
-/* -------- 本机假 provider：只对安全夹具发 codemode 调用 -------- */
 
 const turn = { tool: null, callId: null }
 const providerRequests = []
@@ -147,7 +108,7 @@ const providerServer = createServer((req, res) => {
   req.on('data', (part) => { body += part })
   req.on('end', () => {
     let payload = {}
-    try { payload = JSON.parse(body) } catch { /* 仍应答 */ }
+    try { payload = JSON.parse(body) } catch { }
     providerRequests.push(payload)
     const messages = Array.isArray(payload.messages) ? payload.messages : []
     const last = messages.at(-1)
@@ -171,8 +132,6 @@ const providerServer = createServer((req, res) => {
 })
 await new Promise((ready) => providerServer.listen(0, '127.0.0.1', ready))
 const providerPort = providerServer.address().port
-
-/* -------- 隔离文件 -------- */
 
 for (const dir of [PI_DIR, DATA_DIR, SESSIONS_DIR, EXT_DIR]) await mkdir(dir, { recursive: true })
 await writeFile(join(PI_DIR, 'auth.json'), '{}')
@@ -214,11 +173,8 @@ await writeFile(join(PI_DIR, 'mcp.json'), JSON.stringify({
     }
   }
 }))
-// 探针文件排序在前：否则 danger-guard 先返回 block 会短路后面的 tool_call 处理器。
 await copyFile(resolve('scripts/fixtures/mcp-guard-probe.mjs'), join(EXT_DIR, '0-mcp-guard-probe.js'))
 await copyFile(resolve('resources/pi-extensions/danger-guard.js'), join(EXT_DIR, '9-danger-guard.js'))
-
-/* -------- RPC driver（与 src/main/protocol.ts 同为 JSONL 分帧） -------- */
 
 function startPi() {
   const child = spawn(process.execPath, [CLI, '--mode', 'rpc', '--session-dir', SESSIONS_DIR], {
@@ -281,7 +237,7 @@ function startPi() {
   rpc.stop = async () => {
     if (rpc.exited) return
     const exited = new Promise((done) => child.once('exit', done))
-    try { child.stdin.end() } catch { /* already closed */ }
+    try { child.stdin.end() } catch { }
     const timer = setTimeout(() => child.kill(), 3000)
     await exited
     clearTimeout(timer)
@@ -300,7 +256,6 @@ async function markerCount(toolName) {
 
 let proc
 try {
-  /* ================= 源核对：pi 1.2.0 的工具名模板与注解白名单 ================= */
   const chunkDir = join(runtimeDir, 'dist/bundle/chunks')
   const namingNeedle = 'mcp__${server}__${tool}'
   const hintsNeedle = 'ANNOTATION_HINTS=["readOnlyHint","destructiveHint","idempotentHint","openWorldHint"]'
@@ -313,7 +268,6 @@ try {
   check(results.sourceCheck.namingFile, `源核对：pi 1.2.0 的 MCP 工具名模板是 mcp__\${server}__\${tool}（在 ${results.sourceCheck.namingFile ?? '未找到'}）`)
   check(results.sourceCheck.hintsFile, `源核对：pi 1.2.0 注解白名单含 readOnlyHint/destructiveHint/openWorldHint（在 ${results.sourceCheck.hintsFile ?? '未找到'}）`)
 
-  /* ================= 启动隔离 pi ================= */
   proc = startPi()
   const ready = await proc.command('get_state')
   check(ready.success, `get_state：${ready.error ?? 'ok'}`)
@@ -323,7 +277,6 @@ try {
   const selected = await proc.command('set_model', { provider: PROVIDER, modelId: MODEL })
   check(selected.success, `set_model 本机模型：${selected.error ?? 'ok'}`)
 
-  // MCP 连接是 session_start 后异步建立的：先等第一次请求，确认 codemode 已声明。
   const firstTurnTool = `mcp__${SERVER_NAME}__${EXPECTED[0].tool}`
   turn.tool = firstTurnTool
   turn.callId = 'mcpguard-0'
@@ -335,7 +288,6 @@ try {
   results.observed.declaredTools = declaredTools
   check(declaredTools.includes(CODEMODE_TOOL), `模型请求声明了 ${CODEMODE_TOOL}（否则无法发起原生嵌套调用）`)
 
-  // warmup 已经跑过 read_ok 那一轮；后续只跑剩下四个，避免重复。
   const firstTurn = {
     ...EXPECTED[0],
     expectedName: firstTurnTool,
@@ -346,7 +298,6 @@ try {
   }
   results.turns.push(firstTurn)
 
-  /* ================= 逐工具：真实 codemode 内部 tools.mcp__... ================= */
   for (let index = 1; index < EXPECTED.length; index += 1) {
     const spec = EXPECTED[index]
     const expectedName = `mcp__${SERVER_NAME}__${spec.tool}`
@@ -369,7 +320,6 @@ try {
     })
   }
 
-  /* ================= 护栏行为断言 ================= */
   for (const observed of results.turns) {
     const fixture = fixtureByName.get(observed.tool)
     check(fixture, `夹具定义了工具 ${observed.tool}`)
@@ -393,7 +343,6 @@ try {
     }
   }
 
-  /* ================= 真实 getAllTools 与内部 parentToolCallId ================= */
   const probe = (await readFile(PROBE_LOG, 'utf8')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
   const mcpRecords = probe.filter((record) => typeof record.toolName === 'string' && record.toolName.startsWith('mcp__'))
   const observedNames = [...new Set(mcpRecords.map((record) => record.toolName))].sort()

@@ -2,12 +2,6 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button } from '../ui'
 
-/**
- * 一键安装受管 Git 的按钮与进度。
- *
- * 引导页的「命令行工具」一行和启动时的缺失通知共用它：状态在 store 里（主进程推 `git-install`），
- * 两处看到的是同一份进度。点按钮才开始下载，这是用户的确认；进度里写清来源与大小。
- */
 export function GitInstallControl({ size = 'md' }: { size?: 'sm' | 'md' }) {
   const t = useT()
   const progress = useStore((s) => s.gitInstall)

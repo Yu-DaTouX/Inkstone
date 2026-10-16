@@ -1,11 +1,3 @@
-/**
- * 系统提示开场白扩展（resources/pi-extensions/preamble.js）的单测。
- *
- * 为什么值得钉住：它做的是**定点字符串替换**，替换失败有两种坏法：
- *   ① 认不出原生句 → 静默不生效（用户看到英文开场白，却以为改了）；
- *   ② 替换范围失控 → 把 pi 自己维护的段落一起改掉/删掉。
- * 两种都只能在真实请求里才看得出来，所以这里把机制确定性地测掉。
- */
 export async function runPreambleExtensionTests(ok, mod) {
   const { NATIVE_PREAMBLE, YAN_PREAMBLE, PROGRESS_GUIDANCE, default: extension } = mod
 

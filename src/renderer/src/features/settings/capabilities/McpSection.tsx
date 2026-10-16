@@ -1,13 +1,3 @@
-/**
- * 「连接」分页：砚宿主 MCP 与 pi 原生 MCP（S2）。
- *
- * 三条硬边界（与方案合集 06 / 能力页既有语义一致）：
- *   1. 打开只读快照，**不握手、不启动 stdio**；只有用户点「检查」才连接。
- *   2. 砚宿主配置（`YAN_DIR/mcp-servers.json`）与 pi 原生 `mcp.json` 分成两组，
- *      不自动迁移条目、不搬运凭证。
- *   3. 「导入到 pi 原生」走既有 `prepare/commit` 两步 + 确认框；结果按真实
- *      分步状态展示，不把部分失败说成没写。
- */
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
@@ -31,7 +21,6 @@ import { McpAppRefresh } from './McpAppRefresh'
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** 需要用户手动处理（重新登录 / 不受支持 / 未受信 / 校验不可用）的错误码。 */
 const MANUAL_CODES = new Set([
   'needs_reauth',
   'needs_auth',
@@ -224,11 +213,6 @@ function McpServerRow({
   )
 }
 
-/**
- * 逐条的「导入到 pi 原生」控件。
- *
- * 身份核对在确认前后各做一次：范围变了就不提交（主进程还会再核对令牌）。
- */
 function McpImportControl({
   server,
   onChanged
@@ -337,7 +321,6 @@ function McpImportControl({
       try {
         await onChanged()
       } catch {
-        /* 刷新失败不改写已发生的写盘事实 */
       }
     } catch (cause) {
       if (mounted.current) setOutcome({ phase: 'failed', code: 'exception', error: errorText(cause), manual: false })
@@ -426,11 +409,6 @@ function McpImportOutcome({
   )
 }
 
-/**
- * pi 原生 MCP 组：只读状态，与砚宿主服务分开。
- *
- * pi 的服务清单通过原生 `/mcp` 命令拿（与 v2 同一路径）；点击才发送，不轮询。
- */
 function NativeMcpGroup({ available }: { available: boolean }): ReactElement {
   const t = useT()
   const text = useCapsText()

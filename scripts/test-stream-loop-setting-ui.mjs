@@ -1,13 +1,3 @@
-/**
- * 「循环中止后自动继续」设置开关的专项检查（设置 · 会话 · 常规页 WorkspaceTab）。
- *
- * 覆盖三件只与本次改动有关的事：
- *   ① WorkspaceTab 读取 `streamLoopAutoContinue`：`undefined` 视为开启，只有显式 `false` 才关闭；
- *   ② 切换开关调用 `patchSettings({ streamLoopAutoContinue })`，不碰旧 `autoArchiveDays`；
- *   ③ 文案键在 zh-CN / en-US 两份 i18n 里都存在，且复用既有 SettingRow + Switch（无新增控件）。
- *
- * 现场用 esbuild 编译；不启动 Electron、不连接 pi、不访问网络、不读写真实数据。
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -30,7 +20,6 @@ globalThis.__loopSwitches = []
 await mkdir('.tmp/loop-setting-ui', { recursive: true })
 const dir = await mkdtemp(resolve('.tmp/loop-setting-ui/run-'))
 try {
-  /* ① WorkspaceTab：真实组件，桩掉 store / i18n / 共享控件，只验证本次接线。 */
   const tabOut = join(dir, 'workspace-tab.mjs')
   const tabStubs = {
     i18n: `export const useT = () => (key) => 'T:' + key;`,
@@ -100,10 +89,8 @@ export const Switch = (props) => {
   await defaults.switches[0].onChange(true)
   ok(tab.calls[tab.calls.length - 1].streamLoopAutoContinue === true, '开启提交 streamLoopAutoContinue:true')
 
-  /* 旧「自动归档」行仍在原地，未被本次编辑挤掉。 */
   ok(defaults.rows.some((r) => r.ctlProps && r.ctlProps['data-testid'] === 'set-auto-archive'), '旧 autoArchive 分段控件保留')
 
-  /* ② 真实共享 Switch：确认 props 真的落到 role/aria 与开关类名上。 */
   const uiOut = join(dir, 'ui.mjs')
   await build({
     entryPoints: ['src/renderer/src/components/ui/index.tsx'],
@@ -135,7 +122,6 @@ export const Switch = (props) => {
   ok(switchHtml.includes('aria-checked="true"'), '共享 Switch 的 aria-checked 跟随 checked')
   ok(switchHtml.includes('switch-pill') && switchHtml.includes('switch-pill on'), '共享 Switch 使用既有样式类')
 
-  /* ③ 两份 i18n 都有这三条键，且都不是空串。 */
   const zh = JSON.parse(await readFile('src/renderer/src/i18n/zh-CN.json', 'utf8'))
   const en = JSON.parse(await readFile('src/renderer/src/i18n/en-US.json', 'utf8'))
   for (const key of ['set.streamLoopAutoContinue', 'set.streamLoopAutoContinueDesc', 'set.streamLoopAutoContinueTip']) {

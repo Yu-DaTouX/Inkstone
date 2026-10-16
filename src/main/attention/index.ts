@@ -1,4 +1,3 @@
-/** AttentionService 入口（v3 WP-12 / L12）：应用外注意投影，见 attention-service.ts。 */
 export { createAttentionService } from './attention-service'
 export type {
   AttentionService,
@@ -15,7 +14,6 @@ export type {
   TraySelectTarget,
   TraySessionStatus
 } from './tray-menu'
-/* 托盘柔和闪动（L12）：可注入播放器 + 预载素材装载。 */
 export { createTrayAnimationPlayer } from './tray-animation'
 export type {
   TrayAnimationClock,

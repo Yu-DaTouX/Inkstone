@@ -13,7 +13,6 @@ const electron = process.versions.electron ? createRequire(import.meta.url)('ele
 electron?.app.on('window-all-closed', () => {})
 
 async function main() {
-  // Compile only this fixture and its browser helpers; never load the application.
   if (!process.versions.electron) {
     const { build } = await import('esbuild')
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'inkstone-frame-network-'))
@@ -104,7 +103,6 @@ async function main() {
         click: async ref => { await input.click(registry.resolve(ref)); return { ok: true, observation: await observe() } }
       }
       const state = { settings: { rightPanelOpen: true }, openBrowser: url => contents.loadURL(url), browserState: {}, messages: [] }
-      // Transport adapter only: the app-level browserframeboundary scenario verifies the real CLI.
       const fixtureYan = (actions) => ({ browser: actions, runBash: async command => {
         let output
         if (command.startsWith('node -e')) {
@@ -124,7 +122,6 @@ async function main() {
         state.messages.push({ role: 'bash', bash: { exitCode: 0 }, toolCalls: [{ status: 'ok', output }] })
       } })
       const probePath = fileURLToPath(new URL('./probe/browser-boundary.js', import.meta.url))
-      // Only substitute the dynamically allocated loopback port, not assertions.
       const probe = (await fs.readFile(probePath, 'utf8')).replaceAll('39873', String(server.address().port))
       const result = await vm.runInNewContext(probe, {
         window: { __yanBrowserFrameNetworkOnly: true, __yanStore: { getState: () => state }, yan: fixtureYan(browser) },
@@ -133,7 +130,6 @@ async function main() {
       log(result)
       assert.ok(!result.includes('✗'), 'actual local-only boundary probe passes every existing assertion')
       assert.ok(result.includes('✓ 全部通过'), 'probe reaches its end')
-      // A no-op click must NOT reuse the previous Fetch or claim postMessage success.
       const negativeBrowser = { ...browser, click: async () => ({ ok: true, observation: await observe() }) }
       const negative = await vm.runInNewContext(probe, {
         window: { __yanBrowserFrameNetworkOnly: true, __yanStore: { getState: () => state }, yan: fixtureYan(negativeBrowser) },

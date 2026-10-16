@@ -1,14 +1,9 @@
-/**
- * 办公文件的预览（需求稿 3.4）：读磁盘上的**当前文件**提取结构化正文。
- * 路径走普通预览的 realpath/文件校验；相对路径限制在会话目录，绝对路径沿用显式本地预览语义。
- */
 import { Worker } from 'node:worker_threads'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { officeFormatOf, type OfficeDocumentView } from '../../shared/office'
 import { resolvePreviewTarget } from '../file-refs'
 
-/** 与 PDF 解析同一个上限：再大就不在界面里提取 */
 const MAX_OFFICE_BYTES = 64 * 1024 * 1024
 let active = 0
 

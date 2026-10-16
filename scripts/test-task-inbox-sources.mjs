@@ -1,13 +1,3 @@
-/**
- * 收件箱事实源组装的单元测试（实施-28 T2）。
- *
- * 这里测的是**组装层**，不是投影层（投影在 test-task-inbox.mjs）：
- *   ① `toRunnerFacts` 只映射真的有的字段（不编 `reason`）；
- *   ② `foldRunners` 同一会话多实例折叠时挑「最需要关注」的那一条；
- *   ③ `readInboxState` / `writeInboxState` 往返，且坏文件不拖垮收件箱；
- *   ④ `createTaskInboxSources` 的默认计划投影：空计划给 undefined（不出卡），
- *      有 blocked 才给 blocked（不编 0）。
- */
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,7 +6,6 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
   const { foldRunners, toRunnerFacts, readInboxState, writeInboxState, createTaskInboxSources } = mod
   const { createTaskInboxService } = serviceMod
 
-  /* ---- ① 只映射真的有的字段 ---- */
   {
     ok(toRunnerFacts({}).length === 0, '没有 sessionId 的实例不产出事实（不编一个空会话）')
     const running = toRunnerFacts({ sessionId: 's1', running: true, conn: 'ready' })[0]
@@ -29,7 +18,6 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
     ok(/连接/.test(connErr.reason ?? ''), '连接失败与进程退出给的原因不同（能分辨）')
   }
 
-  /* ---- ② 多实例折叠 ---- */
   {
     const folded = foldRunners([
       { sessionId: 'a', running: true },
@@ -45,12 +33,10 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
     ok(b?.running === true && b?.failed === undefined, '没失败的会话不被别的会话牵连')
   }
 
-  /* ---- ③ 可见性文件往返 + 坏文件容错 ---- */
   {
     const dir = await mkdtemp(join(tmpdir(), 'yan-inbox-'))
     try {
       ok((await readInboxState(dir)).dismissed.length === 0, '文件不存在时当作没忽略（不抛）')
-      /* 漏传 readUntil 不能崩：真实调用方构造状态时很容易只想到 dismissed */
       await writeInboxState({ dismissed: ['s1', 's2'] }, dir)
       const back = await readInboxState(dir)
       ok(back.dismissed.length === 2 && back.dismissed.includes('s2'), '写入后能读回来')
@@ -69,7 +55,6 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
     }
   }
 
-  /* ---- ④ 默认计划投影：空就是空，不编 0 ---- */
   {
     const sources = createTaskInboxSources({
       registry: { statuses: () => [] },
@@ -84,7 +69,6 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
     ok(sources.readQuestion === undefined, '没注入的源就不出现（不编状态）')
   }
 
-  /* ---- ⑤ 组合：注册表 → 事实 → 卡片（端到端走一遍组装层） ---- */
   {
     const sources = createTaskInboxSources({
       registry: {
@@ -105,7 +89,6 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
     ok(String(page.cards[0].progress ?? '').includes('4'), '进度来自计划（第几步 / 共几步）')
   }
 
-  /* ---- ⑥ 等用户回答（T3）：提问与学习两条链 ---- */
   {
     const sources = createTaskInboxSources({
       registry: { statuses: () => [] },
@@ -128,7 +111,6 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
     ok(pending?.pending === true && String(pending.text).includes('这次'), '只取最后一条未作答的提问')
   }
 
-  /* ---- ⑦ 近似审阅（T4）：两个条件缺一不可 ---- */
   {
     const calls = []
     const sources = createTaskInboxSources({
@@ -141,7 +123,6 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
         return session.updatedAt > 1000 ? { since: session.updatedAt, reason: '看过了但又有新活动' } : undefined
       }
     })
-    /* 契约的判据依赖会话快照：所以必须先 listSessions 一次（投影顺序就是这样） */
     ok((await sources.readAwaitingReview?.('s1')) === undefined, '还没投影会话时不猜结果（不编 needs_review）')
     await sources.listSessions()
     const review = await sources.readAwaitingReview?.('s1')

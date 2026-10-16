@@ -1,4 +1,3 @@
-/* Isolated matrix fixture: verify the follow-up UI without model calls or user data. */
 ;(async () => {
   const store = window.__yanStore
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -29,7 +28,6 @@
   check(!!find('turn-copy'), 'Each rendered reply has a footer copy action')
   const copy = find('turn-copy')
   check(copy.closest('.turn-footer') !== null, 'Reply copy sits next to the reply timestamp')
-  // Intercept only this isolated fixture clipboard, never the user's clipboard.
   let copied = ''
   const original = navigator.clipboard.writeText
   navigator.clipboard.writeText = async text => { copied = text }

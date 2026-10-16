@@ -24,10 +24,6 @@ function useNow(active: boolean): number {
   return now
 }
 
-/**
- * 子代理平面图：主 Agent 是中心节点，它派出的子代理按状态分成「运行中 / 需处理 / 已完成」三个区，
- * 每个子代理是一间「房间」（磁贴）。只显示当前会话的子代理；已完成的默认收起。
- */
 export function SubagentPlan({ runs, mainModel, onOpen }: { runs: SubagentRun[]; mainModel?: string; onOpen(run: SubagentRun): void }) {
   const t = useT()
   const [showDone, setShowDone] = useState(false)
@@ -82,7 +78,6 @@ function Room({ index, run, outcome, now, onOpen }: { index: number; run: Subage
     const result = await window.yan.subagents.start(run.task, run.model, run.isolation)
     if (result.ok && result.run) { void useStore.getState().loadSubagents(); window.dispatchEvent(new CustomEvent('inkstone-agent-open', { detail: `subagent:${result.run.id}` })) }
   }
-  /* 不再处理：同一宿主持久标记；成功后重读快照，失败就地提示，仍留在需处理区。 */
   const dismiss = async () => {
     if (dismissInFlight.current) return
     dismissInFlight.current = true

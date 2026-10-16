@@ -1,10 +1,4 @@
 @layer features {
-  /*
-   * v3 设置页（WP-43 / S0）的版面。
-   *
-   * 只写版面与层级：间距/字号/颜色全部引用既有 token，控件外观来自 ui/。
-   * 页签与设置行是页面导航与列表行，按侧栏既有做法用原生 button + feature CSS。
-   */
 
   .settings-page {
     flex: 1;
@@ -18,8 +12,6 @@
   .settings-page[data-loading='1'] {
     padding: var(--s-24);
   }
-
-  /* ---------------- 左栏分区导航 ---------------- */
 
   .settings-nav {
     flex: none;
@@ -68,8 +60,6 @@
     outline-offset: -2px;
   }
 
-  /* ---------------- 右栏内容 ---------------- */
-
   .settings-main {
     flex: 1;
     min-width: 0;
@@ -101,8 +91,6 @@
     font-size: var(--t-meta);
     line-height: 1.5;
   }
-
-  /* ---------------- 设置行 ---------------- */
 
   .settings-row {
     display: flex;
@@ -202,8 +190,6 @@
     flex: 1 1 auto;
   }
 
-  /* ---------------- 用量 ---------------- */
-
   .settings-usage-bar {
     display: flex;
     align-items: center;
@@ -217,15 +203,11 @@
     gap: var(--s-8);
   }
 
-  /* ---------------- 上下文 ---------------- */
-
   .settings-rows {
     display: flex;
     flex-direction: column;
     gap: var(--s-16);
   }
-
-  /* ---------------- 快捷键 ---------------- */
 
   .settings-shortcut-keys {
     display: inline-flex;
@@ -233,8 +215,6 @@
     align-items: center;
     gap: var(--s-4);
   }
-
-  /* ---------------- 用量：图表 / 表格切换 ---------------- */
 
   .settings-breakdown {
     display: flex;
@@ -263,7 +243,6 @@
     font-size: var(--t-meta);
   }
 
-  /* 当前分组里没有用量的行淡化，不抢有数据的行的注意力。 */
   .settings-bar[data-idle='1'],
   .settings-table tr[data-idle='1'] {
     opacity: 0.5;
@@ -364,7 +343,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* 窄窗：导航改成横向条，内容占满 */
   @media (max-width: 720px) {
     .settings-page {
       flex-direction: column;

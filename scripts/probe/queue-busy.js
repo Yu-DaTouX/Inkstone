@@ -1,15 +1,3 @@
-/**
- * 排队消息的「插队 / 撤回」在**消息仍在队列时**必须真的成功。
- *
- * 背景（用户 2026-10-03 截图）：agent 跑长工具时发的消息排在队列里，
- * 点「插队」却报「消息已被 pi 接收，无法再插队」。根因是主进程把
- * `clear_queue` 之后 pi 推的**中间帧空队列**当真，覆盖了本地快照，
- * 之后按文本复用 id 的重建拿不到原来的 id，于是把「还在队列里」误判成
- * 「已被接收」（还会白白重建一次队列）。修复见 `AgentController.queueBusy`。
- *
- * 这个场景要一条真正耗时的工具命令（cost 1）：只有工具在跑时，消息才会
- * 稳定地停在 pi 队列里，才谈得上插队与撤回。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -33,7 +21,6 @@
   const inChat = (text) => st().messages.some((m) => m.role === 'user' && String(m.text ?? '') === text)
   const notices = () => (st().notices || []).map((n) => n.text).join(' | ')
   const draft = () => q('[data-testid="composer"]')?.value ?? null
-  /** 按行内文本找按钮 —— steering / followUp 行都有 queue-retract，不能只取第一个 */
   const rowButton = (text, testId) => {
     const row = [...document.querySelectorAll('[data-testid="queue-row"]')].find((r) =>
       (r.textContent ?? '').includes(text)
@@ -66,7 +53,6 @@
     ok(toolRunning, '长工具已经开始执行（sleep 90）')
     if (!toolRunning) return out.join('\n')
 
-    /* ---------- 1. 消息仍在队列时点「插队」 ---------- */
     const A = '插队目标：请把这句话复述一遍'
     await st().send(A)
     await sleep(1500)
@@ -83,7 +69,6 @@
       ok(steering(A) || inChat(A), 'A 进入了本轮（插话队列或对话里）')
     }
 
-    /* ---------- 2. 消息仍在队列时点「撤回」 ---------- */
     const B = '撤回目标：这条应该回到输入框'
     await st().send(B)
     await sleep(1500)

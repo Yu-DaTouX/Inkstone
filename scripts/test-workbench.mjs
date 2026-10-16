@@ -1,4 +1,3 @@
-/** 工作窗口状态模型测试（实施-11 H-3a：布局与资源契约）。 */
 export async function runWorkbenchTests(ok) {
   const {
     activateWorkbenchTab,
@@ -25,7 +24,6 @@ export async function runWorkbenchTests(ok) {
   ok(workbenchSessionKey(undefined, 'sid') === 'sid', '没有文件时回退到 sessionId')
   ok(workbenchSessionKey(undefined, undefined) === 'pending', '都没有时用临时身份 pending')
 
-  /* ---- 资源身份与 kind 分离 ---- */
   const browser = activateWorkbenchTab(initial, 'browser')
   const file = activateWorkbenchTab(browser, 'file', 'C:/a/README.md')
   ok(file.activeTabId === 'file:C:/a/README.md', '文件资源生成稳定标签 id')
@@ -41,7 +39,6 @@ export async function runWorkbenchTests(ok) {
   ok(viewFromWorkbench(file, new Set(['tools', 'browser', 'file'])) === 'file', '可用资源恢复活动页')
   ok(viewFromWorkbench(file, new Set(['tools'])) === 'tools', '资源未恢复时回退工具而不伪造页面')
 
-  /* ---- 关闭活动 / 非活动标签 ---- */
   const closeInactive = closeWorkbenchTab(agent2, 'file:C:/a/README.md')
   ok(closeInactive.activeTabId === 'subagent:run-2', '关闭非活动标签不动活动页')
   ok(!closeInactive.tabs.some((t) => t.id === 'file:C:/a/README.md'), '关闭非活动标签只释放自身')
@@ -52,7 +49,6 @@ export async function runWorkbenchTests(ok) {
   const closeFixed = closeWorkbenchTab(initial, 'tools')
   ok(closeFixed.tabs.length === 2 && closeFixed.activeTabId === 'start', '关闭固定页是 no-op（不动固定导航）')
 
-  /* ---- 版本迁移：只认 1 / 2，未知版本保留宽度/展开、资源回固定页 ---- */
   const v1 = normalizeWorkbenchState({
     version: 1,
     activeTabId: 'browser',
@@ -71,7 +67,6 @@ export async function runWorkbenchTests(ok) {
   const dup = normalizeWorkbenchState({ version: 2, activeTabId: 'a', tabs: [{ id: 'a', kind: 'browser' }, { id: 'a', kind: 'browser' }] })
   ok(dup.tabs.filter((t) => t.id === 'a').length === 1, '重复 id 只保留一份')
 
-  /* ---- 临时会话布局只被一个真实会话采用一次 ---- */
   const pendingMap = { pending: { version: 2, activeTabId: 'browser', tabs: [{ id: 'tools', kind: 'tools' }, { id: 'browser', kind: 'browser' }], width: 500, expanded: true } }
   const firstUse = pickWorkbenchState(pendingMap, 'C:/a/session.jsonl')
   ok(firstUse.consumedPending && firstUse.state.activeTabId === 'browser', '第一个真实会话采用临时布局')
@@ -80,7 +75,6 @@ export async function runWorkbenchTests(ok) {
   const secondUse = pickWorkbenchState(pendingMap, 'C:/b/session.jsonl')
   ok(secondUse.consumedPending, '第二个会话也只会看到同一份临时布局（由调用方消费后删除）')
 
-  /* ---- 异步打开守卫 ---- */
   const req = newWorkbenchOpenRequest('C:/a/session.jsonl', 4)
   ok(req.requestId === 5 && req.sessionKey === 'C:/a/session.jsonl', '打开请求带序号与会话身份')
   ok(isCurrentWorkbenchOpen(req, 'C:/a/session.jsonl', 5), '身份与序号都当前时允许写状态')
@@ -88,7 +82,6 @@ export async function runWorkbenchTests(ok) {
   ok(!isCurrentWorkbenchOpen(req, 'C:/a/session.jsonl', 6), '又发了新请求后旧返回作废')
   ok(!isCurrentWorkbenchOpen(null, 'C:/a/session.jsonl', 5), '没有在途请求时不写')
 
-  /* ---- 载入时对不可用资源逃逸 ---- */
   const reconciled = reconcileWorkbench(agent2, new Set(['tools']))
   ok(reconciled.activeTabId === 'tools', '载入时活动资源不可用且开始页不可用时对到工具页')
   const reconciledHome = reconcileWorkbench(agent2, new Set(['start', 'tools']))

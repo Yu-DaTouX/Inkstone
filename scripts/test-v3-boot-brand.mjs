@@ -1,18 +1,3 @@
-/**
- * 启动画面品牌几何一致性小测。
- *
- * 纯 Node 静态检查：不启动浏览器 / Electron、不构建、不联网、不写文件。核对：
- *   1. `src/renderer/index.html` 的静态 `.boot-mark` SVG 路径、`viewBox` 与
- *      线宽/端点/连接（`stroke-width` / `stroke-linecap` / `stroke-linejoin`）**只**来自
- *      唯一真源 `resources/brand/inkstone-design.json`，没有手写旧几何；
- *   2. 投影是幂等的，且只改启动画面那一段，`preserveBoot` 之外的 HTML 逐字不动；
- *   3. 更新 / 校验挂在现有图标生成正式入口 `scripts/build-icon.mjs` 上（`npm run icon`
- *      写入、`npm run check:brand` 校验），没有第二个正式入口，未来生成不会回退；
- *   4. 启动画面保持内联、自包含，不在启动时引入额外资源等待（渲染端不 import 生成脚本）；
- *   5. 启动画面 CSS 不再声明线宽/端点/连接，无法盖过真源投影。
- *
- * 可独立执行：node scripts/test-v3-boot-brand.mjs
- */
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -23,11 +8,9 @@ const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '
 const abs = (rel) => `${root}${rel}`
 const read = (rel) => readFileSync(abs(rel), 'utf8')
 
-/** 与 sync-boot-brand.mjs 内部一致的定位式；测试独立重写，不复用其私有正则。 */
 const BOOT_RE = /[ \t]*<svg class="boot-mark"[\s\S]*?<\/svg>/g
 const BOOT_PATH_RE = /<path\b[^>]*\/>/g
 
-/** 旧的硬编码几何（B1 发现的漂移），出现即回归。 */
 const OLD_PATHS = [
   'M70 22H25Q22 22 22 25V75Q22 78 25 78H75Q78 78 78 75V53',
   'M36 40L47 50L36 60',
@@ -52,7 +35,6 @@ function parsePaths(svg) {
   }))
 }
 
-/** 路径的线宽/端点/连接必须逐字来自真源对应几何，且与 SVG 属性写法一致。 */
 function assertGeometry(actual, source, label) {
   assert.equal(actual.strokeWidth, String(source.strokeWidth), `${label} 线宽应来自真源 strokeWidth`)
   if (source.linecap) assert.equal(actual.linecap, source.linecap, `${label} 端点应来自真源 linecap`)
@@ -61,12 +43,8 @@ function assertGeometry(actual, source, label) {
   else assert.equal(actual.linejoin, undefined, `${label} 真源无 linejoin 时不应写连接属性`)
 }
 
-/* ───────────────── 1. 真源结构合法 ───────────────── */
-
 const { design } = readDesign(abs(DESIGN_PATH))
 validateDesign(design)
-
-/* ───────────────── 2. index.html 的启动画面来自真源 ───────────────── */
 
 const html = read(BOOT_HTML)
 const svg = parseBootSvg(html)
@@ -97,8 +75,6 @@ for (const oldPath of OLD_PATHS) {
   assert.ok(!svg.includes(oldPath), `启动画面仍残留旧硬编码几何：${oldPath}`)
 }
 
-/* ───────────────── 3. 投影幂等且只改启动画面一段 ───────────────── */
-
 assert.equal(projectBootHtml(html, design), html, `${BOOT_HTML} 与真源投影不一致（运行 npm run icon 重新生成）`)
 assert.equal(renderBootSvg(design), svg, 'renderBootSvg 输出应与 index.html 中的启动画面逐字一致')
 assert.equal(projectBootHtml(projectBootHtml(html, design), design), projectBootHtml(html, design), '投影应幂等')
@@ -122,8 +98,6 @@ const oneSegment = structuredClone(design)
 oneSegment.geometry.prompt = oneSegment.geometry.prompt.slice(0, 1)
 assert.throws(() => renderBootSvg(oneSegment), /恰好两段/, '真源提示符段数变化时应报错，而不是静默错位')
 
-/* ───────────────── 4. 生成入口接线，且无第二个正式入口 ───────────────── */
-
 const buildIcon = read('scripts/build-icon.mjs')
 assert.match(buildIcon, /from\s*'\.\/design\/sync-boot-brand\.mjs'/, 'build-icon 应导入启动画面投影模块')
 assert.match(buildIcon, /syncBootBrand\(\{\s*root,\s*design,\s*checkOnly\s*\}\)/, 'build-icon 应同时用于写入与校验')
@@ -133,8 +107,6 @@ assert.equal(pkg.scripts.icon, 'electron scripts/build-icon.mjs', 'npm run icon 
 assert.equal(pkg.scripts['check:brand'], 'electron scripts/build-icon.mjs --check', 'npm run check:brand 仍是唯一品牌校验入口')
 const extraEntries = Object.entries(pkg.scripts).filter(([, command]) => /sync-boot-brand/.test(command))
 assert.equal(extraEntries.length, 0, `不应为启动画面投影新增第二个正式入口：${extraEntries.map(([name]) => name).join(', ')}`)
-
-/* ───────────────── 5. 启动画面内联、自包含、不引入资源等待 ───────────────── */
 
 assert.ok(!/\b(?:href|src)\s*=/.test(svg), '启动画面 SVG 不应引用外部资源')
 assert.ok(!/<image\b/.test(svg), '启动画面 SVG 不应嵌入 <image>')
@@ -153,10 +125,6 @@ for (const file of readdirSync(abs('src/renderer'), { recursive: true })) {
   )
 }
 
-/* ───────────────── 6. 启动画面 CSS 不得覆盖真源几何属性 ───────────────── */
-
-/* 表现属性优先级最低，CSS 一旦声明同名属性就会盖过真源投影，因此启动画面的
- * 样式规则只能负责配色/尺寸/动画。 */
 const BOOT_RULE_RE = /\.boot[a-z-]*[^{}]*\{([^}]*)\}/g
 for (const rel of ['src/renderer/src/design/base.css', 'src/renderer/src/styles/motion.css']) {
   const css = read(rel)

@@ -1,11 +1,3 @@
-/**
- * 设置 → 数据（v3）。
- *
- * 数据位置与移动接 `window.yan.storage`（移动是危险动作：先选目录，再点一次
- * 明确的「迁移并重启」才提交），备份与校验接 `window.yan.backup`，
- * 打开位置接 `window.yan.revealPath`，会话导出复用 `window.yan.sync.exportSession`。
- * 没有后端的能力（比如内建许可清单）不伪造。
- */
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import type { StorageInfoView } from '../../../../../shared/ipc'
@@ -21,7 +13,6 @@ export interface StorageFactsProps {
   text: GeneralText
 }
 
-/** 数据位置摘要（纯展示件，便于 SSR 断言）。 */
 export function StorageFacts({ info, text }: StorageFactsProps): ReactElement {
   if (!info) {
     return (

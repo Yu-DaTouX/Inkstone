@@ -1,12 +1,3 @@
-/**
- * 设置 → 上下文 + 用量图表（v3 WP-42）的局部检查。
- *
- * 不启动 Electron / 不读用户设置 / 不调模型：
- *   1. 用 esbuild 编译纯逻辑（上下文阈值、用量图表分组、旧深链接映射、文案键）；
- *   2. 静态检查上下文页仍用 v3 原语与现有 store 动作，没引入 v2 旧组件 / 旧样式。
- *
- * 可独立执行：node scripts/test-v3-context-settings.mjs
- */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -26,7 +17,6 @@ async function loadTs(rel) {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 }
 
-/* ── 1. 上下文阈值与档位（纯逻辑，与随包扩展同一公式） ───────── */
 const limits = await loadTs('../src/shared/context-limits.ts')
 const { CONTEXT_TRIM_STEPS, AUTO_COMPACT_STEPS, DEFAULT_CONTEXT_TRIM_TOKENS, DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt, contextTrimAt, pickTokenStep } = limits
 assert.deepEqual([...CONTEXT_TRIM_STEPS], [50_000, 80_000, 120_000], '裁剪档位与随包扩展一致')
@@ -39,7 +29,6 @@ assert.equal(contextTrimAt(80_000, 0), 80_000, '窗口未知时用设置值')
 assert.equal(pickTokenStep(250_000, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS), 250_000, '档位内的非缺省值保留')
 assert.equal(pickTokenStep(400_000, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS), undefined, '等于缺省值不写入设置')
 
-/* ── 2. 用量分组（纯逻辑） ─────────────────────────────────── */
 const usage = await loadTs('../src/renderer/src/features/settings/usage/usage-model.ts')
 const { USAGE_DIMENSIONS, DAILY_MAX_DAYS, usageBars, dailyEntries } = usage
 assert.deepEqual([...USAGE_DIMENSIONS], ['day', 'model', 'project'], '三个分组维度：按日 / 按模型 / 按项目')
@@ -67,7 +56,6 @@ assert.equal(dailyEntries(heat, '30d').length, 30, '近 30 天取尾部 30 项')
 assert.equal(dailyEntries(heat, 'all').length, 30, '全部也夹在最多 30 天')
 assert.equal(dailyEntries([], 'all').length, 0, '没有热度数据时返回空')
 
-/* ── 3. 旧深链接 context 迁到 v3 上下文分区 ───────────────── */
 const types = await loadTs('../src/renderer/src/features/settings/types.ts')
 const { resolveLegacyView, isSettingsSectionId, SETTINGS_SECTIONS } = types
 assert.deepEqual(
@@ -78,7 +66,6 @@ assert.deepEqual(
 assert.equal(isSettingsSectionId('context'), true, 'context 是 v3 分区')
 assert.deepEqual(resolveLegacyView('context'), { kind: 'section', view: 'context', section: 'context' }, '旧深链接 context 落到上下文分区')
 
-/* ── 4. 文案两语齐全且占位符一致 ──────────────────────────── */
 const textMod = await loadTs('../src/renderer/src/features/settings/settings-text.ts')
 const zh = textMod.settingsText('zh-CN')
 const en = textMod.settingsText('en-US')
@@ -91,7 +78,6 @@ for (const key of ['sectionContext', 'contextAutoCompact', 'contextCompactAt', '
 assert.ok(zh.contextNote.includes('pi'), '上下文说明写明压缩是 pi 原生')
 assert.ok(!/isSelected|checked/.test(zh.contextAutoCompact), '文案键不含控件属性')
 
-/* ── 5. 上下文页源码契约（静态） ───────────────────────────── */
 const ctx = readFileSync(here('../src/renderer/src/features/settings/context/ContextSettings.tsx'), 'utf8')
 for (const id of ['v3-context-settings', 'v3-ctx-compact-now', 'v3-ctx-used', 'v3-ctx-window']) {
   assert.ok(ctx.includes(id), `上下文页保留测试 id ${id}`)
@@ -108,7 +94,6 @@ assert.ok(ctx.includes('isSelected'), '开关用 RAC 的 isSelected 受控属性
 assert.ok(!ctx.includes('checked='), '不混用 v2 的 checked 属性')
 assert.ok(!ctx.includes('window.yan'), '上下文页不新增 IPC 调用')
 
-/* ── 6. 根页挂载上下文分区 ────────────────────────────────── */
 const root = readFileSync(here('../src/renderer/src/features/settings/root/SettingsPage.tsx'), 'utf8')
 assert.ok(root.includes('ContextSettings'), '根页引用上下文分区组件')
 assert.ok(root.includes("section === 'context'"), '根页渲染上下文分支')

@@ -1,11 +1,3 @@
-/**
- * 技能自接入：GitHub 发现 → 限时批准面板 → 本次会话 / 我的技能（cost 0，不调用模型）。
- *
- * 真实 renderer 经 `window.yan.runBash` 调真实 CLI，宿主从 anthropics/skills 取固定提交的
- * 技能，批准请求进入真实问题面板。依次验证：选「仅本次会话使用」→ 落进会话目录；
- * 点「跳过」→ 不安装；不答复 → 到时自动跳过；设置页分类与「保留到我的技能」。
- * 需要能访问 GitHub；离线时整条跳过，不记成通过。
- */
 ;(async () => {
   const out = []
   const ok = (cond, label, extra = '') => {
@@ -47,7 +39,7 @@
   const lastJson = (text) => {
     const lines = String(text).split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith('{'))
     for (let index = lines.length - 1; index >= 0; index -= 1) {
-      try { return JSON.parse(lines[index]) } catch { /* 往前找 */ }
+      try { return JSON.parse(lines[index]) } catch { }
     }
     return null
   }

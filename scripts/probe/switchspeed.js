@@ -1,7 +1,3 @@
-/*
- * 切换会话耗时：逐个切到列表里的会话，量「点击 → 第一批消息画出来」与「peek IPC」两段。
- * 只测量不断言，按文件大小从大到小，用于改动前后对比。
- */
 ;(async () => {
   const out = []
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

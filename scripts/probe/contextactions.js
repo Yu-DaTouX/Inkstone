@@ -1,18 +1,3 @@
-/**
- * 三类整理动作（实施-11 C-2b）的界面回归网。
- *
- * 这一片要修的问题：界面过去只有 pi 的「最近一次压缩」，
- * 而 `tool-sweep`（清扫）与 `episode-fold`（状态刷新）**不产生** pi 事件 ——
- * 「清扫跑了、状态刷新没跑」与「两个都没跑」在界面上完全同形。
- *
- * 探针职责（真实 Electron + 真实主进程 IPC）：
- *   ① 三行**都在**、顺序固定、各有自己的 testid（不合并成一句“整理过”）；
- *   ② 压缩行的口径来自 pi 事件而不是本地账本（没有记录时写「未发生」，不编造）；
- *   ③ 界面拿到的账本 = `window.yan.contextActions()` 的那一份（界面数 = 主进程数，
- *      与 `contextBudget` 同一口径约定），不是渲染端自己算的副本。
- *
- * 不花 token：不跑模型，只读账本与既有会话状态。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -43,17 +28,12 @@
 
   const sec = q('[data-testid="rp-context"]')
   if (!sec) return '✗ 找不到上下文分区'
-  /*
-   * 分区行里第一个 `button` 现在是拖拽把手（.rp-grip，没有 aria-expanded），
-   * 折叠头是 `.rp-sec-head` —— 必须点名它，否则永远展不开上下文分区。
-   */
   const head = sec.querySelector('.rp-sec-head')
   if (head && head.getAttribute('aria-expanded') === 'false') {
     head.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(200)
   }
 
-  /* ---- 1. 详情展开：三类整理分组必须存在 ---- */
   out.push('=== 1. 三类分开显示 ===')
   const toggle = q('[data-testid="ctx-details-toggle"]')
   if (!toggle) return '✗ 找不到上下文详情开关'
@@ -75,7 +55,6 @@
     '两行不是同一份文案的复制（各自有自己的次数与细节）'
   )
 
-  /* ---- 2. 界面读数 = 主进程读数 ---- */
   out.push('')
   out.push('=== 2. 界面数 = 主进程数 ===')
   const ledger = await window.yan.contextActions()
@@ -103,7 +82,6 @@
     '清扫行一定有明确的次数或「未发生」'
   )
 
-  /* ---- 3. 压缩行不编造：没有 pi 记录时写「未发生」 ---- */
   out.push('')
   out.push('=== 3. 压缩行来自 pi 事件 ===')
   const compactionRow = q('[data-testid="ctx-action-compaction"]')
@@ -117,7 +95,6 @@
     )
   }
 
-  /* 收尾：折叠回去，不给后面的场景留展开态 */
   q('[data-testid="ctx-details-toggle"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   await sleep(150)
 

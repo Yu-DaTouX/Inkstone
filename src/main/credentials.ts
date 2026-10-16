@@ -1,51 +1,12 @@
-/**
- * 模型接入 —— 读/写 pi 的凭证，让用户在桌面端就能配 API key。
- *
- * ══════════════════════════════════════════════════════════════════
- * 凭证从哪来（pi 的实际机制，读 docs/providers.md 得到）
- * ══════════════════════════════════════════════════════════════════
- * 解析顺序（后面覆盖前面）：
- *   ① 环境变量（如 `DEEPSEEK_API_KEY`）
- *   ② `~/.pi/agent/auth.json`（**优先于环境变量**）
- *
- * auth.json 的形状：
- * ```json
- * {
- *   "commandcode": { "type": "api_key", "key": "user_..." },
- *   "deepseek":    { "type": "api_key", "key": "sk-..." }
- * }
- * ```
- * OAuth 订阅（ChatGPT Plus/Pro、Claude Pro/Max、GitHub Copilot、xAI、
- * OpenRouter、Radius）的 token 也存这里，形状是
- * `{ type:'oauth', access, refresh, expires, accountId }`。
- * 本模块只管**读写与状态展示**；ChatGPT 的登录流程在 `src/main/oauth.ts`，
- * 其余几家由 `src/main/oauth-providers.ts` 驱动随包 pi 的登录模块，都在应用内完成。
- *
- * ══════════════════════════════════════════════════════════════════
- * 为什么要写这个（而 README 里说「不碰 pi 的 settings.json」）
- * ══════════════════════════════════════════════════════════════════
- * settings.json 是**行为配置**（工具开关、主题等），桌面端去改会污染 TUI 的体验。
- * 而 auth.json 是**凭证**，它本来就是一个「用户手动往里放 key」的文件，
- * 桌面端提供输入框只是把它变成 GUI —— 与 TUI 的 `/login` 是同一件事。
- * 而且写入时会**合并**（不会碰其它 provider 的条目）。
- */
 import { readFile, mkdir, stat, readdir, realpath, rmdir, utimes, open, rename, unlink } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import type { AuthProviderInfo, AuthStatus, FileListingStatus, FileRequestContext, PathCompletionResult } from '../shared/ipc'
 import { PI_AGENT_DIR } from './paths'
 
-/**
- * pi 的凭证文件。
- *
- * ⚠️ `YAN_PI_DIR` 可覆盖 —— **测试必须用隔离目录**。
- *   这个项目已经因为「测试写真实用户数据」踩过两次（会话目录、记忆文件）。
- *   auth.json 里是用户的**真实密钥**，写坏了比那两个严重得多。
- */
 const PI_DIR = PI_AGENT_DIR
 const AUTH_FILE = join(PI_DIR, 'auth.json')
 
-/** 只供主进程服务使用；密钥绝不跨 IPC 返回渲染层。 */
 export async function resolveProviderSecret(provider: string): Promise<string | undefined> {
   const envNames: Record<string, string> = {
     openrouter: 'OPENROUTER_API_KEY',
@@ -62,17 +23,10 @@ export async function resolveProviderSecret(provider: string): Promise<string | 
     else if (entry && typeof entry.key === 'string') fromFile = entry.key
     else if (entry && typeof entry.access === 'string') fromFile = entry.access
     else if (entry && typeof entry.access_token === 'string') fromFile = entry.access_token
-  } catch { /* 未配置 */ }
+  } catch { }
   return fromFile || process.env[envNames[provider] ?? '']
 }
 
-/**
- * ChatGPT（Codex）订阅的 account id。
- *
- * 它的用量接口要求 `chatgpt-account-id` 头，而这个值只存在 auth.json 的
- * OAuth 条目里（与 access token 同源），所以放在这里统一读 ——
- * 不让 quota.ts 自己再拼一遍路径（那样两处迟早会读到不同的文件）。
- */
 export async function resolveCodexAccountId(): Promise<string | undefined> {
   try {
     const data = JSON.parse(await readFile(AUTH_FILE, 'utf8')) as Record<string, unknown>
@@ -83,18 +37,7 @@ export async function resolveCodexAccountId(): Promise<string | undefined> {
   }
 }
 
-/**
- * 接入方式一览。
- *
- * 数据来源：pi 的 `docs/providers.md`（订阅表 + API key 表）。
- * 这里**刻意只放常见的**，不放全部 35 个 —— 一屏能读完比「完整」有用。
- * 其余 provider 依然可用（pi 自己认识它们），只是不在这里给引导。
- *
- * 只给 id / 名称 / 环境变量这些**数据**：给人读的说明与括号注在渲染端的 i18n
- *（`auth.name.*` / `auth.hint.*`），因为主进程不知道界面语言。
- */
 const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
-  // ---- 订阅制（OAuth，应用内登录；pi 的 /login 仍可用） ----
   {
     id: 'openai-codex',
     name: 'ChatGPT Plus / Pro',
@@ -102,7 +45,6 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     envVar: '',
     authKey: '',
     loginCmd: 'pi',
-    /** 只有它支持在应用内直接登录（见 src/main/oauth.ts，参数抄自 pi）。 */
     inAppLogin: true
   },
   {
@@ -134,7 +76,6 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     inAppLogin: true
   },
 
-  // ---- API key ----
   {
     id: 'commandcode',
     name: 'Command Code',
@@ -145,7 +86,6 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
   { id: 'deepseek', name: 'DeepSeek', kind: 'api_key', envVar: 'DEEPSEEK_API_KEY', authKey: 'deepseek' },
   { id: 'openai', name: 'OpenAI', kind: 'api_key', envVar: 'OPENAI_API_KEY', authKey: 'openai' },
   { id: 'google', name: 'Google Gemini', kind: 'api_key', envVar: 'GEMINI_API_KEY', authKey: 'google' },
-  /* pi 没有这个 provider：key 只供宿主的生图通道使用（Seedream） */
   { id: 'volcengine-ark', name: '火山方舟（豆包）', kind: 'api_key', envVar: 'ARK_API_KEY', authKey: 'volcengine-ark' },
   { id: 'zai-coding-cn', name: 'ZAI 编程套餐（国内）', kind: 'api_key', envVar: 'ZAI_CODING_CN_API_KEY', authKey: 'zai-coding-cn' },
   { id: 'kimi-coding', name: 'Kimi For Coding', kind: 'api_key', envVar: 'KIMI_API_KEY', authKey: 'kimi-coding' },
@@ -160,10 +100,7 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
   { id: 'openrouter-key', name: 'OpenRouter（API key）', kind: 'api_key', envVar: 'OPENROUTER_API_KEY', authKey: 'openrouter' }
 ]
 
-/** 宿主自己使用、pi 不认识的凭证（深查时不问 pi） */
 const HOST_ONLY_PROVIDERS = new Set(['volcengine-ark'])
-
-/* ------------------------------------------------------------------ 读写 */
 
 async function readAuth(): Promise<Record<string, unknown>> {
   let raw: string
@@ -195,23 +132,12 @@ async function writeAuthAtomic(data: Record<string, unknown>): Promise<void> {
   }
 }
 
-/** 读一条凭证原样返回（主进程内部用，不跨 IPC）。 */
 export async function readAuthEntry(provider: string): Promise<unknown> {
   return (await readAuth())[provider]
 }
 
-/*
- * auth.json 的文件锁：与 pi 同一把（proper-lockfile 的约定：在旁边建 `auth.json.lock` 目录，
- * mkdir 成功即持有，超过 10 秒没更新 mtime 视为残留）。pi 刷新 OAuth token 时持这把锁，
- * 所以宿主的读改写必须也持锁，否则可能把 pi 刚写的新 token 盖掉。
- *
- * 两条容易出错的细节（踩过就会两边同时写）：
- *   · 持锁期间必须持续刷新 mtime —— 否则宿主自己写超过 10 秒会被 pi 当成残留锁删掉；
- *   · 抢残留锁前要再确认一次 mtime 没变 —— 否则可能删掉另一个进程刚好在刷新的锁。
- */
 const AUTH_LOCK = `${AUTH_FILE}.lock`
 const AUTH_LOCK_STALE_MS = 10_000
-/** 持锁期间刷新 mtime 的间隔，必须明显小于 stale 阈值 */
 const AUTH_LOCK_TOUCH_MS = 2_500
 const AUTH_LOCK_WAIT_MS = 5_000
 const AUTH_LOCK_POLL_MS = 60
@@ -224,7 +150,6 @@ async function lockMtimeMs(): Promise<number | null> {
   }
 }
 
-/** 获取 auth.json 的写锁；返回释放函数 */
 async function acquireAuthLock(): Promise<() => Promise<void>> {
   const deadline = Date.now() + AUTH_LOCK_WAIT_MS
   for (;;) {
@@ -236,7 +161,6 @@ async function acquireAuthLock(): Promise<() => Promise<void>> {
     }
     const firstSeen = await lockMtimeMs()
     if (firstSeen !== null && Date.now() - firstSeen > AUTH_LOCK_STALE_MS) {
-      /* 第二次确认：mtime 在这一瞬没有变化，才当残留锁收回 */
       const confirmed = await lockMtimeMs()
       if (confirmed !== null && confirmed === firstSeen) {
         await rmdir(AUTH_LOCK).catch(() => undefined)
@@ -257,12 +181,6 @@ async function acquireAuthLock(): Promise<() => Promise<void>> {
   }
 }
 
-/**
- * 持锁读改写 auth.json。`fn` 直接修改传入的对象，`write: false` 表示不用写回。
- *
- * **auth.json 的所有写入都应经这里**（合并一条凭证、退出登录、切换账号）——
- * 只给其中一条路径加锁，另一条照旧读写，并发时还是会把对方刚写的内容盖掉。
- */
 export async function updateAuthFile<T>(
   fn: (data: Record<string, unknown>) => { write: boolean; result: T } | Promise<{ write: boolean; result: T }>
 ): Promise<T> {
@@ -278,14 +196,6 @@ export async function updateAuthFile<T>(
   }
 }
 
-/**
- * 写入一个 provider 的凭证。
- *
- * **合并**写入：只动这一个 key，其它 provider 的条目原样保留 ——
- * 否则用户配第二个 provider 时会把第一个弄丢。全部经持锁的 `updateAuthFile`
- *（见那里的注释），与 pi 的 token 刷新、与设置页的其它写入互斥。
- * 文件权限尽量设 0600（与 pi 一致；Windows 上这个位不生效，但不报错）。
- */
 function validProviderId(provider: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(provider) && !['__proto__', 'prototype', 'constructor'].includes(provider)
 }
@@ -298,14 +208,6 @@ export async function setApiKey(provider: string, key: string): Promise<{ ok: bo
   return mergeAuthEntry(id, { type: 'api_key', key: val })
 }
 
-/**
- * 合并写入一条凭证（任何形状：api_key / oauth）。
- *
- * OAuth 也用它 —— `src/main/oauth.ts` 登录完把 pi 期望的
- * `{ type:'oauth', access, refresh, expires, accountId }` 写进同一个 key。
- * 两边的写入路径**共用这一个函数**，免得以后只改一处导致其中一条路把别人的
- * 凭证抹掉。
- */
 export async function mergeAuthEntry(provider: string, value: unknown, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }> {
   if (!validProviderId(provider)) return { ok: false, error: 'provider 名称无效' }
   try {
@@ -320,7 +222,6 @@ export async function mergeAuthEntry(provider: string, value: unknown, signal?: 
   }
 }
 
-/** 移除一个 provider 的凭证（界面上就是「退出登录」） */
 export async function clearAuth(provider: string): Promise<{ ok: boolean; error?: string }> {
   if (!validProviderId(provider)) return { ok: false, error: 'provider 名称无效' }
   try {
@@ -335,17 +236,6 @@ export async function clearAuth(provider: string): Promise<{ ok: boolean; error?
   }
 }
 
-/* ------------------------------------------------------------ 状态查询 */
-
-/**
- * 问 pi 这个 provider 能不能用。
- *
- * 用 `pi auth check --provider X --json` —— 它比我们自己判断可靠：
- * 它会**刷新过期的 OAuth token**（这正是订阅制最需要的），
- * 也会认 provider 的平台差异（比如部分 provider 只看环境变量）。
- *
- * 失败一律降级为「未知」，绝不因此让界面报错 —— 状态查询是辅助信息。
- */
 function checkViaPi(
   piCmd: string,
   piArgs: string[],
@@ -375,18 +265,6 @@ function checkViaPi(
   })
 }
 
-/**
- * 列出所有接入方式 + 各自状态。
- *
- * ⚠️ 逐个 `pi auth check` 会**起 N 个 pi 进程**（实测 19 项 ≈ 1.1s）。
- * 所以默认只对比 auth.json（0ms）；查 pi 是可选的（`deep: true`），
- * 界面用「重新检测」按钮触发。
- *
- * ⚠️ 重要：也要把**已配置但不在目录里**的 provider 列出来。
- * 本会话踩过：用户已有 `commandcode` 凭证、对话完全正常，
- * 但界面显示「0/N 已就绪」——因为那个 provider 不在我的小目录里。
- * 那会让人以为「什么都没配上」而去乱改配置。
- */
 export async function listAuthProviders(
   pi: { cmd: string; args: string[] },
   deep = false
@@ -398,16 +276,6 @@ export async function listAuthProviders(
     if (o && (o.key || o.type === 'oauth')) configured.add(k)
   }
 
-  /*
-   * 环境变量里的 key 也算已配置。
-   *
-   * ⚠️ 这里原本**完全没看 envVar** —— CATALOG 里每一项都写了 envVar，
-   * 但那列声明一直没人用。后果：用 `ANTHROPIC_API_KEY` 之类环境变量配好的
-   * 用户，界面上显示「还没配置」，引导页第 2 步也会卡住（用户报过）。
-   *
-   * 只有**非空**才算；空字符串/纯空白视为没设（Windows 上很容易
-   * 留下 `set X=` 这种空值）。
-   */
   const fromEnv = (name: string): boolean => {
     if (!name) return false
     const v = process.env[name]
@@ -424,13 +292,6 @@ export async function listAuthProviders(
     return { ...c, status: 'missing' as const }
   })
 
-  /*
-   * 把已配置但不在目录里的补上。
-   *
-   * 为什么值得做：pi 支持 35+ 个 provider，我们只列常见的十几个。
-   * 用户如果用了别的（或自定义的），至少要让他在界面上看到
-   * 「这个已经配好了」，而不是一脸茫然。
-   */
   const known = new Set<string>()
   for (const c of CATALOG) {
     if (c.authKey) known.add(c.authKey)
@@ -451,7 +312,6 @@ export async function listAuthProviders(
 
   if (!deep) return base
 
-  // 深查保留 UI 可见等待状态；宿主同时最多启动 3 个 pi 子进程，避免一口气并发启动全部 provider。
   const results = new Array<AuthProviderInfo>(base.length)
   let cursor = 0
   const workers = Array.from({ length: Math.min(3, base.length) }, async () => {
@@ -459,27 +319,9 @@ export async function listAuthProviders(
       const index = cursor++
       const c = base[index]
       results[index] = await (async () => {
-      /*
-       * 探测用的名字：
-       *   · 目录里的自定义项 → 直接用 id（它就是 auth.json 的键）
-       *   · 订阅制 → 也是 c.id：这几个 id 就是 pi 真实的 provider 名
-       *     （openai-codex / anthropic / github-copilot / xai / openrouter）
-       *   · API key → 用 authKey
-       *
-       * ⚠️ 这里曾经把订阅制的 `openai-codex` 改写成 `openai` 再去问 pi，
-       *    依据是「-codex 是我自己加的后缀」。但那是错的：pi 的 provider
-       *    的确叫 `openai-codex`，而 `openai` 是另一条路（OpenAI API key）。
-       *    后果：已登录 ChatGPT Plus 的用户一点「重新检测」，深查问到
-       *    没配 key 的 `openai` 上 → 返回 not_ready → 界面从「已就绪」
-       *    翻转成「未配置」，还提示去 /login 重新登录。别再把这个后缀
-       *    替换加回来。
-       */
-      /* 只给宿主用的 key pi 不认识，问 pi 只会得到「未配置」 */
       if (HOST_ONLY_PROVIDERS.has(c.id)) return c
-      /* 目录外的自定义项（name 就是 auth.json 的键）直接用 id 去问 */
       const probeId = c.kind === 'subscription' || c.name === c.id ? c.id : c.authKey || c.id
       const r = await checkViaPi(pi.cmd, pi.args, probeId)
-      // pi 说 ready / 说缺 → 以 pi 为准（它会考虑环境变量）
       if (r.status === 'ready') return { ...c, status: 'ready' as const }
       if (r.status === 'missing') return { ...c, status: 'missing' as const }
       return c
@@ -490,7 +332,6 @@ export async function listAuthProviders(
   return results
 }
 
-/** auth.json 是否存在、有多少条（界面上用来提示「凭证放在哪」） */
 export async function authFileInfo(): Promise<{ path: string; exists: boolean; count: number }> {
   try {
     await stat(AUTH_FILE)
@@ -501,21 +342,6 @@ export async function authFileInfo(): Promise<{ path: string; exists: boolean; c
   }
 }
 
-/* `@` 文件引用补全 */
-
-/**
- * 列出与 `prefix` 匹配的路径（**只读一层目录**）。
- *
- * ⚠️ 为什么不递归扫整个项目：
- *   仓库里动较几万个文件，扫一遍慢、占内存、还会碰到权限问题。
- *   而补全只需要「用户已打出的这段前缀接下来可能是什么」——
- *   那是**一层 readdir** 的事。
- *
- * `@src/ma` → 读 <cwd>/src/，返回以 `ma` 开头的条目。
- *
- * 安全：只允许在 `cwd` 内读，且跳过 node_modules / .git ——
- *   （它们是噪声，而且巨大）。
- */
 export async function completePath(
   cwd: string,
   prefix: string,
@@ -536,7 +362,6 @@ export async function completePath(
   const dirPart = slash >= 0 ? raw.slice(0, slash) : ''
   const namePart = (slash >= 0 ? raw.slice(slash + 1) : raw).toLowerCase()
 
-  // 拒绝跳出 cwd 的路径（`..`、绝对路径）
   if (dirPart.split(/[\\/]+/).includes('..') || /^[A-Za-z]:/.test(dirPart) || dirPart.startsWith('/')) return result('invalid')
 
   let root: string
@@ -552,7 +377,6 @@ export async function completePath(
   if (baseKey !== rootKey && !baseKey.startsWith(rootKey + '/')) return result('invalid')
   try {
     const realBase = await realpath(base)
-    /* 不允许通过 symlink / junction 把补全目录带到工作区外或换到另一棵树。 */
     const realKey = realBase.replace(/[\\/]+/g, '/').toLowerCase()
     if (realKey !== rootKey && !realKey.startsWith(rootKey + '/')) return result('invalid')
     if (realKey !== baseKey) return result('invalid')
@@ -561,8 +385,8 @@ export async function completePath(
     const files: string[] = []
     for (const e of entries) {
       if (e.name === 'node_modules' || e.name === '.git' || e.name === '.svn' || e.name === '.hg') continue
-      if (e.name.startsWith('.')) continue // 隐藏文件（大多是噪声）
-      if (e.isSymbolicLink()) continue // 不把符号链接 / 目录联接暴露成可补全路径
+      if (e.name.startsWith('.')) continue
+      if (e.isSymbolicLink()) continue
       if (namePart && !e.name.toLowerCase().startsWith(namePart)) continue
       const rel = (dirPart ? dirPart + '/' : '') + e.name + (e.isDirectory() ? '/' : '')
       if (e.isDirectory()) dirs.push(rel)

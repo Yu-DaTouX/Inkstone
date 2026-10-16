@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * 并排视图分隔条消费正式 `ui/Splitter` 原语的定向小检查。
- *
- * 覆盖三件能在无窗口、无构建时可靠验证的事：
- *   1. 纯换算 `app/split-resizer-model.ts`：像素 ↔ 份额、夹取范围、首帧回退、
- *      窗口变化按比例、极窄退化、两列合计份额不变、方向键步长（旧 24px 语义）；
- *   2. mockResizeObserver：绑定相邻两列时首帧先读一次、窗口变化复读、卸载断开、
- *      缺列不观察；没有 ResizeObserver 的环境只保留首次读取；
- *   3. 用 esbuild 转译真实 `ui/index.ts`，经 `react-dom/server` 按模型算出的像素
- *      value/min/max 渲染 Splitter，核对原语承接的是像素与 aria 值；
- *      并静态核对调用点 `SideBySide.tsx` / `SideBySide.css` 只适配、不复刻交互与外观。
- *
- * 它**不**启动 Electron / 浏览器、不拖动、不读用户数据、不调用模型，也不做视觉
- * 验收；通过只代表接线与换算正确，真实指针捕获与外观仍以运行结果为准。
- *
- * 用法：node scripts/test-v3-side-by-side-resize.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -34,8 +17,6 @@ const ok = (condition, label) => {
   console.log(`✓ ${label}`)
 }
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps
-
-/* ------------------------------------------------------------------ 1. 纯比例 */
 
 const modelSrc = resolve(ROOT, 'src/renderer/src/app/split-resizer-model.ts')
 const modelBundle = await build({
@@ -65,14 +46,12 @@ const {
 ok(MIN_COLUMN === 300, '最小列宽沿用 v3 原有 300px')
 ok(KEY_STEP === 24, '方向键步长沿用旧 24px')
 
-/* 首帧：还没量到 DOM 时不能凭空当作 1px = 1% */
 ok(samePair(measurePair(600, 400), { left: 600, total: 1000 }), '首帧读取：两列像素宽得到 left/total')
 ok(samePair(measurePair(Number.NaN, -5), { left: 0, total: 0 }), '非法像素宽归一为 0，不产生 NaN')
 ok(pairBounds(0).min === 0 && pairBounds(0).max === 0, '未测量时范围收成 0，原语不会拖出数值')
 ok(leftPxForWeights(1, 1, { left: 0, total: 0 }) === 0, '未测量时像素显示值退回下界')
 ok(samePair(null, null) === false, 'null 度量不算相同')
 
-/* 拖动范围：正常 / 临界 / 极窄 / 非法 */
 {
   const normal = pairBounds(1000)
   ok(normal.min === MIN_COLUMN && normal.max === 1000 - MIN_COLUMN, '正常宽度范围 = [最小列宽, 合计−最小列宽]')
@@ -83,13 +62,11 @@ ok(samePair(null, null) === false, 'null 度量不算相同')
   ok(pairBounds(Number.POSITIVE_INFINITY).max === 0, '非法合计宽退回 0 范围')
 }
 
-/* 夹取 */
 ok(clampPairValue(250, { min: 300, max: 700 }) === 300, '低于下界夹到下界')
 ok(clampPairValue(900, { min: 300, max: 700 }) === 700, '高于上界夹到上界')
 ok(clampPairValue(500, { min: 300, max: 700 }) === 500, '范围内原样')
 ok(clampPairValue(Number.NaN, { min: 300, max: 700 }) === 300, '非有限值退回下界')
 
-/* 像素 → 份额：两列合计份额不变，其余列不受影响 */
 {
   const w = weightsForLeft(600, 1000, 2)
   ok(near(w.left, 1.2) && near(w.right, 0.8), '按新左列像素宽比例分配合计份额')
@@ -104,7 +81,6 @@ ok(clampPairValue(Number.NaN, { min: 300, max: 700 }) === 300, '非有限值退�
   ok(Number.isFinite(badShare.left) && Number.isFinite(badShare.right), '非法份额不产生 NaN')
 }
 
-/* 旧 ratio 语义：份额 = share × next / total（窗口变化时仍按比例） */
 {
   const total = 1000
   const share = 2
@@ -117,7 +93,6 @@ ok(clampPairValue(Number.NaN, { min: 300, max: 700 }) === 300, '非有限值退�
   ok(near(shrunk, 800 * (w.left / (w.left + w.right))), '窗口变窄后仍按同一比例，不放大绝对像素')
 }
 
-/* 键盘：每按一下 24px，经同一换算，端点夹取 */
 {
   const total = 1000
   const share = 2
@@ -131,7 +106,6 @@ ok(clampPairValue(Number.NaN, { min: 300, max: 700 }) === 300, '非有限值退�
   ok(near(weightsForLeft(0, total, share).right, share), '在另一端点继续按方向键被夹到最小份额')
 }
 
-/* 两列合计 + 其余列不动：合计份额的守恒在所有采样点成立 */
 for (const [leftPx, total, share] of [
   [0, 1000, 3],
   [321, 1000, 3],
@@ -143,8 +117,6 @@ for (const [leftPx, total, share] of [
   const w = weightsForLeft(leftPx, total, share)
   ok(near(w.left + w.right, share), `合计份额守恒：leftPx=${leftPx} total=${total}`)
 }
-
-/* ------------------------------------------------------------------ 2. mockResizeObserver */
 
 const fakeEl = (width) => ({ getBoundingClientRect: () => ({ width }) })
 const makeHost = (left, right) => ({ previousElementSibling: left, nextElementSibling: right })
@@ -210,8 +182,6 @@ ok(
   typeof readPair(makeHost(fakeEl(100), fakeEl(50))) === 'object',
   'readPair 可直接读取一对像素'
 )
-
-/* ------------------------------------------------------------------ 3. SSR + 调用点静态核对 */
 
 function installGlobals() {
   const storage = new Map()
@@ -298,7 +268,6 @@ try {
   )
   ok(firstFrame.includes('aria-valuenow="0"'), '首帧未测量时原语值为 0，不崩、不自造比例')
 
-  /* 调用点静态核对：交互只经原语，wrapper 不重复绑事件 */
   const sideBySide = await READ('src/renderer/src/app/SideBySide.tsx')
   ok(/from '\.\.\/ui'/.test(sideBySide) && /\bSplitter\b/.test(sideBySide.split("from '../ui'")[0]), 'SideBySide 从正式 ../ui 出口导入 Splitter')
   ok(sideBySide.includes("from './split-resizer-model'"), 'SideBySide 通过 split-resizer-model 做像素↔份额换算')

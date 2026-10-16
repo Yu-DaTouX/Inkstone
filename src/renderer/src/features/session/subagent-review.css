@@ -1,10 +1,4 @@
 @layer features {
-  /*
-   * 子 Agent worktree 审阅控件的版面与层级（WP-27b）。
-   *
-   * 控件外观（按钮）仍归 ui/；这里只画审阅区自己的排布、状态字与 diff 容器。
-   * 颜色只取 design/tokens.css 的变量，不新造颜色。
-   */
 
   .v3-subagent-review {
     display: flex;
@@ -40,7 +34,6 @@
     overflow-wrap: anywhere;
   }
 
-  /* diff 容器给出确定高度，DiffView 自身按 100% 填充并内部滚动。 */
   .v3-subagent-review-diff {
     display: flex;
     flex-direction: column;
@@ -57,7 +50,6 @@
     padding: var(--s-8);
   }
 
-  /* ---- 明确确认 ---- */
   .v3-subagent-review-modal {
     width: min(32rem, calc(100vw - 3rem));
   }

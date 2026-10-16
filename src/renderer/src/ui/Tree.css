@@ -1,12 +1,3 @@
-/*
- * v3 Tree 原语外观（WP-05）。
- *
- * 只放控件外观：行高、缩进、悬停 / 选中 / 禁用、展开箭头、标签截断与空态。
- * 颜色、间距、圆角、字号、时长一律取 `design/tokens.css` 的变量，不写死色值。
- * 层级缩进读 RAC 写在行上的 `--tree-item-level`；同一控件在深浅主题与三档密度下
- * 都只改令牌不改结构。焦点环与 `ui.css` 的共享规则同值（2px `--accent`、外偏移 2px），
- * 这里自带一份，保证组件独立加载时仍可用。
- */
 @layer primitives {
   .ui-tree {
     display: flex;
@@ -18,7 +9,6 @@
     font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
   }
 
-  /* 空态：给 `renderEmptyState` 的内容一块可读的落点，不画大插图。 */
   .ui-tree[data-empty] {
     justify-content: center;
     min-height: calc(var(--d-row) * 3);
@@ -42,7 +32,6 @@
     gap: var(--s-6);
     min-width: 0;
     min-height: var(--d-row);
-    /* 层级缩进：RAC 在行上写入 --tree-item-level（1 起）；第 1 层留基础内边距。 */
     padding-inline: calc(var(--s-8) + (var(--tree-item-level, 1) - 1) * var(--s-16)) var(--s-8);
     border-radius: var(--r-sm);
     color: var(--fg);
@@ -58,7 +47,6 @@
     opacity: 0.5;
   }
 
-  /* 与 ui.css 共享焦点环同值：2px 强调色、外偏移 2px。 */
   .ui-tree__item[data-focus-visible],
   .ui-tree__chevron[data-focus-visible] {
     outline: 2px solid var(--accent);
@@ -94,7 +82,6 @@
   .ui-tree__item[data-expanded] .ui-tree__chevron > svg {
     transform: rotate(90deg);
   }
-  /* 叶子行隐藏箭头但保留占位，标签与可展开行对齐。 */
   .ui-tree__item:not([data-has-child-items]) .ui-tree__chevron {
     visibility: hidden;
   }
@@ -121,7 +108,6 @@
     text-wrap: pretty;
   }
 
-  /* 减少动态效果：与 ui.css 的全局规则同义，单独兜底。 */
   @media (prefers-reduced-motion: reduce) {
     .ui-tree__item,
     .ui-tree__chevron > svg {

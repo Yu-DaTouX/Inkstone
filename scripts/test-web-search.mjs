@@ -1,14 +1,3 @@
-/**
- * 「兼容搜索能力」判定（`src/shared/web-search.ts`，实施-07 S4）的单测。
- *
- * 为什么值得单测：这一片的出口是**有则出现、无则隐藏**。判松了入口会在没有
- * 搜索服务的机器上出现（用户点下去只能得到一个空头承诺），判紧了这个功能
- * 永远不可达。两条都不需要真实 MCP 服务就能钉住 —— 判定是纯函数。
- *
- * 最要紧的一条边界：**内置的 `knowledge.search` 不算**。它是项目知识检索，
- * 一旦被算进来，入口会在每台装了砚的机器上都出现。
- */
-
 export function runWebSearchTests(ok, mod) {
   const { isWebSearchCapability, pickWebSearchCapability, webSearchAvailability } = mod
 
@@ -23,7 +12,6 @@ export function runWebSearchTests(ok, mod) {
     ...(over.projectScope ? { projectScope: over.projectScope } : {})
   })
 
-  /* ---- 1. 名字里带搜索语义的外部能力 ---- */
   ok(
     isWebSearchCapability(capability({ id: 'mcp:web:web_search', title: 'web · web_search' })),
     'MCP 工具 `web_search` 命中'
@@ -49,7 +37,6 @@ export function runWebSearchTests(ok, mod) {
     '`tavily_search` 命中'
   )
 
-  /* ---- 2. 不能误报 ---- */
   ok(
     !isWebSearchCapability(
       capability({ id: 'builtin:knowledge.search', kind: 'builtin', title: '项目知识检索', description: '在本项目已确认的知识里检索' })
@@ -71,7 +58,6 @@ export function runWebSearchTests(ok, mod) {
     '只有服务名（google）没有 search 不算'
   )
 
-  /* ---- 3. 描述同时提搜索与网页 = 弱证据成立 ---- */
   ok(
     isWebSearchCapability(
       capability({
@@ -83,7 +69,6 @@ export function runWebSearchTests(ok, mod) {
     '描述里同时有「检索 + 网页」时命中'
   )
 
-  /* ---- 4. 挑选优先级：ready 优先、MCP 工具优先 ---- */
   const picked = pickWebSearchCapability([
     capability({ id: 'skill:web-search', kind: 'skill', title: 'web-search', availability: 'disconnected' }),
     capability({ id: 'mcp:web:web_search', title: 'web · web_search', availability: 'ready' })
@@ -99,7 +84,6 @@ export function runWebSearchTests(ok, mod) {
     '只有内置/无关能力时也没有可挑的（入口隐藏）'
   )
 
-  /* ---- 5. 给界面的快照 ---- */
   const snapshot = webSearchAvailability([capability({ id: 'mcp:web:web_search', title: 'web · web_search' })])
   ok(snapshot.available === true, '命中时 available=true')
   ok(snapshot.title === 'web · web_search', '带上标题（界面要显示「用 X 搜索」）', String(snapshot.title))

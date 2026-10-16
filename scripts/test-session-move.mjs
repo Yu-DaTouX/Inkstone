@@ -1,9 +1,3 @@
-/**
- * 会话移到另一个工作目录的文件头改写（src/main/session-move.ts）。
- * 用临时目录里的假会话文件验证：只改首行 cwd，其余逐字保留；非会话文件拒绝。
- *
- * 单独运行：node scripts/test-session-move.mjs
- */
 import { build } from 'esbuild'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

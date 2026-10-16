@@ -1,17 +1,3 @@
-/**
- * `yan mcp describe` / `yan mcp call` 的**宿主链路**（实施-04 S3）—— 不调模型。
- *
- * 真 CLI → 真 `CapabilityServer` → 真 `McpConnectionManager` → **真 MCP 服务**
- * （官方 SDK 的 stdio server，见 `scripts/lib/mcp-stdio-fixture.mjs`）。
- *
- * 验四类会让模型「能不能自己纠错」的决定性行为：
- *   ① describe 给 schemaRevision；② 正常 call 回结果；
- *   ③ **工具级失败**是 `toolError:true` 的结果，不是崩溃；
- *   ④ 参数不合 / revision 过期回**可重试**的错（`invalid_arguments` / `schema-changed`），
- *      而不是拿旧参数硬调或吐一个堆栈。
- *
- * 服务配置来自 `YAN_MCP_SERVERS_FILE`（test-live 生成），不碰用户配置。
- */
 ;(async () => {
   const out = []
   const ok = (cond, label, extra = '') => {
@@ -59,7 +45,6 @@
       try {
         return JSON.parse(lines[i])
       } catch {
-        /* 继续往前找 */
       }
     }
     return null
@@ -73,13 +58,6 @@
       return null
     }
   }
-  /*
-   * 临时文件路径由 **node 自己算**，不依赖 shell 变量：
-   * `$TEMP` 在 pi 的 bash 通道里不一定会被展开（实测直接失败），
-   * 而路径里带反斜杠又很难安全拼进命令行。
-   * 写到系统临时目录（而不工作区）是硬要求：探针跑在项目根下，
-   * 相对路径会把 `mcp-*.json` 这类中间文件留在仓库里（首次跑就污染了工作区）。
-   */
   const writeJson = async (name, value) => {
     const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(value))))
     const res = await runCli(
@@ -110,7 +88,6 @@
     const tmpFile = (name) => `${TMPDIR}\\yan-mcp-probe-${name}`
     log(`  临时目录：${TMPDIR}`)
 
-    /* ---- 1. describe ---- */
     log('--- 1. mcp describe ---')
     const described = await runCli('yan mcp describe --server fixture --tool add')
     const descReceipt = lastJson(described.output)
@@ -124,7 +101,6 @@
       '结果文件里有完整 inputSchema（模型据此构造参数）'
     )
 
-    /* ---- 2. 正常调用 ---- */
     log('--- 2. mcp call（正常）---')
     const wroteAdd = await writeJson('add.json', {
       serverId: 'fixture',
@@ -145,7 +121,6 @@
     const addFull = await readJsonFile(addReceipt && addReceipt.resultFile)
     ok(!!addFull && String(addFull.text) === '5', '结果文本是 5（服务真的算出来了）')
 
-    /* ---- 3. 工具级失败是结果，不是崩溃 ---- */
     log('--- 3. 工具级失败 ---')
     await writeJson('fail.json', { serverId: 'fixture', toolName: 'fail', arguments: {} })
     const failed = await runCli(`yan mcp call --request-file "${tmpFile('fail.json')}"`)
@@ -154,7 +129,6 @@
     ok(failReceipt && failReceipt.summary && failReceipt.summary.toolError === true, '回执用 toolError:true 表达工具失败')
     ok(!looksLikeStack(failed.output), '工具失败不吐堆栈')
 
-    /* ---- 4. 可重试的两类错 ---- */
     log('--- 4. 可重试错误 ---')
     await writeJson('badargs.json', { serverId: 'fixture', toolName: 'add', arguments: { a: 2 } })
     const badArgs = await runCli(`yan mcp call --request-file "${tmpFile('badargs.json')}"`)
@@ -176,7 +150,6 @@
     const noToolReceipt = lastJson(noTool.output)
     ok(/tool_not_found/.test(String(noToolReceipt && noToolReceipt.code)), '不存在的工具回 tool_not_found')
 
-    /* ---- 5. 大结果落盘 ---- */
     log('--- 5. 大结果 ---')
     await writeJson('big.json', { serverId: 'fixture', toolName: 'big', arguments: { bytes: 100000 } })
     const big = await runCli(`yan mcp call --request-file "${tmpFile('big.json')}"`)
@@ -187,7 +160,6 @@
       String(bigReceipt && bigReceipt.summary && bigReceipt.summary.bytes)
     )
 
-    /* ---- 6. 未登记的服务要可读 ---- */
     const unknown = await runCli('yan mcp describe --server nope --tool add')
     const unknownReceipt = lastJson(unknown.output)
     ok(/mcp_unavailable/.test(String(unknownReceipt && unknownReceipt.code)), '未登记的服务回 mcp_unavailable')

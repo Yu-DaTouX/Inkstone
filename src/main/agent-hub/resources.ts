@@ -25,12 +25,10 @@ interface Resource {
   queue: Pending[]
 }
 
-/** 受管入口共享的 FIFO；超时只取消尚未开始的请求，绝不释放正在执行的动作。 */
 export class ResourceCoordinator {
   private readonly resources = new Map<string, Resource>()
   private journal?: string
 
-  /** 在发送交互动作前落盘；重启时未释放的操作必须先核对，不能重放。 */
   attachJournal(file: string): void {
     if (this.journal === file) return
     if (this.journal) throw new Error('交互资源已绑定另一个宿主数据目录')
@@ -151,7 +149,6 @@ export class ResourceCoordinator {
     this.checkpoint()
   }
 
-  /** 只能在宿主确认旧动作已停止并核对结果后恢复。 */
   resolveUncertain(resourceId: string): void {
     const r = this.resources.get(resourceId)
     if (!r?.uncertain) return
@@ -174,5 +171,4 @@ export class ResourceCoordinator {
 }
 
 export const sharedResources = new ResourceCoordinator()
-/** CDP 与 Windows 输入可能作用于同一浏览器，过渡期使用同一交互资源。 */
 export const INTERACTIVE_RESOURCE = 'windows-interaction'

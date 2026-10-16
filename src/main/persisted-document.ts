@@ -1,4 +1,3 @@
-/** 持久文档的清洗之前先核对结构；合法 JSON 的错误结构也不能被清洗成空表并覆盖。 */
 export function parsePersistedDocument(text: string, fields: Record<string, 'array' | 'object'>): Record<string, unknown> {
   const value: unknown = JSON.parse(text)
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('持久文档必须是对象，已拒绝覆盖')

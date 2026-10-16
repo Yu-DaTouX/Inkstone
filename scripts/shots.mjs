@@ -1,55 +1,16 @@
-/**
- * 生成 README 用的界面截图（Electron 渲染 + 注入假数据）。
- *
- * 为什么不用真 pi 进程：截图只要「界面长什么样」，真起 pi 会依赖模型额度、
- * 网络和本地会话目录，而且每次内容都不同（README 的图会一直漂）。
- * 注入的数据见 `scripts/shot-fixture.js`。
- *
- * 用法：
- *   npm run shots
- *
- * 输出（都在 docs/design/preview/）：
- *   ui-live.png            深色主界面（真实感会话 + 运行中的终端窗口）
- *   yan-app-light.png      浅色主题
- *   reasoning-window.png   推理窗口（展开）
- *   ui-settings.png        设置面板
- *
- * ⚠️ 两个必须保留的坑：
- *   ① 不能在顶层 `await app.whenReady()` —— Electron 的 ESM 加载器要等
- *      整个模块图求值完才发 ready，而 ready 又要等这个 await，直接死锁。
- *      必须包在 main() 里调用。
- *   ② 窗口必须 `show: true` —— 隐藏窗口只合成一次（注入后的首帧），
- *      之后的折叠/切主题/开设置都不再出帧，capturePage 会一直拿到旧画面，
- *      `invalidate()` 也救不回来。
- */
-import { muteMissingHandlerNoise } from './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
+import { muteMissingHandlerNoise } from './lib/stdio-guard.mjs'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-/*
- * 输出目录：默认写进 README 用的 docs/design/preview/。
- *
- * `YAN_SHOT_DIR` 是给「只想要一张基线图看看、不想碰仓库里那几张
- * 已发布的预览图」用的（那些图有用户自己的未提交修改）。
- * 调 UI 时先导到临时目录，对比完再决定要不要刷新正式的那几张。
- */
 const outDir = process.env.YAN_SHOT_DIR
   ? resolve(process.env.YAN_SHOT_DIR)
   : join(root, 'docs/design/preview')
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/**
- * 注册几个只影响「截图好看程度」的 IPC。
- *
- * 截图不跑主进程，文件区/额度区拿不到数据会显示「读取目录失败」——
- * 在真实应用里这是对的，但放进 README 会让人误以为是 bug。
- * 这里只给这两块和连接状态返回静态数据，其余（会话/模型/提示词）由
- * `shot-fixture.js` 直接写进 store。
- */
 function registerStubHandlers() {
   ipcMain.handle('yan:agentStatus', () => ({ state: 'ready', detail: '' }))
   ipcMain.handle('yan:listDir', (_e, rel) => ({
@@ -84,12 +45,6 @@ function registerStubHandlers() {
 }
 
 async function main() {
-  /*
-   * 截图/测量脚本**故意**不注册拉取型 IPC（返回空值会覆盖 fixture 注入的 store）：
-   * Electron 会把每次失败调用刷成一整段堆栈，既是这次 EPIPE 事故里被淹没的
-   * “原始错误”，也会把真错误顶出屏幕。这里显式静音并计数（结尾汇总），
-   * 其余 console.error 原样透传。
-   */
   muteMissingHandlerNoise()
   registerStubHandlers()
   await app.whenReady()
@@ -101,9 +56,6 @@ async function main() {
     frame: false,
     backgroundColor: '#0b0b0d',
     webPreferences: {
-      /* 产物是 .cjs：sandboxed preload 不支持 ESM（见 electron.vite.config.ts）。
-         写成 index.mjs 时 window.yan 缺失 —— 实测产出的四张图全是空白、
-         字体断言也一并失败（2026-09-15 验证时定位）。 */
       preload: join(root, 'out/preload/index.cjs'),
       sandbox: false,
       contextIsolation: true
@@ -112,7 +64,6 @@ async function main() {
 
   await win.loadFile(join(root, 'out/renderer/index.html'))
 
-  // 主题/语言/引导标记先落 localStorage，再重载（否则截的是默认态）
   await win.webContents.executeJavaScript(`
     try {
       localStorage.setItem('yan.theme', 'dark');
@@ -123,9 +74,6 @@ async function main() {
   `)
   await win.webContents.reload()
 
-  // 等字体真正就绪（Maple 栅格对齐），否则汉字会回退。
-  // 必须用 `fonts.load` 主动触发「国」的分片加载：`fonts.ready` 在没 pending 请求时
-  // 立刻 resolve，测在分片落地之前就会得到 1em 的假值（与 visual-matrix.mjs 同因）。
   const cnWidth = await win.webContents.executeJavaScript(`
     document.fonts.load('12.5px "Maple Mono CN"', '国').then(() => {
       const el = document.createElement('span');
@@ -144,7 +92,6 @@ async function main() {
   await wait(700)
 
   const shot = async (name) => {
-    // 再等两帧：确保 React 的这次变更已经画出来
     await win.webContents.executeJavaScript(
       'new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))'
     )
@@ -156,7 +103,6 @@ async function main() {
     console.log('✓', name)
   }
 
-  /** 收起所有推理窗口（主图要的是对话正文 + 终端） */
   const collapseReasoning = async () => {
     await win.webContents.executeJavaScript(`
       document.querySelectorAll('[data-testid="reasoning-toggle"]').forEach((b) => {
@@ -166,19 +112,16 @@ async function main() {
     await wait(300)
   }
 
-  // 1) 深色主界面
   await collapseReasoning()
   await wait(300)
   await shot('ui-live.png')
 
-  // 2) 浅色主题（令牌直接切，不用重载）
   await win.webContents.executeJavaScript("document.documentElement.dataset.theme = 'light'")
   await wait(350)
   await shot('yan-app-light.png')
   await win.webContents.executeJavaScript("document.documentElement.dataset.theme = 'dark'")
   await wait(250)
 
-  // 3) 推理窗口（展开最后一段推理）
   await win.webContents.executeJavaScript(`
     const toggles = document.querySelectorAll('[data-testid="reasoning-toggle"]');
     const last = toggles[toggles.length - 1] || toggles[0];
@@ -189,7 +132,6 @@ async function main() {
   await collapseReasoning()
   await wait(250)
 
-  // 4) 设置面板
   await win.webContents.executeJavaScript(
     "window.__yanStore.getState().openSettings('appearance')"
   )

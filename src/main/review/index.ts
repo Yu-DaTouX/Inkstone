@@ -1,9 +1,3 @@
-/**
- * 评审后端（§10.2 / WP-50）的唯一出口。
- *
- * 主进程只从这里 import：变更集读取、批注存储、评审 Agent 契约、Git 写适配
- * 分文件实现，避免一个好用的门面后面长出一堆互相 import 的细节。
- */
 export { ReviewAnnotationStore, annotationFileName, annotationsDir } from './annotations'
 export type { ReviewAnnotationStoreOptions } from './annotations'
 export {

@@ -1,18 +1,3 @@
-/**
- * 资料解析（实施-25 P03 / T03-4）。
- *
- * 解析按序接入：**纯文本 / Markdown → 可提取正文的 PDF → 网页内容**。
- * 没接入的一律明确标 `unsupported`（"仅附件"），不许静默当成"已可阅读"。
- *
- * ## 为什么 PDF 是自己写的而不是引库
- *
- * 需求是「**可提取正文的** PDF」——不是排版还原、不是表单、不是注释。真正要做的是
- * 把内容流解开、把文本操作符里的字符串取出来。自己写这一小段的好处：
- *   · 不引依赖（本项目只有 15 个运行依赖，扫描件/Office 本来也不解析）；
- *   · 失败时能给出**准确原因**（加密 / 扫描件 / CID 字体乱码），而不是一个笼统的 throw；
- *   · 提取不到就如实标 unsupported，符合 §1「状态如实显示」。
- * 代价是复杂版式会丢掉顺序与位置，note 里明确写清楚。
- */
 import { open, stat } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { inflateSync } from 'node:zlib'
@@ -20,28 +5,15 @@ import type { LibraryKind, LibraryParseStatus } from '../shared/library'
 
 export interface ParseOutcome {
   status: LibraryParseStatus
-  /** 提取出的正文（`ok` 才有）；由服务层负责落盘 */
   text?: string
   pages?: number
-  /** 给人看的说明：为什么是这个状态。不吞原因。 */
   note: string
 }
 
-/** 纯文本类：直接读，超过这个大小就只读前面一截（避免把内存打满）。 */
 export const MAX_TEXT_BYTES = 4 * 1024 * 1024
-/** PDF 上限：超过就标 unsupported（解析会很慢，且多半也不是"资料"）。 */
 export const MAX_PDF_BYTES = 64 * 1024 * 1024
-/**
- * 单个内容流的解压输出上限。
- *
- * 压缩输入大小（受 MAX_PDF_BYTES 约束）**不能**约束输出：一个小压缩流可以展开
- * 成几百倍的文本（deflate 的放大比可以做到上千倍），而解压是同步跑在宿主调用链上的。
- * 同仓库的 `office/zip.ts` 已经用 `inflateRawSync(..., { maxOutputLength })` 做了同样的事。
- */
 export const MAX_PDF_STREAM_BYTES = 16 * 1024 * 1024
-/** 一个 PDF 里所有内容流的累计解压输出上限（多个流各自不超也能量很大）。 */
 export const MAX_PDF_TOTAL_BYTES = 64 * 1024 * 1024
-/** 提取结果的可打印比例低于此值 → 判定为乱码（典型是 CID 字体 / 扫描件）。 */
 const MIN_PRINTABLE_RATIO = 0.6
 const MIN_TEXT_CHARS = 20
 
@@ -51,7 +23,6 @@ const TEXT_EXT = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rb', '.go', '.rs', '.java', '.kt',
   '.c', '.h', '.cpp', '.hpp', '.cs', '.php', '.sh', '.bash', '.ps1', '.sql', '.html', '.htm', '.css'
 ])
-/** 明确「本轮不解析正文」的类型：给准确的说明，而不是含糊的失败。 */
 const OPAQUE_EXT: Record<string, string> = {
   '.pdf': 'PDF',
   '.doc': 'Word 旧格式', '.docx': 'Word', '.rtf': 'RTF',
@@ -66,12 +37,6 @@ export function isTextLike(filePath: string): boolean {
   return TEXT_EXT.has(extname(filePath).toLowerCase())
 }
 
-/**
- * 解析一个本地文件。
- *
- * 分支顺序有意如此：先按扩展名判"文本类"，再判 PDF，最后落到 `unsupported`。
- * 未知扩展名**不当文本**（二进制当 UTF-8 读会得到一堆替换符，比说"仅附件"更糟）。
- */
 export async function parseLibraryFile(filePath: string, kind: LibraryKind): Promise<ParseOutcome> {
   const ext = extname(filePath).toLowerCase()
   if (kind === 'image') {
@@ -102,9 +67,7 @@ async function parsePlainText(filePath: string, ext: string): Promise<ParseOutco
   }
   const slice = buf
   let text = slice.toString('utf8')
-  /* 字节被截断时可能切在多字节字符中间，去掉尾部的替换符 */
   if (truncated) text = text.replace(/\uFFFD+$/, '')
-  /* HTML 走一遍去标签：直接把标签当正文读给模型，是在浪费上下文 */
   if (ext === '.html' || ext === '.htm') text = extractHtmlText(text).text
   if (!text.trim()) return { status: 'unsupported', note: '文件是空的或只含空白' }
   return {
@@ -114,15 +77,6 @@ async function parsePlainText(filePath: string, ext: string): Promise<ParseOutco
   }
 }
 
-/**
- * 最小 PDF 文本提取。
- *
- * 做法：扫描所有 `stream … endstream` → 该解压的解压（FlateDecode）→
- * 收集内容流里的括号字符串，用 `Td` / `TD` / `T*` 判断换行。
- *
- * ⚠️ 它**不是**排版还原：列顺序、脚注位置、表格结构都会丢。note 里如实说明。
- * 提取不出来时按「没有文本层」或「乱码」区分 —— 这两种对用户的含义完全不同。
- */
 async function parsePdf(filePath: string): Promise<ParseOutcome> {
   let buf: Buffer
   try {
@@ -141,7 +95,6 @@ async function parsePdf(filePath: string): Promise<ParseOutcome> {
   return parsePdfBuffer(buf)
 }
 
-/** 同上，但直接处理内存里的内容（办公文件对比要读 git 里的旧版本，没有磁盘文件） */
 export function parsePdfBuffer(buf: Buffer): ParseOutcome {
   if (buf.byteLength > MAX_PDF_BYTES) {
     return { status: 'unsupported', note: `PDF 超过 ${Math.round(MAX_PDF_BYTES / 1024 / 1024)}MB，仅作为附件保留` }
@@ -154,9 +107,7 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
   const pieces: string[] = []
   let streams = 0
   let inflated = 0
-  /** 已经解出来的文本量（含未压缩流）：用来卡累计预算 */
   let produced = 0
-  /** 超出解压预算（或预算已用完）而被跳过的流数 */
   let skipped = 0
 
   const marker = /(?<![A-Za-z])stream(\r\n|\r|\n)/g
@@ -181,7 +132,6 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
     } catch (error) {
       const code = (error as NodeJS.ErrnoException | undefined)?.code
       if (code === 'ERR_BUFFER_TOO_LARGE' || /maxOutputLength/i.test(error instanceof Error ? error.message : '')) {
-        /* 超出预算的流不当成"未压缩流"继续读 —— 那会把压缩数据当文本乱解一气 */
         skipped += 1
         marker.lastIndex = end + 'endstream'.length
         continue
@@ -191,7 +141,6 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
         marker.lastIndex = end + 'endstream'.length
         continue
       }
-      /* 未压缩的流：原样使用 */
       content = slice.toString('latin1')
     }
     produced += content.length
@@ -216,14 +165,6 @@ export function parsePdfBuffer(buf: Buffer): ParseOutcome {
   return { status: 'ok', text, pages, note: `已提取正文：${pages} 页${how}；纯文本，不含排版与图片${skippedNote}` }
 }
 
-/**
- * 从一段内容流里取文本。
- *
- * 括号字符串在 PDF 里就是文本（`(Hi) Tj`、`[(H) -20 (i)] TJ`）：
- *   · 两个文本操作符**之间**出现 `Td` / `TD` / `T*` → 换行；
- *   · 出现 `Tj` / `TJ` → 加空格（两次独立绘制，不连词）；
- *   · 都没有 → 直接拼（同一个 TJ 数组里的分段，拼起来才是词）。
- */
 export function extractPdfText(content: string): string {
   const out: string[] = []
   let last = 0
@@ -253,7 +194,6 @@ export function extractPdfText(content: string): string {
   return out.join('').replace(/[ \t]+\n/g, '\n')
 }
 
-/** PDF 字符串 → 文本：处理转义、八进制，以及 UTF-16BE 的 BOM。 */
 export function decodePdfString(body: string): string {
   const backslash = String.fromCharCode(92)
   const bytes: number[] = []
@@ -289,7 +229,6 @@ export function decodePdfString(body: string): string {
   return Buffer.from(bytes).toString('latin1')
 }
 
-/** 可打印比例：用来识别「解出来一堆乱码」的情况（CID 字体/扫描件的典型症状）。 */
 const PRINTABLE = /[\p{L}\p{N}\p{P}\p{Zs}]/u
 
 export function printableRatio(text: string): number {
@@ -311,13 +250,6 @@ const ENTITIES: Record<string, string> = {
   nbsp: ' '
 }
 
-/**
- * 网页正文提取（T03-4 的第三档）。
- *
- * 只做「去标签 + 解实体 + 保留段落换行」——不做正文识别（Readability 那类）。
- * 理由：这里是**用户自己提供的网页**，不是全网抓取；多留一点导航文字比
- * 误删正文段落更安全，note 里也说明了这一点。
- */
 export function extractHtmlText(html: string): { text: string; title?: string } {
   const titleHit = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)
   const title = titleHit ? titleHit[1].replace(/\s+/g, ' ').trim() : undefined
@@ -353,7 +285,6 @@ export function extractHtmlText(html: string): { text: string; title?: string } 
   }
 }
 
-/** 网页正文的可读性判断：太短的多半是登录页 / 跳转页，如实标出来。 */
 export function htmlParseOutcome(html: string): ParseOutcome {
   const { text } = extractHtmlText(html)
   if (text.length < MIN_TEXT_CHARS) {

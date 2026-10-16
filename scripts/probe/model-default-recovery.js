@@ -1,4 +1,3 @@
-/** Cold start with an unavailable saved model; explicit recovery, no model requests. */
 ;(async()=>{
  const out=[],store=window.__yanStore,sleep=ms=>new Promise(r=>setTimeout(r,ms)),q=s=>document.querySelector(s),ok=(v,s)=>out.push('  '+(v?'✓':'✗')+' '+s)
  try{

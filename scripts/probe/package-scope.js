@@ -36,10 +36,6 @@
   }
   try {
     const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd
-    /*
-     * 插件页现在挂在「市场 → pi 插件」下：`openSettings('packages')` 不是设置页 id
-     * （合法值见 `SETTINGS_PAGES`），铺不出 `pkg-*` 那一套控件。
-     */
     store.getState().openSettings('market')
     check(await until(() => !!q('market-pi-tab')), '真实设置页已加载')
     q('market-pi-tab').click()
@@ -58,7 +54,7 @@
     check(await until(() => !!row('project') && rows().length === 2), 'UI 安装项目级；两级均可见')
     const both = await window.yan.packages.list(cwd)
     check(both.entries.filter(e => e.name === 'yan-probe-ext').length === 2, '主进程回读两级登记')
-    await setSource(source) // Keep the install button enabled for the action completion check.
+    await setSource(source)
     await setLocal(false)
     await action('project', 'update')
     await action('project', 'remove')

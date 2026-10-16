@@ -110,7 +110,6 @@ export async function planApply(root: string, items: Array<{ output: string; des
   }
   return planned
 }
-/** Each file is checked again immediately before replacement; partial completion is explicit. */
 export async function applyOutputs(root: string, plan: TaskApplyItem[], beforeReplace?: (item: TaskApplyItem, index: number) => Promise<void>): Promise<TaskApplyResult> {
   const result: TaskApplyResult = { applied: [], conflicts: [], pending: plan.map(item => item.destination) }
   for (const [index, item] of plan.entries()) {
@@ -126,7 +125,6 @@ export async function applyOutputs(root: string, plan: TaskApplyItem[], beforeRe
       try { await handle.writeFile(await readFile(source)); await handle.sync() } finally { await handle.close() }
       await beforeReplace?.(item, index)
       if (await fileHash(item.destination) !== item.expectedSha256 || await fileHash(temp) !== item.outputSha256) { result.conflicts.push(item.destination); continue }
-      // External writers are not locked by this host; this is optimistic version checking.
       await rename(temp, item.destination)
       temp = undefined
       result.applied.push(item.destination)

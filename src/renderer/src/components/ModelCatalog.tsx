@@ -9,7 +9,6 @@ import { Icon } from '../icons/Icon'
 import { Button, Input } from './ui'
 import { ChoiceSelect } from './ui/ChoiceSelect'
 
-/** Version order is local catalog metadata, not a guessed release date. */
 function newestFirst(a: ModelChoice, b: ModelChoice): number {
   const family = (m: ModelChoice) => m.id.match(/^[a-z]+/i)?.[0] ?? m.id
   const group = a.provider.localeCompare(b.provider) || family(a).localeCompare(family(b))
@@ -28,7 +27,6 @@ function contextLabel(tokens: number): string {
   return `${Number((tokens / 1_000).toFixed(1))}K`
 }
 
-/** Shared model browsing; filtering and favorites never select a runtime model. */
 export function ModelCatalog({ current, onSelect, compact = false, needsAuth = () => false }: {
   current?: ModelChoice; onSelect(model: ModelChoice): Promise<boolean>; compact?: boolean
   needsAuth?(provider: string): boolean
@@ -44,16 +42,13 @@ export function ModelCatalog({ current, onSelect, compact = false, needsAuth = (
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [accounts, setAccounts] = useState<CodexAccountView[]>([])
-  /* 账号 key → 「五小时 100% · 本周 47%」；额度要联网查，晚到不挡住切换 */
   const [usage, setUsage] = useState<Record<string, string>>({})
   const search = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const providerOrder = useStore(s => s.settings?.modelProviderOrder) ?? []
-  /* 键盘移动光标才把行滚进视野；鼠标悬停移动光标时不滚，免得列表跟着鼠标跳 */
   const keyboardCursor = useRef(false)
   const favoriteKeys = new Set(favorites.map(modelKey))
   const available = new Set(models.map(modelKey))
-  /* 供应商按用户拖动的顺序；没排过的按字母接在后面 */
   const providerRank = (p: string) => { const i = providerOrder.indexOf(p); return i < 0 ? providerOrder.length : i }
   const providers = [...new Set([...models, ...favorites, ...(current ? [current] : [])].map(m => m.provider))]
     .sort((a, b) => providerRank(a) - providerRank(b) || a.localeCompare(b))
@@ -62,14 +57,12 @@ export function ModelCatalog({ current, onSelect, compact = false, needsAuth = (
     for (const m of favorites) if (!byKey.has(modelKey(m))) byKey.set(modelKey(m), m)
     const q = query.trim().toLowerCase(), stars = new Set(favorites.map(modelKey))
     const rank = (p: string) => { const i = providerOrder.indexOf(p); return i < 0 ? providerOrder.length : i }
-    /* 收藏页显示全部收藏，不受供应商筛选限制 */
     return [...byKey.values()].filter(m => (favoriteOnly || !provider || m.provider === provider)
       && (!favoriteOnly || stars.has(modelKey(m)))
       && (!q || `${m.name ?? ''} ${m.id} ${m.provider}`.toLowerCase().includes(q)))
       .sort((a, b) => rank(a.provider) - rank(b.provider) || newestFirst(a, b))
   }, [models, favorites, query, provider, favoriteOnly, providerOrder])
   useEffect(() => { const timer = window.setTimeout(() => search.current?.focus(), 0); return () => clearTimeout(timer) }, [])
-  /* 选了 Codex（或当前模型就是 Codex）时才读已保存的 ChatGPT 账号，多于一个才显示切换 */
   const codexShown = provider === 'openai-codex' || (!provider && current?.provider === 'openai-codex')
   const loadAccounts = (): void => { void window.yan.codexAccounts().then(setAccounts).catch(() => setAccounts([])) }
   useEffect(() => {
@@ -155,10 +148,8 @@ export function ModelCatalog({ current, onSelect, compact = false, needsAuth = (
         const info = models.find(model => modelKey(model) === key)
         const starred = favoriteKeys.has(key)
         const context = info?.contextWindow && info.contextWindowStatus !== 'unknown' ? contextLabel(info.contextWindow) : ''
-        /* 名称里已带容量（如「Opus 5.5 1M」）就不再重复 */
         const showContext = !!context && !new RegExp(`(^|[^\\w.])${context.replace('.', '\\.')}($|[^\\w.])`, 'i').test(m.name || m.id)
         const showProvider = favoriteOnly || !provider
-        /* 整行一个悬停底：鼠标与键盘共用同一个落点，只有落点行和当前模型有底色 */
         return <div className="model-row" key={key} data-current={on ? '1' : '0'} data-cursor={i === cursor ? '1' : '0'}
           data-starred={starred ? '1' : '0'} data-ready={ready ? '1' : '0'}
           onMouseMove={() => { if (i !== cursor) setCursor(i) }}>
@@ -168,7 +159,6 @@ export function ModelCatalog({ current, onSelect, compact = false, needsAuth = (
             <span className="model-row-check" aria-hidden>{on ? <Icon name="check" size={12} /> : null}</span>
             <span className="model-row-text">
               <span className="model-row-name">{m.name || m.id}</span>
-              {/* 单行：名称在左，右侧只放区分得开的信息 —— 已按供应商筛选时不重复供应商；推理能力由下方档位表达 */}
               <span className="model-row-id">
                 {showProvider ? <span>{m.provider}</span> : null}
                 {showContext ? <span>{context}</span> : null}

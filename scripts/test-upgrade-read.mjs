@@ -1,25 +1,4 @@
 #!/usr/bin/env node
-/**
- * 升级读取验证（RELEASING 发布门槛第 4 条）。
- *
- * 做法：把 `release/砚数据/`（**真实用户数据，只读**）整份复制到临时目录，
- * 用**打包产物**起一个实例指向这份副本，读回设置 / 项目 / localStorage / 凭证，
- * 再逐字节确认**原目录没被碰过**。
- *
- * 为什么必须用副本而不是原目录：原目录是用户真实数据，任何一次跑动写进去都
- * 不可接受（RELEASING：`release/砚数据/` 只读，升级验证只用备份副本）。
- *
- * 用法：
- *   npm run dist:dir         先产出 release/win-unpacked
- *   npm run test:upgrade     跑本脚本（不烧 token；只起一个实例读状态）
- *
- * 判据：
- *   · 副本里 `yan/desktop.json` 的 cwd / lang / theme / projects 与实例读回的一致；
- *   · `profile.signedIn === false`（**不伪造登录**）；
- *   · `pi-agent/auth.json` 存在且 count ≥ 1，且 `conn = ready`（凭证真的能用）；
- *   · localStorage 里的 theme / onboarded 还在（升级不把界面状态清空）；
- *   · 跑完后原目录逐字节未变（用文件清单 + sha256 比对）。
- */
 import { spawn } from 'node:child_process'
 import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -55,12 +34,10 @@ if (!existsSync(source)) {
   process.exit(1)
 }
 
-/* ---- 1. 复制副本（原目录只读） ---- */
 const copy = mkdtempSync(join(tmpdir(), 'yan-upgrade-'))
 cpSync(source, copy, { recursive: true })
 console.log(`  副本：${copy}`)
 
-/** 目录树指纹：相对路径 + 大小 + sha256（用来证明原目录没被动过） */
 function fingerprint(dir) {
   const rows = []
   const walk = (current) => {
@@ -79,7 +56,6 @@ function fingerprint(dir) {
 
 const before = fingerprint(source)
 
-/* ---- 2. 副本里的期望值（Node 侧才知道原本写的是什么） ---- */
 let expected = null
 try {
   const desktop = JSON.parse(readFileSync(join(copy, 'yan', 'desktop.json'), 'utf8'))
@@ -96,11 +72,8 @@ try {
   process.exit(1)
 }
 
-/* ---- 3. 用打包产物起实例（只读副本） ---- */
 const outFile = join(copy, 'probe-out.txt')
 const delay = 9000
-/* 外层实例注入的那些变量必须**删掉**（设为 undefined 不保险）：否则副本里那个
-   实例的 `yan` 会打到外层真实实例，写真实用户数据。 */
 const probeEnv = {
   ...process.env,
   YAN_USER_DATA: join(copy, 'electron'),
@@ -156,7 +129,6 @@ if (!line) {
 const got = JSON.parse(line.slice('UPGRADE-READ '.length))
 console.log(`  实例读回：${JSON.stringify(got)}`)
 
-/* ---- 4. 断言 ---- */
 say(got.conn === 'ready', '打包实例连上了内置 pi（凭证可用）', String(got.conn))
 say(got.pi?.bundled === true, 'pi 入口来自包内运行时', String(got.pi?.version ?? ''))
 say(got.settings?.cwd === expected.cwd, `读回 cwd 与副本一致`, `${got.settings?.cwd} / ${expected.cwd}`)
@@ -172,7 +144,6 @@ say(got.auth?.exists === true && got.auth?.count >= 1, '凭证文件存在且能
 say(!!got.local?.theme, 'localStorage 里的主题还在（界面状态没被清空）', String(got.local?.theme))
 say(got.local?.onboarded === '1', 'localStorage 里的引导标记还在', String(got.local?.onboarded))
 
-/* ---- 5. 原目录逐字节未变 ---- */
 const after = fingerprint(source)
 const same = before.length === after.length && before.every((row, i) => row === after[i])
 say(same, `原目录 release/砚数据 逐字节未变（${before.length} 个文件）`)

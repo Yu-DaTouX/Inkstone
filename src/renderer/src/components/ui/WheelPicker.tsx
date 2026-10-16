@@ -1,10 +1,8 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 
 const STOP_H = 22
-/** 一次滚轮手势只走一格：两次切换之间至少间隔这么久，触控板的连续小增量也合并成一步 */
 const WHEEL_COOLDOWN_MS = 220
 
-/** 滚筒式选择器：五行可见，选中项居中，上下的行随离中心的距离倾斜、缩小、变淡，像表盘上的计数器。 */
 export function WheelPicker<T extends string>({ values, value, onChange, format, label, disabled, testId, stopTestPrefix = 'wheel' }: {
   values: readonly T[]; value: T; onChange(value: T): void; format(value: T): string
   label: string; disabled?: boolean; testId?: string; stopTestPrefix?: string
@@ -15,12 +13,10 @@ export function WheelPicker<T extends string>({ values, value, onChange, format,
   latest.current = { selected, values, onChange, disabled }
   const mounted = useRef(false)
   useLayoutEffect(() => {
-    /* 首次打开直接落位，之后切档才平滑滚动 */
     const smooth = mounted.current && !matchMedia('(prefers-reduced-motion: reduce)').matches
     mounted.current = true
     root.current?.scrollTo({ top: selected * STOP_H, behavior: smooth ? 'smooth' : 'auto' })
   }, [selected])
-  /* 每一行离中心几格（--d）与绝对值（--a）由滚动位置推出，样式据此做出滚筒弧度；滚动动画途中也逐帧更新 */
   useEffect(() => {
     const el = root.current
     if (!el) return
@@ -39,7 +35,6 @@ export function WheelPicker<T extends string>({ values, value, onChange, format,
     el.addEventListener('scroll', schedule, { passive: true })
     return () => { el.removeEventListener('scroll', schedule); if (frame) cancelAnimationFrame(frame) }
   }, [values.length])
-  /* 原生滚动会按像素滚过好几格；改为拦截滚轮，每个手势只切一档（需要非被动监听才能阻止默认滚动） */
   useEffect(() => {
     const el = root.current
     if (!el) return

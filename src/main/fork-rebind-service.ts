@@ -1,16 +1,3 @@
-/**
- * 工作树 Fork 的文件引用重绑定（实施-07 S2b-3 的服务层）。
- *
- * 输入的「源会话」是**用户当前所在的那条会话**（他正准备派生到工作树去）：
- * 把它里面 `@` 过的仓库内文件捞出来，拿到**目标工作树的仓库根**下重新解析并验证存在性。
- *
- * 为什么不在这里做「历史平铺」：形态是 Fork —— 新会话拿到的应该是**知识**（哪些文件在谈），
- * 不是「曾经打开过的绝对路径」。所以这一层只回答一个问题：
- * **源会话提到的文件，在这个工作树里还剩几个能对上。**
- *
- * ⚠️ 反模式（形态决策 §3）：**不做**绝对路径前缀替换。
- * 绝对路径先转成仓库相对路径（`toRepoRelative`），转不了就报 `outside`（不迁移，如实说明）。
- */
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -22,33 +9,22 @@ import { readSessionMessages } from './session-reader'
 import { readRepoState, resolveRepo } from './git-service'
 
 export interface ForkRefsInput {
-  /** 目标工作树目录 */
   worktree: string
-  /** 源会话的 JSONL 绝对路径（渲染端给；没有就没法从会话里提取） */
   sourceFile?: string
-  /** 源会话的工作目录（用来定源仓库根，并据此过滤掉“源仓库里本来就没有”的噪音） */
   sourceCwd?: string
-  /**
-   * 显式引用列表：给了就**不再从会话里提取**。
-   * 用途是测试与将来的「显式交接」—— 写死一份引用比伪造会话文件诚实。
-   */
   explicitRefs?: string[]
 }
 
 export interface ForkRefsReport {
   worktree: string
-  /** 目标（工作树）仓库根；不是 Git 仓库时为 null */
   root: string | null
-  /** 源仓库根（用来判断引用当初是不是这个仓库里的东西） */
   sourceRoot: string | null
   sourceFile: string | null
   refs: ForkRefResolution[]
   summary: ForkRefSummary
-  /** 出问题时给一句可读原因（界面照实显示，不假装算过） */
   error?: string
 }
 
-/** 真实文件系统查询：只区分 file / dir / 不存在（符号链接跟随，与用户看到的一致） */
 function statKind(abs: string): 'file' | 'dir' | null {
   try {
     const s = statSync(abs)
@@ -75,10 +51,6 @@ export async function forkFileRefs(input: ForkRefsInput): Promise<ForkRefsReport
   } else if (input.sourceFile && sourceRoot) {
     const read = await readSessionMessages(input.sourceFile).catch(() => null)
     if (read) {
-      /*
-       * 只捞**用户说的话**：助手提过的路径往往是它自己编的/工具输出里的噪音，
-       * 而「用户 `@` 过的文件」才是他真正在意的交付面。
-       */
       const texts = read.messages.filter((m) => m.role === 'user').map((m) => m.text)
       refs = extractRefsFromTexts(texts, (rel) => existsSync(join(sourceRoot, rel)))
     }
@@ -97,27 +69,17 @@ export async function forkFileRefs(input: ForkRefsInput): Promise<ForkRefsReport
   }
 }
 
-/* ── Fork 的语义注入正文（实施-07 S2b-4）────────────────── */
-
 export interface ForkContextRequest {
-  /** 目标工作树目录 */
   worktree: string
-  /** 源会话（用户点「派生新会话」之前所在的那条） */
   sourceFile?: string
   sourceCwd?: string
   sourceSessionId?: string
-  /**
-   * 显式附件数：给了就**不看源会话**（测试与将来的显式交接用）。
-   * 与 `explicitRefs` 同一个道理：写一个数字比伪造一份带图的会话文件诚实。
-   */
   explicitAttachmentCount?: number
 }
 
 export interface ForkContextResult {
   forkId: string
-  /** 交给新会话的正文（渲染端作为输入框草稿） */
   text: string
-  /** 诊断字段：界面与断言直接看它们，不再去解析文本 */
   branch: string | null
   head: string | null
   detached: boolean
@@ -126,22 +88,11 @@ export interface ForkContextResult {
   behind: number
   refsTotal: number
   refsResolved: number
-  /** 源会话里的图片附件数（S2b-5：不迁移，只如实告知） */
   attachments: number
   hasPackage: boolean
   error?: string
 }
 
-/**
- * 数源会话里的图片附件。
- *
- * 只看**用户消息**（`images`）：助手消息不带附件，而工具输出里的图不是用户给的。
- * 读不到会话来时返回 null —— “没数到”与“一个都没有”是两件事，
- * 不能把前者说成「没有附件要带」。
- *
- * ⚠️ 这会再读一遍会话文件（`forkFileRefs` 里已经读过一次）。两份职责不同（引用 vs 附件），
- * 而会话文件是 KB 级的小文件；合并成一个“什么都要读”的函数反而不好维护。
- */
 async function countSourceAttachments(sessionFile: string): Promise<{ total: number } | null> {
   const read = await readSessionMessages(sessionFile).catch(() => null)
   if (!read) return null
@@ -153,15 +104,6 @@ async function countSourceAttachments(sessionFile: string): Promise<{ total: num
   return { total }
 }
 
-/**
- * 构造 Fork 上下文正文。
- *
- * `packageOf` 由调用方注入（主进程手里才有 `HandoffStore`）—— 这一层不去碰存储，
- * 好处是单测能直接给一份假交接包。
- *
- * ⚠️ 环境派生状态（分支 / HEAD / 领先落后 / 变更数）**一律在目标工作树上重读**，
- * 函数里没有“源会话的状态”这个入参 —— 想让外部把源会话的状态塞进来都没有地方塞。
- */
 export async function forkContext(
   request: ForkContextRequest,
   packageOf: (sessionFile: string) => HandoffPackage | null
@@ -187,9 +129,6 @@ export async function forkContext(
 
   const pkg = request.sourceFile ? packageOf(request.sourceFile) : null
 
-  /*
-   * 附件（S2b-5）：只数、不搬。给了显式数量就不再读会话（测试用）。
-   */
   const attachments =
     typeof request.explicitAttachmentCount === 'number'
       ? { total: Math.max(0, Math.floor(request.explicitAttachmentCount)) }

@@ -1,16 +1,3 @@
-/**
- * 搜索结果归一化与合并（实施-27 S1）。
- *
- * 这一层是**纯函数**：输入是「每个来源的原始输出」，输出是统一的 SearchItem
- * 列表与来源级状态。没有子进程、没有 Electron —— 所以单测可以直接喂假数据，
- * 不需要装 OpenCLI。
- *
- * 三条必须守住的口径：
- *   ① **N 个来源 → N 条状态**：哪怕某个来源什么都没返回，也要有条状态；
- *   ② `empty`（查到了但没有结果）与 `unavailable` / `timeout` / `error`
- *      （根本没查成）严格分开 —— 把失败写成「没有」是最要命的失真；
- *   ③ 归一化失败**不算来源失败**：单条脏数据丢弃并计数，来源仍按 ok 上报。
- */
 import {
   SEARCH_SNIPPET_MAX,
   type PerSourceStatus,
@@ -19,23 +6,17 @@ import {
   type SourceStatusKind
 } from '../../shared/search'
 
-/** 一个来源跑完后的原始结果（由 opencli.ts 产出） */
 export interface SourceRun {
   source: SearchSourceId
-  /** 解析成功的行；解析失败 / 没取到时是 null */
   rows: unknown[] | null
-  /** 没取到时的后端错误（与 rows 互斥，但都为空也算 empty） */
   error?: { code?: string; message?: string }
   timedOut?: boolean
-  /** 拿不到可执行文件 / 不在白名单 */
   unavailable?: boolean
   elapsedMs: number
 }
 
 export interface AggregateOptions {
-  /** 每个来源最多保留几条（从原始输出里截前 N） */
   limitPerSource: number
-  /** 合并去重后总数上限 */
   limitTotal: number
 }
 
@@ -45,7 +26,6 @@ export interface AggregateResult {
   truncated: boolean
 }
 
-/** 常见 HTML 实体 —— 搜索结果里标题/摘要会带转义（wikipedia 的 &quot; 等） */
 const ENTITIES: Record<string, string> = {
   '&quot;': '"',
   '&amp;': '&',
@@ -57,7 +37,6 @@ const ENTITIES: Record<string, string> = {
 
 export function decodeEntities(input: string): string {
   return input
-    /* 数字实体（`&#39;` 这类）先解掉，所以下面那张表里不必再列它们 */
     .replace(/&#(\d+);/g, (_m, n: string) => {
       const code = Number(n)
       return code > 0 && code < 0x10ffff ? String.fromCodePoint(code) : ''
@@ -65,7 +44,6 @@ export function decodeEntities(input: string): string {
     .replace(/&(?:quot|amp|lt|gt|apos|nbsp);/g, (m) => ENTITIES[m] ?? m)
 }
 
-/** 压平空白并截断到上限（超长只标一个 …，不悄悄留半句） */
 export function cleanText(input: unknown, max = SEARCH_SNIPPET_MAX): string | undefined {
   if (typeof input !== 'string') return undefined
   const t = decodeEntities(input).replace(/\s+/g, ' ').trim()
@@ -73,12 +51,6 @@ export function cleanText(input: unknown, max = SEARCH_SNIPPET_MAX): string | un
   return t.length > max ? t.slice(0, max - 1) + '…' : t
 }
 
-/**
- * URL 规范化 —— 只用来判重，不改写用户看到的链接。
- *
- * 去掉 hash、常见跟踪参数（utm_*、fbclid、ref）、末尾斜杠；
- * host 小写。保留协议与路径大小写（路径大小写敏感的站点不少）。
- */
 export function normalizeUrlForDedupe(raw: string): string {
   let u: URL
   try {
@@ -96,13 +68,11 @@ export function normalizeUrlForDedupe(raw: string): string {
   return `${u.protocol}//${u.host}${path}${qs ? '?' + qs : ''}`
 }
 
-/** Hacker News 的行没有链接，用 id 拼；拼不出来这一条就丢 */
 function hackerNewsUrl(id: unknown): string | null {
   const n = typeof id === 'number' ? id : typeof id === 'string' ? Number(id) : NaN
   return Number.isFinite(n) && n > 0 ? `https://news.ycombinator.com/item?id=${n}` : null
 }
 
-/** 各来源的字段映射。行结构对不上就返回 null（丢一条，不算来源失败） */
 export function normalizeRow(source: SearchSourceId, row: unknown): SearchItem | null {
   if (!row || typeof row !== 'object') return null
   const r = row as Record<string, unknown>
@@ -144,10 +114,6 @@ function statusOf(run: SourceRun): { status: SourceStatusKind; code?: string; me
   return { status: 'ok' }
 }
 
-/**
- * 合并：按**来源顺序**（= 注册顺序）拼接，来源内部保持后端给的顺序；
- * 跨来源按规范化 URL 去重（先到先得）；最后按总数上限截断。
- */
 export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateResult {
   const items: SearchItem[] = []
   const sources: PerSourceStatus[] = []
@@ -158,7 +124,6 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
     const { status, code, message } = statusOf(run)
     let kept = 0
     let badRows = 0
-    /* 被总数上限挤掉的候选行数：这才是「有结果但没收进来」，不能写成 empty */
     let droppedByLimit = 0
 
     if (status === 'ok') {
@@ -188,7 +153,6 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
       source: run.source,
       status,
       count: kept,
-      /* 替身 runner 可能不给 elapsedMs（undefined → NaN 会被 JSON 写成 null） */
       elapsedMs: Number.isFinite(run.elapsedMs) ? Math.max(0, Math.round(run.elapsedMs)) : 0
     }
     if (code) entry.code = code
@@ -201,7 +165,6 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
   return { items, sources, truncated }
 }
 
-/** 组合给模型/CLI 看的一句话：先说要紧的，不漏来源 */
 export function summarizeSources(sources: PerSourceStatus[]): string {
   const label = (s: PerSourceStatus): string => {
     if (s.status === 'ok') {

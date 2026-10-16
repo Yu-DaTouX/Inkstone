@@ -1,9 +1,3 @@
-/*
- * MCP App 沙箱框与步骤审计的版面（A6-frame-ui）。
- * 只写 layout / 层级与状态底色；按钮、图标按钮外观来自 `ui/`，
- * 框身复用 `artifacts.css` 的 `.v3-artifact-frame*` 类，这里只补 MCP 专属部分。
- */
-
 .v3-mcp-app-frame {
   margin: var(--s-8) 0;
 }
@@ -12,7 +6,6 @@
   background: var(--bg);
 }
 
-/* 初始化 / 等待确认：始终在 iframe 之外，明确「确认在宿主卡片」。 */
 .v3-mcp-app-status {
   display: flex;
   align-items: center;
@@ -24,7 +17,6 @@
   font-size: var(--t-meta);
 }
 
-/* 地址不受控：安全拒绝，不给任何继续加载入口。 */
 .v3-mcp-app-invalid {
   display: flex;
   align-items: flex-start;
@@ -43,7 +35,6 @@
   color: var(--fg2);
 }
 
-/* 文本回退：与工具已有文本同宽，不假装是 App。 */
 .v3-mcp-app-fallback {
   margin: var(--s-6) 0;
   padding: var(--s-8);
@@ -61,7 +52,6 @@
   background: var(--fail-bg);
 }
 
-/* 步骤审计：行式列表，与 `v3-step-detail` 的排版一致。 */
 .v3-mcp-app-audit {
   display: flex;
   flex-direction: column;

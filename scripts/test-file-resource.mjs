@@ -1,18 +1,8 @@
-/**
- * 文件资源身份（实施-11 H-4）的纯逻辑测试。
- *
- * 盯的是**标签会不会互相顶掉**这件事，所以断言都是「两个不同文件必须得到
- * 两个不同的键」以及「同一个文件从不同写法进来必须得到同一个键」。
- *
- * 用法：npm run test:unit
- */
 export async function runFileResourceTests(ok) {
   const fr = await import('../out/test/file-resource.mjs')
   const key = fr.fileResourceKey
   const parse = fr.parseFileResourceKey
   const label = fr.fileResourceLabel
-
-  /* ------------------------------------------------ 键的往返 */
 
   const id = {
     projectId: 'p-1',
@@ -27,7 +17,6 @@ export async function runFileResourceTests(ok) {
   ok(back?.canonicalPath === 'C:/work/app/src/index.ts', 'canonicalPath 原样还原')
   ok(key(id) === k, '同一个身份重复构造出同一个键（标签不会重复建）')
 
-  /* 路径里带空格 / 中文 / `|` 都不能把键拆坏 */
   const tricky = key({
     projectId: '项目 A',
     workspaceRoot: 'C:/我的 工作/app',
@@ -43,8 +32,6 @@ export async function runFileResourceTests(ok) {
     '含中文的项目与工作树也能还原'
   )
 
-  /* ------------------------------------------------ 不同文件不撞键 */
-
   const base = { projectId: 'p-1', workspaceRoot: 'C:/work/app', canonicalPath: 'C:/work/app/a.ts' }
   ok(
     key(base) !== key({ ...base, canonicalPath: 'C:/work/app/b.ts' }),
@@ -59,19 +46,14 @@ export async function runFileResourceTests(ok) {
     '同工作树不同项目 → 两个键（项目归属进身份）'
   )
 
-  /* 空的项目 / 工作树：用占位符，位置不丢 */
   const bare = key({ canonicalPath: 'C:/x.ts' })
   ok(parse(bare)?.canonicalPath === 'C:/x.ts', '只有路径时也能解析')
   ok(parse(bare)?.projectId === null && parse(bare)?.workspaceRoot === null, '空项目/工作树解析回 null')
-
-  /* ------------------------------------------------ 脏输入不造身份 */
 
   ok(parse('') === null, '空键 → null')
   ok(parse('a|b') === null, '段数不够 → null')
   ok(parse('a|b|c|d') === null, '段数过多 → null')
   ok(parse('a|b|-') === null, 'canonicalPath 为空占位 → null（没有路径就没有文件身份）')
-
-  /* ------------------------------------------------ 显示名与同路径判断 */
 
   ok(label('C:/work/app/src/index.ts') === 'index.ts', 'Windows 路径取文件名')
   ok(label('/home/me/app/main.ts') === 'main.ts', 'POSIX 路径取文件名')
@@ -86,8 +68,6 @@ export async function runFileResourceTests(ok) {
     !fr.sameResourcePath('C:/work/app/a.ts', 'C:/work/app/A.ts'),
     '大小写不同不擅自当作同一路径（canonicalPath 已由 realpath 归一）'
   )
-
-  /* ------------------------------------------------ 文档内相对链接（H-4 出口 3） */
 
   const rr = fr.resolveRelativePath
   ok(rr('C:/work/app/docs', '../README.md') === 'C:/work/app/README.md', '../ 相对文档目录解析')

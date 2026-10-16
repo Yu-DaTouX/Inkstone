@@ -1,12 +1,3 @@
-/**
- * 左栏常驻搜索：过滤正确、清空后焦点不丢。
- *
- * 对应方案 P1 4.1 的验收：
- *   · 清空搜索后恢复搜索前的展开状态（实现上搜索是「临时展开」，
- *     不改 collapsed/expanded 这两个 state，所以清空后自然恢复）
- *   · 焦点不丢（清空后留在输入框；Esc 清空，再按一次离开）
- *   · 搜索命中能定位、状态图标有文字提示
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -24,7 +15,6 @@
   }
 
   try {
-    /* 左栏展开（默认收起） */
     store.getState().setRailPinned(true)
     await sleep(500)
 
@@ -39,7 +29,6 @@
     out.push('=== 2. 过滤 + 展开状态不被破坏 ===')
     const beforeCollapsed = JSON.stringify(store.getState().sidebarCollapsed ?? null)
     const allCount = qa('.rail .srow').length
-    /* 拿一个真实会话名的一个字来搜，保证必有命中 */
     const firstName = qa('.rail .srow .srow-name')[0]?.textContent?.trim() ?? ''
     const needle = firstName.slice(0, 1) || 'a'
     setVal(input, needle)

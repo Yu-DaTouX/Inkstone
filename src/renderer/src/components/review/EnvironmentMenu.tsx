@@ -1,21 +1,3 @@
-/**
- * 环境菜单（方案 §3.1）。
- *
- * 入口是会话头部原来那个「项目胶囊」—— 它此前只是个静态标签，现在变成
- * 「我现在跑在什么环境里」的入口：变更、工作目录、当前分支、Pull Request、
- * 比较分支。形态参考 Codex 的环境信息菜单（用户提供的截图）。
- *
- * ── 三条刻意的取舍 ──
- * 1. **只放已经能用的动作**。方案 §14 明确「不展示可执行入口而不实现」：
- *    提交 / 推送 / 切换分支属于 G2，这里就不摆按钮 —— 摆一个按下去
- *    说「还没做」的按钮比不摆更糟。分支那一项因此做成「与其比较」
- *    而不是「切换」（比较是 G1 已经有的只读能力）。
- * 2. 每个数字都来自真实查询；拿不到就写「无法获取 Pull Request 状态」
- *    这样的明确说明，不伪造状态（gh 没装就是没装）。
- * 3. 图标复用现有的 reicon 集（没有 git-compare 这类专用图标）：
- *    变更 = history、本地 = folder、分支 = layers、PR = globe、
- *    比较 = search。**不复用同一个图标承担两层含义**（DESIGN §2.7）。
- */
 import { useEffect, useRef, useState } from 'react'
 import type {
   ForkRefsReportView,
@@ -46,16 +28,6 @@ export function EnvironmentMenu() {
   const changeCwd = useStore((s) => s.changeCwd)
   const repoView = useRepoState(project)
 
-  /**
-   * PR 状态文案（方案 §7）。
-   *
-   * ⚠️ 这里必须写全分支，不能 `t(\`pr.${state}\`)` —— `t()` 的键是**字面量联合
-   * 类型**，拼出来的字符串过不了类型检查（这正是不该拼的原因：拼出来的键
-   * 拼错了编译期发现不了）。
-   *
-   * 查不到时要说清是哪一种查不到（没认证 / 限流 / 网络 / 不支持 / 仓库不存在），
-   * 而不是笼统的「无法获取」—— 用户接下来该做什么完全取决于哪一种。
-   */
   const prText = (): string => {
     if (pr === null) return t('pr.querying')
     if (!pr.ok) {
@@ -80,10 +52,8 @@ export function EnvironmentMenu() {
     return head + checks + (pr.localAhead ? ' · ' + t('pr.localAhead') : '')
   }
   const repo = repoView.repo
-  /* 写操作结束后刷新仓库状态：菜单里的数字（待推送 / 变更数）必须立刻是对的 */
   const write = useGitWrite(project, (res: GitActionResult) => {
     if (!res.ok) return
-    /* 先用响应里的状态就地更新（立刻可用），再拉一次完整版本（含 refs） */
     if (res.state) repoView.apply(res.state)
     repoView.refresh()
   })
@@ -95,27 +65,16 @@ export function EnvironmentMenu() {
   const [newBranch, setNewBranch] = useState('')
   const [showWorktrees, setShowWorktrees] = useState(false)
   const [trees, setTrees] = useState<WorktreeInfo[]>([])
-  /** 每个工作树目录的信任状态（键是目录路径）；点「信任」后只改这一条 */
   const [trustMap, setTrustMap] = useState<Record<string, { trusted: boolean; entry: string | null }>>({})
-  /**
-   * 每个工作树的「文件引用重绑定」报告（实施-07 S2b-3，键是目录路径）。
-   *
-   * 内容是把**当前会话**里 `@` 过的仓库内文件拿到那个工作树的仓库根下重新解析的结果 ——
-   * 用户点「派生新会话」之前就能看到「我在源会话里提到的文件，在这个工作树里还剩几个能对上」。
-   */
   const [forkRefs, setForkRefs] = useState<Record<string, ForkRefsReportView>>({})
-  /** 「会话 ↔ 工作树」的来源关系（当前会话的用 `myOrigin` 取） */
   const [origins, setOrigins] = useState<WorktreeLinkView[]>([])
-  /** 当前会话是从哪个工作树派生的（没登记过就是 undefined —— 那时什么都不画） */
   const myOrigin = session?.sessionId ? origins.find((x) => x.sessionId === session.sessionId) : undefined
   const [wtBranch, setWtBranch] = useState('')
   const [wtPath, setWtPath] = useState('')
   const [wtDeleteBranch, setWtDeleteBranch] = useState(false)
   const [actionError, setActionError] = useState('')
   const [wtBlockers, setWtBlockers] = useState<WorktreeBlocker[]>([])
-  /** remote 的托管网页地址（github/gitlab/bitbucket 才认）；null = 不显示「在网上比较」 */
   const [webRepo, setWebRepo] = useState<string | null>(null)
-  /** PR 状态（§7）：只读查询，只在菜单打开时拉一次 */
   const [pr, setPr] = useState<{
     ok: boolean
     state: string
@@ -127,11 +86,6 @@ export function EnvironmentMenu() {
     error?: string
     message?: string
   } | null>(null)
-  /*
-   * 携带未提交改动（W2a）。
-   * 三份东西是**分开**勾的：已暂存、未暂存、未跟踪 —— 因为在新工作树里
-   * 「哪些已经挑好了」正是用户最在意、也最难自己重做的一件事。
-   */
   const [carryStaged, setCarryStaged] = useState(false)
   const [carryUnstaged, setCarryUnstaged] = useState(false)
   const [pickOpen, setPickOpen] = useState(false)
@@ -140,7 +94,6 @@ export function EnvironmentMenu() {
   const wrapRef = useRef<HTMLDivElement>(null)
   const firstRef = useRef<HTMLButtonElement>(null)
 
-  /* 点外面 / Escape 关闭。捕获阶段监听 keydown，避免被内层组件先吃掉 */
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent): void => {
@@ -160,11 +113,6 @@ export function EnvironmentMenu() {
     }
   }, [open])
 
-  /*
-   * 分支列表只在展开时拉：
-   * 菜单每次打开都拉一次 refs（可能上百个分支）是白花的 —— 而分支切换
-   * 本来就是低频动作。拿到后把「被其它工作树占用」也一并收下（方案 §5.1）。
-   */
   useEffect(() => {
     if (!open || !showBranches || !project) return
     let alive = true
@@ -176,17 +124,12 @@ export function EnvironmentMenu() {
         setBusyBranches(res.busyBranches)
       })
       .catch(() => {
-        /* 拉不到分支列表不影响菜单其余部分，静默降级为空列表 */
       })
     return () => {
       alive = false
     }
   }, [open, showBranches, project])
 
-  /*
-   * 来源关系（实施-07 S2）跟菜单一起拉：数据量很小（旁挂的一张表），
-   * 而「这个会话是不是从某个工作树派生的」要在菜单一打开就知道。
-   */
   useEffect(() => {
     if (!open) return
     let alive = true
@@ -196,17 +139,12 @@ export function EnvironmentMenu() {
         if (alive) setOrigins(Array.isArray(res) ? res : [])
       })
       .catch(() => {
-        /* 读不到就少一行追溯，不影响菜单其余部分 */
       })
     return () => {
       alive = false
     }
   }, [open])
 
-  /*
-   * 工作树列表也只在展开时拉：它是一条 git 命令 + 一次目录检查，
-   * 而「我有几个工作树」不是每次打开菜单都要看的信息。
-   */
   useEffect(() => {
     if (!open || !showWorktrees || !project) return
     let alive = true
@@ -216,16 +154,12 @@ export function EnvironmentMenu() {
         if (alive) setTrees(res.worktrees ?? [])
       })
       .catch(() => {
-        /* 拉不到不影响菜单其余部分 */
       })
     return () => {
       alive = false
     }
   }, [open, showWorktrees, project, repoView.repo?.worktreeId])
 
-  /*
-   * 未跟踪清单：只在用户点开「选择要带过去的文件」时拉一次。
-   */
   useEffect(() => {
     if (!pickOpen || !project) return
     let alive = true
@@ -233,25 +167,16 @@ export function EnvironmentMenu() {
       .untracked(project)
       .then((paths) => {
         if (!alive) return
-        /* 列表不带 size；展示用 0，真正的大小上限由主进程把关 */
         setUntracked(paths.map((path) => ({ path, size: 0 })))
       })
       .catch((e: unknown) => {
         if (alive) {
           setUntracked([])
-          /*
-           * 拉不到就说一声 —— 空清单与「拉失败」在界面上长得一样，
-           * 而这两件事对用户的意义完全不同（一个是「没有」，一个是「不知道」）。
-           */
           setWtBlockers([{ kind: 'missing', message: e instanceof Error ? e.message : String(e) }])
         }
       })
   }, [pickOpen, project])
 
-  /*
-   * PR 状态（§7）：只在菜单打开时查一次（它会发外发请求，不能每次渲染都打）。
-   * 失败也记下来 —— 「为什么没有 PR」和「查不到」对用户是两件事。
-   */
   useEffect(() => {
     if (!open || !project) return
     let alive = true
@@ -269,11 +194,6 @@ export function EnvironmentMenu() {
     }
   }, [open, project, repoView.repo?.head])
 
-  /*
-   * 托管网页比较（方案 §7）：只在菜单打开时问一次 remote 的网页地址。
-   * 主进程那边认不出的托管站返回 null —— 那就不显示这一项，
-   * 而不是给一个打不开的链接。
-   */
   useEffect(() => {
     if (!open || !project) return
     let alive = true
@@ -290,16 +210,6 @@ export function EnvironmentMenu() {
     }
   }, [open, project, repoView.repo?.head])
 
-  /*
-   * 工作树的项目信任状态（实施-07 S2b-2）。
-   *
-   * 为何要逐个工作树去查：pi 的信任是**按目录**记在 `trust.json` 里的，
-   * 而工作树目录通常在仓库旁边（不在主仓库路径之下）—— 「主仓库被信任」
-   * 不代表「工作树被信任」。而 RPC 模式没有信任弹窗，用户不处理的话
-   * 项目级 `.pi/settings.json` 会被整份忽略。
-   *
-   * 只在展开工作树区时查（不多花 IPC）；`alive` 防的是「查完前菜单已关」时写回旧值。
-   */
   useEffect(() => {
     if (!open || !showWorktrees) return
     const targets = trees.filter((w) => !w.main).map((w) => w.path)
@@ -323,15 +233,6 @@ export function EnvironmentMenu() {
     }
   }, [open, showWorktrees, trees])
 
-  /*
-   * 工作树的「文件引用重绑定」（实施-07 S2b-3）。
-   *
-   * 输入是**当前会话**（用户正准备从它派生）：主进程把会话里 `@` 过的仓库内文件
-   * 拿到目标工作树根下重新解析。**只在有引用时显示** —— 没有可对照的东西就不占位置
-   * （与 S4 来源搜索同一口径：有则出现、无则隐藏）。
-   *
-   * 依赖 `session?.sessionId`：切会话后要重算（旧会话的引用不能留在新会话的菜单里）。
-   */
   useEffect(() => {
     if (!open || !showWorktrees) return
     const targets = trees.filter((w) => !w.main).map((w) => w.path)
@@ -355,12 +256,10 @@ export function EnvironmentMenu() {
     }
   }, [open, showWorktrees, trees, session?.sessionId, session?.sessionFile, session?.cwd])
 
-  /* 打开时把焦点放进菜单，键盘用户能继续 Tab */
   useEffect(() => {
     if (open) firstRef.current?.focus()
   }, [open])
 
-  /* 关掉菜单时收起分支列表：下次打开应该回到干净的面板 */
   useEffect(() => {
     if (!open) {
       setShowBranches(false)
@@ -376,13 +275,6 @@ export function EnvironmentMenu() {
 
   const changed = repo?.changedCount ?? 0
 
-  /**
-   * 「对不上」的明细（放在 title 里，一行一条）。
-   *
-   * 为什么不用状态名显示：用户看到 `missing` 不知道是「工作树里没有」还是
-   * 「仓库外的东西本来就不搬」—— 这两件事的处理方式完全不同（前者要去 git 里找，
-   * 后者是设计如此）。
-   */
   const forkRefsTip = (report: ForkRefsReportView): string => {
     const problems = report.summary.problems
     if (!problems.length) return t('env.forkRefsAllOk')
@@ -417,10 +309,6 @@ export function EnvironmentMenu() {
 
       {open ? (
         <div className="env-menu" role="menu" data-testid="env-menu" aria-label={t('env.title')}>
-          {/*
-           * 顶部是当前执行环境本身：项目名 + 完整路径，两个动作（打开文件夹 / 复制路径）
-           * 跟着它走。原来的「环境信息」标题与「本地」行合成这一块，Git 是否可用都显示。
-           */}
           <div className="env-project" data-testid="env-local" title={project ?? ''}>
             <span className="env-project-ico" aria-hidden="true">
               <Icon name="folder" size={16} />
@@ -469,7 +357,6 @@ export function EnvironmentMenu() {
                     <span className="env-none">{t('env.noChanges')}</span>
                   ) : (
                     <>
-                      {/* 一眼看出改动量：已跟踪改动是警示色方点，未跟踪是暗点，最多十格 */}
                       <span className="env-dots" aria-hidden="true">
                         {Array.from({ length: 10 }, (_, i) => (
                           <i key={i} className={i < changed ? 'on' : i < changed + repo.untrackedCount ? 'new' : ''} />
@@ -486,11 +373,6 @@ export function EnvironmentMenu() {
                 </span>
               </div>
 
-              {/*
-               * 「分支」以前点下去是「与本分支比较」—— 名字与实际动作不符
-               * （Codex 参考里那行于分支本身）。现在它展开分支列表并支持
-               * 切换与新建；「与谁比较」是下面独立的一项。
-               */}
               <button
                 type="button"
                 role="menuitem"
@@ -576,7 +458,6 @@ export function EnvironmentMenu() {
               ) : null}
               </div>
 
-              {/* 拉取 / 推送：写操作，会改 .git（对象库 / 远程跟踪引用）；并排一行，像一对同步按钮 */}
               <div className="env-group env-sync">
               <button
                 type="button"
@@ -629,11 +510,6 @@ export function EnvironmentMenu() {
               </div>
 
               <div className="env-group">
-              {/*
-                * 工作树（方案 §6.2）：与子代理的一次性隔离工作树是两回事 ——
-                * 这里建的会被用户长期使用，所以「移除」先检查再动手，
-                * 被拦下时把原因逐条摆出来（不替他 stash / 提交 / 丢弃）。
-                */}
               <button
                 type="button"
                 role="menuitem"
@@ -650,11 +526,6 @@ export function EnvironmentMenu() {
 
               {showWorktrees ? (
                 <div className="env-branches env-worktrees" data-testid="env-worktree-list">
-                  {/*
-                   * 这个会话是从哪个工作树派生的（实施-07 S2）。
-                   * 只在**确实登记过**时才画 —— 方案 §6.3 的硬要求是
-                   * 「做不到就不显示无缝继续」，这里同理：不猜、不写死文案。
-                   */}
                   {myOrigin ? (
                     <div className="env-carry-hint" data-testid="env-worktree-origin">
                       {t('env.worktreeOrigin', {
@@ -693,11 +564,6 @@ export function EnvironmentMenu() {
                             onClick={async () => {
                               if (!(await confirm({ title: t('env.trustAllow'), body: t('env.trustAllowNote'), detail: w.path, confirmLabel: t('env.trustAllow') }))) return
                               setActionError('')
-                              /*
-                               * 信任是**用户显式动作**：不因为「同一个 Git 仓库」「remote 相同」
-                               * 就自动把源目录的信任搬过来（形态决策里的反模式之一）。
-                               * 成功后就地改这一条，不重查（避免整个列表闪一下）。
-                               */
                               void window.yan.trust.allow(w.path).then((res) => {
                                 if (res?.ok) setTrustMap((m) => ({ ...m, [w.path]: { trusted: true, entry: res.entry } }))
                                 else setActionError(res?.error || t('env.trustAllowNote'))
@@ -716,43 +582,15 @@ export function EnvironmentMenu() {
                           data-testid="env-worktree-open"
                           title={t('env.worktreeOpenNote')}
                           onClick={() => {
-                            /*
-                             * 「在新工作树开始新会话」—— 方案 §6.3 的**降级路径**。
-                             *
-                             * 完整的「带会话继续」要求重绑定项目权限、相对文件路径、
-                             * 附件授权与上下文派生状态，并在新实例里接着原来的历史。
-                             * 这些没有一件是可以靠改一个 cwd 字段完成的，所以按方案的
-                             * 要求：**只开新会话**，并在按钮的 title 与下面的说明里
-                             * 把「不带什么」讲清楚 —— 不显示「无缝继续」。
-                             *
-                             * ⚠️ 形态已定（2026-09-19，S2b-1）：这条路是 **Fork** ——
-                             * 新会话 + 来源关系（`YAN_DIR/worktree-links.json`），默认不整段注入源历史。
-                             * 判据见 `docs/plan/决策记录-07-S2b-工作树会话形态-2026-09-19.md`。
-                             * 四片里 S2b-2（在工作树目录重新建立信任）、S2b-3（仓库相对路径重绑定）、
-                             * S2b-4（接手上下文草稿）已经做完，`env.worktreeForkCarry` / `env.worktreeForkSkip`
-                             * 两行文案已同步到这一步的事实；**S2b-5（附件不迁移）还没做** ——
-                             * 做完那片之前，文案里不得出现“附件也带过来”。
-                             *
-                             * 先 setCwd 再 newSession：newSession 会把当前 cwd 作为
-                             * 新会话的起点，晚一步设置就落回旧目录了。
-                             */
                             void (async () => {
                               setActionError('')
                               let succeeded = false
                               try {
-                              /*
-                               * 来源关系要在**切之前**取：`newSession` 会把
-                               * `session` 换成新的那一份，之后再读就是新会话自己。
-                               */
                               const before = useStore.getState().session
                               await changeCwd(w.path)
                               const made = await newSession({ cwd: w.path })
                               if (!made.ok || !made.sessionId) throw new Error(made.error || t('env.worktreeOpenNote'))
                               if (made.sessionId) {
-                                /*
-                                 * 登记失败**不静默**：它就是这块功能的全部证据。
-                                 * 但仍不阻断切会话 —— 会话已经起来了，退回反而更糟。
-                                 */
                                 await window.yan.git
                                   .worktreeLink({
                                     sessionId: made.sessionId,
@@ -763,14 +601,6 @@ export function EnvironmentMenu() {
                                     fromCwd: before?.cwd ?? ''
                                   })
                                   .catch(() => undefined)
-                                /*
-                                 * 语义注入（S2b-4）：把「接手必须知道的」放进**新会话的输入框草稿**。
-                                 *
-                                 * 为何不自动发送：这一下花的是用户的额度、还替他定了第一句话；
-                                 * 而草稿他能看一眼、补一句、也能直接删掉 —— 要的是“知道上下文”，
-                                 * 不是“替他说了”。环境派生状态在主进程那边**在目标工作树上重读**，
-                                 * 所以这里只给目录与来源，不把源会话的任何状态传过去。
-                                 */
                                 await window.yan.git
                                   .forkContext({
                                     worktree: w.path,
@@ -812,7 +642,6 @@ export function EnvironmentMenu() {
                                   return
                                 }
                                 setWtBlockers(res.blockers ?? [])
-                                /* 没有 blockers 时把失败当普通错误显示（例如 git 自己拒绝） */
                                 if (!res.blockers?.length && res.failure) {
                                   setWtBlockers([{ kind: 'missing', message: res.failure.message }])
                                 }
@@ -826,10 +655,6 @@ export function EnvironmentMenu() {
                         </button>
                         </>
                       ) : null}
-                      {/*
-                       * 文件引用重绑定（实施-07 S2b-3）：只在**确实有引用**时占位。
-                       * 明细放在 `title` 里 —— 菜单已经很挤，而“哪几个对不上”是查时才需要的。
-                       */}
                       {!w.main && (forkRefs[w.path]?.summary.total ?? 0) > 0 ? (
                         <div className="env-fork-refs" data-testid="env-fork-refs" title={forkRefsTip(forkRefs[w.path])}>
                           {t('env.forkRefs', {
@@ -888,7 +713,6 @@ export function EnvironmentMenu() {
                             branch: wtBranch.trim(),
                             startPoint: null,
                             targetPath: wtPath.trim() || null,
-                            /* 三项都为假就不传 —— 主进程据此走「不携带」的路径并给出对应说明 */
                             carry:
                               carryStaged || carryUnstaged || picked.length > 0
                                 ? { staged: carryStaged, unstaged: carryUnstaged, untracked: picked }
@@ -921,19 +745,7 @@ export function EnvironmentMenu() {
                               setPickOpen(false)
                               setPicked([])
                               repoView.refresh()
-                              /*
-                               * 登记为项目（方案 §6.2：创建成功后要能**独立打开**）。
-                               *
-                               * 这里只写 settings.projects 一条记录：**不**动 cwd、**不**切会话 ——
-                               * 「建完自动跳过去」会把用户正在做的事打断，而 W2 的会话重绑定
-                               * 还没做（§6.3 要求做不到就别假装能）。同 cwd 已登记过就不重复写。
-                               */
                               const known = settings?.projects ?? []
-                              /*
-                               * ⚠️ 比较前把 `\` 归一成 `/`：渲染端拿到的路径来自 git 输出
-                               *（正斜杠），主进程落盘的是反斜杠 —— 直接比在 Windows 上永远不等，
-                               * 结果就是每建一次工作树多一条重复项目。
-                               */
                               const samePath = (a: string, b: string) => a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
                               if (!known.some((x) => samePath(x.cwd, made))) {
                                 const now = Date.now()
@@ -970,11 +782,6 @@ export function EnvironmentMenu() {
                     onChange={(e) => setWtPath(e.target.value)}
                   />
 
-                  {/*
-                    携带未提交改动（方案 §6.2 的可选能力）。
-                    三项分开勾 —— 新工作树里「哪些已经挑好了」是用户最在意的事。
-                    默认全不勾：默认从已提交状态创建，这一点在按钮旁边写着。
-                  */}
                   <div className="env-carry" data-testid="env-carry">
                     <label className="env-wt-check">
                       <input
@@ -1062,7 +869,6 @@ export function EnvironmentMenu() {
                 data-testid="env-pr"
                 title={pr?.message ?? pr?.title ?? ''}
                 onClick={() => {
-                  /* 有 PR 就打开它的网页；没有就什么都不做（不弹假状态） */
                   if (pr?.url) {
                     void window.yan.browser.open(pr.url).catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
                   }
@@ -1076,10 +882,6 @@ export function EnvironmentMenu() {
               </button>
 
 
-              {/*
-                托管网页比较（方案 §7）：把同一段比较交给托管站渲染。
-                与上面那项是**并列**的，不是替代 —— 内部比较不联网也能用。
-              */}
               {webRepo && repo.upstream && repo.branch ? (
                 <button
                   type="button"
@@ -1099,10 +901,6 @@ export function EnvironmentMenu() {
               ) : null}
               </div>
 
-              {/*
-                关联外部任务链接（方案 §6.4）。文案里的边界是硬要求：
-                不宣称上传代码 / 同步会话 / 远程执行。
-              */}
               <SourceMenu sessionId={session?.sessionId ?? 'default'} open={open} onClose={() => setOpen(false)} />
             </>
           ) : (
@@ -1116,7 +914,6 @@ export function EnvironmentMenu() {
           {repoView.error ? <div className="env-error">{repoView.error}</div> : null}
           {actionError ? <div className="env-error" role="alert" data-testid="env-action-error">{actionError}</div> : null}
 
-          {/* 写操作的失败：**不关菜单**，原地把原因与原始输出摆出来 */}
           {write.failure ? (
             <WriteFailure msg={write.failure.message} hint={write.failure.hint} detail={write.failure.detail} />
           ) : null}

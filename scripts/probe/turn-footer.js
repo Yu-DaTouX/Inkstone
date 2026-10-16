@@ -1,22 +1,3 @@
-/*
- * 回合页脚的阅读秩序与计时呈现（实施-11 H-1）。
- *
- * 这里不烧 token：直接往真实 renderer store 注入**多轮已结束的回合**，
- * 渲染、聚合（groupIntoTurns）和页脚全部走生产代码。
- *
- * 验收重点（用户报过的问题 + 设计输入 §4.1 / §4.2）：
- *   · 助手正文顶部不再有「砚 / N 步 / 标准」那一行；用户回合的「你」保留
- *   · 整轮用时只在回合**底部**出现一次，且在正文之后（不是顶部、不是每条消息各一份）
- *   · 用时口径是整轮墙钟（含工具往返），悬停能看到说明，不是最后一次生成的时间
- *   · 只有正文的回合也有页脚（复制入口在那里），但不假装有时刻 / 用时
- *   · 步数不在页脚重复（它在紧邻的「过程」摘要里）
- *   · 底部没有点赞 / 点踩 / 评分入口
- *   · 完成时刻是 <time datetime>，悬停给出完整年月日时分秒 + 时区
- *
- * ⚠️ 整轮耗时**怎么算**（回合起点 vs 首 token）不在这里断言 —— 那属于主进程
- *    `shared/turn-timing.ts`，由 `scripts/test-turn-timing.mjs` 的纯逻辑测试钉住。
- *    探针只负责「算出来的值有没有按契约呈现」。
- */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
@@ -37,14 +18,7 @@
   const sync = (msgs) => store.getState().applyPush({ ch: 'sync', payload: msgs })
   const tool = (id, name, args) => ({ id, name, args, status: 'ok' })
 
-  /*
-   * ---- 0. 恢复重建的历史回合 ----
-   * 界面历史就是会话文件（AGENTS.md），而整轮用时是从会话 JSONL 里的 elapsedMs
-   * 读回来的。所以**注入之前**先看一次 fixture 会话的历史回合：它证明“重载 /
-   * 切换会话后整轮时间仍在”，而不是只在刚跑完时才显示。
-   */
   {
-    /* 轮询等历史渲染完：会话加载是异步的，刚 ready 时可能还没画出来。 */
     let history = []
     for (let i = 0; i < 20; i++) {
       history = [...document.querySelectorAll('article.msg.assistant [data-testid="turn-footer"]')]
@@ -59,14 +33,7 @@
     }
   }
 
-  /*
-   * 三个回合，覆盖分支：
-   *   tf-u1/a*  —— 两次工具往返，最后一条给出整轮 42.5s（多工具 → 显示步数）
-   *   tf-u2/b1  —— 一个工具，18s（单工具 → 不显示步数）
-   *   tf-u3/c1  —— 纯文本，没有 elapsedMs（只有完成时刻）
-   *   tf-u4/d1  —— 只有正文（页脚只剩复制入口，没有时刻 / 用时）
-   */
-  const T = Date.UTC(2026, 8, 21, 12, 42, 8) // 2026-09-21 12:42:08Z
+  const T = Date.UTC(2026, 8, 21, 12, 42, 8)
   const msgs = [
     { id: 'tf-u1', role: 'user', text: '把标题改成独立进程', timestamp: T },
     {
@@ -114,7 +81,6 @@
 
   const turn = (id) => q(`[data-turn-id="${id}"]`)
 
-  /* ---- 1. 顶部：助手没有品牌 / 档位 / 步数标签 ---- */
   ok(!!turn('tf-a1'), '助手回合渲染出来了')
   ok(!turn('tf-a1')?.querySelector('.msg-label'), '助手正文顶部没有「砚 / N 步 / 标准」那一行')
   {
@@ -122,13 +88,11 @@
     ok(!/^砚|标准档|标准/.test(head.trim()), `正文开头直接是内容：「${head.replace(/\s+/g, ' ').trim()}」`)
   }
   {
-    /* 用户回合：身份由右对齐气泡表达，不再有「你」标签；时间与分支合并在气泡下方一行 */
     ok(!turn('tf-u1')?.querySelector('.msg-label'), '用户回合顶部没有身份标签行')
     const meta = turn('tf-u1')?.querySelector('.msg-meta')
     ok(!!meta?.querySelector('.msg-act') && !!meta?.querySelector('.turn-time'), '用户回合的时间与分支在同一行')
   }
 
-  /* ---- 2. 底部：整轮用时只出现一次，且在正文之后 ---- */
   ok(!!footer, '多工具回合出现回合页脚')
   if (!footer) return out.join('\n')
 
@@ -143,22 +107,13 @@
     ok(!!response && fTop >= rBottom - 2, '页脚在正文**下方**（不是顶部汇总行）')
   }
   {
-    /*
-     * 并列布局下 `.msg-body` 的最后一个孩子是侧栏过程（`TurnView` 把过程放在
-     * 正文列之后），页脚收在正文列里 —— 位置断言要看 `.turn-main`。
-     */
     const main = turn('tf-a1')?.querySelector('.turn-main')
     ok(main?.lastElementChild === footer, '页脚是正文列的最后一个元素（贴着消息下沿）')
   }
 
-  /* ---- 3. 步数 / 用时 / 完成时刻 ---- */
   {
     const text = footer.textContent ?? ''
     log(`  页脚文本：「${text.replace(/\s+/g, ' ').trim()}」`)
-    /*
-     * 页脚不再重复步数（产品注释：「步数与失败数在紧邻的「过程」摘要里，
-     * 这里不重复」）—— 但信息不能丢，所以要反过来钉住它在过程摘要里。
-     */
     ok(!/\d+\s*步/.test(text), '页脚不重复步数（统计行只留时刻与用时）', text)
     const summary = turn('tf-a1')?.querySelector('[data-testid="turn-process"]')?.textContent ?? ''
     ok(/2\s*步/.test(summary), '步数在过程摘要里显示（2 步）', summary)
@@ -166,7 +121,6 @@
     ok(!text.includes('42000'), '用时是人类可读格式，不是原始毫秒')
   }
   {
-    /* 口径可解释：悬停要能说明这是整轮墙钟时间（含工具往返），不是生成速度 */
     const elapsedSpan = footer.querySelector('.tact-time')
     ok(!!elapsedSpan?.getAttribute('title'), `用时条有悬停说明：「${elapsedSpan?.getAttribute('title') ?? ''}」`)
     ok(
@@ -186,7 +140,6 @@
     ok(/\d{1,2}[:.]\d{2}/.test(clock), `默认只显示短时间：「${clock}」`)
   }
 
-  /* ---- 4. 单工具回合不显示步数 ---- */
   {
     const t2 = q('[data-turn-id="tf-b1"] [data-testid="turn-footer"]')
     ok(!!t2, '单工具回合也有页脚（用时仍在）')
@@ -195,7 +148,6 @@
     ok(!/\d+\s*步/.test(text), '单工具回合也不往页脚里塞步数', text)
   }
 
-  /* ---- 5. 没有 elapsedMs 的回合只显示完成时刻 ---- */
   {
     const t3 = q('[data-turn-id="tf-c1"] [data-testid="turn-footer"]')
     ok(!!t3, '纯文本回合仍有页脚（完成时刻）')
@@ -204,25 +156,15 @@
     ok(!!t3?.querySelector('time'), '完成时刻仍然显示')
   }
 
-  /* ---- 6. 完全没有元数据但有正文：页脚只留复制入口 ---- */
   {
-    /*
-     * 契约变了：`TurnMeta` 现在把「复制正文」也放在页脚上，所以只要回合有正文
-     * 就会有页脚 —— 不再是「没有元数据就不渲染」。不渲染的只剩「无正文且无时刻」。
-     */
     const t4 = q('[data-turn-id="tf-d1"] [data-testid="turn-footer"]')
     ok(!!t4, '有正文就有页脚（复制入口挂在这里）')
     ok(!t4?.querySelector('time') && !t4?.querySelector('.tact-time'), '没有时刻与用时不渲染空占位')
     ok(!!t4?.querySelector('[data-testid="turn-copy"]'), '正文复制入口仍在')
   }
 
-  /* ---- 7. 没有点赞 / 点踩 / 评分 ---- */
   {
     const buttons = [...footer.querySelectorAll('button')]
-    /*
-     * 页脚只允许一个动作：复制正文（`TurnMeta` 的 `tact-copy`）。
-     * 点赞 / 点踩仍然不能有。
-     */
     const extra = buttons.filter((b) => b.dataset.testid !== 'turn-copy')
     ok(extra.length === 0, '页脚只有复制按钮（其它动作不在统计行）', `其它 ${extra.length} 个`)
     const bad = document.querySelectorAll(
@@ -231,7 +173,6 @@
     ok(bad.length === 0, '整个界面没有点赞 / 点踩 / 评分入口', `匹配 ${bad.length} 个`)
   }
 
-  /* ---- 8. 完整时间的可访问通道（H-7）---- */
   {
     const time = footer.querySelector('time')
     const full = time?.getAttribute('aria-label') ?? ''
@@ -245,7 +186,6 @@
     ok(!!time?.getAttribute('datetime'), '<time> 仍保留机器可读的 datetime')
   }
 
-  /* ---- 9. 时长写法统一（H-7：与子代理列表共用 formatDuration）---- */
   {
     const texts = [...document.querySelectorAll('.sa-time')].map((el) => (el.textContent ?? '').trim())
     if (texts.length === 0) {

@@ -1,19 +1,3 @@
-/**
- * Skill 正文的静态安全审查（实施-04 S6b-2）。
- *
- * Skill 是给模型看的指令材料，不是一个可以靠来源 / hash 自动变可信的
- * 程序。因此这里做的是**内容级闸门**：先记录可解释的 finding，再决定能否
- * 进入受管 staging。来源、SHA-256、项目授权和 runner 边界仍然各自成立；这
- * 个扫描器不替代它们，也不把「没命中规则」说成经过人工审计。
- *
- * 规则刻意分成两档：
- *   - high：提示注入、秘密读取/外传、破坏性文件操作、提权或隐藏行为，直接拒绝；
- *   - medium：命令执行、联网、环境变量访问等可用于正常 Skill 的能力，记录在证据中，
- *     但仍须经过已有的精确候选 / 项目授权。
- *
- * 这是共享纯逻辑，不能读文件、联网、执行命令，也不把正文发送到任何服务。
- */
-
 export const SKILL_SECURITY_SCANNER_VERSION = 'yan-skill-security-1'
 export const SKILL_SECURITY_MAX_FINDINGS = 128
 const MAX_EXCERPT_LENGTH = 180
@@ -61,11 +45,6 @@ type SecurityRule = {
   pattern: RegExp
 }
 
-/*
- * 每条规则只在同一行产生一个 finding：这样审查回执稳定、不会因为一行里
- * 重复出现同一个词而被大量刷屏。规则不使用 g/y，避免跨文件复用时留下
- * RegExp.lastIndex 状态。
- */
 const RULES: readonly SecurityRule[] = [
   {
     code: 'prompt-injection',
@@ -151,7 +130,6 @@ function excerptOf(line: string): string {
   return `${redacted.slice(0, MAX_EXCERPT_LENGTH - 1)}…`
 }
 
-/** 格式化给事务 failure / CLI 回执的人读摘要，不包含完整正文。 */
 export function formatSkillSecurityReview(review: SkillSecurityReview): string {
   if (review.findings.length === 0 && !review.truncated) {
     return `Skill 内容审查通过（${review.scannerVersion}；扫描 ${review.scannedFiles} 个文件）`
@@ -165,12 +143,6 @@ export function formatSkillSecurityReview(review: SkillSecurityReview): string {
   return `Skill 内容审查${review.ok ? '通过（含提醒）' : '拒绝'}（${review.scannerVersion}）：${findings}${suffix}${truncated}`
 }
 
-/**
- * 对已下载 / 已声明的 Skill 正文做确定性扫描。
- * `ok=false` 由 high finding 或审查结果被截断触发；medium finding 会进入回执，
- * 不能被调用方当成「无风险」吞掉。finding 有数量上限时仍继续扫描正文，避免
- * 先出现大量 medium 就把后面的 high 风险截掉后放行。
- */
 export function reviewSkillFiles(files: readonly SkillSecurityInput[]): SkillSecurityReview {
   const findings: SkillSecurityFinding[] = []
   let scannedBytes = 0
@@ -186,7 +158,6 @@ export function reviewSkillFiles(files: readonly SkillSecurityInput[]): SkillSec
         if (!rule.pattern.test(line)) continue
         if (findings.length >= SKILL_SECURITY_MAX_FINDINGS) {
           truncated = true
-          /* 满额后高风险挤掉一条中风险：长文件里前面的命令示例不能把后面的提示注入挤出审查结果 */
           const medium = rule.severity === 'high' ? findings.findLastIndex((finding) => finding.severity === 'medium') : -1
           if (medium < 0) continue
           findings.splice(medium, 1)

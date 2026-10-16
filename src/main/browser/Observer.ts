@@ -1,12 +1,3 @@
-/**
- * 把当前页面变成模型能用的「可交互元素表」。
- *
- * 做法：DOM 全量快照 + 无障碍树 + `DOM.getBoxModel` 逐个体积，
- * 只保留可见且有尺寸的可交互节点（最多 80 个），交给 ElementRegistry
- * 编上 generation-scoped ref。
- *
- * 盒坐标由 geometry.ts 提供：它是**相对视口**的 CSS 像素，与 Input 事件同一套。
- */
 import type { CdpChannel } from './CdpChannel'
 import type { ElementRegistry, RegisteredElement } from './ElementRegistry'
 import { elementBox } from './geometry'
@@ -131,7 +122,6 @@ export class Observer {
     await Promise.all([...this.sessionSetup.values()])
     const frameById = new Map<string, PageFrame>()
     if (pageTree?.frameTree) for (const frame of frameList(pageTree.frameTree)) frameById.set(frame.id, frame)
-    /* OOPIFs have their own CDP target, so the page target omits their frame tree. */
     for (const tree of this.frameTreesBySession.values()) {
       for (const frame of frameList(tree)) frameById.set(frame.id, frame)
     }
@@ -168,7 +158,6 @@ export class Observer {
         perSessionAx.set(sessionId, mapped)
         seenRoots.add(frame.id)
       } catch {
-        /* Detached or same-process frames are read from the parent DOM tree. */
       }
     }
     const candidates: Omit<RegisteredElement, 'ref'>[] = []
@@ -191,7 +180,6 @@ export class Observer {
       const axName = (ax?.name as { value?: string } | undefined)?.value
       const role = axRole || attributes.role || String(node.localName || node.nodeName || 'element').toLowerCase()
       const name = axName || attributes['aria-label'] || attributes.title || attributes.placeholder || textOf(node)
-      /* Same-process child boxes already use the page viewport; OOPIF boxes are target-local. */
       const [offsetX, offsetY]: [number, number] = sessionId ? frameOffsets.get(frameId) ?? [0, 0] : [0, 0]
       candidates.push({
         backendNodeId,
@@ -227,7 +215,6 @@ export class Observer {
     this.autoAttach = (async () => {
       await this.cdp.send('Target.setDiscoverTargets', { discover: true }).catch(() => undefined)
       await this.cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }).catch(() => undefined)
-      /* Existing cross-process frames attach asynchronously after setAutoAttach. */
       await new Promise((resolve) => setTimeout(resolve, 120))
     })()
     return this.autoAttach

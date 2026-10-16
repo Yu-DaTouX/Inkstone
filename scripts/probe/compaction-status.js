@@ -1,17 +1,3 @@
-/**
- * 压缩可观测性（N21-2）—— 真实触发 + 文案矩阵。
- *
- * 三件事要在这里钉住：
- *   ① **真实**触发一次自动压缩（阈值）后，「最近一次」显示原因与结局；
- *   ② **真实**的手动压缩失败**不许静默**（pi 的原文要能看见）；
- *   ③ 进行中与已结束**同时**存在时互不覆盖；reason 认不出时显示原文而不是「未知」。
- *
- * ① ② 会真调模型（cost 1）：本场景跑在 `piSettings` 把阈值压到 0 的隔离环境里
- * （见 test-live 的 `piSettings`），所以第一轮结束就会压缩 —— 否则要把上下文填到
- * 「窗口 − 16384」才触发，那是几十万 token 的额度。
- *
- * ③ 用注入状态验（分支多、且「正在压缩」只有几百毫秒的窗口，不可能稳定抓拍）。
- */
 ;(async () => {
   const out = []
   const ok = (c, s) => {
@@ -45,10 +31,6 @@
   }
   if (S().conn !== 'ready') return `  ⤺ 跳过：pi 未就绪（conn=${S().conn}），本场景要真的压缩一次`
 
-  /*
-   * 右栏是「开始 / 工具」两个视图（实施-12），上下文分区只在工具视图里 ——
-   * 不先切过去，`rp-context` 根本不在 DOM，断言会静默拿到空串。
-   */
   if (!S().settings?.rightPanelOpen) {
     await S().setRightPanelOpen(true)
     await sleep(700)
@@ -70,7 +52,6 @@
   }
   await openDetails()
 
-  /* ---------------- 1. 真实的阈值触发 ---------------- */
   log('=== 1. 真实自动压缩（阈值）===')
   const ta = q('[data-testid="composer"]')
   if (!ta) return '✗ 找不到输入框'
@@ -107,22 +88,12 @@
   ok(!q('[data-testid="ctx-last-compaction-error"]'), '成功时不显示错误行')
   ok(!q('[data-testid="ctx-last-compaction-note"]'), '成功时不显示“已跳过”的解释行')
 
-  /*
-   * 阈值被压到 0 时进度条上**不能**画触发线：
-   * 画在 0% 或负数位置等于告诉用户「马上就要压缩了」——那是假的。
-   */
   ok(!q('[data-testid="ctx-threshold-mark"]'), '阈值为 0 时不画触发线（不撒谎）')
 
-  /* ---------------- 1b. 项目级设置被 pi 忽略时要说明（D21） ---------------- */
   log('')
   log('=== 1b. 项目 .pi/settings.json 未生效（D21）===')
   const info = await window.yan.compactionInfo(200000)
   log('  compactionInfo: ' + JSON.stringify(info))
-  /*
-   * fixture 的项目文件写的是 reserveTokens=4096 / enabled=false；
-   * 全局（隔离 pi 目录）写的是 900000 / true。
-   * pi 不会读未信任项目的 .pi/settings.json —— 所以生效值必须是全局那份。
-   */
   ok(info.reserveTokens === 900000, '生效的 reserveTokens 来自全局设置（项目级那份被忽略）')
   ok(info.enabled === true, '生效的 enabled 也是全局的（项目里写的是 false）')
   ok(info.scope === 'global', `明确标出生效来源是全局（scope=${info.scope}）`)
@@ -130,7 +101,6 @@
   await openDetails()
   ok(!!q('[data-testid="ctx-project-ignored"]'), '界面上说明了项目设置未生效（不拿它画触发线）')
 
-  /* ---------------- 2. 真实的手动压缩失败：不许静默 ---------------- */
   log('')
   log('=== 2. 真实手动压缩失败要看得见 ===')
   const btn = q('[data-testid="rp-compact-now"]')
@@ -153,7 +123,6 @@
   log('  错误文案: ' + JSON.stringify(errText))
   ok(/Compaction failed|Already compacted|Nothing to compact/.test(errText), '错误行是 pi 的原文，没有被吞掉')
 
-  /* ---------------- 3. 关掉自动压缩 → 真实的手动压缩成功 ---------------- */
   log('')
   log('=== 3. 关掉自动压缩后手动压缩（真实成功）===')
   const sw = q('[data-testid="rp-auto-compact"]')
@@ -169,7 +138,6 @@
   ta.dispatchEvent(new Event('input', { bubbles: true }))
   await sleep(200)
   q('[data-testid="send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  /* 等这一轮真的跑完：isAgentRunning 从 true 回到 false */
   let sawRunning = false
   for (let i = 0; i < 90; i++) {
     await sleep(500)
@@ -178,21 +146,12 @@
     if (sawRunning && !s?.isAgentRunning && !s?.isStreaming) break
   }
   await sleep(2500)
-  /*
-   * 关掉自动压缩后**不应该**再出现自动压缩：
-   * 否则“开关”只是个装饰（上一轮就是靠它才在第一轮结束就压了一次，对比明显）。
-   */
   ok(
     S().session?.lastCompaction?.endedAt === endedBefore,
     '关掉开关后不再自动压缩（最近一次的结束时间未变）'
   )
 
   const btn2 = q('[data-testid="rp-compact-now"]')
-  /*
-   * 拿上一次记录的 startedAt 当基准：
-   * 只看 `reason==='manual' && status!=='running'` 会**立刻**命中上一轮那次失败，
-   * 于是根本没等新一次压缩（踩过：三条断言全 ✗，看上去像功能坏了）。
-   */
   const prevStartedAt = S().session?.lastCompaction?.startedAt
   btn2.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   let manualOk = null
@@ -214,13 +173,11 @@
   ok(!q('[data-testid="ctx-last-compaction-error"]'), '成功后错误行消失')
   ok(/→/.test(text('[data-testid="ctx-last-compaction-tokens"]')), '成功后有压缩前后 token')
 
-  /* 把开关恢复回开（不把它当成“测试遗留”）：注入断言不依赖它，但界面应当回得去 */
   if (q('[data-testid="rp-auto-compact"]')?.getAttribute('aria-checked') === 'false') {
     q('[data-testid="rp-auto-compact"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(800)
   }
 
-  /* ---------------- 4. 注入：其余分支 + 并存 ---------------- */
   log('')
   log('=== 4. 进行中 / 已跳过 / 已取消 / 未知原因（注入）===')
   const setSession = async (patch) => {
@@ -237,7 +194,6 @@
   ok(/压缩中/.test(running) && /已达阈值/.test(running), '进行中带原因：「压缩中 · 已达阈值」')
   ok(!!q('[data-testid="ctx-last-compaction"]'), '进行中时上一次的结果仍在（两条互不覆盖）')
   ok(/手动/.test(text('[data-testid="ctx-last-compaction"]')), '并存时「最近一次」仍是上一次的原因')
-  /* 同一句不能同时出现两遍（D10 那类重复的回归网） */
   ok((sec.textContent.match(/已达阈值/g) ?? []).length === 1, '同一句提示只出现一次')
 
   await setSession({ compaction: { status: 'running', reason: 'overflow', startedAt: Date.now() } })
@@ -271,7 +227,6 @@
   ok(!!q('[data-testid="ctx-last-compaction-error"]'), '失败：注入的原文也进错误行')
   ok(/注入的原因/.test(text('[data-testid="ctx-last-compaction-error"]')), '错误行显示原文')
 
-  /* 收尾：把注入的状态清掉，不影响后面的场景/截图 */
   await setSession({ isCompacting: false, compaction: undefined, lastCompaction: undefined })
 
   return out.join('\n')

@@ -1,17 +1,3 @@
-/**
- * 砚对砚：连接者一侧。协议见 `shared/peer-protocol.ts`，对方的路由在 `remote-server.ts` 的 handlePeer。
- *
- * ── 这里做什么 ──
- *   · 保存配对过的对方砚：地址、对方电脑名、设备令牌（系统加密存储可用时加密，不出主进程）；
- *   · 申请本次连接（等对方所有者批准），批准后保持事件流 —— 流断开即视为连接结束，
- *     不自动重连：重连必须重新申请、由对方重新批准；
- *   · 在授权范围内浏览会话与历史；把选定会话**复制**到本机（带来源、缺失附件如实标记），
- *     或把对方的已确认项目记忆导入为本机某个项目的**候选**。
- *
- * ── 不做什么 ──
- *   · 不同步、不合并；导入是一次性副本，已交付的副本对方无法收回，这边也不回写对方；
- *   · 导入会话不迁移正在运行的进程，副本只供查看与引用。
- */
 import { safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
@@ -39,7 +25,6 @@ const IMPORTS_DIR = join(YAN_DIR, 'peer-imports')
 
 interface StoredPeer extends PeerRecordView {
   deviceId: string
-  /** 设备令牌：`enc:` 前缀为系统加密后的 base64，`raw:` 为加密不可用时的原文 */
   token: string
 }
 
@@ -60,12 +45,10 @@ function openToken(sealed: string): string | null {
     if (sealed.startsWith('enc:')) return safeStorage.decryptString(Buffer.from(sealed.slice(4), 'base64'))
     if (sealed.startsWith('raw:')) return sealed.slice(4)
   } catch {
-    /* 换了系统账户或密钥不可用：令牌作废，需要重新配对 */
   }
   return null
 }
 
-/** 用户输入的地址 → `http://host:port`（只接受 http 与主机:端口，不带路径） */
 export function normalizePeerAddress(input: string): string | null {
   const text = input.trim().replace(/\/+$/, '')
   const withScheme = /^https?:\/\//i.test(text) ? text : `http://${text}`
@@ -128,7 +111,6 @@ export class PeerClient {
     this.onChange()
   }
 
-  /** 用对方电脑上显示的配对码配对；本机在对方那里登记为「另一台砚」 */
   async pair(addressInput: string, code: string): Promise<Result<PeerRecordView>> {
     const address = normalizePeerAddress(addressInput)
     if (!address) return { ok: false, error: '地址格式不对，例如 100.101.102.103:37892' }
@@ -194,7 +176,6 @@ export class PeerClient {
       })
       const body = (await response.json()) as { ok?: boolean; data?: T; error?: string; code?: string }
       if (!response.ok || !body.ok) {
-        /* 对方说连接已失效：本地状态跟上，不假装还连着 */
         if (body.code === 'peer_connection_required') this.dropConnection(peerId, '对方已结束本次连接，需要重新申请')
         return { ok: false, error: body.error ?? `请求失败（HTTP ${response.status}）`, code: body.code }
       }
@@ -204,7 +185,6 @@ export class PeerClient {
     }
   }
 
-  /** 申请本次连接：等对方所有者批准，批准后立即打开事件流 */
   async connect(peerId: string, operations: PeerOperation[], note: string): Promise<Result<PeerGrantView>> {
     this.disconnect(peerId)
     this.setState(peerId, { state: 'waiting', since: Date.now() })
@@ -242,7 +222,6 @@ export class PeerClient {
         return { ok: false, error: `对方拒绝建立事件流（HTTP ${response.status}）` }
       }
       const reader = response.body.getReader()
-      /* 后台读到流结束：流一断，本次连接就结束了 */
       void (async () => {
         try {
           for (;;) {
@@ -250,7 +229,6 @@ export class PeerClient {
             if (done) break
           }
         } catch {
-          /* 网络中断或主动断开 */
         }
         if (this.streams.get(peerId) === controller) this.dropConnection(peerId, controller.signal.aborted ? null : '连接已断开；重新连接需要对方再次批准')
       })()
@@ -268,7 +246,6 @@ export class PeerClient {
     this.setState(peerId, reason ? { state: 'failed', error: reason } : { state: 'idle' })
   }
 
-  /** 主动结束本次连接（对方随之作废授权） */
   disconnect(peerId: string): void {
     if (this.streams.has(peerId) || this.connections.get(peerId)?.state === 'connected') this.dropConnection(peerId, null)
   }
@@ -290,7 +267,6 @@ export class PeerClient {
     return this.request(peerId, `/remote/v1/peer/sessions/${encodeURIComponent(sessionId)}/messages`, { method: 'POST', body: { text }, idempotent: true })
   }
 
-  /** 在对方开放的项目里新开任务（需要 send 授权；由对方电脑执行） */
   startSession(peerId: string, projectId: string, text: string): Promise<Result<{ sessionId: string | null; runId: string; projectId: string }>> {
     return this.request(peerId, `/remote/v1/peer/projects/${encodeURIComponent(projectId)}/sessions`, { method: 'POST', body: { text }, idempotent: true })
   }
@@ -299,7 +275,6 @@ export class PeerClient {
     return this.request(peerId, '/remote/v1/peer/runs/abort', { method: 'POST', body: { runId }, idempotent: true })
   }
 
-  /** 把对方一个会话复制到本机：消息 + 可取到的成果文件；取不到的如实标记 */
   async importSession(peerId: string, sessionId: string): Promise<Result<PeerImportView>> {
     const exported = await this.request<PeerSessionExport>(peerId, `/remote/v1/peer/sessions/${encodeURIComponent(sessionId)}/export`, { timeoutMs: 60_000 })
     if (!exported.ok) return exported
@@ -356,7 +331,6 @@ export class PeerClient {
     return { ok: true, data: view }
   }
 
-  /** 对方项目的已确认记忆 → 本机某个项目的候选（保留来源电脑、条目 id 与版本） */
   async importKnowledge(peerId: string, remoteProjectId: string, local: ProjectRecord): Promise<Result<{ accepted: number; rejected: number }>> {
     const exported = await this.request<PeerKnowledgeExport>(peerId, `/remote/v1/peer/projects/${encodeURIComponent(remoteProjectId)}/knowledge`)
     if (!exported.ok) return exported
@@ -403,13 +377,11 @@ export class PeerClient {
           artifacts: manifest.artifacts ?? []
         })
       } catch {
-        /* 损坏的导入目录不列出 */
       }
     }
     return out.sort((a, b) => b.importedAt - a.importedAt)
   }
 
-  /** 导入副本的目录与消息（界面查看用） */
   async readImport(importId: string): Promise<Result<{ dir: string; messages: unknown[] }>> {
     if (!/^imp-[A-Za-z0-9-]+$/.test(importId)) return { ok: false, error: '导入 id 无效' }
     const dir = join(IMPORTS_DIR, importId)

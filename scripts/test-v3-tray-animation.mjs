@@ -1,18 +1,3 @@
-/**
- * 托盘柔和闪动播放器单测（v3 L12）。
- *
- * 现场用 esbuild 编译 `src/main/attention/index.ts`，在 node 里跑，**不启动 Electron、
- * 不起 pi、不写用户数据、不读产品 build 目录**。用虚拟时钟 + 假素材 + 假托盘断言：
- *
- *   · 运行 750ms / 等待 1500ms 的真实原生帧时长；待用户操作优先于运行。
- *   · failed / done 等终态不当作「待确认」，不进问号状态。
- *   · 单链 timer：重复 start 不增 timer；idle / 减少动态 / dispose 立即清 timer。
- *   · 绝对时间定位：时钟一次跳过多个帧后只 apply 目标帧，不补帧突发。
- *   · 常量缓存：`assets()` 只在状态 / 主题 / 减少动态变化时调用，不每 tick 调用。
- *   · 缺素材 / 坏素材安全回退静态，不崩溃、不误用旧图。
- *
- * 可独立执行：node scripts/test-v3-tray-animation.mjs
- */
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -25,7 +10,6 @@ async function compile(entry, outfile) {
   return outfile
 }
 
-/** 真源时间线（运行 12 帧 / 等待 12 帧），数值来自 manifest 的结构，不是 runtime 常量。 */
 const RUNNING = [300, 25, 25, 25, 25, 25, 200, 25, 25, 25, 25, 25]
 const WAITING = [600, 50, 50, 50, 50, 50, 400, 50, 50, 50, 50, 50]
 
@@ -44,7 +28,6 @@ function virtualClock() {
       timers.delete(id)
     },
     pending: () => timers.size,
-    /** 正常推进：按时间顺序触发所有到期 timer。 */
     advance(ms) {
       const target = now + ms
       for (let guard = 0; guard < 100000; guard += 1) {
@@ -55,13 +38,11 @@ function virtualClock() {
         if (next === null) break
         const timer = timers.get(next)
         timers.delete(next)
-        /* 若期间时钟已被 sleep 推后，回调在“当前”时刻执行，不回拨。 */
         now = Math.max(now, timer.at)
         timer.fn()
       }
       now = target
     },
-    /** 模拟休眠：只推进时钟，不触发 timer。 */
     sleep(ms) {
       now += ms
     }
@@ -75,7 +56,6 @@ function frameSet(durations, prefix) {
   }
 }
 
-/** 素材端口：记录调用次数与最近一次 (state, theme)。 */
 function fakeAssets() {
   const calls = []
   return {
@@ -106,10 +86,7 @@ function createPlayer(mod, { assets, clock, log, theme = 'on-light' }) {
   })
 }
 
-/* ───────────────────────── 播放器 ───────────────────────── */
-
 function runPlayerTests(mod) {
-  /* 运行：750ms 周期、真实原生时长、单链 timer。 */
   {
     const clock = virtualClock()
     const assets = fakeAssets()
@@ -121,23 +98,17 @@ function runPlayerTests(mod) {
     assert.equal(clock.pending(), 1, '同一时刻只有一个 timer')
     assert.equal(player.animating(), true)
 
-    /* 亮停留 300ms 内不换帧。 */
     clock.advance(290)
     assert.equal(log.applied.filter((x) => x === 'run1').length, 0)
-    /* 到 300ms 进入第 1 帧。 */
     clock.advance(10)
     assert.equal(log.applied.at(-1), 'run1')
-    /* 走过缓降的 5 个 25ms 帧。 */
     clock.advance(25 * 5)
     assert.equal(log.applied.at(-1), 'run6', '进入暗停留')
-    /* 暗停留 200ms 后回到最暗平台，再走缓升。 */
     clock.advance(200)
     assert.equal(log.applied.at(-1), 'run7')
-    /* 一个完整周期后回到第 0 帧。 */
     clock.advance(25 * 5)
     assert.equal(log.applied.at(-1), 'run0')
 
-    /* 重复 start 不增 timer。 */
     player.setState('running')
     player.setMotionAllowed(true)
     assert.equal(clock.pending(), 1, '重复 start 不增 timer')
@@ -145,7 +116,6 @@ function runPlayerTests(mod) {
     assert.equal(clock.pending(), 0, 'dispose 清 timer')
   }
 
-  /* 等待：1500ms 周期，问号帧，待用户操作优先于运行。 */
   {
     const clock = virtualClock()
     const assets = fakeAssets()
@@ -164,7 +134,6 @@ function runPlayerTests(mod) {
     player.dispose()
   }
 
-  /* 减少动态：立即停 timer 并显示静态亮帧；恢复后重启动画。 */
   {
     const clock = virtualClock()
     const assets = fakeAssets()
@@ -185,7 +154,6 @@ function runPlayerTests(mod) {
     player.dispose()
   }
 
-  /* idle：静态，不启动 timer。 */
   {
     const clock = virtualClock()
     const assets = fakeAssets()
@@ -199,7 +167,6 @@ function runPlayerTests(mod) {
     player.dispose()
   }
 
-  /* 延迟跳帧：时钟一次跳过 1600ms（≈2 周期），只 apply 目标帧，不补发中间帧。 */
   {
     const clock = virtualClock()
     const assets = fakeAssets()
@@ -211,12 +178,10 @@ function runPlayerTests(mod) {
     clock.sleep(1600)
     clock.advance(0)
     assert.ok(log.applied.length - before <= 2, `跳帧后只 apply 少量帧（实际 ${log.applied.length - before}）`)
-    /* 1600 % 750 = 100ms → 仍在亮停留（run0）。 */
     assert.equal(log.applied.at(-1), 'run0')
     player.dispose()
   }
 
-  /* 缺素材 / 坏素材：安全回退，不崩溃。 */
   {
     const clock = virtualClock()
     const log = fakeApplyLog()
@@ -244,7 +209,6 @@ function runPlayerTests(mod) {
     bad.dispose()
   }
 
-  /* 常量缓存：assets() 只在变化时调用，不每 tick 调用。 */
   {
     const clock = virtualClock()
     const assets = fakeAssets()
@@ -259,7 +223,6 @@ function runPlayerTests(mod) {
     player.dispose()
   }
 
-  /* 主题变化：refresh 用新主题重取帧并立即应用。 */
   {
     const clock = virtualClock()
     const assets = fakeAssets()
@@ -284,8 +247,6 @@ function runPlayerTests(mod) {
     player.dispose()
   }
 }
-
-/* ───────────────────────── AttentionService 集成 ───────────────────────── */
 
 function run(runId, phase, overrides = {}) {
   return {
@@ -363,7 +324,6 @@ function runAttentioIntegrationTests(mod) {
     }
   }
 
-  /* failed 未读：不是「待确认」，保持 idle 静态（不显示问号）。 */
   {
     const h = makeHarness([run('f', { kind: 'failed', at: 10, cause: 'model-error', message: '崩了', seen: false })])
     h.service.ensureTray()
@@ -373,7 +333,6 @@ function runAttentioIntegrationTests(mod) {
     h.service.dispose()
   }
 
-  /* done 未读：同样不是待确认。 */
   {
     const h = makeHarness([run('d', { kind: 'done', at: 10, seen: false })])
     h.service.ensureTray()
@@ -381,7 +340,6 @@ function runAttentioIntegrationTests(mod) {
     h.service.dispose()
   }
 
-  /* needs-you：问号闪动；与 running 同时存在时待用户操作优先。 */
   {
     const h = makeHarness([
       run('r', { kind: 'running', since: 1, activity: 'streaming' }),
@@ -393,7 +351,6 @@ function runAttentioIntegrationTests(mod) {
     h.service.dispose()
   }
 
-  /* running：>_ 闪动。 */
   {
     const h = makeHarness([run('r', { kind: 'running', since: 1, activity: 'thinking' })])
     h.service.ensureTray()
@@ -403,7 +360,6 @@ function runAttentioIntegrationTests(mod) {
     h.service.dispose()
   }
 
-  /* 减少动态：静态亮帧，无 timer。 */
   {
     const h = makeHarness([run('r', { kind: 'running', since: 1, activity: 'tool' })])
     h.setMotion(false)
@@ -413,7 +369,6 @@ function runAttentioIntegrationTests(mod) {
     h.service.dispose()
   }
 
-  /* 宿主等待事实（终端阻塞 / 审批）→ 问号。 */
   {
     const h = makeHarness([])
     h.state.hostWaiting = true
@@ -422,7 +377,6 @@ function runAttentioIntegrationTests(mod) {
     h.service.dispose()
   }
 
-  /* dispose 清 timer 与托盘。 */
   {
     const h = makeHarness([run('r', { kind: 'running', since: 1, activity: 'streaming' })])
     h.service.ensureTray()
@@ -432,8 +386,6 @@ function runAttentioIntegrationTests(mod) {
     assert.equal(h.tray.state.destroyed, 1)
   }
 }
-
-/* ───────────────────────── 素材装载 ───────────────────────── */
 
 function runAssetStoreTests(mod) {
   const manifest = {
@@ -479,7 +431,6 @@ function runAssetStoreTests(mod) {
     }
   }
 
-  /* 预载一次后 set() 纯内存：多次调用不增加 createImage。 */
   {
     const h = makeDeps()
     const store = mod.createTrayAssetStore(h.deps)
@@ -499,7 +450,6 @@ function runAssetStoreTests(mod) {
     assert.equal(store.set('running', 'on-light'), undefined)
   }
 
-  /* 坏 manifest：load 失败、set undefined、不抛。 */
   {
     const h = makeDeps({ readFile: () => '{ not json' })
     const store = mod.createTrayAssetStore(h.deps)
@@ -508,7 +458,6 @@ function runAssetStoreTests(mod) {
     assert.equal(store.ready(), false)
   }
 
-  /* 帧数与时间线不符：manifest 整体拒绝（失败封闭），退回静态，不影响其它组合。 */
   {
     const broken = JSON.parse(JSON.stringify(manifest))
     broken.themes['on-light'].running = broken.themes['on-light'].running.slice(0, 3)
@@ -527,7 +476,6 @@ function runAssetStoreTests(mod) {
     assert.match(warned, /manifest/)
   }
 
-  /* 缺 manifest：load 失败、不抛。 */
   {
     const store = mod.createTrayAssetStore({
       dirs: ['/brand/tray'],
