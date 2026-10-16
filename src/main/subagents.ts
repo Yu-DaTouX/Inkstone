@@ -17,7 +17,7 @@ import { PiRpc, resolvePi } from './protocol'
 import { CapabilityServer } from './capability-server'
 import { nativePiToolsSupported } from '../shared/agent-context'
 import { modelErrorNotice } from '../shared/model-errors'
-import { redactDiagnosticText } from '../shared/handoff-diagnostics'
+import { redactDiagnosticText } from '../shared/redact-diagnostic'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
 import { confirmRegisteredModel } from './subagents/registered-model'
 import {

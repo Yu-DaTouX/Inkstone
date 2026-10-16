@@ -1,4 +1,4 @@
-import type { CapabilityAuthorizationChoice, CapabilityAuthorizationPrompt, CapabilityRunOptions, GoalCommandHost } from '../agent'
+import type { CapabilityAuthorizationChoice, CapabilityAuthorizationPrompt, CapabilityRunOptions } from '../agent'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { CapabilityCommandError } from '../capability-server'
@@ -48,7 +48,6 @@ export interface CapabilityAcquisitionHost {
   resetMcpManager(): void
   mcpConfigError(): string | undefined
   mcpConnectionManager(): McpConnectionManager
-  goalHost(): GoalCommandHost | undefined
   rawCommands(): Promise<RawSkillCommand[]>
   push(msg: MainPush): void
   getState(): SessionState | null
@@ -515,18 +514,6 @@ export class CapabilityAcquisition {
       const runnerId = this.host.capabilityOpts()?.sessionId
       const projectId = this.host.capabilityOpts()?.projectId
       if (sessionFile && runnerId && projectId) {
-        const goalHost = this.host.goalHost()
-        const goalStatus = goalHost
-          ? await goalHost.run('goal.status', {}, { sessionId: runnerId, projectId })
-          : null
-        const goal = (goalStatus?.data as { goal?: { goalId?: unknown; revision?: unknown } } | undefined)?.goal
-        if (goalHost && (!goal || !Number.isSafeInteger(goal.revision) || (goal.revision as number) < 0)) {
-          throw new CapabilityCommandError('goal_snapshot_unavailable', '无法固定当前目标修订，事务保持待处理且不会自动激活')
-        }
-        const goalId = typeof goal?.goalId === 'string' && goal.goalId ? goal.goalId : plan.goalId
-        const goalRevision = Number.isSafeInteger(goal?.revision) && (goal?.revision as number) >= 0
-          ? (goal?.revision as number)
-          : 0
         const sourceHead = (await readRepoState(this.host.cwd(), { withRefs: false }))?.head ?? null
         tx = await service.bindPiPackageTarget(tx.operationId, {
           runnerId,
@@ -534,8 +521,8 @@ export class CapabilityAcquisition {
           cwd: this.host.cwd(),
           sessionFile,
           projectId,
-          goalId,
-          goalRevision,
+          goalId: plan.goalId,
+          goalRevision: 0,
           sourceHead,
           continueId: tx.operationId,
           packageName: localPackage.identifier,

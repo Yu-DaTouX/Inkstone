@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
-import { runSessionWorkSchedulerTests } from './test-session-work-scheduler.mjs'
 import { selectedPiRuntime as scriptRuntime } from './lib/pi-runtime-location.mjs'
 import { createRequire } from 'node:module'
 
@@ -16,7 +15,7 @@ await mkdir(join(root, 'context-budget-v1'))
 await writeFile(sentinel, '{"state":"needs_action","history":"keep"}\n')
 const original = await readFile(sentinel)
 const modules = {}
-for (const [name, file] of Object.entries({ context: 'src/shared/agent-context.ts', scheduler: 'src/main/session-work-scheduler.ts', ipc: 'src/main/ipc/context-budget-ipc.ts', runtime: 'src/main/pi-runtime-location.ts' })) {
+for (const [name, file] of Object.entries({ context: 'src/shared/agent-context.ts', ipc: 'src/main/ipc/context-budget-ipc.ts', runtime: 'src/main/pi-runtime-location.ts' })) {
   const outfile = resolve(`out/test/agent-native-${name}.mjs`)
   await build({ entryPoints: [file], outfile, bundle: true, packages: 'external', platform: 'node', format: 'esm', logLevel: 'silent' })
   modules[name] = await import(pathToFileURL(outfile))
@@ -57,7 +56,6 @@ for (const folder of ['pi-extensions', 'yan-thin', 'YAN-THIN']) {
   assert(modules.context.isAgentContextExtension(`C:/app/resources/${folder}/danger-guard.js`))
   checks += 2
 }
-await runSessionWorkSchedulerTests((value, message) => { assert(value, message); checks++ }, modules.scheduler)
 const handlers = new Map()
 modules.ipc.registerContextBudgetIpc({ rawHandle: (name, handler) => handlers.set(name, handler) }, { currentAgent: () => undefined })
 assert.equal(await handlers.get('yan:contextBudgetV1Enabled')(), false)

@@ -13,7 +13,6 @@ try {
     ['src/main/git-service.ts', 'git-service.mjs'],
     ['src/main/work-mode-service.ts', 'work-mode-service.mjs'],
     ['src/main/subagent-isolation.ts', 'subagent-isolation.mjs'],
-    ['src/main/handoff-runner.ts', 'handoff-runner.mjs'],
     ['src/main/git-actions.ts', 'git-actions.mjs']
   ]) {
     await build({ entryPoints: [source], outfile: join(modules, output), bundle: true, platform: 'node', format: 'esm', packages: 'external' })
@@ -46,34 +45,12 @@ try {
   const rename = isolation.summarizeGitDiff('R100\told-name.txt\tnew-name.txt\nM\tkeep.txt\n', '1\t0\tnew-name.txt\n')
   assert.deepEqual(rename.paths, ['new-name.txt', 'keep.txt'], '重命名摘要指向新路径')
 
-  const handoff = await load('handoff-runner.mjs')
-  const calls = []
-  let tx = { handoffId: 'h', stage: 'pending', sourceSession: 'source.jsonl', resumeId: 'h', steps: [] }
-  const runner = new handoff.HandoffRunner({
-    transactions: {
-      load: async () => {},
-      begin: async () => ({ tx, created: true }),
-      step: async (_id, stage, reason) => { tx = { ...tx, stage, error: reason }; return { tx, advanced: true } },
-      setPackage: async (_id, pkg) => { tx = { ...tx, package: pkg }; return { ok: true, tx } }
-    },
-    chains: { load: async () => {} },
-    stopRunner: async () => false,
-    openSession: async (target) => { calls.push(['open', target]); return { ok: true, runId: 'new', sessionFile: 'new.jsonl' } },
-    send: async () => ({ ok: true }),
-    readSessionText: async () => null,
-    notify: () => {}
-  })
-  const result = await runner.commit({ handoffId: 'h', sourceRunId: 'running', sourceSession: 'source.jsonl', cwd: temp, pkg: { goal: 'goal' } })
-  assert.equal(result.ok, false)
-  assert.equal(result.stage, 'failed')
-  assert.equal(calls.length, 1, '源停止失败时只回到源会话，不创建目标实例')
-
   const actions = await load('git-actions.mjs')
   const missingCwd = await actions.runGitAction({ kind: 'stage-all', requestId: 'r', cwd: '', expected: {} })
   assert.equal(missingCwd.ok, false)
   assert.equal(missingCwd.failure.code, 'invalid-input')
 
-  console.log('review2 git behavioral regression passed (6 checks)')
+  console.log('review2 git behavioral regression passed')
 } finally {
   await rm(temp, { recursive: true, force: true })
 }

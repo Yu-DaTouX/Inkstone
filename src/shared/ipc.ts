@@ -20,33 +20,7 @@ import type {
   CustomProviderView,
   LocalModelServer
 } from './custom-provider'
-export type {
-  LibraryDocument,
-  LibraryKind,
-  LibraryOwner,
-  LibraryOwnerKind,
-  LibraryParse,
-  LibraryParseStatus,
-  LibrarySource,
-  LibraryVersion,
-  RefOutcome,
-  SourceReference
-} from './library'
-import type {
-  LibraryKind,
-  LibraryOwner,
-  LibraryParse,
-  LibrarySource,
-  LibraryVersion,
-  RefOutcome,
-  SourceReference
-} from './library'
-
-export type { Space, SpaceDocument, SpaceProjectLink } from './space'
-import type { Space, SpaceProjectLink } from './space'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from './checkpoints'
-export type { ContextAssembly, ContextCitation, ContextFragment, ContextSectionId } from './context-assembly'
-import type { ContextAssembly } from './context-assembly'
 export type {
   ContextBudgetMaterialPinUpdateV1,
   ContextBudgetPhasePolicyV1,
@@ -90,12 +64,10 @@ import type { ContextBackgroundUsageSummary } from './context-background-usage'
 import type { UsageRange, UsageStatsView } from './usage-stats'
 export type UsageStatsResult = UsageStatsView & { userName: string }
 import type { ContextInspectSnapshot } from './context-inspect'
-import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
-import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
 import type { ToolLayout } from './tool-layout'
-import type { AgentProfilePatch, AgentProfileState } from './agent-profile'
+import type { AgentProfileState } from './agent-profile'
 import type { AccountQuotaCliSource, AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from './account-quota'
 import type { CodexFailoverResult } from './quota-failover'
 export type { AgentActivity, AgentProfile, AgentProfileKind, AgentProfilePatch, AgentProfileState } from './agent-profile'
@@ -131,8 +103,6 @@ export type SessionQuestionFrequencyResult =
       effective?: QuestionFrequency
       global?: QuestionFrequency
     }
-export type { GoalState, GoalPhase, GoalLink, GoalLinkKind, PursuedBrief, ReadyApprovalMode } from './goal'
-export type { HandoffView, HandoffPackage, HandoffTally } from './handoff'
 export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, KnowledgeReviewView } from './project-knowledge-view'
 
 export type { GitChangeEntry, GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
@@ -719,7 +689,6 @@ export interface AppSettings {
   keepAwakeOnBattery?: boolean
   checkpointsEnabled?: boolean
   guardOutsideWrites?: boolean
-  showSpaces?: boolean
   permissionMode?: PermissionMode
   guardAllowRoots?: string[]
   recentCwds: string[]
@@ -1258,7 +1227,6 @@ export type MainPushBody =
   | { ch: 'approval-close'; payload: { id: string } }
   | { ch: 'git-install'; payload: GitInstallProgress }
   | { ch: 'agent-profile'; payload: AgentProfileState }
-  | { ch: 'goal'; payload: GoalState }
   | { ch: 'todo-history'; payload: SessionTodoSnapshot[] }
   | { ch: 'ui-request'; payload: ExtensionUiRequest }
   | { ch: 'ui-deadline'; payload: { id: string; timeout: number; deadline: number } }
@@ -1279,7 +1247,6 @@ export type MainPushBody =
   | { ch: 'terminal'; payload: { id: string; kind: 'data' | 'exit' | 'status'; data?: string; seq?: number; exitCode?: number | null; status?: TerminalProgramStatus } }
   | { ch: 'log'; payload: { text: string; level?: 'info' | 'error' } }
   | { ch: 'search-api-hint'; payload: Record<string, never> }
-  | { ch: 'handoff-rebind'; payload: { sourceRunId: string; sourceSessionId: string; runtime: RuntimeEnvelope; state: SessionState; active: boolean } }
   | { ch: 'runners'; payload: RunnerStatus[] }
   | { ch: 'runs'; payload: { revision: number; upsert: import('./runs').RunSnapshot[]; remove: string[] } }
   | { ch: 'tray-new-session'; payload: null }
@@ -1404,7 +1371,6 @@ export interface ForkContextResultView {
   refsTotal: number
   refsResolved: number
   attachments: number
-  hasPackage: boolean
   error?: string
 }
 
@@ -1682,70 +1648,6 @@ export interface SourceLinkView {
   at: number
 }
 
-export interface LibraryRefRecordView {
-  owner: LibraryOwner
-  ref: SourceReference
-  at: number
-  outcome: RefOutcome
-}
-
-export interface LibraryImportView {
-  kind: LibraryKind
-  ref: string
-  title: string
-  spaceId?: string
-  content?: string
-  owner?: LibraryOwner
-}
-
-export interface LibraryImportViewResult {
-  ok: boolean
-  error?: string
-  decision?: 'unchanged' | 'new-version' | 'new-source'
-  sourceId?: string
-  version?: number
-  source?: LibrarySource
-  parse?: LibraryParse
-}
-
-export interface LibraryOpenView {
-  ok: boolean
-  outcome: RefOutcome
-  source?: LibrarySource
-  version?: LibraryVersion
-  text?: string
-  truncated?: boolean
-  error?: string
-}
-
-export interface LibraryBridge {
-  list(req?: { spaceId?: string | null }): Promise<{
-    ok: boolean
-    error?: string
-    sources: LibrarySource[]
-    versions: LibraryVersion[]
-    refs: LibraryRefRecordView[]
-  }>
-  import(view: LibraryImportView): Promise<LibraryImportViewResult>
-  open(ref: SourceReference, options?: { maxChars?: number }): Promise<LibraryOpenView>
-  remove(sourceId: string): Promise<{ ok: boolean; error?: string }>
-  restore(sourceId: string): Promise<{ ok: boolean; error?: string }>
-  rename(sourceId: string, title: string): Promise<{ ok: boolean; error?: string; source?: LibrarySource }>
-  attach(sourceId: string, spaceId: string | null): Promise<{ ok: boolean; error?: string }>
-  verify(refs: SourceReference[]): Promise<{ ok: boolean; error?: string; checked: number; unavailable: number }>
-  addRef(owner: LibraryOwner, ref: SourceReference): Promise<{ ok: boolean; error?: string; added: boolean }>
-  promoteLegacy(req: {
-    sessionId: string
-    legacyId: string
-    kind: LibraryKind
-    title: string
-    ref: string
-    spaceId?: string
-  }): Promise<LibraryImportViewResult & { mapped?: boolean }>
-  current(): Promise<{ ok: boolean; error?: string; assembly?: ContextAssembly }>
-}
-
-
 export interface SourcesBridge {
   list(sessionId: string): Promise<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>
   addImage(req: { sessionId: string; name: string; mimeType: string; base64: string }): Promise<SourceRefView | null>
@@ -1896,38 +1798,8 @@ export interface YanBridge {
     entry?: SessionLayoutEntry
   }>
 
-  getSpaces(): Promise<{ spaces: Space[]; links: SpaceProjectLink[] }>
-  createSpace(input: { name: string; description?: string }): Promise<{
-    ok: boolean
-    error?: string
-    space?: Space
-    spaces?: Space[]
-    links?: SpaceProjectLink[]
-  }>
-  updateSpace(
-    id: string,
-    patch: { name?: string; description?: string | null; archived?: boolean }
-  ): Promise<{
-    ok: boolean
-    error?: string
-    space?: Space
-    spaces?: Space[]
-    links?: SpaceProjectLink[]
-  }>
-  linkSpaceProject(
-    spaceId: string,
-    projectId: string
-  ): Promise<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>
-  unlinkSpaceProject(
-    spaceId: string,
-    projectId: string
-  ): Promise<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>
   setSessionArchived(sessionId: string, archived: boolean): Promise<{ ok: boolean; error?: string }>
   setSessionPinned(sessionId: string, pinned: boolean): Promise<{ ok: boolean; error?: string }>
-  setSessionSpace(
-    sessionId: string,
-    spaceId: string | null
-  ): Promise<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>
   nativeSession(request: import('./native-session-host').NativeSessionHostRequest): Promise<import('./native-session-host').NativeSessionHostResult>
   compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }>
   renameSession(name: string): Promise<{ ok: boolean; error?: string }>
@@ -1964,42 +1836,6 @@ export interface YanBridge {
     | { ok: false; error: string }
   >
   setSessionQuestionFrequency(input: SessionQuestionFrequencyInput): Promise<SessionQuestionFrequencyResult>
-
-  getAgentProfile(): Promise<AgentProfileState>
-  setAgentProfile(patch: AgentProfilePatch, expectedRevision?: number): Promise<{
-    ok: boolean
-    state: AgentProfileState
-    error?: string
-    detail?: string
-  }>
-
-  getGoal(): Promise<{ goal: GoalState; mode: WorkModeState }>
-  setGoal(brief: PursuedBrief): Promise<
-    { ok: true; goal: GoalState } | { ok: false; error: 'no_session' | 'incomplete' }
-  >
-  setGoalReadyApproval(mode: ReadyApprovalMode, expectedGoalRevision?: number): Promise<
-    { ok: true; goal: GoalState } | { ok: false; error: string; goal: GoalState }
-  >
-  approveGoalReady(input: {
-    runnerId: string | null
-    transitionId: string
-    goalRevision: number
-    modeRevision: number
-  }): Promise<
-    | { ok: true; replayed: boolean; started?: boolean; startError?: string; goal: GoalState }
-    | { ok: false; error: string; goal: GoalState }
-  >
-  modifyGoalReady(input: {
-    runnerId: string | null
-    transitionId: string
-    goalRevision: number
-    modeRevision: number
-  }): Promise<{ ok: true; goal: GoalState } | { ok: false; error: string; goal: GoalState }>
-  stopGoal(): Promise<{ ok: boolean; goal?: GoalState | null; error?: string }>
-  getHandoff(): Promise<HandoffView>
-  retryHandoff(): Promise<{ ok: boolean; error?: string }>
-
-  confirmHandoff(handoffId: string): Promise<{ ok: boolean; error?: string }>
 
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
@@ -2181,7 +2017,6 @@ export interface YanBridge {
   schedule: ScheduleBridge
 
   sources: SourcesBridge
-  library: LibraryBridge
   packages: PackagesBridge
   knowledge: KnowledgeBridge
   builtinCapabilities: BuiltinCapabilitiesBridge

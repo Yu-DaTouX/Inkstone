@@ -211,7 +211,7 @@ export interface SubagentCommandHost {
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
 }
 
-export interface GoalCommandHost {
+export interface ResearchCommandHost {
   run(
     command: string,
     params: Record<string, unknown>,
@@ -369,8 +369,7 @@ export class AgentController extends EventEmitter {
   private getBrowserHost?: () => BrowserCommandHost | null
   private subagentHost?: SubagentCommandHost
   private scheduleHost?: ScheduleService
-  private goalHost?: GoalCommandHost
-  private researchHost?: GoalCommandHost
+  private researchHost?: ResearchCommandHost
   private confirmCapabilityAuthorization?: (
     request: CapabilityAuthorizationPrompt
   ) => Promise<CapabilityAuthorizationChoice>
@@ -415,7 +414,6 @@ export class AgentController extends EventEmitter {
     },
     mcpConfigError: () => this.mcpConfigError,
     mcpConnectionManager: () => this.mcpConnectionManager(),
-    goalHost: () => this.goalHost,
     rawCommands: () => this.rawCommands(),
     push: (msg) => this.push(msg),
     getState: () => this.getState(),
@@ -528,8 +526,6 @@ export class AgentController extends EventEmitter {
     workModeExtension?: string
     shellFallbackExtension?: string
     agentProfileExtension?: string
-    goalResumeExtension?: string
-    handoffsExtension?: string
     responseDetailExtension?: string
     preambleExtension?: string
     languageExtension?: string
@@ -553,8 +549,7 @@ export class AgentController extends EventEmitter {
     browserHost?: () => BrowserCommandHost | null
     subagentHost?: SubagentCommandHost
     scheduleHost?: ScheduleService
-    goalHost?: GoalCommandHost
-  researchHost?: GoalCommandHost
+  researchHost?: ResearchCommandHost
     confirmCapabilityAuthorization?: (
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
@@ -615,7 +610,6 @@ export class AgentController extends EventEmitter {
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
     this.scheduleHost = opts.scheduleHost
-    this.goalHost = opts.goalHost
     this.researchHost = opts.researchHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.confirmExternalApi = opts.confirmExternalApi
@@ -1062,15 +1056,6 @@ export class AgentController extends EventEmitter {
     }
     if (command.startsWith('search.')) {
       return this.lookup.runSearchCommand(command.slice('search.'.length), params)
-    }
-    if (command.startsWith('goal.')) {
-      if (!this.goalHost) {
-        throw new CapabilityCommandError('goal_unavailable', '目标状态入口当前不可用（宿主未注入）')
-      }
-      return this.goalHost.run(command, params, {
-        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
-        projectId: this.capabilityOpts?.projectId ?? ''
-      })
     }
     if (command === 'image.generate') return this.runImageCommand(params)
     if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return this.runLocalImageServiceCommand(command)

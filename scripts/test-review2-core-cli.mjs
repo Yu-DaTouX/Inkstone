@@ -26,10 +26,11 @@ try {
   pass('repeat guard local reminder appends to user without changing message prefix')
 
   const { isAllowedBashCommand } = await import(pathToFileURL(resolve('resources/pi-extensions/work-mode.js')).href + `?t=${Date.now()}`)
-  assert.equal(isAllowedBashCommand('yan goal status'), true)
-  assert.equal(isAllowedBashCommand('"relative\\yan" goal status'), false)
-  assert.equal(isAllowedBashCommand('"C:\\Program Files\\Inkstone\\yan.exe" goal status'), true)
-  assert.equal(isAllowedBashCommand('/opt/inkstone/resources/yan-cli/yan.mjs goal status'), true)
+  assert.equal(isAllowedBashCommand('yan question ask'), true)
+  assert.equal(isAllowedBashCommand('yan goal status'), false)
+  assert.equal(isAllowedBashCommand('"relative\\yan" question ask'), false)
+  assert.equal(isAllowedBashCommand('"C:\\Program Files\\Inkstone\\yan.exe" question ask'), true)
+  assert.equal(isAllowedBashCommand('/opt/inkstone/resources/yan-cli/yan.mjs question ask'), true)
   pass('work mode accepts bare or absolute host CLI only, rejects relative quoted prefix')
 
   const lockOut = join(temp, 'lock.mjs')

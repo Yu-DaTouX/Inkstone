@@ -181,18 +181,18 @@ export async function runWorkModeTests(ok) {
   workModeExtension(pi)
   hooks.get('before_agent_start')()
   await service.writeWorkModeSnapshot('r1', { mode: 'clarify', revision: 5, planApprovalPending: true }, dir)
-  const blockedReport = hooks.get('tool_call')({
-    toolName: 'bash',
-    input: { command: 'yan goal report --request-file report.json' }
-  })
-  const allowedStatus = hooks.get('tool_call')({
+  const blockedGoal = hooks.get('tool_call')({
     toolName: 'bash',
     input: { command: 'yan goal status' }
   })
-  ok(blockedReport?.block === true, '待审标记在当前回合立即阻止 goal report')
-  ok(allowedStatus === undefined, '待审期间仍允许只读 goal status')
+  const allowedQuestion = hooks.get('tool_call')({
+    toolName: 'bash',
+    input: { command: 'yan question ask --request-file q.json' }
+  })
+  ok(blockedGoal?.block === true, '计划档拦下已退役的 goal 命令')
+  ok(allowedQuestion === undefined, '计划档仍允许 question ask')
   const blockedWrite = hooks.get('tool_call')({ toolName: 'write', input: { path: 'x', content: 'y' } })
-  ok(blockedWrite?.block === true, '待审期间写工具仍被兜底拦截')
+  ok(blockedWrite?.block === true, '计划档写工具仍被兜底拦截')
   if (oldDataDir === undefined) delete process.env.YAN_DATA_DIR
   else process.env.YAN_DATA_DIR = oldDataDir
   if (oldSessionId === undefined) delete process.env.YAN_SESSION_ID

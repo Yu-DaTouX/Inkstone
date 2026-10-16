@@ -449,8 +449,6 @@ const { runTodoHistoryTests } = await import('./test-todo-history.mjs')
 const { runWorkModeTests } = await import('./test-work-mode.mjs')
 const { runRepeatGuardTests } = await import('./test-repeat-guard.mjs')
 
-const { runGoalTests } = await import('./test-goal.mjs')
-
 const taskPlan = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/task-plan.ts'],
@@ -835,7 +833,7 @@ const { RunnerRegistry } = await import('../node_modules/esbuild/lib/main.js').t
   }).then(() => import('../out/test/runners.mjs'))
 )
 
-const { rebindSessionRuntime, migrateSessionRuntime, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+const { migrateSessionRuntime, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/session-runtime.ts'],
     outfile: 'out/test/session-runtime.mjs',
@@ -1522,39 +1520,7 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 await runWorkModeTests(ok)
-
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/goal.ts'],
-    outfile: 'out/test/goal.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/goal-service.ts'],
-    outfile: 'out/test/goal-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  })
-)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/repeat-guard.ts'],
-    outfile: 'out/test/repeat-guard.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
 await runRepeatGuardTests(ok)
-await runGoalTests(ok)
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1620,145 +1586,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runKeepRunningTests } = await import('./test-keep-running.mjs')
 await runKeepRunningTests(ok)
-
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/handoff.ts'],
-    outfile: 'out/test/handoff.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/handoff-service.ts'],
-    outfile: 'out/test/handoff-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  })
-)
-const { runHandoffHostRegressionTests } = await import('./test-handoff-host-regression.mjs')
-await runHandoffHostRegressionTests(ok)
-const { runHandoffTests } = await import('./test-handoff.mjs')
-await runHandoffTests(ok)
-await (await import('./test-handoff-context.mjs')).runHandoffContextTests(ok)
-const { runHandoffRequestTests } = await import('./test-handoff-request.mjs')
-await runHandoffRequestTests(ok, await import('../out/test/handoff.mjs'), await import('../out/test/handoff-service.mjs'))
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/handoff-transaction.ts'],
-    outfile: 'out/test/handoff-transaction.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/handoff-transaction-service.ts'],
-    outfile: 'out/test/handoff-transaction-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  })
-)
-const { runHandoffTransactionTests } = await import('./test-handoff-transaction.mjs')
-await runHandoffTransactionTests(
-  ok,
-  await import('../out/test/handoff-transaction.mjs'),
-  await import('../out/test/handoff-transaction-service.mjs'),
-  await import('../out/test/handoff.mjs')
-)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/handoff-resume.ts'],
-    outfile: 'out/test/handoff-resume.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/handoff-runner.ts'],
-    outfile: 'out/test/handoff-runner.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  })
-)
-const { runHandoffResumeTests } = await import('./test-handoff-resume.mjs')
-await runHandoffResumeTests(
-  ok,
-  await import('../out/test/handoff-resume.mjs'),
-  await import('../out/test/handoff.mjs')
-)
-const { runHandoffRunnerTests } = await import('./test-handoff-runner.mjs')
-await runHandoffRunnerTests(
-  ok,
-  await import('../out/test/handoff-runner.mjs'),
-  await import('../out/test/handoff-transaction-service.mjs'),
-  await import('../out/test/session-chain-service.mjs'),
-  await import('../out/test/handoff.mjs')
-)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/handoff-diagnostics.ts'],
-    outfile: 'out/test/handoff-diagnostics.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/handoff-diagnostics.ts'],
-    outfile: 'out/test/handoff-diagnostics-main.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  })
-)
-const { runHandoffDiagnosticsTests } = await import('./test-handoff-diagnostics.mjs')
-await runHandoffDiagnosticsTests(
-  ok,
-  await import('../out/test/handoff-diagnostics.mjs'),
-  await import('../out/test/handoff-diagnostics-main.mjs')
-)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/handoff-schedule.ts'],
-    outfile: 'out/test/handoff-schedule.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-const { runHandoffScheduleTests } = await import('./test-handoff-schedule.mjs')
-await runHandoffScheduleTests(ok, await import('../out/test/handoff-schedule.mjs'))
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/handoff-notice.ts'],
-    outfile: 'out/test/handoff-notice.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-const { runHandoffNoticeTests } = await import('./test-handoff-notice.mjs')
-await runHandoffNoticeTests(ok, await import('../out/test/handoff-notice.mjs'), await import('../out/test/handoff-diagnostics.mjs'))
 await runTodoHistoryTests(ok)
 await runTaskPlanTests(ok)
 await runTaskPlanStoreTests(ok)
@@ -1828,7 +1655,7 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 
 {
   const { runSessionRuntimeTests } = await import('./test-session-runtime.mjs')
-  runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime, rebindSessionRuntime)
+  runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime)
 }
 
 {
@@ -2057,19 +1884,6 @@ await runContextRecallTests(ok, { recall: contextRecall, store: contextStateStor
 
 const { runContextArchiveFindTests } = await import('./test-context-budget-rolling.mjs')
 await runContextArchiveFindTests(ok, { recall: contextRecall })
-
-const sessionWorkScheduler = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/session-work-scheduler.ts'],
-    outfile: 'out/test/session-work-scheduler.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/session-work-scheduler.mjs'))
-)
-const { runSessionWorkSchedulerTests } = await import('./test-session-work-scheduler.mjs')
-await runSessionWorkSchedulerTests(ok, sessionWorkScheduler)
 
 const ipcError = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -2782,21 +2596,7 @@ await runGitRepoTests(ok)
   })
   ok(knowledgeHelp.status === 0 && /search/.test(knowledgeHelp.stdout ?? ''), 'yan CLI：knowledge 分组帮助可按需读取')
 
-  const goalActions = specActions('goal')
-  ok(
-    goalActions.join(',') === 'ready,report,status',
-    'yan CLI：目标状态动作表已登记（ready / report / status）',
-    goalActions.join(', ')
-  )
-  const goalUndocumented = goalActions.filter((action) => !usageText('goal').includes(action))
-  ok(goalUndocumented.length === 0, 'yan CLI：目标状态每个动作都在用法里（不漏文案）', goalUndocumented.join(', '))
-  const goalHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'goal', '--help'], { encoding: 'utf8' })
-  ok(goalHelp.status === 0 && /ready/.test(goalHelp.stdout ?? ''), 'yan CLI：goal 分组帮助可按需读取')
-  const capabilityServerText = await readFile('src/main/capability-server.ts', 'utf8')
-  const unregistered = goalActions
-    .map((action) => `goal.${action}`)
-    .filter((command) => !capabilityServerText.includes(`'${command}'`))
-  ok(unregistered.length === 0, 'yan CLI：目标状态命令已在宿主 KNOWN_COMMANDS 登记', unregistered.join(', '))
+  ok(!specActions('goal').length, 'yan CLI：目标命令已退役')
 }
 
 {
@@ -2878,94 +2678,18 @@ await runAgentProfileExtensionTests(ok, agentProfileExtension, {
   rm: fsPromises.rm
 }, agentProfileShared)
 
-const spaceShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+const pdfText = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
-    entryPoints: ['src/shared/space.ts'],
-    outfile: 'out/test/space.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/space.mjs'))
-)
-const spaceStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/space-store.ts'],
-    outfile: 'out/test/space-store.mjs',
+    entryPoints: ['src/main/office/pdf-text.ts'],
+    outfile: 'out/test/pdf-text.mjs',
     bundle: true,
     format: 'esm',
     platform: 'node',
     logLevel: 'silent'
-  }).then(() => import('../out/test/space-store.mjs'))
+  }).then(() => import('../out/test/pdf-text.mjs'))
 )
-const { runSpaceTests, runSpaceStoreTests } = await import('./test-space.mjs')
-await runSpaceTests(ok, spaceShared)
-await runSpaceStoreTests(ok, spaceStore, {
-  mkdtemp: fsPromises.mkdtemp,
-  readFile: fsPromises.readFile,
-  rm: fsPromises.rm
-})
-
-const libraryShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/library.ts'],
-    outfile: 'out/test/library.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/library.mjs'))
-)
-const libraryStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/library-store.ts'],
-    outfile: 'out/test/library-store.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/library-store.mjs'))
-)
-const { runLibraryTests, runLibraryStoreTests } = await import('./test-library.mjs')
-await runLibraryTests(ok, libraryShared)
-await runLibraryStoreTests(ok, libraryStore, {
-  mkdtemp: fsPromises.mkdtemp,
-  readFile: fsPromises.readFile,
-  rm: fsPromises.rm
-})
-
-const libraryParser = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/library-parser.ts'],
-    outfile: 'out/test/library-parser.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/library-parser.mjs'))
-)
-const libraryService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/library-service.ts'],
-    outfile: 'out/test/library-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/library-service.mjs'))
-)
-const { runLibraryParserTests, runLibraryServiceTests } = await import('./test-library-parse.mjs')
-await runLibraryParserTests(ok, libraryParser, {
-  mkdtemp: fsPromises.mkdtemp,
-  writeFile: fsPromises.writeFile,
-  rm: fsPromises.rm
-})
-await runLibraryServiceTests(ok, libraryService, {
-  mkdtemp: fsPromises.mkdtemp,
-  writeFile: fsPromises.writeFile,
-  stat: fsPromises.stat,
-  rm: fsPromises.rm
-})
+const { runPdfTextTests } = await import('./test-pdf-text.mjs')
+runPdfTextTests(ok, pdfText)
 
 const activityFlow = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -2977,34 +2701,8 @@ const activityFlow = await import('../node_modules/esbuild/lib/main.js').then(({
     logLevel: 'silent'
   }).then(() => import('../out/test/activity-flow.mjs'))
 )
-const contextAssemblyShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/context-assembly.ts'],
-    outfile: 'out/test/context-assembly.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-assembly.mjs'))
-)
-const contextAssembler = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/context-assembler.ts'],
-    outfile: 'out/test/context-assembler.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-assembler.mjs'))
-)
 const { runActivityFlowTests } = await import('./test-activity-flow.mjs')
-const { runContextAssemblyTests, runContextAssemblerTests } = await import('./test-context-assembly.mjs')
 await runActivityFlowTests(ok, activityFlow)
-await runContextAssemblyTests(ok, contextAssemblyShared)
-await runContextAssemblerTests(ok, contextAssembler, {
-  mkdtemp: fsPromises.mkdtemp,
-  rm: fsPromises.rm
-})
 
 const userSkillShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({

@@ -978,161 +978,6 @@ const KNOWLEDGE_FIXTURE_TEXT = '发布流程统一走 npm run dist，先跑完�
 const KNOWLEDGE_FIXTURE_CANDIDATE_ID = 'k-candidate01'
 const KNOWLEDGE_FIXTURE_CANDIDATE_TEXT = 'out/ 是构建产物目录，跑单测前先 build'
 
-async function seedGoalDocument(dataDir, sessionsDir) {
-  const now = Date.now()
-  const goalFor = (sessionKey) => ({
-    goalId: 'g-probe-links',
-    phase: 'executing',
-    revision: 3,
-    steps: [
-      { title: '接上结构化链接', status: 'done' },
-      { title: '验产物/参考展示', status: 'pending' }
-    ],
-    evidence: ['npm run test:unit 4712/4712'],
-    budget: { tokens: 200000, ms: 600000 },
-    budgetUsage: { tokens: 312000, at: now },
-    budgetStop: { at: now, reason: 'tokens', detail: '已用 312000 tokens，达到预算 200000' },
-    links: [
-      {
-        kind: 'file',
-        target: 'probe-missing-file.txt',
-        label: '不存在的文件（验失败反馈）',
-        source: { sessionId: sessionKey, messageId: 'm-probe' },
-        check: { at: now, ok: false, method: 'exists', detail: '文件不存在（可能已被移动或删除）' },
-        addedAt: now
-      },
-      {
-        kind: 'url',
-        target: 'https://example.com/spec',
-        label: '规格（不会被点击）',
-        check: { at: now, ok: true, method: 'exists', detail: 'url 仅做形态校验（宿主不联网）' },
-        addedAt: now
-      },
-      {
-        kind: 'artifact',
-        target: 'out/probe.png',
-        label: '产物',
-        check: { at: now, ok: false, method: 'exists', detail: '文件不存在（可能已被移动或删除）' },
-        addedAt: now
-      }
-    ],
-    blocker: null,
-    pursue: false,
-    brief: null,
-    verification: {
-      status: 'failed',
-      at: now,
-      checks: [
-        {
-          target: 'probe-missing-file.txt',
-          kind: 'file',
-          ok: false,
-          detail: '文件不存在（可能已被移动或删除）',
-          at: now
-        },
-        {
-          target: 'https://example.com/spec',
-          kind: 'url',
-          ok: true,
-          detail: 'url 仅做形态校验（宿主不联网）',
-          at: now
-        },
-        {
-          target: 'out/probe.png',
-          kind: 'artifact',
-          ok: false,
-          detail: '文件不存在（可能已被移动或删除）',
-          at: now
-        }
-      ],
-      detail: '2 项本地产物不存在（可能已被移动或删除）'
-    },
-    failure: null,
-    updatedAt: now
-  })
-  const entries = {}
-  let files = []
-  try {
-    files = readdirSync(sessionsDir, { recursive: true })
-      .map((name) => String(name))
-      .filter((name) => name.endsWith('.jsonl'))
-  } catch {
-    files = []
-  }
-  for (const rel of files) {
-    const key = join(sessionsDir, rel)
-    entries[key] = {
-      goal: goalFor(key),
-      transitions: {},
-      reports: {},
-      resume: null,
-      autoContinues: 0,
-      paused: false,
-      repeatCursor: null,
-      updatedAt: now
-    }
-  }
-  writeFileSync(join(dataDir, 'goals.json'), JSON.stringify({ version: 1, entries }, null, 2), 'utf8')
-  return files.length
-}
-
-async function seedPendingGoalReview(dataDir, sessionsDir) {
-  const now = Date.now()
-  const files = readdirSync(sessionsDir, { recursive: true })
-    .map((name) => String(name))
-    .filter((name) => name.endsWith('.jsonl'))
-  const goalId = 'goal-review-modify-fixture'
-  const transitionId = 'tr-review-modify-fixture'
-  const understanding = {
-    goal: '隔离测试待审计划',
-    deliverable: '修改后重新确认',
-    scope: '仅测试会话',
-    constraints: '修改时不开始执行',
-    acceptance: '待审快照已撤销'
-  }
-  const goals = {}
-  for (const rel of files) {
-    const key = join(sessionsDir, rel)
-    goals[key] = {
-      goal: {
-        goalId,
-        phase: 'planning',
-        revision: 3,
-        steps: [],
-        evidence: [],
-        links: [],
-        verification: null,
-        budget: null,
-        budgetStop: null,
-        budgetUsage: null,
-        blocker: null,
-        pursue: false,
-        brief: null,
-        readyApproval: 'review',
-        pendingReady: {
-          transitionId,
-          goalId,
-          modeRevision: 1,
-          goalRevision: 3,
-          understanding,
-          createdAt: now
-        },
-        failure: null,
-        updatedAt: now
-      },
-      transitions: {},
-      reports: {},
-      resume: null,
-      autoContinues: 0,
-      paused: false,
-      repeatCursor: null,
-      updatedAt: now
-    }
-  }
-  writeFileSync(join(dataDir, 'goals.json'), JSON.stringify({ version: 1, entries: goals }, null, 2), 'utf8')
-  return files.length
-}
-
 async function seedProjectKnowledge(dataDir, opts = {}) {
   const projectId = KNOWLEDGE_FIXTURE_PROJECT_ID
   const { pathToFileURL } = await import('node:url')
@@ -2050,9 +1895,6 @@ const AFTER_EXIT = {
   taskCliLog: checkTaskCliLog,
   taskPlanMultiStep: checkTaskPlanMultiStep,
   workModePersisted: checkWorkModePersisted,
-  goalPersisted: checkGoalPersisted,
-  goalReviewPersisted: checkGoalReviewPersisted,
-  goalReviewModifyPersisted: checkGoalReviewModifyPersisted,
   turnTimingPersisted: checkTurnTimingPersisted,
   turnTimingIsolation: checkTurnTimingIsolation,
   turnTimingInterrupted: checkTurnTimingInterrupted,
@@ -2482,201 +2324,6 @@ async function checkTurnTimingHardKill(sandboxRoot, tempBefore, probeText = '') 
   say(handoffFailureState?.bashToolOffered === true && handoffFailureState?.toolCallSent === true, 'fixture 确认收到工具 schema 并返回 bash tool call')
   say(handoffFailureState?.followupHeld === true, 'pi 已执行工具并发出第二次模型请求，该请求仍在途时才强杀')
   say(Number(handoffFailureState?.turnRequests ?? 0) === 2, `本机 provider 收到首轮工具调用与第二轮续接请求（${handoffFailureState?.turnRequests ?? 0}）`)
-  return { ok, lines }
-}
-
-async function checkGoalPersisted(sandboxRoot, _tempBefore, _probeText) {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  if (!sandboxRoot) {
-    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
-    return { ok: true, lines }
-  }
-  const dataDir = join(sandboxRoot, 'data')
-  const short = (key) => String(key).split(/[\\/]/).pop()
-
-  try {
-    const doc = JSON.parse(readFileSync(join(dataDir, 'goals.json'), 'utf8'))
-    const entries = Object.entries(doc?.entries ?? {})
-    lines.push(
-      `goals.json 条目：${entries.map(([k, v]) => `${short(k)}=${v?.goal?.phase}(rev${v?.goal?.revision})`).join(', ') || '（空）'}`
-    )
-    say(entries.length === 1, `恰好一条会话记录（实际 ${entries.length}）`)
-    const entry = entries[0]?.[1]
-    say(entry?.goal?.phase === 'executing', `目标已进入 executing（实际 ${entry?.goal?.phase}）`)
-    say(entry?.goal?.revision === 1, `目标只推进过一次（实际 rev${entry?.goal?.revision}）`)
-    const transitions = Object.entries(entry?.transitions ?? {})
-    say(transitions.length === 1, `就绪转移只记了一条（实际 ${transitions.length}）`)
-    say(String(transitions[0]?.[0] ?? '') === 'tr-probe-1', `幂等键就是探针给的那个（${transitions[0]?.[0] ?? '无'}）`)
-    const understanding = transitions[0]?.[1]?.result?.understanding ?? {}
-    say(String(understanding.acceptance ?? '').includes('CSV'), '五栏（含验收标准）真的传到了宿主')
-    say(transitions[0]?.[1]?.result?.mode === 'standard', '转移记录里写着「模式切标准」')
-
-    say(
-      !entry?.goal?.verification,
-      `G-2：只做了 ready（没 report）→ 没有核验结论（实际 ${entry?.goal?.verification?.status ?? 'null'}）`
-    )
-
-    const sessionFile = String(entries[0]?.[0] ?? '')
-    if (sessionFile && existsSync(sessionFile)) {
-      const text = readFileSync(sessionFile, 'utf8')
-      say(text.includes('"customType":"yan-goal-resume"'), '会话里有续行的消费证据条目（yan-goal-resume）')
-      say(text.includes('"customType":"yan-goal-ready"'), '会话里有那条控制消息（yan-goal-ready，角色不是 user）')
-      const role = /"customType":"yan-goal-ready"[^}]*/.exec(text)?.[0] ?? ''
-      say(!role.includes('"role":"user"'), '控制消息不是伪造的用户消息')
-    } else {
-      say(false, '从 goals.json 的键找不到会话文件：' + (sessionFile || '（无）'))
-    }
-  } catch (error) {
-    say(false, '读 goals.json 失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-
-  try {
-    const doc = JSON.parse(readFileSync(join(dataDir, 'work-modes.json'), 'utf8'))
-    const entries = Object.entries(doc?.entries ?? {})
-    lines.push(
-      `work-modes.json 条目：${entries.map(([k, v]) => `${short(k)}=${v.mode}(rev${v.revision})`).join(', ') || '（空）'}`
-    )
-    say(entries.some(([, v]) => v.mode === 'standard'), '磁盘上的模式已是标准（就绪转移的另一半）')
-    say(
-      entries.some(([, v]) => Number.isFinite(v.revision) && v.revision >= 2),
-      '模式 revision 至少推进两次（切计划 + 就绪切标准）'
-    )
-  } catch (error) {
-    say(false, '读 work-modes.json 失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-
-  try {
-    const dir = join(dataDir, 'goal-resume')
-    const files = existsSync(dir) ? readdirSync(dir) : []
-    lines.push(`goal-resume/ 快照：${files.join(', ') || '（空）'}`)
-    for (const name of files) {
-      if (!name.endsWith('.json')) continue
-      const rec = JSON.parse(readFileSync(join(dir, name), 'utf8'))
-      lines.push(`    ${name}: operationId=${rec?.operationId ?? '(null)'}`)
-    }
-    say(files.includes('r1.json'), '写了续行快照（按 runnerId 命名，扩展据此判断）')
-  } catch (error) {
-    say(false, '读 goal-resume/ 失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-
-  const resumeLog = join(tmpdir(), 'yan-goal-resume.log')
-  if (existsSync(resumeLog)) {
-    const rows = readFileSync(resumeLog, 'utf8').trim().split('\n').filter(Boolean)
-    lines.push(`  续行扩展诊断（${rows.length} 行）：`)
-    for (const row of rows.slice(-6)) lines.push('    ' + row)
-  } else {
-    lines.push('  续行扩展诊断：没有文件（扩展没跑过 message_end，或没开日志）')
-  }
-
-  return { ok, lines }
-}
-
-async function checkGoalReviewPersisted(sandboxRoot, _tempBefore, probeText = '') {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  if (!sandboxRoot) {
-    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
-    return { ok: true, lines }
-  }
-
-  const dataDir = join(sandboxRoot, 'data')
-  const short = (key) => String(key).split(/[\\/]/).pop()
-  try {
-    const doc = JSON.parse(readFileSync(join(dataDir, 'goals.json'), 'utf8'))
-    const entries = Object.entries(doc?.entries ?? {})
-    say(entries.length === 1, `只有当前测试会话的目标记录（实际 ${entries.length}）`)
-    const [sessionFile, entry] = entries[0] ?? []
-    const goal = entry?.goal
-    say(goal?.phase === 'executing', `批准后的目标已落盘为 executing（${goal?.phase ?? '无'}）`)
-    say(!goal?.pendingReady, '已批准目标不再保留待审计划')
-    say(goal?.readyApproval === 'review', '会话的审阅偏好仍为 review')
-    const transitions = Object.entries(entry?.transitions ?? {})
-    say(transitions.length === 1, `只提交一次 ready transition（实际 ${transitions.length}）`)
-    const [transitionId, record] = transitions[0] ?? []
-    say(transitionId === 'tr-review-probe-1', `转移使用探针给出的幂等键（${transitionId ?? '无'}）`)
-    say(
-      record?.result?.phase === 'executing' && record?.result?.mode === 'standard',
-      '转移记录同时提交 executing 与 standard'
-    )
-    say(String(record?.result?.understanding?.acceptance ?? '').includes('CSV'), '批准记录保留用户可审阅的验收字段')
-
-    if (sessionFile && existsSync(sessionFile)) {
-      const text = readFileSync(sessionFile, 'utf8')
-      say(text.includes('yan goal ready'), '真实会话中保存了模型经 bash 提交的 ready 命令')
-      say(text.includes('请按刚才批准的计划开始执行。'), '真实会话中保存了主进程发送的启动消息')
-    } else {
-      say(false, `找不到会话文件（${short(sessionFile ?? '') || '无'}）`)
-    }
-  } catch (error) {
-    say(false, `读 goals.json 失败：${error instanceof Error ? error.message : String(error)}`)
-  }
-
-  try {
-    const doc = JSON.parse(readFileSync(join(dataDir, 'work-modes.json'), 'utf8'))
-    const entries = Object.entries(doc?.entries ?? {})
-    say(
-      entries.some(([, mode]) => mode?.mode === 'standard' && Number(mode.revision) >= 2),
-      `批准后的模式为 standard 且 revision 至少为 2（${entries.map(([key, mode]) => `${short(key)}=${mode.mode}(rev${mode.revision})`).join(', ') || '空'}）`
-    )
-  } catch (error) {
-    say(false, `读 work-modes.json 失败：${error instanceof Error ? error.message : String(error)}`)
-  }
-
-  say(String(probeText).includes('批准 IPC 向当前 runner 发送了计划启动消息'), 'live 探针确认批准后启动消息已到达当前 runner')
-  return { ok, lines }
-}
-
-async function checkGoalReviewModifyPersisted(sandboxRoot, _tempBefore, probeText = '') {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  if (!sandboxRoot) {
-    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
-    return { ok: true, lines }
-  }
-  const dataDir = join(sandboxRoot, 'data')
-  try {
-    const doc = JSON.parse(readFileSync(join(dataDir, 'goals.json'), 'utf8'))
-    const entries = Object.entries(doc?.entries ?? {})
-    const modified = entries.filter(([, entry]) =>
-      entry?.goal?.goalId === 'goal-review-modify-fixture' && entry.goal.pendingReady == null
-    )
-    say(entries.length > 0, `读取到隔离目标条目（${entries.length}）`)
-    say(modified.length === 1, `只有当前会话清除了待审计划（${modified.length} 条）`)
-    const [sessionFile, entry] = modified[0] ?? []
-    say(entry?.goal?.phase === 'planning', `修改后仍处于 planning（${entry?.goal?.phase ?? '无'}）`)
-    say(entry?.goal?.revision === 4, `清除待审快照只推进一次 revision（${entry?.goal?.revision ?? '无'}）`)
-    say(entry?.goal?.readyApproval === 'review', '修改后保留 per-session review 偏好')
-    say(Object.keys(entry?.transitions ?? {}).length === 0, '修改没有提交 ready transition')
-    if (sessionFile && existsSync(sessionFile)) {
-      const text = readFileSync(sessionFile, 'utf8')
-      say(!text.includes('请按刚才批准的计划开始执行。'), '会话文件里没有误发批准后的启动消息')
-    } else {
-      say(false, '修改目标对应的会话文件存在')
-    }
-  } catch (error) {
-    say(false, `读 goals.json 失败：${error instanceof Error ? error.message : String(error)}`)
-  }
-  try {
-    const doc = JSON.parse(readFileSync(join(dataDir, 'work-modes.json'), 'utf8'))
-    const modes = Object.values(doc?.entries ?? {})
-    say(modes.some((mode) => mode?.mode === 'clarify' && mode.revision === 1), '修改后仍留在只读计划模式')
-  } catch (error) {
-    say(false, `读 work-modes.json 失败：${error instanceof Error ? error.message : String(error)}`)
-  }
-  say(String(probeText).includes('G-4 修改经真实 IPC 撤销待审快照'), 'live 探针确认修改按钮经过主进程并撤销待审状态')
   return { ok, lines }
 }
 
@@ -4016,10 +3663,6 @@ async function main() {
 
     const localProviderNames = names.filter(
       (name) =>
-        name === 'handoffrecover' ||
-        name === 'handoffrecoverincomplete' ||
-        name === 'handoffrecoverproviderfail' ||
-        name === 'handoffcommitlocal' ||
         name === 'subagentlocal' ||
         name === 'turntimingisolation' ||
         name === 'turntimingkill'
@@ -4032,35 +3675,10 @@ async function main() {
       try {
         const fixtureName = localProviderNames[0]
         const isTurnTiming = fixtureName === 'turntimingisolation' || fixtureName === 'turntimingkill'
-        const isHandoffCommitLocal = fixtureName === 'handoffcommitlocal'
         const isSubagentLocal = fixtureName === 'subagentlocal'
-        const failureMode = isSubagentLocal
-          ? 'subagent-normal'
-          : isTurnTiming
-          ? fixtureName === 'turntimingkill'
-            ? 'turn-timing-kill'
-            : 'turn-timing'
-          : fixtureName === 'handoffrecoverincomplete'
-            ? 'incomplete-package'
-            : fixtureName === 'handoffrecoverproviderfail'
-              ? 'provider-http-failure'
-            : isHandoffCommitLocal
-              ? 'handoff-start-receipt'
-              : 'invalid-json'
-        const providerId = isTurnTiming
-          ? 'yantimingfixture'
-          : isHandoffCommitLocal
-            ? 'yanhandofffixture'
-            : isSubagentLocal
-              ? 'yansubagentfixture'
-              : 'yanhandofffail'
-        const modelId = isTurnTiming
-          ? 'turn-timing-isolation-fixture'
-          : isHandoffCommitLocal
-            ? 'handoff-start-receipt-fixture'
-            : isSubagentLocal
-              ? 'subagent-local-fixture'
-              : 'handoff-fail-fixture'
+        const failureMode = isSubagentLocal ? 'subagent-normal' : fixtureName === 'turntimingkill' ? 'turn-timing-kill' : 'turn-timing'
+        const providerId = isTurnTiming ? 'yantimingfixture' : 'yansubagentfixture'
+        const modelId = isTurnTiming ? 'turn-timing-isolation-fixture' : 'subagent-local-fixture'
         handoffFailureProvider = await startHandoffFailureProvider(failureMode)
         mkdirSync(piDir, { recursive: true })
         const modelsFile = join(piDir, 'models.json')
@@ -4073,25 +3691,13 @@ async function main() {
         models.providers = {
           ...(models.providers ?? {}),
           [providerId]: {
-            name: isTurnTiming
-              ? 'Yan Turn Timing Fixture'
-              : isHandoffCommitLocal
-                ? 'Yan Handoff Receipt Fixture'
-                : isSubagentLocal
-                  ? 'Yan Subagent Local Fixture'
-                  : 'Yan Handoff Failure Fixture',
+            name: isTurnTiming ? 'Yan Turn Timing Fixture' : 'Yan Subagent Local Fixture',
             baseUrl: `http://127.0.0.1:${handoffFailureProvider.port}/v1`,
             api: 'openai-completions',
             models: [
               {
                 id: modelId,
-                name: isTurnTiming
-                  ? 'Turn Timing Isolation Fixture'
-                  : isHandoffCommitLocal
-                    ? 'Handoff Start Receipt Fixture'
-                    : isSubagentLocal
-                      ? 'Subagent Local Fixture'
-                      : 'Handoff Fail Fixture',
+                name: isTurnTiming ? 'Turn Timing Isolation Fixture' : 'Subagent Local Fixture',
                 contextWindow: 32768,
                 maxTokens: 4096
               }
@@ -4108,11 +3714,7 @@ async function main() {
         }
         auth[providerId] = {
           type: 'api_key',
-          key: isTurnTiming
-            ? 'local-turn-timing-fixture'
-            : isSubagentLocal
-              ? 'local-subagent-fixture'
-              : 'local-handoff-fixture-only'
+          key: isTurnTiming ? 'local-turn-timing-fixture' : 'local-subagent-fixture'
         }
         writeFileSync(authFile, JSON.stringify(auth, null, 2), 'utf8')
         CASES[fixtureName].model = `${providerId}/${modelId}`
@@ -4493,8 +4095,6 @@ async function main() {
       continue
     }
     let isolationSeeded = false
-    let goalSeeded = false
-    let goalReviewSeeded = false
     let contextGuardFixturePath = null
 
     for (const win of wins) {
@@ -4542,16 +4142,6 @@ async function main() {
           contextGuardFixturePath = writeContextGuardSession(join(sandboxRoot, 'sessions'))
           console.log(`  上下文守卫 fixture：${basename(contextGuardFixturePath)}（仅本场景）`)
         }
-        if (c.goalSeed && !goalSeeded) {
-          const count = await seedGoalDocument(join(sandboxRoot, 'data'), join(sandboxRoot, 'sessions'))
-          console.log(`  目标链接 fixture：${count} 个会话各一份`)
-          goalSeeded = count > 0
-        }
-        if (c.goalReviewSeed && !goalReviewSeeded) {
-          const count = await seedPendingGoalReview(join(sandboxRoot, 'data'), join(sandboxRoot, 'sessions'))
-          console.log(`  G-4 待审 fixture：${count} 个会话各一份（仅隔离数据）`)
-          goalReviewSeeded = count > 0
-        }
       }
       if (win) console.log(`\n─── 窗口 ${win} ───`)
       let brokenPiBin
@@ -4580,7 +4170,7 @@ async function main() {
         remoteRouteProvider = null
       }
       if (
-        (name === 'handoffrecover' || name === 'handoffrecoverincomplete' || name === 'handoffrecoverproviderfail' || name === 'turntimingisolation' || name === 'turntimingkill') &&
+        (name === 'turntimingisolation' || name === 'turntimingkill') &&
         handoffFailureProvider
       ) {
         handoffFailureState = handoffFailureProvider.state

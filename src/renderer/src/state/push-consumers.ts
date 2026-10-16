@@ -250,8 +250,6 @@ export function consumeTaskStatePush(m: MainPush, _s: Store, ctx: PushContext): 
     case 'agent-profile':
       set({ agentProfile: m.payload })
       break
-    case 'goal':
-      set({ goal: m.payload })
       break
     default:
       return false

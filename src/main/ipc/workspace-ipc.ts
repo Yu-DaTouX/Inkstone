@@ -8,17 +8,9 @@ import { DEFAULT_AUTO_COMPACT_TOKENS } from '../../shared/context-limits'
 import { allowTrust, revokeTrust, trustStatus } from '../project-trust'
 import { forkContext, forkFileRefs } from '../fork-rebind-service'
 import { providerQuotaWithFallback } from '../quota'
-import type { HandoffPackage } from '../../shared/handoff'
-import { normalizeSessionFileKey } from '../work-mode-service'
-import type { HandoffStore } from '../handoff-service'
 
-export interface WorkspaceIpcDeps {
-  handoffs: HandoffStore
-}
-
-export function registerWorkspaceIpc(ipc: IpcRegistrar, deps: WorkspaceIpcDeps): void {
+export function registerWorkspaceIpc(ipc: IpcRegistrar): void {
   const { rawHandle } = ipc
-  const { handoffs } = deps
   rawHandle('yan:project:changeDirectory', (_event, request: unknown) => changeProjectDirectory(request))
   rawHandle('yan:compactionInfo', async (_e, win: unknown) => {
     const s = await getSettings()
@@ -52,16 +44,7 @@ export function registerWorkspaceIpc(ipc: IpcRegistrar, deps: WorkspaceIpcDeps):
 
   rawHandle('yan:fork:context', async (_e, arg: unknown) => {
     const req = (arg ?? {}) as Parameters<typeof forkContext>[0]
-    await handoffs.load()
-    const packageOf = (sessionFile: string): HandoffPackage | null => {
-      try {
-        const key = normalizeSessionFileKey(sessionFile)
-        return key ? handoffs.state(key).package : null
-      } catch {
-        return null
-      }
-    }
-    return forkContext(req, packageOf)
+    return forkContext(req)
   })
 
   rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuotaWithFallback(String(provider ?? ''), Number(budget) || undefined))

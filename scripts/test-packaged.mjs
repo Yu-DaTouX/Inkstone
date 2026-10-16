@@ -321,8 +321,6 @@ if (!exeFromArg) {
   if (existsSync(asarPath)) {
     const asar = readFileSync(asarPath)
     for (const [needle, label] of [
-      ['yan-handoff-resume', '续接标记（shared/handoff-resume）'],
-      ['handoff-transactions.json', '交接事务日志文件名'],
       ['session-chains.json', '会话链文件名'],
       ['resumeAttempts', '防盲发两遍的尝试计数'],
       ['context-state', '派生状态目录名（实施-06）'],

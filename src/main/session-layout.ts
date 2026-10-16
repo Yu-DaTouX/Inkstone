@@ -294,21 +294,6 @@ export async function moveSessionLayout(input: MoveSessionInput, projectId: stri
   })
 }
 
-export async function setSessionSpace(input: MoveSessionInput, spaceId: string | null): Promise<SessionLayoutEntry> {
-  const doc = await getSessionLayout()
-  const index = findEntryIndex(doc.entries, input.sessionId, input.sessionFile)
-  const previous = index >= 0 ? doc.entries[index] : undefined
-  return rememberSession({
-    sessionId: input.sessionId,
-    ...(input.sessionFile || previous?.sessionFile ? { sessionFile: input.sessionFile ?? previous?.sessionFile } : {}),
-    cwd: input.cwd || previous?.cwd || '',
-    ...(previous?.projectId
-      ? { projectId: previous.projectId, scope: previous.scope }
-      : { scope: previous?.scope ?? 'global' }),
-    spaceId,
-    opened: false
-  })
-}
 
 export async function setSessionFlags(
   input: MoveSessionInput,

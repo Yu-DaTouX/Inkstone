@@ -145,13 +145,12 @@ const QUESTION_BOUNDARY = [
 
 const CLARIFY_GUIDANCE = [
   'Plan mode is ON: produce a plan before doing the work.',
-  '- This mode is READ-ONLY: writing tools (write / edit / task updates) are disabled, and bash only accepts `yan goal status|ready|report …` or `yan question ask …` — nothing else, no shell operators.',
+  '- This mode is READ-ONLY: writing tools (write / edit / task updates) are disabled, and bash only accepts `yan question ask …` — nothing else, no shell operators.',
   '- Start by reading what already exists (read / grep / find / ls) instead of asking what you could find out yourself.',
   '- Ask the ONE question whose answer most changes the plan; several truly independent questions may be grouped. Never re-ask what the user already told you.',
   '- Give at most 3 concrete options; the panel always offers one row for a typed reply, so the user can write their own answer.',
   '- For low-impact unknowns, state a one-line assumption instead of asking.',
-  '- Register the plan itself with `yan goal report` (phase `planning` with concrete `steps`; one step is fine for a small task) and keep those steps updated as you learn more. A plan that lives only in your reply is not a plan.',
-  '- Once the goal, deliverable, scope, constraints and acceptance criteria are all settled and nothing material is left open, submit them exactly once with `yan goal ready` using **inline arguments** (run `yan goal --help` for the shape) — you cannot write a request file in this mode. The mode switches to standard automatically; the NEXT turn can make changes.',
+  '- Once the goal, deliverable, scope, constraints and acceptance criteria are all settled, write the final plan as concrete steps in your reply and tell the user to switch to standard mode to carry it out.',
   '- Never claim work is finished in this mode: you cannot change anything yet.'
 ].join('\n')
 
@@ -161,11 +160,9 @@ const AUTONOMOUS_GUIDANCE = [
   '- Find the actual cause or constraint yourself first (read the code, run the failing case, check the real state) instead of stopping at the first plausible guess.',
   '- Then pick the approach you can defend, say why in one line, and carry it through: implement, verify, and keep the evidence.',
   '- Make a sensible assumption, state it in one line, and prefer reversible choices when several options are plausible.',
-  '- The host registers your user request as the active goal before this turn. Start by running `yan goal status` to read the current goal revision, turn the request into a concrete plan, and keep that goal moving; do not wait for the user to create a plan.',
-  '- Report goal progress with `yan goal report` (run `yan goal --help` for the request shape): `completed` needs concrete evidence, `blocked` needs the reason, and a task-list checkbox is not evidence.',
-  '- Register the concrete plan first (phase `planning` with `steps`; one step is fine for a small task), then work through those steps and keep the steps updated.',
-  '- End your turn once you reported progress: the host automatically calls you back to continue until the goal is `completed` or `blocked`. Never wait for the user to say "continue".',
-  '- If the same failure repeats without new information, report `blocked` instead of retrying the same thing.'
+  '- Turn the request into a concrete plan yourself and work through it in this turn; do not wait for the user to create a plan or to say "continue".',
+  '- Claim completion only with concrete evidence; a task-list checkbox is not evidence.',
+  '- If the same failure repeats without new information, stop and report what blocks you instead of retrying the same thing.'
 ].join('\n')
 
 function guidanceFor(mode, frequency) {

@@ -11,7 +11,6 @@ import type {
   SessionTodo,
   SessionTodoSnapshot,
   SlashCommand,
-  GoalState,
   WorkModeState,
   AgentProfileState,
   UIMessage,
@@ -36,7 +35,6 @@ export interface SessionRuntimeSnapshot {
   draftAttachments: Attachment[]
   workMode: WorkModeState | null
   agentProfile: AgentProfileState | null
-  goal: GoalState
   models: ModelInfo[]
   thinkingLevels: string[]
   commands: SlashCommand[]
@@ -61,24 +59,6 @@ function emptyRuntime(runtime: RuntimeEnvelope): SessionRuntimeSnapshot {
     todoHistory: [],
     workMode: null,
     agentProfile: null,
-    goal: {
-      goalId: '',
-      phase: 'planning',
-      revision: 0,
-      steps: [],
-      evidence: [],
-      links: [],
-      verification: null,
-      budget: null,
-      budgetStop: null,
-      blocker: null,
-    pursue: false,
-    brief: null,
-    readyApproval: 'automatic',
-    pendingReady: null,
-    failure: null,
-      updatedAt: 0
-    },
     uiRequests: [],
     statuses: {},
     widgets: {},
@@ -133,7 +113,6 @@ function mergeMigratedRuntime(
     draftAttachments: (target.draftAttachments ?? []).length ? target.draftAttachments : source.draftAttachments ?? [],
     workMode: target.workMode ?? source.workMode,
     agentProfile: target.agentProfile ?? source.agentProfile,
-    goal: (target.goal.goalId || target.goal.revision > 0) ? target.goal : source.goal,
     models: target.models.length ? target.models : source.models,
     thinkingLevels: target.thinkingLevels.length ? target.thinkingLevels : source.thinkingLevels,
     commands: target.commands.length ? target.commands : source.commands
@@ -272,9 +251,6 @@ export function reduceSessionRuntime(
     case 'agent-profile':
       next = { ...next, agentProfile: message.payload }
       break
-    case 'goal':
-      next = { ...next, goal: message.payload }
-      break
     case 'todo-history':
       next = { ...next, todoHistory: message.payload }
       break
@@ -410,21 +386,4 @@ export function pruneSessionRuntimes(map: SessionRuntimeMap, protectedKeys: Read
     } else delete out[key]
   }
   return out
-}
-
-export function rebindSessionRuntime(
-  map: SessionRuntimeMap,
-  sourceSessionId: string,
-  runtime: RuntimeEnvelope,
-  state: SessionState
-): SessionRuntimeMap {
-  const source = map[sourceSessionId]
-  const target = map[sessionRuntimeKey(runtime)]
-  const base = source ?? target ?? emptyRuntime(runtime)
-  return { ...map, [sessionRuntimeKey(runtime)]: {
-    ...base, runtime, session: state,
-    goal: target?.goal.goalId ? target.goal : base.goal,
-    workMode: target?.workMode ?? base.workMode,
-    agentProfile: target?.agentProfile ?? base.agentProfile
-  } }
 }

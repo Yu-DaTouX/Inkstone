@@ -18,7 +18,6 @@ export interface PiPackageSchedulerPorts {
   authorization(tx: AcquisitionTransaction): Promise<PiPackageGrant | null>
   isTrusted(cwd: string): Promise<boolean>
   sourceHead(cwd: string): Promise<string | null>
-  goalSnapshot(target: PiPackageActivationTarget): Promise<{ goalId: string; revision: number; active: boolean }>
   runner(target: PiPackageActivationTarget): Promise<PiPackageRunnerSnapshot | null>
   cwdBusy(cwd: string): boolean
   verifyStaged(tx: AcquisitionTransaction): Promise<PiPackageCheck>
@@ -27,9 +26,6 @@ export interface PiPackageSchedulerPorts {
   install(tx: AcquisitionTransaction, grant: PiPackageGrant): Promise<{ ok: boolean; error?: string }>
   restartRunner(target: PiPackageActivationTarget, runner: PiPackageRunnerSnapshot): Promise<{ ok: boolean; error?: string }>
   verifyActive(tx: AcquisitionTransaction): Promise<PiPackageCheck>
-  writeContinuation(tx: AcquisitionTransaction, runner: PiPackageRunnerSnapshot): Promise<void>
-  clearContinuation(tx: AcquisitionTransaction, runner?: PiPackageRunnerSnapshot | null): Promise<void>
-  continuationConsumed(tx: AcquisitionTransaction, runner: PiPackageRunnerSnapshot): Promise<boolean>
 }
 
 export type PiPackageScheduleResult = {
@@ -166,7 +162,7 @@ export class PiPackageActivationScheduler {
     const finalBlock = await this.preflight(target)
     if (finalBlock) return { operationId, state: 'deferred', detail: finalBlock }
     const finalGrant = await this.ports.authorization(tx)
-    if (!finalGrant) return { operationId, state: 'deferred', detail: '激活后精确授权复核未通过，暂不重启或续接' }
+    if (!finalGrant) return { operationId, state: 'deferred', detail: '激活后精确授权复核未通过，暂不重启' }
 
     let runner = await this.ports.runner(target)
     if (!runner || !this.matchesTargetRunner(runner, target)) {
@@ -175,16 +171,11 @@ export class PiPackageActivationScheduler {
     if (this.ports.cwdBusy(target.cwd)) return { operationId, state: 'deferred', detail: '目标项目仍有 runner 忙碌' }
 
     let active = await this.ports.verifyActive(tx)
-    let consumed = await this.ports.continuationConsumed(tx, runner)
     const alreadyRestarted = runner.generation > target.runnerGeneration
-    const resumeNeedsKick = !consumed
-    const needsRestart = !alreadyRestarted && (!active.ok || resumeNeedsKick)
-    if (needsRestart) {
+    if (!alreadyRestarted && !active.ok) {
       const beforeGeneration = runner.generation
-      await this.ports.writeContinuation(tx, runner)
       const restarted = await this.ports.restartRunner(target, runner)
       if (!restarted.ok) {
-        await this.ports.clearContinuation(tx, runner)
         return { operationId, state: 'deferred', detail: restarted.error ?? '目标 runner 重载失败，可在下一安全边界重试' }
       }
       runner = await this.ports.runner(target)
@@ -192,7 +183,6 @@ export class PiPackageActivationScheduler {
         return { operationId, state: 'deferred', detail: 'runner 重载结果未能证明代次与原会话已恢复' }
       }
       active = await this.ports.verifyActive(tx)
-      consumed = await this.ports.continuationConsumed(tx, runner)
     }
 
     if (!active.ok) return this.fail(tx, `重载后运行时验证失败：${active.problems.join('；')}`)
@@ -204,26 +194,19 @@ export class PiPackageActivationScheduler {
     if (!resumeCheck.ok) return this.fail(tx, `恢复复核失败：${resumeCheck.reasons.join('；')}`)
     const resumedRunner = await this.ports.runner(target)
     if (!resumedRunner || !this.matchesTargetRunner(resumedRunner, target)) {
-      return { operationId, state: 'deferred', detail: '续接消费后原会话身份尚未恢复' }
+      return { operationId, state: 'deferred', detail: '重载后原会话身份尚未恢复' }
     }
-    if (!(await this.ports.continuationConsumed(tx, resumedRunner))) {
-      return { operationId, state: 'deferred', detail: '运行时已重载；等待薄层一次性续接消费证据' }
-    }
-    const resumed = await this.service.markResumed(operationId, `receipt、运行时技能与 continueId=${target.continueId} 消费证据均已复核`)
-    return { operationId, state: resumed.state, detail: '原目标续接已消费一次' }
+    const resumed = await this.service.markResumed(operationId, 'receipt 与运行时技能均已复核')
+    return { operationId, state: resumed.state, detail: '能力包已在原会话生效' }
   }
 
   private async preflight(target: PiPackageActivationTarget): Promise<string | null> {
     if (!(await this.ports.isTrusted(target.cwd))) return 'Pi 项目持久信任不存在；保持待处理，不使用 --approve 覆盖'
-    const [sourceHead, goal, runner] = await Promise.all([
+    const [sourceHead, runner] = await Promise.all([
       this.ports.sourceHead(target.cwd),
-      this.ports.goalSnapshot(target),
       this.ports.runner(target)
     ])
     if (sourceHead !== target.sourceHead) return '项目 sourceHead 已变化，原接入计划失效'
-    if (goal.goalId !== target.goalId || goal.revision !== target.goalRevision || !goal.active) {
-      return '原目标身份 / 修订已变化或已结束，拒绝续接到新目标'
-    }
     if (!runner || !this.matchesTargetRunner(runner, target)) {
       return '原 runner、项目或会话身份尚未恢复'
     }
@@ -244,8 +227,6 @@ export class PiPackageActivationScheduler {
 
   private async fail(tx: AcquisitionTransaction, detail: string): Promise<PiPackageScheduleResult> {
     const failed = await this.service.fail(tx.operationId, detail)
-    const runner = tx.piPackageTarget ? await this.ports.runner(tx.piPackageTarget).catch(() => null) : null
-    await this.ports.clearContinuation(tx, runner).catch(() => undefined)
     return { operationId: tx.operationId, state: failed.state, detail }
   }
 }

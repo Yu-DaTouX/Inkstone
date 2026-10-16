@@ -26,7 +26,6 @@ export const SYNC_SETTINGS_WHITELIST = [
   'fontSizeUi',
   'checkpointsEnabled',
   'guardOutsideWrites',
-  'showSpaces',
   'permissionMode',
   'autonomous',
   'defaultWorkMode',

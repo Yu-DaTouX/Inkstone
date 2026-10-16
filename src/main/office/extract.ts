@@ -1,5 +1,5 @@
 import { OFFICE_MAX_LINES, type OfficeDocumentView, type OfficeFormat, type OfficeSection } from '../../shared/office'
-import { parsePdfBuffer } from '../library-parser'
+import { parsePdfBuffer } from './pdf-text'
 import { ZipReader } from './zip'
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }

@@ -98,44 +98,12 @@ export async function runRepeatGuardTests(ok) {
     ok(handlers.tool_call(call('pnpm build')) === undefined, '用户发言后同一条命令重新从第 1 次数起')
     ok(handlers.before_provider_request({ payload }) === undefined, '刚归零时不会立刻又提醒')
     ok(handlers.tool_call(call('pnpm build')) === undefined, '数到第 2 次（又到提醒线）')
-    ok(handlers.tool_call({ toolName: 'bash', input: { command: 'cd repo && yan goal report --phase executing' } }) === undefined, '报进展的调用本身放行')
-    ok(handlers.before_provider_request({ payload }) === undefined, '报进展后提醒线也归零（换路径了）')
     const foundReset = (await readLog()).filter((line) => line.hook === 'reset')
     ok(
-      foundReset.some((line) => line.reason === 'user') && foundReset.some((line) => line.reason === 'goal-report'),
-      '两种归零都留了诊断行（排障时能看出串为什么断了）'
+      foundReset.some((line) => line.reason === 'user'),
+      '归零留了诊断行（排障时能看出串为什么断了）'
     )
 
-    const shared = await import(new URL('../out/test/repeat-guard.mjs', import.meta.url))
-    const goal = await import(new URL('../out/test/goal.mjs', import.meta.url))
-    ok(shared.REPEAT_WARN_AT === 3 && shared.REPEAT_BLOCK_AT === 5, '生产阈值是 3 / 5（不随测试 env 漂移）')
-    ok(
-      shared.repeatGuardKey('C:\\sessions\\a b.jsonl') === 'C__sessions_a_b.jsonl',
-      '键清洗与薄层 safeKey 同语义（冒号 / 反斜杠 / 空格 → 下划线）'
-    )
-    ok(shared.repeatGuardKey('') === 'session', '空键退化成 session（与薄层一致）')
-    ok(mod.safeKey() === shared.repeatGuardKey(process.env.YAN_SESSION_ID), '薄层 safeKey 与宿主 repeatGuardKey 交叉一致')
-
-    const snapshot = shared.parseRepeatGuardSnapshot({ blocks: 2.7, tool: ' bash ', updatedAt: 5 })
-    ok(snapshot.blocks === 2 && snapshot.tool === 'bash' && snapshot.updatedAt === 5, '计数宽容解析：向下取整 + 去空白')
-    ok(shared.parseRepeatGuardSnapshot(null).blocks === 0, '脏值（null）当 0')
-    ok(shared.parseRepeatGuardSnapshot({ blocks: 'x' }).blocks === 0, '脏值（非数字）当 0')
-
-    const blank = goal.emptyGoal(1)
-    ok(shared.pendingRepeatFailures(0, 3) === 3, '没有消费游标时全部要补记')
-    const once = goal.applyRepeatFailure(blank, shared.REPEAT_BLOCK_SIGNATURE, 2)
-    ok(once.failure?.count === 1 && once.phase === 'planning', '补记一次：只加计数、不动 phase（没到阈值）')
-    ok(shared.pendingRepeatFailures(1, 3) === 2, '已消费过的不会重复记（用独立消费游标，不用 failure.count）')
-    ok(shared.pendingRepeatFailures(3, 1) === 0, '计数变小（文件被清）不会倒退记账')
-    ok(shared.pendingRepeatFailures(0, 999) === 10, '一次最多补记 10 次（脏文件不会把目标瞬间打爆）')
-
-    const twice = goal.applyRepeatFailure(once, shared.REPEAT_BLOCK_SIGNATURE, 3)
-    ok(twice.phase === 'blocked' && twice.failure === null, '同一签名连续两次 → blocked（与 §5 的失败签名同一阈值）')
-    ok(String(twice.blocker ?? '').includes(shared.REPEAT_BLOCK_SIGNATURE), 'blocked 的 blocker 写明是重复动作拦下')
-
-    const done = { ...blank, phase: 'completed' }
-    const afterDone = goal.applyRepeatFailure(done, shared.REPEAT_BLOCK_SIGNATURE, 4)
-    ok(afterDone.phase === 'completed', '已完成的目标不会被重复拦下改写（不假装失败）')
   } finally {
     delete process.env.YAN_REPEAT_EXT_LOG
     delete process.env.YAN_REPEAT_WARN_AT

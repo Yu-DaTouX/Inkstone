@@ -89,9 +89,6 @@ export default function repeatGuard(pi) {
     warned = false
   }
 
-  const isGoalReportCall = (toolName, input) =>
-    toolName === 'bash' && String(input?.command ?? '').includes('yan goal report')
-
   const writeCounter = (toolName) => {
     const blocks = readCounter() + 1
     const file = counterFile()
@@ -107,10 +104,6 @@ export default function repeatGuard(pi) {
   pi.on('tool_call', (event) => {
     const toolName = String(event?.toolName ?? '')
     if (!toolName) return undefined
-    if (isGoalReportCall(toolName, event?.input)) {
-      reset('goal-report')
-      return undefined
-    }
     if (isSubagentPollLoop(toolName, event?.input)) {
       note('subagent_poll_blocked', {})
       return {

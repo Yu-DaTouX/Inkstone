@@ -26,12 +26,12 @@ try {
   const sameEnvelopeNode = runStateTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'sameRuntimeEnvelope')
   assert(sameEnvelopeNode, 'Missing production helper: sameRuntimeEnvelope')
   const ownershipDeps = ownershipHelpers + '\n' + sameEnvelopeNode.getText(runStateTree).replace(/^export /, '')
-  const compileHandler = async (name, end, ports) => {
+  const compileHandler = async (name, end, ports, prelude = '') => {
     const start = source.indexOf(`  handle('yan:${name}',`)
     assert(start >= 0)
     const text = source.slice(start, source.indexOf(end, start))
     const { transform } = await import('esbuild')
-    const js = await transform(ownershipDeps + '\n' + text, { loader: 'ts', target: 'es2022' })
+    const js = await transform(ownershipDeps + '\n' + prelude + '\n' + text, { loader: 'ts', target: 'es2022' })
     let callback
     vm.runInNewContext(js.code, { ...ports, handle: (_channel, handler) => { callback = handler } })
     return callback
@@ -61,9 +61,9 @@ try {
       )
     }
   }
-  const ports = { runners, handoffPending: new Map(),
+  const ports = { runners,
     getSettings: async () => ({ checkpointsEnabled: true }), captureCheckpoint: async () => { captured++ }, ac: () => agent,
-    startAgent: async () => { throw Error('unexpected restart') }, abandonHandoff: async () => {} }
+    startAgent: async () => { throw Error('unexpected restart') } }
   const send = await compileHandler('send', "  handle('yan:steer'", ports)
   check((await send('normal message')).ok && sent[0] === 'normal message', '普通发送无需旧目标/模式存储即可到达当前实例')
   check(captured === 1, '普通发送保留检查点')
@@ -83,7 +83,10 @@ try {
   busyElsewhere = false
 
   agent.getState = () => ({ sessionId: 'session-a', isAgentRunning: true })
-  const abort = await compileHandler('abort', "  handle('yan:stopGoal'", ports)
+  const stopRunnerStart = source.indexOf('const stopRunner = async')
+  assert(stopRunnerStart >= 0, 'Missing production helper: stopRunner')
+  const stopRunnerSource = source.slice(stopRunnerStart, source.indexOf('\n\n', stopRunnerStart))
+  const abort = await compileHandler('abort', "  handle('yan:runBash'", ports, stopRunnerSource)
   const cleared = await abort()
   check(aborted === 1 && cleared.steering[0] === 'queued', '停止直接终止当前实例，并返回排队文本')
   check((await readdir(temp)).length === 0, '发送与停止不会创建任何旧模式/目标文件')
@@ -107,19 +110,17 @@ try {
 
   await writeWorkModeSnapshot('a', { mode: 'autonomous', revision: 9, questionFrequency: 'inherit', planApprovalPending: true }, temp)
 
-  const coordinator = await bundle('src/main/goal-coordinator.ts', 'coordinator')
+  const coordinator = await bundle('src/main/work-mode-coordinator.ts', 'coordinator')
   const messages = []
-  coordinator.configureGoalCoordinator({
+  coordinator.configureWorkModeCoordinator({
     runners: () => runners,
     workModes: store,
-    agentProfiles: {}, spaces: {}, contextAssembler: {}, handoffDiag: {},
     pushFrom: (id, msg) => messages.push({ id, ...msg })
   })
-  coordinator.goals.load = async () => { throw Error('ordinary compatibility push must not load goals') }
   const inheritPush = await coordinator.pushWorkMode('a')
   const profilePush = await coordinator.pushAgentProfile('b')
   check(messages[0].id === 'a' && inheritPush.mode === 'standard' && inheritPush.revision === 0 && inheritPush.questionFrequency === 'inherit',
-    '模式兼容推送固定 standard / revision 0 / inherit，且不读目标')
+    '模式兼容推送固定 standard / revision 0 / inherit')
   check(messages[1].id === 'b' && messages[1].payload.activity === 'answer', '档案兼容推送保持运行身份且不生成快照')
 
   await store.setQuestionFrequency(sessionKey, 'eager')
@@ -131,7 +132,7 @@ try {
   check(snapshot.mode === 'standard', '逐轮快照固定 standard，不复活旧 autonomous')
   check(snapshot.revision === 1, '逐轮快照携带 store 权威 revision')
   check(snapshot.questionFrequency === 'eager', '逐轮快照携带显式频率')
-  check(snapshot.planApprovalPending === true, '逐轮快照保留上一份的必要待审标记')
+  check(snapshot.planApprovalPending === false, '逐轮快照不再保留已退役的待审标记')
 
   const rootEntries = await readdir(temp)
   check(!rootEntries.includes('goals.json'), '兼容推送不加载/创建目标存储（no-goals）')

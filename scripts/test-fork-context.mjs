@@ -8,8 +8,7 @@ export function runForkContextTests(ok, mod) {
     env: { branch: 'feat/git-review', detached: false, head: 'a1b2c3d4', ahead: 2, behind: 1, changedCount: 3 },
     source: { sessionId: 'sess-src', cwd: 'C:/work/pi-desktop' },
     refs: null,
-    attachments: null,
-    pkg: null
+    attachments: null
   }
 
   const text = buildForkContext(base)
@@ -43,34 +42,7 @@ export function runForkContextTests(ok, mod) {
   const noUpstream = buildForkContext({ ...base, env: { ...base.env, ahead: 0, behind: 0 } })
   ok(!noUpstream.includes('相对 upstream'), '没有跟踪差异时不说 upstream')
 
-  ok(!text.includes('上一个会话留下的交接包'), '没有交接包时**不出现**交接包标题（不许编造）')
-  ok(text.includes('没有留下交接包'), '没有交接包时如实说没有，并给“缺什么直接问”的出口')
-
-  const pkg = {
-    goal: '把工作树会话做成 Fork',
-    deliverable: 'S2b-4 落地',
-    constraints: ['不改 pi 默认工具集'],
-    acceptance: ['live 场景能验'],
-    done: ['S2b-1', 'S2b-2'],
-    remaining: ['S2b-4'],
-    nextActions: ['先接交接包'],
-    blockers: [],
-    files: ['src/shared/fork-context.ts'],
-    notes: [],
-    sourceSession: 'sess-src',
-    sourceHead: null,
-    mode: 'standard',
-    model: 'x',
-    generatedAt: 1,
-    generator: 'model'
-  }
-  const withPkg = buildForkContext({ ...base, pkg })
-  ok(withPkg.includes('上一个会话留下的交接包'), '有交接包时带上标题')
-  ok(withPkg.includes('把工作树会话做成 Fork'), '交接包的目标进来了')
-  ok(withPkg.includes('先接交接包'), '交接包认定的下一步进来了')
-  ok(withPkg.includes('- S2b-2'), '已完成的清单逐条列出')
-  ok(!withPkg.includes('阻塞：'), '空列表不产生空标题（blockers 为空）')
-  ok(withPkg.includes('sess-src') && !withPkg.includes('generator'), '宿主元数据（generator/model）不进正文')
+  ok(!text.includes('交接包'), '交接已退役，正文不再提交接包')
 
   ok(!text.includes('文件在这个工作树里的对照'), '没有引用时不写对照段')
   const withRefs = buildForkContext({

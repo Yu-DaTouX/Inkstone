@@ -1,4 +1,4 @@
-export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime, rebindSessionRuntime) {
+export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime) {
   const runtimeA = { sessionId: 'session-a', runId: 'r1', projectId: 'project-a', generation: 1 }
   const runtimeB = { sessionId: 'session-b', runId: 'r2', projectId: 'project-b', generation: 1 }
   const user = { id: 'u1', role: 'user', text: 'hello' }
@@ -113,14 +113,5 @@ export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeK
 
   map = reduceSessionRuntime(map, runtimeUi, { ch: 'todos', payload: [] })
   ok(map['session-ui'].uiRequests.length === 0, '后续事件不会把已清的请求带回来')
-  map = updateSessionRuntime(map, runtimeUi, { draft: '未发送的草稿' })
-  const nextRuntime = { sessionId: 'next-segment', runId: 'next-runner', generation: 1 }
-  const rebound = rebindSessionRuntime(map, runtimeUi.sessionId, nextRuntime, {
-    sessionId: nextRuntime.sessionId, conversationId: runtimeUi.sessionId
-  })
-  ok(rebound['next-segment'].draft === '未发送的草稿', '交接保留未发送草稿')
-  ok(rebound['next-segment'].messages === map['session-ui'].messages, '交接原位保留消息引用，不清空历史')
-  ok(rebound['next-segment'].runtime.runId === 'next-runner', '界面保持逻辑会话，同时消息路由接到新实例')
-  ok(rebound['next-segment'].session.conversationId === 'session-ui', '逻辑会话身份不会随着物理片段改变')
 
 }

@@ -1,99 +1,19 @@
-import { open, stat } from 'node:fs/promises'
-import { extname } from 'node:path'
 import { inflateSync } from 'node:zlib'
-import type { LibraryKind, LibraryParseStatus } from '../shared/library'
+
+export type PdfParseStatus = 'ok' | 'unsupported' | 'failed'
 
 export interface ParseOutcome {
-  status: LibraryParseStatus
+  status: PdfParseStatus
   text?: string
   pages?: number
   note: string
 }
 
-export const MAX_TEXT_BYTES = 4 * 1024 * 1024
 export const MAX_PDF_BYTES = 64 * 1024 * 1024
 export const MAX_PDF_STREAM_BYTES = 16 * 1024 * 1024
 export const MAX_PDF_TOTAL_BYTES = 64 * 1024 * 1024
 const MIN_PRINTABLE_RATIO = 0.6
 const MIN_TEXT_CHARS = 20
-
-const TEXT_EXT = new Set([
-  '.txt', '.md', '.markdown', '.mdx', '.rst',
-  '.json', '.jsonl', '.csv', '.tsv', '.log', '.yaml', '.yml', '.toml', '.ini', '.env',
-  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rb', '.go', '.rs', '.java', '.kt',
-  '.c', '.h', '.cpp', '.hpp', '.cs', '.php', '.sh', '.bash', '.ps1', '.sql', '.html', '.htm', '.css'
-])
-const OPAQUE_EXT: Record<string, string> = {
-  '.pdf': 'PDF',
-  '.doc': 'Word 旧格式', '.docx': 'Word', '.rtf': 'RTF',
-  '.ppt': 'PowerPoint 旧格式', '.pptx': 'PowerPoint',
-  '.xls': 'Excel 旧格式', '.xlsx': 'Excel',
-  '.png': '图片', '.jpg': '图片', '.jpeg': '图片', '.gif': '图片', '.webp': '图片', '.bmp': '图片', '.heic': '图片',
-  '.zip': '压缩包', '.7z': '压缩包', '.rar': '压缩包', '.tar': '压缩包', '.gz': '压缩包',
-  '.mp3': '音频', '.wav': '音频', '.m4a': '音频', '.mp4': '视频', '.mov': '视频', '.mkv': '视频'
-}
-
-export function isTextLike(filePath: string): boolean {
-  return TEXT_EXT.has(extname(filePath).toLowerCase())
-}
-
-export async function parseLibraryFile(filePath: string, kind: LibraryKind): Promise<ParseOutcome> {
-  const ext = extname(filePath).toLowerCase()
-  if (kind === 'image') {
-    return { status: 'unsupported', note: '图片作为附件保留；正文提取（OCR）尚未接入' }
-  }
-  if (ext === '.pdf') return parsePdf(filePath)
-  if (isTextLike(filePath)) return parsePlainText(filePath, ext)
-  const label = OPAQUE_EXT[ext] ?? (ext ? `${ext} 文件` : '无扩展名文件')
-  return { status: 'unsupported', note: `${label}的正文提取尚未接入，已作为附件保留` }
-}
-
-async function parsePlainText(filePath: string, ext: string): Promise<ParseOutcome> {
-  let buf: Buffer
-  let truncated: boolean
-  try {
-    const info = await stat(filePath)
-    if (!info.isFile()) return { status: 'failed', note: '不是普通文件' }
-    truncated = info.size > MAX_TEXT_BYTES
-    const handle = await open(filePath, 'r')
-    try {
-      buf = Buffer.alloc(Math.min(info.size, MAX_TEXT_BYTES))
-      const { bytesRead } = await handle.read(buf, 0, buf.length, 0)
-      buf = buf.subarray(0, bytesRead)
-      truncated ||= bytesRead < info.size
-    } finally { await handle.close() }
-  } catch (error) {
-    return { status: 'failed', note: `读不到文件：${error instanceof Error ? error.message : String(error)}` }
-  }
-  const slice = buf
-  let text = slice.toString('utf8')
-  if (truncated) text = text.replace(/\uFFFD+$/, '')
-  if (ext === '.html' || ext === '.htm') text = extractHtmlText(text).text
-  if (!text.trim()) return { status: 'unsupported', note: '文件是空的或只含空白' }
-  return {
-    status: 'ok',
-    text,
-    note: truncated ? `已提取正文（超过 ${Math.round(MAX_TEXT_BYTES / 1024 / 1024)}MB，只取了前面一部分）` : '已提取正文'
-  }
-}
-
-async function parsePdf(filePath: string): Promise<ParseOutcome> {
-  let buf: Buffer
-  try {
-    const info = await stat(filePath)
-    if (!info.isFile()) return { status: 'failed', note: '不是普通文件' }
-    if (info.size > MAX_PDF_BYTES) return { status: 'unsupported', note: `PDF 超过 ${Math.round(MAX_PDF_BYTES / 1024 / 1024)}MB，仅作为附件保留` }
-    buf = Buffer.alloc(info.size)
-    const handle = await open(filePath, 'r')
-    try {
-      const { bytesRead } = await handle.read(buf, 0, buf.length, 0)
-      if (bytesRead !== info.size) return { status: 'failed', note: 'PDF 在读取期间发生变化，请重试' }
-    } finally { await handle.close() }
-  } catch (error) {
-    return { status: 'failed', note: `读不到文件：${error instanceof Error ? error.message : String(error)}` }
-  }
-  return parsePdfBuffer(buf)
-}
 
 export function parsePdfBuffer(buf: Buffer): ParseOutcome {
   if (buf.byteLength > MAX_PDF_BYTES) {
@@ -239,56 +159,4 @@ export function printableRatio(text: string): number {
     if (ch === '\n' || PRINTABLE.test(ch)) good += 1
   }
   return good / chars.length
-}
-
-const ENTITIES: Record<string, string> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-  nbsp: ' '
-}
-
-export function extractHtmlText(html: string): { text: string; title?: string } {
-  const titleHit = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)
-  const title = titleHit ? titleHit[1].replace(/\s+/g, ' ').trim() : undefined
-  let body = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
-    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<\/(p|div|section|article|li|tr|h[1-6]|blockquote|pre)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-  body = body.replace(/<[^>]*>/g, ' ')
-  body = body.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (whole: string, name: string) => {
-    const key = name.toLowerCase()
-    if (Object.hasOwn(ENTITIES, key)) return ENTITIES[key]
-    if (key.startsWith('#x')) {
-      const code = parseInt(key.slice(2), 16)
-      return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole
-    }
-    if (key.startsWith('#')) {
-      const code = parseInt(key.slice(1), 10)
-      return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole
-    }
-    return whole
-  })
-  return {
-    title,
-    text: body
-      .replace(/[ \t]+/g, ' ')
-      .replace(/ ?\n ?/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
-  }
-}
-
-export function htmlParseOutcome(html: string): ParseOutcome {
-  const { text } = extractHtmlText(html)
-  if (text.length < MIN_TEXT_CHARS) {
-    return { status: 'unsupported', note: '网页内容太短（可能是需要登录或动态加载的页面），只保留了链接' }
-  }
-  return { status: 'ok', text, note: '已提取网页正文（去标签后的纯文本，未做正文识别）' }
 }
