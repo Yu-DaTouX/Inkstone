@@ -96,7 +96,7 @@
   }
 
   .pane-row:hover {
-    background: var(--bg-1);
+    background: var(--hover);
   }
 
   .pane-row__main {
@@ -131,7 +131,7 @@
     height: 6px;
     border-radius: 3px;
     overflow: hidden;
-    background: var(--bg-1);
+    background: var(--sunken);
   }
 
   .pane-bar__seg {
@@ -140,7 +140,7 @@
   }
 
   .pane-bar__seg.is-warn {
-    background: var(--warn, var(--accent));
+    background: var(--stall);
   }
 
   .pane-bar__seg.is-free {
@@ -184,7 +184,7 @@
     padding: var(--s-4) var(--s-8);
     border: 1px solid var(--line);
     border-radius: var(--r-xs);
-    background: var(--bg-1);
+    background: var(--sunken);
     color: var(--fg);
     font: inherit;
     font-size: var(--t-meta);
@@ -204,6 +204,6 @@
   .pane-browser__native {
     position: absolute;
     inset: 0;
-    background: var(--bg-1);
+    background: var(--bg);
   }
 }

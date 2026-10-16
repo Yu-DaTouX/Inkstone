@@ -208,10 +208,7 @@ function ScheduleEditor({ draft, editingId, busy, error, models, t, onChange, on
             </CheckboxGroup>
           ) : null}
           {draft.kind === 'daily' || draft.kind === 'weekdays' || draft.kind === 'weekly' ? (
-            <TextField label={t('sched.time')} value={draft.time} onChange={(value) => onChange({ time: value })}>
-              <Label className="ui-field__label">{t('sched.time')}</Label>
-              <Input className="ui-input" type="time" data-testid="schedule-time" />
-            </TextField>
+            <ClockField label={t('sched.time')} value={draft.time} onChange={(time) => onChange({ time })} />
           ) : null}
           {draft.kind === 'interval' ? (
             <div className="sched-interval">
@@ -435,5 +432,41 @@ export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): Reac
         </Modal>
       </ModalOverlay>
     </div>
+  )
+}
+
+function normalizeClock(raw: string): string | null {
+  const match = /^\s*(\d{1,2})(?:[:：.]?(\d{2}))?\s*$/.exec(raw)
+  if (!match) return null
+  const hour = Number(match[1])
+  const minute = Number(match[2] ?? '0')
+  if (hour > 23 || minute > 59) return null
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+function ClockField({ label, value, onChange }: { label: string; value: string; onChange: (time: string) => void }): ReactElement {
+  const [raw, setRaw] = useState(value)
+  useEffect(() => setRaw(value), [value])
+  const invalid = normalizeClock(raw) === null
+  const commit = (): void => {
+    const next = normalizeClock(raw)
+    if (!next) return
+    setRaw(next)
+    if (next !== value) onChange(next)
+  }
+  return (
+    <TextField label={label} value={raw} onChange={setRaw} onBlur={commit} isInvalid={invalid}>
+      <Label className="ui-field__label">{label}</Label>
+      <Input
+        className="ui-input sched-clock"
+        inputMode="numeric"
+        maxLength={5}
+        placeholder="09:00"
+        data-testid="schedule-time"
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit()
+        }}
+      />
+    </TextField>
   )
 }

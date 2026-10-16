@@ -722,7 +722,7 @@
   .wb-ov-task-time {
     flex: none;
     font-family: var(--font-mono);
-    color: var(--fg-dim);
+    color: var(--fg3);
   }
 
   .wb-ov-dot {
@@ -734,7 +734,7 @@
 
   .wb-ov-note {
     margin: 0;
-    color: var(--fg-dim);
+    color: var(--fg3);
     overflow-wrap: anywhere;
   }
 }
@@ -747,19 +747,19 @@
   }
 
   .wb-ov-check {
-    color: var(--fg-dim);
+    color: var(--fg3);
   }
 
   .wb-tile[data-tone='warn'] .wb-tile-summary {
-    color: var(--stall);
+    color: var(--stall-t);
   }
 
   .wb-tile[data-tone='err'] .wb-tile-summary {
-    color: var(--fail);
+    color: var(--fail-t);
   }
 
   .wb-tile-summary {
-    color: var(--fg-dim);
+    color: var(--fg3);
   }
 
   .wb-ov-dot {
@@ -771,7 +771,7 @@
   }
 
   .wb-ov-dot.is-ok {
-    background: var(--ok);
+    background: var(--add);
   }
 
   .wb-ov-dot.is-warn {

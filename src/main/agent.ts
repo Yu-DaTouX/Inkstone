@@ -3481,6 +3481,27 @@ export class AgentController extends EventEmitter {
     } catch {
     }
 
+    const stoppedAt = Date.now()
+    const stoppedElapsed = this.turn.startedMono !== undefined
+      ? Math.max(1, Math.round(performance.now() - this.turn.startedMono))
+      : this.turn.elapsedMs
+    const stoppedAnchor = [...this.messages].reverse().find((m) => m.role === 'user' && /^m\d+$/.test(m.id))?.id
+    const stoppedMeta = (id: string): Pick<UIMessage, 'turnTiming' | 'elapsedMs'> => stoppedElapsed === undefined
+      ? {}
+      : {
+          elapsedMs: stoppedElapsed,
+          turnTiming: { logicalTurnId: stoppedAnchor ?? id, startedAt: stoppedAt - stoppedElapsed, endedAt: stoppedAt, elapsedMs: stoppedElapsed, terminalReason: 'stopped' }
+        }
+    const settledId = this.streaming ? null : this.agentRunning ? this.turn.messageIds.at(-1) : undefined
+    if (settledId) {
+      const settled = this.messages.find((m) => m.id === settledId)
+      const patch = stoppedMeta(settledId)
+      if (settled && patch.turnTiming) {
+        Object.assign(settled, patch)
+        this.push({ ch: 'msg-update', payload: { id: settledId, patch } })
+      }
+    }
+
     if (this.streaming) {
       const s = this.streaming
       this.streaming = null
@@ -3491,7 +3512,9 @@ export class AgentController extends EventEmitter {
         thinking: s.thinking || undefined,
         thinkingLive: false,
         toolCalls: s.tools.length ? s.tools : undefined,
-        timestamp: Date.now()
+        model: this.state?.model ? `${this.state.model.provider}/${this.state.model.id}` : undefined,
+        timestamp: stoppedAt,
+        ...stoppedMeta(s.id)
       }
       this.messages.push(msg)
       for (const c of s.tools) {

@@ -309,11 +309,13 @@ function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }
   const reply = replyText(turn)
   const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatDuration(turn.elapsedMs) : null
   const modelDisplay = turn.model ? turnModelLabel(turn.model, models) : null
+  const stopLabel = turn.terminalReason === 'stopped' ? t('act.stopped') : turn.terminalReason === 'interrupted' ? t('act.interrupted') : null
   if (!reply && !turn.timestamp && !elapsed && !turn.model) return null
   return (
     <div className="v3-msg-meta" data-testid="v3-turn-meta">
       {turn.timestamp ? <TurnClock timestamp={turn.timestamp} /> : null}
       {modelDisplay ? <span className="v3-act-model" title={modelDisplay.identity}>{modelDisplay.label}</span> : null}
+      {stopLabel ? <span className="v3-msg-meta-stop">{stopLabel}</span> : null}
       {elapsed ? <span className="v3-act-time" title={turn.waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) }) : t('tok.elapsedTip')}>{elapsed}</span> : null}
       {reply && !readOnly ? (
         <IconButton
@@ -330,12 +332,23 @@ function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }
   )
 }
 
+let clockFormats: { clock: Intl.DateTimeFormat; full: Intl.DateTimeFormat } | null = null
+
+function turnClockFormats(): { clock: Intl.DateTimeFormat; full: Intl.DateTimeFormat } {
+  clockFormats ??= {
+    clock: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }),
+    full: new Intl.DateTimeFormat(undefined, {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short'
+    })
+  }
+  return clockFormats
+}
+
 export function TurnClock({ timestamp }: { timestamp: number }): JSX.Element | null {
   const date = new Date(timestamp)
   if (!Number.isFinite(date.getTime())) return null
-  const clock = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(date)
-  const full = new Intl.DateTimeFormat(undefined, {
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short'
-  }).format(date)
+  const formats = turnClockFormats()
+  const clock = formats.clock.format(date)
+  const full = formats.full.format(date)
   return <time className="v3-time" dateTime={date.toISOString()} title={full} aria-label={full} tabIndex={0}>{clock}</time>
 }

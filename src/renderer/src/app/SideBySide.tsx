@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
 import { createTurnProjector, groupIntoTurns, type Turn } from '../../../shared/turns'
@@ -27,7 +27,7 @@ export interface SideBySideProps {
   narrow: boolean
 }
 
-export function SideBySide({ split, narrow }: SideBySideProps): JSX.Element {
+export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySideProps): JSX.Element {
   const layout = collapsedPanes(split, narrow)
   const weights = useSplitView((s) => s.weights)
 
@@ -76,7 +76,7 @@ export function SideBySide({ split, narrow }: SideBySideProps): JSX.Element {
       })}
     </div>
   )
-}
+})
 
 function PaneFrame({
   target,

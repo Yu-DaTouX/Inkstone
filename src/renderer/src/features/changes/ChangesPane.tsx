@@ -3,6 +3,7 @@ import { ArrowLeft, RefreshCw } from 'lucide-react'
 import type { GitStatusEntry } from '../../../../shared/git'
 import { Badge, Button, IconButton, ListBox, ListBoxItem, cx } from '../../ui'
 import { useI18n } from '../../i18n'
+import { fileStatusLabel, porcelainFileStatus } from '../../lib/file-status'
 import { DiffView } from '../diff'
 import { changesText } from './text'
 import type { ChangeItem, ChangesGitSource, ChangesOwner, ChangesPatch, GitStateView, PatchLoader } from './types'
@@ -282,7 +283,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
             >
               {items.map((item) => (
                 <ListBoxItem key={item.path} id={item.path} textValue={item.path} className="changes-pane__item">
-                  <span className="changes-pane__status">{item.status}</span>
+                  <span className="changes-pane__status" data-status={porcelainFileStatus(item.status)} title={item.status}>{fileStatusLabel(porcelainFileStatus(item.status), lang ?? uiLang)}</span>
                   <span className="changes-pane__path" title={item.path}>
                     {item.path}
                   </span>

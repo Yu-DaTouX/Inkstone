@@ -423,7 +423,7 @@
     border-radius: var(--r-xs);
     background: var(--mtp-think);
     box-shadow: 0 0 12px color-mix(in srgb, var(--mtp-think) 55%, transparent);
-    animation: v3-step-caret var(--dur-1060) step-end 4;
+    animation: v3-step-caret 1060ms step-end 4;
     transition:
       background-color var(--dur-expand) var(--ease),
       box-shadow var(--dur-expand) var(--ease),

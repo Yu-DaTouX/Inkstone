@@ -114,12 +114,13 @@
 
   .changes-pane__status {
     flex: 0 0 auto;
-    min-width: 2.4ch;
-    text-align: center;
+    min-width: 3em;
     color: var(--fg3);
-    font-family: var(--font-mono);
     font-size: var(--t-meta);
   }
+
+  .changes-pane__status:is([data-status='added'], [data-status='untracked']) { color: var(--add); }
+  .changes-pane__status[data-status='deleted'] { color: var(--del); }
 
   .changes-pane__path {
     min-width: 0;

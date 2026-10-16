@@ -124,7 +124,7 @@ function zh(): ReviewUiText {
     noChanges: '这个范围里没有改动',
     truncatedList: '改动文件太多，这里只列出了前面一部分',
     fileCount: (count) => `${count} 个文件`,
-    selectFile: '在上面的文件清单里选一个文件查看差异',
+    selectFile: '从文件清单里选一个文件查看差异',
     selectFileHint: '选中文件后这里显示真实补丁，可在下方按真实行号添加批注',
     binary: '二进制文件，无法逐行显示差异',
     stale: '代码已变化',

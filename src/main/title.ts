@@ -102,12 +102,21 @@ function buildPrompt(samples: string[]): string {
 
 const TITLE_MAX = 18
 
-function cleanTitle(raw: string): string {
-  let s = raw.trim()
+function stripMarkdown(line: string): string {
+  return line
+    .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, '')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__|~~)(.+?)\1/g, '$2')
+    .replace(/`+/g, '')
+    .replace(/(^|\s)[*_](\S(?:.*?\S)?)[*_](?=\s|$)/g, '$1$2')
+    .trim()
+}
+
+export function cleanTitle(raw: string): string {
+  let s = raw.split('\n').map((line) => stripMarkdown(line)).find((line) => line.length > 0) ?? ''
+  s = s.replace(/^(标题|title)\s*[:：]\s*/i, '')
   s = s.replace(/^["'“”『「【\[(（]+/, '').replace(/["'“”』」】\])）]+$/, '')
   s = s.replace(/[。！？!?.,，、；;：:]+$/, '')
-  s = s.replace(/^(标题|title)\s*[:：]\s*/i, '')
-  s = s.split('\n')[0].trim()
   if (Array.from(s).length > TITLE_MAX) s = Array.from(s).slice(0, TITLE_MAX).join('')
   return s
 }

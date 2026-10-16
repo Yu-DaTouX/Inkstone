@@ -89,7 +89,7 @@
   }
 
   .runs-stop-summary {
-    margin: 0 0 var(--s-8);
+    margin-block: 0 var(--s-8);
     color: var(--fg2);
     font-size: var(--t-meta);
     line-height: 1.5;
@@ -117,8 +117,9 @@
 
   .runs-history-title {
     margin: 0;
-    font-size: var(--t-h3);
-    line-height: var(--t-h3-lh);
+    font-size: var(--t-title);
+    line-height: var(--t-title-lh);
+    font-weight: var(--t-title-w);
   }
 
   .runs-history-head-l {
@@ -382,7 +383,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    margin: 0;
+    margin-block: 0;
     padding: 0;
     list-style: none;
   }

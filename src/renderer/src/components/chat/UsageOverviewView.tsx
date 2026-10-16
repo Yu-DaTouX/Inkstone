@@ -198,8 +198,10 @@ export function UsageOverviewView({
             <span className="start-hero-num" data-testid="usage-tokens" title={t('usage.tokensHint')}>
               {dash(compactNumber(data.tokens))}
             </span>
-            <span className="start-label">{t('usage.tokens')}</span>
-            {money && data.cost > 0 ? <span className="start-label" data-testid="usage-cost" title={t('usage.costHint')}>· {dash(money(data.cost))}</span> : null}
+            <span className="start-hero-sub">
+              <span className="start-label">{t('usage.tokens')}</span>
+              {money && data.cost > 0 ? <> <span className="start-label start-hero-cost" data-testid="usage-cost" title={t('usage.costHint')}>{dash(money(data.cost))}</span></> : null}
+            </span>
           </div>
           {note ? <p className="start-hint" data-testid="usage-empty-note">{note}</p> : null}
           <dl className="start-stats">

@@ -32,6 +32,15 @@
     display: flex;
     flex-direction: column;
   }
+  .start-hero-sub {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--s-8);
+  }
+  .start-hero-cost {
+    color: var(--fg2);
+    font-variant-numeric: tabular-nums;
+  }
   .start-hero-num {
     color: var(--fg);
     font: var(--t-h1) / 1.1 var(--font-ui);

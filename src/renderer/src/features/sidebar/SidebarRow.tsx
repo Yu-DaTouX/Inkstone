@@ -29,8 +29,28 @@ export function SidebarRow({ item, title, isCurrent, phase, unread, code, word, 
   const draggedRef = useRef(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [renamePending, setRenamePending] = useState(false)
   const [draft, setDraft] = useState(title)
   const dragging = useSessionDrag((s) => s.item?.path === item.path)
+
+  useEffect(() => {
+    if (!renamePending || menuOpen) return
+    let frame = 0
+    let idleFrames = 0
+    let waited = 0
+    const wait = (): void => {
+      idleFrames = document.querySelector('.ui-popover') ? 0 : idleFrames + 1
+      if (idleFrames < 2 && waited++ < 60) {
+        frame = requestAnimationFrame(wait)
+        return
+      }
+      setRenamePending(false)
+      setDraft(title)
+      setRenaming(true)
+    }
+    frame = requestAnimationFrame(wait)
+    return () => cancelAnimationFrame(frame)
+  }, [renamePending, menuOpen, title])
 
   useEffect(() => {
     if (isCurrent) rowRef.current?.scrollIntoView({ block: 'nearest' })
@@ -163,10 +183,7 @@ export function SidebarRow({ item, title, isCurrent, phase, unread, code, word, 
         anchor={rowRef}
         open={menuOpen}
         onOpenChange={setMenuOpen}
-        onRename={() => {
-          setDraft(title)
-          setRenaming(true)
-        }}
+        onRename={() => setRenamePending(true)}
       />
     </div>
   )

@@ -1,8 +1,8 @@
 @layer primitives {
   .v3-prose {
     color: var(--fg);
-    font-size: var(--t-prose);
-    line-height: var(--t-prose-lh);
+    font-size: var(--d-prose);
+    line-height: var(--d-prose-lh);
     overflow-wrap: anywhere;
   }
   .v3-prose > :first-child { margin-top: 0; }
@@ -75,6 +75,7 @@
   .v3-act[data-kind='run'] { color: var(--run-t); }
   .v3-act[data-kind='err'] { color: var(--fail-t); }
   .v3-act[data-kind='stop'] { color: var(--stall-t); }
+  .v3-msg-meta-stop { color: var(--stall-t); }
   .v3-act-text { min-width: 0; }
   .v3-act-glyph { color: currentColor; }
   .v3-act-time, .v3-act-model { color: var(--fg3); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
