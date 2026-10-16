@@ -49,7 +49,6 @@ import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
 import { registerSourcesIpc } from './ipc/sources-ipc'
-import { registerKnowledgeIpc } from './ipc/knowledge-ipc'
 import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
 import { registerMcpAppIpc } from './ipc/mcp-app-ipc'
 import { registerMcpAppViewIpc } from './ipc/mcp-app-view-ipc'
@@ -1333,7 +1332,7 @@ function projectIdForCwd(settings: Awaited<ReturnType<typeof getSettings>>, cwd:
   return settings.projects.find((project) => normalize(project.cwd) === normalize(cwd))?.id
 }
 
-function knowledgeProjectId(settings: Awaited<ReturnType<typeof getSettings>>, cwd: string): string {
+function capabilityProjectId(settings: Awaited<ReturnType<typeof getSettings>>, cwd: string): string {
   const registered = projectIdForCwd(settings, cwd)
   if (registered) return registered
   return deriveProjectId(cwd, (id) => settings.projects.some((project) => project.id === id))
@@ -1651,7 +1650,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         capability: {
           sessionId: id ?? 'primary',
           runnerGeneration: generation ?? 1,
-          projectId: knowledgeProjectId(settings, cwd),
+          projectId: capabilityProjectId(settings, cwd),
           opsDir: join(YAN_DIR, 'ops'),
           binDir: join(YAN_DIR, 'bin'),
           artifactDir: join(YAN_DIR, 'artifacts'),
@@ -2640,11 +2639,10 @@ function registerIpc(): void {
   )
 
 
-  registerKnowledgeIpc(ipc, { currentCwd: () => ac()?.getState()?.cwd, knowledgeProjectId, window: () => win })
 
   registerBrowserIpc(ipc, () => browser)
 
-  registerPeerIpc(ipc, peerClient, async () => (await getSettings()).projects)
+  registerPeerIpc(ipc, peerClient)
 
   registerPeerHostIpc(ipc, { grants: peerGrants })
 

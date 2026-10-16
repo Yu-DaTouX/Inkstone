@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 const dir = await mkdtemp(join(tmpdir(), 'inkstone-review2-storage-'))
 try {
   const outfile = join(dir, 'pdf-text.mjs')
-  const compileOnly = ['src/main/project-memory-store.ts', 'src/main/personal-memory.ts', 'src/main/learning-export.ts']
+  const compileOnly = ['src/main/project-memory-store.ts', 'src/main/personal-memory.ts']
   for (const [index, entry] of compileOnly.entries()) {
     await build({ entryPoints: [entry], outfile: join(dir, `compile-${index}.mjs`), bundle: true, platform: 'node', format: 'esm' })
   }

@@ -15,12 +15,11 @@ import { PeerGrantRegistry } from './peer-grants'
 import { PeerClient } from './peer-client'
 import type { PeerHostHandlers, RemoteArtifactFile, RemoteCommand, RemoteOperationResult } from './remote-server'
 import { PEER_ARTIFACT_MAX_BYTES } from '../shared/peer-protocol'
-import type { PeerExportedArtifact, PeerKnowledgeExport, PeerSessionExport } from '../shared/peer-protocol'
+import type { PeerExportedArtifact, PeerSessionExport } from '../shared/peer-protocol'
 import { REMOTE_ARTIFACT_MAX_BYTES } from '../shared/remote-protocol'
 import type { RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval } from '../shared/remote-protocol'
 import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/session-chain'
 import { YAN_DIR } from './paths'
-import { listKnowledge } from './project-memory-store'
 import type { AssistantArtifact, RunnerStatus, SessionState, SessionSummary } from '../shared/ipc'
 import type { RemoteAccess } from './remote-access'
 import type { SessionHost } from './session-host'
@@ -565,28 +564,5 @@ export const peerHostHandlers: PeerHostHandlers = {
     host.pushRunners()
     if (!sent.ok) return { ok: false, status: 409, error: sent.error ?? '新任务未能接收消息' }
     return { ok: true, data: { sessionId: sessionId ?? null, runId: selected.runId ?? selected.id, projectId: project.id } }
-  },
-  async knowledge(projectId) {
-    const project = (await getSettings()).projects.find((item) => item.id === projectId)
-    if (!project) return { ok: false, status: 404, error: '找不到这个项目' }
-    try {
-      const entries = (await listKnowledge({ projectId, cwd: project.cwd })).filter((entry) => entry.status === 'active')
-      const exported: PeerKnowledgeExport = {
-        version: 1,
-        source: { computer: hostname(), projectId, projectName: project.name, exportedAt: Date.now() },
-        entries: entries.map((entry) => ({
-          id: entry.id,
-          revision: entry.revision,
-          kind: entry.kind,
-          text: entry.text,
-          tags: entry.tags,
-          confidenceClass: entry.confidenceClass,
-          updatedAt: entry.updatedAt
-        }))
-      }
-      return { ok: true, data: exported }
-    } catch (error) {
-      return { ok: false, status: 500, error: error instanceof Error ? error.message : String(error) }
-    }
   }
 }

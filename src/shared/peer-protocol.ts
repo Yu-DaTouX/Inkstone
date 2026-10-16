@@ -68,12 +68,6 @@ export interface PeerSessionExport {
   truncated: boolean
 }
 
-export interface PeerKnowledgeExport {
-  version: 1
-  source: { computer: string; projectId: string; projectName: string; exportedAt: number }
-  entries: Array<{ id: string; revision: number; kind: string; text: string; tags: string[]; confidenceClass: string; updatedAt: string }>
-}
-
 export interface PeerRecordView {
   id: string
   computer: string

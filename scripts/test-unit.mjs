@@ -694,17 +694,6 @@ const mcpPackage = await import('../node_modules/esbuild/lib/main.js').then(({ b
   }).then(() => import('../out/test/mcp-package.mjs'))
 )
 const { runMcpPackageTests } = await import('./test-mcp-package.mjs')
-const projectKnowledgeView = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/project-knowledge-view.ts'],
-    outfile: 'out/test/project-knowledge-view.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/project-knowledge-view.mjs'))
-)
-const { runProjectKnowledgeViewTests } = await import('./test-project-knowledge-view.mjs')
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1542,7 +1531,6 @@ await runMcpTests(ok, {
 await runMcpRegistrationTests(ok, { shared: mcpRegistrationShared, service: mcpRegistrationService })
 await runMcpPackageTests(ok, mcpPackage)
 runProjectKnowledgeSearchTests(ok, projectMemorySearch)
-await runProjectKnowledgeViewTests(ok, projectKnowledgeView)
 await runExtensionInventoryTests(ok)
 
 await runSubagentIsolationTests(ok, subagentIsolation)
@@ -2582,30 +2570,6 @@ const userSkillMain = await import('../node_modules/esbuild/lib/main.js').then((
 )
 const { runUserSkillTests } = await import('./test-user-skill.mjs')
 await runUserSkillTests(ok, userSkillShared, userSkillMain, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
-
-const learningExportShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/learning-export.ts'],
-    outfile: 'out/test/learning-export.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/learning-export.mjs'))
-)
-const learningExportMain = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/learning-export.ts'],
-    outfile: 'out/test/learning-export-main.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    external: ['electron'],
-    logLevel: 'silent'
-  }).then(() => import('../out/test/learning-export-main.mjs'))
-)
-const { runLearningExportTests } = await import('./test-learning-export.mjs')
-await runLearningExportTests(ok, learningExportShared, learningExportMain, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
 
 const subagentBrief = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({

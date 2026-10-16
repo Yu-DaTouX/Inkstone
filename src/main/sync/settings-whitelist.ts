@@ -38,7 +38,6 @@ export const SYNC_SETTINGS_WHITELIST = [
   'responseDetail',
   'density',
   'temperatureByModel',
-  'projectKnowledge',
   'sound',
   'providerBudgets',
   'toolLayout',

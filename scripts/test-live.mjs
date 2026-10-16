@@ -1032,165 +1032,6 @@ async function seedProjectKnowledge(dataDir, opts = {}) {
   )
 }
 
-const KNOWLEDGE_ISO_A_ID = 'kn-iso-a'
-const KNOWLEDGE_ISO_A_TEXT = 'fixture：主仓库的发布流程统一走 npm run dist'
-const KNOWLEDGE_ISO_B_ID = 'kn-iso-b'
-const KNOWLEDGE_ISO_B_TEXT = 'fixture：另一个项目的接口约定（与主仓库无关）'
-const KNOWLEDGE_ISO_TITLES = { a: 'YAN-ISO-A', b: 'YAN-ISO-B', w: 'YAN-ISO-W' }
-const KNOWLEDGE_ISO_STASH_KEY = 'yan.probe.knowledge-iso.v1'
-const LEGACY_DATA_SENTINELS = [
-  { name: 'memory.json', body: '{"entries":[{"id":"old-1","text":"用户遗留的旧记忆，不许被删除或改写"}]}\n' },
-  { name: 'soul.md', body: '# soul\n\n用户遗留的旧人设文件，逐字节不许变。\n' }
-]
-
-function writeIsolationSessions(root, cwdA, cwdB, cwdW) {
-  const stamp = Date.now().toString(36)
-  const made = {}
-  const one = (tag, key, cwd, skew) => {
-    const id = `yan-iso-${tag}-${stamp}`
-    const file = join(root, `2026-01-05T00-00-00-000Z_${id}.jsonl`)
-    const lines = [
-      { type: 'session', version: 3, id, timestamp: TS(800 - skew), cwd },
-      { type: 'model_change', id: 'mc0', parentId: null, timestamp: TS(800 - skew), provider: 'commandcode', modelId: 'deepseek/deepseek-v4.1-flash' },
-      {
-        type: 'message',
-        id: 'u0',
-        parentId: 'mc0',
-        timestamp: TS(790 - skew),
-        message: { role: 'user', content: [{ type: 'text', text: `${KNOWLEDGE_ISO_TITLES[key]} fixture 会话` }] }
-      },
-      {
-        type: 'message',
-        id: 'a0',
-        parentId: 'u0',
-        timestamp: TS(780 - skew),
-        message: {
-          role: 'assistant',
-          content: [{ type: 'text', text: `${KNOWLEDGE_ISO_TITLES[key]}-REPLY` }],
-          usage: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-          stopReason: 'stop'
-        }
-      }
-    ]
-    writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
-    const t = (Date.now() - (900 + skew) * 1000) / 1000
-    try {
-      utimesSync(file, t, t)
-    } catch {
-    }
-    made[key] = { tag, cwd, file }
-  }
-  one('a', 'a', cwdA, 0)
-  one('b', 'b', cwdB, 10)
-  one('w', 'w', cwdW, 20)
-  return made
-}
-
-async function seedKnowledgeIsolation(sandboxRoot, fixtureProject, caseCwd) {
-  const { pathToFileURL } = await import('node:url')
-  const ids = await import(pathToFileURL(join(root, 'src/main/project-id.ts')).href)
-  const memory = await import(pathToFileURL(join(root, 'src/shared/project-memory.ts')).href)
-
-  const cwdA = caseCwd
-  const cwdB = join(fixtureProject, 'other')
-  const worktreeRoot = join(fixtureProject, 'repo-worktrees')
-  const cwdW = join(worktreeRoot, 'iso')
-
-  let worktreeIsReal = false
-  try {
-    mkdirSync(worktreeRoot, { recursive: true })
-    execFileSync('git', ['-c', 'user.name=yan-test', '-c', 'user.email=yan@test', 'worktree', 'add', '-q', '-b', `iso-${Date.now().toString(36)}`, cwdW], {
-      cwd: cwdA,
-      stdio: 'ignore'
-    })
-    worktreeIsReal = true
-  } catch (error) {
-    mkdirSync(cwdW, { recursive: true })
-    console.log(`  ⚠️  工作树没建起来（${error instanceof Error ? error.message : String(error)}）—— 退化成普通目录，路径前缀不变`)
-  }
-
-  const idA = ids.legacyProjectId(cwdA)
-  const idB = ids.hashedProjectId(cwdB)
-  const legacyW = ids.legacyProjectId(cwdW)
-
-  const entry = (key, id, text, kind) => {
-    const now = new Date().toISOString()
-    return {
-      schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
-      id,
-      projectId: key,
-      revision: 1,
-      kind,
-      status: 'active',
-      text,
-      textDigest: memory.textDigest(text),
-      tags: [],
-      evidence: [{ sessionId: 'fixture' }],
-      confidenceClass: 'user-confirmed',
-      createdAt: now,
-      updatedAt: now
-    }
-  }
-  const writeOne = (projectId, item) => {
-    const dir = join(sandboxRoot, 'data', 'project-knowledge', projectId)
-    mkdirSync(join(dir, 'entries', item.id), { recursive: true })
-    writeFileSync(join(dir, 'entries', item.id, 'r1.json'), JSON.stringify(item, null, 2), 'utf8')
-    writeFileSync(
-      join(dir, 'manifest.json'),
-      JSON.stringify(
-        {
-          schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
-          projectId,
-          revision: 1,
-          updatedAt: item.updatedAt,
-          entries: [memory.pointerOf(item)]
-        },
-        null,
-        2
-      ),
-      'utf8'
-    )
-  }
-  writeOne(idA, entry(idA, KNOWLEDGE_ISO_A_ID, KNOWLEDGE_ISO_A_TEXT, 'decision'))
-  writeOne(idB, entry(idB, KNOWLEDGE_ISO_B_ID, KNOWLEDGE_ISO_B_TEXT, 'fact'))
-
-  writeFileSync(
-    join(sandboxRoot, 'data', 'desktop.json'),
-    JSON.stringify(
-      {
-        cwd: cwdA,
-        lang: 'zh-CN',
-        projectKnowledge: { enabled: true },
-        projects: [
-          { id: idA, cwd: cwdA, name: '主仓库', archived: false, createdAt: Date.now(), updatedAt: Date.now() },
-          { id: idB, cwd: cwdB, name: '另一个项目', archived: false, createdAt: Date.now(), updatedAt: Date.now() }
-        ]
-      },
-      null,
-      2
-    ),
-    'utf8'
-  )
-
-  const sessions = join(sandboxRoot, 'sessions')
-  mkdirSync(sessions, { recursive: true })
-  const made = writeIsolationSessions(sessions, cwdA, cwdB, cwdW)
-
-  const sentinels = []
-  for (const base of [join(sandboxRoot, 'pi-agent'), join(sandboxRoot, 'data')]) {
-    mkdirSync(base, { recursive: true })
-    for (const sentinel of LEGACY_DATA_SENTINELS) {
-      const path = join(base, sentinel.name)
-      writeFileSync(path, sentinel.body, 'utf8')
-      sentinels.push({ path, body: sentinel.body })
-    }
-  }
-
-  console.log(`  隔离 fixture：A=${idA.slice(0, 18)}…(登记) / B=${idB.slice(0, 18)}…(登记·哈希) / W=${legacyW.slice(0, 18)}…(工作树·未登记)`)
-  console.log(`    工作树：${cwdW}${worktreeIsReal ? '（真 git 工作树）' : '（普通目录）'}`)
-  return { cwdA, cwdB, cwdW, idA, idB, legacyW, sessions: made, sentinels }
-}
-
 async function checkKnowledgeCli(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -1219,176 +1060,6 @@ async function checkKnowledgeCli(sandboxRoot, _tempBefore, probeText) {
   }
 
   say(!/\[knowledgecli\]\s+[1-9]\d*\s+条失败/.test(probeText), '探针自身没有失败项')
-  return { ok, lines }
-}
-
-async function checkKnowledgeTab(sandboxRoot, _tempBefore, probeText) {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  if (!sandboxRoot) {
-    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
-    return { ok: true, lines }
-  }
-
-  const manifestFile = join(sandboxRoot, 'data', 'project-knowledge', KNOWLEDGE_FIXTURE_PROJECT_ID, 'manifest.json')
-  try {
-    const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
-    const entries = Array.isArray(manifest.entries) ? manifest.entries : []
-    lines.push(`  manifest：revision=${manifest.revision} 共 ${entries.length} 条`)
-    for (const entry of entries) lines.push(`    ${entry.id} ${entry.status} rev ${entry.revision}`)
-    const deleted = entries.find((entry) => entry.id === KNOWLEDGE_FIXTURE_CANDIDATE_ID)
-    const untouched = entries.find((entry) => entry.id === KNOWLEDGE_FIXTURE_ENTRY_ID)
-    say(!!deleted, '被删的那条仍在 manifest 里（逻辑删除，不是抹掉）')
-    say(deleted?.status === 'deleted', '被删的那条状态是 deleted')
-    say((deleted?.revision ?? 0) >= 4, `revision 至少加了 3（确认 / 编辑 / 删除）：${deleted?.revision}`)
-    say(untouched?.status === 'active' && untouched?.revision === 1, '另一条 fixture 完全没被动过（active / rev 1）')
-    const tombstoneFile = join(
-      sandboxRoot,
-      'data',
-      'project-knowledge',
-      KNOWLEDGE_FIXTURE_PROJECT_ID,
-      'entries',
-      KNOWLEDGE_FIXTURE_CANDIDATE_ID,
-      `r${deleted?.revision ?? 0}.json`
-    )
-    const tombstone = JSON.parse(readFileSync(tombstoneFile, 'utf8'))
-    say(typeof tombstone.text === 'string' && tombstone.text.length > 0, '墓碑保留正文（逻辑删除可恢复）')
-    say(tombstone.status === 'deleted', '那版 revision 文件本身也是 deleted 状态')
-  } catch (error) {
-    say(false, '读 manifest / 墓碑失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-
-  say(!/\[knowledgetab\]\s+[1-9]\d*\s+条失败/.test(probeText), '探针自身没有失败项')
-  return { ok, lines }
-}
-
-async function checkKnowledgeIsolation(sandboxRoot, _tempBefore, probeText) {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  if (!sandboxRoot) {
-    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
-    return { ok: true, lines }
-  }
-
-  const { pathToFileURL } = await import('node:url')
-  const ids = await import(pathToFileURL(join(root, 'src/main/project-id.ts')).href)
-  const memory = await import(pathToFileURL(join(root, 'src/shared/project-memory.ts')).href)
-  const fixtureProject = join(sandboxRoot, 'fixture-project')
-  const cwdA = join(fixtureProject, 'repo')
-  const cwdB = join(fixtureProject, 'other')
-  const cwdW = join(fixtureProject, 'repo-worktrees', 'iso')
-  const idA = ids.legacyProjectId(cwdA)
-  const idB = ids.hashedProjectId(cwdB)
-  const idW = ids.hashedProjectId(cwdW)
-  const knDir = (projectId) => join(sandboxRoot, 'data', 'project-knowledge', projectId)
-  const readManifest = (projectId) => JSON.parse(readFileSync(join(knDir(projectId), 'manifest.json'), 'utf8'))
-
-  say(
-    ids.legacyProjectId(cwdW) === idA,
-    '前提成立：工作树的旧算法 id 与主仓库完全相同（路径前 27 字节被截断）',
-  )
-  say(idB !== idA, '另一个项目的登记 id 与主仓库不同（碰撞退路生效）')
-
-  try {
-    const manifestA = readManifest(idA)
-    const manifestB = readManifest(idB)
-    const entryA = (manifestA.entries ?? []).find((entry) => entry.id === KNOWLEDGE_ISO_A_ID)
-    const entryB = (manifestB.entries ?? []).find((entry) => entry.id === KNOWLEDGE_ISO_B_ID)
-    lines.push(`  A(${idA.slice(0, 18)}…) → ${(manifestA.entries ?? []).map((e) => e.id).join(', ') || '（空）'}`)
-    lines.push(`  B(${idB.slice(0, 18)}…) → ${(manifestB.entries ?? []).map((e) => e.id).join(', ') || '（空）'}`)
-    say(entryA?.status === 'active', 'A 的条目在 A 的知识目录里（active）')
-    say(entryB?.status === 'active', 'B 的条目在 B 的知识目录里（active）')
-    say(
-      entryA?.digest === memory.textDigest(KNOWLEDGE_ISO_A_TEXT),
-      'A 的条目正文指纹与 fixture 一致（逐字节没被改动）',
-    )
-    say(
-      !(manifestA.entries ?? []).some((entry) => entry.id === KNOWLEDGE_ISO_B_ID),
-      'A 的目录里**没有** B 的条目（物理隔离，不靠查询条件）',
-    )
-    say(
-      !(manifestB.entries ?? []).some((entry) => entry.id === KNOWLEDGE_ISO_A_ID),
-      'B 的目录里**没有** A 的条目',
-    )
-  } catch (error) {
-    say(false, '读项目 manifest 失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-
-  try {
-    const worktreeManifest = existsSync(join(knDir(idW), 'manifest.json')) ? readManifest(idW) : null
-    lines.push(
-      `  工作树 id（哈希）→ ${worktreeManifest ? (worktreeManifest.entries ?? []).map((e) => e.id).join(', ') : '（没有知识目录）'}`,
-    )
-    say(
-      !worktreeManifest || (worktreeManifest.entries ?? []).length === 0,
-      '工作树没有拿到任何条目（即使没有知识目录也算通过 —— 它不该读主仓库的）',
-    )
-  } catch (error) {
-    say(false, '读工作树知识目录失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-
-  const idLine = /\[knowledgeisolation\] ids=(\{[^\n]*\})/.exec(probeText)
-  let runtimeIds = null
-  if (!idLine) {
-    say(false, '探针没有打印运行时的 projectId（拿不到隔离的直接证据）')
-  } else {
-    try {
-      runtimeIds = JSON.parse(idLine[1])
-      lines.push(`  运行时 id = ${JSON.stringify(runtimeIds)}`)
-      say(runtimeIds.a === idA, '主仓库会话用的就是登记 id')
-      say(runtimeIds.b === idB, '另一个项目会话用的是哈希 id（登记过）')
-      say(runtimeIds.w === idW, '工作树会话用的是哈希 id —— 不是主仓库的 id（隔离成立）')
-      say(runtimeIds.w !== runtimeIds.a, '工作树的 id 与主仓库不同（这就是旧算法会撞的地方）')
-    } catch (error) {
-      say(false, '解析探针 id 失败：' + (error instanceof Error ? error.message : String(error)))
-    }
-  }
-
-  const restartLine = /\[knowledgeisolation\] restart=(\{[^\n]*\})/.exec(probeText)
-  if (!restartLine) {
-    say(false, '没有拿到重启探针的输出（cross-process 持久化没验到）')
-  } else {
-    try {
-      const restart = JSON.parse(restartLine[1])
-      lines.push(`  重启后 = ${JSON.stringify(restart)}`)
-      say(restart.aHasEntry === true, '重启后主仓库仍能读到自己的条目（知识在盘上，不是内存态）')
-      say(restart.aSameId === true, '重启后主仓库的 projectId 与上一次相同（派生确定性）')
-      say(restart.bHasEntry === true, '重启后另一个项目仍能读到自己的条目')
-      say(restart.wEmpty === true, '重启后工作树仍然读不到任何条目')
-      say(restart.wSameId === true, '重启后工作树的 projectId 与上一次相同（哈希退路确定）')
-    } catch (error) {
-      say(false, '解析重启探针输出失败：' + (error instanceof Error ? error.message : String(error)))
-    }
-  }
-
-  say(!existsSync(join(root, 'project-knowledge')), '开发仓库根目录下没有被创建 project-knowledge（数据只在 YAN_DIR）')
-  say(
-    existsSync(knDir(idA)) && knDir(idA).startsWith(join(sandboxRoot, 'data')),
-    '知识目录落在隔离的 YAN_DIR 下',
-  )
-
-  for (const base of ['pi-agent', 'data']) {
-    for (const sentinel of LEGACY_DATA_SENTINELS) {
-      const path = join(sandboxRoot, base, sentinel.name)
-      let same = false
-      try {
-        same = readFileSync(path, 'utf8') === sentinel.body
-      } catch {
-        same = false
-      }
-      say(same, `旧用户数据逐字节不变：${base}/${sentinel.name}`)
-    }
-  }
-
-  say(!/\[knowledgeisolation\]\s+[1-9]\d*\s+条失败/.test(probeText), '探针自身没有失败项')
   return { ok, lines }
 }
 
@@ -1883,8 +1554,6 @@ const AFTER_EXIT = {
   subagentFail: checkSubagentFail,
   subagentArchive: checkSubagentArchive,
   knowledgeCli: checkKnowledgeCli,
-  knowledgeTab: checkKnowledgeTab,
-  knowledgeIsolation: checkKnowledgeIsolation,
   sessionabArchive: checkSessionabArchive,
   atrefsendArchive: checkAtRefSend,
   browserBoundaryDownloads: checkBrowserBoundaryDownloads,
@@ -3904,7 +3573,6 @@ async function main() {
       console.log(`\n✗ ${name} 未通过`)
       continue
     }
-    let isolationSeeded = false
     let contextGuardFixturePath = null
 
     for (const win of wins) {
@@ -3925,11 +3593,8 @@ async function main() {
               updatedAt: Date.now()
             }
           ]
-          desktop.projectKnowledge = { enabled: true }
         }
-        if (!c.knowledgeIsolationSeed) {
-          writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify(desktop, null, 2), 'utf8')
-        }
+        writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify(desktop, null, 2), 'utf8')
         if (c.knowledgeSeed) {
           let fixtureSessionId
           try {
@@ -3943,10 +3608,6 @@ async function main() {
             withCandidate: c.knowledgeSeed === 'candidate',
             sessionId: c.knowledgeSeed === 'candidate' ? fixtureSessionId : undefined
           })
-        }
-        if (c.knowledgeIsolationSeed && !isolationSeeded) {
-          await seedKnowledgeIsolation(sandboxRoot, fixtureProject, caseCwd)
-          isolationSeeded = true
         }
         if (c.contextGuardSeed && !contextGuardFixturePath) {
           contextGuardFixturePath = writeContextGuardSession(join(sandboxRoot, 'sessions'))
@@ -3962,7 +3623,6 @@ async function main() {
       const out = await runProbe(c, {
         ...env,
         ...(win ? { YAN_WIN: win } : {}),
-        ...(c.knowledgeExtLog && sandboxRoot ? { YAN_KNOWLEDGE_EXT_LOG: join(sandboxRoot, 'knowledge-ext.log') } : {}),
         ...(c.questionExtLog ? { YAN_QUESTION_EXT_LOG: join(tmpdir(), 'yan-question-ext.log') } : {}),
         ...(c.env ?? {}),
         ...(brokenPiBin ? { YAN_PI_BIN: brokenPiBin } : {}),

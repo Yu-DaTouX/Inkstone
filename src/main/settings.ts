@@ -102,14 +102,6 @@ const DEFAULTS: AppSettings = {
   sound: defaultSound()
 }
 
-function sanitizeProjectKnowledge(v: unknown): { enabled: boolean } | undefined {
-  if (!v || typeof v !== 'object') return undefined
-  const enabled = (v as { enabled?: unknown }).enabled
-  if (enabled === true) return { enabled: true }
-  if (enabled === false) return { enabled: false }
-  return undefined
-}
-
 function defaultSound(): SoundSettings {
   return {
     enabled: false,
@@ -326,7 +318,6 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
       : 'standard'
   settings.sound = sanitizeSound(settings.sound)
   settings.temperatureByModel = cleanTemperatureByModel(settings.temperatureByModel)
-  settings.projectKnowledge = sanitizeProjectKnowledge(settings.projectKnowledge)
   settings.remoteAccess = sanitizeRemoteAccess(settings.remoteAccess)
   settings.keepAwakeWhileWorking = settings.keepAwakeWhileWorking === false ? false : undefined
   settings.keepAwakeOnBattery = settings.keepAwakeOnBattery === false ? false : undefined
@@ -445,7 +436,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','questionFrequency','capabilityStrategy','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','workModeShortcutEnabled','workModeShortcut','subagentNotify','streamLoopAutoContinue','usageUnderInput','usageCurrency','temperatureByModel','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput','shortcutOverrides'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','questionFrequency','capabilityStrategy','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','workModeShortcutEnabled','workModeShortcut','subagentNotify','streamLoopAutoContinue','usageUnderInput','usageCurrency','temperatureByModel','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput','shortcutOverrides'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -509,7 +500,6 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
     next.recentCwds = [next.cwd, ...next.recentCwds.filter((p) => p !== next.cwd)].slice(0, 8)
   }
   if ('temperatureByModel' in patch) next.temperatureByModel = cleanTemperatureByModel(next.temperatureByModel)
-  if ('projectKnowledge' in patch) next.projectKnowledge = sanitizeProjectKnowledge(next.projectKnowledge)
   if ('defaultWorkMode' in patch) next.defaultWorkMode = normalizeWorkMode(next.defaultWorkMode)
   if ('questionFrequency' in patch) next.questionFrequency = normalizeQuestionFrequency(next.questionFrequency)
   if ('workModeShortcutEnabled' in patch) {

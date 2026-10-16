@@ -10,15 +10,12 @@ import {
   type PeerConnectionState,
   type PeerGrantView,
   type PeerImportView,
-  type PeerKnowledgeExport,
   type PeerOperation,
   type PeerRecordView,
   type PeerSessionExport,
   type PeerStatusView
 } from '../shared/peer-protocol'
-import type { ProjectRecord } from '../shared/ipc'
 import { YAN_DIR } from './paths'
-import { commitKnowledge } from './project-memory-store'
 
 const PEERS_FILE = join(YAN_DIR, 'peers.json')
 const IMPORTS_DIR = join(YAN_DIR, 'peer-imports')
@@ -329,32 +326,6 @@ export class PeerClient {
     await writeFile(join(dir, 'messages.json'), JSON.stringify(pack.messages), 'utf8')
     this.onChange()
     return { ok: true, data: view }
-  }
-
-  async importKnowledge(peerId: string, remoteProjectId: string, local: ProjectRecord): Promise<Result<{ accepted: number; rejected: number }>> {
-    const exported = await this.request<PeerKnowledgeExport>(peerId, `/remote/v1/peer/projects/${encodeURIComponent(remoteProjectId)}/knowledge`)
-    if (!exported.ok) return exported
-    const pack = exported.data
-    if (pack?.version !== 1 || !Array.isArray(pack.entries)) return { ok: false, error: '对方返回的项目记忆格式不对' }
-    let accepted = 0
-    let rejected = 0
-    const tool = safeFileName(pack.source.computer).replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 40) || 'peer'
-    for (const entry of pack.entries) {
-      const outcome = await commitKnowledge({
-        identity: { projectId: local.id, cwd: local.cwd },
-        request: {
-          kind: entry.kind,
-          text: entry.text,
-          tags: [`peer:${tool}`, ...entry.tags.slice(0, 8)],
-          evidence: [{ excerpt: `来自 ${pack.source.computer} 的项目「${pack.source.projectName}」，条目 ${entry.id} 第 ${entry.revision} 版（${entry.confidenceClass}）`.slice(0, 480) }],
-          confidenceClass: 'inferred',
-          expectedRevision: 0
-        }
-      })
-      if (outcome.ok) accepted += 1
-      else rejected += 1
-    }
-    return { ok: true, data: { accepted, rejected } }
   }
 
   async listImports(): Promise<PeerImportView[]> {
