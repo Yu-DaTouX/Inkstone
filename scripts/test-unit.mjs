@@ -4,8 +4,6 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { runHtmlArtifactPreviewTests } from './test-html-artifact-preview.mjs'
 import { runRunStateTests } from './test-run-state.mjs'
-import { runAgentServiceTests } from './test-agent-service.mjs'
-import { runServiceCliTests } from './test-agent-service-cli.mjs'
 import { runCapabilityNegotiationTests } from './test-capability-negotiation.mjs'
 import { runSessionConcurrencyConflictTests } from './test-session-concurrency-conflict.mjs'
 import { runSessionConcurrencyFrontendTests } from './test-session-concurrency-frontend.mjs'
@@ -32,8 +30,6 @@ await import('./test-model-selection.mjs')
 await import('./test-cc-guard.mjs')
 await runHtmlArtifactPreviewTests()
 await runRunStateTests()
-await runAgentServiceTests()
-await runServiceCliTests()
 await runCapabilityNegotiationTests()
 await import('./test-security-performance-fixes.mjs')
 await import('./test-browser-frame-origin.mjs')
@@ -41,7 +37,7 @@ for (const script of [
   'test-attachment-prune-race', 'test-files-root-boundary',
   'test-mobile-model-url', 'test-open-path-boundary',
   'test-package-sources-fixture', 'test-package-timeout-fallback',
-  'test-service-receipt-hub-null', 'test-session-restore-rollback', 'test-subagent-stop-intent',
+  'test-session-restore-rollback', 'test-subagent-stop-intent',
   'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory'
 ]) await import(`./${script}.mjs`)
 

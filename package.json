@@ -39,7 +39,6 @@
     "test:stories": "node scripts/test-v3-story-coverage.mjs",
     "test:v3-ui-exports": "node scripts/test-v3-ui-exports.mjs",
     "start": "node scripts/launch.mjs",
-    "agent:service": "node scripts/agent-service.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/lint-css.mjs && npm run lint:layers",
     "icons": "node scripts/design/icons/build-icons.mjs",
     "probe-pi": "npm run build && node scripts/probe-pi.mjs",

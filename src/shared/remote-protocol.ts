@@ -14,7 +14,7 @@ export interface RemoteInfo {
   transport: Array<'http' | 'sse'>
   tokenRequired: true
   capabilities: string[]
-  capabilityDetails?: import('./agent-service').ServiceCapability[]
+  capabilityDetails?: import('./capability-negotiation').ServiceCapability[]
   device: RemoteDeviceSummary | null
   computer?: { name: string }
 }

@@ -89,7 +89,6 @@ import { registerFilesIpc } from './ipc/files-ipc'
 import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { canOpenDocument } from '../shared/document-open'
 import { normalizeQuestionFrequency } from '../shared/question-frequency'
-import { registerAgentServiceIpc, closeAgentService } from './ipc/agent-service-ipc'
 import { lockDataRoot } from '../core/data-root-lock'
 import { sameRuntimeEnvelope } from '../core/run-state'
 import { registerContextBudgetIpc } from './ipc/context-budget-ipc'
@@ -1130,7 +1129,6 @@ async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
   scheduleService.stop()
-  await closeAgentService().catch((error) => reportMainError('agent-service-shutdown', error))
   disposeKeepAwake()
   attention?.dispose()
   auxWindows?.dispose()
@@ -2462,7 +2460,6 @@ function registerIpc(): void {
   })
 
   registerFilesIpc(ipc, { resolveFileContext, isSessionBusy: () => !runners || runners.statuses().some((runner) => runner.running || runner.waiting) })
-  registerAgentServiceIpc(ipc, { currentAgent: ac })
 
   handle('yan:getSettings', async () => {
     const s = await getSettings()

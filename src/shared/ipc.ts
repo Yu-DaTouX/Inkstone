@@ -1855,7 +1855,6 @@ export type DeepLinkIntent =
 
 export interface YanBridge {
   readonly probeMode: boolean
-  agentService: import('./agent-service').ServiceBridge
   appUpdate: {
     status(): Promise<import('./app-update').AppUpdateStatus>
     check(): Promise<import('./app-update').AppUpdateStatus>

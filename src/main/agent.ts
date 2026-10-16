@@ -3949,14 +3949,6 @@ export class AgentController extends EventEmitter {
     return { ok: true }
   }
 
-  async serviceModelDetails(): Promise<Record<string, unknown> | null> {
-    const current = this.state?.model
-    if (!current || !this.rpc) return null
-    const response = await this.rpc.command<{ models?: Array<Record<string, unknown>> }>('get_available_models')
-    if (!response.success) return null
-    return response.data?.models?.find(model => model.id === current.id && model.provider === current.provider) ?? null
-  }
-
   async listModels(): Promise<ModelInfo[]> {
     if (!this.rpc) return []
     const res = await this.rpc.command<{ models?: ModelInfo[] }>('get_available_models')
