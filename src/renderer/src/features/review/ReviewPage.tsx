@@ -53,6 +53,7 @@ import {
   updateAnnotation
 } from './review-client'
 import { reviewText, type ReviewUiText } from './review-text'
+import { fileStatusLabel } from '../../lib/file-status'
 import './review-page.css'
 
 export type ReviewFindingsLoader = (changeSet: ReviewChangeSet) => Promise<{ ok: boolean; text?: string; error?: string }>
@@ -782,7 +783,7 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
                 >
                   {changeSet.files.map((file) => (
                     <ListBoxItem key={file.path} id={file.path} textValue={file.path} data-path={file.path} className="review-file">
-                      <span className="review-file-status">{file.status}</span>
+                      <span className="review-file-status" data-status={file.status}>{fileStatusLabel(file.status, lang)}</span>
                       <span className="review-file-path" title={file.path}>
                         {file.path}
                       </span>
@@ -894,7 +895,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
             </Select>
             <Button
               variant="primary"
-              size="sm"
               isDisabled={!usable || runBusy}
               isPending={runBusy}
               onPress={() => void startReview()}
@@ -904,7 +904,6 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
             </Button>
             <Button
               variant="secondary"
-              size="sm"
               isDisabled={!usable || taskBusy || annotations.length === 0}
               isPending={taskBusy}
               onPress={() => void makeAnnotationTask()}

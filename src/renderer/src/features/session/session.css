@@ -140,6 +140,8 @@
     overflow-y: auto;
   }
 
+  .v3-asks > * { flex-shrink: 0; }
+
   .v3-jump { position: absolute; right: var(--s-20); bottom: var(--s-8); z-index: 2; }
 
   @media (prefers-reduced-motion: reduce) {

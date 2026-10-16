@@ -9,7 +9,6 @@ export interface SidebarText {
   restoreSession: string
   projectSessionCount: string
   newChat: string
-  moreEntries: string
   runRecords: string
   showMore: string
   showLess: string
@@ -26,8 +25,7 @@ const zh: SidebarText = {
   restoreSession: '取消归档',
   projectSessionCount: '{n} 个会话',
   newChat: '新建对话',
-  moreEntries: '更多',
-  runRecords: '运行记录',
+  runRecords: '运行总览',
   showMore: '显示更多',
   showLess: '收起'
 }
@@ -43,8 +41,7 @@ const en: SidebarText = {
   restoreSession: 'Unarchive',
   projectSessionCount: '{n} chats',
   newChat: 'New chat',
-  moreEntries: 'More',
-  runRecords: 'Run history',
+  runRecords: 'Runs',
   showMore: 'Show more',
   showLess: 'Show less'
 }

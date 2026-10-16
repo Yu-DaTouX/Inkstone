@@ -14,6 +14,7 @@ import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/asci
 import { settingsText } from '../settings-text'
 import { Segmented, SettingsRow } from '../root/controls'
 import { useSwitchToV2 } from '../root/use-switch-to-v2'
+import { codeFontChoice } from '../../../lib/appearance-v3'
 
 type Density = 'compact' | 'standard' | 'comfortable'
 type FontChoice = 'sans' | 'serif' | 'maple' | 'mono' | 'custom'
@@ -34,7 +35,7 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
   const codePreset = useStore((s) => s.settings?.fontCode)
   const uiCustom = useStore((s) => s.settings?.fontUiCustom)
   const codeCustom = useStore((s) => s.settings?.fontCodeCustom)
-  const preset: string = (kind === 'ui' ? uiPreset : codePreset) ?? (kind === 'ui' ? 'sans' : 'maple')
+  const preset: string = kind === 'ui' ? uiPreset ?? 'sans' : codeFontChoice(codePreset)
   const custom = (kind === 'ui' ? uiCustom : codeCustom) ?? ''
   const [draft, setDraft] = useState<string | null>(null)
   const shown = draft ?? custom
@@ -61,8 +62,8 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
           { value: 'custom', label: text.fontCustom }
         ]
       : [
-          { value: 'maple', label: `${text.fontMaple}（${text.fontDefault}）` },
-          { value: 'mono', label: text.fontMono },
+          { value: 'mono', label: `${text.fontMono}（${text.fontDefault}）` },
+          { value: 'maple', label: text.fontMaple },
           { value: 'custom', label: text.fontCustom }
         ]
 

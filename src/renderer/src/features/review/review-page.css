@@ -168,9 +168,14 @@
   }
 
   .review-file-status {
+    flex: none;
+    min-width: 3em;
     color: var(--fg3);
-    font-family: var(--font-mono);
+    font-size: var(--t-meta);
   }
+
+  .review-file-status:is([data-status='added'], [data-status='untracked']) { color: var(--add); }
+  .review-file-status[data-status='deleted'] { color: var(--del); }
 
   .review-file-stat {
     display: flex;

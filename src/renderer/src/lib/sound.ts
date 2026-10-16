@@ -32,6 +32,7 @@ const THROTTLE: Record<SoundEvent, number> = {
 
 let ctx: AudioContext | null = null
 let installed = false
+let idleTimer = 0
 const lastAt: Partial<Record<SoundEvent, number>> = {}
 
 function audioContext(): AudioContext | null {
@@ -48,16 +49,25 @@ function audioContext(): AudioContext | null {
   return ctx
 }
 
+function suspendWhenIdle(c: AudioContext, afterMs: number): void {
+  window.clearTimeout(idleTimer)
+  idleTimer = window.setTimeout(() => {
+    if (c.state === 'running') void c.suspend()
+  }, afterMs)
+}
+
 export function installAudioUnlock(): void {
   if (installed) return
   installed = true
+  const events = ['pointerdown', 'keydown', 'touchstart'] as const
   const unlock = (): void => {
-    const c = audioContext()
-    if (c && c.state === 'suspended') void c.resume()
+    for (const ev of events) window.removeEventListener(ev, unlock, { capture: true })
+    if (ctx && ctx.state === 'suspended') {
+      void ctx.resume()
+      suspendWhenIdle(ctx, 1000)
+    }
   }
-  for (const ev of ['pointerdown', 'keydown', 'touchstart'] as const) {
-    window.addEventListener(ev, unlock, { capture: true })
-  }
+  for (const ev of events) window.addEventListener(ev, unlock, { capture: true })
 }
 
 export function playSound(event: SoundEvent, volume = 0.4): void {
@@ -71,7 +81,10 @@ export function playSound(event: SoundEvent, volume = 0.4): void {
   lastAt[event] = nowMs
 
   const v = Math.min(1, Math.max(0, volume))
-  if (v <= 0) return
+  if (v <= 0) {
+    suspendWhenIdle(c, 300)
+    return
+  }
 
   const now = c.currentTime
   const master = c.createGain()
@@ -97,7 +110,9 @@ export function playSound(event: SoundEvent, volume = 0.4): void {
   }
 
   const end = now + Math.max(...RECIPES[event].map((n) => n.t + n.d)) + 0.1
-  window.setTimeout(() => master.disconnect(), Math.ceil((end - now) * 1000) + 200)
+  const tailMs = Math.ceil((end - now) * 1000) + 200
+  window.setTimeout(() => master.disconnect(), tailMs)
+  suspendWhenIdle(c, tailMs + 300)
 }
 
 export function previewSound(event: SoundEvent, volume = 0.4): void {

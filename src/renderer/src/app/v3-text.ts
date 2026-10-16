@@ -54,7 +54,7 @@ export interface V3Text {
 }
 
 const ZH: V3Text = {
-  runs: '运行',
+  runs: '运行总览',
   runsEmpty: '暂无运行。开始一件任务，它会出现在这里。',
   runsProvisional:
     '这是按现有运行实例（agent_start → agent_settled 的投影）列出的清单，尚未接入运行注册表（WP-11）；状态词不代表权威七态，也不含停滞计时。',

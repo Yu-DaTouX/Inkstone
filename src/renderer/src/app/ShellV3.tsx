@@ -25,6 +25,7 @@ import { ReviewPage } from '../features/review'
 import { ScheduleTasksPage } from '../features/schedule'
 import { RunPill } from '../patterns/RunPill'
 import { Header } from './Header'
+import { applyAppearanceV3 } from '../lib/appearance-v3'
 import { SettingsPanelV3 } from './SettingsPanelV3'
 import { OnboardingWizard, markOnboarded, shouldAutoWizard } from '../features/onboarding'
 import { NativeSessionSurfaces } from '../features/session/native'
@@ -196,6 +197,15 @@ export default function ShellV3(): ReactElement {
     } catch {
     }
   }, [settings])
+
+  const appearanceKey = settings
+    ? JSON.stringify([settings.density, settings.fontSizeUi, settings.fontUi, settings.fontUiCustom, settings.fontCode, settings.fontCodeCustom])
+    : null
+  useEffect(() => {
+    const current = useStore.getState().settings
+    if (appearanceKey === null || !current) return
+    applyAppearanceV3(document.documentElement, current)
+  }, [appearanceKey])
 
   useEffect(() => {
     if (!settings) return
@@ -425,6 +435,16 @@ export default function ShellV3(): ReactElement {
     void useStore.getState().switchSession(path)
   }
 
+  const sidebarActions = useMemo(() => ({
+    onClose: () => { setSidebarPreview(false); useUiV3.getState().setSidebarOpen(false) },
+    onPin: () => useUiV3.getState().setSidebarOpen(true),
+    onPointerLeave: () => { if (!useUiV3.getState().sidebarOpen) setSidebarPreview(false) },
+    onRuns: () => useUiV3.getState().navigate({ name: 'runs' }),
+    onSchedule: () => useUiV3.getState().navigate({ name: 'schedule' }),
+    onReview: () => useUiV3.getState().navigate({ name: 'review' }),
+    onSettings: () => useUiV3.getState().navigate({ name: 'settings' })
+  }), [])
+
   const openRunFromPill = (run: RunSnapshot): void => {
     const path = run.sessionPath ?? useStore.getState().sessions.find((s) => s.id === run.sessionId)?.path
     if (!path) return
@@ -436,16 +456,7 @@ export default function ShellV3(): ReactElement {
     <V3ErrorBoundary>
       <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={narrow ? '1' : '0'} data-side={sidebarOpen ? 'open' : 'closed'} data-sidebar-preview={sidebarPreview && !sidebarOpen ? '1' : undefined}>
         {!sidebarOpen ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} /> : null}
-        <Sidebar
-          onClose={() => { setSidebarPreview(false); useUiV3.getState().setSidebarOpen(false) }}
-          preview={sidebarPreview && !sidebarOpen}
-          onPin={() => useUiV3.getState().setSidebarOpen(true)}
-          onPointerLeave={() => { if (!useUiV3.getState().sidebarOpen) setSidebarPreview(false) }}
-          onRuns={() => useUiV3.getState().navigate({ name: 'runs' })}
-          onSchedule={() => useUiV3.getState().navigate({ name: 'schedule' })}
-          onReview={() => useUiV3.getState().navigate({ name: 'review' })}
-          onSettings={() => useUiV3.getState().navigate({ name: 'settings' })}
-        />
+        <Sidebar {...sidebarActions} preview={sidebarPreview && !sidebarOpen} />
         {sidebarOpen && !narrow ? <Splitter className="v3-sidebar-resizer" value={sidebarWidth} min={220} max={420} step={16} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={setSidebarWidth} onReset={() => setSidebarWidth(264)} /> : null}
         {narrow && sidebarOpen ? (
           <div className="v3-scrim" onClick={() => useUiV3.getState().setSidebarOpen(false)} aria-hidden />

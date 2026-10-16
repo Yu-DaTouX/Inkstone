@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Activity, Archive, CalendarClock, FileDiff, MoreHorizontal, PanelLeftClose, Settings, SquarePen } from 'lucide-react'
+import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { Activity, Archive, CalendarClock, FileDiff, PanelLeftClose, Settings, SquarePen } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
-import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, SearchField } from '../../ui'
+import { IconButton, SearchField } from '../../ui'
 import { IconTip } from '../../app/IconTip'
 import { BrandMark } from '../../components/shell/BrandMark'
 import { v3Text } from '../../app/v3-text'
@@ -36,7 +36,7 @@ interface Props {
   onSettings?: () => void
 }
 
-export function Sidebar({ onClose, onRuns, onSchedule, onReview, onSettings, preview, onPin, onPointerLeave }: Props): ReactElement {
+export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onReview, onSettings, preview, onPin, onPointerLeave }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -212,20 +212,10 @@ export function Sidebar({ onClose, onRuns, onSchedule, onReview, onSettings, pre
           </button>
         ) : null}
         {onRuns ? (
-          <MenuTrigger>
-            <Button variant="ghost" className="v3-entry v3-entry-more" data-testid="v3-entry-more">
-              <MoreHorizontal size={16} aria-hidden />
-              <span className="v3-entry-label">{own.moreEntries}</span>
-            </Button>
-            <Popover placement="bottom start" offset={4}>
-              <Menu aria-label={own.moreEntries} onAction={(key) => { if (key === 'runs') onRuns() }} data-testid="v3-more-menu">
-                <MenuItem id="runs" textValue={own.runRecords} data-testid="v3-more-runs">
-                  <Activity size={14} aria-hidden />
-                  {own.runRecords}
-                </MenuItem>
-              </Menu>
-            </Popover>
-          </MenuTrigger>
+          <button type="button" className="v3-entry" onClick={onRuns} aria-current={route === 'runs' ? 'true' : undefined} data-testid="v3-runs-entry">
+            <Activity size={16} aria-hidden />
+            <span className="v3-entry-label">{own.runRecords}</span>
+          </button>
         ) : null}
       </div>
 
@@ -321,4 +311,4 @@ export function Sidebar({ onClose, onRuns, onSchedule, onReview, onSettings, pre
       </div>
     </aside>
   )
-}
+})

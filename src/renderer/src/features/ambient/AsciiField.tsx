@@ -111,6 +111,8 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   let elapsed = 0
   let closing = false
   let exitElapsed = 0
+  let painted: Int32Array | null = null
+  let paintedKey = ''
 
   const currentVisible = (): boolean => pageVisible && inViewport
 
@@ -196,17 +198,28 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
       exit: exitProgress()
     }, frame)
     pulses = pulses.filter((p) => elapsed - p.at < 2400)
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
     const { alpha, glyph, accent, cols } = frame
     const total = alpha.length
+    const paintKey = `${canvas.width}x${canvas.height}|${cols}|${atlasKey}`
+    const full = !painted || painted.length !== total || paintedKey !== paintKey
+    if (full) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      painted = new Int32Array(total).fill(-1)
+      paintedKey = paintKey
+    }
+    const cells = painted!
+    const step = CELL_SIZE * dpr
     let col = 0
     let row = 0
     for (let i = 0; i < total; i++) {
       const a = alpha[i]
-      if (a > 0) {
-        const level = alphaLevel(a)
-        const sy = (accent[i] * ALPHA_LEVELS + level) * cellPx
-        ctx.drawImage(atlas, glyph[i] * cellPx, sy, cellPx, cellPx, Math.round(col * CELL_SIZE * dpr), Math.round(row * CELL_SIZE * dpr), cellPx, cellPx)
+      const code = a > 0 ? (glyph[i] * 2 + accent[i]) * ALPHA_LEVELS + alphaLevel(a) : -1
+      if (code !== cells[i]) {
+        const x = Math.round(col * step)
+        const y = Math.round(row * step)
+        if (cells[i] !== -1) ctx.clearRect(x, y, Math.round((col + 1) * step) - x, Math.round((row + 1) * step) - y)
+        if (code !== -1) ctx.drawImage(atlas, glyph[i] * cellPx, (accent[i] * ALPHA_LEVELS + alphaLevel(a)) * cellPx, cellPx, cellPx, x, y, cellPx, cellPx)
+        cells[i] = code
       }
       if (++col === cols) {
         col = 0
