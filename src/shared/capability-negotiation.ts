@@ -1,4 +1,11 @@
-import type { ServiceCapability } from './agent-service'
+export interface ServiceCapability {
+  id: string
+  implemented: boolean
+  configured: boolean
+  available: boolean
+  authorized: boolean
+  reason?: string
+}
 
 export function negotiateCapabilities(implemented: string[], configured: string[], authorized: string[], unavailable: string[] = []): { capabilities: string[]; capabilityDetails: ServiceCapability[] } {
   const details = implemented.map(id => ({ id, implemented: true, configured: configured.includes(id), available: configured.includes(id) && !unavailable.includes(id), authorized: authorized.includes(id), ...(!authorized.includes(id) ? { reason: '当前身份未获授权' } : !configured.includes(id) ? { reason: '宿主尚未配置' } : unavailable.includes(id) ? { reason: '当前不可用' } : {}) }))

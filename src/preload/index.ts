@@ -168,22 +168,6 @@ type Ok = { ok: boolean; error?: string }
 
 const api: YanBridge = {
   probeMode: process.argv.includes('--yan-isolated-probe'),
-  agentService: {
-    snapshot: () => invoke('yan:service:snapshot'),
-    create: request => invoke('yan:service:create', request),
-    run: (id, prompt) => invoke('yan:service:run', id, prompt),
-    cancel: id => invoke('yan:service:cancel', id),
-    reconcile: id => invoke('yan:service:reconcile', id),
-    outputs: id => invoke('yan:service:outputs', id),
-    preview: (id, name) => invoke('yan:service:preview', id, name),
-    planApply: (id, items) => invoke('yan:service:plan', id, items),
-    approve: (id, generation, approved) => invoke('yan:service:approve', id, generation, approved),
-    apply: (id, approval, request) => invoke('yan:service:apply', id, approval, request),
-    chooseInputs: () => invoke('yan:service:inputs'),
-    configureModel: () => invoke('yan:service:configure'),
-    chooseDestination: name => invoke('yan:service:destination', name),
-    openOutput: (id, name) => invoke('yan:service:open', id, name)
-  },
   appUpdate: {
     status: () => invoke('yan:update:status'),
     check: () => invoke('yan:update:check'),

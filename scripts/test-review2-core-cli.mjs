@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { build } from 'esbuild'
 
 const temp = await mkdtemp(join(tmpdir(), 'inkstone-core-cli-'))
@@ -32,35 +31,6 @@ try {
   assert.equal(isAllowedBashCommand('"C:\\Program Files\\Inkstone\\yan.exe" goal status'), true)
   assert.equal(isAllowedBashCommand('/opt/inkstone/resources/yan-cli/yan.mjs goal status'), true)
   pass('work mode accepts bare or absolute host CLI only, rejects relative quoted prefix')
-
-  const taskFilesOut = join(temp, 'task-files.mjs')
-  await build({ entryPoints: ['src/core/task-files.ts'], outfile: taskFilesOut, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
-  const { applyOutputs } = await import(pathToFileURL(taskFilesOut).href)
-  const outDir = join(temp, 'out'), destDir = join(temp, 'dest')
-  await mkdir(outDir); await mkdir(destDir)
-  await writeFile(join(outDir, 'new.txt'), 'ours')
-  const destination = join(destDir, 'result.txt')
-  await writeFile(destination + `.inkstone-${process.pid}-0.new`, 'other-owner')
-  const outputSha256 = createHash('sha256').update('ours').digest('hex')
-  const result = await applyOutputs(outDir, [{ output: 'new.txt', destination, expectedSha256: null, outputSha256 }])
-  assert.equal(await readFile(destination + `.inkstone-${process.pid}-0.new`, 'utf8'), 'other-owner')
-  assert.match(result.error, /EEXIST|already exists/i)
-  pass('apply output conflict leaves same-name temporary file owned by another writer untouched')
-
-  const serviceOut = join(temp, 'agent-service.mjs')
-  await build({ entryPoints: ['src/core/agent-service.ts'], outfile: serviceOut, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
-  const { AgentService } = await import(pathToFileURL(serviceOut).href)
-  const service = new AgentService({ dataRoot: join(temp, 'service-data'), guardExtension: resolve('resources/pi-extensions/service-authority.js') })
-  await service.start()
-  try {
-    await assert.rejects(service.once('service', 'invalid-before-01', 'test', {}, async () => 'side effect', () => { throw new Error('invalid input') }), /invalid input/)
-    assert.equal(service.store.document.receipts.some(r => r.requestId === 'invalid-before-01'), false)
-    const source = join(temp, 'missing-input.txt')
-    await assert.rejects(service.create({ title: 'copy fails', files: [source] }))
-    const taskRoot = join(service.store.root, 'tasks')
-    assert.deepEqual(await readdir(taskRoot).catch(() => []), [])
-  } finally { await service.close() }
-  pass('preflight validation makes no uncertain receipt; failed input copy removes only its fresh workspace')
 
   const lockOut = join(temp, 'lock.mjs')
   await build({ entryPoints: ['src/core/data-root-lock.ts'], outfile: lockOut, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })

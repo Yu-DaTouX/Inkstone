@@ -71,18 +71,6 @@ try {
   ok(Object.keys(store.get(session)).length === 0 && !(await readFile(file, 'utf8').catch(() => '')), '坏交互快照隔离后可恢复为空交互偏好')
   store.set(session, 'widget', 'value'); ok(store.get(session).widget === 'value', '恢复后交互偏好正常保存')
 
-  const fileModel = await load('src/main/file-task-model.ts', 'file-model')
-  const config = { provider: 'fixture', baseUrl: 'https://fixture.invalid', api: 'openai-completions', apiKey: 'must-not-persist', model: { id: 'fixture', contextWindow: 32000, maxTokens: 4096 } }
-  await fileModel.saveFileTaskModel(config)
-  const modelPath = join(process.env.YAN_DATA_DIR, 'file-task-model.json')
-  ok(!(await readFile(modelPath, 'utf8')).includes('must-not-persist'), '文件任务模型只保存引用，不复制秘密')
-  await writeFile(join(process.env.YAN_PI_DIR, 'auth.json'), JSON.stringify({ fixture: { type: 'api_key', key: 'current-key' } }))
-  ok((await fileModel.loadFileTaskModel()).apiKey === 'current-key', '运行时从当前凭证源解析key')
-  await writeFile(modelPath, JSON.stringify(config))
-  ok((await fileModel.loadFileTaskModel()).apiKey === 'current-key' && !(await readFile(modelPath, 'utf8')).includes('must-not-persist'), '旧副本自动移除且不复用旧key')
-  await fileModel.clearFileTaskModel('fixture')
-  ok(await fileModel.loadFileTaskModel() === undefined, '清除凭证时删除文件任务引用')
-
   const trust = await load('src/main/project-trust.ts', 'trust')
   const trustedRoot = join(root, 'trusted'); const child = join(trustedRoot, 'child'); await mkdir(child, { recursive: true })
   ok((await trust.allowTrust(trustedRoot)).ok && (await trust.trustStatus(child)).trusted, '显式父目录信任生效')

@@ -1,5 +1,3 @@
-import { clearFileTaskModel } from '../file-task-model'
-import { closeAgentService } from './agent-service-ipc'
 import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
 import { resolvePi } from '../protocol'
@@ -36,8 +34,6 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   handle('yan:clearAuth', async (provider: string) => {
     const r = await clearAuth(provider)
     if (r.ok) {
-      await closeAgentService()
-      await clearFileTaskModel(provider)
       void restartAgent('凭证已清除').catch((error) => console.error('[auth] 凭证清除后刷新失败', error))
     }
     return r
