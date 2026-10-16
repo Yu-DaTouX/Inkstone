@@ -120,14 +120,6 @@
     ok(!store.getState().titleCandidates[sid()], '采用后候选被清掉（不会一直挂着）')
   }
 
-  log('')
-  log('=== 后台用量账（标题这一类）===')
-  const bgUsage = await window.yan.contextBackgroundUsage().catch(() => null)
-  const titleKind = bgUsage?.kinds?.find((k) => k.kind === 'title')
-  ok(!!titleKind && titleKind.calls >= 1, '标题生成记进用量账（kind=title）', titleKind ? `calls=${titleKind.calls}` : '账本里没有 title 记录')
-  ok(!!titleKind && titleKind.missingUsage === 0, '标题那次拿到了供应商 usage（不是缺报）', titleKind ? `missing=${titleKind.missingUsage}` : '')
-  ok(!!titleKind && (titleKind.input > 0 || titleKind.cacheRead > 0), '记到的是供应商口径的输入', titleKind ? `in=${titleKind.input} cacheRead=${titleKind.cacheRead}` : '')
-
   await store.getState().setManualTitle(sid(), '')
   await sleep(400)
   log('\n  收尾：手动名已清除')

@@ -78,7 +78,6 @@ export function remoteSessionState(state: SessionState | null): Record<string, u
     pendingMessageCount: state.pendingMessageCount,
     cwdName: basename(state.cwd) || state.cwd,
     ...(state.autoCompactionEnabled !== undefined ? { autoCompactionEnabled: state.autoCompactionEnabled } : {}),
-    ...(state.contextPolicy ? { contextPolicy: state.contextPolicy } : {}),
     ...(state.steeringMode ? { steeringMode: state.steeringMode } : {}),
     ...(state.followUpMode ? { followUpMode: state.followUpMode } : {})
   }

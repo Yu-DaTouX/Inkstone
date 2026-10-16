@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node
 import { dirname, join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { QuestionLogEntry } from '../shared/ipc'
-import { isSafeSessionId } from './context-state-store'
+import { isSafeSessionId } from './session-id'
 import { YAN_DIR } from './paths'
 
 const PER_SESSION_LIMIT = 50

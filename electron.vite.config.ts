@@ -40,9 +40,7 @@ export default defineConfig({
           protocol: resolve('src/main/protocol.ts'),
           sessions: resolve('src/main/sessions.ts'),
           'office-worker': resolve('src/main/office/worker.ts'),
-          'zoom-math': resolve('src/main/zoom-math.ts'),
-          'context-state-store': resolve('src/main/context-state-store.ts'),
-          'context-watermark': resolve('src/main/context-watermark.ts')
+          'zoom-math': resolve('src/main/zoom-math.ts')
         }
       }
     }

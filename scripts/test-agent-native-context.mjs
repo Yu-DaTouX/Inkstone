@@ -15,7 +15,7 @@ await mkdir(join(root, 'context-budget-v1'))
 await writeFile(sentinel, '{"state":"needs_action","history":"keep"}\n')
 const original = await readFile(sentinel)
 const modules = {}
-for (const [name, file] of Object.entries({ context: 'src/shared/agent-context.ts', ipc: 'src/main/ipc/context-budget-ipc.ts', runtime: 'src/main/pi-runtime-location.ts' })) {
+for (const [name, file] of Object.entries({ context: 'src/shared/agent-context.ts', runtime: 'src/main/pi-runtime-location.ts' })) {
   const outfile = resolve(`out/test/agent-native-${name}.mjs`)
   await build({ entryPoints: [file], outfile, bundle: true, packages: 'external', platform: 'node', format: 'esm', logLevel: 'silent' })
   modules[name] = await import(pathToFileURL(outfile))
@@ -56,12 +56,5 @@ for (const folder of ['pi-extensions', 'yan-thin', 'YAN-THIN']) {
   assert(modules.context.isAgentContextExtension(`C:/app/resources/${folder}/danger-guard.js`))
   checks += 2
 }
-const handlers = new Map()
-modules.ipc.registerContextBudgetIpc({ rawHandle: (name, handler) => handlers.set(name, handler) }, { currentAgent: () => undefined })
-assert.equal(await handlers.get('yan:contextBudgetV1Enabled')(), false)
-for (const name of ['yan:contextBudgetMaintainV1', 'yan:setContextBudgetV1', 'yan:setContextBudgetMaterialPinV1', 'yan:contextBudgetMaintenanceExitV1']) {
-  assert.equal((await handlers.get(name)({ tier: 'standard' })).ok, false)
-  checks++
-}
 assert.deepEqual(await readFile(sentinel), original, 'retirement preserves historical records')
-console.log(`PASS: ${checks + 2} checks; native skill discovery, trusted adapters, no synthetic turns, retired IPC, preserved history`)
+console.log(`PASS: ${checks + 1} checks; native skill discovery, trusted adapters, no synthetic turns, preserved history`)

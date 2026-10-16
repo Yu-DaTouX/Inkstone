@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { YAN_DIR } from './paths'
-import { isSafeSessionId } from './context-state-store'
+import { isSafeSessionId } from './session-id'
 import {
   applyTaskRequest,
   emptyTaskPlan,

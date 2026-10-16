@@ -253,8 +253,6 @@ const { runToolLayoutTests } = await import('./test-tool-layout.mjs')
 const { runShortTitleTests } = await import('./test-short-title.mjs')
 const { runBrowserVisibilityTests } = await import('./test-browser-visibility.mjs')
 const { runBrowserNavigationTests } = await import('./test-browser-navigation.mjs')
-const { runContextActionTests } = await import('./test-context-actions.mjs')
-const { runContextBackgroundUsageTests } = await import('./test-context-background-usage.mjs')
 const { runResponseDetailTests } = await import('./test-response-detail.mjs')
 const { runSnapshotTests } = await import('./test-snapshots.mjs')
 
@@ -289,48 +287,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     platform: 'neutral',
     logLevel: 'silent'
   })
-)
-
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  Promise.all([
-    build({
-      entryPoints: ['src/shared/context-actions.ts'],
-      outfile: 'out/test/context-actions.mjs',
-      bundle: true,
-      format: 'esm',
-      platform: 'neutral',
-      logLevel: 'silent'
-    }),
-    build({
-      entryPoints: ['src/main/context-actions.ts'],
-      outfile: 'out/test/context-actions-host.mjs',
-      bundle: true,
-      format: 'esm',
-      platform: 'node',
-      logLevel: 'silent'
-    })
-  ])
-)
-
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  Promise.all([
-    build({
-      entryPoints: ['src/shared/context-background-usage.ts'],
-      outfile: 'out/test/context-background-usage.mjs',
-      bundle: true,
-      format: 'esm',
-      platform: 'neutral',
-      logLevel: 'silent'
-    }),
-    build({
-      entryPoints: ['src/main/context-background-usage.ts'],
-      outfile: 'out/test/context-background-usage-host.mjs',
-      bundle: true,
-      format: 'esm',
-      platform: 'node',
-      logLevel: 'silent'
-    })
-  ])
 )
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -1078,37 +1034,6 @@ const peerDeps = await import('../node_modules/esbuild/lib/main.js').then(async 
 })
 const { runPeerTests } = await import('./test-peer.mjs')
 
-const contextPolicy = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/context-policy.ts'],
-    outfile: 'out/test/context-policy.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-policy.mjs'))
-)
-const contextPolicyEnv = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/context-policy.ts'],
-    outfile: 'out/test/context-policy-env.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-policy-env.mjs'))
-)
-const contextView = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/renderer/src/state/context-view.ts'],
-    outfile: 'out/test/context-view.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-view.mjs'))
-)
-
 const quotaCommandCode = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/quota-commandcode.ts'],
@@ -1464,9 +1389,6 @@ await runBrowserVisibilityTests(ok)
 await runBrowserNavigationTests(ok)
 
 
-await runContextActionTests(ok)
-await runContextBackgroundUsageTests(ok)
-
 
 await runSubagentViewTests(ok)
 
@@ -1800,20 +1722,6 @@ await runPeerTests(ok, { ...remoteServer, ...peerDeps })
 const { runRemoteDeviceTests } = await import('./test-remote-devices.mjs')
 await runRemoteDeviceTests(ok, peerDeps)
 
-const { runContextPolicyTests } = await import('./test-context-policy.mjs')
-runContextPolicyTests(ok, contextPolicy, contextPolicyEnv, contextView)
-
-const contextBudgetV1 = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/context-budget-v1.ts'],
-    outfile: 'out/test/context-budget-v1.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-budget-v1.mjs'))
-)
-
 const languageExtension = await import('../resources/pi-extensions/language.js')
 const { runLanguageExtensionTests } = await import('./test-language-extension.mjs')
 await runLanguageExtensionTests(ok, languageExtension)
@@ -1831,59 +1739,6 @@ await runPreambleExtensionTests(ok, preambleExtension)
 }
 const { runAppUpdateTests } = await import('./test-app-update.mjs')
 await runAppUpdateTests(ok)
-
-const contextStateSchema = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/context-state.ts'],
-    outfile: 'out/test/context-state.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-state.mjs'))
-)
-const contextWatermark = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/context-watermark.ts'],
-    outfile: 'out/test/context-watermark.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-watermark.mjs'))
-)
-const contextStateStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/context-state-store.ts'],
-    outfile: 'out/test/context-state-store.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-state-store.mjs'))
-)
-const { runContextStateTests } = await import('./test-context-state.mjs')
-await runContextStateTests(ok, {
-  state: contextStateSchema,
-  watermark: contextWatermark,
-  store: contextStateStore
-})
-
-const contextRecall = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/context-recall.ts'],
-    outfile: 'out/test/context-recall.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/context-recall.mjs'))
-)
-const { runContextRecallTests } = await import('./test-context-recall.mjs')
-await runContextRecallTests(ok, { recall: contextRecall, store: contextStateStore })
-
-const { runContextArchiveFindTests } = await import('./test-context-budget-rolling.mjs')
-await runContextArchiveFindTests(ok, { recall: contextRecall })
 
 const ipcError = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({

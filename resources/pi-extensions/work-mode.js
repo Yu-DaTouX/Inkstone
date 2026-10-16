@@ -7,14 +7,6 @@ const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'bash', 'powershell']
 
 const HOST_YAN = '(?:(?:"(?:[A-Za-z]:[\\\\/]|/)[^"]*[\\\\/]yan(?:\\.(?:cmd|exe|mjs))?")|(?:(?:[A-Za-z]:[\\\\/]|/)[^\\s;&|<>`$(){}\\[\\]]*[\\\\/]yan(?:\\.(?:cmd|exe|mjs))?)|yan(?:\\.(?:cmd|exe|mjs))?)'
 const QUESTION_COMMAND = new RegExp(`^\\s*${HOST_YAN}\\s+question\\s+ask(?:\\s|$)`)
-const CONTEXT_REF = 'ctx:\\/\\/(?:tool|file|diff|episode)\\/[A-Za-z0-9._~%:-]{1,200}'
-const CONTEXT_RECALL_COMMAND = new RegExp(
-  `^\\s*${HOST_YAN}\\s+context\\s+recall\\s+--ref\\s+(?:${CONTEXT_REF}|"${CONTEXT_REF}")\\s*$`
-)
-const CONTEXT_FIND_COMMAND = new RegExp(
-  `^\\s*${HOST_YAN}\\s+context\\s+find(?:\\s+--query\\s+(?:"[^"]{1,200}"|[^\\s"]{1,200}))?(?:\\s+--limit\\s+\\d{1,2})?\\s*$`
-)
-
 const SHELL_METACHARS = /[;&|<>`$(){}[\]\n\r]/
 
 function dataDir() {
@@ -102,8 +94,7 @@ function note(hook, payload) {
 export function isAllowedBashCommand(command) {
   if (!command) return false
   if (SHELL_METACHARS.test(command)) return false
-  return QUESTION_COMMAND.test(command) ||
-    CONTEXT_RECALL_COMMAND.test(command) || CONTEXT_FIND_COMMAND.test(command)
+  return QUESTION_COMMAND.test(command)
 }
 
 function toolName(entry) {

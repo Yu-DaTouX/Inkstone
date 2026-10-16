@@ -102,7 +102,6 @@ export const THIN_EXTENSION_FILES = [
   'language.js',
   'temperature.js',
   'capability-guide.js',
-  'context-inspect.js',
   'context-trim.js',
   'repeat-guard.js',
   'danger-guard.js',

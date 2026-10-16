@@ -338,26 +338,7 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers, shar
       extension.default(pi)
       const options = { sections: {} }
       await Promise.all(pi.fire({ systemPromptOptions: options }))
-      ok(
-        options.sections.yan_context?.includes('来源片段') === true,
-        '有上下文快照时注入 yan_context',
-        String(options.sections.yan_context)
-      )
-
-      await writeContext('{ 不是 JSON')
-      const pi2 = fakePi(['read'])
-      extension.default(pi2)
-      const options2 = { sections: {} }
-      const settled = await Promise.allSettled(pi2.fire({ systemPromptOptions: options2 }))
-      ok(settled.every((r) => r.status === 'fulfilled'), '上下文快照坏掉时不报错')
-      ok(options2.sections.yan_context === undefined, '坏快照不注入上下文')
-
-      await writeContext({ version: 1, section: '   ' })
-      const pi3 = fakePi(['read'])
-      extension.default(pi3)
-      const options3 = { sections: {} }
-      await Promise.all(pi3.fire({ systemPromptOptions: options3 }))
-      ok(options3.sections.yan_context === undefined, 'section 为空时不注入空分区')
+      ok(options.sections.yan_context === undefined, '磁盘上残留的旧上下文快照不再注入 yan_context')
 
       await rm(join(root, 'agent-context'), { recursive: true, force: true })
     }

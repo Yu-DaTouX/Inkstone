@@ -52,7 +52,7 @@ export function extensionDiagnostics(opts: ExtensionExpectation): string[] {
 
   lines.push(
     `[来源] 砚内置薄层 ${thin.length} 项：${thin.join('、') || '（无）'}` +
-      `（显式传入；承载宿主生命周期与授权适配，不注册模型工具；上下文由 Agent 原生管理，交互提问走宿主 yan question ask，归档回读走 yan context recall）`
+      `（显式传入；承载宿主生命周期与授权适配，不注册模型工具；上下文由 Agent 原生管理，交互提问走宿主 yan question ask）`
   )
 
   lines.push(

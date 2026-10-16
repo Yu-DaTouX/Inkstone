@@ -37,10 +37,6 @@ import { voiceModelSpec } from '../shared/voice-input'
 import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import { normalizeUsageCurrency } from '../shared/currency'
 import { FONT_BODY_DEFAULT, FONT_BODY_MAX, FONT_BODY_MIN, FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset } from '../shared/appearance'
-import {
-  sanitizeContextPolicyByModel,
-  sanitizeContextPolicyOverrides
-} from '../shared/context-policy'
 
 const DIR = YAN_DIR
 const FILE = join(DIR, 'desktop.json')
@@ -121,16 +117,6 @@ function defaultSound(): SoundSettings {
     notifications: true,
     events: { done: true, question: true, error: true }
   }
-}
-
-function sanitizeContextDeep(v: unknown): { enabled: boolean } | undefined {
-  if (!v || typeof v !== 'object') return undefined
-  return (v as { enabled?: unknown }).enabled === true ? { enabled: true } : undefined
-}
-
-function sanitizeContextFold(v: unknown): { enabled: boolean } | undefined {
-  if (!v || typeof v !== 'object') return undefined
-  return (v as { enabled?: unknown }).enabled === false ? { enabled: false } : undefined
 }
 
 function sanitizeSound(v: unknown): SoundSettings {
@@ -339,11 +325,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
       ? settings.density
       : 'standard'
   settings.sound = sanitizeSound(settings.sound)
-  settings.contextPolicy = sanitizeContextPolicyOverrides(settings.contextPolicy)
-  settings.contextPolicyByModel = sanitizeContextPolicyByModel(settings.contextPolicyByModel)
   settings.temperatureByModel = cleanTemperatureByModel(settings.temperatureByModel)
-  settings.contextDeep = sanitizeContextDeep(settings.contextDeep)
-  settings.contextFold = sanitizeContextFold(settings.contextFold)
   settings.projectKnowledge = sanitizeProjectKnowledge(settings.projectKnowledge)
   settings.remoteAccess = sanitizeRemoteAccess(settings.remoteAccess)
   settings.keepAwakeWhileWorking = settings.keepAwakeWhileWorking === false ? false : undefined
@@ -375,7 +357,6 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.theme = settings.theme === 'light' ? 'light' : 'dark'
   settings.lang = LANGS.includes(parsed.lang as (typeof LANGS)[number]) ? parsed.lang! : detectLang()
   settings.toolDetailExplicit = settings.toolDetailExplicit === true ? true : undefined
-  delete (settings as { showSpaces?: unknown }).showSpaces
   settings.recentCwds = settings.recentCwds.filter((cwd): cwd is string => typeof cwd === 'string' && !!cwd.trim()).filter((cwd, index, all) => all.indexOf(cwd) === index).slice(0, 8)
   settings.projectNames = Object.fromEntries(Object.entries(settings.projectNames)
     .filter(([path, name]) => path && typeof name === 'string' && !!name.trim())
@@ -464,7 +445,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','questionFrequency','capabilityStrategy','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','workModeShortcutEnabled','workModeShortcut','subagentNotify','streamLoopAutoContinue','usageUnderInput','usageCurrency','contextPolicy','contextPolicyByModel','temperatureByModel','contextDeep','contextFold','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput','shortcutOverrides'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','questionFrequency','capabilityStrategy','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','workModeShortcutEnabled','workModeShortcut','subagentNotify','streamLoopAutoContinue','usageUnderInput','usageCurrency','temperatureByModel','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput','shortcutOverrides'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -527,13 +508,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   if (next.cwd && next.cwd !== cur.cwd) {
     next.recentCwds = [next.cwd, ...next.recentCwds.filter((p) => p !== next.cwd)].slice(0, 8)
   }
-  if ('contextPolicy' in patch) next.contextPolicy = sanitizeContextPolicyOverrides(next.contextPolicy)
   if ('temperatureByModel' in patch) next.temperatureByModel = cleanTemperatureByModel(next.temperatureByModel)
-  if ('contextPolicyByModel' in patch) {
-    next.contextPolicyByModel = sanitizeContextPolicyByModel(next.contextPolicyByModel)
-  }
-  if ('contextDeep' in patch) next.contextDeep = sanitizeContextDeep(next.contextDeep)
-  if ('contextFold' in patch) next.contextFold = sanitizeContextFold(next.contextFold)
   if ('projectKnowledge' in patch) next.projectKnowledge = sanitizeProjectKnowledge(next.projectKnowledge)
   if ('defaultWorkMode' in patch) next.defaultWorkMode = normalizeWorkMode(next.defaultWorkMode)
   if ('questionFrequency' in patch) next.questionFrequency = normalizeQuestionFrequency(next.questionFrequency)

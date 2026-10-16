@@ -3,8 +3,6 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { PiRpc } from './protocol'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
-import { toUsage } from './normalize'
-import { appendContextBackgroundUsage } from './context-background-usage'
 
 const TITLES_FILE = join(YAN_DIR, 'titles.json')
 
@@ -167,27 +165,18 @@ export async function generateTitle(opts: {
 
   let text = ''
   let settled = false
-  let usage: ReturnType<typeof toUsage> = undefined
-  let startedAt = 0
 
   return new Promise<TitleResult | null>((resolve) => {
-    const done = (r: TitleResult | null, errorCode?: string): void => {
+    const done = (r: TitleResult | null): void => {
       if (settled) return
       settled = true
-      appendContextBackgroundUsage(sessionId, {
-        kind: 'title',
-        ok: !!r?.title,
-        usage: r?.title ? usage ?? null : null,
-        ...(startedAt > 0 ? { durationMs: Date.now() - startedAt } : {}),
-        ...(r?.title ? {} : { error: errorCode ?? 'title_unavailable' })
-      })
       void rpc.close()
       resolve(r)
     }
 
     const timer = setTimeout(() => {
       console.error('[title] 超时')
-      done(null, 'title_timeout')
+      done(null)
     }, timeout)
 
     rpc.on('event', (evt) => {
@@ -195,16 +184,12 @@ export async function generateTitle(opts: {
       if (type === 'message_update') {
         const ev = evt.assistantMessageEvent as Record<string, unknown> | undefined
         if (ev?.type === 'text_delta') text += String(ev.delta ?? '')
-      } else if (type === 'message_end') {
-        const message = (evt as Record<string, unknown>).message as Record<string, unknown> | undefined
-        const parsed = toUsage(message?.usage as Parameters<typeof toUsage>[0])
-        if (parsed) usage = parsed
       } else if (type === 'agent_settled' || type === 'agent_end') {
         if (type !== 'agent_settled') return
         clearTimeout(timer)
         const title = cleanTitle(text)
         if (!title) {
-          done(null, 'title_empty')
+          done(null)
           return
         }
         if (opts.persist !== false) void saveTitle(sessionId, title)
@@ -214,7 +199,7 @@ export async function generateTitle(opts: {
 
     rpc.on('exit', () => {
       clearTimeout(timer)
-      if (!settled) done(null, 'title_process_exit')
+      if (!settled) done(null)
     })
 
     rpc.on('stderr', (line) => {
@@ -234,7 +219,6 @@ export async function generateTitle(opts: {
       }
       try {
         await rpc.command('set_thinking_level', { level: 'off' })
-        startedAt = Date.now()
         await rpc.command('prompt', {
           message: buildPrompt(samples),
           ...(opts.images?.length
@@ -244,7 +228,7 @@ export async function generateTitle(opts: {
       } catch (e) {
         clearTimeout(timer)
         console.error('[title] 发送失败:', e)
-        done(null, 'title_prompt_failed')
+        done(null)
       }
     })()
   })

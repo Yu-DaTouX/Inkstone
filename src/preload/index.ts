@@ -54,11 +54,6 @@ import type {
   CodexLoginResult,
   CompactionInfo,
   TrustStatusView,
-  ContextPolicyResolution,
-  ContextBudgetSelectionUpdateResultV1,
-  ContextBudgetRuntimeSnapshotV1,
-  ContextBudgetSessionPolicyV1,
-  ContextMaintenanceOperationV1,
   CustomEntry,
   DirListing,
   FileRequestContext,
@@ -118,9 +113,6 @@ import type { OfficeDocumentView } from '../shared/office'
 import type { ConsentEntryView } from '../shared/tool-consent'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
 import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
-import type { ContextActionSummary } from '../shared/context-actions'
-import type { ContextBackgroundUsageSummary } from '../shared/context-background-usage'
-import type { ContextInspectSnapshot } from '../shared/context-inspect'
 import type { AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from '../shared/account-quota'
 import type { CodexFailoverResult } from '../shared/quota-failover'
 import type { AuxPush, MiniItem, QuickAskSubmit } from '../main/windows/aux-types'
@@ -514,31 +506,6 @@ const api: YanBridge = {
     allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd),
     revoke: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:revoke', cwd)
   },
-  contextBudget: (win) => invoke<ContextPolicyResolution>('yan:contextBudget', win),
-  contextBudgetV1: () => invoke<ContextBudgetSessionPolicyV1 | null>('yan:contextBudgetV1'),
-  contextBudgetV1Enabled: () => invoke<boolean>('yan:contextBudgetV1Enabled'),
-  contextBudgetSnapshotV1: () => invoke<ContextBudgetRuntimeSnapshotV1 | null>('yan:contextBudgetSnapshotV1'),
-  contextBudgetMaintainV1: (operationId?: string) => invoke<{
-    ok: boolean
-    operationId?: string
-    state?: 'committed' | 'applied' | 'needs_action'
-    error?: string
-  }>('yan:contextBudgetMaintainV1', operationId),
-  contextBudgetMaintenanceStatusV1: () => invoke<ContextMaintenanceOperationV1 | null>('yan:contextBudgetMaintenanceStatusV1'),
-  setContextBudgetV1: (update) => invoke<ContextBudgetSelectionUpdateResultV1>('yan:setContextBudgetV1', update),
-  setContextBudgetMaterialPinV1: (update) => invoke<ContextBudgetSelectionUpdateResultV1>('yan:setContextBudgetMaterialPinV1', update),
-  contextBudgetMaintenanceExitV1: (request: { action: 'raise-line' | 'lower-tier'; expectedRevision: string }) =>
-    invoke<{
-      ok: boolean
-      policy?: ContextBudgetSessionPolicyV1
-      selectedBudget?: number
-      temporary?: boolean
-      expiresAt?: number | null
-      error?: string
-    }>('yan:contextBudgetMaintenanceExitV1', request),
-  contextActions: () => invoke<ContextActionSummary>('yan:contextActions'),
-  contextBackgroundUsage: () => invoke<ContextBackgroundUsageSummary>('yan:contextBackgroundUsage'),
-  contextInspect: () => invoke<ContextInspectSnapshot | null>('yan:contextInspect'),
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
 
   attachments: {
