@@ -98,7 +98,6 @@ import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
-import type { TaskInboxPage, TaskInboxQuery } from './task-inbox'
 import type { ToolLayout } from './tool-layout'
 import type { AgentProfilePatch, AgentProfileState } from './agent-profile'
 import type { AccountQuotaCliSource, AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from './account-quota'
@@ -2217,12 +2216,6 @@ export interface YanBridge {
     status(): Promise<ComputerUseStatusView>
     installUv(): Promise<ComputerUseActionResult>
     set(enabled: boolean): Promise<ComputerUseActionResult>
-  }
-  taskInbox: {
-    page(query?: TaskInboxQuery): Promise<TaskInboxPage>
-    dismiss(sessionId: string): Promise<{ ok: boolean; dismissed: string[] }>
-    restore(sessionId: string): Promise<{ ok: boolean; dismissed: string[] }>
-    seen(sessionId: string): Promise<{ ok: boolean }>
   }
   capabilities: CapabilitiesBridge
   mcpApp: McpAppBridge

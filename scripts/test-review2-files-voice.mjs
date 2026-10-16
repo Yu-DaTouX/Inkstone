@@ -62,16 +62,7 @@ try {
   const plan = await taskPlans.currentTaskPlan('session-queue', taskOpts)
   assert.equal(plan.state.revision, 20)
   assert.equal(plan.state.todos.length, 20)
-
-  const inbox = await load('task-inbox-sources')
-  const stateRoot = join(root, 'inbox')
-  const dismissed = Array.from({ length: 510 }, (_, i) => `session-${i}`)
-  await inbox.writeInboxState({ dismissed, readUntil: {} }, stateRoot)
-  const state = await inbox.readInboxState(stateRoot)
-  assert.equal(state.dismissed.length, 500)
-  assert.equal(state.dismissed[0], 'session-10')
-  assert.equal(JSON.parse(await readFile(join(stateRoot, 'task-inbox.json'), 'utf8')).dismissed.length, 500)
-  console.log('review2 files-voice isolated probes passed: source image repair/size cap, disappearing-file listing, file preview boundary, terminal safe cut, migration segment validation, concurrent task-plan queue ordering, inbox latest-500 persistence; voice module compiled without launching Electron/network')
+  console.log('review2 files-voice isolated probes passed: source image repair/size cap, disappearing-file listing, file preview boundary, terminal safe cut, migration segment validation, concurrent task-plan queue ordering; voice module compiled without launching Electron/network')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

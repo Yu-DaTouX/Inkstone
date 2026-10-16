@@ -133,7 +133,6 @@ import type { OfficeDocumentView } from '../shared/office'
 import type { ConsentEntryView } from '../shared/tool-consent'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
 import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
-import type { TaskInboxPage } from '../shared/task-inbox'
 import type { ContextActionSummary } from '../shared/context-actions'
 import type { ContextBackgroundUsageSummary } from '../shared/context-background-usage'
 import type { ContextInspectSnapshot } from '../shared/context-inspect'
@@ -528,12 +527,6 @@ const api: YanBridge = {
     status: () => invoke<ComputerUseStatusView>('yan:computerUse:status'),
     installUv: () => invoke<ComputerUseActionResult>('yan:computerUse:installUv'),
     set: (enabled: boolean) => invoke<ComputerUseActionResult>('yan:computerUse:set', enabled)
-  },
-  taskInbox: {
-    page: (query) => invoke<TaskInboxPage>('yan:taskinbox:page', query),
-    dismiss: (sessionId) => invoke<{ ok: boolean; dismissed: string[] }>('yan:taskinbox:dismiss', sessionId),
-    restore: (sessionId) => invoke<{ ok: boolean; dismissed: string[] }>('yan:taskinbox:restore', sessionId),
-    seen: (sessionId) => invoke<{ ok: boolean }>('yan:taskinbox:seen', sessionId)
   },
   capabilities: {
     snapshot: () => invoke<CapabilitySettingsSnapshot>('yan:capabilities:settings'),

@@ -54,7 +54,6 @@ import { registerGitIpc } from './ipc/git-ipc'
 import { registerLibraryIpc } from './ipc/library-ipc'
 import { registerSourcesIpc } from './ipc/sources-ipc'
 import { registerKnowledgeIpc } from './ipc/knowledge-ipc'
-import { registerTaskInboxIpc } from './ipc/task-inbox-ipc'
 import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
 import { registerMcpAppIpc } from './ipc/mcp-app-ipc'
 import { registerMcpAppViewIpc } from './ipc/mcp-app-view-ipc'
@@ -2878,7 +2877,6 @@ function registerIpc(): void {
   registerActivityModelIpc(ipc)
 
 
-  registerTaskInboxIpc(ipc, { runnerStatuses: () => runners?.statuses() ?? [] })
 
   registerCapabilitiesIpc(ipc, {
     currentAgent: () => ac() ?? undefined,
