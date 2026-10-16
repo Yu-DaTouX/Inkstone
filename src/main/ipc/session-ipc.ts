@@ -6,6 +6,8 @@
 import type { IpcRegistrar } from './registrar'
 import type { SessionHost } from '../session-host'
 import { shell } from 'electron'
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from '../title'
 import { getSettings } from '../settings'
 import { listSessions, deleteSession, readTitleSamples, restoreSession } from '../sessions'
@@ -16,6 +18,49 @@ import { filterChainRepresentatives } from '../remote-host'
 import { planHistoryRead } from '../../shared/session-chain'
 import { readUsageStats } from '../usage-stats'
 
+export interface SelectedSessionTarget {
+  sessionFile: string
+  projectId?: string
+  scope?: 'global' | 'project' | 'pending'
+  cwd: string
+  preview?: boolean
+}
+
+/** Shared desktop selection semantics, also used after a user imports a native session. */
+export async function selectSessionWithHost(host: SessionHost, target: SelectedSessionTarget) {
+  const cwdResult = await host.validateCwd(target.cwd)
+  if (!cwdResult.ok) return cwdResult
+  if (!host.runners()) {
+    const r = await host.startAgent()
+    if (!r.ok) return r
+  }
+  const settings = await getSettings()
+  /* global 是显式产品归属，不能因为物理 cwd 恰好落在项目里就被重新吸回。 */
+  const projectId = target.scope === 'global'
+    ? undefined
+    : (target.projectId ?? (target.scope === 'pending' ? undefined : host.projectIdForCwd(settings, cwdResult.cwd)))
+  const res = await host.runners()!.select({
+    ...target,
+    cwd: cwdResult.cwd,
+    projectId
+  })
+  /*
+   * `deferred`：只是查看，实例没动 —— 不能把它记成「这条会话跑在哪个实例上」，
+   * 否则后续按实例找会话会指向一个根本没载入这条会话的进程。
+   */
+  if (!res.deferred) {
+    await host.rememberRunnerSession(res, {
+      ...target,
+      cwd: cwdResult.cwd,
+      projectId,
+      scope: target.scope ?? (projectId ? 'project' : 'global')
+    })
+  }
+  if (res.ok && res.id) void host.pushRunnerSnapshot(res.id)
+  host.pushRunners()
+  return res
+}
+
 export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   const { handle } = ipc
   /* ---- 启动页用量概览（只读会话文件，增量缓存） ---- */
@@ -24,8 +69,19 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   handle('yan:fork', async (entryId: string) => host.ac()?.fork(entryId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:clone', async () => host.ac()?.clone() ?? { ok: false, error: 'pi 未运行' })
   handle('yan:forkPoints', async () => host.ac()?.forkPoints() ?? [])
-  handle('yan:exportHtml', async () => {
-    const res = (await host.ac()?.exportHtml()) ?? { ok: false, error: 'pi 未运行' }
+  handle('yan:exportHtml', async (outputPath?: string) => {
+    if (outputPath !== undefined && (typeof outputPath !== 'string' || !outputPath.trim())) return { ok: false, error: '导出路径无效' }
+    const agent = host.ac()
+    if (!agent) return { ok: false, error: 'pi 未运行' }
+    const path = outputPath === undefined ? undefined : resolve(agent.workingDirectory, outputPath)
+    const sessionId = agent.getState()?.sessionId
+    if (path && path === agent.getState()?.sessionFile) return { ok: false, error: '不能覆盖原始会话文件' }
+    if (path && existsSync(path)) {
+      const confirmed = await agent.confirmNativeOperation({ title: '覆盖 HTML 导出文件？', message: `将覆盖 ${path}。`, acceptLabel: '覆盖' })
+      if (!confirmed) return { ok: false, cancelled: true }
+      if (host.ac() !== agent || agent.getState()?.sessionId !== sessionId) return { ok: false, error: '会话已切换，导出已取消' }
+    }
+    const res = await agent.exportHtml(path)
     if (res.ok && res.path) await shell.openPath(res.path)
     return res
   })
@@ -203,7 +259,10 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     host.pushRunners()
     return res.ok ? { ok: true } : { ok: false, error: res.error }
   })
-  handle('yan:compact', async () => host.ac()?.compact() ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:compact', async (customInstructions?: string) => {
+    if (customInstructions !== undefined && typeof customInstructions !== 'string') return { ok: false, error: '压缩要求必须是文本' }
+    return host.ac()?.compact(customInstructions) ?? { ok: false, error: 'pi 未运行' }
+  })
 
   handle('yan:cachedTitles', async () => cachedTitles())
   /*

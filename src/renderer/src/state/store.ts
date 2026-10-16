@@ -74,6 +74,7 @@ import { readSpaceView, writeSpaceView, type SpaceView } from './space-view'
 import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
+import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/browser-open'
 import { keepLocalImages } from './keep-images'
 import { planQueueRecovery, type QueueImageRef } from './queue-images'
 import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT, RESET_GRACE_MS } from '../../../shared/quota-resume'
@@ -88,6 +89,9 @@ import {
   type SessionRuntimeSnapshot
 } from './session-runtime'
 import { routePush, viewingSessionId } from './push-routing'
+import { beginSessionSwitch, endSessionSwitch, isSessionSwitchInFlight } from './session-activation'
+import { viewingSubmitSessionId } from '../lib/v3-submit-ownership'
+import { pushBelongsToView, sameSessionFile, viewIdentityOf, viewKeyRef } from './view-identity'
 import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTaskStatePush } from './push-consumers'
 import { addSourceFiles } from './source-files'
 import { newestMessages, shownMessages } from './split-snapshots'
@@ -268,7 +272,26 @@ export interface Store {
   shortcutRecording: boolean
   /** 设置面板开关与当前 tab（放 store 里，好让 ContextBar 等组件能直接打开） */
   settingsOpen: boolean
+  /**
+   * 原生会话面板请求。它只是“请求打开”的信号：`mode` 决定呈现，`sessionId` 是
+   * 打开时的 owner（后续请求一律按它发，切走即关闭）。`tree` 由分支页签消费，
+   * `scoped-models` / `trust` / `entries` 由 `features/session/native` 消费。
+   */
+  nativeSessionPanel: {
+    mode: import('../../../shared/native-session').NativeSessionMode | 'entries'
+    sessionId: string
+  } | null
+  closeNativeSessionPanel: () => void
+  nativeSession: (action: import('../lib/composer-submit').NativeSessionAction, args?: string) => Promise<import('../../../shared/native-session-host').NativeSessionHostResult>
   settingsTab: string
+  /**
+   * 正式 `openSettings` 的请求序号，初始 0，每次调用都自增。
+   *
+   * 为什么单独存：`settingsOpen` 在 v3 里只会被打开、不会被关闭，
+   * 于是「同一个页名重复 openSettings」不产生字段变化，深链接订阅会漏掉。
+   * 用这个单调递增的序号，每次请求（哪怕同页、同毫秒）都能被观察到。
+   */
+  settingsRequestRevision: number
   /**
    * 左栏是否钉住（常驻）。
    * false 时鼠标靠近左边缘才展开、离开 1.5s 收回。
@@ -550,8 +573,14 @@ export interface Store {
   reloadCommands: () => Promise<void>
   /** 拉一次供应商凭证状态（D12）：模型菜单用来区分“未配凭证”与“不支持思考” */
   loadAuthProviders: () => Promise<void>
-  /** 把当前输入框草稿写入当前会话运行时缓存（不保存图片二进制）。 */
-  setSessionDraft: (value: string) => void
+  /**
+   * 把当前输入框草稿写入当前会话运行时缓存（不保存图片二进制）。
+   *
+   * `key` 省略时按 v2 语义写「当前已激活会话」（`runtimeForState`）；
+   * 传入显式键时写那条会话 —— v3 在「已点开、未激活」的窗口里必须把草稿
+   * 记到**正在看的**会话上，否则会写进上一条（D5）。
+   */
+  setSessionDraft: (value: string, key?: string) => void
   /**
    * 往输入框**追加**一段文本（不发送）。
    *
@@ -600,6 +629,11 @@ export interface Store {
   /** 撤回仍在队列中的消息并回填草稿；已被 pi 接收的消息会返回失败。 */
   removeQueued: (queueId: string) => Promise<void>
   /**
+   * 队列编辑 / 重排（WP-24b）：按目标顺序 clear_queue 后重建；
+   * 失败且原队列也没能恢复时，把 dropped 内容放回草稿，保证不丢。
+   */
+  applyQueueOrder: (next: QueueState) => Promise<void>
+  /**
    * 当前会话额度用尽时登记「恢复后自动续跑」；额度接口不可查时返回 false。
    * failoverAt：另一个账号预计先恢复的时间，到点改为换号续跑。
    */
@@ -613,7 +647,7 @@ export interface Store {
   /** 当前会话的持续运行开关。 */
   setKeepRunning: (on: boolean) => void
   abort: () => Promise<void>
-  runBash: (command: string) => Promise<void>
+  runBash: (command: string, options?: { excludeFromContext?: boolean }) => Promise<{ ok: boolean; error?: string }>
   abortBash: () => Promise<void>
   /**
    * 新建会话。返回新会话的身份 —— 调用方需要它把「这个会话从哪来」记下来
@@ -651,8 +685,8 @@ export interface Store {
   deleteSession: (path: string) => Promise<void>
   fork: (entryId: string) => Promise<boolean>
   clone: () => Promise<void>
-  exportHtml: () => Promise<void>
-  compact: () => Promise<void>
+  exportHtml: (outputPath?: string) => Promise<{ ok: boolean; error?: string }>
+  compact: (customInstructions?: string) => Promise<{ ok: boolean; error?: string }>
   stop: () => Promise<void>
 
   setModel: (provider: string, id: string, quiet?: boolean) => Promise<{ ok: boolean; error?: string }>
@@ -673,7 +707,7 @@ export interface Store {
   changeCwd: (cwd: string) => Promise<void>
   /** 设界面缩放（0 = 自动） */
   setUiScale: (v: number) => Promise<void>
-  openBrowser: (url?: string) => Promise<void>
+  openBrowser: (url?: string, target?: BrowserOpenTarget) => Promise<void>
   closeBrowser: () => Promise<void>
   /* ---- 交互终端（实施-11 H-11） ---- */
   /** 从宿主拉一次会话列表与可用性（启用 / 面板打开 / 重连时调） */
@@ -1298,6 +1332,17 @@ function applyBrowserVisibility(get: () => Store): void {
 }
 
 /**
+ * 当前视图对应的会话键（与 `deriveWorkspaceOwner` 的 `viewIdentity` 同一取法）。
+ *
+ * 供浏览器打开守卫在 await 回来后复核「视图有没有切走」——必须现算，
+ * 不能用 `openBrowser` 发起时的快照，否则切会话后拿到的仍是旧键。
+ */
+function currentViewOwnerKey(view: Store): string {
+  /* 与 `deriveWorkspaceOwner` 同一取值：peek 存在时成对只取 peek，不拿旧会话补缺。 */
+  return workspaceKeyFor(viewKeyRef(view))
+}
+
+/**
  * 会话选择代次（不放进 state：它只是并发闸门，不需要渲染、也不需要持久化）。
  *
  * 为什么要它：`switchSession` 的「peek 内容 → 请求 pi 切换」跨了两次 await。
@@ -1466,6 +1511,39 @@ export const useStore = create<Store>((rawSet, get) => {
       return partial
     })
   }
+  /*
+   * v3 浏览器的打开编排（代次 + owner 占用安全失败）。逻辑在纯模块里，
+   * 这里只把 store 的 `get`/`set` 与既有协调入口绑成依赖，便于单测。
+   */
+  const browserOpener = new BrowserOpener({
+    open: (url) => window.yan.browser.open(url),
+    currentOwnerKey: () => currentViewOwnerKey(get()),
+    resourceOwner: () => resourceOwner('browser'),
+    claimResource: (owner) => claimResource('browser', owner),
+    releaseResource: () => releaseResource('browser'),
+    isBrowserOpen: () => get().browserState.open,
+    setBrowserState: (browserState) => set({ browserState }),
+    reveal: () => {
+      /* 浏览器是右栏资源：右栏收着就展开它，否则用户看不到刚打开的网页 */
+      if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
+      applyBrowserVisibility(get)
+    },
+    blocked: (reason) => {
+      const text =
+        reason === 'foreign-owner'
+          ? '内置浏览器当前归另一条会话；切回去或在那条会话里继续。'
+          : '内置浏览器正在被另一条会话打开，等它完成或切回去。'
+      set({ notices: pushNotice(get().notices, 'warning', text) })
+    },
+    failed: (message) => {
+      /*
+       * 这里不走 `piCall`（成功返回的是 BrowserState 而不是 `{ok}`），
+       * 所以剥壳要自己调 —— 否则用户看到的提示是
+       * `Error invoking remote method 'yan:browser:open': Error: 只允许打开 http(s) 网页`。
+       */
+      set({ notices: pushNotice(get().notices, 'error', stripIpcErrorPrefix(message)) })
+    }
+  })
   return {
   conn: 'starting',
   connDetail: '',
@@ -1517,7 +1595,27 @@ export const useStore = create<Store>((rawSet, get) => {
   settings: null,
   shortcutRecording: false,
   settingsOpen: false,
+  nativeSessionPanel: null,
+  closeNativeSessionPanel: () => set({ nativeSessionPanel: null }),
+  nativeSession: async (action, args) => {
+    if (!(await get().ensureActivated())) return { ok: false, error: '会话未能激活' }
+    const sessionId = get().session?.sessionId
+    if (!sessionId) return { ok: false, error: '当前没有可操作的会话' }
+    if (action === 'tree' || action === 'scoped-models' || action === 'trust') {
+      set({ nativeSessionPanel: { mode: action, sessionId } })
+      return { ok: true }
+    }
+    const result = await piCall(() => window.yan.nativeSession({ action, args, expectedSessionId: sessionId }))
+    if (result.ok) {
+      await get().refreshSessions()
+      if (action === 'reload') await Promise.all([get().reloadModels(), get().reloadCommands()])
+      const message = result.url ? `分享链接：${result.url}` : result.path ? `已完成：${result.path}` : '原生操作已完成'
+      get().notify('info', message)
+    }
+    return result
+  },
   settingsTab: 'appearance',
+  settingsRequestRevision: 0,
   /**
    * 左栏是否展开（持久化到 localStorage）。
    *
@@ -1716,6 +1814,44 @@ export const useStore = create<Store>((rawSet, get) => {
   applyPush: (m) => {
     if (m.ch === 'approval') approvalChanges.set(m.payload.id, m.payload)
     else if (m.ch === 'approval-close') approvalChanges.set(m.payload.id, null)
+
+    /*
+     * 流式防护收回的排队内容是会话级草稿事实，显式归属指向 clear_queue 的原会话。
+     * 即使该会话不在前台，也要落进它自己的草稿缓存（applyQueueRecovery 的跨会话分支），
+     * 不能丢队列，也不能让后台回收覆盖当前会话草稿——所以要在
+     * `routePush` 的前台过滤之前处理。
+     */
+    if (m.ch === 'queue-reclaimed') {
+      const current = get()
+      const items = [...(m.payload.items?.steering ?? []), ...(m.payload.items?.followUp ?? [])]
+      const texts = [...m.payload.steering, ...m.payload.followUp].filter((text) => text)
+      const reclaimedCount = Math.max(texts.length, items.length)
+      if (reclaimedCount > 0) {
+        const patch = applyQueueRecovery(current, {
+          sessionId: m.payload.sessionId,
+          text: texts.join('\n'),
+          images: items.flatMap((item) => item.images ?? []),
+          idPrefix: 'queue-image',
+          notice: `检测到模型输出重复，已把 ${reclaimedCount} 条排队内容放回输入框`
+        })
+        /*
+         * `queue-reclaimed` 只说明队列已被清空并交回草稿，但它本身不是队列快照。
+         * 熔断时若 agent 已不再 ownsRun，主进程只发 reclaimed、**不再**发空 `queue`
+         * 推送（见 agent.ts `stopForLoopGuard` 的 `if (ownsRun()) this.resetQueue(true)`）。
+         * 不在这里清掉对应会话残留的队列快照，收回的文本会同时出现在草稿和缓存队列里。
+         */
+        const sessionId = m.payload.sessionId
+        if (sessionId) {
+          const cache = patch.sessionRuntimes ?? current.sessionRuntimes
+          const cached = cache[sessionId]
+          if (cached) patch.sessionRuntimes = { ...cache, [sessionId]: { ...cached, queue: EMPTY_QUEUE } }
+        }
+        if (sessionId && current.session?.sessionId === sessionId) patch.queue = EMPTY_QUEUE
+        set(patch)
+      }
+      return
+    }
+
     const s = get()
 
     /* 会话与运行实例的身份、事件归属判定统一在 push-routing.ts */
@@ -1751,7 +1887,9 @@ export const useStore = create<Store>((rawSet, get) => {
          *   确认」时生效：等到属于它的那条就正常收下（并清掉待确认状态）。
          */
         const incoming = m.runtime?.sessionId
-        if (s.peekedSessionId && incoming && incoming !== s.peekedSessionId) break
+        /* peek 存在时成对核对；path-only 的 peek 只有文件身份，认不出 incoming 就
+         * fail closed，防止旧会话 A 迟到的 sync 覆盖正在查看的 B。 */
+        if (!pushBelongsToView(s, incoming)) break
         /*
          * 整份替换前先保住本地的图片预览：hydrate（压缩结束 / 切会话 / 重启）
          * 推来的是从会话文件重读的那份，里面用户贴的图已经被体积保护丢掉了
@@ -2474,10 +2612,27 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  setSessionDraft: (value) => {
+  setSessionDraft: (value, key) => {
     const current = get()
-    const runtime = runtimeForState(current)
-    if (!runtime) return
+    /* 默认路径保持 v2 语义：写当前已激活会话。 */
+    if (key === undefined) {
+      const runtime = runtimeForState(current)
+      if (!runtime) return
+      set({
+        sessionRuntimes: updateSessionRuntime(current.sessionRuntimes, runtime, { draft: value })
+      })
+      return
+    }
+    /*
+     * 显式键：恢复与回写必须用同一个键。优先沿用该会话已有的运行身份
+     * （保住 generation 闸门），没有缓存时用键本身合成一份最小身份。
+     */
+    const existing = current.sessionRuntimes[key]
+    const runtime: RuntimeEnvelope = existing?.runtime ?? {
+      sessionId: key.startsWith('run:') ? '' : key,
+      runId: key.startsWith('run:') ? key.slice(4) : key,
+      generation: 0
+    }
     set({
       sessionRuntimes: updateSessionRuntime(current.sessionRuntimes, runtime, { draft: value })
     })
@@ -2507,15 +2662,31 @@ export const useStore = create<Store>((rawSet, get) => {
   /* --------------------------------------------------------------- 对话 */
 
   send: async (text, images, mode) => {
+    /*
+     * 这次提交归属哪条会话：peek 身份优先于尚未跟上的 `session` 投影。
+     * `ensureActivated` 与 `collectSourceIds` 都是 await，期间用户随时可能
+     * 再切会话 —— 每个 await 之后都要重新核对目标，不能只读一次 current
+     * 就当还是原会话（否则消息/来源会落到旧会话或新会话上）。
+     */
+    const targetBefore = viewingSubmitSessionId(get())
     /* 先把「正在看的那条会话」真正切到 pi 上（必要时才会建隔离树）；切不动就不发 */
     if (!(await get().ensureActivated())) return false
+    if (viewingSubmitSessionId(get()) !== targetBefore) {
+      set({ notices: pushNotice(get().notices, 'warning', '会话已经切换，消息没有发出（草稿已保留）') })
+      return false
+    }
     /*
      * 來源定位消息（S1）：把这次要发出去的附件换成来源 id，先排队。
-     * 拿不到 id 的（算不出指纹/文件已不在）就静静跳过 —— 一条来源定位不上
-     * 不该阻断发送，而菜单里那份来源仍然在（只是没有“定位”入口）。
+     * 归属用**视图身份**而不是 await 后顶层的 `session` —— 激活后新会话的
+     * state 推送未必已到，拿旧的 sessionId 会把来源绑到下一条会话上（D6）。
      */
-    const sessionId = get().session?.sessionId
+    const sessionId = viewingSubmitSessionId(get())
     const sourceIds = sessionId ? await collectSourceIds(get().attachments, sessionId) : []
+    /* collectSourceIds 期间又切了会话：不登记来源、不发消息，草稿由调用方保留 */
+    if (viewingSubmitSessionId(get()) !== targetBefore) {
+      set({ notices: pushNotice(get().notices, 'warning', '会话已经切换，消息没有发出（草稿已保留）') })
+      return false
+    }
     if (sourceIds.length) {
       set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, sourceIds }] })
     }
@@ -2701,6 +2872,25 @@ export const useStore = create<Store>((rawSet, get) => {
     }))
   },
 
+  applyQueueOrder: async (next) => {
+    const sessionId = get().session?.sessionId
+    const res = await piCall(() => window.yan.queueEdit(next))
+    if (res.ok) return
+    /* 主进程没能恢复原队列时，把这次要写的文本与图片放回草稿，保证内容不丢。 */
+    const dropped = res.dropped ?? []
+    if (dropped.length) {
+      const current = get()
+      set(applyQueueRecovery(current, {
+        sessionId,
+        text: dropped.map((item) => item.text ?? '').filter((text) => text).join('\n'),
+        images: dropped.flatMap((item) => item.images ?? []),
+        idPrefix: 'queue-image',
+        notice: '队列编辑失败，内容已放回输入框'
+      }))
+    }
+    set({ notices: pushNotice(get().notices, 'error', res.error ?? '队列编辑失败') })
+  },
+
   abort: async () => {
     /* 用户点停止就是要停：持续运行不能在这一轮收尾后又自动发继续 */
     if (get().keepRunning) set({ keepRunning: null, notices: pushNotice(get().notices, 'info', '已停止，持续运行已关闭') })
@@ -2729,11 +2919,13 @@ export const useStore = create<Store>((rawSet, get) => {
 
   /* ------------------------------------------------------------ bash */
 
-  runBash: async (command) => {
-    const res = await piCall(() => window.yan.runBash(command))
+  runBash: async (command, options) => {
+    const res = await piCall(() => window.yan.runBash(command, options))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '命令执行失败') })
     }
+    /* 把成功 / 失败明确交给调用方：输入框直执行要据此决定是否恢复命令与附件。 */
+    return res
   },
 
   abortBash: async () => {
@@ -2807,132 +2999,156 @@ export const useStore = create<Store>((rawSet, get) => {
     /* 本次点击的代次；后面每个 await 之后都要核对自己还没过期 */
     const gate = ++sessionSwitchGate
     /*
-     * 会话身份先取：下面 ② 要用它（cwd / 归属），① 的 peek 也要用它把
-     * 「刚铺上的内容」与随后 pi 的 sync 认成同一条会话。
+     * 在**第一个 await 之前**登记「切换在途」：ensureActivated 靠它拒绝这段
+     * 窗口里的发送，不会把「还没有 pendingActivation」误当成已对齐（D4）。
+     * finally 按代次清除，旧请求的收尾不能把新切换的标记清掉。
      */
-    const sum = get().sessions.find((x) => x.path === path)
-    /*
-     * 在新会话的权威快照到达前，不继续展示上一条会话的目标、交接**与用量**：
-     * 三者都是**会话级事实**。用量尤其会「以大充小」—— 旧的大会话累计留在屏幕上，
-     * 看起来像刚点开的小会话自己花了这么多；而只读预览（deferred）根本不会收到
-     * 新 stats，不主动清就永远清不掉。
-     *
-     * 同时把 `peekedSessionId` 提前钉到新会话：它才是「当前视图已铺上的目标身份」。
-     * 下面 peek / selectSession 都要 await，这段间隙里旧实例（可能正被复用到新会话）
-     * 迟到的 stats / sync / todos 会走 routePush 的 belongsToView 判定 —— 不提前认身份，
-     * 它们就会被当成当前视图的推送投影上来。
-     */
-    set({ goal: null, handoff: null, stats: null, peekedSessionId: sum?.id ?? null })
-
-    /*
-     * 运行缓存里已有这条会话的消息（后台在跑），或分屏里另一块正显示着它（split-snapshots）：同步先铺上，
-     * 不等文件读取 —— 否则焦点换边的这几十毫秒里，对话列还是上一条会话的内容或空白。
-     * 后面的 peek 与 pi 的权威同步照常覆盖。
-     */
-    /* 分屏时先用这条会话在旁边那块里正显示的那份（与屏幕上一模一样，换块不跳），没有再用运行缓存 */
-    const runtimeMessages = sum?.id ? get().sessionRuntimes[sum.id]?.messages : undefined
-    const splitShown = useSplitView.getState().split ? shownMessages({ sessionId: sum?.id, path }) : undefined
-    /* 比最后一条消息的时间，不比条数（运行缓存把工具结果单列，条数多不代表新）；一样新用屏幕上那份 */
-    const cachedMessages = newestMessages(splitShown, runtimeMessages)
-    if (cachedMessages?.length) {
-      set({ messages: cachedMessages, peekedPath: path, peekedSessionId: sum?.id ?? null, peekNote: null })
-    }
-
-    // ① 立即显示（不等 pi）
-    performance.mark('yan:switch-start')
-    /* 新会话的内容铺上去之前，屏幕上不能还留着上一条会话的消息（读不出来、文件为空时尤其如此） */
-    const clearStale = (): void => {
-      if (!cachedMessages?.length) set({ messages: [], peekedPath: path, peekedSessionId: sum?.id ?? null, peekNote: null })
-    }
+    beginSessionSwitch(gate)
     try {
-      const peek = await window.yan.peekSession(path)
-      /* 用户又点了别的会话（这次 click 已经过期）：整段放弃，不写投影也不再请求激活 */
-      if (gate !== sessionSwitchGate) return
-      performance.mark('yan:switch-peeked')
-      if (!peek || !peek.messages.length) clearStale()
-      if (peek && peek.messages.length) {
-        set({
-          messages: peek.messages,
-          peekedPath: path,
-          peekedSessionId: peek.sessionId ?? sum?.id ?? null,
-          peekNote: peek.truncated > 0 ? { truncated: peek.truncated, total: peek.total } : null
-        })
-        requestAnimationFrame(() => requestAnimationFrame(() => performance.mark('yan:switch-painted')))
-      }
-    } catch {
-      /* 读不出来就等 pi —— 不是致命错误；但过期了同样不继续 */
-      if (gate !== sessionSwitchGate) return
-      clearStale()
-    }
+      /*
+       * 会话身份先取：下面 ② 要用它（cwd / 归属），① 的 peek 也要用它把
+       * 「刚铺上的内容」与随后 pi 的 sync 认成同一条会话。
+       */
+      const sum = get().sessions.find((x) => x.path === path)
+      /*
+       * 在新会话的权威快照到达前，不继续展示上一条会话的目标、交接**与用量**：
+       * 三者都是**会话级事实**。用量尤其会「以大充小」—— 旧的大会话累计留在屏幕上，
+       * 看起来像刚点开的小会话自己花了这么多；而只读预览（deferred）根本不会收到
+       * 新 stats，不主动清就永远清不掉。
+       *
+       * 同时把 `peekedSessionId` 提前钉到新会话：它才是「当前视图已铺上的目标身份」。
+       * 下面 peek / selectSession 都要 await，这段间隙里旧实例（可能正被复用到新会话）
+       * 迟到的 stats / sync / todos 会走 routePush 的 belongsToView 判定 —— 不提前认身份，
+       * 它们就会被当成当前视图的推送投影上来。
+       */
+      set({ goal: null, handoff: null, stats: null, peekedSessionId: sum?.id ?? null })
 
-    // ② 切视图（N12：命中运行实例就只是切换订阅，**不停任何**会话）
-    const cwd = sum?.cwd || get().session?.cwd || get().settings?.cwd || ''
-    const settings = get().settings
-    /*
-     * 会话的产品归属优先于它的物理 cwd：移动到另一个项目后，
-     * JSONL 仍可能留在原 cwd，但再次打开不能被旧 cwd 重新归类。
-     * global 也必须显式保留，不能被当前工作目录的项目自动“吸回去”。
-     */
-    const projectId = sum?.scope === 'global'
-      ? undefined
-      : (sum?.projectId ?? settings?.projects.find((project) => project.cwd.toLowerCase() === cwd.toLowerCase())?.id)
-    const scope = sum?.scope ?? (projectId ? 'project' : 'global')
-    /*
-     * `preview`：只是查看 —— pi 侧**不激活、不建实例、也不建隔离工作树**。
-     * 内容已经由上面的 peek 铺好了；真正发消息前再由 ensureActivated 切过去。
-     * 为什么：切实例会撞「同 cwd 已有忙实例」而被自动隔离出一棵树，而用户只是翻一眼历史。
-     */
-    const res = await piCall(() =>
-      window.yan.selectSession({ sessionFile: path, sessionId: sum?.id, projectId, scope, cwd, preview: true })
-    )
-    performance.mark('yan:switch-selected')
-    /* 这次点击已经过期：结果一律不采用（宿主侧的激活顺序由它自己的队列决定） */
-    if (gate !== sessionSwitchGate) return
-    if (!res.ok) {
+      /*
+       * 运行缓存里已有这条会话的消息（后台在跑），或分屏里另一块正显示着它（split-snapshots）：同步先铺上，
+       * 不等文件读取 —— 否则焦点换边的这几十毫秒里，对话列还是上一条会话的内容或空白。
+       * 后面的 peek 与 pi 的权威同步照常覆盖。
+       */
+      /* 分屏时先用这条会话在旁边那块里正显示的那份（与屏幕上一模一样，换块不跳），没有再用运行缓存 */
+      const runtimeMessages = sum?.id ? get().sessionRuntimes[sum.id]?.messages : undefined
+      const splitShown = useSplitView.getState().split ? shownMessages({ sessionId: sum?.id, path }) : undefined
+      /* 比最后一条消息的时间，不比条数（运行缓存把工具结果单列，条数多不代表新）；一样新用屏幕上那份 */
+      const cachedMessages = newestMessages(splitShown, runtimeMessages)
+      if (cachedMessages?.length) {
+        set({ messages: cachedMessages, peekedPath: path, peekedSessionId: sum?.id ?? null, peekNote: null })
+      }
+
+      // ① 立即显示（不等 pi）
+      performance.mark('yan:switch-start')
+      /* 新会话的内容铺上去之前，屏幕上不能还留着上一条会话的消息（读不出来、文件为空时尤其如此） */
+      const clearStale = (): void => {
+        if (!cachedMessages?.length) set({ messages: [], peekedPath: path, peekedSessionId: sum?.id ?? null, peekNote: null })
+      }
+      try {
+        const peek = await window.yan.peekSession(path)
+        /* 用户又点了别的会话（这次 click 已经过期）：整段放弃，不写投影也不再请求激活 */
+        if (gate !== sessionSwitchGate) return
+        performance.mark('yan:switch-peeked')
+        if (!peek || !peek.messages.length) clearStale()
+        if (peek && peek.messages.length) {
+          set({
+            messages: peek.messages,
+            peekedPath: path,
+            peekedSessionId: peek.sessionId ?? sum?.id ?? null,
+            peekNote: peek.truncated > 0 ? { truncated: peek.truncated, total: peek.total } : null
+          })
+          requestAnimationFrame(() => requestAnimationFrame(() => performance.mark('yan:switch-painted')))
+        }
+      } catch {
+        /* 读不出来就等 pi —— 不是致命错误；但过期了同样不继续 */
+        if (gate !== sessionSwitchGate) return
+        clearStale()
+      }
+
+      // ② 切视图（N12：命中运行实例就只是切换订阅，**不停任何**会话）
+      const cwd = sum?.cwd || get().session?.cwd || get().settings?.cwd || ''
+      const settings = get().settings
+      /*
+       * 会话的产品归属优先于它的物理 cwd：移动到另一个项目后，
+       * JSONL 仍可能留在原 cwd，但再次打开不能被旧 cwd 重新归类。
+       * global 也必须显式保留，不能被当前工作目录的项目自动“吸回去”。
+       */
+      const projectId = sum?.scope === 'global'
+        ? undefined
+        : (sum?.projectId ?? settings?.projects.find((project) => project.cwd.toLowerCase() === cwd.toLowerCase())?.id)
+      const scope = sum?.scope ?? (projectId ? 'project' : 'global')
+      /*
+       * `preview`：只是查看 —— pi 侧**不激活、不建实例、也不建隔离工作树**。
+       * 内容已经由上面的 peek 铺好了；真正发消息前再由 ensureActivated 切过去。
+       * 为什么：切实例会撞「同 cwd 已有忙实例」而被自动隔离出一棵树，而用户只是翻一眼历史。
+       */
+      const res = await piCall(() =>
+        window.yan.selectSession({ sessionFile: path, sessionId: sum?.id, projectId, scope, cwd, preview: true })
+      )
+      performance.mark('yan:switch-selected')
+      /* 这次点击已经过期：结果一律不采用（宿主侧的激活顺序由它自己的队列决定） */
+      if (gate !== sessionSwitchGate) return
+      if (!res.ok) {
+        /* 切换失败后没有任何「待激活目标」是可信的；不清就会把之后的发送引到上一次的目标（D3） */
+        const authoritative = get().session?.sessionId
+        const authoritativeMessages = authoritative ? get().sessionRuntimes[authoritative]?.messages : undefined
+        set({
+          notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'),
+          peekedPath: null,
+          peekedSessionId: null,
+          pendingActivation: null,
+          /* 视图不能停在失败目标的内容上冒充已切过去；有权威缓存就还原 */
+          ...(authoritativeMessages?.length ? { messages: authoritativeMessages } : {})
+        })
+        return
+      }
+      /*
+       * path-only peek（列表外会话 / 旧读取器只给 messages 没给 id）：宿主对这条
+       * 路径其实有正式 id，这里成对补上。否则视图一直只有路径，运行快照与后续
+       * 权威 sync 认不回这条会话，旧实例的推送就会盖上来。
+       */
+      if (res.sessionId && !get().peekedSessionId && get().peekedPath) {
+        set({ peekedSessionId: res.sessionId })
+      }
+      /* 实例没动：保持 peek 显示，把「待激活」记下来 —— 发消息时才会真的切 */
+      if (res.deferred) {
+        set({
+          pendingActivation: { sessionFile: path, sessionId: res.sessionId ?? sum?.id, projectId, scope, cwd },
+          peekedPath: path,
+          peekedSessionId: res.sessionId ?? sum?.id ?? null,
+          notices: pushNotice(
+            get().notices,
+            'info',
+            '这条会话已只读打开。为避免同一工作目录里的任务互相覆盖，发送消息前会先安全切换运行目录。'
+          )
+        })
+        void get().syncRunners()
+        return
+      }
+      const runId = res.runId ?? res.id
+      const snapshot = findRuntimeSnapshot(
+        get().sessionRuntimes,
+        res.sessionId ?? sum?.id,
+        runId
+      )
+      /*
+       * 缓存里那条快照必须**就是刚点开的这条会话**（没有它就不投影）：
+       * 实例被复用到别的会话时，缓存里的 messages 属于上一条会话，
+       * 投影上去会把 peek 刚铺好的内容换成别人的/空的（D38）。
+       */
+      const usable = snapshotForView(get(), snapshot)
       set({
-        notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'),
-        peekedPath: null,
-        peekedSessionId: null
-      })
-      return
-    }
-    /* 实例没动：保持 peek 显示，把「待激活」记下来 —— 发消息时才会真的切 */
-    if (res.deferred) {
-      set({
-        pendingActivation: { sessionFile: path, sessionId: sum?.id, projectId, scope, cwd },
-        peekedPath: path,
-        peekedSessionId: sum?.id ?? null,
-        notices: pushNotice(
-          get().notices,
-          'info',
-          '这条会话已只读打开。为避免同一工作目录里的任务互相覆盖，发送消息前会先安全切换运行目录。'
-        )
+        ...(usable ? projectSnapshotKeepingPeek(get(), usable) : {}),
+        queue: usable?.queue ?? EMPTY_QUEUE,
+        ...(runId ? { activeRunnerId: runId } : {}),
+        pendingActivation: null
       })
       void get().syncRunners()
-      return
+      void get().reloadModels()
+      void get().reloadCommands()
+      void get().loadGoal()
+    } finally {
+      endSessionSwitch(gate)
     }
-    const runId = res.runId ?? res.id
-    const snapshot = findRuntimeSnapshot(
-      get().sessionRuntimes,
-      res.sessionId ?? sum?.id,
-      runId
-    )
-    /*
-     * 缓存里那条快照必须**就是刚点开的这条会话**（没有它就不投影）：
-     * 实例被复用到别的会话时，缓存里的 messages 属于上一条会话，
-     * 投影上去会把 peek 刚铺好的内容换成别人的/空的（D38）。
-     */
-    const usable = snapshotForView(get(), snapshot)
-    set({
-      ...(usable ? projectSnapshotKeepingPeek(get(), usable) : {}),
-      queue: usable?.queue ?? EMPTY_QUEUE,
-      ...(runId ? { activeRunnerId: runId } : {}),
-      pendingActivation: null
-    })
-    void get().syncRunners()
-    void get().reloadModels()
-    void get().reloadCommands()
-    void get().loadGoal()
   },
 
   /**
@@ -2942,18 +3158,59 @@ export const useStore = create<Store>((rawSet, get) => {
    * 这就是「查看不切实例」换来的代价，所以每个“真开始对话”的入口都要先过这一关。
    */
   ensureActivated: async (): Promise<boolean> => {
+    /*
+     * 切换在途：此刻「没有 pendingActivation」不等于「视图与实例一致」——
+     * 点击刚发出、selectSession 还没回来。安全失败并保留草稿，不猜已经激活（D4）。
+     */
+    if (isSessionSwitchInFlight()) {
+      set({ notices: pushNotice(get().notices, 'warning', '正在切换会话，请稍候再发送') })
+      return false
+    }
     const pending = get().pendingActivation
-    if (!pending) return true
+    if (!pending) {
+      /*
+       * 视图身份（peeked）与已知的当前实例不一致时，也不能直接放行：
+       * 激活结果未回或实例还停在旧会话上，发出去会落错地方。
+       * 身份成对核对：只看 id 会让「有路径、没 id」的 path-only 视图蒙混过关，
+       * 让消息落回旧会话。
+       */
+      const id = viewIdentityOf(get())
+      if (id.peeked) {
+        const runner = get().runners.find((item) => (item.runId ?? item.id) === get().activeRunnerId)
+        const matches =
+          !!runner &&
+          ((!!id.sessionId && runner.sessionId === id.sessionId) ||
+            (!!id.sessionFile && sameSessionFile(runner.sessionFile, id.sessionFile)))
+        if (runner && !matches) {
+          set({ notices: pushNotice(get().notices, 'warning', '会话正在对齐，消息没有发出（草稿已保留）') })
+          return false
+        }
+      }
+      return true
+    }
     const res = await piCall(() => window.yan.selectSession(pending))
+    /* 等待期间用户又切了会话 / 出现了新的待激活目标：本次激活结果一律不采用 */
+    if (isSessionSwitchInFlight() || get().pendingActivation !== pending) {
+      set({ notices: pushNotice(get().notices, 'warning', '会话正在切换，消息没有发出（草稿已保留）') })
+      return false
+    }
     if (!res.ok || res.deferred) {
       set({
         notices: pushNotice(get().notices, 'error', res.error ?? '切换会话失败，消息没有发出')
       })
       return false
     }
+    const activated = get()
     set({
       pendingActivation: null,
-      ...(res.runId ?? res.id ? { activeRunnerId: res.runId ?? res.id } : {})
+      ...(res.runId ?? res.id ? { activeRunnerId: res.runId ?? res.id } : {}),
+      /*
+       * path-only peek 激活成功、且正式 id 证明是同一文件：补上 id，让后续权威
+       * state / sync 认回这条视图（不再永久阻塞），而不是一直靠旧会话兜底。
+       */
+      ...(res.sessionId && !activated.peekedSessionId && sameSessionFile(activated.peekedPath, pending.sessionFile)
+        ? { peekedSessionId: res.sessionId }
+        : {})
     })
     void get().syncRunners()
     void get().reloadModels()
@@ -3158,23 +3415,15 @@ export const useStore = create<Store>((rawSet, get) => {
     await get().refreshSessions()
   },
 
-  exportHtml: async () => {
-    const res = await piCall(() => window.yan.exportHtml())
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '导出失败') })
-      return
-    }
-    set({
-      notices: pushNotice(get().notices, 'info', `已导出：${res.path ?? ''}（已用系统默认程序打开）`)
-    })
+  exportHtml: async (outputPath) => {
+    const res = await piCall(() => window.yan.exportHtml(outputPath))
+    if (res.ok) get().notify('info', `已导出：${res.path ?? ''}（已用系统默认程序打开）`)
+    return res
   },
 
-  compact: async () => {
-    if (!(await get().ensureActivated())) return
-    const res = await piCall(() => window.yan.compact())
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '压缩失败') })
-    }
+  compact: async (customInstructions) => {
+    if (!(await get().ensureActivated())) return { ok: false, error: '会话未能激活' }
+    return piCall(() => window.yan.compact(customInstructions))
   },
 
   stop: async () => {
@@ -3337,35 +3586,20 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  openBrowser: async (url) => {
-    const view = get()
-    const owner = view.peekedPath || view.peekedSessionId
-      ? workspaceKeyFor({ path: view.peekedPath ?? undefined, sessionId: view.peekedSessionId ?? undefined })
-      : conversationKeyOf(view.session)
-    const previousOwner = resourceOwner('browser')
+  openBrowser: async (url, target) => {
     /*
-     * 浏览器与文件预览占同一块区域，而且原生网页视图永远盖在 DOM 之上 ——
-     * 这里仅让主进程打开网页；右栏窗口协调器负责显隐，不能因为切到浏览器
-     * 就丢掉用户刚打开的文件标签。
+     * v3 传 target（面板的会话键）时启用代次 / 当前视图守卫：打开跨了 await，
+     * 这期间切会话或连点都不能让旧回包把旧 view 重新 show 出来，也不能让 B
+     * 在 A 尚在打开时抢走这个全局唯一的浏览器。
+     *
+     * v2 入口不传 target，owner 仍按旧规则从当前视图推导，走与改动前相同的
+     * 路径（认领后直接打开、写状态、apply 显隐）。
      */
-    try {
-      // 在异步 IPC 前绑定，避免打开期间切会话把浏览器认领到新焦点。
-      claimResource('browser', owner)
-      const browserState = await window.yan.browser.open(url)
-      set({ browserState })
-      /* 浏览器是右栏资源：右栏收着就展开它，否则用户看不到刚打开的网页 */
-      if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
-      applyBrowserVisibility(get)
-    } catch (error) {
-      if (!previousOwner && !get().browserState.open && resourceOwner('browser') === owner) releaseResource('browser')
-      /*
-       * 这里不走 `piCall`（成功返回的是 BrowserState 而不是 `{ok}`），
-       * 所以剥壳要自己调 —— 否则用户看到的提示是
-       * `Error invoking remote method 'yan:browser:open': Error: 只允许打开 http(s) 网页`。
-       */
-      const raw = error instanceof Error ? error.message : '打开浏览器失败'
-      set({ notices: pushNotice(get().notices, 'error', stripIpcErrorPrefix(raw)) })
-    }
+    const view = get()
+    const owner = target?.key ?? (view.peekedPath || view.peekedSessionId
+      ? workspaceKeyFor(viewKeyRef(view))
+      : conversationKeyOf(view.session))
+    await browserOpener.open({ owner, url, guard: target !== undefined })
   },
 
   closeBrowser: async () => {
@@ -4074,7 +4308,11 @@ export const useStore = create<Store>((rawSet, get) => {
      * 不依赖「关设置时顺便恢复浏览器」这种全局假设。
      */
     if (!settingsBlockerRelease) settingsBlockerRelease = get().acquireOverlayBlocker('settings')
-    set({ settingsOpen: true, settingsTab: tab ?? 'appearance' })
+    set({
+      settingsOpen: true,
+      settingsTab: tab ?? 'appearance',
+      settingsRequestRevision: get().settingsRequestRevision + 1
+    })
   },
   closeSettings: () => {
     set({ settingsOpen: false })

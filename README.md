@@ -43,7 +43,7 @@
 
 目标是简单易读的 UI、危险审批与原生模式两档权限、指定模型的子 Agent，以及轻量和性能。桌面目标覆盖 Windows、macOS、Linux；Android/iOS 作为连接电脑的工具。写作、学习、空间和资料库不再作为独立产品模块。
 
-当前开发版已接入 Claude Code 订阅插件、指定模型子 Agent 和两档权限；CC 只读子任务暂不支持。默认界面已退出旧计划/自主模式、空间、资料库与专用写作/学习流程。当前主要交付和验证 Windows，其他平台不能视为已支持；开发版改动未必包含在已下载的发行包中。功能与验证边界见[产品方向](docs/PRODUCT_DIRECTION.md)。
+当前开发版已接入 Claude Code 订阅插件、指定模型子 Agent 和两档权限，并补齐原生会话树、JSONL 导入/分支导出、热重载和模型循环范围等[会话操作](docs/GETTING_STARTED.md#pi-原生会话操作)；CC 只读子任务暂不支持。默认界面已退出旧计划/自主模式、空间、资料库与专用写作/学习流程。当前主要交付和验证 Windows，其他平台不能视为已支持；开发版改动未必包含在已下载的发行包中。功能与验证边界见[产品方向](docs/PRODUCT_DIRECTION.md)。
 
 ## 开始使用
 
@@ -78,6 +78,8 @@ npm run launch
 ```
 
 启动器会检查依赖、准备缺失的内置运行时并按需构建。已有工作区可双击 `启动-砚.cmd`；开发模式使用 `开发-砚.cmd` 或 `npm run launch:dev`。
+
+界面正在按 v3 重构：v3 是目标界面，规则见[设计规范](docs/DESIGN_SYSTEM.md)正卷、范围与状态见[界面重构记录](docs/UI_REDESIGN.md)。用 `YAN_UI=v3` 启动可试用，默认仍是 v2，目前不是功能对等的替代版；开发与回退见[贡献指南](docs/CONTRIBUTING.md#v3-开发外壳)。
 
 参与贡献前请阅读 [贡献指南](docs/CONTRIBUTING.md) 和 [AI 协作约定](AGENTS.md)。按功能定位代码见[代码地图](docs/CODE_MAP.md)，架构、构建与发布入口见[文档索引](docs/README.md)。
 

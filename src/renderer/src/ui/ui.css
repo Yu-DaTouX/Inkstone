@@ -1,0 +1,931 @@
+/*
+ * v3 基础原语外观（WP-04 / WP-05）。
+ *
+ * 只放控件外观：位置、颜色、状态、动效。版面归 features/patterns 的模块 CSS。
+ * 颜色一律取 `design/tokens.css` 的变量（由 tokens.json 生成），不在这里写死色值。
+ *
+ * 首行声明全局层级顺序，保证即使本文件先于 `design/index.css` 加载，
+ * `primitives` 也排在 `base` 之后。该声明幂等，重复无副作用。
+ */
+@layer reset, tokens, base, primitives, patterns, features, utilities;
+
+/*
+ * WP-05 原语外观的聚合挂载点：Slider 与 Tree 的 CSS 自身已包在 primitives 层，
+ * 顶层朴素 @import 只会把导入内容落到同一层，不新增层序声明。Table 与 Splitter
+ * 由各自组件自 import（`Table.tsx` / `Splitter.tsx`），这里不要再重复挂载，
+ * 避免同一份规则被引入两次。
+ */
+@import './Slider.css';
+@import './Tree.css';
+
+@layer primitives {
+  /* ── 通用：焦点环、动效降级 ───────────────────────────────── */
+  .ui-btn[data-focus-visible],
+  .ui-icon-btn[data-focus-visible],
+  .ui-input[data-focus-visible],
+  .ui-textarea[data-focus-visible],
+  .ui-select__trigger[data-focus-visible],
+  .ui-combo__toggle[data-focus-visible],
+  .ui-tab[data-focus-visible],
+  .ui-tabpanel[data-focus-visible],
+  .ui-menu__item[data-focus-visible],
+  .ui-listbox__item[data-focus-visible],
+  .ui-checkbox[data-focus-visible] .ui-checkbox__box,
+  .ui-radio[data-focus-visible] .ui-radio__dot,
+  .ui-switch[data-focus-visible] .ui-switch__track {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* ── Button ──────────────────────────────────────────────── */
+  .ui-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-6);
+    height: var(--size-btn);
+    padding: 0 var(--s-12);
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--fg);
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    white-space: nowrap;
+    cursor: default;
+    user-select: none;
+    transition:
+      background-color var(--dur-hover) var(--ease),
+      border-color var(--dur-hover) var(--ease),
+      color var(--dur-hover) var(--ease);
+  }
+  /* 标签包装层也保持行内弹性布局，避免 reset 中的块级 SVG 把图标和文字拆成多行。 */
+  .ui-btn__label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: inherit;
+    gap: inherit;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .ui-btn--sm {
+    height: 26px;
+    padding: 0 var(--s-8);
+    font-size: 13px;
+  }
+  .ui-btn--block {
+    display: flex;
+    width: 100%;
+  }
+  .ui-btn__icon {
+    display: inline-flex;
+    align-items: center;
+    /* 行内图标基线对齐，避免图标略高于文字 */
+    margin-block: -0.125em;
+  }
+  .ui-btn--secondary {
+    background: var(--surface);
+    border-color: var(--line2);
+  }
+  .ui-btn--primary {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--on-ink);
+  }
+  .ui-btn--ghost {
+    color: var(--fg2);
+  }
+  .ui-btn--danger {
+    background: var(--surface);
+    border-color: var(--line2);
+    color: var(--fail-t);
+  }
+  .ui-btn[data-pressed] {
+    background: var(--sunken);
+  }
+  .ui-btn--primary[data-pressed] {
+    background: var(--ink-hover);
+    border-color: var(--ink-hover);
+  }
+  .ui-btn--danger[data-pressed] {
+    background: var(--fail-bg);
+  }
+  .ui-btn[data-disabled] {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .ui-btn[data-pending] {
+    position: relative;
+    color: transparent;
+  }
+  .ui-btn[data-pending] .ui-btn__label,
+  .ui-btn[data-pending] .ui-btn__icon {
+    visibility: hidden;
+  }
+  .ui-btn[data-pending]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    color: var(--fg);
+    animation: ui-spin 0.8s linear infinite;
+  }
+  .ui-btn--primary[data-pending]::after {
+    color: var(--on-ink);
+  }
+  .ui-icon-btn {
+    width: var(--size-btn);
+    padding: 0;
+  }
+  .ui-icon-btn.ui-btn--sm {
+    width: 26px;
+  }
+  .ui-icon-btn svg {
+    display: block;
+  }
+  @media (hover: hover) {
+    .ui-btn--secondary:hover:not([data-disabled]):not([data-pending]) {
+      background: var(--hover);
+    }
+    .ui-btn--primary:hover:not([data-disabled]):not([data-pending]) {
+      background: var(--ink-hover);
+      border-color: var(--ink-hover);
+    }
+    .ui-btn--ghost:hover:not([data-disabled]):not([data-pending]) {
+      background: var(--hover);
+      color: var(--fg);
+    }
+    .ui-btn--danger:hover:not([data-disabled]):not([data-pending]) {
+      background: var(--fail-bg);
+    }
+  }
+
+  /* ── 字段、输入框、文本域、搜索 ──────────────────────────── */
+  .ui-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+  .ui-field__label {
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font-weight: 500;
+    color: var(--fg);
+  }
+  .ui-field__desc {
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fg2);
+  }
+  .ui-field__error {
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fail-t);
+  }
+  .ui-input,
+  .ui-textarea {
+    width: 100%;
+    min-width: 0;
+    padding: 0 var(--s-10);
+    border: 1px solid var(--line2);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+    color: var(--fg);
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    transition:
+      border-color var(--dur-hover) var(--ease),
+      box-shadow var(--dur-hover) var(--ease);
+  }
+  .ui-input {
+    height: var(--size-btn);
+  }
+  .ui-textarea {
+    padding: var(--s-8) var(--s-10);
+    min-height: 64px;
+    resize: none;
+    field-sizing: content;
+  }
+  .ui-input::placeholder,
+  .ui-textarea::placeholder {
+    color: var(--fg3);
+  }
+  .ui-input[data-hovered],
+  .ui-textarea[data-hovered] {
+    border-color: var(--fg3);
+  }
+  .ui-input[data-disabled],
+  .ui-textarea[data-disabled],
+  .ui-field[data-disabled] {
+    opacity: 0.5;
+  }
+  .ui-input[data-readonly],
+  .ui-textarea[data-readonly] {
+    background: var(--sunken);
+  }
+  .ui-input[data-invalid],
+  .ui-textarea[data-invalid] {
+    border-color: var(--fail);
+  }
+  .ui-search__box {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .ui-search__icon {
+    position: absolute;
+    left: var(--s-10);
+    color: var(--fg3);
+    pointer-events: none;
+  }
+  .ui-search__input {
+    padding-left: 32px;
+  }
+
+  /* ── Checkbox / Radio / Switch ───────────────────────────── */
+  .ui-checkbox,
+  .ui-radio,
+  .ui-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-8);
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    color: var(--fg);
+    cursor: default;
+    user-select: none;
+  }
+  /* 原生 input 由 RAC 的 VisuallyHidden 包装并内联隐藏（1px + clip），
+     不占布局，因此这里不需要再写隐藏规则。交互点击仍由 label 原生生效。 */
+  .ui-checkbox__box,
+  .ui-radio__dot {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--line2);
+    background: var(--surface);
+    color: var(--on-ink);
+    transition:
+      background-color var(--dur-hover) var(--ease),
+      border-color var(--dur-hover) var(--ease);
+  }
+  .ui-checkbox__box {
+    border-radius: var(--r-xs);
+  }
+  .ui-radio__dot {
+    border-radius: var(--r-full);
+  }
+  .ui-checkbox[data-selected] .ui-checkbox__box,
+  .ui-checkbox[data-indeterminate] .ui-checkbox__box {
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+  .ui-radio[data-selected] .ui-radio__dot {
+    border-color: var(--ink);
+  }
+  .ui-radio__dot::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: var(--r-full);
+    background: var(--ink);
+    opacity: 0;
+    transition: opacity var(--dur-hover) var(--ease);
+  }
+  .ui-radio[data-selected] .ui-radio__dot::after {
+    opacity: 1;
+  }
+  .ui-checkbox[data-disabled],
+  .ui-radio[data-disabled],
+  .ui-switch[data-disabled] {
+    opacity: 0.5;
+  }
+  @media (hover: hover) {
+    .ui-checkbox:hover:not([data-disabled]) .ui-checkbox__box,
+    .ui-radio:hover:not([data-disabled]) .ui-radio__dot {
+      border-color: var(--fg3);
+    }
+    .ui-checkbox[data-selected]:hover:not([data-disabled]) .ui-checkbox__box {
+      border-color: var(--ink);
+    }
+  }
+  .ui-checkbox-group,
+  .ui-radio-group {
+    gap: var(--s-8);
+  }
+  .ui-switch__track {
+    position: relative;
+    flex: none;
+    width: 36px;
+    height: 20px;
+    border-radius: var(--r-full);
+    background: var(--line2);
+    transition: background-color var(--dur-pop) var(--ease);
+  }
+  .ui-switch__thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: var(--r-full);
+    background: var(--surface);
+    box-shadow: var(--shadow-comp);
+    transition: transform var(--dur-pop) var(--ease);
+  }
+  .ui-switch[data-selected] .ui-switch__track {
+    background: var(--ink);
+  }
+  .ui-switch[data-selected] .ui-switch__thumb {
+    transform: translateX(16px);
+  }
+  .ui-switch[data-selected] .ui-switch__thumb {
+    background: var(--on-ink);
+  }
+
+  /* ── Select / ComboBox ───────────────────────────────────── */
+  .ui-select__trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    text-align: start;
+    cursor: default;
+  }
+  .ui-select__value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ui-select__placeholder {
+    color: var(--fg3);
+  }
+  .ui-select__chevron {
+    flex: none;
+    color: var(--fg3);
+    transition: transform var(--dur-pop) var(--ease);
+  }
+  .ui-select[data-open] .ui-select__chevron {
+    transform: rotate(180deg);
+  }
+  .ui-select__trigger[data-disabled] {
+    opacity: 0.5;
+  }
+  .ui-select__trigger[data-invalid] {
+    border-color: var(--fail);
+  }
+  .ui-combo__box {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .ui-combo__box .ui-combo__input {
+    padding-right: 30px;
+  }
+  .ui-combo__toggle {
+    position: absolute;
+    right: 2px;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: var(--r-xs);
+    background: transparent;
+    color: var(--fg3);
+  }
+  @media (hover: hover) {
+    .ui-select__trigger:hover:not([data-disabled]) {
+      border-color: var(--fg3);
+    }
+    .ui-combo__toggle:hover {
+      background: var(--hover);
+      color: var(--fg);
+    }
+  }
+
+  /* ── Popover / Menu / ListBox ────────────────────────────── */
+  .ui-popover {
+    min-width: 180px;
+    padding: var(--s-4);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    z-index: 1000;
+  }
+  .ui-popover[data-entering] {
+    animation: ui-pop-in var(--dur-pop) var(--ease-in);
+  }
+  .ui-popover[data-exiting] {
+    animation: ui-pop-out var(--dur-pop) var(--ease);
+  }
+  .ui-menu,
+  .ui-listbox {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 320px;
+    overflow: auto;
+    outline: none;
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    color: var(--fg);
+  }
+  .ui-menu__item,
+  .ui-listbox__item {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    padding: var(--s-6) var(--s-10);
+    border-radius: var(--r-sm);
+    cursor: default;
+    outline: none;
+  }
+  .ui-menu__item[data-selected],
+  .ui-listbox__item[data-selected] {
+    background: var(--sel);
+    color: var(--accent);
+  }
+  .ui-menu__item[data-disabled],
+  .ui-listbox__item[data-disabled] {
+    opacity: 0.5;
+  }
+  .ui-menu__item[data-has-submenu]::after {
+    content: '\203a';
+    margin-inline-start: auto;
+    color: var(--fg3);
+  }
+  .ui-menu header,
+  .ui-listbox header {
+    padding: var(--s-6) var(--s-10) var(--s-2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fg3);
+  }
+  @media (hover: hover) {
+    .ui-menu__item:hover:not([data-disabled]),
+    .ui-listbox__item:hover:not([data-disabled]) {
+      background: var(--hover);
+    }
+    .ui-menu__item[data-selected]:hover:not([data-disabled]),
+    .ui-listbox__item[data-selected]:hover:not([data-disabled]) {
+      background: var(--sel);
+    }
+  }
+
+  /* ── Dialog / Modal ──────────────────────────────────────── */
+  .ui-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--s-24);
+    background: var(--scrim);
+  }
+  .ui-modal-overlay[data-entering] {
+    animation: ui-fade-in var(--dur-pop) var(--ease-in);
+  }
+  .ui-modal-overlay[data-exiting] {
+    animation: ui-fade-out var(--dur-pop) var(--ease);
+  }
+  .ui-modal {
+    display: flex;
+    flex-direction: column;
+    width: min(560px, 100%);
+    max-height: calc(100vh - 48px);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    outline: none;
+  }
+  .ui-modal[data-entering] {
+    animation: ui-modal-in var(--dur-expand) var(--ease-in);
+  }
+  .ui-modal[data-exiting] {
+    animation: ui-modal-out var(--dur-pop) var(--ease);
+  }
+  .ui-dialog {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    outline: none;
+  }
+  .ui-dialog__head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    padding: var(--s-12) var(--s-12) var(--s-8) var(--s-16);
+    border-bottom: 1px solid var(--line);
+  }
+  .ui-dialog__title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font: var(--t-title) / var(--t-title-lh) var(--font-ui);
+    font-weight: var(--t-title-w, 600);
+    color: var(--fg);
+  }
+  .ui-dialog__close {
+    margin-inline-start: auto;
+  }
+  .ui-dialog__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+    padding: var(--s-16);
+    overflow: auto;
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    color: var(--fg);
+  }
+
+  /* ── Tabs ────────────────────────────────────────────────── */
+  .ui-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+    min-width: 0;
+  }
+  .ui-tabs[data-orientation='vertical'] {
+    flex-direction: row;
+  }
+  .ui-tablist {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ui-tablist[data-orientation='horizontal'] {
+    border-bottom: 1px solid var(--line);
+  }
+  .ui-tablist[data-orientation='vertical'] {
+    flex-direction: column;
+    align-items: stretch;
+    border-inline-end: 1px solid var(--line);
+  }
+  .ui-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-6);
+    padding: var(--s-6) var(--s-10);
+    border-radius: var(--r-sm) var(--r-sm) 0 0;
+    color: var(--fg2);
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    white-space: nowrap;
+    cursor: default;
+    outline: none;
+  }
+  .ui-tab[data-selected] {
+    color: var(--fg);
+  }
+  .ui-tab[data-selected]::after {
+    content: '';
+    position: absolute;
+    inset-inline: var(--s-6);
+    bottom: -1px;
+    height: 2px;
+    border-radius: var(--r-full);
+    background: var(--accent);
+  }
+  .ui-tab[data-disabled] {
+    opacity: 0.5;
+  }
+  .ui-tab__close {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin-inline-end: -4px;
+    border-radius: var(--r-xs);
+    color: var(--fg3);
+    cursor: default;
+  }
+  @media (hover: hover) {
+    .ui-tab:hover:not([data-disabled]) {
+      background: var(--hover);
+      color: var(--fg);
+    }
+    .ui-tab__close:hover {
+      background: var(--line);
+      color: var(--fg);
+    }
+  }
+  .ui-tabpanel {
+    min-width: 0;
+    outline: none;
+  }
+
+  /* ── Tooltip ─────────────────────────────────────────────── */
+  .ui-tooltip {
+    max-width: 280px;
+    padding: var(--s-4) var(--s-8);
+    border-radius: var(--r-xs);
+    background: var(--ink);
+    color: var(--on-ink);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    box-shadow: var(--shadow-pop);
+    z-index: 1100;
+  }
+  .ui-tooltip[data-entering] {
+    animation: ui-pop-in var(--dur-pop) var(--ease-in);
+  }
+  .ui-tooltip[data-exiting] {
+    animation: ui-pop-out var(--dur-pop) var(--ease);
+  }
+
+  /* ── Toast ───────────────────────────────────────────────── */
+  .ui-toast-region {
+    position: fixed;
+    right: var(--s-16);
+    bottom: var(--s-16);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    width: min(420px, calc(100vw - 32px));
+    outline: none;
+  }
+  .ui-toast {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-8);
+    padding: var(--s-10) var(--s-12);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+  }
+  .ui-toast[data-entering] {
+    animation: ui-toast-in var(--dur-expand) var(--ease-in);
+  }
+  .ui-toast__content {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-8);
+    flex: 1;
+    min-width: 0;
+  }
+  .ui-toast__icon {
+    display: inline-flex;
+    margin-block: 1px;
+    color: var(--accent);
+  }
+  .ui-toast--success .ui-toast__icon {
+    color: var(--run-t);
+  }
+  .ui-toast--warning .ui-toast__icon {
+    color: var(--ask-t);
+  }
+  .ui-toast--danger .ui-toast__icon {
+    color: var(--fail-t);
+  }
+  .ui-toast__text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .ui-toast__title {
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font-weight: 500;
+    color: var(--fg);
+  }
+  .ui-toast__desc {
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fg2);
+    overflow-wrap: anywhere;
+  }
+
+  /* ── Badge / Kbd ─────────────────────────────────────────── */
+  .ui-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+    padding: 1px var(--s-6);
+    border-radius: var(--r-full);
+    background: var(--sunken);
+    color: var(--fg2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .ui-badge--accent {
+    background: var(--sel);
+    color: var(--accent);
+  }
+  .ui-badge--run {
+    background: var(--add-bg);
+    color: var(--run-t);
+  }
+  .ui-badge--ask {
+    background: var(--ask-bg);
+    color: var(--ask-t);
+  }
+  .ui-badge--stall {
+    background: var(--stall-bg);
+    color: var(--stall-t);
+  }
+  .ui-badge--fail {
+    background: var(--fail-bg);
+    color: var(--fail-t);
+  }
+  .ui-kbd {
+    display: inline-block;
+    min-width: 18px;
+    padding: 1px var(--s-6);
+    border: 1px solid var(--line2);
+    border-bottom-width: 2px;
+    border-radius: var(--r-xs);
+    background: var(--sunken);
+    color: var(--fg2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-mono);
+    text-align: center;
+  }
+
+  /* ── Progress / Meter / Spinner / Skeleton / Separator ───── */
+  .ui-progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    width: 100%;
+    min-width: 0;
+  }
+  .ui-progress__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-8);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fg2);
+  }
+  .ui-progress__value {
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .ui-progress__track {
+    position: relative;
+    height: 6px;
+    overflow: hidden;
+    border-radius: var(--r-full);
+    background: var(--sunken);
+  }
+  .ui-progress__fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--ink);
+    transition: width var(--dur-expand) var(--ease);
+  }
+  .ui-progress:not([aria-valuenow]) .ui-progress__fill {
+    width: 40%;
+    animation: ui-progress-indeterminate 1.2s var(--ease) infinite;
+  }
+  .ui-spinner {
+    display: inline-block;
+    border: 2px solid var(--line2);
+    border-top-color: var(--accent);
+    border-radius: var(--r-full);
+    animation: ui-spin 0.8s linear infinite;
+  }
+  .ui-skeleton {
+    display: block;
+    background: linear-gradient(90deg, var(--sunken), var(--hover), var(--sunken));
+    background-size: 200% 100%;
+    animation: ui-shimmer 1.4s ease-in-out infinite;
+  }
+  .ui-skeleton--text {
+    width: 100%;
+    height: 1em;
+    border-radius: var(--r-xs);
+  }
+  .ui-skeleton--rect {
+    width: 100%;
+    height: 48px;
+    border-radius: var(--r-sm);
+  }
+  .ui-skeleton--circle {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--r-full);
+  }
+  .ui-separator {
+    border: none;
+    background: var(--line);
+  }
+  .ui-separator[aria-orientation='horizontal'] {
+    width: 100%;
+    height: 1px;
+    margin: 0;
+  }
+  .ui-separator[aria-orientation='vertical'] {
+    align-self: stretch;
+    width: 1px;
+    height: auto;
+    margin: 0 var(--s-4);
+  }
+
+  /* ── 关键帧 ──────────────────────────────────────────────── */
+  @keyframes ui-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes ui-shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+  @keyframes ui-progress-indeterminate {
+    0% {
+      transform: translateX(-120%);
+    }
+    100% {
+      transform: translateX(320%);
+    }
+  }
+  @keyframes ui-pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes ui-pop-out {
+    from {
+      opacity: 1;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+  @keyframes ui-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes ui-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes ui-modal-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes ui-modal-out {
+    from {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+  @keyframes ui-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* 尊重「减少动态效果」：关掉所有原语动画（圆点、转圈、骨架屏都静止）。 */
+  @media (prefers-reduced-motion: reduce) {
+    [class*='ui-'] {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

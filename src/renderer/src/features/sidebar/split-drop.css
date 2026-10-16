@@ -1,0 +1,87 @@
+/*
+ * 会话拖拽落点预览的版面与层级（features 层）。
+ * 只是拖动期间的临时指示：不接收指针、不占布局；颜色全部来自令牌。
+ */
+@layer features {
+  /* 拖动期间：不选中文字，全窗显示抓取光标 */
+  body[data-v3-dragging] {
+    user-select: none;
+    cursor: grabbing;
+  }
+
+  .v3-drop-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+  }
+
+  .v3-drop-zone {
+    position: fixed;
+    box-sizing: border-box;
+    border-radius: var(--r-lg);
+    transition:
+      background-color var(--dur-hover) var(--ease),
+      box-shadow var(--dur-hover) var(--ease);
+  }
+
+  /* 未命中的半区只留一圈很淡的虚框，告诉用户「这里能放」 */
+  .v3-drop-zone[data-hit='0'] {
+    box-shadow: inset 0 0 0 1px var(--line2);
+  }
+
+  .v3-drop-zone[data-hit='1'] {
+    background: var(--sel);
+    box-shadow: inset 0 0 0 2px var(--accent);
+    animation: v3-drop-in var(--dur-pop) var(--ease-in);
+  }
+
+  .v3-drop-label {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    padding: var(--s-4) var(--s-10);
+    border-radius: var(--r-full);
+    background: var(--accent);
+    color: var(--bg);
+    font-size: var(--t-ui);
+    white-space: nowrap;
+  }
+
+  .v3-drop-ghost {
+    position: fixed;
+    left: 0;
+    top: 0;
+    max-width: 260px;
+    padding: var(--s-4) var(--s-10);
+    border: 1px solid var(--line2);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    color: var(--fg);
+    font-size: var(--t-ui);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.92;
+  }
+
+  .v3-drop-ghost[data-armed='1'] {
+    border-color: var(--accent);
+  }
+
+  @keyframes v3-drop-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-drop-zone,
+    .v3-drop-zone[data-hit='1'] {
+      transition: none;
+      animation: none;
+    }
+  }
+}

@@ -47,7 +47,7 @@ for (const script of [
   'test-mcp-annotations-guard', 'test-terminal-status', 'test-taskbar-status',
   'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills', 'test-tip',
   'test-mcp-native-import-flow', 'test-readonly-model-registration', 'test-terminal-tab-status', 'test-confirm-queue',
-  'test-motion-presence'
+  'test-motion-presence', 'test-stream-loop-detector', 'test-stream-loop-settings', 'test-v3-quota-card', 'test-v3-turn-changes'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)

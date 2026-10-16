@@ -16,6 +16,8 @@ import type {
   NativeMcpImportCommitResponse,
   NativeMcpImportPrepareResponse
 } from './mcp-native-import'
+import type { McpAppBridge } from './mcp-app-switch'
+import type { McpAppViewApi } from './mcp-app-view'
 
 export type {
   CustomProviderDiscoverResult,
@@ -83,7 +85,7 @@ export type { SourceStatus, SourceRefStatus, ResearchExcerpt } from './research'
 export type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { AgentActivity } from './agent-profile'
-import type { GitRefOption, GitRepoState } from './git'
+import type { GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
 /* 写操作的请求 / 结果类型也在这里转发：preload 只 import 本文件（单一入口） */
 export type {
   GitActionExpected,
@@ -130,7 +132,7 @@ export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, Knowle
 
 /* Git 审查的类型与纯解析在 `./git` 里（它们要能在没有 Electron 的环境下单测），
    这里只做转发，让渲染端可以从**一处**拿到全部跨进程类型。 */
-export type { GitRefOption, GitRepoState } from './git'
+export type { GitChangeEntry, GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
 
 /* RPC */
 
@@ -626,6 +628,12 @@ export interface ModelInfo {
   contextWindowStatus?: CapabilityStatus
   maxTokens?: number
   maxTokensStatus?: CapabilityStatus
+  /**
+   * 每百万 token 的报价（美元），与 pi 模型元数据里的 `cost` 同形。
+   * pi 没给报价（订阅制、手写 models.json 未填、或全 0）时缺失 —— 界面据此不显示价格，
+   * 不按模型名猜，也不把 0 渲染成 $0。缓存档可省，`cleanModelCost` 会归 0。
+   */
+  cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
 }
 
 /**
@@ -1074,6 +1082,11 @@ export interface ProjectGroup {
 export type CapabilityStrategy = 'existing-only' | 'search-and-recommend' | 'auto-connect'
 
 export interface AppSettings {
+  /**
+   * 界面外壳：`v2` 现行界面，`v3` 新界面（侧栏 + 对话）。缺省 = v2。
+   * 环境变量 `YAN_UI=v2|v3` 优先于本设置；切换后重新载入窗口生效。
+   */
+  uiVersion?: 'v2' | 'v3'
   /** Last explicitly selected models and shared favorites; independent of session history. */
   lastMainModel?: import('./model-selection').ModelChoice
   lastSubagentModel?: import('./model-selection').ModelChoice | 'follow'
@@ -1087,6 +1100,8 @@ export interface AppSettings {
   piBin?: string
   /** Enable native pi Codemode in Inkstone; missing means enabled. */
   codemodeEnabled?: boolean
+  /** 新会话空态的「动态 ASCII 背景」；缺省 = 开，只有明确关才落 false。 */
+  asciiBackground?: boolean
   /** 闲置多少天自动归档会话；缺省 / 0 = 从不。置顶与有运行实例的会话永不归档。 */
   autoArchiveDays?: number
   /** 有会话在跑时保持电脑不睡眠；缺省 = 开，只有明确关才存 false。 */
@@ -1289,6 +1304,8 @@ export interface AppSettings {
    * `undefined` = 没改过 = **开**；只有明确关掉才是 `false`。
    */
   subagentNotify?: boolean
+  /** 流式循环被安全中止后是否在同一会话自动续一次。`undefined` = 没改过 = 开；只有明确关掉才是 `false`。 */
+  streamLoopAutoContinue?: boolean
   /** 输入框下方显示本轮速度与缓存命中率。`undefined` = 没改过 = 开；只有明确关掉才是 `false`。 */
   usageUnderInput?: boolean
   /**
@@ -1409,6 +1426,14 @@ export interface AppSettings {
    * 默认**关**：突然出声比突然动画更吓人，想用的人自己开。
    */
   sound: SoundSettings
+  /**
+   * 用户改绑的 v3 全局快捷键：`ShortcutId → 键位数组`，缺省项用注册表默认。
+   *
+   * 形状契约在渲染端 `renderer/src/app/shortcuts.ts` 的 `ShortcutOverrides`，
+   * 这里用类型查询引用同一份定义（纯类型，构建时擦除，不产生运行时依赖）。
+   * 主进程只原样读写，渲染端读取与按键绑定时都过 `sanitizeShortcutOverrides` 清洗。
+   */
+  shortcutOverrides?: import('../renderer/src/app/shortcuts').ShortcutOverrides
 }
 
 /**
@@ -2314,6 +2339,15 @@ export type MainPushBody =
   | { ch: 'state'; payload: SessionState }
   | { ch: 'stats'; payload: SessionStats }
   | { ch: 'queue'; payload: QueueState }
+  /**
+   * 流式重复防护收回了排队内容（原文、顺序、图片与身份）。
+   *
+   * 为什么单开一条而不是复用 `queue`：`queue` 是 pi 的文本快照，回收还带着
+   * 图片与稳定 id，需要渲染端用 `applyQueueRecovery` 落回对应会话草稿。
+   * 归属由 `runtime` 封套给出：后台会话的回收也只进它的草稿缓存，
+   * 不覆盖当前会话草稿。
+   */
+  | { ch: 'queue-reclaimed'; payload: QueueSnapshot & { sessionId: string } }
   /** 会话里的任务清单变了（扩展通过 panel_todos 维护） */
   | { ch: 'todos'; payload: SessionTodo[] }
   /**
@@ -2429,6 +2463,14 @@ export type MainPushBody =
    */
   | { ch: 'handoff-rebind'; payload: { sourceRunId: string; sourceSessionId: string; runtime: RuntimeEnvelope; state: SessionState; active: boolean } }
   | { ch: 'runners'; payload: RunnerStatus[] }
+  /**
+   * 运行注册表增量（v3 WP-10）。
+   *
+   * 全量由 `runs.snapshot()` 拉；这里只推变化，`revision` 单调递增。
+   * 渲染端先订阅、再取 snapshot，取回后只回放 `revision > snapshot.revision`
+   * 的增量，避免 snapshot 期间到达的旧 `running` 覆盖后来已到的 `done`。
+   */
+  | { ch: 'runs'; payload: { revision: number; upsert: import('./runs').RunSnapshot[]; remove: string[] } }
   /** 托盘菜单要求渲染端新建一个全局会话。 */
   | { ch: 'tray-new-session'; payload: null }
   /** 另一台砚申请本次连接：所有者界面弹出审批（决定走 yan:peer-host:decide） */
@@ -2514,6 +2556,18 @@ export interface GitBridge {
   remoteWeb(cwd: string): Promise<{ ok: boolean; web?: string | null; remote?: string | null; error?: string }>
   /** 未跟踪文件（新建工作树时勾选要带过去的文件） */
   untracked(cwd: string): Promise<string[]>
+  /**
+   * 逐文件改动列表（P3，**只读**）：仓库状态明细，路径相对授权范围。
+   *
+   * 与 `state` 的聚合计数互补；命令形状、pathspec 校验、`GIT_OPTIONAL_LOCKS=0`
+   * 都在主进程。缺目录授权时 `ok:false`，不静默回空列表。
+   */
+  changes(cwd: string): Promise<GitChangesResult>
+  /**
+   * 单个文件的真实补丁（P3，**只读**）：已暂存 + 未暂存两个真实片段拼接，
+   * 未跟踪文件给安全的新文件补丁。二进制只回说明行，超大按行截断并标记。
+   */
+  diff(req: { cwd: string; path: string }): Promise<GitDiffResult>
   worktrees(cwd: string): Promise<WorktreeListing>
   worktreeCreate(req: WorktreeCreateRequest): Promise<WorktreeCreateResult>
   worktreeRemove(req: WorktreeRemoveRequest): Promise<WorktreeRemoveResult>
@@ -2886,6 +2940,11 @@ export interface CapabilityMcpServerSettingView {
   endpointOrigin?: string
   status: 'ready' | 'connecting' | 'disconnected' | 'needs-auth' | 'error'
   toolCount: number | null
+  /**
+   * 此刻由哪一方连接：`pi`（legacy 连接管理器）或 `inkstone`（宿主单例）。
+   * 展示 `ownedBy` 必须走本字段，不允许在渲染端隐式 cast；老客户端忽略即可。
+   */
+  ownedBy?: 'pi' | 'inkstone'
   /** 已导入 pi 原生的标记；老客户端不认识这个字段也不影响原有条目的显示与删除。 */
   migratedToNative?: import('./mcp').McpMigratedToNativeMark
 }
@@ -3132,6 +3191,93 @@ export interface VisibleRunnerSession {
   sessionFile?: string
 }
 
+/**
+ * 运行历史的一条记录（`YAN_DIR/runs/YYYY-MM-DD.jsonl` 的一行）。
+ *
+ * 与 `src/main/runs/history.ts` 的 `RunHistoryRecord` 同形：共享层不能依赖主进程，
+ * 所以在这里给出渲染端需要的同一份形状；写入端仍是唯一来源。
+ */
+export interface RunsHistorySegment {
+  phase: string
+  from: number
+  to: number
+}
+
+export interface RunsHistoryRecord {
+  runId: string
+  code: string
+  kind: import('./runs').RunKind
+  sessionId: string
+  sessionPath?: string
+  projectId?: string
+  parentRunId?: string
+  title: string
+  model?: import('./runs').RunModel
+  startedAt: number
+  endedAt: number
+  terminal: 'done' | 'stopped' | 'failed'
+  cause?: string
+  errorKind?: string
+  message?: string
+  segments: RunsHistorySegment[]
+  costUsd?: number
+  counts: import('./runs').RunCounts
+}
+
+/** `yan:runs:history` 的查询：单日或闭区间，可附筛选。最多读 31 天。 */
+export interface RunsHistoryQuery {
+  /** 单日（本地日期 `YYYY-MM-DD`）；与 `range` 二选一，都缺省时取今天。 */
+  date?: string
+  /** 闭区间；`to` 缺省等于 `from`。 */
+  range?: { from: string; to?: string }
+  filters?: {
+    /** 终态：done / stopped / failed。 */
+    terminal?: RunsHistoryRecord['terminal'][]
+    kind?: import('./runs').RunKind[]
+    projectId?: string
+    sessionId?: string
+    /** 模型 id 精确匹配。 */
+    model?: string
+    /** 标题包含（不分大小写）。 */
+    query?: string
+  }
+  /** 最多返回多少条（默认 500，上限 2000）。 */
+  limit?: number
+}
+
+/** `yan:runs:history` 的结果：按结束时间倒序，坏行跳过并把失败分片单列。 */
+export interface RunsHistoryResult {
+  ok: boolean
+  error?: string
+  records: RunsHistoryRecord[]
+  /** 实际读取的日期分片（升序）。 */
+  days: string[]
+  /** 命中上限，结果被截断。 */
+  truncated: boolean
+  /** 读取失败的分片（权限 / IO），其余分片仍返回。 */
+  failures?: { day: string; error: string }[]
+}
+
+/** `yan:runs:stop` 的结果：只接受仍在运行且已登记的那一次运行。 */
+export interface RunsStopResult {
+  ok: boolean
+  error?: string
+  runId?: string
+  kind?: import('./runs').RunKind
+  /**
+   * 停止会话运行时先 `clear_queue` 拿回的排队文本（形状同 `QueueSnapshot`）。
+   * 有值时渲染端必须放回输入框或逐条可见，不能静默丢弃。
+   */
+  recovered?: { steering: string[]; followUp: string[] }
+}
+
+/** `inkstone://` 深链接导航意图：主进程已解析校验的白名单动作，渲染端只导航。 */
+export type DeepLinkIntent =
+  | { action: 'session'; sessionId: string; entryId?: string }
+  | { action: 'new-session'; text?: string }
+  | { action: 'settings'; section: string }
+  | { action: 'runs' }
+
 export interface YanBridge {
   /** 宿主显式启动隔离探针时为真；普通窗口与打包产品不开放 store 调试引用。 */
   readonly probeMode: boolean
@@ -3173,6 +3319,39 @@ export interface YanBridge {
   runnerStatuses(): Promise<RunnerStatus[]>
   /** 停掉**某一个**运行实例（只影响它，不涉及别的会话） */
   stopRunner(id: string): Promise<boolean>
+  /**
+   * 运行注册表（v3 WP-10）：全局运行状态，侧栏状态点与「运行总览」共用。
+   *
+   * 与 `runnerStatuses()`（进程级实例状态）分开：这里每轮一个运行实例，
+   * 回答的是「这次任务跑到哪一步、是否在等我」。
+   */
+  runs: {
+    /** 先同步冲出待发增量，再取全量；返回的 revision 与紧随其后的推送对齐。 */
+    snapshot(): Promise<{ revision: number; runs: import('./runs').RunSnapshot[] }>
+    /** 标记某次运行「已看过」（清除未读点）；返回它此前是否已登记。 */
+    markSeen(runId: string): Promise<{ ok: boolean }>
+    /** 读运行历史（有界、坏行跳过）；供运行总览的日期切换与运行时间线使用。 */
+    history(query: RunsHistoryQuery): Promise<RunsHistoryResult>
+    /**
+     * 停止一次仍在运行的运行。会话运行与界面停止按钮同一条路径（
+     * `AgentController.abort()` 的 clear_queue + abort 语义）；
+     * runId 不存在 / 已结束 / 不在登记表里一律 `{ ok: false }`。
+     */
+    stop(runId: string): Promise<RunsStopResult>
+  }
+  /**
+   * 代码评审（v3 WP-50，§10.2）：变更集 / 批注 / 提交 / 推送 / PR。
+   * 契约在 `shared/review.ts`，主进程接线在 `src/main/ipc/review-ipc.ts`。
+   *
+   * 注意：`annotationTask` 与 `start` 都带 `query`，由主进程**重新读**变更集；
+   * 渲染端不能靠传一个伪造的 changeSet 对象把评审运行指到别的目录。
+   */
+  review: import('./review').ReviewBridge
+  /**
+   * 跨设备同步（v3 WP-53）：同步文件夹配置、立即同步、冲突逐条处理、会话导出 / 导入。
+   * 契约在 `shared/sync.ts`，主进程接线在 `src/main/ipc/sync-ipc.ts`。
+   */
+  sync: import('./sync').SyncBridge
   start(cwd?: string): Promise<{ ok: boolean; error?: string; state?: SessionState }>
   send(text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp'): Promise<{ ok: boolean; error?: string }>
   steer(text: string): Promise<{ ok: boolean; error?: string }>
@@ -3181,6 +3360,11 @@ export interface YanBridge {
   steerQueued(queueId: string): Promise<{ ok: boolean; error?: string }>
   /** 撤回一条仍在队列中的消息，并把文字与图片交回草稿。 */
   removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }>
+  /**
+   * 队列编辑 / 重排（WP-24b）：把目标顺序交给主进程 clear_queue 后重建。
+   * 失败且无法恢复原队列时返回 `dropped`，渲染端必须回填输入框。
+   */
+  queueEdit(next: QueueState): Promise<{ ok: boolean; error?: string; dropped?: QueueItem[] }>
   /**
    * 中止。按 pi 的约定先 clear_queue 再 abort，把清出来的队列文本返回，
    * 客户端应把它放回输入框（否则用户排的话就白打了）。
@@ -3245,7 +3429,9 @@ export interface YanBridge {
     sessionId: string,
     spaceId: string | null
   ): Promise<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>
-  compact(): Promise<{ ok: boolean; error?: string }>
+  /** Native operations require an exact foreground session identity; never exposed through remote capability commands. */
+  nativeSession(request: import('./native-session-host').NativeSessionHostRequest): Promise<import('./native-session-host').NativeSessionHostResult>
+  compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }>
   /**
    * 给会话起名（写进 JSONL，TUI 的 /resume 也看得到）。
    *
@@ -3260,7 +3446,7 @@ export interface YanBridge {
   clone(): Promise<{ ok: boolean; error?: string }>
   forkPoints(): Promise<ForkPoint[]>
   /** 导出当前会话为 HTML */
-  exportHtml(): Promise<{ ok: boolean; path?: string; error?: string }>
+  exportHtml(outputPath?: string): Promise<{ ok: boolean; path?: string; error?: string }>
   /**
    * 将一份会话移到砚的回收站。返回的 token 只在本次应用运行期间可用于撤销。
    * UI 必须先完成自己的明确确认，主进程仍会拒绝当前会话。
@@ -3269,8 +3455,8 @@ export interface YanBridge {
   /** 撤销本次运行内刚刚执行的会话删除。 */
   restoreSession(undoToken: string): Promise<{ ok: boolean; error?: string }>
 
-  /* 直执行 bash（不进 LLM 的工具调用） */
-  runBash(command: string): Promise<{ ok: boolean; error?: string }>
+  /* 直执行 bash（不进 LLM 的工具调用）。`!!` 前缀把输出排除在模型上下文之外。 */
+  runBash(command: string, options?: { excludeFromContext?: boolean }): Promise<{ ok: boolean; error?: string }>
   abortBash(): Promise<void>
 
   /* 模型 / 思考 */
@@ -3606,6 +3792,8 @@ export interface YanBridge {
    * 会把 hotkeys 那类场景的按键全吃掉。真实用户路径不受影响。
    */
   readonly isProbe: boolean
+  /** 环境变量 `YAN_UI` 指定的外壳（开发用）；未指定为 null，按设置 `uiVersion` 决定。 */
+  readonly uiVersionEnv: 'v2' | 'v3' | null
 
   /* 窗口 */
   win: {
@@ -3633,6 +3821,11 @@ export interface YanBridge {
    */
   onHotkey(cb: (action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking') => void): () => void
   /**
+   * 订阅主进程投递的 `inkstone://` 深链接意图（已解析校验，白名单动作）。
+   * 渲染端只按意图导航：打开会话 / 新建会话并预填草稿 / 打开设置分区 / 打开运行总览。
+   */
+  onDeepLink(cb: (intent: DeepLinkIntent) => void): () => void
+  /**
    * 告诉主进程「现在有模态层打开」，让它**暂停** cycleModel / cycleThinking 的
    * 全局拦截（缩放不受影响）。
    *
@@ -3641,6 +3834,11 @@ export interface YanBridge {
    * 因此永远做不了反向焦点导航。守卫状态必须由渲染端上报。
    */
   setHotkeyGuard(paused: boolean): void
+  /**
+   * 上报系统「减少动态效果」（L12）：渲染端读 `prefers-reduced-motion` 后单向 send。
+   * 主进程据此决定托盘状态符号是否播放柔和闪动；未上报前保持静态。
+   */
+  setMotionPreference(reduced: boolean): void
   /** 读界面缩放现状（含自动模式下算出的倍率与屏幕缩放） */
   getZoom(): Promise<ZoomState>
   /** 设界面缩放（0 = 自动），返回生效后的状态 */
@@ -3800,6 +3998,13 @@ export interface YanBridge {
   }
   /** 能力页读取当前 runner 的 Skill/MCP，并显式验证 / 取消 MCP 连接。 */
   capabilities: CapabilitiesBridge
+  /** MCP 服务归属双向切换（设计 A3）：预览只读，确认后提交；令牌只由主进程生成。 */
+  mcpApp: McpAppBridge
+  /**
+   * MCP App 视图桥（A6）：prepare / dispatch / release / audit / snapshot / refresh。
+   * 渲染端只传 callId / instanceId / JSON-RPC 消息；owner / grant / 权限档由主进程派生。
+   */
+  mcpApps: McpAppViewApi
   git: GitBridge
 
   /* 内置浏览器 */

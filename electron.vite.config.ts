@@ -102,7 +102,16 @@ export default defineConfig({
       alias: { '@': resolve('src/renderer/src') }
     },
     build: {
-      rollupOptions: { input: { index: resolve('src/renderer/index.html') } }
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          // 辅助小窗（v3 WP-25d / WP-12）：独立 html 入口，共用主 preload 与新暴露的 auxBridge
+          'auxwin/quick-ask': resolve('src/renderer/auxwin/quick-ask.html'),
+          'auxwin/mini': resolve('src/renderer/auxwin/mini.html'),
+          // 页签弹出窗（v3 WP-30 弹出）：独立 html 入口，共用主 preload 与新暴露的 paneBridge
+          'auxwin/pane': resolve('src/renderer/auxwin/pane.html')
+        }
+      }
     },
     plugins: [react()]
   }

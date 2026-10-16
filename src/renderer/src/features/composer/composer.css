@@ -1,0 +1,809 @@
+@layer features {
+  /* 输入框版面（WP-24）。控件外观归 ui/ 与 patterns/，这里只管输入区自己的版面。 */
+
+  /*
+   * 思考档位色（七个，冷 → 暖）。v3 `tokens.css` 没有档位色令牌，按规格在这里
+   * 用现有令牌派生：off 用中性灰，其余依次取数据色板的灰蓝 / 青 / 蓝 / 鸢尾紫 /
+   * 品红与失败红。输入框顶边与模型菜单里的点、徽标、刻度共用这一套值。
+   */
+  :root {
+    --think-off: var(--fg3);
+    --think-minimal: var(--data-8);
+    --think-low: var(--data-2);
+    --think-medium: var(--data-1);
+    --think-high: var(--data-3);
+    --think-xhigh: var(--data-4);
+    --think-max: var(--fail);
+  }
+
+  /* 输入框外框：上方放框外队列，下方放会话统计行 */
+  .composer-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    width: 100%;
+  }
+
+  .composer {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    width: 100%;
+    /* 底栏按输入框自身宽度做容器查询，不随窗口宽度误判 */
+    container-type: inline-size;
+    padding: var(--s-8) var(--s-10) var(--s-6);
+    border: 1px solid var(--line);
+    border-radius: var(--r-xl);
+    background: var(--surface);
+    box-shadow: var(--shadow-comp);
+    color: var(--fg);
+  }
+
+  .composer-wrap.is-dropping .composer {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--sel);
+  }
+
+  /*
+   * 输入框顶边：空闲时完全不可见、也不占高度；只有运行时（`data-state='working'`）
+   * 才按思考档位亮起（与模型菜单同一套 `--think-*`）。
+   *
+   * 贴边方式：绝对定位到卡片 1px 边框外侧、继承卡片圆角，只染上边——这样顶边在
+   * 圆角处跟着弯，不会像直角色条那样从圆角外伸出来。`data-phase` 供样式与诊断
+   * 读取；阶段文字与计时仍归运行位和回合活动行，不在这里重复。
+   */
+  .cborder {
+    position: absolute;
+    inset: -1px;
+    z-index: 1;
+    border: 1px solid transparent;
+    border-radius: inherit;
+    border-top-color: var(--think-off, var(--fg3));
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity var(--dur-expand) var(--ease),
+      border-top-color var(--dur-expand) var(--ease);
+  }
+
+  .cborder[data-state='working'] {
+    opacity: 1;
+  }
+
+  .cborder[data-level='minimal'] {
+    border-top-color: var(--think-minimal, var(--data-8));
+  }
+
+  .cborder[data-level='low'] {
+    border-top-color: var(--think-low, var(--data-2));
+  }
+
+  .cborder[data-level='medium'] {
+    border-top-color: var(--think-medium, var(--data-1));
+  }
+
+  .cborder[data-level='high'] {
+    border-top-color: var(--think-high, var(--data-3));
+  }
+
+  .cborder[data-level='xhigh'] {
+    border-top-color: var(--think-xhigh, var(--data-4));
+  }
+
+  .cborder[data-level='max'] {
+    border-top-color: var(--think-max, var(--fail));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cborder {
+      transition: none;
+    }
+  }
+
+  /* ---------------------------------------------------------- 队列 / 待投递 */
+
+  .composer-queue {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+  }
+
+  .cq-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-height: 26px;
+    padding: 0 var(--s-8);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .cq-pending {
+    background: var(--sel);
+    color: var(--fg);
+  }
+
+  .cq-icon {
+    flex: none;
+    color: var(--fg3);
+  }
+
+  .cq-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cq-tag {
+    flex: none;
+    color: var(--fg3);
+  }
+
+  .cq-tag-run {
+    color: var(--run);
+  }
+
+  .cq-btn {
+    flex: none;
+    height: 20px;
+    padding: 0 var(--s-6);
+    border: 1px solid var(--line);
+    border-radius: var(--r-xs);
+    background: transparent;
+    color: var(--fg2);
+    font: inherit;
+    font-size: var(--t-meta);
+    cursor: pointer;
+  }
+
+  .cq-btn:hover {
+    color: var(--fg);
+    background: var(--surface);
+  }
+
+  .cq-primary {
+    border-color: transparent;
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+
+  .cq-primary:hover {
+    background: var(--ink-hover);
+    color: var(--on-ink);
+  }
+
+  .cq-icon-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: var(--r-xs);
+    background: transparent;
+    color: var(--fg3);
+    cursor: pointer;
+  }
+
+  .cq-icon-btn:hover {
+    background: var(--surface);
+    color: var(--fg);
+  }
+
+  /* ---------------------------------------------------------------- 附件 */
+
+  .composer-attachments {
+    display: flex;
+    gap: var(--s-6);
+    overflow-x: auto;
+    padding-bottom: var(--s-2);
+  }
+
+  .ca-tile {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    flex: none;
+    max-width: 220px;
+    height: 32px;
+    padding: 0 var(--s-8) 0 var(--s-4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .ca-thumb {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--r-xs);
+    object-fit: cover;
+  }
+
+  .ca-file-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--r-xs);
+    background: var(--surface);
+    color: var(--fg2);
+  }
+
+  .ca-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ca-size {
+    flex: none;
+    color: var(--fg3);
+  }
+
+  .ca-del {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: var(--r-xs);
+    background: transparent;
+    color: var(--fg3);
+    cursor: pointer;
+  }
+
+  .ca-del:hover {
+    background: var(--surface);
+    color: var(--fg);
+  }
+
+  /* ------------------------------------------------------------- 输入与底栏 */
+
+  .composer-input {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  /* 输入行：左侧提示符（`›` / `$`，装饰性）+ 文本框 */
+  .composer-line {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .composer-prompt {
+    flex: none;
+    padding-top: var(--s-4);
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-body);
+    line-height: var(--d-prose-lh, 1.5);
+    user-select: none;
+  }
+
+  .composer-text {
+    width: 100%;
+    min-height: 56px;
+    max-height: 200px;
+    padding: var(--s-4) var(--s-6);
+    border: none;
+    background: transparent;
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: var(--t-body);
+    line-height: var(--d-prose-lh, 1.5);
+    resize: none;
+    outline: none;
+    overflow-y: auto;
+  }
+
+  /* 有提示符时，左侧留白交给提示符与间距，文本框不再重复内缩 */
+  .composer-line .composer-text {
+    padding-left: 0;
+  }
+
+  .composer-text::placeholder {
+    color: var(--fg3);
+  }
+
+  /*
+   * 底栏：左组吃掉余下宽度并裁切，右组各项不挤压左组。窄宽时先让模型名省略，
+   * 次要项（发送键提示、上下文百分比、进度环）按输入框自身宽度（容器查询）隐藏。
+   */
+  .composer-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .composer-bar > * {
+    flex: none;
+  }
+
+  .composer-bar > .mtp-wrap {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  /* 左侧控件组：模式徽标 · 权限 · ＋ · 发送键提示，占满余下宽度 */
+  .composer-tools {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .composer-tools > * {
+    min-width: 0;
+  }
+
+  .composer-tools > .composer-plus {
+    flex: none;
+  }
+
+  .composer-spacer {
+    flex: 1;
+  }
+
+  .composer-mode {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    height: var(--size-icon);
+    padding: 0 var(--s-6);
+    border-radius: var(--r-xs);
+    background: var(--sel);
+    color: var(--accent);
+    font-size: var(--t-meta);
+    white-space: nowrap;
+  }
+
+  .composer-keyhint {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 语音输入：录音中显示红点与时长，转写状态给一行小字 */
+  .composer-voice {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .composer-voice-dot {
+    flex: none;
+    width: var(--s-6);
+    height: var(--s-6);
+    border-radius: var(--r-full);
+    background: var(--fail);
+    animation: v3-voice-pulse var(--dur-breathe) var(--ease) infinite;
+  }
+
+  .composer-voice-time,
+  .composer-voice-state {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .composer-voice-error {
+    max-width: 16ch;
+    overflow: hidden;
+    color: var(--fail);
+    font-size: var(--t-meta);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @keyframes v3-voice-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  /* ------------------------------------------------------- 会话统计行 */
+
+  .composer-usage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-4);
+    min-width: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  /* 统计是安静的一行小字：触发器压到 20px 行高，框下只占一行字的高度 */
+  .cu-trigger {
+    height: 20px;
+    padding: 0 var(--s-6);
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .cu-pop {
+    z-index: 40;
+    min-width: 240px;
+    padding: var(--s-10);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    color: var(--fg);
+  }
+
+  .cu-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    outline: none;
+  }
+
+  .cu-title {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+  }
+
+  .cu-kv {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    margin: 0;
+  }
+
+  .cu-kv-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-8);
+  }
+
+  .cu-kv-row dt {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .cu-kv-row dd {
+    margin: 0 0 0 auto;
+    color: var(--fg);
+    font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cu-note {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: 1.4;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .composer-voice-dot {
+      animation: none;
+    }
+  }
+
+  .composer-send {
+    flex: none;
+    min-width: var(--size-btn);
+    padding: 0;
+    border-radius: var(--r-full);
+  }
+
+  .composer-plus {
+    flex: none;
+  }
+
+  .composer-plus-glyph {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  /* 权限入口可收窄：标签省略而不是越出左组去压右侧控件 */
+  .composer-permission {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .cp-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ------------------------------------------------------- ＋ 菜单（浮层） */
+
+  /* 按内容宽度，最宽 420px，从触发按钮处左对齐弹出（placement 为 top start） */
+  .composer-plus-pop,
+  .composer-permission-pop {
+    z-index: 40;
+    width: max-content;
+    max-width: min(420px, calc(100vw - 16px));
+    min-width: 200px;
+    padding: var(--s-4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    color: var(--fg);
+  }
+
+  .composer-plus-menu,
+  .composer-permission-menu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    outline: none;
+  }
+
+  /* 一行内图标与文字居中对齐；说明文字单起一行 */
+  .cpm-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-4) var(--s-8);
+    padding: var(--s-6) var(--s-8);
+    border-radius: var(--r-sm);
+    color: var(--fg);
+    font-size: var(--t-ui);
+    line-height: 1.4;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .cpm-item > svg {
+    flex: none;
+  }
+
+  /* 只有一个高亮：悬停或键盘焦点所在项；当前选中项用强调色字 + 勾选，不再染底 */
+  .cpm-item[data-hovered],
+  .cpm-item[data-focused] {
+    background: var(--sel);
+  }
+
+  .cpm-item[data-current='true'] {
+    color: var(--accent);
+  }
+
+  .cpm-check {
+    flex: none;
+    margin-left: auto;
+    color: var(--accent);
+  }
+
+  .cpm-label {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .cpm-hint {
+    flex-basis: 100%;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .cpm-sep {
+    height: 1px;
+    margin: var(--s-2) 0;
+    background: var(--line);
+    border: none;
+  }
+
+  /* ---------------------------------------------------------- 权限确认弹层 */
+
+  .composer-perm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(0 0 0 / 0.35);
+  }
+
+  .composer-perm-modal {
+    width: min(380px, calc(100vw - 32px));
+    padding: var(--s-16);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+  }
+
+  .composer-perm-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-10);
+    outline: none;
+  }
+
+  .composer-perm-title {
+    margin: 0;
+    font-size: var(--t-title);
+    font-weight: 600;
+  }
+
+  .composer-perm-body {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-ui);
+    line-height: 1.5;
+  }
+
+  .composer-perm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-8);
+  }
+
+  /* `/` 命令与 `@` 路径候选：贴在输入行上方，随内容纵向滚动，不撑宽输入框。 */
+  .cmp-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 260px;
+    min-width: 0;
+    margin-bottom: var(--s-4);
+    padding-bottom: var(--s-2);
+    overflow: hidden auto;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--font-ui);
+    font-size: var(--t-ui);
+  }
+
+  .cmp-group {
+    padding: var(--s-4) var(--s-4) var(--s-2);
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .cmp-item {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--s-6);
+    min-width: 0;
+    padding: var(--s-2) var(--s-4);
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .cmp-item[data-selected] {
+    background: var(--sel);
+  }
+
+  .cmp-item:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+
+  .cmp-name {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cmp-desc {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg3);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cmp-src {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .cmp-empty,
+  .cmp-hint {
+    padding: var(--s-2) var(--s-4);
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .cmp-hint {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2) var(--s-8);
+  }
+
+  .cmp-count {
+    margin-left: auto;
+  }
+
+  /* 手动派发子 Agent 表单 */
+  .v3-delegate {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+    min-width: 0;
+    width: min(520px, 80vw);
+  }
+
+  .v3-delegate-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-12);
+  }
+
+  .v3-delegate-target,
+  .v3-delegate-hint,
+  .v3-delegate-error {
+    margin: 0;
+    font-size: var(--t-meta);
+    overflow-wrap: anywhere;
+  }
+
+  .v3-delegate-target,
+  .v3-delegate-hint {
+    color: var(--fg3);
+  }
+
+  .v3-delegate-error {
+    color: var(--fail-t);
+  }
+
+  .v3-delegate-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-8);
+  }
+
+  /*
+   * 底栏窄宽降级（按输入框宽度）：先去掉发送键提示，再收起上下文百分比，
+   * 最窄时连进度环一起收起；模型名与权限标签靠各自的省略号让位。
+   */
+  @container (max-width: 620px) {
+    .composer-keyhint {
+      display: none;
+    }
+
+    .composer-bar .ctx-ring-text {
+      display: none;
+    }
+  }
+
+  @container (max-width: 480px) {
+    .composer-bar .ctx-ring-wrap {
+      display: none;
+    }
+  }
+}

@@ -1,0 +1,134 @@
+/*
+ * v3 内置浏览器版面（层 features）。
+ *
+ * 只管面板自己的排版与层级；按钮/输入/标签页的控件外观来自 `ui/`。
+ * 原生网页由主进程 WebContentsView 覆盖在 .v3-browser__viewport 上，
+ * 所以这里不给 viewport 画背景色（否则关闭时会闪一层色）。
+ */
+@layer features {
+  .v3-browser {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+  }
+
+  .v3-browser--gate {
+    align-items: center;
+    justify-content: center;
+    padding: var(--s-24);
+    text-align: center;
+  }
+
+  .v3-browser__gate-text {
+    max-width: 42ch;
+    margin: 0;
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    color: var(--fg2);
+  }
+
+  /* ---------------------------------------------------------- 标签栏 */
+
+  .v3-browser__tabsrow {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+    padding: var(--s-6) var(--s-8) 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .v3-browser__tablist {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .v3-browser__tab {
+    max-width: 220px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .v3-browser__tab .ui-tab__label {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .v3-browser__newtab {
+    flex: none;
+    margin-bottom: var(--s-4);
+  }
+
+  /* ---------------------------------------------------------- 工具栏 */
+
+  .v3-browser__toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    padding: var(--s-6) var(--s-8);
+  }
+
+  .v3-browser__address {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+  }
+
+  .v3-browser__address-field {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .v3-browser__input {
+    height: var(--size-btn);
+  }
+
+  /* ---------------------------------------------------------- 状态行 */
+
+  .v3-browser__status {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    padding: 0 var(--s-8) var(--s-6);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    color: var(--fg2);
+  }
+
+  .v3-browser__loaderror {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-6);
+    color: var(--fail-t);
+  }
+
+  .v3-browser__error,
+  .v3-browser__loading {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v3-browser__error-url {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    color: var(--fg3);
+  }
+
+  /* --------------------------------------------------- 原生网页占位区 */
+
+  .v3-browser__viewport {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    position: relative;
+  }
+}

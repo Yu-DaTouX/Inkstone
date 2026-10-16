@@ -1,0 +1,343 @@
+@layer patterns {
+  /*
+   * 运行状态点 / 提醒条 / 运行详情浮层（WP-11–14）。外观归 patterns。
+   *
+   * 语义不只靠颜色：运行是唯一呼吸的点；等你确认带外圈；停滞是空心环；
+   * 失败是方点；完成透明，未读时中间一个小点。读屏词由组件的 aria-label /
+   * title 提供，颜色只是辅助。
+   */
+
+  /* ---------------- 状态点 ---------------- */
+
+  .run-dot {
+    display: inline-block;
+    flex: none;
+    width: var(--size-dot);
+    height: var(--size-dot);
+    box-sizing: border-box;
+    border-radius: var(--r-full);
+    vertical-align: middle;
+  }
+
+  .run-dot[data-kind='none'] {
+    background: transparent;
+  }
+
+  /* 运行中：全窗口唯一的呼吸信号（回合活动行另算，这里只标这个运行） */
+  .run-dot[data-kind='running'] {
+    background: var(--run);
+    animation: run-dot-breathe var(--dur-breathe) var(--ease) infinite;
+  }
+
+  /* 排队：虚边空心，表示还没开始 */
+  .run-dot[data-kind='queued'] {
+    background: transparent;
+    border: 1.5px dashed var(--run);
+  }
+
+  /* 等你确认：实心 + 外圈 */
+  .run-dot[data-kind='needs-you'] {
+    background: var(--ask);
+    box-shadow: 0 0 0 2px var(--ask-bg);
+  }
+
+  /* 停滞：空心环（形状区别于实心的等待） */
+  .run-dot[data-kind='stalled'] {
+    background: transparent;
+    border: 1.5px solid var(--stall);
+  }
+
+  /* 失败：方点（形状区别于圆点） */
+  .run-dot[data-kind='failed'] {
+    background: var(--fail);
+    border-radius: 2px;
+  }
+
+  /* 已停止：暗色空心 */
+  .run-dot[data-kind='stopped'] {
+    background: transparent;
+    border: 1.5px solid var(--line2);
+  }
+
+  /* 完成：透明；未读时中间一个小点 */
+  .run-dot[data-kind='done'] {
+    background: transparent;
+    border: none;
+  }
+
+  .run-dot[data-kind='done'][data-unread='1']::after {
+    content: '';
+    display: block;
+    width: var(--size-dot-unread);
+    height: var(--size-dot-unread);
+    margin: 1px;
+    border-radius: var(--r-full);
+    background: var(--accent);
+  }
+
+  @keyframes run-dot-breathe {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.4;
+      transform: scale(0.78);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .run-dot[data-kind='running'] {
+      animation: none;
+    }
+  }
+
+  /* ---------------- 提醒条 ---------------- */
+
+  .run-pills {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .run-pill {
+    display: inline-flex;
+    align-items: center;
+    max-width: 320px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-full);
+    background: var(--surface);
+    box-shadow: var(--shadow-comp);
+    overflow: hidden;
+  }
+
+  .run-pill[data-tone='ask'] {
+    border-color: var(--ask);
+  }
+
+  .run-pill[data-tone='stall'] {
+    border-color: var(--stall);
+  }
+
+  .run-pill[data-tone='fail'] {
+    border-color: var(--fail);
+  }
+
+  .run-pill-main {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+    min-height: 26px;
+    padding: 0 var(--s-8);
+    border: none;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .run-pill-main:hover {
+    background: var(--sel);
+  }
+
+  .run-pill-main:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .run-pill-code {
+    flex: none;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .run-pill-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--t-ui);
+  }
+
+  .run-pill-word {
+    flex: none;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .run-pill-close {
+    align-self: stretch;
+    height: auto;
+    min-height: 26px;
+    border-radius: 0;
+  }
+
+  .run-pill-all {
+    min-height: 26px;
+    padding: 0 var(--s-8);
+    border: none;
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    font-size: var(--t-meta);
+    cursor: pointer;
+  }
+
+  .run-pill-all:hover {
+    background: var(--sel);
+  }
+
+  /* ---------------- 运行详情浮层 ---------------- */
+
+  .run-pop {
+    z-index: 40;
+    width: min(420px, calc(100vw - 24px));
+    padding: var(--s-12);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    color: var(--fg);
+  }
+
+  .run-pop-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 260px;
+    outline: none;
+  }
+
+  .run-pop-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-8);
+  }
+
+  .run-pop-title {
+    margin: 0;
+    font-size: var(--t-ui);
+    font-weight: 600;
+  }
+
+  .run-pop-count {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .run-pop-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    max-height: 360px;
+    overflow: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .run-pop-empty {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-ui);
+  }
+
+  .run-pop-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    column-gap: var(--s-8);
+    row-gap: 2px;
+    align-items: center;
+    width: 100%;
+    padding: var(--s-6) var(--s-8);
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .run-pop-row:hover {
+    background: var(--sel);
+  }
+
+  .run-pop-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .run-pop-row > .run-dot {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .run-pop-headline {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .run-pop-code {
+    flex: none;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .run-pop-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--t-ui);
+  }
+
+  .run-pop-status {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    white-space: nowrap;
+  }
+
+  .run-pop-meta {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    gap: var(--s-8);
+    min-width: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .run-pop-meta > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .run-pop-time {
+    grid-column: 3;
+    grid-row: 2;
+    justify-self: end;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+}

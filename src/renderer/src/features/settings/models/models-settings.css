@@ -1,0 +1,561 @@
+@layer features {
+  /*
+   * 设置 → 模型与服务的版面（S1）。
+   * 只写 flex / 间距 / 截断 / 滚动；颜色、圆角、字号一律取现有 tokens，
+   * 控件外观来自 `ui/ui.css`（primitives 层）。模块不新增设计变量。
+   */
+
+  /*
+   * 本页挂在 S0 设置页的 `.settings-main` 内（padding / 滚动 / 左栏由父级提供），
+   * 所以根容器不再自己加页面内边距或滚动，避免套一层滚动与双层留白。
+   */
+  .ms-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .ms-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-12);
+    margin-bottom: var(--s-16);
+    max-width: var(--size-col);
+    flex-wrap: wrap;
+  }
+
+  .ms-title {
+    margin: 0;
+    font-size: var(--t-h2);
+    line-height: var(--t-h2-lh);
+  }
+
+  .ms-tabs {
+    display: flex;
+    gap: var(--s-6);
+  }
+
+  .ms-msg {
+    padding: var(--s-8) var(--s-12);
+    margin-bottom: var(--s-12);
+    border-radius: var(--r-md);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    max-width: var(--size-col);
+  }
+
+  .ms-msg--ok {
+    background: var(--add-bg);
+    color: var(--add);
+  }
+
+  .ms-msg--err {
+    background: var(--fail-bg);
+    color: var(--fail-t);
+  }
+
+  .ms-msg--info {
+    background: var(--sunken);
+    color: var(--fg2);
+  }
+
+  .ms-services,
+  .ms-catalog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-16);
+    max-width: var(--size-col);
+    min-width: 0;
+  }
+
+  .ms-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+  }
+
+  .ms-toolbar-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ms-summary {
+    font-size: var(--t-body);
+    color: var(--fg);
+  }
+
+  .ms-safety,
+  .ms-count {
+    font-size: var(--t-meta);
+    color: var(--fg3);
+  }
+
+  .ms-count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 目录工具条：搜索框占满剩余宽度，其余控件不收缩 */
+  .ms-catalog .ms-toolbar .ms-search {
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .ms-catalog .ms-toolbar .ms-filter {
+    flex: none;
+  }
+
+  .ms-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+  }
+
+  .ms-group-title {
+    margin: 0;
+    font-size: var(--t-body);
+    color: var(--fg2);
+    font-weight: 600;
+  }
+
+  .ms-note {
+    margin: 0;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg3);
+  }
+
+  .ms-fileinfo {
+    margin: 0;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg3);
+    overflow-wrap: anywhere;
+  }
+
+  .ms-fileinfo code {
+    font-family: var(--font-mono);
+  }
+
+  /* ---------------- 服务行 ---------------- */
+
+  .ms-service {
+    padding: var(--s-10) var(--s-12);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+  }
+
+  .ms-service-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .ms-service-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .ms-service-name {
+    font-size: var(--t-body);
+    color: var(--fg);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ms-service-hint,
+  .ms-service-env {
+    margin: 0;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg3);
+  }
+
+  .ms-service-env code {
+    font-family: var(--font-mono);
+  }
+
+  .ms-service-warn {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--ask-t);
+  }
+
+  .ms-service-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+  }
+
+  .ms-key-edit {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--s-8);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ms-key-edit .ui-field {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ms-cli {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-6);
+    font-size: var(--t-meta);
+    color: var(--fg3);
+  }
+
+  .ms-cli code {
+    font-family: var(--font-mono);
+    padding: 2px var(--s-6);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+  }
+
+  /* ---------------- 登录面板 ---------------- */
+
+  .ms-oauth {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    padding: var(--s-8) var(--s-10);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+  }
+
+  .ms-oauth-status {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .ms-oauth-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .ms-oauth-row form,
+  .ms-oauth-prompt form {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ms-oauth-code {
+    font-family: var(--font-mono);
+    font-size: var(--t-body);
+    letter-spacing: 0.08em;
+  }
+
+  .ms-oauth-prompt {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .ms-oauth-prompt p {
+    margin: 0;
+  }
+
+  /* ---------------- 思考能力 ---------------- */
+
+  .ms-thinking {
+    padding: var(--s-12);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--sunken);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+  }
+
+  .ms-thinking-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+  }
+
+  .ms-thinking-title {
+    font-size: var(--t-body);
+    color: var(--fg);
+  }
+
+  .ms-thinking-model {
+    font-size: var(--t-meta);
+    color: var(--fg3);
+  }
+
+  .ms-levels {
+    display: flex;
+    gap: var(--s-6);
+    flex-wrap: wrap;
+  }
+
+  .ms-level {
+    padding: 2px var(--s-8);
+    border: 1px solid var(--line2);
+    border-radius: var(--r-sm);
+    font-size: var(--t-meta);
+    color: var(--fg2);
+  }
+
+  .ms-level[data-active='1'] {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--sel);
+  }
+
+  .ms-thinking-note,
+  .ms-thinking-source {
+    margin: 0;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg3);
+  }
+
+  /* ---------------- 模型目录 ---------------- */
+
+  .ms-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+  }
+
+  .ms-model {
+    display: flex;
+    align-items: center;
+    gap: var(--s-12);
+    padding: var(--s-8) var(--s-12);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  .ms-model[data-current='1'] {
+    border-color: var(--accent);
+    background: var(--sel);
+  }
+
+  .ms-model[data-available='0'] {
+    opacity: 0.7;
+  }
+
+  .ms-model-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+  }
+
+  .ms-model-name {
+    font-size: var(--t-body);
+    color: var(--fg);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ms-model-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+    font-size: var(--t-meta);
+    color: var(--fg3);
+  }
+
+  .ms-reason--known {
+    color: var(--run-t);
+  }
+
+  .ms-reason--unsupported {
+    color: var(--fg3);
+  }
+
+  .ms-reason--unknown {
+    color: var(--fg3);
+    font-style: italic;
+  }
+
+  .ms-warn {
+    color: var(--ask-t);
+  }
+
+  .ms-model-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    flex: none;
+  }
+
+  .ms-empty {
+    margin: 0;
+    padding: var(--s-20) 0;
+    text-align: center;
+    font-size: var(--t-meta);
+    color: var(--fg3);
+  }
+
+  /* ---------------- 确认对话框 ---------------- */
+
+  .ms-confirm-body {
+    margin: 0 0 var(--s-8);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg2);
+  }
+
+  .ms-confirm-target {
+    margin: 0 0 var(--s-16);
+    font-size: var(--t-body);
+    color: var(--fg);
+  }
+
+  .ms-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-8);
+  }
+
+  /* ---------------- 自定义端点 ---------------- */
+
+  .ms-custom {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-10);
+    padding: var(--s-12);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  .ms-group-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+  }
+
+  .ms-custom-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s-12);
+    flex-wrap: wrap;
+    padding: var(--s-8) var(--s-10);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+  }
+
+  .ms-custom-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+  }
+
+  .ms-custom-name {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+    font-size: var(--t-body);
+    color: var(--fg);
+    overflow-wrap: anywhere;
+  }
+
+  .ms-custom-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+    font-size: var(--t-meta);
+    color: var(--fg3);
+    overflow-wrap: anywhere;
+  }
+
+  .ms-custom-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+  }
+
+  .ms-custom-spacer {
+    flex: 1;
+  }
+
+  .ms-custom-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    padding: var(--s-10);
+    border: 1px solid var(--line2);
+    border-radius: var(--r-sm);
+  }
+
+  .ms-custom-form .ms-custom-input {
+    font-family: var(--font-mono);
+  }
+
+  .ms-custom-model {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) auto;
+    gap: var(--s-8);
+    align-items: center;
+  }
+
+  .ms-custom-test {
+    flex-basis: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .ms-custom-locals {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .ms-ok {
+    color: var(--run-t);
+  }
+
+  @media (max-width: 720px) {
+    .ms-custom-model {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

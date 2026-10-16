@@ -1,9 +1,22 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { uiVersionArgument } from '../shared/ui-version'
+import { MCP_APP_VIEW_CHANNELS } from '../shared/mcp-app-view'
 import type { HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
 import type {
   NativeMcpImportCommitResponse,
   NativeMcpImportPrepareResponse
 } from '../shared/mcp-native-import'
+import type {
+  McpAppOwnershipResponse,
+  McpAppSwitchCommitResponse,
+  McpAppSwitchPrepareResponse
+} from '../shared/mcp-app-switch'
+import type {
+  McpAppViewAuditEntry,
+  McpAppViewDescriptor,
+  McpAppViewRefreshResult,
+  McpAppViewSnapshot
+} from '../shared/mcp-app-view'
 import type {
   AppSettings,
   OAuthLoginEvent,
@@ -67,6 +80,8 @@ import type {
   ForkPoint,
   GitActionExpected,
   GitActionResult,
+  GitChangesResult,
+  GitDiffResult,
   GitRefOption,
   GitRepoState,
   KnowledgeActionResult,
@@ -107,7 +122,9 @@ import type {
   CustomProviderTestResult,
   LocalModelServer
 } from '../shared/ipc'
+import type { DeepLinkIntent } from '../shared/ipc'
 import type { WebSearchAvailability } from '../shared/web-search'
+import type { RunSnapshot } from '../shared/runs'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from '../shared/checkpoints'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { OfficeDocumentView } from '../shared/office'
@@ -120,6 +137,29 @@ import type { ContextBackgroundUsageSummary } from '../shared/context-background
 import type { ContextInspectSnapshot } from '../shared/context-inspect'
 import type { AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from '../shared/account-quota'
 import type { CodexFailoverResult } from '../shared/quota-failover'
+import type { AuxPush, MiniItem, QuickAskSubmit } from '../main/windows/aux-types'
+import { PANE_POPOUT_CHANNELS } from '../shared/pane-popout'
+import { PANE_BROWSER_CHANNELS } from '../shared/pane-popout'
+import type { PaneBrowserStateView } from '../shared/pane-popout'
+import type { BrowserLeaseResult } from '../main/windows/pane-browser-transfer'
+import type {
+  PaneActionEvent,
+  PaneActionRequest,
+  PaneActionResult,
+  PanePopoutAnyTabId,
+  PanePopoutOpenRequest,
+  PanePopoutOpenResult,
+  PaneProjectionEnvelope,
+  PaneStateView
+} from '../shared/pane-popout'
+import { PANE_TERMINAL_CHANNELS } from '../shared/pane-terminal'
+import type {
+  PaneTerminalBridge,
+  PaneTerminalLeaseView,
+  PaneTerminalOpenRequest,
+  PaneTerminalOpenResult,
+  PaneTerminalPushEvent
+} from '../shared/pane-terminal'
 /**
  * 白名单桥 —— renderer 全程 nodeIntegration:false + contextIsolation:true。
  * 这里的方法就是渲染端能碰到的**全部**能力（HANDOFF §9 原则 3）。
@@ -165,6 +205,7 @@ const api: YanBridge = {
   },
   /* 探针标记（YAN_PROBE）——渲染端唯一能知道自己在被验收的方式 */
   isProbe: !!process.env.YAN_PROBE,
+  uiVersionEnv: uiVersionArgument(process.argv),
 
   /* ---- 会话 ---- */
   start: () =>
@@ -174,6 +215,7 @@ const api: YanBridge = {
   followUp: (text) => invoke<Ok>('yan:followUp', text),
   steerQueued: (queueId) => invoke<Ok>('yan:steerQueued', queueId),
   removeQueued: (queueId) => invoke<Awaited<ReturnType<YanBridge['removeQueued']>>>('yan:removeQueued', queueId),
+  queueEdit: (next) => invoke<Awaited<ReturnType<YanBridge['queueEdit']>>>('yan:queueEdit', next),
   abort: () => invoke<Awaited<ReturnType<YanBridge['abort']>>>('yan:abort'),
   newSession: (target) =>
     invoke<Ok & { id?: string; runId?: string; sessionId?: string; generation?: number }>('yan:newSession', target),
@@ -221,19 +263,57 @@ const api: YanBridge = {
   setSessionSpace: (sessionId, spaceId) =>
     invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:setSessionSpace', sessionId, spaceId),
   setVisibleRunnerSessions: (sessions) => invoke<boolean>('yan:setVisibleRunnerSessions', sessions),
+  /** Native operations require an exact foreground session identity; never exposed through remote capability commands. */
+  nativeSession: (request) => invoke<Awaited<ReturnType<YanBridge['nativeSession']>>>('yan:nativeSession', request),
   runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
   stopRunner: (id) => invoke<boolean>('yan:stopRunner', id),
-  compact: () => invoke<Ok>('yan:compact'),
+  /* 运行注册表（v3 WP-10）：全量快照 + 未读标记 + 运行历史 / 停止；增量走 onPush 的 'runs' 通道。 */
+  runs: {
+    snapshot: () => invoke<{ revision: number; runs: RunSnapshot[] }>('yan:runs:snapshot'),
+    markSeen: (runId) => invoke<{ ok: boolean }>('yan:runs:markSeen', runId),
+    history: (query) => invoke<Awaited<ReturnType<YanBridge['runs']['history']>>>('yan:runs:history', query),
+    stop: (runId) => invoke<Awaited<ReturnType<YanBridge['runs']['stop']>>>('yan:runs:stop', runId)
+  },
+  /* 代码评审（v3 WP-50，§10.2）：变更集 / 批注 / 提交 / 推送 / PR。 */
+  review: {
+    changeSet: (query) => invoke<Awaited<ReturnType<YanBridge['review']['changeSet']>>>('yan:review:changes', query),
+    diff: (query) => invoke<Awaited<ReturnType<YanBridge['review']['diff']>>>('yan:review:diff', query),
+    annotations: (changeSetId, scopeKey) =>
+      invoke<Awaited<ReturnType<YanBridge['review']['annotations']>>>('yan:review:annotations', changeSetId, scopeKey),
+    annotationAdd: (input) => invoke<Awaited<ReturnType<YanBridge['review']['annotationAdd']>>>('yan:review:annotationAdd', input),
+    annotationUpdate: (input) => invoke<Awaited<ReturnType<YanBridge['review']['annotationUpdate']>>>('yan:review:annotationUpdate', input),
+    annotationRemove: (input) => invoke<Awaited<ReturnType<YanBridge['review']['annotationRemove']>>>('yan:review:annotationRemove', input),
+    annotationClear: (input) => invoke<Awaited<ReturnType<YanBridge['review']['annotationClear']>>>('yan:review:annotationClear', input),
+    annotationTask: (query) => invoke<Awaited<ReturnType<YanBridge['review']['annotationTask']>>>('yan:review:annotationTask', { query }),
+    start: (req) => invoke<Awaited<ReturnType<YanBridge['review']['start']>>>('yan:review:start', req),
+    ghStatus: (cwd) => invoke<Awaited<ReturnType<YanBridge['review']['ghStatus']>>>('yan:review:ghStatus', cwd),
+    commit: (req) => invoke<Awaited<ReturnType<YanBridge['review']['commit']>>>('yan:review:commit', req),
+    push: (req) => invoke<Awaited<ReturnType<YanBridge['review']['push']>>>('yan:review:push', req),
+    pullRequest: (req) => invoke<Awaited<ReturnType<YanBridge['review']['pullRequest']>>>('yan:review:pr', req)
+  },
+  /* 跨设备同步（v3 WP-53）：配置、立即同步、冲突、会话导出 / 导入。 */
+  sync: {
+    status: () => invoke<Awaited<ReturnType<YanBridge['sync']['status']>>>('yan:sync:status'),
+    configure: (root) => invoke<Awaited<ReturnType<YanBridge['sync']['configure']>>>('yan:sync:configure', root),
+    now: () => invoke<Awaited<ReturnType<YanBridge['sync']['now']>>>('yan:sync:now'),
+    conflicts: () => invoke<Awaited<ReturnType<YanBridge['sync']['conflicts']>>>('yan:sync:conflicts'),
+    resolve: (id, resolution) =>
+      invoke<Awaited<ReturnType<YanBridge['sync']['resolve']>>>('yan:sync:resolve', id, resolution),
+    exportSession: (sessionPath) =>
+      invoke<Awaited<ReturnType<YanBridge['sync']['exportSession']>>>('yan:sync:exportSession', sessionPath),
+    importSession: () => invoke<Awaited<ReturnType<YanBridge['sync']['importSession']>>>('yan:sync:importSession')
+  },
+  compact: (customInstructions) => invoke<Ok>('yan:compact', customInstructions),
   renameSession: (name) => invoke<Ok>('yan:renameSession', name),
   fork: (entryId) => invoke<{ ok: boolean; error?: string; text?: string }>('yan:fork', entryId),
   clone: () => invoke<Ok>('yan:clone'),
   forkPoints: () => invoke<ForkPoint[]>('yan:forkPoints'),
-  exportHtml: () => invoke<{ ok: boolean; path?: string; error?: string }>('yan:exportHtml'),
+  exportHtml: (outputPath) => invoke<{ ok: boolean; path?: string; error?: string }>('yan:exportHtml', outputPath),
   deleteSession: (path) => invoke<{ ok: boolean; undoToken?: string; error?: string }>('yan:deleteSession', path),
   restoreSession: (undoToken) => invoke<Ok>('yan:restoreSession', undoToken),
 
   /* ---- 直执行 bash ---- */
-  runBash: (command) => invoke<Ok>('yan:runBash', command),
+  runBash: (command, options) => invoke<Ok>('yan:runBash', command, options),
   abortBash: () => invoke<void>('yan:abortBash'),
 
   /* ---- 模型 / 思考 / 命令 ---- */
@@ -528,6 +608,27 @@ const api: YanBridge = {
     commitNativeImport: (token: string) =>
       invoke<NativeMcpImportCommitResponse>('yan:capabilities:commitNativeImport', token)
   },
+  /* MCP 服务归属双向切换（设计 A3）：预览只读，确认后提交；token 只由主进程生成。 */
+  mcpApp: {
+    ownership: () => invoke<McpAppOwnershipResponse>('yan:mcpApp:ownership'),
+    prepareSwitch: (serverId: string) =>
+      invoke<McpAppSwitchPrepareResponse>('yan:mcpApp:prepareSwitch', serverId),
+    commitSwitch: (token: string) => invoke<McpAppSwitchCommitResponse>('yan:mcpApp:commitSwitch', token)
+  },
+  /*
+   * MCP App 视图桥（A6）：渲染端只传 callId / instanceId / JSON-RPC 消息；
+   * owner / 授权 / 权限档不进渲染端，一律由主进程从实际前台 runner 派生。
+   */
+  mcpApps: {
+    prepare: (callId: string) => invoke<McpAppViewDescriptor>(MCP_APP_VIEW_CHANNELS.prepare, callId),
+    dispatch: (instanceId: string, message: unknown) =>
+      invoke<unknown>(MCP_APP_VIEW_CHANNELS.dispatch, instanceId, message),
+    release: (instanceId: string) => invoke<void>(MCP_APP_VIEW_CHANNELS.release, instanceId),
+    audit: (callId: string) => invoke<McpAppViewAuditEntry[]>(MCP_APP_VIEW_CHANNELS.audit, callId),
+    snapshot: () => invoke<McpAppViewSnapshot>(MCP_APP_VIEW_CHANNELS.snapshot),
+    refresh: () => invoke<McpAppViewRefreshResult>(MCP_APP_VIEW_CHANNELS.refresh),
+    hostContext: (instanceId: string) => invoke<unknown | null>(MCP_APP_VIEW_CHANNELS.hostContext, instanceId)
+  },
   git: {
     state: (cwd) =>
       invoke<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>('yan:git:state', cwd),
@@ -539,6 +640,9 @@ const api: YanBridge = {
     /* PR 状态（§7）：只读，未认证时只能读公开仓库 */
     prStatus: (cwd) => invoke('yan:git:prStatus', cwd),
     untracked: (cwd) => invoke<string[]>('yan:git:untracked', cwd),
+    /* P3 只读改动：逐文件明细 + 单文件真实补丁（命令形状固定在主进程） */
+    changes: (cwd) => invoke<GitChangesResult>('yan:git:changes', cwd),
+    diff: (req) => invoke<GitDiffResult>('yan:git:diff', req),
     worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd),
     worktreeCreate: (req) => invoke<WorktreeCreateResult>('yan:git:worktreeCreate', req),
     worktreeRemove: (req) => invoke<WorktreeRemoveResult>('yan:git:worktreeRemove', req),
@@ -795,12 +899,140 @@ const api: YanBridge = {
   },
 
   /**
+   * 订阅主进程的 `inkstone://` 深链接导航意图。
+   *
+   * 解析与校验在主进程（`src/main/deeplink`）；这里只把已收敛的白名单意图
+   * 交给渲染端，渲染端只导航、不执行任何消息或授权动作。
+   */
+  onDeepLink: (cb: (intent: DeepLinkIntent) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, intent: DeepLinkIntent): void => {
+      cb(intent)
+    }
+    ipcRenderer.on('yan:deeplink', listener)
+    return () => {
+      ipcRenderer.removeListener('yan:deeplink', listener)
+    }
+  },
+
+  /**
    * 模态层守卫：有弹窗/对话框打开时，暂停主进程对 cycleModel / cycleThinking
    * 的全局拦截（见 shared/ipc.ts 的说明）。单向 send —— 不需要回执。
    */
   setHotkeyGuard: (paused: boolean): void => {
     ipcRenderer.send('yan:hotkey-guard', Boolean(paused))
+  },
+
+  /** 减少动态效果上报（L12）：单向 send，不需要回执。 */
+  setMotionPreference: (reduced: boolean): void => {
+    ipcRenderer.send('yan:motion-preference', Boolean(reduced))
   }
 }
+
+/**
+ * 辅助小窗桥（v3 WP-25d / WP-12）。
+ *
+ * 两个小窗是独立入口（src/renderer/auxwin/**），但共用这份 preload。只暴露
+ * 取状态 / 提交 / 关闭 / 导航四个动作；推送走 `yan:aux:push`，来源校验在主进程
+ * windows/aux-ipc.ts。与主窗口 `yan` 分开暴露，避免把辅助能力混进主桥契约。
+ */
+const auxApi = {
+  quickAsk: {
+    state: (): Promise<unknown> => invoke('yan:aux:quick-ask:state'),
+    submit: (payload: QuickAskSubmit): Promise<unknown> => invoke('yan:aux:quick-ask:submit', payload),
+    close: (): void => ipcRenderer.send('yan:aux:quick-ask:close')
+  },
+  mini: {
+    state: (): Promise<unknown> => invoke('yan:aux:mini:state'),
+    open: (item: MiniItem): void => ipcRenderer.send('yan:aux:mini:open', item),
+    close: (): void => ipcRenderer.send('yan:aux:mini:close'),
+    setEnabled: (enabled: boolean): void => ipcRenderer.send('yan:aux:mini:set-enabled', Boolean(enabled))
+  },
+  onPush: (cb: (msg: AuxPush) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, msg: AuxPush): void => cb(msg)
+    ipcRenderer.on('yan:aux:push', listener)
+    return () => {
+      ipcRenderer.removeListener('yan:aux:push', listener)
+    }
+  }
+}
+contextBridge.exposeInMainWorld('auxBridge', auxApi)
+
+/**
+ * 页签弹出窗桥（WP-30 弹出）。
+ *
+ * 与 `auxApi` 同构：弹出页与主窗口共用这份 preload，来源校验在主进程
+ * windows/pane-popout-ipc.ts。主窗口只用到 open / update / close / onAction，
+ * 弹出页只用到 state / action / closeSelf / onPush；弹出窗因而拿不到主窗口
+ * 的通用 `yan` 信任（主窗口注册表本就拒绝非主窗口）。
+ */
+const paneApi = {
+  open: (request: PanePopoutOpenRequest): Promise<PanePopoutOpenResult> =>
+    invoke(PANE_POPOUT_CHANNELS.open, request),
+  update: (envelope: PaneProjectionEnvelope): void => ipcRenderer.send(PANE_POPOUT_CHANNELS.update, envelope),
+  close: (tab: PanePopoutAnyTabId): void => ipcRenderer.send(PANE_POPOUT_CHANNELS.close, tab),
+  state: (): Promise<PaneStateView | null> => invoke(PANE_POPOUT_CHANNELS.state),
+  action: (action: PaneActionRequest): Promise<PaneActionResult> => invoke(PANE_POPOUT_CHANNELS.action, action),
+  closeSelf: (): void => ipcRenderer.send(PANE_POPOUT_CHANNELS.closeSelf),
+  onPush: (cb: (view: PaneStateView) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, view: PaneStateView): void => cb(view)
+    ipcRenderer.on(PANE_POPOUT_CHANNELS.push, listener)
+    return () => {
+      ipcRenderer.removeListener(PANE_POPOUT_CHANNELS.push, listener)
+    }
+  },
+  onAction: (cb: (event: PaneActionEvent) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, event: PaneActionEvent): void => cb(event)
+    ipcRenderer.on(PANE_POPOUT_CHANNELS.actionEvent, listener)
+    return () => {
+      ipcRenderer.removeListener(PANE_POPOUT_CHANNELS.actionEvent, listener)
+    }
+  }
+}
+contextBridge.exposeInMainWorld('paneBridge', paneApi)
+
+/**
+ * 浏览器原生弹出窗桥（WP-30 弹出 · browser）。
+ *
+ * 只暴露这一个视图的状态、坐标、导航与关闭；来源校验在主进程
+ * windows/pane-browser-ipc.ts。弹出窗拿不到通用 `yan:browser:*`。
+ */
+const paneBrowserApi = {
+  state: (): Promise<PaneBrowserStateView | null> => invoke(PANE_BROWSER_CHANNELS.state),
+  setBounds: (bounds: { x: number; y: number; width: number; height: number }): Promise<BrowserLeaseResult> =>
+    invoke(PANE_BROWSER_CHANNELS.bounds, bounds),
+  navigate: (url: string): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.navigate, url),
+  goBack: (): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.back),
+  goForward: (): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.forward),
+  reload: (): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.reload),
+  close: (): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.close),
+  returnToHost: (): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.returnToHost)
+}
+contextBridge.exposeInMainWorld('paneBrowserBridge', paneBrowserApi)
+
+/**
+ * 终端弹出桥（WP-30 终端 transfer）。
+ *
+ * 只暴露白名单方法：主窗口用 open，弹窗用 state / input / resize / detach /
+ * closeSelf / onPush；参数里**没有 terminalId**，只有主进程下发的 leaseId，
+ * 来源校验在 main/windows/pane-terminal-transfer.ts。
+ */
+const paneTerminalApi: PaneTerminalBridge = {
+  open: (request: PaneTerminalOpenRequest): Promise<PaneTerminalOpenResult> =>
+    invoke(PANE_TERMINAL_CHANNELS.open, request),
+  state: (): Promise<PaneTerminalLeaseView | null> => invoke(PANE_TERMINAL_CHANNELS.state),
+  input: (leaseId: string, data: string): Promise<boolean> => invoke(PANE_TERMINAL_CHANNELS.input, leaseId, data),
+  resize: (leaseId: string, cols: number, rows: number): Promise<boolean> =>
+    invoke(PANE_TERMINAL_CHANNELS.resize, leaseId, cols, rows),
+  detach: (leaseId: string): Promise<boolean> => invoke(PANE_TERMINAL_CHANNELS.detach, leaseId),
+  closeSelf: (): void => ipcRenderer.send(PANE_TERMINAL_CHANNELS.closeSelf),
+  onPush: (cb: (event: PaneTerminalPushEvent) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, event: PaneTerminalPushEvent): void => cb(event)
+    ipcRenderer.on(PANE_TERMINAL_CHANNELS.push, listener)
+    return () => {
+      ipcRenderer.removeListener(PANE_TERMINAL_CHANNELS.push, listener)
+    }
+  }
+}
+contextBridge.exposeInMainWorld('paneTerminalBridge', paneTerminalApi)
 
 contextBridge.exposeInMainWorld('yan', api)

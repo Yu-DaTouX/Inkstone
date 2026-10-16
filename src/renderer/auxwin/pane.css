@@ -1,0 +1,217 @@
+/*
+ * 页签弹出窗版面（v3 · WP-30 弹出）。
+ *
+ * 只写版面与层级：控件外观来自 ui/，颜色 / 字号 / 间距 / 圆角只取 design 令牌。
+ * 弹出窗是普通系统窗口（有原生标题栏），这里只排应用内容。
+ */
+@layer features {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  .pane {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: var(--t-ui);
+    overflow: hidden;
+  }
+
+  .pane-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    padding: var(--s-12) var(--s-16);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .pane-head__title {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .pane-head__sub {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pane-head__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    margin-inline-start: auto;
+  }
+
+  .pane-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--s-8) 0;
+  }
+
+  .pane-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    padding: 0 var(--s-16);
+  }
+
+  .pane-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .pane-num {
+    margin-inline-start: auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pane-note {
+    margin: 0;
+    padding: var(--s-12) var(--s-16);
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .pane-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .pane-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-height: 26px;
+    padding-inline-end: var(--s-12);
+  }
+
+  .pane-row:hover {
+    background: var(--bg-1);
+  }
+
+  .pane-row__main {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    flex: 1 1 auto;
+    min-width: 0;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    padding: 4px 6px;
+    cursor: pointer;
+  }
+
+  .pane-row__main:disabled {
+    cursor: default;
+    color: var(--fg3);
+  }
+
+  .pane-row__name {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pane-bar {
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--bg-1);
+  }
+
+  .pane-bar__seg {
+    display: block;
+    background: var(--accent);
+  }
+
+  .pane-bar__seg.is-warn {
+    background: var(--warn, var(--accent));
+  }
+
+  .pane-bar__seg.is-free {
+    background: transparent;
+  }
+
+  .pane-invalid {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-8);
+    padding: var(--s-16);
+  }
+
+  .pane-invalid__title {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .pane-invalid__hint {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  /* 浏览器原生弹窗：工具条（地址栏 + 历史）+ 原生视图占位区。 */
+  .pane-head--browser {
+    gap: var(--s-4);
+  }
+
+  .pane-address {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .pane-address__input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: var(--s-4) var(--s-8);
+    border: 1px solid var(--line);
+    border-radius: var(--r-xs);
+    background: var(--bg-1);
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--t-meta);
+  }
+
+  .pane-address__input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+
+  .pane-browser {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* 原生 WebContentsView 由主进程按本占位区的 DIP 坐标改挂；DOM 里不画假内容。 */
+  .pane-browser__native {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-1);
+  }
+}

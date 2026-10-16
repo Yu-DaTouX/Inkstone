@@ -1,0 +1,393 @@
+@layer features {
+  /*
+   * v3 设置页（WP-43 / S0）的版面。
+   *
+   * 只写版面与层级：间距/字号/颜色全部引用既有 token，控件外观来自 ui/。
+   * 页签与设置行是页面导航与列表行，按侧栏既有做法用原生 button + feature CSS。
+   */
+
+  .settings-page {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .settings-page[data-loading='1'] {
+    padding: var(--s-24);
+  }
+
+  /* ---------------- 左栏分区导航 ---------------- */
+
+  .settings-nav {
+    flex: none;
+    width: 196px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-20) var(--s-12);
+    border-right: 1px solid var(--line);
+    overflow: auto;
+  }
+
+  .settings-nav__title {
+    margin: 0 0 var(--s-8) var(--s-8);
+  }
+
+  .settings-nav__item {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    width: 100%;
+    padding: var(--s-8);
+    border: 0;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--fg2);
+    font-family: inherit;
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .settings-nav__item:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+
+  .settings-nav__item[data-active='1'] {
+    background: var(--sel);
+    color: var(--fg);
+  }
+
+  .settings-nav__item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  /* ---------------- 右栏内容 ---------------- */
+
+  .settings-main {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--s-20) var(--s-24) var(--s-32);
+  }
+
+  .settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-16);
+    max-width: var(--size-col);
+  }
+
+  .settings-h2 {
+    margin: 0;
+    font-size: var(--t-h2);
+    line-height: var(--t-h2-lh);
+    font-weight: var(--t-h2-w);
+  }
+
+  .settings-note {
+    margin: 0;
+    padding: var(--s-10) var(--s-12);
+    border-radius: var(--r-md);
+    background: var(--sunken);
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    line-height: 1.5;
+  }
+
+  /* ---------------- 设置行 ---------------- */
+
+  .settings-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s-16);
+    min-height: var(--size-btn);
+  }
+
+  .settings-row[data-block='1'] {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--s-8);
+  }
+
+  .settings-row__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .settings-row__label {
+    color: var(--fg);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+  }
+
+  .settings-row__desc {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .settings-row__desc--error {
+    color: var(--fail-t);
+  }
+
+  .settings-row__ctl {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .settings-seg {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-4);
+  }
+
+  .settings-value {
+    margin: 0;
+    color: var(--fg);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+  }
+
+  .settings-range {
+    width: 200px;
+    max-width: 100%;
+    accent-color: var(--accent);
+  }
+
+  .settings-font-custom {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    margin-top: var(--s-8);
+  }
+
+  .settings-input {
+    width: 280px;
+    max-width: 100%;
+    padding: var(--s-6) var(--s-10);
+    border: 1px solid var(--line2);
+    border-radius: var(--r-sm);
+    background: var(--bg);
+    color: var(--fg);
+    font-family: inherit;
+    font-size: var(--t-body);
+  }
+
+  .settings-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+
+  .settings-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-8);
+  }
+
+  .settings-spacer {
+    flex: 1 1 auto;
+  }
+
+  /* ---------------- 用量 ---------------- */
+
+  .settings-usage-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+  }
+
+  .settings-usage-state {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+  }
+
+  /* ---------------- 上下文 ---------------- */
+
+  .settings-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-16);
+  }
+
+  /* ---------------- 快捷键 ---------------- */
+
+  .settings-shortcut-keys {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-4);
+  }
+
+  /* ---------------- 用量：图表 / 表格切换 ---------------- */
+
+  .settings-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+  }
+
+  .settings-breakdown__cap {
+    color: var(--fg3);
+  }
+
+  .settings-bars {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .settings-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+    align-items: center;
+    gap: var(--s-8);
+    font-size: var(--t-meta);
+  }
+
+  /* 当前分组里没有用量的行淡化，不抢有数据的行的注意力。 */
+  .settings-bar[data-idle='1'],
+  .settings-table tr[data-idle='1'] {
+    opacity: 0.5;
+  }
+
+  .settings-bar__label {
+    color: var(--fg2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .settings-bar__track {
+    display: block;
+    height: 10px;
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    overflow: hidden;
+  }
+
+  .settings-bar__fill {
+    display: block;
+    height: 100%;
+    border-radius: var(--r-sm);
+  }
+
+  .settings-bar__value {
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .settings-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--s-12);
+    margin: 0;
+  }
+
+  .settings-stat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-10) var(--s-12);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+  }
+
+  .settings-stat dt {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .settings-stat dd {
+    margin: 0;
+    color: var(--fg);
+    font-size: var(--t-title);
+    line-height: var(--t-title-lh);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .settings-table-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+  }
+
+  .settings-table-title {
+    color: var(--fg2);
+    font-size: var(--t-body);
+  }
+
+  .settings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--t-meta);
+  }
+
+  .settings-table th,
+  .settings-table td {
+    padding: var(--s-6) var(--s-8);
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+  }
+
+  .settings-table th {
+    color: var(--fg3);
+    font-weight: 400;
+  }
+
+  .settings-table td {
+    color: var(--fg);
+    overflow-wrap: anywhere;
+  }
+
+  .settings-table__num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 窄窗：导航改成横向条，内容占满 */
+  @media (max-width: 720px) {
+    .settings-page {
+      flex-direction: column;
+    }
+
+    .settings-nav {
+      width: auto;
+      flex-direction: row;
+      align-items: center;
+      gap: var(--s-4);
+      padding: var(--s-8) var(--s-12);
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+      overflow-x: auto;
+    }
+
+    .settings-nav__title {
+      display: none;
+    }
+
+    .settings-nav__item {
+      width: auto;
+      white-space: nowrap;
+    }
+  }
+}

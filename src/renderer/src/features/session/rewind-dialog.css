@@ -1,0 +1,89 @@
+/*
+ * 回退对话框的版面（features 层）。
+ * 外观（按钮 / 对话框表面）来自 `ui/`；这里只排文件清单、计数与底部操作区。
+ */
+@layer features {
+  .rewind-dialog {
+    width: min(600px, 100%);
+  }
+
+  .rewind-lead {
+    margin: 0;
+    color: var(--fg2);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .rewind-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-height: 48px;
+  }
+
+  .rewind-counts {
+    color: var(--fg);
+  }
+
+  .rewind-files {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 320px;
+    overflow: auto;
+  }
+
+  .rewind-files li {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .rewind-tag {
+    flex: none;
+    width: 2.2em;
+    text-align: center;
+    padding: 0 var(--s-2);
+    border-radius: var(--r-xs);
+    font-size: var(--t-meta);
+  }
+
+  .rewind-tag.s-M { color: var(--stall-t); background: var(--stall-bg); }
+  .rewind-tag.s-A { color: var(--fail-t); background: var(--fail-bg); }
+  .rewind-tag.s-D { color: var(--add); background: var(--add-bg); }
+
+  .rewind-path {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg2);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+  }
+
+  .rewind-dim {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .rewind-error {
+    color: var(--fail-t);
+    font-size: var(--t-ui);
+  }
+
+  .rewind-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    margin-top: var(--s-4);
+  }
+
+  .rewind-spacer {
+    flex: 1 1 auto;
+  }
+}

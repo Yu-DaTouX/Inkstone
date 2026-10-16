@@ -1,0 +1,186 @@
+/*
+ * 命令面板样式（WP-25）。
+ *
+ * 层归属说明（CONTRACT 的全局层序 reset,tokens,base,primitives,patterns,features,utilities）：
+ *   · 本文件里的**容器外观**与**列表行外观**（底色、描边、圆角、阴影、悬停/选中底色、
+ *     次要文字颜色、错误文字颜色）写在 `@layer patterns` —— 这部分按合同归 patterns 层；
+ *     之所以放在本目录文件里，是因为本任务只能写 `features/commands/**`，不能新增/修改
+ *     `patterns/`。合并时可原样挪到 `patterns/command-palette.css`，选择器不用改。
+ *   · **模块版面**（flex/grid、间距、高度、滚动、字号）写在 `@layer features`。
+ *
+ * 只使用 design/tokens.css 里的变量；没有私造变量。
+ */
+
+@layer patterns {
+  /* 面板靠上，而不是居中：命令面板是「就近输入」，不是确认框 */
+  .cmd-overlay {
+    align-items: flex-start;
+    padding-top: 12vh;
+  }
+
+  .cmd-modal {
+    width: min(600px, calc(100vw - var(--s-32)));
+    max-height: min(70vh, 520px);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+  }
+
+  .cmd-option {
+    border-radius: var(--r-sm);
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .cmd-option[data-active='true'] {
+    background: var(--sel);
+  }
+  .cmd-option--disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+
+  .cmd-option__meta,
+  .cmd-option__reason {
+    color: var(--fg3);
+  }
+
+  .cmd-group__label {
+    color: var(--fg3);
+  }
+
+  .cmd-empty,
+  .cmd-error {
+    color: var(--fg3);
+  }
+  .cmd-error {
+    color: var(--fail-t);
+  }
+
+  .cmd-prefix-hint {
+    color: var(--fg3);
+  }
+
+  .cmd-search__icon {
+    color: var(--fg3);
+  }
+
+  /* 清空按钮是版面内的轻量控件，不占用 ui 原语 */
+  .cmd-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-icon);
+    height: var(--size-icon);
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--fg3);
+    cursor: pointer;
+  }
+  .cmd-clear:hover {
+    color: var(--fg);
+    background: var(--hover);
+  }
+}
+
+@layer features {
+  /* ui Dialog 的 body 默认有内边距与间距；面板自己管版面，这里清零 */
+  .cmd-dialog .ui-dialog__body {
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .cmd-search {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    padding: var(--s-12) var(--s-16);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .cmd-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--fg);
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+  }
+  .cmd-input::placeholder {
+    color: var(--fg3);
+  }
+
+  .cmd-busy {
+    flex: none;
+  }
+
+  .cmd-prefix-hint {
+    padding: var(--s-6) var(--s-16) 0;
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .cmd-list {
+    min-height: 0;
+    max-height: 380px;
+    overflow-y: auto;
+    padding: var(--s-6);
+  }
+
+  .cmd-group + .cmd-group {
+    margin-top: var(--s-6);
+  }
+
+  .cmd-group__label {
+    padding: var(--s-6) var(--s-8) var(--s-2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .cmd-option {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--s-8);
+    padding: var(--s-8) var(--s-10);
+  }
+
+  .cmd-option__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+  }
+
+  .cmd-option__meta,
+  .cmd-option__reason {
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 40%;
+  }
+
+  .cmd-option__keys {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+  }
+
+  .cmd-empty {
+    padding: var(--s-20) var(--s-16);
+    text-align: center;
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+  }
+
+  .cmd-error {
+    padding: var(--s-8) var(--s-16) var(--s-12);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    border-top: 1px solid var(--line);
+  }
+}

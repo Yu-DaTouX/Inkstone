@@ -281,6 +281,24 @@ export function mergeDuplicateCards(cards: AccountQuotaCard[]): AccountQuotaCard
   return out
 }
 
+/**
+ * 「账号额度」磁贴的当前模型归属：把 `provider` 与当前视图一致的卡片排到最前。
+ *
+ * 主进程的账号报告是「本机所有账号」，不知道用户当前会话用的是哪一个；
+ * 只有渲染端拿得到 `session.model.provider`。这一步只**重排已有卡片**：
+ *   · 未知 / 不支持的 provider 没有对应卡时，顺序原样返回 —— 不新建卡、不补 0；
+ *   · 稳定排序：命中的那一条提到第一位，其余保持原有相对顺序；
+ *     同一 provider 出现多张时只提前第一张，避免打乱 ChatGPT 多账号的内部顺序。
+ * 于是「当前用的 Command Code」无需第二套查询状态机或常驻余额，也能稳定落在首位。
+ */
+export function orderAccountCardsForProvider(cards: readonly AccountQuotaCard[], provider: string): AccountQuotaCard[] {
+  const want = provider.trim().toLowerCase()
+  if (!want) return [...cards]
+  const index = cards.findIndex((card) => card.provider.trim().toLowerCase() === want)
+  if (index <= 0) return [...cards]
+  return [cards[index], ...cards.slice(0, index), ...cards.slice(index + 1)]
+}
+
 /** 摘要用：一张卡里用得最多的窗口百分比；没有窗口时为 null。 */
 export function cardPeakPercent(card: Pick<AccountQuotaCard, 'windows'>): number | null {
   let peak: number | null = null

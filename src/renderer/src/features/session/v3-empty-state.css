@@ -1,0 +1,127 @@
+/*
+ * v3 空白会话（真实入口 features/session/SessionView）的**版面**。
+ *
+ * 只写本组件版面与层级：
+ *   · 不对称两栏，左宽右窄（23rem），右栏比左栏下沉一截；
+ *   · 对话区（本容器）真实内容宽度窄于 760px 时叠成一列并收起用量；
+ *   · `.v3-empty-page` 自带 `container-type: inline-size`，量的是对话列实际内容
+ *     宽度（随侧栏、工具面板、分屏变窄），不是窗口宽度，也不加任何 max-width。
+ *
+ * 外观：问候 / 说明沿用 primitives 的 `.v3-empty-greet` / `.v3-empty-hint`；
+ * 用量展示件的领域排版与图形在 `patterns/usage-pattern.css`（只随 v3 入口加载），
+ * 本文件不重定义 `.start-*`。本文件把 `.v3-empty` 的旧内边距移到网格上，
+ * 只为让容器宽度等于对话列内容宽度，不改问候字号 / Accent 或动画参数。
+ */
+@layer features {
+  .v3-empty-page {
+    container-type: inline-size;
+    padding: 0;
+  }
+
+  .v3-empty-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 23rem);
+    align-items: start;
+    column-gap: var(--s-24);
+    width: 100%;
+    padding: var(--s-48) var(--s-20) var(--s-16);
+  }
+
+  .v3-empty-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  /* 右栏下沉一截，与设计规范 §4.3 的不对称两栏一致 */
+  .v3-empty-cols > .start-usage {
+    min-width: 0;
+    margin-top: var(--s-32);
+  }
+
+  /* 右栏无历史时不渲染（`UsageOverview` 返回 null）；固定 23rem 轨道会留下空列，
+     这里用 :has 收成单列让左栏占满。只做版面，不新增宽度 state / 功能。 */
+  .v3-empty-cols:not(:has(> .start-usage)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 一行用量条只在窄对话区出现；宽屏由右栏完整展示 */
+  .v3-empty-main > .start-strip {
+    display: none;
+    margin-top: var(--s-12);
+  }
+
+  /* 窄对话区：单列，右栏收起、换成说明下方的一行用量条，顶部留白收小；判定只按容器宽度 */
+  @container (max-width: 760px) {
+    .v3-empty-cols {
+      grid-template-columns: minmax(0, 1fr);
+      padding: var(--s-32) var(--s-16);
+    }
+    .v3-empty-cols > .start-usage {
+      display: none;
+    }
+    .v3-empty-main > .start-strip {
+      display: flex;
+    }
+  }
+
+  /*
+   * 入场「落墨」的文字部分：提示符先落下（墨滴），问候、说明、用量依次浮出。
+   * 与 ambient 画布的波前同一时刻起步；新会话按会话 key 重挂，所以每次新建都重演。
+   */
+  .v3-empty-prompt {
+    display: inline-block;
+    animation: none;
+  }
+  .v3-hello-cursor { animation: v3-hello-blink 1200ms step-end infinite; }
+  @keyframes v3-hello-blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .v3-hello-cursor { animation: none; } }
+
+  .v3-empty-greet {
+    font-family: var(--font-mono);
+    letter-spacing: 0.06em;
+    animation: v3-empty-rise 160ms var(--ease) both;
+  }
+
+  .v3-empty-hint {
+    animation: v3-empty-rise 420ms var(--ease) 180ms both;
+  }
+
+  .v3-empty-cols > .start-usage,
+  .v3-empty-main > .start-strip {
+    animation: v3-empty-rise 160ms var(--ease) both;
+  }
+
+  @keyframes v3-empty-drop {
+    0% {
+      opacity: 0;
+      transform: translateY(-10px) scale(1.6);
+    }
+    55% {
+      opacity: 1;
+      transform: translateY(0) scale(0.9);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes v3-empty-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-empty-prompt,
+    .v3-empty-greet,
+    .v3-empty-hint,
+    .v3-empty-cols > .start-usage,
+    .v3-empty-main > .start-strip {
+      animation: none;
+    }
+  }
+}

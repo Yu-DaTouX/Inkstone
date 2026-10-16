@@ -120,8 +120,11 @@ export async function runExtensionInventoryTests(ok) {
    * 生命周期钩子 —— 不得注册模型工具；pi 命令原则上也不注册。
    *
    * 扫描全部随包适配，防止未进入专项测试的文件重新注册退役入口。
-   * 唯一例外：shell-fallback.js 用 pi 的 createBashToolDefinition 同名覆盖内置 bash
-   * （不新增工具，只换 Windows 上的执行方式，见 ARCHITECTURE）；参数一致由 test-bash-transport 实测。
+   * 两个经批准的例外：
+   *   · shell-fallback.js：用 pi 的 createBashToolDefinition 同名覆盖内置 bash
+   *     （不新增工具，只换 Windows 上的执行方式，参数一致由 test-bash-transport 实测）；
+   *   · mcp-app-proxy.js（设计 A2）：从宿主下发的只读快照注册 `mcp__` 代理工具，
+   *     工具表 / 审批仍在宿主与 danger-guard，薄层不含任何模型循环。
    */
   {
     const dir = join('resources', 'pi-extensions')
@@ -135,14 +138,16 @@ export async function runExtensionInventoryTests(ok) {
         registrations === 1 &&
         /const template = core\.createBashToolDefinition\(/.test(source) &&
         /\.registerTool\(\{\s*\.\.\.template,\s*execute:/.test(source)
-      if (registrations && !bashOverride) offenders.push(`${file}:registerTool`)
+      const mcpAppProxy =
+        file === 'mcp-app-proxy.js' && registrations === 1 && /\.registerTool\(definition\)/.test(source)
+      if (registrations && !bashOverride && !mcpAppProxy) offenders.push(`${file}:registerTool`)
       if (/\.registerCommand\s*\(/.test(source)) {
         offenders.push(`${file}:registerCommand`)
       }
     }
     ok(
       offenders.length === 0,
-      `薄层不注册模型工具或 pi 命令（扫了 ${files.length} 个文件）`,
+      `薄层只注册经批准的模型工具（shell-fallback / mcp-app-proxy），其余不注册（扫了 ${files.length} 个文件）`,
       offenders.join('、')
     )
   }

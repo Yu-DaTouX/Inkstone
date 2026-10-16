@@ -1,0 +1,283 @@
+/**
+ * 辅助小窗控制器（v3 WP-25d 快速提问 + WP-12 迷你小窗）。
+ *
+ * 把两个窗口、全局快捷键与窗口级状态编排在一起；对 `src/main/index.ts` 只暴露
+ * 一个入口 `createAuxWindows(host)`，宿主负责提供主窗口边界、会话/项目、注意力
+ * 汇总与真正的发送动作（见补丁说明）。本模块不直接读设置、不直接读运行注册表，
+ * 所有宿主事实经 `AuxHost` 注入。
+ */
+import { BrowserWindow, globalShortcut } from 'electron'
+import type { AttentionSummary } from '../attention/summary'
+import { attentionItems } from './attention-items'
+import {
+  INITIAL_MINI_STATE,
+  INITIAL_QUICK_ASK_STATE,
+  miniReducer,
+  quickAskReducer,
+  type MiniWindowState,
+  type QuickAskWindowState
+} from './aux-state'
+import { createMiniWindow, type MiniWindow } from './mini-window'
+import { createQuickAskWindow, type QuickAskWindow } from './quick-ask-window'
+import type { Rect } from './geometry'
+import type {
+  AuxLocale,
+  AuxModelOption,
+  AuxProjectOption,
+  AuxSessionRef,
+  MiniItem,
+  MiniStateView,
+  QuickAskResult,
+  QuickAskStateView,
+  QuickAskSubmit
+} from './aux-types'
+
+export interface AuxHost {
+  /** aux 窗口共用的 preload（`src/preload/index.ts` 已暴露 `auxBridge`）。 */
+  preloadPath(): string
+  /** 在窗口上加载渲染端入口（dev URL 或打包后的 html）。 */
+  loadEntry(win: BrowserWindow, entry: 'quick-ask' | 'mini'): void
+  locale(): AuxLocale
+  /** 主窗口边界；没有主窗口 / 已销毁时返回 undefined。 */
+  anchorBounds(): Rect | undefined
+  /** 给定边界落在哪个显示器的工作区。 */
+  workArea(bounds: Rect): Rect
+  /** 跟随主窗口的界面缩放。 */
+  zoomFactor(): number
+  listProjects(): Promise<AuxProjectOption[]>
+  listModels(): Promise<AuxModelOption[]>
+  currentSession(): Promise<AuxSessionRef | null>
+  attentionSummary(): AttentionSummary
+  submitQuickAsk(payload: QuickAskSubmit): Promise<QuickAskResult>
+  /** 在主窗口打开对应会话（只导航，不执行动作）。 */
+  openSession(target: AuxSessionRef): void
+  showMainWindow(): void
+  /** 全局快捷键；null 表示未配置（不注册）。 */
+  shortcut(): string | null
+  /** 迷你小窗是否启用（设置项，默认关闭）。 */
+  miniEnabled(): boolean
+}
+
+export interface AuxWindows {
+  /* 快速提问 */
+  showQuickAsk(): void
+  toggleQuickAsk(): void
+  hideQuickAsk(): void
+  isQuickAskVisible(): boolean
+  quickAskState(): Promise<QuickAskStateView>
+  submitQuickAsk(payload: QuickAskSubmit): Promise<QuickAskResult>
+  /* 迷你小窗 */
+  showMini(): void
+  hideMini(): void
+  setMiniEnabled(enabled: boolean): void
+  miniState(): MiniStateView
+  openMiniItem(item: MiniItem): void
+  /* 宿主回调 */
+  notifyRuns(): void
+  registerShortcut(): boolean
+  /** 快捷键注册是否成功过（注册失败时宿主可提示）。 */
+  hasShortcut(): boolean
+  /** 该 webContents 是否属于某个辅助小窗。 */
+  owns(contents: Electron.WebContents): boolean
+  dispose(): void
+}
+
+export function createAuxWindows(host: AuxHost): AuxWindows {
+  let quickAskState: QuickAskWindowState = INITIAL_QUICK_ASK_STATE
+  let miniState: MiniWindowState = { ...INITIAL_MINI_STATE, enabled: host.miniEnabled() }
+  let quickAsk: QuickAskWindow | null = null
+  let mini: MiniWindow | null = null
+  let shortcutRegistered = false
+
+  const quickAskView = async (): Promise<QuickAskStateView> => {
+    const [session, projects, models] = await Promise.all([
+      host.currentSession(),
+      host.listProjects(),
+      host.listModels()
+    ])
+    return {
+      locale: host.locale(),
+      projects,
+      models,
+      currentSession: session,
+      defaultTarget: session ? 'current' : 'new',
+      defaultProjectId: session?.projectId ?? null,
+      defaultModelId: null,
+      accelerator: host.shortcut() ?? ''
+    }
+  }
+
+  const miniView = (): MiniStateView => ({
+    locale: host.locale(),
+    enabled: miniState.enabled,
+    items: miniState.items
+  })
+
+  const pushQuickAsk = (payload: unknown): void => {
+    quickAsk?.send('yan:aux:push', { ch: 'quick-ask', payload })
+  }
+
+  const pushMini = (): void => {
+    mini?.send('yan:aux:push', { ch: 'mini', payload: miniView() })
+  }
+
+  const ensureQuickAsk = (): QuickAskWindow => {
+    if (quickAsk) return quickAsk
+    quickAsk = createQuickAskWindow({
+      preloadPath: host.preloadPath(),
+      load: (win) => host.loadEntry(win, 'quick-ask'),
+      anchorBounds: () => host.anchorBounds(),
+      workArea: (bounds) => host.workArea(bounds),
+      zoomFactor: () => host.zoomFactor(),
+      onHide: () => {
+        quickAskState = quickAskReducer(quickAskState, { type: 'hide' })
+      }
+    })
+    return quickAsk
+  }
+
+  const ensureMini = (): MiniWindow => {
+    if (mini) return mini
+    mini = createMiniWindow({
+      preloadPath: host.preloadPath(),
+      load: (win) => host.loadEntry(win, 'mini'),
+      anchorBounds: () => host.anchorBounds(),
+      workArea: (bounds) => host.workArea(bounds),
+      zoomFactor: () => host.zoomFactor()
+    })
+    mini.resize(miniState.items.length)
+    return mini
+  }
+
+  const showQuickAsk = (): void => {
+    quickAskState = quickAskReducer(quickAskState, { type: 'show' })
+    ensureQuickAsk().show()
+    pushQuickAsk({ kind: 'show' })
+  }
+
+  const hideQuickAsk = (): void => {
+    if (!quickAskState.visible && !quickAskState.submitting) return
+    quickAskState = quickAskReducer(quickAskState, { type: 'hide' })
+    quickAsk?.hide()
+  }
+
+  const setMiniEnabled = (enabled: boolean): void => {
+    miniState = miniReducer(miniState, { type: 'set-enabled', enabled })
+    if (enabled) {
+      ensureMini().show()
+      pushMini()
+      notifyRuns()
+    } else {
+      mini?.hide()
+    }
+  }
+
+  const notifyRuns = (): void => {
+    miniState = miniReducer(miniState, { type: 'set-items', items: attentionItems(host.attentionSummary()) })
+    if (mini && miniState.enabled) {
+      mini.resize(miniState.items.length)
+      pushMini()
+    }
+  }
+
+  return {
+    showQuickAsk,
+    toggleQuickAsk() {
+      if (quickAsk?.isVisible()) hideQuickAsk()
+      else showQuickAsk()
+    },
+    hideQuickAsk,
+    isQuickAskVisible: () => quickAsk?.isVisible() ?? false,
+    quickAskState: quickAskView,
+    async submitQuickAsk(payload) {
+      if (quickAskState.submitting) return { ok: false, code: 'unavailable' }
+      quickAskState = quickAskReducer(quickAskState, { type: 'submit-start' })
+      pushQuickAsk({ kind: 'submitting' })
+      let result: QuickAskResult
+      try {
+        result = await host.submitQuickAsk(payload)
+      } catch (error) {
+        result = { ok: false, code: 'unavailable', message: error instanceof Error ? error.message : String(error) }
+      }
+      if (result.ok) {
+        quickAskState = quickAskReducer(quickAskState, { type: 'submit-ok' })
+        quickAsk?.hide()
+        if (result.sessionId || result.sessionPath || payload.expand) {
+          host.showMainWindow()
+          host.openSession({
+            ...(result.sessionId ? { sessionId: result.sessionId } : {}),
+            ...(result.sessionPath ? { sessionPath: result.sessionPath } : {}),
+            ...(payload.projectId ? { projectId: payload.projectId } : {})
+          })
+        }
+      } else {
+        quickAskState = quickAskReducer(quickAskState, {
+          type: 'submit-error',
+          code: result.code ?? 'unavailable',
+          ...(result.message ? { message: result.message } : {})
+        })
+      }
+      pushQuickAsk({ kind: 'result', result })
+      return result
+    },
+    showMini() {
+      if (!miniState.enabled) setMiniEnabled(true)
+      else {
+        miniState = miniReducer(miniState, { type: 'show' })
+        ensureMini().show()
+        pushMini()
+      }
+    },
+    hideMini() {
+      miniState = miniReducer(miniState, { type: 'hide' })
+      mini?.hide()
+    },
+    setMiniEnabled,
+    miniState: miniView,
+    openMiniItem(item) {
+      host.showMainWindow()
+      host.openSession({
+        sessionId: item.sessionId,
+        ...(item.sessionPath ? { sessionPath: item.sessionPath } : {}),
+        ...(item.projectId ? { projectId: item.projectId } : {})
+      })
+    },
+    notifyRuns,
+    registerShortcut() {
+      const accelerator = host.shortcut()
+      if (!accelerator || shortcutRegistered) return shortcutRegistered
+      try {
+        shortcutRegistered = globalShortcut.register(accelerator, () => {
+          if (quickAsk?.isVisible()) hideQuickAsk()
+          else showQuickAsk()
+        })
+      } catch {
+        shortcutRegistered = false
+      }
+      return shortcutRegistered
+    },
+    hasShortcut: () => shortcutRegistered,
+    owns(contents) {
+      const quick = quickAsk?.webContents()
+      if (quick && !quick.isDestroyed() && quick === contents) return true
+      const small = mini?.webContents()
+      if (small && !small.isDestroyed() && small === contents) return true
+      return false
+    },
+    dispose() {
+      if (shortcutRegistered) {
+        try {
+          const accelerator = host.shortcut()
+          if (accelerator) globalShortcut.unregister(accelerator)
+        } catch {
+          /* 退出阶段注册表可能已不可用，忽略。 */
+        }
+        shortcutRegistered = false
+      }
+      quickAsk?.destroy()
+      mini?.destroy()
+      quickAsk = null
+      mini = null
+    }
+  }
+}
