@@ -15,12 +15,6 @@ function profileFile() {
   return join(dataDir(), 'agent-profile', `${safe}.json`)
 }
 
-function contextFile() {
-  const key = process.env.YAN_SESSION_ID?.trim() || 'session'
-  const safe = key.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'session'
-  return join(dataDir(), 'agent-context', `${safe}.json`)
-}
-
 function note(hook, payload) {
   const log = process.env.YAN_PROFILE_EXT_LOG
   if (!log) return
@@ -58,22 +52,6 @@ function readProfileSnapshot() {
   if (!PROFILES.includes(raw.profile)) throw new Error(`档案 profile 取值非法：${String(raw.profile)}`)
   if (!ACTIVITIES.includes(raw.activity)) throw new Error(`档案 activity 取值非法：${String(raw.activity)}`)
   return raw
-}
-
-function readContextSection() {
-  let text
-  try {
-    text = readFileSync(contextFile(), 'utf8')
-  } catch {
-    return null
-  }
-  try {
-    const raw = JSON.parse(text)
-    return typeof raw?.section === 'string' && raw.section.trim() ? raw.section : null
-  } catch {
-    note('invalid-context', {})
-    return null
-  }
 }
 
 export default function agentProfileExtension(pi) {
@@ -115,12 +93,6 @@ export default function agentProfileExtension(pi) {
       note('tools', { profile: snapshot.profile, activity: snapshot.activity, active, allowed, denied })
     } else {
       note('role', { profile: snapshot.profile, activity: snapshot.activity, injected: !!snapshot.roleSection })
-    }
-
-    const context = readContextSection()
-    if (context) {
-      options.sections = { ...(options.sections ?? {}), yan_context: context }
-      note('context', { chars: context.length })
     }
   })
 }

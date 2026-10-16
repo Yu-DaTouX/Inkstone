@@ -324,10 +324,6 @@ export class RunnerRegistry {
     return this.runners.get(id)?.agent ?? null
   }
 
-  refreshPolicyViews(): void {
-    for (const runner of this.runners.values()) runner.agent.refreshPolicyView()
-  }
-
   async reloadMcpServers(): Promise<void> {
     await Promise.all([...this.runners.values()].map((runner) => runner.agent.reloadMcpServers()))
   }

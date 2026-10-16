@@ -1,6 +1,5 @@
 import type { CompactionRun, CompactionStatus } from '../../../shared/ipc'
 import type { TFunc } from '../i18n'
-import { formatTokens } from './context-view'
 
 export function compactionReasonText(t: TFunc, run: CompactionRun): string | null {
   if (run.triggeredBy === 'policy') {
@@ -67,4 +66,10 @@ export function compactionGrowthText(
 export function compactionRunningText(t: TFunc, run: CompactionRun | undefined): string {
   const reason = run ? compactionReasonText(t, run) : null
   return reason ? t('ctx.compactingReason', { reason }) : t('status.compacting')
+}
+
+export function formatTokens(n: number): string {
+  if (n < 1000) return String(n)
+  const k = n / 1000
+  return `${k >= 10 ? Math.round(k) : k.toFixed(1)}k`
 }

@@ -16,11 +16,9 @@ import type { ExecuteAdmissionPort } from './session-send-guard'
 import { modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { isQuotaWaitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
-import { AGENT_CONTEXT_ERROR, agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
+import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
-import { saveContextInspect } from './context-inspect'
-import { ContextRecallError,findArchivedContext, recallArchivedContext } from './context-recall'
 import { previewOffice } from './office/office-service'
 import { localDeviceId, markConsentAuto, readConsentLedger, recordConsentAnswer } from './consent-store'
 import {
@@ -59,7 +57,7 @@ import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStore
 import { agentProfileSnapshotPath } from './agent-profile-store'
 import { decideTaskCreation, taskCreationRefusal } from '../shared/activity-flow'
 import { isAgentActivity, isAgentProfileKind, type AgentActivity, type AgentProfileKind } from '../shared/agent-profile'
-import { isSafeSessionId } from './context-state-store'
+import { isSafeSessionId } from './session-id'
 
 import { questionLog } from './question-log'
 import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, summarizeAnswers, type QuestionField } from '../shared/question-form'
@@ -359,7 +357,6 @@ export class AgentController extends EventEmitter {
   private mcpAppProxyExtension?: string
   private mcpAppToolsSnapshot?: string
   private nativeConfigReader?: McpNativeConfigReader
-  private contextInspectExtension?: string
   private contextTrimExtension?: string
   private repeatGuardExtension?: string
   private bundledSkills: string[] = []
@@ -534,16 +531,11 @@ export class AgentController extends EventEmitter {
     mcpAppProxyExtension?: string
     mcpAppToolsSnapshot?: string
     nativeConfigReader?: McpNativeConfigReader
-    contextInspectExtension?: string
     contextTrimExtension?: string
     nativeSessionExtension?: string
-    contextExtension?: string
-    projectKnowledgeExtension?: string
     repeatGuardExtension?: string
     bundledSkills?: string[]
     userSkills?: () => Promise<string[]>
-    contextBudgetObserverExtension?: string
-    contextBudgetMaintenanceExtension?: string
     readHistory?: (sessionFile: string) => Promise<ReadResult | null>
     getResponseDetail?: () => ResponseDetail
     browserHost?: () => BrowserCommandHost | null
@@ -599,7 +591,6 @@ export class AgentController extends EventEmitter {
     this.mcpAppProxyExtension = opts.mcpAppProxyExtension
     this.mcpAppToolsSnapshot = opts.mcpAppToolsSnapshot
     this.nativeConfigReader = opts.nativeConfigReader
-    this.contextInspectExtension = opts.contextInspectExtension
     this.contextTrimExtension = opts.contextTrimExtension
     this.nativeSessionExtension = opts.nativeSessionExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
@@ -758,7 +749,6 @@ export class AgentController extends EventEmitter {
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
           : []),
-        ...(this.contextInspectExtension ? ['--extension', this.contextInspectExtension] : []),
         ...(this.contextTrimExtension ? ['--extension', this.contextTrimExtension] : []),
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         ...(this.mcpAppProxyExtension ? ['--extension', this.mcpAppProxyExtension] : []),
@@ -1070,18 +1060,11 @@ export class AgentController extends EventEmitter {
     }
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
     if (command === 'question.ask') return this.runQuestionCommand(params)
-    if (command === 'context.recall') return this.runContextRecallCommand(params)
-    if (command === 'context.find') return this.runContextFindCommand(params)
     if (command === 'office.read') return this.runOfficeReadCommand(params)
     if (command === 'file.trash') return this.runFileTrashCommand(params)
     if (command === 'consent.request') return this.runConsentRequestCommand(params)
     if (command === 'danger.confirm') return this.runDangerConfirmCommand(params)
     if (command === 'session.move') return this.runSessionMoveCommand(params)
-    if (command === 'context.inspect') {
-      const saved = saveContextInspect(this.state?.sessionId, params.snapshot)
-      return { data: { saved }, summary: { kind: 'context-inspect', saved } }
-    }
-    if (command.startsWith('context.budget.')) throw new CapabilityCommandError('agent_owned_context', AGENT_CONTEXT_ERROR)
     switch (command) {
       case 'tasks.apply':
         return this.applyTaskPlan(params)
@@ -1200,40 +1183,6 @@ export class AgentController extends EventEmitter {
     return {
       data: { question, options, answer, cancelled, autonomous: false },
       summary: { kind: 'question', action: 'ask', mode: mode ?? 'standard', answered: answer !== null, cancelled }
-    }
-  }
-
-  private async runContextRecallCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
-    const sessionId = this.state?.sessionId
-    const sessionFile = this.state?.sessionFile
-    if (!isSafeSessionId(sessionId) || !sessionFile) {
-      throw new CapabilityCommandError('context_session_unavailable', '当前还没有可安全回读的会话')
-    }
-    try {
-      return await recallArchivedContext({
-        sessionId,
-        sessionFile,
-        ref: params.ref,
-        reason: params.reason
-      })
-    } catch (error) {
-      if (error instanceof ContextRecallError) {
-        throw new CapabilityCommandError(error.code, error.message)
-      }
-      throw new CapabilityCommandError('context_recall_unavailable', '归档回读暂时不可用；未返回正文')
-    }
-  }
-
-  private async runContextFindCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
-    const sessionId = this.state?.sessionId
-    if (!isSafeSessionId(sessionId)) {
-      throw new CapabilityCommandError('context_session_unavailable', '当前还没有可查询归档的会话')
-    }
-    try {
-      return await findArchivedContext({ sessionId, query: params.query, limit: params.limit })
-    } catch (error) {
-      if (error instanceof ContextRecallError) throw new CapabilityCommandError(error.code, error.message)
-      throw new CapabilityCommandError('context_find_unavailable', '归档查询暂时不可用')
     }
   }
 
@@ -2043,14 +1992,6 @@ export class AgentController extends EventEmitter {
     } catch {
       return null
     }
-  }
-
-  refreshPolicyView(): void {
-    if (!this.state) return
-    const next: SessionState = { ...this.state }
-    delete next.contextPolicy
-    this.state = next
-    this.push({ ch: 'state', payload: next })
   }
 
   private setStateFrom(data: Record<string, unknown>): void {

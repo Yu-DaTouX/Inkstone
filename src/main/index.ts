@@ -37,7 +37,6 @@ import { createPiPackageActivationHostPorts } from './capabilities/pi-package-ac
 import { PiPackageActivationScheduler } from './capabilities/pi-package-scheduler'
 import { smokeStagedPiPackage } from './capabilities/pi-package-smoke'
 import { allowTrust, trustStatus } from './project-trust'
-import { setContextPolicySettings, syncEffectivePolicyFile } from './context-policy'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
@@ -86,7 +85,6 @@ import { canOpenDocument } from '../shared/document-open'
 import { normalizeQuestionFrequency } from '../shared/question-frequency'
 import { lockDataRoot } from '../core/data-root-lock'
 import { sameRuntimeEnvelope } from '../core/run-state'
-import { registerContextBudgetIpc } from './ipc/context-budget-ipc'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
@@ -483,10 +481,6 @@ function capabilityGuideExtensionPath(): string | undefined {
   return yanThinResourcePath('capability-guide.js')
 }
 
-function contextInspectExtensionPath(): string | undefined {
-  return yanThinResourcePath('context-inspect.js')
-}
-
 function contextTrimExtensionPath(): string | undefined {
   return yanThinResourcePath('context-trim.js')
 }
@@ -518,7 +512,6 @@ function yanThinExtensionPaths(): string[] {
     temperatureExtensionPath(),
     capabilityGuideExtensionPath(),
     mcpAppProxyExtensionPath(),
-    contextInspectExtensionPath(),
     contextTrimExtensionPath(),
     nativeSessionExtensionPath(),
     repeatGuardExtensionPath(),
@@ -1590,16 +1583,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   await refreshManagedGit().catch(() => undefined)
   agentResponseDetail = settings.responseDetail
   setDefaultWorkMode(settings.defaultWorkMode)
-  setContextPolicySettings({
-    user: settings.contextPolicy,
-    byModel: settings.contextPolicyByModel,
-    foldEnabled: settings.contextFold?.enabled !== false
-  })
-  void syncEffectivePolicyFile(YAN_DIR, {
-    user: settings.contextPolicy,
-    byModel: settings.contextPolicyByModel,
-    foldEnabled: settings.contextFold?.enabled !== false
-  })
 
   runners = new RunnerRegistry({
     isSessionVisible: (state) => runnerVisibility.includes(state),
@@ -1655,7 +1638,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         languageExtension: languageExtensionPath(),
         temperatureExtension: temperatureExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
-        contextInspectExtension: contextInspectExtensionPath(),
         contextTrimExtension: contextTrimExtensionPath(),
         nativeSessionExtension: nativeSessionExtensionPath(),
         mcpAppProxyExtension: mcpAppProxyExtensionPath(),
@@ -2306,19 +2288,6 @@ function registerIpc(): void {
     if ('autoCompactTokens' in patch) void ac()?.listModels().then(syncCompactionLines)
     if ('keepAwakeWhileWorking' in patch || 'keepAwakeOnBattery' in patch) void syncKeepAwake((runners?.statuses() ?? []).some((r) => r.running))
     if (patch.defaultWorkMode !== undefined) setDefaultWorkMode(next.defaultWorkMode)
-    if ('contextPolicy' in patch || 'contextPolicyByModel' in patch || 'contextFold' in patch) {
-      setContextPolicySettings({
-        user: next.contextPolicy,
-        byModel: next.contextPolicyByModel,
-        foldEnabled: next.contextFold?.enabled !== false
-      })
-      void syncEffectivePolicyFile(YAN_DIR, {
-        user: next.contextPolicy,
-        byModel: next.contextPolicyByModel,
-        foldEnabled: next.contextFold?.enabled !== false
-      })
-      runners?.refreshPolicyViews()
-    }
     return next
   })
 
@@ -2544,7 +2513,6 @@ function registerIpc(): void {
 
 
   registerWorkspaceIpc(ipc)
-  registerContextBudgetIpc(ipc, { currentAgent: () => ac() ?? undefined })
 
 
 

@@ -28,14 +28,10 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan artifact attach --path <项目内文件> [--description <说明>]
   yan image generate --request-file image.json
   yan question ask --request-file question.json
-  yan context recall --ref <ctx://...>
-  yan context find --query "关键词"
   yan office read --path <文件.docx|xlsx|pptx|pdf>
   yan file trash --path <文件或目录>     删除改为移到回收站（可恢复）
   yan session move --dir <文件夹> [--reason <原因>]   任务属于别的文件夹时，请用户批准把会话移过去
   yan consent request --capability <能力> --action <操作> [--resource <资源>] [--purpose <用途>]
-  yan context budget status
-  yan context budget adjust --request-file context-budget.json
   yan knowledge search --query-file query.json
   yan subagent start --request-file subagent.json
   yan schedule create --request-file schedule.json     新建定时任务（需用户在「定时任务」页确认后才运行）
@@ -265,34 +261,6 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
           完整答案落在 resultFile，stdout 只回摘要；取消 / 超时会如实返回，不猜答案。
 
 `,
-  context: `yan context <动作> [选项]
-
-动作：
-  recall  读取当前会话中一个已归档墓碑的原始正文；这不是模型工具。
-          yan context recall --ref ctx://tool/<entryId>
-          只接受当前会话里墓碑展示的 ctx:// 引用；不能指定会话、JSONL、归档目录或输出路径。
-          stdout 只给结果文件路径。需要正文时，用 read 按需读取 resultFile；正文以
-          [Recalled context] 开头，会在下一次用户输入时由上下文生命周期清理为存根。
-          归档权限、过期时间、单次/累计预算和受管文件大小都由宿主检查；拒绝时不会给半份内容。
-
-  find    按内容摘录查找已归档的引用（上下文整理后摘要里不再逐条列出引用）。
-          yan context find --query "关键词 另一个词" [--limit 20]
-          关键词全部命中才算匹配；省略 --query 时列出最近归档的条目。stdout 直接给出
-          「ctx://tool/<id> · token 数 · 摘录」，再用 recall --ref 读原文。只读元数据，不占召回预算。
-
-  budget status
-          查看当前会话/阶段的预算选择、版本和已登记材料。
-  budget adjust --request-file context-budget.json
-          按必要材料和原因申请宿主校验并自动选择档位；请求示例：
-          {"expectedPolicyRevision":"从 status 读取","purpose":"当前分析目的",
-           "reason":"哪些材料必须共同分析，以及为何片段不足",
-           "requiredMaterialRefs":[{"path":"src/example.ts","purpose":"比较调用路径"}],
-           "releaseMaterialIds":[],"startNewPhase":false}
-          token 数由宿主根据当前请求、有效任务状态和可读材料估算；不接受模型自报 token 数。
-          任务目标确实切换时设 startNewPhase=true；宿主生成阶段 ID，并保留固定档位/固定材料。
-          用户固定档位时 agent 不会覆盖。调整无需逐次用户确认。
-
-`,
   schedule: `yan schedule <动作> [选项]
 
 动作：
@@ -469,10 +437,6 @@ const GROUP_SPECS = {
     actions: ['ask'],
     required: {}
   },
-  context: {
-    actions: ['recall', 'find', 'budget'],
-    required: { recall: ['ref'] }
-  },
   consent: {
     actions: ['request'],
     required: { request: ['capability', 'action'] }
@@ -595,13 +559,7 @@ if (groupSpec && !groupSpec.actions.includes(positional[1])) {
 }
 
 let command
-if (positional[0] === 'context' && positional[1] === 'budget') {
-  const action = positional[2]
-  if (!['status', 'adjust'].includes(action)) {
-    fail(EXIT.usage, '用法：yan context budget status，或 yan context budget adjust --request-file context-budget.json')
-  }
-  command = `context.budget.${action}`
-} else if (positional[0] === 'image' && positional[1] === 'local') {
+if (positional[0] === 'image' && positional[1] === 'local') {
   const action = positional[2] ?? 'status'
   if (!['status', 'start', 'stop'].includes(action)) {
     fail(EXIT.usage, '用法：yan image local status | start | stop')

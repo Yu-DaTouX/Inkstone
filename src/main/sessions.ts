@@ -5,7 +5,6 @@ import { sep } from 'node:path'
 import { join, resolve } from 'node:path'
 import type { ProjectRecord, SessionSummary } from '../shared/ipc'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
-import { deleteContextStates } from './context-state-store'
 import { decorateSessions } from './session-layout'
 import { parseSubagentNotice } from '../shared/subagent-notice'
 
@@ -392,16 +391,6 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
     throw new Error('当前正在使用的会话位于将删除的分支中')
   }
 
-  const sessionIds = new Set<string>()
-  for (const target of targets) {
-    if (target.sessionId) {
-      sessionIds.add(target.sessionId)
-      continue
-    }
-    const head = await readHead(target.path).catch(() => null)
-    if (head?.id) sessionIds.add(head.id)
-  }
-
   await mkdir(TRASH_DIR, { recursive: true })
   const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   const entries: Array<{ from: string; to: string }> = []
@@ -417,12 +406,6 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
     throw error
   }
   deleted.set(token, entries)
-
-  if (sessionIds.size) {
-    await deleteContextStates([...sessionIds]).catch((error) => {
-      console.warn('[context-state] 清理派生状态失败：', error instanceof Error ? error.message : error)
-    })
-  }
   return token
 }
 

@@ -21,24 +21,6 @@ import type {
   LocalModelServer
 } from './custom-provider'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from './checkpoints'
-export type {
-  ContextBudgetMaterialPinUpdateV1,
-  ContextBudgetPhasePolicyV1,
-  ContextBudgetRuntimeSnapshotV1,
-  ContextBudgetSelectionUpdateResultV1,
-  ContextBudgetSelectionUpdateV1,
-  ContextBudgetSessionPolicyV1,
-  ContextBudgetTierV1
-} from './context-budget-v1'
-import type {
-  ContextBudgetMaterialPinUpdateV1,
-  ContextBudgetSelectionUpdateResultV1,
-  ContextBudgetSelectionUpdateV1,
-  ContextBudgetRuntimeSnapshotV1,
-  ContextBudgetSessionPolicyV1
-} from './context-budget-v1'
-export type { ContextMaintenanceOperationV1, ContextMaintenanceStateV1 } from './context-maintenance'
-import type { ContextMaintenanceOperationV1 } from './context-maintenance'
 import type { GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
 export type {
   GitActionExpected,
@@ -59,11 +41,8 @@ export type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { ApprovalChoice, ApprovalKind, ApprovalRequest, PermissionMode } from './approval'
 import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
-import type { ContextActionSummary } from './context-actions'
-import type { ContextBackgroundUsageSummary } from './context-background-usage'
 import type { UsageRange, UsageStatsView } from './usage-stats'
 export type UsageStatsResult = UsageStatsView & { userName: string }
-import type { ContextInspectSnapshot } from './context-inspect'
 import type { WebSearchAvailability } from './web-search'
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
 import type { ToolLayout } from './tool-layout'
@@ -284,7 +263,6 @@ export interface SessionState {
   pendingMessageCount: number
   cwd: string
   autoCompactionEnabled?: boolean
-  contextPolicy?: ContextPolicyView
   steeringMode?: QueueMode
   followUpMode?: QueueMode
 }
@@ -359,7 +337,6 @@ export interface ModelInfo {
   name: string
   provider: string
   api?: string
-  endpointKey?: string
   reasoning: boolean
   reasoningStatus?: CapabilityStatus
   input?: Array<'text' | 'image' | string>
@@ -727,11 +704,7 @@ export interface AppSettings {
   sendKey: 'auto' | 'enter' | 'ctrlEnter'
   responseDetail: 'brief' | 'standard' | 'detailed'
   density: 'compact' | 'standard' | 'comfortable'
-  contextPolicy?: ContextPolicyOverrides
-  contextPolicyByModel?: Record<string, ContextPolicyOverrides>
   temperatureByModel?: Record<string, number>
-  contextDeep?: { enabled: boolean }
-  contextFold?: { enabled: boolean }
   projectKnowledge?: { enabled: boolean }
   sound: SoundSettings
   shortcutOverrides?: import('../renderer/src/app/shortcuts').ShortcutOverrides
@@ -861,67 +834,6 @@ export interface CompactionRun {
   afterTokens?: number
   triggeredBy?: 'policy'
   policyStage?: 'compact' | 'emergency'
-}
-
-export type ContextOperationKind = 'tool-sweep' | 'episode-fold' | 'compaction' | 'recall'
-
-export interface ContextBudget {
-  contextWindow: number
-  responseReserve: number
-  safetyMargin: number
-  workingSet: number
-  triggers: { sweep: number; fold: number; compact: number }
-  emergency: number
-}
-
-export interface ContextPolicy {
-  enabled: boolean
-  workingSetCap: number
-  windowRatio: number
-  responseReservePreferred: number
-  responseReserveMin: number
-  safetyMarginMin: number
-  safetyMarginRatio: number
-  emergencyRatio: number
-  triggerRatios: { sweep: number; fold: number; compact: number }
-  kinds: ContextOperationKind[]
-}
-
-export interface ContextPolicyOverrides {
-  workingSetCap?: number
-  windowRatio?: number
-  responseReservePreferred?: number
-  responseReserveMin?: number
-  safetyMarginMin?: number
-  safetyMarginRatio?: number
-  emergencyRatio?: number
-  triggerRatios?: { sweep?: number; fold?: number; compact?: number }
-}
-
-export type ContextPolicySource = 'default' | 'user' | 'provider' | 'model' | 'env'
-
-export interface ContextPolicyView {
-  enabled: boolean
-  kinds: ContextOperationKind[]
-  budget: ContextBudget
-  source: ContextPolicySource
-  sourceKey?: string
-  overridden: string[]
-  modelOverrides?: ContextPolicyOverrides
-}
-
-export interface ContextPolicyResolution {
-  policy: ContextPolicy
-  budget: ContextBudget | null
-  source: ContextPolicySource
-  sourceKey?: string
-  overridden: string[]
-}
-
-export interface ContextNextStage {
-  kind: ContextOperationKind
-  at: number
-  reached: boolean
 }
 
 export interface UserProfile {
@@ -1979,33 +1891,6 @@ export interface YanBridge {
     allow(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
     revoke(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
   }
-  contextBudget(contextWindow: number): Promise<ContextPolicyResolution>
-  contextBudgetV1(): Promise<ContextBudgetSessionPolicyV1 | null>
-  contextBudgetV1Enabled(): Promise<boolean>
-  contextBudgetSnapshotV1(): Promise<ContextBudgetRuntimeSnapshotV1 | null>
-  contextBudgetMaintainV1(operationId?: string): Promise<{
-    ok: boolean
-    operationId?: string
-    state?: 'committed' | 'applied' | 'needs_action'
-    error?: string
-  }>
-  contextBudgetMaintenanceStatusV1(): Promise<ContextMaintenanceOperationV1 | null>
-  setContextBudgetV1(update: ContextBudgetSelectionUpdateV1): Promise<ContextBudgetSelectionUpdateResultV1>
-  setContextBudgetMaterialPinV1(update: ContextBudgetMaterialPinUpdateV1): Promise<ContextBudgetSelectionUpdateResultV1>
-  contextBudgetMaintenanceExitV1(request: {
-    action: 'raise-line' | 'lower-tier'
-    expectedRevision: string
-  }): Promise<{
-    ok: boolean
-    policy?: ContextBudgetSessionPolicyV1
-    selectedBudget?: number
-    temporary?: boolean
-    expiresAt?: number | null
-    error?: string
-  }>
-  contextActions(): Promise<ContextActionSummary>
-  contextBackgroundUsage(): Promise<ContextBackgroundUsageSummary>
-  contextInspect(): Promise<ContextInspectSnapshot | null>
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
 
   attachments: {

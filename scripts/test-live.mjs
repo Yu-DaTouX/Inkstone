@@ -1895,11 +1895,9 @@ const AFTER_EXIT = {
   taskCliLog: checkTaskCliLog,
   taskPlanMultiStep: checkTaskPlanMultiStep,
   workModePersisted: checkWorkModePersisted,
-  turnTimingPersisted: checkTurnTimingPersisted,
   turnTimingIsolation: checkTurnTimingIsolation,
   turnTimingInterrupted: checkTurnTimingInterrupted,
   turnTimingHardKill: checkTurnTimingHardKill,
-  budgetGate: checkBudgetGate,
   questionModeLog: checkQuestionModeLog
 }
 
@@ -2061,119 +2059,6 @@ async function checkTaskFixtureReadonly() {
   return { ok, lines }
 }
 
-async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = '') {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  if (!sandboxRoot) {
-    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
-    return { ok: true, lines }
-  }
-
-  const liveMs = Number(/turn-timing\.liveElapsedMs=(\d+)/.exec(probeText)?.[1] ?? 0)
-  const dir = join(sandboxRoot, 'data', 'turn-timing')
-  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')) : []
-  lines.push(`  目录 = ${dir}`)
-  lines.push(`  文件 = ${JSON.stringify(files)}`)
-  say(files.length >= 1, `至少一个会话的计时日志（${files.length}）`)
-
-  const records = []
-  for (const file of files) {
-    for (const line of readFileSync(join(dir, file), 'utf8').split('\n')) {
-      if (!line.trim()) continue
-      try {
-        records.push(JSON.parse(line))
-      } catch {
-      }
-    }
-  }
-  say(records.length >= 1, `至少一条记录（${records.length}）`)
-  const last = records[records.length - 1]
-  say(last?.v === 1, `记录带版本号（v=${last?.v}）`)
-  say(Number(last?.elapsedMs) > 0, `记录里的用时是正数（${last?.elapsedMs}ms）`)
-  if (liveMs > 0 && last) {
-    say(
-      Math.abs(Number(last.elapsedMs) - liveMs) <= Math.max(1500, liveMs * 0.2),
-      `落盘用时与界面一致（${last.elapsedMs} ≈ ${liveMs}）`
-    )
-  }
-  say(
-    Array.isArray(last?.sourceIds) && last.sourceIds.length >= 1,
-    '记录带归属消息 id（否则读回来不知道该挂给哪个回合）'
-  )
-  const expectedReason = /turn-timing\.expectedReason=(\w+)/.exec(probeText)?.[1] ?? ''
-  say(
-    ['completed', 'failed', 'stopped', 'interrupted'].includes(String(last?.terminalReason)),
-    `终止原因是四个合法值之一（实际 ${last?.terminalReason}）`
-  )
-  say(last?.final === true, `收尾记录带 final: true（实际 ${String(last?.final)}）`)
-  say(/^m\d+$/.test(String(last?.anchorId ?? '')), `记录锚定用户消息 id（${last?.anchorId}）`)
-  say(
-    last?.logicalTurnId === last?.anchorId,
-    `逻辑回合身份 = 用户消息 id（${last?.logicalTurnId}）`
-  )
-  say(
-    typeof last?.runId === 'string' && String(last.runId).startsWith('run-'),
-    `记录带 runId（${last?.runId}）`
-  )
-  if (expectedReason) {
-    say(
-      last?.terminalReason === expectedReason,
-      `终止原因与界面一致（${last?.terminalReason} vs ${expectedReason}）`
-    )
-  }
-
-  const extLog = join(sandboxRoot, 'ctx-ext.log')
-  const rows = existsSync(extLog)
-    ? readFileSync(extLog, 'utf8')
-        .split('\n')
-        .filter(Boolean)
-        .flatMap((line) => {
-          try {
-            return [JSON.parse(line)]
-          } catch {
-            return []
-          }
-        })
-    : []
-  const budgetRows = rows.filter((r) => String(r?.hook ?? '').startsWith('request-budget-'))
-  const v1Dir = join(sandboxRoot, 'data', 'context-budget-v1')
-  const v1Active = existsSync(v1Dir) && readdirSync(v1Dir).length > 0
-  const skipTrace = v1Active && budgetRows.length === 0
-  const row = budgetRows[budgetRows.length - 1]
-  if (skipTrace) {
-    lines.push('  ⤺ 会话走预算 V1，旧路径的估算留痕不适用，跳过留痕断言')
-    return { ok, lines }
-  }
-  say(budgetRows.length >= 1, `真实请求里有估算留痕（${budgetRows.length} 行）`)
-  if (row) {
-    lines.push(
-      `  估算 = messages ${row.messages} + tools ${row.tools} + system ${row.system} = ${row.estimatedTokens}`
-    )
-    say(
-      row.messages > 0 && row.tools > 0,
-      'messages 与 tools 都估到了（工具表不是 0）'
-    )
-    lines.push(`  system 段 = ${row.system}（pi 把它放在 messages 里时为 0，属于正常）`)
-    say(
-      row.estimatedTokens === row.messages + row.tools + row.system,
-      '估算总和 = 三部分之和（不是各算各的）'
-    )
-    say(
-      row.projectedTokens === row.estimatedTokens + row.responseReserve,
-      `预测量 = 估算 + 输出预留（${row.projectedTokens} = ${row.estimatedTokens} + ${row.responseReserve}）`
-    )
-    say(row.window > 0 && row.workingSet > 0, `留痕里带着当时的预算线（工作集 ${row.workingSet} / 窗口 ${row.window}）`)
-  } else {
-    say(false, '没有 request-budget-* 行（扩展可能没跑到 before_provider_request）')
-  }
-
-  return { ok, lines }
-}
-
 async function checkTurnTimingIsolation(sandboxRoot, _tempBefore, probeText = '') {
   const lines = []
   let ok = true
@@ -2324,80 +2209,6 @@ async function checkTurnTimingHardKill(sandboxRoot, tempBefore, probeText = '') 
   say(handoffFailureState?.bashToolOffered === true && handoffFailureState?.toolCallSent === true, 'fixture 确认收到工具 schema 并返回 bash tool call')
   say(handoffFailureState?.followupHeld === true, 'pi 已执行工具并发出第二次模型请求，该请求仍在途时才强杀')
   say(Number(handoffFailureState?.turnRequests ?? 0) === 2, `本机 provider 收到首轮工具调用与第二轮续接请求（${handoffFailureState?.turnRequests ?? 0}）`)
-  return { ok, lines }
-}
-
-async function checkBudgetGate(sandboxRoot, _tempBefore, _probeText) {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  if (!sandboxRoot) {
-    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
-    return { ok: true, lines }
-  }
-
-  const logFile = join(sandboxRoot, 'ctx-ext.log')
-  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
-  const records = raw
-    .split('\n')
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line)]
-      } catch {
-        return []
-      }
-    })
-  const budgetRows = records.filter((r) => String(r?.hook ?? '').startsWith('request-budget-'))
-  lines.push(`  诊断行 = ${records.length}（其中请求前预算 ${budgetRows.length} 行）`)
-  say(budgetRows.length >= 1, '请求前预算诊断真的记了（钩子在真实链路里跑起来了）')
-  for (const row of budgetRows) {
-    lines.push(
-      `    ${row.hook}：messages ${row.messages} + tools ${row.tools} + system ${row.system} = 估算 ${row.estimatedTokens} ` +
-        `/ 工作集 ${row.workingSet} / 窗口 ${row.window} / 预留 ${row.responseReserve}`
-    )
-  }
-  const soft = budgetRows.filter((r) => r.hook === 'request-budget-soft')
-  say(soft.length >= 1, '工作集线压到 3000 后，真实对话到了 soft')
-  const physical = budgetRows.filter((r) => r.hook === 'request-budget-physical')
-  say(physical.length === 0, '没有误判 physical（真实窗口下不该拦）')
-  const aborted = records.filter((r) => r.hook === 'budget-abort')
-  say(aborted.length === 0, '没有 abort（真实请求照常发出）')
-
-  const sessionId = budgetRows.find((r) => r.sessionId)?.sessionId ?? null
-  const sessionsDir = join(sandboxRoot, 'sessions')
-  let usageInput = null
-  if (sessionId && existsSync(sessionsDir)) {
-    const files = readdirSync(sessionsDir, { recursive: true })
-      .map(String)
-      .filter((f) => f.endsWith('.jsonl') && f.includes(sessionId))
-    if (files.length) {
-      const rows = readFileSync(join(sessionsDir, files[files.length - 1]), 'utf8')
-        .split('\n')
-        .filter(Boolean)
-        .flatMap((line) => {
-          try {
-            return [JSON.parse(line)]
-          } catch {
-            return []
-          }
-        })
-      for (const row of rows) {
-        const usage = row?.message?.usage
-        if (row?.message?.role === 'assistant' && Number(usage?.input) > 0) usageInput = Number(usage.input)
-      }
-    }
-  }
-  const estimate = budgetRows.length ? Number(budgetRows[budgetRows.length - 1].estimatedTokens) : 0
-  if (usageInput == null) {
-    lines.push('  · 没读到真实 usage.input（本轮模型可能返回空）：只核对诊断，不比数字')
-  } else {
-    lines.push(`  参考：估算 ${estimate} / 真实 usage.input ${usageInput}（不判红，空回复时不可比）`)
-  }
-
   return { ok, lines }
 }
 
@@ -4069,7 +3880,6 @@ async function main() {
     const tempBefore = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('yan-subagent-')))
 
     if (c.questionExtLog) rmSync(join(tmpdir(), 'yan-question-ext.log'), { force: true })
-    if (c.goalResumeExtLog) rmSync(join(tmpdir(), 'yan-goal-resume.log'), { force: true })
 
     taskFixtureBaseline = null
     if (c.readonlySession && sandboxRoot) {
@@ -4152,13 +3962,10 @@ async function main() {
       const out = await runProbe(c, {
         ...env,
         ...(win ? { YAN_WIN: win } : {}),
-        ...(c.contextExtLog && sandboxRoot ? { YAN_CONTEXT_EXT_LOG: join(sandboxRoot, 'ctx-ext.log') } : {}),
         ...(c.knowledgeExtLog && sandboxRoot ? { YAN_KNOWLEDGE_EXT_LOG: join(sandboxRoot, 'knowledge-ext.log') } : {}),
         ...(c.questionExtLog ? { YAN_QUESTION_EXT_LOG: join(tmpdir(), 'yan-question-ext.log') } : {}),
-        ...(c.goalResumeExtLog ? { YAN_GOAL_RESUME_EXT_LOG: join(tmpdir(), 'yan-goal-resume.log') } : {}),
         ...(c.env ?? {}),
         ...(brokenPiBin ? { YAN_PI_BIN: brokenPiBin } : {}),
-        ...(c.handoffExtLog && sandboxRoot ? { YAN_HANDOFF_EXT_LOG: join(sandboxRoot, 'handoff-ext.log') } : {}),
         YAN_TEST_MODEL: modelForCase(c.model)
       }, { sandboxRoot, fixtureProject, caseCwd, delay: c.delay })
       if (contextGuardFixturePath) {
