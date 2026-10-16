@@ -11,10 +11,6 @@ import type {
   ExtensionUiRequest,
   QuestionLogEntry,
   FilePreview,
-  GoalState,
-  HandoffView,
-  PursuedBrief,
-  ReadyApprovalMode,
   MainPush,
   MessagePatch,
   ModelInfo,
@@ -27,16 +23,6 @@ import type {
   SessionStats,
   SessionSummary,
   SessionTodo,
-  Space,
-  SpaceProjectLink,
-  LibraryImportView,
-  LibraryImportViewResult,
-  LibraryOpenView,
-  LibraryRefRecordView,
-  LibrarySource,
-  LibraryVersion,
-  SourceReference,
-  ContextAssembly,
   SessionTodoSnapshot,
   SlashCommand,
   SoundEvent,
@@ -51,7 +37,6 @@ import type {
   ApprovalRequest,
   GitInstallProgress,
   AgentProfileState,
-  AgentProfilePatch,
   ZoomState,
   QuotaWindow
 } from '../../../shared/ipc'
@@ -62,7 +47,6 @@ import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
 import { isWorkspaceMode, type WorkspaceMode } from '../../../shared/workspace-mode'
 import { playSound } from '../lib/sound'
 import { pickProjectSession as pickProjectSessionTarget } from './project-session'
-import { readSpaceView, writeSpaceView, type SpaceView } from './space-view'
 import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
@@ -83,7 +67,6 @@ import { failoverSkip, QUOTA_FAILOVER_PROMPT } from '../../../shared/quota-failo
 import { decideKeepRunning, KEEP_RUNNING_PROMPT, type KeepRunningTurn } from '../../../shared/keep-running'
 import { reuseIfSame } from './same-messages'
 import {
-  rebindSessionRuntime,
   migratePathDraft,
   pruneSessionRuntimes,
   sessionRuntimeKey,
@@ -176,14 +159,6 @@ export interface Store {
   runTail: { sessionId: string; id: string } | null
   messages: UIMessage[]
   sessions: SessionSummary[]
-  spaces: Space[]
-  spaceLinks: SpaceProjectLink[]
-  spaceOpen: boolean
-  spaceView: SpaceView
-  library: LibrarySource[]
-  libraryVersions: LibraryVersion[]
-  libraryRefs: LibraryRefRecordView[]
-  libraryLoaded: boolean
   todos: SessionTodo[]
   todoHistory: SessionTodoSnapshot[]
 
@@ -265,43 +240,12 @@ export interface Store {
   workMode: WorkModeState | null
   approvals: ApprovalRequest[]
   agentProfile: AgentProfileState | null
-  goal: GoalState | null
-  handoff: HandoffView | null
   workspaceMode: WorkspaceMode
 
   bootstrap: () => Promise<void>
   syncRunners: () => Promise<void>
-  loadGoal: () => Promise<void>
-  goalLoading: boolean
-  goalError: string | null
-  goalPopoverOpen: boolean
-  setGoalPopoverOpen: (open: boolean) => void
-  setGoal: (brief: PursuedBrief) => Promise<{ ok: boolean }>
-  setGoalReadyApproval: (mode: ReadyApprovalMode) => Promise<boolean>
-  approveGoalReady: () => Promise<boolean>
-  modifyGoalReady: () => Promise<boolean>
   applyPush: (m: MainPush) => void
   refreshSessions: () => Promise<void>
-  refreshSpaces: () => Promise<void>
-  createSpace: (name: string, description?: string) => Promise<Space | null>
-  updateSpace: (
-    id: string,
-    patch: { name?: string; description?: string | null; archived?: boolean }
-  ) => Promise<boolean>
-  linkSpaceProject: (spaceId: string, projectId: string) => Promise<boolean>
-  unlinkSpaceProject: (spaceId: string, projectId: string) => Promise<boolean>
-  setSessionSpace: (sessionId: string, spaceId: string | null) => Promise<boolean>
-  refreshLibrary: (spaceId?: string | null) => Promise<void>
-  importToLibrary: (view: LibraryImportView) => Promise<LibraryImportViewResult>
-  openLibraryRef: (ref: SourceReference, maxChars?: number) => Promise<LibraryOpenView | null>
-  removeLibrarySource: (sourceId: string) => Promise<boolean>
-  restoreLibrarySource: (sourceId: string) => Promise<boolean>
-  renameLibrarySource: (sourceId: string, title: string) => Promise<boolean>
-  attachLibrarySource: (sourceId: string, spaceId: string | null) => Promise<boolean>
-  joinLibraryRef: (ref: SourceReference) => Promise<boolean>
-  currentContext: () => Promise<ContextAssembly | null>
-  openSpaceView: (view?: SpaceView) => void
-  closeSpaceView: () => void
   inboxOpen: boolean
   setInboxOpen: (open: boolean) => void
   reloadModels: () => Promise<void>
@@ -408,10 +352,6 @@ export interface Store {
   gitInstall: GitInstallProgress
   installGit: () => Promise<void>
   cancelGitInstall: () => Promise<void>
-  setAgentProfile: (patch: AgentProfilePatch) => Promise<void>
-  refreshHandoff: () => Promise<void>
-  retryHandoff: () => Promise<void>
-  confirmHandoff: (handoffId: string) => Promise<void>
   setWorkspaceMode: (mode: WorkspaceMode) => Promise<void>
   setPanelWidth: (p: { railWidth?: number; panelWidth?: number }) => Promise<void>
   setToolLayout: (next: ToolLayout) => Promise<void>
@@ -594,7 +534,6 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
   if (snapshot.session) projection.session = snapshot.session
   if (snapshot.workMode) projection.workMode = snapshot.workMode
   if (snapshot.agentProfile) projection.agentProfile = snapshot.agentProfile
-  projection.goal = snapshot.goal
   return projection
 }
 
@@ -1109,15 +1048,7 @@ export const useStore = create<Store>((rawSet, get) => {
   runTail: null,
   messages: [],
   sessions: [],
-  spaces: [],
-  spaceLinks: [],
-  spaceOpen: false,
-  spaceView: readSpaceView(),
   inboxOpen: false,
-  library: [],
-  libraryVersions: [],
-  libraryRefs: [],
-  libraryLoaded: false,
   todos: [],
   todoHistory: [],
   activeRunnerId: null,
@@ -1127,11 +1058,6 @@ export const useStore = create<Store>((rawSet, get) => {
   approvals: [],
   gitInstall: { phase: 'idle' },
   agentProfile: null,
-  goal: null,
-  goalLoading: false,
-  goalError: null,
-  goalPopoverOpen: false,
-  handoff: null,
   workspaceMode: 'daily',
 
   models: [],
@@ -1294,7 +1220,6 @@ export const useStore = create<Store>((rawSet, get) => {
       .catch(() => undefined)
     void get().loadZoom()
     void get().reloadCommands()
-    void get().loadGoal()
     void get().loadSubagents()
     void get().syncRunners()
   },
@@ -1355,18 +1280,6 @@ export const useStore = create<Store>((rawSet, get) => {
     if (consumeShellPush(m, s, ctx) || consumeQuestionPush(m, s, ctx) || consumeSubagentPush(m, s, ctx) || consumeTaskStatePush(m, s, ctx)) return
 
     switch (m.ch) {
-      case 'handoff-rebind': {
-        const p = m.payload
-        const cache = rebindSessionRuntime(s.sessionRuntimes, p.sourceSessionId, p.runtime, p.state)
-        const viewingSource = s.activeRunnerId === p.sourceRunId &&
-          (!s.peekedSessionId || s.peekedSessionId === p.sourceSessionId)
-        set({ sessionRuntimes: cache, ...(viewingSource && p.active ? {
-          activeRunnerId: p.runtime.runId,
-          session: p.state,
-          peekedPath: null, peekedSessionId: null
-        } : {}) })
-        break
-      }
       case 'sync': {
         const incoming = m.runtime?.sessionId
         if (!pushBelongsToView(s, incoming)) break
@@ -1433,15 +1346,12 @@ export const useStore = create<Store>((rawSet, get) => {
             peekNote: null,
             queue: snapshot?.queue ?? EMPTY_QUEUE,
             activeRunnerId: runId ?? null,
-            goal: snapshot?.goal ?? null,
-            handoff: null,
             stats: snapshot?.stats ?? null,
             pendingActivation: null
           })
           void get().syncRunners()
           void get().reloadModels()
           void get().reloadCommands()
-          void get().loadGoal()
         })()
         break
       }
@@ -1564,199 +1474,7 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  refreshSpaces: async () => {
-    try {
-      const res = await window.yan.getSpaces()
-      set({ spaces: res.spaces, spaceLinks: res.links })
-    } catch {
-    }
-  },
-
-  createSpace: async (name, description) => {
-    try {
-      const res = await window.yan.createSpace({ name, ...(description ? { description } : {}) })
-      if (!res.ok) {
-        set({ notices: pushNotice(get().notices, 'error', res.error ?? '创建空间失败') })
-        return null
-      }
-      set({ spaces: res.spaces ?? get().spaces, spaceLinks: res.links ?? get().spaceLinks })
-      return res.space ?? null
-    } catch (error) {
-      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '创建空间失败') })
-      return null
-    }
-  },
-
-  updateSpace: async (id, patch) => {
-    try {
-      const res = await window.yan.updateSpace(id, patch)
-      if (!res.ok) {
-        set({ notices: pushNotice(get().notices, 'error', res.error ?? '更新空间失败') })
-        return false
-      }
-      set({ spaces: res.spaces ?? get().spaces, spaceLinks: res.links ?? get().spaceLinks })
-      return true
-    } catch (error) {
-      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '更新空间失败') })
-      return false
-    }
-  },
-
-  linkSpaceProject: async (spaceId, projectId) => {
-    try {
-      const res = await window.yan.linkSpaceProject(spaceId, projectId)
-      if (!res.ok) {
-        set({ notices: pushNotice(get().notices, 'error', res.error ?? '关联项目失败') })
-        return false
-      }
-      set({ spaceLinks: res.links ?? get().spaceLinks })
-      return true
-    } catch (error) {
-      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '关联项目失败') })
-      return false
-    }
-  },
-
-  unlinkSpaceProject: async (spaceId, projectId) => {
-    try {
-      const res = await window.yan.unlinkSpaceProject(spaceId, projectId)
-      if (!res.ok) {
-        set({ notices: pushNotice(get().notices, 'error', res.error ?? '解除关联失败') })
-        return false
-      }
-      set({ spaceLinks: res.links ?? get().spaceLinks })
-      return true
-    } catch (error) {
-      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '解除关联失败') })
-      return false
-    }
-  },
-
-  setSessionSpace: async (sessionId, spaceId) => {
-    try {
-      const res = await window.yan.setSessionSpace(sessionId, spaceId)
-      if (!res.ok) {
-        set({ notices: pushNotice(get().notices, 'error', res.error ?? '归属空间失败') })
-        return false
-      }
-      await get().refreshSessions()
-      return true
-    } catch (error) {
-      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '归属空间失败') })
-      return false
-    }
-  },
-
-  refreshLibrary: async (spaceId) => {
-    try {
-      const res = await window.yan.library.list(spaceId === undefined ? undefined : { spaceId })
-      set({
-        library: res.sources,
-        libraryVersions: res.versions ?? [],
-        libraryRefs: res.refs,
-        libraryLoaded: true
-      })
-    } catch {
-    }
-  },
-
-  importToLibrary: async (view) => {
-    try {
-      const res = await window.yan.library.import(view)
-      if (!res.ok) {
-        set({ notices: pushNotice(get().notices, 'error', res.error ?? '加入资料库失败') })
-        return res
-      }
-      await get().refreshLibrary()
-      return res
-    } catch (error) {
-      const res = { ok: false as const, error: error instanceof Error ? error.message : '加入资料库失败' }
-      set({ notices: pushNotice(get().notices, 'error', res.error) })
-      return res
-    }
-  },
-
-  openLibraryRef: async (ref, maxChars) => {
-    try {
-      const res = await window.yan.library.open(ref, maxChars !== undefined ? { maxChars } : undefined)
-      return res
-    } catch (error) {
-      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '打开资料失败') })
-      return null
-    }
-  },
-
-  removeLibrarySource: async (sourceId) => {
-    const res = await window.yan.library.remove(sourceId)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '移除失败') })
-      return false
-    }
-    await get().refreshLibrary()
-    return true
-  },
-
-  restoreLibrarySource: async (sourceId) => {
-    const res = await window.yan.library.restore(sourceId)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '恢复失败') })
-      return false
-    }
-    await get().refreshLibrary()
-    return true
-  },
-
-  renameLibrarySource: async (sourceId, title) => {
-    const res = await window.yan.library.rename(sourceId, title)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '改名失败') })
-      return false
-    }
-    await get().refreshLibrary()
-    return true
-  },
-
-  openSpaceView: (view) => {
-    if (view && view !== get().spaceView) writeSpaceView(view)
-    set({ spaceOpen: true, ...(view ? { spaceView: view } : {}) })
-  },
-
-  closeSpaceView: () => set({ spaceOpen: false }),
   setInboxOpen: (open) => set({ inboxOpen: open }),
-
-  joinLibraryRef: async (ref) => {
-    const sessionId = get().session?.sessionId
-    if (!sessionId) {
-      set({ notices: pushNotice(get().notices, 'error', '先打开一个会话，才能把资料加进去。') })
-      return false
-    }
-    const res = await window.yan.library.addRef({ kind: 'session', id: sessionId }, ref)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '加入对话失败') })
-      return false
-    }
-    await get().refreshLibrary()
-    return true
-  },
-
-  currentContext: async () => {
-    try {
-      const res = await window.yan.library.current()
-      return res.ok && res.assembly ? res.assembly : null
-    } catch {
-      return null
-    }
-  },
-
-  attachLibrarySource: async (sourceId, spaceId) => {
-    const res = await window.yan.library.attach(sourceId, spaceId)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '归档到空间失败') })
-      return false
-    }
-    await get().refreshLibrary()
-    return true
-  },
 
   loadAuthProviders: async () => {
     try {
@@ -1766,161 +1484,6 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  refreshHandoff: async () => {
-    const initial = get()
-    const runnerId = initial.activeRunnerId
-    const sessionId = initial.session?.sessionId
-    try {
-      const res = await window.yan.getHandoff()
-      const current = get()
-      if (runnerId && current.activeRunnerId && current.activeRunnerId !== runnerId) return
-      if (sessionId && current.session?.sessionId && current.session.sessionId !== sessionId) return
-      set({ handoff: res })
-    } catch {
-    }
-  },
-
-  retryHandoff: async () => {
-    if (!(await get().ensureActivated())) return
-    try {
-      const res = await window.yan.retryHandoff()
-      if (!res.ok) {
-        get().notify('error', res.error ?? '重试交接失败')
-        return
-      }
-      await get().refreshHandoff()
-    } catch (error) {
-      get().notify('error', error instanceof Error ? error.message : '重试交接失败')
-    }
-  },
-
-  confirmHandoff: async (handoffId) => {
-    try {
-      const res = await window.yan.confirmHandoff(handoffId)
-      if (!res.ok) {
-        get().notify('error', res.error ?? '确认交接失败')
-        return
-      }
-      await get().refreshHandoff()
-    } catch (error) {
-      get().notify('error', error instanceof Error ? error.message : '确认交接失败')
-    }
-  },
-
-  setGoalPopoverOpen: (open) => set({ goalPopoverOpen: open }),
-
-  loadGoal: async () => {
-    const initial = get()
-    const runnerId = initial.activeRunnerId
-    const sessionId = initial.session?.sessionId
-    const sessionFile = initial.session?.sessionFile
-    const stale = (): boolean => {
-      const current = get()
-      if (runnerId && current.activeRunnerId && current.activeRunnerId !== runnerId) return true
-      if (sessionId && current.session?.sessionId && current.session.sessionId !== sessionId) return true
-      if (sessionFile && current.session?.sessionFile && current.session.sessionFile !== sessionFile) return true
-      return false
-    }
-    set({ goalLoading: true, goalError: null })
-    try {
-      const res = await window.yan.getGoal()
-      if (stale()) return
-      set({ goal: res.goal, goalLoading: false, goalError: null })
-    } catch (error) {
-      if (stale()) return
-      set({ goalLoading: false, goalError: error instanceof Error ? error.message : String(error) })
-    }
-  },
-
-  setGoal: async (brief) => {
-    const before = identityForAwait(get())
-    try {
-      const res = await window.yan.setGoal(brief)
-      if (!res.ok) {
-        get().notify('error', res.error === 'incomplete' ? '目标和可衡量的成果都要写' : '当前没有可用会话')
-        return { ok: false }
-      }
-      if (identityForAwait(get()) !== before) return { ok: true }
-      set({ goal: res.goal })
-      return { ok: true }
-    } catch (error) {
-      get().notify('error', error instanceof Error ? error.message : '设定目标失败')
-      return { ok: false }
-    }
-  },
-
-  setGoalReadyApproval: async (mode) => {
-    const before = identityForAwait(get())
-    const current = get()
-    try {
-      const res = await window.yan.setGoalReadyApproval(mode, current.goal?.revision)
-      if (identityForAwait(get()) !== before) return res.ok
-      set({ goal: res.goal })
-      if (!res.ok) {
-        get().notify('error', res.error === 'clarify_required' ? '请先切换到计划模式，再设置审阅方式。' : '计划设置已变化，请刷新后重试。')
-      }
-      return res.ok
-    } catch (error) {
-      if (identityForAwait(get()) === before) {
-        get().notify('error', error instanceof Error ? error.message : '更新计划审阅方式失败')
-      }
-      return false
-    }
-  },
-
-  approveGoalReady: async () => {
-    const before = identityForAwait(get())
-    const current = get()
-    const pending = current.goal?.pendingReady
-    if (!pending || !current.activeRunnerId || !current.workMode) return false
-    try {
-      const res = await window.yan.approveGoalReady({
-        runnerId: current.activeRunnerId,
-        transitionId: pending.transitionId,
-        goalRevision: current.goal!.revision,
-        modeRevision: current.workMode.revision
-      })
-      if (identityForAwait(get()) !== before) return false
-      set({ goal: res.goal })
-      if (!res.ok) {
-        get().notify('error', '计划或会话状态已变化，请刷新后重新审阅。')
-        return false
-      }
-      if (!res.replayed && res.started === false) {
-        get().notify('error', `计划已批准，但启动消息未送达：${res.startError ?? '请手动发送消息开始执行。'}`)
-      }
-      return true
-    } catch (error) {
-      if (identityForAwait(get()) === before) {
-        get().notify('error', error instanceof Error ? error.message : '批准计划失败')
-      }
-      return false
-    }
-  },
-
-  modifyGoalReady: async () => {
-    const before = identityForAwait(get())
-    const current = get()
-    const pending = current.goal?.pendingReady
-    if (!pending || !current.activeRunnerId || !current.workMode) return false
-    try {
-      const res = await window.yan.modifyGoalReady({
-        runnerId: current.activeRunnerId,
-        transitionId: pending.transitionId,
-        goalRevision: current.goal!.revision,
-        modeRevision: current.workMode.revision
-      })
-      if (identityForAwait(get()) !== before) return false
-      set({ goal: res.goal })
-      if (!res.ok) get().notify('error', '待审计划已变化，请刷新后重试。')
-      return res.ok
-    } catch (error) {
-      if (identityForAwait(get()) === before) {
-        get().notify('error', error instanceof Error ? error.message : '修改计划失败')
-      }
-      return false
-    }
-  },
 
   reloadModels: async () => {
     const request = ++capabilityRequestSeq
@@ -2316,11 +1879,9 @@ export const useStore = create<Store>((rawSet, get) => {
             widgetPlacements: {},
             workMode: null,
             agentProfile: null,
-            goal: null,
             stats: null
           }),
       queue: arrived?.queue ?? EMPTY_QUEUE,
-      handoff: null,
       pendingActivation: null,
       peekedPath: null,
       peekedSessionId: null,
@@ -2329,7 +1890,6 @@ export const useStore = create<Store>((rawSet, get) => {
     void get().syncRunners()
     void get().reloadModels()
     void get().reloadCommands()
-    void get().loadGoal()
     await get().refreshSessions()
     return { ok: true, sessionId: res.sessionId ?? undefined, runId: res.runId ?? res.id }
   },
@@ -2354,8 +1914,6 @@ export const useStore = create<Store>((rawSet, get) => {
       peekNote: null,
       messages: cachedMessages ?? [],
       session: cachedSnapshot?.session ?? null,
-      goal: cachedSnapshot?.goal ?? null,
-      handoff: null,
       stats: cachedSnapshot?.stats ?? null,
       queue: cachedSnapshot?.queue ?? EMPTY_QUEUE,
       todos: cachedSnapshot?.todos ?? [],
@@ -2450,7 +2008,6 @@ export const useStore = create<Store>((rawSet, get) => {
     void get().syncRunners()
     void get().reloadModels()
     void get().reloadCommands()
-    void get().loadGoal()
     } finally {
       finishSwitch()
     }
@@ -2488,7 +2045,6 @@ export const useStore = create<Store>((rawSet, get) => {
     void get().syncRunners()
     void get().reloadModels()
     void get().reloadCommands()
-    void get().loadGoal()
     return true
   },
 
@@ -3073,25 +2629,6 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', `切换工作模式失败：${message}`) })
     }
   },
-
-  setAgentProfile: async (patch) => {
-    const current = get().agentProfile
-    try {
-      const res = await window.yan.setAgentProfile(patch, current?.revision)
-      set({ agentProfile: res.state })
-      if (!res.ok) {
-        const message =
-          res.error === 'version-mismatch'
-            ? '活动档案已被另一个入口改过，已恢复为当前值。'
-            : (res.detail ?? res.error ?? '切换活动失败')
-        set({ notices: pushNotice(get().notices, 'error', message) })
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      set({ notices: pushNotice(get().notices, 'error', `切换活动失败：${message}`) })
-    }
-  },
-
 
   setWorkspaceMode: async (mode) => {
     const prev = get().workspaceMode

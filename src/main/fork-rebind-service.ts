@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto'
 import { extractRefsFromTexts, resolveForkRefs, summarizeForkRefs } from '../shared/fork-rebind'
 import type { ForkRefResolution, ForkRefSummary } from '../shared/fork-rebind'
 import { buildForkContext } from '../shared/fork-context'
-import type { HandoffPackage } from '../shared/handoff'
 import { readSessionMessages } from './session-reader'
 import { readRepoState, resolveRepo } from './git-service'
 
@@ -89,7 +88,6 @@ export interface ForkContextResult {
   refsTotal: number
   refsResolved: number
   attachments: number
-  hasPackage: boolean
   error?: string
 }
 
@@ -105,8 +103,7 @@ async function countSourceAttachments(sessionFile: string): Promise<{ total: num
 }
 
 export async function forkContext(
-  request: ForkContextRequest,
-  packageOf: (sessionFile: string) => HandoffPackage | null
+  request: ForkContextRequest
 ): Promise<ForkContextResult> {
   const worktree = String(request.worktree ?? '').trim()
   const forkId = randomUUID()
@@ -126,8 +123,6 @@ export async function forkContext(
           cwd: sourceCwd || '(未知)'
         }
       : null
-
-  const pkg = request.sourceFile ? packageOf(request.sourceFile) : null
 
   const attachments =
     typeof request.explicitAttachmentCount === 'number'
@@ -159,8 +154,7 @@ export async function forkContext(
             problems: refsReport.summary.problems.map((p) => ({ ref: p.ref, state: p.state }))
           }
         : null,
-    attachments,
-    pkg
+    attachments
   })
 
   return {
@@ -170,7 +164,6 @@ export async function forkContext(
     refsTotal: refsReport.summary.total,
     refsResolved: refsReport.summary.resolved,
     attachments: attachments?.total ?? 0,
-    hasPackage: pkg !== null,
     ...(state ? {} : { error: '目标目录不是 Git 仓库（分支与变更数拿不到）' })
   }
 }

@@ -33,12 +33,6 @@ import type {
   PackageListingView,
   SourceRefView,
   SourceLinkView,
-  LibraryImportViewResult,
-  LibraryOpenView,
-  LibraryRefRecordView,
-  LibraryVersion,
-  LibrarySource,
-  ContextAssembly,
   ForkContextResultView,
   ForkRefsReportView,
   WorktreeLinkView,
@@ -101,21 +95,15 @@ import type {
   SessionSearchResult,
   UsageStatsResult,
   SessionSummary,
-  Space,
-  SpaceProjectLink,
   SessionTodo,
   SubagentRun,
   SlashCommand,
   UIMessage,
-  GoalState,
-  PursuedBrief,
-  HandoffView,
   WorkModeState,
   SessionQuestionFrequencyInput,
   SessionQuestionFrequencyResult,
   SessionQuestionFrequencyView,
   ApprovalRequest,
-  AgentProfileState,
   YanBridge,
   ZoomState,
   CustomProviderTestResult,
@@ -201,31 +189,8 @@ const api: YanBridge = {
     ),
   moveSession: (sessionId, projectId) =>
     invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:moveSession', sessionId, projectId),
-  getSpaces: () => invoke<{ spaces: Space[]; links: SpaceProjectLink[] }>('yan:getSpaces'),
-  createSpace: (input) =>
-    invoke<{
-      ok: boolean
-      error?: string
-      space?: Space
-      spaces?: Space[]
-      links?: SpaceProjectLink[]
-    }>('yan:createSpace', input),
-  updateSpace: (id, patch) =>
-    invoke<{
-      ok: boolean
-      error?: string
-      space?: Space
-      spaces?: Space[]
-      links?: SpaceProjectLink[]
-    }>('yan:updateSpace', id, patch),
-  linkSpaceProject: (spaceId, projectId) =>
-    invoke<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>('yan:linkSpaceProject', spaceId, projectId),
-  unlinkSpaceProject: (spaceId, projectId) =>
-    invoke<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>('yan:unlinkSpaceProject', spaceId, projectId),
   setSessionArchived: (sessionId, archived) => invoke<{ ok: boolean; error?: string }>('yan:setSessionArchived', sessionId, archived),
   setSessionPinned: (sessionId, pinned) => invoke<{ ok: boolean; error?: string }>('yan:setSessionPinned', sessionId, pinned),
-  setSessionSpace: (sessionId, spaceId) =>
-    invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:setSessionSpace', sessionId, spaceId),
   setVisibleRunnerSessions: (sessions) => invoke<boolean>('yan:setVisibleRunnerSessions', sessions),
   nativeSession: (request) => invoke<Awaited<ReturnType<YanBridge['nativeSession']>>>('yan:nativeSession', request),
   runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
@@ -287,39 +252,6 @@ const api: YanBridge = {
   getWorkMode: () => invoke<WorkModeState>('yan:getWorkMode'),
   answerApproval: (id, choice) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice),
   pendingApprovals: () => invoke<ApprovalRequest[]>('yan:approvalPending'),
-  getAgentProfile: () => invoke<AgentProfileState>('yan:getAgentProfile'),
-  setAgentProfile: (patch, expectedRevision) =>
-    invoke<{ ok: boolean; state: AgentProfileState; error?: string; detail?: string }>(
-      'yan:setAgentProfile',
-      patch,
-      expectedRevision
-    ),
-  getGoal: () => invoke<{ goal: GoalState; mode: WorkModeState }>('yan:getGoal'),
-  setGoal: (brief: PursuedBrief) =>
-    invoke<{ ok: true; goal: GoalState } | { ok: false; error: 'no_session' | 'incomplete' }>(
-      'yan:setGoal',
-      brief
-    ),
-  setGoalReadyApproval: (mode, expectedGoalRevision) =>
-    invoke<{ ok: true; goal: GoalState } | { ok: false; error: string; goal: GoalState }>(
-      'yan:setGoalReadyApproval',
-      mode,
-      expectedGoalRevision
-    ),
-  approveGoalReady: (input) =>
-    invoke<
-      | { ok: true; replayed: boolean; started?: boolean; startError?: string; goal: GoalState }
-      | { ok: false; error: string; goal: GoalState }
-    >('yan:approveGoalReady', input),
-  modifyGoalReady: (input) =>
-    invoke<{ ok: true; goal: GoalState } | { ok: false; error: string; goal: GoalState }>(
-      'yan:modifyGoalReady',
-      input
-    ),
-  stopGoal: () => invoke<{ ok: boolean; goal?: GoalState | null; error?: string }>('yan:stopGoal'),
-  getHandoff: () => invoke<HandoffView>('yan:getHandoff'),
-  retryHandoff: () => invoke<Ok>('yan:retryHandoff'),
-  confirmHandoff: (handoffId) => invoke<Ok>('yan:confirmHandoff', handoffId),
   setWorkMode: (mode, expectedRevision) =>
     invoke<{ ok: boolean; state: WorkModeState; error?: string }>('yan:setWorkMode', mode, expectedRevision),
   getSessionQuestionFrequency: (runnerId?: string) =>
@@ -449,30 +381,6 @@ const api: YanBridge = {
     removeImage: (req) => invoke('yan:sources:removeImage', req),
     readImage: (req) => invoke('yan:sources:readImage', req),
     webSearch: () => invoke<WebSearchAvailability>('yan:sources:webSearch')
-  },
-  library: {
-    list: (req) =>
-      invoke<{
-        ok: boolean
-        error?: string
-        sources: LibrarySource[]
-        versions: LibraryVersion[]
-        refs: LibraryRefRecordView[]
-      }>('yan:library:list',
-        req
-      ),
-    import: (view) => invoke<LibraryImportViewResult>('yan:library:import', view),
-    open: (ref, options) => invoke<LibraryOpenView>('yan:library:open', ref, options),
-    remove: (sourceId) => invoke<{ ok: boolean; error?: string }>('yan:library:remove', sourceId),
-    restore: (sourceId) => invoke<{ ok: boolean; error?: string }>('yan:library:restore', sourceId),
-    rename: (sourceId, title) =>
-      invoke<{ ok: boolean; error?: string; source?: LibrarySource }>('yan:library:rename', sourceId, title),
-    attach: (sourceId, spaceId) => invoke<{ ok: boolean; error?: string }>('yan:library:attach', sourceId, spaceId),
-    verify: (refs) =>
-      invoke<{ ok: boolean; error?: string; checked: number; unavailable: number }>('yan:library:verify', refs),
-    addRef: (owner, ref) => invoke<{ ok: boolean; error?: string; added: boolean }>('yan:library:addRef', owner, ref),
-    promoteLegacy: (req) => invoke<LibraryImportViewResult & { mapped?: boolean }>('yan:library:promoteLegacy', req),
-    current: () => invoke<{ ok: boolean; error?: string; assembly?: ContextAssembly }>('yan:context:current')
   },
   packages: {
     search: (query, offset) => invoke('yan:packages:search', query, offset),

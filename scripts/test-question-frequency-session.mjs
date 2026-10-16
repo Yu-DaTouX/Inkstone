@@ -71,11 +71,10 @@ export async function runQuestionFrequencySessionTests(ok) {
     const entry = join(buildDir, 'entry.ts')
     const storePath = fileURLToPath(new URL('../src/main/work-mode-service.ts', import.meta.url)).replace(/\\/g, '/')
     const ipcPath = fileURLToPath(new URL('../src/main/ipc/question-frequency-ipc.ts', import.meta.url)).replace(/\\/g, '/')
-    const goalPath = fileURLToPath(new URL('../src/main/goal-coordinator.ts', import.meta.url)).replace(/\\/g, '/')
+    const coordinatorPath = fileURLToPath(new URL('../src/main/work-mode-coordinator.ts', import.meta.url)).replace(/\\/g, '/')
     const targetPath = fileURLToPath(new URL('../src/renderer/src/state/question-frequency-target.ts', import.meta.url)).replace(/\\/g, '/')
-    const goalIpcPath = fileURLToPath(new URL('../src/main/ipc/goal-ipc.ts', import.meta.url)).replace(/\\/g, '/')
-    const handoffPath = fileURLToPath(new URL('../src/main/handoff-coordinator.ts', import.meta.url)).replace(/\\/g, '/')
-    writeFileSync(entry, `export * from ${JSON.stringify(storePath)}\nexport * from ${JSON.stringify(ipcPath)}\nexport * from ${JSON.stringify(goalPath)}\nexport * from ${JSON.stringify(targetPath)}\nexport * from ${JSON.stringify(goalIpcPath)}\nexport * from ${JSON.stringify(handoffPath)}\n`)
+    const workModeIpcPath = fileURLToPath(new URL('../src/main/ipc/work-mode-ipc.ts', import.meta.url)).replace(/\\/g, '/')
+    writeFileSync(entry, `export * from ${JSON.stringify(storePath)}\nexport * from ${JSON.stringify(ipcPath)}\nexport * from ${JSON.stringify(coordinatorPath)}\nexport * from ${JSON.stringify(targetPath)}\nexport * from ${JSON.stringify(workModeIpcPath)}\n`)
     const outfile = join(buildDir, 'bundle.mjs')
     await build({
       entryPoints: [entry],
@@ -134,16 +133,14 @@ import * as real from './work-mode-service'
       writeWorkModeSnapshot,
       readWorkModeSnapshot,
       registerQuestionFrequencyIpc,
-      registerGoalIpc,
-      configureGoalCoordinator,
-      configureHandoffCoordinator,
-      inheritForHandoff,
+      registerWorkModeIpc,
+      configureWorkModeCoordinator,
       pushWorkMode,
       sessionQuestionFrequencyTarget
     } = bundle
     ok(typeof WorkModeStore === 'function' && typeof registerQuestionFrequencyIpc === 'function', '打包：store 与 IPC 适配可用')
-    ok(typeof pushWorkMode === 'function' && typeof configureGoalCoordinator === 'function', '打包：goal-coordinator producer 可用')
-    ok(typeof registerGoalIpc === 'function' && typeof inheritForHandoff === 'function', '打包：goal-ipc 与 handoff 目的段 writer 可用')
+    ok(typeof pushWorkMode === 'function' && typeof configureWorkModeCoordinator === 'function', '打包：work-mode-coordinator producer 可用')
+    ok(typeof registerWorkModeIpc === 'function', '打包：work-mode-ipc 可用')
     ok(typeof sessionQuestionFrequencyTarget === 'function', '打包：会话频率目标选择器可用')
 
     const makeIpcFixture = async (runnerId = 'runner-A') => {
@@ -210,7 +207,7 @@ import * as real from './work-mode-service'
           pushFrom: (id, msg) => pushes.push({ id, ...msg })
         }
       )
-      configureGoalCoordinator({
+      configureWorkModeCoordinator({
         runners: () => registry,
         workModes: store,
         pushFrom: (id, msg) => pushes.push({ id, ...msg })
@@ -589,7 +586,7 @@ import * as real from './work-mode-service'
           id === 'runner-A' ? { sessionId: producerState.sessionId, runId: 'runner-A', generation: 1 } : null
       }
       const producerPushes = []
-      configureGoalCoordinator({
+      configureWorkModeCoordinator({
         runners: () => producerRegistry,
         workModes: producerStore,
         pushFrom: (id, msg) => producerPushes.push({ id, ...msg })
@@ -903,9 +900,9 @@ import * as real from './work-mode-service'
           { owner: { sessionId: 'sid-B', sessionFile: 'C:/sessions/B.jsonl' } }
         )
 
-      const makeGoalIpcFixture = (runnerId) => {
-        const goalRoot = mkdtempSync(join(tmpdir(), 'yan-qf-goalipc-'))
-        const store = new WorkModeStore({ root: goalRoot })
+      const makeWorkModeIpcFixture = (runnerId) => {
+        const workModeIpcRoot = mkdtempSync(join(tmpdir(), 'yan-qf-wmipc-'))
+        const store = new WorkModeStore({ root: workModeIpcRoot })
         const runnerState = { sessionId: 'sid-A', sessionFile: 'C:/sessions/A.jsonl' }
         const registry = {
           activeRunner: () => ({ id: runnerId }),
@@ -917,20 +914,15 @@ import * as real from './work-mode-service'
           normalizeSessionFileKey(registry.agentOf(id)?.getState()?.sessionFile) ?? `pending:${id}`
         const pushes = []
         const handlers = {}
-        registerGoalIpc(
+        registerWorkModeIpc(
           { handle: (channel, fn) => (handlers[channel] = fn), rawHandle: () => {} },
           {
             registry: () => registry,
             workModes: store,
-            handoffs: {},
-            handoffTransactions: {},
-            sessionChains: {},
-            handoffDiag: { record: () => {} },
-            pushFrom: (id, msg) => pushes.push({ id, ...msg }),
-            scheduleSessionWork: async () => {}
+            pushFrom: (id, msg) => pushes.push({ id, ...msg })
           }
         )
-        configureGoalCoordinator({
+        configureWorkModeCoordinator({
           runners: () => registry,
           workModes: store,
           pushFrom: (id, msg) => pushes.push({ id, ...msg })
@@ -943,12 +935,12 @@ import * as real from './work-mode-service'
           workModeKeyFor,
           pushes,
           set: handlers['yan:setWorkMode'],
-          rm: () => rmSync(goalRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+          rm: () => rmSync(workModeIpcRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
         }
       }
 
       {
-        const h = makeGoalIpcFixture('runner-G1')
+        const h = makeWorkModeIpcFixture('runner-G1')
         await bSnapshot('runner-G1')
         globalThis.__qfHooks = {
           beforeWrite: () => {
@@ -959,18 +951,18 @@ import * as real from './work-mode-service'
         const res = await h.set('autonomous', undefined)
         globalThis.__qfHooks = null
         const snap = await readWorkModeSnapshot('runner-G1')
-        ok(res.ok === true, 'goal-ipc：正常返回 store 结果', JSON.stringify(res))
+        ok(res.ok === true, 'work-mode-ipc：正常返回 store 结果', JSON.stringify(res))
         ok(
           snap?.questionFrequency === 'eager' && snap?.sessionId === 'sid-B',
-          'goal-ipc：写入关键段被复用 → 不覆盖 B 的有效快照',
+          'work-mode-ipc：写入关键段被复用 → 不覆盖 B 的有效快照',
           JSON.stringify(snap)
         )
-        ok(!h.pushes.some((p) => p.ch === 'work-mode'), 'goal-ipc：身份已换 → 不推送旧 payload')
+        ok(!h.pushes.some((p) => p.ch === 'work-mode'), 'work-mode-ipc：身份已换 → 不推送旧 payload')
         h.rm()
       }
 
       {
-        const h = makeGoalIpcFixture('runner-G2')
+        const h = makeWorkModeIpcFixture('runner-G2')
         await h.store.setQuestionFrequency('C:/sessions/A.jsonl', 'eager')
         const res = await h.set('autonomous', 1)
         const snap = await readWorkModeSnapshot('runner-G2')
@@ -978,97 +970,8 @@ import * as real from './work-mode-service'
         ok(
           res.ok && raw.mode === 'autonomous' && raw.revision === 2 && raw.questionFrequency === 'eager' &&
             snap?.questionFrequency === 'eager',
-          'goal-ipc：合法写入保留 mode / 频率 / revision 字段',
+          'work-mode-ipc：合法写入保留 mode / 频率 / revision 字段',
           JSON.stringify({ res, raw })
-        )
-        h.rm()
-      }
-
-      const makeHandoffFixture = (runnerId) => {
-        const handoffRoot = mkdtempSync(join(tmpdir(), 'yan-qf-handoff-'))
-        const store = new WorkModeStore({ root: handoffRoot })
-        const runnerState = { sessionId: 'sid-D', sessionFile: 'C:/sessions/dest.jsonl' }
-        const registry = {
-          agentOf: (id) => (id === runnerId ? { getState: () => ({ ...runnerState }) } : null),
-          runtimeOf: (id) =>
-            id === runnerId ? { sessionId: runnerState.sessionId, runId: runnerId, generation: 1 } : null,
-          activeRunnerId: runnerId
-        }
-        const workModeKeyFor = (id) =>
-          normalizeSessionFileKey(registry.agentOf(id)?.getState()?.sessionFile) ?? `pending:${id}`
-        configureHandoffCoordinator({
-          runners: () => registry,
-          defaultWorkMode: () => 'standard',
-          goals: { inheritTo: async () => true },
-          workModes: store,
-          sessionChains: {},
-          handoffTransactions: {},
-          handoffDiag: { record: () => {} },
-          workModeKeyFor,
-          resolveWorkMode: async () => ({ mode: 'standard', revision: 0 }),
-          pushFrom: () => {},
-          push: () => {},
-          maybeArmGoalContinue: async () => {},
-          cancelGoalResume: async () => {},
-          applyGoalResume: async () => {},
-          consumeRepeatBlocks: async () => {},
-          rememberRunnerSession: async () => {},
-          pushRunners: () => {},
-          pushRunnerSnapshot: async () => {},
-          openHandoffSession: async () => ({ ok: false }),
-          projectIdForCwd: () => undefined
-        })
-        return {
-          runnerId,
-          runnerState,
-          store,
-          workModeKeyFor,
-          rm: () => rmSync(handoffRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
-        }
-      }
-      {
-        const h = makeHandoffFixture('runner-H1')
-        await bSnapshot('runner-H1')
-        globalThis.__qfHooks = {
-          beforeWrite: () => {
-            h.runnerState.sessionId = 'sid-A'
-            h.runnerState.sessionFile = 'C:/sessions/A.jsonl'
-          }
-        }
-        await inheritForHandoff({
-          sessionFile: 'C:/sessions/dest.jsonl',
-          runId: 'runner-H1',
-          sourceSession: 'C:/sessions/source.jsonl'
-        })
-        globalThis.__qfHooks = null
-        const snap = await readWorkModeSnapshot('runner-H1')
-        ok(
-          snap?.questionFrequency === 'eager' && snap?.sessionId === 'sid-B',
-          'handoff：目的段写入关键段被复用 → 不覆盖 B 的有效快照',
-          JSON.stringify(snap)
-        )
-        h.rm()
-      }
-      {
-        const h = makeHandoffFixture('runner-H2')
-        await h.store.load()
-        await h.store.set('C:/sessions/source.jsonl', 'autonomous')
-        await h.store.setQuestionFrequency('C:/sessions/source.jsonl', 'eager')
-        await inheritForHandoff({
-          sessionFile: 'C:/sessions/dest.jsonl',
-          runId: 'runner-H2',
-          sourceSession: 'C:/sessions/source.jsonl'
-        })
-        const snap = await readWorkModeSnapshot('runner-H2')
-        const raw = JSON.parse(readFileSync(join(root, 'work-mode', 'runner-H2.json'), 'utf8'))
-        const dest = h.store.state('C:/sessions/dest.jsonl')
-        ok(
-          raw.mode === 'standard' &&
-            raw.revision === dest.revision &&
-            raw.questionFrequency === 'inherit' &&
-            snap?.sessionId === 'sid-D',
-          'handoff：合法写入固定 standard、保留目的 revision / 频率、带目的归属（不复制源的 eager）',
-          JSON.stringify({ raw, dest, snap })
         )
         h.rm()
       }
@@ -1095,19 +998,19 @@ import * as real from './work-mode-service'
         )
         const owned = workModeExt.currentWorkMode(ctxA)
         ok(
-          owned.mode === 'clarify' && owned.planApprovalPending === true,
-          'work-mode.js：归属相符才采用快照（含待审标记）',
+          owned.mode === 'clarify',
+          'work-mode.js：归属相符才采用快照',
           JSON.stringify(owned)
         )
         const wrong = workModeExt.currentWorkMode(ctxB)
         ok(
-          wrong.mode === 'standard' && wrong.planApprovalPending === false,
-          'work-mode.js：错归属回落安全标准档，不带 A 的待审限制',
+          wrong.mode === 'standard',
+          'work-mode.js：错归属回落安全标准档',
           JSON.stringify(wrong)
         )
         const unknown = workModeExt.currentWorkMode({})
         ok(
-          unknown.mode === 'standard' && unknown.planApprovalPending === false,
+          unknown.mode === 'standard',
           'work-mode.js：ctx 身份不可得且有归属 → 不盲接受',
           JSON.stringify(unknown)
         )

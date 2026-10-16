@@ -6,8 +6,6 @@ import { applyCodemodePreference } from './codemode-policy.js'
 const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'bash', 'powershell']
 
 const HOST_YAN = '(?:(?:"(?:[A-Za-z]:[\\\\/]|/)[^"]*[\\\\/]yan(?:\\.(?:cmd|exe|mjs))?")|(?:(?:[A-Za-z]:[\\\\/]|/)[^\\s;&|<>`$(){}\\[\\]]*[\\\\/]yan(?:\\.(?:cmd|exe|mjs))?)|yan(?:\\.(?:cmd|exe|mjs))?)'
-const GOAL_COMMAND = new RegExp(`^\\s*${HOST_YAN}\\s+goal\\s+(?:status|ready|report)(?:\\s|$)`)
-const GOAL_STATUS_COMMAND = new RegExp(`^\\s*${HOST_YAN}\\s+goal\\s+status(?:\\s|$)`)
 const QUESTION_COMMAND = new RegExp(`^\\s*${HOST_YAN}\\s+question\\s+ask(?:\\s|$)`)
 const CONTEXT_REF = 'ctx:\\/\\/(?:tool|file|diff|episode)\\/[A-Za-z0-9._~%:-]{1,200}'
 const CONTEXT_RECALL_COMMAND = new RegExp(
@@ -69,17 +67,17 @@ function readOwnedSnapshot(ctx) {
 export function currentWorkMode(ctx) {
   const read = readOwnedSnapshot(ctx)
   if (read.snapshot && WORK_MODES.includes(read.snapshot.mode)) {
-    return { mode: read.snapshot.mode, planApprovalPending: read.snapshot.planApprovalPending === true }
+    return { mode: read.snapshot.mode }
   }
-  if (read.mismatch) return { mode: 'standard', planApprovalPending: false }
+  if (read.mismatch) return { mode: 'standard' }
   try {
     const settings = JSON.parse(readFileSync(join(dataDir(), 'desktop.json'), 'utf8'))
     if (WORK_MODES.includes(settings?.defaultWorkMode)) {
-      return { mode: settings.defaultWorkMode, planApprovalPending: false }
+      return { mode: settings.defaultWorkMode }
     }
-    return { mode: settings?.autonomous === true ? 'autonomous' : 'standard', planApprovalPending: false }
+    return { mode: settings?.autonomous === true ? 'autonomous' : 'standard' }
   } catch {
-    return { mode: 'standard', planApprovalPending: false }
+    return { mode: 'standard' }
   }
 }
 
@@ -101,11 +99,10 @@ function note(hook, payload) {
   }
 }
 
-export function isAllowedBashCommand(command, planApprovalPending = false) {
+export function isAllowedBashCommand(command) {
   if (!command) return false
   if (SHELL_METACHARS.test(command)) return false
-  const goalCommand = planApprovalPending ? GOAL_STATUS_COMMAND : GOAL_COMMAND
-  return goalCommand.test(command) || QUESTION_COMMAND.test(command) ||
+  return QUESTION_COMMAND.test(command) ||
     CONTEXT_RECALL_COMMAND.test(command) || CONTEXT_FIND_COMMAND.test(command)
 }
 
@@ -119,7 +116,6 @@ export default function workModePolicy(pi) {
   let baseTools = null
   let restricted = false
   let mode = 'standard'
-  let planApprovalPending = false
 
   const applyTools = (names) => {
     try {
@@ -133,7 +129,6 @@ export default function workModePolicy(pi) {
   pi.on('before_agent_start', (event, ctx) => {
     const policy = currentWorkMode(ctx)
     mode = policy.mode
-    planApprovalPending = policy.planApprovalPending
     if (mode === 'clarify') {
       if (!baseTools) baseTools = (pi.getActiveTools?.() ?? []).map(toolName).filter(Boolean)
       const target = baseTools.filter((name) => READ_ONLY_TOOLS.includes(name))
@@ -153,12 +148,11 @@ export default function workModePolicy(pi) {
   pi.on('tool_call', (event, ctx) => {
     const policy = currentWorkMode(ctx)
     mode = policy.mode
-    planApprovalPending = policy.planApprovalPending
     const name = String(event?.toolName ?? '')
     if (mode !== 'clarify' || !name) return undefined
     if (name === 'bash' || name === 'powershell') {
       const command = String((event?.input ?? {})?.command ?? '')
-      if (isAllowedBashCommand(command, planApprovalPending)) return undefined
+      if (isAllowedBashCommand(command)) return undefined
       note('tool_call_blocked', { mode, tool: name, command: command.slice(0, 140) })
       return { block: true }
     }

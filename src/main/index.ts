@@ -1,4 +1,4 @@
-import { AGENT_CONTEXT_ERROR, isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
+import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
 import './storage-move-boot'
 import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
@@ -49,7 +49,6 @@ import { registerTerminalIpc } from './ipc/terminal-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
-import { registerLibraryIpc } from './ipc/library-ipc'
 import { registerSourcesIpc } from './ipc/sources-ipc'
 import { registerKnowledgeIpc } from './ipc/knowledge-ipc'
 import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
@@ -79,9 +78,8 @@ import { captureCheckpoint, pruneCheckpoints } from './checkpoints'
 import type { SessionHost } from './session-host'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerWorkspaceIpc } from './ipc/workspace-ipc'
-import { registerGoalIpc } from './ipc/goal-ipc'
+import { registerWorkModeIpc } from './ipc/work-mode-ipc'
 import { registerQuestionFrequencyIpc } from './ipc/question-frequency-ipc'
-import { registerSpaceIpc } from './ipc/space-ipc'
 import { registerFilesIpc } from './ipc/files-ipc'
 import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { canOpenDocument } from '../shared/document-open'
@@ -93,25 +91,17 @@ import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
 import { createSubagentNotifier } from './subagent-notify'
-import { configureGoalCoordinator, setDefaultWorkMode, defaultWorkMode, workModeKeyFor, resolveWorkMode, pushWorkMode, resolveAgentProfile, pushAgentProfile, refreshSessionContext, pushGoal, applyGoalResume, cancelGoalResume, consumeRepeatBlocks, goals, maybeArmGoalContinue } from './goal-coordinator'
+import { configureWorkModeCoordinator, setDefaultWorkMode, workModeKeyFor, resolveWorkMode, pushWorkMode, resolveAgentProfile, pushAgentProfile } from './work-mode-coordinator'
 import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
-import { configureHandoffCoordinator, handoffRunner, publishHandoffReplacement, handoffPending, handoffIdentities, hasHandoffOperation, abandonHandoff } from './handoff-coordinator'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { registerAppUpdate } from './app-update'
 import { VoiceService } from './voice/voice-service'
 import { registerPeerIpc } from './ipc/peer-ipc'
 import type { ConsentDecision } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
-import { HandoffStore } from './handoff-service'
-import { HandoffDiagnostics } from './handoff-diagnostics'
-import { HandoffTransactionStore } from './handoff-transaction-service'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
 import { AutoIsolationStore, isolateCwdForConflict, isolationCwdKey, syncIsolationBack } from './session-isolation'
-import { type HandoffSessionHandle, type HandoffSessionTarget } from './handoff-runner'
-import { normalizeChainKey } from '../shared/session-chain'
-import { createSessionWorkScheduler } from './session-work-scheduler'
-import { emptyGoal } from '../shared/goal'
 import { localCommandDescriptors } from './command-registry'
 import { writeExitSnapshot } from './exit-snapshot'
 import { installStdioGuard } from './stdio-guard'
@@ -120,15 +110,11 @@ import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGE
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
-import { WorkModeStore, normalizeSessionFileKey } from './work-mode-service'
+import { WorkModeStore } from './work-mode-service'
 import { ApprovalBroker } from './approval-broker'
 import { refreshManagedGit } from './git-runtime'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
-import { AgentProfileStore } from './agent-profile-store'
-import { SpaceStore } from './space-store'
-import { LibraryService } from './library-service'
-import { ContextAssembler } from './context-assembler'
-import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, MainPush, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
+import type { Attachment, AttentionNotify, FileRequestContext, MainPush, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
 import { toPaneTerminalSnapshot } from '../shared/pane-terminal'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -435,19 +421,8 @@ function syncAppViewForeground(): void {
   mcpAppViewService.invalidateSession(previous.sessionId)
 }
 
-const stopRunnerWithHandoff = async (runnerId: string | null, agent: AgentController | null): Promise<QueueSnapshot> => {
-  if (runnerId) {
-    for (const [sourceId, pending] of handoffPending) {
-      if (sourceId !== runnerId && pending.destinationRunId !== runnerId) continue
-      pending.cancelled = true
-      if (pending.destinationRunId && pending.destinationRunId !== runnerId) {
-        await runners?.agentOf(pending.destinationRunId)?.abort()
-      }
-      await abandonHandoff(sourceId, 'user-stop', pending.request.operationId)
-    }
-  }
-  return (await agent?.abort()) ?? { steering: [], followUp: [] }
-}
+const stopRunner = async (agent: AgentController | null): Promise<QueueSnapshot> =>
+  (await agent?.abort()) ?? { steering: [], followUp: [] }
 
 function bundledSkillPaths(): string[] {
   const roots = [
@@ -680,25 +655,7 @@ function notifyBlockedTerminal(id: string, status?: TerminalProgramStatus): void
   }).catch(() => undefined)
 }
 
-async function observeCompaction(id: string, state: unknown): Promise<void> {
-  const run = (state as { lastCompaction?: CompactionRun } | null | undefined)?.lastCompaction
-  if (!run || run.status !== 'completed') return
-  const key = workModeKeyFor(id)
-  if (!key) return
-  try {
-    await handoffs.load()
-    await handoffs.recordCompaction(key, run)
-  } catch {
-  }
-  void scheduleSessionWork(id, 'compaction')
-}
-
-const handoffs = new HandoffStore()
-
-const handoffDiag = new HandoffDiagnostics()
-
 const sessionChains = new SessionChainStore()
-const handoffTransactions = new HandoffTransactionStore()
 
 const artifactStore = new ArtifactStore(join(YAN_DIR, 'artifacts'))
 
@@ -807,24 +764,7 @@ async function syncPendingIsolations(): Promise<void> {
   }
 }
 
-
-const sessionWork = createSessionWorkScheduler({
-  stateOf: (id) => runners?.agentOf(id)?.getState() ?? null,
-  hasHandoffOperation: (id) => hasHandoffOperation(id),
-  consumeRepeatBlocks: async () => {}
-})
-
-
-
-function scheduleSessionWork(id: string, reason: string): Promise<void> {
-  return sessionWork.schedule(id, reason)
-}
-
 function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnvelope | null): void {
-  const identity = handoffIdentities.get(runnerId)
-  if (msg.ch === 'state' && identity && msg.payload.sessionId === identity.sessionId) {
-    msg = { ...msg, payload: { ...msg.payload, ...identity } }
-  }
   const runtime = runners?.runtimeOf(runnerId)
   if (!runtime) {
     if (msg.ch === 'ui-request') console.warn(`[ui-request] 实例 ${runnerId} 已摘登记，问题推送被丢弃：${msg.payload.id}`)
@@ -839,8 +779,6 @@ function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnve
   })
   if (msg.ch === 'state' || msg.ch === 'proc') refreshTrayMenu()
   if (msg.ch === 'state' || msg.ch === 'proc') requestPiPackageActivationTick()
-  if (msg.ch === 'state') void observeCompaction(runnerId, msg.payload)
-  sessionWork.observePush(runnerId, msg)
   if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) void syncPendingIsolations()
   if (msg.ch === 'state') pushRunners()
   if (msg.ch === 'ui-request' || msg.ch === 'ui-resolved') pushRunners()
@@ -1064,14 +1002,6 @@ async function syncKeepAwake(working: boolean): Promise<void> {
 
 const workModes = new WorkModeStore()
 
-const agentProfiles = new AgentProfileStore()
-
-const spaces = new SpaceStore()
-
-const library = new LibraryService()
-
-const contextAssembler = new ContextAssembler({ library })
-
 async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } = {}): Promise<void> {
   const ag = runners?.agentOf(id)
   if (!ag) return
@@ -1099,9 +1029,6 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
   void ag.refreshTodos().catch(() => {})
   await pushWorkMode(id)
   await pushAgentProfile(id)
-  if (runners?.agentOf(id) === ag && sameRuntimeEnvelope(runners?.runtimeOf(id), expected)) {
-    pushFrom(id, { ch: 'goal', payload: emptyGoal() }, expected)
-  }
   pushRunners()
 }
 
@@ -1629,59 +1556,6 @@ async function rememberRunnerSession(
   })
 }
 
-async function waitForSessionFile(runId: string, timeoutMs = 10_000): Promise<string | undefined> {
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    const file = runners?.agentOf(runId)?.getState()?.sessionFile
-    if (file && normalizeSessionFileKey(file)) return file
-    if (Date.now() >= deadline) return undefined
-    await new Promise((resolve) => setTimeout(resolve, 150))
-  }
-}
-
-async function openHandoffSession(target: HandoffSessionTarget): Promise<HandoffSessionHandle> {
-  if (!runners) return { ok: false, error: 'pi 未运行' }
-  const settings = await getSettings()
-  const cwdResult = await validateCwd(target.cwd || settings.cwd)
-  if (!cwdResult.ok) return { ok: false, error: cwdResult.error }
-  const projectId = target.projectId ?? projectIdForCwd(settings, cwdResult.cwd)
-  const rollback = target.sessionFile ? [...handoffPending.entries()].find(([, op]) => op.request.sessionKey === normalizeChainKey(target.sessionFile!)) : undefined
-  const res = await runners.select({
-    cwd: cwdResult.cwd,
-    ...(projectId ? { projectId } : {}),
-    ...(target.sessionFile ? { sessionFile: target.sessionFile } : {}),
-    ...(!target.sessionFile ? { activate: false, hidden: true } : rollback ? { activate: false } : target.activate === false ? { activate: false } : {})
-  })
-  if (!res.ok || !res.id) return { ok: false, error: res.error ?? '打开会话失败' }
-  if (rollback) rollback[1].destinationRunId = res.id
-  if (target.sessionFile) await rememberRunnerSession(res, {
-    ...(target.sessionFile ? { sessionFile: target.sessionFile } : {}),
-    ...(projectId ? { projectId } : {}),
-    cwd: cwdResult.cwd,
-    scope: projectId ? 'project' : 'global'
-  })
-  pushRunners()
-  const sessionFile = await waitForSessionFile(res.id)
-  if (!sessionFile) {
-    if (!target.sessionFile) await runners.stopOne(res.id)
-    return { ok: false, error: '新会话文件还没落地' }
-  }
-  if (rollback) await publishHandoffReplacement(rollback[0], res.id)
-  else void pushRunnerSnapshot(res.id)
-  return { ok: true, runId: res.id, sessionFile }
-}
-
-async function recoverHandoffs(): Promise<void> {
-  try {
-    const actions = await handoffRunner.recover()
-    for (const item of actions) {
-      console.log(`[handoff] 恢复 ${item.handoffId}: ${item.action} → ${item.stage}`)
-    }
-  } catch (error) {
-    console.error('[handoff] 恢复交接事务失败：', error)
-  }
-}
-
 let starting: Promise<{ ok: boolean; error?: string }> | null = null
 let agentResponseDetail: 'brief' | 'standard' | 'detailed' = 'standard'
 
@@ -1994,7 +1868,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       agentDir: PI_AGENT_DIR,
       service: acquisitions,
       authorizations: packageAuthorizations,
-      goals,
       runners: {
         activationSnapshot: (target) => runners?.activationSnapshot(target) ?? null,
         agentOf: (id) => runners?.agentOf(id) ?? null,
@@ -2026,7 +1899,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   })
   pushRunners()
   if (res.ok && res.id) await pushRunnerSnapshot(res.id)
-  if (res.ok) await recoverHandoffs()
   requestPiPackageActivationTick()
   return res.ok ? { ok: true } : { ok: false, error: res.error }
 }
@@ -2098,42 +1970,11 @@ function registerIpc(): void {
     if (expected === 'invalid') return { ok: false, error: '发送目标身份无效，消息未发送' }
     let targetId = expected ? resolveExpectedTarget(expected) ?? undefined : runners?.activeRunnerId
     if (expected && !targetId) return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
-    const handoffEntry = targetId ? [...handoffPending.entries()].find(([sourceId, op]) => sourceId === targetId || op.destinationRunId === targetId) : undefined
-    const handoff = handoffEntry?.[1]
     let pin = targetId ? pinSendTarget(targetId) : null
     const sendOwnershipChanged = (id: string | null | undefined): boolean =>
       (!!expected && (!id || !targetMatchesExpected(id, expected))) || (!!id && !!pin && !pinnedTargetMatches(pin))
-    const handoffDestPin = handoff?.destinationRunId && handoff.destinationRunId !== targetId
-      ? pinSendTarget(handoff.destinationRunId)
-      : null
-    if (handoff?.collecting) {
-      await handoff.settled
-      if (expected && (!targetId || !targetMatchesExpected(targetId, expected))) {
-        return { ok: false, error: '目标会话在等待交接时已变化，消息未发送；草稿已保留' }
-      }
-      if (handoff.cancelled) return { ok: false, error: '交接已停止，请重新发送' }
-      const destinationId = handoff.destinationRunId
-      if (destinationId) {
-        if (handoffDestPin && !pinnedTargetMatches(handoffDestPin)) {
-          return { ok: false, error: '目标会话在等待交接时已变化，消息未发送；草稿已保留' }
-        }
-        targetId = destinationId
-        pin = pinSendTarget(targetId)
-        if (!pin) return { ok: false, error: '目标会话在等待交接时已变化，消息未发送；草稿已保留' }
-      } else if (pin && !pinnedTargetMatches(pin)) {
-        return { ok: false, error: '目标会话在等待交接时已变化，消息未发送；草稿已保留' }
-      }
-      if (targetId && handoffPending.get(targetId) === handoff) {
-        await abandonHandoff(targetId, 'user-message', handoff.request.operationId)
-      }
-    } else if (handoff && targetId) {
-      await abandonHandoff(handoffEntry![0], 'user-message', handoff.request.operationId)
-    }
     if (sendOwnershipChanged(targetId)) {
       return { ok: false, error: '目标会话在等待时已变化，消息未发送；草稿已保留' }
-    }
-    if (handoff && targetId && !runners?.agentOf(targetId)?.running) {
-      return { ok: false, error: '会话正在恢复，请稍后重新发送' }
     }
     if (!expected && (!targetId || !runners?.agentOf(targetId)?.running)) {
       const r = await startAgent()
@@ -2170,28 +2011,7 @@ function registerIpc(): void {
   handle('yan:steerQueued', async (queueId: string) => ac()?.steerQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:removeQueued', async (queueId: string) => ac()?.removeQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:queueEdit', async (next: QueueState) => ac()?.rewriteQueue(next) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:abort', async () => {
-    return stopRunnerWithHandoff(runners?.activeRunnerId ?? null, ac())
-  })
-
-  handle('yan:stopGoal', async () => {
-    const id = runners?.activeRunner()?.id
-    if (!id) return { ok: false, error: 'pi 未运行' }
-    await goals.load()
-    const key = workModeKeyFor(id)
-    const goal = await goals.stop(key, null)
-    await applyGoalResume(id)
-    await pushGoal(id)
-    handoffDiag.record({
-      stage: 'goal-continue',
-      outcome: 'goal-stopped',
-      reason: 'user-stop-goal',
-      runnerId: id,
-      sessionKey: key,
-      detail: { goalId: goal?.goalId ?? null }
-    })
-    return { ok: true, goal }
-  })
+  handle('yan:abort', async () => stopRunner(ac()))
 
   handle('yan:runBash', async (command: string, options?: { excludeFromContext?: boolean }, expectedInput?: unknown) => {
     if (typeof command !== 'string' || !command.trim() || (options !== undefined && (!options || typeof options !== 'object' || (options.excludeFromContext !== undefined && typeof options.excludeFromContext !== 'boolean')))) return { ok: false, error: '命令参数无效' }
@@ -2300,15 +2120,10 @@ function registerIpc(): void {
     async (enabled: boolean) => ac()?.setAutoRetry(enabled) ?? { ok: false, error: 'pi 未运行' }
   )
 
-  registerGoalIpc(ipc, {
+  registerWorkModeIpc(ipc, {
     registry: () => runners,
     workModes,
-    handoffs,
-    handoffTransactions,
-    sessionChains,
-    handoffDiag,
-    pushFrom,
-    scheduleSessionWork
+    pushFrom
   })
 
   registerQuestionFrequencyIpc(ipc, {
@@ -2319,7 +2134,6 @@ function registerIpc(): void {
     pushFrom
   })
 
-  registerSpaceIpc(ipc, { registry: () => runners, agentProfiles, spaces })
 
   handle(
     'yan:setSteeringMode',
@@ -2372,7 +2186,7 @@ function registerIpc(): void {
     stopSessionRun: async ({ sessionId }) => {
       const agent = runners?.agentForSession(sessionId) ?? null
       if (!agent) return { ok: false, error: '找不到这次运行对应的会话实例' }
-      const cleared = await stopRunnerWithHandoff(runners?.idOf(agent) ?? null, agent)
+      const cleared = await stopRunner(agent)
       return { ok: true, recovered: cleared }
     },
     stopSubagentRun: async (runId) => {
@@ -2729,7 +2543,7 @@ function registerIpc(): void {
   rawHandle('yan:setUiScale', async (_e, v: unknown) => setUiScale(v))
 
 
-  registerWorkspaceIpc(ipc, { handoffs })
+  registerWorkspaceIpc(ipc)
   registerContextBudgetIpc(ipc, { currentAgent: () => ac() ?? undefined })
 
 
@@ -2831,23 +2645,6 @@ function registerIpc(): void {
 
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   registerSourcesIpc(ipc, { webSearchAvailability: async () => ac()?.webSearchAvailability() })
-
-  registerLibraryIpc(ipc, {
-    library,
-    spaces,
-    refreshActiveSessionContext: async (sessionId) => {
-      const activeId = runners?.activeRunner()?.id
-      if (activeId && runners?.agentOf(activeId)?.getState()?.sessionId === sessionId) {
-        await refreshSessionContext(activeId, await resolveAgentProfile(activeId))
-      }
-    }
-  })
-
-  handle('yan:context:current', async () => ({ ok: false, error: AGENT_CONTEXT_ERROR }))
-
-
-
-
 
   registerCapabilitiesIpc(ipc, {
     currentAgent: () => ac() ?? undefined,
@@ -3248,13 +3045,9 @@ function createWindow(): void {
   }
 }
 
-configureGoalCoordinator({
+configureWorkModeCoordinator({
   runners: () => runners,
   workModes,
-  agentProfiles,
-  spaces,
-  contextAssembler,
-  handoffDiag,
   pushFrom
 })
 
@@ -3277,30 +3070,6 @@ configureRemoteHost({
   approvals,
   win: () => win,
   remoteAccess: () => remoteAccess
-})
-
-configureHandoffCoordinator({
-  runners: () => runners,
-  defaultWorkMode,
-  goals,
-  handoffs,
-  workModes,
-  sessionChains,
-  handoffTransactions,
-  handoffDiag,
-  workModeKeyFor,
-  resolveWorkMode,
-  pushFrom,
-  push,
-  maybeArmGoalContinue,
-  cancelGoalResume,
-  applyGoalResume,
-  consumeRepeatBlocks,
-  rememberRunnerSession,
-  pushRunners,
-  pushRunnerSnapshot,
-  openHandoffSession,
-  projectIdForCwd
 })
 
 app.whenReady().then(async () => {

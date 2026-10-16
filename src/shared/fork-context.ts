@@ -1,5 +1,4 @@
 import type { ForkRefState } from './fork-rebind'
-import type { HandoffPackage } from './handoff'
 
 export const FORK_CONTEXT_TAG = 'yan-fork-context'
 
@@ -31,7 +30,6 @@ export interface ForkContextInput {
   source: { sessionId: string; cwd: string } | null
   refs: ForkContextRefs | null
   attachments: { total: number } | null
-  pkg: HandoffPackage | null
 }
 
 export function forkContextMarker(forkId: string): string {
@@ -51,12 +49,6 @@ function problemText(item: ForkContextRefProblem): string {
   if (item.state === 'outside') return `${item.ref}（在仓库之外，按设计不迁移）`
   if (item.state === 'type-mismatch') return `${item.ref}（类型变了：引用时是目录，现在是文件）`
   return `${item.ref}（这个工作树里没有）`
-}
-
-function bullets(label: string, items: readonly string[]): string[] {
-  const clean = items.map((x) => String(x ?? '').trim()).filter(Boolean)
-  if (!clean.length) return []
-  return [`${label}：`, ...clean.map((x) => `- ${x}`)]
 }
 
 export function buildForkContext(input: ForkContextInput): string {
@@ -88,24 +80,6 @@ export function buildForkContext(input: ForkContextInput): string {
       `源会话里有 ${input.attachments.total} 个图片附件**没有带过来**（附件不迁移）。` +
         '需要哪张就在新会话里重新添加/截图发给我 —— 不要去猜它们的内容。'
     )
-  }
-
-  if (input.pkg) {
-    const pkg = input.pkg
-    lines.push('', '上一个会话留下的交接包（可迁移的知识部分）：')
-    lines.push(`- 目标：${pkg.goal}`)
-    lines.push(`- 交付物：${pkg.deliverable}`)
-    lines.push(...bullets('约束与授权', pkg.constraints))
-    lines.push(...bullets('验收标准', pkg.acceptance))
-    lines.push(...bullets('已完成', pkg.done))
-    lines.push(...bullets('未完成', pkg.remaining))
-    lines.push(...bullets('阻塞', pkg.blockers))
-    lines.push(...bullets('交接时认定的下一步', pkg.nextActions))
-    if (pkg.files.length) {
-      lines.push(...bullets('交接包里列的文件', pkg.files))
-    }
-  } else {
-    lines.push('', '上一个会话**没有留下交接包**：只有上面这些（工作树状态 + 文件对照）。缺什么直接问。')
   }
 
   lines.push('', FOOTER)

@@ -49,8 +49,6 @@ try {
   ok(!taskPlan.normalizeTaskItems([{ text: 'fixture', done: 'false' }])[0].done, '字符串false不算完成')
   const turns = await load('src/shared/turns.ts', 'turns')
   ok(turns.splitParagraphs('````js\n```\n\ninside\n````\n\noutside').length === 2, '不同长度代码围栏不被内层误关闭')
-  const handoff = await load('src/shared/handoff.ts', 'handoff')
-  ok(handoff.parseHandoffOutput('prose {not JSON} then {"fixture":true}').ok, '前文非JSON花括号不吞后面对象')
   const knowledge = await load('src/shared/project-memory.ts', 'knowledge')
   ok(!knowledge.isSafeRelativeRef('C:outside.txt'), '知识相对引用拒盘符相对路径')
   ok(knowledge.knowledgeNeedsReview({ status: 'active', validFor: { paths: 'bad' } }, {}) === true, '脏validFor不抛some异常')

@@ -1,9 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { PiPackageActivationTarget } from '../../shared/acquisition'
-import { goalContinueSummary, isActiveGoalPhase } from '../../shared/goal'
 import { formatSkillSecurityReview } from '../../shared/skill-security'
-import { GoalStore, clearGoalResumeSnapshotIfOperation, goalResumeContinuationWasConsumed, writeGoalResumeSnapshotIfVacant } from '../goal-service'
 import type { PackageListing } from '../packages'
 import type { AgentController } from '../agent'
 import { AcquisitionService, stagingDirOf } from './acquisition-service'
@@ -16,7 +14,6 @@ export type PiPackageActivationHostDeps = {
   agentDir: string
   service: AcquisitionService
   authorizations: PackageAuthorizationService
-  goals: GoalStore
   runners: {
     activationSnapshot(target: PiPackageActivationTarget): PiPackageRunnerSnapshot | null
     agentOf(id: string): AgentController | null
@@ -103,11 +100,6 @@ export function createPiPackageActivationHostPorts(deps: PiPackageActivationHost
     }),
     isTrusted: deps.isTrusted,
     sourceHead: deps.sourceHead,
-    async goalSnapshot(target) {
-      await deps.goals.load()
-      const goal = deps.goals.state(target.sessionFile)
-      return { goalId: goal.goalId, revision: goal.revision, active: isActiveGoalPhase(goal.phase) }
-    },
     runner,
     cwdBusy: (cwd) => deps.runners.hasBusyCwd(cwd),
     verifyStaged: async (tx) => deps.service.verifyStaged(tx.operationId),
@@ -137,40 +129,6 @@ export function createPiPackageActivationHostPorts(deps: PiPackageActivationHost
       }
       return deps.runners.restartOne(current.id)
     },
-    verifyActive,
-    async writeContinuation(tx, snapshot) {
-      const target = tx.piPackageTarget
-      if (!target) throw new Error('事务没有绑定 pi 包激活目标')
-      await deps.goals.load()
-      const goal = deps.goals.state(target.sessionFile)
-      if (goal.goalId !== target.goalId || goal.revision !== target.goalRevision || !isActiveGoalPhase(goal.phase)) {
-        throw new Error('续接前目标身份 / 修订已变化或目标已结束')
-      }
-      const pending = deps.goals.resumeOf(target.sessionFile)
-      if (pending && pending.operationId !== target.continueId) {
-        const pendingConsumed = await goalResumeContinuationWasConsumed(snapshot.id, pending.operationId, deps.root)
-        if (!pendingConsumed) throw new Error('该会话另有尚未消费的目标续行，不能覆盖')
-      }
-      const written = await writeGoalResumeSnapshotIfVacant(snapshot.id, {
-        operationId: target.continueId,
-        at: Date.now(),
-        summary: `${goalContinueSummary(goal, 1)}\n\n能力包已验证并激活，继续原目标。续接编号：${target.continueId}`,
-        kind: 'continue'
-      }, deps.root)
-      if (!written) throw new Error('运行时续行槽已有另一条未消费请求，拒绝覆盖')
-    },
-    async clearContinuation(tx, snapshot) {
-      const target = tx.piPackageTarget
-      if (!target) return
-      const resolved = snapshot ?? await runner(target)
-      if (!resolved) return
-      await clearGoalResumeSnapshotIfOperation(resolved.id, target.continueId, deps.root)
-    },
-    continuationConsumed: (tx, snapshot) => {
-      const target = tx.piPackageTarget
-      return target
-        ? goalResumeContinuationWasConsumed(snapshot.id, target.continueId, deps.root)
-        : Promise.resolve(false)
-    }
+    verifyActive
   }
 }

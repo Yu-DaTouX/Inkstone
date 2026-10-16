@@ -74,7 +74,7 @@ export async function runSettingsStoreTests(ok) {
   ok(again.theme === 'dark' && JSON.parse(await readFile(FILE, 'utf8')).theme === 'dark', '一次失败不影响后续写入')
 
   const normalized = await patchSettings({ theme: 'invalid', remoteAccess: { enabled: 'yes', port: -1 }, showSpaces: 'yes' })
-  ok(normalized.theme === 'dark' && normalized.remoteAccess.enabled === false && normalized.showSpaces === undefined, '读写共用清洗，不持久化非法 UI 值')
+  ok(normalized.theme === 'dark' && normalized.remoteAccess.enabled === false && normalized.showSpaces === undefined, '读写共用清洗，不持久化非法 UI 值与已退役的 showSpaces')
   const detached = await getSettings()
   detached.profile.name = 'must-not-mutate-cache'
   ok((await getSettings()).profile.name !== detached.profile.name, '设置快照不泄露嵌套缓存引用')

@@ -36,9 +36,6 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan consent request --capability <能力> --action <操作> [--resource <资源>] [--purpose <用途>]
   yan context budget status
   yan context budget adjust --request-file context-budget.json
-  yan goal ready --request-file ready.json
-  yan goal report --request-file report.json
-  yan goal status
   yan knowledge search --query-file query.json
   yan subagent start --request-file subagent.json
   yan schedule create --request-file schedule.json     新建定时任务（需用户在「定时任务」页确认后才运行）
@@ -127,41 +124,6 @@ const GROUP_USAGE = {
             服务在宿主文件 YAN_DIR/mcp-servers.json 里登记——模型不能新增服务。
 
 `,
-  goal: `yan goal <动作> [选项]
-
-动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
-  ready  声明「信息已经问清，可以开工」。两种写法都行：
-         · 内联（**计划档只能这样**——那一档不能写文件）：
-           yan goal ready --transition-id tr-<唯一> --confidence 0.97 --goal "…" \
-             --deliverable "…" --scope "…" --constraints "…" --acceptance "…" \
-             --mode-revision <从 goal status 读> --goal-revision <从 goal status 读>
-         · 请求文件（--request-file ready.json，字段与内联同名）：
-           {"transitionId":"tr-<唯一>","confidence":0.97,
-            "understanding":{"goal":"…","deliverable":"…","scope":"…","constraints":"…","acceptance":"…"},
-            "openQuestions":[],"modeRevision":<从 goal status 读>,"goalRevision":<从 goal status 读>}
-        宿主会自己校验五栏 / 置信度 / revision：不齐就拒，并把缺什么告诉你。
-        通过后**模式自动切成标准**（下一轮生效），同一 transitionId 重放只生效一次。
-  report 报告推进情况（--request-file 或内联参数）：
-         yan goal report --report-id rp-<唯一> --phase completed \
-           --goal-revision <从 goal status 读> --evidence "npm run test:unit 2879/2879"
-        请求文件示例：
-        {"reportId":"rp-<唯一>","phase":"executing","goalRevision":<从 goal status 读>,
-         "steps":[{"title":"…","status":"done"}],"evidence":["npm run test:unit 全绿"],
-         "links":[{"kind":"artifact","target":"dist/app.exe","label":"安装包"}]}
-        links 是可选数组，kind 只能是 file / url / artifact；复杂字段请写请求 JSON 后用 --request-file。
-        链接归属由宿主覆盖，宿主会重验链接；URL 只检查 http/https 形态，不联网。
-        · phase=completed 必须带 evidence（任务清单勾选不算证据）；
-        · phase=blocked 必须写 blocker；
-        · stopped 只能由用户产生，别自己报；
-        · 同一失败签名连续两次会被判 blocked（换路径才能继续）。
-  status                        看当前目标阶段、revision 与当前工作模式
-
-说明：
-  · 必须先 goal status 拿到最新 revision 再提交，过期提交会被拒（这是
-    「两条腿同时到达时只有一次能生效」的机制，不是故障）；
-  · 拒绝不是失败：回执里有 code 与当前状态，照着补齐再提交一次即可。
-`,
-
   research: `yan research <动作> [选项]
 
 动作（资料引用；对照时并列不一致的说法，结论注明来自哪一份的哪一版）：
@@ -471,11 +433,6 @@ const GROUP_SPECS = {
     required: {
       describe: ['server', 'tool']
     }
-  },
-
-  goal: {
-    actions: ['ready', 'report', 'status'],
-    required: {}
   },
 
   research: {
