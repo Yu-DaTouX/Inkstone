@@ -846,7 +846,10 @@ function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnve
     msg = { ...msg, payload: { ...msg.payload, ...identity } }
   }
   const runtime = runners?.runtimeOf(runnerId)
-  if (!runtime) return
+  if (!runtime) {
+    if (msg.ch === 'ui-request') console.warn(`[ui-request] 实例 ${runnerId} 已摘登记，问题推送被丢弃：${msg.payload.id}`)
+    return
+  }
   if (expectedRuntime && !sameRuntimeEnvelope(runtime, expectedRuntime)) return
   runners?.noteActivity(runnerId)
   push({
@@ -860,6 +863,7 @@ function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnve
   sessionWork.observePush(runnerId, msg)
   if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) void syncPendingIsolations()
   if (msg.ch === 'state') pushRunners()
+  if (msg.ch === 'ui-request' || msg.ch === 'ui-resolved') pushRunners()
 }
 
 function requestPiPackageActivationTick(): void {
