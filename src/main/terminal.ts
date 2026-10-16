@@ -3,7 +3,6 @@ import { existsSync, statSync } from 'node:fs'
 import { basename, delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { IPty } from 'node-pty'
-import { TerminalScreen } from './agent-hub/terminal-screen'
 import { PROGRAM_STATUS_REPLY, TerminalProgramStatusTracker } from './terminal-status'
 import type { TerminalProgramStatus } from '../shared/ipc'
 
@@ -56,7 +55,6 @@ export interface TerminalStartOptions {
   executable?: string
   args?: string[]
   env?: NodeJS.ProcessEnv
-  screenSnapshot?: boolean
 }
 
 interface TerminalEntry {
@@ -64,8 +62,6 @@ interface TerminalEntry {
   pty: IPty
   buffer: string
   seq: number
-  chunks: Array<{ seq: number; data: string }>
-  screen?: TerminalScreen
   tracker: TerminalProgramStatusTracker
 }
 
@@ -225,7 +221,7 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     alive: true,
     exitCode: null
   }
-  const entry: TerminalEntry = { info, pty: child, buffer: '', seq: 0, chunks: [], screen: options.screenSnapshot ? new TerminalScreen(cols, rows) : undefined, tracker: new TerminalProgramStatusTracker() }
+  const entry: TerminalEntry = { info, pty: child, buffer: '', seq: 0, tracker: new TerminalProgramStatusTracker() }
   sessions.set(id, entry)
 
   child.onData((data) => {
@@ -234,14 +230,9 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     applyStatusChunk(current, data, id)
     current.buffer += data
     current.seq += 1
-    current.screen?.write(data, current.seq)
-    current.chunks.push({ seq: current.seq, data })
     if (current.buffer.length > BUFFER_LIMIT) {
       const cut = safeTerminalCut(current.buffer, current.buffer.length - BUFFER_KEEP)
       current.buffer = current.buffer.slice(cut)
-      let kept = 0, from = current.chunks.length
-      while (from > 0 && kept + current.chunks[from - 1].data.length <= BUFFER_KEEP) { from -= 1; kept += current.chunks[from].data.length }
-      current.chunks = current.chunks.slice(from)
     }
     sink?.({ kind: 'data', id, data, seq: current.seq })
   })
@@ -271,35 +262,14 @@ export function writeTerminal(id: string, data: string): boolean {
   }
 }
 
-export async function readTerminalUpdate(id: string, sinceSeq?: number): Promise<{ kind: 'snapshot' | 'delta'; data: string; seq: number; alive: boolean; cols: number; rows: number } | null> {
-  const entry = sessions.get(id)
-  if (!entry) return null
-  const settled = await entry.screen?.settled()
-  const seq = settled?.seq ?? entry.seq
-  const first = entry.chunks[0]?.seq ?? entry.seq + 1
-  const cols = settled?.cols ?? entry.info.cols, rows = settled?.rows ?? entry.info.rows
-  if (Number.isInteger(sinceSeq) && sinceSeq! >= first - 1 && sinceSeq! <= seq) {
-    const data = sinceSeq === seq ? '' : entry.chunks.filter((c) => c.seq > sinceSeq! && c.seq <= seq).map((c) => c.data).join('')
-    return { kind: 'delta', data, seq, alive: entry.info.alive, cols, rows }
-  }
-  const screen = await entry.screen?.snapshot()
-  return { kind: 'snapshot', data: screen?.data ?? entry.buffer, seq: screen?.seq ?? seq, alive: entry.info.alive, cols: screen?.cols ?? cols, rows: screen?.rows ?? rows }
-}
-
 export function resizeTerminal(id: string, cols: number, rows: number): boolean {
   const entry = sessions.get(id)
   if (!entry || !entry.info.alive) return false
   const nextCols = clampDimension(cols, entry.info.cols)
   const nextRows = clampDimension(rows, entry.info.rows)
-  const changedSize = nextCols !== entry.info.cols || nextRows !== entry.info.rows
   entry.info = { ...entry.info, cols: nextCols, rows: nextRows }
   try {
     entry.pty.resize(nextCols, nextRows)
-    if (entry.screen && changedSize) {
-      entry.seq++
-      entry.screen.resize(nextCols, nextRows, entry.seq)
-      entry.chunks = []
-    }
     return true
   } catch {
     return false
@@ -314,7 +284,6 @@ export function killTerminal(id: string): boolean {
   } catch {
   }
   sessions.delete(id)
-  entry.screen?.dispose()
   if (entry.info.status) sink?.({ kind: 'status', id, status: undefined })
   return true
 }

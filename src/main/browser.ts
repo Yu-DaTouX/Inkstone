@@ -21,7 +21,7 @@ import type {
   MainPush
 } from '../shared/ipc'
 import { BrowserPolicy } from './browser/BrowserPolicy'
-import { sharedResources, INTERACTIVE_RESOURCE } from './agent-hub/resources'
+import { sharedResources, INTERACTIVE_RESOURCE } from './interactive-resources'
 import { failureUrl, shouldSurfaceLoadError } from '../shared/browser-navigation'
 import { CDPBridge } from './browser/CDPBridge'
 import type { CdpChannel } from './browser/CdpChannel'

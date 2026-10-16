@@ -133,7 +133,7 @@ const RETIRED_COMMAND_HINTS: ReadonlyArray<{ prefix: string; message: string }> 
   {
     prefix: 'hub.',
     message:
-      '多 Agent 工作台命令（hub.*）已退役，不再从普通会话提供：请改用 `yan subagent start|list|get|stop` 派子代理；历史 Hub 记录仍可在界面查看。'
+      '多 Agent 工作台命令（hub.*）已退役：请改用 `yan subagent start|list|get|stop` 派子代理。'
   }
 ]
 

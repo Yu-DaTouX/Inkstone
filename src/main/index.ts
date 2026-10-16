@@ -46,8 +46,6 @@ import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, readTerminal,
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
-import { AgentHubService } from './agent-hub/service'
-import { registerAgentHubIpc } from './ipc/agent-hub-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
@@ -277,21 +275,6 @@ function schedulePiPackageActivationRetry(): void {
   piPackageActivationRetryTimer.unref?.()
 }
 let browser: BrowserController | null = null
-const agentHub = new AgentHubService({
-  dataDir: YAN_DIR, piDir: PI_AGENT_DIR,
-  resourcesDir: existsSync(join(process.resourcesPath ?? '', 'yan-cli')) ? process.resourcesPath : join(app.getAppPath(), 'resources'),
-  browser: () => browser,
-  projects: async () => (await getSettings()).projects.filter((p) => !p.archived),
-  piBin: async () => (await getSettings()).piBin,
-  sessionProject: (id) => runners?.agentForSession(id)?.capabilityProjectId ?? null,
-  notifyEnabled: async () => (await getSettings()).subagentNotify !== false,
-  sendToSession: async (id, text) => {
-    const target = runners?.agentForSession(id)
-    return target ? target.send(text, undefined, 'followUp') : { ok: false, error: '主会话已关闭' }
-  },
-  openRun: (taskId) => push({ ch: 'hub-open', payload: `hub:${taskId}` }),
-  changed: () => refreshTaskbar()
-})
 const scheduleService = new ScheduleService({
   file: join(YAN_DIR, 'schedules.json'),
   run: async (task) => {
@@ -610,7 +593,7 @@ attention = createAttentionService({
   platform: process.platform,
   snapshot: () => runsHost?.snapshot() ?? { revision: 0, runs: [] },
   hostBusy: () =>
-    runners?.hasBusy() === true || agentHub.hasLiveWork() || (subagentService.current()?.runningCount ?? 0) > 0 || hasWorkingTerminal(),
+    runners?.hasBusy() === true || (subagentService.current()?.runningCount ?? 0) > 0 || hasWorkingTerminal(),
   hostWaiting: () => approvals.list().length > 0 || hasBlockedTerminal(),
   window: () => (win && !win.isDestroyed() ? (win as unknown as AttentionWindowPort) : undefined),
   trayImage: () => trayImage(),
@@ -1155,7 +1138,6 @@ async function shutdown(): Promise<void> {
     await closeMcpAppHost()
   } catch {
   }
-  await agentHub.shutdown().catch((error) => reportMainError('agent-hub-shutdown', error))
   try {
     await subagentService.current()?.stopAll()
   } catch {
@@ -1251,13 +1233,7 @@ async function startRemoteServer(): Promise<void> {
         questions: remoteQuestions,
         answer: remoteAnswer,
         humanApproval: remoteHumanApproval,
-        artifact: remoteArtifact,
-        hubSnapshot: () => agentHub.snapshot(true),
-        hubAttention: () => agentHub.attention(),
-        hubCommand: async (command, actor) => {
-          try { return { ok: true, data: await agentHub.remoteCommand(command, actor) } }
-          catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
-        }
+        artifact: remoteArtifact
       },
       (text, level) => {
         if (level === 'error') console.error(`[remote] ${text}`)
@@ -1353,14 +1329,14 @@ function requestExit(): Promise<ExitResult> {
   if (exitRequestInFlight) return exitRequestInFlight
 
   const task: Promise<ExitResult> = (async (): Promise<ExitResult> => {
-    const busy = runners?.hasBusy() === true || agentHub.hasLiveWork()
+    const busy = runners?.hasBusy() === true
     let choice = probeExitChoice()
     if (!choice && busy && win && !win.isDestroyed()) {
       const response = await dialog.showMessageBox(win, {
         type: 'warning',
         title: '退出砚',
         message: '仍有会话正在运行。请选择退出方式。',
-        detail: ['保存并退出会记录运行实例快照；中断退出会立即停止当前任务。取消会继续把窗口留在托盘。', agentHub.exitDetail()].filter(Boolean).join('\n\n'),
+        detail: '保存并退出会记录运行实例快照；中断退出会立即停止当前任务。取消会继续把窗口留在托盘。',
         buttons: ['取消', '保存并退出', '中断退出'],
         defaultId: 1,
         cancelId: 0,
@@ -2934,8 +2910,7 @@ function registerIpc(): void {
     saveSettings: (remote) => patchSettings({ remoteAccess: remote })
   })
 
-  registerTerminalIpc(ipc, () => ac()?.getState()?.cwd, (id) => agentHub.ownsTerminal(id))
-  registerAgentHubIpc(ipc, agentHub)
+  registerTerminalIpc(ipc, () => ac()?.getState()?.cwd)
 }
 
 function pushWinState(): void {
@@ -3340,7 +3315,6 @@ app.whenReady().then(async () => {
   setTerminalSink((event) => {
     if (event.kind === 'exit') {
       blockedTerminalNotices.delete(event.id)
-      void agentHub.terminalExit(event.id, event.exitCode)
     }
     if (event.kind === 'status') {
       notifyBlockedTerminal(event.id, event.status)

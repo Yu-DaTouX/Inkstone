@@ -34,7 +34,7 @@ const MAX_STREAMS = 4
 const COALESCE_MS = 50
 const REQUEST_TIMEOUT_MS = 120_000
 const FORWARD_HEADERS = ['authorization', 'content-type', 'x-yan-remote-token', REMOTE_IDEMPOTENCY_HEADER, 'last-event-id', 'accept']
-const AGENT_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair', '/remote/v1/hub', '/remote/v1/hub/attention'])
+const AGENT_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair'])
 
 type Pending = { req: ClientRequest; stream: boolean }
 
@@ -157,7 +157,7 @@ export class TunnelSession {
       return this.fail(id, 403, '经中继只能访问砚的远程接口')
     }
     const kind = this.client?.kind ?? 'phone'
-    if (kind === 'agent' && !AGENT_PATHS.has(url.pathname)) return this.fail(id, 403, '礁石只能使用 Agent Hub 接口')
+    if (kind === 'agent' && !AGENT_PATHS.has(url.pathname)) return this.fail(id, 403, 'Agent Hub 已退役，礁石不能再使用远程接口')
     if (this.pending.size >= MAX_REQUESTS) return this.fail(id, 429, '同时进行的请求太多')
     const target = this.hooks.target()
     if (!target) return this.fail(id, 503, '电脑上的远程服务没有运行')

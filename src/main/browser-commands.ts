@@ -6,7 +6,7 @@ import { CapabilityCommandError } from './capability-server'
 import { WAIT_POLL_MS, describeWait, parseWaitCondition, waitSatisfied } from '../shared/browser-wait'
 import { YAN_DIR } from './paths'
 import type { BrowserObservation, BrowserNetworkSnapshot, BrowserState } from '../shared/ipc'
-import { sharedResources, INTERACTIVE_RESOURCE } from './agent-hub/resources'
+import { sharedResources, INTERACTIVE_RESOURCE } from './interactive-resources'
 
 export interface BrowserCommandsHost {
   browserHostOrNull(): BrowserCommandHost | null

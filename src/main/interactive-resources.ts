@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, mkdirSync, openSync, writeFileSync, fsyncSync, closeSync, renameSync, copyFileSync } from 'node:fs'
-import { dirname } from 'node:path'
 
 export class ResourceBusyError extends Error {
   readonly code = 'waiting_resource'
@@ -27,48 +25,6 @@ interface Resource {
 
 export class ResourceCoordinator {
   private readonly resources = new Map<string, Resource>()
-  private journal?: string
-
-  attachJournal(file: string): void {
-    if (this.journal === file) return
-    if (this.journal) throw new Error('交互资源已绑定另一个宿主数据目录')
-    this.journal = file
-    if (existsSync(file)) {
-      try {
-        const saved: unknown = JSON.parse(readFileSync(file, 'utf8'))
-        if (!Array.isArray(saved) || saved.length > 64) throw new Error('资源记录无效')
-        for (const entry of saved) {
-          if (!entry || typeof entry.resourceId !== 'string' || !/^[a-z0-9-]{1,80}$/.test(entry.resourceId) || !Number.isSafeInteger(entry.epoch) || entry.epoch < 0 || typeof entry.uncertain !== 'boolean' || typeof entry.paused !== 'boolean' || !(entry.owner === null || typeof entry.owner === 'string') || !(entry.operationId === null || typeof entry.operationId === 'string')) throw new Error('资源记录无效')
-        }
-        for (const entry of saved) this.resources.set(entry.resourceId, {
-          owner: entry.owner, operationId: entry.operationId, epoch: entry.epoch + 1,
-          uncertain: entry.uncertain || entry.owner !== null || entry.operationId !== null,
-          paused: entry.paused, queue: []
-        })
-      } catch {
-        copyFileSync(file, `${file}.invalid-${Date.now()}-${randomUUID()}`)
-        this.resources.set('windows-interaction', { owner: null, operationId: null, epoch: 1, uncertain: true, paused: false, queue: [] })
-      }
-    }
-    this.checkpoint()
-  }
-
-  private checkpoint(): void {
-    if (!this.journal) return
-    try {
-      mkdirSync(dirname(this.journal), { recursive: true })
-      const tmp = `${this.journal}.tmp`
-      const fd = openSync(tmp, 'w')
-      try { writeFileSync(fd, JSON.stringify(this.snapshot())); fsyncSync(fd) } finally { closeSync(fd) }
-      renameSync(tmp, this.journal)
-    } catch (error) {
-      for (const r of this.resources.values()) {
-        r.uncertain = true
-        for (const pending of r.queue.splice(0)) { clearTimeout(pending.timer); pending.reject(new Error('资源记录写入失败，交互已暂停，请在电脑核对')) }
-      }
-      throw new Error('资源记录写入失败，交互已暂停，请在电脑核对', { cause: error })
-    }
-  }
 
   snapshot() {
     return [...this.resources].map(([resourceId, r]) => ({
@@ -101,7 +57,6 @@ export class ResourceCoordinator {
     r.owner = owner
     r.operationId = randomUUID()
     const epoch = ++r.epoch
-    this.checkpoint()
     let released = false
     return () => {
       if (released || r.epoch !== epoch) return
@@ -109,7 +64,6 @@ export class ResourceCoordinator {
       if (r.uncertain) return
       r.owner = null
       r.operationId = null
-      this.checkpoint()
       const next = r.paused ? undefined : r.queue.shift()
       if (next) {
         clearTimeout(next.timer)
@@ -129,7 +83,6 @@ export class ResourceCoordinator {
       clearTimeout(pending.timer)
       pending.reject(new ResourceBusyError(resourceId, '结果待核实的操作'))
     }
-    this.checkpoint()
   }
 
   setPaused(resourceId: string, paused: boolean): void {
@@ -146,7 +99,6 @@ export class ResourceCoordinator {
         pending.reject(new ResourceBusyError(resourceId, '用户接管'))
       }
     }
-    this.checkpoint()
   }
 
   resolveUncertain(resourceId: string): void {
@@ -156,7 +108,6 @@ export class ResourceCoordinator {
     r.owner = null
     r.operationId = null
     r.epoch++
-    this.checkpoint()
     const next = r.paused ? undefined : r.queue.shift()
     if (next) {
       clearTimeout(next.timer)

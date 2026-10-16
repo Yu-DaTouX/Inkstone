@@ -732,11 +732,6 @@ const api: YanBridge = {
     kill: (id) => invoke<boolean>('yan:terminal:kill', id),
     attach: (id) => invoke<TerminalSnapshot | null>('yan:terminal:attach', id)
   },
-  hub: {
-    snapshot: () => invoke('yan:hub:snapshot'),
-    command: (command) => invoke('yan:hub:command', command),
-    detect: () => invoke('yan:hub:detect')
-  },
 
   win: {
     minimize: () => ipcRenderer.send('win:minimize'),

@@ -16,11 +16,10 @@ function timeAgo(at: number): string {
   return minutes < 1 ? '刚刚' : minutes < 60 ? `${minutes} 分钟` : minutes < 1440 ? `${Math.floor(minutes / 60)} 小时` : `${Math.floor(minutes / 1440)} 天`
 }
 
-export function HomeScreen({ onOpen, onOpenAssistant, onSettings, onHub, alertsEnabled, onEnableAlerts, selectedSessionId, project, onProjectChange }: {
+export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled, onEnableAlerts, selectedSessionId, project, onProjectChange }: {
   onOpen: (sessionId: string, title: string) => void
   onOpenAssistant: () => void
   onSettings: () => void
-  onHub: () => void
   alertsEnabled: boolean
   onEnableAlerts: () => void
   selectedSessionId?: string
@@ -89,7 +88,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, onHub, alertsE
         <Text accessibilityLabel={client.connection.baseUrl} numberOfLines={1} style={{ flexShrink: 1, color: p.fgMute, fontSize: font.xs, fontFamily: mono }}>{info?.computer?.name || client.connection.computerName || client.connection.baseUrl.replace(/^https?:\/\//, '').replace(/:\d+$/, '')}</Text>
         <Meta>· {STATUS_TEXT[stream]}</Meta>
       </>}
-      right={<View style={{ flexDirection: 'row' }}><IconButton name="terminal" label="多 Agent 工作台" onPress={onHub} /><IconButton name="refresh" label="刷新会话" busy={refreshing} onPress={() => { setRefreshing(true); void refresh().finally(() => setRefreshing(false)) }} /><IconButton name="settings" label="打开手机设置" onPress={onSettings} /></View>}
+      right={<View style={{ flexDirection: 'row' }}><IconButton name="refresh" label="刷新会话" busy={refreshing} onPress={() => { setRefreshing(true); void refresh().finally(() => setRefreshing(false)) }} /><IconButton name="settings" label="打开手机设置" onPress={onSettings} /></View>}
     />
     {(refreshing || creating || stream === 'connecting' || stream === 'reconnecting') ? <View style={styles.activity}><ActivityLine state="run" text={creating ? '正在新建会话' : refreshing ? '正在刷新会话' : STATUS_TEXT[stream]} /></View> : null}
     {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft, borderLeftColor: p.err }]}>{/连接超时/.test(error) ? '连接超时，请检查电脑和 Tailscale。' : error}</Text> : null}

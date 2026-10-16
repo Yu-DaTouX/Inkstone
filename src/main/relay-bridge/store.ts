@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomUUID, type webcrypto } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, unlink, writeFile, copyFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { exportKeyPair, generateKeyPair, importKeyPair, randomB64u, sha256, toB64u, type KeyPair } from './crypto'
@@ -21,7 +21,7 @@ export interface RelayClient {
 interface StoredState {
   version: 1
   secret: string
-  hostKey: JsonWebKey
+  hostKey: webcrypto.JsonWebKey
   clients: RelayClient[]
 }
 
@@ -72,7 +72,7 @@ export class RelayBridgeStore {
 
   private async createFreshState(): Promise<StoredState> {
     const pair = await generateKeyPair()
-    this.state = { version: 1, secret: randomB64u(24), hostKey: (await exportKeyPair(pair)) as JsonWebKey, clients: [] }
+    this.state = { version: 1, secret: randomB64u(24), hostKey: (await exportKeyPair(pair)) as webcrypto.JsonWebKey, clients: [] }
     this.key = pair
     await this.save()
     return this.state

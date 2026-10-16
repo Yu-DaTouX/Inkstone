@@ -30,7 +30,7 @@ export default defineConfig({
     define,
     plugins: [
       externalizeDepsPlugin({
-        exclude: ['@modelcontextprotocol/sdk', 'tar', 'electron-updater', '@xterm/headless', '@xterm/addon-serialize']
+        exclude: ['@modelcontextprotocol/sdk', 'tar', 'electron-updater']
       })
     ],
     build: {
