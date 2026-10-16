@@ -36,19 +36,39 @@ export interface ComposerSessionInfo {
   thinkingLevel?: string
 }
 
+/** 命令动作可以返回结果；`ok:false` 视为失败，草稿与附件必须保留。 */
+export type ComposerCommandResult = { ok: boolean; error?: string } | void
+
+/**
+ * 由主会话实现的原生会话操作，与 pi 的 `/tree`、`/import`、`/reload`、
+ * `/scoped-models`、`/trust`、`/share` 以及 JSONL 导出一一对应，
+ * 动作名与 `shared/native-session-host.ts` 对齐。未接入时可以省略。
+ */
+export type NativeSessionAction =
+  | 'tree'
+  | 'import'
+  | 'reload'
+  | 'scoped-models'
+  | 'trust'
+  | 'share'
+  | 'export-jsonl'
+  | 'new-session'
+
 /** 分发会调用到的正式 store 动作子集。 */
 export interface ComposerSendActions {
-  runBash(command: string): void | Promise<void>
+  /** `!!` 前缀按 pi 原生语义执行，但把输出排除在模型上下文之外。返回成功 / 失败供直执行恢复输入。 */
+  runBash(command: string, options?: { excludeFromContext?: boolean }): ComposerCommandResult | Promise<ComposerCommandResult>
   openSettings(tab?: string): void
   newSession(): void | Promise<unknown>
-  compact(): void | Promise<void>
+  compact(customInstructions?: string): ComposerCommandResult | Promise<ComposerCommandResult>
   openBrowser(url?: string): void | Promise<void>
   setModel(provider: string, id: string): void | Promise<unknown>
-  exportHtml(): void | Promise<void>
+  exportHtml(outputPath?: string): ComposerCommandResult | Promise<ComposerCommandResult>
   copyLastReply(): void | Promise<void>
   clone(): void | Promise<void>
   setManualTitle(id: string, title: string): void | Promise<void>
   setThinking(level: string): void | Promise<void>
+  nativeSession?(action: NativeSessionAction, args?: string): Promise<ComposerCommandResult>
   notify(level: 'info' | 'error', text: string): void
 }
 
@@ -93,13 +113,31 @@ export async function submitComposerInput(port: ComposerSubmitPort): Promise<Com
   /* 文字与附件至少有一个才能提交（只发图片也必须能走） */
   if (!raw && port.attachments.length === 0) return 'empty'
 
-  /* `!` 开头的走直接执行，不进模型（图片对它无意义）。
-   * 与旧行为一致：用**未 trim** 的原文判 `!`，避免前导空格改变语义。 */
+  /* `!` / `!!` 开头的走直接执行，不进模型（图片对它无意义）。
+   * `!!` 是 pi 的原生语义：命令仍然执行、结果存进会话，但排除在模型上下文之外。
+   * 与旧行为一致：用**未 trim** 的原文判前缀，避免前导空格改变语义。 */
   if (port.text.startsWith('!')) {
-    const cmd = raw.slice(1).trim()
+    const excludeFromContext = port.text.startsWith('!!')
+    const cmd = raw.slice(excludeFromContext ? 2 : 1).trim()
     if (!cmd) return 'empty'
+    /* 先记下附件：失败时和命令原文一起放回（成功沿用既有「只清文字」行为）。 */
+    const saved = port.readAttachments()
     port.clearText()
-    await port.actions.runBash(cmd)
+    let result: ComposerCommandResult
+    try {
+      result = await port.actions.runBash(cmd, excludeFromContext ? { excludeFromContext: true } : undefined)
+    } catch (error) {
+      /* 抛异常也按失败恢复；restoreText 是追加式，不覆盖 await 期间用户新敲的草稿。 */
+      port.restoreAttachments(saved)
+      port.restoreText(raw)
+      port.actions.notify('error', error instanceof Error ? error.message : `!${cmd} 执行失败`)
+      return 'handled'
+    }
+    /* 旧实现 / 未接线返回 void 视为已执行：保持原行为，不把命令塞回草稿。 */
+    if (result && result.ok === false) {
+      port.restoreAttachments(saved)
+      port.restoreText(raw)
+    }
     return 'handled'
   }
 
@@ -148,28 +186,7 @@ export async function submitComposerInput(port: ComposerSubmitPort): Promise<Com
   }
 
   if (localCommand) {
-    if (localName === 'model') {
-      const spec = localArgs.toLowerCase()
-      const selected = spec
-        ? port.models.find((model) => {
-            const full = `${model.provider}/${model.id}`.toLowerCase()
-            return full === spec || model.id.toLowerCase() === spec || model.name.toLowerCase() === spec
-          })
-        : undefined
-      if (!selected) {
-        port.actions.openSettings('status')
-        return 'handled'
-      }
-      port.clearAll()
-      await port.actions.setModel(selected.provider, selected.id)
-      return 'handled'
-    }
-    port.clearAll()
-    if (localName === 'new') await port.actions.newSession()
-    else if (localName === 'compact') await port.actions.compact()
-    else if (localName === 'browser') await port.actions.openBrowser(localArgs || undefined)
-    else await runYanBuiltin(port, localName ?? '', localArgs)
-    return 'handled'
+    return runLocalCommand(port, localName ?? '', localArgs)
   }
 
   /* 运行中默认加入 follow-up 队列；压缩维护期间先保留，结束后再投递。 */
@@ -199,11 +216,119 @@ export async function submitComposerInput(port: ComposerSubmitPort): Promise<Com
   return 'sent'
 }
 
+/**
+ * 运行中包含会话替换 / 资源重载的命令：明确拒绝而不是丢草稿。
+ * `/tree` 只打开浏览，`/scoped-models`、`/trust`、`/share` 不动当前回合，
+ * 因此只拦下会替换会话（import）或重载资源（reload）的两条。
+ *
+ * 下面的提示暂用原文（store 的本地通知也是同样做法）；
+ * 主会话接入 i18n 时可换成 `composer.commandRunning` / `composer.commandUnavailable` /
+ * `composer.commandFailed` 三个键。
+ */
+const SESSION_MUTATING_COMMANDS = new Set(['import', 'reload'])
+
+/** 走主会话原生会话接口的新增命令。 */
+const NATIVE_SESSION_ACTIONS: Record<string, NativeSessionAction> = {
+  tree: 'tree',
+  import: 'import',
+  reload: 'reload',
+  'scoped-models': 'scoped-models',
+  trust: 'trust',
+  share: 'share'
+}
+
+function isCommandFailure(result: ComposerCommandResult): result is { ok: false; error?: string } {
+  return !!result && typeof result === 'object' && result.ok === false
+}
+
+/**
+ * 执行一个桌面端本地命令。
+ *
+ * 顺序很重要：会返回结果的命令**先执行、成功后才清空**草稿；失败时草稿与附件
+ * 留在输入框并报告 pi / 主进程给的原文，不会出现「清了草稿才发现命令没跑成」。
+ * 纯 UI 命令（browser / settings …）没有结果可判，沿用既有顺序。
+ */
+async function runLocalCommand(port: ComposerSubmitPort, name: string, args: string): Promise<ComposerSubmitOutcome> {
+  const { actions: a } = port
+
+  if (name === 'model') {
+    const spec = args.toLowerCase()
+    const selected = spec
+      ? port.models.find((model) => {
+          const full = `${model.provider}/${model.id}`.toLowerCase()
+          return full === spec || model.id.toLowerCase() === spec || model.name.toLowerCase() === spec
+        })
+      : undefined
+    if (!selected) {
+      a.openSettings('status')
+      return 'handled'
+    }
+    port.clearAll()
+    await a.setModel(selected.provider, selected.id)
+    return 'handled'
+  }
+
+  if (port.roundRunning && SESSION_MUTATING_COMMANDS.has(name)) {
+    a.notify('info', `/${name} 本轮运行中不可用，先停止当前回合再执行`)
+    port.focusComposer()
+    return 'handled'
+  }
+
+  if (name === 'new' && args) return runNativeSessionCommand(port, 'new-session', args, name)
+  if (name === 'compact') {
+    return runResultCommand(port, () => a.compact(args || undefined), name)
+  }
+  if (name === 'export') {
+    const path = args.length > 1 && ((args.startsWith('"') && args.endsWith('"')) || (args.startsWith("'") && args.endsWith("'"))) ? args.slice(1, -1) : args
+    if (/\.jsonl$/i.test(path)) return runNativeSessionCommand(port, 'export-jsonl', path, name)
+    return runResultCommand(port, () => a.exportHtml(path || undefined), name)
+  }
+  const action = NATIVE_SESSION_ACTIONS[name]
+  if (action) return runNativeSessionCommand(port, action, args, name)
+
+  port.clearAll()
+  if (name === 'new') await a.newSession()
+  else if (name === 'browser') await a.openBrowser(args || undefined)
+  else await runYanBuiltin(port, name, args)
+  return 'handled'
+}
+
+async function runResultCommand(
+  port: ComposerSubmitPort,
+  run: () => ComposerCommandResult | Promise<ComposerCommandResult>,
+  name: string
+): Promise<ComposerSubmitOutcome> {
+  const result = await run()
+  if (isCommandFailure(result)) {
+    port.actions.notify('error', result.error || `/${name} 执行失败`)
+    port.focusComposer()
+    return 'handled'
+  }
+  port.clearAll()
+  return 'handled'
+}
+
+async function runNativeSessionCommand(
+  port: ComposerSubmitPort,
+  action: NativeSessionAction,
+  args: string,
+  name: string
+): Promise<ComposerSubmitOutcome> {
+  const native = port.actions.nativeSession
+  if (!native) {
+    /* 主会话尚未接入时不能假装成功：保留草稿并给出说明，不制造无效果按钮。 */
+    port.actions.notify('info', `/${name} 在当前版本尚未接入`)
+    port.focusComposer()
+    return 'handled'
+  }
+  return runResultCommand(port, () => native(action, args || undefined), name)
+}
+
 /** 桌面端承接的 pi 内置命令（不含已单独路由的 model / new / compact / browser / login）。 */
 export async function runYanBuiltin(port: ComposerSubmitPort, name: string, args: string): Promise<void> {
   const { actions: a, t } = port
   if (name === 'settings') a.openSettings()
-  else if (name === 'export') await a.exportHtml()
+  else if (name === 'export') await a.exportHtml(args || undefined)
   else if (name === 'copy') await a.copyLastReply()
   else if (name === 'clone') await a.clone()
   else if (name === 'name') {

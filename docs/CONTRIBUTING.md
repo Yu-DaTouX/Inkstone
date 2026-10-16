@@ -17,6 +17,24 @@ npm run launch
 
 启动器检查依赖与内置运行时，并按需构建。开发模式用 `npm run launch:dev`；已有工作区可使用根目录的两个启动脚本。
 
+## v3 开发外壳
+
+默认仍启动 v2。开发时设置 `YAN_UI=v3` 再启动；`YAN_UI=v2` 可强制回退，环境覆盖优先于持久设置 `uiVersion`。v3 尚未与旧界面功能对等、尚未通过发行验收：精简设置里有回退入口，环境固定版本时须先取消该环境覆盖。不要把开发外壳当成已交付的默认 UI。
+
+v3 与 v2 是两套互不混载的界面：v3 不导入 `styles/`，两套共用会话 store 与正式宿主 IPC。目录导航见[代码导览](PROJECT.md)与[界面重构记录](UI_REDESIGN.md)，样式与令牌边界见[设计规范](DESIGN_SYSTEM.md)。
+
+| 命令 | 作用 |
+| --- | --- |
+| `npm run tokens:v3` / `check:tokens:v3` | 从 `design/tokens.json` 生成令牌；核对生成物与逐对对比度 |
+| `npm run storybook` / `build:storybook` | 本机组件预览 / 静态构建；仅开发依赖，不进入应用运行时 |
+| `npm run test:v3-shell` | 外壳版本选择的纯函数检查 |
+| `npm run test:v3-ui-exports` / `test:stories` | 原语出口与故事覆盖的结构守卫 |
+| `node scripts/test-v3-*.mjs` | 各模块专项检查：运行注册表与宿主接线、审批键盘、命令过滤、模块归属与版面等 |
+| `npm run test:live -- v3-shell` | 构建后的隔离场景：外壳与确认卡（沿用 `YAN_TEST_SYNTHETIC_ONLY=1`） |
+
+这些都是纯逻辑、SSR 结构或静态接线检查，**不代替**交互、无障碍、真实模型或真机验收；一次只跑获准的 live 场景。构建通过不等于视觉验收通过。
+
+
 ## 修改前
 
 阅读 [架构简介](ARCHITECTURE.md)、[代码导览](PROJECT.md) 与 [AGENTS.md](../AGENTS.md)。检查工作区已有改动，只提交当前任务相关内容。提案与历史记录不代表执行授权。多个 AI agent 并行或接力时，按[多 Agent 协作流程](AGENT_WORKFLOW.md)登记状态与交接。
@@ -58,9 +76,15 @@ npm run launch
 
 子代理限制可直接运行 `node scripts/test-subagent-limits.mjs`，现场编译当前源码到临时目录，用独立数据目录、假 RPC 和临时 Git 验证10个并发名额及启动交接、10分钟停滞期限及进展续期、75秒收尾不被迟到事件延长、可选总期限和模型自主调用次数；不依赖应用构建、不启动 Electron或调用模型。
 
+2026-10-15 后端审查缺陷修复的定向回归（均已登记 `test:unit`，现场编译当前源码、隔离数据目录，不启动 Electron 或调用模型）：`test-native-session-export-alias` 校验导出目标对源会话的大小写、硬链接、目录联接与“打开前替换”别名一律拒绝，且只在获批后截断输出文件；`test-schedule-safety` 用真临时文件校验定时任务的损坏/读失败保留原文件、保存失败不发布内存与批准状态、并发修改不丢任务、运行期间暂停/删除不被旧快照覆盖，并从 `index.ts` 取调度回调验证 select/归属记录/模型设置的异步边界复核实例身份；`test-subagent-terminal-races` 验证清除已结束等待差异结算、迟到失败不翻终态（含 `rpc.close()` 挂起期间收到权威完成）、清理期间拒绝新启动且等待在途准备回收；`test-provider-probe-protocol` 校验连接测试与获取模型共用协议感知构造与密钥隔离；`test-remote-chain-target` 校验远程/peer 只列链代表段且旧段操作归一到代表段、跨项目拒绝；`test-retired-hub-cli` 校验 `yan hub` 已从帮助与白名单退役且旧调用不触达 handler；`test-session-move-continuation` 校验批准的会话移动只在原回合正常收尾后由宿主续接一次，人工停止/失败/新输入/归属变化/写入失败/重复请求均不续；`test-subagent-dismiss` 与 `test-subagent-dismiss-ui` 校验失败子任务单条确认的持久化、幂等、例外与界面入口。这些为源码断言，不代表载荷窗口、真实模型或发行包验收。
+
+同一批改动的真实进程与场景验证：`node scripts/test-session-move-continuation-live.mjs` 用当前随包 pi 子进程、回环 SSE 模型与 Node 宿主（不启 Electron、不调外部模型、不读真实凭证）验证批准的会话移动在真实进程上完成「停原实例 → 原子改写会话文件头 cwd → 在新目录重新打开同一会话 → 宿主续接一次」，并确认人工停止时只移动不续接；输出 16 项断言。真实 Electron 场景（`npm run test:live -- …`，官方 runner 自带隔离数据目录，不自动构建）：`subagent`（真实模型）、`subagentlocal`、`subagentview`、`remoteroutes`、`sessionlayout` 与 `customapi` 覆盖子代理主链、本机 provider 推送链、渲染端回放、远程路由与会话布局；视觉状态 `YAN_MATRIX_ONLY=subagentnote,subagentfailed` 与 `chainjoin` 只含组 0/1，其余组会因「未执行任何目标场景」返回退出码 2，属选择器预期而非缺陷。`subagentfail` 的 1 条失败与 `customapi` 的 3 条删除类失败已核实在 HEAD 上同样存在（探针仍等旧文案 / 仍 stub 原生 `window.confirm`，而实现已改为分类错误文案与砚的确认队列），与本批改动无关。
+
 子代理反馈专项：构建后运行 `node scripts/test-subagent-feedback-live.mjs`，在独立数据目录的真实 Electron 深浅主题与窄窗检查紧凑卡片的「范围、模型、思考、原生上下文、耗时」顺序与缺失值、详情展开、后台通知隐藏、停滞超时收尾原因与错误原文展示，并在独立桌面冷启动及复用同一数据目录的重启后核对真实 IPC 恢复调用结果、原父会话归属、过程窗口无任务原文按钮；数据为合成夹具，不调用模型或复制凭证。`test:unit` 中的 `scripts/test-subagents.mjs` 使用临时目录和假 RPC 验证新快照写入/读回、旧摘要从指定子会话补回调用、异常退出不复活、显式清除不反弹，以及落盘等待期间停止不再启动进程。快照及兼容转录保留最近 200 条消息；原生 JSONL 不改写，历史读取跳过损坏或超过 64 MiB 的单文件。
 
 `node scripts/test-subagent-light-live.mjs` 使用真实 pi 子进程和本机模型夹具验证指定模型、文件写入、独立危险审批与结束清理，不能作为真实服务验收。
+
+流式重复防护专项无需应用构建：`node scripts/test-stream-loop-detector.mjs` 现场编译纯算法，覆盖分块/偏移、大增量内部循环、短行池、围栏/结构性排除、长流和重置；已登记 unit，`LOOP_SAMPLE` 可指定本地附件离线重放，未指定不依赖私人文件。`node scripts/test-stream-loop-rpc.mjs` 用当前 `AgentController`、真实随包 pi 和回环 SSE 模型验证思考/正文中止、队列身份、停止锁、显式恢复、回退开关、图片队列保守告警与权威持久终态，另覆盖默认开启时仅一次自动恢复、再次循环限停、手动停止/新输入优先与执行前关闭开关；另用宿主故障注入检查迟到响应归属、快照缺失和中止失败。`node scripts/test-stream-loop-settings.mjs` 验证桌面开关默认态、补丁允许清单和隔离落盘，`node scripts/test-stream-loop-setting-ui.mjs` 做真实组件静态渲染/共享控件/i18n接线检查（非整窗视觉），两者已登记 unit。这些专项不复制凭据、不调用外部模型、不覆盖 `out/`，不代替整窗回填/截图或真实供应商验证。真实模型测试须逐次确认供应商、精确模型、额度及授权，故意生成重复只验证防护链路，不能宣称自发复现原故障。
 
 可靠性专项无需应用构建：`node scripts/test-queue-rpc-live.mjs` 使用当前 `AgentController`、真实随包 pi 与回环地址模型夹具，检查撤回/插队/中止交错、同文本队列身份、正常消费和回收后显式发送。`node scripts/test-personal-state-electron.mjs` 在隔离 Electron 组件夹具中加载正式 preload、IPC 注册器、互动状态 hook 与真实 sandbox iframe，检查写失败不发布、跨会话和进程重启恢复、非可信窗口拒绝与父窗口消息来源。两者现场编译到临时目录，不覆盖应用 `out/`，不复制凭证、不调用外部模型；后者日志中的写盘/坏文件/非可信 IPC 错误为预期故障注入。组件通过不代表整窗书签、小部件 UI、真实服务或发行包验收。
 

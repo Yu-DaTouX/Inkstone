@@ -29,6 +29,7 @@ import {
   WINDOWS_MCP_SERVER_ID
 } from '../../shared/mcp-native-import'
 import { mcpServersFile, parseMcpServersDocument } from './config'
+import { serializedWrite } from './write-queue'
 
 export class NativeMcpImportError extends Error {
   constructor(readonly code: string, message: string) {
@@ -117,14 +118,6 @@ interface PendingImport {
 }
 
 const pendingImports = new Map<string, PendingImport>()
-
-/** 所有落盘共用一条串行链：并发导入不会互相覆盖对方读到的内容。 */
-let writeTail: Promise<unknown> = Promise.resolve()
-function serialized<T>(operation: () => Promise<T>): Promise<T> {
-  const result = writeTail.then(operation, operation)
-  writeTail = result.catch(() => undefined)
-  return result
-}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -354,7 +347,7 @@ export async function commitNativeMcpImport(input: {
 }): Promise<NativeMcpImportCommitResult> {
   const { host, token, owner } = input
 
-  return serialized(async (): Promise<NativeMcpImportCommitResult> => {
+  return serializedWrite(async (): Promise<NativeMcpImportCommitResult> => {
     const nowMs = (host.now ?? Date.now)()
     /*
      * 令牌必须在锁内核对并「领取一次」：两个并发提交不能同时读到同一条 pending。

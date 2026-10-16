@@ -40,6 +40,8 @@ export interface SubagentServiceDeps {
   onRemove(id: string): void
   /** 运行收口后（终态、差异已定）回调一次 */
   onFinished?(run: SubagentRun): void
+  /** 只读原始事件旁路（评审运行的 R 号投影用）；不影响子代理控制与面板。 */
+  onEvent?(runId: string, evt: Record<string, unknown>): void
   /** 父会话的活动档案（按活动配置模型时用） */
   resolveAgentProfile(id: string): Promise<AgentProfileState>
 }
@@ -75,7 +77,8 @@ export class SubagentService {
       onChange: (run) => this.deps.onChange(run),
       ...(this.deps.onPatch ? { onPatch: (payload) => this.deps.onPatch?.(payload) } : {}),
       onRemove: (id) => this.deps.onRemove(id),
-      onFinished: (run) => this.deps.onFinished?.(run)
+      onFinished: (run) => this.deps.onFinished?.(run),
+      ...(this.deps.onEvent ? { onEvent: (runId, evt) => this.deps.onEvent?.(runId, evt) } : {})
     })
     await this.controller.loadHistory()
     return this.controller

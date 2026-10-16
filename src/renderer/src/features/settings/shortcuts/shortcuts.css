@@ -1,0 +1,25 @@
+/*
+ * 设置 → 快捷键分区的版面（WP-25b 余项）。
+ *
+ * 只写版面与层级：间距/字号/颜色引用 design/tokens.css 的变量，控件外观来自 ui/。
+ * 复用 settings.css 已定义的 `.settings-table` / `.settings-shortcut-keys`。
+ */
+@layer features {
+  .settings-shortcut-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-12);
+    flex-wrap: wrap;
+  }
+
+  .settings-shortcut-notice td {
+    color: var(--fail-t);
+    font-size: var(--t-meta);
+  }
+
+  .settings-shortcut-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+}

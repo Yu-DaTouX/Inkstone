@@ -216,3 +216,65 @@ export function parseStatusV2(stdout: string): GitStatusParse {
   }
   return out
 }
+
+/* ── 只读改动读取（`yan:git:changes` / `yan:git:diff`）─────── */
+
+/**
+ * 逐文件改动条目。
+ *
+ * `path` 相对**授权范围**（通常是仓库根；用户只授权子目录时为该子目录），
+ * 界面拿它直接回传给 `git.diff` 即可。
+ */
+export interface GitChangeEntry extends GitStatusEntry {
+  /** index 侧有变化（X 非 `.`` `），即「已暂存」 */
+  staged: boolean
+  /** 工作树侧有变化（Y 非 `.`` `），即「未暂存」 */
+  unstaged: boolean
+}
+
+/**
+ * `yan:git:changes` 的结果。
+ *
+ * 只读：主进程用 `GIT_OPTIONAL_LOCKS=0` 与全局 `--no-optional-locks` 读状态，
+ * 不刷新 index；命令形状固定，渲染端只能传 cwd。
+ */
+export interface GitChangesResult {
+  ok: boolean
+  /** 仓库根（realpath）；目录不在仓库里时为 null（**不是错误**） */
+  root: string | null
+  /** 已授权的读取范围，相对仓库根（`.` 表示整个仓库） */
+  scope: string
+  branch: string | null
+  detached: boolean
+  unborn: boolean
+  head: string | null
+  files: GitChangeEntry[]
+  /** 逐文件条目超过上限被截断（**不是全部改动**） */
+  truncated: boolean
+  error?: string
+}
+
+/**
+ * `yan:git:diff` 的结果：单个文件的真实补丁。
+ *
+ * 已跟踪文件把「已暂存」与「未暂存」两个真实片段拼在一起（都是真实 `git diff`
+ * 输出，可含多段 `diff --git`，DiffView 能渲染）；无 HEAD 也能靠 `--cached` 读到。
+ * 未跟踪文件由主进程按同一统一格式生成新文件补丁。
+ */
+export interface GitDiffResult {
+  ok: boolean
+  path: string
+  patch: string
+  /** 补丁被字节上限截断（**不是完整内容**） */
+  truncated: boolean
+  /** 二进制：不返回内容，补丁只含 git 的二进制说明行（没有 base85 大块） */
+  binary: boolean
+  /** 补丁里含已暂存片段 */
+  staged: boolean
+  /** 补丁里含未暂存片段 */
+  unstaged: boolean
+  untracked: boolean
+  /** 补丁的 UTF-8 字节数；截断时给出未截断内容的大小下界（不小于返回的补丁） */
+  bytes: number
+  error?: string
+}

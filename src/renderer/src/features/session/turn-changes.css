@@ -1,0 +1,107 @@
+/*
+ * 回复末尾更改卡的版面（层 features）。按钮外观来自 ui/ 的 Button，这里只写版面、
+ * 层级与颜色令牌；文件名在窄屏截断目录而不是文件名。
+ */
+@layer features {
+  .v3-chg {
+    margin-top: var(--s-8);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .v3-chg-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-10);
+    padding: var(--s-10) var(--s-12);
+  }
+
+  .v3-chg-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--r-md);
+    background: var(--hover);
+    color: var(--fg2);
+  }
+
+  .v3-chg-title {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    color: var(--fg);
+  }
+
+  .v3-chg-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+  }
+
+  .v3-chg-stats {
+    flex: none;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .v3-chg-list {
+    margin: 0;
+    padding: var(--s-4) 0;
+    list-style: none;
+    border-top: 1px solid var(--line);
+  }
+
+  .v3-chg-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-12);
+    padding: var(--s-4) var(--s-12);
+    font-size: var(--t-ui);
+  }
+
+  .v3-chg-path {
+    min-width: 0;
+    display: flex;
+    color: var(--fg);
+    white-space: nowrap;
+  }
+
+  .v3-chg-dir {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fg3);
+  }
+
+  .v3-chg-more {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    width: 100%;
+    padding: var(--s-8) var(--s-12);
+    border-top: 1px solid var(--line);
+    color: var(--fg2);
+    font-size: var(--t-ui);
+    text-align: left;
+  }
+
+  .v3-chg-more:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+
+  .v3-chg-more:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+}

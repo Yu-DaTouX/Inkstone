@@ -1,0 +1,171 @@
+/*
+ * 会话分支树与「分支」页签（v3 · WP-26 / WP-30）的版面。
+ *
+ * 只服务分支树：容器、滚动、状态块、底部操作条，以及条目的**语义标识**（类型图标、
+ * 书签、折叠隐藏数、当前叶子、活动分支）。行的悬停 / 选中 / 焦点 / 展开与禁用外观、
+ * 层级缩进、箭头旋转全部来自正式原语 `ui/Tree.css`，这里不再自画第二套控件外观；
+ * 状态词与计数用 `ui/Badge`。颜色与尺寸只用 `design/tokens.css` 的变量。
+ */
+@layer features {
+  /* ── 工作区「分支」页签容器 ── */
+  .wb-branch {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .wb-branch__head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .wb-branch__title {
+    margin: 0;
+    min-width: 0;
+    font-size: var(--t-title);
+    font-weight: var(--t-title-w);
+    line-height: var(--t-title-lh);
+  }
+
+  .wb-branch__hint {
+    flex: none;
+    margin: var(--s-4) 0 var(--s-8);
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .wb-branch__tree {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* ── 树本体：只在原语之上加滚动与条目内容的版面 ── */
+  .branch-tree {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .branch-tree__list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: var(--s-2);
+  }
+
+  /* 条目类型图标与活动分支是语义标识，不是控件状态。 */
+  .branch-kind {
+    flex: none;
+    color: var(--fg3);
+  }
+
+  .branch-node--active .ui-tree__label {
+    color: var(--fg);
+  }
+
+  .branch-node--leaf .branch-kind {
+    color: var(--accent);
+  }
+
+  .branch-label {
+    flex: none;
+    max-width: 10ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .branch-meta {
+    flex: none;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .branch-leaf,
+  .branch-spin {
+    flex: none;
+  }
+
+  /* ── 加载 / 空 / 错误状态块 ── */
+  .branch-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-8);
+    min-height: 0;
+    margin: auto;
+    max-width: 32ch;
+    padding: var(--s-16);
+    text-align: center;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .branch-status__title {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-ui);
+  }
+
+  .branch-status__detail {
+    margin: 0;
+    color: var(--fg3);
+    overflow-wrap: anywhere;
+  }
+
+  /* ── 保护提示与底部操作条 ── */
+  .branch-note {
+    flex: none;
+    margin: 0;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .branch-note--err {
+    color: var(--fail);
+  }
+
+  .branch-note--ok {
+    color: var(--run);
+  }
+
+  .branch-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+    margin-top: var(--s-8);
+    padding-top: var(--s-8);
+    border-top: 1px solid var(--line);
+  }
+
+  .branch-foot__hint {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .branch-foot__spacer {
+    flex: 1 1 auto;
+  }
+}

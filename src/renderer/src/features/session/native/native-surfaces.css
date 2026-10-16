@@ -1,0 +1,235 @@
+/*
+ * 原生会话面板（模型循环范围 / 项目信任 / 原始条目）的 v3 版面。
+ *
+ * 只写版面与语义标识：控件外观全部来自 `ui/`（`.ui-checkbox` / `.ui-btn` /
+ * `.ui-badge` / `.ui-field`），令牌只用 `design/tokens.css` 的变量。颜色不写裸值，
+ * 按钮 / 勾选 / 悬停 / 焦点都不在这里重画。
+ */
+@layer features {
+  .native-surface-modal {
+    width: min(720px, 100%);
+  }
+
+  .native-surface-dialog {
+    min-height: 0;
+  }
+
+  .native-surface__body {
+    min-height: 0;
+  }
+
+  .native-surface {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .native-surface__lead {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+  }
+
+  .native-surface__meta {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .native-surface__note {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .native-surface__note--err {
+    color: var(--fail);
+  }
+
+  .native-surface__note--ok {
+    color: var(--run);
+  }
+
+  .native-surface__risk {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .native-surface__spacer {
+    flex: 1 1 auto;
+  }
+
+  .native-surface__empty,
+  .native-surface__status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-8);
+    min-height: 96px;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    text-align: center;
+  }
+
+  .native-surface__status-icon {
+    color: var(--fail);
+  }
+
+  .native-surface__status-title {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-ui);
+  }
+
+  .native-surface__status-detail,
+  .native-surface__unknown {
+    margin: 0;
+    color: var(--fg3);
+    overflow-wrap: anywhere;
+  }
+
+  .native-surface__foot {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-8);
+    min-width: 0;
+    margin-top: var(--s-8);
+    padding-top: var(--s-8);
+    border-top: 1px solid var(--line);
+  }
+
+  /* ── 模型循环范围 ── */
+
+  .native-scope__group {
+    min-height: 0;
+  }
+
+  .native-scope__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    max-height: min(48vh, 420px);
+    overflow-y: auto;
+    padding-right: var(--s-2);
+  }
+
+  .native-scope__row {
+    min-width: 0;
+  }
+
+  .native-scope__row .ui-checkbox {
+    width: 100%;
+  }
+
+  .native-scope__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .native-scope__provider {
+    flex: none;
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+  }
+
+  /* ── 项目信任 ── */
+
+  .native-trust__fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    margin: 0;
+    min-width: 0;
+  }
+
+  .native-trust__field {
+    display: grid;
+    grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .native-trust__name {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .native-trust__value {
+    margin: 0;
+    min-width: 0;
+  }
+
+  .native-trust__path {
+    display: block;
+    overflow: hidden;
+    color: var(--fg2);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── 原始条目 ── */
+
+  .native-entries__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    margin: 0;
+    max-height: min(52vh, 480px);
+    overflow-y: auto;
+    padding: 0 var(--s-2) 0 0;
+    list-style: none;
+  }
+
+  .native-entries__row {
+    display: grid;
+    grid-template-columns: minmax(48px, max-content) minmax(0, 1fr) minmax(0, 18ch) minmax(0, 18ch);
+    align-items: baseline;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .native-entries__kind {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .native-entries__text {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg2);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .native-entries__mono {
+    overflow: hidden;
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .native-entries__parent {
+    text-align: right;
+  }
+
+  @media (max-width: 720px) {
+    .native-entries__row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

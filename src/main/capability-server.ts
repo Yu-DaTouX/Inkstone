@@ -89,7 +89,12 @@ export interface CapabilityHandlers {
   run(
     command: string,
     params: Record<string, unknown>,
-    ctx: CapabilityContext
+    ctx: CapabilityContext,
+    /**
+     * 客户端断开 / 取消时触发。目前只有托管 MCP 代理要用它把取消透传给
+     * 后端 `AbortSignal`；其它命令可忽略。缺省 undefined 表示无取消信号。
+     */
+    signal?: AbortSignal
   ): Promise<CapabilityCommandResult>
 }
 
@@ -157,6 +162,8 @@ const KNOWN_COMMANDS = new Set([
   'skill.save',
   'mcp.describe',
   'mcp.call',
+  /* 托管 MCP 工具的模型代理通道（设计 A2）：只回模型可见文本，原始 Meta 留宿主。 */
+  'mcp.app.call',
   'tasks.apply',
   'artifact.attach',
   'image.generate',
@@ -346,6 +353,17 @@ export class CapabilityServer {
       return
     }
 
+    /*
+     * 取消透传：客户端（托管 MCP 代理）用 `AbortSignal` 中止 fetch 时，HTTP 连接
+     * 断开。这里把它转成一个 AbortController，交给命令实现（当前是代理调用）
+     * 透传到 MCP SDK 的 `notifications/cancelled`；其余命令拿到也不受影响。
+     */
+    const cancel = new AbortController()
+    req.on('aborted', () => cancel.abort())
+    res.on('close', () => {
+      if (!res.writableEnded) cancel.abort()
+    })
+
     const chunks: Buffer[] = []
     let bodyBytes = 0
     try {
@@ -418,7 +436,7 @@ export class CapabilityServer {
       const out =
         command === 'operations.status'
           ? this.describeOps(params)
-          : await this.handlers.run(command, params, bound)
+          : await this.handlers.run(command, params, bound, cancel.signal)
       const file = this.writeResult(opId, out)
       this.remember({ id: opId, command, at: Date.now(), ok: true })
       reply(200, {

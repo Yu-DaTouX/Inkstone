@@ -23,6 +23,7 @@ import { PiRpc, resolvePi } from './protocol'
 import { CapabilityServer } from './capability-server'
 import { nativePiToolsSupported } from '../shared/agent-context'
 import { modelErrorNotice } from '../shared/model-errors'
+import { redactDiagnosticText } from '../shared/handoff-diagnostics'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
 import { confirmRegisteredModel } from './subagents/registered-model'
 import {
@@ -40,7 +41,9 @@ const GRACE_MS = 75 * 1000
 /** 有工具调用在执行时（如整轮测试）静默是正常的，停滞期限放宽到这个倍数，仍保留对卡死命令的兜底。 */
 const TOOL_RUNNING_STALL_FACTOR = 6
 const PROGRESS_EVENTS = new Set(['agent_start', 'turn_start', 'turn_end', 'message_start', 'message_update', 'message_end',
-  'tool_execution_start', 'tool_execution_update', 'tool_execution_end', 'auto_compaction_start', 'auto_compaction_end'])
+  'tool_execution_start', 'tool_execution_update', 'tool_execution_end', 'auto_compaction_start', 'auto_compaction_end',
+  /* 重试等待也算「有进展」：否则原生退避期间会被停滞计时器当卡死。 */
+  'agent_end', 'auto_retry_start', 'auto_retry_end'])
 
 /**
  * 停滞超时、可选总期限与收尾宽限的实际取值。
@@ -72,6 +75,81 @@ function wrapUpMessage(text: string): string {
 }
 /** 转录最多保留多少条 */
 const MAX_TRANSCRIPT = 200
+
+/**
+ * 退出诊断的有界上限：stderr 只留最后若干行、单行截断。
+ * 子进程日志可能很长，也可能带凭证形状，不能整份塞进运行快照。
+ */
+const MAX_STDERR_LINES = 20
+const MAX_STDERR_LINE_CHARS = 400
+
+/**
+ * 本地统一脱敏：在共享形状清洗之前，先处理诊断文本里常见的**有标签**凭证形状。
+ *
+ * 覆盖 stderr 与启动错误里实际出现过的几类：
+ *   · URL userinfo（`https://user:pass@host`）与查询参数密钥；
+ *   · JSON / JS 对象字段（`{"api_key":"…"}`、`{'token': '…'}`、`apiKey: '…'`）；
+ *   · HTTP 头与无引号赋值（`X-API-Key: …`、`Authorization=…`）；
+ *   · `Basic` / `Bearer` 后的凭据串。
+ *
+ * 这是本模块自己的诊断边界，不改共享 handoff 模块的规则。它只能识别这些
+ * 有标签的形状，不能保证识别任意无标签随机字符串。
+ */
+function redactCredentialShapes(text: string): string {
+  return text
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi, '$1[redacted]@')
+    .replace(
+      /([?&])(?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|token|key|secret|password|passwd|credential|authorization|auth)=[^&\s"']+/gi,
+      '$1[redacted]'
+    )
+    .replace(
+      /*
+       * 先匹配闭合引号；再兜底「引号没闭合」的截断/尾行文本，保守脱敏到行尾，
+       * 免得 flush 出去的半截 credential 原样落进诊断。
+       */
+      /(["']?(?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|authorization|auth|token|secret|password|passwd|credential)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*$|'(?:\\.|[^'\\])*$)/gi,
+      '$1[redacted]'
+    )
+    .replace(/\b(?:Basic|Bearer)\s+[A-Za-z0-9._~+/=-]{6,}/gi, '[redacted]')
+    .replace(/\b(authorization\s*[:=]\s*)[^\s,;"']+/gi, '$1[redacted]')
+    .replace(
+      /(\b(?:x-api-key|api[-_]?key|apikey|access[_-]?token|refresh[_-]?token|id[_-]?token|token|secret|password|passwd|credential)\b\s*[:=]\s*)[^\s,;"'&?]+/gi,
+      '$1[redacted]'
+    )
+}
+
+/** 一段诊断文本 → 按本地规则脱敏并截断的短文本；空文本返回 undefined。 */
+export function redactLocalDiagnostic(text: string, max = MAX_STDERR_LINE_CHARS): string | undefined {
+  return redactDiagnosticText(redactCredentialShapes(text), max) ?? undefined
+}
+
+/**
+ * stderr 一行 → 可放进运行诊断的短文本（已脱敏）。
+ *
+ * 先处理 URL、JSON 字段、HTTP 头与 Basic/Bearer 这些本地形状，
+ * 再走共享的凭证清洗与截断；空白行返回 undefined，调用方据此不占一行。
+ */
+export function sanitizeStderrLine(line: string): string | undefined {
+  return redactLocalDiagnostic(line, MAX_STDERR_LINE_CHARS)
+}
+
+/** 把退出事实与脱敏后的 stderr 尾部拼成一句给用户看的原因（有界）。 */
+export function describeProcessExit(
+  info: { code?: number | null; signal?: string | null; spawnError?: string },
+  stderrTail: readonly string[]
+): string {
+  const facts: string[] = []
+  if (info.spawnError) {
+    facts.push(`无法启动 pi：${redactLocalDiagnostic(info.spawnError, 300) ?? info.spawnError}`)
+  } else {
+    const bits: string[] = []
+    if (info.code !== undefined) bits.push(`code=${info.code ?? 'null'}`)
+    if (info.signal !== undefined) bits.push(`signal=${info.signal ?? 'null'}`)
+    if (bits.length) facts.push(`pi 子进程提前退出（${bits.join('，')}）`)
+  }
+  const tail = stderrTail.length ? `；stderr：${stderrTail.join(' | ')}` : ''
+  return `${facts.join('；') || 'pi 子进程提前退出'}${tail}`
+}
 /** 只合并流式消息快照；生命周期、工具与最终消息仍即时推送。 */
 const STREAM_PUSH_MS = 33
 /**
@@ -105,8 +183,12 @@ interface Run extends SubagentRun {
   totalMs?: number
   idleMs: number
   graceMs: number
-  /** 收到过 agent_settled / agent_end 就认为这一轮结束 */
+  /** pi 原生 `agent_settled` 到达后才为 true；`agent_end` 不再终结这一轮 */
   settled: boolean
+  /** 已观察到的原生自动重试次数（事件字段不可靠时保持 undefined，不编默认值） */
+  retryAttempt?: number
+  /** 已观察到的原生重试上限；只在 pi 给出时记录 */
+  retryMaxAttempts?: number
   workspace: PreparedWorkspace
   finalizing?: Promise<void>
   /** 结束事件的转录收尾与进程关闭；退出时必须等它完成再清工作区。 */
@@ -141,6 +223,10 @@ interface Run extends SubagentRun {
    * 主 agent 汇总时得知道当初要的交付物是什么。
    */
   brief: SubagentBrief
+  /** 有界保存、已脱敏的 stderr 尾部；进程早退时用它还原真实原因 */
+  stderrTail: string[]
+  /** 进程退出事实（退出码 / 信号 / 启动失败）；只在第一次收口时写入 */
+  exitInfo?: { code: number | null; signal: string | null; spawnError?: string }
 }
 
 export interface SubagentApprovalOrigin { sessionId?: string; runId?: string; subagentId?: string }
@@ -171,6 +257,11 @@ export interface SubagentOptions {
   onRemove?: (id: string) => void
   /** 一次运行收口（差异与审阅状态已定）后回调一次；用来通知父会话 */
   onFinished?: (run: SubagentRun) => void
+  /**
+   * 只读原始事件旁路（例如把只读评审子运行按 runId 投影成 R 运行）。
+   * 不改变事件处理、投影或控制；抛错也不会打断子代理的事件流。
+   */
+  onEvent?: (runId: string, evt: Record<string, unknown>) => void
   /** 造 pi 客户端（默认真的 PiRpc；单测注入假实现） */
   createRpc?: (opts: { cwd: string; piBin?: string; args: string[] }) => SubagentRpc
   /** 按所选方式准备工作目录；单测可注入准备过程。 */
@@ -439,6 +530,7 @@ export class SubagentController {
       review: 'none',
       usageSnapshots: {},
       brief,
+      stderrTail: [],
       rpc,
       workspace,
       settled: false,
@@ -455,18 +547,25 @@ export class SubagentController {
     this.armWatch(run)
 
     rpc.on('event', (evt: Record<string, unknown>) => this.handleEvent(run, evt))
-    rpc.on('exit', () => {
-      /* 进程自己退了但没标结束 —— 也算结束，不留在“运行中” */
-      if (run.status === 'running' || run.status === 'starting') {
-        clearTimeout(run.timer)
-        run.status = 'error'
-        run.endReason = 'exited'
-        run.wrapUp = undefined
-        run.error = run.error ?? 'pi 子进程提前退出'
-        run.endedAt = Date.now()
-        this.emit(run)
-        void this.finalize(run, false)
-      }
+    /*
+     * 有界保留脱敏后的 stderr 尾部；进程自己退或启动失败时，用它还原真实原因，
+     * 而不是把所有早退都压成「启动期间已停止」。
+     */
+    rpc.on('stderr', (line: string) => {
+      const safe = sanitizeStderrLine(line)
+      if (!safe) return
+      run.stderrTail.push(safe)
+      if (run.stderrTail.length > MAX_STDERR_LINES) run.stderrTail.shift()
+    })
+    rpc.on('spawn-error', (err: Error) => {
+      const raw = err instanceof Error ? err.message : String(err)
+      // 存前脱敏：原始启动错误不能落进快照/历史/IPC，规则与 stderr 一致。
+      run.exitInfo = { code: null, signal: null, spawnError: redactLocalDiagnostic(raw, 300) ?? '未知启动错误' }
+      this.handleProcessGone(run)
+    })
+    rpc.on('exit', (code: number | null, signal: string | null) => {
+      run.exitInfo = { ...(run.exitInfo ?? {}), code, signal }
+      this.handleProcessGone(run)
     })
 
     this.runs.set(id, run)
@@ -476,15 +575,15 @@ export class SubagentController {
 
     try {
       // 保存起始快照时也可能收到停止；不能在已收口后重新拉起子进程。
-      if (run.status !== 'starting') return { ok: false, error: '子代理在启动期间已停止' }
+      if (run.status !== 'starting') return this.startupAbort(run)
       rpc.spawn()
       /* 等 pi 起来（扩展加载 + RPC 就绪） */
       const ready = await this.waitReady(rpc, 20_000)
       /* 等待期间用户可能已经停掉它：不能再把 cancelled 覆盖回 running，更不能继续派活。 */
-      if (run.status !== 'starting') return { ok: false, error: '子代理在启动期间已停止' }
+      if (run.status !== 'starting') return this.startupAbort(run)
       if (!ready.ok) {
         await this.fail(id, '子代理启动超时', 'startup')
-        return { ok: false, error: '子代理启动超时' }
+        return { ok: false, error: this.runs.get(id)?.error ?? '子代理启动超时' }
       }
       /* 指定了模型却被 pi 悄悄换成别的（找不到、未登录等）：直接失败，不让任务在错误的模型上跑。 */
       if (model && ready.model && modelMismatch(model, ready.model)) {
@@ -494,9 +593,9 @@ export class SubagentController {
       }
       if (model && ready.model) {
         const expectedApi = await ctx.resolveModelApi?.(ready.model, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId })
-        if (run.status !== 'starting') return { ok: false, error: '子代理在启动期间已停止' }
+        if (run.status !== 'starting') return this.startupAbort(run)
         const selectionError = await confirmRegisteredModel(rpc, ready.model, { readOnly: isolation === 'controlled-cwd', expectedApi })
-        if (run.status !== 'starting') return { ok: false, error: '子代理在启动期间已停止' }
+        if (run.status !== 'starting') return this.startupAbort(run)
         if (selectionError) {
           await this.fail(id, selectionError, 'startup')
           return { ok: false, error: selectionError }
@@ -508,7 +607,7 @@ export class SubagentController {
       run.status = 'running'
       run.latestActivity = '已启动'
       await this.writeMetadata(run)
-      if (run.status !== 'running') return { ok: false, error: '子代理在启动期间已停止' }
+      if (run.status !== 'running') return this.startupAbort(run)
       this.emit(run)
 
       const res = await rpc.command('prompt', { message: briefPrompt(brief, text) })
@@ -519,8 +618,13 @@ export class SubagentController {
       return { ok: true, run: this.snapshot(run) }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      await this.fail(id, message)
-      return { ok: false, error: message }
+      /*
+       * 子进程已经先退出时，`handleProcessGone` 已经写下带退出码/stderr 的真实原因；
+       * 不要把这份诊断再用通用的“pi 未运行 / 已退出”盖掉。
+       */
+      const realReason = run.status === 'error' && run.endReason === 'exited' ? run.error : undefined
+      if (!realReason) await this.fail(id, message)
+      return { ok: false, error: realReason ?? message }
     }
   }
 
@@ -615,6 +719,34 @@ export class SubagentController {
     }
   }
 
+  /**
+   * 进程自己退出或启动失败：留下真实的退出码 / 信号 / stderr 原因。
+   *
+   * 只在 `running` / `starting` 时收口；重复的 exit 与 spawn-error、以及迟到的
+   * exit 都不能覆盖 cancelled / completed / timeout 等已经定下的终态。
+   */
+  private handleProcessGone(run: Run): void {
+    if (run.status !== 'running' && run.status !== 'starting') return
+    clearTimeout(run.timer)
+    run.status = 'error'
+    run.endReason = 'exited'
+    run.wrapUp = undefined
+    run.error = run.error ?? describeProcessExit(run.exitInfo ?? {}, run.stderrTail)
+    run.endedAt = Date.now()
+    this.emit(run)
+    void this.finalize(run, false)
+  }
+
+  /**
+   * 启动期间进程已经收口时的返回原因。
+   *
+   * 早退会被 `handleProcessGone` 记成带退出码与 stderr 的 `error`，这里优先把
+   * 那份真实原因交出去；只有用户确实停掉（cancelled）才说「启动期间已停止」。
+   */
+  private startupAbort(run: Run): { ok: false; error: string } {
+    return { ok: false, error: run.status === 'error' && run.error ? run.error : '子代理在启动期间已停止' }
+  }
+
   private async fail(id: string, message: string, reason: SubagentEndReason = 'failed'): Promise<void> {
     const run = this.runs.get(id)
     if (!run) return
@@ -629,7 +761,7 @@ export class SubagentController {
       run.error = undefined
       run.latestActivity = '已停止'
     } else {
-      run.error = message
+      run.error = reason === 'startup' && run.stderrTail.length ? `${message}；stderr：${run.stderrTail.join(' | ')}` : message
       run.latestActivity = message
     }
     run.endedAt = Date.now()
@@ -897,7 +1029,20 @@ export class SubagentController {
     })()
   }
 
+  /** 已经收口（settled / 取消 / 失败）的运行不再接受迟到的重试与终态事件。 */
+  private closedForEvents(run: Run): boolean {
+    return run.settled || run.status === 'cancelled' || run.status === 'error'
+  }
+
   private handleEvent(run: Run, evt: Record<string, unknown>): void {
+    /* 只读旁路：评审运行的 R 号投影订阅原始事件；失败不影响子代理行为。 */
+    if (this.opts.onEvent) {
+      try {
+        this.opts.onEvent(run.id, evt)
+      } catch {
+        /* 只读订阅不能打断事件处理 */
+      }
+    }
     const type = String(evt.type ?? '')
     if (PROGRESS_EVENTS.has(type)) {
       run.lastProgressAt = Date.now()
@@ -994,8 +1139,64 @@ export class SubagentController {
       return
     }
 
-    if (type === 'agent_settled' || type === 'agent_end') {
-      if (run.settled) return
+    /*
+     * `agent_end` 不是终局：pi 可能在自动重试前先发它，`willRetry:true` 时同一
+     * 逻辑回合还会继续。宿主只认 pi 1.2 的原生 `agent_settled` 收口，不用
+     * `agent_end` 抢关（否则会把正在重试的运行提前 close 掉）。旧 pi 若不发
+     * `agent_settled`，运行由既有停滞/总时限兜底，不再以 legacy 名义保留这条
+     * 危险分支。
+     */
+    if (type === 'agent_end') {
+      if (this.closedForEvents(run)) return
+      /* 只更新活动与计时；不 settled、不 close。 */
+      if (evt.willRetry === true) {
+        run.latestActivity = '模型请求失败，等待自动重试…'
+        this.emit(run)
+      }
+      return
+    }
+
+    /* 原生自动重试纳入进展与只读活动：只显示真实拿到的 attempt，不编造默认次数。 */
+    if (type === 'auto_retry_start') {
+      if (this.closedForEvents(run)) return
+      const attempt = finiteCount(evt.attempt)
+      const maxAttempts = finiteCount(evt.maxAttempts)
+      /* 每次重试开始只信任本事件携带的计数：缺失/无效一律清旧值，不拿上一轮历史数填。 */
+      run.retryAttempt = attempt
+      run.retryMaxAttempts = maxAttempts
+      run.latestActivity = retryActivity(attempt, maxAttempts)
+      this.emit(run)
+      return
+    }
+
+    if (type === 'auto_retry_end') {
+      if (this.closedForEvents(run)) return
+      if (evt.success === false) {
+        /*
+         * 原生重试已结束且失败：保留模型报错，并把失败落到 stopReason 上，
+         * 让随后的 `agent_settled` 如实收成 error。没有可靠字段就只说状态。
+         */
+        run.stopReason = 'error'
+        run.error = run.error ?? modelErrorNotice(evt.finalError ?? evt.error)
+        run.latestActivity = run.retryAttempt !== undefined
+          ? `自动重试失败（已观察到第 ${run.retryAttempt} 次）`
+          : '自动重试失败'
+      } else if (evt.success === true) {
+        /* 重试成功：暂态的模型失败要清掉，别让它跟随到终态。 */
+        run.error = undefined
+        run.stopReason = undefined
+        run.latestActivity = '自动重试成功，继续'
+      } else {
+        /* success 缺失或非布尔：结果未知——不清错、不假成功、不收口，只如实记录状态。 */
+        run.latestActivity = '自动重试结束（结果未知）'
+      }
+      this.emit(run)
+      return
+    }
+
+    if (type === 'agent_settled') {
+      /* 取消 / 已失败 / 已结束的运行不再被迟到事件重写；重复 settled 只收口一次。 */
+      if (this.closedForEvents(run)) return
       run.settled = true
       clearTimeout(run.timer)
       /*
@@ -1089,6 +1290,19 @@ function modelMismatch(requested: string, actual: string): boolean {
   const want = requested.replace(/:(off|minimal|low|medium|high|xhigh)$/i, '').trim()
   if (!want.includes('/') || want.includes('*')) return false
   return want.toLowerCase() !== actual.toLowerCase()
+}
+
+/** 事件里的次数只有在是正整数时才可信；字符串/小数/NaN 一律 undefined，不 coerce、不编默认值。 */
+function finiteCount(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : undefined
+}
+
+/* 重试中的只读活动文案：没有可靠的 attempt 就只说明状态；max<attempt 的矛盾组合不展示伪总数。 */
+function retryActivity(attempt: number | undefined, maxAttempts: number | undefined): string {
+  if (attempt === undefined) return '模型请求失败，正在自动重试…'
+  return maxAttempts === undefined || maxAttempts < attempt
+    ? `模型请求失败，正在自动重试（第 ${attempt} 次）`
+    : `模型请求失败，正在自动重试（第 ${attempt}/${maxAttempts} 次）`
 }
 
 /** 列表里显示的那一行活动 */

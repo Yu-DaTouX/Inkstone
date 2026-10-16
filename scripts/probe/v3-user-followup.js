@@ -1,0 +1,71 @@
+/* 用户截图回归：单次隔离窗口，只注入合成界面数据，不调用模型。 */
+;(async () => {
+  const out=[]
+  const check=(ok,label)=>out.push(`  ${ok?'✓':'✗'} ${label}`)
+  const wait=(ms)=>new Promise((r)=>setTimeout(r,ms))
+  const q=(id)=>document.querySelector(`[data-testid="${id}"]`)
+  const stage=async(name)=>{ window.__followupStage=name; if(window.__followupDriver)for(let i=0;i<160&&window.__followupDone!==name;i++)await wait(50);else await wait(300) }
+  const store=window.__yanStore
+  try{
+    if(!store)throw new Error('missing store')
+    location.hash='#/'
+    await wait(100)
+    store.setState({messages:[],peekedMessages:null})
+    await wait(500)
+    check(!!q('v3-sidebar-resizer'),'左侧会话列表右边缘有正式拖拽条')
+    await stage('sidebar-drag')
+    check(window.__followupSidebarDrag===true,'可信指针拖动实际改变会话列表宽度')
+    check(Number(localStorage.getItem('inkstone.v3.sidebarWidth'))>280,'拖宽结果已持久化')
+    const sidebar=q('v3-sidebar'), width=sidebar.getBoundingClientRect().width
+    q('v3-side-close').click();await wait(100)
+    check(getComputedStyle(sidebar).display==='none','收起后列表退出常驻布局')
+    const before=document.querySelector('.v3-main').getBoundingClientRect().left
+    await stage('sidebar-hover')
+    check(getComputedStyle(sidebar).display!=='none','鼠标悬停左缘展开会话列表')
+    check(Math.abs(document.querySelector('.v3-main').getBoundingClientRect().left-before)<1,'悬停预览不挤动正文')
+    await stage('sidebar-leave')
+    check(getComputedStyle(sidebar).display==='none','鼠标离开临时预览后收回')
+    q('v3-head-side-open')?.click()
+    if(getComputedStyle(sidebar).display==='none')q('v3-sidebar-reveal')?.click()
+    await wait(200)
+    check(Math.abs(sidebar.getBoundingClientRect().width-width)<1,'再次展开沿用拖宽结果')
+    const cursor=document.querySelector('.v3-hello-cursor')
+    check(cursor&&getComputedStyle(cursor).animationIterationCount==='infinite','HELLO WORLD 末尾光标持续闪烁')
+    check(document.querySelectorAll('.start-usage [role="tablist"]').length===0,'首页用量精简为摘要，分析控件进入详情')
+    const cells=[...document.querySelectorAll('.start-heat .start-cell')].slice(0,30).map((el)=>el.getBoundingClientRect())
+    check(cells.length>0&&cells.every((r)=>Math.abs(r.width-r.height)<.1&&Math.abs(r.width-cells[0].width)<.1),'Token格子为等宽正方形')
+    check(cells.length>0&&Math.abs(cells[0].width*devicePixelRatio-Math.round(cells[0].width*devicePixelRatio))<.05,'格子宽度对齐整物理像素')
+    await stage('home')
+    const models=Array.from({length:120},(_,i)=>({id:`fixture-${i}`,name:`模型 ${i} · 长显示名`,provider:i<60?'provider-a':'provider-b',reasoning:true,contextWindow:200000}))
+    store.setState({models,thinkingLevels:['off','minimal','low','medium','high','xhigh','max'],session:{...store.getState().session,model:models[0],thinkingLevel:'medium',thinkingLevelsStatus:'known'}})
+    const main=document.querySelector('.v3-main'),bounds=main.getBoundingClientRect()
+    q('model-picker').click()
+    let stable=true
+    for(let i=0;i<30;i++){await new Promise(requestAnimationFrame);const next=main.getBoundingClientRect();if(Math.abs(next.left-bounds.left)>.5||Math.abs(next.width-bounds.width)>.5)stable=false}
+    check(stable,'打开模型菜单不改变正文位置或宽度')
+    const pop=document.querySelector('.mtp-pop'),dialog=document.querySelector('.mtp-dialog'),list=document.querySelector('.mtp-scroll')
+    check(pop&&dialog&&dialog.scrollWidth<=dialog.clientWidth+1&&pop.scrollWidth<=pop.clientWidth+1,'模型浮层和内部对话框均无横向溢出')
+    check(list.scrollHeight>list.clientHeight&&getComputedStyle(list).overflowY==='auto','大量模型只在列表内纵向滚动')
+    check(getComputedStyle(dialog).overflowX==='hidden','菜单底部不会显示横向滚动条')
+    await stage('picker')
+    q('model-picker').click();await wait(100)
+    q('v3-schedule-entry').click();await wait(300)
+    const head=document.querySelector('.sched-page-head'),notice=document.querySelector('.sched-page-notice')
+    check(head&&notice&&Math.abs(head.getBoundingClientRect().left-notice.getBoundingClientRect().left)<1,'定时任务标题与说明对齐')
+    await stage('schedule')
+    q('v3-runs-entry').click();await wait(400)
+    const runsHead=document.querySelector('.runs-page-head'),empty=document.querySelector('.runs-page-empty'),history=document.querySelector('.runs-history-head')
+    check(runsHead&&history&&Math.abs(runsHead.getBoundingClientRect().left-history.getBoundingClientRect().left)<1,'运行总览标题与历史区对齐')
+    check(!empty||Math.abs(runsHead.getBoundingClientRect().left-empty.getBoundingClientRect().left)<1,'运行空状态说明与内容列对齐')
+    const pin=q('v3-always-on-top'),wasTop=store.getState().alwaysOnTop
+    pin.click();await wait(150)
+    check(store.getState().alwaysOnTop!==wasTop,'窗口置顶入口调用正式动作')
+    pin.click();await wait(150)
+    check(store.getState().alwaysOnTop===wasTop,'窗口置顶可恢复原状态')
+    await stage('runs')
+    await stage('narrow')
+    check(document.documentElement.scrollWidth<=innerWidth+1,'800px窄屏没有整页横向溢出')
+    await stage('done')
+  }catch(error){out.push(`  ✗ ${error.stack??error}`)}
+  return out.join('\n')
+})()

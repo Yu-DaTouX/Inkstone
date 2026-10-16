@@ -29,7 +29,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 export const DEFAULT_TRIM_TOKENS = 80_000
-export const DEFAULT_COMPACT_TOKENS = 250_000
+/** 自动压缩上限的缺省值，与 src/shared/context-limits.ts 的 DEFAULT_AUTO_COMPACT_TOKENS 必须一致（test-unit 有对照断言）。 */
+export const DEFAULT_COMPACT_TOKENS = 400_000
 /** 窗口较小的模型按比例提前：裁剪线不超过窗口的 30%，压缩线不超过窗口的 90%（给 pi 原生保底线留余量）。 */
 const TRIM_WINDOW_RATIO = 0.3
 const COMPACT_WINDOW_RATIO = 0.9

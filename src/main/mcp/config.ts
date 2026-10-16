@@ -10,6 +10,12 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { McpServerConfig } from '../../shared/mcp'
+import {
+  type McpAppHostConfig,
+  type McpAppNativeEntry,
+  type McpAppOwnership,
+  type McpAppServerConfig
+} from './app-spec'
 import { YAN_DIR } from '../paths'
 
 export function mcpServersFile(env: NodeJS.ProcessEnv = process.env): string {
@@ -19,7 +25,7 @@ export function mcpServersFile(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export interface McpConfigLoadResult {
-  servers: McpServerConfig[]
+  servers: McpAppServerConfig[]
   /** 配置有问题时的可读说明 —— **不静默**吞掉（否则「服务没连上」会变成谜）。 */
   error?: string
   /** 解析出的原始文档（导入 pi 原生时保留未知字段用；数组或 `{ servers }` 形状都可能是它）。 */
@@ -42,7 +48,13 @@ export function mcpServersForProject(
 const TRANSPORTS = new Set(['stdio', 'http'])
 const EFFECTS = new Set(['read', 'write', 'external-action', 'unknown'])
 
-function normalize(raw: unknown): McpServerConfig | { problem: string } {
+/** 已归一化的字段：其余顶层键**原样保留**，避免回写时抹掉别的 agent 或用户手写的字段。 */
+const KNOWN_SERVER_KEYS = new Set([
+  'id', 'title', 'transport', 'command', 'args', 'env', 'url', 'authRef',
+  'projectScope', 'effect', 'enabled', 'migratedToNative', 'ownedBy', 'appHost'
+])
+
+function normalize(raw: unknown): McpAppServerConfig | { problem: string } {
   if (!raw || typeof raw !== 'object') return { problem: '条目不是对象' }
   const r = raw as Record<string, unknown>
   const id = typeof r.id === 'string' ? r.id.trim() : ''
@@ -80,7 +92,16 @@ function normalize(raw: unknown): McpServerConfig | { problem: string } {
     }
   }
   const migratedToNative = parseMigratedMark(r.migratedToNative)
+  /* 未知字段保留：先铺原始条目，再用归一化结果覆盖已知键（顺序即优先级）。 */
+  const extras: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(r)) {
+    if (!KNOWN_SERVER_KEYS.has(key)) extras[key] = value
+  }
+  const ownedBy: McpAppOwnership | undefined =
+    r.ownedBy === 'inkstone' ? 'inkstone' : r.ownedBy === 'pi' ? 'pi' : undefined
+  const appHost = parseAppHost(r.appHost)
   return {
+    ...extras,
     id,
     ...(typeof r.title === 'string' && r.title.trim() ? { title: r.title.trim() } : {}),
     transport: transport as McpServerConfig['transport'],
@@ -92,8 +113,52 @@ function normalize(raw: unknown): McpServerConfig | { problem: string } {
     ...(typeof r.projectScope === 'string' && r.projectScope.trim() ? { projectScope: r.projectScope.trim() } : {}),
     ...(effect ? { effect } : {}),
     ...(r.enabled === false ? { enabled: false } : {}),
-    ...(migratedToNative ? { migratedToNative } : {})
+    ...(migratedToNative ? { migratedToNative } : {}),
+    ...(ownedBy ? { ownedBy } : {}),
+    ...(appHost ? { appHost } : {})
   }
+}
+
+/** `natives[]` 里已知字段之外的键保留，回写时不抹掉。 */
+function nativeExtras(native: Record<string, unknown>): Record<string, unknown> {
+  const extras: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(native)) {
+    if (key !== 'path' && key !== 'name' && key !== 'entry' && key !== 'fingerprint') extras[key] = value
+  }
+  return extras
+}
+
+/**
+ * 解析砚托管声明 `appHost{at,natives[]}`。
+ *
+ * 形状不对就**丢弃整条标记**（等价于未托管，宁可连不上也不误接管）；
+ * `natives[].entry` 是回退时要逐字写回的原条目，任何 JSON 值都保留。
+ */
+function parseAppHost(raw: unknown): McpAppHostConfig | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  if (typeof r.at !== 'string' || !r.at.trim()) return undefined
+  if (!Array.isArray(r.natives)) return undefined
+  const natives: McpAppNativeEntry[] = []
+  for (const item of r.natives) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return undefined
+    const native = item as Record<string, unknown>
+    if (typeof native.path !== 'string' || !native.path.trim()) return undefined
+    if (typeof native.name !== 'string' || !native.name.trim()) return undefined
+    if (typeof native.fingerprint !== 'string' || !native.fingerprint.trim()) return undefined
+    natives.push({
+      ...nativeExtras(native),
+      path: native.path,
+      name: native.name,
+      entry: 'entry' in native ? native.entry : undefined,
+      fingerprint: native.fingerprint
+    })
+  }
+  const extras: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(r)) {
+    if (key !== 'at' && key !== 'natives') extras[key] = value
+  }
+  return { ...extras, at: r.at, natives }
 }
 
 /** `migratedToNative` 只认形状正确的标记；坏值静默丢弃（不因此拒绝整条服务）。 */
@@ -135,7 +200,7 @@ export function parseMcpServersDocument(text: string, file: string): McpConfigLo
       : null
   if (!list) return { servers: [], file, document: parsed, error: `MCP 配置必须是数组或 { servers: [...] }（${file}）` }
 
-  const servers: McpServerConfig[] = []
+  const servers: McpAppServerConfig[] = []
   const problems: string[] = []
   const seen = new Set<string>()
   for (const item of list) {

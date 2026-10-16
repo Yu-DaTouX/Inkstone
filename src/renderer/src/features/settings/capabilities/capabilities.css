@@ -1,0 +1,299 @@
+/*
+ * v3「能力与插件」设置版面（features 层，S2）。
+ *
+ * 只写版面与层级；控件外观归 `ui/ui.css`（primitives），颜色 / 间距 / 圆角一律取
+ * `design/tokens.css` 现有变量，不私造。窄屏优先：头部可换行，操作区不被挤出视窗。
+ */
+@layer features {
+  .caps-root {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .caps-tabs {
+    min-width: 0;
+  }
+
+  .caps-tablist {
+    margin-bottom: var(--s-16);
+  }
+
+  .caps-tabpanel {
+    min-width: 0;
+  }
+
+  .caps-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-20);
+    min-width: 0;
+    max-width: var(--size-col);
+  }
+
+  /* ── 说明 / 警告 / 空态 ─────────────────────────────────────── */
+
+  .caps-note {
+    margin: 0;
+    padding: var(--s-10) var(--s-12);
+    border-radius: var(--r-md);
+    background: var(--sunken);
+    color: var(--fg2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .caps-warn {
+    margin: 0;
+    padding: var(--s-8) var(--s-12);
+    border-radius: var(--r-sm);
+    background: var(--fail-bg);
+    color: var(--fail-t);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .caps-empty {
+    margin: 0;
+    padding: var(--s-12) 0;
+    color: var(--fg3);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  /* ── 分组 ──────────────────────────────────────────────────── */
+
+  .caps-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-10);
+    min-width: 0;
+  }
+
+  .caps-group-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s-8);
+  }
+
+  .caps-group-titles {
+    min-width: 0;
+  }
+
+  .caps-group-title {
+    margin: 0;
+    font-size: var(--t-h2);
+    line-height: var(--t-h2-lh);
+    font-weight: var(--t-h2-w);
+  }
+
+  .caps-group-desc {
+    margin: var(--s-2) 0 0;
+    color: var(--fg3);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .caps-subgroup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    margin-top: var(--s-8);
+  }
+
+  .caps-subgroup-title {
+    margin: 0;
+    color: var(--fg2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    letter-spacing: 0.02em;
+  }
+
+  /* ── 列表与条目 ─────────────────────────────────────────────── */
+
+  .caps-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .caps-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    min-width: 0;
+    padding: var(--s-10) var(--s-12);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  .caps-item--skeleton {
+    gap: var(--s-8);
+  }
+
+  .caps-item-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .caps-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg);
+    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font-weight: 600;
+  }
+
+  .caps-tag {
+    flex: none;
+    padding: 0 var(--s-6);
+    border-radius: var(--r-full);
+    background: var(--sunken);
+    color: var(--fg3);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .caps-meta {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--fg3);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .caps-spacer {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .caps-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-6);
+  }
+
+  .caps-actions--start {
+    justify-content: flex-start;
+  }
+
+  .caps-result {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--fg2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .caps-import {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    margin-top: var(--s-4);
+    padding-top: var(--s-8);
+    border-top: 1px dashed var(--line);
+  }
+
+  .caps-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    margin-top: var(--s-4);
+  }
+
+  .caps-raw {
+    margin: 0;
+    max-height: 220px;
+    overflow: auto;
+    padding: var(--s-8);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    color: var(--fg2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* ── 表单与分页 ─────────────────────────────────────────────── */
+
+  .caps-field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .caps-field-input {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+
+  .caps-pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    color: var(--fg3);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  /* ── 确认框（ConfirmProvider） ──────────────────────────────── */
+
+  .caps-overlay {
+    z-index: 1200;
+  }
+
+  .caps-modal {
+    max-width: min(560px, calc(100vw - var(--s-32)));
+  }
+
+  .caps-confirm-body {
+    margin: 0;
+    color: var(--fg2);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    white-space: pre-wrap;
+  }
+
+  .caps-confirm-detail {
+    margin: 0;
+    max-height: 260px;
+    overflow: auto;
+    padding: var(--s-8);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    color: var(--fg2);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .caps-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-8);
+  }
+
+  /* ── 骨架 ──────────────────────────────────────────────────── */
+
+  .caps-skel {
+    display: block;
+  }
+
+  .caps-skel--title {
+    width: 38%;
+    height: 1em;
+  }
+
+  .caps-skel--line {
+    width: 70%;
+    height: 0.85em;
+  }
+}

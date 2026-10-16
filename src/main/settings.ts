@@ -491,6 +491,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
     settings.workModeShortcutEnabled === false || legacyWorkModeTab === false ? false : undefined
   settings.workModeShortcut = normalizeWorkModeShortcut(settings.workModeShortcut)
   settings.subagentNotify = settings.subagentNotify === false ? false : undefined
+  settings.streamLoopAutoContinue = settings.streamLoopAutoContinue === false ? false : undefined
   settings.usageUnderInput = settings.usageUnderInput === false ? false : undefined
   // 发送键：只认三个已知值，脏值回落到 auto（默认行为）
   settings.sendKey =
@@ -500,6 +501,8 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
     settings.responseDetail === 'brief' || settings.responseDetail === 'detailed'
       ? settings.responseDetail
       : 'standard'
+  // 界面外壳：只认 v3，其余（含缺失）一律不写，按 v2 处理
+  if (settings.uiVersion !== 'v3' && settings.uiVersion !== 'v2') delete settings.uiVersion
   // 密度：只认三个已知值，脏值 / 缺失回落到 standard
   settings.density =
     settings.density === 'compact' || settings.density === 'comfortable'
@@ -531,6 +534,8 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.keepAwakeWhileWorking = settings.keepAwakeWhileWorking === false ? false : undefined
   settings.keepAwakeOnBattery = settings.keepAwakeOnBattery === false ? false : undefined
   settings.visualAnswers = settings.visualAnswers === false ? false : undefined
+  /* 动态 ASCII 背景：只有明确关才落 false，缺省不写进文件 */
+  settings.asciiBackground = settings.asciiBackground === false ? false : undefined
   /* 上下文裁剪与自动压缩：只有明确关才落 false；阈值只收档位里的值，缺省值不写进文件 */
   settings.contextTrim = settings.contextTrim === false ? false : undefined
   settings.contextTrimTokens = pickTokenStep(settings.contextTrimTokens, CONTEXT_TRIM_STEPS, DEFAULT_CONTEXT_TRIM_TOKENS)
@@ -655,10 +660,11 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','showSpaces','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','capabilityStrategy','codemodeEnabled','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','activityModels','workModeShortcutEnabled','workModeShortcut','subagentNotify','usageUnderInput','contextPolicy','contextPolicyByModel','temperatureByModel','contextDeep','contextFold','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['uiVersion','lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','showSpaces','cwd','theme','lang','recentCwds','projectNames','projects','projectGroups','projectOrder','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','railWidth','panelWidth','browserHeight','toolOrder','toolHidden','toolHeights','toolDetail','toolDetailExplicit','streamWidth','autonomous','defaultWorkMode','capabilityStrategy','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','toolLayout','activityModels','workModeShortcutEnabled','workModeShortcut','subagentNotify','streamLoopAutoContinue','usageUnderInput','contextPolicy','contextPolicyByModel','temperatureByModel','contextDeep','contextFold','projectKnowledge','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','processLayout','liveThinking','backgroundPreset','backgroundCustom','backgroundCustomLight','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeBody','fontSizeUi','autoArchiveDays','voiceInput','shortcutOverrides'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
+  if ('uiVersion' in value && value.uiVersion !== 'v2' && value.uiVersion !== 'v3') throw new Error('界面版本必须为 v2 或 v3')
   return value as Partial<AppSettings>
 }
 

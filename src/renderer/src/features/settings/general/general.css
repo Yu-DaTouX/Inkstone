@@ -1,0 +1,68 @@
+@layer features {
+  /*
+   * v3 设置「通用分区」的版面。
+   *
+   * 只写版面：控件外观来自 `ui/`，设置行来自 `settings.css` 的既有类。
+   * 这里只补目录列表、设备列表、数据路径这些小组合的排版。
+   */
+
+  .settings-roots,
+  .settings-devices {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .settings-root,
+  .settings-device {
+    display: flex;
+    align-items: center;
+    gap: var(--s-12);
+    min-width: 0;
+    padding: var(--s-8) var(--s-10);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+  }
+
+  .settings-root__path {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    overflow-wrap: anywhere;
+  }
+
+  .settings-device__main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .settings-device__name {
+    color: var(--fg);
+    font-size: var(--t-body);
+  }
+
+  .settings-data {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .settings-path {
+    min-width: 0;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    overflow-wrap: anywhere;
+  }
+
+  .settings-device[data-state='revoked'] {
+    opacity: 0.65;
+  }
+}

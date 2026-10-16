@@ -1,0 +1,519 @@
+/*
+ * v3 侧栏版面（层 features）：264px、底色比对话区深一级、无描边。
+ *
+ * 列表行、分组标题、入口都是本模块的版面；搜索框、图标按钮的外观来自 `ui/`。
+ * 窄窗时侧栏改成浮层（`data-narrow='1'`），由外壳的 scrim 负责点击收起。
+ */
+@layer features {
+  .v3-side {
+    width: min(var(--sidebar-width, var(--size-side)), calc(100vw - 48px));
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--side);
+    color: var(--fg);
+  }
+
+  /* 收起 / 展开：宽度与透明度过渡，内容保持原宽（不随宽度重排）；收起后延迟隐藏，不留可聚焦残影 */
+  .v3-side {
+    overflow: hidden;
+    transition: width var(--dur-panel) var(--ease), opacity var(--dur-panel) var(--ease), transform var(--dur-panel) var(--ease), visibility 0s;
+  }
+  .v3-side > * { min-width: min(var(--sidebar-width, var(--size-side)), calc(100vw - 48px)); }
+  .v3-root[data-side='closed'] .v3-side {
+    width: 0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: width var(--dur-panel) var(--ease), opacity var(--dur-panel) var(--ease), transform var(--dur-panel) var(--ease), visibility 0s linear var(--dur-panel);
+  }
+  /* 窄窗：侧栏是浮层，收起时整块滑出而不是缩宽 */
+  .v3-root[data-narrow='1'][data-side='closed'] .v3-side {
+    width: min(var(--sidebar-width, var(--size-side)), calc(100vw - 48px));
+    transform: translateX(-100%);
+  }
+  @keyframes v3-side-in { from { opacity: 0; transform: translateX(-12px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .v3-side, .v3-root[data-side='closed'] .v3-side { transition: none; }
+    .v3-root[data-sidebar-preview='1'] .v3-side { animation: none; }
+  }
+  /* 浮层侧栏盖在会话头的拖动区上：整块显式 no-drag，否则顶部按钮被系统当成拖动区，点不动也没有悬停 */
+  .v3-root[data-sidebar-preview='1'] .v3-side,
+  .v3-root[data-narrow='1'] .v3-side,
+  .v3-root[data-sidebar-preview='1'] .v3-side *,
+  .v3-root[data-narrow='1'] .v3-side * { -webkit-app-region: no-drag; }
+  .v3-root[data-sidebar-preview='1'] .v3-side { display: flex; position: absolute; inset: 0 auto 0 0; z-index: 40; box-shadow: var(--shadow-pop); width: min(var(--sidebar-width, var(--size-side)), calc(100vw - 48px)); opacity: 1; visibility: visible; pointer-events: auto; transform: none; animation: v3-side-in var(--dur-panel) var(--ease-in); }
+  .v3-sidebar-reveal { position: absolute; inset: 48px auto 0 0; width: 10px; z-index: 39; padding: 0; border: 0; background: transparent; -webkit-app-region: no-drag; }
+  .v3-sidebar-resizer.ui-splitter { position: absolute; left: calc(var(--sidebar-width) - 1px); top: 0; bottom: 0; z-index: 41; -webkit-app-region: no-drag; }
+
+  .v3-root[data-narrow='1'] .v3-side {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 40;
+    box-shadow: var(--shadow-pop);
+  }
+
+  .v3-side-top {
+    height: var(--size-head);
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px 0 14px;
+  }
+
+  .v3-side-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  /* 品牌标志复用统一几何的 BrandMark；这里只约束版面，颜色由侧栏正文色继承。 */
+  .v3-side-brand .brand-mark {
+    flex: none;
+  }
+
+  .v3-side-name {
+    font-size: var(--t-title);
+    line-height: var(--t-title-lh);
+    font-weight: var(--t-title-w);
+  }
+
+  .v3-side-top-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .v3-side-search {
+    flex: none;
+    padding: 2px 10px 8px;
+  }
+
+  .v3-side-search > * {
+    width: 100%;
+  }
+
+  .v3-side-entries {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px 8px 8px;
+  }
+
+  .v3-entry {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: var(--r-sm);
+    color: var(--fg);
+  }
+
+  .v3-entry:hover {
+    background: var(--hover);
+  }
+
+  /* 「更多」是 ui 按钮：内容包在 label 里，撑满后与上面几行左对齐 */
+  .v3-entry-more {
+    justify-content: flex-start;
+  }
+
+  .v3-entry-more > .ui-btn__label {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .v3-entry-label {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .v3-side-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 8px 8px;
+  }
+
+  .v3-side-empty {
+    padding: 12px 10px;
+    color: var(--fg3);
+    font-size: var(--t-body);
+    line-height: 1.5;
+  }
+
+  .v3-group + .v3-group {
+    margin-top: 4px;
+  }
+
+  .v3-grp {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 30px;
+    padding: 0 10px;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .v3-grp-label {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 组头名称：整块可点，点一下折叠 / 展开该组；「›」随折叠状态转向 */
+  .v3-grp-toggle {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+  }
+
+  .v3-grp-toggle:hover {
+    color: var(--fg2);
+  }
+
+  .v3-grp-toggle .v3-grp-label {
+    flex: 0 1 auto;
+  }
+
+  .v3-grp-chev {
+    flex: none;
+    transition: transform var(--dur-hover) var(--ease);
+  }
+
+  .v3-grp-chev[data-open='1'] {
+    transform: rotate(90deg);
+  }
+
+  /* 「＋」平时隐藏，悬停 / 聚焦组头时出现在行尾 */
+  .v3-grp-add {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--r-xs);
+    color: var(--fg3);
+    opacity: 0;
+    transition: opacity var(--dur-hover) var(--ease);
+  }
+
+  .v3-grp:hover .v3-grp-add,
+  .v3-grp:focus-within .v3-grp-add,
+  .v3-grp[data-menu='1'] .v3-grp-add {
+    opacity: 1;
+  }
+
+  .v3-grp-add:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+
+  .v3-row {
+    width: 100%;
+    min-height: var(--d-row);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    border-radius: var(--r-sm);
+    color: var(--fg);
+    text-align: left;
+  }
+
+  .v3-row:hover {
+    background: var(--hover);
+  }
+
+  /* 当前会话：整行圆角浅色高亮，颜色只来自 --sel 令牌 */
+  .v3-row[aria-current='true'],
+  .v3-entry[aria-current='true'] {
+    background: var(--sel);
+  }
+
+  .v3-show-more {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: var(--d-row);
+    padding: 0 10px;
+    border-radius: var(--r-sm);
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    text-align: left;
+  }
+
+  .v3-show-more:hover {
+    color: var(--fg2);
+    background: var(--hover);
+  }
+
+  /* 会话行外框：行尾「…」叠在行上，悬停 / 键盘聚焦 / 菜单打开时才出现 */
+  .v3-srow {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .v3-srow-more {
+    position: absolute;
+    right: var(--s-4);
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity var(--dur-hover) var(--ease);
+  }
+
+  .v3-srow:hover .v3-srow-more,
+  .v3-srow:focus-within .v3-srow-more,
+  .v3-srow[data-menu='1'] .v3-srow-more {
+    opacity: 1;
+  }
+
+  /* 「…」出现时给它让位：标题收短、等待词隐去 */
+  .v3-srow:hover > .v3-row,
+  .v3-srow:focus-within > .v3-row,
+  .v3-srow[data-menu='1'] > .v3-row {
+    padding-right: calc(var(--s-24) + var(--s-6));
+  }
+
+  .v3-srow:hover .v3-row-word,
+  .v3-srow[data-menu='1'] .v3-row-word {
+    display: none;
+  }
+
+  .v3-srow[data-menu='1'] > .v3-row {
+    background: var(--hover);
+  }
+
+  /* 被拖起的那一行留一个淡影，提示它正在被拖 */
+  .v3-srow[data-dragging='1'] > .v3-row {
+    opacity: 0.45;
+  }
+
+  .v3-srow-rename {
+    width: 100%;
+    min-height: var(--d-row);
+  }
+
+  .v3-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-16);
+  }
+
+  .v3-confirm-body {
+    margin: 0;
+    color: var(--fg2);
+    overflow-wrap: anywhere;
+  }
+
+  .v3-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-8);
+  }
+
+  .v3-menu-danger {
+    color: var(--fail-t);
+  }
+
+  .v3-row-title {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .v3-row-word {
+    flex: none;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    font-weight: 400;
+    color: var(--fg3);
+    white-space: nowrap;
+  }
+
+  .v3-row-word-ask {
+    color: var(--ask-t);
+    font-weight: 600;
+  }
+
+  .v3-row-word-stall {
+    color: var(--stall-t);
+    font-weight: 600;
+  }
+
+  .v3-row-word-fail {
+    color: var(--fail-t);
+    font-weight: 600;
+  }
+
+  .v3-side-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    border-top: 1px solid var(--line);
+  }
+
+  .v3-side-conn {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding-right: 6px;
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg3);
+    white-space: nowrap;
+  }
+
+  .v3-conn-dot {
+    width: var(--size-dot-unread);
+    height: var(--size-dot-unread);
+    flex: none;
+    border-radius: var(--r-full);
+    background: var(--fg3);
+  }
+
+  .v3-conn-dot-ready {
+    background: var(--run);
+  }
+
+  .v3-conn-dot-starting {
+    background: var(--ask);
+    animation: v3-breathe var(--dur-breathe) ease-in-out infinite;
+  }
+
+  .v3-conn-dot-exited,
+  .v3-conn-dot-error {
+    background: var(--fail);
+  }
+
+  /* 项目标题行：「…」平时隐藏，悬停 / 聚焦 / 菜单打开时出现；改名时输入框占满 */
+  .v3-grp-more {
+    flex: none;
+    opacity: 0;
+    transition: opacity var(--dur-hover) var(--ease);
+  }
+
+  .v3-grp:hover .v3-grp-more,
+  .v3-grp:focus-within .v3-grp-more,
+  .v3-grp[data-menu='1'] .v3-grp-more {
+    opacity: 1;
+  }
+
+  .v3-grp-rename {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .v3-confirm-error {
+    margin: 0;
+    color: var(--fail-t);
+    overflow-wrap: anywhere;
+  }
+
+  .v3-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .v3-field-label {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .v3-field-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--s-8);
+    align-items: center;
+  }
+
+  /* 已归档入口：贴在会话列表下方，和上面的入口行同一视觉层级 */
+  .v3-archive-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: calc(100% - var(--s-16));
+    min-height: var(--d-row);
+    margin: 0 var(--s-8);
+    padding: 0 10px;
+    border-radius: var(--r-sm);
+    color: var(--fg2);
+    text-align: left;
+  }
+
+  .v3-archive-toggle:hover,
+  .v3-archive-toggle[aria-pressed='true'] {
+    background: var(--hover);
+    color: var(--fg);
+  }
+
+  /* 归档视图的一行：左边标题（项目另带会话数），右边恢复按钮 */
+  .v3-arow {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+    min-height: var(--d-row);
+    padding: 0 var(--s-4) 0 10px;
+    border-radius: var(--r-sm);
+  }
+
+  .v3-arow:hover {
+    background: var(--hover);
+  }
+
+  .v3-arow-main {
+    display: flex;
+    flex: 1;
+    align-items: baseline;
+    gap: var(--s-8);
+    min-width: 0;
+    color: var(--fg);
+    text-align: left;
+  }
+
+  .v3-arow-open {
+    min-height: var(--d-row);
+    align-items: center;
+  }
+
+  .v3-arow-meta {
+    flex: none;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+}

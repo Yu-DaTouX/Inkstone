@@ -1,0 +1,351 @@
+/*
+ * v3 外壳版面（层 features）。
+ *
+ * 只有「窗口骨架」——两栏、会话头、页面容器、窗口按钮。控件外观不在这里：
+ * 按钮、输入框等由 `ui/`（primitives 层）负责。会话头里的窗口按钮是系统窗口
+ * 装饰（最小化/最大化/关闭），不属于可复用控件，随外壳一起定义。
+ */
+@layer features {
+  .v3-root {
+    position: relative;
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+  }
+
+  .v3-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .v3-body {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    position: relative;
+    display: grid;
+    /* 对话列用 minmax(0,1fr)：右侧面板 / 长内容不会把对话挤出视窗 */
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  /* 宽屏：工作区固定成右侧 420 列，只让对话列伸缩 */
+  .v3-body[data-workspace='open'][data-workspace-mode='docked'] {
+    grid-template-columns: minmax(0, 1fr) var(--workspace-width, var(--size-panel));
+  }
+  .v3-workspace-resizer.ui-splitter { position: absolute; top: 0; bottom: 0; right: calc(var(--workspace-width) - 1px); z-index: 22; }
+
+  /* 对话区：会话流占据剩余高度，输入框固定在底部 */
+  .v3-chat {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 会话头与消息之间的轻微虚化：消息滚到顶栏下沿时渐隐，不再被硬切 */
+  .v3-chat::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 28px;
+    z-index: 5;
+    pointer-events: none;
+    background: linear-gradient(to bottom, var(--bg), transparent);
+    -webkit-backdrop-filter: blur(5px);
+    backdrop-filter: blur(5px);
+    -webkit-mask-image: linear-gradient(to bottom, #000 25%, transparent);
+    mask-image: linear-gradient(to bottom, #000 25%, transparent);
+  }
+
+  /* 提醒条：会话区顶部一条，占位但不压缩正文；空时 RunPill 不渲染 */
+  .v3-pillbar {
+    flex: none;
+    padding: var(--s-8) var(--s-24) 0;
+  }
+
+  .v3-conv {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .v3-conv > * {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  /* 输入框列：宽 760（含两侧 24 内边距），居中并固定在底部 */
+  .v3-composer {
+    flex: none;
+    width: 100%;
+    max-width: calc(var(--size-comp) + var(--s-48));
+    margin: 0 auto;
+    padding: var(--s-6) var(--s-24) var(--s-20);
+  }
+
+  /* 框下有统计行时，统计本身已是底部缓冲，外层底边收到 8px */
+  .v3-composer:has(.composer-usage) {
+    padding-bottom: var(--s-8);
+  }
+
+  /* 窄窗侧栏以浮层出现时的遮罩；点击收起 */
+  .v3-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    background: var(--scrim);
+    animation: v3-fade var(--dur-pop) var(--ease-in);
+  }
+
+  @keyframes v3-fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  /* ---------------- 会话头（兼窗口拖动区） ---------------- */
+
+  .v3-head {
+    height: var(--size-head);
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 12px;
+    /* 原生拖动区；可点元素在下面逐个 no-drag */
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  .v3-head button,
+  .v3-head a,
+  .v3-head input,
+  .v3-head [role='button'],
+  .v3-head [role='menuitem'] {
+    -webkit-app-region: no-drag;
+  }
+
+  .v3-head-left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .v3-head-title {
+    margin: 0;
+    font-size: var(--t-title);
+    line-height: var(--t-title-lh);
+    font-weight: var(--t-title-w);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  .v3-head-proj {
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 40%;
+  }
+
+  .v3-head-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-right: 4px;
+  }
+
+  .v3-head-badge {
+    display: inline-block;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 4px;
+    border-radius: var(--r-full);
+    background: var(--run);
+    color: var(--on-ink);
+    font-size: 10px;
+    line-height: 14px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .v3-win {
+    display: flex;
+    margin-left: 8px;
+  }
+
+  .v3-winbtn {
+    width: 46px;
+    height: var(--size-head);
+    display: grid;
+    place-items: center;
+    color: var(--fg2);
+  }
+
+  .v3-winbtn:hover {
+    background: var(--hover-main);
+    color: var(--fg);
+  }
+
+  .v3-winbtn-close:hover {
+    background: var(--win-close);
+    color: #ffffff;
+  }
+
+  /* ---------------- 对话区之外的页面（运行总览、设置） ---------------- */
+
+  .v3-page {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 20px 24px 32px;
+  }
+
+  .v3-page > * {
+    max-width: var(--size-col);
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .v3-page-note {
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    border-radius: var(--r-md);
+    background: var(--sunken);
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    line-height: 1.5;
+  }
+
+  @keyframes v3-breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  /* ---------------- 精简设置 ---------------- */
+
+  .v3-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .v3-settings .v3-page-note {
+    margin-bottom: 0;
+  }
+
+  .v3-field {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: var(--size-btn);
+  }
+
+  .v3-field-block {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .v3-field-label {
+    width: 96px;
+    flex: none;
+    color: var(--fg3);
+    font-size: var(--t-body);
+  }
+
+  .v3-field-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .v3-field-value {
+    font-size: var(--t-body);
+    color: var(--fg);
+  }
+
+  .v3-field-hint {
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+    color: var(--fg3);
+  }
+
+  .v3-field-error {
+    font-size: var(--t-meta);
+    color: var(--fail-t);
+  }
+
+  /* ---------------- 兜底界面 ---------------- */
+
+  .v3-fatal {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 32px;
+    text-align: center;
+    background: var(--bg);
+    color: var(--fg);
+  }
+
+  .v3-fatal h1 {
+    font-size: var(--t-h2);
+    line-height: var(--t-h2-lh);
+    font-weight: var(--t-h2-w);
+  }
+
+  .v3-fatal p {
+    color: var(--fg2);
+    max-width: 48ch;
+  }
+
+  .v3-fatal-detail {
+    max-width: 80ch;
+    max-height: 30vh;
+    overflow: auto;
+    padding: 10px 12px;
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    color: var(--fg2);
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    text-align: left;
+    white-space: pre-wrap;
+  }
+
+  .v3-fatal-reload {
+    height: var(--size-btn);
+    padding: 0 16px;
+    border-radius: var(--r-sm);
+    background: var(--ink);
+    color: var(--on-ink);
+    font-weight: 600;
+  }
+}
