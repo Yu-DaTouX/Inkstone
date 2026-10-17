@@ -215,7 +215,7 @@ export interface Store {
   notices: Notice[]
   nativeMcpStatus: { sessionId: string; pending: boolean; text: string } | null
   statuses: Record<string, string>
-  editorInject: string | null
+  editorInject: { text: string; mode: 'replace' | 'append' } | null
   composerFocus: { tick: number; at: number; sessionId?: string; path?: string }
   queueRestore: string | null
   title: string | null
@@ -1578,7 +1578,7 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ attachments: snapshot.attachments })
   },
 
-  injectComposerText: (text) => set({ editorInject: text }),
+  injectComposerText: (text) => set({ editorInject: { text, mode: 'append' } }),
 
   redetectPi: async () => {
     const info = await window.yan.redetectPi().catch(() => null)

@@ -85,7 +85,8 @@ export function Composer({ className }: { className?: string } = {}) {
 
   useEffect(() => {
     if (editorInject === null) return
-    setValue((v) => (v ? `${v}\n${editorInject}` : editorInject))
+    const { text, mode } = editorInject
+    setValue((v) => (mode === 'append' && v ? `${v}\n${text}` : text))
     consumeEditorInject()
     ref.current?.focus()
   }, [editorInject, consumeEditorInject])
