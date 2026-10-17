@@ -159,6 +159,21 @@ const MAX_FLUSH_MS = 120
 const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 
 type Push = (msg: MainPush) => void
+type ExtUiPush = Extract<MainPush, { ch: 'status' | 'widget' }>
+
+function extUiKey(msg: ExtUiPush): string {
+  return `${msg.ch}:${msg.payload.key}`
+}
+
+function extUiCleared(msg: ExtUiPush): boolean {
+  return msg.ch === 'status' ? msg.payload.text === undefined : !msg.payload.lines?.length
+}
+
+function extUiRemoval(msg: ExtUiPush): ExtUiPush {
+  return msg.ch === 'status'
+    ? { ch: 'status', payload: { key: msg.payload.key } }
+    : { ch: 'widget', payload: { key: msg.payload.key, ...(msg.payload.placement ? { placement: msg.payload.placement } : {}) } }
+}
 
 export interface RunObserverContext {
   sessionId: string
@@ -445,6 +460,8 @@ export class AgentController extends EventEmitter {
 
   private messages: UIMessage[] = []
   private suppressPush = false
+  private extUi = new Map<string, ExtUiPush>()
+  private extUiPending: Map<string, ExtUiPush> | null = null
   private streaming: {
     id: string
     text: string
@@ -586,7 +603,13 @@ export class AgentController extends EventEmitter {
     super()
     const emit = opts.push
     this.push = (msg) => {
-      if (this.suppressPush && msg.ch !== 'ui-request' && msg.ch !== 'ui-resolved' && msg.ch !== 'notify') return
+      if (msg.ch === 'status' || msg.ch === 'widget') {
+        if (this.extUiPending) {
+          this.extUiPending.set(extUiKey(msg), msg)
+          return
+        }
+        this.recordExtUi(msg)
+      } else if (this.suppressPush && msg.ch !== 'ui-request' && msg.ch !== 'ui-resolved' && msg.ch !== 'notify') return
       this.observeRunPush(msg)
       emit(msg)
     }
@@ -3828,43 +3851,65 @@ export class AgentController extends EventEmitter {
     this.nativeBranchView = false
   }
 
+  private recordExtUi(msg: ExtUiPush): void {
+    if (extUiCleared(msg)) this.extUi.delete(extUiKey(msg))
+    else this.extUi.set(extUiKey(msg), msg)
+  }
+
+  private async changeSessionScope<T>(run: (changed: () => void) => Promise<T>): Promise<T> {
+    let changed = false
+    this.suppressPush = true
+    this.extUiPending = new Map()
+    try {
+      return await run(() => { changed = true })
+    } finally {
+      const pending = this.extUiPending
+      this.extUiPending = null
+      this.suppressPush = false
+      if (changed) {
+        const previous = [...this.extUi.entries()]
+        this.extUi.clear()
+        for (const [key, msg] of previous) if (!pending.has(key)) this.push(extUiRemoval(msg))
+      }
+      for (const msg of pending.values()) this.push(msg)
+    }
+  }
+
   async newSession(parentSession?: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
     const payload: Record<string, unknown> = typeof parentSession === 'string' && parentSession ? { parentSession } : {}
-    this.suppressPush = true
-    try {
-      const res = await this.requireRpc().command('new_session', payload)
-      if (!res.success) return { ok: false, error: res.error }
-      if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
-        return { ok: false, error: '会话切换被扩展取消' }
+    return this.changeSessionScope(async (changed) => {
+      try {
+        const res = await this.requireRpc().command('new_session', payload)
+        if (!res.success) return { ok: false, error: res.error }
+        if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
+          return { ok: false, error: '会话切换被扩展取消' }
+        }
+        changed()
+        this.ui.cancelPending()
+        this.resetSessionScope()
+        await this.hydrate()
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
-      this.ui.cancelPending()
-      this.resetSessionScope()
-      await this.hydrate()
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
-    } finally {
-      this.suppressPush = false
-    }
+    })
   }
 
   async switchSession(path: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-    this.suppressPush = true
-    try {
+    return this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command('switch_session', { sessionPath: path })
       if (!res.success) return { ok: false, error: res.error }
       if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
         return { ok: false, error: '会话切换被扩展取消' }
       }
+      changed()
       this.ui.cancelPending()
       this.resetSessionScope()
       await this.hydrate()
       return { ok: true }
-    } finally {
-      this.suppressPush = false
-    }
+    })
   }
 
   async renameSession(name: string): Promise<{ ok: boolean; error?: string }> {
@@ -3894,34 +3939,30 @@ export class AgentController extends EventEmitter {
 
   async fork(entryId: string): Promise<{ ok: boolean; error?: string; text?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-    this.suppressPush = true
-    try {
+    return this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command<{ text?: string; cancelled?: boolean }>('fork', { entryId })
       if (!res.success) return { ok: false, error: res.error }
       if (res.data?.cancelled) return { ok: false, error: '分叉被扩展取消' }
+      changed()
       this.resetSessionScope()
       this.ui.cancelPending()
       await this.hydrate()
       return { ok: true, text: res.data?.text }
-    } finally {
-      this.suppressPush = false
-    }
+    })
   }
 
   async clone(): Promise<{ ok: boolean; error?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-    this.suppressPush = true
-    try {
+    return this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command<{ cancelled?: boolean }>('clone')
       if (!res.success) return { ok: false, error: res.error }
       if (res.data?.cancelled) return { ok: false, error: '复制被扩展取消' }
+      changed()
       this.resetSessionScope()
       this.ui.cancelPending()
       await this.hydrate()
       return { ok: true }
-    } finally {
-      this.suppressPush = false
-    }
+    })
   }
 
   async forkPoints(): Promise<ForkPoint[]> {
