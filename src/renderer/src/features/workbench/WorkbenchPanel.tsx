@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactElement, type ReactNode } from 'react'
-import { ExternalLink, Maximize2, Minimize2, Rows2, X } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from 'react'
+import { Columns2, ExternalLink, Maximize2, Minimize2, Rows2, X } from 'lucide-react'
 import { IconButton, Tab, TabList, Tabs } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useUiV3 } from '../../state/ui-v3'
 import { workbenchText, type WorkbenchText } from './workbench-text'
 import { emptyMountState, mountedTabs, nextVisited } from './mount-state'
-import { bindPreviewPath, previewPathFor } from './preview-state'
+import { previewPathFor } from './preview-state'
+import { canTileTool, hasTileRoom, openToolTile, revealToolTile, showPreview, usePreviewBindings, useTiledTools, useTileRoom } from './tool-tiles'
+import { trackTileDrag } from './tile-drag'
+import { toolTileText } from './tool-tile-text'
 import {
   cellForTab,
   extraVisibleTabs,
@@ -33,11 +36,12 @@ interface TabStripProps {
   selectedKey: string
   open: boolean
   onSelect: (key: string) => void
+  onPointerDownCapture?: (event: ReactPointerEvent<HTMLDivElement>) => void
   className?: string
   children: ReactNode
 }
 
-function TabStrip({ label, selectedKey, open, onSelect, className, children }: TabStripProps): ReactElement {
+function TabStrip({ label, selectedKey, open, onSelect, onPointerDownCapture, className, children }: TabStripProps): ReactElement {
   const ref = useRef<HTMLDivElement>(null)
   const [edges, setEdges] = useState({ start: false, end: false })
 
@@ -76,6 +80,7 @@ function TabStrip({ label, selectedKey, open, onSelect, className, children }: T
       className={className ? `wb-tabstrip ${className}` : 'wb-tabstrip'}
       data-fade-start={edges.start ? '1' : '0'}
       data-fade-end={edges.end ? '1' : '0'}
+      onPointerDownCapture={onPointerDownCapture}
     >
       <Tabs selectedKey={selectedKey} onSelectionChange={(key) => onSelect(String(key))}>
         <TabList aria-label={label} className="wb-tablist">
@@ -138,9 +143,25 @@ export function WorkbenchPanel({
     if (!open && focus) setWorkspaceFocus(false)
   }, [open, focus, setWorkspaceFocus])
 
-  const mounted = useMemo(() => mountedTabs(visited), [visited])
+  const tiled = useTiledTools()
+  const tileText = useMemo(() => toolTileText(lang), [lang])
+  useEffect(() => {
+    if (!isOverview && tiled.has(view)) {
+      const rest = WORKBENCH_TABS.find((tab) => visited.has(tab) && !tiled.has(tab))
+      setWorkspaceTab(rest ?? 'overview')
+      if (!rest) onClose()
+    }
+    if (split && tiled.has(splitTab)) {
+      const next = WORKBENCH_TABS.find((tab) => tab !== activeTab && !tiled.has(tab))
+      if (next) setWorkspaceSplitTab(next)
+    }
+  }, [isOverview, view, split, splitTab, activeTab, visited, tiled, setWorkspaceTab, setWorkspaceSplitTab, onClose])
+
+  const mounted = useMemo(() => mountedTabs(visited).filter((tab) => !tiled.has(tab)), [visited, tiled])
   const primaryTabs = useMemo(() => mounted.filter((tab) => cellForTab(layout, tab) !== 'secondary'), [mounted, layout])
   const secondaryTabs = useMemo(() => mounted.filter((tab) => cellForTab(layout, tab) === 'secondary'), [mounted, layout])
+  const emptiesToolbar = (tab: WorkbenchTabId): boolean => mounted.every((other) => other === tab)
+  const tileRoom = useTileRoom(open && mode !== 'full', activeTab, emptiesToolbar(activeTab))
 
   const ownerKey = owner?.key ?? null
   const [shownKey, setShownKey] = useState<string | null>(ownerKey)
@@ -158,7 +179,7 @@ export function WorkbenchPanel({
   }, [owner?.key, shownKey])
 
   const [activating, setActivating] = useState(false)
-  const [previewBindings, setPreviewBindings] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const previewBindings = usePreviewBindings((s) => s.bindings)
   const ownerReady = ownerKey !== null && shownKey === ownerKey && !!owner
 
   const [displayOwner, setDisplayOwner] = useState<WorkspaceOwner | null>(owner)
@@ -167,9 +188,24 @@ export function WorkbenchPanel({
   }, [owner, ownerReady])
 
   const handlePreview = (path: string): void => {
-    if (displayOwner) setPreviewBindings((prev) => bindPreviewPath(prev, displayOwner.key, path))
-    setWorkspaceTab('preview')
+    showPreview(displayOwner?.key ?? null, path)
     onPreview?.(path)
+  }
+
+  const tileOut = (tab: WorkbenchTabId, at?: number): void => {
+    const current = owner?.sessionId || owner?.sessionFile ? { sessionId: owner.sessionId ?? undefined, path: owner.sessionFile } : null
+    const empties = emptiesToolbar(tab)
+    if (!openToolTile(tab, current, at, empties)) return
+    setWorkspaceFocus(false)
+    if (!empties) return
+    setWorkspaceTab('overview')
+    onClose()
+  }
+
+  const dragTabOut = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const tab = (event.target as HTMLElement).closest<HTMLElement>('[data-tool]')?.dataset.tool
+    if (mode === 'full' || !tab || !canTileTool(tab) || !hasTileRoom(emptiesToolbar(tab))) return
+    trackTileDrag(event, { id: `tool:${tab}`, title: text.tabs[tab] }, (at) => tileOut(tab, at))
   }
 
   const attemptActivation = (tab: WorkbenchTabId): void => {
@@ -179,6 +215,7 @@ export function WorkbenchPanel({
   }
 
   const selectTab = (tab: WorkbenchTabId): void => {
+    if (tiled.has(tab) && revealToolTile(tab)) return
     const swap = splitTabOnPrimaryChange({ split, splitTab, prevActive: activeTab, nextActive: tab })
     if (swap) setWorkspaceSplitTab(swap)
     setWorkspaceTab(tab)
@@ -221,14 +258,25 @@ export function WorkbenchPanel({
     >
       {isOverview ? null : (
         <div className="wb-head">
-          <TabStrip label={text.title} selectedKey={view} open={open} onSelect={(key) => selectTab(key as WorkbenchTabId)}>
-            {WORKBENCH_TABS.filter((tab) => tab === view || visited.has(tab)).map((tab) => (
-              <Tab key={tab} id={tab} className="wb-tab" data-testid={`wb-tab-${tab}`}>
+          <TabStrip label={text.title} selectedKey={view} open={open} onSelect={(key) => selectTab(key as WorkbenchTabId)} onPointerDownCapture={dragTabOut}>
+            {WORKBENCH_TABS.filter((tab) => (tab === view || visited.has(tab)) && !tiled.has(tab)).map((tab) => (
+              <Tab key={tab} id={tab} className="wb-tab" data-testid={`wb-tab-${tab}`} data-tool={tab}>
                 {text.tabs[tab]}
               </Tab>
             ))}
           </TabStrip>
           <div className="wb-actions">
+            {mode === 'full' ? null : (
+              <IconButton
+                aria-label={tileRoom ? tileText.tileOut : tileText.noRoom}
+                title={tileRoom ? tileText.tileOut : tileText.noRoom}
+                isDisabled={!canTileTool(activeTab) || !tileRoom}
+                data-testid="wb-tile-out"
+                onPress={() => tileOut(activeTab)}
+              >
+                <Columns2 size={15} />
+              </IconButton>
+            )}
             <IconButton
               aria-label={split ? text.unsplit : text.split}
               title={split ? text.unsplit : text.split}
@@ -280,7 +328,7 @@ export function WorkbenchPanel({
                     open={open}
                     onSelect={(key) => selectSecondary(key as WorkbenchTabId)}
                   >
-                    {WORKBENCH_TABS.map((tab) => (
+                    {WORKBENCH_TABS.filter((tab) => !tiled.has(tab)).map((tab) => (
                       <Tab
                         key={tab}
                         id={tab}

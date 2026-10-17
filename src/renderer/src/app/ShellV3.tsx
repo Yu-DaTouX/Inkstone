@@ -37,6 +37,7 @@ import { OverviewPane } from '../features/workbench/OverviewPane'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, SUBAGENT_LANE_EDGE, subagentPanelShownWidth, useSubagentPanel } from '../features/session/subagent-panel-state'
 import { WORKBENCH_PANES } from '../features/workbench/panes'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
+import { revealToolTile } from '../features/workbench/tool-tiles'
 import { createPanePopoutClient } from '../features/workbench/pane-popout-client'
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
@@ -326,6 +327,7 @@ export default function ShellV3(): ReactElement {
 
   const openWorkspaceTab = (tab: WorkbenchTabId): Promise<boolean> => {
     useUiV3.getState().navigate({ name: 'chat' })
+    if (revealToolTile(tab)) return Promise.resolve(true)
     setPanelMounted(true)
     useUiV3.getState().setWorkspaceTab(tab)
     if (!WORKBENCH_ACTIVE_TABS.has(tab)) {
