@@ -44,7 +44,7 @@ for (const script of [
 for (const script of [
   'test-mcp-annotations-guard', 'test-terminal-status', 'test-taskbar-status',
   'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills',
-  'test-readonly-model-registration',
+  'test-readonly-model-registration', 'test-mcp-image-results',
   'test-stream-loop-detector', 'test-stream-loop-settings',
   'test-native-session-export-alias', 'test-schedule-safety', 'test-subagent-terminal-races',
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',

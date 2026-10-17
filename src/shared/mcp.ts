@@ -91,23 +91,52 @@ export function schemaRevisionOf(schema: unknown): string {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
-export function toolResultText(result: unknown): string {
+export interface McpImagePart {
+  index: number
+  mimeType: string
+  data: string
+}
+
+export interface McpResultTextOptions {
+  image?: (part: McpImagePart) => string
+}
+
+export function mcpImageParts(result: unknown): McpImagePart[] {
+  if (!result || typeof result !== 'object') return []
+  const content = (result as { content?: unknown }).content
+  if (!Array.isArray(content)) return []
+  const parts: McpImagePart[] = []
+  content.forEach((item, index) => {
+    if (!item || typeof item !== 'object') return
+    const c = item as { type?: unknown; mimeType?: unknown; data?: unknown }
+    if (c.type === 'image' && typeof c.data === 'string') {
+      parts.push({ index, mimeType: typeof c.mimeType === 'string' ? c.mimeType : '', data: c.data })
+    }
+  })
+  return parts
+}
+
+export function toolResultText(result: unknown, options?: McpResultTextOptions): string {
   if (!result || typeof result !== 'object') return ''
   const content = (result as { content?: unknown }).content
   if (!Array.isArray(content)) return ''
   const parts: string[] = []
-  for (const item of content) {
-    if (!item || typeof item !== 'object') continue
+  content.forEach((item, index) => {
+    if (!item || typeof item !== 'object') return
     const c = item as { type?: unknown; text?: unknown; mimeType?: unknown; data?: unknown }
     if (c.type === 'text' && typeof c.text === 'string') parts.push(c.text)
-    else if (c.type === 'image') parts.push(`[图片 ${String(c.mimeType ?? '未知类型')}]`)
+    else if (c.type === 'image') {
+      if (options?.image && typeof c.data === 'string') {
+        parts.push(options.image({ index, mimeType: typeof c.mimeType === 'string' ? c.mimeType : '', data: c.data }))
+      } else parts.push(`[图片 ${String(c.mimeType ?? '未知类型')}]`)
+    }
     else if (c.type === 'resource') parts.push('[资源]')
     else if (typeof c.type === 'string') parts.push(`[${c.type}]`)
-  }
+  })
   return parts.join('\n')
 }
 
-export function classifyMcpResult(result: unknown): { toolError: boolean; text: string } {
+export function classifyMcpResult(result: unknown, options?: McpResultTextOptions): { toolError: boolean; text: string } {
   const isError = Boolean(result && typeof result === 'object' && (result as { isError?: unknown }).isError)
-  return { toolError: isError, text: toolResultText(result) }
+  return { toolError: isError, text: toolResultText(result, options) }
 }
