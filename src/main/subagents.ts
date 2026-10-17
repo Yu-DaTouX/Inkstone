@@ -190,7 +190,8 @@ export class SubagentController {
   }
 
   setContext(context: { cwd: string; parentSessionId?: string; parentRunId?: string; parentGeneration?: number; parentMessageId?: string; projectId?: string }): void {
-    this.opts = { ...this.opts, ...context }
+    const { cwd, parentSessionId, parentRunId, parentGeneration, parentMessageId, projectId } = context
+    this.opts = { ...this.opts, cwd, parentSessionId, parentRunId, parentGeneration, parentMessageId, projectId }
   }
 
   adoptParentSession(input: {

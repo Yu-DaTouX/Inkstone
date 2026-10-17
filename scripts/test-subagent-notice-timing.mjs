@@ -34,7 +34,7 @@ try {
         export { buildSubagentNotice, isSubagentNotice, parseSubagentNotice } from './src/shared/subagent-notice'
         export * as store from './src/main/turn-timing-store'
         export { TurnTimingTracker } from './src/main/turn-timing-tracker'
-        export { createSubagentNotifier, NOTICE_COALESCE_WINDOW_MS, NOTICE_BATCH_MIN_WAIT_MS, NOTICE_BATCH_MAX_WAIT_MS, NOTICE_SIBLINGS_POLL_MS } from './src/main/subagent-notify'
+        export { createSubagentNotifier, findNoticeTarget, NOTICE_COALESCE_WINDOW_MS, NOTICE_BATCH_MIN_WAIT_MS, NOTICE_BATCH_MAX_WAIT_MS, NOTICE_SIBLINGS_POLL_MS } from './src/main/subagent-notify'
       `,
       resolveDir: process.cwd(),
       loader: 'ts'
@@ -58,6 +58,7 @@ try {
     store,
     TurnTimingTracker,
     createSubagentNotifier,
+    findNoticeTarget,
     NOTICE_COALESCE_WINDOW_MS,
     NOTICE_BATCH_MIN_WAIT_MS,
     NOTICE_BATCH_MAX_WAIT_MS,
@@ -596,6 +597,72 @@ try {
         const toB = sent.find((s) => s.to === 'B')
         check(toA?.text.includes('sub-A1') && !toA?.text.includes('sub-B1'), '跨父会话：A 的消息不含 B 的运行')
         check(toB?.text.includes('sub-B1') && !toB?.text.includes('sub-A1'), '跨父会话：B 的消息不含 A 的运行')
+      }
+
+      {
+        const clk = makeClock()
+        clock = clk
+        const sent = []
+        const parentId = '01a14877-0000-7000-8000-000000000001'
+        const nearId = '01a1487c-d140-7000-8000-000000000002'
+        const runnerPool = new Map()
+        const load = (runId, sessionId, generation) => {
+          runnerPool.set(runId, {
+            generation,
+            agent: {
+              sessionId,
+              send: async (text, images, mode) => { sent.push({ to: sessionId, runId, text, mode }); return { ok: true } }
+            }
+          })
+        }
+        const registry = {
+          agentForSession: (sessionId) => [...runnerPool.values()].find((r) => r.agent.sessionId === sessionId)?.agent ?? null,
+          agentOf: (runId) => runnerPool.get(runId)?.agent ?? null,
+          runtimeOf: (runId) => {
+            const r = runnerPool.get(runId)
+            return r ? { sessionId: r.agent.sessionId ?? `pending:${runId}`, runId, generation: r.generation } : null
+          }
+        }
+        const notify = createSubagentNotifier({
+          enabled: () => true,
+          now: () => clk.now,
+          runningSiblings: () => 0,
+          find: (run) => findNoticeTarget(run, registry)
+        })
+
+        load('r1', parentId, 1)
+        load('r2', '01a00000-other', 1)
+        const fromParent = finish('sub-news-1', parentId, { parentRunId: 'r1', parentGeneration: 1 })
+        load('r1', nearId, 2)
+        check(findNoticeTarget(fromParent, registry) === null, '路由：父 runner 被复用到相近 id 会话后，不按 runner 兜底投给它')
+        notify(fromParent)
+        await settle()
+        await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+        check(sent.length === 0, '路由：父会话未加载时不投给当前会话', JSON.stringify(sent.map((s) => s.to)))
+
+        load('r2', parentId, 2)
+        notify.retry()
+        await settle()
+        check(sent.length === 1 && sent[0].to === parentId && sent[0].runId === 'r2', '路由：父会话重新加载后补投到父会话', JSON.stringify(sent.map((s) => s.to)))
+        check(sent[0].text.includes('sub-news-1') && sent[0].mode === 'followUp', '路由：补投沿用原通知与 followUp 语义')
+        notify.retry()
+        await settle()
+        check(sent.length === 1, '路由：补投只发一次')
+
+        sent.length = 0
+        load('r1', nearId, 3)
+        load('r2', parentId, 2)
+        notify(finish('sub-news-2', parentId, { parentRunId: 'r1', parentGeneration: 1 }))
+        await settle()
+        await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+        check(sent.length === 1 && sent[0].to === parentId && sent[0].runId === 'r2', '路由：父会话不是当前会话、换到别的 runner 时仍精确投给父会话', JSON.stringify(sent.map((s) => `${s.runId}:${s.to}`)))
+
+        check(findNoticeTarget({ parentSessionId: '01a1487', parentRunId: 'r1', parentGeneration: 3 }, registry) === null, '路由：会话 id 前缀不当作匹配')
+        load('r3', undefined, 5)
+        check(findNoticeTarget({ parentSessionId: 'pending:r3', parentRunId: 'r3', parentGeneration: 5 }, registry) === runnerPool.get('r3').agent, '路由：未落盘父会话按 runner 与代次精确匹配')
+        check(findNoticeTarget({ parentSessionId: 'pending:r3', parentRunId: 'r3', parentGeneration: 4 }, registry) === null, '路由：runner 代次变了就不投')
+        check(findNoticeTarget({ parentSessionId: 'pending:r3', parentRunId: 'r3' }, registry) === null, '路由：缺代次不按 runner 兜底')
+        check(findNoticeTarget({ parentSessionId: 'pending:r1', parentRunId: 'r3', parentGeneration: 5 }, registry) === null, '路由：pending 会话与父 runner 不一致不投')
       }
 
       {
