@@ -120,7 +120,11 @@ async function readFromDisk(): Promise<SessionLayoutDocument> {
       return cached
     }
     if (error instanceof SyntaxError) {
-      await copyFile(SESSION_LAYOUT_FILE, `${SESSION_LAYOUT_FILE}.corrupt-${Date.now()}-${randomUUID()}`).catch(() => undefined)
+      const backedUp = await copyFile(SESSION_LAYOUT_FILE, `${SESSION_LAYOUT_FILE}.corrupt-${Date.now()}-${randomUUID()}`).then(() => true, () => false)
+      if (backedUp) {
+        cached = { version: 1, entries: [] }
+        return cached
+      }
     }
     throw error
   }
@@ -228,7 +232,7 @@ export async function decorateSessions(
       }
     })
     return changed ? { version: 1, entries } : document
-  })
+  }).catch(() => undefined)
   return projected
 }
 
