@@ -2243,6 +2243,14 @@ function registerIpc(): void {
     const s = await getSettings()
     return { ...s, lang: s.lang, theme: s.theme }
   })
+  handle('yan:removeGuardAllowRoot', async (path: unknown) => {
+    if (typeof path !== 'string' || !path) throw new Error('目录无效')
+    const current = await getSettings()
+    const roots = current.guardAllowRoots ?? []
+    const next = roots.filter((root) => root !== path)
+    if (next.length === roots.length) return current
+    return patchSettings({ guardAllowRoots: next })
+  })
   handle('yan:patchSettings', async (rawPatch: unknown) => {
     const patch = validateRendererSettingsPatch(rawPatch)
     const before = await getSettings()
