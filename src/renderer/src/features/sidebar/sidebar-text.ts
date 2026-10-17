@@ -12,6 +12,11 @@ export interface SidebarText {
   runRecords: string
   showMore: string
   showLess: string
+  contentMatches: string
+  contentSearching: string
+  contentFailed: string
+  contentFallbackTitle: string
+  contentArchived: string
 }
 
 const zh: SidebarText = {
@@ -27,7 +32,12 @@ const zh: SidebarText = {
   newChat: '新建对话',
   runRecords: '运行总览',
   showMore: '显示更多',
-  showLess: '收起'
+  showLess: '收起',
+  contentMatches: '内容匹配',
+  contentSearching: '正在搜索全文…',
+  contentFailed: '全文搜索失败',
+  contentFallbackTitle: '{date} 的会话',
+  contentArchived: '已归档'
 }
 
 const en: SidebarText = {
@@ -43,7 +53,12 @@ const en: SidebarText = {
   newChat: 'New chat',
   runRecords: 'Runs',
   showMore: 'Show more',
-  showLess: 'Show less'
+  showLess: 'Show less',
+  contentMatches: 'In conversations',
+  contentSearching: 'Searching conversations…',
+  contentFailed: 'Full-text search failed',
+  contentFallbackTitle: 'Chat from {date}',
+  contentArchived: 'Archived'
 }
 
 export function sidebarText(lang: string): SidebarText {
