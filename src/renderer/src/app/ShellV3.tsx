@@ -87,6 +87,7 @@ export default function ShellV3(): ReactElement {
     try { const value = Number(localStorage.getItem('inkstone.v3.sidebarWidth')); return value >= 220 && value <= 420 ? value : 264 } catch { return 264 }
   })
   const [sidebarPreview, setSidebarPreview] = useState(false)
+  const revealTimer = useRef<number | null>(null)
   useEffect(() => {
     const timer = setTimeout(() => { try { localStorage.setItem('inkstone.v3.sidebarWidth', String(sidebarWidth)) } catch { } }, 150)
     return () => clearTimeout(timer)
@@ -134,6 +135,32 @@ export default function ShellV3(): ReactElement {
   const sideWidth = useSubagentPanel((s) => s.width)
   const [sessionBarWidth] = useState(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size-tiles')) || 300)
   useEffect(() => { if (sidebarOpen) setSidebarPreview(false) }, [sidebarOpen])
+  const [previewPhase, setPreviewPhase] = useState<'off' | 'leaving' | 'reset'>('off')
+  const previewWasOn = useRef(false)
+  useEffect(() => {
+    const was = previewWasOn.current
+    previewWasOn.current = sidebarPreview
+    if (sidebarPreview || !was || useUiV3.getState().sidebarOpen) return
+    setPreviewPhase('leaving')
+    let frame = 0
+    const timer = window.setTimeout(() => {
+      setPreviewPhase('reset')
+      frame = window.requestAnimationFrame(() => { frame = window.requestAnimationFrame(() => setPreviewPhase('off')) })
+    }, 260)
+    return () => { window.clearTimeout(timer); window.cancelAnimationFrame(frame) }
+  }, [sidebarPreview])
+  useEffect(() => {
+    if (!sidebarPreview) return
+    let timer: number | null = null
+    const clear = (): void => { if (timer !== null) window.clearTimeout(timer); timer = null }
+    const onMove = (event: PointerEvent): void => {
+      const target = event.target instanceof Element ? event.target : null
+      if (target?.closest('.v3-side, [data-testid="v3-rail-toggle"], [data-testid="v3-sidebar-reveal"], [role="menu"], [role="dialog"]')) { clear(); return }
+      if (timer === null) timer = window.setTimeout(() => setSidebarPreview(false), 350)
+    }
+    window.addEventListener('pointermove', onMove)
+    return () => { window.removeEventListener('pointermove', onMove); clear() }
+  }, [sidebarPreview])
 
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutSheetOpen, setShortcutSheetOpen] = useState(false)
@@ -455,7 +482,6 @@ export default function ShellV3(): ReactElement {
   const sidebarActions = useMemo(() => ({
     onClose: () => { setSidebarPreview(false); useUiV3.getState().setSidebarOpen(false) },
     onPin: () => useUiV3.getState().setSidebarOpen(true),
-    onPointerLeave: () => { if (!useUiV3.getState().sidebarOpen) setSidebarPreview(false) },
     onRuns: () => useUiV3.getState().navigate({ name: 'runs' }),
     onSchedule: () => useUiV3.getState().navigate({ name: 'schedule' }),
     onReview: () => useUiV3.getState().navigate({ name: 'review' }),
@@ -472,8 +498,8 @@ export default function ShellV3(): ReactElement {
 
   return (
     <V3ErrorBoundary>
-      <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={narrow ? '1' : '0'} data-side={sidebarOpen ? 'open' : 'closed'} data-sidebar-preview={sidebarPreview && !sidebarOpen ? '1' : undefined}>
-        {!sidebarOpen ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} /> : null}
+      <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={narrow ? '1' : '0'} data-side={sidebarOpen ? 'open' : 'closed'} data-sidebar-preview={sidebarOpen ? undefined : sidebarPreview ? '1' : previewPhase === 'off' ? undefined : previewPhase}>
+        {!sidebarOpen ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} onPointerEnter={() => { if (revealTimer.current !== null) window.clearTimeout(revealTimer.current); revealTimer.current = window.setTimeout(() => setSidebarPreview(true), 120) }} onPointerLeave={() => { if (revealTimer.current !== null) window.clearTimeout(revealTimer.current); revealTimer.current = null }} /> : null}
         <Sidebar {...sidebarActions} preview={sidebarPreview && !sidebarOpen} />
         {sidebarOpen && !narrow ? <Splitter className="v3-sidebar-resizer" value={sidebarWidth} min={220} max={420} step={16} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={setSidebarWidth} onReset={() => setSidebarWidth(264)} /> : null}
         {narrow && sidebarOpen ? (

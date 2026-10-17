@@ -33,7 +33,11 @@ export function UsagePage() {
         <div className="usage-page-heat-scroll"><div className="start-heat usage-page-heat" aria-label={lang === 'en-US' ? 'Daily Token activity' : '每日 Token 活动'}>
           {stats?.heat.map((day, i) => <span key={day.date} className="start-cell" data-level={levels[i]} title={`${day.date} · ${day.tokens.toLocaleString()} Token`} />)}
         </div>
-        <div className="usage-page-months" aria-hidden>{stats?.heat.filter((_, i) => i % 7 === 0).map((day, i, weeks) => <span key={day.date}>{i === 0 || day.date.slice(0, 7) !== weeks[i - 1].date.slice(0, 7) ? day.date.slice(5, 7) : ''}</span>)}</div>
+        <div className="usage-page-months" aria-hidden>{stats?.heat.filter((_, i) => i % 7 === 0).map((day, i) => {
+            const week = stats.heat.slice(i * 7, i * 7 + 7)
+            const monthStart = week.find((d) => d.date.slice(8, 10) === '01')
+            return <span key={day.date}>{monthStart ? monthStart.date.slice(5, 7) : i === 0 ? day.date.slice(5, 7) : ''}</span>
+          })}</div>
         </div>
         <p>{split ? `${lang === 'en-US' ? 'Main sessions' : '主会话'} ${compactNumber(split.main)} · ${lang === 'en-US' ? 'Subagents' : '子代理'} ${compactNumber(split.subagents)}` : '—'}</p>
       </section>
