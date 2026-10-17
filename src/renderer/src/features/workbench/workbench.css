@@ -655,6 +655,21 @@
     overflow-wrap: anywhere;
   }
 
+  .wb-ov-ext {
+    display: grid;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .wb-ov-ext-block {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--t-meta);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg2);
+  }
+
   .wb-ov-line {
     min-width: 0;
     overflow: hidden;
