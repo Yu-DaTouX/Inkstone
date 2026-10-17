@@ -7,6 +7,7 @@ import { YAN_DIR } from './paths'
 import { readAuthEntry } from './credentials'
 import { resolveQuotaProviderSecret } from './quota-credentials'
 import { fetchCodexUsage, providerQuota } from './quota'
+import { quotaSamples } from './quota-samples'
 import { codexAccountTargets, switchCodexAccount, type CodexAccountTarget } from './codex-accounts'
 import { failoverOrder, pickFailover, type CodexFailoverResult, type FailoverCandidate } from '../shared/quota-failover'
 import { blockedQuotaWindows } from '../shared/quota-resume'
@@ -271,10 +272,27 @@ async function buildReport(): Promise<AccountQuotaReport> {
     ...(Object.keys(CLI_CARDS) as AccountQuotaCliSource[]).filter((s) => prefs.sources[s]).map((s) => CLI_CARDS[s]())
   ]
   const settled = await Promise.all(jobs.map((job) => job.catch(() => null)))
-  const cards = mergeDuplicateCards(settled.filter((c): c is AccountQuotaCard => !!c))
+  const merged = mergeDuplicateCards(settled.filter((c): c is AccountQuotaCard => !!c))
+  const cards = await Promise.all(merged.map(withLastGood))
   for (const card of cards) {
     const label = prefs.labels[card.key]
     if (label) card.label = label
   }
   return { cards, prefs, checkedAt: Date.now() }
+}
+
+const CARD_LAST_GOOD_MAX_AGE_MS = 24 * 60 * 60_000
+const lastGoodCards = new Map<string, AccountQuotaCard>()
+
+async function withLastGood(card: AccountQuotaCard): Promise<AccountQuotaCard> {
+  const lastGoodKey = `${card.source}|${card.key}`
+  if (card.status !== 'error' && (card.windows.length || card.balance)) {
+    const windows = card.windows.length ? await quotaSamples.withForecasts(`card|${lastGoodKey}`, card.windows, card.checkedAt) : card.windows
+    const fresh = { ...card, windows }
+    lastGoodCards.set(lastGoodKey, fresh)
+    return fresh
+  }
+  const prior = lastGoodCards.get(lastGoodKey)
+  if (card.status !== 'error' || !prior || card.checkedAt - prior.checkedAt > CARD_LAST_GOOD_MAX_AGE_MS) return card
+  return { ...prior, active: card.active, switchable: card.switchable, staleError: card.error || '读取失败' }
 }

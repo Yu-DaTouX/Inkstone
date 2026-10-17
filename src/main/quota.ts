@@ -8,8 +8,33 @@ import { resolveQuotaProviderSecret } from './quota-credentials'
 import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode'
 import { hostImageCredentials } from './image-credentials'
 import { chatGptIdentity, claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
+import { quotaSamples } from './quota-samples'
 
 const http = net.fetch.bind(net)
+
+async function claudeSubscriptionQuota(
+  provider: string,
+  accessToken: string,
+  checkedAt: number,
+  label: string,
+  revoked: string
+): Promise<ProviderQuota> {
+  const response = await http('https://api.anthropic.com/api/oauth/usage', {
+    headers: { Authorization: `Bearer ${accessToken}`, 'anthropic-beta': 'oauth-2025-04-20', Accept: 'application/json' },
+    signal: AbortSignal.timeout(10_000)
+  })
+  if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? revoked : `HTTP ${response.status}`)
+  const windows = claudeUsageWindows(await response.json())
+  if (!windows.length) return { provider, supported: true, error: 'Claude 未返回额度窗口', checkedAt }
+  const binding = [...windows].filter((window) => !window.informational).sort((a, b) => b.used / b.total - a.used / a.total)[0]
+  return {
+    provider, supported: true, windows, checkedAt,
+    ...(binding ? {
+      used: binding.used, total: binding.total, remaining: Math.max(0, binding.total - binding.used),
+      currency: 'PERCENT', label
+    } : {})
+  }
+}
 
 export async function providerQuota(rawProvider: string, monthlyBudget?: number): Promise<ProviderQuota> {
   const provider = rawProvider.trim().toLowerCase()
@@ -27,26 +52,25 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
       if (Number(credential.expiresAt) <= Date.now()) {
         return { provider, supported: true, error: 'Claude Code 登录令牌已过期，请先在终端使用一次 claude 刷新', checkedAt }
       }
-      const response = await http('https://api.anthropic.com/api/oauth/usage', {
-        headers: { Authorization: `Bearer ${credential.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20', Accept: 'application/json' },
-        signal: AbortSignal.timeout(10_000)
-      })
-      if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? 'Claude Code 登录已失效' : `HTTP ${response.status}`)
-      const windows = claudeUsageWindows(await response.json())
-      if (!windows.length) return { provider, supported: true, error: 'Claude 未返回额度窗口', checkedAt }
-      const binding = [...windows].filter((window) => !window.informational).sort((a, b) => b.used / b.total - a.used / a.total)[0]
-      return {
-        provider, supported: true, windows, checkedAt,
-        ...(binding ? {
-          used: binding.used, total: binding.total, remaining: Math.max(0, binding.total - binding.used),
-          currency: 'PERCENT', label: 'Claude Code 订阅'
-        } : {})
-      }
+      return await claudeSubscriptionQuota(provider, credential.accessToken, checkedAt, 'Claude Code 订阅', 'Claude Code 登录已失效')
     } catch (e) {
       const error = e instanceof Error && 'code' in e && e.code === 'ENOENT'
         ? '未找到 Claude Code 登录凭证'
         : e instanceof Error ? e.message : String(e)
       return { provider, supported: true, error, checkedAt }
+    }
+  }
+  if (provider === 'anthropic') {
+    const entry = (await readAuthEntry('anthropic').catch(() => undefined)) as { type?: unknown; access?: unknown; expires?: unknown } | undefined
+    if (entry?.type === 'oauth' && typeof entry.access === 'string') {
+      if (Number(entry.expires) <= Date.now()) {
+        return { provider, supported: true, error: 'Claude 登录令牌已过期，下次用 Claude 模型对话时 pi 会自动刷新', checkedAt }
+      }
+      try {
+        return await claudeSubscriptionQuota(provider, entry.access, checkedAt, 'Claude 订阅', 'Claude 登录已失效，请在设置里重新登录')
+      } catch (e) {
+        return { provider, supported: true, error: e instanceof Error ? e.message : String(e), checkedAt }
+      }
     }
   }
   const isCodex = provider === 'openai-codex'
@@ -175,6 +199,7 @@ export async function providerQuotaWithFallback(rawProvider: string, monthlyBudg
   const provider = rawProvider.trim().toLowerCase()
   const fresh = await providerQuota(rawProvider, monthlyBudget)
   const key = await lastGoodKey(provider, monthlyBudget)
+  if (fresh.windows?.length) fresh.windows = await quotaSamples.withForecasts(`provider|${key}`, fresh.windows, fresh.checkedAt)
   if (hasQuotaData(fresh)) {
     lastGood.set(key, fresh)
     return fresh

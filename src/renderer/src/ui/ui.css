@@ -818,9 +818,18 @@
     background: var(--sunken);
   }
   .ui-progress__fill {
+    position: relative;
     height: 100%;
     border-radius: inherit;
     background: var(--ink);
+    transition: width var(--dur-expand) var(--ease);
+  }
+  .ui-progress__projection {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: inherit;
+    background: var(--ui-meter-projection, var(--ink));
+    opacity: 0.38;
     transition: width var(--dur-expand) var(--ease);
   }
   .ui-progress:not([aria-valuenow]) .ui-progress__fill {

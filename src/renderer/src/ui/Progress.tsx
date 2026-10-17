@@ -41,9 +41,10 @@ export function ProgressBar({ label, showValue = false, className, ...props }: P
 export interface MeterProps extends Omit<RACMeterProps, 'children'> {
   label?: ReactNode
   showValue?: boolean
+  projectedPercent?: number | null
 }
 
-export function Meter({ label, showValue = false, className, ...props }: MeterProps) {
+export function Meter({ label, showValue = false, projectedPercent, className, ...props }: MeterProps) {
   return (
     <RACMeter {...props} className={composeRenderProps(className, (cn) => cx('ui-progress', 'ui-meter', cn))}>
       {(renderProps) => (
@@ -57,6 +58,13 @@ export function Meter({ label, showValue = false, className, ...props }: MeterPr
             </div>
           ) : null}
           <div className="ui-progress__track">
+            {projectedPercent != null && renderProps.percentage != null && projectedPercent > renderProps.percentage ? (
+              <div
+                className="ui-progress__projection"
+                data-testid="ui-meter-projection"
+                style={{ width: `${Math.min(100, projectedPercent)}%` }}
+              />
+            ) : null}
             <div
               className="ui-progress__fill"
               style={renderProps.percentage != null ? { width: `${renderProps.percentage}%` } : undefined}

@@ -1,4 +1,5 @@
 import type { QuotaWindow } from '../shared/ipc'
+import { WINDOW_DURATION } from '../shared/quota-forecast'
 
 export interface CommandCodeWindow {
   used?: number
@@ -24,7 +25,7 @@ export interface CommandCodeCredits {
 export function commandCodeWindows(credits: CommandCodeCredits, periodEnd?: number): QuotaWindow[] {
   const wl = credits.windowLimits ?? {}
   const windows: QuotaWindow[] = []
-  const add = (id: string, label: string, w?: CommandCodeWindow): void => {
+  const add = (id: string, label: string, durationMs: number, w?: CommandCodeWindow): void => {
     const cap = Number(w?.cap)
     if (!w || !Number.isFinite(cap) || cap <= 0) return
     windows.push({
@@ -33,11 +34,12 @@ export function commandCodeWindows(credits: CommandCodeCredits, periodEnd?: numb
       used: Number(w.used ?? 0),
       total: cap,
       resetAt: typeof w.resetAt === 'number' ? w.resetAt : undefined,
-      exceeded: w.exceeded === true
+      exceeded: w.exceeded === true,
+      durationMs
     })
   }
-  add('fiveHour', '5 小时', wl.fiveHour)
-  add('weekly', '每周', wl.weekly)
+  add('fiveHour', '5 小时', WINDOW_DURATION.fiveHour, wl.fiveHour)
+  add('weekly', '每周', WINDOW_DURATION.week, wl.weekly)
 
   const planCredits = Number(wl.weekly?.cap) * 2
   const monthlyRemaining = Number(credits.credits?.monthlyCredits)
@@ -51,7 +53,8 @@ export function commandCodeWindows(credits: CommandCodeCredits, periodEnd?: numb
       total: monthlyTotal,
       resetAt: periodEnd,
       exceeded: monthlyRemaining <= 0,
-      estimated: true
+      estimated: true,
+      durationMs: WINDOW_DURATION.month
     })
   }
   return windows
