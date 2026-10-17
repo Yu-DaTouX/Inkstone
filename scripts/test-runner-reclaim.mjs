@@ -147,6 +147,23 @@ export async function runRunnerReclaimTests(ok) {
     await f.reg.stopAll()
   }
   {
+    let childrenRunning = true
+    const f = await setup({ hasRunningSubagents: sessionId => childrenRunning && sessionId === 'r1' })
+    f.agents[1].state.isAgentRunning = true
+    const opened = await f.reg.select({ cwd: 'C:/p0', sessionFile: 'C:/other.jsonl' })
+    ok(opened.ok && opened.via === 'new' && opened.id === 'r3', '父会话有运行中子代理时打开同目录会话改为新建实例')
+    ok(f.agents[0].switches.length === 1 && f.agents[0].state.sessionFile === 'C:/s0.jsonl', '父会话实例保持原会话')
+    f.agents[2].state.isAgentRunning = true
+    const full = await f.reg.select({ cwd: 'C:/p9', sessionFile: 'C:/full.jsonl' })
+    ok(!full.ok && full.error.includes('上限'), '只剩父会话实例空闲且已达上限时明确拒绝')
+    ok(f.agents[0].stopped === 0 && f.agents[0].state.sessionFile === 'C:/s0.jsonl', '上限拒绝不换下父会话')
+    childrenRunning = false
+    const reused = await f.reg.select({ cwd: 'C:/p9', sessionFile: 'C:/later.jsonl' })
+    ok(reused.ok && reused.via === 'reuse' && reused.id === 'r1', '子代理结束后父会话实例可以复用')
+    ok(f.reg.active().state.sessionFile === 'C:/later.jsonl', '复用后载入新会话')
+    await f.reg.stopAll()
+  }
+  {
     const f = await setup({ isSessionVisible: undefined })
     f.at(T)
     ok(await f.reg.reclaimIdle() === null, '未接显示集合同步时默认禁止自动回收')
