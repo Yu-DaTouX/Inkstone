@@ -36,7 +36,8 @@ export function UsagePage() {
         <div className="usage-page-months" aria-hidden>{stats?.heat.filter((_, i) => i % 7 === 0).map((day, i) => {
             const week = stats.heat.slice(i * 7, i * 7 + 7)
             const monthStart = week.find((d) => d.date.slice(8, 10) === '01')
-            return <span key={day.date}>{monthStart ? monthStart.date.slice(5, 7) : i === 0 ? day.date.slice(5, 7) : ''}</span>
+            const nextWeekStartsMonth = i === 0 && stats.heat.slice(7, 14).some((d) => d.date.slice(8, 10) === '01')
+            return <span key={day.date}>{monthStart ? monthStart.date.slice(5, 7) : i === 0 && !nextWeekStartsMonth ? day.date.slice(5, 7) : ''}</span>
           })}</div>
         </div>
         <p>{split ? `${lang === 'en-US' ? 'Main sessions' : '主会话'} ${compactNumber(split.main)} · ${lang === 'en-US' ? 'Subagents' : '子代理'} ${compactNumber(split.subagents)}` : '—'}</p>

@@ -1,10 +1,11 @@
 import '../design/index.css'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
 import { Splitter } from '../ui'
 import { UsagePage } from '../features/usage/UsagePage'
 import { translate, useI18n, type Lang, type MessageKey } from '../i18n'
 import { useStore } from '../state/store'
 import { useRunnerVisibility } from '../lib/use-runner-visibility'
+import { useHoverDelay } from '../lib/use-hover-delay'
 import { displayedSessionOf, reconcileSplit, useSplitView, type SplitSessionRef } from '../state/split-view'
 import { sessionViewIdentity, viewMatchesProjectedSession } from '../features/session/view-state'
 import { isModalOpen } from '../lib/modalLayer'
@@ -87,7 +88,6 @@ export default function ShellV3(): ReactElement {
     try { const value = Number(localStorage.getItem('inkstone.v3.sidebarWidth')); return value >= 220 && value <= 420 ? value : 264 } catch { return 264 }
   })
   const [sidebarPreview, setSidebarPreview] = useState(false)
-  const revealTimer = useRef<number | null>(null)
   useEffect(() => {
     const timer = setTimeout(() => { try { localStorage.setItem('inkstone.v3.sidebarWidth', String(sidebarWidth)) } catch { } }, 150)
     return () => clearTimeout(timer)
@@ -134,32 +134,44 @@ export default function ShellV3(): ReactElement {
   const sideOpen = useSubagentPanel((s) => !!s.runId)
   const sideWidth = useSubagentPanel((s) => s.width)
   const [sessionBarWidth] = useState(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size-tiles')) || 300)
-  useEffect(() => { if (sidebarOpen) setSidebarPreview(false) }, [sidebarOpen])
+  const showSidebarPreview = useCallback(() => { if (!useUiV3.getState().sidebarOpen) setSidebarPreview(true) }, [])
+  const reveal = useHoverDelay(120, showSidebarPreview)
+  useEffect(() => { if (sidebarOpen) { reveal.cancel(); setSidebarPreview(false) } }, [sidebarOpen, reveal])
   const [previewPhase, setPreviewPhase] = useState<'off' | 'leaving' | 'reset'>('off')
   const previewWasOn = useRef(false)
   useEffect(() => {
     const was = previewWasOn.current
     previewWasOn.current = sidebarPreview
-    if (sidebarPreview || !was || useUiV3.getState().sidebarOpen) return
+    if (sidebarPreview || !was || useUiV3.getState().sidebarOpen) { setPreviewPhase('off'); return }
     setPreviewPhase('leaving')
+    const leaveMs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-panel')) || 0
     let frame = 0
     const timer = window.setTimeout(() => {
       setPreviewPhase('reset')
       frame = window.requestAnimationFrame(() => { frame = window.requestAnimationFrame(() => setPreviewPhase('off')) })
-    }, 260)
+    }, leaveMs)
     return () => { window.clearTimeout(timer); window.cancelAnimationFrame(frame) }
   }, [sidebarPreview])
   useEffect(() => {
     if (!sidebarPreview) return
     let timer: number | null = null
     const clear = (): void => { if (timer !== null) window.clearTimeout(timer); timer = null }
+    const scheduleHide = (): void => { if (timer === null) timer = window.setTimeout(() => setSidebarPreview(false), 350) }
     const onMove = (event: PointerEvent): void => {
       const target = event.target instanceof Element ? event.target : null
       if (target?.closest('.v3-side, [data-testid="v3-rail-toggle"], [data-testid="v3-sidebar-reveal"], [role="menu"], [role="dialog"]')) { clear(); return }
-      if (timer === null) timer = window.setTimeout(() => setSidebarPreview(false), 350)
+      scheduleHide()
     }
+    const onOut = (event: PointerEvent): void => { if (!event.relatedTarget) scheduleHide() }
     window.addEventListener('pointermove', onMove)
-    return () => { window.removeEventListener('pointermove', onMove); clear() }
+    document.addEventListener('pointerout', onOut)
+    window.addEventListener('blur', scheduleHide)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerout', onOut)
+      window.removeEventListener('blur', scheduleHide)
+      clear()
+    }
   }, [sidebarPreview])
 
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -499,7 +511,7 @@ export default function ShellV3(): ReactElement {
   return (
     <V3ErrorBoundary>
       <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={narrow ? '1' : '0'} data-side={sidebarOpen ? 'open' : 'closed'} data-sidebar-preview={sidebarOpen ? undefined : sidebarPreview ? '1' : previewPhase === 'off' ? undefined : previewPhase}>
-        {!sidebarOpen ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} onPointerEnter={() => { if (revealTimer.current !== null) window.clearTimeout(revealTimer.current); revealTimer.current = window.setTimeout(() => setSidebarPreview(true), 120) }} onPointerLeave={() => { if (revealTimer.current !== null) window.clearTimeout(revealTimer.current); revealTimer.current = null }} /> : null}
+        {!sidebarOpen ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} onPointerEnter={reveal.start} onPointerLeave={reveal.cancel} /> : null}
         <Sidebar {...sidebarActions} preview={sidebarPreview && !sidebarOpen} />
         {sidebarOpen && !narrow ? <Splitter className="v3-sidebar-resizer" value={sidebarWidth} min={220} max={420} step={16} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={setSidebarWidth} onReset={() => setSidebarWidth(264)} /> : null}
         {narrow && sidebarOpen ? (
@@ -511,7 +523,7 @@ export default function ShellV3(): ReactElement {
             sidebarOpen={sidebarOpen}
             route={route.name}
             onToggleSidebar={() => useUiV3.getState().toggleSidebar()}
-            onPreviewSidebar={() => setSidebarPreview(true)}
+            onPreviewSidebar={showSidebarPreview}
             onSettings={() => useUiV3.getState().navigate({ name: 'settings' })}
             onBack={() => useUiV3.getState().goBack()}
             sessionBarOpen={sessionBarOn}
