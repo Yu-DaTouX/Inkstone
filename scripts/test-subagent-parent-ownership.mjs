@@ -334,6 +334,7 @@ export async function runSubagentParentOwnershipTests(ok) {
         const hookBefore = emitted.length
         context.runners = { statuses: () => [{ runId: 'rA', sessionId: 'A-real', generation: 5 }] }
         context.push = () => {}
+        context.syncAppViewForeground = () => {}
         context.refreshTrayMenu = () => {}
         context.refreshTaskbar = () => {}
         context.syncKeepAwake = () => {}

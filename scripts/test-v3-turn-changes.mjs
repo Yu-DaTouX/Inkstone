@@ -47,7 +47,9 @@ try {
   const rel = splitChangePath('E:\\proj\\docs\\DESIGN_SYSTEM.md', 'e:/proj')
   ok(rel.dir === 'docs/' && rel.base === 'DESIGN_SYSTEM.md', '在 cwd 下的路径显示为相对路径（忽略大小写与斜杠方向）', rel)
   const outside = splitChangePath('/tmp/a/b.txt', '/proj')
-  ok(outside.dir === '/tmp/a/' && outside.base === 'b.txt', 'cwd 之外保持原路径', outside)
+  ok(outside.dir === '…/a/' && outside.base === 'b.txt', 'cwd 之外的绝对路径只保留最后一级目录', outside)
+  const shallow = splitChangePath('/tmp/b.txt', '/proj')
+  ok(shallow.dir === '/tmp/' && shallow.base === 'b.txt', 'cwd 之外只有一级目录时原样显示', shallow)
   ok(splitChangePath('a.ts').dir === '' && splitChangePath('a.ts').base === 'a.ts', '没有目录的文件名', splitChangePath('a.ts'))
 
   console.log(`\nv3-turn-changes: ${checks} checks passed`)
