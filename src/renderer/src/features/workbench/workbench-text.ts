@@ -11,6 +11,7 @@ export interface OverviewText {
     context: string
     todos: string
     tasks: string
+    ext: string
     mcp: string
     changes: string
     quota: string
@@ -97,6 +98,7 @@ const ZH: WorkbenchText = {
       context: '上下文',
       todos: '待办',
       tasks: '任务',
+      ext: '扩展',
       mcp: 'MCP',
       changes: '更改',
       quota: '额度'
@@ -164,6 +166,7 @@ const EN: WorkbenchText = {
       context: 'Context',
       todos: 'Todos',
       tasks: 'Tasks',
+      ext: 'Extensions',
       mcp: 'MCP',
       changes: 'Changes',
       quota: 'Quota'

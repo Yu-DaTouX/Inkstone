@@ -36,7 +36,7 @@ export interface OverviewPaneProps {
   onPreview?: (path: string) => void
 }
 
-type TileId = 'env' | 'context' | 'todos' | 'tasks' | 'mcp' | 'changes' | 'quota'
+type TileId = 'env' | 'context' | 'todos' | 'tasks' | 'ext' | 'mcp' | 'changes' | 'quota'
 
 const FOLD_KEY = 'inkstone.v3.overview.folds'
 const QUOTA_TICK_MS = 30_000
@@ -457,6 +457,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const messages = useStore((s) => s.messages)
   const todos = useStore((s) => s.todos)
   const subagents = useStore((s) => s.subagents)
+  const widgets = useStore((s) => s.widgets)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
   const agentRunning = session?.isAgentRunning === true || session?.isStreaming === true
@@ -498,6 +499,8 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const runs: SubagentRun[] = visibleSubagentRuns(subagents, { sessionIds }).sort(compareRuns)
   const runningCount = runs.filter(isLiveRun).length
   const taskSummary = runningCount > 0 ? text.runningCount(runningCount) : text.doneCount(runs.length)
+
+  const extWidgets = Object.entries(widgets).filter(([, lines]) => lines.length > 0)
 
   const mcp = useMcpServers(agentRunning ? 'running' : 'idle')
   const mcpReady = mcp.servers.filter((server) => server.status === 'ready').length
@@ -572,6 +575,16 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       {runs.length > 0 ? (
         <Tile id="tasks" title={text.tiles.tasks} summary={taskSummary} folded={isFolded('tasks')} onToggle={toggle}>
           <TaskRows runs={runs} owner={view.key} text={text} />
+        </Tile>
+      ) : null}
+
+      {extWidgets.length > 0 ? (
+        <Tile id="ext" title={text.tiles.ext} folded={isFolded('ext')} onToggle={toggle}>
+          <div className="wb-ov-ext" data-testid="wb-ov-ext">
+            {extWidgets.map(([key, lines]) => (
+              <pre key={key} className="wb-ov-ext-block" title={key}>{lines.join('\n')}</pre>
+            ))}
+          </div>
         </Tile>
       ) : null}
 
