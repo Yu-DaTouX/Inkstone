@@ -90,6 +90,10 @@ const CASES = {
     afterExit: 'taskFixtureReadonly', readonlySession: 'yan-todo-fixture'
   },
   'v3-composer': { probe: 'scripts/probe/v3-composer.js', delay: 9000, cost: 0, budget: 90000 },
+  'v3-collab-invite': {
+    probe: 'scripts/probe/v3-collab-invite.js', delay: 9000, cost: 0, budget: 60000,
+    args: ['inkstone://pair?address=http%3A%2F%2F100.64.0.7%3A37892&code=246810']
+  },
   'v3-sendkey': { probe: 'scripts/probe/v3-sendkey.js', delay: 9000, cost: 0 },
   'v3-completion': { probe: 'scripts/probe/v3-completion.js', delay: 9000, cost: 0 },
   'v3-projectmenu': { probe: 'scripts/probe/v3-projectmenu.js', delay: 9000, cost: 0 },
@@ -2790,7 +2794,7 @@ function findIntermediateTurnTiming(dir) {
 }
 
 function runProbe(
-  { probe, delay, keys, keysDelay, env: caseEnv, budget, visible, driver, hardKillAfterIntermediateTiming },
+  { probe, delay, keys, keysDelay, env: caseEnv, budget, visible, driver, hardKillAfterIntermediateTiming, args: caseArgs },
   env,
   driverContext
 ) {
@@ -2818,6 +2822,7 @@ function runProbe(
     const electronArgs = ['.']
     if (process.env.YAN_TEST_DPR) electronArgs.push(`--force-device-scale-factor=${process.env.YAN_TEST_DPR}`)
     if (showWindow) electronArgs.push('--disable-features=CalculateNativeWinOcclusion')
+    if (Array.isArray(caseArgs)) electronArgs.push(...caseArgs)
     const child = spawn(electronBin, electronArgs, {
       cwd: root,
       env: probeEnv,

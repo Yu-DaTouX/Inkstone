@@ -37,6 +37,8 @@ import {
 } from '../../ui'
 import { collabBridge, collabPeerBridge, parsePairLink, type CollabPeerBridge } from './bridge'
 import { collabText, fill, formatCollabTime, type CollabText } from './collab-text'
+import { InviteCard } from './InviteCard'
+import { usePendingPairInvite } from './pending-invite'
 import './collab.css'
 
 type Tone = 'info' | 'error'
@@ -491,6 +493,16 @@ interface PairFormProps {
 function PairForm({ text, disabled, pending, notify, onPair }: PairFormProps): ReactElement {
   const [address, setAddress] = useState('')
   const [code, setCode] = useState('')
+  const invite = usePendingPairInvite((state) => state.invite)
+
+  useEffect(() => {
+    if (!invite) return
+    const taken = usePendingPairInvite.getState().take()
+    if (!taken) return
+    setAddress(taken.address)
+    setCode(taken.code)
+    notify('info', text.pairInviteReceived)
+  }, [invite, notify, text.pairInviteReceived])
 
   const absorbLink = (value: string): boolean => {
     const link = parsePairLink(value)
@@ -1442,6 +1454,7 @@ export function CollabPage(): ReactElement {
           </ul>
         ) : null}
         <PairForm text={text} disabled={!peerBridge} pending={busy.has('pair')} notify={notify} onPair={pair} />
+        <InviteCard text={text} />
       </section>
 
       <section className="collab-section" aria-labelledby="collab-remote-title" data-testid="v3-collab-remote">

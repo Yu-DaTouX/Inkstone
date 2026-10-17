@@ -3230,10 +3230,12 @@ app.whenReady().then(async () => {
   })
 
   syncController?.start()
-  win?.webContents.once('did-finish-load', () => {
+  const deliverStartupDeepLinks = (): void => {
     deepLinkRouter.flush()
     deepLinkRouter.handleArgv(process.argv)
-  })
+  }
+  if (win && !win.isDestroyed() && !win.webContents.isLoading()) deliverStartupDeepLinks()
+  else win?.webContents.once('did-finish-load', deliverStartupDeepLinks)
 
   try {
     runsHost = await createRunsHost({ push })

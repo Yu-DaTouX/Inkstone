@@ -22,6 +22,7 @@ const keys = (value) => Object.keys(value).sort()
 const D = await loadTs('../src/main/deeplink/protocol.ts')
 const R = await loadTs('../src/main/deeplink/register.ts')
 const S = await loadTs('../src/main/deeplink/service.ts')
+const P = await loadTs('../src/shared/pair-invite.ts')
 
 const {
   DEEPLINK_PREFIX,
@@ -73,6 +74,16 @@ r = parseDeepLink('inkstone://runs')
 assert.deepEqual(r.link, { action: 'runs' })
 assert.deepEqual(keys(r.link), ['action'])
 
+r = parseDeepLink('inkstone://pair?address=http%3A%2F%2F100.64.0.7%3A37892&code=123456')
+assert.deepEqual(r.link, { action: 'pair', address: 'http://100.64.0.7:37892', code: '123456' })
+assert.deepEqual(keys(r.link), ['action', 'address', 'code'], '邀请链接只带 action/address/code')
+
+r = parseDeepLink('inkstone://pair/?address=192.168.1.9:37892&code=000123')
+assert.deepEqual(r.link, { action: 'pair', address: 'http://192.168.1.9:37892', code: '000123' }, '无 scheme 的地址补成 http')
+
+r = parseDeepLink('inkstone://pair?address=https%3A%2F%2Fpc.tail.ts.net&code=654321')
+assert.deepEqual(r.link, { action: 'pair', address: 'https://pc.tail.ts.net', code: '654321' })
+
 assert.deepEqual(
   [...DEEPLINK_SETTINGS_SECTIONS],
   ['appearance', 'context', 'models', 'capabilities', 'usage', 'shortcuts'],
@@ -89,7 +100,7 @@ const rejections = [
   ['https://example.com/session/abc', 'scheme'],
   ['inkstone:session/abc', 'scheme'],
   ['inkstone://', 'action'],
-  ['inkstone://pair?address=http%3A%2F%2F127.0.0.1&code=123', 'action'],
+  ['inkstone://pair?address=http%3A%2F%2F127.0.0.1&code=123', 'code'],
   ['inkstone://hub', 'action'],
   ['inkstone://unknown/abc', 'action'],
   ['inkstone://session', 'id'],
@@ -108,6 +119,16 @@ const rejections = [
   ['inkstone://settings/context/extra', 'section'],
   ['inkstone://runs/extra', 'path'],
   ['inkstone://new/extra', 'path'],
+  ['inkstone://pair/extra?address=1.2.3.4:1&code=123456', 'path'],
+  ['inkstone://pair?code=123456', 'address'],
+  ['inkstone://pair?address=file%3A%2F%2F%2Fetc&code=123456', 'address'],
+  ['inkstone://pair?address=http%3A%2F%2Fu%3Ap%40host%3A1&code=123456', 'address'],
+  ['inkstone://pair?address=http%3A%2F%2Fhost%3A1%2Fpath&code=123456', 'address'],
+  ['inkstone://pair?address=http%3A%2F%2Fhost%3A1%3Fx%3D1&code=123456', 'address'],
+  ['inkstone://pair?address=1.2.3.4:1', 'code'],
+  ['inkstone://pair?address=1.2.3.4:1&code=12345', 'code'],
+  ['inkstone://pair?address=1.2.3.4:1&code=1234567', 'code'],
+  ['inkstone://pair?address=1.2.3.4:1&code=12a456', 'code'],
   ['inkstone://session/abc\ninkstone://runs', 'control'],
   ['inkstone://' + 'a'.repeat(MAX_DEEPLINK_URL_LENGTH), 'too-long']
 ]
@@ -215,7 +236,8 @@ for (const url of [
   'inkstone://session/s1',
   'inkstone://new?text=please%20run%20rm%20-rf',
   'inkstone://settings/models',
-  'inkstone://runs'
+  'inkstone://runs',
+  'inkstone://pair?address=1.2.3.4:37892&code=123456'
 ]) {
   const parsed = parseDeepLink(url)
   assert.equal(parsed.ok, true)
@@ -223,5 +245,22 @@ for (const url of [
     assert.equal(key in parsed.link, false, `${url} 不应带 ${key}`)
   }
 }
+
+const running = { running: true, host: '0.0.0.0', port: 37892, addresses: [{ kind: 'loopback', address: '127.0.0.1' }, { kind: 'lan', address: '192.168.1.9' }, { kind: 'tailscale', address: '100.64.0.7' }] }
+assert.deepEqual(P.pairInviteAddress(running), { ok: true, address: 'http://100.64.0.7:37892', kind: 'tailscale' }, '通配监听优先 Tailscale')
+assert.deepEqual(P.pairInviteAddress({ ...running, addresses: running.addresses.slice(0, 2) }), { ok: true, address: 'http://192.168.1.9:37892', kind: 'lan' }, '无 Tailscale 时用局域网')
+assert.deepEqual(P.pairInviteAddress({ ...running, addresses: running.addresses.slice(0, 1) }), { ok: false, reason: 'loopback' }, '只有本机地址不可邀请')
+assert.deepEqual(P.pairInviteAddress({ ...running, host: '127.0.0.1' }), { ok: false, reason: 'loopback' })
+assert.deepEqual(P.pairInviteAddress({ ...running, host: '192.168.1.9' }), { ok: true, address: 'http://192.168.1.9:37892', kind: 'lan' }, '具体监听地址原样使用')
+assert.deepEqual(P.pairInviteAddress({ ...running, host: '10.0.0.5' }), { ok: true, address: 'http://10.0.0.5:37892', kind: 'bound' })
+assert.deepEqual(P.pairInviteAddress({ ...running, running: false }), { ok: false, reason: 'stopped' })
+assert.deepEqual(P.pairInviteAddress(null), { ok: false, reason: 'stopped' })
+
+const invite = { address: 'http://100.64.0.7:37892', code: '123456' }
+const inviteLink = P.pairInviteLink(invite)
+assert.deepEqual(P.parsePairInvite(inviteLink), invite, '生成的邀请链接可被解析回原值')
+assert.deepEqual(parseDeepLink(inviteLink).link, { action: 'pair', ...invite }, '生成的邀请链接能走深链')
+assert.equal(P.parsePairInvite('inkstone://pairing?address=1.2.3.4:1&code=123456'), null)
+assert.equal(P.parsePairInvite('inkstone://pair?address=1.2.3.4:1&code=12'), null)
 
 process.stdout.write('\n✓ WP-20c DeepLink 纯逻辑回归全部通过\n')

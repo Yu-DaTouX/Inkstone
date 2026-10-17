@@ -1,3 +1,5 @@
+import { normalizePairCode, PAIR_CODE_LENGTH, validPairAddress } from '../../shared/pair-invite'
+
 export const DEEPLINK_SCHEME = 'inkstone'
 
 export const DEEPLINK_PREFIX = `${DEEPLINK_SCHEME}://`
@@ -39,9 +41,15 @@ export interface DeepLinkRuns {
   action: 'runs'
 }
 
-export type DeepLinkAction = DeepLinkSession['action'] | DeepLinkNewSession['action'] | DeepLinkSettings['action'] | DeepLinkRuns['action']
+export interface DeepLinkPair {
+  action: 'pair'
+  address: string
+  code: string
+}
 
-export type DeepLink = DeepLinkSession | DeepLinkNewSession | DeepLinkSettings | DeepLinkRuns
+export type DeepLinkAction = DeepLink['action']
+
+export type DeepLink = DeepLinkSession | DeepLinkNewSession | DeepLinkSettings | DeepLinkRuns | DeepLinkPair
 
 export type DeepLinkRejectReason =
   | 'empty'
@@ -54,6 +62,8 @@ export type DeepLinkRejectReason =
   | 'id'
   | 'section'
   | 'text'
+  | 'address'
+  | 'code'
 
 export type DeepLinkParseResult = { ok: true; link: DeepLink } | { ok: false; reason: DeepLinkRejectReason }
 
@@ -154,6 +164,16 @@ export function parseDeepLink(raw: unknown): DeepLinkParseResult {
     case 'runs': {
       if (url.pathname !== '' && url.pathname !== '/') return fail('path')
       return { ok: true, link: { action: 'runs' } }
+    }
+
+    case 'pair': {
+      if (url.pathname !== '' && url.pathname !== '/') return fail('path')
+      const address = validPairAddress(url.searchParams.get('address') ?? '')
+      if (!address) return fail('address')
+      const rawCode = (url.searchParams.get('code') ?? '').trim()
+      const code = normalizePairCode(rawCode)
+      if (code.length !== PAIR_CODE_LENGTH || code !== rawCode) return fail('code')
+      return { ok: true, link: { action: 'pair', address, code } }
     }
 
     default:
