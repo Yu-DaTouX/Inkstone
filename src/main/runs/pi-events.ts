@@ -144,7 +144,3 @@ export function runSignalFromUiResolved(id: string): RunSignal {
 export function runSignalFromPiExit(code?: number | null, signal?: string | null): RunSignal {
   return { type: 'pi-exit', code: code ?? null, signal: signal ?? null }
 }
-
-export function runSignalFromHostStop(by: 'user' | 'host' = 'user'): RunSignal {
-  return { type: 'stopped', by }
-}

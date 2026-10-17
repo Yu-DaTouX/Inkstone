@@ -13,10 +13,6 @@ const MODULES: Record<string, { file: string; exportName: string }> = {
   openrouter: { file: 'openrouter.js', exportName: 'openRouterOAuth' }
 }
 
-export function supportsInAppOAuth(provider: string): boolean {
-  return provider in MODULES
-}
-
 interface PiOAuthPrompt {
   type: 'manual_code' | 'text' | 'select'
   message?: string

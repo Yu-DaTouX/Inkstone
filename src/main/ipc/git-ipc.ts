@@ -1,21 +1,17 @@
 import type { IpcRegistrar } from './registrar'
 import { readExpected, readRepoState, listRefs, resolveRepo } from '../git-service'
-import { listRemotes, remoteWeb, runGitAction } from '../git-actions'
-import { prStatus } from '../hosting'
-import { createWorktree, listUntracked, listWorktrees, removeWorktree } from '../git-worktree'
+import { listRemotes, runGitAction } from '../git-actions'
+import { listUntracked, listWorktrees } from '../git-worktree'
 import { readChanges, readFileDiff } from '../git-inspect'
 import type { AuthorizeReadCwd } from '../git-inspect'
-import type { WorktreeLinkStore } from '../worktree-links'
 
 export interface GitIpcDeps {
-  isCwdBusy(dir: string): boolean
-  worktreeOrigins: WorktreeLinkStore
   authorizeReadCwd: AuthorizeReadCwd
 }
 
 export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
   const { handle } = ipc
-  const { isCwdBusy, worktreeOrigins, authorizeReadCwd } = deps
+  const { authorizeReadCwd } = deps
   handle('yan:git:state', async (cwd: string) => {
     try {
       const dir = String(cwd ?? '')
@@ -166,109 +162,6 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
       }
     }
   })
-  handle('yan:git:worktreeCreate', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return await createWorktree(
-        {
-          cwd: String(raw.cwd ?? ''),
-          branch: String(raw.branch ?? ''),
-          startPoint: typeof raw.startPoint === 'string' && raw.startPoint ? raw.startPoint : null,
-          targetPath: typeof raw.targetPath === 'string' && raw.targetPath ? raw.targetPath : null,
-          carry: (() => {
-            const c = raw.carry as Record<string, unknown> | null | undefined
-            if (!c || typeof c !== 'object') return null
-            return {
-              staged: c.staged === true,
-              unstaged: c.unstaged === true,
-              untracked: Array.isArray(c.untracked) ? c.untracked.filter((x): x is string => typeof x === 'string') : []
-            }
-          })()
-        },
-        isCwdBusy
-      )
-    } catch (error) {
-      return {
-        ok: false,
-        failure: {
-          code: 'unknown',
-          message: error instanceof Error ? error.message : String(error),
-          retrySafe: false
-        }
-      }
-    }
-  })
-  handle('yan:git:worktreeRemove', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return await removeWorktree(
-        {
-          cwd: String(raw.cwd ?? ''),
-          path: String(raw.path ?? ''),
-          deleteBranch: !!raw.deleteBranch
-        },
-        isCwdBusy
-      )
-    } catch (error) {
-      return {
-        ok: false,
-        failure: {
-          code: 'unknown',
-          message: error instanceof Error ? error.message : String(error),
-          retrySafe: false
-        }
-      }
-    }
-  })
-
-  handle('yan:git:worktreeLink', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return await worktreeOrigins.link({
-        sessionId: String(raw.sessionId ?? ''),
-        sessionFile: typeof raw.sessionFile === 'string' ? raw.sessionFile : undefined,
-        worktree: String(raw.worktree ?? ''),
-        branch: typeof raw.branch === 'string' ? raw.branch : undefined,
-        fromSessionId: typeof raw.fromSessionId === 'string' ? raw.fromSessionId : undefined,
-        fromSessionFile: typeof raw.fromSessionFile === 'string' ? raw.fromSessionFile : undefined,
-        fromCwd: typeof raw.fromCwd === 'string' ? raw.fromCwd : undefined
-      })
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-  handle('yan:git:worktreeLinks', async () => {
-    try {
-      await worktreeOrigins.load()
-      return worktreeOrigins.links()
-    } catch {
-      return []
-    }
-  })
-
-  handle('yan:git:prStatus', async (cwd: string) => {
-    try {
-      const token = process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim() || null
-      return await prStatus(String(cwd ?? ''), token)
-    } catch (error) {
-      return {
-        ok: false,
-        state: 'none' as const,
-        checks: 'none' as const,
-        error: 'unknown' as const,
-        message: error instanceof Error ? error.message : String(error)
-      }
-    }
-  })
-
-  handle('yan:git:remoteWeb', async (cwd: string) => {
-    try {
-      return await remoteWeb(String(cwd ?? ''))
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
   handle('yan:git:remotes', async (cwd: string) => {
     try {
       const repo = await resolveRepo(String(cwd ?? ''))

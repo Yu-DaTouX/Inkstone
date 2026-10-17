@@ -11,9 +11,6 @@ const MONO = "ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu
 
 export const FONT_STACKS = { maple: MAPLE, sans: SANS, serif: SERIF, mono: MONO } as const
 
-export const FONT_BODY_MIN = 12
-export const FONT_BODY_MAX = 22
-export const FONT_BODY_DEFAULT = 15
 export const FONT_UI_MIN = 11
 export const FONT_UI_MAX = 16
 export const FONT_UI_DEFAULT = 13

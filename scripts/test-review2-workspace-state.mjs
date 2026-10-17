@@ -9,8 +9,7 @@ async function compile(entry) {
 for (const file of [
   'src/renderer/src/state/store.ts',
   'src/renderer/src/state/refresh-models.ts',
-  'src/renderer/src/main.tsx',
-  'src/renderer/src/lib/interaction-state.tsx'
+  'src/renderer/src/main.tsx'
 ]) {
   const { outputFiles } = await build({ entryPoints: [file], bundle: false, write: false, loader: { '.tsx': 'tsx' } })
   assert.ok(outputFiles[0].text.length > 0, `${file} transpiles`)
@@ -27,8 +26,7 @@ const runtime = await compile('src/renderer/src/state/session-runtime.ts')
 const envelope = (sessionId) => ({ runnerId: `runner-${sessionId}`, runId: `run-${sessionId}`, sessionId, generation: 1 })
 const snapshot = (sessionId, draft, messages = []) => ({
   runtime: envelope(sessionId), session: null, messages, stats: null, queue: { steering: [], followUp: [] },
-  todos: [], todoHistory: [], uiRequests: [], statuses: {}, widgets: {}, draft, workMode: null,
-  agentProfile: null, goal: { goalId: '', phase: 'planning', revision: 0, steps: [], evidence: [], links: [], verification: null, budget: null, budgetStop: null, blocker: null, pursue: false, brief: null, readyApproval: 'automatic', pendingReady: null, failure: null, updatedAt: 0 },
+  todos: [], todoHistory: [], uiRequests: [], statuses: {}, widgets: {}, draft, goal: { goalId: '', phase: 'planning', revision: 0, steps: [], evidence: [], links: [], verification: null, budget: null, budgetStop: null, blocker: null, pursue: false, brief: null, readyApproval: 'automatic', pendingReady: null, failure: null, updatedAt: 0 },
   models: [], thinkingLevels: [], commands: [], touchedAt: 1
 })
 let runtimes = Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`draft-${i}`, { ...snapshot(`draft-${i}`, `draft-${i}`), touchedAt: i + 1 }]))

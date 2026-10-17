@@ -15,6 +15,8 @@ import { ProjectHeader } from './ProjectHeader'
 import { SidebarRow } from './SidebarRow'
 import { sidebarText } from './sidebar-text'
 import { collabText } from '../collab/collab-text'
+import { ContentMatches, useContentSearch } from './ContentMatches'
+import { buildContentMatches } from './content-search'
 import './Sidebar.css'
 
 const GROUP_LIMIT = 5
@@ -109,6 +111,24 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
   const projectRecords = settings?.projects ?? []
 
   const total = groups.reduce((sum, group) => sum + group.list.length, 0)
+
+  const contentState = useContentSearch(query, !showArchived)
+  const contentMatches = useMemo(
+    () =>
+      buildContentMatches({
+        hits: contentState.hits,
+        sessions,
+        shownPaths: groups.flatMap((group) => group.list.map((item) => item.path)),
+        titleOf: (item) => manualTitles[item.id] ?? titles[item.id] ?? item.title,
+        fallbackTitle: (updatedAt) =>
+          own.contentFallbackTitle.replace(
+            '{date}',
+            new Date(updatedAt).toLocaleString(lang, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+          )
+      }),
+    [contentState.hits, sessions, groups, manualTitles, titles, own.contentFallbackTitle, lang]
+  )
+  const contentVisible = contentState.status === 'searching' || contentState.status === 'failed' || contentMatches.length > 0
 
   const isCurrentItem = (item: SessionSummary): boolean =>
     session?.sessionId === item.id || (!!session?.sessionFile && session.sessionFile === item.path)
@@ -233,7 +253,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
             titleOf={(item) => manualTitles[item.id] ?? titles[item.id] ?? item.title}
             onOpen={openSession}
           />
-        ) : groups.length === 0 ? (
+        ) : groups.length === 0 && !contentVisible ? (
           <p className="v3-side-empty">{query ? t('rail.noMatch') : t('rail.empty')}</p>
         ) : (
           groups.map((group) => {
@@ -285,7 +305,17 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
             )
           })
         )}
-        {query && total === 0 ? <span className="v3-visually-hidden" aria-live="polite">{t('rail.noMatch')}</span> : null}
+        {showArchived ? null : (
+          <ContentMatches
+            query={query}
+            state={contentState}
+            matches={contentMatches}
+            currentPath={session?.sessionFile}
+            text={own}
+            onOpen={(match) => openSession({ id: match.id ?? '', path: match.path })}
+          />
+        )}
+        {query && total === 0 && !contentVisible ? <span className="v3-visually-hidden" aria-live="polite">{t('rail.noMatch')}</span> : null}
       </nav>
 
       {archivedCount > 0 || showArchived ? (

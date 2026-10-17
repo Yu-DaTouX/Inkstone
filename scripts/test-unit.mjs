@@ -11,8 +11,6 @@ import { runSessionStatsIsolationTests } from './test-session-stats-isolation.mj
 import { runSessionConcurrencySendGuardTests } from './test-session-concurrency-send-guard.mjs'
 import { runSessionConcurrencyFinalEdgesTests } from './test-session-concurrency-final-edges.mjs'
 import { runCommandCodeQuotaDisplayTests } from './test-commandcode-quota-display.mjs'
-import { runQuestionFrequencyTests } from './test-question-frequency.mjs'
-import { runQuestionFrequencySessionTests } from './test-question-frequency-session.mjs'
 import { runSubagentActiveVisibilityTests } from './test-subagent-active-visibility.mjs'
 import { runSubagentParentOwnershipTests } from './test-subagent-parent-ownership.mjs'
 import { runSessionSyncRaceTests } from './test-session-sync-race.mjs'
@@ -50,7 +48,7 @@ for (const script of [
   'test-native-session-export-alias', 'test-schedule-safety', 'test-subagent-terminal-races',
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
   'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
-  'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-v3-tool-tiles'
+  'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-v3-tool-tiles', 'test-sidebar-content-search'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)
@@ -250,8 +248,6 @@ const { runFileResourceTests } = await import('./test-file-resource.mjs')
 const { runWorkbenchTests } = await import('./test-workbench.mjs')
 const { runSubagentViewTests } = await import('./test-subagent-view.mjs')
 const { runSubagentUsageTests } = await import('./test-subagent-usage.mjs')
-const { runToolLayoutTests } = await import('./test-tool-layout.mjs')
-const { runShortTitleTests } = await import('./test-short-title.mjs')
 const { runBrowserVisibilityTests } = await import('./test-browser-visibility.mjs')
 const { runBrowserNavigationTests } = await import('./test-browser-navigation.mjs')
 const { runResponseDetailTests } = await import('./test-response-detail.mjs')
@@ -301,27 +297,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/short-title.ts'],
-    outfile: 'out/test/short-title.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/tool-layout.ts'],
-    outfile: 'out/test/tool-layout.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -389,7 +364,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
-const { runStreamWidthTests } = await import('./test-stream-width.mjs')
 const { runQuestionTests } = await import('./test-question.mjs')
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -403,7 +377,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 const { runTodoHistoryTests } = await import('./test-todo-history.mjs')
-const { runWorkModeTests } = await import('./test-work-mode.mjs')
 const { runRepeatGuardTests } = await import('./test-repeat-guard.mjs')
 
 const taskPlan = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -834,28 +807,6 @@ const commandRegistry = await import('../node_modules/esbuild/lib/main.js').then
   }).then(() => import('../out/test/command-registry.mjs'))
 )
 
-const subagentCommand = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/subagent-command.ts'],
-    outfile: 'out/test/subagent-command.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/subagent-command.mjs'))
-)
-
-const toolOrigin = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/tool-origin.ts'],
-    outfile: 'out/test/tool-origin.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/tool-origin.mjs'))
-)
-
 const modelCapabilities = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/model-capabilities.ts'],
@@ -922,18 +873,6 @@ const atQuery = await import('../node_modules/esbuild/lib/main.js').then(({ buil
   }).then(() => import('../out/test/at-query.mjs'))
 )
 const { runAtQueryTests } = await import('./test-at-query.mjs')
-
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/rail-order.ts'],
-    outfile: 'out/test/rail-order.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-const { runRailOrderTests } = await import('./test-rail-order.mjs')
 
 const fileListing = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1080,8 +1019,6 @@ await runSessionStatsIsolationTests(ok)
 await runSessionConcurrencySendGuardTests(ok)
 await runSessionConcurrencyFinalEdgesTests(ok)
 await runCommandCodeQuotaDisplayTests(ok)
-await runQuestionFrequencyTests(ok)
-await runQuestionFrequencySessionTests(ok)
 await runSubagentActiveVisibilityTests(ok)
 await runSubagentParentOwnershipTests(ok)
 
@@ -1386,7 +1323,6 @@ await runSubagentViewTests(ok)
 await runSubagentUsageTests(ok)
 
 
-await runToolLayoutTests(ok)
 await runKeepImagesTests(ok)
 await runQueueImageTests(ok)
 await runSameMessagesTests(ok)
@@ -1394,7 +1330,6 @@ await runAttachmentTests(ok)
 await runSessionImageTests(ok)
 
 
-await runShortTitleTests(ok)
 
 
 await runResponseDetailTests(ok)
@@ -1406,32 +1341,10 @@ await runSnapshotTests(ok)
 await runChromeProfileTests(ok)
 
 
-await runStreamWidthTests(ok)
 
 
 await runQuestionTests(ok)
 
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/work-mode.ts'],
-    outfile: 'out/test/work-mode.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  })
-)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/work-mode-service.ts'],
-    outfile: 'out/test/work-mode-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  })
-)
-await runWorkModeTests(ok)
 await runRepeatGuardTests(ok)
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -1455,7 +1368,7 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 const { runSessionChainTests } = await import('./test-session-chain.mjs')
-await runSessionChainTests(ok, await import('../out/test/work-mode-service.mjs'))
+await runSessionChainTests(ok)
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/session-history.ts'],
@@ -1486,18 +1399,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runQuotaResumeTests } = await import('./test-quota-resume.mjs')
 await runQuotaResumeTests(ok)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({ entryPoints: ['src/shared/quota-failover.ts'], outfile: 'out/test/quota-failover.mjs',
-    bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
-)
-const { runQuotaFailoverTests } = await import('./test-quota-failover.mjs')
-await runQuotaFailoverTests(ok)
-await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({ entryPoints: ['src/shared/keep-running.ts'], outfile: 'out/test/keep-running.mjs',
-    bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
-)
-const { runKeepRunningTests } = await import('./test-keep-running.mjs')
-await runKeepRunningTests(ok)
 await runTodoHistoryTests(ok)
 await runTaskPlanTests(ok)
 await runTaskPlanStoreTests(ok)
@@ -1600,11 +1501,6 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 }
 
 {
-  const { runRailViewTests } = await import('./test-rail-view.mjs')
-  await runRailViewTests(ok)
-}
-
-{
   const { runSessionMoveTests } = await import('./test-session-move.mjs')
   await runSessionMoveTests(ok)
 }
@@ -1622,16 +1518,6 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 {
   const { runCommandRegistryTests } = await import('./test-command-registry.mjs')
   runCommandRegistryTests(ok, commandRegistry)
-}
-
-{
-  const { runSubagentCommandTests } = await import('./test-subagent-command.mjs')
-  runSubagentCommandTests(ok, subagentCommand.parseSubagentCommand)
-}
-
-{
-  const { runToolOriginTests } = await import('./test-tool-origin.mjs')
-  runToolOriginTests(ok, toolOrigin)
 }
 
 {
@@ -1671,7 +1557,6 @@ runAtQueryTests(ok, atQuery)
   runQuotaToneTests(ok, quotaTone)
 }
 runSlashQueryTests(ok, slashQuery)
-await runRailOrderTests(ok)
 runCapabilityRequestTests(ok, capabilityRequest)
 await runFileListingTests(ok, fileListing)
 
@@ -1767,19 +1652,6 @@ const quotaMini = await import('../node_modules/esbuild/lib/main.js').then(({ bu
 )
 const { runQuotaMiniTests } = await import('./test-quota-mini.mjs')
 await runQuotaMiniTests(ok, quotaMini)
-
-const quotaRefresh = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/quota-refresh.ts'],
-    outfile: 'out/test/quota-refresh.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/quota-refresh.mjs'))
-)
-const { runQuotaRefreshTests } = await import('./test-quota-refresh.mjs')
-await runQuotaRefreshTests(ok, quotaRefresh)
 
 const runProgress = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -2132,11 +2004,6 @@ await runGitRepoTests(ok)
   )
   const skillHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'skill', '--help'], { encoding: 'utf8' })
   ok(skillHelp.status === 0 && /save/.test(skillHelp.stdout ?? '') && /replace/.test(skillHelp.stdout ?? ''), 'yan CLI：技能帮助说明 save 与覆盖规则')
-  const researchHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'research', '--help'], { encoding: 'utf8' })
-  ok(
-    researchHelp.status === 0 && /read/.test(researchHelp.stdout ?? '') && !/skill:/.test(researchHelp.stdout ?? ''),
-    'yan CLI：资料引用帮助给出按版本读取，且不指向未随会话加载的技能'
-  )
 
   await rm(binDir, { recursive: true, force: true })
 }
@@ -2486,41 +2353,7 @@ const outlineTurns = await import('esbuild').then(({ build }) =>
 const { runOutlineTurnTests } = await import('./test-outline-turns.mjs')
 runOutlineTurnTests(ok, outlineTurns)
 
-const agentProfileShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/agent-profile.ts'],
-    outfile: 'out/test/agent-profile.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/agent-profile.mjs'))
-)
-const agentProfileStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/agent-profile-store.ts'],
-    outfile: 'out/test/agent-profile-store.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/agent-profile-store.mjs'))
-)
-const { runAgentProfileTests, runAgentProfileStoreTests, runAgentProfileExtensionTests } = await import('./test-agent-profile.mjs')
-await runAgentProfileTests(ok, agentProfileShared)
 const fsPromises = await import('node:fs/promises')
-await runAgentProfileStoreTests(ok, agentProfileStore, {
-  mkdtemp: fsPromises.mkdtemp,
-  readFile: fsPromises.readFile,
-  rm: fsPromises.rm
-})
-const agentProfileExtension = await import('../resources/pi-extensions/profile.js')
-await runAgentProfileExtensionTests(ok, agentProfileExtension, {
-  mkdtemp: fsPromises.mkdtemp,
-  writeFile: fsPromises.writeFile,
-  mkdir: fsPromises.mkdir,
-  rm: fsPromises.rm
-}, agentProfileShared)
 
 const pdfText = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -2534,19 +2367,6 @@ const pdfText = await import('../node_modules/esbuild/lib/main.js').then(({ buil
 )
 const { runPdfTextTests } = await import('./test-pdf-text.mjs')
 runPdfTextTests(ok, pdfText)
-
-const activityFlow = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/activity-flow.ts'],
-    outfile: 'out/test/activity-flow.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/activity-flow.mjs'))
-)
-const { runActivityFlowTests } = await import('./test-activity-flow.mjs')
-await runActivityFlowTests(ok, activityFlow)
 
 const userSkillShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -2702,9 +2522,6 @@ await runBrowserSelectTests(ok, browserInputMod, browserRegistryMod)
 const browserNetworkMod = await buildNeutral('src/main/browser/NetworkTracker.ts', 'out/test/browser-network.mjs')
 const { runBrowserNetworkTests } = await import('./test-browser-network.mjs')
 await runBrowserNetworkTests(ok, browserNetworkMod)
-
-const { runAssistantLinkTests } = await import('./test-assistant-link.mjs')
-await runAssistantLinkTests(ok)
 
 const { runSessionReadEquivalenceTests } = await import('./test-session-read-equivalence.mjs')
 await runSessionReadEquivalenceTests(ok)

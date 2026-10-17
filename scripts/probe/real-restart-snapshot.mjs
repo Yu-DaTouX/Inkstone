@@ -115,12 +115,8 @@ const layout = {
   rightPanelOpen: desktop.rightPanelOpen ?? null,
   alwaysOnTop: desktop.alwaysOnTop ?? null,
   uiScale: desktop.uiScale ?? null,
-  railWidth: desktop.railWidth ?? null,
-  panelWidth: desktop.panelWidth ?? null,
-  browserHeight: desktop.browserHeight ?? null,
   recentCwds: Array.isArray(desktop.recentCwds) ? desktop.recentCwds.length : null,
   projects: Array.isArray(desktop.projects) ? desktop.projects.length : (desktop.projects ? Object.keys(desktop.projects).length : null),
-  projectOrder: Array.isArray(desktop.projectOrder) ? desktop.projectOrder.length : null,
   hash: hash(desktop)
 }
 const sessionLayout = readJson(join(YAN_DIR, 'session-layout.json'))
@@ -136,7 +132,6 @@ for (const n of ctxFiles) {
 }
 const subagents = listDir(join(YAN_DIR, 'subagents'))
 const knowledge = listDir(join(YAN_DIR, 'project-knowledge'))
-const workModes = readJson(join(YAN_DIR, 'work-modes.json'))
 const autoContinue = readJson(join(YAN_DIR, 'auto-continue.json'))
 const handoffs = readJson(join(YAN_DIR, 'handoffs.json'))
 const exitSnapshot = readJson(join(YAN_DIR, 'exit-snapshot.json'))
@@ -168,7 +163,6 @@ const snapshot = {
     subagents: subagents.length,
     knowledgeProjects: knowledge.length,
     ops: opsDir.length,
-    workModes: Array.isArray(workModes) ? workModes.length : (workModes?.entries ? Object.keys(workModes.entries).length : 0),
     autoContinueEntries: Array.isArray(autoContinue?.entries) ? autoContinue.entries.length : (autoContinue?.entries ? Object.keys(autoContinue.entries).length : 0),
     handoffs: Array.isArray(handoffs) ? handoffs.length : (handoffs?.entries ? Object.keys(handoffs.entries).length : 0)
   },
@@ -200,7 +194,7 @@ if (flag('--diff')) {
   const keys = [...new Set([...Object.keys(fa), ...Object.keys(fb)])]
   const stable = new Set([
     'layout.theme', 'layout.cwd', 'layout.rightPanelOpen', 'layout.alwaysOnTop', 'layout.uiScale',
-    'layout.railWidth', 'layout.panelWidth', 'layout.browserHeight', 'layout.hash',
+    'layout.hash',
     'goals.count', 'goals.hash', 'credentials.auth', 'credentials.models', 'credentials.settings',
     'stableFingerprint', 'sessions.count', 'sessions.projectDirs', 'titles', 'manualTitles',
     'contextState.total'
@@ -252,7 +246,7 @@ console.log(`\n--- 回合计时 ---`)
 console.log(`文件 ${snapshot.turnTiming.files}，条目 ${snapshot.turnTiming.entries}，终态 ${JSON.stringify(snapshot.turnTiming.byTerminal)}`)
 console.log(`\n--- 界面状态 ---`)
 console.log(`主题 ${snapshot.layout.theme}  cwd ${snapshot.layout.cwd}`)
-console.log(`右面板开 ${snapshot.layout.rightPanelOpen}  左栏宽 ${snapshot.layout.railWidth}  面板宽 ${snapshot.layout.panelWidth}  缩放 ${snapshot.layout.uiScale}  置顶 ${snapshot.layout.alwaysOnTop}`)
+console.log(`右面板开 ${snapshot.layout.rightPanelOpen}  缩放 ${snapshot.layout.uiScale}  置顶 ${snapshot.layout.alwaysOnTop}`)
 console.log(`项目 ${snapshot.layout.projects}  最近 cwd ${snapshot.layout.recentCwds}  desktop hash ${snapshot.layout.hash}`)
 console.log(`\n--- 其它 ---`)
 console.log(`上下文状态 ${snapshot.contextState.total}（${JSON.stringify(snapshot.contextState.bySuffix)}）`)

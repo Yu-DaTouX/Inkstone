@@ -3,7 +3,6 @@ import { getSettings } from './settings'
 import { CapabilityCommandError } from './capability-server'
 import type { SubagentCommandHost } from './agent'
 import type { SubagentRun } from '../shared/ipc'
-import type { AgentProfileState } from '../shared/agent-profile'
 
 const SUBAGENT_SYSTEM_PROMPT = [
   'You are a subagent working on one focused task inside a larger project.',
@@ -26,7 +25,6 @@ export interface SubagentServiceDeps {
   onRemove(id: string): void
   onFinished?(run: SubagentRun): void
   onEvent?(runId: string, evt: Record<string, unknown>): void
-  resolveAgentProfile(id: string): Promise<AgentProfileState>
 }
 
 export class SubagentService {
