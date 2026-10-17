@@ -347,6 +347,7 @@ export interface Store {
   syncPageStorage: () => Promise<ChromeSyncReport>
   patchProfile: (p: Partial<UserProfile>) => Promise<void>
   patchSettings: (p: Partial<AppSettings>) => Promise<void>
+  removeGuardAllowRoot: (path: string) => Promise<void>
   setWorkMode: (mode: WorkMode) => Promise<void>
   answerApproval: (id: string, choice: ApprovalChoice) => Promise<void>
   gitInstall: GitInstallProgress
@@ -2616,6 +2617,14 @@ export const useStore = create<Store>((rawSet, get) => {
 
   patchSettings: async (p) => {
     set({ settings: await persistSettingsPatch(p) })
+  },
+
+  removeGuardAllowRoot: async (path) => {
+    try {
+      set({ settings: await window.yan.removeGuardAllowRoot(path) })
+    } catch (error) {
+      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : String(error)) })
+    }
   },
 
   installGit: async () => {

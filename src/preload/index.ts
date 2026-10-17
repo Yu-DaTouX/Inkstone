@@ -475,6 +475,7 @@ const api: YanBridge = {
 
   getSettings: () => invoke<AppSettings>('yan:getSettings'),
   patchSettings: (patch) => invoke<AppSettings>('yan:patchSettings', patch),
+  removeGuardAllowRoot: (path) => invoke<AppSettings>('yan:removeGuardAllowRoot', path),
   changeProjectDirectory: (request) => invoke<import('../shared/ipc').ProjectDirectoryResult>('yan:project:changeDirectory', request),
   pickCwd: () => invoke<string | null>('yan:pickCwd'),
   setCwd: (cwd) => invoke<Ok>('yan:setCwd', cwd),

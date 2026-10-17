@@ -4,7 +4,7 @@ import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '
 import { useStore } from '../../../state/store'
 import { Button, Dialog, Modal, ModalOverlay, Switch } from '../../../ui'
 import { generalText } from './general-text'
-import { permissionNeedsConfirm, removeAllowRoot } from './general-model'
+import { permissionNeedsConfirm } from './general-model'
 import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
 
 export interface AllowRootsListProps {
@@ -43,6 +43,7 @@ export function SecuritySettings(): ReactElement {
   const text = generalText(lang)
   const settings = useStore((s) => s.settings)
   const patchSettings = useStore((s) => s.patchSettings)
+  const removeGuardAllowRoot = useStore((s) => s.removeGuardAllowRoot)
   const mode = normalizePermissionMode(settings?.permissionMode)
   const outside = settings?.guardOutsideWrites === true
   const roots = settings?.guardAllowRoots ?? []
@@ -102,7 +103,7 @@ export function SecuritySettings(): ReactElement {
             roots={roots}
             emptyText={text.securityAllowRootsEmpty}
             removeText={text.securityAllowRootsRemove}
-            onRemove={(path) => void patchSettings({ guardAllowRoots: removeAllowRoot(roots, path) })}
+            onRemove={(path) => void removeGuardAllowRoot(path)}
           />
         </SettingsRow>
       </SettingsGroup>

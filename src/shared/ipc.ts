@@ -1818,6 +1818,7 @@ export interface YanBridge {
 
   getSettings(): Promise<AppSettings>
   patchSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  removeGuardAllowRoot(path: string): Promise<AppSettings>
   changeProjectDirectory(request: ProjectDirectoryChange): Promise<ProjectDirectoryResult>
   pickCwd(): Promise<string | null>
   setCwd(cwd: string): Promise<{ ok: boolean; cwd?: string; error?: string }>
