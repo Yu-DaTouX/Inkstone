@@ -199,6 +199,21 @@ export default function nativeSessionBridge(pi) {
     }
   })
 
+  pi.on('model_select', (event, ctx) => {
+    try {
+      ctx.ui.notify(
+        buildReceipt({
+          id: `model-${randomUUID()}`,
+          op: 'model_select',
+          ok: true,
+          result: { provider: String(event?.model?.provider ?? ''), id: String(event?.model?.id ?? ''), source: String(event?.source ?? '') }
+        }),
+        'info'
+      )
+    } catch {
+    }
+  })
+
   async function dispatch(op, args, ctx) {
     switch (op) {
       case 'navigate_tree': {

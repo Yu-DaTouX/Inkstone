@@ -153,7 +153,8 @@ export class NativeSessionRuntime {
 
   constructor(
     private readonly transport: NativeSessionTransport,
-    private readonly defaultTimeoutMs: number = DEFAULT_TIMEOUT_MS
+    private readonly defaultTimeoutMs: number = DEFAULT_TIMEOUT_MS,
+    private readonly onSignal?: (receipt: NativeReceipt) => void
   ) {}
 
   get isReady(): boolean {
@@ -195,6 +196,8 @@ export class NativeSessionRuntime {
         const code = receipt.error?.code === 'busy' ? 'busy' : 'extension_error'
         pending.reject(new NativeBridgeError(receipt.error?.message ?? `原生操作失败：${pending.op}`, code))
       }
+    } else {
+      this.onSignal?.(receipt)
     }
     return true
   }

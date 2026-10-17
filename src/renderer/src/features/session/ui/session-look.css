@@ -68,6 +68,10 @@
   .v3-qa-item + .v3-qa-item { margin-top: var(--s-8); }
   .v3-qa-q summary { color: var(--fg2); cursor: pointer; }
   .v3-qa-a { margin-top: var(--s-4); color: var(--fg); }
+  .v3-note { padding: var(--s-8) var(--s-12); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--sunken); }
+  .v3-note-head { color: var(--fg3); font-size: var(--t-meta); }
+  details.v3-note > .v3-note-head { cursor: pointer; }
+  details.v3-note:not([open]) > .v3-note-body { display: none; }
   .v3-img-thumb { max-height: 220px; max-width: 100%; border-radius: var(--r-sm); border: 1px solid var(--line); }
   .v3-img-missing { display: inline-flex; align-items: center; gap: var(--s-4); padding: var(--s-4) var(--s-8); border: 1px dashed var(--line2); border-radius: var(--r-sm); color: var(--fg3); font-size: var(--t-meta); }
 
