@@ -1902,6 +1902,7 @@ export interface YanBridge {
   office: {
     preview(path: string, cwd?: string): Promise<import('./office').OfficeDocumentView>
   }
+  collab: import('./collab').CollabBridge
   peer: {
     hostPending(): Promise<import('./peer-protocol').PeerApprovalRequest[]>
     hostDecide(decision: import('./peer-protocol').PeerApprovalDecision): Promise<boolean>

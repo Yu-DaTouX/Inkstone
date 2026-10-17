@@ -6,6 +6,7 @@ import { IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../
 import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
 import { workbenchText } from '../features/workbench/workbench-text'
+import { collabText } from '../features/collab/collab-text'
 import { IconTip } from './IconTip'
 import { v3Text } from './v3-text'
 
@@ -49,9 +50,10 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
   const title = useMemo(() => {
     if (route === 'settings') return text.settingsTitle
     if (route === 'runs') return text.runs
-    if (route === 'review') return text.review
     if (route === 'usage') return t('usage.title')
     if (route === 'schedule') return t('sched.title')
+    if (route === 'review') return text.review
+    if (route === 'collab') return collabText(lang).nav
     const id = peekedSessionId ?? session?.conversationId ?? session?.sessionId
     if (id && manualTitles[id]) return manualTitles[id]
     if (id && titles[id]) return titles[id]

@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Activity, Archive, CalendarClock, FileDiff, PanelLeftClose, Settings, SquarePen } from 'lucide-react'
+import { Activity, Archive, CalendarClock, FileDiff, PanelLeftClose, Settings, SquarePen, Users } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
@@ -14,6 +14,7 @@ import { ArchivedView } from './ArchivedView'
 import { ProjectHeader } from './ProjectHeader'
 import { SidebarRow } from './SidebarRow'
 import { sidebarText } from './sidebar-text'
+import { collabText } from '../collab/collab-text'
 import './Sidebar.css'
 
 const GROUP_LIMIT = 5
@@ -33,10 +34,11 @@ interface Props {
   onRuns?: () => void
   onSchedule?: () => void
   onReview?: () => void
+  onCollab?: () => void
   onSettings?: () => void
 }
 
-export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onReview, onSettings, preview, onPin, onPointerLeave }: Props): ReactElement {
+export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onReview, onCollab, onSettings, preview, onPin, onPointerLeave }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -209,6 +211,12 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
           <button type="button" className="v3-entry" onClick={onReview} aria-current={route === 'review' ? 'true' : undefined} data-testid="v3-review-entry">
             <FileDiff size={16} aria-hidden />
             <span className="v3-entry-label">{text.review}</span>
+          </button>
+        ) : null}
+        {onCollab ? (
+          <button type="button" className="v3-entry" onClick={onCollab} aria-current={route === 'collab' ? 'true' : undefined} data-testid="v3-collab-entry">
+            <Users size={16} aria-hidden />
+            <span className="v3-entry-label">{collabText(lang).nav}</span>
           </button>
         ) : null}
         {onRuns ? (

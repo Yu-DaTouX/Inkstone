@@ -20,6 +20,7 @@ import type { RemoteImageInput } from '../shared/remote-protocol'
 import type { RemoteDeviceStore } from './remote-devices'
 import { PEER_CONNECTION_HEADER, PEER_OPERATIONS, type PeerOperation, type PeerProjectRef } from '../shared/peer-protocol'
 import type { PeerGrantRegistry } from './peer-grants'
+import type { PeerCollabHost, PeerCollabReply } from './collab/host'
 
 export const REMOTE_API_VERSION = REMOTE_PROTOCOL_VERSION
 
@@ -66,6 +67,7 @@ export interface PeerHostHandlers {
   projectOfRun(runId: string): Promise<string | null>
   exportSession(sessionId: string): Promise<RemoteOperationResult>
   startSession(projectId: string, text: string): Promise<RemoteOperationResult>
+  collab?: PeerCollabHost
 }
 
 export interface RemoteServerOptions {
@@ -692,7 +694,7 @@ export class RemoteServer {
       const operations = Array.isArray(body.operations)
         ? PEER_OPERATIONS.filter((op) => (body.operations as unknown[]).includes(op))
         : []
-      if (!operations.length) return writeError(res, 400, '需要至少申请一种操作：read / transfer / send')
+      if (!operations.length) return writeError(res, 400, `需要至少申请一种操作：${PEER_OPERATIONS.join(' / ')}`)
       const note = typeof body.note === 'string' ? body.note : ''
       const grant = await grants.request(device, operations, note, await handlers.projects())
       if (!grant) return writeError(res, 403, '所有者拒绝了这次连接，或没有及时处理', 'peer_denied')
@@ -754,7 +756,8 @@ export class RemoteServer {
       }
       if (req.method === 'GET' && parts.length === 4 && parts[2] === 'artifacts') {
         const viewing = grants.check(connectionId, device.id, 'read', projectId)
-        const allowed = viewing.ok ? viewing : grants.check(connectionId, device.id, 'transfer', projectId)
+        const copying = viewing.ok ? viewing : grants.check(connectionId, device.id, 'transfer', projectId)
+        const allowed = copying.ok ? copying : grants.check(connectionId, device.id, 'pull', projectId)
         if (!allowed.ok) return writeError(res, allowed.status, allowed.error, allowed.code)
         await this.artifact(res, sessionId, decodeURIComponent(parts[3]))
         return
@@ -801,7 +804,37 @@ export class RemoteServer {
       return
     }
 
+    if (parts[0] === 'collab' && handlers.collab) {
+      const reply = await handlers.collab.handle(req, parts.slice(1), {
+        device,
+        allow: (operations, projectId) => {
+          let denied: RemoteOperationResult | null = null
+          for (const operation of operations) {
+            const result = grants.check(connectionId, device.id, operation, projectId)
+            if (result.ok) return null
+            if (!denied || result.code === 'peer_project_denied') denied = { ok: false, status: result.status, error: result.error, code: result.code }
+          }
+          return denied ?? { ok: false, status: 403, error: '这个操作不在本次连接的授权范围内' }
+        }
+      })
+      if (reply) return this.writeCollab(res, reply)
+    }
+
     writeError(res, 404, '远程 API 路径不存在')
+  }
+
+  private writeCollab(res: ServerResponse, reply: PeerCollabReply): void {
+    if (reply.kind === 'json') return this.writeOperation(res, reply.result)
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'content-length': reply.bytes,
+      'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(reply.filename)}`,
+      'cache-control': 'no-store'
+    })
+    const stream = createReadStream(reply.path)
+    stream.on('error', () => res.destroy())
+    res.on('close', () => reply.done())
+    stream.pipe(res)
   }
 
   private async pair(req: IncomingMessage, res: ServerResponse): Promise<void> {

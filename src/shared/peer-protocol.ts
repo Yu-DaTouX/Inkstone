@@ -1,5 +1,5 @@
-export type PeerOperation = 'read' | 'transfer' | 'send'
-export const PEER_OPERATIONS: PeerOperation[] = ['read', 'transfer', 'send']
+export type PeerOperation = 'read' | 'transfer' | 'send' | 'pull' | 'push'
+export const PEER_OPERATIONS: PeerOperation[] = ['read', 'transfer', 'send', 'pull', 'push']
 
 export const PEER_APPROVAL_TIMEOUT_MS = 2 * 60_000
 export const PEER_ACTIVATION_TIMEOUT_MS = 30_000
