@@ -1,4 +1,4 @@
-import type { SplitLayout, SplitSessionRef } from '../state/split-view'
+import { isAuxTile, type SplitLayout, type SplitSessionRef } from '../state/split-view'
 
 export const SUBAGENT_TILE_PREFIX = 'subagent:'
 
@@ -12,7 +12,7 @@ export function subagentRunIdOf(ref: SplitSessionRef | null | undefined): string
 }
 
 export function isSessionTile(ref: SplitSessionRef | null | undefined): boolean {
-  if (!ref || subagentRunIdOf(ref)) return false
+  if (!ref || isAuxTile(ref)) return false
   return !!(ref.sessionId || ref.path)
 }
 

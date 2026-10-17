@@ -1,9 +1,16 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
-import { useT } from '../i18n'
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Eye, FileDiff, FolderOpen, GitBranch, Globe, GripVertical, PanelRight, ScrollText, Terminal, type LucideIcon } from 'lucide-react'
+import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { createTurnProjector, groupIntoTurns, type Turn } from '../../../shared/turns'
 import type { UIMessage } from '../../../shared/ipc'
-import { neighborOf, sameSplitSession, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
+import { nearestSessionOf, sameSplitSession, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
+import { closeToolTile, dockToolTile, fitPaneTiles, toolTabOf, useTileCapacity, watchChatWidth } from '../features/workbench/tool-tiles'
+import { trackTileDrag } from '../features/workbench/tile-drag'
+import { toolTileText } from '../features/workbench/tool-tile-text'
+import { workbenchText } from '../features/workbench/workbench-text'
+import { ToolTileBody } from '../features/workbench/ToolTileBody'
+import type { WorkbenchTabId } from '../features/workbench/types'
 import { newestMessages, shownMessages } from '../state/split-snapshots'
 import { SessionView } from '../features/session/SessionView'
 import { Composer } from '../features/composer/Composer'
@@ -28,10 +35,11 @@ export interface SideBySideProps {
 }
 
 export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySideProps): JSX.Element {
-  const layout = collapsedPanes(split, narrow)
+  const capacity = useTileCapacity()
+  const layout = fitPaneTiles(collapsedPanes(split, narrow), capacity)
   const weights = useSplitView((s) => s.weights)
 
-  if (!layout) {
+  if (!layout || !split) {
     return (
       <>
         <div className="v3-conv"><SessionView /></div>
@@ -45,22 +53,45 @@ export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySide
     const current = view.split
     if (!current) return
     if (index === current.live) {
-      const neighbor = current.tiles[neighborOf(current, index)]
+      const neighbor = current.tiles[nearestSessionOf(current.tiles, index)]
       if (neighbor && isSessionTile(neighbor) && neighbor.path) void useStore.getState().switchSession(neighbor.path)
     }
     view.remove(index)
   }
 
+  const movable = !narrow && layout.tiles.length > 1
+  const liveTarget = layout.tiles[layout.live]
+  const shown = layout.tiles
+  const slotAt = (position: number): number => {
+    if (position <= 0) return split.tiles.indexOf(shown[0])
+    if (position < shown.length) return split.tiles.indexOf(shown[position])
+    return split.tiles.indexOf(shown[shown.length - 1]) + 1
+  }
+
   return (
-    <div className="v3-split" data-testid="v3-split">
-      {layout.tiles.map((target, index) => {
+    <div className="v3-split" data-testid="v3-split" ref={watchChatWidth}>
+      {shown.map((target, position) => {
         const runId = subagentRunIdOf(target)
-        const live = index === layout.live
+        const tool = toolTabOf(target)
+        const live = position === layout.live
+        const index = split.tiles.indexOf(target)
         return (
           <Fragment key={splitTileKey(target) || `pane-${index}`}>
-            {index > 0 ? <SplitResizer left={layout.tiles[index - 1]} right={target} /> : null}
-            <PaneFrame target={target} live={live} weight={weights[splitTileKey(target)] ?? 1} onClose={() => closePane(index)}>
-              {runId ? (
+            {position > 0 ? <SplitResizer left={shown[position - 1]} right={target} /> : null}
+            <PaneFrame
+              target={target}
+              owner={liveTarget}
+              index={index}
+              leftSlot={slotAt(position - 1)}
+              rightSlot={slotAt(position + 2)}
+              movable={movable}
+              live={live}
+              weight={weights[splitTileKey(target)] ?? 1}
+              onClose={() => (tool ? closeToolTile(tool) : closePane(index))}
+            >
+              {tool ? (
+                <ToolTileBody tab={tool} />
+              ) : runId ? (
                 <AgentPane runId={runId} />
               ) : live ? (
                 <>
@@ -78,34 +109,112 @@ export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySide
   )
 })
 
+const TOOL_ICONS: Partial<Record<WorkbenchTabId, LucideIcon>> = {
+  changes: FileDiff,
+  terminal: Terminal,
+  files: FolderOpen,
+  browser: Globe,
+  preview: Eye,
+  logs: ScrollText,
+  branch: GitBranch
+}
+
+function focusGrip(key: string): void {
+  requestAnimationFrame(() => {
+    const host = [...document.querySelectorAll<HTMLElement>('[data-tile-key]')].find((el) => el.dataset.tileKey === key)
+    host?.querySelector<HTMLElement>('[data-tile-grip]')?.focus()
+  })
+}
+
 function PaneFrame({
   target,
+  owner,
+  index,
+  leftSlot,
+  rightSlot,
+  movable,
   live,
   weight,
   onClose,
   children
 }: {
   target: SplitSessionRef
+  owner: SplitSessionRef
+  index: number
+  leftSlot: number
+  rightSlot: number
+  movable: boolean
   live: boolean
   weight: number
   onClose: () => void
   children: ReactNode
 }): JSX.Element {
   const t = useT()
-  const title = useSplitTitle(target)
+  const { lang } = useI18n()
+  const tool = toolTabOf(target)
+  const tileText = toolTileText(lang)
+  const toolName = tool ? workbenchText(lang).tabs[tool] : ''
+  const title = useSplitTitle(tool ? owner : target)
   const project = useSplitProject(target)
+  const key = splitTileKey(target)
+  const ToolIcon = tool ? TOOL_ICONS[tool] : undefined
+
+  const startDrag = (event: ReactPointerEvent<HTMLElement>): void => {
+    if ((event.target as HTMLElement).closest('[data-tile-action]')) return
+    trackTileDrag(event, { id: key, title: tool ? toolName : title || t('split.untitled') }, (at) => useSplitView.getState().move(index, at))
+  }
+
+  const moveByKey = (event: ReactKeyboardEvent): void => {
+    const to = event.key === 'ArrowLeft' ? leftSlot : event.key === 'ArrowRight' ? rightSlot : null
+    if (to === null) return
+    event.preventDefault()
+    useSplitView.getState().move(index, to)
+    focusGrip(key)
+  }
+
   return (
     <section
       className="v3-split-col"
       data-live={live ? '1' : '0'}
+      data-kind={tool ? 'tool' : subagentRunIdOf(target) ? 'agent' : 'session'}
       data-testid="v3-split-col"
       data-pane={target.sessionId ?? target.path ?? ''}
+      data-tile-key={key}
+      data-split-index={index}
+      data-tool-tile={tool ?? undefined}
+      tabIndex={tool ? -1 : undefined}
       style={{ flexGrow: weight, flexBasis: 0 }}
     >
-      <header className="v3-split-head" data-split-own>
-        <span className="v3-split-title" title={title}>{title || t('split.untitled')}</span>
-        {project ? <span className="v3-split-proj" title={project}>{project}</span> : null}
-        <IconButton size="sm" aria-label={t('split.close')} title={t('split.close')} onPress={onClose} data-testid="v3-split-close">
+      <header className="v3-split-head" data-split-own data-movable={movable ? '1' : undefined} onPointerDownCapture={movable ? startDrag : undefined}>
+        {movable ? (
+          <IconButton size="sm" className="v3-split-grip" aria-label={tileText.grip} title={tileText.grip} data-tile-grip data-testid="v3-split-grip" onKeyDown={moveByKey}>
+            <GripVertical size={14} />
+          </IconButton>
+        ) : null}
+        {ToolIcon ? <ToolIcon size={15} className="v3-split-icon" aria-hidden /> : null}
+        {tool ? (
+          <>
+            <span className="v3-split-title" title={toolName}>{toolName}</span>
+            {title ? <span className="v3-split-proj" title={tileText.owner(title)}>{tileText.owner(title)}</span> : null}
+            <IconButton size="sm" className="v3-split-action" aria-label={tileText.dock} title={tileText.dock} onPress={() => dockToolTile(tool)} data-tile-action data-testid="v3-tool-tile-dock">
+              <PanelRight size={14} />
+            </IconButton>
+          </>
+        ) : (
+          <>
+            <span className="v3-split-title" title={title}>{title || t('split.untitled')}</span>
+            {project ? <span className="v3-split-proj" title={project}>{project}</span> : null}
+          </>
+        )}
+        <IconButton
+          size="sm"
+          className="v3-split-action"
+          aria-label={tool ? tileText.close : t('split.close')}
+          title={tool ? tileText.close : t('split.close')}
+          onPress={onClose}
+          data-tile-action
+          data-testid="v3-split-close"
+        >
           <Icon name="close" size={14} />
         </IconButton>
       </header>

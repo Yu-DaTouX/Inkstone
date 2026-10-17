@@ -18,6 +18,10 @@ const withUid = (ref: SplitSessionRef, uid?: string): SplitSessionRef => ({ ...r
 
 const normPath = (p?: string): string => (p ?? '').replace(/[\\/]+/g, '/').toLowerCase()
 
+const AUX_TILE = /^(?:subagent|tool):/
+
+export const isAuxTile = (ref: SplitSessionRef | null | undefined): boolean => !!ref?.sessionId && AUX_TILE.test(ref.sessionId)
+
 export function sameSplitSession(a: SplitSessionRef | null | undefined, b: SplitSessionRef | null | undefined): boolean {
   if (!a || !b) return false
   if (a.sessionId && b.sessionId) return a.sessionId === b.sessionId
@@ -87,12 +91,32 @@ export function placeInSplit(split: SplitLayout | null, target: SplitSessionRef,
   return { tiles, live: live >= 0 ? live : 0 }
 }
 
+export function nearestSessionOf(tiles: readonly SplitSessionRef[], index: number): number {
+  for (let step = 1; step < tiles.length; step++) {
+    if (index + step < tiles.length && !isAuxTile(tiles[index + step])) return index + step
+    if (index - step >= 0 && !isAuxTile(tiles[index - step])) return index - step
+  }
+  return -1
+}
+
 export function removeSplitTile(split: SplitLayout, index: number): SplitLayout | null {
   if (index < 0 || index >= split.tiles.length) return split
   const tiles = split.tiles.filter((_, i) => i !== index)
-  if (tiles.length < 2) return null
-  const live = index < split.live ? split.live - 1 : Math.min(split.live, tiles.length - 1)
-  return { tiles, live }
+  if (tiles.length < 2 || tiles.every(isAuxTile)) return null
+  if (index !== split.live) return { tiles, live: index < split.live ? split.live - 1 : split.live }
+  const next = nearestSessionOf(split.tiles, index)
+  return { tiles, live: next > index ? next - 1 : next }
+}
+
+export function moveSplitTile(split: SplitLayout, from: number, to: number): SplitLayout {
+  if (from < 0 || from >= split.tiles.length) return split
+  let slot = Math.max(0, Math.min(to, split.tiles.length))
+  if (slot === from || slot === from + 1) return split
+  const tiles = split.tiles.slice()
+  const [tile] = tiles.splice(from, 1)
+  if (from < slot) slot -= 1
+  tiles.splice(slot, 0, tile)
+  return { tiles, live: tiles.indexOf(split.tiles[split.live]) }
 }
 
 export const splitTileKey = (tile: SplitSessionRef): string => tile.uid || tile.sessionId || tile.path || ''
@@ -104,6 +128,7 @@ interface SplitViewState {
   open(target: SplitSessionRef, current: SplitSessionRef | null, at?: number): void
   sync(displayed: SplitSessionRef | null): void
   remove(index: number): void
+  move(from: number, to: number): void
   close(): void
 }
 
@@ -131,6 +156,12 @@ export const useSplitView = create<SplitViewState>((set, get) => ({
     if (!split) return
     const next = removeSplitTile(split, index)
     set({ split: next, weights: keepWeights(get().weights, next) })
+  },
+  move: (from, to) => {
+    const split = get().split
+    if (!split) return
+    const next = moveSplitTile(split, from, to)
+    if (next !== split) set({ split: next })
   },
   close: () => set({ split: null, weights: {} })
 }))
