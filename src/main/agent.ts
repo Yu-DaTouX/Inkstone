@@ -1854,6 +1854,7 @@ export class AgentController extends EventEmitter {
           toolError: outcome.toolError,
           bytes: outcome.bytes,
           ...(outcome.resultFile ? { resultFile: outcome.resultFile } : {}),
+          ...(outcome.images ? { imageFiles: outcome.images } : {}),
           ...(this.mcpConfigError ? { configWarning: this.mcpConfigError } : {})
         }
       }

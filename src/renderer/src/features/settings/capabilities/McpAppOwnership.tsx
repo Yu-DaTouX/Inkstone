@@ -216,19 +216,21 @@ function OwnershipRow({
         </span>
         <span className="caps-tag">{`${labels.nativeName}: ${view.nativeName}`}</span>
         <span className="caps-spacer" />
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={disabled}
-          isPending={busy}
-          onPress={() => void run()}
-          data-testid="caps-mcp-app-switch"
-        >
-          {busy ? labels.previewing : view.managed ? labels.switchToPi : labels.switchToInkstone}
-        </Button>
+        {view.inkstoneOnly ? null : (
+          <Button
+            size="sm"
+            variant="secondary"
+            isDisabled={disabled}
+            isPending={busy}
+            onPress={() => void run()}
+            data-testid="caps-mcp-app-switch"
+          >
+            {busy ? labels.previewing : view.managed ? labels.switchToPi : labels.switchToInkstone}
+          </Button>
+        )}
       </ItemHead>
       {view.holders.length > 0 ? <Meta>{labels.holders(view.holders.length)}</Meta> : null}
-      {reason ? <Warn>{reason}</Warn> : null}
+      {reason ? (view.inkstoneOnly ? <Note>{reason}</Note> : <Warn>{reason}</Warn>) : null}
       <OwnershipOutcome outcome={outcome} labels={labels} />
     </Item>
   )

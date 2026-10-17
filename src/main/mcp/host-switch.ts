@@ -123,7 +123,7 @@ function pruneExpired(nowMs: number): void {
 
 export function mcpAppUnsupportedReason(config: McpServerConfig): string | undefined {
   if (config.id === WINDOWS_MCP_SERVER_ID) {
-    return 'windows-mcp 保留在砚的连接里（电脑操作需要排队与用户接管），首版不纳入托管'
+    return '电脑操作由砚直接连接（需要排队与用户接管），不需要切换托管。'
   }
   if (config.transport !== 'stdio' && config.transport !== 'http') {
     return `不支持的 transport：${String(config.transport)}`
@@ -841,11 +841,13 @@ export function mcpAppOwnershipView(input: {
       : managed && !record
         ? '缺少 appHost 回退记录，不能在未保存原条目的情况下交回 pi。'
         : undefined
+  const inkstoneOnly = config.id === WINDOWS_MCP_SERVER_ID
   return {
     serverId: config.id,
     title: config.title ?? config.id,
     ownedBy: managed ? 'inkstone' : 'pi',
     managed,
+    inkstoneOnly,
     nativeName: record?.name ?? config.id,
     scope: config.projectScope ? 'project' : 'global',
     projectScoped,

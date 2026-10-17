@@ -69,6 +69,7 @@ export interface McpAppOwnershipView {
   title: string
   ownedBy: 'pi' | 'inkstone'
   managed: boolean
+  inkstoneOnly?: boolean
   nativeName: string
   scope: 'global' | 'project'
   projectScoped: boolean
