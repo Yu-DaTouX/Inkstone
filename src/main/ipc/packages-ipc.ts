@@ -4,10 +4,12 @@ import { configurePackageContext, listPackages, runPackageAction } from '../pack
 import { trustStatus } from '../project-trust'
 import { resolvePi } from '../protocol'
 import { PI_AGENT_DIR } from '../paths'
-import { searchPiPackages, exportHermesPlugin, HERMES_PLUGIN_FILES, addCodegraphMcp } from '../plugin-market'
+import { searchPiPackages, exportHermesPlugin, HERMES_PLUGIN_FILES, addCodegraphMcp, codegraphStatus, indexCodegraphProject } from '../plugin-market'
 import { app, dialog } from 'electron'
 import { join, resolve } from 'node:path'
 import { access } from 'node:fs/promises'
+
+const ANTHROPIC_OVERRIDE_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']
 
 export interface PackagesIpcDeps {
   hasBusyCwd(cwd: string): boolean
@@ -45,6 +47,18 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
     try { return await addCodegraphMcp(PI_AGENT_DIR) }
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
   })
+
+  handle('yan:packages:codegraphStatus', async (cwd: unknown) =>
+    codegraphStatus(PI_AGENT_DIR, typeof cwd === 'string' ? cwd : ''))
+
+  handle('yan:packages:codegraphIndex', async (cwd: unknown) => {
+    if (typeof cwd !== 'string' || !cwd.trim()) return { ok: false, error: '没有打开的项目' }
+    try { return await indexCodegraphProject(cwd) }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+  })
+
+  handle('yan:packages:anthropicEnv', async () =>
+    ANTHROPIC_OVERRIDE_ENV.filter((name) => (process.env[name] ?? '').trim().length > 0))
 
   handle('yan:packages:list', async (cwd: string) => {
     try {

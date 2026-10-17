@@ -32,6 +32,7 @@ import {
   type ServiceState
 } from './models-model'
 import { SettingsReveal } from '../root/controls'
+import { ClaudeCodeBridgeRow } from './ClaudeCodeBridgeRow'
 import { CustomEndpointSettings } from './CustomEndpointSettings'
 import { useModelsText, type ModelsTextKey } from './models-text'
 import './models-settings.css'
@@ -470,6 +471,7 @@ export function ModelsSettings(): ReactElement {
             <p className="ms-note">{text('loginPanelNote')}</p>
             <div className="settings-rows ms-rows">
               {subscriptions.map(serviceRow)}
+              <ClaudeCodeBridgeRow />
             </div>
           </section>
 

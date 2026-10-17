@@ -7,6 +7,8 @@ import { useCapsText } from './text'
 import { PackagesPanel } from './PackagesPanel'
 import { Actions, Empty, Group, Item, ItemHead, Meta, Note, Panel, Warn } from './parts'
 import { MARKET_PAGE_SIZE, marketRange } from './model'
+import { OpenCodeProxyRow } from './OpenCodeProxyRow'
+import { CodegraphStatusRow } from './CodegraphStatusRow'
 
 export function MarketSection(): ReactElement {
   const t = useT()
@@ -89,38 +91,43 @@ export function MarketSection(): ReactElement {
 
       <Group title={t('market.ours')} desc={t('market.oursDesc')}>
         <div className="caps-list" data-testid="caps-market-inkstone">
-          {INKSTONE_PLUGINS.map((plugin) => (
-            <Item key={plugin.id} testId="caps-market-plugin">
-              <ItemHead>
-                <span className="caps-name">
-                  {plugin.name} · {plugin.version}
-                </span>
-                <span className="caps-spacer" />
-                <Actions>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    isDisabled={exporting === plugin.id}
-                    onPress={() => void download(plugin.id, plugin.action)}
-                    data-testid={plugin.action === 'mcp' ? `caps-market-${plugin.id}-mcp` : 'caps-market-download'}
-                  >
-                    {exporting === plugin.id ? t('pkg.working') : t(plugin.action === 'mcp' ? 'market.addMcp' : 'market.download')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onPress={() => void window.yan.browser.openExternal(plugin.url)}
-                    data-testid="caps-market-source"
-                  >
-                    {t('market.source')}
-                  </Button>
-                </Actions>
-              </ItemHead>
-              <Meta>{t(plugin.descriptionKey)}</Meta>
-              <Meta>{t(plugin.targetKey)}</Meta>
-              <Meta>{t(plugin.hintKey)}</Meta>
-            </Item>
-          ))}
+          {INKSTONE_PLUGINS.map((plugin) =>
+            plugin.action === 'proxy' ? (
+              <OpenCodeProxyRow key={plugin.id} />
+            ) : (
+              <Item key={plugin.id} testId="caps-market-plugin">
+                <ItemHead>
+                  <span className="caps-name">
+                    {plugin.name} · {plugin.version}
+                  </span>
+                  <span className="caps-spacer" />
+                  <Actions>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      isDisabled={exporting === plugin.id}
+                      onPress={() => void download(plugin.id, plugin.action)}
+                      data-testid={plugin.action === 'mcp' ? `caps-market-${plugin.id}-mcp` : 'caps-market-download'}
+                    >
+                      {exporting === plugin.id ? t('pkg.working') : t(plugin.action === 'mcp' ? 'market.addMcp' : 'market.download')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onPress={() => void window.yan.browser.openExternal(plugin.url)}
+                      data-testid="caps-market-source"
+                    >
+                      {t('market.source')}
+                    </Button>
+                  </Actions>
+                </ItemHead>
+                <Meta>{t(plugin.descriptionKey)}</Meta>
+                <Meta>{t(plugin.targetKey)}</Meta>
+                <Meta>{t(plugin.hintKey)}</Meta>
+                {plugin.id === 'codegraph' ? <CodegraphStatusRow refreshKey={note} /> : null}
+              </Item>
+            )
+          )}
         </div>
         {note ? (
           <p className="caps-result" role="status" data-testid="caps-market-note">

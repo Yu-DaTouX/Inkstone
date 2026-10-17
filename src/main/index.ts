@@ -60,6 +60,8 @@ import { loadMcpServers } from './mcp/config'
 import type { McpAppOwner } from '../shared/mcp-app-preview'
 import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { registerPackagesIpc } from './ipc/packages-ipc'
+import { registerOpenCodeProxyIpc } from './ipc/opencode-ipc'
+import { autoStartOpenCodeProxy, stopOpenCodeProxySync } from './opencode-proxy'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
 import { registerScheduleIpc } from './ipc/schedule-ipc'
 import { ScheduleService } from './schedule-service'
@@ -1030,6 +1032,7 @@ async function shutdown(): Promise<void> {
   shuttingDown = true
   scheduleService.stop()
   disposeKeepAwake()
+  stopOpenCodeProxySync()
   attention?.dispose()
   auxWindows?.dispose()
   panePopout?.dispose()
@@ -2614,6 +2617,7 @@ function registerIpc(): void {
   registerReviewIpc(ipc, { service: reviewService })
 
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
+  registerOpenCodeProxyIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
   registerSourcesIpc(ipc, { webSearchAvailability: async () => ac()?.webSearchAvailability() })
 
   registerCapabilitiesIpc(ipc, {
@@ -3071,6 +3075,7 @@ app.whenReady().then(async () => {
     })
   })
   registerIpc()
+  void autoStartOpenCodeProxy().catch((error) => reportMainError('opencode-proxy-autostart', error))
   trayLanguage = (await getSettings()).lang
   ensureTrayAssets()
   attention?.ensureTray()
