@@ -17,6 +17,7 @@ import { PermissionToggle } from './PermissionToggle'
 import { PlusMenu } from './PlusMenu'
 import { ProjectPicker } from './ProjectPicker'
 import { QueueEditor } from './QueueEditor'
+import { QuotaResumeBar } from './QuotaResumeBar'
 import { VoiceButton } from './VoiceButton'
 import { useCompletion } from './useCompletion'
 import {
@@ -366,6 +367,7 @@ export function Composer({ className }: { className?: string } = {}) {
       }}
       onDrop={onDrop}
     >
+      <QuotaResumeBar />
       <QueueEditor />
       <div className="composer">
         <ComposerBorder />
