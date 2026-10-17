@@ -210,6 +210,13 @@
     gap: var(--s-6);
   }
 
+  .caps-git-progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
   .caps-actions--start {
     justify-content: flex-start;
   }

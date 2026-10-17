@@ -745,6 +745,10 @@
     color: var(--fg2);
     overflow-wrap: anywhere;
   }
+  .ui-toast__action {
+    flex: none;
+    align-self: center;
+  }
 
   .ui-badge {
     display: inline-flex;
