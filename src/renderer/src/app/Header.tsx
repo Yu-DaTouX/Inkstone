@@ -69,7 +69,7 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
         {route === 'chat' ? (
           !sidebarOpen || narrow ? (
             <IconTip label={text.toggleSidebar}>
-              <IconButton aria-label={text.toggleSidebar} onPress={onToggleSidebar} onHoverStart={sidebarOpen ? undefined : () => { cancelPreview(); previewTimer.current = window.setTimeout(() => onPreviewSidebar?.(), 280) }} onHoverEnd={cancelPreview} data-testid="v3-rail-toggle">
+              <IconButton aria-label={text.toggleSidebar} onPress={onToggleSidebar} onHoverStart={sidebarOpen ? undefined : () => { cancelPreview(); previewTimer.current = window.setTimeout(() => onPreviewSidebar?.(), 280) }} onHoverEnd={cancelPreview} onPressStart={cancelPreview} data-testid="v3-rail-toggle">
                 <PanelLeft size={16} />
               </IconButton>
             </IconTip>
