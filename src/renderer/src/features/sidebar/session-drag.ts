@@ -7,6 +7,7 @@ export interface DropRect {
   top: number
   width: number
   height: number
+  slot?: number
 }
 
 export interface DropZone {
@@ -23,8 +24,9 @@ export function dropZonesFor(area: DropRect | null, cols: readonly DropRect[]): 
   const out: DropZone[] = []
   tiles.forEach((r, i) => {
     const half = r.width / 2
-    out.push({ at: i, side: 'left', rect: { left: r.left, top: r.top, width: half, height: r.height } })
-    out.push({ at: i + 1, side: 'right', rect: { left: r.left + half, top: r.top, width: r.width - half, height: r.height } })
+    const at = r.slot ?? i
+    out.push({ at, side: 'left', rect: { left: r.left, top: r.top, width: half, height: r.height } })
+    out.push({ at: at + 1, side: 'right', rect: { left: r.left + half, top: r.top, width: r.width - half, height: r.height } })
   })
   return out
 }
@@ -48,7 +50,10 @@ export function measureDropZones(): DropZone[] {
   if (document.querySelector('.v3-root[data-narrow="1"]')) return []
   const chat = document.querySelector<HTMLElement>('.v3-chat')
   if (!chat) return []
-  const cols = [...chat.querySelectorAll<HTMLElement>('[data-testid="v3-split-col"]')].map((el) => toRect(el.getBoundingClientRect()))
+  const cols = [...chat.querySelectorAll<HTMLElement>('[data-testid="v3-split-col"]')].map((el) => {
+    const slot = Number(el.dataset.splitIndex)
+    return Number.isInteger(slot) ? { ...toRect(el.getBoundingClientRect()), slot } : toRect(el.getBoundingClientRect())
+  })
   return dropZonesFor(toRect(chat.getBoundingClientRect()), cols)
 }
 

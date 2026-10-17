@@ -34,6 +34,7 @@ import { V3ErrorBoundary } from './ErrorBoundary'
 import { WorkbenchPanel } from '../features/workbench/WorkbenchPanel'
 import { WORKBENCH_PANES } from '../features/workbench/panes'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
+import { revealToolTile, useTiledTools } from '../features/workbench/tool-tiles'
 import { createPanePopoutClient } from '../features/workbench/pane-popout-client'
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
@@ -271,7 +272,8 @@ export default function ShellV3(): ReactElement {
     return layout ? sessionTiles(layout.tiles) : displayed ? [displayed] : []
   }, [split, narrow, displayed])
   useRunnerVisibility(visibleSessions)
-  const workspaceMode = panelMode === 'docked' && workspaceTab === 'overview' && visibleSessions.length <= 1 ? 'tiles' : panelMode
+  const toolTiled = useTiledTools().size > 0
+  const workspaceMode = panelMode === 'docked' && workspaceTab === 'overview' && visibleSessions.length <= 1 && !toolTiled ? 'tiles' : panelMode
 
   useEffect(() => {
     if (!settings) return
@@ -318,6 +320,7 @@ export default function ShellV3(): ReactElement {
 
   const openWorkspaceTab = (tab: WorkbenchTabId): Promise<boolean> => {
     useUiV3.getState().navigate({ name: 'chat' })
+    if (revealToolTile(tab)) return Promise.resolve(true)
     setPanelMounted(true)
     useUiV3.getState().setWorkspaceTab(tab)
     if (!WORKBENCH_ACTIVE_TABS.has(tab)) {
