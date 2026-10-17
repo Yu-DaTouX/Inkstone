@@ -92,8 +92,6 @@
     '  目标：' +
       JSON.stringify(goal ? { phase: goal.phase, revision: goal.revision, steps: (goal.steps ?? []).length } : null)
   )
-  const workMode = S().workMode
-  log('  工作模式：' + JSON.stringify(workMode ? { mode: workMode.mode ?? null, phase: workMode.phase ?? null } : null))
   log(
     '  当前会话 = ' +
       JSON.stringify(S().session?.sessionId ?? null) +

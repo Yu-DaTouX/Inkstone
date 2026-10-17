@@ -28,7 +28,6 @@
     ok(created?.ok === true, `新建专用隔离会话（${created?.sessionId ?? '无 sessionId 回执'}）`)
     if (created?.ok !== true) return out.join('\n')
 
-    await state().setWorkMode('standard')
     await state().reloadModels?.()
     const model = await window.yan.setModel('yantimingfixture', 'turn-timing-isolation-fixture')
     ok(model?.ok === true, '选择本机 cost 0 fixture provider')

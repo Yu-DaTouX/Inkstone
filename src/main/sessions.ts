@@ -273,12 +273,6 @@ async function readLastActivity(path: string, size: number): Promise<{ at?: numb
   }
 }
 
-export async function findSessionById(id: string, projects?: ProjectRecord[]): Promise<SessionSummary | undefined> {
-  if (!id) return undefined
-  const sessions = await listSessions(Number.MAX_SAFE_INTEGER, projects)
-  return sessions.find((session) => session.id === id)
-}
-
 export async function listSessions(limit = 200, projects?: ProjectRecord[]): Promise<SessionSummary[]> {
   if (!existsSync(SESSIONS_DIR)) return []
 

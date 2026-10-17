@@ -8,9 +8,7 @@ import { readAuthEntry } from './credentials'
 import { resolveQuotaProviderSecret } from './quota-credentials'
 import { fetchCodexUsage, providerQuota } from './quota'
 import { quotaSamples } from './quota-samples'
-import { codexAccountTargets, switchCodexAccount, type CodexAccountTarget } from './codex-accounts'
-import { failoverOrder, pickFailover, type CodexFailoverResult, type FailoverCandidate } from '../shared/quota-failover'
-import { blockedQuotaWindows } from '../shared/quota-resume'
+import { codexAccountTargets, type CodexAccountTarget } from './codex-accounts'
 import {
   chatGptIdentity,
   claudeUsageWindows,
@@ -226,33 +224,6 @@ const CLI_CARDS: Record<AccountQuotaCliSource, () => Promise<AccountQuotaCard | 
 }
 
 let inflight: Promise<AccountQuotaReport> | null = null
-
-export async function failoverCodexAccount(skip: string[]): Promise<CodexFailoverResult> {
-  const targets = await codexAccountTargets()
-  const activeKey = targets.find((t) => t.active)?.key
-  const order = failoverOrder(targets.map((t) => t.key), activeKey, skip)
-  if (!order.length) return { ok: false, error: '没有其它可切换的 ChatGPT 账号' }
-  const candidates = await Promise.all(order.map(async (key): Promise<FailoverCandidate> => {
-    const t = targets.find((x) => x.key === key)!
-    if (!t.credential) return { key, blocked: false, unknown: true }
-    try {
-      const usage = await fetchCodexUsage(t.credential.access, t.credential.accountId)
-      if (!usage.windows.length) return { key, blocked: false, unknown: true }
-      const blocked = blockedQuotaWindows(usage.windows)
-      const resets = blocked.map((w) => w.resetAt).filter((x): x is number => typeof x === 'number')
-      return { key, blocked: usage.limited || blocked.length > 0, resetAt: resets.length ? Math.max(...resets) : undefined }
-    } catch {
-      return { key, blocked: false, unknown: true }
-    }
-  }))
-  const pick = pickFailover(candidates)
-  if (!pick.ok) return { ok: false, earliestResetAt: pick.earliestResetAt }
-  const switched = await switchCodexAccount(pick.key)
-  if (!switched.ok) return { ok: false, error: switched.error }
-  const target = targets.find((t) => t.key === pick.key)
-  const prefs = await readAccountQuotaPrefs()
-  return { ok: true, key: pick.key, fromKey: activeKey, email: target?.email, label: prefs.labels[pick.key] }
-}
 
 export function accountQuotaReport(): Promise<AccountQuotaReport> {
   inflight ??= buildReport().finally(() => {

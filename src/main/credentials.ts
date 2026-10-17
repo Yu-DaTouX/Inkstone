@@ -7,26 +7,6 @@ import { PI_AGENT_DIR } from './paths'
 const PI_DIR = PI_AGENT_DIR
 const AUTH_FILE = join(PI_DIR, 'auth.json')
 
-export async function resolveProviderSecret(provider: string): Promise<string | undefined> {
-  const envNames: Record<string, string> = {
-    openrouter: 'OPENROUTER_API_KEY',
-    deepseek: 'DEEPSEEK_API_KEY',
-    commandcode: 'COMMANDCODE_API_KEY',
-    openai: 'OPENAI_API_KEY',
-    'openai-codex': 'OPENAI_API_KEY'
-  }
-  let fromFile: string | undefined
-  try {
-    const data = JSON.parse(await readFile(AUTH_FILE, 'utf8')) as Record<string, unknown>
-    const entry = data[provider] as { key?: unknown; access?: unknown; access_token?: unknown } | string | undefined
-    if (typeof entry === 'string') fromFile = entry
-    else if (entry && typeof entry.key === 'string') fromFile = entry.key
-    else if (entry && typeof entry.access === 'string') fromFile = entry.access
-    else if (entry && typeof entry.access_token === 'string') fromFile = entry.access_token
-  } catch { }
-  return fromFile || process.env[envNames[provider] ?? '']
-}
-
 export async function resolveCodexAccountId(): Promise<string | undefined> {
   try {
     const data = JSON.parse(await readFile(AUTH_FILE, 'utf8')) as Record<string, unknown>

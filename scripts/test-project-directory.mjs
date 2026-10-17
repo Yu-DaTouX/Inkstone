@@ -29,9 +29,9 @@ try {
     } }]
   })
   const m = await import(pathToFileURL(outfile).href)
-  const project = { id: 'p-main', cwd: source, name: 'Personal', groupId: 'g', createdAt: 1, updatedAt: 1 }
+  const project = { id: 'p-main', cwd: source, name: 'Personal', createdAt: 1, updatedAt: 1 }
   await m.patchSettings({ cwd: source, projects: [project, { id: 'p-other', cwd: other, name: 'Other', createdAt: 2, updatedAt: 2 }],
-    projectNames: { [source]: 'Personal', [other]: 'Other' }, projectGroups: [{ id: 'g', name: 'Group', createdAt: 1 }], projectOrder: ['p-main', 'p-other'], recentCwds: [source, other] })
+    projectNames: { [source]: 'Personal', [other]: 'Other' }, recentCwds: [source, other] })
   const file = join(process.env.YAN_DATA_DIR, 'desktop.json')
   const oldSession = join(process.env.YAN_SESSIONS_DIR, 'old.jsonl')
   const legacySession = join(process.env.YAN_SESSIONS_DIR, 'legacy.jsonl')
@@ -65,8 +65,7 @@ try {
   const result = await m.changeProjectDirectory(request)
   check(result.ok, '有效目标更改成功')
   const moved = result.settings.projects.find((p) => p.id === 'p-main')
-  check(moved.cwd === target && moved.name === 'Personal' && moved.groupId === 'g' && moved.createdAt === 1, '保留稳定身份、名称、分组与创建时间')
-  check(result.settings.projectOrder.join(',') === 'p-main,p-other', '保留项目顺序')
+  check(moved.cwd === target && moved.name === 'Personal' && moved.createdAt === 1, '保留稳定身份、名称与创建时间')
   check(!result.settings.projects.some((p) => p.cwd === source) && !(source in result.settings.projectNames), '清理旧路径映射，不被设置清洗重建幽灵项目')
   check(result.settings.cwd === target && result.settings.recentCwds.includes(target), '更新默认/最近目录而不操作运行实例')
   check((await readFile(oldSession, 'utf8')) === originalLog && (await readFile(join(source, 'keep.txt'), 'utf8')) === 'never moved', '历史JSONL与项目磁盘文件不搬动、不改写')

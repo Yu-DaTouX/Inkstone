@@ -393,10 +393,6 @@ export function beginTreeSnapshot(callId: string, root: string, sessionId?: stri
   }
 }
 
-export function hasTreeSnapshot(callId: string): boolean {
-  return activeTrees.has(callId)
-}
-
 function toChangeFile(before: TreeSnapshot, after: TreeSnapshot, change: TreeChange): WorkspaceChangeFile {
   const a = before.files.get(change.path)
   const b = after.files.get(change.path)

@@ -1568,109 +1568,9 @@ const AFTER_EXIT = {
   taskFixtureReadonly: checkTaskFixtureReadonly,
   taskCliLog: checkTaskCliLog,
   taskPlanMultiStep: checkTaskPlanMultiStep,
-  workModePersisted: checkWorkModePersisted,
   turnTimingIsolation: checkTurnTimingIsolation,
   turnTimingInterrupted: checkTurnTimingInterrupted,
-  turnTimingHardKill: checkTurnTimingHardKill,
-  questionModeLog: checkQuestionModeLog
-}
-
-async function checkQuestionModeLog(sandboxRoot, _tempBefore, _probeText) {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  if (!sandboxRoot) {
-    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
-    return { ok: true, lines }
-  }
-  const logFile = join(tmpdir(), 'yan-question-ext.log')
-  const records = (existsSync(logFile) ? readFileSync(logFile, 'utf8') : '')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line)
-      } catch {
-        return null
-      }
-    })
-    .filter(Boolean)
-  lines.push(`  诊断行数 = ${records.length}`)
-  for (const r of records.slice(0, 12)) {
-    lines.push(`    ${r.hook} mode=${r.mode} sid=${r.sessionId ?? '-'}`)
-  }
-  say(records.length >= 1, '扩展真的被调用并写下模式')
-  say(
-    records.some((r) => r.mode === 'autonomous'),
-    '自主档真的到达扩展（不靠 defaultWorkMode 猜）'
-  )
-  say(
-    records.some((r) => r.hook === 'before_agent_start' && r.mode === 'autonomous'),
-    '自主档真的经过 question.js 的工作模式提示钩子'
-  )
-  say(!records.some((r) => r.hook === 'execute'), 'question.js 没有恢复旧的模型工具 execute 钩子')
-  return { ok, lines }
-}
-
-async function checkWorkModePersisted(sandboxRoot, _tempBefore, _probeText) {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  if (!sandboxRoot) {
-    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
-    return { ok: true, lines }
-  }
-  const dataDir = join(sandboxRoot, 'data')
-
-  try {
-    const doc = JSON.parse(readFileSync(join(dataDir, 'work-modes.json'), 'utf8'))
-    const entries = Object.entries(doc?.entries ?? {})
-    lines.push(`  work-modes.json 条目：${entries.map(([k, v]) => `${k}=${v.mode}(rev${v.revision})`).join(', ')}`)
-    say(entries.length >= 2, `至少两个会话各自存了一份（实际 ${entries.length}）`)
-    say(entries.some(([, v]) => v.mode === 'autonomous'), '存下了自主模式（A 会话）')
-    say(entries.some(([, v]) => v.mode === 'clarify'), '存下了计划模式（B 会话）')
-    say(entries.every(([, v]) => Number.isFinite(v.revision) && v.revision >= 1), '每条都有 revision（提交过）')
-  } catch (error) {
-    say(false, '读 work-modes.json 失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-
-  try {
-    const snapDir = join(dataDir, 'work-mode')
-    const files = readdirSync(snapDir).filter((n) => n.endsWith('.json'))
-    lines.push(`  work-mode/ 快照：${files.join(', ') || '(空)'}`)
-    say(files.length >= 1, '写了至少一份模型侧快照')
-    const records = files.map((n) => JSON.parse(readFileSync(join(snapDir, n), 'utf8')))
-    say(
-      records.every((r) => ['standard', 'clarify', 'autonomous'].includes(r?.mode)),
-      '每份快照的 mode 都是合法值（扩展读它决定提不提问）'
-    )
-    say(
-      records.some((r) => r.mode === 'clarify') || records.some((r) => r.mode === 'autonomous'),
-      '快照内容跟随会话（不是一直停在默认值）'
-    )
-  } catch (error) {
-    say(false, '读 work-mode/ 快照失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-
-  try {
-    const settings = JSON.parse(readFileSync(join(dataDir, 'desktop.json'), 'utf8'))
-    say(settings.autonomous === true, '旧 autonomous 原样留在磁盘上（不抹掉用户已写下的值）')
-    say(
-      settings.defaultWorkMode === 'autonomous',
-      '迁移结果随写入固化到新字段（与旧值语义相同，幂等）'
-    )
-    say(!('workModeShortcutEnabled' in settings) && !('workModeShortcut' in settings), '关掉再打开的快捷键不落盘（默认态无键）')
-  } catch (error) {
-    say(false, '读 desktop.json 失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-
-  return { ok, lines }
+  turnTimingHardKill: checkTurnTimingHardKill
 }
 
 let taskFixtureBaseline = null
@@ -3444,7 +3344,6 @@ async function main() {
     }
     const tempBefore = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('yan-subagent-')))
 
-    if (c.questionExtLog) rmSync(join(tmpdir(), 'yan-question-ext.log'), { force: true })
 
     taskFixtureBaseline = null
     if (c.readonlySession && sandboxRoot) {
@@ -3477,7 +3376,6 @@ async function main() {
         if (process.env.YAN_TEST_DESKTOP_THEME === 'light' || process.env.YAN_TEST_DESKTOP_THEME === 'dark') {
           desktop.theme = process.env.YAN_TEST_DESKTOP_THEME
         }
-        if (c.legacyAutonomous) desktop.autonomous = true
         if (c.knowledgeSeed) {
           desktop.projects = [
             {
@@ -3519,7 +3417,6 @@ async function main() {
       const out = await runProbe(c, {
         ...env,
         ...(win ? { YAN_WIN: win } : {}),
-        ...(c.questionExtLog ? { YAN_QUESTION_EXT_LOG: join(tmpdir(), 'yan-question-ext.log') } : {}),
         ...(c.env ?? {}),
         ...(brokenPiBin ? { YAN_PI_BIN: brokenPiBin } : {}),
         YAN_TEST_MODEL: modelForCase(c.model)

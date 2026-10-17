@@ -1,14 +1,8 @@
 import type { IpcRegistrar } from './registrar'
-import { linkSources, listImagesForSession, readImage, removeImage, saveImage, verifyFiles } from '../sources'
-import type { WebSearchAvailability } from '../../shared/web-search'
+import { linkSources, listImagesForSession, removeImage, saveImage, verifyFiles } from '../sources'
 
-export interface SourcesIpcDeps {
-  webSearchAvailability(): Promise<WebSearchAvailability | undefined>
-}
-
-export function registerSourcesIpc(ipc: IpcRegistrar, deps: SourcesIpcDeps): void {
+export function registerSourcesIpc(ipc: IpcRegistrar): void {
   const { handle } = ipc
-  const { webSearchAvailability } = deps
   handle('yan:sources:list', async (sessionId: string) => {
     try {
       return listImagesForSession(String(sessionId ?? ''))
@@ -74,15 +68,4 @@ export function registerSourcesIpc(ipc: IpcRegistrar, deps: SourcesIpcDeps): voi
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
-
-  handle('yan:sources:readImage', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return readImage(String(raw.sessionId ?? ''), String(raw.sourceId ?? ''))
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
-  handle('yan:sources:webSearch', async () => (await webSearchAvailability()) ?? { available: false })
 }

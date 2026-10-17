@@ -11,12 +11,13 @@ import { PromptsSection } from './PromptsSection'
 import { VoiceSection } from './VoiceSection'
 import { ComputerUseSection } from './ComputerUseSection'
 import { SearchSection } from './SearchSection'
+import { GitRuntimeSection } from './GitRuntimeSection'
 import { getSettingsRequest, subscribeSettingsRequest } from '../root/deep-link'
 import './capabilities.css'
 
 export type CapabilitiesTabId = 'connections' | 'search' | 'skills' | 'extensions' | 'market' | 'prompts' | 'voice'
 
-const LEGACY_TAB: Record<string, CapabilitiesTabId> = { voice: 'voice', market: 'market' }
+const LEGACY_TAB: Record<string, CapabilitiesTabId> = { voice: 'voice', market: 'market', git: 'connections' }
 
 export function CapabilitiesSettings(): ReactElement {
   const t = useT()
@@ -65,6 +66,7 @@ export function CapabilitiesSettings(): ReactElement {
           <TabPanel id="connections" className="caps-tabpanel">
             <McpSection />
             <ComputerUseSection />
+            <GitRuntimeSection />
           </TabPanel>
           <TabPanel id="search" className="caps-tabpanel">
             <SearchSection />

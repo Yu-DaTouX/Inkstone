@@ -83,7 +83,6 @@ const KNOWN_COMMANDS = new Set([
   'consent.request',
   'danger.confirm',
   'session.move',
-  'research.read',
   'knowledge.search',
   'knowledge.read',
   'knowledge.propose',

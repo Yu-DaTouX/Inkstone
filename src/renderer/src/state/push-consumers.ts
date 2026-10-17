@@ -74,9 +74,6 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
     case 'pi-info':
       set({ piInfo: m.payload })
       break
-    case 'title':
-      set({ title: m.payload })
-      break
     case 'editor-text':
       set({ editorInject: { text: m.payload, mode: 'replace' } })
       break
@@ -234,9 +231,6 @@ export function consumeTaskStatePush(m: MainPush, _s: Store, ctx: PushContext): 
     case 'todo-history':
       set({ todoHistory: m.payload })
       break
-    case 'work-mode':
-      set({ workMode: m.payload })
-      break
     case 'approval':
       if (!_s.approvals.some((item) => item.id === m.payload.id)) set({ approvals: [..._s.approvals, m.payload] })
       break
@@ -246,10 +240,6 @@ export function consumeTaskStatePush(m: MainPush, _s: Store, ctx: PushContext): 
       break
     case 'approval-close':
       set({ approvals: _s.approvals.filter((item) => item.id !== m.payload.id) })
-      break
-    case 'agent-profile':
-      set({ agentProfile: m.payload })
-      break
       break
     default:
       return false

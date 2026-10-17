@@ -22,7 +22,6 @@ let stderr = ''
 const nativeSearch = process.argv.includes('--native-search')
 const nativeTools = !process.argv.includes('--compact')
 const guardProbe = process.argv.includes('--guard')
-const profileProbe = process.argv.includes('--profile-blocked')
 const onlyMode = process.argv.includes('--only')
 const desktopCodemode = process.argv.includes('--desktop-codemode')
 const projectPackagePolicy = process.argv.includes('--project-package-policy')
@@ -83,10 +82,6 @@ const cli = resolve(process.argv[2] && !process.argv[2].startsWith('--') ? proce
 if (nativeTools && !localTools && !guardProbe) {
   await writeFile(join(piDir, 'mcp.json'), JSON.stringify({ mcpServers: { fixture: { command: process.execPath, args: [resolve('scripts/lib/mcp-stdio-fixture.mjs')], exposure: 'codemode', toolExposure: { echo: 'codemode', '*': 'hidden' } } } }))
 }
-if (profileProbe) {
-  await mkdir(join(root, 'yan/agent-profile'), { recursive: true })
-  await writeFile(join(root, 'yan/agent-profile/native-fixture.json'), JSON.stringify({ profile: 'daily', activity: 'research', deniedTools: ['mcp__fixture__echo'] }))
-}
 function command(type, params = {}) {
   if (controller) {
     if (type === 'prompt') return controller.send(params.message).then(result => ({ success: result.ok, error: result.error }))
@@ -120,7 +115,7 @@ try {
       build.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export class BrowserWindow { constructor() { throw new Error("Browser search is outside this fixture"); } } export const session = { fromPartition() { throw new Error("Browser search is outside this fixture"); } };', loader: 'js' }))
     } }] })
     const { AgentController } = await import(pathToFileURL(resolve('out/test/native-context-controller.mjs')))
-    controller = new AgentController({ cwd: root, piBin: cli, push: event => pushes.push(structuredClone(event)), ...(desktopCodemode ? { codemodeExtension: resolve('resources/pi-extensions/codemode-policy.js'), workModeExtension: resolve('resources/pi-extensions/work-mode.js') } : {}), ...(guardProbe ? { dangerGuardExtension: resolve('resources/pi-extensions/danger-guard.js') } : {}), ...(profileProbe ? { agentProfileExtension: resolve('resources/pi-extensions/profile.js') } : {}), contextExtension: resolve('resources/pi-extensions/context.js'), contextBudgetObserverExtension: resolve('resources/pi-extensions/context-budget-observer.js'), contextBudgetMaintenanceExtension: resolve('resources/pi-extensions/context-budget-maintenance.js'), projectKnowledgeExtension: resolve('resources/pi-extensions/project-knowledge.js'), goalResumeExtension: resolve('resources/pi-extensions/goal-resume.js'), handoffsExtension: resolve('resources/pi-extensions/handoffs.js') })
+    controller = new AgentController({ cwd: root, piBin: cli, push: event => pushes.push(structuredClone(event)), ...(desktopCodemode ? { codemodeExtension: resolve('resources/pi-extensions/codemode-policy.js') } : {}), ...(guardProbe ? { dangerGuardExtension: resolve('resources/pi-extensions/danger-guard.js') } : {}), contextExtension: resolve('resources/pi-extensions/context.js'), contextBudgetObserverExtension: resolve('resources/pi-extensions/context-budget-observer.js'), contextBudgetMaintenanceExtension: resolve('resources/pi-extensions/context-budget-maintenance.js'), projectKnowledgeExtension: resolve('resources/pi-extensions/project-knowledge.js'), goalResumeExtension: resolve('resources/pi-extensions/goal-resume.js'), handoffsExtension: resolve('resources/pi-extensions/handoffs.js') })
     controller.maybeGenerateTitle = async () => null
     assert.equal((await controller.start()).ok, true)
     controller.rpc.on('event', event => frames.push(event))
@@ -160,13 +155,13 @@ try {
     assert(nested, JSON.stringify(frames))
     if (!nativeSearch) assert.equal(nested.parentToolCallId, 'native-code')
     const result = frames.find(frame => frame.type === 'tool_execution_end' && frame.toolCallId === nested.toolCallId)
-    assert.equal(result.isError, guardProbe || profileProbe)
-    if (!guardProbe && !profileProbe) assert(JSON.stringify(result).includes(localTools ? 'NATIVE-LOCAL-READ' : 'NATIVE-MCP-ECHO'))
+    assert.equal(result.isError, guardProbe)
+    if (!guardProbe) assert(JSON.stringify(result).includes(localTools ? 'NATIVE-LOCAL-READ' : 'NATIVE-MCP-ECHO'))
     const file = (await command('get_state')).data.sessionFile
     const entries = (await readFile(file, 'utf8')).trim().split('\n').map(JSON.parse)
     if (!nativeSearch) {
       const recorded = entries.find(entry => entry.message?.role === 'toolResult' && entry.message.toolCallId === 'native-code')?.message.nestedCalls
-      assert(recorded?.calls.some(call => call.name === toolName && call.status === (guardProbe || profileProbe ? 'error' : 'ok')))
+      assert(recorded?.calls.some(call => call.name === toolName && call.status === (guardProbe ? 'error' : 'ok')))
       const { normalizeHistory } = await import(pathToFileURL(resolve('out/test/pi-compat-normalize.mjs')))
       const history = normalizeHistory(entries.filter(entry => entry.type === 'message').map(entry => entry.message))
       assert(history.some(message => message.toolCalls?.some(call => call.name === toolName && call.parentToolCallId === 'native-code')))
@@ -194,22 +189,19 @@ try {
     if (desktopCodemode) {
       const originalSettings = await readFile(join(piDir, 'settings.json'))
       const desktop = join(root, 'yan', 'desktop.json')
-      await mkdir(join(root, 'yan', 'work-mode'), { recursive: true })
-      const modeFile = join(root, 'yan', 'work-mode', 'native-fixture.json')
-      for (const [enabled, mode, expected] of [[false, 'standard', false], [true, 'standard', true], [true, 'clarify', false], [false, 'standard', false], [true, 'standard', true]]) {
+      for (const [enabled, expected] of [[false, false], [true, true], [false, false], [true, true]]) {
         await writeFile(desktop, JSON.stringify({ codemodeEnabled: enabled }))
-        await writeFile(modeFile, JSON.stringify({ mode }))
         const after = frames.length
         assert.equal((await command('prompt', { message: 'Confirm the tool preference for this turn.' })).success, true)
         await settled(after)
         const names = requests.at(-1).tools.map(tool => tool.function.name)
-        assert.equal(names.includes('codemode'), expected, `enabled=${enabled}, mode=${mode}`)
+        assert.equal(names.includes('codemode'), expected, `enabled=${enabled}`)
         assert(names.includes('read') && names.includes('bash'), 'ordinary tools remain available')
       }
       assert((await readFile(join(piDir, 'settings.json'))).equals(originalSettings), 'desktop preference does not overwrite native pi settings')
     }
-    await writeFile(join(root, 'evidence.json'), JSON.stringify({ cli, controller: !!controller, desktopCodemode, nativeMcp: !localTools && !guardProbe, nativeCodemode: !nativeSearch, nativeToolSearch: nativeSearch, guardProbe, profileProbe, onlyMode, localTools, nestedParent: nested.parentToolCallId, requests, frames, pushes }, null, 2))
-    console.log(`PASS: native tools, nested identity/history; search=${nativeSearch} guard=${guardProbe} profile=${profileProbe} only=${onlyMode} local=${localTools} projectPackagePolicy=${projectPackagePolicy}\nEvidence: ${root}`)
+    await writeFile(join(root, 'evidence.json'), JSON.stringify({ cli, controller: !!controller, desktopCodemode, nativeMcp: !localTools && !guardProbe, nativeCodemode: !nativeSearch, nativeToolSearch: nativeSearch, guardProbe, onlyMode, localTools, nestedParent: nested.parentToolCallId, requests, frames, pushes }, null, 2))
+    console.log(`PASS: native tools, nested identity/history; search=${nativeSearch} guard=${guardProbe} only=${onlyMode} local=${localTools} projectPackagePolicy=${projectPackagePolicy}\nEvidence: ${root}`)
     process.exitCode = 0
   } else {
   for (const message of [`USER-FACT: project name is Granite\n${'Fixture background material. '.repeat(300)}`, `USER-FACT: output language is Chinese\n${'Fixture recent material. '.repeat(100)}`, 'USER-REQUEST: retain both facts']) {

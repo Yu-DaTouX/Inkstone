@@ -123,15 +123,6 @@ const GROUP_USAGE = {
             服务在宿主文件 YAN_DIR/mcp-servers.json 里登记——模型不能新增服务。
 
 `,
-  research: `yan research <动作> [选项]
-
-动作（资料引用；对照时并列不一致的说法，结论注明来自哪一份的哪一版）：
-  read    --request-file refs.json
-           请求文件：{ "refs": [ { "sourceId": "lib_x", "version": 1,
-             "locator": {"start":0,"end":400} } ], "maxChars": 600 }
-           读的是**每一份当时那一版**的片段（不跟着资料更新走），并标出引用是否已旧；
-           读不到的来源单独放 skipped，不当作有效证据。
-`,
 
   knowledge: `yan knowledge <动作> [选项]
 
@@ -405,10 +396,6 @@ const GROUP_SPECS = {
     required: {
       describe: ['server', 'tool']
     }
-  },
-
-  research: {
-    actions: ['read']
   },
 
   knowledge: {

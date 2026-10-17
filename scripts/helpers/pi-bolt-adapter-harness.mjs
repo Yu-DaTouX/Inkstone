@@ -100,7 +100,6 @@ export const THIN_EXTENSION_FILES = [
   'response-detail.js',
   'preamble.js',
   'language.js',
-  'temperature.js',
   'capability-guide.js',
   'context-trim.js',
   'repeat-guard.js',

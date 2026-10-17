@@ -15,9 +15,6 @@ const agentDir = join(root, 'agent')
 const sessionDir = join(root, 'sessions')
 for (const d of [work, agentDir, sessionDir]) mkdirSync(d, { recursive: true })
 
-const dataDir = join(root, 'data')
-const runnerId = 'probe-runner'
-mkdirSync(join(dataDir, 'work-mode'), { recursive: true })
 const reqLog = join(root, 'requests.jsonl')
 const extLog = join(root, 'hooks.jsonl')
 const marker = join(work, 's1-marker.txt')
@@ -39,16 +36,6 @@ writeFileSync(
 )
 writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ s1mock: { type: 'api_key', key: 'dummy' } }))
 
-const TOOL_COMMAND = MODE === 'workmode-allow' ? 'yan goal status' : undefined
-
-const GATE_MODES = { workmode: 'clarify', 'workmode-standard': 'standard', 'workmode-allow': 'clarify' }
-if (GATE_MODES[MODE]) {
-  writeFileSync(
-    join(dataDir, 'work-mode', `${runnerId}.json`),
-    JSON.stringify({ version: 1, runtimeKey: runnerId, mode: GATE_MODES[MODE], revision: 1, at: new Date().toISOString() })
-  )
-}
-
 const server = spawn(
   process.execPath,
   [
@@ -57,7 +44,7 @@ const server = spawn(
     reqLog,
     MODE === 'plain' || MODE === 'payload' ? 'plain' : 'block'
   ],
-  { stdio: 'inherit', env: { ...process.env, ...(TOOL_COMMAND ? { S1_TOOL_COMMAND: TOOL_COMMAND } : {}) } }
+  { stdio: 'inherit', env: { ...process.env } }
 )
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 await wait(500)
@@ -73,11 +60,10 @@ const args = [
   sessionDir,
   '--extension',
   join(HERE, 'lib/hook-probe-ext.mjs'),
-  ...(GATE_MODES[MODE] ? ['--extension', join(REPO, 'resources/pi-extensions/work-mode.js')] : []),
   '--model',
   's1mock/mock',
   '--tools',
-  GATE_MODES[MODE] ? 'bash,read,write,edit' : 'bash,read',
+  'bash,read',
   '请执行一次 bash 命令，然后回答 S1-DONE。'
 ]
 
@@ -91,14 +77,7 @@ const child = spawn(process.execPath, args, {
     PI_OFFLINE: '1',
     PI_SKIP_VERSION_CHECK: '1',
     S1_LOG: extLog,
-    S1_MODE: MODE,
-    ...(GATE_MODES[MODE]
-      ? {
-          YAN_DATA_DIR: dataDir,
-          YAN_SESSION_ID: runnerId,
-          YAN_WORK_MODE_EXT_LOG: join(root, 'work-mode-ext.jsonl')
-        }
-      : {})
+    S1_MODE: MODE
   }
 })
 
@@ -144,11 +123,6 @@ for (const f of readdirSync(sessionDir, { recursive: true }).map(String).filter(
   for (const l of lines) console.log(`    ${l.type ?? l.role ?? '?'} :: ${JSON.stringify(l).slice(0, 240)}`)
 }
 console.log(`--- marker 文件：${existsSync(marker)} (${marker})`)
-const modeLog = join(root, 'work-mode-ext.jsonl')
-if (existsSync(modeLog)) {
-  console.log('--- 工作模式策略扩展诊断（实施-05 S3 门禁） ---')
-  for (const line of readFileSync(modeLog, 'utf8').trim().split('\n').filter(Boolean)) console.log('  ' + line)
-}
 const budgetLog = join(root, 'context-ext.jsonl')
 if (existsSync(budgetLog)) {
   const rows = readFileSync(budgetLog, 'utf8').trim().split('\n').filter(Boolean)

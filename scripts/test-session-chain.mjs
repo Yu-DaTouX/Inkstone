@@ -2,26 +2,11 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-export async function runSessionChainTests(ok, workModeService) {
+export async function runSessionChainTests(ok) {
   const shared = await import('../out/test/session-chain.mjs')
   const service = await import('../out/test/session-chain-service.mjs')
-  const { normalizeSessionFileKey } = workModeService
-
   console.log('\n--- 实施-05 S5b 会话链（前端一条会话） ---')
 
-  const files = [
-    'C:\\Users\\x\\sessions\\a.jsonl',
-    'C:/Users/x/sessions/a.jsonl/',
-    '  C:/Users/x/sessions/a.jsonl  ',
-    '/home/x/a.jsonl',
-    'D:\\tmp\\b.JSONL'
-  ]
-  for (const file of files) {
-    ok(
-      shared.normalizeChainKey(file) === normalizeSessionFileKey(file),
-      `键归一化与 work-mode-service 一致：${JSON.stringify(file)}`
-    )
-  }
   ok(shared.normalizeChainKey('C:\\a\\b.jsonl') === 'C:/a/b.jsonl', '反斜杠统一成正斜杠')
   ok(shared.normalizeChainKey('C:/a/b.jsonl///') === 'C:/a/b.jsonl', '尾斜杠去掉')
   ok(shared.normalizeChainKey('') === null && shared.normalizeChainKey('   ') === null, '空键不可用')

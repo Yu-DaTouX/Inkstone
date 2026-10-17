@@ -31,18 +31,13 @@ import type {
   UIMessage,
   UIToolCall,
   UserProfile,
-  WorkMode,
-  WorkModeState,
   ApprovalChoice,
   ApprovalRequest,
   GitInstallProgress,
-  AgentProfileState,
   ZoomState,
   QuotaWindow
 } from '../../../shared/ipc'
-import { TOOL_SECTIONS } from '../../../shared/ipc'
 import type { CheckpointRecord } from '../../../shared/checkpoints'
-import { commitTileLayout, defaultToolLayout, type ToolLayout } from '../../../shared/tool-layout'
 import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
 import { isWorkspaceMode, type WorkspaceMode } from '../../../shared/workspace-mode'
 import { playSound } from '../lib/sound'
@@ -62,9 +57,7 @@ import {
   sameComposerView,
   type ComposerSubmitIdentity
 } from './composer-recovery'
-import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT, RESET_GRACE_MS } from '../../../shared/quota-resume'
-import { failoverSkip, QUOTA_FAILOVER_PROMPT } from '../../../shared/quota-failover'
-import { decideKeepRunning, KEEP_RUNNING_PROMPT, type KeepRunningTurn } from '../../../shared/keep-running'
+import { decideQuotaResume, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT } from '../../../shared/quota-resume'
 import { reuseIfSame } from './same-messages'
 import {
   migratePathDraft,
@@ -154,8 +147,6 @@ export interface Store {
   queue: QueueState
   pendingSends: PendingSend[]
   quotaResume: QuotaResumeWait | null
-  quotaFailover: { sessionId: string; tried: string[] } | null
-  keepRunning: { sessionId: string; count: number } | null
   runTail: { sessionId: string; id: string } | null
   messages: UIMessage[]
   sessions: SessionSummary[]
@@ -178,7 +169,6 @@ export interface Store {
   nativeSession: (action: import('../lib/composer-submit').NativeSessionAction, args?: string) => Promise<import('../../../shared/native-session-host').NativeSessionHostResult>
   settingsTab: string
   settingsRequestRevision: number
-  railPinned: boolean
   checkpoints: CheckpointRecord[]
   rewind: { recordId: string; preview: string } | null
   refreshCheckpoints: () => Promise<void>
@@ -186,7 +176,6 @@ export interface Store {
   closeRewind: () => void
   titles: Record<string, string>
   manualTitles: Record<string, string>
-  titleCandidates: Record<string, string>
   autoRetryEnabled: boolean
   maximized: boolean
 
@@ -194,9 +183,7 @@ export interface Store {
   browserState: BrowserState
   browserNativeVisible: boolean
   terminals: TerminalSessionInfo[]
-  activeTerminalId: string | null
   terminalAvailable: boolean
-  terminalError: string | null
   filePreview: FilePreviewState | null
   filePreviews: Record<string, FilePreviewState>
   subagents: SubagentRun[]
@@ -205,7 +192,6 @@ export interface Store {
   piInfo: PiInfo | null
   widgets: Record<string, string[]>
   widgetPlacements: Record<string, WidgetPlacement>
-  scrollToTurn: (i: number) => void
   uiRequests: ExtensionUiRequest[]
   questionLog: QuestionLogEntry[]
   questionLogSession: string | null
@@ -218,7 +204,6 @@ export interface Store {
   editorInject: { text: string; mode: 'replace' | 'append' } | null
   composerFocus: { tick: number; at: number; sessionId?: string; path?: string }
   queueRestore: string | null
-  title: string | null
   attachments: Attachment[]
   pendingSourceLinks: { sessionId: string; sourceIds: string[]; attempts?: number }[]
   locateMessage: (messageId: string) => boolean
@@ -237,17 +222,13 @@ export interface Store {
   activeRunnerId: string | null
   runners: RunnerStatus[]
   sessionRuntimes: SessionRuntimeMap
-  workMode: WorkModeState | null
   approvals: ApprovalRequest[]
-  agentProfile: AgentProfileState | null
   workspaceMode: WorkspaceMode
 
   bootstrap: () => Promise<void>
   syncRunners: () => Promise<void>
   applyPush: (m: MainPush) => void
   refreshSessions: () => Promise<void>
-  inboxOpen: boolean
-  setInboxOpen: (open: boolean) => void
   reloadModels: () => Promise<void>
   reloadCommands: () => Promise<void>
   loadAuthProviders: () => Promise<void>
@@ -277,12 +258,8 @@ export interface Store {
     notice?: string
   }) => void
   applyQueueOrder: (next: QueueState) => Promise<void>
-  armQuotaResume: (failoverAt?: number) => Promise<boolean>
+  armQuotaResume: () => Promise<boolean>
   cancelQuotaResume: () => void
-  failoverQuota: () => Promise<boolean>
-  cancelQuotaFailover: () => void
-  setQuotaFailover: (on: boolean) => void
-  setKeepRunning: (on: boolean) => void
   abort: () => Promise<void>
   runBash: (command: string, options?: { excludeFromContext?: boolean }) => Promise<{ ok: boolean; error?: string }>
   abortBash: () => Promise<void>
@@ -301,8 +278,6 @@ export interface Store {
   renameSession: (name: string) => Promise<void>
   setManualTitle: (sessionId: string, name: string) => Promise<void>
   regenerateTitle: (sessionId: string) => Promise<void>
-  acceptTitleCandidate: (sessionId: string) => Promise<void>
-  dismissTitleCandidate: (sessionId: string) => void
   deleteSession: (path: string) => Promise<void>
   fork: (entryId: string) => Promise<boolean>
   clone: () => Promise<void>
@@ -321,25 +296,12 @@ export interface Store {
   cycleModelBack: () => Promise<void>
   cycleThinking: () => Promise<void>
   copyLastReply: () => Promise<void>
-  changeCwd: (cwd: string) => Promise<void>
   setUiScale: (v: number) => Promise<void>
   openBrowser: (url?: string, target?: BrowserOpenTarget) => Promise<void>
-  closeBrowser: () => Promise<void>
-  refreshTerminals: () => Promise<void>
-  startTerminal: (options?: { cols?: number; rows?: number; cwd?: string; owner?: string }) => Promise<TerminalSessionInfo | null>
-  closeTerminal: (id: string) => Promise<void>
-  setActiveTerminal: (id: string | null) => void
   previewFile: (path: string, line?: number, cwd?: string, lineEnd?: number) => Promise<void>
-  checkPreviewStale: (key?: string) => Promise<void>
-  activateFileTab: (key: string) => void
-  closeFileTab: (key: string) => void
-  closePreview: () => void
   loadSubagents: () => Promise<void>
   startSubagent: (task: string, model?: string, isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<void>
   stopSubagent: (id: string) => Promise<void>
-  clearSubagents: () => Promise<void>
-  mergeSubagent: (id: string) => Promise<void>
-  discardSubagent: (id: string) => Promise<void>
   openSubagent: (id: string | null) => void
   openExternalChrome: (url?: string) => Promise<void>
   closeExternalChrome: () => Promise<void>
@@ -348,17 +310,10 @@ export interface Store {
   patchProfile: (p: Partial<UserProfile>) => Promise<void>
   patchSettings: (p: Partial<AppSettings>) => Promise<void>
   removeGuardAllowRoot: (path: string) => Promise<void>
-  setWorkMode: (mode: WorkMode) => Promise<void>
   answerApproval: (id: string, choice: ApprovalChoice) => Promise<void>
   gitInstall: GitInstallProgress
   installGit: () => Promise<void>
   cancelGitInstall: () => Promise<void>
-  setWorkspaceMode: (mode: WorkspaceMode) => Promise<void>
-  setPanelWidth: (p: { railWidth?: number; panelWidth?: number }) => Promise<void>
-  setToolLayout: (next: ToolLayout) => Promise<void>
-  toolDropTarget: { id: string; after: boolean } | null
-  setToolDropTarget: (t: { id: string; after: boolean } | null) => void
-  setToolHeight: (id: string, px: number) => Promise<void>
   loadZoom: () => Promise<void>
 
   addAttachments: (a: Attachment[]) => void
@@ -387,14 +342,10 @@ export interface Store {
   startConnWatch: () => void
   openSettings: (tab?: string) => void
   closeSettings: () => void
-  setRailPinned: (v: boolean) => void
   toggleAlwaysOnTop: () => Promise<void>
   setRightPanelOpen: (v: boolean) => Promise<void>
-  toggleRightPanel: () => Promise<void>
   setBrowserSurfaceActive: (active: boolean) => void
   acquireOverlayBlocker: (token: string) => () => void
-  registerScrollToTurn: (fn: (i: number) => void) => void
-  setSettingsTab: (tab: string) => void
   log: (line: string) => void
   dismissRequest: (id: string) => void
 }
@@ -407,7 +358,6 @@ export type QuotaResumeWait = {
   provider: string
   armedAt: number
   resetAt?: number
-  failoverAt?: number
 }
 
 export type PendingSend = {
@@ -539,8 +489,6 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
     commandsAt: snapshot.commands.length ? Date.now() : 0
   }
   if (snapshot.session) projection.session = snapshot.session
-  if (snapshot.workMode) projection.workMode = snapshot.workMode
-  if (snapshot.agentProfile) projection.agentProfile = snapshot.agentProfile
   return projection
 }
 
@@ -889,41 +837,6 @@ function beginSessionSwitch(gate: number): () => void {
 
 let quotaResumeGen = 0
 let quotaResumeTimer: ReturnType<typeof setTimeout> | undefined
-let failoverBusy = false
-let lastFailoverAt = 0
-const FAILOVER_DEDUPE_MS = 15_000
-const KEEP_RUNNING_SETTLE_MS = 800
-
-function lastTurnSummary(messages: UIMessage[]): KeepRunningTurn {
-  let start = messages.length
-  while (start > 0 && messages[start - 1].role !== 'user') start--
-  const turn = messages.slice(start).filter((m) => m.role === 'assistant')
-  return {
-    error: turn.some((m) => !!m.error),
-    toolCalls: turn.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0),
-    lastText: [...turn].reverse().find((m) => m.text.trim())?.text ?? ''
-  }
-}
-
-async function runKeepRunning(sessionId: string): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, KEEP_RUNNING_SETTLE_MS))
-  const s = useStore.getState()
-  const keep = s.keepRunning
-  if (!keep || keep.sessionId !== sessionId || s.session?.sessionId !== sessionId) return
-  if (s.session.isAgentRunning || s.session.isStreaming || s.quotaResume || failoverBusy) return
-  if (s.queue.steering.length || s.queue.followUp.length || pendingSendsForView(s).length) return
-  const decision = decideKeepRunning(lastTurnSummary(s.messages), keep.count)
-  if (decision.next === 'skip') return
-  if (decision.next === 'stop') {
-    const text = decision.reason === 'done' ? '任务已完成，已关闭持续运行'
-      : decision.reason === 'idle' ? '模型本轮没有调用工具，已暂停持续运行'
-        : `已连续自动继续 ${keep.count} 次，已暂停持续运行`
-    useStore.setState({ keepRunning: null, notices: pushNotice(s.notices, 'info', text) })
-    return
-  }
-  useStore.setState({ keepRunning: { ...keep, count: keep.count + 1 } })
-  await s.send(KEEP_RUNNING_PROMPT)
-}
 
 async function runQuotaResumeCheck(gen: number, known?: QuotaWindow[]): Promise<void> {
   const wait = useStore.getState().quotaResume
@@ -944,17 +857,8 @@ async function runQuotaResumeCheck(gen: number, known?: QuotaWindow[]): Promise<
   }
   const decision = decideQuotaResume(windows, Date.now())
   if (!decision.ready) {
-    const state = useStore.getState()
-    if (wait.failoverAt !== undefined && Date.now() >= wait.failoverAt &&
-      state.quotaFailover?.sessionId === wait.sessionId && state.session?.sessionId === wait.sessionId) {
-      quotaResumeGen++
-      useStore.setState({ quotaResume: null })
-      void state.failoverQuota()
-      return
-    }
-    const next = wait.failoverAt !== undefined ? Math.min(decision.nextCheckAt, wait.failoverAt) : decision.nextCheckAt
     useStore.setState({ quotaResume: { ...wait, resetAt: decision.resetAt } })
-    quotaResumeTimer = setTimeout(() => void runQuotaResumeCheck(gen), Math.max(1000, next - Date.now()))
+    quotaResumeTimer = setTimeout(() => void runQuotaResumeCheck(gen), Math.max(1000, decision.nextCheckAt - Date.now()))
     return
   }
   quotaResumeGen++
@@ -970,7 +874,6 @@ async function runQuotaResumeCheck(gen: number, known?: QuotaWindow[]): Promise<
 let approvalBootstrapSeq = 0
 let approvalChanges = new Map<string, ApprovalRequest | null>()
 let settingsPatchQueue: Promise<unknown> = Promise.resolve()
-let workspaceModePatchSeq = 0
 let rightPanelPatchSeq = 0
 async function persistSettingsPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   const operation = settingsPatchQueue.then(async () => {
@@ -1050,21 +953,16 @@ export const useStore = create<Store>((rawSet, get) => {
   queue: EMPTY_QUEUE,
   pendingSends: [],
   quotaResume: null,
-  quotaFailover: null,
-  keepRunning: null,
   runTail: null,
   messages: [],
   sessions: [],
-  inboxOpen: false,
   todos: [],
   todoHistory: [],
   activeRunnerId: null,
   runners: [],
   sessionRuntimes: {},
-  workMode: null,
   approvals: [],
   gitInstall: { phase: 'idle' },
-  agentProfile: null,
   workspaceMode: 'daily',
 
   models: [],
@@ -1100,33 +998,20 @@ export const useStore = create<Store>((rawSet, get) => {
   settingsRequestRevision: 0,
   checkpoints: [],
   rewind: null,
-  railPinned: ((): boolean => {
-    try {
-      const v = localStorage.getItem('yan.rail-open')
-      return v === '1'
-    } catch {
-      return false
-    }
-  })(),
   titles: {},
   manualTitles: {},
-  titleCandidates: {},
   autoRetryEnabled: true,
   maximized: false,
   alwaysOnTop: false,
   browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
   browserNativeVisible: false,
   terminals: [],
-  activeTerminalId: null,
   terminalAvailable: true,
-  terminalError: null,
   filePreview: null,
   filePreviews: {},
   subagents: [],
   subagentPreviewId: null,
   zoom: null,
-  scrollToTurn: () => {
-  },
   uiRequests: [],
   questionLog: [],
   questionLogSession: null,
@@ -1142,7 +1027,6 @@ export const useStore = create<Store>((rawSet, get) => {
   editorInject: null,
   composerFocus: { tick: 0, at: 0 },
   queueRestore: null,
-  title: null,
   attachments: [],
   pendingSourceLinks: [],
   peekedPath: null,
@@ -1414,7 +1298,6 @@ export const useStore = create<Store>((rawSet, get) => {
         } else if (endedRun?.status === 'failed') {
           set({ notices: pushNotice(get().notices, 'error', `压缩失败：${endedRun.error ?? '未知原因'}`) })
         }
-        if (finished && s.keepRunning?.sessionId === m.payload.sessionId) void runKeepRunning(m.payload.sessionId)
         if (finished) {
           const sid = s.session?.sessionId
           const label = (sid && (s.manualTitles[sid] || s.titles[sid])) || s.session?.sessionName || ''
@@ -1465,12 +1348,6 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'queue':
         set({ queue: m.payload })
         break
-      case 'agent-error': {
-        const wait = s.quotaFailover
-        if (wait && wait.sessionId === s.session?.sessionId && !failoverBusy && Date.now() - lastFailoverAt > FAILOVER_DEDUPE_MS &&
-          isQuotaWaitError(m.payload.text || m.payload.message)) void get().failoverQuota()
-        break
-      }
     }
   },
 
@@ -1480,8 +1357,6 @@ export const useStore = create<Store>((rawSet, get) => {
     } catch {
     }
   },
-
-  setInboxOpen: (open) => set({ inboxOpen: open }),
 
   loadAuthProviders: async () => {
     try {
@@ -1620,7 +1495,7 @@ export const useStore = create<Store>((rawSet, get) => {
     return true
   },
 
-  armQuotaResume: async (failoverAt) => {
+  armQuotaResume: async () => {
     const session = get().session
     const provider = session?.model?.provider
     if (!session || !provider) return false
@@ -1637,67 +1512,11 @@ export const useStore = create<Store>((rawSet, get) => {
         sessionFile: session.sessionFile,
         provider,
         armedAt: Date.now(),
-        resetAt: decideQuotaResume(snapshot.windows, Date.now()).resetAt,
-        failoverAt
+        resetAt: decideQuotaResume(snapshot.windows, Date.now()).resetAt
       }
     })
     void runQuotaResumeCheck(gen, snapshot.windows)
     return true
-  },
-
-  failoverQuota: async () => {
-    const session = get().session
-    if (!session || session.model?.provider !== 'openai-codex') {
-      set({ notices: pushNotice(get().notices, 'error', '换账号续跑目前只支持 ChatGPT 订阅账号') })
-      return false
-    }
-    if (failoverBusy) return false
-    failoverBusy = true
-    try {
-      const armed = get().quotaFailover
-      const prior = armed?.sessionId === session.sessionId ? failoverSkip(armed.tried, lastFailoverAt, Date.now()) : []
-      const result = prior.length >= 8 ? { ok: false as const, error: '已连续换号多次仍失败，已停止' } : await window.yan.codexAccountFailover(prior)
-      if (get().session?.sessionId !== session.sessionId) return false
-      if (!result.ok) {
-        if (result.error) {
-          set({ quotaFailover: null, notices: pushNotice(get().notices, 'error', result.error) })
-          return false
-        }
-        const now = Date.now()
-        const failoverAt = result.earliestResetAt === undefined ? undefined
-          : result.earliestResetAt + RESET_GRACE_MS > now ? result.earliestResetAt + RESET_GRACE_MS : now + QUOTA_RESUME_POLL_MS
-        set({
-          quotaFailover: { sessionId: session.sessionId, tried: [] },
-          notices: pushNotice(get().notices, 'error', '其它账号的额度也用尽了，改为等待额度恢复后续跑')
-        })
-        void get().armQuotaResume(failoverAt)
-        return false
-      }
-      set({
-        quotaFailover: { sessionId: session.sessionId, tried: [...new Set([...prior, ...(result.fromKey ? [result.fromKey] : []), result.key])] },
-        notices: pushNotice(get().notices, 'info', `已切换到 ${result.label || result.email || '另一个账号'}，继续运行`)
-      })
-      lastFailoverAt = Date.now()
-      for (let i = 0; i < 30 && (get().session?.isAgentRunning || get().session?.isStreaming); i++) await new Promise((r) => setTimeout(r, 500))
-      if (get().session?.sessionId !== session.sessionId) return false
-      return await get().send(QUOTA_FAILOVER_PROMPT)
-    } finally {
-      failoverBusy = false
-    }
-  },
-
-  cancelQuotaFailover: () => set({ quotaFailover: null }),
-
-  setQuotaFailover: (on) => {
-    const session = get().session
-    if (!on || !session) return set({ quotaFailover: null })
-    if (session.model?.provider !== 'openai-codex') return
-    set({ quotaFailover: { sessionId: session.sessionId, tried: [] } })
-  },
-
-  setKeepRunning: (on) => {
-    const sessionId = get().session?.sessionId
-    set({ keepRunning: on && sessionId ? { sessionId, count: 0 } : null })
   },
 
   cancelQuotaResume: () => {
@@ -1817,7 +1636,6 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   abort: async () => {
-    if (get().keepRunning) set({ keepRunning: null, notices: pushNotice(get().notices, 'info', '已停止，持续运行已关闭') })
     const sessionId = get().session?.sessionId
     const cleared = await window.yan.abort()
     const back = [...cleared.steering, ...cleared.followUp].filter(Boolean)
@@ -1885,8 +1703,6 @@ export const useStore = create<Store>((rawSet, get) => {
             statuses: {},
             widgets: {},
             widgetPlacements: {},
-            workMode: null,
-            agentProfile: null,
             stats: null
           }),
       queue: arrived?.queue ?? EMPTY_QUEUE,
@@ -1931,8 +1747,6 @@ export const useStore = create<Store>((rawSet, get) => {
       statuses: left.statuses,
       widgets: left.widgets,
       widgetPlacements: left.widgetPlacements,
-      workMode: left.workMode,
-      agentProfile: left.agentProfile,
       pendingActivation: left.pendingActivation
     }
     set({
@@ -1948,9 +1762,7 @@ export const useStore = create<Store>((rawSet, get) => {
       uiRequests: cachedSnapshot?.uiRequests ?? [],
       statuses: cachedSnapshot?.statuses ?? {},
       widgets: cachedSnapshot?.widgets ?? {},
-      widgetPlacements: cachedSnapshot?.widgetPlacements ?? {},
-      workMode: cachedSnapshot?.workMode ?? null,
-      agentProfile: cachedSnapshot?.agentProfile ?? null
+      widgetPlacements: cachedSnapshot?.widgetPlacements ?? {}
     })
 
     performance.mark('yan:switch-start')
@@ -2158,23 +1970,6 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ notices: pushNotice(get().notices, 'info', `已换成新标题：「${res.title}」`) })
   },
 
-  acceptTitleCandidate: async (sessionId) => {
-    const sid = sessionId.trim()
-    const candidate = get().titleCandidates[sid]
-    if (!sid || !candidate) return
-    await get().setManualTitle(sid, candidate)
-    if (get().manualTitles[sid] !== candidate) return
-    const next = { ...get().titleCandidates }
-    delete next[sid]
-    set({ titleCandidates: next })
-  },
-
-  dismissTitleCandidate: (sessionId) => {
-    const next = { ...get().titleCandidates }
-    delete next[sessionId]
-    set({ titleCandidates: next })
-  },
-
   deleteSession: async (path) => {
     const res = await piCall(() => window.yan.deleteSession(path))
     if (!res.ok) {
@@ -2192,9 +1987,8 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     const manualTitles = { ...get().manualTitles }
     const titles = { ...get().titles }
-    const titleCandidates = { ...get().titleCandidates }
-    for (const id of removedIds) { delete manualTitles[id]; delete titles[id]; delete titleCandidates[id] }
-    set({ sessionRuntimes: cache, manualTitles, titles, titleCandidates })
+    for (const id of removedIds) { delete manualTitles[id]; delete titles[id] }
+    set({ sessionRuntimes: cache, manualTitles, titles })
     await get().refreshSessions()
   },
 
@@ -2361,16 +2155,6 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  changeCwd: async (cwd) => {
-    const res = await piCall(() => window.yan.setCwd(cwd))
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换目录失败') })
-      return
-    }
-    set({ settings: await window.yan.getSettings() })
-    await get().refreshSessions()
-  },
-
   setUiScale: async (v) => {
     set({ zoom: await window.yan.setUiScale(v) })
     set({ settings: await window.yan.getSettings() })
@@ -2390,61 +2174,6 @@ export const useStore = create<Store>((rawSet, get) => {
       : conversationKeyOf(view.session))
     await browserOpener.open({ owner, url, guard: target !== undefined })
   },
-
-  closeBrowser: async () => {
-    const browserState = await window.yan.browser.close()
-    if (!browserState.open) releaseResource('browser')
-    set({ browserState })
-    applyBrowserVisibility(get)
-  },
-
-  refreshTerminals: async () => {
-    try {
-      const availability = await window.yan.terminal.available()
-      if (!availability.available) {
-        set({ terminalAvailable: false, terminalError: availability.error ?? null, terminals: [], activeTerminalId: null })
-        return
-      }
-      const list = await window.yan.terminal.list()
-      set({ terminalAvailable: true, terminalError: null, terminals: list })
-    } catch (error) {
-      set({ terminalAvailable: false, terminalError: error instanceof Error ? error.message : String(error), terminals: [] })
-    }
-  },
-
-  startTerminal: async (options) => {
-    const { owner, ...startOptions } = options ?? {}
-    const snapshot = await window.yan.terminal.start(options ? startOptions : undefined)
-    if (!snapshot) {
-      const availability = await window.yan.terminal.available().catch(() => ({ available: false, error: undefined }))
-      const reason = availability.error ?? ''
-      set({
-        terminalAvailable: false,
-        terminalError: reason || null,
-        notices: pushNotice(get().notices, 'error', reason || '启动终端失败')
-      })
-      return null
-    }
-    if (owner) claimResource('terminal:' + snapshot.id, owner)
-    set({
-      terminals: [...get().terminals.filter((term) => term.id !== snapshot.id), snapshot],
-      activeTerminalId: snapshot.id
-    })
-    if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
-    return snapshot
-  },
-
-  closeTerminal: async (id) => {
-    await window.yan.terminal.kill(id).catch(() => false)
-    releaseResource('terminal:' + id)
-    const terminals = get().terminals.filter((term) => term.id !== id)
-    set({
-      terminals,
-      activeTerminalId: get().activeTerminalId === id ? terminals[terminals.length - 1]?.id ?? null : get().activeTerminalId
-    })
-  },
-
-  setActiveTerminal: (id) => set({ activeTerminalId: id }),
 
   previewFile: async (path, line, cwd, lineEnd) => {
     set({ filePreview: { path, cwd, line, lineEnd, loading: true, data: null } })
@@ -2487,51 +2216,6 @@ export const useStore = create<Store>((rawSet, get) => {
     })
   },
 
-  activateFileTab: (key) => {
-    const target = get().filePreviews[key]
-    if (!target) return
-    set({ filePreview: target })
-  },
-
-  checkPreviewStale: async (key) => {
-    const current = key ? get().filePreviews[key] : get().filePreview
-    const abs = current?.data?.abs
-    const loadedMtime = current?.data?.mtimeMs
-    if (!current || !abs || !current.data?.ok || typeof loadedMtime !== 'number') return
-    const found = await window.yan.statPreview(abs, current.cwd)
-    const now = key ? get().filePreviews[key] : get().filePreview
-    if (!now || now.data?.abs !== abs) return
-    const stale = !found.ok || found.mtimeMs !== loadedMtime
-    if (!!now.stale === stale) return
-    const next: FilePreviewState = { ...now, stale }
-    set({
-      filePreview: get().filePreview?.key === next.key ? next : get().filePreview,
-      filePreviews: next.key ? { ...get().filePreviews, [next.key]: next } : get().filePreviews
-    })
-  },
-
-  closeFileTab: (key) => {
-    releaseResource('file:' + key)
-    const rest = { ...get().filePreviews }
-    delete rest[key]
-    const current = get().filePreview
-    const leaving = current?.key === key
-    const fallbackKey = Object.keys(rest).pop()
-    set({
-      filePreviews: rest,
-      filePreview: leaving ? (fallbackKey ? rest[fallbackKey] : null) : current
-    })
-  },
-
-  closePreview: () => {
-    const current = get().filePreview
-    if (current?.key) {
-      get().closeFileTab(current.key)
-      return
-    }
-    set({ filePreview: null })
-  },
-
   loadSubagents: async () => {
     try {
       set({ subagents: await window.yan.subagents.list() })
@@ -2561,24 +2245,6 @@ export const useStore = create<Store>((rawSet, get) => {
     const res = await window.yan.subagents.stop(id)
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '停止子代理失败') })
-    }
-  },
-
-  clearSubagents: async () => {
-    await window.yan.subagents.clearFinished()
-  },
-
-  mergeSubagent: async (id) => {
-    const res = await window.yan.subagents.merge(id)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '合并子代理结果失败') })
-    }
-  },
-
-  discardSubagent: async (id) => {
-    const res = await window.yan.subagents.discard(id)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '放弃子代理结果失败') })
     }
   },
 
@@ -2644,57 +2310,6 @@ export const useStore = create<Store>((rawSet, get) => {
       await window.yan.answerApproval(id, choice)
     } catch {
     }
-  },
-
-  setWorkMode: async (mode) => {
-    const current = get().workMode
-    try {
-      const res = await window.yan.setWorkMode(mode, current?.revision)
-      set({ workMode: res.state })
-      if (!res.ok) {
-        const message = res.error === 'version-mismatch'
-          ? '模式已被另一个入口改过，已恢复为当前值。'
-          : (res.error ?? '切换工作模式失败')
-        set({ notices: pushNotice(get().notices, 'error', message) })
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      set({ notices: pushNotice(get().notices, 'error', `切换工作模式失败：${message}`) })
-    }
-  },
-
-  setWorkspaceMode: async (mode) => {
-    const prev = get().workspaceMode
-    const request = ++workspaceModePatchSeq
-    set({ workspaceMode: mode })
-    try {
-      const next = await persistSettingsPatch({ workspaceMode: mode })
-      if (request === workspaceModePatchSeq) set({ settings: next, workspaceMode: next.workspaceMode ?? mode })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (request === workspaceModePatchSeq) set({ workspaceMode: prev })
-      set({ notices: pushNotice(get().notices, 'error', `切换工作区模式失败：${message}`) })
-    }
-  },
-
-  setPanelWidth: async (patch) => {
-    try { set({ settings: await persistSettingsPatch(patch as Partial<AppSettings>) }) }
-    catch (error) { set({ notices: pushNotice(get().notices, 'error', `保存面板宽度失败：${String(error)}`) }) }
-  },
-
-  setToolLayout: async (next) => {
-    const current = get().settings?.toolLayout ?? defaultToolLayout(TOOL_SECTIONS)
-    const { layout, applied } = commitTileLayout(current, next)
-    if (!applied) return
-    set({ settings: await persistSettingsPatch({ toolLayout: layout }) })
-  },
-
-  toolDropTarget: null,
-  setToolDropTarget: (t) => set({ toolDropTarget: t }),
-
-  setToolHeight: async (id, px) => {
-    const cur = get().settings?.toolHeights ?? {}
-    set({ settings: await persistSettingsPatch({ toolHeights: { ...cur, [id]: Math.round(px) } } as Partial<AppSettings>) })
   },
 
   addAttachments: (a) => {
@@ -2967,13 +2582,6 @@ export const useStore = create<Store>((rawSet, get) => {
   },
   openRewind: (recordId, preview) => set({ rewind: { recordId, preview } }),
   closeRewind: () => set({ rewind: null }),
-  setRailPinned: (v) => {
-    set({ railPinned: v })
-    try {
-      localStorage.setItem('yan.rail-open', v ? '1' : '0')
-    } catch {
-    }
-  },
   toggleAlwaysOnTop: async () => {
     const next = !get().alwaysOnTop
     const previous = !next
@@ -3010,9 +2618,6 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     applyBrowserVisibility(get)
   },
-  toggleRightPanel: async () => {
-    await get().setRightPanelOpen(!(get().settings?.rightPanelOpen ?? true))
-  },
   setBrowserSurfaceActive: (active) => {
     browserSurfaceActive = active
     applyBrowserVisibility(get)
@@ -3025,8 +2630,6 @@ export const useStore = create<Store>((rawSet, get) => {
       applyBrowserVisibility(get)
     }
   },
-  registerScrollToTurn: (fn) => set({ scrollToTurn: fn }),
-  setSettingsTab: (tab) => set({ settingsTab: tab }),
   log: (line) => set({ logs: [...get().logs, line].slice(-200) })
   }
 })

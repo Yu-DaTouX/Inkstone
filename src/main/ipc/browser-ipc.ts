@@ -30,7 +30,6 @@ export function registerBrowserIpc(ipc: IpcRegistrar, browserOf: () => BrowserCo
   rawHandle('yan:browser:setPermission', (_e, permission: string, origin: string, allowed: boolean) =>
     browserOf()?.setPermission(String(permission ?? ''), String(origin ?? ''), Boolean(allowed)) ?? NOT_READY
   )
-  rawHandle('yan:browser:setUserControl', (_e, value: boolean) => browserOf()?.setUserControl(Boolean(value)))
   rawHandle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
     browserOf()?.setBounds(bounds)
   })

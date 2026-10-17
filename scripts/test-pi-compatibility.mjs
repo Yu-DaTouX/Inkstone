@@ -7,7 +7,6 @@ import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { comparePiVersions, requirePiUpgrade } from './lib/pi-upgrade-policy.mjs'
 import * as danger from '../resources/pi-extensions/danger-guard.js'
-import profile from '../resources/pi-extensions/profile.js'
 import { runDangerGuardTests } from './test-danger-guard.mjs'
 
 let checks = 0
@@ -86,24 +85,6 @@ const cycle = [{ id: 'a', parentToolCallId: 'b', name: 'read' }, { id: 'b', pare
 check(modules.tree.toolCallForest(cycle).length === 2, 'cyclic history cannot hang the renderer')
 check(modules.tree.toolCallForest([{ id: 'x', parentToolCallId: 'gone', name: 'read' }]).length === 1, 'orphan child stays inspectable at the top level')
 
-const previous = { data: process.env.YAN_DATA_DIR, session: process.env.YAN_SESSION_ID }
-try {
-  process.env.YAN_DATA_DIR = root
-  process.env.YAN_SESSION_ID = 'runner'
-  await mkdir(join(root, 'agent-profile'))
-  const snapshot = join(root, 'agent-profile/runner.json')
-  await writeFile(snapshot, JSON.stringify({ profile: 'daily', activity: 'research', deniedTools: ['mcp__fixture__echo'] }))
-  const hooks = new Map()
-  profile({ on: (name, fn) => hooks.set(name, fn) })
-  check(hooks.get('tool_call')({ toolName: 'mcp__fixture__echo', parentToolCallId: 'code' }).block === true, 'profile blocks undeclared nested tools at execution')
-  check(hooks.get('tool_call')({ toolName: 'read' }) === undefined, 'profile allows unrelated tools')
-  await writeFile(snapshot, JSON.stringify({ profile: 'daily', activity: 'compose', deniedTools: [] }))
-  check(hooks.get('tool_call')({ toolName: 'mcp__fixture__echo' }) === undefined, 'execution rechecks changed policy')
-} finally {
-  for (const [name, value] of [['YAN_DATA_DIR', previous.data], ['YAN_SESSION_ID', previous.session]]) {
-    if (value === undefined) delete process.env[name]; else process.env[name] = value
-  }
-}
 console.log(`PASS: ${checks} assertions plus version rejection cases; pi upgrade, shell guard, nested history/tree and deferred-tool policy`)
 
 async function runUpgradeCatalogTests() {

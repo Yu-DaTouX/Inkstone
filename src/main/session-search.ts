@@ -105,11 +105,6 @@ export function warmSessionSearch(): void {
   setTimeout(() => void ensureIndex().catch(() => undefined), 4000).unref?.()
 }
 
-export function clearSessionSearchIndex(): void {
-  index.clear()
-  knownFiles = []
-}
-
 export async function searchSessionText(query: string, limit = 30): Promise<SessionSearchResult> {
   const tokens = queryTokens(query)
   if (!tokens.length) return { hits: [], indexed: index.size, total: knownFiles.length }

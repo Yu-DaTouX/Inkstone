@@ -14,6 +14,7 @@ import { Badge, Button, ListBoxItem, Select, Switch } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { formatWhen } from './general-model'
 import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
+import { RelaySettings } from './RelaySettings'
 
 type BindMode = 'tailscale' | 'radmin' | 'lan' | 'loopback'
 
@@ -325,6 +326,8 @@ export function DevicesSettings(): ReactElement {
           />
         </SettingsRow>
       </SettingsGroup>
+
+      <RelaySettings saved={saved} status={status} busy={busy} text={text} lang={lang} configure={configure} run={run} />
 
       <SettingsGroup label={text.devicesPeer}>
         <SettingsRow block label={text.devicesPeer} description={text.devicesPeerDesc}>

@@ -284,70 +284,15 @@ export async function runCommandCodeQuotaDisplayTests(ok) {
 
   await mkdir(OUT, { recursive: true })
   const { commandCodeWindows } = await loadPure('src/main/quota-commandcode.ts', 'quota-commandcode')
-  const { shouldRenderQuotaSection, quotaSnapshotMatchesProvider } = await loadPure('src/shared/quota-display.ts', 'quota-display')
-
-  const renderInput = (over = {}) => ({
-    provider: 'commandcode',
-    loading: false,
-    supported: true,
-    hasError: false,
-    hasMainText: false,
-    windowCount: 0,
-    hasBudget: false,
-    ...over
-  })
 
   {
     const windows = commandCodeWindows(SNAPSHOT, Date.UTC(2026, 9, 21))
     check(windows.length === 3, '五个小时 / 每周 / 本月三个窗口都产出', windows.map((w) => w.id).join(', '))
-    check(shouldRenderQuotaSection(renderInput({ windowCount: windows.length })), '有窗口 → 渲染')
-    check(shouldRenderQuotaSection(renderInput({ hasMainText: true })), '有主值（即使窗口为空）→ 渲染')
   }
 
   {
-    const failed = renderInput({ supported: true, hasMainText: false, windowCount: 0 })
-    check(shouldRenderQuotaSection(failed), '已知支持额度接口的 provider 查询失败 → 仍渲染错误行')
-    const oldHidden =
-      !failed.provider ||
-      (!failed.loading && !failed.hasMainText && failed.windowCount === 0 && !failed.hasBudget && failed.provider !== 'claude-bridge')
-    check(oldHidden, '旧 guard 会把同样的状态整块隐藏（这就是「没有额度段」的原因）')
     const noWindows = commandCodeWindows({ windowLimits: { limited: false } })
     check(noWindows.length === 0, '接口没返回任何窗口时解析出 0 个窗口（不是编一个 0 额度）')
-    check(shouldRenderQuotaSection(renderInput({ windowCount: noWindows.length })), '接口返回但没窗口 → 仍渲染，让原因可见')
-  }
-
-  {
-    check(
-      shouldRenderQuotaSection(renderInput({ supported: null, loading: false, hasError: true })),
-      'Promise reject（supported === null）→ hasError 让错误行可见'
-    )
-    check(
-      !shouldRenderQuotaSection(renderInput({ supported: false, hasError: true })),
-      '明确不支持（supported === false）即使报错也不占空块'
-    )
-    check(
-      !shouldRenderQuotaSection({
-        provider: 'commandcode', loading: false, supported: null, hasError: false,
-        hasMainText: false, windowCount: 0, hasBudget: false
-      }),
-      '还没查、也没有错误 → 不凭空占位'
-    )
-  }
-
-  {
-    check(!shouldRenderQuotaSection(renderInput({ provider: 'yan-local', supported: false })), '自定义 API（supported === false）→ 不渲染')
-    check(!shouldRenderQuotaSection(renderInput({ provider: '' })), '没有 provider → 不渲染')
-    check(shouldRenderQuotaSection(renderInput({ supported: null, loading: true })), '首次查询在飞 → 渲染占位，避免闪一下消失')
-  }
-
-  {
-    const commandSnapshot = { provider: 'commandcode', supported: true, windows: commandCodeWindows(SNAPSHOT, Date.UTC(2026, 9, 21)) }
-    check(quotaSnapshotMatchesProvider(commandSnapshot.provider, 'commandcode'), '同一 provider → 快照可用')
-    check(!quotaSnapshotMatchesProvider(commandSnapshot.provider, 'deepseek'), '换到 deepseek → Command Code 快照作废')
-    check(quotaSnapshotMatchesProvider('COMMANDCODE', ' commandcode '), '大小写 / 空白差异按同一 provider 处理')
-    check(!quotaSnapshotMatchesProvider(undefined, 'commandcode'), '快照没有 provider → 不作数')
-    const active = quotaSnapshotMatchesProvider(commandSnapshot.provider, 'deepseek') ? commandSnapshot : null
-    check(active === null, '派生出的 quota 为 null（不会把 Command Code 的窗口留给 deepseek）')
   }
 
   await runQuotaCredentialSourceTests(check)
