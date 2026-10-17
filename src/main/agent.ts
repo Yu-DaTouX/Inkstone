@@ -197,6 +197,7 @@ export interface SubagentCommandContext {
   cwd: string
   parentSessionId?: string
   parentRunId?: string
+  parentGeneration?: number
   parentMessageId?: string
   projectId?: string
 }
@@ -1011,8 +1012,9 @@ export class AgentController extends EventEmitter {
       return this.subagentHost.run(command, params, {
         cwd: this.cwd,
         model: this.state?.model ? `${this.state.model.provider}/${this.state.model.id}` : undefined,
-        parentSessionId: this.state?.sessionId ?? this.capabilityOpts?.sessionId,
+        parentSessionId: this.state?.sessionId || (this.capabilityOpts?.sessionId ? `pending:${this.capabilityOpts.sessionId}` : undefined),
         parentRunId: this.capabilityOpts?.sessionId,
+        parentGeneration: this.capabilityOpts?.runnerGeneration,
         parentMessageId: this.latestAssistantMessageId(),
         projectId: this.capabilityOpts?.projectId
       })
