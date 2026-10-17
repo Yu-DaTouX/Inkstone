@@ -87,7 +87,13 @@ export default function ShellV3(): ReactElement {
     const timer = setTimeout(() => { try { localStorage.setItem('inkstone.v3.sidebarWidth', String(sidebarWidth)) } catch { } }, 150)
     return () => clearTimeout(timer)
   }, [sidebarWidth])
-  const [workspaceWidth, setWorkspaceWidth] = useState(420)
+  const [workspaceWidth, setWorkspaceWidth] = useState(() => {
+    try { const value = Number(localStorage.getItem('inkstone.v3.workspaceWidth')); return value >= 280 ? value : 420 } catch { return 420 }
+  })
+  useEffect(() => {
+    const timer = setTimeout(() => { try { localStorage.setItem('inkstone.v3.workspaceWidth', String(workspaceWidth)) } catch { } }, 150)
+    return () => clearTimeout(timer)
+  }, [workspaceWidth])
   const bodyRef = useRef<HTMLDivElement>(null)
   const [bodyWidth, setBodyWidth] = useState(1000)
   useLayoutEffect(() => {
@@ -116,6 +122,10 @@ export default function ShellV3(): ReactElement {
   const route = useUiV3((s) => s.route)
   const sidebarOpen = useUiV3((s) => s.sidebarOpen)
   const workspaceOpen = useUiV3((s) => s.workspaceOpen)
+  const workspaceTab = useUiV3((s) => s.workspaceTab)
+  const hasMessages = useStore((s) => s.messages.length > 0)
+  const tilesEnabled = useStore((s) => s.settings?.workspaceTiles !== false)
+  const workspaceShown = route.name === 'chat' && workspaceOpen && (workspaceTab !== 'overview' || (hasMessages && tilesEnabled))
   useEffect(() => { if (sidebarOpen) setSidebarPreview(false) }, [sidebarOpen])
 
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -123,10 +133,9 @@ export default function ShellV3(): ReactElement {
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const onboardDecided = useRef(false)
   const [narrow, setNarrow] = useState<boolean>(() => window.matchMedia('(max-width: 899px)').matches)
-  const [panelMode, setPanelMode] = useState<'docked' | 'overlay' | 'full'>(() =>
-    window.innerWidth < 900 ? 'full' : window.innerWidth < 1180 ? 'overlay' : 'docked'
-  )
-  const [panelMounted, setPanelMounted] = useState(false)
+  const [panelMode, setPanelMode] = useState<'docked' | 'full'>(() => (window.innerWidth < 900 ? 'full' : 'docked'))
+  const [panelMounted, setPanelMounted] = useState(workspaceOpen)
+  useEffect(() => { if (workspaceOpen) setPanelMounted(true) }, [workspaceOpen])
 
   const owner = useWorkspaceOwner()
 
@@ -236,7 +245,7 @@ export default function ShellV3(): ReactElement {
   useEffect(() => {
     const apply = (): void => {
       const w = window.innerWidth
-      setPanelMode(w < 900 ? 'full' : w < 1180 ? 'overlay' : 'docked')
+      setPanelMode(w < 900 ? 'full' : 'docked')
     }
     apply()
     window.addEventListener('resize', apply)
@@ -262,6 +271,7 @@ export default function ShellV3(): ReactElement {
     return layout ? sessionTiles(layout.tiles) : displayed ? [displayed] : []
   }, [split, narrow, displayed])
   useRunnerVisibility(visibleSessions)
+  const workspaceMode = panelMode === 'docked' && workspaceTab === 'overview' && visibleSessions.length <= 1 ? 'tiles' : panelMode
 
   useEffect(() => {
     if (!settings) return
@@ -278,10 +288,6 @@ export default function ShellV3(): ReactElement {
     window.addEventListener('yan-v3-focus-search', openSearch)
     return () => window.removeEventListener('yan-v3-focus-search', openSearch)
   }, [])
-
-  useEffect(() => {
-    if (route.name !== 'chat' && useUiV3.getState().workspaceOpen) useUiV3.getState().setWorkspaceOpen(false)
-  }, [route.name])
 
   const toggleWorkspace = (): void => {
     const ui = useUiV3.getState()
@@ -422,7 +428,7 @@ export default function ShellV3(): ReactElement {
       }
       if (event.key === 'Escape' && !typing) {
         const ui = useUiV3.getState()
-        if (ui.workspaceOpen && panelMode !== 'docked') ui.setWorkspaceOpen(false)
+        if (ui.workspaceOpen && panelMode === 'full') ui.setWorkspaceOpen(false)
         else if (ui.route.name !== 'chat') ui.goBack()
         else if (narrow && ui.sidebarOpen) ui.setSidebarOpen(false)
       }
@@ -473,13 +479,14 @@ export default function ShellV3(): ReactElement {
             onBack={() => useUiV3.getState().goBack()}
             workspaceOpen={workspaceOpen}
             onToggleWorkspace={toggleWorkspace}
+            onOpenTool={(tab) => void openWorkspaceTab(tab)}
           />
           <div
             className="v3-body"
             ref={bodyRef}
             style={{ '--workspace-width': `${shownWorkspaceWidth}px` } as CSSProperties}
-            data-workspace={route.name === 'chat' && workspaceOpen ? 'open' : 'closed'}
-            data-workspace-mode={panelMode}
+            data-workspace={workspaceShown ? 'open' : 'closed'}
+            data-workspace-mode={workspaceMode}
           >
             {route.name === 'settings' ? (
               <SettingsPanelV3 onShowOnboarding={() => setOnboardingOpen(true)} />
@@ -504,8 +511,8 @@ export default function ShellV3(): ReactElement {
             {panelMounted ? (
               <WorkbenchPanel
                 owner={owner}
-                open={route.name === 'chat' && workspaceOpen}
-                mode={panelMode}
+                open={workspaceShown}
+                mode={workspaceMode}
                 panes={WORKBENCH_PANES}
                 onClose={() => useUiV3.getState().setWorkspaceOpen(false)}
                 onRequestActivation={requestActivation}
@@ -526,8 +533,8 @@ export default function ShellV3(): ReactElement {
                 }}
               />
             ) : null}
-            {route.name === 'chat' && workspaceOpen && panelMode === 'docked' ? (
-              <Splitter className="v3-workspace-resizer" orientation="vertical" value={bodyWidth - shownWorkspaceWidth} min={360} max={bodyWidth - 280} step={16} aria-label={lang === 'en-US' ? 'Resize workspace' : '调整工作区宽度'} onChange={(left) => setWorkspaceWidth(bodyWidth - left)} onReset={() => setWorkspaceWidth(420)} />
+            {workspaceShown && workspaceMode === 'docked' ? (
+              <Splitter className="v3-workspace-resizer" quiet orientation="vertical" value={bodyWidth - shownWorkspaceWidth} min={360} max={bodyWidth - 280} step={16} aria-label={lang === 'en-US' ? 'Resize workspace' : '调整工作区宽度'} onChange={(left) => setWorkspaceWidth(bodyWidth - left)} onReset={() => setWorkspaceWidth(420)} />
             ) : null}
           </div>
         </div>

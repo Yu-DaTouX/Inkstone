@@ -47,6 +47,25 @@ function writeUiPrefs(prefs: V3UiPrefs): void {
   }
 }
 
+const WORKSPACE_OPEN_KEY = 'inkstone.v3.workspaceOpen'
+
+function readWorkspaceOpen(): boolean {
+  if (typeof localStorage === 'undefined') return true
+  try {
+    return localStorage.getItem(WORKSPACE_OPEN_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+function writeWorkspaceOpen(open: boolean): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(WORKSPACE_OPEN_KEY, open ? '1' : '0')
+  } catch {
+  }
+}
+
 interface UiV3State {
   route: V3Route
   back: V3Route[]
@@ -74,7 +93,7 @@ export const useUiV3 = create<UiV3State>((set, get) => ({
   route: { name: 'chat' },
   back: [],
   sidebarOpen: true,
-  workspaceOpen: false,
+  workspaceOpen: readWorkspaceOpen(),
   workspaceTab: readUiPrefs().workbenchTab,
   workspaceSplit: false,
   workspaceSplitTab: 'context',
@@ -91,8 +110,11 @@ export const useUiV3 = create<UiV3State>((set, get) => ({
   },
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set({ sidebarOpen: !get().sidebarOpen }),
-  setWorkspaceOpen: (open) => set({ workspaceOpen: open }),
-  toggleWorkspace: () => set({ workspaceOpen: !get().workspaceOpen }),
+  setWorkspaceOpen: (open) => {
+    set({ workspaceOpen: open })
+    writeWorkspaceOpen(open)
+  },
+  toggleWorkspace: () => get().setWorkspaceOpen(!get().workspaceOpen),
   setWorkspaceTab: (view) => {
     if (!isWorkbenchView(view)) return
     set({ workspaceTab: view })

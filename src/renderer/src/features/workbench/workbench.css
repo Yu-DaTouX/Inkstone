@@ -1,7 +1,7 @@
 @layer patterns {
-  .wb-panel {
+  .wb-panel[data-mode='full'],
+  .wb-panel[data-focus='1'] {
     background: var(--bg);
-    border-left: 1px solid var(--line);
   }
 
   .wb-tablist {
@@ -75,16 +75,6 @@
     min-width: 0;
     min-height: 0;
     height: 100%;
-  }
-
-  .wb-panel[data-mode='overlay'] {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(var(--size-panel), 100%);
-    z-index: 20;
-    box-shadow: var(--shadow-pop, 0 8px 32px rgb(0 0 0 / 0.18));
   }
 
   .wb-panel[data-mode='full'] {
@@ -480,12 +470,12 @@
   }
 
   .wb-quota-card {
+    flex: none;
     display: flex;
     flex-direction: column;
     gap: var(--s-8);
     min-width: 0;
-    padding-bottom: var(--s-12);
-    border-bottom: 1px solid var(--line);
+    padding: var(--s-12);
   }
 
   .wb-quota-name {
@@ -545,14 +535,6 @@
     min-width: 0;
   }
 
-  .wb-head-title {
-    flex: 1;
-    min-width: 0;
-    padding-left: var(--s-4);
-    font-size: var(--t-meta);
-    font-weight: 600;
-  }
-
   .wb-back {
     flex: none;
   }
@@ -568,11 +550,36 @@
     overflow-y: auto;
   }
 
+  .wb-panel[data-mode='tiles'] {
+    position: absolute;
+    top: 0;
+    right: var(--s-12);
+    width: var(--size-tiles);
+    height: auto;
+    max-height: 100%;
+    z-index: 6;
+  }
+
+  .wb-panel[data-mode='tiles'] .wb-body {
+    padding: 0;
+  }
+
+  .wb-panel[data-mode='tiles'] .wb-overview {
+    padding: var(--s-16) 0 var(--s-16);
+    scrollbar-width: none;
+  }
+
   .wb-tile {
     flex: none;
     display: flex;
     flex-direction: column;
+    gap: var(--s-4);
     min-width: 0;
+    padding: var(--s-8) var(--s-12) var(--s-10);
+  }
+
+  .wb-tile[data-folded='1'] {
+    padding-bottom: var(--s-8);
   }
 
   .wb-tile-head {
@@ -585,10 +592,11 @@
   .wb-tile-toggle {
     flex: 1;
     min-width: 0;
-    min-height: 28px;
+    min-height: 24px;
     justify-content: flex-start;
-    gap: var(--s-6);
-    padding: 0 var(--s-8);
+    gap: var(--s-4);
+    margin-left: calc(-1 * var(--s-4));
+    padding: 0 var(--s-4);
   }
 
   .wb-tile-toggle > .ui-btn__label {
@@ -596,14 +604,18 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: var(--s-6);
+    gap: var(--s-4);
   }
 
   .wb-tile-title {
     flex: none;
-    font-size: var(--t-meta);
+    font-size: var(--t-body);
     font-weight: 600;
     white-space: nowrap;
+  }
+
+  .wb-tile-chevron {
+    flex: none;
   }
 
   .wb-tile-summary {
@@ -613,13 +625,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--font-mono);
     font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
   }
 
   .wb-tile-open {
     flex: none;
-    margin-right: var(--s-4);
+    margin-right: calc(-1 * var(--s-6));
   }
 
   .wb-tile-body {
@@ -627,102 +639,55 @@
     flex-direction: column;
     gap: var(--s-6);
     min-width: 0;
-    padding: 0 var(--s-8) var(--s-8);
-    font-size: var(--t-meta);
+    font-size: var(--t-body);
   }
 
   .wb-ov-meter .ui-progress__track {
     height: 4px;
   }
 
-  .wb-ov-rows {
-    display: grid;
-    gap: var(--s-4);
-    margin: 0;
-  }
-
-  .wb-ov-row {
-    display: grid;
-    grid-template-columns: minmax(0, 4.5em) minmax(0, 1fr);
-    gap: var(--s-8);
-    min-width: 0;
-  }
-
-  .wb-ov-row dt {
-    color: var(--fg3);
-  }
-
-  .wb-ov-row dd {
-    margin: 0;
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .wb-ov-path {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--font-mono);
-  }
-
-  .wb-ov-list {
+  .wb-ov-items {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--s-2);
     min-width: 0;
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
-  .wb-ov-line {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-  }
-
-  .wb-ov-task {
+  .wb-ov-item {
     display: flex;
     align-items: center;
-    gap: var(--s-4);
+    gap: var(--s-8);
     min-width: 0;
+    min-height: 24px;
   }
 
-  .wb-ov-task-main,
-  .wb-ov-file {
-    flex: 1;
-    min-width: 0;
-    justify-content: flex-start;
-  }
-
-  .wb-ov-task-main {
-    display: flex;
-    align-items: center;
-    gap: var(--s-6);
-  }
-
-  .wb-ov-status {
+  .wb-ov-item-icon {
     flex: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 12px;
-    height: 12px;
+    width: 14px;
   }
 
-  .wb-ov-task-name {
-    flex: 1;
+  .wb-ov-item-label {
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .wb-ov-task-time {
-    flex: none;
-    font-family: var(--font-mono);
-    color: var(--fg3);
+  .wb-ov-item-value {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
 
   .wb-ov-dot {
@@ -734,20 +699,28 @@
 
   .wb-ov-note {
     margin: 0;
-    color: var(--fg3);
+    font-size: var(--t-meta);
     overflow-wrap: anywhere;
   }
 }
 
 @layer patterns {
-  .wb-tile {
+  .wb-tile,
+  .wb-quota-card {
     border: 1px solid var(--line);
-    border-radius: var(--r-lg);
+    border-radius: var(--r-md);
     background: var(--surface);
   }
 
-  .wb-ov-check {
+  .wb-tile-chevron,
+  .wb-ov-item-icon,
+  .wb-ov-item-value,
+  .wb-ov-note {
     color: var(--fg3);
+  }
+
+  .wb-ov-item-icon {
+    color: var(--fg2);
   }
 
   .wb-tile[data-tone='warn'] .wb-tile-summary {

@@ -53,7 +53,7 @@
     font-size: var(--t-meta);
     color: inherit;
     min-width: 2.6em;
-    text-align: right;
+    text-align: left;
   }
 
   .ctx-pop {

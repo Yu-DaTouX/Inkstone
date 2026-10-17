@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactElement, type ReactNode } from 'react'
-import { ArrowLeft, ExternalLink, FolderOpen, Globe, Maximize2, Minimize2, MoreHorizontal, Rows2, Terminal, X } from 'lucide-react'
-import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Tab, TabList, Tabs } from '../../ui'
+import { ArrowLeft, ExternalLink, Maximize2, Minimize2, Rows2, X } from 'lucide-react'
+import { Button, IconButton, Tab, TabList, Tabs } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useUiV3 } from '../../state/ui-v3'
 import { OverviewPane } from './OverviewPane'
@@ -90,7 +90,7 @@ function TabStrip({ label, selectedKey, open, onSelect, className, children }: T
 export interface WorkbenchPanelProps {
   owner: WorkspaceOwner | null
   open: boolean
-  mode: 'docked' | 'overlay' | 'full'
+  mode: 'docked' | 'tiles' | 'full'
   panes: WorkbenchPaneComponents
   onClose: () => void
   onRequestActivation: (tab: WorkbenchTabId) => Promise<boolean>
@@ -220,90 +220,54 @@ export function WorkbenchPanel({
       aria-label={text.title}
       hidden={!open}
     >
-      <div className="wb-head">
-        {isOverview ? (
-          <span className="wb-head-title" data-testid="wb-overview-title">
-            {text.overview.title}
-          </span>
-        ) : (
-          <>
-            <Button variant="ghost" size="sm" className="wb-back" aria-label={text.overview.backLabel} onPress={() => setWorkspaceTab('overview')} data-testid="wb-back">
-              <ArrowLeft size={14} aria-hidden />
-              <span>{text.overview.back}</span>
-            </Button>
-            <TabStrip label={text.title} selectedKey={view} open={open} onSelect={(key) => selectTab(key as WorkbenchTabId)}>
-              {WORKBENCH_TABS.filter((tab) => tab === view || visited.has(tab)).map((tab) => (
-                <Tab key={tab} id={tab} className="wb-tab" data-testid={`wb-tab-${tab}`}>
-                  {text.tabs[tab]}
-                </Tab>
-              ))}
-            </TabStrip>
-          </>
-        )}
-        <div className="wb-actions">
-          {isOverview ? (
-            <>
-              <IconButton aria-label={text.tabs.terminal} title={text.tabs.terminal} data-testid="wb-open-terminal" onPress={() => selectTab('terminal')}>
-                <Terminal size={15} />
-              </IconButton>
-              <IconButton aria-label={text.tabs.files} title={text.tabs.files} data-testid="wb-open-files" onPress={() => selectTab('files')}>
-                <FolderOpen size={15} />
-              </IconButton>
-              <IconButton aria-label={text.tabs.browser} title={text.tabs.browser} data-testid="wb-open-browser" onPress={() => selectTab('browser')}>
-                <Globe size={15} />
-              </IconButton>
-              <MenuTrigger>
-                <IconButton aria-label={text.overview.moreTools} title={text.overview.moreTools} data-testid="wb-more-tools">
-                  <MoreHorizontal size={15} />
-                </IconButton>
-                <Popover placement="bottom end" offset={6}>
-                  <Menu aria-label={text.overview.moreTools} className="wb-more-menu" data-testid="wb-more-menu">
-                    {(['changes', 'preview', 'logs', 'branch'] as const).map((tab) => (
-                      <MenuItem key={tab} id={tab} textValue={text.tabs[tab]} onAction={() => selectTab(tab)}>
-                        {text.tabs[tab]}
-                      </MenuItem>
-                    ))}
-                  </Menu>
-                </Popover>
-              </MenuTrigger>
-            </>
-          ) : (
-            <>
-              <IconButton
-                aria-label={split ? text.unsplit : text.split}
-                title={split ? text.unsplit : text.split}
-                isDisabled={focus}
-                data-active={split ? '1' : '0'}
-                data-testid="wb-split"
-                onPress={toggleWorkspaceSplit}
-              >
-                <Rows2 size={15} />
-              </IconButton>
-              <IconButton
-                aria-label={focus ? text.unfocus : text.focus}
-                title={focus ? text.unfocus : text.focus}
-                data-active={focus ? '1' : '0'}
-                data-testid="wb-focus"
-                onPress={toggleWorkspaceFocus}
-              >
-                {focus ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-              </IconButton>
-              <IconButton
-                aria-label={canRequestPopout(activeTab) ? text.popout : `${text.popout}（${text.unmigrated}）`}
-                title={canRequestPopout(activeTab) ? text.popout : `${text.popout} · ${text.unmigrated}`}
-                isDisabled={!canRequestPopout(activeTab) || !onPopout}
-                data-testid="wb-popout"
-                onPress={() => onPopout?.(activeTab)}
-              >
-                <ExternalLink size={15} />
-              </IconButton>
-            </>
-          )}
-          <IconButton aria-label={text.close} onPress={onClose} data-testid="wb-close" className="wb-close">
-            <X size={15} />
-          </IconButton>
+      {isOverview ? null : (
+        <div className="wb-head">
+          <Button variant="ghost" size="sm" className="wb-back" aria-label={text.overview.backLabel} onPress={() => setWorkspaceTab('overview')} data-testid="wb-back">
+            <ArrowLeft size={14} aria-hidden />
+            <span>{text.overview.back}</span>
+          </Button>
+          <TabStrip label={text.title} selectedKey={view} open={open} onSelect={(key) => selectTab(key as WorkbenchTabId)}>
+            {WORKBENCH_TABS.filter((tab) => tab === view || visited.has(tab)).map((tab) => (
+              <Tab key={tab} id={tab} className="wb-tab" data-testid={`wb-tab-${tab}`}>
+                {text.tabs[tab]}
+              </Tab>
+            ))}
+          </TabStrip>
+          <div className="wb-actions">
+            <IconButton
+              aria-label={split ? text.unsplit : text.split}
+              title={split ? text.unsplit : text.split}
+              isDisabled={focus}
+              data-active={split ? '1' : '0'}
+              data-testid="wb-split"
+              onPress={toggleWorkspaceSplit}
+            >
+              <Rows2 size={15} />
+            </IconButton>
+            <IconButton
+              aria-label={focus ? text.unfocus : text.focus}
+              title={focus ? text.unfocus : text.focus}
+              data-active={focus ? '1' : '0'}
+              data-testid="wb-focus"
+              onPress={toggleWorkspaceFocus}
+            >
+              {focus ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </IconButton>
+            <IconButton
+              aria-label={canRequestPopout(activeTab) ? text.popout : `${text.popout}（${text.unmigrated}）`}
+              title={canRequestPopout(activeTab) ? text.popout : `${text.popout} · ${text.unmigrated}`}
+              isDisabled={!canRequestPopout(activeTab) || !onPopout}
+              data-testid="wb-popout"
+              onPress={() => onPopout?.(activeTab)}
+            >
+              <ExternalLink size={15} />
+            </IconButton>
+            <IconButton aria-label={text.close} onPress={onClose} data-testid="wb-close" className="wb-close">
+              <X size={15} />
+            </IconButton>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="wb-body">
         {isOverview ? (

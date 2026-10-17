@@ -9,26 +9,26 @@ export interface OverviewText {
   tiles: {
     env: string
     context: string
+    mcp: string
+    changes: string
     quota: string
-    tasks: string
-    todos: string
   }
   noBranch: string
   detached: string
-  projectLabel: string
-  pathLabel: string
   branchLabel: string
   permissionLabel: string
   contextUsed: string
-  stopTask: string
-  taskDetail: string
   moreTools: string
-  quotaChecking: string
   quotaFailed: string
-  noTasks: string
-  noTodos: string
-  runningCount: (n: number) => string
-  doneCount: (n: number) => string
+  mcpFailed: string
+  mcpConnected: (ready: number, total: number) => string
+  mcpTools: (n: number) => string
+  mcpStatus: Record<'ready' | 'connecting' | 'disconnected' | 'needs-auth' | 'error', string>
+  changesNone: string
+  changesFiles: (n: number) => string
+  changesStaged: string
+  changesUnstaged: string
+  changesUntracked: string
 }
 
 export interface WorkbenchText {
@@ -86,26 +86,26 @@ const ZH: WorkbenchText = {
     tiles: {
       env: '环境',
       context: '上下文',
-      quota: '额度',
-      tasks: '后台任务',
-      todos: '待办'
+      mcp: 'MCP',
+      changes: '更改',
+      quota: '额度'
     },
     noBranch: '未知分支',
     detached: '游离 HEAD',
-    projectLabel: '项目',
-    pathLabel: '路径',
     branchLabel: '分支',
     permissionLabel: '权限',
     contextUsed: '已用',
-    stopTask: '停止',
-    taskDetail: '查看详情',
     moreTools: '更多工具',
-    quotaChecking: '正在查询额度…',
     quotaFailed: '额度查询失败',
-    noTasks: '暂无后台任务',
-    noTodos: '暂无待办',
-    runningCount: (n) => `运行中 ${n}`,
-    doneCount: (n) => `${n} 项已结束`
+    mcpFailed: 'MCP 状态读取失败',
+    mcpConnected: (ready, total) => `已连接 ${ready}/${total}`,
+    mcpTools: (n) => `${n} 个工具`,
+    mcpStatus: { ready: '已连接', connecting: '连接中', disconnected: '未连接', 'needs-auth': '需授权', error: '出错' },
+    changesNone: '无改动',
+    changesFiles: (n) => `${n} 个文件`,
+    changesStaged: '已暂存',
+    changesUnstaged: '未暂存',
+    changesUntracked: '未跟踪'
   }
 }
 
@@ -144,26 +144,26 @@ const EN: WorkbenchText = {
     tiles: {
       env: 'Environment',
       context: 'Context',
-      quota: 'Quota',
-      tasks: 'Background tasks',
-      todos: 'Todos'
+      mcp: 'MCP',
+      changes: 'Changes',
+      quota: 'Quota'
     },
     noBranch: 'Unknown branch',
     detached: 'Detached HEAD',
-    projectLabel: 'Project',
-    pathLabel: 'Path',
     branchLabel: 'Branch',
     permissionLabel: 'Permission',
     contextUsed: 'Used',
-    stopTask: 'Stop',
-    taskDetail: 'View details',
     moreTools: 'More tools',
-    quotaChecking: 'Checking quota…',
     quotaFailed: 'Quota check failed',
-    noTasks: 'No background tasks',
-    noTodos: 'No todos',
-    runningCount: (n) => `${n} running`,
-    doneCount: (n) => `${n} done`
+    mcpFailed: 'Could not read MCP status',
+    mcpConnected: (ready, total) => `${ready}/${total} connected`,
+    mcpTools: (n) => `${n} tools`,
+    mcpStatus: { ready: 'Connected', connecting: 'Connecting', disconnected: 'Disconnected', 'needs-auth': 'Needs auth', error: 'Error' },
+    changesNone: 'No changes',
+    changesFiles: (n) => `${n} files`,
+    changesStaged: 'Staged',
+    changesUnstaged: 'Unstaged',
+    changesUntracked: 'Untracked'
   }
 }
 

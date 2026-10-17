@@ -1,26 +1,72 @@
 @layer primitives {
-  .v3-rail-track {
-    border: 1px solid var(--line2);
-    border-radius: var(--r-full);
-    background: var(--surface);
-    box-shadow: var(--shadow-card);
-    transition: opacity var(--dur-hover) var(--ease), transform var(--dur-hover) var(--ease), box-shadow var(--dur-hover) var(--ease);
-    animation: v3-rail-in var(--dur-panel) var(--ease-in) both;
-  }
-  .v3-rail-track:hover { transform: scale(1.04); }
-  @keyframes v3-rail-in { from { opacity: 0; transform: translateX(-8px); } }
-  @keyframes v3-rail-tick-in { from { opacity: 0; transform: scaleX(0.3); } }
-  .v3-rail-tick { border-radius: var(--r-xs); animation: v3-rail-tick-in 260ms var(--ease-in) both; animation-delay: calc(var(--i, 0) * 22ms); }
+  .v3-rail-dock { animation: v3-rail-in var(--dur-panel) var(--ease-in) both; }
+  .v3-rail-track { transition: opacity var(--dur-pop) var(--ease); }
+  .v3-rail[data-open] .v3-rail-track { opacity: 0; }
+  @keyframes v3-rail-in { from { opacity: 0; transform: translateX(-6px); } }
+  @keyframes v3-rail-tick-in { from { opacity: 0; transform: scaleX(0.2); } }
+
+  .v3-rail-tick { border: 0; border-radius: var(--r-xs); background: none; }
+  .v3-rail-tick:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
   .v3-rail-bar {
     display: block;
-    width: 14px;
-    height: 3px;
+    width: 8px;
+    height: 2px;
     border-radius: var(--r-full);
     background: var(--fg3);
-    transition: width var(--dur-hover) var(--ease), background var(--dur-hover) var(--ease);
+    opacity: 0.5;
+    transform-origin: left center;
+    transition: width var(--dur-expand) var(--ease), background-color var(--dur-expand) var(--ease), opacity var(--dur-expand) var(--ease);
+    animation: v3-rail-tick-in var(--dur-expand) var(--ease-in) both;
+    animation-delay: calc(var(--i, 0) * 22ms);
   }
-  .v3-rail-tick:hover .v3-rail-bar,
-  .v3-rail-tick:focus-visible .v3-rail-bar { width: 22px; background: var(--accent); }
+  .v3-rail-tick:hover .v3-rail-bar { width: 12px; opacity: 0.9; }
+  .v3-rail-tick[aria-current] .v3-rail-bar { width: 16px; background: var(--fg); opacity: 1; }
+
+  .v3-rail-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-pop);
+    color: var(--fg2);
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(-6px, -50%) scale(0.98);
+    transform-origin: left center;
+    transition: opacity var(--dur-pop) var(--ease), transform var(--dur-pop) var(--ease), visibility 0s linear var(--dur-pop);
+  }
+  .v3-rail[data-open] .v3-rail-card {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(0, -50%);
+    transition: opacity var(--dur-pop) var(--ease-in), transform var(--dur-pop) var(--ease-in), visibility 0s;
+  }
+  .v3-rail-card-head {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+  .v3-rail-card-title { font-weight: 600; }
+  .v3-rail-card-count { font-variant-numeric: tabular-nums; }
+  .v3-rail-list { scrollbar-width: thin; }
+  .v3-rail-item {
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--fg2);
+    font-family: var(--font-ui);
+    font-size: var(--t-ui);
+    line-height: var(--t-ui-lh);
+    transition: background-color var(--dur-hover) var(--ease), color var(--dur-hover) var(--ease);
+  }
+  .v3-rail-item:hover { background: var(--hover); color: var(--fg); }
+  .v3-rail-item[data-current] { background: var(--sel); color: var(--fg); }
+  .v3-rail-item[data-focus] { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .v3-rail-num {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
+  }
+  .v3-rail-item[data-current] .v3-rail-num { color: var(--accent); }
 
   .v3-stall {
     border: 1px solid var(--stall);
@@ -41,8 +87,11 @@
   .v3-stall-note { margin: 0; color: var(--fg3); font-size: var(--t-meta); }
 
   @media (prefers-reduced-motion: reduce) {
+    .v3-rail-dock,
     .v3-rail-track,
-    .v3-rail-bar { transition: none; animation: none; }
-    .v3-rail-tick { animation: none; }
+    .v3-rail-bar,
+    .v3-rail-card,
+    .v3-rail[data-open] .v3-rail-card,
+    .v3-rail-item { transition: none; animation: none; }
   }
 }

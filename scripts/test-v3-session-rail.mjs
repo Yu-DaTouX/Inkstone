@@ -409,14 +409,14 @@ async function main() {
     ok(typeof tree.props.children !== 'undefined', '卡片内容完整')
   }
 
-  group('悬停右缘才出现 + 减少动态效果：外观规则')
+  group('细刻度常驻 + 悬停展开卡片 + 减少动态效果：外观规则')
   {
     const css = readFileSync(resolve(ROOT, 'src/renderer/src/features/session/rail.css'), 'utf8')
-    ok(css.includes('.v3-rail-zone:hover ~ .v3-rail-track'), '右缘窄带 hover 才展开轨道（CSS 相邻选择器）')
-    ok(/v3-rail-track:focus-within/.test(css), '键盘焦点进轨道时也展开，不只有鼠标可用')
-    ok(/v3-rail-track[\s\S]*?opacity:\s*0\.65/.test(css) && css.includes('left: var(--s-8)'), '轨道默认在左侧常驻淡显')
-
     const look = readFileSync(resolve(ROOT, 'src/renderer/src/features/session/ui/rail-look.css'), 'utf8')
+    ok(css.includes('.v3-rail[data-open] .v3-rail-card') && look.includes('.v3-rail[data-open] .v3-rail-card'), '展开由 data-open 控制，卡片在展开时才可见可点')
+    ok(/v3-rail-tick:focus-visible/.test(look), '刻度有可见的键盘焦点环')
+    ok(/v3-rail-tick\[aria-current\]/.test(look) && css.includes('left: var(--s-8)'), '刻度列在左侧常驻，当前轮高亮')
+
     ok(/prefers-reduced-motion:\s*reduce/.test(look), 'rail-look.css 声明了 reduced-motion 分支')
     ok(/prefers-reduced-motion[\s\S]*transition:\s*none/.test(look), 'reduced-motion 下把过渡关掉')
   }

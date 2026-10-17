@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, type ReactElement } from 'react'
-import { ArrowLeft, Minus, PanelLeft, PanelRight, Pin, Settings, Square, SquarePen, X } from 'lucide-react'
+import { ArrowLeft, FolderOpen, Globe, Minus, MoreHorizontal, PanelLeft, PanelRight, Pin, Settings, Square, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
-import { IconButton } from '../ui'
+import { IconButton, Menu, MenuItem, MenuTrigger, Popover } from '../ui'
 import type { V3RouteName } from '../state/ui-v3'
+import type { WorkbenchTabId } from '../features/workbench/types'
+import { workbenchText } from '../features/workbench/workbench-text'
 import { IconTip } from './IconTip'
 import { v3Text } from './v3-text'
 
@@ -17,6 +19,7 @@ interface Props {
   onBack: () => void
   workspaceOpen: boolean
   onToggleWorkspace: () => void
+  onOpenTool: (tab: WorkbenchTabId) => void
 }
 
 function lastSegment(path: string): string {
@@ -24,10 +27,11 @@ function lastSegment(path: string): string {
   return parts[parts.length - 1] ?? ''
 }
 
-export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, workspaceOpen, onToggleWorkspace }: Props): ReactElement {
+export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, workspaceOpen, onToggleWorkspace, onOpenTool }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
+  const toolText = workbenchText(lang)
   const workspaceLabel = lang === 'en-US' ? 'Workspace' : '工作区'
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
@@ -110,6 +114,39 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
       </div>
 
       <div className="v3-head-actions">
+        {route === 'chat' ? (
+          <>
+            <IconTip label={toolText.tabs.terminal}>
+              <IconButton aria-label={toolText.tabs.terminal} data-testid="wb-open-terminal" onPress={() => onOpenTool('terminal')}>
+                <Terminal size={16} />
+              </IconButton>
+            </IconTip>
+            <IconTip label={toolText.tabs.files}>
+              <IconButton aria-label={toolText.tabs.files} data-testid="wb-open-files" onPress={() => onOpenTool('files')}>
+                <FolderOpen size={16} />
+              </IconButton>
+            </IconTip>
+            <IconTip label={toolText.tabs.browser}>
+              <IconButton aria-label={toolText.tabs.browser} data-testid="wb-open-browser" onPress={() => onOpenTool('browser')}>
+                <Globe size={16} />
+              </IconButton>
+            </IconTip>
+            <MenuTrigger>
+              <IconButton aria-label={toolText.overview.moreTools} title={toolText.overview.moreTools} data-testid="wb-more-tools">
+                <MoreHorizontal size={16} />
+              </IconButton>
+              <Popover placement="bottom end" offset={6}>
+                <Menu aria-label={toolText.overview.moreTools} className="wb-more-menu" data-testid="wb-more-menu">
+                  {(['changes', 'preview', 'logs', 'branch', 'quota'] as const).map((tab) => (
+                    <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} onAction={() => onOpenTool(tab)}>
+                      {toolText.tabs[tab]}
+                    </MenuItem>
+                  ))}
+                </Menu>
+              </Popover>
+            </MenuTrigger>
+          </>
+        ) : null}
         {route === 'chat' ? (
           <IconTip label={workspaceLabel}>
             <IconButton

@@ -10,42 +10,89 @@
     width: 28px;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
     pointer-events: none;
+  }
+  .v3-rail-dock {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 70%;
   }
   .v3-rail-zone {
     position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 28px;
+    inset: calc(-1 * var(--s-8)) calc(-1 * var(--s-6));
     pointer-events: auto;
   }
   .v3-rail-track {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: var(--s-4);
-    max-height: 70%;
+    min-height: 0;
     overflow-y: auto;
-    padding: var(--s-8) var(--s-6);
-    opacity: 0.65;
+    overscroll-behavior: contain;
+    padding: var(--s-6) var(--s-2);
     pointer-events: auto;
-    position: relative;
-    z-index: 1;
     scrollbar-width: none;
   }
   .v3-rail-track::-webkit-scrollbar { display: none; }
-  .v3-rail-zone:hover ~ .v3-rail-track,
-  .v3-rail-track:hover,
-  .v3-rail-track:focus-within { opacity: 1; pointer-events: auto; }
+  .v3-rail[data-open] .v3-rail-track { pointer-events: none; }
   .v3-rail-tick {
+    flex: none;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    padding: var(--s-4) var(--s-2);
-    border: 0;
-    background: none;
+    justify-content: flex-start;
+    width: 24px;
+    height: 10px;
+    padding: 0 var(--s-2);
     cursor: pointer;
+  }
+
+  .v3-rail-card {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: min(260px, calc(100cqw - var(--s-24)));
+    max-height: min(60vh, 100%);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+  .v3-rail[data-open] .v3-rail-card { pointer-events: auto; }
+  .v3-rail-card-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    padding: var(--s-8) var(--s-12) var(--s-4);
+  }
+  .v3-rail-list {
+    position: relative;
+    min-height: 0;
+    margin: 0;
+    padding: 0 var(--s-4) var(--s-4);
+    list-style: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .v3-rail-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--s-8);
+    width: 100%;
+    padding: var(--s-4) var(--s-8);
+    text-align: left;
+    cursor: pointer;
+  }
+  .v3-rail-num { min-width: 2ch; text-align: right; }
+  .v3-rail-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .v3-stall {
