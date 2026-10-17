@@ -18,6 +18,7 @@ import { Actions, Empty, Group, Item, ItemHead, ListSkeleton, Meta, Note, Panel,
 import { canImportMcp, mcpStatusTone, verificationTone } from './model'
 import { McpAppOwnership } from './McpAppOwnership'
 import { McpAppRefresh } from './McpAppRefresh'
+import { NativeMcpList } from './NativeMcpList'
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -464,6 +465,7 @@ function NativeMcpGroup({ available }: { available: boolean }): ReactElement {
   return (
     <Group title={t('cap.nativeMcpTitle')} desc={t('cap.nativeMcpDesc')}>
       <Note>{text('mcpNativeNote')}</Note>
+      <NativeMcpList />
       {available ? (
         <>
           <IndividualAction>

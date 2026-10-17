@@ -72,14 +72,24 @@ export function buildToolDefinitions(tools, projectId) {
       description:
         typeof entry.description === 'string' && entry.description.trim()
           ? entry.description
-          : `MCP 工具 ${serverId}/${toolName}（砚托管）`,
+          : `MCP tool ${toolName} on the Inkstone-hosted server ${serverId}`,
       parameters: safeSchema(entry.inputSchema),
+      exposure: 'deferred',
+      namespace: { name: serverId, description: `Inkstone-hosted MCP server ${serverId}` },
       ...(annotations ? { annotations } : {}),
       execute: (toolCallId, params, signal) => callHost({ toolCallId, serverId, toolName, params, signal })
     })
   }
   return { definitions }
 }
+
+export function hostedServersNote(definitions) {
+  const servers = [...new Set(definitions.map((definition) => definition.namespace?.name).filter(Boolean))].sort()
+  if (servers.length === 0) return ''
+  return `Inkstone-hosted MCP servers: ${servers.join(', ')}. Their tools are not declared to you upfront; load them with \`tool_search\` or call them from codemode scripts.`
+}
+
+const HOSTED_SERVERS_SECTION = 'inkstone_hosted_mcp'
 
 async function callHost({ toolCallId, serverId, toolName, params, signal }) {
   const url = process.env.YAN_CLI_URL
@@ -145,11 +155,22 @@ export default function mcpAppProxy(pi) {
     report(`工具快照被拒绝，未注册任何托管 MCP 工具：${built.error}`)
     return
   }
+  const registered = []
   for (const definition of built.definitions) {
     try {
       pi.registerTool(definition)
+      registered.push(definition)
     } catch (error) {
       report(`注册 ${definition.name} 失败：${String(error?.message ?? error)}（可能已存在同名工具，已跳过）`)
     }
   }
+  const note = hostedServersNote(registered)
+  if (!note) return
+  pi.on('before_agent_start', (event) => {
+    const base = String(event?.systemPrompt ?? '')
+    if (base.includes(note)) return
+    const sections = event?.systemPromptOptions?.sections
+    if (sections && typeof sections === 'object') sections[HOSTED_SERVERS_SECTION] = note
+    return { systemPrompt: base ? `${base}\n\n${note}` : note }
+  })
 }

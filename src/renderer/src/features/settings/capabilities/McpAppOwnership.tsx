@@ -209,12 +209,12 @@ function OwnershipRow({
           {view.title}
         </span>
         <StatusBadge tone={view.managed ? 'accent' : 'neutral'}>
-          {view.managed ? labels.managed : labels.piNative}
+          {view.managed ? labels.managed : view.inkstoneConnection ? labels.inkstoneConnection : labels.piNative}
         </StatusBadge>
         <span className="caps-tag">
           {view.scope === 'project' ? labels.scopeProject : labels.scopeGlobal}
         </span>
-        <span className="caps-tag">{`${labels.nativeName}: ${view.nativeName}`}</span>
+        {view.inkstoneConnection ? null : <span className="caps-tag">{`${labels.nativeName}: ${view.nativeName}`}</span>}
         <span className="caps-spacer" />
         {view.inkstoneOnly ? null : (
           <Button

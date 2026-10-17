@@ -14,6 +14,7 @@ export interface McpAppSwitchLabels {
   empty: string
   managed: string
   piNative: string
+  inkstoneConnection: string
   scopeGlobal: string
   scopeProject: string
   nativeName: string
@@ -61,6 +62,7 @@ const ZH: McpAppSwitchLabels = {
   empty: '当前运行实例看不到可切换的 MCP 服务。',
   managed: '砚托管',
   piNative: 'pi 原生',
+  inkstoneConnection: '砚连接',
   scopeGlobal: '全局',
   scopeProject: '项目',
   nativeName: '原生名',
@@ -108,6 +110,7 @@ const EN: McpAppSwitchLabels = {
   empty: 'No switchable MCP servers are visible to the current runner.',
   managed: 'Inkstone-managed',
   piNative: 'pi native',
+  inkstoneConnection: 'Inkstone connection',
   scopeGlobal: 'Global',
   scopeProject: 'Project',
   nativeName: 'Native name',

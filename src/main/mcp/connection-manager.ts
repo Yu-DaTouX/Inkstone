@@ -4,6 +4,10 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { type ClientCapabilities } from '@modelcontextprotocol/sdk/types.js'
 import type { McpServerConfig, McpServerStatus, McpToolDescriptor } from '../../shared/mcp'
 import { sharedResources, INTERACTIVE_RESOURCE } from '../interactive-resources'
+import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native-import'
+
+const WINDOWS_MCP_CONNECT_TIMEOUT_MS = 60_000
+const WINDOWS_MCP_OBSERVE_TOOLS = new Set(['Snapshot', 'Screenshot', 'DisplayInventory', 'Wait', 'WaitFor'])
 
 interface Connection {
   config: McpServerConfig
@@ -145,13 +149,18 @@ export class McpConnectionManager {
     return this.connections.get(serverId)?.tools?.length ?? null
   }
 
-  private async withTimeout<T>(work: Promise<T>, what: string, onTimeout?: () => Promise<void>): Promise<T> {
+  private async withTimeout<T>(
+    work: Promise<T>,
+    what: string,
+    onTimeout?: () => Promise<void>,
+    timeoutMs = this.timeoutMs
+  ): Promise<T> {
     let timer: NodeJS.Timeout | undefined
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        reject(new Error(`${what} 超时（${this.timeoutMs}ms）`))
+        reject(new Error(`${what} 超时（${timeoutMs}ms）`))
         void onTimeout?.().catch(() => undefined)
-      }, this.timeoutMs)
+      }, timeoutMs)
     })
     try {
       return await Promise.race([work, timeout])
@@ -245,7 +254,12 @@ export class McpConnectionManager {
           conn.transportError = undefined
           this.toolCache.delete(conn.config.id)
         }
-        await this.withTimeout(client.connect(transport), `连接 ${conn.config.id}`, () => this.cancelConnection(conn))
+        await this.withTimeout(
+          client.connect(transport),
+          `连接 ${conn.config.id}`,
+          () => this.cancelConnection(conn),
+          conn.config.id === WINDOWS_MCP_SERVER_ID ? Math.max(this.timeoutMs, WINDOWS_MCP_CONNECT_TIMEOUT_MS) : this.timeoutMs
+        )
         if (generation !== conn.generation) {
           await client.close().catch(() => undefined)
           throw new McpConnectionCancelledError()
@@ -412,12 +426,12 @@ export class McpConnectionManager {
     options: McpRequestOptions = {}
   ): Promise<unknown> {
     this.assertRequestAllowed(options)
-    if (serverId === 'windows-mcp') {
+    if (serverId === WINDOWS_MCP_SERVER_ID) {
       return sharedResources.run(INTERACTIVE_RESOURCE, `mcp:${serverId}`, async () => {
         await this.connect(this.require(serverId))
         try { return await this.callToolUncoordinated(serverId, toolName, args, options) }
         catch (error) {
-          sharedResources.markUncertain(INTERACTIVE_RESOURCE)
+          if (!WINDOWS_MCP_OBSERVE_TOOLS.has(toolName)) sharedResources.markUncertain(INTERACTIVE_RESOURCE)
           throw error
         }
       })

@@ -22,6 +22,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan capabilities discover --query-text "<英文关键词>" [--repo owner/name]
   yan capabilities acquire --candidate <ID>
   yan skill read --id <技能ID>
+  yan mcp list
   yan mcp describe --server <ID> --tool <名称>
   yan mcp call --request-file request.json
   yan tasks apply --request-file task-update.json
@@ -88,7 +89,7 @@ const GROUP_USAGE = {
               state=skipped    → 不要再次请求同一个技能；有 userReply 时按用户的话调整
               state=blocked    → 内容审查发现疑似提示注入，已拒绝
             你不能替用户批准，也不需要先在对话里征求同意。
-            MCP 服务已改由 pi 原生管理（/mcp），这里不登记 MCP。
+            新 MCP 服务由 pi 原生管理（/mcp），这里不登记 MCP；砚自己连接的服务（如电脑操作 windows-mcp）用 yan mcp list 查看。
 
 `,
   skill: `yan skill <动作> [选项]
@@ -109,6 +110,8 @@ const GROUP_USAGE = {
   mcp: `yan mcp <动作> [选项]
 
 动作：
+  list      列出砚连接的 MCP 服务及其工具名（首次会启动服务，电脑操作可能要十几秒）。
+              yan mcp list
   describe  看一个已登记 MCP 工具的参数定义（返回 inputSchema 与 schemaRevision）。
               yan mcp describe --server <服务ID> --tool <工具名>
   call      调用一个 MCP 工具：
@@ -397,7 +400,7 @@ const GROUP_SPECS = {
   },
 
   mcp: {
-    actions: ['describe', 'call'],
+    actions: ['list', 'describe', 'call'],
     required: {
       describe: ['server', 'tool']
     }

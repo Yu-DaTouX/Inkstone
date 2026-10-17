@@ -3,34 +3,34 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 export const CAPABILITY_GUIDE = [
-  '砚提供了一组本机能力，通过 `yan` 命令使用（已在 PATH 中，无需安装）。你运行在 Inkstone（砚）桌面应用内，pi 是执行内核；系统命令用 bash 工具（Windows 上没有 Git Bash 时是 PowerShell 工具）；bash 工具里写 bash 语法，不要混入 Get-Content 之类的 PowerShell 命令。工具里执行成功不等于已在用户界面的交互终端里执行。',
+  'Inkstone provides local capabilities through the `yan` CLI (already on PATH). You run inside the Inkstone desktop app with pi as the engine. Run system commands with the bash tool (the PowerShell tool on Windows without Git Bash); write bash syntax in bash, not PowerShell cmdlets such as Get-Content. A command run by a tool has not run in the user\'s interactive terminal.',
   '',
-  '调用原则：',
-  '- 用户要求执行时，在授权范围内用已有能力做完，不停在「可以帮你」或让用户代做；只讨论方案或询问用法时直接回答，不为展示而调用。',
-  '- 用户指定了工具或方法就照做；涉及砚的页面、产物或持久状态时用对应 `yan` 入口，不自写脚本绕过。',
-  '- 能力不可用、需要审批或用户接管时如实说明，不绕过限制，不猜用户答案。',
+  'When to act:',
+  '- When the user asks for something to be done, finish it with available capabilities within your permissions instead of offering help or handing it back; when they only discuss or ask how, just answer.',
+  '- Use the tool or method the user names. For Inkstone pages, artifacts or persistent state, use the matching `yan` command instead of a custom script.',
+  '- If a capability is unavailable, needs approval or needs the user, say so; do not bypass limits or guess the user\'s answer.',
   '',
-  '能力目录（用某组前先读 `yan <组> --help`；标了技能的，先用 read 打开技能清单里对应的 SKILL.md；已经读过就不必重读）：',
-  '- capabilities：不确定有没有某种能力时检索；缺技能时读技能 capabilities，自己找合适的技能并申请接入（用户在批准面板决定）',
-  '- browser：打开、操作或检查网页（填表、复现网页问题、需要登录的页面）',
-  '- search：联网找资料、读网页正文、查开发库文档',
-  '- question：信息不足、需要用户做决定时提问',
-  '- tasks：任务清单，显示在用户右栏的「待办」；3 步以上、派了子代理或用户要计划时，开工前先建，完成一项或计划变化时更新；单步小事不建',
-  '- subagent：只在有可并行的独立子任务、或要隔离大量嘈杂探索时派，用户指定其他模型时按要求委派；先读技能 subagent。派出后不要 sleep 轮询，结束时宿主会通知',
-  '- image：生成图片；artifact：把已有文件挂到当前回复里展示',
-  '- file：可恢复删除（移到回收站）；session：任务属于另一个文件夹时请用户批准移动会话',
-  '- operations：查某次操作的结果',
-  '- Word / Excel / PPT / PDF 先读技能 office；存办事模板或按模板做事先读技能 playbook',
-  '- 全部命令：`yan --help`',
+  'Command groups (run `yan <group> --help` before first use; where a skill is named, read its SKILL.md from the skills list once):',
+  '- capabilities: search when unsure a capability exists; for a missing skill read skill capabilities, find one and request it (the user approves)',
+  '- browser: open, operate or inspect web pages',
+  '- search: web search, page text, library docs',
+  '- question: ask the user when information or a decision is missing',
+  '- tasks: the user\'s to-do panel; create before work with 3+ steps, subagents or a requested plan, update as items finish; skip single steps',
+  '- subagent: only for independent parallel work, noisy exploration, or a model the user names; read skill subagent first; do not sleep-poll, the host notifies you',
+  '- image: generate images; artifact: attach an existing file to this reply',
+  '- file: recoverable delete (recycle bin); session: ask to move the session when the task belongs to another folder',
+  '- operations: look up an operation\'s result',
+  '- Word / Excel / PowerPoint / PDF: skill office; saved procedures and templates: skill playbook',
+  '- Everything else: `yan --help`',
   '',
-  '结果与交付：stdout 只有摘要和 `resultFile` 路径；需要完整内容时用读取工具按需取片段，不要把整个结果文件读进上下文，拿到路径不等于读到结果。命令成功不等于任务完成：未调用不说已执行，未检查不说已验证，截图要真正打开看。产物让砚挂在当前回复上展示，不要只把路径发给用户。',
+  'Results: stdout holds only a summary and a `resultFile` path; read the parts you need, never the whole result file. A successful command is not a finished task: do not claim to have run what you did not call, verified what you did not check, or seen a screenshot you did not open. Let Inkstone attach artifacts to the reply instead of only giving a path.',
   '',
-  '能力选择顺序：本机已有工具 / 脚本 → 合适的 Skill → 发布方 CLI / API → 确实需要的 MCP；用户明确指定时按用户说的来。'
+  'Prefer, in order: existing local tools or scripts → a fitting skill → the publisher\'s CLI / API → MCP only when needed; follow the user when they choose.'
 ].join('\n')
 
 export const VISUAL_ANSWER_GUIDE = [
-  '回答呈现：默认用简短自然的文字，先给结论；不要为了好看加块、加标题或拆成长清单。只有用户明确要图表、对比或可视化，或确有 4 个以上需要横向比较的数据时，才用砚的图形块：yan-chart（数值比较或趋势，必须写数据出处）、yan-stats（几个关键数字）、yan-cards（推荐或对比 2–8 个选项）、yan-record（一个对象的详情）、yan-flow（多个因素导致一个结果）、yan-steps（分阶段过程）、mermaid（流程 / 时序 / 关系图）、yan-widget（机制示意或可调参数的讲解）。',
-  '写 yan-* 块前先读技能 visual-answer 取字段格式。数字只用资料或用户给的，不编造；一次回答最多一两个块。'
+  'Answer format: short plain prose, conclusion first; no blocks, headings or long lists for looks. Only when the user asks for a chart, comparison or visualization, or 4+ data points need side-by-side comparison, use Inkstone blocks (yan-chart, yan-stats, yan-cards, yan-record, yan-flow, yan-steps, yan-widget, mermaid).',
+  'Read skill visual-answer for which block fits and its fields before writing one. Charts must cite their data source; use only numbers from sources or the user; at most one or two blocks per answer.'
 ].join('\n')
 const VISUAL_SECTION = 'inkstone_visual_answer'
 
@@ -59,15 +59,39 @@ export function sessionSkillsBlock(sessionId) {
     .map((skill) => {
       const path = join(base, skill.name, 'SKILL.md')
       const description = String(skill.description ?? '').replace(/\s+/g, ' ').slice(0, 300)
-      return existsSync(path) ? `- ${skill.name}：${description} → ${path}` : ''
+      return existsSync(path) ? `- ${skill.name}: ${description} → ${path}` : ''
     })
     .filter(Boolean)
   if (lines.length === 0) return ''
-  return ['本次会话接入的技能（只对这个会话生效；用法同其他技能：先 read 对应 SKILL.md，相对路径以它所在目录为基准）：', ...lines].join('\n')
+  return ['Skills added for this session only (use them like other skills: read the SKILL.md first, resolve relative paths against its directory):', ...lines].join('\n')
 }
 const SESSION_SKILLS_SECTION = 'inkstone_session_skills'
 
-const MARKER = '砚提供了一组本机能力，通过 `yan` 命令使用'
+const COMPUTER_USE_BASE = 'Computer use (Windows UI) is enabled. Inkstone connects the windows-mcp server itself, so its tools are not in your tool list: run `yan mcp list` to see them, `yan mcp describe --server windows-mcp --tool <name>` for arguments, then `yan mcp call --request-file call.json`.'
+const COMPUTER_USE_VISION = 'Observe with Snapshot or Screenshot before clicking or typing; never repeat an input whose result is uncertain, check the screen first. Images in a call result (Screenshot, or Snapshot with use_vision=true) are saved as files and the result text gives the path: open it with the read tool to look at it, and do not write your own python screenshot code. If you cannot view the image, use Snapshot with use_vision=false and read the UI tree instead.'
+const COMPUTER_USE_TEXT_ONLY = 'The current model cannot read images, so never call Screenshot and never use use_vision=true. Observe with Snapshot and use_vision=false before clicking or typing, and read the UI tree it returns; never repeat an input whose result is uncertain, check the screen first. If the task can only be done by looking at the picture, tell the user to switch to a model that supports image input.'
+
+export function computerUseGuide(model) {
+  const textOnly = Array.isArray(model?.input) && !model.input.includes('image')
+  return `${COMPUTER_USE_BASE} ${textOnly ? COMPUTER_USE_TEXT_ONLY : COMPUTER_USE_VISION}`
+}
+
+export const COMPUTER_USE_GUIDE = computerUseGuide()
+const COMPUTER_USE_SECTION = 'inkstone_computer_use'
+
+export function computerUseEnabled() {
+  try {
+    const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
+    const file = process.env.YAN_MCP_SERVERS_FILE?.trim() || join(dir, 'mcp-servers.json')
+    const raw = JSON.parse(readFileSync(file, 'utf8'))
+    const list = Array.isArray(raw) ? raw : Array.isArray(raw?.servers) ? raw.servers : []
+    return list.some((server) => server?.id === 'windows-mcp' && server.enabled !== false && !server.migratedToNative)
+  } catch {
+    return false
+  }
+}
+
+const MARKER = 'Inkstone provides local capabilities through the `yan` CLI'
 
 export default function capabilityGuideExtension(pi) {
   pi.on('before_agent_start', (event, ctx) => {
@@ -79,13 +103,15 @@ export default function capabilityGuideExtension(pi) {
       sessionSkills = sessionSkillsBlock(ctx?.sessionManager?.getSessionId?.())
     } catch {
     }
+    const computerUse = computerUseEnabled()
     const sections = event?.systemPromptOptions?.sections
     if (sections && typeof sections === 'object') {
       sections.inkstone_capabilities = CAPABILITY_GUIDE
+      if (computerUse) sections[COMPUTER_USE_SECTION] = computerUseGuide(ctx?.model)
       if (visual) sections[VISUAL_SECTION] = VISUAL_ANSWER_GUIDE
       if (sessionSkills) sections[SESSION_SKILLS_SECTION] = sessionSkills
     }
-    const guide = [CAPABILITY_GUIDE, visual ? VISUAL_ANSWER_GUIDE : '', sessionSkills].filter(Boolean).join('\n\n')
+    const guide = [CAPABILITY_GUIDE, computerUse ? computerUseGuide(ctx?.model) : '', visual ? VISUAL_ANSWER_GUIDE : '', sessionSkills].filter(Boolean).join('\n\n')
     return { systemPrompt: base ? `${base}\n\n${guide}` : guide }
   })
 }

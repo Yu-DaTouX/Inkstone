@@ -32,8 +32,17 @@ try {
     platform: 'neutral',
     logLevel: 'silent'
   })
+  await build({
+    entryPoints: ['resources/pi-extensions/capability-guide.js'],
+    outfile: 'out/test/mcp-image-guide.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
   const toolService = await import('../out/test/mcp-image-tool.mjs')
   const shared = await import('../out/test/mcp-image-shared.mjs')
+  const guide = await import('../out/test/mcp-image-guide.mjs')
 
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
   const fakeManager = (result) => ({
@@ -116,6 +125,29 @@ try {
   )
   ok(emptyData.images === undefined && emptyData.text.includes('未能保存'), '空图片数据退回占位')
 
+  console.log('computerUseGuide')
+  const textGuide = guide.computerUseGuide({ input: ['text'] })
+  const visionGuide = guide.computerUseGuide({ input: ['text', 'image'] })
+  const unknownGuide = guide.computerUseGuide(undefined)
+  ok(textGuide !== visionGuide, '纯文字模型与支持图片的模型文本不同')
+  ok(/never call Screenshot/.test(textGuide) && /use_vision=false/.test(textGuide) && /switch to a model/.test(textGuide), '纯文字模型：只用 Snapshot，建议换模型')
+  ok(!/read tool/.test(textGuide), '纯文字模型：不提 read 打开图片')
+  ok(/read tool/.test(visionGuide) && /python/.test(visionGuide) && /saved as files/.test(visionGuide), '支持图片：用 read 打开保存的文件')
+  ok(unknownGuide === visionGuide && guide.COMPUTER_USE_GUIDE === visionGuide, '拿不到 model 时按支持图片处理，常量保持兼容')
+  ok(guide.computerUseGuide({ input: [] }) === textGuide, 'input 为空数组视为纯文字')
+
+  console.log('扩展按 ctx.model 注入')
+  const serversFile = join(root, 'mcp-servers.json')
+  await writeFile(serversFile, JSON.stringify({ servers: [{ id: 'windows-mcp', enabled: true }] }))
+  process.env.YAN_MCP_SERVERS_FILE = serversFile
+  let hook
+  guide.default({ on: (name, fn) => { if (name === 'before_agent_start') hook = fn } })
+  const sectionsText = {}
+  const resultText = hook({ systemPrompt: 'BASE', systemPromptOptions: { sections: sectionsText } }, { model: { input: ['text'] } })
+  ok(sectionsText.inkstone_computer_use === textGuide && resultText.systemPrompt.includes(textGuide), '纯文字模型：分区与系统提示都用纯文字引导')
+  const sectionsVision = {}
+  const resultVision = hook({ systemPrompt: 'BASE', systemPromptOptions: { sections: sectionsVision } }, { model: { input: ['text', 'image'] } })
+  ok(sectionsVision.inkstone_computer_use === visionGuide && resultVision.systemPrompt.includes(visionGuide), '支持图片的模型：用截图文件引导')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

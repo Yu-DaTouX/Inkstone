@@ -67,6 +67,7 @@ const KNOWN_COMMANDS = new Set([
   'capabilities.acquire',
   'skill.read',
   'skill.save',
+  'mcp.list',
   'mcp.describe',
   'mcp.call',
   'mcp.app.call',

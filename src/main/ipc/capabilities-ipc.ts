@@ -2,7 +2,7 @@ import type { IpcRegistrar } from './registrar'
 import { installOpenCli, searchDoctor } from '../search/opencli'
 import { clearSearchKey, searchApiConfig, setSearchHintDismissed, setSearchKey } from '../search/config'
 import { isSearchProviderId } from '../../shared/search'
-import { computerUseStatus, disableComputerUse, enableComputerUse, installUv } from '../computer-use'
+import { computerUseStatus, disableComputerUse, enableComputerUse, installUv, resolveComputerUseInteraction } from '../computer-use'
 import { randomUUID } from 'node:crypto'
 import { builtinCapabilities } from '../extensions-inventory'
 import type { AppSettings } from '../../shared/ipc'
@@ -11,6 +11,7 @@ import type { RunnerRegistry } from '../runners'
 import { PI_AGENT_DIR } from '../paths'
 import { loadMcpServers, mcpServersForProject } from '../mcp/config'
 import { createNativeMcpVerifier } from '../mcp/native-verify'
+import { listNativeMcpServers } from '../mcp/native-list'
 import {
   commitNativeMcpImport,
   NativeMcpImportError,
@@ -87,10 +88,20 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
 
   handle('yan:computerUse:status', async () => computerUseStatus())
   handle('yan:computerUse:installUv', async () => installUv())
+  handle('yan:computerUse:resolveInteraction', async () => {
+    resolveComputerUseInteraction()
+    return computerUseStatus()
+  })
   handle('yan:computerUse:set', async (value: unknown) => {
     const result = value === true ? await enableComputerUse() : await disableComputerUse()
     if (result.ok) await registry()?.reloadMcpServers()
     return result
+  })
+
+  handle('yan:capabilities:nativeMcpServers', async () => {
+    const projectCwd = registry()?.activeRunner()?.cwd
+    const projectTrusted = projectCwd ? await isProjectTrusted(projectCwd).catch(() => false) : false
+    return listNativeMcpServers({ agentDir: PI_AGENT_DIR, ...(projectCwd ? { projectCwd, projectTrusted } : {}) })
   })
 
   handle('yan:capabilities:settings', async () => {
