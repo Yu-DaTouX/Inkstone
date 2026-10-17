@@ -154,12 +154,24 @@ export interface SubagentLineModel {
   elapsedMs: number
   latest: string | null
   error: string | null
+  recovery: SubagentRecoveryNote | null
   summary: string | null
   summaryTruncated: boolean
   diff: { files: number; additions: number; deletions: number } | null
   sources: string[]
   artifacts: string[]
   review: SubagentRun['review']
+}
+
+export type SubagentRecoveryNote =
+  | { key: 'subagentResumed' | 'subagentNotRetried' }
+  | { key: 'subagentRetried'; n: number }
+
+export function subagentRecoveryNote(run: Pick<SubagentRun, 'endReason' | 'recovery'>): SubagentRecoveryNote | null {
+  if (run.endReason !== 'model-error') return null
+  if (run.recovery?.resumed) return { key: 'subagentResumed' }
+  if (run.recovery?.piRetries) return { key: 'subagentRetried', n: run.recovery.piRetries }
+  return { key: 'subagentNotRetried' }
 }
 
 export function subagentLineModel(run: SubagentRun, snapshot: RunSnapshot | undefined, now: number): SubagentLineModel {
@@ -192,6 +204,7 @@ export function subagentLineModel(run: SubagentRun, snapshot: RunSnapshot | unde
     elapsedMs,
     latest: run.latestActivity?.trim() || null,
     error: run.error?.trim() || null,
+    recovery: subagentRecoveryNote(run),
     summary,
     summaryTruncated: !!result?.summaryTruncated,
     diff,

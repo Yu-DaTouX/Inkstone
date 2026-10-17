@@ -1,5 +1,5 @@
 export function runCompactionStatusTests(ok, mod, view) {
-  const { reduceCompaction, compactionStatusOf, clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom } = mod
+  const { reduceCompaction, compactionStatusOf, clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom, contextFromRun, contextFromEntry, measuredAfterCompaction } = mod
 
   const t = (key, vars) => (vars ? `${key}(${Object.values(vars).join(',')})` : key)
 
@@ -126,6 +126,26 @@ export function runCompactionStatusTests(ok, mod, view) {
     })
     ok(s?.last?.beforeTokens === 1596, 'end：从 result.tokensBefore 取压缩前 token')
     ok(s?.last?.afterTokens === 160, 'end：从 result.estimatedTokensAfter 取压缩后 token')
+    ok(s?.last?.afterMeasured === undefined, 'end：压缩后 token 先记为估算')
+  }
+  {
+    const running = start({ reason: 'threshold', startedAt: 500 })
+    const s = reduceCompaction(running, { type: 'compaction_end', reason: 'threshold', result: { tokensBefore: 9000, estimatedTokensAfter: 2000, firstKeptEntryId: 'k1' } }, 900)
+    ok(s?.last?.firstKeptEntryId === 'k1', 'end：记下保留范围的起点 firstKeptEntryId')
+    const from = contextFromRun(s?.last)
+    ok(from?.firstKeptEntryId === 'k1' && from?.compactedAt === 500, '上下文起点：保留起点 + 压缩开始时间')
+    ok(contextFromRun({ status: 'failed', startedAt: 1 }) === undefined, '上下文起点：失败的压缩不算')
+    const entry = contextFromEntry({ type: 'compaction', firstKeptEntryId: 'k2', timestamp: '2026-09-10T10:34:53.183Z' })
+    ok(entry?.firstKeptEntryId === 'k2' && entry?.compactedAt === Date.parse('2026-09-10T10:34:53.183Z'), '会话文件里的压缩条目也能给出上下文起点')
+    ok(contextFromEntry({ type: 'message' }) === undefined, '非压缩条目不给起点')
+    const before = [{ id: 'a0', role: 'assistant', text: '', timestamp: 800, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: 0 } }]
+    ok(measuredAfterCompaction(s.last, before) === null, '实测回填：压缩前的回复不算')
+    const failed = [...before, { id: 'a1', role: 'assistant', text: '', error: 'x', timestamp: 950, usage: { input: 10, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: 0 } }]
+    ok(measuredAfterCompaction(s.last, failed) === null, '实测回填：报错的回复不算')
+    const after = [...failed, { id: 'a2', role: 'assistant', text: 'ok', timestamp: 960, usage: { input: 300, output: 50, cacheRead: 2400, cacheWrite: 100, totalTokens: 2850, cost: 0 } }]
+    const measured = measuredAfterCompaction(s.last, after)
+    ok(measured?.afterTokens === 2800 && measured?.afterMeasured === true, '实测回填：用压缩后第一次成功请求的输入（含缓存读写，不含输出）', measured)
+    ok(measuredAfterCompaction(measured, after) === null, '实测回填：已实测的不再重复回填')
   }
   {
     const s = reduceCompaction(EMPTY_COMPACTION_STATE, {
@@ -226,18 +246,20 @@ export function runCompactionStatusTests(ok, mod, view) {
     '进行中：拿不到原因时退回短文案，不编原因'
   )
 
-  ok(view.compactionTokensText({ status: 'completed', beforeTokens: 1596, afterTokens: 160 }) === '1.6k → 160', 'token 段：1.6k → 160')
-  ok(view.compactionTokensText({ status: 'completed', beforeTokens: 160000, afterTokens: 20000 }) === '160k → 20k', 'token 段：大于 10k 不再保留一位小数')
-  ok(view.compactionTokensText({ status: 'completed', beforeTokens: 800, afterTokens: 300 }) === '800 → 300', 'token 段：小于 1000 用原数')
+  ok(view.compactionTokensText({ status: 'completed', beforeTokens: 1596, afterTokens: 160, afterMeasured: true }) === '1.6k → 160', 'token 段：1.6k → 160')
+  ok(view.compactionTokensText({ status: 'completed', beforeTokens: 160000, afterTokens: 20000, afterMeasured: true }) === '160k → 20k', 'token 段：大于 10k 不再保留一位小数')
+  ok(view.compactionTokensText({ status: 'completed', beforeTokens: 800, afterTokens: 300, afterMeasured: true }) === '800 → 300', 'token 段：小于 1000 用原数')
+  ok(view.compactionTokensText({ status: 'completed', beforeTokens: 1596, afterTokens: 160 }) === '1.6k → ≈160', 'token 段：压缩后还是估算时带 ≈')
   ok(view.compactionTokensText({ status: 'completed', beforeTokens: 100 }) === null, 'token 段：只有一端有数就不显示')
   ok(view.compactionTokensText({ status: 'failed' }) === null, 'token 段：失败时没有 token 段')
 
   console.log('\n--- C-2 压缩可观测性的两个派生量 ---')
   {
     const { compactionReclaimPercent, compactionReclaimText, compactionGrowthText } = view
-    const completed = { status: 'completed', beforeTokens: 36_230, afterTokens: 18_400 }
+    const completed = { status: 'completed', beforeTokens: 36_230, afterTokens: 18_400, afterMeasured: true }
     ok(compactionReclaimPercent(completed) === 49, `回收比例四舍五入到整数（${compactionReclaimPercent(completed)}）`)
     ok(compactionReclaimText(t, completed) === 'ctx.reclaimed(49)', '有前后 token 时给百分比')
+    ok(compactionReclaimText(t, { ...completed, afterMeasured: undefined }) === 'ctx.reclaimedEstimate(49)', '压缩后只有估算时写「约回收」')
 
     ok(
       compactionReclaimPercent({ status: 'completed', beforeTokens: 1000, afterTokens: 1200 }) === 0,
@@ -257,15 +279,19 @@ export function runCompactionStatusTests(ok, mod, view) {
     )
 
     ok(
-      compactionGrowthText(t, { status: 'completed', afterTokens: 1000 }, 12_000)?.startsWith('ctx.growthAfter('),
+      compactionGrowthText(t, { status: 'completed', afterTokens: 1000, afterMeasured: true }, 12_000)?.startsWith('ctx.growthAfter('),
       '有当前用量时给「此后新增」'
     )
     ok(
-      compactionGrowthText(t, { status: 'completed', afterTokens: 12_000 }, 10_000) === null,
+      compactionGrowthText(t, { status: 'completed', afterTokens: 1000 }, 12_000) === null,
+      '压缩后只有估算时不算「此后新增」（估算与实测不可直接相减）'
+    )
+    ok(
+      compactionGrowthText(t, { status: 'completed', afterTokens: 12_000, afterMeasured: true }, 10_000) === null,
       '当前用量低于压缩后估算 → 不显示（不是“没新增”，是还没测准）'
     )
     ok(
-      compactionGrowthText(t, { status: 'completed', afterTokens: 1000 }, undefined) === null,
+      compactionGrowthText(t, { status: 'completed', afterTokens: 1000, afterMeasured: true }, undefined) === null,
       '当前用量未知（刚压完 pi 故意报 null）→ 不显示'
     )
     ok(

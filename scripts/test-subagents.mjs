@@ -489,8 +489,17 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       message: { role: 'assistant', id: 'm1', content: [], stopReason: 'error', errorMessage: 'WebSocket closed 1012' }
     })
     rpc.emit('event', { type: 'agent_settled' })
+    await new Promise((r) => setTimeout(r, 20))
+    const resuming = ctrl.get(res.run?.id)
+    ok(resuming?.status === 'running' && resuming?.recovery?.resumed === true, '暂态错误且未重试时先自动续跑一次', JSON.stringify({ status: resuming?.status, recovery: resuming?.recovery }))
+    rpc.emit('event', {
+      type: 'message_end',
+      message: { role: 'assistant', id: 'm2', content: [], stopReason: 'error', errorMessage: 'WebSocket closed 1012' }
+    })
+    rpc.emit('event', { type: 'agent_settled' })
     const run = ctrl.get(res.run?.id)
     ok(run?.status === 'error', '模型报错时终态是 error（不是 done）', String(run?.status))
+    ok(run?.latestActivity === '自动续跑 1 次后仍失败', '续跑后仍失败的终态文案', String(run?.latestActivity))
     ok(/服务重启/.test(run?.error ?? '') && /WebSocket closed 1012/.test(run?.error ?? ''), '子代理错误保留服务商原文与可读原因', JSON.stringify(run?.error))
     ok(run?.latestActivity !== '已完成', '列表里的活动也不是「已完成」', String(run?.latestActivity))
     await ctrl.stopAll()

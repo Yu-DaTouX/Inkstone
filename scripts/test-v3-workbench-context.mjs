@@ -26,7 +26,8 @@ const entry = `
 export { WORKBENCH_TABS, WORKBENCH_ACTIVE_TABS } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/types'))}'
 export { MAX_MOUNTED_PANES, emptyMountState, nextVisited, mountedTabs } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/mount-state'))}'
 export { resolvePanelLayout, fallbackSecondary, cellForTab, extraVisibleTabs, nextSplitTab, splitTabOnPrimaryChange } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/panel-layout'))}'
-export { contextUsageSummary, contextSince, contextOccupancy, contextPaneData, shortTokens } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-pane-view'))}'
+export { contextUsageSummary, contextOccupancy, contextPaneData, shortTokens } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-pane-view'))}'
+export { contextFromOf, inContextMessages } from '${posix(resolve(ROOT, 'src/renderer/src/state/context-breakdown'))}'
 export { restorableWorkbenchTab } from '${posix(resolve(ROOT, 'src/renderer/src/state/ui-v3'))}'
 `
 
@@ -59,7 +60,8 @@ async function main() {
     nextSplitTab,
     splitTabOnPrimaryChange,
     contextUsageSummary,
-    contextSince,
+    contextFromOf,
+    inContextMessages,
     contextOccupancy,
     contextPaneData,
     shortTokens,
@@ -171,9 +173,16 @@ async function main() {
     )
     ok(err.tone === 'err', '≥95% 记 err')
 
-    ok(contextSince({ lastCompaction: { status: 'completed', startedAt: 123 } }) === 123, '已完成压缩的起点用来过滤消息')
-    ok(contextSince({ lastCompaction: { status: 'running', startedAt: 123 } }) === undefined, '进行中的压缩不作为过滤起点')
-    ok(contextSince({ lastCompaction: null }) === undefined, '没有压缩记录就不过滤')
+    ok(contextFromOf({ lastCompaction: { status: 'completed', startedAt: 123, firstKeptEntryId: 'k' } })?.compactedAt === 123, '已完成压缩给出上下文起点')
+    ok(contextFromOf({ lastCompaction: { status: 'running', startedAt: 123 } }) === undefined, '进行中的压缩不作为起点')
+    ok(contextFromOf({ lastCompaction: null }) === undefined, '没有压缩记录就不切')
+    ok(contextFromOf({ contextFrom: { firstKeptEntryId: 'f' }, lastCompaction: { status: 'completed', startedAt: 1 } })?.firstKeptEntryId === 'f', '会话状态里的起点（含重开会话从文件读到的）优先')
+    const assumed = contextUsageSummary(
+      { model: { ...model, contextWindow: 128_000, contextWindowAssumed: true }, lastCompaction: null },
+      { contextUsage: { tokens: 10_000, contextWindow: 128_000, percent: 7.8, modelKey: 'anthropic/claude-x' } }
+    )
+    ok(assumed.windowAssumed === true, '模型窗口没配置（pi 默认 128k）时标记为假定')
+    ok(good.windowAssumed === false, '已知窗口不标假定')
 
     ok(shortTokens(900) === '900' && shortTokens(1600) === '1.6k' && shortTokens(2_000_000) === '2M', 'token 短写法按量级收敛')
   }
@@ -217,10 +226,29 @@ async function main() {
     })
     ok(unknown.slices.length === 0 && unknown.occupancy.length === 0, '没有可信总量时不画构成与明细')
 
-    const filtered = contextOccupancy(messages, [{ id: 'tools', tokens: 5 }], 205)
-    ok(filtered.find((r) => r.id === 'files').count === 0, 'since 之前的附件不计入')
-    ok(filtered.find((r) => r.id === 'tools').count === 1, 'since 之后的工具结果仍计入')
+    const filtered = contextOccupancy([messages[1]], [{ id: 'tools', tokens: 5 }])
+    ok(filtered.find((r) => r.id === 'files').count === 0, '不在上下文里的附件不计入')
+    ok(filtered.find((r) => r.id === 'tools').count === 1, '上下文里的工具结果仍计入')
     ok(filtered.find((r) => r.id === 'tools').tokens === 5, '工具结果 token 用分类里的工具值')
+
+    const kept = [
+      { id: 'u0', entryId: 'e0', role: 'user', text: 'old', timestamp: 10 },
+      { id: 'a0', entryId: 'e1', role: 'assistant', text: 'x'.repeat(400), timestamp: 20 },
+      { id: 'u1', entryId: 'e2', role: 'user', text: 'kept', timestamp: 30 },
+      { id: 'a1', role: 'assistant', text: 'after', timestamp: 60 }
+    ]
+    ok(inContextMessages(kept, { firstKeptEntryId: 'e2', compactedAt: 50 }).map((m) => m.id).join() === 'u1,a1', '有保留起点时按 entryId 精确切分，压缩后的消息照常计入')
+    const approx = [
+      { id: 'u-old', role: 'user', text: 'old', timestamp: 10 },
+      { id: 'a-old', role: 'assistant', text: 'y'.repeat(400_000), timestamp: 20 },
+      { id: 'u0', role: 'user', text: 'q', timestamp: 30 },
+      { id: 'a0', role: 'assistant', text: 'z'.repeat(80_000), timestamp: 40 },
+      { id: 'a1', role: 'assistant', text: 'after', timestamp: 60 }
+    ]
+    ok(inContextMessages(approx, { compactedAt: 50 }).map((m) => m.id).join() === 'a0,a1', '没有 entryId 时按 pi 的保留量（约 2 万 token）从压缩点往回切')
+    ok(inContextMessages(approx, undefined).length === approx.length, '没有压缩时全部计入')
+    const compactedData = contextPaneData({ session: { model, lastCompaction: null, contextFrom: { compactedAt: 50 } }, stats, messages: approx })
+    ok(compactedData.compacted === true, '压缩过时标记，系统一栏改称含压缩摘要')
   }
 
   process.stdout.write(`\n================ 结果：${report.pass} 通过 / ${report.fail} 失败 ================\n`)

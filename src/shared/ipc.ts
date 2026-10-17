@@ -102,6 +102,7 @@ export interface Usage {
   totalTokens: number
   cost: number
   costEstimated?: boolean
+  reasoning?: number
 }
 
 export type ResponseDetail = 'brief' | 'standard' | 'detailed' | 'unknown'
@@ -258,6 +259,7 @@ export interface SessionState {
   isCompacting: boolean
   compaction?: CompactionRun
   lastCompaction?: CompactionRun
+  contextFrom?: ContextFrom
   messageCount: number
   pendingMessageCount: number
   cwd: string
@@ -342,6 +344,7 @@ export interface ModelInfo {
   inputStatus?: CapabilityStatus
   contextWindow: number
   contextWindowStatus?: CapabilityStatus
+  contextWindowAssumed?: boolean
   maxTokens?: number
   maxTokensStatus?: CapabilityStatus
   cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
@@ -370,6 +373,13 @@ export interface ModelCapabilitySnapshot {
   }
 }
 
+export interface TokenCounts {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
 export interface SessionStats {
   tokens: {
     input: number
@@ -380,6 +390,8 @@ export interface SessionStats {
   }
   cost: number
   costEstimated?: number
+  overheadUsage?: TokenCounts
+  countedUntil?: number | null
   contextUsage?: {
     tokens: number | null
     contextWindow: number
@@ -832,10 +844,17 @@ export interface CompactionRun {
   endedAt?: number
   error?: string
   entryId?: string
+  firstKeptEntryId?: string
   beforeTokens?: number
   afterTokens?: number
+  afterMeasured?: boolean
   triggeredBy?: 'policy'
   policyStage?: 'compact' | 'emergency'
+}
+
+export interface ContextFrom {
+  firstKeptEntryId?: string
+  compactedAt?: number
 }
 
 export interface UserProfile {
@@ -1091,9 +1110,16 @@ export interface SubagentRun {
   dismissedAt?: number
   toolCalls?: number
   wrapUp?: { reason: 'timeout' | 'budget'; since: number }
+  recovery?: SubagentRecovery
   usage?: SubagentUsageTotals
   brief?: SubagentBrief
   result?: SubagentResult
+}
+
+export interface SubagentRecovery {
+  piRetries?: number
+  piMaxRetries?: number
+  resumed?: boolean
 }
 
 export interface ScheduleBridge {

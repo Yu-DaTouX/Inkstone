@@ -2,7 +2,8 @@ import { open, realpath, stat } from 'node:fs/promises'
 import type { BigIntStats } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
 import { createHistoryBuilder } from './normalize'
-import type { UIMessage } from '../shared/ipc'
+import { contextFromEntry } from './compaction'
+import type { ContextFrom, UIMessage } from '../shared/ipc'
 
 const MAX_LINE_BYTES = 48 * 1024 * 1024
 
@@ -17,6 +18,7 @@ export interface ReadResult {
   sourceCwd?: string
   segments?: number
   missing?: number
+  contextFrom?: ContextFrom
 }
 
 function truncateDeep(v: unknown, depth = 0): { value: unknown; cut: number } {
@@ -109,7 +111,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
       if (!before.isFile() || !Number.isSafeInteger(size)) return null
       const builder = createHistoryBuilder(opts?.localizeImage)
       let total = 0, truncated = 0
-      let sessionId: string | undefined, sourceCwd: string | undefined
+      let sessionId: string | undefined, sourceCwd: string | undefined, contextFrom: ContextFrom | undefined
       let parts: string[] = [], chars = 0, discarded = false, hasMessage = false, scanTail = ''
       const piece = (text: string): void => {
         if (!text) return
@@ -130,6 +132,9 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
               if (!sessionId && typeof head.id === 'string' && head.id) sessionId = head.id
               if (!sourceCwd && typeof head.cwd === 'string' && head.cwd.trim()) sourceCwd = head.cwd
             } catch { }
+          }
+          if (rawLine.startsWith('{"type":"compaction"')) {
+            try { contextFrom = contextFromEntry(JSON.parse(rawLine)) ?? contextFrom } catch { }
           }
           if (hasMessage) {
             let value: unknown, entryId: string | undefined, parsed = false
@@ -172,7 +177,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
           (current.size === before.size && !sameVersion(before, current))) continue
       if (after.size === before.size && current.size === before.size) flush()
       return { messages: builder.finish(), total, truncated, bytes: size,
-        ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}) }
+        ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}), ...(contextFrom ? { contextFrom } : {}) }
     } catch { if (attempt === 0) continue; return null }
     finally { await fh?.close().catch(() => undefined) }
   }

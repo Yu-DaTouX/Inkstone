@@ -134,7 +134,7 @@ try {
   process.env.YAN_DATA_DIR = root
   const guide = await import('../out/test/capability-guide-session.mjs')
   const block = guide.sessionSkillsBlock(sessionId)
-  ok(block.includes('pdf：PDF') && block.includes(session.skillFile), '薄层列出本次会话技能与 SKILL.md 路径')
+  ok(block.includes('pdf: PDF') && block.includes(session.skillFile), '薄层列出本次会话技能与 SKILL.md 路径')
   ok(guide.sessionSkillsBlock('other-session') === '' && guide.sessionSkillsBlock('../x') === '', '别的会话 / 不安全 id 不列')
   let hook
   guide.default({ on: (name, fn) => { if (name === 'before_agent_start') hook = fn } })

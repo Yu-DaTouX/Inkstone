@@ -100,8 +100,8 @@ async function runMainReportScenarios(check, main, piDir) {
     r = await main.accountQuotaReport()
     cc = r.cards.find((c) => c.provider === 'commandcode')
     check(!!cc, '查询 reject → 卡片仍存在（不静默消失）')
-    check(cc?.status === 'error' && cc?.error === 'HTTP 429', '查询 reject → 卡片带错误原因')
-    check(cc?.windows.length === 0, '查询 reject → 不补 0 窗口')
+    check(cc?.status === 'ok' && cc?.staleError === 'HTTP 429', '查询 reject 且有上次成功读数 → 保留旧读数并标出错误原因')
+    check(cc?.windows.length === 3, '查询 reject 且有上次成功读数 → 沿用旧窗口')
 
     setScenario({
       authEntry: {

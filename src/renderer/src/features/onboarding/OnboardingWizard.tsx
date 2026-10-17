@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
+import { contextUsageSummary } from '../workbench/context-pane-view'
 import type { AppSettings } from '../../../../shared/ipc'
 import { Button, Dialog, ListBoxItem, Modal, ModalOverlay, Radio, RadioGroup, Select, Spinner, Switch } from '../../ui'
 import { Slider } from '../../ui/Slider'
@@ -344,7 +345,7 @@ function SoundStep({ text, settings, patchSettings, onTouch }: StepProps): React
 }
 
 function ContextStep({ text, settings, patchSettings, onTouch }: StepProps): ReactElement {
-  const contextWindow = useStore((s) => s.stats?.contextUsage?.contextWindow) ?? 0
+  const contextWindow = contextUsageSummary(useStore((s) => s.session), useStore((s) => s.stats)).windowSize
   const limit = settings.autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS
   const effective = autoCompactAt(limit, contextWindow)
   const nowText =

@@ -2,6 +2,7 @@ import type { CSSProperties, ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { Button, SegmentedControl, Switch } from '../../../ui'
+import { contextUsageSummary } from '../../workbench/context-pane-view'
 import {
   AUTO_COMPACT_STEPS,
   autoCompactAt,
@@ -109,8 +110,10 @@ export function ContextSettings(): ReactElement {
   const session = useStore((s) => s.session)
   const settings = useStore((s) => s.settings)
   const patchSettings = useStore((s) => s.patchSettings)
-  const contextWindow = useStore((s) => s.stats?.contextUsage?.contextWindow) ?? 0
-  const contextTokens = useStore((s) => s.stats?.contextUsage?.tokens) ?? null
+  const stats = useStore((s) => s.stats)
+  const usage = contextUsageSummary(session, stats)
+  const contextWindow = usage.windowSize
+  const contextTokens = usage.known ? usage.tokens : null
   const compact = useStore((s) => s.compact)
   const setAutoCompaction = useStore((s) => s.setAutoCompaction)
 
@@ -128,7 +131,7 @@ export function ContextSettings(): ReactElement {
 
   const trimOn = settings?.contextTrim !== false
   const trimAtValue = settings?.contextTrimTokens ?? DEFAULT_CONTEXT_TRIM_TOKENS
-  const windowText = contextWindow > 0 ? kTokens(contextWindow) : text.contextUnknown
+  const windowText = contextWindow > 0 ? `${usage.windowAssumed ? '~' : ''}${kTokens(contextWindow)}` : text.contextUnknown
 
   const markers: UsageMarker[] = []
   if (trimOn) markers.push({ key: 'trim', at: trimAtValue, label: text.contextTrimAt })

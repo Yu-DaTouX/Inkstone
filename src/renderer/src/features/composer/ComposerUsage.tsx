@@ -7,6 +7,7 @@ import { Button, Popover } from '../../ui'
 import { formatDuration } from '../../../../shared/duration'
 import { formatHitRate } from '../../../../shared/turns'
 import { projectSessionMetrics, type SessionMetrics } from '../../../../shared/session-metrics'
+import { selectSubagentRuns, subagentTokens } from '../../state/subagent-view'
 import type { ReactNode } from 'react'
 
 type OpenPanel = 'session' | 'tokens' | null
@@ -60,6 +61,12 @@ export function ComposerUsage() {
   const stats = useStore((s) => s.stats)
   const sessionKey = useStore((s) => s.peekedSessionId ?? s.session?.sessionId ?? s.session?.conversationId ?? null)
   const peekNote = useStore((s) => s.peekNote)
+  const subagents = useStore((s) => s.subagents)
+  const viewSessionId = useStore((s) => s.peekedSessionId ?? s.session?.sessionId ?? null)
+  const subTokens = useMemo(
+    () => subagentTokens(selectSubagentRuns(subagents, { sessionIds: viewSessionId ? [viewSessionId] : [] }).all),
+    [subagents, viewSessionId]
+  )
   const historyPartial = (peekNote?.truncated ?? 0) > 0
   const metrics = useMemo(
     () => projectSessionMetrics(messages, stats, { historyPartial }),
@@ -100,6 +107,10 @@ export function ComposerUsage() {
   ]
   const tokenRows: [string, ReactNode][] = [
     [t('sm.total'), tokenText(metrics.total, metrics.partial, t('tok.unit'))],
+    ...(subTokens > 0
+      ? [[t('sm.withSubagents'), tokenText((metrics.total ?? 0) + subTokens, metrics.partial, t('tok.unit'))] as [string, ReactNode]]
+      : []),
+    [t('sm.hitRateLatest'), formatHitRate(metrics.latestHitRate) ?? '—'],
     [t('sm.hitRate'), formatHitRate(metrics.hitRate) ?? '—'],
     [t('sm.inputUncached'), tokenText(metrics.input, metrics.partial, t('tok.unit'))],
     [t('sm.cacheRead'), tokenText(metrics.cacheRead, metrics.partial, t('tok.unit'))],

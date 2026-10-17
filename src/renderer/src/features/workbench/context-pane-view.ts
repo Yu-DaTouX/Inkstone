@@ -1,5 +1,5 @@
 import type { SessionStats, SessionState, UIMessage } from '../../../../shared/ipc'
-import { contextBreakdown, type ContextSlice } from '../../state/context-breakdown'
+import { contextBreakdown, contextFromOf, inContextMessages, type ContextSlice } from '../../state/context-breakdown'
 
 const IMAGE_TOKENS = 1200
 
@@ -11,6 +11,7 @@ export interface ContextUsageSummary {
   tone: 'ok' | 'warn' | 'err'
   matchesModel: boolean
   afterCompactUnknown: boolean
+  windowAssumed: boolean
 }
 
 export interface ContextOccupancyRow {
@@ -23,7 +24,7 @@ export interface ContextPaneData {
   usage: ContextUsageSummary
   slices: ContextSlice[]
   occupancy: ContextOccupancyRow[]
-  since?: number
+  compacted: boolean
 }
 
 export function contextUsageSummary(
@@ -50,12 +51,9 @@ export function contextUsageSummary(
     percent,
     tone,
     matchesModel,
-    afterCompactUnknown: matchesModel && usage?.tokens === null
+    afterCompactUnknown: matchesModel && usage?.tokens === null,
+    windowAssumed: !!session?.model?.contextWindowAssumed && windowSize === session.model.contextWindow
   }
-}
-
-export function contextSince(session: Pick<SessionState, 'lastCompaction'> | null): number | undefined {
-  return session?.lastCompaction?.status === 'completed' ? session.lastCompaction.startedAt : undefined
 }
 
 export function shortTokens(n: number): string {
@@ -66,13 +64,11 @@ export function shortTokens(n: number): string {
 
 export function contextOccupancy(
   messages: readonly UIMessage[],
-  slices: readonly ContextSlice[],
-  since?: number
+  slices: readonly ContextSlice[]
 ): ContextOccupancyRow[] {
   let toolCount = 0
   let fileCount = 0
   for (const m of messages) {
-    if (since && (m.timestamp ?? 0) < since) continue
     if (m.role === 'user') fileCount += m.images?.length ?? 0
     toolCount += m.toolCalls?.length ?? 0
   }
@@ -84,13 +80,15 @@ export function contextOccupancy(
 }
 
 export function contextPaneData(input: {
-  session: Pick<SessionState, 'model' | 'lastCompaction'> | null
+  session: Pick<SessionState, 'model' | 'lastCompaction' | 'contextFrom'> | null
   stats: Pick<SessionStats, 'contextUsage'> | null
   messages: readonly UIMessage[]
 }): ContextPaneData {
   const usage = contextUsageSummary(input.session, input.stats)
-  const since = contextSince(input.session)
-  if (!usage.known) return { usage, slices: [], occupancy: [], since }
-  const slices = contextBreakdown(input.messages, usage.tokens, since)
-  return { usage, slices, occupancy: contextOccupancy(input.messages, slices, since), since }
+  const from = contextFromOf(input.session)
+  const compacted = !!from
+  if (!usage.known) return { usage, slices: [], occupancy: [], compacted }
+  const messages = inContextMessages(input.messages, from)
+  const slices = contextBreakdown(messages, usage.tokens)
+  return { usage, slices, occupancy: contextOccupancy(messages, slices), compacted }
 }

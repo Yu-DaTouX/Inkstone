@@ -37,6 +37,9 @@ export type SessionTextKey =
   | 'subagentStackPosition'
   | 'subagentStackOlder'
   | 'subagentStackNewer'
+  | 'subagentRetried'
+  | 'subagentResumed'
+  | 'subagentNotRetried'
   | 'compactionTitle'
   | 'branchFrom'
   | 'errorTitleRetryable'
@@ -88,6 +91,9 @@ const ZH: Record<SessionTextKey, string> = {
   subagentStackPosition: '子代理 {from}–{to} / {n}，滚轮或 ↑↓ 翻看',
   subagentStackOlder: '上面还有 {n} 个更早的，向上滚动查看',
   subagentStackNewer: '下面还有 {n} 个较新的',
+  subagentRetried: '已自动重试 {n} 次',
+  subagentResumed: '已自动续跑 1 次',
+  subagentNotRetried: '未自动重试',
   compactionTitle: '上下文已压缩',
   branchFrom: '从「{text}」分出去',
   errorTitleRetryable: '模型侧错误',
@@ -140,6 +146,9 @@ const EN: Record<SessionTextKey, string> = {
   subagentStackPosition: 'Subagents {from}–{to} of {n}; scroll or use ↑↓',
   subagentStackOlder: '{n} older above; scroll up to see them',
   subagentStackNewer: '{n} newer below',
+  subagentRetried: 'Retried {n} times',
+  subagentResumed: 'Auto-continued once',
+  subagentNotRetried: 'Not retried',
   compactionTitle: 'Context compacted',
   branchFrom: 'Branched from “{text}”',
   errorTitleRetryable: 'Model error',

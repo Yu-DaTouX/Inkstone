@@ -40,9 +40,9 @@ export class TurnTimingTracker {
         .flatMap((m) => m.toolCalls ?? [])
     )
     const sourceSet = new Set(sourceIds)
-    const generationTimings = messages
-      .filter((m) => sourceSet.has(m.id))
-      .map((m) => m.generationTiming ?? null)
+    const sourceMessages = messages.filter((m) => sourceSet.has(m.id))
+    const generationTimings = sourceMessages.map((m) => m.generationTiming ?? null)
+    const generationStamps = sourceMessages.map((m) => (typeof m.timestamp === 'number' ? m.timestamp : null))
     const runIdAtWrite = this.runId
     const endedAt = Date.now()
     const record = {
@@ -57,7 +57,7 @@ export class TurnTimingTracker {
       ...(anchorId ? { anchorId } : {}),
       sourceIds,
       ...(waitSpans.length ? { waitSpans } : {}),
-      ...(generationTimings.some(Boolean) ? { generationTimings } : {}),
+      ...(generationTimings.some(Boolean) ? { generationTimings, generationStamps } : {}),
       ...(this.outputTokens ? { outputTokens: this.outputTokens } : {}),
       monotonicMs: elapsedMs
     }

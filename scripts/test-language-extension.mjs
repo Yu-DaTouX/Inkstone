@@ -54,60 +54,7 @@ export async function runLanguageExtensionTests(ok, mod) {
     'desktop.json 坏了也不注入（不影响这一轮）'
   )
 
-  const provider = handlers.before_provider_request
-  ok(typeof provider === 'function', '扩展注册了 before_provider_request')
-
-  const payload = {
-    model: 'm',
-    messages: [
-      { role: 'developer', content: 'BASE' },
-      { role: 'user', content: '第一个问题' },
-      { role: 'assistant', content: '回答' },
-      { role: 'user', content: '第二个问题' }
-    ]
-  }
-  const withLang = withSettings('en-US', () =>
-    provider({ type: 'before_provider_request', payload }, {})
-  )
-  ok(Array.isArray(withLang?.messages), '有 payload.messages 时会返回修改后的 payload', String(withLang?.messages?.length))
-  ok(withLang?.messages?.length === payload.messages.length + 1, '只多出一条消息（不重写对话）')
-  ok(withLang?.messages?.[3]?.content === en, '插入的那条就是那一句指令', String(withLang?.messages?.[3]?.content))
-  ok(withLang?.messages?.[3]?.role === 'developer', '角色跟着 provider 已有的写法（developer）', String(withLang?.messages?.[3]?.role))
-  ok(withLang?.messages?.[4]?.content === '第二个问题', '插在**最后一条 user 之前**（位置最强）')
-  ok(payload.messages.length === 4, '不改动传进来的原数组（无副作用）')
-  const localPayload = {
-    model: 'qwen3-local',
-    messages: [
-      { role: 'system', content: 'BASE' },
-      { role: 'user', content: '本地模型的问题' }
-    ]
-  }
-  const localOut = withSettings('zh-CN', () =>
-    provider({ type: 'before_provider_request', payload: localPayload }, { model: { provider: 'local' } })
-  )
-  ok(localOut?.messages?.length === 2, '本地 provider 不插入中间 system 消息')
-  ok(
-    localOut?.messages?.[1]?.content === `本地模型的问题\n\n${zh}`,
-    '本地 provider 把同一句语言约束贴到最后一条 user 消息'
-  )
-  ok(localOut?.messages?.[1]?.role === 'user', '本地 provider 保持 Qwen chat template 可接受的 user 角色')
-  ok(
-    withSettings('zh-CN', () => provider({ type: 'before_provider_request', payload: { ...payload } }, {}) )?.messages?.[3]
-      ?.content === zh,
-    '中文界面插的是中文那句'
-  )
-  ok(
-    withSettings('ja-JP', () => provider({ type: 'before_provider_request', payload }, {})) === undefined,
-    '不认识的语言：不动 payload'
-  )
-  ok(
-    provider({ type: 'before_provider_request', payload: { messages: 'nope' } }, {}) === undefined,
-    'payload 结构不认识（没有 messages 数组）时不动它'
-  )
-  ok(
-    withSettings('en-US', () => provider({ type: 'before_provider_request', payload: { messages: [{ role: 'developer', content: 'x' }] } }, {})) === undefined,
-    '没有 user 消息时不动 payload'
-  )
+  ok(handlers.before_provider_request === undefined, '只写进系统提示，不在每次请求里插消息（保持缓存前缀稳定）')
 
   const { readFileSync } = await import('node:fs')
   const mainSrc = readFileSync('src/main/index.ts', 'utf8')

@@ -33,7 +33,7 @@ export function compactionTone(run: CompactionRun): 'ok' | 'warn' | 'err' {
 
 export function compactionTokensText(run: CompactionRun): string | null {
   if (typeof run.beforeTokens !== 'number' || typeof run.afterTokens !== 'number') return null
-  return `${formatTokens(run.beforeTokens)} → ${formatTokens(run.afterTokens)}`
+  return `${formatTokens(run.beforeTokens)} → ${run.afterMeasured ? '' : '≈'}${formatTokens(run.afterTokens)}`
 }
 
 export function compactionReclaimPercent(run: CompactionRun): number | null {
@@ -48,7 +48,7 @@ export function compactionReclaimPercent(run: CompactionRun): number | null {
 export function compactionReclaimText(t: TFunc, run: CompactionRun): string {
   const percent = compactionReclaimPercent(run)
   if (percent === null) return t('ctx.reclaimPending')
-  return t('ctx.reclaimed', { percent: String(percent) })
+  return t(run.afterMeasured ? 'ctx.reclaimed' : 'ctx.reclaimedEstimate', { percent: String(percent) })
 }
 
 export function compactionGrowthText(
@@ -56,7 +56,7 @@ export function compactionGrowthText(
   run: CompactionRun,
   currentTokens: number | undefined
 ): string | null {
-  if (typeof run.afterTokens !== 'number') return null
+  if (typeof run.afterTokens !== 'number' || !run.afterMeasured) return null
   if (typeof currentTokens !== 'number' || !Number.isFinite(currentTokens)) return null
   const growth = Math.round(currentTokens - run.afterTokens)
   if (growth <= 0) return null

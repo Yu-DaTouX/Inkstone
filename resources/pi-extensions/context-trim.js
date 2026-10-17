@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 
 export const DEFAULT_TRIM_TOKENS = 80_000
 export const DEFAULT_COMPACT_TOKENS = 400_000
@@ -89,9 +89,44 @@ function isSkillRead(call) {
   return call?.name === 'read' && /(^|[\\/])SKILL\.md$/i.test(path)
 }
 
-export function stubText(call, size) {
-  const what = size.images ? `${size.images} 张图片` : `约 ${size.tokens} token`
-  return `[较早的工具输出已省略：${describeCall(call)}，${what}。需要时重新运行，或用 read 读原文件。]`
+export function stubText(call, size, path) {
+  const head = `[Earlier tool output trimmed to save context: ${describeCall(call)}`
+  if (size.images) return `${head}, ${size.images} image${size.images > 1 ? 's' : ''}. Re-read the source if you need it again.]`
+  if (path) return `${head}, ~${size.tokens} tokens. Full output: ${path} (read it with offset/limit instead of re-running the call).]`
+  return `${head}, ~${size.tokens} tokens. Re-run the call or read the source if you need it again.]`
+}
+
+export function spillDir(sessionId) {
+  const key = String(sessionId ?? '').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'session'
+  return join(tmpdir(), 'inkstone-trimmed', key === '.' || key === '..' ? 'session' : key)
+}
+
+export function spillText(message) {
+  return (message.content ?? []).map(part => part?.type === 'text' ? String(part.text ?? '') : part?.type === 'image' ? '[image]' : '').join('\n')
+}
+
+export function createSpiller(dirFor) {
+  const paths = new Map()
+  const spill = (message) => {
+    const id = String(message.toolCallId ?? '')
+    if (!id || outputSize(message).images) return undefined
+    const known = paths.get(id)
+    if (known === null) return undefined
+    const path = known ?? join(dirFor(), `${id.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 160)}.txt`)
+    try {
+      if (!existsSync(path)) {
+        mkdirSync(dirname(path), { recursive: true })
+        writeFileSync(path, spillText(message), 'utf8')
+      }
+      paths.set(id, path)
+      return path
+    } catch {
+      if (known === undefined) paths.set(id, null)
+      return known
+    }
+  }
+  spill.reset = () => paths.clear()
+  return spill
 }
 
 function usageKey(message) {
@@ -151,7 +186,7 @@ function activeToolResults(messages) {
   return new Set()
 }
 
-export function trimMessages(messages, { trimmed, projectedTokens, threshold, cacheCold = true, contextWindow = 0 }) {
+export function trimMessages(messages, { trimmed, projectedTokens, threshold, cacheCold = true, contextWindow = 0, spill }) {
   const calls = new Map()
   for (const m of messages) {
     if (m?.role !== 'assistant') continue
@@ -217,7 +252,7 @@ export function trimMessages(messages, { trimmed, projectedTokens, threshold, ca
     if (m?.role !== 'toolResult' || !trimmed.has(m.toolCallId)) return m
     changed = true
     const call = calls.get(m.toolCallId) ?? { name: m.toolName }
-    return { ...m, content: [{ type: 'text', text: stubText(call, outputSize(m)) }] }
+    return { ...m, content: [{ type: 'text', text: stubText(call, outputSize(m), spill?.(m)) }] }
   })
   return changed ? next : undefined
 }
@@ -229,8 +264,11 @@ export default function contextTrimExtension(pi) {
   let lastResponse
   let requestSavings = 0
   let projectionBoundary
+  let sessionId
+  const spill = createSpiller(() => spillDir(sessionId))
   const resetTrim = () => {
     trimmed.clear()
+    spill.reset()
     lastResponse = undefined
     requestSavings = 0
     projectionBoundary = undefined
@@ -253,6 +291,7 @@ export default function contextTrimExtension(pi) {
     if (!settings.trim) return undefined
     const messages = event?.messages
     if (!Array.isArray(messages) || messages.length === 0) return undefined
+    sessionId = ctx?.sessionManager?.getSessionId?.() || process.env.YAN_SESSION_ID
     const branch = ctx?.sessionManager?.getBranch?.() ?? []
     const boundary = branch.findLast(entry => entry.type === 'context_edit' || entry.type === 'compaction')?.id
     if (boundary !== projectionBoundary) { lastResponse = undefined; projectionBoundary = boundary }
@@ -264,7 +303,7 @@ export default function contextTrimExtension(pi) {
     const usage = ctx?.getContextUsage?.()
     const threshold = trimAt(settings.trimTokens, usage?.contextWindow ?? 0)
     const projectedTokens = typeof usage?.tokens === 'number' ? usage.tokens + reflected : undefined
-    const next = trimMessages(messages, { trimmed, projectedTokens, threshold, cacheCold, contextWindow: usage?.contextWindow ?? 0 })
+    const next = trimMessages(messages, { trimmed, projectedTokens, threshold, cacheCold, contextWindow: usage?.contextWindow ?? 0, spill })
     requestSavings = savedTokens(messages, trimmed)
     return next ? { messages: next } : undefined
   })

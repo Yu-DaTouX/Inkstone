@@ -33,7 +33,8 @@ try {
   const entry = join(dir, 'entry.ts')
   await writeFile(
     entry,
-    `export { QuotaCard, resetLine } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/features/workbench/QuotaPane.tsx')))}\n` +
+    `export { QuotaCard } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/features/workbench/QuotaPane.tsx')))}\n` +
+      `export { quotaResetLine } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/patterns/QuotaWindowRow.tsx')))}\n` +
       `export { I18nProvider } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/i18n/index.tsx')))}\n`
   )
   const out = join(dir, 'bundle.mjs')
@@ -87,11 +88,11 @@ try {
   ok(expired.includes('请重新登录'), '凭证过期的卡显示提示')
 
   const t = (key, vars) => `${key}:${JSON.stringify(vars ?? {})}`
-  ok(mod.resetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1 }).text === '', '没有重置时间不显示')
-  ok(mod.resetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1, resetAt: now - 1000 }).text.startsWith('quota.resetDue'), '已到点显示待刷新（不本地归零）')
-  ok(mod.resetLine(t, { id: 'monthly', label: 'x', used: 0, total: 1, resetAt: now + 5 * 86400_000 }).text.startsWith('quota.resetOn'), '月窗口显示日期')
-  ok(mod.resetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1, resetAt: now + 90 * 60_000 }).text.includes('quota.durHM'), '短窗口显示时分倒计时')
-  ok(mod.resetLine(t, { id: 'weekly', label: 'x', used: 0, total: 1, resetAt: now + 3 * 86400_000 + 3600_000 }).text.includes('quota.durDH'), '长窗口显示天时倒计时')
+  ok(mod.quotaResetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1 }, now).text === '', '没有重置时间不显示')
+  ok(mod.quotaResetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1, resetAt: now - 1000 }, now).text.startsWith('quota.resetDue'), '已到点显示待刷新（不本地归零）')
+  ok(mod.quotaResetLine(t, { id: 'monthly', label: 'x', used: 0, total: 1, resetAt: now + 5 * 86400_000 }, now).text.startsWith('quota.resetOn'), '月窗口显示日期')
+  ok(mod.quotaResetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1, resetAt: now + 90 * 60_000 }, now).text.includes('quota.durHM'), '短窗口显示时分倒计时')
+  ok(mod.quotaResetLine(t, { id: 'weekly', label: 'x', used: 0, total: 1, resetAt: now + 3 * 86400_000 + 3600_000 }, now).text.includes('quota.durDH'), '长窗口显示天时倒计时')
   console.log(`\nv3-quota-card: ${checks} checks passed`)
 } finally {
   await rm(dir, { recursive: true, force: true })

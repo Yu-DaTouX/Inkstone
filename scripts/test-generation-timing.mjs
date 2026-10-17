@@ -199,6 +199,36 @@ try {
   }
 
   {
+    const stamped = (id, ts) => ({ ...asst(id), timestamp: ts })
+    const record = { ...base, generationTimings: [g1, g2, g3], generationStamps: [101, 102, 103] }
+    const reloaded = [user('m0'), stamped('x1', 101), stamped('x3', 103), user('m9')]
+    const applied = store.applyTurnTimings(reloaded, [record])
+    check(
+      JSON.stringify(applied[1].generationTiming) === JSON.stringify(g1) &&
+        JSON.stringify(applied[2].generationTiming) === JSON.stringify(g3),
+      '带消息时间戳的记录按时间戳对号（数量对不上也不串到别的消息）',
+      `${JSON.stringify(applied[1].generationTiming)} / ${JSON.stringify(applied[2].generationTiming)}`
+    )
+    const swapped = store.applyTurnTimings([user('m0'), stamped('y2', 102), stamped('y1', 101), stamped('y3', 103)], [record])
+    check(
+      JSON.stringify(swapped.slice(1).map((m) => m.generationTiming)) === JSON.stringify([g2, g1, g3]),
+      '时间戳优先于出现次序'
+    )
+    const dupes = { ...base, generationTimings: [g1, g2], generationStamps: [7, 7] }
+    const fallback = store.applyTurnTimings([user('m0'), stamped('z1', 7), stamped('z2', 8)], [dupes])
+    check(
+      JSON.stringify(fallback[1].generationTiming) === JSON.stringify(g1) &&
+        JSON.stringify(fallback[2].generationTiming) === JSON.stringify(g2),
+      '时间戳重复时不猜，回落到按次序对号'
+    )
+    const lengthMismatch = { ...base, generationTimings: [g1, g2], generationStamps: [1] }
+    check(
+      store.applyTurnTimings([user('m0'), stamped('w1', 1)], [lengthMismatch])[1].generationTiming === undefined,
+      '时间戳与计时长度不一致时整组不用时间戳，数量也对不上则保持未知'
+    )
+  }
+
+  {
     const raw = {
       ...base,
       logicalTurnId: 'g-bad',
@@ -424,6 +454,19 @@ try {
 
     const raw = await readFile(join(dataDir, 'turn-timing', 'tracker.jsonl'), 'utf8')
     check(raw.includes('"generationTimings"'), '生成计时确实写进了 turn-timing 日志')
+
+    const tracker3 = new TurnTimingTracker()
+    tracker3.elapsedMs = 900
+    tracker3.runId = 'run-1'
+    tracker3.terminal = 'completed'
+    tracker3.messageIds = ['m1', 'm2']
+    await tracker3.persist(true, 'tracker-stamps.jsonl', [user('m0'), { ...asst('m1', g1), timestamp: 501 }, asst('m2', g2)])
+    const [stampRec] = await store.readTurnTimings(dataDir, 'tracker-stamps')
+    check(
+      JSON.stringify(stampRec?.generationStamps) === JSON.stringify([501, null]),
+      'tracker 按请求写入消息时间戳，缺的位置写 null',
+      JSON.stringify(stampRec?.generationStamps)
+    )
   }
 
   console.log('\n--- 6. 假事件驱动 streaming：start / update / end / flush ---')
@@ -640,6 +683,27 @@ try {
     emit3({ type: 'message_start', message: { role: 'user', content: '普通插话，不是通知' } })
     check(ctl3.turn.runId === runA, '普通用户 steer 不切段（runId 不变）')
     check(ctl3.turn.messageIds.length === 1, '普通用户 steer 不重置段内归属')
+
+    const ctl4 = new AgentController({ push: () => {}, cwd: process.cwd() })
+    ctl4.state = { sessionFile: join(temp, 'native-retry.jsonl') }
+    const emit4 = (e) => ctl4.handleEvent(e)
+    emit4({ type: 'agent_start' })
+    const retryRun = ctl4.turn.runId
+    const retryStart = ctl4.turn.startedMono
+    emit4({ type: 'turn_start' })
+    emit4({ type: 'message_start', message: { role: 'assistant' } })
+    emit4({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'overloaded', timestamp: 11 } })
+    check(ctl4.turn.terminal === 'failed', '失败的尝试先记为 failed')
+    emit4({ type: 'agent_end', willRetry: true, messages: [] })
+    emit4({ type: 'agent_start' })
+    check(ctl4.turn.runId === retryRun, '自动重试不换 runId（本轮用时不被重置）')
+    check(ctl4.turn.startedMono === retryStart, '自动重试保留本轮起点')
+    check(ctl4.turn.messageIds.length === 1, '自动重试保留失败尝试的归属')
+    check(ctl4.turn.terminal === 'completed', '重试继续后不残留 failed')
+    emit4({ type: 'agent_end', messages: [] })
+    emit4({ type: 'agent_settled' })
+    emit4({ type: 'agent_start' })
+    check(ctl4.turn.runId !== retryRun, '新的一轮仍换 runId')
   }
 
   console.log('\n--- 9. 旧段异步写入不反置新段 persisted（新段中途快照不被吞） ---')

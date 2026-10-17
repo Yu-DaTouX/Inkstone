@@ -487,6 +487,84 @@ try {
     check(noTools.toolPartial === true, '历史截断时「0 工具用时」也是可见部分的下限')
   }
 
+  {
+    const timing = { durationMs: 10_000, decodeMs: 1000, ttftMs: 9000, startEvent: 'turn_start' }
+    const hidden = projectSessionMetrics([
+      { id: 'u1', role: 'user', text: 'hi' },
+      { id: 'a1', role: 'assistant', text: 'answer', usage: usage({ output: 1100, reasoning: 1000 }), generationTiming: timing }
+    ], null)
+    eq(hidden.tps, 100, '推理没流出来时只按可见输出算速度（1100-1000 / 1s）')
+    const shown = projectSessionMetrics([
+      { id: 'u1', role: 'user', text: 'hi' },
+      { id: 'a1', role: 'assistant', text: 'answer', thinking: 'visible reasoning', usage: usage({ output: 1100, reasoning: 1000 }), generationTiming: timing }
+    ], null)
+    eq(shown.tps, 1100, '推理已流式显示时整段输出都在解码窗口内')
+  }
+
+  {
+    const burst = projectSessionMetrics([
+      { id: 'u1', role: 'user', text: 'hi' },
+      { id: 'a1', role: 'assistant', text: 'x', usage: usage({ output: 500 }), generationTiming: { durationMs: 2000, decodeMs: 5, ttftMs: 1995, startEvent: 'turn_start' } }
+    ], null)
+    eq(burst.tps, 250, '整段一次到达（解码只有几毫秒）时改用整段时长')
+    check(burst.tpsPartial === true, '整段时长算出的速度是下限，标 ≥')
+    const fast = projectSessionMetrics([
+      { id: 'u1', role: 'user', text: 'hi' },
+      { id: 'a1', role: 'assistant', text: 'x', usage: usage({ output: 2000 }), generationTiming: { durationMs: 1500, decodeMs: 1000, ttftMs: 500, startEvent: 'turn_start' } }
+    ], null)
+    eq(fast.tps, 2000, '真实的高速流式不被当成异常')
+    check(fast.tpsPartial === false, '正常记录不标下限')
+  }
+
+  {
+    const withError = projectSessionMetrics([
+      { id: 'u1', role: 'user', text: 'hi' },
+      { id: 'a0', role: 'assistant', text: '', error: 'boom', usage: usage({}) },
+      { id: 'a1', role: 'assistant', text: 'ok', usage: usage({ output: 100 }), generationTiming: { durationMs: 1500, decodeMs: 1000, ttftMs: 500, startEvent: 'turn_start' } }
+    ], null)
+    check(withError.tpsPartial === false && withError.ttftPartial === false, '报错的请求没有输出，不让速度与首个输出一直显示「部分缺失」')
+  }
+
+  {
+    const msgs = [
+      { id: 'u1', role: 'user', text: 'hi', timestamp: 1 },
+      { id: 'a1', role: 'assistant', text: 'x', timestamp: 10, usage: usage({ input: 100, cacheRead: 900, output: 50 }) },
+      { id: 'a2', role: 'assistant', text: 'y', timestamp: 20, usage: usage({ input: 200, cacheRead: 0, output: 30 }) }
+    ]
+    const snapshot = stats({ tokens: { input: 5100, output: 550, cacheRead: 900, cacheWrite: 0, total: 6550 }, countedUntil: 10 })
+    const live = projectSessionMetrics(msgs, snapshot)
+    eq(live.source, 'stats', '快照之后的新消息不让来源跳到消息累加')
+    eq(live.total, 6550 + 230, '两次刷新之间 = 快照 + 快照之后的新消息')
+    eq(live.input, 5300, '分项同样补上新消息')
+    const settled = projectSessionMetrics(msgs, { ...snapshot, countedUntil: 20, tokens: { ...snapshot.tokens, input: 5300, output: 580, total: 6780 } })
+    eq(settled.total, 6780, '新快照覆盖后不重复计入')
+    const legacy = projectSessionMetrics(msgs, stats({ tokens: { input: 5100, output: 550, cacheRead: 900, cacheWrite: 0, total: 6550 } }))
+    eq(legacy.total, 6550, '旧快照没有计数边界时不猜，维持原逻辑')
+    const none = projectSessionMetrics(msgs, stats({ tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, countedUntil: null }))
+    eq(none.total, 1280, '快照里还没有对话请求时，全部消息都算新增')
+  }
+
+  {
+    const msgs = [
+      { id: 'u1', role: 'user', text: 'hi', timestamp: 1 },
+      { id: 'a1', role: 'assistant', text: 'x', timestamp: 10, usage: usage({ input: 100, cacheRead: 900 }) },
+      { id: 'a2', role: 'assistant', text: 'y', timestamp: 20, usage: usage({ input: 300, cacheRead: 100 }) },
+      { id: 'a3', role: 'assistant', text: '', timestamp: 30, error: 'boom', usage: usage({ input: 50 }) }
+    ]
+    const m = projectSessionMetrics(msgs, stats({
+      tokens: { input: 2450, output: 500, cacheRead: 1000, cacheWrite: 0, total: 3950 },
+      countedUntil: 30,
+      overheadUsage: { input: 2000, output: 500, cacheRead: 0, cacheWrite: 0 }
+    }))
+    eq(m.total, 3950, '总数仍含压缩与预热（按会话文件计）')
+    eq(m.hitRate, 1000 / 1450 * 100, '累计命中率扣掉压缩与预热请求')
+    check(m.overheadExcluded === true, '标记命中率已扣除非对话请求')
+    eq(m.latestHitRate, 100 / 400 * 100, '最近一次命中率取最后一条成功请求（跳过报错的）')
+    const derived = projectSessionMetrics(msgs, null)
+    eq(derived.hitRate, 1000 / 1450 * 100, '没有快照时按消息累加，本来就不含压缩')
+    check(derived.overheadExcluded === false, '按消息累加时不标扣除')
+  }
+
   console.log(`session-metrics: ${checks} checks passed`)
 } finally {
   await rm(temp, { recursive: true, force: true })

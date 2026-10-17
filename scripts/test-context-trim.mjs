@@ -9,7 +9,7 @@ export async function runContextTrimTests(ok, mod, limits) {
     { role: 'assistant', content: [{ type: 'text', text: `好的 ${i}` }] }
   ]
   const history = (n) => Array.from({ length: n }, (_, i) => turn(i + 1)).flat()
-  const stubbed = (msgs) => msgs.filter((m) => m.role === 'toolResult' && /已省略/.test(m.content[0].text)).map((m) => m.toolCallId)
+  const stubbed = (msgs) => msgs.filter((m) => m.role === 'toolResult' && /^\[Earlier tool output trimmed/.test(m.content[0].text)).map((m) => m.toolCallId)
 
   {
     const trimmed = new Map()
@@ -130,7 +130,33 @@ export async function runContextTrimTests(ok, mod, limits) {
     const msgs = [user, ...step(1, [{ type: 'image', data: 'x', mimeType: 'image/png' }], 'read', { path: 'shot.png' }), ...Array.from({ length: 8 }, (_, k) => step(k + 2, 'x'.repeat(12_000))).flat()]
     const trimmed = new Map()
     const out = trimMessages(msgs, { trimmed, projectedTokens: 10_000, threshold: 8_000, cacheCold: false })
-    ok(stubbed(out ?? []).includes('c1') && /1 张图片/.test(out.find(m => m.toolCallId === 'c1').content[0].text), '图片：单张图片按约 2.8k token 触发裁剪并用图片存根')
+    ok(stubbed(out ?? []).includes('c1') && /1 image\b/.test(out.find(m => m.toolCallId === 'c1').content[0].text), '图片：单张图片按约 2.8k token 触发裁剪并用图片存根')
+  }
+
+  {
+    const { mkdtempSync, readFileSync, rmSync, existsSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const root = mkdtempSync(join(tmpdir(), 'yan-trim-spill-'))
+    try {
+      const spill = mod.createSpiller(() => join(root, 's1'))
+      const msgs = history(10)
+      const out = trimMessages(msgs, { trimmed: new Map(), projectedTokens: 100_000, threshold: 80_000, spill })
+      const stub = out.find((m) => m.toolCallId === 'c1').content[0].text
+      const path = join(root, 's1', 'c1.txt')
+      ok(stub.includes(`Full output: ${path}`) && /offset\/limit/.test(stub), '落盘：存根给出原文路径与按段读取提示', stub)
+      ok(readFileSync(path, 'utf8') === big, '落盘：文件内容就是被裁掉的原文')
+      rmSync(path)
+      const again = trimMessages(msgs, { trimmed: new Map(stubbed(out).map(id => [id, 1])), projectedTokens: 10, threshold: 80_000, spill })
+      ok(again.find((m) => m.toolCallId === 'c1').content[0].text === stub && existsSync(path), '落盘：文件丢失时按原文补写，存根逐字不变')
+      const broken = mod.createSpiller(() => join(root, 'nul\0bad'))
+      const fallback = trimMessages(msgs, { trimmed: new Map(), projectedTokens: 100_000, threshold: 80_000, spill: broken })
+      const plain = fallback.find((m) => m.toolCallId === 'c1').content[0].text
+      ok(!/Full output/.test(plain) && /Re-run the call/.test(plain), '落盘：写不进去时退回不带路径的存根', plain)
+      ok(/[\\/]inkstone-trimmed[\\/]a_b$/.test(mod.spillDir('a/b')) && /[\\/]inkstone-trimmed[\\/]session$/.test(mod.spillDir('..')), '落盘：会话目录名只保留安全字符')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   }
 
   {
@@ -181,10 +207,11 @@ export async function runContextTrimTests(ok, mod, limits) {
   }
   ok(DEFAULT_TRIM_TOKENS === limits.DEFAULT_CONTEXT_TRIM_TOKENS && DEFAULT_COMPACT_TOKENS === limits.DEFAULT_AUTO_COMPACT_TOKENS, '阈值：扩展与 shared 的默认值一致')
 
-  const { mkdtempSync, writeFileSync } = await import('node:fs')
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
   const piDir = mkdtempSync(join(tmpdir(), 'yan-trim-pi-'))
+  const fixtureSession = `yan-trim-test-${process.pid}-${Date.now()}`
   const previousPiDir = process.env.PI_CODING_AGENT_DIR
   const previousYanDir = process.env.YAN_DATA_DIR
   process.env.PI_CODING_AGENT_DIR = piDir
@@ -237,7 +264,7 @@ export async function runContextTrimTests(ok, mod, limits) {
       const fixture = () => {
         const handlers = {}
         extension({ on: (name, fn) => (handlers[name] = fn) })
-        const run = (messages, tokens, branch = []) => handlers.context({ messages }, { getContextUsage: () => ({ tokens, contextWindow: 1_000_000 }), sessionManager: { getBranch: () => branch } })?.messages ?? messages
+        const run = (messages, tokens, branch = []) => handlers.context({ messages }, { getContextUsage: () => ({ tokens, contextWindow: 1_000_000 }), sessionManager: { getBranch: () => branch, getSessionId: () => fixtureSession } })?.messages ?? messages
         return { handlers, run }
       }
       const { handlers, run } = fixture()
@@ -292,7 +319,7 @@ export async function runContextTrimTests(ok, mod, limits) {
       const smallBatch = [...turn(1, 'x'.repeat(8000)), ...Array.from({ length: 3 }, (_, i) => turn(i + 2, 'short')).flat()]
       const capacity = fixture()
       ok(stubbed(capacity.run(smallBatch, 20000)).length === 0, '扩展装配：大窗口下小批次不改变请求前缀')
-      const pressureOutput = capacity.handlers.context({ messages: smallBatch }, { getContextUsage: () => ({ tokens: 20000, contextWindow: 24000 }) })?.messages ?? smallBatch
+      const pressureOutput = capacity.handlers.context({ messages: smallBatch }, { getContextUsage: () => ({ tokens: 20000, contextWindow: 24000 }), sessionManager: { getSessionId: () => fixtureSession } })?.messages ?? smallBatch
       ok(stubbed(pressureOutput).length === 1, '扩展装配：实际窗口传给裁剪器，容量兜底可触发')
 
       for (const event of ['session_start', 'session_tree', 'session_compact']) {
@@ -304,6 +331,7 @@ export async function runContextTrimTests(ok, mod, limits) {
       }
     }
   } finally {
+    rmSync(mod.spillDir(fixtureSession), { recursive: true, force: true })
     if (previousPiDir === undefined) delete process.env.PI_CODING_AGENT_DIR
     else process.env.PI_CODING_AGENT_DIR = previousPiDir
     if (previousYanDir === undefined) delete process.env.YAN_DATA_DIR

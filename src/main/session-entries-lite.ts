@@ -96,6 +96,14 @@ export function liteEntryOf(rawLine: string): LiteEntry | null {
       return null
     }
   }
+  if (type === 'compaction' || type === 'branch_summary' || type === 'usage') {
+    try {
+      const e = JSON.parse(line) as { id?: unknown; usage?: unknown }
+      return { type, ...(typeof e.id === 'string' ? { id: e.id } : {}), ...(e.usage && typeof e.usage === 'object' ? { usage: e.usage } : {}) }
+    } catch {
+      return null
+    }
+  }
   if (type === 'message') {
     const role = /"message":\{"role":"([A-Za-z]+)"/.exec(head)?.[1]
     const id = /^\{"type":"message","id":"([^"]+)"/.exec(head)?.[1]

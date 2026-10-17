@@ -60,6 +60,18 @@ async function writeAtomic(json: Json): Promise<void> {
   }
 }
 
+export async function contextWindowAssumed(provider: string, modelId: string): Promise<boolean> {
+  const raw = await readRaw()
+  if (!raw.ok || !raw.json || typeof raw.json !== 'object') return false
+  const providers = (raw.json as Json).providers
+  const entry = providers && typeof providers === 'object' ? (providers as Json)[provider] : undefined
+  const models = entry && typeof entry === 'object' ? (entry as Json).models : undefined
+  if (!Array.isArray(models)) return false
+  const model = models.find((m): m is Json => !!m && typeof m === 'object' && (m as Json).id === modelId)
+  if (!model) return false
+  return !(typeof model.contextWindow === 'number' && model.contextWindow > 0)
+}
+
 export async function listCustomProviders(): Promise<CustomProviderView[]> {
   const raw = await readRaw()
   if (!raw.ok) return []
