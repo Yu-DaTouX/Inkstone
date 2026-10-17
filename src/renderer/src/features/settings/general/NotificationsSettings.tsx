@@ -6,7 +6,7 @@ import { Button, Switch } from '../../../ui'
 import { previewSound } from '../../../lib/sound'
 import { generalText } from './general-text'
 import { DEFAULT_SOUND_SETTINGS, mergeSound } from './general-model'
-import { SettingsRow } from '../root/controls'
+import { SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
 
 const EVENT_KEYS: readonly { id: SoundEvent; textKey: 'notifEventDone' | 'notifEventQuestion' | 'notifEventError' }[] = [
   { id: 'done', textKey: 'notifEventDone' },
@@ -42,11 +42,7 @@ export function NotificationsSettings(): ReactElement {
 
   return (
     <section className="settings-section" data-testid="v3-notifications-settings">
-      <p className="settings-note" role="note">
-        {text.notifNote}
-      </p>
-
-      <div className="settings-rows">
+      <SettingsGroup label={text.notifSystem}>
         <SettingsRow label={text.notifSystem} description={text.notifSystemDesc}>
           <Button
             size="sm"
@@ -67,7 +63,9 @@ export function NotificationsSettings(): ReactElement {
             data-testid="v3-notif-system"
           />
         </SettingsRow>
+      </SettingsGroup>
 
+      <SettingsGroup label={text.notifSound}>
         <SettingsRow label={text.notifSound} description={text.notifSoundDesc}>
           <Switch
             aria-label={text.notifSound}
@@ -77,7 +75,7 @@ export function NotificationsSettings(): ReactElement {
           />
         </SettingsRow>
 
-        {sound.enabled ? (
+        <SettingsReveal open={sound.enabled}>
           <SettingsRow label={text.notifPreview} description={`${Math.round(shown * 100)}%`}>
             <input
               className="settings-range"
@@ -96,10 +94,10 @@ export function NotificationsSettings(): ReactElement {
               }}
             />
           </SettingsRow>
-        ) : null}
+        </SettingsReveal>
 
         {EVENT_KEYS.map((event) => (
-          <SettingsRow key={event.id} label={text[event.textKey]}>
+          <SettingsRow key={event.id} nested label={text[event.textKey]}>
             <Button
               size="sm"
               variant="ghost"
@@ -117,7 +115,7 @@ export function NotificationsSettings(): ReactElement {
             />
           </SettingsRow>
         ))}
-      </div>
+      </SettingsGroup>
     </section>
   )
 }

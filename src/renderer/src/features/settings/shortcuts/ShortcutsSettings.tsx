@@ -101,96 +101,96 @@ export function ShortcutsSettings(): ReactElement {
 
   return (
     <section className="settings-section" aria-label={settingsText(lang).sectionShortcuts} data-testid="v3-shortcuts-settings">
-      <p className="settings-note" role="note">
-        {text.note}
-      </p>
+      <p className="settings-section__lede">{text.note}</p>
 
-      <table className="settings-table">
-        <thead>
-          <tr>
-            <th>{text.columnAction}</th>
-            <th>{text.columnKeys}</th>
-            <th>{text.columnState}</th>
-            <th>{text.columnActions}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {defs.map((def) => {
-            const modified = overrides[def.id] !== undefined
-            const recording = recordingId === def.id
-            const rowNotice = notice?.id === def.id ? notice.text : null
-            return (
-              <Fragment key={def.id}>
-                <tr data-testid={`v3-shortcut-${def.id}`} data-modified={modified ? '1' : '0'}>
-                  <td>{names.purposes[def.purposeKey]}</td>
-                  <td>
-                    {def.rebindable ? (
-                      <Button
-                        size="sm"
-                        variant={recording ? 'primary' : 'secondary'}
-                        isDisabled={recordingId !== null && !recording}
-                        data-testid={`v3-shortcut-record-${def.id}`}
-                        aria-label={`${text.recording} · ${names.purposes[def.purposeKey]}`}
-                        onPress={() => {
-                          setRecordingId(recording ? null : def.id)
-                          setNotice(null)
-                        }}
-                      >
-                        {recording ? text.recording : <Keys tokens={def.keys} />}
-                      </Button>
-                    ) : (
-                      <Keys tokens={def.keys} />
-                    )}
-                  </td>
-                  <td>{def.rebindable ? (modified ? text.modified : text.rebindable) : text.fixed}</td>
-                  <td>
-                    <div className="settings-shortcut-actions">
+      <div className="settings-rows settings-shortcut-card">
+        <table className="settings-table">
+          <thead>
+            <tr>
+              <th>{text.columnAction}</th>
+              <th>{text.columnKeys}</th>
+              <th>{text.columnState}</th>
+              <th>{text.columnActions}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {defs.map((def) => {
+              const modified = overrides[def.id] !== undefined
+              const recording = recordingId === def.id
+              const rowNotice = notice?.id === def.id ? notice.text : null
+              return (
+                <Fragment key={def.id}>
+                  <tr data-testid={`v3-shortcut-${def.id}`} data-modified={modified ? '1' : '0'}>
+                    <td>{names.purposes[def.purposeKey]}</td>
+                    <td>
                       {def.rebindable ? (
                         <Button
                           size="sm"
-                          variant="ghost"
-                          isDisabled={!modified}
-                          data-testid={`v3-shortcut-reset-${def.id}`}
-                          onPress={() => persist(clearShortcutOverrides(overrides, def.id))}
+                          variant={recording ? 'primary' : 'secondary'}
+                          isDisabled={recordingId !== null && !recording}
+                          data-testid={`v3-shortcut-record-${def.id}`}
+                          aria-label={`${text.recording} · ${names.purposes[def.purposeKey]}`}
+                          onPress={() => {
+                            setRecordingId(recording ? null : def.id)
+                            setNotice(null)
+                          }}
                         >
-                          {text.restoreDefault}
+                          {recording ? text.recording : <Keys tokens={def.keys} />}
                         </Button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-                {rowNotice ? (
-                  <tr className="settings-shortcut-notice" data-testid={`v3-shortcut-notice-${def.id}`}>
-                    <td colSpan={4} role="status">
-                      {rowNotice}
+                      ) : (
+                        <Keys tokens={def.keys} />
+                      )}
+                    </td>
+                    <td>{def.rebindable ? (modified ? text.modified : text.rebindable) : text.fixed}</td>
+                    <td>
+                      <div className="settings-shortcut-actions">
+                        {def.rebindable ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            isDisabled={!modified}
+                            data-testid={`v3-shortcut-reset-${def.id}`}
+                            onPress={() => persist(clearShortcutOverrides(overrides, def.id))}
+                          >
+                            {text.restoreDefault}
+                          </Button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
-                ) : null}
-              </Fragment>
-            )
-          })}
-        </tbody>
-      </table>
+                  {rowNotice ? (
+                    <tr className="settings-shortcut-notice" data-testid={`v3-shortcut-notice-${def.id}`}>
+                      <td colSpan={4} role="status">
+                        {rowNotice}
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
 
-      <div className="settings-shortcut-foot">
-        <p className="settings-row__desc" role="status" data-testid="v3-shortcut-conflicts">
-          {conflicts.length
-            ? text.conflictFound.replace('{list}', conflicts.join(', '))
-            : text.conflictNone}
-        </p>
-        <Button
-          size="sm"
-          variant="ghost"
-          isDisabled={!hasOverrides}
-          data-testid="v3-shortcut-reset-all"
-          onPress={() => {
-            persist({})
-            setRecordingId(null)
-            setNotice(null)
-          }}
-        >
-          {text.restoreAll}
-        </Button>
+        <div className="settings-shortcut-foot">
+          <p className="settings-row__desc" role="status" data-testid="v3-shortcut-conflicts">
+            {conflicts.length
+              ? text.conflictFound.replace('{list}', conflicts.join(', '))
+              : text.conflictNone}
+          </p>
+          <Button
+            size="sm"
+            variant="ghost"
+            isDisabled={!hasOverrides}
+            data-testid="v3-shortcut-reset-all"
+            onPress={() => {
+              persist({})
+              setRecordingId(null)
+              setNotice(null)
+            }}
+          >
+            {text.restoreAll}
+          </Button>
+        </div>
       </div>
     </section>
   )

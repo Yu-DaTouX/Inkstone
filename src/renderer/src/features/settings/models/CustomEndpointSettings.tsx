@@ -10,6 +10,7 @@ import { CUSTOM_API_CHOICES, type CustomProviderModel } from '../../../../../sha
 import { useT } from '../../../i18n'
 import { refreshModelsAfterRestart } from '../../../state/refresh-models'
 import { mergeDiscoveredModels } from './review2-settings-guards'
+import { SettingsReveal } from '../root/controls'
 import {
   Badge,
   Button,
@@ -227,94 +228,98 @@ export function CustomEndpointSettings(): ReactElement {
 
       {list === null ? <p className="ms-note">{t('customApi.loading')}</p> : null}
 
-      {list?.map((item) => (
-        <div className="ms-custom-row" key={item.id} data-testid={`ms-custom-row-${item.id}`}>
-          <div className="ms-custom-main">
-            <div className="ms-custom-name">
-              {item.id}
-              <Badge tone="neutral">{apiLabel(item.api)}</Badge>
-            </div>
-            <div className="ms-custom-meta">
-              <span>{item.baseUrl}</span>
-              <span>{t('customApi.modelCount', { n: item.models.length })}</span>
-              <span className={item.hasApiKey ? 'ms-ok' : 'ms-warn'}>
-                {item.hasApiKey ? t('customApi.keySet') : t('customApi.keyMissing')}
-              </span>
-            </div>
-          </div>
-          <div className="ms-custom-actions">
-            <Button
-              size="sm"
-              data-testid={`ms-custom-edit-${item.id}`}
-              isDisabled={busy}
-              onPress={() =>
-                beginDraft({
-                  id: item.id,
-                  api: item.api || 'openai-completions',
-                  baseUrl: item.baseUrl,
-                  models: item.models.length ? item.models : [{ id: '' }]
-                })
-              }
-            >
-              {t('customApi.edit')}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-expanded={testId === item.id}
-              data-testid={`ms-custom-test-${item.id}`}
-              onPress={() => {
-                setTestResult(null)
-                setTestId(testId === item.id ? null : item.id)
-              }}
-            >
-              {t('customApi.test')}
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              isDisabled={busy}
-              data-testid={`ms-custom-remove-${item.id}`}
-              onPress={() => setPendingRemove(item)}
-            >
-              <Trash2 size={13} aria-hidden /> {t('customApi.remove')}
-            </Button>
-          </div>
-
-          {testId === item.id ? (
-            <div className="ms-custom-test" data-testid={`ms-custom-test-panel-${item.id}`}>
+      {list?.length ? (
+        <div className="settings-rows ms-rows">
+          {list.map((item) => (
+            <div className="ms-custom-row" key={item.id} data-testid={`ms-custom-row-${item.id}`}>
+              <div className="ms-custom-main">
+                <div className="ms-custom-name">
+                  {item.id}
+                  <Badge tone="neutral">{apiLabel(item.api)}</Badge>
+                </div>
+                <div className="ms-custom-meta">
+                  <span>{item.baseUrl}</span>
+                  <span>{t('customApi.modelCount', { n: item.models.length })}</span>
+                  <span className={item.hasApiKey ? 'ms-ok' : 'ms-warn'}>
+                    {item.hasApiKey ? t('customApi.keySet') : t('customApi.keyMissing')}
+                  </span>
+                </div>
+              </div>
               <div className="ms-custom-actions">
                 <Button
                   size="sm"
-                  isDisabled={!!testing}
-                  data-testid={`ms-custom-test-endpoint-${item.id}`}
-                  onPress={() => void runTest(item, 'endpoint')}
+                  data-testid={`ms-custom-edit-${item.id}`}
+                  isDisabled={busy}
+                  onPress={() =>
+                    beginDraft({
+                      id: item.id,
+                      api: item.api || 'openai-completions',
+                      baseUrl: item.baseUrl,
+                      models: item.models.length ? item.models : [{ id: '' }]
+                    })
+                  }
                 >
-                  {testing === `${item.id}:endpoint` ? t('customApi.testRunning') : t('customApi.testEndpoint')}
+                  {t('customApi.edit')}
                 </Button>
                 <Button
                   size="sm"
-                  isDisabled={!!testing}
-                  data-testid={`ms-custom-test-billable-${item.id}`}
-                  onPress={() => void runTest(item, 'billable')}
+                  variant="ghost"
+                  aria-expanded={testId === item.id}
+                  data-testid={`ms-custom-test-${item.id}`}
+                  onPress={() => {
+                    setTestResult(null)
+                    setTestId(testId === item.id ? null : item.id)
+                  }}
                 >
-                  {testing === `${item.id}:billable` ? t('customApi.testRunning') : t('customApi.testBillable')}
+                  {t('customApi.test')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  isDisabled={busy}
+                  data-testid={`ms-custom-remove-${item.id}`}
+                  onPress={() => setPendingRemove(item)}
+                >
+                  <Trash2 size={13} aria-hidden /> {t('customApi.remove')}
                 </Button>
               </div>
-              <p className="ms-note">{t('customApi.testCost')}</p>
-              {testResult?.id === item.id ? (
-                <p
-                  className={testResult.result.ok ? 'ms-note ms-ok' : 'ms-note ms-warn'}
-                  data-testid={`ms-custom-test-result-${item.id}`}
-                >
-                  {testResult.result.message} · {testResult.result.ms}ms
-                  {testResult.result.text ? ` · ${testResult.result.text.slice(0, 60)}` : ''}
-                </p>
-              ) : null}
+
+              <SettingsReveal open={testId === item.id}>
+                <div className="ms-custom-test" data-testid={`ms-custom-test-panel-${item.id}`}>
+                  <div className="ms-custom-actions">
+                    <Button
+                      size="sm"
+                      isDisabled={!!testing}
+                      data-testid={`ms-custom-test-endpoint-${item.id}`}
+                      onPress={() => void runTest(item, 'endpoint')}
+                    >
+                      {testing === `${item.id}:endpoint` ? t('customApi.testRunning') : t('customApi.testEndpoint')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      isDisabled={!!testing}
+                      data-testid={`ms-custom-test-billable-${item.id}`}
+                      onPress={() => void runTest(item, 'billable')}
+                    >
+                      {testing === `${item.id}:billable` ? t('customApi.testRunning') : t('customApi.testBillable')}
+                    </Button>
+                  </div>
+                  <p className="ms-note">{t('customApi.testCost')}</p>
+                  {testResult?.id === item.id ? (
+                    <p
+                      className={testResult.result.ok ? 'ms-note ms-ok' : 'ms-note ms-warn'}
+                      data-testid={`ms-custom-test-result-${item.id}`}
+                    >
+                      {testResult.result.message} · {testResult.result.ms}ms
+                      {testResult.result.text ? ` · ${testResult.result.text.slice(0, 60)}` : ''}
+                    </p>
+                  ) : null}
+                </div>
+              </SettingsReveal>
             </div>
-          ) : null}
+          ))}
         </div>
-      ))}
+      ) : null}
 
       {draft ? (
         <div className="ms-custom-form" data-testid="ms-custom-form">
@@ -444,7 +449,10 @@ export function CustomEndpointSettings(): ReactElement {
       )}
 
       {!draft && locals ? (
-        <div className="ms-custom-locals" data-testid="ms-custom-locals">
+        <div
+          className={locals.length ? 'ms-custom-locals settings-rows ms-rows' : 'ms-custom-locals'}
+          data-testid="ms-custom-locals"
+        >
           {locals.length ? (
             locals.map((server) => (
               <div className="ms-custom-row" key={`${server.kind}:${server.baseUrl}`}>

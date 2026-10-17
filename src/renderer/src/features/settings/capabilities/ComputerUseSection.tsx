@@ -77,6 +77,7 @@ export function ComputerUseSection(): ReactElement | null {
       <Group
         title={t('cu.title')}
         desc={t('cu.desc')}
+        card
         actions={
           <Switch
             aria-label={t('cu.title')}

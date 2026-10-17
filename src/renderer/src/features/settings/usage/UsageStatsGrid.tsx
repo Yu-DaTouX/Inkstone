@@ -3,6 +3,13 @@ import type { UsageStatsResult } from '../../../../../shared/ipc'
 import type { SettingsText } from '../settings-text'
 import { compactNumber, peakHourText } from './usage-model'
 import { formatMoney } from '../../../../../shared/currency'
+import { useTweenedNumber } from '../root/use-tweened-number'
+
+function Tweened({ value, format }: { value: number; format: (n: number) => string }): ReactElement {
+  return <>{format(useTweenedNumber(value))}</>
+}
+
+const wholeNumber = (n: number): string => Math.round(n).toLocaleString()
 
 export function UsageStatsGrid({ stats, text, money = (usd) => formatMoney(usd, undefined) }: { stats: UsageStatsResult; text: SettingsText; money?: (usd: number) => string }): ReactElement {
   const peak = peakHourText(stats.peakHour)
@@ -11,25 +18,33 @@ export function UsageStatsGrid({ stats, text, money = (usd) => formatMoney(usd, 
       <dl className="settings-stats">
         <div className="settings-stat">
           <dt>{text.usageSessions}</dt>
-          <dd>{stats.sessions.toLocaleString()}</dd>
+          <dd>
+            <Tweened value={stats.sessions} format={wholeNumber} />
+          </dd>
         </div>
         <div className="settings-stat">
           <dt>{text.usageMessages}</dt>
-          <dd>{compactNumber(stats.messages)}</dd>
+          <dd>
+            <Tweened value={stats.messages} format={(n) => compactNumber(Math.round(n))} />
+          </dd>
         </div>
         <div className="settings-stat">
           <dt>{text.usageTokens}</dt>
           <dd data-testid="settings-usage-tokens" title={text.usageTokensHint}>
-            {compactNumber(stats.tokens)}
+            <Tweened value={stats.tokens} format={(n) => compactNumber(Math.round(n))} />
           </dd>
         </div>
         <div className="settings-stat">
           <dt>{text.usageCost}</dt>
-          <dd data-testid="settings-usage-cost">{money(stats.cost ?? 0)}</dd>
+          <dd data-testid="settings-usage-cost">
+            <Tweened value={stats.cost ?? 0} format={money} />
+          </dd>
         </div>
         <div className="settings-stat">
           <dt>{text.usageActiveDays}</dt>
-          <dd>{stats.activeDays.toLocaleString()}</dd>
+          <dd>
+            <Tweened value={stats.activeDays} format={wholeNumber} />
+          </dd>
         </div>
         <div className="settings-stat">
           <dt>{text.usagePeakHour}</dt>

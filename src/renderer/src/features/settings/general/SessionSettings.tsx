@@ -3,7 +3,7 @@ import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { Switch } from '../../../ui'
 import { generalText } from './general-text'
-import { SettingsRow, Segmented } from '../root/controls'
+import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
 
 const ARCHIVE_OPTIONS = [0, 7, 14, 30] as const
 
@@ -22,11 +22,7 @@ export function SessionSettings(): ReactElement {
 
   return (
     <section className="settings-section" data-testid="v3-session-settings">
-      <p className="settings-note" role="note">
-        {text.sessionNote}
-      </p>
-
-      <div className="settings-rows">
+      <SettingsGroup label={text.sessionAutoArchive}>
         <SettingsRow label={text.sessionAutoArchive} description={text.sessionAutoArchiveDesc} block>
           <Segmented
             label={text.sessionAutoArchive}
@@ -39,8 +35,10 @@ export function SessionSettings(): ReactElement {
             onChange={(value) => void patchSettings({ autoArchiveDays: Number(value) })}
           />
         </SettingsRow>
+      </SettingsGroup>
 
-        <SettingsRow label={text.sessionKeepAwake} description={text.sessionKeepAwakeDesc}>
+      <SettingsGroup label={text.sessionKeepAwake}>
+        <SettingsRow label={text.sessionKeepAwake}description={text.sessionKeepAwakeDesc}>
           <Switch
             aria-label={text.sessionKeepAwake}
             isSelected={keepAwake}
@@ -50,6 +48,7 @@ export function SessionSettings(): ReactElement {
         </SettingsRow>
 
         <SettingsRow
+          nested
           label={text.sessionKeepAwakeBattery}
           description={keepAwake ? text.sessionKeepAwakeBatteryDesc : text.securityOutsideDisabled}
         >
@@ -61,7 +60,9 @@ export function SessionSettings(): ReactElement {
             data-testid="v3-session-keep-awake-battery"
           />
         </SettingsRow>
+      </SettingsGroup>
 
+      <div className="settings-rows">
         <SettingsRow label={text.sessionCheckpoints} description={text.sessionCheckpointsDesc}>
           <Switch
             aria-label={text.sessionCheckpoints}

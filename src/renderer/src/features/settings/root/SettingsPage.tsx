@@ -237,45 +237,48 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
       </nav>
 
       <div className="settings-main">
-        {legacy ? (
-          <LegacyNotice view={legacy.view} kind={legacy.kind} onDismiss={openAppearance} onBack={onBack} />
-        ) : section === 'appearance' ? (
-          <AppearanceSettings />
-        ) : section === 'session' ? (
-          <SessionSettings />
-        ) : section === 'notifications' ? (
-          <NotificationsSettings />
-        ) : section === 'context' ? (
-          <ContextSettings />
-        ) : section === 'models' ? (
-          <SubmoduleHost
-            component={ModelsSettings}
-            title={text.missingTitle}
-            body={text.missingBody}
-            onDismiss={openAppearance}
-          />
-        ) : section === 'capabilities' ? (
-          <SubmoduleHost
-            component={CapabilitiesSettings}
-            title={text.missingTitle}
-            body={text.missingBody}
-            onDismiss={openAppearance}
-          />
-        ) : section === 'shortcuts' ? (
-          <ShortcutsSettings />
-        ) : section === 'security' ? (
-          <SecuritySettings />
-        ) : section === 'devices' ? (
-          <DevicesSettings />
-        ) : section === 'data' ? (
-          <DataSettings />
-        ) : section === 'about' ? (
-          <AboutSettings onOpenModels={() => select('models')} onShowOnboarding={onShowOnboarding} />
-        ) : section === 'sync' ? (
-          <SyncSettings />
-        ) : (
-          <UsageSettings onOpenRuns={openRuns} />
-        )}
+        <div className="settings-main__col" key={legacy ? 'legacy' : section}>
+          {legacy ? null : <h2 className="settings-h2 settings-main__title">{text[SECTION_LABEL[section]]}</h2>}
+          {legacy ? (
+            <LegacyNotice view={legacy.view} kind={legacy.kind} onDismiss={openAppearance} onBack={onBack} />
+          ) : section === 'appearance' ? (
+            <AppearanceSettings />
+          ) : section === 'session' ? (
+            <SessionSettings />
+          ) : section === 'notifications' ? (
+            <NotificationsSettings />
+          ) : section === 'context' ? (
+            <ContextSettings />
+          ) : section === 'models' ? (
+            <SubmoduleHost
+              component={ModelsSettings}
+              title={text.missingTitle}
+              body={text.missingBody}
+              onDismiss={openAppearance}
+            />
+          ) : section === 'capabilities' ? (
+            <SubmoduleHost
+              component={CapabilitiesSettings}
+              title={text.missingTitle}
+              body={text.missingBody}
+              onDismiss={openAppearance}
+            />
+          ) : section === 'shortcuts' ? (
+            <ShortcutsSettings />
+          ) : section === 'security' ? (
+            <SecuritySettings />
+          ) : section === 'devices' ? (
+            <DevicesSettings />
+          ) : section === 'data' ? (
+            <DataSettings />
+          ) : section === 'about' ? (
+            <AboutSettings onOpenModels={() => select('models')} onShowOnboarding={onShowOnboarding} />
+          ) : section === 'sync' ? (
+            <SyncSettings />
+          ) : (
+            <UsageSettings onOpenRuns={openRuns} />
+          )}
+        </div>
       </div>
     </div>
   )

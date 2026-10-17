@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import type { UsageStatsResult } from '../../../../../shared/ipc'
 import type { UsageRange } from '../../../../../shared/usage-stats'
-import { Button, Separator } from '../../../ui'
+import { Button } from '../../../ui'
 import { settingsText } from '../settings-text'
 import { Segmented } from '../root/controls'
 import {
@@ -17,6 +17,7 @@ import {
 import { UsageStatsGrid } from './UsageStatsGrid'
 import { UsageCurrency } from './UsageCurrency'
 import { useMoney } from '../../usage/UsageOverview'
+import './usage-settings.css'
 
 type Status = 'loading' | 'ready' | 'error'
 type UsageView = 'chart' | 'table'
@@ -89,47 +90,45 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
 
   return (
     <section className="settings-section" aria-label={text.sectionUsage}>
-      <p className="settings-note" role="note">
-        {text.usageNote}
-      </p>
+      <p className="settings-section__lede">{text.usageNote}</p>
 
       <UsageCurrency text={text} />
 
-      <div className="settings-usage-bar">
-        <Segmented
-          label={text.sectionUsage}
-          value={range}
-          options={rangeOptions}
-          onChange={(value) => setRange(value)}
-        />
-        <span className="settings-spacer" />
-        {onOpenRuns ? (
-          <Button size="sm" variant="ghost" onPress={onOpenRuns}>
-            {text.usageRuns}
-          </Button>
+      <div className="settings-rows usage-panel">
+        <div className="settings-usage-bar usage-panel__bar">
+          <Segmented
+            label={text.sectionUsage}
+            value={range}
+            options={rangeOptions}
+            onChange={(value) => setRange(value)}
+          />
+          <span className="settings-spacer" />
+          {onOpenRuns ? (
+            <Button size="sm" variant="ghost" onPress={onOpenRuns}>
+              {text.usageRuns}
+            </Button>
+          ) : null}
+        </div>
+
+        {status === 'loading' ? <p className="settings-value usage-panel__state">{text.usageLoading}</p> : null}
+
+        {status === 'error' ? (
+          <div className="settings-usage-state usage-panel__state" role="alert">
+            <p className="settings-row__desc settings-row__desc--error">{text.usageError}</p>
+            <Button size="sm" variant="secondary" onPress={retry}>
+              {text.usageRetry}
+            </Button>
+          </div>
         ) : null}
+
+        {empty ? <p className="settings-value usage-panel__state">{text.usageEmpty}</p> : null}
+
+        {status === 'ready' && stats && !empty ? <UsageStatsGrid stats={stats} text={text} money={money} /> : null}
       </div>
 
-      {status === 'loading' ? <p className="settings-value">{text.usageLoading}</p> : null}
-
-      {status === 'error' ? (
-        <div className="settings-usage-state" role="alert">
-          <p className="settings-row__desc settings-row__desc--error">{text.usageError}</p>
-          <Button size="sm" variant="secondary" onPress={retry}>
-            {text.usageRetry}
-          </Button>
-        </div>
-      ) : null}
-
-      {empty ? <p className="settings-value">{text.usageEmpty}</p> : null}
-
       {status === 'ready' && stats && !empty ? (
-        <>
-          <UsageStatsGrid stats={stats} text={text} money={money} />
-
-          <Separator />
-
-          <div className="settings-usage-bar">
+        <div className="settings-rows usage-panel">
+          <div className="settings-usage-bar usage-panel__bar">
             <Segmented
               label={text.usageDimension}
               value={dimension}
@@ -209,7 +208,7 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
               <p className="settings-value">{dimension === 'day' ? text.usageNoDays : text.usageNoModels}</p>
             )}
           </div>
-        </>
+        </div>
       ) : null}
     </section>
   )

@@ -13,6 +13,7 @@ import {
   Modal,
   ModalOverlay,
   SearchField,
+  SegmentedControl,
   Select,
   Spinner,
   TextField,
@@ -30,6 +31,7 @@ import {
   type CatalogModel,
   type ServiceState
 } from './models-model'
+import { SettingsReveal } from '../root/controls'
 import { CustomEndpointSettings } from './CustomEndpointSettings'
 import { useModelsText, type ModelsTextKey } from './models-text'
 import './models-settings.css'
@@ -430,27 +432,16 @@ export function ModelsSettings(): ReactElement {
   return (
     <section className="ms-page" aria-label={text('title')}>
       <header className="ms-head">
-        <h2 className="ms-title">{text('title')}</h2>
-        <div className="ms-tabs" role="group" aria-label={text('title')}>
-          <Button
-            size="sm"
-            variant={tab === 'services' ? 'primary' : 'ghost'}
-            aria-pressed={tab === 'services'}
-            data-testid="ms-tab-services"
-            onPress={() => setTab('services')}
-          >
-            {text('tabServices')}
-          </Button>
-          <Button
-            size="sm"
-            variant={tab === 'catalog' ? 'primary' : 'ghost'}
-            aria-pressed={tab === 'catalog'}
-            data-testid="ms-tab-catalog"
-            onPress={() => setTab('catalog')}
-          >
-            {text('tabCatalog')}
-          </Button>
-        </div>
+        <SegmentedControl
+          className="ms-tabs"
+          label={text('title')}
+          value={tab}
+          options={[
+            { value: 'services', label: text('tabServices'), testId: 'ms-tab-services' },
+            { value: 'catalog', label: text('tabCatalog'), testId: 'ms-tab-catalog' }
+          ]}
+          onChange={setTab}
+        />
       </header>
 
       {msg ? (
@@ -472,31 +463,40 @@ export function ModelsSettings(): ReactElement {
             </Button>
           </div>
 
-          {authProviders.length === 0 ? <p className="ms-note">{text('noAuthInfo')}</p> : null}
+          {authProviders.length === 0 ? <p className="settings-section__lede">{text('noAuthInfo')}</p> : null}
 
           <section className="ms-group" aria-label={t('auth.subs')}>
             <h3 className="ms-group-title">{t('auth.subs')}</h3>
             <p className="ms-note">{text('loginPanelNote')}</p>
-            {subscriptions.map(serviceRow)}
+            <div className="settings-rows ms-rows">
+              {subscriptions.map(serviceRow)}
+            </div>
           </section>
 
           <section className="ms-group" aria-label={t('auth.keys')}>
             <h3 className="ms-group-title">{t('auth.keys')}</h3>
-            {readyKeys.map(serviceRow)}
-            {otherKeys.length > 0 ? (
-              <>
-                {showAllKeys ? otherKeys.map(serviceRow) : null}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  data-testid="ms-toggle-keys"
-                  onPress={() => setShowAllKeys((v) => !v)}
-                >
-                  {showAllKeys
-                    ? text('hideAllKeys')
-                    : text('showAllKeys').replace('{n}', String(otherKeys.length))}
-                </Button>
-              </>
+            {keys.length > 0 ? (
+              <div className="settings-rows ms-rows">
+                {readyKeys.map(serviceRow)}
+                {otherKeys.length > 0 ? (
+                  <>
+                    <SettingsReveal open={showAllKeys}>{otherKeys.map(serviceRow)}</SettingsReveal>
+                    <div className="ms-rows-foot">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-expanded={showAllKeys}
+                        data-testid="ms-toggle-keys"
+                        onPress={() => setShowAllKeys((v) => !v)}
+                      >
+                        {showAllKeys
+                          ? text('hideAllKeys')
+                          : text('showAllKeys').replace('{n}', String(otherKeys.length))}
+                      </Button>
+                    </div>
+                  </>
+                ) : null}
+              </div>
             ) : null}
           </section>
 

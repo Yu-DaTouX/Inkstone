@@ -7,20 +7,23 @@
     min-width: 0;
   }
 
-  .sync-note {
-    margin: 0;
-    max-width: var(--size-col);
-    color: var(--fg2);
-    font-size: var(--t-body);
-    line-height: var(--t-body-lh);
-  }
-
   .sync-card {
     display: flex;
     flex-direction: column;
     gap: var(--s-8);
     min-width: 0;
     max-width: var(--size-col);
+    padding: var(--s-12) var(--s-16);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    transition: background-color var(--dur-hover) var(--ease);
+  }
+
+  @media (hover: hover) {
+    .sync-card:hover {
+      background: color-mix(in srgb, var(--hover) 45%, var(--surface));
+    }
   }
 
   .sync-card__title {
@@ -106,7 +109,6 @@
   .sync-conflicts {
     display: flex;
     flex-direction: column;
-    gap: var(--s-12);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -117,10 +119,15 @@
     flex-direction: column;
     gap: var(--s-8);
     min-width: 0;
-    padding: var(--s-12);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
+    padding: var(--s-12) 0;
+  }
+
+  .sync-conflict + .sync-conflict {
+    border-top: 1px solid var(--line);
+  }
+
+  .sync-conflict:last-child {
+    padding-bottom: 0;
   }
 
   .sync-conflict__head {
@@ -200,6 +207,12 @@
   .sync-msg[data-tone='error'] {
     background: var(--fail-bg);
     color: var(--fail-t);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sync-card {
+      transition: none;
+    }
   }
 
   @media (max-width: 720px) {

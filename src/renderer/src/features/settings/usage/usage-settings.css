@@ -1,0 +1,49 @@
+@layer features {
+  .usage-panel__bar,
+  .usage-panel__state,
+  .usage-panel .settings-stats,
+  .usage-panel .settings-breakdown {
+    padding: var(--s-12) var(--s-16);
+  }
+
+  .usage-panel .settings-stats {
+    gap: var(--s-12) var(--s-16);
+  }
+
+  .usage-panel .settings-stat {
+    padding: 0;
+    border: 0;
+  }
+
+  .usage-panel .settings-table th:first-child,
+  .usage-panel .settings-table td:first-child {
+    padding-left: 0;
+  }
+
+  .usage-panel .settings-table th:last-child,
+  .usage-panel .settings-table td:last-child {
+    padding-right: 0;
+  }
+
+  .usage-panel .settings-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .usage-panel .settings-bar__fill {
+    transition: width var(--dur-expand) var(--ease);
+    animation: usage-bar-in 600ms var(--ease) both;
+  }
+
+  @keyframes usage-bar-in {
+    from {
+      width: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .usage-panel .settings-bar__fill {
+      transition: none;
+      animation: none;
+    }
+  }
+}

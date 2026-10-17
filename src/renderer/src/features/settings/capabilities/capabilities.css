@@ -14,6 +14,16 @@
   }
 
   .caps-tabpanel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-20);
+    min-width: 0;
+  }
+
+  .caps-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-20);
     min-width: 0;
   }
 
@@ -27,11 +37,15 @@
 
   .caps-note {
     margin: 0;
+    color: var(--fg3);
+    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+  }
+
+  .caps-note--caution {
     padding: var(--s-10) var(--s-12);
     border-radius: var(--r-md);
-    background: var(--sunken);
+    background: var(--ask-bg);
     color: var(--fg2);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
   }
 
   .caps-warn {
@@ -71,9 +85,9 @@
 
   .caps-group-title {
     margin: 0;
-    font-size: var(--t-h2);
-    line-height: var(--t-h2-lh);
-    font-weight: var(--t-h2-w);
+    color: var(--fg);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    font-weight: 600;
   }
 
   .caps-group-desc {
@@ -99,8 +113,11 @@
   .caps-list {
     display: flex;
     flex-direction: column;
-    gap: var(--s-6);
     min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    overflow: hidden;
   }
 
   .caps-item {
@@ -108,10 +125,38 @@
     flex-direction: column;
     gap: var(--s-4);
     min-width: 0;
-    padding: var(--s-10) var(--s-12);
+    padding: var(--s-12) var(--s-16);
     border: 1px solid var(--line);
     border-radius: var(--r-md);
     background: var(--surface);
+    transition: background-color var(--dur-hover) var(--ease);
+  }
+
+  .caps-list > .caps-item {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .caps-list > * + * {
+    border-top: 1px solid var(--line);
+  }
+
+  .caps-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+    padding: var(--s-12) var(--s-16);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  @media (hover: hover) {
+    .caps-item:not(.caps-item--skeleton):hover {
+      background: color-mix(in srgb, var(--hover) 45%, transparent);
+    }
   }
 
   .caps-item--skeleton {
@@ -277,5 +322,11 @@
   .caps-skel--line {
     width: 70%;
     height: 0.85em;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .caps-item {
+      transition: none;
+    }
   }
 }

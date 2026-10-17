@@ -111,14 +111,14 @@ export function McpAppRefresh(): ReactElement {
 
   if (!api.current) {
     return (
-      <Group title={labels.title} desc={labels.desc}>
+      <Group title={labels.title} desc={labels.desc} card>
         <Warn>{labels.unavailable}</Warn>
       </Group>
     )
   }
 
   return (
-    <Group title={labels.title} desc={labels.desc}>
+    <Group title={labels.title} desc={labels.desc} card>
       <Meta>
         <span data-testid="v3-mcp-app-refresh-count">
           {toolCount === null ? labels.upToDate : withCount(labels.toolCount, toolCount)}

@@ -20,7 +20,7 @@ export interface ShortcutsText {
 }
 
 const zh: ShortcutsText = {
-  note: '点快捷键即可录制新键位：按下组合键生效，Esc 取消。终端会让键的 Ctrl+K / Ctrl+B / Ctrl+J / Ctrl+L / Ctrl+Shift+C 以及 Esc、确认卡的 Alt+Y / Alt+N 保持固定，不在可改范围。',
+  note: '点快捷键录制新键位，Esc 取消；部分键位固定。',
   columnAction: '作用',
   columnKeys: '快捷键',
   columnState: '改键',
@@ -39,7 +39,7 @@ const zh: ShortcutsText = {
 }
 
 const en: ShortcutsText = {
-  note: 'Click a shortcut to record a new one: press the combination to apply, Esc to cancel. Ctrl+K / Ctrl+B / Ctrl+J / Ctrl+L / Ctrl+Shift+C (yielded to the terminal), Esc, and the approval card’s Alt+Y / Alt+N stay fixed and are not rebindable.',
+  note: 'Click a shortcut to record; Esc cancels. Some keys are fixed.',
   columnAction: 'Action',
   columnKeys: 'Keys',
   columnState: 'Rebind',
