@@ -2619,11 +2619,16 @@ await runSearchTests(ok, searchMod)
   const stub = join(dataDir, 'electron-stub.mjs')
   writeFileSync(stub, 'export const BrowserWindow = class {}\nexport const session = {}\n')
   const savedDataDir = process.env.YAN_DATA_DIR
+  const savedPiDir = process.env.YAN_PI_DIR
+  const savedDeepseekKey = process.env.DEEPSEEK_API_KEY
   process.env.YAN_DATA_DIR = dataDir
+  process.env.YAN_PI_DIR = dataDir
+  delete process.env.DEEPSEEK_API_KEY
   try {
     const entry = [
       "export * as config from './src/main/search/config.ts'",
       "export * as tavily from './src/main/search/tavily.ts'",
+      "export * as deepseek from './src/main/search/deepseek.ts'",
       "export * as firecrawl from './src/main/search/firecrawl.ts'",
       "export * as context7 from './src/main/search/context7.ts'",
       "export * as shared from './src/shared/search.ts'"
@@ -2645,6 +2650,10 @@ await runSearchTests(ok, searchMod)
   } finally {
     if (savedDataDir === undefined) delete process.env.YAN_DATA_DIR
     else process.env.YAN_DATA_DIR = savedDataDir
+    if (savedPiDir === undefined) delete process.env.YAN_PI_DIR
+    else process.env.YAN_PI_DIR = savedPiDir
+    if (savedDeepseekKey === undefined) delete process.env.DEEPSEEK_API_KEY
+    else process.env.DEEPSEEK_API_KEY = savedDeepseekKey
   }
 }
 

@@ -1,4 +1,4 @@
-export type SearchSourceId = 'wikipedia' | 'arxiv' | 'hackernews' | 'brave' | 'tavily' | 'bing' | 'ddg' | 'so360'
+export type SearchSourceId = 'wikipedia' | 'arxiv' | 'hackernews' | 'brave' | 'tavily' | 'bing' | 'ddg' | 'so360' | 'deepseek'
 
 export interface SearchSource {
   id: SearchSourceId
@@ -17,6 +17,7 @@ export const SEARCH_SOURCES: readonly SearchSource[] = [
   { id: 'hackernews', app: 'hackernews', subcommand: 'search', label: 'Hacker News', needsBrowser: false, urlKind: 'hackernews' },
   { id: 'brave', app: '', subcommand: '', label: 'Brave 搜索', needsBrowser: false, urlKind: 'direct', needsKey: true, direct: true },
   { id: 'tavily', app: '', subcommand: '', label: 'Tavily 搜索', needsBrowser: false, urlKind: 'direct', needsKey: true, direct: true },
+  { id: 'deepseek', app: '', subcommand: '', label: 'DeepSeek 搜索', needsBrowser: false, urlKind: 'direct', needsKey: true, direct: true },
   { id: 'bing', app: '', subcommand: '', label: 'Bing 网页', needsBrowser: false, urlKind: 'direct', direct: true },
   { id: 'ddg', app: '', subcommand: '', label: 'DuckDuckGo', needsBrowser: false, urlKind: 'direct', direct: true },
   { id: 'so360', app: '', subcommand: '', label: '360 搜索', needsBrowser: false, urlKind: 'direct', direct: true }
@@ -111,4 +112,5 @@ export interface SearchApiConfigView {
   configured: boolean
   hintDismissed: boolean
   providers: Record<SearchProviderId, SearchProviderState>
+  deepseekModelKey: boolean
 }

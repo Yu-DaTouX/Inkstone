@@ -5,6 +5,7 @@ import { createOpencliRunner, type AdapterRunner, runSearch, searchDoctor, searc
 import { runBraveSearch } from './search/brave'
 import { runTavilySearch } from './search/tavily'
 import { firecrawlReadPage } from './search/firecrawl'
+import { deepseekReadPage, resolveDeepseekSearchKey, runDeepseekSearch } from './search/deepseek'
 import { DocsError, queryDocs } from './search/context7'
 import { detectLocale, runBingSearch } from './search/bing'
 import { runDdgSearch } from './search/ddg'
@@ -72,8 +73,8 @@ export class LookupCommands {
       const url = this.searchString(params, ['url'])
       if (!url) throw new CapabilityCommandError('search_url_required', 'search fetch 需要网址（--url）')
       const via = this.searchString(params, ['via'])
-      if (via && via !== 'local' && via !== 'firecrawl') {
-        throw new CapabilityCommandError('search_bad_via', '--via 只能是 local 或 firecrawl')
+      if (via && via !== 'local' && via !== 'firecrawl' && via !== 'deepseek') {
+        throw new CapabilityCommandError('search_bad_via', '--via 只能是 local、firecrawl 或 deepseek')
       }
       try {
         const read = {
@@ -155,12 +156,15 @@ export class LookupCommands {
       .filter((s): s is SearchSourceId => s.length > 0)
 
     if (sources.length === 0) {
-      const [hasTavily, hasBrave] = await Promise.all([resolveSearchKey('tavily'), resolveSearchKey('brave')])
-      const hasKey = !!(hasTavily || hasBrave)
-      const web: SearchSourceId[] = detectLocale(text) === 'zh' ? ['bing', 'so360'] : ['ddg', 'bing']
+      const [hasTavily, hasBrave, hasDeepseek] = await Promise.all([resolveSearchKey('tavily'), resolveSearchKey('brave'), resolveDeepseekSearchKey()])
+      const hasKey = !!(hasTavily || hasBrave || hasDeepseek)
+      const zh = detectLocale(text) === 'zh'
+      const web: SearchSourceId[] = zh ? ['bing', 'so360'] : ['ddg', 'bing']
       sources.push(
+        ...(hasDeepseek && zh ? (['deepseek'] as SearchSourceId[]) : []),
         ...(hasTavily ? (['tavily'] as SearchSourceId[]) : []),
         ...(hasBrave ? (['brave'] as SearchSourceId[]) : []),
+        ...(hasDeepseek && !zh ? (['deepseek'] as SearchSourceId[]) : []),
         ...web,
         ...DEFAULT_SEARCH_SOURCES
       )
@@ -236,8 +240,9 @@ export class LookupCommands {
     url: string,
     read: { maxChars?: number; timeoutMs?: number },
     via: string | undefined
-  ): Promise<{ page: Awaited<ReturnType<typeof readPage>>; via: 'local' | 'firecrawl'; note?: string }> {
+  ): Promise<{ page: Awaited<ReturnType<typeof readPage>>; via: 'local' | 'firecrawl' | 'deepseek'; note?: string }> {
     if (via === 'firecrawl') return { page: await firecrawlReadPage(url, read), via: 'firecrawl' }
+    if (via === 'deepseek') return { page: await deepseekReadPage(url, read), via: 'deepseek' }
     let local: Awaited<ReturnType<typeof readPage>> | null = null
     let localError: ReadPageError | null = null
     try {
@@ -409,6 +414,7 @@ function searchRunner(): AdapterRunner {
     switch (source.id) {
       case 'brave': return runBraveSearch(query, opts)
       case 'tavily': return runTavilySearch(query, opts)
+      case 'deepseek': return runDeepseekSearch(query, opts)
       case 'bing': return runBingSearch(query, opts)
       case 'ddg': return runDdgSearch(query, opts)
       case 'so360': return runSo360Search(query, opts)
