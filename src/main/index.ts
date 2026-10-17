@@ -87,7 +87,7 @@ import { sameRuntimeEnvelope } from '../core/run-state'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
-import { createSubagentNotifier } from './subagent-notify'
+import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
 import { configureWorkModeCoordinator, setDefaultWorkMode, workModeKeyFor, resolveWorkMode, pushWorkMode, resolveAgentProfile, pushAgentProfile } from './work-mode-coordinator'
 import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { registerVoiceIpc } from './ipc/voice-ipc'
@@ -313,10 +313,7 @@ const scheduleService = new ScheduleService({
 })
 const notifySubagentFinished = createSubagentNotifier({
   enabled: async () => (await getSettings()).subagentNotify !== false,
-  find: (run) =>
-    (run.parentSessionId ? runners?.agentForSession(run.parentSessionId) : null) ??
-    (run.parentRunId ? runners?.agentOf(run.parentRunId) : null) ??
-    null,
+  find: (run) => (runners ? findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners) : null),
   runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0
 })
 const subagentService: SubagentService = new SubagentService({
@@ -860,6 +857,7 @@ function pushRunners(): void {
   refreshTaskbar()
   void syncKeepAwake(statuses.some((r) => r.running))
   adoptSubagentParentSessions(statuses)
+  notifySubagentFinished.retry()
 }
 
 const publishedRunnerGenerations = new Map<string, number>()

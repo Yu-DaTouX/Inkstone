@@ -309,6 +309,24 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       onChange: () => {},
       prepare: fakePrepare
     })
+    ctrl.setContext({ cwd: 'C:/proj-a', parentSessionId: '01a14877-aaaa', parentRunId: 'r1', parentGeneration: 3, parentMessageId: 'm1', projectId: 'p1' })
+    ctrl.setContext({ cwd: 'C:/proj-b' })
+    const res = await ctrl.start('没有父会话的派发')
+    ok(res.ok === true, '无父会话上下文也能派发', res.error ?? '')
+    ok(res.run?.parentSessionId === undefined, '上一次的父会话不残留到新派发', res.run?.parentSessionId)
+    ok(res.run?.parentRunId === undefined && res.run?.parentGeneration === undefined, '上一次的父 runner 与代次不残留')
+    ok(res.run?.parentMessageId === undefined && res.run?.projectId === undefined, '上一次的消息与项目归属不残留')
+    await ctrl.stopAll()
+  }
+
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({
+      cwd: 'C:/proj-a',
+      createRpc: factory.createRpc,
+      onChange: () => {},
+      prepare: fakePrepare
+    })
     const res = await ctrl.start('只读审查', undefined, 'controlled-cwd')
     ok(res.ok === true, '只读子代理可以启动', res.error ?? '')
     const args = factory.created[0]?.args ?? []
