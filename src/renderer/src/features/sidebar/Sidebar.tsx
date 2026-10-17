@@ -29,7 +29,6 @@ function toggleKey(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
 interface Props {
   preview?: boolean
   onPin?: () => void
-  onPointerLeave?: () => void
   onClose?: () => void
   onRuns?: () => void
   onSchedule?: () => void
@@ -38,7 +37,7 @@ interface Props {
   onSettings?: () => void
 }
 
-export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onReview, onCollab, onSettings, preview, onPin, onPointerLeave }: Props): ReactElement {
+export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onReview, onCollab, onSettings, preview, onPin }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -170,7 +169,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
   const connLabel = conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')
 
   return (
-    <aside className="v3-side" ref={asideRef} aria-label={text.sidebarLabel} data-testid="v3-sidebar" onPointerLeave={onPointerLeave}>
+    <aside className="v3-side" ref={asideRef} aria-label={text.sidebarLabel} data-testid="v3-sidebar">
       <div className="v3-side-top">
         <span className="v3-side-brand">
           <BrandMark size={16} decorative />

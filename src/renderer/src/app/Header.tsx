@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactElement } from 'react'
+import { useMemo, type ReactElement } from 'react'
 import { ArrowLeft, FolderOpen, Globe, Minus, MoreHorizontal, PanelLeft, PanelRight, Pin, Settings, Square, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
@@ -7,6 +7,7 @@ import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
 import { workbenchText } from '../features/workbench/workbench-text'
 import { collabText } from '../features/collab/collab-text'
+import { useHoverDelay } from '../lib/use-hover-delay'
 import { IconTip } from './IconTip'
 import { v3Text } from './v3-text'
 
@@ -40,12 +41,7 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const win = window.yan.win
 
-  const previewTimer = useRef<number | null>(null)
-  const cancelPreview = (): void => {
-    if (previewTimer.current !== null) window.clearTimeout(previewTimer.current)
-    previewTimer.current = null
-  }
-  useEffect(() => cancelPreview, [])
+  const preview = useHoverDelay(280, () => onPreviewSidebar?.())
 
   const title = useMemo(() => {
     if (route === 'settings') return text.settingsTitle
@@ -69,7 +65,7 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
         {route === 'chat' ? (
           !sidebarOpen || narrow ? (
             <IconTip label={text.toggleSidebar}>
-              <IconButton aria-label={text.toggleSidebar} onPress={onToggleSidebar} onHoverStart={sidebarOpen ? undefined : () => { cancelPreview(); previewTimer.current = window.setTimeout(() => onPreviewSidebar?.(), 280) }} onHoverEnd={cancelPreview} onPressStart={cancelPreview} data-testid="v3-rail-toggle">
+              <IconButton aria-label={text.toggleSidebar} onPress={onToggleSidebar} onHoverStart={sidebarOpen ? undefined : preview.start} onHoverEnd={preview.cancel} onPressStart={preview.cancel} data-testid="v3-rail-toggle">
                 <PanelLeft size={16} />
               </IconButton>
             </IconTip>
