@@ -337,6 +337,8 @@
   "cap.importPreservedNotice": "旧条目仍然保留启用，未自动搬运凭证；请按提示手动处理。",
   "cap.importManualHint": "这属于需要你手动处理的情况（重新登录 / 不受支持 / 目录未受信 / 校验不可用）；砚不会自动搬运凭证。",
   "chat.bash": "命令",
+  "chat.noteCustom": "扩展消息",
+  "chat.noteBranchSummary": "分支摘要",
   "chat.cmds": "命令",
   "chat.draft1": "带我了解当前文件夹：有哪些文件，它们有什么用途？",
   "chat.draft2": "帮我分析这个问题：",

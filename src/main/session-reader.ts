@@ -1,7 +1,7 @@
 import { open, realpath, stat } from 'node:fs/promises'
 import type { BigIntStats } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
-import { createHistoryBuilder } from './normalize'
+import { createHistoryBuilder, entryMessage } from './normalize'
 import { contextFromEntry } from './compaction'
 import type { ContextFrom, UIMessage } from '../shared/ipc'
 
@@ -117,7 +117,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
         if (!text) return
         chars += text.length
         const scan = scanTail + text
-        hasMessage ||= scan.includes('"type":"message"')
+        hasMessage ||= scan.includes('"type":"message"') || scan.includes('"type":"custom_message"') || scan.includes('"type":"branch_summary"')
         scanTail = scan.slice(-32)
         if (chars > MAX_LINE_BYTES) { discarded = true; parts = [] }
         if (!discarded) parts.push(text)
@@ -140,8 +140,9 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
             let value: unknown, entryId: string | undefined, parsed = false
             try {
               const entry = JSON.parse(rawLine) as { message?: unknown; id?: unknown }
-              if (entry.message && typeof entry.message === 'object') {
-                const result = truncateDeep(entry.message)
+              const message = entryMessage(entry)
+              if (message) {
+                const result = truncateDeep(message)
                 value = result.value; truncated += result.cut; total++
                 entryId = typeof entry.id === 'string' && entry.id ? entry.id : undefined
                 parsed = true

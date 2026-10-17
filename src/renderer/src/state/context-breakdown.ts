@@ -60,7 +60,7 @@ function argsText(args: unknown): string {
 export function contextBreakdown(messages: readonly UIMessage[], total: number): ContextSlice[] {
   const sums: Record<Exclude<ContextCategory, 'system'>, number> = { user: 0, assistant: 0, thinking: 0, tools: 0 }
   for (const m of messages) {
-    if (m.role === 'user') sums.user += estimateTokens(m.text) + (m.images?.length ?? 0) * IMAGE_TOKENS
+    if (m.role === 'user' || m.role === 'note') sums.user += estimateTokens(m.text) + (m.images?.length ?? 0) * IMAGE_TOKENS
     else if (m.role === 'bash') sums.tools += estimateTokens(m.bash?.command) + estimateTokens(m.text)
     else {
       sums.assistant += estimateTokens(m.text)

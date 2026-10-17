@@ -36,6 +36,7 @@ import {
   normalizeMessage,
   imagesOf,
   toUsage,
+  entryMessage,
   type PiContentBlock,
   type PiMessage
 } from './normalize'
@@ -808,7 +809,15 @@ export class AgentController extends EventEmitter {
       }
     })
     this.rpc = rpc
-    this.nativeRuntime = new NativeSessionRuntime({ command: (type, payload, options) => rpc.command(type, payload, options) })
+    this.nativeRuntime = new NativeSessionRuntime(
+      { command: (type, payload, options) => rpc.command(type, payload, options) },
+      undefined,
+      (receipt) => {
+        if (this.rpc !== rpc || receipt.op !== 'model_select') return
+        void this.refreshState()
+        void this.listThinkingLevels()
+      }
+    )
 
     rpc.on('stderr', (line) => {
       this.push({ ch: 'proc', payload: { state: 'stderr', detail: line } })
@@ -921,7 +930,10 @@ export class AgentController extends EventEmitter {
       const snapshot = await this.sessionEntries()
       if (!snapshot.ok) throw new Error(snapshot.error ?? '无法读取当前原生分支')
       const path = nativeActiveBranch(snapshot.entries ?? [], snapshot.leafId ?? null)
-      const messageEntries = path.filter(entry => entry.type === 'message' && entry.message)
+      const messageEntries = path.flatMap(entry => {
+        const message = entryMessage(entry)
+        return message ? [{ id: entry.id, message }] : []
+      })
       const compactionEntry = path.findLast(entry => entry.type === 'compaction')
       this.setContextFrom(compactionEntry ? contextFromEntry(compactionEntry) : undefined)
       const previousSegments = fromFile?.messages.filter(message => message.id.startsWith('history:')) ?? []
@@ -2186,6 +2198,12 @@ export class AgentController extends EventEmitter {
             this.push({ ch: 'msg-add', payload: norm })
             this.consumeQueued(norm.text, imagesOf(m.content) ?? [])
           }
+        } else if (m?.role === 'custom') {
+          const norm = normalizeMessage(m, this.messages.length)
+          if (norm) {
+            this.messages.push(norm)
+            this.push({ ch: 'msg-add', payload: norm })
+          }
         } else if (m?.role === 'assistant') {
           const id = `m${this.messages.length}`
           const requestStartMono = this.pendingRequestMono
@@ -2555,10 +2573,35 @@ export class AgentController extends EventEmitter {
         void this.refreshState()
         break
 
-      case 'model_change':
+      case 'session_info_changed': {
+        const name = typeof evt.name === 'string' ? evt.name.trim() : ''
+        const sessionId = this.state?.sessionId
+        if (name && sessionId) this.push({ ch: 'session-title', payload: { sessionId, title: name } })
         void this.refreshState()
-        void this.listThinkingLevels()
         break
+      }
+
+      case 'entry_appended': {
+        const entry = evt.entry as { type?: unknown } | undefined
+        if (entry?.type === 'usage') void this.refreshStats()
+        break
+      }
+
+      case 'summarization_retry_scheduled': {
+        const what = this.compactionState.running ? '压缩' : '分支摘要'
+        const seconds = Math.max(1, Math.round(Number(evt.delayMs ?? 0) / 1000))
+        const reason = modelErrorText(evt.errorMessage)
+        this.push({
+          ch: 'notify',
+          payload: {
+            id: `summary-retry-${Date.now()}`,
+            method: 'notify',
+            notifyType: 'warning',
+            message: `${what}失败${reason ? `（${reason}）` : ''}，${seconds} 秒后第 ${Number(evt.attempt ?? 1)}/${Number(evt.maxAttempts ?? 1)} 次重试…`
+          }
+        })
+        break
+      }
 
       case 'auto_retry_start': {
         if (this.loopGuardAbortSent) {

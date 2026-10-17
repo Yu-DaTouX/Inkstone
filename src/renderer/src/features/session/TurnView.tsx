@@ -25,11 +25,12 @@ import { SubagentLine } from './SubagentLine'
 import { TurnChanges } from './TurnChanges'
 import { viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
-import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared/turns'
+import type { AssistantTurn, BashTurn, NoteTurn, Turn, UserTurn } from '../../../../shared/turns'
 
 export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly} rewindOwner={rewindOwner} branchPager={branchPager} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
+  if (turn.kind === 'note') return <NoteTurnView turn={turn} sessionId={sessionId} />
   return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} />
 })
 
@@ -115,6 +116,49 @@ function BashTurnView({ turn }: { turn: BashTurn }): JSX.Element {
       <div className="v3-tag">{t('chat.bash')}</div>
       <ToolSteps tools={msg.toolCalls ?? []} />
       {msg.error ? <div className="v3-error" role="alert"><Icon name="warn" size={13} /><span>{msg.error}</span></div> : null}
+    </article>
+  )
+}
+
+function NoteTurnView({ turn, sessionId }: { turn: NoteTurn; sessionId: string | null }): JSX.Element {
+  const t = useT()
+  const msg = turn.msg
+  const summary = msg.note?.kind === 'branchSummary'
+  const label = summary ? t('chat.noteBranchSummary')
+    : msg.note?.customType ? `${t('chat.noteCustom')} · ${msg.note.customType}` : t('chat.noteCustom')
+  const head = (
+    <>
+      <Icon name={summary ? 'branch' : 'message'} size={13} />
+      <span className="v3-note-label">{label}</span>
+      {msg.timestamp ? <TurnClock timestamp={msg.timestamp} /> : null}
+    </>
+  )
+  const body = (
+    <div className="v3-note-body">
+      {msg.text ? <div className="v3-para"><Markdown text={msg.text} sessionId={sessionId} messageId={msg.id} /></div> : null}
+      {msg.images?.length ? (
+        <div className="v3-note-images">
+          {msg.images.map((im, i) =>
+            im.data ? <MessageImage key={i} src={`data:${im.mimeType};base64,${im.data}`} className="v3-img-thumb" /> :
+            im.url ? <MessageImage key={i} src={im.url} className="v3-img-thumb" /> : null
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+  return (
+    <article className="v3-msg note" data-msg-id={msg.id} data-turn-id={turn.id} data-note={msg.note?.kind ?? 'custom'} data-testid="v3-note">
+      {summary ? (
+        <details className="v3-note">
+          <summary className="v3-note-head">{head}</summary>
+          {body}
+        </details>
+      ) : (
+        <div className="v3-note">
+          <div className="v3-note-head">{head}</div>
+          {body}
+        </div>
+      )}
     </article>
   )
 }
