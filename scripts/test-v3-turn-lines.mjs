@@ -546,13 +546,15 @@ async function main() {
         sessionId: 'sess-a',
         conversationId: 'sess-a',
         sessionFile: 'A',
-        lastCompaction: { status: 'completed', reason: 'threshold', beforeTokens: 150_000, afterTokens: 32_000 }
+        lastCompaction: { status: 'completed', reason: 'threshold', beforeTokens: 150_000, afterTokens: 32_000, afterMeasured: true }
       }
     })
     const marker = rt.render(bundle.CompactionMarker, {})
     ok(marker && byTestId(marker, 'v3-compaction-marker').length === 1, '有压缩记录就画标记行')
     const markerText = flattenText(marker)
     ok(markerText.includes('150k → 32k'), '两端 token 都拿到时写定量结果', markerText)
+    store({ session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', lastCompaction: { status: 'completed', reason: 'threshold', beforeTokens: 150_000, afterTokens: 32_000 } } })
+    ok(flattenText(rt.render(bundle.CompactionMarker, {})).includes('150k → ≈32k'), '压缩后读数未实测时标为估计值')
     ok(markerText.includes('compactionTitle'), '已完成压缩带「上下文已压缩」标题', markerText)
 
     store({ session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', compaction: { status: 'running', reason: 'overflow' } } })
