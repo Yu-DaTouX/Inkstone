@@ -841,10 +841,14 @@ export class AgentController extends EventEmitter {
     })
 
     rpc.on('ui', (req) => {
+      if (this.rpc !== rpc) return
       if (this.nativeRuntime?.handleUi(req)) return
       this.ui.handleUi(req)
     })
-    rpc.on('event', (evt) => this.handleEvent(evt))
+    rpc.on('event', (evt) => {
+      if (this.rpc !== rpc) return
+      this.handleEvent(evt)
+    })
 
     this.nativeWitness = null
     this.nativeWitnessPending = null
