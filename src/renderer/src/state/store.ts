@@ -2154,10 +2154,8 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '标题生成失败，已保留原标题') })
       return
     }
-    set({
-      titleCandidates: { ...get().titleCandidates, [sid]: res.title },
-      notices: pushNotice(get().notices, 'info', `已生成标题候选：「${res.title}」`)
-    })
+    if (get().manualTitles[sid]) await get().setManualTitle(sid, res.title)
+    set({ notices: pushNotice(get().notices, 'info', `已换成新标题：「${res.title}」`) })
   },
 
   acceptTitleCandidate: async (sessionId) => {
