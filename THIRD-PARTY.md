@@ -7,6 +7,13 @@
 - 界面图标是本仓库自绘的「砚线」，随砚以 MIT 发布，不含第三方几何。几何写在 [`scripts/design/icons/inkline.json`](../scripts/design/icons/inkline.json)，语义写在 [`catalog.json`](../scripts/design/icons/catalog.json)，由 `npm run icons` 在构建期生成 `src/renderer/src/icons/sprite.ts`。
 - 2026-09-28 之前的版本使用 [Lucide](https://lucide.dev)（ISC，npm 包 `lucide-static`），更早使用 [reicon](https://reicon.dev)。分发这些旧版本时，其许可声明仍随对应版本保留。
 
+## 子代理模型 Bot
+
+| 组件 | 许可 | 说明 |
+| --- | --- | --- |
+| [Lobe Icons](https://github.com/lobehub/lobe-icons)（npm 包 `@lobehub/icons-static-png@1.97.0`） | MIT | 模型 logo 源图在 [`assets/lobe-icons/`](assets/lobe-icons/)（附原许可 `LICENSE`），由 `scripts/gen-bot-forms.mjs` 预先算出外沿、色场与小图，写入 `src/renderer/src/patterns/model-bot/bot-forms.json`；各 logo 的商标归其厂商所有 |
+| [agent-hud-open](https://github.com/jazzenchen/agent-hud-open) | Apache-2.0 | Bot 形体与动作算法及各品牌参数移植自其 `Sources/AgentHUDDesktop/Bots/`（`BotForm`、`BotRenderer`、`BotFins`、`BotState` 等），许可原文见 [`src/renderer/src/patterns/model-bot/LICENSE-agent-hud-open`](src/renderer/src/patterns/model-bot/LICENSE-agent-hud-open)；未使用其 Clawd 像素精灵 |
+
 ## 其它运行时组件
 
 | 组件 | 许可 |

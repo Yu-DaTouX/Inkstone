@@ -12,6 +12,7 @@ import { useSubagentPanel } from './subagent-panel-state'
 import { useSessionText } from './text'
 import { Icon } from './Icon'
 import { Busy } from './Busy'
+import { SubagentBot } from './SubagentBot'
 import { Markdown } from './Markdown'
 import type { SubagentRun } from '../../../../shared/ipc'
 
@@ -38,7 +39,8 @@ function PanelBody({ run, viewActive }: { run: SubagentRun; viewActive: boolean 
   const { lang } = useI18n()
   const tt = useSessionText()
   const runs = useRunsV3((s) => s.runs)
-  const { model, status, dotClass } = useSubagentView(run, findSubagentSnapshot(runs, run.id))
+  const snapshot = findSubagentSnapshot(runs, run.id)
+  const { model, status, dotClass } = useSubagentView(run, snapshot)
   const rootRef = useRef<HTMLElement>(null)
   const [busy, setBusy] = useState<'stop' | 'retry' | null>(null)
   const [width, setWidth] = useState(360)
@@ -109,7 +111,7 @@ function PanelBody({ run, viewActive }: { run: SubagentRun; viewActive: boolean 
       <Splitter className="v3-sap-resizer" orientation="vertical" value={available - shownWidth} min={48} max={Math.max(48, available - 260)} step={16} aria-label={t('tile.resizeWidth')} onChange={(left) => setWidth(available - left)} onReset={() => setWidth(360)} />
       <header className="v3-sap-head">
         <span className="v3-sap-glyph" data-tone={dotClass} aria-hidden>
-          {model.live ? <Busy /> : <Icon name="layers" size={16} />}
+          <SubagentBot run={run} snapshot={snapshot} model={model} />
         </span>
         <div className="v3-sap-headtext">
           <span className="v3-sap-pill" data-tone={dotClass}>

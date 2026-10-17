@@ -13,7 +13,7 @@ import type { SubagentRun } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
 import type { AssistantTurn } from '../../../../shared/turns'
 import { Icon } from './Icon'
-import { Busy } from './Busy'
+import { SubagentBot } from './SubagentBot'
 import { useSessionText } from './text'
 import { useSubagentPanel } from './subagent-panel-state'
 
@@ -118,7 +118,7 @@ function SubagentRow({ run, owner, snapshot }: { run: SubagentRun; owner: string
         data-testid="v3-subagent-toggle"
       >
         <span className="v3-subagent-glyph" data-tone={dotClass}>
-          {dotClass === 'run' ? <Busy /> : <Icon name="layers" size={15} />}
+          <SubagentBot run={run} snapshot={snapshot} model={model} />
           <span className={`v3-dot ${dotClass}`} data-testid="v3-subagent-dot" />
         </span>
         <span className="v3-subagent-main">
