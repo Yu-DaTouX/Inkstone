@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, CornerUpRight, History, Pencil, Send, Trash2, Undo2
 import { Button, IconButton } from '../../ui'
 import type { QueueState } from '../../../../shared/ipc'
 import { useT } from '../../i18n'
-import { useStore } from '../../state/store'
+import { pendingSendsForView, useStore } from '../../state/store'
 import { locateQueueItem, planQueueEdit, planQueueMove, planQueueRemove } from './queue-plan'
 import './queue-editor.css'
 
@@ -17,7 +17,11 @@ function applyQueueOrderAction(): ApplyQueueOrder | undefined {
 export function QueueEditor() {
   const t = useT()
   const queue = useStore((s) => s.queue)
-  const pendingSends = useStore((s) => s.pendingSends)
+  const allPendingSends = useStore((s) => s.pendingSends)
+  const peekedSessionId = useStore((s) => s.peekedSessionId)
+  const peekedPath = useStore((s) => s.peekedPath)
+  const session = useStore((s) => s.session)
+  const pendingSends = pendingSendsForView({ pendingSends: allPendingSends, peekedSessionId, peekedPath, session })
   const releaseSend = useStore((s) => s.releaseSend)
   const restoreSend = useStore((s) => s.restoreSend)
   const steerQueued = useStore((s) => s.steerQueued)
