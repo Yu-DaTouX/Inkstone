@@ -1385,6 +1385,9 @@ export interface PackagesBridge {
   search(query: string, offset?: number): Promise<import('./plugin-market').MarketSearchResult>
   exportPlugin(id: string): Promise<import('./plugin-market').PluginExportResult>
   addMcp(id: string): Promise<import('./plugin-market').PluginExportResult>
+  codegraphStatus(cwd: string): Promise<import('./plugin-market').CodegraphStatus>
+  codegraphIndex(cwd: string): Promise<{ ok: boolean; error?: string; log?: string }>
+  anthropicEnv(): Promise<string[]>
   list(cwd: string): Promise<PackageListingView>
   action(req: PackageActionView): Promise<PackageActionResultView>
 }
@@ -1763,6 +1766,7 @@ export interface YanBridge {
   gitRuntimeCancel(): Promise<void>
   gitRuntimeRemove(): Promise<void>
   customProviders(): Promise<CustomProviderView[]>
+  opencodeProxy: import('./opencode-proxy').OpenCodeProxyBridge
   saveCustomProvider(input: CustomProviderInput): Promise<CustomProviderResult>
   removeCustomProvider(id: string): Promise<CustomProviderResult>
   discoverCustomModels(input: Partial<CustomProviderInput>): Promise<CustomProviderDiscoverResult>

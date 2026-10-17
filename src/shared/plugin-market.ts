@@ -13,6 +13,12 @@ export interface MarketSearchResult {
   total: number
   error?: string
 }
+export interface CodegraphStatus {
+  cliInstalled: boolean
+  configured: boolean
+  cwd?: string
+  indexed?: boolean
+}
 export interface PluginExportResult {
   ok: boolean
   cancelled?: boolean

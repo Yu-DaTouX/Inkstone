@@ -1,9 +1,9 @@
-import type { MarketSearchResult, PluginExportResult } from '../shared/plugin-market'
+import type { CodegraphStatus, MarketSearchResult, PluginExportResult } from '../shared/plugin-market'
 import { buildNativeMcpDocument } from '../shared/mcp-native-import'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 
 export const CODEGRAPH_MCP_NAME = 'codegraph'
 export const CODEGRAPH_MCP_SERVER = { command: 'codegraph', args: ['serve', '--mcp'] }
@@ -39,6 +39,51 @@ export async function addCodegraphMcp(agentDir: string, installed: (command: str
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
   return { ok: true, path }
+}
+
+export async function codegraphStatus(
+  agentDir: string,
+  cwd: string,
+  installed: (command: string) => Promise<boolean> = commandOnPath
+): Promise<CodegraphStatus> {
+  let configured = false
+  try {
+    const root = JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8')) as { mcpServers?: Record<string, { enabled?: unknown } | undefined> }
+    const entry = root?.mcpServers?.[CODEGRAPH_MCP_NAME]
+    configured = Boolean(entry) && entry?.enabled !== false
+  } catch {
+  }
+  const project = cwd.trim() ? resolve(cwd) : ''
+  return {
+    cliInstalled: await installed(CODEGRAPH_MCP_SERVER.command),
+    configured,
+    ...(project ? { cwd: project, indexed: await stat(join(project, '.codegraph')).then((s) => s.isDirectory(), () => false) } : {})
+  }
+}
+
+export async function indexCodegraphProject(cwd: string): Promise<{ ok: boolean; error?: string; log?: string }> {
+  const project = cwd.trim() ? resolve(cwd) : ''
+  if (!project || !(await stat(project).then((s) => s.isDirectory(), () => false))) return { ok: false, error: '项目目录不存在' }
+  if (!await commandOnPath(CODEGRAPH_MCP_SERVER.command)) return { ok: false, error: `没有找到 codegraph 命令，先运行 ${CODEGRAPH_INSTALL}` }
+  return new Promise((done) => {
+    let log = ''
+    const keep = (chunk: Buffer): void => { log = (log + chunk.toString('utf8')).slice(-4000) }
+    const child = spawn(CODEGRAPH_MCP_SERVER.command, ['init', '--yes', '.'], {
+      cwd: project,
+      shell: process.platform === 'win32',
+      windowsHide: true,
+      env: { ...process.env, NO_COLOR: '1' }
+    })
+    const timer = setTimeout(() => child.kill(), 15 * 60_000)
+    child.stdout?.on('data', keep)
+    child.stderr?.on('data', keep)
+    child.on('error', (error) => { clearTimeout(timer); done({ ok: false, error: error.message, log }) })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      const tail = log.trim().split('\n').slice(-8).join('\n')
+      done(code === 0 ? { ok: true, log: tail } : { ok: false, error: `codegraph init 退出码 ${code ?? '?'}`, log: tail })
+    })
+  })
 }
 
 export const HERMES_PLUGIN_FILES = ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py']

@@ -101,6 +101,7 @@ import type {
   LocalModelServer
 } from '../shared/ipc'
 import type { DeepLinkIntent } from '../shared/ipc'
+import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../shared/opencode-proxy'
 import type { WebSearchAvailability } from '../shared/web-search'
 import type { RunSnapshot } from '../shared/runs'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from '../shared/checkpoints'
@@ -312,6 +313,15 @@ const api: YanBridge = {
   gitRuntimeCancel: () => invoke<void>('yan:gitRuntimeCancel'),
   gitRuntimeRemove: () => invoke<void>('yan:gitRuntimeRemove'),
   customProviders: () => invoke<CustomProviderView[]>('yan:customProviders'),
+  opencodeProxy: {
+    status: () => invoke<OpenCodeProxyStatus>('yan:opencodeProxy:status'),
+    install: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:install'),
+    start: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:start'),
+    stop: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:stop'),
+    refresh: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:refresh'),
+    uninstall: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:uninstall'),
+    autoStart: (enabled) => invoke<OpenCodeProxyResult>('yan:opencodeProxy:autoStart', enabled)
+  },
   saveCustomProvider: (input) => invoke<CustomProviderResult>('yan:saveCustomProvider', input),
   discoverCustomModels: (input) => invoke<CustomProviderDiscoverResult>('yan:discoverCustomModels', input),
   detectLocalModels: () => invoke<LocalModelServer[]>('yan:detectLocalModels'),
@@ -375,6 +385,9 @@ const api: YanBridge = {
     search: (query, offset) => invoke('yan:packages:search', query, offset),
     exportPlugin: (id) => invoke('yan:packages:exportPlugin', id),
     addMcp: (id) => invoke('yan:packages:addMcp', id),
+    codegraphStatus: (cwd) => invoke('yan:packages:codegraphStatus', cwd),
+    codegraphIndex: (cwd) => invoke('yan:packages:codegraphIndex', cwd),
+    anthropicEnv: () => invoke<string[]>('yan:packages:anthropicEnv'),
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
     action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)
   },
