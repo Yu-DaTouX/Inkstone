@@ -78,7 +78,7 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
       set({ title: m.payload })
       break
     case 'editor-text':
-      set({ editorInject: m.payload })
+      set({ editorInject: { text: m.payload, mode: 'replace' } })
       break
     case 'proc':
       if (m.payload.state === 'ready') {
