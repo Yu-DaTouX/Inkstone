@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { atomicWriteFile } from './atomic'
+import { isSyncMode, type SyncMode } from '../../shared/sync'
 
 export const SYNC_CONFIG_FILE = 'sync-config.json'
 
@@ -17,6 +18,7 @@ export interface SyncRunSummary {
 
 export interface SyncConfig {
   v: 1
+  mode: SyncMode
   syncRoot?: string
   lastSync?: SyncRunSummary
 }
@@ -49,15 +51,17 @@ export class SyncConfigStore {
 
   async read(): Promise<SyncConfig> {
     if (this.cache) return this.cache
-    if (!existsSync(this.file)) return (this.cache = { v: 1 })
+    if (!existsSync(this.file)) return (this.cache = { v: 1, mode: 'manual' })
     try {
       const raw = JSON.parse(await readFile(this.file, 'utf8')) as Partial<SyncConfig>
-      const config: SyncConfig = { v: 1 }
-      if (typeof raw?.syncRoot === 'string' && raw.syncRoot) config.syncRoot = raw.syncRoot
+      const syncRoot = typeof raw?.syncRoot === 'string' && raw.syncRoot ? raw.syncRoot : undefined
+      const legacyMode: SyncMode = syncRoot ? 'auto' : 'manual'
+      const config: SyncConfig = { v: 1, mode: isSyncMode(raw?.mode) ? raw.mode : legacyMode }
+      if (syncRoot) config.syncRoot = syncRoot
       if (isRunSummary(raw?.lastSync)) config.lastSync = raw.lastSync
       return (this.cache = config)
     } catch {
-      return (this.cache = { v: 1 })
+      return (this.cache = { v: 1, mode: 'manual' })
     }
   }
 
@@ -69,8 +73,16 @@ export class SyncConfigStore {
   async setSyncRoot(root: string | undefined): Promise<SyncConfig> {
     const current = await this.read()
     if ((current.syncRoot ?? '') === (root ?? '')) return current
-    const next: SyncConfig = { v: 1 }
+    const next: SyncConfig = { v: 1, mode: current.mode }
     if (root) next.syncRoot = root
+    await this.save(next)
+    return next
+  }
+
+  async setMode(mode: SyncMode): Promise<SyncConfig> {
+    const current = await this.read()
+    if (current.mode === mode) return current
+    const next: SyncConfig = { ...current, mode }
     await this.save(next)
     return next
   }
@@ -78,6 +90,6 @@ export class SyncConfigStore {
   async recordSync(summary: SyncRunSummary): Promise<void> {
     const current = await this.read()
     if (!current.syncRoot) return
-    await this.save({ v: 1, syncRoot: current.syncRoot, lastSync: summary })
+    await this.save({ v: 1, mode: current.mode, syncRoot: current.syncRoot, lastSync: summary })
   }
 }

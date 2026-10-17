@@ -1,5 +1,5 @@
 import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
-import './storage-move-boot'
+import { storageMoveReady } from './storage-move-boot'
 import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
 import { constants as fsConstants, existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -1240,7 +1240,7 @@ async function dispatchControlCommand(command: ControlCommand): Promise<void> {
   }
 }
 
-function requestExit(): Promise<ExitResult> {
+function requestExit(options: { relaunch?: boolean } = {}): Promise<ExitResult> {
   if (isQuitting) return Promise.resolve({ action: 'already-exiting' })
   if (exitRequestInFlight) return exitRequestInFlight
 
@@ -1269,6 +1269,7 @@ function requestExit(): Promise<ExitResult> {
       console.error('[exit-snapshot] 写入失败：', error)
     })
     const action: 'save-and-exit' | 'interrupt-exit' = choice === 'save' ? 'save-and-exit' : 'interrupt-exit'
+    if (options.relaunch) app.relaunch()
     void shutdown().then(() => app.quit())
     return { action }
   })()
@@ -2409,9 +2410,11 @@ function registerIpc(): void {
   })
   handle('yan:storage:schedule', async (target: string, relaunch?: boolean) => {
     const r = await scheduleStorageMove(String(target ?? ''))
-    if (r.ok && relaunch) {
-      app.relaunch()
-      app.quit()
+    if (!r.ok || !relaunch) return r
+    const exit = await requestExit({ relaunch: true })
+    if (exit.action === 'cancelled') {
+      cancelStorageMove()
+      return { ok: false, error: '仍有会话在运行，已取消迁移' }
     }
     return r
   })
@@ -3038,6 +3041,7 @@ configureRemoteHost({
 })
 
 app.whenReady().then(async () => {
+  await storageMoveReady
   try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { reportMainError('data-root-writer', error); app.exit(1); return }
   registerDeepLinkProtocol(app, { isPackaged: app.isPackaged, execPath: process.execPath, appPath: process.argv[1] })
   registerHtmlArtifactProtocol()
@@ -3217,7 +3221,7 @@ app.whenReady().then(async () => {
     isMainWindow: (contents) => !!win && !win.isDestroyed() && win.webContents === contents
   })
 
-  void syncController?.runStartupSync()
+  syncController?.start()
   win?.webContents.once('did-finish-load', () => {
     deepLinkRouter.flush()
     deepLinkRouter.handleArgv(process.argv)
@@ -3312,6 +3316,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (e) => {
+  isQuitting = true
   if (shuttingDown) return
   e.preventDefault()
   void shutdown().then(() => app.quit())

@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
-import { Badge, Button } from '../../../ui'
-import type { SyncConflictView, SyncResolution, SyncStatusView } from '../../../../../shared/sync'
+import { Badge, Button, Radio, RadioGroup } from '../../../ui'
+import {
+  AUTO_SYNC_INTERVAL_MS,
+  isSyncMode,
+  type SyncConflictView,
+  type SyncMode,
+  type SyncResolution,
+  type SyncStatusView
+} from '../../../../../shared/sync'
 import { syncBridge } from './bridge'
 import { syncText } from './text'
 import './sync.css'
@@ -97,6 +104,21 @@ export function SyncSettings(): ReactElement {
     }
   }
 
+  const changeMode = async (mode: SyncMode): Promise<void> => {
+    if (!bridge || busy || mode === status?.mode) return
+    setBusy('mode')
+    setMessage(null)
+    try {
+      const result = await bridge.setMode(mode)
+      if (result.ok) await refresh()
+      else setMessage({ tone: 'error', text: result.error ?? text.modeFailed })
+    } catch (error) {
+      setMessage({ tone: 'error', text: `${text.modeFailed} ${describe(error)}` })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const syncNow = async (): Promise<void> => {
     if (!bridge || busy || !configured) return
     setBusy('sync')
@@ -183,6 +205,8 @@ export function SyncSettings(): ReactElement {
 
   const last = status?.lastSync
   const errors = last?.errors ?? []
+  const mode: SyncMode = status?.mode ?? 'manual'
+  const intervalHours = Math.max(1, Math.round((status?.autoIntervalMs ?? AUTO_SYNC_INTERVAL_MS) / 3_600_000))
 
   return (
     <section className="sync-page" data-testid="v3-sync-settings" data-wired="1">
@@ -212,6 +236,21 @@ export function SyncSettings(): ReactElement {
             {busy === 'sync' ? text.syncing : text.syncNow}
           </Button>
         </div>
+        <RadioGroup
+          label={text.modeTitle}
+          value={mode}
+          isDisabled={busy !== null}
+          description={mode === 'auto' ? fill(text.modeAutoHint, { hours: intervalHours }) : text.modeManualHint}
+          onChange={(value) => {
+            if (isSyncMode(value)) void changeMode(value)
+          }}
+          data-testid="v3-sync-mode"
+        >
+          <div className="sync-mode">
+            <Radio value="manual">{text.modeManual}</Radio>
+            <Radio value="auto">{text.modeAuto}</Radio>
+          </div>
+        </RadioGroup>
       </div>
 
       <div className="sync-card" data-testid="v3-sync-last">

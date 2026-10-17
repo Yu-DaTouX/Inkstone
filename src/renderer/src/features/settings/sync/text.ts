@@ -9,6 +9,12 @@ export interface SyncText {
   folderPick: string
   folderClear: string
   folderRecommend: string
+  modeTitle: string
+  modeManual: string
+  modeAuto: string
+  modeManualHint: string
+  modeAutoHint: string
+  modeFailed: string
   contentTitle: string
   contentList: string
   credentialNote: string
@@ -60,6 +66,12 @@ const ZH: SyncText = {
   folderPick: '选择文件夹',
   folderClear: '清除',
   folderRecommend: '两台电脑选同一个云盘文件夹即可，无需登录。',
+  modeTitle: '同步方式',
+  modeManual: '手动',
+  modeAuto: '自动',
+  modeManualHint: '只在点「立即同步」时同步。',
+  modeAutoHint: '砚启动时同步一次，之后每 {hours} 小时同步一次。',
+  modeFailed: '切换同步方式失败。',
   contentTitle: '同步哪些内容',
   contentList: '设置、提示词模板、技能、书签、定时任务；新设置默认不同步。',
   credentialNote: '模型凭证、路径、窗口位置和会话本体不同步。',
@@ -119,6 +131,12 @@ const EN: SyncText = {
   folderClear: 'Clear',
   folderRecommend:
     'Point both computers at the same cloud-drive folder; no sign-in.',
+  modeTitle: 'Sync mode',
+  modeManual: 'Manual',
+  modeAuto: 'Automatic',
+  modeManualHint: 'Syncs only when you press "Sync now".',
+  modeAutoHint: 'Syncs once when Inkstone starts, then every {hours} h.',
+  modeFailed: 'Could not change the sync mode.',
   contentTitle: 'What gets synced',
   contentList:
     'Settings, prompts, skills, bookmarks, schedules; new settings are not synced by default.',
