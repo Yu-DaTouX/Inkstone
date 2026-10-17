@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type JSX } from 'react'
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useRunsV3 } from '../../state/runs-v3'
@@ -8,7 +8,8 @@ import { findSubagentSnapshot } from './turn-lines'
 import { SubagentReview } from './SubagentReview'
 import { discardSubagentResult, mergeSubagentResult } from './subagent-review'
 import { openSubagentPane, useSubagentView } from './SubagentLine'
-import { useSubagentPanel } from './subagent-panel-state'
+import { SUBAGENT_LANE_EDGE, SUBAGENT_PANEL_EDGE, SUBAGENT_PANEL_WIDTH, subagentPanelShownWidth, useSubagentPanel } from './subagent-panel-state'
+import { sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { useSessionText } from './text'
 import { Icon } from './Icon'
 import { Busy } from './Busy'
@@ -18,7 +19,7 @@ import type { SubagentRun } from '../../../../shared/ipc'
 
 const RETRYABLE = new Set(['failed', 'timeout', 'budget', 'stopped'])
 
-export function SubagentPanel({ ownerKey, viewActive }: { ownerKey: string; viewActive: boolean }): JSX.Element | null {
+export function SubagentPanel({ ownerKey, viewActive, edge = SUBAGENT_PANEL_EDGE }: { ownerKey: string; viewActive: boolean; edge?: number }): JSX.Element | null {
   const runId = useSubagentPanel((s) => (s.owner === ownerKey ? s.runId : null))
   const run = useStore((s) => (runId ? s.subagents.find((item) => item.id === runId) : undefined))
 
@@ -31,10 +32,21 @@ export function SubagentPanel({ ownerKey, viewActive }: { ownerKey: string; view
   }, [runId, run])
 
   if (!runId || !run) return null
-  return <PanelBody key={run.id} run={run} viewActive={viewActive} />
+  return <PanelBody key={run.id} run={run} viewActive={viewActive} edge={edge} />
 }
 
-function PanelBody({ run, viewActive }: { run: SubagentRun; viewActive: boolean }): JSX.Element {
+export function ChatSubagentPanel(): JSX.Element | null {
+  const session = useStore((s) => s.session)
+  const peekedSessionId = useStore((s) => s.peekedSessionId)
+  const peekedPath = useStore((s) => s.peekedPath)
+  const view = useMemo(
+    () => sessionViewIdentity({ peekedSessionId, peekedPath, session }),
+    [peekedSessionId, peekedPath, session]
+  )
+  return <SubagentPanel ownerKey={view.key} viewActive={viewMatchesProjectedSession(view, session)} edge={SUBAGENT_LANE_EDGE} />
+}
+
+function PanelBody({ run, viewActive, edge }: { run: SubagentRun; viewActive: boolean; edge: number }): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
   const tt = useSessionText()
@@ -43,7 +55,8 @@ function PanelBody({ run, viewActive }: { run: SubagentRun; viewActive: boolean 
   const { model, status, dotClass } = useSubagentView(run, snapshot)
   const rootRef = useRef<HTMLElement>(null)
   const [busy, setBusy] = useState<'stop' | 'retry' | null>(null)
-  const [width, setWidth] = useState(360)
+  const width = useSubagentPanel((s) => s.width)
+  const setWidth = useSubagentPanel((s) => s.setWidth)
   const [available, setAvailable] = useState(1000)
   useEffect(() => {
     const parent = rootRef.current?.parentElement
@@ -53,7 +66,7 @@ function PanelBody({ run, viewActive }: { run: SubagentRun; viewActive: boolean 
     setAvailable(parent.clientWidth)
     return () => observer.disconnect()
   }, [])
-  const shownWidth = Math.min(width, Math.max(240, available - 48))
+  const shownWidth = subagentPanelShownWidth(width, available, edge)
   useEffect(() => {
     const parent = rootRef.current?.parentElement
     parent?.style.setProperty('--subagent-width', `${shownWidth}px`)
@@ -108,7 +121,7 @@ function PanelBody({ run, viewActive }: { run: SubagentRun; viewActive: boolean 
         close()
       }}
     >
-      <Splitter className="v3-sap-resizer" orientation="vertical" value={available - shownWidth} min={48} max={Math.max(48, available - 260)} step={16} aria-label={t('tile.resizeWidth')} onChange={(left) => setWidth(available - left)} onReset={() => setWidth(360)} />
+      <Splitter className="v3-sap-resizer" orientation="vertical" value={available - shownWidth} min={edge} max={Math.max(edge, available - 260)} step={16} aria-label={t('tile.resizeWidth')} onChange={(left) => setWidth(available - left)} onReset={() => setWidth(SUBAGENT_PANEL_WIDTH)} />
       <header className="v3-sap-head">
         <span className="v3-sap-glyph" data-tone={dotClass} aria-hidden>
           <SubagentBot run={run} snapshot={snapshot} model={model} />

@@ -32,6 +32,8 @@ import { OnboardingWizard, markOnboarded, shouldAutoWizard } from '../features/o
 import { NativeSessionSurfaces } from '../features/session/native'
 import { V3ErrorBoundary } from './ErrorBoundary'
 import { WorkbenchPanel } from '../features/workbench/WorkbenchPanel'
+import { OverviewPane } from '../features/workbench/OverviewPane'
+import { LANE_GAP, MESSAGE_MIN_WIDTH, SUBAGENT_LANE_EDGE, subagentPanelShownWidth, useSubagentPanel } from '../features/session/subagent-panel-state'
 import { WORKBENCH_PANES } from '../features/workbench/panes'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
 import { createPanePopoutClient } from '../features/workbench/pane-popout-client'
@@ -124,8 +126,11 @@ export default function ShellV3(): ReactElement {
   const workspaceOpen = useUiV3((s) => s.workspaceOpen)
   const workspaceTab = useUiV3((s) => s.workspaceTab)
   const hasMessages = useStore((s) => s.messages.length > 0)
-  const tilesEnabled = useStore((s) => s.settings?.workspaceTiles !== false)
-  const workspaceShown = route.name === 'chat' && workspaceOpen && (workspaceTab !== 'overview' || (hasMessages && tilesEnabled))
+  const sessionBarOn = useStore((s) => s.settings?.workspaceTiles !== false)
+  const workspaceShown = route.name === 'chat' && workspaceOpen && workspaceTab !== 'overview'
+  const sideOpen = useSubagentPanel((s) => !!s.runId)
+  const sideWidth = useSubagentPanel((s) => s.width)
+  const [sessionBarWidth] = useState(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size-tiles')) || 300)
   useEffect(() => { if (sidebarOpen) setSidebarPreview(false) }, [sidebarOpen])
 
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -271,7 +276,13 @@ export default function ShellV3(): ReactElement {
     return layout ? sessionTiles(layout.tiles) : displayed ? [displayed] : []
   }, [split, narrow, displayed])
   useRunnerVisibility(visibleSessions)
-  const workspaceMode = panelMode === 'docked' && workspaceTab === 'overview' && visibleSessions.length <= 1 ? 'tiles' : panelMode
+  const singlePane = !collapsedPanes(split, narrow)
+  const chatWidth = bodyWidth - (workspaceShown && panelMode === 'docked' ? shownWorkspaceWidth : 0)
+  const sideReserve = subagentPanelShownWidth(sideWidth, chatWidth, SUBAGENT_LANE_EDGE) + LANE_GAP
+  const panelInChat = singlePane && chatWidth - sideReserve >= MESSAGE_MIN_WIDTH
+  const sideInLane = sideOpen && panelInChat
+  const sessionBarFits = (!sideOpen || sideInLane) && chatWidth - (sideInLane ? sideReserve : 0) - (sessionBarWidth + LANE_GAP) >= MESSAGE_MIN_WIDTH
+  const sessionBarShown = route.name === 'chat' && singlePane && hasMessages && sessionBarOn && sessionBarFits && !(workspaceShown && panelMode === 'full')
 
   useEffect(() => {
     if (!settings) return
@@ -291,19 +302,15 @@ export default function ShellV3(): ReactElement {
 
   const toggleWorkspace = (): void => {
     const ui = useUiV3.getState()
-    if (ui.workspaceOpen) {
+    if (ui.workspaceOpen && ui.workspaceTab !== 'overview') {
       ui.setWorkspaceOpen(false)
       return
     }
-    setPanelMounted(true)
-    if (!WORKBENCH_ACTIVE_TABS.has(ui.workspaceTab)) {
-      ui.setWorkspaceOpen(true)
-      return
-    }
-    const target = captureActivationTarget()
-    void activateWorkspaceOwner(target).then((ok) => {
-      if (ok) useUiV3.getState().setWorkspaceOpen(true)
-    })
+    void openWorkspaceTab(ui.workspaceTab === 'overview' ? 'changes' : ui.workspaceTab)
+  }
+
+  const toggleSessionBar = (): void => {
+    void useStore.getState().patchSettings({ workspaceTiles: !sessionBarOn }).catch(() => undefined)
   }
 
   const requestActivation = (_tab: WorkbenchTabId): Promise<boolean> => activateWorkspaceOwner(captureActivationTarget())
@@ -477,8 +484,8 @@ export default function ShellV3(): ReactElement {
             onPreviewSidebar={() => setSidebarPreview(true)}
             onSettings={() => useUiV3.getState().navigate({ name: 'settings' })}
             onBack={() => useUiV3.getState().goBack()}
-            workspaceOpen={workspaceOpen}
-            onToggleWorkspace={toggleWorkspace}
+            sessionBarOpen={sessionBarOn}
+            onToggleSessionBar={toggleSessionBar}
             onOpenTool={(tab) => void openWorkspaceTab(tab)}
           />
           <div
@@ -486,7 +493,7 @@ export default function ShellV3(): ReactElement {
             ref={bodyRef}
             style={{ '--workspace-width': `${shownWorkspaceWidth}px` } as CSSProperties}
             data-workspace={workspaceShown ? 'open' : 'closed'}
-            data-workspace-mode={workspaceMode}
+            data-workspace-mode={panelMode}
           >
             {route.name === 'settings' ? (
               <SettingsPanelV3 onShowOnboarding={() => setOnboardingOpen(true)} />
@@ -499,20 +506,25 @@ export default function ShellV3(): ReactElement {
             ) : route.name === 'usage' ? (
               <UsagePage />
             ) : (
-              <div className="v3-chat">
+              <div className="v3-chat" data-sessionbar={sessionBarShown ? '1' : undefined} data-side-panel={sideInLane ? '1' : undefined}>
                 <RunPill
                   className="v3-pillbar"
                   onOpen={openRunFromPill}
                   onShowAll={() => useUiV3.getState().navigate({ name: 'runs' })}
                 />
-                <SideBySide split={split} narrow={narrow} />
+                <SideBySide split={split} narrow={narrow} panelInChat={panelInChat} />
+                {sessionBarShown ? (
+                  <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
+                    <OverviewPane owner={owner} onOpenView={(tab) => void openWorkspaceTab(tab)} />
+                  </aside>
+                ) : null}
               </div>
             )}
             {panelMounted ? (
               <WorkbenchPanel
                 owner={owner}
                 open={workspaceShown}
-                mode={workspaceMode}
+                mode={panelMode}
                 panes={WORKBENCH_PANES}
                 onClose={() => useUiV3.getState().setWorkspaceOpen(false)}
                 onRequestActivation={requestActivation}
@@ -533,7 +545,7 @@ export default function ShellV3(): ReactElement {
                 }}
               />
             ) : null}
-            {workspaceShown && workspaceMode === 'docked' ? (
+            {workspaceShown && panelMode === 'docked' ? (
               <Splitter className="v3-workspace-resizer" quiet orientation="vertical" value={bodyWidth - shownWorkspaceWidth} min={360} max={bodyWidth - 280} step={16} aria-label={lang === 'en-US' ? 'Resize workspace' : '调整工作区宽度'} onChange={(left) => setWorkspaceWidth(bodyWidth - left)} onReset={() => setWorkspaceWidth(420)} />
             ) : null}
           </div>

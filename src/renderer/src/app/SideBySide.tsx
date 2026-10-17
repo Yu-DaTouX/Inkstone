@@ -6,6 +6,7 @@ import type { UIMessage } from '../../../shared/ipc'
 import { neighborOf, sameSplitSession, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
 import { newestMessages, shownMessages } from '../state/split-snapshots'
 import { SessionView } from '../features/session/SessionView'
+import { ChatSubagentPanel } from '../features/session/SubagentPanel'
 import { Composer } from '../features/composer/Composer'
 import { TurnView } from '../features/session/TurnView'
 import { Icon } from '../features/session/Icon'
@@ -25,17 +26,19 @@ import './SideBySide.css'
 export interface SideBySideProps {
   split: SplitLayout | null
   narrow: boolean
+  panelInChat?: boolean
 }
 
-export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySideProps): JSX.Element {
+export const SideBySide = memo(function SideBySide({ split, narrow, panelInChat = false }: SideBySideProps): JSX.Element {
   const layout = collapsedPanes(split, narrow)
   const weights = useSplitView((s) => s.weights)
 
   if (!layout) {
     return (
       <>
-        <div className="v3-conv"><SessionView /></div>
+        <div className="v3-conv"><SessionView subagentPanel={!panelInChat} /></div>
         <div className="v3-composer"><Composer /></div>
+        {panelInChat ? <ChatSubagentPanel /> : null}
       </>
     )
   }

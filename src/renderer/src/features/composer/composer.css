@@ -401,19 +401,51 @@
 
   .composer-usage {
     display: flex;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: center;
     gap: var(--s-4);
     min-width: 0;
+    container: composer-usage / inline-size;
     color: var(--fg3);
     font-size: var(--t-meta);
   }
 
   .cu-trigger {
     height: 20px;
-    padding: 0 var(--s-6);
+    padding: 0 var(--s-4);
     color: var(--fg3);
     font-size: var(--t-meta);
+  }
+
+  .cu-items {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-12);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .cu-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+  }
+
+  .cu-item svg {
+    flex: none;
+  }
+
+  @container composer-usage (max-width: 380px) {
+    .cu-item[data-optional='speed'] {
+      display: none;
+    }
+  }
+
+  @container composer-usage (max-width: 300px) {
+    .cu-item[data-optional='hit'] {
+      display: none;
+    }
   }
 
   .cu-pop {

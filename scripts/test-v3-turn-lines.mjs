@@ -145,6 +145,7 @@ export function Badge(props){ return null } Badge.__stub='ui-badge'
 export function Dialog(props){ return null } Dialog.__stub='ui-dialog'
 export function Modal(props){ return null } Modal.__stub='ui-modal'
 export function ModalOverlay(props){ return null } ModalOverlay.__stub='ui-modal-overlay'
+export function ProgressBar(props){ return null } ProgressBar.__stub='ui-progress'
 `
 
 const ICON_STUB = `export function Icon(){ return null } Icon.__stub='icon'
@@ -192,7 +193,7 @@ async function buildBundle(outdir) {
   const entry = join(outdir, 'entry.ts')
   await writeFile(entry, [
     `export * from '${posix(abs('src/renderer/src/features/session/turn-lines.ts'))}'`,
-    `export { SubagentLine } from '${posix(abs('src/renderer/src/features/session/SubagentLine.tsx'))}'`,
+    `export { SubagentLine, subagentTitle, subagentStackOrder, subagentStackWindow, SUBAGENT_FOLD_AT } from '${posix(abs('src/renderer/src/features/session/SubagentLine.tsx'))}'`,
     `export { ErrorCard } from '${posix(abs('src/renderer/src/features/session/ErrorCard.tsx'))}'`,
     `export { CompactionMarker } from '${posix(abs('src/renderer/src/features/session/CompactionMarker.tsx'))}'`,
     `export { BranchSummary } from '${posix(abs('src/renderer/src/features/session/BranchSummary.tsx'))}'`,
@@ -414,7 +415,8 @@ async function main() {
     ok(row.props['data-terminal'] === '0', '运行投影仍 running：行标记为非终态', row.props['data-terminal'])
     ok(textOf(byTestId(row, 'v3-subagent-status')[0]) === '运行中', '状态词来自运行投影阶段', textOf(byTestId(row, 'v3-subagent-status')[0]))
     ok(textOf(byTestId(row, 'v3-subagent-code')[0]) === 'S12·1', '显示编号', textOf(byTestId(row, 'v3-subagent-code')[0]))
-    ok(byTestId(row, 'v3-subagent-model').length === 0 && byTestId(row, 'v3-subagent-open').length === 0, '模型与分屏入口不再挤在消息行里')
+    ok(byTestId(row, 'v3-subagent-open').length === 0, '分屏入口不挤在消息行里')
+    ok(byTestId(row, 'v3-subagent-model').length === 0 && collect(row, (el) => el.props?.className === 'v3-subagent-kind').length === 1, '没有模型时元信息行仍写「子代理」')
     ok(byTestId(row, 'v3-subagent-summary').length === 0, '摘要不在消息流里展开')
 
     const toggle = byTestId(row, 'v3-subagent-toggle')[0]
@@ -424,6 +426,78 @@ async function main() {
     ok(panel.runId === 'sub-1' && panel.owner === rowEl.props.owner, '点击后详情面板指向这条运行与当前视图', { runId: panel.runId, owner: panel.owner })
     toggle.props.onClick({ currentTarget: null })
     ok(lib.useSubagentPanel.getState().runId === null, '再点一次收起')
+  }
+
+  group('SubagentLine：模型显示名、思考档位与上下文圆环')
+  {
+    lib.useRunsV3.setState({ runs: [], revision: 3, syncing: false, error: null, buffer: [] })
+    lib.useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
+    const turn = { kind: 'assistant', id: 'a1', sourceIds: ['a1'] }
+    const renderRow = () => {
+      const line = rt.render(bundle.SubagentLine, { turn })
+      const rowEl = collect(line, (el) => typeof el.type === 'function' && el.type.name === 'SubagentRow')[0]
+      return rt.render(rowEl.type, rowEl.props)
+    }
+    const flash = 'commandcode/deepseek/deepseek-v4.1-flash'
+    store({
+      subagents: [subagentRun({
+        model: flash,
+        thinkingLevel: 'medium',
+        contextUsage: { tokens: 40_000, contextWindow: 200_000, percent: 20, availability: 'known', estimated: false }
+      })],
+      models: [{ provider: 'commandcode', id: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash' }]
+    })
+    const row = renderRow()
+    const name = byTestId(row, 'v3-subagent-model')[0]
+    ok(textOf(name) === 'DeepSeek V4.1 Flash', '元信息行开头用模型菜单名', name && textOf(name))
+    ok(name?.props.title === flash, '悬停保留完整模型身份', name?.props.title)
+    ok(collect(row, (el) => el.props?.className === 'v3-subagent-kind').length === 0, '有模型时不再写「子代理」')
+    const think = byTestId(row, 'v3-subagent-thinking')[0]
+    ok(think?.props.level === 'medium', '模型后跟思考档位短标签', think?.props.level)
+    const ctx = byTestId(row, 'v3-subagent-context')[0]
+    ok(!!ctx && Math.round(ctx.props.usage.percent) === 20 && ctx.props.usage.tokens === 40_000 && ctx.props.usage.windowSize === 200_000, '行尾圆环取子代理自己的上下文用量', ctx?.props.usage)
+    ok(byTestId(row, 'v3-subagent-status').length === 1 && byTestId(row, 'v3-subagent-time').length === 1, '状态与用时仍保留')
+
+    store({
+      subagents: [subagentRun({ model: flash, thinkingLevel: 'off', contextUsage: { tokens: 40_000, contextWindow: 0, percent: null } })],
+      models: []
+    })
+    const bare = renderRow()
+    ok(textOf(byTestId(bare, 'v3-subagent-model')[0]) === 'deepseek/deepseek-v4.1-flash', '目录查不到时退回模型 id', textOf(byTestId(bare, 'v3-subagent-model')[0] ?? {}))
+    ok(byTestId(bare, 'v3-subagent-thinking').length === 0, '思考档位为 off 时不显示')
+    ok(byTestId(bare, 'v3-subagent-context').length === 0, '上下文窗口未知时不画圆环')
+  }
+
+  group('SubagentLine：多开时堆叠，标题取第一句')
+  {
+    ok(bundle.subagentTitle('用联网搜索找「体育」领域最近 3 天的新闻：先运行 yan search query') === '用联网搜索找「体育」领域最近 3 天的新闻', '中文冒号前作短标题')
+    const pathTask = 'Fix C:\\repo\\a.ts now'
+    ok(bundle.subagentTitle(pathTask) === pathTask, '路径里的冒号不截断', bundle.subagentTitle(pathTask))
+    ok(bundle.subagentTitle('修：x') === '修：x', '冒号前太短时保留整句')
+    lib.useRunsV3.setState({ runs: [], revision: 4, syncing: false, error: null, buffer: [] })
+    lib.useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
+    const many = Array.from({ length: 6 }, (_, i) => subagentRun({ id: 'sub-' + i, startedAt: 1000 + i, status: i < 2 ? 'done' : 'running', endedAt: i < 2 ? 5000 + i : undefined }))
+    store({ subagents: many, models: [] })
+    const line = rt.render(bundle.SubagentLine, { turn: { kind: 'assistant', id: 'a1', sourceIds: ['a1'] } })
+    const stackEl = collect(line, (el) => typeof el.type === 'function' && el.type.name === 'SubagentStack')[0]
+    ok(!!stackEl && stackEl.props.runs.length === 6, '超过 3 个改为堆叠', stackEl && stackEl.props.runs.length)
+    ok(byTestId(line, 'v3-subagents-more').length === 1 && byTestId(line, 'v3-subagents-progress').length === 1, '有「显示全部」与进度条')
+    const stack = rt.render(stackEl.type, stackEl.props)
+    const rows = collect(stack, (el) => typeof el.type === 'function' && el.type.name === 'SubagentRow')
+    ok(rows.length === bundle.SUBAGENT_FOLD_AT, '堆叠只展开 3 张卡片', rows.length)
+    ok(rows.map((el) => el.props.run.id).join() === 'sub-3,sub-4,sub-5', '没有出错时最新的 3 个，最新的在最下面', rows.map((el) => el.props.run.id))
+    ok(byTestId(stack, 'v3-subagent-tick').length === 6, '左侧每个子代理一格刻度', byTestId(stack, 'v3-subagent-tick').length)
+    ok(byTestId(stack, 'v3-subagent-tick').filter((el) => el.props['data-view'] === '1').length === 3, '可见的 3 格加长')
+    ok(byTestId(stack, 'v3-subagent-pile').length === 1 && byTestId(stack, 'v3-subagent-pile-below').length === 0, '更早的压成一叠放在上方')
+    const withError = many.map((run) => (run.id === 'sub-1' ? { ...run, status: 'error', endedAt: 9000 } : run))
+    ok(bundle.subagentStackOrder(withError)[0].id === 'sub-1', '出错的插到最前面', bundle.subagentStackOrder(withError).map((run) => run.id))
+    ok(bundle.subagentStackOrder(many).map((run) => run.id).join() === 'sub-5,sub-4,sub-3,sub-2,sub-1,sub-0', '其余按启动时间新到旧')
+    const win = bundle.subagentStackWindow(6, 99)
+    ok(win.start === 3 && win.end === 6 && win.max === 3, '往上滚到头时停在最早的 3 个', win)
+    ok(bundle.subagentStackWindow(6, -2).start === 0, '往下滚到头回到最前面')
+    store({ subagents: many.slice(0, 3), models: [] })
+    const few = rt.render(bundle.SubagentLine, { turn: { kind: 'assistant', id: 'a1', sourceIds: ['a1'] } })
+    ok(byTestId(few, 'v3-subagents-more').length === 0, '3 个以内不折叠')
   }
 
   group('SubagentLine：未激活视图（peek 别的会话）不显示别的会话的子 Agent')

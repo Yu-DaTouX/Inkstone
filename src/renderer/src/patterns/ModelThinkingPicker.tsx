@@ -16,7 +16,7 @@ import { Check, ChevronDown, Search, Star } from 'lucide-react'
 import { Button, Slider, Select, ListBoxItem as ProviderItem } from '../ui'
 import { PulseField, resolveColor } from './pulse-field'
 import { APPEARANCE_EVENT } from '../lib/appearance'
-import { useT, type MessageKey, type TFunc } from '../i18n'
+import { useT } from '../i18n'
 import { useStore } from '../state/store'
 import {
   buildPickerSections,
@@ -36,22 +36,8 @@ import {
 } from '../features/composer/composer-layout'
 import type { ModelChoice } from '../../../shared/model-selection'
 import type { ModelInfo } from '../../../shared/ipc'
+import { levelLabel, ThinkingBadge } from './ThinkingBadge'
 import './model-thinking-picker.css'
-
-const LEVEL_LABEL: Record<string, MessageKey> = {
-  off: 'think.off',
-  minimal: 'think.minimal',
-  low: 'think.low',
-  medium: 'think.medium',
-  high: 'think.high',
-  xhigh: 'think.xhigh',
-  max: 'think.max'
-}
-
-export function levelLabel(t: TFunc, level: string): string {
-  const key = LEVEL_LABEL[level]
-  return key ? t(key) : level
-}
 
 export function thinkColor(level: string): string {
   return `var(--think-${level}, var(--fg3))`
@@ -347,11 +333,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
           <span className="mtp-model" data-testid="model-picker-name">
             {cur ? cur.name : t('picker.notReady')}
           </span>
-          {hasLevels && level !== 'off' ? (
-            <span className="mtp-level" data-level={level} data-testid="thinking-badge">
-              {levelLabel(t, level)}
-            </span>
-          ) : null}
+          {hasLevels && level !== 'off' ? <ThinkingBadge level={level} data-testid="thinking-badge" /> : null}
           <ChevronDown className="mtp-chev" size={12} aria-hidden />
         </Button>
       </span>
@@ -363,7 +345,6 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
         triggerRef={triggerRef}
         placement="top start"
         offset={8}
-        isNonModal
       >
         <Dialog className="mtp-dialog" aria-label={t('picker.searchModel')}>
           <SearchField className="mtp-search" aria-label={t('picker.searchModel')} value={query} onChange={setQuery}>

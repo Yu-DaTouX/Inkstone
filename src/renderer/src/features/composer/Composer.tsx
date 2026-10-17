@@ -9,7 +9,6 @@ import { attachmentsAfterSubmit, runLocalCommandGuarded } from '../../lib/v3-sub
 import { readFiles } from './attachment-files'
 import { ModelThinkingPicker } from '../../patterns/ModelThinkingPicker'
 import { ContextRing } from '../../patterns/ContextRing'
-import { QuotaRing } from '../../patterns/QuotaRing'
 import { AttachmentStrip } from './AttachmentStrip'
 import { ComposerBorder } from './ComposerBorder'
 import { CompletionMenu } from './CompletionMenu'
@@ -414,7 +413,6 @@ export function Composer({ className }: { className?: string } = {}) {
             </div>
             <VoiceButton onText={insertAtCursor} />
             <ContextRing />
-            <QuotaRing />
             <ModelThinkingPicker />
             {submitAction === 'stop' ? (
               <Button

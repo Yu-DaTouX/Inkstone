@@ -51,7 +51,7 @@ type RenderItem = Turn | PendingTurn
 
 const isPending = (item: RenderItem): item is PendingTurn => item.kind === 'pending'
 
-export function SessionView(): JSX.Element {
+export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean } = {}): JSX.Element {
   const t = useT()
   const messages = useStore((s) => s.messages)
   const session = useStore((s) => s.session)
@@ -321,7 +321,7 @@ export function SessionView(): JSX.Element {
     })
   }, [turns, virtual, setStickNow])
 
-  const sidePanel = useSubagentPanel((s) => s.owner === view.key && !!s.runId)
+  const sidePanel = useSubagentPanel((s) => subagentPanel && s.owner === view.key && !!s.runId)
 
   const jumpToBottom = useCallback(() => {
     setStickNow(true)
@@ -382,7 +382,7 @@ export function SessionView(): JSX.Element {
 
       <RewindDialogV3 ownerKey={view.key} active={viewActive} />
 
-      <SubagentPanel ownerKey={view.key} viewActive={viewActive} />
+      {subagentPanel ? <SubagentPanel ownerKey={view.key} viewActive={viewActive} /> : null}
     </div>
   )
 }

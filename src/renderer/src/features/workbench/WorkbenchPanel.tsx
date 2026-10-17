@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactElement, type ReactNode } from 'react'
-import { ArrowLeft, ExternalLink, Maximize2, Minimize2, Rows2, X } from 'lucide-react'
-import { Button, IconButton, Tab, TabList, Tabs } from '../../ui'
+import { ExternalLink, Maximize2, Minimize2, Rows2, X } from 'lucide-react'
+import { IconButton, Tab, TabList, Tabs } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useUiV3 } from '../../state/ui-v3'
-import { OverviewPane } from './OverviewPane'
 import { workbenchText, type WorkbenchText } from './workbench-text'
 import { emptyMountState, mountedTabs, nextVisited } from './mount-state'
 import { bindPreviewPath, previewPathFor } from './preview-state'
@@ -90,7 +89,7 @@ function TabStrip({ label, selectedKey, open, onSelect, className, children }: T
 export interface WorkbenchPanelProps {
   owner: WorkspaceOwner | null
   open: boolean
-  mode: 'docked' | 'tiles' | 'full'
+  mode: 'docked' | 'full'
   panes: WorkbenchPaneComponents
   onClose: () => void
   onRequestActivation: (tab: WorkbenchTabId) => Promise<boolean>
@@ -222,10 +221,6 @@ export function WorkbenchPanel({
     >
       {isOverview ? null : (
         <div className="wb-head">
-          <Button variant="ghost" size="sm" className="wb-back" aria-label={text.overview.backLabel} onPress={() => setWorkspaceTab('overview')} data-testid="wb-back">
-            <ArrowLeft size={14} aria-hidden />
-            <span>{text.overview.back}</span>
-          </Button>
           <TabStrip label={text.title} selectedKey={view} open={open} onSelect={(key) => selectTab(key as WorkbenchTabId)}>
             {WORKBENCH_TABS.filter((tab) => tab === view || visited.has(tab)).map((tab) => (
               <Tab key={tab} id={tab} className="wb-tab" data-testid={`wb-tab-${tab}`}>
@@ -270,9 +265,6 @@ export function WorkbenchPanel({
       )}
 
       <div className="wb-body">
-        {isOverview ? (
-          <OverviewPane owner={owner} onOpenView={selectTab} onPreview={handlePreview} />
-        ) : null}
         <div className="wb-view" hidden={isOverview}>
         {displayOwner ? (
           <div className="wb-cells" data-split={layout.secondary ? '1' : '0'}>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog } from 'react-aria-components'
+import { Coins, DatabaseZap, Gauge, MessagesSquare } from 'lucide-react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, Popover } from '../../ui'
@@ -43,9 +44,13 @@ function abbrevCount(n: number): string {
   return String(n)
 }
 
-function abbrevToken(n: number | null, partial: boolean, unit: string): string {
+function abbrevToken(n: number | null, unit: string): string {
   if (n === null) return '—'
-  return `${partial ? '≥' : ''}${abbrevCount(n)} ${unit}`
+  return `${abbrevCount(n)} ${unit}`
+}
+
+function withNote(tip: string, note: string | null): string {
+  return note ? `${tip}\n${note}` : tip
 }
 
 export function ComposerUsage() {
@@ -104,6 +109,7 @@ export function ComposerUsage() {
     [t('sm.output'), tokenText(metrics.output, metrics.partial, t('tok.unit'))]
   ]
   const rows = open === 'tokens' ? tokenRows : sessionRows
+  const hitRate = formatHitRate(metrics.hitRate)
 
   return (
     <div className="composer-usage ui-meta-num" data-testid="composer-usage">
@@ -114,16 +120,23 @@ export function ComposerUsage() {
           variant="ghost"
           className="cu-trigger"
           data-testid="composer-usage-session"
-          title={t('sm.sessionTip')}
+          title={withNote(t('sm.sessionTip'), historyPartial ? t('sm.historyPartialTip') : null)}
           aria-haspopup="dialog"
           aria-expanded={open === 'session'}
           onPress={() => setOpen((v) => (v === 'session' ? null : 'session'))}
         >
-          {t('sm.summary', {
-            turns: countText(metrics.turns, historyPartial),
-            steps: countText(metrics.steps, historyPartial),
-            tps: tpsText(metrics, t('tok.perSec'))
-          })}
+          <span className="cu-items">
+            <span className="cu-item">
+              <MessagesSquare size={14} aria-hidden />
+              {t('sm.summary', { turns: metrics.turns, steps: metrics.steps })}
+            </span>
+            {metrics.tps !== null ? (
+              <span className="cu-item" data-optional="speed">
+                <Gauge size={14} aria-hidden />
+                {tpsText(metrics, t('tok.perSec'))}
+              </span>
+            ) : null}
+          </span>
         </Button>
       ) : null}
       {showTokens ? (
@@ -133,12 +146,23 @@ export function ComposerUsage() {
           variant="ghost"
           className="cu-trigger"
           data-testid="composer-usage-tokens"
-          title={t('sm.tokensTip')}
+          title={withNote(t('sm.tokensTip'), metrics.partial ? t('sm.partialTip') : null)}
           aria-haspopup="dialog"
           aria-expanded={open === 'tokens'}
           onPress={() => setOpen((v) => (v === 'tokens' ? null : 'tokens'))}
         >
-          {`${abbrevToken(metrics.total, metrics.partial, t('tok.unit'))} · ${formatHitRate(metrics.hitRate) ?? '—'}`}
+          <span className="cu-items">
+            <span className="cu-item">
+              <Coins size={14} aria-hidden />
+              {abbrevToken(metrics.total, t('tok.unit'))}
+            </span>
+            {hitRate !== null ? (
+              <span className="cu-item" data-optional="hit">
+                <DatabaseZap size={14} aria-hidden />
+                {hitRate}
+              </span>
+            ) : null}
+          </span>
         </Button>
       ) : null}
       <Popover
@@ -167,7 +191,6 @@ export function ComposerUsage() {
           (metrics.modelPartial || metrics.toolPartial || metrics.ttftPartial || metrics.tpsPartial) ? (
             <p className="cu-note">{t('sm.timingPartialTip')}</p>
           ) : null}
-          {open === 'tokens' ? <p className="cu-note">{t('sm.tokensNote')}</p> : null}
         </Dialog>
       </Popover>
     </div>

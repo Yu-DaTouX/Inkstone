@@ -28,6 +28,15 @@ export type SessionTextKey =
   | 'subagentTranscript'
   | 'subagentDetailHint'
   | 'subagentGroup'
+  | 'subagentCount'
+  | 'subagentLiveCount'
+  | 'subagentDoneCount'
+  | 'subagentFailedCount'
+  | 'subagentShowAll'
+  | 'subagentShowLess'
+  | 'subagentStackPosition'
+  | 'subagentStackOlder'
+  | 'subagentStackNewer'
   | 'compactionTitle'
   | 'branchFrom'
   | 'errorTitleRetryable'
@@ -70,6 +79,15 @@ const ZH: Record<SessionTextKey, string> = {
   subagentTranscript: '分屏查看完整转录',
   subagentDetailHint: '查看详情',
   subagentGroup: '{n} 个子代理 · {live} 个进行中',
+  subagentCount: '{n} 个子代理',
+  subagentLiveCount: '{n} 进行中',
+  subagentDoneCount: '{n} 完成',
+  subagentFailedCount: '{n} 失败',
+  subagentShowAll: '显示全部 {n} 个',
+  subagentShowLess: '收起',
+  subagentStackPosition: '子代理 {from}–{to} / {n}，滚轮或 ↑↓ 翻看',
+  subagentStackOlder: '上面还有 {n} 个更早的，向上滚动查看',
+  subagentStackNewer: '下面还有 {n} 个较新的',
   compactionTitle: '上下文已压缩',
   branchFrom: '从「{text}」分出去',
   errorTitleRetryable: '模型侧错误',
@@ -113,6 +131,15 @@ const EN: Record<SessionTextKey, string> = {
   subagentTranscript: 'Open full transcript side by side',
   subagentDetailHint: 'View details',
   subagentGroup: '{n} subagents · {live} in progress',
+  subagentCount: '{n} subagents',
+  subagentLiveCount: '{n} in progress',
+  subagentDoneCount: '{n} done',
+  subagentFailedCount: '{n} failed',
+  subagentShowAll: 'Show all {n}',
+  subagentShowLess: 'Show less',
+  subagentStackPosition: 'Subagents {from}–{to} of {n}; scroll or use ↑↓',
+  subagentStackOlder: '{n} older above; scroll up to see them',
+  subagentStackNewer: '{n} newer below',
   compactionTitle: 'Context compacted',
   branchFrom: 'Branched from “{text}”',
   errorTitleRetryable: 'Model error',

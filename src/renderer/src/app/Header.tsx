@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, type ReactElement } from 'react'
 import { ArrowLeft, FolderOpen, Globe, Minus, MoreHorizontal, PanelLeft, PanelRight, Pin, Settings, Square, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
-import { IconButton, Menu, MenuItem, MenuTrigger, Popover } from '../ui'
+import { IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../ui'
 import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
 import { workbenchText } from '../features/workbench/workbench-text'
@@ -17,30 +17,22 @@ interface Props {
   onPreviewSidebar?: () => void
   onSettings: () => void
   onBack: () => void
-  workspaceOpen: boolean
-  onToggleWorkspace: () => void
+  sessionBarOpen: boolean
+  onToggleSessionBar: () => void
   onOpenTool: (tab: WorkbenchTabId) => void
 }
 
-function lastSegment(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean)
-  return parts[parts.length - 1] ?? ''
-}
-
-export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, workspaceOpen, onToggleWorkspace, onOpenTool }: Props): ReactElement {
+export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, onToggleSessionBar, onOpenTool }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
   const toolText = workbenchText(lang)
-  const workspaceLabel = lang === 'en-US' ? 'Workspace' : '工作区'
+  const sessionBarLabel = sessionBarOpen ? text.hideSessionBar : text.showSessionBar
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const firstUserTitle = useStore((s) => s.messages.find((message) => message.role === 'user')?.text.replace(/\s+/g, ' ').trim().slice(0, 80) ?? '')
   const manualTitles = useStore((s) => s.manualTitles)
   const titles = useStore((s) => s.titles)
-  const settings = useStore((s) => s.settings)
-  const runners = useStore((s) => s.runners)
-  const activeRunnerId = useStore((s) => s.activeRunnerId)
   const sessions = useStore((s) => s.sessions)
   const maximized = useStore((s) => s.maximized)
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
@@ -54,11 +46,10 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
   }
   useEffect(() => cancelPreview, [])
 
-  const activeRunner = runners.find((r) => r.id === activeRunnerId || r.runId === activeRunnerId)
-
   const title = useMemo(() => {
     if (route === 'settings') return text.settingsTitle
     if (route === 'runs') return text.runs
+    if (route === 'review') return text.review
     if (route === 'usage') return t('usage.title')
     if (route === 'schedule') return t('sched.title')
     const id = peekedSessionId ?? session?.conversationId ?? session?.sessionId
@@ -68,15 +59,7 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
     if (summary?.title) return summary.title
     if (!peekedSessionId && session?.sessionName) return session.sessionName
     return firstUserTitle || t('rail.untitled')
-  }, [route, peekedSessionId, session?.conversationId, session?.sessionId, session?.sessionName, sessions, firstUserTitle, manualTitles, titles, t, text.settingsTitle, text.runs])
-
-  const projectName = useMemo(() => {
-    const record = activeRunner?.projectId ? settings?.projects?.find((p) => p.id === activeRunner.projectId) : undefined
-    const cwd = activeRunner?.cwd || session?.cwd || settings?.cwd || ''
-    if (record?.name) return record.name
-    if (cwd && settings?.projectNames?.[cwd]) return settings.projectNames[cwd]
-    return cwd ? lastSegment(cwd) : ''
-  }, [activeRunner?.projectId, activeRunner?.cwd, session?.cwd, settings?.cwd, settings?.projects, settings?.projectNames])
+  }, [route, peekedSessionId, session?.conversationId, session?.sessionId, session?.sessionName, sessions, firstUserTitle, manualTitles, titles, t, lang, text.settingsTitle, text.runs, text.review])
 
   return (
     <header className="v3-head">
@@ -110,12 +93,23 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
         <h1 className="v3-head-title" title={title}>
           {title}
         </h1>
-        {projectName ? <span className="v3-head-proj">{projectName}</span> : null}
       </div>
 
       <div className="v3-head-actions">
         {route === 'chat' ? (
           <>
+            <IconTip label={sessionBarLabel}>
+              <IconButton
+                aria-label={sessionBarLabel}
+                aria-pressed={sessionBarOpen}
+                onPress={onToggleSessionBar}
+                data-testid="v3-header-sessionbar"
+                data-active={sessionBarOpen ? '1' : '0'}
+              >
+                <PanelRight size={16} />
+              </IconButton>
+            </IconTip>
+            <Separator orientation="vertical" className="v3-head-sep" />
             <IconTip label={toolText.tabs.terminal}>
               <IconButton aria-label={toolText.tabs.terminal} data-testid="wb-open-terminal" onPress={() => onOpenTool('terminal')}>
                 <Terminal size={16} />
@@ -146,19 +140,6 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
               </Popover>
             </MenuTrigger>
           </>
-        ) : null}
-        {route === 'chat' ? (
-          <IconTip label={workspaceLabel}>
-            <IconButton
-              aria-label={workspaceLabel}
-              aria-pressed={workspaceOpen}
-              onPress={onToggleWorkspace}
-              data-testid="v3-header-workspace"
-              data-active={workspaceOpen ? '1' : '0'}
-            >
-              <PanelRight size={16} />
-            </IconButton>
-          </IconTip>
         ) : null}
         <IconTip label={text.settingsEntryHint}>
           <IconButton

@@ -334,10 +334,11 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
   const toggleWorkspace = async (): Promise<RunResult> => {
     onNavigate?.('chat')
     const ui = useUiV3.getState()
-    if (ui.workspaceOpen) {
+    if (ui.workspaceOpen && ui.workspaceTab !== 'overview') {
       ui.setWorkspaceOpen(false)
       return { ok: true }
     }
+    if (ui.workspaceTab === 'overview') ui.setWorkspaceTab('changes')
     if (WORKBENCH_ACTIVE_TABS.has(ui.workspaceTab)) {
       const target = captureActivationTarget()
       const ok = await activateWorkspaceOwner(target)

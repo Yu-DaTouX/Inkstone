@@ -26,8 +26,8 @@ assert.ok(
 const brandEntry = sidebarTsx.match(/<span className="v3-side-brand">[\s\S]*?<\/span>/)
 assert.ok(brandEntry, `${SIDEBAR_TSX} 应有 .v3-side-brand 品牌入口`)
 assert.ok(/<BrandMark\b[^>]*\bsize=\{16\}/.test(brandEntry[0]), '品牌入口应渲染 <BrandMark size={16}>')
-assert.ok(/<BrandMark\b[^>]*\bdecorative\b/.test(brandEntry[0]), '品牌入口的 BrandMark 应为装饰性（旁边「砚」字给名称）')
-assert.ok(/v3-side-name[^>]*>砚</.test(brandEntry[0]), '品牌入口应保留「砚」字标')
+assert.ok(/<BrandMark\b[^>]*\bdecorative\b/.test(brandEntry[0]), '品牌入口的 BrandMark 应为装饰性（旁边「Inkstone」字给名称）')
+assert.ok(/v3-side-name[^>]*>Inkstone</.test(brandEntry[0]), '品牌入口应显示「Inkstone」字标')
 assert.ok(!/v3-side-mark/.test(brandEntry[0]), '品牌入口不应再使用 .v3-side-mark 方块')
 
 const sidebarCss = read(SIDEBAR_CSS)
