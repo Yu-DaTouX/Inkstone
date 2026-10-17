@@ -41,17 +41,17 @@ export function runAgentProfileTests(ok, mod) {
   {
     const coding = agentRoleSection('coding', 'research')
     ok(
-      coding?.name === ROLE_SECTION_NAME && /同步相关文档/.test(coding.content) && /不要借回填文档批准新的产品需求/.test(coding.content),
+      coding?.name === ROLE_SECTION_NAME && /update the docs/.test(coding.content) && /do not use a doc backfill to approve new product requirements/.test(coding.content),
       'coding 档案只追加「代码改完同步文档」约定（需求稿 3.2）'
     )
-    ok(/同步相关文档/.test(agentRoleSection('auto', 'answer')?.content ?? ''), 'auto 档「写代码」一类也带文档同步')
-    ok(/解析式/.test(agentRoleSection('daily', 'learn')?.content ?? ''), '学习可按自然语言切到解析式')
+    ok(/sync related docs/.test(agentRoleSection('auto', 'answer')?.content ?? ''), 'auto 档「写代码」一类也带文档同步')
+    ok(/direct explanation/.test(agentRoleSection('daily', 'learn')?.content ?? ''), '学习可按自然语言切到解析式')
     ok(!/skill:(tutor|writing|research)/.test(['learn', 'compose', 'research'].map((a) => agentRoleSection('daily', a)?.content ?? '').join('\n') + (agentRoleSection('auto', 'answer')?.content ?? '')), '角色文本不指向已删除的技能')
     ok(/skill:doc-sync/.test(agentRoleSection('coding', 'answer')?.content ?? ''), 'coding 指向 doc-sync 技能')
     const auto = agentRoleSection('auto', 'answer')
     ok(auto?.name === ROLE_SECTION_NAME, 'auto 档注入角色分区')
     ok(
-      /判断/.test(String(auto?.content)) && /代码/.test(String(auto?.content)),
+      /First decide/.test(String(auto?.content)) && /Code/.test(String(auto?.content)),
       'auto 档给的是「先判断、再按对应方式做」的准则'
     )
     const research = agentRoleSection('daily', 'research')
@@ -70,11 +70,11 @@ export function runAgentProfileTests(ok, mod) {
     )
     ok(new Set(all).size === 5, '五个活动各有各的角色文本（不重复）')
     ok(
-      all.every((c) => c.includes('日常') || c.includes('学习者')),
+      all.every((c) => c.includes('Daily mode')),
       '每条角色文本都点明了所处场景'
     )
-    ok(learn?.content.includes('不要替他作答'), '导师角色明确「不替学习者作答」')
-    ok(learn?.content.includes('独立完成'), '导师角色明确「独立完成之前不算掌握」')
+    ok(learn?.content.includes('Do not answer for them'), '导师角色明确「不替学习者作答」')
+    ok(learn?.content.includes('finish on their own'), '导师角色明确「独立完成之前不算掌握」')
   }
 
   {
@@ -166,14 +166,14 @@ export async function runAgentProfileStoreTests(ok, mod, helpers) {
       await writeAgentProfileSnapshot('sess-a', store.state('sess-a'), root)
       const snap = JSON.parse(await readFile(snapPath, 'utf8'))
       ok(snap.profile === 'daily' && snap.activity === 'research', '快照带上档案')
-      ok(snap.roleSection?.name === 'yan_role' && /研究/.test(snap.roleSection.content), '快照带上渲染好的角色分区')
+      ok(snap.roleSection?.name === 'yan_role' && /doing research/.test(snap.roleSection.content), '快照带上渲染好的角色分区')
       ok(Array.isArray(snap.deniedTools) && snap.deniedTools.includes('write'), '快照带上本活动禁用的工具')
 
       const coding = { profile: 'coding', activity: 'answer', revision: 1 }
       await writeAgentProfileSnapshot('coding-sess', coding, root)
       const codingSnap = JSON.parse(await readFile(agentProfileSnapshotPath('coding-sess', root), 'utf8'))
       ok(
-        codingSnap.roleSection?.name === 'yan_role' && /同步相关文档/.test(codingSnap.roleSection.content),
+        codingSnap.roleSection?.name === 'yan_role' && /update the docs/.test(codingSnap.roleSection.content),
         'coding 快照带文档同步角色分区'
       )
       ok(Array.isArray(codingSnap.deniedTools) && codingSnap.deniedTools.length === 0, 'coding 不禁用工具')

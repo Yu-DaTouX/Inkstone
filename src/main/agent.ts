@@ -13,7 +13,7 @@ import { nativeActiveBranch } from './native-session-history'
 import { allowTrust, revokeTrust } from './project-trust'
 import { workspaceMutationInProgress } from './workspace-mutation'
 import type { ExecuteAdmissionPort } from './session-send-guard'
-import { modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { isQuotaWaitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
@@ -42,7 +42,8 @@ import {
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { consumeQueuedItem, reconcileQueueItems, sameQueueImages, snapshotQueue } from './queue-items'
 import { applyQueueRewrite, type QueueRewriteResult } from './queue-edit'
-import { clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
+import { contextWindowAssumed } from './custom-providers'
+import { clearStaleRunning, contextFromEntry, contextFromRun, EMPTY_COMPACTION_STATE, measuredAfterCompaction, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { projectPackageDirs } from './packages'
 import { generationTiming, turnTiming } from '../shared/turn-timing'
@@ -119,6 +120,7 @@ import {
 import { attachModelPrice } from './models/price'
 import type {
   BashRun,
+  ContextFrom,
   BrowserObservation,
   BrowserNetworkSnapshot,
   BrowserState,
@@ -136,6 +138,7 @@ import type {
   QueueState,
   SessionState,
   SessionStats,
+  TokenCounts,
   SessionTodo,
   SlashCommand,
   ResponseDetail,
@@ -144,6 +147,7 @@ import type {
   Usage
 } from '../shared/ipc'
 import type { CapabilityStrategy, WorkMode } from '../shared/ipc'
+import { hasUsageNumbers } from '../shared/turns'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import type { ScheduleService } from './schedule-service'
 import { runScheduleCommand, ScheduleCommandError } from './schedule-commands'
@@ -165,6 +169,7 @@ export interface RunObserverContext {
 export type RunObserver = (ctx: RunObserverContext, signal: RunSignal) => void
 
 type BrowserCommandResult = { ok: boolean; error?: string; code?: string }
+type AutoContinueScope = { rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number; reason?: 'model-error' }
 
 export type BrowserObservationResult = BrowserCommandResult & { observation?: BrowserObservation }
 
@@ -471,6 +476,8 @@ export class AgentController extends EventEmitter {
   private loopGuardResumeVersion = -1
   private loopGuardContinueTask?: Promise<void>
   private loopGuardHit?: { rule: LoopHit['rule']; stream: 'thinking' | 'text' }
+  private retrySeenThisRun = false
+  private pendingModelError?: { text: string; retried: boolean }
 
   private readonly turn = new TurnTimingTracker()
   private pendingRequestMono?: number
@@ -483,6 +490,9 @@ export class AgentController extends EventEmitter {
 
   private state: SessionState | null = null
   private compactionState: CompactionState = EMPTY_COMPACTION_STATE
+  private contextFrom: ContextFrom | undefined
+  private timingContinues = false
+  private readonly assumedWindows = new Map<string, boolean>()
 
   private readonly entriesLite = new SessionEntriesLite()
 
@@ -809,6 +819,7 @@ export class AgentController extends EventEmitter {
       this.agentRunning = false
       this.releaseExecutionAdmission()
       this.compactionState = EMPTY_COMPACTION_STATE
+      this.contextFrom = undefined
       this.ui.rejectPendingHostUi('pi 已退出，问题请求已取消')
       this.ui.pending.clear()
       if (this.state) {
@@ -903,12 +914,15 @@ export class AgentController extends EventEmitter {
       if (!snapshot.ok) throw new Error(snapshot.error ?? '无法读取当前原生分支')
       const path = nativeActiveBranch(snapshot.entries ?? [], snapshot.leafId ?? null)
       const messageEntries = path.filter(entry => entry.type === 'message' && entry.message)
+      const compactionEntry = path.findLast(entry => entry.type === 'compaction')
+      this.setContextFrom(compactionEntry ? contextFromEntry(compactionEntry) : undefined)
       const previousSegments = fromFile?.messages.filter(message => message.id.startsWith('history:')) ?? []
       this.messages = [...previousSegments, ...normalizeHistory(messageEntries.map(entry => entry.message),
         (mimeType, data) => localizeImage(join(YAN_DIR, 'attachments'), mimeType, data),
         messageEntries.map(entry => typeof entry.id === 'string' ? entry.id : undefined))]
     } else if (fromFile?.messages.length) {
       this.messages = fromFile.messages
+      this.setContextFrom(fromFile.contextFrom ?? contextFromRun(this.compactionState.last))
     } else {
       const msgs = await this.requireRpc().command('get_messages').catch(() => null)
       const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
@@ -938,7 +952,10 @@ export class AgentController extends EventEmitter {
     this.push({ ch: 'sync', payload: this.messages })
     this.pushQuestionLog()
     const stats = await this.requireRpc().command('get_session_stats').catch(() => null)
-    if (stats?.success) this.push({ ch: 'stats', payload: this.statsForCurrentModel(stats.data as SessionStats) })
+    if (stats?.success) {
+      const counted = this.statsForCurrentModel(stats.data as SessionStats)
+      this.push({ ch: 'stats', payload: await this.withOverheadUsage(counted) })
+    }
 
     void this.refreshTodos()
 
@@ -2044,7 +2061,7 @@ export class AgentController extends EventEmitter {
   }
 
   private setStateFrom(data: Record<string, unknown>): void {
-    const model = normalizeModelInfo(data.model)
+    const model = this.withAssumedWindow(normalizeModelInfo(data.model))
     this.compactionState = clearStaleRunning(this.compactionState, !!data.isCompacting)
     const previous = this.state
     const levels = resolveThinkingLevels(
@@ -2073,6 +2090,7 @@ export class AgentController extends EventEmitter {
       isCompacting: !!data.isCompacting,
       compaction: this.compactionState.running ?? undefined,
       lastCompaction: this.compactionState.last ?? undefined,
+      ...(this.contextFrom ? { contextFrom: this.contextFrom } : {}),
       messageCount: Number(data.messageCount ?? 0),
       pendingMessageCount: Number(data.pendingMessageCount ?? 0),
       cwd: this.cwd,
@@ -2082,6 +2100,7 @@ export class AgentController extends EventEmitter {
       followUpMode: normalizeQueueMode(data.followUpMode)
     }
     this.push({ ch: 'state', payload: this.state })
+    if (previous && previous.sessionId === this.state.sessionId && modelKeyOf(previous.model) !== modelKeyOf(model)) void this.refreshStats()
   }
 
   private runObserverContext(): RunObserverContext | null {
@@ -2299,6 +2318,7 @@ export class AgentController extends EventEmitter {
         }
         this.messages.push(msg)
         this.turn.messageIds.push(id)
+        this.backfillCompactionAfter()
         if (this.turn.startedMono !== undefined) {
           this.turn.elapsedMs = Math.max(1, Math.round(performance.now() - this.turn.startedMono))
         } else if (sp.elapsedMs !== undefined) {
@@ -2311,6 +2331,7 @@ export class AgentController extends EventEmitter {
           payload: { id, patch: msg }
         })
         if (m.stopReason === 'error' || m.stopReason === 'aborted') this.sessionMoveFailureVersion += 1
+        this.pendingModelError = m.stopReason === 'error' ? { text: modelErrorText(m.errorMessage), retried: this.retrySeenThisRun } : undefined
         if (m.stopReason === 'error') {
           this.push({
             ch: 'agent-error',
@@ -2420,7 +2441,9 @@ export class AgentController extends EventEmitter {
       case 'agent_start':
         this.wroteThisRun = false
         this.turn.responseDetail = this.currentResponseDetail()
-        this.startTimingSegment()
+        if (!this.timingContinues || this.turn.startedMono === undefined) this.startTimingSegment()
+        else if (this.turn.terminal === 'failed') this.turn.terminal = 'completed'
+        this.timingContinues = false
         this.pendingRequestMono = undefined
         this.markStreaming(true)
         this.setAgentRunning(true)
@@ -2431,6 +2454,14 @@ export class AgentController extends EventEmitter {
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
             runId: this.turn.runId, version: this.loopGuardResumeVersion }
           : null
+        const modelError = this.pendingModelError
+        const errorContinuation = !continuation && modelError && !modelError.retried && isTransientModelError(modelError.text) &&
+          this.rpc && this.state?.sessionId
+          ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
+            runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'model-error' as const }
+          : null
+        this.pendingModelError = undefined
+        this.retrySeenThisRun = false
         if (this.loopGuardHit) this.logStreamLoopGuard('settled', { rule: this.loopGuardHit.rule, stream: this.loopGuardHit.stream, outcome: 'agent-settled' })
         this.streamLoopDetector = null
         this.loopGuardTripped = false
@@ -2443,13 +2474,15 @@ export class AgentController extends EventEmitter {
         this.turn.startedAt = undefined
         this.turn.startedMono = undefined
         this.pendingRequestMono = undefined
+        this.timingContinues = false
         void this.persistTurnTiming()
         void this.refreshState()
         void this.refreshStats({ allowPolicyTrigger: true })
         void this.refreshTodos()
         void this.maybeGenerateTitle({ force: true, onlyIfSamplesChanged: true })
-        if (continuation) {
-          const task = this.continueAfterLoopGuard(continuation)
+        const task = continuation ? this.continueAfterLoopGuard(continuation)
+          : errorContinuation ? this.continueAfterModelError(errorContinuation) : undefined
+        if (task) {
           this.loopGuardContinueTask = task
           void task.finally(() => {
             if (this.loopGuardContinueTask === task) this.loopGuardContinueTask = undefined
@@ -2464,6 +2497,7 @@ export class AgentController extends EventEmitter {
 
       case 'agent_end':
         this.pendingRequestMono = undefined
+        if (evt.willRetry === true) this.timingContinues = true
         if (evt.willRetry !== true) {
           this.streamLoopDetector = null
           void this.persistTurnTiming()
@@ -2501,6 +2535,7 @@ export class AgentController extends EventEmitter {
         break
 
       case 'compaction_end':
+        if (evt.willRetry === true && this.turn.startedMono !== undefined) this.timingContinues = true
         this.setCompaction(this.compactionState, evt)
         this.markStreaming(false)
         void this.refreshState()
@@ -2545,6 +2580,8 @@ export class AgentController extends EventEmitter {
           void this.abortRetry()
           break
         }
+        this.retrySeenThisRun = true
+        if (this.pendingModelError) this.pendingModelError.retried = true
         this.push({
           ch: 'notify',
           payload: {
@@ -2558,6 +2595,10 @@ export class AgentController extends EventEmitter {
       }
 
       case 'auto_retry_end':
+        if (evt.success === true) {
+          this.retrySeenThisRun = false
+          this.pendingModelError = undefined
+        }
         if (evt.success === false) {
           const finalError = modelErrorText(evt.finalError)
           this.push({
@@ -2857,8 +2898,43 @@ export class AgentController extends EventEmitter {
     const next = reduceCompaction(cur, evt)
     if (!next) return
     this.compactionState = next
+    if (next.last !== cur.last) this.contextFrom = contextFromRun(next.last) ?? this.contextFrom
     if (!this.state) return
-    this.state = { ...this.state, compaction: next.running ?? undefined, lastCompaction: next.last ?? undefined }
+    this.state = { ...this.state, compaction: next.running ?? undefined, lastCompaction: next.last ?? undefined, ...(this.contextFrom ? { contextFrom: this.contextFrom } : {}) }
+    this.push({ ch: 'state', payload: this.state })
+  }
+
+  private withAssumedWindow(model: ModelInfo | undefined): ModelInfo | undefined {
+    const key = modelKeyOf(model)
+    if (!model || !key) return model
+    const known = this.assumedWindows.get(key)
+    if (known === undefined) {
+      this.assumedWindows.set(key, false)
+      void contextWindowAssumed(model.provider, model.id).then((assumed) => {
+        if (!assumed) return
+        this.assumedWindows.set(key, true)
+        if (!this.state?.model || modelKeyOf(this.state.model) !== key) return
+        this.state = { ...this.state, model: { ...this.state.model, contextWindowAssumed: true } }
+        this.push({ ch: 'state', payload: this.state })
+      }).catch(() => undefined)
+    }
+    return known ? { ...model, contextWindowAssumed: true } : model
+  }
+
+  private backfillCompactionAfter(): void {
+    const measured = measuredAfterCompaction(this.compactionState.last, this.messages)
+    if (!measured) return
+    this.compactionState = { ...this.compactionState, last: measured }
+    if (!this.state) return
+    this.state = { ...this.state, lastCompaction: measured }
+    this.push({ ch: 'state', payload: this.state })
+  }
+
+  private setContextFrom(next: ContextFrom | undefined): void {
+    this.contextFrom = next
+    if (!this.state) return
+    const { contextFrom: _previous, ...rest } = this.state
+    this.state = next ? { ...rest, contextFrom: next } : rest
     this.push({ ch: 'state', payload: this.state })
   }
 
@@ -2997,6 +3073,24 @@ export class AgentController extends EventEmitter {
       if (this.canContinueAfterLoopGuard(scope)) {
         this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
           message: `未能自动继续（${detail}），请手动决定。` } })
+      }
+    }
+  }
+
+  private async continueAfterModelError(scope: AutoContinueScope): Promise<void> {
+    try {
+      if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return
+      if (!this.canContinueAfterLoopGuard(scope) || this.loopGuardAutoContinueCount >= 1) return
+      const prompt = '[模型错误恢复 · 自动继续 1/1]\n上一轮模型请求因暂时性错误（超时、连接中断或服务过载）中断，且没有自动重试。请核对已完成的工具结果，在当前会话继续尚未完成的原任务；不要重复已完成的操作。若原任务已完成、需要用户决定或无法安全继续，请简短说明并结束。'
+      const result = await this.send(prompt, undefined, undefined, scope)
+      if (!result.ok && this.loopGuardContinuationVersion === scope.version) {
+        this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
+          message: `未能自动继续（${result.error ?? '发送失败'}），请手动决定。` } })
+      }
+    } catch (error) {
+      if (this.canContinueAfterLoopGuard(scope)) {
+        this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
+          message: `未能自动继续（${error instanceof Error ? error.message : String(error)}），请手动决定。` } })
       }
     }
   }
@@ -3211,7 +3305,7 @@ export class AgentController extends EventEmitter {
     text: string,
     images?: { data: string; mimeType: string }[],
     mode?: 'steer' | 'followUp',
-    autoContinue?: { rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number }
+    autoContinue?: AutoContinueScope
   ): Promise<{ ok: boolean; error?: string }> {
     const admission = this.claimExecutionAdmission()
     if (!admission.ok) return { ok: false, error: admission.error }
@@ -3230,7 +3324,7 @@ export class AgentController extends EventEmitter {
     text: string,
     images?: { data: string; mimeType: string }[],
     mode?: 'steer' | 'followUp',
-    autoContinue?: { rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number }
+    autoContinue?: AutoContinueScope
   ): Promise<{ ok: boolean; error?: string }> {
     if (!autoContinue) {
       this.loopGuardContinuationVersion += 1
@@ -3258,9 +3352,14 @@ export class AgentController extends EventEmitter {
       if (!rpc) return { ok: false, error: 'pi 尚未就绪' }
       if (autoContinue) {
         this.loopGuardAutoContinueCount += 1
-        this.logStreamLoopGuard('auto-continue-requested', { sessionId: autoContinue.sessionId, runId: autoContinue.runId, count: 1, limit: 1, outcome: 'sending' })
-        this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
-          message: '已安全中止循环，正在同一会话自动继续（1/1）；不会执行收回的排队草稿。' } })
+        if (autoContinue.reason === 'model-error') {
+          this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
+            message: '模型请求因暂时性错误中断且未自动重试，正在同一会话自动继续（1/1）。' } })
+        } else {
+          this.logStreamLoopGuard('auto-continue-requested', { sessionId: autoContinue.sessionId, runId: autoContinue.runId, count: 1, limit: 1, outcome: 'sending' })
+          this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
+            message: '已安全中止循环，正在同一会话自动继续（1/1）；不会执行收回的排队草稿。' } })
+        }
       }
       const res = await this.submitQueueCommand('prompt', text, images, mode === 'steer' ? 'steering' : 'followUp', payload)
       if (!res.success) return { ok: false, error: res.error }
@@ -3673,6 +3772,7 @@ export class AgentController extends EventEmitter {
     this.setAgentRunning(false)
     this.resetQueue()
     this.compactionState = EMPTY_COMPACTION_STATE
+    this.contextFrom = undefined
     this.nativeBranchView = false
   }
 
@@ -4103,7 +4203,8 @@ export class AgentController extends EventEmitter {
       if (res?.success && res.data) {
         if (_opts.expectGeneration !== undefined && generation !== _opts.expectGeneration) return null
         if (_opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== _opts.expectGeneration) return null
-        const stats = this.statsForCurrentModel(res.data)
+        const stats = await this.withOverheadUsage(this.statsForCurrentModel(res.data))
+        if (_opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== _opts.expectGeneration) return null
         this.push({ ch: 'stats', payload: stats })
         return stats
       }
@@ -4201,15 +4302,42 @@ export class AgentController extends EventEmitter {
     }
   }
 
+  private async withOverheadUsage(stats: SessionStats): Promise<SessionStats> {
+    const entries = await this.sessionEntriesLite().catch(() => null)
+    if (!entries) return stats
+    const sum: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+    let found = false
+    for (const e of entries) {
+      if (e.type !== 'compaction' && e.type !== 'branch_summary' && e.type !== 'usage') continue
+      const u = e.usage as Partial<Record<keyof TokenCounts, unknown>> | undefined
+      if (!u) continue
+      for (const key of ['input', 'output', 'cacheRead', 'cacheWrite'] as const) {
+        const v = u[key]
+        if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
+          sum[key] += v
+          found = true
+        }
+      }
+    }
+    return found ? { ...stats, overheadUsage: sum } : stats
+  }
+
   private statsForCurrentModel(stats: SessionStats): SessionStats {
     const modelKey = modelKeyOf(this.state?.model)
     let costEstimated = 0
-    for (const msg of this.messages) if (msg.usage?.costEstimated) costEstimated += msg.usage.cost
+    let countedUntil: number | null = null
+    for (const msg of this.messages) {
+      if (msg.usage?.costEstimated) costEstimated += msg.usage.cost
+      if (msg.role === 'assistant' && hasUsageNumbers(msg.usage) && typeof msg.timestamp === 'number') {
+        countedUntil = Math.max(countedUntil ?? msg.timestamp, msg.timestamp)
+      }
+    }
     const priced = costEstimated > 0 ? { cost: stats.cost + costEstimated, costEstimated } : {}
-    if (!stats.contextUsage) return { ...stats, ...priced }
+    if (!stats.contextUsage) return { ...stats, ...priced, countedUntil }
     return {
       ...stats,
       ...priced,
+      countedUntil,
       contextUsage: {
         ...stats.contextUsage,
         ...(modelKey ? { modelKey } : {}),

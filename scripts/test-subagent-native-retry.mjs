@@ -309,4 +309,97 @@ async function waitFor(predicate, timeoutMs = 8000) {
   }
 }
 
+{
+  await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+    build({ entryPoints: ['src/shared/model-errors.ts'], outfile: `${BUILD_DIR}/model-errors-transient.mjs`, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
+  )
+  const { isTransientModelError } = await import(`../${BUILD_DIR}/model-errors-transient.mjs`)
+  for (const text of ['Request timed out', 'connect ETIMEDOUT 1.2.3.4:443', '等待响应超时', 'socket hang up', 'WebSocket closed 1012', '502 Bad Gateway', 'fetch failed']) {
+    ok(isTransientModelError(text) === true, `暂态错误：${text}`)
+  }
+  for (const text of ['429 Too Many Requests', 'insufficient balance', '401 Unauthorized', 'prompt is too long', 'Request aborted', 'unable to verify the first certificate', 'model not found', '', undefined]) {
+    ok(isTransientModelError(text) === false, `非暂态错误：${String(text)}`)
+  }
+}
+
+async function withController(task, body) {
+  const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-native-retry-'))
+  const factory = makeRpcFactory()
+  const state = { finished: 0 }
+  const ctrl = new SubagentController({
+    cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc: factory.createRpc,
+    onChange: () => {}, onFinished: () => { state.finished += 1 }
+  })
+  try {
+    const started = await ctrl.start(task, undefined, 'shared-cwd')
+    ok(started.ok === true, '假 RPC 启动成功', started.error ?? '')
+    await body({ ctrl, id: started.run.id, rpc: factory.created[0], state })
+  } finally {
+    await ctrl.stopAll()
+    await rm(archive, { recursive: true, force: true })
+  }
+}
+
+await withController('超时未重试续跑成功', async ({ ctrl, id, rpc, state }) => {
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: 'connect ETIMEDOUT 1.2.3.4:443' }))
+  rpc.emit('event', { type: 'agent_end', willRetry: false })
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => promptCount(rpc) === 2), 'pi 未重试的超时由宿主在同一会话续跑一次', rpc.commands.join(','))
+  const resuming = ctrl.get(id)
+  ok(resuming.status === 'running' && resuming.recovery?.resumed === true, '续跑期间仍运行并记录 resumed', JSON.stringify({ status: resuming.status, recovery: resuming.recovery }))
+  ok(resuming.error === undefined && rpc.closeCount === 0, '续跑期间不保留旧错误、不关进程', resuming.error)
+  rpc.emit('event', assistant('续跑完成', { stopReason: 'stop' }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => state.finished === 1), '续跑成功后收口一次', String(state.finished))
+  const done = ctrl.get(id)
+  ok(done.status === 'done' && done.endReason === 'completed' && done.recovery?.resumed === true, '续跑成功收成 done 并保留续跑记录', JSON.stringify({ status: done.status, recovery: done.recovery }))
+})
+
+await withController('续跑后再失败', async ({ ctrl, id, rpc, state }) => {
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: 'Request timed out' }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => promptCount(rpc) === 2), '第一次暂态失败续跑', rpc.commands.join(','))
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: 'Request timed out' }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => state.finished === 1), '第二次失败直接收口', String(state.finished))
+  const failed = ctrl.get(id)
+  ok(promptCount(rpc) === 2, '同一子代理最多续跑一次', String(promptCount(rpc)))
+  ok(failed.status === 'error' && failed.endReason === 'model-error', '续跑后仍失败为 error/model-error', JSON.stringify({ status: failed.status, endReason: failed.endReason }))
+  ok(failed.latestActivity === '自动续跑 1 次后仍失败' && /超时/.test(failed.error ?? ''), '终态写明已续跑并保留错误原因', `${failed.latestActivity} | ${failed.error}`)
+})
+
+await withController('额度错误不续跑', async ({ ctrl, id, rpc, state }) => {
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: '429 Too Many Requests' }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => state.finished === 1), '额度错误直接收口', String(state.finished))
+  const failed = ctrl.get(id)
+  ok(promptCount(rpc) === 1 && !failed.recovery, '额度错误不续跑也无恢复记录', JSON.stringify(failed.recovery))
+  ok(failed.latestActivity === '模型返回错误（未自动重试）', '终态写明未自动重试', failed.latestActivity)
+})
+
+await withController('pi 重试耗尽不续跑', async ({ ctrl, id, rpc, state }) => {
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: 'Request timed out' }))
+  rpc.emit('event', { type: 'agent_end', willRetry: true })
+  for (const attempt of [1, 2, 3]) rpc.emit('event', { type: 'auto_retry_start', attempt, maxAttempts: 3 })
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: 'Request timed out' }))
+  rpc.emit('event', { type: 'auto_retry_end', success: false, finalError: 'Request timed out' })
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => state.finished === 1), 'pi 重试耗尽后收口', String(state.finished))
+  const failed = ctrl.get(id)
+  ok(promptCount(rpc) === 1, 'pi 已重试过时宿主不再续跑', String(promptCount(rpc)))
+  ok(failed.recovery?.piRetries === 3 && failed.recovery?.piMaxRetries === 3, '记录 pi 重试次数', JSON.stringify(failed.recovery))
+  ok(failed.latestActivity === '自动重试 3 次后仍失败', '终态写明重试次数', failed.latestActivity)
+})
+
+await withController('续跑中人工停止', async ({ ctrl, id, rpc, state }) => {
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: 'socket hang up' }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => promptCount(rpc) === 2), '续跑已发出', rpc.commands.join(','))
+  await ctrl.stop(id)
+  rpc.emit('event', { type: 'agent_settled' })
+  const stopped = ctrl.get(id)
+  ok(stopped.status === 'cancelled' && stopped.error === undefined, '续跑中停止为 cancelled', JSON.stringify({ status: stopped.status, error: stopped.error }))
+  ok(await waitFor(() => state.finished === 1), '停止只收口一次', String(state.finished))
+})
+
 console.log(`subagent-native-retry: ${checks} assertions passed（注入假事件流，未启动真实 pi / 未联网）`)

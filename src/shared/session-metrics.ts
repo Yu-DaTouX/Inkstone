@@ -19,6 +19,8 @@ export interface SessionMetrics {
   cacheRead: number | null
   cacheWrite: number | null
   hitRate: number | null
+  latestHitRate: number | null
+  overheadExcluded: boolean
   partial: boolean
   source: 'stats' | 'messages' | 'none'
   cost: number | null
@@ -46,8 +48,18 @@ function sanitizeUsage(usage: Usage | undefined): Usage | undefined {
     cacheRead: nonNegative(usage.cacheRead),
     cacheWrite: nonNegative(usage.cacheWrite),
     totalTokens: nonNegative(usage.totalTokens),
-    cost: nonNegative(usage.cost)
+    cost: nonNegative(usage.cost),
+    ...(nonNegative(usage.reasoning) > 0 ? { reasoning: nonNegative(usage.reasoning) } : {})
   }
+}
+
+const MIN_DECODE_MS = 150
+const MAX_PLAUSIBLE_TPS = 5000
+
+function visibleOutput(m: UIMessage, usage: Usage | undefined): number {
+  if (!usage) return 0
+  const hidden = usage.reasoning && !m.thinking ? Math.min(usage.reasoning, usage.output) : 0
+  return usage.output - hidden
 }
 
 function effectiveMessages(messages: readonly UIMessage[]): UIMessage[] {
@@ -92,7 +104,10 @@ export function projectSessionMetrics(
     }
   }
 
+  const countedUntil = stats?.countedUntil
   let derived: Usage | undefined
+  let uncounted: Usage | undefined
+  let latestHitRate: number | null = null
   let missingUsage = false
   let observedUsage = false
   for (const m of msgs) {
@@ -101,6 +116,10 @@ export function projectSessionMetrics(
     if (hasUsageNumbers(usage)) {
       derived = addUsage(derived, usage)
       observedUsage = true
+      if (countedUntil !== undefined && typeof m.timestamp === 'number' && (countedUntil === null || m.timestamp > countedUntil)) {
+        uncounted = addUsage(uncounted, usage)
+      }
+      if (!m.error) latestHitRate = cacheHitRate(usage) ?? latestHitRate
     } else {
       missingUsage = true
     }
@@ -109,11 +128,13 @@ export function projectSessionMetrics(
   const derivedPartial = observedUsage && missingUsage
 
   const statsTokens = stats ? {
-    input: nonNegative(stats.tokens.input),
-    output: nonNegative(stats.tokens.output),
-    cacheRead: nonNegative(stats.tokens.cacheRead),
-    cacheWrite: nonNegative(stats.tokens.cacheWrite),
-    total: nonNegative(stats.tokens.total)
+    input: nonNegative(stats.tokens.input) + (uncounted?.input ?? 0),
+    output: nonNegative(stats.tokens.output) + (uncounted?.output ?? 0),
+    cacheRead: nonNegative(stats.tokens.cacheRead) + (uncounted?.cacheRead ?? 0),
+    cacheWrite: nonNegative(stats.tokens.cacheWrite) + (uncounted?.cacheWrite ?? 0),
+    total:
+      nonNegative(stats.tokens.total) +
+      (uncounted ? uncounted.input + uncounted.output + uncounted.cacheRead + uncounted.cacheWrite : 0)
   } : null
   const statsTotal = statsTokens ? statsTokens.total : 0
   const statsStale = !!statsTokens && statsTotal < derivedTotal
@@ -143,14 +164,16 @@ export function projectSessionMetrics(
     source = 'messages'
     partial = derivedPartial || statsStale || historyPartial
   }
+  const summary = source === 'stats' ? stats?.overheadUsage : undefined
+  const overheadExcluded = !!summary && summary.input + summary.cacheRead + summary.cacheWrite > 0
   const hitRate = total === null
     ? null
     : cacheHitRate({
-        input: input ?? 0,
-        output: output ?? 0,
-        cacheRead: cacheRead ?? 0,
-        cacheWrite: cacheWrite ?? 0,
-        totalTokens: total,
+        input: Math.max(0, (input ?? 0) - nonNegative(summary?.input)),
+        output: 0,
+        cacheRead: Math.max(0, (cacheRead ?? 0) - nonNegative(summary?.cacheRead)),
+        cacheWrite: Math.max(0, (cacheWrite ?? 0) - nonNegative(summary?.cacheWrite)),
+        totalTokens: 0,
         cost: 0
       })
 
@@ -160,8 +183,11 @@ export function projectSessionMetrics(
   let decodeOut = 0
   let decodeTime = 0
   let tpsCovered = 0
+  let tpsEligible = 0
+  let tpsApprox = false
   let ttftSum = 0
   let ttftCount = 0
+  let ttftEligible = 0
   for (const m of msgs) {
     if (m.role !== 'assistant') continue
 
@@ -176,13 +202,27 @@ export function projectSessionMetrics(
 
     const usage = sanitizeUsage(m.usage)
     const out = usage ? usage.output : 0
+    const visible = visibleOutput(m, usage)
+    if (!m.error && (out > 0 || !hasUsageNumbers(usage))) tpsEligible += 1
+    if (!m.error && (out > 0 || m.text || m.toolCalls?.length)) ttftEligible += 1
     const realDecode = gt && isNonNegative(gt.decodeMs) && gt.decodeMs > 0 ? gt.decodeMs : null
     const legacySpeed = gt === undefined && isNonNegative(m.speed) && m.speed > 0 ? m.speed : null
-    const decodeMs = realDecode ?? (legacySpeed !== null && out > 0 ? (out / legacySpeed) * 1000 : null)
-    if (out > 0 && decodeMs !== null) {
-      decodeOut += out
-      decodeTime += decodeMs
-      tpsCovered += 1
+    const burst = realDecode !== null && visible > 0 && (realDecode < MIN_DECODE_MS || visible / (realDecode / 1000) > MAX_PLAUSIBLE_TPS)
+    if (burst) {
+      if (durationMs !== null && durationMs >= MIN_DECODE_MS && out > 0) {
+        decodeOut += out
+        decodeTime += durationMs
+        tpsCovered += 1
+        tpsApprox = true
+      }
+    } else {
+      const decodeMs = realDecode ?? (legacySpeed !== null && out > 0 ? (out / legacySpeed) * 1000 : null)
+      const counted = realDecode !== null ? visible : out
+      if (counted > 0 && decodeMs !== null) {
+        decodeOut += counted
+        decodeTime += decodeMs
+        tpsCovered += 1
+      }
     }
 
     const ttft = gt && gt.startEvent === 'turn_start' && isNonNegative(gt.ttftMs) ? gt.ttftMs : null
@@ -192,11 +232,11 @@ export function projectSessionMetrics(
     }
   }
   const tps = decodeTime > 0 ? decodeOut / (decodeTime / 1000) : null
-  const tpsPartial = (steps > 0 && tpsCovered < steps) || (historyPartial && tps !== null)
+  const tpsPartial = tpsCovered < tpsEligible || tpsApprox || (historyPartial && tps !== null)
   const modelPartial =
     (modelMs !== null && (modelMissing > 0 || modelLowerBound)) || (historyPartial && modelMs !== null)
   const ttftMs = ttftCount > 0 ? ttftSum / ttftCount : null
-  const ttftPartial = (ttftCount > 0 && ttftCount < steps) || (historyPartial && ttftMs !== null)
+  const ttftPartial = (ttftCount > 0 && ttftCount < ttftEligible) || (historyPartial && ttftMs !== null)
 
   const toolIds = new Set<string>()
   const spans: { id: string; name: string; startedAt: number; endedAt: number }[] = []
@@ -242,6 +282,8 @@ export function projectSessionMetrics(
     cacheRead,
     cacheWrite,
     hitRate,
+    latestHitRate,
+    overheadExcluded,
     partial,
     source,
     cost,

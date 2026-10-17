@@ -3,7 +3,9 @@ import { Dialog, Popover } from 'react-aria-components'
 import { Button } from '../ui'
 import { useT, type MessageKey } from '../i18n'
 import { useStore } from '../state/store'
-import { contextBreakdown, type ContextCategory } from '../state/context-breakdown'
+import type { ContextCategory } from '../state/context-breakdown'
+import { contextPaneData, contextUsageSummary } from '../features/workbench/context-pane-view'
+import { ContextRingGlyph } from './ContextGauge'
 import './context-ring.css'
 
 function shortTokens(n: number): string {
@@ -25,50 +27,24 @@ export function useContextUsage() {
   const session = useStore((s) => s.session)
   const stats = useStore((s) => s.stats)
   const usage = stats?.contextUsage
-  const modelKey = session?.model ? `${session.model.provider}/${session.model.id}` : undefined
-  const matches = !!usage && (!usage.modelKey || usage.modelKey === modelKey)
-  const reported = matches ? usage?.contextWindow : undefined
-  const windowSize =
-    typeof reported === 'number' && Number.isFinite(reported) && reported > 0
-      ? reported
-      : session?.model?.contextWindow ?? 0
-  const known = matches && typeof usage?.tokens === 'number' && windowSize > 0
-  const tokens = known ? usage!.tokens! : 0
-  const percent = known ? (tokens / windowSize) * 100 : null
-  const tone: 'ok' | 'warn' | 'err' =
-    percent !== null && percent >= 95 ? 'err' : percent !== null && percent >= 80 ? 'warn' : 'ok'
-  return { session, usage, matches, windowSize, known, tokens, percent, tone }
-}
-
-function Ring({ percent, tone }: { percent: number | null; tone: 'ok' | 'warn' | 'err' }) {
-  const R = 5
-  const C = 2 * Math.PI * R
-  const clamped = percent === null ? 0 : Math.max(0, Math.min(100, percent))
-  const dash = (clamped / 100) * C
-  return (
-    <svg className="ctx-ring-svg" width="14" height="14" viewBox="0 0 14 14" aria-hidden>
-      <circle className="ctx-ring-track" cx="7" cy="7" r={R} fill="none" strokeWidth="2" />
-      {percent !== null ? (
-        <circle
-          className="ctx-ring-arc"
-          data-tone={tone}
-          cx="7"
-          cy="7"
-          r={R}
-          fill="none"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeDasharray={`${dash} ${C}`}
-          transform="rotate(-90 7 7)"
-        />
-      ) : null}
-    </svg>
-  )
+  const summary = contextUsageSummary(session, stats)
+  return {
+    session,
+    usage,
+    matches: summary.matchesModel,
+    windowSize: summary.windowSize,
+    known: summary.known,
+    tokens: summary.tokens,
+    percent: summary.percent,
+    tone: summary.tone,
+    windowAssumed: summary.windowAssumed
+  }
 }
 
 export function ContextRing({ className }: { className?: string } = {}) {
   const t = useT()
-  const { session, usage, matches, windowSize, known, tokens, percent, tone } = useContextUsage()
+  const { session, usage, matches, windowSize, known, tokens, percent, tone, windowAssumed } = useContextUsage()
+  const stats = useStore((s) => s.stats)
   const messages = useStore((s) => s.messages)
   const compact = useStore((s) => s.compact)
   const [open, setOpen] = useState(false)
@@ -79,11 +55,7 @@ export function ContextRing({ className }: { className?: string } = {}) {
     setOpen(false)
   }, [boundKey])
 
-  const since = session?.lastCompaction?.status === 'completed' ? session.lastCompaction.startedAt : undefined
-  const slices = useMemo(
-    () => (known ? contextBreakdown(messages, tokens, since) : []),
-    [known, messages, tokens, since]
-  )
+  const { slices, compacted } = useMemo(() => contextPaneData({ session, stats, messages }), [session, stats, messages])
   const share = (n: number): number => (windowSize > 0 ? (n / windowSize) * 100 : 0)
   const rows = known
     ? [...slices.filter((s) => s.tokens > 0), { id: 'free' as const, tokens: Math.max(0, windowSize - tokens) }]
@@ -107,7 +79,7 @@ export function ContextRing({ className }: { className?: string } = {}) {
         title={title}
         onClick={() => setOpen((v) => !v)}
       >
-        <Ring percent={percent} tone={tone} />
+        <ContextRingGlyph percent={percent} tone={tone} />
         <span className="ctx-ring-text ui-meta-num" data-testid="ctx-ring-text">
           {text}
         </span>
@@ -124,9 +96,14 @@ export function ContextRing({ className }: { className?: string } = {}) {
           <div className="ctx-window-head" data-testid="ctx-main">
             <span className="ctx-pop-title">{t('ctx.window')}</span>
             <span className={`ctx-window-total ui-meta-num ${known && tone !== 'ok' ? tone : ''}`} data-testid="ctx-tokens">
-              {known ? `${shortTokens(tokens)} / ${shortTokens(windowSize)} (${Math.round(percent!)}%)` : '—'}
+              {known ? `${shortTokens(tokens)} / ${windowAssumed ? '~' : ''}${shortTokens(windowSize)} (${Math.round(percent!)}%)` : '—'}
             </span>
           </div>
+          {windowAssumed ? (
+            <div className="ctx-note" data-testid="ctx-window-assumed">
+              {t('ctx.windowAssumed', { win: shortTokens(windowSize) })}
+            </div>
+          ) : null}
           <div
             className="ctx-usage-bar"
             role="img"
@@ -143,7 +120,7 @@ export function ContextRing({ className }: { className?: string } = {}) {
               {rows.map((r) => (
                 <li key={r.id} className={r.id === 'free' ? 'free' : undefined}>
                   <i className={`ctx-swatch c-${r.id}`} aria-hidden />
-                  <span className="ctx-legend-name">{t(CATEGORY_LABEL[r.id])}</span>
+                  <span className="ctx-legend-name">{t(r.id === 'system' && compacted ? 'ctx.cat.systemSummary' : CATEGORY_LABEL[r.id])}</span>
                   <span className="ctx-legend-num ui-meta-num">{shortTokens(r.tokens)}</span>
                   <span className="ctx-legend-num ui-meta-num">{`${share(r.tokens).toFixed(1)}%`}</span>
                 </li>

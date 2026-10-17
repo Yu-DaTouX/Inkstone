@@ -323,7 +323,7 @@ function Tile({ id, title, summary, folded, onToggle, onOpen, openLabel, tone, c
 
 function ContextDetail({ data, last, text }: { data: ContextPaneData; last: CompactionRun | undefined; text: OverviewText }): ReactElement {
   const t = useT()
-  const { usage, slices } = data
+  const { usage, slices, compacted } = data
   const share = (n: number): number => (usage.windowSize > 0 ? (n / usage.windowSize) * 100 : 0)
   const rows = [...slices.filter((s) => s.tokens > 0), { id: 'free' as const, tokens: Math.max(0, usage.windowSize - usage.tokens) }]
   const record = last
@@ -340,10 +340,10 @@ function ContextDetail({ data, last, text }: { data: ContextPaneData; last: Comp
       >
         {slices.map((s) => (s.tokens > 0 ? <i key={s.id} className={`wb-ctx-seg c-${s.id}`} style={{ width: `${share(s.tokens)}%` }} /> : null))}
       </div>
-      <p className="wb-ov-note">{`${text.contextUsed} ${shortTokens(usage.tokens)} / ${shortTokens(usage.windowSize)}`}</p>
+      <p className="wb-ov-note">{`${text.contextUsed} ${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)}`}</p>
       <ul className="wb-ctx-legend" data-testid="wb-ov-ctx-breakdown">
         {rows.map((row) => {
-          const name = t(CATEGORY_LABEL[row.id])
+          const name = t(row.id === 'system' && compacted ? 'ctx.cat.systemSummary' : CATEGORY_LABEL[row.id])
           return (
             <li key={row.id} className={row.id === 'free' ? 'free' : undefined} title={name}>
               <i className={`wb-ctx-swatch c-${row.id}`} aria-hidden />

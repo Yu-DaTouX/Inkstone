@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { formatTokens } from '../../state/compaction-view'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useRunsV3, phaseWord, runTone } from '../../state/runs-v3'
 import { displayedSessionOf, useSplitView } from '../../state/split-view'
 import { subagentTileRef } from '../../app/SideBySideLayout'
 import { findSubagentSnapshot, subagentLineModel, type SubagentLineModel } from './turn-lines'
-import { selectSubagentRuns } from '../../state/subagent-view'
+import { selectSubagentRuns, subagentTokens } from '../../state/subagent-view'
 import { sessionViewIdentity } from './view-state'
 import { formatDuration } from '../../../../shared/duration'
 import type { SubagentOutcomeKey } from '../../../../shared/subagent-outcome'
@@ -284,8 +285,10 @@ function SubagentStack({ runs, owner, snapshots }: { runs: SubagentRun[]; owner:
 
 function SubagentRow({ run, owner, snapshot }: { run: SubagentRun; owner: string; snapshot?: RunSnapshot }): JSX.Element {
   const tt = useSessionText()
+  const t = useT()
   const { model, status, dotClass } = useSubagentView(run, snapshot)
   const selected = useSubagentPanel((s) => s.runId === run.id && s.owner === owner)
+  const tokens = subagentTokens([run])
   const models = useStore((s) => s.models)
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
   const thinking = run.thinkingLevel && run.thinkingLevel !== 'off' ? run.thinkingLevel : null
@@ -325,6 +328,9 @@ function SubagentRow({ run, owner, snapshot }: { run: SubagentRun; owner: string
             {model.code ? <span className="v3-subagent-code" data-testid="v3-subagent-code">{model.code}</span> : null}
             <span className="v3-subagent-status" data-testid="v3-subagent-status">{status}</span>
             <span className="v3-subagent-time" data-testid="v3-subagent-time">{formatDuration(model.elapsedMs, { minSeconds: 1 })}</span>
+            {tokens > 0 ? (
+              <span className="v3-subagent-tokens" data-testid="v3-subagent-tokens">{`${formatTokens(tokens)} ${t('tok.unit')}`}</span>
+            ) : null}
             {context.known ? <ContextGauge usage={context} className="v3-subagent-ctx" data-testid="v3-subagent-context" /> : null}
           </span>
         </span>

@@ -98,43 +98,43 @@ export function agentRoleSection(profile: AgentProfileKind, activity: AgentActiv
 }
 
 const DOC_SYNC_BODY = [
-  '代码改完后同步相关文档：按实际改动更新描述这块行为的文档，已实现 / 未完成 / 建议分开写，不要借回填文档批准新的产品需求。',
-  '收尾一轮代码改动前先读 `doc-sync` 技能（`yan skill read --id skill:doc-sync`）。'
+  'After changing code, update the docs that describe the changed behavior to match it, keeping implemented / unfinished / suggested apart; do not use a doc backfill to approve new product requirements.',
+  'Before wrapping up a round of code changes, read skill doc-sync (`yan skill read --id skill:doc-sync`).'
 ].join('\n')
 
 const AUTO_ROLE_BODY = [
-  '你先判断这次请求是哪一类，再按那一类的方式做 —— 不要先问用户该用哪种模式。',
-  '- 写代码、改文件、排错、看仓库 → 按代码助手工作：先读现有实现，改动最小，说清影响；改完同步相关文档（`doc-sync` 技能）。',
-  '- 只是问一件事 → 直接回答；不要把它展开成工程计划，也不要先去读无关文件。',
-  '- 要读资料、作比较、给结论 → 每条结论能指出出处，分歧如实保留。',
-  '- 要写一份文档 → 先确认用途，先提纲后初稿，不覆盖用户改过的段落。',
-  '- 要归类、命名、整理资料 → `organize` 技能：先说方案再动手，不丢资料。',
-  '- 要学一样东西 → 一次推进一小步，讲完停下来等回应。',
-  '技能用 `yan skill read --id skill:<名称>` 读取，开始这一类工作前先读。',
-  '判断不了时，按「直接回答」处理，并在回答里说一句你按哪一类在做。'
+  'First decide which kind of request this is, then work that way; do not ask the user to pick a mode.',
+  '- Code, files, debugging, repositories → work as a coding assistant: read the existing implementation first, change as little as needed, state the impact, then sync related docs (skill doc-sync).',
+  '- A single question → answer directly; do not turn it into an engineering plan or read unrelated files.',
+  '- Research, comparison, conclusions → give a source for every claim and keep disagreements visible.',
+  '- Writing a document → confirm its purpose, outline before drafting, never overwrite paragraphs the user edited.',
+  '- Sorting, naming, organizing material → skill organize: propose the scheme before acting, lose nothing.',
+  '- Learning something → advance one small step at a time and stop for a response.',
+  'Before starting that kind of work, read its skill with `yan skill read --id skill:<name>`.',
+  'If unsure, answer directly and say in one line which kind you treated it as.'
 ].join('\n')
 
 function dailyBody(title: string, core: string, skill?: string): string {
-  const lines = [`你正在「日常」模式里${title}。`, core]
-  if (skill) lines.push(`完整做法见 \`${skill}\` 技能（\`yan skill read --id skill:${skill}\`），开始前先读。`)
+  const lines = [`You are in Daily mode, ${title}.`, core]
+  if (skill) lines.push(`Read skill ${skill} (\`yan skill read --id skill:${skill}\`) before starting.`)
   return lines.join('\n')
 }
 
 const DAILY_ROLE_BODY: Record<AgentActivity, string> = {
   answer: [
-    '你正在「日常」模式里回答一个问题。',
-    '- 直接回答，不要把问题展开成工程计划，也不要先去读无关文件。',
-    '- 需要资料时先读再答；不需要就不读。',
-    '- 用户用的是普通语言，回答也说普通语言，不要用内部的工具名与文件路径堆砌。'
+    'You are in Daily mode, answering a question.',
+    '- Answer directly; do not turn it into an engineering plan or read unrelated files.',
+    '- Read sources first only when the answer needs them.',
+    '- The user speaks plain language; answer in plain language, without piling up internal tool names or file paths.'
   ].join('\n'),
   research: dailyBody(
-    '做研究',
-    '每条结论都要能指出出处；资料之间有分歧就如实保留，不要强行合成唯一答案。这个活动不改文件。'
+    'doing research',
+    'Give a source for every claim; keep disagreements between sources visible instead of forcing a single answer. This activity does not change files.'
   ),
-  compose: dailyBody('创作', '先确认给谁看、做什么用，先提纲后初稿；用户改过的段落不要覆盖。'),
-  organize: dailyBody('整理资料', '先说明分类与命名方案再动手；不丢资料，改名、移动、删除先说明影响。', 'organize'),
+  compose: dailyBody('writing', 'Confirm the audience and purpose, outline before drafting; never overwrite paragraphs the user edited.'),
+  organize: dailyBody('organizing material', 'Explain the categories and naming scheme before acting; lose nothing, and state the impact before renaming, moving or deleting.', 'organize'),
   learn: dailyBody(
-    '给一位学习者当导师',
-    '默认引导式，一次推进一小步，讲完停下来等他回应；他要「直接讲」时切到解析式。不要替他作答，他独立完成之前不要说「你已掌握」。'
+    'tutoring a learner',
+    'Guide by default: advance one small step at a time and stop for their response; switch to direct explanation when they ask for it. Do not answer for them, and do not say they have mastered it before they finish on their own.'
   )
 }

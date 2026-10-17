@@ -1,9 +1,49 @@
-import type { UIMessage } from '../../../shared/ipc'
+import type { ContextFrom, SessionState, UIMessage } from '../../../shared/ipc'
 
 export type ContextCategory = 'system' | 'user' | 'assistant' | 'thinking' | 'tools'
 export interface ContextSlice { id: ContextCategory; tokens: number }
 
 const IMAGE_TOKENS = 1200
+const KEEP_RECENT_TOKENS = 20_000
+
+export function contextFromOf(session: Pick<SessionState, 'contextFrom' | 'lastCompaction'> | null | undefined): ContextFrom | undefined {
+  if (session?.contextFrom) return session.contextFrom
+  const last = session?.lastCompaction
+  if (last?.status !== 'completed') return undefined
+  const compactedAt = last.startedAt ?? last.endedAt
+  if (!last.firstKeptEntryId && compactedAt === undefined) return undefined
+  return { firstKeptEntryId: last.firstKeptEntryId, compactedAt }
+}
+
+function cutEstimate(m: UIMessage): number {
+  let chars = (m.text?.length ?? 0) + (m.thinking?.length ?? 0) + (m.bash?.command.length ?? 0)
+  let images = m.images?.length ?? 0
+  for (const call of m.toolCalls ?? []) {
+    chars += call.name.length + (call.argsRaw ?? argsText(call.args)).length + (call.output?.length ?? 0)
+    images += call.images?.length ?? 0
+  }
+  return Math.ceil(chars / 4) + images * IMAGE_TOKENS
+}
+
+export function inContextMessages(messages: readonly UIMessage[], from: ContextFrom | undefined): readonly UIMessage[] {
+  if (!from) return messages
+  if (from.firstKeptEntryId) {
+    const kept = messages.findIndex((m) => m.entryId === from.firstKeptEntryId)
+    if (kept >= 0) return messages.slice(kept)
+  }
+  const at = from.compactedAt
+  if (at === undefined) return messages
+  let after = messages.findIndex((m) => (m.timestamp ?? 0) >= at)
+  if (after < 0) after = messages.length
+  let start = after
+  let kept = 0
+  for (let i = after - 1; i >= 0; i--) {
+    kept += cutEstimate(messages[i])
+    start = i
+    if (kept >= KEEP_RECENT_TOKENS) break
+  }
+  return messages.slice(start)
+}
 
 export function estimateTokens(text: string | undefined): number {
   if (!text) return 0
@@ -17,10 +57,9 @@ function argsText(args: unknown): string {
   try { return JSON.stringify(args) ?? '' } catch { return '' }
 }
 
-export function contextBreakdown(messages: readonly UIMessage[], total: number, since?: number): ContextSlice[] {
+export function contextBreakdown(messages: readonly UIMessage[], total: number): ContextSlice[] {
   const sums: Record<Exclude<ContextCategory, 'system'>, number> = { user: 0, assistant: 0, thinking: 0, tools: 0 }
   for (const m of messages) {
-    if (since && (m.timestamp ?? 0) < since) continue
     if (m.role === 'user') sums.user += estimateTokens(m.text) + (m.images?.length ?? 0) * IMAGE_TOKENS
     else if (m.role === 'bash') sums.tools += estimateTokens(m.bash?.command) + estimateTokens(m.text)
     else {

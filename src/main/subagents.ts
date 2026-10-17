@@ -4,7 +4,7 @@ import { SubagentHistory } from './subagent-history'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
-import type { SubagentEndReason, SubagentRun, UIMessage } from '../shared/ipc'
+import type { SubagentEndReason, SubagentRecovery, SubagentRun, UIMessage } from '../shared/ipc'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
 import { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage, type UsageSnapshots } from '../shared/subagent-usage'
 import {
@@ -16,7 +16,7 @@ import {
 import { PiRpc, resolvePi } from './protocol'
 import { CapabilityServer } from './capability-server'
 import { nativePiToolsSupported } from '../shared/agent-context'
-import { modelErrorNotice } from '../shared/model-errors'
+import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { redactDiagnosticText } from '../shared/redact-diagnostic'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
 import { confirmRegisteredModel } from './subagents/registered-model'
@@ -129,6 +129,7 @@ interface Run extends SubagentRun {
   settled: boolean
   retryAttempt?: number
   retryMaxAttempts?: number
+  lastModelErrorText?: string
   workspace: PreparedWorkspace
   finalizing?: Promise<void>
   settling?: Promise<void>
@@ -239,6 +240,7 @@ export class SubagentController {
       dismissedAt: run.dismissedAt,
       toolCalls: run.toolCalls,
       wrapUp: run.wrapUp,
+      recovery: run.recovery,
       latestActivity: run.latestActivity,
       progressWarning: run.progressWarning,
       transcript: run.transcript,
@@ -962,7 +964,10 @@ export class SubagentController {
 
       if (raw.role === 'assistant' && raw.stopReason) {
         run.stopReason = raw.stopReason
-        if (raw.stopReason === 'error') run.error = modelErrorNotice(raw.errorMessage)
+        if (raw.stopReason === 'error') {
+          run.error = modelErrorNotice(raw.errorMessage)
+          run.lastModelErrorText = modelErrorText(raw.errorMessage)
+        }
       }
 
       if (raw.role === 'toolResult') {
@@ -1033,6 +1038,7 @@ export class SubagentController {
       const maxAttempts = finiteCount(evt.maxAttempts)
       run.retryAttempt = attempt
       run.retryMaxAttempts = maxAttempts
+      run.recovery = { ...run.recovery, piRetries: attempt, piMaxRetries: maxAttempts }
       run.latestActivity = retryActivity(attempt, maxAttempts)
       this.emit(run)
       return
@@ -1049,6 +1055,9 @@ export class SubagentController {
       } else if (evt.success === true) {
         run.error = undefined
         run.stopReason = undefined
+        run.lastModelErrorText = undefined
+        run.retryAttempt = undefined
+        run.recovery = run.recovery?.resumed ? { resumed: true } : undefined
         run.latestActivity = '自动重试成功，继续'
       } else {
         run.latestActivity = '自动重试结束（结果未知）'
@@ -1059,30 +1068,65 @@ export class SubagentController {
 
     if (type === 'agent_settled') {
       if (this.closedForEvents(run)) return
-      run.settled = true
-      clearTimeout(run.timer)
-      const modelFailed = run.status !== 'cancelled' && run.stopReason === 'error'
-      const wrapped = run.status !== 'cancelled' && !modelFailed ? run.wrapUp : undefined
-      run.status = run.status === 'cancelled' ? 'cancelled' : modelFailed ? 'error' : 'done'
-      run.endReason = run.status === 'cancelled' ? 'stopped' : modelFailed ? 'model-error' : (wrapped?.reason ?? 'completed')
-      run.wrapUp = undefined
-      run.progressWarning = undefined
-      run.endedAt = Date.now()
-      if (modelFailed) run.error = run.error ?? modelErrorNotice(undefined)
-      run.latestActivity = modelFailed
-        ? '模型返回错误'
-        : wrapped ? '超时，已收尾' : '已完成'
-      this.emit(run)
-      run.settling = (async () => {
-        await this.waitTranscriptQuiet(run)
-        await run.contextRefresh
-        try {
-          await run.rpc.close()
-        } catch {
-        }
-        await this.finalize(run, false)
-      })()
+      if (this.canResumeAfterModelError(run)) {
+        void this.resumeAfterModelError(run)
+        return
+      }
+      this.settle(run)
     }
+  }
+
+  private canResumeAfterModelError(run: Run): boolean {
+    return run.status === 'running' && run.stopReason === 'error' && !run.wrapUp && !run.recovery?.resumed &&
+      run.retryAttempt === undefined && isTransientModelError(run.lastModelErrorText)
+  }
+
+  private async resumeAfterModelError(run: Run): Promise<void> {
+    run.recovery = { ...run.recovery, resumed: true }
+    run.stopReason = undefined
+    run.error = undefined
+    run.latestActivity = '模型请求中断且未自动重试，正在同一会话自动续跑（1/1）…'
+    run.lastProgressAt = Date.now()
+    this.armWatch(run)
+    this.emit(run)
+    const failed = (): void => {
+      if (run.settled || run.status !== 'running') return
+      run.stopReason = 'error'
+      run.error = modelErrorNotice(run.lastModelErrorText)
+      this.settle(run)
+    }
+    try {
+      const res = await run.rpc.command('prompt', { message: MODEL_ERROR_RESUME_PROMPT }, { timeoutMs: 10_000 })
+      if (!res.success) failed()
+    } catch {
+      failed()
+    }
+  }
+
+  private settle(run: Run): void {
+    run.settled = true
+    clearTimeout(run.timer)
+    const modelFailed = run.status !== 'cancelled' && run.stopReason === 'error'
+    const wrapped = run.status !== 'cancelled' && !modelFailed ? run.wrapUp : undefined
+    run.status = run.status === 'cancelled' ? 'cancelled' : modelFailed ? 'error' : 'done'
+    run.endReason = run.status === 'cancelled' ? 'stopped' : modelFailed ? 'model-error' : (wrapped?.reason ?? 'completed')
+    run.wrapUp = undefined
+    run.progressWarning = undefined
+    run.endedAt = Date.now()
+    if (modelFailed) run.error = run.error ?? modelErrorNotice(undefined)
+    run.latestActivity = modelFailed
+      ? modelFailureActivity(run.recovery)
+      : wrapped ? '超时，已收尾' : '已完成'
+    this.emit(run)
+    run.settling = (async () => {
+      await this.waitTranscriptQuiet(run)
+      await run.contextRefresh
+      try {
+        await run.rpc.close()
+      } catch {
+      }
+      await this.finalize(run, false)
+    })()
   }
 
   private async waitTranscriptQuiet(run: Run, quietMs = 600, maxMs = 5000): Promise<void> {
@@ -1125,6 +1169,14 @@ function modelMismatch(requested: string, actual: string): boolean {
 
 function finiteCount(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : undefined
+}
+
+const MODEL_ERROR_RESUME_PROMPT = '[模型错误恢复 · 自动继续 1/1]\n上一轮模型请求因暂时性错误（超时、连接中断或服务过载）中断，且没有自动重试。请核对已完成的工具结果，继续尚未完成的原任务；不要重复已完成的操作。若原任务已完成或无法安全继续，请简短说明并结束。'
+
+function modelFailureActivity(recovery: SubagentRecovery | undefined): string {
+  if (recovery?.resumed) return '自动续跑 1 次后仍失败'
+  if (recovery?.piRetries) return `自动重试 ${recovery.piRetries} 次后仍失败`
+  return '模型返回错误（未自动重试）'
 }
 
 function retryActivity(attempt: number | undefined, maxAttempts: number | undefined): string {

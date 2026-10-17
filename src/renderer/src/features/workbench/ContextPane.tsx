@@ -33,7 +33,7 @@ export function ContextPane(_props: ContextPaneProps): ReactElement {
   const messages = useStore((s) => s.messages)
 
   const data = useMemo(() => contextPaneData({ session, stats, messages }), [session, stats, messages])
-  const { usage, slices, occupancy } = data
+  const { usage, slices, occupancy, compacted } = data
 
   const share = (n: number): number => (usage.windowSize > 0 ? (n / usage.windowSize) * 100 : 0)
   const rows = usage.known
@@ -60,7 +60,7 @@ export function ContextPane(_props: ContextPaneProps): ReactElement {
             data-testid="v3-wb-ctx-tokens"
           >
             {usage.known
-              ? `${shortTokens(usage.tokens)} / ${shortTokens(usage.windowSize)} (${Math.round(usage.percent!)}%)`
+              ? `${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)} (${Math.round(usage.percent!)}%)`
               : text.unknown}
           </span>
         </div>
@@ -86,7 +86,7 @@ export function ContextPane(_props: ContextPaneProps): ReactElement {
               {rows.map((r) => (
                 <li key={r.id} className={r.id === 'free' ? 'free' : undefined}>
                   <i className={`wb-ctx-swatch c-${r.id}`} aria-hidden />
-                  <span className="wb-ctx-legend-name">{t(CATEGORY_LABEL[r.id])}</span>
+                  <span className="wb-ctx-legend-name">{t(r.id === 'system' && compacted ? 'ctx.cat.systemSummary' : CATEGORY_LABEL[r.id])}</span>
                   <span className="wb-ctx-legend-num ui-meta-num">{shortTokens(r.tokens)}</span>
                   <span className="wb-ctx-legend-num ui-meta-num">{`${share(r.tokens).toFixed(1)}%`}</span>
                 </li>
@@ -100,6 +100,11 @@ export function ContextPane(_props: ContextPaneProps): ReactElement {
         )}
 
         {usage.afterCompactUnknown ? <p className="wb-ctx-note">{text.afterCompact}</p> : null}
+        {usage.windowAssumed ? (
+          <p className="wb-ctx-note" data-testid="v3-wb-ctx-window-assumed">
+            {t('ctx.windowAssumed', { win: shortTokens(usage.windowSize) })}
+          </p>
+        ) : null}
       </div>
 
       {usage.known ? (

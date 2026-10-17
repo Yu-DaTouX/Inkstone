@@ -43,8 +43,23 @@ try {
   const { code } = await transform(hook.getText(ast), { loader: 'ts', format: 'cjs' })
   const selected = { provider: 'vmfix', id: 'auto', contextWindow: 111111 }
   let state = { session: { model: selected }, stats: { contextUsage: { tokens: 16000, contextWindow: 32000, modelKey: 'vmfix/auto' } } }
+  const viewBundle = await build({
+    entryPoints: ['src/renderer/src/features/workbench/context-pane-view.ts'],
+    bundle: true,
+    write: false,
+    format: 'cjs',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+  const view = { exports: {} }
+  vm.runInNewContext(viewBundle.outputFiles[0].text, { module: view, exports: view.exports })
   const module = { exports: {} }
-  const context = vm.createContext({ module, exports: module.exports, useStore: selector => selector(state) })
+  const context = vm.createContext({
+    module,
+    exports: module.exports,
+    useStore: selector => selector(state),
+    contextUsageSummary: view.exports.contextUsageSummary
+  })
   vm.runInContext(code, context)
   check(context.useContextUsage().windowSize === 32000 && context.useContextUsage().percent === 50, '路由响应后使用原生物理窗口作分母')
   state.stats.contextUsage.modelKey = 'other/model'

@@ -148,7 +148,12 @@ function PanelBody({ run, viewActive, edge }: { run: SubagentRun; viewActive: bo
           <h3 className="v3-sap-title" tabIndex={-1}>{model.task}</h3>
         </section>
 
-        {model.error ? <div className="v3-subagent-err v3-sap-block" role="alert" data-testid="v3-subagent-error">{model.error}</div> : null}
+        {model.error ? (
+          <div className="v3-subagent-err v3-sap-block" role="alert" data-testid="v3-subagent-error">
+            {model.recovery ? <span data-testid="v3-subagent-recovery">{`${tt(model.recovery.key, 'n' in model.recovery ? { n: model.recovery.n } : undefined)} · `}</span> : null}
+            {model.error}
+          </div>
+        ) : null}
 
         <SubagentReview run={run} onMerge={mergeSubagentResult} onDiscard={discardSubagentResult} />
 

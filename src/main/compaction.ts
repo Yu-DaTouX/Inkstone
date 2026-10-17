@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 import { autoCompactAt } from '../shared/context-limits'
-import type { CompactionInfo, CompactionReason, CompactionRun, CompactionStatus } from '../shared/ipc'
+import type { CompactionInfo, CompactionReason, CompactionRun, CompactionStatus, ContextFrom, UIMessage } from '../shared/ipc'
 
 const DEFAULTS = { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }
 
@@ -118,15 +118,53 @@ function readError(evt: Record<string, unknown>): string | undefined {
   return undefined
 }
 
-function readTokens(evt: Record<string, unknown>): { beforeTokens?: number; afterTokens?: number } {
+function readTokens(evt: Record<string, unknown>): { beforeTokens?: number; afterTokens?: number; firstKeptEntryId?: string } {
   const r = evt.result
   if (!r || typeof r !== 'object') return {}
-  const o = r as { tokensBefore?: unknown; estimatedTokensAfter?: unknown }
+  const o = r as { tokensBefore?: unknown; estimatedTokensAfter?: unknown; firstKeptEntryId?: unknown }
   const num = (v: unknown): number | undefined =>
     typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v) : undefined
   const before = num(o.tokensBefore)
   const after = num(o.estimatedTokensAfter)
-  return { ...(before !== undefined ? { beforeTokens: before } : {}), ...(after !== undefined ? { afterTokens: after } : {}) }
+  const kept = typeof o.firstKeptEntryId === 'string' && o.firstKeptEntryId ? o.firstKeptEntryId : undefined
+  return {
+    ...(before !== undefined ? { beforeTokens: before } : {}),
+    ...(after !== undefined ? { afterTokens: after } : {}),
+    ...(kept ? { firstKeptEntryId: kept } : {})
+  }
+}
+
+export function contextFromRun(run: CompactionRun | null | undefined): ContextFrom | undefined {
+  if (run?.status !== 'completed') return undefined
+  const compactedAt = run.startedAt ?? run.endedAt
+  if (!run.firstKeptEntryId && compactedAt === undefined) return undefined
+  return {
+    ...(run.firstKeptEntryId ? { firstKeptEntryId: run.firstKeptEntryId } : {}),
+    ...(compactedAt !== undefined ? { compactedAt } : {})
+  }
+}
+
+export function contextFromEntry(entry: unknown): ContextFrom | undefined {
+  if (!entry || typeof entry !== 'object') return undefined
+  const o = entry as { type?: unknown; firstKeptEntryId?: unknown; timestamp?: unknown }
+  if (o.type !== 'compaction') return undefined
+  const at = typeof o.timestamp === 'string' ? Date.parse(o.timestamp) : typeof o.timestamp === 'number' ? o.timestamp : NaN
+  const kept = typeof o.firstKeptEntryId === 'string' && o.firstKeptEntryId ? o.firstKeptEntryId : undefined
+  if (!kept && !Number.isFinite(at)) return undefined
+  return { ...(kept ? { firstKeptEntryId: kept } : {}), ...(Number.isFinite(at) ? { compactedAt: at } : {}) }
+}
+
+export function measuredAfterCompaction(run: CompactionRun | null, messages: readonly UIMessage[]): CompactionRun | null {
+  if (!run || run.status !== 'completed' || run.afterMeasured) return null
+  const endedAt = run.endedAt ?? run.startedAt
+  if (endedAt === undefined) return null
+  for (const m of messages) {
+    if (m.role !== 'assistant' || m.error || (m.timestamp ?? 0) < endedAt || !m.usage) continue
+    const input = m.usage.input + m.usage.cacheRead + m.usage.cacheWrite
+    if (!(input > 0)) continue
+    return { ...run, afterTokens: input, afterMeasured: true }
+  }
+  return null
 }
 
 export function compactionStatusOf(evt: Record<string, unknown>): CompactionStatus {

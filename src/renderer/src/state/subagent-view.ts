@@ -150,3 +150,14 @@ export function hasVisibleSubagents(s: { subagents: SubagentRun[]; session?: { s
   const sessionIds = [s.session?.sessionId, s.session?.conversationId].filter((v): v is string => !!v)
   return visibleSubagentRuns(s.subagents, { sessionIds }).length > 0
 }
+
+export function subagentTokens(runs: readonly SubagentRun[]): number {
+  let sum = 0
+  for (const run of runs) {
+    const u = run.usage
+    if (!u) continue
+    const parts = (u.input ?? 0) + (u.output ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0)
+    sum += parts > 0 ? parts : Math.max(0, u.totalTokens ?? 0)
+  }
+  return sum
+}

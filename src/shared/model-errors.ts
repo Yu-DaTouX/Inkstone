@@ -106,6 +106,19 @@ export function classifyModelError(text: unknown): ModelErrorInfo {
   return { kind: 'retryable', text: raw, label: raw ? '模型侧错误' : '模型侧错误（没有错误文本）' }
 }
 
+const STREAM_BROKEN_RE = /\bterminated\b|websocket|socket hang up|econnreset|stream.{0,20}(closed|ended)|connection.{0,20}(closed|reset)/i
+const TIMEOUT_RE = /timeout|timed out|etimedout|超时/i
+const OVERLOAD_RE = /\b5\d\d\b|overloaded|overload|server error|service unavailable/i
+const UNREACHABLE_RE = /fetch failed|connect|network|enotfound|econnrefused|dns|tls|certificate/i
+const CERTIFICATE_RE = /tls|certificate/i
+
+export function isTransientModelError(errorText: unknown): boolean {
+  const info = classifyModelError(errorText)
+  if (info.kind !== 'retryable' || !info.text) return false
+  if (STREAM_BROKEN_RE.test(info.text) || TIMEOUT_RE.test(info.text) || OVERLOAD_RE.test(info.text)) return true
+  return UNREACHABLE_RE.test(info.text) && !CERTIFICATE_RE.test(info.text)
+}
+
 export function modelErrorNotice(errorText: unknown): string {
   const info = classifyModelError(errorText)
   if (!info.text) return '模型请求失败：服务商未返回具体原因，无法判断是网络、额度还是请求问题。请查看运行日志，或稍后重试。'
@@ -128,15 +141,15 @@ export function modelErrorNotice(errorText: unknown): string {
     case 'aborted': explanation = '本轮请求已取消。已执行的工具操作可能保留，继续前请先核对进度。'; break
     case 'request': explanation = '服务商拒绝了模型或请求配置。请核对模型 ID、接口地址、工具格式及不受支持的参数。'; break
     default:
-      if (/\bterminated\b|websocket|socket hang up|econnreset|stream.{0,20}(closed|ended)|connection.{0,20}(closed|reset)/i.test(info.text)) {
+      if (STREAM_BROKEN_RE.test(info.text)) {
         explanation = /\b1012\b/.test(info.text)
           ? '模型连接被关闭（WebSocket 1012：服务重启）。可稍后重试，继续前先核对已执行的工具。'
           : '模型连接或响应流意外中断。现有信息无法确认中断源，可检查网络后重试；继续前先核对已执行的工具。'
-      } else if (/timeout|timed out|etimedout|超时/i.test(info.text)) {
+      } else if (TIMEOUT_RE.test(info.text)) {
         explanation = '等待模型响应超时。请检查网络、代理与服务商状态后重试。'
-      } else if (/\b5\d\d\b|overloaded|overload|server error|service unavailable/i.test(info.text)) {
+      } else if (OVERLOAD_RE.test(info.text)) {
         explanation = '模型服务暂时故障或过载。可稍后重试，或选择其他可用模型。'
-      } else if (/fetch failed|connect|network|enotfound|econnrefused|dns|tls|certificate/i.test(info.text)) {
+      } else if (UNREACHABLE_RE.test(info.text)) {
         explanation = '无法连接模型服务。请检查网络、代理、接口地址及证书。'
       } else explanation = '模型请求失败，服务商返回了以下原因。请根据原文检查配置或服务状态。'
   }

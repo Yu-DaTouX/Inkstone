@@ -451,6 +451,7 @@
   .cu-pop {
     z-index: 40;
     min-width: 240px;
+    max-width: min(340px, calc(100vw - 32px));
     padding: var(--s-10);
     border: 1px solid var(--line);
     border-radius: var(--r-md);

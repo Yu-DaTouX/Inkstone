@@ -12,6 +12,7 @@ export interface TurnTimingRecord extends TurnTimingMeta {
   anchorId?: string
   sourceIds: string[]
   generationTimings?: (GenerationTiming | null)[]
+  generationStamps?: (number | null)[]
   monotonicMs?: number
   outputTokens?: number
   final?: boolean
@@ -94,6 +95,9 @@ function parseRecord(line: string): TurnTimingRecord | null {
     ...(Array.isArray(item.waitSpans) ? { waitSpans: parseWaitSpans(item.waitSpans) } : {}),
     ...(Array.isArray(item.generationTimings)
       ? { generationTimings: parseGenerationTimings(item.generationTimings) }
+      : {}),
+    ...(Array.isArray(item.generationStamps) && Array.isArray(item.generationTimings) && item.generationStamps.length === item.generationTimings.length
+      ? { generationStamps: item.generationStamps.map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)) }
       : {})
   }
 }
@@ -148,8 +152,11 @@ export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimi
     for (const s of r.waitSpans ?? []) waitSpans.push(s)
   }
   const generationTimings: (GenerationTiming | null)[] = []
+  const generationStamps: (number | null)[] = []
   for (const r of runs) {
-    if (r.generationTimings?.length) generationTimings.push(...r.generationTimings)
+    if (!r.generationTimings?.length) continue
+    generationTimings.push(...r.generationTimings)
+    generationStamps.push(...(r.generationStamps ?? r.generationTimings.map(() => null)))
   }
   const anchorId = runs.map((r) => r.anchorId).find((a) => !!a)
   const reported = runs.filter((r) => typeof r.outputTokens === 'number')
@@ -166,6 +173,7 @@ export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimi
     ...(anchorId ? { anchorId } : {}),
     ...(waitSpans.length ? { waitSpans } : {}),
     ...(generationTimings.length ? { generationTimings } : {}),
+    ...(generationStamps.some((v) => v !== null) ? { generationStamps } : {}),
     ...(outputTokens !== undefined ? { outputTokens } : {})
   }
 }
@@ -200,6 +208,11 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
   if (!records.length || !messages.length) return messages
   const indexById = new Map<string, number>()
   messages.forEach((m, i) => indexById.set(m.id, i))
+  const assistantByStamp = new Map<number, string | null>()
+  for (const m of messages) {
+    if (m.role !== 'assistant' || typeof m.timestamp !== 'number') continue
+    assistantByStamp.set(m.timestamp, assistantByStamp.has(m.timestamp) ? null : m.id)
+  }
 
   const assistantsOf = (record: TurnTimingRecord): { list: UIMessage[]; anchored: boolean } => {
     const anchor = record.anchorId
@@ -237,12 +250,23 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
       elapsedMs: record.elapsedMs,
       terminalReason: effectiveTerminalReason(record)
     })
-    const timings = record.generationTimings
-    if (timings?.length && timings.length === assistants.length) {
-      for (let i = 0; i < assistants.length; i += 1) {
-        const timing = timings[i]
-        if (timing) genPatch.set(assistants[i].id, timing)
-      }
+    const timings = record.generationTimings ?? []
+    const stamps = record.generationStamps?.length === timings.length ? record.generationStamps : undefined
+    const positional = timings.length === assistants.length
+    const repeated = new Set<number>()
+    const seen = new Set<number>()
+    for (const stamp of stamps ?? []) {
+      if (stamp === null) continue
+      if (seen.has(stamp)) repeated.add(stamp)
+      seen.add(stamp)
+    }
+    for (let i = 0; i < timings.length; i += 1) {
+      const timing = timings[i]
+      if (!timing) continue
+      const stamp = stamps?.[i] ?? null
+      const byStamp = stamp === null || repeated.has(stamp) ? undefined : assistantByStamp.get(stamp)
+      const id = byStamp ?? (positional ? assistants[i].id : undefined)
+      if (id) genPatch.set(id, timing)
     }
     if (!anchored || !record.waitSpans?.length) continue
     const spanByTool = new Map<string, WaitSpan>()

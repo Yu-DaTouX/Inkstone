@@ -24,9 +24,15 @@ export interface RunRetry {
   resumeAt?: number
 }
 
+export interface RunTool {
+  name: string
+  label: string
+  callId: string
+}
+
 export type RunPhase =
   | { kind: 'queued'; since: number; reason: 'followup' | 'concurrency' | 'scheduled'; at?: number }
-  | { kind: 'running'; since: number; activity: RunActivity; tool?: { name: string; label: string; callId: string } }
+  | { kind: 'running'; since: number; activity: RunActivity; tool?: RunTool }
   | { kind: 'needs-you'; since: number; request: { id: string; type: RunRequestType; summary: string } }
   | { kind: 'stalled'; since: number; cause: StallCause; detail?: string; retry?: RunRetry }
   | { kind: 'failed'; at: number; cause: FailCause; errorKind?: string; message: string; seen: boolean }
@@ -77,6 +83,7 @@ export interface RunState extends RunSnapshot {
   started: boolean
   requests: RunRequest[]
   activityBeforeWait: RunActivity
+  activeTools: RunTool[]
   stallBeforeWait?: StallResume
   pendingError?: { message: string; errorKind?: string }
   loopAbortMarked: boolean
@@ -164,6 +171,7 @@ export function createRunState(init: RunInit, now: number): RunState {
     started: false,
     requests: [],
     activityBeforeWait: 'waiting-model',
+    activeTools: [],
     loopAbortMarked: false
   }
 }
@@ -242,29 +250,30 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
         state.requests.length > 0
           ? { kind: 'needs-you', since: state.requests[0].since, request: requestOf(state.requests[0]) }
           : { kind: 'running', since: now, activity: 'waiting-model' }
-      return withPhase(state, now, phase, { started: true, loopAbortMarked: false, activityBeforeWait: 'waiting-model' })
+      return withPhase(state, now, phase, { started: true, loopAbortMarked: false, activityBeforeWait: 'waiting-model', activeTools: [] })
     }
 
     case 'activity': {
-      if (state.phase.kind === 'needs-you') return touch(state, now, { activityBeforeWait: signal.activity })
+      if (state.phase.kind === 'needs-you') return touch(state, now, { activityBeforeWait: signal.activity, activeTools: [] })
       const stalled = state.phase.kind === 'stalled'
       if (stalled || state.phase.kind === 'queued') {
         const since = state.phase.kind === 'running' ? state.phase.since : now
-        return withPhase(state, now, { kind: 'running', since, activity: signal.activity }, { activityBeforeWait: signal.activity })
+        return withPhase(state, now, { kind: 'running', since, activity: signal.activity }, { activityBeforeWait: signal.activity, activeTools: [] })
       }
       if (state.phase.kind === 'running') {
-        if (state.phase.activity === signal.activity && state.phase.tool === undefined) return touch(state, now)
-        return withPhase(state, now, { kind: 'running', since: state.phase.since, activity: signal.activity }, { activityBeforeWait: signal.activity })
+        if (state.phase.activity === signal.activity && state.phase.tool === undefined && state.activeTools.length === 0) return touch(state, now)
+        return withPhase(state, now, { kind: 'running', since: state.phase.since, activity: signal.activity }, { activityBeforeWait: signal.activity, activeTools: [] })
       }
-      return touch(state, now, { activityBeforeWait: signal.activity })
+      return touch(state, now, { activityBeforeWait: signal.activity, activeTools: [] })
     }
 
     case 'tool-start': {
       const tool = { name: signal.tool.name, label: signal.tool.label ?? signal.tool.name, callId: signal.tool.callId }
       const counts = { ...state.counts, tools: state.counts.tools + 1 }
-      if (state.phase.kind === 'needs-you') return touch(state, now, { counts, activityBeforeWait: 'tool' })
+      const activeTools = [...state.activeTools.filter((t) => t.callId !== tool.callId), tool]
+      if (state.phase.kind === 'needs-you') return touch(state, now, { counts, activityBeforeWait: 'tool', activeTools })
       const since = state.phase.kind === 'running' ? state.phase.since : now
-      return withPhase(state, now, { kind: 'running', since, activity: 'tool', tool }, { counts, activityBeforeWait: 'tool' })
+      return withPhase(state, now, { kind: 'running', since, activity: 'tool', tool }, { counts, activityBeforeWait: 'tool', activeTools })
     }
 
     case 'tool-update':
@@ -276,13 +285,18 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
         edits: state.counts.edits + (signal.isWrite ? 1 : 0),
         errors: state.counts.errors + (signal.isError ? 1 : 0)
       }
-      if (state.phase.kind === 'running' && state.phase.activity === 'tool') {
-        return withPhase(state, now, { kind: 'running', since: state.phase.since, activity: 'waiting-model' }, { counts })
+      const activeTools = signal.callId ? state.activeTools.filter((t) => t.callId !== signal.callId) : state.activeTools.slice(1)
+      const remaining = activeTools[activeTools.length - 1]
+      const toolSilent = state.phase.kind === 'stalled' && state.phase.cause === 'tool-silent'
+      if ((state.phase.kind === 'running' && state.phase.activity === 'tool') || toolSilent) {
+        const since = state.phase.kind === 'running' ? state.phase.since : now
+        const phase: RunPhase = remaining
+          ? { kind: 'running', since, activity: 'tool', tool: remaining }
+          : { kind: 'running', since, activity: 'waiting-model' }
+        return withPhase(state, now, phase, { counts, activeTools, ...(remaining ? {} : { activityBeforeWait: 'waiting-model' as const }) })
       }
-      if (state.phase.kind === 'stalled' && state.phase.cause === 'tool-silent') {
-        return withPhase(state, now, { kind: 'running', since: now, activity: 'waiting-model' }, { counts })
-      }
-      return touch(state, now, { counts })
+      const settledWait = !remaining && state.activityBeforeWait === 'tool' ? { activityBeforeWait: 'waiting-model' as const } : {}
+      return touch(state, now, { counts, activeTools, ...settledWait })
     }
 
     case 'compaction-start': {
@@ -363,7 +377,13 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
           { requests, stallBeforeWait: undefined }
         )
       }
-      return withPhase(state, now, { kind: 'running', since: now, activity: state.activityBeforeWait }, { requests, stallBeforeWait: undefined })
+      const waitingTool = state.activityBeforeWait === 'tool' ? state.activeTools[state.activeTools.length - 1] : undefined
+      return withPhase(
+        state,
+        now,
+        { kind: 'running', since: now, activity: state.activityBeforeWait, ...(waitingTool ? { tool: waitingTool } : {}) },
+        { requests, stallBeforeWait: undefined }
+      )
     }
 
     case 'model-error':
@@ -464,9 +484,12 @@ export function detectStall(
   const elapsed = now - state.lastEventAt
   if (elapsed <= 0) return null
   if (state.phase.activity === 'tool') {
-    const tool = state.phase.tool
-    const haystacks = [tool?.label, tool?.name].filter((v): v is string => typeof v === 'string' && v.length > 0)
-    if (options.exemptTools?.some((prefix) => haystacks.some((text) => text.startsWith(prefix)))) return null
+    const tools = state.activeTools.length > 0 ? state.activeTools : state.phase.tool ? [state.phase.tool] : []
+    const exempt = (tool: RunTool): boolean => {
+      const haystacks = [tool.label, tool.name].filter((v) => v.length > 0)
+      return !!options.exemptTools?.some((prefix) => haystacks.some((text) => text.startsWith(prefix)))
+    }
+    if (tools.length > 0 && tools.every(exempt)) return null
     return elapsed > thresholds.toolSilentMs ? 'tool-silent' : null
   }
   return elapsed > thresholds.noOutputMs ? 'no-output' : null
