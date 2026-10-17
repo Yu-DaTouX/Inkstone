@@ -349,6 +349,7 @@ const subagentService: SubagentService = new SubagentService({
     return answer === 'once'
   },
   onChange: (run) => {
+    if (run.status !== 'starting' && run.status !== 'running') approvals.cancel((pending) => pending.subagentId === run.id)
     push({ ch: 'subagent', payload: run })
     refreshTaskbar()
   },
@@ -1804,6 +1805,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             }
           }
           return choice === 'once' || choice === 'remember' ? 'allow' : choice === 'deny' ? 'deny' : null
+        },
+        cancelApprovals: () => {
+          approvals.cancel((pending) => pending.runId === id && !pending.subagentId)
         },
         requestSessionMove,
         confirmToolConsent: async (request: ToolConsentPrompt): Promise<ConsentDecision | null> => {

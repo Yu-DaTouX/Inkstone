@@ -380,6 +380,7 @@ export class AgentController extends EventEmitter {
   private confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
   private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
   private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
+  private cancelApprovals?: () => void
   private getPermissionMode?: () => Promise<'danger' | 'all'>
   private requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
   private dangerGuardExtension?: string
@@ -559,6 +560,7 @@ export class AgentController extends EventEmitter {
     confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
     confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
     confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
+    cancelApprovals?: () => void
     getPermissionMode?: () => Promise<'danger' | 'all'>
     requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
     dangerGuardExtension?: string
@@ -617,6 +619,7 @@ export class AgentController extends EventEmitter {
     this.confirmExternalApi = opts.confirmExternalApi
     this.confirmToolConsent = opts.confirmToolConsent
     this.confirmDanger = opts.confirmDanger
+    this.cancelApprovals = opts.cancelApprovals
     this.getPermissionMode = opts.getPermissionMode
     this.requestSessionMove = opts.requestSessionMove
     this.dangerGuardExtension = opts.dangerGuardExtension
@@ -822,6 +825,7 @@ export class AgentController extends EventEmitter {
       this.contextFrom = undefined
       this.ui.rejectPendingHostUi('pi 已退出，问题请求已取消')
       this.ui.pending.clear()
+      this.cancelApprovals?.()
       if (this.state) {
         this.state = { ...this.state, isAgentRunning: false, isStreaming: false, isCompacting: false }
         this.push({ ch: 'state', payload: this.state })
@@ -3532,6 +3536,7 @@ export class AgentController extends EventEmitter {
       if (this.loopGuardAbortSent || !this.agentRunning) return { steering: [], followUp: [] }
     }
     this.cancelImages()
+    this.cancelApprovals?.()
     this.turn.terminal = 'stopped'
     let cleared: QueueSnapshot = { steering: [], followUp: [] }
     try {
@@ -4368,6 +4373,7 @@ export class AgentController extends EventEmitter {
     this.nativeRuntime = null
     this.titleLifecycle += 1
     this.cancelImages()
+    this.cancelApprovals?.()
     this.capabilityServer?.stop()
     this.capabilityServer = undefined
     this.yanCliEnv = undefined
