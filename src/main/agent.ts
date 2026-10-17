@@ -36,6 +36,7 @@ import {
   normalizeMessage,
   imagesOf,
   toUsage,
+  entryMessage,
   type PiContentBlock,
   type PiMessage
 } from './normalize'
@@ -152,6 +153,21 @@ const MAX_FLUSH_MS = 120
 const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 
 type Push = (msg: MainPush) => void
+type ExtUiPush = Extract<MainPush, { ch: 'status' | 'widget' }>
+
+function extUiKey(msg: ExtUiPush): string {
+  return `${msg.ch}:${msg.payload.key}`
+}
+
+function extUiCleared(msg: ExtUiPush): boolean {
+  return msg.ch === 'status' ? msg.payload.text === undefined : !msg.payload.lines?.length
+}
+
+function extUiRemoval(msg: ExtUiPush): ExtUiPush {
+  return msg.ch === 'status'
+    ? { ch: 'status', payload: { key: msg.payload.key } }
+    : { ch: 'widget', payload: { key: msg.payload.key, ...(msg.payload.placement ? { placement: msg.payload.placement } : {}) } }
+}
 
 export interface RunObserverContext {
   sessionId: string
@@ -424,6 +440,8 @@ export class AgentController extends EventEmitter {
 
   private messages: UIMessage[] = []
   private suppressPush = false
+  private extUi = new Map<string, ExtUiPush>()
+  private extUiPending: Map<string, ExtUiPush> | null = null
   private streaming: {
     id: string
     text: string
@@ -558,7 +576,13 @@ export class AgentController extends EventEmitter {
     super()
     const emit = opts.push
     this.push = (msg) => {
-      if (this.suppressPush && msg.ch !== 'ui-request' && msg.ch !== 'ui-resolved' && msg.ch !== 'notify') return
+      if (msg.ch === 'status' || msg.ch === 'widget') {
+        if (this.extUiPending) {
+          this.extUiPending.set(extUiKey(msg), msg)
+          return
+        }
+        this.recordExtUi(msg)
+      } else if (this.suppressPush && msg.ch !== 'ui-request' && msg.ch !== 'ui-resolved' && msg.ch !== 'notify') return
       this.observeRunPush(msg)
       emit(msg)
     }
@@ -772,7 +796,15 @@ export class AgentController extends EventEmitter {
       }
     })
     this.rpc = rpc
-    this.nativeRuntime = new NativeSessionRuntime({ command: (type, payload, options) => rpc.command(type, payload, options) })
+    this.nativeRuntime = new NativeSessionRuntime(
+      { command: (type, payload, options) => rpc.command(type, payload, options) },
+      undefined,
+      (receipt) => {
+        if (this.rpc !== rpc || receipt.op !== 'model_select') return
+        void this.refreshState()
+        void this.listThinkingLevels()
+      }
+    )
 
     rpc.on('stderr', (line) => {
       this.push({ ch: 'proc', payload: { state: 'stderr', detail: line } })
@@ -885,7 +917,10 @@ export class AgentController extends EventEmitter {
       const snapshot = await this.sessionEntries()
       if (!snapshot.ok) throw new Error(snapshot.error ?? '无法读取当前原生分支')
       const path = nativeActiveBranch(snapshot.entries ?? [], snapshot.leafId ?? null)
-      const messageEntries = path.filter(entry => entry.type === 'message' && entry.message)
+      const messageEntries = path.flatMap(entry => {
+        const message = entryMessage(entry)
+        return message ? [{ id: entry.id, message }] : []
+      })
       const compactionEntry = path.findLast(entry => entry.type === 'compaction')
       this.setContextFrom(compactionEntry ? contextFromEntry(compactionEntry) : undefined)
       const previousSegments = fromFile?.messages.filter(message => message.id.startsWith('history:')) ?? []
@@ -2059,6 +2094,12 @@ export class AgentController extends EventEmitter {
             this.push({ ch: 'msg-add', payload: norm })
             this.consumeQueued(norm.text, imagesOf(m.content) ?? [])
           }
+        } else if (m?.role === 'custom') {
+          const norm = normalizeMessage(m, this.messages.length)
+          if (norm) {
+            this.messages.push(norm)
+            this.push({ ch: 'msg-add', payload: norm })
+          }
         } else if (m?.role === 'assistant') {
           const id = `m${this.messages.length}`
           const requestStartMono = this.pendingRequestMono
@@ -2428,10 +2469,35 @@ export class AgentController extends EventEmitter {
         void this.refreshState()
         break
 
-      case 'model_change':
+      case 'session_info_changed': {
+        const name = typeof evt.name === 'string' ? evt.name.trim() : ''
+        const sessionId = this.state?.sessionId
+        if (name && sessionId) this.push({ ch: 'session-title', payload: { sessionId, title: name } })
         void this.refreshState()
-        void this.listThinkingLevels()
         break
+      }
+
+      case 'entry_appended': {
+        const entry = evt.entry as { type?: unknown } | undefined
+        if (entry?.type === 'usage') void this.refreshStats()
+        break
+      }
+
+      case 'summarization_retry_scheduled': {
+        const what = this.compactionState.running ? '压缩' : '分支摘要'
+        const seconds = Math.max(1, Math.round(Number(evt.delayMs ?? 0) / 1000))
+        const reason = modelErrorText(evt.errorMessage)
+        this.push({
+          ch: 'notify',
+          payload: {
+            id: `summary-retry-${Date.now()}`,
+            method: 'notify',
+            notifyType: 'warning',
+            message: `${what}失败${reason ? `（${reason}）` : ''}，${seconds} 秒后第 ${Number(evt.attempt ?? 1)}/${Number(evt.maxAttempts ?? 1)} 次重试…`
+          }
+        })
+        break
+      }
 
       case 'auto_retry_start': {
         if (this.loopGuardAbortSent) {
@@ -3658,43 +3724,65 @@ export class AgentController extends EventEmitter {
     this.nativeBranchView = false
   }
 
+  private recordExtUi(msg: ExtUiPush): void {
+    if (extUiCleared(msg)) this.extUi.delete(extUiKey(msg))
+    else this.extUi.set(extUiKey(msg), msg)
+  }
+
+  private async changeSessionScope<T>(run: (changed: () => void) => Promise<T>): Promise<T> {
+    let changed = false
+    this.suppressPush = true
+    this.extUiPending = new Map()
+    try {
+      return await run(() => { changed = true })
+    } finally {
+      const pending = this.extUiPending
+      this.extUiPending = null
+      this.suppressPush = false
+      if (changed) {
+        const previous = [...this.extUi.entries()]
+        this.extUi.clear()
+        for (const [key, msg] of previous) if (!pending.has(key)) this.push(extUiRemoval(msg))
+      }
+      for (const msg of pending.values()) this.push(msg)
+    }
+  }
+
   async newSession(parentSession?: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
     const payload: Record<string, unknown> = typeof parentSession === 'string' && parentSession ? { parentSession } : {}
-    this.suppressPush = true
-    try {
-      const res = await this.requireRpc().command('new_session', payload)
-      if (!res.success) return { ok: false, error: res.error }
-      if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
-        return { ok: false, error: '会话切换被扩展取消' }
+    return this.changeSessionScope(async (changed) => {
+      try {
+        const res = await this.requireRpc().command('new_session', payload)
+        if (!res.success) return { ok: false, error: res.error }
+        if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
+          return { ok: false, error: '会话切换被扩展取消' }
+        }
+        changed()
+        this.ui.cancelPending()
+        this.resetSessionScope()
+        await this.hydrate()
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
-      this.ui.cancelPending()
-      this.resetSessionScope()
-      await this.hydrate()
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
-    } finally {
-      this.suppressPush = false
-    }
+    })
   }
 
   async switchSession(path: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-    this.suppressPush = true
-    try {
+    return this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command('switch_session', { sessionPath: path })
       if (!res.success) return { ok: false, error: res.error }
       if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
         return { ok: false, error: '会话切换被扩展取消' }
       }
+      changed()
       this.ui.cancelPending()
       this.resetSessionScope()
       await this.hydrate()
       return { ok: true }
-    } finally {
-      this.suppressPush = false
-    }
+    })
   }
 
   async renameSession(name: string): Promise<{ ok: boolean; error?: string }> {
@@ -3724,34 +3812,30 @@ export class AgentController extends EventEmitter {
 
   async fork(entryId: string): Promise<{ ok: boolean; error?: string; text?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-    this.suppressPush = true
-    try {
+    return this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command<{ text?: string; cancelled?: boolean }>('fork', { entryId })
       if (!res.success) return { ok: false, error: res.error }
       if (res.data?.cancelled) return { ok: false, error: '分叉被扩展取消' }
+      changed()
       this.resetSessionScope()
       this.ui.cancelPending()
       await this.hydrate()
       return { ok: true, text: res.data?.text }
-    } finally {
-      this.suppressPush = false
-    }
+    })
   }
 
   async clone(): Promise<{ ok: boolean; error?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-    this.suppressPush = true
-    try {
+    return this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command<{ cancelled?: boolean }>('clone')
       if (!res.success) return { ok: false, error: res.error }
       if (res.data?.cancelled) return { ok: false, error: '复制被扩展取消' }
+      changed()
       this.resetSessionScope()
       this.ui.cancelPending()
       await this.hydrate()
       return { ok: true }
-    } finally {
-      this.suppressPush = false
-    }
+    })
   }
 
   async forkPoints(): Promise<ForkPoint[]> {
@@ -3979,40 +4063,43 @@ export class AgentController extends EventEmitter {
     return this.enqueueCapabilityChange(() => this.cycleModelNow(dir))
   }
 
+  private async nativeCycleLength(): Promise<number> {
+    const models = await this.listModels()
+    if (!this.nativeRuntime) return models.length
+    const scoped = await this.nativeRuntime.getScopedModels()
+    if (!scoped.scopedModels.length) return models.length
+    const available = new Set(models.map(model => `${model.provider}/${model.id}`))
+    return scoped.scopedModels.filter(item => available.has(item.key)).length
+  }
+
   private async cycleModelNow(dir: 1 | -1): Promise<{ ok: boolean; error?: string; to?: string }> {
-    let models = await this.listModels()
-    if (this.nativeRuntime) {
-      const scoped = await this.nativeRuntime.getScopedModels()
-      if (scoped.scopedModels.length) {
-        const keys = new Set(scoped.scopedModels.map(item => item.key))
-        models = models.filter(model => keys.has(`${model.provider}/${model.id}`))
-      }
+    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    const steps = dir === 1 ? 1 : (await this.nativeCycleLength()) - 1
+    if (steps < 1) return { ok: false, error: '只有一个可用模型' }
+    this.loopGuardContinuationVersion += 1
+    let landed: { name?: string; id?: string } | undefined
+    for (let i = 0; i < steps; i += 1) {
+      const res = await this.requireRpc().command<{ model?: { name?: string; id?: string } } | null>('cycle_model')
+      if (!res.success) return { ok: false, error: res.error }
+      if (!res.data?.model) return { ok: false, error: '只有一个可用模型' }
+      landed = res.data.model
     }
-    if (models.length < 2) return { ok: false, error: '只有一个可用模型' }
-
-    const cur = this.state?.model
-    const i = models.findIndex((m) => m.provider === cur?.provider && m.id === cur?.id)
-    const next = models[i < 0 ? 0 : (i + dir + models.length) % models.length]
-
-    const changed = await this.applyModel(next.provider, next.id)
-    return changed.ok ? { ok: true, to: next.name } : changed
+    await this.refreshState()
+    await this.listThinkingLevels()
+    await this.refreshStats()
+    return { ok: true, to: landed?.name || landed?.id }
   }
 
   async cycleThinking(): Promise<{ ok: boolean; error?: string; to?: string }> {
     return this.enqueueCapabilityChange(async () => {
       if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-      const levels = await this.listThinkingLevels()
-      if (levels.length < 2) return { ok: false, error: '当前模型不支持思考' }
-
-      const cur = this.state?.thinkingLevel ?? 'off'
-      const i = levels.indexOf(cur)
-      const next = levels[i < 0 ? 0 : (i + 1) % levels.length]
-
-      const res = await this.requireRpc().command('set_thinking_level', { level: next })
+      const res = await this.rpc.command<{ level?: string } | null>('cycle_thinking_level')
       if (!res.success) return { ok: false, error: res.error }
-
+      const level = res.data?.level
+      if (!level) return { ok: false, error: '当前模型不支持思考' }
+      this.loopGuardContinuationVersion += 1
       await this.refreshState()
-      return { ok: true, to: next }
+      return { ok: true, to: level }
     })
   }
 

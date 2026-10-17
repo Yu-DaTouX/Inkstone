@@ -54,6 +54,11 @@
   .v3-msg.user .v3-user-body { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s-4); max-width: 80%; }
   .v3-msg.assistant .v3-assistant-body { display: flex; flex-direction: column; gap: var(--s-8); min-width: 0; }
   .v3-msg.bash { gap: var(--s-6); }
+  .v3-note { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
+  .v3-note-head { display: flex; align-items: center; gap: var(--s-6); min-width: 0; }
+  .v3-note-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v3-note-body { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
+  .v3-note-images { display: flex; flex-wrap: wrap; gap: var(--s-6); }
 
   .v3-user-images { display: flex; flex-wrap: wrap; gap: var(--s-6); justify-content: flex-end; }
 

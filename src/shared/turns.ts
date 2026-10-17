@@ -64,7 +64,13 @@ export interface BashTurn {
   msg: UIMessage
 }
 
-export type Turn = AssistantTurn | UserTurn | BashTurn
+export interface NoteTurn {
+  kind: 'note'
+  id: string
+  msg: UIMessage
+}
+
+export type Turn = AssistantTurn | UserTurn | BashTurn | NoteTurn
 
 function hasText(s: string | undefined): boolean {
   return !!s && s.trim().length > 0
@@ -141,7 +147,7 @@ export function createTurnProjector(): typeof groupIntoTurns {
         flush()
         continue
       }
-      if (message.role === 'user' || message.role === 'bash') {
+      if (message.role === 'user' || message.role === 'bash' || message.role === 'note') {
         flush()
         group = [message]
         flush()
@@ -280,6 +286,12 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     if (m.role === 'bash') {
       flush()
       turns.push({ kind: 'bash', id: m.id, msg: m })
+      continue
+    }
+
+    if (m.role === 'note') {
+      flush()
+      turns.push({ kind: 'note', id: m.id, msg: m })
       continue
     }
 

@@ -121,7 +121,8 @@ export interface GenerationTiming {
 export interface UIMessage {
   id: string
   entryId?: string
-  role: 'user' | 'assistant' | 'bash'
+  role: 'user' | 'assistant' | 'bash' | 'note'
+  note?: { kind: 'custom' | 'branchSummary'; customType?: string }
   question?: boolean
   qa?: { question: string; answer?: string }[]
   sourceCwd?: string
