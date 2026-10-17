@@ -272,6 +272,7 @@ export default function ShellV3(): ReactElement {
     if (onboardDecided.current) return
     if (!settings) return
     onboardDecided.current = true
+    useStore.getState().checkToolchainNotice()
     if (window.yan.isProbe) return
     if (shouldAutoWizard()) setOnboardingOpen(true)
   }, [settings])
