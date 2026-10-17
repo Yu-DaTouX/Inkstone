@@ -186,6 +186,7 @@ export class RunnerRegistry {
       now?: () => number
       isSessionVisible?: (state: ReturnType<AgentController['getState']>) => boolean
       isParentProtected?: (sessionId: string | undefined, runId: string) => boolean
+      hasRunningSubagents?: (sessionId: string) => boolean
       onReclaimed?: (entry: { id: string; sessionId?: string; idleMs: number; remaining: number }) => void
       createAgent: (id: string, cwd: string, generation?: number) => AgentController
       prepareNewSession?: (agent: AgentController) => Promise<{ ok: boolean; error?: string }>
@@ -346,6 +347,11 @@ export class RunnerRegistry {
     )
   }
 
+  private awaitingSubagents(runner: Runner): boolean {
+    const sessionId = runner.agent.getState()?.sessionId
+    return !!sessionId && (this.opts.hasRunningSubagents?.(sessionId) ?? false)
+  }
+
   private findBySessionFile(sessionFile: string): Runner | undefined {
     for (const r of this.runners.values()) {
       if (r.agent.getState()?.sessionFile === sessionFile) return r
@@ -433,7 +439,7 @@ export class RunnerRegistry {
     }
 
     const idle = [...this.runners.values()]
-      .filter((runner) => !target.hidden && !runner.hidden && !this.busy(runner) && (target.activate !== false || runner.id !== this.activeId))
+      .filter((runner) => !target.hidden && !runner.hidden && !this.busy(runner) && !this.awaitingSubagents(runner) && (target.activate !== false || runner.id !== this.activeId))
       .sort((a, b) => a.lastActiveAt - b.lastActiveAt)[0]
 
     if (idle) {

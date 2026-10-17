@@ -1584,6 +1584,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   runners = new RunnerRegistry({
     isSessionVisible: (state) => runnerVisibility.includes(state),
     isParentProtected: (sessionId, runId) => subagentService.current()?.hasParentRun(sessionId, runId) ?? false,
+    hasRunningSubagents: (sessionId) => (subagentService.current()?.runningSiblings({ parentSessionId: sessionId }) ?? 0) > 0,
     onRunnerOrigin: ({ sessionId, generation, origin }) => {
       if (!runsHost) return
       if (origin) {
