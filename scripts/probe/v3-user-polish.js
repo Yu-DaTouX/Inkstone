@@ -3,6 +3,21 @@
   const check = (ok, name) => results.push(`  ${ok ? '✓' : '✗'} ${name}`)
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   const q = (id) => document.querySelector(`[data-testid="${id}"]`)
+
+  const openTool = async (tab) => {
+    const direct = q(`wb-open-${tab}`)
+    if (direct) {
+      direct.click()
+      await wait(200)
+      return
+    }
+    q('wb-more-tools')?.click()
+    const order = ['changes', 'preview', 'logs', 'branch', 'quota']
+    const pick = () => document.querySelector(`.wb-more-menu [data-key="${tab}"]`) ?? document.querySelectorAll('.wb-more-menu [role="menuitem"]')[order.indexOf(tab)]
+    for (let i = 0; i < 40 && !pick(); i++) await wait(50)
+    pick()?.click()
+    await wait(200)
+  }
   const store = window.__yanStore
   try {
     if (!store) throw new Error('missing probe store')
@@ -70,7 +85,7 @@
     await wait(2200)
     document.querySelector('.mtp-item')?.click(); await wait(300)
     check(picked[0]?.provider==='provider-b' && picked[0]?.id==='two', '跨供应商选择携带正确 provider 与 model')
-    q('v3-header-workspace')?.click(); await wait(300)
+    await openTool('files'); await wait(300)
     const resizer=document.querySelector('.v3-workspace-resizer')
     const before=document.querySelector('.wb-panel')?.getBoundingClientRect().width
     resizer?.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}))
@@ -91,7 +106,7 @@
     const track=document.querySelector('.v3-rail-track')
     check(track && getComputedStyle(track).pointerEvents==='auto', '会话导航轨无需悬停即可使用')
     tick?.click();await wait(300)
-    check((document.querySelector('.v3-stream')?.scrollTop ?? 999) < 100, '点击第一轮回到开头')
+    check((document.querySelector('.v3-stream')?.scrollTop ?? 999) < 100, `点击第一轮回到开头（scrollTop=${Math.round(document.querySelector('.v3-stream')?.scrollTop ?? -1)}）`)
     check(!q('v3-ascii-field'), '发送/出现消息后背景已卸载，不留绘制循环')
     window.__polishStage = 'messages'
     check([...document.querySelectorAll('.v3-think-label,.v3-badge,.v3-step-verb')].every((el)=>getComputedStyle(el).whiteSpace==='nowrap'), '推理与工具短标签不拆行')

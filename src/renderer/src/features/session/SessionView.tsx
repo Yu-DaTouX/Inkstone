@@ -310,15 +310,12 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
       vlistRef.current?.scrollToIndex(target, { align: 'start' })
       return
     }
-    requestAnimationFrame(() => {
-      const box = streamRef.current
-      const turn = turns[target]
-      const el = turn ? box?.querySelector<HTMLElement>(`[data-turn-id="${turn.id}"]`) : null
-      if (!box || !el) return
-      const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
-      box.scrollTop = Math.max(0, top)
-      setStickNow(false)
-    })
+    const box = streamRef.current
+    const turn = turns[target]
+    const el = turn ? box?.querySelector<HTMLElement>(`[data-turn-id="${turn.id}"]`) : null
+    if (!box || !el) return
+    const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
+    box.scrollTop = Math.max(0, top)
   }, [turns, virtual, setStickNow])
 
   const sidePanel = useSubagentPanel((s) => subagentPanel && s.owner === view.key && !!s.runId)

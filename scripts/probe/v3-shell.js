@@ -22,6 +22,21 @@
     return false
   }
   const query = (testId) => document.querySelector(`[data-testid="${testId}"]`)
+
+  const openTool = async (tab) => {
+    const direct = query(`wb-open-${tab}`)
+    if (direct) {
+      direct.click()
+      await wait(200)
+      return
+    }
+    query('wb-more-tools')?.click()
+    const order = ['changes', 'preview', 'logs', 'branch', 'quota']
+    const pick = () => document.querySelector(`.wb-more-menu [data-key="${tab}"]`) ?? document.querySelectorAll('.wb-more-menu [role="menuitem"]')[order.indexOf(tab)]
+    for (let i = 0; i < 40 && !pick(); i++) await wait(50)
+    pick()?.click()
+    await wait(200)
+  }
   const store = window.__yanStore
   const oldAnswer = store?.getState().answerApproval
   const oldApprovals = store?.getState().approvals
@@ -128,15 +143,15 @@
     check(answered.at(-1)?.id === pending.id && answered.at(-1)?.choice === 'once', '明确点击仅答复原请求一次')
     store.setState({ approvals: oldApprovals, answerApproval: oldAnswer })
 
-    const workspaceButton = query('v3-header-workspace')
-    check(!!workspaceButton, '工作区有明确打开入口')
-    if (workspaceButton?.getAttribute('aria-pressed') !== 'true') workspaceButton?.click()
+    check(['terminal', 'files', 'browser'].every((tab) => !!query(`wb-open-${tab}`)) && !!query('wb-more-tools'), '工作区有明确打开入口（标题栏工具按钮与更多工具）')
+    await openTool('files')
     check(await until(() => {
       const panel = document.querySelector('.wb-panel')
       return panel && !panel.hidden && panel.getBoundingClientRect().width > 0
     }), '工作区点击后实际可见')
     const panel = document.querySelector('.wb-panel')
-    check(['changes', 'terminal', 'files', 'browser', 'preview', 'context'].every((tab) => query(`wb-tab-${tab}`)), '六个正式页签全部挂载')
+    for (const tab of ['changes', 'browser', 'preview']) await openTool(tab)
+    check(['changes', 'files', 'browser', 'preview'].every((tab) => query(`wb-tab-${tab}`)), '打开过的工具页签都挂载')
     check(!!query('wb-split') && !!query('wb-focus'), '拆分与专注控件有明确入口')
     check(!!query('wb-popout') && query('wb-popout').disabled === true, '弹出为禁用占位（未迁移）')
     const noOwner = () => !!query('wb-empty')
@@ -152,8 +167,7 @@
     check(frame && frame.left >= -1 && frame.right <= innerWidth + 1, '工作区保持在窗口可读范围内')
     query('wb-close')?.click()
     check(await until(() => panel?.getBoundingClientRect().width === 0), '关闭后工作区实际隐藏，而不是只改状态')
-    workspaceButton?.click()
-    query('wb-tab-changes')?.click()
+    await openTool('changes')
     check(await until(() => panel && !panel.hidden && panel.getBoundingClientRect().width > 0), '重新打开保留面板，不创建终端资源')
     check(document.querySelectorAll('.wb-pane').length <= 6, '叶子实例数量不随操作增加')
 
@@ -328,8 +342,7 @@
       await wait(1200)
     }
 
-    query('v3-header-workspace')?.click()
-    query('wb-tab-changes')?.click()
+    await openTool('changes')
     await until(() => panel && !panel.hidden && panel.getBoundingClientRect().width > 0)
 
     store.getState().applyPush({ ch: 'sync', payload: [
@@ -406,8 +419,7 @@
         syncing: false,
         error: null
       })
-      query('v3-header-workspace')?.click()
-      await wait(1)
+      await openTool('files')
       query('wb-close')?.click()
       await wait(9000)
       query('v3-runs-entry')?.click()
