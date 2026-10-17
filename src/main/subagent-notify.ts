@@ -5,6 +5,7 @@ export const NOTICE_COALESCE_WINDOW_MS = 20_000
 export const NOTICE_BATCH_MIN_WAIT_MS = 2 * 60_000
 export const NOTICE_BATCH_MAX_WAIT_MS = 10 * 60_000
 export const NOTICE_SIBLINGS_POLL_MS = 15_000
+const MAX_DELIVERY_ATTEMPTS = 5
 
 export interface NoticeTarget {
   send(text: string, images: undefined, mode: 'followUp'): Promise<{ ok: boolean; error?: string }>
@@ -73,6 +74,7 @@ function batchWaitMs(run: SubagentRun): number {
 export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNotifier {
   const pending = new Map<string, PendingBatch>()
   const undelivered = new Map<string, SubagentRun[]>()
+  const failedAttempts = new Map<string, number>()
   let retrying = false
   const now = (): number => deps.now?.() ?? Date.now()
 
@@ -90,6 +92,24 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
     batch.pollTimer = undefined
   }
 
+  const deliver = async (target: NoticeTarget, runs: SubagentRun[]): Promise<boolean> => {
+    try {
+      return (await target.send(buildNotice(runs), undefined, 'followUp')).ok
+    } catch {
+      return false
+    }
+  }
+
+  const keepUndelivered = (key: string, runs: SubagentRun[]): void => {
+    const attempts = (failedAttempts.get(key) ?? 0) + 1
+    if (attempts >= MAX_DELIVERY_ATTEMPTS) {
+      failedAttempts.delete(key)
+      return
+    }
+    failedAttempts.set(key, attempts)
+    undelivered.set(key, [...runs, ...(undelivered.get(key) ?? [])])
+  }
+
   const flush = (key: string): void => {
     const batch = pending.get(key)
     if (!batch) return
@@ -105,7 +125,8 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
         undelivered.set(key, runs)
         return
       }
-      await target.send(buildNotice(runs), undefined, 'followUp')
+      if (await deliver(target, runs)) failedAttempts.delete(key)
+      else keepUndelivered(key, runs)
     })().catch(() => undefined)
   }
 
@@ -122,7 +143,8 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
         const target = deps.find(runs[runs.length - 1])
         if (!target) continue
         undelivered.delete(key)
-        await target.send(buildNotice(runs), undefined, 'followUp')
+        if (await deliver(target, runs)) failedAttempts.delete(key)
+        else keepUndelivered(key, runs)
       }
     })().catch(() => undefined).finally(() => {
       retrying = false
