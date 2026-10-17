@@ -173,6 +173,25 @@ try {
     }
     ok(!threw, 'entry_appended 不抛错')
   }
+  console.log('自动重试进度')
+  {
+    const pushes = []
+    const ctl = new AgentController({ push: (m) => pushes.push(m), cwd: process.cwd() })
+    ctl.state = { sessionId: 's1', isStreaming: false, isCompacting: false, messageCount: 0, pendingMessageCount: 0, cwd: process.cwd() }
+    const states = () => pushes.filter((m) => m.ch === 'state').map((m) => m.payload)
+    ctl.handleEvent({ type: 'auto_retry_start', attempt: 2, maxAttempts: 3, delayMs: 4000, errorMessage: '500 Internal Server Error' })
+    const started = states().at(-1)?.retry
+    ok(started?.attempt === 2 && started.maxAttempts === 3 && started.delayMs === 4000 && started.at > 0, 'auto_retry_start 写入 state.retry', started)
+    ctl.handleEvent({ type: 'auto_retry_end', success: true, attempt: 2 })
+    ok(states().at(-1)?.retry === undefined, 'auto_retry_end 清除 state.retry')
+    ctl.handleEvent({ type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 1000, errorMessage: '500' })
+    const count = states().length
+    ctl.handleEvent({ type: 'agent_settled' })
+    ok(states().length > count && states().at(-1)?.retry === undefined, 'agent_settled 清除 state.retry')
+    const quiet = states().length
+    ctl.handleEvent({ type: 'auto_retry_end', success: true })
+    ok(states().length === quiet, '没有重试时结束事件不重复推 state')
+  }
   console.log('切换会话时的扩展挂件与状态')
   {
     const pushes = []

@@ -136,6 +136,7 @@ import type {
   QueueItem,
   QueueSnapshot,
   QueueMode,
+  RetryRun,
   QueueState,
   SessionState,
   SessionStats,
@@ -509,6 +510,7 @@ export class AgentController extends EventEmitter {
 
   private state: SessionState | null = null
   private compactionState: CompactionState = EMPTY_COMPACTION_STATE
+  private retryRun: RetryRun | null = null
   private contextFrom: ContextFrom | undefined
   private timingContinues = false
   private readonly assumedWindows = new Map<string, boolean>()
@@ -2133,6 +2135,7 @@ export class AgentController extends EventEmitter {
       isCompacting: !!data.isCompacting,
       compaction: this.compactionState.running ?? undefined,
       lastCompaction: this.compactionState.last ?? undefined,
+      ...(this.retryRun ? { retry: this.retryRun } : {}),
       ...(this.contextFrom ? { contextFrom: this.contextFrom } : {}),
       messageCount: Number(data.messageCount ?? 0),
       pendingMessageCount: Number(data.pendingMessageCount ?? 0),
@@ -2499,6 +2502,7 @@ export class AgentController extends EventEmitter {
         break
 
       case 'agent_settled': {
+        this.setRetryRun(null)
         const continuation = this.loopGuardAbortSent && this.loopGuardAbortedMessage && this.rpc && this.state?.sessionId
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
             runId: this.turn.runId, version: this.loopGuardResumeVersion }
@@ -2656,6 +2660,13 @@ export class AgentController extends EventEmitter {
         }
         this.retrySeenThisRun = true
         if (this.pendingModelError) this.pendingModelError.retried = true
+        this.setRetryRun({
+          attempt: Number(evt.attempt ?? 1),
+          maxAttempts: Number(evt.maxAttempts ?? evt.attempt ?? 1),
+          delayMs: Math.max(0, Number(evt.delayMs ?? 0)),
+          at: Date.now(),
+          ...(retryError ? { error: retryError } : {})
+        })
         this.push({
           ch: 'notify',
           payload: {
@@ -2669,6 +2680,7 @@ export class AgentController extends EventEmitter {
       }
 
       case 'auto_retry_end':
+        this.setRetryRun(null)
         if (evt.success === true) {
           this.retrySeenThisRun = false
           this.pendingModelError = undefined
@@ -3856,12 +3868,24 @@ export class AgentController extends EventEmitter {
     else this.extUi.set(extUiKey(msg), msg)
   }
 
+  private setRetryRun(next: RetryRun | null): void {
+    if (!next && !this.retryRun) return
+    this.retryRun = next
+    if (!this.state) return
+    const { retry: _previous, ...rest } = this.state
+    this.state = next ? { ...rest, retry: next } : rest
+    this.push({ ch: 'state', payload: this.state })
+  }
+
   private async changeSessionScope<T>(run: (changed: () => void) => Promise<T>): Promise<T> {
     let changed = false
     this.suppressPush = true
     this.extUiPending = new Map()
     try {
-      return await run(() => { changed = true })
+      return await run(() => {
+        changed = true
+        this.retryRun = null
+      })
     } finally {
       const pending = this.extUiPending
       this.extUiPending = null
