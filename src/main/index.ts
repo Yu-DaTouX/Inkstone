@@ -11,7 +11,7 @@ import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAut
 import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
-import { readPiRuntimePrefs } from './pi-runtime-prefs'
+import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from './pi-runtime-prefs'
 import { createRunsHost, type RunsHost } from './runs-host'
 import { createAttentionService, createTrayAssetStore, summarizeAttention, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
 import { createAuxWindows, createPaneBrowserTransfer, createPanePopoutController, createPaneTerminalTransfer, registerAuxIpc, registerPaneBrowserIpc, registerPanePopoutIpc, registerPaneTerminalIpc, submitQuickAsk, type AuxWindows, type PaneBrowserTransfer, type PanePopoutController, type PaneTerminalTransfer } from './windows'
@@ -2126,6 +2126,8 @@ function registerIpc(): void {
     async (enabled: boolean) => applyToAllAgents((agent) => agent.setAutoRetry(enabled))
   )
   handle('yan:piRuntimePrefs', async () => readPiRuntimePrefs())
+  handle('yan:piNativeSettings', async () => readPiNativeSettings())
+  handle('yan:setPiNativeSettings', async (patch: unknown) => writePiNativeSettings(patch))
 
   registerWorkModeIpc(ipc, {
     registry: () => runners,

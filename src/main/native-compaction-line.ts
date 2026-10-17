@@ -63,7 +63,7 @@ export function applyLines(
   return { settings: next, owned: nextOwned }
 }
 
-async function readJson(path: string): Promise<Json | undefined> {
+export async function readJson(path: string): Promise<Json | undefined> {
   try {
     const parsed = JSON.parse(await readFile(path, 'utf8')) as unknown
     return isObj(parsed) ? parsed : undefined
@@ -72,7 +72,7 @@ async function readJson(path: string): Promise<Json | undefined> {
   }
 }
 
-async function writeAtomic(path: string, value: unknown): Promise<void> {
+export async function writeAtomic(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const tmp = `${path}.${process.pid}.tmp`
   try {
@@ -85,6 +85,12 @@ async function writeAtomic(path: string, value: unknown): Promise<void> {
 }
 
 let queue: Promise<unknown> = Promise.resolve()
+
+export function withPiSettingsLock<T>(run: () => Promise<T>): Promise<T> {
+  const next = queue.then(run, run)
+  queue = next.catch(() => undefined)
+  return next
+}
 
 export function syncNativeCompactionLines(models: LineModel[], cap: number): Promise<void> {
   const run = async (): Promise<void> => {
@@ -100,7 +106,5 @@ export function syncNativeCompactionLines(models: LineModel[], cap: number): Pro
     await writeAtomic(file, result.settings)
     await writeAtomic(recordFile, result.owned)
   }
-  const next = queue.then(run, run)
-  queue = next.catch(() => undefined)
-  return next
+  return withPiSettingsLock(run)
 }

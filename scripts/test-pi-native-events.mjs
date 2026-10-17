@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -375,6 +375,29 @@ try {
     ok(!isNativeMcpActionResult('已切换模型'), '无关通知不截获')
     ok(isNativeMcpSignInPrompt('Sign in to MCP server "docs" in your browser:\nhttps://auth.example/x'), '识别浏览器登录提示，继续等结果')
     ok(!isNativeMcpStatus('Reconnected to MCP server "docs" (connected).'), '状态查询不误收操作结果')
+  }
+
+
+  console.log('pi 原生设置读写')
+  {
+    const { piNativeSettingsOf, validatePiNativePatch, readPiNativeSettings, writePiNativeSettings } = await bundle('src/main/pi-runtime-prefs.ts', 'pi-native-prefs-5.mjs', 'node', [electronStub])
+    const defaults = piNativeSettingsOf({})
+    ok(defaults.retryMaxRetries === 3 && defaults.retryBaseDelayMs === 2000 && defaults.httpIdleTimeoutMs === 300000 && defaults.cacheWarming === 'streaming' && defaults.imagesAutoResize && !defaults.imagesBlockImages && defaults.defaultProjectTrust === 'ask' && defaults.sessionShareDestination === 'auto', '缺省值与 pi 1.3 一致', defaults)
+    ok(piNativeSettingsOf({ httpIdleTimeoutMs: 'disabled' }).httpIdleTimeoutMs === 0, '空闲超时 disabled 读作 0')
+    ok(Object.keys(piNativeSettingsOf({ modelThinkingLevels: { 'p/m': 'high', bad: 'high', 'p/x': 'turbo' } }).modelThinkingLevels).join() === 'p/m', '丢弃无效的模型思考档位')
+    ok(!validatePiNativePatch({ cacheWarming: 'always' }).ok && !validatePiNativePatch({ retryMaxRetries: 1.5 }).ok && !validatePiNativePatch({ unknown: 1 }).ok, '拒绝无效或未知的设置')
+    const file = join(dataDir, 'pi-settings.json')
+    await writeFile(file, JSON.stringify({ defaultProvider: 'mock', retry: { enabled: false }, images: { blockImages: true } }))
+    const saved = await writePiNativeSettings({ retryMaxRetries: 5, httpIdleTimeoutMs: 0, imagesAutoResize: false, modelThinkingLevels: { 'p/m': 'low' } }, file)
+    const disk = JSON.parse(await readFile(file, 'utf8'))
+    ok(saved.ok && disk.defaultProvider === 'mock' && disk.retry.enabled === false && disk.retry.maxRetries === 5 && disk.images.blockImages === true && disk.images.autoResize === false && disk.httpIdleTimeoutMs === 0 && disk.modelThinkingLevels['p/m'] === 'low', '写入只改动对应键，保留其他设置', disk)
+    await writePiNativeSettings({ modelThinkingLevels: {} }, file)
+    ok(!('modelThinkingLevels' in JSON.parse(await readFile(file, 'utf8'))), '清空模型思考档位时删除该键')
+    await writeFile(file, '{ broken')
+    const refused = await writePiNativeSettings({ cacheWarming: 'off' }, file)
+    ok(!refused.ok && (await readFile(file, 'utf8')) === '{ broken', '设置文件损坏时拒绝写入、不覆盖')
+    const unread = await readPiNativeSettings(file)
+    ok(!unread.ok && unread.settings?.cacheWarming === 'streaming', '设置文件损坏时读取报错并给出缺省值')
   }
 
 } finally {

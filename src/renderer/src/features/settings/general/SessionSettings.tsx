@@ -5,6 +5,8 @@ import { useStore } from '../../../state/store'
 import { Switch } from '../../../ui'
 import { generalText } from './general-text'
 import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
+import { PiRetryDetailRows, PiSessionGroups, usePiNativeSettings } from './PiNativeSettings'
+import { piNativeText } from './pi-native-text'
 
 const ARCHIVE_OPTIONS = [0, 7, 14, 30] as const
 const QUEUE_MODES: QueueMode[] = ['one-at-a-time', 'all']
@@ -27,6 +29,8 @@ export function SessionSettings(): ReactElement {
   const setSteeringMode = useStore((s) => s.setSteeringMode)
   const setFollowUpMode = useStore((s) => s.setFollowUpMode)
   const [prefs, setPrefs] = useState<PiRuntimePrefs | null>(null)
+  const piText = piNativeText(lang)
+  const piNative = usePiNativeSettings(piText)
 
   useEffect(() => {
     let alive = true
@@ -119,6 +123,7 @@ export function SessionSettings(): ReactElement {
             data-testid="v3-session-auto-retry"
           />
         </SettingsRow>
+        <PiRetryDetailRows state={piNative} text={piText} disabled={!autoRetry} />
 
         <SettingsRow label={text.sessionCheckpoints} description={text.sessionCheckpointsDesc}>
           <Switch
@@ -147,6 +152,8 @@ export function SessionSettings(): ReactElement {
           />
         </SettingsRow>
       </div>
+
+      <PiSessionGroups state={piNative} text={piText} />
     </section>
   )
 }
