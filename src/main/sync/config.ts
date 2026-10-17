@@ -41,6 +41,7 @@ function isRunSummary(value: unknown): value is SyncRunSummary {
 export class SyncConfigStore {
   private readonly file: string
   private cache?: SyncConfig
+  private writes: Promise<unknown> = Promise.resolve()
 
   constructor(dataDir: string) {
     this.file = join(dataDir, SYNC_CONFIG_FILE)
@@ -70,26 +71,38 @@ export class SyncConfigStore {
     this.cache = config
   }
 
-  async setSyncRoot(root: string | undefined): Promise<SyncConfig> {
-    const current = await this.read()
-    if ((current.syncRoot ?? '') === (root ?? '')) return current
-    const next: SyncConfig = { v: 1, mode: current.mode }
-    if (root) next.syncRoot = root
-    await this.save(next)
+  private serial<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.writes.then(task, task)
+    this.writes = next.catch(() => undefined)
     return next
   }
 
-  async setMode(mode: SyncMode): Promise<SyncConfig> {
-    const current = await this.read()
-    if (current.mode === mode) return current
-    const next: SyncConfig = { ...current, mode }
-    await this.save(next)
-    return next
+  setSyncRoot(root: string | undefined): Promise<SyncConfig> {
+    return this.serial(async () => {
+      const current = await this.read()
+      if ((current.syncRoot ?? '') === (root ?? '')) return current
+      const next: SyncConfig = { v: 1, mode: current.mode }
+      if (root) next.syncRoot = root
+      await this.save(next)
+      return next
+    })
   }
 
-  async recordSync(summary: SyncRunSummary): Promise<void> {
-    const current = await this.read()
-    if (!current.syncRoot) return
-    await this.save({ v: 1, mode: current.mode, syncRoot: current.syncRoot, lastSync: summary })
+  setMode(mode: SyncMode): Promise<SyncConfig> {
+    return this.serial(async () => {
+      const current = await this.read()
+      if (current.mode === mode) return current
+      const next: SyncConfig = { ...current, mode }
+      await this.save(next)
+      return next
+    })
+  }
+
+  recordSync(summary: SyncRunSummary): Promise<void> {
+    return this.serial(async () => {
+      const current = await this.read()
+      if (!current.syncRoot) return
+      await this.save({ v: 1, mode: current.mode, syncRoot: current.syncRoot, lastSync: summary })
+    })
   }
 }

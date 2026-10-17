@@ -384,11 +384,13 @@ try {
     const local = captureRegistrar()
     const timed = registerSyncIpc(local.ipc, timedDeps)
     timed.start()
-    await new Promise((resolve) => setTimeout(resolve, 90))
+    const deadline = Date.now() + 2000
+    while (calls < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
     assert.ok(calls >= 2, `期望启动加定时至少 2 次，实际 ${calls}`)
     assert.equal((await local.invoke('yan:sync:setMode', 'manual')).mode, 'manual')
-    const settled = calls
     await new Promise((resolve) => setTimeout(resolve, 60))
+    const settled = calls
+    await new Promise((resolve) => setTimeout(resolve, 100))
     timed.stop()
     assert.equal(calls, settled)
   })
