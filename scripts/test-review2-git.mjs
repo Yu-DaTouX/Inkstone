@@ -11,7 +11,6 @@ try {
   await mkdir(modules)
   for (const [source, output] of [
     ['src/main/git-service.ts', 'git-service.mjs'],
-    ['src/main/work-mode-service.ts', 'work-mode-service.mjs'],
     ['src/main/subagent-isolation.ts', 'subagent-isolation.mjs'],
     ['src/main/git-actions.ts', 'git-actions.mjs']
   ]) {
@@ -32,14 +31,6 @@ try {
   assert.equal(metadata.lines, 3, '截断缓冲区末尾的稀疏零填充仍按最后一行计数')
   assert.equal(metadata.size, (await stat(large)).size)
   assert.ok(process.memoryUsage().arrayBuffers - before < 2 * 1024 * 1024, '只读取有界前缀而非整个大文件')
-
-  const modes = await load('work-mode-service.mjs')
-  const store = new modes.WorkModeStore({ root: join(temp, 'settings') })
-  await store.load()
-  store.persist = async () => { throw new Error('fixture write failure') }
-  await assert.rejects(store.set('session-a', 'autonomous'))
-  assert.equal(store.state('session-a').revision, 0, '写盘失败回滚未落盘的模式变更')
-  assert.deepEqual(store.snapshot().entries, {})
 
   const isolation = await load('subagent-isolation.mjs')
   const rename = isolation.summarizeGitDiff('R100\told-name.txt\tnew-name.txt\nM\tkeep.txt\n', '1\t0\tnew-name.txt\n')

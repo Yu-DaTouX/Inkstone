@@ -100,44 +100,8 @@ try {
     return import(pathToFileURL(out).href)
   }
 
-  const workModeModule = await bundle('src/main/work-mode-service.ts', 'work-mode-service')
-  const { WorkModeStore, normalizeSessionFileKey, writeWorkModeSnapshot } = workModeModule
-  const store = new WorkModeStore({ root: temp })
-  await store.load()
-  const sessionFile = join(temp, 'sessions', 'a.jsonl')
-  const sessionKey = normalizeSessionFileKey(sessionFile)
-  agent.getState = () => ({ sessionId: 'session-a', sessionFile })
-
-  await writeWorkModeSnapshot('a', { mode: 'autonomous', revision: 9, questionFrequency: 'inherit', planApprovalPending: true }, temp)
-
-  const coordinator = await bundle('src/main/work-mode-coordinator.ts', 'coordinator')
-  const messages = []
-  coordinator.configureWorkModeCoordinator({
-    runners: () => runners,
-    workModes: store,
-    pushFrom: (id, msg) => messages.push({ id, ...msg })
-  })
-  const inheritPush = await coordinator.pushWorkMode('a')
-  const profilePush = await coordinator.pushAgentProfile('b')
-  check(messages[0].id === 'a' && inheritPush.mode === 'standard' && inheritPush.revision === 0 && inheritPush.questionFrequency === 'inherit',
-    '模式兼容推送固定 standard / revision 0 / inherit')
-  check(messages[1].id === 'b' && messages[1].payload.activity === 'answer', '档案兼容推送保持运行身份且不生成快照')
-
-  await store.setQuestionFrequency(sessionKey, 'eager')
-  const explicitPush = await coordinator.pushWorkMode('a')
-  check(explicitPush.mode === 'standard' && explicitPush.revision === 1 && explicitPush.questionFrequency === 'eager',
-    '频率显式时推送携带 store 权威 revision 且模式固定 standard')
-
-  const snapshot = JSON.parse(await readFile(join(temp, 'work-mode', 'a.json'), 'utf8'))
-  check(snapshot.mode === 'standard', '逐轮快照固定 standard，不复活旧 autonomous')
-  check(snapshot.revision === 1, '逐轮快照携带 store 权威 revision')
-  check(snapshot.questionFrequency === 'eager', '逐轮快照携带显式频率')
-  check(snapshot.planApprovalPending === false, '逐轮快照不再保留已退役的待审标记')
-
   const rootEntries = await readdir(temp)
-  check(!rootEntries.includes('goals.json'), '兼容推送不加载/创建目标存储（no-goals）')
-  check(!rootEntries.includes('agent-profile') && !rootEntries.includes('agent-profiles.json'), '兼容推送不创建档案快照（no-agent-profile）')
-  check(rootEntries.includes('work-mode'), '只允许频率必要的 work-mode 快照目录')
+  check(!rootEntries.includes('goals.json'), '启动与推送不创建目标存储（no-goals）')
   const catalog = await bundle('src/main/capabilities/catalog.ts', 'catalog')
   const built = catalog.buildCatalog([])
   check(!built.capabilities.some(c => /^builtin:(goal|knowledge|follow|research)\./.test(c.id)), '默认模型目录不再推荐已退出的领域流程')

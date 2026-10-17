@@ -10,7 +10,7 @@ import { build } from 'esbuild'
 const root = await mkdtemp(join(tmpdir(), 'review-remotecli-'))
 try {
   const bundles = {}
-  for (const [name, source] of Object.entries({ devices: 'src/main/remote-devices.ts', consent: 'src/main/consent-store.ts', relay: 'src/main/relay-bridge/store.ts', assistant: 'src/main/assistant-link.ts' })) {
+  for (const [name, source] of Object.entries({ devices: 'src/main/remote-devices.ts', consent: 'src/main/consent-store.ts', relay: 'src/main/relay-bridge/store.ts' })) {
     const outfile = join(root, `${name}.mjs`)
     await build({ entryPoints: [source], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
     bundles[name] = await import(pathToFileURL(outfile).href)
@@ -69,24 +69,7 @@ try {
   await assert.rejects(relay.secret(), SyntaxError, 'subsequent calls still refuse to overwrite damaged identity')
   assert((await readdir(relayDir)).some(name => name.endsWith('.corrupt')), 'damaged relay state is preserved as backup')
 
-  const events = []
-  const server = createServer((req, res) => {
-    if (req.url === '/v1/health') return res.end(JSON.stringify({ ok: true, version: 'test', timezone: 'UTC', now: '', now_ms: 0, model: null }))
-    res.writeHead(200, { 'content-type': 'text/event-stream' })
-    res.end('id: 9\r\nevent: reminder\r\ndata: {"delivery_id":9}\r\n\r\n')
-  })
-  await new Promise(resolveListen => server.listen(0, '127.0.0.1', resolveListen))
-  const link = new bundles.assistant.AssistantLink({ baseUrl: `http://127.0.0.1:${server.address().port}`, token: 'fixture', onReminder: event => events.push(event) })
-  try {
-    link.startEvents()
-    const deadline = Date.now() + 2000
-    while (!events.length && Date.now() < deadline) await new Promise(resolveTick => setTimeout(resolveTick, 10))
-    assert.equal(events[0]?.delivery_id, 9, 'SSE CRLF frame is parsed')
-  } finally {
-    link.stop()
-    await new Promise(resolveClose => server.close(resolveClose))
-  }
-  console.log('PASS: isolated remotecli regression fixtures (device-store read recovery, corrupt consent refusal, relay backup/refusal, SSE CRLF)')
+  console.log('PASS: isolated remotecli regression fixtures (device-store read recovery, corrupt consent refusal, relay backup/refusal)')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

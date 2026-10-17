@@ -189,8 +189,6 @@ export async function runSessionStatsIsolationTests(ok) {
       models: [],
       thinkingLevels: [],
       commands: [],
-      workMode: null,
-      agentProfile: null
     }
     resetView({
       session: { sessionId: 'sess-b' },

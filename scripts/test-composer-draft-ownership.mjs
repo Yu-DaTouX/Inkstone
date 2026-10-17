@@ -99,8 +99,6 @@ export async function runComposerDraftOwnershipTests(ok) {
       widgetPlacements: {},
       draft,
       draftAttachments,
-      workMode: null,
-      agentProfile: null,
       goal: null,
       models: [],
       thinkingLevels: [],

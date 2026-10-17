@@ -24,10 +24,6 @@ const load = async (path, name, plugins = []) => {
   return import(pathToFileURL(outfile).href)
 }
 try {
-  const command = await load('src/shared/subagent-command.ts', 'command')
-  ok(command.parseSubagentCommand('/subagent explain --worktree literally').isolation === 'shared-cwd', '任务正文的flag不改变隔离')
-  ok(command.parseSubagentCommand('/subagent --worktree --model "fixture/model" do it').model === 'fixture/model', '前置model和隔离flag正常解析')
-  ok(command.parseSubagentCommand('/subagent --read-only -- task --model sample').task === 'task --model sample', '选项终止符之后的正文原样保留')
   const url = await load('src/shared/file-url.ts', 'url')
   ok(url.fileUrl('\\\\server\\share\\a #.png') === 'file://server/share/a%20%23.png', 'UNC host与share正确编码')
   const refs = await load('src/shared/file-resource.ts', 'refs')
@@ -60,14 +56,6 @@ try {
   const documents = await load('src/shared/document-open.ts', 'documents')
   for (const path of ['a.exe', 'a.svg', 'a.unknown', 'a.ps1']) ok(!documents.canOpenDocument(path), '非被动文档只定位')
   ok(documents.canOpenDocument('a.PDF') && documents.canOpenDocument('photo.JPG'), '合法文档图片可直接打开')
-
-  const interaction = await load('src/main/interaction-state.ts', 'interaction')
-  const store = new interaction.InteractionStore(join(root, 'interactions'))
-  const session = 'fixture-session-01'; const file = store.path(session)
-  await mkdir(join(root, 'interactions'))
-  await writeFile(file, '{broken')
-  ok(Object.keys(store.get(session)).length === 0 && !(await readFile(file, 'utf8').catch(() => '')), '坏交互快照隔离后可恢复为空交互偏好')
-  store.set(session, 'widget', 'value'); ok(store.get(session).widget === 'value', '恢复后交互偏好正常保存')
 
   const trust = await load('src/main/project-trust.ts', 'trust')
   const trustedRoot = join(root, 'trusted'); const child = join(trustedRoot, 'child'); await mkdir(child, { recursive: true })
@@ -109,14 +97,6 @@ try {
   ok(same.status === 200 && same.headers['access-control-allow-origin'] === 'http://127.0.0.1', '同源健康查询正常')
   const unpair = response(); await server.handle({ url: '/remote/v1/devices/self/revoke', method: 'POST', headers: {} }, unpair)
   ok(unpair.status === 200 && revoked, '手机退出配对可撤销自身令牌')
-  const assistant = await load('src/main/assistant-link.ts', 'assistant')
-  assert.throws(() => new assistant.AssistantLink({ baseUrl: 'http://foreign.invalid', token: 'fake' })); checks++
-  const savedFetch = globalThis.fetch
-  try {
-    globalThis.fetch = async () => new Response('fixture gateway error', { status: 502 })
-    const link = new assistant.AssistantLink({ baseUrl: 'http://127.0.0.1:1234', token: 'fake' })
-    await assert.rejects(link.request('GET', '/fixture'), error => error.message.includes('fixture gateway error')); checks++
-  } finally { globalThis.fetch = savedFetch }
   console.log(`review2-main: ${checks} isolated behavior checks passed`)
 } finally {
   for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key] }

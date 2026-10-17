@@ -60,7 +60,6 @@
     )
     ok(!!selectedA, 'renderer store.switchSession 选择 A，并投影到 A 的 sessionFile')
     if (!selectedA) return out.join('\n')
-    await state().setWorkMode('standard')
     const modelA = await window.yan.setModel(provider, modelId)
     ok(modelA?.ok === true, 'A 已切到成本为零的本机模型')
     if (modelA?.ok !== true) return out.join('\n')
