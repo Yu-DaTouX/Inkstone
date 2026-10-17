@@ -325,6 +325,10 @@ export class RunnerRegistry {
     return this.runners.get(id)?.agent ?? null
   }
 
+  agents(): AgentController[] {
+    return [...this.runners.values()].map((runner) => runner.agent)
+  }
+
   async reloadMcpServers(): Promise<void> {
     await Promise.all([...this.runners.values()].map((runner) => runner.agent.reloadMcpServers()))
   }

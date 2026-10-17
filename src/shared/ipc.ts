@@ -226,6 +226,12 @@ export interface AssistantArtifact {
 
 export type QueueMode = 'all' | 'one-at-a-time'
 
+export interface PiRuntimePrefs {
+  autoRetry: boolean
+  steeringMode: QueueMode
+  followUpMode: QueueMode
+}
+
 export type PiSource =
   | 'override'
   | 'env'
@@ -1721,6 +1727,7 @@ export interface YanBridge {
 
   setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }>
   setAutoRetry(enabled: boolean): Promise<{ ok: boolean; error?: string }>
+  piRuntimePrefs(): Promise<PiRuntimePrefs>
 
   answerApproval(id: string, choice: ApprovalChoice): Promise<{ ok: boolean }>
   pendingApprovals(): Promise<ApprovalRequest[]>

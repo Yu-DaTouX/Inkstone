@@ -20,6 +20,15 @@ export interface GeneralText {
   sessionSubagentNotifyDesc: string
   sessionLoopAutoContinue: string
   sessionLoopAutoContinueDesc: string
+  sessionDelivery: string
+  sessionSteeringMode: string
+  sessionSteeringModeDesc: string
+  sessionFollowUpMode: string
+  sessionFollowUpModeDesc: string
+  queueOneAtATime: string
+  queueAll: string
+  sessionAutoRetry: string
+  sessionAutoRetryDesc: string
 
   notifSystem: string
   notifSystemDesc: string
@@ -166,6 +175,15 @@ const ZH: GeneralText = {
   sessionSubagentNotifyDesc: '子 Agent 跑完后唤醒父会话继续汇总。',
   sessionLoopAutoContinue: '循环中止后自动继续',
   sessionLoopAutoContinueDesc: '循环被安全中止后自动续一次；关闭则等你发送。',
+  sessionDelivery: '消息投递',
+  sessionSteeringMode: '运行中插话',
+  sessionSteeringModeDesc: 'Agent 工作时发出的插话，在下一步之前逐条或一次全部送达。',
+  sessionFollowUpMode: '排队消息',
+  sessionFollowUpModeDesc: '排到本轮结束后的消息，逐条或一次全部送达。',
+  queueOneAtATime: '逐条',
+  queueAll: '全部',
+  sessionAutoRetry: '自动重试',
+  sessionAutoRetryDesc: '模型服务临时出错（限流、过载、5xx）时自动重试。写入 pi 设置，对所有会话生效。',
 
   notifSystem: '系统通知',
   notifSystemDesc: '窗口在后台时弹出系统通知。',
@@ -312,6 +330,15 @@ const EN: GeneralText = {
   sessionSubagentNotifyDesc: 'Wakes the parent session to summarise after a subagent completes.',
   sessionLoopAutoContinue: 'Auto-continue after a loop stop',
   sessionLoopAutoContinueDesc: 'Continue once after a safe loop stop; off waits for you.',
+  sessionDelivery: 'Message delivery',
+  sessionSteeringMode: 'Steering while running',
+  sessionSteeringModeDesc: 'Messages sent while the agent works arrive before its next step, one at a time or all at once.',
+  sessionFollowUpMode: 'Queued messages',
+  sessionFollowUpModeDesc: 'Messages queued for after the turn arrive one at a time or all at once.',
+  queueOneAtATime: 'One at a time',
+  queueAll: 'All at once',
+  sessionAutoRetry: 'Auto-retry',
+  sessionAutoRetryDesc: 'Retry automatically on transient provider errors (rate limits, overload, 5xx). Saved to pi settings for all sessions.',
 
   notifSystem: 'System notifications',
   notifSystemDesc: 'System notification when the window is in background.',

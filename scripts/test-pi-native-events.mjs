@@ -282,6 +282,16 @@ try {
     const none = await ctl.cycleThinking()
     ok(!none.ok && none.error === '当前模型不支持思考', 'cycle_thinking_level 返回 null 时提示不支持思考')
   }
+
+  {
+    const { piRuntimePrefsOf, readPiRuntimePrefs } = await bundle('src/main/pi-runtime-prefs.ts', 'pi-native-prefs.mjs', 'node', [electronStub])
+    const defaults = piRuntimePrefsOf({})
+    ok(defaults.autoRetry === true && defaults.steeringMode === 'one-at-a-time' && defaults.followUpMode === 'one-at-a-time', 'pi 设置缺省时重试开、投递逐条', defaults)
+    const custom = piRuntimePrefsOf({ retry: { enabled: false }, steeringMode: 'all', followUpMode: 'bogus' })
+    ok(custom.autoRetry === false && custom.steeringMode === 'all' && custom.followUpMode === 'one-at-a-time', '读取 retry.enabled 与投递模式，未知值回落逐条', custom)
+    const missing = await readPiRuntimePrefs(join(dataDir, 'no-such-settings.json'))
+    ok(missing.autoRetry === true, '设置文件缺失时回落缺省')
+  }
 } finally {
   await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
 }
