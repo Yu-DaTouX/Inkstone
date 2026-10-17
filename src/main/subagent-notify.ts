@@ -17,6 +17,28 @@ export interface SubagentNotifierDeps {
   now?(): number
 }
 
+export type SubagentNotifier = ((run: SubagentRun) => void) & { retry(): void }
+
+export interface NoticeTargetLookup<T> {
+  agentForSession(sessionId: string): T | null | undefined
+  agentOf(runId: string): T | null | undefined
+  runtimeOf(runId: string): { sessionId?: string; generation: number } | null | undefined
+}
+
+export function findNoticeTarget<T>(
+  run: Pick<SubagentRun, 'parentSessionId' | 'parentRunId' | 'parentGeneration'>,
+  lookup: NoticeTargetLookup<T>
+): T | null {
+  const sessionId = run.parentSessionId
+  if (sessionId && !sessionId.startsWith('pending:')) return lookup.agentForSession(sessionId) ?? null
+  const runId = run.parentRunId
+  if (!runId || run.parentGeneration === undefined) return null
+  if (sessionId && sessionId !== `pending:${runId}`) return null
+  const runtime = lookup.runtimeOf(runId)
+  if (!runtime || runtime.generation !== run.parentGeneration) return null
+  return lookup.agentOf(runId) ?? null
+}
+
 function buildNotice(runs: SubagentRun[]): string {
   if (runs.length === 1) return buildSubagentNotice(runs[0])
   const bodies = runs.map((run) => {
@@ -48,8 +70,10 @@ function batchWaitMs(run: SubagentRun): number {
   return Math.min(NOTICE_BATCH_MAX_WAIT_MS, Math.max(NOTICE_BATCH_MIN_WAIT_MS, Math.floor(duration / 2)))
 }
 
-export function createSubagentNotifier(deps: SubagentNotifierDeps): (run: SubagentRun) => void {
+export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNotifier {
   const pending = new Map<string, PendingBatch>()
+  const undelivered = new Map<string, SubagentRun[]>()
+  let retrying = false
   const now = (): number => deps.now?.() ?? Date.now()
 
   const siblingsOf = async (run: SubagentRun): Promise<number> => {
@@ -74,10 +98,35 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): (run: Subage
     stopPoll(batch)
     void (async () => {
       if (!(await deps.enabled())) return
-      const target = deps.find(batch.runs[0])
-      if (!target) return
-      await target.send(buildNotice(batch.runs), undefined, 'followUp')
+      const runs = [...(undelivered.get(key) ?? []), ...batch.runs]
+      undelivered.delete(key)
+      const target = deps.find(runs[runs.length - 1])
+      if (!target) {
+        undelivered.set(key, runs)
+        return
+      }
+      await target.send(buildNotice(runs), undefined, 'followUp')
     })().catch(() => undefined)
+  }
+
+  const retry = (): void => {
+    if (retrying || undelivered.size === 0) return
+    retrying = true
+    void (async () => {
+      if (!(await deps.enabled())) {
+        undelivered.clear()
+        return
+      }
+      for (const [key, runs] of [...undelivered]) {
+        if (pending.has(key)) continue
+        const target = deps.find(runs[runs.length - 1])
+        if (!target) continue
+        undelivered.delete(key)
+        await target.send(buildNotice(runs), undefined, 'followUp')
+      }
+    })().catch(() => undefined).finally(() => {
+      retrying = false
+    })
   }
 
   const rearm = (key: string, batch: PendingBatch, delay: number): void => {
@@ -116,7 +165,7 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): (run: Subage
     unref(batch.pollTimer)
   }
 
-  return (run) => {
+  const notify = (run: SubagentRun): void => {
     if (run.status !== 'done' && run.status !== 'error' && run.status !== 'cancelled') return
     const key = run.parentSessionId || run.parentRunId
     if (!key) return
@@ -144,4 +193,6 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): (run: Subage
       if (!short) startPoll(key)
     })().catch(() => undefined)
   }
+
+  return Object.assign(notify, { retry })
 }
