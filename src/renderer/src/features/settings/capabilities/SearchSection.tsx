@@ -168,6 +168,17 @@ function SearchApiGroup(): ReactElement {
         }
       >
         <div className="caps-list">
+          <Item testId="cap-search-api-deepseek">
+            <ItemHead>
+              <span className="caps-name">{t('search.deepseekTitle')}</span>
+            </ItemHead>
+            <Meta>{t('search.role.deepseek')}</Meta>
+            <Meta>
+              <span data-testid="cap-search-api-status-deepseek">
+                {config?.deepseekModelKey ? t('search.deepseekReady') : t('search.deepseekMissing')}
+              </span>
+            </Meta>
+          </Item>
           {SEARCH_PROVIDERS.map((provider) => (
             <SearchProviderItem key={provider.id} provider={provider} state={config?.providers[provider.id]} onChanged={load} />
           ))}

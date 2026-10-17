@@ -319,11 +319,12 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
 
 动作：
   query   联网搜索。按查询语言自动挑网页来源：中文用 Bing + 360，其余用 DuckDuckGo + Bing；
-          用户在设置里配了 Tavily / Brave key 时自动加上并排在最前；另有维基百科 / arXiv / Hacker News（需 OpenCLI）
+          用户在设置里配了 Tavily / Brave key 时自动加上并排在最前；模型设置里有 DeepSeek key 时加上 DeepSeek 搜索
+          （中文查询排第一，其余排在 Tavily / Brave 之后；按次计费）；另有维基百科 / arXiv / Hacker News（需 OpenCLI）
             yan search query --query-text "flash attention"
             yan search query --query-text "…" --sources wikipedia,arxiv --limit-per-source 5 --limit-total 12
   fetch   把一个网页读成正文文本（JS 渲染页也行；不带登录态，不读本机/内网地址）。本地读不出正文时，
-          若用户配了 Firecrawl key 会自动改用它（结果里 via 写明是谁读的）；--via local|firecrawl 可强制
+          若用户配了 Firecrawl key 会自动改用它（结果里 via 写明是谁读的）；--via local|firecrawl|deepseek 可强制
             yan search fetch --url https://example.com/post [--max-chars 12000] [--via firecrawl]
   docs    查开发文档：按库名取该库最新版本的文档片段与示例（Context7）。库名有歧义时看结果里的 alternatives，
           用 --library-id 指定
@@ -335,7 +336,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   · 后端是 OpenCLI（用户自行安装）。没装时 query 回 code=backend_unavailable，
     doctor 回可读提示 —— 不把「取不到」写成「没有结果」；
   · 逐来源状态是分开的：ok / empty / timeout / unavailable / error；
-  · 网页来源（bing / ddg / so360 / brave / tavily）的 --sources 可以点名；没配 key 的来源会单独报 api_key_missing；某个来源弹验证或连不上会单独报错，其余照常；
+  · 网页来源（bing / ddg / so360 / brave / tavily / deepseek）的 --sources 可以点名；没配 key 的来源会单独报 api_key_missing；某个来源弹验证或连不上会单独报错，其余照常；
   · 要读结果正文先用 fetch；要登录、点击、交互的页面再用内置浏览器：yan browser navigate --url <结果里的 url>；
   · 这个 search 是「联网找网页」；在已装能力里找工具用 yan capabilities search。
 `,

@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from '../paths'
+import { resolveQuotaProviderSecret } from '../quota-credentials'
 import {
   SEARCH_PROVIDERS,
   type SearchApiConfigView,
@@ -50,10 +51,12 @@ export async function searchApiConfig(): Promise<SearchApiConfigView> {
     SearchProviderId,
     SearchProviderState
   >
+  const deepseekModelKey = !!(await resolveQuotaProviderSecret('deepseek'))
   return {
-    configured: providers.brave.configured || providers.tavily.configured,
+    configured: providers.brave.configured || providers.tavily.configured || deepseekModelKey,
     hintDismissed: cfg.hintDismissed === true,
-    providers
+    providers,
+    deepseekModelKey
   }
 }
 

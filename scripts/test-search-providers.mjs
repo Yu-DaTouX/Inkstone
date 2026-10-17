@@ -83,6 +83,49 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
   }
 
   {
+    const { deepseek } = mod
+    const never = async () => { throw new Error('不该发请求') }
+    const noKey = await deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 1000 }, never, async () => undefined)
+    ok(noKey.unavailable && noKey.error?.code === 'api_key_missing', 'DeepSeek 没有模型 key → unavailable，不发请求')
+    ok((await config.searchApiConfig()).deepseekModelKey === false, '没有模型 key 时设置页显示未检测到')
+
+    const key = async () => 'sk-ds-test'
+    const okRun = fakeFetch([json(200, { results: [
+      { title: 'D1', url: 'https://d.example/1', snippet: '短摘要', summary: '给模型的长摘要', date: '2026-10-01T08:00:00Z', rerank_score: 2.1 },
+      { title: 'D2', url: 'https://d.example/2', snippet: '只有短摘要', summary: '', date: null }
+    ] })])
+    const run = await deepseek.runDeepseekSearch('查'.repeat(150), { limit: 80, timeoutMs: 1000 }, okRun.impl, key)
+    const call = okRun.calls[0]
+    ok(call.url === 'https://api.deepseek.com/v1/tools/search' && call.init.method === 'POST', '请求 DeepSeek /v1/tools/search')
+    ok(call.init.headers.Authorization === 'Bearer sk-ds-test', '用 Bearer 带模型 key')
+    ok(Array.from(call.body.query).length === 128 && call.body.count === 50, '查询截到 128 字符，条数夹到 50')
+    ok(run.rows?.length === 2 && run.rows[0].snippet === '给模型的长摘要' && run.rows[0].published === '2026-10-01', 'summary 优先作摘要，日期取到天')
+    ok(run.rows[1].snippet === '只有短摘要' && run.rows[1].published === undefined, 'summary 为空时退回 snippet')
+
+    const poor = await deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 1000 }, fakeFetch([json(402, { error: { message: 'Insufficient Balance', type: 'x', code: 'insufficient_balance' } })]).impl, key)
+    ok(poor.error?.code === 'insufficient_balance' && /余额不足/.test(poor.error.message) && /Insufficient Balance/.test(poor.error.message), '402 → 余额不足，带上服务端原因')
+    const busy = await deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 1000 }, fakeFetch([json(429, {})]).impl, key)
+    ok(busy.error?.code === 'rate_limited' && /QPS/.test(busy.error.message), '429 → 超过 QPS')
+    const denied = await deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 1000 }, fakeFetch([json(401, {})]).impl, key)
+    ok(denied.error?.code === 'api_key_rejected', '401 → api_key_rejected')
+    const bad = await deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 1000 }, fakeFetch([{ status: 200, body: '<html>' }]).impl, key)
+    ok(bad.error?.code === 'bad_response', 'DeepSeek 返回不是 JSON → bad_response')
+
+    let err = null
+    await deepseek.deepseekReadPage('http://127.0.0.1:8080/x', {}, never, key).catch((e) => { err = e })
+    ok(err?.code === 'private_host', '不把本机地址发给 DeepSeek Fetch')
+    const page = fakeFetch([json(200, { title: ' 页面 ', content: '# 正文\n\n'.padEnd(1200, '字') })])
+    const read = await deepseek.deepseekReadPage('https://example.com/a', { maxChars: 600 }, page.impl, key)
+    ok(page.calls[0].url === 'https://api.deepseek.com/v1/tools/fetch' && page.calls[0].body.url === 'https://example.com/a', '请求 /v1/tools/fetch 并带上网址')
+    ok(read.title === '页面' && read.text.length === 600 && read.truncated && read.totalChars > 600, 'Fetch 正文按 maxChars 截断')
+    for (const [status, code] of [[403, 'blocked'], [404, 'no_content'], [402, 'insufficient_balance']]) {
+      err = null
+      await deepseek.deepseekReadPage('https://example.com/a', {}, fakeFetch([json(status, {})]).impl, key).catch((e) => { err = e })
+      ok(err?.code === code, `Fetch HTTP ${status} → ${code}`)
+    }
+  }
+
+  {
     const never = async () => { throw new Error('不该发请求') }
     let err = null
     await firecrawl.firecrawlReadPage('https://example.com/a', {}, never).catch((e) => { err = e })
