@@ -18,6 +18,21 @@
     return false
   }
   const q = (testId) => document.querySelector(`[data-testid="${testId}"]`)
+
+  const openTool = async (tab) => {
+    const direct = q(`wb-open-${tab}`)
+    if (direct) {
+      direct.click()
+      await wait(200)
+      return
+    }
+    q('wb-more-tools')?.click()
+    const order = ['changes', 'preview', 'logs', 'branch', 'quota']
+    const pick = () => document.querySelector(`.wb-more-menu [data-key="${tab}"]`) ?? document.querySelectorAll('.wb-more-menu [role="menuitem"]')[order.indexOf(tab)]
+    for (let i = 0; i < 40 && !pick(); i++) await wait(50)
+    pick()?.click()
+    await wait(200)
+  }
   const store = window.__yanStore
   const setNativeValue = (el, text) => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
@@ -39,7 +54,8 @@
       await until(() => !document.querySelector('.v3-ob-overlay'), 3000)
     }
 
-    if (!q('wb-tab-logs')) q('v3-header-workspace')?.click()
+    await openTool('quota')
+    await openTool('logs')
     check(await until(() => !!q('wb-tab-logs') && !!q('wb-tab-quota'), 4000), '工作区有「日志」「额度」页签')
 
     out.push('')

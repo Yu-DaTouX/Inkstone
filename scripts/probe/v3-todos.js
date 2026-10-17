@@ -18,6 +18,24 @@
     return false
   }
   const q = (testId) => document.querySelector(`[data-testid="${testId}"]`)
+  const todoTile = () => q('wb-tile-todos')
+  const todoCount = () => todoTile()?.querySelector('.wb-tile-summary')
+  const todoToggle = () => todoTile()?.querySelector('.wb-tile-toggle')
+
+  const openTool = async (tab) => {
+    const direct = q(`wb-open-${tab}`)
+    if (direct) {
+      direct.click()
+      await wait(200)
+      return
+    }
+    q('wb-more-tools')?.click()
+    const order = ['changes', 'preview', 'logs', 'branch', 'quota']
+    const pick = () => document.querySelector(`.wb-more-menu [data-key="${tab}"]`) ?? document.querySelectorAll('.wb-more-menu [role="menuitem"]')[order.indexOf(tab)]
+    for (let i = 0; i < 40 && !pick(); i++) await wait(50)
+    pick()?.click()
+    await wait(200)
+  }
   const qa = (testId) => [...document.querySelectorAll(`[data-testid="${testId}"]`)]
   const store = window.__yanStore
 
@@ -49,9 +67,9 @@
 
     check(await until(() => store.getState().sessions.length > 0, 10000), '隔离会话表已就绪')
 
-    if (!q('v3-header-workspace')) throw new Error('缺少工作区开关（需要在聊天路由）')
-    if (q('v3-header-workspace').getAttribute('aria-pressed') !== 'true') q('v3-header-workspace').click()
-    check(await until(() => !!document.querySelector('.wb-panel:not([hidden])'), 4000), '右侧工作区已展开')
+    if (!q('v3-header-sessionbar')) throw new Error('缺少会话栏开关（需要在聊天路由）')
+    if (q('v3-header-sessionbar').getAttribute('aria-pressed') !== 'true') q('v3-header-sessionbar').click()
+    check(await until(() => q('v3-header-sessionbar')?.getAttribute('aria-pressed') === 'true', 4000), '会话栏开关已打开')
 
     const fixture = store
       .getState()
@@ -88,9 +106,9 @@
     out.push('')
     out.push('--- 1. 磁贴出现 / 计数 / 行状态 ---')
     setTodos(FIXTURE_TODOS, true)
-    check(await until(() => !!q('v3-todo')), '有待办时磁贴出现（v3-todo）')
-    check(q('v3-todo')?.getAttribute('data-folded') === '0', '默认展开（data-folded=0）')
-    check((q('v3-todo-count')?.textContent ?? '').trim() === '2/4', `标题计数 2/4（实际 ${JSON.stringify(q('v3-todo-count')?.textContent)}）`)
+    check(await until(() => !!todoTile()), '有待办时会话栏出现待办磁贴（wb-tile-todos）')
+    check(todoTile()?.getAttribute('data-folded') === '0', '默认展开（data-folded=0）')
+    check((todoCount()?.textContent ?? '').trim() === '2/4', `标题计数 2/4（实际 ${JSON.stringify(todoCount()?.textContent)}）`)
     const rows = qa('v3-todo-row')
     check(rows.length === 4, `渲染 4 行（实际 ${rows.length}）`)
     check(rows.filter((r) => r.getAttribute('data-kind') === 'done').length === 2, '2 行标为 done')
@@ -126,25 +144,25 @@
     )
 
     out.push('')
-    out.push('--- 3. 折叠 / 按会话记住 ---')
+    out.push('--- 3. 折叠 / 切换会话保持 ---')
     setTodos(FIXTURE_TODOS, true)
-    await until(() => !!q('v3-todo-toggle'))
-    q('v3-todo-toggle')?.click()
-    check(await until(() => q('v3-todo')?.getAttribute('data-folded') === '1'), '点标题行折叠（data-folded=1）')
+    await until(() => !!todoToggle())
+    todoToggle()?.click()
+    check(await until(() => todoTile()?.getAttribute('data-folded') === '1'), '点标题行折叠（data-folded=1）')
     check(!q('v3-todo-scroll'), '折叠后清单内部滚动容器不存在（只剩标题）')
-    check(!!q('v3-todo-count') && !!q('v3-todo-toggle'), '折叠后标题行与计数仍在')
+    check(!!todoCount() && !!todoToggle(), '折叠后标题行与计数仍在')
     store.setState({ peekedSessionId: `${PROBE_SID}-B` })
     check(
-      await until(() => q('v3-todo')?.getAttribute('data-folded') === '0'),
-      '另一条会话折叠状态独立（默认展开）'
+      await until(() => todoTile()?.getAttribute('data-folded') === '1'),
+      '会话栏折叠对所有会话一致（切到另一条会话仍折叠）'
     )
     store.setState({ peekedSessionId: PROBE_SID })
     check(
-      await until(() => q('v3-todo')?.getAttribute('data-folded') === '1'),
-      '切回原会话折叠状态被记住'
+      await until(() => todoTile()?.getAttribute('data-folded') === '1'),
+      '切回原会话仍折叠'
     )
-    q('v3-todo-toggle')?.click()
-    check(await until(() => q('v3-todo')?.getAttribute('data-folded') === '0'), '可再展开')
+    todoToggle()?.click()
+    check(await until(() => todoTile()?.getAttribute('data-folded') === '0'), '可再展开')
 
     out.push('')
     out.push('--- 4. 超长清单 / 会话列表 ---')
@@ -160,11 +178,11 @@
     check(Number.isFinite(maxHeight) && maxHeight <= 160, `高度上限 ${Number.isFinite(maxHeight) ? maxHeight + 'px' : 'n/a'}（不无限长高）`)
     const nav = document.querySelector('.v3-side-list')
     check(!!nav && nav.clientHeight > 0, `会话列表仍有可见高度（${nav ? Math.round(nav.clientHeight) : 'n/a'}px，未被挤没）`)
-    const foot = document.querySelector('.v3-side-foot')
-    const tileBox = q('v3-todo')?.getBoundingClientRect()
+    const bar = q('v3-sessionbar')
+    const tileBox = todoTile()?.getBoundingClientRect()
     check(
-      !!foot && !!tileBox && tileBox.bottom <= foot.getBoundingClientRect().top + 1,
-      '磁贴底边不压到侧栏底栏'
+      !!bar && !!tileBox && tileBox.bottom <= bar.getBoundingClientRect().bottom + 1,
+      '磁贴底边不超出会话栏'
     )
     check(document.documentElement.scrollWidth <= innerWidth + 1, '无页面横向溢出')
 
@@ -183,8 +201,8 @@
       note('没有可切换的无待办会话，只做注入清空')
     }
     store.setState({ todos: [] })
-    check(await until(() => !q('v3-todo')), '无待办会话磁贴 DOM 不存在')
-    check(!document.querySelector('.v3-todo'), '磁贴 class 也不残留（无空态占位）')
+    check(await until(() => !todoTile()), '无待办会话磁贴 DOM 不存在')
+    check(!document.querySelector('.wb-tile[data-tile="todos"]'), '磁贴 class 也不残留（无空态占位）')
 
     out.push('')
     out.push('--- 6. Ctrl+B 收起无浮层 ---')
@@ -198,11 +216,8 @@
     check(collapsed, '收到真实 Ctrl+B 并收起侧栏（data-side=closed）')
     check(!document.querySelector('.v3-scrim'), '收起后没有浮层遮罩（宽窗不另开浮层）')
     const side = q('v3-sidebar')
-    const sideBox = side?.getBoundingClientRect()
-    check(
-      !side || getComputedStyle(side).display === 'none' || !sideBox || sideBox.width === 0,
-      '收起后侧栏不占布局（display:none / 宽度 0）'
-    )
+    const gone = () => !side || getComputedStyle(side).display === 'none' || side.getBoundingClientRect().width === 0
+    check(await until(gone, 3000), '收起动画结束后侧栏不占布局（display:none / 宽度 0）')
     if (!collapsed) {
       out.push(`    诊断：data-side=${root()?.getAttribute('data-side')} narrow=${root()?.getAttribute('data-narrow')}`)
     }
