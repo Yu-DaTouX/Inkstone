@@ -1,5 +1,5 @@
 export type NativeSessionHostAction =
-  | 'tree' | 'entries' | 'navigate' | 'reload'
+  | 'tree' | 'entries' | 'navigate' | 'set-label' | 'reload'
   | 'scoped-models' | 'set-scoped-models'
   | 'trust' | 'set-trust'
   | 'import' | 'export-jsonl' | 'share' | 'new-session'
@@ -9,6 +9,8 @@ export interface NativeSessionHostRequest {
   expectedSessionId: string
   args?: string
   entryId?: string
+  summarize?: boolean
+  label?: string
   since?: string
   modelIds?: string[]
   trusted?: boolean

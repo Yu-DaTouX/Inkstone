@@ -2,10 +2,10 @@ import type { NativeSessionHostRequest } from '../shared/native-session-host'
 import type { SessionState } from '../shared/ipc'
 
 const ACTIONS = new Set([
-  'tree', 'entries', 'navigate', 'reload', 'scoped-models', 'set-scoped-models',
+  'tree', 'entries', 'navigate', 'set-label', 'reload', 'scoped-models', 'set-scoped-models',
   'trust', 'set-trust', 'import', 'export-jsonl', 'share', 'new-session'
 ])
-const MUTATIONS = new Set(['navigate', 'reload', 'set-scoped-models', 'set-trust', 'import', 'new-session', 'share', 'export-jsonl'])
+const MUTATIONS = new Set(['navigate', 'set-label', 'reload', 'set-scoped-models', 'set-trust', 'import', 'new-session', 'share', 'export-jsonl'])
 
 export function validateNativeSessionRequest(
   input: unknown,
@@ -23,7 +23,9 @@ export function validateNativeSessionRequest(
       return { ok: false, error: '原生会话参数无效' }
     }
   }
-  if (req.action === 'navigate' && (typeof req.entryId !== 'string' || !req.entryId.trim())) return { ok: false, error: '缺少会话树目标条目' }
+  if ((req.action === 'navigate' || req.action === 'set-label') && (typeof req.entryId !== 'string' || !req.entryId.trim())) return { ok: false, error: '缺少会话树目标条目' }
+  if (req.summarize !== undefined && typeof req.summarize !== 'boolean') return { ok: false, error: '原生会话参数无效' }
+  if (req.label !== undefined && (typeof req.label !== 'string' || req.label.length > 200)) return { ok: false, error: '书签名称无效' }
   if (req.action === 'set-trust' && typeof req.trusted !== 'boolean') return { ok: false, error: '必须明确选择信任或不信任' }
   if (req.action === 'set-scoped-models' && (!Array.isArray(req.modelIds) || req.modelIds.length > 500 || req.modelIds.some(id => typeof id !== 'string' || !id || id.length > 1024))) {
     return { ok: false, error: '模型范围无效' }

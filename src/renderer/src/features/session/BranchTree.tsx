@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type JSX } from 'react'
 import {
   Activity,
   Archive,
@@ -26,7 +26,7 @@ import {
   type NativeTreeRow
 } from '../../../../shared/native-session'
 import type { NativeSessionHostRequest, NativeSessionHostResult } from '../../../../shared/native-session-host'
-import { Badge, Button, Spinner } from '../../ui'
+import { Badge, Button, Dialog, DialogTrigger, IconButton, Popover, Spinner, TextField } from '../../ui'
 import { Tree, TreeChevron, TreeItem, TreeItemContent, TreeItemLabel } from '../../ui/Tree'
 import type { WorkspaceOwner } from '../workbench/types'
 import './branch-tree.css'
@@ -35,6 +35,16 @@ export interface BranchText {
   title: string
   treeLabel: string
   hint: string
+  hintSummarize: string
+  summarize: string
+  summarizing: string
+  bookmark: string
+  bookmarkEdit: string
+  bookmarkPlaceholder: string
+  bookmarkSave: string
+  bookmarkClear: string
+  bookmarkSaved: string
+  bookmarkFailed: string
   loading: string
   loadFailed: string
   bridgeMissing: string
@@ -59,6 +69,16 @@ const ZH: BranchText = {
   title: '分支',
   treeLabel: '会话树',
   hint: '切换只把当前叶子移到所选条目：不改写会话文件，也不会自动摘要。',
+  hintSummarize: '切换时让模型总结离开的分支，摘要作为新条目写进会话，可能需要几十秒。',
+  summarize: '离开时生成分支摘要',
+  summarizing: '正在总结离开的分支…',
+  bookmark: '书签',
+  bookmarkEdit: '编辑书签',
+  bookmarkPlaceholder: '给这个条目起个名字',
+  bookmarkSave: '保存',
+  bookmarkClear: '清除',
+  bookmarkSaved: '书签已更新。',
+  bookmarkFailed: '书签保存失败。',
   loading: '正在读取会话树…',
   loadFailed: '会话树读取失败。',
   bridgeMissing: '宿主尚未提供原生会话桥；此页签暂时无法读取会话树。',
@@ -96,6 +116,16 @@ const EN: BranchText = {
   title: 'Branches',
   treeLabel: 'Session tree',
   hint: 'Switching only moves the current leaf to the chosen entry: it does not rewrite the session file and never summarizes.',
+  hintSummarize: 'Switching asks the model to summarize the branch you leave; the summary is added to the session and may take a while.',
+  summarize: 'Summarize the branch I leave',
+  summarizing: 'Summarizing the branch you left…',
+  bookmark: 'Bookmark',
+  bookmarkEdit: 'Edit bookmark',
+  bookmarkPlaceholder: 'Name this entry',
+  bookmarkSave: 'Save',
+  bookmarkClear: 'Clear',
+  bookmarkSaved: 'Bookmark updated.',
+  bookmarkFailed: 'Could not save the bookmark.',
   loading: 'Loading session tree…',
   loadFailed: 'Could not load the session tree.',
   bridgeMissing: 'The host has not exposed the native session bridge yet; this tab cannot read the tree.',
@@ -176,10 +206,29 @@ export async function navigateBranch(
   transport: BranchTransport,
   expectedSessionId: string,
   entryId: string,
+  fallbackError: string,
+  summarize = false
+): Promise<NativeActionResult> {
+  try {
+    const result = await transport.request(
+      summarize ? { action: 'navigate', expectedSessionId, entryId, summarize } : { action: 'navigate', expectedSessionId, entryId }
+    )
+    if (!result.ok) return { ok: false, error: result.error || fallbackError }
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+export async function labelBranch(
+  transport: BranchTransport,
+  expectedSessionId: string,
+  entryId: string,
+  label: string,
   fallbackError: string
 ): Promise<NativeActionResult> {
   try {
-    const result = await transport.request({ action: 'navigate', expectedSessionId, entryId })
+    const result = await transport.request({ action: 'set-label', expectedSessionId, entryId, label: label.trim() })
     if (!result.ok) return { ok: false, error: result.error || fallbackError }
     return { ok: true }
   } catch (error) {
@@ -208,7 +257,67 @@ export function nestBranchRows(rows: readonly NativeTreeRow[]): BranchNode[] {
 export interface BranchNodeContext {
   text: BranchText
   pending: string | null
+  blocked: boolean
   onNavigate: (entryId: string) => void
+  onLabel: (entryId: string, label: string) => Promise<boolean>
+}
+
+function BranchBookmark({ row, ctx }: { row: NativeTreeRow; ctx: BranchNodeContext }): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState(row.label ?? '')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    if (open) setValue(row.label ?? '')
+  }, [open, row.label])
+  const save = async (label: string): Promise<void> => {
+    setSaving(true)
+    const saved = await ctx.onLabel(row.entryId, label)
+    setSaving(false)
+    if (saved) setOpen(false)
+  }
+  const submit = (event: FormEvent): void => {
+    event.preventDefault()
+    void save(value)
+  }
+  return (
+    <DialogTrigger isOpen={open} onOpenChange={setOpen}>
+      <IconButton
+        size="sm"
+        className="branch-bookmark"
+        aria-label={`${ctx.text.bookmarkEdit} · ${row.text || ctx.text.kind[row.kind]}`}
+        title={ctx.text.bookmarkEdit}
+        isDisabled={ctx.blocked}
+        data-testid="branch-bookmark"
+      >
+        <Tag size={12} aria-hidden="true" />
+      </IconButton>
+      <Popover className="branch-bookmark-pop" placement="bottom end" offset={4}>
+        <Dialog showClose={false} aria-label={ctx.text.bookmarkEdit} className="branch-bookmark-dialog">
+          <form className="branch-bookmark-form" onSubmit={submit}>
+            <TextField
+              autoFocus
+              label={ctx.text.bookmark}
+              value={value}
+              onChange={setValue}
+              maxLength={200}
+              placeholder={ctx.text.bookmarkPlaceholder}
+              data-testid="branch-bookmark-input"
+            />
+            <div className="branch-bookmark-actions">
+              {row.label ? (
+                <Button size="sm" variant="ghost" isDisabled={saving} onPress={() => void save('')} data-testid="branch-bookmark-clear">
+                  {ctx.text.bookmarkClear}
+                </Button>
+              ) : null}
+              <Button size="sm" variant="primary" type="submit" isDisabled={saving || !value.trim()} data-testid="branch-bookmark-save">
+                {ctx.text.bookmarkSave}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      </Popover>
+    </DialogTrigger>
+  )
 }
 
 export function renderBranchNodes(nodes: readonly BranchNode[], ctx: BranchNodeContext): JSX.Element[] {
@@ -243,6 +352,7 @@ export function renderBranchNodes(nodes: readonly BranchNode[], ctx: BranchNodeC
             </Badge>
           ) : null}
           {ctx.pending === row.entryId ? <Spinner className="branch-spin" label={ctx.text.navigated} size={12} /> : null}
+          {row.kind === 'label' ? null : <BranchBookmark row={row} ctx={ctx} />}
         </TreeItemContent>
         {renderBranchNodes(node.children, ctx)}
       </TreeItem>
@@ -254,6 +364,7 @@ export interface BranchTreeProps {
   owner: WorkspaceOwner
   transport: BranchTransport
   busy?: boolean
+  summarize?: boolean
   reloadToken?: number
   onNavigated?: () => void
   className?: string
@@ -268,6 +379,7 @@ export function BranchTree({
   owner,
   transport,
   busy = false,
+  summarize = false,
   reloadToken = 0,
   onNavigated,
   className
@@ -352,7 +464,7 @@ export function BranchTree({
 
   const selectedRow = rows.find((row) => row.entryId === selected) ?? null
 
-  const refreshInPlace = useCallback(async (): Promise<void> => {
+  const refreshInPlace = useCallback(async (keepSelected?: string): Promise<void> => {
     if (!expectedSessionId) return
     const run = ++runRef.current
     const result = await loadBranchTree(transportRef.current, expectedSessionId, text.loadFailed)
@@ -363,7 +475,7 @@ export function BranchTree({
     }
     setState({ phase: 'ready', tree: result.tree, leafId: result.leafId })
     setCollapsed(initialCollapsedForLeaf(result.tree, result.leafId))
-    setOverrideId(result.leafId)
+    setOverrideId(keepSelected ?? result.leafId)
   }, [expectedSessionId, text.loadFailed])
 
   const navigate = useCallback(
@@ -379,7 +491,7 @@ export function BranchTree({
       setActionError('')
       setNotice('')
       const run = runRef.current
-      const result = await navigateBranch(transportRef.current, expectedSessionId, entryId, text.actionFailed)
+      const result = await navigateBranch(transportRef.current, expectedSessionId, entryId, text.actionFailed, summarize)
       if (!aliveRef.current || run !== runRef.current) return
       setPending(null)
       if (!result.ok) {
@@ -390,18 +502,39 @@ export function BranchTree({
       onNavigated?.()
       await refreshInPlace()
     },
-    [expectedSessionId, pending, busy, rows, text.atLeaf, text.actionFailed, text.navigated, onNavigated, refreshInPlace]
+    [expectedSessionId, pending, busy, summarize, rows, text.atLeaf, text.actionFailed, text.navigated, onNavigated, refreshInPlace]
+  )
+
+  const setLabel = useCallback(
+    async (entryId: string, label: string): Promise<boolean> => {
+      if (!expectedSessionId || pending || busy) return false
+      setActionError('')
+      setNotice('')
+      const run = runRef.current
+      const result = await labelBranch(transportRef.current, expectedSessionId, entryId, label, text.bookmarkFailed)
+      if (!aliveRef.current || run !== runRef.current) return false
+      if (!result.ok) {
+        setActionError(result.error || text.bookmarkFailed)
+        return false
+      }
+      setNotice(text.bookmarkSaved)
+      await refreshInPlace(entryId)
+      return true
+    },
+    [expectedSessionId, pending, busy, text.bookmarkFailed, text.bookmarkSaved, refreshInPlace]
   )
 
   const ctx = useMemo<BranchNodeContext>(
     () => ({
       text,
       pending,
+      blocked: busy || pending !== null,
       onNavigate: (entryId: string) => {
         void navigate(entryId)
-      }
+      },
+      onLabel: setLabel
     }),
-    [text, pending, navigate]
+    [text, pending, busy, navigate, setLabel]
   )
 
   const guard = stats ? stats.cycles + stats.depthTruncated + stats.rowTruncated : 0
@@ -481,7 +614,7 @@ export function BranchTree({
       ) : null}
 
       <div className="branch-foot">
-        <span className="branch-foot__hint">{blocked ? text.busyHint : text.hint}</span>
+        <span className="branch-foot__hint">{pending && summarize ? text.summarizing : blocked ? text.busyHint : summarize ? text.hintSummarize : text.hint}</span>
         <span className="branch-foot__spacer" />
         {actionError ? (
           <span className="branch-note branch-note--err" data-testid="branch-error">

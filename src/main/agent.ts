@@ -4068,10 +4068,10 @@ export class AgentController extends EventEmitter {
     return !response.cancelled && response.value === prompt.acceptLabel
   }
 
-  async nativeNavigate(entryId: string): Promise<NavigateTreeResult> {
+  async nativeNavigate(entryId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult> {
     if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
     if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error('当前会话尚未空闲')
-    const result = await this.nativeRuntime.navigateTree(entryId)
+    const result = await this.nativeRuntime.navigateTree(entryId, options)
     if (!result.cancelled) {
       this.nativeBranchView = true
       this.resetQueue()
@@ -4079,6 +4079,13 @@ export class AgentController extends EventEmitter {
       await this.hydrate()
     }
     return result
+  }
+
+  async nativeSetLabel(entryId: string, label: string): Promise<{ ok: boolean; error?: string }> {
+    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error('当前会话尚未空闲')
+    await this.nativeRuntime.setLabel(entryId, label)
+    return { ok: true }
   }
 
   async nativeReload(): Promise<void> {

@@ -2043,7 +2043,8 @@ function registerIpc(): void {
     confirm: (agent, prompt) => agent.confirmNativeOperation(prompt),
     win: () => win,
     runtime: async (agent, request) => {
-      if (request.action === 'navigate') return agent.nativeNavigate(request.entryId!)
+      if (request.action === 'navigate') return agent.nativeNavigate(request.entryId!, { summarize: request.summarize === true })
+      if (request.action === 'set-label') return agent.nativeSetLabel(request.entryId!, request.label ?? '')
       if (request.action === 'reload') {
         await agent.nativeReload()
         await agent.listCommands()
