@@ -6,6 +6,7 @@ import { Button, Dialog, Modal, ModalOverlay, Switch } from '../../../ui'
 import { generalText } from './general-text'
 import { permissionNeedsConfirm } from './general-model'
 import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
+import { PiProjectTrustGroup } from './PiNativeSettings'
 
 export interface AllowRootsListProps {
   roots: readonly string[]
@@ -107,6 +108,8 @@ export function SecuritySettings(): ReactElement {
           />
         </SettingsRow>
       </SettingsGroup>
+
+      <PiProjectTrustGroup />
 
       <ModalOverlay className="settings-confirm-overlay" isOpen={confirmAll} onOpenChange={setConfirmAll}>
         <Modal className="settings-confirm-modal">

@@ -232,6 +232,26 @@ export interface PiRuntimePrefs {
   followUpMode: QueueMode
 }
 
+export type PiCacheWarming = 'off' | 'streaming' | 'idle'
+export type PiProjectTrustDefault = 'ask' | 'always' | 'never'
+export type PiShareDestination = 'auto' | 'gist' | 'radius'
+
+export interface PiNativeSettings {
+  retryMaxRetries: number
+  retryBaseDelayMs: number
+  httpIdleTimeoutMs: number
+  cacheWarming: PiCacheWarming
+  imagesAutoResize: boolean
+  imagesBlockImages: boolean
+  defaultProjectTrust: PiProjectTrustDefault
+  sessionShareDestination: PiShareDestination
+  modelThinkingLevels: Record<string, string>
+}
+
+export type PiNativeSettingsResult =
+  | { ok: true; settings: PiNativeSettings }
+  | { ok: false; error: string; settings?: PiNativeSettings }
+
 export type PiSource =
   | 'override'
   | 'env'
@@ -1737,6 +1757,8 @@ export interface YanBridge {
   setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }>
   setAutoRetry(enabled: boolean): Promise<{ ok: boolean; error?: string }>
   piRuntimePrefs(): Promise<PiRuntimePrefs>
+  piNativeSettings(): Promise<PiNativeSettingsResult>
+  setPiNativeSettings(patch: Partial<PiNativeSettings>): Promise<PiNativeSettingsResult>
 
   answerApproval(id: string, choice: ApprovalChoice): Promise<{ ok: boolean }>
   pendingApprovals(): Promise<ApprovalRequest[]>

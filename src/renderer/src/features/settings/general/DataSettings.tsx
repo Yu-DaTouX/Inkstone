@@ -7,6 +7,7 @@ import { Button } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { bytesText } from './general-model'
 import { SettingsGroup, SettingsRow } from '../root/controls'
+import { PiShareDestinationGroup } from './PiNativeSettings'
 
 export interface StorageFactsProps {
   info: StorageInfoView | null
@@ -201,6 +202,8 @@ export function DataSettings(): ReactElement {
           </Button>
         </SettingsRow>
       </SettingsGroup>
+
+      <PiShareDestinationGroup />
 
       <p className="settings-note" role="note">
         {text.dataDangerNote}
