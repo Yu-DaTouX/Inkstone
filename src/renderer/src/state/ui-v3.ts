@@ -154,7 +154,12 @@ export function useV3RouteSync(): void {
     const applyHash = (): void => {
       useUiV3.setState({ route: routeFromHash(window.location.hash) })
     }
-    applyHash()
+    const early = useUiV3.getState().route
+    if (early.name !== 'chat' && routeFromHash(window.location.hash).name === 'chat') {
+      window.history.replaceState(null, '', hashForRoute(early))
+    } else {
+      applyHash()
+    }
     window.addEventListener('hashchange', applyHash)
     const unsubscribe = useUiV3.subscribe((state, previous) => {
       if (state.route === previous.route) return

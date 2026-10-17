@@ -33,6 +33,7 @@ await runRunStateTests()
 await runCapabilityNegotiationTests()
 await import('./test-security-performance-fixes.mjs')
 await import('./test-browser-frame-origin.mjs')
+await import('./test-v3-deeplink.mjs')
 for (const script of [
   'test-attachment-prune-race', 'test-files-root-boundary',
   'test-mobile-model-url', 'test-open-path-boundary',

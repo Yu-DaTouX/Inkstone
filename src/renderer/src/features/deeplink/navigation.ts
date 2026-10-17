@@ -1,6 +1,7 @@
 import type { DeepLinkIntent } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
+import { usePendingPairInvite } from '../collab/pending-invite'
 
 export function applyDeepLink(intent: DeepLinkIntent): void {
   const ui = useUiV3.getState()
@@ -37,6 +38,11 @@ export function applyDeepLink(intent: DeepLinkIntent): void {
     }
     case 'runs': {
       ui.navigate({ name: 'runs' })
+      return
+    }
+    case 'pair': {
+      usePendingPairInvite.getState().offer({ address: intent.address, code: intent.code })
+      ui.navigate({ name: 'collab' })
       return
     }
   }

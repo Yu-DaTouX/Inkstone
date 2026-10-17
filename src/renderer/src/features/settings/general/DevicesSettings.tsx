@@ -7,6 +7,7 @@ import {
   type RemoteDeviceRecord
 } from '../../../../../shared/remote-protocol'
 import type { PeerGrantView, PeerStatusView } from '../../../../../shared/peer-protocol'
+import { pairInviteAddress, pairInviteLink } from '../../../../../shared/pair-invite'
 import { useStore } from '../../../state/store'
 import { Badge, Button, Switch } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
@@ -68,9 +69,8 @@ export function DeviceList({ devices, busy, text, lang, onRevoke, onForget }: De
 
 function pairingLinkOf(status: RemoteAccessStatus | null): string | null {
   if (!status?.pairing) return null
-  const endpoint = status.running ? `${status.host}:${status.port}` : null
-  if (!endpoint) return null
-  return `inkstone://pair?address=${encodeURIComponent(`http://${endpoint}`)}&code=${status.pairing.code}`
+  const target = pairInviteAddress(status)
+  return target.ok ? pairInviteLink({ address: target.address, code: status.pairing.code }) : null
 }
 
 export function DevicesSettings(): ReactElement {

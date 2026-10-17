@@ -36,6 +36,19 @@ export interface CollabText {
   paired: string
   pairFailed: string
   pairLinkParsed: string
+  pairInviteReceived: string
+  inviteTitle: string
+  inviteHint: string
+  inviteStart: string
+  inviteCancel: string
+  inviteCopy: string
+  inviteCopied: string
+  inviteCode: string
+  inviteExpires: string
+  inviteStopped: string
+  inviteLoopback: string
+  inviteOpenDevices: string
+  inviteQrLabel: string
   stateIdle: string
   stateWaiting: string
   stateConnected: string
@@ -189,6 +202,19 @@ const ZH: CollabText = {
   paired: '已配对「{computer}」。',
   pairFailed: '配对失败：{error}',
   pairLinkParsed: '已从配对链接填入地址和配对码。',
+  pairInviteReceived: '收到邀请链接，已填入地址和配对码，确认后点「配对」。',
+  inviteTitle: '邀请协作者',
+  inviteHint: '生成一次性配对码，把链接发给对方，或让对方扫二维码。对方在砚里打开链接会自动填好下面的配对表单。',
+  inviteStart: '生成邀请',
+  inviteCancel: '取消邀请',
+  inviteCopy: '复制邀请链接',
+  inviteCopied: '已复制',
+  inviteCode: '配对码',
+  inviteExpires: '{seconds} 秒后失效',
+  inviteStopped: '先在「设置 › 设备与同步」开启接入，才能邀请别人。',
+  inviteLoopback: '接入只监听本机地址，别的电脑连不上。请在「设置 › 设备与同步」改为局域网或 Tailscale。',
+  inviteOpenDevices: '打开设备与同步',
+  inviteQrLabel: '邀请链接二维码',
   stateIdle: '未连接',
   stateWaiting: '等待对方批准',
   stateConnected: '已连接',
@@ -364,6 +390,19 @@ const EN: CollabText = {
   paired: 'Paired with “{computer}”.',
   pairFailed: 'Pairing failed: {error}',
   pairLinkParsed: 'Filled in the address and code from the pairing link.',
+  pairInviteReceived: 'Invite link received. The address and code are filled in; press “Pair” to confirm.',
+  inviteTitle: 'Invite a collaborator',
+  inviteHint: 'Generate a one-time pairing code, then send the link or let them scan the QR code. Opening the link in Inkstone fills in the pairing form below for them.',
+  inviteStart: 'Create invite',
+  inviteCancel: 'Cancel invite',
+  inviteCopy: 'Copy invite link',
+  inviteCopied: 'Copied',
+  inviteCode: 'Pairing code',
+  inviteExpires: 'Expires in {seconds}s',
+  inviteStopped: 'Turn on access in Settings › Devices & sync before inviting anyone.',
+  inviteLoopback: 'Access only listens on this computer, so others cannot reach it. Switch to LAN or Tailscale in Settings › Devices & sync.',
+  inviteOpenDevices: 'Open Devices & sync',
+  inviteQrLabel: 'Invite link QR code',
   stateIdle: 'Not connected',
   stateWaiting: 'Waiting for approval',
   stateConnected: 'Connected',

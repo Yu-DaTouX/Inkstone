@@ -1635,6 +1635,7 @@ export type DeepLinkIntent =
   | { action: 'new-session'; text?: string }
   | { action: 'settings'; section: string }
   | { action: 'runs' }
+  | { action: 'pair'; address: string; code: string }
 
 export interface YanBridge {
   readonly probeMode: boolean
