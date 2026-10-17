@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import vm from 'node:vm'
 import ts from 'typescript'
-import { transform } from 'esbuild'
+import { build, transform } from 'esbuild'
 
 const source = await readFile('src/main/index.ts', 'utf8')
 const ast = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true)
-const names = ['refreshTaskbar', 'notifyBlockedTerminal']
+const names = ['notifyBlockedTerminal']
 const functions = names.map((name) => {
   const node = ast.statements.find((item) => ts.isFunctionDeclaration(item) && item.name?.text === name)
   assert.ok(node, `实际入口必须保留 ${name}`)
@@ -33,15 +36,38 @@ class FakeNotification {
   show() { notices.push(this.options) }
 }
 const context = vm.createContext({
-  process: { platform: 'win32' }, win: fakeWindow(1),
-  runners: { hasBusy: () => mainBusy },
-  subagentService: { current: () => ({ runningCount: children }) },
-  approvals: { list: () => waiting ? [{}] : [] }, hasBlockedTerminal: () => false, hasWorkingTerminal: () => false,
-  taskbarProjection: undefined, blockedTerminalNotices: new Map(),
-  trayImage: () => 'fake-tray-image', Notification: FakeNotification,
+  win: fakeWindow(1),
+  hasBlockedTerminal: () => false, hasWorkingTerminal: () => false,
+  blockedTerminalNotices: new Map(),
+  Notification: FakeNotification,
   getSettings: () => deferred ?? Promise.resolve(settings)
 })
 vm.runInContext(code, context)
+assert.ok(/hostBusy: () =>s*runners?.hasBusy() === true || (subagentService.current()?.runningCount ?? 0) > 0 || hasWorkingTerminal()/.test(source), '入口的忙碌来源仍是主会话、子 Agent 与终端 working')
+assert.ok(/hostWaiting: () => approvals.list().length > 0 || hasBlockedTerminal()/.test(source), '入口的等待来源仍是待批准与终端 blocked')
+const outDir = await mkdtemp(join(tmpdir(), 'yan-taskbar-'))
+const attentionFile = join(outDir, 'attention.mjs')
+await build({ entryPoints: ['src/main/attention/index.ts'], outfile: attentionFile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+const { createAttentionService } = await import(pathToFileURL(attentionFile).href)
+await rm(outDir, { recursive: true, force: true })
+const deps = {
+  platform: 'win32',
+  snapshot: () => ({ revision: 0, runs: [] }),
+  hostBusy: () => mainBusy || children > 0 || context.hasWorkingTerminal(),
+  hostWaiting: () => waiting || context.hasBlockedTerminal(),
+  window: () => context.win,
+  trayImage: () => 'fake-tray-image',
+  createTray: () => { throw new Error('任务栏检查不创建托盘') },
+  language: () => 'zh-CN',
+  statuses: () => [],
+  showMainWindow() {},
+  newSession() {},
+  selectSession() {},
+  quit() {},
+  onThemeChange: () => () => {}
+}
+const attention = createAttentionService(deps)
+context.refreshTaskbar = (force) => attention.refreshTaskbar(force)
 const refresh = () => context.refreshTaskbar()
 const notify = async (id, status) => { context.notifyBlockedTerminal(id, status); await Promise.resolve(); await Promise.resolve() }
 
@@ -76,12 +102,12 @@ check(progress.length === initialProgress + 3 && overlays.length === initialOver
 const beforeForce = overlays.length
 context.refreshTaskbar(true)
 check(overlays.length === beforeForce + 1, '系统主题变化允许强制刷新角标')
-context.process.platform = 'linux'
+deps.platform = 'linux'
 const beforeNonWindows = progress.length
 mainBusy = true
 refresh()
 check(progress.length === beforeNonWindows, '非 Windows 静默跳过任务栏 API')
-context.process.platform = 'win32'
+deps.platform = 'win32'
 
 await notify('terminal-a', { state: 'blocked', kind: 'permission', title: '审批' })
 check(notices.length === 1 && notices[0].body === '审批', '后台进入 blocked 时通知')

@@ -10,7 +10,7 @@
 
   try {
     for (let i = 0; i < 60; i++) {
-      if (q('[data-testid="composer"]') && store?.getState().settings) break
+      if (q('[data-testid="composer-input"]') && store?.getState().settings) break
       await sleep(250)
     }
     await sleep(600)
@@ -41,31 +41,27 @@
     ])
     await sleep(300)
 
-    const tag = q('.attach[data-kind="file"]')
+    const tag = q('.ca-tile[data-kind="file"]')
     ok(!!tag, '文件引用渲染成独立标签（data-kind=file）')
     if (tag) {
       const text = tag.textContent ?? ''
       ok(/probe\.ts/.test(text), '标签显示文件名')
       ok(/2\.0 KB|KB/.test(text), '标签显示大小')
-      ok(!!tag.querySelector('.ico'), '标签用图标而不是图片缩略图')
+      ok(!!tag.querySelector('.ca-file-ico') && !tag.querySelector('img'), '标签用图标而不是图片缩略图')
     }
 
-    const send = q('[data-testid="send"]')
+    const send = q('[data-testid="composer-send"]')
     ok(!!send, '找到发送按钮')
     if (send) {
       const st = store.getState()
       out.push(`  发送按钮 disabled = ${send.disabled}（conn = ${st.conn}）`)
-      if (st.conn === 'ready') {
-        ok(send.disabled === false, '只有附件（没有文字）时发送按钮可用')
-      } else {
-        out.push('  （跳过）连接未就绪，按钮由 conn 决定禁用，与附件无关')
-        ok(st.attachments.length === 1, '附件确实进了 store（发送判据用的就是它）')
-      }
+      ok(st.attachments.length === 1, '附件确实进了 store（发送判据用的就是它）')
+      ok(send.disabled === false, '只有附件（没有文字）时发送按钮可用')
     }
 
     store.getState().clearAttachments()
     await sleep(200)
-    ok(!q('.attach[data-kind="file"]'), '清理后标签消失')
+    ok(!q('.ca-tile[data-kind="file"]'), '清理后标签消失')
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
   }

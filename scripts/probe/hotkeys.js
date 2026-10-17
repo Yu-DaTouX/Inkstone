@@ -14,6 +14,16 @@
   const seen = []
   window.yan.onHotkey((a) => seen.push(a))
 
+  const toasts = []
+  const collectToasts = () => {
+    for (const el of document.querySelectorAll('.ui-toast__title')) {
+      const text = el.textContent ?? ''
+      if (text && !toasts.includes(text)) toasts.push(text)
+    }
+  }
+  const toastWatch = new MutationObserver(collectToasts)
+  toastWatch.observe(document.body, { childList: true, subtree: true, characterData: true })
+
   const ta = document.querySelector('.composer textarea')
   ta?.focus()
   out.push('  焦点: ' + (document.activeElement?.tagName ?? '-'))
@@ -35,10 +45,11 @@
   )
   if (piReady) {
     ok(!!s?.model?.name, '会话有模型（说明 state 正常）')
-    const notices = st.notices.map((n) => n.text)
-    out.push('  提示: ' + JSON.stringify(notices))
+    collectToasts()
+    toastWatch.disconnect()
+    out.push('  提示: ' + JSON.stringify(toasts))
     ok(
-      notices.some((t) => t.startsWith('模型 →') || t.includes('思考') || t.includes('模型')),
+      toasts.some((t) => t.startsWith('模型 →') || t.includes('思考') || t.includes('模型')),
       '按下去有可见反馈（提示条）'
     )
   } else {
@@ -50,7 +61,7 @@
   out.push('')
   out.push('=== 3. 不干扰输入 ===')
   if (!ta) {
-    bad('找不到 .composer textarea（输入区没渲染出来）')
+    ok(false, '找不到 .composer textarea（输入区没渲染出来）')
     out.push(
       `  诊断: .composer=${document.querySelectorAll('.composer').length} 个, ` +
         `textarea=${document.querySelectorAll('textarea').length} 个, ` +

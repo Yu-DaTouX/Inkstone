@@ -118,7 +118,12 @@ try {
       async setModel() { if (hooks.model) await hooks.model(context, registry); return { ok: !hooks.rejectModel, error: 'fixture model failure' } },
       async send(text) { sent.push({ sessionId: this.state.sessionId, text }); return { ok: true } }
     }) })
-    const context = { runners: registry, sameRuntimeEnvelope, getSettings: async () => ({ cwd: work }), sessionHost: {
+    const runs = { opened: [], failed: [] }
+    const runsHost = {
+      async openScheduled(record) { runs.opened.push(record); return 'scheduled-' + runs.opened.length },
+      failScheduled(handle, message) { runs.failed.push({ handle, message }) }
+    }
+    const context = { runners: registry, runsHost, sameRuntimeEnvelope, getSettings: async () => ({ cwd: work }), sessionHost: {
       validateCwd: async cwd => ({ ok: true, cwd }), projectIdForCwd: () => undefined,
       rememberRunnerSession: async () => { if (hooks.remember) await hooks.remember(context, registry) },
       pushRunnerSnapshot() {}, pushRunners() {}
@@ -126,11 +131,12 @@ try {
     if (hooks.selection) { const originalSelect = registry.select.bind(registry); registry.select = async target => { const result = await originalSelect(target); await hooks.selection(context, registry); return result } }
     if (hooks.guard) registry.guardExecute = () => ({ ok: false, error: 'fixture busy cwd' })
     vm.runInNewContext(dispatchCode, context)
-    return { context, registry, sent, dispatch: task => context.dispatch({ ...input, ...task }) }
+    return { context, registry, sent, runs, dispatch: task => context.dispatch({ ...input, ...task }) }
   }
   let fixture = makeDispatch()
   await fixture.dispatch({})
   verify(fixture.sent.length === 1, 'normal scheduled dispatch succeeds')
+  verify(fixture.runs.opened.length === 1 && fixture.runs.opened[0].title === input.name && fixture.runs.failed.length === 0, 'scheduled run record opened once and not failed')
   const reuse = async (_, registry) => registry.select({ cwd: work, sessionFile: 'unrelated-session' })
   fixture = makeDispatch({ remember: reuse })
   await assert.rejects(fixture.dispatch({}), /目标会话已变化/); checks++
@@ -150,6 +156,7 @@ try {
   fixture = makeDispatch({ rejectModel: true })
   await assert.rejects(fixture.dispatch({ model: 'fixture/model' }), /model failure/); checks++
   verify(fixture.sent.length === 0, 'failed model selection does not dispatch')
+  verify(fixture.runs.failed.length === 1 && fixture.runs.failed[0].handle === 'scheduled-1' && /model failure/.test(fixture.runs.failed[0].message), 'failed dispatch marks its scheduled run record as failed')
   console.log(`Schedule safety: ${checks} passed`)
 } finally {
   for (const service of services) service.stop()

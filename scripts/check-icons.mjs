@@ -66,14 +66,17 @@ if (!sprite) {
 }
 
 const usable = new Set(Object.keys(catalog.icons))
-const files = []
-;(function walk(dir) {
+const MOBILE_SRC = join(ROOT, 'mobile/src')
+const collect = (dir, out = []) => {
   for (const entry of readdirSync(dir)) {
     const p = join(dir, entry)
-    if (statSync(p).isDirectory()) walk(p)
-    else if (/\.(tsx|ts)$/.test(entry) && !p.endsWith('icons/sprite.ts')) files.push(p)
+    if (statSync(p).isDirectory()) collect(p, out)
+    else if (/\.(tsx|ts)$/.test(entry) && !p.endsWith('icons/sprite.ts')) out.push(p)
   }
-})(SRC)
+  return out
+}
+const spriteConsumers = collect(SRC).filter((p) => /icons\/sprite['"]/.test(readFileSync(p, 'utf8')))
+const files = [...spriteConsumers, ...collect(MOBILE_SRC)]
 
 const used = new Set()
 const refs = []

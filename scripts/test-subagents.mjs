@@ -261,10 +261,10 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     try {
       ok(await waitFor(() => factory.created.length === 5 && ctrl.list().length === 5), '第一批已进入启动等待')
       ok(ctrl.runningCount === 5, '已登记的启动任务不再重复计入准备名额')
-      const second = Array.from({ length: 5 }, () => ctrl.start('第二批'))
-      ok(!(await ctrl.start('超额')).ok, '交错启动仍拒绝第11个任务')
+      const second = Array.from({ length: 19 }, () => ctrl.start('第二批'))
+      ok(!(await ctrl.start('超额')).ok, '交错启动仍拒绝第25个任务')
       release()
-      ok((await Promise.all([...first, ...second])).every(result => result.ok) && ctrl.runningCount === 10, '两批共10个均可启动')
+      ok((await Promise.all([...first, ...second])).every(result => result.ok) && ctrl.runningCount === 24, '两批共24个均可启动')
     } finally {
       release()
       await Promise.all(first)
