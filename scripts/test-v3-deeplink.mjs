@@ -248,7 +248,10 @@ for (const url of [
 
 const running = { running: true, host: '0.0.0.0', port: 37892, addresses: [{ kind: 'loopback', address: '127.0.0.1' }, { kind: 'lan', address: '192.168.1.9' }, { kind: 'tailscale', address: '100.64.0.7' }] }
 assert.deepEqual(P.pairInviteAddress(running), { ok: true, address: 'http://100.64.0.7:37892', kind: 'tailscale' }, '通配监听优先 Tailscale')
-assert.deepEqual(P.pairInviteAddress({ ...running, addresses: running.addresses.slice(0, 2) }), { ok: true, address: 'http://192.168.1.9:37892', kind: 'lan' }, '无 Tailscale 时用局域网')
+const withRadmin = { ...running, addresses: [running.addresses[0], running.addresses[1], { kind: 'radmin', address: '26.10.20.30' }] }
+assert.deepEqual(P.pairInviteAddress(withRadmin), { ok: true, address: 'http://26.10.20.30:37892', kind: 'radmin' }, '无 Tailscale 时优先 Radmin VPN')
+assert.deepEqual(P.pairInviteAddress({ ...withRadmin, host: '26.10.20.30' }), { ok: true, address: 'http://26.10.20.30:37892', kind: 'radmin' }, '监听 Radmin 地址时标为 radmin')
+assert.deepEqual(P.pairInviteAddress({ ...running, addresses: running.addresses.slice(0, 2) }),{ ok: true, address: 'http://192.168.1.9:37892', kind: 'lan' }, '无 Tailscale 时用局域网')
 assert.deepEqual(P.pairInviteAddress({ ...running, addresses: running.addresses.slice(0, 1) }), { ok: false, reason: 'loopback' }, '只有本机地址不可邀请')
 assert.deepEqual(P.pairInviteAddress({ ...running, host: '127.0.0.1' }), { ok: false, reason: 'loopback' })
 assert.deepEqual(P.pairInviteAddress({ ...running, host: '192.168.1.9' }), { ok: true, address: 'http://192.168.1.9:37892', kind: 'lan' }, '具体监听地址原样使用')

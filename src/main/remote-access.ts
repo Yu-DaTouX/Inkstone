@@ -20,6 +20,12 @@ function isTailscaleIPv4(address: string): boolean {
   return a === 100 && b >= 64 && b <= 127
 }
 
+function isRadminIPv4(address: string, adapter: string): boolean {
+  return /radmin/i.test(adapter) || address.split('.')[0] === '26'
+}
+
+const KIND_ORDER: Record<AddressKind, number> = { tailscale: 0, radmin: 1, lan: 2, loopback: 3 }
+
 function isPrivateIPv4(address: string): boolean {
   const [a, b] = address.split('.').map(Number)
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
@@ -27,14 +33,20 @@ function isPrivateIPv4(address: string): boolean {
 
 export function candidateAddresses(): RemoteAccessStatus['addresses'] {
   const found: RemoteAccessStatus['addresses'] = []
-  for (const list of Object.values(networkInterfaces())) {
+  for (const [adapter, list] of Object.entries(networkInterfaces())) {
     for (const item of list ?? []) {
-      if (item.family !== 'IPv4' || item.internal) continue
-      const kind: AddressKind | null = isTailscaleIPv4(item.address) ? 'tailscale' : isPrivateIPv4(item.address) ? 'lan' : null
+      if (item.family !== 'IPv4' || item.internal || item.address.startsWith('169.254.')) continue
+      const kind: AddressKind | null = isTailscaleIPv4(item.address)
+        ? 'tailscale'
+        : isRadminIPv4(item.address, adapter)
+          ? 'radmin'
+          : isPrivateIPv4(item.address)
+            ? 'lan'
+            : null
       if (kind && !found.some((entry) => entry.address === item.address)) found.push({ kind, address: item.address })
     }
   }
-  found.sort((left, right) => (left.kind === right.kind ? 0 : left.kind === 'tailscale' ? -1 : 1))
+  found.sort((left, right) => KIND_ORDER[left.kind] - KIND_ORDER[right.kind])
   return [...found, { kind: 'loopback', address: '127.0.0.1' }]
 }
 
@@ -53,6 +65,7 @@ async function resolveBindHost(bind: RemoteAccessSettings['bind']): Promise<stri
   if (bind === 'tailscale') {
     return candidateAddresses().find((entry) => entry.kind === 'tailscale')?.address ?? (await tailscaleCliAddress())
   }
+  if (bind === 'radmin') return candidateAddresses().find((entry) => entry.kind === 'radmin')?.address ?? null
   return bind
 }
 
@@ -106,7 +119,9 @@ export class RemoteAccess {
     const wanted = env ?? (this.settings.enabled ? { host: await resolveBindHost(this.settings.bind), port: this.settings.port } : null)
     if (wanted && !wanted.host) {
       await this.stopServer()
-      this.lastError = '没有找到 Tailscale 地址：请确认 Tailscale 已登录，或改为「仅本机」/ 指定 IP'
+      this.lastError = this.settings.bind === 'radmin'
+        ? '没有找到 Radmin VPN 地址：请确认 Radmin VPN 已连接，或改选其他监听地址'
+        : '没有找到 Tailscale 地址：请确认 Tailscale 已登录，或改选其他监听地址'
       return
     }
     const current = this.server?.info

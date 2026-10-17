@@ -164,6 +164,10 @@ async function main() {
     ok(devicesHtml.includes('data-testid="v3-devices-enable"'), '手机接入开关接现有 remoteAccess.enabled')
     ok(devicesHtml.includes('data-testid="v3-devices-pair"'), '配对入口来自既有 remote.pair')
     ok(devicesHtml.includes('data-testid="v3-devices-empty"'), '未取到设备时不渲染假设备')
+    ok(
+      ['tailscale', 'radmin', 'lan', 'loopback'].every((mode) => devicesHtml.includes(`data-testid="v3-devices-bind-${mode}"`)),
+      '监听地址可选 Tailscale / Radmin VPN / 局域网 / 仅本机'
+    )
 
     const dataHtml = withProvider(General.DataSettings)
     ok(dataHtml.includes('data-testid="v3-data-settings"'), '数据分区有稳定根 testid')
@@ -251,6 +255,7 @@ async function main() {
     assert.ok(sources.security.includes('PERMISSION_MODES') && sources.security.includes('shared/approval'), '权限分区复用既有档位定义')
     assert.ok(sources.security.includes('guardAllowRoots') && sources.security.includes('guardOutsideWrites'), '权限分区复用现有保护字段')
     assert.ok(sources.devices.includes('window.yan.remote') && sources.devices.includes('window.yan.peer'), '设备分区只调既有 remote / peer IPC')
+    assert.ok(sources.devices.includes('setSettings({ ...store.settings, remoteAccess: next })'), '开关保存后回写渲染端设置，开关能回显')
     assert.ok(sources.data.includes('window.yan.storage') && sources.data.includes('window.yan.backup') && sources.data.includes('window.yan.sync.exportSession'), '数据分区只调既有 storage / backup / sync IPC')
     assert.ok(sources.about.includes('BUILD_INFO') && sources.about.includes('appUpdate') && sources.about.includes('openBrowser'), '关于分区显示真实构建信息并接既有更新 / 浏览器入口')
     for (const bad of ['budget', 'permissionTier', 'authorizationBudget', 'newPermissionMode']) {
