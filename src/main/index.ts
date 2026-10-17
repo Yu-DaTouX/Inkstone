@@ -11,6 +11,7 @@ import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAut
 import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
+import { readPiRuntimePrefs } from './pi-runtime-prefs'
 import { createRunsHost, type RunsHost } from './runs-host'
 import { createAttentionService, createTrayAssetStore, summarizeAttention, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
 import { createAuxWindows, createPaneBrowserTransfer, createPanePopoutController, createPaneTerminalTransfer, registerAuxIpc, registerPaneBrowserIpc, registerPanePopoutIpc, registerPaneTerminalIpc, submitQuickAsk, type AuxWindows, type PaneBrowserTransfer, type PanePopoutController, type PaneTerminalTransfer } from './windows'
@@ -375,6 +376,21 @@ const subagentService: SubagentService = new SubagentService({
   }
 })
 let remoteAccess: RemoteAccess | null = null
+
+async function applyToAllAgents(
+  apply: (agent: AgentController) => Promise<{ ok: boolean; error?: string }>
+): Promise<{ ok: boolean; error?: string }> {
+  const active = ac()
+  if (!active) return { ok: false, error: 'pi 未运行' }
+  const result = await apply(active)
+  if (!result.ok) return result
+  await Promise.all(
+    (runners?.agents() ?? [])
+      .filter((agent) => agent !== active)
+      .map((agent) => apply(agent).catch(() => undefined))
+  )
+  return result
+}
 
 function ac(): AgentController | null {
   return runners?.active() ?? null
@@ -2106,8 +2122,9 @@ function registerIpc(): void {
   )
   handle(
     'yan:setAutoRetry',
-    async (enabled: boolean) => ac()?.setAutoRetry(enabled) ?? { ok: false, error: 'pi 未运行' }
+    async (enabled: boolean) => applyToAllAgents((agent) => agent.setAutoRetry(enabled))
   )
+  handle('yan:piRuntimePrefs', async () => readPiRuntimePrefs())
 
   registerWorkModeIpc(ipc, {
     registry: () => runners,
@@ -2126,11 +2143,11 @@ function registerIpc(): void {
 
   handle(
     'yan:setSteeringMode',
-    async (mode: string) => ac()?.setSteeringMode(mode) ?? { ok: false, error: 'pi 未运行' }
+    async (mode: string) => applyToAllAgents((agent) => agent.setSteeringMode(mode))
   )
   handle(
     'yan:setFollowUpMode',
-    async (mode: string) => ac()?.setFollowUpMode(mode) ?? { ok: false, error: 'pi 未运行' }
+    async (mode: string) => applyToAllAgents((agent) => agent.setFollowUpMode(mode))
   )
   handle(
     'yan:abortRetry',

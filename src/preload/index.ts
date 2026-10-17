@@ -99,7 +99,8 @@ import type {
   YanBridge,
   ZoomState,
   CustomProviderTestResult,
-  LocalModelServer
+  LocalModelServer,
+  PiRuntimePrefs
 } from '../shared/ipc'
 import type { DeepLinkIntent } from '../shared/ipc'
 import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../shared/opencode-proxy'
@@ -239,6 +240,7 @@ const api: YanBridge = {
 
   setAutoCompaction: (enabled) => invoke<Ok>('yan:setAutoCompaction', enabled),
   setAutoRetry: (enabled) => invoke<Ok>('yan:setAutoRetry', enabled),
+  piRuntimePrefs: () => invoke<PiRuntimePrefs>('yan:piRuntimePrefs'),
 
   getWorkMode: () => invoke<WorkModeState>('yan:getWorkMode'),
   answerApproval: (id, choice) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice),
