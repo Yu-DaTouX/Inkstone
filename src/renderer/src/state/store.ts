@@ -78,7 +78,7 @@ import {
 } from './session-runtime'
 import { routePush, viewingSessionId } from './push-routing'
 import { beginSessionSwitch as markSessionSwitch, endSessionSwitch as unmarkSessionSwitch } from './session-activation'
-import { pushBelongsToView, sameSessionFile, viewKeyRef } from './view-identity'
+import { pushBelongsToView, sameSessionFile, viewIdentityOf, viewKeyRef } from './view-identity'
 import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTaskStatePush } from './push-consumers'
 import { addSourceFiles } from './source-files'
 import { newestMessages, shownMessages } from './split-snapshots'
@@ -411,8 +411,14 @@ export type QuotaResumeWait = {
 
 export type PendingSend = {
   id: string
+  sessionId: string | null
   text: string
   images?: { data: string; mimeType: string }[]
+}
+
+export function pendingSendsForView(s: Pick<Store, 'pendingSends' | 'peekedSessionId' | 'peekedPath' | 'session'>): PendingSend[] {
+  const sessionId = viewIdentityOf(s).sessionId
+  return s.pendingSends.filter((item) => item.sessionId === sessionId)
 }
 
 function runtimeFromRunner(runner: RunnerStatus): RuntimeEnvelope {
@@ -904,7 +910,7 @@ async function runKeepRunning(sessionId: string): Promise<void> {
   const keep = s.keepRunning
   if (!keep || keep.sessionId !== sessionId || s.session?.sessionId !== sessionId) return
   if (s.session.isAgentRunning || s.session.isStreaming || s.quotaResume || failoverBusy) return
-  if (s.queue.steering.length || s.queue.followUp.length || s.pendingSends.length) return
+  if (s.queue.steering.length || s.queue.followUp.length || pendingSendsForView(s).length) return
   const decision = decideKeepRunning(lastTurnSummary(s.messages), keep.count)
   if (decision.next === 'skip') return
   if (decision.next === 'stop') {
@@ -1712,16 +1718,17 @@ export const useStore = create<Store>((rawSet, get) => {
 
   holdSend: (text, images) => {
     const list = get().pendingSends
+    const sessionId = viewIdentityOf(get()).sessionId
     set({
       pendingSends: [
         ...list,
-        { id: `ps-${Date.now().toString(36)}-${list.length}`, text, images }
+        { id: `ps-${Date.now().toString(36)}-${list.length}`, sessionId, text, images }
       ]
     })
   },
 
   releaseSend: async (id, mode) => {
-    const item = get().pendingSends.find((p) => p.id === id)
+    const item = pendingSendsForView(get()).find((p) => p.id === id)
     if (!item) return
     const sessionId = get().session?.sessionId
     const ok = await get().send(item.text, item.images, mode)
@@ -1731,7 +1738,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   restoreSend: (id) => {
-    const item = get().pendingSends.find((p) => p.id === id)
+    const item = pendingSendsForView(get()).find((p) => p.id === id)
     if (!item) return
     const sessionId = get().session?.sessionId
     const current = get()
@@ -1908,6 +1915,25 @@ export const useStore = create<Store>((rawSet, get) => {
       findSnapshotByPath(get().sessionRuntimes, path)
     const splitShown = useSplitView.getState().split ? shownMessages({ sessionId: sum?.id, path }) : undefined
     const cachedMessages = newestMessages(splitShown, cachedSnapshot?.messages)
+    const left = get()
+    const leftView = {
+      peekedPath: left.peekedPath,
+      peekedSessionId: left.peekedSessionId,
+      peekNote: left.peekNote,
+      messages: left.messages,
+      session: left.session,
+      stats: left.stats,
+      queue: left.queue,
+      todos: left.todos,
+      todoHistory: left.todoHistory,
+      uiRequests: left.uiRequests,
+      statuses: left.statuses,
+      widgets: left.widgets,
+      widgetPlacements: left.widgetPlacements,
+      workMode: left.workMode,
+      agentProfile: left.agentProfile,
+      pendingActivation: left.pendingActivation
+    }
     set({
       peekedPath: path,
       peekedSessionId: sum?.id ?? cachedSnapshot?.runtime.sessionId ?? null,
@@ -1964,14 +1990,14 @@ export const useStore = create<Store>((rawSet, get) => {
     performance.mark('yan:switch-selected')
     if (gate !== sessionSwitchGate) return
     if (!res.ok) {
-      const authoritative = get().session?.sessionId
-      const authoritativeMessages = authoritative ? get().sessionRuntimes[authoritative]?.messages : undefined
+      const leftId = viewIdentityOf(leftView).sessionId
+      const leftCache = leftId ? get().sessionRuntimes[leftId] : undefined
       set({
-        notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'),
-        peekedPath: null,
-        peekedSessionId: null,
-        pendingActivation: null,
-        ...(authoritativeMessages?.length ? { messages: authoritativeMessages } : {})
+        ...leftView,
+        ...(leftCache?.messages?.length ? { messages: leftCache.messages } : {}),
+        ...(leftCache?.session ? { session: leftCache.session } : {}),
+        ...(leftCache?.queue ? { queue: leftCache.queue } : {}),
+        notices: pushNotice(get().notices, 'error', res.error ?? '切换失败')
       })
       return
     }
