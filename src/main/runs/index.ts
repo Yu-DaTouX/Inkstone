@@ -1,6 +1,6 @@
 import { DurableRunHistory, type RunHistoryWriter } from './history'
 import { RunPublisher, type RunUpdatePayload } from './publisher'
-import { RunRegistry, type RunContext, type RunError, type RunRegistryOptions } from './registry'
+import { RunRegistry, type RunError, type RunRegistryOptions } from './registry'
 import { SessionCodeStore } from './session-codes'
 import { StallMonitor } from './stall-monitor'
 import type { StallThresholds } from '../../shared/runs'
@@ -85,18 +85,6 @@ export async function createRunPipeline(options: RunPipelineOptions = {}): Promi
       await codes.whenIdle()
       await registry.whenIdle()
     }
-  }
-}
-
-export function runContextFromEnvelope(
-  envelope: { sessionId: string; projectId?: string; generation?: number },
-  extra: Partial<Omit<RunContext, 'sessionId'>> = {}
-): RunContext {
-  return {
-    sessionId: envelope.sessionId,
-    ...(envelope.projectId ? { projectId: envelope.projectId } : {}),
-    ...(envelope.generation !== undefined ? { generation: envelope.generation } : {}),
-    ...extra
   }
 }
 

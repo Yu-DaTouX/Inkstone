@@ -34,9 +34,6 @@ import type {
   PackageListingView,
   SourceRefView,
   SourceLinkView,
-  ForkContextResultView,
-  ForkRefsReportView,
-  WorktreeLinkView,
   Attachment,
   AttentionNotify,
   BrowserBounds,
@@ -53,15 +50,11 @@ import type {
   GitRuntimeStatus,
   CustomProviderDiscoverResult,
   CodexLoginResult,
-  CompactionInfo,
   TrustStatusView,
-  CustomEntry,
   DirListing,
   FileRequestContext,
   FilePreview,
   FileRefInfo,
-  FileSearchRequest,
-  FileSearchResult,
   FileTextResult,
   ForkPoint,
   GitActionExpected,
@@ -72,12 +65,9 @@ import type {
   GitRepoState,
   MainPush,
   ModelInfo,
-  WorktreeCreateResult,
   WorktreeListing,
-  WorktreeRemoveResult,
   PeekResult,
   PiInfo,
-  PiProbe,
   PathCompletionResult,
   ProviderQuota,
   RunnerStatus,
@@ -91,10 +81,6 @@ import type {
   SubagentRun,
   SlashCommand,
   UIMessage,
-  WorkModeState,
-  SessionQuestionFrequencyInput,
-  SessionQuestionFrequencyResult,
-  SessionQuestionFrequencyView,
   ApprovalRequest,
   YanBridge,
   ZoomState,
@@ -103,7 +89,6 @@ import type {
 } from '../shared/ipc'
 import type { DeepLinkIntent } from '../shared/ipc'
 import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../shared/opencode-proxy'
-import type { WebSearchAvailability } from '../shared/web-search'
 import type { RunSnapshot } from '../shared/runs'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from '../shared/checkpoints'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
@@ -111,8 +96,7 @@ import type { OfficeDocumentView } from '../shared/office'
 import type { ConsentEntryView } from '../shared/tool-consent'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
 import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
-import type { AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from '../shared/account-quota'
-import type { CodexFailoverResult } from '../shared/quota-failover'
+import type { AccountQuotaReport } from '../shared/account-quota'
 import type { AuxPush, MiniItem, QuickAskSubmit } from '../main/windows/aux-types'
 import { PANE_POPOUT_CHANNELS } from '../shared/pane-popout'
 import { PANE_BROWSER_CHANNELS } from '../shared/pane-popout'
@@ -240,19 +224,8 @@ const api: YanBridge = {
   setAutoCompaction: (enabled) => invoke<Ok>('yan:setAutoCompaction', enabled),
   setAutoRetry: (enabled) => invoke<Ok>('yan:setAutoRetry', enabled),
 
-  getWorkMode: () => invoke<WorkModeState>('yan:getWorkMode'),
   answerApproval: (id, choice) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice),
   pendingApprovals: () => invoke<ApprovalRequest[]>('yan:approvalPending'),
-  setWorkMode: (mode, expectedRevision) =>
-    invoke<{ ok: boolean; state: WorkModeState; error?: string }>('yan:setWorkMode', mode, expectedRevision),
-  getSessionQuestionFrequency: (runnerId?: string) =>
-    invoke<({ ok: true } & SessionQuestionFrequencyView) | { ok: false; error: string }>(
-      'yan:getSessionQuestionFrequency',
-      runnerId
-    ),
-  setSessionQuestionFrequency: (input: SessionQuestionFrequencyInput) =>
-    invoke<SessionQuestionFrequencyResult>('yan:setSessionQuestionFrequency', input),
-
   setSteeringMode: (mode) => invoke<Ok>('yan:setSteeringMode', mode),
   setFollowUpMode: (mode) => invoke<Ok>('yan:setFollowUpMode', mode),
   abortRetry: () => invoke<Ok>('yan:abortRetry'),
@@ -272,7 +245,6 @@ const api: YanBridge = {
   manualTitles: () => invoke<Record<string, string>>('yan:manualTitles'),
   setManualTitle: (sessionId, name) => invoke<{ ok: boolean; error?: string }>('yan:setManualTitle', sessionId, name),
   regenerateTitle: (sessionId) => invoke<{ ok: boolean; title?: string; error?: string }>('yan:regenerateTitle', sessionId),
-  getCustomEntries: () => invoke<CustomEntry[]>('yan:getCustomEntries'),
   refreshTodos: () => invoke<SessionTodo[]>('yan:refreshTodos'),
   listSessions: () => invoke<SessionSummary[]>('yan:listSessions'),
   checkpoints: {
@@ -302,12 +274,7 @@ const api: YanBridge = {
   clearAuth: (provider) => invoke<Ok>('yan:clearAuth', provider),
   authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
   accountQuota: () => invoke<AccountQuotaReport>('yan:accountQuota'),
-  accountQuotaSource: (source, enabled) => invoke<AccountQuotaPrefs>('yan:accountQuotaSource', source, enabled),
-  accountLabel: (key, label) => invoke<AccountQuotaPrefs>('yan:accountLabel', key, label),
-  codexAccounts: () => invoke<CodexAccountView[]>('yan:codexAccounts'),
   codexAccountSwitch: (key) => invoke<Ok>('yan:codexAccountSwitch', key),
-  codexAccountRemove: (key) => invoke<Ok>('yan:codexAccountRemove', key),
-  codexAccountFailover: (skip) => invoke<CodexFailoverResult>('yan:codexAccountFailover', skip),
   toolchainStatus: () => invoke<ToolchainStatus>('yan:toolchainStatus'),
   gitRuntimeStatus: () => invoke<GitRuntimeStatus>('yan:gitRuntimeStatus'),
   gitRuntimeInstall: () => invoke<{ ok: boolean; error?: string }>('yan:gitRuntimeInstall'),
@@ -326,14 +293,10 @@ const api: YanBridge = {
   saveCustomProvider: (input) => invoke<CustomProviderResult>('yan:saveCustomProvider', input),
   discoverCustomModels: (input) => invoke<CustomProviderDiscoverResult>('yan:discoverCustomModels', input),
   detectLocalModels: () => invoke<LocalModelServer[]>('yan:detectLocalModels'),
-  localModelUrls: () => invoke<string[]>('yan:localModelUrls'),
-  saveLocalModelUrls: (urls) => invoke<string[]>('yan:saveLocalModelUrls', urls),
   removeCustomProvider: (id) => invoke<CustomProviderResult>('yan:removeCustomProvider', id),
   testCustomProvider: (id, mode, modelId) =>
     invoke<CustomProviderTestResult>('yan:testCustomProvider', id, mode, modelId),
   completePath: (prefix, cwd, context) => invoke<PathCompletionResult>('yan:completePath', prefix, cwd, context),
-  cancelFileSearch: (requestId) => invoke<void>('yan:cancelFileSearch', requestId),
-  searchFiles: (request: FileSearchRequest) => invoke<FileSearchResult>('yan:searchFiles', request),
 
   pickImages: () => invoke<Attachment[]>('yan:pickImages'),
   pickFilePaths: () => invoke<string[]>('yan:pickFiles'),
@@ -378,9 +341,7 @@ const api: YanBridge = {
     addImage: (req) => invoke<SourceRefView | null>('yan:sources:addImage', req),
     verifyFiles: (req) => invoke<SourceRefView[]>('yan:sources:verifyFiles', req),
     link: (req) => invoke('yan:sources:link', req),
-    removeImage: (req) => invoke('yan:sources:removeImage', req),
-    readImage: (req) => invoke('yan:sources:readImage', req),
-    webSearch: () => invoke<WebSearchAvailability>('yan:sources:webSearch')
+    removeImage: (req) => invoke('yan:sources:removeImage', req)
   },
   packages: {
     search: (query, offset) => invoke('yan:packages:search', query, offset),
@@ -448,29 +409,10 @@ const api: YanBridge = {
       invoke<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>('yan:git:refs', cwd),
     action: (req) => invoke<GitActionResult>('yan:git:action', req),
     remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd),
-    remoteWeb: (cwd) => invoke('yan:git:remoteWeb', cwd),
-    prStatus: (cwd) => invoke('yan:git:prStatus', cwd),
     untracked: (cwd) => invoke<string[]>('yan:git:untracked', cwd),
     changes: (cwd) => invoke<GitChangesResult>('yan:git:changes', cwd),
     diff: (req) => invoke<GitDiffResult>('yan:git:diff', req),
-    worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd),
-    worktreeCreate: (req) => invoke<WorktreeCreateResult>('yan:git:worktreeCreate', req),
-    worktreeRemove: (req) => invoke<WorktreeRemoveResult>('yan:git:worktreeRemove', req),
-    worktreeLink: (req) => invoke('yan:git:worktreeLink', req),
-    worktreeLinks: () => invoke<WorktreeLinkView[]>('yan:git:worktreeLinks'),
-    forkFileRefs: (input: {
-      worktree: string
-      sourceFile?: string
-      sourceCwd?: string
-      explicitRefs?: string[]
-    }) => invoke<ForkRefsReportView>('yan:fork:fileRefs', input),
-    forkContext: (input: {
-      worktree: string
-      sourceFile?: string
-      sourceCwd?: string
-      sourceSessionId?: string
-      explicitAttachmentCount?: number
-    }) => invoke<ForkContextResultView>('yan:fork:context', input)
+    worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd)
   },
 
   getSettings: () => invoke<AppSettings>('yan:getSettings'),
@@ -487,12 +429,7 @@ const api: YanBridge = {
   notifyAttention: (n: AttentionNotify) =>
     invoke<{ shown: boolean; simulated?: boolean; error?: string }>('yan:notifyAttention', n),
 
-  probePi: () => invoke<PiProbe>('yan:probePi'),
   openPath: (p) => invoke<{ ok: boolean; error?: string }>('yan:openPath', p),
-  interactions: {
-    get: (session) => invoke<import('../shared/interaction-state').InteractionValues>('yan:interactions:get', session),
-    set: (session, key, value) => invoke<import('../shared/interaction-state').InteractionValues>('yan:interactions:set', session, key, value)
-  },
   backup: (action) => invoke<import('../shared/data-backup').BackupResult>('yan:backup', action),
   storage: {
     info: () => invoke<StorageInfoView>('yan:storage:info'),
@@ -500,14 +437,12 @@ const api: YanBridge = {
     schedule: (target, relaunch) => invoke<{ ok: boolean; error?: string }>('yan:storage:schedule', target, relaunch),
     cancel: () => invoke<void>('yan:storage:cancel')
   },
-  openFileDefault: (p, cwd) => invoke<{ ok: boolean; revealed?: boolean; error?: string }>('yan:openFileDefault', p, cwd),
   revealPath: (p) => invoke<{ ok: boolean }>('yan:revealPath', p),
 
   getZoom: () => invoke<ZoomState>('yan:getZoom'),
   setUiScale: (v) => invoke<ZoomState>('yan:setUiScale', v),
 
   listDir: (rel, showHidden, context?: FileRequestContext) => invoke<DirListing>('yan:listDir', rel, showHidden === true, context),
-  compactionInfo: (win) => invoke<CompactionInfo>('yan:compactionInfo', win),
   trust: {
     status: (cwd?: string) => invoke<TrustStatusView>('yan:trust:status', cwd),
     allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd),
@@ -540,7 +475,6 @@ const api: YanBridge = {
     syncPageStorage: () => invoke<ChromeSyncReport>('yan:browser:syncPageStorage'),
     setPermission: (permission, origin, allowed) =>
       invoke<{ ok: boolean; error?: string }>('yan:browser:setPermission', permission, origin, allowed),
-    setUserControl: (value) => invoke<BrowserState>('yan:browser:setUserControl', value),
     setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds),
     setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible)
   },
@@ -563,9 +497,7 @@ const api: YanBridge = {
     send: (peerId, sessionId, text) => invoke('yan:peer:send', peerId, sessionId, text),
     startSession: (peerId, projectId, text) => invoke('yan:peer:startSession', peerId, projectId, text),
     abort: (peerId, runId) => invoke('yan:peer:abort', peerId, runId),
-    importSession: (peerId, sessionId) => invoke('yan:peer:importSession', peerId, sessionId),
-    readImport: (importId) => invoke('yan:peer:readImport', importId),
-    revealImport: (importId) => invoke('yan:peer:revealImport', importId)
+    importSession: (peerId, sessionId) => invoke('yan:peer:importSession', peerId, sessionId)
   } as YanBridge['peer'],
 
   collab: {

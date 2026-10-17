@@ -144,13 +144,6 @@ export class CapabilityAcquisition {
   >()
 
   async runCapabilitiesDiscover(params: Record<string, unknown>) {
-    const strategy = await this.host.capabilityOpts()?.getCapabilityStrategy?.()
-    if (strategy === 'existing-only') {
-      throw new CapabilityCommandError(
-        'capability_policy_existing_only',
-        '当前能力策略为「仅已有能力」，不会联网搜索。可在设置 → 能力中更改策略。'
-      )
-    }
     const queryText = paramString(params, ['queryText', 'query-text', 'query', 'text']) ?? ''
     const goalText = paramString(params, ['goal', 'goalText', 'goal-text'])
     const timeoutMs = paramNumber(params, 'timeoutMs')
@@ -293,38 +286,6 @@ export class CapabilityAcquisition {
       )
     }
     const { plan, candidate, digest } = entry
-    const workMode = await this.host.capabilityOpts()?.getWorkMode?.()
-    if (workMode === 'clarify') {
-      throw new CapabilityCommandError(
-        'capability_mode_clarify',
-        '计划模式允许搜索与查看候选，但不允许接入能力；切换到标准或自主模式后再继续。'
-      )
-    }
-    const strategy = await this.host.capabilityOpts()?.getCapabilityStrategy?.()
-    if (strategy === 'existing-only') {
-      return {
-        data: {
-          plan,
-          candidate,
-          executable: false,
-          state: 'policy-blocked',
-          notice: '当前能力策略为「仅已有能力」，接入被宿主阻止；可在设置 → 能力中更改策略。'
-        },
-        summary: { kind: 'capabilities', action: 'acquire', planId: plan.planId, state: 'policy-blocked', executed: false }
-      }
-    }
-    if (strategy === 'search-and-recommend') {
-      return {
-        data: {
-          plan,
-          candidate,
-          executable: false,
-          state: 'recommendation-only',
-          notice: '当前策略只搜索并推荐，不会连接、下载或安装候选；请在设置 → 能力中改用授权范围内自动接入。'
-        },
-        summary: { kind: 'capabilities', action: 'acquire', planId: plan.planId, state: 'recommendation-only', executed: false }
-      }
-    }
     const operationId = operationIdOf({ planId: plan.planId, planRevision: plan.revision })
     const explicitAuthorize = params.authorize === true || params.authorize === 'true'
 

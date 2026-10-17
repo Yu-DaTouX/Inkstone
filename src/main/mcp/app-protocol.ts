@@ -2,7 +2,6 @@ import { protocol } from 'electron'
 import type { McpAppResource } from './app-host'
 import type { McpAppResourceStore, McpAppLoadedResource, McpAppResourceFetch } from './app-resource-store'
 import type { McpAppCsp } from './app-spec'
-import { resolvesToPrivateAddress } from '../browser/network-policy'
 import {
   buildMcpAppCsp,
   mcpAppErrorHeaders,
@@ -34,8 +33,6 @@ export interface McpAppResourceReader {
 export interface McpAppLoaderOptions {
   resolvePrivateHost?: McpAppResolveHost
 }
-
-export const mcpAppNetworkBoundaryResolver: McpAppResolveHost = (host) => resolvesToPrivateAddress(host)
 
 export interface McpAppCspDerivation {
   csp: string

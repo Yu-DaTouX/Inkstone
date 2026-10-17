@@ -11,8 +11,6 @@ import type {
   SessionTodo,
   SessionTodoSnapshot,
   SlashCommand,
-  WorkModeState,
-  AgentProfileState,
   UIMessage,
   UIToolCall
 } from '../../../shared/ipc'
@@ -33,8 +31,6 @@ export interface SessionRuntimeSnapshot {
   widgetPlacements: Record<string, 'aboveEditor' | 'belowEditor'>
   draft: string
   draftAttachments: Attachment[]
-  workMode: WorkModeState | null
-  agentProfile: AgentProfileState | null
   models: ModelInfo[]
   thinkingLevels: string[]
   commands: SlashCommand[]
@@ -57,8 +53,6 @@ function emptyRuntime(runtime: RuntimeEnvelope): SessionRuntimeSnapshot {
     queue: { steering: [], followUp: [] },
     todos: [],
     todoHistory: [],
-    workMode: null,
-    agentProfile: null,
     uiRequests: [],
     statuses: {},
     widgets: {},
@@ -111,8 +105,6 @@ function mergeMigratedRuntime(
     runtime: target.runtime.generation >= runtime.generation ? target.runtime : runtime,
     draft: target.draft || source.draft,
     draftAttachments: (target.draftAttachments ?? []).length ? target.draftAttachments : source.draftAttachments ?? [],
-    workMode: target.workMode ?? source.workMode,
-    agentProfile: target.agentProfile ?? source.agentProfile,
     models: target.models.length ? target.models : source.models,
     thinkingLevels: target.thinkingLevels.length ? target.thinkingLevels : source.thinkingLevels,
     commands: target.commands.length ? target.commands : source.commands
@@ -244,12 +236,6 @@ export function reduceSessionRuntime(
       break
     case 'todos':
       next = { ...next, todos: message.payload }
-      break
-    case 'work-mode':
-      next = { ...next, workMode: message.payload }
-      break
-    case 'agent-profile':
-      next = { ...next, agentProfile: message.payload }
       break
     case 'todo-history':
       next = { ...next, todoHistory: message.payload }

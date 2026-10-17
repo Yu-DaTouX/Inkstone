@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PiRpc, resolvePi } from '../protocol'
 import { formatSkillSecurityReview, reviewSkillFiles, type SkillSecurityReview } from '../../shared/skill-security'
-import { stagingDirOf, type AcquisitionService } from './acquisition-service'
+import { stagingDirOf } from './acquisition-service'
 import type { PiPackageCheck } from './pi-package-scheduler'
 
 type JsonObject = Record<string, unknown>
@@ -340,21 +340,5 @@ export async function smokeStagedPiPackage(input: {
     if (tempRoot) {
       await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined)
     }
-  }
-}
-
-export function stagedPiPackageSmokePort(input: {
-  root: string
-  piBin?: string
-  service: AcquisitionService
-}): (tx: { operationId: string }) => Promise<PiPackageCheck> {
-  return async (tx) => {
-    const staged = await input.service.verifyStaged(tx.operationId)
-    if (!staged.ok) return { ok: false, problems: staged.problems }
-    return smokeStagedPiPackage({
-      root: input.root,
-      operationId: tx.operationId,
-      ...(input.piBin ? { piBin: input.piBin } : {})
-    })
   }
 }
