@@ -265,6 +265,7 @@ export interface SessionState {
   isAgentRunning?: boolean
   isCompacting: boolean
   compaction?: CompactionRun
+  retry?: RetryRun
   lastCompaction?: CompactionRun
   contextFrom?: ContextFrom
   messageCount: number
@@ -273,6 +274,14 @@ export interface SessionState {
   autoCompactionEnabled?: boolean
   steeringMode?: QueueMode
   followUpMode?: QueueMode
+}
+
+export interface RetryRun {
+  attempt: number
+  maxAttempts: number
+  delayMs: number
+  at: number
+  error?: string
 }
 
 export interface RuntimeEnvelope {

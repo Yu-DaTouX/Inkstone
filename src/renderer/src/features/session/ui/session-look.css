@@ -77,6 +77,7 @@
 
   .v3-act { display: flex; align-items: center; gap: var(--s-6); color: var(--fg2); font-size: var(--t-ui); }
   .v3-act[data-kind='run'] { color: var(--run-t); }
+  .v3-act[data-kind='retry'] { color: var(--stall-t); }
   .v3-act[data-kind='err'] { color: var(--fail-t); }
   .v3-act[data-kind='stop'] { color: var(--stall-t); }
   .v3-msg-meta-stop { color: var(--stall-t); }
